@@ -620,8 +620,7 @@ void DrawGrid( void )
  * main()
  *======================================================================*/
 
-int main( void )
-{
+int main() {
    GLFWwindow* window;
 
    /* Init GLFW */
@@ -654,8 +653,7 @@ int main( void )
    init();
 
    /* Main loop */
-   for (;;)
-   {
+   for (;;) {
        /* Timing */
        t = glfwGetTime();
        dt = t - t_old;
@@ -667,6 +665,10 @@ int main( void )
        /* Swap buffers */
        glfwSwapBuffers(window);
        glfwPollEvents();
+
+       // Kill the window on ESC
+       if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+		   break;
 
        /* Check if we are still running */
        if (glfwWindowShouldClose(window))
