@@ -5,8 +5,7 @@ bool initGame();
 bool gameLogic(float deltaTime);
 void closeGame();
 
-namespace platform
-{
+namespace platform {
 	///sets the mouse pos relative to the window's drawing area
 	void setRelMousePosition(int x, int y);
 
@@ -37,7 +36,5 @@ namespace platform
 
 	bool writeEntireFile(const char *name, void *buffer, size_t size);
 	bool readEntireFile(const char *name, void *buffer, size_t size);
-
-
 };
 
