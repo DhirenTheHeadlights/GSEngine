@@ -13,6 +13,8 @@
 #include "PlatformInput.h"
 #include "PlatformFunctions.h"
 
+#include "Engine/Graphics/Camera.h"
+
 bool initGame();
 bool gameLogic(float deltaTime);
 void closeGame();
