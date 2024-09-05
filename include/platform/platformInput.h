@@ -1,9 +1,10 @@
 #pragma once
 #include <GLFW/glfw3.h>
-#include "gameLayer.h"
 #include <string>
 
-namespace platform {
+#include "PlatformFunctions.h"
+
+namespace Platform {
 	struct Button {
 		char pressed = 0;
 		char held = 0;

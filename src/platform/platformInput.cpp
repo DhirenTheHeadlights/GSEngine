@@ -1,83 +1,83 @@
-#include "platformInput.h"
+#include "PlatformInput.h"
 
-platform::Button keyBoard[platform::Button::BUTTONS_COUNT];
-platform::Button leftMouse;
-platform::Button rightMouse;
+Platform::Button keyBoard[Platform::Button::BUTTONS_COUNT];
+Platform::Button leftMouse;
+Platform::Button rightMouse;
 
-platform::ControllerButtons controllerButtons;
+Platform::ControllerButtons controllerButtons;
 std::string typedInput;
 
-int platform::isButtonHeld(int key) {
+int Platform::isButtonHeld(int key) {
 	if (key < Button::A || key >= Button::BUTTONS_COUNT) { return 0; }
 
 	return keyBoard[key].held;
 }
 
-int platform::isButtonPressedOn(int key) {
+int Platform::isButtonPressedOn(int key) {
 	if (key < Button::A || key >= Button::BUTTONS_COUNT) { return 0; }
 
 	return keyBoard[key].pressed;
 }
 
-int platform::isButtonReleased(int key) {
+int Platform::isButtonReleased(int key) {
 	if (key < Button::A || key >= Button::BUTTONS_COUNT) { return 0; }
 
 	return keyBoard[key].released;
 }
 
-int platform::isButtonTyped(int key) {
+int Platform::isButtonTyped(int key) {
 	if (key < Button::A || key >= Button::BUTTONS_COUNT) { return 0; }
 
 	return keyBoard[key].typed;
 }
 
-int platform::isLMousePressed() {
+int Platform::isLMousePressed() {
 	return leftMouse.pressed;
 }
 
-int platform::isRMousePressed() {
+int Platform::isRMousePressed() {
 	return rightMouse.pressed;
 }
 
-int platform::isLMouseReleased() {
+int Platform::isLMouseReleased() {
 	return leftMouse.released;
 }
 
-int platform::isRMouseReleased() {
+int Platform::isRMouseReleased() {
 	return rightMouse.released;
 }
 
-int platform::isLMouseHeld() {
+int Platform::isLMouseHeld() {
 	return leftMouse.held;
 }
 
-int platform::isRMouseHeld() {
+int Platform::isRMouseHeld() {
 	return rightMouse.held;
 }
 
-platform::ControllerButtons platform::getControllerButtons() {
-	return platform::isFocused() ? controllerButtons : platform::ControllerButtons{};
+Platform::ControllerButtons Platform::getControllerButtons() {
+	return Platform::windowFocused ? controllerButtons : Platform::ControllerButtons{};
 }
 
-std::string platform::getTypedInput() {
+std::string Platform::getTypedInput() {
 	return typedInput;
 }
 
-void platform::internal::setButtonState(int button, int newState) {
+void Platform::internal::setButtonState(int button, int newState) {
 	processEventButton(keyBoard[button], newState);
 }
 
-void platform::internal::setLeftMouseState(int newState) {
+void Platform::internal::setLeftMouseState(int newState) {
 	processEventButton(leftMouse, newState);
 }
 
-void platform::internal::setRightMouseState(int newState) {
+void Platform::internal::setRightMouseState(int newState) {
 	processEventButton(rightMouse, newState);
 }
 
 
-void platform::internal::updateAllButtons(float deltaTime) {
-	for (int i = 0; i < platform::Button::BUTTONS_COUNT; i++) {
+void Platform::internal::updateAllButtons(float deltaTime) {
+	for (int i = 0; i < Platform::Button::BUTTONS_COUNT; i++) {
 		updateButton(keyBoard[i], deltaTime);
 	}
 
@@ -114,10 +114,10 @@ void platform::internal::updateAllButtons(float deltaTime) {
 	}
 }
 
-void platform::internal::resetInputsToZero() {
+void Platform::internal::resetInputsToZero() {
 	resetTypedInput();
 
-	for (int i = 0; i < platform::Button::BUTTONS_COUNT; i++) {
+	for (int i = 0; i < Platform::Button::BUTTONS_COUNT; i++) {
 		resetButtonToZero(keyBoard[i]);
 	}
 
@@ -127,10 +127,10 @@ void platform::internal::resetInputsToZero() {
 	controllerButtons.setAllToZero();
 }
 
-void platform::internal::addToTypedInput(char c) {
+void Platform::internal::addToTypedInput(char c) {
 	typedInput += c;
 }
 
-void platform::internal::resetTypedInput() {
+void Platform::internal::resetTypedInput() {
 	typedInput.clear();
 }
