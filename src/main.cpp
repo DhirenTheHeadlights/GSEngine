@@ -80,8 +80,8 @@ void mainLoop(int w, int h) {
         ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
 #endif
 
-        if (!gameLogic(augmentedDeltaTime)) {
-            closeGame();
+        if (!Game::gameLogic(augmentedDeltaTime)) {
+            Game::closeGame();
             return;
         }
 
@@ -198,13 +198,13 @@ int main() {
 	    setUpImgui();
     #endif
 
-    if (!initGame()) {
+    if (!Game::initGame()) {
         return 0;
     }
 
     mainLoop(w, h);
 
-    closeGame();
+    Game::closeGame();
 
     // Keep the console open in debug mode
     std::cin.clear();

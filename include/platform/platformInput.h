@@ -108,6 +108,8 @@ namespace Platform {
 	ControllerButtons getControllerButtons();
 	std::string getTypedInput();
 
+	glm::vec2 getMouseDelta();
+
 	namespace internal {
 
 		void setButtonState(int button, int newState);

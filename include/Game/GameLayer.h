@@ -15,6 +15,10 @@
 
 #include "Engine/Graphics/Camera.h"
 
-bool initGame();
-bool gameLogic(float deltaTime);
-void closeGame();
+#include "Arena.h"
+
+namespace Game {
+	bool initGame();
+	bool gameLogic(float deltaTime);
+	void closeGame();
+}
