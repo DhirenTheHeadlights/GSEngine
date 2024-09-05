@@ -1,7 +1,4 @@
-//enet has to be included before other stuff, otherwise you will get linking errors
-//don't forget to also link to it in the cmake (you have to uncomment the add_subdirectory line and also
-//  add enet in the target_link_libraries list at the end
-//#include <enet/enet.h>
+#include <enet/enet.h> // Included first to avoid linking errors
 
 // Standard Library Includes
 #include <iostream>
@@ -18,11 +15,11 @@
 
 // Project-Specific Includes
 #include "gl2d/gl2d.h"
-#include "platformTools.h"
-#include "platformInput.h"
-#include "otherPlatformFunctions.h"
-#include "gameLayer.h"
-#include "errorReporting.h"
+#include "PlatformTools.h"
+#include "PlatformInput.h"
+#include "PlatformFunctions.h"
+#include "GameLayer.h"
+#include "ErrorReporting.h"
 
 #define REMOVE_IMGUI 0
 
@@ -40,13 +37,10 @@
 #undef min
 #undef max
 
-bool currentFullScreen = 0;
-bool fullScreen = 0;
-
 void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
 
     if ((action == GLFW_REPEAT || action == GLFW_PRESS) && key == GLFW_KEY_BACKSPACE) {
-        platform::internal::addToTypedInput(8);
+        Platform::internal::addToTypedInput(8);
     }
 
     bool state = 0;
@@ -63,48 +57,48 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
 
     if (key >= GLFW_KEY_A && key <= GLFW_KEY_Z) {
         int index = key - GLFW_KEY_A;
-        platform::internal::setButtonState(platform::Button::A + index, state);
+        Platform::internal::setButtonState(Platform::Button::A + index, state);
     }
     else if (key >= GLFW_KEY_0 && key <= GLFW_KEY_9) {
         int index = key - GLFW_KEY_0;
-        platform::internal::setButtonState(platform::Button::NR0 + index, state);
+        Platform::internal::setButtonState(Platform::Button::NR0 + index, state);
     }
     else {
         //special keys
         //GLFW_KEY_SPACE, GLFW_KEY_ENTER, GLFW_KEY_ESCAPE, GLFW_KEY_UP, GLFW_KEY_DOWN, GLFW_KEY_LEFT, GLFW_KEY_RIGHT
 
         if (key == GLFW_KEY_SPACE) {
-            platform::internal::setButtonState(platform::Button::Space, state);
+            Platform::internal::setButtonState(Platform::Button::Space, state);
         }
         else if (key == GLFW_KEY_ENTER) {
-            platform::internal::setButtonState(platform::Button::Enter, state);
+            Platform::internal::setButtonState(Platform::Button::Enter, state);
         }
         else if (key == GLFW_KEY_ESCAPE) {
-            platform::internal::setButtonState(platform::Button::Escape, state);
+            Platform::internal::setButtonState(Platform::Button::Escape, state);
         }
         else if (key == GLFW_KEY_UP) {
-            platform::internal::setButtonState(platform::Button::Up, state);
+            Platform::internal::setButtonState(Platform::Button::Up, state);
         }
         else if (key == GLFW_KEY_DOWN) {
-            platform::internal::setButtonState(platform::Button::Down, state);
+            Platform::internal::setButtonState(Platform::Button::Down, state);
         }
         else if (key == GLFW_KEY_LEFT) {
-            platform::internal::setButtonState(platform::Button::Left, state);
+            Platform::internal::setButtonState(Platform::Button::Left, state);
         }
         else if (key == GLFW_KEY_RIGHT) {
-            platform::internal::setButtonState(platform::Button::Right, state);
+            Platform::internal::setButtonState(Platform::Button::Right, state);
         }
         else if (key == GLFW_KEY_LEFT_CONTROL) {
-            platform::internal::setButtonState(platform::Button::LeftCtrl, state);
+            Platform::internal::setButtonState(Platform::Button::LeftCtrl, state);
         }
         else if (key == GLFW_KEY_TAB) {
-            platform::internal::setButtonState(platform::Button::Tab, state);
+            Platform::internal::setButtonState(Platform::Button::Tab, state);
         }
         else if (key == GLFW_KEY_LEFT_SHIFT) {
-            platform::internal::setButtonState(platform::Button::LeftShift, state);
+            Platform::internal::setButtonState(Platform::Button::LeftShift, state);
         }
         else if (key == GLFW_KEY_LEFT_ALT) {
-            platform::internal::setButtonState(platform::Button::LeftAlt, state);
+            Platform::internal::setButtonState(Platform::Button::LeftAlt, state);
         }
 
     }
@@ -125,127 +119,37 @@ void mouseCallback(GLFWwindow* window, int key, int action, int mods) {
     }
 
     if (key == GLFW_MOUSE_BUTTON_LEFT) {
-        platform::internal::setLeftMouseState(state);
+        Platform::internal::setLeftMouseState(state);
     }
     else if (key == GLFW_MOUSE_BUTTON_RIGHT) {
-        platform::internal::setRightMouseState(state);
+        Platform::internal::setRightMouseState(state);
     }
 
 }
 
-bool windowFocus = 1;
-
 void windowFocusCallback(GLFWwindow* window, int focused) {
     if (focused) {
-        windowFocus = 1;
+        Platform::windowFocused = 1;
     }
     else {
-        windowFocus = 0;
-        //if you not capture the release event when the window loses focus,
-        //the buttons will stay pressed
-        platform::internal::resetInputsToZero();
+        Platform::windowFocused = 0;
+        Platform::internal::resetInputsToZero(); // To reset buttons
     }
 }
 
 void windowSizeCallback(GLFWwindow* window, int x, int y) {
-    platform::internal::resetInputsToZero();
+    Platform::internal::resetInputsToZero();
 }
 
-int mouseMovedFlag = 0;
-
 void cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
-    mouseMovedFlag = 1;
+    Platform::mouseMoved = 1;
 }
 
 void characterCallback(GLFWwindow* window, unsigned int codepoint) {
     if (codepoint < 127) {
-        platform::internal::addToTypedInput(codepoint);
+        Platform::internal::addToTypedInput(codepoint);
     }
 }
-
-#pragma region platform functions
-
-GLFWwindow* window = 0;
-
-namespace platform {
-
-    void setRelMousePosition(int x, int y) {
-        glfwSetCursorPos(window, x, y);
-    }
-
-    bool isFullScreen() {
-        return fullScreen;
-    }
-
-    void setFullScreen(bool f) {
-        fullScreen = f;
-    }
-
-    glm::ivec2 getFrameBufferSize() {
-        int x = 0; int y = 0;
-        glfwGetFramebufferSize(window, &x, &y);
-        return { x, y };
-    }
-
-    glm::ivec2 getRelMousePosition() {
-        double x = 0, y = 0;
-        glfwGetCursorPos(window, &x, &y);
-        return { x, y };
-    }
-
-    glm::ivec2 getWindowSize() {
-        int x = 0; int y = 0;
-        glfwGetWindowSize(window, &x, &y);
-        return { x, y };
-    }
-
-    void showMouse(bool show) {
-        if (show) {
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-        }
-        else {
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
-        }
-    }
-
-    bool isFocused() {
-        return windowFocus;
-    }
-
-    bool mouseMoved() {
-        return mouseMovedFlag;
-    }
-
-    bool writeEntireFile(const char* name, void* buffer, size_t size) {
-        std::ofstream f(name, std::ios::binary);
-
-        if (!f.is_open()) {
-            return 0;
-        }
-
-        f.write((char*)buffer, size);
-
-        f.close();
-
-        return 1;
-    }
-
-    bool readEntireFile(const char* name, void* buffer, size_t size) {
-        std::ifstream f(name, std::ios::binary);
-
-        if (!f.is_open()) {
-            return 0;
-        }
-
-        f.read((char*)buffer, size);
-
-        f.close();
-
-        return 1;
-    }
-
-};
-#pragma endregion
 
 void setUpImgui() {
     ImGui::CreateContext();
@@ -265,7 +169,7 @@ void setUpImgui() {
         style.Colors[ImGuiCol_DockingEmptyBg].w = 0.f;
     }
 
-    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplGlfw_InitForOpenGL(Platform::window, true);
     ImGui_ImplOpenGL3_Init("#version 330");
 }
 
@@ -273,7 +177,7 @@ void setUpImgui() {
 void mainLoop(int w, int h) {
     auto stop = std::chrono::high_resolution_clock::now();
 
-    while (!glfwWindowShouldClose(window)) {
+    while (!glfwWindowShouldClose(Platform::window)) {
         auto start = std::chrono::high_resolution_clock::now();
 
         float deltaTime = (std::chrono::duration_cast<std::chrono::nanoseconds>(start - stop)).count() / std::pow(10, 9);
@@ -294,47 +198,47 @@ void mainLoop(int w, int h) {
             return;
         }
 
-        if (platform::isFocused() && currentFullScreen != fullScreen) {
+        if (Platform::windowFocused && Platform::currentFullScreen != Platform::fullScreen) {
             static int lastW = w;
             static int lastH = w;
             static int lastPosX = 0;
             static int lastPosY = 0;
 
-            if (fullScreen) {
+            if (Platform::fullScreen) {
                 lastW = w;
                 lastH = h;
 
                 //glfwWindowHint(GLFW_DECORATED, NULL); // Remove the border and titlebar..  
-                glfwGetWindowPos(window, &lastPosX, &lastPosY);
+                glfwGetWindowPos(Platform::window, &lastPosX, &lastPosY);
 
                 //auto monitor = glfwGetPrimaryMonitor();
-                auto monitor = getCurrentMonitor(window);
+                auto monitor = Platform::getCurrentMonitor();
 
                 const GLFWvidmode* mode = glfwGetVideoMode(monitor);
 
                 // switch to full screen
-                glfwSetWindowMonitor(window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+                glfwSetWindowMonitor(Platform::window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
 
-                currentFullScreen = 1;
+                Platform::currentFullScreen = 1;
 
             }
             else {
                 //glfwWindowHint(GLFW_DECORATED, GLFW_TRUE); // 
-                glfwSetWindowMonitor(window, nullptr, lastPosX, lastPosY, lastW, lastH, 0);
+                glfwSetWindowMonitor(Platform::window, nullptr, lastPosX, lastPosY, lastW, lastH, 0);
 
-                currentFullScreen = 0;
+                Platform::currentFullScreen = 0;
             }
 
         }
 
-        mouseMovedFlag = 0;
-        platform::internal::updateAllButtons(deltaTime);
-        platform::internal::resetTypedInput();
+        Platform::mouseMoved = 0;
+        Platform::internal::updateAllButtons(deltaTime);
+        Platform::internal::resetTypedInput();
 
 #if REMOVE_IMGUI == 0
         ImGui::Render();
         int display_w, display_h;
-        glfwGetFramebufferSize(window, &display_w, &display_h);
+        glfwGetFramebufferSize(Platform::window, &display_w, &display_h);
         glViewport(0, 0, display_w, display_h);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
@@ -350,7 +254,7 @@ void mainLoop(int w, int h) {
         }
 #endif
 
-        glfwSwapBuffers(window);
+        glfwSwapBuffers(Platform::window);
         glfwPollEvents();
     }
 }
@@ -383,16 +287,16 @@ int main() {
 
     int w = 500;
     int h = 500;
-    window = glfwCreateWindow(w, h, "geam", nullptr, nullptr);
-    glfwMakeContextCurrent(window);
+    Platform::window = glfwCreateWindow(w, h, "geam", nullptr, nullptr);
+    glfwMakeContextCurrent(Platform::window);
     glfwSwapInterval(1);
 
-    glfwSetKeyCallback(window, keyCallback);
-    glfwSetMouseButtonCallback(window, mouseCallback);
-    glfwSetWindowFocusCallback(window, windowFocusCallback);
-    glfwSetWindowSizeCallback(window, windowSizeCallback);
-    glfwSetCursorPosCallback(window, cursorPositionCallback);
-    glfwSetCharCallback(window, characterCallback);
+    glfwSetKeyCallback(Platform::window, keyCallback);
+    glfwSetMouseButtonCallback(Platform::window, mouseCallback);
+    glfwSetWindowFocusCallback(Platform::window, windowFocusCallback);
+    glfwSetWindowSizeCallback(Platform::window, windowSizeCallback);
+    glfwSetCursorPosCallback(Platform::window, cursorPositionCallback);
+    glfwSetCharCallback(Platform::window, characterCallback);
 
     //permaAssertComment(gladLoadGL(), "err initializing glad");
     permaAssertComment(gladLoadGLLoader((GLADloadproc)glfwGetProcAddress), "err initializing glad");

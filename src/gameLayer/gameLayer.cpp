@@ -1,15 +1,6 @@
 #define GLM_ENABLE_EXPERIMENTAL
-#include "gameLayer.h"
-#include <glad/glad.h>
-#include <glm/glm.hpp>
-#include <glm/gtx/transform.hpp>
-#include "platformInput.h"
-#include "imgui.h"
-#include <iostream>
-#include <sstream>
-#include "imfilebrowser.h"
-#include <gl2d/gl2d.h>
-#include <platformTools.h>
+
+#include "GameLayer.h"
 
 struct GameData {
 	glm::vec2 rectPos = {100,100};
@@ -24,31 +15,31 @@ bool initGame() {
 	renderer.create();
 
 	//loading the saved data. Loading an entire structure like this makes savind game data very easy.
-	platform::readEntireFile(RESOURCES_PATH "gameData.data", &gameData, sizeof(GameData));
+	Platform::readEntireFile(RESOURCES_PATH "gameData.data", &gameData, sizeof(GameData));
 
 	return true;
 }
 
 bool gameLogic(float deltaTime) {
 	int w = 0; int h = 0;
-	w = platform::getFrameBufferSizeX(); //window w
-	h = platform::getFrameBufferSizeY(); //window h
+	w = Platform::getFrameBufferSize().x; //window w
+	h = Platform::getFrameBufferSize().y; //window h
 	
 	glViewport(0, 0, w, h);
 	glClear(GL_COLOR_BUFFER_BIT); //clear screen
 
 	renderer.updateWindowMetrics(w, h);
 
-	if (platform::isButtonHeld(platform::Button::Left)) {
+	if (Platform::isButtonHeld(Platform::Button::Left)) {
 		gameData.rectPos.x -= deltaTime * 100;
 	}
-	if (platform::isButtonHeld(platform::Button::Right)) {
+	if (Platform::isButtonHeld(Platform::Button::Right)) {
 		gameData.rectPos.x += deltaTime * 100;
 	}
-	if (platform::isButtonHeld(platform::Button::Up)) {
+	if (Platform::isButtonHeld(Platform::Button::Up)) {
 		gameData.rectPos.y -= deltaTime * 100;
 	}
-	if (platform::isButtonHeld(platform::Button::Down)) {
+	if (Platform::isButtonHeld(Platform::Button::Down)) {
 		gameData.rectPos.y += deltaTime * 100;
 	}
 
@@ -67,5 +58,5 @@ bool gameLogic(float deltaTime) {
 }
 
 void closeGame() {
-	platform::writeEntireFile(RESOURCES_PATH "gameData.data", &gameData, sizeof(GameData));
+	Platform::writeEntireFile(RESOURCES_PATH "gameData.data", &gameData, sizeof(GameData));
 }
