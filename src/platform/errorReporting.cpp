@@ -1,4 +1,4 @@
-#include "errorReporting.h"
+#include "ErrorReporting.h"
 #include <iostream>
 
 //https://learnopengl.com/In-Practice/Debugging

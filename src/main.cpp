@@ -20,6 +20,7 @@
 #include "PlatformFunctions.h"
 #include "GameLayer.h"
 #include "ErrorReporting.h"
+#include "CallBacks.h"
 
 #define REMOVE_IMGUI 0
 
@@ -36,120 +37,6 @@
 
 #undef min
 #undef max
-
-void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-
-    if ((action == GLFW_REPEAT || action == GLFW_PRESS) && key == GLFW_KEY_BACKSPACE) {
-        Platform::internal::addToTypedInput(8);
-    }
-
-    bool state = 0;
-
-    if (action == GLFW_PRESS) {
-        state = 1;
-    }
-    else if (action == GLFW_RELEASE) {
-        state = 0;
-    }
-    else {
-        return;
-    }
-
-    if (key >= GLFW_KEY_A && key <= GLFW_KEY_Z) {
-        int index = key - GLFW_KEY_A;
-        Platform::internal::setButtonState(Platform::Button::A + index, state);
-    }
-    else if (key >= GLFW_KEY_0 && key <= GLFW_KEY_9) {
-        int index = key - GLFW_KEY_0;
-        Platform::internal::setButtonState(Platform::Button::NR0 + index, state);
-    }
-    else {
-        //special keys
-        //GLFW_KEY_SPACE, GLFW_KEY_ENTER, GLFW_KEY_ESCAPE, GLFW_KEY_UP, GLFW_KEY_DOWN, GLFW_KEY_LEFT, GLFW_KEY_RIGHT
-
-        if (key == GLFW_KEY_SPACE) {
-            Platform::internal::setButtonState(Platform::Button::Space, state);
-        }
-        else if (key == GLFW_KEY_ENTER) {
-            Platform::internal::setButtonState(Platform::Button::Enter, state);
-        }
-        else if (key == GLFW_KEY_ESCAPE) {
-            Platform::internal::setButtonState(Platform::Button::Escape, state);
-        }
-        else if (key == GLFW_KEY_UP) {
-            Platform::internal::setButtonState(Platform::Button::Up, state);
-        }
-        else if (key == GLFW_KEY_DOWN) {
-            Platform::internal::setButtonState(Platform::Button::Down, state);
-        }
-        else if (key == GLFW_KEY_LEFT) {
-            Platform::internal::setButtonState(Platform::Button::Left, state);
-        }
-        else if (key == GLFW_KEY_RIGHT) {
-            Platform::internal::setButtonState(Platform::Button::Right, state);
-        }
-        else if (key == GLFW_KEY_LEFT_CONTROL) {
-            Platform::internal::setButtonState(Platform::Button::LeftCtrl, state);
-        }
-        else if (key == GLFW_KEY_TAB) {
-            Platform::internal::setButtonState(Platform::Button::Tab, state);
-        }
-        else if (key == GLFW_KEY_LEFT_SHIFT) {
-            Platform::internal::setButtonState(Platform::Button::LeftShift, state);
-        }
-        else if (key == GLFW_KEY_LEFT_ALT) {
-            Platform::internal::setButtonState(Platform::Button::LeftAlt, state);
-        }
-
-    }
-
-};
-
-void mouseCallback(GLFWwindow* window, int key, int action, int mods) {
-    bool state = 0;
-
-    if (action == GLFW_PRESS) {
-        state = 1;
-    }
-    else if (action == GLFW_RELEASE) {
-        state = 0;
-    }
-    else {
-        return;
-    }
-
-    if (key == GLFW_MOUSE_BUTTON_LEFT) {
-        Platform::internal::setLeftMouseState(state);
-    }
-    else if (key == GLFW_MOUSE_BUTTON_RIGHT) {
-        Platform::internal::setRightMouseState(state);
-    }
-
-}
-
-void windowFocusCallback(GLFWwindow* window, int focused) {
-    if (focused) {
-        Platform::windowFocused = 1;
-    }
-    else {
-        Platform::windowFocused = 0;
-        Platform::internal::resetInputsToZero(); // To reset buttons
-    }
-}
-
-void windowSizeCallback(GLFWwindow* window, int x, int y) {
-    Platform::internal::resetInputsToZero();
-}
-
-void cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
-    Platform::mouseMoved = 1;
-}
-
-void characterCallback(GLFWwindow* window, unsigned int codepoint) {
-    if (codepoint < 127) {
-        Platform::internal::addToTypedInput(codepoint);
-    }
-}
 
 void setUpImgui() {
     ImGui::CreateContext();
@@ -291,12 +178,12 @@ int main() {
     glfwMakeContextCurrent(Platform::window);
     glfwSwapInterval(1);
 
-    glfwSetKeyCallback(Platform::window, keyCallback);
-    glfwSetMouseButtonCallback(Platform::window, mouseCallback);
-    glfwSetWindowFocusCallback(Platform::window, windowFocusCallback);
-    glfwSetWindowSizeCallback(Platform::window, windowSizeCallback);
-    glfwSetCursorPosCallback(Platform::window, cursorPositionCallback);
-    glfwSetCharCallback(Platform::window, characterCallback);
+    glfwSetKeyCallback(Platform::window, Platform::keyCallback);
+    glfwSetMouseButtonCallback(Platform::window, Platform::mouseCallback);
+    glfwSetWindowFocusCallback(Platform::window, Platform::windowFocusCallback);
+    glfwSetWindowSizeCallback(Platform::window, Platform::windowSizeCallback);
+    glfwSetCursorPosCallback(Platform::window, Platform::cursorPositionCallback);
+    glfwSetCharCallback(Platform::window, Platform::characterCallback);
 
     //permaAssertComment(gladLoadGL(), "err initializing glad");
     permaAssertComment(gladLoadGLLoader((GLADloadproc)glfwGetProcAddress), "err initializing glad");
