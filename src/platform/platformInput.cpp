@@ -6,6 +6,8 @@ Platform::Button rightMouse;
 
 Platform::ControllerButtons controllerButtons;
 std::string typedInput;
+glm::ivec2 mouseDelta;
+glm::ivec2 lastMousePos;
 
 int Platform::isButtonHeld(int key) {
 	if (key < Button::A || key >= Button::BUTTONS_COUNT) { return 0; }
@@ -63,6 +65,10 @@ std::string Platform::getTypedInput() {
 	return typedInput;
 }
 
+glm::vec2 Platform::getMouseDelta() {
+	return mouseDelta;
+}
+
 void Platform::internal::setButtonState(int button, int newState) {
 	processEventButton(keyBoard[button], newState);
 }
@@ -112,6 +118,10 @@ void Platform::internal::updateAllButtons(float deltaTime) {
 			}
 		}
 	}
+
+	// Update Mouse Delta
+	mouseDelta = Platform::getRelMousePosition() - lastMousePos;
+	lastMousePos = Platform::getRelMousePosition();
 }
 
 void Platform::internal::resetInputsToZero() {
