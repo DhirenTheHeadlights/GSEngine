@@ -12,10 +12,12 @@ namespace Engine {
     class Shader {
     public:
         // Constructor reads and builds the shader from given file paths
-        Shader(const std::string& vertexPath, const std::string& fragmentPath);
+        Shader() = default;
+
+        void createShaderProgram(const std::string& vertexPath, const std::string& fragmentPath);
 
         // Use the shader program
-        void use();
+        void use() const;
 
         // Utility functions to set uniform values
         void setBool(const std::string& name, bool value) const;
@@ -25,12 +27,12 @@ namespace Engine {
 
     private:
         // ID of the shader program
-        unsigned int ID;
+        unsigned int ID = 0;
 
         // Utility function to load shader from file
-        std::string loadShaderSource(const std::string& filePath);
+        static std::string loadShaderSource(const std::string& filePath);
 
         // Utility function to check for shader compile/link errors
-        void checkCompileErrors(unsigned int shader, std::string type);
+        static void checkCompileErrors(unsigned int shader, const std::string& type);
     };
 }

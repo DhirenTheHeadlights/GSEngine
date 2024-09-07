@@ -19,7 +19,7 @@
 #include "Arena.h"
 
 namespace Game {
-	bool initGame();
+	bool initializeGame();
 	bool gameLogic(float deltaTime);
 	void closeGame();
 }

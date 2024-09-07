@@ -8,29 +8,35 @@ struct GameData {
 } gameData;
 
 Engine::Camera camera({0,0,0});
-Engine::Shader shaderProgram(RESOURCES_PATH "Arena/grid.vert", RESOURCES_PATH "Arena/grid.frag");
+Engine::Shader shaderProgram;
 
 Game::Arena arena({100, 100, 100});
 
-bool Game::initGame() {
+bool Game::initializeGame() {
 	// Loading the saved data. Loading an entire structure like this makes saving game data very easy.
 	Platform::readEntireFile(RESOURCES_PATH "gameData.data", &gameData, sizeof(GameData));
 
+	// Set up game
+	shaderProgram.createShaderProgram(RESOURCES_PATH "Arena/grid.vert", RESOURCES_PATH "Arena/grid.frag");
 	arena.initialize();
 
 	return true;
 }
 
-bool Game::gameLogic(float deltaTime) {
+bool Game::gameLogic(const float deltaTime) {
 	glViewport(0, 0, Platform::getFrameBufferSize().x, Platform::getFrameBufferSize().y);
 	glClear(GL_COLOR_BUFFER_BIT); // Clear screen
+
+	// Disable mouse cursor
+	//if (platform::)
+	glfwSetInputMode(Platform::window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
 	// Use shader
 	shaderProgram.use();
 
 	glm::mat4 view = camera.getViewMatrix();
-	glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)Platform::getFrameBufferSize().x / (float)Platform::getFrameBufferSize().y, 0.1f, 1000.0f);		
-	glm::mat4 model = glm::mat4(1.0f);
+	glm::mat4 projection = glm::perspective(glm::radians(45.0f), static_cast<float>(Platform::getFrameBufferSize().x) / static_cast<float>(Platform::getFrameBufferSize().y), 0.1f, 1000.0f);
+	auto model = glm::mat4(1.0f);
 
 	// Pass the matrices to the shader
 	shaderProgram.setMat4("view", glm::value_ptr(view));

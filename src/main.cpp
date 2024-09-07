@@ -185,8 +185,7 @@ int main() {
     glfwSetCursorPosCallback(Platform::window, Platform::cursorPositionCallback);
     glfwSetCharCallback(Platform::window, Platform::characterCallback);
 
-    //permaAssertComment(gladLoadGL(), "err initializing glad");
-    permaAssertComment(gladLoadGLLoader((GLADloadproc)glfwGetProcAddress), "err initializing glad");
+    permaAssertComment(gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)), "err initializing glad");
 
     enableReportGlErrors();
 
@@ -198,7 +197,7 @@ int main() {
 	    setUpImgui();
     #endif
 
-    if (!Game::initGame()) {
+    if (!Game::initializeGame()) {
         return 0;
     }
 
