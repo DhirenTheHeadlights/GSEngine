@@ -62,7 +62,7 @@ void Arena::setupBuffers() {
     glBindVertexArray(0);
 }
 
-void Arena::render(const glm::mat4& view, const glm::mat4& projection) {
+void Arena::render(const glm::mat4& view, const glm::mat4& projection) const {
     // Bind grid VAO and render gridlines
     glBindVertexArray(gridVAO);
 

@@ -3,7 +3,7 @@
 using namespace Engine;
 
 // Constructor that builds the shader program from vertex and fragment shader file paths
-Shader::Shader(const std::string& vertexPath, const std::string& fragmentPath) {
+void Shader::createShaderProgram(const std::string& vertexPath, const std::string& fragmentPath) {
     // 1. Retrieve the vertex and fragment shader source code from file paths
     std::string vertexCode = loadShaderSource(vertexPath);
     std::string fragmentCode = loadShaderSource(fragmentPath);
@@ -11,17 +11,14 @@ Shader::Shader(const std::string& vertexPath, const std::string& fragmentPath) {
     const char* vShaderCode = vertexCode.c_str();
     const char* fShaderCode = fragmentCode.c_str();
 
-    // 2. Compile the shaders
-    unsigned int vertexShader, fragmentShader;
-
     // Vertex Shader
-    vertexShader = glCreateShader(GL_VERTEX_SHADER);
+    unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vertexShader, 1, &vShaderCode, NULL);
     glCompileShader(vertexShader);
     checkCompileErrors(vertexShader, "VERTEX");
 
     // Fragment Shader
-    fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+    unsigned int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
     glShaderSource(fragmentShader, 1, &fShaderCode, NULL);
     glCompileShader(fragmentShader);
     checkCompileErrors(fragmentShader, "FRAGMENT");
@@ -39,7 +36,7 @@ Shader::Shader(const std::string& vertexPath, const std::string& fragmentPath) {
 }
 
 // Use the shader program
-void Shader::use() {
+void Shader::use() const {
     glUseProgram(ID);
 }
 
@@ -58,28 +55,28 @@ std::string Shader::loadShaderSource(const std::string& filePath) {
         shaderFile.close();
     }
     catch (std::ifstream::failure& e) {
-        std::cerr << "ERROR::SHADER::FILE_NOT_SUCCESSFULLY_READ: " << e.what() << std::endl;
+        std::cerr << "ERROR::SHADER::FILE_NOT_SUCCESSFULLY_READ: " << e.what() << '\n';
     }
 
     return shaderStream.str();
 }
 
 // Utility to check and report shader compile and linking errors
-void Shader::checkCompileErrors(unsigned int shader, std::string type) {
+void Shader::checkCompileErrors(unsigned int shader, const std::string& type) {
     int success;
     char infoLog[1024];
 
     if (type != "PROGRAM") {
         glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
         if (!success) {
-            glGetShaderInfoLog(shader, 1024, NULL, infoLog);
-            std::cerr << "ERROR::SHADER_COMPILATION_ERROR of type: " << type << "\n" << infoLog << std::endl;
+            glGetShaderInfoLog(shader, 1024, nullptr, infoLog);
+            std::cerr << "ERROR::SHADER_COMPILATION_ERROR of type: " << type << "\n" << infoLog << '\n';
         }
     }
     else {
         glGetProgramiv(shader, GL_LINK_STATUS, &success);
         if (!success) {
-            glGetProgramInfoLog(shader, 1024, NULL, infoLog);
+            glGetProgramInfoLog(shader, 1024, nullptr, infoLog);
             std::cerr << "ERROR::PROGRAM_LINKING_ERROR of type: " << type << "\n" << infoLog << std::endl;
         }
     }

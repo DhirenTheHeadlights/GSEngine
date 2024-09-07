@@ -10,7 +10,7 @@ namespace Game {
 		Arena(glm::vec3 size) : width(size.x), height(size.y), depth(size.z) {}
 
 		void initialize();
-		void render(const glm::mat4& view, const glm::mat4& projection);
+		void render(const glm::mat4& view, const glm::mat4& projection) const;
 	private:
 		float width, height, depth;
 

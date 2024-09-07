@@ -9,25 +9,25 @@ std::string typedInput;
 glm::ivec2 mouseDelta;
 glm::ivec2 lastMousePos;
 
-int Platform::isButtonHeld(int key) {
+int Platform::isButtonHeld(const int key) {
 	if (key < Button::A || key >= Button::BUTTONS_COUNT) { return 0; }
 
 	return keyBoard[key].held;
 }
 
-int Platform::isButtonPressedOn(int key) {
+int Platform::isButtonPressedOn(const int key) {
 	if (key < Button::A || key >= Button::BUTTONS_COUNT) { return 0; }
 
 	return keyBoard[key].pressed;
 }
 
-int Platform::isButtonReleased(int key) {
+int Platform::isButtonReleased(const int key) {
 	if (key < Button::A || key >= Button::BUTTONS_COUNT) { return 0; }
 
 	return keyBoard[key].released;
 }
 
-int Platform::isButtonTyped(int key) {
+int Platform::isButtonTyped(const int key) {
 	if (key < Button::A || key >= Button::BUTTONS_COUNT) { return 0; }
 
 	return keyBoard[key].typed;
@@ -69,22 +69,22 @@ glm::vec2 Platform::getMouseDelta() {
 	return mouseDelta;
 }
 
-void Platform::internal::setButtonState(int button, int newState) {
+void Platform::internal::setButtonState(const int button, const int newState) {
 	processEventButton(keyBoard[button], newState);
 }
 
-void Platform::internal::setLeftMouseState(int newState) {
+void Platform::internal::setLeftMouseState(const int newState) {
 	processEventButton(leftMouse, newState);
 }
 
-void Platform::internal::setRightMouseState(int newState) {
+void Platform::internal::setRightMouseState(const int newState) {
 	processEventButton(rightMouse, newState);
 }
 
 
-void Platform::internal::updateAllButtons(float deltaTime) {
-	for (int i = 0; i < Platform::Button::BUTTONS_COUNT; i++) {
-		updateButton(keyBoard[i], deltaTime);
+void Platform::internal::updateAllButtons(const float deltaTime) {
+	for (auto& i : keyBoard) {
+		updateButton(i, deltaTime);
 	}
 
 	updateButton(leftMouse, deltaTime);
@@ -127,17 +127,17 @@ void Platform::internal::updateAllButtons(float deltaTime) {
 void Platform::internal::resetInputsToZero() {
 	resetTypedInput();
 
-	for (int i = 0; i < Platform::Button::BUTTONS_COUNT; i++) {
-		resetButtonToZero(keyBoard[i]);
+	for (auto& i : keyBoard) {
+		i.reset();
 	}
 
-	resetButtonToZero(leftMouse);
-	resetButtonToZero(rightMouse);
+	leftMouse.reset();
+	rightMouse.reset();
 	
-	controllerButtons.setAllToZero();
+	controllerButtons.reset();
 }
 
-void Platform::internal::addToTypedInput(char c) {
+void Platform::internal::addToTypedInput(const char c) {
 	typedInput += c;
 }
 
