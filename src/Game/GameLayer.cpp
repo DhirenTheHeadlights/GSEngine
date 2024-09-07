@@ -8,6 +8,8 @@ struct GameData {
 } gameData;
 
 Engine::Camera camera({0,0,0});
+Engine::Shader shaderProgram(RESOURCES_PATH "Arena/grid.vert", RESOURCES_PATH "Arena/grid.frag");
+
 Game::Arena arena({100, 100, 100});
 
 bool Game::initGame() {
@@ -23,9 +25,23 @@ bool Game::gameLogic(float deltaTime) {
 	glViewport(0, 0, Platform::getFrameBufferSize().x, Platform::getFrameBufferSize().y);
 	glClear(GL_COLOR_BUFFER_BIT); // Clear screen
 
+	// Use shader
+	shaderProgram.use();
+
+	glm::mat4 view = camera.getViewMatrix();
+	glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)Platform::getFrameBufferSize().x / (float)Platform::getFrameBufferSize().y, 0.1f, 1000.0f);		
+	glm::mat4 model = glm::mat4(1.0f);
+
+	// Pass the matrices to the shader
+	shaderProgram.setMat4("view", glm::value_ptr(view));
+	shaderProgram.setMat4("projection", glm::value_ptr(projection));
+	shaderProgram.setMat4("model", glm::value_ptr(model));
+
 	// Camera
 	camera.updateCameraVectors();
 	camera.processMouseMovement(Platform::getMouseDelta().x, Platform::getMouseDelta().y);
+
+	arena.render(view, projection);
 
 	if (Platform::isButtonHeld(Platform::Button::A)) {
 		camera.moveLeft(deltaTime * 100);
@@ -47,9 +63,6 @@ bool Game::gameLogic(float deltaTime) {
 	}
 
 	std::cout << "Camera Position: " << camera.getPosition().x << ", " << camera.getPosition().y << ", " << camera.getPosition().z << std::endl;
-
-	// Arena
-	arena.render(camera.getViewMatrix(), glm::perspective(glm::radians(45.0f), (float)Platform::getFrameBufferSize().x / (float)Platform::getFrameBufferSize().y, 0.1f, 100.0f));
 
 	ImGui::Begin("Test Imgui");
 

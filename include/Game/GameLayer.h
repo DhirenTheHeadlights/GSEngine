@@ -14,6 +14,7 @@
 #include "PlatformFunctions.h"
 
 #include "Engine/Graphics/Camera.h"
+#include "Engine/Graphics/Shader.h"
 
 #include "Arena.h"
 
