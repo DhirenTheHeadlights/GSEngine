@@ -16,7 +16,7 @@ namespace Game {
 
 		// Vertex data for gridlines and walls
 		std::vector<float> gridVertices;
-		unsigned int gridVAO, gridVBO;
+		unsigned int gridVAO = 0, gridVBO = 0;
 
 		// Generates gridlines
 		void generateGridLines();

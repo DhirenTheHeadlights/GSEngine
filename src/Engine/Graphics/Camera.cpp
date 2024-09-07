@@ -11,9 +11,9 @@ void Camera::processMouseMovement(float xOffset, float yOffset) {
     if (pitch < -89.0f) pitch = -89.0f;
     updateCameraVectors();
 }
-
+ 
 void Camera::updateCameraVectors() {
-    glm::vec3 newFront;
+    glm::vec3 newFront(0.0f, 0.0f, 0.0f);
     newFront.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
     newFront.y = sin(glm::radians(pitch));
     newFront.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
