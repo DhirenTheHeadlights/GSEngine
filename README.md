@@ -20,6 +20,18 @@ These are the major categories of files in the `src` & `include` directory:
 - `Platform` - Contains all the platform specific code (e.g. OS, Windowing, Input, etx.)
 - `Engine` - Contains all the engine specific code
 
+To steamline developing new objects, you will need to add a `Code Snippet` to Visual Studio. To do this, follow these steps:
+
+1. Open Visual Studio
+2. Go to `Tools` -> `Code Snippets Manager`
+3. Click `Import`
+4. Navigate to the `resources/Code Snippets` folder in the repository
+5. Select the file and click `Open`
+6. Click `Finish`
+
+To use the code snippet, type `gameobject` and press `Tab` twice. This will generate a new GameObject class for you to use.
+Visual studio will automatically highlight the class name for you to change. All you need to do is type the new class name and press `Enter`.
+
 These are two big things to avoid when writing code for this project:
 
 - Avoid inheritance when possible

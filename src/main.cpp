@@ -172,8 +172,8 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 #endif
 
-    int w = glfwGetVideoMode(glfwGetPrimaryMonitor())->width;
-    int h = glfwGetVideoMode(glfwGetPrimaryMonitor())->height;
+    const int w = glfwGetVideoMode(glfwGetPrimaryMonitor())->width;
+    const int h = glfwGetVideoMode(glfwGetPrimaryMonitor())->height;
     Platform::window = glfwCreateWindow(w, h, "SavantShooter", nullptr, nullptr);
     glfwMakeContextCurrent(Platform::window);
     glfwSwapInterval(1);
