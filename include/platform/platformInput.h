@@ -1,6 +1,7 @@
 #pragma once
 #include <GLFW/glfw3.h>
 #include <string>
+#include <unordered_map>
 
 #include "PlatformFunctions.h"
 
@@ -9,27 +10,9 @@ namespace Platform {
 		char pressed = 0;
 		char held = 0;
 		char released = 0;
-		char newState = -1; // this can be -1, used for internal logic
+		char newState = -1;
 		char typed = 0;
 		float typedTime = 0;
-
-		enum {
-			A = 0,
-			B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
-			NR0, NR1, NR2, NR3, NR4, NR5, NR6, NR7, NR8, NR9,
-			Space,
-			Enter,
-			Escape,
-			Up,
-			Down,
-			Left,
-			Right,
-			LeftCtrl,
-			Tab,
-			LeftShift,
-			LeftAlt,
-			BUTTONS_COUNT,
-		};
 
 		void merge(const Button &b) {
 			this->pressed |= b.pressed;
@@ -44,26 +27,8 @@ namespace Platform {
 		}
 	};
 
-	struct ControllerButtons {
-		enum Buttons {
-			A = GLFW_GAMEPAD_BUTTON_A,           
-			B = GLFW_GAMEPAD_BUTTON_B,           
-			X = GLFW_GAMEPAD_BUTTON_X,           
-			Y = GLFW_GAMEPAD_BUTTON_Y,           
-			LBumper = GLFW_GAMEPAD_BUTTON_LEFT_BUMPER, 
-			RBumper = GLFW_GAMEPAD_BUTTON_RIGHT_BUMPER,
-			Back = GLFW_GAMEPAD_BUTTON_BACK,
-			Start = GLFW_GAMEPAD_BUTTON_START,       
-			Guide = GLFW_GAMEPAD_BUTTON_GUIDE,      
-			LThumb = GLFW_GAMEPAD_BUTTON_LEFT_THUMB,  
-			Rthumb = GLFW_GAMEPAD_BUTTON_RIGHT_THUMB, 
-			Up = GLFW_GAMEPAD_BUTTON_DPAD_UP,   
-			Right = GLFW_GAMEPAD_BUTTON_DPAD_RIGHT,  
-			Down = GLFW_GAMEPAD_BUTTON_DPAD_DOWN, 
-			Left = GLFW_GAMEPAD_BUTTON_DPAD_LEFT,  
-		};
-
-		Button buttons[GLFW_GAMEPAD_BUTTON_LAST + 1] = {};
+	struct Controller {
+		std::unordered_map<int, Platform::Button> buttons;
 
 		float LT = 0.f;
 		float RT = 0.f;
@@ -73,43 +38,54 @@ namespace Platform {
 		}LStick, RStick;
 
 		void reset() {
-			*this = ControllerButtons();
+			for (auto& [fst, snd] : buttons) {
+				snd.reset();
+			}
+
+			LT = 0.f;
+			RT = 0.f;
+			LStick.x = 0.f;
+			LStick.y = 0.f;
 		}
 	};
 
-	
-	// Button::key
-	int isButtonHeld(int key);
-	int isButtonPressedOn(int key);
-	int isButtonReleased(int key);
-	int isButtonTyped(int key);
+	struct Keyboard {
+		std::unordered_map<int, Platform::Button> keys;
 
-	int isLMousePressed();
-	int isRMousePressed();
+		std::string typedInput;
 
-	int isLMouseReleased();
-	int isRMouseReleased();
+		void reset() {
+			for (auto& [fst, snd] : keys) {
+				snd.reset();
+			}
+		}
+	};
 
-	int isLMouseHeld();
-	int isRMouseHeld();
+	struct Mouse {
+		std::unordered_map<int, Platform::Button> buttons;
 
-	ControllerButtons getControllerButtons();
-	std::string getTypedInput();
+		glm::vec2 position;
+		glm::vec2 delta;
+		glm::ivec2 lastPosition;
 
-	glm::vec2 getMouseDelta();
+		void reset() {
+			for (auto& [fst, snd] : buttons) {
+				snd.reset();
+			}
+		}
+	};
+
+	Keyboard& getKeyboard();
+	Controller& getController();
+	Mouse& getMouse();
+
 
 	namespace internal {
-
-		void setButtonState(int button, int newState);
-
-		void setLeftMouseState(int newState);
-		void setRightMouseState(int newState);
-
-		inline void processEventButton(Button &b, bool newState) {
+		inline void processEventButton(Button& b, bool newState) {
 			b.newState = newState;
 		}
 
-		inline void updateButton(Button &b, float deltaTime) {
+		inline void updateButton(Button& b, float deltaTime) {
 			if (b.newState == 1) {
 				if (b.held) {
 					b.pressed = false;

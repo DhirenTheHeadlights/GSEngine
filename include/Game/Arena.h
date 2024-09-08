@@ -7,7 +7,7 @@
 namespace Game {
 	class Arena {
 	public:
-		Arena(glm::vec3 size) : width(size.x), height(size.y), depth(size.z) {}
+		Arena(const glm::vec3 size) : width(size.x), height(size.y), depth(size.z) {}
 
 		void initialize();
 		void render(const glm::mat4& view, const glm::mat4& projection) const;

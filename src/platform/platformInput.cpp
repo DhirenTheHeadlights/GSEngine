@@ -1,146 +1,114 @@
 #include "PlatformInput.h"
 
-Platform::Button keyBoard[Platform::Button::BUTTONS_COUNT];
-Platform::Button leftMouse;
-Platform::Button rightMouse;
+Platform::Keyboard keyboard;
+Platform::Controller controller;
+Platform::Mouse mouse;
 
-Platform::ControllerButtons controllerButtons;
-std::string typedInput;
-glm::ivec2 mouseDelta;
-glm::ivec2 lastMousePos;
-
-int Platform::isButtonHeld(const int key) {
-	if (key < Button::A || key >= Button::BUTTONS_COUNT) { return 0; }
-
-	return keyBoard[key].held;
-}
-
-int Platform::isButtonPressedOn(const int key) {
-	if (key < Button::A || key >= Button::BUTTONS_COUNT) { return 0; }
-
-	return keyBoard[key].pressed;
-}
-
-int Platform::isButtonReleased(const int key) {
-	if (key < Button::A || key >= Button::BUTTONS_COUNT) { return 0; }
-
-	return keyBoard[key].released;
-}
-
-int Platform::isButtonTyped(const int key) {
-	if (key < Button::A || key >= Button::BUTTONS_COUNT) { return 0; }
-
-	return keyBoard[key].typed;
-}
-
-int Platform::isLMousePressed() {
-	return leftMouse.pressed;
-}
-
-int Platform::isRMousePressed() {
-	return rightMouse.pressed;
-}
-
-int Platform::isLMouseReleased() {
-	return leftMouse.released;
-}
-
-int Platform::isRMouseReleased() {
-	return rightMouse.released;
-}
-
-int Platform::isLMouseHeld() {
-	return leftMouse.held;
-}
-
-int Platform::isRMouseHeld() {
-	return rightMouse.held;
-}
-
-Platform::ControllerButtons Platform::getControllerButtons() {
-	return Platform::windowFocused ? controllerButtons : Platform::ControllerButtons{};
-}
-
-std::string Platform::getTypedInput() {
-	return typedInput;
-}
-
-glm::vec2 Platform::getMouseDelta() {
-	return mouseDelta;
-}
-
-void Platform::internal::setButtonState(const int button, const int newState) {
-	processEventButton(keyBoard[button], newState);
-}
-
-void Platform::internal::setLeftMouseState(const int newState) {
-	processEventButton(leftMouse, newState);
-}
-
-void Platform::internal::setRightMouseState(const int newState) {
-	processEventButton(rightMouse, newState);
-}
-
-
-void Platform::internal::updateAllButtons(const float deltaTime) {
-	for (auto& i : keyBoard) {
-		updateButton(i, deltaTime);
+void setUpKeyMaps() {
+	for (int i = GLFW_KEY_A; i <= GLFW_KEY_Z; i++) {
+		keyboard.keys.insert(std::make_pair(i, Platform::Button()));
 	}
 
-	updateButton(leftMouse, deltaTime);
-	updateButton(rightMouse, deltaTime);
+	for (int i = GLFW_KEY_0; i <= GLFW_KEY_9; i++) {
+		keyboard.keys.insert(std::make_pair(i, Platform::Button()));
+	}
+
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_SPACE, Platform::Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_ENTER, Platform::Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_ESCAPE, Platform::Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_UP, Platform::Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_DOWN, Platform::Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT, Platform::Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_RIGHT, Platform::Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT_CONTROL, Platform::Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_TAB, Platform::Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT_SHIFT, Platform::Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT_ALT, Platform::Button()));
+
+	for (int i = 0; i <= GLFW_GAMEPAD_BUTTON_LAST; i++) {
+		controller.buttons.insert(std::make_pair(i, Platform::Button()));
+	}
+
+	for (int i = 0; i <= GLFW_MOUSE_BUTTON_LAST; i++) {
+		mouse.buttons.insert(std::make_pair(i, Platform::Button()));
+	}
+}
+
+Platform::Keyboard& Platform::getKeyboard() {
+	return keyboard;
+}
+
+Platform::Controller& Platform::getController() {
+	return controller;
+}
+
+Platform::Mouse& Platform::getMouse() {
+	return mouse;
+}
+
+void Platform::internal::updateAllButtons(const float deltaTime) {
+	for (auto& [fst, snd] : keyboard.keys) {
+		updateButton(snd, deltaTime);
+	}
 	
-	for(int i=0; i<=GLFW_JOYSTICK_LAST; i++) {
-		if(glfwJoystickPresent(i) && glfwJoystickIsGamepad(i)) {
-			GLFWgamepadstate state;
+	for(int i = 0; i <= static_cast<int>(controller.buttons.size()); i++) {
+		if (!(glfwJoystickPresent(i) && glfwJoystickIsGamepad(i))) continue;
 
-			if (glfwGetGamepadState(i, &state)) {
-				for (int b = 0; b <= GLFW_GAMEPAD_BUTTON_LAST; b++) {
-					if(state.buttons[b] == GLFW_PRESS) {
-						processEventButton(controllerButtons.buttons[b], 1);
-					}
-					else if (state.buttons[b] == GLFW_RELEASE) {
-						processEventButton(controllerButtons.buttons[b], 0);
-					}
-					updateButton(controllerButtons.buttons[b], deltaTime);
+		GLFWgamepadstate state;
+
+		if (glfwGetGamepadState(i, &state)) {
+			for (auto& [b, button] : controller.buttons) {
+				if (state.buttons[b] == GLFW_PRESS) {
+					processEventButton(button, true);
 				}
-				
-				controllerButtons.LT = state.axes[GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER];
-				controllerButtons.RT = state.axes[GLFW_GAMEPAD_AXIS_LEFT_TRIGGER];
-
-				controllerButtons.LStick.x = state.axes[GLFW_GAMEPAD_AXIS_LEFT_X];
-				controllerButtons.LStick.y = state.axes[GLFW_GAMEPAD_AXIS_LEFT_Y];
-
-				controllerButtons.RStick.x = state.axes[GLFW_GAMEPAD_AXIS_RIGHT_X];
-				controllerButtons.RStick.y = state.axes[GLFW_GAMEPAD_AXIS_RIGHT_Y];
-			
-				break;
+				else if (state.buttons[b] == GLFW_RELEASE) {
+					processEventButton(button, false);
+				}
+				updateButton(button, deltaTime);
 			}
+			
+			controller.RT = state.axes[GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER];
+			controller.RT = state.axes[GLFW_GAMEPAD_AXIS_LEFT_TRIGGER];
+
+			controller.LStick.x = state.axes[GLFW_GAMEPAD_AXIS_LEFT_X];
+			controller.LStick.y = state.axes[GLFW_GAMEPAD_AXIS_LEFT_Y];
+
+			controller.RStick.x = state.axes[GLFW_GAMEPAD_AXIS_RIGHT_X];
+			controller.RStick.y = state.axes[GLFW_GAMEPAD_AXIS_RIGHT_Y];
+		
+			break;
 		}
 	}
 
+	for (auto& i : mouse.buttons) {
+		updateButton(i.second, deltaTime);
+	}
+
 	// Update Mouse Delta
-	mouseDelta = Platform::getRelMousePosition() - lastMousePos;
-	lastMousePos = Platform::getRelMousePosition();
+	mouse.delta = Platform::getRelMousePosition() - mouse.lastPosition;
+	mouse.lastPosition = Platform::getRelMousePosition();
 }
 
 void Platform::internal::resetInputsToZero() {
 	resetTypedInput();
 
-	for (auto& i : keyBoard) {
-		i.reset();
+	for (auto& [fst, snd] : keyboard.keys) {
+		snd.reset();
 	}
 
-	leftMouse.reset();
-	rightMouse.reset();
-	
-	controllerButtons.reset();
+	for (auto& [fst, snd] : controller.buttons) {
+		snd.reset();
+	}
+
+	for (auto& [fst, snd] : mouse.buttons) {
+		snd.reset();
+	}
 }
 
 void Platform::internal::addToTypedInput(const char c) {
-	typedInput += c;
+	keyboard.typedInput += c;
 }
 
 void Platform::internal::resetTypedInput() {
-	typedInput.clear();
+	keyboard.typedInput.clear();
 }

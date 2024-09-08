@@ -2836,7 +2836,7 @@ GLFWAPI void glfwGetWindowPos(GLFWwindow* window, int* xpos, int* ypos);
  *  corner of the content area of the specified windowed mode window.  If the
  *  window is a full screen window, this function does nothing.
  *
- *  __Do not use this function__ to move an already visible window unless you
+ *  __Do not use this function__ to moveRelativeToOrigin an already visible window unless you
  *  have very good reasons for doing so, as it will confuse and annoy the user.
  *
  *  The window manager may put limits on what positions are allowed.  GLFW
@@ -3879,7 +3879,7 @@ GLFWAPI GLFWwindowcontentscalefun glfwSetWindowContentScaleCallback(GLFWwindow* 
  *  queue and then returns immediately.  Processing events will cause the window
  *  and input callbacks associated with those events to be called.
  *
- *  On some platforms, a window move, resize or menu operation will cause event
+ *  On some platforms, a window moveRelativeToOrigin, resize or menu operation will cause event
  *  processing to block.  This is due to how event processing is designed on
  *  those platforms.  You can use the
  *  [window refresh callback](@ref window_refresh) to redraw the contents of
@@ -3924,7 +3924,7 @@ GLFWAPI void glfwPollEvents(void);
  *  without a callback having been called even if you are monitoring all
  *  callbacks.
  *
- *  On some platforms, a window move, resize or menu operation will cause event
+ *  On some platforms, a window moveRelativeToOrigin, resize or menu operation will cause event
  *  processing to block.  This is due to how event processing is designed on
  *  those platforms.  You can use the
  *  [window refresh callback](@ref window_refresh) to redraw the contents of
@@ -3971,7 +3971,7 @@ GLFWAPI void glfwWaitEvents(void);
  *  without a callback having been called even if you are monitoring all
  *  callbacks.
  *
- *  On some platforms, a window move, resize or menu operation will cause event
+ *  On some platforms, a window moveRelativeToOrigin, resize or menu operation will cause event
  *  processing to block.  This is due to how event processing is designed on
  *  those platforms.  You can use the
  *  [window refresh callback](@ref window_refresh) to redraw the contents of

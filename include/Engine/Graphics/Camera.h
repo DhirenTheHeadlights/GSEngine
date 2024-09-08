@@ -6,16 +6,17 @@
 namespace Engine {
 	class Camera {
 	public:
-		Camera(glm::vec3 initalPosition) : position(initalPosition) {}
+		Camera(glm::vec3 initialPosition) : position(initialPosition) {}
 
-		void moveUp(float deltaTime) { position += movementSpeed * deltaTime * up; }
-		void moveDown(float deltaTime) { position -= movementSpeed * deltaTime * up; }
-		void moveLeft(float deltaTime) { position -= glm::normalize(glm::cross(front, up)) * movementSpeed * deltaTime; }
-		void moveRight(float deltaTime) { position += glm::normalize(glm::cross(front, up)) * movementSpeed * deltaTime; }
-		void moveForward(float deltaTime) { position += movementSpeed * deltaTime * front; }
-		void moveBackward(float deltaTime) { position -= movementSpeed * deltaTime * front; }
+		void moveRelativeToOrigin(const glm::vec3 direction, const float distance, const float deltaTime) {
+			glm::vec3 cameraDirection =
+				direction.x * right +
+				direction.y * up +
+				direction.z * front;
+			position += cameraDirection * distance * movementSpeed * deltaTime;
+		}
 
-		void processMouseMovement(float xOffset, float yOffset);
+		void processMouseMovement(glm::vec2 offset);
 		void updateCameraVectors();
 
 		glm::mat4 getViewMatrix() const { return glm::lookAt(position, position + front, up); }
