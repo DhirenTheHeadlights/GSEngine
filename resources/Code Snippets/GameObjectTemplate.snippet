@@ -29,15 +29,22 @@ namespace Game {
 	public:
 		$safeitemname$() = default;
 		~$safeitemname$() = default;
+		
+		void initialize() {}
+		void update(float deltaTime) {}
+		void render(glm::mat4 projection, glm::mat4 view) {}
 
 		//////////////////////////////////////////////////////////////////////////////////
 		// All game objects require a colliding info and a vector of bounding boxes     //
 		// These get passed into collision handler and are used to check for collisions //
 		//////////////////////////////////////////////////////////////////////////////////
 
-		virtual bool isColliding() const override = 0;
-		virtual void setIsColliding(bool isColliding) override = 0;
-		virtual std::vector<Engine::BoundingBox>& getBoundingBoxes() override = 0;
+		virtual bool isColliding() const override { return isColliding; }
+		virtual void setIsColliding(bool isColliding) override { this->isColliding = isColliding; }
+		virtual std::vector<Engine::BoundingBox>& getBoundingBoxes() override { return boundingBoxes; }
+	private:
+		bool isColliding = false;
+		std::vector<Engine::BoundingBox> boundingBoxes;
 	};
 }
         ]]>

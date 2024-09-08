@@ -7,6 +7,8 @@
 namespace Game {
 	class GameObject {
 	public:
+		GameObject() = default;
+		virtual ~GameObject() = default;
 
 		//////////////////////////////////////////////////////////////////////////////////
 		// All game objects require a colliding info and a vector of bounding boxes     //

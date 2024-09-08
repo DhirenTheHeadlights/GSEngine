@@ -17,6 +17,7 @@
 #include "Engine/Graphics/Shader.h"
 
 #include "Arena.h"
+#include "Player.h"
 
 namespace Game {
 	bool initializeGame();
