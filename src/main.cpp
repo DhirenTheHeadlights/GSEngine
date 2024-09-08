@@ -207,5 +207,5 @@ int main() {
 
     // Keep the console open in debug mode
     /*std::cin.clear();
-    std::cin.get();
-}*/
+    std::cin.get();*/
+}
