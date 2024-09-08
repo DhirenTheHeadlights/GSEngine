@@ -10,7 +10,7 @@ struct GameData {
 Engine::Camera camera({0,0,0});
 Engine::Shader shaderProgram;
 
-Game::Arena arena({100, 100, 100});
+Game::Arena arena({1000, 1000, 1000});
 
 bool Game::initializeGame() {
 	// Loading the saved data. Loading an entire structure like this makes saving game data very easy.
@@ -35,7 +35,7 @@ bool Game::gameLogic(const float deltaTime) {
 	shaderProgram.use();
 
 	glm::mat4 view = camera.getViewMatrix();
-	glm::mat4 projection = glm::perspective(glm::radians(45.0f), static_cast<float>(Platform::getFrameBufferSize().x) / static_cast<float>(Platform::getFrameBufferSize().y), 0.1f, 1000.0f);
+	glm::mat4 projection = glm::perspective(glm::radians(45.0f), static_cast<float>(Platform::getFrameBufferSize().x) / static_cast<float>(Platform::getFrameBufferSize().y), 0.1f, 1000000.0f);
 	auto model = glm::mat4(1.0f);
 
 	// Pass the matrices to the shader
@@ -45,34 +45,34 @@ bool Game::gameLogic(const float deltaTime) {
 
 	// Camera
 	camera.updateCameraVectors();
-	camera.processMouseMovement(Platform::getMouseDelta().x, Platform::getMouseDelta().y);
+	camera.processMouseMovement(Platform::getMouse().delta);
 
 	arena.render(view, projection);
 
-	if (Platform::isButtonHeld(Platform::Button::A)) {
-		camera.moveLeft(deltaTime * 100);
+	if (Platform::getKeyboard().keys[GLFW_KEY_A].held) {
+		camera.moveRelativeToOrigin({-1, 0, 0}, 100.f, deltaTime);
 	}
-	if (Platform::isButtonHeld(Platform::Button::D)) {
-		camera.moveRight(deltaTime * 100);
+	if (Platform::getKeyboard().keys[GLFW_KEY_D].held) {
+		camera.moveRelativeToOrigin({1, 0, 0}, 100.f, deltaTime);
 	}
-	if (Platform::isButtonHeld(Platform::Button::W)) {
-		camera.moveForward(deltaTime * 100);
+	if (Platform::getKeyboard().keys[GLFW_KEY_W].held) {
+		camera.moveRelativeToOrigin({0, 0, 1}, 100.f, deltaTime);
 	}
-	if (Platform::isButtonHeld(Platform::Button::S)) {
-		camera.moveBackward(deltaTime * 100);
+	if (Platform::getKeyboard().keys[GLFW_KEY_S].held) {
+		camera.moveRelativeToOrigin({0, 0, -1}, 100.f, deltaTime);
 	}
-	if (Platform::isButtonHeld(Platform::Button::Space)) {
-		camera.moveUp(deltaTime * 100);
+	if (Platform::getKeyboard().keys[GLFW_KEY_SPACE].held) {
+		camera.moveRelativeToOrigin({0, 1, 0}, 100.f,	deltaTime);
 	}
-	if (Platform::isButtonHeld(Platform::Button::LeftCtrl)) {
-		camera.moveDown(deltaTime * 100);
+	if (Platform::getKeyboard().keys[GLFW_KEY_LEFT_CONTROL].held) {
+		camera.moveRelativeToOrigin({0, -1, 0}, 100.f, deltaTime);
 	}
 
 	std::cout << "Camera Position: " << camera.getPosition().x << ", " << camera.getPosition().y << ", " << camera.getPosition().z << std::endl;
 
 	ImGui::Begin("Test Imgui");
 
-	ImGui::DragFloat2("Positions", &gameData.cameraPos[0]);
+	ImGui::InputFloat3("Camera Position", &camera.getPosition()[0]);
 
 	ImGui::End();
 

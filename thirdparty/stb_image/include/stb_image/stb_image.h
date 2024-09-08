@@ -1232,7 +1232,7 @@ static unsigned char *stbi__load_and_postprocess_8bit(stbi__context *s, int *x, 
 	  ri.bits_per_channel = 8;
    }
 
-   // @TODO: move stbi__convert_format to here
+   // @TODO: moveRelativeToOrigin stbi__convert_format to here
 
    if (stbi__vertically_flip_on_load) {
 	  int channels = req_comp ? req_comp : *comp;
@@ -1258,7 +1258,7 @@ static stbi__uint16 *stbi__load_and_postprocess_16bit(stbi__context *s, int *x, 
 	  ri.bits_per_channel = 16;
    }
 
-   // @TODO: move stbi__convert_format16 to here
+   // @TODO: moveRelativeToOrigin stbi__convert_format16 to here
    // @TODO: special case RGB-to-Y (and RGBA-to-YA) for 8-bit-to-16-bit case to keep more precision
 
    if (stbi__vertically_flip_on_load) {
@@ -6700,7 +6700,7 @@ static stbi_uc *stbi__gif_load_next(stbi__context *s, stbi__gif *g, int *comp, i
 
 			// if the width of the specified rectangle is 0, that means
 			// we may not see *any* pixels or the image is malformed;
-			// to make sure this is caught, move the current y down to
+			// to make sure this is caught, moveRelativeToOrigin the current y down to
 			// max_y (which is what out_gif_code checks).
 			if (w == 0)
 			   g->cur_y = g->max_y;

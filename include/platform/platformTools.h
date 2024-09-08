@@ -361,7 +361,7 @@
 	{
 		stream << std::forward<F>(f) << " ";
 
-		elog(std::move(stream), args...);
+		elog(std::moveRelativeToOrigin(stream), args...);
 	}
 
 	template<class F, class ...T>
@@ -371,7 +371,7 @@
 
 		stream << std::forward<F>(f) << " ";
 
-		elog(std::move(stream), args...);
+		elog(std::moveRelativeToOrigin(stream), args...);
 	}
 
 
@@ -383,7 +383,7 @@
 
 		stream << std::forward<F>(f) << " ";
 
-		elog(std::move(stream), args...);
+		elog(std::moveRelativeToOrigin(stream), args...);
 	}
 
 	template<class F, class ...T>
@@ -391,7 +391,7 @@
 	{
 		stream << std::forward<F>(f) << " ";
 
-		elog(std::move(stream), args...);
+		elog(std::moveRelativeToOrigin(stream), args...);
 	}
 
 #include <fstream>

@@ -1,12 +1,14 @@
 #include "Camera.h"
 
+#include "Arena.h"
+#include "Arena.h"
+
 using namespace Engine;
 
-void Camera::processMouseMovement(float xOffset, float yOffset) {
-    xOffset *= mouseSensitivity;
-    yOffset *= mouseSensitivity;
-    yaw += xOffset;
-    pitch -= yOffset;
+void Camera::processMouseMovement(glm::vec2 offset) {
+    offset *= mouseSensitivity;
+    yaw += offset.x;
+    pitch -= offset.y;
     if (pitch > 89.0f) pitch = 89.0f;
     if (pitch < -89.0f) pitch = -89.0f;
     updateCameraVectors();

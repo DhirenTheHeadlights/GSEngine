@@ -2646,7 +2646,7 @@ STBTT_DEF void stbtt_GetGlyphBitmapBoxSubpixel(const stbtt_fontinfo *font, int g
 		if (iy1) *iy1 = 0;
 	}
 	else {
-		// move to integral bboxes (treating pixels as little squares, what pixels get touched)?
+		// moveRelativeToOrigin to integral bboxes (treating pixels as little squares, what pixels get touched)?
 		if (ix0) *ix0 = STBTT_ifloor(x0 * scale_x + shift_x);
 		if (iy0) *iy0 = STBTT_ifloor(-y1 * scale_y + shift_y);
 		if (ix1) *ix1 = STBTT_iceil(x1 * scale_x + shift_x);
@@ -3304,7 +3304,7 @@ static void stbtt__sort_edges_quicksort(stbtt__edge *p, int n)
 			p[m] = t;
 		}
 		/* now p[m] is the median-of-three */
-		/* swap it to the beginning so it won't move around */
+		/* swap it to the beginning so it won't moveRelativeToOrigin around */
 		t = p[0];
 		p[0] = p[m];
 		p[m] = t;
@@ -3762,7 +3762,7 @@ typedef int stbrp_coord;
 //                                                                                //
 //                                                                                //
 // if you get a compile warning due to these symbols being defined more than      //
-// once, move #include "stb_rect_pack.h" before #include "stb_truetype.h"         //
+// once, moveRelativeToOrigin #include "stb_rect_pack.h" before #include "stb_truetype.h"         //
 //                                                                                //
 ////////////////////////////////////////////////////////////////////////////////////
 
