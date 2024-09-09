@@ -21,6 +21,17 @@ namespace Engine {
 
 		mutable CollisionInformation collisionInformation;
 
+		void move(const glm::vec3& direction, const float distance, const float deltaTime) {
+			topCorner += direction * distance * deltaTime;
+			bottomCorner += direction * distance * deltaTime;
+		}
+
+		void setPosition(const glm::vec3& center) {
+			glm::vec3 halfSize = (topCorner - bottomCorner) / 2.0f;
+			topCorner = center + halfSize;
+			bottomCorner = center - halfSize;
+		}
+
 		glm::vec3 getCenter() const {
 			return (topCorner + bottomCorner) / 2.0f;
 		}
@@ -32,10 +43,10 @@ namespace Engine {
 	};
 
 	template <typename T>
-	concept Collidable = requires(T object, BoundingBox box, bool isColliding) {
+	concept Collidable = requires(T object, bool isColliding) {
 		{ object.isColliding() } -> std::same_as<bool>;
 		{ object.setIsColliding(isColliding) } -> std::same_as<void>;
-		{ object.getBoundingBoxes() } -> std::same_as<std::vector<BoundingBox>>;
+		{ object.getBoundingBoxes() } -> std::same_as<std::vector<BoundingBox>&>;
 	};
 
 	template <Collidable T>

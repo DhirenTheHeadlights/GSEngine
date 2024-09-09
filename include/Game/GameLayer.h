@@ -13,8 +13,7 @@
 #include "PlatformInput.h"
 #include "PlatformFunctions.h"
 
-#include "Engine/Graphics/Camera.h"
-#include "Engine/Graphics/Shader.h"
+#include "Engine/Core/Engine.h"
 
 #include "Arena.h"
 #include "Player.h"

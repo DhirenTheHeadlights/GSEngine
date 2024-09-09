@@ -18,7 +18,7 @@ void Arena::generateGridLines() {
         gridVertices.push_back(i); gridVertices.push_back(-height / 2); gridVertices.push_back(depth / 2);
         gridVertices.push_back(i); gridVertices.push_back(height / 2); gridVertices.push_back(depth / 2);
     }
-    walls.push_back(Engine::BoundingBox({-width / 2, -height / 2, -depth / 2}, {width, height, 0.1f}));
+    boundingBoxes.push_back(Engine::BoundingBox({-width / 2, -height / 2, -depth / 2}, {width, height, 0.1f}));
 
     for (float i = -width / 2; i <= width / 2; i += 1.0f) {
 		// Horizontal lines on back face
@@ -29,7 +29,7 @@ void Arena::generateGridLines() {
 		gridVertices.push_back(i); gridVertices.push_back(-height / 2); gridVertices.push_back(-depth / 2);
 		gridVertices.push_back(i); gridVertices.push_back(height / 2); gridVertices.push_back(-depth / 2);
 	}
-    walls.push_back(Engine::BoundingBox({-width / 2, -height / 2, depth / 2}, {width, height, 0.1f}));
+    boundingBoxes.push_back(Engine::BoundingBox({-width / 2, -height / 2, depth / 2}, {width, height, 0.1f}));
 
     for (float i = -depth / 2; i <= depth / 2; i += 1.0f) {
         // Horizontal lines on left face
@@ -40,7 +40,7 @@ void Arena::generateGridLines() {
         gridVertices.push_back(-width / 2); gridVertices.push_back(i); gridVertices.push_back(-depth / 2);
         gridVertices.push_back(-width / 2); gridVertices.push_back(i); gridVertices.push_back(depth / 2);
     }
-    walls.push_back(Engine::BoundingBox({-width / 2, -height / 2, -depth / 2}, {0.1f, height, depth}));
+    boundingBoxes.push_back(Engine::BoundingBox({-width / 2, -height / 2, -depth / 2}, {0.1f, height, depth}));
 
     for (float i = -depth / 2; i <= depth / 2; i += 1.0f) {
 		// Horizontal lines on right face
@@ -51,7 +51,7 @@ void Arena::generateGridLines() {
 		gridVertices.push_back(width / 2); gridVertices.push_back(i); gridVertices.push_back(-depth / 2);
 		gridVertices.push_back(width / 2); gridVertices.push_back(i); gridVertices.push_back(depth / 2);
 	}
-    walls.push_back(Engine::BoundingBox({width / 2, -height / 2, -depth / 2}, {0.1f, height, depth}));
+    boundingBoxes.push_back(Engine::BoundingBox({width / 2, -height / 2, -depth / 2}, {0.1f, height, depth}));
 }
 
 void Arena::setupBuffers() {

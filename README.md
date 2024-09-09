@@ -11,7 +11,7 @@ To get started, clone the respository. There are no dependencies required to run
 The files in this project are divided into the following categories:
 
 - `src` - Contains all the source code for the project
-- `assets` - Contains all the assets for the project
+- `resources` - Contains all the resources for the project
 - `include` - Contains all the header files for the project
 
 These are the major categories of files in the `src` & `include` directory:
