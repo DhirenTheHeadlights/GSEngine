@@ -23,11 +23,12 @@
 #pragma once
 
 #include "GameObject.h"
+#include "Engine/Core/Engine.h"
 
 namespace Game {
 	class $safeitemname$ : GameObject {
 	public:
-		$safeitemname$() = default;
+		$safeitemname$() : GameObject(Engine::idManager.generateID()) {};
 		~$safeitemname$() = default;
 		
 		void initialize() {}
@@ -39,12 +40,11 @@ namespace Game {
 		// These get passed into collision handler and are used to check for collisions //
 		//////////////////////////////////////////////////////////////////////////////////
 
-		virtual bool isColliding() const override { return isColliding; }
-		virtual void setIsColliding(bool isColliding) override { this->isColliding = isColliding; }
-		virtual std::vector<Engine::BoundingBox>& getBoundingBoxes() override { return boundingBoxes; }
+		bool isColliding() const override { return isColliding; }
+		void setIsColliding(const bool isColliding) override { this->isColliding = isColliding; }
+		std::vector<Engine::BoundingBox>& getBoundingBoxes() override { return boundingBoxes; }
 	private:
-		bool isColliding = false;
-		std::vector<Engine::BoundingBox> boundingBoxes;
+	
 	};
 }
         ]]>
