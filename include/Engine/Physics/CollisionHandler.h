@@ -5,43 +5,9 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/epsilon.hpp>
 
+#include "BoundingBox.h"
+
 namespace Engine {
-	struct CollisionInformation {
-		glm::vec3 collisionNormal;
-		float penetration;
-		glm::vec3 collisionPoint;
-	};
-
-	struct BoundingBox {
-		BoundingBox() = default;
-		BoundingBox(const glm::vec3& corner1, const glm::vec3& corner2) : topCorner(corner1), bottomCorner(corner2) {}
-
-		glm::vec3 topCorner;
-		glm::vec3 bottomCorner;
-
-		mutable CollisionInformation collisionInformation;
-
-		void move(const glm::vec3& direction, const float distance, const float deltaTime) {
-			topCorner += direction * distance * deltaTime;
-			bottomCorner += direction * distance * deltaTime;
-		}
-
-		void setPosition(const glm::vec3& center) {
-			glm::vec3 halfSize = (topCorner - bottomCorner) / 2.0f;
-			topCorner = center + halfSize;
-			bottomCorner = center - halfSize;
-		}
-
-		glm::vec3 getCenter() const {
-			return (topCorner + bottomCorner) / 2.0f;
-		}
-
-		bool operator==(const BoundingBox& other) const {
-			return glm::all(glm::epsilonEqual(topCorner, other.topCorner, 0.0001f)) &&
-				   glm::all(glm::epsilonEqual(bottomCorner, other.bottomCorner, 0.0001f));
-		}
-	};
-
 	template <typename T>
 	concept Collidable = requires(T object, bool isColliding) {
 		{ object.isColliding() } -> std::same_as<bool>;
@@ -53,9 +19,9 @@ namespace Engine {
 	class CollisionHandler {
 	public:
 		static bool checkCollision(const BoundingBox& box1, const BoundingBox& box2) {
-			if ((box1.topCorner.x >= box2.bottomCorner.x && box1.bottomCorner.x <= box2.topCorner.x) ||
-				(box1.topCorner.y >= box2.bottomCorner.y && box1.bottomCorner.y <= box2.topCorner.y) ||
-				(box1.topCorner.z >= box2.bottomCorner.z && box1.bottomCorner.z <= box2.topCorner.z)) {
+			if ((box1.upperBound.x >= box2.lowerBound.x && box1.lowerBound.x <= box2.upperBound.x) ||
+				(box1.upperBound.y >= box2.lowerBound.y && box1.lowerBound.y <= box2.upperBound.y) ||
+				(box1.upperBound.z >= box2.lowerBound.z && box1.lowerBound.z <= box2.upperBound.z)) {
 				setCollisionInformation(box1, box2);
 				return true;
 			}
@@ -67,9 +33,9 @@ namespace Engine {
 		}
 
 		static bool checkCollision(const glm::vec3& point, const BoundingBox& box) {
-			return (point.x >= box.bottomCorner.x && point.x <= box.topCorner.x) &&
-				   (point.y >= box.bottomCorner.y && point.y <= box.topCorner.y) &&  
-				   (point.z >= box.bottomCorner.z && point.z <= box.topCorner.z);
+			return (point.x >= box.lowerBound.x && point.x <= box.upperBound.x) &&
+				   (point.y >= box.lowerBound.y && point.y <= box.upperBound.y) &&  
+				   (point.z >= box.lowerBound.z && point.z <= box.upperBound.z);
 		}
 
 		static bool checkCollision(const std::vector<BoundingBox>& boxes1, const std::vector<BoundingBox>& boxes2) {
@@ -87,8 +53,8 @@ namespace Engine {
 			CollisionInformation collisionInformation;
 
 			// Calculate the penetration
-			glm::vec3 distance1 = box2.bottomCorner - box1.topCorner;
-			glm::vec3 distance2 = box1.bottomCorner - box2.topCorner;
+			glm::vec3 distance1 = box2.lowerBound - box1.upperBound;
+			glm::vec3 distance2 = box1.lowerBound - box2.upperBound;
 			auto penetration = glm::vec3(
 				std::abs(distance1.x) < std::abs(distance2.x) ? distance1.x : distance2.x,
 				std::abs(distance1.y) < std::abs(distance2.y) ? distance1.y : distance2.y,
@@ -132,6 +98,7 @@ namespace Engine {
 					if (object == other) continue;
 
 					if (checkCollision(object.getBoundingBoxes(), other.getBoundingBoxes())) {
+						std::cout << "Collision detected" << std::endl;
 						object.setIsColliding(true);
 						other.setIsColliding(true);
 					}

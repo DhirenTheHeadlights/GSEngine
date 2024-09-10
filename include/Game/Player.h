@@ -17,7 +17,7 @@ namespace Game {
 		void initialize();
 
 		void update(float deltaTime);
-		void render(const glm::mat4& view, const glm::mat4& projection) const;
+		void render(const glm::mat4& view, const glm::mat4& projection);
 
 		Engine::Camera& getCamera() { return camera; }
 	private:
