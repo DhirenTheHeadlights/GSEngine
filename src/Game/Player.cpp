@@ -3,7 +3,7 @@
 using namespace Game;
 
 void Player::initialize() {
-	boundingBoxes.push_back(Engine::BoundingBox({ -10.f, -10.f, -10.f }, { 10.f, 10.f, 10.f }));
+	boundingBoxes.push_back(Engine::BoundingBox({ 10.f, 10.f, 10.f }, { -10.f, -10.f, -10.f }));
 
 	movementKeys.insert({ GLFW_KEY_W, {0, 0, 1} });
 	movementKeys.insert({ GLFW_KEY_S, {0, 0, -1} });
@@ -36,6 +36,8 @@ void Player::update(const float deltaTime) {
 	camera.processMouseMovement(Platform::getMouse().delta);
 }
 
-void Player::render(const glm::mat4& view, const glm::mat4& projection) const {
-	
+void Player::render(const glm::mat4& view, const glm::mat4& projection) {
+	for (auto& bb : boundingBoxes) {
+		Engine::drawBoundingBox(bb, view * projection, false);
+	}
 }

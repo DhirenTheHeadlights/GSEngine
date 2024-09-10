@@ -7,7 +7,7 @@ struct GameData {
 
 } gameData;
 
-Game::Arena arena({1000, 1000, 1000});
+Game::Arena arena({100, 100, 100});
 Game::Player player;
 
 bool Game::initializeGame() {
@@ -32,15 +32,14 @@ bool Game::gameLogic(const float deltaTime) {
 	glClear(GL_COLOR_BUFFER_BIT); // Clear screen
 
 	// Disable mouse cursor if middle mouse is not pressed
-	if (Platform::getMouse().buttons[GLFW_MOUSE_BUTTON_MIDDLE].held)
-		glfwSetInputMode(Platform::window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-	else glfwSetInputMode(Platform::window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+	//glfwSetInputMode(Platform::window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+	glfwSetInputMode(Platform::window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
 	// Update Engine
 	Engine::update(deltaTime);
 
 	glm::mat4 view = player.getCamera().getViewMatrix();
-	glm::mat4 projection = glm::perspective(glm::radians(45.0f), static_cast<float>(Platform::getFrameBufferSize().x) / static_cast<float>(Platform::getFrameBufferSize().y), 0.1f, 1000000.0f);
+	glm::mat4 projection = glm::perspective(glm::radians(45.0f), static_cast<float>(Platform::getFrameBufferSize().x) / static_cast<float>(Platform::getFrameBufferSize().y), 0.1f, 1000.0f);
 	auto model = glm::mat4(1.0f);
 
 	// Pass the matrices to the shader
@@ -58,6 +57,19 @@ bool Game::gameLogic(const float deltaTime) {
 	ImGui::InputFloat3("Camera Position", &player.getCamera().getPosition()[0]);
 	ImGui::InputFloat3("Player Bounding Box Position", &player.getBoundingBoxes()[0].getCenter()[0]);
 
+	Engine::CollisionInformation playerColInfo = player.getBoundingBoxes()[0].collisionInformation;
+	bool isColliding = player.isColliding();
+	ImGui::Text("Player Collision: %s", isColliding ? "True" : "False");
+	ImGui::Text("Player Collision Information: ");
+	ImGui::Text("Collision Normal: %f, %f, %f", playerColInfo.collisionNormal.x, playerColInfo.collisionNormal.y, playerColInfo.collisionNormal.z);
+	ImGui::Text("Collision Depth: %f", playerColInfo.penetration);
+	ImGui::Text("Collision Point: %f, %f, %f", playerColInfo.collisionPoint.x, playerColInfo.collisionPoint.y, playerColInfo.collisionPoint.z);
+
+	ImGui::Text("Arena Bounding Box Positions: ");
+	for (int i = 0; i < arena.getBoundingBoxes().size(); i++) {
+		ImGui::InputFloat3(("Arena Bounding Box " + std::to_string(i) + " Position").c_str(), &arena.getBoundingBoxes()[i].getCenter()[0]);
+	}
+	
 	ImGui::End();
 
 	return true;

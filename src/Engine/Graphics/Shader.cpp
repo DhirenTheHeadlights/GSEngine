@@ -33,6 +33,9 @@ void Shader::createShaderProgram(const std::string& vertexPath, const std::strin
     // 4. Clean up the shaders as they are no longer needed once linked
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
+
+    // Cache uniform locations
+    cacheUniformLocations();
 }
 
 // Use the shader program
@@ -59,6 +62,17 @@ std::string Shader::loadShaderSource(const std::string& filePath) {
     }
 
     return shaderStream.str();
+}
+
+void Engine::Shader::cacheUniformLocations() {
+    // Cache uniform locations
+	uniforms.insert(std::make_pair("color", glGetUniformLocation(ID, "color")));
+    uniforms.insert(std::make_pair("view", glGetUniformLocation(ID, "viewProjection")));
+
+    // Check for errors
+    for (const auto& uniform : uniforms) {
+		assert(uniform.second != -1 && "Uniform not found in shader");
+	}
 }
 
 // Utility to check and report shader compile and linking errors

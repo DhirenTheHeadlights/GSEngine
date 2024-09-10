@@ -7,6 +7,7 @@
 #include <fstream>
 #include <sstream>
 #include <iostream>
+#include <unordered_map>
 
 namespace Engine {
     class Shader {
@@ -25,12 +26,19 @@ namespace Engine {
         void setFloat(const std::string& name, float value) const;
         void setMat4(const std::string& name, const GLfloat* value) const;
 
+        int getID() const { return ID; }
+        GLint getUniformLocation(const std::string& name) const { return uniforms.at(name); }
+
     private:
         // ID of the shader program
         unsigned int ID = 0;
 
         // Utility function to load shader from file
         static std::string loadShaderSource(const std::string& filePath);
+
+        void cacheUniformLocations();
+        
+        std::unordered_map<std::string, GLint> uniforms;
 
         // Utility function to check for shader compile/link errors
         static void checkCompileErrors(unsigned int shader, const std::string& type);
