@@ -16,8 +16,13 @@ namespace Engine {
 
 	struct BoundingBox {
 		BoundingBox() = default;
+
+		// Only use this constructor if you know what you are doing
 		BoundingBox(const glm::vec3& upperBound, const glm::vec3& lowerBound) : upperBound(upperBound), lowerBound(lowerBound) {}
 
+		// Use this constructor for a centered bounding box
+		BoundingBox(const glm::vec3& center, const float width, const float height, const float depth) : upperBound(center + glm::vec3(width / 2, height / 2, depth / 2)),
+																					   lowerBound(center - glm::vec3(width / 2, height / 2, depth / 2)) {}
 		~BoundingBox() {
 			glDeleteVertexArrays(1, &gridVAO);
 			glDeleteBuffers(1, &gridVBO);
@@ -25,6 +30,8 @@ namespace Engine {
 
 		glm::vec3 upperBound;
 		glm::vec3 lowerBound;
+
+		bool setGrid = false;
 
 		mutable CollisionInformation collisionInformation;
 
@@ -38,7 +45,7 @@ namespace Engine {
 		}
 
 		void setPosition(const glm::vec3& center) {
-			glm::vec3 halfSize = (upperBound - lowerBound) / 2.0f;
+			const glm::vec3 halfSize = (upperBound - lowerBound) / 2.0f;
 			upperBound = center + halfSize;
 			lowerBound = center - halfSize;
 		}

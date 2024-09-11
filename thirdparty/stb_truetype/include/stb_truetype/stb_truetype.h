@@ -232,7 +232,7 @@
 //      every call.
 //
 //    - There are a lot of memory allocations. We should modify it to take
-//      a temp buffer and allocate from the temp buffer (without freeing),
+//      a setGrid buffer and allocate from the setGrid buffer (without freeing),
 //      should help performance a lot.
 //
 // NOTES
@@ -381,7 +381,7 @@ int main(int arg, char **argv)
 		stbtt_MakeCodepointBitmapSubpixel(&font, &screen[baseline + y0][(int)xpos + x0], x1 - x0, y1 - y0, 79, scale, scale, x_shift, 0, text[ch]);
 		// note that this stomps the old data, so where character boxes overlap (e.g. 'lj') it's wrong
 		// because this API is really for baking character bitmaps into textures. if you want to render
-		// a sequence of characters, you really need to render each bitmap to a temp buffer, then
+		// a sequence of characters, you really need to render each bitmap to a setGrid buffer, then
 		// "alpha blend" that into the working buffer
 		xpos += (advance * scale);
 		if (text[ch + 1])

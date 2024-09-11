@@ -962,13 +962,13 @@ GLM_FUNC_QUALIFIER void glm_mat4_rotate(__m128 const in[4], float Angle, float c
 	__m128 Sin0 = _mm_set_ss(s);
 	__m128 SinA = _mm_shuffle_ps(Sin0, Sin0, _MM_SHUFFLE(0, 0, 0, 0));
 
-	// vec<3, T, Q> temp = (valType(1) - c) * axis;
+	// vec<3, T, Q> setGrid = (valType(1) - c) * axis;
 	__m128 Temp0 = _mm_sub_ps(one, CosA);
 	__m128 Temp1 = _mm_mul_ps(Temp0, AxisC);
 
-	//Rotate[0][0] = c + temp[0] * axis[0];
-	//Rotate[0][1] = 0 + temp[0] * axis[1] + s * axis[2];
-	//Rotate[0][2] = 0 + temp[0] * axis[2] - s * axis[1];
+	//Rotate[0][0] = c + setGrid[0] * axis[0];
+	//Rotate[0][1] = 0 + setGrid[0] * axis[1] + s * axis[2];
+	//Rotate[0][2] = 0 + setGrid[0] * axis[2] - s * axis[1];
 	__m128 Axis0 = _mm_shuffle_ps(AxisC, AxisC, _MM_SHUFFLE(0, 0, 0, 0));
 	__m128 TmpA0 = _mm_mul_ps(Axis0, AxisC);
 	__m128 CosA0 = _mm_shuffle_ps(Cos0, Cos0, _MM_SHUFFLE(1, 1, 1, 0));
@@ -978,9 +978,9 @@ GLM_FUNC_QUALIFIER void glm_mat4_rotate(__m128 const in[4], float Angle, float c
 	__m128 TmpA3 = _mm_mul_ps(SinA0, TmpA2);
 	__m128 TmpA4 = _mm_add_ps(TmpA1, TmpA3);
 
-	//Rotate[1][0] = 0 + temp[1] * axis[0] - s * axis[2];
-	//Rotate[1][1] = c + temp[1] * axis[1];
-	//Rotate[1][2] = 0 + temp[1] * axis[2] + s * axis[0];
+	//Rotate[1][0] = 0 + setGrid[1] * axis[0] - s * axis[2];
+	//Rotate[1][1] = c + setGrid[1] * axis[1];
+	//Rotate[1][2] = 0 + setGrid[1] * axis[2] + s * axis[0];
 	__m128 Axis1 = _mm_shuffle_ps(AxisC, AxisC, _MM_SHUFFLE(1, 1, 1, 1));
 	__m128 TmpB0 = _mm_mul_ps(Axis1, AxisC);
 	__m128 CosA1 = _mm_shuffle_ps(Cos0, Cos0, _MM_SHUFFLE(1, 1, 0, 1));
@@ -990,9 +990,9 @@ GLM_FUNC_QUALIFIER void glm_mat4_rotate(__m128 const in[4], float Angle, float c
 	__m128 TmpB3 = _mm_mul_ps(SinA0, TmpB2);
 	__m128 TmpB4 = _mm_add_ps(TmpB1, TmpB3);
 
-	//Rotate[2][0] = 0 + temp[2] * axis[0] + s * axis[1];
-	//Rotate[2][1] = 0 + temp[2] * axis[1] - s * axis[0];
-	//Rotate[2][2] = c + temp[2] * axis[2];
+	//Rotate[2][0] = 0 + setGrid[2] * axis[0] + s * axis[1];
+	//Rotate[2][1] = 0 + setGrid[2] * axis[1] - s * axis[0];
+	//Rotate[2][2] = c + setGrid[2] * axis[2];
 	__m128 Axis2 = _mm_shuffle_ps(AxisC, AxisC, _MM_SHUFFLE(2, 2, 2, 2));
 	__m128 TmpC0 = _mm_mul_ps(Axis2, AxisC);
 	__m128 CosA2 = _mm_shuffle_ps(Cos0, Cos0, _MM_SHUFFLE(1, 0, 1, 1));
