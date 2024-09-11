@@ -5,20 +5,20 @@ using namespace Engine;
 // Constructor that builds the shader program from vertex and fragment shader file paths
 void Shader::createShaderProgram(const std::string& vertexPath, const std::string& fragmentPath) {
     // 1. Retrieve the vertex and fragment shader source code from file paths
-    std::string vertexCode = loadShaderSource(vertexPath);
-    std::string fragmentCode = loadShaderSource(fragmentPath);
+    const std::string vertexCode = loadShaderSource(vertexPath);
+    const std::string fragmentCode = loadShaderSource(fragmentPath);
 
     const char* vShaderCode = vertexCode.c_str();
     const char* fShaderCode = fragmentCode.c_str();
 
     // Vertex Shader
-    unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
+    const unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vertexShader, 1, &vShaderCode, NULL);
     glCompileShader(vertexShader);
     checkCompileErrors(vertexShader, "VERTEX");
 
     // Fragment Shader
-    unsigned int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+    const unsigned int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
     glShaderSource(fragmentShader, 1, &fShaderCode, NULL);
     glCompileShader(fragmentShader);
     checkCompileErrors(fragmentShader, "FRAGMENT");
@@ -64,15 +64,18 @@ std::string Shader::loadShaderSource(const std::string& filePath) {
     return shaderStream.str();
 }
 
-void Engine::Shader::cacheUniformLocations() {
-    // Cache uniform locations
-	uniforms.insert(std::make_pair("color", glGetUniformLocation(ID, "color")));
-    uniforms.insert(std::make_pair("view", glGetUniformLocation(ID, "viewProjection")));
-
-    // Check for errors
-    for (const auto& uniform : uniforms) {
-		assert(uniform.second != -1 && "Uniform not found in shader");
-	}
+void Shader::cacheUniformLocations() {
+    int uniformCount;
+    glGetProgramiv(ID, GL_ACTIVE_UNIFORMS, &uniformCount);
+    for (int i = 0; i < uniformCount; ++i) {
+        char uniformName[256];
+        GLsizei length;
+        GLint size;
+        GLenum type;
+        glGetActiveUniform(ID, i, sizeof(uniformName), &length, &size, &type, uniformName);
+        const GLint location = glGetUniformLocation(ID, uniformName);
+        uniforms[std::string(uniformName)] = location;
+    }
 }
 
 // Utility to check and report shader compile and linking errors
@@ -97,15 +100,15 @@ void Shader::checkCompileErrors(unsigned int shader, const std::string& type) {
 }
 
 // Utility functions for setting shader uniforms
-void Shader::setBool(const std::string& name, bool value) const {
+void Shader::setBool(const std::string& name, const bool value) const {
     glUniform1i(glGetUniformLocation(ID, name.c_str()), static_cast<int>(value));
 }
 
-void Shader::setInt(const std::string& name, int value) const {
+void Shader::setInt(const std::string& name, const int value) const {
     glUniform1i(glGetUniformLocation(ID, name.c_str()), value);
 }
 
-void Shader::setFloat(const std::string& name, float value) const {
+void Shader::setFloat(const std::string& name, const float value) const {
     glUniform1f(glGetUniformLocation(ID, name.c_str()), value);
 }
 

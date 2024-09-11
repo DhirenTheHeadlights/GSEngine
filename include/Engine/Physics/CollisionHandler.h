@@ -98,7 +98,6 @@ namespace Engine {
 					if (object == other) continue;
 
 					if (checkCollision(object.getBoundingBoxes(), other.getBoundingBoxes())) {
-						std::cout << "Collision detected" << std::endl;
 						object.setIsColliding(true);
 						other.setIsColliding(true);
 					}

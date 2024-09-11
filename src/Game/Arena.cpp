@@ -3,22 +3,23 @@
 using namespace Game;
 
 void Arena::initialize() {
+    constexpr float wallThickness = 10.f;
+
     // Front and back walls
-    boundingBoxes.push_back(Engine::BoundingBox({ width / 2, height / 2, 0.1f }, { -width / 2, -height / 2, -depth / 2 }));
-    boundingBoxes.push_back(Engine::BoundingBox({ width / 2, height / 2, 0.1f }, { -width / 2, -height / 2, depth / 2 }));
+    boundingBoxes.emplace_back(Engine::BoundingBox({ 0, 0, depth / 2 - wallThickness / 2 }, width, height, wallThickness));
+    boundingBoxes.emplace_back(Engine::BoundingBox({ 0, 0, -depth / 2 + wallThickness / 2 }, width, height, wallThickness));
 
     // Left and right walls
-    boundingBoxes.push_back(Engine::BoundingBox({ 0.1f, height, depth }, { -width / 2, -height / 2, -depth / 2 }));
-    boundingBoxes.push_back(Engine::BoundingBox({ 0.1f, height, depth }, { width / 2, -height / 2, -depth / 2 }));
+    boundingBoxes.emplace_back(Engine::BoundingBox({ -width / 2 + wallThickness / 2, 0, 0 }, wallThickness, height, depth));
+    boundingBoxes.emplace_back(Engine::BoundingBox({ width / 2 - wallThickness / 2, 0, 0 }, wallThickness, height, depth));
 
     // Top and bottom walls
-    boundingBoxes.push_back(Engine::BoundingBox({ width, 0.1f, depth }, { -width / 2, height / 2, -depth / 2 }));
-    boundingBoxes.push_back(Engine::BoundingBox({ width, 0.1f, depth }, { -width / 2, -height / 2, -depth / 2 }));
+    boundingBoxes.emplace_back(Engine::BoundingBox({ 0, height / 2 - wallThickness / 2, 0 }, width, wallThickness, depth));
+    boundingBoxes.emplace_back(Engine::BoundingBox({ 0, -height / 2 + wallThickness / 2, 0 }, width, wallThickness, depth));
 }
-
 
 void Arena::render(const glm::mat4& view, const glm::mat4& projection) {
     for (auto& boundingBox : boundingBoxes) {
-        Engine::drawBoundingBox(boundingBox, view * projection, false);
+        drawBoundingBox(boundingBox, view * projection, true);
 	}
 }

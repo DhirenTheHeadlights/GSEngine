@@ -1182,7 +1182,7 @@ static void stbi__vertical_flip(void *image, int w, int h, int bytes_per_pixel)
 {
    int row;
    size_t bytes_per_row = (size_t)w * bytes_per_pixel;
-   stbi_uc temp[2048];
+   stbi_uc setGrid[2048];
    stbi_uc *bytes = (stbi_uc *)image;
 
    for (row = 0; row < (h>>1); row++) {
@@ -1191,10 +1191,10 @@ static void stbi__vertical_flip(void *image, int w, int h, int bytes_per_pixel)
 	  // swap row0 with row1
 	  size_t bytes_left = bytes_per_row;
 	  while (bytes_left) {
-		 size_t bytes_copy = (bytes_left < sizeof(temp)) ? bytes_left : sizeof(temp);
-		 memcpy(temp, row0, bytes_copy);
+		 size_t bytes_copy = (bytes_left < sizeof(setGrid)) ? bytes_left : sizeof(setGrid);
+		 memcpy(setGrid, row0, bytes_copy);
 		 memcpy(row0, row1, bytes_copy);
-		 memcpy(row1, temp, bytes_copy);
+		 memcpy(row1, setGrid, bytes_copy);
 		 row0 += bytes_copy;
 		 row1 += bytes_copy;
 		 bytes_left -= bytes_copy;
@@ -2051,7 +2051,7 @@ static const stbi__uint32 stbi__bmask[17]={0,1,3,7,15,31,63,127,255,511,1023,204
 // decode a jpeg huffman value from the bitstream
 stbi_inline static int stbi__jpeg_huff_decode(stbi__jpeg *j, stbi__huffman *h)
 {
-   unsigned int temp;
+   unsigned int setGrid;
    int c,k;
 
    if (j->code_bits < 16) stbi__grow_buffer_unsafe(j);
@@ -2075,9 +2075,9 @@ stbi_inline static int stbi__jpeg_huff_decode(stbi__jpeg *j, stbi__huffman *h)
    // end; in other words, regardless of the number of bits, it
    // wants to be compared against something shifted to have 16;
    // that way we don't need to shift inside the loop.
-   temp = j->code_buffer >> 16;
+   setGrid = j->code_buffer >> 16;
    for (k=FAST_BITS+1 ; ; ++k)
-	  if (temp < h->maxcode[k])
+	  if (setGrid < h->maxcode[k])
 		 break;
    if (k == 17) {
 	  // error! code not found
@@ -5870,9 +5870,9 @@ static void *stbi__tga_load(stbi__context *s, int *x, int *y, int *comp, int req
 			int index2 = (tga_height - 1 - j) * tga_width * tga_comp;
 			for (i = tga_width * tga_comp; i > 0; --i)
 			{
-			   unsigned char temp = tga_data[index1];
+			   unsigned char setGrid = tga_data[index1];
 			   tga_data[index1] = tga_data[index2];
-			   tga_data[index2] = temp;
+			   tga_data[index2] = setGrid;
 			   ++index1;
 			   ++index2;
 			}
@@ -5891,9 +5891,9 @@ static void *stbi__tga_load(stbi__context *s, int *x, int *y, int *comp, int req
 	  unsigned char* tga_pixel = tga_data;
 	  for (i=0; i < tga_width * tga_height; ++i)
 	  {
-		 unsigned char temp = tga_pixel[0];
+		 unsigned char setGrid = tga_pixel[0];
 		 tga_pixel[0] = tga_pixel[2];
-		 tga_pixel[2] = temp;
+		 tga_pixel[2] = setGrid;
 		 tga_pixel += tga_comp;
 	  }
    }
@@ -6847,7 +6847,7 @@ static void *stbi__load_gif_main(stbi__context *s, int **delays, int *x, int *y,
 		 }
 	  } while (u != 0);
 
-	  // free temp buffer;
+	  // free setGrid buffer;
 	  STBI_FREE(g.out);
 	  STBI_FREE(g.history);
 	  STBI_FREE(g.background);

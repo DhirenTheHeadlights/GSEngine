@@ -7,7 +7,7 @@ struct GameData {
 
 } gameData;
 
-Game::Arena arena({100, 100, 100});
+Game::Arena arena;
 Game::Player player;
 
 bool Game::initializeGame() {
@@ -32,14 +32,14 @@ bool Game::gameLogic(const float deltaTime) {
 	glClear(GL_COLOR_BUFFER_BIT); // Clear screen
 
 	// Disable mouse cursor if middle mouse is not pressed
-	//glfwSetInputMode(Platform::window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-	glfwSetInputMode(Platform::window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+	glfwSetInputMode(Platform::window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+	//glfwSetInputMode(Platform::window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
 	// Update Engine
 	Engine::update(deltaTime);
 
 	glm::mat4 view = player.getCamera().getViewMatrix();
-	glm::mat4 projection = glm::perspective(glm::radians(45.0f), static_cast<float>(Platform::getFrameBufferSize().x) / static_cast<float>(Platform::getFrameBufferSize().y), 0.1f, 1000.0f);
+	glm::mat4 projection = glm::perspective(glm::radians(45.0f), static_cast<float>(Platform::getFrameBufferSize().x) / static_cast<float>(Platform::getFrameBufferSize().y), 1.f, 100.0f);
 	auto model = glm::mat4(1.0f);
 
 	// Pass the matrices to the shader
