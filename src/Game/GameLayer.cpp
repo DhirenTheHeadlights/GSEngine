@@ -1,9 +1,10 @@
 #define GLM_ENABLE_EXPERIMENTAL
 
 #include "GameLayer.h"
+#include "glm/gtx/string_cast.hpp"
 
 struct GameData {
-	glm::vec3 cameraPos = {0,0,0};
+	glm::vec3 playerPosition = {0,0,0};
 
 } gameData;
 
@@ -20,6 +21,9 @@ bool Game::initializeGame() {
 	arena.initialize();
 	player.initialize();
 
+	// Set player position
+	//player.setPosition(gameData.playerPosition);
+
 	// Set up collision handler
 	Engine::collisionHandler.addObject(player);
 	Engine::collisionHandler.addObject(arena);
@@ -31,16 +35,15 @@ bool Game::gameLogic(const float deltaTime) {
 	glViewport(0, 0, Platform::getFrameBufferSize().x, Platform::getFrameBufferSize().y);
 	glClear(GL_COLOR_BUFFER_BIT); // Clear screen
 
-	// Disable mouse cursor if middle mouse is not pressed
 	glfwSetInputMode(Platform::window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 	//glfwSetInputMode(Platform::window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
+	glm::mat4 view = player.getCamera().getViewMatrix();
+	glm::mat4 projection = glm::perspective(glm::radians(90.0f), static_cast<float>(Platform::getFrameBufferSize().x) / static_cast<float>(Platform::getFrameBufferSize().y), 1.f, 1000.0f);
+	auto model = glm::mat4(1.0f);
+
 	// Update Engine
 	Engine::update(deltaTime);
-
-	glm::mat4 view = player.getCamera().getViewMatrix();
-	glm::mat4 projection = glm::perspective(glm::radians(45.0f), static_cast<float>(Platform::getFrameBufferSize().x) / static_cast<float>(Platform::getFrameBufferSize().y), 1.f, 100.0f);
-	auto model = glm::mat4(1.0f);
 
 	// Pass the matrices to the shader
 	Engine::shader.setMat4("view", glm::value_ptr(view));
@@ -54,12 +57,15 @@ bool Game::gameLogic(const float deltaTime) {
 
 	ImGui::Begin("Test Imgui");
 
+	ImGui::Text("View Matrix: %s", glm::to_string(view).c_str());
+	ImGui::Text("Projection Matrix: %s", glm::to_string(projection).c_str());
+	ImGui::Text("Model Matrix: %s", glm::to_string(model).c_str());
+
 	ImGui::InputFloat3("Camera Position", &player.getCamera().getPosition()[0]);
 	ImGui::InputFloat3("Player Bounding Box Position", &player.getBoundingBoxes()[0].getCenter()[0]);
 
 	Engine::CollisionInformation playerColInfo = player.getBoundingBoxes()[0].collisionInformation;
-	bool isColliding = player.isColliding();
-	ImGui::Text("Player Collision: %s", isColliding ? "True" : "False");
+	ImGui::Text("Player Collision: %s", player.isColliding() ? "True" : "False");
 	ImGui::Text("Player Collision Information: ");
 	ImGui::Text("Collision Normal: %f, %f, %f", playerColInfo.collisionNormal.x, playerColInfo.collisionNormal.y, playerColInfo.collisionNormal.z);
 	ImGui::Text("Collision Depth: %f", playerColInfo.penetration);

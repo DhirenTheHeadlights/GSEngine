@@ -29,6 +29,8 @@ namespace Engine {
         int getID() const { return ID; }
         GLint getUniformLocation(const std::string& name) const { return uniforms.at(name); }
 
+        glm::mat4 getProjectionMatrix() { return glm::mat4(1.f); }
+
     private:
         // ID of the shader program
         unsigned int ID = 0;

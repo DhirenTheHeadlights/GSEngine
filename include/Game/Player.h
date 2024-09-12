@@ -20,6 +20,8 @@ namespace Game {
 		void render(const glm::mat4& view, const glm::mat4& projection);
 
 		Engine::Camera& getCamera() { return camera; }
+
+		void setPosition(const glm::vec3& position) { boundingBoxes[0].setPosition(position); }
 	private:
 		Engine::Camera camera = Engine::Camera(glm::vec3(0.f, 0.f, 0.f));
 

@@ -189,6 +189,10 @@ int main() {
 
     enableReportGlErrors();
 
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glEnable(GL_BLEND);
+
 #pragma endregion
 
     gl2d::init();

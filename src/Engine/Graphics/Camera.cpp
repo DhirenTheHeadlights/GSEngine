@@ -1,8 +1,5 @@
 #include "Camera.h"
 
-#include "Arena.h"
-#include "Arena.h"
-
 using namespace Engine;
 
 void Camera::processMouseMovement(glm::vec2 offset) {
