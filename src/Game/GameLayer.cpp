@@ -39,7 +39,7 @@ bool Game::gameLogic(const float deltaTime) {
 	//glfwSetInputMode(Platform::window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
 	glm::mat4 view = player.getCamera().getViewMatrix();
-	glm::mat4 projection = glm::perspective(glm::radians(90.0f), static_cast<float>(Platform::getFrameBufferSize().x) / static_cast<float>(Platform::getFrameBufferSize().y), 1.f, 1000.0f);
+	glm::mat4 projection = glm::perspective(glm::radians(45.0f), static_cast<float>(Platform::getFrameBufferSize().x) / static_cast<float>(Platform::getFrameBufferSize().y), 0.1f, 1000.0f);
 	auto model = glm::mat4(1.0f);
 
 	// Update Engine

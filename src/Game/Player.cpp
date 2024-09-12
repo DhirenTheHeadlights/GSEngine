@@ -38,6 +38,6 @@ void Player::update(const float deltaTime) {
 
 void Player::render(const glm::mat4& view, const glm::mat4& projection) {
 	for (auto& bb : boundingBoxes) {
-		//drawBoundingBox(bb, view * projection, false);
+		drawBoundingBox(bb, view * projection, false);
 	}
 }
