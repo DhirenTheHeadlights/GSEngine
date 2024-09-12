@@ -72,14 +72,13 @@ void Engine::drawBoundingBox(BoundingBox& boundingBox, const glm::mat4& viewProj
 
         glBindVertexArray(boundingBox.gridVAO);
         glBindBuffer(GL_ARRAY_BUFFER, boundingBox.gridVBO);
-        glBufferData(GL_ARRAY_BUFFER, boundingBox.gridVertices.size() * sizeof(float), boundingBox.gridVertices.data(), GL_DYNAMIC_DRAW);
+        glBufferData(GL_ARRAY_BUFFER, boundingBox.gridVertices.size() * sizeof(float), boundingBox.gridVertices.data(), moving ? GL_DYNAMIC_DRAW : GL_STATIC_DRAW);
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), static_cast<void*>(nullptr));
         glEnableVertexAttribArray(0);
 
         boundingBox.setGrid = true;
     }
 
-    glUseProgram(shaderID);
     glUniform3fv(Engine::shader.getUniformLocation("color"), 1, glm::value_ptr(color));
     glUniformMatrix4fv(Engine::shader.getUniformLocation("viewProjection"), 1, GL_FALSE, glm::value_ptr(viewProjectionMatrix));
     glDrawArrays(GL_LINES, 0, boundingBox.gridVertices.size() / 3);

@@ -39,4 +39,4 @@ These are two big things to avoid when writing code for this project:
 
 ### Prerequisites
 
-Install ReSharper for Visual Studio for style enforcement & many helpful tools
+Install ReSharper C++ for Visual Studio for style enforcement & many helpful tools
