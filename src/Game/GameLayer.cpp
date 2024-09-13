@@ -35,8 +35,12 @@ bool Game::gameLogic(const float deltaTime) {
 	glViewport(0, 0, Platform::getFrameBufferSize().x, Platform::getFrameBufferSize().y);
 	glClear(GL_COLOR_BUFFER_BIT); // Clear screen
 
-	glfwSetInputMode(Platform::window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-	//glfwSetInputMode(Platform::window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+	if (Platform::getMouse().buttons[GLFW_MOUSE_BUTTON_MIDDLE].toggled) {
+		glfwSetInputMode(Platform::window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+	}
+	else {
+		glfwSetInputMode(Platform::window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+	}
 
 	glm::mat4 view = player.getCamera().getViewMatrix();
 	glm::mat4 projection = glm::perspective(glm::radians(45.0f), static_cast<float>(Platform::getFrameBufferSize().x) / static_cast<float>(Platform::getFrameBufferSize().y), 0.1f, 1000.0f);
@@ -55,11 +59,7 @@ bool Game::gameLogic(const float deltaTime) {
 
 	arena.render(view, projection);
 
-	ImGui::Begin("Test Imgui");
-
-	ImGui::Text("View Matrix: %s", glm::to_string(view).c_str());
-	ImGui::Text("Projection Matrix: %s", glm::to_string(projection).c_str());
-	ImGui::Text("Model Matrix: %s", glm::to_string(model).c_str());
+	ImGui::Begin("DEBUG");
 
 	ImGui::InputFloat3("Camera Position", &player.getCamera().getPosition()[0]);
 	ImGui::InputFloat3("Player Bounding Box Position", &player.getBoundingBoxes()[0].getCenter()[0]);
