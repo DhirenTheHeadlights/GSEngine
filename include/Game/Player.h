@@ -5,9 +5,7 @@
 #include "GameObject.h"
 
 #include "Engine.h"
-#include "Camera.h"
 
-#include "PlatformInput.h"
 
 namespace Game {
 	class Player : public GameObject {

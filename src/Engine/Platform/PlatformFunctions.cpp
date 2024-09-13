@@ -62,7 +62,7 @@ bool Platform::readEntireFile(const char* name, void* buffer, size_t size) {
 		return 0;
 	}
 
-	f.read((char*)buffer, size);
+	f.read(static_cast<char*>(buffer), size);
 
 	f.close();
 

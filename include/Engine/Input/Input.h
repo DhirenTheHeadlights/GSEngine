@@ -1,11 +1,12 @@
 #pragma once
+
 #include <GLFW/glfw3.h>
 #include <string>
 #include <unordered_map>
 
 #include "PlatformFunctions.h"
 
-namespace Platform {
+namespace Input {
 	struct Button {
 		char pressed = 0;
 		char held = 0;
@@ -36,7 +37,7 @@ namespace Platform {
 
 		struct {
 			float x = 0.f, y = 0.f;
-		}LStick, RStick;
+		} LStick, RStick;
 
 		void reset() {
 			for (auto& [fst, snd] : buttons) {
