@@ -3,7 +3,7 @@
 using namespace Game;
 
 void Player::initialize() {
-	boundingBoxes.push_back(Engine::BoundingBox({ 0.f, 0.f, 0.f }, 1.f, 1.f, 1.f));
+	boundingBoxes.push_back(Engine::BoundingBox({ -10.f, -10.f, -10.f }, 10.f, 10.f, 10.f));
 
 	movementKeys.insert({ GLFW_KEY_W, {0, 0, 1} });
 	movementKeys.insert({ GLFW_KEY_S, {0, 0, -1} });
@@ -27,7 +27,7 @@ void Player::update(const float deltaTime) {
 	// If the player is colliding with something, move the player back to the previous position
 	for (auto& bb : boundingBoxes) {
 		if (bb.collisionInformation.penetration > 0) {
-			//bb.move(-bb.collisionInformation.collisionNormal, bb.collisionInformation.penetration, deltaTime);
+			bb.move(-bb.collisionInformation.collisionNormal, bb.collisionInformation.penetration, deltaTime);
 		}
 	}
 	
@@ -38,6 +38,6 @@ void Player::update(const float deltaTime) {
 
 void Player::render(const glm::mat4& view, const glm::mat4& projection) {
 	for (auto& bb : boundingBoxes) {
-		drawBoundingBox(bb, view * projection, false);
+		drawBoundingBox(bb, view * projection, true);
 	}
 }
