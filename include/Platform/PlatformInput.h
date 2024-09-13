@@ -13,6 +13,7 @@ namespace Platform {
 		char newState = -1;
 		char typed = 0;
 		float typedTime = 0;
+		bool toggled = false;
 
 		void merge(const Button &b) {
 			this->pressed |= b.pressed;
@@ -92,6 +93,7 @@ namespace Platform {
 				}
 				else {
 					b.pressed = true;
+					b.toggled = !b.toggled;
 				}
 
 				b.held = true;
