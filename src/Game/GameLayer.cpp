@@ -1,17 +1,17 @@
 #define GLM_ENABLE_EXPERIMENTAL
 
-#include "GameLayer.h"
+#include "Game/GameLayer.h"
 
 #include "imgui.h"
 
 #include <glm/gtc/type_ptr.hpp>
 
-#include "Engine.h"
+#include "Engine/Core/Engine.h"
 
-#include "Arena.h"
-#include "Input.h"
-#include "PlatformFunctions.h"
-#include "Player.h"
+#include "Engine/Input/Input.h"
+#include "Engine/Platform/PlatformFunctions.h"
+#include "Game/Arena.h"
+#include "Game/Player.h"
 
 struct GameData {
 	glm::vec3 playerPosition = {0,0,0};
@@ -34,9 +34,8 @@ bool Game::initializeGame() {
 	// Set player position
 	//player.setPosition(gameData.playerPosition);
 
-	// Set up collision handler
-	Engine::collisionHandler.addObject(player);
-	Engine::collisionHandler.addObject(arena);
+	addObject(player);
+	addObject(arena);
 
 	return true;
 }
@@ -57,12 +56,7 @@ bool Game::gameLogic(const float deltaTime) {
 	auto model = glm::mat4(1.0f);
 
 	// Update Engine
-	Engine::update(deltaTime);
-
-	// Pass the matrices to the shader
-	Engine::shader.setMat4("view", glm::value_ptr(view));
-	Engine::shader.setMat4("projection", glm::value_ptr(projection));
-	Engine::shader.setMat4("model", glm::value_ptr(model));
+	Engine::update(deltaTime, view, projection, model);
 
 	player.update(deltaTime);
 	player.render(view, projection);
@@ -87,6 +81,10 @@ bool Game::gameLogic(const float deltaTime) {
 	}
 	
 	ImGui::End();
+
+	if (Engine::Input::getKeyboard().keys[GLFW_KEY_ESCAPE].pressed) {
+		return false;
+	}
 
 	return true;
 }

@@ -11,12 +11,12 @@
 #include <stb_truetype/stb_truetype.h>
 
 // Project-Specific Includes
-#include "CallBacks.h"
-#include "ErrorReporting.h"
-#include "GameLayer.h"
-#include "PlatformFunctions.h"
-#include "Input.h"
-#include "PlatformTools.h"
+#include "Engine/Platform/CallBacks.h"
+#include "Engine/Platform/ErrorReporting.h"
+#include "Game/GameLayer.h"
+#include "Engine/Platform/PlatformFunctions.h"
+#include "Engine/Input/Input.h"
+#include "Engine/Platform/PlatformTools.h"
 #include "gl2d/gl2d.h"
 
 #define REMOVE_IMGUI 0

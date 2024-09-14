@@ -1,8 +1,8 @@
 #pragma once
+#include <vector>
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
-#include <vector>
 
 namespace Engine {
 	struct CollisionInformation {
@@ -18,8 +18,9 @@ namespace Engine {
 		BoundingBox(const glm::vec3& upperBound, const glm::vec3& lowerBound) : upperBound(upperBound), lowerBound(lowerBound) {}
 
 		// Use this constructor for a centered bounding box
-		BoundingBox(const glm::vec3& center, const float width, const float height, const float depth) : upperBound(center + glm::vec3(width / 2, height / 2, depth / 2)),
-																					   lowerBound(center - glm::vec3(width / 2, height / 2, depth / 2)) {}
+		BoundingBox(const glm::vec3& center, const float width, const float height, const float depth)
+					: upperBound(center + glm::vec3(width / 2, height / 2, depth / 2)),
+					  lowerBound(center - glm::vec3(width / 2, height / 2, depth / 2)) {}
 		~BoundingBox() {
 			glDeleteVertexArrays(1, &gridVAO);
 			glDeleteBuffers(1, &gridVBO);
@@ -30,7 +31,7 @@ namespace Engine {
 
 		bool setGrid = false;
 
-		mutable CollisionInformation collisionInformation;
+		mutable CollisionInformation collisionInformation = {};
 
 		// Debug rendering information
 		std::vector<float> gridVertices;

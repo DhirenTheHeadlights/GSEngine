@@ -2,14 +2,16 @@
 
 #include <vector>
 
-#include "ID.h"
-#include "BoundingBox.h"
+#include "Engine/Core/ID.h"
+#include "Engine/Graphics/BoundingBox.h"
+
+#include "Engine/Physics/System.h"
 
 namespace Engine {
-	class GameObject {
+	class Object {
 	public:
-		GameObject(const std::shared_ptr<ID>& id) : id(id) {}
-		virtual ~GameObject() = default;
+		Object(const std::shared_ptr<ID>& id) : id(id) {}
+		virtual ~Object() = default;
 
 		////////////////////////////////////////////////////////////////////////////////////
 		/// All game objects require a colliding info and a vector of bounding boxes     ///
@@ -22,7 +24,7 @@ namespace Engine {
 
 		ID* getId() const { return id.get(); }
 
-		bool operator==(const GameObject& other) const {
+		bool operator==(const Object& other) const {
 			return id == other.id;
 		}
 	protected:

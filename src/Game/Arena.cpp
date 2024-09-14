@@ -1,4 +1,4 @@
-#include "Arena.h"
+#include "Game/Arena.h"
 
 using namespace Game;
 
