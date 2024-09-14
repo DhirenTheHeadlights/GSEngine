@@ -2,9 +2,6 @@
 
 // Standard Library Includes
 #include <chrono>
-#include <ctime>
-#include <fstream>
-#include <iostream>
 
 // Third-Party Library Includes
 #include <raudio.h>
@@ -18,7 +15,7 @@
 #include "ErrorReporting.h"
 #include "GameLayer.h"
 #include "PlatformFunctions.h"
-#include "PlatformInput.h"
+#include "Input.h"
 #include "PlatformTools.h"
 #include "gl2d/gl2d.h"
 
@@ -43,7 +40,7 @@ void setUpImgui() {
     ImGui::StyleColorsDark();
     imguiThemes::embraceTheDarkness();
 
-    ImGuiIO& io = ImGui::GetIO(); (void)io; // void cast prevents unused variable warning
+    ImGuiIO& io = ImGui::GetIO(); (void)io;						// void cast prevents unused variable warning
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
@@ -56,7 +53,7 @@ void setUpImgui() {
         style.Colors[ImGuiCol_DockingEmptyBg].w = 0.f;
     }
 
-    ImGui_ImplGlfw_InitForOpenGL(Platform::window, true);
+    ImGui_ImplGlfw_InitForOpenGL(Engine::Platform::window, true);
     ImGui_ImplOpenGL3_Init("#version 330");
 }
 
@@ -64,7 +61,7 @@ void setUpImgui() {
 void mainLoop(const int w, const int h) {
     auto stop = std::chrono::high_resolution_clock::now();
 
-    while (!glfwWindowShouldClose(Platform::window)) {
+    while (!glfwWindowShouldClose(Engine::Platform::window)) {
         auto start = std::chrono::high_resolution_clock::now();
 
         const float deltaTime = std::chrono::duration_cast<std::chrono::nanoseconds>(start - stop).count() / std::pow(10, 9);
@@ -85,47 +82,47 @@ void mainLoop(const int w, const int h) {
             return;
         }
 
-        if (Platform::windowFocused && Platform::currentFullScreen != Platform::fullScreen) {
+        if (Engine::Platform::windowFocused && Engine::Platform::currentFullScreen != Engine::Platform::fullScreen) {
             static int lastW = w;
             static int lastH = w;
             static int lastPosX = 0;
             static int lastPosY = 0;
 
-            if (Platform::fullScreen) {
+            if (Engine::Platform::fullScreen) {
                 lastW = w;
                 lastH = h;
 
                 //glfwWindowHint(GLFW_DECORATED, NULL); // Remove the border and titlebar..  
-                glfwGetWindowPos(Platform::window, &lastPosX, &lastPosY);
+                glfwGetWindowPos(Engine::Platform::window, &lastPosX, &lastPosY);
 
                 //auto monitor = glfwGetPrimaryMonitor();
-                const auto monitor = Platform::getCurrentMonitor();
+                const auto monitor = Engine::Platform::getCurrentMonitor();
 
                 const GLFWvidmode* mode = glfwGetVideoMode(monitor);
 
                 // switch to full screen
-                glfwSetWindowMonitor(Platform::window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+                glfwSetWindowMonitor(Engine::Platform::window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
 
-                Platform::currentFullScreen = 1;
+                Engine::Platform::currentFullScreen = true;
 
             }
             else {
                 //glfwWindowHint(GLFW_DECORATED, GLFW_TRUE); // 
-                glfwSetWindowMonitor(Platform::window, nullptr, lastPosX, lastPosY, lastW, lastH, 0);
+                glfwSetWindowMonitor(Engine::Platform::window, nullptr, lastPosX, lastPosY, lastW, lastH, 0);
 
-                Platform::currentFullScreen = 0;
+                Engine::Platform::currentFullScreen = false;
             }
 
         }
 
-        Platform::mouseMoved = 0;
-        Platform::internal::updateAllButtons(deltaTime);
-        Platform::internal::resetTypedInput();
+        Engine::Platform::mouseMoved = 0;
+        Engine::Input::internal::updateAllButtons(deltaTime);
+		Engine::Input::internal::resetTypedInput();
 
 #if REMOVE_IMGUI == 0
         ImGui::Render();
         int displayW, displayH;
-        glfwGetFramebufferSize(Platform::window, &displayW, &displayH);
+        glfwGetFramebufferSize(Engine::Platform::window, &displayW, &displayH);
         glViewport(0, 0, displayW, displayH);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
@@ -134,14 +131,14 @@ void mainLoop(const int w, const int h) {
         //  For this specific demo app we could also call glfwMakeContextCurrent(window) directly)
         const ImGuiIO& io = ImGui::GetIO(); (void)io;
         if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
-            GLFWwindow* backup_current_context = glfwGetCurrentContext();
+            GLFWwindow* backupCurrentContext = glfwGetCurrentContext();
             ImGui::UpdatePlatformWindows();
             ImGui::RenderPlatformWindowsDefault();
-            glfwMakeContextCurrent(backup_current_context);
+            glfwMakeContextCurrent(backupCurrentContext);
         }
 #endif
 
-        glfwSwapBuffers(Platform::window);
+        glfwSwapBuffers(Engine::Platform::window);
         glfwPollEvents();
     }
 }
@@ -174,16 +171,16 @@ int main() {
 
     const int w = glfwGetVideoMode(glfwGetPrimaryMonitor())->width;
     const int h = glfwGetVideoMode(glfwGetPrimaryMonitor())->height;
-    Platform::window = glfwCreateWindow(w, h, "SavantShooter", nullptr, nullptr);
-    glfwMakeContextCurrent(Platform::window);
+    Engine::Platform::window = glfwCreateWindow(w, h, "SavantShooter", nullptr, nullptr);
+    glfwMakeContextCurrent(Engine::Platform::window);
     glfwSwapInterval(1);
 
-    glfwSetKeyCallback(Platform::window, Platform::keyCallback);
-    glfwSetMouseButtonCallback(Platform::window, Platform::mouseCallback);
-    glfwSetWindowFocusCallback(Platform::window, Platform::windowFocusCallback);
-    glfwSetWindowSizeCallback(Platform::window, Platform::windowSizeCallback);
-    glfwSetCursorPosCallback(Platform::window, Platform::cursorPositionCallback);
-    glfwSetCharCallback(Platform::window, Platform::characterCallback);
+    glfwSetKeyCallback(Engine::Platform::window, Engine::Platform::keyCallback);
+    glfwSetMouseButtonCallback(Engine::Platform::window, Engine::Platform::mouseCallback);
+    glfwSetWindowFocusCallback(Engine::Platform::window, Engine::Platform::windowFocusCallback);
+    glfwSetWindowSizeCallback(Engine::Platform::window, Engine::Platform::windowSizeCallback);
+    glfwSetCursorPosCallback(Engine::Platform::window, Engine::Platform::cursorPositionCallback);
+    glfwSetCharCallback(Engine::Platform::window, Engine::Platform::characterCallback);
 
     permaAssertComment(gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)), "err initializing glad");
 

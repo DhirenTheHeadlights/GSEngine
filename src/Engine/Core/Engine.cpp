@@ -1,7 +1,7 @@
 #include "Engine.h"
 
 Engine::IDHandler Engine::idManager;
-Engine::CollisionHandler<Game::GameObject> Engine::collisionHandler;
+Engine::CollisionHandler<Engine::GameObject> Engine::collisionHandler;
 Engine::Shader Engine::shader;
 
 void Engine::initialize() {
@@ -10,7 +10,7 @@ void Engine::initialize() {
 
 void Engine::update(const float deltaTime) {
 	shader.use();
-	collisionHandler.update(deltaTime);
+	collisionHandler.update();
 }
 
 void Engine::render() {

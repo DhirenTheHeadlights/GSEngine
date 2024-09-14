@@ -1,11 +1,8 @@
 #pragma once
-
-#include <glm/glm.hpp>
 #include <glad/glad.h>
+#include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
-#include <glm/gtc/epsilon.hpp>
 #include <vector>
-#include <iostream>
 
 namespace Engine {
 	struct CollisionInformation {
@@ -55,8 +52,8 @@ namespace Engine {
 		}
 
 		bool operator==(const BoundingBox& other) const {
-			return glm::all(glm::epsilonEqual(upperBound, other.upperBound, 0.0001f)) &&
-				glm::all(glm::epsilonEqual(lowerBound, other.lowerBound, 0.0001f));
+			return all(epsilonEqual(upperBound, other.upperBound, 0.0001f)) &&
+				all(epsilonEqual(lowerBound, other.lowerBound, 0.0001f));
 		}
 	};
 

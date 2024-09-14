@@ -1,54 +1,56 @@
 #include "Input.h"
 
-Input::Keyboard keyboard;
-Input::Controller controller;
-Input::Mouse mouse;
+#include <GLFW/glfw3.h>
+
+Engine::Input::Keyboard keyboard;
+Engine::Input::Controller controller;
+Engine::Input::Mouse mouse;
 
 void setUpKeyMaps() {
 	for (int i = GLFW_KEY_A; i <= GLFW_KEY_Z; i++) {
-		keyboard.keys.insert(std::make_pair(i, Input::Button()));
+		keyboard.keys.insert(std::make_pair(i, Engine::Input::Button()));
 	}
 
 	for (int i = GLFW_KEY_0; i <= GLFW_KEY_9; i++) {
-		keyboard.keys.insert(std::make_pair(i, Input::Button()));
+		keyboard.keys.insert(std::make_pair(i, Engine::Input::Button()));
 	}
 
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_SPACE, Input::Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_ENTER, Input::Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_ESCAPE, Input::Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_UP, Input::Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_DOWN, Input::Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT, Input::Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_RIGHT, Input::Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT_CONTROL, Input::Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_TAB, Input::Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT_SHIFT, Input::Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT_ALT, Input::Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_SPACE, Engine::Input::Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_ENTER, Engine::Input::Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_ESCAPE, Engine::Input::Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_UP, Engine::Input::Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_DOWN, Engine::Input::Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT, Engine::Input::Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_RIGHT, Engine::Input::Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT_CONTROL, Engine::Input::Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_TAB, Engine::Input::Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT_SHIFT, Engine::Input::Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT_ALT, Engine::Input::Button()));
 
 	for (int i = 0; i <= GLFW_GAMEPAD_BUTTON_LAST; i++) {
-		controller.buttons.insert(std::make_pair(i, Input::Button()));
+		controller.buttons.insert(std::make_pair(i, Engine::Input::Button()));
 	}
 
 	for (int i = 0; i <= GLFW_MOUSE_BUTTON_LAST; i++) {
-		mouse.buttons.insert(std::make_pair(i, Input::Button()));
+		mouse.buttons.insert(std::make_pair(i, Engine::Input::Button()));
 	}
 }
 
-Input::Keyboard& Input::getKeyboard() {
+Engine::Input::Keyboard& Engine::Input::getKeyboard() {
 	return keyboard;
 }
 
-Input::Controller& Input::getController() {
+Engine::Input::Controller& Engine::Input::getController() {
 	return controller;
 }
 
-Input::Mouse& Input::getMouse() {
+Engine::Input::Mouse& Engine::Input::getMouse() {
 	return mouse;
 }
 
-void Input::internal::updateAllButtons(const float deltaTime) {
+void Engine::Input::internal::updateAllButtons(const float deltaTime) {
 	for (auto& [fst, snd] : keyboard.keys) {
-		updateButton(snd, deltaTime);
+		internal::updateButton(snd, deltaTime);
 	}
 	
 	for(int i = 0; i <= static_cast<int>(controller.buttons.size()); i++) {
@@ -85,11 +87,11 @@ void Input::internal::updateAllButtons(const float deltaTime) {
 	}
 
 	// Update Mouse Delta
-	mouse.delta = Input::getRelMousePosition() - mouse.lastPosition;
-	mouse.lastPosition = Input::getRelMousePosition();
+	mouse.delta = Platform::getRelMousePosition() - mouse.lastPosition;
+	mouse.lastPosition = Platform::getRelMousePosition();
 }
 
-void Input::internal::resetInputsToZero() {
+void Engine::Input::internal::resetInputsToZero() {
 	resetTypedInput();
 
 	for (auto& [fst, snd] : keyboard.keys) {
@@ -105,10 +107,10 @@ void Input::internal::resetInputsToZero() {
 	}
 }
 
-void Input::internal::addToTypedInput(const char c) {
+void Engine::Input::internal::addToTypedInput(const char c) {
 	keyboard.typedInput += c;
 }
 
-void Input::internal::resetTypedInput() {
+void Engine::Input::internal::resetTypedInput() {
 	keyboard.typedInput.clear();
 }

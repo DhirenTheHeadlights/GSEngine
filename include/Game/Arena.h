@@ -1,13 +1,9 @@
 #pragma once
 
-#include <vector>
-#include <glm/glm.hpp>
-
 #include "Engine.h"
-#include "GameObject.h"
 
 namespace Game {
-	class Arena : public GameObject {
+	class Arena final : public Engine::GameObject {
 	public:
 		Arena() : GameObject(Engine::idManager.generateID()) {}
 

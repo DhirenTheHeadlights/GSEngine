@@ -1,12 +1,10 @@
 #pragma once
 
 #include <GLFW/glfw3.h>
-#include <fstream>
-#include <algorithm>
 
 #include "gl2d/gl2d.h"
 
-namespace Platform {
+namespace Engine::Platform {
     extern GLFWwindow* window;
 
     extern bool currentFullScreen;

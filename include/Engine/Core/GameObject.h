@@ -3,12 +3,12 @@
 #include <vector>
 
 #include "ID.h"
-#include "CollisionHandler.h"
+#include "BoundingBox.h"
 
-namespace Game {
+namespace Engine {
 	class GameObject {
 	public:
-		GameObject(const std::shared_ptr<Engine::ID>& id) : id(id) {}
+		GameObject(const std::shared_ptr<ID>& id) : id(id) {}
 		virtual ~GameObject() = default;
 
 		////////////////////////////////////////////////////////////////////////////////////
@@ -18,17 +18,17 @@ namespace Game {
 
 		virtual bool isColliding() const { return colliding; }
 		virtual void setIsColliding(const bool isColliding) { colliding = isColliding; }
-		virtual std::vector<Engine::BoundingBox>& getBoundingBoxes() { return boundingBoxes; }
+		virtual std::vector<BoundingBox>& getBoundingBoxes() { return boundingBoxes; }
 
-		Engine::ID* getId() const { return id.get(); }
+		ID* getId() const { return id.get(); }
 
 		bool operator==(const GameObject& other) const {
 			return id == other.id;
 		}
 	protected:
-		std::vector<Engine::BoundingBox> boundingBoxes;
+		std::vector<BoundingBox> boundingBoxes;
 		bool colliding = false;
 
-		std::shared_ptr<Engine::ID> id;
+		std::shared_ptr<ID> id;
 	};
 }

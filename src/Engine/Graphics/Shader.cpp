@@ -1,5 +1,9 @@
 #include "Shader.h"
 
+#include <fstream>
+#include <iostream>
+#include <sstream>
+
 using namespace Engine;
 
 // Constructor that builds the shader program from vertex and fragment shader file paths
