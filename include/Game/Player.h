@@ -1,12 +1,13 @@
 #pragma once
 
-#include "Camera.h"
-#include "Engine.h"
+#include "Engine/Core/Engine.h"
+#include "Engine/Graphics/Camera.h"
+#include "Engine/Core/Object/DynamicObject.h"
 
 namespace Game {
-	class Player final : public Engine::GameObject {
+	class Player final : public Engine::DynamicObject {
 	public:
-		Player() : GameObject(Engine::idManager.generateID()) {}
+		Player() : DynamicObject(Engine::idManager.generateID()) {}
 
 		void initialize();
 
@@ -20,5 +21,7 @@ namespace Game {
 		Engine::Camera camera = Engine::Camera(glm::vec3(0.f, 0.f, 0.f));
 
 		std::unordered_map<int, glm::vec3> movementKeys;
+
+		float speed = 10.f;
 	};
 }

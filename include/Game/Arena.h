@@ -1,15 +1,16 @@
 #pragma once
 
-#include "Engine.h"
+#include "Engine/Core/Engine.h"
+#include "Engine/Core/Object/StaticObject.h"
 
 namespace Game {
-	class Arena final : public Engine::GameObject {
+	class Arena final : public Engine::StaticObject {
 	public:
-		Arena() : GameObject(Engine::idManager.generateID()) {}
+		Arena() : StaticObject(Engine::idManager.generateID()) {}
 
 		void initialize();
 		void render(const glm::mat4& view, const glm::mat4& projection);
 	private:
-		float width = 100.f, height = 100.f, depth = 100.f;
+		float width = 1000.f, height = 1000.f, depth = 1000.f;
 	};
 }

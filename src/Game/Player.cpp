@@ -1,6 +1,6 @@
-#include "Player.h"
+#include "Game/Player.h"
 
-#include "Input.h"
+#include "Engine/Input/Input.h"
 
 using namespace Game;
 
@@ -18,10 +18,14 @@ void Player::initialize() {
 }
 
 void Player::update(const float deltaTime) {
+	for (auto& bb : boundingBoxes) {
+		bb.move(motionComponent.velocity, speed, deltaTime);
+	}
+
 	for (auto& [key, direction] : movementKeys) {
 		if (Engine::Input::getKeyboard().keys[key].held) {
 			for (auto& bb : boundingBoxes) {
-				bb.move(camera.getCameraDirectionRelativeToOrigin(direction), 10.f, deltaTime);
+				motionComponent.velocity = direction;
 			}
 		}
 	}
@@ -29,7 +33,7 @@ void Player::update(const float deltaTime) {
 	// If the player is colliding with something, move the player back to the previous position
 	for (auto& bb : boundingBoxes) {
 		if (bb.collisionInformation.penetration > 0) {
-			bb.move(-bb.collisionInformation.collisionNormal, bb.collisionInformation.penetration, deltaTime);
+			motionComponent.velocity = -motionComponent.velocity;
 		}
 	}
 	

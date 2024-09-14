@@ -1,5 +1,5 @@
-#include "BoundingBox.h"
-#include "Engine.h"
+#include "Engine/Graphics/BoundingBox.h"
+#include "Engine/Core/Engine.h"
 
 void Engine::drawBoundingBox(BoundingBox& boundingBox, const glm::mat4& viewProjectionMatrix, const bool moving, const glm::vec3& color) {
     const GLuint shaderID = Engine::shader.getID();
