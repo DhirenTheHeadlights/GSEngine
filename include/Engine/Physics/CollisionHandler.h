@@ -5,8 +5,9 @@
 #include <vector>
 #include <glm/glm.hpp>
 
-#include "Engine/Graphics/BoundingBox.h"
 #include "Engine/Core/Object/Object.h"
+#include "Engine/Core/Object/DynamicObject.h"
+#include "Engine/Graphics/BoundingBox.h"
 
 // To prevent conflicts with the Windows API
 #undef min
