@@ -1,7 +1,6 @@
 #pragma once
 #include <glad/glad.h>
 
-//https://learnopengl.com/In-Practice/Debugging
 void GLAPIENTRY glDebugOutput(GLenum source,
 	GLenum type,
 	unsigned int id,

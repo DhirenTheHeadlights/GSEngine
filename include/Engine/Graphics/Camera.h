@@ -9,7 +9,7 @@ namespace Engine {
 		Camera(glm::vec3 initialPosition) : position(initialPosition) {}
 
 		void moveRelativeToOrigin(const glm::vec3 direction, const float distance, const float deltaTime) {
-			glm::vec3 cameraDirection =
+			const glm::vec3 cameraDirection =
 				direction.x * right +
 				direction.y * up +
 				direction.z * front;

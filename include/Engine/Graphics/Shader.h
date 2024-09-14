@@ -1,13 +1,9 @@
 #pragma once
 
+#include <string>
+#include <unordered_map>
 #include <glad/glad.h>
 #include <glm/glm.hpp>
-#include <glm/gtc/type_ptr.hpp>
-#include <string>
-#include <fstream>
-#include <sstream>
-#include <iostream>
-#include <unordered_map>
 
 namespace Engine {
     class Shader {
@@ -29,7 +25,7 @@ namespace Engine {
         int getID() const { return ID; }
         GLint getUniformLocation(const std::string& name) const { return uniforms.at(name); }
 
-        glm::mat4 getProjectionMatrix() { return glm::mat4(1.f); }
+        static glm::mat4 getProjectionMatrix() { return glm::mat4(1.f); }
 
     private:
         // ID of the shader program

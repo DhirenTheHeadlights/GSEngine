@@ -1,14 +1,10 @@
 #pragma once
 
-#include <iostream>
-
-#include "GameObject.h"
-
+#include "Camera.h"
 #include "Engine.h"
 
-
 namespace Game {
-	class Player : public GameObject {
+	class Player final : public Engine::GameObject {
 	public:
 		Player() : GameObject(Engine::idManager.generateID()) {}
 

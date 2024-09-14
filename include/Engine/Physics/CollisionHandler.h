@@ -1,10 +1,9 @@
 #pragma once
 
-#include <algorithm>
+//#include <algorithm>
 #include <concepts>
 #include <vector>
 #include <glm/glm.hpp>
-#include <glm/gtc/epsilon.hpp>
 
 #include "BoundingBox.h"
 
@@ -65,10 +64,10 @@ namespace Engine {
 			const float penetration = std::min({ xPenetration, yPenetration, zPenetration });
 
 			// Set the collision normal based on the axis of least penetration
-			if (penetration == xPenetration) {
+			if (glm::epsilonEqual(penetration, xPenetration, 0.0001f)) {
 				collisionInformation.collisionNormal = glm::vec3(xPenetration, 0.0f, 0.0f);
 			}
-			else if (penetration == yPenetration) {
+			else if (glm::epsilonEqual(penetration, yPenetration, 0.0001f)) {
 				collisionInformation.collisionNormal = glm::vec3(0.0f, yPenetration, 0.0f);
 			}
 			else {
@@ -81,7 +80,7 @@ namespace Engine {
 			return collisionInformation;
 		}
 
-		static void setCollisionInformation(BoundingBox& box1, BoundingBox& box2) {
+		static void setCollisionInformation(const BoundingBox& box1, const BoundingBox& box2) {
 			box1.collisionInformation = calculateCollisionInformation(box1, box2);
 			box2.collisionInformation = calculateCollisionInformation(box2, box1);
 		}
@@ -94,7 +93,7 @@ namespace Engine {
 			objects.erase(std::remove(objects.begin(), objects.end(), &object), objects.end());
 		}
 
-		void update(float deltaTime) {
+		void update() {
 			// Reset collision state for all objects
 			for (auto& objectPtr : objects) {
 				T& object = *objectPtr;

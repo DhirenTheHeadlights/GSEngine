@@ -1,5 +1,7 @@
 #include "Player.h"
 
+#include "Input.h"
+
 using namespace Game;
 
 void Player::initialize() {
@@ -17,7 +19,7 @@ void Player::initialize() {
 
 void Player::update(const float deltaTime) {
 	for (auto& [key, direction] : movementKeys) {
-		if (Platform::getKeyboard().keys[key].held) {
+		if (Engine::Input::getKeyboard().keys[key].held) {
 			for (auto& bb : boundingBoxes) {
 				bb.move(camera.getCameraDirectionRelativeToOrigin(direction), 10.f, deltaTime);
 			}
@@ -33,7 +35,7 @@ void Player::update(const float deltaTime) {
 	
 	camera.setPosition(boundingBoxes[0].getCenter());
 	camera.updateCameraVectors();
-	camera.processMouseMovement(Platform::getMouse().delta);
+	camera.processMouseMovement(Engine::Input::getMouse().delta);
 }
 
 void Player::render(const glm::mat4& view, const glm::mat4& projection) {

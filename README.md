@@ -20,6 +20,8 @@ These are the major categories of files in the `src` & `include` directory:
 - `Platform` - Contains all the platform specific code (e.g. OS, Windowing, Input, etx.)
 - `Engine` - Contains all the engine specific code
 
+When you end up adding a file to the project, VS will prompt you to update the `CMakeLists.txt` file. DO NOT UPDATE THIS FILE. Select `Cancel` when prompted.
+
 To steamline developing new objects, you will need to add a `Code Snippet` to Visual Studio. To do this, follow these steps:
 
 1. Open Visual Studio
@@ -36,6 +38,8 @@ These are two big things to avoid when writing code for this project:
 
 - Avoid inheritance when possible
 - Avoid using pointers when possible
+
+When nesting namespaces, do not indent the nested namespace.
 
 ### Prerequisites
 

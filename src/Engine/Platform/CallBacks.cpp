@@ -1,50 +1,53 @@
 #include "CallBacks.h"
 
-void Platform::keyCallback(GLFWwindow* window, const int key, int scancode, const int action, int mods) {
+#include "PlatformFunctions.h"
+#include "Input.h"
+
+void Engine::Platform::keyCallback(GLFWwindow* window, const int key, int scancode, const int action, int mods) {
 	// Check if the key exists in the map
-	if (Platform::getKeyboard().keys.find(key) != Platform::getKeyboard().keys.end()) {
+	if (Input::getKeyboard().keys.contains(key)) {
 		// Handle key press and release events
 		if (action == GLFW_PRESS) {
-			Platform::internal::processEventButton(Platform::getKeyboard().keys[key], true);
+			Input::internal::processEventButton(Input::getKeyboard().keys[key], true);
 		}
 		else if (action == GLFW_RELEASE) {
-			Platform::internal::processEventButton(Platform::getKeyboard().keys[key], false);
+			Input::internal::processEventButton(Input::getKeyboard().keys[key], false);
 		}
 	}
 }
 
-void Platform::mouseCallback(GLFWwindow* window, const int button, const int action, int mods) {
-	if (Platform::getMouse().buttons.find(button) != Platform::getMouse().buttons.end()) {
+void Engine::Platform::mouseCallback(GLFWwindow* window, const int button, const int action, int mods) {
+	if (Input::getMouse().buttons.contains(button)) {
 		// Handle mouse press and release events
 		if (action == GLFW_PRESS) {
-			Platform::internal::processEventButton(Platform::getMouse().buttons[button], true);
+			Input::internal::processEventButton(Input::getMouse().buttons[button], true);
 		}
 		else if (action == GLFW_RELEASE) {
-			Platform::internal::processEventButton(Platform::getMouse().buttons[button], false);
+			Input::internal::processEventButton(Input::getMouse().buttons[button], false);
 		}
 	}
 }
 
-void Platform::windowFocusCallback(GLFWwindow* window, const int focused) {
+void Engine::Platform::windowFocusCallback(GLFWwindow* window, const int focused) {
     if (focused) {
-		Platform::windowFocused = true;
+	    windowFocused = true;
 	}
     else {
-		Platform::windowFocused = false;
-		Platform::internal::resetInputsToZero(); // To reset buttons
+	    windowFocused = false;
+		Input::internal::resetInputsToZero(); // To reset buttons
 	}
 }
 
-void Platform::windowSizeCallback(GLFWwindow* window, int x, int y) {
-	Platform::internal::resetInputsToZero();
+void Engine::Platform::windowSizeCallback(GLFWwindow* window, int x, int y) {
+	Input::internal::resetInputsToZero();
 }
 
-void Platform::cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
-	Platform::mouseMoved = 1;
+void Engine::Platform::cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
+	mouseMoved = 1;
 }
 
-void Platform::characterCallback(GLFWwindow* window, const unsigned int codepoint) {
+void Engine::Platform::characterCallback(GLFWwindow* window, const unsigned int codepoint) {
     if (codepoint < 127) {
-		Platform::internal::addToTypedInput(codepoint);
+		Engine::Input::internal::addToTypedInput(codepoint);
 	}
 }

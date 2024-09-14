@@ -20,6 +20,6 @@ void Arena::initialize() {
 
 void Arena::render(const glm::mat4& view, const glm::mat4& projection) {
     for (auto& boundingBox : boundingBoxes) {
-        drawBoundingBox(boundingBox, view * projection, false);
+	    drawBoundingBox(boundingBox, view * projection, false);
 	}
 }

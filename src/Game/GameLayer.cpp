@@ -1,7 +1,17 @@
 #define GLM_ENABLE_EXPERIMENTAL
 
 #include "GameLayer.h"
-#include "glm/gtx/string_cast.hpp"
+
+#include "imgui.h"
+
+#include <glm/gtc/type_ptr.hpp>
+
+#include "Engine.h"
+
+#include "Arena.h"
+#include "Input.h"
+#include "PlatformFunctions.h"
+#include "Player.h"
 
 struct GameData {
 	glm::vec3 playerPosition = {0,0,0};
@@ -15,7 +25,7 @@ bool Game::initializeGame() {
 	Engine::initialize();
 
 	// Loading the saved data. Loading an entire structure like this makes saving game data very easy.
-	Platform::readEntireFile(RESOURCES_PATH "gameData.data", &gameData, sizeof(GameData));
+	Engine::Platform::readEntireFile(RESOURCES_PATH "gameData.data", &gameData, sizeof(GameData));
 
 	// Set up game
 	arena.initialize();
@@ -32,18 +42,18 @@ bool Game::initializeGame() {
 }
 
 bool Game::gameLogic(const float deltaTime) {
-	glViewport(0, 0, Platform::getFrameBufferSize().x, Platform::getFrameBufferSize().y);
+	glViewport(0, 0, Engine::Platform::getFrameBufferSize().x, Engine::Platform::getFrameBufferSize().y);
 	glClear(GL_COLOR_BUFFER_BIT); // Clear screen
 
-	if (Platform::getMouse().buttons[GLFW_MOUSE_BUTTON_MIDDLE].toggled) {
-		glfwSetInputMode(Platform::window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+	if (Engine::Input::getMouse().buttons[GLFW_MOUSE_BUTTON_MIDDLE].toggled) {
+		glfwSetInputMode(Engine::Platform::window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 	}
 	else {
-		glfwSetInputMode(Platform::window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+		glfwSetInputMode(Engine::Platform::window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 	}
 
 	glm::mat4 view = player.getCamera().getViewMatrix();
-	glm::mat4 projection = glm::perspective(glm::radians(45.0f), static_cast<float>(Platform::getFrameBufferSize().x) / static_cast<float>(Platform::getFrameBufferSize().y), 0.1f, 1000.0f);
+	glm::mat4 projection = glm::perspective(glm::radians(45.0f), static_cast<float>(Engine::Platform::getFrameBufferSize().x) / static_cast<float>(Engine::Platform::getFrameBufferSize().y), 0.1f, 1000.0f);
 	auto model = glm::mat4(1.0f);
 
 	// Update Engine
@@ -82,5 +92,5 @@ bool Game::gameLogic(const float deltaTime) {
 }
 
 void Game::closeGame() {
-	Platform::writeEntireFile(RESOURCES_PATH "gameData.data", &gameData, sizeof(GameData));
+	Engine::Platform::writeEntireFile(RESOURCES_PATH "gameData.data", &gameData, sizeof(GameData));
 }

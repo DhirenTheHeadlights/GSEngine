@@ -1,12 +1,11 @@
 #pragma once
 
-#include <GLFW/glfw3.h>
 #include <string>
 #include <unordered_map>
 
 #include "PlatformFunctions.h"
 
-namespace Input {
+namespace Engine::Input {
 	struct Button {
 		char pressed = 0;
 		char held = 0;
@@ -30,7 +29,7 @@ namespace Input {
 	};
 
 	struct Controller {
-		std::unordered_map<int, Platform::Button> buttons;
+		std::unordered_map<int, Button> buttons;
 
 		float LT = 0.f;
 		float RT = 0.f;
@@ -52,7 +51,7 @@ namespace Input {
 	};
 
 	struct Keyboard {
-		std::unordered_map<int, Platform::Button> keys;
+		std::unordered_map<int, Button> keys;
 
 		std::string typedInput;
 
@@ -64,7 +63,7 @@ namespace Input {
 	};
 
 	struct Mouse {
-		std::unordered_map<int, Platform::Button> buttons;
+		std::unordered_map<int, Button> buttons;
 
 		glm::vec2 position;
 		glm::vec2 delta;
@@ -80,7 +79,6 @@ namespace Input {
 	Keyboard& getKeyboard();
 	Controller& getController();
 	Mouse& getMouse();
-
 
 	namespace internal {
 		inline void processEventButton(Button& b, bool newState) {
@@ -142,4 +140,4 @@ namespace Input {
 		void addToTypedInput(char c);
 		void resetTypedInput();
 	};
-};
+}
