@@ -44,3 +44,10 @@ When nesting namespaces, do not indent the nested namespace.
 ### Prerequisites
 
 Install ReSharper C++ for Visual Studio for style enforcement & many helpful tools
+
+Integrating team style guide into your ReSharper C++:
+
+1. Go to `Extensions` -> `ReSharper` -> `Manage Options`
+2. Highlight `Solution "Goon Squad" Team Shared`
+3. Hit the drop down `Copy to` and select `This computer` or `Solution "Goon Squad" Team Shared`
+4. Select all of the options and hit `OK`
