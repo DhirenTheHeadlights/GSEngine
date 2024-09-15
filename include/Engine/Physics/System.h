@@ -7,14 +7,12 @@
 #include "Engine/Graphics/BoundingBox.h"
 
 namespace Engine::Physics {
-
-	void updateEntities(const float deltaTime);
+	extern std::vector<MotionComponent*> components;
 
 	void addMotionComponent(MotionComponent& component);
 	void removeMotionComponent(MotionComponent& component);
 
+	void updateEntities(const float deltaTime);
 	void resolveCollision(MotionComponent& component, const CollisionInformation& collisionInfo);
-
-	extern std::vector<MotionComponent*> components;
 
 }

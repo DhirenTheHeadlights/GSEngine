@@ -1,6 +1,8 @@
 #include "Engine/Physics/System.h"
-
 #include <algorithm>
+
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/norm.hpp>  // For glm::length2
 
 using namespace Engine;
 
@@ -15,30 +17,41 @@ void Physics::removeMotionComponent(MotionComponent& component) {
 }
 
 void updateGravity(Physics::MotionComponent* component, const float deltaTime) {
-	component->velocity.y -= 9.8f * deltaTime;
-	component->velocity.y = std::clamp(component->velocity.y, -9.8f, 100.f);
+	if (component->affectedByGravity && !component->grounded) {
+		component->acceleration.y = -9.8f;
+	}
+	else {
+		component->acceleration.y = 0.0f;
+	}
 }
 
 void updateAirResistance(Physics::MotionComponent* component, const float deltaTime) {
-	// Should be more complex, but for now, just a simple drag force
-	constexpr float dragCoefficient = 0.47f;	// Sphere
-	constexpr float airDensity = 1.225f;		// At 15 degrees Celsius
-	constexpr float crossSectionalArea = 1.0f;	// Sphere
-	const float dragForce = 0.5f * dragCoefficient * airDensity * crossSectionalArea * glm::length(component->velocity);
-	const glm::vec3 dragDirection = glm::normalize(component->velocity);
-	const glm::vec3 dragAcceleration = dragDirection * dragForce / component->mass;
-	component->acceleration -= dragAcceleration * deltaTime;
+	const glm::vec3 dragForce = component->velocity * -0.1f;  // 0.1 is an arbitrary drag coefficient
+	component->acceleration += dragForce * deltaTime;
 }
 
-void updateVelocity(Physics::MotionComponent* component, const float deltaTime) {
+void updatePosition(Physics::MotionComponent* component, const float deltaTime) {
 	component->velocity += component->acceleration * deltaTime;
+
+	// Prevent negative velocity when decelerating
+	if (glm::length2(component->velocity) < 0.0001f) {  // length2 is faster as it skips square root
+		component->velocity = glm::vec3(0.0f);
+	}
+
+	// Update position using velocity
+	component->position += component->velocity * deltaTime;
 }
 
 void Physics::updateEntities(const float deltaTime) {
 	for (MotionComponent* component : components) {
-		if (!component->grounded) updateGravity(component, deltaTime);
-		//if (component->airborne) updateAirResistance(component, deltaTime);
-		updateVelocity(component, deltaTime);
+		// Update gravity only if the object is not grounded
+		updateGravity(component, deltaTime);
+
+		// Apply air resistance (can be applied even when grounded to simulate drag)
+		updateAirResistance(component, deltaTime);
+
+		// Update velocity and position
+		updatePosition(component, deltaTime);
 	}
 }
 
@@ -46,10 +59,11 @@ void Physics::resolveCollision(MotionComponent& component, const CollisionInform
 	if (glm::epsilonEqual(collisionInfo.collisionNormal.y, 1.0f, 0.0001f)) {
 		// Ground collision, stop downward velocity and mark the object as grounded
 		component.velocity.y = 0;
+		component.acceleration.y = 0;
 		component.airborne = false;
 		component.grounded = true;
+		component.position.y = collisionInfo.collisionPoint.y;  // Snap to the collision point
 	}
 	else {
-
 	}
 }

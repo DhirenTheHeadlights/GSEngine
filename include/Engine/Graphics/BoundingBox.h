@@ -38,9 +38,9 @@ namespace Engine {
 		std::vector<float> gridVertices;
 		unsigned int gridVAO = 0, gridVBO = 0;
 
-		void move(const glm::vec3& direction, const float distance, const float deltaTime) {
-			upperBound += direction * distance * deltaTime;
-			lowerBound += direction * distance * deltaTime;
+		void move(const glm::vec3& direction, const float multiplier = 1.f) {
+			upperBound += direction * multiplier;
+			lowerBound += direction * multiplier;
 		}
 
 		void setPosition(const glm::vec3& center) {
