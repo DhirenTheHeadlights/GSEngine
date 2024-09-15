@@ -9,8 +9,8 @@ void Player::initialize() {
 
 	movementKeys.insert({ GLFW_KEY_W, {0, 0, 1} });
 	movementKeys.insert({ GLFW_KEY_S, {0, 0, -1} });
-	movementKeys.insert({ GLFW_KEY_A, {-1, 0, 0} });
-	movementKeys.insert({ GLFW_KEY_D, {1, 0, 0} });
+	movementKeys.insert({ GLFW_KEY_A, {1, 0, 0} });
+	movementKeys.insert({ GLFW_KEY_D, {-1, 0, 0} });
 	movementKeys.insert({ GLFW_KEY_SPACE, {0, 1, 0} });
 	movementKeys.insert({ GLFW_KEY_LEFT_CONTROL, {0, -1, 0} });
 
@@ -19,21 +19,14 @@ void Player::initialize() {
 
 void Player::update(const float deltaTime) {
 	for (auto& bb : boundingBoxes) {
-		bb.move(motionComponent.velocity, speed, deltaTime);
+		bb.move(motionComponent.velocity);
 	}
 
 	for (auto& [key, direction] : movementKeys) {
 		if (Engine::Input::getKeyboard().keys[key].held) {
 			for (auto& bb : boundingBoxes) {
-				motionComponent.velocity = camera.getCameraDirectionRelativeToOrigin(direction);
+				motionComponent.acceleration = camera.getCameraDirectionRelativeToOrigin(direction);
 			}
-		}
-	}
-
-	// If any of the bounding boxes are colliding, set the velocity in that direction to 0
-	for (const auto& bb : boundingBoxes) {
-		if (bb.collisionInformation.colliding) {
-			motionComponent.velocity.y = 0.f;
 		}
 	}
 	

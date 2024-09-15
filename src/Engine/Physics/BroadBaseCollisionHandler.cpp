@@ -2,6 +2,8 @@
 
 #include "Engine/Physics/System.h"
 
+#include <iostream>
+
 using namespace Engine;
 
 bool BroadPhaseCollisionHandler::checkCollision(const BoundingBox& box1, const BoundingBox& box2) {
@@ -14,11 +16,13 @@ bool BroadPhaseCollisionHandler::checkCollision(const BoundingBox& dynamicBox, c
 	// Check if the dynamic box will collide with the static box after moving
 	BoundingBox tempBox = dynamicBox;
 
-	tempBox.move(totalVelocity, 1.0f, 1.0f);
+	tempBox.move(totalVelocity);
 
 	if (!checkCollision(tempBox, staticBox)) {
 		return false;
 	}
+
+	std::cout << "Collision detected" << std::endl;
 
 	return checkCollision(tempBox, staticBox);
 }
