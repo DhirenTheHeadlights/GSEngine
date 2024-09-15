@@ -4,7 +4,7 @@
 #include "Engine/Core/Object/Object.h"
 #include "Object/DynamicObject.h"
 #include "Engine/Graphics/Shader.h"
-#include "Engine/Physics/CollisionHandler.h"
+#include "Engine/Physics/BroadPhaseCollisionHandler.h"
 #include "Engine/Physics/System.h"
 
 namespace Engine {
@@ -20,6 +20,6 @@ namespace Engine {
 	void removeObject(DynamicObject& object);
 
 	extern IDHandler idManager;
-	extern CollisionHandler collisionHandler;
+	extern BroadPhaseCollisionHandler collisionHandler;
 	extern Shader shader;
 }
