@@ -1,5 +1,7 @@
 #include "Engine/Physics/System.h"
 
+#include <algorithm>
+
 using namespace Engine;
 
 std::vector<Physics::MotionComponent*> Physics::components;
@@ -14,6 +16,7 @@ void Physics::removeMotionComponent(MotionComponent& component) {
 
 void updateGravity(Physics::MotionComponent* component, const float deltaTime) {
 	component->velocity.y -= 9.8f * deltaTime;
+	component->velocity.y = std::clamp(component->velocity.y, -9.8f, 100.f);
 }
 
 void updateAirResistance(Physics::MotionComponent* component, const float deltaTime) {
@@ -33,8 +36,20 @@ void updateVelocity(Physics::MotionComponent* component, const float deltaTime) 
 
 void Physics::updateEntities(const float deltaTime) {
 	for (MotionComponent* component : components) {
-		updateGravity(component, deltaTime);
-		if (component->airborne) updateAirResistance(component, deltaTime);
+		if (!component->grounded) updateGravity(component, deltaTime);
+		//if (component->airborne) updateAirResistance(component, deltaTime);
 		updateVelocity(component, deltaTime);
+	}
+}
+
+void Physics::resolveCollision(MotionComponent& component, const CollisionInformation& collisionInfo) {
+	if (glm::epsilonEqual(collisionInfo.collisionNormal.y, 1.0f, 0.0001f)) {
+		// Ground collision, stop downward velocity and mark the object as grounded
+		component.velocity.y = 0;
+		component.airborne = false;
+		component.grounded = true;
+	}
+	else {
+
 	}
 }

@@ -25,15 +25,15 @@ void Player::update(const float deltaTime) {
 	for (auto& [key, direction] : movementKeys) {
 		if (Engine::Input::getKeyboard().keys[key].held) {
 			for (auto& bb : boundingBoxes) {
-				motionComponent.velocity = direction;
+				motionComponent.velocity = camera.getCameraDirectionRelativeToOrigin(direction);
 			}
 		}
 	}
 
-	// If the player is colliding with something, move the player back to the previous position
-	for (auto& bb : boundingBoxes) {
-		if (bb.collisionInformation.penetration > 0) {
-			motionComponent.velocity = -motionComponent.velocity;
+	// If any of the bounding boxes are colliding, set the velocity in that direction to 0
+	for (const auto& bb : boundingBoxes) {
+		if (bb.collisionInformation.colliding) {
+			motionComponent.velocity.y = 0.f;
 		}
 	}
 	

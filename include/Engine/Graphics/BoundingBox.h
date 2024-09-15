@@ -6,6 +6,7 @@
 
 namespace Engine {
 	struct CollisionInformation {
+		bool colliding = false;
 		glm::vec3 collisionNormal;
 		float penetration;
 		glm::vec3 collisionPoint;

@@ -1,7 +1,7 @@
 #include "Engine/Core/Engine.h"
 
 Engine::IDHandler Engine::idManager;
-Engine::CollisionHandler Engine::collisionHandler;
+Engine::BroadPhaseCollisionHandler Engine::collisionHandler;
 Engine::Shader Engine::shader;
 
 void Engine::initialize() {
