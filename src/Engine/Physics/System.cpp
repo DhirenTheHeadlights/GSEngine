@@ -17,7 +17,7 @@ void Physics::removeMotionComponent(MotionComponent& component) {
 }
 
 void updateGravity(Physics::MotionComponent* component, const float deltaTime) {
-	if (component->affectedByGravity && !component->grounded) {
+	if (component->affectedByGravity && component->airborne) {
 		component->acceleration.y = -9.8f;
 	}
 	else {
@@ -44,10 +44,10 @@ void updatePosition(Physics::MotionComponent* component, const float deltaTime) 
 
 void Physics::updateEntities(const float deltaTime) {
 	for (MotionComponent* component : components) {
-		// Update gravity only if the object is not grounded
-		updateGravity(component, deltaTime);
+		// Update gravity only if the object is not airborne
+		//updateGravity(component, deltaTime);
 
-		// Apply air resistance (can be applied even when grounded to simulate drag)
+		// Apply air resistance (can be applied even when airborne to simulate drag)
 		updateAirResistance(component, deltaTime);
 
 		// Update velocity and position
@@ -56,12 +56,11 @@ void Physics::updateEntities(const float deltaTime) {
 }
 
 void Physics::resolveCollision(MotionComponent& component, const CollisionInformation& collisionInfo) {
-	if (glm::epsilonEqual(collisionInfo.collisionNormal.y, 1.0f, 0.0001f)) {
-		// Ground collision, stop downward velocity and mark the object as grounded
+	if (glm::epsilonEqual(collisionInfo.collisionPoint.y, component.position.y, 0.0001f)) {
+		// Ground collision, stop downward velocity and mark the object as airborne
 		component.velocity.y = 0;
 		component.acceleration.y = 0;
 		component.airborne = false;
-		component.grounded = true;
 		component.position.y = collisionInfo.collisionPoint.y;  // Snap to the collision point
 	}
 	else {

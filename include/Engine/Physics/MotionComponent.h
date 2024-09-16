@@ -11,6 +11,5 @@ namespace Engine::Physics {
 		float speed = 1.0f;										// Speed of the object (for future forces)
 		bool affectedByGravity = true;							// Toggle for whether gravity affects this entity
 		bool airborne = false; 									// Toggle for whether the entity is in the air
-		bool grounded = false;									// Toggle for whether the entity is grounded
 	};
 }

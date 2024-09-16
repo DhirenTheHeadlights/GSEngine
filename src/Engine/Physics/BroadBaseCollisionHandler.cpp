@@ -2,8 +2,6 @@
 
 #include "Engine/Physics/System.h"
 
-#include <iostream>
-
 using namespace Engine;
 
 bool BroadPhaseCollisionHandler::checkCollision(const BoundingBox& box1, const BoundingBox& box2) {
@@ -21,8 +19,6 @@ bool BroadPhaseCollisionHandler::checkCollision(const BoundingBox& dynamicBox, c
 	if (!checkCollision(tempBox, staticBox)) {
 		return false;
 	}
-
-	std::cout << "Collision detected" << std::endl;
 
 	return checkCollision(tempBox, staticBox);
 }
@@ -42,7 +38,7 @@ bool BroadPhaseCollisionHandler::checkCollision(DynamicObject& object1, Object& 
 				box1.collisionInformation.colliding = true;
 				box2.collisionInformation.colliding = true;
 
-				Physics::resolveCollision(object1.getMotionComponent(), box2.collisionInformation);
+				resolveCollision(object1.getMotionComponent(), box2.collisionInformation);
 
 				return true;
 			}
@@ -98,7 +94,7 @@ void BroadPhaseCollisionHandler::update() const {
 	for (auto& dynamicObjectPtr : dynamicObjects) {
 		for (auto& objectPtr : objects) {
 			if (!checkCollision(*dynamicObjectPtr, *objectPtr)) {
-				dynamicObjectPtr->getMotionComponent().grounded = false;
+				dynamicObjectPtr->getMotionComponent().airborne = true;
 			}
 		}
 	}
