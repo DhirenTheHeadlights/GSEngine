@@ -184,11 +184,7 @@ int main() {
 
     permaAssertComment(gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)), "err initializing glad");
 
-    enableReportGlErrors();
-
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LESS);
-    glEnable(GL_BLEND);
+    //enableReportGlErrors();
 
 #pragma endregion
 

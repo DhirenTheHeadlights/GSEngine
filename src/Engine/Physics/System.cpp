@@ -1,5 +1,7 @@
 #include "Engine/Physics/System.h"
+
 #include <algorithm>
+#include <iostream>
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/norm.hpp>  // For glm::length2
@@ -18,7 +20,7 @@ void Physics::removeMotionComponent(MotionComponent& component) {
 
 void updateGravity(Physics::MotionComponent* component, const float deltaTime) {
 	if (component->affectedByGravity && component->airborne) {
-		component->acceleration.y = -9.8f;
+		component->acceleration.y = -1.8f;
 	}
 	else {
 		component->acceleration.y = 0.0f;
@@ -45,7 +47,7 @@ void updatePosition(Physics::MotionComponent* component, const float deltaTime) 
 void Physics::updateEntities(const float deltaTime) {
 	for (MotionComponent* component : components) {
 		// Update gravity only if the object is not airborne
-		//updateGravity(component, deltaTime);
+		updateGravity(component, deltaTime);
 
 		// Apply air resistance (can be applied even when airborne to simulate drag)
 		updateAirResistance(component, deltaTime);
@@ -56,6 +58,8 @@ void Physics::updateEntities(const float deltaTime) {
 }
 
 void Physics::resolveCollision(MotionComponent& component, const CollisionInformation& collisionInfo) {
+	std::cerr << "Collision point: " << collisionInfo.collisionPoint.y << '\n';
+	std::cerr << "Component position: " << component.position.y << '\n';
 	if (glm::epsilonEqual(collisionInfo.collisionPoint.y, component.position.y, 0.0001f)) {
 		// Ground collision, stop downward velocity and mark the object as airborne
 		component.velocity.y = 0;

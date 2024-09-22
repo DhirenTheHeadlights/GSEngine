@@ -1,5 +1,7 @@
 #include "Engine/Physics/BroadPhaseCollisionHandler.h"
 
+#include <iostream>
+
 #include "Engine/Physics/System.h"
 
 using namespace Engine;
@@ -15,10 +17,6 @@ bool BroadPhaseCollisionHandler::checkCollision(const BoundingBox& dynamicBox, c
 	BoundingBox tempBox = dynamicBox;
 
 	tempBox.move(totalVelocity);
-
-	if (!checkCollision(tempBox, staticBox)) {
-		return false;
-	}
 
 	return checkCollision(tempBox, staticBox);
 }
@@ -84,17 +82,18 @@ void BroadPhaseCollisionHandler::setCollisionInformation(const BoundingBox& box1
 }
 
 void BroadPhaseCollisionHandler::update() const {
-	// Reset collision state for all objects
-	for (auto& objectPtr : objects) {
-		Object& object = *objectPtr;
-		object.setIsColliding(false);
-	}
-
 	// Check for collisions
 	for (auto& dynamicObjectPtr : dynamicObjects) {
 		for (auto& objectPtr : objects) {
-			if (!checkCollision(*dynamicObjectPtr, *objectPtr)) {
+			if (checkCollision(*dynamicObjectPtr, *objectPtr)) {
+				dynamicObjectPtr->setIsColliding(true);
+				objectPtr->setIsColliding(true);
+			}
+			else {
 				dynamicObjectPtr->getMotionComponent().airborne = true;
+
+				objectPtr->setIsColliding(false);
+				dynamicObjectPtr->setIsColliding(false);
 			}
 		}
 	}
