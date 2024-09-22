@@ -67,8 +67,7 @@ void mainLoop(const int w, const int h) {
         const float deltaTime = std::chrono::duration_cast<std::chrono::nanoseconds>(start - stop).count() / std::pow(10, 9);
         stop = std::chrono::high_resolution_clock::now();
 
-        float augmentedDeltaTime = deltaTime;
-        if (augmentedDeltaTime > 0.01f) { augmentedDeltaTime = 0.01f; }
+		float augmentedDeltaTime = std::min(augmentedDeltaTime, 0.01f);
 
 #if REMOVE_IMGUI == 0
         ImGui_ImplOpenGL3_NewFrame();
@@ -107,7 +106,6 @@ void mainLoop(const int w, const int h) {
 
             }
             else {
-                //glfwWindowHint(GLFW_DECORATED, GLFW_TRUE); // 
                 glfwSetWindowMonitor(Engine::Platform::window, nullptr, lastPosX, lastPosY, lastW, lastH, 0);
 
                 Engine::Platform::currentFullScreen = false;

@@ -34,7 +34,7 @@ void updatePosition(Physics::MotionComponent* component, const float deltaTime) 
 	component->velocity += component->acceleration * deltaTime;
 
 	// Prevent negative velocity when decelerating
-	if (glm::length2(component->velocity) < 0.0001f) {  // length2 is faster as it skips square root
+	if (length2(component->velocity) < 0.0001f) {  // length2 is faster as it skips square root
 		component->velocity = glm::vec3(0.0f);
 	}
 
@@ -45,7 +45,7 @@ void updatePosition(Physics::MotionComponent* component, const float deltaTime) 
 void Physics::updateEntities(const float deltaTime) {
 	for (MotionComponent* component : components) {
 		// Update gravity only if the object is not airborne
-		//updateGravity(component, deltaTime);
+		updateGravity(component, deltaTime);
 
 		// Apply air resistance (can be applied even when airborne to simulate drag)
 		updateAirResistance(component, deltaTime);
