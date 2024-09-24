@@ -19,7 +19,7 @@ void Player::initialize() {
 
 void Player::update(const float deltaTime) {
 	for (auto& bb : boundingBoxes) {
-		bb.move(motionComponent.velocity);
+		bb.setPosition(motionComponent.position);
 	}
 
 	for (auto& [key, direction] : movementKeys) {
@@ -30,7 +30,7 @@ void Player::update(const float deltaTime) {
 		}
 	}
 	
-	camera.setPosition(boundingBoxes[0].getCenter());
+	camera.setPosition(motionComponent.position);
 	camera.updateCameraVectors();
 	camera.processMouseMovement(Engine::Input::getMouse().delta);
 }

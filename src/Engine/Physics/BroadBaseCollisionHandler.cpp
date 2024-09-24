@@ -36,7 +36,7 @@ bool BroadPhaseCollisionHandler::checkCollision(DynamicObject& object1, Object& 
 				box1.collisionInformation.colliding = true;
 				box2.collisionInformation.colliding = true;
 
-				resolveCollision(object1.getMotionComponent(), box2.collisionInformation);
+				resolveCollision(box1, object1.getMotionComponent(), box2.collisionInformation);
 
 				return true;
 			}

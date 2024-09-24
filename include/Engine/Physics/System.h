@@ -13,6 +13,6 @@ namespace Engine::Physics {
 	void removeMotionComponent(MotionComponent& component);
 
 	void updateEntities(const float deltaTime);
-	void resolveCollision(MotionComponent& component, const CollisionInformation& collisionInfo);
+	void resolveCollision(const BoundingBox& dynamicBoundingBox, MotionComponent& dynamicMotionComponent, const CollisionInformation& collisionInfo);
 
 }

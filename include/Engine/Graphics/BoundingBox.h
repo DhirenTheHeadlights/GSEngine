@@ -53,6 +53,10 @@ namespace Engine {
 			return (upperBound + lowerBound) / 2.0f;
 		}
 
+		glm::vec3 getSize() const {
+			return upperBound - lowerBound;
+		}
+
 		bool operator==(const BoundingBox& other) const {
 			return all(epsilonEqual(upperBound, other.upperBound, 0.0001f)) &&
 				all(epsilonEqual(lowerBound, other.lowerBound, 0.0001f));
