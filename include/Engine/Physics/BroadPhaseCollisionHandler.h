@@ -5,6 +5,8 @@
 #include <vector>
 #include <glm/glm.hpp>
 
+#include "imgui.h"
+
 #include "Engine/Core/Object/DynamicObject.h"
 #include "Engine/Core/Object/Object.h"
 #include "Engine/Graphics/BoundingBox.h"
@@ -30,7 +32,6 @@ namespace Engine {
 		}
 
 		void addObject(DynamicObject& object) {
-			objects.push_back(&object);
 			dynamicObjects.push_back(&object);
 		}
 
@@ -39,12 +40,10 @@ namespace Engine {
 		}
 
 		void removeObject(DynamicObject& object) {
-			std::erase(objects, &object);
 			std::erase(dynamicObjects, &object);
 		}
 
 		void update() const;
-
 	private:
 		std::vector<Object*> objects;
 
