@@ -30,22 +30,22 @@ namespace Engine::Input {
 	struct Controller {
 		std::unordered_map<int, Button> buttons;
 
-		float LT = 0.f;
-		float RT = 0.f;
+		float lt = 0.f;
+		float rt = 0.f;
 
 		struct {
 			float x = 0.f, y = 0.f;
-		} LStick, RStick;
+		} lStick, rStick;
 
 		void reset() {
 			for (auto& [fst, snd] : buttons) {
 				snd.reset();
 			}
 
-			LT = 0.f;
-			RT = 0.f;
-			LStick.x = 0.f;
-			LStick.y = 0.f;
+			lt = 0.f;
+			rt = 0.f;
+			lStick.x = 0.f;
+			lStick.y = 0.f;
 		}
 	};
 
@@ -75,16 +75,18 @@ namespace Engine::Input {
 		}
 	};
 
+	void update();
+	void setUpKeyMaps();
 	Keyboard& getKeyboard();
 	Controller& getController();
 	Mouse& getMouse();
 
-	namespace internal {
-		inline void processEventButton(Button& b, bool newState) {
+	namespace Internal {
+		inline void processEventButton(Button& b, const bool newState) {
 			b.newState = newState;
 		}
 
-		inline void updateButton(Button& b, float deltaTime) {
+		inline void updateButton(Button& b, const float deltaTime) {
 			if (b.newState == 1) {
 				if (b.held) {
 					b.pressed = false;

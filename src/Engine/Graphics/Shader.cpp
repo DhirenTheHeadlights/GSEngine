@@ -4,10 +4,8 @@
 #include <iostream>
 #include <sstream>
 
-using namespace Engine;
-
 // Constructor that builds the shader program from vertex and fragment shader file paths
-void Shader::createShaderProgram(const std::string& vertexPath, const std::string& fragmentPath) {
+void Engine::Shader::createShaderProgram(const std::string& vertexPath, const std::string& fragmentPath) {
     // 1. Retrieve the vertex and fragment shader source code from file paths
     const std::string vertexCode = loadShaderSource(vertexPath);
     const std::string fragmentCode = loadShaderSource(fragmentPath);
@@ -43,12 +41,12 @@ void Shader::createShaderProgram(const std::string& vertexPath, const std::strin
 }
 
 // Use the shader program
-void Shader::use() const {
+void Engine::Shader::use() const {
     glUseProgram(ID);
 }
 
 // Load shader source code from a file
-std::string Shader::loadShaderSource(const std::string& filePath) {
+std::string Engine::Shader::loadShaderSource(const std::string& filePath) {
     std::ifstream shaderFile;
     std::stringstream shaderStream;
 
@@ -68,7 +66,7 @@ std::string Shader::loadShaderSource(const std::string& filePath) {
     return shaderStream.str();
 }
 
-void Shader::cacheUniformLocations() {
+void Engine::Shader::cacheUniformLocations() {
     int uniformCount;
     glGetProgramiv(ID, GL_ACTIVE_UNIFORMS, &uniformCount);
     for (int i = 0; i < uniformCount; ++i) {
@@ -83,7 +81,7 @@ void Shader::cacheUniformLocations() {
 }
 
 // Utility to check and report shader compile and linking errors
-void Shader::checkCompileErrors(unsigned int shader, const std::string& type) {
+void Engine::Shader::checkCompileErrors(unsigned int shader, const std::string& type) {
     int success;
     char infoLog[1024];
 
@@ -104,18 +102,18 @@ void Shader::checkCompileErrors(unsigned int shader, const std::string& type) {
 }
 
 // Utility functions for setting shader uniforms
-void Shader::setBool(const std::string& name, const bool value) const {
+void Engine::Shader::setBool(const std::string& name, const bool value) const {
     glUniform1i(glGetUniformLocation(ID, name.c_str()), static_cast<int>(value));
 }
 
-void Shader::setInt(const std::string& name, const int value) const {
+void Engine::Shader::setInt(const std::string& name, const int value) const {
     glUniform1i(glGetUniformLocation(ID, name.c_str()), value);
 }
 
-void Shader::setFloat(const std::string& name, const float value) const {
+void Engine::Shader::setFloat(const std::string& name, const float value) const {
     glUniform1f(glGetUniformLocation(ID, name.c_str()), value);
 }
 
-void Shader::setMat4(const std::string& name, const GLfloat* value) const {
+void Engine::Shader::setMat4(const std::string& name, const GLfloat* value) const {
     glUniformMatrix4fv(glGetUniformLocation(ID, name.c_str()), 1, GL_FALSE, value);
 }

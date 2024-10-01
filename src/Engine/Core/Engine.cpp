@@ -1,25 +1,52 @@
 #include "Engine/Core/Engine.h"
+#include "Engine/Core/Clock.h"
+#include "Engine/Input/Input.h"
+
+#define IMGUI 1
+
+#if IMGUI
+#include "Engine/Graphics/Debug.h"
+#endif
 
 Engine::IDHandler Engine::idManager;
 Engine::BroadPhaseCollisionHandler Engine::collisionHandler;
 Engine::Shader Engine::shader;
 
 void Engine::initialize() {
+	Platform::initialize();
+
 	shader.createShaderProgram(RESOURCES_PATH "Arena/grid.vert", RESOURCES_PATH "Arena/grid.frag");
+
+#if IMGUI
+	Debug::setUpImGui();
+#endif
 }
 
-void Engine::update(const float deltaTime, const glm::mat4& view, const glm::mat4& projection, const glm::mat4& model) {
+void Engine::update(const Camera& camera) {
+	Platform::update();
+
+	shader.setMat4("view", value_ptr(camera.getViewMatrix()));
+	shader.setMat4("projection", value_ptr(glm::perspective(glm::radians(45.0f), static_cast<float>(Engine::Platform::getFrameBufferSize().x) / static_cast<float>(Engine::Platform::getFrameBufferSize().y), 0.1f, 1000.0f)));
+	shader.setMat4("model", value_ptr(glm::mat4(1.0f)));
 	shader.use();
 
-	shader.setMat4("view", value_ptr(view));
-	shader.setMat4("projection", value_ptr(projection));
-	shader.setMat4("model", value_ptr(model));
+#if IMGUI
+	Debug::updateImGui();
+#endif
+
+	Clock::update();
 
 	collisionHandler.update();
-	Physics::updateEntities(deltaTime);
+
+	Physics::updateEntities(Clock::getDeltaTime().asSeconds());
+
+	Input::update();
 }
 
 void Engine::render() {
+#if IMGUI
+	Debug::renderImGui();
+#endif
 }
 
 void Engine::shutdown() {

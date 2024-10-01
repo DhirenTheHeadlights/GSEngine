@@ -6,6 +6,7 @@
 
 #include <glm/gtc/type_ptr.hpp>
 
+#include "Engine/Core/Clock.h"
 #include "Engine/Core/Engine.h"
 
 #include "Engine/Input/Input.h"
@@ -21,9 +22,11 @@ struct GameData {
 Game::Arena arena;
 Game::Player player;
 
-bool Game::initializeGame() {
-	Engine::initialize();
+const Engine::Camera& Game::getCamera() {
+	return player.getCamera();
+}
 
+bool Game::initializeGame() {
 	// Loading the saved data. Loading an entire structure like this makes saving game data very easy.
 	Engine::Platform::readEntireFile(RESOURCES_PATH "gameData.data", &gameData, sizeof(GameData));
 
@@ -32,7 +35,7 @@ bool Game::initializeGame() {
 	player.initialize();
 
 	// Set player position
-	//player.setPosition(gameData.playerPosition);
+	player.setPosition(gameData.playerPosition);
 
 	addObject(player);
 	addObject(arena);
@@ -40,7 +43,7 @@ bool Game::initializeGame() {
 	return true;
 }
 
-bool Game::gameLogic(const float deltaTime) {
+bool Game::gameLogic() {
 	glViewport(0, 0, Engine::Platform::getFrameBufferSize().x, Engine::Platform::getFrameBufferSize().y);
 	glClear(GL_COLOR_BUFFER_BIT); // Clear screen
 
@@ -52,13 +55,9 @@ bool Game::gameLogic(const float deltaTime) {
 	}
 
 	const glm::mat4 view = player.getCamera().getViewMatrix();
-	const glm::mat4 projection = glm::perspective(glm::radians(45.0f), static_cast<float>(Engine::Platform::getFrameBufferSize().x) / static_cast<float>(Engine::Platform::getFrameBufferSize().y), 0.1f, 1000.0f);
-	const auto model = glm::mat4(1.0f);
+	const glm::mat4 projection = glm::perspective(glm::radians(45.0f), static_cast<float>(Engine::Platform::getFrameBufferSize().x) / static_cast<float>(Engine::Platform::getFrameBufferSize().y), 0.1f, 10000.0f);
 
-	// Update Engine
-	Engine::update(deltaTime, view, projection, model);
-
-	player.update(deltaTime);
+	player.update(Engine::Clock::getDeltaTime().asSeconds());
 	player.render(view, projection);
 
 	arena.render(view, projection);
