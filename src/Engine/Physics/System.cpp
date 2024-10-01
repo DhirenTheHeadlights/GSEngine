@@ -59,14 +59,19 @@ void Physics::updateEntities(const float deltaTime) {
 
 void Physics::resolveCollision(const BoundingBox& dynamicBoundingBox, MotionComponent& dynamicMotionComponent, const CollisionInformation& collisionInfo) {
 	std::cerr << "Collision point: " << collisionInfo.collisionPoint.y << '\n';
-	std::cerr << "Component position: " << dynamicMotionComponent.position.y - dynamicBoundingBox.getSize().y / 2.f << '\n';
+	std::cerr << "Box position: " << dynamicBoundingBox.lowerBound.y << '\n';
+	std::cerr << "Obj Position: " << dynamicMotionComponent.position.y << '\n';
 	std::cerr << "Dynamic box size: " << dynamicBoundingBox.getSize().y << '\n';
-	if (glm::epsilonEqual(collisionInfo.collisionPoint.y, dynamicMotionComponent.position.y - dynamicBoundingBox.getSize().y / 2.f, 0.0001f)) {
+	if (glm::epsilonEqual(collisionInfo.collisionPoint.y, dynamicBoundingBox.lowerBound.y, 0.0001f)) {
 		// Ground collision, stop downward velocity and mark the object as airborne
-		dynamicMotionComponent.velocity.y = 0;
-		dynamicMotionComponent.acceleration.y = 0;
+		dynamicMotionComponent.velocity.y = 0.f;
+		dynamicMotionComponent.acceleration.y = 0.f;
 		dynamicMotionComponent.airborne = false;
-		dynamicMotionComponent.position.y = collisionInfo.collisionPoint.y;  // Snap to the collision point
+
+		// Set the position so that the bounding box is exactly on the ground,
+		// accounting for the difference in position between the motion component
+		// and the bounding box
+		dynamicMotionComponent.position.y = dynamicBoundingBox.lowerBound.y - (dynamicBoundingBox.lowerBound.y - dynamicMotionComponent.position.y);
 	}
 	else {
 	}

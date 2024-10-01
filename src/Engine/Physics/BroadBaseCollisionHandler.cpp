@@ -7,18 +7,19 @@
 using namespace Engine;
 
 bool BroadPhaseCollisionHandler::checkCollision(const BoundingBox& box1, const BoundingBox& box2) {
-	return ((box1.upperBound.x >= box2.lowerBound.x && box1.lowerBound.x <= box2.upperBound.x) &&
-			(box1.upperBound.y >= box2.lowerBound.y && box1.lowerBound.y <= box2.upperBound.y) &&
-			(box1.upperBound.z >= box2.lowerBound.z && box1.lowerBound.z <= box2.upperBound.z));
+	return (box1.upperBound.x >= box2.lowerBound.x && box1.lowerBound.x <= box2.upperBound.x) &&
+		   (box1.upperBound.y >= box2.lowerBound.y && box1.lowerBound.y <= box2.upperBound.y) &&
+		   (box1.upperBound.z >= box2.lowerBound.z && box1.lowerBound.z <= box2.upperBound.z);
 }
 
 bool BroadPhaseCollisionHandler::checkCollision(const BoundingBox& dynamicBox, const BoundingBox& staticBox, const glm::vec3& totalVelocity) {
-	// Check if the dynamic box will collide with the static box after moving
-	BoundingBox tempBox = dynamicBox;
+	BoundingBox expandedBox = dynamicBox;
 
-	tempBox.move(totalVelocity);
+	// Expand the bounding box in the direction of velocity
+	expandedBox.lowerBound = min(dynamicBox.lowerBound, dynamicBox.lowerBound + totalVelocity);
+	expandedBox.upperBound = max(dynamicBox.upperBound, dynamicBox.upperBound + totalVelocity);
 
-	return checkCollision(tempBox, staticBox);
+	return checkCollision(expandedBox, staticBox);
 }
 
 bool BroadPhaseCollisionHandler::checkCollision(const glm::vec3& point, const BoundingBox& box) {
@@ -48,8 +49,17 @@ bool BroadPhaseCollisionHandler::checkCollision(DynamicObject& object1, Object& 
 	return false;
 }
 
+void BroadPhaseCollisionHandler::setCollisionInformation(const BoundingBox& box1, const BoundingBox& box2) {
+	box1.collisionInformation = calculateCollisionInformation(box1, box2);
+	box2.collisionInformation = calculateCollisionInformation(box2, box1);
+}
+
 CollisionInformation BroadPhaseCollisionHandler::calculateCollisionInformation(const BoundingBox& box1, const BoundingBox& box2) {
-	CollisionInformation collisionInformation{};
+	CollisionInformation collisionInformation;
+
+	if (!checkCollision(box1, box2)) {
+		return collisionInformation;
+	}
 
 	// Calculate the penetration depth on each axis
 	float xPenetration = std::min(box1.upperBound.x, box2.upperBound.x) - std::max(box1.lowerBound.x, box2.lowerBound.x);
@@ -57,28 +67,34 @@ CollisionInformation BroadPhaseCollisionHandler::calculateCollisionInformation(c
 	float zPenetration = std::min(box1.upperBound.z, box2.upperBound.z) - std::max(box1.lowerBound.z, box2.lowerBound.z);
 
 	// Find the axis with the smallest penetration
-	const float penetration = std::min({ xPenetration, yPenetration, zPenetration });
+	float penetration = xPenetration;
+	auto collisionNormal = glm::vec3(1.0f, 0.0f, 0.0f); // Default to X axis
 
-	// Set the collision normal based on the axis of least penetration
-	if (glm::epsilonEqual(penetration, xPenetration, 0.0001f)) {
-		collisionInformation.collisionNormal = glm::vec3(xPenetration, 0.0f, 0.0f);
+	if (yPenetration < penetration) {
+		penetration = yPenetration;
+		collisionNormal = glm::vec3(0.0f, 1.0f, 0.0f);
 	}
-	else if (glm::epsilonEqual(penetration, yPenetration, 0.0001f)) {
-		collisionInformation.collisionNormal = glm::vec3(0.0f, yPenetration, 0.0f);
-	}
-	else {
-		collisionInformation.collisionNormal = glm::vec3(0.0f, 0.0f, zPenetration);
+	if (zPenetration < penetration) {
+		penetration = zPenetration;
+		collisionNormal = glm::vec3(0.0f, 0.0f, 1.0f);
 	}
 
+	// Determine the direction of the collision normal
+	glm::vec3 deltaCenter = box2.getCenter() - box1.getCenter();
+	if (dot(deltaCenter, collisionNormal) < 0.0f) {
+		collisionNormal = -collisionNormal;
+	}
+
+	// Calculate the collision point
+	glm::vec3 collisionPoint = box1.getCenter();
+	collisionPoint += box1.getSize() / 2.f * collisionNormal;			// Move to the surface of box1
+	collisionPoint -= collisionNormal * penetration;					// Adjust by half the penetration depth
+
+	collisionInformation.collisionNormal = collisionNormal;
 	collisionInformation.penetration = penetration;
-	collisionInformation.collisionPoint = (box1.getCenter() + box2.getCenter()) / 2.0f;
+	collisionInformation.collisionPoint = collisionPoint;
 
 	return collisionInformation;
-}
-
-void BroadPhaseCollisionHandler::setCollisionInformation(const BoundingBox& box1, const BoundingBox& box2) {
-	box1.collisionInformation = calculateCollisionInformation(box1, box2);
-	box2.collisionInformation = calculateCollisionInformation(box2, box1);
 }
 
 void BroadPhaseCollisionHandler::update() const {
