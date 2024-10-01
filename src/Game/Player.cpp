@@ -25,7 +25,7 @@ void Player::update(const float deltaTime) {
 	for (auto& [key, direction] : movementKeys) {
 		if (Engine::Input::getKeyboard().keys[key].held) {
 			for (auto& bb : boundingBoxes) {
-				motionComponent.acceleration = camera.getCameraDirectionRelativeToOrigin(direction);
+				motionComponent.acceleration = camera.getCameraDirectionRelativeToOrigin(direction * 10.f);
 			}
 		}
 	}
