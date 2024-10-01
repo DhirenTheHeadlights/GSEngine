@@ -49,6 +49,18 @@ namespace Engine {
 			lowerBound = center - halfSize;
 		}
 
+		void setPositionBasedOnLowerBound(const glm::vec3& lowerBound) {
+			const glm::vec3 halfSize = (upperBound - lowerBound) / 2.0f;
+			upperBound = lowerBound + halfSize;
+			this->lowerBound = lowerBound;
+		}
+
+		void setPositionBasedOnUpperBound(const glm::vec3& upperBound) {
+			const glm::vec3 halfSize = (upperBound - lowerBound) / 2.0f;
+			lowerBound = upperBound - halfSize;
+			this->upperBound = upperBound;
+		}
+
 		glm::vec3 getCenter() const {
 			return (upperBound + lowerBound) / 2.0f;
 		}
