@@ -28,19 +28,18 @@ void updateGravity(Physics::MotionComponent* component, const float deltaTime) {
 }
 
 void updateAirResistance(Physics::MotionComponent* component, const float deltaTime) {
-	const glm::vec3 dragForce = component->velocity * -0.1f;  // 0.1 is an arbitrary drag coefficient
-	component->acceleration += dragForce * deltaTime;
+	const float dragCoefficient = component->airborne ? 0.2f : 0.9f;  // Lower drag in the air, higher on the ground
+
+	const glm::vec3 velocityDragForce = component->velocity * -dragCoefficient;
+	component->velocity += velocityDragForce * deltaTime;
+
+	const glm::vec3 accelDragForce = component->acceleration * -dragCoefficient;
+	component->acceleration += accelDragForce * deltaTime;
 }
+
 
 void updatePosition(Physics::MotionComponent* component, const float deltaTime) {
 	component->velocity += component->acceleration * deltaTime;
-
-	// Prevent negative velocity when decelerating
-	if (glm::length2(component->velocity) < 0.0001f) {  // length2 is faster as it skips square root
-		component->velocity = glm::vec3(0.0f);
-	}
-
-	// Update position using velocity
 	component->position += component->velocity * deltaTime;
 }
 
