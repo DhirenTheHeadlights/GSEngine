@@ -56,17 +56,65 @@ void Engine::Physics::updateEntities(const float deltaTime) {
 }
 
 void Engine::Physics::resolveCollision(const BoundingBox& dynamicBoundingBox, MotionComponent& dynamicMotionComponent, const CollisionInformation& collisionInfo) {
-	if (glm::epsilonEqual(collisionInfo.collisionPoint.y, dynamicBoundingBox.lowerBound.y, 0.0001f)) {
-		// Ground collision, stop downward velocity and mark the object as airborne
+	constexpr float epsilon = 0.0001f;
+
+	// Check for collision on the bottom face (ground collision)
+	if (glm::epsilonEqual(collisionInfo.collisionPoint.y, dynamicBoundingBox.lowerBound.y, epsilon)) {
+		// Stop downward velocity and acceleration
 		dynamicMotionComponent.velocity.y = std::max(0.f, dynamicMotionComponent.velocity.y);
 		dynamicMotionComponent.acceleration.y = std::max(0.f, dynamicMotionComponent.acceleration.y);
 		dynamicMotionComponent.airborne = false;
 
-		// Set the position so that the bounding box is exactly on the ground,
-		// accounting for the difference in position between the motion component
-		// and the bounding box
-		dynamicMotionComponent.position.y = std::max(dynamicBoundingBox.lowerBound.y - (dynamicBoundingBox.lowerBound.y - dynamicMotionComponent.position.y), dynamicBoundingBox.lowerBound.y);
+		// Adjust position to be exactly on the ground
+		dynamicMotionComponent.position.y = dynamicBoundingBox.lowerBound.y - (dynamicBoundingBox.lowerBound.y - dynamicMotionComponent.position.y);
+	}
+	// Check for collision on the top face
+	else if (glm::epsilonEqual(collisionInfo.collisionPoint.y, dynamicBoundingBox.upperBound.y, epsilon)) {
+		// Stop upward velocity and acceleration
+		dynamicMotionComponent.velocity.y = std::min(0.f, dynamicMotionComponent.velocity.y);
+		dynamicMotionComponent.acceleration.y = std::min(0.f, dynamicMotionComponent.acceleration.y);
+
+		// Adjust position to be just below the top face
+		dynamicMotionComponent.position.y = dynamicBoundingBox.upperBound.y - (dynamicBoundingBox.upperBound.y - dynamicMotionComponent.position.y);
+	}
+	// Check for collision on the left face
+	else if (glm::epsilonEqual(collisionInfo.collisionPoint.x, dynamicBoundingBox.lowerBound.x, epsilon)) {
+		// Stop leftward velocity and acceleration
+		dynamicMotionComponent.velocity.x = std::max(0.f, dynamicMotionComponent.velocity.x);
+		dynamicMotionComponent.acceleration.x = std::max(0.f, dynamicMotionComponent.acceleration.x);
+
+		// Adjust position to be just to the right of the left face
+		dynamicMotionComponent.position.x = dynamicBoundingBox.lowerBound.x - (dynamicBoundingBox.lowerBound.x - dynamicMotionComponent.position.x);
+	}
+	// Check for collision on the right face
+	else if (glm::epsilonEqual(collisionInfo.collisionPoint.x, dynamicBoundingBox.upperBound.x, epsilon)) {
+		// Stop rightward velocity and acceleration
+		dynamicMotionComponent.velocity.x = std::min(0.f, dynamicMotionComponent.velocity.x);
+		dynamicMotionComponent.acceleration.x = std::min(0.f, dynamicMotionComponent.acceleration.x);
+
+		// Adjust position to be just to the left of the right face
+		dynamicMotionComponent.position.x = dynamicBoundingBox.upperBound.x - (dynamicBoundingBox.upperBound.x - dynamicMotionComponent.position.x);
+	}
+	// Check for collision on the back face
+	else if (glm::epsilonEqual(collisionInfo.collisionPoint.z, dynamicBoundingBox.lowerBound.z, epsilon)) {
+		// Stop backward velocity and acceleration
+		dynamicMotionComponent.velocity.z = std::max(0.f, dynamicMotionComponent.velocity.z);
+		dynamicMotionComponent.acceleration.z = std::max(0.f, dynamicMotionComponent.acceleration.z);
+
+		// Adjust position to be just in front of the back face
+		dynamicMotionComponent.position.z = dynamicBoundingBox.lowerBound.z - (dynamicBoundingBox.lowerBound.z - dynamicMotionComponent.position.z);
+	}
+	// Check for collision on the front face
+	else if (glm::epsilonEqual(collisionInfo.collisionPoint.z, dynamicBoundingBox.upperBound.z, epsilon)) {
+		// Stop forward velocity and acceleration
+		dynamicMotionComponent.velocity.z = std::min(0.f, dynamicMotionComponent.velocity.z);
+		dynamicMotionComponent.acceleration.z = std::min(0.f, dynamicMotionComponent.acceleration.z);
+
+		// Adjust position to be just behind the front face
+		dynamicMotionComponent.position.z = dynamicBoundingBox.upperBound.z - (dynamicBoundingBox.upperBound.z - dynamicMotionComponent.position.z);
 	}
 	else {
+		// Collision does not match any of the faces
 	}
 }
+
