@@ -2,37 +2,44 @@
 
 #include <GLFW/glfw3.h>
 
+#include "Engine/Core/Clock.h"
+
 Engine::Input::Keyboard keyboard;
 Engine::Input::Controller controller;
 Engine::Input::Mouse mouse;
 
-void setUpKeyMaps() {
+void Engine::Input::update() {
+	Internal::updateAllButtons(Clock::getDeltaTime().asSeconds());
+	Internal::resetTypedInput();
+}
+
+void Engine::Input::setUpKeyMaps() {
 	for (int i = GLFW_KEY_A; i <= GLFW_KEY_Z; i++) {
-		keyboard.keys.insert(std::make_pair(i, Engine::Input::Button()));
+		keyboard.keys.insert(std::make_pair(i, Button()));
 	}
 
 	for (int i = GLFW_KEY_0; i <= GLFW_KEY_9; i++) {
-		keyboard.keys.insert(std::make_pair(i, Engine::Input::Button()));
+		keyboard.keys.insert(std::make_pair(i, Button()));
 	}
 
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_SPACE, Engine::Input::Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_ENTER, Engine::Input::Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_ESCAPE, Engine::Input::Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_UP, Engine::Input::Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_DOWN, Engine::Input::Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT, Engine::Input::Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_RIGHT, Engine::Input::Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT_CONTROL, Engine::Input::Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_TAB, Engine::Input::Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT_SHIFT, Engine::Input::Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT_ALT, Engine::Input::Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_SPACE, Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_ENTER, Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_ESCAPE, Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_UP, Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_DOWN, Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT, Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_RIGHT, Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT_CONTROL, Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_TAB, Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT_SHIFT, Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT_ALT, Button()));
 
 	for (int i = 0; i <= GLFW_GAMEPAD_BUTTON_LAST; i++) {
-		controller.buttons.insert(std::make_pair(i, Engine::Input::Button()));
+		controller.buttons.insert(std::make_pair(i, Button()));
 	}
 
 	for (int i = 0; i <= GLFW_MOUSE_BUTTON_LAST; i++) {
-		mouse.buttons.insert(std::make_pair(i, Engine::Input::Button()));
+		mouse.buttons.insert(std::make_pair(i, Button()));
 	}
 }
 
@@ -48,9 +55,9 @@ Engine::Input::Mouse& Engine::Input::getMouse() {
 	return mouse;
 }
 
-void Engine::Input::internal::updateAllButtons(const float deltaTime) {
+void Engine::Input::Internal::updateAllButtons(const float deltaTime) {
 	for (auto& [fst, snd] : keyboard.keys) {
-		internal::updateButton(snd, deltaTime);
+		Internal::updateButton(snd, deltaTime);
 	}
 	
 	for(int i = 0; i <= static_cast<int>(controller.buttons.size()); i++) {
@@ -69,21 +76,21 @@ void Engine::Input::internal::updateAllButtons(const float deltaTime) {
 				updateButton(button, deltaTime);
 			}
 			
-			controller.RT = state.axes[GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER];
-			controller.RT = state.axes[GLFW_GAMEPAD_AXIS_LEFT_TRIGGER];
+			controller.rt = state.axes[GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER];
+			controller.rt = state.axes[GLFW_GAMEPAD_AXIS_LEFT_TRIGGER];
 
-			controller.LStick.x = state.axes[GLFW_GAMEPAD_AXIS_LEFT_X];
-			controller.LStick.y = state.axes[GLFW_GAMEPAD_AXIS_LEFT_Y];
+			controller.lStick.x = state.axes[GLFW_GAMEPAD_AXIS_LEFT_X];
+			controller.lStick.y = state.axes[GLFW_GAMEPAD_AXIS_LEFT_Y];
 
-			controller.RStick.x = state.axes[GLFW_GAMEPAD_AXIS_RIGHT_X];
-			controller.RStick.y = state.axes[GLFW_GAMEPAD_AXIS_RIGHT_Y];
+			controller.rStick.x = state.axes[GLFW_GAMEPAD_AXIS_RIGHT_X];
+			controller.rStick.y = state.axes[GLFW_GAMEPAD_AXIS_RIGHT_Y];
 		
 			break;
 		}
 	}
 
-	for (auto& i : mouse.buttons) {
-		updateButton(i.second, deltaTime);
+	for (auto& [fst, snd] : mouse.buttons) {
+		updateButton(snd, deltaTime);
 	}
 
 	// Update Mouse Delta
@@ -91,7 +98,7 @@ void Engine::Input::internal::updateAllButtons(const float deltaTime) {
 	mouse.lastPosition = Platform::getRelMousePosition();
 }
 
-void Engine::Input::internal::resetInputsToZero() {
+void Engine::Input::Internal::resetInputsToZero() {
 	resetTypedInput();
 
 	for (auto& [fst, snd] : keyboard.keys) {
@@ -107,10 +114,10 @@ void Engine::Input::internal::resetInputsToZero() {
 	}
 }
 
-void Engine::Input::internal::addToTypedInput(const char c) {
+void Engine::Input::Internal::addToTypedInput(const char c) {
 	keyboard.typedInput += c;
 }
 
-void Engine::Input::internal::resetTypedInput() {
+void Engine::Input::Internal::resetTypedInput() {
 	keyboard.typedInput.clear();
 }

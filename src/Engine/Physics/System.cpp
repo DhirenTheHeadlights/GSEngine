@@ -6,19 +6,17 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/norm.hpp>
 
-using namespace Engine;
+std::vector<Engine::Physics::MotionComponent*> Engine::Physics::components;
 
-std::vector<Physics::MotionComponent*> Physics::components;
-
-void Physics::addMotionComponent(MotionComponent& component) {
+void Engine::Physics::addMotionComponent(MotionComponent& component) {
 	components.push_back(&component);
 }
 
-void Physics::removeMotionComponent(MotionComponent& component) {
+void Engine::Physics::removeMotionComponent(MotionComponent& component) {
 	std::erase(components, &component);
 }
 
-void updateGravity(Physics::MotionComponent* component, const float deltaTime) {
+void updateGravity(Engine::Physics::MotionComponent* component, const float deltaTime) {
 	if (component->affectedByGravity && component->airborne) {
 		component->acceleration.y = -9.8f;
 		component->acceleration.x *= 0.001f;
@@ -29,7 +27,7 @@ void updateGravity(Physics::MotionComponent* component, const float deltaTime) {
 	}
 }
 
-void updateAirResistance(Physics::MotionComponent* component, const float deltaTime) {
+void updateAirResistance(Engine::Physics::MotionComponent* component, const float deltaTime) {
 	const float dragCoefficient = component->airborne ? 0.2f : 0.9f;  // Lower drag in the air, higher on the ground
 
 	const glm::vec3 velocityDragForce = component->velocity * -dragCoefficient;
@@ -39,12 +37,12 @@ void updateAirResistance(Physics::MotionComponent* component, const float deltaT
 	component->acceleration += accelDragForce * deltaTime;
 }
 
-void updatePosition(Physics::MotionComponent* component, const float deltaTime) {
+void updatePosition(Engine::Physics::MotionComponent* component, const float deltaTime) {
 	component->velocity += component->acceleration * deltaTime;
 	component->position += component->velocity * deltaTime;
 }
 
-void Physics::updateEntities(const float deltaTime) {
+void Engine::Physics::updateEntities(const float deltaTime) {
 	for (MotionComponent* component : components) {
 		// Update gravity only if the object is not airborne
 		updateGravity(component, deltaTime);
@@ -57,7 +55,7 @@ void Physics::updateEntities(const float deltaTime) {
 	}
 }
 
-void Physics::resolveCollision(const BoundingBox& dynamicBoundingBox, MotionComponent& dynamicMotionComponent, const CollisionInformation& collisionInfo) {
+void Engine::Physics::resolveCollision(const BoundingBox& dynamicBoundingBox, MotionComponent& dynamicMotionComponent, const CollisionInformation& collisionInfo) {
 	if (glm::epsilonEqual(collisionInfo.collisionPoint.y, dynamicBoundingBox.lowerBound.y, 0.0001f)) {
 		// Ground collision, stop downward velocity and mark the object as airborne
 		dynamicMotionComponent.velocity.y = std::max(0.f, dynamicMotionComponent.velocity.y);

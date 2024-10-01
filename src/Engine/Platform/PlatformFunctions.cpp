@@ -1,6 +1,10 @@
 #include "Engine/Platform/PlatformFunctions.h"
 #include <fstream>
 
+#include "Engine/Core/Clock.h"
+#include "Engine/Platform/CallBacks.h"
+#include "Engine/Platform/PlatformTools.h"
+
 #undef max
 #undef min
 
@@ -10,6 +14,58 @@ bool Engine::Platform::currentFullScreen = false;
 bool Engine::Platform::fullScreen = false;
 bool Engine::Platform::windowFocused = true;
 int Engine::Platform::mouseMoved = 0;
+
+void Engine::Platform::initialize() {
+	const int w = glfwGetVideoMode(glfwGetPrimaryMonitor())->width;
+	const int h = glfwGetVideoMode(glfwGetPrimaryMonitor())->height;
+	window = glfwCreateWindow(w, h, "SavantShooter", nullptr, nullptr);
+	glfwMakeContextCurrent(window);
+	glfwSwapInterval(1);
+
+	glfwSetKeyCallback(window, keyCallback);
+	glfwSetMouseButtonCallback(window, mouseCallback);
+	glfwSetWindowFocusCallback(window, windowFocusCallback);
+	glfwSetWindowSizeCallback(window, windowSizeCallback);
+	glfwSetCursorPosCallback(window, cursorPositionCallback);
+	glfwSetCharCallback(window, characterCallback);
+
+	permaAssertComment(gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)), "err initializing glad");
+}
+
+void Engine::Platform::update() {
+	int w = 0, h = 0;
+	glfwGetWindowSize(window, &w, &h);
+	if (windowFocused && currentFullScreen != fullScreen) {
+		static int lastW = w;
+		static int lastH = h;
+		static int lastPosX = 0;
+		static int lastPosY = 0;
+
+		if (fullScreen) {
+			lastW = w;
+			lastH = h;
+
+			glfwGetWindowPos(window, &lastPosX, &lastPosY);
+
+			const auto monitor = getCurrentMonitor();
+
+			const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+
+			// Switch to full screen
+			glfwSetWindowMonitor(window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+
+			currentFullScreen = true;
+
+		}
+		else {
+			glfwSetWindowMonitor(window, nullptr, lastPosX, lastPosY, lastW, lastH, 0);
+
+			currentFullScreen = false;
+		}
+
+		mouseMoved = 0;
+	}
+}
 
 void Engine::Platform::setMousePosRelativeToWindow(const int x, const int y) {
 	glfwSetCursorPos(window, x, y);
@@ -79,8 +135,8 @@ GLFWmonitor* Engine::Platform::getCurrentMonitor() {
 	int bestOverlap = 0;
 	GLFWmonitor* bestMonitor = nullptr;
 
-	glfwGetWindowPos(Engine::Platform::window, &wx, &wy);
-	glfwGetWindowSize(Engine::Platform::window, &ww, &wh);
+	glfwGetWindowPos(window, &wx, &wy);
+	glfwGetWindowSize(window, &ww, &wh);
 	GLFWmonitor** monitors = glfwGetMonitors(&numberOfMonitors);
 
 	for (int i = 0; i < numberOfMonitors; i++) {

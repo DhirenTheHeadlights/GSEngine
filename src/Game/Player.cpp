@@ -2,9 +2,7 @@
 
 #include "Engine/Input/Input.h"
 
-using namespace Game;
-
-void Player::initialize() {
+void Game::Player::initialize() {
 	boundingBoxes.push_back(Engine::BoundingBox({ -10.f, -10.f, -10.f }, 10.f, 10.f, 10.f));
 
 	movementKeys.insert({ GLFW_KEY_W, {0, 0, 1} });	
@@ -17,7 +15,7 @@ void Player::initialize() {
 	camera.setPosition(boundingBoxes[0].getCenter());
 }
 
-void Player::update(const float deltaTime) {
+void Game::Player::update(const float deltaTime) {
 	for (auto& bb : boundingBoxes) {
 		bb.setPosition(motionComponent.position);
 	}
@@ -41,7 +39,7 @@ void Player::update(const float deltaTime) {
 	camera.processMouseMovement(Engine::Input::getMouse().delta);
 }
 
-void Player::render(const glm::mat4& view, const glm::mat4& projection) {
+void Game::Player::render(const glm::mat4& view, const glm::mat4& projection) {
 	for (auto& bb : boundingBoxes) {
 		drawBoundingBox(bb, view * projection, true);
 	}

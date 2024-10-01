@@ -1,7 +1,10 @@
 #pragma once
+#include "Engine/Graphics/Camera.h"
 
 namespace Game {
 	bool initializeGame();
-	bool gameLogic(float deltaTime);
+	bool gameLogic();
 	void closeGame();
+
+	const Engine::Camera& getCamera();
 }

@@ -1,8 +1,6 @@
 #include "Game/Arena.h"
 
-using namespace Game;
-
-void Arena::initialize() {
+void Game::Arena::initialize() {
     constexpr float wallThickness = 10.f;
 
     // Front and back walls
@@ -18,7 +16,7 @@ void Arena::initialize() {
     boundingBoxes.emplace_back(Engine::BoundingBox({ 0, -height / 2 + wallThickness / 2, 0 }, width, wallThickness, depth));
 }
 
-void Arena::render(const glm::mat4& view, const glm::mat4& projection) {
+void Game::Arena::render(const glm::mat4& view, const glm::mat4& projection) {
     for (auto& boundingBox : boundingBoxes) {
 	    drawBoundingBox(boundingBox, view * projection, false);
 	}

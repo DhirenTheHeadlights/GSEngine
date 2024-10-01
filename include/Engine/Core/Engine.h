@@ -2,14 +2,14 @@
 
 #include "Engine/Core/ID.h"
 #include "Engine/Core/Object/Object.h"
-#include "Object/DynamicObject.h"
+#include "Engine/Graphics/Camera.h"
 #include "Engine/Graphics/Shader.h"
 #include "Engine/Physics/BroadPhaseCollisionHandler.h"
-#include "Engine/Physics/System.h"
+#include "Object/DynamicObject.h"
 
 namespace Engine {
 	void initialize();
-	void update(float deltaTime, const glm::mat4& view, const glm::mat4& projection, const glm::mat4& model);
+	void update(const Camera& camera);
 	void render();
 	void shutdown();
 

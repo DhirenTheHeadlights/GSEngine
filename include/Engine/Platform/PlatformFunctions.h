@@ -12,6 +12,10 @@ namespace Engine::Platform {
     extern bool windowFocused;
     extern int mouseMoved;
 
+	void initialize();
+
+	void update();
+
     GLFWmonitor* getCurrentMonitor();
 
     void setMousePosRelativeToWindow(int x, int y);

@@ -1,8 +1,6 @@
 #include "Engine/Graphics/Camera.h"
 
-using namespace Engine;
-
-void Camera::processMouseMovement(glm::vec2 offset) {
+void Engine::Camera::processMouseMovement(glm::vec2 offset) {
     offset *= mouseSensitivity;
     yaw += offset.x;
     pitch -= offset.y;
@@ -11,7 +9,7 @@ void Camera::processMouseMovement(glm::vec2 offset) {
     updateCameraVectors();
 }
  
-void Camera::updateCameraVectors() {
+void Engine::Camera::updateCameraVectors() {
     glm::vec3 newFront(0.0f, 0.0f, 0.0f);
     newFront.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
     newFront.y = sin(glm::radians(pitch));
