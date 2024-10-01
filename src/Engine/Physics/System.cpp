@@ -4,7 +4,7 @@
 #include <iostream>
 
 #define GLM_ENABLE_EXPERIMENTAL
-#include <glm/gtx/norm.hpp>  // For glm::length2
+#include <glm/gtx/norm.hpp>
 
 using namespace Engine;
 
@@ -21,9 +21,11 @@ void Physics::removeMotionComponent(MotionComponent& component) {
 void updateGravity(Physics::MotionComponent* component, const float deltaTime) {
 	if (component->affectedByGravity && component->airborne) {
 		component->acceleration.y = -9.8f;
+		component->acceleration.x *= 0.001f;
+		component->acceleration.z *= 0.001f;
 	}
 	else {
-		component->acceleration.y = 0.0f;
+		component->acceleration.y = std::max(0.f, component->acceleration.y);
 	}
 }
 
@@ -36,7 +38,6 @@ void updateAirResistance(Physics::MotionComponent* component, const float deltaT
 	const glm::vec3 accelDragForce = component->acceleration * -dragCoefficient;
 	component->acceleration += accelDragForce * deltaTime;
 }
-
 
 void updatePosition(Physics::MotionComponent* component, const float deltaTime) {
 	component->velocity += component->acceleration * deltaTime;
@@ -57,20 +58,16 @@ void Physics::updateEntities(const float deltaTime) {
 }
 
 void Physics::resolveCollision(const BoundingBox& dynamicBoundingBox, MotionComponent& dynamicMotionComponent, const CollisionInformation& collisionInfo) {
-	std::cerr << "Collision point: " << collisionInfo.collisionPoint.y << '\n';
-	std::cerr << "Box position: " << dynamicBoundingBox.lowerBound.y << '\n';
-	std::cerr << "Obj Position: " << dynamicMotionComponent.position.y << '\n';
-	std::cerr << "Dynamic box size: " << dynamicBoundingBox.getSize().y << '\n';
 	if (glm::epsilonEqual(collisionInfo.collisionPoint.y, dynamicBoundingBox.lowerBound.y, 0.0001f)) {
 		// Ground collision, stop downward velocity and mark the object as airborne
-		dynamicMotionComponent.velocity.y = 0.f;
-		dynamicMotionComponent.acceleration.y = 0.f;
+		dynamicMotionComponent.velocity.y = std::max(0.f, dynamicMotionComponent.velocity.y);
+		dynamicMotionComponent.acceleration.y = std::max(0.f, dynamicMotionComponent.acceleration.y);
 		dynamicMotionComponent.airborne = false;
 
 		// Set the position so that the bounding box is exactly on the ground,
 		// accounting for the difference in position between the motion component
 		// and the bounding box
-		dynamicMotionComponent.position.y = dynamicBoundingBox.lowerBound.y - (dynamicBoundingBox.lowerBound.y - dynamicMotionComponent.position.y);
+		dynamicMotionComponent.position.y = std::max(dynamicBoundingBox.lowerBound.y - (dynamicBoundingBox.lowerBound.y - dynamicMotionComponent.position.y), dynamicBoundingBox.lowerBound.y);
 	}
 	else {
 	}

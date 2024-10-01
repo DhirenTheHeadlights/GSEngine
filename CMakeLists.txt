@@ -2,10 +2,6 @@ cmake_minimum_required(VERSION 3.16)
 
 set(CMAKE_CXX_STANDARD 23)
 
-#! ! ! ! ! ! !
-#set this to true to ship the game!
-#basically this will change the RESOURCES_PATH to be the local path
-#! ! ! ! ! ! !
 #DELETE THE OUT FOLDER AFTER CHANGING THIS BECAUSE VISUAL STUDIO DOESN'T SEEM TO RECOGNIZE THIS CHANGE AND REBUILD!
 option(PRODUCTION_BUILD "Make this a production build" OFF)
 #DELETE THE OUT FOLDER AFTER CHANGING THIS BECAUSE VISUAL STUDIO DOESN'T SEEM TO RECOGNIZE THIS CHANGE AND REBUILD!
@@ -44,16 +40,11 @@ add_subdirectory(thirdparty/profilerLib)		#profiling, just a simpel library for 
 add_subdirectory(thirdparty/gl2d)				#2D rendering library
 add_subdirectory(thirdparty/glui)				#ui library, useful for making game menus
 
-
-# MY_SOURCES is defined to be a list of all the source files for my game 
-# DON'T ADD THE SOURCES BY HAND, they are already added with this macro
 file(GLOB_RECURSE MY_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
-
 
 add_executable("${CMAKE_PROJECT_NAME}")
 
 set_property(TARGET "${CMAKE_PROJECT_NAME}" PROPERTY CXX_STANDARD 23)
-
 
 target_compile_definitions("${CMAKE_PROJECT_NAME}" PUBLIC GLFW_INCLUDE_NONE=1) 
 
@@ -72,7 +63,6 @@ else()
 endif()
 
 target_sources("${CMAKE_PROJECT_NAME}" PRIVATE ${MY_SOURCES} )
-
 
 if(MSVC) # If using the VS compiler...
 
