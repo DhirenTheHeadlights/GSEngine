@@ -7,11 +7,11 @@ using namespace Game;
 void Player::initialize() {
 	boundingBoxes.push_back(Engine::BoundingBox({ -10.f, -10.f, -10.f }, 10.f, 10.f, 10.f));
 
-	movementKeys.insert({ GLFW_KEY_W, {0, 0, 1} });
+	movementKeys.insert({ GLFW_KEY_W, {0, 0, 1} });	
 	movementKeys.insert({ GLFW_KEY_S, {0, 0, -1} });
-	movementKeys.insert({ GLFW_KEY_A, {1, 0, 0} });
-	movementKeys.insert({ GLFW_KEY_D, {-1, 0, 0} });
-	movementKeys.insert({ GLFW_KEY_SPACE, {0, 1, 0} });
+	movementKeys.insert({ GLFW_KEY_A, {-1, 0, 0} });
+	movementKeys.insert({ GLFW_KEY_D, {1, 0, 0} });
+	movementKeys.insert({ GLFW_KEY_SPACE, {0, 10000, 0} });
 	movementKeys.insert({ GLFW_KEY_LEFT_CONTROL, {0, -1, 0} });
 
 	camera.setPosition(boundingBoxes[0].getCenter());
@@ -25,7 +25,13 @@ void Player::update(const float deltaTime) {
 	for (auto& [key, direction] : movementKeys) {
 		if (Engine::Input::getKeyboard().keys[key].held) {
 			for (auto& bb : boundingBoxes) {
-				motionComponent.acceleration = camera.getCameraDirectionRelativeToOrigin(direction * 10.f);
+				// If the key is not up/down
+				if (key != GLFW_KEY_SPACE && key != GLFW_KEY_LEFT_CONTROL) {
+					motionComponent.acceleration += camera.getCameraDirectionRelativeToOrigin(direction);
+				}
+				else {
+					motionComponent.acceleration += direction;
+				}
 			}
 		}
 	}
