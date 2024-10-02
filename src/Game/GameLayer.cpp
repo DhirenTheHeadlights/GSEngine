@@ -57,7 +57,7 @@ bool Game::gameLogic() {
 	const glm::mat4 view = player.getCamera().getViewMatrix();
 	const glm::mat4 projection = glm::perspective(glm::radians(45.0f), static_cast<float>(Engine::Platform::getFrameBufferSize().x) / static_cast<float>(Engine::Platform::getFrameBufferSize().y), 0.1f, 10000.0f);
 
-	player.update(Engine::Clock::getDeltaTime().asSeconds());
+	player.update();
 	player.render(view, projection);
 
 	arena.render(view, projection);

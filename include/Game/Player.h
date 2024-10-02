@@ -11,7 +11,7 @@ namespace Game {
 
 		void initialize();
 
-		void update(float deltaTime);
+		void update();
 		void render(const glm::mat4& view, const glm::mat4& projection);
 
 		Engine::Camera& getCamera() { return camera; }
@@ -20,7 +20,7 @@ namespace Game {
 	private:
 		Engine::Camera camera = Engine::Camera(glm::vec3(0.f, 0.f, 0.f));
 
-		std::unordered_map<int, glm::vec3> movementKeys;
+		std::unordered_map<int, glm::vec3> wasd;
 
 		float speed = 10.f;
 	};

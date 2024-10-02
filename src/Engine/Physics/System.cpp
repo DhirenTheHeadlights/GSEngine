@@ -6,7 +6,13 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/norm.hpp>
 
+#include "Engine/Core/Clock.h"
+
 std::vector<Engine::Physics::MotionComponent*> Engine::Physics::components;
+
+void Engine::Physics::applyForce(MotionComponent* component, const glm::vec3& force) {
+	component->acceleration += force / std::max(component->mass, 0.0001f) * Clock::getDeltaTime().asSeconds();
+}
 
 void Engine::Physics::addMotionComponent(MotionComponent& component) {
 	components.push_back(&component);
@@ -16,7 +22,7 @@ void Engine::Physics::removeMotionComponent(MotionComponent& component) {
 	std::erase(components, &component);
 }
 
-void updateGravity(Engine::Physics::MotionComponent* component, const float deltaTime) {
+void updateGravity(Engine::Physics::MotionComponent* component) {
 	if (component->affectedByGravity && component->airborne) {
 		component->acceleration.y = -9.8f;
 		component->acceleration.x *= 0.001f;
@@ -27,31 +33,31 @@ void updateGravity(Engine::Physics::MotionComponent* component, const float delt
 	}
 }
 
-void updateAirResistance(Engine::Physics::MotionComponent* component, const float deltaTime) {
+void updateAirResistance(Engine::Physics::MotionComponent* component) {
 	const float dragCoefficient = component->airborne ? 0.2f : 0.9f;  // Lower drag in the air, higher on the ground
 
 	const glm::vec3 velocityDragForce = component->velocity * -dragCoefficient;
-	component->velocity += velocityDragForce * deltaTime;
+	component->velocity += velocityDragForce * Engine::Clock::getDeltaTime().asSeconds();
 
 	const glm::vec3 accelDragForce = component->acceleration * -dragCoefficient;
-	component->acceleration += accelDragForce * deltaTime;
+	applyForce(component, accelDragForce);
 }
 
-void updatePosition(Engine::Physics::MotionComponent* component, const float deltaTime) {
-	component->velocity += component->acceleration * deltaTime;
-	component->position += component->velocity * deltaTime;
+void updatePosition(Engine::Physics::MotionComponent* component) {
+	component->velocity += component->acceleration * Engine::Clock::getDeltaTime().asSeconds();
+	component->position += component->velocity * Engine::Clock::getDeltaTime().asSeconds();
 }
 
-void Engine::Physics::updateEntities(const float deltaTime) {
+void Engine::Physics::updateEntities() {
 	for (MotionComponent* component : components) {
 		// Update gravity only if the object is not airborne
-		updateGravity(component, deltaTime);
+		updateGravity(component);
 
 		// Apply air resistance (can be applied even when airborne to simulate drag)
-		updateAirResistance(component, deltaTime);
+		updateAirResistance(component);
 
 		// Update velocity and position
-		updatePosition(component, deltaTime);
+		updatePosition(component);
 	}
 }
 
