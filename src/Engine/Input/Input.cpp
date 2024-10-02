@@ -9,7 +9,7 @@ Engine::Input::Controller controller;
 Engine::Input::Mouse mouse;
 
 void Engine::Input::update() {
-	Internal::updateAllButtons(Clock::getDeltaTime().asSeconds());
+	Internal::updateAllButtons(MainClock::getDeltaTime().as<Seconds>());
 	Internal::resetTypedInput();
 }
 

@@ -1,4 +1,5 @@
 #include "Engine/Core/Engine.h"
+
 #include "Engine/Core/Clock.h"
 #include "Engine/Input/Input.h"
 
@@ -34,7 +35,7 @@ void Engine::update(const Camera& camera) {
 	Debug::updateImGui();
 #endif
 
-	Clock::update();
+	MainClock::update();
 
 	collisionHandler.update();
 

@@ -11,7 +11,7 @@
 std::vector<Engine::Physics::MotionComponent*> Engine::Physics::components;
 
 void Engine::Physics::applyForce(MotionComponent* component, const glm::vec3& force) {
-	component->acceleration += force / std::max(component->mass, 0.0001f) * Clock::getDeltaTime().asSeconds();
+	component->acceleration += force / std::max(component->mass, 0.0001f) * MainClock::getDeltaTime().as<Seconds>();
 }
 
 void Engine::Physics::addMotionComponent(MotionComponent& component) {
@@ -37,15 +37,15 @@ void updateAirResistance(Engine::Physics::MotionComponent* component) {
 	const float dragCoefficient = component->airborne ? 0.2f : 0.9f;  // Lower drag in the air, higher on the ground
 
 	const glm::vec3 velocityDragForce = component->velocity * -dragCoefficient;
-	component->velocity += velocityDragForce * Engine::Clock::getDeltaTime().asSeconds();
+	component->velocity += velocityDragForce * Engine::MainClock::getDeltaTime().as<Engine::Seconds>();
 
 	const glm::vec3 accelDragForce = component->acceleration * -dragCoefficient;
 	applyForce(component, accelDragForce);
 }
 
 void updatePosition(Engine::Physics::MotionComponent* component) {
-	component->velocity += component->acceleration * Engine::Clock::getDeltaTime().asSeconds();
-	component->position += component->velocity * Engine::Clock::getDeltaTime().asSeconds();
+	component->velocity += component->acceleration * Engine::MainClock::getDeltaTime().as<Engine::Seconds>();
+	component->position += component->velocity * Engine::MainClock::getDeltaTime().as<Engine::Seconds>();
 }
 
 void Engine::Physics::updateEntities() {
