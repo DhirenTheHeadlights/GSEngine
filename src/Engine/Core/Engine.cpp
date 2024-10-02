@@ -38,7 +38,7 @@ void Engine::update(const Camera& camera) {
 
 	collisionHandler.update();
 
-	Physics::updateEntities(Clock::getDeltaTime().asSeconds());
+	Physics::updateEntities();
 
 	Input::update();
 }

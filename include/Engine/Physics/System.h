@@ -9,10 +9,12 @@
 namespace Engine::Physics {
 	extern std::vector<MotionComponent*> components;
 
+	void applyForce(MotionComponent* component, const glm::vec3& force);
+
 	void addMotionComponent(MotionComponent& component);
 	void removeMotionComponent(MotionComponent& component);
 
-	void updateEntities(const float deltaTime);
+	void updateEntities();
 	void resolveCollision(const BoundingBox& dynamicBoundingBox, MotionComponent& dynamicMotionComponent, const CollisionInformation& collisionInfo);
 
 }
