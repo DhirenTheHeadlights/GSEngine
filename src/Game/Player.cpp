@@ -12,7 +12,7 @@ void Game::Player::initialize() {
 
 	camera.setPosition(boundingBoxes[0].getCenter());
 
-	motionComponent.mass = 2.f;
+	motionComponent.mass = 1.f;
 }
 
 void Game::Player::update() {

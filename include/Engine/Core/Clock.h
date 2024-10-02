@@ -3,72 +3,46 @@
 #include <chrono>
 #include <algorithm>
 
-namespace Engine::Clock {
+#include "Engine/Physics/Units/UnitTemplate.h"
 
-	// Custom time types
-	struct Seconds {
-		Seconds() = default;
-		explicit Seconds(const float time) : time(time) {}
+namespace Engine {
+	using Milliseconds = Unit<float, 0.001f>;
+	using Seconds = Unit<float, 1.0f>;
+	using Minutes = Unit<float, 60.0f>;
+	using Hours = Unit<float, 3600.0f>;
 
-		explicit operator float() const {
-			return time;
-		}
-
-		float time = 0.0f;
+	struct Time : Quantity<Seconds> {
+		using Quantity::Quantity;
 	};
 
-	struct Milliseconds {
-		Milliseconds() = default;
-		explicit Milliseconds(const float time) : time(time) {}
+	class Clock {
+	public:
+		Clock() : startTime(std::chrono::steady_clock::now()) {}
 
-		explicit operator float() const {
-			return time;
+		Time reset() {
+			const Time elapsedTime = getElapsedTime();
+			startTime = std::chrono::steady_clock::now();
+			return elapsedTime;
 		}
 
-		float time = 0.0f;
-	};
-
-	struct Minutes {
-		Minutes() = default;
-		explicit Minutes(const float time) : time(time) {}
-
-		explicit operator float() const {
-			return time;
-		}
-
-		float time = 0.0f;
-	};
-
-	// Time class to convert between Seconds, Milliseconds, and Minutes
-	struct Time {
-		Time() = default;
-		explicit Time(const Seconds& seconds) : time(seconds.time) {}
-		explicit Time(const Milliseconds& milliseconds) : time(milliseconds.time / 1000.0f) {}
-		explicit Time(const Minutes& minutes) : time(minutes.time * 60.0f) {}
-
-		float asSeconds() const {
-			return time;
-		}
-
-		float asMilliseconds() const {
-			return time * 1000.0f;
-		}
-
-		float asMinutes() const {
-			return time / 60.0f;
+		Time getElapsedTime() const {
+			const auto now = std::chrono::steady_clock::now();
+			const std::chrono::duration<float> elapsedTime = now - startTime;
+			return Time(Seconds(elapsedTime.count()));
 		}
 	private:
-		float time = 0.0f;
+		std::chrono::steady_clock::time_point startTime;
 	};
+}
 
-	// Clock system using custom time types
+namespace Engine::MainClock {
 	inline std::chrono::steady_clock::time_point lastUpdate = std::chrono::steady_clock::now();
 	inline Time dt;
 
 	inline int frameRate = 0;
-	inline int frameCount = 0;
-	inline int numFramesToAverage = 40;
-	inline Time frameRateUpdateTime{ Seconds(0.0f) };
+	inline float frameCount = 0;
+	inline float numFramesToAverage = 40;
+	inline Time frameRateUpdateTime;
 
 	// Call this at the beginning of each frame
 	inline void update() {
@@ -81,21 +55,19 @@ namespace Engine::Clock {
 
 		// Frame rate calculation
 		++frameCount;
-		frameRateUpdateTime = Time(Seconds(frameRateUpdateTime.asSeconds() + dt.asSeconds()));
+		frameRateUpdateTime += dt;
 
 		if (frameCount >= numFramesToAverage) {
-			frameRate = static_cast<int>(frameCount / frameRateUpdateTime.asSeconds());
-			frameRateUpdateTime = Time(Seconds(0.0f)); // Reset frame rate update time
-			frameCount = 0;
+			frameRate = static_cast<int>(frameCount / frameRateUpdateTime.as<Seconds>());
+			frameRateUpdateTime = Time();
+			frameCount = 0.f;
 		}
 	}
 
-	// Get delta time for all classes
 	inline Time getDeltaTime() {
 		return dt;
 	}
 
-	// Get frame rate
 	inline int getFrameRate() {
 		return frameRate;
 	}

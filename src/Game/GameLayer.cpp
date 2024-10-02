@@ -6,7 +6,6 @@
 
 #include <glm/gtc/type_ptr.hpp>
 
-#include "Engine/Core/Clock.h"
 #include "Engine/Core/Engine.h"
 
 #include "Engine/Input/Input.h"
