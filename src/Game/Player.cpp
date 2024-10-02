@@ -12,7 +12,7 @@ void Game::Player::initialize() {
 
 	camera.setPosition(boundingBoxes[0].getCenter());
 
-	motionComponent.mass = 10.f;
+	motionComponent.mass = 2.f;
 }
 
 void Game::Player::update() {
@@ -22,12 +22,12 @@ void Game::Player::update() {
 
 	for (auto& [key, direction] : wasd) {
 		if (Engine::Input::getKeyboard().keys[key].held) {
-			applyForce(&motionComponent, camera.getCameraDirectionRelativeToOrigin(direction * 10.f));
+			applyForce(&motionComponent, camera.getCameraDirectionRelativeToOrigin(direction * 100.f));
 		}
 	}
 
 	if (Engine::Input::getKeyboard().keys[GLFW_KEY_SPACE].pressed && !motionComponent.airborne) {
-		applyForce(&motionComponent, { 0, 1000, 0 });
+		applyForce(&motionComponent, { 0, 100000, 0 });
 		motionComponent.airborne = true;
 	}
 	
