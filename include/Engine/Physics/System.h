@@ -9,7 +9,7 @@
 namespace Engine::Physics {
 	extern std::vector<MotionComponent*> components;
 
-	void applyForce(MotionComponent* component, const glm::vec3& force);
+	void applyForce(MotionComponent* component, const Vec3<Force>& force);
 
 	void addMotionComponent(MotionComponent& component);
 	void removeMotionComponent(MotionComponent& component);

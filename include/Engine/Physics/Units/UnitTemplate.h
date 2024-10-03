@@ -22,6 +22,13 @@ namespace Engine {
 			return value / UnitType(1.0f).getValue();
 		}
 
+		// Assignment operator overload
+		template <typename UnitType>
+		Quantity& operator=(const UnitType& unit) {
+			value = unit.getValue();
+			return *this;
+		}
+
 		// Arithmetic operators
 		Quantity operator+(const Quantity& other) const { return Quantity(value + other.value); }
 		Quantity operator-(const Quantity& other) const { return Quantity(value - other.value); }
@@ -34,5 +41,4 @@ namespace Engine {
 	private:
 		float value;  // Stored in base units
 	};
-
 }

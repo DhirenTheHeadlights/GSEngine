@@ -48,6 +48,8 @@ void Engine::render() {
 #if IMGUI
 	Debug::renderImGui();
 #endif
+	glfwSwapBuffers(Platform::window);
+	glfwPollEvents();
 }
 
 void Engine::shutdown() {

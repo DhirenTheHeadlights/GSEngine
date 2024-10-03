@@ -29,7 +29,7 @@ bool Engine::BroadPhaseCollisionHandler::checkCollision(const glm::vec3& point, 
 bool Engine::BroadPhaseCollisionHandler::checkCollision(DynamicObject& object1, Object& object2) {
 	for (auto& box1 : object1.getBoundingBoxes()) {
 		for (auto& box2 : object2.getBoundingBoxes()) {
-			if (checkCollision(box1, box2, object1.getMotionComponent().velocity)) {
+			if (checkCollision(box1, box2, object1.getMotionComponent().velocity.as<Units::MetersPerSecondSquared>())) {
 				setCollisionInformation(box1, box2);
 
 				box1.collisionInformation.colliding = true;
