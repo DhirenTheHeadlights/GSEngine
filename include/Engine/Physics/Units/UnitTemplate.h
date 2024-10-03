@@ -9,22 +9,27 @@ namespace Engine {
 		float value;
 	};
 
-	template <typename BaseUnitType>
+	template <typename T>
+	concept IsUnit = requires(T t) {
+		{ t.getValue() } -> std::convertible_to<float>;
+	};
+
+	template <typename UnitType>
 	struct Quantity {
 		Quantity() : value(0.0f) {}
 
-		template <typename UnitType>
-		explicit Quantity(const UnitType& unit) : value(unit.getValue()) {}
+		template <IsUnit Unit>
+		explicit Quantity(const Unit& unit) : value(unit.getValue()) {}
 
 		// Conversion function to convert to any other unit type
-		template <typename UnitType>
+		template <IsUnit Unit>
 		float as() const {
-			return value / UnitType(1.0f).getValue();
+			return value / Unit(1.0f).getValue();
 		}
 
 		// Assignment operator overload
-		template <typename UnitType>
-		Quantity& operator=(const UnitType& unit) {
+		template <IsUnit Unit>
+		Quantity& operator=(const Unit& unit) {
 			value = unit.getValue();
 			return *this;
 		}

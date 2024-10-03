@@ -3,26 +3,6 @@
 #include "Engine/Physics/Units/UnitTemplate.h"
 
 namespace Engine {
-	template <typename T>
-	concept IsUnit = requires(T t) {
-		{ t.getValue() } -> std::convertible_to<float>;
-	};
-
-	template <typename Unit>
-	requires IsUnit<Unit>
-	struct Vec3Units {
-		explicit Vec3Units(const glm::vec3& vec)
-			: x(vec.x), y(vec.y), z(vec.z) {}
-		Unit x;
-		Unit y;
-		Unit z;
-	};
-
-	template <typename T>
-	concept IsQuantity = requires(T t) {
-		{ t } -> std::is_same<Quantity>;
-	};
-
 	template <typename UnitType>
 	struct Vec3 {
 		Vec3() = default;
@@ -33,8 +13,15 @@ namespace Engine {
 			: vec(normalize(vec)), magnitude(glm::length(vec)) {}
 
 		// Constructor that initializes with 3 UnitType units
-		explicit Vec3(const Vec3Units<UnitType>& units)
-			: vec(glm::vec3(units.x.getValue(), units.y.getValue(), units.z.getValue())),
+		template <IsUnit Unit>
+		explicit Vec3(const Unit& x, const Unit& y, const Unit& z)
+			: vec(glm::vec3(x.getValue(), y.getValue(), z.getValue())),
+			magnitude(glm::length(vec)) {}
+
+		// Constructor that initializes with an initializer list of units
+		template <IsUnit Unit>
+		explicit Vec3(std::initializer_list<Unit> list)
+			: vec(glm::vec3(list.begin()[0].getValue(), list.begin()[1].getValue(), list.begin()[2].getValue())),
 			magnitude(glm::length(vec)) {}
 
 		// Return the magnitude as the UnitType (e.g., Meters, MetersPerSecond)

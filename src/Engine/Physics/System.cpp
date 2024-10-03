@@ -24,8 +24,12 @@ void Engine::Physics::removeMotionComponent(MotionComponent& component) {
 
 void updateGravity(Engine::Physics::MotionComponent* component) {
 	if (component->affectedByGravity && component->airborne) {
-		Engine::Vec3<Engine::Force> gravity(Engine::Vec3Units<Engine::Units::Newtons>(glm::vec3(0, -9.81f, 0) * component->mass.as<Engine::Units::Kilograms>()));
-		applyForce(component, gravity);
+		Engine::Vec3<Engine::Force> gravity(
+			Engine::Units::Newtons(0.f), // No gravity in the x direction
+			Engine::Units::Newtons(9.8f * component->mass.as<Engine::Units::Kilograms>()),
+			Engine::Units::Newtons(0.f)  // No gravity in the z direction
+		);
+		applyForce(component, gravity);	
 		component->acceleration.getFullVector().x *= 0.001f;
 		component->acceleration.getFullVector().z *= 0.001f;
 	}
@@ -110,8 +114,8 @@ void Engine::Physics::resolveCollision(const BoundingBox& dynamicBoundingBox, Mo
 	// Check for collision on the back face
 	else if (glm::epsilonEqual(collisionInfo.collisionPoint.z, dynamicBoundingBox.lowerBound.z, epsilon)) {
 		// Stop backward velocity and acceleration
-		dynamicMotionComponent.velocity.getFullVector().z = std::max(0.f, dynamicMotionComponent.velocity.z);
-		dynamicMotionComponent.acceleration.getFullVector().z = std::max(0.f, dynamicMotionComponent.acceleration.z);
+		dynamicMotionComponent.velocity.getFullVector().z = std::max(0.f, dynamicMotionComponent.velocity.getFullVector().z);
+		dynamicMotionComponent.acceleration.getFullVector().z = std::max(0.f, dynamicMotionComponent.acceleration.getFullVector().z);
 
 		// Adjust position to be just in front of the back face
 		dynamicMotionComponent.position.getFullVector().z = dynamicBoundingBox.lowerBound.z - (dynamicBoundingBox.lowerBound.z - dynamicMotionComponent.position.getFullVector().z);
