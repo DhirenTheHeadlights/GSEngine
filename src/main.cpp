@@ -37,9 +37,6 @@ int main() {
 		}
 
 		Engine::render();
-
-		glfwSwapBuffers(Engine::Platform::window);
-		glfwPollEvents();
 	}
 
     Game::closeGame();

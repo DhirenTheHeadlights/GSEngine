@@ -2,7 +2,7 @@
 
 #include "Engine/Physics/Units/UnitTemplate.h"
 
-namespace Engine::Length {
+namespace Engine::Units {
 	// Define specific unit types
 	using Kilometers = Unit<float, 1000.0f>;
 	using Meters = Unit<float, 1.0f>;
@@ -14,7 +14,7 @@ namespace Engine::Length {
 }
 
 namespace Engine {
-	struct Length : public Quantity<Meters> {
+	struct Length : Quantity<Units::Meters> {
 		using Quantity::Quantity;
 	};
 }

@@ -5,13 +5,15 @@
 
 #include "Engine/Physics/Units/UnitTemplate.h"
 
-namespace Engine {
+namespace Engine::Units {
 	using Milliseconds = Unit<float, 0.001f>;
 	using Seconds = Unit<float, 1.0f>;
 	using Minutes = Unit<float, 60.0f>;
 	using Hours = Unit<float, 3600.0f>;
+}
 
-	struct Time : Quantity<Seconds> {
+namespace Engine {
+	struct Time : Quantity<Units::Seconds> {
 		using Quantity::Quantity;
 	};
 
@@ -28,7 +30,7 @@ namespace Engine {
 		Time getElapsedTime() const {
 			const auto now = std::chrono::steady_clock::now();
 			const std::chrono::duration<float> elapsedTime = now - startTime;
-			return Time(Seconds(elapsedTime.count()));
+			return Time(Units::Seconds(elapsedTime.count()));
 		}
 	private:
 		std::chrono::steady_clock::time_point startTime;
@@ -51,14 +53,14 @@ namespace Engine::MainClock {
 		lastUpdate = now;
 
 		// Update delta time (clamped to a max of 0.16 seconds to avoid big time jumps)
-		dt = Time(Seconds(std::min(deltaTime.count(), 0.16f)));
+		dt = Time(Units::Seconds(std::min(deltaTime.count(), 0.16f)));
 
 		// Frame rate calculation
 		++frameCount;
 		frameRateUpdateTime += dt;
 
 		if (frameCount >= numFramesToAverage) {
-			frameRate = static_cast<int>(frameCount / frameRateUpdateTime.as<Seconds>());
+			frameRate = static_cast<int>(frameCount / frameRateUpdateTime.as<Units::Seconds>());
 			frameRateUpdateTime = Time();
 			frameCount = 0.f;
 		}

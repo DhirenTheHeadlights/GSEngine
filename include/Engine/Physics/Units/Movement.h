@@ -4,7 +4,7 @@
 
 // Velocity
 
-namespace Engine::Velocity {
+namespace Engine::Units {
 	using MetersPerSecond = Unit<float, 1.0f>;
 	using KilometersPerHour = Unit<float, 0.277778f>;
 	using MilesPerHour = Unit<float, 0.44704f>;
@@ -12,14 +12,14 @@ namespace Engine::Velocity {
 }
 
 namespace Engine {
-	struct Velocity : Quantity<Velocity::MetersPerSecond> {
+	struct Velocity : Quantity<Units::MetersPerSecond> {
 		using Quantity::Quantity;
 	};
 }
 
 // Acceleration
 
-namespace Engine::Acceleration {
+namespace Engine::Units {
 	using MetersPerSecondSquared = Unit<float, 1.0f>;
 	using KilometersPerHourSquared = Unit<float, 0.0000771605f>;
 	using MilesPerHourSquared = Unit<float, 0.000124514f>;
@@ -27,7 +27,7 @@ namespace Engine::Acceleration {
 }
 
 namespace Engine {
-	struct Acceleration : Quantity<Acceleration::MetersPerSecondSquared> {
+	struct Acceleration : Quantity<Units::MetersPerSecondSquared> {
 		using Quantity::Quantity;
 	};
 }

@@ -66,8 +66,8 @@ bool Game::gameLogic() {
 
 	ImGui::InputFloat3("Camera Position", &player.getCamera().getPosition()[0]);
 	ImGui::InputFloat3("Player Bounding Box Position", &player.getBoundingBoxes()[0].getCenter()[0]);
-	ImGui::InputFloat3("Player Velocity", &player.getMotionComponent().velocity[0]);
-	ImGui::InputFloat3("Player Acceleration", &player.getMotionComponent().acceleration[0]);
+	ImGui::InputFloat3("Player Velocity: m/s", &player.getMotionComponent().velocity.as<Engine::Units::MetersPerSecond>()[0]);
+	ImGui::InputFloat3("Player Acceleration: m/s^2", &player.getMotionComponent().acceleration.as<Engine::Units::MetersPerSecondSquared>()[0]);
 
 	const auto [colliding, collisionNormal, penetration, collisionPoint] = player.getBoundingBoxes()[0].collisionInformation;
 	ImGui::Text("Player Collision: %s", player.isColliding() ? "True" : "False");
