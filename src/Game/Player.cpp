@@ -22,12 +22,14 @@ void Game::Player::update() {
 
 	for (auto& [key, direction] : wasd) {
 		if (Engine::Input::getKeyboard().keys[key].held) {
-			applyForce(&motionComponent, Engine::Vec3<Engine::Force>(camera.getCameraDirectionRelativeToOrigin(direction * 100.f)));
+			applyForce(&motionComponent, Engine::Vec3<Engine::Force>(
+				camera.getCameraDirectionRelativeToOrigin(direction * 100.f), Engine::Units::Newtons())
+			);
 		}
 	}
 
 	if (Engine::Input::getKeyboard().keys[GLFW_KEY_SPACE].pressed && !motionComponent.airborne) {
-		applyForce(&motionComponent, Engine::Vec3<Engine::Force>({ 0, 100000, 0 }));
+		applyForce(&motionComponent, Engine::Vec3<Engine::Units::Newtons>({ 0, 100000, 0 }));
 		motionComponent.airborne = true;
 	}
 	
