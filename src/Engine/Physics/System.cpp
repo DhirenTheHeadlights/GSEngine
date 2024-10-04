@@ -24,10 +24,10 @@ void Engine::Physics::removeMotionComponent(MotionComponent& component) {
 
 void updateGravity(Engine::Physics::MotionComponent* component) {
 	if (component->affectedByGravity && component->airborne) {
-		Engine::Vec3<Engine::Force> gravity(
-			Engine::Units::Newtons(0.f), // No gravity in the x direction
+		const Engine::Vec3<Engine::Force> gravity(
+			Engine::Units::Newtons(0.f),
 			Engine::Units::Newtons(9.8f * component->mass.as<Engine::Units::Kilograms>()),
-			Engine::Units::Newtons(0.f)  // No gravity in the z direction
+			Engine::Units::Newtons(0.f)
 		);
 		applyForce(component, gravity);	
 		component->acceleration.getFullVector().x *= 0.001f;
@@ -44,8 +44,12 @@ void updateAirResistance(Engine::Physics::MotionComponent* component) {
 	const float dragCoefficient = component->airborne ? 0.47f : 1.05f;  // Approx for a sphere vs a box
 	constexpr float crossSectionalArea = 1.0f;  // Example area in m^2, adjust according to the object
 
-	// Calculate drag force magnitude: F_d = 0.5 * C_d * rho * A * v^2
-	const Engine::Force dragForceMagnitude(0.5f * dragCoefficient * airDensity * crossSectionalArea * component->velocity.length().as<Engine::Units::MetersPerSecond>() * component->velocity.length().as<Engine::Units::MetersPerSecond>());
+	// Calculate drag force magnitude: F_d = 0.5 * C_d * rho * A * v^2, Units are in Newtons
+	const Engine::Force dragForceMagnitude(Engine::Units::Newtons(
+		0.5f * dragCoefficient * airDensity * crossSectionalArea * 
+		component->velocity.length().as<Engine::Units::MetersPerSecond>() * 
+		component->velocity.length().as<Engine::Units::MetersPerSecond>())
+	);
 
 	// Apply the drag force to the object
 	applyForce(component, Engine::Vec3<Engine::Force>(-dragForceMagnitude.as<Engine::Units::Newtons>() * component->velocity.getDirection()));
