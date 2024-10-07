@@ -5,13 +5,15 @@
 // Mass
 
 namespace Engine::Units {
+	struct MassTag {};
+
 	constexpr char kilograms[] = "kg";
 	constexpr char grams[] = "g";
 	constexpr char pounds[] = "lb";
 
-	using Kilograms = Unit<float, 1.0f, kilograms>;
-	using Grams = Unit<float, 0.001f, grams>;
-	using Pounds = Unit<float, 0.453592f, pounds>;
+	using Kilograms = Unit<MassTag, 1.0f, kilograms>;
+	using Grams = Unit<MassTag, 0.001f, grams>;
+	using Pounds = Unit<MassTag, 0.453592f, pounds>;
 }
 
 namespace Engine {
@@ -21,7 +23,7 @@ namespace Engine {
 		Units::Pounds
 	>;
 
-	struct Mass : Quantity<MassUnits> {
+	struct Mass : Quantity<Units::Kilograms, MassUnits> {
 		using Quantity::Quantity;
 	};
 }
@@ -29,11 +31,13 @@ namespace Engine {
 // Force
 
 namespace Engine::Units {
+	struct ForceTag {};
+
 	constexpr char newtons[] = "N";
 	constexpr char poundsForce[] = "lbf";
 
-	using Newtons = Unit<float, 1.0f, newtons>;
-	using PoundsForce = Unit<float, 4.44822f, poundsForce>;
+	using Newtons = Unit<ForceTag, 1.0f, newtons>;
+	using PoundsForce = Unit<ForceTag, 4.44822f, poundsForce>;
 }
 
 namespace Engine {
@@ -42,7 +46,7 @@ namespace Engine {
 		Units::PoundsForce
 	>;
 
-	struct Force : Quantity<ForceUnits> {
+	struct Force : Quantity<Units::Newtons, ForceUnits> {
 		using Quantity::Quantity;
 	};
 }

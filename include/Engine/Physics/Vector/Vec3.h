@@ -1,130 +1,139 @@
 #pragma once
 
-#include <initializer_list>
 #include <glm/glm.hpp>
-#include "Engine/Physics/Units/UnitTemplate.h"
+#include "Engine/Physics/Units/UnitToQuantityDefinitions.h"
 
 namespace Engine {
+	// Trait to extract QuantityTagType
 	template <typename T>
-	concept IsQuantity = requires {
-		typename T::Units;
-		std::derived_from<T, Quantity<typename T::Units>>;
+	struct GetQuantityTagType;
+
+	template <typename T>
+	struct GetQuantityTagType {
+		using Type = typename UnitToQuantity<T>::Type;
 	};
 
+	// Concept to check if two types have the same QuantityTagType
+	template <typename T, typename U>
+	concept IsSameQuantityTag = std::is_same_v<typename GetQuantityTagType<T>::Type, typename GetQuantityTagType<U>::Type>;
+
 	template <typename T>
-	concept IsUnitOrQuantity = IsUnit<T> || IsQuantity<T>;
+	concept IsQuantity = std::is_base_of_v<Quantity<typename T::DefaultUnit, typename T::Units>, T>;
 
-	template <IsUnitOrQuantity T>
+	template <typename T>
+	concept IsQuantityOrUnit = IsQuantity<T> || IsUnit<T>;
+
+	template <IsQuantityOrUnit T>
 	struct Vec3 {
-		Vec3() : vec(glm::vec3(0.0f)), magnitude(typename UnitToQuantity<T>::Type(0.0f)) {}
+		using QuantityType = typename UnitToQuantity<T>::Type;
 
-		// Constructor that initializes with a glm::vec3 and a unit
-		template <IsUnit Unit>
-		explicit Vec3(const glm::vec3& vec, const Unit& unit)
-			: vec(glm::normalize(vec)), magnitude(typename UnitToQuantity<Unit>::Type(unit.getValue()* glm::length(vec))) {}
+		Vec3() : magnitude(QuantityType()), vec() {}
 
-		// Constructor that initializes with 3 UnitType units
-		template <IsUnit Unit>
-		explicit Vec3(const Unit& x, const Unit& y, const Unit& z)
-			: vec(glm::vec3(x.getValue(), y.getValue(), z.getValue())),
-			magnitude(typename UnitToQuantity<Unit>::Type(glm::length(vec))) {}
-
-		// Constructor that initializes with a glm::vec3 from an initializer list
-		template <IsUnit Unit>
-		explicit Vec3(const std::initializer_list<float>& list) {
-			assert(list.size() == 3);
-			vec = glm::vec3(*(list.begin()), *(list.begin() + 1), *(list.begin() + 2));
-			magnitude = typename UnitToQuantity<Unit>::Type(glm::length(vec));
+		// Constructor that only takes glm::vec3
+		explicit Vec3(const glm::vec3& vector)
+			: vec(glm::normalize(vector)) {
+			float length = glm::length(vector);
+			if constexpr (IsUnit<T>) {
+				magnitude = QuantityType(T(length));
+			}
+			else if constexpr (IsQuantity<T>) {
+				magnitude = T(T::DefaultUnit(length));
+			}
+			else {
+				static_assert(false, "T must be a Unit to use this constructor");
+			}
 		}
 
-		// Return the magnitude as the QuantityType
-		auto length() const {
-			return magnitude;
-		}
+		explicit Vec3(const float x, const float y, const float z)
+			: Vec3(glm::vec3(x, y, z)) {}
+
+		explicit Vec3(const float xyz) : Vec3(glm::vec3(xyz)) {}
+
+		// Converter from Vec3<Unit> to Vec3<Quantity>
+		template <IsUnit Unit>
+		Vec3(const Vec3<Unit>& other)
+			: magnitude(other.magnitude), vec(other.getDirection()) {}
+
+		// Converter from Vec3<Quantity> to Vec3<Unit>
+		template <IsQuantity Quantity>
+		Vec3(const Vec3<Quantity>& other)
+			: magnitude(other.magnitude.template as<typename Quantity::DefaultUnit>()),
+			  vec(other.getDirection()) {}
+
+		// Magnitude
+		// Call: magnitude.as<Units::[unit name]>()
+		QuantityType magnitude;
 
 		// Convert the vector to a different unit
-		template <typename Unit>
-		glm::vec3 as() const {
-			static_assert(typename UnitToQuantity<Unit>::Type::template isValidUnit<Unit>(), "Invalid unit type for conversion");
-			float convertedMagnitude = magnitude.template as<Unit>();
+		template <IsUnit Unit>
+		[[nodiscard]] glm::vec3 as() const {
+			const float convertedMagnitude = magnitude.template as<Unit>();
 			return vec * convertedMagnitude;
 		}
 
-		glm::vec3 getDirection() const {
+		[[nodiscard]] glm::vec3 getDirection() const {
 			return vec;
 		}
 
-		// Arithmetic operators (+, -, *, /)
-		Vec3 operator+(const Vec3& other) const {
-			glm::vec3 combinedVector = vec * magnitude.as() + other.vec * other.magnitude.as();
-			return Vec3(combinedVector, magnitude);
+		template <typename U>
+			requires IsSameQuantityTag<T, U>
+		friend auto operator+(const Vec3& lhs, const Vec3<U>& rhs) {
+			using ResultQuantity = decltype(lhs.magnitude + rhs.magnitude);
+			glm::vec3 combinedVector = lhs.getDirection() * lhs.magnitude.template as<typename ResultQuantity::DefaultUnit>() +
+				rhs.getDirection() * rhs.magnitude.template as<typename ResultQuantity::DefaultUnit>();
+			return Vec3<ResultQuantity>(combinedVector);
 		}
 
-		Vec3 operator+(const glm::vec3& other) const {
-			glm::vec3 combinedVector = vec * magnitude.as() + other;
-			return Vec3(combinedVector, magnitude);
+		template <typename U>
+			requires IsSameQuantityTag<T, U>
+		friend auto operator-(const Vec3& lhs, const Vec3<U>& rhs) {
+			using ResultQuantity = decltype(lhs.magnitude - rhs.magnitude);
+			glm::vec3 combinedVector = lhs.getDirection() * lhs.magnitude.template as<typename ResultQuantity::DefaultUnit>() -
+				rhs.getDirection() * rhs.magnitude.template as<typename ResultQuantity::DefaultUnit>();
+			return Vec3<ResultQuantity>(combinedVector);
 		}
 
-		Vec3 operator+(const float scalar) const {
-			return Vec3(vec * (magnitude.as() + scalar), magnitude);
+		friend Vec3 operator*(const Vec3& vec, const float scalar) {
+			return Vec3(vec.getDirection() * scalar * vec.magnitude.value());
 		}
 
-		Vec3 operator-(const Vec3& other) const {
-			glm::vec3 combinedVector = vec * magnitude.as() - other.vec * other.magnitude.as();
-			return Vec3(combinedVector, magnitude);
+		friend Vec3 operator/(const Vec3& vec, const float scalar) {
+			return Vec3(vec.getDirection() * (vec.magnitude.value() / scalar));
 		}
 
-		Vec3 operator*(const float scalar) const {
-			return Vec3(vec * (magnitude.as() * scalar), magnitude);
-		}
-
-		template <typename ScalarUnit, typename ResultUnit>
-		Vec3<ResultUnit> operator*(const ScalarUnit& scalar) const {
-			return Vec3<ResultUnit>(vec * (magnitude.as() * scalar.getValue()));
-		}
-
-		Vec3 operator/(const float scalar) const {
-			return Vec3(vec * (magnitude.as() / scalar), magnitude);
-		}
-
-		// Compound assignment operators (+=, -=, *=, /=)
-		Vec3& operator+=(const Vec3& other) {
-			*this = *this + other;
+		template <IsQuantityOrUnit U>
+			requires IsSameQuantityTag<T, U>
+		Vec3& operator+=(const Vec3<U>& other) {
+			*this = Vec3(*this + other);
 			return *this;
 		}
 
-		Vec3& operator+=(const glm::vec3& other) {
-			*this = *this + other;
-			return *this;
-		}
-
-		Vec3& operator+=(const float scalar) {
-			magnitude = typename decltype(magnitude)::QuantityType(magnitude.as() + scalar);
-			return *this;
-		}
-
-		Vec3& operator-=(const Vec3& other) {
-			*this = *this - other;
+		template <IsQuantityOrUnit U>
+			requires IsSameQuantityTag<T, U>
+		Vec3& operator-=(const Vec3<U>& other) {
+			*this = Vec3(*this - other);
 			return *this;
 		}
 
 		Vec3& operator*=(const float scalar) {
-			magnitude = typename decltype(magnitude)::QuantityType(magnitude.as() * scalar);
+			magnitude = magnitude * scalar;
 			return *this;
 		}
 
 		Vec3& operator/=(const float scalar) {
-			magnitude = typename decltype(magnitude)::QuantityType(magnitude.as() / scalar);
+			magnitude = magnitude / scalar;
 			return *this;
 		}
 
-		/// Be careful - this function is not unit safe
-		glm::vec3& getFullVector() {
+		// Raw vector access
+		// CAUTION: Not unit safe
+		[[nodiscard]] glm::vec3& rawVec3() {
 			return vec;
 		}
 
 	private:
-		glm::vec3 vec;  // Normalized direction vector
-		typename UnitToQuantity<T>::Type magnitude;  // Scalar magnitude as either Quantity or deduced type from Unit
+		glm::vec3 vec;           // Normalized direction vector
 	};
 }
+
+

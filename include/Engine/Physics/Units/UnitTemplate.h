@@ -5,28 +5,18 @@
 #include <tuple>
 #include <string>
 
-template <typename T>
-struct UnitToQuantity;
-
-// Macro to define the relationship between a unit and a quantity
-// Example: DEFINE_UNIT_TO_QUANTITY(Units::Meters, Length);
-
-#define DEFINE_UNIT_TO_QUANTITY(UnitType, QuantityType)		 \
-	    template <>                                          \
-	    struct UnitToQuantity<UnitType> {					 \
-	        using Type = QuantityType;                       \
-	    };
-
 namespace Engine {
 	template<typename... Units>
 	struct UnitList {
 		using Type = std::tuple<Units...>;
 	};
 
-	template <typename T, float ConversionFactor, const char* UnitName>
+	template <typename QuantityTag, float ConversionFactor, const char* UnitName>
 	struct Unit {
 		Unit() = default;											// Default constructor: Equivalent to 0.0f
 		explicit Unit(const float value) : value(value) {}			// Constructor with value
+
+		using QuantityTagType = QuantityTag;
 
 		// Access the value in the unit
 		[[nodiscard]] float getValue() const { return value * ConversionFactor; }	
@@ -53,40 +43,51 @@ namespace Engine {
 
 	// Concept to check if a type is a valid unit
 	template <typename T>
-	concept IsUnit = requires(T t) {
+	concept IsUnit = requires {
+		typename T::QuantityTagType;							// Units have QuantityTagType
+		{ T::units() } -> std::convertible_to<const char*>;		// Optional: further ensures T is a Unit
+	}&& requires(T t) {
 		{ t.getValue() } -> std::convertible_to<float>;
 	};
 
-	// Concept to check if a type is a valid quantity
-	template <typename Unit, typename Tuple>
-	struct is_in_tuple;
+	template <typename UnitType, typename ValidUnits>
+	constexpr bool isValidUnitForQuantity() {
+		return std::apply([]<typename... Units>(Units... u) {
+			return ((std::is_same_v<typename UnitType::QuantityTagType, typename Units::QuantityTagType>) || ...);
+		}, typename ValidUnits::Type{});
+	}
 
-	// Helper to check if a type is in a tuple
-	template <typename Unit, typename... Types>
-	struct is_in_tuple<Unit, std::tuple<Types...>> : std::disjunction<std::is_same<Unit, Types>...> {};
-
-	template <typename ValidUnits>
+	template <IsUnit Default, typename ValidUnits>
 	struct Quantity {
-		using Units = typename ValidUnits::Type;
+		using Units = ValidUnits;
+
+		using DefaultUnit = Default;
 
 		Quantity() : value(0.0f) {}
 
-		template <IsUnit Unit>
-		explicit Quantity(const Unit& unit) : value(unit.getValue()) {
-			static_assert(isValidUnit<Unit>(), "Invalid unit type for this quantity");
+		// Constructs a quantity from a value - default unit is assumed
+		explicit Quantity(const float value) : value(value) {}
+
+		explicit Quantity(const DefaultUnit& unit) : value(unit.getValue()) {
+			// We skip validity check since DefaultUnit is inherently valid
 		}
 
-		// Conversion function to convert to any other unit type
-		template <typename Unit>
+		template <IsUnit Unit>
+		explicit Quantity(const Unit& unit) : value(unit.getValue()) {
+			static_assert(isValidUnitForQuantity<Unit, ValidUnits>(), "Invalid unit type for this quantity");
+		}
+
+		// Conversion function to convert to any other valid unit
+		template <IsUnit Unit>
 		float as() const {
-			static_assert(isValidUnit<Unit>(), "Invalid unit type for conversion");
-			return value / Unit(1.0f).getValue();
+			static_assert(isValidUnitForQuantity<Unit, ValidUnits>(), "Invalid unit type for conversion");
+			return Unit(value.getValue()).getValue();
 		}
 
 		// Assignment operator overload
 		template <IsUnit Unit>
 		Quantity& operator=(const Unit& unit) {
-			static_assert(isValidUnit<Unit>(), "Invalid unit type for assignment");
+			static_assert(isValidUnitForQuantity<Unit, ValidUnits>(), "Invalid unit type for assignment");
 			value = unit.getValue();
 			return *this;
 		}
@@ -104,40 +105,36 @@ namespace Engine {
 			return Quantity(value * scalar);
 		}
 
+		glm::vec3 operator*(const glm::vec3& vec) const {
+			return { value * vec.x, value * vec.y, value * vec.z };
+		}
+
 		Quantity operator/(const float scalar) const {
 			return Quantity(value / scalar);
 		}
 
 		Quantity& operator+=(const Quantity& other) {
-			value += other.value;
+			value = DefaultUnit(value.getValue() + other.value.getValue());
 			return *this;
 		}
 
 		Quantity& operator-=(const Quantity& other) {
-			value -= other.value;
+			value = DefaultUnit(value.getValue() - other.value.getValue());
 			return *this;
 		}
 
 		Quantity& operator*=(const float scalar) {
-			value *= scalar;
+			value = DefaultUnit(value.getValue() * scalar);
 			return *this;
 		}
 
 		Quantity& operator/=(const float scalar) {
-			value /= scalar;
+			value = DefaultUnit(value.getValue() / scalar);
 			return *this;
 		}
 
 	private:
-		float value;  // Stored in base units
-
-		explicit Quantity(const float value) : value(value) {}  // Private constructor for internal arithmetic
-
-		// Helper to check if Unit is valid for this Quantity
-		template <typename Unit>
-		static constexpr bool isValidUnit() {
-			return is_in_tuple<Unit, Units>::value;
-		}
+		DefaultUnit value = 0;  // Stored in base units
 	};
 }
 
