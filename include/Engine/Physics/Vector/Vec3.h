@@ -27,11 +27,11 @@ namespace Engine {
 	struct Vec3 {
 		using QuantityType = typename UnitToQuantity<T>::Type;
 
-		Vec3() : magnitude(QuantityType()), vec() {}
+		Vec3() : magnitude(QuantityType()), vec(0.0f) {}
 
 		// Constructor that only takes glm::vec3
 		explicit Vec3(const glm::vec3& vector)
-			: vec(glm::normalize(vector)) {
+			: vec(glm::length(vector) > 0.0f ? normalize(vector) : glm::vec3(0.0f)) {
 			float length = glm::length(vector);
 			if constexpr (IsUnit<T>) {
 				magnitude = QuantityType(T(length));
@@ -39,10 +39,8 @@ namespace Engine {
 			else if constexpr (IsQuantity<T>) {
 				magnitude = T(T::DefaultUnit(length));
 			}
-			else {
-				static_assert(false, "T must be a Unit to use this constructor");
-			}
 		}
+
 
 		explicit Vec3(const float x, const float y, const float z)
 			: Vec3(glm::vec3(x, y, z)) {}
@@ -124,6 +122,8 @@ namespace Engine {
 			magnitude = magnitude / scalar;
 			return *this;
 		}
+
+
 
 		// Raw vector access
 		// CAUTION: Not unit safe

@@ -2,7 +2,7 @@
 
 #include <string>
 #include <unordered_map>
-#include "Engine/Platform/PlatformFunctions.h"
+#include "Engine/Platform/Platform.h"
 
 namespace Engine::Input {
 	struct Button {

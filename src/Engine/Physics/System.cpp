@@ -11,10 +11,12 @@
 std::vector<Engine::Physics::MotionComponent*> Engine::Physics::components;
 
 void Engine::Physics::applyForce(MotionComponent* component, const Vec3<Force>& force) {
-	component->acceleration += Engine::Vec3<Units::MetersPerSecondSquared>(
-		force.as<Units::Newtons>() / 
-		std::max(component->mass.as<Units::Kilograms>(), 0.0001f) * 
-		MainClock::getDeltaTime().as<Units::Seconds>());
+	component->acceleration += 
+		Engine::Vec3<Units::MetersPerSecondSquared>(
+			force.as<Units::Newtons>() / 
+			std::max(component->mass.as<Units::Kilograms>(), 0.0001f) * 
+			MainClock::getDeltaTime().as<Units::Seconds>()
+		);
 }
 
 void Engine::Physics::addMotionComponent(MotionComponent& component) {

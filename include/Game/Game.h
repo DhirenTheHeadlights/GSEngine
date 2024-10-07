@@ -2,9 +2,9 @@
 #include "Engine/Graphics/Camera.h"
 
 namespace Game {
-	bool initializeGame();
-	bool gameLogic();
-	void closeGame();
+	bool initialize();
+	bool update();
+	void close();
 
 	const Engine::Camera& getCamera();
 }

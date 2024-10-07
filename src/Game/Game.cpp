@@ -1,6 +1,6 @@
 #define GLM_ENABLE_EXPERIMENTAL
 
-#include "Game/GameLayer.h"
+#include "Game/Game.h"
 
 #include "imgui.h"
 
@@ -9,7 +9,7 @@
 #include "Engine/Core/Engine.h"
 
 #include "Engine/Input/Input.h"
-#include "Engine/Platform/PlatformFunctions.h"
+#include "Engine/Platform/Platform.h"
 #include "Game/Arena.h"
 #include "Game/Player.h"
 
@@ -25,7 +25,7 @@ const Engine::Camera& Game::getCamera() {
 	return player.getCamera();
 }
 
-bool Game::initializeGame() {
+bool Game::initialize() {
 	// Loading the saved data. Loading an entire structure like this makes saving game data very easy.
 	Engine::Platform::readEntireFile(RESOURCES_PATH "gameData.data", &gameData, sizeof(GameData));
 
@@ -34,7 +34,7 @@ bool Game::initializeGame() {
 	player.initialize();
 
 	// Set player position
-	player.setPosition(gameData.playerPosition);
+	//player.setPosition(gameData.playerPosition);
 
 	addObject(player);
 	addObject(arena);
@@ -42,9 +42,7 @@ bool Game::initializeGame() {
 	return true;
 }
 
-bool Game::gameLogic() {
-	glViewport(0, 0, Engine::Platform::getFrameBufferSize().x, Engine::Platform::getFrameBufferSize().y);
-	glClear(GL_COLOR_BUFFER_BIT); // Clear screen
+bool Game::update() {
 
 	if (Engine::Input::getMouse().buttons[GLFW_MOUSE_BUTTON_MIDDLE].toggled) {
 		glfwSetInputMode(Engine::Platform::window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
@@ -86,6 +84,6 @@ bool Game::gameLogic() {
 	return true;
 }
 
-void Game::closeGame() {
+void Game::close() {
 	Engine::Platform::writeEntireFile(RESOURCES_PATH "gameData.data", &gameData, sizeof(GameData));
 }

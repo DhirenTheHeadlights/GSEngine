@@ -13,13 +13,13 @@ namespace Engine {
 
 	template <typename QuantityTag, float ConversionFactor, const char* UnitName>
 	struct Unit {
-		Unit() = default;											// Default constructor: Equivalent to 0.0f
-		explicit Unit(const float value) : value(value) {}			// Constructor with value
+		Unit() = default;                                            // Default constructor: Equivalent to 0.0f
+		explicit Unit(const float value) : value(value) {}           // Constructor with value
 
 		using QuantityTagType = QuantityTag;
 
 		// Access the value in the unit
-		[[nodiscard]] float getValue() const { return value * ConversionFactor; }	
+		[[nodiscard]] float getValue() const { return value * ConversionFactor; }
 
 		// Light weight, compile time string representation of the unit
 		static constexpr const char* units() { return UnitName; }
@@ -44,8 +44,8 @@ namespace Engine {
 	// Concept to check if a type is a valid unit
 	template <typename T>
 	concept IsUnit = requires {
-		typename T::QuantityTagType;							// Units have QuantityTagType
-		{ T::units() } -> std::convertible_to<const char*>;		// Optional: further ensures T is a Unit
+		typename T::QuantityTagType;                            // Units have QuantityTagType
+		{ T::units() } -> std::convertible_to<const char*>;     // Optional: further ensures T is a Unit
 	}&& requires(T t) {
 		{ t.getValue() } -> std::convertible_to<float>;
 	};
@@ -68,20 +68,23 @@ namespace Engine {
 		// Constructs a quantity from a value - default unit is assumed
 		explicit Quantity(const float value) : value(value) {}
 
-		explicit Quantity(const DefaultUnit& unit) : value(unit.getValue()) {
-			// We skip validity check since DefaultUnit is inherently valid
-		}
-
+		// Constructs a quantity from a specific unit
 		template <IsUnit Unit>
-		explicit Quantity(const Unit& unit) : value(unit.getValue()) {
+		Quantity(const Unit& unit) {
 			static_assert(isValidUnitForQuantity<Unit, ValidUnits>(), "Invalid unit type for this quantity");
+			value = unit.getValue();  // Store in base unit
 		}
 
 		// Conversion function to convert to any other valid unit
 		template <IsUnit Unit>
 		float as() const {
 			static_assert(isValidUnitForQuantity<Unit, ValidUnits>(), "Invalid unit type for conversion");
-			return Unit(value.getValue()).getValue();
+			return Unit(value).getValue();
+		}
+
+		// Get the value in default unit
+		DefaultUnit getDefaultUnit() const {
+			return DefaultUnit(value);
 		}
 
 		// Assignment operator overload
@@ -105,37 +108,31 @@ namespace Engine {
 			return Quantity(value * scalar);
 		}
 
-		glm::vec3 operator*(const glm::vec3& vec) const {
-			return { value * vec.x, value * vec.y, value * vec.z };
-		}
-
 		Quantity operator/(const float scalar) const {
 			return Quantity(value / scalar);
 		}
 
 		Quantity& operator+=(const Quantity& other) {
-			value = DefaultUnit(value.getValue() + other.value.getValue());
+			value += other.value;
 			return *this;
 		}
 
 		Quantity& operator-=(const Quantity& other) {
-			value = DefaultUnit(value.getValue() - other.value.getValue());
+			value -= other.value;
 			return *this;
 		}
 
 		Quantity& operator*=(const float scalar) {
-			value = DefaultUnit(value.getValue() * scalar);
+			value *= scalar;
 			return *this;
 		}
 
 		Quantity& operator/=(const float scalar) {
-			value = DefaultUnit(value.getValue() / scalar);
+			value /= scalar;
 			return *this;
 		}
 
 	private:
-		DefaultUnit value = 0;  // Stored in base units
+		float value = 0.0f;  // Stored in base units
 	};
 }
-
-

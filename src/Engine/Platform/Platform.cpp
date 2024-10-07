@@ -1,9 +1,9 @@
-#include "Engine/Platform/PlatformFunctions.h"
+#include "Engine/Platform/Platform.h"
 #include <fstream>
 
 #include "Engine/Core/Clock.h"
 #include "Engine/Platform/CallBacks.h"
-#include "Engine/Platform/PlatformTools.h"
+#include "Engine/Platform/PermaAssert.h"
 
 #undef max
 #undef min

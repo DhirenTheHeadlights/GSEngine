@@ -1,6 +1,6 @@
 #include "Engine/Platform/CallBacks.h"
 #include "Engine/Input/Input.h"
-#include "Engine/Platform/PlatformFunctions.h"
+#include "Engine/Platform/Platform.h"
 
 void Engine::Platform::keyCallback(GLFWwindow* window, const int key, int scancode, const int action, int mods) {
 	// Check if the key exists in the map
