@@ -12,7 +12,7 @@ void Game::Player::initialize() {
 
 	camera.setPosition(boundingBoxes[0].getCenter());
 
-	motionComponent.mass = Engine::Mass(Engine::Units::Pounds(180.f));
+	motionComponent.mass = Engine::Units::Pounds(180.f);
 }
 
 void Game::Player::update() {

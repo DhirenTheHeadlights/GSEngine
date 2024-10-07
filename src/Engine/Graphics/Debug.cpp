@@ -2,7 +2,9 @@
 #include <imguiThemes.h>
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
-#include "Engine/Platform/PlatformFunctions.h"
+#include "Engine/Platform/Platform.h"
+
+#include "Engine/Physics/Vector/Vec3.h"
 
 void Engine::Debug::setUpImGui() {
 	ImGui::CreateContext();

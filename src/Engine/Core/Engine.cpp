@@ -2,6 +2,7 @@
 
 #include "Engine/Core/Clock.h"
 #include "Engine/Input/Input.h"
+#include "Engine/Platform/PermaAssert.h"
 
 #define IMGUI 1
 
@@ -14,6 +15,16 @@ Engine::BroadPhaseCollisionHandler Engine::collisionHandler;
 Engine::Shader Engine::shader;
 
 void Engine::initialize() {
+	permaAssertComment(glfwInit(), "err initializing glfw");
+	glfwWindowHint(GLFW_SAMPLES, 4);
+
+#ifdef __APPLE__
+	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, 1);
+	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+#endif
+
 	Platform::initialize();
 
 	shader.createShaderProgram(RESOURCES_PATH "Arena/grid.vert", RESOURCES_PATH "Arena/grid.frag");
@@ -42,6 +53,9 @@ void Engine::update(const Camera& camera) {
 	Physics::updateEntities();
 
 	Input::update();
+
+	glViewport(0, 0, Platform::getFrameBufferSize().x, Platform::getFrameBufferSize().y);
+	glClear(GL_COLOR_BUFFER_BIT); // Clear screen
 }
 
 void Engine::render() {
