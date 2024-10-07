@@ -12,7 +12,7 @@ void Game::Player::initialize() {
 
 	camera.setPosition(boundingBoxes[0].getCenter());
 
-	motionComponent.mass = Engine::Mass(Engine::Units::Kilograms(1.f));
+	motionComponent.mass = Engine::Mass(Engine::Units::Pounds(180.f));
 }
 
 void Game::Player::update() {
@@ -22,14 +22,14 @@ void Game::Player::update() {
 
 	for (auto& [key, direction] : wasd) {
 		if (Engine::Input::getKeyboard().keys[key].held) {
-			applyForce(&motionComponent, Engine::Vec3<Engine::Force>(
-				camera.getCameraDirectionRelativeToOrigin(direction * 100.f), Engine::Units::Newtons())
+			applyForce(&motionComponent, Engine::Vec3<Engine::Units::Newtons>(
+				camera.getCameraDirectionRelativeToOrigin(direction) * 100.f)
 			);
 		}
 	}
 
 	if (Engine::Input::getKeyboard().keys[GLFW_KEY_SPACE].pressed && !motionComponent.airborne) {
-		applyForce(&motionComponent, Engine::Vec3<Engine::Units::Newtons>({ 0, 100000, 0 }));
+		applyForce(&motionComponent, Engine::Vec3<Engine::Units::Newtons>(0.f, 100000.f, 0.f ));
 		motionComponent.airborne = true;
 	}
 	

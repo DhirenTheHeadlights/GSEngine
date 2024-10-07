@@ -3,6 +3,8 @@
 #include "Engine/Physics/Units/UnitTemplate.h"
 
 namespace Engine::Units {
+	struct LengthTag {};
+
 	constexpr char kilometers[] = "km";
 	constexpr char meters[] = "m";
 	constexpr char centimeters[] = "cm";
@@ -12,13 +14,13 @@ namespace Engine::Units {
 	constexpr char inches[] = "in";
 
 	// Define specific unit types
-	using Kilometers = Unit<float, 1000.0f, kilometers>;
-	using Meters = Unit<float, 1.0f, meters>;
-	using Centimeters = Unit<float, 0.01f, centimeters>;
-	using Millimeters = Unit<float, 0.001f, millimeters>;
-	using Yards = Unit<float, 0.9144f, yards>;
-	using Feet = Unit<float, 0.3048f, feet>;
-	using Inches = Unit<float, 0.0254f, inches>;
+	using Kilometers = Unit<LengthTag, 1000.0f, kilometers>;
+	using Meters = Unit<LengthTag, 1.0f, meters>;
+	using Centimeters = Unit<LengthTag, 0.01f, centimeters>;
+	using Millimeters = Unit<LengthTag, 0.001f, millimeters>;
+	using Yards = Unit<LengthTag, 0.9144f, yards>;
+	using Feet = Unit<LengthTag, 0.3048f, feet>;
+	using Inches = Unit<LengthTag, 0.0254f, inches>;
 }
 
 namespace Engine {
@@ -31,7 +33,7 @@ namespace Engine {
 		Units::Feet,
 		Units::Inches
 	>;
-	struct Length : Quantity<LengthUnits> {
+	struct Length : Quantity<Units::Meters, LengthUnits> {
 		using Quantity::Quantity;
 	};
 }

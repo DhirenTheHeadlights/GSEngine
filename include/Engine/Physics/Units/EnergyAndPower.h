@@ -5,6 +5,8 @@
 // Energy
 
 namespace Engine::Units {
+	struct EnergyTag {};
+
 	constexpr char joules[] = "J";
 	constexpr char kilojoules[] = "kJ";
 	constexpr char megajoules[] = "MJ";
@@ -12,12 +14,12 @@ namespace Engine::Units {
 	constexpr char calories[] = "cal";
 	constexpr char kilocalories[] = "kcal";
 
-	using Joules = Unit<float, 1.0f, joules>;
-	using Kilojoules = Unit<float, 1000.0f, kilojoules>;
-	using Megajoules = Unit<float, 1000000.0f, megajoules>;
-	using Gigajoules = Unit<float, 1000000000.0f, gigajoules>;
-	using Calories = Unit<float, 4184.0f, calories>;
-	using Kilocalories = Unit<float, 4184000.0f, kilocalories>;
+	using Joules = Unit<EnergyTag, 1.0f, joules>;
+	using Kilojoules = Unit<EnergyTag, 1000.0f, kilojoules>;
+	using Megajoules = Unit<EnergyTag, 1000000.0f, megajoules>;
+	using Gigajoules = Unit<EnergyTag, 1000000000.0f, gigajoules>;
+	using Calories = Unit<EnergyTag, 4184.0f, calories>;
+	using Kilocalories = Unit<EnergyTag, 4184000.0f, kilocalories>;
 }
 
 namespace Engine {
@@ -30,7 +32,7 @@ namespace Engine {
 		Units::Kilocalories
 	>;
 
-	struct Energy : Quantity<EnergyUnits> {
+	struct Energy : Quantity<Units::Joules, EnergyUnits> {
 		using Quantity::Quantity;
 	};
 }
@@ -38,17 +40,19 @@ namespace Engine {
 // Power
 
 namespace Engine::Units {
+	struct PowerTag {};
+
 	constexpr char watts[] = "W";
 	constexpr char kilowatts[] = "kW";
 	constexpr char megawatts[] = "MW";
 	constexpr char gigawatts[] = "GW";
 	constexpr char horsepower[] = "hp";
 
-	using Watts = Unit<float, 1.0f, watts>;
-	using Kilowatts = Unit<float, 1000.0f, kilowatts>;
-	using Megawatts = Unit<float, 1000000.0f, megawatts>;
-	using Gigawatts = Unit<float, 1000000000.0f, gigawatts>;
-	using Horsepower = Unit<float, 745.7f, horsepower>;
+	using Watts = Unit<PowerTag, 1.0f, watts>;
+	using Kilowatts = Unit<PowerTag, 1000.0f, kilowatts>;
+	using Megawatts = Unit<PowerTag, 1000000.0f, megawatts>;
+	using Gigawatts = Unit<PowerTag, 1000000000.0f, gigawatts>;
+	using Horsepower = Unit<PowerTag, 745.7f, horsepower>;
 }
 
 namespace Engine {
@@ -59,7 +63,7 @@ namespace Engine {
 		Units::Gigawatts,
 		Units::Horsepower
 	>;
-	struct Power : Quantity<PowerUnits> {
+	struct Power : Quantity<Units::Watts, PowerUnits> {
 		using Quantity::Quantity;
 	};
 }
