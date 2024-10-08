@@ -1,6 +1,7 @@
 #include "Engine/Physics/BroadPhaseCollisionHandler.h"
 
 #include <iostream>
+#include "Engine/Physics/Vector/Math.h"
 
 #include "Engine/Physics/System.h"
 
@@ -10,26 +11,24 @@ bool Engine::BroadPhaseCollisionHandler::checkCollision(const BoundingBox& box1,
 		   (box1.upperBound.z >= box2.lowerBound.z && box1.lowerBound.z <= box2.upperBound.z);
 }
 
-bool Engine::BroadPhaseCollisionHandler::checkCollision(const BoundingBox& dynamicBox, const BoundingBox& staticBox, const glm::vec3& totalVelocity) {
+bool Engine::BroadPhaseCollisionHandler::checkCollision(const BoundingBox& dynamicBox, const BoundingBox& staticBox, const Vec3<Velocity>& velocity) {
 	BoundingBox expandedBox = dynamicBox;
 
 	// Expand the bounding box in the direction of velocity
-	expandedBox.lowerBound = min(dynamicBox.lowerBound, dynamicBox.lowerBound + totalVelocity);
-	expandedBox.upperBound = max(dynamicBox.upperBound, dynamicBox.upperBound + totalVelocity);
+	expandedBox.lowerBound = min(dynamicBox.lowerBound, dynamicBox.lowerBound + velocity);
+	expandedBox.upperBound = max(dynamicBox.upperBound, dynamicBox.upperBound + velocity);
 
 	return checkCollision(expandedBox, staticBox);
 }
 
-bool Engine::BroadPhaseCollisionHandler::checkCollision(const glm::vec3& point, const BoundingBox& box) {
-	return (point.x >= box.lowerBound.x && point.x <= box.upperBound.x) &&
-		   (point.y >= box.lowerBound.y && point.y <= box.upperBound.y) &&
-		   (point.z >= box.lowerBound.z && point.z <= box.upperBound.z);
+bool Engine::BroadPhaseCollisionHandler::checkCollision(const Vec3<Length>& point, const BoundingBox& box) {
+	return point < box.upperBound && point > box.lowerBound;
 }
 
 bool Engine::BroadPhaseCollisionHandler::checkCollision(DynamicObject& object1, Object& object2) {
 	for (auto& box1 : object1.getBoundingBoxes()) {
 		for (auto& box2 : object2.getBoundingBoxes()) {
-			if (checkCollision(box1, box2, object1.getMotionComponent().velocity.as<Units::MetersPerSecond>())) {
+			if (checkCollision(box1, box2, object1.getMotionComponent().velocity)) {
 				setCollisionInformation(box1, box2);
 
 				box1.collisionInformation.colliding = true;

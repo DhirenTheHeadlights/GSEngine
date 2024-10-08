@@ -95,7 +95,8 @@ namespace Engine {
 			return *this;
 		}
 
-		// Arithmetic operators
+		/// Arithmetic operators
+		
 		Quantity operator+(const Quantity& other) const {
 			return Quantity(value + other.value);
 		}
@@ -111,6 +112,8 @@ namespace Engine {
 		Quantity operator/(const float scalar) const {
 			return Quantity(value / scalar);
 		}
+
+		/// Compound assignment operators
 
 		Quantity& operator+=(const Quantity& other) {
 			value += other.value;
@@ -130,6 +133,28 @@ namespace Engine {
 		Quantity& operator/=(const float scalar) {
 			value /= scalar;
 			return *this;
+		}
+
+		/// Comparison operators
+
+		bool operator==(const Quantity& other) const {
+			return value == other.value;
+		}
+
+		bool operator!=(const Quantity& other) const {
+			return value != other.value;
+		}
+
+		bool operator<(const Quantity& other) const {
+			return value < other.value;
+		}
+
+		bool operator>(const Quantity& other) const {
+			return value > other.value;
+		}
+
+		bool operator<=(const Quantity& other) const {
+			return value <= other.value;
 		}
 
 	private:
