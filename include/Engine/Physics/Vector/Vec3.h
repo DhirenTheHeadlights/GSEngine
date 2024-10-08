@@ -41,11 +41,26 @@ namespace Engine {
 			}
 		}
 
-
 		explicit Vec3(const float x, const float y, const float z)
 			: Vec3(glm::vec3(x, y, z)) {}
 
 		explicit Vec3(const float xyz) : Vec3(glm::vec3(xyz)) {}
+
+		template <IsUnit Unit>
+		explicit Vec3(const Unit& x, const Unit& y, const Unit& z)
+			: Vec3(glm::vec3(x.getValue(), y.getValue(), z.getValue())) {}
+
+		template <IsUnit Unit>
+		explicit Vec3(const Unit& xyz) : Vec3(glm::vec3(xyz.getValue())) {}
+
+		template <IsQuantity Quantity>
+		explicit Vec3(const Quantity& x, const Quantity& y, const Quantity& z)
+			: Vec3(glm::vec3(x.template as<typename Quantity::DefaultUnit>(),
+			                 y.template as<typename Quantity::DefaultUnit>(),
+			                 z.template as<typename Quantity::DefaultUnit>())) {}
+
+		template <IsQuantity Quantity>
+		explicit Vec3(const Quantity& xyz) : Vec3(glm::vec3(xyz.template as<typename Quantity::DefaultUnit>())) {}
 
 		// Converter from Vec3<Unit> to Vec3<Quantity>
 		template <IsUnit Unit>
@@ -73,6 +88,8 @@ namespace Engine {
 			return vec;
 		}
 
+		/// Arithmetic operators
+
 		template <typename U>
 			requires IsSameQuantityTag<T, U>
 		friend auto operator+(const Vec3& lhs, const Vec3<U>& rhs) {
@@ -99,6 +116,8 @@ namespace Engine {
 			return Vec3(vec.getDirection() * (vec.magnitude.value() / scalar));
 		}
 
+		/// Compound arithmetic operators
+
 		template <IsQuantityOrUnit U>
 			requires IsSameQuantityTag<T, U>
 		Vec3& operator+=(const Vec3<U>& other) {
@@ -123,7 +142,39 @@ namespace Engine {
 			return *this;
 		}
 
+		/// Comparison Operators
 
+		bool operator==(const Vec3& other) const {
+			return magnitude == other.magnitude && vec == other.vec;
+		}
+
+		bool operator!=(const Vec3& other) const {
+			return !(*this == other);
+		}
+
+		template <IsQuantityOrUnit U>
+			requires IsSameQuantityTag<T, U>
+		bool operator<(const Vec3<U>& other) const {
+			return magnitude * vec < other.magnitude * other.vec;
+		}
+
+		template <IsQuantityOrUnit U>
+			requires IsSameQuantityTag<T, U>
+		bool operator<=(const Vec3<U>& other) const {
+			return magnitude * vec <= other.magnitude * other.vec;
+		}
+
+		template <IsQuantityOrUnit U>
+			requires IsSameQuantityTag<T, U>
+		bool operator>(const Vec3<U>& other) const {
+			return magnitude * vec > other.magnitude * other.vec;
+		}
+
+		template <IsQuantityOrUnit U>
+			requires IsSameQuantityTag<T, U>
+		bool operator>=(const Vec3<U>& other) const {
+			return magnitude * vec >= other.magnitude * other.vec;
+		}
 
 		// Raw vector access
 		// CAUTION: Not unit safe

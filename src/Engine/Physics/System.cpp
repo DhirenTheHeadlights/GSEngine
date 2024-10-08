@@ -14,8 +14,7 @@ void Engine::Physics::applyForce(MotionComponent* component, const Vec3<Force>& 
 	component->acceleration += 
 		Engine::Vec3<Units::MetersPerSecondSquared>(
 			force.as<Units::Newtons>() / 
-			std::max(component->mass.as<Units::Kilograms>(), 0.0001f) * 
-			MainClock::getDeltaTime().as<Units::Seconds>()
+			std::max(component->mass.as<Units::Kilograms>(), 0.0001f)
 		);
 }
 
@@ -31,7 +30,7 @@ void updateGravity(Engine::Physics::MotionComponent* component) {
 	if (component->affectedByGravity && component->airborne) {
 		const Engine::Vec3<Engine::Units::Newtons> gravity(
 			0.f,
-			9.8f * component->mass.as<Engine::Units::Kilograms>(),
+			-9.8f * component->mass.as<Engine::Units::Kilograms>(),
 			0.f
 		);
 		applyForce(component, gravity);	

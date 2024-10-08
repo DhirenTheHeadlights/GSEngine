@@ -4,6 +4,9 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#include "Engine/Physics/Vector/Vec3.h"
+#include "Engine/Physics/Units/Units.h"
+
 namespace Engine {
 	struct CollisionInformation {
 		bool colliding = false;
@@ -16,19 +19,19 @@ namespace Engine {
 		BoundingBox() = default;
 
 		// Only use this constructor if you know what you are doing
-		BoundingBox(const glm::vec3& upperBound, const glm::vec3& lowerBound) : upperBound(upperBound), lowerBound(lowerBound) {}
+		BoundingBox(const Vec3<Length>& upperBound, const Vec3<Length>& lowerBound) : upperBound(upperBound), lowerBound(lowerBound) {}
 
 		// Use this constructor for a centered bounding box
-		BoundingBox(const glm::vec3& center, const float width, const float height, const float depth)
-					: upperBound(center + glm::vec3(width / 2, height / 2, depth / 2)),
-					  lowerBound(center - glm::vec3(width / 2, height / 2, depth / 2)) {}
+		BoundingBox(const Vec3<Length>& center, const Length& width, const Length& height, const Length& depth)
+					: upperBound(center + Vec3<Units::Meters>(width / 2.f, height / 2.f, depth / 2.f)),
+					  lowerBound(center - Vec3<Units::Meters>(width / 2.f, height / 2.f, depth / 2.f)) {}
 		~BoundingBox() {
 			glDeleteVertexArrays(1, &gridVAO);
 			glDeleteBuffers(1, &gridVBO);
 		}
 
-		glm::vec3 upperBound;
-		glm::vec3 lowerBound;
+		Vec3<Length> upperBound;
+		Vec3<Length> lowerBound;
 
 		bool setGrid = false;
 
@@ -38,40 +41,22 @@ namespace Engine {
 		std::vector<float> gridVertices;
 		unsigned int gridVAO = 0, gridVBO = 0;
 
-		void move(const glm::vec3& direction, const float multiplier = 1.f) {
-			upperBound += direction * multiplier;
-			lowerBound += direction * multiplier;
-		}
-
-		void setPosition(const glm::vec3& center) {
-			const glm::vec3 halfSize = (upperBound - lowerBound) / 2.0f;
+		void setPosition(const Vec3<Length> center) {
+			const Vec3<Length> halfSize = (upperBound - lowerBound) / 2.0f;
 			upperBound = center + halfSize;
 			lowerBound = center - halfSize;
 		}
 
-		void setPositionBasedOnLowerBound(const glm::vec3& lowerBound) {
-			const glm::vec3 halfSize = (upperBound - lowerBound) / 2.0f;
-			upperBound = lowerBound + halfSize;
-			this->lowerBound = lowerBound;
-		}
-
-		void setPositionBasedOnUpperBound(const glm::vec3& upperBound) {
-			const glm::vec3 halfSize = (upperBound - lowerBound) / 2.0f;
-			lowerBound = upperBound - halfSize;
-			this->upperBound = upperBound;
-		}
-
-		glm::vec3 getCenter() const {
+		Vec3<Length> getCenter() const {
 			return (upperBound + lowerBound) / 2.0f;
 		}
 
-		glm::vec3 getSize() const {
+		Vec3<Length> getSize() const {
 			return upperBound - lowerBound;
 		}
 
 		bool operator==(const BoundingBox& other) const {
-			return all(epsilonEqual(upperBound, other.upperBound, 0.0001f)) &&
-				all(epsilonEqual(lowerBound, other.lowerBound, 0.0001f));
+			return lowerBound == other.lowerBound && upperBound == other.upperBound;
 		}
 	};
 
