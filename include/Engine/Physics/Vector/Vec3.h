@@ -48,6 +48,9 @@ namespace Engine {
 		}
 
 		[[nodiscard]] QuantityType magnitude() const {
+			if (vec == glm::vec3(0.0f)) {
+				return QuantityType(0.0f);
+			}
 			return QuantityType(length(vec));
 		}
 
@@ -55,6 +58,9 @@ namespace Engine {
 			requires IsSameQuantityTag<T, Unit>
 		[[nodiscard]] glm::vec3 as() const {
 			const float convertedMagnitude = magnitude().template as<Unit>();
+			if (const auto zero = glm::vec3(0.0f); vec == zero) {
+				return zero;
+			}
 			return normalize(vec) * convertedMagnitude;
 		}
 

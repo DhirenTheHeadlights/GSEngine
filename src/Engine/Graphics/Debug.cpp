@@ -4,8 +4,6 @@
 #include "backends/imgui_impl_opengl3.h"
 #include "Engine/Platform/Platform.h"
 
-#include "Engine/Physics/Vector/Vec3.h"
-
 void Engine::Debug::setUpImGui() {
 	ImGui::CreateContext();
 	ImGui::StyleColorsDark();
@@ -50,5 +48,14 @@ void Engine::Debug::renderImGui() {
 		ImGui::UpdatePlatformWindows();
 		ImGui::RenderPlatformWindowsDefault();
 		glfwMakeContextCurrent(backupCurrentContext);
+	}
+}
+
+void Engine::Debug::printVector(const std::string& name, const glm::vec3& vec, const char* unit) {
+	if (unit) {
+		ImGui::InputFloat3((name + unit).c_str(), const_cast<float*>(&vec.x));
+	}
+	else {
+		ImGui::InputFloat3(name.c_str(), const_cast<float*>(&vec.x));
 	}
 }

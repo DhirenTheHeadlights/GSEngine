@@ -24,7 +24,7 @@ void Game::Player::update() {
 	for (auto& [key, direction] : wasd) {
 		if (Engine::Input::getKeyboard().keys[key].held) {
 			applyForce(&motionComponent, Engine::Vec3<Engine::Units::Newtons>(
-				camera.getCameraDirectionRelativeToOrigin(direction) * 100.f)
+				           camera.getCameraDirectionRelativeToOrigin(direction) * 100.f)
 			);
 		}
 	}

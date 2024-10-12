@@ -35,10 +35,9 @@ void updateGravity(Engine::Physics::MotionComponent* component) {
 			0.f
 		);
 		applyForce(component, gravity);	
-		component->acceleration.rawVec3().x *= 0.001f;
-		component->acceleration.rawVec3().z *= 0.001f;
+
 	}
-	else {
+	else if (component->affectedByGravity && !component->airborne) {
 		component->acceleration.rawVec3().y = std::max(0.f, component->acceleration.rawVec3().y);
 	}
 }
@@ -48,6 +47,10 @@ void updateAirResistance(Engine::Physics::MotionComponent* component) {
 	constexpr float airDensity = 1.225f;								// kg/m^3 (air density at sea level)
 	const float dragCoefficient = component->airborne ? 0.47f : 1.05f;  // Approx for a sphere vs a box
 	constexpr float crossSectionalArea = 1.0f;							// Example area in m^2, adjust according to the object
+
+	if (component->velocity.magnitude().as<Engine::Units::MetersPerSecond>() == 0.f) {
+		return;
+	}
 
 	// Calculate drag force magnitude: F_d = 0.5 * C_d * rho * A * v^2, Units are in Newtons
 	const Engine::Force dragForceMagnitude(Engine::Units::Newtons(
@@ -62,6 +65,7 @@ void updateAirResistance(Engine::Physics::MotionComponent* component) {
 
 void updatePosition(Engine::Physics::MotionComponent* component) {
 	const float deltaTime = Engine::MainClock::getDeltaTime().as<Engine::Units::Seconds>();
+
 	// Update position using the kinematic equation: x = x0 + v0t + 0.5at^2
 	component->position += Engine::Vec3<Engine::Units::Meters>(
 		component->velocity.as<Engine::Units::MetersPerSecond>() * deltaTime + 0.5f * 
