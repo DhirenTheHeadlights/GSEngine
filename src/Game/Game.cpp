@@ -7,6 +7,7 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "Engine/Core/Engine.h"
+#include "Engine/Graphics/Debug.h"
 
 #include "Engine/Input/Input.h"
 #include "Engine/Platform/Platform.h"
@@ -62,10 +63,10 @@ bool Game::update() {
 	ImGui::Begin("DEBUG");
 	ImGui::SetWindowSize({ 500.f, 500.f });
 
-	ImGui::InputFloat3("Camera Position", &player.getCamera().getPosition()[0]);
-	ImGui::InputFloat3("Player Bounding Box Position", &player.getBoundingBoxes()[0].getCenter().as<Engine::Units::Meters>()[0]);
-	ImGui::InputFloat3("Player Velocity: m/s", &player.getMotionComponent().velocity.as<Engine::Units::MetersPerSecond>()[0]);
-	ImGui::InputFloat3("Player Acceleration: m/s^2", &player.getMotionComponent().acceleration.as<Engine::Units::MetersPerSecondSquared>()[0]);
+	Engine::Debug::printVector("Player Position: ", player.getMotionComponent().position.as<Engine::Units::Meters>(), Engine::Units::Meters::units());
+	Engine::Debug::printVector("Player Bounding Box Position: ", player.getBoundingBoxes()[0].getCenter().as<Engine::Units::Meters>(), Engine::Units::Meters::units());
+	Engine::Debug::printVector("Player Velocity: ", player.getMotionComponent().velocity.as<Engine::Units::MetersPerSecond>(), Engine::Units::MetersPerSecond::units());
+	Engine::Debug::printVector("Player Acceleration: ", player.getMotionComponent().acceleration.as<Engine::Units::MetersPerSecondSquared>(), Engine::Units::MetersPerSecondSquared::units());
 
 	const auto [colliding, collisionNormal, penetration, collisionPoint] = player.getBoundingBoxes()[0].collisionInformation;
 	ImGui::Text("Player Collision: %s", player.isColliding() ? "True" : "False");

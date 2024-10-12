@@ -15,13 +15,13 @@ void Engine::Shader::createShaderProgram(const std::string& vertexPath, const st
 
     // Vertex Shader
     const unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vShaderCode, NULL);
+    glShaderSource(vertexShader, 1, &vShaderCode, nullptr);
     glCompileShader(vertexShader);
     checkCompileErrors(vertexShader, "VERTEX");
 
     // Fragment Shader
     const unsigned int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fShaderCode, NULL);
+    glShaderSource(fragmentShader, 1, &fShaderCode, nullptr);
     glCompileShader(fragmentShader);
     checkCompileErrors(fragmentShader, "FRAGMENT");
 
@@ -81,7 +81,7 @@ void Engine::Shader::cacheUniformLocations() {
 }
 
 // Utility to check and report shader compile and linking errors
-void Engine::Shader::checkCompileErrors(unsigned int shader, const std::string& type) {
+void Engine::Shader::checkCompileErrors(const unsigned int shader, const std::string& type) {
     int success;
     char infoLog[1024];
 
