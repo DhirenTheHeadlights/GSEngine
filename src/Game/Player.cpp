@@ -3,21 +3,22 @@
 #include "Engine/Input/Input.h"
 
 void Game::Player::initialize() {
-	boundingBoxes.push_back(Engine::BoundingBox({ -10.f, -10.f, -10.f }, 10.f, 10.f, 10.f));
+	Engine::Units::Meters size = 10.f;
+	boundingBoxes.emplace_back(Engine::Vec3<Engine::Units::Meters>(-10.f, -10.f, -10.f), size, size, size);
 
 	wasd.insert({ GLFW_KEY_W, {0, 0, 1} });	
 	wasd.insert({ GLFW_KEY_S, {0, 0, -1} });
 	wasd.insert({ GLFW_KEY_A, {-1, 0, 0} });
 	wasd.insert({ GLFW_KEY_D, {1, 0, 0} });
 
-	camera.setPosition(boundingBoxes[0].getCenter());
+	camera.setPosition(boundingBoxes[0].getCenter().as<Engine::Units::Meters>());
 
 	motionComponent.mass = Engine::Units::Pounds(180.f);
 }
 
 void Game::Player::update() {
 	for (auto& bb : boundingBoxes) {
-		bb.setPosition(motionComponent.position.as<Engine::Units::Meters>());
+		bb.setPosition(motionComponent.position);
 	}
 
 	for (auto& [key, direction] : wasd) {

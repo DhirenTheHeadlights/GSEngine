@@ -14,7 +14,7 @@ namespace Engine {
 	template <typename QuantityTag, float ConversionFactor, const char* UnitName>
 	struct Unit {
 		Unit() = default;                                            // Default constructor: Equivalent to 0.0f
-		explicit Unit(const float value) : value(value) {}           // Constructor with value
+		Unit(const float value) : value(value) {}					 // Constructor with value
 
 		using QuantityTagType = QuantityTag;
 
@@ -37,6 +37,25 @@ namespace Engine {
 			os << unit.toString();
 			return os;
 		}
+
+		Unit& operator=(const float newValue) {
+			value = newValue;
+			return *this;
+		}
+
+		// Arithmetic operators
+		Unit operator+(const Unit& other) const { return Unit(value + other.value); }
+		Unit operator-(const Unit& other) const { return Unit(value - other.value); }
+		Unit operator*(const float scalar) const { return Unit(value * scalar); }
+		Unit operator/(const float scalar) const { return Unit(value / scalar); }
+
+		// Compound assignment operators
+		Unit& operator+=(const Unit& other) { value += other.value; return *this; }
+		Unit& operator-=(const Unit& other) { value -= other.value; return *this; }
+		Unit& operator*=(const float scalar) { value *= scalar; return *this; }
+		Unit& operator/=(const float scalar) { value /= scalar; return *this; }
+
+		operator float() const { return getValue(); } // Implicit conversion to float
 	private:
 		float value = 0.0f;
 	};
@@ -57,18 +76,15 @@ namespace Engine {
 		}, typename ValidUnits::Type{});
 	}
 
-	template <IsUnit Default, typename ValidUnits>
+	template <typename Derived, IsUnit Default, typename ValidUnits>
 	struct Quantity {
 		using Units = ValidUnits;
-
 		using DefaultUnit = Default;
 
-		Quantity() : value(0.0f) {}
-
-		// Constructs a quantity from a value - default unit is assumed
+		// Constructors
+		Quantity() = default;
 		explicit Quantity(const float value) : value(value) {}
 
-		// Constructs a quantity from a specific unit
 		template <IsUnit Unit>
 		Quantity(const Unit& unit) {
 			static_assert(isValidUnitForQuantity<Unit, ValidUnits>(), "Invalid unit type for this quantity");
@@ -82,81 +98,80 @@ namespace Engine {
 			return Unit(value).getValue();
 		}
 
-		// Get the value in default unit
-		DefaultUnit getDefaultUnit() const {
+		DefaultUnit asDefaultUnit() const {
 			return DefaultUnit(value);
 		}
 
 		// Assignment operator overload
 		template <IsUnit Unit>
-		Quantity& operator=(const Unit& unit) {
+		Derived& operator=(const Unit& unit) {
 			static_assert(isValidUnitForQuantity<Unit, ValidUnits>(), "Invalid unit type for assignment");
 			value = unit.getValue();
-			return *this;
+			return static_cast<Derived&>(*this);
 		}
 
 		/// Arithmetic operators
-		
-		Quantity operator+(const Quantity& other) const {
-			return Quantity(value + other.value);
+		Derived operator+(const Derived& other) const {
+			return Derived(value + other.value);
 		}
 
-		Quantity operator-(const Quantity& other) const {
-			return Quantity(value - other.value);
+		Derived operator-(const Derived& other) const {
+			return Derived(value - other.value);
 		}
 
-		Quantity operator*(const float scalar) const {
-			return Quantity(value * scalar);
+		Derived operator*(const float scalar) const {
+			return Derived(value * scalar);
 		}
 
-		Quantity operator/(const float scalar) const {
-			return Quantity(value / scalar);
+		Derived operator/(const float scalar) const {
+			return Derived(value / scalar);
 		}
 
 		/// Compound assignment operators
-
-		Quantity& operator+=(const Quantity& other) {
+		Derived& operator+=(const Derived& other) {
 			value += other.value;
-			return *this;
+			return static_cast<Derived&>(*this);
 		}
 
-		Quantity& operator-=(const Quantity& other) {
+		Derived& operator-=(const Derived& other) {
 			value -= other.value;
-			return *this;
+			return static_cast<Derived&>(*this);
 		}
 
-		Quantity& operator*=(const float scalar) {
+		Derived& operator*=(const float scalar) {
 			value *= scalar;
-			return *this;
+			return static_cast<Derived&>(*this);
 		}
 
-		Quantity& operator/=(const float scalar) {
+		Derived& operator/=(const float scalar) {
 			value /= scalar;
-			return *this;
+			return static_cast<Derived&>(*this);
 		}
 
-		/// Comparison operators
-
-		bool operator==(const Quantity& other) const {
+		// Comparison operators
+		bool operator==(const Derived& other) const {
 			return value == other.value;
 		}
 
-		bool operator!=(const Quantity& other) const {
+		bool operator!=(const Derived& other) const {
 			return value != other.value;
 		}
 
-		bool operator<(const Quantity& other) const {
+		bool operator<(const Derived& other) const {
 			return value < other.value;
 		}
 
-		bool operator>(const Quantity& other) const {
+		bool operator>(const Derived& other) const {
 			return value > other.value;
 		}
 
-		bool operator<=(const Quantity& other) const {
+		bool operator<=(const Derived& other) const {
 			return value <= other.value;
 		}
 
+		bool operator>=(const Derived& other) const {
+			return value >= other.value;
+		}
 	private:
 		float value = 0.0f;  // Stored in base units
 	};

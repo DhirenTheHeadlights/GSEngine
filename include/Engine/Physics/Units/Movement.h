@@ -26,7 +26,7 @@ namespace Engine {
 		Units::FeetPerSecond
 	>;
 
-	struct Velocity : Quantity<Units::MetersPerSecond, VelocityUnits> {
+	struct Velocity : Quantity<Velocity, Units::MetersPerSecond, VelocityUnits> {
 		using Quantity::Quantity;
 	};
 }
@@ -55,7 +55,7 @@ namespace Engine {
 		Units::FeetPerSecondSquared
 	>;
 
-	struct Acceleration : Quantity<Units::MetersPerSecondSquared, AccelerationUnits> {
+	struct Acceleration : Quantity<Acceleration, Units::MetersPerSecondSquared, AccelerationUnits> {
 		using Quantity::Quantity;
 	};
 }

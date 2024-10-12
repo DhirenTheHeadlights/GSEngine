@@ -12,7 +12,7 @@ namespace Engine {
 		bool colliding = false;
 		glm::vec3 collisionNormal;
 		float penetration;
-		glm::vec3 collisionPoint;
+		Vec3<Length> collisionPoint;
 	};
 
 	struct BoundingBox {
@@ -23,8 +23,9 @@ namespace Engine {
 
 		// Use this constructor for a centered bounding box
 		BoundingBox(const Vec3<Length>& center, const Length& width, const Length& height, const Length& depth)
-					: upperBound(center + Vec3<Units::Meters>(width / 2.f, height / 2.f, depth / 2.f)),
-					  lowerBound(center - Vec3<Units::Meters>(width / 2.f, height / 2.f, depth / 2.f)) {}
+					: upperBound(center + Vec3<Length>(width / 2.f, height / 2.f, depth / 2.f)),
+					  lowerBound(center - Vec3<Length>(width / 2.f, height / 2.f, depth / 2.f)) {}
+
 		~BoundingBox() {
 			glDeleteVertexArrays(1, &gridVAO);
 			glDeleteBuffers(1, &gridVBO);
@@ -41,7 +42,7 @@ namespace Engine {
 		std::vector<float> gridVertices;
 		unsigned int gridVAO = 0, gridVBO = 0;
 
-		void setPosition(const Vec3<Length> center) {
+		void setPosition(const Vec3<Length>& center) {
 			const Vec3<Length> halfSize = (upperBound - lowerBound) / 2.0f;
 			upperBound = center + halfSize;
 			lowerBound = center - halfSize;
