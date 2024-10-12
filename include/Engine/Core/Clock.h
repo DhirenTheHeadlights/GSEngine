@@ -25,7 +25,7 @@ namespace Engine {
 		Units::Hours
 	>;
 
-	struct Time : Quantity<Units::Seconds, TimeUnits> {
+	struct Time : Quantity<Time, Units::Seconds, TimeUnits> {
 		using Quantity::Quantity;
 	};
 

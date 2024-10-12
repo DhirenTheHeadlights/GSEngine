@@ -8,8 +8,8 @@ void Engine::drawBoundingBox(BoundingBox& boundingBox, const glm::mat4& viewProj
 
         constexpr float cellSize = 10.0f;
 
-        const glm::vec3 min = boundingBox.lowerBound;
-        const glm::vec3 max = boundingBox.upperBound;
+        const glm::vec3 min = boundingBox.lowerBound.rawVec3();
+        const glm::vec3 max = boundingBox.upperBound.rawVec3();
 
         boundingBox.gridVertices.clear();
 

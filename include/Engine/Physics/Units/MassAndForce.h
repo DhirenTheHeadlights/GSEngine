@@ -23,7 +23,7 @@ namespace Engine {
 		Units::Pounds
 	>;
 
-	struct Mass : Quantity<Units::Kilograms, MassUnits> {
+	struct Mass : Quantity<Mass, Units::Kilograms, MassUnits> {
 		using Quantity::Quantity;
 	};
 }
@@ -46,7 +46,7 @@ namespace Engine {
 		Units::PoundsForce
 	>;
 
-	struct Force : Quantity<Units::Newtons, ForceUnits> {
+	struct Force : Quantity<Force, Units::Newtons, ForceUnits> {
 		using Quantity::Quantity;
 	};
 }

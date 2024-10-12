@@ -16,7 +16,7 @@ namespace Game {
 
 		Engine::Camera& getCamera() { return camera; }
 
-		void setPosition(const glm::vec3& position) { boundingBoxes[0].setPosition(position); }
+		void setPosition(const Engine::Vec3<Engine::Length>& position) { boundingBoxes[0].setPosition(position); }
 	private:
 		Engine::Camera camera = Engine::Camera(glm::vec3(0.f, 0.f, 0.f));
 

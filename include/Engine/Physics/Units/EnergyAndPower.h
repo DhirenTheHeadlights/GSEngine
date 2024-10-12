@@ -32,7 +32,7 @@ namespace Engine {
 		Units::Kilocalories
 	>;
 
-	struct Energy : Quantity<Units::Joules, EnergyUnits> {
+	struct Energy : Quantity<Energy, Units::Joules, EnergyUnits> {
 		using Quantity::Quantity;
 	};
 }
@@ -63,7 +63,7 @@ namespace Engine {
 		Units::Gigawatts,
 		Units::Horsepower
 	>;
-	struct Power : Quantity<Units::Watts, PowerUnits> {
+	struct Power : Quantity<Power, Units::Watts, PowerUnits> {
 		using Quantity::Quantity;
 	};
 }

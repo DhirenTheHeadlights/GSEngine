@@ -4,7 +4,6 @@
 #include "Engine/Physics/Units/UnitToQuantityDefinitions.h"
 
 namespace Engine {
-	// Trait to extract QuantityTagType
 	template <typename T>
 	struct GetQuantityTagType;
 
@@ -13,107 +12,86 @@ namespace Engine {
 		using Type = typename UnitToQuantity<T>::Type;
 	};
 
-	// Concept to check if two types have the same QuantityTagType
 	template <typename T, typename U>
 	concept IsSameQuantityTag = std::is_same_v<typename GetQuantityTagType<T>::Type, typename GetQuantityTagType<U>::Type>;
 
 	template <typename T>
-	concept IsQuantity = std::is_base_of_v<Quantity<typename T::DefaultUnit, typename T::Units>, T>;
+	concept IsQuantity = std::is_base_of_v<Quantity<T, typename T::DefaultUnit, typename T::Units>, T>;
 
 	template <typename T>
 	concept IsQuantityOrUnit = IsQuantity<T> || IsUnit<T>;
+
+	template <typename T, typename... Args>
+	concept AreValidVectorArgs = ((std::is_convertible_v<Args, T> || std::is_same_v<Args, float> || IsQuantityOrUnit<Args>) && ...);
 
 	template <IsQuantityOrUnit T>
 	struct Vec3 {
 		using QuantityType = typename UnitToQuantity<T>::Type;
 
-		Vec3() : magnitude(QuantityType()), vec(0.0f) {}
+		Vec3() = default;
 
-		// Constructor that only takes glm::vec3
-		explicit Vec3(const glm::vec3& vector)
-			: vec(glm::length(vector) > 0.0f ? normalize(vector) : glm::vec3(0.0f)) {
-			float length = glm::length(vector);
+		template <typename... Args>
+			requires ((sizeof...(Args) == 0 || sizeof...(Args) == 1 || sizeof...(Args) == 3) && AreValidVectorArgs<T, Args...>)
+		explicit Vec3(Args&&... args)
+			: vec(createVec(std::forward<Args>(args)...)) {}
+
+		explicit Vec3(const glm::vec3& vec3) {
 			if constexpr (IsUnit<T>) {
-				magnitude = QuantityType(T(length));
+				vec = glm::vec3(T(vec3.x).getValue(), T(vec3.y).getValue(), T(vec3.z).getValue());
 			}
 			else if constexpr (IsQuantity<T>) {
-				magnitude = T(T::DefaultUnit(length));
+				vec = vec3; // Assume vec3 is in default units
+			}
+			else {
+				static_assert(sizeof(T) == 0, "Unsupported type in Vec3 constructor with glm::vec3 argument");
 			}
 		}
 
-		explicit Vec3(const float x, const float y, const float z)
-			: Vec3(glm::vec3(x, y, z)) {}
-
-		explicit Vec3(const float xyz) : Vec3(glm::vec3(xyz)) {}
-
-		template <IsUnit Unit>
-		explicit Vec3(const Unit& x, const Unit& y, const Unit& z)
-			: Vec3(glm::vec3(x.getValue(), y.getValue(), z.getValue())) {}
-
-		template <IsUnit Unit>
-		explicit Vec3(const Unit& xyz) : Vec3(glm::vec3(xyz.getValue())) {}
-
-		template <IsQuantity Quantity>
-		explicit Vec3(const Quantity& x, const Quantity& y, const Quantity& z)
-			: Vec3(glm::vec3(x.template as<typename Quantity::DefaultUnit>(),
-			                 y.template as<typename Quantity::DefaultUnit>(),
-			                 z.template as<typename Quantity::DefaultUnit>())) {}
-
-		template <IsQuantity Quantity>
-		explicit Vec3(const Quantity& xyz) : Vec3(glm::vec3(xyz.template as<typename Quantity::DefaultUnit>())) {}
-
-		// Converter from Vec3<Unit> to Vec3<Quantity>
-		template <IsUnit Unit>
-		Vec3(const Vec3<Unit>& other)
-			: magnitude(other.magnitude), vec(other.getDirection()) {}
-
-		// Converter from Vec3<Quantity> to Vec3<Unit>
-		template <IsQuantity Quantity>
-		Vec3(const Vec3<Quantity>& other)
-			: magnitude(other.magnitude.template as<typename Quantity::DefaultUnit>()),
-			  vec(other.getDirection()) {}
-
-		// Magnitude
-		// Call: magnitude.as<Units::[unit name]>()
-		QuantityType magnitude;
-
-		// Convert the vector to a different unit
-		template <IsUnit Unit>
-		[[nodiscard]] glm::vec3 as() const {
-			const float convertedMagnitude = magnitude.template as<Unit>();
-			return vec * convertedMagnitude;
+		[[nodiscard]] QuantityType magnitude() const {
+			return QuantityType(length(vec));
 		}
 
+		template <IsUnit Unit>
+			requires IsSameQuantityTag<T, Unit>
+		[[nodiscard]] glm::vec3 as() const {
+			const float convertedMagnitude = magnitude().template as<Unit>();
+			return normalize(vec) * convertedMagnitude;
+		}
+
+		// Converter between Vec3<Unit> and Vec3<Quantity>
+		template <IsQuantityOrUnit U>
+			requires IsSameQuantityTag<T, U>
+		Vec3(const Vec3<U>& other)
+			: vec(other.rawVec3()) {}
+
 		[[nodiscard]] glm::vec3 getDirection() const {
-			return vec;
+			return normalize(vec);
 		}
 
 		/// Arithmetic operators
 
 		template <typename U>
 			requires IsSameQuantityTag<T, U>
-		friend auto operator+(const Vec3& lhs, const Vec3<U>& rhs) {
-			using ResultQuantity = decltype(lhs.magnitude + rhs.magnitude);
-			glm::vec3 combinedVector = lhs.getDirection() * lhs.magnitude.template as<typename ResultQuantity::DefaultUnit>() +
-				rhs.getDirection() * rhs.magnitude.template as<typename ResultQuantity::DefaultUnit>();
-			return Vec3<ResultQuantity>(combinedVector);
+		Vec3 operator+(const Vec3<U>& rhs) const {
+			return Vec3(vec + rhs.rawVec3());
 		}
 
 		template <typename U>
 			requires IsSameQuantityTag<T, U>
-		friend auto operator-(const Vec3& lhs, const Vec3<U>& rhs) {
-			using ResultQuantity = decltype(lhs.magnitude - rhs.magnitude);
-			glm::vec3 combinedVector = lhs.getDirection() * lhs.magnitude.template as<typename ResultQuantity::DefaultUnit>() -
-				rhs.getDirection() * rhs.magnitude.template as<typename ResultQuantity::DefaultUnit>();
-			return Vec3<ResultQuantity>(combinedVector);
+		Vec3 operator-(const Vec3<U>& rhs) const {
+			return Vec3(vec - rhs.rawVec3());
 		}
 
-		friend Vec3 operator*(const Vec3& vec, const float scalar) {
-			return Vec3(vec.getDirection() * scalar * vec.magnitude.value());
+		Vec3 operator*(const float scalar) const {
+			return Vec3(vec * scalar);
 		}
 
-		friend Vec3 operator/(const Vec3& vec, const float scalar) {
-			return Vec3(vec.getDirection() * (vec.magnitude.value() / scalar));
+		Vec3 operator*(const glm::vec3& other) const {
+			return Vec3(vec * normalize(other));
+		}
+
+		Vec3 operator/(const float scalar) const {
+			return Vec3(vec / scalar);
 		}
 
 		/// Compound arithmetic operators
@@ -121,70 +99,93 @@ namespace Engine {
 		template <IsQuantityOrUnit U>
 			requires IsSameQuantityTag<T, U>
 		Vec3& operator+=(const Vec3<U>& other) {
-			*this = Vec3(*this + other);
+			vec += other.rawVec3();
 			return *this;
 		}
 
 		template <IsQuantityOrUnit U>
 			requires IsSameQuantityTag<T, U>
 		Vec3& operator-=(const Vec3<U>& other) {
-			*this = Vec3(*this - other);
+			vec -= other.rawVec3();
 			return *this;
 		}
 
 		Vec3& operator*=(const float scalar) {
-			magnitude = magnitude * scalar;
+			vec *= scalar;
 			return *this;
 		}
 
 		Vec3& operator/=(const float scalar) {
-			magnitude = magnitude / scalar;
+			vec /= scalar;
 			return *this;
 		}
 
 		/// Comparison Operators
 
 		bool operator==(const Vec3& other) const {
-			return magnitude == other.magnitude && vec == other.vec;
+			return vec == other.vec;
 		}
 
 		bool operator!=(const Vec3& other) const {
 			return !(*this == other);
 		}
 
-		template <IsQuantityOrUnit U>
-			requires IsSameQuantityTag<T, U>
-		bool operator<(const Vec3<U>& other) const {
-			return magnitude * vec < other.magnitude * other.vec;
-		}
-
-		template <IsQuantityOrUnit U>
-			requires IsSameQuantityTag<T, U>
-		bool operator<=(const Vec3<U>& other) const {
-			return magnitude * vec <= other.magnitude * other.vec;
-		}
-
-		template <IsQuantityOrUnit U>
-			requires IsSameQuantityTag<T, U>
-		bool operator>(const Vec3<U>& other) const {
-			return magnitude * vec > other.magnitude * other.vec;
-		}
-
-		template <IsQuantityOrUnit U>
-			requires IsSameQuantityTag<T, U>
-		bool operator>=(const Vec3<U>& other) const {
-			return magnitude * vec >= other.magnitude * other.vec;
-		}
-
-		// Raw vector access
-		// CAUTION: Not unit safe
+		// Non-const getter for the raw vector
+		// Caution: Not unit safe
 		[[nodiscard]] glm::vec3& rawVec3() {
 			return vec;
 		}
 
+		// Const getter for the raw vector
+		// Caution: Not unit safe
+		[[nodiscard]] const glm::vec3& rawVec3() const {
+			return vec;
+		}
+
 	private:
-		glm::vec3 vec;           // Normalized direction vector
+		glm::vec3 vec;           // Direction vector with magnitude
+
+		template <typename... Args>
+		[[nodiscard]] static glm::vec3 createVec(Args&&... args) {
+			if constexpr (sizeof...(Args) == 0) {
+				return glm::vec3(0.0f);
+			}
+			else if constexpr (sizeof...(Args) == 1) {
+				const float value = getValue(std::forward<Args>(args)...);
+				return glm::vec3(value);
+			}
+			else {
+				return glm::vec3(getValue(std::forward<Args>(args))...);
+			}
+		}
+
+		// getValue function
+		template <typename U>
+		[[nodiscard]] static float getValue(const U& argument) {
+			if constexpr (IsQuantity<U>) {
+				// Quantity: convert to default units before getting the value
+				return argument.asDefaultUnit().getValue();
+			}
+			else if constexpr (IsUnit<U>) {
+				// Unit: use .getValue() directly
+				return argument.getValue();
+			}
+			else if constexpr (std::is_convertible_v<U, float>) {
+				float value = static_cast<float>(argument);
+				if constexpr (IsUnit<T>) {
+					// T is a Unit: cast float to T and get its default unit value
+					return T(value).getValue();
+				}
+				else {
+					// T is Quantity or float
+					// If T is Quantity, assume float is in default units
+					return value;
+				}
+			}
+			else {
+				static_assert(sizeof(U) == 0, "Unsupported type in getValue");
+				return -1.0f;
+			}
+		}
 	};
 }
-
-

@@ -19,7 +19,7 @@ namespace Engine::Debug {
 		}
 		else if constexpr (IsQuantity<T>) {
 			ImGui::InputFloat3(
-				text.c_str() + T().getDefaultUnit().units(),
+				text.c_str() + T().asDefaultUnit().units(),
 				&vec.rawVec3()[0]
 			);
 		}

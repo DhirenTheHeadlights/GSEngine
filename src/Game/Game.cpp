@@ -63,7 +63,7 @@ bool Game::update() {
 	ImGui::SetWindowSize({ 500.f, 500.f });
 
 	ImGui::InputFloat3("Camera Position", &player.getCamera().getPosition()[0]);
-	ImGui::InputFloat3("Player Bounding Box Position", &player.getBoundingBoxes()[0].getCenter()[0]);
+	ImGui::InputFloat3("Player Bounding Box Position", &player.getBoundingBoxes()[0].getCenter().as<Engine::Units::Meters>()[0]);
 	ImGui::InputFloat3("Player Velocity: m/s", &player.getMotionComponent().velocity.as<Engine::Units::MetersPerSecond>()[0]);
 	ImGui::InputFloat3("Player Acceleration: m/s^2", &player.getMotionComponent().acceleration.as<Engine::Units::MetersPerSecondSquared>()[0]);
 
@@ -72,7 +72,7 @@ bool Game::update() {
 	ImGui::Text("Player Collision Information: ");
 	ImGui::Text("Collision Normal: %f, %f, %f", collisionNormal.x, collisionNormal.y, collisionNormal.z);
 	ImGui::Text("Collision Depth: %f", penetration);
-	ImGui::Text("Collision Point: %f, %f, %f", collisionPoint.x, collisionPoint.y, collisionPoint.z);
+	ImGui::Text("Collision Point: %f, %f, %f", collisionPoint.as<Engine::Units::Meters>().x, collisionPoint.as<Engine::Units::Meters>().y, collisionPoint.as<Engine::Units::Meters>().z);
 	ImGui::Text("Airborne: %s", player.getMotionComponent().airborne ? "True" : "False");
 	
 	ImGui::End();

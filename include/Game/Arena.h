@@ -11,6 +11,9 @@ namespace Game {
 		void initialize();
 		void render(const glm::mat4& view, const glm::mat4& projection);
 	private:
-		float width = 1000.f, height = 1000.f, depth = 1000.f;
+		Engine::Units::Meters
+			width   = 1000.f,
+			height	= 1000.f,
+			depth	= 1000.f;
 	};
 }

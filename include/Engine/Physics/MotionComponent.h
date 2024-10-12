@@ -15,7 +15,7 @@ namespace Engine::Physics {
 		bool airborne = false; 									
 
 		Velocity getSpeed() const {
-			return velocity.magnitude;
+			return velocity.magnitude();
 		}
 	};
 }
