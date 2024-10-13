@@ -7,16 +7,25 @@
 #include <glm/gtx/norm.hpp>
 
 #include "Engine/Core/Clock.h"
+#include "Engine/Physics/Surfaces.h"
 #include "Engine/Physics/Vector/Math.h"
 
 std::vector<Engine::Physics::MotionComponent*> Engine::Physics::components;
 
+const Engine::Vec3<Engine::Units::MetersPerSecondSquared> gravity(0.f, -9.8f, 0.f);
+
 void Engine::Physics::applyForce(MotionComponent* component, const Vec3<Force>& force) {
-	component->acceleration += 
-		Engine::Vec3<Units::MetersPerSecondSquared>(
-			force.as<Units::Newtons>() / 
-			std::max(component->mass.as<Units::Kilograms>(), 0.0001f)
-		);
+	auto acceleration = Engine::Vec3<Units::MetersPerSecondSquared>(
+		force.as<Units::Newtons>() /
+		std::max(component->mass.as<Units::Kilograms>(), 0.0001f)
+	);
+
+	if (component->airborne) {
+		acceleration.rawVec3().x *= 0.1f;
+		acceleration.rawVec3().z *= 0.1f;
+	}
+
+	component->acceleration += acceleration;
 }
 
 void Engine::Physics::addMotionComponent(MotionComponent& component) {
@@ -29,13 +38,9 @@ void Engine::Physics::removeMotionComponent(MotionComponent& component) {
 
 void updateGravity(Engine::Physics::MotionComponent* component) {
 	if (component->affectedByGravity && component->airborne) {
-		const Engine::Vec3<Engine::Units::Newtons> gravity(
-			0.f,
-			-9.8f * component->mass.as<Engine::Units::Kilograms>(),
-			0.f
-		);
-		applyForce(component, gravity);	
+		const auto gravityForce = Engine::Vec3<Engine::Units::Newtons>(gravity.as<Engine::Units::MetersPerSecondSquared>() * component->mass.as<Engine::Units::Kilograms>());
 
+		applyForce(component, gravityForce);
 	}
 	else if (component->affectedByGravity && !component->airborne) {
 		component->acceleration.rawVec3().y = std::max(0.f, component->acceleration.rawVec3().y);
@@ -53,14 +58,34 @@ void updateAirResistance(Engine::Physics::MotionComponent* component) {
 	}
 
 	// Calculate drag force magnitude: F_d = 0.5 * C_d * rho * A * v^2, Units are in Newtons
-	const Engine::Force dragForceMagnitude(Engine::Units::Newtons(
-		0.5f * dragCoefficient * airDensity * crossSectionalArea * 
-		component->velocity.magnitude().as<Engine::Units::MetersPerSecond>() *
-		component->velocity.magnitude().as<Engine::Units::MetersPerSecond>())
+	const Engine::Force dragForceMagnitude(
+		Engine::Units::Newtons(
+			0.5f * dragCoefficient * airDensity * crossSectionalArea * 
+			component->velocity.magnitude().as<Engine::Units::MetersPerSecond>() *
+			component->velocity.magnitude().as<Engine::Units::MetersPerSecond>()
+		)
 	); 
 
 	// Apply the drag force to the object
 	applyForce(component, Engine::Vec3<Engine::Units::Newtons>(-dragForceMagnitude.as<Engine::Units::Newtons>() * component->velocity.getDirection()));
+}
+
+void updateFriction(Engine::Physics::MotionComponent* component, const Engine::Surfaces::SurfaceProperties& surface) {
+	const Engine::Units::Newtons normal = component->mass.as<Engine::Units::Kilograms>() * gravity.magnitude().as<Engine::Units::MetersPerSecondSquared>();
+	const Engine::Units::Newtons friction = surface.frictionCoefficient * normal;
+
+	const Engine::Vec3<Engine::Units::Newtons> frictionForce(-friction * component->velocity.getDirection());
+
+	applyForce(component, frictionForce);
+}
+
+void updateVelocity(Engine::Physics::MotionComponent* component) {
+	const float deltaTime = Engine::MainClock::getDeltaTime().as<Engine::Units::Seconds>();
+
+	// Update velocity using the kinematic equation: v = v0 + at
+	component->velocity += Engine::Vec3<Engine::Units::MetersPerSecond>(component->acceleration.as<Engine::Units::MetersPerSecondSquared>() * deltaTime);
+
+	component->acceleration = Engine::Vec3<Engine::Units::MetersPerSecondSquared>(0.f, 0.f, 0.f);
 }
 
 void updatePosition(Engine::Physics::MotionComponent* component) {
@@ -69,83 +94,38 @@ void updatePosition(Engine::Physics::MotionComponent* component) {
 	// Update position using the kinematic equation: x = x0 + v0t + 0.5at^2
 	component->position += Engine::Vec3<Engine::Units::Meters>(
 		component->velocity.as<Engine::Units::MetersPerSecond>() * deltaTime + 0.5f * 
-		component->acceleration.as<Engine::Units::MetersPerSecondSquared>() * deltaTime * deltaTime);
-}
-
-void Engine::Physics::updateEntities() {
-	for (MotionComponent* component : components) {
-		updateGravity(component);
-		updateAirResistance(component);
-		updatePosition(component);
-	}
+		component->acceleration.as<Engine::Units::MetersPerSecondSquared>() * deltaTime * deltaTime
+	);
 }
 
 void Engine::Physics::updateEntity(MotionComponent* component) {
 	updateGravity(component);
 	updateAirResistance(component);
+	updateVelocity(component);
 	updatePosition(component);
 }
 
-void Engine::Physics::resolveCollision(BoundingBox& dynamicBoundingBox, MotionComponent& dynamicMotionComponent, CollisionInformation& collisionInfo) {
-	constexpr float epsilon = 0.0001f;
+void Engine::Physics::updateEntities() {
+	for (MotionComponent* component : components) {
+		updateEntity(component);
+	}
+}
 
-	// Check for collision on the bottom face (ground collision)
-	if (glm::epsilonEqual(collisionInfo.collisionPoint.rawVec3().y, dynamicBoundingBox.lowerBound.rawVec3().y, epsilon)) {
-		// Stop downward velocity and acceleration
-		dynamicMotionComponent.velocity.rawVec3().y = std::max(0.f, dynamicMotionComponent.velocity.rawVec3().y);
-		dynamicMotionComponent.acceleration.rawVec3().y = std::max(0.f, dynamicMotionComponent.acceleration.rawVec3().y);
+void resolveAxisCollision(int axis, Engine::BoundingBox& dynamicBoundingBox, Engine::Physics::MotionComponent& dynamicMotionComponent, const Engine::Surfaces::SurfaceProperties& surface) {
+	dynamicMotionComponent.velocity.rawVec3()[axis] = std::max(0.f, dynamicMotionComponent.velocity.rawVec3()[axis]);
+	dynamicMotionComponent.acceleration.rawVec3()[axis] = std::max(0.f, dynamicMotionComponent.acceleration.rawVec3()[axis]);
+
+	if (axis == 1) {
 		dynamicMotionComponent.airborne = false;
-
-		// Adjust position to be exactly on the ground
-		dynamicMotionComponent.position.rawVec3().y = dynamicBoundingBox.lowerBound.rawVec3().y - (dynamicBoundingBox.lowerBound.rawVec3().y - dynamicMotionComponent.position.rawVec3().y);
+		updateFriction(&dynamicMotionComponent, surface);
 	}
-	// Check for collision on the top face
-	else if (glm::epsilonEqual(collisionInfo.collisionPoint.rawVec3().y, dynamicBoundingBox.upperBound.rawVec3().y, epsilon)) {
-		// Stop upward velocity and acceleration
-		dynamicMotionComponent.velocity.rawVec3().y = std::min(0.f, dynamicMotionComponent.velocity.rawVec3().y);
-		dynamicMotionComponent.acceleration.rawVec3().y = std::min(0.f, dynamicMotionComponent.acceleration.rawVec3().y);
 
-		// Adjust position to be just below the top face
-		dynamicMotionComponent.position.rawVec3().y = dynamicBoundingBox.upperBound.rawVec3().y - (dynamicBoundingBox.upperBound.rawVec3().y - dynamicMotionComponent.position.rawVec3().y);
-	}
-	// Check for collision on the left face
-	else if (glm::epsilonEqual(collisionInfo.collisionPoint.rawVec3().x, dynamicBoundingBox.lowerBound.rawVec3().x, epsilon)) {
-		// Stop leftward velocity and acceleration
-		dynamicMotionComponent.velocity.rawVec3().x = std::max(0.f, dynamicMotionComponent.velocity.rawVec3().x);
-		dynamicMotionComponent.acceleration.rawVec3().x = std::max(0.f, dynamicMotionComponent.acceleration.rawVec3().x);
+	dynamicMotionComponent.position.rawVec3()[axis] = dynamicBoundingBox.lowerBound.rawVec3()[axis] - (dynamicBoundingBox.lowerBound.rawVec3()[axis] - dynamicMotionComponent.position.rawVec3()[axis]);
+}
 
-		// Adjust position to be just to the right of the left face
-		dynamicMotionComponent.position.rawVec3().x = dynamicBoundingBox.lowerBound.rawVec3().x - (dynamicBoundingBox.lowerBound.rawVec3().x - dynamicMotionComponent.position.rawVec3().x);
-	}
-	// Check for collision on the right face
-	else if (glm::epsilonEqual(collisionInfo.collisionPoint.rawVec3().x, dynamicBoundingBox.upperBound.rawVec3().x, epsilon)) {
-		// Stop rightward velocity and acceleration
-		dynamicMotionComponent.velocity.rawVec3().x = std::min(0.f, dynamicMotionComponent.velocity.rawVec3().x);
-		dynamicMotionComponent.acceleration.rawVec3().x = std::min(0.f, dynamicMotionComponent.acceleration.rawVec3().x);
-
-		// Adjust position to be just to the left of the right face
-		dynamicMotionComponent.position.rawVec3().x = dynamicBoundingBox.upperBound.rawVec3().x - (dynamicBoundingBox.upperBound.rawVec3().x - dynamicMotionComponent.position.rawVec3().x);
-	}
-	// Check for collision on the back face
-	else if (glm::epsilonEqual(collisionInfo.collisionPoint.rawVec3().z, dynamicBoundingBox.lowerBound.rawVec3().z, epsilon)) {
-		// Stop backward velocity and acceleration
-		dynamicMotionComponent.velocity.rawVec3().z = std::max(0.f, dynamicMotionComponent.velocity.rawVec3().z);
-		dynamicMotionComponent.acceleration.rawVec3().z = std::max(0.f, dynamicMotionComponent.acceleration.rawVec3().z);
-
-		// Adjust position to be just in front of the back face
-		dynamicMotionComponent.position.rawVec3().z = dynamicBoundingBox.lowerBound.rawVec3().z - (dynamicBoundingBox.lowerBound.rawVec3().z - dynamicMotionComponent.position.rawVec3().z);
-	}
-	// Check for collision on the front face
-	else if (glm::epsilonEqual(collisionInfo.collisionPoint.rawVec3().z, dynamicBoundingBox.upperBound.rawVec3().z, epsilon)) {
-		// Stop forward velocity and acceleration
-		dynamicMotionComponent.velocity.rawVec3().z = std::min(0.f, dynamicMotionComponent.velocity.rawVec3().z);
-		dynamicMotionComponent.acceleration.rawVec3().z = std::min(0.f, dynamicMotionComponent.acceleration.rawVec3().z);
-
-		// Adjust position to be just behind the front face
-		dynamicMotionComponent.position.rawVec3().z = dynamicBoundingBox.upperBound.rawVec3().z - (dynamicBoundingBox.upperBound.rawVec3().z - dynamicMotionComponent.position.rawVec3().z);
-	}
-	else {
-		// Collision does not match any of the faces
+void Engine::Physics::resolveCollision(BoundingBox& dynamicBoundingBox, MotionComponent& dynamicMotionComponent, const CollisionInformation& collisionInfo) {
+	if (epsilonEqual(collisionInfo.collisionPoint, dynamicBoundingBox.lowerBound)) {
+		resolveAxisCollision(0, dynamicBoundingBox, dynamicMotionComponent, Surfaces::getSurfaceProperties(Surfaces::SurfaceType::Concrete));
 	}
 }
 

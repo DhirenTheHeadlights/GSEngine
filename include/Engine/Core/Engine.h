@@ -1,25 +1,10 @@
 #pragma once
 
-#include "Engine/Core/ID.h"
-#include "Engine/Core/Object/Object.h"
-#include "Engine/Graphics/Camera.h"
-#include "Engine/Graphics/Shader.h"
-#include "Engine/Physics/BroadPhaseCollisionHandler.h"
-#include "Object/DynamicObject.h"
+#include "Engine/Core/EngineCore.h"
+#include "Engine/Platform/Platform.h"
+#include "Engine/Physics/Units/Units.h"
+#include "Engine/Graphics/Debug.h"
+#include "Engine/Input/Input.h"
 
-namespace Engine {
-	void initialize();
-	void update(const Camera& camera);
-	void render();
-	void shutdown();
-
-	void addObject(Object& object);
-	void addObject(DynamicObject& object);
-
-	void removeObject(Object& object);
-	void removeObject(DynamicObject& object);
-
-	extern IDHandler idManager;
-	extern BroadPhaseCollisionHandler collisionHandler;
-	extern Shader shader;
-}
+#include "Engine/Core/Object/DynamicObject.h"
+#include "Engine/Core/Object/StaticObject.h"

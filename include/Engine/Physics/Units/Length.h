@@ -36,4 +36,4 @@ namespace Engine {
 	struct Length : Quantity<Length, Units::Meters, LengthUnits> {
 		using Quantity::Quantity;
 	};
-}
+}		

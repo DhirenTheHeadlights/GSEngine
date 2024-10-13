@@ -1,8 +1,8 @@
-#include "Engine/Physics/BroadPhaseCollisionHandler.h"
+#include "Engine/Physics/Collision/BroadPhaseCollisionHandler.h"
 
 #include <iostream>
-#include "Engine/Physics/Vector/Math.h"
 
+#include "Engine/Physics/Vector/Math.h"
 #include "Engine/Physics/System.h"
 
 bool Engine::BroadPhaseCollisionHandler::checkCollision(const BoundingBox& box1, const BoundingBox& box2) {

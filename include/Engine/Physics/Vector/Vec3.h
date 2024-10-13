@@ -71,6 +71,9 @@ namespace Engine {
 			: vec(other.rawVec3()) {}
 
 		[[nodiscard]] glm::vec3 getDirection() const {
+			if (const auto zero = glm::vec3(0.0f); vec == zero) {
+				return zero;
+			}
 			return normalize(vec);
 		}
 

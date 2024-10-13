@@ -1,8 +1,6 @@
 #pragma once
 
 #include "Engine/Core/Engine.h"
-#include "Engine/Graphics/Camera.h"
-#include "Engine/Core/Object/DynamicObject.h"
 
 namespace Game {
 	class Player final : public Engine::DynamicObject {

@@ -1,5 +1,5 @@
 #pragma once
-#include "Engine/Graphics/Camera.h"
+#include "Engine/Core/Engine.h"
 
 namespace Game {
 	bool initialize();
