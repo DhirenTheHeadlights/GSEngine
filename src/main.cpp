@@ -5,7 +5,6 @@
 
 // Project-Specific Includes
 #include "Engine/Core/Engine.h"
-#include "Engine/Platform/Platform.h"
 #include "Game/Game.h"
 
 int main() {

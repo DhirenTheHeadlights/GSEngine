@@ -16,5 +16,5 @@ namespace Engine::Physics {
 
 	void updateEntities();
 	void updateEntity(MotionComponent* component);
-	void resolveCollision(BoundingBox& dynamicBoundingBox, MotionComponent& dynamicMotionComponent, CollisionInformation& collisionInfo);
+	void resolveCollision(BoundingBox& dynamicBoundingBox, MotionComponent& dynamicMotionComponent, const CollisionInformation& collisionInfo);
 }

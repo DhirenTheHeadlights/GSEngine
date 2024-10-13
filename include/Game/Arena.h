@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Engine/Core/Engine.h"
-#include "Engine/Core/Object/StaticObject.h"
 
 namespace Game {
 	class Arena final : public Engine::StaticObject {

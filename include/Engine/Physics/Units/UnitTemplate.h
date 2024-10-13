@@ -172,7 +172,7 @@ namespace Engine {
 		bool operator>=(const Derived& other) const {
 			return value >= other.value;
 		}
-	private:
+	protected:
 		float value = 0.0f;  // Stored in base units
 	};
 }

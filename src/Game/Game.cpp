@@ -2,15 +2,9 @@
 
 #include "Game/Game.h"
 
-#include "imgui.h"
-
 #include <glm/gtc/type_ptr.hpp>
 
 #include "Engine/Core/Engine.h"
-#include "Engine/Graphics/Debug.h"
-
-#include "Engine/Input/Input.h"
-#include "Engine/Platform/Platform.h"
 #include "Game/Arena.h"
 #include "Game/Player.h"
 

@@ -6,8 +6,8 @@
 namespace Engine {
 	class DynamicObject : public Object {
 	public:
-		DynamicObject(const std::shared_ptr<ID>& id) : Object(id) {}
-		~DynamicObject() = default;
+		explicit DynamicObject(const std::shared_ptr<ID>& id) : Object(id) {}
+		~DynamicObject() override = default;
 
 		///////////////////////////////////////////////////////////////////////////////////
 		// Dynamic objects contain various components that are used to update the object //
