@@ -1,4 +1,7 @@
 #include "Engine/Graphics/BoundingBox.h"
+
+#include <iostream>
+
 #include "Engine/Core/EngineCore.h"
 
 void Engine::drawBoundingBox(BoundingBox& boundingBox, const glm::mat4& viewProjectionMatrix, const bool moving, const glm::vec3& color) {
@@ -45,7 +48,7 @@ void Engine::drawBoundingBox(BoundingBox& boundingBox, const glm::mat4& viewProj
                 }
 
                 // **New Code: Horizontal lines along z-axis on left and right faces**
-                if (x == min.x || x == max.x) {
+				if (std::abs(x - max.x) < 1e-5 || std::abs(x - min.x) < 1e-5) {
                     for (float z = min.z; z + cellSize <= max.z; z += cellSize) {
                         float zEnd = z + cellSize;
                         // Left or Right face at x
@@ -55,6 +58,7 @@ void Engine::drawBoundingBox(BoundingBox& boundingBox, const glm::mat4& viewProj
                         boundingBox.gridVertices.push_back(x);
                         boundingBox.gridVertices.push_back(y);
                         boundingBox.gridVertices.push_back(zEnd);
+						std::cout << "x: " << x << " y: " << y << " z: " << z << std::endl;
                     }
                 }
 

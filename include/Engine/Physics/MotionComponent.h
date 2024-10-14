@@ -10,9 +10,13 @@ namespace Engine::Physics {
 		Vec3<Length> position;
 		Vec3<Velocity> velocity;
 		Vec3<Acceleration> acceleration;
+
 		Mass mass;
-		bool affectedByGravity = true;							
-		bool airborne = false; 									
+
+		bool affectedByGravity = true;
+		bool moving = false;
+		bool airborne = false;
+		bool selfControlled = false;
 
 		Velocity getSpeed() const {
 			return velocity.magnitude();

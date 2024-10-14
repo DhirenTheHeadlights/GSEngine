@@ -2,6 +2,7 @@
 
 #include "Engine/Core/Clock.h"
 #include "Engine/Input/Input.h"
+#include "Engine/Physics/System.h"
 #include "Engine/Platform/PermaAssert.h"
 
 #define IMGUI 1
@@ -69,20 +70,20 @@ void Engine::render() {
 void Engine::shutdown() {
 }
 
-void Engine::addObject(Object& object) {
+void Engine::addObject(const std::weak_ptr<StaticObject>& object) {
 	collisionHandler.addObject(object);
 }
 
-void Engine::addObject(DynamicObject& object) {
+void Engine::addObject(const std::weak_ptr<DynamicObject>& object) {
 	collisionHandler.addObject(object);
-	addMotionComponent(object.getMotionComponent());
+	Physics::addObject(object);
 }
 
-void Engine::removeObject(Object& object) {
+void Engine::removeObject(const std::weak_ptr<StaticObject>& object) {
 	collisionHandler.removeObject(object);
 }
 
-void Engine::removeObject(DynamicObject& object) {
+void Engine::removeObject(const std::weak_ptr<DynamicObject>& object) {
 	collisionHandler.removeObject(object);
-	removeMotionComponent(object.getMotionComponent());
+	Physics::removeObject(object);
 }

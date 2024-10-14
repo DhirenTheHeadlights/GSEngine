@@ -6,6 +6,7 @@
 #include "Engine/Graphics/Shader.h"
 #include "Engine/Physics/Collision/BroadPhaseCollisionHandler.h"
 #include "Object/DynamicObject.h"
+#include "Object/StaticObject.h"
 
 namespace Engine {
 	void initialize();
@@ -13,11 +14,11 @@ namespace Engine {
 	void render();
 	void shutdown();
 
-	void addObject(Object& object);
-	void addObject(DynamicObject& object);
+	void addObject(const std::weak_ptr<StaticObject>& object);
+	void addObject(const std::weak_ptr<DynamicObject>& object);
 
-	void removeObject(Object& object);
-	void removeObject(DynamicObject& object);
+	void removeObject(const std::weak_ptr<StaticObject>& object);
+	void removeObject(const std::weak_ptr<DynamicObject>& object);
 
 	extern IDHandler idManager;
 	extern BroadPhaseCollisionHandler collisionHandler;

@@ -13,11 +13,11 @@ struct GameData {
 
 } gameData;
 
-Game::Arena arena;
-Game::Player player;
+auto arena = std::make_shared<Game::Arena>();
+auto player = std::make_shared<Game::Player>();
 
 const Engine::Camera& Game::getCamera() {
-	return player.getCamera();
+	return player->getCamera();
 }
 
 bool Game::initialize() {
@@ -25,8 +25,8 @@ bool Game::initialize() {
 	Engine::Platform::readEntireFile(RESOURCES_PATH "gameData.data", &gameData, sizeof(GameData));
 
 	// Set up game
-	arena.initialize();
-	player.initialize();
+	arena->initialize();
+	player->initialize();
 
 	// Set player position
 	//player.setPosition(gameData.playerPosition);
@@ -46,29 +46,30 @@ bool Game::update() {
 		glfwSetInputMode(Engine::Platform::window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 	}
 
-	const glm::mat4 view = player.getCamera().getViewMatrix();
+	const glm::mat4 view = player->getCamera().getViewMatrix();
 	const glm::mat4 projection = glm::perspective(glm::radians(45.0f), static_cast<float>(Engine::Platform::getFrameBufferSize().x) / static_cast<float>(Engine::Platform::getFrameBufferSize().y), 0.1f, 10000.0f);
 
-	player.update();
-	player.render(view, projection);
+	player->update();
+	player->render(view, projection);
 
-	arena.render(view, projection);
+	arena->render(view, projection);
 
 	ImGui::Begin("DEBUG");
 	ImGui::SetWindowSize({ 500.f, 500.f });
 
-	Engine::Debug::printVector("Player Position: ", player.getMotionComponent().position.as<Engine::Units::Meters>(), Engine::Units::Meters::units());
-	Engine::Debug::printVector("Player Bounding Box Position: ", player.getBoundingBoxes()[0].getCenter().as<Engine::Units::Meters>(), Engine::Units::Meters::units());
-	Engine::Debug::printVector("Player Velocity: ", player.getMotionComponent().velocity.as<Engine::Units::MetersPerSecond>(), Engine::Units::MetersPerSecond::units());
-	Engine::Debug::printVector("Player Acceleration: ", player.getMotionComponent().acceleration.as<Engine::Units::MetersPerSecondSquared>(), Engine::Units::MetersPerSecondSquared::units());
+	Engine::Debug::printVector("Player Position: ", player->getMotionComponent().position.as<Engine::Units::Meters>(), Engine::Units::Meters::units());
+	Engine::Debug::printVector("Player Bounding Box Position: ", player->getBoundingBoxes()[0].getCenter().as<Engine::Units::Meters>(), Engine::Units::Meters::units());
+	Engine::Debug::printVector("Player Velocity: ", player->getMotionComponent().velocity.as<Engine::Units::MetersPerSecond>(), Engine::Units::MetersPerSecond::units());
+	Engine::Debug::printVector("Player Acceleration: ", player->getMotionComponent().acceleration.as<Engine::Units::MetersPerSecondSquared>(), Engine::Units::MetersPerSecondSquared::units());
 
-	const auto [colliding, collisionNormal, penetration, collisionPoint] = player.getBoundingBoxes()[0].collisionInformation;
-	ImGui::Text("Player Collision: %s", player.isColliding() ? "True" : "False");
+	const auto [colliding, collisionNormal, penetration, collisionPoint] = player->getBoundingBoxes()[0].collisionInformation;
+	ImGui::Text("Player Collision: %s", player->isColliding() ? "True" : "False");
 	ImGui::Text("Player Collision Information: ");
 	ImGui::Text("Collision Normal: %f, %f, %f", collisionNormal.x, collisionNormal.y, collisionNormal.z);
 	ImGui::Text("Collision Depth: %f", penetration);
 	ImGui::Text("Collision Point: %f, %f, %f", collisionPoint.as<Engine::Units::Meters>().x, collisionPoint.as<Engine::Units::Meters>().y, collisionPoint.as<Engine::Units::Meters>().z);
-	ImGui::Text("Airborne: %s", player.getMotionComponent().airborne ? "True" : "False");
+	ImGui::Text("Airborne: %s", player->getMotionComponent().airborne ? "True" : "False");
+	ImGui::Text("Moving: %s", player->getMotionComponent().moving ? "True" : "False");
 	
 	ImGui::End();
 
