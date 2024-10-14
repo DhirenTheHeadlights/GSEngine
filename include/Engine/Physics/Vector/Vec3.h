@@ -1,6 +1,9 @@
 #pragma once
 
 #include <glm/glm.hpp>
+
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/norm.hpp>
 #include "Engine/Physics/Units/UnitToQuantityDefinitions.h"
 
 namespace Engine {
@@ -45,6 +48,10 @@ namespace Engine {
 			else {
 				static_assert(sizeof(T) == 0, "Unsupported type in Vec3 constructor with glm::vec3 argument");
 			}
+		}
+
+		[[nodiscard]] bool isZero() const {
+			return all(epsilonEqual(vec, glm::vec3(0.0f), 0.00001f));
 		}
 
 		[[nodiscard]] QuantityType magnitude() const {

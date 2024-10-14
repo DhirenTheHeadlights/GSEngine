@@ -47,6 +47,12 @@ namespace Engine {
 	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
 		requires IsSameQuantityTag<T, U>
 	bool epsilonEqual(const Vec3<T>& a, const Vec3<U>& b, const float epsilon = 0.00001f) {
-		return glm::epsilonEqual(a.rawVec3(), b.rawVec3(), epsilon);
+        return glm::all(glm::epsilonEqual(a.rawVec3(), b.rawVec3(), epsilon));
+	}
+
+	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
+		requires IsSameQuantityTag<T, U>
+	bool epsilonEqualIndex(const Vec3<T>& a, const Vec3<U>& b, const int index, const float epsilon = 0.00001f) {
+		return glm::epsilonEqual(a.rawVec3()[index], b.rawVec3()[index], epsilon);
 	}
 }

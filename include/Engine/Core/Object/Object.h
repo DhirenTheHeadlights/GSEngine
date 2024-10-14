@@ -5,8 +5,6 @@
 #include "Engine/Core/ID.h"
 #include "Engine/Graphics/BoundingBox.h"
 
-#include "Engine/Physics/System.h"
-
 namespace Engine {
 	class Object {
 	public:

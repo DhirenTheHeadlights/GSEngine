@@ -1,6 +1,7 @@
 #include "Game/Player.h"
 
 #include "Engine/Input/Input.h"
+#include "Engine/Physics/System.h"
 
 void Game::Player::initialize() {
 	Engine::Units::Meters size = 10.f;
@@ -14,6 +15,7 @@ void Game::Player::initialize() {
 	camera.setPosition(boundingBoxes[0].getCenter().as<Engine::Units::Meters>());
 
 	motionComponent.mass = Engine::Units::Pounds(180.f);
+	motionComponent.selfControlled = true;
 }
 
 void Game::Player::update() {
@@ -24,7 +26,7 @@ void Game::Player::update() {
 	for (auto& [key, direction] : wasd) {
 		if (Engine::Input::getKeyboard().keys[key].held) {
 			applyForce(&motionComponent, Engine::Vec3<Engine::Units::Newtons>(
-				           camera.getCameraDirectionRelativeToOrigin(direction) * 100.f)
+				camera.getCameraDirectionRelativeToOrigin(direction) * 1000.f)
 			);
 		}
 	}

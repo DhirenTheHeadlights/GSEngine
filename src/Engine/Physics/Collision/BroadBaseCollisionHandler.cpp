@@ -2,8 +2,8 @@
 
 #include <iostream>
 
-#include "Engine/Physics/Vector/Math.h"
 #include "Engine/Physics/System.h"
+#include "Engine/Physics/Vector/Math.h"
 
 bool Engine::BroadPhaseCollisionHandler::checkCollision(const BoundingBox& box1, const BoundingBox& box2) {
 	return box1.upperBound.rawVec3().x > box2.lowerBound.rawVec3().x && box1.lowerBound.rawVec3().x < box2.upperBound.rawVec3().x &&
@@ -25,16 +25,16 @@ bool Engine::BroadPhaseCollisionHandler::checkCollision(const Vec3<Length>& poin
 		   point.rawVec3().z > box.lowerBound.rawVec3().z && point.rawVec3().z < box.upperBound.rawVec3().z;
 } 
 
-bool Engine::BroadPhaseCollisionHandler::checkCollision(DynamicObject& object1, Object& object2) {
-	for (auto& box1 : object1.getBoundingBoxes()) {
-		for (auto& box2 : object2.getBoundingBoxes()) {
-			if (checkCollision(box1, box2, &object1.getMotionComponent())) {
+bool Engine::BroadPhaseCollisionHandler::checkCollision(const std::shared_ptr<DynamicObject>& object1, const std::shared_ptr<Object>& object2) {
+	for (auto& box1 : object1->getBoundingBoxes()) {
+		for (auto& box2 : object2->getBoundingBoxes()) {
+			if (checkCollision(box1, box2, &object1->getMotionComponent())) {
 				setCollisionInformation(box1, box2);
 
 				box1.collisionInformation.colliding = true;
 				box2.collisionInformation.colliding = true;
 
-				resolveCollision(box1, object1.getMotionComponent(), box2.collisionInformation);
+				resolveCollision(box1, object1->getMotionComponent(), box2.collisionInformation);
 
 				return true;
 			}
@@ -95,19 +95,32 @@ Engine::CollisionInformation Engine::BroadPhaseCollisionHandler::calculateCollis
 }
 
 void Engine::BroadPhaseCollisionHandler::update() const {
-	// Check for collisions
-	for (auto& dynamicObjectPtr : dynamicObjects) {
-		for (auto& objectPtr : objects) {
-			if (checkCollision(*dynamicObjectPtr, *objectPtr)) {
+	for (auto& dynamicObject : dynamicObjects) {
+		const auto dynamicObjectPtr = dynamicObject.lock();
+		if (!dynamicObjectPtr) {
+			continue;
+		}
+
+		for (auto& object : objects) {
+			const auto objectPtr = object.lock();
+			if (!objectPtr) {
+				continue;
+			}
+
+			if (dynamicObjectPtr == objectPtr) {
+				continue;
+			}
+
+			if (checkCollision(dynamicObjectPtr, objectPtr)) {
 				dynamicObjectPtr->setIsColliding(true);
 				objectPtr->setIsColliding(true);
 			}
 			else {
 				dynamicObjectPtr->getMotionComponent().airborne = true;
-
 				objectPtr->setIsColliding(false);
 				dynamicObjectPtr->setIsColliding(false);
 			}
 		}
 	}
 }
+

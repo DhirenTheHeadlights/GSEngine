@@ -10,11 +10,15 @@
 #include "Engine/Physics/Surfaces.h"
 #include "Engine/Physics/Vector/Math.h"
 
-std::vector<Engine::Physics::MotionComponent*> Engine::Physics::components;
+std::vector<std::weak_ptr<Engine::DynamicObject>> Engine::Physics::objects;
 
 const Engine::Vec3<Engine::Units::MetersPerSecondSquared> gravity(0.f, -9.8f, 0.f);
 
 void Engine::Physics::applyForce(MotionComponent* component, const Vec3<Force>& force) {
+	if (force.isZero()) {
+		return;
+	}
+
 	auto acceleration = Engine::Vec3<Units::MetersPerSecondSquared>(
 		force.as<Units::Newtons>() /
 		std::max(component->mass.as<Units::Kilograms>(), 0.0001f)
@@ -28,34 +32,27 @@ void Engine::Physics::applyForce(MotionComponent* component, const Vec3<Force>& 
 	component->acceleration += acceleration;
 }
 
-void Engine::Physics::addMotionComponent(MotionComponent& component) {
-	components.push_back(&component);
-}
-
-void Engine::Physics::removeMotionComponent(MotionComponent& component) {
-	std::erase(components, &component);
-}
-
 void updateGravity(Engine::Physics::MotionComponent* component) {
-	if (component->affectedByGravity && component->airborne) {
-		const auto gravityForce = Engine::Vec3<Engine::Units::Newtons>(gravity.as<Engine::Units::MetersPerSecondSquared>() * component->mass.as<Engine::Units::Kilograms>());
+	if (!component->affectedByGravity) {
+		return;
+	}
 
+	if (component->airborne) {
+		const auto gravityForce = Engine::Vec3<Engine::Units::Newtons>(
+			gravity.as<Engine::Units::MetersPerSecondSquared>() *
+			component->mass.as<Engine::Units::Kilograms>()
+		);
 		applyForce(component, gravityForce);
 	}
-	else if (component->affectedByGravity && !component->airborne) {
+	else {
 		component->acceleration.rawVec3().y = std::max(0.f, component->acceleration.rawVec3().y);
 	}
 }
 
 void updateAirResistance(Engine::Physics::MotionComponent* component) {
-	// Constants
-	constexpr float airDensity = 1.225f;								// kg/m^3 (air density at sea level)
-	const float dragCoefficient = component->airborne ? 0.47f : 1.05f;  // Approx for a sphere vs a box
-	constexpr float crossSectionalArea = 1.0f;							// Example area in m^2, adjust according to the object
-
-	if (component->velocity.magnitude().as<Engine::Units::MetersPerSecond>() == 0.f) {
-		return;
-	}
+	constexpr float airDensity = 1.225f;												  // kg/m^3 (air density at sea level)
+	const Engine::Units::Unitless dragCoefficient = component->airborne ? 0.47f : 1.05f;  // Approx for a sphere vs a box
+	constexpr float crossSectionalArea = 1.0f;											  // Example area in m^2, adjust according to the object
 
 	// Calculate drag force magnitude: F_d = 0.5 * C_d * rho * A * v^2, Units are in Newtons
 	const Engine::Force dragForceMagnitude(
@@ -64,9 +61,8 @@ void updateAirResistance(Engine::Physics::MotionComponent* component) {
 			component->velocity.magnitude().as<Engine::Units::MetersPerSecond>() *
 			component->velocity.magnitude().as<Engine::Units::MetersPerSecond>()
 		)
-	); 
+	);
 
-	// Apply the drag force to the object
 	applyForce(component, Engine::Vec3<Engine::Units::Newtons>(-dragForceMagnitude.as<Engine::Units::Newtons>() * component->velocity.getDirection()));
 }
 
@@ -106,12 +102,27 @@ void Engine::Physics::updateEntity(MotionComponent* component) {
 }
 
 void Engine::Physics::updateEntities() {
-	for (MotionComponent* component : components) {
-		updateEntity(component);
+	std::erase_if(objects, [](const std::weak_ptr<DynamicObject>& obj) {
+		return obj.expired();
+	});
+
+	for (auto& object : objects) {
+		if (const auto objectPtr = object.lock()) {
+			auto& component = objectPtr->getMotionComponent();
+
+			if (component.velocity.isZero() && component.acceleration.isZero()) {
+				component.moving = false;
+			}
+			else {
+				component.moving = true;
+			}
+
+			updateEntity(&component);
+		}
 	}
 }
 
-void resolveAxisCollision(int axis, Engine::BoundingBox& dynamicBoundingBox, Engine::Physics::MotionComponent& dynamicMotionComponent, const Engine::Surfaces::SurfaceProperties& surface) {
+void resolveAxisCollision(const int axis, Engine::BoundingBox& dynamicBoundingBox, Engine::Physics::MotionComponent& dynamicMotionComponent, const Engine::Surfaces::SurfaceProperties& surface) {
 	dynamicMotionComponent.velocity.rawVec3()[axis] = std::max(0.f, dynamicMotionComponent.velocity.rawVec3()[axis]);
 	dynamicMotionComponent.acceleration.rawVec3()[axis] = std::max(0.f, dynamicMotionComponent.acceleration.rawVec3()[axis]);
 
@@ -124,8 +135,11 @@ void resolveAxisCollision(int axis, Engine::BoundingBox& dynamicBoundingBox, Eng
 }
 
 void Engine::Physics::resolveCollision(BoundingBox& dynamicBoundingBox, MotionComponent& dynamicMotionComponent, const CollisionInformation& collisionInfo) {
-	if (epsilonEqual(collisionInfo.collisionPoint, dynamicBoundingBox.lowerBound)) {
-		resolveAxisCollision(0, dynamicBoundingBox, dynamicMotionComponent, Surfaces::getSurfaceProperties(Surfaces::SurfaceType::Concrete));
+	if (epsilonEqualIndex(collisionInfo.collisionPoint, dynamicBoundingBox.upperBound, 0)) {
+		resolveAxisCollision(0, dynamicBoundingBox, dynamicMotionComponent, getSurfaceProperties(Surfaces::SurfaceType::Concrete));
+	}
+	else if (epsilonEqualIndex(collisionInfo.collisionPoint, dynamicBoundingBox.lowerBound, 1)) {
+		resolveAxisCollision(1, dynamicBoundingBox, dynamicMotionComponent, getSurfaceProperties(Surfaces::SurfaceType::Concrete));
 	}
 }
 

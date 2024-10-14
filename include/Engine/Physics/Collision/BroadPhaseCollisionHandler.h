@@ -1,19 +1,11 @@
 #pragma once
 
 //#include <algorithm>
-#include <concepts>
 #include <vector>
-#include <glm/glm.hpp>
-
-#include "imgui.h"
 
 #include "Engine/Core/Object/DynamicObject.h"
 #include "Engine/Core/Object/Object.h"
 #include "Engine/Graphics/BoundingBox.h"
-
-// To prevent conflicts with the Windows API
-#undef min
-#undef max
 
 namespace Engine {
 	class BroadPhaseCollisionHandler {
@@ -21,32 +13,36 @@ namespace Engine {
 		static bool checkCollision(const BoundingBox& box1, const BoundingBox& box2);
 		static bool checkCollision(const BoundingBox& dynamicBox, const BoundingBox& staticBox, const Physics::MotionComponent* component);
 		static bool checkCollision(const Vec3<Length>& point, const BoundingBox& box);
-		static bool checkCollision(DynamicObject& object1, Object& object2);
+		static bool checkCollision(const std::shared_ptr<DynamicObject>& object1, const std::shared_ptr<Object>& object2);
 
 		static CollisionInformation calculateCollisionInformation(const BoundingBox& box1, const BoundingBox& box2);
 
 		static void setCollisionInformation(const BoundingBox& box1, const BoundingBox& box2);
 
-		void addObject(Object& object) {
-			objects.push_back(&object);
+		void addObject(const std::weak_ptr<Object>& object) {
+			objects.push_back(object);
 		}
 
-		void addObject(DynamicObject& object) {
-			dynamicObjects.push_back(&object);
+		void addObject(const std::weak_ptr<DynamicObject>& object) {
+			dynamicObjects.push_back(object);
 		}
 
-		void removeObject(Object& object) {
-			std::erase(objects, &object);
+		void removeObject(const std::weak_ptr<Object>& object) {
+			std::erase_if(objects, [&](const std::weak_ptr<Object>& obj) {
+				return !obj.owner_before(object) && !object.owner_before(obj);
+				});
 		}
 
-		void removeObject(DynamicObject& object) {
-			std::erase(dynamicObjects, &object);
+		void removeObject(const std::weak_ptr<DynamicObject>& object) {
+			std::erase_if(dynamicObjects, [&](const std::weak_ptr<DynamicObject>& obj) {
+				return !obj.owner_before(object) && !object.owner_before(obj);
+				});
 		}
 
 		void update() const;
 	private:
-		std::vector<Object*> objects;
+		std::vector<std::weak_ptr<Object>> objects;
 
-		std::vector<DynamicObject*> dynamicObjects;
+		std::vector<std::weak_ptr<DynamicObject>> dynamicObjects;
 	};
 }
