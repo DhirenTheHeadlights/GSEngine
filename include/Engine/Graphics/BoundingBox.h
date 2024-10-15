@@ -11,8 +11,8 @@
 namespace Engine {
 	struct CollisionInformation {
 		bool colliding = false;
-		glm::vec3 collisionNormal;
-		float penetration;
+		Vec3<Unitless> collisionNormal;
+		Length penetration;
 		Vec3<Length> collisionPoint;
 	};
 

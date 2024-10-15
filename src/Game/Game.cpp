@@ -65,9 +65,9 @@ bool Game::update() {
 	const auto [colliding, collisionNormal, penetration, collisionPoint] = player->getBoundingBoxes()[0].collisionInformation;
 	ImGui::Text("Player Collision: %s", player->isColliding() ? "True" : "False");
 	ImGui::Text("Player Collision Information: ");
-	ImGui::Text("Collision Normal: %f, %f, %f", collisionNormal.x, collisionNormal.y, collisionNormal.z);
-	ImGui::Text("Collision Depth: %f", penetration);
-	ImGui::Text("Collision Point: %f, %f, %f", collisionPoint.as<Engine::Units::Meters>().x, collisionPoint.as<Engine::Units::Meters>().y, collisionPoint.as<Engine::Units::Meters>().z);
+	Engine::Debug::printVector("Collision Normal: ", collisionNormal.as<Engine::Units::Unitless>(), Engine::Units::Unitless::units());
+	ImGui::Text("Collision Depth: %f", penetration.as<Engine::Units::Meters>());
+	Engine::Debug::printVector("Collision Point: ", collisionPoint.as<Engine::Units::Meters>(), Engine::Units::Meters::units());
 	ImGui::Text("Airborne: %s", player->getMotionComponent().airborne ? "True" : "False");
 	ImGui::Text("Moving: %s", player->getMotionComponent().moving ? "True" : "False");
 	

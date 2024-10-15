@@ -58,7 +58,6 @@ void Engine::drawBoundingBox(BoundingBox& boundingBox, const glm::mat4& viewProj
                         boundingBox.gridVertices.push_back(x);
                         boundingBox.gridVertices.push_back(y);
                         boundingBox.gridVertices.push_back(zEnd);
-						std::cout << "x: " << x << " y: " << y << " z: " << z << std::endl;
                     }
                 }
 

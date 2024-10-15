@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 
 #define GLM_ENABLE_EXPERIMENTAL
+#include <iostream>
 #include <glm/gtx/norm.hpp>
 #include "Engine/Physics/Units/UnitToQuantityDefinitions.h"
 
@@ -36,7 +37,8 @@ namespace Engine {
 		template <typename... Args>
 			requires ((sizeof...(Args) == 0 || sizeof...(Args) == 1 || sizeof...(Args) == 3) && AreValidVectorArgs<T, Args...>)
 		explicit Vec3(Args&&... args)
-			: vec(createVec(std::forward<Args>(args)...)) {}
+			: vec(createVec(std::forward<Args>(args)...)) {
+		}
 
 		explicit Vec3(const glm::vec3& vec3) {
 			if constexpr (IsUnit<T>) {
@@ -44,9 +46,6 @@ namespace Engine {
 			}
 			else if constexpr (IsQuantity<T>) {
 				vec = vec3; // Assume vec3 is in default units
-			}
-			else {
-				static_assert(sizeof(T) == 0, "Unsupported type in Vec3 constructor with glm::vec3 argument");
 			}
 		}
 
@@ -102,12 +101,16 @@ namespace Engine {
 			return Vec3(vec * scalar);
 		}
 
-		Vec3 operator*(const glm::vec3& other) const {
-			return Vec3(vec * normalize(other));
+		Vec3 operator*(const Vec3<Unitless>& other) const {
+			return Vec3(vec * other.rawVec3());
 		}
 
 		Vec3 operator/(const float scalar) const {
 			return Vec3(vec / scalar);
+		}
+
+		Vec3 operator/(const Vec3<Unitless>& other) const {
+			return Vec3(vec / other.rawVec3());
 		}
 
 		/// Compound arithmetic operators
@@ -131,8 +134,24 @@ namespace Engine {
 			return *this;
 		}
 
+		Vec3& operator*=(const Vec3<Unitless>& other) {
+			vec *= other.rawVec3();
+			return *this;
+		}
+
 		Vec3& operator/=(const float scalar) {
 			vec /= scalar;
+			return *this;
+		}
+
+		Vec3& operator/=(const Vec3<Unitless>& other) {
+			vec /= other.rawVec3();
+			return *this;
+		}
+
+		/// Casts
+		Vec3& operator-() {
+			vec = -vec;
 			return *this;
 		}
 
@@ -158,8 +177,8 @@ namespace Engine {
 			return vec;
 		}
 
-	private:
-		glm::vec3 vec;           // Direction vector with magnitude
+	protected:
+		glm::vec3 vec = glm::vec3(0.0f);
 
 		template <typename... Args>
 		[[nodiscard]] static glm::vec3 createVec(Args&&... args) {
@@ -179,29 +198,55 @@ namespace Engine {
 		template <typename U>
 		[[nodiscard]] static float getValue(const U& argument) {
 			if constexpr (IsQuantity<U>) {
-				// Quantity: convert to default units before getting the value
 				return argument.asDefaultUnit().getValue();
 			}
 			else if constexpr (IsUnit<U>) {
-				// Unit: use .getValue() directly
 				return argument.getValue();
 			}
 			else if constexpr (std::is_convertible_v<U, float>) {
 				float value = static_cast<float>(argument);
 				if constexpr (IsUnit<T>) {
-					// T is a Unit: cast float to T and get its default unit value
 					return T(value).getValue();
 				}
-				else {
-					// T is Quantity or float
-					// If T is Quantity, assume float is in default units
-					return value;
-				}
+
+				return value; // Assume value is in default units
 			}
 			else {
 				static_assert(sizeof(U) == 0, "Unsupported type in getValue");
 				return -1.0f;
 			}
+		}
+	};
+
+	template <>
+	struct Vec3<Units::Unitless> : Vec3<Unitless> {
+		using Vec3<Unitless>::Vec3;
+
+		[[nodiscard]] Unitless magnitude() const {
+			if (vec == glm::vec3(0.0f)) {
+				return Unitless(0.0f);
+			}
+			return Unitless(length(rawVec3()));
+		}
+
+		template <IsQuantityOrUnit U>
+		Vec3& operator*(const U& other) {
+			return Vec3<U>(rawVec3() * other.getValue());
+		}
+
+		template <IsQuantityOrUnit U>
+		Vec3& operator/(const U& other) {
+			return Vec3<U>(rawVec3() / other.getValue());
+		}
+
+		template <IsQuantityOrUnit U>
+		Vec3& operator*=(const U& other) {
+			return vec * other;
+		}
+
+		template <IsQuantityOrUnit U>
+		Vec3& operator/=(const U& other) {
+			return vec / other;
 		}
 	};
 }

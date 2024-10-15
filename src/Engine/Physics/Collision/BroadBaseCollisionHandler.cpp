@@ -59,33 +59,33 @@ Engine::CollisionInformation Engine::BroadPhaseCollisionHandler::calculateCollis
 	}
 
 	// Calculate the penetration depth on each axis
-	float xPenetration = min(box1.upperBound, box2.upperBound, 0) - max(box1.lowerBound, box2.lowerBound, 0);
-	float yPenetration = min(box1.upperBound, box2.upperBound, 1) - max(box1.lowerBound, box2.lowerBound, 1);
-	float zPenetration = min(box1.upperBound, box2.upperBound, 2) - max(box1.lowerBound, box2.lowerBound, 2);
+	Length xPenetration = min(box1.upperBound, box2.upperBound, 0) - max(box1.lowerBound, box2.lowerBound, 0);
+	Length yPenetration = min(box1.upperBound, box2.upperBound, 1) - max(box1.lowerBound, box2.lowerBound, 1);
+	Length zPenetration = min(box1.upperBound, box2.upperBound, 2) - max(box1.lowerBound, box2.lowerBound, 2);
 
 	// Find the axis with the smallest penetration
-	float penetration = xPenetration;
-	auto collisionNormal = glm::vec3(1.0f, 0.0f, 0.0f); // Default to X axis
+	Length penetration = xPenetration;
+	Vec3<Unitless> collisionNormal(1.0f, 0.0f, 0.0f); // Default to X axis
 
 	if (yPenetration < penetration) {
 		penetration = yPenetration;
-		collisionNormal = glm::vec3(0.0f, 1.0f, 0.0f);
+		collisionNormal = Vec3<Unitless>(0.0f, 1.0f, 0.0f);
 	}
 	if (zPenetration < penetration) {
 		penetration = zPenetration;
-		collisionNormal = glm::vec3(0.0f, 0.0f, 1.0f);
+		collisionNormal = Vec3<Unitless>(0.0f, 0.0f, 1.0f);
 	}
 
 	// Determine the rawVec3 of the collision normal
 	const Vec3<Length> deltaCenter = box2.getCenter() - box1.getCenter();
-	if (dot(deltaCenter, Vec3<Units::Meters>(collisionNormal)) < 0.0f) {
+	if (dot(deltaCenter, collisionNormal) < 0.0f) {
 		collisionNormal = -collisionNormal;
 	}
 
 	// Calculate the collision point
 	Vec3<Units::Meters> collisionPoint = box1.getCenter();
 	collisionPoint += box1.getSize() / 2.f * collisionNormal;									// Move to the surface of box1
-	collisionPoint -= Vec3<Units::Meters>(collisionNormal * penetration);					// Adjust by half the penetration depth
+	collisionPoint -= Vec3<Units::Meters>(collisionNormal.as<Units::Unitless>() * penetration.as<Units::Meters>());					// Adjust by half the penetration depth
 
 	collisionInformation.collisionNormal = collisionNormal;
 	collisionInformation.penetration = penetration;
