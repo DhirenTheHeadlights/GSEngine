@@ -39,7 +39,7 @@ void Engine::update(const Camera& camera) {
 	Platform::update();
 
 	shader.setMat4("view", value_ptr(camera.getViewMatrix()));
-	shader.setMat4("projection", value_ptr(glm::perspective(glm::radians(45.0f), static_cast<float>(Engine::Platform::getFrameBufferSize().x) / static_cast<float>(Engine::Platform::getFrameBufferSize().y), 0.1f, 1000.0f)));
+	shader.setMat4("projection", value_ptr(glm::perspective(glm::radians(45.0f), static_cast<float>(Platform::getFrameBufferSize().x) / static_cast<float>(Platform::getFrameBufferSize().y), 0.1f, 1000.0f)));
 	shader.setMat4("model", value_ptr(glm::mat4(1.0f)));
 	shader.use();
 

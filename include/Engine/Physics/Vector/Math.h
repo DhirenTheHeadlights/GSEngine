@@ -15,8 +15,8 @@ namespace Engine {
 		return b;
 	}
 
-	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
-	Vec3<T> min(const Vec3<T>& a, const Vec3<U>& b) {
+	template <IsQuantityOrUnit T>
+	Vec3<T> min(const Vec3<T>& a, const Vec3<T>& b) {
 		if (glm::min(a.rawVec3(), b.rawVec3()) == a.rawVec3()) {
 			return a;
 		}
@@ -24,19 +24,40 @@ namespace Engine {
 	}
 
 	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
-	float max(const Vec3<T>& a, const Vec3<U>& b, const int index) {
-		if (a.rawVec3()[index] > b.rawVec3()[index]) {
-			return a.rawVec3()[index];
+		requires IsSameQuantityTag<T, U>
+	typename UnitToQuantity<T>::Type max(const Vec3<T>& a, const Vec3<U>& b, const int index) {
+		float max = a.rawVec3()[index];
+		if (b.rawVec3()[index] > a.rawVec3()[index]) {
+			max = b.rawVec3()[index];
 		}
-		return b.rawVec3()[index];
+
+		if constexpr (IsUnit<T>) {
+			return T(max);
+		}
+		else if constexpr (IsQuantity<T>) {
+			return typename UnitToQuantity<T>::Type(max);
+		}
+
+		return typename UnitToQuantity<T>::Type(max);
 	}
 
 	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
-	float min(const Vec3<T>& a, const Vec3<U>& b, const int index) {
-		if (a.rawVec3()[index] < b.rawVec3()[index]) {
-			return a.rawVec3()[index];
+		requires IsSameQuantityTag<T, U>
+	typename UnitToQuantity<T>::Type min(const Vec3<T>& a, const Vec3<U>& b, const int index) {
+		float min = a.rawVec3()[index];
+
+		if (b.rawVec3()[index] < a.rawVec3()[index]) {
+			min = b.rawVec3()[index];
 		}
-		return b.rawVec3()[index];
+
+		if constexpr (IsUnit<T>) {
+			return T(min);
+		}
+		else if constexpr (IsQuantity<T>) {
+			return typename UnitToQuantity<T>::Type(min);
+		}
+
+		return typename UnitToQuantity<T>::Type(min);
 	}
 
 	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
