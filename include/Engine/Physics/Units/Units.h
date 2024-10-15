@@ -6,12 +6,21 @@
 #include "Engine/Physics/Units/Movement.h"
 
 namespace Engine::Units {
+	struct PlaceHolderDoNotUseTag {};
+	constexpr char placeHolderDoNotUse[] = "This should never show up";
+	using PlaceHolderDoNotUse = Unit<PlaceHolderDoNotUseTag, 1.0f, placeHolderDoNotUse>;
+
 	struct UnitlessTag {};
 	constexpr char unitless[] = "Unitless";
 	using Unitless = Unit<UnitlessTag, 1.0f, unitless>;
 }
 
 namespace Engine {
+	using PlaceHolderUnits = UnitList<>;
+	struct PlaceHolderDoNotUse : Quantity<PlaceHolderDoNotUse, Units::PlaceHolderDoNotUse, PlaceHolderUnits> {
+		using Quantity::Quantity;
+	};
+
 	using UnitlessUnits = UnitList<Units::Unitless>;
 	struct Unitless : Quantity<Unitless, Units::Unitless, UnitlessUnits> {
 		using Quantity::Quantity;

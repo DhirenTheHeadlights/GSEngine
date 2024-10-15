@@ -8,7 +8,7 @@
 namespace Engine {
 	class Object {
 	public:
-		Object(const std::shared_ptr<ID>& id) : id(id) {}
+		explicit Object(const std::shared_ptr<ID>& id) : id(id) {}
 		virtual ~Object() = default;
 
 		////////////////////////////////////////////////////////////////////////////////////
