@@ -6,7 +6,7 @@
 namespace Engine {
 	class Camera {
 	public:
-		Camera(glm::vec3 initialPosition) : position(initialPosition) {}
+		Camera(glm::vec3 initialPosition = glm::vec3(0.f)) : position(initialPosition) {}
 
 		void moveRelativeToOrigin(const glm::vec3 direction, const float distance, const float deltaTime) {
 			const glm::vec3 cameraDirection =
@@ -24,7 +24,7 @@ namespace Engine {
 		glm::mat4 getViewMatrix() const { return glm::lookAt(position, position + front, up); }
 		glm::vec3 getPosition() const { return position; }
 		glm::vec3 getCameraDirectionRelativeToOrigin(glm::vec3 direction) const {
-			return direction.x * right + direction.y * up + direction.z * front;
+			return direction.x * right + direction.y * up + direction.z * front * glm::vec3(1.f, 0.f, 1.f);
 		}
 	private:
 		glm::vec3 position;

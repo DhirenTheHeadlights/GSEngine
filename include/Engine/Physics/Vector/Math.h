@@ -76,4 +76,21 @@ namespace Engine {
 	bool epsilonEqualIndex(const Vec3<T>& a, const Vec3<U>& b, const int index, const float epsilon = 0.00001f) {
 		return glm::epsilonEqual(a.rawVec3()[index], b.rawVec3()[index], epsilon);
 	}
+
+	template <IsQuantityOrUnit T>
+	bool isZero(const Vec3<T>& a) {
+		return glm::all(glm::epsilonEqual(a.rawVec3(), Vec3<T>(0.0f).rawVec3(), 0.00001f));
+	}
+
+	template <IsQuantityOrUnit T>
+	typename UnitToQuantity<T>::Type magnitude(const Vec3<T>& a) {
+		if (isZero(a)) return typename UnitToQuantity<T>::Type(0.0f);
+		return typename UnitToQuantity<T>::Type(glm::length(a.rawVec3()));
+	}
+
+	template <IsQuantityOrUnit T>
+	glm::vec3 normalize(const Vec3<T>& a) {
+		if (isZero(a)) return glm::vec3(0.0f);
+		return glm::normalize(a.rawVec3());
+	}
 }

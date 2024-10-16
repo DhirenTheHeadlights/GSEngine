@@ -15,7 +15,7 @@ std::vector<std::weak_ptr<Engine::DynamicObject>> Engine::Physics::objects;
 const Engine::Vec3<Engine::Units::MetersPerSecondSquared> gravity(0.f, -9.8f, 0.f);
 
 void Engine::Physics::applyForce(MotionComponent* component, const Vec3<Force>& force) {
-	if (force.isZero()) {
+	if (isZero(force)) {
 		return;
 	}
 
@@ -58,19 +58,27 @@ void updateAirResistance(Engine::Physics::MotionComponent* component) {
 	const Engine::Force dragForceMagnitude(
 		Engine::Units::Newtons(
 			0.5f * dragCoefficient * airDensity * crossSectionalArea * 
-			component->velocity.magnitude().as<Engine::Units::MetersPerSecond>() *
-			component->velocity.magnitude().as<Engine::Units::MetersPerSecond>()
+			magnitude(component->velocity).as<Engine::Units::MetersPerSecond>() *
+			magnitude(component->velocity).as<Engine::Units::MetersPerSecond>()
 		)
 	);
 
-	applyForce(component, Engine::Vec3<Engine::Units::Newtons>(-dragForceMagnitude.as<Engine::Units::Newtons>() * component->velocity.getDirection()));
+	applyForce(component, Engine::Vec3<Engine::Units::Newtons>(-dragForceMagnitude.as<Engine::Units::Newtons>() * normalize(component->velocity)));
 }
 
 void updateFriction(Engine::Physics::MotionComponent* component, const Engine::Surfaces::SurfaceProperties& surface) {
-	const Engine::Units::Newtons normal = component->mass.as<Engine::Units::Kilograms>() * gravity.magnitude().as<Engine::Units::MetersPerSecondSquared>();
-	const Engine::Units::Newtons friction = surface.frictionCoefficient * normal;
+	if (component->airborne) {
+		return;
+	}
 
-	const Engine::Vec3<Engine::Units::Newtons> frictionForce(-friction * component->velocity.getDirection());
+	const Engine::Units::Newtons normal = component->mass.as<Engine::Units::Kilograms>() * magnitude(gravity).as<Engine::Units::MetersPerSecondSquared>();
+	Engine::Units::Newtons friction = surface.frictionCoefficient * normal;
+
+	if (component->selfControlled) {
+		friction *= 5.f;
+	}
+
+	const Engine::Vec3<Engine::Units::Newtons> frictionForce(-friction * normalize(component->velocity));
 
 	applyForce(component, frictionForce);
 }
@@ -78,8 +86,19 @@ void updateFriction(Engine::Physics::MotionComponent* component, const Engine::S
 void updateVelocity(Engine::Physics::MotionComponent* component) {
 	const float deltaTime = Engine::MainClock::getDeltaTime().as<Engine::Units::Seconds>();
 
+	if (component->selfControlled && !component->airborne) {
+		const Engine::Units::Unitless dampingFactor = 5.0f; 
+		component->velocity *= std::max(0.f, 1.0f - dampingFactor * deltaTime);
+	}
+
 	// Update velocity using the kinematic equation: v = v0 + at
 	component->velocity += Engine::Vec3<Engine::Units::MetersPerSecond>(component->acceleration.as<Engine::Units::MetersPerSecondSquared>() * deltaTime);
+
+	if (magnitude(component->velocity) > component->maxSpeed && !component->airborne) {
+		component->velocity = Engine::Vec3<Engine::Units::MetersPerSecond>(
+			normalize(component->velocity) * component->maxSpeed.as<Engine::Units::MetersPerSecond>()
+		);
+	}
 
 	component->acceleration = Engine::Vec3<Engine::Units::MetersPerSecondSquared>(0.f, 0.f, 0.f);
 }
@@ -110,7 +129,7 @@ void Engine::Physics::updateEntities() {
 		if (const auto objectPtr = object.lock()) {
 			auto& component = objectPtr->getMotionComponent();
 
-			if (component.velocity.isZero() && component.acceleration.isZero()) {
+			if (isZero(component.velocity) && isZero(component.acceleration)) {
 				component.moving = false;
 			}
 			else {
@@ -140,6 +159,12 @@ void Engine::Physics::resolveCollision(BoundingBox& dynamicBoundingBox, MotionCo
 	}
 	else if (epsilonEqualIndex(collisionInfo.collisionPoint, dynamicBoundingBox.lowerBound, 1)) {
 		resolveAxisCollision(1, dynamicBoundingBox, dynamicMotionComponent, getSurfaceProperties(Surfaces::SurfaceType::Concrete));
+	}
+	else if (epsilonEqualIndex(collisionInfo.collisionPoint, getLeftBound(dynamicBoundingBox), 0)) {
+		resolveAxisCollision(0, dynamicBoundingBox, dynamicMotionComponent, getSurfaceProperties(Surfaces::SurfaceType::Concrete));
+	}
+	else if (epsilonEqualIndex(collisionInfo.collisionPoint, getRightBound(dynamicBoundingBox), 0)) {
+		resolveAxisCollision(0, dynamicBoundingBox, dynamicMotionComponent, getSurfaceProperties(Surfaces::SurfaceType::Concrete));
 	}
 }
 

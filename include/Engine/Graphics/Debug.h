@@ -12,4 +12,5 @@ namespace Engine::Debug {
 	void renderImGui();
 
 	void printVector(const std::string& name, const glm::vec3& vec, const char* unit = nullptr);
+	void printValue(const std::string& name, const float& value, const char* unit = nullptr);
 }

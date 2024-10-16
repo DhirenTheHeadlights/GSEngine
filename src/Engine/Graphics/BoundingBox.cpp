@@ -4,9 +4,19 @@
 
 #include "Engine/Core/EngineCore.h"
 
-void Engine::drawBoundingBox(BoundingBox& boundingBox, const glm::mat4& viewProjectionMatrix, const bool moving, const glm::vec3& color) {
-    const GLuint shaderID = Engine::shader.getID();
+Engine::Vec3<Engine::Length> Engine::getLeftBound(const BoundingBox& boundingBox) {
+	const Vec3<Length> center = boundingBox.getCenter();
+	const Units::Meters halfWidth = boundingBox.getSize().as<Units::Meters>().x / 2.0f;
+	return center - Vec3<Units::Meters>(halfWidth, 0.0f, 0.0f);
+}
 
+Engine::Vec3<Engine::Length> Engine::getRightBound(const BoundingBox& boundingBox) {
+	const Vec3<Length> center = boundingBox.getCenter();
+	const Units::Meters halfWidth = boundingBox.getSize().as<Units::Meters>().x / 2.0f;
+	return center + Vec3<Units::Meters>(halfWidth, 0.0f, 0.0f);
+}
+
+void Engine::drawBoundingBox(BoundingBox& boundingBox, const glm::mat4& viewProjectionMatrix, const bool moving, const glm::vec3& color) {
     if (!boundingBox.setGrid || moving) {
 
         constexpr float cellSize = 10.0f;

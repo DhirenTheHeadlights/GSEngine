@@ -4,6 +4,7 @@
 
 #include "Engine/Physics/Units/Units.h"
 #include "Engine/Physics/Vector/Vec3.h"
+#include "Vector/Math.h"
 
 namespace Engine::Physics {
 	struct MotionComponent {
@@ -11,6 +12,7 @@ namespace Engine::Physics {
 		Vec3<Velocity> velocity;
 		Vec3<Acceleration> acceleration;
 
+		Velocity maxSpeed;
 		Mass mass;
 
 		bool affectedByGravity = true;
@@ -19,7 +21,7 @@ namespace Engine::Physics {
 		bool selfControlled = false;
 
 		Velocity getSpeed() const {
-			return velocity.magnitude();
+			return magnitude(velocity);
 		}
 	};
 }
