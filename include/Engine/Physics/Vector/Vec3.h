@@ -277,7 +277,7 @@ namespace Engine {
 
 	/// Combining a units and vectors with unitless quantities
 	DEFINE_VEC3_ARITHMETIC_OPERATOR(*, multiply)
-	DEFINE_VEC3_ARITHMETIC_OPERATOR(/ , divide)
+	DEFINE_VEC3_ARITHMETIC_OPERATOR(/, divide)
 
 #undef DEFINE_VEC3_ARITHMETIC_OPERATOR
 }
