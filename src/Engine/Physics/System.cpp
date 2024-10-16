@@ -25,8 +25,8 @@ void Engine::Physics::applyForce(MotionComponent* component, const Vec3<Force>& 
 	);
 
 	if (component->airborne) {
-		acceleration.rawVec3().x *= 0.1f;
-		acceleration.rawVec3().z *= 0.1f;
+		acceleration.rawVec3().x = 0.f;
+		acceleration.rawVec3().z = 0.f;
 	}
 
 	component->acceleration += acceleration;
@@ -154,17 +154,20 @@ void resolveAxisCollision(const int axis, Engine::BoundingBox& dynamicBoundingBo
 }
 
 void Engine::Physics::resolveCollision(BoundingBox& dynamicBoundingBox, MotionComponent& dynamicMotionComponent, const CollisionInformation& collisionInfo) {
-	if (epsilonEqualIndex(collisionInfo.collisionPoint, dynamicBoundingBox.upperBound, 0)) {
-		resolveAxisCollision(0, dynamicBoundingBox, dynamicMotionComponent, getSurfaceProperties(Surfaces::SurfaceType::Concrete));
-	}
-	else if (epsilonEqualIndex(collisionInfo.collisionPoint, dynamicBoundingBox.lowerBound, 1)) {
-		resolveAxisCollision(1, dynamicBoundingBox, dynamicMotionComponent, getSurfaceProperties(Surfaces::SurfaceType::Concrete));
-	}
-	else if (epsilonEqualIndex(collisionInfo.collisionPoint, getLeftBound(dynamicBoundingBox), 0)) {
-		resolveAxisCollision(0, dynamicBoundingBox, dynamicMotionComponent, getSurfaceProperties(Surfaces::SurfaceType::Concrete));
-	}
-	else if (epsilonEqualIndex(collisionInfo.collisionPoint, getRightBound(dynamicBoundingBox), 0)) {
-		resolveAxisCollision(0, dynamicBoundingBox, dynamicMotionComponent, getSurfaceProperties(Surfaces::SurfaceType::Concrete));
+	const std::vector<std::pair<Vec3<Length>, int>> bounds = {
+		{getLeftBound(dynamicBoundingBox), 0},
+		{getRightBound(dynamicBoundingBox), 0},
+		{getFrontBound(dynamicBoundingBox), 2},
+		{getBackBound(dynamicBoundingBox), 2},
+		{dynamicBoundingBox.lowerBound, 1},
+		{dynamicBoundingBox.upperBound, 0}
+	};
+
+	for (const auto& [bound, axis] : bounds) {
+		if (epsilonEqualIndex(collisionInfo.collisionPoint, bound, axis)) {
+			resolveAxisCollision(axis, dynamicBoundingBox, dynamicMotionComponent, getSurfaceProperties(Surfaces::SurfaceType::Concrete));
+			return;
+		}
 	}
 }
 
