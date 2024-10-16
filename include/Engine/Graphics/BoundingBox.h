@@ -63,4 +63,7 @@ namespace Engine {
 	};
 
 	void drawBoundingBox(BoundingBox& boundingBox, const glm::mat4& viewProjectionMatrix, const bool moving, const glm::vec3& color = glm::vec3(1.0f));
+
+	Vec3<Length> getLeftBound(const BoundingBox& boundingBox);
+	Vec3<Length> getRightBound(const BoundingBox& boundingBox);
 }

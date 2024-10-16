@@ -4,8 +4,9 @@
 #include "Engine/Physics/System.h"
 
 void Game::Player::initialize() {
-	Engine::Units::Meters size = 10.f;
-	boundingBoxes.emplace_back(Engine::Vec3<Engine::Units::Meters>(-10.f, -10.f, -10.f), size, size, size);
+	Engine::Units::Feet height = 6.0f;
+	Engine::Units::Feet width = 3.0f;
+	boundingBoxes.emplace_back(Engine::Vec3<Engine::Units::Meters>(-10.f, -10.f, -10.f), height, width, width);
 
 	wasd.insert({ GLFW_KEY_W, {0, 0, 1} });	
 	wasd.insert({ GLFW_KEY_S, {0, 0, -1} });
@@ -15,10 +16,26 @@ void Game::Player::initialize() {
 	camera.setPosition(boundingBoxes[0].getCenter().as<Engine::Units::Meters>());
 
 	motionComponent.mass = Engine::Units::Pounds(180.f);
+	motionComponent.maxSpeed = maxSpeed;
 	motionComponent.selfControlled = true;
 }
 
 void Game::Player::update() {
+	if (Engine::Input::getKeyboard().keys[GLFW_KEY_LEFT_SHIFT].held) {
+		motionComponent.maxSpeed = shiftMaxSpeed;
+	}
+	else {
+		motionComponent.maxSpeed = maxSpeed;
+	}
+
+	if (Engine::Input::getKeyboard().keys[GLFW_KEY_J].pressed) {
+		jetpack = !jetpack;
+	}
+
+	if (jetpack && Engine::Input::getKeyboard().keys[GLFW_KEY_SPACE].held) {
+		applyForce(&motionComponent, Engine::Vec3<Engine::Units::Newtons>(0.f, jetpackForce, 0.f));
+	}
+
 	for (auto& bb : boundingBoxes) {
 		bb.setPosition(motionComponent.position);
 	}

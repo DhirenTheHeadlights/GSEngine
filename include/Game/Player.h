@@ -15,11 +15,15 @@ namespace Game {
 		Engine::Camera& getCamera() { return camera; }
 
 		void setPosition(const Engine::Vec3<Engine::Length>& position) { boundingBoxes[0].setPosition(position); }
+
+		bool jetpack = false;
 	private:
-		Engine::Camera camera = Engine::Camera(glm::vec3(0.f, 0.f, 0.f));
+		Engine::Camera camera;
 
 		std::unordered_map<int, glm::vec3> wasd;
 
-		float speed = 10.f;
+		Engine::Units::MetersPerSecond maxSpeed = 20.f;
+		Engine::Units::MetersPerSecond shiftMaxSpeed = 40.f;
+		Engine::Units::Newtons jetpackForce = 1000.f;
 	};
 }
