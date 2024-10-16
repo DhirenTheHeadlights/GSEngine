@@ -66,4 +66,6 @@ namespace Engine {
 
 	Vec3<Length> getLeftBound(const BoundingBox& boundingBox);
 	Vec3<Length> getRightBound(const BoundingBox& boundingBox);
+	Vec3<Length> getFrontBound(const BoundingBox& boundingBox);
+	Vec3<Length> getBackBound(const BoundingBox& boundingBox);
 }

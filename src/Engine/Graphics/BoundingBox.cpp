@@ -16,6 +16,18 @@ Engine::Vec3<Engine::Length> Engine::getRightBound(const BoundingBox& boundingBo
 	return center + Vec3<Units::Meters>(halfWidth, 0.0f, 0.0f);
 }
 
+Engine::Vec3<Engine::Length> Engine::getFrontBound(const BoundingBox& boundingBox) {
+	const Vec3<Length> center = boundingBox.getCenter();
+	const Units::Meters halfDepth = boundingBox.getSize().as<Units::Meters>().z / 2.0f;
+	return center - Vec3<Units::Meters>(0.0f, 0.0f, halfDepth);
+}
+
+Engine::Vec3<Engine::Length> Engine::getBackBound(const BoundingBox& boundingBox) {
+	const Vec3<Length> center = boundingBox.getCenter();
+	const Units::Meters halfDepth = boundingBox.getSize().as<Units::Meters>().z / 2.0f;
+	return center + Vec3<Units::Meters>(0.0f, 0.0f, halfDepth);
+}
+
 void Engine::drawBoundingBox(BoundingBox& boundingBox, const glm::mat4& viewProjectionMatrix, const bool moving, const glm::vec3& color) {
     if (!boundingBox.setGrid || moving) {
 

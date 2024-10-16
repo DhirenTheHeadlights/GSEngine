@@ -1,6 +1,6 @@
 #include "Engine/Graphics/Camera.h"
 
-void Engine::Camera::processMouseMovement(glm::vec2 offset) {
+void Engine::Camera::processMouseMovement(glm::vec2& offset) {
     offset *= mouseSensitivity;
     yaw += offset.x;
     pitch -= offset.y;

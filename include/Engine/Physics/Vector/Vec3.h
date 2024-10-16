@@ -116,8 +116,16 @@ namespace Engine {
 			return Vec3(vec * scalar);
 		}
 
+		Vec3 operator*(const float scalar, const Vec3& vec) {
+			return vec * scalar;
+		}
+
 		Vec3 operator/(const float scalar) const {
 			return Vec3(vec / scalar);
+		}
+
+		Vec3 operator/(const float scalar, const Vec3& vec) {
+			return vec / scalar;
 		}
 
 		/// Compound arithmetic operators
