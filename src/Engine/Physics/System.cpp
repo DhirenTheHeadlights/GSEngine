@@ -19,15 +19,10 @@ void Engine::Physics::applyForce(MotionComponent* component, const Vec3<Force>& 
 		return;
 	}
 
-	auto acceleration = Engine::Vec3<Units::MetersPerSecondSquared>(
+	const auto acceleration = Engine::Vec3<Units::MetersPerSecondSquared>(
 		force.as<Units::Newtons>() /
 		std::max(component->mass.as<Units::Kilograms>(), 0.0001f)
 	);
-
-	if (component->airborne) {
-		acceleration.rawVec3().x = 0.f;
-		acceleration.rawVec3().z = 0.f;
-	}
 
 	component->acceleration += acceleration;
 }
@@ -63,7 +58,7 @@ void updateAirResistance(Engine::Physics::MotionComponent* component) {
 		)
 	);
 
-	applyForce(component, Engine::Vec3<Engine::Units::Newtons>(-dragForceMagnitude.as<Engine::Units::Newtons>() * normalize(component->velocity)));
+	applyForce(component, Engine::Vec3<Engine::Units::Newtons>(-dragForceMagnitude.as<Engine::Units::Newtons>() * normalize(component->velocity).rawVec3()));
 }
 
 void updateFriction(Engine::Physics::MotionComponent* component, const Engine::Surfaces::SurfaceProperties& surface) {
@@ -78,7 +73,7 @@ void updateFriction(Engine::Physics::MotionComponent* component, const Engine::S
 		friction *= 5.f;
 	}
 
-	const Engine::Vec3<Engine::Units::Newtons> frictionForce(-friction * normalize(component->velocity));
+	const Engine::Vec3<Engine::Units::Newtons> frictionForce(-friction * normalize(component->velocity).rawVec3());
 
 	applyForce(component, frictionForce);
 }
@@ -100,7 +95,7 @@ void updateVelocity(Engine::Physics::MotionComponent* component) {
 		);
 	}
 
-	component->acceleration = Engine::Vec3<Engine::Units::MetersPerSecondSquared>(0.f, 0.f, 0.f);
+	component->acceleration = { 0.f, 0.f, 0.f };
 }
 
 void updatePosition(Engine::Physics::MotionComponent* component) {

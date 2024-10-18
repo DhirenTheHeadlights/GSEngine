@@ -8,12 +8,12 @@ void Game::Player::initialize() {
 	Engine::Units::Feet width = 3.0f;
 	boundingBoxes.emplace_back(Engine::Vec3<Engine::Units::Meters>(-10.f, -10.f, -10.f), height, width, width);
 
-	wasd.insert({ GLFW_KEY_W, {0, 0, 1} });	
-	wasd.insert({ GLFW_KEY_S, {0, 0, -1} });
-	wasd.insert({ GLFW_KEY_A, {-1, 0, 0} });
-	wasd.insert({ GLFW_KEY_D, {1, 0, 0} });
+	wasd.insert({ GLFW_KEY_W, {0.f, 0.f, 1.f} });
+	wasd.insert({ GLFW_KEY_S, {0.f, 0.f, -1.f} });
+	wasd.insert({ GLFW_KEY_A, {-1.f, 0.f, 0.f} });
+	wasd.insert({ GLFW_KEY_D, {1.f, 0.f, 0.f} });
 
-	camera.setPosition(boundingBoxes[0].getCenter().as<Engine::Units::Meters>());
+	camera.setPosition(boundingBoxes[0].getCenter());
 
 	motionComponent.mass = Engine::Units::Pounds(180.f);
 	motionComponent.maxSpeed = maxSpeed;
@@ -41,9 +41,9 @@ void Game::Player::update() {
 	}
 
 	for (auto& [key, direction] : wasd) {
-		if (Engine::Input::getKeyboard().keys[key].held) {
+		if (Engine::Input::getKeyboard().keys[key].held && !motionComponent.airborne) {
 			applyForce(&motionComponent, Engine::Vec3<Engine::Units::Newtons>(
-				camera.getCameraDirectionRelativeToOrigin(direction) * 1000000.f)
+				camera.getCameraDirectionRelativeToOrigin(direction) * 1000000.f /** Engine::Vec3<Engine::Unitless>(1.f, 0.f, 1.f)*/)
 			);
 		}
 	}

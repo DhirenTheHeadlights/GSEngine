@@ -89,8 +89,14 @@ namespace Engine {
 	}
 
 	template <IsQuantityOrUnit T>
-	glm::vec3 normalize(const Vec3<T>& a) {
-		if (isZero(a)) return glm::vec3(0.0f);
-		return glm::normalize(a.rawVec3());
+	Vec3<T> normalize(const Vec3<T>& a) {
+		if (isZero(a)) return Vec3<T>(glm::vec3(0.0f));
+		return Vec3<T>(glm::normalize(a.rawVec3()));
+	}
+
+	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
+		requires IsSameQuantityTag<T, U>
+	Vec3<T> cross(const Vec3<T>& a, const Vec3<U>& b) {
+		return Vec3<T>(glm::cross(a.rawVec3(), b.rawVec3()));
 	}
 }

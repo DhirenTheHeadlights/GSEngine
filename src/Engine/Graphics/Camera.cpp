@@ -10,11 +10,12 @@ void Engine::Camera::processMouseMovement(glm::vec2& offset) {
 }
  
 void Engine::Camera::updateCameraVectors() {
-    glm::vec3 newFront(0.0f, 0.0f, 0.0f);
-    newFront.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
-    newFront.y = sin(glm::radians(pitch));
-    newFront.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
-    front = glm::normalize(newFront);
-    right = glm::normalize(glm::cross(front, worldUp));
-    up = glm::normalize(glm::cross(right, front));
+	const Vec3<Length> newFront(
+		cos(glm::radians(yaw)) * cos(glm::radians(pitch)),
+		sin(glm::radians(pitch)),
+		sin(glm::radians(yaw)) * cos(glm::radians(pitch))
+	);
+    front = normalize(newFront);
+    right = normalize(cross(front, worldUp));
+	up = normalize(cross(right, front));
 }
