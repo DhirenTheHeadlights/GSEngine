@@ -20,7 +20,7 @@ namespace Game {
 	private:
 		Engine::Camera camera;
 
-		std::unordered_map<int, glm::vec3> wasd;
+		std::unordered_map<int, Engine::Vec3<Engine::Unitless>> wasd;
 
 		Engine::Units::MetersPerSecond maxSpeed = 20.f;
 		Engine::Units::MetersPerSecond shiftMaxSpeed = 40.f;
