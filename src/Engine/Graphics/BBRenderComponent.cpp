@@ -1,6 +1,13 @@
 #include "Engine/Graphics/BBRenderComponent.h"
 
-void Engine::BoundingBoxRenderComponent::initializeGrid(const Vec3<Length>& lower, const Vec3<Length>& upper) {
+Engine::BoundingBoxRenderComponent::BoundingBoxRenderComponent(BoundingBoxRenderComponent&& other) noexcept
+	: RenderComponent(std::move(other)),
+	vertices(std::move(other.vertices)), lower(other.lower), upper(other.upper), isInitialized(other.isInitialized) {
+
+	other.isInitialized = false;
+}
+
+void Engine::BoundingBoxRenderComponent::updateGrid() {
 	constexpr float cellSize = 10.0f;
 
 	vertices.clear();
@@ -123,33 +130,27 @@ void Engine::BoundingBoxRenderComponent::initializeGrid(const Vec3<Length>& lowe
 	}
 }
 
-void Engine::BoundingBoxRenderComponent::updateGrid(const Vec3<Length>& lower, const Vec3<Length>& upper, const bool isMoving) {
-	if (isMoving || !isInitialized) {
-		initializeGrid(lower, upper);
-
-		if (VAO == 0) {
-			glGenVertexArrays(1, &VAO);
-			glGenBuffers(1, &VBO);
-		}
-
-		glBindVertexArray(VAO);
-		glBindBuffer(GL_ARRAY_BUFFER, VBO);
-		glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
-		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), static_cast<void*>(nullptr));
-		glEnableVertexAttribArray(0);
-		glBindBuffer(GL_ARRAY_BUFFER, 0);
-		glBindVertexArray(0);
-
-		isInitialized = true;
-	}
-}
-
-void Engine::BoundingBoxRenderComponent::render() const {
-	if (!isInitialized) {
-		return;
-	}
+void Engine::BoundingBoxRenderComponent::initialize(const bool moving) {
+	updateGrid();
 
 	glBindVertexArray(VAO);
-	glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(vertices.size() / 3));
+	glBindBuffer(GL_ARRAY_BUFFER, VBO);
+	glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), moving ? GL_DYNAMIC_DRAW : GL_STATIC_DRAW);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), static_cast<void*>(nullptr));
+	glEnableVertexAttribArray(0);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
+
+	vertexCount = static_cast<GLsizei>(vertices.size() / 3);
+	drawMode = GL_LINES;
+
+	isInitialized = true;
+}
+
+void Engine::BoundingBoxRenderComponent::update(const bool moving) {
+	if (!isInitialized || moving) {
+		initialize(moving);
+	}
+
+	render();
 }
