@@ -1,12 +1,30 @@
 #pragma once
 
-#include <cmath>
 #include <algorithm>
+#include <cmath>
+#include <random>
 #include <glm/glm.hpp>
 
 #include "Engine/Physics/Vector/Vec3.h"
 
 namespace Engine {
+	static std::random_device rd;
+	static std::mt19937 gen(rd());
+
+	template <typename T>
+		requires std::is_floating_point_v<T> || std::is_integral_v<T>
+	T randomValue(T min, T max) {
+		std::uniform_real_distribution<T> dis(min, max);
+		return dis(gen);
+	}
+}
+
+namespace Engine {
+	template <typename T>
+	void print(const char* message, const Vec3<T>& a) {
+		std::cout << message << ": " << a.rawVec3().x << ", " << a.rawVec3().y << ", " << a.rawVec3().z << std::endl;
+	}
+
 	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
 	Vec3<T> max(const Vec3<T>& a, const Vec3<U>& b) {
 		if (glm::max(a.rawVec3(), b.rawVec3()) == a.rawVec3()) {

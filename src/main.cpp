@@ -1,33 +1,15 @@
 #include <enet/enet.h> // Included first to avoid linking errors
-
-// Third-Party Library Includes
 #include <GLFW/glfw3.h>
-
-// Project-Specific Includes
 #include "Engine/Core/Engine.h"
 #include "Game/Game.h"
 
 int main() {
-    //enableReportGlErrors();
-
-	Engine::initialize();
-
-    if (!Game::initialize()) {
-        return 0;
-    }
+	Engine::initialize(Game::initialize, Game::close);
 
 	while (!glfwWindowShouldClose(Engine::Platform::window)) {
-		Engine::update(Game::getCamera());
-
-		if (!Game::update()) {
-			Game::close();
-			return 0;
-		}
-
-		Engine::render();
+		Engine::update(Game::update);
+		Engine::render(Game::getCamera(), Game::render);
 	}
-
-    Game::close();
 
 	Engine::shutdown();
 

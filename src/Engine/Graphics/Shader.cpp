@@ -4,7 +4,6 @@
 #include <iostream>
 #include <sstream>
 
-// Constructor that builds the shader program from vertex and fragment shader file paths
 void Engine::Shader::createShaderProgram(const std::string& vertexPath, const std::string& fragmentPath) {
     // 1. Retrieve the vertex and fragment shader source code from file paths
     const std::string vertexCode = loadShaderSource(vertexPath);
@@ -40,12 +39,10 @@ void Engine::Shader::createShaderProgram(const std::string& vertexPath, const st
     cacheUniformLocations();
 }
 
-// Use the shader program
 void Engine::Shader::use() const {
     glUseProgram(ID);
 }
 
-// Load shader source code from a file
 std::string Engine::Shader::loadShaderSource(const std::string& filePath) {
     std::ifstream shaderFile;
     std::stringstream shaderStream;

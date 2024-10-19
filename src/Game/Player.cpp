@@ -13,8 +13,6 @@ void Game::Player::initialize() {
 	wasd.insert({ GLFW_KEY_A, {-1.f, 0.f, 0.f} });
 	wasd.insert({ GLFW_KEY_D, {1.f, 0.f, 0.f} });
 
-	camera.setPosition(boundingBoxes[0].getCenter());
-
 	motionComponent.mass = Engine::Units::Pounds(180.f);
 	motionComponent.maxSpeed = maxSpeed;
 	motionComponent.selfControlled = true;
@@ -43,7 +41,7 @@ void Game::Player::update() {
 	for (auto& [key, direction] : wasd) {
 		if (Engine::Input::getKeyboard().keys[key].held && !motionComponent.airborne) {
 			applyForce(&motionComponent, Engine::Vec3<Engine::Units::Newtons>(
-				camera.getCameraDirectionRelativeToOrigin(direction) * 1000000.f /** Engine::Vec3<Engine::Unitless>(1.f, 0.f, 1.f)*/)
+				camera.getCameraDirectionRelativeToOrigin(direction) * 1000000.f * Engine::Vec3<Engine::Unitless>(1.f, 0.f, 1.f))
 			);
 		}
 	}
@@ -53,13 +51,13 @@ void Game::Player::update() {
 		motionComponent.airborne = true;
 	}
 	
-	camera.setPosition(motionComponent.position.as<Engine::Units::Meters>());
+	camera.setPosition(motionComponent.position + Engine::Vec3<Engine::Units::Feet>(0.f, 5.f, 0.f));
 	camera.updateCameraVectors();
 	camera.processMouseMovement(Engine::Input::getMouse().delta);
 }
 
-void Game::Player::render(const glm::mat4& view, const glm::mat4& projection) {
+void Game::Player::render() {
 	for (auto& bb : boundingBoxes) {
-		drawBoundingBox(bb, view * projection, true);
+		bb.render(true);
 	}
 }

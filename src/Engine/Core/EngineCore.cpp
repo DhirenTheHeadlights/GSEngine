@@ -1,6 +1,7 @@
 #include "Engine/Core/EngineCore.h"
 
 #include "Engine/Core/Clock.h"
+#include "Engine/Graphics/Renderer.h"
 #include "Engine/Input/Input.h"
 #include "Engine/Physics/System.h"
 #include "Engine/Platform/PermaAssert.h"
@@ -12,10 +13,14 @@
 #endif
 
 Engine::IDHandler Engine::idManager;
-Engine::BroadPhaseCollisionHandler Engine::collisionHandler;
-Engine::Shader Engine::shader;
+Engine::BroadPhaseCollisionHandler collisionHandler;
+Engine::Renderer renderer;
 
-void Engine::initialize() {
+std::function<void()> gameShutdownFunction = [] {};
+
+void Engine::initialize(const std::function<void()>& initializeFunction, const std::function<void()>& shutdownFunction) {
+	gameShutdownFunction = shutdownFunction;
+
 	permaAssertComment(glfwInit(), "err initializing glfw");
 	glfwWindowHint(GLFW_SAMPLES, 4);
 
@@ -27,21 +32,17 @@ void Engine::initialize() {
 #endif
 
 	Platform::initialize();
-
-	shader.createShaderProgram(RESOURCES_PATH "Arena/grid.vert", RESOURCES_PATH "Arena/grid.frag");
+	renderer.initialize();
 
 #if IMGUI
 	Debug::setUpImGui();
 #endif
+
+	initializeFunction();
 }
 
-void Engine::update(const Camera& camera) {
+void Engine::update(const std::function<bool()>& updateFunction) {
 	Platform::update();
-
-	shader.setMat4("view", value_ptr(camera.getViewMatrix()));
-	shader.setMat4("projection", value_ptr(glm::perspective(glm::radians(45.0f), static_cast<float>(Platform::getFrameBufferSize().x) / static_cast<float>(Platform::getFrameBufferSize().y), 0.1f, 1000.0f)));
-	shader.setMat4("model", value_ptr(glm::mat4(1.0f)));
-	shader.use();
 
 #if IMGUI
 	Debug::updateImGui();
@@ -55,19 +56,29 @@ void Engine::update(const Camera& camera) {
 
 	Input::update();
 
-	glViewport(0, 0, Platform::getFrameBufferSize().x, Platform::getFrameBufferSize().y);
-	glClear(GL_COLOR_BUFFER_BIT); // Clear screen
+	if (!updateFunction()) {
+		shutdown();
+	}
 }
 
-void Engine::render() {
+void Engine::render(const Camera& camera, const std::function<bool()>& renderFunction) {
+	Renderer::beginFrame();
+	renderer.setCameraInformation(camera);
+	renderer.renderObjects();
+
+	if (!renderFunction()) {
+		shutdown();
+	}
+
 #if IMGUI
 	Debug::renderImGui();
 #endif
-	glfwSwapBuffers(Platform::window);
-	glfwPollEvents();
+	Renderer::endFrame();
 }
 
 void Engine::shutdown() {
+	gameShutdownFunction();
+	glfwTerminate();
 }
 
 void Engine::addObject(const std::weak_ptr<StaticObject>& object) {

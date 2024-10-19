@@ -16,8 +16,8 @@ void Game::Arena::initialize() {
     boundingBoxes.emplace_back(Engine::Vec3<Engine::Units::Meters>(0.f, -height / 2.f + wallThickness / 2.f, 0.f), width, wallThickness, depth);
 }
 
-void Game::Arena::render(const glm::mat4& view, const glm::mat4& projection) {
-    for (auto& boundingBox : boundingBoxes) {
-	    drawBoundingBox(boundingBox, view * projection, false);
+void Game::Arena::render() {
+    for (auto& bb : boundingBoxes) {
+		bb.render(false);
 	}
 }

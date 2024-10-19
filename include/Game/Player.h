@@ -10,7 +10,7 @@ namespace Game {
 		void initialize();
 
 		void update();
-		void render(const glm::mat4& view, const glm::mat4& projection);
+		void render();
 
 		Engine::Camera& getCamera() { return camera; }
 

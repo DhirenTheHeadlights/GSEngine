@@ -8,7 +8,7 @@ namespace Game {
 		Arena() : StaticObject(Engine::idManager.generateID()) {}
 
 		void initialize();
-		void render(const glm::mat4& view, const glm::mat4& projection);
+		void render();
 	private:
 		Engine::Units::Meters
 			width   = 1000.f,

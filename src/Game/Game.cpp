@@ -1,9 +1,4 @@
-#define GLM_ENABLE_EXPERIMENTAL
-
-#include "Game/Game.h"
-
-#include <glm/gtc/type_ptr.hpp>
-
+ #include "Game/Game.h"
 #include "Engine/Core/Engine.h"
 #include "Game/Arena.h"
 #include "Game/Player.h"
@@ -21,14 +16,11 @@ const Engine::Camera& Game::getCamera() {
 }
 
 bool Game::initialize() {
-	// Loading the saved data. Loading an entire structure like this makes saving game data very easy.
 	Engine::Platform::readEntireFile(RESOURCES_PATH "gameData.data", &gameData, sizeof(GameData));
 
-	// Set up game
 	arena->initialize();
 	player->initialize();
 
-	// Set player position
 	//player.setPosition(gameData.playerPosition);
 
 	addObject(player);
@@ -38,21 +30,25 @@ bool Game::initialize() {
 }
 
 bool Game::update() {
-
-	if (Engine::Input::getMouse().buttons[GLFW_MOUSE_BUTTON_MIDDLE].toggled) {
-		glfwSetInputMode(Engine::Platform::window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-	}
-	else {
-		glfwSetInputMode(Engine::Platform::window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-	}
-
-	const glm::mat4 view = player->getCamera().getViewMatrix();
-	const glm::mat4 projection = glm::perspective(glm::radians(45.0f), static_cast<float>(Engine::Platform::getFrameBufferSize().x) / static_cast<float>(Engine::Platform::getFrameBufferSize().y), 0.1f, 10000.0f);
+	Engine::Platform::showMouse(Engine::Input::getMouse().buttons[GLFW_MOUSE_BUTTON_MIDDLE].toggled);
 
 	player->update();
-	player->render(view, projection);
 
-	arena->render(view, projection);
+	if (Engine::Input::getKeyboard().keys[GLFW_KEY_ESCAPE].pressed) {
+		if (close) {
+			std::cerr << "Game closed properly." << '\n';
+			return false;
+		}
+		std::cerr << "Failed to close game properly." << '\n';
+		return false;
+	}
+
+	return true;
+}
+
+bool Game::render() {
+	player->render();
+	arena->render();
 
 	ImGui::Begin("DEBUG");
 	ImGui::SetWindowSize({ 500.f, 500.f });
@@ -64,27 +60,24 @@ bool Game::update() {
 	Engine::Debug::printVector("Player Velocity: ", player->getMotionComponent().velocity.as<Engine::Units::MetersPerSecond>(), Engine::Units::MetersPerSecond::units());
 	Engine::Debug::printVector("Player Acceleration: ", player->getMotionComponent().acceleration.as<Engine::Units::MetersPerSecondSquared>(), Engine::Units::MetersPerSecondSquared::units());
 
-	ImGui::Text("Player Speed: %f", player->getMotionComponent().getSpeed().as<Engine::Units::MilesPerHour>());
-	ImGui::Text("Player Jetpack: %s", player->jetpack ? "True" : "False");
+	Engine::Debug::printValue("Player Speed: ", player->getMotionComponent().getSpeed().as<Engine::Units::MilesPerHour>(), Engine::Units::MilesPerHour::units());
+
+	Engine::Debug::printBoolean("Player Jetpack [J]: ", player->jetpack);
+
+	ImGui::Text("Player Collision Information: ");
 
 	const auto [colliding, collisionNormal, penetration, collisionPoint] = player->getBoundingBoxes()[0].collisionInformation;
-	ImGui::Text("Player Collision: %s", player->isColliding() ? "True" : "False");
-	ImGui::Text("Player Collision Information: ");
+	Engine::Debug::printBoolean("Player Colliding: ", colliding);
 	Engine::Debug::printVector("Collision Normal: ", collisionNormal.rawVec3(), Engine::Units::Unitless::units());
-	ImGui::Text("Collision Depth: %f", penetration.as<Engine::Units::Meters>());
+	Engine::Debug::printValue("Penetration: ", penetration.as<Engine::Units::Meters>(), Engine::Units::Meters::units());
 	Engine::Debug::printVector("Collision Point: ", collisionPoint.as<Engine::Units::Meters>(), Engine::Units::Meters::units());
-	ImGui::Text("Airborne: %s", player->getMotionComponent().airborne ? "True" : "False");
-	ImGui::Text("Moving: %s", player->getMotionComponent().moving ? "True" : "False");
-	
-	ImGui::End();
-
-	if (Engine::Input::getKeyboard().keys[GLFW_KEY_ESCAPE].pressed) {
-		return false;
-	}
+	Engine::Debug::printBoolean("Player Airborne: ", player->getMotionComponent().airborne);
+	Engine::Debug::printBoolean("Player Moving: ", player->getMotionComponent().moving);
 
 	return true;
+
 }
 
-void Game::close() {
-	Engine::Platform::writeEntireFile(RESOURCES_PATH "gameData.data", &gameData, sizeof(GameData));
+bool Game::close() {
+	return Engine::Platform::writeEntireFile(RESOURCES_PATH "gameData.data", &gameData, sizeof(GameData));
 }
