@@ -6,11 +6,21 @@
 namespace Engine {
 	class BoundingBoxRenderComponent : public RenderComponent {
 	public:
-		void initializeGrid(const Vec3<Length>& lower, const Vec3<Length>& upper);
-		void updateGrid(const Vec3<Length>& lower, const Vec3<Length>& upper, bool isMoving);
-		void render() const;
+		BoundingBoxRenderComponent(const Vec3<Length>& lower, const Vec3<Length>& upper)
+			: lower(lower), upper(upper) {}
+		BoundingBoxRenderComponent(const BoundingBoxRenderComponent&) = default;
+		BoundingBoxRenderComponent(BoundingBoxRenderComponent&&) noexcept;
+
+		void update(bool moving);
 	private:
+		void updateGrid();
+		void initialize(bool moving);
+
 		std::vector<float> vertices;
+
+		Vec3<Length> lower;
+		Vec3<Length> upper;
+
 		bool isInitialized = false;
 	};
 }

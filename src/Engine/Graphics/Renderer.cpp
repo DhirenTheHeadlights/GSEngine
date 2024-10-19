@@ -9,7 +9,7 @@
 void Engine::Renderer::initialize() {
 	shader.createShaderProgram(RESOURCES_PATH "grid.vert", RESOURCES_PATH "grid.frag");
 
-	enableReportGlErrors();
+	//enableReportGlErrors();
 }
 
 void Engine::Renderer::setCameraInformation(const Camera& camera) const {
@@ -33,10 +33,10 @@ void Engine::Renderer::renderObjects() {
 	shader.use();
 	for (const auto& renderComponent : renderComponents) {
 		if (const auto component = renderComponent.lock()) {
-			shader.setMat4("transform", value_ptr(component->getTransform()));
+			/*shader.setMat4("transform", value_ptr(component->getTransform()));
 			glBindVertexArray(component->getVAO());
 			glBindTexture(GL_TEXTURE_2D, component->getTextureID());
-			glDrawArrays(GL_TRIANGLES, 0, 36);
+			glDrawArrays(GL_TRIANGLES, 0, 36);*/
 		}
 		else {
 			removeRenderComponent(renderComponent.lock());

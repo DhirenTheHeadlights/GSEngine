@@ -2,7 +2,6 @@
 #include <vector>
 #include <glad/glad.h>
 #include <glm/glm.hpp>
-#include <glm/gtc/type_ptr.hpp>
 
 #include "BBRenderComponent.h"
 #include "Engine/Physics/Surfaces.h"
@@ -21,14 +20,13 @@ namespace Engine {
 		BoundingBox() = default;
 
 		// Only use this constructor if you know what you are doing
-		BoundingBox(const Vec3<Length>& upperBound, const Vec3<Length>& lowerBound) : upperBound(upperBound), lowerBound(lowerBound) {
-			renderComponent.updateGrid(lowerBound, upperBound, true);
-		}
+		BoundingBox(const Vec3<Length>& upperBound, const Vec3<Length>& lowerBound)
+			: upperBound(upperBound), lowerBound(lowerBound), renderComponent(lowerBound, upperBound) {}
 
 		// Use this constructor for a centered bounding box
 		BoundingBox(const Vec3<Length>& center, const Length& width, const Length& height, const Length& depth)
-					: BoundingBox(center + Vec3<Length>(width / 2.f, height / 2.f, depth / 2.f),
-								  center - Vec3<Length>(width / 2.f, height / 2.f, depth / 2.f)) {}
+			: BoundingBox(center + Vec3<Length>(width / 2.f, height / 2.f, depth / 2.f),
+						  center - Vec3<Length>(width / 2.f, height / 2.f, depth / 2.f)) {}
 
 		Vec3<Length> upperBound;
 		Vec3<Length> lowerBound;
@@ -38,8 +36,7 @@ namespace Engine {
 		BoundingBoxRenderComponent renderComponent;
 
 		void render(const bool moving) {
-			renderComponent.updateGrid(lowerBound, upperBound, moving);
-			renderComponent.render();
+			renderComponent.update(moving);
 		}
 
 		void setPosition(const Vec3<Length>& center) {
@@ -56,8 +53,6 @@ namespace Engine {
 			return upperBound - lowerBound;
 		}
 	};
-
-	void drawBoundingBox(BoundingBox& boundingBox, const glm::mat4& viewProjectionMatrix, const bool moving, const glm::vec3& color = glm::vec3(1.0f));
 
 	Vec3<Length> getLeftBound(const BoundingBox& boundingBox);
 	Vec3<Length> getRightBound(const BoundingBox& boundingBox);

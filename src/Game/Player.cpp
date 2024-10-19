@@ -39,9 +39,10 @@ void Game::Player::update() {
 	}
 
 	for (auto& [key, direction] : wasd) {
-		if (Engine::Input::getKeyboard().keys[key].held && !motionComponent.airborne) {
+		if (Engine::Input::getKeyboard().keys[key].held && (!motionComponent.airborne || jetpack)) {
 			applyForce(&motionComponent, Engine::Vec3<Engine::Units::Newtons>(
-				camera.getCameraDirectionRelativeToOrigin(direction) * 1000000.f * Engine::Vec3<Engine::Unitless>(1.f, 0.f, 1.f))
+				camera.getCameraDirectionRelativeToOrigin(direction) * 1000000.f 
+				* (jetpack ? Engine::Vec3<Engine::Unitless>(0.001f, 0.f, 0.001f) : Engine::Vec3<Engine::Unitless>(1.f, 0.f, 1.f)))
 			);
 		}
 	}

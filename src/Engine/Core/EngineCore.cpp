@@ -21,7 +21,7 @@ std::function<void()> gameShutdownFunction = [] {};
 void Engine::initialize(const std::function<void()>& initializeFunction, const std::function<void()>& shutdownFunction) {
 	gameShutdownFunction = shutdownFunction;
 
-	permaAssertComment(glfwInit(), "err initializing glfw");
+	permaAssertComment(glfwInit(), "Error initializing GLFW");
 	glfwWindowHint(GLFW_SAMPLES, 4);
 
 #ifdef __APPLE__
