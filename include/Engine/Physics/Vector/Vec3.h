@@ -282,5 +282,25 @@ namespace Engine {
 	DEFINE_VEC3_ARITHMETIC_OPERATOR(*, multiply)
 	DEFINE_VEC3_ARITHMETIC_OPERATOR(/, divide)
 
+	/// Vec3<Unitless> * Vec3<Unitless> is allowed
+	inline Vec3<Unitless> operator*(const Vec3<Unitless>& lhs, const Vec3<Unitless>& rhs) {
+		return { lhs.rawVec3() * rhs.rawVec3() };
+	}
+
+	inline Vec3<Unitless> operator/(const Vec3<Unitless>& lhs, const Vec3<Unitless>& rhs) {
+		return { lhs.rawVec3() / rhs.rawVec3() };
+	}
+
+	inline Vec3<Unitless>& operator*=(Vec3<Unitless>& lhs, const Vec3<Unitless>& rhs) {
+		lhs = lhs * rhs;
+		return lhs;
+	}
+
+	inline Vec3<Unitless>& operator/=(Vec3<Unitless>& lhs, const Vec3<Unitless>& rhs) {
+		lhs = lhs / rhs;
+		return lhs;
+	}
+		
+
 #undef DEFINE_VEC3_ARITHMETIC_OPERATOR
 }

@@ -4,7 +4,8 @@
 namespace Game {
 	bool initialize();
 	bool update();
-	void close();
+	bool render();
+	bool close();
 
 	const Engine::Camera& getCamera();
 }

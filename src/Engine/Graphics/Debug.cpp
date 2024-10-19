@@ -34,6 +34,8 @@ void Engine::Debug::updateImGui() {
 }
 
 void Engine::Debug::renderImGui() {
+	ImGui::End();
+
 	ImGui::Render();
 
 	int displayW, displayH;
@@ -58,4 +60,17 @@ void Engine::Debug::printVector(const std::string& name, const glm::vec3& vec, c
 	else {
 		ImGui::InputFloat3(name.c_str(), const_cast<float*>(&vec.x));
 	}
+}
+
+void Engine::Debug::printValue(const std::string& name, const float& value, const char* unit) {
+	if (unit) {
+		ImGui::InputFloat((name + unit).c_str(), const_cast<float*>(&value));
+	}
+	else {
+		ImGui::InputFloat(name.c_str(), const_cast<float*>(&value));
+	}
+}
+
+void Engine::Debug::printBoolean(const std::string& name, const bool& value) {
+	ImGui::Checkbox(name.c_str(), const_cast<bool*>(&value));
 }

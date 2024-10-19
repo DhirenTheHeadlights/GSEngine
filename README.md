@@ -34,11 +34,6 @@ To steamline developing new objects, you will need to add a `Code Snippet` to Vi
 To use the code snippet, type `gameobject` and press `Tab` twice. This will generate a new GameObject class for you to use.
 Visual studio will automatically highlight the class name for you to change. All you need to do is type the new class name and press `Enter`.
 
-These are two big things to avoid when writing code for this project:
-
-- Avoid inheritance when possible
-- Avoid using pointers when possible
-
 When nesting namespaces, do not indent the nested namespace.
 
 ### Prerequisites

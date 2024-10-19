@@ -27,7 +27,7 @@ namespace Engine {
 
 		glm::mat4 getViewMatrix() const { return glm::lookAt(position.as<Units::Meters>(), (position + front).as<Units::Meters>(), up.as<Units::Meters>()); }
 		Vec3<Length> getPosition() const { return position; }
-		Vec3<Unitless> getCameraDirectionRelativeToOrigin(Vec3<Unitless> direction) const {
+		Vec3<Unitless> getCameraDirectionRelativeToOrigin(const Vec3<Unitless>& direction) const {
 			return { right.as<Units::Meters>() * direction.rawVec3().x + up.as<Units::Meters>() * direction.rawVec3().y + front.as<Units::Meters>() * direction.rawVec3().z};
 		}
 	private:
