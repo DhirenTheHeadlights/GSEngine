@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Engine/Include/Core/Engine.h"
+#include "Engine/Engine.h"
 
 namespace Game {
 	class Player final : public Engine::DynamicObject {

@@ -22,24 +22,14 @@ mkdir %BUILD_DIR%
 REM Navigate to the build directory
 cd %BUILD_DIR%
 
-REM Run CMake to configure the project
+REM Run CMake to configure the project (but don't build)
 cmake ..
 
-REM Run the build using CMake
-cmake --build . --config Release
-
-REM Create the output directory
+REM Optional: Create the output directory (if needed later)
 echo Creating out directory...
 mkdir ..\%OUT_DIR%
-
-REM Move the built files to the output directory (adjust as needed)
-echo Moving built files to the out directory...
-move *.exe ..\%OUT_DIR%\
-move *.dll ..\%OUT_DIR%\
-move *.lib ..\%OUT_DIR%\
-move *.pdb ..\%OUT_DIR%\
 
 REM Navigate back to the root directory
 cd ..
 
-@echo Build and organization finished!
+@echo Configuration finished!
