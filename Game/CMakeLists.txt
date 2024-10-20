@@ -42,6 +42,19 @@ if(MSVC)
     # Group header files under "Header Files" in Visual Studio
     source_group("Header Files" FILES ${MY_HEADERS})
 
+    # Function to create source groups by full directory heirarchy
+    function(create_source_groups BASE_DIR)
+		file(GLOB children RELATIVE ${BASE_DIR} ${BASE_DIR}/*)
+		foreach(child ${children})
+			if(IS_DIRECTORY ${BASE_DIR}/${child})
+				create_source_groups(${BASE_DIR}/${child})
+			else()
+				string(REPLACE "/" "\\" groupname ${BASE_DIR})
+				source_group(${groupname} FILES ${BASE_DIR}/${child})
+			endif()
+		endforeach()
+    endfunction()
+
     target_compile_definitions(GoonSquad PUBLIC _CRT_SECURE_NO_WARNINGS)
 
     if(PRODUCTION_BUILD)

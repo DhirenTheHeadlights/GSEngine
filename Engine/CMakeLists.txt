@@ -67,19 +67,27 @@ if (MSVC)
     set_property(TARGET stb_truetype PROPERTY FOLDER "External")
     set_property(TARGET glm PROPERTY FOLDER "External")
 
-    # Function to create source groups by directory for Visual Studio
-    function(create_source_groups root_folder)
-        foreach(_source IN ITEMS ${ARGN})
-            get_filename_component(_source_path "${_source}" PATH)
-            string(REPLACE "${root_folder}" "" _group_path "${_source_path}")
-            string(REPLACE "/" "\\" _group_path "${_group_path}")
-            source_group("${_group_path}" FILES "${_source}")
+    # Function to create source groups by full directory hierarchy
+    function(create_source_groups_by_dir root_dir base_group)
+        file(GLOB_RECURSE files LIST_DIRECTORIES false "${root_dir}/*")
+
+        foreach(file_path ${files})
+            file(RELATIVE_PATH relative_path "${CMAKE_CURRENT_SOURCE_DIR}" "${file_path}")
+            get_filename_component(dir "${relative_path}" DIRECTORY)
+            string(REPLACE "/" "\\" group_path "${dir}")
+        
+            # Add base group if provided
+            if (NOT "${base_group}" STREQUAL "")
+                set(group_path "${base_group}\\${group_path}")
+            endif()
+
+            source_group("${group_path}" FILES "${file_path}")
         endforeach()
     endfunction()
 
-    # Apply source groups for both source and header files
-    create_source_groups("${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source" ${ENGINE_SOURCES})
-    create_source_groups("${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include" ${ENGINE_HEADERS})
+    # Call the function for source and header files
+    create_source_groups_by_dir("${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source" "Source")
+    create_source_groups_by_dir("${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include" "Include")
 endif()
 
 # Exclude dependencies from all builds

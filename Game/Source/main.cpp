@@ -1,8 +1,8 @@
-#include <enet/enet.h> // Included first to avoid linking errors
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+
+#include <Engine/Engine.h>
 #include "Game.h"
-#include "Engine/Include/Core/Engine.h"
 
 int main() {
 	Engine::initialize(Game::initialize, Game::close);
