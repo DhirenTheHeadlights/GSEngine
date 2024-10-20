@@ -1,0 +1,90 @@
+#include "Engine/Include/Core/EngineCore.h"
+
+#include "Engine/Include/Core/Clock.h"
+#include "Engine/Include/Graphics/Renderer.h"
+#include "Engine/Include/Input/Input.h"
+#include "Engine/Include/Physics/System.h"
+#include "Engine/Include/Platform/PermaAssert.h"
+
+#define IMGUI 1
+
+#if IMGUI
+#include "Engine/Include/Graphics/Debug.h"
+#endif
+
+Engine::IDHandler Engine::idManager;
+Engine::BroadPhaseCollisionHandler collisionHandler;
+Engine::Renderer renderer;
+
+std::function<void()> gameShutdownFunction = [] {};
+
+void Engine::initialize(const std::function<void()>& initializeFunction, const std::function<void()>& shutdownFunction) {
+	gameShutdownFunction = shutdownFunction;
+
+	Platform::initialize();
+	renderer.initialize();
+
+#if IMGUI
+	Debug::setUpImGui();
+#endif
+
+	initializeFunction();
+}
+
+void Engine::update(const std::function<bool()>& updateFunction) {
+	Platform::update();
+
+#if IMGUI
+	Debug::updateImGui();
+#endif
+
+	MainClock::update();
+
+	collisionHandler.update();
+
+	Physics::updateEntities();
+
+	Input::update();
+
+	if (!updateFunction()) {
+		shutdown();
+	}
+}
+
+void Engine::render(const Camera& camera, const std::function<bool()>& renderFunction) {
+	Renderer::beginFrame();
+	renderer.setCameraInformation(camera);
+	renderer.renderObjects();
+
+	if (!renderFunction()) {
+		shutdown();
+	}
+
+#if IMGUI
+	Debug::renderImGui();
+#endif
+	Renderer::endFrame();
+}
+
+void Engine::shutdown() {
+	gameShutdownFunction();
+	glfwTerminate();
+}
+
+void Engine::addObject(const std::weak_ptr<StaticObject>& object) {
+	collisionHandler.addObject(object);
+}
+
+void Engine::addObject(const std::weak_ptr<DynamicObject>& object) {
+	collisionHandler.addObject(object);
+	Physics::addObject(object);
+}
+
+void Engine::removeObject(const std::weak_ptr<StaticObject>& object) {
+	collisionHandler.removeObject(object);
+}
+
+void Engine::removeObject(const std::weak_ptr<DynamicObject>& object) {
+	collisionHandler.removeObject(object);
+	Physics::removeObject(object);
+}
