@@ -1,24 +1,22 @@
 ## 3-D Shooter Project
 
-This 3-D shooter will be built from the ground up with multiplayer in mind
+This is a dual development project for a simulation engine and a 3-D shooter game as a demo. The game will feature multiplayer and single player modes.
 
 ## Getting Started
 
 To get started, clone the respository. There are no dependencies required to run the project.
+Run the `build.bat` file to build the project. This will generate a `build` folder with the project files.
 
-### Style Guide
+### Code Structure
 
 The files in this project are divided into the following categories:
 
-- `src` - Contains all the source code for the project
-- `resources` - Contains all the resources for the project
-- `include` - Contains all the header files for the project
-
-These are the major categories of files in the `src` & `include` directory:
-
-- `GameLayer` - Contains all the game logic
-- `Platform` - Contains all the platform specific code (e.g. OS, Windowing, Input, etx.)
 - `Engine` - Contains all the engine specific code
+- `Game` - Contains all the game logic
+
+Engine statically links all required third party libraries. Game contains all the game logic and is also statically linked to the engine.
+
+The `Build` folder will contain the Visual Studio solution file. Open this file to start working on the project using VS, or, if you prefer, open and run in `Folder View` mode to run using just CMake & Ninja.
 
 When you end up adding a file to the project, VS will prompt you to update the `CMakeLists.txt` file. DO NOT UPDATE THIS FILE. Select `Cancel` when prompted.
 
