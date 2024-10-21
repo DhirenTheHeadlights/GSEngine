@@ -6,7 +6,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/epsilon.hpp>
 
-#include "Engine/Include/Physics/Vector/Vec3.h"
+#include "Physics/Vector/Vec3.h"
 
 namespace Engine {
 	static std::random_device rd;

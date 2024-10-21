@@ -5,7 +5,7 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include <iostream>
 #include <glm/gtx/norm.hpp>
-#include "Engine/Include/Physics/Units/UnitToQuantityDefinitions.h"
+#include "Physics/Units/UnitToQuantityDefinitions.h"
 
 namespace Engine {
 	template <typename T>
@@ -187,120 +187,108 @@ namespace Engine {
 	};
 
 	/// Unitless arithmetic overloads
-	
-	template <typename Operator, IsQuantity T, IsUnitless U>
-	Vec3<T> vec3Arithmetic(const Vec3<T>& vec, const U& scalar, Operator op) {
-		return Vec3<T>(op(vec.rawVec3(), getValue<T>(scalar)));
+
+	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
+	auto operator*(const Vec3<T>& lhs, const Vec3<U>& rhs) {
+		if constexpr (IsUnitless<T> && !IsUnitless<U>) {
+			return Vec3<U>(lhs.rawVec3() * rhs.rawVec3());
+		}
+		else if constexpr (!IsUnitless<T> && IsUnitless<U>) {
+			return Vec3<T>(lhs.rawVec3() * rhs.rawVec3());
+		}
+		else {
+			return Vec3<Unitless>(lhs.rawVec3() * rhs.rawVec3());
+		}
 	}
 
-	template <typename Operator, IsQuantity T, IsUnitless U>
-	Vec3<T> vec3Arithmetic(const Vec3<T>& vec, const Vec3<U>& other, Operator op) {
-		return Vec3<T>(op(vec.rawVec3(), other.rawVec3()));
+	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
+	auto operator/(const Vec3<T>& lhs, const Vec3<U>& rhs) {
+		if constexpr (IsUnitless<T> && !IsUnitless<U>) {
+			return Vec3<U>(lhs.rawVec3() / rhs.rawVec3());
+		}
+		else if constexpr (!IsUnitless<T> && IsUnitless<U>) {
+			return Vec3<T>(lhs.rawVec3() / rhs.rawVec3());
+		}
+		else {
+			return Vec3<Unitless>(lhs.rawVec3() / rhs.rawVec3());
+		}
 	}
 
-	template <typename Operator, IsQuantity T, IsUnitless U>
-	Vec3<T> vec3CompoundArithmetic(Vec3<T>& vec, const U& scalar, Operator op) {
-		vec = vec3Arithmetic(vec, scalar, op);
-		return vec;
+	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
+	auto operator*(const Vec3<T>& lhs, const U& rhs) {
+		if constexpr (IsUnitless<T> && !IsUnitless<U>) {
+			return Vec3<U>(lhs.rawVec3() * getValue<U>(rhs));
+		}
+		else if constexpr (IsUnitless<U> && !IsUnitless<T>) {
+			return Vec3<T>(lhs.rawVec3() * getValue<T>(rhs));
+		}
+		else {
+			return Vec3<Unitless>(lhs.rawVec3() * getValue<Unitless>(rhs));
+		}
 	}
 
-	template <typename Operator, IsQuantity T, IsUnitless U>
-	Vec3<T>& vec3CompoundArithmetic(Vec3<T>& vec, const Vec3<U>& other, Operator op) {
-		vec = vec3Arithmetic(vec, other, op);
-		return vec;
+	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
+	auto operator*(const T& lhs, const Vec3<U>& rhs) {
+		if constexpr (IsUnitless<T> && !IsUnitless<U>) {
+			return Vec3<U>(getValue<U>(lhs) * rhs.rawVec3());
+		}
+		else if constexpr (IsUnitless<U> && !IsUnitless<T>) {
+			return Vec3<T>(getValue<T>(lhs) * rhs.rawVec3());
+		}
+		else {
+			return Vec3<Unitless>(getValue<Unitless>(lhs) * rhs.rawVec3());
+		}
 	}
 
-	template <typename Operator, IsUnitless U, IsQuantity T>
-	Vec3<T> vec3Arithmetic(const Vec3<U>& vec, const T& scalar, Operator op) {
-		return Vec3<T>(op(vec.rawVec3(), getValue<T>(scalar)));
+	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
+	auto operator/(const Vec3<T>& lhs, const U& rhs) {
+		if constexpr (IsUnitless<T> && !IsUnitless<U>) {
+			return Vec3<U>(lhs.rawVec3() / getValue<U>(rhs));
+		}
+		else if constexpr (IsUnitless<U> && !IsUnitless<T>) {
+			return Vec3<T>(lhs.rawVec3() / getValue<T>(rhs));
+		}
+		else {
+			return Vec3<Unitless>(lhs.rawVec3() / getValue<Unitless>(rhs));
+		}
 	}
 
-	template <typename Operator, IsUnitless U, IsQuantity T>
-	Vec3<T> vec3Arithmetic(const Vec3<U>& vec, const Vec3<T>& other, Operator op) {
-		return Vec3<T>(op(vec.rawVec3(), other.rawVec3()));
+	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
+	auto operator/(const T& lhs, const Vec3<U> rhs) {
+		if constexpr (IsUnitless<T> && !IsUnitless<U>) {
+			return Vec3<U>(getValue<U>(lhs) / rhs.rawVec3());
+		}
+		else if constexpr (IsUnitless<U> && !IsUnitless<T>) {
+			return Vec3<T>(getValue<T>(lhs) / rhs.rawVec3());
+		}
+		else {
+			return Vec3<Unitless>(getValue<Unitless>(lhs) / rhs.rawVec3());
+		}
 	}
 
-	template <typename Operator, IsUnitless U, IsQuantity T>
-	Vec3<T>& vec3CompoundArithmetic(Vec3<U>& vec, const T& scalar, Operator op) {
-		vec = vec3Arithmetic(vec, scalar, op);
-		return vec;
+	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
+	auto operator*(const T& lhs, const U& rhs) {
+		if constexpr (IsUnitless<T> && !IsUnitless<U>) {
+			return U(getValue<U>(lhs) * getValue<U>(rhs));
+		}
+		else if constexpr (IsUnitless<U> && !IsUnitless<T>) {
+			return T(getValue<T>(lhs) * getValue<T>(rhs));
+		}
+		else {
+			return Unitless(getValue<Unitless>(lhs) * getValue<Unitless>(rhs));
+		}
 	}
 
-	template <typename Operator, IsUnitless U, IsQuantity T>
-	Vec3<T>& vec3CompoundArithmetic(Vec3<U>& vec, const Vec3<T>& other, Operator op) {
-		vec = vec3Arithmetic(vec, other, op);
-		return vec;
+	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
+	auto operator/(const T& lhs, const U& rhs) {
+		if constexpr (IsUnitless<T> && !IsUnitless<U>) {
+			return U(getValue<U>(lhs) / getValue<U>(rhs));
+		}
+		else if constexpr (IsUnitless<U> && !IsUnitless<T>) {
+			return T(getValue<T>(lhs) / getValue<T>(rhs));
+		}
+		else {
+			return Unitless(getValue<Unitless>(lhs) / getValue<Unitless>(rhs));
+		}
 	}
-
-	constexpr auto multiply = [](const auto& lhs, const auto& rhs) { return lhs * rhs; };
-	constexpr auto divide = [](const auto& lhs, const auto& rhs) { return lhs / rhs; };
-
-#define DEFINE_VEC3_ARITHMETIC_OPERATOR(op, operatorLambda)                        \
-    /* Vec3<T> op scalar */                                                        \
-    template <IsQuantity T, IsUnitless U>										   \
-    Vec3<T> operator op (const Vec3<T>& lhs, const U& rhs) {                       \
-        return vec3Arithmetic(lhs, rhs, operatorLambda);                           \
-    }                                                                              \
-                                                                                   \
-    /* Vec3<T> op Vec3<U> */                                                       \
-    template <IsQuantity T, IsUnitless U>										   \
-    Vec3<T> operator op (const Vec3<T>& lhs, const Vec3<U>& rhs) {                 \
-        return vec3Arithmetic(lhs, rhs, operatorLambda);                           \
-    }                                                                              \
-                                                                                   \
-    /* scalar op Vec3<T> (flipped order) */                                        \
-    template <IsQuantity T, IsUnitless U>										   \
-    Vec3<T> operator op (const U& lhs, const Vec3<T>& rhs) {                       \
-        return vec3Arithmetic(rhs, lhs, operatorLambda);                           \
-    }                                                                              \
-                                                                                   \
-    /* scalar op Vec3<Unitless> */                                                 \
-    template <IsUnitless U, IsQuantity T>                                          \
-    Vec3<T> operator op (const T& lhs, const Vec3<U>& rhs) {                       \
-        return vec3Arithmetic(rhs, lhs, operatorLambda);                           \
-    }                                                                              \
-                                                                                   \
-    /* Vec3<Unitless> op scalar */                                                 \
-    template <IsUnitless U, IsQuantity T>                                          \
-    Vec3<T> operator op (const Vec3<U>& lhs, const T& rhs) {                       \
-        return vec3Arithmetic(lhs, rhs, operatorLambda);                           \
-    }                                                                              \
-                                                                                   \
-    /* Vec3<T> op= scalar */                                                       \
-    template <IsQuantity T, IsUnitless U>										   \
-    Vec3<T>& operator op##= (Vec3<T>& lhs, const U& rhs) {                         \
-        return vec3CompoundArithmetic(lhs, rhs, operatorLambda);                   \
-    }                                                                              \
-                                                                                   \
-    /* Vec3<T> op= Vec3<U> */                                                      \
-    template <IsQuantity T, IsUnitless U>										   \
-    Vec3<T>& operator op##= (Vec3<T>& lhs, const Vec3<U>& rhs) {                   \
-        return vec3CompoundArithmetic(lhs, rhs, operatorLambda);                   \
-    }
-
-	/// Combining a units and vectors with unitless quantities
-	DEFINE_VEC3_ARITHMETIC_OPERATOR(*, multiply)
-	DEFINE_VEC3_ARITHMETIC_OPERATOR(/, divide)
-
-	/// Vec3<Unitless> * Vec3<Unitless> is allowed
-	inline Vec3<Unitless> operator*(const Vec3<Unitless>& lhs, const Vec3<Unitless>& rhs) {
-		return { lhs.rawVec3() * rhs.rawVec3() };
-	}
-
-	inline Vec3<Unitless> operator/(const Vec3<Unitless>& lhs, const Vec3<Unitless>& rhs) {
-		return { lhs.rawVec3() / rhs.rawVec3() };
-	}
-
-	inline Vec3<Unitless>& operator*=(Vec3<Unitless>& lhs, const Vec3<Unitless>& rhs) {
-		lhs = lhs * rhs;
-		return lhs;
-	}
-
-	inline Vec3<Unitless>& operator/=(Vec3<Unitless>& lhs, const Vec3<Unitless>& rhs) {
-		lhs = lhs / rhs;
-		return lhs;
-	}
-		
-
-#undef DEFINE_VEC3_ARITHMETIC_OPERATOR
 }

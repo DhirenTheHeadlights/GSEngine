@@ -2,8 +2,8 @@
 
 #include <vector>
 
-#include "Engine/Include/Core/ID.h"
-#include "Engine/Include/Graphics/BoundingBox.h"
+#include "Core/ID.h"
+#include "Graphics/BoundingBox.h"
 
 namespace Engine {
 	class Object {

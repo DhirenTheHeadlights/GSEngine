@@ -3,9 +3,9 @@
 //#include <algorithm>
 #include <vector>
 
-#include "Engine/Include/Core/Object/DynamicObject.h"
-#include "Engine/Include/Core/Object/Object.h"
-#include "Engine/Include/Graphics/BoundingBox.h"
+#include "Core/Object/DynamicObject.h"
+#include "Core/Object/Object.h"
+#include "Graphics/BoundingBox.h"
 
 namespace Engine {
 	class BroadPhaseCollisionHandler {

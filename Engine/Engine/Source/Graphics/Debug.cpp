@@ -1,8 +1,8 @@
-#include "Engine/Include/Graphics/Debug.h"
+#include "Graphics/Debug.h"
 #include "imguiThemes.h"
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
-#include "Engine/Include/Platform/Platform.h"
+#include "Platform/Platform.h"
 
 void Engine::Debug::setUpImGui() {
 	ImGui::CreateContext();

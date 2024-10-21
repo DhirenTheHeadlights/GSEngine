@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Engine/Include/Core/Object/Object.h"
-#include "Engine/Include/Physics/MotionComponent.h"
+#include "Core/Object/Object.h"
+#include "Physics/MotionComponent.h"
 
 namespace Engine {
 	class DynamicObject : public Object {

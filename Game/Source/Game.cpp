@@ -1,5 +1,5 @@
  #include "Game.h"
-#include <Engine/Engine.h>
+#include <Engine.h>
 #include "Arena.h"
 #include "Player.h"
 
@@ -10,10 +10,6 @@ struct GameData {
 
 auto arena = std::make_shared<Game::Arena>();
 auto player = std::make_shared<Game::Player>();
-
-const Engine::Camera& Game::getCamera() {
-	return player->getCamera();
-}
 
 bool Game::initialize() {
 	Engine::Platform::readEntireFile(RESOURCES_PATH "gameData.data", &gameData, sizeof(GameData));
@@ -35,7 +31,7 @@ bool Game::update() {
 	player->update();
 
 	if (Engine::Input::getKeyboard().keys[GLFW_KEY_ESCAPE].pressed) {
-		if (close) {
+		if (close()) {
 			std::cerr << "Game closed properly." << '\n';
 			return false;
 		}

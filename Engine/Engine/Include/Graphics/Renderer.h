@@ -1,8 +1,8 @@
 #pragma once
 
-#include "Engine/Include/Graphics/Camera.h"
-#include "Engine/Include/Graphics/RenderComponent.h"
-#include "Engine/Include/Graphics/Shader.h"
+#include "Graphics/Camera.h"
+#include "Graphics/RenderComponent.h"
+#include "Graphics/Shader.h"
 
 namespace Engine {
 	class Renderer {
@@ -10,14 +10,17 @@ namespace Engine {
 		Renderer() = default;
 
 		void initialize();
-		void setCameraInformation(const Camera& camera) const;
 		void addRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent);
 		void removeRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent);
 		void renderObjects();
+
 		static void beginFrame();
 		static void endFrame();
+
+		Camera& getCamera() { return camera; }
 	private:
 		Shader shader;
+		Camera camera;
 		
 		std::vector<std::weak_ptr<RenderComponent>> renderComponents;
 	};

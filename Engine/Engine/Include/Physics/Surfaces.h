@@ -2,8 +2,8 @@
 
 #include <unordered_map>
 
-#include "Engine/Include/Core/Clock.h"
-#include "Engine/Include/Physics/Units/Units.h"
+#include "Core/Clock.h"
+#include "Physics/Units/Units.h"
 
 namespace Engine::Surfaces {
 	enum class SurfaceType : std::uint8_t {
