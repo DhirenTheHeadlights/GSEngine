@@ -42,7 +42,7 @@ namespace Engine {
 		Time getElapsedTime() const {
 			const auto now = std::chrono::steady_clock::now();
 			const std::chrono::duration<float> elapsedTime = now - startTime;
-			return Time(Units::Seconds(elapsedTime.count()));
+			return Units::Seconds(elapsedTime.count());
 		}
 	private:
 		std::chrono::steady_clock::time_point startTime;
