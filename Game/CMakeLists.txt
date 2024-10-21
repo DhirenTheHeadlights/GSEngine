@@ -42,26 +42,29 @@ if(MSVC)
     # Group header files under "Header Files" in Visual Studio
     source_group("Header Files" FILES ${MY_HEADERS})
 
-    # Function to create source groups by full directory heirarchy
-    function(create_source_groups BASE_DIR)
-		file(GLOB children RELATIVE ${BASE_DIR} ${BASE_DIR}/*)
-		foreach(child ${children})
-			if(IS_DIRECTORY ${BASE_DIR}/${child})
-				create_source_groups(${BASE_DIR}/${child})
-			else()
-				string(REPLACE "/" "\\" groupname ${BASE_DIR})
-				source_group(${groupname} FILES ${BASE_DIR}/${child})
-			endif()
-		endforeach()
+    # Function to create source groups by full directory hierarchy and remove unnecessary prefix
+    function(create_source_groups BASE_DIR REMOVE_PREFIX BASE_GROUP)
+        file(GLOB_RECURSE children RELATIVE ${BASE_DIR} ${BASE_DIR}/*)
+
+        foreach(child ${children})
+            if(IS_DIRECTORY ${BASE_DIR}/${child})
+                create_source_groups(${BASE_DIR}/${child} ${REMOVE_PREFIX} ${BASE_GROUP})
+            else()
+                string(REPLACE "/" "\\" groupname ${BASE_DIR})
+            
+                # Remove the unnecessary prefix
+                string(REPLACE "${REMOVE_PREFIX}" "" groupname)
+
+                # Add base group if provided
+                if(NOT "${BASE_GROUP}" STREQUAL "")
+                    set(groupname "${BASE_GROUP}\\${groupname}")
+                endif()
+
+                source_group(${groupname} FILES ${BASE_DIR}/${child})
+            endif()
+        endforeach()
     endfunction()
 
-    target_compile_definitions(GoonSquad PUBLIC _CRT_SECURE_NO_WARNINGS)
-
-    if(PRODUCTION_BUILD)
-        set_target_properties(GoonSquad PROPERTIES LINK_FLAGS "/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup") # No console in production
-    else()
-        set_target_properties(GoonSquad PROPERTIES LINK_FLAGS "/SUBSYSTEM:CONSOLE") # Console for debugging
-    endif()
 endif()
 
 # Include directories for game headers

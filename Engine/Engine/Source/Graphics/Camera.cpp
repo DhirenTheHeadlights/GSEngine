@@ -1,4 +1,4 @@
-#include "Engine/Include/Graphics/Camera.h"
+#include "Graphics/Camera.h"
 
 void Engine::Camera::processMouseMovement(glm::vec2& offset) {
     offset *= mouseSensitivity;

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Engine/Include/Graphics/RenderComponent.h"
-#include "Engine/Include/Physics/Vector/Vec3.h"
+#include "Graphics/RenderComponent.h"
+#include "Physics/Vector/Vec3.h"
 
 namespace Engine {
 	class BoundingBoxRenderComponent : public RenderComponent {

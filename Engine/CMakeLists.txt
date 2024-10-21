@@ -29,13 +29,13 @@ add_subdirectory(External/imgui-docking)
 file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/*.cpp")
 
 # Gather engine header files (h, hpp) from the new "Include" folder
-file(GLOB_RECURSE ENGINE_HEADERS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/*.h" "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/*.hpp")
+file(GLOB_RECURSE ENGINE_HEADERS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.h" "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp")
 
 # Add the engine as a static library including source and header files
 add_library(Engine STATIC ${ENGINE_SOURCES} ${ENGINE_HEADERS})
 
 # Include directories for engine headers
-target_include_directories(Engine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(Engine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include")
 
 # Link the third-party libraries to the engine
 target_link_libraries(Engine PUBLIC
@@ -67,8 +67,8 @@ if (MSVC)
     set_property(TARGET stb_truetype PROPERTY FOLDER "External")
     set_property(TARGET glm PROPERTY FOLDER "External")
 
-    # Function to create source groups by full directory hierarchy
-    function(create_source_groups_by_dir root_dir base_group)
+    # Function to create source groups by full directory hierarchy and remove unnecessary prefix
+    function(create_source_groups_by_dir root_dir base_group remove_prefix)
         file(GLOB_RECURSE files LIST_DIRECTORIES false "${root_dir}/*")
 
         foreach(file_path ${files})
@@ -76,6 +76,9 @@ if (MSVC)
             get_filename_component(dir "${relative_path}" DIRECTORY)
             string(REPLACE "/" "\\" group_path "${dir}")
         
+            # Remove the unnecessary prefix
+            string(REPLACE "${remove_prefix}" "" group_path "${group_path}")
+
             # Add base group if provided
             if (NOT "${base_group}" STREQUAL "")
                 set(group_path "${base_group}\\${group_path}")
@@ -86,8 +89,9 @@ if (MSVC)
     endfunction()
 
     # Call the function for source and header files
-    create_source_groups_by_dir("${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source" "Source")
-    create_source_groups_by_dir("${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include" "Include")
+    # Removing "Engine/Include" from the beginning of the path
+    create_source_groups_by_dir("${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source" "Source" "Engine\\Source")
+    create_source_groups_by_dir("${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include" "Include" "Engine\\Include")
 endif()
 
 # Exclude dependencies from all builds

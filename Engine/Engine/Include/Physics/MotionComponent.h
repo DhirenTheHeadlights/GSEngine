@@ -2,8 +2,8 @@
 
 #include <glm/glm.hpp>
 
-#include "Engine/Include/Physics/Units/Units.h"
-#include "Engine/Include/Physics/Vector/Vec3.h"
+#include "Physics/Units/Units.h"
+#include "Physics/Vector/Vec3.h"
 #include "Vector/Math.h"
 
 namespace Engine::Physics {

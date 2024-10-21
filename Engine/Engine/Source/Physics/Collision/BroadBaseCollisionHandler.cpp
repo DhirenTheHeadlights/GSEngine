@@ -1,9 +1,9 @@
-#include "Engine/Include/Physics/Collision/BroadPhaseCollisionHandler.h"
+#include "Physics/Collision/BroadPhaseCollisionHandler.h"
 
 #include <iostream>
 
-#include "Engine/Include/Physics/System.h"
-#include "Engine/Include/Physics/Vector/Math.h"
+#include "Physics/System.h"
+#include "Physics/Vector/Math.h"
 
 bool Engine::BroadPhaseCollisionHandler::checkCollision(const BoundingBox& box1, const BoundingBox& box2) {
 	return box1.upperBound.rawVec3().x > box2.lowerBound.rawVec3().x && box1.lowerBound.rawVec3().x < box2.upperBound.rawVec3().x &&

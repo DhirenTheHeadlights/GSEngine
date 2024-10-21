@@ -1,9 +1,9 @@
 #pragma once
 
-#include "Engine/Include/Physics/Units/EnergyAndPower.h"
-#include "Engine/Include/Physics/Units/Length.h"
-#include "Engine/Include/Physics/Units/MassAndForce.h"
-#include "Engine/Include/Physics/Units/Movement.h"
+#include "Physics/Units/EnergyAndPower.h"
+#include "Physics/Units/Length.h"
+#include "Physics/Units/MassAndForce.h"
+#include "Physics/Units/Movement.h"
 
 namespace Engine::Units {
 	struct PlaceHolderDoNotUseTag {};

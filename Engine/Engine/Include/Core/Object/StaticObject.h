@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Engine/Include/Core/Object/Object.h"
+#include "Core/Object/Object.h"
 
 namespace Engine {
 	class StaticObject : public Object {

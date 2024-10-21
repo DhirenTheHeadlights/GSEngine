@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Engine/Engine.h"
+#include <Engine.h>
 
 namespace Game {
 	class Arena final : public Engine::StaticObject {
@@ -14,5 +14,8 @@ namespace Game {
 			width   = 1000.f,
 			height	= 1000.f,
 			depth	= 1000.f;
+
+		Engine::RenderComponent renderComponent;
+		Engine::MeshComponent meshComponent;
 	};
 }

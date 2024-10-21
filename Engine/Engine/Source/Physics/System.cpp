@@ -1,4 +1,4 @@
-#include "Engine/Include/Physics/System.h"
+#include "Physics/System.h"
 
 #include <algorithm>
 #include <iostream>
@@ -6,9 +6,9 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/norm.hpp>
 
-#include "Engine/Include/Core/Clock.h"
-#include "Engine/Include/Physics/Surfaces.h"
-#include "Engine/Include/Physics/Vector/Math.h"
+#include "Core/Clock.h"
+#include "Physics/Surfaces.h"
+#include "Physics/Vector/Math.h"
 
 std::vector<std::weak_ptr<Engine::DynamicObject>> Engine::Physics::objects;
 
@@ -25,6 +25,18 @@ void Engine::Physics::applyForce(MotionComponent* component, const Vec3<Force>& 
 	);
 
 	component->acceleration += acceleration;
+}
+
+void Engine::Physics::applyImpulse(MotionComponent* component, const Vec3<Force>& force, const Time& duration) {
+	if (isZero(force)) {
+		return;
+	}
+
+	const auto deltaVelocity = Engine::Vec3<Units::MetersPerSecond>(
+		force.as<Units::Newtons>() * duration.as<Units::Seconds>() / std::max(component->mass.as<Units::Kilograms>(), 0.0001f)
+	);
+
+	component->velocity += deltaVelocity;
 }
 
 void updateGravity(Engine::Physics::MotionComponent* component) {
@@ -67,7 +79,7 @@ void updateFriction(Engine::Physics::MotionComponent* component, const Engine::S
 	}
 
 	const Engine::Units::Newtons normal = component->mass.as<Engine::Units::Kilograms>() * magnitude(gravity).as<Engine::Units::MetersPerSecondSquared>();
-	Engine::Units::Newtons friction = surface.frictionCoefficient * normal;
+	Engine::Units::Newtons friction = normal * surface.frictionCoefficient;
 
 	if (component->selfControlled) {
 		friction *= 5.f;

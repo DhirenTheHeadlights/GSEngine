@@ -1,4 +1,4 @@
-#include "Engine/Include/Graphics/BBRenderComponent.h"
+#include "Graphics/BBRenderComponent.h"
 
 Engine::BoundingBoxRenderComponent::BoundingBoxRenderComponent(BoundingBoxRenderComponent&& other) noexcept
 	: RenderComponent(std::move(other)),

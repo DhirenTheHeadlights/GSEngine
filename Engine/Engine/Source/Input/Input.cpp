@@ -1,9 +1,9 @@
-#include "Engine/Include/Input/Input.h"
+#include "Input/Input.h"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
-#include "Engine/Include/Core/Clock.h"
+#include "Core/Clock.h"
 
 Engine::Input::Keyboard keyboard;
 Engine::Input::Controller controller;

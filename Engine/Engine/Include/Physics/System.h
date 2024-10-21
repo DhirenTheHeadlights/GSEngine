@@ -4,13 +4,14 @@
 #include <glm/glm.hpp>
 
 #include "MotionComponent.h"
-#include "Engine/Include/Core/Object/DynamicObject.h"
-#include "Engine/Include/Graphics/BoundingBox.h"
+#include "Core/Object/DynamicObject.h"
+#include "Graphics/BoundingBox.h"
 
 namespace Engine::Physics {
 	extern std::vector<std::weak_ptr<DynamicObject>> objects;
 
 	void applyForce(MotionComponent* component, const Vec3<Force>& force);
+	void applyImpulse(MotionComponent* component, const Vec3<Force>& force, const Time& duration);
 
 	inline void addObject(const std::weak_ptr<DynamicObject>& object) {
 		objects.push_back(object);

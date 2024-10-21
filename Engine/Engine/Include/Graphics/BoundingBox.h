@@ -4,9 +4,9 @@
 #include <glm/glm.hpp>
 
 #include "BBRenderComponent.h"
-#include "Engine/Include/Physics/Surfaces.h"
-#include "Engine/Include/Physics/Units/Units.h"
-#include "Engine/Include/Physics/Vector/Vec3.h"
+#include "Physics/Surfaces.h"
+#include "Physics/Units/Units.h"
+#include "Physics/Vector/Vec3.h"
 
 namespace Engine {
 	struct CollisionInformation {

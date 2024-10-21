@@ -1,8 +1,8 @@
-#include "Engine/Include/Graphics/BoundingBox.h"
+#include "Graphics/BoundingBox.h"
 
 #include <iostream>
 
-#include "Engine/Include/Core/EngineCore.h"
+#include "Core/EngineCore.h"
 
 Engine::Vec3<Engine::Length> Engine::getLeftBound(const BoundingBox& boundingBox) {
 	const Vec3<Length> center = boundingBox.getCenter();

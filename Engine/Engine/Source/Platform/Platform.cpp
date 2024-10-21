@@ -1,10 +1,10 @@
-#include "Engine/Include/Platform/Platform.h"
+#include "Platform/Platform.h"
 #include <fstream>
 
 
-#include "Engine/Include/Core/Clock.h"
-#include "Engine/Include/Platform/CallBacks.h"
-#include "Engine/Include/Platform/PermaAssert.h"
+#include "Core/Clock.h"
+#include "Platform/CallBacks.h"
+#include "Platform/PermaAssert.h"
 
 #undef max
 #undef min
@@ -105,7 +105,7 @@ void Engine::Platform::showMouse(const bool show) {
 		glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 	}
 	else {
-		glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
+		glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 	}
 }
 

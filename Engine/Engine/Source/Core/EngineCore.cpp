@@ -1,24 +1,43 @@
-#include "Engine/Include/Core/EngineCore.h"
+#include "Core/EngineCore.h"
 
-#include "Engine/Include/Core/Clock.h"
-#include "Engine/Include/Graphics/Renderer.h"
-#include "Engine/Include/Input/Input.h"
-#include "Engine/Include/Physics/System.h"
-#include "Engine/Include/Platform/PermaAssert.h"
+#include "Core/Clock.h"
+#include "Graphics/Renderer.h"
+#include "Input/Input.h"
+#include "Physics/System.h"
+#include "Platform/PermaAssert.h"
 
 #define IMGUI 1
 
 #if IMGUI
-#include "Engine/Include/Graphics/Debug.h"
+#include "Graphics/Debug.h"
 #endif
 
 Engine::IDHandler Engine::idManager;
 Engine::BroadPhaseCollisionHandler collisionHandler;
 Engine::Renderer renderer;
 
+Engine::Camera& Engine::getCamera() {
+	return renderer.getCamera();
+}
+
 std::function<void()> gameShutdownFunction = [] {};
 
+enum class EngineState {
+	Uninitialized,
+	Initializing,
+	Running,
+	Shutdown
+};
+
+auto engineState = EngineState::Uninitialized;
+
+void requestShutdown() {
+	engineState = EngineState::Shutdown;
+}
+
 void Engine::initialize(const std::function<void()>& initializeFunction, const std::function<void()>& shutdownFunction) {
+	engineState = EngineState::Initializing;
+
 	gameShutdownFunction = shutdownFunction;
 
 	Platform::initialize();
@@ -29,46 +48,58 @@ void Engine::initialize(const std::function<void()>& initializeFunction, const s
 #endif
 
 	initializeFunction();
+
+	engineState = EngineState::Running;
 }
 
-void Engine::update(const std::function<bool()>& updateFunction) {
-	Platform::update();
+void update(const std::function<bool()>& updateFunction) {
+	Engine::Platform::update();
 
 #if IMGUI
-	Debug::updateImGui();
+	Engine::Debug::updateImGui();
 #endif
 
-	MainClock::update();
+	Engine::MainClock::update();
 
 	collisionHandler.update();
 
-	Physics::updateEntities();
+	Engine::Physics::updateEntities();
 
-	Input::update();
+	Engine::Input::update();
 
 	if (!updateFunction()) {
-		shutdown();
+		requestShutdown();
 	}
 }
 
-void Engine::render(const Camera& camera, const std::function<bool()>& renderFunction) {
-	Renderer::beginFrame();
-	renderer.setCameraInformation(camera);
+void render(const std::function<bool()>& renderFunction) {
+	Engine::Renderer::beginFrame();
 	renderer.renderObjects();
 
 	if (!renderFunction()) {
-		shutdown();
+		requestShutdown();
 	}
 
 #if IMGUI
-	Debug::renderImGui();
+	Engine::Debug::renderImGui();
 #endif
-	Renderer::endFrame();
+	Engine::Renderer::endFrame();
 }
 
-void Engine::shutdown() {
+void shutdown() {
 	gameShutdownFunction();
 	glfwTerminate();
+}
+
+void Engine::run(const std::function<bool()>& updateFunction, const std::function<bool()>& renderFunction) {
+	permaAssertComment(engineState == EngineState::Running, "Engine is not initialized");
+
+	while (engineState == EngineState::Running && !glfwWindowShouldClose(Platform::window)) {
+		update(updateFunction);
+		render(renderFunction);
+	}
+
+	shutdown();
 }
 
 void Engine::addObject(const std::weak_ptr<StaticObject>& object) {
