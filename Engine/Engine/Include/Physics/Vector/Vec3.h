@@ -3,7 +3,6 @@
 #include <glm/glm.hpp>
 
 #define GLM_ENABLE_EXPERIMENTAL
-#include <iostream>
 #include <glm/gtx/norm.hpp>
 #include "Physics/Units/UnitToQuantityDefinitions.h"
 
