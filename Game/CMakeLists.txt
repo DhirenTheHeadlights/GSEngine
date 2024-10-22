@@ -19,10 +19,10 @@ project(GoonSquad)
 file(GLOB_RECURSE MY_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Source/*.cpp")
 
 # Gather game header files
-file(GLOB_RECURSE MY_HEADERS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Include/*.h" "${CMAKE_CURRENT_SOURCE_DIR}/Include/*.hpp")
+file(GLOB_RECURSE MY_HEADERS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Include/*.h")
 
-# Define the game executable
-add_executable(GoonSquad ${MY_SOURCES} ${MY_HEADERS})
+# Define the game executable (main.cpp is outside Game, so specify its path)
+add_executable(GoonSquad "${CMAKE_CURRENT_SOURCE_DIR}/../main.cpp" ${MY_SOURCES} ${MY_HEADERS})
 
 # Set the C++ standard for this target
 set_property(TARGET GoonSquad PROPERTY CXX_STANDARD 23)

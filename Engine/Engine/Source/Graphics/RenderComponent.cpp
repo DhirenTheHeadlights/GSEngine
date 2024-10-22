@@ -29,7 +29,7 @@ Engine::RenderComponent::RenderComponent(RenderComponent&& other) noexcept
 void Engine::RenderComponent::setUpBuffers() {
 	glGenVertexArrays(1, &VAO);
 	glGenBuffers(1, &VBO);
-	//glGenBuffers(1, &EBO);
+	glGenBuffers(1, &EBO);
 }
 
 void Engine::RenderComponent::deleteBuffers() const {
