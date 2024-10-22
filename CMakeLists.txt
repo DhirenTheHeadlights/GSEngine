@@ -7,3 +7,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Add subdirectories for the engine and game
 add_subdirectory(engine)
 add_subdirectory(game)
+
+# Add the executable
+add_executable(${PROJECT_NAME} main.cpp)

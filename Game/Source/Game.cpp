@@ -1,9 +1,10 @@
  #include "Game.h"
-#include <Engine.h>
+
 #include "Arena.h"
+#include "Engine.h"
 #include "Player.h"
 
-struct GameData {
+ struct GameData {
 	glm::vec3 playerPosition = {0,0,0};
 
 } gameData;

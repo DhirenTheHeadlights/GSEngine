@@ -1,8 +1,5 @@
-#include <glad/glad.h>
-#include <GLFW/glfw3.h>
-
-#include <Engine.h>
-#include "Game.h"
+#include "Game/Include/Game.h"
+#include "Engine/Engine/Include/Engine.h"
 
 int main() {
 	Engine::initialize(Game::initialize, Game::close);
