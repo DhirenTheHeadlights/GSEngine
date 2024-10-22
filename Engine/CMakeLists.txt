@@ -51,12 +51,6 @@ target_link_libraries(Engine PUBLIC
 
 # Visual Studio specific settings
 if (MSVC)
-    # Group source files under "Source Files"
-    source_group("Source Files" FILES ${ENGINE_SOURCES})
-
-    # Group header files under "Header Files"
-    source_group("Header Files" FILES ${ENGINE_HEADERS})
-
     # Group third-party libraries under "ThirdParty"
     set_property(TARGET glfw PROPERTY FOLDER "External")
     set_property(TARGET glad PROPERTY FOLDER "External")
