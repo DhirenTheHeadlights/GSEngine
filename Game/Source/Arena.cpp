@@ -44,6 +44,7 @@ void Game::Arena::initialize() {
 }
 
 void Game::Arena::render() {
+	renderComponent.render();
     for (auto& bb : boundingBoxes) {
 		bb.render(false);
 	}

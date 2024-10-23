@@ -1,6 +1,6 @@
 #pragma once
+#include <glad/glad.h>
 
-#include "Graphics/Shader.h"
 #include "Graphics/MeshComponent.h"
 
 namespace Engine {

@@ -4,7 +4,9 @@
 #include "Graphics/Renderer.h"
 #include "Input/Input.h"
 #include "Physics/System.h"
+#include "Physics/Collision/BroadPhaseCollisionHandler.h"
 #include "Platform/PermaAssert.h"
+#include "Platform/Platform.h"
 
 #define IMGUI 1
 

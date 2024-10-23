@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Physics/Units/Duration.h"
 #include "Physics/Units/EnergyAndPower.h"
 #include "Physics/Units/Length.h"
 #include "Physics/Units/MassAndForce.h"

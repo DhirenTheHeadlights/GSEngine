@@ -1,8 +1,9 @@
 #pragma once
 
+#include <ranges>
 #include <string>
 #include <unordered_map>
-#include "Platform/Platform.h"
+#include <glm/glm.hpp>
 
 namespace Engine::Input {
 	struct Button {
@@ -38,7 +39,7 @@ namespace Engine::Input {
 		} lStick, rStick;
 
 		void reset() {
-			for (auto& [fst, snd] : buttons) {
+			for (auto& snd : buttons | std::views::values) {
 				snd.reset();
 			}
 
@@ -55,7 +56,7 @@ namespace Engine::Input {
 		std::string typedInput;
 
 		void reset() {
-			for (auto& [fst, snd] : keys) {
+			for (auto& snd : keys | std::views::values) {
 				snd.reset();
 			}
 		}
@@ -69,7 +70,7 @@ namespace Engine::Input {
 		glm::ivec2 lastPosition;
 
 		void reset() {
-			for (auto& [fst, snd] : buttons) {
+			for (auto& snd : buttons | std::views::values) {
 				snd.reset();
 			}
 		}

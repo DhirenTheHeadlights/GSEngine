@@ -4,6 +4,7 @@
 #include <GLFW/glfw3.h>
 
 #include "Core/Clock.h"
+#include "Platform/Platform.h"
 
 Engine::Input::Keyboard keyboard;
 Engine::Input::Controller controller;
@@ -57,8 +58,8 @@ Engine::Input::Mouse& Engine::Input::getMouse() {
 }
 
 void Engine::Input::Internal::updateAllButtons(const float deltaTime) {
-	for (auto& [fst, snd] : keyboard.keys) {
-		Internal::updateButton(snd, deltaTime);
+	for (auto& snd : keyboard.keys | std::views::values) {
+		updateButton(snd, deltaTime);
 	}
 	
 	for(int i = 0; i <= static_cast<int>(controller.buttons.size()); i++) {
@@ -90,7 +91,7 @@ void Engine::Input::Internal::updateAllButtons(const float deltaTime) {
 		}
 	}
 
-	for (auto& [fst, snd] : mouse.buttons) {
+	for (auto& snd : mouse.buttons | std::views::values) {
 		updateButton(snd, deltaTime);
 	}
 
@@ -102,15 +103,15 @@ void Engine::Input::Internal::updateAllButtons(const float deltaTime) {
 void Engine::Input::Internal::resetInputsToZero() {
 	resetTypedInput();
 
-	for (auto& [fst, snd] : keyboard.keys) {
+	for (auto& snd : keyboard.keys | std::views::values) {
 		snd.reset();
 	}
 
-	for (auto& [fst, snd] : controller.buttons) {
+	for (auto& snd : controller.buttons | std::views::values) {
 		snd.reset();
 	}
 
-	for (auto& [fst, snd] : mouse.buttons) {
+	for (auto& snd : mouse.buttons | std::views::values) {
 		snd.reset();
 	}
 }

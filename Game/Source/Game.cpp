@@ -1,18 +1,23 @@
- #include "Game.h"
+#include "Game.h"
+
+#include <imgui.h>
 
 #include "Arena.h"
 #include "Engine.h"
 #include "Player.h"
 
- struct GameData {
+struct GameData {
 	glm::vec3 playerPosition = {0,0,0};
 
 } gameData;
 
-auto arena = std::make_shared<Game::Arena>();
-auto player = std::make_shared<Game::Player>();
+std::shared_ptr<Game::Arena> arena;
+std::shared_ptr<Game::Player> player;
 
 bool Game::initialize() {
+	arena = std::make_shared<Arena>();
+	player = std::make_shared<Player>();
+
 	Engine::Platform::readEntireFile(RESOURCES_PATH "gameData.data", &gameData, sizeof(GameData));
 
 	arena->initialize();
@@ -72,7 +77,6 @@ bool Game::render() {
 	Engine::Debug::printBoolean("Player Moving: ", player->getMotionComponent().moving);
 
 	return true;
-
 }
 
 bool Game::close() {

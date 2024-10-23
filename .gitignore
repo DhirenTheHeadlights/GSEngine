@@ -6,5 +6,4 @@ build/
 CMakeSettings.json
 Makefile
 /resources
-.user
 /Folder.DotSettings.user
