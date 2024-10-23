@@ -6,13 +6,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Set production build option
 option(PRODUCTION_BUILD "Make this a production build" OFF)
 
-# MSVC-specific settings
-if(MSVC)
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Release>:Release>")
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-    add_compile_options(/arch:AVX2) # SIMD optimizations
-endif()
-
 project(GoonSquad)
 
 # Gather game source files
@@ -21,11 +14,14 @@ file(GLOB_RECURSE MY_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Sour
 # Gather game header files
 file(GLOB_RECURSE MY_HEADERS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Include/*.h")
 
-# Define the game executable (main.cpp is outside Game, so specify its path)
-add_executable(GoonSquad "${CMAKE_CURRENT_SOURCE_DIR}/../main.cpp" ${MY_SOURCES} ${MY_HEADERS})
+# Add the game as a library
+add_library(GoonSquad STATIC ${MY_SOURCES} ${MY_HEADERS})
 
-# Set the C++ standard for this target
-set_property(TARGET GoonSquad PROPERTY CXX_STANDARD 23)
+# Include directories for game headers
+target_include_directories(GoonSquad PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/Include/")
+
+# Link against the engine (the engine handles all third-party libraries)
+target_link_libraries(GoonSquad PRIVATE Engine)
 
 # Define macros for resource paths based on the build type
 if(PRODUCTION_BUILD)
@@ -36,11 +32,9 @@ endif()
 
 # Set MSVC-specific compile options
 if(MSVC)
-    # Group source files under "Source Files" in Visual Studio
-    source_group("Source Files" FILES ${MY_SOURCES})
-
-    # Group header files under "Header Files" in Visual Studio
-    source_group("Header Files" FILES ${MY_HEADERS})
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Release>:Release>")
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    add_compile_options(/arch:AVX2) # SIMD optimizations
 
     # Function to create source groups by full directory hierarchy and remove unnecessary prefix
     function(create_source_groups BASE_DIR REMOVE_PREFIX BASE_GROUP)
@@ -66,9 +60,3 @@ if(MSVC)
     endfunction()
 
 endif()
-
-# Include directories for game headers
-target_include_directories(GoonSquad PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/Include/")
-
-# Link against the engine (the engine handles all third-party libraries)
-target_link_libraries(GoonSquad PRIVATE Engine)

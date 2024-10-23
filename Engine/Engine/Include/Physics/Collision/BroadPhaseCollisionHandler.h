@@ -1,11 +1,7 @@
 #pragma once
-
-//#include <algorithm>
 #include <vector>
-
 #include "Core/Object/DynamicObject.h"
 #include "Core/Object/Object.h"
-#include "Graphics/BoundingBox.h"
 
 namespace Engine {
 	class BroadPhaseCollisionHandler {

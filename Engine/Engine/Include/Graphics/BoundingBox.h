@@ -1,10 +1,7 @@
 #pragma once
-#include <vector>
-#include <glad/glad.h>
 #include <glm/glm.hpp>
 
-#include "BBRenderComponent.h"
-#include "Physics/Surfaces.h"
+#include "Graphics/BBRenderComponent.h"
 #include "Physics/Units/Units.h"
 #include "Physics/Vector/Vec3.h"
 

@@ -16,7 +16,6 @@ set(GLFW_INSTALL OFF CACHE BOOL "Do not generate installation target")
 
 # Add GLFW as a subdirectory
 add_subdirectory(External/glfw-3.3.2)
-
 add_subdirectory(External/glad)
 add_subdirectory(External/stb_image)
 add_subdirectory(External/stb_truetype)
@@ -29,13 +28,16 @@ add_subdirectory(External/imgui-docking)
 file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/*.cpp")
 
 # Gather engine header files (h, hpp) from the new "Include" folder
-file(GLOB_RECURSE ENGINE_HEADERS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.h" "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp")
+file(GLOB_RECURSE ENGINE_HEADERS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/*.h")
 
 # Add the engine as a static library including source and header files
 add_library(Engine STATIC ${ENGINE_SOURCES} ${ENGINE_HEADERS})
 
 # Include directories for engine headers
-target_include_directories(Engine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include")
+target_include_directories(Engine PUBLIC 
+    "${CMAKE_CURRENT_SOURCE_DIR}/glm/"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/"
+)
 
 # Link the third-party libraries to the engine
 target_link_libraries(Engine PUBLIC
@@ -51,7 +53,11 @@ target_link_libraries(Engine PUBLIC
 
 # Visual Studio specific settings
 if (MSVC)
-    # Group third-party libraries under "ThirdParty"
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Release>:Release>")
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    add_compile_options(/arch:AVX2) # SIMD optimizations
+
+    # Group third-party libraries under "External"
     set_property(TARGET glfw PROPERTY FOLDER "External")
     set_property(TARGET glad PROPERTY FOLDER "External")
     set_property(TARGET enet PROPERTY FOLDER "External")
@@ -86,6 +92,10 @@ if (MSVC)
     # Removing "Engine/Include" from the beginning of the path
     create_source_groups_by_dir("${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source" "Source" "Engine\\Source")
     create_source_groups_by_dir("${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include" "Include" "Engine\\Include")
+
+    # Manually include glm headers in a visible group
+    file(GLOB_RECURSE GLM_HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/External/glm/glm/*.hpp")
+    source_group("External\\glm" FILES ${GLM_HEADERS})
 endif()
 
 # Exclude dependencies from all builds

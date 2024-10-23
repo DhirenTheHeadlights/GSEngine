@@ -3,8 +3,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-#include "Physics/Vector/Vec3.h"
 #include "Physics/Vector/Math.h"
+#include "Physics/Vector/Vec3.h"
 
 namespace Engine {
 	class Camera {

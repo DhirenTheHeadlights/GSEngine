@@ -1,8 +1,5 @@
 #pragma once
-
-#include <imgui.h>
 #include <string>
-
 #include "glm/vec3.hpp"
 
 

@@ -152,5 +152,7 @@ void Engine::BoundingBoxRenderComponent::update(const bool moving) {
 		initialize(moving);
 	}
 
-	render();
+	glBindVertexArray(VAO);
+	glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(vertices.size() / 3));
+	glBindVertexArray(0);
 }
