@@ -57,12 +57,12 @@ bool Game::render() {
 
 	ImGui::Text("FPS: %d", Engine::MainClock::getFrameRate());
 
-	Engine::Debug::printVector("Player Position: ", player->getMotionComponent().position.as<Engine::Units::Meters>(), Engine::Units::Meters::units());
+	Engine::Debug::printVector("Player Position: ", player->getMotionComponent()->position.as<Engine::Units::Meters>(), Engine::Units::Meters::units());
 	Engine::Debug::printVector("Player Bounding Box Position: ", player->getBoundingBoxes()[0].getCenter().as<Engine::Units::Meters>(), Engine::Units::Meters::units());
-	Engine::Debug::printVector("Player Velocity: ", player->getMotionComponent().velocity.as<Engine::Units::MetersPerSecond>(), Engine::Units::MetersPerSecond::units());
-	Engine::Debug::printVector("Player Acceleration: ", player->getMotionComponent().acceleration.as<Engine::Units::MetersPerSecondSquared>(), Engine::Units::MetersPerSecondSquared::units());
+	Engine::Debug::printVector("Player Velocity: ", player->getMotionComponent()->velocity.as<Engine::Units::MetersPerSecond>(), Engine::Units::MetersPerSecond::units());
+	Engine::Debug::printVector("Player Acceleration: ", player->getMotionComponent()->acceleration.as<Engine::Units::MetersPerSecondSquared>(), Engine::Units::MetersPerSecondSquared::units());
 
-	Engine::Debug::printValue("Player Speed: ", player->getMotionComponent().getSpeed().as<Engine::Units::MilesPerHour>(), Engine::Units::MilesPerHour::units());
+	Engine::Debug::printValue("Player Speed: ", player->getMotionComponent()->getSpeed().as<Engine::Units::MilesPerHour>(), Engine::Units::MilesPerHour::units());
 
 	Engine::Debug::printBoolean("Player Jetpack [J]: ", player->jetpack);
 
@@ -73,8 +73,8 @@ bool Game::render() {
 	Engine::Debug::printVector("Collision Normal: ", collisionNormal.rawVec3(), Engine::Units::Unitless::units());
 	Engine::Debug::printValue("Penetration: ", penetration.as<Engine::Units::Meters>(), Engine::Units::Meters::units());
 	Engine::Debug::printVector("Collision Point: ", collisionPoint.as<Engine::Units::Meters>(), Engine::Units::Meters::units());
-	Engine::Debug::printBoolean("Player Airborne: ", player->getMotionComponent().airborne);
-	Engine::Debug::printBoolean("Player Moving: ", player->getMotionComponent().moving);
+	Engine::Debug::printBoolean("Player Airborne: ", player->getMotionComponent()->airborne);
+	Engine::Debug::printBoolean("Player Moving: ", player->getMotionComponent()->moving);
 
 	return true;
 }

@@ -10,8 +10,8 @@
 namespace Engine::Physics {
 	extern std::vector<std::weak_ptr<MotionComponent>> objectMotionComponents;
 
-	void applyForce(const std::shared_ptr<MotionComponent>&, const Vec3<Force>& force);
-	void applyImpulse(const std::shared_ptr<MotionComponent>& component, const Vec3<Force>& force, const Time& duration);
+	void applyForce(MotionComponent* component, const Vec3<Force>& force);
+	void applyImpulse(MotionComponent* component, const Vec3<Force>& force, const Time& duration);
 
 	inline void addObject(const std::weak_ptr<MotionComponent>& object) {
 		objectMotionComponents.push_back(object);
@@ -23,6 +23,6 @@ namespace Engine::Physics {
 	}
 
 	void updateEntities();
-	void updateEntity(const std::shared_ptr<MotionComponent>& component);
+	void updateEntity(MotionComponent* component);
 	void resolveCollision(BoundingBox& dynamicBoundingBox, const std::weak_ptr<MotionComponent>& dynamicMotionComponent, const CollisionInformation& collisionInfo);
 }

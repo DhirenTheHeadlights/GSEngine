@@ -3,9 +3,9 @@
 #include <Engine.h>
 
 namespace Game {
-	class Player final : public Engine::DynamicObject {
+	class Player final : public Engine::Object {
 	public:
-		Player() : DynamicObject(Engine::idManager.generateID()) {}
+		Player() : Object(Engine::idManager.generateID()) {}
 
 		void initialize();
 

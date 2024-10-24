@@ -11,7 +11,7 @@ namespace Engine {
 		static bool checkCollision(const Vec3<Length>& point, const BoundingBox& box);
 		static bool checkCollision(const std::shared_ptr<DynamicObject>& object1, const std::shared_ptr<Object>& object2);
 
-		static CollisionInformation calculateCollisionInformation(const BoundingBox& box1, const BoundingBox& box2);
+		static CollisionComponent calculateCollisionInformation(const BoundingBox& box1, const BoundingBox& box2);
 
 		static void setCollisionInformation(const BoundingBox& box1, const BoundingBox& box2);
 
