@@ -14,7 +14,7 @@ std::vector<std::weak_ptr<Engine::Physics::MotionComponent>> Engine::Physics::ob
 
 const Engine::Vec3<Engine::Units::MetersPerSecondSquared> gravity(0.f, -9.8f, 0.f);
 
-void Engine::Physics::applyForce(const std::shared_ptr<MotionComponent>& component, const Vec3<Force>& force) {
+void Engine::Physics::applyForce(MotionComponent* component, const Vec3<Force>& force) {
 	if (isZero(force)) {
 		return;
 	}
@@ -27,7 +27,7 @@ void Engine::Physics::applyForce(const std::shared_ptr<MotionComponent>& compone
 	component->acceleration += acceleration;
 }
 
-void Engine::Physics::applyImpulse(const std::shared_ptr<MotionComponent>& component, const Vec3<Force>& force, const Time& duration) {
+void Engine::Physics::applyImpulse(MotionComponent* component, const Vec3<Force>& force, const Time& duration) {
 	if (isZero(force)) {
 		return;
 	}
@@ -39,7 +39,7 @@ void Engine::Physics::applyImpulse(const std::shared_ptr<MotionComponent>& compo
 	component->velocity += deltaVelocity;
 }
 
-void updateGravity(const std::shared_ptr<Engine::Physics::MotionComponent>& component) {
+void updateGravity(Engine::Physics::MotionComponent* component) {
 	if (!component->affectedByGravity) {
 		return;
 	}
@@ -56,7 +56,7 @@ void updateGravity(const std::shared_ptr<Engine::Physics::MotionComponent>& comp
 	}
 }
 
-void updateAirResistance(const std::shared_ptr<Engine::Physics::MotionComponent>& component) {
+void updateAirResistance(Engine::Physics::MotionComponent* component) {
 	constexpr float airDensity = 1.225f;												  // kg/m^3 (air density at sea level)
 	const Engine::Units::Unitless dragCoefficient = component->airborne ? 0.47f : 1.05f;  // Approx for a sphere vs a box
 	constexpr float crossSectionalArea = 1.0f;											  // Example area in m^2, adjust according to the object
@@ -73,7 +73,7 @@ void updateAirResistance(const std::shared_ptr<Engine::Physics::MotionComponent>
 	applyForce(component, Engine::Vec3<Engine::Units::Newtons>(-dragForceMagnitude.as<Engine::Units::Newtons>() * normalize(component->velocity).rawVec3()));
 }
 
-void updateFriction(const std::shared_ptr<Engine::Physics::MotionComponent>& component, const Engine::Surfaces::SurfaceProperties& surface) {
+void updateFriction(Engine::Physics::MotionComponent* component, const Engine::Surfaces::SurfaceProperties& surface) {
 	if (component->airborne) {
 		return;
 	}
@@ -90,7 +90,7 @@ void updateFriction(const std::shared_ptr<Engine::Physics::MotionComponent>& com
 	applyForce(component, frictionForce);
 }
 
-void updateVelocity(const std::shared_ptr<Engine::Physics::MotionComponent>& component) {
+void updateVelocity(Engine::Physics::MotionComponent* component) {
 	const float deltaTime = Engine::MainClock::getDeltaTime().as<Engine::Units::Seconds>();
 
 	if (component->selfControlled && !component->airborne) {
@@ -110,7 +110,7 @@ void updateVelocity(const std::shared_ptr<Engine::Physics::MotionComponent>& com
 	component->acceleration = { 0.f, 0.f, 0.f };
 }
 
-void updatePosition(const std::shared_ptr<Engine::Physics::MotionComponent>& component) {
+void updatePosition(Engine::Physics::MotionComponent* component) {
 	const float deltaTime = Engine::MainClock::getDeltaTime().as<Engine::Units::Seconds>();
 
 	// Update position using the kinematic equation: x = x0 + v0t + 0.5at^2
@@ -120,7 +120,7 @@ void updatePosition(const std::shared_ptr<Engine::Physics::MotionComponent>& com
 	);
 }
 
-void Engine::Physics::updateEntity(const std::shared_ptr<MotionComponent>& component) {
+void Engine::Physics::updateEntity(MotionComponent* component) {
 	if (isZero(component->velocity) && isZero(component->acceleration)) {
 		component->moving = false;
 	}
@@ -141,7 +141,7 @@ void Engine::Physics::updateEntities() {
 
 	for (auto& motionComponent : objectMotionComponents) {
 		if (const auto motionComponentPtr = motionComponent.lock()) {
-			updateEntity(motionComponentPtr);
+			updateEntity(motionComponentPtr.get());
 		}
 	}
 }
@@ -152,8 +152,8 @@ void resolveAxisCollision(const int axis, Engine::BoundingBox& dynamicBoundingBo
 		dynamicMotionComponentPtr->acceleration.rawVec3()[axis] = std::max(0.f, dynamicMotionComponentPtr->acceleration.rawVec3()[axis]);
 
 		if (axis == 1) {
-			dynamicMotionComponent.airborne = false;
-			updateFriction(dynamicMotionComponentPtr, surface);
+			dynamicMotionComponentPtr->airborne = false;
+			updateFriction(dynamicMotionComponentPtr.get(), surface);
 		}
 
 		dynamicMotionComponentPtr->position.rawVec3()[axis] = dynamicBoundingBox.lowerBound.rawVec3()[axis] - (dynamicBoundingBox.lowerBound.rawVec3()[axis] - dynamicMotionComponentPtr->position.rawVec3()[axis]);

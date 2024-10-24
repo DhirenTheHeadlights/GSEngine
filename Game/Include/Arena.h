@@ -3,9 +3,9 @@
 #include <Engine.h>
 
 namespace Game {
-	class Arena final : public Engine::StaticObject {
+	class Arena final : public Engine::Object {
 	public:
-		Arena() : StaticObject(Engine::idManager.generateID()) {}
+		Arena() : Object(Engine::idManager.generateID()) {}
 
 		void initialize();
 		void render();

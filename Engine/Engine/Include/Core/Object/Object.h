@@ -1,5 +1,6 @@
 #pragma once
 
+#include <typeindex>
 #include <vector>
 
 #include "Core/ID.h"
@@ -11,24 +12,24 @@ namespace Engine {
 		explicit Object(const std::shared_ptr<ID>& id) : id(id) {}
 		virtual ~Object() = default;
 
-		////////////////////////////////////////////////////////////////////////////////////
-		/// All game objectMotionComponents require a colliding info and a vector of bounding boxes     ///
-		/// These get passed into collision handler and are used to check for collisions ///
-		////////////////////////////////////////////////////////////////////////////////////
-
-		virtual bool isColliding() const { return colliding; }
-		virtual void setIsColliding(const bool isColliding) { colliding = isColliding; }
-		virtual std::vector<BoundingBox>& getBoundingBoxes() { return boundingBoxes; }
-
 		ID* getId() const { return id.get(); }
 
 		bool operator==(const Object& other) const {
 			return id == other.id;
 		}
-	protected:
-		std::vector<BoundingBox> boundingBoxes;
-		bool colliding = false;
 
+		template <typename T>
+		void addComponent(std::shared_ptr<T> component) {
+			components.insert({ typeid(T), component });
+		}
+
+		template <typename T>
+		std::shared_ptr<T> getComponent() const {
+			return components.at(typeid(T));
+		}
+	protected:
 		std::shared_ptr<ID> id;
+
+		std::unordered_map<std::type_index, std::shared_ptr<void>> components;
 	};
 }

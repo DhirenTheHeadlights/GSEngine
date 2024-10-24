@@ -106,6 +106,9 @@ void Engine::run(const std::function<bool()>& updateFunction, const std::functio
 
 void Engine::addObject(const std::weak_ptr<StaticObject>& object) {
 	collisionHandler.addObject(object);
+	if (const auto objectPtr = object.lock()) {
+		renderer.addRenderComponent(objectPtr->getR
+	}
 }
 
 void Engine::addObject(const std::weak_ptr<DynamicObject>& object) {
