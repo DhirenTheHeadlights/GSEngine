@@ -4,7 +4,7 @@
 #include <glm/glm.hpp>
 
 #include "MotionComponent.h"
-#include "Core/Object/DynamicObject.h"
+#include "Core/Object/Object.h"
 #include "Graphics/BoundingBox.h"
 
 namespace Engine::Physics {
@@ -13,10 +13,10 @@ namespace Engine::Physics {
 	void applyForce(MotionComponent* component, const Vec3<Force>& force);
 	void applyImpulse(MotionComponent* component, const Vec3<Force>& force, const Time& duration);
 
-	inline void addObject(const std::weak_ptr<MotionComponent>& object) {
+	inline void addComponent(const std::shared_ptr<MotionComponent>& object) {
 		objectMotionComponents.push_back(object);
 	}
-	inline void removeObject(const std::weak_ptr<MotionComponent>& object) {
+	inline void removeComponent(const std::shared_ptr<MotionComponent>& object) {
 		std::erase_if(objectMotionComponents, [&](const std::weak_ptr<MotionComponent>& obj) {
 			return !obj.owner_before(object) && !object.owner_before(obj);
 			});

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Physics/Graphics/BoundingBox.h"
+#include "Graphics/BoundingBox.h"
 
 namespace Engine::Physics {
 	struct CollisionComponent {

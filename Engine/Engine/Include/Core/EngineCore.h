@@ -4,18 +4,14 @@
 
 #include "ID.h"
 #include "Graphics/Camera.h"
-#include "Object/DynamicObject.h"
-#include "Object/StaticObject.h"
+#include "Object/Object.h"
 
 namespace Engine {
 	void initialize(const std::function<void()>& initializeFunction, const std::function<void()>& shutdownFunction);
 	void run(const std::function<bool()>& updateFunction, const std::function<bool()>& renderFunction);
 
-	void addObject(const std::weak_ptr<StaticObject>& object);
-	void addObject(const std::weak_ptr<DynamicObject>& object);
-
-	void removeObject(const std::weak_ptr<StaticObject>& object);
-	void removeObject(const std::weak_ptr<DynamicObject>& object);
+	void addObject(const std::weak_ptr<Object>& object);
+	void removeObject(const std::weak_ptr<Object>& object);
 
 	Camera& getCamera();
 

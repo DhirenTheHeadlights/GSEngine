@@ -1,6 +1,7 @@
 #include "Core/EngineCore.h"
 
 #include "Core/Clock.h"
+#include "GLFW/glfw3.h"
 #include "Graphics/Renderer.h"
 #include "Input/Input.h"
 #include "Physics/System.h"
@@ -104,27 +105,32 @@ void Engine::run(const std::function<bool()>& updateFunction, const std::functio
 	shutdown();
 }
 
-void Engine::addObject(const std::weak_ptr<StaticObject>& object) {
-	collisionHandler.addObject(object);
+template <typename SystemType, typename Action, typename... ComponentTypes>
+void handleClassComponents(const std::weak_ptr<Engine::Object>& object, const SystemType& system, Action action) {
 	if (const auto objectPtr = object.lock()) {
-		renderer.addRenderComponent(objectPtr->getR
+		if ((objectPtr->getComponent<ComponentTypes>() && ...)) {
+			(system.*action)(objectPtr->getComponent<ComponentTypes>()...);
+		}
 	}
 }
 
-void Engine::addObject(const std::weak_ptr<DynamicObject>& object) {
-	collisionHandler.addObject(object);
+template <typename Action, typename... ComponentTypes>
+void handleNamespaceComponents(const std::weak_ptr<Engine::Object>& object, Action action) {
 	if (const auto objectPtr = object.lock()) {
-		Physics::addObject(objectPtr->getMotionComponent());
+		if ((objectPtr->getComponent<ComponentTypes>() && ...)) {
+			action(objectPtr->getComponent<ComponentTypes>()...);
+		}
 	}
 }
 
-void Engine::removeObject(const std::weak_ptr<StaticObject>& object) {
-	collisionHandler.removeObject(object);
+void Engine::addObject(const std::weak_ptr<Object>& object) {
+	handleNamespaceComponents<Physics::MotionComponent>(object, Physics::addComponent);
+	handleClassComponents<Physics::CollisionComponent, Physics::MotionComponent>(object, collisionHandler, &BroadPhaseCollisionHandler::addComponents);
+	handleClassComponents<RenderComponent>(object, renderer, &Renderer::addComponent);
 }
 
-void Engine::removeObject(const std::weak_ptr<DynamicObject>& object) {
-	collisionHandler.removeObject(object);
-	if (const auto objectPtr = object.lock()) {
-		Physics::removeObject(objectPtr->getMotionComponent());
-	}
+void Engine::removeObject(const std::weak_ptr<Object>& object) {
+	handleNamespaceComponents<Physics::MotionComponent>(object, Physics::removeComponent);
+	handleClassComponents<Physics::CollisionComponent>(object, collisionHandler, &BroadPhaseCollisionHandler::removeComponents);
+	handleClassComponents<RenderComponent>(object, renderer, &Renderer::removeComponent);
 }

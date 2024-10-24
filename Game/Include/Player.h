@@ -10,9 +10,7 @@ namespace Game {
 		void initialize();
 
 		void update();
-		void render();
-
-		void setPosition(const Engine::Vec3<Engine::Length>& position) { boundingBoxes[0].setPosition(position); }
+		void render() const;
 
 		bool jetpack = false;
 	private:

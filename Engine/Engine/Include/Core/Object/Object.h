@@ -23,9 +23,12 @@ namespace Engine {
 			components.insert({ typeid(T), component });
 		}
 
-		template <typename T>
+		template<typename T>
 		std::shared_ptr<T> getComponent() const {
-			return components.at(typeid(T));
+			if (const auto it = components.find(typeid(T)); it != components.end()) {
+				return std::static_pointer_cast<T>(it->second);
+			}
+			return nullptr;
 		}
 	protected:
 		std::shared_ptr<ID> id;
