@@ -10,11 +10,11 @@ namespace Engine {
 		~DynamicObject() override = default;
 
 		///////////////////////////////////////////////////////////////////////////////////
-		// Dynamic objects contain various components that are used to update the object //
+		// Dynamic objectMotionComponents contain various components that are used to update the object //
 		///////////////////////////////////////////////////////////////////////////////////
 
-		Physics::MotionComponent& getMotionComponent() { return motionComponent; }
+		std::shared_ptr<Physics::MotionComponent>& getMotionComponent() { return motionComponent; }
 	protected:
-		Physics::MotionComponent motionComponent;
+		std::shared_ptr<Physics::MotionComponent> motionComponent = std::make_shared<Physics::MotionComponent>();
 	};
 }

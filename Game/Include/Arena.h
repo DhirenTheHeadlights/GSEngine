@@ -15,7 +15,7 @@ namespace Game {
 			height	= 1000.f,
 			depth	= 1000.f;
 
-		Engine::RenderComponent renderComponent;
-		Engine::MeshComponent meshComponent;
+		std::shared_ptr<Engine::RenderComponent> renderComponent = std::make_shared<Engine::RenderComponent>();
+		std::shared_ptr<Engine::MeshComponent> meshComponent;
 	};
 }

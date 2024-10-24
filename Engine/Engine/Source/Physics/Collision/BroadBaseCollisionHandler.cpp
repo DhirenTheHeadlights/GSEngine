@@ -11,10 +11,10 @@ bool Engine::BroadPhaseCollisionHandler::checkCollision(const BoundingBox& box1,
 		   box1.upperBound.rawVec3().z > box2.lowerBound.rawVec3().z && box1.lowerBound.rawVec3().z < box2.upperBound.rawVec3().z;
 }
 
-bool Engine::BroadPhaseCollisionHandler::checkCollision(const BoundingBox& dynamicBox, const BoundingBox& staticBox, const Physics::MotionComponent* component) {
+bool Engine::BroadPhaseCollisionHandler::checkCollision(const BoundingBox& dynamicBox, const BoundingBox& staticBox, const std::shared_ptr<Physics::MotionComponent>& component) {
 	BoundingBox expandedBox = dynamicBox;					// Create a copy
 	Physics::MotionComponent tempComponent = *component;    
-	updateEntity(&tempComponent);							// Update the entity's position in the direction of its velocity
+	updateEntity(tempComponent);							// Update the entity's position in the direction of its velocity
 	expandedBox.setPosition(tempComponent.position);		// Set the expanded box's position to the updated position
 	return checkCollision(expandedBox, staticBox);			// Check for collision with the new expanded box
 }
@@ -28,7 +28,7 @@ bool Engine::BroadPhaseCollisionHandler::checkCollision(const Vec3<Length>& poin
 bool Engine::BroadPhaseCollisionHandler::checkCollision(const std::shared_ptr<DynamicObject>& object1, const std::shared_ptr<Object>& object2) {
 	for (auto& box1 : object1->getBoundingBoxes()) {
 		for (auto& box2 : object2->getBoundingBoxes()) {
-			if (checkCollision(box1, box2, &object1->getMotionComponent())) {
+			if (checkCollision(box1, box2, object1->getMotionComponent())) {
 				setCollisionInformation(box1, box2);
 
 				box1.collisionInformation.colliding = true;

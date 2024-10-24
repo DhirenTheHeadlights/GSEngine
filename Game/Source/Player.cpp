@@ -23,7 +23,7 @@ void Game::Player::updateJetpack() {
 	if (jetpack && Engine::Input::getKeyboard().keys[GLFW_KEY_SPACE].held) {
 		for (auto& [key, direction] : wasd) {
 			if (Engine::Input::getKeyboard().keys[key].held) {
-				applyForce(&motionComponent, Engine::Vec3<Engine::Units::Newtons>(jetpackSideForce, jetpackForce, jetpackSideForce) * Engine::getCamera().getCameraDirectionRelativeToOrigin(direction));
+				applyForce(motionComponent, Engine::Vec3<Engine::Units::Newtons>(jetpackSideForce, jetpackForce, jetpackSideForce) * Engine::getCamera().getCameraDirectionRelativeToOrigin(direction));
 			}
 		}
 	}
@@ -32,7 +32,7 @@ void Game::Player::updateJetpack() {
 void Game::Player::updateMovement() {
 	for (auto& [key, direction] : wasd) {
 		if (Engine::Input::getKeyboard().keys[key].held && !motionComponent.airborne) {
-			applyForce(&motionComponent, moveForce * Engine::getCamera().getCameraDirectionRelativeToOrigin(direction) * Engine::Vec3<Engine::Unitless>(1.f, 0.f, 1.f));
+			applyForce(motionComponent, moveForce * Engine::getCamera().getCameraDirectionRelativeToOrigin(direction) * Engine::Vec3<Engine::Unitless>(1.f, 0.f, 1.f));
 		}
 	}
 
@@ -44,7 +44,7 @@ void Game::Player::updateMovement() {
 	}
 
 	if (Engine::Input::getKeyboard().keys[GLFW_KEY_SPACE].pressed && !motionComponent.airborne) {
-		applyImpulse(&motionComponent, Engine::Vec3<Engine::Units::Newtons>(0.f, jumpForce, 0.f), Engine::Units::Seconds(0.5f));
+		applyImpulse(motionComponent, Engine::Vec3<Engine::Units::Newtons>(0.f, jumpForce, 0.f), Engine::Units::Seconds(0.5f));
 		motionComponent.airborne = true;
 	}
 }
@@ -57,7 +57,7 @@ void Game::Player::update() {
 		bb.setPosition(motionComponent.position);
 	}
 	
-	Engine::getCamera().setPosition(motionComponent.position + Engine::Vec3<Engine::Units::Feet>(0.f, 6.f, 0.f));
+	Engine::getCamera().setPosition(motionComponent->position + Engine::Vec3<Engine::Units::Feet>(0.f, 6.f, 0.f));
 }
 
 void Game::Player::render() {
