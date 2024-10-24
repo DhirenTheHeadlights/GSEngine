@@ -11,8 +11,8 @@ namespace Engine {
 		Renderer() = default;
 
 		void initialize();
-		void addRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent);
-		void removeRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent);
+		void addComponent(const std::shared_ptr<RenderComponent>& renderComponent);
+		void removeComponent(const std::shared_ptr<RenderComponent>& renderComponent);
 		void renderObjects();
 
 		static void beginFrame();

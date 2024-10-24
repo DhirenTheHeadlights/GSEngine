@@ -1,8 +1,8 @@
 #include "Player.h"
 
 void Game::Player::initialize() {
-	auto motionComponent = std::make_shared<Engine::Physics::MotionComponent>();
-	auto collisionComponent = std::make_shared<Engine::Physics::CollisionComponent>();
+	const auto motionComponent = std::make_shared<Engine::Physics::MotionComponent>();
+	const auto collisionComponent = std::make_shared<Engine::Physics::CollisionComponent>();
 
 	Engine::Units::Feet height = 6.0f;
 	Engine::Units::Feet width = 3.0f;
@@ -37,21 +37,21 @@ void Game::Player::updateJetpack() {
 
 void Game::Player::updateMovement() {
 	for (auto& [key, direction] : wasd) {
-		if (Engine::Input::getKeyboard().keys[key].held && !motionComponent->airborne) {
-			applyForce(motionComponent.get(), moveForce * Engine::getCamera().getCameraDirectionRelativeToOrigin(direction) * Engine::Vec3<Engine::Unitless>(1.f, 0.f, 1.f));
+		if (Engine::Input::getKeyboard().keys[key].held && !getComponent<Engine::Physics::MotionComponent>()->airborne) {
+			applyForce(getComponent<Engine::Physics::MotionComponent>().get(), moveForce * Engine::getCamera().getCameraDirectionRelativeToOrigin(direction) * Engine::Vec3<Engine::Unitless>(1.f, 0.f, 1.f));
 		}
 	}
 
 	if (Engine::Input::getKeyboard().keys[GLFW_KEY_LEFT_SHIFT].held) {
-		motionComponent->maxSpeed = shiftMaxSpeed;
+		getComponent<Engine::Physics::MotionComponent>()->maxSpeed = shiftMaxSpeed;
 	}
 	else {
-		motionComponent->maxSpeed = maxSpeed;
+		getComponent<Engine::Physics::MotionComponent>()->maxSpeed = maxSpeed;
 	}
 
-	if (Engine::Input::getKeyboard().keys[GLFW_KEY_SPACE].pressed && !motionComponent->airborne) {
-		applyImpulse(motionComponent.get(), Engine::Vec3<Engine::Units::Newtons>(0.f, jumpForce, 0.f), Engine::Units::Seconds(0.5f));
-		motionComponent->airborne = true;
+	if (Engine::Input::getKeyboard().keys[GLFW_KEY_SPACE].pressed && !getComponent<Engine::Physics::MotionComponent>()->airborne) {
+		applyImpulse(getComponent<Engine::Physics::MotionComponent>().get(), Engine::Vec3<Engine::Units::Newtons>(0.f, jumpForce, 0.f), Engine::Units::Seconds(0.5f));
+		getComponent<Engine::Physics::MotionComponent>()->airborne = true;
 	}
 }
 
@@ -59,15 +59,15 @@ void Game::Player::update() {
 	updateJetpack();
 	updateMovement();
 
-	for (auto& bb : boundingBoxes) {
-		bb.setPosition(motionComponent->position);
+	for (auto& bb : getComponent<Engine::Physics::CollisionComponent>()->boundingBoxes) {
+		bb.setPosition(getComponent<Engine::Physics::MotionComponent>()->position);
 	}
 	
-	Engine::getCamera().setPosition(motionComponent->position + Engine::Vec3<Engine::Units::Feet>(0.f, 6.f, 0.f));
+	Engine::getCamera().setPosition(getComponent<Engine::Physics::MotionComponent>()->position + Engine::Vec3<Engine::Units::Feet>(0.f, 6.f, 0.f));
 }
 
-void Game::Player::render() {
-	for (auto& bb : boundingBoxes) {
+void Game::Player::render() const {
+	for (auto& bb : getComponent<Engine::Physics::CollisionComponent>()->boundingBoxes) {
 		bb.render(true);
 	}
 }

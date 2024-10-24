@@ -13,14 +13,14 @@ void Engine::Renderer::initialize() {
 	enableReportGlErrors();
 }
 
-void Engine::Renderer::addRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent) {
+void Engine::Renderer::addComponent(const std::shared_ptr<RenderComponent>& renderComponent) {
 	renderComponents.push_back(renderComponent);
 }
 
-void Engine::Renderer::removeRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent) {
+void Engine::Renderer::removeComponent(const std::shared_ptr<RenderComponent>& renderComponent) {
 	std::erase_if(renderComponents, [&](const std::weak_ptr<RenderComponent>& component) {
-		return component.lock() == renderComponent;
-	});
+		return !component.owner_before(renderComponent) && !renderComponent.owner_before(component);
+		});
 }
 
 void Engine::Renderer::renderObjects() {
@@ -40,7 +40,7 @@ void Engine::Renderer::renderObjects() {
 			glDrawArrays(GL_TRIANGLES, 0, 36);*/
 		}
 		else {
-			removeRenderComponent(renderComponent.lock());
+			removeComponent(renderComponent.lock());
 		}
 	}
 }

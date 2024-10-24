@@ -57,24 +57,24 @@ bool Game::render() {
 
 	ImGui::Text("FPS: %d", Engine::MainClock::getFrameRate());
 
-	Engine::Debug::printVector("Player Position: ", player->getMotionComponent()->position.as<Engine::Units::Meters>(), Engine::Units::Meters::units());
-	Engine::Debug::printVector("Player Bounding Box Position: ", player->getBoundingBoxes()[0].getCenter().as<Engine::Units::Meters>(), Engine::Units::Meters::units());
-	Engine::Debug::printVector("Player Velocity: ", player->getMotionComponent()->velocity.as<Engine::Units::MetersPerSecond>(), Engine::Units::MetersPerSecond::units());
-	Engine::Debug::printVector("Player Acceleration: ", player->getMotionComponent()->acceleration.as<Engine::Units::MetersPerSecondSquared>(), Engine::Units::MetersPerSecondSquared::units());
+	Engine::Debug::printVector("Player Position: ", player->getComponent<Engine::Physics::MotionComponent>()->position.as<Engine::Units::Meters>(), Engine::Units::Meters::units());
+	Engine::Debug::printVector("Player Bounding Box Position: ", player->getComponent<Engine::Physics::CollisionComponent>()->boundingBoxes[0].getCenter().as<Engine::Units::Meters>(), Engine::Units::Meters::units());
+	Engine::Debug::printVector("Player Velocity: ", player->getComponent<Engine::Physics::MotionComponent>()->velocity.as<Engine::Units::MetersPerSecond>(), Engine::Units::MetersPerSecond::units());
+	Engine::Debug::printVector("Player Acceleration: ", player->getComponent<Engine::Physics::MotionComponent>()->acceleration.as<Engine::Units::MetersPerSecondSquared>(), Engine::Units::MetersPerSecondSquared::units());
 
-	Engine::Debug::printValue("Player Speed: ", player->getMotionComponent()->getSpeed().as<Engine::Units::MilesPerHour>(), Engine::Units::MilesPerHour::units());
+	Engine::Debug::printValue("Player Speed: ", player->getComponent<Engine::Physics::MotionComponent>()->getSpeed().as<Engine::Units::MilesPerHour>(), Engine::Units::MilesPerHour::units());
 
 	Engine::Debug::printBoolean("Player Jetpack [J]: ", player->jetpack);
 
 	ImGui::Text("Player Collision Information: ");
 
-	const auto [colliding, collisionNormal, penetration, collisionPoint] = player->getBoundingBoxes()[0].collisionInformation;
+	const auto [colliding, collisionNormal, penetration, collisionPoint] = player->getComponent<Engine::Physics::CollisionComponent>()->boundingBoxes[0].collisionInformation;
 	Engine::Debug::printBoolean("Player Colliding: ", colliding);
 	Engine::Debug::printVector("Collision Normal: ", collisionNormal.rawVec3(), Engine::Units::Unitless::units());
 	Engine::Debug::printValue("Penetration: ", penetration.as<Engine::Units::Meters>(), Engine::Units::Meters::units());
 	Engine::Debug::printVector("Collision Point: ", collisionPoint.as<Engine::Units::Meters>(), Engine::Units::Meters::units());
-	Engine::Debug::printBoolean("Player Airborne: ", player->getMotionComponent()->airborne);
-	Engine::Debug::printBoolean("Player Moving: ", player->getMotionComponent()->moving);
+	Engine::Debug::printBoolean("Player Airborne: ", player->getComponent<Engine::Physics::MotionComponent>()->airborne);
+	Engine::Debug::printBoolean("Player Moving: ", player->getComponent<Engine::Physics::MotionComponent>()->moving);
 
 	return true;
 }
