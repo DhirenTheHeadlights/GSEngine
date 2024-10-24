@@ -110,7 +110,9 @@ void Engine::addObject(const std::weak_ptr<StaticObject>& object) {
 
 void Engine::addObject(const std::weak_ptr<DynamicObject>& object) {
 	collisionHandler.addObject(object);
-	Physics::addObject(object);
+	if (const auto objectPtr = object.lock()) {
+		Physics::addObject(objectPtr->getMotionComponent());
+	}
 }
 
 void Engine::removeObject(const std::weak_ptr<StaticObject>& object) {
@@ -119,5 +121,7 @@ void Engine::removeObject(const std::weak_ptr<StaticObject>& object) {
 
 void Engine::removeObject(const std::weak_ptr<DynamicObject>& object) {
 	collisionHandler.removeObject(object);
-	Physics::removeObject(object);
+	if (const auto objectPtr = object.lock()) {
+		Physics::removeObject(objectPtr->getMotionComponent());
+	}
 }

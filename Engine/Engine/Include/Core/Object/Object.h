@@ -12,7 +12,7 @@ namespace Engine {
 		virtual ~Object() = default;
 
 		////////////////////////////////////////////////////////////////////////////////////
-		/// All game objects require a colliding info and a vector of bounding boxes     ///
+		/// All game objectMotionComponents require a colliding info and a vector of bounding boxes     ///
 		/// These get passed into collision handler and are used to check for collisions ///
 		////////////////////////////////////////////////////////////////////////////////////
 

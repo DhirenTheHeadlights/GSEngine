@@ -7,7 +7,7 @@ namespace Engine {
 	class BroadPhaseCollisionHandler {
 	public:
 		static bool checkCollision(const BoundingBox& box1, const BoundingBox& box2);
-		static bool checkCollision(const BoundingBox& dynamicBox, const BoundingBox& staticBox, const Physics::MotionComponent* component);
+		static bool checkCollision(const BoundingBox& dynamicBox, const BoundingBox& staticBox, const std::shared_ptr<Physics::MotionComponent>& component);
 		static bool checkCollision(const Vec3<Length>& point, const BoundingBox& box);
 		static bool checkCollision(const std::shared_ptr<DynamicObject>& object1, const std::shared_ptr<Object>& object2);
 

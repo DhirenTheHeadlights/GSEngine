@@ -19,14 +19,10 @@ void Game::Arena::initialize() {
 
 	// Define vertices for the floor (flat quad)
 	const std::vector<Engine::Vertex> floorVertices = {
-		// Bottom-left corner
-		{glm::vec3(-width.getValue() / 2.f, -height.getValue() / 2.f, depth.getValue() / 2.f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec2(0.0f, 0.0f)},
-		// Bottom-right corner
-		{glm::vec3(width.getValue() / 2.f, -height.getValue() / 2.f, depth.getValue() / 2.f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec2(1.0f, 0.0f)},
-		// Top-right corner
-		{glm::vec3(width.getValue() / 2.f, -height.getValue() / 2.f, -depth.getValue() / 2.f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec2(1.0f, 1.0f)},
-		// Top-left corner
-		{glm::vec3(-width.getValue() / 2.f, -height.getValue() / 2.f, -depth.getValue() / 2.f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec2(0.0f, 1.0f)}
+		{ glm::vec3(-width.getValue() / 2.f, -height.getValue() / 2.f, depth.getValue() / 2.f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec2(0.0f, 0.0f) },  // Bottom-left corner
+		{ glm::vec3(width.getValue() / 2.f, -height.getValue() / 2.f, depth.getValue() / 2.f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec2(1.0f, 0.0f) },   // Bottom-right corner
+		{ glm::vec3(width.getValue() / 2.f, -height.getValue() / 2.f, -depth.getValue() / 2.f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec2(1.0f, 1.0f) },  // Top-right corner
+		{ glm::vec3(-width.getValue() / 2.f, -height.getValue() / 2.f, -depth.getValue() / 2.f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec2(0.0f, 1.0f) }  // Top-left corner
 	};
 
 	// Define indices for two triangles that make up the floor quad
@@ -35,16 +31,12 @@ void Game::Arena::initialize() {
 		2, 3, 0   // Second triangle
 	};
 
-	// Set up the MeshComponent
-	meshComponent = Engine::MeshComponent(floorVertices, floorIndices);
-
-	// Initialize the RenderComponent with the mesh
-	renderComponent.setMesh(meshComponent);
-
+	meshComponent = std::make_shared<Engine::MeshComponent>(floorVertices, floorIndices);
+	renderComponent->setMesh(meshComponent);
 }
 
 void Game::Arena::render() {
-	renderComponent.render();
+	renderComponent->render();
     for (auto& bb : boundingBoxes) {
 		bb.render(false);
 	}
