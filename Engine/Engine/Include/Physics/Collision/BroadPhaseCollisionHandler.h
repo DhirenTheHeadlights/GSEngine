@@ -7,34 +7,44 @@
 
 namespace Engine {
 	class BroadPhaseCollisionHandler {
-		struct RequiredComponents {
-			RequiredComponents(const std::weak_ptr<Physics::CollisionComponent>& collisionComponent, const std::weak_ptr<Physics::MotionComponent>& motionComponent) :
-				collisionComponent(collisionComponent), motionComponent(motionComponent) {}
+		struct Object {
+			Object(const std::weak_ptr<Physics::CollisionComponent>& collisionComponent) :
+				collisionComponent(collisionComponent) {}
 			std::weak_ptr<Physics::CollisionComponent> collisionComponent;
+		};
+
+		struct DynamicObject : Object {
+			DynamicObject(const std::weak_ptr<Physics::CollisionComponent>& collisionComponent, const std::weak_ptr<Physics::MotionComponent>& motionComponent) :
+				Object(collisionComponent), motionComponent(motionComponent) {}
 			std::weak_ptr<Physics::MotionComponent> motionComponent;
 		};
 	public:
 		static bool checkCollision(const BoundingBox& box1, const BoundingBox& box2);
-		static bool checkCollision(const BoundingBox& box1, const std::shared_ptr<Physics::MotionComponent>& box1Component, const BoundingBox& box2);
-		static bool checkCollision(const std::shared_ptr<Physics::CollisionComponent>& object1, const std::shared_ptr<Physics::MotionComponent>& object1MotionComponent, const std::shared_ptr<Physics::CollisionComponent>& object2);
+		static bool checkCollision(const BoundingBox& dynamicBox, const std::shared_ptr<Physics::MotionComponent>& dynamicMotionComponent, const BoundingBox& otherBox);
+		static bool checkCollision(const std::shared_ptr<Physics::CollisionComponent>& dynamicObjectCollisionComponent, const std::shared_ptr<Physics::MotionComponent>& dynamicObjectMotionComponent, const std::shared_ptr<Physics::CollisionComponent>& otherCollisionComponent);
 		static bool checkCollision(const Vec3<Length>& point, const BoundingBox& box);
 
 		static CollisionInformation calculateCollisionInformation(const BoundingBox& box1, const BoundingBox& box2);
 
 		static void setCollisionInformation(const BoundingBox& box1, const BoundingBox& box2);
 
-		void addComponents(const std::weak_ptr<Physics::CollisionComponent>& collisionComponent, const std::weak_ptr<Physics::MotionComponent>& motionComponent) {
-			components.emplace_back(collisionComponent, motionComponent);
+		void addDynamicComponents(const std::weak_ptr<Physics::CollisionComponent>& collisionComponent, const std::weak_ptr<Physics::MotionComponent>& motionComponent) {
+			dynamicObjects.emplace_back(collisionComponent, motionComponent);
+		}
+
+		void addObjectComponent(const std::weak_ptr<Physics::CollisionComponent>& collisionComponent) {
+			objects.emplace_back(collisionComponent);
 		}
 
 		void removeComponents(const std::weak_ptr<Physics::CollisionComponent>& collisionComponent) {
-			std::erase_if(components, [&collisionComponent](const RequiredComponents& requiredComponents) {
+			std::erase_if(dynamicObjects, [&collisionComponent](const DynamicObject& requiredComponents) {
 				return requiredComponents.collisionComponent.lock() == collisionComponent.lock();
 				});
 		}
 
 		void update() const;
 	private:
-		std::vector<RequiredComponents> components;
+		std::vector<DynamicObject> dynamicObjects;
+		std::vector<Object> objects;
 	};
 }

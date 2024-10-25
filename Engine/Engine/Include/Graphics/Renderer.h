@@ -1,9 +1,8 @@
 #pragma once
 
 #include "Graphics/Camera.h"
+#include "Graphics/RenderComponent.h"
 #include "Graphics/Shader.h"
-
-class RenderComponent;
 
 namespace Engine {
 	class Renderer {
