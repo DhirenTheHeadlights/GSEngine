@@ -17,6 +17,8 @@ namespace Engine {
         void setInt(const std::string& name, int value) const;
         void setFloat(const std::string& name, float value) const;
         void setMat4(const std::string& name, const GLfloat* value) const;
+
+    	unsigned int getID() const { return ID; }
     private:
         unsigned int ID = 0;
 

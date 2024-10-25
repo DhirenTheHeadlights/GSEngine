@@ -59,7 +59,5 @@ void Engine::RenderComponent::setMesh(const std::shared_ptr<MeshComponent>& mesh
 }
 
 void Engine::RenderComponent::render() const {
-	glBindVertexArray(VAO);
-	glDrawElements(drawMode, vertexCount, GL_UNSIGNED_INT, nullptr);
-	glBindVertexArray(0);
+
 }

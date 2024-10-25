@@ -8,9 +8,19 @@
 #include "Platform/Platform.h"
 
 void Engine::Renderer::initialize() {
-	shader.createShaderProgram(RESOURCES_PATH "grid.vert", RESOURCES_PATH "grid.frag");
-
 	enableReportGlErrors();
+}
+
+void Engine::Renderer::loadShader(const std::string& vertexShaderPath, const std::string& fragmentShaderPath) {
+	Shader newShader;
+	newShader.createShaderProgram(vertexShaderPath, fragmentShaderPath);
+	shaders.insert({ newShader.getID(), newShader});
+}
+
+void Engine::Renderer::loadShaders(const std::vector<std::pair<std::string, std::string>>& shaders) {
+	for (const auto& [fst, snd] : shaders) {
+		loadShader(fst, snd);
+	}
 }
 
 void Engine::Renderer::addComponent(const std::shared_ptr<RenderComponent>& renderComponent) {
@@ -23,21 +33,26 @@ void Engine::Renderer::removeComponent(const std::shared_ptr<RenderComponent>& r
 		});
 }
 
-void Engine::Renderer::renderObjects() {
-	camera.updateCameraVectors();
-	camera.processMouseMovement(Input::getMouse().delta);
+void Engine::Renderer::renderObject(const Engine::RenderQueueEntry& entry) {
+	const Shader& shader = shaders[entry.shaderProgram];
 
 	shader.use();
 	shader.setMat4("view", value_ptr(camera.getViewMatrix()));
 	shader.setMat4("projection", value_ptr(glm::perspective(glm::radians(45.0f), static_cast<float>(Platform::getFrameBufferSize().x) / static_cast<float>(Platform::getFrameBufferSize().y), 0.1f, 10000.0f)));
-	shader.setMat4("model", value_ptr(glm::mat4(1.0f)));
+	shader.setMat4("model", value_ptr(entry.modelMatrix));
+
+	glBindVertexArray(entry.VAO);
+	glDrawElements(entry.drawMode, entry.vertexCount, GL_UNSIGNED_INT, nullptr);
+	glBindVertexArray(0);
+}
+
+void Engine::Renderer::renderObjects() {
+	camera.updateCameraVectors();
+	camera.processMouseMovement(Input::getMouse().delta);
 
 	for (const auto& renderComponent : renderComponents) {
-		if (const auto component = renderComponent.lock()) {
-			/*shader.setMat4("transform", value_ptr(component->getTransform()));
-			glBindVertexArray(component->getVAO());
-			glBindTexture(GL_TEXTURE_2D, component->getTextureID());
-			glDrawArrays(GL_TRIANGLES, 0, 36);*/
+		if (const auto renderComponentPtr = renderComponent.lock()) {
+			renderObject(renderComponentPtr->getQueueEntry());
 		}
 		else {
 			removeComponent(renderComponent.lock());
