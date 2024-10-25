@@ -11,12 +11,12 @@ bool Engine::BroadPhaseCollisionHandler::checkCollision(const BoundingBox& box1,
 		   box1.upperBound.rawVec3().z > box2.lowerBound.rawVec3().z && box1.lowerBound.rawVec3().z < box2.upperBound.rawVec3().z;
 }
 
-bool Engine::BroadPhaseCollisionHandler::checkCollision(const BoundingBox& box1, const std::shared_ptr<Physics::MotionComponent>& box1Component, const BoundingBox& box2) {
-	BoundingBox expandedBox = box1;							// Create a copy
-	Physics::MotionComponent tempComponent = *box1Component;
-	updateEntity(&tempComponent);							// Update the entity's position in the direction of its velocity
-	expandedBox.setPosition(tempComponent.position);		// Set the expanded box's position to the updated position
-	return checkCollision(expandedBox, box2);				// Check for collision with the new expanded box
+bool Engine::BroadPhaseCollisionHandler::checkCollision(const BoundingBox& dynamicBox, const std::shared_ptr<Physics::MotionComponent>& dynamicMotionComponent, const BoundingBox& otherBox) {
+	BoundingBox expandedBox = dynamicBox;						// Create a copy
+	Physics::MotionComponent tempComponent = *dynamicMotionComponent;
+	updateEntity(&tempComponent);								// Update the entity's position in the direction of its velocity
+	expandedBox.setPosition(tempComponent.position);			// Set the expanded box's position to the updated position
+	return checkCollision(expandedBox, otherBox);				// Check for collision with the new expanded box
 }
 
 bool Engine::BroadPhaseCollisionHandler::checkCollision(const Vec3<Length>& point, const BoundingBox& box) {
@@ -25,16 +25,16 @@ bool Engine::BroadPhaseCollisionHandler::checkCollision(const Vec3<Length>& poin
 		   point.rawVec3().z > box.lowerBound.rawVec3().z && point.rawVec3().z < box.upperBound.rawVec3().z;
 } 
 
-bool Engine::BroadPhaseCollisionHandler::checkCollision(const std::shared_ptr<Physics::CollisionComponent>& object1, const std::shared_ptr<Physics::MotionComponent>& object1MotionComponent, const std::shared_ptr<Physics::CollisionComponent>& object2) {
-	for (auto& box1 : object1->boundingBoxes) {
-		for (auto& box2 : object2->boundingBoxes) {
+bool Engine::BroadPhaseCollisionHandler::checkCollision(const std::shared_ptr<Physics::CollisionComponent>& dynamicObjectCollisionComponent, const std::shared_ptr<Physics::MotionComponent>& dynamicObjectMotionComponent, const std::shared_ptr<Physics::CollisionComponent>& otherCollisionComponent) {
+	for (auto& box1 : dynamicObjectCollisionComponent->boundingBoxes) {
+		for (auto& box2 : otherCollisionComponent->boundingBoxes) {
 			if (checkCollision(box1, box2)) {
 				setCollisionInformation(box1, box2);
 
 				box1.collisionInformation.colliding = true;
 				box2.collisionInformation.colliding = true;
 
-				resolveCollision(box1, object1MotionComponent, box2.collisionInformation);
+				resolveCollision(box1, dynamicObjectMotionComponent, box2.collisionInformation);
 
 				return true;
 			}
@@ -84,7 +84,7 @@ Engine::CollisionInformation Engine::BroadPhaseCollisionHandler::calculateCollis
 
 	// Calculate the collision point
 	Vec3<Units::Meters> collisionPoint = box1.getCenter();
-	collisionPoint += box1.getSize() / 2.f * collisionNormal;															// Move to the surface of box1
+	collisionPoint += box1.getSize() / 2.f * collisionNormal;					
 	collisionPoint -= Vec3<Units::Meters>(penetration * collisionNormal);
 
 	collisionInformation.collisionNormal = collisionNormal;
@@ -95,28 +95,28 @@ Engine::CollisionInformation Engine::BroadPhaseCollisionHandler::calculateCollis
 }
 
 void Engine::BroadPhaseCollisionHandler::update() const {
-	for (auto& component : components) {
-		const auto collisionComponentPtr = component.collisionComponent.lock();
-		if (!collisionComponentPtr) {
+	for (auto& dynamicObject : dynamicObjects) {
+		const auto dynamicObjectPtr = dynamicObject.collisionComponent.lock();
+		if (!dynamicObjectPtr) {
 			continue;
 		}
 
-		const auto motionComponentPtr = component.motionComponent.lock();
+		const auto motionComponentPtr = dynamicObject.motionComponent.lock();
 		if (!motionComponentPtr) {
 			continue;
 		}
 
-		for (auto& otherComponent : components) {
-			const auto otherCollisionComponentPtr = otherComponent.collisionComponent.lock();
-			if (!otherCollisionComponentPtr) {
+		for (auto& object : objects) {
+			const auto objectPtr = object.collisionComponent.lock();
+			if (!objectPtr) {
 				continue;
 			}
 
-			if (collisionComponentPtr == otherCollisionComponentPtr) {
+			if (dynamicObjectPtr == objectPtr) {
 				continue;
 			}
 
-			if (!checkCollision(collisionComponentPtr, motionComponentPtr, otherCollisionComponentPtr)) {
+			if (!checkCollision(dynamicObjectPtr, motionComponentPtr, objectPtr)) {
 				motionComponentPtr->airborne = true;
 			}
 		}
