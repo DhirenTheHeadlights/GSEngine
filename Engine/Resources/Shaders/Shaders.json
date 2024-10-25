@@ -1,0 +1,10 @@
+{
+  "SolidColor": {
+    "vertex": "solid_color.vert",
+    "fragment": "solid_color.frag"
+  },
+  "SolidNoColor": {
+    "vertex": "solid_no_color.vert",
+    "fragment": "solid_no_color.frag"
+  }
+}

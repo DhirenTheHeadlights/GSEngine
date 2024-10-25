@@ -34,9 +34,13 @@ file(GLOB_RECURSE ENGINE_HEADERS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/
 add_library(Engine STATIC ${ENGINE_SOURCES} ${ENGINE_HEADERS})
 
 # Include directories for engine headers
-target_include_directories(Engine PUBLIC 
-    "${CMAKE_CURRENT_SOURCE_DIR}/glm/"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/"
+target_include_directories(
+    Engine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/"
+)
+
+# Include directories for third-party libraries
+target_include_directories(
+	Engine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/External/nlohmann"
 )
 
 # Link the third-party libraries to the engine
