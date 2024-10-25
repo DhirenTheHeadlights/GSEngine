@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Material.h"
 #include "Graphics/Camera.h"
 #include "Graphics/RenderComponent.h"
 #include "Graphics/Shader.h"
@@ -9,9 +10,7 @@ namespace Engine {
 	public:
 		Renderer() = default;
 
-		static void initialize();
-		void loadShader(const std::string& vertexShaderPath, const std::string& fragmentShaderPath);
-		void loadShaders(const std::vector<std::pair<std::string, std::string>>& shaders);
+		void initialize();
 		void addComponent(const std::shared_ptr<RenderComponent>& renderComponent);
 		void removeComponent(const std::shared_ptr<RenderComponent>& renderComponent);
 		void renderObject(const RenderQueueEntry& entry);
@@ -24,7 +23,7 @@ namespace Engine {
 	private:
 		Camera camera;
 
-		std::unordered_map<GLuint, Shader> shaders;
+		std::unordered_map<std::string, Material> materials;
 		std::vector<std::weak_ptr<RenderComponent>> renderComponents;
 	};
 }

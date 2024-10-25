@@ -20,7 +20,7 @@ namespace Engine {
 
 		RenderQueueEntry getQueueEntry() {
 			return {
-				0,
+				"Color",
 				VAO,
 				drawMode,
 				vertexCount,
