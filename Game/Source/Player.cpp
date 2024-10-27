@@ -1,8 +1,11 @@
 #include "Player.h"
 
+#include "Graphics/RenderComponent.h"
+
 void Game::Player::initialize() {
 	const auto motionComponent = std::make_shared<Engine::Physics::MotionComponent>();
 	const auto collisionComponent = std::make_shared<Engine::Physics::CollisionComponent>();
+	const auto renderComponent = std::make_shared<Engine::RenderComponent>();
 
 	Engine::Units::Feet height = 6.0f;
 	Engine::Units::Feet width = 3.0f;
@@ -17,6 +20,12 @@ void Game::Player::initialize() {
 	motionComponent->maxSpeed = maxSpeed;
 	motionComponent->selfControlled = true;
 
+	for (auto& bb : collisionComponent->boundingBoxes) {
+		const auto boundingBoxMesh = std::make_shared<Engine::BoundingBoxMesh>(bb.upperBound, bb.lowerBound);
+		renderComponent->addBoundingBoxMesh(boundingBoxMesh);
+	}
+
+	addComponent(renderComponent);
 	addComponent(motionComponent);
 	addComponent(collisionComponent);
 }
@@ -69,7 +78,6 @@ void Game::Player::update() {
 }
 
 void Game::Player::render() const {
-	for (auto& bb : getComponent<Engine::Physics::CollisionComponent>()->boundingBoxes) {
-		bb.render(true);
-	}
+	getComponent<Engine::RenderComponent>()->updateBoundingBoxMeshes(true);
+	getComponent<Engine::RenderComponent>()->setRender(true, true);
 }

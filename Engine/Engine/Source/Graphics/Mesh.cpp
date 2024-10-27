@@ -1,17 +1,17 @@
-#include "Graphics/MeshComponent.h"
+#include "Graphics/Mesh.h"
 
-Engine::MeshComponent::MeshComponent(const std::vector<Vertex>& vertices, const std::vector<unsigned int>& indices, const glm::vec3 color, GLuint textureId)
+Engine::Mesh::Mesh(const std::vector<Vertex>& vertices, const std::vector<unsigned int>& indices, const glm::vec3 color, GLuint textureId)
 	: vertices(vertices), indices(indices) {
 	setUpMesh();
 }
 
-Engine::MeshComponent::~MeshComponent() {
+Engine::Mesh::~Mesh() {
 	glDeleteVertexArrays(1, &VAO);
 	glDeleteBuffers(1, &VBO);
 	glDeleteBuffers(1, &EBO);
 }
 
-Engine::MeshComponent::MeshComponent(MeshComponent&& other) noexcept
+Engine::Mesh::Mesh(Mesh&& other) noexcept
 	: VAO(other.VAO), VBO(other.VBO), EBO(other.EBO),
 	vertices(std::move(other.vertices)), indices(std::move(other.indices)) {
 	other.VAO = 0;
@@ -19,7 +19,7 @@ Engine::MeshComponent::MeshComponent(MeshComponent&& other) noexcept
 	other.EBO = 0;
 }
 
-Engine::MeshComponent& Engine::MeshComponent::operator=(MeshComponent&& other) noexcept {
+Engine::Mesh& Engine::Mesh::operator=(Mesh&& other) noexcept {
 	if (this != &other) {
 		glDeleteVertexArrays(1, &VAO);
 		glDeleteBuffers(1, &VBO);
@@ -38,7 +38,7 @@ Engine::MeshComponent& Engine::MeshComponent::operator=(MeshComponent&& other) n
 	return *this;
 }
 
-void Engine::MeshComponent::setUpMesh() {
+void Engine::Mesh::setUpMesh() {
 	glGenVertexArrays(1, &VAO);
 	glGenBuffers(1, &VBO);
 	glGenBuffers(1, &EBO);
