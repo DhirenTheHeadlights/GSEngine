@@ -6,13 +6,14 @@
 
 namespace Engine {
     struct RenderQueueEntry {
-		RenderQueueEntry(const GLuint shaderProgram, const GLuint VAO, const GLenum drawMode, const GLsizei vertexCount, const glm::mat4& modelMatrix, const GLuint textureID)
-			: shaderProgram(shaderProgram), VAO(VAO), drawMode(drawMode), vertexCount(vertexCount), modelMatrix(modelMatrix), textureID(textureID) {}
+		RenderQueueEntry(const std::string& shaderProgramType, const GLuint VAO, const GLenum drawMode, const GLsizei vertexCount, const glm::mat4& modelMatrix, const GLuint textureID, const glm::vec3& color)
+			: shaderProgramKey(shaderProgramType), VAO(VAO), drawMode(drawMode), vertexCount(vertexCount), modelMatrix(modelMatrix), textureID(textureID), color(color) {}
         std::string shaderProgramKey;
         GLuint VAO;
         GLenum drawMode;
         GLsizei vertexCount;
         glm::mat4 modelMatrix;
         GLuint textureID;
+        glm::vec3 color;
     };
 }

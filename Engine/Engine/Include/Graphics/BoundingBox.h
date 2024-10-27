@@ -34,6 +34,7 @@ namespace Engine {
 
 		void render(const bool moving) {
 			renderComponent.update(moving);
+			renderComponent.render();
 		}
 
 		void setPosition(const Vec3<Length>& center) {

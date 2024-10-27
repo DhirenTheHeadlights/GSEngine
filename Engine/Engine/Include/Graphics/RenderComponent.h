@@ -1,42 +1,34 @@
 #pragma once
 #include <memory>
+#include <vector>
 #include <glad/glad.h>
+#include <glm/glm.hpp>
 
 #include "Graphics/MeshComponent.h"
-#include "Graphics/RenderQueueEntry.h"
 
 namespace Engine {
 	class RenderComponent {
 	public:
-		RenderComponent();
-		RenderComponent(const std::shared_ptr<MeshComponent>& mesh, GLenum drawMode = GL_TRIANGLES);
-		virtual ~RenderComponent();
-		RenderComponent(const RenderComponent&);
-		RenderComponent(RenderComponent&&) noexcept;
+		RenderComponent() = default;
+		RenderComponent(const std::vector<std::shared_ptr<MeshComponent>>& meshes, GLenum drawMode = GL_TRIANGLES)
+			: meshes(meshes), drawMode(drawMode) {}
 
-		void render() const;
-
-		void setMesh(const std::shared_ptr<MeshComponent>& mesh);
-
-		RenderQueueEntry getQueueEntry() {
-			return {
-				"Color",
-				VAO,
-				drawMode,
-				vertexCount,
-				glm::mat4(1.0f),
-				0
-			};
+		void addMesh(const std::shared_ptr<MeshComponent>& mesh) {
+			meshes.push_back(mesh);
 		}
+
+		std::vector<RenderQueueEntry> getQueueEntries() const {
+			std::vector<RenderQueueEntry> entries;
+			entries.reserve(meshes.size());
+			for (const auto& mesh : meshes) {
+				entries.push_back(mesh->getQueueEntry());
+			}
+			return entries;
+		}
+
+		std::vector<std::shared_ptr<MeshComponent>>& getMeshes() { return meshes; }
 	protected:
-		void setUpBuffers();
-		void deleteBuffers() const;
-
-		GLuint VAO = 0;
-		GLuint VBO = 0;
-		GLuint EBO = 0;
-
+		std::vector<std::shared_ptr<MeshComponent>> meshes;
 		GLenum drawMode = GL_TRIANGLES;
-		GLsizei vertexCount = 0;
 	};
 }

@@ -1,8 +1,30 @@
 #include "Graphics/BBRenderComponent.h"
 
+Engine::BoundingBoxRenderComponent::BoundingBoxRenderComponent(const Vec3<Length>& lower, const Vec3<Length>& upper)
+	: RenderComponent(), lower(lower), upper(upper) {
+
+	glGenVertexArrays(1, &VAO);
+	glGenBuffers(1, &VBO);
+}
+
+Engine::BoundingBoxRenderComponent::~BoundingBoxRenderComponent() {
+	if (isInitialized) {
+		glDeleteVertexArrays(1, &VAO);
+		glDeleteBuffers(1, &VBO);
+	}
+}
+
+Engine::BoundingBoxRenderComponent::BoundingBoxRenderComponent(const BoundingBoxRenderComponent& other)
+	: RenderComponent(other), vertices(other.vertices), lower(other.lower), upper(other.upper), isInitialized(other.isInitialized) {
+
+	if (isInitialized) {
+		glGenVertexArrays(1, &VAO);
+		glGenBuffers(1, &VBO);
+	}
+}
+
 Engine::BoundingBoxRenderComponent::BoundingBoxRenderComponent(BoundingBoxRenderComponent&& other) noexcept
-	: RenderComponent(std::move(other)),
-	vertices(std::move(other.vertices)), lower(other.lower), upper(other.upper), isInitialized(other.isInitialized) {
+	: RenderComponent(std::move(other)), vertices(std::move(other.vertices)), lower(other.lower), upper(other.upper), isInitialized(other.isInitialized), VAO(other.VAO), VBO(other.VBO) {
 
 	other.isInitialized = false;
 }
@@ -141,7 +163,6 @@ void Engine::BoundingBoxRenderComponent::initialize(const bool moving) {
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
 
-	vertexCount = static_cast<GLsizei>(vertices.size() / 3);
 	drawMode = GL_LINES;
 
 	isInitialized = true;
@@ -151,7 +172,9 @@ void Engine::BoundingBoxRenderComponent::update(const bool moving) {
 	if (!isInitialized || moving) {
 		initialize(moving);
 	}
+}
 
+void Engine::BoundingBoxRenderComponent::render() const {
 	glBindVertexArray(VAO);
 	glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(vertices.size() / 3));
 	glBindVertexArray(0);
