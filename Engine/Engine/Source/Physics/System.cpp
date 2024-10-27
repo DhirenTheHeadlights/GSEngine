@@ -146,35 +146,40 @@ void Engine::Physics::updateEntities() {
 	}
 }
 
-void resolveAxisCollision(const int axis, Engine::BoundingBox& dynamicBoundingBox, const std::weak_ptr<Engine::Physics::MotionComponent>& dynamicMotionComponent, const Engine::Surfaces::SurfaceProperties& surface) {
+void resolveAxisCollision(
+	const Engine::CollisionInformation& collisionInfo,
+	const std::weak_ptr<Engine::Physics::MotionComponent>& dynamicMotionComponent,
+	const Engine::Surfaces::SurfaceProperties& surface
+) {
 	if (const auto dynamicMotionComponentPtr = dynamicMotionComponent.lock()) {
-		dynamicMotionComponentPtr->velocity.rawVec3()[axis] = std::max(0.f, dynamicMotionComponentPtr->velocity.rawVec3()[axis]);
-		dynamicMotionComponentPtr->acceleration.rawVec3()[axis] = std::max(0.f, dynamicMotionComponentPtr->acceleration.rawVec3()[axis]);
+		float& vel = dynamicMotionComponentPtr->velocity.rawVec3()[collisionInfo.getAxis()];
+		float& acc = dynamicMotionComponentPtr->acceleration.rawVec3()[collisionInfo.getAxis()];
 
-		if (axis == 1) {
+		// Project velocity and acceleration onto collision normal to check movement toward the surface
+		const float velocityIntoSurface = dot(dynamicMotionComponentPtr->velocity, collisionInfo.collisionNormal);
+		const float accelerationIntoSurface = dot(dynamicMotionComponentPtr->acceleration, collisionInfo.collisionNormal);
+
+		// Set velocity and acceleration to zero along the collision normal if moving into the surface
+		if (velocityIntoSurface < 0) {
+			vel = 0;
+		}
+		if (accelerationIntoSurface < 0) {
+			acc = 0;
+		}
+
+		// Special case for ground collision (assumed Y-axis collision)
+		if (collisionInfo.getAxis() == 1 && collisionInfo.collisionNormal.rawVec3().y > 0) {
 			dynamicMotionComponentPtr->airborne = false;
 			updateFriction(dynamicMotionComponentPtr.get(), surface);
 		}
 
-		dynamicMotionComponentPtr->position.rawVec3()[axis] = dynamicBoundingBox.lowerBound.rawVec3()[axis] - (dynamicBoundingBox.lowerBound.rawVec3()[axis] - dynamicMotionComponentPtr->position.rawVec3()[axis]);
+		// Adjust position to prevent sinking into the collision surface
+		//dynamicMotionComponentPtr->position.rawVec3()[collisionInfo.getAxis()] -= collisionInfo.penetration.as<Engine::Units::Meters>();
 	}
 }
 
 void Engine::Physics::resolveCollision(BoundingBox& dynamicBoundingBox, const std::weak_ptr<MotionComponent>& dynamicMotionComponent, const CollisionInformation& collisionInfo) {
-	const std::vector<std::pair<Vec3<Length>, int>> bounds = {
-		{getLeftBound(dynamicBoundingBox), 0},
-		{getRightBound(dynamicBoundingBox), 0},
-		{getFrontBound(dynamicBoundingBox), 2},
-		{getBackBound(dynamicBoundingBox), 2},
-		{dynamicBoundingBox.lowerBound, 1},
-		{dynamicBoundingBox.upperBound, 0}
-	};
-
-	for (const auto& [bound, axis] : bounds) {
-		if (epsilonEqualIndex(collisionInfo.collisionPoint, bound, axis)) {
-			resolveAxisCollision(axis, dynamicBoundingBox, dynamicMotionComponent, getSurfaceProperties(Surfaces::SurfaceType::Concrete));
-			return;
-		}
-	}
+	// Determine which axis to resolve using collisionInfo
+	resolveAxisCollision(collisionInfo, dynamicMotionComponent, getSurfaceProperties(Surfaces::SurfaceType::Concrete));
 }
 

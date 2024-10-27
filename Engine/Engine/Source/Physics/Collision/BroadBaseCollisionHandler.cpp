@@ -76,7 +76,7 @@ Engine::CollisionInformation Engine::BroadPhaseCollisionHandler::calculateCollis
 		collisionNormal = Vec3<Unitless>(0.0f, 0.0f, 1.0f);
 	}
 
-	// Determine the rawVec3 of the collision normal
+	// Determine the collision normal
 	const Vec3<Length> deltaCenter = box2.getCenter() - box1.getCenter();
 	if (dot(deltaCenter, collisionNormal) < 0.0f) {
 		collisionNormal = -collisionNormal;
