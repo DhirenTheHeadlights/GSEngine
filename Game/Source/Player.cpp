@@ -27,9 +27,11 @@ void Game::Player::updateJetpack() {
 	}
 
 	if (jetpack && Engine::Input::getKeyboard().keys[GLFW_KEY_SPACE].held) {
+		applyForce(getComponent<Engine::Physics::MotionComponent>().get(), Engine::Vec3<Engine::Units::Newtons>(0.f, jetpackForce, 0.f));
+
 		for (auto& [key, direction] : wasd) {
 			if (Engine::Input::getKeyboard().keys[key].held) {
-				applyForce(getComponent<Engine::Physics::MotionComponent>().get(), Engine::Vec3<Engine::Units::Newtons>(jetpackSideForce, jetpackForce, jetpackSideForce) * Engine::getCamera().getCameraDirectionRelativeToOrigin(direction));
+				applyForce(getComponent<Engine::Physics::MotionComponent>().get(), Engine::Vec3<Engine::Units::Newtons>(jetpackSideForce, 0, jetpackSideForce) * Engine::getCamera().getCameraDirectionRelativeToOrigin(direction));
 			}
 		}
 	}

@@ -21,8 +21,8 @@ namespace Game {
 
 		Engine::Units::MetersPerSecond maxSpeed = 20.f;
 		Engine::Units::MetersPerSecond shiftMaxSpeed = 40.f;
-		Engine::Units::Newtons jetpackForce = 10000.f;
-		Engine::Units::Newtons jetpackSideForce = 10000.f;
+		Engine::Units::Newtons jetpackForce = 1000.f;
+		Engine::Units::Newtons jetpackSideForce = 1000.f;
 		Engine::Units::Newtons jumpForce = 1000.f;
 		Engine::Units::Newtons moveForce = 100000.f;
 	};
