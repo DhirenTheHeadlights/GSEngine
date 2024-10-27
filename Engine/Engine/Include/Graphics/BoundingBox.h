@@ -11,6 +11,15 @@ namespace Engine {
 		Vec3<Unitless> collisionNormal;
 		Length penetration;
 		Vec3<Length> collisionPoint;
+		int getAxis() const {
+			if (collisionNormal.rawVec3().x != 0) {
+				return 0;
+			} else if (collisionNormal.rawVec3().y != 0) {
+				return 1;
+			} else {
+				return 2;
+			}
+		}
 	};
 
 	struct BoundingBox {
