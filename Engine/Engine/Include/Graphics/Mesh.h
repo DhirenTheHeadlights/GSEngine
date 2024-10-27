@@ -1,9 +1,8 @@
 #pragma once
-#include <vector>
 #include <memory>
+#include <vector>
 #include <glad/glad.h>
 #include <glm/glm.hpp>
-
 
 #include "Graphics/RenderQueueEntry.h"
 
@@ -14,27 +13,28 @@ namespace Engine {
 		glm::vec2 texCoords;
 	};
 
-	class MeshComponent {
+	class Mesh {
 	public:
-		MeshComponent(const std::vector<Vertex>& vertices, const std::vector<unsigned int>& indices, const glm::vec3 color = { 1.0f, 1.0f, 1.0f }, GLuint textureId = 0);
-		~MeshComponent();
+		Mesh() = default;
+		Mesh(const std::vector<Vertex>& vertices, const std::vector<unsigned int>& indices, const glm::vec3 color = { 1.0f, 1.0f, 1.0f }, GLuint textureId = 0);
+		~Mesh();
 
 		// Disable copy to avoid OpenGL resource duplication
-		MeshComponent(const MeshComponent&) = delete;
-		MeshComponent& operator=(const MeshComponent&) = delete;
+		Mesh(const Mesh&) = delete;
+		Mesh& operator=(const Mesh&) = delete;
 
 		// Allow move semantics
-		MeshComponent(MeshComponent&& other) noexcept;
-		MeshComponent& operator=(MeshComponent&& other) noexcept;
+		Mesh(Mesh&& other) noexcept;
+		Mesh& operator=(Mesh&& other) noexcept;
 
 		GLuint getVAO() const { return VAO; }
 		GLsizei getVertexCount() const { return static_cast<GLsizei>(indices.size()); }
 
-		RenderQueueEntry getQueueEntry() const {
+		virtual RenderQueueEntry getQueueEntry() const {
 			return {
 				"SolidColor",
 				VAO,
-				GL_TRIANGLES,
+				drawMode,
 				getVertexCount(),
 				modelMatrix,
 				textureId,
@@ -43,7 +43,7 @@ namespace Engine {
 		}
 
 		void setColor(const glm::vec3& newColor) { color = newColor; }
-	private:
+	protected:
 		void setUpMesh();
 
 		GLuint VAO = 0;
@@ -55,6 +55,7 @@ namespace Engine {
 
 		glm::mat4 modelMatrix = glm::mat4(1.0f);
 		GLuint textureId = 0;
+		GLuint drawMode = GL_TRIANGLES;
 		glm::vec3 color = { 1.0f, 1.0f, 1.0f };
 	};
 }

@@ -4,31 +4,34 @@
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 
-#include "Graphics/MeshComponent.h"
+#include "BoundingBoxMesh.h"
+#include "Graphics/Mesh.h"
 
 namespace Engine {
 	class RenderComponent {
 	public:
 		RenderComponent() = default;
-		RenderComponent(const std::vector<std::shared_ptr<MeshComponent>>& meshes, GLenum drawMode = GL_TRIANGLES)
-			: meshes(meshes), drawMode(drawMode) {}
+		RenderComponent(const std::vector<std::shared_ptr<Mesh>>& meshes) : meshes(meshes) {}
 
-		void addMesh(const std::shared_ptr<MeshComponent>& mesh) {
+		void addMesh(const std::shared_ptr<Mesh>& mesh) {
 			meshes.push_back(mesh);
 		}
 
-		std::vector<RenderQueueEntry> getQueueEntries() const {
-			std::vector<RenderQueueEntry> entries;
-			entries.reserve(meshes.size());
-			for (const auto& mesh : meshes) {
-				entries.push_back(mesh->getQueueEntry());
-			}
-			return entries;
+		void addBoundingBoxMesh(const std::shared_ptr<BoundingBoxMesh>& boundingBoxMesh) {
+			boundingBoxMeshes.push_back(boundingBoxMesh);
 		}
 
-		std::vector<std::shared_ptr<MeshComponent>>& getMeshes() { return meshes; }
+		void updateBoundingBoxMeshes(bool moving) const;
+		virtual std::vector<RenderQueueEntry> getQueueEntries() const;
+		void setRender(bool render, bool renderBoundingBoxes);
+
+		std::vector<std::shared_ptr<Mesh>>& getMeshes() { return meshes; }
+		std::vector<std::shared_ptr<BoundingBoxMesh>>& getBoundingBoxMeshes() { return boundingBoxMeshes; }
 	protected:
-		std::vector<std::shared_ptr<MeshComponent>> meshes;
-		GLenum drawMode = GL_TRIANGLES;
+		std::vector<std::shared_ptr<Mesh>> meshes;
+		std::vector<std::shared_ptr<BoundingBoxMesh>> boundingBoxMeshes;
+
+		bool render = false;
+		bool renderBoundingBoxes = false;
 	};
 }

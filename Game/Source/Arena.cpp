@@ -1,5 +1,7 @@
 #include "Arena.h"
 
+#include "Graphics/RenderComponent.h"
+
 void Game::Arena::initialize() {
     const Engine::Units::Meters wallThickness = 10.f;
 
@@ -83,11 +85,14 @@ void Game::Arena::initialize() {
 
     const auto renderComponent = std::make_shared<Engine::RenderComponent>();
 
-    // Loop over each face, creating a MeshComponent and RenderComponent with a unique color
+    // Loop over each face, creating a Mesh and RenderComponent with a unique color
     for (size_t i = 0; i < 6; ++i) {
-        auto meshComponent = std::make_shared<Engine::MeshComponent>(faceVertices[i], faceIndices);
-		meshComponent->setColor(colors[i]);
-        renderComponent->addMesh(meshComponent);
+        auto mesh = std::make_shared<Engine::Mesh>(faceVertices[i], faceIndices);
+		mesh->setColor(colors[i]);
+        renderComponent->addMesh(mesh);
+
+		auto boundingBoxMesh = std::make_shared<Engine::BoundingBoxMesh>(collisionComponent->boundingBoxes[i].lowerBound, collisionComponent->boundingBoxes[i].upperBound);
+		renderComponent->addBoundingBoxMesh(boundingBoxMesh);
     }
 
     addComponent(renderComponent);
@@ -95,7 +100,6 @@ void Game::Arena::initialize() {
 }
 
 void Game::Arena::render() const {
-	for (auto& bb : getComponent<Engine::Physics::CollisionComponent>()->boundingBoxes) {
-		bb.render(false);
-	}
+	getComponent<Engine::RenderComponent>()->updateBoundingBoxMeshes(false);
+	getComponent<Engine::RenderComponent>()->setRender(true, true);
 }
