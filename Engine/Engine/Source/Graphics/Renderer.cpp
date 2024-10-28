@@ -36,31 +36,42 @@ void Engine::Renderer::initialize() {
 
 	glDisable(GL_LIGHTING);
 
+	// G-buffer setup
 	glGenFramebuffers(1, &gBuffer);
 	glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
 
+	// Position texture
 	glGenTextures(1, &gPosition);
 	glBindTexture(GL_TEXTURE_2D, gPosition);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, screenWidth, screenHeight, 0, GL_RGB, GL_FLOAT, nullptr);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gPosition, 0);
 
+	// Normal texture
 	glGenTextures(1, &gNormal);
 	glBindTexture(GL_TEXTURE_2D, gNormal);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, screenWidth, screenHeight, 0, GL_RGB, GL_FLOAT, nullptr);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, gNormal, 0);
 
+	// Albedo + Specular texture
 	glGenTextures(1, &gAlbedoSpec);
 	glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, screenWidth, screenHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, gAlbedoSpec, 0);
 
-	// Tell OpenGL which color attachments we'll use (for multiple render targets)
+	// Specify color attachments
 	constexpr GLuint attachments[3] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
 	glDrawBuffers(3, attachments);
 
+	// Check framebuffer completeness
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
 		std::cerr << "G-Buffer not complete!" << '\n';
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	// Generate and initialize SSBO for lights
+	glGenBuffers(1, &ssboLights);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboLights);
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssboLights);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
 void Engine::Renderer::addRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent) {
@@ -138,6 +149,10 @@ void Engine::Renderer::renderObjects() {
 	camera.updateCameraVectors();
 	camera.processMouseMovement(Input::getMouse().delta);
 
+	// Geometry pass
+	glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
 	for (const auto& renderComponent : renderComponents) {
 		if (const auto renderComponentPtr = renderComponent.lock()) {
 			for (auto entries = renderComponentPtr->getQueueEntries(); const auto & entry : entries) {
@@ -148,6 +163,8 @@ void Engine::Renderer::renderObjects() {
 			removeComponent(renderComponent.lock());
 		}
 	}
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 	// Collect all LightRenderQueueEntries into lightData for SSBO
 	std::vector<LightRenderQueueEntry> lightData;
@@ -173,6 +190,8 @@ void Engine::Renderer::renderObjects() {
 	glBufferData(GL_SHADER_STORAGE_BUFFER, lightData.size() * sizeof(LightRenderQueueEntry), lightData.data(), GL_DYNAMIC_DRAW);
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssboLights);  // Binding point 0
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	// Perform the Lighting Pass
 	lightingShader.use();
