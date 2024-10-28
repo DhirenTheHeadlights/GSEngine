@@ -98,7 +98,12 @@ void Game::Arena::initialize() {
     addComponent(renderComponent);
     addComponent(collisionComponent);
 
-	//auto lightSourceComponent = std::make_shared<Engine::LightSourceComponent>();
+    const auto lightSourceComponent = std::make_shared<Engine::LightSourceComponent>();
+
+	// Add a point light to the center of the arena
+	lightSourceComponent->addLight(std::make_shared<Engine::PointLight>(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f), 1.0f, 0.09f, 0.032f, 1.0f));
+
+	addComponent(lightSourceComponent);
 }
 
 void Game::Arena::render() const {
