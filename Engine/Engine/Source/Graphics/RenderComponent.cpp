@@ -1,8 +1,8 @@
 #include "Graphics/RenderComponent.h"
 
-void Engine::RenderComponent::updateBoundingBoxMeshes(const bool moving) const {
+void Engine::RenderComponent::updateBoundingBoxMeshes() const {
 	for (const auto& boundingBoxMesh : boundingBoxMeshes) {
-		boundingBoxMesh->update(moving);
+		boundingBoxMesh->update();
 	}
 }
 

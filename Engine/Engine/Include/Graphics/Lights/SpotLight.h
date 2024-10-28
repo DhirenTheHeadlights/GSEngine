@@ -1,0 +1,23 @@
+#pragma once
+
+#include "Light.h"
+
+namespace Engine {
+	class SpotLight : public Light {
+	public:
+		SpotLight(const glm::vec3& position, const glm::vec3& direction, const glm::vec3& color, const float intensity, const float constant, const float linear, const float quadratic, const float cutOff, const float outerCutOff)
+			: Light(color, intensity, LightType::Spot), position(position), direction(direction), constant(constant), linear(linear), quadratic(quadratic), cutOff(cutOff), outerCutOff(outerCutOff) {}
+
+		float constant;
+		float linear;
+		float quadratic;
+		float cutOff;
+		float outerCutOff;
+		glm::vec3 position;
+		glm::vec3 direction;
+
+		LightRenderQueueEntry getRenderQueueEntry() const override {
+			return { LightType::Spot, color, intensity, position, direction, constant, linear, quadratic, cutOff, outerCutOff };
+		}
+	};
+}

@@ -8,7 +8,7 @@ namespace Engine {
 	public:
 		BoundingBoxMesh(const Vec3<Length>& lower, const Vec3<Length>& upper);
 
-		void update(bool moving);
+		void update();
 
 		RenderQueueEntry getQueueEntry() const override {
 			return {
@@ -23,7 +23,7 @@ namespace Engine {
 		}
 	private:
 		void updateGrid();
-		void initialize(bool moving);
+		void initialize();
 
 		std::vector<float> bbverticies;
 

@@ -1,6 +1,6 @@
 #pragma once
 #include <string>
-#include "glm/vec3.hpp"
+#include <glm/glm.hpp>
 
 
 namespace Engine::Debug {

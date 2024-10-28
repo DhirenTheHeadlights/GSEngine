@@ -3,11 +3,13 @@
 #include <string>
 #include <unordered_map>
 #include <glad/glad.h>
+#include <glm/glm.hpp>
 
 namespace Engine {
     class Shader {
     public:
         Shader() = default;
+		Shader(const std::string& vertexPath, const std::string& fragmentPath);
 
         void createShaderProgram(const std::string& vertexPath, const std::string& fragmentPath);
         void use() const;
@@ -16,8 +18,8 @@ namespace Engine {
         void setBool(const std::string& name, bool value) const;
         void setInt(const std::string& name, int value) const;
         void setFloat(const std::string& name, float value) const;
-        void setMat4(const std::string& name, const GLfloat* value) const;
-		void setVec3(const std::string& name, const GLfloat* value) const;
+        void setMat4(const std::string& name, const glm::mat4& value) const;
+		void setVec3(const std::string& name, const glm::vec3& value) const;
 
     	unsigned int getID() const { return ID; }
     private:

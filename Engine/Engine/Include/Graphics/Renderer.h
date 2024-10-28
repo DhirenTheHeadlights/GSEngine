@@ -4,6 +4,7 @@
 #include "Graphics/Camera.h"
 #include "Graphics/RenderComponent.h"
 #include "Graphics/Shader.h"
+#include "Lights/LightSourceComponent.h"
 
 namespace Engine {
 	class Renderer {
@@ -11,9 +12,12 @@ namespace Engine {
 		Renderer() = default;
 
 		void initialize();
-		void addComponent(const std::shared_ptr<RenderComponent>& renderComponent);
+		void addRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent);
+		void addLightSourceComponent(const std::shared_ptr<LightSourceComponent>& lightSourceComponent);
 		void removeComponent(const std::shared_ptr<RenderComponent>& renderComponent);
+		void removeLightSourceComponent(const std::shared_ptr<LightSourceComponent>& lightSourceComponent);
 		void renderObject(const RenderQueueEntry& entry);
+		void renderObject(const LightRenderQueueEntry& entry);
 		void renderObjects();
 
 		static void beginFrame();
@@ -25,5 +29,15 @@ namespace Engine {
 
 		std::unordered_map<std::string, Material> materials;
 		std::vector<std::weak_ptr<RenderComponent>> renderComponents;
+		std::unordered_map<std::string, Shader> lightShaders;
+		std::vector<std::weak_ptr<LightSourceComponent>> lightSourceComponents;
+
+		GLuint gBuffer;
+		GLuint gPosition;
+		GLuint gNormal;
+		GLuint gAlbedoSpec;
+		GLuint ssboLights;
+
+		Shader lightingShader;
 	};
 }

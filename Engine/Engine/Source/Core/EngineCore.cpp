@@ -1,7 +1,9 @@
 #include "Core/EngineCore.h"
 
+#include <glad/glad.h>
+#include <GLFW/glfw3.h>
+
 #include "Core/Clock.h"
-#include "GLFW/glfw3.h"
 #include "Graphics/Renderer.h"
 #include "Input/Input.h"
 #include "Physics/System.h"
@@ -124,7 +126,8 @@ void Engine::addObject(const std::weak_ptr<Object>& object) {
 		handleComponent<Physics::MotionComponent>(objectPtr, Physics::addComponent);
 		handleComponent<Physics::CollisionComponent, Physics::MotionComponent>(objectPtr, collisionHandler, &BroadPhaseCollisionHandler::addDynamicComponents);
 		handleComponent<Physics::CollisionComponent>(objectPtr, collisionHandler, &BroadPhaseCollisionHandler::addObjectComponent);
-		handleComponent<RenderComponent>(objectPtr, renderer, &Renderer::addComponent);
+		handleComponent<RenderComponent>(objectPtr, renderer, &Renderer::addRenderComponent);
+		handleComponent<LightSourceComponent>(objectPtr, renderer, &Renderer::addLightSourceComponent);
 	}
 }
 
@@ -133,5 +136,6 @@ void Engine::removeObject(const std::weak_ptr<Object>& object) {
 		handleComponent<Physics::MotionComponent>(objectPtr, Physics::removeComponent);
 		handleComponent<Physics::CollisionComponent>(objectPtr, collisionHandler, &BroadPhaseCollisionHandler::removeComponents);
 		handleComponent<RenderComponent>(objectPtr, renderer, &Renderer::removeComponent);
+		handleComponent<LightSourceComponent>(objectPtr, renderer, &Renderer::removeLightSourceComponent);
 	}
 }

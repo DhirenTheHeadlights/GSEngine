@@ -22,4 +22,5 @@ if (MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Release>:Release>")
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     add_compile_options(/arch:AVX2) # SIMD optimizations
+    add_compile_options(/MP) # Multi-core compilation
 endif()
