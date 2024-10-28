@@ -97,9 +97,10 @@ void Game::Arena::initialize() {
 
     addComponent(renderComponent);
     addComponent(collisionComponent);
+
+	//auto lightSourceComponent = std::make_shared<Engine::LightSourceComponent>();
 }
 
 void Game::Arena::render() const {
-	getComponent<Engine::RenderComponent>()->updateBoundingBoxMeshes(false);
 	getComponent<Engine::RenderComponent>()->setRender(true, true);
 }

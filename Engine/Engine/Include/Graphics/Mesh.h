@@ -15,7 +15,7 @@ namespace Engine {
 
 	class Mesh {
 	public:
-		Mesh() = default;
+		Mesh();
 		Mesh(const std::vector<Vertex>& vertices, const std::vector<unsigned int>& indices, const glm::vec3 color = { 1.0f, 1.0f, 1.0f }, GLuint textureId = 0);
 		~Mesh();
 
@@ -32,7 +32,7 @@ namespace Engine {
 
 		virtual RenderQueueEntry getQueueEntry() const {
 			return {
-				"SolidColor",
+				"Lighting",
 				VAO,
 				drawMode,
 				getVertexCount(),

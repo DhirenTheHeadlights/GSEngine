@@ -1,7 +1,5 @@
 #include "Player.h"
 
-#include "Graphics/RenderComponent.h"
-
 void Game::Player::initialize() {
 	const auto motionComponent = std::make_shared<Engine::Physics::MotionComponent>();
 	const auto collisionComponent = std::make_shared<Engine::Physics::CollisionComponent>();
@@ -78,6 +76,6 @@ void Game::Player::update() {
 }
 
 void Game::Player::render() const {
-	getComponent<Engine::RenderComponent>()->updateBoundingBoxMeshes(true);
+	getComponent<Engine::RenderComponent>()->updateBoundingBoxMeshes();
 	getComponent<Engine::RenderComponent>()->setRender(true, true);
 }

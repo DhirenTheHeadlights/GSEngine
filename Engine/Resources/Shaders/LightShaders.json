@@ -1,0 +1,6 @@
+{
+  "Lighting": {
+    "vertex": "lighting_pass.vert",
+    "fragment": "lighting_pass.frag"
+  }
+}

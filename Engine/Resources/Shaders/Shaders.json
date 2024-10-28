@@ -6,5 +6,9 @@
   "SolidNoColor": {
     "vertex": "solid_no_color.vert",
     "fragment": "solid_no_color.frag"
+  },
+  "Lighting": {
+    "vertex": "lighting.vert",
+    "fragment": "lighting.frag"
   }
 }

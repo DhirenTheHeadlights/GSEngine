@@ -35,6 +35,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Release>:Release>")
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     add_compile_options(/arch:AVX2) # SIMD optimizations
+    add_compile_options(/MP) # Multi-core compilation
 
     # Function to create source groups by full directory hierarchy and remove unnecessary prefix
     function(create_source_groups BASE_DIR REMOVE_PREFIX BASE_GROUP)
@@ -58,5 +59,4 @@ if(MSVC)
             endif()
         endforeach()
     endfunction()
-
 endif()

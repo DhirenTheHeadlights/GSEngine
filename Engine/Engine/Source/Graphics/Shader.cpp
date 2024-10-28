@@ -4,6 +4,12 @@
 #include <iostream>
 #include <sstream>
 
+#include "glm/gtc/type_ptr.hpp"
+
+Engine::Shader::Shader(const std::string& vertexPath, const std::string& fragmentPath) {
+	createShaderProgram(vertexPath, fragmentPath);
+}
+
 void Engine::Shader::createShaderProgram(const std::string& vertexPath, const std::string& fragmentPath) {
     // 1. Retrieve the vertex and fragment shader source code from file paths
     const std::string vertexCode = loadShaderSource(vertexPath);
@@ -111,10 +117,10 @@ void Engine::Shader::setFloat(const std::string& name, const float value) const 
     glUniform1f(glGetUniformLocation(ID, name.c_str()), value);
 }
 
-void Engine::Shader::setMat4(const std::string& name, const GLfloat* value) const {
-    glUniformMatrix4fv(glGetUniformLocation(ID, name.c_str()), 1, GL_FALSE, value);
+void Engine::Shader::setMat4(const ::std::string& name, const glm::mat4& value) const {
+    glUniformMatrix4fv(glGetUniformLocation(ID, name.c_str()), 1, GL_FALSE, value_ptr(value));
 }
 
-void Engine::Shader::setVec3(const std::string& name, const GLfloat* value) const {
-	glUniform3fv(glGetUniformLocation(ID, name.c_str()), 1, value);
+void Engine::Shader::setVec3(const ::std::string& name, const glm::vec3& value) const {
+	glUniform3fv(glGetUniformLocation(ID, name.c_str()), 1, value_ptr(value));
 }

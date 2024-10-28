@@ -2,7 +2,7 @@
 
 Engine::BoundingBoxMesh::BoundingBoxMesh(const Vec3<Length>& lower, const Vec3<Length>& upper)
 	: lower(lower), upper(upper) {
-	initialize(true);
+	initialize();
 }
 
 void Engine::BoundingBoxMesh::updateGrid() {

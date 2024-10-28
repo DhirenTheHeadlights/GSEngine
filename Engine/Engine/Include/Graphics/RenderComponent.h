@@ -21,7 +21,7 @@ namespace Engine {
 			boundingBoxMeshes.push_back(boundingBoxMesh);
 		}
 
-		void updateBoundingBoxMeshes(bool moving) const;
+		void updateBoundingBoxMeshes() const;
 		virtual std::vector<RenderQueueEntry> getQueueEntries() const;
 		void setRender(bool render, bool renderBoundingBoxes);
 
