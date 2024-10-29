@@ -23,7 +23,7 @@ struct Light {
     float outerCutOff;
 };
 
-layout(std430, binding = 0) buffer Lights {
+layout(std140, binding = 0) buffer Lights {
     Light lights[];
 };
 

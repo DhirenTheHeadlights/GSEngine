@@ -14,6 +14,7 @@ GLFWwindow* Engine::Platform::window = nullptr;
 bool Engine::Platform::currentFullScreen = false;
 bool Engine::Platform::fullScreen = false;
 bool Engine::Platform::windowFocused = true;
+bool Engine::Platform::mouseVisible = true;
 int Engine::Platform::mouseMoved = 0;
 
 void Engine::Platform::initialize() {
@@ -76,6 +77,13 @@ void Engine::Platform::update() {
 
 		mouseMoved = 0;
 	}
+
+	if (mouseVisible) {
+		glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+	}
+	else {
+		glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+	}
 }
 
 void Engine::Platform::setMousePosRelativeToWindow(const int x, const int y) {
@@ -98,15 +106,6 @@ glm::ivec2 Engine::Platform::getWindowSize() {
 	int x = 0; int y = 0;
 	glfwGetWindowSize(window, &x, &y);
 	return { x, y };
-}
-
-void Engine::Platform::showMouse(const bool show) {
-	if (show) {
-		glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-	}
-	else {
-		glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-	}
 }
 
 bool Engine::Platform::writeEntireFile(const char* name, void* buffer, const size_t size) {

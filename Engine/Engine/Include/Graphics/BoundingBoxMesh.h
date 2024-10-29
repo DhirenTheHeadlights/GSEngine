@@ -12,7 +12,7 @@ namespace Engine {
 
 		RenderQueueEntry getQueueEntry() const override {
 			return {
-				"SolidNoColor",
+				"SolidColor",
 				VAO,
 				GL_LINES,
 				static_cast<GLsizei>(vertices.size() / 3),

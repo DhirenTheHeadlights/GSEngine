@@ -1,5 +1,7 @@
 #pragma once
 
+#include <imgui_internal.h>
+
 #include "Light.h"
 
 namespace Engine {
@@ -13,5 +15,13 @@ namespace Engine {
 		}
 
 		glm::vec3 direction;
+
+		void showDebugMenu() override {
+			ImGui::Text("Directional Light");
+			ImGui::SetWindowSize({ 500.f, 500.f });
+			ImGui::ColorEdit3("Color", &color[0]);
+			ImGui::SliderFloat("Intensity", &intensity, 0.0f, 100.0f);
+			ImGui::SliderFloat3("Direction", &direction[0], -1.0f, 1.0f);
+		}
 	};
 }

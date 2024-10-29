@@ -8,7 +8,7 @@ in vec3 FragPos;
 in vec3 Normal;
 in vec2 TexCoords;
 
-uniform sampler2D texture_diffuse;  // Diffuse texture map
+uniform sampler2D diffuseTexture;   // Diffuse texture map
 uniform vec3 color;                 // Solid color if no texture
 uniform bool useTexture;
 
@@ -17,7 +17,7 @@ void main() {
     gNormal = normalize(Normal);
     
     if (useTexture) {
-        gAlbedoSpec.rgb = texture(texture_diffuse, TexCoords).rgb;
+        gAlbedoSpec.rgb = texture(diffuseTexture, TexCoords).rgb;
     } else {
         gAlbedoSpec.rgb = color;
     }
