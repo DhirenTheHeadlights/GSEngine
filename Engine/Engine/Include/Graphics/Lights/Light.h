@@ -2,6 +2,8 @@
 
 #include <glm/glm.hpp>
 
+#include "Graphics/Debug.h"
+
 namespace Engine {
     enum class LightType {
         Directional,
@@ -9,6 +11,29 @@ namespace Engine {
         Spot
     };
 
+    struct alignas(16) LightShaderEntry {
+        int lightType;        // 4 bytes
+        int padding1;         // 4 bytes padding to align to 8 bytes
+        // Next available offset: 8 bytes
+        glm::vec3 position;   // 12 bytes
+        float padding2;       // 4 bytes padding to align to 16 bytes
+        // Next available offset: 24 bytes
+        glm::vec3 direction;  // 12 bytes
+        float padding3;       // 4 bytes padding to align to 16 bytes
+        // Next available offset: 40 bytes
+        glm::vec3 color;      // 12 bytes
+        float intensity;      // 4 bytes
+        // Next available offset: 56 bytes
+        float constant;       // 4 bytes
+        float linear;         // 4 bytes
+        float quadratic;      // 4 bytes
+        float padding4;       // 4 bytes padding to align to 16 bytes
+        // Next available offset: 72 bytes
+        float cutOff;         // 4 bytes
+        float outerCutOff;    // 4 bytes
+        float padding5[2];    // 8 bytes padding to make the struct size a multiple of 16 bytes
+        // Total size: 88 bytes
+    };
 
     struct LightRenderQueueEntry {
 		std::string shaderKey = "Lighting";
@@ -42,6 +67,26 @@ namespace Engine {
                               const float constant, const float linear, const float quadratic, const float cutOff, const float outerCutOff)
             : type(type), color(color), intensity(intensity), position(position), direction(direction),
             constant(constant), linear(linear), quadratic(quadratic), cutOff(cutOff), outerCutOff(outerCutOff) {}
+
+        LightShaderEntry getShaderEntry() const {
+            return {
+                static_cast<int>(type),
+                0,
+                position,
+                0,
+                direction,
+                0,
+                color,
+                intensity,
+                constant,
+                linear,
+                quadratic,
+                0,
+                cutOff,
+                outerCutOff,
+                {0, 0}
+            };
+        }
     };
 
 	class Light {
@@ -49,6 +94,7 @@ namespace Engine {
 		Light() = default;
 		virtual ~Light() = default;
 		virtual LightRenderQueueEntry getRenderQueueEntry() const = 0;
+        virtual void showDebugMenu() = 0;
 
 		LightType getType() const { return type; }
 	protected:

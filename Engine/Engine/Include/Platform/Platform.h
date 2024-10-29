@@ -11,6 +11,7 @@ namespace Engine::Platform {
     extern bool currentFullScreen;
     extern bool fullScreen;
     extern bool windowFocused;
+    extern bool mouseVisible;
     extern int mouseMoved;
 
 	void initialize();

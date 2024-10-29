@@ -17,7 +17,6 @@ namespace Engine {
 		void removeComponent(const std::shared_ptr<RenderComponent>& renderComponent);
 		void removeLightSourceComponent(const std::shared_ptr<LightSourceComponent>& lightSourceComponent);
 		void renderObject(const RenderQueueEntry& entry);
-		void renderObject(const LightRenderQueueEntry& entry);
 		void renderObjects();
 
 		static void beginFrame();

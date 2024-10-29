@@ -26,6 +26,10 @@ namespace Engine {
 			}
 			return entries;
 		}
+
+		std::vector<std::shared_ptr<Light>>& getLights() {
+			return lights;
+		}
 	private:
 		std::vector<std::shared_ptr<Light>> lights;
 	};

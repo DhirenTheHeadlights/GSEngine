@@ -32,7 +32,7 @@ bool Game::initialize() {
 }
 
 bool Game::update() {
-	Engine::Platform::showMouse(Engine::Input::getMouse().buttons[GLFW_MOUSE_BUTTON_MIDDLE].toggled);
+	Engine::Platform::mouseVisible = Engine::Input::getMouse().buttons[GLFW_MOUSE_BUTTON_MIDDLE].toggled;
 
 	player->update();
 
