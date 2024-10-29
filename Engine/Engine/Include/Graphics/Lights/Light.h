@@ -37,56 +37,21 @@ namespace Engine {
 
     struct LightRenderQueueEntry {
 		std::string shaderKey = "Lighting";
-		LightType type;
-        glm::vec3 color;
-        float intensity;
-
-        glm::vec3 position;        // Only applicable for Point and Spotlights
-        glm::vec3 direction;       // Only applicable for Directional and Spotlights
-
-        // Attenuation parameters for Point and Spotlights
-        float constant = 1.0f;
-        float linear = 0.0f;
-        float quadratic = 0.0f;
-
-        // Spot light-specific parameters
-        float cutOff = 0.0f;
-        float outerCutOff = 0.0f;
+		LightShaderEntry shaderEntry;
 
         // Constructor for Directional Light
         LightRenderQueueEntry(const LightType type, const glm::vec3& color, const float intensity, const glm::vec3& direction)
-            : type(type), color(color), intensity(intensity), direction(direction) {}
+			: shaderEntry({ static_cast<int>(type), 0, {0, 0, 0}, 0, direction, 0, color, intensity, 0, 0, 0, 0, 0, 0, {0, 0} }) {}
 
         // Constructor for Point Light
         LightRenderQueueEntry(const LightType type, const glm::vec3& color, const float intensity, const glm::vec3& position,
                               const float constant, const float linear, const float quadratic)
-            : type(type), color(color), intensity(intensity), position(position), constant(constant), linear(linear), quadratic(quadratic) {}
+			: shaderEntry({ static_cast<int>(type), 0, position, 0, {0, 0, 0}, 0, color, intensity, constant, linear, quadratic, 0, 0, 0, {0, 0} }) {}
 
         // Constructor for Spotlight
         LightRenderQueueEntry(const LightType type, const glm::vec3& color, const float intensity, const glm::vec3& position, const glm::vec3& direction,
                               const float constant, const float linear, const float quadratic, const float cutOff, const float outerCutOff)
-            : type(type), color(color), intensity(intensity), position(position), direction(direction),
-            constant(constant), linear(linear), quadratic(quadratic), cutOff(cutOff), outerCutOff(outerCutOff) {}
-
-        LightShaderEntry getShaderEntry() const {
-            return {
-                static_cast<int>(type),
-                0,
-                position,
-                0,
-                direction,
-                0,
-                color,
-                intensity,
-                constant,
-                linear,
-                quadratic,
-                0,
-                cutOff,
-                outerCutOff,
-                {0, 0}
-            };
-        }
+			: shaderEntry({ static_cast<int>(type), 0, position, 0, direction, 0, color, intensity, constant, linear, quadratic, 0, cutOff, outerCutOff, {0, 0} }) {}
     };
 
 	class Light {

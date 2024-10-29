@@ -170,7 +170,7 @@ void Engine::Renderer::renderObjects() {
 	for (const auto& lightSourceComponent : lightSourceComponents) {
 		if (const auto lightSourceComponentPtr = lightSourceComponent.lock()) {
 			for (const auto& entry : lightSourceComponentPtr->getRenderQueueEntries()) {
-				lightData.push_back(entry.getShaderEntry());
+				lightData.push_back(entry.shaderEntry);
 			}
 		}
 		else {
