@@ -2,7 +2,30 @@
 #include "imguiThemes.h"
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
+#include "Core/Clock.h"
+#include "Core/EngineCore.h"
+#include "Core/JsonParser.h"
 #include "Platform/Platform.h"
+
+struct WindowState {
+	ImVec2 position;
+	ImVec2 size;
+};
+
+void to_json(nlohmann::json& j, const ImVec2& v) {
+	j = nlohmann::json{ {"x", v.x}, {"y", v.y} };
+}
+
+void from_json(const nlohmann::json& j, ImVec2& v) {
+	j.at("x").get_to(v.x);
+	j.at("y").get_to(v.y);
+}
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(WindowState, position, size);
+
+std::unordered_map<std::string, WindowState> windowStates;
+Engine::Clock autosaveClock;
+const Engine::Units::Seconds autosaveTime = 60.f;
 
 void Engine::Debug::setUpImGui() {
 	ImGui::CreateContext();
@@ -24,6 +47,13 @@ void Engine::Debug::setUpImGui() {
 
 	ImGui_ImplGlfw_InitForOpenGL(Platform::window, true);
 	ImGui_ImplOpenGL3_Init("#version 330");
+
+	JsonParse::parse(JsonParse::loadJson(RESOURCES_PATH "imgui_state.json"), [](const std::string& key, const nlohmann::json& value) {
+		if (value.is_null() || !value.is_object() || !value.contains("position") || !value.contains("size")) {
+			return;
+		}
+		windowStates[key] = value.get<WindowState>();
+	});
 }
 
 void Engine::Debug::updateImGui() {
@@ -31,6 +61,25 @@ void Engine::Debug::updateImGui() {
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
 	ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
+
+	if (ImGui::BeginMainMenuBar()) {
+		if (ImGui::BeginMenu("File")) {
+			if (ImGui::MenuItem("Save State")) {
+				saveImGuiState();
+			}
+			if (ImGui::MenuItem("Exit")) {
+				requestShutdown();
+			}
+			ImGui::EndMenu();
+		}
+		ImGui::EndMainMenuBar();
+	}
+
+	// Autosave
+	if (autosaveClock.getElapsedTime() > autosaveTime) {
+		saveImGuiState();
+		autosaveClock.reset();
+	}
 }
 
 void Engine::Debug::renderImGui() {
@@ -53,9 +102,41 @@ void Engine::Debug::renderImGui() {
 	}
 }
 
+void Engine::Debug::saveImGuiState() {
+	nlohmann::json json;
+	for (const auto& [fst, snd] : windowStates) {
+		const std::string& name = fst;
+		const WindowState& state = snd;
+		json[name] = state;
+	}
+	JsonParse::writeJson(RESOURCES_PATH "imgui_state.json", [&json](nlohmann::json& j) {
+		j = json;
+	});
+}
+
+
+void Engine::Debug::createWindow(const std::string& name, const ImVec2& size, const ImVec2& position, bool open) {
+	if (windowStates.contains(name)) {
+		const auto& [position, size] = windowStates[name];
+		ImGui::SetNextWindowSize(size, ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowPos(position, ImGuiCond_FirstUseEver);
+	}
+	else {
+		ImGui::SetNextWindowSize(size, ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowPos(position, ImGuiCond_FirstUseEver);
+		windowStates[name] = { position, size };
+	}
+
+	ImGui::Begin(name.c_str(), &open);
+
+	windowStates[name].position = ImGui::GetWindowPos();
+	windowStates[name].size = ImGui::GetWindowSize();
+}
+
+
 void Engine::Debug::printVector(const std::string& name, const glm::vec3& vec, const char* unit) {
 	if (unit) {
-		ImGui::InputFloat3((name + unit).c_str(), const_cast<float*>(&vec.x));
+		ImGui::InputFloat3((name + " - " + unit).c_str(), const_cast<float*>(&vec.x));
 	}
 	else {
 		ImGui::InputFloat3(name.c_str(), const_cast<float*>(&vec.x));
@@ -64,7 +145,7 @@ void Engine::Debug::printVector(const std::string& name, const glm::vec3& vec, c
 
 void Engine::Debug::printValue(const std::string& name, const float& value, const char* unit) {
 	if (unit) {
-		ImGui::InputFloat((name + unit).c_str(), const_cast<float*>(&value));
+		ImGui::InputFloat((name + " - " + unit).c_str(), const_cast<float*>(&value), 0.f, 0.f, "%.10f");
 	}
 	else {
 		ImGui::InputFloat(name.c_str(), const_cast<float*>(&value));

@@ -2,5 +2,9 @@
   "Lighting": {
     "vertex": "lighting_pass.vert",
     "fragment": "lighting_pass.frag"
+  },
+  "Emissive": {
+    "vertex": "emissive.vert",
+    "fragment": "emissive.frag"
   }
 }

@@ -36,7 +36,7 @@ enum class EngineState {
 
 auto engineState = EngineState::Uninitialized;
 
-void requestShutdown() {
+void Engine::requestShutdown() {
 	engineState = EngineState::Shutdown;
 }
 
@@ -58,6 +58,8 @@ void Engine::initialize(const std::function<void()>& initializeFunction, const s
 }
 
 void update(const std::function<bool()>& updateFunction) {
+	Engine::addTimer("Engine::update");
+
 	Engine::Platform::update();
 
 #if IMGUI
@@ -73,22 +75,29 @@ void update(const std::function<bool()>& updateFunction) {
 	Engine::Input::update();
 
 	if (!updateFunction()) {
-		requestShutdown();
+		Engine::requestShutdown();
 	}
+
+	Engine::resetTimer("Engine::render");
 }
 
 void render(const std::function<bool()>& renderFunction) {
+	Engine::addTimer("Engine::render");
+
 	Engine::Renderer::beginFrame();
 	renderer.renderObjects();
+	Engine::displayTimers();
 
 	if (!renderFunction()) {
-		requestShutdown();
+		Engine::requestShutdown();
 	}
 
 #if IMGUI
 	Engine::Debug::renderImGui();
 #endif
 	Engine::Renderer::endFrame();
+
+	Engine::resetTimer("Engine::update");
 }
 
 void shutdown() {

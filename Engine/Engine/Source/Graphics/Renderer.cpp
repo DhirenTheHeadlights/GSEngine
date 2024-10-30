@@ -142,6 +142,22 @@ void Engine::Renderer::renderObject(const RenderQueueEntry& entry) {
 	}
 }
 
+void Engine::Renderer::renderObject(const LightRenderQueueEntry& entry) {
+	if (const auto it = lightShaders.find(entry.shaderKey); it != lightShaders.end()) {
+		it->second.use();
+		it->second.setMat4("model", glm::mat4(1.0f));
+		it->second.setMat4("view", camera.getViewMatrix());
+		it->second.setMat4("projection", glm::perspective(glm::radians(45.0f), static_cast<float>(Platform::getFrameBufferSize().x) / static_cast<float>(Platform::getFrameBufferSize().y), 0.1f, 10000.0f));
+
+		it->second.setVec3("color", entry.shaderEntry.color);
+		it->second.setFloat("intensity", entry.shaderEntry.intensity);
+	}
+	else {
+		std::cerr << "Shader program key not found: " << entry.shaderKey << '\n';
+	}
+}
+
+
 void Engine::Renderer::renderObjects() {
 	camera.updateCameraVectors();
 	if (!Platform::mouseVisible) camera.processMouseMovement(Input::getMouse().delta);
@@ -170,6 +186,7 @@ void Engine::Renderer::renderObjects() {
 	for (const auto& lightSourceComponent : lightSourceComponents) {
 		if (const auto lightSourceComponentPtr = lightSourceComponent.lock()) {
 			for (const auto& entry : lightSourceComponentPtr->getRenderQueueEntries()) {
+				renderObject(entry); 
 				lightData.push_back(entry.shaderEntry);
 			}
 		}
