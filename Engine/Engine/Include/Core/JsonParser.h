@@ -12,7 +12,13 @@ namespace Engine::JsonParse {
 	inline nlohmann::json loadJson(const std::string& path) {
 		std::ifstream file(path);
 		permaAssertComment(file.is_open(), std::string("Failed to open file: " + path).c_str());
-		return nlohmann::json::parse(file);
+		try {
+			return nlohmann::json::parse(file);
+		}
+		catch (const nlohmann::json::parse_error& e) {
+			std::cerr << "JSON parse error: " << e.what() << '\n';
+			return nlohmann::json{}; // Return an empty JSON object on failure
+		}
 	}
 
 	// Generic JSON parser
@@ -21,5 +27,17 @@ namespace Engine::JsonParse {
 		for (const auto& [key, value] : json.items()) {
 			std::forward<Function>(processElement)(key, value);
 		}
+	}
+
+	template <typename Function>
+	void writeJson(const std::string& path, Function&& processElement) {
+		nlohmann::json json;
+		processElement(json);
+
+		std::ofstream file(path);
+		if (!file.is_open()) {
+			throw std::runtime_error("Failed to open file: " + path);
+		}
+		file << json.dump(4);
 	}
 }

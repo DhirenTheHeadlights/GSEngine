@@ -16,8 +16,7 @@ namespace Engine {
 		glm::vec3 position;
 
 		void showDebugMenu() override {
-			ImGui::Begin("Point Light Debug Menu");
-			ImGui::SetWindowSize({ 500.f, 500.f });
+			Debug::createWindow("Point Light");
 			ImGui::Text("Position: (%.2f, %.2f, %.2f)", position.x, position.y, position.z);
 			ImGui::ColorEdit3("Color", &color[0]);
 			ImGui::SliderFloat("Intensity", &intensity, 0.0f, 100.0f);

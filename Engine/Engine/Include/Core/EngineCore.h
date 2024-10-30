@@ -14,6 +14,9 @@ namespace Engine {
 	void addObject(const std::weak_ptr<Object>& object);
 	void removeObject(const std::weak_ptr<Object>& object);
 
+	/// Request the engine to shut down after the current frame.
+	void requestShutdown();
+
 	Camera& getCamera();
 
 	extern IDHandler idManager;

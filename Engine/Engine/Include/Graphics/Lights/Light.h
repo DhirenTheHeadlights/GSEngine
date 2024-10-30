@@ -36,7 +36,7 @@ namespace Engine {
     };
 
     struct LightRenderQueueEntry {
-		std::string shaderKey = "Lighting";
+		std::string shaderKey = "Emissive";
 		LightShaderEntry shaderEntry;
 
         // Constructor for Directional Light
