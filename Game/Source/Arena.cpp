@@ -103,13 +103,8 @@ void Game::Arena::initialize() {
     const auto lightSourceComponent = std::make_shared<Engine::LightSourceComponent>();
 
 	// Add a point light to the center of the arena
-    lightSourceComponent->addLight(std::make_shared<Engine::PointLight>(
-        glm::vec3(0.0f, 5.0f, 0.0f),   // Move light up for visibility
-        glm::vec3(1.0f),               // White color
-        2.0f,                          // Increased intensity
-        1.0f,                          // Constant factor, often left at 1.0f
-        0.02f,                         // Lower linear factor for broader light spread
-        0.001f                         // Very low quadratic factor to ensure larger reach
+    lightSourceComponent->addLight(std::make_shared<Engine::SpotLight>(
+		glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(1.0f, 1.0f, 1.0f), 1.0f, 1.0f, 0.09f, 0.032f, 0.f, glm::cos(glm::radians(17.5f))
     ));
 
 	addComponent(lightSourceComponent);

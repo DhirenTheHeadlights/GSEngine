@@ -7,19 +7,21 @@ in vec2 TexCoords;
 uniform sampler2D gPosition;
 uniform sampler2D gNormal;
 uniform sampler2D gAlbedoSpec;
+uniform sampler2D shadowMap; // Shadow map
 
 uniform vec3 viewPos;
+uniform mat4 lightSpaceMatrix; // Matrix to transform to light space
 
 struct Light {
-    int lightType;       // 0 = Directional, 1 = Point, 2 = Spot
-    vec3 position;       // For Point and Spot lights
-    vec3 direction;      // For Directional and Spot lights
+    int lightType;
+    vec3 position;
+    vec3 direction;
     vec3 color;
     float intensity;
-    float constant;      // Attenuation for Point and Spot lights
+    float constant;
     float linear;
     float quadratic;
-    float cutOff;        // Spot lights only
+    float cutOff;
     float outerCutOff;
 };
 
@@ -27,11 +29,33 @@ layout(std140, binding = 0) buffer Lights {
     Light lights[];
 };
 
+// Shadow calculation function
+float calculateShadow(vec4 FragPosLightSpace) {
+    // Transform fragment position to [0,1] space for texture lookup
+    vec3 projCoords = FragPosLightSpace.xyz / FragPosLightSpace.w;
+    projCoords = projCoords * 0.5 + 0.5;
+
+    // Depth of the fragment in light space
+    float currentDepth = projCoords.z;
+
+    // Compare current depth to the depth stored in the shadow map
+    float closestDepth = texture(shadowMap, projCoords.xy).r;
+
+    // Basic shadow bias to avoid shadow acne
+    float shadowBias = 0.005;
+    float shadow = currentDepth - shadowBias > closestDepth ? 1.0 : 0.0;
+
+    // Return shadow factor (1 = in shadow, 0 = fully lit)
+    return shadow;
+}
+
 void main() {
     vec3 FragPos = texture(gPosition, TexCoords).rgb;
     vec3 Normal = normalize(texture(gNormal, TexCoords).rgb);
     vec3 Albedo = texture(gAlbedoSpec, TexCoords).rgb;
     float Specular = texture(gAlbedoSpec, TexCoords).a;
+
+    vec4 FragPosLightSpace = lightSpaceMatrix * vec4(FragPos, 1.0); // Transform fragment position to light space
 
     vec3 resultColor = vec3(0.0);
 
@@ -39,8 +63,7 @@ void main() {
         vec3 lightDir;
         float attenuation = 1.0;
 
-        // Handle each light type
-        if (lights[i].lightType == 0) { // Directional
+        if (lights[i].lightType == 0) { // Directional light
             lightDir = normalize(-lights[i].direction);
         } else {
             lightDir = normalize(lights[i].position - FragPos);
@@ -58,17 +81,11 @@ void main() {
         float spec = pow(max(dot(viewDir, reflectDir), 0.0), Specular);
         vec3 specular = lights[i].color * spec * lights[i].intensity;
 
-        // Spot light cut-off
-        if (lights[i].lightType == 2) {  // Spot light
-            float theta = dot(lightDir, normalize(-lights[i].direction));
-            float epsilon = lights[i].cutOff - lights[i].outerCutOff;
-            float intensity = clamp((theta - lights[i].outerCutOff) / epsilon, 0.0, 1.0);
-            diffuse *= intensity;
-            specular *= intensity;
-        }
+        // Shadow factor
+        float shadow = (lights[i].lightType == 0) ? calculateShadow(FragPosLightSpace) : 0.0;
 
-        // Apply attenuation for Point and Spot lights
-        resultColor += (diffuse + specular) * Albedo * attenuation;
+        // Apply attenuation and shadow
+        resultColor += ((diffuse + specular) * (1.0 - shadow) * attenuation) * Albedo;
     }
 
     FragColor = vec4(resultColor, 1.0);
