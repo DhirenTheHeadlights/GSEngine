@@ -95,6 +95,27 @@ void Engine::Renderer::initialize() {
 	lightingShader.setInt("gPosition", 0);
 	lightingShader.setInt("gNormal", 1);
 	lightingShader.setInt("gAlbedoSpec", 2);
+
+	// Initialize Shadow Map resources
+	glGenFramebuffers(1, &depthMapFBO);
+	glGenTextures(1, &depthMap);
+	glBindTexture(GL_TEXTURE_2D, depthMap);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, shadowWidth, shadowHeight, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+	float borderColor[] = { 1.0, 1.0, 1.0, 1.0 };
+	glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+
+	glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
+	glDrawBuffer(GL_NONE);
+	glReadBuffer(GL_NONE);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	// Initialize shadow shader
+	shadowShader.createShaderProgram(shaderPath + "shadow.vert", shaderPath + "shadow.frag");
 }
 
 void Engine::Renderer::addRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent) {
@@ -157,44 +178,7 @@ void Engine::Renderer::renderObject(const LightRenderQueueEntry& entry) {
 	}
 }
 
-
-void Engine::Renderer::renderObjects() {
-	camera.updateCameraVectors();
-	if (!Platform::mouseVisible) camera.processMouseMovement(Input::getMouse().delta);
-
-	// Geometry pass
-	glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-	for (const auto& renderComponent : renderComponents) {
-		if (const auto renderComponentPtr = renderComponent.lock()) {
-			for (auto entries = renderComponentPtr->getQueueEntries(); const auto & entry : entries) {
-				renderObject(entry);  // Geometry pass
-			}
-		}
-		else {
-			removeComponent(renderComponent.lock());
-		}
-	}
-
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-	// Collect all LightRenderQueueEntries into lightData for SSBO
-	std::vector<LightShaderEntry> lightData;
-	lightData.reserve(lightSourceComponents.size());
-
-	for (const auto& lightSourceComponent : lightSourceComponents) {
-		if (const auto lightSourceComponentPtr = lightSourceComponent.lock()) {
-			for (const auto& entry : lightSourceComponentPtr->getRenderQueueEntries()) {
-				renderObject(entry); 
-				lightData.push_back(entry.shaderEntry);
-			}
-		}
-		else {
-			removeLightSourceComponent(lightSourceComponent.lock());
-		}
-	}
-
+void Engine::Renderer::renderLightingPass(const std::vector<LightShaderEntry>& lightData, const glm::mat4& lightSpaceMatrix) const {
 	if (lightData.empty()) {
 		return;
 	}
@@ -210,6 +194,11 @@ void Engine::Renderer::renderObjects() {
 	glDisable(GL_DEPTH_TEST);  // Disable depth testing for the lighting pass
 
 	lightingShader.use();
+
+	lightingShader.setInt("shadowMap", 3);
+	glActiveTexture(GL_TEXTURE3);
+	glBindTexture(GL_TEXTURE_2D, depthMap);
+	lightingShader.setMat4("lightSpaceMatrix", lightSpaceMatrix);
 
 	// Bind the G-buffer textures
 	glActiveTexture(GL_TEXTURE0);
@@ -253,6 +242,86 @@ void Engine::Renderer::renderObjects() {
 	glBindVertexArray(0);
 
 	glEnable(GL_DEPTH_TEST);  // Re-enable depth testing after the lighting pass
+}
+
+void Engine::Renderer::renderShadowPass(const glm::mat4& lightSpaceMatrix) const {
+
+	glViewport(0, 0, shadowWidth, shadowHeight);
+	glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+	glClear(GL_DEPTH_BUFFER_BIT);
+
+	shadowShader.use();
+	shadowShader.setMat4("lightSpaceMatrix", lightSpaceMatrix);
+
+	for (const auto& renderComponent : renderComponents) {
+		if (const auto renderComponentPtr = renderComponent.lock()) {
+			for (const auto& entry : renderComponentPtr->getQueueEntries()) {
+				shadowShader.setMat4("model", entry.modelMatrix);
+
+				// Bind VAO and issue draw call directly for each entry
+				glBindVertexArray(entry.VAO);
+				glDrawElements(entry.drawMode, entry.vertexCount, GL_UNSIGNED_INT, nullptr);
+				glBindVertexArray(0);
+			}
+		}
+	}
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glViewport(0, 0, Platform::getFrameBufferSize().x, Platform::getFrameBufferSize().y); // Restore viewport
+}
+
+void Engine::Renderer::renderObjects() {
+	camera.updateCameraVectors();
+	if (!Platform::mouseVisible) camera.processMouseMovement(Input::getMouse().delta);
+
+	glm::mat4 lightProjection = glm::ortho(-20.0f, 20.0f, -20.0f, 20.0f, nearPlane, farPlane);
+	glm::mat4 lightView = glm::lookAt(camera.getPosition().as<Units::Meters>(), glm::vec3(0.f), glm::vec3(0.0f, 1.0f, 0.0f));
+	const glm::mat4 lightSpaceMatrix = lightProjection * lightView;
+
+	renderShadowPass(lightSpaceMatrix);
+
+	// Geometry pass
+	glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	for (const auto& renderComponent : renderComponents) {
+		if (const auto renderComponentPtr = renderComponent.lock()) {
+			for (auto entries = renderComponentPtr->getQueueEntries(); const auto & entry : entries) {
+				renderObject(entry);  // Geometry pass
+			}
+		}
+		else {
+			removeComponent(renderComponent.lock());
+		}
+	}
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	// Collect all LightRenderQueueEntries into lightData for SSBO
+	std::vector<LightShaderEntry> lightData;
+	lightData.reserve(lightSourceComponents.size());
+
+	// Light glow pass
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_ONE, GL_ONE);
+	glDisable(GL_DEPTH_TEST);
+
+	for (const auto& lightSourceComponent : lightSourceComponents) {
+		if (const auto lightSourceComponentPtr = lightSourceComponent.lock()) {
+			for (const auto& entry : lightSourceComponentPtr->getRenderQueueEntries()) {
+				renderObject(entry); 
+				lightData.push_back(entry.shaderEntry);
+			}
+		}
+		else {
+			removeLightSourceComponent(lightSourceComponent.lock());
+		}
+	}
+
+	glEnable(GL_DEPTH_TEST);
+	glDisable(GL_BLEND);
+
+	renderLightingPass(lightData, lightSpaceMatrix);
 }
 
 void Engine::Renderer::beginFrame() {

@@ -16,8 +16,6 @@ namespace Engine {
 		void addLightSourceComponent(const std::shared_ptr<LightSourceComponent>& lightSourceComponent);
 		void removeComponent(const std::shared_ptr<RenderComponent>& renderComponent);
 		void removeLightSourceComponent(const std::shared_ptr<LightSourceComponent>& lightSourceComponent);
-		void renderObject(const RenderQueueEntry& entry);
-		void renderObject(const LightRenderQueueEntry& entry);
 		void renderObjects();
 
 		static void beginFrame();
@@ -25,6 +23,11 @@ namespace Engine {
 
 		Camera& getCamera() { return camera; }
 	private:
+		void renderObject(const RenderQueueEntry& entry);
+		void renderObject(const LightRenderQueueEntry& entry);
+		void renderLightingPass(const std::vector<LightShaderEntry>& lightData, const glm::mat4& lightSpaceMatrix) const;
+		void renderShadowPass(const glm::mat4& lightSpaceMatrix) const;
+
 		Camera camera;
 
 		std::unordered_map<std::string, Material> materials;
@@ -39,5 +42,13 @@ namespace Engine {
 		GLuint ssboLights;
 
 		Shader lightingShader;
+
+		GLuint depthMapFBO;
+		GLuint depthMap;
+		Shader shadowShader;
+		GLsizei shadowWidth = 1024, shadowHeight = 1024;
+
+		const float nearPlane = 1.0f;
+		const float farPlane = 100.0f;
 	};
 }

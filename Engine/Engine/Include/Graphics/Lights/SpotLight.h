@@ -25,6 +25,7 @@ namespace Engine {
 			ImGui::SliderFloat("Quadratic", &quadratic, 0.0f, 1.0f);
 			ImGui::SliderFloat("Cut Off", &cutOff, 0.0f, 1.0f);
 			ImGui::SliderFloat("Outer Cut Off", &outerCutOff, 0.0f, 1.0f);
+			ImGui::End();
 		}
 
 		LightRenderQueueEntry getRenderQueueEntry() const override {
