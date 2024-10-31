@@ -4,7 +4,7 @@
 #include <GLFW/glfw3.h>
 
 #include "Core/Clock.h"
-#include "Platform/Platform.h"
+#include "Platform/GLFW/Window.h"
 
 Engine::Input::Keyboard keyboard;
 Engine::Input::Controller controller;

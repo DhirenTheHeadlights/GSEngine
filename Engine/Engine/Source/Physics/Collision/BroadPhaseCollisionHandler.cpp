@@ -46,11 +46,6 @@ bool Engine::BroadPhaseCollisionHandler::checkCollision(const std::shared_ptr<Ph
 	return false;
 }
 
-void Engine::BroadPhaseCollisionHandler::setCollisionInformation(const BoundingBox& box1, const BoundingBox& box2) {
-	box1.collisionInformation = calculateCollisionInformation(box1, box2);
-	box2.collisionInformation = calculateCollisionInformation(box2, box1);
-}
-
 Engine::CollisionInformation Engine::BroadPhaseCollisionHandler::calculateCollisionInformation(const BoundingBox& box1, const BoundingBox& box2) {
 	CollisionInformation collisionInformation;
 
@@ -92,6 +87,25 @@ Engine::CollisionInformation Engine::BroadPhaseCollisionHandler::calculateCollis
 	collisionInformation.collisionPoint = collisionPoint;
 
 	return collisionInformation;
+}
+
+void Engine::BroadPhaseCollisionHandler::setCollisionInformation(const BoundingBox& box1, const BoundingBox& box2) {
+	box1.collisionInformation = calculateCollisionInformation(box1, box2);
+	box2.collisionInformation = calculateCollisionInformation(box2, box1);
+}
+
+void Engine::BroadPhaseCollisionHandler::addDynamicComponents(const std::weak_ptr<Physics::CollisionComponent>& collisionComponent, const std::weak_ptr<Physics::MotionComponent>& motionComponent) {
+	dynamicObjects.emplace_back(collisionComponent, motionComponent);
+}
+
+void Engine::BroadPhaseCollisionHandler::addObjectComponent(const std::weak_ptr<Physics::CollisionComponent>& collisionComponent) {
+	objects.emplace_back(collisionComponent);
+}
+
+void Engine::BroadPhaseCollisionHandler::removeComponents(const std::weak_ptr<Physics::CollisionComponent>& collisionComponent) {
+	std::erase_if(dynamicObjects, [&collisionComponent](const DynamicObject& requiredComponents) {
+		return requiredComponents.collisionComponent.lock() == collisionComponent.lock();
+		});
 }
 
 void Engine::BroadPhaseCollisionHandler::update() const {

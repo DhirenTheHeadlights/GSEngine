@@ -272,7 +272,7 @@ void Engine::Renderer::renderShadowPass(const glm::mat4& lightSpaceMatrix) const
 
 void Engine::Renderer::renderObjects() {
 	camera.updateCameraVectors();
-	if (!Platform::mouseVisible) camera.processMouseMovement(Input::getMouse().delta);
+	if (!Platform::isMouseVisible()) camera.processMouseMovement(Input::getMouse().delta);
 
 	glm::mat4 lightProjection = glm::ortho(-20.0f, 20.0f, -20.0f, 20.0f, nearPlane, farPlane);
 	glm::mat4 lightView = glm::lookAt(camera.getPosition().as<Units::Meters>(), glm::vec3(0.f), glm::vec3(0.0f, 1.0f, 0.0f));
@@ -330,6 +330,6 @@ void Engine::Renderer::beginFrame() {
 }
 
 void Engine::Renderer::endFrame() {
-	glfwSwapBuffers(Platform::window);
+	glfwSwapBuffers(Platform::getWindow());
 	glfwPollEvents();
 }

@@ -6,7 +6,8 @@ namespace Engine {
 	class SpotLight : public Light {
 	public:
 		SpotLight(const glm::vec3& position, const glm::vec3& direction, const glm::vec3& color, const float intensity, const float constant, const float linear, const float quadratic, const float cutOff, const float outerCutOff)
-			: Light(color, intensity, LightType::Spot), position(position), direction(direction), constant(constant), linear(linear), quadratic(quadratic), cutOff(cutOff), outerCutOff(outerCutOff) {}
+			: Light(color, intensity, LightType::Spot), constant(constant), linear(linear), quadratic(quadratic),
+			  cutOff(cutOff), outerCutOff(outerCutOff), position(position), direction(direction) {}
 
 		float constant;
 		float linear;
