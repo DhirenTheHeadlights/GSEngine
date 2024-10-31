@@ -5,7 +5,7 @@
 #include "Core/Clock.h"
 #include "Core/EngineCore.h"
 #include "Core/JsonParser.h"
-#include "Platform/Platform.h"
+#include "Platform/GLFW/Window.h"
 
 struct WindowState {
 	ImVec2 position;

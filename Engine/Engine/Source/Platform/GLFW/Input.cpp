@@ -1,4 +1,4 @@
-#include "Input/Input.h"
+#include "Platform/GLFW/Input.h"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>

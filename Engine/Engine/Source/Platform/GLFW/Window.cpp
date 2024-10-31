@@ -1,9 +1,9 @@
-#include "Platform/Platform.h"
+#include "Platform/GLFW/Window.h"
 #include <fstream>
 
 
 #include "Core/Clock.h"
-#include "Platform/CallBacks.h"
+#include "Platform/GLFW/Input.h"
 #include "Platform/PermaAssert.h"
 
 #undef max
@@ -28,9 +28,13 @@ void Engine::Platform::initialize() {
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 #endif
 
-	const int w = glfwGetVideoMode(glfwGetPrimaryMonitor())->width;
-	const int h = glfwGetVideoMode(glfwGetPrimaryMonitor())->height;
-	window = glfwCreateWindow(w, h, "SavantShooter", nullptr, nullptr);
+	GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+	const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+	const int w = mode->width;
+	const int h = mode->height;
+
+	// Create window in full screen mode
+	window = glfwCreateWindow(w, h, "SavantShooter", monitor, nullptr);
 	glfwMakeContextCurrent(window);
 	glfwSwapInterval(1);
 
@@ -86,8 +90,12 @@ void Engine::Platform::update() {
 	}
 }
 
-void Engine::Platform::setMousePosRelativeToWindow(const int x, const int y) {
-	glfwSetCursorPos(window, x, y);
+void Engine::Platform::shutdown() {
+	glfwTerminate();
+}
+
+void Engine::Platform::setMousePosRelativeToWindow(const glm::ivec2& position) {
+	glfwSetCursorPos(window, position.x, position.y);
 }
 
 glm::ivec2 Engine::Platform::getFrameBufferSize() {
@@ -106,34 +114,6 @@ glm::ivec2 Engine::Platform::getWindowSize() {
 	int x = 0; int y = 0;
 	glfwGetWindowSize(window, &x, &y);
 	return { x, y };
-}
-
-bool Engine::Platform::writeEntireFile(const char* name, void* buffer, const size_t size) {
-	std::ofstream f(name, std::ios::binary);
-
-	if (!f.is_open()) {
-		return false;
-	}
-
-	f.write(static_cast<char*>(buffer), size);
-
-	f.close();
-
-	return true;
-}
-
-bool Engine::Platform::readEntireFile(const char* name, void* buffer, const size_t size) {
-	std::ifstream f(name, std::ios::binary);
-
-	if (!f.is_open()) {
-		return false;
-	}
-
-	f.read(static_cast<char*>(buffer), size);
-
-	f.close();
-
-	return true;
 }
 
 //https://stackoverflow.com/questions/21421074/how-to-create-a-full-screen-window-on-the-current-monitor-with-glfw
@@ -165,4 +145,55 @@ GLFWmonitor* Engine::Platform::getCurrentMonitor() {
 	}
 
 	return bestMonitor;
+}
+
+/// Callbacks
+
+void Engine::Platform::keyCallback(GLFWwindow* window, const int key, int scancode, const int action, int mods) {
+	// Check if the key exists in the map
+	if (Input::getKeyboard().keys.contains(key)) {
+		// Handle key press and release events
+		if (action == GLFW_PRESS) {
+			Input::Internal::processEventButton(Input::getKeyboard().keys[key], true);
+		}
+		else if (action == GLFW_RELEASE) {
+			Input::Internal::processEventButton(Input::getKeyboard().keys[key], false);
+		}
+	}
+}
+
+void Engine::Platform::mouseCallback(GLFWwindow* window, const int button, const int action, int mods) {
+	if (Input::getMouse().buttons.contains(button)) {
+		// Handle mouse press and release events
+		if (action == GLFW_PRESS) {
+			Input::Internal::processEventButton(Input::getMouse().buttons[button], true);
+		}
+		else if (action == GLFW_RELEASE) {
+			Input::Internal::processEventButton(Input::getMouse().buttons[button], false);
+		}
+	}
+}
+
+void Engine::Platform::windowFocusCallback(GLFWwindow* window, const int focused) {
+	if (focused) {
+		windowFocused = true;
+	}
+	else {
+		windowFocused = false;
+		Input::Internal::resetInputsToZero(); // To reset buttons
+	}
+}
+
+void Engine::Platform::windowSizeCallback(GLFWwindow* window, int x, int y) {
+	Input::Internal::resetInputsToZero();
+}
+
+void Engine::Platform::cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
+	mouseMoved = 1;
+}
+
+void Engine::Platform::characterCallback(GLFWwindow* window, const unsigned int codepoint) {
+	if (codepoint < 127) {
+		Input::Internal::addToTypedInput(codepoint);
+	}
 }

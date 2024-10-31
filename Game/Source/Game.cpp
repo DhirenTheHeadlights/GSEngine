@@ -6,11 +6,6 @@
 #include "Engine.h"
 #include "Player.h"
 
-struct GameData {
-	glm::vec3 playerPosition = {0,0,0};
-
-} gameData;
-
 std::shared_ptr<Game::Arena> arena;
 std::shared_ptr<Game::Player> player;
 
@@ -18,12 +13,8 @@ bool Game::initialize() {
 	arena = std::make_shared<Arena>();
 	player = std::make_shared<Player>();
 
-	Engine::Platform::readEntireFile(RESOURCES_PATH "gameData.data", &gameData, sizeof(GameData));
-
 	arena->initialize();
 	player->initialize();
-
-	//player.setPosition(gameData.playerPosition);
 
 	addObject(player);
 	addObject(arena);
@@ -32,7 +23,11 @@ bool Game::initialize() {
 }
 
 bool Game::update() {
-	Engine::Platform::mouseVisible = Engine::Input::getMouse().buttons[GLFW_MOUSE_BUTTON_MIDDLE].toggled;
+	Engine::Platform::mouseVisible = Engine::Input::getMouse().buttons[GLFW_MOUSE_BUTTON_MIDDLE].toggled || Engine::Input::getKeyboard().keys[GLFW_KEY_N].toggled;
+
+	if (Engine::Input::getKeyboard().keys[GLFW_KEY_ENTER].pressed && Engine::Input::getKeyboard().keys[GLFW_KEY_LEFT_ALT].held) {
+		Engine::Platform::fullScreen = !Engine::Platform::fullScreen;
+	}
 
 	player->update();
 
@@ -79,5 +74,5 @@ bool Game::render() {
 }
 
 bool Game::close() {
-	return Engine::Platform::writeEntireFile(RESOURCES_PATH "gameData.data", &gameData, sizeof(GameData));
+	return true;
 }

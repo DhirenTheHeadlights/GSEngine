@@ -5,11 +5,11 @@
 
 #include "Core/Clock.h"
 #include "Graphics/Renderer.h"
-#include "Input/Input.h"
 #include "Physics/System.h"
 #include "Physics/Collision/BroadPhaseCollisionHandler.h"
 #include "Platform/PermaAssert.h"
-#include "Platform/Platform.h"
+#include "Platform/GLFW/Input.h"
+#include "Platform/GLFW/Window.h"
 
 #define IMGUI 1
 
@@ -102,7 +102,7 @@ void render(const std::function<bool()>& renderFunction) {
 
 void shutdown() {
 	gameShutdownFunction();
-	glfwTerminate();
+	Engine::Platform::shutdown();
 }
 
 void Engine::run(const std::function<bool()>& updateFunction, const std::function<bool()>& renderFunction) {
