@@ -108,7 +108,7 @@ void shutdown() {
 void Engine::run(const std::function<bool()>& updateFunction, const std::function<bool()>& renderFunction) {
 	permaAssertComment(engineState == EngineState::Running, "Engine is not initialized");
 
-	while (engineState == EngineState::Running && !glfwWindowShouldClose(Platform::window)) {
+	while (engineState == EngineState::Running && !Platform::isWindowClosed()) {
 		update(updateFunction);
 		render(renderFunction);
 	}

@@ -1,7 +1,6 @@
 #include "Platform/GLFW/Window.h"
 #include <fstream>
 
-
 #include "Core/Clock.h"
 #include "Platform/GLFW/Input.h"
 #include "Platform/PermaAssert.h"
@@ -9,13 +8,13 @@
 #undef max
 #undef min
 
-GLFWwindow* Engine::Platform::window = nullptr;
+GLFWwindow* window = nullptr;
 
-bool Engine::Platform::currentFullScreen = false;
-bool Engine::Platform::fullScreen = false;
-bool Engine::Platform::windowFocused = true;
-bool Engine::Platform::mouseVisible = true;
-int Engine::Platform::mouseMoved = 0;
+bool currentFullScreen = false;
+bool fullScreen = false;
+bool windowFocused = true;
+bool mouseVisible = true;
+int mouseMoved = 0;
 
 void Engine::Platform::initialize() {
 	permaAssertComment(glfwInit(), "Error initializing GLFW");
@@ -94,29 +93,32 @@ void Engine::Platform::shutdown() {
 	glfwTerminate();
 }
 
-void Engine::Platform::setMousePosRelativeToWindow(const glm::ivec2& position) {
-	glfwSetCursorPos(window, position.x, position.y);
+/// Getters and Setters
+
+GLFWwindow* Engine::Platform::getWindow() {
+	return window;
 }
 
-glm::ivec2 Engine::Platform::getFrameBufferSize() {
-	int x = 0; int y = 0;
-	glfwGetFramebufferSize(window, &x, &y);
-	return { x, y };
+bool Engine::Platform::isWindowClosed() {
+	return glfwWindowShouldClose(window);
 }
 
-glm::ivec2 Engine::Platform::getRelMousePosition() {
-	double x = 0, y = 0;
-	glfwGetCursorPos(window, &x, &y);
-	return { x, y };
+bool Engine::Platform::isFullScreen() {
+	return fullScreen;
 }
 
-glm::ivec2 Engine::Platform::getWindowSize() {
-	int x = 0; int y = 0;
-	glfwGetWindowSize(window, &x, &y);
-	return { x, y };
+bool Engine::Platform::isWindowFocused() {
+	return windowFocused;
 }
 
-//https://stackoverflow.com/questions/21421074/how-to-create-a-full-screen-window-on-the-current-monitor-with-glfw
+bool Engine::Platform::isMouseVisible() {
+	return mouseVisible;
+}
+
+int Engine::Platform::hasMouseMoved() {
+	return mouseMoved;
+}
+
 GLFWmonitor* Engine::Platform::getCurrentMonitor() {
 	int numberOfMonitors;
 	int wx, wy, ww, wh;
@@ -147,12 +149,44 @@ GLFWmonitor* Engine::Platform::getCurrentMonitor() {
 	return bestMonitor;
 }
 
+glm::ivec2 Engine::Platform::getFrameBufferSize() {
+	int x = 0; int y = 0;
+	glfwGetFramebufferSize(window, &x, &y);
+	return { x, y };
+}
+
+glm::ivec2 Engine::Platform::getRelMousePosition() {
+	double x = 0, y = 0;
+	glfwGetCursorPos(window, &x, &y);
+	return { x, y };
+}
+
+glm::ivec2 Engine::Platform::getWindowSize() {
+	int x = 0; int y = 0;
+	glfwGetWindowSize(window, &x, &y);
+	return { x, y };
+}
+
+void Engine::Platform::setMousePosRelativeToWindow(const glm::ivec2& position) {
+	glfwSetCursorPos(window, position.x, position.y);
+}
+
+void Engine::Platform::setFullScreen(bool fs) {
+	fullScreen = fs;
+}
+
+void Engine::Platform::setWindowFocused(bool focused) {
+	windowFocused = focused;
+}
+
+void Engine::Platform::setMouseVisible(bool show) {
+	mouseVisible = show;
+}
+
 /// Callbacks
 
 void Engine::Platform::keyCallback(GLFWwindow* window, const int key, int scancode, const int action, int mods) {
-	// Check if the key exists in the map
 	if (Input::getKeyboard().keys.contains(key)) {
-		// Handle key press and release events
 		if (action == GLFW_PRESS) {
 			Input::Internal::processEventButton(Input::getKeyboard().keys[key], true);
 		}
