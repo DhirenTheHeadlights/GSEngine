@@ -1,4 +1,4 @@
-#include "Platform/ErrorReporting.h"
+#include "Platform/GLFW/ErrorReporting.h"
 #include <iostream>
 
 void GLAPIENTRY glDebugOutput(const GLenum source,

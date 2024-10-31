@@ -4,9 +4,9 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "Core/JsonParser.h"
-#include "Input/Input.h"
-#include "Platform/ErrorReporting.h"
-#include "Platform/Platform.h"
+#include "Platform/GLFW/Input.h"
+#include "Platform/GLFW/ErrorReporting.h"
+#include "Platform/GLFW/Window.h"
 
 void Engine::Renderer::initialize() {
 	enableReportGlErrors();
