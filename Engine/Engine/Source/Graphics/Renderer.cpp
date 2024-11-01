@@ -126,7 +126,7 @@ void Engine::Renderer::addLightSourceComponent(const std::shared_ptr<LightSource
 	lightSourceComponents.push_back(lightSourceComponent);
 }
 
-void Engine::Renderer::removeComponent(const std::shared_ptr<RenderComponent>& renderComponent) {
+void Engine::Renderer::removeRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent) {
 	std::erase_if(renderComponents, [&](const std::weak_ptr<RenderComponent>& component) {
 		return !component.owner_before(renderComponent) && !renderComponent.owner_before(component);
 		});
@@ -291,7 +291,7 @@ void Engine::Renderer::renderObjects() {
 			}
 		}
 		else {
-			removeComponent(renderComponent.lock());
+			removeRenderComponent(renderComponent.lock());
 		}
 	}
 
