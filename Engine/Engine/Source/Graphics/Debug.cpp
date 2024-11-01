@@ -45,7 +45,7 @@ void Engine::Debug::setUpImGui() {
 		style.Colors[ImGuiCol_DockingEmptyBg].w = 0.f;
 	}
 
-	ImGui_ImplGlfw_InitForOpenGL(Platform::getWindow(), true);
+	ImGui_ImplGlfw_InitForOpenGL(Window::getWindow(), true);
 	ImGui_ImplOpenGL3_Init("#version 330");
 
 	JsonParse::parse(JsonParse::loadJson(RESOURCES_PATH "imgui_state.json"), [](const std::string& key, const nlohmann::json& value) {
@@ -87,7 +87,7 @@ void Engine::Debug::renderImGui() {
 
 	ImGui::Render();
 
-	const glm::ivec2 windowSize = Platform::getWindowSize();
+	const glm::ivec2 windowSize = Window::getWindowSize();
 	glViewport(0, 0, windowSize.x, windowSize.y);
 
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());

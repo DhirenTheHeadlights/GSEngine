@@ -46,7 +46,7 @@ void Engine::initialize(const std::function<void()>& initializeFunction, const s
 
 	gameShutdownFunction = shutdownFunction;
 
-	Platform::initialize();
+	Window::initialize();
 	renderer.initialize();
 
 #if IMGUI
@@ -61,7 +61,7 @@ void Engine::initialize(const std::function<void()>& initializeFunction, const s
 void update(const std::function<bool()>& updateFunction) {
 	Engine::addTimer("Engine::update");
 
-	Engine::Platform::update();
+	Engine::Window::update();
 
 #if IMGUI
 	Engine::Debug::updateImGui();
@@ -85,7 +85,7 @@ void update(const std::function<bool()>& updateFunction) {
 void render(const std::function<bool()>& renderFunction) {
 	Engine::addTimer("Engine::render");
 
-	Engine::Renderer::beginFrame();
+	Engine::Window::beginFrame();
 	renderer.renderObjects();
 	Engine::displayTimers();
 
@@ -96,20 +96,20 @@ void render(const std::function<bool()>& renderFunction) {
 #if IMGUI
 	Engine::Debug::renderImGui();
 #endif
-	Engine::Renderer::endFrame();
+	Engine::Window::endFrame();
 
 	Engine::resetTimer("Engine::update");
 }
 
 void shutdown() {
 	gameShutdownFunction();
-	Engine::Platform::shutdown();
+	Engine::Window::shutdown();
 }
 
 void Engine::run(const std::function<bool()>& updateFunction, const std::function<bool()>& renderFunction) {
 	permaAssertComment(engineState == EngineState::Running, "Engine is not initialized");
 
-	while (engineState == EngineState::Running && !Platform::isWindowClosed()) {
+	while (engineState == EngineState::Running && !Window::isWindowClosed()) {
 		update(updateFunction);
 		render(renderFunction);
 	}

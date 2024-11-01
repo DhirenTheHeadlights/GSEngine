@@ -96,8 +96,8 @@ void Engine::Input::Internal::updateAllButtons(const float deltaTime) {
 	}
 
 	// Update Mouse Delta
-	mouse.delta = Platform::getRelMousePosition() - mouse.lastPosition;
-	mouse.lastPosition = Platform::getRelMousePosition();
+	mouse.delta = Window::getRelMousePosition() - mouse.lastPosition;
+	mouse.lastPosition = Window::getRelMousePosition();
 }
 
 void Engine::Input::Internal::resetInputsToZero() {

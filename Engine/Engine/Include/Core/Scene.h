@@ -20,6 +20,9 @@ namespace Engine {
 		void run();
 		void exit();
 	private:
+		void update();
+		void render();
+
 		std::vector<std::weak_ptr<Object>> objects;
 
 		bool isActive = false;

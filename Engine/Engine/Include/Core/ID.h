@@ -35,10 +35,6 @@ namespace Engine {
             return idPtr;
         }
 
-        void registerObject(const std::shared_ptr<ID>& obj) {
-            idMap[obj->id] = obj;
-        }
-
         bool isObjectAlive(const int id) {
             if (const auto it = idMap.find(id); it != idMap.end()) {
                 if (!it->second.expired()) {
@@ -49,8 +45,27 @@ namespace Engine {
             return false;
         }
 
+        std::weak_ptr<ID> grabID (const int id) {
+			if (const auto it = idMap.find(id); it != idMap.end()) {
+				return it->second;
+			}
+			return {};
+		}
+
+        std::weak_ptr<ID> grabID(const std::string& tag) {
+            if (const auto it = tagMap.find(tag); it != tagMap.end()) {
+                return it->second;
+            }
+            return {};
+        }
+
     private:
-        std::vector<std::shared_ptr<ID>> ids;
+        void registerObject(const std::shared_ptr<ID>& obj) {
+            idMap[obj->id] = obj;
+        }
+
+        std::vector<std::weak_ptr<ID>> ids;
         std::unordered_map<int, std::weak_ptr<ID>> idMap;
+        std::unordered_map<std::string, std::weak_ptr<ID>> tagMap;
     };
 }
