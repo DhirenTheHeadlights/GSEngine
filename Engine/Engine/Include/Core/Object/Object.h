@@ -14,8 +14,8 @@ namespace Engine {
 
 		void setSceneId(const std::shared_ptr<ID>& sceneId) { this->sceneId = sceneId; }
 
-		ID* getId() const { return id.get(); }
-		ID* getSceneId() const { return sceneId.get(); }
+		std::weak_ptr<ID> getId() const { return id; }
+		std::weak_ptr<ID> getSceneId() const { return sceneId; }
 
 		bool operator==(const Object& other) const {
 			return id == other.id;

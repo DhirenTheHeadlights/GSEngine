@@ -44,7 +44,5 @@ void Engine::Scene::removeObject(const std::weak_ptr<Object>& object) {
 }
 
 void Engine::Scene::initialize() {
-	for (const auto& object : objects) {
-		
-	}
+	renderer.initialize();
 }
