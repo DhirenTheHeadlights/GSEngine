@@ -20,6 +20,7 @@
 Engine::IDHandler Engine::idManager;
 Engine::BroadPhaseCollisionHandler collisionHandler;
 Engine::Renderer renderer;
+Engine::Physics::System physicsSystem;
 
 Engine::Camera& Engine::getCamera() {
 	return renderer.getCamera();
@@ -70,7 +71,7 @@ void update(const std::function<bool()>& updateFunction) {
 
 	collisionHandler.update();
 
-	Engine::Physics::updateEntities();
+	physicsSystem.update();
 
 	Engine::Input::update();
 
@@ -116,23 +117,9 @@ void Engine::run(const std::function<bool()>& updateFunction, const std::functio
 	shutdown();
 }
 
-template <typename... ComponentTypes, typename Action>									
-void handleComponent(const std::shared_ptr<Engine::Object>& object, Action action) {
-	if ((object->getComponent<ComponentTypes>() && ...)) { // Namespace
-		action(object->getComponent<ComponentTypes>()...);
-	}
-}
-
-template <typename... ComponentTypes, typename SystemType, typename Action>				
-void handleComponent(const std::shared_ptr<Engine::Object>& object, SystemType& system, Action action) {
-	if ((object->getComponent<ComponentTypes>() && ...)) { // Class
-		(system.*action)(object->getComponent<ComponentTypes>()...);
-	}
-}
-
 void Engine::addObject(const std::weak_ptr<Object>& object) {
 	if (const auto objectPtr = object.lock()) {
-		handleComponent<Physics::MotionComponent>(objectPtr, Physics::addComponent);
+		handleComponent<Physics::MotionComponent>(objectPtr, physicsSystem, &Physics::System::addMotionComponent);
 		handleComponent<Physics::CollisionComponent, Physics::MotionComponent>(objectPtr, collisionHandler, &BroadPhaseCollisionHandler::addDynamicComponents);
 		handleComponent<Physics::CollisionComponent>(objectPtr, collisionHandler, &BroadPhaseCollisionHandler::addObjectComponent);
 		handleComponent<RenderComponent>(objectPtr, renderer, &Renderer::addRenderComponent);
@@ -142,9 +129,9 @@ void Engine::addObject(const std::weak_ptr<Object>& object) {
 
 void Engine::removeObject(const std::weak_ptr<Object>& object) {
 	if (const auto objectPtr = object.lock()) {
-		handleComponent<Physics::MotionComponent>(objectPtr, Physics::removeComponent);
+		handleComponent<Physics::MotionComponent>(objectPtr, physicsSystem, &Physics::System::removeMotionComponent);
 		handleComponent<Physics::CollisionComponent>(objectPtr, collisionHandler, &BroadPhaseCollisionHandler::removeComponents);
-		handleComponent<RenderComponent>(objectPtr, renderer, &Renderer::removeComponent);
+		handleComponent<RenderComponent>(objectPtr, renderer, &Renderer::removeRenderComponent);
 		handleComponent<LightSourceComponent>(objectPtr, renderer, &Renderer::removeLightSourceComponent);
 	}
 }
