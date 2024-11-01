@@ -116,22 +116,3 @@ void Engine::run(const std::function<bool()>& updateFunction, const std::functio
 
 	shutdown();
 }
-
-void Engine::addObject(const std::weak_ptr<Object>& object) {
-	if (const auto objectPtr = object.lock()) {
-		handleComponent<Physics::MotionComponent>(objectPtr, physicsSystem, &Physics::System::addMotionComponent);
-		handleComponent<Physics::CollisionComponent, Physics::MotionComponent>(objectPtr, collisionHandler, &BroadPhaseCollisionHandler::addDynamicComponents);
-		handleComponent<Physics::CollisionComponent>(objectPtr, collisionHandler, &BroadPhaseCollisionHandler::addObjectComponent);
-		handleComponent<RenderComponent>(objectPtr, renderer, &Renderer::addRenderComponent);
-		handleComponent<LightSourceComponent>(objectPtr, renderer, &Renderer::addLightSourceComponent);
-	}
-}
-
-void Engine::removeObject(const std::weak_ptr<Object>& object) {
-	if (const auto objectPtr = object.lock()) {
-		handleComponent<Physics::MotionComponent>(objectPtr, physicsSystem, &Physics::System::removeMotionComponent);
-		handleComponent<Physics::CollisionComponent>(objectPtr, collisionHandler, &BroadPhaseCollisionHandler::removeComponents);
-		handleComponent<RenderComponent>(objectPtr, renderer, &Renderer::removeRenderComponent);
-		handleComponent<LightSourceComponent>(objectPtr, renderer, &Renderer::removeLightSourceComponent);
-	}
-}
