@@ -23,10 +23,10 @@ bool Game::initialize() {
 }
 
 bool Game::update() {
-	Engine::Platform::setMouseVisible(Engine::Input::getMouse().buttons[GLFW_MOUSE_BUTTON_MIDDLE].toggled || Engine::Input::getKeyboard().keys[GLFW_KEY_N].toggled);
+	Engine::Window::setMouseVisible(Engine::Input::getMouse().buttons[GLFW_MOUSE_BUTTON_MIDDLE].toggled || Engine::Input::getKeyboard().keys[GLFW_KEY_N].toggled);
 
 	if (Engine::Input::getKeyboard().keys[GLFW_KEY_ENTER].pressed && Engine::Input::getKeyboard().keys[GLFW_KEY_LEFT_ALT].held) {
-		Engine::Platform::setFullScreen(!Engine::Platform::isFullScreen());
+		Engine::Window::setFullScreen(!Engine::Window::isFullScreen());
 	}
 
 	player->update();

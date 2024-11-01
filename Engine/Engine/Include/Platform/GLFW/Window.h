@@ -5,9 +5,11 @@
 
 #include "glm/glm.hpp"
 
-namespace Engine::Platform {
+namespace Engine::Window {
     void initialize();
+    void beginFrame();
     void update();
+    void endFrame();
     void shutdown();
 
     GLFWwindow* getWindow();

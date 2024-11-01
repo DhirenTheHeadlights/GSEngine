@@ -16,7 +16,7 @@ bool windowFocused = true;
 bool mouseVisible = true;
 int mouseMoved = 0;
 
-void Engine::Platform::initialize() {
+void Engine::Window::initialize() {
 	permaAssertComment(glfwInit(), "Error initializing GLFW");
 	glfwWindowHint(GLFW_SAMPLES, 4);
 
@@ -47,7 +47,12 @@ void Engine::Platform::initialize() {
 	permaAssertComment(gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)), "Error Initializing GLAD");
 }
 
-void Engine::Platform::update() {
+void Engine::Window::beginFrame() {
+	glViewport(0, 0, Window::getFrameBufferSize().x, Window::getFrameBufferSize().y);
+	glClear(GL_COLOR_BUFFER_BIT);
+}
+
+void Engine::Window::update() {
 	int w = 0, h = 0;
 	glfwGetWindowSize(window, &w, &h);
 	if (windowFocused && currentFullScreen != fullScreen) {
@@ -89,37 +94,42 @@ void Engine::Platform::update() {
 	}
 }
 
-void Engine::Platform::shutdown() {
+void Engine::Window::endFrame() {
+	glfwSwapBuffers(window);
+	glfwPollEvents();
+}
+
+void Engine::Window::shutdown() {
 	glfwTerminate();
 }
 
 /// Getters and Setters
 
-GLFWwindow* Engine::Platform::getWindow() {
+GLFWwindow* Engine::Window::getWindow() {
 	return window;
 }
 
-bool Engine::Platform::isWindowClosed() {
+bool Engine::Window::isWindowClosed() {
 	return glfwWindowShouldClose(window);
 }
 
-bool Engine::Platform::isFullScreen() {
+bool Engine::Window::isFullScreen() {
 	return fullScreen;
 }
 
-bool Engine::Platform::isWindowFocused() {
+bool Engine::Window::isWindowFocused() {
 	return windowFocused;
 }
 
-bool Engine::Platform::isMouseVisible() {
+bool Engine::Window::isMouseVisible() {
 	return mouseVisible;
 }
 
-int Engine::Platform::hasMouseMoved() {
+int Engine::Window::hasMouseMoved() {
 	return mouseMoved;
 }
 
-GLFWmonitor* Engine::Platform::getCurrentMonitor() {
+GLFWmonitor* Engine::Window::getCurrentMonitor() {
 	int numberOfMonitors;
 	int wx, wy, ww, wh;
 	int mx, my;
@@ -149,43 +159,43 @@ GLFWmonitor* Engine::Platform::getCurrentMonitor() {
 	return bestMonitor;
 }
 
-glm::ivec2 Engine::Platform::getFrameBufferSize() {
+glm::ivec2 Engine::Window::getFrameBufferSize() {
 	int x = 0; int y = 0;
 	glfwGetFramebufferSize(window, &x, &y);
 	return { x, y };
 }
 
-glm::ivec2 Engine::Platform::getRelMousePosition() {
+glm::ivec2 Engine::Window::getRelMousePosition() {
 	double x = 0, y = 0;
 	glfwGetCursorPos(window, &x, &y);
 	return { x, y };
 }
 
-glm::ivec2 Engine::Platform::getWindowSize() {
+glm::ivec2 Engine::Window::getWindowSize() {
 	int x = 0; int y = 0;
 	glfwGetWindowSize(window, &x, &y);
 	return { x, y };
 }
 
-void Engine::Platform::setMousePosRelativeToWindow(const glm::ivec2& position) {
+void Engine::Window::setMousePosRelativeToWindow(const glm::ivec2& position) {
 	glfwSetCursorPos(window, position.x, position.y);
 }
 
-void Engine::Platform::setFullScreen(bool fs) {
+void Engine::Window::setFullScreen(bool fs) {
 	fullScreen = fs;
 }
 
-void Engine::Platform::setWindowFocused(bool focused) {
+void Engine::Window::setWindowFocused(bool focused) {
 	windowFocused = focused;
 }
 
-void Engine::Platform::setMouseVisible(bool show) {
+void Engine::Window::setMouseVisible(bool show) {
 	mouseVisible = show;
 }
 
 /// Callbacks
 
-void Engine::Platform::keyCallback(GLFWwindow* window, const int key, int scancode, const int action, int mods) {
+void Engine::Window::keyCallback(GLFWwindow* window, const int key, int scancode, const int action, int mods) {
 	if (Input::getKeyboard().keys.contains(key)) {
 		if (action == GLFW_PRESS) {
 			Input::Internal::processEventButton(Input::getKeyboard().keys[key], true);
@@ -196,7 +206,7 @@ void Engine::Platform::keyCallback(GLFWwindow* window, const int key, int scanco
 	}
 }
 
-void Engine::Platform::mouseCallback(GLFWwindow* window, const int button, const int action, int mods) {
+void Engine::Window::mouseCallback(GLFWwindow* window, const int button, const int action, int mods) {
 	if (Input::getMouse().buttons.contains(button)) {
 		// Handle mouse press and release events
 		if (action == GLFW_PRESS) {
@@ -208,7 +218,7 @@ void Engine::Platform::mouseCallback(GLFWwindow* window, const int button, const
 	}
 }
 
-void Engine::Platform::windowFocusCallback(GLFWwindow* window, const int focused) {
+void Engine::Window::windowFocusCallback(GLFWwindow* window, const int focused) {
 	if (focused) {
 		windowFocused = true;
 	}
@@ -218,15 +228,15 @@ void Engine::Platform::windowFocusCallback(GLFWwindow* window, const int focused
 	}
 }
 
-void Engine::Platform::windowSizeCallback(GLFWwindow* window, int x, int y) {
+void Engine::Window::windowSizeCallback(GLFWwindow* window, int x, int y) {
 	Input::Internal::resetInputsToZero();
 }
 
-void Engine::Platform::cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
+void Engine::Window::cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
 	mouseMoved = 1;
 }
 
-void Engine::Platform::characterCallback(GLFWwindow* window, const unsigned int codepoint) {
+void Engine::Window::characterCallback(GLFWwindow* window, const unsigned int codepoint) {
 	if (codepoint < 127) {
 		Input::Internal::addToTypedInput(codepoint);
 	}

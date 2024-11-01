@@ -28,7 +28,7 @@ void Engine::Scene::addObject(const std::weak_ptr<Object>& object) {
 
 void Engine::Scene::removeObject(const std::weak_ptr<Object>& object) {
 	if (const auto objectPtr = object.lock()) {
-		if (objectPtr->getSceneId() == id.get()) {
+		if (objectPtr->getSceneId().lock() == id) {
 			handleComponent<Physics::MotionComponent>(objectPtr, physicsSystem, &Physics::System::removeMotionComponent);
 			handleComponent<Physics::CollisionComponent, Physics::MotionComponent>(objectPtr, broadPhaseCollisionHandler, &BroadPhaseCollisionHandler::removeComponents);
 			handleComponent<RenderComponent>(objectPtr, renderer, &Renderer::removeRenderComponent);
@@ -44,5 +44,24 @@ void Engine::Scene::removeObject(const std::weak_ptr<Object>& object) {
 }
 
 void Engine::Scene::initialize() {
-	renderer.initialize();
+	renderer->initialize();
 }
+
+void Engine::Scene::update() {
+	physicsSystem->update();
+	broadPhaseCollisionHandler->update();
+}
+
+void Engine::Scene::render() {
+	renderer->renderObjects();
+}
+
+void Engine::Scene::run() {
+	update();
+	render();
+}
+
+void Engine::Scene::exit() {
+	// TODO
+}
+
