@@ -2,7 +2,11 @@
 
 #include <ranges>
 
-void Engine::SceneHandler::addScene(const std::shared_ptr<Scene>& scene) {
+void Engine::SceneHandler::addScene(const std::shared_ptr<Scene>& scene, const std::string& tag) {
+	if (!scene->getId()) {
+		scene->setId(idHandler.generateID(tag));
+	}
+
 	scenes.insert({ scene->getId(), scene });
 }
 
@@ -33,10 +37,18 @@ void Engine::SceneHandler::deactivateScene(const std::shared_ptr<ID>& sceneId) {
 	}
 }
 
-void Engine::SceneHandler::run() {
+void Engine::SceneHandler::update() {
 	for (const auto& scene : scenes | std::views::values) {
 		if (scene->getActive()) {
-			scene->run();
+			scene->update();
+		}
+	}
+}
+
+void Engine::SceneHandler::render() {
+	for (const auto& scene : scenes | std::views::values) {
+		if (scene->getActive()) {
+			scene->render();
 		}
 	}
 }

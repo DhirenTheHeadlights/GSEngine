@@ -12,6 +12,9 @@ namespace Engine {
 		explicit Object(const std::shared_ptr<ID>& id) : id(id) {}
 		virtual ~Object() = default;
 
+		virtual void update() {}
+		virtual void render() {}
+
 		void setSceneId(const std::shared_ptr<ID>& sceneId) { this->sceneId = sceneId; }
 
 		std::weak_ptr<ID> getId() const { return id; }

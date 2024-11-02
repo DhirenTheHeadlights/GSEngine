@@ -73,9 +73,7 @@ void Game::Player::update() {
 	}
 	
 	Engine::getCamera().setPosition(getComponent<Engine::Physics::MotionComponent>()->position + Engine::Vec3<Engine::Units::Feet>(0.f, 6.f, 0.f));
-}
 
-void Game::Player::render() const {
 	getComponent<Engine::RenderComponent>()->updateBoundingBoxMeshes();
 	getComponent<Engine::RenderComponent>()->setRender(true, true);
 }

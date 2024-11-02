@@ -5,6 +5,8 @@
 #include <string>
 #include <unordered_map>
 
+#include "Platform/PermaAssert.h"
+
 namespace Engine {
     class ID {
     public:
@@ -27,7 +29,9 @@ namespace Engine {
 
     class IDHandler {
     public:
-		std::shared_ptr<ID> generateID(const std::string& tag = "Untagged") {
+		std::shared_ptr<ID> generateID(const std::string& tag) {
+            permaAssertComment(!tagMap.contains(tag), "Duplicate Tag in IDHandler");
+
 	        const int newID = static_cast<int>(ids.size());
             auto idPtr = std::shared_ptr<ID>(new ID(newID, tag));
             ids.push_back(idPtr);
