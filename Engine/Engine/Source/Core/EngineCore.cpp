@@ -18,12 +18,10 @@
 #endif
 
 Engine::IDHandler Engine::idManager;
-Engine::BroadPhaseCollisionHandler collisionHandler;
-Engine::Renderer renderer;
-Engine::Physics::System physicsSystem;
+Engine::SceneHandler Engine::sceneHandler;
 
 Engine::Camera& Engine::getCamera() {
-	return renderer.getCamera();
+	return sceneHandler.getActiveScene()->getCamera();
 }
 
 std::function<void()> gameShutdownFunction = [] {};

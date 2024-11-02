@@ -3,10 +3,10 @@
 #include <string>
 #include <vector>
 
-#include "Core/Object/Object.h
+#include "Core/Object/Object.h"
+#include "Graphics/Renderer.h"
 #include "Physics/System.h"
 #include "Physics/Collision/BroadPhaseCollisionHandler.h"
-#include "Graphics/Renderer.h"
 
 namespace Engine {
 	class Scene {
@@ -19,6 +19,11 @@ namespace Engine {
 		void initialize();
 		void run();
 		void exit();
+
+		std::shared_ptr<ID> getId() const { return id; }
+
+		void setActive(const bool isActive) { this->isActive = isActive; }
+		bool getActive() const { return isActive; }
 	private:
 		void update();
 		void render();

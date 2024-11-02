@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "ID.h"
+#include "SceneHandler.h"
 #include "Graphics/Camera.h"
 #include "Graphics/Renderer.h"
 #include "Object/Object.h"
@@ -20,4 +21,5 @@ namespace Engine {
 	Camera& getCamera();
 
 	extern IDHandler idManager;
+	extern SceneHandler sceneHandler;
 }

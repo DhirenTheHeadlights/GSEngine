@@ -181,15 +181,15 @@ void Engine::Window::setMousePosRelativeToWindow(const glm::ivec2& position) {
 	glfwSetCursorPos(window, position.x, position.y);
 }
 
-void Engine::Window::setFullScreen(bool fs) {
+void Engine::Window::setFullScreen(const bool fs) {
 	fullScreen = fs;
 }
 
-void Engine::Window::setWindowFocused(bool focused) {
+void Engine::Window::setWindowFocused(const bool focused) {
 	windowFocused = focused;
 }
 
-void Engine::Window::setMouseVisible(bool show) {
+void Engine::Window::setMouseVisible(const bool show) {
 	mouseVisible = show;
 }
 
