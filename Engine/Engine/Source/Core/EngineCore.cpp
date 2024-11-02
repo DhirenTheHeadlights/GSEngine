@@ -17,11 +17,11 @@
 #include "Graphics/Debug.h"
 #endif
 
-Engine::IDHandler Engine::idManager;
-Engine::SceneHandler Engine::sceneHandler;
+Engine::IDHandler Engine::idHandler;
+Engine::SceneHandler Engine::sceneHandler(idHandler);
 
 Engine::Camera& Engine::getCamera() {
-	return sceneHandler.getActiveScene()->getCamera();
+	return Renderer::getCamera();
 }
 
 std::function<void()> gameShutdownFunction = [] {};
@@ -45,7 +45,6 @@ void Engine::initialize(const std::function<void()>& initializeFunction, const s
 	gameShutdownFunction = shutdownFunction;
 
 	Window::initialize();
-	renderer.initialize();
 
 #if IMGUI
 	Debug::setUpImGui();
@@ -67,9 +66,7 @@ void update(const std::function<bool()>& updateFunction) {
 
 	Engine::MainClock::update();
 
-	collisionHandler.update();
-
-	physicsSystem.update();
+	Engine::sceneHandler.update();
 
 	Engine::Input::update();
 
@@ -84,7 +81,9 @@ void render(const std::function<bool()>& renderFunction) {
 	Engine::addTimer("Engine::render");
 
 	Engine::Window::beginFrame();
-	renderer.renderObjects();
+
+	Engine::sceneHandler.render();
+
 	Engine::displayTimers();
 
 	if (!renderFunction()) {

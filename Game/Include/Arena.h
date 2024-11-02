@@ -5,10 +5,11 @@
 namespace Game {
 	class Arena final : public Engine::Object {
 	public:
-		Arena() : Object(Engine::idManager.generateID()) {}
+		Arena() : Object(Engine::idHandler.generateID()) {}
 
 		void initialize();
-		void render() const;
+		void update() override;
+		void render() override;
 	private:
 		Engine::Units::Meters
 			width   = 1000.f,
