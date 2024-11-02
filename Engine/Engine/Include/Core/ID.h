@@ -11,7 +11,7 @@ namespace Engine {
         int id;
         std::string tag = "You should never see this message. If you do, something went wrong.";
 
-        ID(const std::string& tag) : id(-1), tag(tag) {}
+        ID(std::string tag) : id(-1), tag(std::move(tag)) {}
 
         bool operator==(const ID& other) const {
             if (id == -1 || other.id == -1) {
@@ -20,14 +20,14 @@ namespace Engine {
             return id == other.id;
         }
     private:
-        explicit ID(const int id, const std::string& tag) : id(id), tag(tag) {}
+        explicit ID(const int id, std::string tag) : id(id), tag(std::move(tag)) {}
 
         friend class IDHandler;
     };
 
     class IDHandler {
     public:
-        std::shared_ptr<ID> generateID(const std::string& tag) {
+		std::shared_ptr<ID> generateID(const std::string& tag = "Untagged") {
 	        const int newID = static_cast<int>(ids.size());
             auto idPtr = std::shared_ptr<ID>(new ID(newID, tag));
             ids.push_back(idPtr);
@@ -62,6 +62,7 @@ namespace Engine {
     private:
         void registerObject(const std::shared_ptr<ID>& obj) {
             idMap[obj->id] = obj;
+			tagMap[obj->tag] = obj;
         }
 
         std::vector<std::weak_ptr<ID>> ids;
