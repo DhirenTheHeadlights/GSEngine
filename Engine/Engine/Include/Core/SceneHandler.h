@@ -5,7 +5,7 @@
 namespace Engine {
 	class SceneHandler {
 	public:
-		SceneHandler(const IDHandler& idHandler) : idHandler(idHandler) {}
+		SceneHandler(IDHandler& idHandler) : idHandler(idHandler) {}
 
 		void addScene(const std::shared_ptr<Scene>& scene, const std::string& tag);
 		void removeScene(const std::shared_ptr<ID>& sceneId);

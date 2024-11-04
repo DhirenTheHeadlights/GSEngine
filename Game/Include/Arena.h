@@ -5,7 +5,7 @@
 namespace Game {
 	class Arena final : public Engine::Object {
 	public:
-		Arena() : Object(Engine::idHandler.generateID()) {}
+		Arena() : Object(Engine::idHandler.generateID("Arena")) {}
 
 		void initialize();
 		void update() override;

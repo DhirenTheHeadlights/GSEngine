@@ -10,7 +10,6 @@
 #include "Physics/Surfaces.h"
 #include "Physics/Vector/Math.h"
 
-
 auto gravity = Engine::Vec3<Engine::Units::MetersPerSecondSquared>(0.f, -9.8f, 0.f);
 
 void Engine::Physics::applyForce(MotionComponent* component, const Vec3<Force>& force) {
