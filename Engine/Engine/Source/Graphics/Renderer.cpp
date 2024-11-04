@@ -8,6 +8,8 @@
 #include "Platform/GLFW/ErrorReporting.h"
 #include "Platform/GLFW/Window.h"
 
+Engine::Camera Engine::Renderer::camera;
+
 void Engine::Renderer::initialize() {
 	enableReportGlErrors();
 
@@ -31,8 +33,8 @@ void Engine::Renderer::initialize() {
 
 	lightingShader.createShaderProgram(shaderPath + "lighting_pass.vert", shaderPath + "lighting_pass.frag");
 
-	const GLsizei screenWidth = Platform::getFrameBufferSize().x;
-	const GLsizei screenHeight = Platform::getFrameBufferSize().y;
+	const GLsizei screenWidth = Window::getFrameBufferSize().x;
+	const GLsizei screenHeight = Window::getFrameBufferSize().y;
 
 	// G-buffer setup
 	glGenFramebuffers(1, &gBuffer);
@@ -126,7 +128,7 @@ void Engine::Renderer::addLightSourceComponent(const std::shared_ptr<LightSource
 	lightSourceComponents.push_back(lightSourceComponent);
 }
 
-void Engine::Renderer::removeComponent(const std::shared_ptr<RenderComponent>& renderComponent) {
+void Engine::Renderer::removeRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent) {
 	std::erase_if(renderComponents, [&](const std::weak_ptr<RenderComponent>& component) {
 		return !component.owner_before(renderComponent) && !renderComponent.owner_before(component);
 		});
@@ -140,7 +142,7 @@ void Engine::Renderer::removeLightSourceComponent(const std::shared_ptr<LightSou
 
 void Engine::Renderer::renderObject(const RenderQueueEntry& entry) {
 	if (const auto it = materials.find(entry.materialKey); it != materials.end()) {
-		it->second.use(camera.getViewMatrix(), glm::perspective(glm::radians(45.0f), static_cast<float>(Platform::getFrameBufferSize().x) / static_cast<float>(Platform::getFrameBufferSize().y), 0.1f, 10000.0f), entry.modelMatrix);
+		it->second.use(camera.getViewMatrix(), glm::perspective(glm::radians(45.0f), static_cast<float>(Window::getFrameBufferSize().x) / static_cast<float>(Window::getFrameBufferSize().y), 0.1f, 10000.0f), entry.modelMatrix);
 		it->second.shader.setVec3("color", entry.color);
 		it->second.shader.setBool("useTexture", entry.textureID != 0);
 
@@ -168,7 +170,7 @@ void Engine::Renderer::renderObject(const LightRenderQueueEntry& entry) {
 		it->second.use();
 		it->second.setMat4("model", glm::mat4(1.0f));
 		it->second.setMat4("view", camera.getViewMatrix());
-		it->second.setMat4("projection", glm::perspective(glm::radians(45.0f), static_cast<float>(Platform::getFrameBufferSize().x) / static_cast<float>(Platform::getFrameBufferSize().y), 0.1f, 10000.0f));
+		it->second.setMat4("projection", glm::perspective(glm::radians(45.0f), static_cast<float>(Window::getFrameBufferSize().x) / static_cast<float>(Window::getFrameBufferSize().y), 0.1f, 10000.0f));
 
 		it->second.setVec3("color", entry.shaderEntry.color);
 		it->second.setFloat("intensity", entry.shaderEntry.intensity);
@@ -267,12 +269,12 @@ void Engine::Renderer::renderShadowPass(const glm::mat4& lightSpaceMatrix) const
 	}
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	glViewport(0, 0, Platform::getFrameBufferSize().x, Platform::getFrameBufferSize().y); // Restore viewport
+	glViewport(0, 0, Window::getFrameBufferSize().x, Window::getFrameBufferSize().y); // Restore viewport
 }
 
 void Engine::Renderer::renderObjects() {
 	camera.updateCameraVectors();
-	if (!Platform::mouseVisible) camera.processMouseMovement(Input::getMouse().delta);
+	if (!Window::isMouseVisible()) camera.processMouseMovement(Input::getMouse().delta);
 
 	glm::mat4 lightProjection = glm::ortho(-20.0f, 20.0f, -20.0f, 20.0f, nearPlane, farPlane);
 	glm::mat4 lightView = glm::lookAt(camera.getPosition().as<Units::Meters>(), glm::vec3(0.f), glm::vec3(0.0f, 1.0f, 0.0f));
@@ -291,7 +293,7 @@ void Engine::Renderer::renderObjects() {
 			}
 		}
 		else {
-			removeComponent(renderComponent.lock());
+			removeRenderComponent(renderComponent.lock());
 		}
 	}
 
@@ -322,14 +324,4 @@ void Engine::Renderer::renderObjects() {
 	glDisable(GL_BLEND);
 
 	renderLightingPass(lightData, lightSpaceMatrix);
-}
-
-void Engine::Renderer::beginFrame() {
-	glViewport(0, 0, Platform::getFrameBufferSize().x, Platform::getFrameBufferSize().y);
-	glClear(GL_COLOR_BUFFER_BIT);
-}
-
-void Engine::Renderer::endFrame() {
-	glfwSwapBuffers(Platform::window);
-	glfwPollEvents();
 }

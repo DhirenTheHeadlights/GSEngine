@@ -10,9 +10,7 @@
 #include "Physics/Surfaces.h"
 #include "Physics/Vector/Math.h"
 
-std::vector<std::weak_ptr<Engine::Physics::MotionComponent>> Engine::Physics::objectMotionComponents;
-
-const Engine::Vec3<Engine::Units::MetersPerSecondSquared> gravity(0.f, -9.8f, 0.f);
+auto gravity = Engine::Vec3<Engine::Units::MetersPerSecondSquared>(0.f, -9.8f, 0.f);
 
 void Engine::Physics::applyForce(MotionComponent* component, const Vec3<Force>& force) {
 	if (isZero(force)) {
@@ -37,6 +35,16 @@ void Engine::Physics::applyImpulse(MotionComponent* component, const Vec3<Force>
 	);
 
 	component->velocity += deltaVelocity;
+}
+
+void Engine::Physics::System::addMotionComponent(const std::shared_ptr<MotionComponent>& object) {
+	objectMotionComponents.push_back(object);
+}
+
+void Engine::Physics::System::removeMotionComponent(const std::shared_ptr<MotionComponent>& object) {
+	std::erase_if(objectMotionComponents, [&](const std::weak_ptr<MotionComponent>& obj) {
+		return !obj.owner_before(object) && !object.owner_before(obj);
+		});
 }
 
 void updateGravity(Engine::Physics::MotionComponent* component) {
@@ -120,7 +128,7 @@ void updatePosition(Engine::Physics::MotionComponent* component) {
 	);
 }
 
-void Engine::Physics::updateEntity(MotionComponent* component) {
+void Engine::Physics::System::updateEntity(MotionComponent* component) {
 	if (isZero(component->velocity) && isZero(component->acceleration)) {
 		component->moving = false;
 	}
@@ -134,7 +142,7 @@ void Engine::Physics::updateEntity(MotionComponent* component) {
 	updatePosition(component);
 }
 
-void Engine::Physics::updateEntities() {
+void Engine::Physics::System::update() {
 	std::erase_if(objectMotionComponents, [](const std::weak_ptr<MotionComponent>& obj) {
 		return obj.expired();
 	});
@@ -178,7 +186,7 @@ void resolveAxisCollision(
 	}
 }
 
-void Engine::Physics::resolveCollision(BoundingBox& dynamicBoundingBox, const std::weak_ptr<MotionComponent>& dynamicMotionComponent, const CollisionInformation& collisionInfo) {
+void Engine::Physics::System::resolveCollision(BoundingBox& dynamicBoundingBox, const std::weak_ptr<MotionComponent>& dynamicMotionComponent, const CollisionInformation& collisionInfo) {
 	// Determine which axis to resolve using collisionInfo
 	resolveAxisCollision(collisionInfo, dynamicMotionComponent, getSurfaceProperties(Surfaces::SurfaceType::Concrete));
 }

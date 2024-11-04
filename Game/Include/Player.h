@@ -5,12 +5,11 @@
 namespace Game {
 	class Player final : public Engine::Object {
 	public:
-		Player() : Object(Engine::idManager.generateID()) {}
+		Player() : Object(Engine::idHandler.generateID("Player")) {}
 
 		void initialize();
 
-		void update();
-		void render() const;
+		void update() override;
 
 		bool jetpack = false;
 	private:
