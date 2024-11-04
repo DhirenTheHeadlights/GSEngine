@@ -4,28 +4,29 @@ cmake_minimum_required(VERSION 3.16)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-project(editor)
+project(Editor)
 
-# Gather editor source files
-file(GLOB_RECURSE editor_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Source/*.cpp")
+# Gather Editor source files
+file(GLOB_RECURSE Editor_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Source/*.cpp")
 
-# Gather editor header files
-file(GLOB_RECURSE editor_HEADERS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Include/*.h")
+# Gather Editor header files
+file(GLOB_RECURSE Editor_HEADERS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Include/*.h")
 
-# Add the editor as an executable
-add_executable(editor ${editor_SOURCES} ${editor_HEADERS})
+# Add the Editor as an executable
+add_executable(Editor ${Editor_SOURCES} ${Editor_HEADERS})
 
-# Include directories for editor headers
-target_include_directories(editor PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/Include/")
+# Include directories for Editor headers
+target_include_directories(Editor PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/Include/")
 
-# Link against the engine (the engine handles all third-party libraries)
-target_link_libraries(editor PRIVATE Engine)
+# Link against the Engine (the Engine handles all third-party libraries) and the GoonSquadLib
+target_link_libraries(Editor PRIVATE Engine)
+target_link_libraries(Editor PRIVATE GoonSquadLib)
 
 # Define macros for resource paths based on the build type
 if(PRODUCTION_BUILD)
-    target_compile_definitions(editor PUBLIC RESOURCES_PATH="./editor/Resources/" PRODUCTION_BUILD=1)
+    target_compile_definitions(Editor PUBLIC RESOURCES_PATH="./Editor/Resources/" PRODUCTION_BUILD=1)
 else()
-    target_compile_definitions(editor PUBLIC RESOURCES_PATH="${CMAKE_CURRENT_SOURCE_DIR}/editor/Resources/" PRODUCTION_BUILD=0)
+    target_compile_definitions(Editor PUBLIC RESOURCES_PATH="${CMAKE_CURRENT_SOURCE_DIR}/Editor/Resources/" PRODUCTION_BUILD=0)
 endif()
 
 # Set MSVC-specific compile options
