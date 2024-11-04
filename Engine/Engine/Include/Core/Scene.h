@@ -11,7 +11,7 @@
 namespace Engine {
 	class Scene {
 	public:
-		Scene() : {}
+		Scene() = default;
 		Scene(const std::shared_ptr<ID>& id) : id(id) {}
 
 		void addObject(const std::weak_ptr<Object>& object);

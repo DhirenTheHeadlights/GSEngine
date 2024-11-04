@@ -8,6 +8,8 @@
 #include "Platform/GLFW/ErrorReporting.h"
 #include "Platform/GLFW/Window.h"
 
+Engine::Camera Engine::Renderer::camera;
+
 void Engine::Renderer::initialize() {
 	enableReportGlErrors();
 
