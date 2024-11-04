@@ -1,5 +1,5 @@
-#include "Engine/Engine/Include/Engine.h"
-#include "Game/Include/Game.h"
+#include "Engine.h"
+#include "Game.h"
 
 int main() {
 	Engine::initialize(Game::initialize, Game::close);

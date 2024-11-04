@@ -64,8 +64,8 @@ inline void assertFuncInternal(
         "\n\nPress retry to debug.",
         fileName, lineNumber, expression, comment);
 
-    int action = MessageBox(0, c, "Platform Layer", MB_TASKMODAL
-        | MB_ICONHAND | MB_ABORTRETRYIGNORE | MB_SETFOREGROUND);
+    const int action = MessageBox(nullptr, c, "Platform Layer", MB_TASKMODAL
+                                  | MB_ICONHAND | MB_ABORTRETRYIGNORE | MB_SETFOREGROUND);
 
     switch (action) {
     case IDABORT:
