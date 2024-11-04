@@ -110,9 +110,11 @@ void Game::Arena::initialize() {
 	addComponent(lightSourceComponent);
 }
 
-void Game::Arena::render() const {
-	getComponent<Engine::RenderComponent>()->setRender(true, true);
+void Game::Arena::update() {
+    getComponent<Engine::RenderComponent>()->setRender(true, true);
+}
 
+void Game::Arena::render() {
     for (const auto& light : getComponent<Engine::LightSourceComponent>()->getLights()) {
         light->showDebugMenu();
     }

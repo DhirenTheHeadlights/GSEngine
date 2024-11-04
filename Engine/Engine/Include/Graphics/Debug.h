@@ -4,7 +4,6 @@
 
 #include "imgui.h"
 
-
 namespace Engine::Debug {
 	void setUpImGui();
 	void updateImGui();

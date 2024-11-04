@@ -16,20 +16,22 @@ bool Game::initialize() {
 	arena->initialize();
 	player->initialize();
 
-	addObject(player);
-	addObject(arena);
+	const auto scene1 = std::make_shared<Engine::Scene>();
+
+	scene1->addObject(arena);
+	scene1->addObject(player);
+
+	Engine::sceneHandler.addScene(scene1, "Scene1");
 
 	return true;
 }
 
 bool Game::update() {
-	Engine::Platform::mouseVisible = Engine::Input::getMouse().buttons[GLFW_MOUSE_BUTTON_MIDDLE].toggled || Engine::Input::getKeyboard().keys[GLFW_KEY_N].toggled;
+	Engine::Window::setMouseVisible(Engine::Input::getMouse().buttons[GLFW_MOUSE_BUTTON_MIDDLE].toggled || Engine::Input::getKeyboard().keys[GLFW_KEY_N].toggled);
 
 	if (Engine::Input::getKeyboard().keys[GLFW_KEY_ENTER].pressed && Engine::Input::getKeyboard().keys[GLFW_KEY_LEFT_ALT].held) {
-		Engine::Platform::fullScreen = !Engine::Platform::fullScreen;
+		Engine::Window::setFullScreen(!Engine::Window::isFullScreen());
 	}
-
-	player->update();
 
 	if (Engine::Input::getKeyboard().keys[GLFW_KEY_ESCAPE].pressed) {
 		if (close()) {
@@ -40,13 +42,14 @@ bool Game::update() {
 		return false;
 	}
 
+	if (const auto scene1Id = Engine::idHandler.grabID("Scene1").lock()) {
+		Engine::sceneHandler.activateScene(scene1Id);
+	}
+
 	return true;
 }
 
 bool Game::render() {
-	player->render();
-	arena->render();
-
 	Engine::Debug::createWindow("Game Data");
 
 	ImGui::Text("FPS: %d", Engine::MainClock::getFrameRate());

@@ -17,12 +17,11 @@
 #include "Graphics/Debug.h"
 #endif
 
-Engine::IDHandler Engine::idManager;
-Engine::BroadPhaseCollisionHandler collisionHandler;
-Engine::Renderer renderer;
+Engine::IDHandler Engine::idHandler;
+Engine::SceneHandler Engine::sceneHandler(idHandler);
 
 Engine::Camera& Engine::getCamera() {
-	return renderer.getCamera();
+	return Renderer::getCamera();
 }
 
 std::function<void()> gameShutdownFunction = [] {};
@@ -45,8 +44,7 @@ void Engine::initialize(const std::function<void()>& initializeFunction, const s
 
 	gameShutdownFunction = shutdownFunction;
 
-	Platform::initialize();
-	renderer.initialize();
+	Window::initialize();
 
 #if IMGUI
 	Debug::setUpImGui();
@@ -60,7 +58,7 @@ void Engine::initialize(const std::function<void()>& initializeFunction, const s
 void update(const std::function<bool()>& updateFunction) {
 	Engine::addTimer("Engine::update");
 
-	Engine::Platform::update();
+	Engine::Window::update();
 
 #if IMGUI
 	Engine::Debug::updateImGui();
@@ -68,9 +66,7 @@ void update(const std::function<bool()>& updateFunction) {
 
 	Engine::MainClock::update();
 
-	collisionHandler.update();
-
-	Engine::Physics::updateEntities();
+	Engine::sceneHandler.update();
 
 	Engine::Input::update();
 
@@ -84,8 +80,10 @@ void update(const std::function<bool()>& updateFunction) {
 void render(const std::function<bool()>& renderFunction) {
 	Engine::addTimer("Engine::render");
 
-	Engine::Renderer::beginFrame();
-	renderer.renderObjects();
+	Engine::Window::beginFrame();
+
+	Engine::sceneHandler.render();
+
 	Engine::displayTimers();
 
 	if (!renderFunction()) {
@@ -95,56 +93,23 @@ void render(const std::function<bool()>& renderFunction) {
 #if IMGUI
 	Engine::Debug::renderImGui();
 #endif
-	Engine::Renderer::endFrame();
+	Engine::Window::endFrame();
 
 	Engine::resetTimer("Engine::update");
 }
 
 void shutdown() {
 	gameShutdownFunction();
-	Engine::Platform::shutdown();
+	Engine::Window::shutdown();
 }
 
 void Engine::run(const std::function<bool()>& updateFunction, const std::function<bool()>& renderFunction) {
 	permaAssertComment(engineState == EngineState::Running, "Engine is not initialized");
 
-	while (engineState == EngineState::Running && !glfwWindowShouldClose(Platform::window)) {
+	while (engineState == EngineState::Running && !Window::isWindowClosed()) {
 		update(updateFunction);
 		render(renderFunction);
 	}
 
 	shutdown();
-}
-
-template <typename... ComponentTypes, typename Action>									
-void handleComponent(const std::shared_ptr<Engine::Object>& object, Action action) {
-	if ((object->getComponent<ComponentTypes>() && ...)) { // Namespace
-		action(object->getComponent<ComponentTypes>()...);
-	}
-}
-
-template <typename... ComponentTypes, typename SystemType, typename Action>				
-void handleComponent(const std::shared_ptr<Engine::Object>& object, SystemType& system, Action action) {
-	if ((object->getComponent<ComponentTypes>() && ...)) { // Class
-		(system.*action)(object->getComponent<ComponentTypes>()...);
-	}
-}
-
-void Engine::addObject(const std::weak_ptr<Object>& object) {
-	if (const auto objectPtr = object.lock()) {
-		handleComponent<Physics::MotionComponent>(objectPtr, Physics::addComponent);
-		handleComponent<Physics::CollisionComponent, Physics::MotionComponent>(objectPtr, collisionHandler, &BroadPhaseCollisionHandler::addDynamicComponents);
-		handleComponent<Physics::CollisionComponent>(objectPtr, collisionHandler, &BroadPhaseCollisionHandler::addObjectComponent);
-		handleComponent<RenderComponent>(objectPtr, renderer, &Renderer::addRenderComponent);
-		handleComponent<LightSourceComponent>(objectPtr, renderer, &Renderer::addLightSourceComponent);
-	}
-}
-
-void Engine::removeObject(const std::weak_ptr<Object>& object) {
-	if (const auto objectPtr = object.lock()) {
-		handleComponent<Physics::MotionComponent>(objectPtr, Physics::removeComponent);
-		handleComponent<Physics::CollisionComponent>(objectPtr, collisionHandler, &BroadPhaseCollisionHandler::removeComponents);
-		handleComponent<RenderComponent>(objectPtr, renderer, &Renderer::removeComponent);
-		handleComponent<LightSourceComponent>(objectPtr, renderer, &Renderer::removeLightSourceComponent);
-	}
 }

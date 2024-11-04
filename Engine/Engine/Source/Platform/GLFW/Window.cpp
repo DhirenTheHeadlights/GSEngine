@@ -1,7 +1,6 @@
 #include "Platform/GLFW/Window.h"
 #include <fstream>
 
-
 #include "Core/Clock.h"
 #include "Platform/GLFW/Input.h"
 #include "Platform/PermaAssert.h"
@@ -9,15 +8,15 @@
 #undef max
 #undef min
 
-GLFWwindow* Engine::Platform::window = nullptr;
+GLFWwindow* window = nullptr;
 
-bool Engine::Platform::currentFullScreen = false;
-bool Engine::Platform::fullScreen = false;
-bool Engine::Platform::windowFocused = true;
-bool Engine::Platform::mouseVisible = true;
-int Engine::Platform::mouseMoved = 0;
+bool currentFullScreen = false;
+bool fullScreen = false;
+bool windowFocused = true;
+bool mouseVisible = true;
+int mouseMoved = 0;
 
-void Engine::Platform::initialize() {
+void Engine::Window::initialize() {
 	permaAssertComment(glfwInit(), "Error initializing GLFW");
 	glfwWindowHint(GLFW_SAMPLES, 4);
 
@@ -48,7 +47,12 @@ void Engine::Platform::initialize() {
 	permaAssertComment(gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)), "Error Initializing GLAD");
 }
 
-void Engine::Platform::update() {
+void Engine::Window::beginFrame() {
+	glViewport(0, 0, Window::getFrameBufferSize().x, Window::getFrameBufferSize().y);
+	glClear(GL_COLOR_BUFFER_BIT);
+}
+
+void Engine::Window::update() {
 	int w = 0, h = 0;
 	glfwGetWindowSize(window, &w, &h);
 	if (windowFocused && currentFullScreen != fullScreen) {
@@ -90,34 +94,42 @@ void Engine::Platform::update() {
 	}
 }
 
-void Engine::Platform::shutdown() {
+void Engine::Window::endFrame() {
+	glfwSwapBuffers(window);
+	glfwPollEvents();
+}
+
+void Engine::Window::shutdown() {
 	glfwTerminate();
 }
 
-void Engine::Platform::setMousePosRelativeToWindow(const glm::ivec2& position) {
-	glfwSetCursorPos(window, position.x, position.y);
+/// Getters and Setters
+
+GLFWwindow* Engine::Window::getWindow() {
+	return window;
 }
 
-glm::ivec2 Engine::Platform::getFrameBufferSize() {
-	int x = 0; int y = 0;
-	glfwGetFramebufferSize(window, &x, &y);
-	return { x, y };
+bool Engine::Window::isWindowClosed() {
+	return glfwWindowShouldClose(window);
 }
 
-glm::ivec2 Engine::Platform::getRelMousePosition() {
-	double x = 0, y = 0;
-	glfwGetCursorPos(window, &x, &y);
-	return { x, y };
+bool Engine::Window::isFullScreen() {
+	return fullScreen;
 }
 
-glm::ivec2 Engine::Platform::getWindowSize() {
-	int x = 0; int y = 0;
-	glfwGetWindowSize(window, &x, &y);
-	return { x, y };
+bool Engine::Window::isWindowFocused() {
+	return windowFocused;
 }
 
-//https://stackoverflow.com/questions/21421074/how-to-create-a-full-screen-window-on-the-current-monitor-with-glfw
-GLFWmonitor* Engine::Platform::getCurrentMonitor() {
+bool Engine::Window::isMouseVisible() {
+	return mouseVisible;
+}
+
+int Engine::Window::hasMouseMoved() {
+	return mouseMoved;
+}
+
+GLFWmonitor* Engine::Window::getCurrentMonitor() {
 	int numberOfMonitors;
 	int wx, wy, ww, wh;
 	int mx, my;
@@ -147,12 +159,44 @@ GLFWmonitor* Engine::Platform::getCurrentMonitor() {
 	return bestMonitor;
 }
 
+glm::ivec2 Engine::Window::getFrameBufferSize() {
+	int x = 0; int y = 0;
+	glfwGetFramebufferSize(window, &x, &y);
+	return { x, y };
+}
+
+glm::ivec2 Engine::Window::getRelMousePosition() {
+	double x = 0, y = 0;
+	glfwGetCursorPos(window, &x, &y);
+	return { x, y };
+}
+
+glm::ivec2 Engine::Window::getWindowSize() {
+	int x = 0; int y = 0;
+	glfwGetWindowSize(window, &x, &y);
+	return { x, y };
+}
+
+void Engine::Window::setMousePosRelativeToWindow(const glm::ivec2& position) {
+	glfwSetCursorPos(window, position.x, position.y);
+}
+
+void Engine::Window::setFullScreen(const bool fs) {
+	fullScreen = fs;
+}
+
+void Engine::Window::setWindowFocused(const bool focused) {
+	windowFocused = focused;
+}
+
+void Engine::Window::setMouseVisible(const bool show) {
+	mouseVisible = show;
+}
+
 /// Callbacks
 
-void Engine::Platform::keyCallback(GLFWwindow* window, const int key, int scancode, const int action, int mods) {
-	// Check if the key exists in the map
+void Engine::Window::keyCallback(GLFWwindow* window, const int key, int scancode, const int action, int mods) {
 	if (Input::getKeyboard().keys.contains(key)) {
-		// Handle key press and release events
 		if (action == GLFW_PRESS) {
 			Input::Internal::processEventButton(Input::getKeyboard().keys[key], true);
 		}
@@ -162,7 +206,7 @@ void Engine::Platform::keyCallback(GLFWwindow* window, const int key, int scanco
 	}
 }
 
-void Engine::Platform::mouseCallback(GLFWwindow* window, const int button, const int action, int mods) {
+void Engine::Window::mouseCallback(GLFWwindow* window, const int button, const int action, int mods) {
 	if (Input::getMouse().buttons.contains(button)) {
 		// Handle mouse press and release events
 		if (action == GLFW_PRESS) {
@@ -174,7 +218,7 @@ void Engine::Platform::mouseCallback(GLFWwindow* window, const int button, const
 	}
 }
 
-void Engine::Platform::windowFocusCallback(GLFWwindow* window, const int focused) {
+void Engine::Window::windowFocusCallback(GLFWwindow* window, const int focused) {
 	if (focused) {
 		windowFocused = true;
 	}
@@ -184,15 +228,15 @@ void Engine::Platform::windowFocusCallback(GLFWwindow* window, const int focused
 	}
 }
 
-void Engine::Platform::windowSizeCallback(GLFWwindow* window, int x, int y) {
+void Engine::Window::windowSizeCallback(GLFWwindow* window, int x, int y) {
 	Input::Internal::resetInputsToZero();
 }
 
-void Engine::Platform::cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
+void Engine::Window::cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
 	mouseMoved = 1;
 }
 
-void Engine::Platform::characterCallback(GLFWwindow* window, const unsigned int codepoint) {
+void Engine::Window::characterCallback(GLFWwindow* window, const unsigned int codepoint) {
 	if (codepoint < 127) {
 		Input::Internal::addToTypedInput(codepoint);
 	}
