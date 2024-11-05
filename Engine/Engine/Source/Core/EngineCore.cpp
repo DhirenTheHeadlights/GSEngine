@@ -5,7 +5,6 @@
 
 #include "Core/Clock.h"
 #include "Graphics/Renderer.h"
-#include "Physics/System.h"
 #include "Physics/Collision/BroadPhaseCollisionHandler.h"
 #include "Platform/PermaAssert.h"
 #include "Platform/GLFW/Input.h"
