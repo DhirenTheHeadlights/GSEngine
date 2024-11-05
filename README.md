@@ -4,6 +4,8 @@ This is a dual development project for a simulation engine and a 3-D shooter gam
 
 ## Features
 - OpenGL, GLFW, and ImGui window/context creation
+- Unit system for common units (force, length, etc.) wrapping glm's vector implemenations
+  - Gives complete clarity in mathematical equations & dimentional analysis used; also allows for units to show on debug outputs
 - Physics engine
 - Broad phase collision using axis aligned bounding boxes
 - Entity component system
