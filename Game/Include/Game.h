@@ -5,4 +5,6 @@ namespace Game {
 	bool update();
 	bool render();
 	bool close();
+
+	void setResizingEnabled(bool enabled);
 }

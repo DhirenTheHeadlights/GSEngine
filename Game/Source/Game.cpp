@@ -9,6 +9,12 @@
 std::shared_ptr<Game::Arena> arena;
 std::shared_ptr<Game::Player> player;
 
+bool resizingEnabled = true;
+
+void Game::setResizingEnabled(const bool enabled) {
+	resizingEnabled = enabled;
+}
+
 bool Game::initialize() {
 	arena = std::make_shared<Arena>();
 	player = std::make_shared<Player>();
@@ -29,7 +35,7 @@ bool Game::initialize() {
 bool Game::update() {
 	Engine::Window::setMouseVisible(Engine::Input::getMouse().buttons[GLFW_MOUSE_BUTTON_MIDDLE].toggled || Engine::Input::getKeyboard().keys[GLFW_KEY_N].toggled);
 
-	if (Engine::Input::getKeyboard().keys[GLFW_KEY_ENTER].pressed && Engine::Input::getKeyboard().keys[GLFW_KEY_LEFT_ALT].held) {
+	if (Engine::Input::getKeyboard().keys[GLFW_KEY_ENTER].pressed && Engine::Input::getKeyboard().keys[GLFW_KEY_LEFT_ALT].held && resizingEnabled) {
 		Engine::Window::setFullScreen(!Engine::Window::isFullScreen());
 	}
 

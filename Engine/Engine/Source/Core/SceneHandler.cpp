@@ -46,10 +46,18 @@ void Engine::SceneHandler::update() {
 }
 
 void Engine::SceneHandler::render() {
+	for (const auto& renderingInterface : renderingInterfaces) {
+		renderingInterface->onPreRender();
+	}
+
 	for (const auto& scene : scenes | std::views::values) {
 		if (scene->getActive()) {
 			scene->render();
 		}
+	}
+
+	for (const auto& renderingInterface : renderingInterfaces) {
+		renderingInterface->onPostRender();
 	}
 }
 
@@ -58,6 +66,16 @@ void Engine::SceneHandler::exit() {
 		if (scene->getActive()) {
 			scene->exit();
 		}
+	}
+}
+
+void Engine::SceneHandler::addRenderingInterface(const std::shared_ptr<RenderingInterface>& renderingInterface) {
+		renderingInterfaces.push_back(renderingInterface);
+}
+
+void Engine::SceneHandler::removeRenderingInterface(const std::shared_ptr<RenderingInterface>& renderingInterface) {
+	if (const auto it = std::ranges::find(renderingInterfaces, renderingInterface); it != renderingInterfaces.end()) {
+		renderingInterfaces.erase(it);
 	}
 }
 

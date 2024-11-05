@@ -1,30 +1,46 @@
 cmake_minimum_required(VERSION 3.16)
 
+# Set C++ standard
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Set production build option
+# Define the project
+project(GoonSquadProject)
+
+# Option for production build
 option(PRODUCTION_BUILD "Make this a production build" OFF)
 
-project(GoonSquad)
+# Include directories
+set(INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Include")
 
 # Gather game source and header files
 file(GLOB_RECURSE GAME_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Source/*.cpp")
-file(GLOB_RECURSE GAME_HEADERS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Include/*.h")
+file(GLOB_RECURSE GAME_HEADERS CONFIGURE_DEPENDS "${INCLUDE_DIR}/*.h")
 
-# Add the game as an executable
+# GoonSquadLib: Add as a static library
+add_library(GoonSquadLib STATIC ${GAME_SOURCES} ${GAME_HEADERS})
+
+# Include directories for GoonSquadLib
+target_include_directories(GoonSquadLib PUBLIC "${INCLUDE_DIR}")
+
+# Link against the Engine for GoonSquadLib
+target_link_libraries(GoonSquadLib PRIVATE Engine)
+
+# GoonSquad: Add as an executable
 add_executable(GoonSquad ${GAME_SOURCES} ${GAME_HEADERS})
 
-# Include directories for game headers
-target_include_directories(GoonSquad PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/Include/")
+# Include directories for GoonSquad
+target_include_directories(GoonSquad PUBLIC "${INCLUDE_DIR}")
 
-# Link against the engine
-target_link_libraries(GoonSquad PRIVATE Engine)
+# Link against GoonSquadLib and Engine for GoonSquad
+target_link_libraries(GoonSquad PRIVATE GoonSquadLib Engine)
 
-# Define macros for resource paths based on the build type
+# Define macros for resource paths based on build type
 if(PRODUCTION_BUILD)
+    target_compile_definitions(GoonSquadLib PUBLIC RESOURCES_PATH="./Game/Resources/" PRODUCTION_BUILD=1)
     target_compile_definitions(GoonSquad PUBLIC RESOURCES_PATH="./Game/Resources/" PRODUCTION_BUILD=1)
 else()
+    target_compile_definitions(GoonSquadLib PUBLIC RESOURCES_PATH="${CMAKE_CURRENT_SOURCE_DIR}/Game/Resources/" PRODUCTION_BUILD=0)
     target_compile_definitions(GoonSquad PUBLIC RESOURCES_PATH="${CMAKE_CURRENT_SOURCE_DIR}/Game/Resources/" PRODUCTION_BUILD=0)
 endif()
 
@@ -33,7 +49,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Release>:Release>")
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     add_compile_options(/arch:AVX2) # SIMD optimizations
-    add_compile_options(/MP) # Multi-core compilation
+    add_compile_options(/MP)        # Multi-core compilation
 
     # (Optional) Function to create source groups for Visual Studio
     function(create_source_groups BASE_DIR REMOVE_PREFIX BASE_GROUP)
