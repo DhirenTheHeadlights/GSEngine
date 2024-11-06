@@ -1,11 +1,21 @@
 #pragma once
 
+#include <memory>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
 #include "glm/glm.hpp"
 
 namespace Engine::Window {
+    struct RenderingInterface {
+        virtual ~RenderingInterface() = default;
+        virtual void onPreRender() = 0;
+        virtual void onPostRender() = 0;
+    };
+
+    void addRenderingInterface(const std::shared_ptr<RenderingInterface>& renderingInterface);
+    void removeRenderingInterface(const std::shared_ptr<RenderingInterface>& renderingInterface);
+
     void initialize();
     void beginFrame();
     void update();

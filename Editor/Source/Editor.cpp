@@ -1,10 +1,19 @@
 #include "Editor.h"
 
-GLuint fbo;            // FBO ID
-GLuint fboTexture;     // Texture attached to the FBO
-GLuint depthBuffer;    // Depth buffer for the FBO
+#include "imguiThemes.h"
+#include "backends/imgui_impl_glfw.h"
+#include "backends/imgui_impl_opengl3.h"
+
+GLuint fbo;                  // FBO ID
+GLuint fboTexture;           // Texture attached to the FBO
+GLuint depthBuffer;          // Depth buffer for the FBO
 int viewportWidth = 800;     // Width of the viewport
 int viewportHeight = 600;    // Height of the viewport
+
+void Editor::initialize() {
+	Engine::Debug::setImguiSaveFilePath(RESOURCES_PATH "imgui_state.json");
+	Engine::Debug::setUpImGui();
+}
 
 void Editor::bindFbo() {
     // Generate and bind the FBO
@@ -24,21 +33,27 @@ void Editor::bindFbo() {
     glBindRenderbuffer(GL_RENDERBUFFER, depthBuffer);
     glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, viewportWidth, viewportHeight);
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthBuffer);
-
-    glBindFramebuffer(GL_FRAMEBUFFER, 0); // Unbind the FBO
 }
 
 void Editor::unbindFbo() {
-	glDeleteFramebuffers(1, &fbo);
-    glDeleteTextures(1, &fboTexture);
-    glDeleteRenderbuffers(1, &depthBuffer);
-}
-
-void Editor::renderImGuiViewport() {
-    ImGui::Image(reinterpret_cast<void*>(static_cast<intptr_t>(fboTexture)), ImVec2(static_cast<float>(viewportWidth), static_cast<float>(viewportHeight)));
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 void Editor::update() {
-	
+	Engine::Debug::updateImGui();
+}
+
+void Editor::render() {
+    if (fbo != 0) {
+        ImGui::Image(reinterpret_cast<void*>(static_cast<intptr_t>(fboTexture)), ImVec2(static_cast<float>(viewportWidth), static_cast<float>(viewportHeight)));
+    }
+
+	Engine::Debug::renderImGui();
+}
+
+void Editor::exit() {
+    glDeleteFramebuffers(1, &fbo);
+    glDeleteTextures(1, &fboTexture);
+    glDeleteRenderbuffers(1, &depthBuffer);
 }
 

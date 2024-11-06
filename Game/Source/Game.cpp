@@ -56,7 +56,7 @@ bool Game::update() {
 }
 
 bool Game::render() {
-	Engine::Debug::createWindow("Game Data");
+	/*Engine::Debug::createWindow("Game Data");
 
 	ImGui::Text("FPS: %d", Engine::MainClock::getFrameRate());
 
@@ -77,7 +77,7 @@ bool Game::render() {
 	Engine::Debug::printValue("Penetration", penetration.as<Engine::Units::Meters>(), Engine::Units::Meters::units());
 	Engine::Debug::printVector("Collision Point", collisionPoint.as<Engine::Units::Meters>(), Engine::Units::Meters::units());
 	Engine::Debug::printBoolean("Player Airborne", player->getComponent<Engine::Physics::MotionComponent>()->airborne);
-	Engine::Debug::printBoolean("Player Moving", player->getComponent<Engine::Physics::MotionComponent>()->moving);
+	Engine::Debug::printBoolean("Player Moving", player->getComponent<Engine::Physics::MotionComponent>()->moving);*/
 
 	return true;
 }

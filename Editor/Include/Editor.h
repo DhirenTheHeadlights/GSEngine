@@ -3,20 +3,27 @@
 #include "Engine.h"
 
 namespace Editor {
+	void initialize();
+
 	void bindFbo();
 	void unbindFbo();
-	void renderImGuiViewport();
 
 	void update();
 	void render();
 
-	struct RenderingInterface : Engine::RenderingInterface {
+	void exit();
+
+	struct RenderingInterface : Engine::Window::RenderingInterface {
 		void onPreRender() override {
 			bindFbo();
+			initialize();
 		}
+
 		void onPostRender() override {
 			unbindFbo();
-			renderImGuiViewport();
+
+			update();
+			render();
 		}
 	};
 }
