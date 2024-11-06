@@ -10,7 +10,12 @@
 #include "Platform/GLFW/Input.h"
 #include "Platform/GLFW/Window.h"
 
-#define IMGUI 1
+#if IMGUI == 0
+#pragma message("IMGUI is set to 0")
+#else
+#pragma message("IMGUI is set to 1")
+#endif
+
 
 #if IMGUI
 #include "Graphics/Debug.h"
@@ -55,7 +60,9 @@ void Engine::initialize(const std::function<void()>& initializeFunction, const s
 }
 
 void update(const std::function<bool()>& updateFunction) {
+#if IMGUI
 	Engine::addTimer("Engine::update");
+#endif
 
 	Engine::Window::update();
 
@@ -73,23 +80,26 @@ void update(const std::function<bool()>& updateFunction) {
 		Engine::requestShutdown();
 	}
 
+#if IMGUI
 	Engine::resetTimer("Engine::render");
+#endif
 }
 
 void render(const std::function<bool()>& renderFunction) {
+#if IMGUI
 	Engine::addTimer("Engine::render");
+#endif
 
 	Engine::Window::beginFrame();
 
 	Engine::sceneHandler.render();
-
-	Engine::displayTimers();
 
 	if (!renderFunction()) {
 		Engine::requestShutdown();
 	}
 
 #if IMGUI
+	Engine::displayTimers();
 	Engine::Debug::renderImGui();
 #endif
 	Engine::Window::endFrame();

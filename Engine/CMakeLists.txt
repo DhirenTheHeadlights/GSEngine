@@ -111,7 +111,7 @@ set_target_properties(glm PROPERTIES EXCLUDE_FROM_ALL TRUE)
 
 # Define macros for resource paths based on the build type
 if(PRODUCTION_BUILD)
-    target_compile_definitions(Engine PUBLIC RESOURCES_PATH="./Resources/" PRODUCTION_BUILD=1)
+    target_compile_definitions(Engine PUBLIC RESOURCES_PATH="./Resources/" PRODUCTION_BUILD = 1)
 else()
-    target_compile_definitions(Engine PUBLIC RESOURCES_PATH="${CMAKE_CURRENT_SOURCE_DIR}/Resources/" PRODUCTION_BUILD=0)
+    target_compile_definitions(Engine PUBLIC RESOURCES_PATH="${CMAKE_CURRENT_SOURCE_DIR}/Resources/" PRODUCTION_BUILD = 0)
 endif()

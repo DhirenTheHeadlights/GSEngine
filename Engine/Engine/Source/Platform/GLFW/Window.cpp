@@ -16,6 +16,18 @@ bool windowFocused = true;
 bool mouseVisible = true;
 int mouseMoved = 0;
 
+std::vector<std::shared_ptr<Engine::Window::RenderingInterface>> renderingInterfaces;
+
+void Engine::Window::addRenderingInterface(const std::shared_ptr<RenderingInterface>& renderingInterface) {
+	renderingInterfaces.push_back(renderingInterface);
+}
+
+void Engine::Window::removeRenderingInterface(const std::shared_ptr<RenderingInterface>& renderingInterface) {
+	if (const auto it = std::ranges::find(renderingInterfaces, renderingInterface); it != renderingInterfaces.end()) {
+		renderingInterfaces.erase(it);
+	}
+}
+
 void Engine::Window::initialize() {
 	permaAssertComment(glfwInit(), "Error initializing GLFW");
 	glfwWindowHint(GLFW_SAMPLES, 4);
@@ -48,8 +60,12 @@ void Engine::Window::initialize() {
 }
 
 void Engine::Window::beginFrame() {
-	glViewport(0, 0, Window::getFrameBufferSize().x, Window::getFrameBufferSize().y);
+	glViewport(0, 0, getFrameBufferSize().x, getFrameBufferSize().y);
 	glClear(GL_COLOR_BUFFER_BIT);
+
+	for (const auto& renderingInterface : renderingInterfaces) {
+		renderingInterface->onPreRender();
+	}
 }
 
 void Engine::Window::update() {
@@ -95,6 +111,10 @@ void Engine::Window::update() {
 }
 
 void Engine::Window::endFrame() {
+	for (const auto& renderingInterface : renderingInterfaces) {
+		renderingInterface->onPostRender();
+	}
+
 	glfwSwapBuffers(window);
 	glfwPollEvents();
 }

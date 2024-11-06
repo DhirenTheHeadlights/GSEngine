@@ -23,6 +23,12 @@ void from_json(const nlohmann::json& j, ImVec2& v) {
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(WindowState, position, size);
 
+std::string imguiSaveFilePath;
+
+void Engine::Debug::setImguiSaveFilePath(const std::string& path) {
+	imguiSaveFilePath = path;
+}
+
 std::unordered_map<std::string, WindowState> windowStates;
 Engine::Clock autosaveClock;
 const Engine::Units::Seconds autosaveTime = 60.f;
@@ -48,7 +54,7 @@ void Engine::Debug::setUpImGui() {
 	ImGui_ImplGlfw_InitForOpenGL(Window::getWindow(), true);
 	ImGui_ImplOpenGL3_Init("#version 330");
 
-	JsonParse::parse(JsonParse::loadJson(RESOURCES_PATH "imgui_state.json"), [](const std::string& key, const nlohmann::json& value) {
+	JsonParse::parse(JsonParse::loadJson(imguiSaveFilePath), [](const std::string& key, const nlohmann::json& value) {
 		if (value.is_null() || !value.is_object() || !value.contains("position") || !value.contains("size")) {
 			return;
 		}
@@ -108,11 +114,10 @@ void Engine::Debug::saveImGuiState() {
 		const WindowState& state = snd;
 		json[name] = state;
 	}
-	JsonParse::writeJson(RESOURCES_PATH "imgui_state.json", [&json](nlohmann::json& j) {
+	JsonParse::writeJson(imguiSaveFilePath, [&json](nlohmann::json& j) {
 		j = json;
 	});
 }
-
 
 void Engine::Debug::createWindow(const std::string& name, const ImVec2& size, const ImVec2& position, bool open) {
 	if (windowStates.contains(name)) {
@@ -131,7 +136,6 @@ void Engine::Debug::createWindow(const std::string& name, const ImVec2& size, co
 	windowStates[name].position = ImGui::GetWindowPos();
 	windowStates[name].size = ImGui::GetWindowSize();
 }
-
 
 void Engine::Debug::printVector(const std::string& name, const glm::vec3& vec, const char* unit) {
 	if (unit) {

@@ -116,6 +116,6 @@ void Game::Arena::update() {
 
 void Game::Arena::render() {
     for (const auto& light : getComponent<Engine::LightSourceComponent>()->getLights()) {
-        light->showDebugMenu();
+        //light->showDebugMenu();
     }
 }

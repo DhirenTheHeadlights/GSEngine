@@ -22,12 +22,11 @@ target_include_directories(Editor PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/Include/")
 target_link_libraries(Editor PRIVATE Engine)
 target_link_libraries(Editor PRIVATE GoonSquadLib)
 
-# Define macros for resource paths based on the build type
-if(PRODUCTION_BUILD)
-    target_compile_definitions(Editor PUBLIC RESOURCES_PATH="./Editor/Resources/" PRODUCTION_BUILD=1)
-else()
-    target_compile_definitions(Editor PUBLIC RESOURCES_PATH="${CMAKE_CURRENT_SOURCE_DIR}/Editor/Resources/" PRODUCTION_BUILD=0)
-endif()
+# Compilation Arguments
+target_compile_definitions(Editor PRIVATE IMGUI = 0)
+
+# Define macros for resource path
+target_compile_definitions(Editor PUBLIC RESOURCES_PATH = "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
 
 # Set MSVC-specific compile options
 if(MSVC)
