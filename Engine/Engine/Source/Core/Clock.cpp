@@ -34,7 +34,7 @@ std::map<std::string, std::unique_ptr<Engine::ScopedTimer>> timers;
 
 void Engine::addTimer(const std::string& name) {
 	if (!timers.contains(name)) {
-		timers[name] = std::make_unique<Engine::ScopedTimer>(name); // Add if not present
+		timers[name] = std::make_unique<ScopedTimer>(name); // Add if not present
 	}
 }
 

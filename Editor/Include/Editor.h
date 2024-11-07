@@ -16,7 +16,6 @@ namespace Editor {
 	struct RenderingInterface : Engine::Window::RenderingInterface {
 		void onPreRender() override {
 			bindFbo();
-			initialize();
 		}
 
 		void onPostRender() override {

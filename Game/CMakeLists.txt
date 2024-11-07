@@ -38,8 +38,10 @@ target_link_libraries(GoonSquad PRIVATE GoonSquadLib Engine)
 # Define macros for resource paths based on build type
 if(PRODUCTION_BUILD)
     target_compile_definitions(GoonSquad PUBLIC RESOURCES_PATH="./Game/Resources/" PRODUCTION_BUILD=1)
+    target_compile_definitions(GoonSquad PRIVATE IMGUI = 0)
 else()
     target_compile_definitions(GoonSquad PUBLIC RESOURCES_PATH="${CMAKE_CURRENT_SOURCE_DIR}/Resources/" PRODUCTION_BUILD=0)
+    target_compile_definitions(GoonSquad PRIVATE IMGUI = 1)
 endif()
 
 # MSVC-specific compile options
