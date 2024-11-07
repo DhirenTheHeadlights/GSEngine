@@ -89,8 +89,6 @@ void Engine::Debug::updateImGui() {
 }
 
 void Engine::Debug::renderImGui() {
-	ImGui::End();
-
 	ImGui::Render();
 
 	const glm::ivec2 windowSize = Window::getWindowSize();

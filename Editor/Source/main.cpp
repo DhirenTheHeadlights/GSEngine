@@ -5,6 +5,8 @@
 int main() {
 	Engine::initialize(Game::initialize, Game::close);
 
+	Editor::initialize();
+
 	Engine::Window::addRenderingInterface(std::make_shared<Editor::RenderingInterface>());
 
 	Engine::Window::setFullScreen(false);
