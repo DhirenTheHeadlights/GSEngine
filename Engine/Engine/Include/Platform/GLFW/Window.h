@@ -37,6 +37,7 @@ namespace Engine::Window {
     glm::ivec2 getRelMousePosition();
     glm::ivec2 getWindowSize();
 
+    void overrideFrameBufferSize(const glm::ivec2& size);
     void setMousePosRelativeToWindow(const glm::ivec2& position);
     void setFullScreen(bool fullScreen);
     void setWindowFocused(bool focused);
