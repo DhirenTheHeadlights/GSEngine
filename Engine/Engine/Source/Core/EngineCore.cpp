@@ -1,8 +1,5 @@
 #include "Core/EngineCore.h"
 
-#include <glad/glad.h>
-#include <GLFW/glfw3.h>
-
 #include "Core/Clock.h"
 #include "Graphics/Renderer.h"
 #include "Physics/Collision/BroadPhaseCollisionHandler.h"
@@ -86,6 +83,10 @@ void update(const std::function<bool()>& updateFunction) {
 }
 
 void render(const std::function<bool()>& renderFunction) {
+	if (!Engine::Window::isFocused()) {
+		return;
+	}
+
 #if IMGUI
 	Engine::addTimer("Engine::render");
 #endif

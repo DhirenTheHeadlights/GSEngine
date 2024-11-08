@@ -26,7 +26,8 @@ namespace Engine::Window {
 
     bool isWindowClosed();
     bool isFullScreen();
-    bool isWindowFocused();
+    bool isFocused();
+	bool isMinimized();
     bool isMouseVisible();
     int hasMouseMoved();
 
