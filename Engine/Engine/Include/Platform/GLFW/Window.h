@@ -39,7 +39,7 @@ namespace Engine::Window {
 
     void overrideFrameBufferSize(const glm::ivec2& size);
     void setMousePosRelativeToWindow(const glm::ivec2& position);
-    void setFullScreen(bool fullScreen);
+    void setFullScreen(bool fs);
     void setWindowFocused(bool focused);
     void setMouseVisible(bool show);
 
