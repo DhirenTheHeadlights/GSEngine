@@ -36,13 +36,17 @@ void Editor::bindFbo() {
 
 	glViewport(0, 0, viewportWidth, viewportHeight);
 
+    Engine::Window::overrideFrameBufferSize({ viewportWidth, viewportHeight });
+
     GLint viewport[4];
     glGetIntegerv(GL_VIEWPORT, viewport);
     std::cout << "Viewport: " << viewport[2] << "x" << viewport[3] << std::endl;
-
 }
 
 void Editor::unbindFbo() {
+    GLint viewport[4];
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    std::cout << "ubind fbo Viewport: " << viewport[2] << "x" << viewport[3] << std::endl;
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
@@ -52,6 +56,9 @@ void Editor::update() {
 
 void Editor::render() {
     if (fbo != 0) {
+        GLint viewport[4];
+        glGetIntegerv(GL_VIEWPORT, viewport);
+        std::cout << "Viewport in image: " << viewport[2] << "x" << viewport[3] << std::endl;
         ImGui::Image(reinterpret_cast<void*>(static_cast<intptr_t>(fboTexture)), ImVec2(static_cast<float>(viewportWidth), static_cast<float>(viewportHeight)));
     }
 

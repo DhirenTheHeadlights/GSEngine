@@ -10,6 +10,7 @@
 
 GLFWwindow* window = nullptr;
 
+std::optional<glm::ivec2> dynamicFrameBufferSize = std::nullopt;
 bool currentFullScreen = false;
 bool fullScreen = false;
 bool windowFocused = true;
@@ -66,9 +67,16 @@ void Engine::Window::beginFrame() {
 	for (const auto& renderingInterface : renderingInterfaces) {
 		renderingInterface->onPreRender();
 	}
+
+	GLint viewport[4];
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    std::cout << "post frameViewport: " << viewport[2] << "x" << viewport[3] << std::endl;
 }
 
 void Engine::Window::update() {
+	GLint viewport[4];
+	glGetIntegerv(GL_VIEWPORT, viewport);
+	std::cout << "pre upd Viewport: " << viewport[2] << "x" << viewport[3] << std::endl;
 	int w = 0, h = 0;
 	glfwGetWindowSize(window, &w, &h);
 	if (windowFocused && currentFullScreen != fullScreen) {
@@ -101,6 +109,9 @@ void Engine::Window::update() {
 
 		mouseMoved = 0;
 	}
+	
+	glGetIntegerv(GL_VIEWPORT, viewport);
+	std::cout << "post upd Viewport: " << viewport[2] << "x" << viewport[3] << std::endl;
 
 	if (mouseVisible) {
 		glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
@@ -186,6 +197,10 @@ GLFWmonitor* Engine::Window::getCurrentMonitor() {
 }
 
 glm::ivec2 Engine::Window::getFrameBufferSize() {
+	if (dynamicFrameBufferSize.has_value()) {
+		return dynamicFrameBufferSize.value();
+	}
+
 	int x = 0; int y = 0;
 	glfwGetFramebufferSize(window, &x, &y);
 	return { x, y };
@@ -201,6 +216,10 @@ glm::ivec2 Engine::Window::getWindowSize() {
 	int x = 0; int y = 0;
 	glfwGetWindowSize(window, &x, &y);
 	return { x, y };
+}
+
+void Engine::Window::overrideFrameBufferSize(const glm::ivec2& size) {
+	dynamicFrameBufferSize = size;
 }
 
 void Engine::Window::setMousePosRelativeToWindow(const glm::ivec2& position) {
