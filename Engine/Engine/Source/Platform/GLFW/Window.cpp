@@ -137,8 +137,14 @@ bool Engine::Window::isFullScreen() {
 	return fullScreen;
 }
 
-bool Engine::Window::isWindowFocused() {
+bool Engine::Window::isFocused() {
 	return windowFocused;
+}
+
+bool Engine::Window::isMinimized() {
+	int width, height;
+	glfwGetWindowSize(window, &width, &height);
+	return width == 0 || height == 0;
 }
 
 bool Engine::Window::isMouseVisible() {

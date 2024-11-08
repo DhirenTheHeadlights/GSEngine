@@ -33,6 +33,13 @@ void Editor::bindFbo() {
     glBindRenderbuffer(GL_RENDERBUFFER, depthBuffer);
     glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, viewportWidth, viewportHeight);
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthBuffer);
+
+	glViewport(0, 0, viewportWidth, viewportHeight);
+
+    GLint viewport[4];
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    std::cout << "Viewport: " << viewport[2] << "x" << viewport[3] << std::endl;
+
 }
 
 void Editor::unbindFbo() {
