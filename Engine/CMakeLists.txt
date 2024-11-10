@@ -23,6 +23,10 @@ add_library(Engine STATIC ${ENGINE_SOURCES} ${ENGINE_HEADERS})
 # FetchContent for glfw
 ##############################################
 
+set(GLFW_BUILD_DOCS OFF CACHE BOOL "GLFW: Build documentation" FORCE)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "GLFW: Build examples" FORCE)
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "GLFW: Build tests" FORCE)
+
 FetchContent_Declare(
     glfw
     GIT_REPOSITORY https://github.com/glfw/glfw.git
@@ -44,10 +48,6 @@ FetchContent_Declare(
 )
 
 FetchContent_MakeAvailable(glad)
-
-set(GLFW_BUILD_DOCS OFF CACHE BOOL "GLFW: Build documentation" FORCE)
-set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "GLFW: Build examples" FORCE)
-set(GLFW_BUILD_TESTS OFF CACHE BOOL "GLFW: Build tests" FORCE)
 
 ############################################
 
@@ -86,13 +86,13 @@ FetchContent_MakeAvailable(stb_truetype)
 FetchContent_Declare(
     enet
     GIT_REPOSITORY https://github.com/lsalzman/enet.git
-    GIT_TAG        v1.3.17  # Use a stable version tag
+    GIT_TAG        v1.3.17
 )
 
 FetchContent_MakeAvailable(enet)
 
 # Manually define the ENet target if it's not provided
-add_library(enet_static STATIC 
+add_library(enet_static STATIC EXCLUDE_FROM_ALL
     ${enet_SOURCE_DIR}/callbacks.c
     ${enet_SOURCE_DIR}/compress.c
     ${enet_SOURCE_DIR}/host.c
@@ -163,6 +163,12 @@ target_link_libraries(Engine PUBLIC
     glm
 )
 
+# Exclude dependencies from all builds
+set_target_properties(glfw PROPERTIES EXCLUDE_FROM_ALL TRUE)
+set_target_properties(glad PROPERTIES EXCLUDE_FROM_ALL TRUE)
+set_target_properties(enet PROPERTIES EXCLUDE_FROM_ALL TRUE)
+set_target_properties(glm PROPERTIES EXCLUDE_FROM_ALL TRUE)
+
 # Visual Studio specific settings
 if (MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Release>:Release>")
@@ -208,15 +214,11 @@ if (MSVC)
     source_group("External\\glm" FILES ${GLM_HEADERS})
 endif()
 
-# Exclude dependencies from all builds
-set_target_properties(glfw PROPERTIES EXCLUDE_FROM_ALL TRUE)
-set_target_properties(glad PROPERTIES EXCLUDE_FROM_ALL TRUE)
-set_target_properties(enet PROPERTIES EXCLUDE_FROM_ALL TRUE)
-set_target_properties(glm PROPERTIES EXCLUDE_FROM_ALL TRUE)
-
 # Define macros for resource paths based on the build type
 if(PRODUCTION_BUILD)
     target_compile_definitions(Engine PUBLIC RESOURCES_PATH="./Resources/" PRODUCTION_BUILD = 1)
+    target_compile_definitions(Engine PUBLIC IMGUI = 0)
 else()
     target_compile_definitions(Engine PUBLIC RESOURCES_PATH="${CMAKE_CURRENT_SOURCE_DIR}/Resources/" PRODUCTION_BUILD = 0)
+    target_compile_definitions(Engine PUBLIC IMGUI = 1)
 endif()

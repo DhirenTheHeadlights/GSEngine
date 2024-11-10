@@ -28,6 +28,8 @@ target_compile_definitions(Editor PRIVATE IMGUI = 0)
 # Define macros for resource path
 target_compile_definitions(Editor PUBLIC RESOURCES_PATH = "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
 
+set_target_properties(GoonSquadLib PROPERTIES EXCLUDE_FROM_ALL TRUE)
+
 # Set MSVC-specific compile options
 if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Release>:Release>")
