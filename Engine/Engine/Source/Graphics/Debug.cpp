@@ -66,8 +66,13 @@ void Engine::Debug::updateImGui() {
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
-	ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
 
+	// DockSpace over entire viewport
+	if (const ImGuiIO& io = ImGui::GetIO(); io.ConfigFlags & ImGuiConfigFlags_DockingEnable) {
+		ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
+	}
+
+	// Main menu bar
 	if (ImGui::BeginMainMenuBar()) {
 		if (ImGui::BeginMenu("File")) {
 			if (ImGui::MenuItem("Save State")) {
