@@ -11,10 +11,10 @@ project(GoonSquadProject)
 option(PRODUCTION_BUILD "Make this a production build" OFF)
 
 # Include directories
-set(INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Include")
+set(INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Game/Include")
 
 # Gather game source and header files
-file(GLOB_RECURSE GAME_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Source/*.cpp")
+file(GLOB_RECURSE GAME_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Game/Source/*.cpp")
 file(GLOB_RECURSE GAME_HEADERS CONFIGURE_DEPENDS "${INCLUDE_DIR}/*.h")
 
 # GoonSquadLib: Add as a static library
@@ -51,20 +51,29 @@ if(MSVC)
     add_compile_options(/arch:AVX2) # SIMD optimizations
     add_compile_options(/MP)        # Multi-core compilation
 
-    # (Optional) Function to create source groups for Visual Studio
-    function(create_source_groups BASE_DIR REMOVE_PREFIX BASE_GROUP)
-        file(GLOB_RECURSE children RELATIVE ${BASE_DIR} ${BASE_DIR}/*)
-        foreach(child ${children})
-            if(IS_DIRECTORY ${BASE_DIR}/${child})
-                create_source_groups(${BASE_DIR}/${child} ${REMOVE_PREFIX} ${BASE_GROUP})
-            else()
-                string(REPLACE "/" "\\" groupname ${BASE_DIR})
-                string(REPLACE "${REMOVE_PREFIX}" "" groupname)
-                if(NOT "${BASE_GROUP}" STREQUAL "")
-                    set(groupname "${BASE_GROUP}\\${groupname}")
-                endif()
-                source_group(${groupname} FILES ${BASE_DIR}/${child})
+    # Function to create source groups by full directory hierarchy and remove unnecessary prefix
+    function(create_source_groups_by_dir root_dir base_group remove_prefix)
+        file(GLOB_RECURSE files LIST_DIRECTORIES false "${root_dir}/*")
+
+        foreach(file_path ${files})
+            file(RELATIVE_PATH relative_path "${CMAKE_CURRENT_SOURCE_DIR}" "${file_path}")
+            get_filename_component(dir "${relative_path}" DIRECTORY)
+            string(REPLACE "/" "\\" group_path "${dir}")
+        
+            # Remove the unnecessary prefix
+            string(REPLACE "${remove_prefix}" "" group_path "${group_path}")
+
+            # Add base group if provided
+            if (NOT "${base_group}" STREQUAL "")
+                set(group_path "${base_group}\\${group_path}")
             endif()
+
+            source_group("${group_path}" FILES "${file_path}")
         endforeach()
     endfunction()
+
+    # Call the function for source and header files
+    # Removing "Engine/Include" from the beginning of the path
+    create_source_groups_by_dir("${CMAKE_CURRENT_SOURCE_DIR}/Game/Source" "Source" "Game\\Source")
+    create_source_groups_by_dir("${CMAKE_CURRENT_SOURCE_DIR}/Game/Include" "Include" "Game\\Include")
 endif()
