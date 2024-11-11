@@ -5,21 +5,26 @@
 #include "Arena.h"
 #include "Engine.h"
 #include "Player.h"
+#include "Box.h"
 
 std::shared_ptr<Game::Arena> arena;
 std::shared_ptr<Game::Player> player;
+std::shared_ptr<Game::Box> box;
 
 bool Game::initialize() {
 	arena = std::make_shared<Arena>();
 	player = std::make_shared<Player>();
+	box = std::make_shared<Box>(Engine::Vec3<Engine::Units::Meters>(30.f, 40.f, 50.f));
 
 	arena->initialize();
 	player->initialize();
+	box->initialize();
 
 	const auto scene1 = std::make_shared<Engine::Scene>();
 
 	scene1->addObject(arena);
 	scene1->addObject(player);
+	scene1->addObject(box);
 
 	Engine::sceneHandler.addScene(scene1, "Scene1");
 
