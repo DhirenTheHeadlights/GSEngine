@@ -14,7 +14,7 @@ std::shared_ptr<Game::Box> box;
 bool Game::initialize() {
 	arena = std::make_shared<Arena>();
 	player = std::make_shared<Player>();
-	box = std::make_shared<Box>(Engine::Vec3<Engine::Units::Meters>(30.f, 40.f, 50.f));
+	box = std::make_shared<Box>(Engine::Vec3<Engine::Units::Meters>(20.f, -400.f, 20.f), Engine::Vec3<Engine::Units::Meters>(20.f, 20.f, 20.f));
 
 	arena->initialize();
 	player->initialize();
