@@ -6,7 +6,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 project(Engine)
 
-include (FetchContent)
+set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/Engine/External" CACHE STRING "Base directory for FetchContent dependencies" FORCE)
+
+# Ensure the directory exists
+file(MAKE_DIRECTORY "${FETCHCONTENT_BASE_DIR}")
+
+# Include FetchContent
+include(FetchContent)
 
 # Gather engine source files (cpp) from the new "Resource" folder
 file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/*.cpp")
@@ -40,6 +46,8 @@ FetchContent_MakeAvailable(glfw)
 ##############################################
 # FetchContent_Declare for glad
 ##############################################
+
+option(GLAD_GENERATE "Generate GLAD source files" OFF)
 
 FetchContent_Declare(
     glad
@@ -91,19 +99,7 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(enet)
 
-# Manually define the ENet target if it's not provided
-add_library(enet_static STATIC EXCLUDE_FROM_ALL
-    ${enet_SOURCE_DIR}/callbacks.c
-    ${enet_SOURCE_DIR}/compress.c
-    ${enet_SOURCE_DIR}/host.c
-    ${enet_SOURCE_DIR}/list.c
-    ${enet_SOURCE_DIR}/packet.c
-    ${enet_SOURCE_DIR}/peer.c
-    ${enet_SOURCE_DIR}/protocol.c
-)
-
-# Include the ENet headers
-target_include_directories(enet_static PUBLIC ${enet_SOURCE_DIR}/include)
+target_include_directories(Engine PUBLIC ${enet_SOURCE_DIR}/include)
 
 ############################################
 
@@ -163,12 +159,6 @@ target_link_libraries(Engine PUBLIC
     glm
 )
 
-# Exclude dependencies from all builds
-set_target_properties(glfw PROPERTIES EXCLUDE_FROM_ALL TRUE)
-set_target_properties(glad PROPERTIES EXCLUDE_FROM_ALL TRUE)
-set_target_properties(enet PROPERTIES EXCLUDE_FROM_ALL TRUE)
-set_target_properties(glm PROPERTIES EXCLUDE_FROM_ALL TRUE)
-
 # Visual Studio specific settings
 if (MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Release>:Release>")
@@ -176,12 +166,29 @@ if (MSVC)
     add_compile_options(/arch:AVX2) # SIMD optimizations
     add_compile_options(/MP) # Multi-core compilation
 
-    # Group third-party libraries under "External"
-    set_property(TARGET glfw PROPERTY FOLDER "External")
-    set_property(TARGET glad PROPERTY FOLDER "External")
-    set_property(TARGET enet PROPERTY FOLDER "External")
-    set_property(TARGET imgui PROPERTY FOLDER "External")
-    set_property(TARGET glm PROPERTY FOLDER "External")
+    # List of external targets to be grouped under "External"
+    set(EXTERNAL_TARGETS glfw glad glad-generate-files enet glm imgui)
+
+    # Loop through each target and set its folder property
+    foreach(target ${EXTERNAL_TARGETS})
+        set_property(TARGET ${target} PROPERTY FOLDER "External")
+    endforeach()
+
+    # Move glfw-related projects under External/GLFW3
+
+    # Collect targets from the glfw root directory
+    get_property(ROOT_SUBPROJECTS DIRECTORY "${glfw_SOURCE_DIR}" PROPERTY BUILDSYSTEM_TARGETS)
+
+    # Collect targets from the glfw 'src' directory
+    get_property(SRC_SUBPROJECTS DIRECTORY "${glfw_SOURCE_DIR}/src" PROPERTY BUILDSYSTEM_TARGETS)
+
+    # Combine both sets of subprojects into one list
+    set(GLFW_SUBPROJECTS ${ROOT_SUBPROJECTS} ${SRC_SUBPROJECTS})
+
+    # Loop through the combined list of subprojects
+    foreach(subproject ${GLFW_SUBPROJECTS})
+        set_property(TARGET ${subproject} PROPERTY FOLDER "External/GLFW3")
+    endforeach()
 
     # Function to create source groups by full directory hierarchy and remove unnecessary prefix
     function(create_source_groups_by_dir root_dir base_group remove_prefix)
