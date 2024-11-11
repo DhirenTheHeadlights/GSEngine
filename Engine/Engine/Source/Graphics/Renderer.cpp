@@ -210,9 +210,6 @@ void Engine::Renderer::renderLightingPass(const std::vector<LightShaderEntry>& l
 	glActiveTexture(GL_TEXTURE2);
 	glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
 
-	// Set the camera position (viewPos) for specular calculations
-	lightingShader.setVec3("viewPos", camera.getPosition().as<Units::Meters>());
-
 	// Render a full-screen quad to process lighting
 	static unsigned int quadVAO = 0;
 	static unsigned int quadVBO = 0;

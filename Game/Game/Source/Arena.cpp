@@ -102,10 +102,13 @@ void Game::Arena::initialize() {
 
     const auto lightSourceComponent = std::make_shared<Engine::LightSourceComponent>();
 
-	// Add a point light to the center of the arena
+
     lightSourceComponent->addLight(std::make_shared<Engine::SpotLight>(
 		glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(1.0f, 1.0f, 1.0f), 1.0f, 1.0f, 0.09f, 0.032f, 0.f, glm::cos(glm::radians(17.5f))
     ));
+ //   lightSourceComponent->addLight(std::make_shared<Engine::PointLight>(
+	//	glm::vec3(490.0f, 490.0f, 490.0f), glm::vec3(1.0f, 1.0f, 1.0f), 1.0f, 0.09f, 0.032f, 1.f
+	//));
 
 	addComponent(lightSourceComponent);
 }
