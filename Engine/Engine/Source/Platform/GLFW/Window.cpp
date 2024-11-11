@@ -10,11 +10,24 @@
 
 GLFWwindow* window = nullptr;
 
+std::optional<glm::ivec2> dynamicFrameBufferSize = std::nullopt;
 bool currentFullScreen = false;
 bool fullScreen = false;
 bool windowFocused = true;
 bool mouseVisible = true;
 int mouseMoved = 0;
+
+std::vector<std::shared_ptr<Engine::Window::RenderingInterface>> renderingInterfaces;
+
+void Engine::Window::addRenderingInterface(const std::shared_ptr<RenderingInterface>& renderingInterface) {
+	renderingInterfaces.push_back(renderingInterface);
+}
+
+void Engine::Window::removeRenderingInterface(const std::shared_ptr<RenderingInterface>& renderingInterface) {
+	if (const auto it = std::ranges::find(renderingInterfaces, renderingInterface); it != renderingInterfaces.end()) {
+		renderingInterfaces.erase(it);
+	}
+}
 
 void Engine::Window::initialize() {
 	permaAssertComment(glfwInit(), "Error initializing GLFW");
@@ -48,8 +61,12 @@ void Engine::Window::initialize() {
 }
 
 void Engine::Window::beginFrame() {
-	glViewport(0, 0, Window::getFrameBufferSize().x, Window::getFrameBufferSize().y);
+	glViewport(0, 0, getFrameBufferSize().x, getFrameBufferSize().y);
 	glClear(GL_COLOR_BUFFER_BIT);
+
+	for (const auto& renderingInterface : renderingInterfaces) {
+		renderingInterface->onPreRender();
+	}
 }
 
 void Engine::Window::update() {
@@ -95,6 +112,10 @@ void Engine::Window::update() {
 }
 
 void Engine::Window::endFrame() {
+	for (const auto& renderingInterface : renderingInterfaces) {
+		renderingInterface->onPostRender();
+	}
+
 	glfwSwapBuffers(window);
 	glfwPollEvents();
 }
@@ -117,8 +138,14 @@ bool Engine::Window::isFullScreen() {
 	return fullScreen;
 }
 
-bool Engine::Window::isWindowFocused() {
+bool Engine::Window::isFocused() {
 	return windowFocused;
+}
+
+bool Engine::Window::isMinimized() {
+	int width, height;
+	glfwGetWindowSize(window, &width, &height);
+	return width == 0 || height == 0;
 }
 
 bool Engine::Window::isMouseVisible() {
@@ -160,6 +187,10 @@ GLFWmonitor* Engine::Window::getCurrentMonitor() {
 }
 
 glm::ivec2 Engine::Window::getFrameBufferSize() {
+	if (dynamicFrameBufferSize.has_value()) {
+		return dynamicFrameBufferSize.value();
+	}
+
 	int x = 0; int y = 0;
 	glfwGetFramebufferSize(window, &x, &y);
 	return { x, y };
@@ -175,6 +206,10 @@ glm::ivec2 Engine::Window::getWindowSize() {
 	int x = 0; int y = 0;
 	glfwGetWindowSize(window, &x, &y);
 	return { x, y };
+}
+
+void Engine::Window::overrideFrameBufferSize(const glm::ivec2& size) {
+	dynamicFrameBufferSize = size;
 }
 
 void Engine::Window::setMousePosRelativeToWindow(const glm::ivec2& position) {
