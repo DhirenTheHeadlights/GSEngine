@@ -2,6 +2,19 @@
 
 This is a dual development project for a simulation engine and a 3-D shooter game as a demo. The game will feature multiplayer and single player modes.
 
+## Features
+- OpenGL, GLFW, and ImGui window/context creation
+- Unit system for common units (force, length, etc.) wrapping glm's vector implemenations
+  - Gives complete clarity in mathematical equations & dimentional analysis used; also allows for units to show on debug outputs
+- Physics engine
+- Broad phase collision using axis aligned bounding boxes
+- Entity component system
+- Rendering pipeline
+- Scene based rendering system
+- Basic lighting shaders
+- Light objects
+- Editor with hot-reloading enabled for game changes
+
 ## Getting Started
 
 To get started, clone the respository. There are no dependencies required to run the project.
@@ -13,6 +26,7 @@ The files in this project are divided into the following categories:
 
 - `Engine` - Contains all the engine specific code
 - `Game` - Contains all the game logic
+- `Editor` - Contains logic for an editor that links the game as a DLL for easy runtime adjustments/hot reloading
 
 Engine statically links all required third party libraries. Game contains all the game logic and is also statically linked to the engine.
 
@@ -20,7 +34,7 @@ The `Build` folder will contain the Visual Studio solution file. Open this file 
 
 When you end up adding a file to the project, VS will prompt you to update the `CMakeLists.txt` file. DO NOT UPDATE THIS FILE. Select `Cancel` when prompted.
 
-To steamline developing new objects, you will need to add a `Code Snippet` to Visual Studio. To do this, follow these steps:
+To steamline developing new objects, you might want to add a `Code Snippet` to Visual Studio. To do this, follow these steps:
 
 1. Open Visual Studio
 2. Go to `Tools` -> `Code Snippets Manager`
@@ -31,8 +45,6 @@ To steamline developing new objects, you will need to add a `Code Snippet` to Vi
 
 To use the code snippet, type `gameobject` and press `Tab` twice. This will generate a new GameObject class for you to use.
 Visual studio will automatically highlight the class name for you to change. All you need to do is type the new class name and press `Enter`.
-
-When nesting namespaces, do not indent the nested namespace.
 
 ### Prerequisites
 
