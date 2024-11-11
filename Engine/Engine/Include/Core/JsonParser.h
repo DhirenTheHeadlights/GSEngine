@@ -5,23 +5,12 @@
 #include <type_traits>
 #include <fstream>
 
-#include "Platform/PermaAssert.h"
-
 namespace Engine::JsonParse {
-	// Load JSON from file
-	inline nlohmann::json loadJson(const std::string& path) {
-		std::ifstream file(path);
-		permaAssertComment(file.is_open(), std::string("Failed to open file: " + path).c_str());
-		try {
-			return nlohmann::json::parse(file);
-		}
-		catch (const nlohmann::json::parse_error& e) {
-			std::cerr << "JSON parse error: " << e.what() << '\n';
-			return nlohmann::json{}; // Return an empty JSON object on failure
-		}
-	}
+	nlohmann::json loadJson(const std::string& path);
 
-	// Generic JSON parser
+	// Generic function to parse JSON objects
+	// Pass in a lambda that takes a key and a value
+	// And do whatever the fuck you want with it
 	template <typename Function>
 	void parse(const nlohmann::json& json, Function&& processElement) {
 		for (const auto& [key, value] : json.items()) {
@@ -29,6 +18,9 @@ namespace Engine::JsonParse {
 		}
 	}
 
+	// Generic function to write to a json file
+	// Pass in a lambda that takes a key and value
+	// And write it however the fuck you want
 	template <typename Function>
 	void writeJson(const std::string& path, Function&& processElement) {
 		nlohmann::json json;
