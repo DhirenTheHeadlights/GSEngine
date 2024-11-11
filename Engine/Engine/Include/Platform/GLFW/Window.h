@@ -1,11 +1,21 @@
 #pragma once
 
+#include <memory>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
 #include "glm/glm.hpp"
 
 namespace Engine::Window {
+    struct RenderingInterface {
+        virtual ~RenderingInterface() = default;
+        virtual void onPreRender() = 0;
+        virtual void onPostRender() = 0;
+    };
+
+    void addRenderingInterface(const std::shared_ptr<RenderingInterface>& renderingInterface);
+    void removeRenderingInterface(const std::shared_ptr<RenderingInterface>& renderingInterface);
+
     void initialize();
     void beginFrame();
     void update();
@@ -16,7 +26,8 @@ namespace Engine::Window {
 
     bool isWindowClosed();
     bool isFullScreen();
-    bool isWindowFocused();
+    bool isFocused();
+	bool isMinimized();
     bool isMouseVisible();
     int hasMouseMoved();
 
@@ -26,8 +37,9 @@ namespace Engine::Window {
     glm::ivec2 getRelMousePosition();
     glm::ivec2 getWindowSize();
 
+    void overrideFrameBufferSize(const glm::ivec2& size);
     void setMousePosRelativeToWindow(const glm::ivec2& position);
-    void setFullScreen(bool fullScreen);
+    void setFullScreen(bool fs);
     void setWindowFocused(bool focused);
     void setMouseVisible(bool show);
 
