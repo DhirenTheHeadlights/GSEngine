@@ -155,7 +155,7 @@ target_link_libraries(Engine PUBLIC
     glfw
     glad
     imgui
-    enet_static
+    enet
     glm
 )
 
