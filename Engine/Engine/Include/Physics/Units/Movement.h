@@ -4,7 +4,7 @@
 
 // Velocity
 
-namespace Engine::Units {
+namespace Engine {
 	struct VelocityTag {};
 
 	constexpr char metersPerSecond[] = "m/s";
@@ -20,20 +20,20 @@ namespace Engine::Units {
 
 namespace Engine {
 	using VelocityUnits = UnitList<
-		Units::MetersPerSecond,
-		Units::KilometersPerHour,
-		Units::MilesPerHour,
-		Units::FeetPerSecond
+		MetersPerSecond,
+		KilometersPerHour,
+		MilesPerHour,
+		FeetPerSecond
 	>;
 
-	struct Velocity : Quantity<Velocity, Units::MetersPerSecond, VelocityUnits> {
+	struct Velocity : Quantity<Velocity, MetersPerSecond, VelocityUnits> {
 		using Quantity::Quantity;
 	};
 }
 
 // Acceleration
 
-namespace Engine::Units {
+namespace Engine {
 	struct AccelerationTag {};
 
 	constexpr char metersPrSecondSquared[] = "m/s^2";
@@ -49,13 +49,13 @@ namespace Engine::Units {
 
 namespace Engine {
 	using AccelerationUnits = UnitList<
-		Units::MetersPerSecondSquared,
-		Units::KilometersPerHourSquared,
-		Units::MilesPerHourSquared,
-		Units::FeetPerSecondSquared
+		MetersPerSecondSquared,
+		KilometersPerHourSquared,
+		MilesPerHourSquared,
+		FeetPerSecondSquared
 	>;
 
-	struct Acceleration : Quantity<Acceleration, Units::MetersPerSecondSquared, AccelerationUnits> {
+	struct Acceleration : Quantity<Acceleration, MetersPerSecondSquared, AccelerationUnits> {
 		using Quantity::Quantity;
 	};
 }

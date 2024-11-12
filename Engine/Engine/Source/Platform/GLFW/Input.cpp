@@ -11,7 +11,7 @@ Engine::Input::Controller controller;
 Engine::Input::Mouse mouse;
 
 void Engine::Input::update() {
-	Internal::updateAllButtons(MainClock::getDeltaTime().as<Units::Seconds>());
+	Internal::updateAllButtons(MainClock::getDeltaTime().as<Seconds>());
 	Internal::resetTypedInput();
 }
 

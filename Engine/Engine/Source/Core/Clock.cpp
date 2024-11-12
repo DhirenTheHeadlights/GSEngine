@@ -17,7 +17,7 @@ Engine::Time Engine::Clock::reset() {
 Engine::Time Engine::Clock::getElapsedTime() const {
 	const auto now = std::chrono::steady_clock::now();
 	const std::chrono::duration<float> elapsedTime = now - startTime;
-	return Units::Seconds(elapsedTime.count());
+	return Seconds(elapsedTime.count());
 }
 
 /// ScopedTimer
@@ -25,7 +25,7 @@ Engine::Time Engine::Clock::getElapsedTime() const {
 Engine::ScopedTimer::~ScopedTimer() {
 	completed = true;
 	const Time elapsedTime = reset();
-	std::cout << name << ": " << elapsedTime.as<Units::Milliseconds>() << "ms\n";
+	std::cout << name << ": " << elapsedTime.as<Milliseconds>() << "ms\n";
 }
 
 /// Global Timer State
@@ -54,7 +54,7 @@ void Engine::displayTimers() {
 	Debug::createWindow("Timers");
 	for (auto it = timers.begin(); it != timers.end();) {
 		const auto& timer = it->second;
-		Debug::printValue(timer->getName(), timer->getElapsedTime().as<Units::Milliseconds>(), Units::Milliseconds::units());
+		Debug::printValue(timer->getName(), timer->getElapsedTime().as<Milliseconds>(), Milliseconds::units());
 		if (timer->isCompleted()) {
 			it = timers.erase(it); // Remove completed timers
 		}
@@ -81,14 +81,14 @@ void Engine::MainClock::update() {
 	lastUpdate = now;
 
 	// Update delta time (clamped to a max of 0.16 seconds to avoid big time jumps)
-	dt = Time(Units::Seconds(std::min(deltaTime.count(), 0.16f)));
+	dt = Time(Seconds(std::min(deltaTime.count(), 0.16f)));
 
 	// Frame rate calculation
 	++frameCount;
 	frameRateUpdateTime += dt;
 
 	if (frameCount >= numFramesToAverage) {
-		frameRate = static_cast<int>(frameCount / frameRateUpdateTime.as<Units::Seconds>());
+		frameRate = static_cast<int>(frameCount / frameRateUpdateTime.as<Seconds>());
 		frameRateUpdateTime = Time();
 		frameCount = 0.f;
 	}
@@ -99,7 +99,7 @@ Engine::Time Engine::MainClock::getDeltaTime() {
 }
 
 Engine::Time Engine::MainClock::getConstantUpdateTime(const float frameRate) {
-	return Units::Seconds(1.0f / frameRate);
+	return Seconds(1.0f / frameRate);
 }
 
 int Engine::MainClock::getFrameRate() {

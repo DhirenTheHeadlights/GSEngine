@@ -5,22 +5,22 @@
 #include "Graphics/RenderComponent.h"
 
 void Game::Arena::initialize() {
-    const Engine::Units::Meters wallThickness = 10.f;
+    const Engine::Meters wallThickness = 10.f;
 
     // Create collision component and add bounding boxes for each face
     const auto collisionComponent = std::make_shared<Engine::Physics::CollisionComponent>();
 
     // Front and back walls
-    collisionComponent->boundingBoxes.emplace_back(Engine::Vec3<Engine::Units::Meters>(0.f, 0.f, depth / 2.f - wallThickness / 2.f), width, height, wallThickness);
-    collisionComponent->boundingBoxes.emplace_back(Engine::Vec3<Engine::Units::Meters>(0.f, 0.f, -depth / 2.f + wallThickness / 2.f), width, height, wallThickness);
+    collisionComponent->boundingBoxes.emplace_back(Engine::Vec3<Engine::Meters>(0.f, 0.f, depth / 2.f - wallThickness / 2.f), width, height, wallThickness);
+    collisionComponent->boundingBoxes.emplace_back(Engine::Vec3<Engine::Meters>(0.f, 0.f, -depth / 2.f + wallThickness / 2.f), width, height, wallThickness);
 
     // Left and right walls
-    collisionComponent->boundingBoxes.emplace_back(Engine::Vec3<Engine::Units::Meters>(-width / 2.f + wallThickness / 2.f, 0.f, 0.f), wallThickness, height, depth);
-    collisionComponent->boundingBoxes.emplace_back(Engine::Vec3<Engine::Units::Meters>(width / 2.f - wallThickness / 2.f, 0.f, 0.f), wallThickness, height, depth);
+    collisionComponent->boundingBoxes.emplace_back(Engine::Vec3<Engine::Meters>(-width / 2.f + wallThickness / 2.f, 0.f, 0.f), wallThickness, height, depth);
+    collisionComponent->boundingBoxes.emplace_back(Engine::Vec3<Engine::Meters>(width / 2.f - wallThickness / 2.f, 0.f, 0.f), wallThickness, height, depth);
 
     // Top and bottom walls
-    collisionComponent->boundingBoxes.emplace_back(Engine::Vec3<Engine::Units::Meters>(0.f, height / 2.f - wallThickness / 2.f, 0.f), width, wallThickness, depth);
-    collisionComponent->boundingBoxes.emplace_back(Engine::Vec3<Engine::Units::Meters>(0.f, -height / 2.f + wallThickness / 2.f, 0.f), width, wallThickness, depth);
+    collisionComponent->boundingBoxes.emplace_back(Engine::Vec3<Engine::Meters>(0.f, height / 2.f - wallThickness / 2.f, 0.f), width, wallThickness, depth);
+    collisionComponent->boundingBoxes.emplace_back(Engine::Vec3<Engine::Meters>(0.f, -height / 2.f + wallThickness / 2.f, 0.f), width, wallThickness, depth);
 
     // Colors for each face
     const glm::vec3 colors[] = {

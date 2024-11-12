@@ -2,7 +2,7 @@
 
 #include "Physics/Units/UnitTemplate.h"
 
-namespace Engine::Units {
+namespace Engine {
 	constexpr char milliseconds[] = "ms";
 	constexpr char seconds[] = "s";
 	constexpr char minutes[] = "m";
@@ -16,13 +16,13 @@ namespace Engine::Units {
 
 namespace Engine {
 	using TimeUnits = UnitList<
-		Units::Milliseconds,
-		Units::Seconds,
-		Units::Minutes,
-		Units::Hours
+		Milliseconds,
+		Seconds,
+		Minutes,
+		Hours
 	>;
 
-	struct Time : Quantity<Time, Units::Seconds, TimeUnits> {
+	struct Time : Quantity<Time, Seconds, TimeUnits> {
 		using Quantity::Quantity;
 	};
 }

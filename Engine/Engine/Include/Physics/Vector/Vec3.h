@@ -28,7 +28,7 @@ namespace Engine {
 	concept AreValidVectorArgs = ((std::is_convertible_v<Args, T> || std::is_same_v<Args, float> || IsQuantityOrUnit<Args>) && ...);
 
 	template <typename T>
-	concept IsUnitless = std::is_same_v<T, Unitless> || std::is_same_v<T, Units::Unitless>;
+	concept IsUnitless = std::is_same_v<T, Unitless> || std::is_same_v<T, Unitless>;
 
 	template <typename T, typename U>
 	[[nodiscard]] static float getValue(const U& argument) {

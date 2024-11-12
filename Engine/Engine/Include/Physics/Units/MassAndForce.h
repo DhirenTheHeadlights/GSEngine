@@ -4,7 +4,7 @@
 
 // Mass
 
-namespace Engine::Units {
+namespace Engine {
 	struct MassTag {};
 
 	constexpr char kilograms[] = "kg";
@@ -18,19 +18,19 @@ namespace Engine::Units {
 
 namespace Engine {
 	using MassUnits = UnitList<
-		Units::Kilograms,
-		Units::Grams,
-		Units::Pounds
+		Kilograms,
+		Grams,
+		Pounds
 	>;
 
-	struct Mass : Quantity<Mass, Units::Kilograms, MassUnits> {
+	struct Mass : Quantity<Mass, Kilograms, MassUnits> {
 		using Quantity::Quantity;
 	};
 }
 
 // Force
 
-namespace Engine::Units {
+namespace Engine {
 	struct ForceTag {};
 
 	constexpr char newtons[] = "N";
@@ -42,11 +42,11 @@ namespace Engine::Units {
 
 namespace Engine {
 	using ForceUnits = UnitList<
-		Units::Newtons,
-		Units::PoundsForce
+		Newtons,
+		PoundsForce
 	>;
 
-	struct Force : Quantity<Force, Units::Newtons, ForceUnits> {
+	struct Force : Quantity<Force, Newtons, ForceUnits> {
 		using Quantity::Quantity;
 	};
 }

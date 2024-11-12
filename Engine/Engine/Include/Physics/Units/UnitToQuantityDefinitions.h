@@ -10,7 +10,7 @@ struct UnitToQuantity {
 };
 
 // Macro to define the relationship between a unit and a quantity
-// Example: DEFINE_UNIT_TO_QUANTITY(Units::Meters, Length);
+// Example: DEFINE_UNIT_TO_QUANTITY(Meters, Length);
 #define DEFINE_UNIT_TO_QUANTITY(UnitType, QuantityType)		 \
 	    template <>                                          \
 	    struct UnitToQuantity<UnitType> {					 \
@@ -20,52 +20,52 @@ struct UnitToQuantity {
 ////////////////////////////////////////////////////////////////////////
 /// Length
 ////////////////////////////////////////////////////////////////////////
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::Kilometers, Engine::Length);
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::Meters, Engine::Length);
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::Centimeters, Engine::Length);
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::Millimeters, Engine::Length);
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::Yards, Engine::Length);
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::Feet, Engine::Length);
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::Inches, Engine::Length);
+DEFINE_UNIT_TO_QUANTITY(Engine::Kilometers, Engine::Length);
+DEFINE_UNIT_TO_QUANTITY(Engine::Meters, Engine::Length);
+DEFINE_UNIT_TO_QUANTITY(Engine::Centimeters, Engine::Length);
+DEFINE_UNIT_TO_QUANTITY(Engine::Millimeters, Engine::Length);
+DEFINE_UNIT_TO_QUANTITY(Engine::Yards, Engine::Length);
+DEFINE_UNIT_TO_QUANTITY(Engine::Feet, Engine::Length);
+DEFINE_UNIT_TO_QUANTITY(Engine::Inches, Engine::Length);
 ////////////////////////////////////////////////////////////////////////
 /// Mass
 ////////////////////////////////////////////////////////////////////////
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::Kilograms, Engine::Mass);
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::Grams, Engine::Mass);
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::Pounds, Engine::Mass);
+DEFINE_UNIT_TO_QUANTITY(Engine::Kilograms, Engine::Mass);
+DEFINE_UNIT_TO_QUANTITY(Engine::Grams, Engine::Mass);
+DEFINE_UNIT_TO_QUANTITY(Engine::Pounds, Engine::Mass);
 ////////////////////////////////////////////////////////////////////////
 /// Force
 ////////////////////////////////////////////////////////////////////////
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::Newtons, Engine::Force);
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::PoundsForce, Engine::Force);
+DEFINE_UNIT_TO_QUANTITY(Engine::Newtons, Engine::Force);
+DEFINE_UNIT_TO_QUANTITY(Engine::PoundsForce, Engine::Force);
 ////////////////////////////////////////////////////////////////////////
 /// Energy
 ////////////////////////////////////////////////////////////////////////
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::Joules, Engine::Energy);
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::Kilojoules, Engine::Energy);
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::Megajoules, Engine::Energy);
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::Gigajoules, Engine::Energy);
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::Calories, Engine::Energy);
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::Kilocalories, Engine::Energy);
+DEFINE_UNIT_TO_QUANTITY(Engine::Joules, Engine::Energy);
+DEFINE_UNIT_TO_QUANTITY(Engine::Kilojoules, Engine::Energy);
+DEFINE_UNIT_TO_QUANTITY(Engine::Megajoules, Engine::Energy);
+DEFINE_UNIT_TO_QUANTITY(Engine::Gigajoules, Engine::Energy);
+DEFINE_UNIT_TO_QUANTITY(Engine::Calories, Engine::Energy);
+DEFINE_UNIT_TO_QUANTITY(Engine::Kilocalories, Engine::Energy);
 ////////////////////////////////////////////////////////////////////////
 /// Power
 ////////////////////////////////////////////////////////////////////////
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::Watts, Engine::Power);
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::Kilowatts, Engine::Power);
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::Megawatts, Engine::Power);
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::Gigawatts, Engine::Power);
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::Horsepower, Engine::Power);
+DEFINE_UNIT_TO_QUANTITY(Engine::Watts, Engine::Power);
+DEFINE_UNIT_TO_QUANTITY(Engine::Kilowatts, Engine::Power);
+DEFINE_UNIT_TO_QUANTITY(Engine::Megawatts, Engine::Power);
+DEFINE_UNIT_TO_QUANTITY(Engine::Gigawatts, Engine::Power);
+DEFINE_UNIT_TO_QUANTITY(Engine::Horsepower, Engine::Power);
 ////////////////////////////////////////////////////////////////////////
 /// Velocity
 ////////////////////////////////////////////////////////////////////////
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::MetersPerSecond, Engine::Velocity);
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::KilometersPerHour, Engine::Velocity);
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::MilesPerHour, Engine::Velocity);
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::FeetPerSecond, Engine::Velocity);
+DEFINE_UNIT_TO_QUANTITY(Engine::MetersPerSecond, Engine::Velocity);
+DEFINE_UNIT_TO_QUANTITY(Engine::KilometersPerHour, Engine::Velocity);
+DEFINE_UNIT_TO_QUANTITY(Engine::MilesPerHour, Engine::Velocity);
+DEFINE_UNIT_TO_QUANTITY(Engine::FeetPerSecond, Engine::Velocity);
 ////////////////////////////////////////////////////////////////////////
 /// Acceleration
 ////////////////////////////////////////////////////////////////////////
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::MetersPerSecondSquared, Engine::Acceleration);
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::KilometersPerHourSquared, Engine::Acceleration);
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::MilesPerHourSquared, Engine::Acceleration);
-DEFINE_UNIT_TO_QUANTITY(Engine::Units::FeetPerSecondSquared, Engine::Acceleration);
+DEFINE_UNIT_TO_QUANTITY(Engine::MetersPerSecondSquared, Engine::Acceleration);
+DEFINE_UNIT_TO_QUANTITY(Engine::KilometersPerHourSquared, Engine::Acceleration);
+DEFINE_UNIT_TO_QUANTITY(Engine::MilesPerHourSquared, Engine::Acceleration);
+DEFINE_UNIT_TO_QUANTITY(Engine::FeetPerSecondSquared, Engine::Acceleration);

@@ -11,7 +11,7 @@ namespace Game {
 		void update() override;
 		void render() override;
 	private:
-		Engine::Units::Meters
+		Engine::Meters
 			width   = 1000.f,
 			height	= 1000.f,
 			depth	= 1000.f;

@@ -10,8 +10,8 @@ void Engine::BoundingBoxMesh::updateGrid() {
 
 	bbverticies.clear();
 
-	const glm::vec3 min = lower.as<Units::Meters>();
-	const glm::vec3 max = upper.as<Units::Meters>();
+	const glm::vec3 min = lower.as<Meters>();
+	const glm::vec3 max = upper.as<Meters>();
 
 	// Generate grid lines for each face
 	for (float y = min.y; y <= max.y; y += cellSize) {

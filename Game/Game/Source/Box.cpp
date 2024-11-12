@@ -5,11 +5,11 @@
 void Game::Box::initialize() {
     const auto renderComponent = std::make_shared<Engine::RenderComponent>();
 
-    const float halfWidth = size.as<Engine::Units::Meters>().x / 2.f;
-    const float halfHeight = size.as<Engine::Units::Meters>().y / 2.f;
-    const float halfDepth = size.as<Engine::Units::Meters>().z / 2.f;
+    const float halfWidth = size.as<Engine::Meters>().x / 2.f;
+    const float halfHeight = size.as<Engine::Meters>().y / 2.f;
+    const float halfDepth = size.as<Engine::Meters>().z / 2.f;
 
-    const glm::vec3 posOffset = position.as<Engine::Units::Meters>();
+    const glm::vec3 posOffset = position.as<Engine::Meters>();
 
     const glm::vec3 colors[] = {
         {.75f, 0.5f, 0.2f},  // Front

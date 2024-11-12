@@ -22,7 +22,7 @@ namespace Engine::Surfaces {
 
 		Unitless frictionCoefficient;	 // Surface friction (controls sliding)
 		Unitless restitution;			 // Bounce factor
-		Units::Seconds inverseDamping;	 // Time it takes for an object to stop moving on the surface
+		Seconds inverseDamping;	 // Time it takes for an object to stop moving on the surface
 		Unitless traction;				 // Grip, useful for vehicle or character movement
 	};
 
