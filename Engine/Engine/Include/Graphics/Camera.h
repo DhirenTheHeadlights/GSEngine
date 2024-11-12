@@ -25,17 +25,17 @@ namespace Engine {
 
 		void setPosition(const Vec3<Length>& position) { this->position = position; }
 
-		glm::mat4 getViewMatrix() const { return glm::lookAt(position.as<Units::Meters>(), (position + front).as<Units::Meters>(), up.as<Units::Meters>()); }
+		glm::mat4 getViewMatrix() const { return glm::lookAt(position.as<Meters>(), (position + front).as<Meters>(), up.as<Meters>()); }
 		Vec3<Length> getPosition() const { return position; }
 		Vec3<Unitless> getCameraDirectionRelativeToOrigin(const Vec3<Unitless>& direction) const {
-			return { right.as<Units::Meters>() * direction.rawVec3().x + up.as<Units::Meters>() * direction.rawVec3().y + front.as<Units::Meters>() * direction.rawVec3().z};
+			return { right.as<Meters>() * direction.rawVec3().x + up.as<Meters>() * direction.rawVec3().y + front.as<Meters>() * direction.rawVec3().z};
 		}
 	private:
 		Vec3<Length> position;
-		Vec3<Length> front = Vec3<Units::Meters>(0.0f, 0.0f, -1.0f);
-		Vec3<Length> up = Vec3<Units::Meters>(0.0f, 1.0f, 0.0f);
-		Vec3<Length> right = Vec3<Units::Meters>(1.0f, 0.0f, 0.0f);
-		Vec3<Length> worldUp = Vec3<Units::Meters>(0.0f, 1.0f, 0.0f);
+		Vec3<Length> front = Vec3<Meters>(0.0f, 0.0f, -1.0f);
+		Vec3<Length> up = Vec3<Meters>(0.0f, 1.0f, 0.0f);
+		Vec3<Length> right = Vec3<Meters>(1.0f, 0.0f, 0.0f);
+		Vec3<Length> worldUp = Vec3<Meters>(0.0f, 1.0f, 0.0f);
 
 		float yaw = -90.0f;
 		float pitch = 0.0f;

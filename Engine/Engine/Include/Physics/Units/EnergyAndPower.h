@@ -4,7 +4,7 @@
 
 // Energy
 
-namespace Engine::Units {
+namespace Engine {
 	struct EnergyTag {};
 
 	constexpr char joules[] = "J";
@@ -24,22 +24,22 @@ namespace Engine::Units {
 
 namespace Engine {
 	using EnergyUnits = UnitList<
-		Units::Joules,
-		Units::Kilojoules,
-		Units::Megajoules,
-		Units::Gigajoules,
-		Units::Calories,
-		Units::Kilocalories
+		Joules,
+		Kilojoules,
+		Megajoules,
+		Gigajoules,
+		Calories,
+		Kilocalories
 	>;
 
-	struct Energy : Quantity<Energy, Units::Joules, EnergyUnits> {
+	struct Energy : Quantity<Energy, Joules, EnergyUnits> {
 		using Quantity::Quantity;
 	};
 }
 
 // Power
 
-namespace Engine::Units {
+namespace Engine {
 	struct PowerTag {};
 
 	constexpr char watts[] = "W";
@@ -57,13 +57,13 @@ namespace Engine::Units {
 
 namespace Engine {
 	using PowerUnits = UnitList<
-		Units::Watts,
-		Units::Kilowatts,
-		Units::Megawatts,
-		Units::Gigawatts,
-		Units::Horsepower
+		Watts,
+		Kilowatts,
+		Megawatts,
+		Gigawatts,
+		Horsepower
 	>;
-	struct Power : Quantity<Power, Units::Watts, PowerUnits> {
+	struct Power : Quantity<Power, Watts, PowerUnits> {
 		using Quantity::Quantity;
 	};
 }

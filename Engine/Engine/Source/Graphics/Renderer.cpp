@@ -274,7 +274,7 @@ void Engine::Renderer::renderObjects() {
 	if (!Window::isMouseVisible()) camera.processMouseMovement(Input::getMouse().delta);
 
 	glm::mat4 lightProjection = glm::ortho(-20.0f, 20.0f, -20.0f, 20.0f, nearPlane, farPlane);
-	glm::mat4 lightView = glm::lookAt(camera.getPosition().as<Units::Meters>(), glm::vec3(0.f), glm::vec3(0.0f, 1.0f, 0.0f));
+	glm::mat4 lightView = glm::lookAt(camera.getPosition().as<Meters>(), glm::vec3(0.f), glm::vec3(0.0f, 1.0f, 0.0f));
 	const glm::mat4 lightSpaceMatrix = lightProjection * lightView;
 
 	renderShadowPass(lightSpaceMatrix);

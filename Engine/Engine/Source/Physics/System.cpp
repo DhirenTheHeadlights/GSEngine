@@ -10,16 +10,16 @@
 #include "Physics/Surfaces.h"
 #include "Physics/Vector/Math.h"
 
-auto gravity = Engine::Vec3<Engine::Units::MetersPerSecondSquared>(0.f, -9.8f, 0.f);
+auto gravity = Engine::Vec3<Engine::MetersPerSecondSquared>(0.f, -9.8f, 0.f);
 
 void Engine::Physics::applyForce(MotionComponent* component, const Vec3<Force>& force) {
 	if (isZero(force)) {
 		return;
 	}
 
-	const auto acceleration = Engine::Vec3<Units::MetersPerSecondSquared>(
-		force.as<Units::Newtons>() /
-		std::max(component->mass.as<Units::Kilograms>(), 0.0001f)
+	const auto acceleration = Engine::Vec3<MetersPerSecondSquared>(
+		force.as<Newtons>() /
+		std::max(component->mass.as<Kilograms>(), 0.0001f)
 	);
 
 	component->acceleration += acceleration;
@@ -30,8 +30,8 @@ void Engine::Physics::applyImpulse(MotionComponent* component, const Vec3<Force>
 		return;
 	}
 
-	const auto deltaVelocity = Engine::Vec3<Units::MetersPerSecond>(
-		force.as<Units::Newtons>() * duration.as<Units::Seconds>() / std::max(component->mass.as<Units::Kilograms>(), 0.0001f)
+	const auto deltaVelocity = Engine::Vec3<MetersPerSecond>(
+		force.as<Newtons>() * duration.as<Seconds>() / std::max(component->mass.as<Kilograms>(), 0.0001f)
 	);
 
 	component->velocity += deltaVelocity;
@@ -53,9 +53,9 @@ void updateGravity(Engine::Physics::MotionComponent* component) {
 	}
 
 	if (component->airborne) {
-		const auto gravityForce = Engine::Vec3<Engine::Units::Newtons>(
-			gravity.as<Engine::Units::MetersPerSecondSquared>() *
-			component->mass.as<Engine::Units::Kilograms>()
+		const auto gravityForce = Engine::Vec3<Engine::Newtons>(
+			gravity.as<Engine::MetersPerSecondSquared>() *
+			component->mass.as<Engine::Kilograms>()
 		);
 		applyForce(component, gravityForce);
 	}
@@ -66,19 +66,19 @@ void updateGravity(Engine::Physics::MotionComponent* component) {
 
 void updateAirResistance(Engine::Physics::MotionComponent* component) {
 	constexpr float airDensity = 1.225f;												  // kg/m^3 (air density at sea level)
-	const Engine::Units::Unitless dragCoefficient = component->airborne ? 0.47f : 1.05f;  // Approx for a sphere vs a box
+	const Engine::Unitless dragCoefficient = component->airborne ? 0.47f : 1.05f;  // Approx for a sphere vs a box
 	constexpr float crossSectionalArea = 1.0f;											  // Example area in m^2, adjust according to the object
 
 	// Calculate drag force magnitude: F_d = 0.5 * C_d * rho * A * v^2, Units are in Newtons
 	const Engine::Force dragForceMagnitude(
-		Engine::Units::Newtons(
-			0.5f * dragCoefficient * airDensity * crossSectionalArea * 
-			magnitude(component->velocity).as<Engine::Units::MetersPerSecond>() *
-			magnitude(component->velocity).as<Engine::Units::MetersPerSecond>()
+		Engine::Newtons(
+			0.5f * dragCoefficient.asDefaultUnit() * airDensity * crossSectionalArea * 
+			magnitude(component->velocity).as<Engine::MetersPerSecond>() *
+			magnitude(component->velocity).as<Engine::MetersPerSecond>()
 		)
 	);
 
-	applyForce(component, Engine::Vec3<Engine::Units::Newtons>(-dragForceMagnitude.as<Engine::Units::Newtons>() * normalize(component->velocity).rawVec3()));
+	applyForce(component, Engine::Vec3<Engine::Newtons>(-dragForceMagnitude.as<Engine::Newtons>() * normalize(component->velocity).rawVec3()));
 }
 
 void updateFriction(Engine::Physics::MotionComponent* component, const Engine::Surfaces::SurfaceProperties& surface) {
@@ -86,32 +86,32 @@ void updateFriction(Engine::Physics::MotionComponent* component, const Engine::S
 		return;
 	}
 
-	const Engine::Units::Newtons normal = component->mass.as<Engine::Units::Kilograms>() * magnitude(gravity).as<Engine::Units::MetersPerSecondSquared>();
-	Engine::Units::Newtons friction = normal * surface.frictionCoefficient;
+	const Engine::Newtons normal = component->mass.as<Engine::Kilograms>() * magnitude(gravity).as<Engine::MetersPerSecondSquared>();
+	Engine::Newtons friction = normal * surface.frictionCoefficient;
 
 	if (component->selfControlled) {
 		friction *= 5.f;
 	}
 
-	const Engine::Vec3<Engine::Units::Newtons> frictionForce(-friction * normalize(component->velocity).rawVec3());
+	const Engine::Vec3<Engine::Newtons> frictionForce(-friction * normalize(component->velocity).rawVec3());
 
 	applyForce(component, frictionForce);
 }
 
 void updateVelocity(Engine::Physics::MotionComponent* component) {
-	const float deltaTime = Engine::MainClock::getDeltaTime().as<Engine::Units::Seconds>();
+	const float deltaTime = Engine::MainClock::getDeltaTime().as<Engine::Seconds>();
 
 	if (component->selfControlled && !component->airborne) {
-		const Engine::Units::Unitless dampingFactor = 5.0f; 
-		component->velocity *= std::max(0.f, 1.0f - dampingFactor * deltaTime);
+		const Engine::Unitless dampingFactor = 5.0f; 
+		component->velocity *= std::max(0.f, 1.0f - dampingFactor.asDefaultUnit() * deltaTime);
 	}
 
 	// Update velocity using the kinematic equation: v = v0 + at
-	component->velocity += Engine::Vec3<Engine::Units::MetersPerSecond>(component->acceleration.as<Engine::Units::MetersPerSecondSquared>() * deltaTime);
+	component->velocity += Engine::Vec3<Engine::MetersPerSecond>(component->acceleration.as<Engine::MetersPerSecondSquared>() * deltaTime);
 
 	if (magnitude(component->velocity) > component->maxSpeed && !component->airborne) {
-		component->velocity = Engine::Vec3<Engine::Units::MetersPerSecond>(
-			normalize(component->velocity) * component->maxSpeed.as<Engine::Units::MetersPerSecond>()
+		component->velocity = Engine::Vec3<Engine::MetersPerSecond>(
+			normalize(component->velocity) * component->maxSpeed.as<Engine::MetersPerSecond>()
 		);
 	}
 
@@ -119,12 +119,12 @@ void updateVelocity(Engine::Physics::MotionComponent* component) {
 }
 
 void updatePosition(Engine::Physics::MotionComponent* component) {
-	const float deltaTime = Engine::MainClock::getDeltaTime().as<Engine::Units::Seconds>();
+	const float deltaTime = Engine::MainClock::getDeltaTime().as<Engine::Seconds>();
 
 	// Update position using the kinematic equation: x = x0 + v0t + 0.5at^2
-	component->position += Engine::Vec3<Engine::Units::Meters>(
-		component->velocity.as<Engine::Units::MetersPerSecond>() * deltaTime + 0.5f * 
-		component->acceleration.as<Engine::Units::MetersPerSecondSquared>() * deltaTime * deltaTime
+	component->position += Engine::Vec3<Engine::Meters>(
+		component->velocity.as<Engine::MetersPerSecond>() * deltaTime + 0.5f * 
+		component->acceleration.as<Engine::MetersPerSecondSquared>() * deltaTime * deltaTime
 	);
 }
 
@@ -182,7 +182,7 @@ void resolveAxisCollision(
 		}
 
 		// Adjust position to prevent sinking into the collision surface
-		//dynamicMotionComponentPtr->position.rawVec3()[collisionInfo.getAxis()] -= collisionInfo.penetration.as<Engine::Units::Meters>();
+		//dynamicMotionComponentPtr->position.rawVec3()[collisionInfo.getAxis()] -= collisionInfo.penetration.as<Engine::Meters>();
 	}
 }
 

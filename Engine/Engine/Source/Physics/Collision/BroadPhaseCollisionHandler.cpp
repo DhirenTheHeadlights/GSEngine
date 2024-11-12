@@ -78,9 +78,9 @@ Engine::CollisionInformation Engine::BroadPhaseCollisionHandler::calculateCollis
 	}
 
 	// Calculate the collision point
-	Vec3<Units::Meters> collisionPoint = box1.getCenter();
+	Vec3<Meters> collisionPoint = box1.getCenter();
 	collisionPoint += box1.getSize() / 2.f * collisionNormal;					
-	collisionPoint -= Vec3<Units::Meters>(penetration * collisionNormal);
+	collisionPoint -= Vec3<Meters>(penetration * collisionNormal);
 
 	collisionInformation.collisionNormal = collisionNormal;
 	collisionInformation.penetration = penetration;
