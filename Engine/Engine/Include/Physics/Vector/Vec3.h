@@ -8,7 +8,7 @@
 
 namespace Engine {
 	template <typename T>
-	concept IsQuantity = std::is_base_of_v<Quantity<T, typename T::DefaultUnit, typename T::Units>, T>;
+	concept IsQuantity = std::is_base_of_v<QuantityBase, T>;
 
 	template <typename T>
 	concept IsQuantityOrUnit = IsQuantity<T> || IsUnit<T>;
@@ -25,7 +25,7 @@ namespace Engine {
 	concept IsSameQuantityTag = std::is_same_v<typename GetQuantityTagType<T>::Type, typename GetQuantityTagType<U>::Type>;
 
 	template <typename T, typename... Args>
-	concept AreValidVectorArgs = ((std::is_convertible_v<Args, T> || std::is_same_v<Args, float> || IsQuantityOrUnit<Args>) && ...);
+	concept AreValidVectorArgs = ((IsSameQuantityTag<Args, T> || std::is_same_v<Args, float> || IsQuantityOrUnit<Args>) && ...);
 
 	template <typename T>
 	concept IsUnitless = std::is_same_v<T, Unitless>;
@@ -216,87 +216,87 @@ namespace Engine {
 		}
 	}
 
-	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
+	template <IsQuantityOrUnit T, IsQuantity U>
 		requires IsUnitless<T> || IsUnitless<U>
 	auto operator*(const Vec3<T>& lhs, const U& rhs) {
 		if constexpr (IsUnitless<T> && !IsUnitless<U>) {
-			return Vec3<U>(lhs.asDefaultUnits() * getValue<U>(rhs));
+			return Vec3<U>(lhs.asDefaultUnits() * rhs.asDefaultUnit());
 		}
 		else if constexpr (IsUnitless<U> && !IsUnitless<T>) {
-			return Vec3<T>(lhs.asDefaultUnits() * getValue<T>(rhs));
+			return Vec3<T>(lhs.asDefaultUnits() * rhs.asDefaultUnit());
 		}
 		else {
 			return Vec3<Unitless>(lhs.asDefaultUnits() * getValue<Unitless>(rhs));
 		}
 	}
 
-	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
+	template <IsQuantity T, IsQuantityOrUnit U>
 		requires IsUnitless<T> || IsUnitless<U>
 	auto operator*(const T& lhs, const Vec3<U>& rhs) {
 		if constexpr (IsUnitless<T> && !IsUnitless<U>) {
-			return Vec3<U>(getValue<U>(lhs) * rhs.asDefaultUnits());
+			return Vec3<U>(lhs.asDefaultUnit() * rhs.asDefaultUnits());
 		}
 		else if constexpr (IsUnitless<U> && !IsUnitless<T>) {
-			return Vec3<T>(getValue<T>(lhs) * rhs.asDefaultUnits());
+			return Vec3<T>(lhs.asDefaultUnit() * rhs.asDefaultUnits());
 		}
 		else {
 			return Vec3<Unitless>(getValue<Unitless>(lhs) * rhs.asDefaultUnits());
 		}
 	}
 
-	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
+	template <IsQuantityOrUnit T, IsQuantity U>
 		requires IsUnitless<T> || IsUnitless<U>
 	auto operator/(const Vec3<T>& lhs, const U& rhs) {
 		if constexpr (IsUnitless<T> && !IsUnitless<U>) {
-			return Vec3<U>(lhs.asDefaultUnits() / getValue<U>(rhs));
+			return Vec3<U>(lhs.asDefaultUnits() / rhs.asDefaultUnit());
 		}
 		else if constexpr (IsUnitless<U> && !IsUnitless<T>) {
-			return Vec3<T>(lhs.asDefaultUnits() / getValue<T>(rhs));
+			return Vec3<T>(lhs.asDefaultUnits() / rhs.asDefaultUnit());
 		}
 		else {
-			return Vec3<Unitless>(lhs.asDefaultUnits() / getValue<Unitless>(rhs));
+			return Vec3<Unitless>(lhs.asDefaultUnits() / rhs.asDefaultUnit());
 		}
 	}
 
-	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
+	template <IsQuantity T, IsQuantityOrUnit U>
 		requires IsUnitless<T> || IsUnitless<U>
 	auto operator/(const T& lhs, const Vec3<U> rhs) {
 		if constexpr (IsUnitless<T> && !IsUnitless<U>) {
-			return Vec3<U>(getValue<U>(lhs) / rhs.asDefaultUnits());
+			return Vec3<U>(lhs.asDefaultUnit() / rhs.asDefaultUnits());
 		}
 		else if constexpr (IsUnitless<U> && !IsUnitless<T>) {
-			return Vec3<T>(getValue<T>(lhs) / rhs.asDefaultUnits());
+			return Vec3<T>(lhs.asDefaultUnit() / rhs.asDefaultUnits());
 		}
 		else {
 			return Vec3<Unitless>(getValue<Unitless>(lhs) / rhs.asDefaultUnits());
 		}
 	}
 
-	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
+	template <IsQuantity T, IsQuantity U>
 		requires IsUnitless<T> || IsUnitless<U>
 	auto operator*(const T& lhs, const U& rhs) {
 		if constexpr (IsUnitless<T> && !IsUnitless<U>) {
-			return U(getValue<U>(lhs) * getValue<U>(rhs));
+			return convertValueToQuantity<U>(lhs.asDefaultUnit() * rhs.asDefaultUnit());
 		}
 		else if constexpr (IsUnitless<U> && !IsUnitless<T>) {
-			return T(getValue<T>(lhs) * getValue<T>(rhs));
+			return convertValueToQuantity<T>(lhs.asDefaultUnit() * rhs.asDefaultUnit());
 		}
 		else {
-			return Unitless(getValue<Unitless>(lhs) * getValue<Unitless>(rhs));
+			return Unitless(lhs.asDefaultUnit() * rhs.asDefaultUnit());
 		}
 	}
 
-	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
+	template <IsQuantity T, IsQuantity U>
 		requires IsUnitless<T> || IsUnitless<U>
 	auto operator/(const T& lhs, const U& rhs) {
 		if constexpr (IsUnitless<T> && !IsUnitless<U>) {
-			return U(getValue<U>(lhs) / getValue<U>(rhs));
+			return convertValueToQuantity<U>(lhs.asDefaultUnit() / rhs.asDefaultUnit());
 		}
 		else if constexpr (IsUnitless<U> && !IsUnitless<T>) {
-			return T(getValue<T>(lhs) / getValue<T>(rhs));
+			return convertValueToQuantity<T>(lhs.asDefaultUnit() / rhs.asDefaultUnit());
 		}
 		else {
-			return Unitless(getValue<Unitless>(lhs) / getValue<Unitless>(rhs));
+			return Unitless(lhs.asDefaultUnit() / rhs.asDefaultUnit());
 		}
 	}
 }
