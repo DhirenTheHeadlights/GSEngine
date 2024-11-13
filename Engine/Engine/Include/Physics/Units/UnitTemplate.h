@@ -20,9 +20,9 @@ namespace Engine {
 
 	template <typename T>
 	concept IsUnit = requires {
-		typename T::QuantityTag;								   // Units have QuantityTagType
-		{ T::UnitName } -> std::convertible_to<const char*>;       // Optional: further ensures T is a Unit
-		{ T::ConversionFactor } -> std::convertible_to<float>;     // Optional: further ensures T is a Unit
+		typename std::remove_cvref_t<T>::QuantityTag;
+		{ std::remove_cvref_t<T>::UnitName } -> std::convertible_to<const char*>;
+		{ std::remove_cvref_t<T>::ConversionFactor } -> std::convertible_to<float>;
 	};
 
 	template <typename UnitType, typename ValidUnits>

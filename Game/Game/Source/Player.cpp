@@ -38,7 +38,7 @@ void Game::Player::updateJetpack() {
 
 		for (auto& [key, direction] : wasd) {
 			if (Engine::Input::getKeyboard().keys[key].held) {
-				applyForce(getComponent<Engine::Physics::MotionComponent>().get(), Engine::Vec3<Engine::Newtons>(jetpackSideForce, 0, jetpackSideForce) * Engine::getCamera().getCameraDirectionRelativeToOrigin(direction));
+				applyForce(getComponent<Engine::Physics::MotionComponent>().get(), Engine::Vec3<Engine::Newtons>(jetpackSideForce, 0.f, jetpackSideForce) * Engine::getCamera().getCameraDirectionRelativeToOrigin(direction));
 			}
 		}
 	}
