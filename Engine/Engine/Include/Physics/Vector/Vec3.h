@@ -8,7 +8,10 @@
 
 namespace Engine {
 	template <typename T>
-	concept IsQuantity = std::is_base_of_v<Quantity<T, typename T::DefaultUnit, typename T::Units>, T>;
+	concept IsQuantity = std::is_base_of_v<
+		Quantity<std::remove_cvref_t<T>, typename std::remove_cvref_t<T>::DefaultUnit, typename std::remove_cvref_t<T>::Units>,
+		std::remove_cvref_t<T>
+	>;
 
 	template <typename T>
 	concept IsQuantityOrUnit = IsQuantity<T> || IsUnit<T>;
@@ -18,14 +21,17 @@ namespace Engine {
 
 	template <typename T>
 	struct GetQuantityTagType {
-		using Type = typename UnitToQuantity<T>::Type;
+		using Type = typename UnitToQuantity<std::remove_cvref_t<T>>::Type;
 	};
 
 	template <typename T, typename U>
-	concept IsSameQuantityTag = std::is_same_v<typename GetQuantityTagType<T>::Type, typename GetQuantityTagType<U>::Type>;
+	concept IsSameQuantityTag = std::is_same_v<
+		typename GetQuantityTagType<std::remove_cvref_t<T>>::Type,
+		typename GetQuantityTagType<std::remove_cvref_t<U>>::Type
+	>;
 
 	template <typename T, typename... Args>
-	concept AreValidVectorArgs = (((IsQuantity<Args> && IsSameQuantityTag<Args, T>) || std::is_same_v<Args, float>) && ...);
+	concept AreValidVectorArgs = (((IsQuantity<Args> && IsSameQuantityTag<Args, T>) || std::is_convertible_v<Args, float>) && ...);
 
 	template <typename T>
 	concept IsUnitless = std::is_same_v<T, Unitless>;
@@ -75,8 +81,6 @@ namespace Engine {
 	template <IsQuantityOrUnit T>
 	struct Vec3 {
 		using QuantityType = typename UnitToQuantity<T>::Type;
-
-		Vec3() = default;
 
 		template <typename... Args>
 			requires ((sizeof...(Args) == 0 || sizeof...(Args) == 1 || sizeof...(Args) == 3) && AreValidVectorArgs<T, Args...>)
