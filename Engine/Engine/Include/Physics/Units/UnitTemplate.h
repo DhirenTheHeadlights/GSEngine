@@ -5,19 +5,24 @@
 #include <tuple>
 #include <string>
 
-#include "Physics/Units/UnitConcepts.h"
-
 namespace Engine {
 	template<typename... Units>
 	struct UnitList {
 		using Type = std::tuple<Units...>;
 	};
 
-	template <typename QuantityTagType, float ConversionFactorType, const char* UnitNameType>
+	template <typename QuantityTagType, float ConversionFactorType, const char UnitNameType[]>
 	struct Unit {
 		using QuantityTag = QuantityTagType;
 		static constexpr float ConversionFactor = ConversionFactorType;
 		static constexpr const char* UnitName = UnitNameType;
+	};
+
+	template <typename T>
+	concept IsUnit = requires {
+		typename T::QuantityTag;								   // Units have QuantityTagType
+		{ T::UnitName } -> std::convertible_to<const char*>;       // Optional: further ensures T is a Unit
+		{ T::ConversionFactor } -> std::convertible_to<float>;     // Optional: further ensures T is a Unit
 	};
 
 	template <typename UnitType, typename ValidUnits>
@@ -27,10 +32,8 @@ namespace Engine {
 		}, typename ValidUnits::Type{});
 	}
 
-	struct QuantityBase {};
-
 	template <typename Derived, IsUnit Default, typename ValidUnits>
-	struct Quantity : QuantityBase {
+	struct Quantity {
 		using Units = ValidUnits;
 		using DefaultUnit = Default;
 

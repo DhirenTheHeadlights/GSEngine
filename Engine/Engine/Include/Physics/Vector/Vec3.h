@@ -8,7 +8,7 @@
 
 namespace Engine {
 	template <typename T>
-	concept IsQuantity = std::is_base_of_v<QuantityBase, T>;
+	concept IsQuantity = std::is_base_of_v<Quantity<T, typename T::DefaultUnit, typename T::Units>, T>;
 
 	template <typename T>
 	concept IsQuantityOrUnit = IsQuantity<T> || IsUnit<T>;
@@ -25,7 +25,7 @@ namespace Engine {
 	concept IsSameQuantityTag = std::is_same_v<typename GetQuantityTagType<T>::Type, typename GetQuantityTagType<U>::Type>;
 
 	template <typename T, typename... Args>
-	concept AreValidVectorArgs = ((IsSameQuantityTag<Args, T> || std::is_same_v<Args, float> || IsQuantityOrUnit<Args>) && ...);
+	concept AreValidVectorArgs = (((IsQuantity<Args> && IsSameQuantityTag<Args, T>) || std::is_same_v<Args, float>) && ...);
 
 	template <typename T>
 	concept IsUnitless = std::is_same_v<T, Unitless>;
@@ -84,7 +84,7 @@ namespace Engine {
 
 		Vec3(const glm::vec3& vec3) {
 			if constexpr (IsUnit<T>) {
-				vec = { QuantityType<T>(vec3.x).asDefaultUnit(), QuantityType<T>(vec3.y).asDefaultUnit(), QuantityType<T>(vec3.z).asDefaultUnit() };
+				vec = { convertValueToDefaultUnit<T>(vec3.x), convertValueToDefaultUnit<T>(vec3.y), convertValueToDefaultUnit<T>(vec3.z) };
 			}
 			else if constexpr (IsQuantity<T>) {
 				vec = vec3; // Assume vec3 is in default units
