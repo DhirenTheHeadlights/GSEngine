@@ -27,14 +27,16 @@ namespace Engine {
 		}, typename ValidUnits::Type{});
 	}
 
+	struct QuantityBase {};
+
 	template <typename Derived, IsUnit Default, typename ValidUnits>
-	struct Quantity {
+	struct Quantity : QuantityBase {
 		using Units = ValidUnits;
 		using DefaultUnit = Default;
 
 		Quantity() = default;
 
-		// Conversion function to convert to any other valid unit
+		// Convert to any other valid unit
 		template <IsUnit Unit>
 		float as() const {
 			static_assert(isValidUnitForQuantity<Unit, ValidUnits>(), "Invalid unit type for conversion");
