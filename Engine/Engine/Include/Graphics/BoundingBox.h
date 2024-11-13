@@ -1,6 +1,7 @@
 #pragma once
 #include <glm/glm.hpp>
 #include "Physics/Units/Units.h"
+#include "Physics/Vector/Math.h"
 #include "Physics/Vector/Vec3.h"
 
 namespace Engine {
@@ -10,13 +11,13 @@ namespace Engine {
 		Length penetration;
 		Vec3<Length> collisionPoint;
 		int getAxis() const {
-			if (collisionNormal.asDefaultUnits().x != 0) {
+			if (epsilonEqualIndex(collisionNormal, Vec3<Unitless>(), X)) {
 				return 0;
-			} else if (collisionNormal.asDefaultUnits().y != 0) {
-				return 1;
-			} else {
-				return 2;
 			}
+			if (epsilonEqualIndex(collisionNormal, Vec3<Unitless>(), Y)) {
+				return 1;
+			}
+			return Z; // Assume it is the z axis
 		}
 	};
 

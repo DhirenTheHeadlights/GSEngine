@@ -22,6 +22,10 @@ namespace Engine {
 }
 
 namespace Engine {
+	enum : std::uint8_t {
+		X, Y, Z 
+	};
+
 	template <typename T>
 	void print(const char* message, const Vec3<T>& a) {
 		std::cout << message << ": " << a.asDefaultUnits().x << ", " << a.asDefaultUnits().y << ", " << a.asDefaultUnits().z << std::endl;
@@ -51,14 +55,7 @@ namespace Engine {
 			max = b.asDefaultUnits()[index];
 		}
 
-		if constexpr (IsUnit<T>) {
-			return T(max);
-		}
-		else if constexpr (IsQuantity<T>) {
-			return typename UnitToQuantity<T>::Type(UnitToQuantity<T>::Type::DefaultUnit(max));
-		}
-
-		return typename UnitToQuantity<T>::Type(UnitToQuantity<T>::Type::DefaultUnit(max));
+		return convertValueToQuantity<T>(max);
 	}
 
 	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
@@ -68,13 +65,6 @@ namespace Engine {
 
 		if (b.asDefaultUnits()[index] < a.asDefaultUnits()[index]) {
 			min = b.asDefaultUnits()[index];
-		}
-
-		if constexpr (IsUnit<T>) {
-			return T(min);
-		}
-		else if constexpr (IsQuantity<T>) {
-			return convertValueToQuantity<T>(min);
 		}
 
 		return convertValueToQuantity<T>(min);

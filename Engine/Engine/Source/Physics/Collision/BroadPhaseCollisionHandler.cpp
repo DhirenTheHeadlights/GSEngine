@@ -54,9 +54,9 @@ Engine::CollisionInformation Engine::BroadPhaseCollisionHandler::calculateCollis
 	}
 
 	// Calculate the penetration depth on each axis
-	Length xPenetration = min(box1.upperBound, box2.upperBound, 0) - max(box1.lowerBound, box2.lowerBound, 0);
-	Length yPenetration = min(box1.upperBound, box2.upperBound, 1) - max(box1.lowerBound, box2.lowerBound, 1);
-	Length zPenetration = min(box1.upperBound, box2.upperBound, 2) - max(box1.lowerBound, box2.lowerBound, 2);
+	Length xPenetration = min(box1.upperBound, box2.upperBound, X) - max(box1.lowerBound, box2.lowerBound, X);
+	Length yPenetration = min(box1.upperBound, box2.upperBound, Y) - max(box1.lowerBound, box2.lowerBound, Y);
+	Length zPenetration = min(box1.upperBound, box2.upperBound, Z) - max(box1.lowerBound, box2.lowerBound, Z);
 
 	// Find the axis with the smallest penetration
 	Length penetration = xPenetration;
@@ -80,7 +80,7 @@ Engine::CollisionInformation Engine::BroadPhaseCollisionHandler::calculateCollis
 	// Calculate the collision point
 	Vec3<Meters> collisionPoint = box1.getCenter();
 	collisionPoint += box1.getSize() / 2.f * collisionNormal;					
-	collisionPoint -= Vec3<Meters>(penetration * collisionNormal);
+	collisionPoint -= penetration * collisionNormal;
 
 	collisionInformation.collisionNormal = collisionNormal;
 	collisionInformation.penetration = penetration;
