@@ -10,9 +10,9 @@ namespace Engine {
 		Length penetration;
 		Vec3<Length> collisionPoint;
 		int getAxis() const {
-			if (collisionNormal.rawVec3().x != 0) {
+			if (collisionNormal.asDefaultUnits().x != 0) {
 				return 0;
-			} else if (collisionNormal.rawVec3().y != 0) {
+			} else if (collisionNormal.asDefaultUnits().y != 0) {
 				return 1;
 			} else {
 				return 2;

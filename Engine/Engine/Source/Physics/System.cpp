@@ -60,7 +60,7 @@ void updateGravity(Engine::Physics::MotionComponent* component) {
 		applyForce(component, gravityForce);
 	}
 	else {
-		component->acceleration.rawVec3().y = std::max(0.f, component->acceleration.rawVec3().y);
+		component->acceleration.asDefaultUnits().y = std::max(0.f, component->acceleration.asDefaultUnits().y);
 	}
 }
 
@@ -76,7 +76,7 @@ void updateAirResistance(Engine::Physics::MotionComponent* component) {
 			magnitude(component->velocity).as<Engine::MetersPerSecond>()
 	);
 
-	applyForce(component, Engine::Vec3<Engine::Newtons>(-dragForceMagnitude.as<Engine::Newtons>() * normalize(component->velocity).rawVec3()));
+	applyForce(component, Engine::Vec3<Engine::Newtons>(-dragForceMagnitude.as<Engine::Newtons>() * normalize(component->velocity).asDefaultUnits()));
 }
 
 void updateFriction(Engine::Physics::MotionComponent* component, const Engine::Surfaces::SurfaceProperties& surface) {
@@ -158,8 +158,8 @@ void resolveAxisCollision(
 	const Engine::Surfaces::SurfaceProperties& surface
 ) {
 	if (const auto dynamicMotionComponentPtr = dynamicMotionComponent.lock()) {
-		float& vel = dynamicMotionComponentPtr->velocity.rawVec3()[collisionInfo.getAxis()];
-		float& acc = dynamicMotionComponentPtr->acceleration.rawVec3()[collisionInfo.getAxis()];
+		float& vel = dynamicMotionComponentPtr->velocity.asDefaultUnits()[collisionInfo.getAxis()];
+		float& acc = dynamicMotionComponentPtr->acceleration.asDefaultUnits()[collisionInfo.getAxis()];
 
 		// Project velocity and acceleration onto collision normal to check movement toward the surface
 		const float velocityIntoSurface = dot(dynamicMotionComponentPtr->velocity, collisionInfo.collisionNormal);
@@ -174,7 +174,7 @@ void resolveAxisCollision(
 		}
 
 		// Special case for ground collision (assumed Y-axis collision)
-		if (collisionInfo.getAxis() == 1 && collisionInfo.collisionNormal.rawVec3().y > 0) {
+		if (collisionInfo.getAxis() == 1 && collisionInfo.collisionNormal.asDefaultUnits().y > 0) {
 			dynamicMotionComponentPtr->airborne = false;
 			updateFriction(dynamicMotionComponentPtr.get(), surface);
 		}
