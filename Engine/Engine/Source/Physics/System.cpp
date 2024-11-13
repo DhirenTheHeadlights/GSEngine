@@ -70,12 +70,10 @@ void updateAirResistance(Engine::Physics::MotionComponent* component) {
 	constexpr float crossSectionalArea = 1.0f;											  // Example area in m^2, adjust according to the object
 
 	// Calculate drag force magnitude: F_d = 0.5 * C_d * rho * A * v^2, Units are in Newtons
-	const Engine::Force dragForceMagnitude(
-		Engine::Newtons(
+	const Engine::Force dragForceMagnitude = Engine::newtons(
 			0.5f * dragCoefficient.asDefaultUnit() * airDensity * crossSectionalArea * 
 			magnitude(component->velocity).as<Engine::MetersPerSecond>() *
 			magnitude(component->velocity).as<Engine::MetersPerSecond>()
-		)
 	);
 
 	applyForce(component, Engine::Vec3<Engine::Newtons>(-dragForceMagnitude.as<Engine::Newtons>() * normalize(component->velocity).rawVec3()));
@@ -86,14 +84,14 @@ void updateFriction(Engine::Physics::MotionComponent* component, const Engine::S
 		return;
 	}
 
-	const Engine::Newtons normal = component->mass.as<Engine::Kilograms>() * magnitude(gravity).as<Engine::MetersPerSecondSquared>();
-	Engine::Newtons friction = normal * surface.frictionCoefficient;
+	const Engine::Force normal = Engine::newtons(component->mass.as<Engine::Kilograms>() * magnitude(gravity).as<Engine::MetersPerSecondSquared>());
+	Engine::Force friction = normal * surface.frictionCoefficient;
 
 	if (component->selfControlled) {
 		friction *= 5.f;
 	}
 
-	const Engine::Vec3<Engine::Newtons> frictionForce(-friction * normalize(component->velocity).rawVec3());
+	const Engine::Vec3<Engine::Newtons> frictionForce(-friction.as<Engine::Newtons>() * normalize(component->velocity).as<Engine::MetersPerSecond>());
 
 	applyForce(component, frictionForce);
 }
@@ -180,9 +178,6 @@ void resolveAxisCollision(
 			dynamicMotionComponentPtr->airborne = false;
 			updateFriction(dynamicMotionComponentPtr.get(), surface);
 		}
-
-		// Adjust position to prevent sinking into the collision surface
-		//dynamicMotionComponentPtr->position.rawVec3()[collisionInfo.getAxis()] -= collisionInfo.penetration.as<Engine::Meters>();
 	}
 }
 

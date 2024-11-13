@@ -55,10 +55,10 @@ namespace Engine {
 			return T(max);
 		}
 		else if constexpr (IsQuantity<T>) {
-			return typename UnitToQuantity<T>::Type(max);
+			return typename UnitToQuantity<T>::Type(UnitToQuantity<T>::Type::DefaultUnit(max));
 		}
 
-		return typename UnitToQuantity<T>::Type(max);
+		return typename UnitToQuantity<T>::Type(UnitToQuantity<T>::Type::DefaultUnit(max));
 	}
 
 	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
@@ -74,10 +74,10 @@ namespace Engine {
 			return T(min);
 		}
 		else if constexpr (IsQuantity<T>) {
-			return typename UnitToQuantity<T>::Type(min);
+			return convertValueToQuantity<T>(min);
 		}
 
-		return typename UnitToQuantity<T>::Type(min);
+		return convertValueToQuantity<T>(min);
 	}
 
 	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
@@ -104,8 +104,8 @@ namespace Engine {
 
 	template <IsQuantityOrUnit T>
 	typename UnitToQuantity<T>::Type magnitude(const Vec3<T>& a) {
-		if (isZero(a)) return typename UnitToQuantity<T>::Type(0.0f);
-		return typename UnitToQuantity<T>::Type(glm::length(a.rawVec3()));
+		if (isZero(a)) return typename UnitToQuantity<T>::Type();
+		return typename UnitToQuantity<T>::Type(UnitToQuantity<T>::Type::DefaultUnit(glm::length(a.rawVec3())));
 	}
 
 	template <IsQuantityOrUnit T>

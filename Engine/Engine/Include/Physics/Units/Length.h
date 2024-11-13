@@ -5,22 +5,21 @@
 namespace Engine {
 	struct LengthTag {};
 
-	constexpr char kilometers[] = "km";
-	constexpr char meters[] = "m";
-	constexpr char centimeters[] = "cm";
-	constexpr char millimeters[] = "mm";
-	constexpr char yards[] = "yd";
-	constexpr char feet[] = "ft";
-	constexpr char inches[] = "in";
+	constexpr char kilometersUnits[] = "km";
+	constexpr char metersUnits[] = "m";
+	constexpr char centimetersUnits[] = "cm";
+	constexpr char millimetersUnits[] = "mm";
+	constexpr char yardsUnits[] = "yd";
+	constexpr char feetUnits[] = "ft";
+	constexpr char inchesUnits[] = "in";
 
-	// Define specific unit types
-	using Kilometers = Unit<LengthTag, 1000.0f, kilometers>;
-	using Meters = Unit<LengthTag, 1.0f, meters>;
-	using Centimeters = Unit<LengthTag, 0.01f, centimeters>;
-	using Millimeters = Unit<LengthTag, 0.001f, millimeters>;
-	using Yards = Unit<LengthTag, 0.9144f, yards>;
-	using Feet = Unit<LengthTag, 0.3048f, feet>;
-	using Inches = Unit<LengthTag, 0.0254f, inches>;
+	using Kilometers = Unit<LengthTag, 1000.0f, kilometersUnits>;
+	using Meters = Unit<LengthTag, 1.0f, metersUnits>;
+	using Centimeters = Unit<LengthTag, 0.01f, centimetersUnits>;
+	using Millimeters = Unit<LengthTag, 0.001f, millimetersUnits>;
+	using Yards = Unit<LengthTag, 0.9144f, yardsUnits>;
+	using Feet = Unit<LengthTag, 0.3048f, feetUnits>;
+	using Inches = Unit<LengthTag, 0.0254f, inchesUnits>;
 }
 
 namespace Engine {
@@ -36,4 +35,32 @@ namespace Engine {
 	struct Length : Quantity<Length, Meters, LengthUnits> {
 		using Quantity::Quantity;
 	};
+
+	inline Length kilometers(const float value) {
+		return Length::from<Kilometers>(value);
+	}
+
+	inline Length meters(const float value) {
+		return Length::from<Meters>(value);
+	}
+
+	inline Length centimeters(const float value) {
+		return Length::from<Centimeters>(value);
+	}
+
+	inline Length millimeters(const float value) {
+		return Length::from<Millimeters>(value);
+	}
+
+	inline Length yards(const float value) {
+		return Length::from<Yards>(value);
+	}
+
+	inline Length feet(const float value) {
+		return Length::from<Feet>(value);
+	}
+
+	inline Length inches(const float value) {
+		return Length::from<Inches>(value);
+	}
 }		
