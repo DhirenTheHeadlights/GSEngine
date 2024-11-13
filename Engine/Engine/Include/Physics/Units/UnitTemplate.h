@@ -72,12 +72,12 @@ namespace Engine {
 
 		/// Compound assignment operators
 		Derived& operator+=(const Derived& other) {
-			val += other.value;
+			val += other.val;
 			return static_cast<Derived&>(*this);
 		}
 
 		Derived& operator-=(const Derived& other) {
-			val -= other.value;
+			val -= other.val;
 			return static_cast<Derived&>(*this);
 		}
 
@@ -137,8 +137,5 @@ namespace Engine {
 		}
 
 		explicit Quantity(const float value) : val(value) {}
-
-		template <IsQuantityOrUnit T>
-		friend struct Vec3;
 	};
 }
