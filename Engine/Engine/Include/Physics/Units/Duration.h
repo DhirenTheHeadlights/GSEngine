@@ -3,15 +3,15 @@
 #include "Physics/Units/UnitTemplate.h"
 
 namespace Engine {
-	constexpr char milliseconds[] = "ms";
-	constexpr char seconds[] = "s";
-	constexpr char minutes[] = "m";
-	constexpr char hours[] = "h";
+	constexpr char millisecondsUnits[] = "ms";
+	constexpr char secondsUnits[] = "s";
+	constexpr char minutesUnits[] = "m";
+	constexpr char hoursUnits[] = "h";
 
-	using Milliseconds = Unit<float, 0.001f, milliseconds>;
-	using Seconds = Unit<float, 1.0f, seconds>;
-	using Minutes = Unit<float, 60.0f, minutes>;
-	using Hours = Unit<float, 3600.0f, hours>;
+	using Milliseconds = Unit<float, 0.001f, millisecondsUnits>;
+	using Seconds = Unit<float, 1.0f, secondsUnits>;
+	using Minutes = Unit<float, 60.0f, minutesUnits>;
+	using Hours = Unit<float, 3600.0f, hoursUnits>;
 }
 
 namespace Engine {
@@ -25,4 +25,20 @@ namespace Engine {
 	struct Time : Quantity<Time, Seconds, TimeUnits> {
 		using Quantity::Quantity;
 	};
+
+	inline Time milliseconds(const float value) {
+		return Time::from<Milliseconds>(value);
+	}
+
+	inline Time seconds(const float value) {
+		return Time::from<Seconds>(value);
+	}
+
+	inline Time minutes(const float value) {
+		return Time::from<Minutes>(value);
+	}
+
+	inline Time hours(const float value) {
+		return Time::from<Hours>(value);
+	}
 }

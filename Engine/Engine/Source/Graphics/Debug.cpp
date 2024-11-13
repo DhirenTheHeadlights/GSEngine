@@ -31,7 +31,7 @@ void Engine::Debug::setImguiSaveFilePath(const std::string& path) {
 
 std::unordered_map<std::string, WindowState> windowStates;
 Engine::Clock autosaveClock;
-const Engine::Seconds autosaveTime = 60.f;
+const Engine::Time<Engine::Seconds> autosaveTime = 60.f;
 
 void Engine::Debug::setUpImGui() {
 	ImGui::CreateContext();

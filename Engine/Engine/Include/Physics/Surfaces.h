@@ -17,12 +17,12 @@ namespace Engine::Surfaces {
 	};
 
 	struct SurfaceProperties {
-		SurfaceProperties(const float fc, const float r, const float id, const float t)
+		SurfaceProperties(const float fc, const float r, const Time id, const float t)
 			: frictionCoefficient(fc), restitution(r), inverseDamping(id), traction(t) {}
 
 		Unitless frictionCoefficient;	 // Surface friction (controls sliding)
 		Unitless restitution;			 // Bounce factor
-		Seconds inverseDamping;	 // Time it takes for an object to stop moving on the surface
+		Time inverseDamping;			 // Time it takes for an object to stop moving on the surface
 		Unitless traction;				 // Grip, useful for vehicle or character movement
 	};
 

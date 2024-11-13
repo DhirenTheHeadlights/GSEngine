@@ -8,12 +8,13 @@
 
 namespace Engine {
 	struct UnitlessTag {};
-	constexpr char unitless[] = "Unitless";
-	using UnitlessPlaceholder = Unit<UnitlessTag, 1.0f, unitless>;
+	constexpr char unitlessUnits[] = "Unitless";
+	using UnitlessPlaceholder = Unit<UnitlessTag, 1.0f, unitlessUnits>;
 }
 
 namespace Engine {
 	using UnitlessUnits = UnitList<UnitlessPlaceholder>;
+
 	struct Unitless : Quantity<Unitless, UnitlessPlaceholder, UnitlessUnits> {
 		using Quantity::Quantity;
 
@@ -21,24 +22,28 @@ namespace Engine {
 
 		template <IsUnit Unit>
 		auto operator*(const Unit& other) const {
-			return Unit(value * other.getValue());
+			return Unit(val * other.getValue());
 		}
 
 		template <IsUnit Unit>
 		auto operator/(const Unit& other) const {
-			return Unit(value / other.getValue());
+			return Unit(val / other.getValue());
 		}
 
 		template <IsUnit Unit>
 		Quantity& operator*=(const Unit& other) {
-			value *= other.getValue();
+			val *= other.getValue();
 			return *this;
 		}
 
 		template <IsUnit Unit>
 		Quantity& operator/=(const Unit& other) {
-			value /= other.getValue();
+			val /= other.getValue()();
 			return *this;
 		}
 	};
+
+	inline Unitless unitless(const float value) {
+		return value;
+	}
 }

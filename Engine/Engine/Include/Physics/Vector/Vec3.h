@@ -18,30 +18,33 @@ namespace Engine {
 	template <typename T, typename U>
 	concept IsSameQuantityTag = std::is_same_v<typename GetQuantityTagType<T>::Type, typename GetQuantityTagType<U>::Type>;
 
-	template <typename T>
-	concept IsQuantity = std::is_base_of_v<Quantity<T, typename T::DefaultUnit, typename T::Units>, T>;
-
-	template <typename T>
-	concept IsQuantityOrUnit = IsQuantity<T> || IsUnit<T>;
-
 	template <typename T, typename... Args>
 	concept AreValidVectorArgs = ((std::is_convertible_v<Args, T> || std::is_same_v<Args, float> || IsQuantityOrUnit<Args>) && ...);
 
 	template <typename T>
-	concept IsUnitless = std::is_same_v<T, Unitless> || std::is_same_v<T, Unitless>;
+	concept IsUnitless = std::is_same_v<T, Unitless>;
+
+	template <IsQuantityOrUnit T>
+	float convertValueToDefaultUnit(const float value) {
+		using QuantityType = typename UnitToQuantity<T>::Type;
+		return QuantityType::template from<typename QuantityType::DefaultUnit>(value).asDefaultUnit();
+	}
+
+	template <IsQuantityOrUnit T>
+	typename UnitToQuantity<T>::Type convertValueToQuantity(const float value) {
+		using QuantityType = typename UnitToQuantity<T>::Type;
+		return QuantityType::template from<typename QuantityType::DefaultUnit>(value);
+	}
 
 	template <typename T, typename U>
 	[[nodiscard]] static float getValue(const U& argument) {
 		if constexpr (IsQuantity<U>) {
-			return argument.asDefaultUnit().getValue();
-		}
-		else if constexpr (IsUnit<U>) {
-			return argument.getValue();
+			return argument.asDefaultUnit();
 		}
 		else if constexpr (std::is_convertible_v<U, float>) {
-			float value = static_cast<float>(argument);
+			const float value = static_cast<float>(argument);
 			if constexpr (IsUnit<T>) {
-				return T(value).getValue();
+				return convertValue<T>(value);
 			}
 
 			return value; // Assume value is in default units
@@ -77,7 +80,7 @@ namespace Engine {
 
 		Vec3(const glm::vec3& vec3) {
 			if constexpr (IsUnit<T>) {
-				vec = glm::vec3(T(vec3.x).getValue(), T(vec3.y).getValue(), T(vec3.z).getValue());
+				vec = { QuantityType<T>(vec3.x).asDefaultUnit(), QuantityType<T>(vec3.y).asDefaultUnit(), QuantityType<T>(vec3.z).asDefaultUnit() };
 			}
 			else if constexpr (IsQuantity<T>) {
 				vec = vec3; // Assume vec3 is in default units
@@ -87,8 +90,8 @@ namespace Engine {
 		template <IsUnit Unit>
 			requires IsSameQuantityTag<T, Unit>
 		[[nodiscard]] glm::vec3 as() const {
-			const float convertedMagnitude = length(vec) * Unit(1.0f).getValue();
-			if (const auto zero = glm::vec3(0.0f); vec == zero) {
+			const float convertedMagnitude = length(vec) * Unit::ConversionFactor;
+			if (constexpr auto zero = glm::vec3(0.0f); vec == zero) {
 				return zero;
 			}
 			return normalize(vec) * convertedMagnitude;
