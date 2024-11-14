@@ -4,11 +4,13 @@
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
 
-GLuint fbo;                  // FBO ID
-GLuint fboTexture;           // Texture attached to the FBO
-GLuint depthBuffer;          // Depth buffer for the FBO
-int viewportWidth = 800;     // Width of the viewport
-int viewportHeight = 600;    // Height of the viewport
+namespace {
+    GLuint fbo;                  // FBO ID
+    GLuint fboTexture;           // Texture attached to the FBO
+    GLuint depthBuffer;          // Depth buffer for the FBO
+    int viewportWidth = 800;     // Width of the viewport
+    int viewportHeight = 600;    // Height of the viewport
+}
 
 void Editor::initialize() {
 	Engine::Debug::setImguiSaveFilePath(RESOURCES_PATH "imgui_state.json");
@@ -35,12 +37,11 @@ void Editor::bindFbo() {
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthBuffer);
 
 	glViewport(0, 0, viewportWidth, viewportHeight);
-
-    Engine::Window::overrideFrameBufferSize({ viewportWidth, viewportHeight });
 }
 
 void Editor::unbindFbo() {
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, Engine::Window::getWindowSize().x, Engine::Window::getWindowSize().y);
 }
 
 void Editor::update() {

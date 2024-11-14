@@ -38,14 +38,16 @@ namespace Engine {
 		GLuint gAlbedoSpec = 0;
 		GLuint ssboLights = 0;
 
-		Shader lightingShader;
+		static Shader lightingShader;
+		static Shader shadowShader;
 
-		GLuint depthMapFBO = 0;
-		GLuint depthMap = 0;
-		Shader shadowShader;
-		GLsizei shadowWidth = 1024, shadowHeight = 1024;
+		static GLuint depthMapFBO;
+		static GLuint depthMap;
 
-		const float nearPlane = 1.0f;
-		const float farPlane = 100.0f;
+		static GLsizei shadowWidth;
+		static GLsizei shadowHeight;
+
+		static const float nearPlane;
+		static const float farPlane;
 	};
 }
