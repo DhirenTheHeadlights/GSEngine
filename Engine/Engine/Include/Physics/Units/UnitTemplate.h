@@ -11,68 +11,24 @@ namespace Engine {
 		using Type = std::tuple<Units...>;
 	};
 
-	template <typename QuantityTag, float ConversionFactor, const char* UnitName>
+	template <typename QuantityTagType, float ConversionFactorType, const char UnitNameType[]>
 	struct Unit {
-		Unit() = default;                                            // Default constructor: Equivalent to 0.0f
-		Unit(const float value) : value(value) {}					 // Constructor with value
-
-		using QuantityTagType = QuantityTag;
-
-		// Access the value in the unit
-		[[nodiscard]] float getValue() const { return value * ConversionFactor; }
-
-		// Light weight, compile time string representation of the unit
-		static constexpr const char* units() { return UnitName; }
-
-		// Explicit string representation of the value and unit
-		// Example: "5.0 m"
-		// Caution: Can be expensive if used in performance critical code
-		[[nodiscard]] std::string toString() const {
-			std::ostringstream oss;
-			oss << value << " " << UnitName;
-			return oss.str();
-		}
-
-		friend std::ostream& operator<<(std::ostream& os, const Unit& unit) {
-			os << unit.toString();
-			return os;
-		}
-
-		Unit& operator=(const float newValue) {
-			value = newValue;
-			return *this;
-		}
-
-		// Arithmetic operators
-		Unit operator+(const Unit& other) const { return Unit(value + other.value); }
-		Unit operator-(const Unit& other) const { return Unit(value - other.value); }
-		Unit operator*(const float scalar) const { return Unit(value * scalar); }
-		Unit operator/(const float scalar) const { return Unit(value / scalar); }
-
-		// Compound assignment operators
-		Unit& operator+=(const Unit& other) { value += other.value; return *this; }
-		Unit& operator-=(const Unit& other) { value -= other.value; return *this; }
-		Unit& operator*=(const float scalar) { value *= scalar; return *this; }
-		Unit& operator/=(const float scalar) { value /= scalar; return *this; }
-
-		operator float() const { return getValue(); } // Implicit conversion to float
-	private:
-		float value = 0.0f;
+		using QuantityTag = QuantityTagType;
+		static constexpr float ConversionFactor = ConversionFactorType;
+		static constexpr const char* UnitName = UnitNameType;
 	};
 
-	// Concept to check if a type is a valid unit
 	template <typename T>
 	concept IsUnit = requires {
-		typename T::QuantityTagType;                            // Units have QuantityTagType
-		{ T::units() } -> std::convertible_to<const char*>;     // Optional: further ensures T is a Unit
-	}&& requires(T t) {
-		{ t.getValue() } -> std::convertible_to<float>;
+		typename std::remove_cvref_t<T>::QuantityTag;
+		{ std::remove_cvref_t<T>::UnitName } -> std::convertible_to<const char*>;
+		{ std::remove_cvref_t<T>::ConversionFactor } -> std::convertible_to<float>;
 	};
 
 	template <typename UnitType, typename ValidUnits>
 	constexpr bool isValidUnitForQuantity() {
 		return std::apply([]<typename... Units>(Units... u) {
-			return ((std::is_same_v<typename UnitType::QuantityTagType, typename Units::QuantityTagType>) || ...);
+			return ((std::is_same_v<typename UnitType::QuantityTag, typename Units::QuantityTag>) || ...);
 		}, typename ValidUnits::Type{});
 	}
 
@@ -81,98 +37,110 @@ namespace Engine {
 		using Units = ValidUnits;
 		using DefaultUnit = Default;
 
-		// Constructors
 		Quantity() = default;
-		explicit Quantity(const float value) : value(value) {}
 
-		template <IsUnit Unit>
-		Quantity(const Unit& unit) {
-			static_assert(isValidUnitForQuantity<Unit, ValidUnits>(), "Invalid unit type for this quantity");
-			value = unit.getValue();  // Store in base unit
-		}
-
-		// Conversion function to convert to any other valid unit
+		// Convert to any other valid unit
 		template <IsUnit Unit>
 		float as() const {
 			static_assert(isValidUnitForQuantity<Unit, ValidUnits>(), "Invalid unit type for conversion");
-			return Unit(value).getValue();
+			return val / Unit::ConversionFactor;
 		}
 
-		DefaultUnit asDefaultUnit() const {
-			return DefaultUnit(value);
+		float asDefaultUnit() const {
+			return val;
 		}
 
 		// Assignment operator overload
 		template <IsUnit Unit>
-		Derived& operator=(const Unit& unit) {
+		Derived& operator=(const float value) {
 			static_assert(isValidUnitForQuantity<Unit, ValidUnits>(), "Invalid unit type for assignment");
-			value = unit.getValue();
+			val = getConvertedValue<Unit>(value);
 			return static_cast<Derived&>(*this);
 		}
 
 		/// Arithmetic operators
 		Derived operator+(const Derived& other) const {
-			return Derived(value + other.value);
+			return Derived(val + other.val);
 		}
 
 		Derived operator-(const Derived& other) const {
-			return Derived(value - other.value);
+			return Derived(val - other.val);
 		}
 
 		Derived operator*(const float scalar) const {
-			return Derived(value * scalar);
+			return Derived(val * scalar);
 		}
 
 		Derived operator/(const float scalar) const {
-			return Derived(value / scalar);
+			return Derived(val / scalar);
 		}
 
 		/// Compound assignment operators
 		Derived& operator+=(const Derived& other) {
-			value += other.value;
+			val += other.val;
 			return static_cast<Derived&>(*this);
 		}
 
 		Derived& operator-=(const Derived& other) {
-			value -= other.value;
+			val -= other.val;
 			return static_cast<Derived&>(*this);
 		}
 
 		Derived& operator*=(const float scalar) {
-			value *= scalar;
+			val *= scalar;
 			return static_cast<Derived&>(*this);
 		}
 
 		Derived& operator/=(const float scalar) {
-			value /= scalar;
+			val /= scalar;
 			return static_cast<Derived&>(*this);
 		}
 
 		// Comparison operators
 		bool operator==(const Derived& other) const {
-			return value == other.value;
+			return val == other.val;
 		}
 
 		bool operator!=(const Derived& other) const {
-			return value != other.value;
+			return val != other.val;
 		}
 
 		bool operator<(const Derived& other) const {
-			return value < other.value;
+			return val < other.val;
 		}
 
 		bool operator>(const Derived& other) const {
-			return value > other.value;
+			return val > other.val;
 		}
 
 		bool operator<=(const Derived& other) const {
-			return value <= other.value;
+			return val <= other.val;
 		}
 
 		bool operator>=(const Derived& other) const {
-			return value >= other.value;
+			return val >= other.val;
+		}
+
+		// Other operators
+		Derived operator-() const {
+			return Derived(-val);
+		}
+
+		template <IsUnit Unit>
+		static Derived from(const float value) {
+			static_assert(isValidUnitForQuantity<Unit, ValidUnits>(), "Invalid unit type for conversion");
+			Derived result;
+			result.val = result.template getConvertedValue<Unit>(value);
+			return result;
 		}
 	protected:
-		float value = 0.0f;  // Stored in base units
+		float val = 0.0f;  // Stored in base units
+
+		template <IsUnit T>
+		float getConvertedValue(const float value) {
+			return value * T::ConversionFactor / Default::ConversionFactor;
+		}
+
+		explicit Quantity(const float value) : val(value) {}
 	};
 }

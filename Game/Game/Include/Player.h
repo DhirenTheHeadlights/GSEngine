@@ -18,11 +18,11 @@ namespace Game {
 
 		std::unordered_map<int, Engine::Vec3<Engine::Unitless>> wasd;
 
-		Engine::MetersPerSecond maxSpeed = 20.f;
-		Engine::MetersPerSecond shiftMaxSpeed = 40.f;
-		Engine::Newtons jetpackForce = 1000.f;
-		Engine::Newtons jetpackSideForce = 1000.f;
-		Engine::Newtons jumpForce = 1000.f;
-		Engine::Newtons moveForce = 100000.f;
+		Engine::Velocity maxSpeed = Engine::milesPerHour(20.f);
+		Engine::Velocity shiftMaxSpeed = Engine::milesPerHour(40.f);
+		Engine::Force jetpackForce = Engine::newtons(1000.f);
+		Engine::Force jetpackSideForce = Engine::newtons(500.f);
+		Engine::Force jumpForce = Engine::newtons(1000.f);
+		Engine::Force moveForce = Engine::newtons(100000.f);
 	};
 }

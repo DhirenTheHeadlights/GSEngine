@@ -17,7 +17,7 @@ Engine::Time Engine::Clock::reset() {
 Engine::Time Engine::Clock::getElapsedTime() const {
 	const auto now = std::chrono::steady_clock::now();
 	const std::chrono::duration<float> elapsedTime = now - startTime;
-	return Seconds(elapsedTime.count());
+	return seconds(elapsedTime.count());
 }
 
 /// ScopedTimer
@@ -54,7 +54,7 @@ void Engine::displayTimers() {
 	Debug::createWindow("Timers");
 	for (auto it = timers.begin(); it != timers.end();) {
 		const auto& timer = it->second;
-		Debug::printValue(timer->getName(), timer->getElapsedTime().as<Milliseconds>(), Milliseconds::units());
+		Debug::printValue(timer->getName(), timer->getElapsedTime().as<Milliseconds>(), Milliseconds::UnitName);
 		if (timer->isCompleted()) {
 			it = timers.erase(it); // Remove completed timers
 		}
@@ -81,7 +81,7 @@ void Engine::MainClock::update() {
 	lastUpdate = now;
 
 	// Update delta time (clamped to a max of 0.16 seconds to avoid big time jumps)
-	dt = Time(Seconds(std::min(deltaTime.count(), 0.16f)));
+	dt = seconds(std::min(deltaTime.count(), 0.16f));
 
 	// Frame rate calculation
 	++frameCount;
@@ -99,7 +99,7 @@ Engine::Time Engine::MainClock::getDeltaTime() {
 }
 
 Engine::Time Engine::MainClock::getConstantUpdateTime(const float frameRate) {
-	return Seconds(1.0f / frameRate);
+	return seconds(1.0f / frameRate);
 }
 
 int Engine::MainClock::getFrameRate() {
