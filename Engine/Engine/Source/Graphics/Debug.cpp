@@ -23,15 +23,16 @@ void from_json(const nlohmann::json& j, ImVec2& v) {
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(WindowState, position, size);
 
-std::string imguiSaveFilePath;
+namespace {
+	std::unordered_map<std::string, WindowState> windowStates;
+	Engine::Clock autosaveClock;
+	const Engine::Time autosaveTime = Engine::seconds(60.f);
+	std::string imguiSaveFilePath;
+}
 
 void Engine::Debug::setImguiSaveFilePath(const std::string& path) {
 	imguiSaveFilePath = path;
 }
-
-std::unordered_map<std::string, WindowState> windowStates;
-Engine::Clock autosaveClock;
-const Engine::Seconds autosaveTime = 60.f;
 
 void Engine::Debug::setUpImGui() {
 	ImGui::CreateContext();

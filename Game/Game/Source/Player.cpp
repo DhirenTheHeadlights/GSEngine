@@ -5,8 +5,8 @@ void Game::Player::initialize() {
 	const auto collisionComponent = std::make_shared<Engine::Physics::CollisionComponent>();
 	const auto renderComponent = std::make_shared<Engine::RenderComponent>();
 
-	Engine::Feet height = 6.0f;
-	Engine::Feet width = 3.0f;
+	Engine::Length height = Engine::feet(6.0f);
+	Engine::Length width = Engine::feet(3.0f);
 	collisionComponent->boundingBoxes.emplace_back(Engine::Vec3<Engine::Meters>(-10.f, -10.f, -10.f), height, width, width);
 
 	wasd.insert({ GLFW_KEY_W, {0.f, 0.f, 1.f} });
@@ -14,7 +14,7 @@ void Game::Player::initialize() {
 	wasd.insert({ GLFW_KEY_A, {-1.f, 0.f, 0.f} });
 	wasd.insert({ GLFW_KEY_D, {1.f, 0.f, 0.f} });
 
-	motionComponent->mass = Engine::Pounds(180.f);
+	motionComponent->mass = Engine::pounds(180.f);
 	motionComponent->maxSpeed = maxSpeed;
 	motionComponent->selfControlled = true;
 
@@ -38,7 +38,7 @@ void Game::Player::updateJetpack() {
 
 		for (auto& [key, direction] : wasd) {
 			if (Engine::Input::getKeyboard().keys[key].held) {
-				applyForce(getComponent<Engine::Physics::MotionComponent>().get(), Engine::Vec3<Engine::Newtons>(jetpackSideForce, 0, jetpackSideForce) * Engine::getCamera().getCameraDirectionRelativeToOrigin(direction));
+				applyForce(getComponent<Engine::Physics::MotionComponent>().get(), Engine::Vec3<Engine::Newtons>(jetpackSideForce, 0.f, jetpackSideForce) * Engine::getCamera().getCameraDirectionRelativeToOrigin(direction));
 			}
 		}
 	}
@@ -59,7 +59,7 @@ void Game::Player::updateMovement() {
 	}
 
 	if (Engine::Input::getKeyboard().keys[GLFW_KEY_SPACE].pressed && !getComponent<Engine::Physics::MotionComponent>()->airborne) {
-		applyImpulse(getComponent<Engine::Physics::MotionComponent>().get(), Engine::Vec3<Engine::Newtons>(0.f, jumpForce, 0.f), Engine::Seconds(0.5f));
+		applyImpulse(getComponent<Engine::Physics::MotionComponent>().get(), Engine::Vec3<Engine::Newtons>(0.f, jumpForce, 0.f), Engine::seconds(0.5f));
 		getComponent<Engine::Physics::MotionComponent>()->airborne = true;
 	}
 }

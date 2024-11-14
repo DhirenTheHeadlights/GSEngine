@@ -6,23 +6,23 @@
 #include "Physics/Vector/Math.h"
 
 bool Engine::BroadPhaseCollisionHandler::checkCollision(const BoundingBox& box1, const BoundingBox& box2) {
-	return box1.upperBound.rawVec3().x > box2.lowerBound.rawVec3().x && box1.lowerBound.rawVec3().x < box2.upperBound.rawVec3().x &&
-		   box1.upperBound.rawVec3().y > box2.lowerBound.rawVec3().y && box1.lowerBound.rawVec3().y < box2.upperBound.rawVec3().y &&
-		   box1.upperBound.rawVec3().z > box2.lowerBound.rawVec3().z && box1.lowerBound.rawVec3().z < box2.upperBound.rawVec3().z;
+	return box1.upperBound.asDefaultUnits().x > box2.lowerBound.asDefaultUnits().x && box1.lowerBound.asDefaultUnits().x < box2.upperBound.asDefaultUnits().x &&
+		   box1.upperBound.asDefaultUnits().y > box2.lowerBound.asDefaultUnits().y && box1.lowerBound.asDefaultUnits().y < box2.upperBound.asDefaultUnits().y &&
+		   box1.upperBound.asDefaultUnits().z > box2.lowerBound.asDefaultUnits().z && box1.lowerBound.asDefaultUnits().z < box2.upperBound.asDefaultUnits().z;
 }
 
 bool Engine::BroadPhaseCollisionHandler::checkCollision(const BoundingBox& dynamicBox, const std::shared_ptr<Physics::MotionComponent>& dynamicMotionComponent, const BoundingBox& otherBox) {
-	BoundingBox expandedBox = dynamicBox;						// Create a copy
+	BoundingBox expandedBox = dynamicBox;										// Create a copy
 	Physics::MotionComponent tempComponent = *dynamicMotionComponent;
 	Physics::System::updateEntity(&tempComponent);								// Update the entity's position in the direction of its velocity
-	expandedBox.setPosition(tempComponent.position);			// Set the expanded box's position to the updated position
-	return checkCollision(expandedBox, otherBox);				// Check for collision with the new expanded box
+	expandedBox.setPosition(tempComponent.position);							// Set the expanded box's position to the updated position
+	return checkCollision(expandedBox, otherBox);								// Check for collision with the new expanded box
 }
 
 bool Engine::BroadPhaseCollisionHandler::checkCollision(const Vec3<Length>& point, const BoundingBox& box) {
-	return point.rawVec3().x > box.lowerBound.rawVec3().x && point.rawVec3().x < box.upperBound.rawVec3().x &&
-		   point.rawVec3().y > box.lowerBound.rawVec3().y && point.rawVec3().y < box.upperBound.rawVec3().y &&
-		   point.rawVec3().z > box.lowerBound.rawVec3().z && point.rawVec3().z < box.upperBound.rawVec3().z;
+	return point.asDefaultUnits().x > box.lowerBound.asDefaultUnits().x && point.asDefaultUnits().x < box.upperBound.asDefaultUnits().x &&
+		   point.asDefaultUnits().y > box.lowerBound.asDefaultUnits().y && point.asDefaultUnits().y < box.upperBound.asDefaultUnits().y &&
+		   point.asDefaultUnits().z > box.lowerBound.asDefaultUnits().z && point.asDefaultUnits().z < box.upperBound.asDefaultUnits().z;
 } 
 
 bool Engine::BroadPhaseCollisionHandler::checkCollision(const std::shared_ptr<Physics::CollisionComponent>& dynamicObjectCollisionComponent, const std::shared_ptr<Physics::MotionComponent>& dynamicObjectMotionComponent, const std::shared_ptr<Physics::CollisionComponent>& otherCollisionComponent) {
@@ -54,9 +54,9 @@ Engine::CollisionInformation Engine::BroadPhaseCollisionHandler::calculateCollis
 	}
 
 	// Calculate the penetration depth on each axis
-	Length xPenetration = min(box1.upperBound, box2.upperBound, 0) - max(box1.lowerBound, box2.lowerBound, 0);
-	Length yPenetration = min(box1.upperBound, box2.upperBound, 1) - max(box1.lowerBound, box2.lowerBound, 1);
-	Length zPenetration = min(box1.upperBound, box2.upperBound, 2) - max(box1.lowerBound, box2.lowerBound, 2);
+	Length xPenetration = min(box1.upperBound, box2.upperBound, X) - max(box1.lowerBound, box2.lowerBound, X);
+	Length yPenetration = min(box1.upperBound, box2.upperBound, Y) - max(box1.lowerBound, box2.lowerBound, Y);
+	Length zPenetration = min(box1.upperBound, box2.upperBound, Z) - max(box1.lowerBound, box2.lowerBound, Z);
 
 	// Find the axis with the smallest penetration
 	Length penetration = xPenetration;
@@ -80,7 +80,7 @@ Engine::CollisionInformation Engine::BroadPhaseCollisionHandler::calculateCollis
 	// Calculate the collision point
 	Vec3<Meters> collisionPoint = box1.getCenter();
 	collisionPoint += box1.getSize() / 2.f * collisionNormal;					
-	collisionPoint -= Vec3<Meters>(penetration * collisionNormal);
+	collisionPoint -= penetration * collisionNormal;
 
 	collisionInformation.collisionNormal = collisionNormal;
 	collisionInformation.penetration = penetration;

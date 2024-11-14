@@ -5,7 +5,7 @@
 #include "Graphics/RenderComponent.h"
 
 void Game::Arena::initialize() {
-    const Engine::Meters wallThickness = 10.f;
+    const Engine::Length wallThickness = Engine::meters(10.f);
 
     // Create collision component and add bounding boxes for each face
     const auto collisionComponent = std::make_shared<Engine::Physics::CollisionComponent>();
@@ -32,9 +32,9 @@ void Game::Arena::initialize() {
         {0.0f, 1.0f, 1.0f}   // Cyan - Bottom
     };
 
-    const float halfWidth = width.getValue() / 2.f;
-    const float halfHeight = height.getValue() / 2.f;
-    const float halfDepth = depth.getValue() / 2.f;
+    const float halfWidth  =  width.as<Engine::Meters>() / 2.f;
+    const float halfHeight =  height.as<Engine::Meters>() / 2.f;
+    const float halfDepth  =  depth.as<Engine::Meters>() / 2.f;
 
     // Define vertices for each face
     const std::vector<std::vector<Engine::Vertex>> faceVertices = {
