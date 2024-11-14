@@ -32,6 +32,7 @@ namespace Engine {
 		Feet,
 		Inches
 	>;
+
 	struct Length : Quantity<Length, Meters, LengthUnits> {
 		using Quantity::Quantity;
 	};
