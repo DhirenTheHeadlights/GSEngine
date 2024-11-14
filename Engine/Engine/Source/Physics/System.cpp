@@ -152,11 +152,7 @@ void Engine::Physics::System::update() {
 	}
 }
 
-void resolveAxisCollision(
-	const Engine::CollisionInformation& collisionInfo,
-	const std::weak_ptr<Engine::Physics::MotionComponent>& dynamicMotionComponent,
-	const Engine::Surfaces::SurfaceProperties& surface
-) {
+void Engine::Physics::System::resolveCollision(BoundingBox& dynamicBoundingBox, const std::weak_ptr<MotionComponent>& dynamicMotionComponent, const CollisionInformation& collisionInfo) {
 	if (const auto dynamicMotionComponentPtr = dynamicMotionComponent.lock()) {
 		float& vel = dynamicMotionComponentPtr->velocity.asDefaultUnits()[collisionInfo.getAxis()];
 		float& acc = dynamicMotionComponentPtr->acceleration.asDefaultUnits()[collisionInfo.getAxis()];
@@ -176,13 +172,8 @@ void resolveAxisCollision(
 		// Special case for ground collision (assumed Y-axis collision)
 		if (collisionInfo.getAxis() == 1 && collisionInfo.collisionNormal.asDefaultUnits().y > 0) {
 			dynamicMotionComponentPtr->airborne = false;
-			updateFriction(dynamicMotionComponentPtr.get(), surface);
+			updateFriction(dynamicMotionComponentPtr.get(), getSurfaceProperties(Surfaces::SurfaceType::Concrete));
 		}
 	}
-}
-
-void Engine::Physics::System::resolveCollision(BoundingBox& dynamicBoundingBox, const std::weak_ptr<MotionComponent>& dynamicMotionComponent, const CollisionInformation& collisionInfo) {
-	// Determine which axis to resolve using collisionInfo
-	resolveAxisCollision(collisionInfo, dynamicMotionComponent, getSurfaceProperties(Surfaces::SurfaceType::Concrete));
 }
 

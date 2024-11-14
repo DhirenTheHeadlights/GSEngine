@@ -11,10 +11,10 @@ namespace Engine {
 		Length penetration;
 		Vec3<Length> collisionPoint;
 		int getAxis() const {
-			if (epsilonEqualIndex(collisionNormal, Vec3<Unitless>(), X)) {
+			if (!epsilonEqualIndex(collisionNormal, Vec3<Unitless>(), X)) {
 				return 0;
 			}
-			if (epsilonEqualIndex(collisionNormal, Vec3<Unitless>(), Y)) {
+			if (!epsilonEqualIndex(collisionNormal, Vec3<Unitless>(), Y)) {
 				return 1;
 			}
 			return Z; // Assume it is the z axis

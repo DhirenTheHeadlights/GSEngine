@@ -12,11 +12,11 @@ bool Engine::BroadPhaseCollisionHandler::checkCollision(const BoundingBox& box1,
 }
 
 bool Engine::BroadPhaseCollisionHandler::checkCollision(const BoundingBox& dynamicBox, const std::shared_ptr<Physics::MotionComponent>& dynamicMotionComponent, const BoundingBox& otherBox) {
-	BoundingBox expandedBox = dynamicBox;						// Create a copy
+	BoundingBox expandedBox = dynamicBox;										// Create a copy
 	Physics::MotionComponent tempComponent = *dynamicMotionComponent;
 	Physics::System::updateEntity(&tempComponent);								// Update the entity's position in the direction of its velocity
-	expandedBox.setPosition(tempComponent.position);			// Set the expanded box's position to the updated position
-	return checkCollision(expandedBox, otherBox);				// Check for collision with the new expanded box
+	expandedBox.setPosition(tempComponent.position);							// Set the expanded box's position to the updated position
+	return checkCollision(expandedBox, otherBox);								// Check for collision with the new expanded box
 }
 
 bool Engine::BroadPhaseCollisionHandler::checkCollision(const Vec3<Length>& point, const BoundingBox& box) {
