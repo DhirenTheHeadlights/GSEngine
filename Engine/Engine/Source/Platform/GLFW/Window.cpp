@@ -8,16 +8,17 @@
 #undef max
 #undef min
 
-GLFWwindow* window = nullptr;
+namespace {
+	GLFWwindow* window = nullptr;
 
-std::optional<glm::ivec2> dynamicFrameBufferSize = std::nullopt;
-bool currentFullScreen = false;
-bool fullScreen = false;
-bool windowFocused = true;
-bool mouseVisible = true;
-int mouseMoved = 0;
+	bool currentFullScreen = false;
+	bool fullScreen = false;
+	bool windowFocused = true;
+	bool mouseVisible = true;
+	int mouseMoved = 0;
 
-std::vector<std::shared_ptr<Engine::Window::RenderingInterface>> renderingInterfaces;
+	std::vector<std::shared_ptr<Engine::Window::RenderingInterface>> renderingInterfaces;
+}
 
 void Engine::Window::addRenderingInterface(const std::shared_ptr<RenderingInterface>& renderingInterface) {
 	renderingInterfaces.push_back(renderingInterface);
@@ -32,6 +33,7 @@ void Engine::Window::removeRenderingInterface(const std::shared_ptr<RenderingInt
 void Engine::Window::initialize() {
 	permaAssertComment(glfwInit(), "Error initializing GLFW");
 	glfwWindowHint(GLFW_SAMPLES, 4);
+	glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
 
 #ifdef __APPLE__
 	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, 1);
@@ -46,7 +48,8 @@ void Engine::Window::initialize() {
 	const int h = mode->height;
 
 	// Create window in full screen mode
-	window = glfwCreateWindow(w, h, "SavantShooter", monitor, nullptr);
+	window = glfwCreateWindow(w, h, "SavantShooter", nullptr, nullptr);
+	glfwSetWindowPos(window, 0.f, 0.f);
 	glfwMakeContextCurrent(window);
 	glfwSwapInterval(1);
 
@@ -67,6 +70,8 @@ void Engine::Window::beginFrame() {
 	for (const auto& renderingInterface : renderingInterfaces) {
 		renderingInterface->onPreRender();
 	}
+
+	std::cout << "Frame buffer size: " << getFrameBufferSize().x << ", " << getFrameBufferSize().y << std::endl;
 }
 
 void Engine::Window::update() {
@@ -187,10 +192,6 @@ GLFWmonitor* Engine::Window::getCurrentMonitor() {
 }
 
 glm::ivec2 Engine::Window::getFrameBufferSize() {
-	if (dynamicFrameBufferSize.has_value()) {
-		return dynamicFrameBufferSize.value();
-	}
-
 	int x = 0; int y = 0;
 	glfwGetFramebufferSize(window, &x, &y);
 	return { x, y };
@@ -208,8 +209,10 @@ glm::ivec2 Engine::Window::getWindowSize() {
 	return { x, y };
 }
 
-void Engine::Window::overrideFrameBufferSize(const glm::ivec2& size) {
-	dynamicFrameBufferSize = size;
+glm::ivec2 Engine::Window::getViewportSize() {
+	GLint viewport[4];
+	glGetIntegerv(GL_VIEWPORT, viewport);
+	return { viewport[2], viewport[3] };
 }
 
 void Engine::Window::setMousePosRelativeToWindow(const glm::ivec2& position) {

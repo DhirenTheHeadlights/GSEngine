@@ -6,6 +6,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 project(Engine)
 
+# Option for production build
+option(PRODUCTION_BUILD "Make this a production build" OFF)
+
 set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/Engine/External" CACHE STRING "Base directory for FetchContent dependencies" FORCE)
 
 # Ensure the directory exists
@@ -224,8 +227,6 @@ endif()
 # Define macros for resource paths based on the build type
 if(PRODUCTION_BUILD)
     target_compile_definitions(Engine PUBLIC RESOURCES_PATH="./Resources/" PRODUCTION_BUILD = 1)
-    target_compile_definitions(Engine PUBLIC IMGUI = 0)
 else()
     target_compile_definitions(Engine PUBLIC RESOURCES_PATH="${CMAKE_CURRENT_SOURCE_DIR}/Resources/" PRODUCTION_BUILD = 0)
-    target_compile_definitions(Engine PUBLIC IMGUI = 1)
 endif()

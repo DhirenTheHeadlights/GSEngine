@@ -32,9 +32,6 @@ add_executable(GoonSquad ${GAME_SOURCES} ${GAME_HEADERS})
 # Include directories for GoonSquad
 target_include_directories(GoonSquad PUBLIC "${INCLUDE_DIR}")
 
-# Link against GoonSquadLib and Engine for GoonSquad
-target_link_libraries(GoonSquad PRIVATE GoonSquadLib Engine)
-
 # Define macros for resource paths based on build type
 if(PRODUCTION_BUILD)
     target_compile_definitions(GoonSquad PUBLIC RESOURCES_PATH="./Game/Resources/" PRODUCTION_BUILD=1)
@@ -43,6 +40,9 @@ else()
     target_compile_definitions(GoonSquad PUBLIC RESOURCES_PATH="${CMAKE_CURRENT_SOURCE_DIR}/Resources/" PRODUCTION_BUILD=0)
     target_compile_definitions(GoonSquad PRIVATE IMGUI = 1)
 endif()
+
+# Link against GoonSquadLib and Engine for GoonSquad
+target_link_libraries(GoonSquad PRIVATE GoonSquadLib Engine)
 
 # MSVC-specific compile options
 if(MSVC)

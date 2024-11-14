@@ -36,6 +36,8 @@ void Engine::Renderer::initialize() {
 	const GLsizei screenWidth = Window::getFrameBufferSize().x;
 	const GLsizei screenHeight = Window::getFrameBufferSize().y;
 
+	std::cout << "Screen width: " << screenWidth << " Screen height: " << screenHeight << '\n';
+
 	// G-buffer setup
 	glGenFramebuffers(1, &gBuffer);
 	glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
@@ -167,10 +169,15 @@ void Engine::Renderer::renderObject(const RenderQueueEntry& entry) {
 
 void Engine::Renderer::renderObject(const LightRenderQueueEntry& entry) {
 	if (const auto it = lightShaders.find(entry.shaderKey); it != lightShaders.end()) {
+		// Calculate the aspect ratio based on the viewport size
+		const glm::vec2 viewportSize = Window::getViewportSize();
+		const float aspectRatio = viewportSize.x / viewportSize.y;
+		const glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 10000.0f);
+
 		it->second.use();
 		it->second.setMat4("model", glm::mat4(1.0f));
 		it->second.setMat4("view", camera.getViewMatrix());
-		it->second.setMat4("projection", glm::perspective(glm::radians(45.0f), static_cast<float>(Window::getFrameBufferSize().x) / static_cast<float>(Window::getFrameBufferSize().y), 0.1f, 10000.0f));
+		it->second.setMat4("projection", projection);
 
 		it->second.setVec3("color", entry.shaderEntry.color);
 		it->second.setFloat("intensity", entry.shaderEntry.intensity);
@@ -244,7 +251,6 @@ void Engine::Renderer::renderLightingPass(const std::vector<LightShaderEntry>& l
 }
 
 void Engine::Renderer::renderShadowPass(const glm::mat4& lightSpaceMatrix) const {
-
 	glViewport(0, 0, shadowWidth, shadowHeight);
 	glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
 	glClear(GL_DEPTH_BUFFER_BIT);
