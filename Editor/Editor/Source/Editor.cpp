@@ -37,6 +37,8 @@ void Editor::bindFbo() {
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthBuffer);
 
 	glViewport(0, 0, viewportWidth, viewportHeight);
+
+    Engine::sceneHandler.setFbo(fbo);
 }
 
 void Editor::unbindFbo() {

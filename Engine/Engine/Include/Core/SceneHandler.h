@@ -16,11 +16,15 @@ namespace Engine {
 		void render();
 		void exit();
 
+		void setFbo(const GLuint fbo) { this->fbo = fbo; }
+
 		std::vector<std::shared_ptr<Scene>> getActiveScenes() const;
 		std::vector<std::shared_ptr<ID>> getActiveSceneIds() const;
 		std::shared_ptr<Scene> getScene(const std::shared_ptr<ID>& sceneId) const;
 	private:
 		IDHandler& idHandler;
+
+		std::optional<GLuint> fbo = std::nullopt;
 
 		std::unordered_map<std::shared_ptr<ID>, std::shared_ptr<Scene>> scenes;
 	};

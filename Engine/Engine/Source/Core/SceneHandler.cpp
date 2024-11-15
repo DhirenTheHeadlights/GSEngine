@@ -22,7 +22,7 @@ void Engine::SceneHandler::removeScene(const std::shared_ptr<ID>& sceneId) {
 void Engine::SceneHandler::activateScene(const std::shared_ptr<ID>& sceneId) {
 	if (const auto scene = scenes.find(sceneId); scene != scenes.end()) {
 		if (!scene->second->getActive()) {
-			scene->second->initialize();
+			scene->second->initialize(fbo);
 			scene->second->setActive(true);
 		}
 	}

@@ -11,7 +11,7 @@ namespace Engine {
 	public:
 		Renderer() = default;
 
-		void initialize();
+		void initialize(std::optional<GLuint> fbo);
 		void addRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent);
 		void addLightSourceComponent(const std::shared_ptr<LightSourceComponent>& lightSourceComponent);
 		void removeRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent);
@@ -38,16 +38,16 @@ namespace Engine {
 		GLuint gAlbedoSpec = 0;
 		GLuint ssboLights = 0;
 
-		static Shader lightingShader;
-		static Shader shadowShader;
+		Shader lightingShader;
+		Shader shadowShader;
 
-		static GLuint depthMapFBO;
-		static GLuint depthMap;
+		GLuint depthMapFBO;
+		GLuint depthMap;
 
-		static GLsizei shadowWidth;
-		static GLsizei shadowHeight;
+		GLsizei shadowWidth;
+		GLsizei shadowHeight;
 
-		static const float nearPlane;
-		static const float farPlane;
+		const float nearPlane = 1.0f;
+		const float farPlane = 10000.f;
 	};
 }

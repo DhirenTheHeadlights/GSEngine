@@ -17,7 +17,7 @@ namespace Engine {
 		void addObject(const std::weak_ptr<Object>& object);
 		void removeObject(const std::weak_ptr<Object>& object);
 
-		void initialize();
+		void initialize(std::optional<GLuint> fbo);
 		void update();
 		void render();
 		void exit();
