@@ -53,14 +53,15 @@ bool Game::update() {
 		return false;
 	}
 
-	if (const auto scene1Id = Engine::idHandler.grabID("Scene1").lock()) {
-		Engine::sceneHandler.activateScene(scene1Id);
-	}
-
 	return true;
 }
 
 bool Game::render() {
+
+	if (const auto scene1Id = Engine::idHandler.grabID("Scene1").lock()) {
+		Engine::sceneHandler.activateScene(scene1Id);
+	}
+
 	/*Engine::Debug::createWindow("Game Data");
 
 	ImGui::Text("FPS: %d", Engine::MainClock::getFrameRate());

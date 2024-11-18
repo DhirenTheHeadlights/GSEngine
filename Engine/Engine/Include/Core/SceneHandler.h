@@ -17,6 +17,7 @@ namespace Engine {
 		void exit();
 
 		void setFbo(const GLuint fbo) { this->fbo = fbo; }
+		void setEngineInitialized(const bool initialized) { this->engineInitialized = initialized; }
 
 		std::vector<std::shared_ptr<Scene>> getActiveScenes() const;
 		std::vector<std::shared_ptr<ID>> getActiveSceneIds() const;
@@ -25,6 +26,7 @@ namespace Engine {
 		IDHandler& idHandler;
 
 		std::optional<GLuint> fbo = std::nullopt;
+		bool engineInitialized = false;
 
 		std::unordered_map<std::shared_ptr<ID>, std::shared_ptr<Scene>> scenes;
 	};

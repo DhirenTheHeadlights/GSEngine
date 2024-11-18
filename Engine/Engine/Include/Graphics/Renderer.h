@@ -32,6 +32,8 @@ namespace Engine {
 		std::unordered_map<std::string, Shader> lightShaders;
 		std::vector<std::weak_ptr<LightSourceComponent>> lightSourceComponents;
 
+		std::optional<GLuint> fbo;
+
 		GLuint gBuffer = 0;
 		GLuint gPosition = 0;
 		GLuint gNormal = 0;
