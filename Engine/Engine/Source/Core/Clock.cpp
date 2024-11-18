@@ -25,7 +25,9 @@ Engine::Time Engine::Clock::getElapsedTime() const {
 Engine::ScopedTimer::~ScopedTimer() {
 	completed = true;
 	const Time elapsedTime = reset();
-	std::cout << name << ": " << elapsedTime.as<Milliseconds>() << "ms\n";
+	if (print) {
+		std::cout << name << ": " << elapsedTime.as<Milliseconds>() << "ms\n";
+	}
 }
 
 /// Global Timer State

@@ -11,7 +11,7 @@ namespace Engine {
 	public:
 		Renderer() = default;
 
-		void initialize(std::optional<GLuint> fbo);
+		void initialize();
 		void addRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent);
 		void addLightSourceComponent(const std::shared_ptr<LightSourceComponent>& lightSourceComponent);
 		void removeRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent);
@@ -32,8 +32,6 @@ namespace Engine {
 		std::unordered_map<std::string, Shader> lightShaders;
 		std::vector<std::weak_ptr<LightSourceComponent>> lightSourceComponents;
 
-		std::optional<GLuint> fbo;
-
 		GLuint gBuffer = 0;
 		GLuint gPosition = 0;
 		GLuint gNormal = 0;
@@ -46,8 +44,8 @@ namespace Engine {
 		GLuint depthMapFBO;
 		GLuint depthMap;
 
-		GLsizei shadowWidth;
-		GLsizei shadowHeight;
+		GLsizei shadowWidth = 0;
+		GLsizei shadowHeight = 0;
 
 		const float nearPlane = 1.0f;
 		const float farPlane = 10000.f;

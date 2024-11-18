@@ -36,7 +36,7 @@ void Editor::initialize() {
 
     glViewport(0, 0, viewportWidth, viewportHeight);
 
-    Engine::sceneHandler.setFbo(fbo);
+    Engine::Window::setFbo(fbo, { viewportWidth, viewportHeight });
 }
 
 void Editor::bindFbo() {
@@ -55,7 +55,7 @@ void Editor::update() {
 
 void Editor::render() {
     if (fbo != 0) {
-        Engine::Debug::createWindow("Game", ImVec2(viewportWidth, viewportHeight), ImVec2(50, 50));
+        Engine::Debug::createWindow("Game", ImVec2(viewportWidth, viewportHeight), ImVec2(0, 0));
 
         ImGui::Image(reinterpret_cast<void*>(static_cast<intptr_t>(fboTexture)), ImVec2(viewportWidth, viewportHeight), ImVec2(0, 1), ImVec2(1, 0));
 
