@@ -73,7 +73,9 @@ namespace {
 
 		Engine::sceneHandler.update();
 
-		Engine::Input::update();
+		if (!Engine::Debug::getImGuiNeedsInputs()) {
+			Engine::Input::update();
+		}
 
 		if (!updateFunction()) {
 			Engine::requestShutdown();
@@ -85,14 +87,10 @@ namespace {
 	}
 
 	void render(const std::function<bool()>& renderFunction) {
-		if (!Engine::Window::isFocused()) {
-			return;
-		}
 
 #if IMGUI
 		Engine::addTimer("Engine::render");
 #endif
-
 		Engine::Window::beginFrame();
 
 		Engine::sceneHandler.render();
@@ -122,8 +120,6 @@ void Engine::run(const std::function<bool()>& updateFunction, const std::functio
 	sceneHandler.setEngineInitialized(true);
 
 	while (engineState == EngineState::Running && !Window::isWindowClosed()) {
-		if (!Window::isFocused()) continue;
-
 		update(updateFunction);
 		render(renderFunction);
 	}

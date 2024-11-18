@@ -41,8 +41,8 @@ void Engine::Scene::removeObject(const std::weak_ptr<Object>& object) {
 		});
 }
 
-void Engine::Scene::initialize(const std::optional<GLuint> fbo) {
-	renderer.initialize(fbo);
+void Engine::Scene::initialize() {
+	renderer.initialize();
 }
 
 void Engine::Scene::update() {

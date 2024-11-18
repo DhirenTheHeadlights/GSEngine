@@ -1,6 +1,8 @@
 #pragma once
 
 #include <chrono>
+#include <iostream>
+
 #include "Physics/Units/Units.h"
 
 namespace Engine {
@@ -16,7 +18,7 @@ namespace Engine {
 
 	class ScopedTimer : public Clock {
 	public:
-		ScopedTimer(const std::string& name) : name(name), completed(false) {}
+		ScopedTimer(std::string name, const bool print = true) : name(std::move(name)), print(print) {}
 
 		~ScopedTimer();
 
@@ -25,7 +27,8 @@ namespace Engine {
 		void setCompleted() { completed = true; }
 	private:
 		std::string name;
-		bool completed;
+		bool print = false;
+		bool completed = true;
 	};
 
 

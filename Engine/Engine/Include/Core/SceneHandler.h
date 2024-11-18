@@ -16,7 +16,6 @@ namespace Engine {
 		void render();
 		void exit();
 
-		void setFbo(const GLuint fbo) { this->fbo = fbo; }
 		void setEngineInitialized(const bool initialized) { this->engineInitialized = initialized; }
 
 		std::vector<std::shared_ptr<Scene>> getActiveScenes() const;

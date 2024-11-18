@@ -10,7 +10,7 @@
 
 Engine::Camera Engine::Renderer::camera;
 
-void Engine::Renderer::initialize(const std::optional<GLuint> fbo) {
+void Engine::Renderer::initialize() {
 	enableReportGlErrors();
 
 	const std::string shaderPath = std::string(RESOURCES_PATH) + "Shaders/";
@@ -41,13 +41,6 @@ void Engine::Renderer::initialize(const std::optional<GLuint> fbo) {
 
 	std::cout << "Screen width: " << screenWidth << " Screen height: " << screenHeight << '\n';
 
-	if (fbo.has_value()) {
-		// Use editor-provided FBO
-		this->fbo = fbo;
-		std::cout << "Renderer initialized with Editor's FBO.\n";
-	}
-	
-	// Fallback to default G-buffer setup if no FBO is provided
 	glGenFramebuffers(1, &gBuffer);
 	glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
 
@@ -101,6 +94,9 @@ void Engine::Renderer::initialize(const std::optional<GLuint> fbo) {
 	lightingShader.setInt("gPosition", 0);
 	lightingShader.setInt("gNormal", 1);
 	lightingShader.setInt("gAlbedoSpec", 2);
+
+	this->shadowHeight = Window::getFrameBufferSize().x;
+	this->shadowWidth = Window::getFrameBufferSize().y;
 
 	// Shadow map setup
 	glGenFramebuffers(1, &depthMapFBO);
@@ -329,8 +325,8 @@ void Engine::Renderer::renderObjects() {
 	glEnable(GL_DEPTH_TEST);
 	glDisable(GL_BLEND);
 
-	if (fbo.has_value()) {
-		glBindFramebuffer(GL_FRAMEBUFFER, fbo.value());
+	if (Window::getFbo().has_value()) {
+		glBindFramebuffer(GL_FRAMEBUFFER, Window::getFbo().value());
 	}
 	else {
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
