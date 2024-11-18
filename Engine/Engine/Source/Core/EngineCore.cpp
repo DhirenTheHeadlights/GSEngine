@@ -119,6 +119,8 @@ namespace {
 void Engine::run(const std::function<bool()>& updateFunction, const std::function<bool()>& renderFunction) {
 	permaAssertComment(engineState == EngineState::Running, "Engine is not initialized");
 
+	sceneHandler.setEngineInitialized(true);
+
 	while (engineState == EngineState::Running && !Window::isWindowClosed()) {
 		if (!Window::isFocused()) continue;
 

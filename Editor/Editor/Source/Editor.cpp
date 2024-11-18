@@ -15,9 +15,7 @@ namespace {
 void Editor::initialize() {
 	Engine::Debug::setImguiSaveFilePath(RESOURCES_PATH "imgui_state.json");
 	Engine::Debug::setUpImGui();
-}
 
-void Editor::bindFbo() {
     // Generate and bind the FBO
     glGenFramebuffers(1, &fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
@@ -36,9 +34,14 @@ void Editor::bindFbo() {
     glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, viewportWidth, viewportHeight);
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthBuffer);
 
-	glViewport(0, 0, viewportWidth, viewportHeight);
+    glViewport(0, 0, viewportWidth, viewportHeight);
 
     Engine::sceneHandler.setFbo(fbo);
+}
+
+void Editor::bindFbo() {
+ 	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glViewport(0, 0, viewportWidth, viewportHeight);
 }
 
 void Editor::unbindFbo() {
