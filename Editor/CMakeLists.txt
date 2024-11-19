@@ -22,11 +22,24 @@ target_include_directories(Editor PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/Editor/Inc
 target_link_libraries(Editor PRIVATE Engine)
 target_link_libraries(Editor PRIVATE GoonSquadLib)
 
-# Compilation Arguments
-target_compile_definitions(Editor PRIVATE IMGUI = 0)
+# Define the resource path
+set(EDITOR_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
 
-# Define macros for resource path
-target_compile_definitions(Editor PUBLIC RESOURCES_PATH = "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
+# Configure the header file
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/Editor/Include/ResourcePaths.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/Editor/Include/ResourcePaths.h
+    @ONLY
+)
+
+# Include directories for Editor headers
+target_include_directories(Editor PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/Editor/Include/"
+    "${CMAKE_CURRENT_BINARY_DIR}/Editor/Include"
+)
+
+# Compilation Arguments
+target_compile_definitions(Editor PUBLIC IMGUI = 0)
 
 set_target_properties(GoonSquadLib PROPERTIES EXCLUDE_FROM_ALL TRUE)
 

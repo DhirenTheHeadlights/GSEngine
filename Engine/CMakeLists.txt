@@ -6,9 +6,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 project(Engine)
 
-# Option for production build
-option(PRODUCTION_BUILD "Make this a production build" OFF)
-
 set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/Engine/External" CACHE STRING "Base directory for FetchContent dependencies" FORCE)
 
 # Ensure the directory exists
@@ -25,6 +22,29 @@ file(GLOB_RECURSE ENGINE_HEADERS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/
 
 # Add the engine as a static library including source and header files
 add_library(Engine STATIC ${ENGINE_SOURCES} ${ENGINE_HEADERS})
+
+# Option for production build
+option(PRODUCTION_BUILD "Make this a production build" OFF)
+
+# Define the resource path
+if(PRODUCTION_BUILD)
+    set(ENGINE_RESOURCES_PATH "./Resources/")
+else()
+    set(ENGINE_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
+endif()
+
+# Configure the header file
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/Core/ResourcePaths.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/Engine/Include/Core/ResourcePaths.h
+    @ONLY
+)
+
+# Add the binary directory to include paths so that generated headers are found
+target_include_directories(Engine PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include"
+    "${CMAKE_CURRENT_BINARY_DIR}/Engine/Include"
+)
 
 # Add the third-party libraries as subdirectories
 
@@ -224,9 +244,3 @@ if (MSVC)
     source_group("External\\glm" FILES ${GLM_HEADERS})
 endif()
 
-# Define macros for resource paths based on the build type
-if(PRODUCTION_BUILD)
-    target_compile_definitions(Engine PUBLIC RESOURCES_PATH="./Resources/" PRODUCTION_BUILD = 1)
-else()
-    target_compile_definitions(Engine PUBLIC RESOURCES_PATH="${CMAKE_CURRENT_SOURCE_DIR}/Resources/" PRODUCTION_BUILD = 0)
-endif()

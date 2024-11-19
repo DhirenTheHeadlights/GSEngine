@@ -4,6 +4,7 @@
 #include "imguiThemes.h"
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
+#include "ResourcePaths.h"
 
 namespace {
     GLuint fbo;                  // FBO ID
@@ -19,7 +20,7 @@ namespace {
 }
 
 void Editor::initialize() {
-	Engine::Debug::setImguiSaveFilePath(RESOURCES_PATH "imgui_state.json");
+	Engine::Debug::setImguiSaveFilePath(EDITOR_RESOURCES_PATH "imgui_state.json");
 	Engine::Debug::setUpImGui();
 
     // Generate and bind the FBO
@@ -67,10 +68,10 @@ void Editor::update() {
 
 	const ImVec2 mousePosition = { static_cast<float>(Engine::Window::getRelMousePosition().x), static_cast<float>(Engine::Window::getRelMousePosition().y) };
 
-	const bool mouseOverGameWindow = mousePosition.x > gameWindowPosition.x && mousePosition.x < gameWindowPosition.x + gameWindowSize.x &&
-									 mousePosition.y > gameWindowPosition.y && mousePosition.y < gameWindowPosition.y + gameWindowSize.y;
+	const bool mouseOverGameImage = mousePosition.x > gameWindowPosition.x && mousePosition.x < gameWindowPosition.x + gameWindowSize.x &&
+									mousePosition.y > gameWindowPosition.y && mousePosition.y < gameWindowPosition.y + gameWindowSize.y;
 
-    if (ImGui::GetIO().MouseClicked[0] && mouseOverGameWindow) {
+    if (ImGui::GetIO().MouseClicked[0] && mouseOverGameImage) {
 	    gameFocused = true;
     }
 
@@ -85,23 +86,46 @@ void Editor::update() {
 }
 
 void Editor::render() {
-    if (fbo != 0) {
-        ImGui::Begin("Game");  // Game window
-        ImGui::Image(reinterpret_cast<void*>(static_cast<intptr_t>(fboTexture)), ImVec2(viewportWidth, viewportHeight), ImVec2(0, 1), ImVec2(1, 0));
+	Engine::Debug::createWindow("Game", ImVec2(800, 600), ImVec2(0, 0), true);
 
-		gameWindowPosition = ImGui::GetWindowPos();
-		gameWindowSize = ImGui::GetWindowSize();
+    const ImVec2 availableSize = ImGui::GetContentRegionAvail();
+    if (static_cast<int>(availableSize.x) != viewportWidth || static_cast<int>(availableSize.y) != viewportHeight) {
+        viewportWidth = static_cast<int>(availableSize.x);
+        viewportHeight = static_cast<int>(availableSize.y);
 
-        ImGui::End();
+        // Resize FBO
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
+        // Resize color texture
+        glBindTexture(GL_TEXTURE_2D, fboTexture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, viewportWidth, viewportHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fboTexture, 0);
+
+        // Resize depth buffer
+        glBindRenderbuffer(GL_RENDERBUFFER, depthBuffer);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, viewportWidth, viewportHeight);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthBuffer);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+		Engine::Window::setFbo(fbo, { viewportWidth, viewportHeight });
     }
 
-    ImGui::Begin("Editor");
+    const ImVec2 imagePosition = ImGui::GetCursorScreenPos();
+    ImGui::Image(reinterpret_cast<void*>(static_cast<intptr_t>(fboTexture)), ImVec2(static_cast<float>(viewportWidth), static_cast<float>(viewportHeight)), ImVec2(0, 1), ImVec2(1, 0));
+
+    gameWindowPosition = imagePosition;
+    gameWindowSize = ImVec2(static_cast<float>(viewportWidth), static_cast<float>(viewportHeight));
+
+    ImGui::End();
+
+	Engine::Debug::createWindow("Editor", ImVec2(400, 600), ImVec2(800, 0), true);
     ImGui::Text("Welcome to the Editor!");
     ImGui::Separator();
     ImGui::Text("Add your widgets for game objects, properties, and settings here.");
     ImGui::End();
 
-    ImGui::Begin("Resources");
+	Engine::Debug::createWindow("Editor2", ImVec2(400, 600), ImVec2(1200, 0), true);
     ImGui::Text("Welcome to the Editor!");
     ImGui::Separator();
     ImGui::Text("Add your widgets for game objects, properties, and settings here.");
