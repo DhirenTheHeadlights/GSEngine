@@ -20,7 +20,7 @@ namespace {
 }
 
 void Editor::initialize() {
-	Engine::Debug::setImguiSaveFilePath(EDITOR_RESOURCES_PATH "imgui_state.json");
+	Engine::Debug::setImguiSaveFilePath(EDITOR_RESOURCES_PATH "imgui_state.ini");
 	Engine::Debug::setUpImGui();
 
     // Generate and bind the FBO
@@ -86,9 +86,20 @@ void Editor::update() {
 }
 
 void Editor::render() {
-	Engine::Debug::createWindow("Game", ImVec2(800, 600), ImVec2(0, 0), true);
+    ImGui::Begin("Game");
 
-    const ImVec2 availableSize = ImGui::GetContentRegionAvail();
+    ImVec2 availableSize = ImGui::GetContentRegionAvail();
+    // Determine if the aspect ratio is correct
+    if (const float aspectRatio = availableSize.x / availableSize.y; std::fabs(aspectRatio - (16.0f / 9.0f)) > 0.01f) {
+        // Figure out which direction is most economical to resize
+        if (aspectRatio > 16.0f / 9.0f) {
+            availableSize.x = availableSize.y * (16.0f / 9.0f);
+        }
+        else {
+            availableSize.y = availableSize.x / (16.0f / 9.0f);
+        }
+    }
+
     if (static_cast<int>(availableSize.x) != viewportWidth || static_cast<int>(availableSize.y) != viewportHeight) {
         viewportWidth = static_cast<int>(availableSize.x);
         viewportHeight = static_cast<int>(availableSize.y);
@@ -119,13 +130,13 @@ void Editor::render() {
 
     ImGui::End();
 
-	Engine::Debug::createWindow("Editor", ImVec2(400, 600), ImVec2(800, 0), true);
+    ImGui::Begin("Editor");
     ImGui::Text("Welcome to the Editor!");
     ImGui::Separator();
     ImGui::Text("Add your widgets for game objects, properties, and settings here.");
     ImGui::End();
 
-	Engine::Debug::createWindow("Editor2", ImVec2(400, 600), ImVec2(1200, 0), true);
+    ImGui::Begin("Editor2");
     ImGui::Text("Welcome to the Editor!");
     ImGui::Separator();
     ImGui::Text("Add your widgets for game objects, properties, and settings here.");

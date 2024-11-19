@@ -1,11 +1,11 @@
 #pragma once
 
-#include <Engine.h>
+#include "Engine.h"
 
 namespace Game {
 	class Arena final : public Engine::Object {
 	public:
-		Arena() : Object(Engine::idHandler.generateID("Arena")) {}
+		Arena() : Object("Arena") {}
 
 		void initialize();
 		void update() override;

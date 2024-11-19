@@ -60,7 +60,7 @@ bool Game::update() {
 
 bool Game::render() {
 
-	if (const auto scene1Id = Engine::idHandler.grabID("Scene1").lock()) {
+	if (const auto scene1Id = Engine::grabID("Scene1").lock()) {
 		Engine::sceneHandler.activateScene(scene1Id);
 	}
 

@@ -9,7 +9,7 @@
 namespace Engine {
 	class Object {
 	public:
-		explicit Object(const std::shared_ptr<ID>& id) : id(id) {}
+		explicit Object(const std::string& name = "Unnamed Entity") : id(generateID(name)) {}
 		virtual ~Object() = default;
 
 		virtual void update() {}

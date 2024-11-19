@@ -5,7 +5,7 @@
 namespace Engine {
 	class SceneHandler {
 	public:
-		SceneHandler(IDHandler& idHandler) : idHandler(idHandler) {}
+		SceneHandler() {}
 
 		void addScene(const std::shared_ptr<Scene>& scene, const std::string& tag);
 		void removeScene(const std::shared_ptr<ID>& sceneId);
@@ -19,11 +19,10 @@ namespace Engine {
 		void setEngineInitialized(const bool initialized) { this->engineInitialized = initialized; }
 
 		std::vector<std::shared_ptr<Scene>> getActiveScenes() const;
+		std::vector<std::shared_ptr<ID>> getAllScenes() const;
 		std::vector<std::shared_ptr<ID>> getActiveSceneIds() const;
 		std::shared_ptr<Scene> getScene(const std::shared_ptr<ID>& sceneId) const;
 	private:
-		IDHandler& idHandler;
-
 		std::optional<GLuint> fbo = std::nullopt;
 		bool engineInitialized = false;
 

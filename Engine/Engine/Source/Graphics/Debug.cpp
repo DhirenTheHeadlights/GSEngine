@@ -7,24 +7,7 @@
 #include "Core/JsonParser.h"
 #include "Platform/GLFW/Window.h"
 
-struct WindowState {
-	ImVec2 position;
-	ImVec2 size;
-};
-
-void to_json(nlohmann::json& j, const ImVec2& v) {
-	j = nlohmann::json{ {"x", v.x}, {"y", v.y} };
-}
-
-void from_json(const nlohmann::json& j, ImVec2& v) {
-	j.at("x").get_to(v.x);
-	j.at("y").get_to(v.y);
-}
-
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(WindowState, position, size);
-
 namespace {
-	std::unordered_map<std::string, WindowState> windowStates;
 	Engine::Clock autosaveClock;
 	const Engine::Time autosaveTime = Engine::seconds(60.f);
 	std::string imguiSaveFilePath;
@@ -55,12 +38,9 @@ void Engine::Debug::setUpImGui() {
 	ImGui_ImplGlfw_InitForOpenGL(Window::getWindow(), true);
 	ImGui_ImplOpenGL3_Init("#version 330");
 
-	JsonParse::parse(JsonParse::loadJson(imguiSaveFilePath), [](const std::string& key, const nlohmann::json& value) {
-		if (value.is_null() || !value.is_object() || !value.contains("position") || !value.contains("size")) {
-			return;
-		}
-		windowStates[key] = value.get<WindowState>();
-	});
+	if (std::filesystem::exists(imguiSaveFilePath)) {
+		ImGui::LoadIniSettingsFromDisk(imguiSaveFilePath.c_str());
+	}
 }
 
 void Engine::Debug::updateImGui() {
@@ -114,35 +94,7 @@ void Engine::Debug::renderImGui() {
 }
 
 void Engine::Debug::saveImGuiState() {
-	nlohmann::json json;
-	for (const auto& [fst, snd] : windowStates) {
-		const std::string& name = fst;
-		const WindowState& state = snd;
-		json[name] = state;
-	}
-	JsonParse::writeJson(imguiSaveFilePath, [&json](nlohmann::json& j) {
-		j = json;
-	});
-
-	std::cout << "Saved ImGui state" << std::endl;
-}
-
-void Engine::Debug::createWindow(const std::string& name, const ImVec2& size, const ImVec2& position, bool open) {
-	if (windowStates.contains(name)) {
-		const auto& [position, size] = windowStates[name];
-		ImGui::SetNextWindowSize(size, ImGuiCond_Once);
-		ImGui::SetNextWindowPos(position, ImGuiCond_Once);
-	}
-	else {
-		ImGui::SetNextWindowSize(size, ImGuiCond_FirstUseEver);
-		ImGui::SetNextWindowPos(position, ImGuiCond_FirstUseEver);
-		windowStates[name] = { position, size };
-	}
-
-	ImGui::Begin(name.c_str(), &open);
-
-	windowStates[name].position = ImGui::GetWindowPos();
-	windowStates[name].size = ImGui::GetWindowSize();
+	ImGui::SaveIniSettingsToDisk(imguiSaveFilePath.c_str());
 }
 
 void Engine::Debug::printVector(const std::string& name, const glm::vec3& vec, const char* unit) {
