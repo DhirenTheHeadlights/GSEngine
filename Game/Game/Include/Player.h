@@ -5,7 +5,7 @@
 namespace Game {
 	class Player final : public Engine::Object {
 	public:
-		Player() : Object(Engine::idHandler.generateID("Player")) {}
+		Player() : Object("Player") {}
 
 		void initialize();
 

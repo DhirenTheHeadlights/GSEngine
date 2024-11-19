@@ -17,8 +17,7 @@
 #include "Graphics/Debug.h"
 #endif
 
-Engine::IDHandler Engine::idHandler;
-Engine::SceneHandler Engine::sceneHandler(idHandler);
+Engine::SceneHandler Engine::sceneHandler;
 
 Engine::Camera& Engine::getCamera() {
 	return Renderer::getCamera();

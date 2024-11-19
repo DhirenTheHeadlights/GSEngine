@@ -18,6 +18,5 @@ namespace Engine {
 
 	Camera& getCamera();
 
-	extern IDHandler idHandler;
 	extern SceneHandler sceneHandler;
 }

@@ -4,7 +4,7 @@
 
 void Engine::SceneHandler::addScene(const std::shared_ptr<Scene>& scene, const std::string& tag) {
 	if (!scene->getId()) {
-		scene->setId(idHandler.generateID(tag));
+		scene->setId(generateID(tag));
 	}
 
 	scenes.insert({ scene->getId(), scene });
@@ -71,6 +71,15 @@ std::vector<std::shared_ptr<Engine::Scene>> Engine::SceneHandler::getActiveScene
 		}
 	}
 	return activeScenes;
+}
+
+std::vector<std::shared_ptr<Engine::ID>> Engine::SceneHandler::getAllScenes() const {
+	std::vector<std::shared_ptr<ID>> allScenes;
+	allScenes.reserve(scenes.size());
+	for (const auto& id : scenes | std::views::keys) {
+		allScenes.push_back(id);
+	}
+	return allScenes;
 }
 
 std::vector<std::shared_ptr<Engine::ID>> Engine::SceneHandler::getActiveSceneIds() const {

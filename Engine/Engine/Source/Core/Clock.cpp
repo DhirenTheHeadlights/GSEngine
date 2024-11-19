@@ -53,7 +53,7 @@ void Engine::removeTimer(const std::string& name) {
 }
 
 void Engine::displayTimers() {
-	Debug::createWindow("Timers");
+	ImGui::Begin("Timers");
 	for (auto it = timers.begin(); it != timers.end();) {
 		const auto& timer = it->second;
 		Debug::printValue(timer->getName(), timer->getElapsedTime().as<Milliseconds>(), Milliseconds::UnitName);

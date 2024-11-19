@@ -18,7 +18,7 @@ namespace Engine {
 		glm::vec3 direction;
 
 		void showDebugMenu() override {
-			Debug::createWindow("Spot Light");
+			ImGui::Begin("Spot Light");
 			ImGui::ColorEdit3("Color", &color[0]);
 			ImGui::SliderFloat("Intensity", &intensity, 0.0f, 10.0f);
 			ImGui::SliderFloat("Constant", &constant, 0.0f, 1.0f);
