@@ -14,6 +14,7 @@ namespace Engine {
 
 	/// Request the engine to shut down after the current frame.
 	void requestShutdown();
+	void blockShutdownRequests();
 
 	Camera& getCamera();
 

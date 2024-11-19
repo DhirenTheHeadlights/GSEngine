@@ -35,10 +35,20 @@ namespace {
 	};
 
 	auto engineState = EngineState::Uninitialized;
+
+	bool engineShutdownBlocked = false;
 }
 
 void Engine::requestShutdown() {
+	if (engineShutdownBlocked) {
+		return;
+	}
 	engineState = EngineState::Shutdown;
+}
+
+// Stops the engine from shutting down this frame
+void Engine::blockShutdownRequests() {
+	engineShutdownBlocked = true;
 }
 
 void Engine::initialize(const std::function<void()>& initializeFunction, const std::function<void()>& shutdownFunction) {
