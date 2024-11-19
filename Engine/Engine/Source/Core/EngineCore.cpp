@@ -73,9 +73,7 @@ namespace {
 
 		Engine::sceneHandler.update();
 
-		if (!Engine::Debug::getImGuiNeedsInputs()) {
-			Engine::Input::update();
-		}
+		Engine::Input::update();
 
 		if (!updateFunction()) {
 			Engine::requestShutdown();

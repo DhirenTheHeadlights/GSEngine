@@ -6,5 +6,5 @@ namespace Game {
 	bool render();
 	bool close();
 
-	void setResizingEnabled(bool enabled);
+	void setInputHandlingFlag(bool enabled);
 }

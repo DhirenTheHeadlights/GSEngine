@@ -1,5 +1,6 @@
 #include "Editor.h"
 
+#include "Game.h"
 #include "imguiThemes.h"
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
@@ -10,6 +11,9 @@ namespace {
     GLuint depthBuffer;          // Depth buffer for the FBO
     int viewportWidth = 800;     // Width of the viewport
     int viewportHeight = 600;    // Height of the viewport
+
+	ImVec2 gameWindowPosition = { 0, 0 };
+    ImVec2 gameWindowSize = { 800, 600 };
 }
 
 void Editor::initialize() {
@@ -51,18 +55,50 @@ void Editor::unbindFbo() {
 
 void Editor::update() {
 	Engine::Debug::updateImGui();
+
+	if (Engine::Input::getKeyboard().keys.at(GLFW_KEY_ESCAPE).pressed) {
+		Engine::requestShutdown();
+        exit();
+	}
+
+	const ImVec2 mousePosition = { static_cast<float>(Engine::Window::getRelMousePosition().x), static_cast<float>(Engine::Window::getRelMousePosition().y) };
+
+	const bool mouseOverGameWindow = mousePosition.x > gameWindowPosition.x && mousePosition.x < gameWindowPosition.x + gameWindowSize.x &&
+									 mousePosition.y > gameWindowPosition.y && mousePosition.y < gameWindowPosition.y + gameWindowSize.y;
+	std::cout << "Mouse over game window: " << mouseOverGameWindow << '\n';
+
+	Game::setInputHandlingFlag(Engine::Input::getMouse().buttons.at(GLFW_MOUSE_BUTTON_MIDDLE).toggled && mouseOverGameWindow);
+
+	std::cout << "Mouse toggled: " << Engine::Input::getMouse().buttons.at(GLFW_MOUSE_BUTTON_MIDDLE).toggled << '\n';
 }
 
 void Editor::render() {
-    if (fbo != 0) {
-        Engine::Debug::createWindow("Game", ImVec2(viewportWidth, viewportHeight), ImVec2(0, 0));
+    Engine::Window::setMouseVisible(true);
 
+    if (fbo != 0) {
+        ImGui::Begin("Game");  // Game window
         ImGui::Image(reinterpret_cast<void*>(static_cast<intptr_t>(fboTexture)), ImVec2(viewportWidth, viewportHeight), ImVec2(0, 1), ImVec2(1, 0));
+
+		gameWindowPosition = ImGui::GetWindowPos();
+		gameWindowSize = ImGui::GetWindowSize();
 
         ImGui::End();
     }
 
-	Engine::Debug::renderImGui();
+    ImGui::Begin("Editor");
+    ImGui::Text("Welcome to the Editor!");
+    ImGui::Separator();
+    ImGui::Text("Add your widgets for game objects, properties, and settings here.");
+    ImGui::End();
+
+    ImGui::Begin("Resources");
+    ImGui::Text("Welcome to the Editor!");
+    ImGui::Separator();
+    ImGui::Text("Add your widgets for game objects, properties, and settings here.");
+    ImGui::End();
+
+
+    Engine::Debug::renderImGui();
 }
 
 void Editor::exit() {

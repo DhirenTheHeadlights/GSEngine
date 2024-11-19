@@ -68,13 +68,11 @@ void Engine::Debug::updateImGui() {
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
 
-	// DockSpace over entire viewport
 	const ImGuiIO& io = ImGui::GetIO();
 	if (io.ConfigFlags & ImGuiConfigFlags_DockingEnable) {
 		ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
 	}
 
-	// Main menu bar
 	if (ImGui::BeginMainMenuBar()) {
 		if (ImGui::BeginMenu("File")) {
 			if (ImGui::MenuItem("Save State")) {
@@ -92,7 +90,6 @@ void Engine::Debug::updateImGui() {
 		Window::setMouseVisible(true);
 	}
 
-	// Autosave
 	if (autosaveClock.getElapsedTime() > autosaveTime) {
 		saveImGuiState();
 		autosaveClock.reset();
