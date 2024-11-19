@@ -14,6 +14,8 @@ namespace {
 
 	ImVec2 gameWindowPosition = { 0, 0 };
     ImVec2 gameWindowSize = { 800, 600 };
+
+    bool gameFocused = false;
 }
 
 void Editor::initialize() {
@@ -41,6 +43,8 @@ void Editor::initialize() {
     glViewport(0, 0, viewportWidth, viewportHeight);
 
     Engine::Window::setFbo(fbo, { viewportWidth, viewportHeight });
+
+    Game::setInputHandlingFlag(false); // Initialize to false
 }
 
 void Editor::bindFbo() {
@@ -57,24 +61,28 @@ void Editor::update() {
 	Engine::Debug::updateImGui();
 
 	if (Engine::Input::getKeyboard().keys.at(GLFW_KEY_ESCAPE).pressed) {
-		Engine::requestShutdown();
-        exit();
+        if (gameFocused) {
+            gameFocused = false;
+        }
+        else {
+            Engine::requestShutdown();
+            exit();
+        }
 	}
 
 	const ImVec2 mousePosition = { static_cast<float>(Engine::Window::getRelMousePosition().x), static_cast<float>(Engine::Window::getRelMousePosition().y) };
 
 	const bool mouseOverGameWindow = mousePosition.x > gameWindowPosition.x && mousePosition.x < gameWindowPosition.x + gameWindowSize.x &&
 									 mousePosition.y > gameWindowPosition.y && mousePosition.y < gameWindowPosition.y + gameWindowSize.y;
-	std::cout << "Mouse over game window: " << mouseOverGameWindow << '\n';
 
-	Game::setInputHandlingFlag(Engine::Input::getMouse().buttons.at(GLFW_MOUSE_BUTTON_MIDDLE).toggled && mouseOverGameWindow);
+    if (ImGui::GetIO().MouseClicked[0] && mouseOverGameWindow) {
+	    gameFocused = !gameFocused;
+    }
 
-	std::cout << "Mouse toggled: " << Engine::Input::getMouse().buttons.at(GLFW_MOUSE_BUTTON_MIDDLE).toggled << '\n';
+    Game::setInputHandlingFlag(gameFocused);
 }
 
 void Editor::render() {
-    Engine::Window::setMouseVisible(true);
-
     if (fbo != 0) {
         ImGui::Begin("Game");  // Game window
         ImGui::Image(reinterpret_cast<void*>(static_cast<intptr_t>(fboTexture)), ImVec2(viewportWidth, viewportHeight), ImVec2(0, 1), ImVec2(1, 0));
