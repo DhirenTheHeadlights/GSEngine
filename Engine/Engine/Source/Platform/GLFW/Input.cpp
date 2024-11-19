@@ -11,8 +11,12 @@ Engine::Input::Controller controller;
 Engine::Input::Mouse mouse;
 
 void Engine::Input::update() {
-	Internal::updateAllButtons(MainClock::getDeltaTime().as<Seconds>());
+	Internal::updateAllButtons();
 	Internal::resetTypedInput();
+}
+
+namespace {
+	bool blockInputs = false;
 }
 
 void Engine::Input::setUpKeyMaps() {
@@ -57,9 +61,67 @@ Engine::Input::Mouse& Engine::Input::getMouse() {
 	return mouse;
 }
 
-void Engine::Input::Internal::updateAllButtons(const float deltaTime) {
-	for (auto& snd : keyboard.keys | std::views::values) {
-		updateButton(snd, deltaTime);
+void Engine::Input::setInputsBlocked(const bool blocked) {
+	blockInputs = blocked;
+}
+
+void Engine::Input::Internal::processEventButton(Button& button, const bool newState) {
+	button.newState = newState;
+}
+
+void Engine::Input::Internal::updateButton(Button& button) {
+	if (button.newState == 1) {
+		if (button.held) {
+			button.pressed = false;
+		}
+		else {
+			button.pressed = true;
+			button.toggled = !button.toggled;
+		}
+
+		button.held = true;
+		button.released = false;
+	}
+	else if (button.newState == 0) {
+		button.held = false;
+		button.pressed = false;
+		button.released = true;
+	}
+	else {
+		button.pressed = false;
+		button.released = false;
+	}
+
+	if (button.pressed)
+	{
+		button.typed = true;
+		button.typedTime = 0.48f;
+	}
+	else if (button.held) {
+		button.typedTime -= MainClock::getDeltaTime().as<Seconds>();
+
+		if (button.typedTime < 0.f)
+		{
+			button.typedTime += 0.07f;
+			button.typed = true;
+		}
+		else {
+			button.typed = false;
+		}
+
+	}
+	else {
+		button.typedTime = 0;
+		button.typed = false;
+	}
+	button.newState = -1;
+}
+
+void Engine::Input::Internal::updateAllButtons() {
+	if (blockInputs) return;
+
+	for (auto& button : keyboard.keys | std::views::values) {
+		updateButton(button);
 	}
 	
 	for(int i = 0; i <= static_cast<int>(controller.buttons.size()); i++) {
@@ -75,7 +137,7 @@ void Engine::Input::Internal::updateAllButtons(const float deltaTime) {
 				else if (state.buttons[b] == GLFW_RELEASE) {
 					processEventButton(button, false);
 				}
-				updateButton(button, deltaTime);
+				updateButton(button);
 			}
 			
 			controller.rt = state.axes[GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER];
@@ -91,11 +153,10 @@ void Engine::Input::Internal::updateAllButtons(const float deltaTime) {
 		}
 	}
 
-	for (auto& snd : mouse.buttons | std::views::values) {
-		updateButton(snd, deltaTime);
+	for (auto& button : mouse.buttons | std::views::values) {
+		updateButton(button);
 	}
 
-	// Update Mouse Delta
 	mouse.delta = Window::getRelMousePosition() - mouse.lastPosition;
 	mouse.lastPosition = Window::getRelMousePosition();
 }
@@ -116,8 +177,8 @@ void Engine::Input::Internal::resetInputsToZero() {
 	}
 }
 
-void Engine::Input::Internal::addToTypedInput(const char c) {
-	keyboard.typedInput += c;
+void Engine::Input::Internal::addToTypedInput(const char input) {
+	keyboard.typedInput += input;
 }
 
 void Engine::Input::Internal::resetTypedInput() {

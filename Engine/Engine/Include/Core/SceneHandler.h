@@ -16,11 +16,16 @@ namespace Engine {
 		void render();
 		void exit();
 
+		void setEngineInitialized(const bool initialized) { this->engineInitialized = initialized; }
+
 		std::vector<std::shared_ptr<Scene>> getActiveScenes() const;
 		std::vector<std::shared_ptr<ID>> getActiveSceneIds() const;
 		std::shared_ptr<Scene> getScene(const std::shared_ptr<ID>& sceneId) const;
 	private:
 		IDHandler& idHandler;
+
+		std::optional<GLuint> fbo = std::nullopt;
+		bool engineInitialized = false;
 
 		std::unordered_map<std::shared_ptr<ID>, std::shared_ptr<Scene>> scenes;
 	};

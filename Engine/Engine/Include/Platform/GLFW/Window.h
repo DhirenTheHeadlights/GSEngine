@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
@@ -33,11 +34,13 @@ namespace Engine::Window {
 
     GLFWmonitor* getCurrentMonitor();
 
+    std::optional<GLuint> getFbo();
     glm::ivec2 getFrameBufferSize();
     glm::ivec2 getRelMousePosition();
     glm::ivec2 getWindowSize();
+    glm::ivec2 getViewportSize();
 
-    void overrideFrameBufferSize(const glm::ivec2& size);
+    void setFbo(GLuint fboIn, const glm::ivec2& size);
     void setMousePosRelativeToWindow(const glm::ivec2& position);
     void setFullScreen(bool fs);
     void setWindowFocused(bool focused);

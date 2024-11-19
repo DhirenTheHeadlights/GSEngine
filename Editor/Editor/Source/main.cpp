@@ -9,8 +9,5 @@ int main() {
 
 	Engine::Window::addRenderingInterface(std::make_shared<Editor::RenderingInterface>());
 
-	Engine::Window::setFullScreen(false);
-	Game::setResizingEnabled(false);
-
 	Engine::run(Game::update, Game::render);
 }

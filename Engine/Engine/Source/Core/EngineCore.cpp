@@ -2,7 +2,6 @@
 
 #include "Core/Clock.h"
 #include "Graphics/Renderer.h"
-#include "Physics/Collision/BroadPhaseCollisionHandler.h"
 #include "Platform/PermaAssert.h"
 #include "Platform/GLFW/Input.h"
 #include "Platform/GLFW/Window.h"
@@ -25,19 +24,31 @@ Engine::Camera& Engine::getCamera() {
 	return Renderer::getCamera();
 }
 
-std::function<void()> gameShutdownFunction = [] {};
+namespace {
+	std::function<void()> gameShutdownFunction = [] {};
 
-enum class EngineState {
-	Uninitialized,
-	Initializing,
-	Running,
-	Shutdown
-};
+	enum class EngineState : uint8_t {
+		Uninitialized,
+		Initializing,
+		Running,
+		Shutdown
+	};
 
-auto engineState = EngineState::Uninitialized;
+	auto engineState = EngineState::Uninitialized;
+
+	bool engineShutdownBlocked = false;
+}
 
 void Engine::requestShutdown() {
+	if (engineShutdownBlocked) {
+		return;
+	}
 	engineState = EngineState::Shutdown;
+}
+
+// Stops the engine from shutting down this frame
+void Engine::blockShutdownRequests() {
+	engineShutdownBlocked = true;
 }
 
 void Engine::initialize(const std::function<void()>& initializeFunction, const std::function<void()>& shutdownFunction) {
@@ -56,65 +67,65 @@ void Engine::initialize(const std::function<void()>& initializeFunction, const s
 	engineState = EngineState::Running;
 }
 
-void update(const std::function<bool()>& updateFunction) {
+namespace {
+	void update(const std::function<bool()>& updateFunction) {
 #if IMGUI
-	Engine::addTimer("Engine::update");
+		Engine::addTimer("Engine::update");
 #endif
 
-	Engine::Window::update();
+		Engine::Window::update();
 
 #if IMGUI
-	Engine::Debug::updateImGui();
+		Engine::Debug::updateImGui();
 #endif
 
-	Engine::MainClock::update();
+		Engine::MainClock::update();
 
-	Engine::sceneHandler.update();
+		Engine::sceneHandler.update();
 
-	Engine::Input::update();
+		Engine::Input::update();
 
-	if (!updateFunction()) {
-		Engine::requestShutdown();
+		if (!updateFunction()) {
+			Engine::requestShutdown();
+		}
+
+#if IMGUI
+		Engine::resetTimer("Engine::render");
+#endif
 	}
 
-#if IMGUI
-	Engine::resetTimer("Engine::render");
-#endif
-}
+	void render(const std::function<bool()>& renderFunction) {
 
-void render(const std::function<bool()>& renderFunction) {
-	if (!Engine::Window::isFocused()) {
-		return;
+#if IMGUI
+		Engine::addTimer("Engine::render");
+#endif
+		Engine::Window::beginFrame();
+
+		Engine::sceneHandler.render();
+
+		if (!renderFunction()) {
+			Engine::requestShutdown();
+		}
+
+#if IMGUI
+		Engine::displayTimers();
+		Engine::Debug::renderImGui();
+#endif
+		Engine::Window::endFrame();
+
+		Engine::resetTimer("Engine::update");
 	}
 
-#if IMGUI
-	Engine::addTimer("Engine::render");
-#endif
-
-	Engine::Window::beginFrame();
-
-	Engine::sceneHandler.render();
-
-	if (!renderFunction()) {
-		Engine::requestShutdown();
+	void shutdown() {
+		gameShutdownFunction();
+		Engine::Window::shutdown();
 	}
-
-#if IMGUI
-	Engine::displayTimers();
-	Engine::Debug::renderImGui();
-#endif
-	Engine::Window::endFrame();
-
-	Engine::resetTimer("Engine::update");
-}
-
-void shutdown() {
-	gameShutdownFunction();
-	Engine::Window::shutdown();
 }
 
 void Engine::run(const std::function<bool()>& updateFunction, const std::function<bool()>& renderFunction) {
 	permaAssertComment(engineState == EngineState::Running, "Engine is not initialized");
+
+	sceneHandler.setEngineInitialized(true);
 
 	while (engineState == EngineState::Running && !Window::isWindowClosed()) {
 		update(updateFunction);

@@ -68,12 +68,11 @@ void Engine::Debug::updateImGui() {
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
 
-	// DockSpace over entire viewport
-	if (const ImGuiIO& io = ImGui::GetIO(); io.ConfigFlags & ImGuiConfigFlags_DockingEnable) {
+	const ImGuiIO& io = ImGui::GetIO();
+	if (io.ConfigFlags & ImGuiConfigFlags_DockingEnable) {
 		ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
 	}
 
-	// Main menu bar
 	if (ImGui::BeginMainMenuBar()) {
 		if (ImGui::BeginMenu("File")) {
 			if (ImGui::MenuItem("Save State")) {
@@ -87,7 +86,10 @@ void Engine::Debug::updateImGui() {
 		ImGui::EndMainMenuBar();
 	}
 
-	// Autosave
+	if (io.WantCaptureMouse) {
+		Window::setMouseVisible(true);
+	}
+
 	if (autosaveClock.getElapsedTime() > autosaveTime) {
 		saveImGuiState();
 		autosaveClock.reset();
@@ -121,13 +123,15 @@ void Engine::Debug::saveImGuiState() {
 	JsonParse::writeJson(imguiSaveFilePath, [&json](nlohmann::json& j) {
 		j = json;
 	});
+
+	std::cout << "Saved ImGui state" << std::endl;
 }
 
 void Engine::Debug::createWindow(const std::string& name, const ImVec2& size, const ImVec2& position, bool open) {
 	if (windowStates.contains(name)) {
 		const auto& [position, size] = windowStates[name];
-		ImGui::SetNextWindowSize(size, ImGuiCond_FirstUseEver);
-		ImGui::SetNextWindowPos(position, ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize(size, ImGuiCond_Once);
+		ImGui::SetNextWindowPos(position, ImGuiCond_Once);
 	}
 	else {
 		ImGui::SetNextWindowSize(size, ImGuiCond_FirstUseEver);
@@ -161,4 +165,9 @@ void Engine::Debug::printValue(const std::string& name, const float& value, cons
 
 void Engine::Debug::printBoolean(const std::string& name, const bool& value) {
 	ImGui::Checkbox(name.c_str(), const_cast<bool*>(&value));
+}
+
+bool Engine::Debug::getImGuiNeedsInputs() {
+	const ImGuiIO& io = ImGui::GetIO();
+	return io.WantCaptureKeyboard || io.WantTextInput || io.WantCaptureMouse;
 }
