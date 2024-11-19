@@ -13,7 +13,7 @@ option(PRODUCTION_BUILD "Make this a production build" OFF)
 # Include directories
 set(INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Game/Include")
 
-# Gather game source and header files
+# Gather game source files only for GoonSquadLib
 file(GLOB_RECURSE GAME_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Game/Source/*.cpp")
 file(GLOB_RECURSE GAME_HEADERS CONFIGURE_DEPENDS "${INCLUDE_DIR}/*.h")
 
@@ -21,28 +21,33 @@ file(GLOB_RECURSE GAME_HEADERS CONFIGURE_DEPENDS "${INCLUDE_DIR}/*.h")
 add_library(GoonSquadLib STATIC ${GAME_SOURCES} ${GAME_HEADERS})
 
 # Include directories for GoonSquadLib
-target_include_directories(GoonSquadLib PUBLIC "${INCLUDE_DIR}")
+target_include_directories(GoonSquadLib PUBLIC 
+    "${INCLUDE_DIR}"
+    "${CMAKE_CURRENT_BINARY_DIR}/Game/Include"
+)
 
-# Link against the Engine for GoonSquadLib
+# Link against Engine
 target_link_libraries(GoonSquadLib PRIVATE Engine)
 
-# GoonSquad: Add as an executable
-add_executable(GoonSquad ${GAME_SOURCES} ${GAME_HEADERS})
+# GoonSquad: Add as an executable, without sources
+add_executable(GoonSquad ${GAME_SOURCES})
 
-# Include directories for GoonSquad
-target_include_directories(GoonSquad PUBLIC "${INCLUDE_DIR}")
-
-# Link against GoonSquadLib and Engine for GoonSquad
+# Link against GoonSquadLib and Engine
 target_link_libraries(GoonSquad PRIVATE GoonSquadLib Engine)
 
-# Define macros for resource paths based on build type
+# Define the resource path
 if(PRODUCTION_BUILD)
-    target_compile_definitions(GoonSquad PUBLIC RESOURCES_PATH="./Game/Resources/" PRODUCTION_BUILD=1)
-    target_compile_definitions(GoonSquad PRIVATE IMGUI = 0)
+    set(GOONSQUAD_RESOURCES_PATH "./Game/Resources/")
 else()
-    target_compile_definitions(GoonSquad PUBLIC RESOURCES_PATH="${CMAKE_CURRENT_SOURCE_DIR}/Resources/" PRODUCTION_BUILD=0)
-    target_compile_definitions(GoonSquad PRIVATE IMGUI = 1)
+    set(GOONSQUAD_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
 endif()
+
+# Configure the header file
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/Game/Include/ResourcePaths.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/Game/Include/Core/ResourcePaths.h
+    @ONLY
+)
 
 # MSVC-specific compile options
 if(MSVC)

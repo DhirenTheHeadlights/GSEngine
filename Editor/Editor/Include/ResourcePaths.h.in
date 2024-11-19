@@ -1,0 +1,3 @@
+#pragma once
+
+#define EDITOR_RESOURCES_PATH "@EDITOR_RESOURCES_PATH@"

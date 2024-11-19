@@ -7,15 +7,15 @@
 
 namespace Engine::Input {
 	struct Button {
-		char pressed = 0;
-		char held = 0;
-		char released = 0;
-		char newState = -1;
-		char typed = 0;
-		float typedTime = 0;
+		std::uint8_t pressed = 0;
+		std::uint8_t held = 0;
+		std::uint8_t released = 0;
+		std::int8_t newState = -1;
+		std::uint8_t typed = 0;
+		float typedTime = 0.0f;
 		bool toggled = false;
 
-		void merge(const Button &b) {
+		void merge(const Button& b) {
 			this->pressed |= b.pressed;
 			this->released |= b.released;
 			this->held |= b.held;
@@ -78,68 +78,21 @@ namespace Engine::Input {
 
 	void update();
 	void setUpKeyMaps();
+
 	Keyboard& getKeyboard();
 	Controller& getController();
 	Mouse& getMouse();
 
+	void setInputsBlocked(bool blocked);
+
 	namespace Internal {
-		inline void processEventButton(Button& b, const bool newState) {
-			b.newState = newState;
-		}
+		void processEventButton(Button& button, bool newState);
+		void updateButton(Button& button);
 
-		inline void updateButton(Button& b, const float deltaTime) {
-			if (b.newState == 1) {
-				if (b.held) {
-					b.pressed = false;
-				}
-				else {
-					b.pressed = true;
-					b.toggled = !b.toggled;
-				}
-
-				b.held = true;
-				b.released = false;
-			}
-			else if (b.newState == 0) {
-				b.held = false;
-				b.pressed = false;
-				b.released = true;
-			}
-			else {
-				b.pressed = false;
-				b.released = false;
-			}
-
-			// Processing typed
-			if (b.pressed)
-			{
-				b.typed = true;
-				b.typedTime = 0.48f;
-			}
-			else if(b.held) {
-				b.typedTime -= deltaTime;
-			
-				if (b.typedTime < 0.f)
-				{
-					b.typedTime += 0.07f;
-					b.typed = true;
-				}
-				else {
-					b.typed = false;
-				}
-
-			}
-			else {
-				b.typedTime = 0;
-				b.typed = false;
-			}
-			b.newState = -1;
-		}
-
-		void updateAllButtons(float deltaTime);
+		void updateAllButtons();
 		void resetInputsToZero();
 
-		void addToTypedInput(char c);
+		void addToTypedInput(char input);
 		void resetTypedInput();
 	};
 }

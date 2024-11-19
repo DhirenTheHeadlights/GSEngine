@@ -39,13 +39,15 @@ namespace Engine {
 		GLuint ssboLights = 0;
 
 		Shader lightingShader;
-
-		GLuint depthMapFBO = 0;
-		GLuint depthMap = 0;
 		Shader shadowShader;
-		GLsizei shadowWidth = 1024, shadowHeight = 1024;
+
+		GLuint depthMapFBO;
+		GLuint depthMap;
+
+		GLsizei shadowWidth = 0;
+		GLsizei shadowHeight = 0;
 
 		const float nearPlane = 1.0f;
-		const float farPlane = 100.0f;
+		const float farPlane = 10000.f;
 	};
 }
