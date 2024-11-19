@@ -60,14 +60,9 @@ void Editor::unbindFbo() {
 void Editor::update() {
 	Engine::Debug::updateImGui();
 
-	if (Engine::Input::getKeyboard().keys.at(GLFW_KEY_ESCAPE).pressed) {
-        if (gameFocused) {
-            gameFocused = false;
-        }
-        else {
-            Engine::requestShutdown();
-            exit();
-        }
+	if (ImGui::GetIO().KeysDown[ImGuiKey_Escape]) {
+        Engine::requestShutdown();
+        exit();
 	}
 
 	const ImVec2 mousePosition = { static_cast<float>(Engine::Window::getRelMousePosition().x), static_cast<float>(Engine::Window::getRelMousePosition().y) };
@@ -76,10 +71,17 @@ void Editor::update() {
 									 mousePosition.y > gameWindowPosition.y && mousePosition.y < gameWindowPosition.y + gameWindowSize.y;
 
     if (ImGui::GetIO().MouseClicked[0] && mouseOverGameWindow) {
-	    gameFocused = !gameFocused;
+	    gameFocused = true;
+    }
+
+	if (gameFocused && ImGui::GetIO().KeysDown[ImGuiKey_Q]) {
+		gameFocused = false;
+
+        Engine::Window::setMousePosRelativeToWindow({ static_cast<int>(gameWindowPosition.x + gameWindowSize.x / 2), static_cast<int>(gameWindowPosition.y + gameWindowSize.y / 2) });
     }
 
     Game::setInputHandlingFlag(gameFocused);
+    Engine::Window::setMouseVisible(!gameFocused);
 }
 
 void Editor::render() {
