@@ -123,6 +123,8 @@ void Engine::Debug::saveImGuiState() {
 	JsonParse::writeJson(imguiSaveFilePath, [&json](nlohmann::json& j) {
 		j = json;
 	});
+
+	std::cout << "Saved ImGui state" << std::endl;
 }
 
 void Engine::Debug::createWindow(const std::string& name, const ImVec2& size, const ImVec2& position, bool open) {

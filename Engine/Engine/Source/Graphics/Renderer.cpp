@@ -7,13 +7,14 @@
 #include "Platform/GLFW/Input.h"
 #include "Platform/GLFW/ErrorReporting.h"
 #include "Platform/GLFW/Window.h"
+#include "Core/ResourcePaths.h"
 
 Engine::Camera Engine::Renderer::camera;
 
 void Engine::Renderer::initialize() {
 	enableReportGlErrors();
 
-	const std::string shaderPath = std::string(RESOURCES_PATH) + "Shaders/";
+	const std::string shaderPath = std::string(ENGINE_RESOURCES_PATH) + "Shaders/";
 
 	// Load material shaders
 	JsonParse::parse(
