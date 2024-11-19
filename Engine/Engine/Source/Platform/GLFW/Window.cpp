@@ -262,7 +262,6 @@ void Engine::Window::keyCallback(GLFWwindow* window, const int key, int scancode
 
 void Engine::Window::mouseCallback(GLFWwindow* window, const int button, const int action, int mods) {
 	if (Input::getMouse().buttons.contains(button)) {
-		// Handle mouse press and release events
 		if (action == GLFW_PRESS) {
 			Input::Internal::processEventButton(Input::getMouse().buttons[button], true);
 		}

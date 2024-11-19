@@ -11,10 +11,10 @@ std::shared_ptr<Game::Arena> arena;
 std::shared_ptr<Game::Player> player;
 std::shared_ptr<Game::Box> box;
 
-bool resizingEnabled = true;
+bool inputHandlingEnabled = true;
 
-void Game::setResizingEnabled(const bool enabled) {
-	resizingEnabled = enabled;
+void Game::setInputHandlingFlag(const bool enabled) {
+	inputHandlingEnabled = enabled;
 }
 
 bool Game::initialize() {
@@ -38,19 +38,21 @@ bool Game::initialize() {
 }
 
 bool Game::update() {
-	Engine::Window::setMouseVisible(Engine::Input::getMouse().buttons[GLFW_MOUSE_BUTTON_MIDDLE].toggled || Engine::Input::getKeyboard().keys[GLFW_KEY_N].toggled);
+	if (inputHandlingEnabled) {
+		Engine::Window::setMouseVisible(Engine::Input::getMouse().buttons[GLFW_MOUSE_BUTTON_MIDDLE].toggled || Engine::Input::getKeyboard().keys[GLFW_KEY_N].toggled);
 
-	if (Engine::Input::getKeyboard().keys[GLFW_KEY_ENTER].pressed && Engine::Input::getKeyboard().keys[GLFW_KEY_LEFT_ALT].held && resizingEnabled) {
-		Engine::Window::setFullScreen(!Engine::Window::isFullScreen());
-	}
+		if (Engine::Input::getKeyboard().keys[GLFW_KEY_ENTER].pressed && Engine::Input::getKeyboard().keys[GLFW_KEY_LEFT_ALT].held) {
+			Engine::Window::setFullScreen(!Engine::Window::isFullScreen());
+		}
 
-	if (Engine::Input::getKeyboard().keys[GLFW_KEY_ESCAPE].pressed) {
-		if (close()) {
-			std::cerr << "Game closed properly." << '\n';
+		if (Engine::Input::getKeyboard().keys[GLFW_KEY_ESCAPE].pressed) {
+			if (close()) {
+				std::cerr << "Game closed properly." << '\n';
+				return false;
+			}
+			std::cerr << "Failed to close game properly." << '\n';
 			return false;
 		}
-		std::cerr << "Failed to close game properly." << '\n';
-		return false;
 	}
 
 	return true;

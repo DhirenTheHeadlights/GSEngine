@@ -19,6 +19,8 @@ namespace Editor {
 		}
 
 		void onPostRender() override {
+			unbindFbo();
+
 			update();
 			render();
 		}
