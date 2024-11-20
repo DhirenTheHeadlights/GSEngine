@@ -3,6 +3,8 @@
 #include "Core/Clock.h"
 #include "Core/EngineCore.h"
 #include "Core/Object/Object.h"
+#include "Core/Object/Sphere.h"
+#include "Core/Object/Box.h"	
 #include "Graphics/Debug.h"
 #include "Graphics/RenderComponent.h"
 #include "Graphics/Lights/DirectionalLight.h"
