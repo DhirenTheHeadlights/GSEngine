@@ -1,5 +1,6 @@
 #pragma once
-#include "Engine.h"
+
+#include "Object.h"
 
 namespace Engine {
     class Sphere : public Object {

@@ -1,6 +1,10 @@
 #include "Core/Object/Sphere.h"
 #include <imgui.h>
+
+#include "glm/ext/scalar_constants.hpp"
 #include "Graphics/RenderComponent.h"
+#include "Graphics/Lights/LightSourceComponent.h"
+#include "Graphics/Lights/SpotLight.h"
 
 void Engine::Sphere::initialize() {
     const auto renderComponent = std::make_shared<RenderComponent>();
