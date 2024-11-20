@@ -7,9 +7,9 @@ namespace Engine {
         Sphere(const Vec3<Length>& position, const Length radius, const int sectors = 36, const int stacks = 18)
             : Object("Sphere"), position(position), radius(radius), sectors(sectors), stacks(stacks) {}
 
-        void initialize();
-        void update() override;
-        void render() override;
+        void initialize() override;
+        void update() override {}
+        void render() override {}
 
     private:
         Vec3<Length> position;
