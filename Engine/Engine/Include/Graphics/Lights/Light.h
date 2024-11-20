@@ -31,7 +31,8 @@ namespace Engine {
         // Next available offset: 72 bytes
         float cutOff;         // 4 bytes
         float outerCutOff;    // 4 bytes
-        float padding5[2];    // 8 bytes padding to make the struct size a multiple of 16 bytes
+        float ambientStrength; // 4 bytes
+        float padding5;    // 4 bytes padding to make the struct size a multiple of 16 bytes
         // Total size: 88 bytes
     };
 
@@ -40,18 +41,18 @@ namespace Engine {
 		LightShaderEntry shaderEntry;
 
         // Constructor for Directional Light
-        LightRenderQueueEntry(const LightType type, const glm::vec3& color, const float intensity, const glm::vec3& direction)
-			: shaderEntry({ static_cast<int>(type), 0, {0, 0, 0}, 0, direction, 0, color, intensity, 0, 0, 0, 0, 0, 0, {0, 0} }) {}
+        LightRenderQueueEntry(const LightType type, const glm::vec3& color, const float intensity, const glm::vec3& direction, float ambientStrength)
+			: shaderEntry({ static_cast<int>(type), 0, {0, 0, 0}, 0, direction, 0, color, intensity, 0, 0, 0, 0, 0, 0, ambientStrength, 0 }) {}
 
         // Constructor for Point Light
         LightRenderQueueEntry(const LightType type, const glm::vec3& color, const float intensity, const glm::vec3& position,
-                              const float constant, const float linear, const float quadratic)
-			: shaderEntry({ static_cast<int>(type), 0, position, 0, {0, 0, 0}, 0, color, intensity, constant, linear, quadratic, 0, 0, 0, {0, 0} }) {}
+                              const float constant, const float linear, const float quadratic, float ambientStrength)
+			: shaderEntry({ static_cast<int>(type), 0, position, 0, {0, 0, 0}, 0, color, intensity, constant, linear, quadratic, 0, 0, 0, ambientStrength, 0 }) {}
 
         // Constructor for Spotlight
         LightRenderQueueEntry(const LightType type, const glm::vec3& color, const float intensity, const glm::vec3& position, const glm::vec3& direction,
-                              const float constant, const float linear, const float quadratic, const float cutOff, const float outerCutOff)
-			: shaderEntry({ static_cast<int>(type), 0, position, 0, direction, 0, color, intensity, constant, linear, quadratic, 0, cutOff, outerCutOff, {0, 0} }) {}
+                              const float constant, const float linear, const float quadratic, const float cutOff, const float outerCutOff, float ambientStrength)
+			: shaderEntry({ static_cast<int>(type), 0, position, 0, direction, 0, color, intensity, constant, linear, quadratic, 0, cutOff, outerCutOff, ambientStrength, 0 }) {}
     };
 
 	class Light {

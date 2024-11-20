@@ -64,28 +64,29 @@ bool Game::render() {
 		Engine::sceneHandler.activateScene(scene1Id);
 	}
 
-	/*Engine::Debug::createWindow("Game Data");
+	ImGui::Begin("Game Data");
 
 	ImGui::Text("FPS: %d", Engine::MainClock::getFrameRate());
 
-	Engine::Debug::printVector("Player Position", player->getComponent<Engine::Physics::MotionComponent>()->position.as<Engine::Meters>(), Engine::Meters::units());
-	Engine::Debug::printVector("Player Bounding Box Position", player->getComponent<Engine::Physics::CollisionComponent>()->boundingBoxes[0].getCenter().as<Engine::Meters>(), Engine::Meters::units());
-	Engine::Debug::printVector("Player Velocity", player->getComponent<Engine::Physics::MotionComponent>()->velocity.as<Engine::MetersPerSecond>(), Engine::MetersPerSecond::units());
-	Engine::Debug::printVector("Player Acceleration", player->getComponent<Engine::Physics::MotionComponent>()->acceleration.as<Engine::MetersPerSecondSquared>(), Engine::MetersPerSecondSquared::units());
+	//Engine::Debug::printVector("Player Position", player->getComponent<Engine::Physics::MotionComponent>()->position.as<Engine::Meters>(), Engine::Meters::units());
+	//Engine::Debug::printVector("Player Bounding Box Position", player->getComponent<Engine::Physics::CollisionComponent>()->boundingBoxes[0].getCenter().as<Engine::Meters>(), Engine::Meters::units());
+	//Engine::Debug::printVector("Player Velocity", player->getComponent<Engine::Physics::MotionComponent>()->velocity.as<Engine::MetersPerSecond>(), Engine::MetersPerSecond::units());
+	//Engine::Debug::printVector("Player Acceleration", player->getComponent<Engine::Physics::MotionComponent>()->acceleration.as<Engine::MetersPerSecondSquared>(), Engine::MetersPerSecondSquared::units());
 
-	Engine::Debug::printValue("Player Speed", player->getComponent<Engine::Physics::MotionComponent>()->getSpeed().as<Engine::MilesPerHour>(), Engine::MilesPerHour::units());
+	//Engine::Debug::printValue("Player Speed", player->getComponent<Engine::Physics::MotionComponent>()->getSpeed().as<Engine::MilesPerHour>(), Engine::MilesPerHour::units());
 
-	Engine::Debug::printBoolean("Player Jetpack [J]", player->jetpack);
+	//Engine::Debug::printBoolean("Player Jetpack [J]", player->jetpack);
 
-	ImGui::Text("Player Collision Information");
+	//ImGui::Text("Player Collision Information");
 
-	const auto [colliding, collisionNormal, penetration, collisionPoint] = player->getComponent<Engine::Physics::CollisionComponent>()->boundingBoxes[0].collisionInformation;
-	Engine::Debug::printBoolean("Player Colliding", colliding);
-	Engine::Debug::printVector("Collision Normal", collisionNormal.rawVec3(), Engine::Unitless::units());
-	Engine::Debug::printValue("Penetration", penetration.as<Engine::Meters>(), Engine::Meters::units());
-	Engine::Debug::printVector("Collision Point", collisionPoint.as<Engine::Meters>(), Engine::Meters::units());
-	Engine::Debug::printBoolean("Player Airborne", player->getComponent<Engine::Physics::MotionComponent>()->airborne);
-	Engine::Debug::printBoolean("Player Moving", player->getComponent<Engine::Physics::MotionComponent>()->moving);*/
+	//const auto [colliding, collisionNormal, penetration, collisionPoint] = player->getComponent<Engine::Physics::CollisionComponent>()->boundingBoxes[0].collisionInformation;
+	//Engine::Debug::printBoolean("Player Colliding", colliding);
+	//Engine::Debug::printVector("Collision Normal", collisionNormal.rawVec3(), Engine::Unitless::units());
+	//Engine::Debug::printValue("Penetration", penetration.as<Engine::Meters>(), Engine::Meters::units());
+	//Engine::Debug::printVector("Collision Point", collisionPoint.as<Engine::Meters>(), Engine::Meters::units());
+	//Engine::Debug::printBoolean("Player Airborne", player->getComponent<Engine::Physics::MotionComponent>()->airborne);
+	//Engine::Debug::printBoolean("Player Moving", player->getComponent<Engine::Physics::MotionComponent>()->moving);
+	ImGui::End();
 
 	return true;
 }

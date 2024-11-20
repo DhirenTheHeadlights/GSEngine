@@ -5,7 +5,7 @@
 #include "Platform/PermaAssert.h"
 #include "Platform/GLFW/Input.h"
 #include "Platform/GLFW/Window.h"
-
+#define IMGUI 1
 #if IMGUI == 0
 #pragma message("IMGUI is set to 0")
 #else
