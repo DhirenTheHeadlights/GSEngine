@@ -43,6 +43,12 @@ void Engine::Scene::removeObject(const std::weak_ptr<Object>& object) {
 
 void Engine::Scene::initialize() {
 	renderer.initialize();
+
+	for (auto& object : objects) {
+		if (const auto objectPtr = object.lock()) {
+			objectPtr->processInitialize();
+		}
+	}
 }
 
 void Engine::Scene::update() {
@@ -51,7 +57,7 @@ void Engine::Scene::update() {
 
 	for (auto& object : objects) {
 		if (const auto objectPtr = object.lock()) {
-			objectPtr->update();
+			objectPtr->processUpdate();
 		}
 	}
 }
@@ -61,7 +67,7 @@ void Engine::Scene::render() {
 
 	for (auto& object : objects) {
 		if (const auto objectPtr = object.lock()) {
-			objectPtr->render();
+			objectPtr->processRender();
 		}
 	}
 }

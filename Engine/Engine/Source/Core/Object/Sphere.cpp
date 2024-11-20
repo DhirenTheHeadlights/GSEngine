@@ -63,26 +63,5 @@ void Engine::Sphere::initialize() {
     renderComponent->addMesh(mesh);
     addComponent(renderComponent);
 
-    const auto lightSourceComponent = std::make_shared<LightSourceComponent>();
-
-
-    lightSourceComponent->addLight(std::make_shared<SpotLight>(
-        glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(1.0f, 1.0f, 1.0f), 1.0f, 1.0f, 0.09f, 0.032f, 0.f, glm::cos(glm::radians(17.5f)), 0.1f
-    ));
-
-    //lightSourceComponent->addLight(std::make_shared<Engine::PointLight>(
-    //	glm::vec3(490.0f, 490.0f, 490.0f), glm::vec3(1.0f, 1.0f, 1.0f), 1.0f, 0.09f, 0.032f, 1.f
-    //));
-
-    addComponent(lightSourceComponent);
-}
-
-void Engine::Sphere::update() {
     getComponent<RenderComponent>()->setRender(true, true);
-}
-
-void Engine::Sphere::render() {
-    for (const auto& light : getComponent<LightSourceComponent>()->getLights()) {
-        light->showDebugMenu();
-    }
 }

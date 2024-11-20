@@ -7,7 +7,7 @@ namespace Engine {
 		Box(const Vec3<Length>& position, const Vec3<Length>& size) 
 			: Object("Box"), position(position), size(size) {}
 
-		void initialize();
+		void initialize() override;
 		void update() override {}
 		void render() override {}
 
