@@ -203,6 +203,7 @@ void Engine::Renderer::renderLightingPass(const std::vector<LightShaderEntry>& l
 
 	lightingShader.use();
 
+	lightingShader.setVec3("objectColor", glm::vec3(255.0f, 0.0f, 0.0f));
 	lightingShader.setInt("shadowMap", 3);
 	glActiveTexture(GL_TEXTURE3);
 	glBindTexture(GL_TEXTURE_2D, depthMap);
@@ -262,7 +263,7 @@ void Engine::Renderer::renderShadowPass(const glm::mat4& lightSpaceMatrix) const
 		if (const auto renderComponentPtr = renderComponent.lock()) {
 			for (const auto& entry : renderComponentPtr->getQueueEntries()) {
 				shadowShader.setMat4("model", entry.modelMatrix);
-
+				
 				// Bind VAO and issue draw call directly for each entry
 				glBindVertexArray(entry.VAO);
 				glDrawElements(entry.drawMode, entry.vertexCount, GL_UNSIGNED_INT, nullptr);
