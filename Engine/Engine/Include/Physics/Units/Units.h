@@ -17,6 +17,7 @@ namespace Engine {
 
 	struct Unitless : Quantity<Unitless, UnitlessPlaceholder, UnitlessUnits> {
 		using Quantity::Quantity;
+		//static constexpr char Units[] = "Unitless";
 
 		Unitless(const float value) : Quantity(value) {}
 

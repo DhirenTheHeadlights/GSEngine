@@ -29,10 +29,10 @@ namespace Engine {
         float quadratic;      // 4 bytes
         float padding4;       // 4 bytes padding to align to 16 bytes
         // Next available offset: 72 bytes
-        float cutOff;         // 4 bytes
-        float outerCutOff;    // 4 bytes
-        float ambientStrength; // 4 bytes
-        float padding5;    // 4 bytes padding to make the struct size a multiple of 16 bytes
+        float cutOff;           // 4 bytes
+        float outerCutOff;      // 4 bytes
+        float ambientStrength;  // 4 bytes
+        float padding5;         // 4 bytes padding to make the struct size a multiple of 16 bytes
         // Total size: 88 bytes
     };
 

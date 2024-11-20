@@ -45,7 +45,7 @@ endif()
 # Configure the header file
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/Game/Include/ResourcePaths.h.in
-    ${CMAKE_CURRENT_BINARY_DIR}/Game/Include/Core/ResourcePaths.h
+    ${CMAKE_CURRENT_BINARY_DIR}/Game/Include/ResourcePaths.h
     @ONLY
 )
 
