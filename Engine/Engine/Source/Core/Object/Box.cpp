@@ -1,15 +1,15 @@
-#include "Box.h"
+#include "Core/Object/Box.h"
 #include <imgui.h>
 #include "Graphics/RenderComponent.h"
 
-void Game::Box::initialize() {
-    const auto renderComponent = std::make_shared<Engine::RenderComponent>();
+void Engine::Box::initialize() {
+    const auto renderComponent = std::make_shared<RenderComponent>();
 
-    const float halfWidth = size.as<Engine::Meters>().x / 2.f;
-    const float halfHeight = size.as<Engine::Meters>().y / 2.f;
-    const float halfDepth = size.as<Engine::Meters>().z / 2.f;
+    const float halfWidth = size.as<Meters>().x / 2.f;
+    const float halfHeight = size.as<Meters>().y / 2.f;
+    const float halfDepth = size.as<Meters>().z / 2.f;
 
-    const glm::vec3 posOffset = position.as<Engine::Meters>();
+    const glm::vec3 posOffset = position.as<Meters>();
 
     const glm::vec3 colors[] = {
         {.75f, 0.5f, 0.2f},  // Front
@@ -20,7 +20,7 @@ void Game::Box::initialize() {
         {0.2f, 1.0f, 0.3f}   // Bottom
     };
 
-    const std::vector<std::vector<Engine::Vertex>> faceVertices = {
+    const std::vector<std::vector<Vertex>> faceVertices = {
         // Front face
         {
             { glm::vec3(-halfWidth, -halfHeight, halfDepth) + posOffset, glm::vec3(0.0f, 0.0f, 1.0f), glm::vec2(0.0f, 0.0f) },
@@ -68,17 +68,12 @@ void Game::Box::initialize() {
     const std::vector<unsigned int> faceIndices = { 0, 1, 2, 2, 3, 0 };
 
     for (size_t i = 0; i < 6; ++i) {
-        auto mesh = std::make_shared<Engine::Mesh>(faceVertices[i], faceIndices);
+        auto mesh = std::make_shared<Mesh>(faceVertices[i], faceIndices);
         mesh->setColor(colors[i]);
         renderComponent->addMesh(mesh);
     }
 
+	renderComponent->setRender(true, true);
+
     addComponent(renderComponent);
-}
-
-void Game::Box::update() {
-	getComponent<Engine::RenderComponent>()->setRender(true, true);
-}
-
-void Game::Box::render() {
 }
