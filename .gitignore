@@ -7,3 +7,4 @@ CMakeSettings.json
 Makefile
 /resources
 /Folder.DotSettings.user
+*.ini
