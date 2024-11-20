@@ -13,12 +13,12 @@ void Engine::Sphere::initialize() {
 
     // Generate vertices
     for (int stack = 0; stack <= stacks; ++stack) {
-	    const float phi = glm::pi<float>() * stack / stacks; // From 0 to PI
+	    const float phi = glm::pi<float>() * static_cast<float>(stack / stacks); // From 0 to PI
 	    const float sinPhi = glm::sin(phi);
 	    const float cosPhi = glm::cos(phi);
 
         for (int sector = 0; sector <= sectors; ++sector) {
-	        const float theta = 2 * glm::pi<float>() * sector / sectors; // From 0 to 2PI
+	        const float theta = 2 * glm::pi<float>() * static_cast<float>(stack / stacks); // From 0 to 2PI
 	        const float sinTheta = glm::sin(theta);
 	        const float cosTheta = glm::cos(theta);
 
