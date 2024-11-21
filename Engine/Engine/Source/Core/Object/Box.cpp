@@ -3,7 +3,7 @@
 #include "Graphics/RenderComponent.h"
 
 void Engine::Box::initialize() {
-    const auto renderComponent = std::make_shared<RenderComponent>();
+    const auto renderComponent = std::make_shared<RenderComponent>(id.get());
 
     const float halfWidth = size.as<Meters>().x / 2.f;
     const float halfHeight = size.as<Meters>().y / 2.f;

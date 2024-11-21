@@ -58,6 +58,10 @@ bool Game::update() {
 }
 
 bool Game::render() {
+	if (const auto scene1Id = Engine::grabID("Scene1").lock()) {
+		Engine::sceneHandler.activateScene(scene1Id);
+	}
+
 	ImGui::Begin("Game Data");
 
 	ImGui::Text("FPS: %d", Engine::MainClock::getFrameRate());
@@ -81,10 +85,6 @@ bool Game::render() {
 	Engine::Debug::printBoolean("Player Airborne", player->getComponent<Engine::Physics::MotionComponent>()->airborne);
 	Engine::Debug::printBoolean("Player Moving", player->getComponent<Engine::Physics::MotionComponent>()->moving);
 	ImGui::End();
-
-	if (const auto scene1Id = Engine::grabID("Scene1").lock()) {
-		Engine::sceneHandler.activateScene(scene1Id);
-	}
 
 	return true;
 }
