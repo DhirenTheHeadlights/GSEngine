@@ -5,26 +5,22 @@
 #include <glm/glm.hpp>
 
 #include "BoundingBoxMesh.h"
+#include "Core/EngineComponent.h"
 #include "Graphics/Mesh.h"
 
 namespace Engine {
-	class RenderComponent {
+	class RenderComponent : public EngineComponent {
 	public:
-		RenderComponent() = default;
-		RenderComponent(const std::vector<std::shared_ptr<Mesh>>& meshes) : meshes(meshes) {}
+		RenderComponent(ID* id) : EngineComponent(id) {}
+		RenderComponent(ID* id, const std::vector<std::shared_ptr<Mesh>>& meshes) : EngineComponent(id), meshes(meshes) {}
 
-		void addMesh(const std::shared_ptr<Mesh>& mesh) {
-			meshes.push_back(mesh);
-		}
-
-		void addBoundingBoxMesh(const std::shared_ptr<BoundingBoxMesh>& boundingBoxMesh) {
-			boundingBoxMeshes.push_back(boundingBoxMesh);
-		}
+		void addMesh(const std::shared_ptr<Mesh>& mesh);
+		void addBoundingBoxMesh(const std::shared_ptr<BoundingBoxMesh>& boundingBoxMesh);
 
 		void updateBoundingBoxMeshes() const;
-		virtual std::vector<RenderQueueEntry> getQueueEntries() const;
 		void setRender(bool render, bool renderBoundingBoxes);
 
+		virtual std::vector<RenderQueueEntry> getQueueEntries() const;
 		std::vector<std::shared_ptr<Mesh>>& getMeshes() { return meshes; }
 		std::vector<std::shared_ptr<BoundingBoxMesh>>& getBoundingBoxMeshes() { return boundingBoxMeshes; }
 	protected:

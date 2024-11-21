@@ -40,7 +40,6 @@ namespace Engine {
 			hooks.push_back(std::move(hook));
 		}
 	private:
-		std::shared_ptr<ID> id;
 		std::shared_ptr<ID> sceneId;
 
 		std::unordered_map<std::type_index, std::shared_ptr<void>> components;
@@ -81,6 +80,8 @@ namespace Engine {
 
 		friend Scene;
 	protected:
+		std::shared_ptr<ID> id;
+
 		virtual void initialize() {}
 		virtual void update() {}
 		virtual void render() {}

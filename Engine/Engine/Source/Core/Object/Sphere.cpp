@@ -3,7 +3,7 @@
 #include "Graphics/RenderComponent.h"
 
 void Engine::Sphere::initialize() {
-    const auto renderComponent = std::make_shared<RenderComponent>();
+    const auto renderComponent = std::make_shared<RenderComponent>(id.get());
 
     const float r = radius.as<Meters>();
     const glm::vec3 posOffset = position.as<Meters>();
@@ -13,14 +13,14 @@ void Engine::Sphere::initialize() {
 
     // Generate vertices
     for (int stack = 0; stack <= stacks; ++stack) {
-	    const float phi = glm::pi<float>() * static_cast<float>(stack / stacks); // From 0 to PI
-	    const float sinPhi = glm::sin(phi);
-	    const float cosPhi = glm::cos(phi);
+        const float phi = glm::pi<float>() * (static_cast<float>(stack) / static_cast<float>(stacks)); // From 0 to PI
+        const float sinPhi = glm::sin(phi);
+        const float cosPhi = glm::cos(phi);
 
         for (int sector = 0; sector <= sectors; ++sector) {
-	        const float theta = 2 * glm::pi<float>() * static_cast<float>(stack / stacks); // From 0 to 2PI
-	        const float sinTheta = glm::sin(theta);
-	        const float cosTheta = glm::cos(theta);
+            const float theta = 2 * glm::pi<float>() * (static_cast<float>(sector) / static_cast<float>(sectors)); // From 0 to 2PI
+            const float sinTheta = glm::sin(theta);
+            const float cosTheta = glm::cos(theta);
 
             // Calculate vertex position
             glm::vec3 position = {
@@ -30,12 +30,12 @@ void Engine::Sphere::initialize() {
             };
 
             // Calculate normal (normalized position for a sphere)
-	        const glm::vec3 normal = glm::normalize(position);
+            const glm::vec3 normal = glm::normalize(position);
 
             // Calculate texture coordinates
-	        const glm::vec2 texCoords = {
-                static_cast<float>(sector / sectors),
-                static_cast<float>(stack / stacks)
+            const glm::vec2 texCoords = {
+                static_cast<float>(sector) / static_cast<float>(sectors),
+                static_cast<float>(stack) / static_cast<float>(stacks)
             };
 
             vertices.push_back({ position + posOffset, normal, texCoords });

@@ -9,19 +9,16 @@ namespace Engine {
 		virtual void render() = 0;
 	};
 
-
 	template <typename OwnerType>
 	struct Hook : BaseHook {
+		Hook() = default;
+		Hook(OwnerType* owner) : owner(owner) {}
 		~Hook() override = default;
 
-		void initialize() override = 0;
-		void update() override = 0;
-		void render() override = 0;
-
-		void setOwner(std::shared_ptr<OwnerType> owner) {
+		void setOwner(OwnerType* owner) {
 			this->owner = owner;
 		}
 	protected:
-		std::weak_ptr<OwnerType> owner;
+		OwnerType* owner;
 	};
 }

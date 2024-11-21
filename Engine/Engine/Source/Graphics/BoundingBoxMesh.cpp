@@ -2,13 +2,23 @@
 
 Engine::BoundingBoxMesh::BoundingBoxMesh(const Vec3<Length>& lower, const Vec3<Length>& upper)
 	: lower(lower), upper(upper) {
-	initialize();
+	updateGrid();
+	drawMode = GL_LINES;
+	shaderName = "SolidColor";
+}
+
+Engine::Vertex Engine::BoundingBoxMesh::createVertex(const glm::vec3& position) {
+	return {
+		position,
+		glm::vec3(0.0f),
+		glm::vec2(0.0f)
+	};
 }
 
 void Engine::BoundingBoxMesh::updateGrid() {
 	constexpr float cellSize = 10.0f;
 
-	bbverticies.clear();
+	vertices.clear();
 
 	const glm::vec3 min = lower.as<Meters>();
 	const glm::vec3 max = upper.as<Meters>();
@@ -17,44 +27,25 @@ void Engine::BoundingBoxMesh::updateGrid() {
 	for (float y = min.y; y <= max.y; y += cellSize) {
 		for (float x = min.x; x <= max.x; x += cellSize) {
 			// Vertical lines (front and back faces)
-			bbverticies.push_back(x);
-			bbverticies.push_back(y);
-			bbverticies.push_back(min.z);
-			bbverticies.push_back(x);
-			bbverticies.push_back(y);
-			bbverticies.push_back(max.z);
+			vertices.push_back(createVertex({ x, y, min.z }));
+			vertices.push_back(createVertex({ x, y, max.z }));
 
 			// Horizontal lines along x-axis (front and back faces)
 			if (x + cellSize <= max.x) {
 				float xEnd = x + cellSize;
-				// Front face
-				bbverticies.push_back(x);
-				bbverticies.push_back(y);
-				bbverticies.push_back(min.z);
-				bbverticies.push_back(xEnd);
-				bbverticies.push_back(y);
-				bbverticies.push_back(min.z);
+				vertices.push_back(createVertex({ x, y, min.z }));
+				vertices.push_back(createVertex({ xEnd, y, min.z }));
 
-				// Back face
-				bbverticies.push_back(x);
-				bbverticies.push_back(y);
-				bbverticies.push_back(max.z);
-				bbverticies.push_back(xEnd);
-				bbverticies.push_back(y);
-				bbverticies.push_back(max.z);
+				vertices.push_back(createVertex({ x, y, max.z }));
+				vertices.push_back(createVertex({ xEnd, y, max.z }));
 			}
 
 			// Horizontal lines along z-axis on left and right faces
 			if (std::abs(x - max.x) < 1e-5 || std::abs(x - min.x) < 1e-5) {
 				for (float z = min.z; z + cellSize <= max.z; z += cellSize) {
 					float zEnd = z + cellSize;
-					// Left or Right face at x
-					bbverticies.push_back(x);
-					bbverticies.push_back(y);
-					bbverticies.push_back(z);
-					bbverticies.push_back(x);
-					bbverticies.push_back(y);
-					bbverticies.push_back(zEnd);
+					vertices.push_back(createVertex({ x, y, z }));
+					vertices.push_back(createVertex({ x, y, zEnd }));
 				}
 			}
 
@@ -62,21 +53,8 @@ void Engine::BoundingBoxMesh::updateGrid() {
 			if (y + cellSize <= max.y) {
 				float yEnd = y + cellSize;
 				for (float z = min.z; z <= max.z; z += cellSize) {
-					// Left face at x = min.x
-					bbverticies.push_back(x);
-					bbverticies.push_back(y);
-					bbverticies.push_back(z);
-					bbverticies.push_back(x);
-					bbverticies.push_back(yEnd);
-					bbverticies.push_back(z);
-
-					// Right face at x = max.x
-					bbverticies.push_back(x);
-					bbverticies.push_back(y);
-					bbverticies.push_back(z);
-					bbverticies.push_back(x);
-					bbverticies.push_back(yEnd);
-					bbverticies.push_back(z);
+					vertices.push_back(createVertex({ x, y, z }));
+					vertices.push_back(createVertex({ x, yEnd, z }));
 				}
 			}
 		}
@@ -87,61 +65,26 @@ void Engine::BoundingBoxMesh::updateGrid() {
 		for (float x = min.x; x <= max.x; x += cellSize) {
 			if (x + cellSize <= max.x) {
 				float xEnd = x + cellSize;
-				// Lines along x-axis on top and bottom faces
-				// Top face at y = max.y
-				bbverticies.push_back(x);
-				bbverticies.push_back(max.y);
-				bbverticies.push_back(z);
-				bbverticies.push_back(xEnd);
-				bbverticies.push_back(max.y);
-				bbverticies.push_back(z);
+				vertices.push_back(createVertex({ x, max.y, z }));
+				vertices.push_back(createVertex({ xEnd, max.y, z }));
 
-				// Bottom face at y = min.y
-				bbverticies.push_back(x);
-				bbverticies.push_back(min.y);
-				bbverticies.push_back(z);
-				bbverticies.push_back(xEnd);
-				bbverticies.push_back(min.y);
-				bbverticies.push_back(z);
+				vertices.push_back(createVertex({ x, min.y, z }));
+				vertices.push_back(createVertex({ xEnd, min.y, z }));
 			}
 
 			if (z + cellSize <= max.z) {
 				float zEnd = z + cellSize;
-				// Lines along z-axis on top and bottom faces
-				// Top face at y = max.y
-				bbverticies.push_back(x);
-				bbverticies.push_back(max.y);
-				bbverticies.push_back(z);
-				bbverticies.push_back(x);
-				bbverticies.push_back(max.y);
-				bbverticies.push_back(zEnd);
+				vertices.push_back(createVertex({ x, max.y, z }));
+				vertices.push_back(createVertex({ x, max.y, zEnd }));
 
-				// Bottom face at y = min.y
-				bbverticies.push_back(x);
-				bbverticies.push_back(min.y);
-				bbverticies.push_back(z);
-				bbverticies.push_back(x);
-				bbverticies.push_back(min.y);
-				bbverticies.push_back(zEnd);
+				vertices.push_back(createVertex({ x, min.y, z }));
+				vertices.push_back(createVertex({ x, min.y, zEnd }));
 			}
 		}
 	}
 }
 
-void Engine::BoundingBoxMesh::initialize() {
-	updateGrid();
-
-	glBindVertexArray(VAO);
-	glBindBuffer(GL_ARRAY_BUFFER, VBO);
-	glBufferData(GL_ARRAY_BUFFER, bbverticies.size() * sizeof(float), bbverticies.data(), GL_STATIC_DRAW);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), static_cast<void*>(nullptr));
-	glEnableVertexAttribArray(0);
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
-	glBindVertexArray(0);
-
-	isInitialized = true;
-}
-
 void Engine::BoundingBoxMesh::update() {
-	initialize();
+	updateGrid();
+	setUpMesh();
 }

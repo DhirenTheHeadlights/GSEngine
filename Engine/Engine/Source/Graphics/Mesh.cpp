@@ -6,7 +6,7 @@ Engine::Mesh::Mesh() {
 	glGenBuffers(1, &EBO);
 }
 
-Engine::Mesh::Mesh(const std::vector<Vertex>& vertices, const std::vector<unsigned int>& indices, const glm::vec3 color, GLuint textureId)
+Engine::Mesh::Mesh(const std::vector<Vertex>& vertices, const std::vector<unsigned int>& indices, const glm::vec3& color, GLuint textureId)
 	: vertices(vertices), indices(indices) {
 	setUpMesh();
 }
