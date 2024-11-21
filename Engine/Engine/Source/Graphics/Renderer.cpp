@@ -228,7 +228,7 @@ void Engine::Renderer::renderLightingPass(const std::vector<LightShaderEntry>& l
 	if (lightData.empty()) {
 		return;
 	}
-
+	//dhiren sucks nuts (mmmmmmmfgh)
 	// Update SSBO with light data
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboLights);
 	glBufferData(GL_SHADER_STORAGE_BUFFER, lightData.size() * sizeof(LightShaderEntry), lightData.data(), GL_DYNAMIC_DRAW);
