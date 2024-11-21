@@ -67,7 +67,7 @@ void Engine::Sphere::initialize() {
 
 
     lightSourceComponent->addLight(std::make_shared<SpotLight>(
-        glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(1.0f, 1.0f, 1.0f), 1.0f, 1.0f, 0.09f, 0.032f, 0.f, glm::cos(glm::radians(17.5f)), 0.1f
+        position.as<Engine::Meters>(), glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(1.0f, 1.0f, 1.0f), 1.0f, 1.0f, 0.09f, 0.032f, 0.f, glm::cos(glm::radians(17.5f)), 0.1f
     ));
 
     //lightSourceComponent->addLight(std::make_shared<Engine::PointLight>(

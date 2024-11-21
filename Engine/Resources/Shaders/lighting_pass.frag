@@ -91,9 +91,9 @@ void main() {
         vec3 specular = lights[i].color * spec * 0.5;
 
         // Apply attenuation and shadow
-        vec3 lightEffect = (ambient + diffuse + specular) * Albedo;
+        float shadow = calculateShadow(FragPosLightSpace);
+        vec3 lightEffect = (ambient + (1 - shadow) * ( diffuse + specular)) * Albedo;
         resultColor += (lightEffect - resultColor);
     }
-
     FragColor = vec4(resultColor, 1.0);
 }

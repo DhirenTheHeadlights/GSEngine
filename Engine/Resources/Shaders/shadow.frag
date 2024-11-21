@@ -1,5 +1,5 @@
 #version 330 core
 
 void main() {
-    // No output needed; depth values are automatically written to the depth buffer
+    // OpenGL automatically writes depth values to the depth buffer.
 }
