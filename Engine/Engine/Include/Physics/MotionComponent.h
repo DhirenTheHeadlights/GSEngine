@@ -2,12 +2,15 @@
 
 #include <glm/glm.hpp>
 
+#include "Core/EngineComponent.h"
 #include "Physics/Units/Units.h"
 #include "Physics/Vector/Vec3.h"
 #include "Vector/Math.h"
 
 namespace Engine::Physics {
-	struct MotionComponent {
+	struct MotionComponent : EngineComponent {
+		MotionComponent(ID* id) : EngineComponent(id) {}
+
 		Vec3<Length> position;
 		Vec3<Velocity> velocity;
 		Vec3<Acceleration> acceleration;

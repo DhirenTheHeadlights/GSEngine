@@ -1,9 +1,9 @@
 #include "Player.h"
 
 void Game::Player::initialize() {
-	const auto motionComponent = std::make_shared<Engine::Physics::MotionComponent>();
-	const auto collisionComponent = std::make_shared<Engine::Physics::CollisionComponent>();
-	const auto renderComponent = std::make_shared<Engine::RenderComponent>();
+	const auto motionComponent = std::make_shared<Engine::Physics::MotionComponent>(id.get());
+	const auto collisionComponent = std::make_shared<Engine::Physics::CollisionComponent>(id.get());
+	const auto renderComponent = std::make_shared<Engine::RenderComponent>(id.get());
 
 	Engine::Length height = Engine::feet(6.0f);
 	Engine::Length width = Engine::feet(3.0f);

@@ -1,9 +1,11 @@
 #pragma once
 
+#include "Core/EngineComponent.h"
 #include "Graphics/BoundingBox.h"
 
 namespace Engine::Physics {
-	struct CollisionComponent {
+	struct CollisionComponent : EngineComponent {
+		CollisionComponent(ID* id) : EngineComponent(id) {}
 		std::vector<BoundingBox> boundingBoxes;
 	};
 }

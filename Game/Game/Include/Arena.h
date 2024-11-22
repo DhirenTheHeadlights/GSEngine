@@ -7,7 +7,7 @@ namespace Game {
 	public:
 		Arena() : Object("Arena") {}
 
-		void initialize();
+		void initialize() override;
 		void update() override;
 		void render() override;
 	private:

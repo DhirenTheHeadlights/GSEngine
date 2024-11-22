@@ -7,8 +7,7 @@ namespace Game {
 	public:
 		Player() : Object("Player") {}
 
-		void initialize();
-
+		void initialize() override;
 		void update() override;
 
 		bool jetpack = false;
