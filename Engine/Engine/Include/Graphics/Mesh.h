@@ -13,11 +13,13 @@ namespace Engine {
 		glm::vec2 texCoords;
 	};
 
+	class RenderComponent;
+
 	class Mesh {
 	public:
 		Mesh();
-		Mesh(const std::vector<Vertex>& vertices, const std::vector<unsigned int>& indices, const glm::vec3 color = { 1.0f, 1.0f, 1.0f }, GLuint textureId = 0);
-		~Mesh();
+		Mesh(const std::vector<Vertex>& vertices, const std::vector<unsigned int>& indices, const glm::vec3& color = { 1.0f, 1.0f, 1.0f }, GLuint textureId = 0);
+		virtual ~Mesh();
 
 		// Disable copy to avoid OpenGL resource duplication
 		Mesh(const Mesh&) = delete;
@@ -30,9 +32,9 @@ namespace Engine {
 		GLuint getVAO() const { return VAO; }
 		GLsizei getVertexCount() const { return static_cast<GLsizei>(indices.size()); }
 
-		virtual RenderQueueEntry getQueueEntry() const {
+		RenderQueueEntry getQueueEntry() const {
 			return {
-				"Lighting",
+				shaderName,
 				VAO,
 				drawMode,
 				getVertexCount(),
@@ -44,6 +46,7 @@ namespace Engine {
 
 		void setColor(const glm::vec3& newColor) { color = newColor; }
 	protected:
+		friend RenderComponent;
 		void setUpMesh();
 
 		GLuint VAO = 0;
@@ -56,6 +59,7 @@ namespace Engine {
 		glm::mat4 modelMatrix = glm::mat4(1.0f);
 		GLuint textureId = 0;
 		GLuint drawMode = GL_TRIANGLES;
+		std::string shaderName = "Lighting";
 		glm::vec3 color = { 1.0f, 1.0f, 1.0f };
 	};
 }

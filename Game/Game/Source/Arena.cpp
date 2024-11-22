@@ -8,7 +8,7 @@ void Game::Arena::initialize() {
     const Engine::Length wallThickness = Engine::meters(10.f);
 
     // Create collision component and add bounding boxes for each face
-    const auto collisionComponent = std::make_shared<Engine::Physics::CollisionComponent>();
+    const auto collisionComponent = std::make_shared<Engine::Physics::CollisionComponent>(id.get());
 
     // Front and back walls
     collisionComponent->boundingBoxes.emplace_back(Engine::Vec3<Engine::Meters>(0.f, 0.f, depth / 2.f - wallThickness / 2.f), width, height, wallThickness);
@@ -85,7 +85,7 @@ void Game::Arena::initialize() {
     // Common indices for each face
     const std::vector<unsigned int> faceIndices = { 0, 1, 2, 2, 3, 0 };
 
-    const auto renderComponent = std::make_shared<Engine::RenderComponent>();
+    const auto renderComponent = std::make_shared<Engine::RenderComponent>(id.get());
 
     // Loop over each face, creating a Mesh and RenderComponent with a unique color
     for (size_t i = 0; i < 6; ++i) {
@@ -99,10 +99,12 @@ void Game::Arena::initialize() {
 
     addComponent(renderComponent);
     addComponent(collisionComponent);
+
+    getComponent<Engine::RenderComponent>()->setRender(true, true);
 }
 
 void Game::Arena::update() {
-    getComponent<Engine::RenderComponent>()->setRender(true, true);
+
 }
 
 void Game::Arena::render() {

@@ -5,15 +5,14 @@
 
 #include "Core/ID.h"
 #include "Graphics/BoundingBox.h"
+#include "Core/Object/Hook.h"
 
 namespace Engine {
+	class Scene;
 	class Object {
 	public:
 		explicit Object(const std::string& name = "Unnamed Entity") : id(generateID(name)) {}
 		virtual ~Object() = default;
-
-		virtual void update() {}
-		virtual void render() {}
 
 		void setSceneId(const std::shared_ptr<ID>& sceneId) { this->sceneId = sceneId; }
 
@@ -36,10 +35,55 @@ namespace Engine {
 			}
 			return nullptr;
 		}
-	protected:
-		std::shared_ptr<ID> id;
+
+		void addHook(std::unique_ptr<BaseHook> hook) {
+			hooks.push_back(std::move(hook));
+		}
+	private:
 		std::shared_ptr<ID> sceneId;
 
 		std::unordered_map<std::type_index, std::shared_ptr<void>> components;
+		std::vector<std::unique_ptr<BaseHook>> hooks;
+
+		void initializeHooks() const {
+			for (const auto& hook : hooks) {
+				hook->initialize();
+			}
+		}
+
+		void updateHooks() const {
+			for (const auto& hook : hooks) {
+				hook->update();
+			}
+		}
+
+		void renderHooks() const {
+			for (const auto& hook : hooks) {
+				hook->render();
+			}
+		}
+
+		void processInitialize() {
+			initialize();
+			initializeHooks();
+		}
+
+		void processUpdate() {
+			update();
+			updateHooks();
+		}
+
+		void processRender() {
+			render();
+			renderHooks();
+		}
+
+		friend Scene;
+	protected:
+		std::shared_ptr<ID> id;
+
+		virtual void initialize() {}
+		virtual void update() {}
+		virtual void render() {}
 	};
 }

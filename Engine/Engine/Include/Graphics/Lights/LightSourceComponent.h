@@ -3,12 +3,13 @@
 #include <glm/glm.hpp>
 
 #include "Graphics/Lights/Light.h"
+#include "Core/EngineComponent.h"
 
 namespace Engine {
-	class LightSourceComponent {
+	class LightSourceComponent : public EngineComponent {
 	public:
-		LightSourceComponent() = default;
-		LightSourceComponent(const std::vector<std::shared_ptr<Light>>& lights) : lights(lights) {}
+		LightSourceComponent(ID* id) : EngineComponent(id) {}
+		LightSourceComponent(ID* id, const std::vector<std::shared_ptr<Light>>& lights) : lights(lights), EngineComponent(id) {}
 
 		void addLight(const std::shared_ptr<Light>& light) {
 			lights.push_back(light);
