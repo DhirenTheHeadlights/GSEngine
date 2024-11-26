@@ -11,6 +11,8 @@ namespace {
 	Engine::Clock autosaveClock;
 	const Engine::Time autosaveTime = Engine::seconds(60.f);
 	std::string imguiSaveFilePath;
+
+	std::vector<std::function<void()>> renderCallBacks;
 }
 
 void Engine::Debug::setImguiSaveFilePath(const std::string& path) {
@@ -77,6 +79,11 @@ void Engine::Debug::updateImGui() {
 }
 
 void Engine::Debug::renderImGui() {
+	for (const auto& callback : renderCallBacks) {
+		callback();
+	}
+	renderCallBacks.clear();
+
 	ImGui::Render();
 
 	const glm::ivec2 windowSize = Window::getWindowSize();
@@ -117,6 +124,10 @@ void Engine::Debug::printValue(const std::string& name, const float& value, cons
 
 void Engine::Debug::printBoolean(const std::string& name, const bool& value) {
 	ImGui::Checkbox(name.c_str(), const_cast<bool*>(&value));
+}
+
+void Engine::Debug::addImguiCallback(const std::function<void()>& callback) {
+	renderCallBacks.push_back(callback);
 }
 
 bool Engine::Debug::getImGuiNeedsInputs() {

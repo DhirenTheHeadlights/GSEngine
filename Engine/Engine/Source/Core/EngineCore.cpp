@@ -5,17 +5,6 @@
 #include "Platform/PermaAssert.h"
 #include "Platform/GLFW/Input.h"
 #include "Platform/GLFW/Window.h"
-#define IMGUI 1
-#if IMGUI == 0
-#pragma message("IMGUI is set to 0")
-#else
-#pragma message("IMGUI is set to 1")
-#endif
-
-
-#if IMGUI
-#include "Graphics/Debug.h"
-#endif
 
 Engine::SceneHandler Engine::sceneHandler;
 
@@ -36,6 +25,7 @@ namespace {
 	auto engineState = EngineState::Uninitialized;
 
 	bool engineShutdownBlocked = false;
+	bool imguiEnabled = false;
 }
 
 void Engine::requestShutdown() {
@@ -50,6 +40,10 @@ void Engine::blockShutdownRequests() {
 	engineShutdownBlocked = true;
 }
 
+void Engine::setImguiEnabled(const bool enabled) {
+	imguiEnabled = enabled;
+}
+
 void Engine::initialize(const std::function<void()>& initializeFunction, const std::function<void()>& shutdownFunction) {
 	engineState = EngineState::Initializing;
 
@@ -57,9 +51,7 @@ void Engine::initialize(const std::function<void()>& initializeFunction, const s
 
 	Window::initialize();
 
-#if IMGUI
-	Debug::setUpImGui();
-#endif
+	if (imguiEnabled) Debug::setUpImGui();
 
 	initializeFunction();
 
@@ -68,15 +60,12 @@ void Engine::initialize(const std::function<void()>& initializeFunction, const s
 
 namespace {
 	void update(const std::function<bool()>& updateFunction) {
-#if IMGUI
-		Engine::addTimer("Engine::update");
-#endif
+
+		if (imguiEnabled) Engine::addTimer("Engine::update");
 
 		Engine::Window::update();
 
-#if IMGUI
-		Engine::Debug::updateImGui();
-#endif
+		if (imguiEnabled) Engine::Debug::updateImGui();
 
 		Engine::MainClock::update();
 
@@ -88,16 +77,12 @@ namespace {
 			Engine::requestShutdown();
 		}
 
-#if IMGUI
-		Engine::resetTimer("Engine::render");
-#endif
+		if (imguiEnabled) Engine::resetTimer("Engine::render");
 	}
 
 	void render(const std::function<bool()>& renderFunction) {
+		if (imguiEnabled) Engine::addTimer("Engine::render");
 
-#if IMGUI
-		Engine::addTimer("Engine::render");
-#endif
 		Engine::Window::beginFrame();
 
 		Engine::sceneHandler.render();
@@ -106,13 +91,12 @@ namespace {
 			Engine::requestShutdown();
 		}
 
-#if IMGUI
-		Engine::displayTimers();
-		Engine::Debug::renderImGui();
-#endif
+		if (imguiEnabled) Engine::displayTimers();
+		if (imguiEnabled) Engine::Debug::renderImGui();
+
 		Engine::Window::endFrame();
 
-		Engine::resetTimer("Engine::update");
+		if (imguiEnabled) Engine::resetTimer("Engine::update");
 	}
 
 	void shutdown() {
