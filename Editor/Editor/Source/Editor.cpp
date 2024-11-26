@@ -14,7 +14,7 @@ namespace {
     int viewportHeight = 600;    // Height of the viewport
 
 	ImVec2 gameWindowPosition = { 0, 0 };
-    ImVec2 gameWindowSize = { 800, 600 };
+    ImVec2 gameWindowSize = { 1920 / 2, 1080 / 2 };
 
     bool gameFocused = false;
 }

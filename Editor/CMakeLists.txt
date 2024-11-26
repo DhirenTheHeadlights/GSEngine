@@ -18,9 +18,6 @@ add_executable(Editor ${Editor_SOURCES} ${Editor_HEADERS})
 # Include directories for Editor headers
 target_include_directories(Editor PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/Editor/Include/")
 
-# Compilation Arguments
-set(IMGUI OFF CACHE BOOL "Enable IMGUI support" FORCE)
-
 # Link against the Engine (the Engine handles all third-party libraries) and the GoonSquadLib
 target_link_libraries(Editor PRIVATE Engine)
 target_link_libraries(Editor PRIVATE GoonSquadLib)

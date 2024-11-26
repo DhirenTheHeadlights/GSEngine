@@ -18,15 +18,17 @@ namespace Engine {
 		float ambientStrength;
 
 		void showDebugMenu() override {
-			ImGui::Begin("Point Light");
-			ImGui::Text("Position: (%.2f, %.2f, %.2f)", position.x, position.y, position.z);
-			ImGui::ColorEdit3("Color", &color[0]);
-			ImGui::SliderFloat("Intensity", &intensity, 0.0f, 100.0f);
-			ImGui::SliderFloat("Ambient Strength", &ambientStrength, 0.0f, 1.0f);
-			ImGui::SliderFloat("Constant", &constant, 0.0f, 1.0f);
-			ImGui::SliderFloat("Linear", &linear, 0.0f, 1.0f);
-			ImGui::SliderFloat("Quadratic", &quadratic, 0.0f, 1.0f);
-			ImGui::End();
+			Debug::addImguiCallback([this] {
+				ImGui::Begin("Point Light");
+				ImGui::Text("Position: (%.2f, %.2f, %.2f)", position.x, position.y, position.z);
+				ImGui::ColorEdit3("Color", &color[0]);
+				ImGui::SliderFloat("Intensity", &intensity, 0.0f, 100.0f);
+				ImGui::SliderFloat("Ambient Strength", &ambientStrength, 0.0f, 1.0f);
+				ImGui::SliderFloat("Constant", &constant, 0.0f, 1.0f);
+				ImGui::SliderFloat("Linear", &linear, 0.0f, 1.0f);
+				ImGui::SliderFloat("Quadratic", &quadratic, 0.0f, 1.0f);
+				ImGui::End();
+				});
 		}
 
 		LightRenderQueueEntry getRenderQueueEntry() const override {

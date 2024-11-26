@@ -15,12 +15,14 @@ namespace Engine {
 		float ambientStrength;
 
 		void showDebugMenu() override {
-			ImGui::Begin("Directional Light");
-			ImGui::ColorEdit3("Color", &color[0]);
-			ImGui::SliderFloat("Intensity", &intensity, 0.0f, 100.0f);
-			ImGui::SliderFloat("Ambient Strength", &ambientStrength, 0.0f, 1.0f);
-			ImGui::SliderFloat3("Direction", &direction[0], -1.0f, 1.0f);
-			ImGui::End();
+			Debug::addImguiCallback([this] {
+				ImGui::Begin("Directional Light");
+				ImGui::ColorEdit3("Color", &color[0]);
+				ImGui::SliderFloat("Intensity", &intensity, 0.0f, 100.0f);
+				ImGui::SliderFloat("Ambient Strength", &ambientStrength, 0.0f, 1.0f);
+				ImGui::SliderFloat3("Direction", &direction[0], -1.0f, 1.0f);
+				ImGui::End();
+				});
 		}	
 		
 		LightRenderQueueEntry getRenderQueueEntry() const override {

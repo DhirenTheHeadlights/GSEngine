@@ -16,6 +16,7 @@ namespace Engine {
 	void requestShutdown();
 	void blockShutdownRequests();
 
+	void setImguiEnabled(bool enabled);
 	Camera& getCamera();
 
 	extern SceneHandler sceneHandler;
