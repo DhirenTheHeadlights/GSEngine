@@ -15,7 +15,7 @@ namespace Game {
 		void updateJetpack();
 		void updateMovement();
 
-		std::unordered_map<int, Engine::Vec3<Engine::Unitless>> wasd;
+		std::unordered_map<int, Engine::Vec3<>> wasd;
 
 		Engine::Velocity maxSpeed = Engine::milesPerHour(20.f);
 		Engine::Velocity shiftMaxSpeed = Engine::milesPerHour(40.f);

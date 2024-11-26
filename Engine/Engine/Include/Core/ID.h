@@ -1,9 +1,6 @@
 #pragma once
 
-#include <vector>
-#include <memory>
-#include <string>
-#include <unordered_map>
+import std;
 
 #include "Platform/PermaAssert.h"
 

@@ -1,8 +1,6 @@
-#include "Game.h"
+module Game;
 
-#include <imgui.h>
-
-#include "Arena.h"
+import Arena;
 #include "Engine.h"
 #include "Player.h"
 #include "SphereLight.h"
@@ -32,6 +30,8 @@ bool Game::initialize() {
 	scene1->addObject(sphere);
 
 	Engine::sceneHandler.addScene(scene1, "Scene1");
+	Engine::sceneHandler.addScene(std::make_shared<Engine::Scene>(), "Scene2");
+	Engine::sceneHandler.queueSceneTrigger(Engine::grabID("Scene1").lock(), [] { return true; });
 
 	return true;
 }
@@ -58,10 +58,6 @@ bool Game::update() {
 }
 
 bool Game::render() {
-	if (const auto scene1Id = Engine::grabID("Scene1").lock()) {
-		Engine::sceneHandler.activateScene(scene1Id);
-	}
-
 	Engine::Debug::addImguiCallback([] {
 		ImGui::Begin("Game Data");
 

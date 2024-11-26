@@ -1,6 +1,6 @@
 #pragma once
+
 #include <functional>
-#include <memory>
 
 #include "ID.h"
 #include "SceneHandler.h"

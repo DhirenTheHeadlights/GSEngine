@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.27)
 
 # Set project details and C++ standard
 set(CMAKE_CXX_STANDARD 23)
@@ -14,11 +14,13 @@ file(MAKE_DIRECTORY "${FETCHCONTENT_BASE_DIR}")
 # Include FetchContent
 include(FetchContent)
 
-# Gather engine source files (cpp) from the new "Resource" folder
+# Gather engine source files and header files
 file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/*.cpp")
-
-# Gather engine header files (h, hpp) from the new "Include" folder
 file(GLOB_RECURSE ENGINE_HEADERS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/*.h")
+
+# Glob module interface files
+file(GLOB MODULE_FILES "${CMAKE_SOURCE_DIR}/src/*.cppm")
+file(GLOB MODULE_IMPL_FILES "${CMAKE_SOURCE_DIR}/src/*.cpp")
 
 # Add the engine as a static library including source and header files
 add_library(Engine STATIC ${ENGINE_SOURCES} ${ENGINE_HEADERS})

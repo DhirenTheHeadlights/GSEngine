@@ -11,7 +11,7 @@ namespace Engine {
 	public:
 		Camera(const Vec3<Length>& initialPosition = { 0.f }) : position(initialPosition) {}
 
-		void moveRelativeToOrigin(const Vec3<Unitless>& direction, const float distance, const float deltaTime) {
+		void moveRelativeToOrigin(const Vec3<>& direction, const float distance, const float deltaTime) {
 			const auto normDirection = normalize(direction).asDefaultUnits();
 			const Vec3<Length> cameraDirection =
 				right * normDirection.x +
@@ -25,10 +25,10 @@ namespace Engine {
 
 		void setPosition(const Vec3<Length>& position) { this->position = position; }
 
-		glm::mat4 getViewMatrix() const { return glm::lookAt(position.as<Meters>(), (position + front).as<Meters>(), up.as<Meters>()); }
+		glm::mat4 getViewMatrix() const { return lookAt(position.as<Meters>(), (position + front).as<Meters>(), up.as<Meters>()); }
 		Vec3<Length> getPosition() const { return position; }
-		Vec3<Unitless> getCameraDirectionRelativeToOrigin(const Vec3<Unitless>& direction) const {
-			return { right.as<Meters>() * direction.asDefaultUnits().x + up.as<Meters>() * direction.asDefaultUnits().y + front.as<Meters>() * direction.asDefaultUnits().z};
+		Vec3<> getCameraDirectionRelativeToOrigin(const Vec3<>& direction) const {
+			return { right.as<Meters>() * direction.asDefaultUnits().x + up.as<Meters>() * direction.asDefaultUnits().y + front.as<Meters>() * direction.asDefaultUnits().z };
 		}
 	private:
 		Vec3<Length> position;

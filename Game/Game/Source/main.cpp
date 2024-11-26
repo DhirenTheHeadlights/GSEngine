@@ -1,6 +1,7 @@
 #include "Engine.h"
-#include "Game.h"
 #include "ResourcePaths.h"
+
+import Game;
 
 int main() {
 	Engine::setImguiEnabled(true);

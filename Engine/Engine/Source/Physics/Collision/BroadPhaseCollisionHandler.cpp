@@ -60,15 +60,15 @@ Engine::CollisionInformation Engine::BroadPhaseCollisionHandler::calculateCollis
 
 	// Find the axis with the smallest penetration
 	Length penetration = xPenetration;
-	Vec3<Unitless> collisionNormal(1.0f, 0.0f, 0.0f); // Default to X axis
+	Vec3 collisionNormal(1.0f, 0.0f, 0.0f); // Default to X axis
 
 	if (yPenetration < penetration) {
 		penetration = yPenetration;
-		collisionNormal = Vec3<Unitless>(0.0f, 1.0f, 0.0f);
+		collisionNormal = Vec3(0.0f, 1.0f, 0.0f);
 	}
 	if (zPenetration < penetration) {
 		penetration = zPenetration;
-		collisionNormal = Vec3<Unitless>(0.0f, 0.0f, 1.0f);
+		collisionNormal = Vec3(0.0f, 0.0f, 1.0f);
 	}
 
 	// Determine the collision normal

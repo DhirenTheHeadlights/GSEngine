@@ -131,9 +131,35 @@ void Editor::render() {
     ImGui::End();
 
     ImGui::Begin("Editor");
-    ImGui::Text("Welcome to the Editor!");
-    ImGui::Separator();
-    ImGui::Text("Add your widgets for game objects, properties, and settings here.");
+
+    const auto scenes = Engine::sceneHandler.getAllScenes();
+    const auto activeScenes = Engine::sceneHandler.getActiveScenes();
+
+    const std::string currentSceneName = activeScenes.empty() ? "No Active Scene" : activeScenes[0]->getId()->tag;
+
+    if (scenes.empty()) {
+        ImGui::Text("No scenes available.");
+    }
+    else if (scenes.size() == 1) {
+        ImGui::Text("Only one scene available: %s", scenes[0]->tag.c_str());
+    }
+    else {
+        if (ImGui::BeginCombo("Select Scene", currentSceneName.c_str())) {
+            for (const auto& scene : scenes) {
+                const bool isSelected = !activeScenes.empty() && activeScenes[0]->getId()->tag == scene->tag;
+                if (ImGui::Selectable(scene->tag.c_str(), isSelected)) {
+                    if (!isSelected) { // Avoid redundant activation
+                        Engine::sceneHandler.activateScene(scene);
+                    }
+                }
+                if (isSelected) {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndCombo();
+        }
+    }
+
     ImGui::End();
 
     ImGui::Begin("Editor2");

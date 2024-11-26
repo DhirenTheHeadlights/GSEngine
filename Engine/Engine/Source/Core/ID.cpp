@@ -1,5 +1,9 @@
 #include "Core/ID.h"
 
+#include <unordered_map>
+
+import std;
+
 namespace {
     std::vector<std::weak_ptr<Engine::ID>> ids;
     std::unordered_map<int, std::weak_ptr<Engine::ID>> idMap;

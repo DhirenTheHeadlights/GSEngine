@@ -1,9 +1,10 @@
 #include "Platform/GLFW/Window.h"
-#include <fstream>
+
+import std;
 
 #include "Core/Clock.h"
-#include "Platform/GLFW/Input.h"
 #include "Platform/PermaAssert.h"
+#include "Platform/GLFW/Input.h"
 
 #undef max
 #undef min

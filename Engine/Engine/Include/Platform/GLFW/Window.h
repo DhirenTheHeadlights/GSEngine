@@ -1,6 +1,6 @@
 #pragma once
 
-#include <memory>
+import std;
 #include <optional>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>

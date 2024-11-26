@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.27)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 23)
@@ -6,11 +6,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 project(Editor)
 
-# Gather Editor source files
+# Gather source and header files
 file(GLOB_RECURSE Editor_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Editor/Source/*.cpp")
-
-# Gather Editor header files
 file(GLOB_RECURSE Editor_HEADERS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Editor/Include/*.h")
+
+# Glob module interface files
+file(GLOB MODULE_FILES "${CMAKE_SOURCE_DIR}/src/*.cppm")
+file(GLOB MODULE_IMPL_FILES "${CMAKE_SOURCE_DIR}/src/*.cpp")
 
 # Add the Editor as an executable
 add_executable(Editor ${Editor_SOURCES} ${Editor_HEADERS})

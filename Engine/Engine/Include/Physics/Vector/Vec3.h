@@ -78,7 +78,7 @@ namespace Engine {
 		}
 	}
 
-	template <IsQuantityOrUnit T>
+	template <IsQuantityOrUnit T = Unitless>
 	struct Vec3 {
 		using QuantityType = typename UnitToQuantity<T>::Type;
 
@@ -202,7 +202,7 @@ namespace Engine {
 			return Vec3<T>(lhs.asDefaultUnits() * rhs.asDefaultUnits());
 		}
 		else {
-			return Vec3<Unitless>(lhs.asDefaultUnits() * rhs.asDefaultUnits());
+			return Vec3<>(lhs.asDefaultUnits() * rhs.asDefaultUnits());
 		}
 	}
 
@@ -216,7 +216,7 @@ namespace Engine {
 			return Vec3<T>(lhs.asDefaultUnits() / rhs.asDefaultUnits());
 		}
 		else {
-			return Vec3<Unitless>(lhs.asDefaultUnits() / rhs.asDefaultUnits());
+			return Vec3<>(lhs.asDefaultUnits() / rhs.asDefaultUnits());
 		}
 	}
 
@@ -230,7 +230,7 @@ namespace Engine {
 			return Vec3<T>(lhs.asDefaultUnits() * rhs.asDefaultUnit());
 		}
 		else {
-			return Vec3<Unitless>(lhs.asDefaultUnits() * getValue<Unitless>(rhs));
+			return Vec3<>(lhs.asDefaultUnits() * getValue<Unitless>(rhs));
 		}
 	}
 
@@ -244,7 +244,7 @@ namespace Engine {
 			return Vec3<T>(lhs.asDefaultUnit() * rhs.asDefaultUnits());
 		}
 		else {
-			return Vec3<Unitless>(getValue<Unitless>(lhs) * rhs.asDefaultUnits());
+			return Vec3<>(getValue<Unitless>(lhs) * rhs.asDefaultUnits());
 		}
 	}
 
@@ -258,7 +258,7 @@ namespace Engine {
 			return Vec3<T>(lhs.asDefaultUnits() / rhs.asDefaultUnit());
 		}
 		else {
-			return Vec3<Unitless>(lhs.asDefaultUnits() / rhs.asDefaultUnit());
+			return Vec3<>(lhs.asDefaultUnits() / rhs.asDefaultUnit());
 		}
 	}
 
@@ -272,7 +272,7 @@ namespace Engine {
 			return Vec3<T>(lhs.asDefaultUnit() / rhs.asDefaultUnits());
 		}
 		else {
-			return Vec3<Unitless>(getValue<Unitless>(lhs) / rhs.asDefaultUnits());
+			return Vec3<>(getValue<Unitless>(lhs) / rhs.asDefaultUnits());
 		}
 	}
 

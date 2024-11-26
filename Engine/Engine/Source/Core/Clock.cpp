@@ -1,7 +1,6 @@
 #include "Core/Clock.h"
 
-#include <iostream>
-#include <map>
+import std;
 
 #include "imgui.h"
 #include "Graphics/Debug.h"

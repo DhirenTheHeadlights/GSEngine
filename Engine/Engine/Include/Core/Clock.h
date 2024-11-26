@@ -1,7 +1,6 @@
 #pragma once
 
-#include <chrono>
-#include <iostream>
+import std;
 
 #include "Physics/Units/Units.h"
 
