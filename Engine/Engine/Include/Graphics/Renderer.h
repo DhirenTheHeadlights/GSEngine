@@ -23,7 +23,7 @@ namespace Engine {
 		void renderObject(const RenderQueueEntry& entry);
 		void renderObject(const LightRenderQueueEntry& entry);
 		void renderLightingPass(const std::vector<LightShaderEntry>& lightData, const glm::mat4& lightSpaceMatrix) const;
-		void renderShadowPass(const glm::mat4& lightSpaceMatrix) const;
+		void renderShadowPass(const glm::mat4& lightSpaceMatrix);
 
 		static Camera camera;
 
@@ -49,5 +49,8 @@ namespace Engine {
 
 		const float nearPlane = 1.0f;
 		const float farPlane = 10000.f;
+
+		//Debug Tool
+		bool depthMapDebug = false;
 	};
 }

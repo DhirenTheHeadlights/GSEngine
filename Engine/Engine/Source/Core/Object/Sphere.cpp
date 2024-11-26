@@ -70,9 +70,13 @@ void Engine::Sphere::initialize() {
         position.as<Engine::Meters>(), glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(1.0f, 1.0f, 1.0f), 1.0f, 1.0f, 0.09f, 0.032f, 0.f, glm::cos(glm::radians(17.5f)), 0.1f
     ));
 
-    //lightSourceComponent->addLight(std::make_shared<Engine::PointLight>(
-    //	glm::vec3(490.0f, 490.0f, 490.0f), glm::vec3(1.0f, 1.0f, 1.0f), 1.0f, 0.09f, 0.032f, 1.f
-    //));
+    /*lightSourceComponent->addLight(std::make_shared<Engine::PointLight>(
+    	glm::vec3(490.0f, 490.0f, 490.0f), glm::vec3(1.0f, 1.0f, 1.0f), 1.0f, 0.09f, 0.032f, 1.f, 0.1f
+    ));*/
+
+    /*lightSourceComponent->addLight(std::make_shared<Engine::DirectionalLight>(
+		glm::vec3(1.0f, 1.0f, 1.0f), 1.0f, glm::vec3(0.f, -1.0f, 0.f), 0.1f
+	));*/
 
     addComponent(lightSourceComponent);
 }

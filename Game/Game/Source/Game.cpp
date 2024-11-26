@@ -9,6 +9,7 @@
 std::shared_ptr<Game::Arena> arena;
 std::shared_ptr<Game::Player> player;
 std::shared_ptr<Engine::Box> box;
+std::shared_ptr<Engine::Box> box2;
 std::shared_ptr<Engine::Sphere> sphere;
 
 bool inputHandlingEnabled = true;
@@ -21,11 +22,13 @@ bool Game::initialize() {
 	arena  = std::make_shared<Arena>();
 	player = std::make_shared<Player>();
 	box    = std::make_shared<Engine::Box>(Engine::Vec3<Engine::Meters>(20.f, -400.f, 20.f), Engine::Vec3<Engine::Meters>(20.f, 20.f, 20.f));
+	box2   = std::make_shared<Engine::Box>(Engine::Vec3<Engine::Meters>(-20.f, 400.f, 20.f), Engine::Vec3<Engine::Meters>(20.f, 20.f, 20.f));
 	sphere = std::make_shared<Engine::Sphere>(Engine::Vec3<Engine::Meters>(0.f, 0.f, 0.f), Engine::meters(10.f));
 
 	arena->initialize();
 	player->initialize();
 	box->initialize();
+	box2->initialize();
 	sphere->initialize();
 
 	const auto scene1 = std::make_shared<Engine::Scene>();
@@ -33,6 +36,7 @@ bool Game::initialize() {
 	scene1->addObject(arena);
 	scene1->addObject(player);
 	scene1->addObject(box);
+	scene1->addObject(box2);
 	scene1->addObject(sphere);
 
 	Engine::sceneHandler.addScene(scene1, "Scene1");

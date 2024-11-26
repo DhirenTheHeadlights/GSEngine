@@ -5,6 +5,8 @@ out vec4 FragColor;
 
 in vec2 TexCoords;
 
+uniform bool depthMapDebug;
+
 uniform sampler2D gPosition;
 uniform sampler2D gNormal;
 uniform sampler2D gAlbedoSpec;
@@ -54,46 +56,55 @@ float calculateShadow(vec4 FragPosLightSpace) {
 }
 
 void main() {
-    vec3 FragPos = texture(gPosition, TexCoords).rgb;
-    vec3 Normal = normalize(texture(gNormal, TexCoords).rgb);
-    vec3 Albedo = texture(gAlbedoSpec, TexCoords).rgb;
-    float Specular = texture(gAlbedoSpec, TexCoords).a;
+    if (!depthMapDebug) {
+        vec3 FragPos = texture(gPosition, TexCoords).rgb;
+        vec3 Normal = normalize(texture(gNormal, TexCoords).rgb);
+        vec3 Albedo = texture(gAlbedoSpec, TexCoords).rgb;
+        float Specular = texture(gAlbedoSpec, TexCoords).a;
 
-    vec4 FragPosLightSpace = lightSpaceMatrix * vec4(FragPos, 1.0); // Transform fragment position to light space
+        vec4 FragPosLightSpace = lightSpaceMatrix * vec4(FragPos, 1.0); // Transform fragment position to light space
 
-    vec3 resultColor = vec3(0.0);
+        vec3 resultColor = vec3(0.0);
 
-    for (int i = 0; i < lights.length(); ++i) {
-        vec3 lightDir;
-        float distance = length(lights[i].position - FragPos);
-        float attenuation = 1.0;
+        for (int i = 0; i < lights.length(); ++i) {
+            vec3 lightDir;
+            float distance = length(lights[i].position - FragPos);
+            float attenuation = 1.0;
 
-        // Add ambient light
-        float ambientStrength = 0.1f;  // lights[i].ambientStrength; FIX
-        vec3 ambient = ambientStrength * lights[i].color;
+            // Add ambient light
+            float ambientStrength = 0.1f;  // lights[i].ambientStrength; FIX
+            vec3 ambient = ambientStrength * lights[i].color;
 
-        if (lights[i].lightType == 0) { // Directional light
-            lightDir = normalize(-lights[i].direction);
-        } else {
-            lightDir = normalize(lights[i].position - FragPos);
-            //float distance = length(lights[i].position - FragPos);
-            attenuation = 1.0 / (lights[i].constant + lights[i].linear * distance + lights[i].quadratic * (distance * distance));
+            if (lights[i].lightType == 0) { // Directional light
+                lightDir = normalize(-lights[i].direction);
+            } else {
+                lightDir = normalize(lights[i].position - FragPos);
+                //float distance = length(lights[i].position - FragPos);
+                attenuation = 1.0 / (lights[i].constant + lights[i].linear * distance + lights[i].quadratic * (distance * distance));
+            }
+
+            // Diffuse component
+            float diff = max(dot(normalize(Normal), normalize(lights[i].position - FragPos)), 0.0);
+            vec3 diffuse = diff * lights[i].color;
+
+            // Specular component
+            vec3 viewDir = normalize(viewPos - FragPos);
+            vec3 reflectDir = reflect(-lightDir, Normal);
+            float spec = pow(max(dot(viewDir, reflectDir), 0.0), Specular); // FIX SPECULAR STRENGTH; this specular value is ~1-2. Should be ~32
+            vec3 specular = lights[i].color * spec * 0.5;
+
+            // Apply attenuation and shadow
+        
+            FragPosLightSpace.z -= .0005;
+            float shadow = calculateShadow(FragPosLightSpace);
+            vec3 lightEffect = (ambient + (1 - shadow) * ( diffuse + specular)) * Albedo;
+            resultColor += (lightEffect - resultColor);
         }
-
-        // Diffuse component
-        float diff = max(dot(normalize(Normal), normalize(lights[i].position - FragPos)), 0.0);
-        vec3 diffuse = diff * lights[i].color;
-
-        // Specular component
-        vec3 viewDir = normalize(viewPos - FragPos);
-        vec3 reflectDir = reflect(-lightDir, Normal);
-        float spec = pow(max(dot(viewDir, reflectDir), 0.0), Specular); // FIX SPECULAR STRENGTH; this specular value is ~1-2. Should be ~32
-        vec3 specular = lights[i].color * spec * 0.5;
-
-        // Apply attenuation and shadow
-        float shadow = calculateShadow(FragPosLightSpace);
-        vec3 lightEffect = (ambient + (1 - shadow) * ( diffuse + specular)) * Albedo;
-        resultColor += (lightEffect - resultColor);
-    }
-    FragColor = vec4(resultColor, 1.0);
+        FragColor = vec4(resultColor, 1.0);
+        }
+        else {
+        // If we're rendering the depth map, just output the depth value
+			float depth = texture(shadowMap, TexCoords).r;
+			FragColor = vec4(vec3(depth), 1.0);
+		}
 }

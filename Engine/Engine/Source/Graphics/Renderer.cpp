@@ -95,9 +95,10 @@ void Engine::Renderer::initialize() {
 	lightingShader.setInt("gPosition", 0);
 	lightingShader.setInt("gNormal", 1);
 	lightingShader.setInt("gAlbedoSpec", 2);
+	lightingShader.setBool("depthMapDebug", depthMapDebug);
 
-	this->shadowHeight = Window::getFrameBufferSize().x;
-	this->shadowWidth = Window::getFrameBufferSize().y;
+	this->shadowHeight = 1024; //Window::getFrameBufferSize().x;
+	this->shadowWidth = 1024; //Window::getFrameBufferSize().y;
 
 	// Shadow map setup
 	glGenFramebuffers(1, &depthMapFBO);
@@ -251,14 +252,21 @@ void Engine::Renderer::renderLightingPass(const std::vector<LightShaderEntry>& l
 	glEnable(GL_DEPTH_TEST);  // Re-enable depth testing after the lighting pass
 }
 
-void Engine::Renderer::renderShadowPass(const glm::mat4& lightSpaceMatrix) const {
+void Engine::Renderer::renderShadowPass(const glm::mat4& lightSpaceMatrix) {
+
+
 	glViewport(0, 0, shadowWidth, shadowHeight);
 	glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
 	glClear(GL_DEPTH_BUFFER_BIT);
 
 	shadowShader.use();
+
 	shadowShader.setMat4("lightSpaceMatrix", lightSpaceMatrix);
 
+	glViewport(0, 0, shadowWidth, shadowHeight);
+	glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+	glClear(GL_DEPTH_BUFFER_BIT);
+	
 	for (const auto& renderComponent : renderComponents) {
 		if (const auto renderComponentPtr = renderComponent.lock()) {
 			for (const auto& entry : renderComponentPtr->getQueueEntries()) {
@@ -280,9 +288,25 @@ void Engine::Renderer::renderObjects() {
 	camera.updateCameraVectors();
 	if (!Window::isMouseVisible()) camera.processMouseMovement(Input::getMouse().delta);
 
+
+
+
+	///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// THIS MUST BE CONVERTED TO PROCESS ALL LIGHTS; CURRENTLY ONLY FIRST LIGHT
+	
+	glm::vec3 lightPos = lightSourceComponents[0].lock()->getRenderQueueEntries()[0].shaderEntry.position;
+	glm::vec3 lightDir = lightSourceComponents[0].lock()->getRenderQueueEntries()[0].shaderEntry.direction;
+
+	//Make pertpendicular to light direction
+	glm::vec3 reference = (glm::abs(glm::dot(lightDir, glm::vec3(0.0f, 1.0f, 0.0f))) > 0.999f)
+		? glm::vec3(1.0f, 0.0f, 0.0f)  // Use x-axis as fallback if parallel
+		: glm::vec3(0.0f, 1.0f, 0.0f);
+	glm::vec3 lightDirPerpendicular = glm::normalize(glm::cross(lightDir, reference));
+
 	glm::mat4 lightProjection = glm::ortho(-20.0f, 20.0f, -20.0f, 20.0f, nearPlane, farPlane);
-	glm::mat4 lightView = glm::lookAt(camera.getPosition().as<Meters>(), glm::vec3(0.f), glm::vec3(0.0f, 1.0f, 0.0f));
+	glm::mat4 lightView = glm::lookAt(lightPos, lightPos + lightDir, {0.f,0.f,1.f});
 	const glm::mat4 lightSpaceMatrix = lightProjection * lightView;
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	renderShadowPass(lightSpaceMatrix);
 
