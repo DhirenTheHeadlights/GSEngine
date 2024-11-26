@@ -18,5 +18,6 @@ namespace Engine::Debug {
 	void printValue(const std::string& name, const float& value, const char* unit = nullptr);
 	void printBoolean(const std::string& name, const bool& value);
 
+	void addImguiCallback(const std::function<void()>& callback);
 	bool getImGuiNeedsInputs();
 }

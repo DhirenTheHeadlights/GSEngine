@@ -33,12 +33,6 @@ else()
     set(ENGINE_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
 endif()
 
-if(IMGUI)
-    target_compile_definitions(Engine PUBLIC IMGUI = 1)
-else()
-    target_compile_definitions(Engine PUBLIC IMGUI = 0)
-endif()
-
 # Configure the header file
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/Core/ResourcePaths.h.in
