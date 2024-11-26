@@ -35,12 +35,8 @@ add_executable(GoonSquad ${GAME_SOURCES})
 # Define the resource path
 if(PRODUCTION_BUILD)
     set(GOONSQUAD_RESOURCES_PATH "./Game/Resources/")
-    target_compile_definitions(GoonSquad PUBLIC IMGUI = 0)
-    target_compile_definitions(GoonSquadLib PUBLIC IMGUI = 0)
 else()
     set(GOONSQUAD_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
-    target_compile_definitions(GoonSquad PUBLIC IMGUI = 1)
-    target_compile_definitions(GoonSquadLib PUBLIC IMGUI = 1)
 endif()
 
 # Link against GoonSquadLib and Engine
