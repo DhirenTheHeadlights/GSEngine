@@ -110,74 +110,6 @@ namespace Engine {
 			requires IsSameQuantityTag<T, U>
 		Vec3(const Vec3<U>& other) : vec(other.asDefaultUnits()) {}
 
-		// Converter between Vec3<Unitless> and Vec3<T>
-		template <IsUnitless U>
-		Vec3(const Vec3<U>& other) : vec(other.asDefaultUnits()) {}
-
-		/// Arithmetic operators
-
-		template <typename U>
-			requires IsSameQuantityTag<T, U>
-		Vec3 operator+(const Vec3<U>& rhs) const {
-			return Vec3(vec + rhs.asDefaultUnits());
-		}
-
-		template <typename U>
-			requires IsSameQuantityTag<T, U>
-		Vec3 operator-(const Vec3<U>& rhs) const {
-			return Vec3(vec - rhs.asDefaultUnits());
-		}
-
-		Vec3 operator*(const float scalar) const {
-			return Vec3(vec * scalar);
-		}
-
-		Vec3 operator/(const float scalar) const {
-			return Vec3(vec / scalar);
-		}
-
-		/// Compound arithmetic operators
-
-		template <IsQuantityOrUnit U>
-			requires IsSameQuantityTag<T, U>
-		Vec3& operator+=(const Vec3<U>& other) {
-			vec += other.asDefaultUnits();
-			return *this;
-		}
-
-		template <IsQuantityOrUnit U>
-			requires IsSameQuantityTag<T, U>
-		Vec3& operator-=(const Vec3<U>& other) {
-			vec -= other.asDefaultUnits();
-			return *this;
-		}
-
-		Vec3& operator*=(const float scalar) {
-			vec *= scalar;
-			return *this;
-		}
-
-		Vec3& operator/=(const float scalar) {
-			vec /= scalar;
-			return *this;
-		}
-
-		/// Casts
-		Vec3& operator-() {
-			vec = -vec;
-			return *this;
-		}
-
-		/// Comparison Operators
-
-		bool operator==(const Vec3& other) const {
-			return vec == other.vec;
-		}
-
-		bool operator!=(const Vec3& other) const {
-			return !(*this == other);
-		}
-
 		[[nodiscard]] glm::vec3& asDefaultUnits() {
 			return vec;
 		}
@@ -189,6 +121,82 @@ namespace Engine {
 	protected:
 		glm::vec3 vec = glm::vec3(0.0f);
 	};
+
+	/// Unit arithmetic overloads
+
+	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
+		requires IsSameQuantityTag<T, U>
+	auto operator+(const Vec3<T>& lhs, const Vec3<U>& rhs) {
+		return Vec3<T>(lhs.asDefaultUnits() + rhs.asDefaultUnits());
+	}
+
+	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
+		requires IsSameQuantityTag<T, U>
+	auto operator-(const Vec3<T>& lhs, const Vec3<U>& rhs) {
+		return Vec3<T>(lhs.asDefaultUnits() - rhs.asDefaultUnits());
+	}
+
+	template <IsQuantityOrUnit T>
+	auto operator*(const Vec3<T>& lhs, const float scalar) {
+		return Vec3<T>(lhs.asDefaultUnits() * scalar);
+	}
+
+	template <IsQuantityOrUnit T>
+	auto operator*(const float scalar, const Vec3<T>& rhs) {
+		return Vec3<T>(scalar * rhs.asDefaultUnits());
+	}
+
+	template <IsQuantityOrUnit T>
+	auto operator/(const Vec3<T>& lhs, const float scalar) {
+		return Vec3<T>(lhs.asDefaultUnits() / scalar);
+	}
+
+	/// Compound arithmetic operators
+
+	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
+		requires IsSameQuantityTag<T, U>
+	auto& operator+=(Vec3<T>& lhs, const Vec3<U>& rhs) {
+		lhs = lhs + rhs;
+		return lhs;
+	}
+
+	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
+		requires IsSameQuantityTag<T, U>
+	auto& operator-=(Vec3<T>& lhs, const Vec3<U>& rhs) {
+		lhs = lhs - rhs;
+		return lhs;
+	}
+
+	template <IsQuantityOrUnit T>
+	auto& operator*=(Vec3<T>& lhs, const float scalar) {
+		lhs = lhs * scalar;
+		return lhs;
+	}
+
+	template <IsQuantityOrUnit T>
+	auto& operator/=(Vec3<T>& lhs, const float scalar) {
+		lhs = lhs / scalar;
+		return lhs;
+	}
+
+	/// Casts
+
+	template <IsQuantityOrUnit T>
+	auto& operator-(Vec3<T>& lhs) {
+		return lhs *= -1.0f;
+	}
+
+	/// Comparison Operators
+
+	template <IsQuantityOrUnit T>
+	bool operator==(const Vec3<T>& lhs, const Vec3<T>& rhs) {
+		return lhs.asDefaultUnits() == rhs.asDefaultUnits();
+	}
+
+	template <IsQuantityOrUnit T>
+	bool operator!=(const Vec3<T>& lhs, const Vec3<T>& rhs) {
+		return !(lhs == rhs);
+	}
 
 	/// Unitless arithmetic overloads
 
