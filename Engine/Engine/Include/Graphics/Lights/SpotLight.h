@@ -29,6 +29,7 @@ namespace Engine {
 				ImGui::SliderFloat("Quadratic", &quadratic, 0.0f, 1.0f);
 				ImGui::SliderFloat("Cut Off", &cutOff, -0.01f, 0.01f);
 				ImGui::SliderFloat("Outer Cut Off", &outerCutOff, 0.0f, 1.0f);
+				ImGui::SliderFloat3("Direction", &direction[0], -1.0f, 1.0f);
 				ImGui::End();
 				});
 		}

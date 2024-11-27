@@ -17,6 +17,7 @@ namespace Engine {
 		void exit();
 
 		void setEngineInitialized(const bool initialized) { this->engineInitialized = initialized; }
+		void queueSceneTrigger(const std::shared_ptr<ID>& id, const std::function<bool()>& trigger);
 
 		std::vector<std::shared_ptr<Scene>> getActiveScenes() const;
 		std::vector<std::shared_ptr<ID>> getAllScenes() const;
@@ -27,5 +28,6 @@ namespace Engine {
 		bool engineInitialized = false;
 
 		std::unordered_map<std::shared_ptr<ID>, std::shared_ptr<Scene>> scenes;
+		std::unordered_map<std::shared_ptr<ID>, std::function<bool()>> sceneTriggers;
 	};
 }

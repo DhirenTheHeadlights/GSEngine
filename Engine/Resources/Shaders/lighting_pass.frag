@@ -10,8 +10,6 @@ uniform sampler2D gNormal;
 uniform sampler2D gAlbedoSpec;
 uniform sampler2D shadowMap; // Shadow map
 
-
-
 uniform vec3 viewPos;
 uniform mat4 lightSpaceMatrix; // Matrix to transform to light space
 
@@ -33,7 +31,6 @@ layout(std140, binding = 0) buffer Lights {
     Light lights[];
 };
 
-// Shadow calculation function
 float calculateShadow(vec4 FragPosLightSpace) {
     // Transform fragment position to [0,1] space for texture lookup
     vec3 projCoords = FragPosLightSpace.xyz / FragPosLightSpace.w;
@@ -65,7 +62,6 @@ void main() {
 
     for (int i = 0; i < lights.length(); ++i) {
         vec3 lightDir;
-        float distance = length(lights[i].position - FragPos);
         float attenuation = 1.0;
 
         // Add ambient light
@@ -76,7 +72,7 @@ void main() {
             lightDir = normalize(-lights[i].direction);
         } else {
             lightDir = normalize(lights[i].position - FragPos);
-            //float distance = length(lights[i].position - FragPos);
+            float distance = length(lights[i].position - FragPos);
             attenuation = 1.0 / (lights[i].constant + lights[i].linear * distance + lights[i].quadratic * (distance * distance));
         }
 
@@ -90,8 +86,9 @@ void main() {
         float spec = pow(max(dot(viewDir, reflectDir), 0.0), Specular); // FIX SPECULAR STRENGTH; this specular value is ~1-2. Should be ~32
         vec3 specular = lights[i].color * spec * 0.5;
 
-        // Apply attenuation and shadow
-        vec3 lightEffect = (ambient + diffuse + specular) * Albedo;
+        FragPosLightSpace.z -= .0005;
+        float shadow = calculateShadow(FragPosLightSpace);
+        vec3 lightEffect = (ambient + (1 - shadow) * ( diffuse + specular)) * Albedo;
         resultColor += (lightEffect - resultColor);
     }
 

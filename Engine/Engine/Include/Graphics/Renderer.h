@@ -25,6 +25,8 @@ namespace Engine {
 		void renderLightingPass(const std::vector<LightShaderEntry>& lightData, const glm::mat4& lightSpaceMatrix) const;
 		void renderShadowPass(const glm::mat4& lightSpaceMatrix) const;
 
+		glm::mat4 calculateLightSpaceMatrix(const std::shared_ptr<Light>& light) const;
+
 		static Camera camera;
 
 		std::unordered_map<std::string, Material> materials;

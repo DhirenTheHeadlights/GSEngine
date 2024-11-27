@@ -2,8 +2,8 @@
 #include <fstream>
 
 #include "Core/Clock.h"
-#include "Platform/GLFW/Input.h"
 #include "Platform/PermaAssert.h"
+#include "Platform/GLFW/Input.h"
 
 #undef max
 #undef min
@@ -12,7 +12,7 @@ namespace {
 	GLFWwindow* window = nullptr;
 
 	std::optional<GLuint> fbo;
-	glm::ivec2 fboSize = { 0, 0 };
+	glm::ivec2 fboSize = { 1, 1 };
 
 	bool currentFullScreen = false;
 	bool fullScreen = false;
@@ -200,11 +200,17 @@ std::optional<GLuint> Engine::Window::getFbo() {
 
 glm::ivec2 Engine::Window::getFrameBufferSize() {
 	if (fbo.has_value()) {
+		if (fboSize == glm::ivec2(0, 0)) {
+			return { 1, 1 };
+		}
 		return fboSize;
 	}
 
 	int x = 0; int y = 0;
 	glfwGetFramebufferSize(window, &x, &y);
+	if (x == 0 || y == 0) {
+		return { 1, 1 };
+	}
 	return { x, y };
 }
 

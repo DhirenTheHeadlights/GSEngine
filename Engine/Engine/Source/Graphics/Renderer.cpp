@@ -40,8 +40,6 @@ void Engine::Renderer::initialize() {
 	const GLsizei screenWidth = Window::getFrameBufferSize().x;
 	const GLsizei screenHeight = Window::getFrameBufferSize().y;
 
-	std::cout << "Screen width: " << screenWidth << " Screen height: " << screenHeight << '\n';
-
 	glGenFramebuffers(1, &gBuffer);
 	glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
 
@@ -96,8 +94,8 @@ void Engine::Renderer::initialize() {
 	lightingShader.setInt("gNormal", 1);
 	lightingShader.setInt("gAlbedoSpec", 2);
 
-	this->shadowHeight = Window::getFrameBufferSize().x;
-	this->shadowWidth = Window::getFrameBufferSize().y;
+	this->shadowHeight = 1024;
+	this->shadowWidth = 1024;
 
 	// Shadow map setup
 	glGenFramebuffers(1, &depthMapFBO);
@@ -143,7 +141,7 @@ void Engine::Renderer::removeLightSourceComponent(const std::shared_ptr<LightSou
 
 void Engine::Renderer::renderObject(const RenderQueueEntry& entry) {
 	if (const auto it = materials.find(entry.materialKey); it != materials.end()) {
-		it->second.use(camera.getViewMatrix(), glm::perspective(glm::radians(45.0f), static_cast<float>(Window::getFrameBufferSize().x) / static_cast<float>(Window::getFrameBufferSize().y), 0.1f, 10000.0f), entry.modelMatrix);
+		it->second.use(camera.getViewMatrix(), camera.getProjectionMatrix(), entry.modelMatrix);
 		it->second.shader.setVec3("color", entry.color);
 		it->second.shader.setBool("useTexture", entry.textureID != 0);
 
@@ -168,15 +166,10 @@ void Engine::Renderer::renderObject(const RenderQueueEntry& entry) {
 
 void Engine::Renderer::renderObject(const LightRenderQueueEntry& entry) {
 	if (const auto it = lightShaders.find(entry.shaderKey); it != lightShaders.end()) {
-		// Calculate the aspect ratio based on the viewport size
-		const glm::vec2 viewportSize = Window::getViewportSize();
-		const float aspectRatio = viewportSize.x / viewportSize.y;
-		const glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 10000.0f);
-
 		it->second.use();
 		it->second.setMat4("model", glm::mat4(1.0f));
 		it->second.setMat4("view", camera.getViewMatrix());
-		it->second.setMat4("projection", projection);
+		it->second.setMat4("projection", camera.getProjectionMatrix());
 
 		it->second.setVec3("color", entry.shaderEntry.color);
 		it->second.setFloat("intensity", entry.shaderEntry.intensity);
@@ -199,7 +192,7 @@ void Engine::Renderer::renderLightingPass(const std::vector<LightShaderEntry>& l
 
 	// Lighting pass
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	glDisable(GL_DEPTH_TEST);  // Disable depth testing for the lighting pass
+	glDisable(GL_DEPTH_TEST);
 
 	lightingShader.use();
 
@@ -276,15 +269,40 @@ void Engine::Renderer::renderShadowPass(const glm::mat4& lightSpaceMatrix) const
 	glViewport(0, 0, Window::getFrameBufferSize().x, Window::getFrameBufferSize().y); // Restore viewport
 }
 
+glm::mat4 Engine::Renderer::calculateLightSpaceMatrix(const std::shared_ptr<Light>& light) const {
+	switch (static_cast<LightType>(light->getRenderQueueEntry().shaderEntry.lightType)) {
+	case LightType::Directional: {
+		const glm::vec3 lightDirection = light->getRenderQueueEntry().shaderEntry.direction;
+		const glm::vec3 lightPos = -lightDirection * 10.0f;
+		const glm::mat4 lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, nearPlane, farPlane);
+		const glm::mat4 lightView = lookAt(lightPos, lightPos + lightDirection, glm::vec3(0.0f, 1.0f, 0.0f));
+		return lightProjection * lightView;
+	}
+	case LightType::Spot: {
+		const glm::vec3 lightPos = light->getRenderQueueEntry().shaderEntry.position;
+		const glm::vec3 lightDirection = light->getRenderQueueEntry().shaderEntry.direction;
+		const glm::mat4 lightProjection = glm::perspective(glm::radians(45.0f), 1.0f, nearPlane, farPlane);
+		const glm::mat4 lightView = lookAt(lightPos, lightPos + lightDirection, glm::vec3(0.0f, 1.0f, 0.0f));
+		return lightProjection * lightView;
+	}
+	case LightType::Point:
+
+		break;
+	}
+
+	return { 1.0f };
+}
+
+
 void Engine::Renderer::renderObjects() {
 	camera.updateCameraVectors();
 	if (!Window::isMouseVisible()) camera.processMouseMovement(Input::getMouse().delta);
 
-	glm::mat4 lightProjection = glm::ortho(-20.0f, 20.0f, -20.0f, 20.0f, nearPlane, farPlane);
-	glm::mat4 lightView = glm::lookAt(camera.getPosition().as<Meters>(), glm::vec3(0.f), glm::vec3(0.0f, 1.0f, 0.0f));
-	const glm::mat4 lightSpaceMatrix = lightProjection * lightView;
-
-	renderShadowPass(lightSpaceMatrix);
+	for (const auto& component : lightSourceComponents) {
+		for (const auto& light : component.lock()->getLights()) {
+			renderShadowPass(calculateLightSpaceMatrix(light));
+		}
+	}
 
 	// Geometry pass
 	glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
@@ -334,5 +352,5 @@ void Engine::Renderer::renderObjects() {
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
 
-	renderLightingPass(lightData, lightSpaceMatrix);
+	renderLightingPass(lightData, calculateLightSpaceMatrix(lightSourceComponents[0].lock()->getLights()[0]));
 }
