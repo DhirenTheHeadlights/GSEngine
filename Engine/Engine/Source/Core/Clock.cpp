@@ -32,11 +32,13 @@ Engine::ScopedTimer::~ScopedTimer() {
 
 /// Global Timer State
 
-std::map<std::string, std::unique_ptr<Engine::ScopedTimer>> timers;
+namespace {
+	std::map<std::string, std::unique_ptr<Engine::ScopedTimer>> timers;
+}
 
 void Engine::addTimer(const std::string& name) {
 	if (!timers.contains(name)) {
-		timers[name] = std::make_unique<ScopedTimer>(name); // Add if not present
+		timers[name] = std::make_unique<ScopedTimer>(name, false);
 	}
 }
 
@@ -69,13 +71,15 @@ void Engine::displayTimers() {
 
 /// Main Clock
 
-std::chrono::steady_clock::time_point lastUpdate = std::chrono::steady_clock::now();
-Engine::Time dt;
+namespace {
+	std::chrono::steady_clock::time_point lastUpdate = std::chrono::steady_clock::now();
+	Engine::Time dt;
 
-int frameRate = 0;
-float frameCount = 0;
-float numFramesToAverage = 40;
-Engine::Time frameRateUpdateTime;
+	int frameRate = 0;
+	float frameCount = 0;
+	float numFramesToAverage = 40;
+	Engine::Time frameRateUpdateTime;
+}
 
 void Engine::MainClock::update() {
 	const auto now = std::chrono::steady_clock::now();
@@ -85,7 +89,6 @@ void Engine::MainClock::update() {
 	// Update delta time (clamped to a max of 0.16 seconds to avoid big time jumps)
 	dt = seconds(std::min(deltaTime.count(), 0.16f));
 
-	// Frame rate calculation
 	++frameCount;
 	frameRateUpdateTime += dt;
 

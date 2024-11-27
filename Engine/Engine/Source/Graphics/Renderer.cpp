@@ -4,10 +4,10 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "Core/JsonParser.h"
-#include "Platform/GLFW/Input.h"
-#include "Platform/GLFW/ErrorReporting.h"
-#include "Platform/GLFW/Window.h"
 #include "Core/ResourcePaths.h"
+#include "Platform/GLFW/ErrorReporting.h"
+#include "Platform/GLFW/Input.h"
+#include "Platform/GLFW/Window.h"
 
 Engine::Camera Engine::Renderer::camera;
 
@@ -245,12 +245,12 @@ void Engine::Renderer::renderLightingPass(const std::vector<LightShaderEntry>& l
 }
 
 void Engine::Renderer::renderShadowPass(const glm::mat4& lightSpaceMatrix) const {
-	glViewport(0, 0, shadowWidth, shadowHeight);
-	glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
-	glClear(GL_DEPTH_BUFFER_BIT);
-
 	shadowShader.use();
 	shadowShader.setMat4("lightSpaceMatrix", lightSpaceMatrix);
+
+	glViewport(0, 0, shadowWidth, shadowHeight);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glClear(GL_DEPTH_BUFFER_BIT);
 
 	for (const auto& renderComponent : renderComponents) {
 		if (const auto renderComponentPtr = renderComponent.lock()) {
