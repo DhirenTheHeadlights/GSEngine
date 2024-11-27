@@ -10,11 +10,11 @@ namespace {
     GLuint fbo;                  // FBO ID
     GLuint fboTexture;           // Texture attached to the FBO
     GLuint depthBuffer;          // Depth buffer for the FBO
-    int viewportWidth = 800;     // Width of the viewport
-    int viewportHeight = 600;    // Height of the viewport
+    int viewportWidth = 1920 / 2;     // Width of the viewport
+    int viewportHeight = 1080 / 2;    // Height of the viewport
 
 	ImVec2 gameWindowPosition = { 0, 0 };
-    ImVec2 gameWindowSize = { 1920 / 2, 1080 / 2 };
+	ImVec2 gameWindowSize = { static_cast<float>(viewportWidth), static_cast<float>(viewportHeight) };
 
     bool gameFocused = false;
 }
@@ -90,7 +90,7 @@ void Editor::render() {
 
     ImVec2 availableSize = ImGui::GetContentRegionAvail();
     // Determine if the aspect ratio is correct
-    if (const float aspectRatio = availableSize.x / availableSize.y; std::fabs(aspectRatio - (16.0f / 9.0f)) > 0.01f) {
+    if (const float aspectRatio = availableSize.x / availableSize.y; std::fabs(aspectRatio - 16.0f / 9.0f) > 0.01f) {
         // Figure out which direction is most economical to resize
         if (aspectRatio > 16.0f / 9.0f) {
             availableSize.x = availableSize.y * (16.0f / 9.0f);
@@ -131,9 +131,32 @@ void Editor::render() {
     ImGui::End();
 
     ImGui::Begin("Editor");
-    ImGui::Text("Welcome to the Editor!");
-    ImGui::Separator();
-    ImGui::Text("Add your widgets for game objects, properties, and settings here.");
+
+    const auto scenes = Engine::sceneHandler.getAllScenes();
+    const auto activeScenes = Engine::sceneHandler.getActiveScenes();
+    const std::string currentSceneName = activeScenes.empty() ? "No Active Scene" : activeScenes[0]->getId()->tag;
+    if (scenes.empty()) {
+        ImGui::Text("No scenes available.");
+    }
+    else if (scenes.size() == 1) {
+        ImGui::Text("Only one scene available: %s", scenes[0]->tag.c_str());
+    }
+    else {
+        if (ImGui::BeginCombo("Select Scene", currentSceneName.c_str())) {
+            for (const auto& scene : scenes) {
+                const bool isSelected = !activeScenes.empty() && activeScenes[0]->getId()->tag == scene->tag;
+                if (ImGui::Selectable(scene->tag.c_str(), isSelected)) {
+                    if (!isSelected) { // Avoid redundant activation
+                        Engine::sceneHandler.activateScene(scene);
+                    }
+                }
+                if (isSelected) {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndCombo();
+        }
+    }
     ImGui::End();
 
     ImGui::Begin("Editor2");

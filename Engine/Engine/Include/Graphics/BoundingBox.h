@@ -7,14 +7,14 @@
 namespace Engine {
 	struct CollisionInformation {
 		bool colliding = false;
-		Vec3<Unitless> collisionNormal;
+		Vec3<> collisionNormal;
 		Length penetration;
 		Vec3<Length> collisionPoint;
 		int getAxis() const {
-			if (!epsilonEqualIndex(collisionNormal, Vec3<Unitless>(), X)) {
+			if (!epsilonEqualIndex(collisionNormal, Vec3(), X)) {
 				return 0;
 			}
-			if (!epsilonEqualIndex(collisionNormal, Vec3<Unitless>(), Y)) {
+			if (!epsilonEqualIndex(collisionNormal, Vec3(), Y)) {
 				return 1;
 			}
 			return Z; // Assume it is the z axis

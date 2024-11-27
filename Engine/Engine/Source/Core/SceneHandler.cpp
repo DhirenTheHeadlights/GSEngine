@@ -44,6 +44,12 @@ void Engine::SceneHandler::update() {
 			scene->update();
 		}
 	}
+
+	for (const auto& [id, trigger] : sceneTriggers) {
+		if (trigger()) {
+			activateScene(id);
+		}
+	}
 }
 
 void Engine::SceneHandler::render() {
@@ -60,6 +66,10 @@ void Engine::SceneHandler::exit() {
 			scene->exit();
 		}
 	}
+}
+
+void Engine::SceneHandler::queueSceneTrigger(const std::shared_ptr<ID>& id, const std::function<bool()>& trigger) {
+	sceneTriggers.insert({ id, trigger });
 }
 
 std::vector<std::shared_ptr<Engine::Scene>> Engine::SceneHandler::getActiveScenes() const {
