@@ -22,6 +22,5 @@ void main() {
         gAlbedoSpec.rgb = color;
     }
 
-    // Optional: Set specular/shininess in alpha channel (if needed)
     gAlbedoSpec.a = 1.0;
 }

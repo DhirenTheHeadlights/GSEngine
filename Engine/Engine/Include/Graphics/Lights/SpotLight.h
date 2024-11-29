@@ -22,12 +22,12 @@ namespace Engine {
 			Debug::addImguiCallback([this] {
 				ImGui::Begin("Spot Light");
 				ImGui::ColorEdit3("Color", &color[0]);
-				ImGui::SliderFloat("Intensity", &intensity, 0.0f, 10.0f);
+				ImGui::SliderFloat("Intensity", &intensity, 0.0f, 1000.0f);
 				ImGui::SliderFloat("Ambient Strength", &ambientStrength, 0.0f, 1.0f);
 				ImGui::SliderFloat("Constant", &constant, 0.0f, 1.0f);
 				ImGui::SliderFloat("Linear", &linear, 0.0f, 1.0f);
 				ImGui::SliderFloat("Quadratic", &quadratic, 0.0f, 1.0f);
-				ImGui::SliderFloat("Cut Off", &cutOff, -0.01f, 0.01f);
+				ImGui::SliderFloat("Cut Off", &cutOff, -1.f, 1.f);
 				ImGui::SliderFloat("Outer Cut Off", &outerCutOff, 0.0f, 1.0f);
 				ImGui::SliderFloat3("Direction", &direction[0], -1.0f, 1.0f);
 				ImGui::End();

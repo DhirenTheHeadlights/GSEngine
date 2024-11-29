@@ -9,6 +9,7 @@ namespace Game {
 
 		void initialize() override;
 		void update() override;
+		void render() override;
 
 		bool jetpack = false;
 	private:
@@ -23,5 +24,7 @@ namespace Game {
 		Engine::Force jetpackSideForce = Engine::newtons(500.f);
 		Engine::Force jumpForce = Engine::newtons(1000.f);
 		Engine::Force moveForce = Engine::newtons(100000.f);
+
+		int boostFuel = 1000;
 	};
 }

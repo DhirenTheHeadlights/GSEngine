@@ -1,23 +1,19 @@
-
 #version 430 core
+
+in vec3 FragPos;
+in vec3 Normal;
+in vec2 TexCoords;
 
 out vec4 FragColor;
 
-in vec2 TexCoords;
-
-uniform sampler2D gPosition;
-uniform sampler2D gNormal;
-uniform sampler2D gAlbedoSpec;
-
-#define MAX_LIGHTS 10
-uniform sampler2D shadowMaps[MAX_LIGHTS];
-uniform mat4 lightSpaceMatrices[MAX_LIGHTS];
-
+uniform sampler2D albedoSpec;
+uniform sampler2D diffuseTexture;   // Diffuse texture map
 uniform vec3 viewPos;
-uniform samplerCube environmentMap;
+uniform vec3 color;                 // Solid color if no texture
+uniform bool useTexture;
 
 struct Light {
-    int lightType;
+    int lightType;                // 0: Directional, 1: Point, 2: Spot
     vec3 position;
     vec3 direction;
     vec3 color;
@@ -34,38 +30,13 @@ layout(std140, binding = 0) buffer Lights {
     Light lights[];
 };
 
-float calculateShadow(vec4 FragPosLightSpace, sampler2D shadowMap) {
-    vec3 projCoords = FragPosLightSpace.xyz / FragPosLightSpace.w;
-    projCoords = projCoords * 0.5 + 0.5;
-
-    if (projCoords.z > 1.0)
-        return 0.0;
-
-    float shadow = 0.0;
-    float shadowBias = 0.005;
-    vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
-
-    for(int x = -1; x <= 1; ++x) {
-        for(int y = -1; y <= 1; ++y) {
-            float pcfDepth = texture(shadowMap, projCoords.xy + vec2(x, y) * texelSize).r;
-            float currentDepth = projCoords.z;
-            shadow += currentDepth - shadowBias > pcfDepth ? 1.0 : 0.0;
-        }
-    }
-    shadow /= 9.0;
-
-    return shadow;
-}
-
 void main() {
-    vec3 FragPos = texture(gPosition, TexCoords).rgb;
-    vec3 Normal = texture(gNormal, TexCoords).rgb;
-    Normal = normalize(Normal);
-    vec3 Albedo = texture(gAlbedoSpec, TexCoords).rgb;
-    float Specular = texture(gAlbedoSpec, TexCoords).a;
+    vec3 normal = normalize(Normal);
+    vec3 albedo = useTexture ? texture(diffuseTexture, TexCoords).rgb : color;
+    float Specular = texture(albedoSpec, TexCoords).a;
 
-    vec3 resultColor = vec3(0.0);
     vec3 viewDir = normalize(viewPos - FragPos);
+    vec3 resultColor = vec3(0.0);
 
     for (int i = 0; i < lights.length(); ++i) {
         vec3 lightDir;
@@ -79,10 +50,7 @@ void main() {
             vec3 diffuse = diff * lights[i].color * lights[i].intensity;
             vec3 specular = lights[i].color * spec * lights[i].intensity * Specular;
 
-            vec4 FragPosLightSpace = lightSpaceMatrices[i] * vec4(FragPos, 1.0);
-            float shadow = 1.0 - calculateShadow(FragPosLightSpace, shadowMaps[i]);
-
-            resultColor += (ambient + diffuse + specular) * Albedo * shadow;
+            resultColor += (ambient + diffuse + specular) * albedo;
         } 
         else if (lights[i].lightType == 1) { // Point Light
             lightDir = normalize(lights[i].position - FragPos);
@@ -95,14 +63,11 @@ void main() {
             vec3 diffuse = diff * lights[i].color * lights[i].intensity;
             vec3 specular = lights[i].color * spec * lights[i].intensity * Specular;
 
-            vec4 FragPosLightSpace = lightSpaceMatrices[i] * vec4(FragPos, 1.0);
-            float shadow = 1.0 - calculateShadow(FragPosLightSpace, shadowMaps[i]);
+            ambient *= attenuation;
+            diffuse *= attenuation;
+            specular *= attenuation;
 
-            ambient *= attenuation * shadow;
-            diffuse *= attenuation * shadow;
-            specular *= attenuation * shadow;
-
-            resultColor += (ambient + diffuse + specular) * Albedo;
+            resultColor += (ambient + diffuse + specular) * albedo;
         }
         else {                                         
             lightDir = normalize(lights[i].position - FragPos);
@@ -118,23 +83,13 @@ void main() {
             vec3 diffuse = diff * lights[i].color * lights[i].intensity;
             vec3 specular = lights[i].color * spec * lights[i].intensity * Specular;
 
-            vec4 FragPosLightSpace = lightSpaceMatrices[i] * vec4(FragPos, 1.0);
-            float shadow = 1.0 - calculateShadow(FragPosLightSpace, shadowMaps[i]);
+            ambient *= attenuation * intensity;
+            diffuse *= attenuation * intensity;
+            specular *= attenuation * intensity;
 
-            ambient *= attenuation * intensity * shadow;
-            diffuse *= attenuation * intensity * shadow;
-            specular *= attenuation * intensity * shadow;
-
-            resultColor += (ambient + diffuse + specular) * Albedo;
+            resultColor += (ambient + diffuse + specular) * albedo;
         }
     }
-
-    vec3 reflectDir = reflect(-viewDir, Normal);
-    vec3 reflectionColor = texture(environmentMap, reflectDir).rgb;
-    float reflectivity = 0.5;
-    float fresnel = pow(1.0 - max(dot(viewDir, Normal), 0.0), 5.0);
-    reflectivity *= fresnel;
-    resultColor = mix(resultColor, reflectionColor, reflectivity);
 
     FragColor = vec4(resultColor, 1.0);
 }

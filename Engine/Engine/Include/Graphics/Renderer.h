@@ -2,6 +2,7 @@
 
 #include "Material.h"
 #include "Graphics/Camera.h"
+#include "Graphics/CubeMap.h"
 #include "Graphics/RenderComponent.h"
 #include "Graphics/Shader.h"
 #include "Lights/LightSourceComponent.h"
@@ -20,10 +21,12 @@ namespace Engine {
 
 		static Camera& getCamera() { return camera; }
 	private:
-		void renderObject(const RenderQueueEntry& entry);
+		void renderObject(const RenderQueueEntry& entry, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix);
+		void renderObjectForward(const RenderQueueEntry& entry, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) const;
 		void renderObject(const LightRenderQueueEntry& entry);
-		void renderLightingPass(const std::vector<LightShaderEntry>& lightData, const glm::mat4& lightSpaceMatrix) const;
+		void renderLightingPass(const std::vector<LightShaderEntry>& lightData, const std::vector<glm::mat4>& lightSpaceMatrices) const;
 		void renderShadowPass(const glm::mat4& lightSpaceMatrix) const;
+		static glm::vec3 ensureNonCollinearUp(const glm::vec3& direction, const glm::vec3& up);
 
 		glm::mat4 calculateLightSpaceMatrix(const std::shared_ptr<Light>& light) const;
 
@@ -40,16 +43,19 @@ namespace Engine {
 		GLuint gAlbedoSpec = 0;
 		GLuint ssboLights = 0;
 
+		CubeMap shadowCubeMap;
+
 		Shader lightingShader;
 		Shader shadowShader;
+		Shader forwardRenderingShader;
 
-		GLuint depthMapFBO;
-		GLuint depthMap;
+		std::vector<GLuint> depthMaps;
+		std::vector<GLuint> depthMapFBOs;
 
 		GLsizei shadowWidth = 0;
 		GLsizei shadowHeight = 0;
 
-		const float nearPlane = 1.0f;
-		const float farPlane = 10000.f;
+		float nearPlane = 10.0f;
+		float farPlane = 10000.f;
 	};
 }

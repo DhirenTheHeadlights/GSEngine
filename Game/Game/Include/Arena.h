@@ -13,7 +13,7 @@ namespace Game {
 	private:
 		Engine::Length
 			width   = Engine::meters(1000.f),
-			height	= Engine::meters(1000.f),
+			height	= Engine::meters(100.f),
 			depth	= Engine::meters(1000.f);
 	};
 }
