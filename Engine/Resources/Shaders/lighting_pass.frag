@@ -34,28 +34,26 @@ layout(std140, binding = 0) buffer Lights {
     Light lights[];
 };
 
+// Shadow calculation function
 float calculateShadow(vec4 FragPosLightSpace, sampler2D shadowMap) {
+    // Transform fragment position to [0,1] space for texture lookup
     vec3 projCoords = FragPosLightSpace.xyz / FragPosLightSpace.w;
     projCoords = projCoords * 0.5 + 0.5;
 
-    if (projCoords.z > 1.0)
-        return 0.0;
+    // Depth of the fragment in light space
+    float currentDepth = projCoords.z;
 
-    float shadow = 0.0;
+    // Compare current depth to the depth stored in the shadow map
+    float closestDepth = texture(shadowMap, projCoords.xy).r;
+
+    // Basic shadow bias to avoid shadow acne
     float shadowBias = 0.005;
-    vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
+    float shadow = currentDepth - shadowBias > closestDepth ? 1.0 : 0.0;
 
-    for(int x = -1; x <= 1; ++x) {
-        for(int y = -1; y <= 1; ++y) {
-            float pcfDepth = texture(shadowMap, projCoords.xy + vec2(x, y) * texelSize).r;
-            float currentDepth = projCoords.z;
-            shadow += currentDepth - shadowBias > pcfDepth ? 1.0 : 0.0;
-        }
-    }
-    shadow /= 9.0;
-
+    // Return shadow factor (1 = in shadow, 0 = fully lit)
     return shadow;
 }
+
 
 void main() {
     vec3 FragPos = texture(gPosition, TexCoords).rgb;
@@ -66,72 +64,62 @@ void main() {
 
     vec3 resultColor = vec3(0.0);
     vec3 viewDir = normalize(viewPos - FragPos);
+    
+
 
     for (int i = 0; i < lights.length(); ++i) {
-        vec3 lightDir;
 
+        //General Values
+        vec3 lightDir = normalize(lights[i].position - FragPos);
+        vec3 reflectDir = reflect(-lightDir, Normal);
+        vec3 halfwayDir = normalize(lightDir + viewDir);
+        //Ambient lighting
+        vec3 ambient = lights[i].ambientStrength * lights[i].color * lights[i].intensity;
+
+        //Diffused lighting
+        float diff = max(dot(Normal, lightDir), 0.0);
+        vec3 diffuse = diff * lights[i].color * lights[i].intensity;
+
+        //Specular lighting
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), 2);
+        vec3 specular = lights[i].color * spec * lights[i].intensity * 0.5;
+
+        vec4 FragPosLightSpace = lightSpaceMatrices[i] * vec4(FragPos, 1.0);
+        float shadow = 1.0 - calculateShadow(FragPosLightSpace, shadowMaps[i]);
+
+
+        //Light-Specific Calculations
         if (lights[i].lightType == 0) { // Directional Light
-            lightDir = normalize(-lights[i].direction);
-            float diff = max(dot(Normal, lightDir), 0.0);
-            vec3 reflectDir = reflect(-lightDir, Normal);
-            float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);
-            vec3 ambient = lights[i].ambientStrength * lights[i].color * lights[i].intensity;
-            vec3 diffuse = diff * lights[i].color * lights[i].intensity;
-            vec3 specular = lights[i].color * spec * lights[i].intensity * Specular;
-
-            vec4 FragPosLightSpace = lightSpaceMatrices[i] * vec4(FragPos, 1.0);
-            float shadow = 1.0 - calculateShadow(FragPosLightSpace, shadowMaps[i]);
-
-            resultColor += (ambient + diffuse + specular) * Albedo * shadow;
+            //resultColor += (ambient + shadow  * (diffuse + specular)) * Albedo;
         } 
+
         else if (lights[i].lightType == 1) { // Point Light
-            lightDir = normalize(lights[i].position - FragPos);
-            float diff = max(dot(Normal, lightDir), 0.0);
-            vec3 reflectDir = reflect(-lightDir, Normal);
-            float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);
             float distance = length(lights[i].position - FragPos);
             float attenuation = 1.0 / (lights[i].constant + lights[i].linear * distance + lights[i].quadratic * (distance * distance));
-            vec3 ambient = lights[i].ambientStrength * lights[i].color * lights[i].intensity;
-            vec3 diffuse = diff * lights[i].color * lights[i].intensity;
-            vec3 specular = lights[i].color * spec * lights[i].intensity * Specular;
 
-            vec4 FragPosLightSpace = lightSpaceMatrices[i] * vec4(FragPos, 1.0);
-            float shadow = 1.0 - calculateShadow(FragPosLightSpace, shadowMaps[i]);
-
-            ambient *= attenuation * shadow;
             diffuse *= attenuation * shadow;
             specular *= attenuation * shadow;
 
-            resultColor += (ambient + diffuse + specular) * Albedo;
         }
+
         else {                                         
-            lightDir = normalize(lights[i].position - FragPos);
-            float diff = max(dot(Normal, lightDir), 0.0);
-            vec3 reflectDir = reflect(lightDir, Normal);
-            float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);
+            
             float distance = length(lights[i].position - FragPos);
             float attenuation = 1.0 / (lights[i].constant + lights[i].linear * distance + lights[i].quadratic * (distance * distance));
             float theta = dot(lightDir, normalize(-lights[i].direction));
             float epsilon = lights[i].cutOff - lights[i].outerCutOff;
             float intensity = clamp((theta - lights[i].outerCutOff) / epsilon, 0.0, 1.0);
-            vec3 ambient = lights[i].ambientStrength * lights[i].color * lights[i].intensity;
-            vec3 diffuse = diff * lights[i].color * lights[i].intensity;
-            vec3 specular = lights[i].color * spec * lights[i].intensity * Specular;
-
-            vec4 FragPosLightSpace = lightSpaceMatrices[i] * vec4(FragPos, 1.0);
-            float shadow = 1.0 - calculateShadow(FragPosLightSpace, shadowMaps[i]);
-
-            ambient *= attenuation * intensity * shadow;
             diffuse *= attenuation * intensity * shadow;
             specular *= attenuation * intensity * shadow;
-
-            resultColor += (ambient + diffuse + specular) * Albedo;
         }
+
+        resultColor += ((ambient + shadow  * (diffuse + specular)) * Albedo) - resultColor;
+
     }
 
     vec3 reflectDir = reflect(-viewDir, Normal);
     vec3 reflectionColor = texture(environmentMap, reflectDir).rgb;
-    float reflectivity = 0.5;
+    float reflectivity = 0.01;
     float fresnel = pow(1.0 - max(dot(viewDir, Normal), 0.0), 5.0);
     reflectivity *= fresnel;
     resultColor = mix(resultColor, reflectionColor, reflectivity);

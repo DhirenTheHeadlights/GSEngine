@@ -296,6 +296,7 @@ void Engine::Renderer::renderLightingPass(const std::vector<LightShaderEntry>& l
 }
 
 void Engine::Renderer::renderShadowPass(const glm::mat4& lightSpaceMatrix) const {
+	
 	shadowShader.use();
 	shadowShader.setMat4("lightSpaceMatrix", lightSpaceMatrix);
 
@@ -351,6 +352,7 @@ glm::mat4 Engine::Renderer::calculateLightSpaceMatrix(const std::shared_ptr<Ligh
 	case LightType::Spot: {
 		const glm::vec3 lightPos = light->getRenderQueueEntry().shaderEntry.position;
 		const glm::vec3 lightDirection = light->getRenderQueueEntry().shaderEntry.direction;
+		glm::vec3 lightDirectionPerpendicular = glm::cross(lightDirection, glm::vec3(0.0f, 1.0f, 0.0f));
 		const float cutoff = glm::radians(light->getRenderQueueEntry().shaderEntry.cutOff * 2.f);
 		const glm::mat4 lightProjection = glm::perspective(cutoff, 1.0f, nearPlane, farPlane);
 		const glm::mat4 lightView = lookAt(lightPos, lightPos + lightDirection, ensureNonCollinearUp(lightDirection, glm::vec3(0.0f, 1.0f, 0.0f)));

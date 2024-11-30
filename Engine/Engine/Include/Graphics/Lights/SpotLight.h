@@ -23,7 +23,7 @@ namespace Engine {
 				ImGui::Begin("Spot Light");
 				ImGui::ColorEdit3("Color", &color[0]);
 				ImGui::SliderFloat("Intensity", &intensity, 0.0f, 1000.0f);
-				ImGui::SliderFloat("Ambient Strength", &ambientStrength, 0.0f, 1.0f);
+				ImGui::SliderFloat("Ambient Strength", &ambientStrength, 0.0f, 10.0f);
 				ImGui::SliderFloat("Constant", &constant, 0.0f, 1.0f);
 				ImGui::SliderFloat("Linear", &linear, 0.0f, 1.0f);
 				ImGui::SliderFloat("Quadratic", &quadratic, 0.0f, 1.0f);

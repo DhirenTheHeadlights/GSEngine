@@ -39,56 +39,49 @@ void main() {
     vec3 resultColor = vec3(0.0);
 
     for (int i = 0; i < lights.length(); ++i) {
-        vec3 lightDir;
+       //General Values
+        vec3 lightDir = normalize(lights[i].position - FragPos);
+        vec3 reflectDir = reflect(-lightDir, Normal);
+        vec3 halfwayDir = normalize(lightDir + viewDir);
+        //Ambient lighting
+        vec3 ambient = lights[i].ambientStrength * lights[i].color * lights[i].intensity;
 
+        //Diffused lighting
+        float diff = max(dot(Normal, lightDir), 0.0);
+        vec3 diffuse = diff * lights[i].color * lights[i].intensity;
+
+        //Specular lighting
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), 2);
+        vec3 specular = lights[i].color * spec * lights[i].intensity * 0.5;
+
+
+        //Light-Specific Calculations
         if (lights[i].lightType == 0) { // Directional Light
-            lightDir = normalize(-lights[i].direction);
-            float diff = max(dot(Normal, lightDir), 0.0);
-            vec3 reflectDir = reflect(-lightDir, Normal);
-            float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);
-            vec3 ambient = lights[i].ambientStrength * lights[i].color * lights[i].intensity;
-            vec3 diffuse = diff * lights[i].color * lights[i].intensity;
-            vec3 specular = lights[i].color * spec * lights[i].intensity * Specular;
-
-            resultColor += (ambient + diffuse + specular) * albedo;
+            //resultColor += (ambient + shadow  * (diffuse + specular)) * Albedo;
         } 
+
         else if (lights[i].lightType == 1) { // Point Light
-            lightDir = normalize(lights[i].position - FragPos);
-            float diff = max(dot(Normal, lightDir), 0.0);
-            vec3 reflectDir = reflect(-lightDir, Normal);
-            float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);
             float distance = length(lights[i].position - FragPos);
             float attenuation = 1.0 / (lights[i].constant + lights[i].linear * distance + lights[i].quadratic * (distance * distance));
-            vec3 ambient = lights[i].ambientStrength * lights[i].color * lights[i].intensity;
-            vec3 diffuse = diff * lights[i].color * lights[i].intensity;
-            vec3 specular = lights[i].color * spec * lights[i].intensity * Specular;
 
-            ambient *= attenuation;
             diffuse *= attenuation;
             specular *= attenuation;
 
-            resultColor += (ambient + diffuse + specular) * albedo;
         }
+
         else {                                         
-            lightDir = normalize(lights[i].position - FragPos);
-            float diff = max(dot(Normal, lightDir), 0.0);
-            vec3 reflectDir = reflect(lightDir, Normal);
-            float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);
+            
             float distance = length(lights[i].position - FragPos);
             float attenuation = 1.0 / (lights[i].constant + lights[i].linear * distance + lights[i].quadratic * (distance * distance));
             float theta = dot(lightDir, normalize(-lights[i].direction));
             float epsilon = lights[i].cutOff - lights[i].outerCutOff;
             float intensity = clamp((theta - lights[i].outerCutOff) / epsilon, 0.0, 1.0);
-            vec3 ambient = lights[i].ambientStrength * lights[i].color * lights[i].intensity;
-            vec3 diffuse = diff * lights[i].color * lights[i].intensity;
-            vec3 specular = lights[i].color * spec * lights[i].intensity * Specular;
-
-            ambient *= attenuation * intensity;
             diffuse *= attenuation * intensity;
             specular *= attenuation * intensity;
-
-            resultColor += (ambient + diffuse + specular) * albedo;
         }
+
+        resultColor += ((ambient + (diffuse + specular)) * albedo) - resultColor;
+        
     }
 
     FragColor = vec4(resultColor, 1.0);
