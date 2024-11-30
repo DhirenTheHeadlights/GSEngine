@@ -55,7 +55,7 @@ namespace Engine {
 		GLsizei shadowWidth = 0;
 		GLsizei shadowHeight = 0;
 
-		float nearPlane = 10.0f;
+		float nearPlane = 1.0f;
 		float farPlane = 10000.f;
 	};
 }
