@@ -24,7 +24,7 @@ namespace Engine::Debug {
 	void unitSlider(const std::string& name, Quantity& quantity, const Quantity& min, const Quantity& max) {
 		float value = quantity.template as<Unit>();
 
-		if (ImGui::SliderFloat((name + " " + Unit::template UnitName).c_str(), &value, min.template as<Unit>(), max.template as<Unit>())) {
+		if (ImGui::SliderFloat((name + " (" + Unit::template UnitName + ")").c_str(), &value, min.template as<Unit>(), max.template as<Unit>())) {
 			quantity.template set<Unit>(value);
 		}
 	}

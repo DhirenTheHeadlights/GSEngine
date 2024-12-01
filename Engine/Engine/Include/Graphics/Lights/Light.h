@@ -13,13 +13,13 @@ namespace Engine {
 
     struct alignas(16) LightShaderEntry {
         int lightType;        // Offset 0, Size 4 bytes
-        float padding1[3];    // Offset 4, Size 12 bytes (Padding to align to 16 bytes)
+		glm::vec3 padding1;   // Offset 4, Size 12 bytes (Padding to align to 16 bytes)
         glm::vec3 position;   // Offset 16, Size 12 bytes
         float padding2;       // Offset 28, Size 4 bytes (Padding to align to 16 bytes)
         glm::vec3 direction;  // Offset 32, Size 12 bytes
         float padding3;       // Offset 44, Size 4 bytes (Padding to align to 16 bytes)
         glm::vec3 color;      // Offset 48, Size 12 bytes
-        float padding4;       // Offset 60, Size 4 bytes (Padding to align to 16 bytes)
+		// We don't need padding here, not sure why - it ends up working correctly without it
         float intensity;      // Offset 64, Size 4 bytes
         float constant;       // Offset 68, Size 4 bytes
         float linear;         // Offset 72, Size 4 bytes
@@ -36,15 +36,15 @@ namespace Engine {
 
         // Constructor for Directional Light
 		LightRenderQueueEntry(const LightType type, const Vec3<>& color, const Unitless& intensity, const Vec3<>& direction, const Unitless& ambientStrength)
-            : shaderEntry({ static_cast<int>(type), { 0, 0, 0 }, { 0, 0, 0 }, 0, direction.asDefaultUnits(), 0, color.asDefaultUnits(), 0.f, intensity, 0, 0, 0, 0, 0, ambientStrength, 0 }) {}
+            : shaderEntry({ static_cast<int>(type), { 0, 0, 0 }, { 0, 0, 0 }, 0, direction.asDefaultUnits(), 0, color.asDefaultUnits(), intensity, 0, 0, 0, 0, 0, ambientStrength, 0 }) {}
 
         // Constructor for Point Light
 		LightRenderQueueEntry(const LightType type, const Vec3<>& color, const Unitless& intensity, const Vec3<Length>& position, const Unitless& constant, const Unitless& linear, const Unitless& quadratic, const Unitless& ambientStrength)
-			: shaderEntry({ static_cast<int>(type), { 0, 0, 0 }, position.asDefaultUnits(), 0, {0, 0, 0}, 0, color.asDefaultUnits(), 0.f, intensity, constant, linear, quadratic, 0, 0, ambientStrength, 0 }) {}
+			: shaderEntry({ static_cast<int>(type), { 0, 0, 0 }, position.asDefaultUnits(), 0, {0, 0, 0}, 0, color.asDefaultUnits(), intensity, constant, linear, quadratic, 0, 0, ambientStrength, 0 }) {}
 
         // Constructor for Spotlight
 		LightRenderQueueEntry(const LightType type, const Vec3<>& color, const Unitless& intensity, const Vec3<Length>& position, const Vec3<>& direction, const Unitless& constant, const Unitless& linear, const Unitless& quadratic, const Angle& cutOff, const Angle& outerCutOff, const Unitless& ambientStrength)
-			: shaderEntry({ static_cast<int>(type), { 0, 0, 0 }, position.asDefaultUnits(), 0, direction.asDefaultUnits(), 0, color.asDefaultUnits(), 0.f, intensity, constant, linear, quadratic, cutOff.as<Degrees>(), outerCutOff.as<Degrees>(), ambientStrength, 0}) {}
+            : shaderEntry({ static_cast<int>(type), { 0, 0, 0 }, position.asDefaultUnits(), 0, direction.asDefaultUnits(), 0, color.asDefaultUnits(), intensity, constant, linear, quadratic, std::cos(cutOff.as<Radians>()), std::cos(outerCutOff.as<Radians>()), ambientStrength, 0 }) {}
     };
 
 	class Light {

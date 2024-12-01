@@ -102,7 +102,7 @@ void main() {
             float distance = length(lights[i].position - FragPos);
             float theta = dot(normalize(lightDir), normalize(lights[i].direction));
 
-            if (theta > lights[i].cutOff) continue;
+            //if (theta > lights[i].cutOff) continue;
 
             float epsilon = lights[i].cutOff - lights[i].outerCutOff;
             float intensity = clamp((theta - lights[i].outerCutOff) / epsilon, 0.0, 1.0);
