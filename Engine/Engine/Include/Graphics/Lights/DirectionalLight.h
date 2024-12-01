@@ -8,19 +8,18 @@
 namespace Engine {
 	class DirectionalLight : public Light {
 	public:
-		DirectionalLight(const glm::vec3& color, const float intensity, const glm::vec3& direction, const float ambientStrength)
+		DirectionalLight(const Vec3<>& color, const Unitless& intensity, const Vec3<>& direction, const Unitless& ambientStrength)
 			: Light(color, intensity, LightType::Directional), direction(direction), ambientStrength(ambientStrength) {}
 
-		glm::vec3 direction;
-		float ambientStrength;
+		Vec3<> direction;
+		Unitless ambientStrength;
 
 		void showDebugMenu() override {
 			Debug::addImguiCallback([this] {
 				ImGui::Begin("Directional Light");
-				ImGui::ColorEdit3("Color", &color[0]);
-				ImGui::SliderFloat("Intensity", &intensity, 0.0f, 100.0f);
-				ImGui::SliderFloat("Ambient Strength", &ambientStrength, 0.0f, 1.0f);
-				ImGui::SliderFloat3("Direction", &direction[0], -1.0f, 1.0f);
+				Debug::unitSlider("Intensity", intensity, unitless(0.0f), unitless(100.0f));
+				Debug::unitSlider("Ambient Strength", ambientStrength, unitless(0.0f), unitless(10.0f));
+				ImGui::SliderFloat3("Direction", &direction.asDefaultUnits().x, -1.0f, 1.0f);
 				ImGui::End();
 				});
 		}	
