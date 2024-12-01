@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Physics/Units/Angle.h"
 #include "Physics/Units/Duration.h"
 #include "Physics/Units/EnergyAndPower.h"
 #include "Physics/Units/Length.h"
@@ -9,13 +10,13 @@
 namespace Engine {
 	struct UnitlessTag {};
 	constexpr char unitlessUnits[] = "Unitless";
-	using UnitlessPlaceholder = Unit<UnitlessTag, 1.0f, unitlessUnits>;
+	using UnitlessUnit = Unit<UnitlessTag, 1.0f, unitlessUnits>;
 }
 
 namespace Engine {
-	using UnitlessUnits = UnitList<UnitlessPlaceholder>;
+	using UnitlessUnits = UnitList<UnitlessUnit>;
 
-	struct Unitless : Quantity<Unitless, UnitlessPlaceholder, UnitlessUnits> {
+	struct Unitless : Quantity<Unitless, UnitlessUnit, UnitlessUnits> {
 		using Quantity::Quantity;
 
 		Unitless(const float value) : Quantity(value) {}
@@ -40,6 +41,10 @@ namespace Engine {
 		Quantity& operator/=(const Unit& other) {
 			val /= other.getValue()();
 			return *this;
+		}
+
+		operator float() const {
+			return val;
 		}
 	};
 

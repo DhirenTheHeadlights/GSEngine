@@ -48,7 +48,7 @@ namespace Engine {
 	}
 
 	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
-		requires IsSameQuantityTag<T, U>
+		requires HasSameQuantityTag<T, U>
 	typename UnitToQuantity<T>::Type max(const Vec3<T>& a, const Vec3<U>& b, const int index) {
 		float max = a.asDefaultUnits()[index];
 		if (b.asDefaultUnits()[index] > a.asDefaultUnits()[index]) {
@@ -59,7 +59,7 @@ namespace Engine {
 	}
 
 	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
-		requires IsSameQuantityTag<T, U>
+		requires HasSameQuantityTag<T, U>
 	typename UnitToQuantity<T>::Type min(const Vec3<T>& a, const Vec3<U>& b, const int index) {
 		float min = a.asDefaultUnits()[index];
 
@@ -76,13 +76,13 @@ namespace Engine {
 	}
 
 	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
-		requires IsSameQuantityTag<T, U>
+		requires HasSameQuantityTag<T, U>
 	bool epsilonEqual(const Vec3<T>& a, const Vec3<U>& b, const float epsilon = 0.00001f) {
         return glm::all(glm::epsilonEqual(a.asDefaultUnits(), b.asDefaultUnits(), epsilon));
 	}
 
 	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
-		requires IsSameQuantityTag<T, U>
+		requires HasSameQuantityTag<T, U>
 	bool epsilonEqualIndex(const Vec3<T>& a, const Vec3<U>& b, const int index, const float epsilon = 0.00001f) {
 		return glm::epsilonEqual(a.asDefaultUnits()[index], b.asDefaultUnits()[index], epsilon);
 	}
@@ -105,7 +105,7 @@ namespace Engine {
 	}
 
 	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
-		requires IsSameQuantityTag<T, U>
+		requires HasSameQuantityTag<T, U>
 	Vec3<T> cross(const Vec3<T>& a, const Vec3<U>& b) {
 		return Vec3<T>(glm::cross(a.asDefaultUnits(), b.asDefaultUnits()));
 	}
