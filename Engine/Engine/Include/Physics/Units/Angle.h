@@ -7,7 +7,7 @@ namespace Engine {
 	constexpr char radiansUnits[] = "rad";
 
 	using Degrees = Unit<float, 1.0f, degreesUnits>;
-	using Radians = Unit<float, 0.01745329252f, radiansUnits>;
+	using Radians = Unit<float, 1 / 0.01745329252f, radiansUnits>;
 }
 
 namespace Engine {
