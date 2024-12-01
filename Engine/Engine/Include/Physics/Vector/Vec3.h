@@ -25,13 +25,13 @@ namespace Engine {
 	};
 
 	template <typename T, typename U>
-	concept IsSameQuantityTag = std::is_same_v<
+	concept HasSameQuantityTag = std::is_same_v<
 		typename GetQuantityTagType<std::remove_cvref_t<T>>::Type,
 		typename GetQuantityTagType<std::remove_cvref_t<U>>::Type
 	>;
 
 	template <typename T, typename... Args>
-	concept AreValidVectorArgs = (((IsQuantity<Args> && IsSameQuantityTag<Args, T>) || std::is_convertible_v<Args, float>) && ...);
+	concept AreValidVectorArgs = (((IsQuantity<Args> && HasSameQuantityTag<Args, T>) || std::is_convertible_v<Args, float>) && ...);
 
 	template <typename T>
 	concept IsUnitless = std::is_same_v<T, Unitless>;
@@ -96,7 +96,7 @@ namespace Engine {
 		}
 
 		template <IsUnit Unit>
-			requires IsSameQuantityTag<T, Unit>
+			requires HasSameQuantityTag<T, Unit>
 		[[nodiscard]] glm::vec3 as() const {
 			const float convertedMagnitude = length(vec) * Unit::ConversionFactor;
 			if (constexpr auto zero = glm::vec3(0.0f); vec == zero) {
@@ -107,7 +107,7 @@ namespace Engine {
 
 		// Converter between Vec3<Unit> and Vec3<Quantity>
 		template <IsQuantityOrUnit U>
-			requires IsSameQuantityTag<T, U>
+			requires HasSameQuantityTag<T, U>
 		Vec3(const Vec3<U>& other) : vec(other.asDefaultUnits()) {}
 
 		[[nodiscard]] glm::vec3& asDefaultUnits() {
@@ -125,13 +125,13 @@ namespace Engine {
 	/// Unit arithmetic overloads
 
 	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
-		requires IsSameQuantityTag<T, U>
+		requires HasSameQuantityTag<T, U>
 	auto operator+(const Vec3<T>& lhs, const Vec3<U>& rhs) {
 		return Vec3<T>(lhs.asDefaultUnits() + rhs.asDefaultUnits());
 	}
 
 	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
-		requires IsSameQuantityTag<T, U>
+		requires HasSameQuantityTag<T, U>
 	auto operator-(const Vec3<T>& lhs, const Vec3<U>& rhs) {
 		return Vec3<T>(lhs.asDefaultUnits() - rhs.asDefaultUnits());
 	}
@@ -154,14 +154,14 @@ namespace Engine {
 	/// Compound arithmetic operators
 
 	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
-		requires IsSameQuantityTag<T, U>
+		requires HasSameQuantityTag<T, U>
 	auto& operator+=(Vec3<T>& lhs, const Vec3<U>& rhs) {
 		lhs = lhs + rhs;
 		return lhs;
 	}
 
 	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
-		requires IsSameQuantityTag<T, U>
+		requires HasSameQuantityTag<T, U>
 	auto& operator-=(Vec3<T>& lhs, const Vec3<U>& rhs) {
 		lhs = lhs - rhs;
 		return lhs;

@@ -8,25 +8,25 @@
 namespace Engine {
 	class PointLight : public Light {
 	public:
-		PointLight(const glm::vec3& position, const glm::vec3& color, const float intensity, const float constant, const float linear, const float quadratic, const float ambientStrength)
+		PointLight(const Vec3<>& color, const Unitless& intensity, const Vec3<Length>& position, const Unitless& constant, const Unitless& linear, const Unitless& quadratic, const Unitless& ambientStrength)
 			: Light(color, intensity, LightType::Point), position(position), constant(constant), linear(linear), quadratic(quadratic), ambientStrength(ambientStrength) {}
 
-		glm::vec3 position;
-		float constant;
-		float linear;
-		float quadratic;
-		float ambientStrength;
+		Vec3<Length> position;
+		Unitless constant;
+		Unitless linear;
+		Unitless quadratic;
+		Unitless ambientStrength;
 
 		void showDebugMenu() override {
 			Debug::addImguiCallback([this] {
 				ImGui::Begin("Point Light");
-				ImGui::Text("Position: (%.2f, %.2f, %.2f)", position.x, position.y, position.z);
-				ImGui::ColorEdit3("Color", &color[0]);
-				ImGui::SliderFloat("Intensity", &intensity, 0.0f, 100.0f);
-				ImGui::SliderFloat("Ambient Strength", &ambientStrength, 0.0f, 10.0f);
-				ImGui::SliderFloat("Constant", &constant, 0.0f, 1.0f);
-				ImGui::SliderFloat("Linear", &linear, 0.0f, 1.0f);
-				ImGui::SliderFloat("Quadratic", &quadratic, 0.0f, 1.0f);
+				ImGui::ColorEdit3("Color", &color.asDefaultUnits().x);
+				Debug::unitSlider("Intensity", intensity, unitless(0.0f), unitless(100.0f));
+				Debug::unitSlider("Constant", constant, unitless(0.0f), unitless(1.0f));
+				Debug::unitSlider("Linear", linear, unitless(0.0f), unitless(0.1f));
+				Debug::unitSlider("Quadratic", quadratic, unitless(0.0f), unitless(0.1f));
+				Debug::unitSlider("Ambient Strength", ambientStrength, unitless(0.0f), unitless(10.0f));
+				ImGui::SliderFloat3("Position", &position.asDefaultUnits().x, -100.0f, 100.0f);
 				ImGui::End();
 				});
 		}

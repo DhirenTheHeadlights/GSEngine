@@ -113,12 +113,20 @@ void Engine::Shader::setInt(const std::string& name, const int value) const {
     glUniform1i(glGetUniformLocation(ID, name.c_str()), value);
 }
 
+void Engine::Shader::setIntArray(const std::string& name, const int* values, const unsigned int count) const {
+	glUniform1iv(glGetUniformLocation(ID, name.c_str()), count, values);
+}
+
 void Engine::Shader::setFloat(const std::string& name, const float value) const {
     glUniform1f(glGetUniformLocation(ID, name.c_str()), value);
 }
 
 void Engine::Shader::setMat4(const ::std::string& name, const glm::mat4& value) const {
     glUniformMatrix4fv(glGetUniformLocation(ID, name.c_str()), 1, GL_FALSE, value_ptr(value));
+}
+
+void Engine::Shader::setMat4Array(const ::std::string& name, const glm::mat4* values, const unsigned int count) const {
+    glUniformMatrix4fv(glGetUniformLocation(ID, name.c_str()), count, GL_FALSE, value_ptr(*values));
 }
 
 void Engine::Shader::setVec3(const ::std::string& name, const glm::vec3& value) const {
