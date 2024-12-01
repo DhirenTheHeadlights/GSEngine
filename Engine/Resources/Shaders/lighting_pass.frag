@@ -76,11 +76,11 @@ void main() {
         vec3 lightDir = normalize(lights[i].position - FragPos);
         vec3 reflectDir = reflect(-lightDir, Normal);
         vec3 halfwayDir = normalize(lightDir + viewDir);
-        vec3 ambient = lights[i].ambientStrength * lights[i].color * lights[i].intensity;
+        vec3 ambient = lights[i].ambientStrength * lights[i].color;
         float diff = max(dot(Normal, lightDir), 0.0);
-        vec3 diffuse = diff * lights[i].color * lights[i].intensity;
+        vec3 diffuse = diff * lights[i].color;
         float spec = pow(max(dot(viewDir, reflectDir), 0.0), 2);
-        vec3 specular = lights[i].color * spec * lights[i].intensity * 0.5;
+        vec3 specular = lights[i].color * spec * 0.5;
         vec4 FragPosLightSpace = lightSpaceMatrices[i] * vec4(FragPos, 1.0);
         float shadow = 0;
 
@@ -93,33 +93,30 @@ void main() {
             float distance = length(lights[i].position - FragPos);
             float attenuation = 1.0 / (lights[i].constant + lights[i].linear * distance + lights[i].quadratic * (distance * distance));
 
-            diffuse *= attenuation * shadow;
-            specular *= attenuation * shadow;
+            diffuse *= attenuation;
+            specular *= attenuation;
 
         }
         // Spot Light
         else {             
             float distance = length(lights[i].position - FragPos);
             float theta = dot(normalize(lightDir), normalize(lights[i].direction));
-
-            //if (theta > lights[i].cutOff) continue;
-
             float epsilon = lights[i].cutOff - lights[i].outerCutOff;
             float intensity = clamp((theta - lights[i].outerCutOff) / epsilon, 0.0, 1.0);
             shadow = 1.0 - calculateShadow(FragPosLightSpace, shadowMaps[i], -lights[i].direction, -lightDir, lights[i].cutOff, lights[i].outerCutOff);
             float attenuation = 1.0 / (lights[i].constant + lights[i].linear * distance + lights[i].quadratic * (distance * distance));
-            diffuse *= attenuation * intensity * shadow;
-            specular *= attenuation * intensity * shadow;
+            diffuse *= attenuation * intensity;
+            specular *= attenuation * intensity;
             resultColor += (ambient + shadow * (diffuse + specular)) * Albedo;
         }
     }
 
-//    vec3 reflectDir = reflect(-viewDir, Normal);
-//    vec3 reflectionColor = texture(environmentMap, reflectDir).rgb;
-//    float reflectivity = 0.01;
-//    float fresnel = pow(1.0 - max(dot(viewDir, Normal), 0.0), 5.0);
-//    reflectivity *= fresnel;
-//    resultColor = mix(resultColor, reflectionColor, reflectivity);
+    vec3 reflectDir = reflect(-viewDir, Normal);
+    vec3 reflectionColor = texture(environmentMap, reflectDir).rgb;
+    float reflectivity = 0.01;
+    float fresnel = pow(1.0 - max(dot(viewDir, Normal), 0.0), 5.0);
+    reflectivity *= fresnel;
+    resultColor = mix(resultColor, reflectionColor, reflectivity);
 
     FragColor = vec4(resultColor, 1.0);
 }
