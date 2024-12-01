@@ -254,8 +254,6 @@ void Engine::Renderer::renderLightingPass(const std::vector<LightShaderEntry>& l
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	glDisable(GL_DEPTH_TEST);
 
-	std::cout << "Light Intensity: " << lightData[0].intensity << '\n';
-
 	lightingShader.use();
 
 	std::vector<GLint> shadowMapUnits(depthMaps.size());
@@ -370,7 +368,7 @@ glm::mat4 Engine::Renderer::calculateLightSpaceMatrix(const std::shared_ptr<Ligh
 	case LightType::Spot: {
 		const glm::vec3 lightPos = light->getRenderQueueEntry().shaderEntry.position;
 		const glm::vec3 lightDirection = light->getRenderQueueEntry().shaderEntry.direction;
-		const float cutoff = glm::cos(glm::radians(light->getRenderQueueEntry().shaderEntry.cutOff));
+		const float cutoff = light->getRenderQueueEntry().shaderEntry.cutOff;
 		const glm::mat4 lightProjection = glm::perspective(cutoff, 1.0f, nearPlane, farPlane);
 		const glm::mat4 lightView = lookAt(lightPos, lightPos + lightDirection, ensureNonCollinearUp(lightDirection, glm::vec3(0.0f, 1.0f, 0.0f)));
 		return lightProjection * lightView;
