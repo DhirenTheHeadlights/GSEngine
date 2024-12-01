@@ -1,12 +1,12 @@
-#version 330 core
+#version 430 core
 
 out vec3 gPosition;
 out vec3 gNormal;
 out vec4 gAlbedoSpec;
 
-in vec3 FragPos;
-in vec3 Normal;
-in vec2 TexCoords;
+layout(location = 0) in vec3 FragPos;
+layout(location = 1) in vec3 Normal;
+layout(location = 2) in vec2 TexCoords;
 
 uniform sampler2D diffuseTexture;   // Diffuse texture map
 uniform vec3 color;                 // Solid color if no texture

@@ -39,6 +39,12 @@ namespace Engine {
 
 		Quantity() = default;
 
+		template <IsUnit Unit>
+		void set(const float value) {
+			static_assert(isValidUnitForQuantity<Unit, ValidUnits>(), "Invalid unit type for assignment");
+			val = getConvertedValue<Unit>(value);
+		}
+
 		// Convert to any other valid unit
 		template <IsUnit Unit>
 		float as() const {

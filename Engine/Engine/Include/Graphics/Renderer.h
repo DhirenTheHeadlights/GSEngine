@@ -25,7 +25,7 @@ namespace Engine {
 		void renderObjectForward(const RenderQueueEntry& entry, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) const;
 		void renderObject(const LightRenderQueueEntry& entry);
 		void renderLightingPass(const std::vector<LightShaderEntry>& lightData, const std::vector<glm::mat4>& lightSpaceMatrices) const;
-		void renderShadowPass(const glm::mat4& lightSpaceMatrix) const;
+		void renderShadowPass(const glm::mat4& lightSpaceMatrix, GLuint depthMap) const;
 		static glm::vec3 ensureNonCollinearUp(const glm::vec3& direction, const glm::vec3& up);
 
 		glm::mat4 calculateLightSpaceMatrix(const std::shared_ptr<Light>& light) const;
@@ -42,8 +42,9 @@ namespace Engine {
 		GLuint gNormal = 0;
 		GLuint gAlbedoSpec = 0;
 		GLuint ssboLights = 0;
+		GLuint lightSpaceBlockUBO = 0;
 
-		CubeMap shadowCubeMap;
+		CubeMap reflectionCubeMap;
 
 		Shader lightingShader;
 		Shader shadowShader;
@@ -56,6 +57,6 @@ namespace Engine {
 		GLsizei shadowHeight = 0;
 
 		float nearPlane = 1.0f;
-		float farPlane = 10000.f;
+		float farPlane = 100.f;
 	};
 }
