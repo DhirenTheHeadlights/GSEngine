@@ -6,18 +6,99 @@
 
 #include "Core/JsonParser.h"
 #include "Core/ResourcePaths.h"
+#include "Graphics/CubeMap.h"
+#include "Graphics/Material.h"
+#include "Graphics/Shader.h"
 #include "Platform/GLFW/ErrorReporting.h"
 #include "Platform/GLFW/Input.h"
 #include "Platform/GLFW/Window.h"
 
-Engine::Camera Engine::Renderer::camera;
+namespace {
+	Engine::Camera camera;
+
+	std::unordered_map<std::string, Engine::Material> materials;
+	std::unordered_map<std::string, Engine::Shader> lightShaders;
+
+	GLuint gBuffer = 0;
+	GLuint gPosition = 0;
+	GLuint gNormal = 0;
+	GLuint gAlbedoSpec = 0;
+	GLuint ssboLights = 0;
+	GLuint lightSpaceBlockUBO = 0;
+
+	Engine::CubeMap reflectionCubeMap;
+
+	Engine::Shader lightingShader;
+	Engine::Shader shadowShader;
+	Engine::Shader forwardRenderingShader;
+
+	GLsizei shadowWidth = 2048;
+	GLsizei shadowHeight = 2048;
+
+	Engine::Length nearPlane = Engine::meters(1.0f);
+	Engine::Length farPlane = Engine::meters(100.f);
+}
+
+void Engine::Renderer::Group::addRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent) {
+	renderComponents.push_back(renderComponent);
+}
+
+void Engine::Renderer::Group::addLightSourceComponent(const std::shared_ptr<LightSourceComponent>& lightSourceComponent) {
+	lightSourceComponents.push_back(lightSourceComponent);
+
+	// Generate depth map and FBO for each light
+	GLuint depthMap, depthMapFBO;
+	glGenTextures(1, &depthMap);
+	glBindTexture(GL_TEXTURE_2D, depthMap);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, shadowWidth, shadowHeight, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+	constexpr float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+
+	glGenFramebuffers(1, &depthMapFBO);
+	glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
+	glDrawBuffer(GL_NONE);
+	glReadBuffer(GL_NONE);
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	depthMaps.push_back(depthMap);
+	depthMapFBOs.push_back(depthMapFBO);
+}
+
+void Engine::Renderer::Group::removeRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent) {
+	std::erase_if(renderComponents, [&](const std::weak_ptr<RenderComponent>& component) {
+		return !component.owner_before(renderComponent) && !renderComponent.owner_before(component);
+		});
+}
+
+void Engine::Renderer::Group::removeLightSourceComponent(const std::shared_ptr<LightSourceComponent>& lightSourceComponent) {
+	const auto it = std::ranges::find_if(lightSourceComponents,
+		[&](const std::weak_ptr<LightSourceComponent>& component) {
+			return !component.owner_before(lightSourceComponent) && !lightSourceComponent.owner_before(component);
+		});
+
+	if (it != lightSourceComponents.end()) {
+		const size_t index = std::distance(lightSourceComponents.begin(), it);
+
+		glDeleteTextures(1, &depthMaps[index]);
+		glDeleteFramebuffers(1, &depthMapFBOs[index]);
+
+		depthMaps.erase(depthMaps.begin() + index);
+		depthMapFBOs.erase(depthMapFBOs.begin() + index);
+		lightSourceComponents.erase(it);
+	}
+}
 
 void Engine::Renderer::initialize() {
 	enableReportGlErrors();
 
 	const std::string shaderPath = std::string(ENGINE_RESOURCES_PATH) + "Shaders/";
 
-	// Load material shaders
 	JsonParse::parse(
 		JsonParse::loadJson(shaderPath + "Shaders.json"),
 		[&](const std::string& key, const nlohmann::json& value) {
@@ -26,7 +107,6 @@ void Engine::Renderer::initialize() {
 		}
 	);
 
-	// Load light shaders
 	JsonParse::parse(
 		JsonParse::loadJson(shaderPath + "LightShaders.json"),
 		[&](const std::string& key, const nlohmann::json& value) {
@@ -35,7 +115,6 @@ void Engine::Renderer::initialize() {
 		}
 	);
 
-	// Set up the lighting shader
 	lightingShader.createShaderProgram(shaderPath + "lighting_pass.vert", shaderPath + "lighting_pass.frag");
 
 	const GLsizei screenWidth = Window::getFrameBufferSize().x;
@@ -103,9 +182,6 @@ void Engine::Renderer::initialize() {
 	lightingShader.setInt("gNormal", 1);
 	lightingShader.setInt("gAlbedoSpec", 2);
 
-	this->shadowHeight = 2048;
-	this->shadowWidth = 2048;
-
 	shadowShader.createShaderProgram(shaderPath + "shadow.vert", shaderPath + "shadow.frag");
 
 	reflectionCubeMap.create(1024);
@@ -113,62 +189,7 @@ void Engine::Renderer::initialize() {
 	forwardRenderingShader.createShaderProgram(shaderPath + "forward_rendering.vert", shaderPath + "forward_rendering.frag");
 }
 
-void Engine::Renderer::addRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent) {
-	renderComponents.push_back(renderComponent);
-}
-
-void Engine::Renderer::addLightSourceComponent(const std::shared_ptr<LightSourceComponent>& lightSourceComponent) {
-	lightSourceComponents.push_back(lightSourceComponent);
-
-	// Generate depth map and FBO for each light
-	GLuint depthMap, depthMapFBO;
-	glGenTextures(1, &depthMap);
-	glBindTexture(GL_TEXTURE_2D, depthMap);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, shadowWidth, shadowHeight, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-	constexpr float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-	glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
-
-	glGenFramebuffers(1, &depthMapFBO);
-	glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
-	glDrawBuffer(GL_NONE);
-	glReadBuffer(GL_NONE);
-
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-	depthMaps.push_back(depthMap);
-	depthMapFBOs.push_back(depthMapFBO);
-}
-
-void Engine::Renderer::removeRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent) {
-	std::erase_if(renderComponents, [&](const std::weak_ptr<RenderComponent>& component) {
-		return !component.owner_before(renderComponent) && !renderComponent.owner_before(component);
-		});
-}
-
-void Engine::Renderer::removeLightSourceComponent(const std::shared_ptr<LightSourceComponent>& lightSourceComponent) {
-	const auto it = std::ranges::find_if(lightSourceComponents,
-	                                     [&](const std::weak_ptr<LightSourceComponent>& component) {
-		                                     return !component.owner_before(lightSourceComponent) && !lightSourceComponent.owner_before(component);
-	                                     });
-
-	if (it != lightSourceComponents.end()) {
-		const size_t index = std::distance(lightSourceComponents.begin(), it);
-
-		glDeleteTextures(1, &depthMaps[index]);
-		glDeleteFramebuffers(1, &depthMapFBOs[index]);
-
-		depthMaps.erase(depthMaps.begin() + index);
-		depthMapFBOs.erase(depthMapFBOs.begin() + index);
-		lightSourceComponents.erase(it);
-	}
-}
-
-void Engine::Renderer::renderObject(const RenderQueueEntry& entry, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
+void renderObject(const Engine::RenderQueueEntry& entry, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
 	if (const auto it = materials.find(entry.materialKey); it != materials.end()) {
 		it->second.use(viewMatrix, projectionMatrix, entry.modelMatrix);
 		it->second.shader.setVec3("color", entry.color);
@@ -193,7 +214,7 @@ void Engine::Renderer::renderObject(const RenderQueueEntry& entry, const glm::ma
 	}
 }
 
-void Engine::Renderer::renderObjectForward(const RenderQueueEntry& entry, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) const {
+void renderObjectForward(const Engine::RenderQueueEntry& entry, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
 	forwardRenderingShader.setVec3("color", entry.color);
 	forwardRenderingShader.setBool("useTexture", entry.textureID != 0);
 	forwardRenderingShader.setMat4("model", entry.modelMatrix);
@@ -219,7 +240,7 @@ void Engine::Renderer::renderObjectForward(const RenderQueueEntry& entry, const 
 	}
 }
 
-void Engine::Renderer::renderObject(const LightRenderQueueEntry& entry) {
+void renderObject(const Engine::LightRenderQueueEntry& entry) {
 	if (const auto it = lightShaders.find(entry.shaderKey); it != lightShaders.end()) {
 		it->second.use();
 		it->second.setMat4("model", glm::mat4(1.0f));
@@ -234,14 +255,14 @@ void Engine::Renderer::renderObject(const LightRenderQueueEntry& entry) {
 	}
 }
 
-void Engine::Renderer::renderLightingPass(const std::vector<LightShaderEntry>& lightData, const std::vector<glm::mat4>& lightSpaceMatrices) const {
+void renderLightingPass(const std::vector<Engine::LightShaderEntry>& lightData, const std::vector<glm::mat4>& lightSpaceMatrices, const std::vector<GLuint>& depthMaps) {
 	if (lightData.empty()) {
 		return;
 	}
 
 	// Update SSBO with light data
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboLights);
-	glBufferData(GL_SHADER_STORAGE_BUFFER, lightData.size() * sizeof(LightShaderEntry), lightData.data(), GL_DYNAMIC_DRAW);
+	glBufferData(GL_SHADER_STORAGE_BUFFER, lightData.size() * sizeof(Engine::LightShaderEntry), lightData.data(), GL_DYNAMIC_DRAW);
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 26, ssboLights);
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
@@ -312,7 +333,7 @@ void Engine::Renderer::renderLightingPass(const std::vector<LightShaderEntry>& l
 	glEnable(GL_DEPTH_TEST);  // Re-enable depth testing after the lighting pass
 }
 
-void Engine::Renderer::renderShadowPass(const glm::mat4& lightSpaceMatrix, const GLuint depthMap) const {
+void renderShadowPass(const std::vector<std::weak_ptr<Engine::RenderComponent>>& renderComponents, const glm::mat4& lightSpaceMatrix, const GLuint depthMap) {
 	shadowShader.setMat4("lightSpaceMatrix", lightSpaceMatrix);
 
 	glEnable(GL_DEPTH_TEST);
@@ -333,15 +354,15 @@ void Engine::Renderer::renderShadowPass(const glm::mat4& lightSpaceMatrix, const
 	}
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	glViewport(0, 0, Window::getFrameBufferSize().x, Window::getFrameBufferSize().y); // Restore viewport
+	glViewport(0, 0, Engine::Window::getFrameBufferSize().x, Engine::Window::getFrameBufferSize().y); // Restore viewport
 }
 
-glm::vec3 Engine::Renderer::ensureNonCollinearUp(const glm::vec3& direction, const glm::vec3& up) {
+glm::vec3 ensureNonCollinearUp(const glm::vec3& direction, const glm::vec3& up) {
 	constexpr float epsilon = 0.001f;
 
-	const glm::vec3 normalizedDirection = glm::normalize(direction);
-	glm::vec3 normalizedUp = glm::normalize(up);
-	const float dotProduct = glm::dot(normalizedDirection, normalizedUp);
+	const glm::vec3 normalizedDirection = normalize(direction);
+	glm::vec3 normalizedUp = normalize(up);
+	const float dotProduct = dot(normalizedDirection, normalizedUp);
 
 	if (glm::abs(dotProduct) > 1.0f - epsilon) {
 		if (glm::abs(normalizedDirection.y) > 0.9f) {
@@ -356,24 +377,24 @@ glm::vec3 Engine::Renderer::ensureNonCollinearUp(const glm::vec3& direction, con
 }
 
 
-glm::mat4 Engine::Renderer::calculateLightSpaceMatrix(const std::shared_ptr<Light>& light) const {
-	switch (static_cast<LightType>(light->getRenderQueueEntry().shaderEntry.lightType)) {
-	case LightType::Directional: {
+glm::mat4 calculateLightSpaceMatrix(const std::shared_ptr<Engine::Light>& light) {
+	switch (static_cast<Engine::LightType>(light->getRenderQueueEntry().shaderEntry.lightType)) {
+	case Engine::LightType::Directional: {
 		const glm::vec3 lightDirection = light->getRenderQueueEntry().shaderEntry.direction;
 		const glm::vec3 lightPos = -lightDirection * 10.0f;
-		const glm::mat4 lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, nearPlane, farPlane);
+		const glm::mat4 lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, nearPlane.as<Engine::Meters>(), farPlane.as<Engine::Meters>());
 		const glm::mat4 lightView = lookAt(lightPos, lightPos + lightDirection, ensureNonCollinearUp(lightDirection, glm::vec3(0.0f, 1.0f, 0.0f)));
 		return lightProjection * lightView;
 	}
-	case LightType::Spot: {
+	case Engine::LightType::Spot: {
 		const glm::vec3 lightPos = light->getRenderQueueEntry().shaderEntry.position;
 		const glm::vec3 lightDirection = light->getRenderQueueEntry().shaderEntry.direction;
 		const float cutoff = light->getRenderQueueEntry().shaderEntry.cutOff;
-		const glm::mat4 lightProjection = glm::perspective(cutoff, 1.0f, nearPlane, farPlane);
+		const glm::mat4 lightProjection = glm::perspective(cutoff, 1.0f, nearPlane.as<Engine::Meters>(), farPlane.as<Engine::Meters>());
 		const glm::mat4 lightView = lookAt(lightPos, lightPos + lightDirection, ensureNonCollinearUp(lightDirection, glm::vec3(0.0f, 1.0f, 0.0f)));
 		return lightProjection * lightView;
 	}
-	case LightType::Point:
+	case Engine::LightType::Point:
 
 		break;
 	}
@@ -381,14 +402,17 @@ glm::mat4 Engine::Renderer::calculateLightSpaceMatrix(const std::shared_ptr<Ligh
 }
 
 
-void Engine::Renderer::renderObjects() {
+void Engine::Renderer::renderObjects(Group& group) {
+	const auto& renderComponents = group.getRenderComponents();
+	const auto& lightSourceComponents = group.getLightSourceComponents();
+
 	camera.updateCameraVectors();
 	if (!Window::isMouseVisible()) camera.processMouseMovement(Input::getMouse().delta);
 
-	Debug::addImguiCallback([this] {
+	Debug::addImguiCallback([] {
 		ImGui::Begin("Near/Far Plane");
-		ImGui::SliderFloat("Near Plane", &nearPlane, 0.1f, 10.0f);
-		ImGui::SliderFloat("Far Plane", &farPlane, 10.0f, 100.0f);
+		Debug::unitSlider<Length, Meters>("Near Plane", nearPlane, meters(0.1f), meters(10.0f));
+		Debug::unitSlider<Length, Meters>("Far Plane", farPlane, meters(10.0f), meters(1000.0f));
 		ImGui::End();
 		});
 
@@ -402,7 +426,7 @@ void Engine::Renderer::renderObjects() {
 			}
 		}
 		else {
-			removeLightSourceComponent(lightSourceComponent.lock());
+			group.removeLightSourceComponent(lightSourceComponent.lock());
 		}
 	}
 
@@ -411,7 +435,7 @@ void Engine::Renderer::renderObjects() {
 	glBufferData(GL_SHADER_STORAGE_BUFFER, lightData.size() * sizeof(LightShaderEntry), lightData.data(), GL_DYNAMIC_DRAW);
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssboLights);  // Binding point 0
 
-	reflectionCubeMap.update(glm::vec3(0.f), glm::perspective(glm::radians(45.0f), 1.0f, nearPlane, farPlane), [this](const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
+	reflectionCubeMap.update(glm::vec3(0.f), glm::perspective(glm::radians(45.0f), 1.0f, nearPlane.as<Meters>(), farPlane.as<Meters>()), [&group, renderComponents](const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssboLights);  // Binding point 0
 
 		forwardRenderingShader.use();
@@ -423,7 +447,7 @@ void Engine::Renderer::renderObjects() {
 				}
 			}
 			else {
-				removeRenderComponent(renderComponent.lock());
+				group.removeRenderComponent(renderComponent.lock());
 			}
 		}
 	});
@@ -438,7 +462,7 @@ void Engine::Renderer::renderObjects() {
 			shadowShader.use();
 
 			lightSpaceMatrices.push_back(calculateLightSpaceMatrix(light));
-			renderShadowPass(lightSpaceMatrices.back(), depthMapFBOs[i]);
+			renderShadowPass(renderComponents, lightSpaceMatrices.back(), group.depthMapFBOs[i]);
 		}
 	}
 
@@ -455,7 +479,7 @@ void Engine::Renderer::renderObjects() {
 			}
 		}
 		else {
-			removeRenderComponent(renderComponent.lock());
+			group.removeRenderComponent(renderComponent.lock());
 		}
 	}
 
@@ -473,7 +497,7 @@ void Engine::Renderer::renderObjects() {
 			}
 		}
 		else {
-			removeLightSourceComponent(lightSourceComponent.lock());
+			group.removeLightSourceComponent(lightSourceComponent.lock());
 		}
 	}
 
@@ -487,5 +511,9 @@ void Engine::Renderer::renderObjects() {
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
 
-	renderLightingPass(lightData, lightSpaceMatrices);
+	renderLightingPass(lightData, lightSpaceMatrices, group.depthMaps);
+}
+
+Engine::Camera& Engine::Renderer::getCamera() {
+	return camera;
 }
