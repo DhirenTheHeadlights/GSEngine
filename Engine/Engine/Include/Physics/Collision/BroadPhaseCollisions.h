@@ -6,7 +6,7 @@
 #include "Physics/MotionComponent.h"
 
 namespace Engine::Collisions {
-	class CollisionGroup {
+	class Group {
 		struct Object {
 			Object(const std::weak_ptr<Physics::CollisionComponent>& collisionComponent) :
 				collisionComponent(collisionComponent) {}
@@ -24,8 +24,8 @@ namespace Engine::Collisions {
 
 		void addDynamicObject(const std::shared_ptr<Physics::CollisionComponent>& collisionComponent, const std::shared_ptr<Physics::MotionComponent>& motionComponent);
 
-		const std::vector<DynamicObject>& getDynamicObjects() const { return dynamicObjects; }
-		const std::vector<Object>& getObjects() const { return objects; }
+		auto getDynamicObjects() -> std::vector<DynamicObject>& { return dynamicObjects; }
+		auto getObjects() -> std::vector<Object>& { return objects; }
 	private:
 		std::vector<DynamicObject> dynamicObjects;
 		std::vector<Object> objects;
@@ -40,5 +40,5 @@ namespace Engine::BroadPhaseCollisions {
 	CollisionInformation calculateCollisionInformation(const BoundingBox& box1, const BoundingBox& box2);
 	void setCollisionInformation(const BoundingBox& box1, const BoundingBox& box2);
 
-	void update(const Collisions::CollisionGroup& group);
+	void update(Collisions::Group& group);
 }

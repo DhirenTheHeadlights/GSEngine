@@ -25,7 +25,7 @@ void Engine::Scene::removeObject(const std::weak_ptr<Object>& object) {
 	if (const auto objectPtr = object.lock()) {
 		if (objectPtr->getSceneId().lock() == id) {
 			handleComponent<Physics::MotionComponent>(objectPtr, physicsSystem, &Physics::System::removeMotionComponent);
-			handleComponent<Physics::CollisionComponent>(objectPtr, broadPhaseCollisionHandler, &BroadPhaseCollisionHandler::removeComponents);
+			handleComponent<Physics::CollisionComponent>(objectPtr, collisionGroup, &Collisions::Group::removeObject);
 			handleComponent<RenderComponent>(objectPtr, renderGroup, &Renderer::Group::removeRenderComponent);
 			handleComponent<LightSourceComponent>(objectPtr, renderGroup, &Renderer::Group::removeLightSourceComponent);
 		}
@@ -42,17 +42,17 @@ void Engine::Scene::initialize() {
 			objectPtr->processInitialize();
 
 			handleComponent<Physics::MotionComponent>(objectPtr, physicsSystem, &Physics::System::addMotionComponent);
-			handleComponent<Physics::CollisionComponent, Physics::MotionComponent>(objectPtr, broadPhaseCollisionHandler, &BroadPhaseCollisionHandler::addDynamicComponents);
-			handleComponent<Physics::CollisionComponent>(objectPtr, broadPhaseCollisionHandler, &BroadPhaseCollisionHandler::addObjectComponent);
-			handleComponent<RenderComponent>(objectPtr, renderer, &Renderer::addRenderComponent);
-			handleComponent<LightSourceComponent>(objectPtr, renderer, &Renderer::addLightSourceComponent);
+			handleComponent<Physics::CollisionComponent, Physics::MotionComponent>(objectPtr, collisionGroup, &Collisions::Group::addDynamicObject);
+			handleComponent<Physics::CollisionComponent>(objectPtr, collisionGroup, &Collisions::Group::addObject);
+			handleComponent<RenderComponent>(objectPtr, renderGroup, &Renderer::Group::addRenderComponent);
+			handleComponent<LightSourceComponent>(objectPtr, renderGroup, &Renderer::Group::addLightSourceComponent);
 		}
 	}
 }
 
 void Engine::Scene::update() {
 	physicsSystem.update();
-	BroadPhaseCollisions::update(collisionObjects);
+	BroadPhaseCollisions::update(collisionGroup);
 
 	for (auto& object : objects) {
 		if (const auto objectPtr = object.lock()) {
@@ -62,7 +62,7 @@ void Engine::Scene::update() {
 }
 
 void Engine::Scene::render() {
-	Renderer::renderObjects(renderGroup);
+	renderObjects(renderGroup);
 
 	for (auto& object : objects) {
 		if (const auto objectPtr = object.lock()) {

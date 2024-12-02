@@ -38,11 +38,11 @@ void Engine::Physics::applyImpulse(MotionComponent* component, const Vec3<Force>
 }
 
 void Engine::Physics::System::addMotionComponent(const std::shared_ptr<MotionComponent>& object) {
-	objectMotionComponents.push_back(object);
+	motionComponents.push_back(object);
 }
 
 void Engine::Physics::System::removeMotionComponent(const std::shared_ptr<MotionComponent>& object) {
-	std::erase_if(objectMotionComponents, [&](const std::weak_ptr<MotionComponent>& obj) {
+	std::erase_if(motionComponents, [&](const std::weak_ptr<MotionComponent>& obj) {
 		return !obj.owner_before(object) && !object.owner_before(obj);
 		});
 }
@@ -141,11 +141,11 @@ void Engine::Physics::System::updateEntity(MotionComponent* component) {
 }
 
 void Engine::Physics::System::update() {
-	std::erase_if(objectMotionComponents, [](const std::weak_ptr<MotionComponent>& obj) {
+	std::erase_if(motionComponents, [](const std::weak_ptr<MotionComponent>& obj) {
 		return obj.expired();
 	});
 
-	for (auto& motionComponent : objectMotionComponents) {
+	for (auto& motionComponent : motionComponents) {
 		if (const auto motionComponentPtr = motionComponent.lock()) {
 			updateEntity(motionComponentPtr.get());
 		}
