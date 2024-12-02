@@ -8,7 +8,7 @@
 #include "Graphics/BoundingBox.h"
 
 namespace Engine::Physics {
-	class System {
+	class Group {
 	public:
 		void addMotionComponent(const std::shared_ptr<MotionComponent>& object);
 		void removeMotionComponent(const std::shared_ptr<MotionComponent>& object);

@@ -34,7 +34,7 @@ namespace Engine {
 
 		std::shared_ptr<ID> id;
 
-		Physics::System physicsSystem;
+		Physics::Group physicsSystem;
 		Collisions::Group collisionGroup;
 		Renderer::Group renderGroup;
 	};
