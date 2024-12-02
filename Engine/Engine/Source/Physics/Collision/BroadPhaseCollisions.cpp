@@ -5,21 +5,21 @@
 #include "Physics/System.h"
 #include "Physics/Vector/Math.h"
 
-void Engine::Collisions::CollisionGroup::addDynamicObject(const std::shared_ptr<Physics::CollisionComponent>& collisionComponent, const std::shared_ptr<Physics::MotionComponent>& motionComponent) {
+void Engine::Collisions::Group::addDynamicObject(const std::shared_ptr<Physics::CollisionComponent>& collisionComponent, const std::shared_ptr<Physics::MotionComponent>& motionComponent) {
 	dynamicObjects.emplace_back(collisionComponent, motionComponent);
 }
 
-void Engine::Collisions::CollisionGroup::addObject(const std::shared_ptr<Physics::CollisionComponent>& collisionComponent) {
+void Engine::Collisions::Group::addObject(const std::shared_ptr<Physics::CollisionComponent>& collisionComponent) {
 	objects.emplace_back(collisionComponent);
 }
 
-void Engine::Collisions::CollisionGroup::removeObject(const std::shared_ptr<Physics::CollisionComponent>& collisionComponent) {
-	std::erase_if(objects, [&](const std::weak_ptr<Physics::CollisionComponent>& obj) {
-		return !obj.owner_before(collisionComponent) && !collisionComponent.owner_before(obj);
+void Engine::Collisions::Group::removeObject(const std::shared_ptr<Physics::CollisionComponent>& collisionComponent) {
+	std::erase_if(objects, [&](const Object& obj) {
+		return !obj.collisionComponent.owner_before(collisionComponent) && !collisionComponent.owner_before(obj.collisionComponent);
 		});
 
-	std::erase_if(dynamicObjects, [&](const std::weak_ptr<Physics::CollisionComponent>& obj) {
-		return !obj.owner_before(collisionComponent) && !collisionComponent.owner_before(obj);
+	std::erase_if(dynamicObjects, [&](const DynamicObject& obj) {
+		return !obj.collisionComponent.owner_before(collisionComponent) && !collisionComponent.owner_before(obj.collisionComponent);
 		});
 }
 
@@ -112,7 +112,7 @@ void Engine::BroadPhaseCollisions::setCollisionInformation(const BoundingBox& bo
 	box2.collisionInformation = calculateCollisionInformation(box2, box1);
 }
 
-void Engine::BroadPhaseCollisions::update(const Collisions::CollisionGroup& group) {
+void Engine::BroadPhaseCollisions::update(Collisions::Group& group) {
 	for (auto& dynamicObject : group.getDynamicObjects()) {
 		const auto dynamicObjectPtr = dynamicObject.collisionComponent.lock();
 		if (!dynamicObjectPtr) {
