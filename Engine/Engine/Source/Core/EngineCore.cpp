@@ -53,6 +53,8 @@ void Engine::initialize(const std::function<void()>& initializeFunction, const s
 
 	if (imguiEnabled) Debug::setUpImGui();
 
+	Renderer::initialize();
+
 	initializeFunction();
 
 	engineState = EngineState::Running;

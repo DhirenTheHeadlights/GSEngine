@@ -6,7 +6,7 @@
 #include "Core/Object/Object.h"
 #include "Graphics/Renderer.h"
 #include "Physics/System.h"
-#include "Physics/Collision/BroadPhaseCollisionHandler.h"
+#include "Physics/Collision/BroadPhaseCollisions.h"
 
 namespace Engine {
 	class Scene {
@@ -35,7 +35,7 @@ namespace Engine {
 		std::shared_ptr<ID> id;
 
 		Physics::System physicsSystem;
-		BroadPhaseCollisionHandler broadPhaseCollisionHandler;
-		Renderer renderer;
+		Collisions::Group collisionGroup;
+		Renderer::Group renderGroup;
 	};
 }
