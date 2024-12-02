@@ -1,17 +1,35 @@
-#include "Physics/Collision/BroadPhaseCollisionHandler.h"
+#include "Physics/Collision/BroadPhaseCollisions.h"
 
 #include <iostream>
 
 #include "Physics/System.h"
 #include "Physics/Vector/Math.h"
 
-bool Engine::BroadPhaseCollisionHandler::checkCollision(const BoundingBox& box1, const BoundingBox& box2) {
+void Engine::Collisions::Group::addDynamicObject(const std::shared_ptr<Physics::CollisionComponent>& collisionComponent, const std::shared_ptr<Physics::MotionComponent>& motionComponent) {
+	dynamicObjects.emplace_back(collisionComponent, motionComponent);
+}
+
+void Engine::Collisions::Group::addObject(const std::shared_ptr<Physics::CollisionComponent>& collisionComponent) {
+	objects.emplace_back(collisionComponent);
+}
+
+void Engine::Collisions::Group::removeObject(const std::shared_ptr<Physics::CollisionComponent>& collisionComponent) {
+	std::erase_if(objects, [&](const Object& obj) {
+		return !obj.collisionComponent.owner_before(collisionComponent) && !collisionComponent.owner_before(obj.collisionComponent);
+		});
+
+	std::erase_if(dynamicObjects, [&](const DynamicObject& obj) {
+		return !obj.collisionComponent.owner_before(collisionComponent) && !collisionComponent.owner_before(obj.collisionComponent);
+		});
+}
+
+bool Engine::BroadPhaseCollisions::checkCollision(const BoundingBox& box1, const BoundingBox& box2) {
 	return box1.upperBound.asDefaultUnits().x > box2.lowerBound.asDefaultUnits().x && box1.lowerBound.asDefaultUnits().x < box2.upperBound.asDefaultUnits().x &&
 		   box1.upperBound.asDefaultUnits().y > box2.lowerBound.asDefaultUnits().y && box1.lowerBound.asDefaultUnits().y < box2.upperBound.asDefaultUnits().y &&
 		   box1.upperBound.asDefaultUnits().z > box2.lowerBound.asDefaultUnits().z && box1.lowerBound.asDefaultUnits().z < box2.upperBound.asDefaultUnits().z;
 }
 
-bool Engine::BroadPhaseCollisionHandler::checkCollision(const BoundingBox& dynamicBox, const std::shared_ptr<Physics::MotionComponent>& dynamicMotionComponent, const BoundingBox& otherBox) {
+bool Engine::BroadPhaseCollisions::checkCollision(const BoundingBox& dynamicBox, const std::shared_ptr<Physics::MotionComponent>& dynamicMotionComponent, const BoundingBox& otherBox) {
 	BoundingBox expandedBox = dynamicBox;										// Create a copy
 	Physics::MotionComponent tempComponent = *dynamicMotionComponent;
 	Physics::System::updateEntity(&tempComponent);								// Update the entity's position in the direction of its velocity
@@ -19,13 +37,13 @@ bool Engine::BroadPhaseCollisionHandler::checkCollision(const BoundingBox& dynam
 	return checkCollision(expandedBox, otherBox);								// Check for collision with the new expanded box
 }
 
-bool Engine::BroadPhaseCollisionHandler::checkCollision(const Vec3<Length>& point, const BoundingBox& box) {
+bool Engine::BroadPhaseCollisions::checkCollision(const Vec3<Length>& point, const BoundingBox& box) {
 	return point.asDefaultUnits().x > box.lowerBound.asDefaultUnits().x && point.asDefaultUnits().x < box.upperBound.asDefaultUnits().x &&
 		   point.asDefaultUnits().y > box.lowerBound.asDefaultUnits().y && point.asDefaultUnits().y < box.upperBound.asDefaultUnits().y &&
 		   point.asDefaultUnits().z > box.lowerBound.asDefaultUnits().z && point.asDefaultUnits().z < box.upperBound.asDefaultUnits().z;
 } 
 
-bool Engine::BroadPhaseCollisionHandler::checkCollision(const std::shared_ptr<Physics::CollisionComponent>& dynamicObjectCollisionComponent, const std::shared_ptr<Physics::MotionComponent>& dynamicObjectMotionComponent, const std::shared_ptr<Physics::CollisionComponent>& otherCollisionComponent) {
+bool Engine::BroadPhaseCollisions::checkCollision(const std::shared_ptr<Physics::CollisionComponent>& dynamicObjectCollisionComponent, const std::shared_ptr<Physics::MotionComponent>& dynamicObjectMotionComponent, const std::shared_ptr<Physics::CollisionComponent>& otherCollisionComponent) {
 	for (auto& box1 : dynamicObjectCollisionComponent->boundingBoxes) {
 		for (auto& box2 : otherCollisionComponent->boundingBoxes) {
 			if (checkCollision(box1, box2)) {
@@ -46,7 +64,7 @@ bool Engine::BroadPhaseCollisionHandler::checkCollision(const std::shared_ptr<Ph
 	return false;
 }
 
-Engine::CollisionInformation Engine::BroadPhaseCollisionHandler::calculateCollisionInformation(const BoundingBox& box1, const BoundingBox& box2) {
+Engine::CollisionInformation Engine::BroadPhaseCollisions::calculateCollisionInformation(const BoundingBox& box1, const BoundingBox& box2) {
 	CollisionInformation collisionInformation;
 
 	if (!checkCollision(box1, box2)) {
@@ -89,27 +107,13 @@ Engine::CollisionInformation Engine::BroadPhaseCollisionHandler::calculateCollis
 	return collisionInformation;
 }
 
-void Engine::BroadPhaseCollisionHandler::setCollisionInformation(const BoundingBox& box1, const BoundingBox& box2) {
+void Engine::BroadPhaseCollisions::setCollisionInformation(const BoundingBox& box1, const BoundingBox& box2) {
 	box1.collisionInformation = calculateCollisionInformation(box1, box2);
 	box2.collisionInformation = calculateCollisionInformation(box2, box1);
 }
 
-void Engine::BroadPhaseCollisionHandler::addDynamicComponents(const std::weak_ptr<Physics::CollisionComponent>& collisionComponent, const std::weak_ptr<Physics::MotionComponent>& motionComponent) {
-	dynamicObjects.emplace_back(collisionComponent, motionComponent);
-}
-
-void Engine::BroadPhaseCollisionHandler::addObjectComponent(const std::weak_ptr<Physics::CollisionComponent>& collisionComponent) {
-	objects.emplace_back(collisionComponent);
-}
-
-void Engine::BroadPhaseCollisionHandler::removeComponents(const std::weak_ptr<Physics::CollisionComponent>& collisionComponent) {
-	std::erase_if(dynamicObjects, [&collisionComponent](const DynamicObject& requiredComponents) {
-		return requiredComponents.collisionComponent.lock() == collisionComponent.lock();
-		});
-}
-
-void Engine::BroadPhaseCollisionHandler::update() const {
-	for (auto& dynamicObject : dynamicObjects) {
+void Engine::BroadPhaseCollisions::update(Collisions::Group& group) {
+	for (auto& dynamicObject : group.getDynamicObjects()) {
 		const auto dynamicObjectPtr = dynamicObject.collisionComponent.lock();
 		if (!dynamicObjectPtr) {
 			continue;
@@ -120,7 +124,7 @@ void Engine::BroadPhaseCollisionHandler::update() const {
 			continue;
 		}
 
-		for (auto& object : objects) {
+		for (auto& object : group.getObjects()) {
 			const auto objectPtr = object.collisionComponent.lock();
 			if (!objectPtr) {
 				continue;
