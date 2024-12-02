@@ -32,7 +32,7 @@ bool Engine::BroadPhaseCollisions::checkCollision(const BoundingBox& box1, const
 bool Engine::BroadPhaseCollisions::checkCollision(const BoundingBox& dynamicBox, const std::shared_ptr<Physics::MotionComponent>& dynamicMotionComponent, const BoundingBox& otherBox) {
 	BoundingBox expandedBox = dynamicBox;										// Create a copy
 	Physics::MotionComponent tempComponent = *dynamicMotionComponent;
-	Physics::System::updateEntity(&tempComponent);								// Update the entity's position in the direction of its velocity
+	updateEntity(&tempComponent);												// Update the entity's position in the direction of its velocity
 	expandedBox.setPosition(tempComponent.position);							// Set the expanded box's position to the updated position
 	return checkCollision(expandedBox, otherBox);								// Check for collision with the new expanded box
 }
@@ -52,7 +52,7 @@ bool Engine::BroadPhaseCollisions::checkCollision(const std::shared_ptr<Physics:
 				box1.collisionInformation.colliding = true;
 				box2.collisionInformation.colliding = true;
 
-				Physics::System::resolveCollision(box1, dynamicObjectMotionComponent, box2.collisionInformation);
+				resolveCollision(box1, dynamicObjectMotionComponent, box2.collisionInformation);
 
 				return true;
 			}
@@ -78,15 +78,15 @@ Engine::CollisionInformation Engine::BroadPhaseCollisions::calculateCollisionInf
 
 	// Find the axis with the smallest penetration
 	Length penetration = xPenetration;
-	Vec3<Unitless> collisionNormal(1.0f, 0.0f, 0.0f); // Default to X axis
+	Vec3 collisionNormal(1.0f, 0.0f, 0.0f); // Default to X axis
 
 	if (yPenetration < penetration) {
 		penetration = yPenetration;
-		collisionNormal = Vec3<Unitless>(0.0f, 1.0f, 0.0f);
+		collisionNormal = Vec3(0.0f, 1.0f, 0.0f);
 	}
 	if (zPenetration < penetration) {
 		penetration = zPenetration;
-		collisionNormal = Vec3<Unitless>(0.0f, 0.0f, 1.0f);
+		collisionNormal = Vec3(0.0f, 0.0f, 1.0f);
 	}
 
 	// Determine the collision normal
