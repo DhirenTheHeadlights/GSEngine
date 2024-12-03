@@ -303,7 +303,7 @@ void Engine::Renderer::renderObjects() {
 		: glm::vec3(0.0f, 1.0f, 0.0f);
 	glm::vec3 lightDirPerpendicular = glm::normalize(glm::cross(lightDir, reference));
 
-	glm::mat4 lightProjection = glm::ortho(-20.0f, 20.0f, -20.0f, 20.0f, nearPlane, farPlane);
+	glm::mat4 lightProjection = glm::ortho(-1000.0f, 1000.0f, -1000.0f, 1000.0f, nearPlane, farPlane);
 	glm::mat4 lightView = glm::lookAt(lightPos, lightPos + lightDir, {0.f,0.f,1.f});
 	const glm::mat4 lightSpaceMatrix = lightProjection * lightView;
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

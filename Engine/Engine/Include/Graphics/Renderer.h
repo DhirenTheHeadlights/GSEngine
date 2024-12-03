@@ -44,10 +44,10 @@ namespace Engine {
 		GLuint depthMapFBO;
 		GLuint depthMap;
 
-		GLsizei shadowWidth = 0;
-		GLsizei shadowHeight = 0;
+		GLsizei shadowWidth = 1024;
+		GLsizei shadowHeight = 1024;
 
-		const float nearPlane = 1.0f;
+		const float nearPlane = .5f;
 		const float farPlane = 10000.f;
 
 		//Debug Tool
