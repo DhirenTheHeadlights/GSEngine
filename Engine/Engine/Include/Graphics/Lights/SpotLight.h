@@ -28,6 +28,7 @@ namespace Engine {
 				Debug::unitSlider<Angle, Degrees>("Cut Off", cutOff, degrees(-270.0f), degrees(180.0f));
 				Debug::unitSlider<Angle, Degrees>("Outer Cut Off", outerCutOff, degrees(0.0f), degrees(90.0f));
 				Debug::unitSlider("Ambient Strength", ambientStrength, unitless(0.0f), unitless(10.0f));
+				ImGui::SliderFloat3("Direction", &direction.asDefaultUnits().x, -1.0f, 1.0f);
 				ImGui::SliderFloat3("Position", &position.asDefaultUnits().x, -100.0f, 100.0f);
 				ImGui::End();
 				});
