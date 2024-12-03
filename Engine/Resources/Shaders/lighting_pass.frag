@@ -101,13 +101,18 @@ void main() {
         else {             
             float distance = length(lights[i].position - FragPos);
             float theta = dot(normalize(lightDir), normalize(lights[i].direction));
-            float epsilon = lights[i].cutOff - lights[i].outerCutOff;
-            float intensity = clamp((theta - lights[i].outerCutOff) / epsilon, 0.0, 1.0);
-            shadow = 1.0 - calculateShadow(FragPosLightSpace, shadowMaps[i], -lights[i].direction, -lightDir, lights[i].cutOff, lights[i].outerCutOff);
-            float attenuation = 1.0 / (lights[i].constant + lights[i].linear * distance + lights[i].quadratic * (distance * distance));
-            diffuse *= attenuation * intensity;
-            specular *= attenuation * intensity;
-            resultColor += (ambient + shadow * (diffuse + specular)) * Albedo;
+
+            if (theta < lights[i].cutOff) {
+				float epsilon = lights[i].cutOff - lights[i].outerCutOff;
+                float intensity = clamp((theta - lights[i].outerCutOff) / epsilon, 0.0, 1.0) * lights[i].intensity;
+                shadow = 1.0 - calculateShadow(FragPosLightSpace, shadowMaps[i], -lights[i].direction, -lightDir, lights[i].cutOff, lights[i].outerCutOff);
+                float attenuation = 1.0 / (lights[i].constant + lights[i].linear * distance + lights[i].quadratic * (distance * distance));
+                diffuse *= attenuation * intensity;
+                specular *= attenuation * intensity;
+                resultColor += (ambient + shadow * (diffuse + specular)) * Albedo;
+            }
+
+            else resultColor += ambient * Albedo;
         }
     }
 
