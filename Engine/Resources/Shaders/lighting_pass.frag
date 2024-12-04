@@ -9,11 +9,11 @@ layout(binding = 2) uniform sampler2D gAlbedoSpec;
 
 #define MAX_LIGHTS 10
 layout(binding = 3) uniform sampler2D shadowMaps[MAX_LIGHTS];
-layout(std140, binding = 14) uniform LightSpaceBlock {
+layout(std140, binding = 4) uniform LightSpaceBlock {
     mat4 lightSpaceMatrices[MAX_LIGHTS];
 };
 
-layout(binding = 25) uniform samplerCube environmentMap;
+layout(binding = 5) uniform samplerCube environmentMap;
 
 struct Light {
     int lightType;
@@ -29,11 +29,11 @@ struct Light {
     float ambientStrength;
 };
 
-layout(std140, binding = 26) buffer Lights {
+layout(std140, binding = 6) buffer Lights {
     Light lights[];
 };
 
-layout(location = 27) uniform vec3 viewPos;
+layout(location = 7) uniform vec3 viewPos;
 
 // Shadow calculation function
 float calculateShadow(vec4 FragPosLightSpace, sampler2D shadowMap, vec3 lightDir, vec3 fragToLight, float innerCutOff, float outerCutOff) {
@@ -79,7 +79,7 @@ void main() {
         vec3 ambient = lights[i].ambientStrength * lights[i].color;
         float diff = max(dot(Normal, lightDir), 0.0);
         vec3 diffuse = diff * lights[i].color;
-        float spec = pow(max(dot(viewDir, reflectDir), 0.0), 2);
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), Specular);
         vec3 specular = lights[i].color * spec * 0.5;
         vec4 FragPosLightSpace = lightSpaceMatrices[i] * vec4(FragPos, 1.0);
         float shadow = 0;
@@ -100,12 +100,12 @@ void main() {
         // Spot Light
         else {             
             float distance = length(lights[i].position - FragPos);
-            float theta = dot(normalize(lightDir), normalize(lights[i].direction));
+            float theta = dot(normalize(lightDir), normalize(-lights[i].direction));
 
-            if (theta < lights[i].cutOff) {
+            if (theta > lights[i].cutOff) {
 				float epsilon = lights[i].cutOff - lights[i].outerCutOff;
                 float intensity = clamp((theta - lights[i].outerCutOff) / epsilon, 0.0, 1.0) * lights[i].intensity;
-                shadow = 1.0 - calculateShadow(FragPosLightSpace, shadowMaps[i], -lights[i].direction, -lightDir, lights[i].cutOff, lights[i].outerCutOff);
+                shadow = 1.0 - calculateShadow(FragPosLightSpace, shadowMaps[i], lights[i].direction, lightDir, lights[i].cutOff, lights[i].outerCutOff);
                 float attenuation = 1.0 / (lights[i].constant + lights[i].linear * distance + lights[i].quadratic * (distance * distance));
                 diffuse *= attenuation * intensity;
                 specular *= attenuation * intensity;
@@ -116,12 +116,12 @@ void main() {
         }
     }
 
-    vec3 reflectDir = reflect(-viewDir, Normal);
-    vec3 reflectionColor = texture(environmentMap, reflectDir).rgb;
-    float reflectivity = 0.01;
-    float fresnel = pow(1.0 - max(dot(viewDir, Normal), 0.0), 5.0);
-    reflectivity *= fresnel;
-    resultColor = mix(resultColor, reflectionColor, reflectivity);
+//    vec3 reflectDir = reflect(-viewDir, Normal);
+//    vec3 reflectionColor = texture(environmentMap, reflectDir).rgb;
+//    float reflectivity = 0.01;
+//    float fresnel = pow(1.0 - max(dot(viewDir, Normal), 0.0), 5.0);
+//    reflectivity *= fresnel;
+//    resultColor = mix(resultColor, reflectionColor, reflectivity);
 
     FragColor = vec4(resultColor, 1.0);
 }
