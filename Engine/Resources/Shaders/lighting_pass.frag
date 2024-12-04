@@ -35,6 +35,8 @@ layout(std140, binding = 6) buffer Lights {
 
 layout(location = 7) uniform vec3 viewPos;
 
+uniform bool depthMapDebug;
+
 // Shadow calculation function
 float calculateShadow(vec4 FragPosLightSpace, sampler2D shadowMap, vec3 lightDir, vec3 fragToLight, float innerCutOff, float outerCutOff) {
     vec3 projCoords = FragPosLightSpace.xyz / FragPosLightSpace.w;
@@ -63,6 +65,12 @@ float calculateShadow(vec4 FragPosLightSpace, sampler2D shadowMap, vec3 lightDir
 }
 
 void main() {
+    if (depthMapDebug) {
+        float depthValue = texture(shadowMaps[0], TexCoords).r;
+        FragColor = vec4(vec3(depthValue), 1.0);
+        return;
+    }
+
     vec3 FragPos = texture(gPosition, TexCoords).rgb;
     vec3 Normal = texture(gNormal, TexCoords).rgb;
     Normal = normalize(Normal);
