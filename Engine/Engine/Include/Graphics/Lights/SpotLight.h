@@ -21,14 +21,15 @@ namespace Engine {
 		void showDebugMenu() override {
 			Debug::addImguiCallback([this] {
 				ImGui::Begin("Spot Light");
-				Debug::unitSlider("Intensity", intensity, unitless(0.0f), unitless(100.0f));
+				Debug::unitSlider("Intensity", intensity, unitless(0.0f), unitless(1000.0f));
 				Debug::unitSlider("Constant", constant, unitless(0.0f), unitless(1.0f));
 				Debug::unitSlider("Linear", linear, unitless(0.0f), unitless(1.0f));
 				Debug::unitSlider("Quadratic", quadratic, unitless(0.0f), unitless(1.0f));
-				Debug::unitSlider<Angle, Degrees>("Cut Off", cutOff, degrees(-270.0f), degrees(180.0f));
+				Debug::unitSlider<Angle, Degrees>("Cut Off", cutOff, degrees(0.0f), degrees(90.0f));
 				Debug::unitSlider<Angle, Degrees>("Outer Cut Off", outerCutOff, degrees(0.0f), degrees(90.0f));
-				Debug::unitSlider("Ambient Strength", ambientStrength, unitless(0.0f), unitless(10.0f));
-				ImGui::SliderFloat3("Position", &position.asDefaultUnits().x, -100.0f, 100.0f);
+				Debug::unitSlider("Ambient Strength", ambientStrength, unitless(0.0f), unitless(1.0f));
+				ImGui::SliderFloat3("Direction", &direction.asDefaultUnits().x, -1.0f, 1.0f);
+				ImGui::SliderFloat3("Position", &position.asDefaultUnits().x, -500.0f, 500.0f);
 				ImGui::End();
 				});
 		}

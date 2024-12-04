@@ -168,13 +168,13 @@ void Engine::Renderer::initialize() {
 	glBindBuffer(GL_UNIFORM_BUFFER, lightSpaceBlockUBO);
 	size_t bufferSize = sizeof(glm::mat4) * 10; // MAX_LIGHTS is 10 in the shader
 	glBufferData(GL_UNIFORM_BUFFER, bufferSize, nullptr, GL_DYNAMIC_DRAW);
-	glBindBufferBase(GL_UNIFORM_BUFFER, 14, lightSpaceBlockUBO); // Binding point 14
+	glBindBufferBase(GL_UNIFORM_BUFFER, 4, lightSpaceBlockUBO);
 	glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
 	// Initialize SSBO for lights
 	glGenBuffers(1, &ssboLights);
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboLights);
-	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssboLights);
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, ssboLights);
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
 	lightingShader.use();
@@ -255,15 +255,17 @@ void renderObject(const Engine::LightRenderQueueEntry& entry) {
 	}
 }
 
-void renderLightingPass(const std::vector<Engine::LightShaderEntry>& lightData, const std::vector<glm::mat4>& lightSpaceMatrices, const std::vector<GLuint>& depthMaps) {
+void renderLightingPass(const std::vector<Engine::LightShaderEntry>& lightData, const std::vector<glm::mat4>& lightSpaceMatrices, const std::vector<GLuint>& depthMapFBOs) {
 	if (lightData.empty()) {
 		return;
 	}
 
+	lightingShader.use();
+
 	// Update SSBO with light data
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboLights);
 	glBufferData(GL_SHADER_STORAGE_BUFFER, lightData.size() * sizeof(Engine::LightShaderEntry), lightData.data(), GL_DYNAMIC_DRAW);
-	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 26, ssboLights);
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, ssboLights);
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
 	// Update UBO with light space matrices
@@ -275,12 +277,10 @@ void renderLightingPass(const std::vector<Engine::LightShaderEntry>& lightData, 
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	glDisable(GL_DEPTH_TEST);
 
-	lightingShader.use();
-
-	std::vector<GLint> shadowMapUnits(depthMaps.size());
-	for (size_t i = 0; i < depthMaps.size(); ++i) {
+	std::vector<GLint> shadowMapUnits(depthMapFBOs.size());
+	for (size_t i = 0; i < depthMapFBOs.size(); ++i) {
 		glActiveTexture(GL_TEXTURE3 + i);
-		glBindTexture(GL_TEXTURE_2D, depthMaps[i]);
+		glBindTexture(GL_TEXTURE_2D, depthMapFBOs[i]);
 		shadowMapUnits[i] = 3 + i;
 	}
 
@@ -295,7 +295,7 @@ void renderLightingPass(const std::vector<Engine::LightShaderEntry>& lightData, 
 	glActiveTexture(GL_TEXTURE2);
 	glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
 
-	constexpr GLuint bindingUnit = 25;
+	constexpr GLuint bindingUnit = 5;
 	reflectionCubeMap.bind(bindingUnit);
 	lightingShader.setInt("environmentMap", bindingUnit);
 
@@ -430,6 +430,8 @@ void Engine::Renderer::renderObjects(Group& group) {
 		}
 	}
 
+	forwardRenderingShader.use();
+
 	// Bind ssbo for cube map
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboLights);
 	glBufferData(GL_SHADER_STORAGE_BUFFER, lightData.size() * sizeof(LightShaderEntry), lightData.data(), GL_DYNAMIC_DRAW);
@@ -437,8 +439,6 @@ void Engine::Renderer::renderObjects(Group& group) {
 
 	reflectionCubeMap.update(glm::vec3(0.f), glm::perspective(glm::radians(45.0f), 1.0f, nearPlane.as<Meters>(), farPlane.as<Meters>()), [&group, renderComponents](const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssboLights);  // Binding point 0
-
-		forwardRenderingShader.use();
 
 		for (const auto& renderComponent : renderComponents) {
 			if (const auto renderComponentPtr = renderComponent.lock()) {
@@ -457,10 +457,10 @@ void Engine::Renderer::renderObjects(Group& group) {
 
 	std::vector<glm::mat4> lightSpaceMatrices;
 
+	shadowShader.use();
+
 	for (size_t i = 0; i < lightSourceComponents.size(); ++i) {
 		for (const auto& light : lightSourceComponents[i].lock()->getLights()) {
-			shadowShader.use();
-
 			lightSpaceMatrices.push_back(calculateLightSpaceMatrix(light));
 			renderShadowPass(renderComponents, lightSpaceMatrices.back(), group.depthMapFBOs[i]);
 		}
