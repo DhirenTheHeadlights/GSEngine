@@ -37,6 +37,8 @@ namespace {
 
 	Engine::Length nearPlane = Engine::meters(1.0f);
 	Engine::Length farPlane = Engine::meters(100.f);
+
+	bool depthMapDebug = false;
 }
 
 void Engine::Renderer::Group::addRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent) {
@@ -181,6 +183,7 @@ void Engine::Renderer::initialize() {
 	lightingShader.setInt("gPosition", 0);
 	lightingShader.setInt("gNormal", 1);
 	lightingShader.setInt("gAlbedoSpec", 2);
+	lightingShader.setBool("depthMapDebug", depthMapDebug);
 
 	shadowShader.createShaderProgram(shaderPath + "shadow.vert", shaderPath + "shadow.frag");
 
@@ -382,7 +385,9 @@ glm::mat4 calculateLightSpaceMatrix(const std::shared_ptr<Engine::Light>& light)
 	case Engine::LightType::Directional: {
 		const glm::vec3 lightDirection = light->getRenderQueueEntry().shaderEntry.direction;
 		const glm::vec3 lightPos = -lightDirection * 10.0f;
-		const glm::mat4 lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, nearPlane.as<Engine::Meters>(), farPlane.as<Engine::Meters>());
+
+		//Set Orthographic projection using the size/corners of the arena
+		const glm::mat4 lightProjection = glm::ortho(-1000.0f, 1000.0f, -1000.0f, 1000.0f, nearPlane.as<Engine::Meters>(), farPlane.as<Engine::Meters>());
 		const glm::mat4 lightView = lookAt(lightPos, lightPos + lightDirection, ensureNonCollinearUp(lightDirection, glm::vec3(0.0f, 1.0f, 0.0f)));
 		return lightProjection * lightView;
 	}

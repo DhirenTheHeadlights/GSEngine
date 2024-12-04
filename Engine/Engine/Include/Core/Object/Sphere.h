@@ -12,6 +12,7 @@ namespace Engine {
         void render() override {}
 
 		Vec3<Length> getPosition() const { return position; }
+        Length getRadius() const { return radius; }
     private:
         Vec3<Length> position;
         Length radius;
