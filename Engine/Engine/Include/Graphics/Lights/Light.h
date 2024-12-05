@@ -52,7 +52,7 @@ namespace Engine {
 		Light() = default;
 		virtual ~Light() = default;
 		virtual LightRenderQueueEntry getRenderQueueEntry() const = 0;
-        virtual void showDebugMenu() = 0;
+        virtual void showDebugMenu(const std::shared_ptr<ID>& lightID) = 0;
 
 		LightType getType() const { return type; }
 	protected:
