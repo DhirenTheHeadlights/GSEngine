@@ -18,9 +18,9 @@ namespace Engine {
 		Vec3<> direction;
 		Unitless ambientStrength;
 
-		void showDebugMenu() override {
-			Debug::addImguiCallback([this] {
-				ImGui::Begin("Spot Light");
+		void showDebugMenu(const std::shared_ptr<ID>& lightID) override {
+			Debug::addImguiCallback([this, lightID] {
+				ImGui::Begin(std::string("Spot Light " + lightID->tag).c_str());
 				Debug::unitSlider("Intensity", intensity, unitless(0.0f), unitless(1000.0f));
 				Debug::unitSlider("Constant", constant, unitless(0.0f), unitless(1.0f));
 				Debug::unitSlider("Linear", linear, unitless(0.0f), unitless(1.0f));

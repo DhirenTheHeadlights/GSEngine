@@ -48,7 +48,7 @@ float calculateShadow(vec4 FragPosLightSpace, sampler2D shadowMap, vec3 lightDir
 
     float closestDepth = texture(shadowMap, projCoords.xy).r;
     float currentDepth = projCoords.z;
-    float bias = max(0.005 * (1.0 - dot(normalize(fragToLight), normalize(lightDir))), 0.0005);
+    float bias = max(0.005 * (1.0 - dot(normalize(fragToLight), normalize(lightDir))), 0.005);
 
     // PCF (Percentage-Closer Filtering) for soft shadows
     float shadow = 0.0;
@@ -95,14 +95,20 @@ void main() {
         // Directional Light
         if (lights[i].lightType == 0) {
            shadow = 1.0 - calculateShadow(FragPosLightSpace, shadowMaps[i], -lights[i].direction, -lightDir, lights[i].cutOff, lights[i].outerCutOff);
+
+           resultColor += (ambient + shadow * (diffuse + specular)) * Albedo;
         }
         // Point Light
         else if (lights[i].lightType == 1) {
             float distance = length(lights[i].position - FragPos);
             float attenuation = 1.0 / (lights[i].constant + lights[i].linear * distance + lights[i].quadratic * (distance * distance));
 
-            diffuse *= attenuation;
-            specular *= attenuation;
+            shadow = 1.0 - calculateShadow(FragPosLightSpace, shadowMaps[i], lights[i].direction, lightDir, lights[i].cutOff, lights[i].outerCutOff);
+
+            diffuse *= attenuation * lights[i].intensity;
+            specular *= attenuation * lights[i].intensity;
+
+            resultColor += (ambient + shadow * (diffuse + specular)) * Albedo;
 
         }
         // Spot Light
@@ -113,7 +119,9 @@ void main() {
             if (theta > lights[i].cutOff) {
 				float epsilon = lights[i].cutOff - lights[i].outerCutOff;
                 float intensity = clamp((theta - lights[i].outerCutOff) / epsilon, 0.0, 1.0) * lights[i].intensity;
+
                 shadow = 1.0 - calculateShadow(FragPosLightSpace, shadowMaps[i], lights[i].direction, lightDir, lights[i].cutOff, lights[i].outerCutOff);
+
                 float attenuation = 1.0 / (lights[i].constant + lights[i].linear * distance + lights[i].quadratic * (distance * distance));
                 diffuse *= attenuation * intensity;
                 specular *= attenuation * intensity;

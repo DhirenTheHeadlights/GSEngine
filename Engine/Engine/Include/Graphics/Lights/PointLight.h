@@ -17,9 +17,9 @@ namespace Engine {
 		Unitless quadratic;
 		Unitless ambientStrength;
 
-		void showDebugMenu() override {
-			Debug::addImguiCallback([this] {
-				ImGui::Begin("Point Light");
+		void showDebugMenu(const std::shared_ptr<ID>& lightID) override {
+			Debug::addImguiCallback([this, lightID] {
+				ImGui::Begin(std::string("Point Light " + lightID->tag).c_str());
 				ImGui::ColorEdit3("Color", &color.asDefaultUnits().x);
 				Debug::unitSlider("Intensity", intensity, unitless(0.0f), unitless(100.0f));
 				Debug::unitSlider("Constant", constant, unitless(0.0f), unitless(1.0f));
