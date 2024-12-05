@@ -35,8 +35,8 @@ namespace {
 	GLsizei shadowWidth = 2048;
 	GLsizei shadowHeight = 2048;
 
-	Engine::Length nearPlane = Engine::meters(1.0f);
-	Engine::Length farPlane = Engine::meters(100.f);
+	Engine::Length nearPlane = Engine::meters(10.0f);
+	Engine::Length farPlane = Engine::meters(1000.f);
 
 	bool depthMapDebug = false;
 }
@@ -336,12 +336,11 @@ void renderLightingPass(const std::vector<Engine::LightShaderEntry>& lightData, 
 	glEnable(GL_DEPTH_TEST);  // Re-enable depth testing after the lighting pass
 }
 
-void renderShadowPass(const std::vector<std::weak_ptr<Engine::RenderComponent>>& renderComponents, const glm::mat4& lightSpaceMatrix, const GLuint depthMap) {
+void renderShadowPass(const std::vector<std::weak_ptr<Engine::RenderComponent>>& renderComponents, const glm::mat4& lightSpaceMatrix, const GLuint depthMapFBO) {
 	shadowShader.setMat4("lightSpaceMatrix", lightSpaceMatrix);
 
-	glEnable(GL_DEPTH_TEST);
 	glViewport(0, 0, shadowWidth, shadowHeight);
-	glBindFramebuffer(GL_FRAMEBUFFER, depthMap);
+	glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
 	glClear(GL_DEPTH_BUFFER_BIT);
 
 	for (const auto& renderComponent : renderComponents) {
@@ -416,8 +415,8 @@ void Engine::Renderer::renderObjects(Group& group) {
 
 	Debug::addImguiCallback([] {
 		ImGui::Begin("Near/Far Plane");
-		Debug::unitSlider<Length, Meters>("Near Plane", nearPlane, meters(0.1f), meters(10.0f));
-		Debug::unitSlider<Length, Meters>("Far Plane", farPlane, meters(10.0f), meters(1000.0f));
+		Debug::unitSlider<Length, Meters>("Near Plane", nearPlane, meters(0.1f), meters(100.0f));
+		Debug::unitSlider<Length, Meters>("Far Plane", farPlane, meters(10.0f), meters(10000.0f));
 		ImGui::End();
 		});
 
