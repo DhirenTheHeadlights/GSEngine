@@ -27,8 +27,8 @@ bool Game::initialize() {
 	box    = std::make_shared<Engine::Box>(Engine::Vec3<Engine::Meters>(20.f, -400.f, 20.f), Engine::Vec3<Engine::Meters>(20.f, 20.f, 20.f));
 	box2   = std::make_shared<Engine::Box>(Engine::Vec3<Engine::Meters>(-20.f, -400.f, 20.f), Engine::Vec3<Engine::Meters>(40.f, 40.f, 40.f));
 	sphere = std::make_shared<SphereLight>(Engine::Vec3<Engine::Meters>(0.f, -300.f, 0.f), Engine::meters(10.f));
-	sphere2 = std::make_shared<SphereLight>(Engine::Vec3<Engine::Meters>(0.f, 0.f, 0.f), Engine::meters(1.f));
-	sphere3 = std::make_shared<Engine::Sphere>(Engine::Vec3<Engine::Meters>(400.f, -400.f, 400.f), Engine::meters(10.f));
+	//sphere2 = std::make_shared<SphereLight>(Engine::Vec3<Engine::Meters>(0.f, 0.f, 0.f), Engine::meters(1.f));
+	sphere3 = std::make_shared<Engine::Sphere>(Engine::Vec3<Engine::Meters>(0.f, -400.f, 200.f), Engine::meters(10.f));
 
 	const auto scene1 = std::make_shared<Engine::Scene>();
 
@@ -37,7 +37,7 @@ bool Game::initialize() {
 	scene1->addObject(box);
 	scene1->addObject(box2);
 	scene1->addObject(sphere);
-	//scene1->addObject(sphere2);
+	scene1->addObject(sphere2);
 	scene1->addObject(sphere3);
 
 	Engine::sceneHandler.addScene(scene1, "Scene1");
