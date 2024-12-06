@@ -3,9 +3,6 @@
     "vertex": "lighting_pass.vert",
     "fragment": "lighting_pass.frag"
   },
-  "Geometry": {
-    "geometry": "geometry_pass.geom"
-  },
   "Emissive": {
     "vertex": "emissive.vert",
     "fragment": "emissive.frag"
