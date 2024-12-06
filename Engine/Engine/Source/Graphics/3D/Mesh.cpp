@@ -1,4 +1,4 @@
-#include "Graphics/Mesh.h"
+#include "Graphics/3D/Mesh.h"
 
 Engine::Mesh::Mesh() {
 	glGenVertexArrays(1, &VAO);

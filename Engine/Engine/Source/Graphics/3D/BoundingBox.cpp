@@ -1,4 +1,4 @@
-#include "Graphics/BoundingBox.h"
+#include "Graphics/3D/BoundingBox.h"
 
 #include <iostream>
 

@@ -4,8 +4,8 @@
 
 #include "ID.h"
 #include "SceneHandler.h"
-#include "Graphics/Camera.h"
-#include "Graphics/Renderer.h"
+#include "Graphics/3D/Camera.h"
+#include "Graphics/3D/Renderer3D.h"
 #include "Object/Object.h"
 
 namespace Engine {

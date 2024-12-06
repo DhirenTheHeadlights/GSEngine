@@ -1,4 +1,4 @@
-#include "Graphics/Camera.h"
+#include "Graphics/3D/Camera.h"
 
 #include "Physics/Vector/Math.h"
 #include "Platform/GLFW/Window.h"
