@@ -32,13 +32,13 @@ namespace {
 	Engine::Shader shadowShader;
 	Engine::Shader forwardRenderingShader;
 
-	GLsizei shadowWidth = 2048;
-	GLsizei shadowHeight = 2048;
+	float shadowWidth = 4096;
+	float shadowHeight = 4096;
 
-	Engine::Length nearPlane = Engine::meters(1.0f);
-	Engine::Length farPlane = Engine::meters(100.f);
+	Engine::Length nearPlane = Engine::meters(10.0f);
+	Engine::Length farPlane = Engine::meters(1000.f);
 
-	bool depthMapDebug = false;
+	bool depthMapDebug = true;
 }
 
 void Engine::Renderer::Group::addRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent) {
@@ -336,25 +336,28 @@ void renderLightingPass(const std::vector<Engine::LightShaderEntry>& lightData, 
 	glEnable(GL_DEPTH_TEST);  // Re-enable depth testing after the lighting pass
 }
 
-void renderShadowPass(const std::vector<std::weak_ptr<Engine::RenderComponent>>& renderComponents, const glm::mat4& lightSpaceMatrix, const GLuint depthMap) {
+void renderShadowPass(const std::vector<std::weak_ptr<Engine::RenderComponent>>& renderComponents, const glm::mat4& lightSpaceMatrix, const GLuint depthMapFBO) {
+
+
 	shadowShader.setMat4("lightSpaceMatrix", lightSpaceMatrix);
 
-	glEnable(GL_DEPTH_TEST);
 	glViewport(0, 0, shadowWidth, shadowHeight);
-	glBindFramebuffer(GL_FRAMEBUFFER, depthMap);
+	glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
 	glClear(GL_DEPTH_BUFFER_BIT);
+
 
 	for (const auto& renderComponent : renderComponents) {
 		if (const auto renderComponentPtr = renderComponent.lock()) {
 			for (const auto& entry : renderComponentPtr->getQueueEntries()) {
 				shadowShader.setMat4("model", entry.modelMatrix);
-
 				glBindVertexArray(entry.VAO);
 				glDrawElements(entry.drawMode, entry.vertexCount, GL_UNSIGNED_INT, nullptr);
 				glBindVertexArray(0);
 			}
 		}
 	}
+
+
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	glViewport(0, 0, Engine::Window::getFrameBufferSize().x, Engine::Window::getFrameBufferSize().y); // Restore viewport
@@ -387,7 +390,7 @@ glm::mat4 calculateLightSpaceMatrix(const std::shared_ptr<Engine::Light>& light)
 		const glm::vec3 lightPos = -lightDirection * 10.0f;
 
 		//Set Orthographic projection using the size/corners of the arena
-		const glm::mat4 lightProjection = glm::ortho(-1000.0f, 1000.0f, -1000.0f, 1000.0f, nearPlane.as<Engine::Meters>(), farPlane.as<Engine::Meters>());
+		const glm::mat4 lightProjection = glm::ortho(-10000.0f, 10000.0f, -10000.0f, 1000.0f, nearPlane.as<Engine::Meters>(), farPlane.as<Engine::Meters>());
 		const glm::mat4 lightView = lookAt(lightPos, lightPos + lightDirection, ensureNonCollinearUp(lightDirection, glm::vec3(0.0f, 1.0f, 0.0f)));
 		return lightProjection * lightView;
 	}
@@ -399,9 +402,26 @@ glm::mat4 calculateLightSpaceMatrix(const std::shared_ptr<Engine::Light>& light)
 		const glm::mat4 lightView = lookAt(lightPos, lightPos + lightDirection, ensureNonCollinearUp(lightDirection, glm::vec3(0.0f, 1.0f, 0.0f)));
 		return lightProjection * lightView;
 	}
-	case Engine::LightType::Point:
-
+	case Engine::LightType::Point: {
+		float aspect = shadowWidth / shadowHeight;
+		glm::mat4 shadowProj = glm::perspective(glm::radians(90.0f), aspect, nearPlane.as<Engine::Meters>(), farPlane.as<Engine::Meters>());
+		
+		const glm::vec3 lightPos = light->getRenderQueueEntry().shaderEntry.position;
+		std::vector<glm::mat4> shadowTransforms;
+		shadowTransforms.push_back(shadowProj *
+			glm::lookAt(lightPos, lightPos + glm::vec3(1.0, 0.0, 0.0), glm::vec3(0.0, -1.0, 0.0)));
+		shadowTransforms.push_back(shadowProj *
+			glm::lookAt(lightPos, lightPos + glm::vec3(-1.0, 0.0, 0.0), glm::vec3(0.0, -1.0, 0.0)));
+		shadowTransforms.push_back(shadowProj *
+			glm::lookAt(lightPos, lightPos + glm::vec3(0.0, 1.0, 0.0), glm::vec3(0.0, 0.0, 1.0)));
+		shadowTransforms.push_back(shadowProj *
+			glm::lookAt(lightPos, lightPos + glm::vec3(0.0, -1.0, 0.0), glm::vec3(0.0, 0.0, -1.0)));
+		shadowTransforms.push_back(shadowProj *
+			glm::lookAt(lightPos, lightPos + glm::vec3(0.0, 0.0, 1.0), glm::vec3(0.0, -1.0, 0.0)));
+		shadowTransforms.push_back(shadowProj *
+			glm::lookAt(lightPos, lightPos + glm::vec3(0.0, 0.0, -1.0), glm::vec3(0.0, -1.0, 0.0)));
 		break;
+	}
 	}
 	return { 1.0f };
 }
@@ -416,8 +436,8 @@ void Engine::Renderer::renderObjects(Group& group) {
 
 	Debug::addImguiCallback([] {
 		ImGui::Begin("Near/Far Plane");
-		Debug::unitSlider<Length, Meters>("Near Plane", nearPlane, meters(0.1f), meters(10.0f));
-		Debug::unitSlider<Length, Meters>("Far Plane", farPlane, meters(10.0f), meters(1000.0f));
+		Debug::unitSlider<Length, Meters>("Near Plane", nearPlane, meters(0.1f), meters(100.0f));
+		Debug::unitSlider<Length, Meters>("Far Plane", farPlane, meters(10.0f), meters(10000.0f));
 		ImGui::End();
 		});
 
