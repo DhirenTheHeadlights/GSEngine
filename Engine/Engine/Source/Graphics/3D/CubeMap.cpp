@@ -1,4 +1,4 @@
-#include "Graphics/CubeMap.h"
+#include "Graphics/3D/CubeMap.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <iostream>

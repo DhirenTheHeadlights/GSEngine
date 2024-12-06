@@ -1,4 +1,4 @@
-#include "Graphics/BoundingBoxMesh.h"
+#include "Graphics/3D/BoundingBoxMesh.h"
 
 Engine::BoundingBoxMesh::BoundingBoxMesh(const Vec3<Length>& lower, const Vec3<Length>& upper)
 	: lower(lower), upper(upper) {

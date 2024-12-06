@@ -4,9 +4,9 @@
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 
-#include "BoundingBoxMesh.h"
 #include "Core/EngineComponent.h"
-#include "Graphics/Mesh.h"
+#include "Graphics/3D/BoundingBoxMesh.h"
+#include "Graphics/3D/Mesh.h"
 
 namespace Engine {
 	class RenderComponent : public EngineComponent {
