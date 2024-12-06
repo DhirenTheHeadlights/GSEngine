@@ -5,7 +5,7 @@
 
 #include "MotionComponent.h"
 #include "Core/Object/Object.h"
-#include "Graphics/BoundingBox.h"
+#include "Graphics/3D/BoundingBox.h"
 
 namespace Engine::Physics {
 	class Group {

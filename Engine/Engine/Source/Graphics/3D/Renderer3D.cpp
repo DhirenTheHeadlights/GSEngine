@@ -1,4 +1,4 @@
-#include "Graphics/Renderer.h"
+#include "Graphics/3D/Renderer3D.h"
 
 #include <algorithm>
 #include <glm/gtc/type_ptr.hpp>
@@ -6,8 +6,8 @@
 
 #include "Core/JsonParser.h"
 #include "Core/ResourcePaths.h"
-#include "Graphics/CubeMap.h"
-#include "Graphics/Material.h"
+#include "Graphics/3D/CubeMap.h"
+#include "Graphics/3D/Material.h"
 #include "Graphics/Shader.h"
 #include "Platform/GLFW/ErrorReporting.h"
 #include "Platform/GLFW/Input.h"

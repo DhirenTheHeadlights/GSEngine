@@ -1,6 +1,6 @@
 #pragma once
 #include <vector>
-#include "Graphics/Mesh.h"
+#include "Graphics/3D/Mesh.h"
 #include "Physics/Vector/Vec3.h"
 
 namespace Engine {

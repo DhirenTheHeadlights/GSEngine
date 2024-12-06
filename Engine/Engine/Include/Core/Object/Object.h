@@ -4,7 +4,7 @@
 #include <vector>
 
 #include "Core/ID.h"
-#include "Graphics/BoundingBox.h"
+#include "Graphics/3D/BoundingBox.h"
 #include "Core/Object/Hook.h"
 
 namespace Engine {

@@ -4,7 +4,7 @@
 #include <vector>
 
 #include "Core/Object/Object.h"
-#include "Graphics/Renderer.h"
+#include "Graphics/3D/Renderer3D.h"
 #include "Physics/System.h"
 #include "Physics/Collision/BroadPhaseCollisions.h"
 

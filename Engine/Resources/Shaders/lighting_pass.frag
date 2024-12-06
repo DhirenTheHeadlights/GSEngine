@@ -1,19 +1,19 @@
 #version 430 core
 
-layout(location = 0) out vec4 FragColor;
-layout(location = 0) in vec2 TexCoords;
+out vec4 FragColor;
+in vec2 TexCoords;
 
-layout(binding = 0) uniform sampler2D gPosition;
-layout(binding = 1) uniform sampler2D gNormal;
-layout(binding = 2) uniform sampler2D gAlbedoSpec;
+uniform sampler2D gPosition;
+uniform sampler2D gNormal;
+uniform sampler2D gAlbedoSpec;
 
 #define MAX_LIGHTS 10
-layout(binding = 3) uniform sampler2D shadowMaps[MAX_LIGHTS];
+uniform sampler2D shadowMaps[MAX_LIGHTS];
 layout(std140, binding = 4) uniform LightSpaceBlock {
     mat4 lightSpaceMatrices[MAX_LIGHTS];
 };
 
-layout(binding = 5) uniform samplerCube environmentMap;
+uniform samplerCube environmentMap;
 
 struct Light {
     int lightType;
@@ -33,7 +33,7 @@ layout(std140, binding = 6) buffer Lights {
     Light lights[];
 };
 
-layout(location = 7) uniform vec3 viewPos;
+uniform vec3 viewPos;
 
 uniform bool depthMapDebug;
 
