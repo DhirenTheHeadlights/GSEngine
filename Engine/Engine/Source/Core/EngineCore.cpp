@@ -1,7 +1,7 @@
 #include "Core/EngineCore.h"
 
 #include "Core/Clock.h"
-#include "Graphics/Renderer.h"
+#include "Graphics/3D/Renderer3D.h"
 #include "Platform/PermaAssert.h"
 #include "Platform/GLFW/Input.h"
 #include "Platform/GLFW/Window.h"
