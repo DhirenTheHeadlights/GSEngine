@@ -38,7 +38,7 @@ namespace {
 	Engine::Length nearPlane = Engine::meters(10.0f);
 	Engine::Length farPlane = Engine::meters(1000.f);
 
-	bool depthMapDebug = true;
+	bool depthMapDebug = false;
 }
 
 void Engine::Renderer::Group::addRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent) {
