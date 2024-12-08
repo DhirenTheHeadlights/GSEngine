@@ -31,20 +31,54 @@ namespace Engine {
     };
 
     struct LightRenderQueueEntry {
-		std::string shaderKey = "Emissive";
-		LightShaderEntry shaderEntry;
+        std::string shaderKey = "Emissive";
+        LightShaderEntry shaderEntry;
 
-        // Constructor for Directional Light
-		LightRenderQueueEntry(const LightType type, const Vec3<>& color, const Unitless& intensity, const Vec3<>& direction, const Unitless& ambientStrength)
-            : shaderEntry({ static_cast<int>(type), { 0, 0, 0 }, { 0, 0, 0 }, 0, direction.asDefaultUnits(), 0, color.asDefaultUnits(), intensity, 0, 0, 0, 0, 0, ambientStrength, 0 }) {}
+        GLuint depthMap = 0;
+        GLuint depthMapFBO = 0;
 
-        // Constructor for Point Light
-		LightRenderQueueEntry(const LightType type, const Vec3<>& color, const Unitless& intensity, const Vec3<Length>& position, const Unitless& constant, const Unitless& linear, const Unitless& quadratic, const Unitless& ambientStrength)
-			: shaderEntry({ static_cast<int>(type), { 0, 0, 0 }, position.asDefaultUnits(), 0, {0, 0, 0}, 0, color.asDefaultUnits(), intensity, constant, linear, quadratic, 0, 0, ambientStrength, 0 }) {}
+        Length nearPlane = meters(0.1f);
+        Length farPlane = meters(1000.0f);
 
-        // Constructor for Spotlight
-		LightRenderQueueEntry(const LightType type, const Vec3<>& color, const Unitless& intensity, const Vec3<Length>& position, const Vec3<>& direction, const Unitless& constant, const Unitless& linear, const Unitless& quadratic, const Angle& cutOff, const Angle& outerCutOff, const Unitless& ambientStrength)
-            : shaderEntry({ static_cast<int>(type), { 0, 0, 0 }, position.asDefaultUnits(), 0, direction.asDefaultUnits(), 0, color.asDefaultUnits(), intensity, constant, linear, quadratic, std::cos(cutOff.as<Radians>()), std::cos(outerCutOff.as<Radians>()), ambientStrength, 0 }) {}
+        LightRenderQueueEntry(
+			GLuint depthMap,
+			GLuint depthMapFBO,
+            LightType type,
+            const Vec3<>& color,
+            const Unitless& intensity,
+            const Vec3<Length>& position = Vec3<Length>(),  // Default: No position for non-point lights
+            const Vec3<>& direction = Vec3(),               // Default: No direction for non-directional lights
+            const Unitless& constant = 1.0f,                // Default: No attenuation
+            const Unitless& linear = 0.0f,
+            const Unitless& quadratic = 0.0f,
+            const Angle& cutOff = degrees(0.0f),            // Default: No spotlight cutoff
+			const Angle& outerCutOff = degrees(0.0f),	    // Default: No spotlight outer cutoff
+            const Unitless& ambientStrength = 0.0f,         // Default: No ambient strength
+			const Length& nearPlane = meters(0.1f),         // Default: Near plane for shadow mapping
+			const Length& farPlane = meters(1000.0f)        // Default: Far plane for shadow mapping
+		)
+    	: shaderEntry({
+				static_cast<int>(type),
+				{0, 0, 0},
+				position.asDefaultUnits(),
+				0,
+				direction.asDefaultUnits(),
+				0,
+				color.asDefaultUnits(),
+				intensity,
+				constant,
+				linear,
+				quadratic,
+				std::cos(cutOff.as<Radians>()),
+				std::cos(outerCutOff.as<Radians>()),
+				ambientStrength,
+				0
+			}),
+    		depthMap(depthMap),
+    		depthMapFBO(depthMapFBO),
+			nearPlane(nearPlane),
+			farPlane(farPlane)
+		{}
     };
 
 	class Light {
@@ -55,6 +89,7 @@ namespace Engine {
         virtual void showDebugMenu(const std::shared_ptr<ID>& lightID) = 0;
 
 		LightType getType() const { return type; }
+		virtual void setDepthMap(const GLuint depthMap, const GLuint depthMapFBO) {}
 	protected:
 		Light(const Vec3<>& color, const Unitless& intensity, const LightType type)
 			: color(color), intensity(intensity), type(type) {}
@@ -62,5 +97,8 @@ namespace Engine {
 		Vec3<> color;
 		Unitless intensity = 1.0f;
 		LightType type;
+
+		Length nearPlane = meters(0.1f);
+		Length farPlane = meters(1000.0f);
 	};
 }

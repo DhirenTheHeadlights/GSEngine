@@ -24,6 +24,7 @@ namespace Engine {
 		GLuint frameBufferID;
 		GLuint depthRenderBufferID;
 		int resolution;
+		bool depthOnly;
 
 		static std::vector<glm::mat4> getViewMatrices(const glm::vec3& position);
 	};

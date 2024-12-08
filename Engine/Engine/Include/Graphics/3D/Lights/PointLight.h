@@ -28,7 +28,7 @@ namespace Engine {
 		}
 
 		LightRenderQueueEntry getRenderQueueEntry() const override {
-			return { LightType::Point, color, intensity, position, constant, linear, quadratic, ambientStrength };
+			return { shadowMap.getTextureID(), shadowMap.getFrameBufferID(), LightType::Point, color, intensity, position, Vec3(), constant, linear, quadratic, degrees(0.0f), degrees(0.0f), ambientStrength };
 		}
 
 		CubeMap& getShadowMap() { return shadowMap; }

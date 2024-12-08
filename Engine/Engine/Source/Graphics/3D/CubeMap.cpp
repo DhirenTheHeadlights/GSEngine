@@ -39,6 +39,7 @@ void Engine::CubeMap::create(const std::vector<std::string>& faces) {
 
 void Engine::CubeMap::create(const int resolution, const bool depthOnly) {
     this->resolution = resolution;
+	this->depthOnly = depthOnly;
 
     glGenTextures(1, &textureID);
     glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
@@ -81,21 +82,30 @@ void Engine::CubeMap::bind(const GLuint unit) const {
 }
 
 void Engine::CubeMap::update(const glm::vec3& position, const glm::mat4& projectionMatrix, const std::function<void(const glm::mat4&, const glm::mat4&)>& renderFunction) const {
-	glBindFramebuffer(GL_FRAMEBUFFER, frameBufferID);
-	glViewport(0, 0, resolution, resolution);
-	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glBindFramebuffer(GL_FRAMEBUFFER, frameBufferID);
+    glViewport(0, 0, resolution, resolution);
 
-	const std::vector<glm::mat4> viewMatrices = getViewMatrices(position);
+    const std::vector<glm::mat4> viewMatrices = getViewMatrices(position);
 
-	for (unsigned int i = 0; i < 6; i++) {
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, textureID, 0);
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    for (unsigned int i = 0; i < 6; i++) {
+        if (depthOnly) {
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, textureID, 0);
+            glDrawBuffer(GL_NONE);
+            glReadBuffer(GL_NONE);
+            glClear(GL_DEPTH_BUFFER_BIT);
+        }
+        else {
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, textureID, 0);
+            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        }
 
-		renderFunction(viewMatrices[i], projectionMatrix);
-	}
+        renderFunction(viewMatrices[i], projectionMatrix);
+    }
 
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
+
 
 std::vector<glm::mat4> Engine::CubeMap::getViewMatrices(const glm::vec3& position) {
 	return {

@@ -18,9 +18,6 @@ namespace Engine::Renderer {
 		auto getLightSourceComponents() -> std::vector<std::weak_ptr<LightSourceComponent>>& {
 			return lightSourceComponents;
 		}
-
-		std::vector<GLuint> depthMaps;
-		std::vector<GLuint> depthMapFBOs;
 	private:
 		std::vector<std::weak_ptr<RenderComponent>> renderComponents;
 		std::vector<std::weak_ptr<LightSourceComponent>> lightSourceComponents;

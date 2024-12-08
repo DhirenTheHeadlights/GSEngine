@@ -22,10 +22,18 @@ namespace Engine {
 		}	
 		
 		LightRenderQueueEntry getRenderQueueEntry() const override {
-			return { LightType::Directional, color, intensity, direction, ambientStrength };
+			return { depthMap, depthMapFBO, LightType::Directional, color, intensity, Vec3<Length>(), direction, 0.0f, 0.0f, 0.0f, degrees(0.0f), degrees(0.0f), ambientStrength };
+		}
+
+		void setDepthMap(const GLuint depthMap, const GLuint depthMapFBO) override {
+			this->depthMap = depthMap;
+			this->depthMapFBO = depthMapFBO;
 		}
 	private:
 		Vec3<> direction;
 		Unitless ambientStrength;
+
+		GLuint depthMap = 0;
+		GLuint depthMapFBO = 0;
 	};
 }
