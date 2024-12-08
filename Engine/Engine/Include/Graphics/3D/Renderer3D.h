@@ -1,8 +1,7 @@
 #pragma once
 
-
-#include "Graphics/3D/Camera.h"
 #include "Graphics/RenderComponent.h"
+#include "Graphics/3D/Camera.h"
 #include "Lights/LightSourceComponent.h"
 
 namespace Engine::Renderer {
