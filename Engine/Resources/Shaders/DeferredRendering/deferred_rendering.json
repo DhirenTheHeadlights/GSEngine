@@ -1,0 +1,10 @@
+{
+  "LightingPass": {
+    "vertex": "lighting_pass.vert",
+    "fragment": "lighting_pass.frag"
+  },
+  "ShadowPass": {
+    "vertex": "shadow_pass.vert",
+    "fragment": "shadow_pass.frag"
+  }
+}

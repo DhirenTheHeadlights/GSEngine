@@ -6,14 +6,20 @@
 
 #include "glm/gtc/type_ptr.hpp"
 
-Engine::Shader::Shader(const std::string& vertexPath, const std::string& fragmentPath) {
-	createShaderProgram(vertexPath, fragmentPath);
+Engine::Shader::Shader(const std::string& vertexPath, const std::string& fragmentPath, const std::string& geometryPath) {
+	if (!geometryPath.empty()) {
+		createShaderProgram(vertexPath, fragmentPath, geometryPath);
+	}
+    else {
+        createShaderProgram(vertexPath, fragmentPath);
+    }
 }
 
-void Engine::Shader::createShaderProgram(const std::string& vertexPath, const std::string& fragmentPath) {
+void Engine::Shader::createShaderProgram(const std::string& vertexPath, const std::string& fragmentPath, const std::string& geometryPath) {
     // 1. Retrieve the vertex and fragment shader source code from file paths
     const std::string vertexCode = loadShaderSource(vertexPath);
     const std::string fragmentCode = loadShaderSource(fragmentPath);
+	const std::string geometryCode = geometryPath.empty() ? "" : loadShaderSource(geometryPath);
 
     const char* vShaderCode = vertexCode.c_str();
     const char* fShaderCode = fragmentCode.c_str();
@@ -30,16 +36,31 @@ void Engine::Shader::createShaderProgram(const std::string& vertexPath, const st
     glCompileShader(fragmentShader);
     checkCompileErrors(fragmentShader, "FRAGMENT");
 
+	// Geometry Shader
+    const unsigned int geometryShader = glCreateShader(GL_GEOMETRY_SHADER);
+    if (!geometryPath.empty()) {
+        const char* gShaderCode = geometryCode.c_str();
+        glShaderSource(geometryShader, 1, &gShaderCode, nullptr);
+        glCompileShader(geometryShader);
+        checkCompileErrors(geometryShader, "GEOMETRY");
+    }
+
     // 3. Link shaders to create the shader program
     ID = glCreateProgram();
     glAttachShader(ID, vertexShader);
     glAttachShader(ID, fragmentShader);
+	if (!geometryPath.empty()) {
+		glAttachShader(ID, geometryShader);
+	}
     glLinkProgram(ID);
     checkCompileErrors(ID, "PROGRAM");
 
     // 4. Clean up the shaders as they are no longer needed once linked
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
+	if (!geometryPath.empty()) {
+		glDeleteShader(geometryShader);
+	}
 
     // Cache uniform locations
     cacheUniformLocations();

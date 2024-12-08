@@ -11,9 +11,6 @@ namespace Engine {
 		DirectionalLight(const Vec3<>& color, const Unitless& intensity, const Vec3<>& direction, const Unitless& ambientStrength)
 			: Light(color, intensity, LightType::Directional), direction(direction), ambientStrength(ambientStrength) {}
 
-		Vec3<> direction;
-		Unitless ambientStrength;
-
 		void showDebugMenu(const std::shared_ptr<ID>& lightID) override {
 			Debug::addImguiCallback([this, lightID] {
 				ImGui::Begin(std::string("Directional Light " + lightID->tag).c_str());
@@ -27,5 +24,8 @@ namespace Engine {
 		LightRenderQueueEntry getRenderQueueEntry() const override {
 			return { LightType::Directional, color, intensity, direction, ambientStrength };
 		}
+	private:
+		Vec3<> direction;
+		Unitless ambientStrength;
 	};
 }

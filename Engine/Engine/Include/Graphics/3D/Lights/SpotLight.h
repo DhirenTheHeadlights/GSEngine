@@ -9,15 +9,6 @@ namespace Engine {
 			: Light(color, intensity, LightType::Spot), constant(constant), linear(linear), quadratic(quadratic),
 			  cutOff(cutOff), outerCutOff(outerCutOff), position(position), direction(direction), ambientStrength(ambientStrength) {}
 
-		Unitless constant;
-		Unitless linear;
-		Unitless quadratic;
-		Angle cutOff;
-		Angle outerCutOff;
-		Vec3<Length> position;
-		Vec3<> direction;
-		Unitless ambientStrength;
-
 		void showDebugMenu(const std::shared_ptr<ID>& lightID) override {
 			Debug::addImguiCallback([this, lightID] {
 				ImGui::Begin(std::string("Spot Light " + lightID->tag).c_str());
@@ -37,5 +28,14 @@ namespace Engine {
 		LightRenderQueueEntry getRenderQueueEntry() const override {
 			return { LightType::Spot, color, intensity, position, direction, constant, linear, quadratic, cutOff, outerCutOff, ambientStrength };
 		}
+	private:
+		Unitless constant;
+		Unitless linear;
+		Unitless quadratic;
+		Angle cutOff;
+		Angle outerCutOff;
+		Vec3<Length> position;
+		Vec3<> direction;
+		Unitless ambientStrength;
 	};
 }
