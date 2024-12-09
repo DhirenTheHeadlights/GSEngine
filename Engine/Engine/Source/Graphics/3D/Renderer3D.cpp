@@ -96,7 +96,7 @@ void Engine::Renderer::Group::removeLightSourceComponent(const std::shared_ptr<L
 	}
 }
 
-void Engine::Renderer::initialize() {
+void Engine::Renderer::initialize3d() {
 	enableReportGlErrors();
 
 	const std::string shaderPath = std::string(ENGINE_RESOURCES_PATH) + "Shaders/";

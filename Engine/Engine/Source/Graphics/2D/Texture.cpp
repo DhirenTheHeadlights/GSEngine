@@ -14,8 +14,9 @@ Engine::Texture::~Texture() {
 void Engine::Texture::loadFromFile(const std::string& filepath) {
 	stbi_set_flip_vertically_on_load(true);
 	unsigned char* data = stbi_load(filepath.c_str(), &dimensions.x, &dimensions.y, &channels, 0);
+
 	if (!data) {
-		std::cerr << "Failed to load texture: " << filepath << std::endl;
+		std::cerr << "Failed to load texture: " << filepath << '\n';
 		return;
 	}
 
@@ -36,7 +37,7 @@ void Engine::Texture::loadFromFile(const std::string& filepath) {
 	stbi_image_free(data);
 }
 
-void Engine::Texture::bind(unsigned int unit) const {
+void Engine::Texture::bind(const unsigned int unit) const {
 	glActiveTexture(GL_TEXTURE0 + unit);
 	glBindTexture(GL_TEXTURE_2D, textureID);
 }
@@ -45,14 +46,14 @@ void Engine::Texture::unbind() const {
 	glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-void Engine::Texture::setWrapping(GLenum wrapS, GLenum wrapT) {
+void Engine::Texture::setWrapping(const GLenum wrapS, const GLenum wrapT) {
 	glBindTexture(GL_TEXTURE_2D, textureID);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrapS);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrapT);
 	glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-void Engine::Texture::setFiltering(GLenum minFilter, GLenum magFilter) {
+void Engine::Texture::setFiltering(const GLenum minFilter, const GLenum magFilter) {
 	glBindTexture(GL_TEXTURE_2D, textureID);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, minFilter);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, magFilter);

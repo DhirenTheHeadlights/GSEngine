@@ -27,7 +27,7 @@ namespace Engine::Renderer {
 		std::vector<std::weak_ptr<LightSourceComponent>> lightSourceComponents;
 	};
 
-	void initialize();
+	void initialize3d();
 	void renderObjects(Group& group);
 
 	Camera& getCamera();
