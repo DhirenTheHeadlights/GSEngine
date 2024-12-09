@@ -9,9 +9,9 @@ namespace Engine {
     class Shader {
     public:
         Shader() = default;
-		Shader(const std::string& vertexPath, const std::string& fragmentPath);
+		Shader(const std::string& vertexPath, const std::string& fragmentPath, const std::string& geometryPath = "");
 
-        void createShaderProgram(const std::string& vertexPath, const std::string& fragmentPath);
+		void createShaderProgram(const std::string& vertexPath, const std::string& fragmentPath, const std::string& geometryPath = "");
         void use() const;
 
         // Utility functions to set uniform values
