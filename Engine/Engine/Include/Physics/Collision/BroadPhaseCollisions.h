@@ -5,7 +5,7 @@
 #include "Core/Object/Object.h"
 #include "Physics/MotionComponent.h"
 
-namespace Engine::Collisions {
+namespace Engine::BroadPhaseCollision {
 	class Group {
 		struct Object {
 			Object(const std::weak_ptr<Physics::CollisionComponent>& collisionComponent) :
@@ -30,9 +30,7 @@ namespace Engine::Collisions {
 		std::vector<DynamicObject> dynamicObjects;
 		std::vector<Object> objects;
 	};
-}
 
-namespace Engine::BroadPhaseCollisions {
 	bool checkCollision(const BoundingBox& box1, const BoundingBox& box2);
 	bool checkCollision(const BoundingBox& dynamicBox, const std::shared_ptr<Physics::MotionComponent>& dynamicMotionComponent, const BoundingBox& otherBox);
 	bool checkCollision(const std::shared_ptr<Physics::CollisionComponent>& dynamicObjectCollisionComponent, const std::shared_ptr<Physics::MotionComponent>& dynamicObjectMotionComponent, const std::shared_ptr<Physics::CollisionComponent>& otherCollisionComponent);
@@ -40,5 +38,6 @@ namespace Engine::BroadPhaseCollisions {
 	CollisionInformation calculateCollisionInformation(const BoundingBox& box1, const BoundingBox& box2);
 	void setCollisionInformation(const BoundingBox& box1, const BoundingBox& box2);
 
-	void update(Collisions::Group& group);
+	void update(Group& group);
 }
+

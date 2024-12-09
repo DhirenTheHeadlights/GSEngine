@@ -1,0 +1,6 @@
+{
+  "Emissive": {
+    "vertex": "emissive.vert",
+    "fragment": "emissive.frag"
+  }
+}

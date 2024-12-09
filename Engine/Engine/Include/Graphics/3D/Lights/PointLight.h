@@ -5,17 +5,13 @@
 
 #include "Light.h"
 
+#include "Graphics/3D/CubeMap.h"
+
 namespace Engine {
 	class PointLight : public Light {
 	public:
 		PointLight(const Vec3<>& color, const Unitless& intensity, const Vec3<Length>& position, const Unitless& constant, const Unitless& linear, const Unitless& quadratic, const Unitless& ambientStrength)
 			: Light(color, intensity, LightType::Point), position(position), constant(constant), linear(linear), quadratic(quadratic), ambientStrength(ambientStrength) {}
-
-		Vec3<Length> position;
-		Unitless constant;
-		Unitless linear;
-		Unitless quadratic;
-		Unitless ambientStrength;
 
 		void showDebugMenu(const std::shared_ptr<ID>& lightID) override {
 			Debug::addImguiCallback([this, lightID] {
@@ -34,5 +30,15 @@ namespace Engine {
 		LightRenderQueueEntry getRenderQueueEntry() const override {
 			return { LightType::Point, color, intensity, position, constant, linear, quadratic, ambientStrength };
 		}
+
+		CubeMap& getShadowMap() { return shadowMap; }
+	private:
+		Vec3<Length> position;
+		Unitless constant;
+		Unitless linear;
+		Unitless quadratic;
+		Unitless ambientStrength;
+
+		CubeMap shadowMap;
 	};
 }
