@@ -21,7 +21,7 @@ namespace Engine {
 				Debug::unitSlider("Ambient Strength", ambientStrength, unitless(0.0f), unitless(1.0f));
 				ImGui::SliderFloat3("Direction", &direction.asDefaultUnits().x, -1.0f, 1.0f);
 				ImGui::SliderFloat3("Position", &position.asDefaultUnits().x, -500.0f, 500.0f);
-				Debug::unitSlider("Near Plane", nearPlane, meters(0.1f), meters(100.0f));
+				Debug::unitSlider<Meters>("Near Plane", nearPlane, meters(0.1f), meters(100.0f));
 				Debug::unitSlider<Meters>("Far Plane", farPlane, meters(100.0f), meters(1000.0f));
 				ImGui::End();
 				});

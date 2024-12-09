@@ -480,8 +480,8 @@ void Engine::Renderer::renderObjects(Group& group) {
 	const auto& shadowShader = deferredRenderingShaders["ShadowPass"];
 	shadowShader.use();
 
-	for (size_t i = 0; i < lightSourceComponents.size(); ++i) {
-		for (const auto& light : lightSourceComponents[i].lock()->getLights()) {
+	for (const auto& lightSourceComponent : lightSourceComponents) {
+		for (const auto& light : lightSourceComponent.lock()->getLights()) {
 			if (const auto pointLight = std::dynamic_pointer_cast<PointLight>(light); pointLight) {
 				const auto lightPos = pointLight->getRenderQueueEntry().shaderEntry.position;
 

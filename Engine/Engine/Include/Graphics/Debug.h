@@ -20,7 +20,7 @@ namespace Engine::Debug {
 	void printVector(const std::string& name, const glm::vec3& vec, const char* unit = nullptr);
 	void printValue(const std::string& name, const float& value, const char* unit = nullptr);
 
-	template <IsUnit Unit = UnitlessUnit, IsQuantity Quantity = Unitless>
+	template <IsUnit Unit = UnitlessUnit, IsQuantity Quantity>
 	void unitSlider(const std::string& name, Quantity& quantity, const Quantity& min, const Quantity& max) {
 		float value = quantity.template as<Unit>();
 
