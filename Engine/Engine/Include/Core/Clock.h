@@ -5,26 +5,26 @@
 
 #include "Physics/Units/Units.h"
 
-namespace Engine {
-	class Clock {
+namespace gse {
+	class clock {
 	public:
-		Clock() : startTime(std::chrono::steady_clock::now()) {}
+		clock() : startTime(std::chrono::steady_clock::now()) {}
 
 		Time reset();
-		Time getElapsedTime() const;
+		Time get_elapsed_time() const;
 	private:
 		std::chrono::steady_clock::time_point startTime;
 	};
 
-	class ScopedTimer : public Clock {
+	class scoped_timer : public clock {
 	public:
-		ScopedTimer(std::string name, const bool print = true) : name(std::move(name)), print(print) {}
+		scoped_timer(std::string name, const bool print = true) : name(std::move(name)), print(print) {}
 
-		~ScopedTimer();
+		~scoped_timer();
 
-		bool isCompleted() const { return completed; }
-		std::string getName() const { return name; }
-		void setCompleted() { completed = true; }
+		bool is_completed() const { return completed; }
+		std::string get_name() const { return name; }
+		void set_completed() { completed = true; }
 	private:
 		std::string name;
 		bool print = false;
@@ -38,7 +38,7 @@ namespace Engine {
 	void displayTimers();
 }
 
-namespace Engine::MainClock {
+namespace gse::MainClock {
 	void update();
 	Time getDeltaTime();
 	Time getConstantUpdateTime(const float frameRate);

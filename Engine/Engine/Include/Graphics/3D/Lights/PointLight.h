@@ -7,7 +7,7 @@
 
 #include "Graphics/3D/CubeMap.h"
 
-namespace Engine {
+namespace gse {
 	class PointLight : public Light {
 	public:
 		PointLight(const Vec3<>& color, const Unitless& intensity, const Vec3<Length>& position, const Unitless& constant, const Unitless& linear, const Unitless& quadratic, const Unitless& ambientStrength)

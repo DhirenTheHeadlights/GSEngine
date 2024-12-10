@@ -5,7 +5,7 @@
 #include <tuple>
 #include <string>
 
-namespace Engine {
+namespace gse {
 	template<typename... Units>
 	struct UnitList {
 		using Type = std::tuple<Units...>;

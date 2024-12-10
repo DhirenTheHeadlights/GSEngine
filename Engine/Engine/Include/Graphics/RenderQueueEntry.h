@@ -4,7 +4,7 @@
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 
-namespace Engine {
+namespace gse {
     struct RenderQueueEntry {
         std::string materialKey;
         GLuint VAO;

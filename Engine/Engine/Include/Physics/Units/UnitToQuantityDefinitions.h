@@ -20,52 +20,52 @@ struct UnitToQuantity {
 ////////////////////////////////////////////////////////////////////////
 /// Length
 ////////////////////////////////////////////////////////////////////////
-DEFINE_UNIT_TO_QUANTITY(Engine::Kilometers, Engine::Length);
-DEFINE_UNIT_TO_QUANTITY(Engine::Meters, Engine::Length);
-DEFINE_UNIT_TO_QUANTITY(Engine::Centimeters, Engine::Length);
-DEFINE_UNIT_TO_QUANTITY(Engine::Millimeters, Engine::Length);
-DEFINE_UNIT_TO_QUANTITY(Engine::Yards, Engine::Length);
-DEFINE_UNIT_TO_QUANTITY(Engine::Feet, Engine::Length);
-DEFINE_UNIT_TO_QUANTITY(Engine::Inches, Engine::Length);
+DEFINE_UNIT_TO_QUANTITY(gse::Kilometers, gse::Length);
+DEFINE_UNIT_TO_QUANTITY(gse::Meters, gse::Length);
+DEFINE_UNIT_TO_QUANTITY(gse::Centimeters, gse::Length);
+DEFINE_UNIT_TO_QUANTITY(gse::Millimeters, gse::Length);
+DEFINE_UNIT_TO_QUANTITY(gse::Yards, gse::Length);
+DEFINE_UNIT_TO_QUANTITY(gse::Feet, gse::Length);
+DEFINE_UNIT_TO_QUANTITY(gse::Inches, gse::Length);
 ////////////////////////////////////////////////////////////////////////
 /// Mass
 ////////////////////////////////////////////////////////////////////////
-DEFINE_UNIT_TO_QUANTITY(Engine::Kilograms, Engine::Mass);
-DEFINE_UNIT_TO_QUANTITY(Engine::Grams, Engine::Mass);
-DEFINE_UNIT_TO_QUANTITY(Engine::Pounds, Engine::Mass);
+DEFINE_UNIT_TO_QUANTITY(gse::Kilograms, gse::Mass);
+DEFINE_UNIT_TO_QUANTITY(gse::Grams, gse::Mass);
+DEFINE_UNIT_TO_QUANTITY(gse::Pounds, gse::Mass);
 ////////////////////////////////////////////////////////////////////////
 /// Force
 ////////////////////////////////////////////////////////////////////////
-DEFINE_UNIT_TO_QUANTITY(Engine::Newtons, Engine::Force);
-DEFINE_UNIT_TO_QUANTITY(Engine::PoundsForce, Engine::Force);
+DEFINE_UNIT_TO_QUANTITY(gse::Newtons, gse::Force);
+DEFINE_UNIT_TO_QUANTITY(gse::PoundsForce, gse::Force);
 ////////////////////////////////////////////////////////////////////////
 /// Energy
 ////////////////////////////////////////////////////////////////////////
-DEFINE_UNIT_TO_QUANTITY(Engine::Joules, Engine::Energy);
-DEFINE_UNIT_TO_QUANTITY(Engine::Kilojoules, Engine::Energy);
-DEFINE_UNIT_TO_QUANTITY(Engine::Megajoules, Engine::Energy);
-DEFINE_UNIT_TO_QUANTITY(Engine::Gigajoules, Engine::Energy);
-DEFINE_UNIT_TO_QUANTITY(Engine::Calories, Engine::Energy);
-DEFINE_UNIT_TO_QUANTITY(Engine::Kilocalories, Engine::Energy);
+DEFINE_UNIT_TO_QUANTITY(gse::Joules, gse::Energy);
+DEFINE_UNIT_TO_QUANTITY(gse::Kilojoules, gse::Energy);
+DEFINE_UNIT_TO_QUANTITY(gse::Megajoules, gse::Energy);
+DEFINE_UNIT_TO_QUANTITY(gse::Gigajoules, gse::Energy);
+DEFINE_UNIT_TO_QUANTITY(gse::Calories, gse::Energy);
+DEFINE_UNIT_TO_QUANTITY(gse::Kilocalories, gse::Energy);
 ////////////////////////////////////////////////////////////////////////
 /// Power
 ////////////////////////////////////////////////////////////////////////
-DEFINE_UNIT_TO_QUANTITY(Engine::Watts, Engine::Power);
-DEFINE_UNIT_TO_QUANTITY(Engine::Kilowatts, Engine::Power);
-DEFINE_UNIT_TO_QUANTITY(Engine::Megawatts, Engine::Power);
-DEFINE_UNIT_TO_QUANTITY(Engine::Gigawatts, Engine::Power);
-DEFINE_UNIT_TO_QUANTITY(Engine::Horsepower, Engine::Power);
+DEFINE_UNIT_TO_QUANTITY(gse::Watts, gse::Power);
+DEFINE_UNIT_TO_QUANTITY(gse::Kilowatts, gse::Power);
+DEFINE_UNIT_TO_QUANTITY(gse::Megawatts, gse::Power);
+DEFINE_UNIT_TO_QUANTITY(gse::Gigawatts, gse::Power);
+DEFINE_UNIT_TO_QUANTITY(gse::Horsepower, gse::Power);
 ////////////////////////////////////////////////////////////////////////
 /// Velocity
 ////////////////////////////////////////////////////////////////////////
-DEFINE_UNIT_TO_QUANTITY(Engine::MetersPerSecond, Engine::Velocity);
-DEFINE_UNIT_TO_QUANTITY(Engine::KilometersPerHour, Engine::Velocity);
-DEFINE_UNIT_TO_QUANTITY(Engine::MilesPerHour, Engine::Velocity);
-DEFINE_UNIT_TO_QUANTITY(Engine::FeetPerSecond, Engine::Velocity);
+DEFINE_UNIT_TO_QUANTITY(gse::MetersPerSecond, gse::Velocity);
+DEFINE_UNIT_TO_QUANTITY(gse::KilometersPerHour, gse::Velocity);
+DEFINE_UNIT_TO_QUANTITY(gse::MilesPerHour, gse::Velocity);
+DEFINE_UNIT_TO_QUANTITY(gse::FeetPerSecond, gse::Velocity);
 ////////////////////////////////////////////////////////////////////////
 /// Acceleration
 ////////////////////////////////////////////////////////////////////////
-DEFINE_UNIT_TO_QUANTITY(Engine::MetersPerSecondSquared, Engine::Acceleration);
-DEFINE_UNIT_TO_QUANTITY(Engine::KilometersPerHourSquared, Engine::Acceleration);
-DEFINE_UNIT_TO_QUANTITY(Engine::MilesPerHourSquared, Engine::Acceleration);
-DEFINE_UNIT_TO_QUANTITY(Engine::FeetPerSecondSquared, Engine::Acceleration);
+DEFINE_UNIT_TO_QUANTITY(gse::MetersPerSecondSquared, gse::Acceleration);
+DEFINE_UNIT_TO_QUANTITY(gse::KilometersPerHourSquared, gse::Acceleration);
+DEFINE_UNIT_TO_QUANTITY(gse::MilesPerHourSquared, gse::Acceleration);
+DEFINE_UNIT_TO_QUANTITY(gse::FeetPerSecondSquared, gse::Acceleration);

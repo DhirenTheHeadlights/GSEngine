@@ -6,11 +6,11 @@
 #include "Core/Clock.h"
 #include "Platform/GLFW/Window.h"
 
-Engine::Input::Keyboard keyboard;
-Engine::Input::Controller controller;
-Engine::Input::Mouse mouse;
+gse::Input::Keyboard keyboard;
+gse::Input::Controller controller;
+gse::Input::Mouse mouse;
 
-void Engine::Input::update() {
+void gse::Input::update() {
 	Internal::updateAllButtons();
 	Internal::resetTypedInput();
 }
@@ -19,7 +19,7 @@ namespace {
 	bool blockInputs = false;
 }
 
-void Engine::Input::setUpKeyMaps() {
+void gse::Input::setUpKeyMaps() {
 	for (int i = GLFW_KEY_A; i <= GLFW_KEY_Z; i++) {
 		keyboard.keys.insert(std::make_pair(i, Button()));
 	}
@@ -49,27 +49,27 @@ void Engine::Input::setUpKeyMaps() {
 	}
 }
 
-Engine::Input::Keyboard& Engine::Input::getKeyboard() {
+gse::Input::Keyboard& gse::Input::getKeyboard() {
 	return keyboard;
 }
 
-Engine::Input::Controller& Engine::Input::getController() {
+gse::Input::Controller& gse::Input::getController() {
 	return controller;
 }
 
-Engine::Input::Mouse& Engine::Input::getMouse() {
+gse::Input::Mouse& gse::Input::getMouse() {
 	return mouse;
 }
 
-void Engine::Input::setInputsBlocked(const bool blocked) {
+void gse::Input::setInputsBlocked(const bool blocked) {
 	blockInputs = blocked;
 }
 
-void Engine::Input::Internal::processEventButton(Button& button, const bool newState) {
+void gse::Input::Internal::processEventButton(Button& button, const bool newState) {
 	button.newState = newState;
 }
 
-void Engine::Input::Internal::updateButton(Button& button) {
+void gse::Input::Internal::updateButton(Button& button) {
 	if (button.newState == 1) {
 		if (button.held) {
 			button.pressed = false;
@@ -117,7 +117,7 @@ void Engine::Input::Internal::updateButton(Button& button) {
 	button.newState = -1;
 }
 
-void Engine::Input::Internal::updateAllButtons() {
+void gse::Input::Internal::updateAllButtons() {
 	if (blockInputs) return;
 
 	for (auto& button : keyboard.keys | std::views::values) {
@@ -161,7 +161,7 @@ void Engine::Input::Internal::updateAllButtons() {
 	mouse.lastPosition = Window::getRelMousePosition();
 }
 
-void Engine::Input::Internal::resetInputsToZero() {
+void gse::Input::Internal::resetInputsToZero() {
 	resetTypedInput();
 
 	for (auto& snd : keyboard.keys | std::views::values) {
@@ -177,10 +177,10 @@ void Engine::Input::Internal::resetInputsToZero() {
 	}
 }
 
-void Engine::Input::Internal::addToTypedInput(const char input) {
+void gse::Input::Internal::addToTypedInput(const char input) {
 	keyboard.typedInput += input;
 }
 
-void Engine::Input::Internal::resetTypedInput() {
+void gse::Input::Internal::resetTypedInput() {
 	keyboard.typedInput.clear();
 }

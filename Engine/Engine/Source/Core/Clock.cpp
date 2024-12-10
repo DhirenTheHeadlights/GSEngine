@@ -8,13 +8,13 @@
 
 /// Clock
 
-Engine::Time Engine::Clock::reset() {
-	const Time elapsedTime = getElapsedTime();
+gse::Time gse::clock::reset() {
+	const Time elapsedTime = get_elapsed_time();
 	startTime = std::chrono::steady_clock::now();
 	return elapsedTime;
 }
 
-Engine::Time Engine::Clock::getElapsedTime() const {
+gse::Time gse::clock::get_elapsed_time() const {
 	const auto now = std::chrono::steady_clock::now();
 	const std::chrono::duration<float> elapsedTime = now - startTime;
 	return seconds(elapsedTime.count());
@@ -22,7 +22,7 @@ Engine::Time Engine::Clock::getElapsedTime() const {
 
 /// ScopedTimer
 
-Engine::ScopedTimer::~ScopedTimer() {
+gse::scoped_timer::~scoped_timer() {
 	completed = true;
 	const Time elapsedTime = reset();
 	if (print) {
@@ -33,33 +33,33 @@ Engine::ScopedTimer::~ScopedTimer() {
 /// Global Timer State
 
 namespace {
-	std::map<std::string, std::unique_ptr<Engine::ScopedTimer>> timers;
+	std::map<std::string, std::unique_ptr<gse::scoped_timer>> timers;
 }
 
-void Engine::addTimer(const std::string& name) {
+void gse::addTimer(const std::string& name) {
 	if (!timers.contains(name)) {
-		timers[name] = std::make_unique<ScopedTimer>(name, false);
+		timers[name] = std::make_unique<scoped_timer>(name, false);
 	}
 }
 
-void Engine::resetTimer(const std::string& name) {
+void gse::resetTimer(const std::string& name) {
 	if (timers.contains(name)) {
 		timers[name]->reset();
 	}
 }
 
-void Engine::removeTimer(const std::string& name) {
+void gse::removeTimer(const std::string& name) {
 	if (timers.contains(name)) {
 		timers.erase(name);
 	}
 }
 
-void Engine::displayTimers() {
+void gse::displayTimers() {
 	ImGui::Begin("Timers");
 	for (auto it = timers.begin(); it != timers.end();) {
 		const auto& timer = it->second;
-		Debug::printValue(timer->getName(), timer->getElapsedTime().as<Milliseconds>(), Milliseconds::UnitName);
-		if (timer->isCompleted()) {
+		Debug::printValue(timer->get_name(), timer->get_elapsed_time().as<Milliseconds>(), Milliseconds::UnitName);
+		if (timer->is_completed()) {
 			it = timers.erase(it); // Remove completed timers
 		}
 		else {
@@ -73,15 +73,15 @@ void Engine::displayTimers() {
 
 namespace {
 	std::chrono::steady_clock::time_point lastUpdate = std::chrono::steady_clock::now();
-	Engine::Time dt;
+	gse::Time dt;
 
 	int frameRate = 0;
 	float frameCount = 0;
 	float numFramesToAverage = 40;
-	Engine::Time frameRateUpdateTime;
+	gse::Time frameRateUpdateTime;
 }
 
-void Engine::MainClock::update() {
+void gse::MainClock::update() {
 	const auto now = std::chrono::steady_clock::now();
 	const std::chrono::duration<float> deltaTime = now - lastUpdate;
 	lastUpdate = now;
@@ -99,14 +99,14 @@ void Engine::MainClock::update() {
 	}
 }
 
-Engine::Time Engine::MainClock::getDeltaTime() {
+gse::Time gse::MainClock::getDeltaTime() {
 	return dt;
 }
 
-Engine::Time Engine::MainClock::getConstantUpdateTime(const float frameRate) {
+gse::Time gse::MainClock::getConstantUpdateTime(const float frameRate) {
 	return seconds(1.0f / frameRate);
 }
 
-int Engine::MainClock::getFrameRate() {
+int gse::MainClock::getFrameRate() {
 	return frameRate;
 }

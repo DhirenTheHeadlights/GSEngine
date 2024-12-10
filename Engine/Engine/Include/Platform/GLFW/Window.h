@@ -7,7 +7,7 @@
 
 #include "glm/glm.hpp"
 
-namespace Engine::Window {
+namespace gse::Window {
     struct RenderingInterface {
         virtual ~RenderingInterface() = default;
         virtual void onPreRender() = 0;

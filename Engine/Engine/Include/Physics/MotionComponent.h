@@ -7,9 +7,9 @@
 #include "Physics/Vector/Vec3.h"
 #include "Vector/Math.h"
 
-namespace Engine::Physics {
-	struct MotionComponent : EngineComponent {
-		MotionComponent(ID* id) : EngineComponent(id) {}
+namespace gse::Physics {
+	struct MotionComponent : engine_component {
+		MotionComponent(ID* id) : engine_component(id) {}
 
 		Vec3<Length> position;
 		Vec3<Velocity> velocity;

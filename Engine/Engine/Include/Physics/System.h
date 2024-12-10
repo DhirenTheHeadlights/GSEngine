@@ -7,7 +7,7 @@
 #include "Core/Object/Object.h"
 #include "Graphics/3D/BoundingBox.h"
 
-namespace Engine::Physics {
+namespace gse::Physics {
 	class Group {
 	public:
 		void addMotionComponent(const std::shared_ptr<MotionComponent>& object);

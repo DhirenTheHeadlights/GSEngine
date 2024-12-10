@@ -8,18 +8,18 @@
 #include "Platform/GLFW/Window.h"
 
 namespace {
-	Engine::Clock autosaveClock;
-	const Engine::Time autosaveTime = Engine::seconds(60.f);
+	gse::clock autosaveClock;
+	const gse::Time autosaveTime = gse::seconds(60.f);
 	std::string imguiSaveFilePath;
 
 	std::vector<std::function<void()>> renderCallBacks;
 }
 
-void Engine::Debug::setImguiSaveFilePath(const std::string& path) {
+void gse::Debug::setImguiSaveFilePath(const std::string& path) {
 	imguiSaveFilePath = path;
 }
 
-void Engine::Debug::setUpImGui() {
+void gse::Debug::setUpImGui() {
 	ImGui::CreateContext();
 	ImGui::StyleColorsDark();
 	imguiThemes::embraceTheDarkness();
@@ -45,7 +45,7 @@ void Engine::Debug::setUpImGui() {
 	}
 }
 
-void Engine::Debug::updateImGui() {
+void gse::Debug::updateImGui() {
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
@@ -61,7 +61,7 @@ void Engine::Debug::updateImGui() {
 				saveImGuiState();
 			}
 			if (ImGui::MenuItem("Exit")) {
-				requestShutdown();
+				request_shutdown();
 			}
 			ImGui::EndMenu();
 		}
@@ -72,13 +72,13 @@ void Engine::Debug::updateImGui() {
 		Window::setMouseVisible(true);
 	}
 
-	if (autosaveClock.getElapsedTime() > autosaveTime) {
+	if (autosaveClock.get_elapsed_time() > autosaveTime) {
 		saveImGuiState();
 		autosaveClock.reset();
 	}
 }
 
-void Engine::Debug::renderImGui() {
+void gse::Debug::renderImGui() {
 	for (const auto& callback : renderCallBacks) {
 		callback();
 	}
@@ -100,11 +100,11 @@ void Engine::Debug::renderImGui() {
 	}
 }
 
-void Engine::Debug::saveImGuiState() {
+void gse::Debug::saveImGuiState() {
 	ImGui::SaveIniSettingsToDisk(imguiSaveFilePath.c_str());
 }
 
-void Engine::Debug::printVector(const std::string& name, const glm::vec3& vec, const char* unit) {
+void gse::Debug::printVector(const std::string& name, const glm::vec3& vec, const char* unit) {
 	if (unit) {
 		ImGui::InputFloat3((name + " - " + unit).c_str(), const_cast<float*>(&vec.x));
 	}
@@ -113,7 +113,7 @@ void Engine::Debug::printVector(const std::string& name, const glm::vec3& vec, c
 	}
 }
 
-void Engine::Debug::printValue(const std::string& name, const float& value, const char* unit) {
+void gse::Debug::printValue(const std::string& name, const float& value, const char* unit) {
 	if (unit) {
 		ImGui::InputFloat((name + " - " + unit).c_str(), const_cast<float*>(&value), 0.f, 0.f, "%.10f");
 	}
@@ -122,15 +122,15 @@ void Engine::Debug::printValue(const std::string& name, const float& value, cons
 	}
 }
 
-void Engine::Debug::printBoolean(const std::string& name, const bool& value) {
+void gse::Debug::printBoolean(const std::string& name, const bool& value) {
 	ImGui::Checkbox(name.c_str(), const_cast<bool*>(&value));
 }
 
-void Engine::Debug::addImguiCallback(const std::function<void()>& callback) {
+void gse::Debug::addImguiCallback(const std::function<void()>& callback) {
 	renderCallBacks.push_back(callback);
 }
 
-bool Engine::Debug::getImGuiNeedsInputs() {
+bool gse::Debug::getImGuiNeedsInputs() {
 	const ImGuiIO& io = ImGui::GetIO();
 	return io.WantCaptureKeyboard || io.WantTextInput || io.WantCaptureMouse;
 }

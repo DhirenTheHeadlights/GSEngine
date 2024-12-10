@@ -3,7 +3,7 @@
 #include <imgui.h>
 #include "Graphics/RenderComponent.h"
 
-void Engine::Sphere::initialize() {
+void gse::sphere::initialize() {
     const auto renderComponent = std::make_shared<RenderComponent>(id.get());
 
     const float r = radius.as<Meters>();

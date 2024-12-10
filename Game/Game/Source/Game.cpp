@@ -9,11 +9,11 @@
 
 std::shared_ptr<Game::Arena> arena;
 std::shared_ptr<Game::Player> player;
-std::shared_ptr<Engine::Box> box;
-std::shared_ptr<Engine::Box> box2;
+std::shared_ptr<gse::box> box;
+std::shared_ptr<gse::box> box2;
 std::shared_ptr<Game::SphereLight> sphere;
 std::shared_ptr<Game::SphereLight> sphere2;
-std::shared_ptr<Engine::Sphere> sphere3;
+std::shared_ptr<gse::sphere> sphere3;
 
 bool inputHandlingEnabled = true;
 
@@ -24,13 +24,13 @@ void Game::setInputHandlingFlag(const bool enabled) {
 bool Game::initialize() {
 	arena  = std::make_shared<Arena>();
 	player = std::make_shared<Player>();
-	box    = std::make_shared<Engine::Box>(Engine::Vec3<Engine::Meters>(20.f, -400.f, 20.f), Engine::Vec3<Engine::Meters>(20.f, 20.f, 20.f));
-	box2   = std::make_shared<Engine::Box>(Engine::Vec3<Engine::Meters>(-20.f, -400.f, 20.f), Engine::Vec3<Engine::Meters>(40.f, 40.f, 40.f));
-	sphere = std::make_shared<SphereLight>(Engine::Vec3<Engine::Meters>(0.f, -300.f, 0.f), Engine::meters(10.f));
+	box    = std::make_shared<gse::box>(gse::Vec3<gse::Meters>(20.f, -400.f, 20.f), gse::Vec3<gse::Meters>(20.f, 20.f, 20.f));
+	box2   = std::make_shared<gse::box>(gse::Vec3<gse::Meters>(-20.f, -400.f, 20.f), gse::Vec3<gse::Meters>(40.f, 40.f, 40.f));
+	sphere = std::make_shared<SphereLight>(gse::Vec3<gse::Meters>(0.f, -300.f, 0.f), gse::meters(10.f));
 	//sphere2 = std::make_shared<SphereLight>(Engine::Vec3<Engine::Meters>(0.f, 0.f, 0.f), Engine::meters(1.f));
-	sphere3 = std::make_shared<Engine::Sphere>(Engine::Vec3<Engine::Meters>(0.f, -400.f, 200.f), Engine::meters(10.f));
+	sphere3 = std::make_shared<gse::sphere>(gse::Vec3<gse::Meters>(0.f, -400.f, 200.f), gse::meters(10.f));
 
-	const auto scene1 = std::make_shared<Engine::Scene>();
+	const auto scene1 = std::make_shared<gse::scene>();
 
 	scene1->addObject(arena);
 	scene1->addObject(player);
@@ -40,23 +40,23 @@ bool Game::initialize() {
 	scene1->addObject(sphere2);
 	scene1->addObject(sphere3);
 
-	Engine::sceneHandler.addScene(scene1, "Scene1");
-	Engine::sceneHandler.addScene(std::make_shared<Engine::Scene>(), "Scene2");
+	gse::scene_handler.addScene(scene1, "Scene1");
+	gse::scene_handler.addScene(std::make_shared<gse::scene>(), "Scene2");
 
-	Engine::sceneHandler.queueSceneTrigger(Engine::grabID("Scene1").lock(), [] { return true; });
+	gse::scene_handler.queueSceneTrigger(gse::grabID("Scene1").lock(), [] { return true; });
 
 	return true;
 }
 
 bool Game::update() {
 	if (inputHandlingEnabled) {
-		Engine::Window::setMouseVisible(Engine::Input::getMouse().buttons[GLFW_MOUSE_BUTTON_MIDDLE].toggled || Engine::Input::getKeyboard().keys[GLFW_KEY_N].toggled);
+		gse::Window::setMouseVisible(gse::Input::getMouse().buttons[GLFW_MOUSE_BUTTON_MIDDLE].toggled || gse::Input::getKeyboard().keys[GLFW_KEY_N].toggled);
 
-		if (Engine::Input::getKeyboard().keys[GLFW_KEY_ENTER].pressed && Engine::Input::getKeyboard().keys[GLFW_KEY_LEFT_ALT].held) {
-			Engine::Window::setFullScreen(!Engine::Window::isFullScreen());
+		if (gse::Input::getKeyboard().keys[GLFW_KEY_ENTER].pressed && gse::Input::getKeyboard().keys[GLFW_KEY_LEFT_ALT].held) {
+			gse::Window::setFullScreen(!gse::Window::isFullScreen());
 		}
 
-		if (Engine::Input::getKeyboard().keys[GLFW_KEY_ESCAPE].pressed) {
+		if (gse::Input::getKeyboard().keys[GLFW_KEY_ESCAPE].pressed) {
 			if (close()) {
 				std::cerr << "Game closed properly." << '\n';
 				return false;
@@ -70,11 +70,11 @@ bool Game::update() {
 }
 
 bool Game::render() {
-	Engine::Debug::addImguiCallback([] {
-		if (Engine::sceneHandler.getScene(Engine::grabID("Scene1").lock())->getActive()) {
+	gse::Debug::addImguiCallback([] {
+		if (gse::scene_handler.getScene(gse::grabID("Scene1").lock())->getActive()) {
 			ImGui::Begin("Game Data");
 
-			ImGui::Text("FPS: %d", Engine::MainClock::getFrameRate());
+			ImGui::Text("FPS: %d", gse::MainClock::getFrameRate());
 
 			ImGui::End();
 		}

@@ -6,7 +6,7 @@
 #include <glm/gtx/norm.hpp>
 #include "Physics/Units/UnitToQuantityDefinitions.h"
 
-namespace Engine {
+namespace gse {
 	template <typename T>
 	concept IsQuantity = std::is_base_of_v<
 		Quantity<std::remove_cvref_t<T>, typename std::remove_cvref_t<T>::DefaultUnit, typename std::remove_cvref_t<T>::Units>,

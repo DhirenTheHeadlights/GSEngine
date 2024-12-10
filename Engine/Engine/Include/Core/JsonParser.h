@@ -5,7 +5,7 @@
 #include <type_traits>
 #include <fstream>
 
-namespace Engine::JsonParse {
+namespace gse::JsonParse {
 	nlohmann::json loadJson(const std::string& path);
 
 	// Generic function to parse JSON objects

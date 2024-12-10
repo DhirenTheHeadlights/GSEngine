@@ -3,17 +3,17 @@
 #include "Engine.h"
 
 namespace Game {
-	class Arena final : public Engine::Object {
+	class Arena final : public gse::object {
 	public:
-		Arena() : Object("Arena") {}
+		Arena() : object("Arena") {}
 
 		void initialize() override;
 		void update() override;
 		void render() override;
 	private:
-		Engine::Length
-			width   = Engine::meters(1000.f),
-			height	= Engine::meters(1000.f),
-			depth	= Engine::meters(1000.f);
+		gse::Length
+			width   = gse::meters(1000.f),
+			height	= gse::meters(1000.f),
+			depth	= gse::meters(1000.f);
 	};
 }

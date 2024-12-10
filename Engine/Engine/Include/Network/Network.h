@@ -1,7 +1,7 @@
 #pragma once
 #include "enet/enet.h"
 
-namespace Engine::Network {
+namespace gse::Network {
 	void initializeENet();
 	//void update();
 	inline void closeENet() { enet_deinitialize(); }

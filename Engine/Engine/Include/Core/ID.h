@@ -7,7 +7,7 @@
 
 #include "Platform/PermaAssert.h"
 
-namespace Engine {
+namespace gse {
     class ID;
 
     std::shared_ptr<ID> generateID(const std::string& tag);

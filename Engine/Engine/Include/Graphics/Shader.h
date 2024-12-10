@@ -5,7 +5,7 @@
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 
-namespace Engine {
+namespace gse {
     class Shader {
     public:
         Shader() = default;

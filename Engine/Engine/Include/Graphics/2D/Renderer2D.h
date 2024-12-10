@@ -4,12 +4,12 @@
 
 #include "Texture.h"
 
-namespace Engine::Renderer {
+namespace gse::renderer {
 	void initialize2d();
-	void beginFrame();
-	void endFrame();
+	void begin_frame();
+	void end_frame();
 	void shutdown();
 
-	void drawQuad(const glm::vec2& position, const glm::vec2& size, const glm::vec4& color);
-	void drawQuad(const glm::vec2& position, const glm::vec2& size, const Texture& texture);
+	void draw_quad(const glm::vec2& position, const glm::vec2& size, const glm::vec4& color);
+	void draw_quad(const glm::vec2& position, const glm::vec2& size, const Texture& texture);
 }

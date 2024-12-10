@@ -6,7 +6,7 @@
 
 #include "glm/gtc/type_ptr.hpp"
 
-Engine::Shader::Shader(const std::string& vertexPath, const std::string& fragmentPath, const std::string& geometryPath) {
+gse::Shader::Shader(const std::string& vertexPath, const std::string& fragmentPath, const std::string& geometryPath) {
 	if (!geometryPath.empty()) {
 		createShaderProgram(vertexPath, fragmentPath, geometryPath);
 	}
@@ -15,7 +15,7 @@ Engine::Shader::Shader(const std::string& vertexPath, const std::string& fragmen
     }
 }
 
-void Engine::Shader::createShaderProgram(const std::string& vertexPath, const std::string& fragmentPath, const std::string& geometryPath) {
+void gse::Shader::createShaderProgram(const std::string& vertexPath, const std::string& fragmentPath, const std::string& geometryPath) {
     // 1. Retrieve the vertex and fragment shader source code from file paths
     const std::string vertexCode = loadShaderSource(vertexPath);
     const std::string fragmentCode = loadShaderSource(fragmentPath);
@@ -66,11 +66,11 @@ void Engine::Shader::createShaderProgram(const std::string& vertexPath, const st
     cacheUniformLocations();
 }
 
-void Engine::Shader::use() const {
+void gse::Shader::use() const {
     glUseProgram(ID);
 }
 
-std::string Engine::Shader::loadShaderSource(const std::string& filePath) {
+std::string gse::Shader::loadShaderSource(const std::string& filePath) {
     std::ifstream shaderFile;
     std::stringstream shaderStream;
 
@@ -90,7 +90,7 @@ std::string Engine::Shader::loadShaderSource(const std::string& filePath) {
     return shaderStream.str();
 }
 
-void Engine::Shader::cacheUniformLocations() {
+void gse::Shader::cacheUniformLocations() {
     int uniformCount;
     glGetProgramiv(ID, GL_ACTIVE_UNIFORMS, &uniformCount);
     for (int i = 0; i < uniformCount; ++i) {
@@ -105,7 +105,7 @@ void Engine::Shader::cacheUniformLocations() {
 }
 
 // Utility to check and report shader compile and linking errors
-void Engine::Shader::checkCompileErrors(const unsigned int shader, const std::string& type) {
+void gse::Shader::checkCompileErrors(const unsigned int shader, const std::string& type) {
     int success;
     char infoLog[1024];
 
@@ -126,30 +126,30 @@ void Engine::Shader::checkCompileErrors(const unsigned int shader, const std::st
 }
 
 // Utility functions for setting shader uniforms
-void Engine::Shader::setBool(const std::string& name, const bool value) const {
+void gse::Shader::setBool(const std::string& name, const bool value) const {
     glUniform1i(glGetUniformLocation(ID, name.c_str()), static_cast<int>(value));
 }
 
-void Engine::Shader::setInt(const std::string& name, const int value) const {
+void gse::Shader::setInt(const std::string& name, const int value) const {
     glUniform1i(glGetUniformLocation(ID, name.c_str()), value);
 }
 
-void Engine::Shader::setIntArray(const std::string& name, const int* values, const unsigned int count) const {
+void gse::Shader::setIntArray(const std::string& name, const int* values, const unsigned int count) const {
 	glUniform1iv(glGetUniformLocation(ID, name.c_str()), count, values);
 }
 
-void Engine::Shader::setFloat(const std::string& name, const float value) const {
+void gse::Shader::setFloat(const std::string& name, const float value) const {
     glUniform1f(glGetUniformLocation(ID, name.c_str()), value);
 }
 
-void Engine::Shader::setMat4(const ::std::string& name, const glm::mat4& value) const {
+void gse::Shader::setMat4(const ::std::string& name, const glm::mat4& value) const {
     glUniformMatrix4fv(glGetUniformLocation(ID, name.c_str()), 1, GL_FALSE, value_ptr(value));
 }
 
-void Engine::Shader::setMat4Array(const ::std::string& name, const glm::mat4* values, const unsigned int count) const {
+void gse::Shader::setMat4Array(const ::std::string& name, const glm::mat4* values, const unsigned int count) const {
     glUniformMatrix4fv(glGetUniformLocation(ID, name.c_str()), count, GL_FALSE, value_ptr(*values));
 }
 
-void Engine::Shader::setVec3(const ::std::string& name, const glm::vec3& value) const {
+void gse::Shader::setVec3(const ::std::string& name, const glm::vec3& value) const {
 	glUniform3fv(glGetUniformLocation(ID, name.c_str()), 1, value_ptr(value));
 }

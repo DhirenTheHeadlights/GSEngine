@@ -6,7 +6,7 @@
 
 #include "Graphics/RenderQueueEntry.h"
 
-namespace Engine {
+namespace gse {
 	struct Vertex {
 		glm::vec3 position;
 		glm::vec3 normal;

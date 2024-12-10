@@ -4,7 +4,7 @@
 
 // Mass
 
-namespace Engine {
+namespace gse {
 	struct MassTag {};
 
 	constexpr char kilogramsUnits[] = "kg";
@@ -16,7 +16,7 @@ namespace Engine {
 	using Pounds = Unit<MassTag, 0.453592f, poundsUnits>;
 }
 
-namespace Engine {
+namespace gse {
 	using MassUnits = UnitList<
 		Kilograms,
 		Grams,
@@ -42,7 +42,7 @@ namespace Engine {
 
 // Force
 
-namespace Engine {
+namespace gse {
 	struct ForceTag {};
 
 	constexpr char newtonsUnits[] = "N";
@@ -52,7 +52,7 @@ namespace Engine {
 	using PoundsForce = Unit<ForceTag, 4.44822f, poundsForceUnits>;
 }
 
-namespace Engine {
+namespace gse {
 	using ForceUnits = UnitList<
 		Newtons,
 		PoundsForce

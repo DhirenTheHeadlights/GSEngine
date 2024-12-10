@@ -1,17 +1,17 @@
 #include "Core/ID.h"
 
 namespace {
-    std::vector<std::weak_ptr<Engine::ID>> ids;
-    std::unordered_map<int, std::weak_ptr<Engine::ID>> idMap;
-    std::unordered_map<std::string, std::weak_ptr<Engine::ID>> tagMap;
+    std::vector<std::weak_ptr<gse::ID>> ids;
+    std::unordered_map<int, std::weak_ptr<gse::ID>> idMap;
+    std::unordered_map<std::string, std::weak_ptr<gse::ID>> tagMap;
 
-    void registerObject(const std::shared_ptr<Engine::ID>& obj) {
+    void registerObject(const std::shared_ptr<gse::ID>& obj) {
         idMap[obj->id] = obj;
         tagMap[obj->tag] = obj;
     }
 }
 
-namespace Engine {
+namespace gse {
     std::shared_ptr<ID> generateID(const std::string& tag) {
         const int newID = static_cast<int>(ids.size());
 

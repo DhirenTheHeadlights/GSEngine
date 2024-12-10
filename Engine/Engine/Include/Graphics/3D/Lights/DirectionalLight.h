@@ -5,7 +5,7 @@
 
 #include "Light.h"
 
-namespace Engine {
+namespace gse {
 	class DirectionalLight : public Light {
 	public:
 		DirectionalLight(const Vec3<>& color, const Unitless& intensity, const Vec3<>& direction, const Unitless& ambientStrength)

@@ -9,7 +9,7 @@
 #include "Physics/Units/UnitTemplate.h"
 #include "Physics/Vector/Vec3.h"
 
-namespace Engine::Debug {
+namespace gse::Debug {
 	void setUpImGui();
 	void updateImGui();
 	void renderImGui();

@@ -1,23 +1,23 @@
 #include "Graphics/3D/Mesh.h"
 
-Engine::Mesh::Mesh() {
+gse::Mesh::Mesh() {
 	glGenVertexArrays(1, &VAO);
 	glGenBuffers(1, &VBO);
 	glGenBuffers(1, &EBO);
 }
 
-Engine::Mesh::Mesh(const std::vector<Vertex>& vertices, const std::vector<unsigned int>& indices, const glm::vec3& color, GLuint textureId)
+gse::Mesh::Mesh(const std::vector<Vertex>& vertices, const std::vector<unsigned int>& indices, const glm::vec3& color, GLuint textureId)
 	: vertices(vertices), indices(indices) {
 	setUpMesh();
 }
 
-Engine::Mesh::~Mesh() {
+gse::Mesh::~Mesh() {
 	glDeleteVertexArrays(1, &VAO);
 	glDeleteBuffers(1, &VBO);
 	glDeleteBuffers(1, &EBO);
 }
 
-Engine::Mesh::Mesh(Mesh&& other) noexcept
+gse::Mesh::Mesh(Mesh&& other) noexcept
 	: VAO(other.VAO), VBO(other.VBO), EBO(other.EBO),
 	vertices(std::move(other.vertices)), indices(std::move(other.indices)) {
 	other.VAO = 0;
@@ -25,7 +25,7 @@ Engine::Mesh::Mesh(Mesh&& other) noexcept
 	other.EBO = 0;
 }
 
-Engine::Mesh& Engine::Mesh::operator=(Mesh&& other) noexcept {
+gse::Mesh& gse::Mesh::operator=(Mesh&& other) noexcept {
 	if (this != &other) {
 		glDeleteVertexArrays(1, &VAO);
 		glDeleteBuffers(1, &VBO);
@@ -44,7 +44,7 @@ Engine::Mesh& Engine::Mesh::operator=(Mesh&& other) noexcept {
 	return *this;
 }
 
-void Engine::Mesh::setUpMesh() {
+void gse::Mesh::setUpMesh() {
 	glGenVertexArrays(1, &VAO);
 	glGenBuffers(1, &VBO);
 	glGenBuffers(1, &EBO);

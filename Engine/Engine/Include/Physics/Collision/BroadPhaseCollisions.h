@@ -5,7 +5,7 @@
 #include "Core/Object/Object.h"
 #include "Physics/MotionComponent.h"
 
-namespace Engine::BroadPhaseCollision {
+namespace gse::BroadPhaseCollision {
 	class Group {
 		struct Object {
 			Object(const std::weak_ptr<Physics::CollisionComponent>& collisionComponent) :

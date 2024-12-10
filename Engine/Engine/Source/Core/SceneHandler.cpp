@@ -2,7 +2,7 @@
 
 #include <ranges>
 
-void Engine::SceneHandler::addScene(const std::shared_ptr<Scene>& scene, const std::string& tag) {
+void gse::SceneHandler::addScene(const std::shared_ptr<scene>& scene, const std::string& tag) {
 	if (!scene->getId()) {
 		scene->setId(generateID(tag));
 	}
@@ -10,7 +10,7 @@ void Engine::SceneHandler::addScene(const std::shared_ptr<Scene>& scene, const s
 	scenes.insert({ scene->getId(), scene });
 }
 
-void Engine::SceneHandler::removeScene(const std::shared_ptr<ID>& sceneId) {
+void gse::SceneHandler::removeScene(const std::shared_ptr<ID>& sceneId) {
 	if (const auto scene = scenes.find(sceneId); scene != scenes.end()) {
 		if (scene->second->getActive()) {
 			scene->second->exit();
@@ -19,7 +19,7 @@ void Engine::SceneHandler::removeScene(const std::shared_ptr<ID>& sceneId) {
 	}
 }
 
-void Engine::SceneHandler::activateScene(const std::shared_ptr<ID>& sceneId) {
+void gse::SceneHandler::activateScene(const std::shared_ptr<ID>& sceneId) {
 	permaAssertComment(engineInitialized, "You are trying to activate a scene before the engine is initialized");
 	if (const auto scene = scenes.find(sceneId); scene != scenes.end()) {
 		if (!scene->second->getActive()) {
@@ -29,7 +29,7 @@ void Engine::SceneHandler::activateScene(const std::shared_ptr<ID>& sceneId) {
 	}
 }
 
-void Engine::SceneHandler::deactivateScene(const std::shared_ptr<ID>& sceneId) {
+void gse::SceneHandler::deactivateScene(const std::shared_ptr<ID>& sceneId) {
 	if (const auto scene = scenes.find(sceneId); scene != scenes.end()) {
 		if (scene->second->getActive()) {
 			scene->second->exit();
@@ -38,7 +38,7 @@ void Engine::SceneHandler::deactivateScene(const std::shared_ptr<ID>& sceneId) {
 	}
 }
 
-void Engine::SceneHandler::update() {
+void gse::SceneHandler::update() {
 	for (const auto& scene : scenes | std::views::values) {
 		if (scene->getActive()) {
 			scene->update();
@@ -52,7 +52,7 @@ void Engine::SceneHandler::update() {
 	}
 }
 
-void Engine::SceneHandler::render() {
+void gse::SceneHandler::render() {
 	for (const auto& scene : scenes | std::views::values) {
 		if (scene->getActive()) {
 			scene->render();
@@ -60,7 +60,7 @@ void Engine::SceneHandler::render() {
 	}
 }
 
-void Engine::SceneHandler::exit() {
+void gse::SceneHandler::exit() {
 	for (const auto& scene : scenes | std::views::values) {
 		if (scene->getActive()) {
 			scene->exit();
@@ -68,12 +68,12 @@ void Engine::SceneHandler::exit() {
 	}
 }
 
-void Engine::SceneHandler::queueSceneTrigger(const std::shared_ptr<ID>& id, const std::function<bool()>& trigger) {
+void gse::SceneHandler::queueSceneTrigger(const std::shared_ptr<ID>& id, const std::function<bool()>& trigger) {
 	sceneTriggers.insert({ id, trigger });
 }
 
-std::vector<std::shared_ptr<Engine::Scene>> Engine::SceneHandler::getActiveScenes() const {
-	std::vector<std::shared_ptr<Scene>> activeScenes;
+std::vector<std::shared_ptr<gse::scene>> gse::SceneHandler::getActiveScenes() const {
+	std::vector<std::shared_ptr<scene>> activeScenes;
 	activeScenes.reserve(scenes.size());
 	for (const auto& scene : scenes | std::views::values) {
 		if (scene->getActive()) {
@@ -83,7 +83,7 @@ std::vector<std::shared_ptr<Engine::Scene>> Engine::SceneHandler::getActiveScene
 	return activeScenes;
 }
 
-std::vector<std::shared_ptr<Engine::ID>> Engine::SceneHandler::getAllScenes() const {
+std::vector<std::shared_ptr<gse::ID>> gse::SceneHandler::getAllScenes() const {
 	std::vector<std::shared_ptr<ID>> allScenes;
 	allScenes.reserve(scenes.size());
 	for (const auto& id : scenes | std::views::keys) {
@@ -92,7 +92,7 @@ std::vector<std::shared_ptr<Engine::ID>> Engine::SceneHandler::getAllScenes() co
 	return allScenes;
 }
 
-std::vector<std::shared_ptr<Engine::ID>> Engine::SceneHandler::getActiveSceneIds() const {
+std::vector<std::shared_ptr<gse::ID>> gse::SceneHandler::getActiveSceneIds() const {
 	std::vector<std::shared_ptr<ID>> activeSceneIds;
 	activeSceneIds.reserve(scenes.size());
 	for (const auto& id : scenes | std::views::keys) {
@@ -103,7 +103,7 @@ std::vector<std::shared_ptr<Engine::ID>> Engine::SceneHandler::getActiveSceneIds
 	return activeSceneIds;
 }
 
-std::shared_ptr<Engine::Scene> Engine::SceneHandler::getScene(const std::shared_ptr<ID>& sceneId) const {
+std::shared_ptr<gse::scene> gse::SceneHandler::getScene(const std::shared_ptr<ID>& sceneId) const {
 	if (const auto scene = scenes.find(sceneId); scene != scenes.end()) {
 		return scene->second;
 	}

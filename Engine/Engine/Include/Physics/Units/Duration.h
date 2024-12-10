@@ -2,7 +2,7 @@
 
 #include "Physics/Units/UnitTemplate.h"
 
-namespace Engine {
+namespace gse {
 	constexpr char millisecondsUnits[] = "ms";
 	constexpr char secondsUnits[] = "s";
 	constexpr char minutesUnits[] = "m";
@@ -14,7 +14,7 @@ namespace Engine {
 	using Hours = Unit<float, 3600.0f, hoursUnits>;
 }
 
-namespace Engine {
+namespace gse {
 	using TimeUnits = UnitList<
 		Milliseconds,
 		Seconds,

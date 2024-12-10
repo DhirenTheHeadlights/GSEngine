@@ -13,12 +13,12 @@
 #include "Platform/GLFW/Window.h"
 
 namespace {
-	Engine::Camera camera;
+	gse::Camera camera;
 
-	std::unordered_map<std::string, Engine::Material> materials;
-	std::unordered_map<std::string, Engine::Shader> deferredRenderingShaders;
-	std::unordered_map<std::string, Engine::Shader> forwardRenderingShaders;
-	std::unordered_map<std::string, Engine::Shader> lightingShaders;
+	std::unordered_map<std::string, gse::Material> materials;
+	std::unordered_map<std::string, gse::Shader> deferredRenderingShaders;
+	std::unordered_map<std::string, gse::Shader> forwardRenderingShaders;
+	std::unordered_map<std::string, gse::Shader> lightingShaders;
 
 	GLuint gBuffer = 0;
 	GLuint gPosition = 0;
@@ -27,32 +27,32 @@ namespace {
 	GLuint ssboLights = 0;
 	GLuint lightSpaceBlockUBO = 0;
 
-	Engine::CubeMap reflectionCubeMap;
+	gse::CubeMap reflectionCubeMap;
 
 	float shadowWidth = 4096;
 	float shadowHeight = 4096;
 
-	Engine::Length nearPlane = Engine::meters(10.0f);
-	Engine::Length farPlane = Engine::meters(1000.f);
+	gse::Length nearPlane = gse::meters(10.0f);
+	gse::Length farPlane = gse::meters(1000.f);
 
 	bool depthMapDebug = false;
 
-	void loadShaders(const std::string& shaderPath, const std::string& shaderFileName, std::unordered_map<std::string, Engine::Shader>& shaders) {
-		Engine::JsonParse::parse(
-			Engine::JsonParse::loadJson(shaderPath + shaderFileName),
+	void loadShaders(const std::string& shaderPath, const std::string& shaderFileName, std::unordered_map<std::string, gse::Shader>& shaders) {
+		gse::JsonParse::parse(
+			gse::JsonParse::loadJson(shaderPath + shaderFileName),
 			[&](const std::string& key, const nlohmann::json& value) {
-				shaders.emplace(key, Engine::Shader(shaderPath + value["vertex"].get<std::string>(),
+				shaders.emplace(key, gse::Shader(shaderPath + value["vertex"].get<std::string>(),
 					shaderPath + value["fragment"].get<std::string>()));
 			}
 		);
 	}
 }
 
-void Engine::Renderer::Group::addRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent) {
+void gse::renderer::Group::addRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent) {
 	renderComponents.push_back(renderComponent);
 }
 
-void Engine::Renderer::Group::addLightSourceComponent(const std::shared_ptr<LightSourceComponent>& lightSourceComponent) {
+void gse::renderer::Group::addLightSourceComponent(const std::shared_ptr<LightSourceComponent>& lightSourceComponent) {
 	lightSourceComponents.push_back(lightSourceComponent);
 
 	if (const auto pointLight = std::dynamic_pointer_cast<PointLight>(lightSourceComponent); pointLight) {
@@ -86,13 +86,13 @@ void Engine::Renderer::Group::addLightSourceComponent(const std::shared_ptr<Ligh
 	}
 }
 
-void Engine::Renderer::Group::removeRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent) {
+void gse::renderer::Group::removeRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent) {
 	std::erase_if(renderComponents, [&](const std::weak_ptr<RenderComponent>& component) {
 		return !component.owner_before(renderComponent) && !renderComponent.owner_before(component);
 		});
 }
 
-void Engine::Renderer::Group::removeLightSourceComponent(const std::shared_ptr<LightSourceComponent>& lightSourceComponent) {
+void gse::renderer::Group::removeLightSourceComponent(const std::shared_ptr<LightSourceComponent>& lightSourceComponent) {
 	const auto it = std::ranges::find_if(lightSourceComponents,
 		[&](const std::weak_ptr<LightSourceComponent>& component) {
 			return !component.owner_before(lightSourceComponent) && !lightSourceComponent.owner_before(component);
@@ -110,7 +110,7 @@ void Engine::Renderer::Group::removeLightSourceComponent(const std::shared_ptr<L
 	}
 }
 
-void Engine::Renderer::initialize3d() {
+void gse::renderer::initialize3d() {
 	enableReportGlErrors();
 
 	const std::string shaderPath = std::string(ENGINE_RESOURCES_PATH) + "Shaders/";
@@ -199,7 +199,7 @@ void Engine::Renderer::initialize3d() {
 }
 
 namespace {
-	void renderObject(const Engine::RenderQueueEntry& entry, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
+	void renderObject(const gse::RenderQueueEntry& entry, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
 		if (const auto it = materials.find(entry.materialKey); it != materials.end()) {
 			it->second.use(viewMatrix, projectionMatrix, entry.modelMatrix);
 			it->second.shader.setVec3("color", entry.color);
@@ -224,7 +224,7 @@ namespace {
 		}
 	}
 
-	void renderObjectForward(const Engine::Shader& forwardRenderingShader, const Engine::RenderQueueEntry& entry, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
+	void renderObjectForward(const gse::Shader& forwardRenderingShader, const gse::RenderQueueEntry& entry, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
 		forwardRenderingShader.setVec3("color", entry.color);
 		forwardRenderingShader.setBool("useTexture", entry.textureID != 0);
 		forwardRenderingShader.setMat4("model", entry.modelMatrix);
@@ -250,7 +250,7 @@ namespace {
 		}
 	}
 
-	void renderObject(const Engine::LightRenderQueueEntry& entry) {
+	void renderObject(const gse::LightRenderQueueEntry& entry) {
 		if (const auto it = lightingShaders.find(entry.shaderKey); it != lightingShaders.end()) {
 			it->second.use();
 			it->second.setMat4("model", glm::mat4(1.0f));
@@ -265,7 +265,7 @@ namespace {
 		}
 	}
 
-	void renderLightingPass(const Engine::Shader& lightingShader, const std::vector<Engine::LightShaderEntry>& lightData, const std::vector<glm::mat4>& lightSpaceMatrices, const std::vector<GLuint>& depthMapFBOs) {
+	void renderLightingPass(const gse::Shader& lightingShader, const std::vector<gse::LightShaderEntry>& lightData, const std::vector<glm::mat4>& lightSpaceMatrices, const std::vector<GLuint>& depthMapFBOs) {
 		if (lightData.empty()) {
 			return;
 		}
@@ -274,7 +274,7 @@ namespace {
 
 		// Update SSBO with light data
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboLights);
-		glBufferData(GL_SHADER_STORAGE_BUFFER, lightData.size() * sizeof(Engine::LightShaderEntry), lightData.data(), GL_DYNAMIC_DRAW);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, lightData.size() * sizeof(gse::LightShaderEntry), lightData.data(), GL_DYNAMIC_DRAW);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, ssboLights);
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
@@ -343,7 +343,7 @@ namespace {
 		glEnable(GL_DEPTH_TEST);  // Re-enable depth testing after the lighting pass
 	}
 
-	void renderShadowPass(const Engine::Shader& shadowShader, const std::vector<std::weak_ptr<Engine::RenderComponent>>& renderComponents, const glm::mat4& lightSpaceMatrix, const GLuint depthMapFBO) {
+	void renderShadowPass(const gse::Shader& shadowShader, const std::vector<std::weak_ptr<gse::RenderComponent>>& renderComponents, const glm::mat4& lightSpaceMatrix, const GLuint depthMapFBO) {
 		shadowShader.setMat4("lightSpaceMatrix", lightSpaceMatrix);
 
 		glViewport(0, 0, static_cast<GLsizei>(shadowWidth), static_cast<GLsizei>(shadowHeight)); 
@@ -363,7 +363,7 @@ namespace {
 		}
 
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
-		glViewport(0, 0, Engine::Window::getFrameBufferSize().x, Engine::Window::getFrameBufferSize().y); // Restore viewport
+		glViewport(0, 0, gse::Window::getFrameBufferSize().x, gse::Window::getFrameBufferSize().y); // Restore viewport
 	}
 
 	glm::vec3 ensureNonCollinearUp(const glm::vec3& direction, const glm::vec3& up) {
@@ -386,22 +386,22 @@ namespace {
 	}
 
 
-	glm::mat4 calculateLightSpaceMatrix(const std::shared_ptr<Engine::Light>& light) {
+	glm::mat4 calculateLightSpaceMatrix(const std::shared_ptr<gse::Light>& light) {
 		const auto& entry = light->getRenderQueueEntry().shaderEntry;
 		const glm::vec3 lightDirection = entry.direction;
 
 		glm::vec3 lightPos(0.0f);
 		glm::mat4 lightProjection(1.0f);
 
-		if (entry.lightType == static_cast<int>(Engine::LightType::Directional)) {
+		if (entry.lightType == static_cast<int>(gse::LightType::Directional)) {
 			lightPos = -lightDirection * 10.0f;
 			lightProjection = glm::ortho(-10000.0f, 10000.0f, -10000.0f, 1000.0f,
-				nearPlane.as<Engine::Meters>(), farPlane.as<Engine::Meters>());
+				nearPlane.as<gse::Meters>(), farPlane.as<gse::Meters>());
 		}
-		else if (entry.lightType == static_cast<int>(Engine::LightType::Spot)) {
+		else if (entry.lightType == static_cast<int>(gse::LightType::Spot)) {
 			lightPos = entry.position;
 			const float cutoff = entry.cutOff;
-			lightProjection = glm::perspective(cutoff, 1.0f, nearPlane.as<Engine::Meters>(), farPlane.as<Engine::Meters>());
+			lightProjection = glm::perspective(cutoff, 1.0f, nearPlane.as<gse::Meters>(), farPlane.as<gse::Meters>());
 		}
 
 		const glm::mat4 lightView = lookAt(
@@ -414,7 +414,7 @@ namespace {
 	}
 }
 
-void Engine::Renderer::renderObjects(Group& group) {
+void gse::renderer::renderObjects(Group& group) {
 	const auto& renderComponents = group.getRenderComponents();
 	const auto& lightSourceComponents = group.getLightSourceComponents();
 
@@ -548,6 +548,6 @@ void Engine::Renderer::renderObjects(Group& group) {
 	renderLightingPass(deferredRenderingShaders["LightingPass"], lightData, lightSpaceMatrices, group.depthMaps);
 }
 
-Engine::Camera& Engine::Renderer::getCamera() {
+gse::Camera& gse::renderer::getCamera() {
 	return camera;
 }

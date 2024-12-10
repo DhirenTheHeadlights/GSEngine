@@ -2,7 +2,7 @@
 
 #include "Light.h"
 
-namespace Engine {
+namespace gse {
 	class SpotLight : public Light {
 	public:
 		SpotLight(const Vec3<Length>& position, const Vec3<>& direction, const Vec3<>& color, const Unitless& intensity, const Unitless& constant, const Unitless& linear, const Unitless& quadratic, const Angle& cutOff, const Angle& outerCutOff, const Unitless& ambientStrength)

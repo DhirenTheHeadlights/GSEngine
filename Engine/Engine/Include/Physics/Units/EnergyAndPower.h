@@ -4,7 +4,7 @@
 
 // Energy
 
-namespace Engine {
+namespace gse {
 	struct EnergyTag {};
 
 	constexpr char joulesUnits[] = "J";
@@ -22,7 +22,7 @@ namespace Engine {
 	using Kilocalories = Unit<EnergyTag, 4184000.0f, kilocaloriesUnits>;
 }
 
-namespace Engine {
+namespace gse {
 	using EnergyUnits = UnitList<
 		Joules,
 		Kilojoules,
@@ -63,7 +63,7 @@ namespace Engine {
 
 // Power
 
-namespace Engine {
+namespace gse {
 	struct PowerTag {};
 
 	constexpr char wattsUnits[] = "W";
@@ -79,7 +79,7 @@ namespace Engine {
 	using Horsepower = Unit<PowerTag, 745.7f, horsepowerUnits>;
 }
 
-namespace Engine {
+namespace gse {
 	using PowerUnits = UnitList<
 		Watts,
 		Kilowatts,

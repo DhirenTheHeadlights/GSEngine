@@ -4,7 +4,7 @@
 
 // Velocity
 
-namespace Engine {
+namespace gse {
 	struct VelocityTag {};
 
 	constexpr char metersPerSecondUnits[] = "m/s";
@@ -18,7 +18,7 @@ namespace Engine {
 	using FeetPerSecond = Unit<VelocityTag, 0.3048f, feetPerSecondUnits>;
 }
 
-namespace Engine {
+namespace gse {
 	using VelocityUnits = UnitList<
 		MetersPerSecond,
 		KilometersPerHour,
@@ -49,7 +49,7 @@ namespace Engine {
 
 // Acceleration
 
-namespace Engine {
+namespace gse {
 	struct AccelerationTag {};
 
 	constexpr char metersPrSecondSquaredUnits[] = "m/s^2";
@@ -63,7 +63,7 @@ namespace Engine {
 	using FeetPerSecondSquared = Unit<AccelerationTag, 0.3048f, feetPrSecondSquaredUnits>;
 }
 
-namespace Engine {
+namespace gse {
 	using AccelerationUnits = UnitList<
 		MetersPerSecondSquared,
 		KilometersPerHourSquared,

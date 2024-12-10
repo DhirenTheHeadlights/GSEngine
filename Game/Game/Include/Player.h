@@ -3,9 +3,9 @@
 #include <Engine.h>
 
 namespace Game {
-	class Player final : public Engine::Object {
+	class Player final : public gse::object {
 	public:
-		Player() : Object("Player") {}
+		Player() : object("Player") {}
 
 		void initialize() override;
 		void update() override;
@@ -16,14 +16,14 @@ namespace Game {
 		void updateJetpack();
 		void updateMovement();
 
-		std::unordered_map<int, Engine::Vec3<Engine::Unitless>> wasd;
+		std::unordered_map<int, gse::Vec3<gse::Unitless>> wasd;
 
-		Engine::Velocity maxSpeed = Engine::milesPerHour(20.f);
-		Engine::Velocity shiftMaxSpeed = Engine::milesPerHour(40.f);
-		Engine::Force jetpackForce = Engine::newtons(1000.f);
-		Engine::Force jetpackSideForce = Engine::newtons(500.f);
-		Engine::Force jumpForce = Engine::newtons(1000.f);
-		Engine::Force moveForce = Engine::newtons(100000.f);
+		gse::Velocity maxSpeed = gse::milesPerHour(20.f);
+		gse::Velocity shiftMaxSpeed = gse::milesPerHour(40.f);
+		gse::Force jetpackForce = gse::newtons(1000.f);
+		gse::Force jetpackSideForce = gse::newtons(500.f);
+		gse::Force jumpForce = gse::newtons(1000.f);
+		gse::Force moveForce = gse::newtons(100000.f);
 
 		int boostFuel = 1000;
 	};

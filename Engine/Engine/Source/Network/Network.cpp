@@ -11,7 +11,7 @@ char* serverIP;
 ENetHost* server;
 ENetHost* client;
 
-void Engine::Network::initializeENet() {
+void gse::Network::initializeENet() {
 	if (enet_initialize() != 0) {
 		std::cerr << "An error occurred while initializing ENet." << std::endl;
 	}
@@ -63,7 +63,7 @@ void Engine::Network::initializeENet() {
 //
 //}
 
-void Engine::Network::joinNetworkSession() {
+void gse::Network::joinNetworkSession() {
 	ENetPeer* peer;
 	ENetEvent event;
 	enet_address_set_host(&serverAddress, serverIP);

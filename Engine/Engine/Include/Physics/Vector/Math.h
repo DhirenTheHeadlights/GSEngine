@@ -9,7 +9,7 @@
 
 #include "Physics/Vector/Vec3.h"
 
-namespace Engine {
+namespace gse {
 	static std::random_device rd;
 	static std::mt19937 gen(rd());
 
@@ -21,7 +21,7 @@ namespace Engine {
 	}
 }
 
-namespace Engine {
+namespace gse {
 	enum : std::uint8_t {
 		X, Y, Z 
 	};

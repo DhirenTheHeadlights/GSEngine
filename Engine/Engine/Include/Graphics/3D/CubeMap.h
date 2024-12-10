@@ -6,7 +6,7 @@
 #include <vector>
 #include <string>
 
-namespace Engine {
+namespace gse {
 	class CubeMap {
 	public:
 		CubeMap() = default;

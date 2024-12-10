@@ -1,13 +1,13 @@
 #include "Graphics/3D/BoundingBoxMesh.h"
 
-Engine::BoundingBoxMesh::BoundingBoxMesh(const Vec3<Length>& lower, const Vec3<Length>& upper)
+gse::BoundingBoxMesh::BoundingBoxMesh(const Vec3<Length>& lower, const Vec3<Length>& upper)
 	: lower(lower), upper(upper) {
 	updateGrid();
 	drawMode = GL_LINES;
 	shaderName = "SolidColor";
 }
 
-Engine::Vertex Engine::BoundingBoxMesh::createVertex(const glm::vec3& position) {
+gse::Vertex gse::BoundingBoxMesh::createVertex(const glm::vec3& position) {
 	return {
 		position,
 		glm::vec3(0.0f),
@@ -15,7 +15,7 @@ Engine::Vertex Engine::BoundingBoxMesh::createVertex(const glm::vec3& position) 
 	};
 }
 
-void Engine::BoundingBoxMesh::updateGrid() {
+void gse::BoundingBoxMesh::updateGrid() {
 	constexpr float cellSize = 10.0f;
 
 	vertices.clear();
@@ -84,7 +84,7 @@ void Engine::BoundingBoxMesh::updateGrid() {
 	}
 }
 
-void Engine::BoundingBoxMesh::update() {
+void gse::BoundingBoxMesh::update() {
 	updateGrid();
 	setUpMesh();
 }

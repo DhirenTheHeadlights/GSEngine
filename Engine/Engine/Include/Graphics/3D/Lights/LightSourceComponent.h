@@ -5,11 +5,11 @@
 #include "Graphics/3D/Lights/Light.h"
 #include "Core/EngineComponent.h"
 
-namespace Engine {
-	class LightSourceComponent : public EngineComponent {
+namespace gse {
+	class LightSourceComponent : public engine_component {
 	public:
-		LightSourceComponent(ID* id) : EngineComponent(id) {}
-		LightSourceComponent(ID* id, const std::vector<std::shared_ptr<Light>>& lights) : EngineComponent(id), lights(lights) {}
+		LightSourceComponent(ID* id) : engine_component(id) {}
+		LightSourceComponent(ID* id, const std::vector<std::shared_ptr<Light>>& lights) : engine_component(id), lights(lights) {}
 
 		void addLight(const std::shared_ptr<Light>& light) {
 			lights.push_back(light);

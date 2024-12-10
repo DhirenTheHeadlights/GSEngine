@@ -5,7 +5,7 @@
 #include "Core/Clock.h"
 #include "Physics/Units/Units.h"
 
-namespace Engine::Surfaces {
+namespace gse::Surfaces {
 	enum class SurfaceType : std::uint8_t {
 		Concrete,
 		Grass,
