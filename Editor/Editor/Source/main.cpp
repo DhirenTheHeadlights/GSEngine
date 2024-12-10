@@ -7,7 +7,7 @@ int main() {
 
 	Editor::initialize();
 
-	gse::Window::addRenderingInterface(std::make_shared<Editor::RenderingInterface>());
+	gse::window::add_rendering_interface(std::make_shared<Editor::RenderingInterface>());
 
 	gse::run(Game::update, Game::render);
 }

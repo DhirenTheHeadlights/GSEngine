@@ -3,49 +3,49 @@
 #include "Physics/Vector/Math.h"
 #include "Platform/GLFW/Window.h"
 
-void gse::Camera::moveRelativeToOrigin(const Vec3<>& direction, const float distance, const float deltaTime) {
-	const auto normDirection = normalize(direction).asDefaultUnits();
-	const Vec3<Length> cameraDirection =
-		right * normDirection.x +
-		up * normDirection.y +
-		front * normDirection.z;
-	position += cameraDirection * distance * movementSpeed * deltaTime;
+void gse::camera::move_relative_to_origin(const vec3<>& direction, const float distance, const float delta_time) {
+	const auto normDirection = normalize(direction).as_default_units();
+	const vec3<length> cameraDirection =
+		m_right * normDirection.x +
+		m_up * normDirection.y +
+		m_front * normDirection.z;
+	m_position += cameraDirection * distance * m_movement_speed * delta_time;
 }
 
-void gse::Camera::processMouseMovement(glm::vec2& offset) {
-    offset *= mouseSensitivity;
-    yaw += offset.x;
-    pitch -= offset.y;
-    if (pitch > 89.0f) pitch = 89.0f;
-    if (pitch < -89.0f) pitch = -89.0f;
-    updateCameraVectors();
+void gse::camera::process_mouse_movement(glm::vec2& offset) {
+    offset *= m_mouse_sensitivity;
+    m_yaw += offset.x;
+    m_pitch -= offset.y;
+    if (m_pitch > 89.0f) m_pitch = 89.0f;
+    if (m_pitch < -89.0f) m_pitch = -89.0f;
+    update_camera_vectors();
 }
  
-void gse::Camera::updateCameraVectors() {
-	const Vec3<Length> newFront(
-		cos(glm::radians(yaw)) * cos(glm::radians(pitch)),
-		sin(glm::radians(pitch)),
-		sin(glm::radians(yaw)) * cos(glm::radians(pitch))
+void gse::camera::update_camera_vectors() {
+	const vec3<length> newFront(
+		cos(glm::radians(m_yaw)) * cos(glm::radians(m_pitch)),
+		sin(glm::radians(m_pitch)),
+		sin(glm::radians(m_yaw)) * cos(glm::radians(m_pitch))
 	);
-    front = normalize(newFront);
-    right = normalize(cross(front, worldUp));
-	up = normalize(cross(right, front));
+    m_front = normalize(newFront);
+    m_right = normalize(cross(m_front, m_world_up));
+	m_up = normalize(cross(m_right, m_front));
 }
 
-glm::mat4 gse::Camera::getViewMatrix() const {
-	return lookAt(position.as<Meters>(), (position + front).as<Meters>(), up.as<Meters>());
+glm::mat4 gse::camera::get_view_matrix() const {
+	return lookAt(m_position.as<Meters>(), (m_position + m_front).as<Meters>(), m_up.as<Meters>());
 }
 
-glm::mat4 gse::Camera::getProjectionMatrix() {
-	const glm::vec2 viewPortSize = Window::getFrameBufferSize();
+glm::mat4 gse::camera::get_projection_matrix() {
+	const glm::vec2 viewPortSize = window::get_frame_buffer_size();
 	const float aspectRatio = viewPortSize.x / viewPortSize.y;
 	return glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 10000.f);
 }
 
-gse::Vec3<gse::Length> gse::Camera::getPosition() const {
-	return position;
+gse::vec3<gse::length> gse::camera::get_position() const {
+	return m_position;
 }
 
-gse::Vec3<> gse::Camera::getCameraDirectionRelativeToOrigin(const Vec3<>& direction) const {
-	return { right.as<Meters>() * direction.asDefaultUnits().x + up.as<Meters>() * direction.asDefaultUnits().y + front.as<Meters>() * direction.asDefaultUnits().z };
+gse::vec3<> gse::camera::get_camera_direction_relative_to_origin(const vec3<>& direction) const {
+	return { m_right.as<Meters>() * direction.as_default_units().x + m_up.as<Meters>() * direction.as_default_units().y + m_front.as<Meters>() * direction.as_default_units().z };
 }

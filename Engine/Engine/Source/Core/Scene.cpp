@@ -14,47 +14,47 @@ void handleComponent(const std::shared_ptr<gse::object>& object, SystemType& sys
 	}
 }
 
-void gse::scene::addObject(const std::weak_ptr<object>& object) {
-	objects.push_back(object);
+void gse::scene::add_object(const std::weak_ptr<object>& object) {
+	m_objects.push_back(object);
 
 	/// Components are not added here; it is assumed that the object will only be ready
 	///	to be initialized after all components have been added (when the scene is activated)
 }
 
-void gse::scene::removeObject(const std::weak_ptr<object>& object) {
+void gse::scene::remove_object(const std::weak_ptr<object>& object) {
 	if (const auto objectPtr = object.lock()) {
-		if (objectPtr->getSceneId().lock() == id) {
-			handleComponent<Physics::MotionComponent>(objectPtr, physicsSystem, &Physics::Group::removeMotionComponent);
-			handleComponent<Physics::CollisionComponent>(objectPtr, collisionGroup, &BroadPhaseCollision::Group::removeObject);
-			handleComponent<RenderComponent>(objectPtr, renderGroup, &renderer::Group::removeRenderComponent);
-			handleComponent<LightSourceComponent>(objectPtr, renderGroup, &renderer::Group::removeLightSourceComponent);
+		if (objectPtr->get_scene_id().lock() == m_id) {
+			handleComponent<physics::motion_component>(objectPtr, m_physics_system, &physics::group::remove_motion_component);
+			handleComponent<physics::collision_component>(objectPtr, m_collision_group, &broad_phase_collision::group::remove_object);
+			handleComponent<render_component>(objectPtr, m_render_group, &renderer::group::remove_render_component);
+			handleComponent<light_source_component>(objectPtr, m_render_group, &renderer::group::remove_light_source_component);
 		}
 	}
 
-	std::erase_if(objects, [&object](const std::weak_ptr<object>& requiredObject) {
+	std::erase_if(m_objects, [&object](const std::weak_ptr<object>& requiredObject) {
 		return requiredObject.lock() == object.lock();
 		});
 }
 
 void gse::scene::initialize() {
-	for (auto& object : objects) {
+	for (auto& object : m_objects) {
 		if (const auto objectPtr = object.lock()) {
 			objectPtr->process_initialize();
 
-			handleComponent<Physics::MotionComponent>(objectPtr, physicsSystem, &Physics::Group::addMotionComponent);
-			handleComponent<Physics::CollisionComponent, Physics::MotionComponent>(objectPtr, collisionGroup, &BroadPhaseCollision::Group::addDynamicObject);
-			handleComponent<Physics::CollisionComponent>(objectPtr, collisionGroup, &BroadPhaseCollision::Group::addObject);
-			handleComponent<RenderComponent>(objectPtr, renderGroup, &renderer::Group::addRenderComponent);
-			handleComponent<LightSourceComponent>(objectPtr, renderGroup, &renderer::Group::addLightSourceComponent);
+			handleComponent<physics::motion_component>(objectPtr, m_physics_system, &physics::group::add_motion_component);
+			handleComponent<physics::collision_component, physics::motion_component>(objectPtr, m_collision_group, &broad_phase_collision::group::add_dynamic_object);
+			handleComponent<physics::collision_component>(objectPtr, m_collision_group, &broad_phase_collision::group::add_object);
+			handleComponent<render_component>(objectPtr, m_render_group, &renderer::group::add_render_component);
+			handleComponent<light_source_component>(objectPtr, m_render_group, &renderer::group::add_light_source_component);
 		}
 	}
 }
 
 void gse::scene::update() {
-	physicsSystem.update();
-	BroadPhaseCollision::update(collisionGroup);
+	m_physics_system.update();
+	broad_phase_collision::update(m_collision_group);
 
-	for (auto& object : objects) {
+	for (auto& object : m_objects) {
 		if (const auto objectPtr = object.lock()) {
 			objectPtr->process_update();
 		}
@@ -62,9 +62,9 @@ void gse::scene::update() {
 }
 
 void gse::scene::render() {
-	renderObjects(renderGroup);
+	render_objects(m_render_group);
 
-	for (auto& object : objects) {
+	for (auto& object : m_objects) {
 		if (const auto objectPtr = object.lock()) {
 			objectPtr->process_render();
 		}

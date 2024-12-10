@@ -3,35 +3,35 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-gse::Texture::Texture(const std::string& filepath) : filepath(filepath) {
-	loadFromFile(filepath);
+gse::Texture::Texture(const std::string& filepath) : m_filepath(filepath) {
+	load_from_file(filepath);
 }
 
 gse::Texture::~Texture() {
-	glDeleteTextures(1, &textureID);
+	glDeleteTextures(1, &m_texture_id);
 }
 
-void gse::Texture::loadFromFile(const std::string& filepath) {
+void gse::Texture::load_from_file(const std::string& filepath) {
 	stbi_set_flip_vertically_on_load(true);
-	unsigned char* data = stbi_load(filepath.c_str(), &dimensions.x, &dimensions.y, &channels, 0);
+	unsigned char* data = stbi_load(filepath.c_str(), &m_dimensions.x, &m_dimensions.y, &m_channels, 0);
 
 	if (!data) {
 		std::cerr << "Failed to load texture: " << filepath << '\n';
 		return;
 	}
 
-	glGenTextures(1, &textureID);
-	glBindTexture(GL_TEXTURE_2D, textureID);
+	glGenTextures(1, &m_texture_id);
+	glBindTexture(GL_TEXTURE_2D, m_texture_id);
 
 	GLenum format = GL_RGB;
-	if (channels == 4) {
+	if (m_channels == 4) {
 		format = GL_RGBA;
 	}
-	else if (channels == 1) {
+	else if (m_channels == 1) {
 		format = GL_RED;
 	}
 
-	glTexImage2D(GL_TEXTURE_2D, 0, format, dimensions.x, dimensions.y, 0, format, GL_UNSIGNED_BYTE, data);
+	glTexImage2D(GL_TEXTURE_2D, 0, format, m_dimensions.x, m_dimensions.y, 0, format, GL_UNSIGNED_BYTE, data);
 	glGenerateMipmap(GL_TEXTURE_2D);
 
 	stbi_image_free(data);
@@ -39,23 +39,23 @@ void gse::Texture::loadFromFile(const std::string& filepath) {
 
 void gse::Texture::bind(const unsigned int unit) const {
 	glActiveTexture(GL_TEXTURE0 + unit);
-	glBindTexture(GL_TEXTURE_2D, textureID);
+	glBindTexture(GL_TEXTURE_2D, m_texture_id);
 }
 
 void gse::Texture::unbind() const {
 	glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-void gse::Texture::setWrapping(const GLenum wrapS, const GLenum wrapT) {
-	glBindTexture(GL_TEXTURE_2D, textureID);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrapS);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrapT);
+void gse::Texture::set_wrapping(const GLenum wrap_s, const GLenum wrap_t) {
+	glBindTexture(GL_TEXTURE_2D, m_texture_id);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap_s);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap_t);
 	glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-void gse::Texture::setFiltering(const GLenum minFilter, const GLenum magFilter) {
-	glBindTexture(GL_TEXTURE_2D, textureID);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, minFilter);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, magFilter);
+void gse::Texture::set_filtering(const GLenum min_filter, const GLenum mag_filter) {
+	glBindTexture(GL_TEXTURE_2D, m_texture_id);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, min_filter);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, mag_filter);
 	glBindTexture(GL_TEXTURE_2D, 0);
 }

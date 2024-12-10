@@ -5,13 +5,13 @@
 #include <glm/glm.hpp>
 
 namespace gse {
-    struct RenderQueueEntry {
-        std::string materialKey;
-        GLuint VAO;
-        GLenum drawMode;
-        GLsizei vertexCount;
-        glm::mat4 modelMatrix;
-        GLuint textureID;
+    struct render_queue_entry {
+        std::string material_key;
+        GLuint vao;
+        GLenum draw_mode;
+        GLsizei vertex_count;
+        glm::mat4 model_matrix;
+        GLuint texture_id;
         glm::vec3 color;
     };
 }

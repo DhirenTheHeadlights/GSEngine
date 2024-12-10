@@ -5,38 +5,38 @@
 // Mass
 
 namespace gse {
-	struct MassTag {};
+	struct mass_tag {};
 
-	constexpr char kilogramsUnits[] = "kg";
-	constexpr char gramsUnits[] = "g";
-	constexpr char poundsUnits[] = "lb";
+	constexpr char kilograms_units[] = "kg";
+	constexpr char grams_units[] = "g";
+	constexpr char pounds_units[] = "lb";
 
-	using Kilograms = Unit<MassTag, 1.0f, kilogramsUnits>;
-	using Grams = Unit<MassTag, 0.001f, gramsUnits>;
-	using Pounds = Unit<MassTag, 0.453592f, poundsUnits>;
+	struct kilograms : unit<mass_tag, 1.0f, kilograms_units> {};
+	struct grams : unit<mass_tag, 0.001f, grams_units> {};
+	struct pounds : unit<mass_tag, 0.453592f, pounds_units> {};
 }
 
 namespace gse {
-	using MassUnits = UnitList<
-		Kilograms,
-		Grams,
-		Pounds
+	using mass_units = unit_list<
+		kilograms,
+		grams,
+		pounds
 	>;
 
-	struct Mass : Quantity<Mass, Kilograms, MassUnits> {
-		using Quantity::Quantity;
+	struct mass : quantity<mass, kilograms, mass_units> {
+		using quantity::quantity;
 	};
 
-	inline Mass kilograms(const float value) {
-		return Mass::from<Kilograms>(value);
+	inline mass kilograms(const float value) {
+		return mass::from<struct kilograms>(value);
 	}
 
-	inline Mass grams(const float value) {
-		return Mass::from<Grams>(value);
+	inline mass grams(const float value) {
+		return mass::from<struct grams>(value);
 	}
 
-	inline Mass pounds(const float value) {
-		return Mass::from<Pounds>(value);
+	inline mass pounds(const float value) {
+		return mass::from<struct pounds>(value);
 	}
 }
 
@@ -48,25 +48,25 @@ namespace gse {
 	constexpr char newtonsUnits[] = "N";
 	constexpr char poundsForceUnits[] = "lbf";
 
-	using Newtons = Unit<ForceTag, 1.0f, newtonsUnits>;
-	using PoundsForce = Unit<ForceTag, 4.44822f, poundsForceUnits>;
+	struct newtons : unit<ForceTag, 1.0f, newtonsUnits> {};
+	struct pounds_force : unit<ForceTag, 4.44822f, poundsForceUnits> {};
 }
 
 namespace gse {
-	using ForceUnits = UnitList<
-		Newtons,
-		PoundsForce
+	using force_units = unit_list<
+		newtons,
+		pounds_force
 	>;
 
-	struct Force : Quantity<Force, Newtons, ForceUnits> {
-		using Quantity::Quantity;
+	struct force : quantity<force, newtons, force_units> {
+		using quantity::quantity;
 	};
 
-	inline Force newtons(const float value) {
-		return Force::from<Newtons>(value);
+	inline force newtons(const float value) {
+		return force::from<struct newtons>(value);
 	}
 
-	inline Force poundsForce(const float value) {
-		return Force::from<PoundsForce>(value);
+	inline force pounds_force(const float value) {
+		return force::from<struct pounds_force>(value);
 	}
 }

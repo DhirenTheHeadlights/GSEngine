@@ -5,89 +5,89 @@
 // Velocity
 
 namespace gse {
-	struct VelocityTag {};
+	struct velocity_tag {};
 
-	constexpr char metersPerSecondUnits[] = "m/s";
-	constexpr char kilometersPerHourUnits[] = "km/h";
-	constexpr char milesPerHourUnits[] = "mph";
-	constexpr char feetPerSecondUnits[] = "ft/s";
+	constexpr char meters_per_second_units[] = "m/s";
+	constexpr char kilometers_per_hour_units[] = "km/h";
+	constexpr char miles_per_hour_units[] = "mph";
+	constexpr char feet_per_second_units[] = "ft/s";
 
-	using MetersPerSecond = Unit<VelocityTag, 1.0f, metersPerSecondUnits>;
-	using KilometersPerHour = Unit<VelocityTag, 0.277778f, kilometersPerHourUnits>;
-	using MilesPerHour = Unit<VelocityTag, 0.44704f, milesPerHourUnits>;
-	using FeetPerSecond = Unit<VelocityTag, 0.3048f, feetPerSecondUnits>;
+	struct meters_per_second : unit<velocity_tag, 1.0f, meters_per_second_units> {};
+	struct kilometers_per_hour : unit<velocity_tag, 0.277778f, kilometers_per_hour_units> {};
+	struct miles_per_hour : unit<velocity_tag, 0.44704f, miles_per_hour_units> {};
+	struct feet_per_second : unit<velocity_tag, 0.3048f, feet_per_second_units> {};
 }
 
 namespace gse {
-	using VelocityUnits = UnitList<
-		MetersPerSecond,
-		KilometersPerHour,
-		MilesPerHour,
-		FeetPerSecond
+	using velocity_units = unit_list<
+		meters_per_second,
+		kilometers_per_hour,
+		miles_per_hour,
+		feet_per_second
 	>;
 
-	struct Velocity : Quantity<Velocity, MetersPerSecond, VelocityUnits> {
-		using Quantity::Quantity;
+	struct velocity : quantity<velocity, meters_per_second, velocity_units> {
+		using quantity::quantity;
 	};
 
-	inline Velocity metersPerSecond(const float value) {
-		return Velocity::from<MetersPerSecond>(value);
+	inline velocity meters_per_second(const float value) {
+		return velocity::from<struct meters_per_second>(value);
 	}
 
-	inline Velocity kilometersPerHour(const float value) {
-		return Velocity::from<KilometersPerHour>(value);
+	inline velocity kilometers_per_hour(const float value) {
+		return velocity::from<struct kilometers_per_hour>(value);
 	}
 
-	inline Velocity milesPerHour(const float value) {
-		return Velocity::from<MilesPerHour>(value);
+	inline velocity miles_per_hour(const float value) {
+		return velocity::from<struct miles_per_hour>(value);
 	}
 
-	inline Velocity feetPerSecond(const float value) {
-		return Velocity::from<FeetPerSecond>(value);
+	inline velocity feet_per_second(const float value) {
+		return velocity::from<struct feet_per_second>(value);
 	}
 }
 
 // Acceleration
 
 namespace gse {
-	struct AccelerationTag {};
+	struct acceleration_tag {};
 
-	constexpr char metersPrSecondSquaredUnits[] = "m/s^2";
-	constexpr char kilometersPrHourSquaredUnits[] = "km/h^2";
-	constexpr char milesPrHourSquaredUnits[] = "mph^2";
-	constexpr char feetPrSecondSquaredUnits[] = "ft/s^2";
+	constexpr char meters_pr_second_squared_units[] = "m/s^2";
+	constexpr char kilometers_pr_hour_squared_units[] = "km/h^2";
+	constexpr char miles_pr_hour_squared_units[] = "mph^2";
+	constexpr char feet_pr_second_squared_units[] = "ft/s^2";
 
-	using MetersPerSecondSquared = Unit<AccelerationTag, 1.0f, metersPrSecondSquaredUnits>;
-	using KilometersPerHourSquared = Unit<AccelerationTag, 0.0000771605f, kilometersPrHourSquaredUnits>;
-	using MilesPerHourSquared = Unit<AccelerationTag, 0.000124514f, milesPrHourSquaredUnits>;
-	using FeetPerSecondSquared = Unit<AccelerationTag, 0.3048f, feetPrSecondSquaredUnits>;
+	struct meters_per_second_squared : unit<acceleration_tag, 1.0f, meters_pr_second_squared_units> {};
+	struct kilometers_per_hour_squared : unit<acceleration_tag, 0.00007716f, kilometers_pr_hour_squared_units> {};
+	struct miles_per_hour_squared : unit<acceleration_tag, 0.00012451f, miles_pr_hour_squared_units> {};
+	struct feet_per_second_squared : unit<acceleration_tag, 0.3048f, feet_pr_second_squared_units> {};
 }
 
 namespace gse {
-	using AccelerationUnits = UnitList<
-		MetersPerSecondSquared,
-		KilometersPerHourSquared,
-		MilesPerHourSquared,
-		FeetPerSecondSquared
+	using acceleration_units = unit_list<
+		meters_per_second_squared,
+		kilometers_per_hour_squared,
+		miles_per_hour_squared,
+		feet_per_second_squared
 	>;
 
-	struct Acceleration : Quantity<Acceleration, MetersPerSecondSquared, AccelerationUnits> {
-		using Quantity::Quantity;
+	struct acceleration : quantity<acceleration, meters_per_second_squared, acceleration_units> {
+		using quantity::quantity;
 	};
 
-	inline Acceleration metersPerSecondSquared(const float value) {
-		return Acceleration::from<MetersPerSecondSquared>(value);
+	inline acceleration meters_per_second_squared(const float value) {
+		return acceleration::from<struct meters_per_second_squared>(value);
 	}
 
-	inline Acceleration kilometersPerHourSquared(const float value) {
-		return Acceleration::from<KilometersPerHourSquared>(value);
+	inline acceleration kilometers_per_hour_squared(const float value) {
+		return acceleration::from<struct kilometers_per_hour_squared>(value);
 	}
 
-	inline Acceleration milesPerHourSquared(const float value) {
-		return Acceleration::from<MilesPerHourSquared>(value);
+	inline acceleration miles_per_hour_squared(const float value) {
+		return acceleration::from<struct miles_per_hour_squared>(value);
 	}
 
-	inline Acceleration feetPerSecondSquared(const float value) {
-		return Acceleration::from<FeetPerSecondSquared>(value);
+	inline acceleration feet_per_second_squared(const float value) {
+		return acceleration::from<struct feet_per_second_squared>(value);
 	}
 }

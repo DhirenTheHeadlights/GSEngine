@@ -6,71 +6,71 @@
 #include "Core/Clock.h"
 #include "Platform/GLFW/Window.h"
 
-gse::Input::Keyboard keyboard;
-gse::Input::Controller controller;
-gse::Input::Mouse mouse;
+gse::input::keyboard keyboard;
+gse::input::controller controller;
+gse::input::mouse mouse;
 
-void gse::Input::update() {
-	Internal::updateAllButtons();
-	Internal::resetTypedInput();
+void gse::input::update() {
+	internal::update_all_buttons();
+	internal::reset_typed_input();
 }
 
 namespace {
 	bool blockInputs = false;
 }
 
-void gse::Input::setUpKeyMaps() {
+void gse::input::set_up_key_maps() {
 	for (int i = GLFW_KEY_A; i <= GLFW_KEY_Z; i++) {
-		keyboard.keys.insert(std::make_pair(i, Button()));
+		keyboard.keys.insert(std::make_pair(i, button()));
 	}
 
 	for (int i = GLFW_KEY_0; i <= GLFW_KEY_9; i++) {
-		keyboard.keys.insert(std::make_pair(i, Button()));
+		keyboard.keys.insert(std::make_pair(i, button()));
 	}
 
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_SPACE, Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_ENTER, Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_ESCAPE, Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_UP, Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_DOWN, Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT, Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_RIGHT, Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT_CONTROL, Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_TAB, Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT_SHIFT, Button()));
-	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT_ALT, Button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_SPACE, button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_ENTER, button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_ESCAPE, button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_UP, button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_DOWN, button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT, button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_RIGHT, button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT_CONTROL, button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_TAB, button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT_SHIFT, button()));
+	keyboard.keys.insert(std::make_pair(GLFW_KEY_LEFT_ALT, button()));
 
 	for (int i = 0; i <= GLFW_GAMEPAD_BUTTON_LAST; i++) {
-		controller.buttons.insert(std::make_pair(i, Button()));
+		controller.buttons.insert(std::make_pair(i, button()));
 	}
 
 	for (int i = 0; i <= GLFW_MOUSE_BUTTON_LAST; i++) {
-		mouse.buttons.insert(std::make_pair(i, Button()));
+		mouse.buttons.insert(std::make_pair(i, button()));
 	}
 }
 
-gse::Input::Keyboard& gse::Input::getKeyboard() {
+gse::input::keyboard& gse::input::get_keyboard() {
 	return keyboard;
 }
 
-gse::Input::Controller& gse::Input::getController() {
+gse::input::controller& gse::input::get_controller() {
 	return controller;
 }
 
-gse::Input::Mouse& gse::Input::getMouse() {
+gse::input::mouse& gse::input::get_mouse() {
 	return mouse;
 }
 
-void gse::Input::setInputsBlocked(const bool blocked) {
+void gse::input::set_inputs_blocked(const bool blocked) {
 	blockInputs = blocked;
 }
 
-void gse::Input::Internal::processEventButton(Button& button, const bool newState) {
-	button.newState = newState;
+void gse::input::internal::process_event_button(button& button, const bool new_state) {
+	button.new_state = new_state;
 }
 
-void gse::Input::Internal::updateButton(Button& button) {
-	if (button.newState == 1) {
+void gse::input::internal::update_button(button& button) {
+	if (button.new_state == 1) {
 		if (button.held) {
 			button.pressed = false;
 		}
@@ -82,7 +82,7 @@ void gse::Input::Internal::updateButton(Button& button) {
 		button.held = true;
 		button.released = false;
 	}
-	else if (button.newState == 0) {
+	else if (button.new_state == 0) {
 		button.held = false;
 		button.pressed = false;
 		button.released = true;
@@ -95,14 +95,14 @@ void gse::Input::Internal::updateButton(Button& button) {
 	if (button.pressed)
 	{
 		button.typed = true;
-		button.typedTime = 0.48f;
+		button.typed_time = 0.48f;
 	}
 	else if (button.held) {
-		button.typedTime -= MainClock::getDeltaTime().as<Seconds>();
+		button.typed_time -= MainClock::getDeltaTime().as<Seconds>();
 
-		if (button.typedTime < 0.f)
+		if (button.typed_time < 0.f)
 		{
-			button.typedTime += 0.07f;
+			button.typed_time += 0.07f;
 			button.typed = true;
 		}
 		else {
@@ -111,17 +111,17 @@ void gse::Input::Internal::updateButton(Button& button) {
 
 	}
 	else {
-		button.typedTime = 0;
+		button.typed_time = 0;
 		button.typed = false;
 	}
-	button.newState = -1;
+	button.new_state = -1;
 }
 
-void gse::Input::Internal::updateAllButtons() {
+void gse::input::internal::update_all_buttons() {
 	if (blockInputs) return;
 
 	for (auto& button : keyboard.keys | std::views::values) {
-		updateButton(button);
+		update_button(button);
 	}
 	
 	for(int i = 0; i <= static_cast<int>(controller.buttons.size()); i++) {
@@ -132,12 +132,12 @@ void gse::Input::Internal::updateAllButtons() {
 		if (glfwGetGamepadState(i, &state)) {
 			for (auto& [b, button] : controller.buttons) {
 				if (state.buttons[b] == GLFW_PRESS) {
-					processEventButton(button, true);
+					process_event_button(button, true);
 				}
 				else if (state.buttons[b] == GLFW_RELEASE) {
-					processEventButton(button, false);
+					process_event_button(button, false);
 				}
-				updateButton(button);
+				update_button(button);
 			}
 			
 			controller.rt = state.axes[GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER];
@@ -154,15 +154,15 @@ void gse::Input::Internal::updateAllButtons() {
 	}
 
 	for (auto& button : mouse.buttons | std::views::values) {
-		updateButton(button);
+		update_button(button);
 	}
 
-	mouse.delta = Window::getRelMousePosition() - mouse.lastPosition;
-	mouse.lastPosition = Window::getRelMousePosition();
+	mouse.delta = window::get_rel_mouse_position() - mouse.lastPosition;
+	mouse.lastPosition = window::get_rel_mouse_position();
 }
 
-void gse::Input::Internal::resetInputsToZero() {
-	resetTypedInput();
+void gse::input::internal::reset_inputs_to_zero() {
+	reset_typed_input();
 
 	for (auto& snd : keyboard.keys | std::views::values) {
 		snd.reset();
@@ -177,10 +177,10 @@ void gse::Input::Internal::resetInputsToZero() {
 	}
 }
 
-void gse::Input::Internal::addToTypedInput(const char input) {
+void gse::input::internal::add_to_typed_input(const char input) {
 	keyboard.typedInput += input;
 }
 
-void gse::Input::Internal::resetTypedInput() {
+void gse::input::internal::reset_typed_input() {
 	keyboard.typedInput.clear();
 }

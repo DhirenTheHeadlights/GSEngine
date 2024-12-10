@@ -9,17 +9,17 @@
 
 namespace {
 	gse::clock autosaveClock;
-	const gse::Time autosaveTime = gse::seconds(60.f);
+	const gse::time autosaveTime = gse::seconds(60.f);
 	std::string imguiSaveFilePath;
 
 	std::vector<std::function<void()>> renderCallBacks;
 }
 
-void gse::Debug::setImguiSaveFilePath(const std::string& path) {
+void gse::debug::set_imgui_save_file_path(const std::string& path) {
 	imguiSaveFilePath = path;
 }
 
-void gse::Debug::setUpImGui() {
+void gse::debug::set_up_im_gui() {
 	ImGui::CreateContext();
 	ImGui::StyleColorsDark();
 	imguiThemes::embraceTheDarkness();
@@ -37,7 +37,7 @@ void gse::Debug::setUpImGui() {
 		style.Colors[ImGuiCol_DockingEmptyBg].w = 0.f;
 	}
 
-	ImGui_ImplGlfw_InitForOpenGL(Window::getWindow(), true);
+	ImGui_ImplGlfw_InitForOpenGL(window::get_window(), true);
 	ImGui_ImplOpenGL3_Init("#version 330");
 
 	if (std::filesystem::exists(imguiSaveFilePath)) {
@@ -45,7 +45,7 @@ void gse::Debug::setUpImGui() {
 	}
 }
 
-void gse::Debug::updateImGui() {
+void gse::debug::update_im_gui() {
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
@@ -58,7 +58,7 @@ void gse::Debug::updateImGui() {
 	if (ImGui::BeginMainMenuBar()) {
 		if (ImGui::BeginMenu("File")) {
 			if (ImGui::MenuItem("Save State")) {
-				saveImGuiState();
+				save_im_gui_state();
 			}
 			if (ImGui::MenuItem("Exit")) {
 				request_shutdown();
@@ -69,16 +69,16 @@ void gse::Debug::updateImGui() {
 	}
 
 	if (io.WantCaptureMouse) {
-		Window::setMouseVisible(true);
+		window::set_mouse_visible(true);
 	}
 
 	if (autosaveClock.get_elapsed_time() > autosaveTime) {
-		saveImGuiState();
+		save_im_gui_state();
 		autosaveClock.reset();
 	}
 }
 
-void gse::Debug::renderImGui() {
+void gse::debug::render_im_gui() {
 	for (const auto& callback : renderCallBacks) {
 		callback();
 	}
@@ -86,7 +86,7 @@ void gse::Debug::renderImGui() {
 
 	ImGui::Render();
 
-	const glm::ivec2 windowSize = Window::getWindowSize();
+	const glm::ivec2 windowSize = window::get_window_size();
 	glViewport(0, 0, windowSize.x, windowSize.y);
 
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -100,11 +100,11 @@ void gse::Debug::renderImGui() {
 	}
 }
 
-void gse::Debug::saveImGuiState() {
+void gse::debug::save_im_gui_state() {
 	ImGui::SaveIniSettingsToDisk(imguiSaveFilePath.c_str());
 }
 
-void gse::Debug::printVector(const std::string& name, const glm::vec3& vec, const char* unit) {
+void gse::debug::print_vector(const std::string& name, const glm::vec3& vec, const char* unit) {
 	if (unit) {
 		ImGui::InputFloat3((name + " - " + unit).c_str(), const_cast<float*>(&vec.x));
 	}
@@ -113,7 +113,7 @@ void gse::Debug::printVector(const std::string& name, const glm::vec3& vec, cons
 	}
 }
 
-void gse::Debug::printValue(const std::string& name, const float& value, const char* unit) {
+void gse::debug::print_value(const std::string& name, const float& value, const char* unit) {
 	if (unit) {
 		ImGui::InputFloat((name + " - " + unit).c_str(), const_cast<float*>(&value), 0.f, 0.f, "%.10f");
 	}
@@ -122,15 +122,15 @@ void gse::Debug::printValue(const std::string& name, const float& value, const c
 	}
 }
 
-void gse::Debug::printBoolean(const std::string& name, const bool& value) {
+void gse::debug::print_boolean(const std::string& name, const bool& value) {
 	ImGui::Checkbox(name.c_str(), const_cast<bool*>(&value));
 }
 
-void gse::Debug::addImguiCallback(const std::function<void()>& callback) {
+void gse::debug::add_imgui_callback(const std::function<void()>& callback) {
 	renderCallBacks.push_back(callback);
 }
 
-bool gse::Debug::getImGuiNeedsInputs() {
+bool gse::debug::get_imgui_needs_inputs() {
 	const ImGuiIO& io = ImGui::GetIO();
 	return io.WantCaptureKeyboard || io.WantTextInput || io.WantCaptureMouse;
 }

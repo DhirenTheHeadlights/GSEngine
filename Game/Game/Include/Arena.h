@@ -11,7 +11,7 @@ namespace Game {
 		void update() override;
 		void render() override;
 	private:
-		gse::Length
+		gse::length
 			width   = gse::meters(1000.f),
 			height	= gse::meters(1000.f),
 			depth	= gse::meters(1000.f);

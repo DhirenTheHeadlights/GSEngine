@@ -4,15 +4,15 @@
 namespace gse {
 	class box : public object {
 	public:
-		box(const Vec3<Length>& position, const Vec3<Length>& size) 
-			: object("Box"), position(position), size(size) {}
+		box(const vec3<length>& position, const vec3<length>& size) 
+			: object("Box"), m_position(position), m_size(size) {}
 
 		void initialize() override;
 		void update() override {}
 		void render() override {}
 
 	private:
-		Vec3<Length> position;
-		Vec3<Length> size;
+		vec3<length> m_position;
+		vec3<length> m_size;
 	};
 }

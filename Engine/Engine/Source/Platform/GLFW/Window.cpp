@@ -20,20 +20,20 @@ namespace {
 	bool mouseVisible = true;
 	int mouseMoved = 0;
 
-	std::vector<std::shared_ptr<gse::Window::RenderingInterface>> renderingInterfaces;
+	std::vector<std::shared_ptr<gse::window::rendering_interface>> renderingInterfaces;
 }
 
-void gse::Window::addRenderingInterface(const std::shared_ptr<RenderingInterface>& renderingInterface) {
-	renderingInterfaces.push_back(renderingInterface);
+void gse::window::add_rendering_interface(const std::shared_ptr<rendering_interface>& rendering_interface) {
+	renderingInterfaces.push_back(rendering_interface);
 }
 
-void gse::Window::removeRenderingInterface(const std::shared_ptr<RenderingInterface>& renderingInterface) {
-	if (const auto it = std::ranges::find(renderingInterfaces, renderingInterface); it != renderingInterfaces.end()) {
+void gse::window::remove_rendering_interface(const std::shared_ptr<rendering_interface>& rendering_interface) {
+	if (const auto it = std::ranges::find(renderingInterfaces, rendering_interface); it != renderingInterfaces.end()) {
 		renderingInterfaces.erase(it);
 	}
 }
 
-void gse::Window::initialize() {
+void gse::window::initialize() {
 	permaAssertComment(glfwInit(), "Error initializing GLFW");
 	glfwWindowHint(GLFW_SAMPLES, 4);
 	glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
@@ -58,26 +58,26 @@ void gse::Window::initialize() {
 	glfwMakeContextCurrent(window);
 	glfwSwapInterval(1);
 
-	glfwSetKeyCallback(window, keyCallback);
-	glfwSetMouseButtonCallback(window, mouseCallback);
-	glfwSetWindowFocusCallback(window, windowFocusCallback);
-	glfwSetWindowSizeCallback(window, windowSizeCallback);
-	glfwSetCursorPosCallback(window, cursorPositionCallback);
-	glfwSetCharCallback(window, characterCallback);
+	glfwSetKeyCallback(window, key_callback);
+	glfwSetMouseButtonCallback(window, mouse_callback);
+	glfwSetWindowFocusCallback(window, window_focus_callback);
+	glfwSetWindowSizeCallback(window, window_size_callback);
+	glfwSetCursorPosCallback(window, cursor_position_callback);
+	glfwSetCharCallback(window, character_callback);
 
 	permaAssertComment(gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)), "Error Initializing GLAD");
 }
 
-void gse::Window::beginFrame() {
-	glViewport(0, 0, getFrameBufferSize().x, getFrameBufferSize().y);
+void gse::window::begin_frame() {
+	glViewport(0, 0, get_frame_buffer_size().x, get_frame_buffer_size().y);
 	glClear(GL_COLOR_BUFFER_BIT);
 
 	for (const auto& renderingInterface : renderingInterfaces) {
-		renderingInterface->onPreRender();
+		renderingInterface->on_pre_render();
 	}
 }
 
-void gse::Window::update() {
+void gse::window::update() {
 	int w = 0, h = 0;
 	glfwGetWindowSize(window, &w, &h);
 	if (windowFocused && currentFullScreen != fullScreen) {
@@ -92,7 +92,7 @@ void gse::Window::update() {
 
 			glfwGetWindowPos(window, &lastPosX, &lastPosY);
 
-			const auto monitor = getCurrentMonitor();
+			const auto monitor = get_current_monitor();
 
 			const GLFWvidmode* mode = glfwGetVideoMode(monitor);
 
@@ -119,52 +119,52 @@ void gse::Window::update() {
 	}
 }
 
-void gse::Window::endFrame() {
+void gse::window::end_frame() {
 	for (const auto& renderingInterface : renderingInterfaces) {
-		renderingInterface->onPostRender();
+		renderingInterface->on_post_render();
 	}
 
 	glfwSwapBuffers(window);
 	glfwPollEvents();
 }
 
-void gse::Window::shutdown() {
+void gse::window::shutdown() {
 	glfwTerminate();
 }
 
 /// Getters and Setters
 
-GLFWwindow* gse::Window::getWindow() {
+GLFWwindow* gse::window::get_window() {
 	return window;
 }
 
-bool gse::Window::isWindowClosed() {
+bool gse::window::is_window_closed() {
 	return glfwWindowShouldClose(window);
 }
 
-bool gse::Window::isFullScreen() {
+bool gse::window::is_full_screen() {
 	return fullScreen;
 }
 
-bool gse::Window::isFocused() {
+bool gse::window::is_focused() {
 	return windowFocused;
 }
 
-bool gse::Window::isMinimized() {
+bool gse::window::is_minimized() {
 	int width, height;
 	glfwGetWindowSize(window, &width, &height);
 	return width == 0 || height == 0;
 }
 
-bool gse::Window::isMouseVisible() {
+bool gse::window::is_mouse_visible() {
 	return mouseVisible;
 }
 
-int gse::Window::hasMouseMoved() {
+int gse::window::has_mouse_moved() {
 	return mouseMoved;
 }
 
-GLFWmonitor* gse::Window::getCurrentMonitor() {
+GLFWmonitor* gse::window::get_current_monitor() {
 	int numberOfMonitors;
 	int wx, wy, ww, wh;
 	int mx, my;
@@ -194,11 +194,11 @@ GLFWmonitor* gse::Window::getCurrentMonitor() {
 	return bestMonitor;
 }
 
-std::optional<GLuint> gse::Window::getFbo() {
+std::optional<GLuint> gse::window::get_fbo() {
 	return fbo;
 }
 
-glm::ivec2 gse::Window::getFrameBufferSize() {
+glm::ivec2 gse::window::get_frame_buffer_size() {
 	if (fbo.has_value()) {
 		if (fboSize == glm::ivec2(0, 0)) {
 			return { 1, 1 };
@@ -214,89 +214,89 @@ glm::ivec2 gse::Window::getFrameBufferSize() {
 	return { x, y };
 }
 
-glm::ivec2 gse::Window::getRelMousePosition() {
+glm::ivec2 gse::window::get_rel_mouse_position() {
 	double x = 0, y = 0;
 	glfwGetCursorPos(window, &x, &y);
 	return { x, y };
 }
 
-glm::ivec2 gse::Window::getWindowSize() {
+glm::ivec2 gse::window::get_window_size() {
 	int x = 0; int y = 0;
 	glfwGetWindowSize(window, &x, &y);
 	return { x, y };
 }
 
-glm::ivec2 gse::Window::getViewportSize() {
+glm::ivec2 gse::window::get_viewport_size() {
 	GLint viewport[4];
 	glGetIntegerv(GL_VIEWPORT, viewport);
 	return { viewport[2], viewport[3] };
 }
 
-void gse::Window::setFbo(const GLuint fboIn, const glm::ivec2& size) {
-	fbo = fboIn;
+void gse::window::set_fbo(const GLuint fbo_in, const glm::ivec2& size) {
+	fbo = fbo_in;
 	fboSize = size;
 }
 
-void gse::Window::setMousePosRelativeToWindow(const glm::ivec2& position) {
+void gse::window::set_mouse_pos_relative_to_window(const glm::ivec2& position) {
 	glfwSetCursorPos(window, position.x, position.y);
 }
 
-void gse::Window::setFullScreen(const bool fs) {
+void gse::window::set_full_screen(const bool fs) {
 	fullScreen = fs;
 }
 
-void gse::Window::setWindowFocused(const bool focused) {
+void gse::window::set_window_focused(const bool focused) {
 	windowFocused = focused;
 }
 
-void gse::Window::setMouseVisible(const bool show) {
+void gse::window::set_mouse_visible(const bool show) {
 	mouseVisible = show;
 }
 
 /// Callbacks
 
-void gse::Window::keyCallback(GLFWwindow* window, const int key, int scancode, const int action, int mods) {
-	if (Input::getKeyboard().keys.contains(key)) {
+void gse::window::key_callback(GLFWwindow* window, const int key, int scancode, const int action, int mods) {
+	if (input::get_keyboard().keys.contains(key)) {
 		if (action == GLFW_PRESS) {
-			Input::Internal::processEventButton(Input::getKeyboard().keys[key], true);
+			input::internal::process_event_button(input::get_keyboard().keys[key], true);
 		}
 		else if (action == GLFW_RELEASE) {
-			Input::Internal::processEventButton(Input::getKeyboard().keys[key], false);
+			input::internal::process_event_button(input::get_keyboard().keys[key], false);
 		}
 	}
 }
 
-void gse::Window::mouseCallback(GLFWwindow* window, const int button, const int action, int mods) {
-	if (Input::getMouse().buttons.contains(button)) {
+void gse::window::mouse_callback(GLFWwindow* window, const int button, const int action, int mods) {
+	if (input::get_mouse().buttons.contains(button)) {
 		if (action == GLFW_PRESS) {
-			Input::Internal::processEventButton(Input::getMouse().buttons[button], true);
+			input::internal::process_event_button(input::get_mouse().buttons[button], true);
 		}
 		else if (action == GLFW_RELEASE) {
-			Input::Internal::processEventButton(Input::getMouse().buttons[button], false);
+			input::internal::process_event_button(input::get_mouse().buttons[button], false);
 		}
 	}
 }
 
-void gse::Window::windowFocusCallback(GLFWwindow* window, const int focused) {
+void gse::window::window_focus_callback(GLFWwindow* window, const int focused) {
 	if (focused) {
 		windowFocused = true;
 	}
 	else {
 		windowFocused = false;
-		Input::Internal::resetInputsToZero(); // To reset buttons
+		input::internal::reset_inputs_to_zero(); // To reset buttons
 	}
 }
 
-void gse::Window::windowSizeCallback(GLFWwindow* window, int x, int y) {
-	Input::Internal::resetInputsToZero();
+void gse::window::window_size_callback(GLFWwindow* window, int x, int y) {
+	input::internal::reset_inputs_to_zero();
 }
 
-void gse::Window::cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
+void gse::window::cursor_position_callback(GLFWwindow* window, double xpos, double ypos) {
 	mouseMoved = 1;
 }
 
-void gse::Window::characterCallback(GLFWwindow* window, const unsigned int codepoint) {
+void gse::window::character_callback(GLFWwindow* window, const unsigned int codepoint) {
 	if (codepoint < 127) {
-		Input::Internal::addToTypedInput(codepoint);
+		input::internal::add_to_typed_input(codepoint);
 	}
 }

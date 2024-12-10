@@ -1,13 +1,13 @@
 #include "Graphics/3D/BoundingBoxMesh.h"
 
-gse::BoundingBoxMesh::BoundingBoxMesh(const Vec3<Length>& lower, const Vec3<Length>& upper)
-	: lower(lower), upper(upper) {
-	updateGrid();
-	drawMode = GL_LINES;
-	shaderName = "SolidColor";
+gse::bounding_box_mesh::bounding_box_mesh(const vec3<length>& lower, const vec3<length>& upper)
+	: m_lower(lower), m_upper(upper) {
+	update_grid();
+	m_draw_mode = GL_LINES;
+	m_shader_name = "SolidColor";
 }
 
-gse::Vertex gse::BoundingBoxMesh::createVertex(const glm::vec3& position) {
+gse::vertex gse::bounding_box_mesh::create_vertex(const glm::vec3& position) {
 	return {
 		position,
 		glm::vec3(0.0f),
@@ -15,37 +15,37 @@ gse::Vertex gse::BoundingBoxMesh::createVertex(const glm::vec3& position) {
 	};
 }
 
-void gse::BoundingBoxMesh::updateGrid() {
+void gse::bounding_box_mesh::update_grid() {
 	constexpr float cellSize = 10.0f;
 
-	vertices.clear();
+	m_vertices.clear();
 
-	const glm::vec3 min = lower.as<Meters>();
-	const glm::vec3 max = upper.as<Meters>();
+	const glm::vec3 min = m_lower.as<Meters>();
+	const glm::vec3 max = m_upper.as<Meters>();
 
 	// Generate grid lines for each face
 	for (float y = min.y; y <= max.y; y += cellSize) {
 		for (float x = min.x; x <= max.x; x += cellSize) {
 			// Vertical lines (front and back faces)
-			vertices.push_back(createVertex({ x, y, min.z }));
-			vertices.push_back(createVertex({ x, y, max.z }));
+			m_vertices.push_back(create_vertex({ x, y, min.z }));
+			m_vertices.push_back(create_vertex({ x, y, max.z }));
 
 			// Horizontal lines along x-axis (front and back faces)
 			if (x + cellSize <= max.x) {
 				float xEnd = x + cellSize;
-				vertices.push_back(createVertex({ x, y, min.z }));
-				vertices.push_back(createVertex({ xEnd, y, min.z }));
+				m_vertices.push_back(create_vertex({ x, y, min.z }));
+				m_vertices.push_back(create_vertex({ xEnd, y, min.z }));
 
-				vertices.push_back(createVertex({ x, y, max.z }));
-				vertices.push_back(createVertex({ xEnd, y, max.z }));
+				m_vertices.push_back(create_vertex({ x, y, max.z }));
+				m_vertices.push_back(create_vertex({ xEnd, y, max.z }));
 			}
 
 			// Horizontal lines along z-axis on left and right faces
 			if (std::abs(x - max.x) < 1e-5 || std::abs(x - min.x) < 1e-5) {
 				for (float z = min.z; z + cellSize <= max.z; z += cellSize) {
 					float zEnd = z + cellSize;
-					vertices.push_back(createVertex({ x, y, z }));
-					vertices.push_back(createVertex({ x, y, zEnd }));
+					m_vertices.push_back(create_vertex({ x, y, z }));
+					m_vertices.push_back(create_vertex({ x, y, zEnd }));
 				}
 			}
 
@@ -53,8 +53,8 @@ void gse::BoundingBoxMesh::updateGrid() {
 			if (y + cellSize <= max.y) {
 				float yEnd = y + cellSize;
 				for (float z = min.z; z <= max.z; z += cellSize) {
-					vertices.push_back(createVertex({ x, y, z }));
-					vertices.push_back(createVertex({ x, yEnd, z }));
+					m_vertices.push_back(create_vertex({ x, y, z }));
+					m_vertices.push_back(create_vertex({ x, yEnd, z }));
 				}
 			}
 		}
@@ -65,26 +65,26 @@ void gse::BoundingBoxMesh::updateGrid() {
 		for (float x = min.x; x <= max.x; x += cellSize) {
 			if (x + cellSize <= max.x) {
 				float xEnd = x + cellSize;
-				vertices.push_back(createVertex({ x, max.y, z }));
-				vertices.push_back(createVertex({ xEnd, max.y, z }));
+				m_vertices.push_back(create_vertex({ x, max.y, z }));
+				m_vertices.push_back(create_vertex({ xEnd, max.y, z }));
 
-				vertices.push_back(createVertex({ x, min.y, z }));
-				vertices.push_back(createVertex({ xEnd, min.y, z }));
+				m_vertices.push_back(create_vertex({ x, min.y, z }));
+				m_vertices.push_back(create_vertex({ xEnd, min.y, z }));
 			}
 
 			if (z + cellSize <= max.z) {
 				float zEnd = z + cellSize;
-				vertices.push_back(createVertex({ x, max.y, z }));
-				vertices.push_back(createVertex({ x, max.y, zEnd }));
+				m_vertices.push_back(create_vertex({ x, max.y, z }));
+				m_vertices.push_back(create_vertex({ x, max.y, zEnd }));
 
-				vertices.push_back(createVertex({ x, min.y, z }));
-				vertices.push_back(createVertex({ x, min.y, zEnd }));
+				m_vertices.push_back(create_vertex({ x, min.y, z }));
+				m_vertices.push_back(create_vertex({ x, min.y, zEnd }));
 			}
 		}
 	}
 }
 
-void gse::BoundingBoxMesh::update() {
-	updateGrid();
-	setUpMesh();
+void gse::bounding_box_mesh::update() {
+	update_grid();
+	set_up_mesh();
 }

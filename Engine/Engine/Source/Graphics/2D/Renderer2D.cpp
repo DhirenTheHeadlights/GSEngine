@@ -9,7 +9,7 @@
 
 namespace {
 	GLuint vao, vbo, ebo;
-	gse::Shader shader(ENGINE_RESOURCES_PATH "Shaders/ui_2d_shader.vert", ENGINE_RESOURCES_PATH "Shaders/ui_2d_shader.frag");
+	gse::shader shader(ENGINE_RESOURCES_PATH "Shaders/ui_2d_shader.vert", ENGINE_RESOURCES_PATH "Shaders/ui_2d_shader.frag");
 }
 
 void gse::renderer::initialize2d() {
@@ -53,7 +53,7 @@ void gse::renderer::initialize2d() {
 
 void gse::renderer::begin_frame() {
 	shader.use();
-    shader.setMat4("projection", getCamera().getProjectionMatrix());
+    shader.setMat4("projection", get_camera().get_projection_matrix());
 }
 
 void gse::renderer::end_frame() {
@@ -64,14 +64,14 @@ namespace {
     void render_quad(const glm::vec2& position, const glm::vec2& size, const glm::vec4* color, const gse::Texture* texture) {
         glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(position, 0.0f));
         model = glm::scale(model, glm::vec3(size, 1.0f));
-        shader.setMat4("uModel", model);
+        shader.set_mat4("uModel", model);
 
         if (texture) {
-            shader.setInt("uUseColor", 0);
+            shader.set_int("uUseColor", 0);
             texture->bind();
         }
         else if (color) {
-            shader.setInt("uUseColor", 1);
+            shader.set_int("uUseColor", 1);
             //shader.setVec4("uColor", *color);
         }
 

@@ -5,39 +5,38 @@
 #include "Core/Object/Object.h"
 #include "Physics/MotionComponent.h"
 
-namespace gse::BroadPhaseCollision {
-	class Group {
-		struct Object {
-			Object(const std::weak_ptr<Physics::CollisionComponent>& collisionComponent) :
-				collisionComponent(collisionComponent) {}
-			std::weak_ptr<Physics::CollisionComponent> collisionComponent;
+namespace gse::broad_phase_collision {
+	class group {
+		struct object {
+			object(const std::weak_ptr<physics::collision_component>& collision_component) : m_collision_component(collision_component) {}
+			std::weak_ptr<physics::collision_component> m_collision_component;
 		};
 
-		struct DynamicObject : Object {
-			DynamicObject(const std::weak_ptr<Physics::CollisionComponent>& collisionComponent, const std::weak_ptr<Physics::MotionComponent>& motionComponent) :
-				Object(collisionComponent), motionComponent(motionComponent) {}
-			std::weak_ptr<Physics::MotionComponent> motionComponent;
+		struct dynamic_object : object {
+			dynamic_object(const std::weak_ptr<physics::collision_component>& collision_component, const std::weak_ptr<physics::motion_component>& motion_component) :
+				object(collision_component), m_motion_component(motion_component) {}
+			std::weak_ptr<physics::motion_component> m_motion_component;
 		};
 	public:
-		void addObject(const std::shared_ptr<Physics::CollisionComponent>& collisionComponent);
-		void removeObject(const std::shared_ptr<Physics::CollisionComponent>& collisionComponent);
+		void add_object(const std::shared_ptr<physics::collision_component>& collision_component);
+		void remove_object(const std::shared_ptr<physics::collision_component>& collision_component);
 
-		void addDynamicObject(const std::shared_ptr<Physics::CollisionComponent>& collisionComponent, const std::shared_ptr<Physics::MotionComponent>& motionComponent);
+		void add_dynamic_object(const std::shared_ptr<physics::collision_component>& collision_component, const std::shared_ptr<physics::motion_component>& motion_component);
 
-		auto getDynamicObjects() -> std::vector<DynamicObject>& { return dynamicObjects; }
-		auto getObjects() -> std::vector<Object>& { return objects; }
+		auto get_dynamic_objects() -> std::vector<dynamic_object>& { return m_dynamic_objects; }
+		auto get_objects() -> std::vector<object>& { return m_objects; }
 	private:
-		std::vector<DynamicObject> dynamicObjects;
-		std::vector<Object> objects;
+		std::vector<dynamic_object> m_dynamic_objects;
+		std::vector<object> m_objects;
 	};
 
-	bool checkCollision(const BoundingBox& box1, const BoundingBox& box2);
-	bool checkCollision(const BoundingBox& dynamicBox, const std::shared_ptr<Physics::MotionComponent>& dynamicMotionComponent, const BoundingBox& otherBox);
-	bool checkCollision(const std::shared_ptr<Physics::CollisionComponent>& dynamicObjectCollisionComponent, const std::shared_ptr<Physics::MotionComponent>& dynamicObjectMotionComponent, const std::shared_ptr<Physics::CollisionComponent>& otherCollisionComponent);
-	bool checkCollision(const Vec3<Length>& point, const BoundingBox& box);
-	CollisionInformation calculateCollisionInformation(const BoundingBox& box1, const BoundingBox& box2);
-	void setCollisionInformation(const BoundingBox& box1, const BoundingBox& box2);
+	bool check_collision(const bounding_box& box1, const bounding_box& box2);
+	bool check_collision(const bounding_box& dynamic_box, const std::shared_ptr<physics::motion_component>& dynamic_motion_component, const bounding_box& other_box);
+	bool check_collision(const std::shared_ptr<physics::collision_component>& dynamic_object_collision_component, const std::shared_ptr<physics::motion_component>& dynamic_object_motion_component, const std::shared_ptr<physics::collision_component>& other_collision_component);
+	bool check_collision(const vec3<length>& point, const bounding_box& box);
+	collision_information calculate_collision_information(const bounding_box& box1, const bounding_box& box2);
+	void set_collision_information(const bounding_box& box1, const bounding_box& box2);
 
-	void update(Group& group);
+	void update(group& group);
 }
 

@@ -1,13 +1,13 @@
 #include "Platform/GLFW/ErrorReporting.h"
 #include <iostream>
 
-void GLAPIENTRY glDebugOutput(const GLenum source,
+void GLAPIENTRY gl_debug_output(const GLenum source,
                               const GLenum type,
                               const unsigned int id,
                               const GLenum severity,
                               GLsizei length,
                               const char* message,
-                              const void* userParam)
+                              const void* user_param)
 {
 	// ignore non-significant error/warning codes
 	if (id == 131169 || id == 131185 || id == 131218 || id == 131204
@@ -55,10 +55,10 @@ void GLAPIENTRY glDebugOutput(const GLenum source,
 
 }
 
-void enableReportGlErrors()
+void enable_report_gl_errors()
 {
 	glEnable(GL_DEBUG_OUTPUT);
 	glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
-	glDebugMessageCallback(glDebugOutput, nullptr);
+	glDebugMessageCallback(gl_debug_output, nullptr);
 	glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, nullptr, GL_TRUE);
 }

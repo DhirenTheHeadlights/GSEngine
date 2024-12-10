@@ -3,9 +3,9 @@
 #include "Core/EngineComponent.h"
 #include "Graphics/3D/BoundingBox.h"
 
-namespace gse::Physics {
-	struct CollisionComponent : engine_component {
-		CollisionComponent(ID* id) : engine_component(id) {}
-		std::vector<BoundingBox> boundingBoxes;
+namespace gse::physics {
+	struct collision_component final : engine_component {
+		collision_component(id* id) : engine_component(id) {}
+		std::vector<bounding_box> m_bounding_boxes;
 	};
 }
