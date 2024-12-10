@@ -8,11 +8,11 @@
 #include "Graphics/3D/BoundingBoxMesh.h"
 #include "Graphics/3D/Mesh.h"
 
-namespace Engine {
-	class RenderComponent : public EngineComponent {
+namespace gse {
+	class RenderComponent : public engine_component {
 	public:
-		RenderComponent(ID* id) : EngineComponent(id) {}
-		RenderComponent(ID* id, const std::vector<std::shared_ptr<Mesh>>& meshes) : EngineComponent(id), meshes(meshes) {}
+		RenderComponent(ID* id) : engine_component(id) {}
+		RenderComponent(ID* id, const std::vector<std::shared_ptr<Mesh>>& meshes) : engine_component(id), meshes(meshes) {}
 
 		void addMesh(const std::shared_ptr<Mesh>& mesh);
 		void addBoundingBoxMesh(const std::shared_ptr<BoundingBoxMesh>& boundingBoxMesh);

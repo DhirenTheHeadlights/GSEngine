@@ -6,7 +6,7 @@
 #include "Physics/Units/Units.h"
 #include "Physics/Vector/Vec3.h"
 
-namespace Engine {
+namespace gse {
 	class Camera {
 	public:
 		Camera(const Vec3<Length>& initialPosition = { 0.f }) : position(initialPosition) {}

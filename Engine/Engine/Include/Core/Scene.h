@@ -8,14 +8,14 @@
 #include "Physics/System.h"
 #include "Physics/Collision/BroadPhaseCollisions.h"
 
-namespace Engine {
-	class Scene {
+namespace gse {
+	class scene {
 	public:
-		Scene() = default;
-		Scene(const std::shared_ptr<ID>& id) : id(id) {}
+		scene() = default;
+		scene(const std::shared_ptr<ID>& id) : id(id) {}
 
-		void addObject(const std::weak_ptr<Object>& object);
-		void removeObject(const std::weak_ptr<Object>& object);
+		void addObject(const std::weak_ptr<object>& object);
+		void removeObject(const std::weak_ptr<object>& object);
 
 		void initialize();
 		void update();
@@ -28,7 +28,7 @@ namespace Engine {
 		void setActive(const bool isActive) { this->isActive = isActive; }
 		bool getActive() const { return isActive; }
 	private:
-		std::vector<std::weak_ptr<Object>> objects;
+		std::vector<std::weak_ptr<object>> objects;
 
 		bool isActive = false;
 
@@ -36,6 +36,6 @@ namespace Engine {
 
 		Physics::Group physicsSystem;
 		BroadPhaseCollision::Group collisionGroup;
-		Renderer::Group renderGroup;
+		renderer::Group renderGroup;
 	};
 }

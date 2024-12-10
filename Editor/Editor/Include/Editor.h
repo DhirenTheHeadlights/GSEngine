@@ -13,7 +13,7 @@ namespace Editor {
 
 	void exit();
 
-	struct RenderingInterface : Engine::Window::RenderingInterface {
+	struct RenderingInterface : gse::Window::RenderingInterface {
 		void onPreRender() override {
 			
 		}

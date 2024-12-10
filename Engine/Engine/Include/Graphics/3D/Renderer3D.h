@@ -4,7 +4,7 @@
 #include "Graphics/3D/Camera.h"
 #include "Lights/LightSourceComponent.h"
 
-namespace Engine::Renderer {
+namespace gse::renderer {
 	class Group {
 	public:
 		void addRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent);

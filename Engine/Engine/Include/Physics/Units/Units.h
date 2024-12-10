@@ -7,13 +7,13 @@
 #include "Physics/Units/MassAndForce.h"
 #include "Physics/Units/Movement.h"
 
-namespace Engine {
+namespace gse {
 	struct UnitlessTag {};
 	constexpr char unitlessUnits[] = "Unitless";
 	using UnitlessUnit = Unit<UnitlessTag, 1.0f, unitlessUnits>;
 }
 
-namespace Engine {
+namespace gse {
 	using UnitlessUnits = UnitList<UnitlessUnit>;
 
 	struct Unitless : Quantity<Unitless, UnitlessUnit, UnitlessUnits> {

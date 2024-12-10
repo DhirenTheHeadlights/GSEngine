@@ -2,7 +2,7 @@
 #include <imgui.h>
 #include "Graphics/RenderComponent.h"
 
-void Engine::Box::initialize() {
+void gse::box::initialize() {
     const auto renderComponent = std::make_shared<RenderComponent>(id.get());
 
     const float halfWidth = size.as<Meters>().x / 2.f;

@@ -5,15 +5,15 @@
 #include "Physics/System.h"
 #include "Physics/Vector/Math.h"
 
-void Engine::BroadPhaseCollision::Group::addDynamicObject(const std::shared_ptr<Physics::CollisionComponent>& collisionComponent, const std::shared_ptr<Physics::MotionComponent>& motionComponent) {
+void gse::BroadPhaseCollision::Group::addDynamicObject(const std::shared_ptr<Physics::CollisionComponent>& collisionComponent, const std::shared_ptr<Physics::MotionComponent>& motionComponent) {
 	dynamicObjects.emplace_back(collisionComponent, motionComponent);
 }
 
-void Engine::BroadPhaseCollision::Group::addObject(const std::shared_ptr<Physics::CollisionComponent>& collisionComponent) {
+void gse::BroadPhaseCollision::Group::addObject(const std::shared_ptr<Physics::CollisionComponent>& collisionComponent) {
 	objects.emplace_back(collisionComponent);
 }
 
-void Engine::BroadPhaseCollision::Group::removeObject(const std::shared_ptr<Physics::CollisionComponent>& collisionComponent) {
+void gse::BroadPhaseCollision::Group::removeObject(const std::shared_ptr<Physics::CollisionComponent>& collisionComponent) {
 	std::erase_if(objects, [&](const Object& obj) {
 		return !obj.collisionComponent.owner_before(collisionComponent) && !collisionComponent.owner_before(obj.collisionComponent);
 		});
@@ -23,13 +23,13 @@ void Engine::BroadPhaseCollision::Group::removeObject(const std::shared_ptr<Phys
 		});
 }
 
-bool Engine::BroadPhaseCollision::checkCollision(const BoundingBox& box1, const BoundingBox& box2) {
+bool gse::BroadPhaseCollision::checkCollision(const BoundingBox& box1, const BoundingBox& box2) {
 	return box1.upperBound.asDefaultUnits().x > box2.lowerBound.asDefaultUnits().x && box1.lowerBound.asDefaultUnits().x < box2.upperBound.asDefaultUnits().x &&
 		   box1.upperBound.asDefaultUnits().y > box2.lowerBound.asDefaultUnits().y && box1.lowerBound.asDefaultUnits().y < box2.upperBound.asDefaultUnits().y &&
 		   box1.upperBound.asDefaultUnits().z > box2.lowerBound.asDefaultUnits().z && box1.lowerBound.asDefaultUnits().z < box2.upperBound.asDefaultUnits().z;
 }
 
-bool Engine::BroadPhaseCollision::checkCollision(const BoundingBox& dynamicBox, const std::shared_ptr<Physics::MotionComponent>& dynamicMotionComponent, const BoundingBox& otherBox) {
+bool gse::BroadPhaseCollision::checkCollision(const BoundingBox& dynamicBox, const std::shared_ptr<Physics::MotionComponent>& dynamicMotionComponent, const BoundingBox& otherBox) {
 	BoundingBox expandedBox = dynamicBox;										// Create a copy
 	Physics::MotionComponent tempComponent = *dynamicMotionComponent;
 	updateEntity(&tempComponent);												// Update the entity's position in the direction of its velocity
@@ -37,13 +37,13 @@ bool Engine::BroadPhaseCollision::checkCollision(const BoundingBox& dynamicBox, 
 	return checkCollision(expandedBox, otherBox);								// Check for collision with the new expanded box
 }
 
-bool Engine::BroadPhaseCollision::checkCollision(const Vec3<Length>& point, const BoundingBox& box) {
+bool gse::BroadPhaseCollision::checkCollision(const Vec3<Length>& point, const BoundingBox& box) {
 	return point.asDefaultUnits().x > box.lowerBound.asDefaultUnits().x && point.asDefaultUnits().x < box.upperBound.asDefaultUnits().x &&
 		   point.asDefaultUnits().y > box.lowerBound.asDefaultUnits().y && point.asDefaultUnits().y < box.upperBound.asDefaultUnits().y &&
 		   point.asDefaultUnits().z > box.lowerBound.asDefaultUnits().z && point.asDefaultUnits().z < box.upperBound.asDefaultUnits().z;
 } 
 
-bool Engine::BroadPhaseCollision::checkCollision(const std::shared_ptr<Physics::CollisionComponent>& dynamicObjectCollisionComponent, const std::shared_ptr<Physics::MotionComponent>& dynamicObjectMotionComponent, const std::shared_ptr<Physics::CollisionComponent>& otherCollisionComponent) {
+bool gse::BroadPhaseCollision::checkCollision(const std::shared_ptr<Physics::CollisionComponent>& dynamicObjectCollisionComponent, const std::shared_ptr<Physics::MotionComponent>& dynamicObjectMotionComponent, const std::shared_ptr<Physics::CollisionComponent>& otherCollisionComponent) {
 	for (auto& box1 : dynamicObjectCollisionComponent->boundingBoxes) {
 		for (auto& box2 : otherCollisionComponent->boundingBoxes) {
 			if (checkCollision(box1, box2)) {
@@ -64,7 +64,7 @@ bool Engine::BroadPhaseCollision::checkCollision(const std::shared_ptr<Physics::
 	return false;
 }
 
-Engine::CollisionInformation Engine::BroadPhaseCollision::calculateCollisionInformation(const BoundingBox& box1, const BoundingBox& box2) {
+gse::CollisionInformation gse::BroadPhaseCollision::calculateCollisionInformation(const BoundingBox& box1, const BoundingBox& box2) {
 	CollisionInformation collisionInformation;
 
 	if (!checkCollision(box1, box2)) {
@@ -107,12 +107,12 @@ Engine::CollisionInformation Engine::BroadPhaseCollision::calculateCollisionInfo
 	return collisionInformation;
 }
 
-void Engine::BroadPhaseCollision::setCollisionInformation(const BoundingBox& box1, const BoundingBox& box2) {
+void gse::BroadPhaseCollision::setCollisionInformation(const BoundingBox& box1, const BoundingBox& box2) {
 	box1.collisionInformation = calculateCollisionInformation(box1, box2);
 	box2.collisionInformation = calculateCollisionInformation(box2, box1);
 }
 
-void Engine::BroadPhaseCollision::update(BroadPhaseCollision::Group& group) {
+void gse::BroadPhaseCollision::update(BroadPhaseCollision::Group& group) {
 	for (auto& dynamicObject : group.getDynamicObjects()) {
 		const auto dynamicObjectPtr = dynamicObject.collisionComponent.lock();
 		if (!dynamicObjectPtr) {

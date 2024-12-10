@@ -4,31 +4,28 @@
 #include <vector>
 
 #include "Core/ID.h"
-#include "Graphics/3D/BoundingBox.h"
 #include "Core/Object/Hook.h"
+#include "Graphics/3D/BoundingBox.h"
 
-namespace Engine {
-	class Scene;
-	class Object {
+namespace gse {
+	class scene;
+
+	class object {
 	public:
-		explicit Object(const std::string& name = "Unnamed Entity") : id(generateID(name)) {}
-		virtual ~Object() = default;
+		explicit object(const std::string& name = "Unnamed Entity") : id(generateID(name)) {}
+		virtual ~object() = default;
 
-		void setSceneId(const std::shared_ptr<ID>& sceneId) { this->sceneId = sceneId; }
+		void set_scene_id(const std::shared_ptr<ID>& sceneId) { this->scene_id = sceneId; }
 
 		std::weak_ptr<ID> getId() const { return id; }
-		std::weak_ptr<ID> getSceneId() const { return sceneId; }
+		std::weak_ptr<ID> getSceneId() const { return scene_id; }
 
-		bool operator==(const Object& other) const {
-			return id == other.id;
-		}
+		bool operator==(const object& other) const { return id == other.id; }
 
 		template <typename T>
-		void addComponent(std::shared_ptr<T> component) {
-			components.insert({ typeid(T), component });
-		}
+		void addComponent(std::shared_ptr<T> component) { components.insert({typeid(T), component}); }
 
-		template<typename T>
+		template <typename T>
 		std::shared_ptr<T> getComponent() const {
 			if (const auto it = components.find(typeid(T)); it != components.end()) {
 				return std::static_pointer_cast<T>(it->second);
@@ -36,49 +33,37 @@ namespace Engine {
 			return nullptr;
 		}
 
-		void addHook(std::unique_ptr<BaseHook> hook) {
-			hooks.push_back(std::move(hook));
-		}
+		void add_hook(std::unique_ptr<base_hook> hook) { hooks.push_back(std::move(hook)); }
+
 	private:
-		std::shared_ptr<ID> sceneId;
+		std::shared_ptr<ID> scene_id;
 
 		std::unordered_map<std::type_index, std::shared_ptr<void>> components;
-		std::vector<std::unique_ptr<BaseHook>> hooks;
+		std::vector<std::unique_ptr<base_hook>> hooks;
 
-		void initializeHooks() const {
-			for (const auto& hook : hooks) {
-				hook->initialize();
-			}
-		}
+		void initialize_hooks() const { for (const auto& hook : hooks) { hook->initialize(); } }
 
-		void updateHooks() const {
-			for (const auto& hook : hooks) {
-				hook->update();
-			}
-		}
+		void update_hooks() const { for (const auto& hook : hooks) { hook->update(); } }
 
-		void renderHooks() const {
-			for (const auto& hook : hooks) {
-				hook->render();
-			}
-		}
+		void render_hooks() const { for (const auto& hook : hooks) { hook->render(); } }
 
-		void processInitialize() {
+		void process_initialize() {
 			initialize();
-			initializeHooks();
+			initialize_hooks();
 		}
 
-		void processUpdate() {
+		void process_update() {
 			update();
-			updateHooks();
+			update_hooks();
 		}
 
-		void processRender() {
+		void process_render() {
 			render();
-			renderHooks();
+			render_hooks();
 		}
 
-		friend Scene;
+		friend scene;
+
 	protected:
 		std::shared_ptr<ID> id;
 

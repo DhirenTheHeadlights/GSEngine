@@ -1,22 +1,22 @@
 #include "Graphics/RenderComponent.h"
 
-void Engine::RenderComponent::addMesh(const std::shared_ptr<Mesh>& mesh) {
+void gse::RenderComponent::addMesh(const std::shared_ptr<Mesh>& mesh) {
 	mesh->setUpMesh();
 	meshes.push_back(mesh);
 }
 
-void Engine::RenderComponent::addBoundingBoxMesh(const std::shared_ptr<BoundingBoxMesh>& boundingBoxMesh) {
+void gse::RenderComponent::addBoundingBoxMesh(const std::shared_ptr<BoundingBoxMesh>& boundingBoxMesh) {
 	boundingBoxMesh->setUpMesh();
 	boundingBoxMeshes.push_back(boundingBoxMesh);
 }
 
-void Engine::RenderComponent::updateBoundingBoxMeshes() const {
+void gse::RenderComponent::updateBoundingBoxMeshes() const {
 	for (const auto& boundingBoxMesh : boundingBoxMeshes) {
 		boundingBoxMesh->update();
 	}
 }
 
-std::vector<Engine::RenderQueueEntry> Engine::RenderComponent::getQueueEntries() const {
+std::vector<gse::RenderQueueEntry> gse::RenderComponent::getQueueEntries() const {
 	if (!render) return {};
 
 	std::vector<RenderQueueEntry> entries;
@@ -32,7 +32,7 @@ std::vector<Engine::RenderQueueEntry> Engine::RenderComponent::getQueueEntries()
 	return entries;
 }
 
-void Engine::RenderComponent::setRender(const bool render, const bool renderBoundingBoxes) {
+void gse::RenderComponent::setRender(const bool render, const bool renderBoundingBoxes) {
 	this->render = render;
 	this->renderBoundingBoxes = renderBoundingBoxes;
 }

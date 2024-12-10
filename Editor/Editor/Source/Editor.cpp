@@ -20,8 +20,8 @@ namespace {
 }
 
 void Editor::initialize() {
-	Engine::Debug::setImguiSaveFilePath(EDITOR_RESOURCES_PATH "imgui_state.ini");
-	Engine::Debug::setUpImGui();
+	gse::Debug::setImguiSaveFilePath(EDITOR_RESOURCES_PATH "imgui_state.ini");
+	gse::Debug::setUpImGui();
 
     // Generate and bind the FBO
     glGenFramebuffers(1, &fbo);
@@ -43,7 +43,7 @@ void Editor::initialize() {
 
     glViewport(0, 0, viewportWidth, viewportHeight);
 
-    Engine::Window::setFbo(fbo, { viewportWidth, viewportHeight });
+    gse::Window::setFbo(fbo, { viewportWidth, viewportHeight });
 
     Game::setInputHandlingFlag(false); // Initialize to false
 }
@@ -55,18 +55,18 @@ void Editor::bindFbo() {
 
 void Editor::unbindFbo() {
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glViewport(0, 0, Engine::Window::getWindowSize().x, Engine::Window::getWindowSize().y);
+    glViewport(0, 0, gse::Window::getWindowSize().x, gse::Window::getWindowSize().y);
 }
 
 void Editor::update() {
-	Engine::Debug::updateImGui();
+	gse::Debug::updateImGui();
 
 	if (ImGui::GetIO().KeysDown[ImGuiKey_Escape]) {
-        Engine::requestShutdown();
+        gse::request_shutdown();
         exit();
 	}
 
-	const ImVec2 mousePosition = { static_cast<float>(Engine::Window::getRelMousePosition().x), static_cast<float>(Engine::Window::getRelMousePosition().y) };
+	const ImVec2 mousePosition = { static_cast<float>(gse::Window::getRelMousePosition().x), static_cast<float>(gse::Window::getRelMousePosition().y) };
 
 	const bool mouseOverGameImage = mousePosition.x > gameWindowPosition.x && mousePosition.x < gameWindowPosition.x + gameWindowSize.x &&
 									mousePosition.y > gameWindowPosition.y && mousePosition.y < gameWindowPosition.y + gameWindowSize.y;
@@ -78,11 +78,11 @@ void Editor::update() {
 	if (gameFocused && ImGui::GetIO().KeysDown[ImGuiKey_Q]) {
 		gameFocused = false;
 
-        Engine::Window::setMousePosRelativeToWindow({ static_cast<int>(gameWindowPosition.x + gameWindowSize.x / 2), static_cast<int>(gameWindowPosition.y + gameWindowSize.y / 2) });
+        gse::Window::setMousePosRelativeToWindow({ static_cast<int>(gameWindowPosition.x + gameWindowSize.x / 2), static_cast<int>(gameWindowPosition.y + gameWindowSize.y / 2) });
     }
 
     Game::setInputHandlingFlag(gameFocused);
-    Engine::Window::setMouseVisible(!gameFocused);
+    gse::Window::setMouseVisible(!gameFocused);
 }
 
 void Editor::render() {
@@ -119,7 +119,7 @@ void Editor::render() {
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-		Engine::Window::setFbo(fbo, { viewportWidth, viewportHeight });
+		gse::Window::setFbo(fbo, { viewportWidth, viewportHeight });
     }
 
     const ImVec2 imagePosition = ImGui::GetCursorScreenPos();
@@ -132,8 +132,8 @@ void Editor::render() {
 
     ImGui::Begin("Editor");
 
-    const auto scenes = Engine::sceneHandler.getAllScenes();
-    const auto activeScenes = Engine::sceneHandler.getActiveScenes();
+    const auto scenes = gse::scene_handler.getAllScenes();
+    const auto activeScenes = gse::scene_handler.getActiveScenes();
     const std::string currentSceneName = activeScenes.empty() ? "No Active Scene" : activeScenes[0]->getId()->tag;
     if (scenes.empty()) {
         ImGui::Text("No scenes available.");
@@ -147,7 +147,7 @@ void Editor::render() {
                 const bool isSelected = !activeScenes.empty() && activeScenes[0]->getId()->tag == scene->tag;
                 if (ImGui::Selectable(scene->tag.c_str(), isSelected)) {
                     if (!isSelected) { // Avoid redundant activation
-                        Engine::sceneHandler.activateScene(scene);
+                        gse::scene_handler.activateScene(scene);
                     }
                 }
                 if (isSelected) {
@@ -166,7 +166,7 @@ void Editor::render() {
     ImGui::End();
 
 
-    Engine::Debug::renderImGui();
+    gse::Debug::renderImGui();
 }
 
 void Editor::exit() {

@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include <glm/glm.hpp>
 
-namespace Engine::Input {
+namespace gse::Input {
 	struct Button {
 		std::uint8_t pressed = 0;
 		std::uint8_t held = 0;

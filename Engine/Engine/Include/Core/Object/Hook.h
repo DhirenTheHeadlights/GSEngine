@@ -1,24 +1,24 @@
 #pragma once
 
-namespace Engine {
-	struct BaseHook {
-		virtual ~BaseHook() = default;
+namespace gse {
+	struct base_hook {
+		virtual ~base_hook() = default;
 
 		virtual void initialize() = 0;
 		virtual void update() = 0;
 		virtual void render() = 0;
 	};
 
-	template <typename OwnerType>
-	struct Hook : BaseHook {
-		Hook() = default;
-		Hook(OwnerType* owner) : owner(owner) {}
-		~Hook() override = default;
+	template <typename owner_type>
+	struct hook : base_hook {
+		hook() = default;
+		hook(owner_type* owner) : owner(owner) {}
+		~hook() override = default;
 
-		void setOwner(OwnerType* owner) {
+		void set_owner(owner_type* owner) {
 			this->owner = owner;
 		}
 	protected:
-		OwnerType* owner;
+		owner_type* owner;
 	};
 }

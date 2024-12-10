@@ -4,7 +4,7 @@
 
 #include "Graphics/Debug.h"
 
-namespace Engine {
+namespace gse {
     enum class LightType {
         Directional,
         Point,

@@ -2,7 +2,7 @@
 
 #include "UnitTemplate.h"
 
-namespace Engine {
+namespace gse {
 	constexpr char degreesUnits[] = "deg";
 	constexpr char radiansUnits[] = "rad";
 
@@ -10,7 +10,7 @@ namespace Engine {
 	using Radians = Unit<float, 1 / 0.01745329252f, radiansUnits>;
 }
 
-namespace Engine {
+namespace gse {
 	using AngleUnits = UnitList<
 		Degrees,
 		Radians

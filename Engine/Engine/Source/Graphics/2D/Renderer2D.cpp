@@ -9,16 +9,16 @@
 
 namespace {
 	GLuint vao, vbo, ebo;
-	Engine::Shader shader(ENGINE_RESOURCES_PATH "Shaders/ui_2d_shader.vert", ENGINE_RESOURCES_PATH "Shaders/ui_2d_shader.frag");
+	gse::Shader shader(ENGINE_RESOURCES_PATH "Shaders/ui_2d_shader.vert", ENGINE_RESOURCES_PATH "Shaders/ui_2d_shader.frag");
 }
 
-void Engine::Renderer::initialize2d() {
-    struct Vertex {
+void gse::renderer::initialize2d() {
+    struct vertex {
         glm::vec2 position;
-        glm::vec2 textureCoordinate;
+        glm::vec2 texture_coordinate;
     };
 
-    constexpr Vertex vertices[4] = {
+    constexpr vertex vertices[4] = {
         {{0.0f, 0.0f}, {0.0f, 0.0f}}, // Top-left
         {{1.0f, 0.0f}, {1.0f, 0.0f}}, // Top-right
         {{1.0f, 1.0f}, {1.0f, 1.0f}}, // Bottom-right
@@ -43,25 +43,25 @@ void Engine::Renderer::initialize2d() {
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
 
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(vertex), (void*)0);
 
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, textureCoordinate));
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(vertex), (void*)offsetof(vertex, texture_coordinate));
 
     glBindVertexArray(0);
 }
 
-void Engine::Renderer::beginFrame() {
+void gse::renderer::begin_frame() {
 	shader.use();
     shader.setMat4("projection", getCamera().getProjectionMatrix());
 }
 
-void Engine::Renderer::endFrame() {
+void gse::renderer::end_frame() {
 
 }
 
 namespace {
-    void renderQuad(const glm::vec2& position, const glm::vec2& size, const glm::vec4* color, const Engine::Texture* texture) {
+    void render_quad(const glm::vec2& position, const glm::vec2& size, const glm::vec4* color, const gse::Texture* texture) {
         glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(position, 0.0f));
         model = glm::scale(model, glm::vec3(size, 1.0f));
         shader.setMat4("uModel", model);
@@ -86,7 +86,15 @@ namespace {
     }
 }
 
-void Engine::Renderer::shutdown() {
+void gse::renderer::draw_quad(const glm::vec2& position, const glm::vec2& size, const glm::vec4& color) {
+	render_quad(position, size, &color, nullptr);
+}
+
+void gse::renderer::draw_quad(const glm::vec2& position, const glm::vec2& size, const gse::Texture& texture) {
+	render_quad(position, size, nullptr, &texture);
+}
+
+void gse::renderer::shutdown() {
     glDeleteVertexArrays(1, &vao);
     glDeleteBuffers(1, &vbo);
     glDeleteBuffers(1, &ebo);

@@ -5,18 +5,18 @@
 namespace Game {
 	class SphereLight;
 
-	struct SphereLightHook : Engine::Hook<SphereLight> {
-		using Hook::Hook;
+	struct SphereLightHook : gse::hook<SphereLight> {
+		using hook::hook;
 		void initialize() override;
 		void update() override;
 		void render() override;
 	};
 
-	class SphereLight : public Engine::Sphere {
+	class SphereLight : public gse::sphere {
 	public:
-		SphereLight(const Engine::Vec3<Engine::Length>& position, const Engine::Length radius, const int sectors = 36, const int stacks = 18)
-			: Sphere(position, radius, sectors, stacks) {
-			addHook(std::make_unique<SphereLightHook>(this));
+		SphereLight(const gse::Vec3<gse::Length>& position, const gse::Length radius, const int sectors = 36, const int stacks = 18)
+			: sphere(position, radius, sectors, stacks) {
+			add_hook(std::make_unique<SphereLightHook>(this));
 		}
 	};
 }

@@ -2,7 +2,7 @@
 
 #include "Physics/Units/UnitTemplate.h"
 
-namespace Engine {
+namespace gse {
 	struct LengthTag {};
 
 	constexpr char kilometersUnits[] = "km";
@@ -22,7 +22,7 @@ namespace Engine {
 	using Inches = Unit<LengthTag, 0.0254f, inchesUnits>;
 }
 
-namespace Engine {
+namespace gse {
 	using LengthUnits = UnitList<
 		Kilometers,
 		Meters,

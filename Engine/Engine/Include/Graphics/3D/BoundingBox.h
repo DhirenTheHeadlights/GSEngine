@@ -4,7 +4,7 @@
 #include "Physics/Vector/Math.h"
 #include "Physics/Vector/Vec3.h"
 
-namespace Engine {
+namespace gse {
 	struct CollisionInformation {
 		bool colliding = false;
 		Vec3<> collisionNormal;

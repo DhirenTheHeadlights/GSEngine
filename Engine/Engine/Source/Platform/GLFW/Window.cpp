@@ -20,20 +20,20 @@ namespace {
 	bool mouseVisible = true;
 	int mouseMoved = 0;
 
-	std::vector<std::shared_ptr<Engine::Window::RenderingInterface>> renderingInterfaces;
+	std::vector<std::shared_ptr<gse::Window::RenderingInterface>> renderingInterfaces;
 }
 
-void Engine::Window::addRenderingInterface(const std::shared_ptr<RenderingInterface>& renderingInterface) {
+void gse::Window::addRenderingInterface(const std::shared_ptr<RenderingInterface>& renderingInterface) {
 	renderingInterfaces.push_back(renderingInterface);
 }
 
-void Engine::Window::removeRenderingInterface(const std::shared_ptr<RenderingInterface>& renderingInterface) {
+void gse::Window::removeRenderingInterface(const std::shared_ptr<RenderingInterface>& renderingInterface) {
 	if (const auto it = std::ranges::find(renderingInterfaces, renderingInterface); it != renderingInterfaces.end()) {
 		renderingInterfaces.erase(it);
 	}
 }
 
-void Engine::Window::initialize() {
+void gse::Window::initialize() {
 	permaAssertComment(glfwInit(), "Error initializing GLFW");
 	glfwWindowHint(GLFW_SAMPLES, 4);
 	glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
@@ -68,7 +68,7 @@ void Engine::Window::initialize() {
 	permaAssertComment(gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)), "Error Initializing GLAD");
 }
 
-void Engine::Window::beginFrame() {
+void gse::Window::beginFrame() {
 	glViewport(0, 0, getFrameBufferSize().x, getFrameBufferSize().y);
 	glClear(GL_COLOR_BUFFER_BIT);
 
@@ -77,7 +77,7 @@ void Engine::Window::beginFrame() {
 	}
 }
 
-void Engine::Window::update() {
+void gse::Window::update() {
 	int w = 0, h = 0;
 	glfwGetWindowSize(window, &w, &h);
 	if (windowFocused && currentFullScreen != fullScreen) {
@@ -119,7 +119,7 @@ void Engine::Window::update() {
 	}
 }
 
-void Engine::Window::endFrame() {
+void gse::Window::endFrame() {
 	for (const auto& renderingInterface : renderingInterfaces) {
 		renderingInterface->onPostRender();
 	}
@@ -128,43 +128,43 @@ void Engine::Window::endFrame() {
 	glfwPollEvents();
 }
 
-void Engine::Window::shutdown() {
+void gse::Window::shutdown() {
 	glfwTerminate();
 }
 
 /// Getters and Setters
 
-GLFWwindow* Engine::Window::getWindow() {
+GLFWwindow* gse::Window::getWindow() {
 	return window;
 }
 
-bool Engine::Window::isWindowClosed() {
+bool gse::Window::isWindowClosed() {
 	return glfwWindowShouldClose(window);
 }
 
-bool Engine::Window::isFullScreen() {
+bool gse::Window::isFullScreen() {
 	return fullScreen;
 }
 
-bool Engine::Window::isFocused() {
+bool gse::Window::isFocused() {
 	return windowFocused;
 }
 
-bool Engine::Window::isMinimized() {
+bool gse::Window::isMinimized() {
 	int width, height;
 	glfwGetWindowSize(window, &width, &height);
 	return width == 0 || height == 0;
 }
 
-bool Engine::Window::isMouseVisible() {
+bool gse::Window::isMouseVisible() {
 	return mouseVisible;
 }
 
-int Engine::Window::hasMouseMoved() {
+int gse::Window::hasMouseMoved() {
 	return mouseMoved;
 }
 
-GLFWmonitor* Engine::Window::getCurrentMonitor() {
+GLFWmonitor* gse::Window::getCurrentMonitor() {
 	int numberOfMonitors;
 	int wx, wy, ww, wh;
 	int mx, my;
@@ -194,11 +194,11 @@ GLFWmonitor* Engine::Window::getCurrentMonitor() {
 	return bestMonitor;
 }
 
-std::optional<GLuint> Engine::Window::getFbo() {
+std::optional<GLuint> gse::Window::getFbo() {
 	return fbo;
 }
 
-glm::ivec2 Engine::Window::getFrameBufferSize() {
+glm::ivec2 gse::Window::getFrameBufferSize() {
 	if (fbo.has_value()) {
 		if (fboSize == glm::ivec2(0, 0)) {
 			return { 1, 1 };
@@ -214,48 +214,48 @@ glm::ivec2 Engine::Window::getFrameBufferSize() {
 	return { x, y };
 }
 
-glm::ivec2 Engine::Window::getRelMousePosition() {
+glm::ivec2 gse::Window::getRelMousePosition() {
 	double x = 0, y = 0;
 	glfwGetCursorPos(window, &x, &y);
 	return { x, y };
 }
 
-glm::ivec2 Engine::Window::getWindowSize() {
+glm::ivec2 gse::Window::getWindowSize() {
 	int x = 0; int y = 0;
 	glfwGetWindowSize(window, &x, &y);
 	return { x, y };
 }
 
-glm::ivec2 Engine::Window::getViewportSize() {
+glm::ivec2 gse::Window::getViewportSize() {
 	GLint viewport[4];
 	glGetIntegerv(GL_VIEWPORT, viewport);
 	return { viewport[2], viewport[3] };
 }
 
-void Engine::Window::setFbo(const GLuint fboIn, const glm::ivec2& size) {
+void gse::Window::setFbo(const GLuint fboIn, const glm::ivec2& size) {
 	fbo = fboIn;
 	fboSize = size;
 }
 
-void Engine::Window::setMousePosRelativeToWindow(const glm::ivec2& position) {
+void gse::Window::setMousePosRelativeToWindow(const glm::ivec2& position) {
 	glfwSetCursorPos(window, position.x, position.y);
 }
 
-void Engine::Window::setFullScreen(const bool fs) {
+void gse::Window::setFullScreen(const bool fs) {
 	fullScreen = fs;
 }
 
-void Engine::Window::setWindowFocused(const bool focused) {
+void gse::Window::setWindowFocused(const bool focused) {
 	windowFocused = focused;
 }
 
-void Engine::Window::setMouseVisible(const bool show) {
+void gse::Window::setMouseVisible(const bool show) {
 	mouseVisible = show;
 }
 
 /// Callbacks
 
-void Engine::Window::keyCallback(GLFWwindow* window, const int key, int scancode, const int action, int mods) {
+void gse::Window::keyCallback(GLFWwindow* window, const int key, int scancode, const int action, int mods) {
 	if (Input::getKeyboard().keys.contains(key)) {
 		if (action == GLFW_PRESS) {
 			Input::Internal::processEventButton(Input::getKeyboard().keys[key], true);
@@ -266,7 +266,7 @@ void Engine::Window::keyCallback(GLFWwindow* window, const int key, int scancode
 	}
 }
 
-void Engine::Window::mouseCallback(GLFWwindow* window, const int button, const int action, int mods) {
+void gse::Window::mouseCallback(GLFWwindow* window, const int button, const int action, int mods) {
 	if (Input::getMouse().buttons.contains(button)) {
 		if (action == GLFW_PRESS) {
 			Input::Internal::processEventButton(Input::getMouse().buttons[button], true);
@@ -277,7 +277,7 @@ void Engine::Window::mouseCallback(GLFWwindow* window, const int button, const i
 	}
 }
 
-void Engine::Window::windowFocusCallback(GLFWwindow* window, const int focused) {
+void gse::Window::windowFocusCallback(GLFWwindow* window, const int focused) {
 	if (focused) {
 		windowFocused = true;
 	}
@@ -287,15 +287,15 @@ void Engine::Window::windowFocusCallback(GLFWwindow* window, const int focused) 
 	}
 }
 
-void Engine::Window::windowSizeCallback(GLFWwindow* window, int x, int y) {
+void gse::Window::windowSizeCallback(GLFWwindow* window, int x, int y) {
 	Input::Internal::resetInputsToZero();
 }
 
-void Engine::Window::cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
+void gse::Window::cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
 	mouseMoved = 1;
 }
 
-void Engine::Window::characterCallback(GLFWwindow* window, const unsigned int codepoint) {
+void gse::Window::characterCallback(GLFWwindow* window, const unsigned int codepoint) {
 	if (codepoint < 127) {
 		Input::Internal::addToTypedInput(codepoint);
 	}

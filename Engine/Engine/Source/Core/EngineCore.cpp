@@ -6,10 +6,10 @@
 #include "Platform/GLFW/Input.h"
 #include "Platform/GLFW/Window.h"
 
-Engine::SceneHandler Engine::sceneHandler;
+gse::SceneHandler gse::scene_handler;
 
-Engine::Camera& Engine::getCamera() {
-	return Renderer::getCamera();
+gse::Camera& gse::get_camera() {
+	return renderer::getCamera();
 }
 
 namespace {
@@ -28,7 +28,7 @@ namespace {
 	bool imguiEnabled = false;
 }
 
-void Engine::requestShutdown() {
+void gse::request_shutdown() {
 	if (engineShutdownBlocked) {
 		return;
 	}
@@ -36,26 +36,26 @@ void Engine::requestShutdown() {
 }
 
 // Stops the engine from shutting down this frame
-void Engine::blockShutdownRequests() {
+void gse::block_shutdown_requests() {
 	engineShutdownBlocked = true;
 }
 
-void Engine::setImguiEnabled(const bool enabled) {
+void gse::set_imgui_enabled(const bool enabled) {
 	imguiEnabled = enabled;
 }
 
-void Engine::initialize(const std::function<void()>& initializeFunction, const std::function<void()>& shutdownFunction) {
+void gse::initialize(const std::function<void()>& initialize_function, const std::function<void()>& shutdown_function) {
 	engineState = EngineState::Initializing;
 
-	gameShutdownFunction = shutdownFunction;
+	gameShutdownFunction = shutdown_function;
 
 	Window::initialize();
 
 	if (imguiEnabled) Debug::setUpImGui();
 
-	Renderer::initialize3d();
+	renderer::initialize3d();
 
-	initializeFunction();
+	initialize_function();
 
 	engineState = EngineState::Running;
 }
@@ -63,58 +63,58 @@ void Engine::initialize(const std::function<void()>& initializeFunction, const s
 namespace {
 	void update(const std::function<bool()>& updateFunction) {
 
-		if (imguiEnabled) Engine::addTimer("Engine::update");
+		if (imguiEnabled) gse::addTimer("Engine::update");
 
-		Engine::Window::update();
+		gse::Window::update();
 
-		if (imguiEnabled) Engine::Debug::updateImGui();
+		if (imguiEnabled) gse::Debug::updateImGui();
 
-		Engine::MainClock::update();
+		gse::MainClock::update();
 
-		Engine::sceneHandler.update();
+		gse::scene_handler.update();
 
-		Engine::Input::update();
+		gse::Input::update();
 
 		if (!updateFunction()) {
-			Engine::requestShutdown();
+			gse::request_shutdown();
 		}
 
-		if (imguiEnabled) Engine::resetTimer("Engine::render");
+		if (imguiEnabled) gse::resetTimer("Engine::render");
 	}
 
 	void render(const std::function<bool()>& renderFunction) {
-		if (imguiEnabled) Engine::addTimer("Engine::render");
+		if (imguiEnabled) gse::addTimer("Engine::render");
 
-		Engine::Window::beginFrame();
+		gse::Window::beginFrame();
 
-		Engine::sceneHandler.render();
+		gse::scene_handler.render();
 
 		if (!renderFunction()) {
-			Engine::requestShutdown();
+			gse::request_shutdown();
 		}
 
-		if (imguiEnabled) Engine::displayTimers();
-		if (imguiEnabled) Engine::Debug::renderImGui();
+		if (imguiEnabled) gse::displayTimers();
+		if (imguiEnabled) gse::Debug::renderImGui();
 
-		Engine::Window::endFrame();
+		gse::Window::endFrame();
 
-		if (imguiEnabled) Engine::resetTimer("Engine::update");
+		if (imguiEnabled) gse::resetTimer("Engine::update");
 	}
 
 	void shutdown() {
 		gameShutdownFunction();
-		Engine::Window::shutdown();
+		gse::Window::shutdown();
 	}
 }
 
-void Engine::run(const std::function<bool()>& updateFunction, const std::function<bool()>& renderFunction) {
+void gse::run(const std::function<bool()>& update_function, const std::function<bool()>& render_function) {
 	permaAssertComment(engineState == EngineState::Running, "Engine is not initialized");
 
-	sceneHandler.setEngineInitialized(true);
+	scene_handler.setEngineInitialized(true);
 
 	while (engineState == EngineState::Running && !Window::isWindowClosed()) {
-		update(updateFunction);
-		render(renderFunction);
+		update(update_function);
+		render(render_function);
 	}
 
 	shutdown();

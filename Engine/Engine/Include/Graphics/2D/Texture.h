@@ -7,7 +7,7 @@
 
 #include "Core/Object/Object.h"
 
-namespace Engine {
+namespace gse {
     class Texture {
     public:
         Texture() = default;

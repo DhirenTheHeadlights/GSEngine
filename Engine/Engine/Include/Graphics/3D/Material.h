@@ -3,7 +3,7 @@
 #include "glm/gtc/type_ptr.hpp"
 #include "Graphics/Shader.h"
 
-namespace Engine {
+namespace gse {
 	struct Material {
 		Material(const std::string& vertexPath, const std::string& fragmentPath, const std::string& materialType) :
 			materialType(materialType) {

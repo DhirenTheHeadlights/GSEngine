@@ -1,11 +1,11 @@
 #pragma once
 #include "Engine.h"
 
-namespace Engine {
-	class Box : public Object {
+namespace gse {
+	class box : public object {
 	public:
-		Box(const Vec3<Length>& position, const Vec3<Length>& size) 
-			: Object("Box"), position(position), size(size) {}
+		box(const Vec3<Length>& position, const Vec3<Length>& size) 
+			: object("Box"), position(position), size(size) {}
 
 		void initialize() override;
 		void update() override {}

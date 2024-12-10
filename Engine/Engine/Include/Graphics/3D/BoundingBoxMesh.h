@@ -3,7 +3,7 @@
 #include "Graphics/3D/Mesh.h"
 #include "Physics/Vector/Vec3.h"
 
-namespace Engine {
+namespace gse {
 	class BoundingBoxMesh : public Mesh {
 	public:
 		BoundingBoxMesh(const Vec3<Length>& lower, const Vec3<Length>& upper);
