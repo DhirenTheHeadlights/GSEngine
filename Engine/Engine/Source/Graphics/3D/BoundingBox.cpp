@@ -4,26 +4,26 @@
 
 #include "Core/EngineCore.h"
 
-gse::Vec3<gse::Length> gse::getLeftBound(const BoundingBox& boundingBox) {
-	const Vec3<Length> center = boundingBox.getCenter();
-	const Length halfWidth = meters(boundingBox.getSize().as<Meters>().x / 2.0f);
-	return center - Vec3<Meters>(halfWidth, 0.0f, 0.0f);
+gse::vec3<gse::length> gse::get_left_bound(const bounding_box& bounding_box) {
+	const vec3<length> center = bounding_box.get_center();
+	const length halfWidth = meters(bounding_box.get_size().as<Meters>().x / 2.0f);
+	return center - vec3<Meters>(halfWidth, 0.0f, 0.0f);
 }
 
-gse::Vec3<gse::Length> gse::getRightBound(const BoundingBox& boundingBox) {
-	const Vec3<Length> center = boundingBox.getCenter();
-	const Length halfWidth = meters(boundingBox.getSize().as<Meters>().x / 2.0f);
-	return center + Vec3<Meters>(halfWidth, 0.0f, 0.0f);
+gse::vec3<gse::length> gse::get_right_bound(const bounding_box& bounding_box) {
+	const vec3<length> center = bounding_box.get_center();
+	const length halfWidth = meters(bounding_box.get_size().as<Meters>().x / 2.0f);
+	return center + vec3<Meters>(halfWidth, 0.0f, 0.0f);
 }
 
-gse::Vec3<gse::Length> gse::getFrontBound(const BoundingBox& boundingBox) {
-	const Vec3<Length> center = boundingBox.getCenter();
-	const Length halfDepth = meters(boundingBox.getSize().as<Meters>().z / 2.0f);
-	return center - Vec3<Meters>(0.0f, 0.0f, halfDepth);
+gse::vec3<gse::length> gse::get_front_bound(const bounding_box& bounding_box) {
+	const vec3<length> center = bounding_box.get_center();
+	const length halfDepth = meters(bounding_box.get_size().as<Meters>().z / 2.0f);
+	return center - vec3<Meters>(0.0f, 0.0f, halfDepth);
 }
 
-gse::Vec3<gse::Length> gse::getBackBound(const BoundingBox& boundingBox) {
-	const Vec3<Length> center = boundingBox.getCenter();
-	const Length halfDepth = meters(boundingBox.getSize().as<Meters>().z / 2.0f);
-	return center + Vec3<Meters>(0.0f, 0.0f, halfDepth);
+gse::vec3<gse::length> gse::get_back_bound(const bounding_box& bounding_box) {
+	const vec3<length> center = bounding_box.get_center();
+	const length halfDepth = meters(bounding_box.get_size().as<Meters>().z / 2.0f);
+	return center + vec3<Meters>(0.0f, 0.0f, halfDepth);
 }

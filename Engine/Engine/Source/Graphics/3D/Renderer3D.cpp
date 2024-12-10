@@ -13,12 +13,12 @@
 #include "Platform/GLFW/Window.h"
 
 namespace {
-	gse::Camera camera;
+	gse::camera camera;
 
-	std::unordered_map<std::string, gse::Material> materials;
-	std::unordered_map<std::string, gse::Shader> deferredRenderingShaders;
-	std::unordered_map<std::string, gse::Shader> forwardRenderingShaders;
-	std::unordered_map<std::string, gse::Shader> lightingShaders;
+	std::unordered_map<std::string, gse::material> materials;
+	std::unordered_map<std::string, gse::shader> deferredRenderingShaders;
+	std::unordered_map<std::string, gse::shader> forwardRenderingShaders;
+	std::unordered_map<std::string, gse::shader> lightingShaders;
 
 	GLuint gBuffer = 0;
 	GLuint gPosition = 0;
@@ -27,39 +27,39 @@ namespace {
 	GLuint ssboLights = 0;
 	GLuint lightSpaceBlockUBO = 0;
 
-	gse::CubeMap reflectionCubeMap;
+	gse::cube_map reflectionCubeMap;
 
 	float shadowWidth = 4096;
 	float shadowHeight = 4096;
 
-	gse::Length nearPlane = gse::meters(10.0f);
-	gse::Length farPlane = gse::meters(1000.f);
+	gse::length nearPlane = gse::meters(10.0f);
+	gse::length farPlane = gse::meters(1000.f);
 
 	bool depthMapDebug = false;
 
-	void loadShaders(const std::string& shaderPath, const std::string& shaderFileName, std::unordered_map<std::string, gse::Shader>& shaders) {
-		gse::JsonParse::parse(
-			gse::JsonParse::loadJson(shaderPath + shaderFileName),
+	void loadShaders(const std::string& shaderPath, const std::string& shaderFileName, std::unordered_map<std::string, gse::shader>& shaders) {
+		gse::json_parse::parse(
+			gse::json_parse::load_json(shaderPath + shaderFileName),
 			[&](const std::string& key, const nlohmann::json& value) {
-				shaders.emplace(key, gse::Shader(shaderPath + value["vertex"].get<std::string>(),
+				shaders.emplace(key, gse::shader(shaderPath + value["vertex"].get<std::string>(),
 					shaderPath + value["fragment"].get<std::string>()));
 			}
 		);
 	}
 }
 
-void gse::renderer::Group::addRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent) {
-	renderComponents.push_back(renderComponent);
+void gse::renderer::group::add_render_component(const std::shared_ptr<render_component>& render_component) {
+	m_render_components.push_back(render_component);
 }
 
-void gse::renderer::Group::addLightSourceComponent(const std::shared_ptr<LightSourceComponent>& lightSourceComponent) {
-	lightSourceComponents.push_back(lightSourceComponent);
+void gse::renderer::group::add_light_source_component(const std::shared_ptr<light_source_component>& light_source_component) {
+	m_light_source_components.push_back(light_source_component);
 
-	if (const auto pointLight = std::dynamic_pointer_cast<PointLight>(lightSourceComponent); pointLight) {
-		pointLight->getShadowMap().create(static_cast<int>((shadowWidth + shadowHeight) / 2.f), true);
+	if (const auto pointLight = std::dynamic_pointer_cast<point_light>(light_source_component); pointLight) {
+		pointLight->get_shadow_map().create(static_cast<int>((shadowWidth + shadowHeight) / 2.f), true);
 
-		depthMaps.push_back(pointLight->getShadowMap().getTextureID());
-		depthMapFBOs.push_back(pointLight->getShadowMap().getFrameBufferID());
+		depth_maps.push_back(pointLight->get_shadow_map().get_texture_id());
+		depth_map_fbos.push_back(pointLight->get_shadow_map().get_frame_buffer_id());
 	}
 	else {
 		GLuint depthMap, depthMapFbo;
@@ -81,45 +81,45 @@ void gse::renderer::Group::addLightSourceComponent(const std::shared_ptr<LightSo
 
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-		depthMaps.push_back(depthMap);
-		depthMapFBOs.push_back(depthMapFbo);
+		depth_maps.push_back(depthMap);
+		depth_map_fbos.push_back(depthMapFbo);
 	}
 }
 
-void gse::renderer::Group::removeRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent) {
-	std::erase_if(renderComponents, [&](const std::weak_ptr<RenderComponent>& component) {
-		return !component.owner_before(renderComponent) && !renderComponent.owner_before(component);
+void gse::renderer::group::remove_render_component(const std::shared_ptr<render_component>& render_component) {
+	std::erase_if(m_render_components, [&](const std::weak_ptr<render_component>& component) {
+		return !component.owner_before(render_component) && !render_component.owner_before(component);
 		});
 }
 
-void gse::renderer::Group::removeLightSourceComponent(const std::shared_ptr<LightSourceComponent>& lightSourceComponent) {
-	const auto it = std::ranges::find_if(lightSourceComponents,
-		[&](const std::weak_ptr<LightSourceComponent>& component) {
-			return !component.owner_before(lightSourceComponent) && !lightSourceComponent.owner_before(component);
+void gse::renderer::group::remove_light_source_component(const std::shared_ptr<light_source_component>& light_source_component) {
+	const auto it = std::ranges::find_if(m_light_source_components,
+		[&](const std::weak_ptr<light_source_component>& component) {
+			return !component.owner_before(light_source_component) && !light_source_component.owner_before(component);
 		});
 
-	if (it != lightSourceComponents.end()) {
-		const size_t index = std::distance(lightSourceComponents.begin(), it);
+	if (it != m_light_source_components.end()) {
+		const size_t index = std::distance(m_light_source_components.begin(), it);
 
-		glDeleteTextures(1, &depthMaps[index]);
-		glDeleteFramebuffers(1, &depthMapFBOs[index]);
+		glDeleteTextures(1, &depth_maps[index]);
+		glDeleteFramebuffers(1, &depth_map_fbos[index]);
 
-		depthMaps.erase(depthMaps.begin() + index);
-		depthMapFBOs.erase(depthMapFBOs.begin() + index);
-		lightSourceComponents.erase(it);
+		depth_maps.erase(depth_maps.begin() + index);
+		depth_map_fbos.erase(depth_map_fbos.begin() + index);
+		m_light_source_components.erase(it);
 	}
 }
 
 void gse::renderer::initialize3d() {
-	enableReportGlErrors();
+	enable_report_gl_errors();
 
 	const std::string shaderPath = std::string(ENGINE_RESOURCES_PATH) + "Shaders/";
 
 	const std::string objectShadersPath = shaderPath + "Object/";
-	JsonParse::parse(
-		JsonParse::loadJson(objectShadersPath + "object_shaders.json"),
+	json_parse::parse(
+		json_parse::load_json(objectShadersPath + "object_shaders.json"),
 		[&](const std::string& key, const nlohmann::json& value) {
-			materials.emplace(key, Material(objectShadersPath + value["vertex"].get<std::string>(),
+			materials.emplace(key, material(objectShadersPath + value["vertex"].get<std::string>(),
 			objectShadersPath + value["fragment"].get<std::string>(), key));
 		}
 	);
@@ -128,8 +128,8 @@ void gse::renderer::initialize3d() {
 	loadShaders(shaderPath + "ForwardRendering/", "forward_rendering.json", forwardRenderingShaders);
 	loadShaders(shaderPath + "Lighting/", "light_shaders.json", lightingShaders);
 
-	const GLsizei screenWidth = Window::getFrameBufferSize().x;
-	const GLsizei screenHeight = Window::getFrameBufferSize().y;
+	const GLsizei screenWidth = window::get_frame_buffer_size().x;
+	const GLsizei screenHeight = window::get_frame_buffer_size().y;
 
 	glGenFramebuffers(1, &gBuffer);
 	glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
@@ -190,82 +190,82 @@ void gse::renderer::initialize3d() {
 	const auto& lightingShader = deferredRenderingShaders["LightingPass"];
 
 	lightingShader.use();
-	lightingShader.setInt("gPosition", 0);
-	lightingShader.setInt("gNormal", 1);
-	lightingShader.setInt("gAlbedoSpec", 2);
-	lightingShader.setBool("depthMapDebug", depthMapDebug);
+	lightingShader.set_int("gPosition", 0);
+	lightingShader.set_int("gNormal", 1);
+	lightingShader.set_int("gAlbedoSpec", 2);
+	lightingShader.set_bool("depthMapDebug", depthMapDebug);
 
 	reflectionCubeMap.create(1024);
 }
 
 namespace {
-	void renderObject(const gse::RenderQueueEntry& entry, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
-		if (const auto it = materials.find(entry.materialKey); it != materials.end()) {
-			it->second.use(viewMatrix, projectionMatrix, entry.modelMatrix);
-			it->second.shader.setVec3("color", entry.color);
-			it->second.shader.setBool("useTexture", entry.textureID != 0);
+	void renderObject(const gse::render_queue_entry& entry, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
+		if (const auto it = materials.find(entry.material_key); it != materials.end()) {
+			it->second.use(viewMatrix, projectionMatrix, entry.model_matrix);
+			it->second.shader.set_vec3("color", entry.color);
+			it->second.shader.set_bool("useTexture", entry.texture_id != 0);
 
-			if (entry.textureID != 0) {
+			if (entry.texture_id != 0) {
 				glActiveTexture(GL_TEXTURE0);
-				glBindTexture(GL_TEXTURE_2D, entry.textureID);
-				it->second.shader.setInt("diffuseTexture", 0);
+				glBindTexture(GL_TEXTURE_2D, entry.texture_id);
+				it->second.shader.set_int("diffuseTexture", 0);
 			}
 
-			glBindVertexArray(entry.VAO);
-			glDrawElements(entry.drawMode, entry.vertexCount, GL_UNSIGNED_INT, nullptr);
+			glBindVertexArray(entry.vao);
+			glDrawElements(entry.draw_mode, entry.vertex_count, GL_UNSIGNED_INT, nullptr);
 			glBindVertexArray(0);
 
-			if (entry.textureID != 0) {
+			if (entry.texture_id != 0) {
 				glBindTexture(GL_TEXTURE_2D, 0);
 			}
 		}
 		else {
-			std::cerr << "Shader program key not found: " << entry.materialKey << '\n';
+			std::cerr << "Shader program key not found: " << entry.material_key << '\n';
 		}
 	}
 
-	void renderObjectForward(const gse::Shader& forwardRenderingShader, const gse::RenderQueueEntry& entry, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
-		forwardRenderingShader.setVec3("color", entry.color);
-		forwardRenderingShader.setBool("useTexture", entry.textureID != 0);
-		forwardRenderingShader.setMat4("model", entry.modelMatrix);
-		forwardRenderingShader.setMat4("view", viewMatrix);
-		forwardRenderingShader.setMat4("projection", projectionMatrix);
-		forwardRenderingShader.setVec3("viewPos", glm::vec3(0.f));
+	void renderObjectForward(const gse::shader& forwardRenderingShader, const gse::render_queue_entry& entry, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
+		forwardRenderingShader.set_vec3("color", entry.color);
+		forwardRenderingShader.set_bool("useTexture", entry.texture_id != 0);
+		forwardRenderingShader.set_mat4("model", entry.model_matrix);
+		forwardRenderingShader.set_mat4("view", viewMatrix);
+		forwardRenderingShader.set_mat4("projection", projectionMatrix);
+		forwardRenderingShader.set_vec3("viewPos", glm::vec3(0.f));
 
-		if (entry.textureID != 0) {
+		if (entry.texture_id != 0) {
 			glActiveTexture(GL_TEXTURE0);
-			glBindTexture(GL_TEXTURE_2D, entry.textureID);
-			forwardRenderingShader.setInt("diffuseTexture", 0);
+			glBindTexture(GL_TEXTURE_2D, entry.texture_id);
+			forwardRenderingShader.set_int("diffuseTexture", 0);
 		}
 
 		glActiveTexture(GL_TEXTURE2);
 		glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
 
-		glBindVertexArray(entry.VAO);
-		glDrawElements(entry.drawMode, entry.vertexCount, GL_UNSIGNED_INT, nullptr);
+		glBindVertexArray(entry.vao);
+		glDrawElements(entry.draw_mode, entry.vertex_count, GL_UNSIGNED_INT, nullptr);
 		glBindVertexArray(0);
 
-		if (entry.textureID != 0) {
+		if (entry.texture_id != 0) {
 			glBindTexture(GL_TEXTURE_2D, 0);
 		}
 	}
 
-	void renderObject(const gse::LightRenderQueueEntry& entry) {
-		if (const auto it = lightingShaders.find(entry.shaderKey); it != lightingShaders.end()) {
+	void renderObject(const gse::light_render_queue_entry& entry) {
+		if (const auto it = lightingShaders.find(entry.shader_key); it != lightingShaders.end()) {
 			it->second.use();
-			it->second.setMat4("model", glm::mat4(1.0f));
-			it->second.setMat4("view", camera.getViewMatrix());
-			it->second.setMat4("projection", camera.getProjectionMatrix());
+			it->second.set_mat4("model", glm::mat4(1.0f));
+			it->second.set_mat4("view", camera.get_view_matrix());
+			it->second.set_mat4("projection", camera.get_projection_matrix());
 
-			it->second.setVec3("color", entry.shaderEntry.color);
-			it->second.setFloat("intensity", entry.shaderEntry.intensity);
+			it->second.set_vec3("color", entry.shader_entry.color);
+			it->second.set_float("intensity", entry.shader_entry.intensity);
 		}
 		else {
-			std::cerr << "Shader program key not found: " << entry.shaderKey << '\n';
+			std::cerr << "Shader program key not found: " << entry.shader_key << '\n';
 		}
 	}
 
-	void renderLightingPass(const gse::Shader& lightingShader, const std::vector<gse::LightShaderEntry>& lightData, const std::vector<glm::mat4>& lightSpaceMatrices, const std::vector<GLuint>& depthMapFBOs) {
+	void renderLightingPass(const gse::shader& lightingShader, const std::vector<gse::light_shader_entry>& lightData, const std::vector<glm::mat4>& lightSpaceMatrices, const std::vector<GLuint>& depthMapFBOs) {
 		if (lightData.empty()) {
 			return;
 		}
@@ -274,7 +274,7 @@ namespace {
 
 		// Update SSBO with light data
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboLights);
-		glBufferData(GL_SHADER_STORAGE_BUFFER, lightData.size() * sizeof(gse::LightShaderEntry), lightData.data(), GL_DYNAMIC_DRAW);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, lightData.size() * sizeof(gse::light_shader_entry), lightData.data(), GL_DYNAMIC_DRAW);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, ssboLights);
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
@@ -294,8 +294,8 @@ namespace {
 			shadowMapUnits[i] = 3 + i;
 		}
 
-		lightingShader.setIntArray("shadowMaps", shadowMapUnits.data(), static_cast<unsigned>(shadowMapUnits.size()));
-		lightingShader.setMat4Array("lightSpaceMatrices", lightSpaceMatrices.data(), static_cast<unsigned>(lightSpaceMatrices.size()));
+		lightingShader.set_int_array("shadowMaps", shadowMapUnits.data(), static_cast<unsigned>(shadowMapUnits.size()));
+		lightingShader.set_mat4_array("lightSpaceMatrices", lightSpaceMatrices.data(), static_cast<unsigned>(lightSpaceMatrices.size()));
 
 		// Pass other G-buffer textures
 		glActiveTexture(GL_TEXTURE0);
@@ -307,7 +307,7 @@ namespace {
 
 		constexpr GLuint bindingUnit = 5;
 		reflectionCubeMap.bind(bindingUnit);
-		lightingShader.setInt("environmentMap", bindingUnit);
+		lightingShader.set_int("environmentMap", bindingUnit);
 
 		// Render a full-screen quad to process lighting
 		static unsigned int quadVAO = 0;
@@ -343,8 +343,8 @@ namespace {
 		glEnable(GL_DEPTH_TEST);  // Re-enable depth testing after the lighting pass
 	}
 
-	void renderShadowPass(const gse::Shader& shadowShader, const std::vector<std::weak_ptr<gse::RenderComponent>>& renderComponents, const glm::mat4& lightSpaceMatrix, const GLuint depthMapFBO) {
-		shadowShader.setMat4("lightSpaceMatrix", lightSpaceMatrix);
+	void renderShadowPass(const gse::shader& shadowShader, const std::vector<std::weak_ptr<gse::render_component>>& renderComponents, const glm::mat4& lightSpaceMatrix, const GLuint depthMapFBO) {
+		shadowShader.set_mat4("lightSpaceMatrix", lightSpaceMatrix);
 
 		glViewport(0, 0, static_cast<GLsizei>(shadowWidth), static_cast<GLsizei>(shadowHeight)); 
 		glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
@@ -353,17 +353,17 @@ namespace {
 
 		for (const auto& renderComponent : renderComponents) {
 			if (const auto renderComponentPtr = renderComponent.lock()) {
-				for (const auto& entry : renderComponentPtr->getQueueEntries()) {
-					shadowShader.setMat4("model", entry.modelMatrix);
-					glBindVertexArray(entry.VAO);
-					glDrawElements(entry.drawMode, entry.vertexCount, GL_UNSIGNED_INT, nullptr);
+				for (const auto& entry : renderComponentPtr->get_queue_entries()) {
+					shadowShader.set_mat4("model", entry.model_matrix);
+					glBindVertexArray(entry.vao);
+					glDrawElements(entry.draw_mode, entry.vertex_count, GL_UNSIGNED_INT, nullptr);
 					glBindVertexArray(0);
 				}
 			}
 		}
 
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
-		glViewport(0, 0, gse::Window::getFrameBufferSize().x, gse::Window::getFrameBufferSize().y); // Restore viewport
+		glViewport(0, 0, gse::window::get_frame_buffer_size().x, gse::window::get_frame_buffer_size().y); // Restore viewport
 	}
 
 	glm::vec3 ensureNonCollinearUp(const glm::vec3& direction, const glm::vec3& up) {
@@ -386,21 +386,21 @@ namespace {
 	}
 
 
-	glm::mat4 calculateLightSpaceMatrix(const std::shared_ptr<gse::Light>& light) {
-		const auto& entry = light->getRenderQueueEntry().shaderEntry;
+	glm::mat4 calculateLightSpaceMatrix(const std::shared_ptr<gse::light>& light) {
+		const auto& entry = light->get_render_queue_entry().shader_entry;
 		const glm::vec3 lightDirection = entry.direction;
 
 		glm::vec3 lightPos(0.0f);
 		glm::mat4 lightProjection(1.0f);
 
-		if (entry.lightType == static_cast<int>(gse::LightType::Directional)) {
+		if (entry.light_type == static_cast<int>(gse::light_type::directional)) {
 			lightPos = -lightDirection * 10.0f;
 			lightProjection = glm::ortho(-10000.0f, 10000.0f, -10000.0f, 1000.0f,
 				nearPlane.as<gse::Meters>(), farPlane.as<gse::Meters>());
 		}
-		else if (entry.lightType == static_cast<int>(gse::LightType::Spot)) {
+		else if (entry.light_type == static_cast<int>(gse::light_type::spot)) {
 			lightPos = entry.position;
-			const float cutoff = entry.cutOff;
+			const float cutoff = entry.cut_off;
 			lightProjection = glm::perspective(cutoff, 1.0f, nearPlane.as<gse::Meters>(), farPlane.as<gse::Meters>());
 		}
 
@@ -414,31 +414,31 @@ namespace {
 	}
 }
 
-void gse::renderer::renderObjects(Group& group) {
-	const auto& renderComponents = group.getRenderComponents();
-	const auto& lightSourceComponents = group.getLightSourceComponents();
+void gse::renderer::render_objects(group& group) {
+	const auto& renderComponents = group.get_render_components();
+	const auto& lightSourceComponents = group.get_light_source_components();
 
 	camera.updateCameraVectors();
-	if (!Window::isMouseVisible()) camera.processMouseMovement(Input::getMouse().delta);
+	if (!window::is_mouse_visible()) camera.processMouseMovement(input::get_mouse().delta);
 
-	Debug::addImguiCallback([] {
+	debug::add_imgui_callback([] {
 		ImGui::Begin("Near/Far Plane");
-		Debug::unitSlider<Length, Meters>("Near Plane", nearPlane, meters(0.1f), meters(100.0f));
-		Debug::unitSlider<Length, Meters>("Far Plane", farPlane, meters(10.0f), meters(10000.0f));
+		debug::unit_slider<length, Meters>("Near Plane", nearPlane, meters(0.1f), meters(100.0f));
+		debug::unit_slider<length, Meters>("Far Plane", farPlane, meters(10.0f), meters(10000.0f));
 		ImGui::End();
 		});
 
 	// Grab all LightRenderQueueEntries from LightSourceComponents
-	std::vector<LightShaderEntry> lightData;
+	std::vector<light_shader_entry> lightData;
 	lightData.reserve(lightSourceComponents.size());
 	for (const auto& lightSourceComponent : lightSourceComponents) {
 		if (const auto lightSourceComponentPtr = lightSourceComponent.lock()) {
-			for (const auto& entry : lightSourceComponentPtr->getRenderQueueEntries()) {
-				lightData.push_back(entry.shaderEntry);
+			for (const auto& entry : lightSourceComponentPtr->get_render_queue_entries()) {
+				lightData.push_back(entry.shader_entry);
 			}
 		}
 		else {
-			group.removeLightSourceComponent(lightSourceComponent.lock());
+			group.remove_light_source_component(lightSourceComponent.lock());
 		}
 	}
 
@@ -446,19 +446,19 @@ void gse::renderer::renderObjects(Group& group) {
 	forwardRenderingShader.use();
 
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboLights);
-	glBufferData(GL_SHADER_STORAGE_BUFFER, static_cast<GLsizeiptr>(lightData.size()) * sizeof(LightShaderEntry), lightData.data(), GL_DYNAMIC_DRAW);
+	glBufferData(GL_SHADER_STORAGE_BUFFER, static_cast<GLsizeiptr>(lightData.size()) * sizeof(light_shader_entry), lightData.data(), GL_DYNAMIC_DRAW);
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssboLights);
 
 	reflectionCubeMap.update(glm::vec3(0.f), glm::perspective(glm::radians(45.0f), 1.0f, nearPlane.as<Meters>(), farPlane.as<Meters>()),
 		[&group, renderComponents, forwardRenderingShader](const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
 			for (const auto& renderComponent : renderComponents) {
 				if (const auto renderComponentPtr = renderComponent.lock()) {
-					for (auto entries = renderComponentPtr->getQueueEntries(); const auto & entry : entries) {
+					for (auto entries = renderComponentPtr->get_queue_entries(); const auto & entry : entries) {
 						renderObjectForward(forwardRenderingShader, entry, viewMatrix, projectionMatrix);
 					}
 				}
 				else {
-					group.removeRenderComponent(renderComponent.lock());
+					group.remove_render_component(renderComponent.lock());
 				}
 			}
 		});
@@ -471,23 +471,23 @@ void gse::renderer::renderObjects(Group& group) {
 	shadowShader.use();
 
 	for (size_t i = 0; i < lightSourceComponents.size(); ++i) {
-		for (const auto& light : lightSourceComponents[i].lock()->getLights()) {
-			if (const auto pointLight = std::dynamic_pointer_cast<PointLight>(light); pointLight) {
-				const auto lightPos = pointLight->getRenderQueueEntry().shaderEntry.position;
+		for (const auto& light : lightSourceComponents[i].lock()->get_lights()) {
+			if (const auto pointLight = std::dynamic_pointer_cast<point_light>(light); pointLight) {
+				const auto lightPos = pointLight->get_render_queue_entry().shader_entry.position;
 
-				pointLight->getShadowMap().update(lightPos, glm::mat4(1.f), [&](const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
+				pointLight->get_shadow_map().update(lightPos, glm::mat4(1.f), [&](const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
 					shadowShader.use();
-					shadowShader.setMat4("view", viewMatrix);     
-					shadowShader.setMat4("projection", projectionMatrix);
-					shadowShader.setVec3("lightPos", lightPos);
-					shadowShader.setFloat("farPlane", farPlane.as<Meters>());
+					shadowShader.set_mat4("view", viewMatrix);     
+					shadowShader.set_mat4("projection", projectionMatrix);
+					shadowShader.set_vec3("lightPos", lightPos);
+					shadowShader.set_float("farPlane", farPlane.as<Meters>());
 
 					for (const auto& renderComponent : renderComponents) {
 						if (const auto renderComponentPtr = renderComponent.lock()) {
-							for (const auto& entry : renderComponentPtr->getQueueEntries()) {
-								shadowShader.setMat4("model", entry.modelMatrix);  // Object's model matrix
-								glBindVertexArray(entry.VAO);
-								glDrawElements(entry.drawMode, entry.vertexCount, GL_UNSIGNED_INT, nullptr);
+							for (const auto& entry : renderComponentPtr->get_queue_entries()) {
+								shadowShader.set_mat4("model", entry.model_matrix);  // Object's model matrix
+								glBindVertexArray(entry.vao);
+								glDrawElements(entry.draw_mode, entry.vertex_count, GL_UNSIGNED_INT, nullptr);
 							}
 						}
 					}
@@ -495,7 +495,7 @@ void gse::renderer::renderObjects(Group& group) {
 			}
 			else {
 				lightSpaceMatrices.push_back(calculateLightSpaceMatrix(light));
-				renderShadowPass(shadowShader, renderComponents, lightSpaceMatrices.back(), group.depthMapFBOs[i]);
+				renderShadowPass(shadowShader, renderComponents, lightSpaceMatrices.back(), group.depth_map_fbos[i]);
 			}
 		}
 	}
@@ -508,12 +508,12 @@ void gse::renderer::renderObjects(Group& group) {
 
 	for (const auto& renderComponent : renderComponents) {
 		if (const auto renderComponentPtr = renderComponent.lock()) {
-			for (auto entries = renderComponentPtr->getQueueEntries(); const auto & entry : entries) {
+			for (auto entries = renderComponentPtr->get_queue_entries(); const auto & entry : entries) {
 				renderObject(entry, camera.getViewMatrix(), camera.getProjectionMatrix());
 			}
 		}
 		else {
-			group.removeRenderComponent(renderComponent.lock());
+			group.remove_render_component(renderComponent.lock());
 		}
 	}
 
@@ -526,28 +526,28 @@ void gse::renderer::renderObjects(Group& group) {
 
 	for (const auto& lightSourceComponent : lightSourceComponents) {
 		if (const auto lightSourceComponentPtr = lightSourceComponent.lock()) {
-			for (const auto& entry : lightSourceComponentPtr->getRenderQueueEntries()) {
+			for (const auto& entry : lightSourceComponentPtr->get_render_queue_entries()) {
 				renderObject(entry); 
 			}
 		}
 		else {
-			group.removeLightSourceComponent(lightSourceComponent.lock());
+			group.remove_light_source_component(lightSourceComponent.lock());
 		}
 	}
 
 	glEnable(GL_DEPTH_TEST);
 	glDisable(GL_BLEND);
 
-	if (Window::getFbo().has_value()) {
-		glBindFramebuffer(GL_FRAMEBUFFER, Window::getFbo().value());
+	if (window::get_fbo().has_value()) {
+		glBindFramebuffer(GL_FRAMEBUFFER, window::get_fbo().value());
 	}
 	else {
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
 
-	renderLightingPass(deferredRenderingShaders["LightingPass"], lightData, lightSpaceMatrices, group.depthMaps);
+	renderLightingPass(deferredRenderingShaders["LightingPass"], lightData, lightSpaceMatrices, group.depth_maps);
 }
 
-gse::Camera& gse::renderer::getCamera() {
+gse::camera& gse::renderer::get_camera() {
 	return camera;
 }

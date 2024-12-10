@@ -6,26 +6,26 @@
 #include "Light.h"
 
 namespace gse {
-	class DirectionalLight : public Light {
+	class directional_light final : public light {
 	public:
-		DirectionalLight(const Vec3<>& color, const Unitless& intensity, const Vec3<>& direction, const Unitless& ambientStrength)
-			: Light(color, intensity, LightType::Directional), direction(direction), ambientStrength(ambientStrength) {}
+		directional_light(const vec3<>& color, const unitless& intensity, const vec3<>& direction, const unitless& ambient_strength)
+			: light(color, intensity, light_type::directional), m_direction(direction), m_ambient_strength(ambient_strength) {}
 
-		void showDebugMenu(const std::shared_ptr<ID>& lightID) override {
-			Debug::addImguiCallback([this, lightID] {
-				ImGui::Begin(std::string("Directional Light " + lightID->tag).c_str());
-				Debug::unitSlider("Intensity", intensity, unitless(0.0f), unitless(100.0f));
-				Debug::unitSlider("Ambient Strength", ambientStrength, unitless(0.0f), unitless(10.0f));
-				ImGui::SliderFloat3("Direction", &direction.asDefaultUnits().x, -1.0f, 1.0f);
+		void show_debug_menu(const std::shared_ptr<id>& light_id) override {
+			debug::add_imgui_callback([this, light_id] {
+				ImGui::Begin(std::string("Directional Light " + light_id->tag).c_str());
+				debug::unit_slider("Intensity", m_intensity, unitless(0.0f), unitless(100.0f));
+				debug::unit_slider("Ambient Strength", m_ambient_strength, unitless(0.0f), unitless(10.0f));
+				ImGui::SliderFloat3("Direction", &m_direction.as_default_units().x, -1.0f, 1.0f);
 				ImGui::End();
 				});
 		}	
 		
-		LightRenderQueueEntry getRenderQueueEntry() const override {
-			return { LightType::Directional, color, intensity, direction, ambientStrength };
+		light_render_queue_entry get_render_queue_entry() const override {
+			return { light_type::directional, m_color, m_intensity, m_direction, m_ambient_strength };
 		}
 	private:
-		Vec3<> direction;
-		Unitless ambientStrength;
+		vec3<> m_direction;
+		unitless m_ambient_strength;
 	};
 }

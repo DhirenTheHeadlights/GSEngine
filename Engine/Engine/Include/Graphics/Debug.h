@@ -9,28 +9,28 @@
 #include "Physics/Units/UnitTemplate.h"
 #include "Physics/Vector/Vec3.h"
 
-namespace gse::Debug {
-	void setUpImGui();
-	void updateImGui();
-	void renderImGui();
-	void saveImGuiState();
+namespace gse::debug {
+	void set_up_im_gui();
+	void update_im_gui();
+	void render_im_gui();
+	void save_im_gui_state();
 
-	void setImguiSaveFilePath(const std::string& path);
+	void set_imgui_save_file_path(const std::string& path);
 
-	void printVector(const std::string& name, const glm::vec3& vec, const char* unit = nullptr);
-	void printValue(const std::string& name, const float& value, const char* unit = nullptr);
+	void print_vector(const std::string& name, const glm::vec3& vec, const char* unit = nullptr);
+	void print_value(const std::string& name, const float& value, const char* unit = nullptr);
 
-	template <IsQuantity Quantity = Unitless, IsUnit Unit = UnitlessUnit>
-	void unitSlider(const std::string& name, Quantity& quantity, const Quantity& min, const Quantity& max) {
-		float value = quantity.template as<Unit>();
+	template <is_quantity quantity_type = unitless, is_unit unit_type = unitless_unit>
+	void unit_slider(const std::string& name, quantity_type& quantity, const quantity_type& min, const quantity_type& max) {
+		float value = quantity.template as<unit_type>();
 
-		if (ImGui::SliderFloat((name + " (" + Unit::template UnitName + ")").c_str(), &value, min.template as<Unit>(), max.template as<Unit>())) {
-			quantity.template set<Unit>(value);
+		if (ImGui::SliderFloat((name + " (" + unit_type::template UnitName + ")").c_str(), &value, min.template as<unit_type>(), max.template as<unit_type>())) {
+			quantity.template set<unit_type>(value);
 		}
 	}
 
-	void printBoolean(const std::string& name, const bool& value);
+	void print_boolean(const std::string& name, const bool& value);
 
-	void addImguiCallback(const std::function<void()>& callback);
-	bool getImGuiNeedsInputs();
+	void add_imgui_callback(const std::function<void()>& callback);
+	bool get_imgui_needs_inputs();
 }

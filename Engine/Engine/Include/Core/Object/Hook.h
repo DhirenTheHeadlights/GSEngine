@@ -12,13 +12,13 @@ namespace gse {
 	template <typename owner_type>
 	struct hook : base_hook {
 		hook() = default;
-		hook(owner_type* owner) : owner(owner) {}
+		hook(owner_type* owner) : m_owner(owner) {}
 		~hook() override = default;
 
 		void set_owner(owner_type* owner) {
-			this->owner = owner;
+			m_owner = owner;
 		}
 	protected:
-		owner_type* owner;
+		owner_type* m_owner;
 	};
 }

@@ -3,28 +3,28 @@
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 
-#include <vector>
 #include <string>
+#include <vector>
 
 namespace gse {
-	class CubeMap {
+	class cube_map {
 	public:
-		CubeMap() = default;
-		~CubeMap();
+		cube_map() = default;
+		~cube_map();
 
 		void create(const std::vector<std::string>& faces);
-		void create(int resolution, bool depthOnly = false);
+		void create(int resolution, bool depth_only = false);
 		void bind(GLuint unit) const;
-		void update(const glm::vec3& position, const glm::mat4& projectionMatrix, const std::function<void(const glm::mat4&, const glm::mat4&)>& renderFunction) const;
+		void update(const glm::vec3& position, const glm::mat4& projection_matrix, const std::function<void(const glm::mat4&, const glm::mat4&)>& render_function) const;
 
-		GLuint getTextureID() const { return textureID; }
-		GLuint getFrameBufferID() const { return frameBufferID; }
+		GLuint get_texture_id() const { return m_texture_id; }
+		GLuint get_frame_buffer_id() const { return m_frame_buffer_id; }
 	private:
-		GLuint textureID;
-		GLuint frameBufferID;
-		GLuint depthRenderBufferID;
-		int resolution;
+		GLuint m_texture_id;
+		GLuint m_frame_buffer_id;
+		GLuint m_depth_render_buffer_id;
+		int m_resolution;
 
-		static std::vector<glm::mat4> getViewMatrices(const glm::vec3& position);
+		static std::vector<glm::mat4> get_view_matrices(const glm::vec3& position);
 	};
 }

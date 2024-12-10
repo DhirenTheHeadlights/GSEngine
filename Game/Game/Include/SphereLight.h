@@ -14,7 +14,7 @@ namespace Game {
 
 	class SphereLight : public gse::sphere {
 	public:
-		SphereLight(const gse::Vec3<gse::Length>& position, const gse::Length radius, const int sectors = 36, const int stacks = 18)
+		SphereLight(const gse::vec3<gse::length>& position, const gse::length radius, const int sectors = 36, const int stacks = 18)
 			: sphere(position, radius, sectors, stacks) {
 			add_hook(std::make_unique<SphereLightHook>(this));
 		}

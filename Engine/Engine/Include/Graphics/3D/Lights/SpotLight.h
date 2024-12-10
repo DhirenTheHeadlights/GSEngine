@@ -3,39 +3,39 @@
 #include "Light.h"
 
 namespace gse {
-	class SpotLight : public Light {
+	class SpotLight : public light {
 	public:
-		SpotLight(const Vec3<Length>& position, const Vec3<>& direction, const Vec3<>& color, const Unitless& intensity, const Unitless& constant, const Unitless& linear, const Unitless& quadratic, const Angle& cutOff, const Angle& outerCutOff, const Unitless& ambientStrength)
-			: Light(color, intensity, LightType::Spot), constant(constant), linear(linear), quadratic(quadratic),
-			  cutOff(cutOff), outerCutOff(outerCutOff), position(position), direction(direction), ambientStrength(ambientStrength) {}
+		SpotLight(const vec3<length>& position, const vec3<>& direction, const vec3<>& color, const unitless& intensity, const unitless& constant, const unitless& linear, const unitless& quadratic, const angle& cutOff, const angle& outerCutOff, const unitless& ambientStrength)
+			: light(color, intensity, light_type::spot), m_constant(constant), m_linear(linear), m_quadratic(quadratic),
+			  m_cut_off(cutOff), m_outer_cut_off(outerCutOff), m_position(position), m_direction(direction), m_ambient_strength(ambientStrength) {}
 
-		void showDebugMenu(const std::shared_ptr<ID>& lightID) override {
-			Debug::addImguiCallback([this, lightID] {
-				ImGui::Begin(std::string("Spot Light " + lightID->tag).c_str());
-				Debug::unitSlider("Intensity", intensity, unitless(0.0f), unitless(1000.0f));
-				Debug::unitSlider("Constant", constant, unitless(0.0f), unitless(1.0f));
-				Debug::unitSlider("Linear", linear, unitless(0.0f), unitless(1.0f));
-				Debug::unitSlider("Quadratic", quadratic, unitless(0.0f), unitless(1.0f));
-				Debug::unitSlider<Angle, Degrees>("Cut Off", cutOff, degrees(0.0f), degrees(90.0f));
-				Debug::unitSlider<Angle, Degrees>("Outer Cut Off", outerCutOff, degrees(0.0f), degrees(90.0f));
-				Debug::unitSlider("Ambient Strength", ambientStrength, unitless(0.0f), unitless(1.0f));
-				ImGui::SliderFloat3("Direction", &direction.asDefaultUnits().x, -1.0f, 1.0f);
-				ImGui::SliderFloat3("Position", &position.asDefaultUnits().x, -500.0f, 500.0f);
+		void show_debug_menu(const std::shared_ptr<id>& light_id) override {
+			debug::add_imgui_callback([this, light_id] {
+				ImGui::Begin(std::string("Spot Light " + light_id->tag).c_str());
+				debug::unit_slider("Intensity", m_intensity, unitless(0.0f), unitless(1000.0f));
+				debug::unit_slider("Constant", m_constant, unitless(0.0f), unitless(1.0f));
+				debug::unit_slider("Linear", m_linear, unitless(0.0f), unitless(1.0f));
+				debug::unit_slider("Quadratic", m_quadratic, unitless(0.0f), unitless(1.0f));
+				debug::unit_slider<angle, degrees>("Cut Off", m_cut_off, degrees(0.0f), degrees(90.0f));
+				debug::unit_slider<angle, degrees>("Outer Cut Off", m_outer_cut_off, degrees(0.0f), degrees(90.0f));
+				debug::unit_slider("Ambient Strength", m_ambient_strength, unitless(0.0f), unitless(1.0f));
+				ImGui::SliderFloat3("Direction", &m_direction.as_default_units().x, -1.0f, 1.0f);
+				ImGui::SliderFloat3("Position", &m_position.as_default_units().x, -500.0f, 500.0f);
 				ImGui::End();
 				});
 		}
 
-		LightRenderQueueEntry getRenderQueueEntry() const override {
-			return { LightType::Spot, color, intensity, position, direction, constant, linear, quadratic, cutOff, outerCutOff, ambientStrength };
+		light_render_queue_entry get_render_queue_entry() const override {
+			return { light_type::spot, m_color, m_intensity, m_position, m_direction, m_constant, m_linear, m_quadratic, m_cut_off, m_outer_cut_off, m_ambient_strength };
 		}
 	private:
-		Unitless constant;
-		Unitless linear;
-		Unitless quadratic;
-		Angle cutOff;
-		Angle outerCutOff;
-		Vec3<Length> position;
-		Vec3<> direction;
-		Unitless ambientStrength;
+		unitless m_constant;
+		unitless m_linear;
+		unitless m_quadratic;
+		angle m_cut_off;
+		angle m_outer_cut_off;
+		vec3<length> m_position;
+		vec3<> m_direction;
+		unitless m_ambient_strength;
 	};
 }

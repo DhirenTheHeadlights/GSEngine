@@ -7,48 +7,44 @@
 #include "Physics/Units/MassAndForce.h"
 #include "Physics/Units/Movement.h"
 
-namespace gse {
-	struct UnitlessTag {};
-	constexpr char unitlessUnits[] = "Unitless";
-	using UnitlessUnit = Unit<UnitlessTag, 1.0f, unitlessUnits>;
+namespace gse::internal {
+	struct unitless_tag {};
+	constexpr char unitless_units[] = "Unitless";
+	struct unitless_unit : unit<unitless_tag, 1.0f, unitless_units> {};
 }
 
 namespace gse {
-	using UnitlessUnits = UnitList<UnitlessUnit>;
+	using unitless_units = unit_list<internal::unitless_unit>;
 
-	struct Unitless : Quantity<Unitless, UnitlessUnit, UnitlessUnits> {
-		using Quantity::Quantity;
+	struct unitless : quantity<unitless, internal::unitless_unit, unitless_units> {
+		using quantity::quantity;
 
-		Unitless(const float value) : Quantity(value) {}
+		unitless(const float value) : quantity(value) {}
 
-		template <IsUnit Unit>
+		template <is_unit Unit>
 		auto operator*(const Unit& other) const {
-			return Unit(val * other.getValue());
+			return Unit(m_val * other.get_value());
 		}
 
-		template <IsUnit Unit>
+		template <is_unit Unit>
 		auto operator/(const Unit& other) const {
-			return Unit(val / other.getValue());
+			return Unit(m_val / other.get_value());
 		}
 
-		template <IsUnit Unit>
-		Quantity& operator*=(const Unit& other) {
-			val *= other.getValue();
+		template <is_unit Unit>
+		quantity& operator*=(const Unit& other) {
+			m_val *= other.get_value();
 			return *this;
 		}
 
-		template <IsUnit Unit>
-		Quantity& operator/=(const Unit& other) {
-			val /= other.getValue()();
+		template <is_unit Unit>
+		quantity& operator/=(const Unit& other) {
+			m_val /= other.get_value()();
 			return *this;
 		}
 
 		operator float() const {
-			return val;
+			return m_val;
 		}
 	};
-
-	inline Unitless unitless(const float value) {
-		return value;
-	}
 }

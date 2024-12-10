@@ -3,42 +3,44 @@
 #include "Physics/Units/UnitTemplate.h"
 
 namespace gse {
-	constexpr char millisecondsUnits[] = "ms";
-	constexpr char secondsUnits[] = "s";
-	constexpr char minutesUnits[] = "m";
-	constexpr char hoursUnits[] = "h";
+	struct time_tag {};
 
-	using Milliseconds = Unit<float, 0.001f, millisecondsUnits>;
-	using Seconds = Unit<float, 1.0f, secondsUnits>;
-	using Minutes = Unit<float, 60.0f, minutesUnits>;
-	using Hours = Unit<float, 3600.0f, hoursUnits>;
+	constexpr char milliseconds_units[] = "ms";
+	constexpr char seconds_units[] = "s";
+	constexpr char minutes_units[] = "m";
+	constexpr char hours_units[] = "h";
+
+	struct milliseconds : unit<time_tag, 0.001f, milliseconds_units> {};
+	struct seconds : unit<time_tag, 1.0f, seconds_units> {};
+	struct minutes : unit<time_tag, 60.0f, minutes_units> {};
+	struct hours : unit<time_tag, 3600.0f, hours_units> {};
 }
 
 namespace gse {
-	using TimeUnits = UnitList<
-		Milliseconds,
-		Seconds,
-		Minutes,
-		Hours
+	using time_units = unit_list<
+		milliseconds,
+		seconds,
+		minutes,
+		hours
 	>;
 
-	struct Time : Quantity<Time, Seconds, TimeUnits> {
-		using Quantity::Quantity;
+	struct time : quantity<time, seconds, time_units> {
+		using quantity::quantity;
 	};
 
-	inline Time milliseconds(const float value) {
-		return Time::from<Milliseconds>(value);
+	inline time milliseconds(const float value) {
+		return time::from<struct milliseconds>(value);
+	}
+	 
+	inline time seconds(const float value) {
+		return time::from<struct seconds>(value);
 	}
 
-	inline Time seconds(const float value) {
-		return Time::from<Seconds>(value);
+	inline time minutes(const float value) {
+		return time::from<struct minutes>(value);
 	}
 
-	inline Time minutes(const float value) {
-		return Time::from<Minutes>(value);
-	}
-
-	inline Time hours(const float value) {
-		return Time::from<Hours>(value);
+	inline time hours(const float value) {
+		return time::from<struct hours>(value);
 	}
 }

@@ -8,39 +8,39 @@
 namespace gse {
 	class clock {
 	public:
-		clock() : startTime(std::chrono::steady_clock::now()) {}
+		clock() : m_start_time(std::chrono::steady_clock::now()) {}
 
-		Time reset();
-		Time get_elapsed_time() const;
+		time reset();
+		time get_elapsed_time() const;
 	private:
-		std::chrono::steady_clock::time_point startTime;
+		std::chrono::steady_clock::time_point m_start_time;
 	};
 
 	class scoped_timer : public clock {
 	public:
-		scoped_timer(std::string name, const bool print = true) : name(std::move(name)), print(print) {}
+		scoped_timer(std::string name, const bool print = true) : m_name(std::move(name)), m_print(print) {}
 
 		~scoped_timer();
 
-		bool is_completed() const { return completed; }
-		std::string get_name() const { return name; }
-		void set_completed() { completed = true; }
+		bool is_completed() const { return m_completed; }
+		std::string get_name() const { return m_name; }
+		void set_completed() { m_completed = true; }
 	private:
-		std::string name;
-		bool print = false;
-		bool completed = true;
+		std::string m_name;
+		bool m_print = false;
+		bool m_completed = true;
 	};
 
 
-	void addTimer(const std::string& name);
-	void resetTimer(const std::string& name);
-	void removeTimer(const std::string& name);
-	void displayTimers();
+	void add_timer(const std::string& name);
+	void reset_timer(const std::string& name);
+	void remove_timer(const std::string& name);
+	void display_timers();
 }
 
 namespace gse::MainClock {
 	void update();
-	Time getDeltaTime();
-	Time getConstantUpdateTime(const float frameRate);
+	time getDeltaTime();
+	time getConstantUpdateTime(const float frameRate);
 	int getFrameRate();
 }

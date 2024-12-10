@@ -7,24 +7,24 @@
 #include "Physics/Vector/Vec3.h"
 #include "Vector/Math.h"
 
-namespace gse::Physics {
-	struct MotionComponent : engine_component {
-		MotionComponent(ID* id) : engine_component(id) {}
+namespace gse::physics {
+	struct motion_component final : engine_component {
+		motion_component(id* id) : engine_component(id) {}
 
-		Vec3<Length> position;
-		Vec3<Velocity> velocity;
-		Vec3<Acceleration> acceleration;
+		vec3<length> current_position;
+		vec3<velocity> current_velocity;
+		vec3<acceleration> current_acceleration;
 
-		Velocity maxSpeed;
-		Mass mass;
+		velocity max_speed;
+		mass mass;
 
-		bool affectedByGravity = true;
+		bool affected_by_gravity = true;
 		bool moving = false;
 		bool airborne = false;
-		bool selfControlled = false;
+		bool self_controlled = false;
 
-		Velocity getSpeed() const {
-			return magnitude(velocity);
+		velocity get_speed() const {
+			return magnitude(current_velocity);
 		}
 	};
 }

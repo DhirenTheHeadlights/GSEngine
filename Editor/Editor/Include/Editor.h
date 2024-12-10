@@ -13,12 +13,12 @@ namespace Editor {
 
 	void exit();
 
-	struct RenderingInterface : gse::Window::RenderingInterface {
-		void onPreRender() override {
+	struct RenderingInterface : gse::window::rendering_interface {
+		void on_pre_render() override {
 			
 		}
 
-		void onPostRender() override {
+		void on_post_render() override {
 			unbindFbo();
 
 			update();

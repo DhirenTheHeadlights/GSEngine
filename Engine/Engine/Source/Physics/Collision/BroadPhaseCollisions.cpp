@@ -5,127 +5,127 @@
 #include "Physics/System.h"
 #include "Physics/Vector/Math.h"
 
-void gse::BroadPhaseCollision::Group::addDynamicObject(const std::shared_ptr<Physics::CollisionComponent>& collisionComponent, const std::shared_ptr<Physics::MotionComponent>& motionComponent) {
-	dynamicObjects.emplace_back(collisionComponent, motionComponent);
+void gse::broad_phase_collision::group::add_dynamic_object(const std::shared_ptr<physics::collision_component>& collision_component, const std::shared_ptr<physics::motion_component>& motion_component) {
+	m_dynamic_objects.emplace_back(collision_component, motion_component);
 }
 
-void gse::BroadPhaseCollision::Group::addObject(const std::shared_ptr<Physics::CollisionComponent>& collisionComponent) {
-	objects.emplace_back(collisionComponent);
+void gse::broad_phase_collision::group::add_object(const std::shared_ptr<physics::collision_component>& collision_component) {
+	m_objects.emplace_back(collision_component);
 }
 
-void gse::BroadPhaseCollision::Group::removeObject(const std::shared_ptr<Physics::CollisionComponent>& collisionComponent) {
-	std::erase_if(objects, [&](const Object& obj) {
-		return !obj.collisionComponent.owner_before(collisionComponent) && !collisionComponent.owner_before(obj.collisionComponent);
+void gse::broad_phase_collision::group::remove_object(const std::shared_ptr<physics::collision_component>& collision_component) {
+	std::erase_if(m_objects, [&](const object& obj) {
+		return !obj.m_collision_component.owner_before(collision_component) && !collision_component.owner_before(obj.m_collision_component);
 		});
 
-	std::erase_if(dynamicObjects, [&](const DynamicObject& obj) {
-		return !obj.collisionComponent.owner_before(collisionComponent) && !collisionComponent.owner_before(obj.collisionComponent);
+	std::erase_if(m_dynamic_objects, [&](const dynamic_object& obj) {
+		return !obj.m_collision_component.owner_before(collision_component) && !collision_component.owner_before(obj.m_collision_component);
 		});
 }
 
-bool gse::BroadPhaseCollision::checkCollision(const BoundingBox& box1, const BoundingBox& box2) {
-	return box1.upperBound.asDefaultUnits().x > box2.lowerBound.asDefaultUnits().x && box1.lowerBound.asDefaultUnits().x < box2.upperBound.asDefaultUnits().x &&
-		   box1.upperBound.asDefaultUnits().y > box2.lowerBound.asDefaultUnits().y && box1.lowerBound.asDefaultUnits().y < box2.upperBound.asDefaultUnits().y &&
-		   box1.upperBound.asDefaultUnits().z > box2.lowerBound.asDefaultUnits().z && box1.lowerBound.asDefaultUnits().z < box2.upperBound.asDefaultUnits().z;
+bool gse::broad_phase_collision::check_collision(const bounding_box& box1, const bounding_box& box2) {
+	return box1.upper_bound.as_default_units().x > box2.lower_bound.as_default_units().x && box1.lower_bound.as_default_units().x < box2.upper_bound.as_default_units().x &&
+		   box1.upper_bound.as_default_units().y > box2.lower_bound.as_default_units().y && box1.lower_bound.as_default_units().y < box2.upper_bound.as_default_units().y &&
+		   box1.upper_bound.as_default_units().z > box2.lower_bound.as_default_units().z && box1.lower_bound.as_default_units().z < box2.upper_bound.as_default_units().z;
 }
 
-bool gse::BroadPhaseCollision::checkCollision(const BoundingBox& dynamicBox, const std::shared_ptr<Physics::MotionComponent>& dynamicMotionComponent, const BoundingBox& otherBox) {
-	BoundingBox expandedBox = dynamicBox;										// Create a copy
-	Physics::MotionComponent tempComponent = *dynamicMotionComponent;
-	updateEntity(&tempComponent);												// Update the entity's position in the direction of its velocity
-	expandedBox.setPosition(tempComponent.position);							// Set the expanded box's position to the updated position
-	return checkCollision(expandedBox, otherBox);								// Check for collision with the new expanded box
+bool gse::broad_phase_collision::check_collision(const bounding_box& dynamic_box, const std::shared_ptr<physics::motion_component>& dynamic_motion_component, const bounding_box& other_box) {
+	bounding_box expandedBox = dynamic_box;										// Create a copy
+	physics::motion_component tempComponent = *dynamic_motion_component;
+	update_entity(&tempComponent);												// Update the entity's position in the direction of its current_velocity
+	expandedBox.set_position(tempComponent.current_position);							// Set the expanded box's position to the updated position
+	return check_collision(expandedBox, other_box);								// Check for collision with the new expanded box
 }
 
-bool gse::BroadPhaseCollision::checkCollision(const Vec3<Length>& point, const BoundingBox& box) {
-	return point.asDefaultUnits().x > box.lowerBound.asDefaultUnits().x && point.asDefaultUnits().x < box.upperBound.asDefaultUnits().x &&
-		   point.asDefaultUnits().y > box.lowerBound.asDefaultUnits().y && point.asDefaultUnits().y < box.upperBound.asDefaultUnits().y &&
-		   point.asDefaultUnits().z > box.lowerBound.asDefaultUnits().z && point.asDefaultUnits().z < box.upperBound.asDefaultUnits().z;
+bool gse::broad_phase_collision::check_collision(const vec3<length>& point, const bounding_box& box) {
+	return point.as_default_units().x > box.lower_bound.as_default_units().x && point.as_default_units().x < box.upper_bound.as_default_units().x &&
+		   point.as_default_units().y > box.lower_bound.as_default_units().y && point.as_default_units().y < box.upper_bound.as_default_units().y &&
+		   point.as_default_units().z > box.lower_bound.as_default_units().z && point.as_default_units().z < box.upper_bound.as_default_units().z;
 } 
 
-bool gse::BroadPhaseCollision::checkCollision(const std::shared_ptr<Physics::CollisionComponent>& dynamicObjectCollisionComponent, const std::shared_ptr<Physics::MotionComponent>& dynamicObjectMotionComponent, const std::shared_ptr<Physics::CollisionComponent>& otherCollisionComponent) {
-	for (auto& box1 : dynamicObjectCollisionComponent->boundingBoxes) {
-		for (auto& box2 : otherCollisionComponent->boundingBoxes) {
-			if (checkCollision(box1, box2)) {
-				setCollisionInformation(box1, box2);
+bool gse::broad_phase_collision::check_collision(const std::shared_ptr<physics::collision_component>& dynamic_object_collision_component, const std::shared_ptr<physics::motion_component>& dynamic_object_motion_component, const std::shared_ptr<physics::collision_component>& other_collision_component) {
+	for (auto& box1 : dynamic_object_collision_component->m_bounding_boxes) {
+		for (auto& box2 : other_collision_component->m_bounding_boxes) {
+			if (check_collision(box1, box2)) {
+				set_collision_information(box1, box2);
 
-				box1.collisionInformation.colliding = true;
-				box2.collisionInformation.colliding = true;
+				box1.collision_information.colliding = true;
+				box2.collision_information.colliding = true;
 
-				resolveCollision(box1, dynamicObjectMotionComponent, box2.collisionInformation);
+				resolve_collision(box1, dynamic_object_motion_component, box2.collision_information);
 
 				return true;
 			}
 
-			box1.collisionInformation = {};
-			box2.collisionInformation = {};
+			box1.collision_information = {};
+			box2.collision_information = {};
 		}
 	}
 	return false;
 }
 
-gse::CollisionInformation gse::BroadPhaseCollision::calculateCollisionInformation(const BoundingBox& box1, const BoundingBox& box2) {
-	CollisionInformation collisionInformation;
+gse::collision_information gse::broad_phase_collision::calculate_collision_information(const bounding_box& box1, const bounding_box& box2) {
+	collision_information collisionInformation;
 
-	if (!checkCollision(box1, box2)) {
+	if (!check_collision(box1, box2)) {
 		return collisionInformation;
 	}
 
 	// Calculate the penetration depth on each axis
-	Length xPenetration = min(box1.upperBound, box2.upperBound, X) - max(box1.lowerBound, box2.lowerBound, X);
-	Length yPenetration = min(box1.upperBound, box2.upperBound, Y) - max(box1.lowerBound, box2.lowerBound, Y);
-	Length zPenetration = min(box1.upperBound, box2.upperBound, Z) - max(box1.lowerBound, box2.lowerBound, Z);
+	length xPenetration = min(box1.upper_bound, box2.upper_bound, x) - max(box1.lower_bound, box2.lower_bound, x);
+	length yPenetration = min(box1.upper_bound, box2.upper_bound, y) - max(box1.lower_bound, box2.lower_bound, y);
+	length zPenetration = min(box1.upper_bound, box2.upper_bound, z) - max(box1.lower_bound, box2.lower_bound, z);
 
 	// Find the axis with the smallest penetration
-	Length penetration = xPenetration;
-	Vec3 collisionNormal(1.0f, 0.0f, 0.0f); // Default to X axis
+	length penetration = xPenetration;
+	vec3 collisionNormal(1.0f, 0.0f, 0.0f); // Default to X axis
 
 	if (yPenetration < penetration) {
 		penetration = yPenetration;
-		collisionNormal = Vec3(0.0f, 1.0f, 0.0f);
+		collisionNormal = vec3(0.0f, 1.0f, 0.0f);
 	}
 	if (zPenetration < penetration) {
 		penetration = zPenetration;
-		collisionNormal = Vec3(0.0f, 0.0f, 1.0f);
+		collisionNormal = vec3(0.0f, 0.0f, 1.0f);
 	}
 
 	// Determine the collision normal
-	const Vec3<Length> deltaCenter = box2.getCenter() - box1.getCenter();
+	const vec3<length> deltaCenter = box2.get_center() - box1.get_center();
 	if (dot(deltaCenter, collisionNormal) < 0.0f) {
 		collisionNormal = -collisionNormal;
 	}
 
 	// Calculate the collision point
-	Vec3<Meters> collisionPoint = box1.getCenter();
-	collisionPoint += box1.getSize() / 2.f * collisionNormal;					
+	vec3<Meters> collisionPoint = box1.get_center();
+	collisionPoint += box1.get_size() / 2.f * collisionNormal;					
 	collisionPoint -= penetration * collisionNormal;
 
-	collisionInformation.collisionNormal = collisionNormal;
+	collisionInformation.collision_normal = collisionNormal;
 	collisionInformation.penetration = penetration;
-	collisionInformation.collisionPoint = collisionPoint;
+	collisionInformation.collision_point = collisionPoint;
 
 	return collisionInformation;
 }
 
-void gse::BroadPhaseCollision::setCollisionInformation(const BoundingBox& box1, const BoundingBox& box2) {
-	box1.collisionInformation = calculateCollisionInformation(box1, box2);
-	box2.collisionInformation = calculateCollisionInformation(box2, box1);
+void gse::broad_phase_collision::set_collision_information(const bounding_box& box1, const bounding_box& box2) {
+	box1.collision_information = calculate_collision_information(box1, box2);
+	box2.collision_information = calculate_collision_information(box2, box1);
 }
 
-void gse::BroadPhaseCollision::update(BroadPhaseCollision::Group& group) {
-	for (auto& dynamicObject : group.getDynamicObjects()) {
-		const auto dynamicObjectPtr = dynamicObject.collisionComponent.lock();
+void gse::broad_phase_collision::update(broad_phase_collision::group& group) {
+	for (auto& dynamicObject : group.get_dynamic_objects()) {
+		const auto dynamicObjectPtr = dynamicObject.m_collision_component.lock();
 		if (!dynamicObjectPtr) {
 			continue;
 		}
 
-		const auto motionComponentPtr = dynamicObject.motionComponent.lock();
+		const auto motionComponentPtr = dynamicObject.m_motion_component.lock();
 		if (!motionComponentPtr) {
 			continue;
 		}
 
-		for (auto& object : group.getObjects()) {
-			const auto objectPtr = object.collisionComponent.lock();
+		for (auto& object : group.get_objects()) {
+			const auto objectPtr = object.m_collision_component.lock();
 			if (!objectPtr) {
 				continue;
 			}
@@ -134,7 +134,7 @@ void gse::BroadPhaseCollision::update(BroadPhaseCollision::Group& group) {
 				continue;
 			}
 
-			if (!checkCollision(dynamicObjectPtr, motionComponentPtr, objectPtr)) {
+			if (!check_collision(dynamicObjectPtr, motionComponentPtr, objectPtr)) {
 				motionComponentPtr->airborne = true;
 			}
 		}

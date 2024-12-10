@@ -6,33 +6,33 @@
 #include <glm/glm.hpp>
 
 namespace gse {
-    class Shader {
+    class shader {
     public:
-        Shader() = default;
-		Shader(const std::string& vertexPath, const std::string& fragmentPath, const std::string& geometryPath = "");
+        shader() = default;
+		shader(const std::string& vertex_path, const std::string& fragment_path, const std::string& geometry_path = "");
 
-		void createShaderProgram(const std::string& vertexPath, const std::string& fragmentPath, const std::string& geometryPath = "");
+		void create_shader_program(const std::string& vertex_path, const std::string& fragment_path, const std::string& geometry_path = "");
         void use() const;
 
         // Utility functions to set uniform values
-        void setBool(const std::string& name, bool value) const;
-        void setInt(const std::string& name, int value) const;
-		void setIntArray(const std::string& name, const int* values, unsigned int count) const;
-        void setFloat(const std::string& name, float value) const;
-        void setMat4(const std::string& name, const glm::mat4& value) const;
-		void setMat4Array(const std::string& name, const glm::mat4* values, unsigned int count) const;
-		void setVec3(const std::string& name, const glm::vec3& value) const;
+        void set_bool(const std::string& name, bool value) const;
+        void set_int(const std::string& name, int value) const;
+		void set_int_array(const std::string& name, const int* values, unsigned int count) const;
+        void set_float(const std::string& name, float value) const;
+        void set_mat4(const std::string& name, const glm::mat4& value) const;
+		void set_mat4_array(const std::string& name, const glm::mat4* values, unsigned int count) const;
+		void set_vec3(const std::string& name, const glm::vec3& value) const;
 
-    	unsigned int getID() const { return ID; }
+    	unsigned int get_id() const { return m_id; }
     private:
-        unsigned int ID = 0;
+        unsigned int m_id = 0;
 
-        static std::string loadShaderSource(const std::string& filePath);
+        static std::string load_shader_source(const std::string& file_path);
 
-        void cacheUniformLocations();
+        void cache_uniform_locations();
         
-        std::unordered_map<std::string, GLint> uniforms;
+        std::unordered_map<std::string, GLint> m_uniforms;
 
-        static void checkCompileErrors(unsigned int shader, const std::string& type);
+        static void check_compile_errors(unsigned int shader, const std::string& type);
     };
 }

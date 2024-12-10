@@ -17,7 +17,7 @@ namespace gse {
 	void block_shutdown_requests();
 
 	void set_imgui_enabled(bool enabled);
-	Camera& get_camera();
+	camera& get_camera();
 
-	extern SceneHandler scene_handler;
+	extern scene_handler scene_handler;
 }

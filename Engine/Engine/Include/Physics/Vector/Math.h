@@ -13,100 +13,100 @@ namespace gse {
 	static std::random_device rd;
 	static std::mt19937 gen(rd());
 
-	template <typename T>
-		requires std::is_floating_point_v<T> || std::is_integral_v<T>
-	T randomValue(T min, T max) {
-		std::uniform_real_distribution<T> dis(min, max);
+	template <typename t>
+		requires std::is_floating_point_v<t> || std::is_integral_v<t>
+	t random_value(t min, t max) {
+		std::uniform_real_distribution<t> dis(min, max);
 		return dis(gen);
 	}
 }
 
 namespace gse {
 	enum : std::uint8_t {
-		X, Y, Z 
+		x, y, z 
 	};
 
-	template <typename T>
-	void print(const char* message, const Vec3<T>& a) {
-		std::cout << message << ": " << a.asDefaultUnits().x << ", " << a.asDefaultUnits().y << ", " << a.asDefaultUnits().z << std::endl;
+	template <is_unit_or_quantity quantity_or_unit_type>
+	void print(const char* message, const vec3<quantity_or_unit_type>& a) {
+		std::cout << message << ": " << a.as_default_units().x << ", " << a.as_default_units().y << ", " << a.as_default_units().z << std::endl;
 	}
 
-	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
-	Vec3<T> max(const Vec3<T>& a, const Vec3<U>& b) {
-		if (glm::max(a.asDefaultUnits(), b.asDefaultUnits()) == a.asDefaultUnits()) {
+	template <is_unit_or_quantity quantity_or_unit_type_a, is_unit_or_quantity quantity_or_unit_type_b>
+	vec3<quantity_or_unit_type_a> max(const vec3<quantity_or_unit_type_a>& a, const vec3<quantity_or_unit_type_b>& b) {
+		if (glm::max(a.as_default_units(), b.as_default_units()) == a.as_default_units()) {
 			return a;
 		}
 		return b;
 	}
 
-	template <IsQuantityOrUnit T>
-	Vec3<T> min(const Vec3<T>& a, const Vec3<T>& b) {
-		if (glm::min(a.asDefaultUnits(), b.asDefaultUnits()) == a.asDefaultUnits()) {
+	template <is_unit_or_quantity quantity_or_unit_type>
+	vec3<quantity_or_unit_type> min(const vec3<quantity_or_unit_type>& a, const vec3<quantity_or_unit_type>& b) {
+		if (glm::min(a.as_default_units(), b.as_default_units()) == a.as_default_units()) {
 			return a;
 		}
 		return b;
 	}
 
-	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
-		requires HasSameQuantityTag<T, U>
-	typename UnitToQuantity<T>::Type max(const Vec3<T>& a, const Vec3<U>& b, const int index) {
-		float max = a.asDefaultUnits()[index];
-		if (b.asDefaultUnits()[index] > a.asDefaultUnits()[index]) {
-			max = b.asDefaultUnits()[index];
+	template <is_unit_or_quantity quantity_or_unit_type_a, is_unit_or_quantity quantity_or_unit_type_b>
+		requires has_same_quantity_tag<quantity_or_unit_type_a, quantity_or_unit_type_b>
+	typename unit_to_quantity<quantity_or_unit_type_a>::type max(const vec3<quantity_or_unit_type_a>& a, const vec3<quantity_or_unit_type_b>& b, const int index) {
+		float max = a.as_default_units()[index];
+		if (b.as_default_units()[index] > a.as_default_units()[index]) {
+			max = b.as_default_units()[index];
 		}
 
-		return convertValueToQuantity<T>(max);
+		return convert_value_to_quantity<quantity_or_unit_type_a>(max);
 	}
 
-	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
-		requires HasSameQuantityTag<T, U>
-	typename UnitToQuantity<T>::Type min(const Vec3<T>& a, const Vec3<U>& b, const int index) {
-		float min = a.asDefaultUnits()[index];
+	template <is_unit_or_quantity quantity_or_unit_type_a, is_unit_or_quantity quantity_or_unit_type_b>
+		requires has_same_quantity_tag<quantity_or_unit_type_a, quantity_or_unit_type_b>
+	typename unit_to_quantity<quantity_or_unit_type_a>::type min(const vec3<quantity_or_unit_type_a>& a, const vec3<quantity_or_unit_type_b>& b, const int index) {
+		float min = a.as_default_units()[index];
 
-		if (b.asDefaultUnits()[index] < a.asDefaultUnits()[index]) {
-			min = b.asDefaultUnits()[index];
+		if (b.as_default_units()[index] < a.as_default_units()[index]) {
+			min = b.as_default_units()[index];
 		}
 
-		return convertValueToQuantity<T>(min);
+		return convert_value_to_quantity<quantity_or_unit_type_a>(min);
 	}
 
-	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
-	float dot(const Vec3<T>& a, const Vec3<U>& b) {
-		return glm::dot(a.asDefaultUnits(), b.asDefaultUnits());
+	template <is_unit_or_quantity quantity_or_unit_type_a, is_unit_or_quantity quantity_or_unit_type_b>
+	float dot(const vec3<quantity_or_unit_type_a>& a, const vec3<quantity_or_unit_type_b>& b) {
+		return glm::dot(a.as_default_units(), b.as_default_units());
 	}
 
-	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
-		requires HasSameQuantityTag<T, U>
-	bool epsilonEqual(const Vec3<T>& a, const Vec3<U>& b, const float epsilon = 0.00001f) {
-        return glm::all(glm::epsilonEqual(a.asDefaultUnits(), b.asDefaultUnits(), epsilon));
+	template <is_unit_or_quantity quantity_or_unit_type_a, is_unit_or_quantity quantity_or_unit_type_b>
+		requires has_same_quantity_tag<quantity_or_unit_type_a, quantity_or_unit_type_b>
+	bool epsilon_equal(const vec3<quantity_or_unit_type_a>& a, const vec3<quantity_or_unit_type_b>& b, const float epsilon = 0.00001f) {
+        return glm::all(glm::epsilonEqual(a.as_default_units(), b.as_default_units(), epsilon));
 	}
 
-	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
-		requires HasSameQuantityTag<T, U>
-	bool epsilonEqualIndex(const Vec3<T>& a, const Vec3<U>& b, const int index, const float epsilon = 0.00001f) {
-		return glm::epsilonEqual(a.asDefaultUnits()[index], b.asDefaultUnits()[index], epsilon);
+	template <is_unit_or_quantity quantity_or_unit_type_a, is_unit_or_quantity quantity_or_unit_type_b>
+		requires has_same_quantity_tag<quantity_or_unit_type_a, quantity_or_unit_type_b>
+	bool epsilon_equal_index(const vec3<quantity_or_unit_type_a>& a, const vec3<quantity_or_unit_type_b>& b, const int index, const float epsilon = 0.00001f) {
+		return glm::epsilonEqual(a.as_default_units()[index], b.as_default_units()[index], epsilon);
 	}
 
-	template <IsQuantityOrUnit T>
-	bool isZero(const Vec3<T>& a) {
-		return glm::all(glm::epsilonEqual(a.asDefaultUnits(), Vec3<T>(0.0f).asDefaultUnits(), 0.00001f));
+	template <is_unit_or_quantity quantity_or_unit_type>
+	bool is_zero(const vec3<quantity_or_unit_type>& a) {
+		return glm::all(glm::epsilonEqual(a.as_default_units(), vec3<quantity_or_unit_type>(0.0f).as_default_units(), 0.00001f));
 	}
 
-	template <IsQuantityOrUnit T>
-	typename UnitToQuantity<T>::Type magnitude(const Vec3<T>& a) {
-		if (isZero(a)) return typename UnitToQuantity<T>::Type();
-		return convertValueToQuantity<T>(glm::length(a.asDefaultUnits()));
+	template <is_unit_or_quantity quantity_or_unit_type>
+	typename unit_to_quantity<quantity_or_unit_type>::type magnitude(const vec3<quantity_or_unit_type>& a) {
+		if (is_zero(a)) return typename unit_to_quantity<quantity_or_unit_type>::type();
+		return convert_value_to_quantity<quantity_or_unit_type>(glm::length(a.as_default_units()));
 	}
 
-	template <IsQuantityOrUnit T>
-	Vec3<T> normalize(const Vec3<T>& a) {
-		if (isZero(a)) return Vec3<T>(glm::vec3(0.0f));
-		return Vec3<T>(glm::normalize(a.asDefaultUnits()));
+	template <is_unit_or_quantity quantity_or_unit_type>
+	vec3<quantity_or_unit_type> normalize(const vec3<quantity_or_unit_type>& a) {
+		if (is_zero(a)) return vec3<quantity_or_unit_type>(glm::vec3(0.0f));
+		return vec3<quantity_or_unit_type>(glm::normalize(a.as_default_units()));
 	}
 
-	template <IsQuantityOrUnit T, IsQuantityOrUnit U>
-		requires HasSameQuantityTag<T, U>
-	Vec3<T> cross(const Vec3<T>& a, const Vec3<U>& b) {
-		return Vec3<T>(glm::cross(a.asDefaultUnits(), b.asDefaultUnits()));
+	template <is_unit_or_quantity quantity_or_unit_type_a, is_unit_or_quantity quantity_or_unit_type_b>
+		requires has_same_quantity_tag<quantity_or_unit_type_a, quantity_or_unit_type_b>
+	vec3<quantity_or_unit_type_a> cross(const vec3<quantity_or_unit_type_a>& a, const vec3<quantity_or_unit_type_b>& b) {
+		return vec3<quantity_or_unit_type_a>(glm::cross(a.as_default_units(), b.as_default_units()));
 	}
 }

@@ -5,22 +5,22 @@
 #include "Graphics/RenderComponent.h"
 
 void Game::Arena::initialize() {
-    const gse::Length wallThickness = gse::meters(10.f);
+    const gse::length wallThickness = gse::meters(10.f);
 
     // Create collision component and add bounding boxes for each face
-    const auto collisionComponent = std::make_shared<gse::Physics::CollisionComponent>(id.get());
+    const auto collisionComponent = std::make_shared<gse::physics::collision_component>(m_id.get());
 
     // Front and back walls
-    collisionComponent->boundingBoxes.emplace_back(gse::Vec3<gse::Meters>(0.f, 0.f, depth / 2.f - wallThickness / 2.f), width, height, wallThickness);
-    collisionComponent->boundingBoxes.emplace_back(gse::Vec3<gse::Meters>(0.f, 0.f, -depth / 2.f + wallThickness / 2.f), width, height, wallThickness);
+    collisionComponent->m_bounding_boxes.emplace_back(gse::vec3<gse::Meters>(0.f, 0.f, depth / 2.f - wallThickness / 2.f), width, height, wallThickness);
+    collisionComponent->m_bounding_boxes.emplace_back(gse::vec3<gse::Meters>(0.f, 0.f, -depth / 2.f + wallThickness / 2.f), width, height, wallThickness);
 
     // Left and right walls
-    collisionComponent->boundingBoxes.emplace_back(gse::Vec3<gse::Meters>(-width / 2.f + wallThickness / 2.f, 0.f, 0.f), wallThickness, height, depth);
-    collisionComponent->boundingBoxes.emplace_back(gse::Vec3<gse::Meters>(width / 2.f - wallThickness / 2.f, 0.f, 0.f), wallThickness, height, depth);
+    collisionComponent->m_bounding_boxes.emplace_back(gse::vec3<gse::Meters>(-width / 2.f + wallThickness / 2.f, 0.f, 0.f), wallThickness, height, depth);
+    collisionComponent->m_bounding_boxes.emplace_back(gse::vec3<gse::Meters>(width / 2.f - wallThickness / 2.f, 0.f, 0.f), wallThickness, height, depth);
 
     // Top and bottom walls
-    collisionComponent->boundingBoxes.emplace_back(gse::Vec3<gse::Meters>(0.f, height / 2.f - wallThickness / 2.f, 0.f), width, wallThickness, depth);
-    collisionComponent->boundingBoxes.emplace_back(gse::Vec3<gse::Meters>(0.f, -height / 2.f + wallThickness / 2.f, 0.f), width, wallThickness, depth);
+    collisionComponent->m_bounding_boxes.emplace_back(gse::vec3<gse::Meters>(0.f, height / 2.f - wallThickness / 2.f, 0.f), width, wallThickness, depth);
+    collisionComponent->m_bounding_boxes.emplace_back(gse::vec3<gse::Meters>(0.f, -height / 2.f + wallThickness / 2.f, 0.f), width, wallThickness, depth);
 
     // Colors for each face
     const glm::vec3 colors[] = {
@@ -37,7 +37,7 @@ void Game::Arena::initialize() {
     const float halfDepth  =  depth.as<gse::Meters>() / 2.f;
 
     // Define vertices for each face
-    const std::vector<std::vector<gse::Vertex>> faceVertices = {
+    const std::vector<std::vector<gse::vertex>> faceVertices = {
         // Front face
         {
             { glm::vec3(-halfWidth, -halfHeight, halfDepth), glm::vec3(0.0f, 0.0f, 1.0f), glm::vec2(0.0f, 0.0f) },
@@ -85,22 +85,22 @@ void Game::Arena::initialize() {
     // Common indices for each face
     const std::vector<unsigned int> faceIndices = { 0, 1, 2, 2, 3, 0 };
 
-    const auto renderComponent = std::make_shared<gse::RenderComponent>(id.get());
+    const auto renderComponent = std::make_shared<gse::render_component>(m_id.get());
 
     // Loop over each face, creating a Mesh and RenderComponent with a unique color
     for (size_t i = 0; i < 6; ++i) {
-        auto mesh = std::make_shared<gse::Mesh>(faceVertices[i], faceIndices);
-		mesh->setColor(colors[i]);
-        renderComponent->addMesh(mesh);
+        auto mesh = std::make_shared<gse::mesh>(faceVertices[i], faceIndices);
+		mesh->set_color(colors[i]);
+        renderComponent->add_mesh(mesh);
 
-		auto boundingBoxMesh = std::make_shared<gse::BoundingBoxMesh>(collisionComponent->boundingBoxes[i].lowerBound, collisionComponent->boundingBoxes[i].upperBound);
-		renderComponent->addBoundingBoxMesh(boundingBoxMesh);
+		auto boundingBoxMesh = std::make_shared<gse::bounding_box_mesh>(collisionComponent->m_bounding_boxes[i].lower_bound, collisionComponent->m_bounding_boxes[i].upper_bound);
+		renderComponent->add_bounding_box_mesh(boundingBoxMesh);
     }
 
-    addComponent(renderComponent);
-    addComponent(collisionComponent);
+    add_component(renderComponent);
+    add_component(collisionComponent);
 
-    getComponent<gse::RenderComponent>()->setRender(true, true);
+    get_component<gse::render_component>()->set_render(true, true);
 }
 
 void Game::Arena::update() {

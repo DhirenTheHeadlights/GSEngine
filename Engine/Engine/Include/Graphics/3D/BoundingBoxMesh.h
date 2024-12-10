@@ -4,16 +4,16 @@
 #include "Physics/Vector/Vec3.h"
 
 namespace gse {
-	class BoundingBoxMesh : public Mesh {
+	class bounding_box_mesh final : public mesh {
 	public:
-		BoundingBoxMesh(const Vec3<Length>& lower, const Vec3<Length>& upper);
+		bounding_box_mesh(const vec3<length>& lower, const vec3<length>& upper);
 
 		void update();
 	private:
-		void updateGrid();
-		static Vertex createVertex(const glm::vec3& position);
+		void update_grid();
+		static vertex create_vertex(const glm::vec3& position);
 
-		Vec3<Length> lower;
-		Vec3<Length> upper;
+		vec3<length> m_lower;
+		vec3<length> m_upper;
 	};
 }

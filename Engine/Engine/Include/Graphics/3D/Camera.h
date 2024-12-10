@@ -7,32 +7,32 @@
 #include "Physics/Vector/Vec3.h"
 
 namespace gse {
-	class Camera {
+	class camera {
 	public:
-		Camera(const Vec3<Length>& initialPosition = { 0.f }) : position(initialPosition) {}
+		camera(const vec3<length>& initial_position = { 0.f }) : m_position(initial_position) {}
 
-		void moveRelativeToOrigin(const Vec3<>& direction, float distance, float deltaTime);
+		void move_relative_to_origin(const vec3<>& direction, float distance, float delta_time);
 
-		void processMouseMovement(glm::vec2& offset);
-		void updateCameraVectors();
+		void process_mouse_movement(glm::vec2& offset);
+		void update_camera_vectors();
 
-		void setPosition(const Vec3<Length>& position) { this->position = position; }
+		void set_position(const vec3<length>& position) { this->m_position = position; }
 
-		glm::mat4 getViewMatrix() const;
-		glm::mat4 getProjectionMatrix();
-		Vec3<Length> getPosition() const;
-		Vec3<> getCameraDirectionRelativeToOrigin(const Vec3<>& direction) const;
+		glm::mat4 get_view_matrix() const;
+		glm::mat4 get_projection_matrix();
+		vec3<length> get_position() const;
+		vec3<> get_camera_direction_relative_to_origin(const vec3<>& direction) const;
 	private:
-		Vec3<Length> position;
-		Vec3<Length> front = Vec3<Meters>(0.0f, 0.0f, -1.0f);
-		Vec3<Length> up = Vec3<Meters>(0.0f, 1.0f, 0.0f);
-		Vec3<Length> right = Vec3<Meters>(1.0f, 0.0f, 0.0f);
-		Vec3<Length> worldUp = Vec3<Meters>(0.0f, 1.0f, 0.0f);
+		vec3<length> m_position;
+		vec3<length> m_front = vec3<Meters>(0.0f, 0.0f, -1.0f);
+		vec3<length> m_up = vec3<Meters>(0.0f, 1.0f, 0.0f);
+		vec3<length> m_right = vec3<Meters>(1.0f, 0.0f, 0.0f);
+		vec3<length> m_world_up = vec3<Meters>(0.0f, 1.0f, 0.0f);
 
-		float yaw = -90.0f;
-		float pitch = 0.0f;
+		float m_yaw = -90.0f;
+		float m_pitch = 0.0f;
 
-		float movementSpeed = 2.5f;
-		float mouseSensitivity = 0.1f;
+		float m_movement_speed = 2.5f;
+		float m_mouse_sensitivity = 0.1f;
 	};
 }

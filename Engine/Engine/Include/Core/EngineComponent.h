@@ -5,9 +5,9 @@
 namespace gse {
 	class engine_component {
 	public:
-		engine_component(ID* id) : id(id) {}
+		engine_component(id* id) : m_id(id) {}
 		virtual ~engine_component() = default;
 	private:
-		ID* id;
+		id* m_id;
 	};
 }
