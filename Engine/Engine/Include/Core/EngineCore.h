@@ -8,16 +8,16 @@
 #include "Graphics/3D/Renderer3D.h"
 #include "Object/Object.h"
 
-namespace Engine {
-	void initialize(const std::function<void()>& initializeFunction, const std::function<void()>& shutdownFunction);
-	void run(const std::function<bool()>& updateFunction, const std::function<bool()>& renderFunction);
+namespace gse {
+	void initialize(const std::function<void()>& initialize_function, const std::function<void()>& shutdown_function);
+	void run(const std::function<bool()>& update_function, const std::function<bool()>& render_function);
 
 	/// Request the engine to shut down after the current frame.
-	void requestShutdown();
-	void blockShutdownRequests();
+	void request_shutdown();
+	void block_shutdown_requests();
 
-	void setImguiEnabled(bool enabled);
-	Camera& getCamera();
+	void set_imgui_enabled(bool enabled);
+	camera& get_camera();
 
-	extern SceneHandler sceneHandler;
+	extern scene_handler g_scene_handler;
 }

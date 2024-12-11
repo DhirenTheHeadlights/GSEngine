@@ -4,57 +4,50 @@
 #include "Physics/Vector/Math.h"
 #include "Physics/Vector/Vec3.h"
 
-namespace Engine {
-	struct CollisionInformation {
+namespace gse {
+	struct collision_information {
 		bool colliding = false;
-		Vec3<> collisionNormal;
-		Length penetration;
-		Vec3<Length> collisionPoint;
-		int getAxis() const {
-			if (!epsilonEqualIndex(collisionNormal, Vec3(), X)) {
-				return 0;
-			}
-			if (!epsilonEqualIndex(collisionNormal, Vec3(), Y)) {
-				return 1;
-			}
-			return Z; // Assume it is the z axis
+		vec3<> collision_normal;
+		length penetration;
+		vec3<length> collision_point;
+
+		int get_axis() const {
+			if (!epsilon_equal_index(collision_normal, vec3(), x)) { return 0; }
+			if (!epsilon_equal_index(collision_normal, vec3(), y)) { return 1; }
+			return z; // Assume it is the z axis
 		}
 	};
 
-	struct BoundingBox {
-		BoundingBox() = default;
+	struct bounding_box {
+		bounding_box() = default;
 
 		// Only use this constructor if you know what you are doing
-		BoundingBox(const Vec3<Length>& upperBound, const Vec3<Length>& lowerBound)
-			: upperBound(upperBound), lowerBound(lowerBound) {}
+		bounding_box(const vec3<length>& upper_bound, const vec3<length>& lower_bound)
+			: upper_bound(upper_bound), lower_bound(lower_bound) {}
 
 		// Use this constructor for a centered bounding box
-		BoundingBox(const Vec3<Length>& center, const Length& width, const Length& height, const Length& depth)
-			: BoundingBox(center + Vec3<Length>(width / 2.f, height / 2.f, depth / 2.f),
-						  center - Vec3<Length>(width / 2.f, height / 2.f, depth / 2.f)) {}
+		bounding_box(const vec3<length>& center, const length& width, const length& height, const length& depth)
+			: bounding_box(center + vec3<length>(width / 2.f, height / 2.f, depth / 2.f),
+			               center - vec3<length>(width / 2.f, height / 2.f, depth / 2.f)) {}
 
-		Vec3<Length> upperBound;
-		Vec3<Length> lowerBound;
+		vec3<length> upper_bound;
+		vec3<length> lower_bound;
 
-		mutable CollisionInformation collisionInformation = {};
+		mutable collision_information collision_information = {};
 
-		void setPosition(const Vec3<Length>& center) {
-			const Vec3<Length> halfSize = (upperBound - lowerBound) / 2.0f;
-			upperBound = center + halfSize;
-			lowerBound = center - halfSize;
+		void set_position(const vec3<length>& center) {
+			const vec3<length> half_size = (upper_bound - lower_bound) / 2.0f;
+			upper_bound = center + half_size;
+			lower_bound = center - half_size;
 		}
 
-		Vec3<Length> getCenter() const {
-			return (upperBound + lowerBound) / 2.0f;
-		}
+		vec3<length> get_center() const { return (upper_bound + lower_bound) / 2.0f; }
 
-		Vec3<Length> getSize() const {
-			return upperBound - lowerBound;
-		}
+		vec3<length> get_size() const { return upper_bound - lower_bound; }
 	};
 
-	Vec3<Length> getLeftBound(const BoundingBox& boundingBox);
-	Vec3<Length> getRightBound(const BoundingBox& boundingBox);
-	Vec3<Length> getFrontBound(const BoundingBox& boundingBox);
-	Vec3<Length> getBackBound(const BoundingBox& boundingBox);
+	vec3<length> get_left_bound(const bounding_box& bounding_box);
+	vec3<length> get_right_bound(const bounding_box& bounding_box);
+	vec3<length> get_front_bound(const bounding_box& bounding_box);
+	vec3<length> get_back_bound(const bounding_box& bounding_box);
 }

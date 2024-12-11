@@ -6,60 +6,60 @@
 
 #include "Graphics/RenderQueueEntry.h"
 
-namespace Engine {
-	struct Vertex {
+namespace gse {
+	struct vertex {
 		glm::vec3 position;
 		glm::vec3 normal;
-		glm::vec2 texCoords;
+		glm::vec2 tex_coords;
 	};
 
-	class RenderComponent;
+	class render_component;
 
-	class Mesh {
+	class mesh {
 	public:
-		Mesh();
-		Mesh(const std::vector<Vertex>& vertices, const std::vector<unsigned int>& indices, const glm::vec3& color = { 1.0f, 1.0f, 1.0f }, GLuint textureId = 0);
-		virtual ~Mesh();
+		mesh();
+		mesh(const std::vector<vertex>& vertices, const std::vector<unsigned int>& indices, const glm::vec3& color = { 1.0f, 1.0f, 1.0f }, GLuint texture_id = 0);
+		virtual ~mesh();
 
 		// Disable copy to avoid OpenGL resource duplication
-		Mesh(const Mesh&) = delete;
-		Mesh& operator=(const Mesh&) = delete;
+		mesh(const mesh&) = delete;
+		mesh& operator=(const mesh&) = delete;
 
 		// Allow move semantics
-		Mesh(Mesh&& other) noexcept;
-		Mesh& operator=(Mesh&& other) noexcept;
+		mesh(mesh&& other) noexcept;
+		mesh& operator=(mesh&& other) noexcept;
 
-		GLuint getVAO() const { return VAO; }
-		GLsizei getVertexCount() const { return static_cast<GLsizei>(indices.size()); }
+		GLuint get_vao() const;
+		GLsizei get_vertex_count() const { return static_cast<GLsizei>(m_indices.size()); }
 
-		RenderQueueEntry getQueueEntry() const {
+		render_queue_entry get_queue_entry() const {
 			return {
-				shaderName,
-				VAO,
-				drawMode,
-				getVertexCount(),
-				modelMatrix,
-				textureId,
-				color
+				m_shader_name,
+				m_vao,
+				m_draw_mode,
+				get_vertex_count(),
+				m_model_matrix,
+				m_texture_id,
+				m_color
 			};
 		}
 
-		void setColor(const glm::vec3& newColor) { color = newColor; }
+		void set_color(const glm::vec3& new_color) { m_color = new_color; }
 	protected:
-		friend RenderComponent;
-		void setUpMesh();
+		friend render_component;
+		void set_up_mesh();
 
-		GLuint VAO = 0;
-		GLuint VBO = 0;
-		GLuint EBO = 0;
+		GLuint m_vao = 0;
+		GLuint m_vbo = 0;
+		GLuint m_ebo = 0;
 
-		std::vector<Vertex> vertices;
-		std::vector<unsigned int> indices;
+		std::vector<vertex> m_vertices;
+		std::vector<unsigned int> m_indices;
 
-		glm::mat4 modelMatrix = glm::mat4(1.0f);
-		GLuint textureId = 0;
-		GLuint drawMode = GL_TRIANGLES;
-		std::string shaderName = "Lighting";
-		glm::vec3 color = { 1.0f, 1.0f, 1.0f };
+		glm::mat4 m_model_matrix = glm::mat4(1.0f);
+		GLuint m_texture_id = 0;
+		GLuint m_draw_mode = GL_TRIANGLES;
+		std::string m_shader_name = "Lighting";
+		glm::vec3 m_color = { 1.0f, 1.0f, 1.0f };
 	};
 }

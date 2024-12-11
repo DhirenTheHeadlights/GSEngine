@@ -5,148 +5,148 @@
 #include <tuple>
 #include <string>
 
-namespace Engine {
+namespace gse {
 	template<typename... Units>
-	struct UnitList {
-		using Type = std::tuple<Units...>;
+	struct unit_list {
+		using type = std::tuple<Units...>;
 	};
 
-	template <typename QuantityTagType, float ConversionFactorType, const char UnitNameType[]>
-	struct Unit {
-		using QuantityTag = QuantityTagType;
-		static constexpr float ConversionFactor = ConversionFactorType;
-		static constexpr const char* UnitName = UnitNameType;
+	template <typename quantity_tag_type, float conversion_factor_type, const char unit_name_type[]>
+	struct unit {
+		using quantity_tag = quantity_tag_type;
+		static constexpr float conversion_factor = conversion_factor_type;
+		static constexpr const char* unit_name = unit_name_type;
 	};
 
 	template <typename T>
-	concept IsUnit = requires {
-		typename std::remove_cvref_t<T>::QuantityTag;
-		{ std::remove_cvref_t<T>::UnitName } -> std::convertible_to<const char*>;
-		{ std::remove_cvref_t<T>::ConversionFactor } -> std::convertible_to<float>;
+	concept is_unit = requires {
+		typename std::remove_cvref_t<T>::quantity_tag;
+		{ std::remove_cvref_t<T>::unit_name } -> std::convertible_to<const char*>;
+		{ std::remove_cvref_t<T>::conversion_factor } -> std::convertible_to<float>;
 	};
 
-	template <typename UnitType, typename ValidUnits>
-	constexpr bool isValidUnitForQuantity() {
+	template <typename unit_type, typename valid_units>
+	constexpr bool is_valid_unit_for_quantity() {
 		return std::apply([]<typename... Units>(Units... u) {
-			return ((std::is_same_v<typename UnitType::QuantityTag, typename Units::QuantityTag>) || ...);
-		}, typename ValidUnits::Type{});
+			return ((std::is_same_v<typename unit_type::quantity_tag, typename Units::quantity_tag>) || ...);
+		}, typename valid_units::type{});
 	}
 
-	template <typename Derived, IsUnit Default, typename ValidUnits>
-	struct Quantity {
-		using Units = ValidUnits;
-		using DefaultUnit = Default;
+	template <typename derived_type, is_unit default_unit_type, typename valid_units_type>
+	struct quantity {
+		using units = valid_units_type;
+		using default_unit = default_unit_type;
 
-		Quantity() = default;
+		quantity() = default;
 
-		template <IsUnit Unit>
+		template <is_unit unit_type>
 		void set(const float value) {
-			static_assert(isValidUnitForQuantity<Unit, ValidUnits>(), "Invalid unit type for assignment");
-			val = getConvertedValue<Unit>(value);
+			static_assert(is_valid_unit_for_quantity<unit_type, valid_units_type>(), "Invalid unit type for assignment");
+			m_val = get_converted_value<unit_type>(value);
 		}
 
 		// Convert to any other valid unit
-		template <IsUnit Unit>
+		template <is_unit unit_type>
 		float as() const {
-			static_assert(isValidUnitForQuantity<Unit, ValidUnits>(), "Invalid unit type for conversion");
-			return val / Unit::ConversionFactor;
+			static_assert(is_valid_unit_for_quantity<unit_type, valid_units_type>(), "Invalid unit type for conversion");
+			return m_val / unit_type::conversion_factor;
 		}
 
-		float asDefaultUnit() const {
-			return val;
+		float as_default_unit() const {
+			return m_val;
 		}
 
 		// Assignment operator overload
-		template <IsUnit Unit>
-		Derived& operator=(const float value) {
-			static_assert(isValidUnitForQuantity<Unit, ValidUnits>(), "Invalid unit type for assignment");
-			val = getConvertedValue<Unit>(value);
-			return static_cast<Derived&>(*this);
+		template <is_unit unit_type>
+		derived_type& operator=(const float value) {
+			static_assert(is_valid_unit_for_quantity<unit_type, valid_units_type>(), "Invalid unit type for assignment");
+			m_val = get_converted_value<unit_type>(value);
+			return static_cast<derived_type&>(*this);
 		}
 
 		/// Arithmetic operators
-		Derived operator+(const Derived& other) const {
-			return Derived(val + other.val);
+		derived_type operator+(const derived_type& other) const {
+			return derived_type(m_val + other.m_val);
 		}
 
-		Derived operator-(const Derived& other) const {
-			return Derived(val - other.val);
+		derived_type operator-(const derived_type& other) const {
+			return derived_type(m_val - other.m_val);
 		}
 
-		Derived operator*(const float scalar) const {
-			return Derived(val * scalar);
+		derived_type operator*(const float scalar) const {
+			return derived_type(m_val * scalar);
 		}
 
-		Derived operator/(const float scalar) const {
-			return Derived(val / scalar);
+		derived_type operator/(const float scalar) const {
+			return derived_type(m_val / scalar);
 		}
 
 		/// Compound assignment operators
-		Derived& operator+=(const Derived& other) {
-			val += other.val;
-			return static_cast<Derived&>(*this);
+		derived_type& operator+=(const derived_type& other) {
+			m_val += other.m_val;
+			return static_cast<derived_type&>(*this);
 		}
 
-		Derived& operator-=(const Derived& other) {
-			val -= other.val;
-			return static_cast<Derived&>(*this);
+		derived_type& operator-=(const derived_type& other) {
+			m_val -= other.m_val;
+			return static_cast<derived_type&>(*this);
 		}
 
-		Derived& operator*=(const float scalar) {
-			val *= scalar;
-			return static_cast<Derived&>(*this);
+		derived_type& operator*=(const float scalar) {
+			m_val *= scalar;
+			return static_cast<derived_type&>(*this);
 		}
 
-		Derived& operator/=(const float scalar) {
-			val /= scalar;
-			return static_cast<Derived&>(*this);
+		derived_type& operator/=(const float scalar) {
+			m_val /= scalar;
+			return static_cast<derived_type&>(*this);
 		}
 
 		// Comparison operators
-		bool operator==(const Derived& other) const {
-			return val == other.val;
+		bool operator==(const derived_type& other) const {
+			return m_val == other.m_val;
 		}
 
-		bool operator!=(const Derived& other) const {
-			return val != other.val;
+		bool operator!=(const derived_type& other) const {
+			return m_val != other.m_val;
 		}
 
-		bool operator<(const Derived& other) const {
-			return val < other.val;
+		bool operator<(const derived_type& other) const {
+			return m_val < other.m_val;
 		}
 
-		bool operator>(const Derived& other) const {
-			return val > other.val;
+		bool operator>(const derived_type& other) const {
+			return m_val > other.m_val;
 		}
 
-		bool operator<=(const Derived& other) const {
-			return val <= other.val;
+		bool operator<=(const derived_type& other) const {
+			return m_val <= other.m_val;
 		}
 
-		bool operator>=(const Derived& other) const {
-			return val >= other.val;
+		bool operator>=(const derived_type& other) const {
+			return m_val >= other.m_val;
 		}
 
 		// Other operators
-		Derived operator-() const {
-			return Derived(-val);
+		derived_type operator-() const {
+			return derived_type(-m_val);
 		}
 
-		template <IsUnit Unit>
-		static Derived from(const float value) {
-			static_assert(isValidUnitForQuantity<Unit, ValidUnits>(), "Invalid unit type for conversion");
-			Derived result;
-			result.val = result.template getConvertedValue<Unit>(value);
+		template <is_unit unit_type>
+		static derived_type from(const float value) {
+			static_assert(is_valid_unit_for_quantity<unit_type, valid_units_type>(), "Invalid unit type for conversion");
+			derived_type result;
+			result.m_val = result.template get_converted_value<unit_type>(value);
 			return result;
 		}
 	protected:
-		float val = 0.0f;  // Stored in base units
+		float m_val = 0.0f;  // Stored in base units
 
-		template <IsUnit T>
-		float getConvertedValue(const float value) {
-			return value * T::ConversionFactor / Default::ConversionFactor;
+		template <is_unit unit_type>
+		float get_converted_value(const float value) {
+			return value * unit_type::conversion_factor / default_unit_type::conversion_factor;
 		}
 
-		explicit Quantity(const float value) : val(value) {}
+		explicit quantity(const float value) : m_val(value) {}
 	};
 }

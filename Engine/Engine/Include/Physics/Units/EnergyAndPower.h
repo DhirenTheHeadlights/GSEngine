@@ -4,110 +4,110 @@
 
 // Energy
 
-namespace Engine {
-	struct EnergyTag {};
+namespace gse::units {
+	struct energy_tag {};
 
-	constexpr char joulesUnits[] = "J";
-	constexpr char kilojoulesUnits[] = "kJ";
-	constexpr char megajoulesUnits[] = "MJ";
-	constexpr char gigajoulesUnits[] = "GJ";
-	constexpr char caloriesUnits[] = "cal";
-	constexpr char kilocaloriesUnits[] = "kcal";
+	constexpr char joules_units[] = "J";
+	constexpr char kilojoules_units[] = "kJ";
+	constexpr char megajoules_units[] = "MJ";
+	constexpr char gigajoules_units[] = "GJ";
+	constexpr char calories_units[] = "cal";
+	constexpr char kilocalories_units[] = "kcal";
 
-	using Joules = Unit<EnergyTag, 1.0f, joulesUnits>;
-	using Kilojoules = Unit<EnergyTag, 1000.0f, kilojoulesUnits>;
-	using Megajoules = Unit<EnergyTag, 1000000.0f, megajoulesUnits>;
-	using Gigajoules = Unit<EnergyTag, 1000000000.0f, gigajoulesUnits>;
-	using Calories = Unit<EnergyTag, 4184.0f, caloriesUnits>;
-	using Kilocalories = Unit<EnergyTag, 4184000.0f, kilocaloriesUnits>;
+	using joules = unit<energy_tag, 1.0f, joules_units>;
+	using kilojoules = unit<energy_tag, 1000.0f, kilojoules_units>;
+	using megajoules = unit<energy_tag, 1000000.0f, megajoules_units>;
+	using gigajoules = unit<energy_tag, 1000000000.0f, gigajoules_units>;
+	using calories = unit<energy_tag, 4.184f, calories_units>;
+	using kilocalories = unit<energy_tag, 4184.0f, kilocalories_units>;
 }
 
-namespace Engine {
-	using EnergyUnits = UnitList<
-		Joules,
-		Kilojoules,
-		Megajoules,
-		Gigajoules,
-		Calories,
-		Kilocalories
+namespace gse {
+	using energy_units = unit_list<
+		units::joules,
+		units::kilojoules,
+		units::megajoules,
+		units::gigajoules,
+		units::calories,
+		units::kilocalories
 	>;
 
-	struct Energy : Quantity<Energy, Joules, EnergyUnits> {
-		using Quantity::Quantity;
+	struct energy : quantity<energy, units::joules, energy_units> {
+		using quantity::quantity;
 	};
 
-	inline Energy joules(const float value) {
-		return Energy::from<Joules>(value);
+	inline energy joules(const float value) {
+		return energy::from<units::joules>(value);
 	}
 
-	inline Energy kilojoules(const float value) {
-		return Energy::from<Kilojoules>(value);
+	inline energy kilojoules(const float value) {
+		return energy::from<units::kilojoules>(value);
 	}
 
-	inline Energy megajoules(const float value) {
-		return Energy::from<Megajoules>(value);
+	inline energy megajoules(const float value) {
+		return energy::from<units::megajoules>(value);
 	}
 
-	inline Energy gigajoules(const float value) {
-		return Energy::from<Gigajoules>(value);
+	inline energy gigajoules(const float value) {
+		return energy::from<units::gigajoules>(value);
 	}
 
-	inline Energy calories(const float value) {
-		return Energy::from<Calories>(value);
+	inline energy calories(const float value) {
+		return energy::from<units::calories>(value);
 	}
 
-	inline Energy kilocalories(const float value) {
-		return Energy::from<Kilocalories>(value);
+	inline energy kilocalories(const float value) {
+		return energy::from<units::kilocalories>(value);
 	}
 }
 
 // Power
 
-namespace Engine {
-	struct PowerTag {};
+namespace gse::units {
+	struct power_tag {};
 
-	constexpr char wattsUnits[] = "W";
-	constexpr char kilowattsUnits[] = "kW";
-	constexpr char megawattsUnits[] = "MW";
-	constexpr char gigawattsUnits[] = "GW";
-	constexpr char horsepowerUnits[] = "hp";
+	constexpr char watts_units[] = "W";
+	constexpr char kilowatts_units[] = "kW";
+	constexpr char megawatts_units[] = "MW";
+	constexpr char gigawatts_units[] = "GW";
+	constexpr char horsepower_units[] = "hp";
 
-	using Watts = Unit<PowerTag, 1.0f, wattsUnits>;
-	using Kilowatts = Unit<PowerTag, 1000.0f, kilowattsUnits>;
-	using Megawatts = Unit<PowerTag, 1000000.0f, megawattsUnits>;
-	using Gigawatts = Unit<PowerTag, 1000000000.0f, gigawattsUnits>;
-	using Horsepower = Unit<PowerTag, 745.7f, horsepowerUnits>;
+	using watts = unit<power_tag, 1.0f, watts_units>;
+	using kilowatts = unit<power_tag, 1000.0f, kilowatts_units>;
+	using megawatts = unit<power_tag, 1000000.0f, megawatts_units>;
+	using gigawatts = unit<power_tag, 1000000000.0f, gigawatts_units>;
+	using horsepower = unit<power_tag, 745.7f, horsepower_units>;
 }
 
-namespace Engine {
-	using PowerUnits = UnitList<
-		Watts,
-		Kilowatts,
-		Megawatts,
-		Gigawatts,
-		Horsepower
+namespace gse {
+	using power_units = unit_list<
+		units::watts,
+		units::kilowatts,
+		units::megawatts,
+		units::gigawatts,
+		units::horsepower
 	>;
-	struct Power : Quantity<Power, Watts, PowerUnits> {
-		using Quantity::Quantity;
+	struct power : quantity<power, units::watts, power_units> {
+		using quantity::quantity;
 	};
 
-	inline Power watts(const float value) {
-		return Power::from<Watts>(value);
+	inline power watts(const float value) {
+		return power::from<units::watts>(value);
 	}
 
-	inline Power kilowatts(const float value) {
-		return Power::from<Kilowatts>(value);
+	inline power kilowatts(const float value) {
+		return power::from<units::kilowatts>(value);
 	}
 
-	inline Power megawatts(const float value) {
-		return Power::from<Megawatts>(value);
+	inline power megawatts(const float value) {
+		return power::from<units::megawatts>(value);
 	}
 
-	inline Power gigawatts(const float value) {
-		return Power::from<Gigawatts>(value);
+	inline power gigawatts(const float value) {
+		return power::from<units::gigawatts>(value);
 	}
 
-	inline Power horsepower(const float value) {
-		return Power::from<Horsepower>(value);
+	inline power horsepower(const float value) {
+		return power::from<units::horsepower>(value);
 	}
 }

@@ -5,17 +5,17 @@
 #include <unordered_map>
 #include <glm/glm.hpp>
 
-namespace Engine::Input {
-	struct Button {
+namespace gse::input {
+	struct button {
 		std::uint8_t pressed = 0;
 		std::uint8_t held = 0;
 		std::uint8_t released = 0;
-		std::int8_t newState = -1;
+		std::int8_t new_state = -1;
 		std::uint8_t typed = 0;
-		float typedTime = 0.0f;
+		float typed_time = 0.0f;
 		bool toggled = false;
 
-		void merge(const Button& b) {
+		void merge(const button& b) {
 			this->pressed |= b.pressed;
 			this->released |= b.released;
 			this->held |= b.held;
@@ -28,15 +28,15 @@ namespace Engine::Input {
 		}
 	};
 
-	struct Controller {
-		std::unordered_map<int, Button> buttons;
+	struct controller {
+		std::unordered_map<int, button> buttons;
 
 		float lt = 0.f;
 		float rt = 0.f;
 
 		struct {
 			float x = 0.f, y = 0.f;
-		} lStick, rStick;
+		} l_stick, r_stick;
 
 		void reset() {
 			for (auto& snd : buttons | std::views::values) {
@@ -45,15 +45,15 @@ namespace Engine::Input {
 
 			lt = 0.f;
 			rt = 0.f;
-			lStick.x = 0.f;
-			lStick.y = 0.f;
+			l_stick.x = 0.f;
+			l_stick.y = 0.f;
 		}
 	};
 
-	struct Keyboard {
-		std::unordered_map<int, Button> keys;
+	struct keyboard {
+		std::unordered_map<int, button> keys;
 
-		std::string typedInput;
+		std::string typed_input;
 
 		void reset() {
 			for (auto& snd : keys | std::views::values) {
@@ -62,12 +62,12 @@ namespace Engine::Input {
 		}
 	};
 
-	struct Mouse {
-		std::unordered_map<int, Button> buttons;
+	struct mouse {
+		std::unordered_map<int, button> buttons;
 
 		glm::vec2 position;
 		glm::vec2 delta;
-		glm::ivec2 lastPosition;
+		glm::ivec2 last_position;
 
 		void reset() {
 			for (auto& snd : buttons | std::views::values) {
@@ -77,22 +77,22 @@ namespace Engine::Input {
 	};
 
 	void update();
-	void setUpKeyMaps();
+	void set_up_key_maps();
 
-	Keyboard& getKeyboard();
-	Controller& getController();
-	Mouse& getMouse();
+	keyboard& get_keyboard();
+	controller& get_controller();
+	mouse& get_mouse();
 
-	void setInputsBlocked(bool blocked);
+	void set_inputs_blocked(bool blocked);
 
-	namespace Internal {
-		void processEventButton(Button& button, bool newState);
-		void updateButton(Button& button);
+	namespace internal {
+		void process_event_button(button& button, bool new_state);
+		void update_button(button& button);
 
-		void updateAllButtons();
-		void resetInputsToZero();
+		void update_all_buttons();
+		void reset_inputs_to_zero();
 
-		void addToTypedInput(char input);
-		void resetTypedInput();
+		void add_to_typed_input(char input);
+		void reset_typed_input();
 	};
 }

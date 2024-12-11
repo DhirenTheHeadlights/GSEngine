@@ -1,22 +1,22 @@
 #pragma once
 #include "Engine.h"
 
-namespace Engine {
-    class Sphere : public Object {
+namespace gse {
+    class sphere : public object {
     public:
-        Sphere(const Vec3<Length>& position, const Length radius, const int sectors = 36, const int stacks = 18)
-            : Object("Sphere"), position(position), radius(radius), sectors(sectors), stacks(stacks) {}
+        sphere(const vec3<length>& position, const length radius, const int sectors = 36, const int stacks = 18)
+            : object("Sphere"), m_position(position), m_radius(radius), m_sectors(sectors), m_stacks(stacks) {}
 
         void initialize() override;
         void update() override {}
         void render() override {}
 
-		Vec3<Length> getPosition() const { return position; }
-        Length getRadius() const { return radius; }
+		vec3<length> get_position() const { return m_position; }
+        length get_radius() const { return m_radius; }
     private:
-        Vec3<Length> position;
-        Length radius;
-        int sectors; // Number of slices around the sphere
-        int stacks;  // Number of stacks from top to bottom
+        vec3<length> m_position;
+        length m_radius;
+        int m_sectors; // Number of slices around the sphere
+        int m_stacks;  // Number of stacks from top to bottom
     };
 }

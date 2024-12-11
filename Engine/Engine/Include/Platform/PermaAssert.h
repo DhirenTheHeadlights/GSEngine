@@ -5,16 +5,16 @@
 #include <signal.h>
 
 // Forward declarations of assert functions
-inline void assertFuncProduction(
+inline void assert_func_production(
     const char* expression,
-    const char* fileName,
-    unsigned lineNumber,
+    const char* file_name,
+    unsigned line_number,
     const char* comment = "---");
 
-inline void assertFuncInternal(
+inline void assert_func_internal(
     const char* expression,
-    const char* fileName,
-    unsigned lineNumber,
+    const char* file_name,
+    unsigned line_number,
     const char* comment = "---");
 
 #ifdef _WIN32
@@ -22,10 +22,10 @@ inline void assertFuncInternal(
 #include <Windows.h>
 
 // Windows-specific implementations
-inline void assertFuncProduction(
+inline void assert_func_production(
     const char* expression,
-    const char* fileName,
-    const unsigned lineNumber,
+    const char* file_name,
+    const unsigned line_number,
     const char* comment)
 {
     char message[1024];
@@ -36,17 +36,17 @@ inline void assertFuncProduction(
         "Expression:\n%s\n\n"
         "Comment:\n%s\n\n"
         "Please report this error to the developer.",
-        fileName, lineNumber, expression, comment);
+        file_name, line_number, expression, comment);
 
     MessageBoxA(nullptr, message, "Platform Layer", MB_TASKMODAL | MB_ICONHAND | MB_OK | MB_SETFOREGROUND);
     raise(SIGABRT);
     _exit(3);
 }
 
-inline void assertFuncInternal(
+inline void assert_func_internal(
     const char* expression,
-    const char* fileName,
-    const unsigned lineNumber,
+    const char* file_name,
+    const unsigned line_number,
     const char* comment)
 {
     char message[1024];
@@ -57,7 +57,7 @@ inline void assertFuncInternal(
         "Expression:\n%s\n\n"
         "Comment:\n%s\n\n"
         "Press retry to debug.",
-        fileName, lineNumber, expression, comment);
+        file_name, line_number, expression, comment);
 
     const int action = MessageBoxA(nullptr, message, "Platform Layer",
                                    MB_TASKMODAL | MB_ICONHAND | MB_ABORTRETRYIGNORE | MB_SETFOREGROUND);
@@ -106,9 +106,9 @@ inline void assertFuncInternal(
 // Define permaAssert macros
 #if PRODUCTION_BUILD == 0
 #define permaAssert(expression) \
-    ((expression) ? (void)0 : assertFuncInternal(#expression, __FILE__, __LINE__))
+    ((expression) ? (void)0 : assert_func_internal(#expression, __FILE__, __LINE__))
 #define permaAssertComment(expression, comment) \
-    ((expression) ? (void)0 : assertFuncInternal(#expression, __FILE__, __LINE__, comment))
+    ((expression) ? (void)0 : assert_func_internal(#expression, __FILE__, __LINE__, comment))
 #else
 #define permaAssert(expression) \
     ((expression) ? (void)0 : assertFuncProduction(#expression, __FILE__, __LINE__))
@@ -128,7 +128,7 @@ inline void assertFuncInternal(
 #ifdef FORCE_LOG
 
 template<typename... Args>
-void genericLog(Args&&... args) {
+void generic_log(Args&&... args) {
     (std::cout << ... << args) << std::endl;
 }
 

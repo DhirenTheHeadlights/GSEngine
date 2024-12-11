@@ -2,29 +2,29 @@
 
 #include "UnitTemplate.h"
 
-namespace Engine {
-	constexpr char degreesUnits[] = "deg";
-	constexpr char radiansUnits[] = "rad";
+namespace gse::units {
+	constexpr char degrees_units[] = "deg";
+	constexpr char radians_units[] = "rad";
 
-	using Degrees = Unit<float, 1.0f, degreesUnits>;
-	using Radians = Unit<float, 1 / 0.01745329252f, radiansUnits>;
+	using degrees = unit<float, 1.0f, degrees_units>;
+	using radians = unit<float, 1 / 0.01745329252f, radians_units>;
 }
 
-namespace Engine {
-	using AngleUnits = UnitList<
-		Degrees,
-		Radians
+namespace gse {
+	using angle_units = unit_list<
+		units::degrees,
+		units::radians
 	>;
 
-	struct Angle : Quantity<Angle, Degrees, AngleUnits> {
-		using Quantity::Quantity;
+	struct angle : quantity<angle, units::degrees, angle_units> {
+		using quantity::quantity;
 	};
 
-	inline Angle degrees(const float value) {
-		return Angle::from<Degrees>(value);
+	inline angle degrees(const float value) {
+		return angle::from<units::degrees>(value);
 	}
 
-	inline Angle radians(const float value) {
-		return Angle::from<Radians>(value);
+	inline angle radians(const float value) {
+		return angle::from<units::radians>(value);
 	}
 }

@@ -1,72 +1,74 @@
 #include "Graphics/3D/Mesh.h"
 
-Engine::Mesh::Mesh() {
-	glGenVertexArrays(1, &VAO);
-	glGenBuffers(1, &VBO);
-	glGenBuffers(1, &EBO);
+gse::mesh::mesh() {
+	glGenVertexArrays(1, &m_vao);
+	glGenBuffers(1, &m_vbo);
+	glGenBuffers(1, &m_ebo);
 }
 
-Engine::Mesh::Mesh(const std::vector<Vertex>& vertices, const std::vector<unsigned int>& indices, const glm::vec3& color, GLuint textureId)
-	: vertices(vertices), indices(indices) {
-	setUpMesh();
+gse::mesh::mesh(const std::vector<vertex>& vertices, const std::vector<unsigned int>& indices, const glm::vec3& color, const GLuint texture_id)
+	: m_vertices(vertices), m_indices(indices), m_texture_id(texture_id), m_color(color) {
+	set_up_mesh();
 }
 
-Engine::Mesh::~Mesh() {
-	glDeleteVertexArrays(1, &VAO);
-	glDeleteBuffers(1, &VBO);
-	glDeleteBuffers(1, &EBO);
+gse::mesh::~mesh() {
+	glDeleteVertexArrays(1, &m_vao);
+	glDeleteBuffers(1, &m_vbo);
+	glDeleteBuffers(1, &m_ebo);
 }
 
-Engine::Mesh::Mesh(Mesh&& other) noexcept
-	: VAO(other.VAO), VBO(other.VBO), EBO(other.EBO),
-	vertices(std::move(other.vertices)), indices(std::move(other.indices)) {
-	other.VAO = 0;
-	other.VBO = 0;
-	other.EBO = 0;
+gse::mesh::mesh(mesh&& other) noexcept
+	: m_vao(other.m_vao), m_vbo(other.m_vbo), m_ebo(other.m_ebo),
+	m_vertices(std::move(other.m_vertices)), m_indices(std::move(other.m_indices)) {
+	other.m_vao = 0;
+	other.m_vbo = 0;
+	other.m_ebo = 0;
 }
 
-Engine::Mesh& Engine::Mesh::operator=(Mesh&& other) noexcept {
+gse::mesh& gse::mesh::operator=(mesh&& other) noexcept {
 	if (this != &other) {
-		glDeleteVertexArrays(1, &VAO);
-		glDeleteBuffers(1, &VBO);
-		glDeleteBuffers(1, &EBO);
+		glDeleteVertexArrays(1, &m_vao);
+		glDeleteBuffers(1, &m_vbo);
+		glDeleteBuffers(1, &m_ebo);
 
-		VAO = other.VAO;
-		VBO = other.VBO;
-		EBO = other.EBO;
-		vertices = std::move(other.vertices);
-		indices = std::move(other.indices);
+		m_vao = other.m_vao;
+		m_vbo = other.m_vbo;
+		m_ebo = other.m_ebo;
+		m_vertices = std::move(other.m_vertices);
+		m_indices = std::move(other.m_indices);
 
-		other.VAO = 0;
-		other.VBO = 0;
-		other.EBO = 0;
+		other.m_vao = 0;
+		other.m_vbo = 0;
+		other.m_ebo = 0;
 	}
 	return *this;
 }
 
-void Engine::Mesh::setUpMesh() {
-	glGenVertexArrays(1, &VAO);
-	glGenBuffers(1, &VBO);
-	glGenBuffers(1, &EBO);
+GLuint gse::mesh::get_vao() const { return m_vao; }
 
-	glBindVertexArray(VAO);
+void gse::mesh::set_up_mesh() {
+	glGenVertexArrays(1, &m_vao);
+	glGenBuffers(1, &m_vbo);
+	glGenBuffers(1, &m_ebo);
 
-	glBindBuffer(GL_ARRAY_BUFFER, VBO);
-	glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(Vertex), vertices.data(), GL_STATIC_DRAW);
+	glBindVertexArray(m_vao);
 
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
+	glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+	glBufferData(GL_ARRAY_BUFFER, m_vertices.size() * sizeof(vertex), m_vertices.data(), GL_STATIC_DRAW);
+
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebo);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, m_indices.size() * sizeof(unsigned int), m_indices.data(), GL_STATIC_DRAW);
 
 	// Position attribute
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), static_cast<void*>(nullptr));
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), static_cast<void*>(nullptr));
 	glEnableVertexAttribArray(0);
 
 	// Normal attribute
-	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, normal)));
+	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), reinterpret_cast<void*>(offsetof(vertex, normal)));
 	glEnableVertexAttribArray(1);
 
 	// Texture coordinates attribute
-	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, texCoords)));
+	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(vertex), reinterpret_cast<void*>(offsetof(vertex, tex_coords)));
 	glEnableVertexAttribArray(2);
 
 	glBindVertexArray(0);

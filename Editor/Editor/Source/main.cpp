@@ -3,11 +3,11 @@
 #include "Game.h"
 
 int main() {
-	Engine::initialize(Game::initialize, Game::close);
+	gse::initialize(game::initialize, game::close);
 
 	Editor::initialize();
 
-	Engine::Window::addRenderingInterface(std::make_shared<Editor::RenderingInterface>());
+	gse::window::add_rendering_interface(std::make_shared<Editor::RenderingInterface>());
 
-	Engine::run(Game::update, Game::render);
+	gse::run(game::update, game::render);
 }

@@ -2,12 +2,12 @@
 
 #include "ID.h"
 
-namespace Engine {
-	class EngineComponent {
+namespace gse {
+	class engine_component {
 	public:
-		EngineComponent(ID* id) : id(id) {}
-		virtual ~EngineComponent() = default;
+		engine_component(id* id) : m_id(id) {}
+		virtual ~engine_component() = default;
 	private:
-		ID* id;
+		id* m_id;
 	};
 }

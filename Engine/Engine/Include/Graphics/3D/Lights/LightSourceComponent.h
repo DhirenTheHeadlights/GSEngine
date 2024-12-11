@@ -2,36 +2,36 @@
 
 #include <glm/glm.hpp>
 
-#include "Graphics/3D/Lights/Light.h"
 #include "Core/EngineComponent.h"
+#include "Graphics/3D/Lights/Light.h"
 
-namespace Engine {
-	class LightSourceComponent : public EngineComponent {
+namespace gse {
+	class light_source_component final : public engine_component {
 	public:
-		LightSourceComponent(ID* id) : EngineComponent(id) {}
-		LightSourceComponent(ID* id, const std::vector<std::shared_ptr<Light>>& lights) : EngineComponent(id), lights(lights) {}
+		light_source_component(id* id) : engine_component(id) {}
+		light_source_component(id* id, const std::vector<std::shared_ptr<light>>& lights) : engine_component(id), m_lights(lights) {}
 
-		void addLight(const std::shared_ptr<Light>& light) {
-			lights.push_back(light);
+		void add_light(const std::shared_ptr<light>& light) {
+			m_lights.push_back(light);
 		}
 
-		void removeLight(const std::shared_ptr<Light>& light) {
-			std::erase(lights, light);
+		void remove_light(const std::shared_ptr<light>& light) {
+			std::erase(m_lights, light);
 		}
 
-		std::vector<LightRenderQueueEntry> getRenderQueueEntries() const {
-			std::vector<LightRenderQueueEntry> entries;
-			entries.reserve(lights.size());
-			for (const auto& light : lights) {
-				entries.push_back(light->getRenderQueueEntry());
+		std::vector<light_render_queue_entry> get_render_queue_entries() const {
+			std::vector<light_render_queue_entry> entries;
+			entries.reserve(m_lights.size());
+			for (const auto& light : m_lights) {
+				entries.push_back(light->get_render_queue_entry());
 			}
 			return entries;
 		}
 
-		std::vector<std::shared_ptr<Light>>& getLights() {
-			return lights;
+		std::vector<std::shared_ptr<light>>& get_lights() {
+			return m_lights;
 		}
 	private:
-		std::vector<std::shared_ptr<Light>> lights;
+		std::vector<std::shared_ptr<light>> m_lights;
 	};
 }
