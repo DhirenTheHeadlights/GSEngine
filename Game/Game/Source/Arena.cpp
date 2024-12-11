@@ -11,16 +11,16 @@ void Game::Arena::initialize() {
     const auto collisionComponent = std::make_shared<gse::physics::collision_component>(m_id.get());
 
     // Front and back walls
-    collisionComponent->m_bounding_boxes.emplace_back(gse::vec3<gse::Meters>(0.f, 0.f, depth / 2.f - wallThickness / 2.f), width, height, wallThickness);
-    collisionComponent->m_bounding_boxes.emplace_back(gse::vec3<gse::Meters>(0.f, 0.f, -depth / 2.f + wallThickness / 2.f), width, height, wallThickness);
+    collisionComponent->bounding_boxes.emplace_back(gse::vec3<gse::Meters>(0.f, 0.f, depth / 2.f - wallThickness / 2.f), width, height, wallThickness);
+    collisionComponent->bounding_boxes.emplace_back(gse::vec3<gse::Meters>(0.f, 0.f, -depth / 2.f + wallThickness / 2.f), width, height, wallThickness);
 
     // Left and right walls
-    collisionComponent->m_bounding_boxes.emplace_back(gse::vec3<gse::Meters>(-width / 2.f + wallThickness / 2.f, 0.f, 0.f), wallThickness, height, depth);
-    collisionComponent->m_bounding_boxes.emplace_back(gse::vec3<gse::Meters>(width / 2.f - wallThickness / 2.f, 0.f, 0.f), wallThickness, height, depth);
+    collisionComponent->bounding_boxes.emplace_back(gse::vec3<gse::Meters>(-width / 2.f + wallThickness / 2.f, 0.f, 0.f), wallThickness, height, depth);
+    collisionComponent->bounding_boxes.emplace_back(gse::vec3<gse::Meters>(width / 2.f - wallThickness / 2.f, 0.f, 0.f), wallThickness, height, depth);
 
     // Top and bottom walls
-    collisionComponent->m_bounding_boxes.emplace_back(gse::vec3<gse::Meters>(0.f, height / 2.f - wallThickness / 2.f, 0.f), width, wallThickness, depth);
-    collisionComponent->m_bounding_boxes.emplace_back(gse::vec3<gse::Meters>(0.f, -height / 2.f + wallThickness / 2.f, 0.f), width, wallThickness, depth);
+    collisionComponent->bounding_boxes.emplace_back(gse::vec3<gse::Meters>(0.f, height / 2.f - wallThickness / 2.f, 0.f), width, wallThickness, depth);
+    collisionComponent->bounding_boxes.emplace_back(gse::vec3<gse::Meters>(0.f, -height / 2.f + wallThickness / 2.f, 0.f), width, wallThickness, depth);
 
     // Colors for each face
     const glm::vec3 colors[] = {
@@ -93,7 +93,7 @@ void Game::Arena::initialize() {
 		mesh->set_color(colors[i]);
         renderComponent->add_mesh(mesh);
 
-		auto boundingBoxMesh = std::make_shared<gse::bounding_box_mesh>(collisionComponent->m_bounding_boxes[i].lower_bound, collisionComponent->m_bounding_boxes[i].upper_bound);
+		auto boundingBoxMesh = std::make_shared<gse::bounding_box_mesh>(collisionComponent->bounding_boxes[i].lower_bound, collisionComponent->bounding_boxes[i].upper_bound);
 		renderComponent->add_bounding_box_mesh(boundingBoxMesh);
     }
 

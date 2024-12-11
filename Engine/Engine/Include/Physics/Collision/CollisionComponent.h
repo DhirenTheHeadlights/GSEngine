@@ -6,6 +6,6 @@
 namespace gse::physics {
 	struct collision_component final : engine_component {
 		collision_component(id* id) : engine_component(id) {}
-		std::vector<bounding_box> m_bounding_boxes;
+		std::vector<bounding_box> bounding_boxes;
 	};
 }

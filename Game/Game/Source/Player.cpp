@@ -7,7 +7,7 @@ void Game::Player::initialize() {
 
 	gse::length height = gse::feet(6.0f);
 	gse::length width = gse::feet(3.0f);
-	collisionComponent->m_bounding_boxes.emplace_back(gse::vec3<gse::Meters>(-10.f, -10.f, -10.f), height, width, width);
+	collisionComponent->bounding_boxes.emplace_back(gse::vec3<gse::Meters>(-10.f, -10.f, -10.f), height, width, width);
 
 	wasd.insert({ GLFW_KEY_W, { 0.f, 0.f, 1.f } });
 	wasd.insert({ GLFW_KEY_S, { 0.f, 0.f, -1.f } });
@@ -18,7 +18,7 @@ void Game::Player::initialize() {
 	motionComponent->max_speed = maxSpeed;
 	motionComponent->self_controlled = true;
 
-	for (auto& bb : collisionComponent->m_bounding_boxes) {
+	for (auto& bb : collisionComponent->bounding_boxes) {
 		const auto boundingBoxMesh = std::make_shared<gse::bounding_box_mesh>(bb.upper_bound, bb.lower_bound);
 		renderComponent->add_bounding_box_mesh(boundingBoxMesh);
 	}
@@ -78,7 +78,7 @@ void Game::Player::update() {
 	updateJetpack();
 	updateMovement();
 
-	for (auto& bb : get_component<gse::physics::collision_component>()->m_bounding_boxes) {
+	for (auto& bb : get_component<gse::physics::collision_component>()->bounding_boxes) {
 		bb.set_position(get_component<gse::physics::motion_component>()->current_position);
 	}
 	
@@ -92,7 +92,7 @@ void Game::Player::render() {
 	gse::debug::add_imgui_callback([this] {
 		ImGui::Begin("Player");
 		gse::debug::print_vector("Player Position", get_component<gse::physics::motion_component>()->current_position.as<gse::Meters>(), gse::Meters::UnitName);
-		gse::debug::print_vector("Player Bounding Box Position", get_component<gse::physics::collision_component>()->m_bounding_boxes[0].get_center().as<gse::Meters>(), gse::Meters::UnitName);
+		gse::debug::print_vector("Player Bounding Box Position", get_component<gse::physics::collision_component>()->bounding_boxes[0].get_center().as<gse::Meters>(), gse::Meters::UnitName);
 		gse::debug::print_vector("Player Velocity", get_component<gse::physics::motion_component>()->current_velocity.as<gse::meters_per_second>(), gse::meters_per_second::unit_name);
 		gse::debug::print_vector("Player Acceleration", get_component<gse::physics::motion_component>()->current_acceleration.as<gse::meters_per_second_squared>(), gse::meters_per_second_squared::unit_name);
 
@@ -103,7 +103,7 @@ void Game::Player::render() {
 
 		ImGui::Text("Player Collision Information");
 
-		const auto [colliding, collisionNormal, penetration, collisionPoint] = get_component<gse::physics::collision_component>()->m_bounding_boxes[0].collision_information;
+		const auto [colliding, collisionNormal, penetration, collisionPoint] = get_component<gse::physics::collision_component>()->bounding_boxes[0].collision_information;
 		gse::debug::print_boolean("Player Colliding", colliding);
 		gse::debug::print_vector("Collision Normal", collisionNormal.as_default_units(), "");
 		gse::debug::print_value("Penetration", penetration.as<gse::Meters>(), gse::Meters::UnitName);

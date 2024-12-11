@@ -38,9 +38,9 @@ namespace gse {
 	void display_timers();
 }
 
-namespace gse::MainClock {
+namespace gse::main_clock {
 	void update();
-	time getDeltaTime();
-	time getConstantUpdateTime(const float frameRate);
-	int getFrameRate();
+	time get_delta_time();
+	time get_constant_update_time(const float frame_rate);
+	int get_frame_rate();
 }

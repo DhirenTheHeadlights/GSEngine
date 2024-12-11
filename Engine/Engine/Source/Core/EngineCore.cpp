@@ -51,7 +51,7 @@ void gse::initialize(const std::function<void()>& initialize_function, const std
 
 	window::initialize();
 
-	if (imguiEnabled) debug::set_up_im_gui();
+	if (imguiEnabled) debug::set_up_imgui();
 
 	renderer::initialize3d();
 
@@ -67,9 +67,9 @@ namespace {
 
 		gse::window::update();
 
-		if (imguiEnabled) gse::debug::update_im_gui();
+		if (imguiEnabled) gse::debug::update_imgui();
 
-		gse::MainClock::update();
+		gse::main_clock::update();
 
 		gse::scene_handler.update();
 
@@ -94,7 +94,7 @@ namespace {
 		}
 
 		if (imguiEnabled) gse::display_timers();
-		if (imguiEnabled) gse::debug::render_im_gui();
+		if (imguiEnabled) gse::debug::render_imgui();
 
 		gse::window::end_frame();
 

@@ -8,14 +8,14 @@
 namespace gse::broad_phase_collision {
 	class group {
 		struct object {
-			object(const std::weak_ptr<physics::collision_component>& collision_component) : m_collision_component(collision_component) {}
-			std::weak_ptr<physics::collision_component> m_collision_component;
+			object(const std::weak_ptr<physics::collision_component>& collision_component) : collision_component(collision_component) {}
+			std::weak_ptr<physics::collision_component> collision_component;
 		};
 
 		struct dynamic_object : object {
 			dynamic_object(const std::weak_ptr<physics::collision_component>& collision_component, const std::weak_ptr<physics::motion_component>& motion_component) :
-				object(collision_component), m_motion_component(motion_component) {}
-			std::weak_ptr<physics::motion_component> m_motion_component;
+				object(collision_component), motion_component(motion_component) {}
+			std::weak_ptr<physics::motion_component> motion_component;
 		};
 	public:
 		void add_object(const std::shared_ptr<physics::collision_component>& collision_component);

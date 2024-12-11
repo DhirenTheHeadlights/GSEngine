@@ -21,7 +21,7 @@ namespace {
 
 void Editor::initialize() {
 	gse::debug::set_imgui_save_file_path(EDITOR_RESOURCES_PATH "imgui_state.ini");
-	gse::debug::set_up_im_gui();
+	gse::debug::set_up_imgui();
 
     // Generate and bind the FBO
     glGenFramebuffers(1, &fbo);
@@ -59,7 +59,7 @@ void Editor::unbindFbo() {
 }
 
 void Editor::update() {
-	gse::debug::update_im_gui();
+	gse::debug::update_imgui();
 
 	if (ImGui::GetIO().KeysDown[ImGuiKey_Escape]) {
         gse::request_shutdown();
@@ -166,7 +166,7 @@ void Editor::render() {
     ImGui::End();
 
 
-    gse::debug::render_im_gui();
+    gse::debug::render_imgui();
 }
 
 void Editor::exit() {

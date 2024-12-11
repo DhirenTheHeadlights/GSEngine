@@ -9,7 +9,7 @@
 #include "Graphics/3D/Mesh.h"
 
 namespace gse {
-	class render_component : public engine_component {
+	class render_component final : public engine_component {
 	public:
 		render_component(id* id) : engine_component(id) {}
 		render_component(id* id, const std::vector<std::shared_ptr<mesh>>& meshes) : engine_component(id), m_meshes(meshes) {}
@@ -20,7 +20,7 @@ namespace gse {
 		void update_bounding_box_meshes() const;
 		void set_render(bool render, bool render_bounding_boxes);
 
-		virtual std::vector<render_queue_entry> get_queue_entries() const;
+		std::vector<render_queue_entry> get_queue_entries() const;
 		std::vector<std::shared_ptr<mesh>>& get_meshes() { return m_meshes; }
 		std::vector<std::shared_ptr<bounding_box_mesh>>& get_bounding_box_meshes() { return m_bounding_box_meshes; }
 	protected:

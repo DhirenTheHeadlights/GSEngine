@@ -20,52 +20,52 @@ struct unit_to_quantity {
 ////////////////////////////////////////////////////////////////////////
 /// Length
 ////////////////////////////////////////////////////////////////////////
-DEFINE_UNIT_TO_QUANTITY(struct gse::kilometers, gse::length);
-DEFINE_UNIT_TO_QUANTITY(struct gse::meters, gse::length);
-DEFINE_UNIT_TO_QUANTITY(struct gse::centimeters, gse::length);
-DEFINE_UNIT_TO_QUANTITY(struct gse::millimeters, gse::length);
-DEFINE_UNIT_TO_QUANTITY(struct gse::yards, gse::length);
-DEFINE_UNIT_TO_QUANTITY(struct gse::feet, gse::length);
-DEFINE_UNIT_TO_QUANTITY(struct gse::inches, gse::length);
+DEFINE_UNIT_TO_QUANTITY(gse::units::kilometers, gse::length);
+DEFINE_UNIT_TO_QUANTITY(gse::units::meters, gse::length);
+DEFINE_UNIT_TO_QUANTITY(gse::units::centimeters, gse::length);
+DEFINE_UNIT_TO_QUANTITY(gse::units::millimeters, gse::length);
+DEFINE_UNIT_TO_QUANTITY(gse::units::yards, gse::length);
+DEFINE_UNIT_TO_QUANTITY(gse::units::feet, gse::length);
+DEFINE_UNIT_TO_QUANTITY(gse::units::inches, gse::length);
 ////////////////////////////////////////////////////////////////////////
 /// Mass
 ////////////////////////////////////////////////////////////////////////
-DEFINE_UNIT_TO_QUANTITY(struct gse::kilograms, gse::mass);
-DEFINE_UNIT_TO_QUANTITY(struct gse::grams, gse::mass);
-DEFINE_UNIT_TO_QUANTITY(struct gse::pounds, gse::mass);
+DEFINE_UNIT_TO_QUANTITY(gse::units::kilograms, gse::mass);
+DEFINE_UNIT_TO_QUANTITY(gse::units::grams, gse::mass);
+DEFINE_UNIT_TO_QUANTITY(gse::units::pounds, gse::mass);
 ////////////////////////////////////////////////////////////////////////
 /// Force
 ////////////////////////////////////////////////////////////////////////
-DEFINE_UNIT_TO_QUANTITY(struct gse::newtons, gse::force);
-DEFINE_UNIT_TO_QUANTITY(struct gse::pounds_force, gse::force);
+DEFINE_UNIT_TO_QUANTITY(gse::units::newtons, gse::force);
+DEFINE_UNIT_TO_QUANTITY(gse::units::pounds_force, gse::force);
 ////////////////////////////////////////////////////////////////////////
 /// Energy
 ////////////////////////////////////////////////////////////////////////
-DEFINE_UNIT_TO_QUANTITY(struct gse::joules, gse::energy);
-DEFINE_UNIT_TO_QUANTITY(struct gse::kilojoules, gse::energy);
-DEFINE_UNIT_TO_QUANTITY(struct gse::megajoules, gse::energy);
-DEFINE_UNIT_TO_QUANTITY(struct gse::gigajoules, gse::energy);
-DEFINE_UNIT_TO_QUANTITY(struct gse::calories, gse::energy);
-DEFINE_UNIT_TO_QUANTITY(struct gse::kilocalories, gse::energy);
+DEFINE_UNIT_TO_QUANTITY(gse::units::joules, gse::energy);
+DEFINE_UNIT_TO_QUANTITY(gse::units::kilojoules, gse::energy);
+DEFINE_UNIT_TO_QUANTITY(gse::units::megajoules, gse::energy);
+DEFINE_UNIT_TO_QUANTITY(gse::units::gigajoules, gse::energy);
+DEFINE_UNIT_TO_QUANTITY(gse::units::calories, gse::energy);
+DEFINE_UNIT_TO_QUANTITY(gse::units::kilocalories, gse::energy);
 ////////////////////////////////////////////////////////////////////////
 /// Power
 ////////////////////////////////////////////////////////////////////////
-DEFINE_UNIT_TO_QUANTITY(struct gse::watts, gse::power);
-DEFINE_UNIT_TO_QUANTITY(struct gse::kilowatts, gse::power);
-DEFINE_UNIT_TO_QUANTITY(struct gse::megawatts, gse::power);
-DEFINE_UNIT_TO_QUANTITY(struct gse::gigawatts, gse::power);
-DEFINE_UNIT_TO_QUANTITY(struct gse::horsepower, gse::power);
+DEFINE_UNIT_TO_QUANTITY(gse::units::watts, gse::power);
+DEFINE_UNIT_TO_QUANTITY(gse::units::kilowatts, gse::power);
+DEFINE_UNIT_TO_QUANTITY(gse::units::megawatts, gse::power);
+DEFINE_UNIT_TO_QUANTITY(gse::units::gigawatts, gse::power);
+DEFINE_UNIT_TO_QUANTITY(gse::units::horsepower, gse::power);
 ////////////////////////////////////////////////////////////////////////
 /// Velocity
 ////////////////////////////////////////////////////////////////////////
-DEFINE_UNIT_TO_QUANTITY(struct gse::meters_per_second, gse::velocity);
-DEFINE_UNIT_TO_QUANTITY(struct gse::kilometers_per_hour, gse::velocity);
-DEFINE_UNIT_TO_QUANTITY(struct gse::miles_per_hour, gse::velocity);
-DEFINE_UNIT_TO_QUANTITY(struct gse::feet_per_second, gse::velocity);
+DEFINE_UNIT_TO_QUANTITY(gse::units::meters_per_second, gse::velocity);
+DEFINE_UNIT_TO_QUANTITY(gse::units::kilometers_per_hour, gse::velocity);
+DEFINE_UNIT_TO_QUANTITY(gse::units::miles_per_hour, gse::velocity);
+DEFINE_UNIT_TO_QUANTITY(gse::units::feet_per_second, gse::velocity);
 ////////////////////////////////////////////////////////////////////////
 /// Acceleration
 ////////////////////////////////////////////////////////////////////////
-DEFINE_UNIT_TO_QUANTITY(struct gse::meters_per_second_squared, gse::acceleration);
-DEFINE_UNIT_TO_QUANTITY(struct gse::kilometers_per_hour_squared, gse::acceleration);
-DEFINE_UNIT_TO_QUANTITY(struct gse::miles_per_hour_squared, gse::acceleration);
-DEFINE_UNIT_TO_QUANTITY(struct gse::feet_per_second_squared, gse::acceleration);
+DEFINE_UNIT_TO_QUANTITY(gse::units::meters_per_second_squared, gse::acceleration);
+DEFINE_UNIT_TO_QUANTITY(gse::units::kilometers_per_hour_squared, gse::acceleration);
+DEFINE_UNIT_TO_QUANTITY(gse::units::miles_per_hour_squared, gse::acceleration);
+DEFINE_UNIT_TO_QUANTITY(gse::units::feet_per_second_squared, gse::acceleration);

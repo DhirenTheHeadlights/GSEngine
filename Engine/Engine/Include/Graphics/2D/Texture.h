@@ -8,11 +8,11 @@
 #include "Core/Object/Object.h"
 
 namespace gse {
-    class Texture {
+    class texture {
     public:
-        Texture() = default;
-        explicit Texture(const std::string& filepath);
-        ~Texture();
+        texture() = default;
+        explicit texture(const std::string& filepath);
+        ~texture();
 
         void load_from_file(const std::string& filepath);
         void bind(unsigned int unit = 0) const;
