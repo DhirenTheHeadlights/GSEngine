@@ -6,8 +6,8 @@ gse::mesh::mesh() {
 	glGenBuffers(1, &m_ebo);
 }
 
-gse::mesh::mesh(const std::vector<vertex>& vertices, const std::vector<unsigned int>& indices, const glm::vec3& color, GLuint texture_id)
-	: m_vertices(vertices), m_indices(indices) {
+gse::mesh::mesh(const std::vector<vertex>& vertices, const std::vector<unsigned int>& indices, const glm::vec3& color, const GLuint texture_id)
+	: m_vertices(vertices), m_indices(indices), m_texture_id(texture_id), m_color(color) {
 	set_up_mesh();
 }
 

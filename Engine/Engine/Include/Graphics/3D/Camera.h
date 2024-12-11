@@ -24,10 +24,10 @@ namespace gse {
 		vec3<> get_camera_direction_relative_to_origin(const vec3<>& direction) const;
 	private:
 		vec3<length> m_position;
-		vec3<length> m_front = vec3<Meters>(0.0f, 0.0f, -1.0f);
-		vec3<length> m_up = vec3<Meters>(0.0f, 1.0f, 0.0f);
-		vec3<length> m_right = vec3<Meters>(1.0f, 0.0f, 0.0f);
-		vec3<length> m_world_up = vec3<Meters>(0.0f, 1.0f, 0.0f);
+		vec3<length> m_front = vec3<units::meters>(0.0f, 0.0f, -1.0f);
+		vec3<length> m_up = vec3<units::meters>(0.0f, 1.0f, 0.0f);
+		vec3<length> m_right = vec3<units::meters>(1.0f, 0.0f, 0.0f);
+		vec3<length> m_world_up = vec3<units::meters>(0.0f, 1.0f, 0.0f);
 
 		float m_yaw = -90.0f;
 		float m_pitch = 0.0f;

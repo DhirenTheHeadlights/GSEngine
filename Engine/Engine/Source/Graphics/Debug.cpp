@@ -8,15 +8,15 @@
 #include "Platform/GLFW/Window.h"
 
 namespace {
-	gse::clock autosaveClock;
-	const gse::time autosaveTime = gse::seconds(60.f);
-	std::string imguiSaveFilePath;
+	gse::clock g_autosave_clock;
+	const gse::time g_autosave_time = gse::seconds(60.f);
+	std::string g_imgui_save_file_path;
 
-	std::vector<std::function<void()>> renderCallBacks;
+	std::vector<std::function<void()>> g_render_call_backs;
 }
 
 void gse::debug::set_imgui_save_file_path(const std::string& path) {
-	imguiSaveFilePath = path;
+	g_imgui_save_file_path = path;
 }
 
 void gse::debug::set_up_imgui() {
@@ -40,8 +40,8 @@ void gse::debug::set_up_imgui() {
 	ImGui_ImplGlfw_InitForOpenGL(window::get_window(), true);
 	ImGui_ImplOpenGL3_Init("#version 330");
 
-	if (std::filesystem::exists(imguiSaveFilePath)) {
-		ImGui::LoadIniSettingsFromDisk(imguiSaveFilePath.c_str());
+	if (std::filesystem::exists(g_imgui_save_file_path)) {
+		ImGui::LoadIniSettingsFromDisk(g_imgui_save_file_path.c_str());
 	}
 }
 
@@ -72,36 +72,36 @@ void gse::debug::update_imgui() {
 		window::set_mouse_visible(true);
 	}
 
-	if (autosaveClock.get_elapsed_time() > autosaveTime) {
+	if (g_autosave_clock.get_elapsed_time() > g_autosave_time) {
 		save_imgui_state();
-		autosaveClock.reset();
+		g_autosave_clock.reset();
 	}
 }
 
 void gse::debug::render_imgui() {
-	for (const auto& callback : renderCallBacks) {
+	for (const auto& callback : g_render_call_backs) {
 		callback();
 	}
-	renderCallBacks.clear();
+	g_render_call_backs.clear();
 
 	ImGui::Render();
 
-	const glm::ivec2 windowSize = window::get_window_size();
-	glViewport(0, 0, windowSize.x, windowSize.y);
+	const glm::ivec2 window_size = window::get_window_size();
+	glViewport(0, 0, window_size.x, window_size.y);
 
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
 	const ImGuiIO& io = ImGui::GetIO(); (void)io;
 	if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
-		GLFWwindow* backupCurrentContext = glfwGetCurrentContext();
+		GLFWwindow* backup_current_context = glfwGetCurrentContext();
 		ImGui::UpdatePlatformWindows();
 		ImGui::RenderPlatformWindowsDefault();
-		glfwMakeContextCurrent(backupCurrentContext);
+		glfwMakeContextCurrent(backup_current_context);
 	}
 }
 
 void gse::debug::save_imgui_state() {
-	ImGui::SaveIniSettingsToDisk(imguiSaveFilePath.c_str());
+	ImGui::SaveIniSettingsToDisk(g_imgui_save_file_path.c_str());
 }
 
 void gse::debug::print_vector(const std::string& name, const glm::vec3& vec, const char* unit) {
@@ -127,7 +127,7 @@ void gse::debug::print_boolean(const std::string& name, const bool& value) {
 }
 
 void gse::debug::add_imgui_callback(const std::function<void()>& callback) {
-	renderCallBacks.push_back(callback);
+	g_render_call_backs.push_back(callback);
 }
 
 bool gse::debug::get_imgui_needs_inputs() {

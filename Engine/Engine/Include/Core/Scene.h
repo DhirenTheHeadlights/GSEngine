@@ -15,7 +15,7 @@ namespace gse {
 		scene(const std::shared_ptr<id>& id) : m_id(id) {}
 
 		void add_object(const std::weak_ptr<object>& object);
-		void remove_object(const std::weak_ptr<object>& object);
+		void remove_object(const std::weak_ptr<object>& object_to_remove);
 
 		void initialize();
 		void update();

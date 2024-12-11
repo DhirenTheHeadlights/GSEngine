@@ -4,10 +4,10 @@
 #include "Graphics/RenderComponent.h"
 
 void gse::sphere::initialize() {
-    const auto new_render_component = std::make_shared<new_render_component>(m_id.get());
+    const auto new_render_component = std::make_shared<render_component>(m_id.get());
 
-    const float r = m_radius.as<meters>();
-    const glm::vec3 pos_offset = m_position.as<meters>();
+    const float r = m_radius.as<units::meters>();
+    const glm::vec3 pos_offset = m_position.as<units::meters>();
 
     std::vector<vertex> vertices;
     std::vector<unsigned int> indices;

@@ -13,36 +13,36 @@
 #include "Platform/GLFW/Window.h"
 
 namespace {
-	gse::camera camera;
+	gse::camera g_camera;
 
-	std::unordered_map<std::string, gse::material> materials;
-	std::unordered_map<std::string, gse::shader> deferredRenderingShaders;
-	std::unordered_map<std::string, gse::shader> forwardRenderingShaders;
-	std::unordered_map<std::string, gse::shader> lightingShaders;
+	std::unordered_map<std::string, gse::material> g_materials;
+	std::unordered_map<std::string, gse::shader> g_deferred_rendering_shaders;
+	std::unordered_map<std::string, gse::shader> g_forward_rendering_shaders;
+	std::unordered_map<std::string, gse::shader> g_lighting_shaders;
 
-	GLuint gBuffer = 0;
-	GLuint gPosition = 0;
-	GLuint gNormal = 0;
-	GLuint gAlbedoSpec = 0;
-	GLuint ssboLights = 0;
-	GLuint lightSpaceBlockUBO = 0;
+	GLuint g_g_buffer = 0;
+	GLuint g_g_position = 0;
+	GLuint g_g_normal = 0;
+	GLuint g_g_albedo_spec = 0;
+	GLuint g_ssbo_lights = 0;
+	GLuint g_light_space_block_ubo = 0;
 
-	gse::cube_map reflectionCubeMap;
+	gse::cube_map g_reflection_cube_map;
 
-	float shadowWidth = 4096;
-	float shadowHeight = 4096;
+	float g_shadow_width = 4096;
+	float g_shadow_height = 4096;
 
-	gse::length nearPlane = gse::meters(10.0f);
-	gse::length farPlane = gse::meters(1000.f);
+	gse::length g_near_plane = gse::meters(10.0f);
+	gse::length g_far_plane = gse::meters(1000.f);
 
-	bool depthMapDebug = false;
+	bool g_depth_map_debug = false;
 
-	void loadShaders(const std::string& shaderPath, const std::string& shaderFileName, std::unordered_map<std::string, gse::shader>& shaders) {
+	void load_shaders(const std::string& shader_path, const std::string& shader_file_name, std::unordered_map<std::string, gse::shader>& shaders) {
 		gse::json_parse::parse(
-			gse::json_parse::load_json(shaderPath + shaderFileName),
+			gse::json_parse::load_json(shader_path + shader_file_name),
 			[&](const std::string& key, const nlohmann::json& value) {
-				shaders.emplace(key, gse::shader(shaderPath + value["vertex"].get<std::string>(),
-					shaderPath + value["fragment"].get<std::string>()));
+				shaders.emplace(key, gse::shader(shader_path + value["vertex"].get<std::string>(),
+					shader_path + value["fragment"].get<std::string>()));
 			}
 		);
 	}
@@ -55,47 +55,47 @@ void gse::renderer::group::add_render_component(const std::shared_ptr<render_com
 void gse::renderer::group::add_light_source_component(const std::shared_ptr<light_source_component>& light_source_component) {
 	m_light_source_components.push_back(light_source_component);
 
-	if (const auto pointLight = std::dynamic_pointer_cast<point_light>(light_source_component); pointLight) {
-		pointLight->get_shadow_map().create(static_cast<int>((shadowWidth + shadowHeight) / 2.f), true);
+	if (const auto light = std::dynamic_pointer_cast<point_light>(light_source_component); light) {
+		light->get_shadow_map().create(static_cast<int>((g_shadow_width + g_shadow_height) / 2.f), true);
 
-		depth_maps.push_back(pointLight->get_shadow_map().get_texture_id());
-		depth_map_fbos.push_back(pointLight->get_shadow_map().get_frame_buffer_id());
+		depth_maps.push_back(light->get_shadow_map().get_texture_id());
+		depth_map_fbos.push_back(light->get_shadow_map().get_frame_buffer_id());
 	}
 	else {
-		GLuint depthMap, depthMapFbo;
-		glGenTextures(1, &depthMap);
-		glBindTexture(GL_TEXTURE_2D, depthMap);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, static_cast<GLsizei>(shadowWidth), static_cast<GLsizei>(shadowHeight), 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+		GLuint depth_map, depth_map_fbo;
+		glGenTextures(1, &depth_map);
+		glBindTexture(GL_TEXTURE_2D, depth_map);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, static_cast<GLsizei>(g_shadow_width), static_cast<GLsizei>(g_shadow_height), 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-		constexpr float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-		glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+		constexpr float border_color[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+		glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, border_color);
 
-		glGenFramebuffers(1, &depthMapFbo);
-		glBindFramebuffer(GL_FRAMEBUFFER, depthMapFbo);
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
+		glGenFramebuffers(1, &depth_map_fbo);
+		glBindFramebuffer(GL_FRAMEBUFFER, depth_map_fbo);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depth_map, 0);
 		glDrawBuffer(GL_NONE);
 		glReadBuffer(GL_NONE);
 
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-		depth_maps.push_back(depthMap);
-		depth_map_fbos.push_back(depthMapFbo);
+		depth_maps.push_back(depth_map);
+		depth_map_fbos.push_back(depth_map_fbo);
 	}
 }
 
-void gse::renderer::group::remove_render_component(const std::shared_ptr<render_component>& render_component) {
+void gse::renderer::group::remove_render_component(const std::shared_ptr<render_component>& render_component_to_remove) {
 	std::erase_if(m_render_components, [&](const std::weak_ptr<render_component>& component) {
-		return !component.owner_before(render_component) && !render_component.owner_before(component);
+		return !component.owner_before(render_component_to_remove) && !render_component_to_remove.owner_before(component);
 		});
 }
 
-void gse::renderer::group::remove_light_source_component(const std::shared_ptr<light_source_component>& light_source_component) {
+void gse::renderer::group::remove_light_source_component(const std::shared_ptr<light_source_component>& light_source_component_to_remove) {
 	const auto it = std::ranges::find_if(m_light_source_components,
 		[&](const std::weak_ptr<light_source_component>& component) {
-			return !component.owner_before(light_source_component) && !light_source_component.owner_before(component);
+			return !component.owner_before(light_source_component_to_remove) && !light_source_component_to_remove.owner_before(component);
 		});
 
 	if (it != m_light_source_components.end()) {
@@ -113,95 +113,95 @@ void gse::renderer::group::remove_light_source_component(const std::shared_ptr<l
 void gse::renderer::initialize3d() {
 	enable_report_gl_errors();
 
-	const std::string shaderPath = std::string(ENGINE_RESOURCES_PATH) + "Shaders/";
+	const std::string shader_path = std::string(ENGINE_RESOURCES_PATH) + "Shaders/";
 
-	const std::string objectShadersPath = shaderPath + "Object/";
+	const std::string object_shaders_path = shader_path + "Object/";
 	json_parse::parse(
-		json_parse::load_json(objectShadersPath + "object_shaders.json"),
+		json_parse::load_json(object_shaders_path + "object_shaders.json"),
 		[&](const std::string& key, const nlohmann::json& value) {
-			materials.emplace(key, material(objectShadersPath + value["vertex"].get<std::string>(),
-			objectShadersPath + value["fragment"].get<std::string>(), key));
+			g_materials.emplace(key, material(object_shaders_path + value["vertex"].get<std::string>(),
+			object_shaders_path + value["fragment"].get<std::string>(), key));
 		}
 	);
 
-	loadShaders(shaderPath + "DeferredRendering/", "deferred_rendering.json", deferredRenderingShaders);
-	loadShaders(shaderPath + "ForwardRendering/", "forward_rendering.json", forwardRenderingShaders);
-	loadShaders(shaderPath + "Lighting/", "light_shaders.json", lightingShaders);
+	load_shaders(shader_path + "DeferredRendering/", "deferred_rendering.json", g_deferred_rendering_shaders);
+	load_shaders(shader_path + "ForwardRendering/", "forward_rendering.json", g_forward_rendering_shaders);
+	load_shaders(shader_path + "Lighting/", "light_shaders.json", g_lighting_shaders);
 
-	const GLsizei screenWidth = window::get_frame_buffer_size().x;
-	const GLsizei screenHeight = window::get_frame_buffer_size().y;
+	const GLsizei screen_width = window::get_frame_buffer_size().x;
+	const GLsizei screen_height = window::get_frame_buffer_size().y;
 
-	glGenFramebuffers(1, &gBuffer);
-	glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
+	glGenFramebuffers(1, &g_g_buffer);
+	glBindFramebuffer(GL_FRAMEBUFFER, g_g_buffer);
 
 	// Set up G-buffer textures
-	glGenTextures(1, &gPosition);
-	glBindTexture(GL_TEXTURE_2D, gPosition);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, screenWidth, screenHeight, 0, GL_RGB, GL_FLOAT, nullptr);
+	glGenTextures(1, &g_g_position);
+	glBindTexture(GL_TEXTURE_2D, g_g_position);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, screen_width, screen_height, 0, GL_RGB, GL_FLOAT, nullptr);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gPosition, 0);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_g_position, 0);
 
-	glGenTextures(1, &gNormal);
-	glBindTexture(GL_TEXTURE_2D, gNormal);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, screenWidth, screenHeight, 0, GL_RGB, GL_FLOAT, nullptr);
+	glGenTextures(1, &g_g_normal);
+	glBindTexture(GL_TEXTURE_2D, g_g_normal);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, screen_width, screen_height, 0, GL_RGB, GL_FLOAT, nullptr);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, gNormal, 0);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, g_g_normal, 0);
 
-	glGenTextures(1, &gAlbedoSpec);
-	glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, screenWidth, screenHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+	glGenTextures(1, &g_g_albedo_spec);
+	glBindTexture(GL_TEXTURE_2D, g_g_albedo_spec);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, screen_width, screen_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, gAlbedoSpec, 0);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, g_g_albedo_spec, 0);
 
 	constexpr GLuint attachments[3] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
 	glDrawBuffers(3, attachments);
 
-	GLuint rboDepth;
-	glGenRenderbuffers(1, &rboDepth);
-	glBindRenderbuffer(GL_RENDERBUFFER, rboDepth);
-	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, screenWidth, screenHeight);
-	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rboDepth);
+	GLuint rbo_depth;
+	glGenRenderbuffers(1, &rbo_depth);
+	glBindRenderbuffer(GL_RENDERBUFFER, rbo_depth);
+	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, screen_width, screen_height);
+	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rbo_depth);
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 	// Set up the UBO for light space matrices
-	glGenBuffers(1, &lightSpaceBlockUBO);
-	glBindBuffer(GL_UNIFORM_BUFFER, lightSpaceBlockUBO);
-	constexpr size_t bufferSize = sizeof(glm::mat4) * 10; // MAX_LIGHTS is 10 in the shader
-	glBufferData(GL_UNIFORM_BUFFER, static_cast<GLsizeiptr>(bufferSize), nullptr, GL_DYNAMIC_DRAW);
-	glBindBufferBase(GL_UNIFORM_BUFFER, 4, lightSpaceBlockUBO);
+	glGenBuffers(1, &g_light_space_block_ubo);
+	glBindBuffer(GL_UNIFORM_BUFFER, g_light_space_block_ubo);
+	constexpr size_t buffer_size = sizeof(glm::mat4) * 10; // MAX_LIGHTS is 10 in the shader
+	glBufferData(GL_UNIFORM_BUFFER, static_cast<GLsizeiptr>(buffer_size), nullptr, GL_DYNAMIC_DRAW);
+	glBindBufferBase(GL_UNIFORM_BUFFER, 4, g_light_space_block_ubo);
 	glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
 	// Initialize SSBO for lights
-	glGenBuffers(1, &ssboLights);
-	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboLights);
-	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, ssboLights);
+	glGenBuffers(1, &g_ssbo_lights);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, g_ssbo_lights);
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, g_ssbo_lights);
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
-	const auto& lightingShader = deferredRenderingShaders["LightingPass"];
+	const auto& lightingShader = g_deferred_rendering_shaders["LightingPass"];
 
 	lightingShader.use();
 	lightingShader.set_int("gPosition", 0);
 	lightingShader.set_int("gNormal", 1);
 	lightingShader.set_int("gAlbedoSpec", 2);
-	lightingShader.set_bool("depthMapDebug", depthMapDebug);
+	lightingShader.set_bool("depthMapDebug", g_depth_map_debug);
 
-	reflectionCubeMap.create(1024);
+	g_reflection_cube_map.create(1024);
 }
 
 namespace {
-	void renderObject(const gse::render_queue_entry& entry, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
-		if (const auto it = materials.find(entry.material_key); it != materials.end()) {
-			it->second.use(viewMatrix, projectionMatrix, entry.model_matrix);
+	void render_object(const gse::render_queue_entry& entry, const glm::mat4& view_matrix, const glm::mat4& projection_matrix) {
+		if (const auto it = g_materials.find(entry.material_key); it != g_materials.end()) {
+			it->second.use(view_matrix, projection_matrix, entry.model_matrix);
 			it->second.shader.set_vec3("color", entry.color);
 			it->second.shader.set_bool("useTexture", entry.texture_id != 0);
 
@@ -224,22 +224,22 @@ namespace {
 		}
 	}
 
-	void renderObjectForward(const gse::shader& forwardRenderingShader, const gse::render_queue_entry& entry, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
-		forwardRenderingShader.set_vec3("color", entry.color);
-		forwardRenderingShader.set_bool("useTexture", entry.texture_id != 0);
-		forwardRenderingShader.set_mat4("model", entry.model_matrix);
-		forwardRenderingShader.set_mat4("view", viewMatrix);
-		forwardRenderingShader.set_mat4("projection", projectionMatrix);
-		forwardRenderingShader.set_vec3("viewPos", glm::vec3(0.f));
+	void render_object_forward(const gse::shader& forward_rendering_shader, const gse::render_queue_entry& entry, const glm::mat4& view_matrix, const glm::mat4& projection_matrix) {
+		forward_rendering_shader.set_vec3("color", entry.color);
+		forward_rendering_shader.set_bool("useTexture", entry.texture_id != 0);
+		forward_rendering_shader.set_mat4("model", entry.model_matrix);
+		forward_rendering_shader.set_mat4("view", view_matrix);
+		forward_rendering_shader.set_mat4("projection", projection_matrix);
+		forward_rendering_shader.set_vec3("viewPos", glm::vec3(0.f));
 
 		if (entry.texture_id != 0) {
 			glActiveTexture(GL_TEXTURE0);
 			glBindTexture(GL_TEXTURE_2D, entry.texture_id);
-			forwardRenderingShader.set_int("diffuseTexture", 0);
+			forward_rendering_shader.set_int("diffuseTexture", 0);
 		}
 
 		glActiveTexture(GL_TEXTURE2);
-		glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
+		glBindTexture(GL_TEXTURE_2D, g_g_albedo_spec);
 
 		glBindVertexArray(entry.vao);
 		glDrawElements(entry.draw_mode, entry.vertex_count, GL_UNSIGNED_INT, nullptr);
@@ -250,12 +250,12 @@ namespace {
 		}
 	}
 
-	void renderObject(const gse::light_render_queue_entry& entry) {
-		if (const auto it = lightingShaders.find(entry.shader_key); it != lightingShaders.end()) {
+	void render_object(const gse::light_render_queue_entry& entry) {
+		if (const auto it = g_lighting_shaders.find(entry.shader_key); it != g_lighting_shaders.end()) {
 			it->second.use();
 			it->second.set_mat4("model", glm::mat4(1.0f));
-			it->second.set_mat4("view", camera.get_view_matrix());
-			it->second.set_mat4("projection", camera.get_projection_matrix());
+			it->second.set_mat4("view", g_camera.get_view_matrix());
+			it->second.set_mat4("projection", g_camera.get_projection_matrix());
 
 			it->second.set_vec3("color", entry.shader_entry.color);
 			it->second.set_float("intensity", entry.shader_entry.intensity);
@@ -265,49 +265,49 @@ namespace {
 		}
 	}
 
-	void renderLightingPass(const gse::shader& lightingShader, const std::vector<gse::light_shader_entry>& lightData, const std::vector<glm::mat4>& lightSpaceMatrices, const std::vector<GLuint>& depthMapFBOs) {
-		if (lightData.empty()) {
+	void render_lighting_pass(const gse::shader& lighting_shader, const std::vector<gse::light_shader_entry>& light_data, const std::vector<glm::mat4>& light_space_matrices, const std::vector<GLuint>& depth_map_fbos) {
+		if (light_data.empty()) {
 			return;
 		}
 
-		lightingShader.use();
+		lighting_shader.use();
 
 		// Update SSBO with light data
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboLights);
-		glBufferData(GL_SHADER_STORAGE_BUFFER, lightData.size() * sizeof(gse::light_shader_entry), lightData.data(), GL_DYNAMIC_DRAW);
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, ssboLights);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, g_ssbo_lights);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, light_data.size() * sizeof(gse::light_shader_entry), light_data.data(), GL_DYNAMIC_DRAW);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, g_ssbo_lights);
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
 		// Update UBO with light space matrices
-		glBindBuffer(GL_UNIFORM_BUFFER, lightSpaceBlockUBO);
-		glBufferSubData(GL_UNIFORM_BUFFER, 0, lightSpaceMatrices.size() * sizeof(glm::mat4), lightSpaceMatrices.data());
+		glBindBuffer(GL_UNIFORM_BUFFER, g_light_space_block_ubo);
+		glBufferSubData(GL_UNIFORM_BUFFER, 0, light_space_matrices.size() * sizeof(glm::mat4), light_space_matrices.data());
 		glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
 		// Lighting pass
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		glDisable(GL_DEPTH_TEST);
 
-		std::vector<GLint> shadowMapUnits(depthMapFBOs.size());
-		for (size_t i = 0; i < depthMapFBOs.size(); ++i) {
+		std::vector<GLint> shadowMapUnits(depth_map_fbos.size());
+		for (size_t i = 0; i < depth_map_fbos.size(); ++i) {
 			glActiveTexture(GL_TEXTURE3 + i);
-			glBindTexture(GL_TEXTURE_2D, depthMapFBOs[i]);
+			glBindTexture(GL_TEXTURE_2D, depth_map_fbos[i]);
 			shadowMapUnits[i] = 3 + i;
 		}
 
-		lightingShader.set_int_array("shadowMaps", shadowMapUnits.data(), static_cast<unsigned>(shadowMapUnits.size()));
-		lightingShader.set_mat4_array("lightSpaceMatrices", lightSpaceMatrices.data(), static_cast<unsigned>(lightSpaceMatrices.size()));
+		lighting_shader.set_int_array("shadowMaps", shadowMapUnits.data(), static_cast<unsigned>(shadowMapUnits.size()));
+		lighting_shader.set_mat4_array("lightSpaceMatrices", light_space_matrices.data(), static_cast<unsigned>(light_space_matrices.size()));
 
 		// Pass other G-buffer textures
 		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, gPosition);
+		glBindTexture(GL_TEXTURE_2D, g_g_position);
 		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, gNormal);
+		glBindTexture(GL_TEXTURE_2D, g_g_normal);
 		glActiveTexture(GL_TEXTURE2);
-		glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
+		glBindTexture(GL_TEXTURE_2D, g_g_albedo_spec);
 
 		constexpr GLuint bindingUnit = 5;
-		reflectionCubeMap.bind(bindingUnit);
-		lightingShader.set_int("environmentMap", bindingUnit);
+		g_reflection_cube_map.bind(bindingUnit);
+		lighting_shader.set_int("environmentMap", bindingUnit);
 
 		// Render a full-screen quad to process lighting
 		static unsigned int quadVAO = 0;
@@ -346,7 +346,7 @@ namespace {
 	void renderShadowPass(const gse::shader& shadowShader, const std::vector<std::weak_ptr<gse::render_component>>& renderComponents, const glm::mat4& lightSpaceMatrix, const GLuint depthMapFBO) {
 		shadowShader.set_mat4("lightSpaceMatrix", lightSpaceMatrix);
 
-		glViewport(0, 0, static_cast<GLsizei>(shadowWidth), static_cast<GLsizei>(shadowHeight)); 
+		glViewport(0, 0, static_cast<GLsizei>(g_shadow_width), static_cast<GLsizei>(g_shadow_height)); 
 		glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
 		glClear(GL_DEPTH_BUFFER_BIT);
 
@@ -396,12 +396,12 @@ namespace {
 		if (entry.light_type == static_cast<int>(gse::light_type::directional)) {
 			lightPos = -lightDirection * 10.0f;
 			lightProjection = glm::ortho(-10000.0f, 10000.0f, -10000.0f, 1000.0f,
-				nearPlane.as<gse::Meters>(), farPlane.as<gse::Meters>());
+				g_near_plane.as<gse::Meters>(), g_far_plane.as<gse::Meters>());
 		}
 		else if (entry.light_type == static_cast<int>(gse::light_type::spot)) {
 			lightPos = entry.position;
 			const float cutoff = entry.cut_off;
-			lightProjection = glm::perspective(cutoff, 1.0f, nearPlane.as<gse::Meters>(), farPlane.as<gse::Meters>());
+			lightProjection = glm::perspective(cutoff, 1.0f, g_near_plane.as<gse::Meters>(), g_far_plane.as<gse::Meters>());
 		}
 
 		const glm::mat4 lightView = lookAt(
@@ -423,8 +423,8 @@ void gse::renderer::render_objects(group& group) {
 
 	debug::add_imgui_callback([] {
 		ImGui::Begin("Near/Far Plane");
-		debug::unit_slider<length, Meters>("Near Plane", nearPlane, meters(0.1f), meters(100.0f));
-		debug::unit_slider<length, Meters>("Far Plane", farPlane, meters(10.0f), meters(10000.0f));
+		debug::unit_slider<length, Meters>("Near Plane", g_near_plane, meters(0.1f), meters(100.0f));
+		debug::unit_slider<length, Meters>("Far Plane", g_far_plane, meters(10.0f), meters(10000.0f));
 		ImGui::End();
 		});
 
@@ -442,19 +442,19 @@ void gse::renderer::render_objects(group& group) {
 		}
 	}
 
-	const auto& forwardRenderingShader = forwardRenderingShaders["ForwardRendering"];
+	const auto& forwardRenderingShader = g_forward_rendering_shaders["ForwardRendering"];
 	forwardRenderingShader.use();
 
-	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboLights);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, g_ssbo_lights);
 	glBufferData(GL_SHADER_STORAGE_BUFFER, static_cast<GLsizeiptr>(lightData.size()) * sizeof(light_shader_entry), lightData.data(), GL_DYNAMIC_DRAW);
-	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssboLights);
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, g_ssbo_lights);
 
-	reflectionCubeMap.update(glm::vec3(0.f), glm::perspective(glm::radians(45.0f), 1.0f, nearPlane.as<Meters>(), farPlane.as<Meters>()),
+	g_reflection_cube_map.update(glm::vec3(0.f), glm::perspective(glm::radians(45.0f), 1.0f, g_near_plane.as<Meters>(), g_far_plane.as<Meters>()),
 		[&group, renderComponents, forwardRenderingShader](const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix) {
 			for (const auto& renderComponent : renderComponents) {
 				if (const auto renderComponentPtr = renderComponent.lock()) {
 					for (auto entries = renderComponentPtr->get_queue_entries(); const auto & entry : entries) {
-						renderObjectForward(forwardRenderingShader, entry, viewMatrix, projectionMatrix);
+						render_object_forward(forwardRenderingShader, entry, viewMatrix, projectionMatrix);
 					}
 				}
 				else {
@@ -467,7 +467,7 @@ void gse::renderer::render_objects(group& group) {
 
 	std::vector<glm::mat4> lightSpaceMatrices;
 
-	const auto& shadowShader = deferredRenderingShaders["ShadowPass"];
+	const auto& shadowShader = g_deferred_rendering_shaders["ShadowPass"];
 	shadowShader.use();
 
 	for (size_t i = 0; i < lightSourceComponents.size(); ++i) {
@@ -480,7 +480,7 @@ void gse::renderer::render_objects(group& group) {
 					shadowShader.set_mat4("view", viewMatrix);     
 					shadowShader.set_mat4("projection", projectionMatrix);
 					shadowShader.set_vec3("lightPos", lightPos);
-					shadowShader.set_float("farPlane", farPlane.as<Meters>());
+					shadowShader.set_float("farPlane", g_far_plane.as<Meters>());
 
 					for (const auto& renderComponent : renderComponents) {
 						if (const auto renderComponentPtr = renderComponent.lock()) {
@@ -503,13 +503,13 @@ void gse::renderer::render_objects(group& group) {
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 	// Geometry pass
-	glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
+	glBindFramebuffer(GL_FRAMEBUFFER, g_g_buffer);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	for (const auto& renderComponent : renderComponents) {
 		if (const auto renderComponentPtr = renderComponent.lock()) {
 			for (auto entries = renderComponentPtr->get_queue_entries(); const auto & entry : entries) {
-				renderObject(entry, camera.getViewMatrix(), camera.getProjectionMatrix());
+				render_object(entry, camera.getViewMatrix(), camera.getProjectionMatrix());
 			}
 		}
 		else {
@@ -527,7 +527,7 @@ void gse::renderer::render_objects(group& group) {
 	for (const auto& lightSourceComponent : lightSourceComponents) {
 		if (const auto lightSourceComponentPtr = lightSourceComponent.lock()) {
 			for (const auto& entry : lightSourceComponentPtr->get_render_queue_entries()) {
-				renderObject(entry); 
+				render_object(entry); 
 			}
 		}
 		else {
@@ -545,7 +545,7 @@ void gse::renderer::render_objects(group& group) {
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
 
-	renderLightingPass(deferredRenderingShaders["LightingPass"], lightData, lightSpaceMatrices, group.depth_maps);
+	render_lighting_pass(g_deferred_rendering_shaders["LightingPass"], lightData, lightSpaceMatrices, group.depth_maps);
 }
 
 gse::camera& gse::renderer::get_camera() {

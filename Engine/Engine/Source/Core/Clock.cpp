@@ -58,7 +58,7 @@ void gse::display_timers() {
 	ImGui::Begin("Timers");
 	for (auto it = timers.begin(); it != timers.end();) {
 		const auto& timer = it->second;
-		debug::print_value(timer->get_name(), timer->get_elapsed_time().as<milliseconds>(), milliseconds::UnitName);
+		debug::print_value(timer->get_name(), timer->get_elapsed_time().as<units::milliseconds>(), units::milliseconds::unit_name);
 		if (timer->is_completed()) {
 			it = timers.erase(it); // Remove completed timers
 		}
@@ -72,30 +72,30 @@ void gse::display_timers() {
 /// Main Clock
 
 namespace {
-	std::chrono::steady_clock::time_point lastUpdate = std::chrono::steady_clock::now();
+	std::chrono::steady_clock::time_point last_update = std::chrono::steady_clock::now();
 	gse::time dt;
 
-	int frameRate = 0;
-	float frameCount = 0;
-	float numFramesToAverage = 40;
-	gse::time frameRateUpdateTime;
+	int frame_rate = 0;
+	float frame_count = 0;
+	float num_frames_to_average = 40;
+	gse::time frame_rate_update_time;
 }
 
 void gse::main_clock::update() {
 	const auto now = std::chrono::steady_clock::now();
-	const std::chrono::duration<float> deltaTime = now - lastUpdate;
-	lastUpdate = now;
+	const std::chrono::duration<float> delta_time = now - last_update;
+	last_update = now;
 
 	// Update delta time (clamped to a max of 0.16 seconds to avoid big time jumps)
-	dt = seconds(std::min(deltaTime.count(), 0.16f));
+	dt = seconds(std::min(delta_time.count(), 0.16f));
 
-	++frameCount;
-	frameRateUpdateTime += dt;
+	++frame_count;
+	frame_rate_update_time += dt;
 
-	if (frameCount >= numFramesToAverage) {
-		frameRate = static_cast<int>(frameCount / frameRateUpdateTime.as<Seconds>());
-		frameRateUpdateTime = time();
-		frameCount = 0.f;
+	if (frame_count >= num_frames_to_average) {
+		frame_rate = static_cast<int>(frame_count / frame_rate_update_time.as<Seconds>());
+		frame_rate_update_time = time();
+		frame_count = 0.f;
 	}
 }
 
@@ -108,5 +108,5 @@ gse::time gse::main_clock::get_constant_update_time(const float frame_rate) {
 }
 
 int gse::main_clock::get_frame_rate() {
-	return frameRate;
+	return frame_rate;
 }

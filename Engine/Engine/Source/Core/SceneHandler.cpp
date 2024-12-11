@@ -73,34 +73,34 @@ void gse::scene_handler::queue_scene_trigger(const std::shared_ptr<id>& id, cons
 }
 
 std::vector<std::shared_ptr<gse::scene>> gse::scene_handler::get_active_scenes() const {
-	std::vector<std::shared_ptr<scene>> activeScenes;
-	activeScenes.reserve(m_scenes.size());
+	std::vector<std::shared_ptr<scene>> active_scenes;
+	active_scenes.reserve(m_scenes.size());
 	for (const auto& scene : m_scenes | std::views::values) {
 		if (scene->get_active()) {
-			activeScenes.push_back(scene);
+			active_scenes.push_back(scene);
 		}
 	}
-	return activeScenes;
+	return active_scenes;
 }
 
 std::vector<std::shared_ptr<gse::id>> gse::scene_handler::get_all_scenes() const {
-	std::vector<std::shared_ptr<id>> allScenes;
-	allScenes.reserve(m_scenes.size());
+	std::vector<std::shared_ptr<id>> all_scenes;
+	all_scenes.reserve(m_scenes.size());
 	for (const auto& id : m_scenes | std::views::keys) {
-		allScenes.push_back(id);
+		all_scenes.push_back(id);
 	}
-	return allScenes;
+	return all_scenes;
 }
 
 std::vector<std::shared_ptr<gse::id>> gse::scene_handler::get_active_scene_ids() const {
-	std::vector<std::shared_ptr<id>> activeSceneIds;
-	activeSceneIds.reserve(m_scenes.size());
+	std::vector<std::shared_ptr<id>> active_scene_ids;
+	active_scene_ids.reserve(m_scenes.size());
 	for (const auto& id : m_scenes | std::views::keys) {
 		if (m_scenes.at(id)->get_active()) {
-			activeSceneIds.push_back(id);
+			active_scene_ids.push_back(id);
 		}
 	}
-	return activeSceneIds;
+	return active_scene_ids;
 }
 
 std::shared_ptr<gse::scene> gse::scene_handler::get_scene(const std::shared_ptr<id>& scene_id) const {

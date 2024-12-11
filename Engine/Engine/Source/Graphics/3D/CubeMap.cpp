@@ -17,9 +17,9 @@ void gse::cube_map::create(const std::vector<std::string>& faces) {
     glGenTextures(1, &m_texture_id);
     glBindTexture(GL_TEXTURE_CUBE_MAP, m_texture_id);
 
-    int width, height, nrChannels;
+    int width, height, nr_channels;
     for (unsigned int i = 0; i < faces.size(); i++) {
-        unsigned char* data = stbi_load(faces[i].c_str(), &width, &height, &nrChannels, 0);
+        unsigned char* data = stbi_load(faces[i].c_str(), &width, &height, &nr_channels, 0);
         if (data) {
             glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
             stbi_image_free(data);
@@ -43,11 +43,11 @@ void gse::cube_map::create(const int resolution, const bool depth_only) {
     glGenTextures(1, &m_texture_id);
     glBindTexture(GL_TEXTURE_CUBE_MAP, m_texture_id);
 
-    const GLenum internalFormat = depth_only ? GL_DEPTH_COMPONENT : GL_RGB16F;
+    const GLenum internal_format = depth_only ? GL_DEPTH_COMPONENT : GL_RGB16F;
     const GLenum format = depth_only ? GL_DEPTH_COMPONENT : GL_RGB;
 
     for (unsigned int i = 0; i < 6; ++i) {
-        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, static_cast<GLint>(internalFormat),
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, static_cast<GLint>(internal_format),
             resolution, resolution, 0, format, GL_FLOAT, nullptr);
     }
 
@@ -85,13 +85,13 @@ void gse::cube_map::update(const glm::vec3& position, const glm::mat4& projectio
 	glViewport(0, 0, m_resolution, m_resolution);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 
-	const std::vector<glm::mat4> viewMatrices = get_view_matrices(position);
+	const std::vector<glm::mat4> view_matrices = get_view_matrices(position);
 
 	for (unsigned int i = 0; i < 6; i++) {
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, m_texture_id, 0);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		render_function(viewMatrices[i], projection_matrix);
+		render_function(view_matrices[i], projection_matrix);
 	}
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
