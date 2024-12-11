@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <imgui_internal.h>
@@ -22,10 +21,18 @@ namespace gse {
 		}	
 		
 		light_render_queue_entry get_render_queue_entry() const override {
-			return { light_type::directional, m_color, m_intensity, m_direction, m_ambient_strength };
+			return { m_depth_map, m_depth_map_fbo, light_type::directional, m_color, m_intensity, vec3<length>(), m_direction, unitless(), unitless(), unitless(), angle(), angle(), m_ambient_strength, m_near_plane, m_far_plane };
+		}
+
+		void set_depth_map(const GLuint depth_map, const GLuint depth_map_fbo) override {
+			m_depth_map = depth_map;
+			m_depth_map_fbo = depth_map_fbo;
 		}
 	private:
 		vec3<> m_direction;
 		unitless m_ambient_strength;
+
+		GLuint m_depth_map = 0;
+		GLuint m_depth_map_fbo = 0;
 	};
 }

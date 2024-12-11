@@ -32,9 +32,6 @@ namespace {
 	float g_shadow_width = 4096;
 	float g_shadow_height = 4096;
 
-	gse::length g_near_plane = gse::meters(10.0f);
-	gse::length g_far_plane = gse::meters(1000.f);
-
 	bool g_depth_map_debug = false;
 
 	void load_shaders(const std::string& shader_path, const std::string& shader_file_name, std::unordered_map<std::string, gse::shader>& shaders) {
@@ -386,21 +383,21 @@ namespace {
 
 
 	glm::mat4 calculate_light_space_matrix(const std::shared_ptr<gse::light>& light) {
-		const auto& entry = light->get_render_queue_entry().shader_entry;
-		const glm::vec3 light_direction = entry.direction;
+		const auto& entry = light->get_render_queue_entry();
+		const glm::vec3 light_direction = entry.shader_entry.direction;
 
 		glm::vec3 light_pos(0.0f);
 		glm::mat4 light_projection(1.0f);
 
-		if (entry.light_type == static_cast<int>(gse::light_type::directional)) {
+		if (light->get_type() == gse::light_type::directional) {
 			light_pos = -light_direction * 10.0f;
 			light_projection = glm::ortho(-10000.0f, 10000.0f, -10000.0f, 1000.0f,
-				g_near_plane.as<gse::units::meters>(), g_far_plane.as<gse::units::meters>());
+				entry.near_plane.as<gse::units::meters>(), entry.far_plane.as<gse::units::meters>());
 		}
-		else if (entry.light_type == static_cast<int>(gse::light_type::spot)) {
-			light_pos = entry.position;
-			const float cutoff = entry.cut_off;
-			light_projection = glm::perspective(cutoff, 1.0f, g_near_plane.as<gse::units::meters>(), g_far_plane.as<gse::units::meters>());
+		else if (light->get_type() == gse::light_type::spot) {
+			light_pos = entry.shader_entry.position;
+			const float cutoff = entry.shader_entry.cut_off;
+			light_projection = glm::perspective(cutoff, 1.0f, entry.near_plane.as<gse::units::meters>(), entry.far_plane.as<gse::units::meters>());
 		}
 
 		const glm::mat4 light_view = lookAt(
@@ -419,13 +416,6 @@ void gse::renderer::render_objects(group& group) {
 
 	g_camera.update_camera_vectors();
 	if (!window::is_mouse_visible()) g_camera.process_mouse_movement(input::get_mouse().delta);
-
-	debug::add_imgui_callback([] {
-		ImGui::Begin("Near/Far Plane");
-		debug::unit_slider<length, units::meters>("Near Plane", g_near_plane, meters(0.1f), meters(100.0f));
-		debug::unit_slider<length, units::meters>("Far Plane", g_far_plane, meters(10.0f), meters(10000.0f));
-		ImGui::End();
-		});
 
 	// Grab all LightRenderQueueEntries from LightSourceComponents
 	std::vector<light_shader_entry> light_data;
@@ -448,7 +438,7 @@ void gse::renderer::render_objects(group& group) {
 	glBufferData(GL_SHADER_STORAGE_BUFFER, static_cast<GLsizeiptr>(light_data.size()) * sizeof(light_shader_entry), light_data.data(), GL_DYNAMIC_DRAW);
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, g_ssbo_lights);
 
-	g_reflection_cube_map.update(glm::vec3(0.f), glm::perspective(glm::radians(45.0f), 1.0f, g_near_plane.as<units::meters>(), g_far_plane.as<units::meters>()),
+	g_reflection_cube_map.update(glm::vec3(0.f), g_camera.get_projection_matrix(),
 		[&group, render_components, forward_rendering_shader](const glm::mat4& view_matrix, const glm::mat4& projection_matrix) {
 			for (const auto& render_component : render_components) {
 				if (const auto render_component_ptr = render_component.lock()) {
@@ -479,7 +469,7 @@ void gse::renderer::render_objects(group& group) {
 					shadow_shader.set_mat4("view", view_matrix);     
 					shadow_shader.set_mat4("projection", projection_matrix);
 					shadow_shader.set_vec3("lightPos", light_pos);
-					shadow_shader.set_float("farPlane", g_far_plane.as<units::meters>());
+					shadow_shader.set_float("farPlane", point_light_ptr->get_render_queue_entry().far_plane.as<units::meters>());
 
 					for (const auto& render_component : render_components) {
 						if (const auto render_component_ptr = render_component.lock()) {
