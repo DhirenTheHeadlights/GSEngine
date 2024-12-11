@@ -42,7 +42,7 @@ namespace gse {
 	}
 
 	template <is_unit_or_quantity unit_or_quantity_type>
-	typename unit_to_quantity<unit_or_quantity_type>::type convert_value_to_quantity(const float value) {
+	auto convert_value_to_quantity(const float value) {
 		using quantity_type = typename unit_to_quantity<unit_or_quantity_type>::type;
 		return quantity_type::template from<typename quantity_type::default_unit>(value);
 	}
@@ -79,8 +79,6 @@ namespace gse {
 
 	template <is_unit_or_quantity unit_or_quantity_type = unitless>
 	struct vec3 {
-		using quantity_type = typename unit_to_quantity<unit_or_quantity_type>::type;
-
 		template <typename... arguments>
 			requires ((sizeof...(arguments) == 0 || sizeof...(arguments) == 1 || sizeof...(arguments) == 3) && are_valid_vector_args<unit_or_quantity_type, arguments...>)
 		vec3(arguments&&... args) : m_vec(create_vec<unit_or_quantity_type>(std::forward<arguments>(args)...)) {}
@@ -94,6 +92,10 @@ namespace gse {
 			}
 		}
 
+		template <is_unit_or_quantity other_unit_or_quantity_type>
+			requires has_same_quantity_tag<unit_or_quantity_type, other_unit_or_quantity_type>
+		vec3(const vec3<other_unit_or_quantity_type>& other) : m_vec(other.as_default_units()) {}
+
 		template <is_unit unit_type>
 			requires has_same_quantity_tag<unit_or_quantity_type, unit_type>
 		[[nodiscard]] glm::vec3 as() const {
@@ -103,11 +105,6 @@ namespace gse {
 			}
 			return normalize(m_vec) * converted_magnitude;
 		}
-
-		// Converter between Vec3<Unit> and Vec3<Quantity>
-		template <is_unit_or_quantity other_unit_or_quantity_type>
-			requires has_same_quantity_tag<unit_or_quantity_type, other_unit_or_quantity_type>
-		vec3(const vec3<other_unit_or_quantity_type>& other) : m_vec(other.as_default_units()) {}
 
 		[[nodiscard]] glm::vec3& as_default_units() {
 			return m_vec;
@@ -152,28 +149,28 @@ namespace gse {
 
 	/// Compound arithmetic operators
 
-	template <is_unit_or_quantity T, is_unit_or_quantity U>
-		requires has_same_quantity_tag<T, U>
-	auto& operator+=(vec3<T>& lhs, const vec3<U>& rhs) {
+	template <is_unit_or_quantity unit_or_quantity_type_a, is_unit_or_quantity unit_or_quantity_type_b>
+		requires has_same_quantity_tag<unit_or_quantity_type_a, unit_or_quantity_type_b>
+	auto& operator+=(vec3<unit_or_quantity_type_a>& lhs, const vec3<unit_or_quantity_type_b>& rhs) {
 		lhs = lhs + rhs;
 		return lhs;
 	}
 
-	template <is_unit_or_quantity T, is_unit_or_quantity U>
-		requires has_same_quantity_tag<T, U>
-	auto& operator-=(vec3<T>& lhs, const vec3<U>& rhs) {
+	template <is_unit_or_quantity unit_or_quantity_type_a, is_unit_or_quantity unit_or_quantity_type_b>
+		requires has_same_quantity_tag<unit_or_quantity_type_a, unit_or_quantity_type_b>
+	auto& operator-=(vec3<unit_or_quantity_type_a>& lhs, const vec3<unit_or_quantity_type_b>& rhs) {
 		lhs = lhs - rhs;
 		return lhs;
 	}
 
-	template <is_unit_or_quantity T>
-	auto& operator*=(vec3<T>& lhs, const float scalar) {
+	template <is_unit_or_quantity unit_or_quantity_type>
+	auto& operator*=(vec3<unit_or_quantity_type>& lhs, const float scalar) {
 		lhs = lhs * scalar;
 		return lhs;
 	}
 
-	template <is_unit_or_quantity T>
-	auto& operator/=(vec3<T>& lhs, const float scalar) {
+	template <is_unit_or_quantity unit_or_quantity_type>
+	auto& operator/=(vec3<unit_or_quantity_type>& lhs, const float scalar) {
 		lhs = lhs / scalar;
 		return lhs;
 	}
