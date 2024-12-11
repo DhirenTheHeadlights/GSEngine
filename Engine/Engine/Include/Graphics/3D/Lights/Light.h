@@ -31,20 +31,54 @@ namespace gse {
     };
 
     struct light_render_queue_entry {
-		std::string shader_key = "Emissive";
-		light_shader_entry shader_entry;
+        std::string shader_key = "Emissive";
+        light_shader_entry shader_entry;
 
-        // Constructor for Directional Light
-		light_render_queue_entry(const light_type type, const vec3<>& color, const unitless& intensity, const vec3<>& direction, const unitless& ambient_strength)
-            : shader_entry({ static_cast<int>(type), { 0, 0, 0 }, { 0, 0, 0 }, 0, direction.as_default_units(), 0, color.as_default_units(), intensity, 0, 0, 0, 0, 0, ambient_strength, 0 }) {}
+        GLuint depth_map = 0;
+        GLuint depth_map_fbo = 0;
 
-        // Constructor for Point Light
-		light_render_queue_entry(const light_type type, const vec3<>& color, const unitless& intensity, const vec3<length>& position, const unitless& constant, const unitless& linear, const unitless& quadratic, const unitless& ambient_strength)
-			: shader_entry({ static_cast<int>(type), { 0, 0, 0 }, position.as_default_units(), 0, {0, 0, 0}, 0, color.as_default_units(), intensity, constant, linear, quadratic, 0, 0, ambient_strength, 0 }) {}
+        length near_plane = meters(0.1f);
+        length far_plane = meters(1000.0f);
 
-        // Constructor for Spotlight
-		light_render_queue_entry(const light_type type, const vec3<>& color, const unitless& intensity, const vec3<length>& position, const vec3<>& direction, const unitless& constant, const unitless& linear, const unitless& quadratic, const angle& cut_off, const angle& outer_cut_off, const unitless& ambient_strength)
-            : shader_entry({ static_cast<int>(type), { 0, 0, 0 }, position.as_default_units(), 0, direction.as_default_units(), 0, color.as_default_units(), intensity, constant, linear, quadratic, std::cos(cut_off.as<units::radians>()), std::cos(outer_cut_off.as<units::radians>()), ambient_strength, 0 }) {}
+        light_render_queue_entry(
+            GLuint depth_map,
+            GLuint depth_map_fbo,
+            light_type type,
+            const vec3<>& color,
+            const unitless& intensity,
+            const vec3<length>& position = vec3<length>(),   // Default: No position for non-point lights
+            const vec3<>& direction = vec3(),                // Default: No direction for non-directional lights
+            const unitless& constant = 1.0f,                 // Default: No attenuation
+            const unitless& linear = 0.0f,
+            const unitless& quadratic = 0.0f,
+            const angle& cut_off = degrees(0.0f),            // Default: No spotlight cutoff
+            const angle& outer_cut_off = degrees(0.0f),	     // Default: No spotlight outer cutoff
+            const unitless& ambient_strength = 0.0f,         // Default: No ambient strength
+            const length& near_plane = meters(0.1f),         // Default: Near plane for shadow mapping
+            const length& far_plane = meters(1000.0f)        // Default: Far plane for shadow mapping
+        )
+            : shader_entry({
+                    static_cast<int>(type),
+                    {0, 0, 0},
+                    position.as_default_units(),
+                    0,
+                    direction.as_default_units(),
+                    0,
+                    color.as_default_units(),
+                    intensity,
+                    constant,
+                    linear,
+                    quadratic,
+                    std::cos(cut_off.as<units::radians>()),
+                    std::cos(outer_cut_off.as<units::radians>()),
+                    ambient_strength,
+                    0
+                }),
+            depth_map(depth_map),
+            depth_map_fbo(depth_map_fbo),
+            near_plane(near_plane),
+            far_plane(far_plane)
+        {}
     };
 
 	class light {
@@ -55,6 +89,7 @@ namespace gse {
         virtual void show_debug_menu(const std::shared_ptr<id>& light_id) = 0;
 
 		light_type get_type() const { return m_type; }
+		virtual void set_depth_map(GLuint depth_map, GLuint depth_map_fbo) {}
 	protected:
 		light(const vec3<>& color, const unitless& intensity, const light_type type)
 			: m_color(color), m_intensity(intensity), m_type(type) {}
@@ -62,5 +97,8 @@ namespace gse {
 		vec3<> m_color;
 		unitless m_intensity = 1.0f;
 		light_type m_type;
+
+		length m_near_plane = meters(10.f);
+		length m_far_plane = meters(1000.0f);
 	};
 }

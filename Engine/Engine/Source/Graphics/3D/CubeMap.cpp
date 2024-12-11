@@ -81,20 +81,28 @@ void gse::cube_map::bind(const GLuint unit) const {
 }
 
 void gse::cube_map::update(const glm::vec3& position, const glm::mat4& projection_matrix, const std::function<void(const glm::mat4&, const glm::mat4&)>& render_function) const {
-	glBindFramebuffer(GL_FRAMEBUFFER, m_frame_buffer_id);
-	glViewport(0, 0, m_resolution, m_resolution);
-	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_frame_buffer_id);
+    glViewport(0, 0, m_resolution, m_resolution);
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
 
-	const std::vector<glm::mat4> view_matrices = get_view_matrices(position);
+    const std::vector<glm::mat4> view_matrices = get_view_matrices(position);
 
-	for (unsigned int i = 0; i < 6; i++) {
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, m_texture_id, 0);
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    for (unsigned int i = 0; i < 6; i++) {
+        if (m_depth_only) {
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, m_texture_id, 0);
+            glDrawBuffer(GL_NONE);
+            glReadBuffer(GL_NONE);
+            glClear(GL_DEPTH_BUFFER_BIT);
+        }
+        else {
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, m_texture_id, 0);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        }
 
-		render_function(view_matrices[i], projection_matrix);
-	}
+        render_function(view_matrices[i], projection_matrix);
+    }
 
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 std::vector<glm::mat4> gse::cube_map::get_view_matrices(const glm::vec3& position) {

@@ -20,7 +20,7 @@ namespace gse::debug {
 	void print_vector(const std::string& name, const glm::vec3& vec, const char* unit = nullptr);
 	void print_value(const std::string& name, const float& value, const char* unit = nullptr);
 
-	template <is_quantity quantity_type = unitless, is_unit unit_type = internal::unitless_unit>
+	template <is_unit unit_type = internal::unitless_unit, is_quantity quantity_type>
 	void unit_slider(const std::string& name, quantity_type& quantity, const quantity_type& min, const quantity_type& max) {
 		float value = quantity.template as<unit_type>();
 

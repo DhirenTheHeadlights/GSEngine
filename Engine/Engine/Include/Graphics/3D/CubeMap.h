@@ -24,6 +24,7 @@ namespace gse {
 		GLuint m_frame_buffer_id;
 		GLuint m_depth_render_buffer_id;
 		int m_resolution;
+		bool m_depth_only;
 
 		static std::vector<glm::mat4> get_view_matrices(const glm::vec3& position);
 	};
