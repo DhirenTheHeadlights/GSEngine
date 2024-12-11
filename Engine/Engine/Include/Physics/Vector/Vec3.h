@@ -7,10 +7,10 @@
 #include "Physics/Units/UnitToQuantityDefinitions.h"
 
 namespace gse {
-	template <typename T>
+	template <typename possible_quantity_type>
 	concept is_quantity = std::derived_from<
-		std::remove_cvref_t<T>,
-		quantity<std::remove_cvref_t<T>, typename std::remove_cvref_t<T>::default_unit, typename std::remove_cvref_t<T>::units>
+		std::remove_cvref_t<possible_quantity_type>,
+		quantity<std::remove_cvref_t<possible_quantity_type>, typename std::remove_cvref_t<possible_quantity_type>::default_unit, typename std::remove_cvref_t<possible_quantity_type>::units>
 	>;
 
 	template <typename unit_or_quantity_type>
@@ -19,7 +19,7 @@ namespace gse {
 	template <typename possibly_unitless_type>
 	concept is_unitless = std::is_same_v<possibly_unitless_type, unitless>;
 
-	template <typename T>
+	template <typename t>
 	struct get_quantity_tag_type;
 
 	template <typename unit_or_quantity_type>
