@@ -52,7 +52,7 @@ namespace gse {
 			return m_val / unit_type::conversion_factor;
 		}
 
-		float asDefaultUnit() const {
+		float as_default_unit() const {
 			return m_val;
 		}
 
@@ -142,9 +142,9 @@ namespace gse {
 	protected:
 		float m_val = 0.0f;  // Stored in base units
 
-		template <is_unit T>
+		template <is_unit unit_type>
 		float get_converted_value(const float value) {
-			return value * T::conversion_factor / default_unit_type::conversion_factor;
+			return value * unit_type::conversion_factor / default_unit_type::conversion_factor;
 		}
 
 		explicit quantity(const float value) : m_val(value) {}

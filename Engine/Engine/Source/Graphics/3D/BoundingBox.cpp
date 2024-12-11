@@ -6,7 +6,7 @@
 
 gse::vec3<gse::length> gse::get_left_bound(const bounding_box& bounding_box) {
 	const vec3<length> center = bounding_box.get_center();
-	const length half_width = meters(bounding_box.get_size().as<Meters>().x / 2.0f);
+	const length half_width = meters(bounding_box.get_size().as<units::meters>().x / 2.0f);
 	return center - vec3<units::meters>(half_width, 0.0f, 0.0f);
 }
 

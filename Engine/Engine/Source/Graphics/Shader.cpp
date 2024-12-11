@@ -39,8 +39,8 @@ void gse::shader::create_shader_program(const std::string& vertex_path, const st
 	// Geometry Shader
     const unsigned int geometry_shader = glCreateShader(GL_GEOMETRY_SHADER);
     if (!geometry_path.empty()) {
-        const char* gShaderCode = geometry_code.c_str();
-        glShaderSource(geometry_shader, 1, &gShaderCode, nullptr);
+        const char* g_shader_code = geometry_code.c_str();
+        glShaderSource(geometry_shader, 1, &g_shader_code, nullptr);
         glCompileShader(geometry_shader);
         check_compile_errors(geometry_shader, "GEOMETRY");
     }

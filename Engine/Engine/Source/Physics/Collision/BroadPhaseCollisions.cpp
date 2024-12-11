@@ -30,11 +30,11 @@ bool gse::broad_phase_collision::check_collision(const bounding_box& box1, const
 }
 
 bool gse::broad_phase_collision::check_collision(const bounding_box& dynamic_box, const std::shared_ptr<physics::motion_component>& dynamic_motion_component, const bounding_box& other_box) {
-	bounding_box expandedBox = dynamic_box;										// Create a copy
-	physics::motion_component tempComponent = *dynamic_motion_component;
-	update_entity(&tempComponent);												// Update the entity's position in the direction of its current_velocity
-	expandedBox.set_position(tempComponent.current_position);							// Set the expanded box's position to the updated position
-	return check_collision(expandedBox, other_box);								// Check for collision with the new expanded box
+	bounding_box expanded_box = dynamic_box;										// Create a copy
+	physics::motion_component temp_component = *dynamic_motion_component;
+	update_entity(&temp_component);													// Update the entity's position in the direction of its current_velocity
+	expanded_box.set_position(temp_component.current_position);						// Set the expanded box's position to the updated position
+	return check_collision(expanded_box, other_box);								// Check for collision with the new expanded box
 }
 
 bool gse::broad_phase_collision::check_collision(const vec3<length>& point, const bounding_box& box) {
@@ -65,46 +65,45 @@ bool gse::broad_phase_collision::check_collision(const std::shared_ptr<physics::
 }
 
 gse::collision_information gse::broad_phase_collision::calculate_collision_information(const bounding_box& box1, const bounding_box& box2) {
-	collision_information collisionInformation;
+	collision_information collision_information;
 
 	if (!check_collision(box1, box2)) {
-		return collisionInformation;
+		return collision_information;
 	}
 
 	// Calculate the penetration depth on each axis
-	length xPenetration = min(box1.upper_bound, box2.upper_bound, x) - max(box1.lower_bound, box2.lower_bound, x);
-	length yPenetration = min(box1.upper_bound, box2.upper_bound, y) - max(box1.lower_bound, box2.lower_bound, y);
-	length zPenetration = min(box1.upper_bound, box2.upper_bound, z) - max(box1.lower_bound, box2.lower_bound, z);
+	const length x_penetration = min(box1.upper_bound, box2.upper_bound, x) - max(box1.lower_bound, box2.lower_bound, x);
+	const length y_penetration = min(box1.upper_bound, box2.upper_bound, y) - max(box1.lower_bound, box2.lower_bound, y);
+	const length z_penetration = min(box1.upper_bound, box2.upper_bound, z) - max(box1.lower_bound, box2.lower_bound, z);
 
 	// Find the axis with the smallest penetration
-	length penetration = xPenetration;
-	vec3 collisionNormal(1.0f, 0.0f, 0.0f); // Default to X axis
+	length penetration = x_penetration;
+	vec3 collision_normal(1.0f, 0.0f, 0.0f); // Default to X axis
 
-	if (yPenetration < penetration) {
-		penetration = yPenetration;
-		collisionNormal = vec3(0.0f, 1.0f, 0.0f);
+	if (y_penetration < penetration) {
+		penetration = y_penetration;
+		collision_normal = vec3(0.0f, 1.0f, 0.0f);
 	}
-	if (zPenetration < penetration) {
-		penetration = zPenetration;
-		collisionNormal = vec3(0.0f, 0.0f, 1.0f);
+	if (z_penetration < penetration) {
+		penetration = z_penetration;
+		collision_normal = vec3(0.0f, 0.0f, 1.0f);
 	}
 
 	// Determine the collision normal
-	const vec3<length> deltaCenter = box2.get_center() - box1.get_center();
-	if (dot(deltaCenter, collisionNormal) < 0.0f) {
-		collisionNormal = -collisionNormal;
+	if (const vec3<length> delta_center = box2.get_center() - box1.get_center(); dot(delta_center, collision_normal) < 0.0f) {
+		collision_normal = -collision_normal;
 	}
 
 	// Calculate the collision point
-	vec3<Meters> collisionPoint = box1.get_center();
-	collisionPoint += box1.get_size() / 2.f * collisionNormal;					
-	collisionPoint -= penetration * collisionNormal;
+	vec3<units::meters> collision_point = box1.get_center();
+	collision_point += box1.get_size() / 2.f * collision_normal;					
+	collision_point -= penetration * collision_normal;
 
-	collisionInformation.collision_normal = collisionNormal;
-	collisionInformation.penetration = penetration;
-	collisionInformation.collision_point = collisionPoint;
+	collision_information.collision_normal = collision_normal;
+	collision_information.penetration = penetration;
+	collision_information.collision_point = collision_point;
 
-	return collisionInformation;
+	return collision_information;
 }
 
 void gse::broad_phase_collision::set_collision_information(const bounding_box& box1, const bounding_box& box2) {
@@ -113,29 +112,29 @@ void gse::broad_phase_collision::set_collision_information(const bounding_box& b
 }
 
 void gse::broad_phase_collision::update(broad_phase_collision::group& group) {
-	for (auto& dynamicObject : group.get_dynamic_objects()) {
-		const auto dynamicObjectPtr = dynamicObject.collision_component.lock();
-		if (!dynamicObjectPtr) {
+	for (auto& dynamic_object : group.get_dynamic_objects()) {
+		const auto dynamic_object_ptr = dynamic_object.collision_component.lock();
+		if (!dynamic_object_ptr) {
 			continue;
 		}
 
-		const auto motionComponentPtr = dynamicObject.motion_component.lock();
-		if (!motionComponentPtr) {
+		const auto motion_component_ptr = dynamic_object.motion_component.lock();
+		if (!motion_component_ptr) {
 			continue;
 		}
 
 		for (auto& object : group.get_objects()) {
-			const auto objectPtr = object.collision_component.lock();
-			if (!objectPtr) {
+			const auto object_ptr = object.collision_component.lock();
+			if (!object_ptr) {
 				continue;
 			}
 
-			if (dynamicObjectPtr == objectPtr) {
+			if (dynamic_object_ptr == object_ptr) {
 				continue;
 			}
 
-			if (!check_collision(dynamicObjectPtr, motionComponentPtr, objectPtr)) {
-				motionComponentPtr->airborne = true;
+			if (!check_collision(dynamic_object_ptr, motion_component_ptr, object_ptr)) {
+				motion_component_ptr->airborne = true;
 			}
 		}
 	}

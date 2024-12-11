@@ -3,7 +3,7 @@
 #include "Graphics/RenderComponent.h"
 
 void gse::box::initialize() {
-    const auto new_render_component = std::make_shared<new_render_component>(m_id.get());
+    const auto new_render_component = std::make_shared<render_component>(m_id.get());
 
     const float half_width = m_size.as<units::meters>().x / 2.f;
     const float half_height = m_size.as<units::meters>().y / 2.f;
