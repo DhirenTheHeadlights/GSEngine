@@ -2,7 +2,7 @@
 
 #include "UnitTemplate.h"
 
-namespace gse {
+namespace gse::units {
 	constexpr char degrees_units[] = "deg";
 	constexpr char radians_units[] = "rad";
 
@@ -12,19 +12,19 @@ namespace gse {
 
 namespace gse {
 	using angle_units = unit_list<
-		degrees,
-		radians
+		units::degrees,
+		units::radians
 	>;
 
-	struct angle : quantity<angle, degrees, angle_units> {
+	struct angle : quantity<angle, units::degrees, angle_units> {
 		using quantity::quantity;
 	};
 
 	inline angle degrees(const float value) {
-		return angle::from<degrees>(value);
+		return angle::from<units::degrees>(value);
 	}
 
 	inline angle radians(const float value) {
-		return angle::from<radians>(value);
+		return angle::from<units::radians>(value);
 	}
 }

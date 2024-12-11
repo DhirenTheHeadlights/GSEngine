@@ -74,7 +74,7 @@ bool Game::render() {
 		if (gse::scene_handler.get_scene(gse::grab_id("Scene1").lock())->get_active()) {
 			ImGui::Begin("Game Data");
 
-			ImGui::Text("FPS: %d", gse::MainClock::getFrameRate());
+			ImGui::Text("FPS: %d", gse::main_clock::get_frame_rate());
 
 			ImGui::End();
 		}

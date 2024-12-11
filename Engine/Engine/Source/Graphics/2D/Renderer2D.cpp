@@ -61,7 +61,7 @@ void gse::renderer::end_frame() {
 }
 
 namespace {
-    void render_quad(const glm::vec2& position, const glm::vec2& size, const glm::vec4* color, const gse::Texture* texture) {
+    void render_quad(const glm::vec2& position, const glm::vec2& size, const glm::vec4* color, const gse::texture* texture) {
         glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(position, 0.0f));
         model = glm::scale(model, glm::vec3(size, 1.0f));
         shader.set_mat4("uModel", model);
@@ -90,7 +90,7 @@ void gse::renderer::draw_quad(const glm::vec2& position, const glm::vec2& size, 
 	render_quad(position, size, &color, nullptr);
 }
 
-void gse::renderer::draw_quad(const glm::vec2& position, const glm::vec2& size, const gse::Texture& texture) {
+void gse::renderer::draw_quad(const glm::vec2& position, const glm::vec2& size, const gse::texture& texture) {
 	render_quad(position, size, nullptr, &texture);
 }
 

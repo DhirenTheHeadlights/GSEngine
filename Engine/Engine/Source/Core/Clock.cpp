@@ -81,7 +81,7 @@ namespace {
 	gse::time frameRateUpdateTime;
 }
 
-void gse::MainClock::update() {
+void gse::main_clock::update() {
 	const auto now = std::chrono::steady_clock::now();
 	const std::chrono::duration<float> deltaTime = now - lastUpdate;
 	lastUpdate = now;
@@ -99,14 +99,14 @@ void gse::MainClock::update() {
 	}
 }
 
-gse::time gse::MainClock::getDeltaTime() {
+gse::time gse::main_clock::get_delta_time() {
 	return dt;
 }
 
-gse::time gse::MainClock::getConstantUpdateTime(const float frameRate) {
-	return seconds(1.0f / frameRate);
+gse::time gse::main_clock::get_constant_update_time(const float frame_rate) {
+	return seconds(1.0f / frame_rate);
 }
 
-int gse::MainClock::getFrameRate() {
+int gse::main_clock::get_frame_rate() {
 	return frameRate;
 }

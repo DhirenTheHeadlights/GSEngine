@@ -4,7 +4,7 @@
 
 // Mass
 
-namespace gse {
+namespace gse::units {
 	struct mass_tag {};
 
 	constexpr char kilograms_units[] = "kg";
@@ -18,55 +18,55 @@ namespace gse {
 
 namespace gse {
 	using mass_units = unit_list<
-		kilograms,
-		grams,
-		pounds
+		units::kilograms,
+		units::grams,
+		units::pounds
 	>;
 
-	struct mass : quantity<mass, kilograms, mass_units> {
+	struct mass : quantity<mass, units::kilograms, mass_units> {
 		using quantity::quantity;
 	};
 
 	inline mass kilograms(const float value) {
-		return mass::from<struct kilograms>(value);
+		return mass::from<units::kilograms>(value);
 	}
 
 	inline mass grams(const float value) {
-		return mass::from<struct grams>(value);
+		return mass::from<units::grams>(value);
 	}
 
 	inline mass pounds(const float value) {
-		return mass::from<struct pounds>(value);
+		return mass::from<units::pounds>(value);
 	}
 }
 
 // Force
 
-namespace gse {
-	struct ForceTag {};
+namespace gse::units {
+	struct force_tag {};
 
-	constexpr char newtonsUnits[] = "N";
-	constexpr char poundsForceUnits[] = "lbf";
+	constexpr char newtons_units[] = "N";
+	constexpr char pounds_force_units[] = "lbf";
 
-	struct newtons : unit<ForceTag, 1.0f, newtonsUnits> {};
-	struct pounds_force : unit<ForceTag, 4.44822f, poundsForceUnits> {};
+	using newtons = unit<force_tag, 1.0f, newtons_units>;
+	using pounds_force = unit<force_tag, 4.44822f, pounds_force_units>;
 }
 
 namespace gse {
 	using force_units = unit_list<
-		newtons,
-		pounds_force
+		units::newtons,
+		units::pounds_force
 	>;
 
-	struct force : quantity<force, newtons, force_units> {
+	struct force : quantity<force, units::newtons, force_units> {
 		using quantity::quantity;
 	};
 
 	inline force newtons(const float value) {
-		return force::from<struct newtons>(value);
+		return force::from<units::newtons>(value);
 	}
 
 	inline force pounds_force(const float value) {
-		return force::from<struct pounds_force>(value);
+		return force::from<units::pounds_force>(value);
 	}
 }

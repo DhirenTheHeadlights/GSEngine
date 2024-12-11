@@ -22,7 +22,7 @@ namespace gse::json_parse {
 	// Pass in a lambda that takes a key and value
 	// And write it however the fuck you want
 	template <typename function>
-	void writeJson(const std::string& path, function&& process_element) {
+	void write_json(const std::string& path, function&& process_element) {
 		nlohmann::json json;
 		process_element(json);
 

@@ -21,7 +21,7 @@ namespace gse {
 
 	template <typename unit_or_quantity_type>
 	struct get_quantity_tag_type {
-		using type = typename unit_to_quantity<std::remove_cvref_t<unit_or_quantity_type>>::Type;
+		using type = typename unit_to_quantity<std::remove_cvref_t<unit_or_quantity_type>>::type;
 	};
 
 	template <typename unit_or_quantity_a, typename unit_or_quantity_b>

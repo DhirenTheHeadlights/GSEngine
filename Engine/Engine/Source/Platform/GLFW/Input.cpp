@@ -98,7 +98,7 @@ void gse::input::internal::update_button(button& button) {
 		button.typed_time = 0.48f;
 	}
 	else if (button.held) {
-		button.typed_time -= MainClock::getDeltaTime().as<Seconds>();
+		button.typed_time -= main_clock::get_delta_time().as<Seconds>();
 
 		if (button.typed_time < 0.f)
 		{

@@ -19,7 +19,7 @@ void gse::debug::set_imgui_save_file_path(const std::string& path) {
 	imguiSaveFilePath = path;
 }
 
-void gse::debug::set_up_im_gui() {
+void gse::debug::set_up_imgui() {
 	ImGui::CreateContext();
 	ImGui::StyleColorsDark();
 	imguiThemes::embraceTheDarkness();
@@ -45,7 +45,7 @@ void gse::debug::set_up_im_gui() {
 	}
 }
 
-void gse::debug::update_im_gui() {
+void gse::debug::update_imgui() {
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
@@ -58,7 +58,7 @@ void gse::debug::update_im_gui() {
 	if (ImGui::BeginMainMenuBar()) {
 		if (ImGui::BeginMenu("File")) {
 			if (ImGui::MenuItem("Save State")) {
-				save_im_gui_state();
+				save_imgui_state();
 			}
 			if (ImGui::MenuItem("Exit")) {
 				request_shutdown();
@@ -73,12 +73,12 @@ void gse::debug::update_im_gui() {
 	}
 
 	if (autosaveClock.get_elapsed_time() > autosaveTime) {
-		save_im_gui_state();
+		save_imgui_state();
 		autosaveClock.reset();
 	}
 }
 
-void gse::debug::render_im_gui() {
+void gse::debug::render_imgui() {
 	for (const auto& callback : renderCallBacks) {
 		callback();
 	}
@@ -100,7 +100,7 @@ void gse::debug::render_im_gui() {
 	}
 }
 
-void gse::debug::save_im_gui_state() {
+void gse::debug::save_imgui_state() {
 	ImGui::SaveIniSettingsToDisk(imguiSaveFilePath.c_str());
 }
 

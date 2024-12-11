@@ -13,10 +13,10 @@ namespace gse {
 	static std::random_device rd;
 	static std::mt19937 gen(rd());
 
-	template <typename t>
-		requires std::is_floating_point_v<t> || std::is_integral_v<t>
-	t random_value(t min, t max) {
-		std::uniform_real_distribution<t> dis(min, max);
+	template <typename number_type>
+		requires std::is_floating_point_v<number_type> || std::is_integral_v<number_type>
+	number_type random_value(number_type min, number_type max) {
+		std::uniform_real_distribution<number_type> dis(min, max);
 		return dis(gen);
 	}
 }

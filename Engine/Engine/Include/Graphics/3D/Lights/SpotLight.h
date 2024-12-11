@@ -16,8 +16,8 @@ namespace gse {
 				debug::unit_slider("Constant", m_constant, unitless(0.0f), unitless(1.0f));
 				debug::unit_slider("Linear", m_linear, unitless(0.0f), unitless(1.0f));
 				debug::unit_slider("Quadratic", m_quadratic, unitless(0.0f), unitless(1.0f));
-				debug::unit_slider<angle, degrees>("Cut Off", m_cut_off, degrees(0.0f), degrees(90.0f));
-				debug::unit_slider<angle, degrees>("Outer Cut Off", m_outer_cut_off, degrees(0.0f), degrees(90.0f));
+				debug::unit_slider<angle, units::degrees>("Cut Off", m_cut_off, degrees(0.0f), degrees(90.0f));
+				debug::unit_slider<angle, units::degrees>("Outer Cut Off", m_outer_cut_off, degrees(0.0f), degrees(90.0f));
 				debug::unit_slider("Ambient Strength", m_ambient_strength, unitless(0.0f), unitless(1.0f));
 				ImGui::SliderFloat3("Direction", &m_direction.as_default_units().x, -1.0f, 1.0f);
 				ImGui::SliderFloat3("Position", &m_position.as_default_units().x, -500.0f, 500.0f);

@@ -15,11 +15,11 @@ void gse::broad_phase_collision::group::add_object(const std::shared_ptr<physics
 
 void gse::broad_phase_collision::group::remove_object(const std::shared_ptr<physics::collision_component>& collision_component) {
 	std::erase_if(m_objects, [&](const object& obj) {
-		return !obj.m_collision_component.owner_before(collision_component) && !collision_component.owner_before(obj.m_collision_component);
+		return !obj.collision_component.owner_before(collision_component) && !collision_component.owner_before(obj.collision_component);
 		});
 
 	std::erase_if(m_dynamic_objects, [&](const dynamic_object& obj) {
-		return !obj.m_collision_component.owner_before(collision_component) && !collision_component.owner_before(obj.m_collision_component);
+		return !obj.collision_component.owner_before(collision_component) && !collision_component.owner_before(obj.collision_component);
 		});
 }
 
@@ -44,8 +44,8 @@ bool gse::broad_phase_collision::check_collision(const vec3<length>& point, cons
 } 
 
 bool gse::broad_phase_collision::check_collision(const std::shared_ptr<physics::collision_component>& dynamic_object_collision_component, const std::shared_ptr<physics::motion_component>& dynamic_object_motion_component, const std::shared_ptr<physics::collision_component>& other_collision_component) {
-	for (auto& box1 : dynamic_object_collision_component->m_bounding_boxes) {
-		for (auto& box2 : other_collision_component->m_bounding_boxes) {
+	for (auto& box1 : dynamic_object_collision_component->bounding_boxes) {
+		for (auto& box2 : other_collision_component->bounding_boxes) {
 			if (check_collision(box1, box2)) {
 				set_collision_information(box1, box2);
 
@@ -114,18 +114,18 @@ void gse::broad_phase_collision::set_collision_information(const bounding_box& b
 
 void gse::broad_phase_collision::update(broad_phase_collision::group& group) {
 	for (auto& dynamicObject : group.get_dynamic_objects()) {
-		const auto dynamicObjectPtr = dynamicObject.m_collision_component.lock();
+		const auto dynamicObjectPtr = dynamicObject.collision_component.lock();
 		if (!dynamicObjectPtr) {
 			continue;
 		}
 
-		const auto motionComponentPtr = dynamicObject.m_motion_component.lock();
+		const auto motionComponentPtr = dynamicObject.motion_component.lock();
 		if (!motionComponentPtr) {
 			continue;
 		}
 
 		for (auto& object : group.get_objects()) {
-			const auto objectPtr = object.m_collision_component.lock();
+			const auto objectPtr = object.collision_component.lock();
 			if (!objectPtr) {
 				continue;
 			}

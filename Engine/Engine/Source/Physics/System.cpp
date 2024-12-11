@@ -97,7 +97,7 @@ void updateFriction(gse::physics::motion_component* component, const gse::surfac
 }
 
 void updateVelocity(gse::physics::motion_component* component) {
-	const float deltaTime = gse::MainClock::getDeltaTime().as<gse::Seconds>();
+	const float deltaTime = gse::main_clock::get_delta_time().as<gse::Seconds>();
 
 	if (component->self_controlled && !component->airborne) {
 		const gse::unitless dampingFactor = 5.0f; 
@@ -117,7 +117,7 @@ void updateVelocity(gse::physics::motion_component* component) {
 }
 
 void updatePosition(gse::physics::motion_component* component) {
-	const float deltaTime = gse::MainClock::getDeltaTime().as<gse::Seconds>();
+	const float deltaTime = gse::main_clock::get_delta_time().as<gse::Seconds>();
 
 	// Update position using the kinematic equation: x = x0 + v0t + 0.5at^2
 	component->current_position += gse::vec3<gse::Meters>(
