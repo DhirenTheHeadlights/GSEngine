@@ -26,7 +26,7 @@ gse::scoped_timer::~scoped_timer() {
 	m_completed = true;
 	const time elapsed_time = reset();
 	if (m_print) {
-		std::cout << m_name << ": " << elapsed_time.as<Milliseconds>() << "ms\n";
+		std::cout << m_name << ": " << elapsed_time.as<units::milliseconds>() << "ms\n";
 	}
 }
 
@@ -72,35 +72,35 @@ void gse::display_timers() {
 /// Main Clock
 
 namespace {
-	std::chrono::steady_clock::time_point last_update = std::chrono::steady_clock::now();
-	gse::time dt;
+	std::chrono::steady_clock::time_point g_last_update = std::chrono::steady_clock::now();
+	gse::time g_dt;
 
-	int frame_rate = 0;
-	float frame_count = 0;
-	float num_frames_to_average = 40;
-	gse::time frame_rate_update_time;
+	int g_frame_rate = 0;
+	float g_frame_count = 0;
+	float g_num_frames_to_average = 40;
+	gse::time g_frame_rate_update_time;
 }
 
 void gse::main_clock::update() {
 	const auto now = std::chrono::steady_clock::now();
-	const std::chrono::duration<float> delta_time = now - last_update;
-	last_update = now;
+	const std::chrono::duration<float> delta_time = now - g_last_update;
+	g_last_update = now;
 
 	// Update delta time (clamped to a max of 0.16 seconds to avoid big time jumps)
-	dt = seconds(std::min(delta_time.count(), 0.16f));
+	g_dt = seconds(std::min(delta_time.count(), 0.16f));
 
-	++frame_count;
-	frame_rate_update_time += dt;
+	++g_frame_count;
+	g_frame_rate_update_time += g_dt;
 
-	if (frame_count >= num_frames_to_average) {
-		frame_rate = static_cast<int>(frame_count / frame_rate_update_time.as<Seconds>());
-		frame_rate_update_time = time();
-		frame_count = 0.f;
+	if (g_frame_count >= g_num_frames_to_average) {
+		g_frame_rate = static_cast<int>(g_frame_count / g_frame_rate_update_time.as<units::seconds>());
+		g_frame_rate_update_time = time();
+		g_frame_count = 0.f;
 	}
 }
 
 gse::time gse::main_clock::get_delta_time() {
-	return dt;
+	return g_dt;
 }
 
 gse::time gse::main_clock::get_constant_update_time(const float frame_rate) {
@@ -108,5 +108,5 @@ gse::time gse::main_clock::get_constant_update_time(const float frame_rate) {
 }
 
 int gse::main_clock::get_frame_rate() {
-	return frame_rate;
+	return g_frame_rate;
 }

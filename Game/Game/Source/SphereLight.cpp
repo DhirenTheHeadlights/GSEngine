@@ -1,6 +1,6 @@
 #include "SphereLight.h"
 
-void Game::SphereLightHook::initialize() {
+void game::sphere_light_hook::initialize() {
     const auto lightSourceComponent = std::make_shared<gse::light_source_component>(m_owner->get_id().lock().get());
 
     lightSourceComponent->add_light(std::make_shared<gse::SpotLight>(
@@ -14,11 +14,11 @@ void Game::SphereLightHook::initialize() {
     m_owner->add_component(lightSourceComponent);
 }
 
-void Game::SphereLightHook::update() {
+void game::sphere_light_hook::update() {
 
 }
 
-void Game::SphereLightHook::render() {
+void game::sphere_light_hook::render() {
     for (const auto& light : m_owner->get_component<gse::light_source_component>()->get_lights()) {
         light->show_debug_menu(m_owner->get_id().lock());
     }

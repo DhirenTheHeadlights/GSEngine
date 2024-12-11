@@ -24,10 +24,10 @@ namespace gse {
         float constant;       // Offset 68, Size 4 bytes
         float linear;         // Offset 72, Size 4 bytes
         float quadratic;      // Offset 76, Size 4 bytes
-        float cut_off;           // Offset 80, Size 4 bytes
+        float cut_off;            // Offset 80, Size 4 bytes
         float outer_cut_off;      // Offset 84, Size 4 bytes
-        float ambient_strength;  // Offset 88, Size 4 bytes
-        float padding5;         // Offset 92, Size 4 bytes (Padding to align total size to multiple of 16 bytes)
+        float ambient_strength;   // Offset 88, Size 4 bytes
+        float padding5;           // Offset 92, Size 4 bytes (Padding to align total size to multiple of 16 bytes)
     };
 
     struct light_render_queue_entry {
@@ -35,16 +35,16 @@ namespace gse {
 		light_shader_entry shader_entry;
 
         // Constructor for Directional Light
-		light_render_queue_entry(const light_type type, const vec3<>& color, const unitless& intensity, const vec3<>& direction, const unitless& ambientStrength)
-            : shader_entry({ static_cast<int>(type), { 0, 0, 0 }, { 0, 0, 0 }, 0, direction.as_default_units(), 0, color.as_default_units(), intensity, 0, 0, 0, 0, 0, ambientStrength, 0 }) {}
+		light_render_queue_entry(const light_type type, const vec3<>& color, const unitless& intensity, const vec3<>& direction, const unitless& ambient_strength)
+            : shader_entry({ static_cast<int>(type), { 0, 0, 0 }, { 0, 0, 0 }, 0, direction.as_default_units(), 0, color.as_default_units(), intensity, 0, 0, 0, 0, 0, ambient_strength, 0 }) {}
 
         // Constructor for Point Light
-		light_render_queue_entry(const light_type type, const vec3<>& color, const unitless& intensity, const vec3<length>& position, const unitless& constant, const unitless& linear, const unitless& quadratic, const unitless& ambientStrength)
-			: shader_entry({ static_cast<int>(type), { 0, 0, 0 }, position.as_default_units(), 0, {0, 0, 0}, 0, color.as_default_units(), intensity, constant, linear, quadratic, 0, 0, ambientStrength, 0 }) {}
+		light_render_queue_entry(const light_type type, const vec3<>& color, const unitless& intensity, const vec3<length>& position, const unitless& constant, const unitless& linear, const unitless& quadratic, const unitless& ambient_strength)
+			: shader_entry({ static_cast<int>(type), { 0, 0, 0 }, position.as_default_units(), 0, {0, 0, 0}, 0, color.as_default_units(), intensity, constant, linear, quadratic, 0, 0, ambient_strength, 0 }) {}
 
         // Constructor for Spotlight
-		light_render_queue_entry(const light_type type, const vec3<>& color, const unitless& intensity, const vec3<length>& position, const vec3<>& direction, const unitless& constant, const unitless& linear, const unitless& quadratic, const angle& cutOff, const angle& outerCutOff, const unitless& ambientStrength)
-            : shader_entry({ static_cast<int>(type), { 0, 0, 0 }, position.as_default_units(), 0, direction.as_default_units(), 0, color.as_default_units(), intensity, constant, linear, quadratic, std::cos(cutOff.as<radians>()), std::cos(outerCutOff.as<radians>()), ambientStrength, 0 }) {}
+		light_render_queue_entry(const light_type type, const vec3<>& color, const unitless& intensity, const vec3<length>& position, const vec3<>& direction, const unitless& constant, const unitless& linear, const unitless& quadratic, const angle& cut_off, const angle& outer_cut_off, const unitless& ambient_strength)
+            : shader_entry({ static_cast<int>(type), { 0, 0, 0 }, position.as_default_units(), 0, direction.as_default_units(), 0, color.as_default_units(), intensity, constant, linear, quadratic, std::cos(cut_off.as<units::radians>()), std::cos(outer_cut_off.as<units::radians>()), ambient_strength, 0 }) {}
     };
 
 	class light {

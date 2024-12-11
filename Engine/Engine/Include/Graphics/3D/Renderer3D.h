@@ -7,8 +7,8 @@
 namespace gse::renderer {
 	class group {
 	public:
-		void add_render_component(const std::shared_ptr<render_component>& render_component);
-		void add_light_source_component(const std::shared_ptr<light_source_component>& light_source_component);
+		void add_render_component(const std::shared_ptr<render_component>& new_render_component);
+		void add_light_source_component(const std::shared_ptr<light_source_component>& new_light_source_component);
 		void remove_render_component(const std::shared_ptr<render_component>& render_component_to_remove);
 		void remove_light_source_component(const std::shared_ptr<light_source_component>& light_source_component_to_remove);
 

@@ -5,7 +5,7 @@
 int main() {
 	gse::set_imgui_enabled(true);
 	gse::debug::set_imgui_save_file_path(GOONSQUAD_RESOURCES_PATH "imgui_state.ini");
-	gse::initialize(Game::initialize, Game::close);
-	gse::run(Game::update, Game::render);
+	gse::initialize(game::initialize, game::close);
+	gse::run(game::update, game::render);
 	return 0;
 }

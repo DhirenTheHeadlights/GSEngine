@@ -4,23 +4,23 @@
 #include <iostream>
 #include <string>
 
-bool asServer = false;
+bool as_server = false;
 //std::unordered_map<ENetPeer, char*> clientData;
-ENetAddress serverAddress;
-char* serverIP;
+ENetAddress server_address;
+char* server_ip;
 ENetHost* server;
 ENetHost* client;
 
 void gse::network::initialize_e_net() {
 	if (enet_initialize() != 0) {
-		std::cerr << "An error occurred while initializing ENet." << std::endl;
+		std::cerr << "An error occurred while initializing ENet." << '\n';
 	}
 
-	if (!asServer) {
-		client = enet_host_create(NULL, 1, 1, 0, 0);
+	if (!as_server) {
+		client = enet_host_create(nullptr, 1, 1, 0, 0);
 
-		if (client == NULL) {
-			std::cerr << "An error occurred while creating the client host." << std::endl;
+		if (client == nullptr) {
+			std::cerr << "An error occurred while creating the client host." << '\n';
 		}
 	}
 	
@@ -64,17 +64,17 @@ void gse::network::initialize_e_net() {
 //}
 
 void gse::network::join_network_session() {
-	ENetPeer* peer;
 	ENetEvent event;
-	enet_address_set_host(&serverAddress, serverIP);
-	serverAddress.port = 1234;
+	enet_address_set_host(&server_address, server_ip);
+	server_address.port = 1234;
 
-	peer = enet_host_connect(client, &serverAddress, 1, 0);
-	if (peer == NULL) {std::cerr << "No available peers for initiating an ENet connection." << std::endl;}
+	ENetPeer* peer = enet_host_connect(client, &server_address, 1, 0);
+	if (peer == nullptr) {std::cerr << "No available peers for initiating an ENet connection." << '\n';}
 
-	if (enet_host_service (client, &event, 5000) > 0 && event.type == ENET_EVENT_TYPE_CONNECT) {std::cout << "Connection to " << serverAddress.host << ":" << serverAddress.port << " succeeded." << std::endl;}
+	if (enet_host_service (client, &event, 5000) > 0 && event.type == ENET_EVENT_TYPE_CONNECT) {std::cout << "Connection to " << server_address.host << ":" << server_address.port << " succeeded." <<
+		'\n';}
 	else {
 		enet_peer_reset(peer);
-		std::cerr << "Connection to " << serverIP << ":" << serverAddress.port << " failed." << std::endl;
+		std::cerr << "Connection to " << server_ip << ":" << server_address.port << " failed." << '\n';
 	}	
 }

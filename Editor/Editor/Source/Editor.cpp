@@ -45,7 +45,7 @@ void Editor::initialize() {
 
     gse::window::set_fbo(fbo, { viewportWidth, viewportHeight });
 
-    Game::setInputHandlingFlag(false); // Initialize to false
+    game::set_input_handling_flag(false); // Initialize to false
 }
 
 void Editor::bindFbo() {
@@ -81,7 +81,7 @@ void Editor::update() {
         gse::window::set_mouse_pos_relative_to_window({ static_cast<int>(gameWindowPosition.x + gameWindowSize.x / 2), static_cast<int>(gameWindowPosition.y + gameWindowSize.y / 2) });
     }
 
-    Game::setInputHandlingFlag(gameFocused);
+    game::set_input_handling_flag(gameFocused);
     gse::window::set_mouse_visible(!gameFocused);
 }
 

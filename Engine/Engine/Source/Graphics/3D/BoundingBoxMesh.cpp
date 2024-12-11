@@ -20,7 +20,7 @@ void gse::bounding_box_mesh::update_grid() {
 
 	m_vertices.clear();
 
-	const glm::vec3 min = m_lower.as<units::meters();
+	const glm::vec3 min = m_lower.as<units::meters>();
 	const glm::vec3 max = m_upper.as<units::meters>();
 
 	// Generate grid lines for each face

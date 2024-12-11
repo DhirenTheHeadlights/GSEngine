@@ -21,28 +21,6 @@ namespace gse {
 
 		unitless(const float value) : quantity(value) {}
 
-		template <is_unit Unit>
-		auto operator*(const Unit& other) const {
-			return Unit(m_val * other.get_value());
-		}
-
-		template <is_unit Unit>
-		auto operator/(const Unit& other) const {
-			return Unit(m_val / other.get_value());
-		}
-
-		template <is_unit Unit>
-		quantity& operator*=(const Unit& other) {
-			m_val *= other.get_value();
-			return *this;
-		}
-
-		template <is_unit Unit>
-		quantity& operator/=(const Unit& other) {
-			m_val /= other.get_value()();
-			return *this;
-		}
-
 		operator float() const {
 			return m_val;
 		}
