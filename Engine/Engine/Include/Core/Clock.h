@@ -5,42 +5,42 @@
 
 #include "Physics/Units/Units.h"
 
-namespace Engine {
-	class Clock {
+namespace gse {
+	class clock {
 	public:
-		Clock() : startTime(std::chrono::steady_clock::now()) {}
+		clock() : m_start_time(std::chrono::steady_clock::now()) {}
 
-		Time reset();
-		Time getElapsedTime() const;
+		time reset();
+		time get_elapsed_time() const;
 	private:
-		std::chrono::steady_clock::time_point startTime;
+		std::chrono::steady_clock::time_point m_start_time;
 	};
 
-	class ScopedTimer : public Clock {
+	class scoped_timer : public clock {
 	public:
-		ScopedTimer(std::string name, const bool print = true) : name(std::move(name)), print(print) {}
+		scoped_timer(std::string name, const bool print = true) : m_name(std::move(name)), m_print(print) {}
 
-		~ScopedTimer();
+		~scoped_timer();
 
-		bool isCompleted() const { return completed; }
-		std::string getName() const { return name; }
-		void setCompleted() { completed = true; }
+		bool is_completed() const { return m_completed; }
+		std::string get_name() const { return m_name; }
+		void set_completed() { m_completed = true; }
 	private:
-		std::string name;
-		bool print = false;
-		bool completed = true;
+		std::string m_name;
+		bool m_print = false;
+		bool m_completed = true;
 	};
 
 
-	void addTimer(const std::string& name);
-	void resetTimer(const std::string& name);
-	void removeTimer(const std::string& name);
-	void displayTimers();
+	void add_timer(const std::string& name);
+	void reset_timer(const std::string& name);
+	void remove_timer(const std::string& name);
+	void display_timers();
 }
 
-namespace Engine::MainClock {
+namespace gse::main_clock {
 	void update();
-	Time getDeltaTime();
-	Time getConstantUpdateTime(const float frameRate);
-	int getFrameRate();
+	time get_delta_time();
+	time get_constant_update_time(const float frame_rate);
+	int get_frame_rate();
 }

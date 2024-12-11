@@ -2,18 +2,18 @@
 
 #include "Engine.h"
 
-namespace Game {
-	class Arena final : public Engine::Object {
+namespace game {
+	class arena final : public gse::object {
 	public:
-		Arena() : Object("Arena") {}
+		arena() : object("Arena") {}
 
 		void initialize() override;
 		void update() override;
 		void render() override;
 	private:
-		Engine::Length
-			width   = Engine::meters(1000.f),
-			height	= Engine::meters(1000.f),
-			depth	= Engine::meters(1000.f);
+		gse::length
+			m_width   = gse::meters(1000.f),
+			m_height  = gse::meters(1000.f),
+			m_depth	  = gse::meters(1000.f);
 	};
 }

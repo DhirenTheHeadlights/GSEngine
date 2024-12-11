@@ -4,30 +4,30 @@
 #include "Graphics/3D/Camera.h"
 #include "Lights/LightSourceComponent.h"
 
-namespace Engine::Renderer {
-	class Group {
+namespace gse::renderer {
+	class group {
 	public:
-		void addRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent);
-		void addLightSourceComponent(const std::shared_ptr<LightSourceComponent>& lightSourceComponent);
-		void removeRenderComponent(const std::shared_ptr<RenderComponent>& renderComponent);
-		void removeLightSourceComponent(const std::shared_ptr<LightSourceComponent>& lightSourceComponent);
+		void add_render_component(const std::shared_ptr<render_component>& new_render_component);
+		void add_light_source_component(const std::shared_ptr<light_source_component>& new_light_source_component);
+		void remove_render_component(const std::shared_ptr<render_component>& render_component_to_remove);
+		void remove_light_source_component(const std::shared_ptr<light_source_component>& light_source_component_to_remove);
 
-		auto getRenderComponents() -> std::vector<std::weak_ptr<RenderComponent>>& {
-			return renderComponents;
+		auto get_render_components() -> std::vector<std::weak_ptr<render_component>>& {
+			return m_render_components;
 		}
-		auto getLightSourceComponents() -> std::vector<std::weak_ptr<LightSourceComponent>>& {
-			return lightSourceComponents;
+		auto get_light_source_components() -> std::vector<std::weak_ptr<light_source_component>>& {
+			return m_light_source_components;
 		}
 
-		std::vector<GLuint> depthMaps;
-		std::vector<GLuint> depthMapFBOs;
+		std::vector<GLuint> depth_maps;
+		std::vector<GLuint> depth_map_fbos;
 	private:
-		std::vector<std::weak_ptr<RenderComponent>> renderComponents;
-		std::vector<std::weak_ptr<LightSourceComponent>> lightSourceComponents;
+		std::vector<std::weak_ptr<render_component>> m_render_components;
+		std::vector<std::weak_ptr<light_source_component>> m_light_source_components;
 	};
 
-	void initialize();
-	void renderObjects(Group& group);
+	void initialize3d();
+	void render_objects(group& group);
 
-	Camera& getCamera();
+	camera& get_camera();
 }

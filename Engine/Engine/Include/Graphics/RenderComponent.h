@@ -8,26 +8,26 @@
 #include "Graphics/3D/BoundingBoxMesh.h"
 #include "Graphics/3D/Mesh.h"
 
-namespace Engine {
-	class RenderComponent : public EngineComponent {
+namespace gse {
+	class render_component final : public engine_component {
 	public:
-		RenderComponent(ID* id) : EngineComponent(id) {}
-		RenderComponent(ID* id, const std::vector<std::shared_ptr<Mesh>>& meshes) : EngineComponent(id), meshes(meshes) {}
+		render_component(id* id) : engine_component(id) {}
+		render_component(id* id, const std::vector<std::shared_ptr<mesh>>& meshes) : engine_component(id), m_meshes(meshes) {}
 
-		void addMesh(const std::shared_ptr<Mesh>& mesh);
-		void addBoundingBoxMesh(const std::shared_ptr<BoundingBoxMesh>& boundingBoxMesh);
+		void add_mesh(const std::shared_ptr<mesh>& mesh);
+		void add_bounding_box_mesh(const std::shared_ptr<bounding_box_mesh>& bounding_box_mesh);
 
-		void updateBoundingBoxMeshes() const;
-		void setRender(bool render, bool renderBoundingBoxes);
+		void update_bounding_box_meshes() const;
+		void set_render(bool render, bool render_bounding_boxes);
 
-		virtual std::vector<RenderQueueEntry> getQueueEntries() const;
-		std::vector<std::shared_ptr<Mesh>>& getMeshes() { return meshes; }
-		std::vector<std::shared_ptr<BoundingBoxMesh>>& getBoundingBoxMeshes() { return boundingBoxMeshes; }
+		std::vector<render_queue_entry> get_queue_entries() const;
+		std::vector<std::shared_ptr<mesh>>& get_meshes() { return m_meshes; }
+		std::vector<std::shared_ptr<bounding_box_mesh>>& get_bounding_box_meshes() { return m_bounding_box_meshes; }
 	protected:
-		std::vector<std::shared_ptr<Mesh>> meshes;
-		std::vector<std::shared_ptr<BoundingBoxMesh>> boundingBoxMeshes;
+		std::vector<std::shared_ptr<mesh>> m_meshes;
+		std::vector<std::shared_ptr<bounding_box_mesh>> m_bounding_box_meshes;
 
-		bool render = false;
-		bool renderBoundingBoxes = false;
+		bool m_render = false;
+		bool m_render_bounding_boxes = false;
 	};
 }

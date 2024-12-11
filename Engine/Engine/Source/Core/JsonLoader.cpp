@@ -2,7 +2,7 @@
 
 #include "Platform/PermaAssert.h"
 
-nlohmann::json Engine::JsonParse::loadJson(const std::string& path) {
+nlohmann::json gse::json_parse::load_json(const std::string& path) {
 	std::ifstream file(path);
 	permaAssertComment(file.is_open(), std::string("Failed to open file: " + path).c_str());
 	try {

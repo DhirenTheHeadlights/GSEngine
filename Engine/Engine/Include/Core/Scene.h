@@ -8,34 +8,34 @@
 #include "Physics/System.h"
 #include "Physics/Collision/BroadPhaseCollisions.h"
 
-namespace Engine {
-	class Scene {
+namespace gse {
+	class scene {
 	public:
-		Scene() = default;
-		Scene(const std::shared_ptr<ID>& id) : id(id) {}
+		scene() = default;
+		scene(const std::shared_ptr<id>& id) : m_id(id) {}
 
-		void addObject(const std::weak_ptr<Object>& object);
-		void removeObject(const std::weak_ptr<Object>& object);
+		void add_object(const std::weak_ptr<object>& object);
+		void remove_object(const std::weak_ptr<object>& object_to_remove);
 
 		void initialize();
 		void update();
 		void render();
 		void exit();
 
-		void setId(const std::shared_ptr<ID>& id) { this->id = id; }
-		std::shared_ptr<ID> getId() const { return id; }
+		void set_id(const std::shared_ptr<id>& id) { this->m_id = id; }
+		std::shared_ptr<id> get_id() const { return m_id; }
 
-		void setActive(const bool isActive) { this->isActive = isActive; }
-		bool getActive() const { return isActive; }
+		void set_active(const bool is_active) { this->m_is_active = is_active; }
+		bool get_active() const { return m_is_active; }
 	private:
-		std::vector<std::weak_ptr<Object>> objects;
+		std::vector<std::weak_ptr<object>> m_objects;
 
-		bool isActive = false;
+		bool m_is_active = false;
 
-		std::shared_ptr<ID> id;
+		std::shared_ptr<id> m_id;
 
-		Physics::Group physicsSystem;
-		BroadPhaseCollision::Group collisionGroup;
-		Renderer::Group renderGroup;
+		physics::group m_physics_system;
+		broad_phase_collision::group m_collision_group;
+		renderer::group m_render_group;
 	};
 }

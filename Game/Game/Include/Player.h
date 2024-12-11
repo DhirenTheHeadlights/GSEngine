@@ -2,10 +2,10 @@
 
 #include <Engine.h>
 
-namespace Game {
-	class Player final : public Engine::Object {
+namespace game {
+	class player final : public gse::object {
 	public:
-		Player() : Object("Player") {}
+		player() : object("Player") {}
 
 		void initialize() override;
 		void update() override;
@@ -13,18 +13,18 @@ namespace Game {
 
 		bool jetpack = false;
 	private:
-		void updateJetpack();
-		void updateMovement();
+		void update_jetpack();
+		void update_movement();
 
-		std::unordered_map<int, Engine::Vec3<Engine::Unitless>> wasd;
+		std::unordered_map<int, gse::vec3<>> m_wasd;
 
-		Engine::Velocity maxSpeed = Engine::milesPerHour(20.f);
-		Engine::Velocity shiftMaxSpeed = Engine::milesPerHour(40.f);
-		Engine::Force jetpackForce = Engine::newtons(1000.f);
-		Engine::Force jetpackSideForce = Engine::newtons(500.f);
-		Engine::Force jumpForce = Engine::newtons(1000.f);
-		Engine::Force moveForce = Engine::newtons(100000.f);
+		gse::velocity m_max_speed = gse::miles_per_hour(20.f);
+		gse::velocity m_shift_max_speed = gse::miles_per_hour(40.f);
+		gse::force m_jetpack_force = gse::newtons(1000.f);
+		gse::force m_jetpack_side_force = gse::newtons(500.f);
+		gse::force m_jump_force = gse::newtons(1000.f);
+		gse::force m_move_force = gse::newtons(100000.f);
 
-		int boostFuel = 1000;
+		int m_boost_fuel = 1000;
 	};
 }

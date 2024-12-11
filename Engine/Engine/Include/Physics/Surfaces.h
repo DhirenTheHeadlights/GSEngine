@@ -5,26 +5,26 @@
 #include "Core/Clock.h"
 #include "Physics/Units/Units.h"
 
-namespace Engine::Surfaces {
-	enum class SurfaceType : std::uint8_t {
-		Concrete,
-		Grass,
-		Water,
-		Sand,
-		Gravel,
-		Asphalt,
-		Count
+namespace gse::surfaces {
+	enum class surface_type : std::uint8_t {
+		concrete,
+		grass,
+		water,
+		sand,
+		gravel,
+		asphalt,
+		count
 	};
 
-	struct SurfaceProperties {
-		SurfaceProperties(const float fc, const float r, const Time id, const float t)
-			: frictionCoefficient(fc), restitution(r), inverseDamping(id), traction(t) {}
+	struct surface_properties {
+		surface_properties(const float fc, const float r, const time id, const float t)
+			: friction_coefficient(fc), restitution(r), inverse_damping(id), traction(t) {}
 
-		Unitless frictionCoefficient;	 // Surface friction (controls sliding)
-		Unitless restitution;			 // Bounce factor
-		Time inverseDamping;			 // Time it takes for an object to stop moving on the surface
-		Unitless traction;				 // Grip, useful for vehicle or character movement
+		unitless friction_coefficient;		 // Surface friction (controls sliding)
+		unitless restitution;			     // Bounce factor
+		time inverse_damping;			     // Time it takes for an object to stop moving on the surface
+		unitless traction;					 // Grip, useful for vehicle or character movement
 	};
 
-	SurfaceProperties getSurfaceProperties(const SurfaceType& surfaceType);
+	surface_properties get_surface_properties(const surface_type& surface_type);
 }

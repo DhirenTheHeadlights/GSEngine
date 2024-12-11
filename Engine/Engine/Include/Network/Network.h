@@ -1,12 +1,12 @@
 #pragma once
 #include "enet/enet.h"
 
-namespace Engine::Network {
-	void initializeENet();
+namespace gse::network {
+	void initialize_e_net();
 	//void update();
-	inline void closeENet() { enet_deinitialize(); }
+	inline void close_e_net() { enet_deinitialize(); }
 	//void createMultiplayerSession();
-	void joinNetworkSession();
+	void join_network_session();
 	//void setOwnAddress(std::string IP, int port);
 	//void setServerAddress(std::string IP, int port);
 }

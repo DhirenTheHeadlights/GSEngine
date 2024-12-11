@@ -3,9 +3,9 @@
 #include "ResourcePaths.h"
 
 int main() {
-	Engine::setImguiEnabled(true);
-	Engine::Debug::setImguiSaveFilePath(GOONSQUAD_RESOURCES_PATH "imgui_state.ini");
-	Engine::initialize(Game::initialize, Game::close);
-	Engine::run(Game::update, Game::render);
+	gse::set_imgui_enabled(true);
+	gse::debug::set_imgui_save_file_path(GOONSQUAD_RESOURCES_PATH "imgui_state.ini");
+	gse::initialize(game::initialize, game::close);
+	gse::run(game::update, game::render);
 	return 0;
 }

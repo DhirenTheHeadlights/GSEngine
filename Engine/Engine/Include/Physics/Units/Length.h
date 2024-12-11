@@ -2,66 +2,66 @@
 
 #include "Physics/Units/UnitTemplate.h"
 
-namespace Engine {
-	struct LengthTag {};
+namespace gse::units {
+	struct length_tag {};
 
-	constexpr char kilometersUnits[] = "km";
-	constexpr char metersUnits[] = "m";
-	constexpr char centimetersUnits[] = "cm";
-	constexpr char millimetersUnits[] = "mm";
-	constexpr char yardsUnits[] = "yd";
-	constexpr char feetUnits[] = "ft";
-	constexpr char inchesUnits[] = "in";
+	constexpr char kilometers_units[] = "km";
+	constexpr char meters_units[] = "m";
+	constexpr char centimeters_units[] = "cm";
+	constexpr char millimeters_units[] = "mm";
+	constexpr char yards_units[] = "yd";
+	constexpr char feet_units[] = "ft";
+	constexpr char inches_units[] = "in";
 
-	using Kilometers = Unit<LengthTag, 1000.0f, kilometersUnits>;
-	using Meters = Unit<LengthTag, 1.0f, metersUnits>;
-	using Centimeters = Unit<LengthTag, 0.01f, centimetersUnits>;
-	using Millimeters = Unit<LengthTag, 0.001f, millimetersUnits>;
-	using Yards = Unit<LengthTag, 0.9144f, yardsUnits>;
-	using Feet = Unit<LengthTag, 0.3048f, feetUnits>;
-	using Inches = Unit<LengthTag, 0.0254f, inchesUnits>;
+	using kilometers = unit<length_tag, 1000.0f, kilometers_units>;
+	using meters = unit<length_tag, 1.0f, meters_units>;
+	using centimeters = unit<length_tag, 0.01f, centimeters_units>;
+	using millimeters = unit<length_tag, 0.001f, millimeters_units>;
+	using yards = unit<length_tag, 0.9144f, yards_units>;
+	using feet = unit<length_tag, 0.3048f, feet_units>;
+	using inches = unit<length_tag, 0.0254f, inches_units>;
 }
 
-namespace Engine {
-	using LengthUnits = UnitList<
-		Kilometers,
-		Meters,
-		Centimeters,
-		Millimeters,
-		Yards,
-		Feet,
-		Inches
+namespace gse {
+	using length_units = unit_list<
+		units::kilometers,
+		units::meters,
+		units::centimeters,
+		units::millimeters,
+		units::yards,
+		units::feet,
+		units::inches
 	>;
 
-	struct Length : Quantity<Length, Meters, LengthUnits> {
-		using Quantity::Quantity;
+	struct length : quantity<length, units::meters, length_units> {
+		using quantity::quantity;
 	};
 
-	inline Length kilometers(const float value) {
-		return Length::from<Kilometers>(value);
+	inline length kilometers(const float value) {
+		return length::from<units::kilometers>(value);
 	}
 
-	inline Length meters(const float value) {
-		return Length::from<Meters>(value);
+	inline length meters(const float value) {
+		return length::from<units::meters>(value);
 	}
 
-	inline Length centimeters(const float value) {
-		return Length::from<Centimeters>(value);
+	inline length centimeters(const float value) {
+		return length::from<units::centimeters>(value);
 	}
 
-	inline Length millimeters(const float value) {
-		return Length::from<Millimeters>(value);
+	inline length millimeters(const float value) {
+		return length::from<units::millimeters>(value);
 	}
 
-	inline Length yards(const float value) {
-		return Length::from<Yards>(value);
+	inline length yards(const float value) {
+		return length::from<units::yards>(value);
 	}
 
-	inline Length feet(const float value) {
-		return Length::from<Feet>(value);
+	inline length feet(const float value) {
+		return length::from<units::feet>(value);
 	}
 
-	inline Length inches(const float value) {
-		return Length::from<Inches>(value);
+	inline length inches(const float value) {
+		return length::from<units::inches>(value);
 	}
 }		

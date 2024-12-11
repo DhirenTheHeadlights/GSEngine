@@ -1,38 +1,38 @@
 #include "Graphics/RenderComponent.h"
 
-void Engine::RenderComponent::addMesh(const std::shared_ptr<Mesh>& mesh) {
-	mesh->setUpMesh();
-	meshes.push_back(mesh);
+void gse::render_component::add_mesh(const std::shared_ptr<mesh>& mesh) {
+	mesh->set_up_mesh();
+	m_meshes.push_back(mesh);
 }
 
-void Engine::RenderComponent::addBoundingBoxMesh(const std::shared_ptr<BoundingBoxMesh>& boundingBoxMesh) {
-	boundingBoxMesh->setUpMesh();
-	boundingBoxMeshes.push_back(boundingBoxMesh);
+void gse::render_component::add_bounding_box_mesh(const std::shared_ptr<bounding_box_mesh>& bounding_box_mesh) {
+	bounding_box_mesh->set_up_mesh();
+	m_bounding_box_meshes.push_back(bounding_box_mesh);
 }
 
-void Engine::RenderComponent::updateBoundingBoxMeshes() const {
-	for (const auto& boundingBoxMesh : boundingBoxMeshes) {
-		boundingBoxMesh->update();
+void gse::render_component::update_bounding_box_meshes() const {
+	for (const auto& bounding_box_mesh : m_bounding_box_meshes) {
+		bounding_box_mesh->update();
 	}
 }
 
-std::vector<Engine::RenderQueueEntry> Engine::RenderComponent::getQueueEntries() const {
-	if (!render) return {};
+std::vector<gse::render_queue_entry> gse::render_component::get_queue_entries() const {
+	if (!m_render) return {};
 
-	std::vector<RenderQueueEntry> entries;
-	entries.reserve(meshes.size() + boundingBoxMeshes.size());
-	for (const auto& mesh : meshes) {
-		entries.push_back(mesh->getQueueEntry());
+	std::vector<render_queue_entry> entries;
+	entries.reserve(m_meshes.size() + m_bounding_box_meshes.size());
+	for (const auto& mesh : m_meshes) {
+		entries.push_back(mesh->get_queue_entry());
 	}
 
-	if (boundingBoxMeshes.empty()) return entries;
-	for (const auto& boundingBoxMesh : boundingBoxMeshes) {
-		entries.push_back(boundingBoxMesh->getQueueEntry());
+	if (m_bounding_box_meshes.empty()) return entries;
+	for (const auto& bounding_box_mesh : m_bounding_box_meshes) {
+		entries.push_back(bounding_box_mesh->get_queue_entry());
 	}
 	return entries;
 }
 
-void Engine::RenderComponent::setRender(const bool render, const bool renderBoundingBoxes) {
-	this->render = render;
-	this->renderBoundingBoxes = renderBoundingBoxes;
+void gse::render_component::set_render(const bool render, const bool render_bounding_boxes) {
+	this->m_render = render;
+	this->m_render_bounding_boxes = render_bounding_boxes;
 }

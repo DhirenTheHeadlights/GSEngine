@@ -1,115 +1,115 @@
 #include "Player.h"
 
-void Game::Player::initialize() {
-	const auto motionComponent = std::make_shared<Engine::Physics::MotionComponent>(id.get());
-	const auto collisionComponent = std::make_shared<Engine::Physics::CollisionComponent>(id.get());
-	const auto renderComponent = std::make_shared<Engine::RenderComponent>(id.get());
+void game::player::initialize() {
+	const auto motion_component = std::make_shared<gse::physics::motion_component>(m_id.get());
+	const auto collision_component = std::make_shared<gse::physics::collision_component>(m_id.get());
+	const auto render_component = std::make_shared<gse::render_component>(m_id.get());
 
-	Engine::Length height = Engine::feet(6.0f);
-	Engine::Length width = Engine::feet(3.0f);
-	collisionComponent->boundingBoxes.emplace_back(Engine::Vec3<Engine::Meters>(-10.f, -10.f, -10.f), height, width, width);
+	gse::length height = gse::feet(6.0f);
+	gse::length width = gse::feet(3.0f);
+	collision_component->bounding_boxes.emplace_back(gse::vec3<gse::units::meters>(-10.f, -10.f, -10.f), height, width, width);
 
-	wasd.insert({ GLFW_KEY_W, { 0.f, 0.f, 1.f } });
-	wasd.insert({ GLFW_KEY_S, { 0.f, 0.f, -1.f } });
-	wasd.insert({ GLFW_KEY_A, { -1.f, 0.f, 0.f } });
-	wasd.insert({ GLFW_KEY_D, { 1.f, 0.f, 0.f } });
+	m_wasd.insert({ GLFW_KEY_W, { 0.f, 0.f, 1.f } });
+	m_wasd.insert({ GLFW_KEY_S, { 0.f, 0.f, -1.f } });
+	m_wasd.insert({ GLFW_KEY_A, { -1.f, 0.f, 0.f } });
+	m_wasd.insert({ GLFW_KEY_D, { 1.f, 0.f, 0.f } });
 
-	motionComponent->mass = Engine::pounds(180.f);
-	motionComponent->maxSpeed = maxSpeed;
-	motionComponent->selfControlled = true;
+	motion_component->mass = gse::pounds(180.f);
+	motion_component->max_speed = m_max_speed;
+	motion_component->self_controlled = true;
 
-	for (auto& bb : collisionComponent->boundingBoxes) {
-		const auto boundingBoxMesh = std::make_shared<Engine::BoundingBoxMesh>(bb.upperBound, bb.lowerBound);
-		renderComponent->addBoundingBoxMesh(boundingBoxMesh);
+	for (auto& bb : collision_component->bounding_boxes) {
+		const auto bounding_box_mesh = std::make_shared<gse::bounding_box_mesh>(bb.upper_bound, bb.lower_bound);
+		render_component->add_bounding_box_mesh(bounding_box_mesh);
 	}
 
-	addComponent(renderComponent);
-	addComponent(motionComponent);
-	addComponent(collisionComponent);
+	add_component(render_component);
+	add_component(motion_component);
+	add_component(collision_component);
 }
 
-void Game::Player::updateJetpack() {
-	if (Engine::Input::getKeyboard().keys[GLFW_KEY_J].pressed) {
+void game::player::update_jetpack() {
+	if (gse::input::get_keyboard().keys[GLFW_KEY_J].pressed) {
 		jetpack = !jetpack;
 	}
 
-	if (jetpack && Engine::Input::getKeyboard().keys[GLFW_KEY_SPACE].held) {
-		Engine::Force boostForce;
-		if (Engine::Input::getKeyboard().keys[GLFW_KEY_LEFT_SHIFT].held && boostFuel > 0) {
-			boostForce = Engine::newtons(2000.f);
-			boostFuel -= 1;
+	if (jetpack && gse::input::get_keyboard().keys[GLFW_KEY_SPACE].held) {
+		gse::force boost_force;
+		if (gse::input::get_keyboard().keys[GLFW_KEY_LEFT_SHIFT].held && m_boost_fuel > 0) {
+			boost_force = gse::newtons(2000.f);
+			m_boost_fuel -= 1;
 		}
 		else {
-			boostFuel += 1;
-			boostFuel = std::min(boostFuel, 1000);
+			m_boost_fuel += 1;
+			m_boost_fuel = std::min(m_boost_fuel, 1000);
 		}
 
-		applyForce(getComponent<Engine::Physics::MotionComponent>().get(), Engine::Vec3<Engine::Newtons>(0.f, jetpackForce + boostForce, 0.f));
+		apply_force(get_component<gse::physics::motion_component>().get(), gse::vec3<gse::units::newtons>(0.f, m_jetpack_force + boost_force, 0.f));
 
-		for (auto& [key, direction] : wasd) {
-			if (Engine::Input::getKeyboard().keys[key].held) {
-				applyForce(getComponent<Engine::Physics::MotionComponent>().get(), Engine::Vec3<Engine::Newtons>(jetpackSideForce + boostForce, 0.f, jetpackSideForce + boostForce) * Engine::getCamera().getCameraDirectionRelativeToOrigin(direction));
+		for (auto& [key, direction] : m_wasd) {
+			if (gse::input::get_keyboard().keys[key].held) {
+				apply_force(get_component<gse::physics::motion_component>().get(), gse::vec3<gse::units::newtons>(m_jetpack_side_force + boost_force, 0.f, m_jetpack_side_force + boost_force) * gse::get_camera().get_camera_direction_relative_to_origin(direction));
 			}
 		}
 	}
 }
 
-void Game::Player::updateMovement() {
-	for (auto& [key, direction] : wasd) {
-		if (Engine::Input::getKeyboard().keys[key].held && !getComponent<Engine::Physics::MotionComponent>()->airborne) {
-			applyForce(getComponent<Engine::Physics::MotionComponent>().get(), moveForce * Engine::getCamera().getCameraDirectionRelativeToOrigin(direction) * Engine::Vec3(1.f, 0.f, 1.f));
+void game::player::update_movement() {
+	for (auto& [key, direction] : m_wasd) {
+		if (gse::input::get_keyboard().keys[key].held && !get_component<gse::physics::motion_component>()->airborne) {
+			apply_force(get_component<gse::physics::motion_component>().get(), m_move_force * gse::get_camera().get_camera_direction_relative_to_origin(direction) * gse::vec3(1.f, 0.f, 1.f));
 		}
 	}
 
-	if (Engine::Input::getKeyboard().keys[GLFW_KEY_LEFT_SHIFT].held) {
-		getComponent<Engine::Physics::MotionComponent>()->maxSpeed = shiftMaxSpeed;
+	if (gse::input::get_keyboard().keys[GLFW_KEY_LEFT_SHIFT].held) {
+		get_component<gse::physics::motion_component>()->max_speed = m_shift_max_speed;
 	}
 	else {
-		getComponent<Engine::Physics::MotionComponent>()->maxSpeed = maxSpeed;
+		get_component<gse::physics::motion_component>()->max_speed = m_max_speed;
 	}
 
-	if (Engine::Input::getKeyboard().keys[GLFW_KEY_SPACE].pressed && !getComponent<Engine::Physics::MotionComponent>()->airborne) {
-		applyImpulse(getComponent<Engine::Physics::MotionComponent>().get(), Engine::Vec3<Engine::Newtons>(0.f, jumpForce, 0.f), Engine::seconds(0.5f));
-		getComponent<Engine::Physics::MotionComponent>()->airborne = true;
+	if (gse::input::get_keyboard().keys[GLFW_KEY_SPACE].pressed && !get_component<gse::physics::motion_component>()->airborne) {
+		apply_impulse(get_component<gse::physics::motion_component>().get(), gse::vec3<gse::units::newtons>(0.f, m_jump_force, 0.f), gse::seconds(0.5f));
+		get_component<gse::physics::motion_component>()->airborne = true;
 	}
 }
 
-void Game::Player::update() {
-	updateJetpack();
-	updateMovement();
+void game::player::update() {
+	update_jetpack();
+	update_movement();
 
-	for (auto& bb : getComponent<Engine::Physics::CollisionComponent>()->boundingBoxes) {
-		bb.setPosition(getComponent<Engine::Physics::MotionComponent>()->position);
+	for (auto& bb : get_component<gse::physics::collision_component>()->bounding_boxes) {
+		bb.set_position(get_component<gse::physics::motion_component>()->current_position);
 	}
 	
-	Engine::getCamera().setPosition(getComponent<Engine::Physics::MotionComponent>()->position + Engine::Vec3<Engine::Feet>(0.f, 6.f, 0.f));
+	gse::get_camera().set_position(get_component<gse::physics::motion_component>()->current_position + gse::vec3<gse::units::feet>(0.f, 6.f, 0.f));
 
-	getComponent<Engine::RenderComponent>()->updateBoundingBoxMeshes();
-	getComponent<Engine::RenderComponent>()->setRender(true, true);
+	get_component<gse::render_component>()->update_bounding_box_meshes();
+	get_component<gse::render_component>()->set_render(true, true);
 }
 
-void Game::Player::render() {
-	Engine::Debug::addImguiCallback([this] {
+void game::player::render() {
+	gse::debug::add_imgui_callback([this] {
 		ImGui::Begin("Player");
-		Engine::Debug::printVector("Player Position", getComponent<Engine::Physics::MotionComponent>()->position.as<Engine::Meters>(), Engine::Meters::UnitName);
-		Engine::Debug::printVector("Player Bounding Box Position", getComponent<Engine::Physics::CollisionComponent>()->boundingBoxes[0].getCenter().as<Engine::Meters>(), Engine::Meters::UnitName);
-		Engine::Debug::printVector("Player Velocity", getComponent<Engine::Physics::MotionComponent>()->velocity.as<Engine::MetersPerSecond>(), Engine::MetersPerSecond::UnitName);
-		Engine::Debug::printVector("Player Acceleration", getComponent<Engine::Physics::MotionComponent>()->acceleration.as<Engine::MetersPerSecondSquared>(), Engine::MetersPerSecondSquared::UnitName);
+		gse::debug::print_vector("Player Position", get_component<gse::physics::motion_component>()->current_position.as<gse::units::meters>(), gse::units::meters::unit_name);
+		gse::debug::print_vector("Player Bounding Box Position", get_component<gse::physics::collision_component>()->bounding_boxes[0].get_center().as<gse::units::meters>(), gse::units::meters::unit_name);
+		gse::debug::print_vector("Player Velocity", get_component<gse::physics::motion_component>()->current_velocity.as<gse::units::meters_per_second>(), gse::units::meters_per_second::unit_name);
+		gse::debug::print_vector("Player Acceleration", get_component<gse::physics::motion_component>()->current_acceleration.as<gse::units::meters_per_second_squared>(), gse::units::meters_per_second_squared::unit_name);
 
-		Engine::Debug::printValue("Player Speed", getComponent<Engine::Physics::MotionComponent>()->getSpeed().as<Engine::MilesPerHour>(), Engine::MilesPerHour::UnitName);
+		gse::debug::print_value("Player Speed", get_component<gse::physics::motion_component>()->get_speed().as<gse::units::miles_per_hour>(), gse::units::miles_per_hour::unit_name);
 
-		Engine::Debug::printBoolean("Player Jetpack [J]", jetpack);
-		Engine::Debug::printValue("Player Boost Fuel", static_cast<float>(boostFuel), "");
+		gse::debug::print_boolean("Player Jetpack [J]", jetpack);
+		gse::debug::print_value("Player Boost Fuel", static_cast<float>(m_boost_fuel), "");
 
 		ImGui::Text("Player Collision Information");
 
-		const auto [colliding, collisionNormal, penetration, collisionPoint] = getComponent<Engine::Physics::CollisionComponent>()->boundingBoxes[0].collisionInformation;
-		Engine::Debug::printBoolean("Player Colliding", colliding);
-		Engine::Debug::printVector("Collision Normal", collisionNormal.asDefaultUnits(), "");
-		Engine::Debug::printValue("Penetration", penetration.as<Engine::Meters>(), Engine::Meters::UnitName);
-		Engine::Debug::printVector("Collision Point", collisionPoint.as<Engine::Meters>(), Engine::Meters::UnitName);
-		Engine::Debug::printBoolean("Player Airborne", getComponent<Engine::Physics::MotionComponent>()->airborne);
-		Engine::Debug::printBoolean("Player Moving", getComponent<Engine::Physics::MotionComponent>()->moving);
+		const auto [colliding, collisionNormal, penetration, collisionPoint] = get_component<gse::physics::collision_component>()->bounding_boxes[0].collision_information;
+		gse::debug::print_boolean("Player Colliding", colliding);
+		gse::debug::print_vector("Collision Normal", collisionNormal.as_default_units(), "");
+		gse::debug::print_value("Penetration", penetration.as<gse::units::meters>(), gse::units::meters::unit_name);
+		gse::debug::print_vector("Collision Point", collisionPoint.as<gse::units::meters>(), gse::units::meters::unit_name);
+		gse::debug::print_boolean("Player Airborne", get_component<gse::physics::motion_component>()->airborne);
+		gse::debug::print_boolean("Player Moving", get_component<gse::physics::motion_component>()->moving);
 		ImGui::End();
 		});
 }

@@ -10,169 +10,171 @@
 #include "Physics/Surfaces.h"
 #include "Physics/Vector/Math.h"
 
-auto gravity = Engine::Vec3<Engine::MetersPerSecondSquared>(0.f, -9.8f, 0.f);
+namespace {
+	auto g_gravity = gse::vec3<gse::units::meters_per_second_squared>(0.f, -9.8f, 0.f);
+}
 
-void Engine::Physics::applyForce(MotionComponent* component, const Vec3<Force>& force) {
-	if (isZero(force)) {
+void gse::physics::apply_force(motion_component* component, const vec3<force>& force) {
+	if (is_zero(force)) {
 		return;
 	}
 
-	const auto acceleration = Engine::Vec3<MetersPerSecondSquared>(
-		force.as<Newtons>() /
-		std::max(component->mass.as<Kilograms>(), 0.0001f)
+	const auto acceleration = gse::vec3<units::meters_per_second_squared>(
+		force.as<units::newtons>() /
+		std::max(component->mass.as<units::kilograms>(), 0.0001f)
 	);
 
-	component->acceleration += acceleration;
+	component->current_acceleration += acceleration;
 }
 
-void Engine::Physics::applyImpulse(MotionComponent* component, const Vec3<Force>& force, const Time& duration) {
-	if (isZero(force)) {
+void gse::physics::apply_impulse(motion_component* component, const vec3<force>& force, const time& duration) {
+	if (is_zero(force)) {
 		return;
 	}
 
-	const auto deltaVelocity = Engine::Vec3<MetersPerSecond>(
-		force.as<Newtons>() * duration.as<Seconds>() / std::max(component->mass.as<Kilograms>(), 0.0001f)
+	const auto delta_velocity = gse::vec3<units::meters_per_second>(
+		force.as<units::newtons>() * duration.as<units::seconds>() / std::max(component->mass.as<units::kilograms>(), 0.0001f)
 	);
 
-	component->velocity += deltaVelocity;
+	component->current_velocity += delta_velocity;
 }
 
-void Engine::Physics::Group::addMotionComponent(const std::shared_ptr<MotionComponent>& object) {
-	motionComponents.push_back(object);
+void gse::physics::group::add_motion_component(const std::shared_ptr<motion_component>& object) {
+	m_motion_components.push_back(object);
 }
 
-void Engine::Physics::Group::removeMotionComponent(const std::shared_ptr<MotionComponent>& object) {
-	std::erase_if(motionComponents, [&](const std::weak_ptr<MotionComponent>& obj) {
+void gse::physics::group::remove_motion_component(const std::shared_ptr<motion_component>& object) {
+	std::erase_if(m_motion_components, [&](const std::weak_ptr<motion_component>& obj) {
 		return !obj.owner_before(object) && !object.owner_before(obj);
 		});
 }
 
-void updateGravity(Engine::Physics::MotionComponent* component) {
-	if (!component->affectedByGravity) {
+void update_gravity(gse::physics::motion_component* component) {
+	if (!component->affected_by_gravity) {
 		return;
 	}
 
 	if (component->airborne) {
-		const auto gravityForce = Engine::Vec3<Engine::Newtons>(
-			gravity.as<Engine::MetersPerSecondSquared>() *
-			component->mass.as<Engine::Kilograms>()
+		const auto gravity_force = gse::vec3<gse::units::newtons>(
+			g_gravity.as<gse::units::meters_per_second_squared>() *
+			component->mass.as<gse::units::kilograms>()
 		);
-		applyForce(component, gravityForce);
+		apply_force(component, gravity_force);
 	}
 	else {
-		component->acceleration.asDefaultUnits().y = std::max(0.f, component->acceleration.asDefaultUnits().y);
+		component->current_acceleration.as_default_units().y = std::max(0.f, component->current_acceleration.as_default_units().y);
 	}
 }
 
-void updateAirResistance(Engine::Physics::MotionComponent* component) {
-	constexpr float airDensity = 1.225f;												  // kg/m^3 (air density at sea level)
-	const Engine::Unitless dragCoefficient = component->airborne ? 0.47f : 1.05f;  // Approx for a sphere vs a box
-	constexpr float crossSectionalArea = 1.0f;											  // Example area in m^2, adjust according to the object
+void update_air_resistance(gse::physics::motion_component* component) {
+	constexpr float air_density = 1.225f;												  // kg/m^3 (air density at sea level)
+	const gse::unitless drag_coefficient = component->airborne ? 0.47f : 1.05f;			  // Approx for a sphere vs a box
+	constexpr float cross_sectional_area = 1.0f;										  // Example area in m^2, adjust according to the object
 
 	// Calculate drag force magnitude: F_d = 0.5 * C_d * rho * A * v^2, Units are in Newtons
-	const Engine::Force dragForceMagnitude = Engine::newtons(
-			0.5f * dragCoefficient.asDefaultUnit() * airDensity * crossSectionalArea * 
-			magnitude(component->velocity).as<Engine::MetersPerSecond>() *
-			magnitude(component->velocity).as<Engine::MetersPerSecond>()
+	const gse::force drag_force_magnitude = gse::newtons(
+			0.5f * drag_coefficient.as_default_unit() * air_density * cross_sectional_area * 
+			magnitude(component->current_velocity).as<gse::units::meters_per_second>() *
+			magnitude(component->current_velocity).as<gse::units::meters_per_second>()
 	);
 
-	applyForce(component, Engine::Vec3<Engine::Newtons>(-dragForceMagnitude.as<Engine::Newtons>() * normalize(component->velocity).asDefaultUnits()));
+	apply_force(component, gse::vec3<gse::units::newtons>(-drag_force_magnitude.as<gse::units::newtons>() * normalize(component->current_velocity).as_default_units()));
 }
 
-void updateFriction(Engine::Physics::MotionComponent* component, const Engine::Surfaces::SurfaceProperties& surface) {
+void update_friction(gse::physics::motion_component* component, const gse::surfaces::surface_properties& surface) {
 	if (component->airborne) {
 		return;
 	}
 
-	const Engine::Force normal = Engine::newtons(component->mass.as<Engine::Kilograms>() * magnitude(gravity).as<Engine::MetersPerSecondSquared>());
-	Engine::Force friction = normal * surface.frictionCoefficient;
+	const gse::force normal = gse::newtons(component->mass.as<gse::units::kilograms>() * magnitude(g_gravity).as<gse::units::meters_per_second_squared>());
+	gse::force friction = normal * surface.friction_coefficient;
 
-	if (component->selfControlled) {
+	if (component->self_controlled) {
 		friction *= 5.f;
 	}
 
-	const Engine::Vec3<Engine::Newtons> frictionForce(-friction.as<Engine::Newtons>() * normalize(component->velocity).as<Engine::MetersPerSecond>());
+	const gse::vec3<gse::units::newtons> friction_force(-friction.as<gse::units::newtons>() * normalize(component->current_velocity).as<gse::units::meters_per_second>());
 
-	applyForce(component, frictionForce);
+	apply_force(component, friction_force);
 }
 
-void updateVelocity(Engine::Physics::MotionComponent* component) {
-	const float deltaTime = Engine::MainClock::getDeltaTime().as<Engine::Seconds>();
+void update_velocity(gse::physics::motion_component* component) {
+	const float delta_time = gse::main_clock::get_delta_time().as<gse::units::seconds>();
 
-	if (component->selfControlled && !component->airborne) {
-		const Engine::Unitless dampingFactor = 5.0f; 
-		component->velocity *= std::max(0.f, 1.0f - dampingFactor.asDefaultUnit() * deltaTime);
+	if (component->self_controlled && !component->airborne) {
+		const gse::unitless damping_factor = 5.0f; 
+		component->current_velocity *= std::max(0.f, 1.0f - damping_factor.as_default_unit() * delta_time);
 	}
 
-	// Update velocity using the kinematic equation: v = v0 + at
-	component->velocity += Engine::Vec3<Engine::MetersPerSecond>(component->acceleration.as<Engine::MetersPerSecondSquared>() * deltaTime);
+	// Update current_velocity using the kinematic equation: v = v0 + at
+	component->current_velocity += gse::vec3<gse::units::meters_per_second>(component->current_acceleration.as<gse::units::meters_per_second_squared>() * delta_time);
 
-	if (magnitude(component->velocity) > component->maxSpeed && !component->airborne) {
-		component->velocity = Engine::Vec3<Engine::MetersPerSecond>(
-			normalize(component->velocity) * component->maxSpeed.as<Engine::MetersPerSecond>()
+	if (magnitude(component->current_velocity) > component->max_speed && !component->airborne) {
+		component->current_velocity = gse::vec3<gse::units::meters_per_second>(
+			normalize(component->current_velocity) * component->max_speed.as<gse::units::meters_per_second>()
 		);
 	}
 
-	component->acceleration = { 0.f, 0.f, 0.f };
+	component->current_acceleration = { 0.f, 0.f, 0.f };
 }
 
-void updatePosition(Engine::Physics::MotionComponent* component) {
-	const float deltaTime = Engine::MainClock::getDeltaTime().as<Engine::Seconds>();
+void update_position(gse::physics::motion_component* component) {
+	const float delta_time = gse::main_clock::get_delta_time().as<gse::units::seconds>();
 
 	// Update position using the kinematic equation: x = x0 + v0t + 0.5at^2
-	component->position += Engine::Vec3<Engine::Meters>(
-		component->velocity.as<Engine::MetersPerSecond>() * deltaTime + 0.5f * 
-		component->acceleration.as<Engine::MetersPerSecondSquared>() * deltaTime * deltaTime
+	component->current_position += gse::vec3<gse::units::meters>(
+		component->current_velocity.as<gse::units::meters_per_second>() * delta_time + 0.5f * 
+		component->current_acceleration.as<gse::units::meters_per_second_squared>() * delta_time * delta_time
 	);
 }
 
-void Engine::Physics::updateEntity(MotionComponent* component) {
-	if (isZero(component->velocity) && isZero(component->acceleration)) {
+void gse::physics::update_entity(motion_component* component) {
+	if (is_zero(component->current_velocity) && is_zero(component->current_acceleration)) {
 		component->moving = false;
 	}
 	else {
 		component->moving = true;
 	}
 
-	updateGravity(component);
-	updateAirResistance(component);
-	updateVelocity(component);
-	updatePosition(component);
+	update_gravity(component);
+	update_air_resistance(component);
+	update_velocity(component);
+	update_position(component);
 }
 
-void Engine::Physics::Group::update() {
-	std::erase_if(motionComponents, [](const std::weak_ptr<MotionComponent>& obj) {
+void gse::physics::group::update() {
+	std::erase_if(m_motion_components, [](const std::weak_ptr<motion_component>& obj) {
 		return obj.expired();
 	});
 
-	for (auto& motionComponent : motionComponents) {
-		if (const auto motionComponentPtr = motionComponent.lock()) {
-			updateEntity(motionComponentPtr.get());
+	for (auto& motion_component : m_motion_components) {
+		if (const auto motion_component_ptr = motion_component.lock()) {
+			update_entity(motion_component_ptr.get());
 		}
 	}
 }
 
-void Engine::Physics::resolveCollision(BoundingBox& dynamicBoundingBox, const std::weak_ptr<MotionComponent>& dynamicMotionComponent, const CollisionInformation& collisionInfo) {
-	if (const auto dynamicMotionComponentPtr = dynamicMotionComponent.lock()) {
-		float& vel = dynamicMotionComponentPtr->velocity.asDefaultUnits()[collisionInfo.getAxis()];
-		float& acc = dynamicMotionComponentPtr->acceleration.asDefaultUnits()[collisionInfo.getAxis()];
+void gse::physics::resolve_collision(bounding_box& dynamic_bounding_box, const std::weak_ptr<motion_component>& dynamic_motion_component, const collision_information& collision_info) {
+	if (const auto dynamic_motion_component_ptr = dynamic_motion_component.lock()) {
+		float& vel = dynamic_motion_component_ptr->current_velocity.as_default_units()[collision_info.get_axis()];
+		float& acc = dynamic_motion_component_ptr->current_acceleration.as_default_units()[collision_info.get_axis()];
 
-		// Project velocity and acceleration onto collision normal to check movement toward the surface
-		const float velocityIntoSurface = dot(dynamicMotionComponentPtr->velocity, collisionInfo.collisionNormal);
-		const float accelerationIntoSurface = dot(dynamicMotionComponentPtr->acceleration, collisionInfo.collisionNormal);
+		// Project current_velocity and acceleration onto collision normal to check movement toward the surface
+		const float velocity_into_surface = dot(dynamic_motion_component_ptr->current_velocity, collision_info.collision_normal);
+		const float acceleration_into_surface = dot(dynamic_motion_component_ptr->current_acceleration, collision_info.collision_normal);
 
-		// Set velocity and acceleration to zero along the collision normal if moving into the surface
-		if (velocityIntoSurface < 0) {
+		// Set current_velocity and acceleration to zero along the collision normal if moving into the surface
+		if (velocity_into_surface < 0) {
 			vel = 0;
 		}
-		if (accelerationIntoSurface < 0) {
+		if (acceleration_into_surface < 0) {
 			acc = 0;
 		}
 
 		// Special case for ground collision (assumed Y-axis collision)
-		if (collisionInfo.getAxis() == 1 && collisionInfo.collisionNormal.asDefaultUnits().y > 0) {
-			dynamicMotionComponentPtr->airborne = false;
-			updateFriction(dynamicMotionComponentPtr.get(), getSurfaceProperties(Surfaces::SurfaceType::Concrete));
+		if (collision_info.get_axis() == 1 && collision_info.collision_normal.as_default_units().y > 0) {
+			dynamic_motion_component_ptr->airborne = false;
+			update_friction(dynamic_motion_component_ptr.get(), get_surface_properties(surfaces::surface_type::concrete));
 		}
 	}
 }
