@@ -18,12 +18,12 @@ namespace gse::surfaces {
 
 	struct surface_properties {
 		surface_properties(const float fc, const float r, const time id, const float t)
-			: m_friction_coefficient(fc), m_restitution(r), m_inverse_damping(id), m_traction(t) {}
+			: friction_coefficient(fc), restitution(r), inverse_damping(id), traction(t) {}
 
-		unitless m_friction_coefficient;	 // Surface friction (controls sliding)
-		unitless m_restitution;			     // Bounce factor
-		time m_inverse_damping;			     // Time it takes for an object to stop moving on the surface
-		unitless m_traction;				 // Grip, useful for vehicle or character movement
+		unitless friction_coefficient;		 // Surface friction (controls sliding)
+		unitless restitution;			     // Bounce factor
+		time inverse_damping;			     // Time it takes for an object to stop moving on the surface
+		unitless traction;					 // Grip, useful for vehicle or character movement
 	};
 
 	surface_properties get_surface_properties(const surface_type& surface_type);

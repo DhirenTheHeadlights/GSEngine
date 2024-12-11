@@ -1,16 +1,16 @@
 #include "Core/Scene.h"
 
-template <typename... ComponentTypes, typename Action>
-void handleComponent(const std::shared_ptr<gse::object>& object, Action action) {
-	if ((object->getComponent<ComponentTypes>() && ...)) { // Namespace
-		action(object->getComponent<ComponentTypes>()...);
+template <typename... component_types, typename action_type>
+void handle_component(const std::shared_ptr<gse::object>& object, action_type action) {
+	if ((object->get_component<component_types>() && ...)) { // Namespace
+		action(object->get_component<component_types>()...);
 	}
 }
 
-template <typename... ComponentTypes, typename SystemType, typename Action>
-void handleComponent(const std::shared_ptr<gse::object>& object, SystemType& system, Action action) {
-	if ((object->getComponent<ComponentTypes>() && ...)) { // Class
-		(system.*action)(object->getComponent<ComponentTypes>()...);
+template <typename... component_types, typename system_type, typename action_type>
+void handle_component(const std::shared_ptr<gse::object>& object, system_type& system, action_type action) {
+	if ((object->get_component<component_types>() && ...)) { // Class
+		(system.*action)(object->get_component<component_types>()...);
 	}
 }
 
@@ -21,31 +21,31 @@ void gse::scene::add_object(const std::weak_ptr<object>& object) {
 	///	to be initialized after all components have been added (when the scene is activated)
 }
 
-void gse::scene::remove_object(const std::weak_ptr<object>& object) {
-	if (const auto objectPtr = object.lock()) {
-		if (objectPtr->get_scene_id().lock() == m_id) {
-			handleComponent<physics::motion_component>(objectPtr, m_physics_system, &physics::group::remove_motion_component);
-			handleComponent<physics::collision_component>(objectPtr, m_collision_group, &broad_phase_collision::group::remove_object);
-			handleComponent<render_component>(objectPtr, m_render_group, &renderer::group::remove_render_component);
-			handleComponent<light_source_component>(objectPtr, m_render_group, &renderer::group::remove_light_source_component);
+void gse::scene::remove_object(const std::weak_ptr<object>& object_to_remove) {
+	if (const auto object_ptr = object_to_remove.lock()) {
+		if (object_ptr->get_scene_id().lock() == m_id) {
+			handle_component<physics::motion_component>(object_ptr, m_physics_system, &physics::group::remove_motion_component);
+			handle_component<physics::collision_component>(object_ptr, m_collision_group, &broad_phase_collision::group::remove_object);
+			handle_component<render_component>(object_ptr, m_render_group, &renderer::group::remove_render_component);
+			handle_component<light_source_component>(object_ptr, m_render_group, &renderer::group::remove_light_source_component);
 		}
 	}
 
-	std::erase_if(m_objects, [&object](const std::weak_ptr<object>& requiredObject) {
-		return requiredObject.lock() == object.lock();
+	std::erase_if(m_objects, [&object_to_remove](const std::weak_ptr<object>& required_object) {
+		return required_object.lock() == object_to_remove.lock();
 		});
 }
 
 void gse::scene::initialize() {
 	for (auto& object : m_objects) {
-		if (const auto objectPtr = object.lock()) {
-			objectPtr->process_initialize();
+		if (const auto object_ptr = object.lock()) {
+			object_ptr->process_initialize();
 
-			handleComponent<physics::motion_component>(objectPtr, m_physics_system, &physics::group::add_motion_component);
-			handleComponent<physics::collision_component, physics::motion_component>(objectPtr, m_collision_group, &broad_phase_collision::group::add_dynamic_object);
-			handleComponent<physics::collision_component>(objectPtr, m_collision_group, &broad_phase_collision::group::add_object);
-			handleComponent<render_component>(objectPtr, m_render_group, &renderer::group::add_render_component);
-			handleComponent<light_source_component>(objectPtr, m_render_group, &renderer::group::add_light_source_component);
+			handle_component<physics::motion_component>(object_ptr, m_physics_system, &physics::group::add_motion_component);
+			handle_component<physics::collision_component, physics::motion_component>(object_ptr, m_collision_group, &broad_phase_collision::group::add_dynamic_object);
+			handle_component<physics::collision_component>(object_ptr, m_collision_group, &broad_phase_collision::group::add_object);
+			handle_component<render_component>(object_ptr, m_render_group, &renderer::group::add_render_component);
+			handle_component<light_source_component>(object_ptr, m_render_group, &renderer::group::add_light_source_component);
 		}
 	}
 }
@@ -55,8 +55,8 @@ void gse::scene::update() {
 	broad_phase_collision::update(m_collision_group);
 
 	for (auto& object : m_objects) {
-		if (const auto objectPtr = object.lock()) {
-			objectPtr->process_update();
+		if (const auto object_ptr = object.lock()) {
+			object_ptr->process_update();
 		}
 	}
 }
@@ -65,8 +65,8 @@ void gse::scene::render() {
 	render_objects(m_render_group);
 
 	for (auto& object : m_objects) {
-		if (const auto objectPtr = object.lock()) {
-			objectPtr->process_render();
+		if (const auto object_ptr = object.lock()) {
+			object_ptr->process_render();
 		}
 	}
 }

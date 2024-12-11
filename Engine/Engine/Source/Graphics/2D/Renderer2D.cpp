@@ -8,8 +8,8 @@
 #include "Graphics/3D/Renderer3D.h"
 
 namespace {
-	GLuint vao, vbo, ebo;
-	gse::shader shader(ENGINE_RESOURCES_PATH "Shaders/ui_2d_shader.vert", ENGINE_RESOURCES_PATH "Shaders/ui_2d_shader.frag");
+	GLuint g_vao, g_vbo, g_ebo;
+	gse::shader g_shader(ENGINE_RESOURCES_PATH "Shaders/ui_2d_shader.vert", ENGINE_RESOURCES_PATH "Shaders/ui_2d_shader.frag");
 }
 
 void gse::renderer::initialize2d() {
@@ -30,16 +30,16 @@ void gse::renderer::initialize2d() {
         2, 3, 0   // Second triangle
     };
 
-    glGenVertexArrays(1, &vao);
-    glGenBuffers(1, &vbo);
-    glGenBuffers(1, &ebo);
+    glGenVertexArrays(1, &g_vao);
+    glGenBuffers(1, &g_vbo);
+    glGenBuffers(1, &g_ebo);
 
-    glBindVertexArray(vao);
+    glBindVertexArray(g_vao);
 
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, g_vbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g_ebo);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
 
     glEnableVertexAttribArray(0);
@@ -52,8 +52,8 @@ void gse::renderer::initialize2d() {
 }
 
 void gse::renderer::begin_frame() {
-	shader.use();
-    shader.setMat4("projection", get_camera().get_projection_matrix());
+	g_shader.use();
+    g_shader.set_mat4("projection", get_camera().get_projection_matrix());
 }
 
 void gse::renderer::end_frame() {
@@ -64,19 +64,19 @@ namespace {
     void render_quad(const glm::vec2& position, const glm::vec2& size, const glm::vec4* color, const gse::texture* texture) {
         glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(position, 0.0f));
         model = glm::scale(model, glm::vec3(size, 1.0f));
-        shader.set_mat4("uModel", model);
+        g_shader.set_mat4("uModel", model);
 
         if (texture) {
-            shader.set_int("uUseColor", 0);
+            g_shader.set_int("uUseColor", 0);
             texture->bind();
         }
         else if (color) {
-            shader.set_int("uUseColor", 1);
+            g_shader.set_int("uUseColor", 1);
             //shader.setVec4("uColor", *color);
         }
 
         // Render the quad
-        glBindVertexArray(vao);
+        glBindVertexArray(g_vao);
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr);
         glBindVertexArray(0);
 
@@ -95,7 +95,7 @@ void gse::renderer::draw_quad(const glm::vec2& position, const glm::vec2& size, 
 }
 
 void gse::renderer::shutdown() {
-    glDeleteVertexArrays(1, &vao);
-    glDeleteBuffers(1, &vbo);
-    glDeleteBuffers(1, &ebo);
+    glDeleteVertexArrays(1, &g_vao);
+    glDeleteBuffers(1, &g_vbo);
+    glDeleteBuffers(1, &g_ebo);
 }

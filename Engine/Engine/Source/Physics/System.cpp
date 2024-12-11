@@ -85,7 +85,7 @@ void updateFriction(gse::physics::motion_component* component, const gse::surfac
 	}
 
 	const gse::force normal = gse::newtons(component->mass.as<gse::kilograms>() * magnitude(gravity).as<gse::meters_per_second_squared>());
-	gse::force friction = normal * surface.m_friction_coefficient;
+	gse::force friction = normal * surface.friction_coefficient;
 
 	if (component->self_controlled) {
 		friction *= 5.f;

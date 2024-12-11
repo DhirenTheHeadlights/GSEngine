@@ -19,5 +19,5 @@ namespace gse {
 	void set_imgui_enabled(bool enabled);
 	camera& get_camera();
 
-	extern scene_handler scene_handler;
+	extern scene_handler g_scene_handler;
 }

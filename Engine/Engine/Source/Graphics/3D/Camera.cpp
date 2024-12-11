@@ -4,12 +4,12 @@
 #include "Platform/GLFW/Window.h"
 
 void gse::camera::move_relative_to_origin(const vec3<>& direction, const float distance, const float delta_time) {
-	const auto normDirection = normalize(direction).as_default_units();
-	const vec3<length> cameraDirection =
-		m_right * normDirection.x +
-		m_up * normDirection.y +
-		m_front * normDirection.z;
-	m_position += cameraDirection * distance * m_movement_speed * delta_time;
+	const auto norm_direction = normalize(direction).as_default_units();
+	const vec3<length> camera_direction =
+		m_right * norm_direction.x +
+		m_up * norm_direction.y +
+		m_front * norm_direction.z;
+	m_position += camera_direction * distance * m_movement_speed * delta_time;
 }
 
 void gse::camera::process_mouse_movement(glm::vec2& offset) {
@@ -33,13 +33,13 @@ void gse::camera::update_camera_vectors() {
 }
 
 glm::mat4 gse::camera::get_view_matrix() const {
-	return lookAt(m_position.as<Meters>(), (m_position + m_front).as<Meters>(), m_up.as<Meters>());
+	return lookAt(m_position.as<units::meters>(), (m_position + m_front).as<units::meters>(), m_up.as<units::meters>());
 }
 
 glm::mat4 gse::camera::get_projection_matrix() {
-	const glm::vec2 viewPortSize = window::get_frame_buffer_size();
-	const float aspectRatio = viewPortSize.x / viewPortSize.y;
-	return glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 10000.f);
+	const glm::vec2 view_port_size = window::get_frame_buffer_size();
+	const float aspect_ratio = view_port_size.x / view_port_size.y;
+	return glm::perspective(glm::radians(45.0f), aspect_ratio, 0.1f, 10000.f);
 }
 
 gse::vec3<gse::length> gse::camera::get_position() const {
@@ -47,5 +47,5 @@ gse::vec3<gse::length> gse::camera::get_position() const {
 }
 
 gse::vec3<> gse::camera::get_camera_direction_relative_to_origin(const vec3<>& direction) const {
-	return { m_right.as<Meters>() * direction.as_default_units().x + m_up.as<Meters>() * direction.as_default_units().y + m_front.as<Meters>() * direction.as_default_units().z };
+	return { m_right.as<units::meters>() * direction.as_default_units().x + m_up.as<units::meters>() * direction.as_default_units().y + m_front.as<units::meters>() * direction.as_default_units().z };
 }

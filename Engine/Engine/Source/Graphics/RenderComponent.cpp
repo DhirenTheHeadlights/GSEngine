@@ -11,8 +11,8 @@ void gse::render_component::add_bounding_box_mesh(const std::shared_ptr<bounding
 }
 
 void gse::render_component::update_bounding_box_meshes() const {
-	for (const auto& boundingBoxMesh : m_bounding_box_meshes) {
-		boundingBoxMesh->update();
+	for (const auto& bounding_box_mesh : m_bounding_box_meshes) {
+		bounding_box_mesh->update();
 	}
 }
 
@@ -26,8 +26,8 @@ std::vector<gse::render_queue_entry> gse::render_component::get_queue_entries() 
 	}
 
 	if (m_bounding_box_meshes.empty()) return entries;
-	for (const auto& boundingBoxMesh : m_bounding_box_meshes) {
-		entries.push_back(boundingBoxMesh->get_queue_entry());
+	for (const auto& bounding_box_mesh : m_bounding_box_meshes) {
+		entries.push_back(bounding_box_mesh->get_queue_entry());
 	}
 	return entries;
 }
