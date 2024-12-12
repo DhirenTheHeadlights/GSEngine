@@ -14,5 +14,9 @@
   "Bloom": {
     "vertex": "bloom.vert",
     "fragment": "bloom.frag"
+  },
+  "HDR": {
+    "vertex": "hdr.vert",
+    "fragment": "hdr.frag"
   }
 }

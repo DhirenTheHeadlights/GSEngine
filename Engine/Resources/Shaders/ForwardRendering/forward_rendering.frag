@@ -6,6 +6,7 @@ in vec2 TexCoords;
 
 out vec4 FragColor;
 
+
 uniform sampler2D albedoSpec;
 uniform sampler2D diffuseTexture;   // Diffuse texture map
 uniform vec3 viewPos;

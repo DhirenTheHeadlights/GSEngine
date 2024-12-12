@@ -6,9 +6,16 @@ in vec2 TexCoords;
 uniform sampler2D scene;
 uniform sampler2D bloomBlur;
 uniform float exposure;
+uniform bool bloom;
 
 void main()
-{             
+{         
+    if(!bloom)
+	{
+		FragColor = texture(scene, TexCoords);
+		return;
+	}
+
     const float gamma = 2.2;
     vec3 hdrColor = texture(scene, TexCoords).rgb;      
     vec3 bloomColor = texture(bloomBlur, TexCoords).rgb;

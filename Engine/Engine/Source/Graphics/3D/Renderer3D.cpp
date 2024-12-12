@@ -141,6 +141,8 @@ void gse::renderer::initialize3d() {
 	const GLsizei screen_width = window::get_frame_buffer_size().x;
 	const GLsizei screen_height = window::get_frame_buffer_size().y;
 
+
+
 	glGenFramebuffers(1, &g_g_buffer);
 	glBindFramebuffer(GL_FRAMEBUFFER, g_g_buffer);
 
@@ -172,8 +174,25 @@ void gse::renderer::initialize3d() {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, g_g_albedo_spec, 0);
 
-	constexpr GLuint attachments[3] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
-	glDrawBuffers(3, attachments);
+	// Create HDR frambuffer for HDR & pre-bloom process
+	glGenFramebuffers(1, &hdr_fbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, hdr_fbo);
+
+	glGenTextures(2, color_buffers);
+	for (GLuint i = 0; i < 2; i++)
+	{
+		glBindTexture(GL_TEXTURE_2D, color_buffers[i]);
+		glTexImage2D(
+			GL_TEXTURE_2D, 0, GL_RGBA16F, screen_width, screen_height, 0, GL_RGBA, GL_FLOAT, NULL
+		);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glFramebufferTexture2D(
+			GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT3 + i, GL_TEXTURE_2D, color_buffers[i], 0
+		);
+	}
 
 	GLuint rbo_depth;
 	glGenRenderbuffers(1, &rbo_depth);
@@ -181,7 +200,10 @@ void gse::renderer::initialize3d() {
 	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, screen_width, screen_height);
 	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rbo_depth);
 
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	constexpr GLuint attachments[5] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3, GL_COLOR_ATTACHMENT4 };
+	glDrawBuffers(5, attachments);
+	//constexpr GLuint attachments[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+	//glDrawBuffers(2, attachments);
 
 	// Set up the UBO for light space matrices
 	glGenBuffers(1, &g_light_space_block_ubo);
@@ -197,42 +219,7 @@ void gse::renderer::initialize3d() {
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, g_ssbo_lights);
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
-	const auto& lighting_shader = g_deferred_rendering_shaders["LightingPass"];
-
-	lighting_shader.use();
-	lighting_shader.set_int("gPosition", 0);
-	lighting_shader.set_int("gNormal", 1);
-	lighting_shader.set_int("gAlbedoSpec", 2);
-	lighting_shader.set_bool("depthMapDebug", g_depth_map_debug);
-
-	g_reflection_cube_map.create(1024);
-
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	// Create HDR frambuffer for bloom rendering
-	glGenFramebuffers(1, &hdr_fbo);
-	glBindFramebuffer(GL_FRAMEBUFFER, hdr_fbo);
-
-	glGenTextures(2, color_buffers);
-	for (GLuint i = 0; i < 2; i++)
-	{
-		glBindTexture(GL_TEXTURE_2D, color_buffers[i]);
-		glTexImage2D(
-			GL_TEXTURE_2D, 0, GL_RGBA16F, screen_width, screen_height, 0, GL_RGBA, GL_FLOAT, NULL
-		);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-		// attach texture to framebuffer
-		glFramebufferTexture2D(
-			GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT3 + i, GL_TEXTURE_2D, color_buffers[i], 0
-		);
-	}
-
-	GLuint bloom_attachments[2] = { GL_COLOR_ATTACHMENT3, GL_COLOR_ATTACHMENT4 };
-	glDrawBuffers(2, bloom_attachments);
-
-
+	// Create blur framebuffer for bloom rendering
 	glGenFramebuffers(2, blur_fbo);
 	glGenTextures(2, blur_buffer);
 	for (unsigned int i = 0; i < 2; i++)
@@ -251,6 +238,24 @@ void gse::renderer::initialize3d() {
 		);
 	}
 
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	const auto& lighting_shader = g_deferred_rendering_shaders["LightingPass"];
+
+
+	lighting_shader.use();
+	lighting_shader.set_int("gPosition", 0);
+	lighting_shader.set_int("gNormal", 1);
+	lighting_shader.set_int("gAlbedoSpec", 2);
+	lighting_shader.set_bool("depthMapDebug", g_depth_map_debug);
+	lighting_shader.set_int("diffuseTexture", 0);
+
+	g_reflection_cube_map.create(1024);
+
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	
+	
+
 	//Configure Blur Shader
 	const auto& blur_shader = g_deferred_rendering_shaders["Blur"];
 	blur_shader.use();
@@ -261,10 +266,8 @@ void gse::renderer::initialize3d() {
 	bloom_shader.use();
 	bloom_shader.set_int("scene", 0);
 	bloom_shader.set_int("bloomBlur", 1);
-
-	
-
 }
+	
 
 namespace {
 	void render_object(const gse::render_queue_entry& entry, const glm::mat4& view_matrix, const glm::mat4& projection_matrix) {
@@ -368,6 +371,8 @@ namespace {
 			return;
 		}
 
+
+
 		lighting_shader.use();
 
 
@@ -388,9 +393,9 @@ namespace {
 
 		std::vector<GLint> shadow_map_units(depth_map_fbos.size());
 		for (size_t i = 0; i < depth_map_fbos.size(); ++i) {
-			glActiveTexture(GL_TEXTURE3 + i);
+			glActiveTexture(GL_TEXTURE5 + i);
 			glBindTexture(GL_TEXTURE_2D, depth_map_fbos[i]);
-			shadow_map_units[i] = 3 + i;
+			shadow_map_units[i] = 5 + i;
 		}
 
 		lighting_shader.set_int_array("shadowMaps", shadow_map_units.data(), static_cast<unsigned>(shadow_map_units.size()));
@@ -404,14 +409,13 @@ namespace {
 		glActiveTexture(GL_TEXTURE2);
 		glBindTexture(GL_TEXTURE_2D, g_g_albedo_spec);
 
-		constexpr GLuint binding_unit = 5;
+
+		constexpr GLuint binding_unit = 7;
 		g_reflection_cube_map.bind(binding_unit);
 		lighting_shader.set_int("environmentMap", binding_unit);
-
 		// Render a full-screen quad to process lighting
 		static unsigned int quad_vao = 0;
 		static unsigned int quad_vbo = 0;
-
 		render_quad(quad_vao, quad_vbo);
 
 		// Blurring pass for bloom effect
@@ -431,15 +435,17 @@ namespace {
 			render_quad(quad_vao, quad_vbo);
 
 			horizontal = !horizontal;
-			if (first_iteration) first_iteration = false;
+			first_iteration = false;
 		}
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		bloom_shader.use();
-		glActiveTexture(GL_TEXTURE0);
+		glActiveTexture(GL_TEXTURE3);
 		glBindTexture(GL_TEXTURE_2D, color_buffers[0]);
+		glActiveTexture(GL_TEXTURE4);
+		glBindTexture(GL_TEXTURE_2D, blur_buffer[!horizontal]);
 		bloom_shader.set_int("bloom", bloom);
 		bloom_shader.set_float("exposure", hdr_exposure);
 		render_quad(quad_vao, quad_vbo);
