@@ -227,7 +227,7 @@ namespace {
 		forward_rendering_shader.set_mat4("model", entry.model_matrix);
 		forward_rendering_shader.set_mat4("view", view_matrix);
 		forward_rendering_shader.set_mat4("projection", projection_matrix);
-		forward_rendering_shader.set_vec3("viewPos", glm::vec3(0.f));
+		forward_rendering_shader.set_vec3("viewPos", g_camera.get_position().as<gse::units::meters>());
 
 		if (entry.texture_id != 0) {
 			glActiveTexture(GL_TEXTURE0);
