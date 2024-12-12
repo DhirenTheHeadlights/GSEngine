@@ -134,12 +134,12 @@ void main() {
         }
     }
 
-//    vec3 reflectDir = reflect(-viewDir, Normal);
-//    vec3 reflectionColor = texture(environmentMap, reflectDir).rgb;
-//    float reflectivity = 0.001;
-//    float fresnel = pow(1.0 - max(dot(viewDir, Normal), 0.0), 5.0);
-//    reflectivity *= fresnel;
-//    resultColor = mix(resultColor, reflectionColor, reflectivity);
+    vec3 reflectDir = reflect(-viewDir, Normal);
+    vec3 reflectionColor = texture(environmentMap, reflectDir).rgb;
+    float reflectivity = 0.001;
+    float fresnel = pow(1.0 - max(dot(viewDir, Normal), 0.0), 5.0);
+    reflectivity *= fresnel;
+    resultColor = mix(resultColor, reflectionColor, reflectivity);
 
     FragColor = vec4(resultColor, 1.0);
 
