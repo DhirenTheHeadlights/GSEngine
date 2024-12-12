@@ -424,6 +424,7 @@ namespace {
 		lighting_shader.set_int_array("shadowMaps", shadow_map_units.data(), static_cast<unsigned>(shadow_map_units.size()));
 		lighting_shader.set_mat4_array("lightSpaceMatrices", light_space_matrices.data(), static_cast<unsigned>(light_space_matrices.size()));
 		lighting_shader.set_bool("brightness_extraction_debug", brightness_extraction_debug);
+		lighting_shader.set_bool("depthMapDebug", g_depth_map_debug);
 
 		// Pass other G-buffer textures
 		glActiveTexture(GL_TEXTURE0);
