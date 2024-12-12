@@ -5,9 +5,9 @@
 namespace gse {
 	class SpotLight : public light {
 	public:
-		SpotLight(const vec3<length>& position, const vec3<>& direction, const vec3<>& color, const unitless& intensity, const unitless& constant, const unitless& linear, const unitless& quadratic, const angle& cutOff, const angle& outerCutOff, const unitless& ambientStrength)
+		SpotLight(const vec3<>& color, const unitless& intensity, const vec3<length>& position, const vec3<>& direction, const unitless& constant, const unitless& linear, const unitless& quadratic, const angle& cut_off, const angle& outer_cut_off, const unitless& ambient_strength)
 			: light(color, intensity, light_type::spot), m_constant(constant), m_linear(linear), m_quadratic(quadratic),
-			  m_cut_off(cutOff), m_outer_cut_off(outerCutOff), m_position(position), m_direction(direction), m_ambient_strength(ambientStrength) {}
+			  m_cut_off(cut_off), m_outer_cut_off(outer_cut_off), m_position(position), m_direction(direction), m_ambient_strength(ambient_strength) {}
 
 		void show_debug_menu(const std::shared_ptr<id>& light_id) override {
 			debug::add_imgui_callback([this, light_id] {
@@ -21,8 +21,8 @@ namespace gse {
 				debug::unit_slider("Ambient Strength", m_ambient_strength, unitless(0.0f), unitless(1.0f));
 				ImGui::SliderFloat3("Direction", &m_direction.as_default_units().x, -1.0f, 1.0f);
 				ImGui::SliderFloat3("Position", &m_position.as_default_units().x, -500.0f, 500.0f);
-				debug::unit_slider<units::meters>("Near Plane", m_near_plane, meters(0.1f), meters(10.0f));
-				debug::unit_slider<units::meters>("Far Plane", m_far_plane, meters(10.0f), meters(1000.0f));
+				debug::unit_slider<units::meters>("Near Plane", m_near_plane, meters(0.1f), meters(100.0f));
+				debug::unit_slider<units::meters>("Far Plane", m_far_plane, meters(100.0f), meters(1000.0f));
 				ImGui::End();
 				});
 		}

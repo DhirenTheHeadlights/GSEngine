@@ -1,5 +1,7 @@
 #include "Graphics/3D/Mesh.h"
 
+#include "glm/ext/matrix_transform.hpp"
+
 gse::mesh::mesh() {
 	glGenVertexArrays(1, &m_vao);
 	glGenBuffers(1, &m_vbo);
@@ -45,6 +47,10 @@ gse::mesh& gse::mesh::operator=(mesh&& other) noexcept {
 }
 
 GLuint gse::mesh::get_vao() const { return m_vao; }
+
+void gse::mesh::set_position(const vec3<length>& new_position) {
+	m_model_matrix = translate(glm::mat4(1.0f), new_position.as<units::meters>());
+}
 
 void gse::mesh::set_up_mesh() {
 	glGenVertexArrays(1, &m_vao);

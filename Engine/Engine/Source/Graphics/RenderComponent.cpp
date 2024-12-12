@@ -36,3 +36,9 @@ void gse::render_component::set_render(const bool render, const bool render_boun
 	this->m_render = render;
 	this->m_render_bounding_boxes = render_bounding_boxes;
 }
+
+void gse::render_component::set_mesh_positions(const vec3<length>& position) const {
+	for (const auto& mesh : m_meshes) {
+		mesh->set_position(position);
+	}
+}

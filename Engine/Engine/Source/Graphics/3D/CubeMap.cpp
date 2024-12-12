@@ -6,6 +6,7 @@
 
 #include "glm/ext/matrix_clip_space.hpp"
 #include "glm/ext/matrix_transform.hpp"
+#include "Platform/GLFW/Window.h"
 
 gse::cube_map::~cube_map() {
 	glDeleteTextures(1, &m_texture_id);
@@ -39,6 +40,7 @@ void gse::cube_map::create(const std::vector<std::string>& faces) {
 
 void gse::cube_map::create(const int resolution, const bool depth_only) {
     this->m_resolution = resolution;
+	this->m_depth_only = depth_only;
 
     glGenTextures(1, &m_texture_id);
     glBindTexture(GL_TEXTURE_CUBE_MAP, m_texture_id);
@@ -83,7 +85,6 @@ void gse::cube_map::bind(const GLuint unit) const {
 void gse::cube_map::update(const glm::vec3& position, const glm::mat4& projection_matrix, const std::function<void(const glm::mat4&, const glm::mat4&)>& render_function) const {
     glBindFramebuffer(GL_FRAMEBUFFER, m_frame_buffer_id);
     glViewport(0, 0, m_resolution, m_resolution);
-    glDrawBuffer(GL_COLOR_ATTACHMENT0);
 
     const std::vector<glm::mat4> view_matrices = get_view_matrices(position);
 
@@ -95,6 +96,7 @@ void gse::cube_map::update(const glm::vec3& position, const glm::mat4& projectio
             glClear(GL_DEPTH_BUFFER_BIT);
         }
         else {
+            glDrawBuffer(GL_COLOR_ATTACHMENT0);
             glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, m_texture_id, 0);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         }
@@ -103,6 +105,7 @@ void gse::cube_map::update(const glm::vec3& position, const glm::mat4& projectio
     }
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glViewport(0, 0, window::get_frame_buffer_size().x, window::get_frame_buffer_size().y);
 }
 
 std::vector<glm::mat4> gse::cube_map::get_view_matrices(const glm::vec3& position) {

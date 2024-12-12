@@ -52,34 +52,32 @@ void gse::renderer::group::add_render_component(const std::shared_ptr<render_com
 void gse::renderer::group::add_light_source_component(const std::shared_ptr<light_source_component>& new_light_source_component) {
 	m_light_source_components.push_back(new_light_source_component);
 
-	if (const auto light = std::dynamic_pointer_cast<point_light>(new_light_source_component); light) {
-		light->get_shadow_map().create(static_cast<int>((g_shadow_width + g_shadow_height) / 2.f), true);
+	for (const auto& light : new_light_source_component->get_lights()) {
+		if (const auto point_light_ptr = std::dynamic_pointer_cast<point_light>(light); point_light_ptr) {
+			point_light_ptr->get_shadow_map().create(static_cast<int>((g_shadow_width + g_shadow_height) / 2.f), true);
+		}
+		else {
+			GLuint depth_map, depth_map_fbo;
+			glGenTextures(1, &depth_map);
+			glBindTexture(GL_TEXTURE_2D, depth_map);
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, static_cast<GLsizei>(g_shadow_width), static_cast<GLsizei>(g_shadow_height), 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+			constexpr float border_color[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+			glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, border_color);
 
-		depth_maps.push_back(light->get_shadow_map().get_texture_id());
-		depth_map_fbos.push_back(light->get_shadow_map().get_frame_buffer_id());
-	}
-	else {
-		GLuint depth_map, depth_map_fbo;
-		glGenTextures(1, &depth_map);
-		glBindTexture(GL_TEXTURE_2D, depth_map);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, static_cast<GLsizei>(g_shadow_width), static_cast<GLsizei>(g_shadow_height), 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-		constexpr float border_color[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-		glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, border_color);
+			glGenFramebuffers(1, &depth_map_fbo);
+			glBindFramebuffer(GL_FRAMEBUFFER, depth_map_fbo);
+			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depth_map, 0);
+			glDrawBuffer(GL_NONE);
+			glReadBuffer(GL_NONE);
 
-		glGenFramebuffers(1, &depth_map_fbo);
-		glBindFramebuffer(GL_FRAMEBUFFER, depth_map_fbo);
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depth_map, 0);
-		glDrawBuffer(GL_NONE);
-		glReadBuffer(GL_NONE);
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-		depth_maps.push_back(depth_map);
-		depth_map_fbos.push_back(depth_map_fbo);
+			light->set_depth_map(depth_map, depth_map_fbo);
+		}
 	}
 }
 
@@ -95,15 +93,17 @@ void gse::renderer::group::remove_light_source_component(const std::shared_ptr<l
 			return !component.owner_before(light_source_component_to_remove) && !light_source_component_to_remove.owner_before(component);
 		});
 
-	if (it != m_light_source_components.end()) {
-		const size_t index = std::distance(m_light_source_components.begin(), it);
+	for (const auto& light : light_source_component_to_remove->get_lights()) {
+		if (const auto point_light_ptr = std::dynamic_pointer_cast<point_light>(light); point_light_ptr) {
+			
+		}
+		else {
+			const auto depth_map = light->get_render_queue_entry().depth_map;
+			const auto depth_map_fbo = light->get_render_queue_entry().depth_map_fbo;
 
-		glDeleteTextures(1, &depth_maps[index]);
-		glDeleteFramebuffers(1, &depth_map_fbos[index]);
-
-		depth_maps.erase(depth_maps.begin() + index);
-		depth_map_fbos.erase(depth_map_fbos.begin() + index);
-		m_light_source_components.erase(it);
+			glDeleteTextures(1, &depth_map);
+			glDeleteFramebuffers(1, &depth_map_fbo);
+		}
 	}
 }
 
@@ -262,7 +262,7 @@ namespace {
 		}
 	}
 
-	void render_lighting_pass(const gse::shader& lighting_shader, const std::vector<gse::light_shader_entry>& light_data, const std::vector<glm::mat4>& light_space_matrices, const std::vector<GLuint>& depth_map_fbos) {
+	void render_lighting_pass(const gse::shader& lighting_shader, const std::vector<gse::light_shader_entry>& light_data, const std::vector<glm::mat4>& light_space_matrices, const std::vector<GLuint>& depth_maps) {
 		if (light_data.empty()) {
 			return;
 		}
@@ -284,10 +284,10 @@ namespace {
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		glDisable(GL_DEPTH_TEST);
 
-		std::vector<GLint> shadow_map_units(depth_map_fbos.size());
-		for (size_t i = 0; i < depth_map_fbos.size(); ++i) {
+		std::vector<GLint> shadow_map_units(depth_maps.size());
+		for (size_t i = 0; i < depth_maps.size(); ++i) {
 			glActiveTexture(GL_TEXTURE3 + i);
-			glBindTexture(GL_TEXTURE_2D, depth_map_fbos[i]);
+			glBindTexture(light_data[i].light_type == static_cast<int>(gse::light_type::point) ? GL_TEXTURE_CUBE_MAP : GL_TEXTURE_2D, depth_maps[i]);
 			shadow_map_units[i] = 3 + i;
 		}
 
@@ -340,8 +340,9 @@ namespace {
 		glEnable(GL_DEPTH_TEST);  // Re-enable depth testing after the lighting pass
 	}
 
-	void render_shadow_pass(const gse::shader& shadow_shader, const std::vector<std::weak_ptr<gse::render_component>>& render_components, const glm::mat4& light_space_matrix, const GLuint depth_map_fbo) {
-		shadow_shader.set_mat4("lightSpaceMatrix", light_space_matrix);
+	void render_shadow_pass(const gse::shader& shadow_shader, const std::vector<std::weak_ptr<gse::render_component>>& render_components, const glm::mat4& light_projection, const glm::mat4& light_view, const GLuint depth_map_fbo) {
+		shadow_shader.set_mat4("light_view", light_view);
+		shadow_shader.set_mat4("light_projection", light_projection);
 
 		glViewport(0, 0, static_cast<GLsizei>(g_shadow_width), static_cast<GLsizei>(g_shadow_height)); 
 		glBindFramebuffer(GL_FRAMEBUFFER, depth_map_fbo);
@@ -382,31 +383,41 @@ namespace {
 	}
 
 
-	glm::mat4 calculate_light_space_matrix(const std::shared_ptr<gse::light>& light) {
+	glm::mat4 calculate_light_projection(const std::shared_ptr<gse::light>& light) {
 		const auto& entry = light->get_render_queue_entry();
-		const glm::vec3 light_direction = entry.shader_entry.direction;
 
-		glm::vec3 light_pos(0.0f);
 		glm::mat4 light_projection(1.0f);
 
 		if (light->get_type() == gse::light_type::directional) {
-			light_pos = -light_direction * 10.0f;
 			light_projection = glm::ortho(-10000.0f, 10000.0f, -10000.0f, 1000.0f,
 				entry.near_plane.as<gse::units::meters>(), entry.far_plane.as<gse::units::meters>());
 		}
 		else if (light->get_type() == gse::light_type::spot) {
-			light_pos = entry.shader_entry.position;
 			const float cutoff = entry.shader_entry.cut_off;
 			light_projection = glm::perspective(cutoff, 1.0f, entry.near_plane.as<gse::units::meters>(), entry.far_plane.as<gse::units::meters>());
 		}
 
-		const glm::mat4 light_view = lookAt(
+		return light_projection;
+	}
+
+	glm::mat4 calculate_light_view(const std::shared_ptr<gse::light>& light) {
+		const auto& entry = light->get_render_queue_entry();
+		const glm::vec3 light_direction = entry.shader_entry.direction;
+
+		glm::vec3 light_pos(0.0f);
+
+		if (light->get_type() == gse::light_type::directional) {
+			light_pos = -light_direction * 10.0f;
+		}
+		else if (light->get_type() == gse::light_type::spot) {
+			light_pos = entry.shader_entry.position;
+		}
+
+		return lookAt(
 			light_pos,
 			light_pos + light_direction,
 			ensure_non_collinear_up(light_direction, glm::vec3(0.0f, 1.0f, 0.0f))
 		);
-
-		return light_projection * light_view;
 	}
 }
 
@@ -417,13 +428,17 @@ void gse::renderer::render_objects(group& group) {
 	g_camera.update_camera_vectors();
 	if (!window::is_mouse_visible()) g_camera.process_mouse_movement(input::get_mouse().delta);
 
-	// Grab all LightRenderQueueEntries from LightSourceComponents
 	std::vector<light_shader_entry> light_data;
 	light_data.reserve(light_source_components.size());
+
+	std::vector<GLuint> depth_maps;
+	depth_maps.reserve(light_source_components.size());
+
 	for (const auto& light_source_component : light_source_components) {
 		if (const auto light_source_component_ptr = light_source_component.lock()) {
 			for (const auto& entry : light_source_component_ptr->get_render_queue_entries()) {
 				light_data.push_back(entry.shader_entry);
+				depth_maps.push_back(entry.depth_map);
 			}
 		}
 		else {
@@ -442,7 +457,7 @@ void gse::renderer::render_objects(group& group) {
 		[&group, render_components, forward_rendering_shader](const glm::mat4& view_matrix, const glm::mat4& projection_matrix) {
 			for (const auto& render_component : render_components) {
 				if (const auto render_component_ptr = render_component.lock()) {
-					for (auto entries = render_component_ptr->get_queue_entries(); const auto & entry : entries) {
+					for (auto entries = render_component_ptr->get_queue_entries(); const auto& entry : entries) {
 						render_object_forward(forward_rendering_shader, entry, view_matrix, projection_matrix);
 					}
 				}
@@ -459,8 +474,8 @@ void gse::renderer::render_objects(group& group) {
 	const auto& shadow_shader = g_deferred_rendering_shaders["ShadowPass"];
 	shadow_shader.use();
 
-	for (size_t i = 0; i < light_source_components.size(); ++i) {
-		for (const auto& light : light_source_components[i].lock()->get_lights()) {
+	for (const auto& light_source_component : light_source_components) {
+		for (const auto& light : light_source_component.lock()->get_lights()) {
 			if (const auto point_light_ptr = std::dynamic_pointer_cast<point_light>(light); point_light_ptr) {
 				const auto light_pos = point_light_ptr->get_render_queue_entry().shader_entry.position;
 
@@ -483,8 +498,10 @@ void gse::renderer::render_objects(group& group) {
 					});
 			}
 			else {
-				light_space_matrices.push_back(calculate_light_space_matrix(light));
-				render_shadow_pass(shadow_shader, render_components, light_space_matrices.back(), group.depth_map_fbos[i]);
+				auto light_projection = calculate_light_projection(light);
+				auto light_view = calculate_light_view(light);
+				light_space_matrices.push_back(light_projection * light_view);
+				render_shadow_pass(shadow_shader, render_components, light_projection, light_view, light->get_render_queue_entry().depth_map_fbo);
 			}
 		}
 	}
@@ -534,7 +551,7 @@ void gse::renderer::render_objects(group& group) {
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
 
-	render_lighting_pass(g_deferred_rendering_shaders["LightingPass"], light_data, light_space_matrices, group.depth_maps);
+	render_lighting_pass(g_deferred_rendering_shaders["LightingPass"], light_data, light_space_matrices, depth_maps);
 }
 
 gse::camera& gse::renderer::get_camera() {

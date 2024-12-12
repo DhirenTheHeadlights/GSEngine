@@ -10,8 +10,8 @@
 namespace gse {
 	class point_light final : public light {
 	public:
-		point_light(const vec3<>& color, const unitless& intensity, const vec3<length>& position, const unitless& constant, const unitless& linear, const unitless& quadratic, const unitless& ambientStrength)
-			: light(color, intensity, light_type::point), m_position(position), m_constant(constant), m_linear(linear), m_quadratic(quadratic), m_ambient_strength(ambientStrength), m_shadow_map() {}
+		point_light(const vec3<>& color, const unitless& intensity, const vec3<length>& position, const unitless& constant, const unitless& linear, const unitless& quadratic, const unitless& ambient_strength)
+			: light(color, intensity, light_type::point), m_position(position), m_constant(constant), m_linear(linear), m_quadratic(quadratic), m_ambient_strength(ambient_strength), m_shadow_map() {}
 
 		void show_debug_menu(const std::shared_ptr<id>& light_id) override {
 			debug::add_imgui_callback([this, light_id] {
@@ -22,7 +22,7 @@ namespace gse {
 				debug::unit_slider("Linear", m_linear, unitless(0.0f), unitless(0.1f));
 				debug::unit_slider("Quadratic", m_quadratic, unitless(0.0f), unitless(0.1f));
 				debug::unit_slider("Ambient Strength", m_ambient_strength, unitless(0.0f), unitless(10.0f));
-				ImGui::SliderFloat3("Position", &m_position.as_default_units().x, -100.0f, 100.0f);
+				ImGui::SliderFloat3("Position", &m_position.as_default_units().x, -1000.0f, 1000.0f);
 				ImGui::End();
 				});
 		}

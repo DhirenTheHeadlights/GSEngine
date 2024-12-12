@@ -13,6 +13,8 @@ namespace gse {
 
 		vec3<length> get_position() const { return m_position; }
         length get_radius() const { return m_radius; }
+
+        void set_position(const vec3<length>& position);
     private:
         vec3<length> m_position;
         length m_radius;
