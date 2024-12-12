@@ -5,6 +5,7 @@
 #include <glm/glm.hpp>
 
 #include "Graphics/RenderQueueEntry.h"
+#include "Physics/Vector/Vec3.h"
 
 namespace gse {
 	struct vertex {
@@ -45,6 +46,9 @@ namespace gse {
 		}
 
 		void set_color(const glm::vec3& new_color) { m_color = new_color; }
+		void set_texture(const GLuint texture_id) { m_texture_id = texture_id; }
+
+		void set_position(const vec3<length>& new_position);
 	protected:
 		friend render_component;
 		void set_up_mesh();

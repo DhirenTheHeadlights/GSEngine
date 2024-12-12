@@ -66,3 +66,8 @@ void gse::sphere::initialize() {
 
     get_component<render_component>()->set_render(true, true);
 }
+
+void gse::sphere::set_position(const vec3<length>& position) {
+	m_position = position;
+	get_component<render_component>()->set_mesh_positions(position);
+}

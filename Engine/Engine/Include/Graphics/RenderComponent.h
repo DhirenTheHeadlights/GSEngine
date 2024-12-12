@@ -20,6 +20,8 @@ namespace gse {
 		void update_bounding_box_meshes() const;
 		void set_render(bool render, bool render_bounding_boxes);
 
+		void set_mesh_positions(const vec3<length>& position) const;
+
 		std::vector<render_queue_entry> get_queue_entries() const;
 		std::vector<std::shared_ptr<mesh>>& get_meshes() { return m_meshes; }
 		std::vector<std::shared_ptr<bounding_box_mesh>>& get_bounding_box_meshes() { return m_bounding_box_meshes; }

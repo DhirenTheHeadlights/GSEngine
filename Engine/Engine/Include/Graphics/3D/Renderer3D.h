@@ -18,9 +18,6 @@ namespace gse::renderer {
 		auto get_light_source_components() -> std::vector<std::weak_ptr<light_source_component>>& {
 			return m_light_source_components;
 		}
-
-		std::vector<GLuint> depth_maps;
-		std::vector<GLuint> depth_map_fbos;
 	private:
 		std::vector<std::weak_ptr<render_component>> m_render_components;
 		std::vector<std::weak_ptr<light_source_component>> m_light_source_components;
