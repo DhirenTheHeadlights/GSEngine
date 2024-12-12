@@ -35,6 +35,16 @@ namespace {
 	gse::length g_near_plane = gse::meters(10.0f);
 	gse::length g_far_plane = gse::meters(1000.f);
 
+	//Bloom FBOs and buffers
+	bool bloom = true;
+	bool hdr = true;
+	GLuint hdr_fbo;
+	GLuint color_buffers[2];
+	GLuint blur_fbo[2];
+	GLuint blur_buffer[2];
+
+	gse::unitless hdr_exposure = 1.0f;
+
 	bool g_depth_map_debug = false;
 
 	void load_shaders(const std::string& shader_path, const std::string& shader_file_name, std::unordered_map<std::string, gse::shader>& shaders) {
@@ -196,6 +206,64 @@ void gse::renderer::initialize3d() {
 	lighting_shader.set_bool("depthMapDebug", g_depth_map_debug);
 
 	g_reflection_cube_map.create(1024);
+
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	// Create HDR frambuffer for bloom rendering
+	glGenFramebuffers(1, &hdr_fbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, hdr_fbo);
+
+	glGenTextures(2, color_buffers);
+	for (GLuint i = 0; i < 2; i++)
+	{
+		glBindTexture(GL_TEXTURE_2D, color_buffers[i]);
+		glTexImage2D(
+			GL_TEXTURE_2D, 0, GL_RGBA16F, screen_width, screen_height, 0, GL_RGBA, GL_FLOAT, NULL
+		);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		// attach texture to framebuffer
+		glFramebufferTexture2D(
+			GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT3 + i, GL_TEXTURE_2D, color_buffers[i], 0
+		);
+	}
+
+	GLuint bloom_attachments[2] = { GL_COLOR_ATTACHMENT3, GL_COLOR_ATTACHMENT4 };
+	glDrawBuffers(2, bloom_attachments);
+
+
+	glGenFramebuffers(2, blur_fbo);
+	glGenTextures(2, blur_buffer);
+	for (unsigned int i = 0; i < 2; i++)
+	{
+		glBindFramebuffer(GL_FRAMEBUFFER, blur_fbo[i]);
+		glBindTexture(GL_TEXTURE_2D, blur_buffer[i]);
+		glTexImage2D(
+			GL_TEXTURE_2D, 0, GL_RGBA16F, screen_width, screen_height, 0, GL_RGBA, GL_FLOAT, NULL
+		);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glFramebufferTexture2D(
+			GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT3, GL_TEXTURE_2D, blur_buffer[i], 0
+		);
+	}
+
+	//Configure Blur Shader
+	const auto& blur_shader = g_deferred_rendering_shaders["Blur"];
+	blur_shader.use();
+	blur_shader.set_int("image", 0);
+
+	//Configure Bloom Shader
+	const auto& bloom_shader = g_deferred_rendering_shaders["Bloom"];
+	bloom_shader.use();
+	bloom_shader.set_int("scene", 0);
+	bloom_shader.set_int("bloomBlur", 1);
+
+	
+
 }
 
 namespace {
@@ -265,12 +333,43 @@ namespace {
 		}
 	}
 
-	void render_lighting_pass(const gse::shader& lighting_shader, const std::vector<gse::light_shader_entry>& light_data, const std::vector<glm::mat4>& light_space_matrices, const std::vector<GLuint>& depth_map_fbos) {
+	void render_quad(static unsigned int quad_vao, static unsigned int quad_vbo) {
+		if (quad_vao == 0) {
+			constexpr float quad_vertices[] = {
+				// Positions   // TexCoords
+				-1.0f,  1.0f,  0.0f, 1.0f,
+				-1.0f, -1.0f,  0.0f, 0.0f,
+				 1.0f, -1.0f,  1.0f, 0.0f,
+
+				-1.0f,  1.0f,  0.0f, 1.0f,
+				 1.0f, -1.0f,  1.0f, 0.0f,
+				 1.0f,  1.0f,  1.0f, 1.0f
+			};
+
+			glGenVertexArrays(1, &quad_vao);
+			glGenBuffers(1, &quad_vbo);
+			glBindVertexArray(quad_vao);
+			glBindBuffer(GL_ARRAY_BUFFER, quad_vbo);
+			glBufferData(GL_ARRAY_BUFFER, sizeof(quad_vertices), &quad_vertices, GL_STATIC_DRAW);
+			glEnableVertexAttribArray(0);
+			glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), static_cast<void*>(nullptr));
+			glEnableVertexAttribArray(1);
+			glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), reinterpret_cast<void*>(2 * sizeof(float)));
+		}
+
+		glBindVertexArray(quad_vao);
+		glDrawArrays(GL_TRIANGLES, 0, 6);
+		glBindVertexArray(0);
+	}
+
+	void render_lighting_pass(const gse::shader& lighting_shader, const gse::shader& blur_shader, const gse::shader& bloom_shader,
+							const std::vector<gse::light_shader_entry>& light_data, const std::vector<glm::mat4>& light_space_matrices, const std::vector<GLuint>& depth_map_fbos) {
 		if (light_data.empty()) {
 			return;
 		}
 
 		lighting_shader.use();
+
 
 		// Update SSBO with light data
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, g_ssbo_lights);
@@ -313,32 +412,37 @@ namespace {
 		static unsigned int quad_vao = 0;
 		static unsigned int quad_vbo = 0;
 
-		if (quad_vao == 0) {
-			constexpr float quad_vertices[] = {
-				// Positions   // TexCoords
-				-1.0f,  1.0f,  0.0f, 1.0f,
-				-1.0f, -1.0f,  0.0f, 0.0f,
-				 1.0f, -1.0f,  1.0f, 0.0f,
+		render_quad(quad_vao, quad_vbo);
 
-				-1.0f,  1.0f,  0.0f, 1.0f,
-				 1.0f, -1.0f,  1.0f, 0.0f,
-				 1.0f,  1.0f,  1.0f, 1.0f
-			};
+		// Blurring pass for bloom effect
+		bool horizontal = true;
+		bool first_iteration = true;
+		int amount = 10;
 
-			glGenVertexArrays(1, &quad_vao);
-			glGenBuffers(1, &quad_vbo);
-			glBindVertexArray(quad_vao);
-			glBindBuffer(GL_ARRAY_BUFFER, quad_vbo);
-			glBufferData(GL_ARRAY_BUFFER, sizeof(quad_vertices), &quad_vertices, GL_STATIC_DRAW);
-			glEnableVertexAttribArray(0);
-			glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), static_cast<void*>(nullptr));
-			glEnableVertexAttribArray(1);
-			glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), reinterpret_cast<void*>(2 * sizeof(float)));
+		blur_shader.use();
+		for (unsigned int i = 0; i < amount; i++)
+		{
+			glBindFramebuffer(GL_FRAMEBUFFER, blur_fbo[horizontal]);
+			blur_shader.set_int("horizontal", horizontal);
+			glBindTexture(
+				GL_TEXTURE_2D, first_iteration ? color_buffers[1] : blur_buffer[!horizontal]
+			);
+
+			render_quad(quad_vao, quad_vbo);
+
+			horizontal = !horizontal;
+			if (first_iteration) first_iteration = false;
 		}
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-		glBindVertexArray(quad_vao);
-		glDrawArrays(GL_TRIANGLES, 0, 6);
-		glBindVertexArray(0);
+
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		bloom_shader.use();
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, color_buffers[0]);
+		bloom_shader.set_int("bloom", bloom);
+		bloom_shader.set_float("exposure", hdr_exposure);
+		render_quad(quad_vao, quad_vbo);
 
 		glEnable(GL_DEPTH_TEST);  // Re-enable depth testing after the lighting pass
 	}
@@ -424,6 +528,7 @@ void gse::renderer::render_objects(group& group) {
 		ImGui::Begin("Near/Far Plane");
 		debug::unit_slider<length, units::meters>("Near Plane", g_near_plane, meters(0.1f), meters(100.0f));
 		debug::unit_slider<length, units::meters>("Far Plane", g_far_plane, meters(10.0f), meters(10000.0f));
+		debug::unit_slider("HDR Exposure", hdr_exposure, unitless(-5.0f), unitless(5.0f));
 		ImGui::End();
 		});
 
@@ -544,7 +649,8 @@ void gse::renderer::render_objects(group& group) {
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
 
-	render_lighting_pass(g_deferred_rendering_shaders["LightingPass"], light_data, light_space_matrices, group.depth_maps);
+	render_lighting_pass(g_deferred_rendering_shaders["LightingPass"], g_deferred_rendering_shaders["Blur"], g_deferred_rendering_shaders["Bloom"],
+		light_data, light_space_matrices, group.depth_maps);
 }
 
 gse::camera& gse::renderer::get_camera() {
