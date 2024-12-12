@@ -41,6 +41,7 @@ namespace {
 	float g_shadow_height = 4096;
 
 	bool g_depth_map_debug = false;
+	bool brightness_extraction_debug = false;
 	bool g_hdr = true;
 	bool g_bloom = true;
 
@@ -271,6 +272,7 @@ void gse::renderer::initialize3d() {
 	lighting_pass_shader.set_int("gNormal", 1);
 	lighting_pass_shader.set_int("gAlbedoSpec", 2);
 	lighting_pass_shader.set_bool("depthMapDebug", g_depth_map_debug);
+	lighting_pass_shader.set_bool("brightness_extraction_debug", brightness_extraction_debug);
 	lighting_pass_shader.set_int("diffuseTexture", 3);
 
 	g_reflection_cube_map.create(1024);
@@ -402,14 +404,10 @@ namespace {
 		glBufferSubData(GL_UNIFORM_BUFFER, 0, light_space_matrices.size() * sizeof(glm::mat4), light_space_matrices.data());
 		glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
-		if (g_hdr) { // Bind HDR frame buffer
-			glBindFramebuffer(GL_FRAMEBUFFER, g_hdr_fbo);
-			constexpr GLenum hdr_draw_buffers[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
-			glDrawBuffers(2, hdr_draw_buffers);
-		}
-		else {
-			glBindFramebuffer(GL_FRAMEBUFFER, 0); // Default Framebuffer
-		}
+		// Bind HDR frame buffer
+		glBindFramebuffer(GL_FRAMEBUFFER, g_hdr_fbo);
+		constexpr GLenum hdr_draw_buffers[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+		glDrawBuffers(2, hdr_draw_buffers);
 
 		// Lighting pass
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -425,6 +423,7 @@ namespace {
 
 		lighting_shader.set_int_array("shadowMaps", shadow_map_units.data(), static_cast<unsigned>(shadow_map_units.size()));
 		lighting_shader.set_mat4_array("lightSpaceMatrices", light_space_matrices.data(), static_cast<unsigned>(light_space_matrices.size()));
+		lighting_shader.set_bool("brightness_extraction_debug", brightness_extraction_debug);
 
 		// Pass other G-buffer textures
 		glActiveTexture(GL_TEXTURE0);
@@ -616,6 +615,7 @@ void gse::renderer::render_objects(group& group) {
 		ImGui::Checkbox("HDR", &g_hdr);
 		ImGui::Checkbox("Bloom", &g_bloom);
 		ImGui::Checkbox("Depth Map Debug", &g_depth_map_debug);
+		ImGui::Checkbox("Brightness Extraction Debug", &brightness_extraction_debug);
 
 		debug::unit_slider("Exposure", g_hdr_exposure, unitless(0.1f), unitless(10.f));
 
