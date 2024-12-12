@@ -11,7 +11,7 @@ char* server_ip;
 ENetHost* server;
 ENetHost* client;
 
-void gse::network::initialize_e_net() {
+void gse::network::initialize_enet() {
 	if (enet_initialize() != 0) {
 		std::cerr << "An error occurred while initializing ENet." << '\n';
 	}

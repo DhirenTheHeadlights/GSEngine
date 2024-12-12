@@ -27,12 +27,22 @@ namespace {
 	GLuint g_ssbo_lights = 0;
 	GLuint g_light_space_block_ubo = 0;
 
+	GLuint g_hdr_fbo = 0;
+	GLuint g_hdr_color_buffer[2] = { 0, 0 };
+	GLuint g_blur_fbo[2] = { 0, 0 };
+	GLuint g_blur_color_buffer[2] = { 0, 0 };
+
+	gse::unitless g_hdr_exposure = 1.f;
+	gse::unitless g_bloom_intensity = 1.f;
+
 	gse::cube_map g_reflection_cube_map;
 
 	float g_shadow_width = 4096;
 	float g_shadow_height = 4096;
 
 	bool g_depth_map_debug = false;
+	bool g_hdr = true;
+	bool g_bloom = true;
 
 	void load_shaders(const std::string& shader_path, const std::string& shader_file_name, std::unordered_map<std::string, gse::shader>& shaders) {
 		gse::json_parse::parse(
@@ -184,15 +194,95 @@ void gse::renderer::initialize3d() {
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, g_ssbo_lights);
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
-	const auto& lighting_shader = g_deferred_rendering_shaders["LightingPass"];
+	// Set up HDR frame buffer
+	glGenFramebuffers(1, &g_hdr_fbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, g_hdr_fbo);
 
-	lighting_shader.use();
-	lighting_shader.set_int("gPosition", 0);
-	lighting_shader.set_int("gNormal", 1);
-	lighting_shader.set_int("gAlbedoSpec", 2);
-	lighting_shader.set_bool("depthMapDebug", g_depth_map_debug);
+	glGenTextures(2, g_hdr_color_buffer);
+	for (int i = 0; i < 2; i++) {
+		glBindTexture(GL_TEXTURE_2D, g_hdr_color_buffer[i]);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, screen_width, screen_height, 0, GL_RGBA, GL_FLOAT, nullptr);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); // Optional but recommended
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE); // Optional but recommended
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + i, GL_TEXTURE_2D, g_hdr_color_buffer[i], 0);
+	}
+
+	constexpr GLenum hdr_draw_buffers[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+	glDrawBuffers(2, hdr_draw_buffers);
+
+	GLuint hdr_rbo_depth;
+	glGenRenderbuffers(1, &hdr_rbo_depth);
+	glBindRenderbuffer(GL_RENDERBUFFER, hdr_rbo_depth);
+	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, screen_width, screen_height);
+	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, hdr_rbo_depth);
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	// Set up bloom frame buffers
+	glGenFramebuffers(2, g_blur_fbo);
+	glGenTextures(2, g_blur_color_buffer);
+	for (int i = 0; i < 2; i++) {
+		glBindFramebuffer(GL_FRAMEBUFFER, g_blur_fbo[i]);
+
+		glBindTexture(GL_TEXTURE_2D, g_blur_color_buffer[i]);
+		glTexImage2D(
+			GL_TEXTURE_2D, 0, GL_RGBA16F,
+			screen_width, screen_height, 0,
+			GL_RGBA, GL_FLOAT, nullptr
+		);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); // Optional but recommended
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE); // Optional but recommended
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_blur_color_buffer[i], 0);
+
+		GLenum bloom_draw_buffer = GL_COLOR_ATTACHMENT0;
+		glDrawBuffers(1, &bloom_draw_buffer);
+
+		GLuint bloom_rbo_depth;
+		glGenRenderbuffers(1, &bloom_rbo_depth);
+		glBindRenderbuffer(GL_RENDERBUFFER, bloom_rbo_depth);
+		glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, screen_width, screen_height);
+		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, bloom_rbo_depth);
+	}
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	const auto& bloom_shader = g_deferred_rendering_shaders["Bloom"];
+	const auto& blur_shader = g_deferred_rendering_shaders["GaussianBlur"];
+
+	bloom_shader.use();
+	bloom_shader.set_int("scene", 0);
+	bloom_shader.set_int("bloomBlur", 1);
+	bloom_shader.set_bool("hdr", g_hdr);
+	bloom_shader.set_float("exposure", g_hdr_exposure);
+	bloom_shader.set_float("bloomIntensity", g_bloom_intensity);
+
+	blur_shader.use();
+	blur_shader.set_int("image", 0);
+	blur_shader.set_bool("horizontal", true);
+
+	const auto& lighting_pass_shader = g_deferred_rendering_shaders["LightingPass"];
+
+	lighting_pass_shader.use();
+	lighting_pass_shader.set_int("gPosition", 0);
+	lighting_pass_shader.set_int("gNormal", 1);
+	lighting_pass_shader.set_int("gAlbedoSpec", 2);
+	lighting_pass_shader.set_bool("depthMapDebug", g_depth_map_debug);
+	lighting_pass_shader.set_int("diffuseTexture", 3);
 
 	g_reflection_cube_map.create(1024);
+
+	const auto& post_processing_shader = g_deferred_rendering_shaders["PostProcessing"];
+
+	post_processing_shader.use();
+	post_processing_shader.set_int("scene", 0);
+	post_processing_shader.set_int("bloomBlur", 1);
+	post_processing_shader.set_bool("bloom", g_bloom);
+	post_processing_shader.set_bool("hdr", g_hdr);
+	post_processing_shader.set_float("exposure", g_hdr_exposure);
 }
 
 namespace {
@@ -262,51 +352,7 @@ namespace {
 		}
 	}
 
-	void render_lighting_pass(const gse::shader& lighting_shader, const std::vector<gse::light_shader_entry>& light_data, const std::vector<glm::mat4>& light_space_matrices, const std::vector<GLuint>& depth_maps) {
-		if (light_data.empty()) {
-			return;
-		}
-
-		lighting_shader.use();
-
-		// Update SSBO with light data
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, g_ssbo_lights);
-		glBufferData(GL_SHADER_STORAGE_BUFFER, light_data.size() * sizeof(gse::light_shader_entry), light_data.data(), GL_DYNAMIC_DRAW);
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, g_ssbo_lights);
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-
-		// Update UBO with light space matrices
-		glBindBuffer(GL_UNIFORM_BUFFER, g_light_space_block_ubo);
-		glBufferSubData(GL_UNIFORM_BUFFER, 0, light_space_matrices.size() * sizeof(glm::mat4), light_space_matrices.data());
-		glBindBuffer(GL_UNIFORM_BUFFER, 0);
-
-		// Lighting pass
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-		glDisable(GL_DEPTH_TEST);
-
-		std::vector<GLint> shadow_map_units(depth_maps.size());
-		for (size_t i = 0; i < depth_maps.size(); ++i) {
-			glActiveTexture(GL_TEXTURE3 + i);
-			glBindTexture(light_data[i].light_type == static_cast<int>(gse::light_type::point) ? GL_TEXTURE_CUBE_MAP : GL_TEXTURE_2D, depth_maps[i]);
-			shadow_map_units[i] = 3 + i;
-		}
-
-		lighting_shader.set_int_array("shadowMaps", shadow_map_units.data(), static_cast<unsigned>(shadow_map_units.size()));
-		lighting_shader.set_mat4_array("lightSpaceMatrices", light_space_matrices.data(), static_cast<unsigned>(light_space_matrices.size()));
-
-		// Pass other G-buffer textures
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, g_g_position);
-		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, g_g_normal);
-		glActiveTexture(GL_TEXTURE2);
-		glBindTexture(GL_TEXTURE_2D, g_g_albedo_spec);
-
-		constexpr GLuint binding_unit = 5;
-		g_reflection_cube_map.bind(binding_unit);
-		lighting_shader.set_int("environmentMap", binding_unit);
-
-		// Render a full-screen quad to process lighting
+	void render_fullscreen_quad() {
 		static unsigned int quad_vao = 0;
 		static unsigned int quad_vbo = 0;
 
@@ -336,8 +382,150 @@ namespace {
 		glBindVertexArray(quad_vao);
 		glDrawArrays(GL_TRIANGLES, 0, 6);
 		glBindVertexArray(0);
+	}
+
+	void render_lighting_pass(const gse::shader& lighting_shader, const std::vector<gse::light_shader_entry>& light_data, const std::vector<glm::mat4>& light_space_matrices, const std::vector<GLuint>& depth_maps) {
+		if (light_data.empty()) {
+			return;
+		}
+
+		lighting_shader.use();
+
+		// Update SSBO with light data
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, g_ssbo_lights);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, light_data.size() * sizeof(gse::light_shader_entry), light_data.data(), GL_DYNAMIC_DRAW);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, g_ssbo_lights);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+		// Update UBO with light space matrices
+		glBindBuffer(GL_UNIFORM_BUFFER, g_light_space_block_ubo);
+		glBufferSubData(GL_UNIFORM_BUFFER, 0, light_space_matrices.size() * sizeof(glm::mat4), light_space_matrices.data());
+		glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+		if (g_hdr) { // Bind HDR frame buffer
+			glBindFramebuffer(GL_FRAMEBUFFER, g_hdr_fbo);
+			constexpr GLenum hdr_draw_buffers[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+			glDrawBuffers(2, hdr_draw_buffers);
+		}
+		else {
+			glBindFramebuffer(GL_FRAMEBUFFER, 0); // Default Framebuffer
+		}
+
+		// Lighting pass
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		glDisable(GL_DEPTH_TEST);
+
+		std::vector<GLint> shadow_map_units(depth_maps.size());
+		for (size_t i = 0; i < depth_maps.size(); ++i) {
+			const GLenum texture_unit = GL_TEXTURE4 + i;
+			glActiveTexture(texture_unit);
+			glBindTexture(light_data[i].light_type == static_cast<int>(gse::light_type::point) ? GL_TEXTURE_CUBE_MAP : GL_TEXTURE_2D, depth_maps[i]);
+			shadow_map_units[i] = texture_unit - GL_TEXTURE0;
+		}
+
+		lighting_shader.set_int_array("shadowMaps", shadow_map_units.data(), static_cast<unsigned>(shadow_map_units.size()));
+		lighting_shader.set_mat4_array("lightSpaceMatrices", light_space_matrices.data(), static_cast<unsigned>(light_space_matrices.size()));
+
+		// Pass other G-buffer textures
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, g_g_position);
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, g_g_normal);
+		glActiveTexture(GL_TEXTURE2);
+		glBindTexture(GL_TEXTURE_2D, g_g_albedo_spec);
+
+		constexpr GLuint binding_unit = 5;
+		g_reflection_cube_map.bind(binding_unit);
+		lighting_shader.set_int("environmentMap", binding_unit);
+
+		render_fullscreen_quad();
 
 		glEnable(GL_DEPTH_TEST);  // Re-enable depth testing after the lighting pass
+
+		// Unbind HDR frame buffer
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	}
+
+	void render_brightness_pass(const gse::shader& bloom_shader, const gse::shader& blur_shader) {
+		if (g_hdr) {
+			glBindFramebuffer(GL_FRAMEBUFFER, g_hdr_fbo);
+			glDrawBuffer(GL_COLOR_ATTACHMENT1);
+			glClear(GL_COLOR_BUFFER_BIT);
+		}
+		else {
+			glBindFramebuffer(GL_FRAMEBUFFER, 0); // Default Framebuffer
+		}
+
+		bloom_shader.use();
+		bloom_shader.set_int("scene", 0);
+		bloom_shader.set_bool("hdr", g_hdr);
+		bloom_shader.set_float("exposure", g_hdr_exposure);
+
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, g_hdr_color_buffer[1]);
+		bloom_shader.set_int("hdrBuffer", 0);
+
+		render_fullscreen_quad();
+
+		if (g_bloom) {
+			constexpr int blur_iterations = 10;
+			bool horizontal = true;
+
+			bool first_iteration = true;
+			unsigned int current_fbo = 0;
+			unsigned int current_texture = 0;
+
+			blur_shader.use();
+			blur_shader.set_int("image", 0);
+
+			for (int i = 0; i < blur_iterations; ++i) {
+				glBindFramebuffer(GL_FRAMEBUFFER, g_blur_fbo[current_fbo]);
+
+				blur_shader.set_bool("horizontal", horizontal);
+
+				glActiveTexture(GL_TEXTURE0);
+				if (first_iteration) {
+					glBindTexture(GL_TEXTURE_2D, g_hdr_color_buffer[1]); // Brightness buffer
+					first_iteration = false;
+				}
+				else {
+					glBindTexture(GL_TEXTURE_2D, g_blur_color_buffer[current_texture]);
+				}
+
+				render_fullscreen_quad();
+
+				horizontal = !horizontal;
+				current_fbo = (current_fbo + 1) % 2;
+				current_texture = (current_texture + 1) % 2;
+			}
+
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		}
+	}
+
+	void render_post_processing(const gse::shader& post_processing_shader) {
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+		post_processing_shader.use();
+		post_processing_shader.set_int("scene", 0);
+		post_processing_shader.set_int("bloomBlur", 1);
+		post_processing_shader.set_bool("hdr", g_hdr);
+		post_processing_shader.set_bool("bloom", g_bloom);
+		post_processing_shader.set_float("exposure", g_hdr_exposure);
+
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, g_hdr_color_buffer[0]);
+
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, g_blur_color_buffer[0]);
+
+		render_fullscreen_quad();
+
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, 0);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, 0);
 	}
 
 	void render_shadow_pass(const gse::shader& shadow_shader, const std::vector<std::weak_ptr<gse::render_component>>& render_components, const glm::mat4& light_projection, const glm::mat4& light_view, const GLuint depth_map_fbo) {
@@ -422,6 +610,18 @@ namespace {
 }
 
 void gse::renderer::render_objects(group& group) {
+	debug::add_imgui_callback([] {
+		ImGui::Begin("Renderer3D");
+
+		ImGui::Checkbox("HDR", &g_hdr);
+		ImGui::Checkbox("Bloom", &g_bloom);
+		ImGui::Checkbox("Depth Map Debug", &g_depth_map_debug);
+
+		debug::unit_slider("Exposure", g_hdr_exposure, unitless(0.1f), unitless(10.f));
+
+		ImGui::End();
+		});
+
 	const auto& render_components = group.get_render_components();
 	const auto& light_source_components = group.get_light_source_components();
 
@@ -544,6 +744,10 @@ void gse::renderer::render_objects(group& group) {
 	glEnable(GL_DEPTH_TEST);
 	glDisable(GL_BLEND);
 
+	render_lighting_pass(g_deferred_rendering_shaders["LightingPass"], light_data, light_space_matrices, depth_maps);
+
+	render_brightness_pass(g_deferred_rendering_shaders["Bloom"], g_deferred_rendering_shaders["GaussianBlur"]);
+
 	if (window::get_fbo().has_value()) {
 		glBindFramebuffer(GL_FRAMEBUFFER, window::get_fbo().value());
 	}
@@ -551,7 +755,7 @@ void gse::renderer::render_objects(group& group) {
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
 
-	render_lighting_pass(g_deferred_rendering_shaders["LightingPass"], light_data, light_space_matrices, depth_maps);
+	render_post_processing(g_deferred_rendering_shaders["PostProcessing"]);
 }
 
 gse::camera& gse::renderer::get_camera() {

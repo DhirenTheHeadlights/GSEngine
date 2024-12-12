@@ -1,6 +1,7 @@
 #version 430 core
 
 out vec4 FragColor;
+
 in vec2 TexCoords;
 
 uniform sampler2D gPosition;
@@ -13,6 +14,7 @@ layout(std140, binding = 4) uniform LightSpaceBlock {
     mat4 lightSpaceMatrices[MAX_LIGHTS];
 };
 
+uniform sampler2D diffuseTexture;
 uniform samplerCube environmentMap;
 
 struct Light {
@@ -34,10 +36,8 @@ layout(std140, binding = 6) buffer Lights {
 };
 
 uniform vec3 viewPos;
-
 uniform bool depthMapDebug;
 
-// Shadow calculation function
 float calculateShadow(vec4 FragPosLightSpace, sampler2D shadowMap, vec3 lightDir, vec3 fragToLight, float innerCutOff, float outerCutOff) {
     vec3 projCoords = FragPosLightSpace.xyz / FragPosLightSpace.w;
     projCoords = projCoords * 0.5 + 0.5;
