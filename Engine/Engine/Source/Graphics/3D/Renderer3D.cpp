@@ -34,6 +34,7 @@ namespace {
 
 	gse::unitless g_hdr_exposure = 1.f;
 	gse::unitless g_bloom_intensity = 1.f;
+	gse::unitless g_bloom_threshold = 0.5f;
 
 	gse::cube_map g_reflection_cube_map;
 
@@ -41,7 +42,7 @@ namespace {
 	float g_shadow_height = 4096;
 
 	bool g_depth_map_debug = false;
-	bool brightness_extraction_debug = false;
+	bool g_brightness_extraction_debug = false;
 	bool g_hdr = true;
 	bool g_bloom = true;
 
@@ -272,7 +273,7 @@ void gse::renderer::initialize3d() {
 	lighting_pass_shader.set_int("gNormal", 1);
 	lighting_pass_shader.set_int("gAlbedoSpec", 2);
 	lighting_pass_shader.set_bool("depthMapDebug", g_depth_map_debug);
-	lighting_pass_shader.set_bool("brightness_extraction_debug", brightness_extraction_debug);
+	lighting_pass_shader.set_bool("brightness_extraction_debug", g_brightness_extraction_debug);
 	lighting_pass_shader.set_int("diffuseTexture", 3);
 
 	g_reflection_cube_map.create(1024);
@@ -423,8 +424,9 @@ namespace {
 
 		lighting_shader.set_int_array("shadowMaps", shadow_map_units.data(), static_cast<unsigned>(shadow_map_units.size()));
 		lighting_shader.set_mat4_array("lightSpaceMatrices", light_space_matrices.data(), static_cast<unsigned>(light_space_matrices.size()));
-		lighting_shader.set_bool("brightness_extraction_debug", brightness_extraction_debug);
+		lighting_shader.set_bool("brightness_extraction_debug", g_brightness_extraction_debug);
 		lighting_shader.set_bool("depthMapDebug", g_depth_map_debug);
+		lighting_shader.set_float("bloomThreshold", g_bloom_threshold);
 
 		// Pass other G-buffer textures
 		glActiveTexture(GL_TEXTURE0);
@@ -463,7 +465,6 @@ namespace {
 
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, g_hdr_color_buffer[1]);
-		bloom_shader.set_int("hdrBuffer", 0);
 
 		render_fullscreen_quad();
 
@@ -616,9 +617,11 @@ void gse::renderer::render_objects(group& group) {
 		ImGui::Checkbox("HDR", &g_hdr);
 		ImGui::Checkbox("Bloom", &g_bloom);
 		ImGui::Checkbox("Depth Map Debug", &g_depth_map_debug);
-		ImGui::Checkbox("Brightness Extraction Debug", &brightness_extraction_debug);
+		ImGui::Checkbox("Brightness Extraction Debug", &g_brightness_extraction_debug);
 
 		debug::unit_slider("Exposure", g_hdr_exposure, unitless(0.1f), unitless(10.f));
+		debug::unit_slider("Bloom Intensity", g_bloom_intensity, unitless(0.1f), unitless(10.f));
+		debug::unit_slider("Bloom Threshold", g_bloom_threshold, unitless(0.1f), unitless(10.f));
 
 		ImGui::End();
 		});
