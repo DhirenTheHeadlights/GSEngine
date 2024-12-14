@@ -571,7 +571,6 @@ namespace {
 		return normalized_up;
 	}
 
-
 	glm::mat4 calculate_light_projection(const std::shared_ptr<gse::light>& light) {
 		const auto& entry = light->get_render_queue_entry();
 

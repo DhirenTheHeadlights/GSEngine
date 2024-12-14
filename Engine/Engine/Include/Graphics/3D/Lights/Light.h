@@ -90,6 +90,7 @@ namespace gse {
 
 		light_type get_type() const { return m_type; }
 		virtual void set_depth_map(GLuint depth_map, GLuint depth_map_fbo) {}
+		virtual void set_position(const vec3<length>& position) {}
 	protected:
 		light(const vec3<>& color, const unitless& intensity, const light_type type)
 			: m_color(color), m_intensity(intensity), m_type(type) {}

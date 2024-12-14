@@ -4,10 +4,13 @@
 #include "Graphics/RenderComponent.h"
 
 void gse::sphere::initialize() {
+	const auto new_motion_component = std::make_shared<physics::motion_component>(m_id.get());
+	new_motion_component->current_position = m_initial_position;
+	add_component(new_motion_component);
+
     const auto new_render_component = std::make_shared<render_component>(m_id.get());
 
     const float r = m_radius.as<units::meters>();
-    const glm::vec3 pos_offset = m_position.as<units::meters>();
 
     std::vector<vertex> vertices;
     std::vector<unsigned int> indices;
@@ -39,7 +42,7 @@ void gse::sphere::initialize() {
                 static_cast<float>(stack) / static_cast<float>(m_stacks)
             };
 
-            vertices.push_back({ position + pos_offset, normal, tex_coords });
+            vertices.push_back({ position, normal, tex_coords });
         }
     }
 
@@ -67,7 +70,8 @@ void gse::sphere::initialize() {
     get_component<render_component>()->set_render(true, true);
 }
 
-void gse::sphere::set_position(const vec3<length>& position) {
-	m_position = position;
+void gse::sphere::update() {
+	const auto position = get_component<physics::motion_component>()->current_position.as<units::meters>();
+
 	get_component<render_component>()->set_mesh_positions(position);
 }
