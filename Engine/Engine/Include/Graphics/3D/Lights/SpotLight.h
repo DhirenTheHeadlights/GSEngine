@@ -35,6 +35,10 @@ namespace gse {
 			m_depth_map = depth_map;
 			m_depth_map_fbo = depth_map_fbo;
 		}
+
+		void set_position(const vec3<length>& position) override {
+			m_position = position;
+		}
 	private:
 		unitless m_constant;
 		unitless m_linear;

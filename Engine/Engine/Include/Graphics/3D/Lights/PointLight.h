@@ -32,6 +32,10 @@ namespace gse {
 		}
 
 		cube_map& get_shadow_map() { return m_shadow_map; }
+
+		void set_position(const vec3<length>& position) override {
+			m_position = position;
+		}
 	private:
 		vec3<length> m_position;
 		unitless m_constant;
