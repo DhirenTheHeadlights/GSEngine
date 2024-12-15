@@ -2,6 +2,7 @@
 
 #include <glm/gtx/string_cast.hpp>
 
+#include "Core/ObjectRegistry.h"
 #include "Core/JsonParser.h"
 #include "Core/ResourcePaths.h"
 #include "Graphics/Shader.h"
@@ -529,7 +530,7 @@ namespace {
 		glBindTexture(GL_TEXTURE_2D, 0);
 	}
 
-	void render_shadow_pass(const gse::shader& shadow_shader, const std::vector<std::weak_ptr<gse::render_component>>& render_components, const glm::mat4& light_projection, const glm::mat4& light_view, const GLuint depth_map_fbo) {
+	void render_shadow_pass(const gse::shader& shadow_shader, const std::vector<std::weak_ptr<gse::render_component>>& render_components, const glm::mat4& light_projection, const glm::mat4& light_view, const GLuint depth_map_fbo, const std::shared_ptr<gse::id>& light_ignore_list_id) {
 		shadow_shader.set_mat4("light_view", light_view);
 		shadow_shader.set_mat4("light_projection", light_projection);
 
@@ -539,7 +540,11 @@ namespace {
 
 
 		for (const auto& render_component : render_components) {
-			if (const auto render_component_ptr = render_component.lock()) {
+			if (const auto render_component_ptr = render_component.lock(); render_component_ptr) {
+				if (gse::registry::is_id_in_list(light_ignore_list_id, render_component_ptr->get_id())) {
+					continue;
+				}
+
 				for (const auto& entry : render_component_ptr->get_queue_entries()) {
 					shadow_shader.set_mat4("model", entry.model_matrix);
 					glBindVertexArray(entry.vao);
@@ -638,7 +643,7 @@ void gse::renderer::render_objects(group& group) {
 	depth_maps.reserve(light_source_components.size());
 
 	for (const auto& light_source_component : light_source_components) {
-		if (const auto light_source_component_ptr = light_source_component.lock()) {
+		if (const auto light_source_component_ptr = light_source_component.lock(); light_source_component_ptr) {
 			for (const auto& entry : light_source_component_ptr->get_render_queue_entries()) {
 				light_data.push_back(entry.shader_entry);
 				depth_maps.push_back(entry.depth_map);
@@ -659,7 +664,7 @@ void gse::renderer::render_objects(group& group) {
 	g_reflection_cube_map.update(glm::vec3(0.f), g_camera.get_projection_matrix(),
 		[&group, render_components, forward_rendering_shader](const glm::mat4& view_matrix, const glm::mat4& projection_matrix) {
 			for (const auto& render_component : render_components) {
-				if (const auto render_component_ptr = render_component.lock()) {
+				if (const auto render_component_ptr = render_component.lock(); render_component_ptr) {
 					for (auto entries = render_component_ptr->get_queue_entries(); const auto& entry : entries) {
 						render_object_forward(forward_rendering_shader, entry, view_matrix, projection_matrix);
 					}
@@ -690,7 +695,11 @@ void gse::renderer::render_objects(group& group) {
 					shadow_shader.set_float("farPlane", point_light_ptr->get_render_queue_entry().far_plane.as<units::meters>());
 
 					for (const auto& render_component : render_components) {
-						if (const auto render_component_ptr = render_component.lock()) {
+						if (const auto render_component_ptr = render_component.lock(); render_component_ptr) {
+							if (registry::is_id_in_list(point_light_ptr->get_ignore_list_id(), render_component_ptr->get_id())) {
+								continue;
+							}
+
 							for (const auto& entry : render_component_ptr->get_queue_entries()) {
 								shadow_shader.set_mat4("model", entry.model_matrix);  // Object's model matrix
 								glBindVertexArray(entry.vao);
@@ -704,7 +713,7 @@ void gse::renderer::render_objects(group& group) {
 				auto light_projection = calculate_light_projection(light);
 				auto light_view = calculate_light_view(light);
 				light_space_matrices.push_back(light_projection * light_view);
-				render_shadow_pass(shadow_shader, render_components, light_projection, light_view, light->get_render_queue_entry().depth_map_fbo);
+				render_shadow_pass(shadow_shader, render_components, light_projection, light_view, light->get_render_queue_entry().depth_map_fbo, light->get_ignore_list_id());
 			}
 		}
 	}
@@ -716,7 +725,7 @@ void gse::renderer::render_objects(group& group) {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	for (const auto& render_component : render_components) {
-		if (const auto render_component_ptr = render_component.lock()) {
+		if (const auto render_component_ptr = render_component.lock(); render_component_ptr) {
 			for (auto entries = render_component_ptr->get_queue_entries(); const auto & entry : entries) {
 				render_object(entry, g_camera.get_view_matrix(), g_camera.get_projection_matrix());
 			}
@@ -734,7 +743,7 @@ void gse::renderer::render_objects(group& group) {
 	glDisable(GL_DEPTH_TEST);
 
 	for (const auto& light_source_component : light_source_components) {
-		if (const auto light_source_component_ptr = light_source_component.lock()) {
+		if (const auto light_source_component_ptr = light_source_component.lock(); light_source_component_ptr) {
 			for (const auto& entry : light_source_component_ptr->get_render_queue_entries()) {
 				render_object(entry); 
 			}

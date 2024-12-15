@@ -28,7 +28,7 @@ namespace gse {
 		}
 
 		light_render_queue_entry get_render_queue_entry() const override {
-			return { m_depth_map, m_depth_map_fbo, light_type::spot, m_color, m_intensity, m_position, m_direction, m_constant, m_linear, m_quadratic, m_cut_off, m_outer_cut_off, m_ambient_strength, m_near_plane, m_far_plane };
+			return { m_depth_map, m_depth_map_fbo, light_type::spot, m_color, m_intensity, m_position, m_direction, m_constant, m_linear, m_quadratic, m_cut_off, m_outer_cut_off, m_ambient_strength, m_near_plane, m_far_plane, m_ignore_list_id.get() };
 		}
 
 		void set_depth_map(const GLuint depth_map, const GLuint depth_map_fbo) override {

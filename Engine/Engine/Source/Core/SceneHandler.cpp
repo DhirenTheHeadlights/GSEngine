@@ -2,12 +2,12 @@
 
 #include <ranges>
 
-void gse::scene_handler::add_scene(const std::shared_ptr<scene>& scene, const std::string& tag) {
+void gse::scene_handler::add_scene(std::unique_ptr<scene>& scene, const std::string& tag) {
 	if (!scene->get_id()) {
 		scene->set_id(generate_id(tag));
 	}
 
-	m_scenes.insert({ scene->get_id(), scene });
+	m_scenes.insert({ scene->get_id(), std::move(scene) });
 }
 
 void gse::scene_handler::remove_scene(const std::shared_ptr<id>& scene_id) {
@@ -72,12 +72,12 @@ void gse::scene_handler::queue_scene_trigger(const std::shared_ptr<id>& id, cons
 	m_scene_triggers.insert({ id, trigger });
 }
 
-std::vector<std::shared_ptr<gse::scene>> gse::scene_handler::get_active_scenes() const {
-	std::vector<std::shared_ptr<scene>> active_scenes;
+std::vector<gse::scene*> gse::scene_handler::get_active_scenes() const {
+	std::vector<scene*> active_scenes;
 	active_scenes.reserve(m_scenes.size());
 	for (const auto& scene : m_scenes | std::views::values) {
 		if (scene->get_active()) {
-			active_scenes.push_back(scene);
+			active_scenes.push_back(scene.get());
 		}
 	}
 	return active_scenes;
@@ -103,9 +103,9 @@ std::vector<std::shared_ptr<gse::id>> gse::scene_handler::get_active_scene_ids()
 	return active_scene_ids;
 }
 
-std::shared_ptr<gse::scene> gse::scene_handler::get_scene(const std::shared_ptr<id>& scene_id) const {
+gse::scene* gse::scene_handler::get_scene(const std::shared_ptr<id>& scene_id) const {
 	if (const auto scene = m_scenes.find(scene_id); scene != m_scenes.end()) {
-		return scene->second;
+		return scene->second.get();
 	}
 	return nullptr;
 }

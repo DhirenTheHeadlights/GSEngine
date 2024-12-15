@@ -28,7 +28,7 @@ namespace gse {
 		}
 
 		light_render_queue_entry get_render_queue_entry() const override {
-			return { m_shadow_map.get_texture_id(), m_shadow_map.get_frame_buffer_id(), light_type::point, m_color, m_intensity, m_position, vec3(), m_constant, m_linear, m_quadratic, angle(), angle(), m_ambient_strength, m_near_plane, m_far_plane };
+			return { m_shadow_map.get_texture_id(), m_shadow_map.get_frame_buffer_id(), light_type::point, m_color, m_intensity, m_position, vec3(), m_constant, m_linear, m_quadratic, angle(), angle(), m_ambient_strength, m_near_plane, m_far_plane, m_ignore_list_id.get() };
 		}
 
 		cube_map& get_shadow_map() { return m_shadow_map; }
