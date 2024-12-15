@@ -14,13 +14,13 @@ namespace gse {
 		scene() = default;
 		scene(const std::shared_ptr<id>& id) : m_id(id) {}
 
-		void add_object(const std::weak_ptr<object>& object);
-		void remove_object(const std::weak_ptr<object>& object_to_remove);
+		void add_object(std::unique_ptr<object>&& object);
+		void remove_object(const object* object_to_remove);
 
 		void initialize();
 		void update();
 		void render();
-		void exit();
+		void exit() const;
 
 		void set_id(const std::shared_ptr<id>& id) { this->m_id = id; }
 		std::shared_ptr<id> get_id() const { return m_id; }
@@ -28,7 +28,7 @@ namespace gse {
 		void set_active(const bool is_active) { this->m_is_active = is_active; }
 		bool get_active() const { return m_is_active; }
 	private:
-		std::vector<std::weak_ptr<object>> m_objects;
+		std::vector<std::unique_ptr<object>> m_objects;
 
 		bool m_is_active = false;
 
