@@ -283,10 +283,6 @@ void gse::renderer::initialize3d() {
 
 	post_processing_shader.use();
 	post_processing_shader.set_int("scene", 0);
-	post_processing_shader.set_int("bloomBlur", 1);
-	post_processing_shader.set_bool("bloom", g_bloom);
-	post_processing_shader.set_bool("hdr", g_hdr);
-	post_processing_shader.set_float("exposure", g_hdr_exposure);
 }
 
 namespace {
@@ -449,83 +445,78 @@ namespace {
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
 
-	void render_brightness_pass(const gse::shader& bloom_shader, const gse::shader& blur_shader) {
-		if (g_hdr) {
-			glBindFramebuffer(GL_FRAMEBUFFER, g_hdr_fbo);
-			glDrawBuffer(GL_COLOR_ATTACHMENT1);
-			glClear(GL_COLOR_BUFFER_BIT);
-		}
-		else {
-			glBindFramebuffer(GL_FRAMEBUFFER, 0); // Default Framebuffer
+	int render_blur_pass(const gse::shader& blur_shader) {
+		blur_shader.use();
+		blur_shader.set_int("image", 0);
+
+		bool horizontal = true;
+		bool first_iteration = true;
+		unsigned int current_fbo = 0;
+		unsigned int current_texture = 0;
+
+		for (int i = 0; i < 10; ++i) {
+			glBindFramebuffer(GL_FRAMEBUFFER, g_blur_fbo[current_fbo]);
+			blur_shader.set_bool("horizontal", horizontal);
+
+			glActiveTexture(GL_TEXTURE0);
+			if (first_iteration) {
+				glBindTexture(GL_TEXTURE_2D, g_hdr_color_buffer[1]);
+				first_iteration = false;
+			}
+			else {
+				glBindTexture(GL_TEXTURE_2D, g_blur_color_buffer[current_texture]);
+			}
+
+			render_fullscreen_quad();
+
+			horizontal = !horizontal;
+			current_fbo = 1 - current_fbo;
+			current_texture = 1 - current_texture;
 		}
 
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+		return static_cast<int>(current_texture);
+	}
+
+	void render_bloom_compositing(const gse::shader& bloom_shader, const int current_texture) {
 		bloom_shader.use();
 		bloom_shader.set_int("scene", 0);
+		bloom_shader.set_int("bloomBlur", 1);
 		bloom_shader.set_bool("hdr", g_hdr);
+		bloom_shader.set_bool("bloom", g_bloom);
 		bloom_shader.set_float("exposure", g_hdr_exposure);
 
 		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, g_hdr_color_buffer[1]);
+		glBindTexture(GL_TEXTURE_2D, g_hdr_color_buffer[0]); // Full HDR scene
 
-		render_fullscreen_quad();
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, g_blur_color_buffer[current_texture]); // Blurred scene
 
-		if (g_bloom) {
-			constexpr int blur_iterations = 10;
-			bool horizontal = true;
-
-			bool first_iteration = true;
-			unsigned int current_fbo = 0;
-			unsigned int current_texture = 0;
-
-			blur_shader.use();
-			blur_shader.set_int("image", 0);
-
-			for (int i = 0; i < blur_iterations; ++i) {
-				glBindFramebuffer(GL_FRAMEBUFFER, g_blur_fbo[current_fbo]);
-
-				blur_shader.set_bool("horizontal", horizontal);
-
-				glActiveTexture(GL_TEXTURE0);
-				if (first_iteration) {
-					glBindTexture(GL_TEXTURE_2D, g_hdr_color_buffer[1]); // Brightness buffer
-					first_iteration = false;
-				}
-				else {
-					glBindTexture(GL_TEXTURE_2D, g_blur_color_buffer[current_texture]);
-				}
-
-				render_fullscreen_quad();
-
-				horizontal = !horizontal;
-				current_fbo = (current_fbo + 1) % 2;
-				current_texture = (current_texture + 1) % 2;
-			}
-
-			glBindFramebuffer(GL_FRAMEBUFFER, 0);
-		}
-	}
-
-	void render_post_processing(const gse::shader& post_processing_shader) {
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+		render_fullscreen_quad();
+
+		// Unbind textures after rendering
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, 0);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, 0);
+	}
+
+	void render_additional_post_processing(const gse::shader& post_processing_shader) {
 		post_processing_shader.use();
 		post_processing_shader.set_int("scene", 0);
-		post_processing_shader.set_int("bloomBlur", 1);
-		post_processing_shader.set_bool("hdr", g_hdr);
-		post_processing_shader.set_bool("bloom", g_bloom);
-		post_processing_shader.set_float("exposure", g_hdr_exposure);
 
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, g_hdr_color_buffer[0]);
 
-		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, g_blur_color_buffer[0]);
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		render_fullscreen_quad();
 
-		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, 0);
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, 0);
 	}
@@ -537,7 +528,6 @@ namespace {
 		glViewport(0, 0, static_cast<GLsizei>(g_shadow_width), static_cast<GLsizei>(g_shadow_height)); 
 		glBindFramebuffer(GL_FRAMEBUFFER, depth_map_fbo);
 		glClear(GL_DEPTH_BUFFER_BIT);
-
 
 		for (const auto& render_component : render_components) {
 			if (const auto render_component_ptr = render_component.lock(); render_component_ptr) {
@@ -756,10 +746,6 @@ void gse::renderer::render_objects(group& group) {
 	glEnable(GL_DEPTH_TEST);
 	glDisable(GL_BLEND);
 
-	render_lighting_pass(g_deferred_rendering_shaders["LightingPass"], light_data, light_space_matrices, depth_maps);
-
-	render_brightness_pass(g_deferred_rendering_shaders["Bloom"], g_deferred_rendering_shaders["GaussianBlur"]);
-
 	if (window::get_fbo().has_value()) {
 		glBindFramebuffer(GL_FRAMEBUFFER, window::get_fbo().value());
 	}
@@ -767,7 +753,13 @@ void gse::renderer::render_objects(group& group) {
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
 
-	render_post_processing(g_deferred_rendering_shaders["PostProcessing"]);
+	render_lighting_pass(g_deferred_rendering_shaders["LightingPass"], light_data, light_space_matrices, depth_maps);
+
+	const int current_texture = render_blur_pass(g_deferred_rendering_shaders["GaussianBlur"]);
+
+	render_bloom_compositing(g_deferred_rendering_shaders["Bloom"], current_texture);
+
+	render_additional_post_processing(g_deferred_rendering_shaders["PostProcessing"]);
 }
 
 gse::camera& gse::renderer::get_camera() {
