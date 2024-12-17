@@ -13,7 +13,7 @@ namespace gse {
 			debug::add_imgui_callback([this, light_id] {
 				ImGui::Begin(std::string("Spot Light " + light_id->tag).c_str());
 				ImGui::ColorEdit3("Color", &m_color.as_default_units().x);
-				debug::unit_slider("Intensity", m_intensity, unitless(0.0f), unitless(1000.0f));
+				debug::unit_slider("Intensity", m_intensity, unitless(0.0f), unitless(10000.0f));
 				debug::unit_slider("Constant", m_constant, unitless(0.0f), unitless(1.0f));
 				debug::unit_slider("Linear", m_linear, unitless(0.0f), unitless(1.0f));
 				debug::unit_slider("Quadratic", m_quadratic, unitless(0.0f), unitless(1.0f));
