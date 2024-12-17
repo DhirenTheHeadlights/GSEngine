@@ -259,8 +259,6 @@ void gse::renderer::initialize3d() {
 	bloom_shader.use();
 	bloom_shader.set_int("scene", 0);
 	bloom_shader.set_int("bloomBlur", 1);
-	bloom_shader.set_bool("hdr", g_hdr);
-	bloom_shader.set_float("exposure", g_hdr_exposure);
 	bloom_shader.set_float("bloomIntensity", g_bloom_intensity);
 
 	blur_shader.use();
@@ -283,6 +281,8 @@ void gse::renderer::initialize3d() {
 
 	post_processing_shader.use();
 	post_processing_shader.set_int("scene", 0);
+	post_processing_shader.set_bool("hdr", g_hdr);
+	post_processing_shader.set_float("exposure", g_hdr_exposure);
 }
 
 namespace {
@@ -451,41 +451,34 @@ namespace {
 
 		bool horizontal = true;
 		bool first_iteration = true;
-		unsigned int current_fbo = 0;
-		unsigned int current_texture = 0;
+		constexpr int blur_amount = 10;
+		const GLuint input_texture = g_hdr_color_buffer[1];
 
-		for (int i = 0; i < 10; ++i) {
-			glBindFramebuffer(GL_FRAMEBUFFER, g_blur_fbo[current_fbo]);
+		for (int i = 0; i < blur_amount; ++i) {
+			glBindFramebuffer(GL_FRAMEBUFFER, g_blur_fbo[horizontal ? 1 : 0]);
 			blur_shader.set_bool("horizontal", horizontal);
 
 			glActiveTexture(GL_TEXTURE0);
-			if (first_iteration) {
-				glBindTexture(GL_TEXTURE_2D, g_hdr_color_buffer[1]);
-				first_iteration = false;
-			}
-			else {
-				glBindTexture(GL_TEXTURE_2D, g_blur_color_buffer[current_texture]);
-			}
+			glBindTexture(GL_TEXTURE_2D, first_iteration ? input_texture : g_blur_color_buffer[!horizontal]);
 
 			render_fullscreen_quad();
 
 			horizontal = !horizontal;
-			current_fbo = 1 - current_fbo;
-			current_texture = 1 - current_texture;
+			if (first_iteration) first_iteration = false;
 		}
 
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-		return static_cast<int>(current_texture);
+		// After completion, 'horizontal' has been toggled amount times.
+		// The last written texture is in g_blur_color_buffer[!horizontal].
+		return !horizontal;
 	}
 
 	void render_bloom_compositing(const gse::shader& bloom_shader, const int current_texture) {
 		bloom_shader.use();
 		bloom_shader.set_int("scene", 0);
 		bloom_shader.set_int("bloomBlur", 1);
-		bloom_shader.set_bool("hdr", g_hdr);
 		bloom_shader.set_bool("bloom", g_bloom);
-		bloom_shader.set_float("exposure", g_hdr_exposure);
 
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, g_hdr_color_buffer[0]); // Full HDR scene
@@ -508,6 +501,8 @@ namespace {
 	void render_additional_post_processing(const gse::shader& post_processing_shader) {
 		post_processing_shader.use();
 		post_processing_shader.set_int("scene", 0);
+		post_processing_shader.set_bool("hdr", g_hdr);
+		post_processing_shader.set_float("exposure", g_hdr_exposure);
 
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, g_hdr_color_buffer[0]);
