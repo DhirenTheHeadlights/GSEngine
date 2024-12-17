@@ -36,6 +36,7 @@ namespace {
 	gse::unitless g_hdr_exposure = 1.f;
 	gse::unitless g_bloom_intensity = 1.f;
 	gse::unitless g_bloom_threshold = 0.5f;
+	gse::unitless g_blur_radius = 1.0f;
 
 	gse::cube_map g_reflection_cube_map;
 
@@ -46,7 +47,7 @@ namespace {
 	bool g_brightness_extraction_debug = false;
 	bool g_hdr = true;
 	bool g_bloom = true;
-	int g_blur_amount = 5;
+	int g_blur_amount = 5; // Amount of blur passes in each direction, not total
 
 	void load_shaders(const std::string& shader_path, const std::string& shader_file_name, std::unordered_map<std::string, gse::shader>& shaders) {
 		gse::json_parse::parse(
@@ -246,18 +247,16 @@ void gse::renderer::initialize3d() {
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-	const auto& bloom_shader = g_deferred_rendering_shaders["Bloom"];
 	const auto& blur_shader = g_deferred_rendering_shaders["GaussianBlur"];
 
-	bloom_shader.use();
-	bloom_shader.set_int("scene", 0);
-	bloom_shader.set_int("bloomBlur", 1);
-	bloom_shader.set_float("bloomIntensity", g_bloom_intensity);
+	
+	
 
 	blur_shader.use();
 	blur_shader.set_int("image", 0);
 	blur_shader.set_bool("horizontal", true);
-
+	blur_shader.set_float("bloom_intensity", g_bloom_intensity);
+	blur_shader.set_float("blur_radius", g_blur_radius);
 	const auto& lighting_pass_shader = g_deferred_rendering_shaders["LightingPass"];
 
 	lighting_pass_shader.use();
@@ -276,6 +275,8 @@ void gse::renderer::initialize3d() {
 	post_processing_shader.set_int("scene", 0);
 	post_processing_shader.set_bool("hdr", g_hdr);
 	post_processing_shader.set_float("exposure", g_hdr_exposure);
+	post_processing_shader.set_int("bloomBlur", 1);
+	post_processing_shader.set_bool("bloom", g_bloom);
 }
 
 namespace {
@@ -444,6 +445,9 @@ namespace {
 		blur_shader.use();
 		blur_shader.set_int("image", 0);
 		blur_shader.set_int("blur_amount", g_blur_amount);
+		blur_shader.set_float("bloom_intensity", g_bloom_intensity);
+		blur_shader.set_float("blur_radius", g_blur_radius);
+
 
 		bool horizontal = true;
 		bool first_iteration = true;
@@ -468,19 +472,23 @@ namespace {
 		return !horizontal;
 	}
 
-	void render_bloom_compositing(const gse::shader& bloom_shader, const int current_texture) {
-		bloom_shader.use();
-		bloom_shader.set_int("scene", 0);
-		bloom_shader.set_int("bloomBlur", 1);
-		bloom_shader.set_float("bloomIntensity", g_bloom_intensity);
-		bloom_shader.set_bool("bloom", g_bloom);
-
+	void render_additional_post_processing(const gse::shader& post_processing_shader, const int current_texture) {
+		// Begin HDR layer blend
+		post_processing_shader.use();
+		post_processing_shader.set_int("scene", 0);
+		post_processing_shader.set_bool("hdr", g_hdr);
+		post_processing_shader.set_float("exposure", g_hdr_exposure);
+		post_processing_shader.set_int("bloomBlur", 1);
+		post_processing_shader.set_bool("bloom", g_bloom);
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, g_hdr_color_buffer[0]);
+
+		//// Begin Bloom layer blend
 		glActiveTexture(GL_TEXTURE1);
 		glBindTexture(GL_TEXTURE_2D, g_blur_color_buffer[current_texture]);
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
 
 		render_fullscreen_quad();
 
@@ -491,28 +499,9 @@ namespace {
 		glBindTexture(GL_TEXTURE_2D, 0);
 	}
 
-	void render_additional_post_processing(const gse::shader& post_processing_shader) {
-		post_processing_shader.use();
-		post_processing_shader.set_int("scene", 0);
-		post_processing_shader.set_bool("hdr", g_hdr);
-		post_processing_shader.set_float("exposure", g_hdr_exposure);
-
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, g_hdr_color_buffer[0]);
-
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-		render_fullscreen_quad();
-
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, 0);
-	}
-
 	void render_shadow_pass(const gse::shader& shadow_shader, const std::vector<std::weak_ptr<gse::render_component>>& render_components, const glm::mat4& light_projection, const glm::mat4& light_view, const GLuint depth_map_fbo, const std::shared_ptr<gse::id>& light_ignore_list_id) {
 		shadow_shader.set_mat4("light_view", light_view);
 		shadow_shader.set_mat4("light_projection", light_projection);
-
 		glViewport(0, 0, static_cast<GLsizei>(g_shadow_width), static_cast<GLsizei>(g_shadow_height)); 
 		glBindFramebuffer(GL_FRAMEBUFFER, depth_map_fbo);
 		glClear(GL_DEPTH_BUFFER_BIT);
@@ -602,10 +591,11 @@ void gse::renderer::render_objects(group& group) {
 		ImGui::Checkbox("Brightness Extraction Debug", &g_brightness_extraction_debug);
 		ImGui::SliderInt("Blur Amount", &g_blur_amount, 0, 10);
 
+		
 		debug::unit_slider("Exposure", g_hdr_exposure, unitless(0.1f), unitless(10.f));
 		debug::unit_slider("Bloom Intensity", g_bloom_intensity, unitless(0.1f), unitless(10.f));
 		debug::unit_slider("Bloom Threshold", g_bloom_threshold, unitless(0.1f), unitless(10.f));
-
+		debug::unit_slider("Bloom Radius", g_blur_radius, unitless(0.1f), unitless(10.f));
 		ImGui::End();
 		});
 
@@ -744,11 +734,12 @@ void gse::renderer::render_objects(group& group) {
 
 	render_lighting_pass(g_deferred_rendering_shaders["LightingPass"], light_data, light_space_matrices, depth_maps);
 
+	
+
 	const int current_texture = render_blur_pass(g_deferred_rendering_shaders["GaussianBlur"]);
 
-	render_bloom_compositing(g_deferred_rendering_shaders["Bloom"], current_texture);
-
-	render_additional_post_processing(g_deferred_rendering_shaders["PostProcessing"]);
+	render_additional_post_processing(g_deferred_rendering_shaders["PostProcessing"], current_texture);
+	
 }
 
 gse::camera& gse::renderer::get_camera() {
