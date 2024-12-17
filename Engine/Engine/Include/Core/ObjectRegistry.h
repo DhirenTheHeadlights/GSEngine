@@ -19,5 +19,5 @@ namespace gse::registry {
 	void remove_object_from_list(const std::weak_ptr<id>& list_id, const object* object);
 	void remove_id_from_list(const std::weak_ptr<id>& list_id, const id* id);
 
-	void clean_up_stale_lists(const time& clean_up_interval = seconds(60.f));
+	void periodically_clean_up_stale_lists(const time& clean_up_interval = seconds(60.f));
 }

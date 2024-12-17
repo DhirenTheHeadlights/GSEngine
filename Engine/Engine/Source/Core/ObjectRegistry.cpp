@@ -85,7 +85,7 @@ void gse::registry::remove_id_from_list(const std::weak_ptr<id>& list_id, const 
 		});
 }
 
-void gse::registry::clean_up_stale_lists(const time& clean_up_interval) {
+void gse::registry::periodically_clean_up_stale_lists(const time& clean_up_interval) {
 	if (g_clean_up_clock.get_elapsed_time() < clean_up_interval) {
 		return;
 	}
