@@ -6,23 +6,33 @@ in vec2 TexCoords;
 uniform sampler2D image;
 
 uniform bool horizontal;
-uniform float weight[5] = float[] (0.2270270270, 0.1945945946, 0.1216216216, 0.0540540541, 0.0162162162);
+//uniform float weight[5] = float[] (0.2270270270, 0.1945945946, 0.1216216216, 0.0540540541, 0.0162162162);
+uniform int blur_amount;
+
+// Function to calculate Gaussian weights
+float gaussianWeight(int x, float sigma) {
+    return exp(-(x * x) / (2.0 * sigma * sigma)) / (sqrt(2.0 * 3.14159) * sigma);
+}
+
 
 void main() {             
+     float sigma = float(blur_amount) * 0.5;
      vec2 tex_offset = 1.0 / textureSize(image, 0); // Gets size of single texel
-     vec3 result = texture(image, TexCoords).rgb * weight[0];
+     vec3 result = texture(image, TexCoords).rgb * gaussianWeight(0, sigma);
 
      if (horizontal) {
-         for(int i = 1; i < 5; ++i) {
-            result += texture(image, TexCoords + vec2(tex_offset.x * i, 0.0)).rgb * weight[i];
-            result += texture(image, TexCoords - vec2(tex_offset.x * i, 0.0)).rgb * weight[i];
+         for(int i = 1; i < blur_amount; ++i) {
+            float weight = gaussianWeight(i, sigma);
+            result += texture(image, TexCoords + vec2(tex_offset.x * i, 0.0)).rgb * weight;
+            result += texture(image, TexCoords - vec2(tex_offset.x * i, 0.0)).rgb * weight;
          }
      }
      else {
-         for(int i = 1; i < 5; ++i)
+         for(int i = 1; i < blur_amount; ++i)
          {
-             result += texture(image, TexCoords + vec2(0.0, tex_offset.y * i)).rgb * weight[i];
-             result += texture(image, TexCoords - vec2(0.0, tex_offset.y * i)).rgb * weight[i];
+             float weight = gaussianWeight(i, sigma);
+             result += texture(image, TexCoords + vec2(0.0, tex_offset.y * i)).rgb * weight;
+             result += texture(image, TexCoords - vec2(0.0, tex_offset.y * i)).rgb * weight;
          }
      }
 

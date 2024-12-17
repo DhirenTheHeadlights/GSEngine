@@ -46,6 +46,7 @@ namespace {
 	bool g_brightness_extraction_debug = false;
 	bool g_hdr = true;
 	bool g_bloom = true;
+	int g_blur_amount = 5;
 
 	void load_shaders(const std::string& shader_path, const std::string& shader_file_name, std::unordered_map<std::string, gse::shader>& shaders) {
 		gse::json_parse::parse(
@@ -241,14 +242,6 @@ void gse::renderer::initialize3d() {
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE); // Optional but recommended
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_blur_color_buffer[i], 0);
 
-		GLenum bloom_draw_buffer = GL_COLOR_ATTACHMENT0;
-		glDrawBuffers(1, &bloom_draw_buffer);
-
-		GLuint bloom_rbo_depth;
-		glGenRenderbuffers(1, &bloom_rbo_depth);
-		glBindRenderbuffer(GL_RENDERBUFFER, bloom_rbo_depth);
-		glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, screen_width, screen_height);
-		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, bloom_rbo_depth);
 	}
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -377,6 +370,8 @@ namespace {
 			glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), static_cast<void*>(nullptr));
 			glEnableVertexAttribArray(1);
 			glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), reinterpret_cast<void*>(2 * sizeof(float)));
+
+
 		}
 
 		glBindVertexArray(quad_vao);
@@ -448,23 +443,22 @@ namespace {
 	int render_blur_pass(const gse::shader& blur_shader) {
 		blur_shader.use();
 		blur_shader.set_int("image", 0);
+		blur_shader.set_int("blur_amount", g_blur_amount);
 
 		bool horizontal = true;
 		bool first_iteration = true;
-		constexpr int blur_amount = 10;
 		const GLuint input_texture = g_hdr_color_buffer[1];
 
-		for (int i = 0; i < blur_amount; ++i) {
-			glBindFramebuffer(GL_FRAMEBUFFER, g_blur_fbo[horizontal ? 1 : 0]);
+		for (int i = 0; i < (2 * g_blur_amount); ++i) {
+			glBindFramebuffer(GL_FRAMEBUFFER, g_blur_fbo[horizontal]);
 			blur_shader.set_bool("horizontal", horizontal);
-
 			glActiveTexture(GL_TEXTURE0);
 			glBindTexture(GL_TEXTURE_2D, first_iteration ? input_texture : g_blur_color_buffer[!horizontal]);
 
 			render_fullscreen_quad();
 
 			horizontal = !horizontal;
-			if (first_iteration) first_iteration = false;
+			first_iteration = false;
 		}
 
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -478,14 +472,13 @@ namespace {
 		bloom_shader.use();
 		bloom_shader.set_int("scene", 0);
 		bloom_shader.set_int("bloomBlur", 1);
+		bloom_shader.set_float("bloomIntensity", g_bloom_intensity);
 		bloom_shader.set_bool("bloom", g_bloom);
 
 		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, g_hdr_color_buffer[0]); // Full HDR scene
-
+		glBindTexture(GL_TEXTURE_2D, g_hdr_color_buffer[0]);
 		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, g_blur_color_buffer[current_texture]); // Blurred scene
-
+		glBindTexture(GL_TEXTURE_2D, g_blur_color_buffer[current_texture]);
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -607,6 +600,7 @@ void gse::renderer::render_objects(group& group) {
 		ImGui::Checkbox("Bloom", &g_bloom);
 		ImGui::Checkbox("Depth Map Debug", &g_depth_map_debug);
 		ImGui::Checkbox("Brightness Extraction Debug", &g_brightness_extraction_debug);
+		ImGui::SliderInt("Blur Amount", &g_blur_amount, 0, 10);
 
 		debug::unit_slider("Exposure", g_hdr_exposure, unitless(0.1f), unitless(10.f));
 		debug::unit_slider("Bloom Intensity", g_bloom_intensity, unitless(0.1f), unitless(10.f));
