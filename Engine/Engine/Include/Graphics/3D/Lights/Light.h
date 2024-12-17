@@ -1,7 +1,6 @@
 #pragma once
 
 #include <glm/glm.hpp>
-
 #include "Graphics/Debug.h"
 
 namespace gse {
@@ -33,6 +32,7 @@ namespace gse {
     struct light_render_queue_entry {
         std::string shader_key = "Emissive";
         light_shader_entry shader_entry;
+        const id* ignore_list_id = nullptr;
 
         GLuint depth_map = 0;
         GLuint depth_map_fbo = 0;
@@ -55,7 +55,8 @@ namespace gse {
             const angle& outer_cut_off = degrees(0.0f),	     // Default: No spotlight outer cutoff
             const unitless& ambient_strength = 0.0f,         // Default: No ambient strength
             const length& near_plane = meters(0.1f),         // Default: Near plane for shadow mapping
-            const length& far_plane = meters(1000.0f)        // Default: Far plane for shadow mapping
+            const length& far_plane = meters(1000.0f),       // Default: Far plane for shadow mapping
+			const id* ignore_list_id = nullptr 			     // Default: No ignore list
         )
             : shader_entry({
                     static_cast<int>(type),
@@ -74,22 +75,28 @@ namespace gse {
                     ambient_strength,
                     0
                 }),
-            depth_map(depth_map),
-            depth_map_fbo(depth_map_fbo),
-            near_plane(near_plane),
-            far_plane(far_plane)
-        {}
+              ignore_list_id(ignore_list_id),
+              depth_map(depth_map),
+              depth_map_fbo(depth_map_fbo),
+              near_plane(near_plane),
+              far_plane(far_plane) {}
     };
 
 	class light {
 	public:
 		light() = default;
 		virtual ~light() = default;
+
 		virtual light_render_queue_entry get_render_queue_entry() const = 0;
         virtual void show_debug_menu(const std::shared_ptr<id>& light_id) = 0;
 
 		light_type get_type() const { return m_type; }
+
 		virtual void set_depth_map(GLuint depth_map, GLuint depth_map_fbo) {}
+		virtual void set_position(const vec3<length>& position) {}
+
+		void set_ignore_list_id(const std::shared_ptr<id>& ignore_list_id) { m_ignore_list_id = ignore_list_id; }
+		const std::shared_ptr<id>& get_ignore_list_id() const { return m_ignore_list_id; }
 	protected:
 		light(const vec3<>& color, const unitless& intensity, const light_type type)
 			: m_color(color), m_intensity(intensity), m_type(type) {}
@@ -100,5 +107,7 @@ namespace gse {
 
 		length m_near_plane = meters(10.f);
 		length m_far_plane = meters(1000.0f);
+
+        std::shared_ptr<id> m_ignore_list_id;
 	};
 }

@@ -1,6 +1,7 @@
 #include "Graphics/3D/Mesh.h"
 
 #include "glm/ext/matrix_transform.hpp"
+#include "Physics/Vector/Math.h"
 
 gse::mesh::mesh() {
 	glGenVertexArrays(1, &m_vao);
