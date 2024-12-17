@@ -33,9 +33,9 @@ namespace {
 	GLuint g_blur_fbo[2] = { 0, 0 };
 	GLuint g_blur_color_buffer[2] = { 0, 0 };
 
-	gse::unitless g_hdr_exposure = 1.f;
+	gse::unitless g_hdr_exposure = 0.5f;
 	gse::unitless g_bloom_intensity = 1.f;
-	gse::unitless g_bloom_threshold = 0.5f;
+	gse::unitless g_bloom_threshold = 0.25f;
 	gse::unitless g_blur_radius = 1.0f;
 
 	gse::cube_map g_reflection_cube_map;
