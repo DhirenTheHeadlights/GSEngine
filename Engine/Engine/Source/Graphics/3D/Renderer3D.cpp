@@ -2,6 +2,7 @@
 
 #include <glm/gtx/string_cast.hpp>
 
+#include "Core/ObjectRegistry.h"
 #include "Core/JsonParser.h"
 #include "Core/ResourcePaths.h"
 #include "Graphics/Shader.h"
@@ -27,12 +28,26 @@ namespace {
 	GLuint g_ssbo_lights = 0;
 	GLuint g_light_space_block_ubo = 0;
 
+	GLuint g_hdr_fbo = 0;
+	GLuint g_hdr_color_buffer[2] = { 0, 0 };
+	GLuint g_blur_fbo[2] = { 0, 0 };
+	GLuint g_blur_color_buffer[2] = { 0, 0 };
+
+	gse::unitless g_hdr_exposure = 0.5f;
+	gse::unitless g_bloom_intensity = 1.f;
+	gse::unitless g_bloom_threshold = 0.25f;
+	gse::unitless g_blur_radius = 1.0f;
+
 	gse::cube_map g_reflection_cube_map;
 
 	float g_shadow_width = 4096;
 	float g_shadow_height = 4096;
 
 	bool g_depth_map_debug = false;
+	bool g_brightness_extraction_debug = false;
+	bool g_hdr = true;
+	bool g_bloom = true;
+	int g_amount_of_blur_passes_in_each_direction = 5;
 
 	void load_shaders(const std::string& shader_path, const std::string& shader_file_name, std::unordered_map<std::string, gse::shader>& shaders) {
 		gse::json_parse::parse(
@@ -184,15 +199,81 @@ void gse::renderer::initialize3d() {
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, g_ssbo_lights);
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
-	const auto& lighting_shader = g_deferred_rendering_shaders["LightingPass"];
+	// Set up HDR frame buffer
+	glGenFramebuffers(1, &g_hdr_fbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, g_hdr_fbo);
 
-	lighting_shader.use();
-	lighting_shader.set_int("gPosition", 0);
-	lighting_shader.set_int("gNormal", 1);
-	lighting_shader.set_int("gAlbedoSpec", 2);
-	lighting_shader.set_bool("depthMapDebug", g_depth_map_debug);
+	glGenTextures(2, g_hdr_color_buffer);
+	for (int i = 0; i < 2; i++) {
+		glBindTexture(GL_TEXTURE_2D, g_hdr_color_buffer[i]);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, screen_width, screen_height, 0, GL_RGBA, GL_FLOAT, nullptr);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); // Optional but recommended
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE); // Optional but recommended
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + i, GL_TEXTURE_2D, g_hdr_color_buffer[i], 0);
+	}
+
+	constexpr GLenum hdr_draw_buffers[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+	glDrawBuffers(2, hdr_draw_buffers);
+
+	GLuint hdr_rbo_depth;
+	glGenRenderbuffers(1, &hdr_rbo_depth);
+	glBindRenderbuffer(GL_RENDERBUFFER, hdr_rbo_depth);
+	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, screen_width, screen_height);
+	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, hdr_rbo_depth);
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	// Set up bloom frame buffers
+	glGenFramebuffers(2, g_blur_fbo);
+	glGenTextures(2, g_blur_color_buffer);
+	for (int i = 0; i < 2; i++) {
+		glBindFramebuffer(GL_FRAMEBUFFER, g_blur_fbo[i]);
+
+		glBindTexture(GL_TEXTURE_2D, g_blur_color_buffer[i]);
+		glTexImage2D(
+			GL_TEXTURE_2D, 0, GL_RGBA16F,
+			screen_width, screen_height, 0,
+			GL_RGBA, GL_FLOAT, nullptr
+		);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); // Optional but recommended
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE); // Optional but recommended
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_blur_color_buffer[i], 0);
+
+	}
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	const auto& blur_shader = g_deferred_rendering_shaders["GaussianBlur"];
+
+	blur_shader.use();
+	blur_shader.set_int("image", 0);
+	blur_shader.set_bool("horizontal", true);
+	blur_shader.set_float("bloom_intensity", g_bloom_intensity);
+	blur_shader.set_float("blur_radius", g_blur_radius);
+	const auto& lighting_pass_shader = g_deferred_rendering_shaders["LightingPass"];
+
+	lighting_pass_shader.use();
+	lighting_pass_shader.set_int("gPosition", 0);
+	lighting_pass_shader.set_int("gNormal", 1);
+	lighting_pass_shader.set_int("gAlbedoSpec", 2);
+	lighting_pass_shader.set_bool("depthMapDebug", g_depth_map_debug);
+	lighting_pass_shader.set_bool("brightness_extraction_debug", g_brightness_extraction_debug);
+	lighting_pass_shader.set_int("diffuseTexture", 3);
 
 	g_reflection_cube_map.create(1024);
+
+	const auto& post_processing_shader = g_deferred_rendering_shaders["PostProcessing"];
+
+	post_processing_shader.use();
+	post_processing_shader.set_int("scene", 0);
+	post_processing_shader.set_bool("hdr", g_hdr);
+	post_processing_shader.set_float("exposure", g_hdr_exposure);
+	post_processing_shader.set_int("bloomBlur", 1);
+	post_processing_shader.set_bool("bloom", g_bloom);
 }
 
 namespace {
@@ -262,51 +343,7 @@ namespace {
 		}
 	}
 
-	void render_lighting_pass(const gse::shader& lighting_shader, const std::vector<gse::light_shader_entry>& light_data, const std::vector<glm::mat4>& light_space_matrices, const std::vector<GLuint>& depth_maps) {
-		if (light_data.empty()) {
-			return;
-		}
-
-		lighting_shader.use();
-
-		// Update SSBO with light data
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, g_ssbo_lights);
-		glBufferData(GL_SHADER_STORAGE_BUFFER, light_data.size() * sizeof(gse::light_shader_entry), light_data.data(), GL_DYNAMIC_DRAW);
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, g_ssbo_lights);
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-
-		// Update UBO with light space matrices
-		glBindBuffer(GL_UNIFORM_BUFFER, g_light_space_block_ubo);
-		glBufferSubData(GL_UNIFORM_BUFFER, 0, light_space_matrices.size() * sizeof(glm::mat4), light_space_matrices.data());
-		glBindBuffer(GL_UNIFORM_BUFFER, 0);
-
-		// Lighting pass
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-		glDisable(GL_DEPTH_TEST);
-
-		std::vector<GLint> shadow_map_units(depth_maps.size());
-		for (size_t i = 0; i < depth_maps.size(); ++i) {
-			glActiveTexture(GL_TEXTURE3 + i);
-			glBindTexture(light_data[i].light_type == static_cast<int>(gse::light_type::point) ? GL_TEXTURE_CUBE_MAP : GL_TEXTURE_2D, depth_maps[i]);
-			shadow_map_units[i] = 3 + i;
-		}
-
-		lighting_shader.set_int_array("shadowMaps", shadow_map_units.data(), static_cast<unsigned>(shadow_map_units.size()));
-		lighting_shader.set_mat4_array("lightSpaceMatrices", light_space_matrices.data(), static_cast<unsigned>(light_space_matrices.size()));
-
-		// Pass other G-buffer textures
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, g_g_position);
-		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, g_g_normal);
-		glActiveTexture(GL_TEXTURE2);
-		glBindTexture(GL_TEXTURE_2D, g_g_albedo_spec);
-
-		constexpr GLuint binding_unit = 5;
-		g_reflection_cube_map.bind(binding_unit);
-		lighting_shader.set_int("environmentMap", binding_unit);
-
-		// Render a full-screen quad to process lighting
+	void render_fullscreen_quad() {
 		static unsigned int quad_vao = 0;
 		static unsigned int quad_vbo = 0;
 
@@ -331,26 +368,147 @@ namespace {
 			glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), static_cast<void*>(nullptr));
 			glEnableVertexAttribArray(1);
 			glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), reinterpret_cast<void*>(2 * sizeof(float)));
+
+
 		}
 
 		glBindVertexArray(quad_vao);
 		glDrawArrays(GL_TRIANGLES, 0, 6);
 		glBindVertexArray(0);
-
-		glEnable(GL_DEPTH_TEST);  // Re-enable depth testing after the lighting pass
 	}
 
-	void render_shadow_pass(const gse::shader& shadow_shader, const std::vector<std::weak_ptr<gse::render_component>>& render_components, const glm::mat4& light_projection, const glm::mat4& light_view, const GLuint depth_map_fbo) {
+	void render_lighting_pass(const gse::shader& lighting_shader, const std::vector<gse::light_shader_entry>& light_data, const std::vector<glm::mat4>& light_space_matrices, const std::vector<GLuint>& depth_maps) {
+		if (light_data.empty()) {
+			return;
+		}
+
+		lighting_shader.use();
+
+		// Update SSBO with light data
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, g_ssbo_lights);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, light_data.size() * sizeof(gse::light_shader_entry), light_data.data(), GL_DYNAMIC_DRAW);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, g_ssbo_lights);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+		// Update UBO with light space matrices
+		glBindBuffer(GL_UNIFORM_BUFFER, g_light_space_block_ubo);
+		glBufferSubData(GL_UNIFORM_BUFFER, 0, light_space_matrices.size() * sizeof(glm::mat4), light_space_matrices.data());
+		glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+		// Bind HDR frame buffer
+		glBindFramebuffer(GL_FRAMEBUFFER, g_hdr_fbo);
+		constexpr GLenum hdr_draw_buffers[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+		glDrawBuffers(2, hdr_draw_buffers);
+
+		// Lighting pass
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		glDisable(GL_DEPTH_TEST);
+
+		std::vector<GLint> shadow_map_units(depth_maps.size());
+		for (size_t i = 0; i < depth_maps.size(); ++i) {
+			const GLenum texture_unit = GL_TEXTURE4 + i;
+			glActiveTexture(texture_unit);
+			glBindTexture(light_data[i].light_type == static_cast<int>(gse::light_type::point) ? GL_TEXTURE_CUBE_MAP : GL_TEXTURE_2D, depth_maps[i]);
+			shadow_map_units[i] = texture_unit - GL_TEXTURE0;
+		}
+
+		lighting_shader.set_int_array("shadowMaps", shadow_map_units.data(), static_cast<unsigned>(shadow_map_units.size()));
+		lighting_shader.set_mat4_array("lightSpaceMatrices", light_space_matrices.data(), static_cast<unsigned>(light_space_matrices.size()));
+		lighting_shader.set_bool("brightness_extraction_debug", g_brightness_extraction_debug);
+		lighting_shader.set_bool("depthMapDebug", g_depth_map_debug);
+		lighting_shader.set_float("bloomThreshold", g_bloom_threshold);
+
+		// Pass other G-buffer textures
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, g_g_position);
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, g_g_normal);
+		glActiveTexture(GL_TEXTURE2);
+		glBindTexture(GL_TEXTURE_2D, g_g_albedo_spec);
+
+		constexpr GLuint binding_unit = 5;
+		g_reflection_cube_map.bind(binding_unit);
+		lighting_shader.set_int("environmentMap", binding_unit);
+
+		render_fullscreen_quad();
+
+		glEnable(GL_DEPTH_TEST);  // Re-enable depth testing after the lighting pass
+
+		// Unbind HDR frame buffer
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	}
+
+	int render_blur_pass(const gse::shader& blur_shader) {
+		blur_shader.use();
+		blur_shader.set_int("image", 0);
+		blur_shader.set_int("blur_amount", g_amount_of_blur_passes_in_each_direction);
+		blur_shader.set_float("bloom_intensity", g_bloom_intensity);
+		blur_shader.set_float("blur_radius", g_blur_radius);
+
+
+		bool horizontal = true;
+		bool first_iteration = true;
+		const GLuint input_texture = g_hdr_color_buffer[1];
+
+		for (int i = 0; i < (2 * g_amount_of_blur_passes_in_each_direction); ++i) {
+			glBindFramebuffer(GL_FRAMEBUFFER, g_blur_fbo[horizontal]);
+			blur_shader.set_bool("horizontal", horizontal);
+			glActiveTexture(GL_TEXTURE0);
+			glBindTexture(GL_TEXTURE_2D, first_iteration ? input_texture : g_blur_color_buffer[!horizontal]);
+
+			render_fullscreen_quad();
+
+			horizontal = !horizontal;
+			first_iteration = false;
+		}
+
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+		// After completion, 'horizontal' has been toggled amount times.
+		// The last written texture is in g_blur_color_buffer[!horizontal].
+		return !horizontal;
+	}
+
+	void render_additional_post_processing(const gse::shader& post_processing_shader, const int current_texture) {
+		// Begin HDR layer blend
+		post_processing_shader.use();
+		post_processing_shader.set_int("scene", 0);
+		post_processing_shader.set_bool("hdr", g_hdr);
+		post_processing_shader.set_float("exposure", g_hdr_exposure);
+		post_processing_shader.set_int("bloomBlur", 1);
+		post_processing_shader.set_bool("bloom", g_bloom);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, g_hdr_color_buffer[0]);
+
+		//// Begin Bloom layer blend
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, g_blur_color_buffer[current_texture]);
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+
+		render_fullscreen_quad();
+
+		// Unbind textures after rendering
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, 0);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, 0);
+	}
+
+	void render_shadow_pass(const gse::shader& shadow_shader, const std::vector<std::weak_ptr<gse::render_component>>& render_components, const glm::mat4& light_projection, const glm::mat4& light_view, const GLuint depth_map_fbo, const std::shared_ptr<gse::id>& light_ignore_list_id) {
 		shadow_shader.set_mat4("light_view", light_view);
 		shadow_shader.set_mat4("light_projection", light_projection);
-
 		glViewport(0, 0, static_cast<GLsizei>(g_shadow_width), static_cast<GLsizei>(g_shadow_height)); 
 		glBindFramebuffer(GL_FRAMEBUFFER, depth_map_fbo);
 		glClear(GL_DEPTH_BUFFER_BIT);
 
-
 		for (const auto& render_component : render_components) {
-			if (const auto render_component_ptr = render_component.lock()) {
+			if (const auto render_component_ptr = render_component.lock(); render_component_ptr) {
+				if (gse::registry::is_id_in_list(light_ignore_list_id, render_component_ptr->get_id())) {
+					continue;
+				}
+
 				for (const auto& entry : render_component_ptr->get_queue_entries()) {
 					shadow_shader.set_mat4("model", entry.model_matrix);
 					glBindVertexArray(entry.vao);
@@ -381,7 +539,6 @@ namespace {
 
 		return normalized_up;
 	}
-
 
 	glm::mat4 calculate_light_projection(const std::shared_ptr<gse::light>& light) {
 		const auto& entry = light->get_render_queue_entry();
@@ -422,6 +579,23 @@ namespace {
 }
 
 void gse::renderer::render_objects(group& group) {
+	debug::add_imgui_callback([] {
+		ImGui::Begin("Renderer3D");
+
+		ImGui::Checkbox("HDR", &g_hdr);
+		ImGui::Checkbox("Bloom", &g_bloom);
+		ImGui::Checkbox("Depth Map Debug", &g_depth_map_debug);
+		ImGui::Checkbox("Brightness Extraction Debug", &g_brightness_extraction_debug);
+		ImGui::SliderInt("Blur Amount", &g_amount_of_blur_passes_in_each_direction, 0, 10);
+
+		
+		debug::unit_slider("Exposure", g_hdr_exposure, unitless(0.1f), unitless(10.f));
+		debug::unit_slider("Bloom Intensity", g_bloom_intensity, unitless(0.1f), unitless(10.f));
+		debug::unit_slider("Bloom Threshold", g_bloom_threshold, unitless(0.1f), unitless(10.f));
+		debug::unit_slider("Bloom Radius", g_blur_radius, unitless(0.1f), unitless(10.f));
+		ImGui::End();
+		});
+
 	const auto& render_components = group.get_render_components();
 	const auto& light_source_components = group.get_light_source_components();
 
@@ -435,7 +609,7 @@ void gse::renderer::render_objects(group& group) {
 	depth_maps.reserve(light_source_components.size());
 
 	for (const auto& light_source_component : light_source_components) {
-		if (const auto light_source_component_ptr = light_source_component.lock()) {
+		if (const auto light_source_component_ptr = light_source_component.lock(); light_source_component_ptr) {
 			for (const auto& entry : light_source_component_ptr->get_render_queue_entries()) {
 				light_data.push_back(entry.shader_entry);
 				depth_maps.push_back(entry.depth_map);
@@ -456,7 +630,7 @@ void gse::renderer::render_objects(group& group) {
 	g_reflection_cube_map.update(glm::vec3(0.f), g_camera.get_projection_matrix(),
 		[&group, render_components, forward_rendering_shader](const glm::mat4& view_matrix, const glm::mat4& projection_matrix) {
 			for (const auto& render_component : render_components) {
-				if (const auto render_component_ptr = render_component.lock()) {
+				if (const auto render_component_ptr = render_component.lock(); render_component_ptr) {
 					for (auto entries = render_component_ptr->get_queue_entries(); const auto& entry : entries) {
 						render_object_forward(forward_rendering_shader, entry, view_matrix, projection_matrix);
 					}
@@ -487,7 +661,11 @@ void gse::renderer::render_objects(group& group) {
 					shadow_shader.set_float("farPlane", point_light_ptr->get_render_queue_entry().far_plane.as<units::meters>());
 
 					for (const auto& render_component : render_components) {
-						if (const auto render_component_ptr = render_component.lock()) {
+						if (const auto render_component_ptr = render_component.lock(); render_component_ptr) {
+							if (registry::is_id_in_list(point_light_ptr->get_ignore_list_id(), render_component_ptr->get_id())) {
+								continue;
+							}
+
 							for (const auto& entry : render_component_ptr->get_queue_entries()) {
 								shadow_shader.set_mat4("model", entry.model_matrix);  // Object's model matrix
 								glBindVertexArray(entry.vao);
@@ -501,7 +679,7 @@ void gse::renderer::render_objects(group& group) {
 				auto light_projection = calculate_light_projection(light);
 				auto light_view = calculate_light_view(light);
 				light_space_matrices.push_back(light_projection * light_view);
-				render_shadow_pass(shadow_shader, render_components, light_projection, light_view, light->get_render_queue_entry().depth_map_fbo);
+				render_shadow_pass(shadow_shader, render_components, light_projection, light_view, light->get_render_queue_entry().depth_map_fbo, light->get_ignore_list_id());
 			}
 		}
 	}
@@ -513,7 +691,7 @@ void gse::renderer::render_objects(group& group) {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	for (const auto& render_component : render_components) {
-		if (const auto render_component_ptr = render_component.lock()) {
+		if (const auto render_component_ptr = render_component.lock(); render_component_ptr) {
 			for (auto entries = render_component_ptr->get_queue_entries(); const auto & entry : entries) {
 				render_object(entry, g_camera.get_view_matrix(), g_camera.get_projection_matrix());
 			}
@@ -531,7 +709,7 @@ void gse::renderer::render_objects(group& group) {
 	glDisable(GL_DEPTH_TEST);
 
 	for (const auto& light_source_component : light_source_components) {
-		if (const auto light_source_component_ptr = light_source_component.lock()) {
+		if (const auto light_source_component_ptr = light_source_component.lock(); light_source_component_ptr) {
 			for (const auto& entry : light_source_component_ptr->get_render_queue_entries()) {
 				render_object(entry); 
 			}
@@ -552,6 +730,11 @@ void gse::renderer::render_objects(group& group) {
 	}
 
 	render_lighting_pass(g_deferred_rendering_shaders["LightingPass"], light_data, light_space_matrices, depth_maps);
+
+	const int current_texture = render_blur_pass(g_deferred_rendering_shaders["GaussianBlur"]);
+
+	render_additional_post_processing(g_deferred_rendering_shaders["PostProcessing"], current_texture);
+	
 }
 
 gse::camera& gse::renderer::get_camera() {
