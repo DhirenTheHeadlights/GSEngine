@@ -7,10 +7,6 @@
     "vertex": "shadow_pass.vert",
     "fragment": "shadow_pass.frag"
   },
-  "Bloom": {
-    "vertex": "bloom.vert",
-    "fragment": "bloom.frag"
-  },
   "GaussianBlur": {
     "vertex": "gaussian_blur.vert",
     "fragment": "gaussian_blur.frag"
