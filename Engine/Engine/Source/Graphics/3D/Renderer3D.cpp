@@ -47,7 +47,7 @@ namespace {
 	bool g_brightness_extraction_debug = false;
 	bool g_hdr = true;
 	bool g_bloom = true;
-	int g_blur_amount = 5; // Amount of blur passes in each direction, not total
+	int g_amount_of_blur_passes_in_each_direction = 5;
 
 	void load_shaders(const std::string& shader_path, const std::string& shader_file_name, std::unordered_map<std::string, gse::shader>& shaders) {
 		gse::json_parse::parse(
@@ -249,9 +249,6 @@ void gse::renderer::initialize3d() {
 
 	const auto& blur_shader = g_deferred_rendering_shaders["GaussianBlur"];
 
-	
-	
-
 	blur_shader.use();
 	blur_shader.set_int("image", 0);
 	blur_shader.set_bool("horizontal", true);
@@ -444,7 +441,7 @@ namespace {
 	int render_blur_pass(const gse::shader& blur_shader) {
 		blur_shader.use();
 		blur_shader.set_int("image", 0);
-		blur_shader.set_int("blur_amount", g_blur_amount);
+		blur_shader.set_int("blur_amount", g_amount_of_blur_passes_in_each_direction);
 		blur_shader.set_float("bloom_intensity", g_bloom_intensity);
 		blur_shader.set_float("blur_radius", g_blur_radius);
 
@@ -453,7 +450,7 @@ namespace {
 		bool first_iteration = true;
 		const GLuint input_texture = g_hdr_color_buffer[1];
 
-		for (int i = 0; i < (2 * g_blur_amount); ++i) {
+		for (int i = 0; i < (2 * g_amount_of_blur_passes_in_each_direction); ++i) {
 			glBindFramebuffer(GL_FRAMEBUFFER, g_blur_fbo[horizontal]);
 			blur_shader.set_bool("horizontal", horizontal);
 			glActiveTexture(GL_TEXTURE0);
@@ -589,7 +586,7 @@ void gse::renderer::render_objects(group& group) {
 		ImGui::Checkbox("Bloom", &g_bloom);
 		ImGui::Checkbox("Depth Map Debug", &g_depth_map_debug);
 		ImGui::Checkbox("Brightness Extraction Debug", &g_brightness_extraction_debug);
-		ImGui::SliderInt("Blur Amount", &g_blur_amount, 0, 10);
+		ImGui::SliderInt("Blur Amount", &g_amount_of_blur_passes_in_each_direction, 0, 10);
 
 		
 		debug::unit_slider("Exposure", g_hdr_exposure, unitless(0.1f), unitless(10.f));
@@ -733,8 +730,6 @@ void gse::renderer::render_objects(group& group) {
 	}
 
 	render_lighting_pass(g_deferred_rendering_shaders["LightingPass"], light_data, light_space_matrices, depth_maps);
-
-	
 
 	const int current_texture = render_blur_pass(g_deferred_rendering_shaders["GaussianBlur"]);
 
