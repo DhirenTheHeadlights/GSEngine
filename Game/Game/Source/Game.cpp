@@ -40,10 +40,10 @@ struct scene1_hook final : gse::hook<gse::scene> {
 };
 
 bool game::initialize() {
-	auto scene1 = std::make_unique<gse::scene>();
+	auto scene1 = std::make_unique<gse::scene>("Scene1");
 	scene1->add_hook(std::make_unique<scene1_hook>(scene1.get()));
 
-	auto scene2 = std::make_unique<gse::scene>();
+	auto scene2 = std::make_unique<gse::scene>("Scene2");
 
 	gse::g_scene_handler.add_scene(scene1);
 	gse::g_scene_handler.add_scene(scene2);

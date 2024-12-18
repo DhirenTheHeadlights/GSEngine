@@ -11,7 +11,7 @@
 namespace gse {
 	class scene : public hookable, public identifiable {
 	public:
-		scene(const std::string& name = "Unnamed Scene") : identifiable(std::make_shared<id>(name)) {}
+		scene(const std::string& name = "Unnamed Scene") : identifiable(name) {}
 		scene(const std::shared_ptr<id>& id) : identifiable(id) {}
 
 		void add_object(std::unique_ptr<object>&& object);
