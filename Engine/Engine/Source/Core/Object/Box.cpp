@@ -104,6 +104,6 @@ private:
 	gse::vec3<gse::length> m_size;
 };
 
-gse::box::box(const vec3<length>& initial_position, const vec3<length>& size) {
+gse::box::box(const vec3<length>& initial_position, const vec3<length>& size) : object("Box") {
 	add_hook(std::make_unique<box_mesh_hook>(this, initial_position, size));
 }
