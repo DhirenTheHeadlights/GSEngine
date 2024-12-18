@@ -25,10 +25,18 @@ std::vector<gse::render_queue_entry> gse::render_component::get_queue_entries() 
 		entries.push_back(mesh->get_queue_entry());
 	}
 
-	if (m_bounding_box_meshes.empty()) return entries;
+	return entries;
+}
+
+std::vector<gse::render_queue_entry> gse::render_component::get_bounding_box_queue_entries() const {
+	if (!m_render_bounding_boxes) return {};
+
+	std::vector<render_queue_entry> entries;
+	entries.reserve(m_bounding_box_meshes.size());
 	for (const auto& bounding_box_mesh : m_bounding_box_meshes) {
 		entries.push_back(bounding_box_mesh->get_queue_entry());
 	}
+
 	return entries;
 }
 

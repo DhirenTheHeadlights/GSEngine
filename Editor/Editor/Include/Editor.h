@@ -2,24 +2,24 @@
 
 #include "Engine.h"
 
-namespace Editor {
+namespace editor {
 	void initialize();
 
-	void bindFbo();
-	void unbindFbo();
+	void bind_fbo();
+	void unbind_fbo();
 
 	void update();
 	void render();
 
 	void exit();
 
-	struct RenderingInterface : gse::window::rendering_interface {
+	struct rendering_interface final : gse::window::rendering_interface {
 		void on_pre_render() override {
 			
 		}
 
 		void on_post_render() override {
-			unbindFbo();
+			unbind_fbo();
 
 			update();
 			render();

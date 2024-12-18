@@ -368,8 +368,6 @@ namespace {
 			glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), static_cast<void*>(nullptr));
 			glEnableVertexAttribArray(1);
 			glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), reinterpret_cast<void*>(2 * sizeof(float)));
-
-
 		}
 
 		glBindVertexArray(quad_vao);
@@ -445,7 +443,6 @@ namespace {
 		blur_shader.set_float("bloom_intensity", g_bloom_intensity);
 		blur_shader.set_float("blur_radius", g_blur_radius);
 
-
 		bool horizontal = true;
 		bool first_iteration = true;
 		const GLuint input_texture = g_hdr_color_buffer[1];
@@ -470,26 +467,23 @@ namespace {
 	}
 
 	void render_additional_post_processing(const gse::shader& post_processing_shader, const int current_texture) {
-		// Begin HDR layer blend
 		post_processing_shader.use();
 		post_processing_shader.set_int("scene", 0);
 		post_processing_shader.set_bool("hdr", g_hdr);
 		post_processing_shader.set_float("exposure", g_hdr_exposure);
 		post_processing_shader.set_int("bloomBlur", 1);
 		post_processing_shader.set_bool("bloom", g_bloom);
+
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, g_hdr_color_buffer[0]);
 
-		//// Begin Bloom layer blend
 		glActiveTexture(GL_TEXTURE1);
 		glBindTexture(GL_TEXTURE_2D, g_blur_color_buffer[current_texture]);
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-
 		render_fullscreen_quad();
 
-		// Unbind textures after rendering
 		glActiveTexture(GL_TEXTURE1);
 		glBindTexture(GL_TEXTURE_2D, 0);
 		glActiveTexture(GL_TEXTURE0);
@@ -722,6 +716,10 @@ void gse::renderer::render_objects(group& group) {
 	glEnable(GL_DEPTH_TEST);
 	glDisable(GL_BLEND);
 
+	render_lighting_pass(g_deferred_rendering_shaders["LightingPass"], light_data, light_space_matrices, depth_maps);
+
+	const int current_texture = render_blur_pass(g_deferred_rendering_shaders["GaussianBlur"]);
+
 	if (window::get_fbo().has_value()) {
 		glBindFramebuffer(GL_FRAMEBUFFER, window::get_fbo().value());
 	}
@@ -729,12 +727,29 @@ void gse::renderer::render_objects(group& group) {
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
 
-	render_lighting_pass(g_deferred_rendering_shaders["LightingPass"], light_data, light_space_matrices, depth_maps);
-
-	const int current_texture = render_blur_pass(g_deferred_rendering_shaders["GaussianBlur"]);
-
 	render_additional_post_processing(g_deferred_rendering_shaders["PostProcessing"], current_texture);
-	
+
+	// Finally, render bounding boxes
+	for (const auto& render_component : render_components) {
+		if (const auto render_component_ptr = render_component.lock(); render_component_ptr) {
+			for (const auto& entry : render_component_ptr->get_bounding_box_queue_entries()) {
+				if (const auto it = g_materials.find(entry.material_key); it != g_materials.end()) {
+					it->second.use(g_camera.get_view_matrix(), g_camera.get_projection_matrix(), entry.model_matrix);
+					it->second.shader.set_vec3("color", entry.color);
+
+					glBindVertexArray(entry.vao);
+					glDrawArrays(entry.draw_mode, 0, entry.vertex_count);
+					glBindVertexArray(0);
+				}
+				else {
+					std::cerr << "Shader program key not found: " << entry.material_key << '\n';
+				}
+			}
+		}
+		else {
+			group.remove_render_component(render_component.lock());
+		}
+	}
 }
 
 gse::camera& gse::renderer::get_camera() {
