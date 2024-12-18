@@ -19,8 +19,8 @@ namespace {
 }
 
 void gse::scene::add_object(std::unique_ptr<object>&& object) {
-	m_objects.push_back(std::move(object));
 	registry::register_object(object.get());
+	m_objects.push_back(std::move(object));
 
 	/// Components are not added here; it is assumed that the object will only be ready
 	///	to be initialized after all components have been added (when the scene is activated)
@@ -42,8 +42,10 @@ void gse::scene::remove_object(const object* object_to_remove) {
 }
 
 void gse::scene::initialize() {
+	initialize_hooks();
+
 	for (auto& object : m_objects) {
-		object->process_initialize();
+		object->initialize_hooks();
 
 		handle_component<physics::motion_component>(object.get(), m_physics_system, &physics::group::add_motion_component);
 		handle_component<physics::collision_component, physics::motion_component>(object.get(), m_collision_group, &broad_phase_collision::group::add_dynamic_object);
@@ -54,19 +56,23 @@ void gse::scene::initialize() {
 }
 
 void gse::scene::update() {
+	update_hooks();
+
 	m_physics_system.update();
 	broad_phase_collision::update(m_collision_group);
 
 	for (const auto& object : m_objects) {
-		object->process_update();
+		object->update_hooks();
 	}
 }
 
 void gse::scene::render() {
+	render_hooks();
+
 	render_objects(m_render_group);
 
 	for (const auto& object : m_objects) {
-		object->process_render();
+		object->render_hooks();
 	}
 }
 
@@ -74,5 +80,14 @@ void gse::scene::exit() const {
 	for (const auto& object : m_objects) {
 		registry::unregister_object(object.get());
 	}
+}
+
+std::vector<gse::object*> gse::scene::get_objects() const {
+	std::vector<object*> objects;
+	objects.reserve(m_objects.size());
+	for (const auto& object : m_objects) {
+		objects.push_back(object.get());
+	}
+	return objects;
 }
 
