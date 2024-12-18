@@ -6,10 +6,10 @@
 #include "Graphics/3D/Lights/Light.h"
 
 namespace gse {
-	class light_source_component final : public engine_component {
+	class light_source_component final : public component {
 	public:
-		light_source_component(id* id) : engine_component(id) {}
-		light_source_component(id* id, const std::vector<std::shared_ptr<light>>& lights) : engine_component(id), m_lights(lights) {}
+		light_source_component(id* id) : component(id) {}
+		light_source_component(id* id, const std::vector<std::shared_ptr<light>>& lights) : component(id), m_lights(lights) {}
 
 		void add_light(const std::shared_ptr<light>& light) {
 			m_lights.push_back(light);

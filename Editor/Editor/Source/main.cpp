@@ -5,9 +5,9 @@
 int main() {
 	gse::initialize(game::initialize, game::close);
 
-	Editor::initialize();
+	editor::initialize();
 
-	gse::window::add_rendering_interface(std::make_shared<Editor::RenderingInterface>());
+	gse::window::add_rendering_interface(std::make_shared<editor::rendering_interface>());
 
 	gse::run(game::update, game::render);
 }

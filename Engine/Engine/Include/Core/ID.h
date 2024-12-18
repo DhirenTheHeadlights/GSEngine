@@ -33,4 +33,15 @@ namespace gse {
 
         friend std::shared_ptr<id> generate_id(const std::string& tag);
     };
+
+    class identifiable {
+	public:
+		identifiable(const std::string& tag) : m_id(generate_id(tag)) {}
+		identifiable(const std::shared_ptr<id>& id) : m_id(id) {}
+
+		void set_id(const std::shared_ptr<id>& id) { m_id = id; }
+        std::weak_ptr<id> get_id() const { return m_id; }
+	protected:
+		std::shared_ptr<id> m_id;
+    };
 }

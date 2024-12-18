@@ -33,7 +33,7 @@ namespace gse {
 		GLuint get_vao() const;
 		GLsizei get_vertex_count() const { return static_cast<GLsizei>(m_indices.size()); }
 
-		render_queue_entry get_queue_entry() const {
+		virtual render_queue_entry get_queue_entry() const {
 			return {
 				m_shader_name,
 				m_vao,

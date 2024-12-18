@@ -17,9 +17,9 @@ namespace gse {
 				debug::unit_slider("Constant", m_constant, unitless(0.0f), unitless(1.0f));
 				debug::unit_slider("Linear", m_linear, unitless(0.0f), unitless(1.0f));
 				debug::unit_slider("Quadratic", m_quadratic, unitless(0.0f), unitless(1.0f));
-				debug::unit_slider<units::degrees>("Cut Off", m_cut_off, degrees(0.0f), degrees(90.0f));
+				debug::unit_slider<units::degrees>("Cut Off", m_cut_off, degrees(0.0f), m_outer_cut_off);
 				debug::unit_slider<units::degrees>("Outer Cut Off", m_outer_cut_off, degrees(0.0f), degrees(90.0f));
-				debug::unit_slider("Ambient Strength", m_ambient_strength, unitless(0.0f), unitless(1.0f));
+				debug::unit_slider("Ambient Strength", m_ambient_strength, unitless(0.01f), unitless(0.1f));
 				ImGui::SliderFloat3("Direction", &m_direction.as_default_units().x, -1.0f, 1.0f);
 				ImGui::SliderFloat3("Position", &m_position.as_default_units().x, -500.0f, 500.0f);
 				debug::unit_slider<units::meters>("Near Plane", m_near_plane, meters(0.1f), meters(100.0f));
@@ -29,7 +29,7 @@ namespace gse {
 		}
 
 		light_render_queue_entry get_render_queue_entry() const override {
-			return { m_depth_map, m_depth_map_fbo, light_type::spot, m_color, m_intensity, m_position, m_direction, m_constant, m_linear, m_quadratic, m_cut_off, m_outer_cut_off, m_ambient_strength, m_near_plane, m_far_plane, m_ignore_list_id.get() };
+			return { m_depth_map, m_depth_map_fbo, light_type::spot, m_color, m_intensity, m_position, m_direction, m_constant, m_linear, m_quadratic, m_cut_off > m_outer_cut_off ? m_outer_cut_off : m_cut_off, m_outer_cut_off, m_ambient_strength, m_near_plane, m_far_plane, m_ignore_list_id.get() };
 		}
 
 		void set_depth_map(const GLuint depth_map, const GLuint depth_map_fbo) override {
