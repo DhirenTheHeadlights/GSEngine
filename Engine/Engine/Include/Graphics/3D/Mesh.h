@@ -40,15 +40,13 @@ namespace gse {
 				m_draw_mode,
 				get_vertex_count(),
 				m_model_matrix,
-				m_texture_id,
 				m_color
 			};
 		}
 
 		void set_color(const glm::vec3& new_color) { m_color = new_color; }
-		void set_texture(const GLuint texture_id) { m_texture_id = texture_id; }
-
 		void set_position(const vec3<length>& new_position);
+
 	protected:
 		friend render_component;
 		void set_up_mesh();
@@ -61,7 +59,6 @@ namespace gse {
 		std::vector<unsigned int> m_indices;
 
 		glm::mat4 m_model_matrix = glm::mat4(1.0f);
-		GLuint m_texture_id = 0;
 		GLuint m_draw_mode = GL_TRIANGLES;
 		std::string m_material_name = "Concrete";
 		glm::vec3 m_color = { 1.0f, 1.0f, 1.0f };
