@@ -42,7 +42,6 @@ namespace gse {
 		}
 
 		vec3<length> get_center() const { return (upper_bound + lower_bound) / 2.0f; }
-
 		vec3<length> get_size() const { return upper_bound - lower_bound; }
 	};
 
@@ -50,4 +49,5 @@ namespace gse {
 	vec3<length> get_right_bound(const bounding_box& bounding_box);
 	vec3<length> get_front_bound(const bounding_box& bounding_box);
 	vec3<length> get_back_bound(const bounding_box& bounding_box);
+	void set_bounding_box_position_by_axis(bounding_box& bounding_box, const vec3<length>& new_position, int side);
 }

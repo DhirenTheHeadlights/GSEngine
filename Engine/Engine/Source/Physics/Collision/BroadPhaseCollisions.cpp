@@ -52,7 +52,9 @@ bool gse::broad_phase_collision::check_collision(const std::shared_ptr<physics::
 				box1.collision_information.colliding = true;
 				box2.collision_information.colliding = true;
 
-				resolve_collision(box1, dynamic_object_motion_component, box2.collision_information);
+				if (dynamic_object_collision_component->resolve_collisions) {
+					resolve_collision(box1, dynamic_object_motion_component, box2.collision_information);
+				}
 
 				return true;
 			}
