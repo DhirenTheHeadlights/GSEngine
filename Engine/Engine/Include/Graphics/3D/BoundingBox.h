@@ -1,5 +1,7 @@
 #pragma once
 #include <glm/glm.hpp>
+
+#include "Physics/MotionComponent.h"
 #include "Physics/Units/Units.h"
 #include "Physics/Vector/Math.h"
 #include "Physics/Vector/Vec3.h"
@@ -46,5 +48,5 @@ namespace gse {
 	vec3<length> get_right_bound(const bounding_box& bounding_box);
 	vec3<length> get_front_bound(const bounding_box& bounding_box);
 	vec3<length> get_back_bound(const bounding_box& bounding_box);
-	void set_bounding_box_position_by_axis(bounding_box& bounding_box, const vec3<length>& new_position, int side);
+	void set_position_lower_bound(physics::motion_component* component, bounding_box& bounding_box, const vec3<length>& new_position);
 }

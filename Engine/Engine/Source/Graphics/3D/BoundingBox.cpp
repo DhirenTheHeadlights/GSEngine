@@ -28,38 +28,12 @@ gse::vec3<gse::length> gse::get_back_bound(const bounding_box& bounding_box) {
 	return center + vec3<units::meters>(0.0f, 0.0f, half_depth);
 }
 
-// For side, 0 is bottom, 1 is top, 2 is left, 3 is right, 4 is front, 5 is back
-void gse::set_bounding_box_position_by_axis(bounding_box& bounding_box, const vec3<length>& new_position, const int side) {
-	const glm::vec3 half_size = (bounding_box.get_size() / 2.0f).as_default_units();
-	const glm::vec3 position = new_position.as_default_units();
+void gse::set_position_lower_bound(physics::motion_component* component, bounding_box& bounding_box, const vec3<length>& new_position) {
+	const vec3<length> half_size = (bounding_box.upper_bound - bounding_box.lower_bound) / 2.0f;
+	bounding_box.upper_bound = new_position + half_size;
+	bounding_box.lower_bound = new_position - half_size;
 
-	switch (side) {
-	case 0:
-		bounding_box.upper_bound = vec3<length>(position.x, position.y + half_size.y, position.z);
-		bounding_box.lower_bound = vec3<length>(position.x, position.y - half_size.y, position.z);
-		break;
-	case 1:
-		bounding_box.upper_bound = vec3<length>(position.x, position.y + half_size.y, position.z);
-		bounding_box.lower_bound = vec3<length>(position.x, position.y - half_size.y, position.z);
-		break;
-	case 2:
-		bounding_box.upper_bound = vec3<length>(position.x + half_size.x, position.y, position.z);
-		bounding_box.lower_bound = vec3<length>(position.x - half_size.x, position.y, position.z);
-		break;
-	case 3:
-		bounding_box.upper_bound = vec3<length>(position.x + half_size.x, position.y, position.z);
-		bounding_box.lower_bound = vec3<length>(position.x - half_size.x, position.y, position.z);
-		break;
-	case 4:
-		bounding_box.upper_bound = vec3<length>(position.x, position.y, position.z + half_size.z);
-		bounding_box.lower_bound = vec3<length>(position.x, position.y, position.z - half_size.z);
-		break;
-	case 5:
-		bounding_box.upper_bound = vec3<length>(position.x, position.y, position.z + half_size.z);
-		bounding_box.lower_bound = vec3<length>(position.x, position.y, position.z - half_size.z);
-		break;
-	default:
-		std::cerr << "Invalid side for set_bounding_box_position_by_axis" << std::endl;
-		break;
-	}
+	component->current_position = bounding_box.get_center();
 }
+
+

@@ -173,7 +173,7 @@ void gse::physics::resolve_collision(bounding_box& dynamic_bounding_box, const s
 
 		// Special case for ground collision (assumed Y-axis collision)
 		if (collision_info.get_axis() == 1 && collision_info.collision_normal.as_default_units().y > 0) {
-			dynamic_motion_component_ptr->current_position.as_default_units().y = collision_info.collision_point.as_default_units().y;
+			//set_position_lower_bound(dynamic_motion_component_ptr.get(), dynamic_bounding_box, collision_info.collision_point);
 			dynamic_motion_component_ptr->current_velocity.as_default_units().y = 0.0f;
 
 			dynamic_motion_component_ptr->airborne = false;
