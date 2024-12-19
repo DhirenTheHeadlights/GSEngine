@@ -75,5 +75,29 @@ void gse::box::initialize() {
 
 	new_render_component->set_render(true, true);
 
-    add_component(new_render_component);
+        const auto new_bounding_box_mesh = std::make_shared<gse::bounding_box_mesh>(m_owner->get_component<gse::physics::collision_component>()->bounding_boxes[0]);
+        new_render_component->add_bounding_box_mesh(new_bounding_box_mesh);
+
+        m_owner->add_component(new_render_component);
+    }
+
+    void update() override {
+        m_owner->get_component<gse::render_component>()->set_mesh_positions(m_owner->get_component<gse::physics::motion_component>()->current_position);
+        m_owner->get_component<gse::physics::collision_component>()->bounding_boxes[0].set_position(m_owner->get_component<gse::physics::motion_component>()->current_position);
+    }
+private:
+	gse::vec3<gse::length> m_initial_position;
+	gse::vec3<gse::length> m_size;
+};
+
+gse::box::box(const vec3<length>& initial_position, const vec3<length>& size) : object("Box") {
+	add_hook(std::make_unique<box_mesh_hook>(this, initial_position, size));
+}
+private:
+	gse::vec3<gse::length> m_initial_position;
+	gse::vec3<gse::length> m_size;
+};
+
+gse::box::box(const vec3<length>& initial_position, const vec3<length>& size) : object("Box") {
+	add_hook(std::make_unique<box_mesh_hook>(this, initial_position, size));
 }
