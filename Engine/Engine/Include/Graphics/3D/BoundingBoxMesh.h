@@ -20,7 +20,6 @@ namespace gse {
 				m_draw_mode,
 				static_cast<GLsizei>(m_vertices.size() / 3),
 				m_model_matrix,
-				m_texture_id,
 				m_color
 			};
 		}

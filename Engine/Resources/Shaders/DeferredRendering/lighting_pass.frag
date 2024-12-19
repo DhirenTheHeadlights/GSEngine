@@ -97,7 +97,6 @@ void main() {
     float totalAttenuation = 0.0;
 
     for (int i = 0; i < lights.length(); ++i) {
-        
         vec3 lightDir = normalize(lights[i].position - FragPos);
         vec3 reflectDir = reflect(-lightDir, Normal);
         vec3 halfwayDir = normalize(lightDir + viewDir);
