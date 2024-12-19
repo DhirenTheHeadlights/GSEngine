@@ -21,14 +21,11 @@ namespace gse {
 	struct bounding_box {
 		bounding_box() = default;
 
-		// Only use this constructor if you know what you are doing
-		bounding_box(const vec3<length>& upper_bound, const vec3<length>& lower_bound)
-			: upper_bound(upper_bound), lower_bound(lower_bound) {}
+		bounding_box(const vec3<length>& center, const vec3<length>& size)
+			: upper_bound(center + size / 2.0f), lower_bound(center - size / 2.0f) {}
 
-		// Use this constructor for a centered bounding box
 		bounding_box(const vec3<length>& center, const length& width, const length& height, const length& depth)
-			: bounding_box(center + vec3<length>(width / 2.f, height / 2.f, depth / 2.f),
-			               center - vec3<length>(width / 2.f, height / 2.f, depth / 2.f)) {}
+			: bounding_box(center, vec3<length>(width, height, depth)) {}
 
 		vec3<length> upper_bound;
 		vec3<length> lower_bound;
