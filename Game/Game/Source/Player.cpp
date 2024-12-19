@@ -1,115 +1,149 @@
 #include "Player.h"
 
-void game::player::initialize() {
-	const auto motion_component = std::make_shared<gse::physics::motion_component>(m_id.get());
-	const auto collision_component = std::make_shared<gse::physics::collision_component>(m_id.get());
-	const auto render_component = std::make_shared<gse::render_component>(m_id.get());
+struct game::jetpack_hook final : gse::hook<player> {
+	using hook::hook;
 
-	gse::length height = gse::feet(6.0f);
-	gse::length width = gse::feet(3.0f);
-	collision_component->bounding_boxes.emplace_back(gse::vec3<gse::units::meters>(-10.f, -10.f, -10.f), height, width, width);
-
-	m_wasd.insert({ GLFW_KEY_W, { 0.f, 0.f, 1.f } });
-	m_wasd.insert({ GLFW_KEY_S, { 0.f, 0.f, -1.f } });
-	m_wasd.insert({ GLFW_KEY_A, { -1.f, 0.f, 0.f } });
-	m_wasd.insert({ GLFW_KEY_D, { 1.f, 0.f, 0.f } });
-
-	motion_component->mass = gse::pounds(180.f);
-	motion_component->max_speed = m_max_speed;
-	motion_component->self_controlled = true;
-
-	for (auto& bb : collision_component->bounding_boxes) {
-		const auto bounding_box_mesh = std::make_shared<gse::bounding_box_mesh>(bb.upper_bound, bb.lower_bound);
-		render_component->add_bounding_box_mesh(bounding_box_mesh);
-	}
-
-	add_component(render_component);
-	add_component(motion_component);
-	add_component(collision_component);
-}
-
-void game::player::update_jetpack() {
-	if (gse::input::get_keyboard().keys[GLFW_KEY_J].pressed) {
-		jetpack = !jetpack;
-	}
-
-	if (jetpack && gse::input::get_keyboard().keys[GLFW_KEY_SPACE].held) {
-		gse::force boost_force;
-		if (gse::input::get_keyboard().keys[GLFW_KEY_LEFT_SHIFT].held && m_boost_fuel > 0) {
-			boost_force = gse::newtons(2000.f);
-			m_boost_fuel -= 1;
-		}
-		else {
-			m_boost_fuel += 1;
-			m_boost_fuel = std::min(m_boost_fuel, 1000);
+	void update() override {
+		if (gse::input::get_keyboard().keys[GLFW_KEY_J].pressed) {
+			m_jetpack = !m_jetpack;
 		}
 
-		apply_force(get_component<gse::physics::motion_component>().get(), gse::vec3<gse::units::newtons>(0.f, m_jetpack_force + boost_force, 0.f));
+		if (m_jetpack && gse::input::get_keyboard().keys[GLFW_KEY_SPACE].held) {
+			gse::force boost_force;
+			if (gse::input::get_keyboard().keys[GLFW_KEY_LEFT_SHIFT].held && m_boost_fuel > 0) {
+				boost_force = gse::newtons(2000.f);
+				m_boost_fuel -= 1;
+			}
+			else {
+				m_boost_fuel += 1;
+				m_boost_fuel = std::min(m_boost_fuel, 1000);
+			}
 
-		for (auto& [key, direction] : m_wasd) {
-			if (gse::input::get_keyboard().keys[key].held) {
-				apply_force(get_component<gse::physics::motion_component>().get(), gse::vec3<gse::units::newtons>(m_jetpack_side_force + boost_force, 0.f, m_jetpack_side_force + boost_force) * gse::get_camera().get_camera_direction_relative_to_origin(direction));
+			apply_force(m_owner->get_component<gse::physics::motion_component>().get(), gse::vec3<gse::units::newtons>(0.f, m_jetpack_force + boost_force, 0.f));
+
+			for (auto& [key, direction] : m_owner->m_wasd) {
+				if (gse::input::get_keyboard().keys[key].held) {
+					apply_force(m_owner->get_component<gse::physics::motion_component>().get(), gse::vec3<gse::units::newtons>(m_jetpack_side_force + boost_force, 0.f, m_jetpack_side_force + boost_force) * gse::get_camera().get_camera_direction_relative_to_origin(direction));
+				}
 			}
 		}
 	}
-}
 
-void game::player::update_movement() {
-	for (auto& [key, direction] : m_wasd) {
-		if (gse::input::get_keyboard().keys[key].held && !get_component<gse::physics::motion_component>()->airborne) {
-			apply_force(get_component<gse::physics::motion_component>().get(), m_move_force * gse::get_camera().get_camera_direction_relative_to_origin(direction) * gse::vec3(1.f, 0.f, 1.f));
+	void render() override {
+		gse::debug::add_imgui_callback([this] {
+			ImGui::Begin("Jetpack");
+			gse::debug::print_boolean("Player Jetpack", m_jetpack);
+			gse::debug::print_value("Jetpack Fuel", static_cast<float>(m_boost_fuel), "");
+			ImGui::End();
+			});
+	}
+private:
+	gse::force m_jetpack_force = gse::newtons(1000.f);
+	gse::force m_jetpack_side_force = gse::newtons(500.f);
+
+	int m_boost_fuel = 1000;
+	bool m_jetpack = false;
+};
+
+struct game::player_hook final : gse::hook<player> {
+	using hook::hook;
+
+	void initialize() override {
+		const auto id = m_owner->get_id().lock();
+		const auto motion_component = std::make_shared<gse::physics::motion_component>(id.get());
+		const auto collision_component = std::make_shared<gse::physics::collision_component>(id.get());
+		const auto render_component = std::make_shared<gse::render_component>(id.get());
+
+		gse::length height = gse::feet(6.0f);
+		gse::length width = gse::feet(3.0f);
+		collision_component->bounding_boxes.emplace_back(gse::vec3<gse::units::meters>(-10.f, -10.f, -10.f), height, width, width);
+
+		m_owner->m_wasd.insert({ GLFW_KEY_W, { 0.f, 0.f, 1.f } });
+		m_owner->m_wasd.insert({ GLFW_KEY_S, { 0.f, 0.f, -1.f } });
+		m_owner->m_wasd.insert({ GLFW_KEY_A, { -1.f, 0.f, 0.f } });
+		m_owner->m_wasd.insert({ GLFW_KEY_D, { 1.f, 0.f, 0.f } });
+
+		motion_component->mass = gse::pounds(180.f);
+		motion_component->max_speed = m_max_speed;
+		motion_component->self_controlled = true;
+
+		for (auto& bb : collision_component->bounding_boxes) {
+			const auto bounding_box_mesh = std::make_shared<gse::bounding_box_mesh>(bb.upper_bound, bb.lower_bound);
+			render_component->add_bounding_box_mesh(bounding_box_mesh);
 		}
+
+		render_component->set_render(true, true);
+
+		m_owner->add_component(render_component);
+		m_owner->add_component(motion_component);
+		m_owner->add_component(collision_component);
 	}
 
-	if (gse::input::get_keyboard().keys[GLFW_KEY_LEFT_SHIFT].held) {
-		get_component<gse::physics::motion_component>()->max_speed = m_shift_max_speed;
+	void update() override {
+		const auto motion_component = m_owner->get_component<gse::physics::motion_component>();
+
+		for (auto& [key, direction] : m_owner->m_wasd) {
+			if (gse::input::get_keyboard().keys[key].held && !motion_component->airborne) {
+				apply_force(motion_component.get(), m_move_force * gse::get_camera().get_camera_direction_relative_to_origin(direction) * gse::vec3(1.f, 0.f, 1.f));
+			}
+		}
+
+		if (gse::input::get_keyboard().keys[GLFW_KEY_LEFT_SHIFT].held) {
+			motion_component->max_speed = m_shift_max_speed;
+		}
+		else {
+			motion_component->max_speed = m_max_speed;
+		}
+
+		if (gse::input::get_keyboard().keys[GLFW_KEY_SPACE].pressed && !motion_component->airborne) {
+			apply_impulse(motion_component.get(), gse::vec3<gse::units::newtons>(0.f, m_jump_force, 0.f), gse::seconds(0.5f));
+			motion_component->airborne = true;
+		}
+
+		for (auto& bb : m_owner->get_component<gse::physics::collision_component>()->bounding_boxes) {
+			bb.set_position(motion_component->current_position);
+		}
+
+		gse::get_camera().set_position(motion_component->current_position + gse::vec3<gse::units::feet>(0.f, 6.f, 0.f));
+
+		m_owner->get_component<gse::render_component>()->update_bounding_box_meshes();
 	}
-	else {
-		get_component<gse::physics::motion_component>()->max_speed = m_max_speed;
+
+	void render() override {
+		gse::debug::add_imgui_callback([this] {
+			ImGui::Begin("Player");
+
+			const auto motion_component = m_owner->get_component<gse::physics::motion_component>();
+			const auto collision_component = m_owner->get_component<gse::physics::collision_component>();
+
+			gse::debug::print_vector("Player Position", motion_component->current_position.as<gse::units::meters>(), gse::units::meters::unit_name);
+			gse::debug::print_vector("Player Bounding Box Position", collision_component->bounding_boxes[0].get_center().as<gse::units::meters>(), gse::units::meters::unit_name);
+			gse::debug::print_vector("Player Velocity", motion_component->current_velocity.as<gse::units::meters_per_second>(), gse::units::meters_per_second::unit_name);
+			gse::debug::print_vector("Player Acceleration", motion_component->current_acceleration.as<gse::units::meters_per_second_squared>(), gse::units::meters_per_second_squared::unit_name);
+
+			gse::debug::print_value("Player Speed", motion_component->get_speed().as<gse::units::miles_per_hour>(), gse::units::miles_per_hour::unit_name);
+
+			ImGui::Text("Player Collision Information");
+
+			const auto [colliding, collision_normal, penetration, collision_point] = collision_component->bounding_boxes[0].collision_information;
+			gse::debug::print_boolean("Player Colliding", colliding);
+			gse::debug::print_vector("Collision Normal", collision_normal.as_default_units(), "");
+			gse::debug::print_value("Penetration", penetration.as<gse::units::meters>(), gse::units::meters::unit_name);
+			gse::debug::print_vector("Collision Point", collision_point.as<gse::units::meters>(), gse::units::meters::unit_name);
+			gse::debug::print_boolean("Player Airborne", motion_component->airborne);
+			gse::debug::print_boolean("Player Moving", motion_component->moving);
+			ImGui::End();
+			});
 	}
+private:
+	gse::velocity m_max_speed = gse::miles_per_hour(20.f);
+	gse::velocity m_shift_max_speed = gse::miles_per_hour(40.f);
 
-	if (gse::input::get_keyboard().keys[GLFW_KEY_SPACE].pressed && !get_component<gse::physics::motion_component>()->airborne) {
-		apply_impulse(get_component<gse::physics::motion_component>().get(), gse::vec3<gse::units::newtons>(0.f, m_jump_force, 0.f), gse::seconds(0.5f));
-		get_component<gse::physics::motion_component>()->airborne = true;
-	}
-}
+	gse::force m_move_force = gse::newtons(100000.f);
+	gse::force m_jump_force = gse::newtons(1000.f);
+};
 
-void game::player::update() {
-	update_jetpack();
-	update_movement();
-
-	for (auto& bb : get_component<gse::physics::collision_component>()->bounding_boxes) {
-		bb.set_position(get_component<gse::physics::motion_component>()->current_position);
-	}
-	
-	gse::get_camera().set_position(get_component<gse::physics::motion_component>()->current_position + gse::vec3<gse::units::feet>(0.f, 6.f, 0.f));
-
-	get_component<gse::render_component>()->update_bounding_box_meshes();
-	get_component<gse::render_component>()->set_render(true, true);
-}
-
-void game::player::render() {
-	gse::debug::add_imgui_callback([this] {
-		ImGui::Begin("Player");
-		gse::debug::print_vector("Player Position", get_component<gse::physics::motion_component>()->current_position.as<gse::units::meters>(), gse::units::meters::unit_name);
-		gse::debug::print_vector("Player Bounding Box Position", get_component<gse::physics::collision_component>()->bounding_boxes[0].get_center().as<gse::units::meters>(), gse::units::meters::unit_name);
-		gse::debug::print_vector("Player Velocity", get_component<gse::physics::motion_component>()->current_velocity.as<gse::units::meters_per_second>(), gse::units::meters_per_second::unit_name);
-		gse::debug::print_vector("Player Acceleration", get_component<gse::physics::motion_component>()->current_acceleration.as<gse::units::meters_per_second_squared>(), gse::units::meters_per_second_squared::unit_name);
-
-		gse::debug::print_value("Player Speed", get_component<gse::physics::motion_component>()->get_speed().as<gse::units::miles_per_hour>(), gse::units::miles_per_hour::unit_name);
-
-		gse::debug::print_boolean("Player Jetpack [J]", jetpack);
-		gse::debug::print_value("Player Boost Fuel", static_cast<float>(m_boost_fuel), "");
-
-		ImGui::Text("Player Collision Information");
-
-		const auto [colliding, collisionNormal, penetration, collisionPoint] = get_component<gse::physics::collision_component>()->bounding_boxes[0].collision_information;
-		gse::debug::print_boolean("Player Colliding", colliding);
-		gse::debug::print_vector("Collision Normal", collisionNormal.as_default_units(), "");
-		gse::debug::print_value("Penetration", penetration.as<gse::units::meters>(), gse::units::meters::unit_name);
-		gse::debug::print_vector("Collision Point", collisionPoint.as<gse::units::meters>(), gse::units::meters::unit_name);
-		gse::debug::print_boolean("Player Airborne", get_component<gse::physics::motion_component>()->airborne);
-		gse::debug::print_boolean("Player Moving", get_component<gse::physics::motion_component>()->moving);
-		ImGui::End();
-		});
+game::player::player() : object("Player") {
+	add_hook(std::make_unique<player_hook>(this));
+	add_hook(std::make_unique<jetpack_hook>(this));
 }

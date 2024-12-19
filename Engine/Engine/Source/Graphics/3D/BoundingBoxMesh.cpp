@@ -7,6 +7,9 @@ gse::bounding_box_mesh::bounding_box_mesh(const vec3<length>& lower, const vec3<
 	m_shader_name = "SolidColor";
 }
 
+gse::bounding_box_mesh::bounding_box_mesh(const bounding_box& box)
+	: bounding_box_mesh(box.lower_bound, box.upper_bound) {}
+
 gse::vertex gse::bounding_box_mesh::create_vertex(const glm::vec3& position) {
 	return {
 		position,

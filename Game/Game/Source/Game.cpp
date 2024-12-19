@@ -13,28 +13,42 @@ void game::set_input_handling_flag(const bool enabled) {
 	g_input_handling_enabled = enabled;
 }
 
+struct scene1_hook final : gse::hook<gse::scene> {
+	using hook::hook;
+
+	void initialize() override {
+		game::arena::create(m_owner);
+
+		m_owner->add_object(std::make_unique<game::player>());
+		m_owner->add_object(std::make_unique<gse::box>(gse::vec3<gse::units::meters>(20.f, -400.f, 20.f), gse::vec3<gse::units::meters>(20.f, 20.f, 20.f)));
+		m_owner->add_object(std::make_unique<gse::box>(gse::vec3<gse::units::meters>(-20.f, -400.f, 20.f), gse::vec3<gse::units::meters>(40.f, 40.f, 40.f)));
+		m_owner->add_object(std::make_unique<game::sphere_light>(gse::vec3<gse::units::meters>(0.f, -300.f, 0.f), gse::meters(10.f)));
+		m_owner->add_object(std::make_unique<gse::sphere>(gse::vec3<gse::units::meters>(0.f, -00.f, 200.f), gse::meters(10.f)));
+	}
+
+	void render() override {
+		gse::debug::add_imgui_callback([] {
+			if (gse::g_scene_handler.get_scene(gse::grab_id("Scene1").lock().get())->get_active()) {
+				ImGui::Begin("Game Data");
+
+				ImGui::Text("FPS: %d", gse::main_clock::get_frame_rate());
+
+				ImGui::End();
+			}
+			});
+	}
+};
+
 bool game::initialize() {
-	auto new_arena   = std::make_unique<arena>();
-	auto new_player  = std::make_unique<player>();
-	auto new_box     = std::make_unique<gse::box>(gse::vec3<gse::units::meters>(20.f, -400.f, 20.f), gse::vec3<gse::units::meters>(20.f, 20.f, 20.f));
-	auto new_box2    = std::make_unique<gse::box>(gse::vec3<gse::units::meters>(-20.f, -400.f, 20.f), gse::vec3<gse::units::meters>(40.f, 40.f, 40.f));
-	auto new_sphere  = std::make_unique<sphere_light>(gse::vec3<gse::units::meters>(0.f, -300.f, 0.f), gse::meters(10.f));
-	auto new_sphere3 = std::make_unique<gse::sphere>(gse::vec3<gse::units::meters>(0.f, -00.f, 200.f), gse::meters(10.f));
+	auto scene1 = std::make_unique<gse::scene>("Scene1");
+	scene1->add_hook(std::make_unique<scene1_hook>(scene1.get()));
 
-	auto scene1 = std::make_unique<gse::scene>();
-	auto scene2 = std::make_unique<gse::scene>();
+	auto scene2 = std::make_unique<gse::scene>("Scene2");
 
-	scene1->add_object(std::move(new_arena));
-	scene1->add_object(std::move(new_player));
-	scene1->add_object(std::move(new_box));
-	scene1->add_object(std::move(new_box2));
-	scene1->add_object(std::move(new_sphere));
-	scene1->add_object(std::move(new_sphere3));
+	gse::g_scene_handler.add_scene(scene1);
+	gse::g_scene_handler.add_scene(scene2);
 
-	gse::g_scene_handler.add_scene(scene1, "Scene1");
-	gse::g_scene_handler.add_scene(scene2, "Scene2");
-
-	gse::g_scene_handler.queue_scene_trigger(gse::grab_id("Scene1").lock(), [] { return true; });
+	gse::g_scene_handler.queue_scene_trigger(gse::grab_id("Scene1").lock().get(), [] { return true; });
 
 	return true;
 }
@@ -61,16 +75,6 @@ bool game::update() {
 }
 
 bool game::render() {
-	gse::debug::add_imgui_callback([] {
-		if (gse::g_scene_handler.get_scene(gse::grab_id("Scene1").lock())->get_active()) {
-			ImGui::Begin("Game Data");
-
-			ImGui::Text("FPS: %d", gse::main_clock::get_frame_rate());
-
-			ImGui::End();
-		}
-		});
-
 	return true;
 }
 
