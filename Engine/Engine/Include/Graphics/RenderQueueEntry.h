@@ -11,7 +11,6 @@ namespace gse {
         GLenum draw_mode;
         GLsizei vertex_count;
         glm::mat4 model_matrix;
-        GLuint texture_id;
         glm::vec3 color;
     };
 }

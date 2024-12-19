@@ -15,12 +15,11 @@ namespace gse {
 
 		render_queue_entry get_queue_entry() const override {
 			return {
-				m_shader_name,
+				m_material_name,
 				m_vao,
 				m_draw_mode,
 				static_cast<GLsizei>(m_vertices.size() / 3),
 				m_model_matrix,
-				m_texture_id,
 				m_color
 			};
 		}
