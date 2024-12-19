@@ -4,6 +4,7 @@ struct wall_hook final : gse::hook<> {
 	using hook::hook;
 
 	void initialize() override {
+		m_owner->get_component<gse::physics::collision_component>()->resolve_collisions = false;
 		m_owner->get_component<gse::physics::motion_component>()->affected_by_gravity = false;
 	}
 };
