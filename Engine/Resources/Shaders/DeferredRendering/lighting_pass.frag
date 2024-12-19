@@ -84,7 +84,7 @@ void main() {
         FragColor = vec4(vec3(depthValue), 1.0);
         return;
     }
-
+    vec3 texture_color = texture(diffuseTexture, TexCoords).rgb;
     vec3 FragPos = texture(gPosition, TexCoords).rgb;
     vec3 Normal = texture(gNormal, TexCoords).rgb;
     Normal = normalize(Normal);

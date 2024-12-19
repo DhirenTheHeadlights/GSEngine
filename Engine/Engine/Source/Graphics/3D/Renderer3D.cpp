@@ -2,8 +2,8 @@
 
 #include <glm/gtx/string_cast.hpp>
 
-#include "Core/ObjectRegistry.h"
 #include "Core/JsonParser.h"
+#include "Core/ObjectRegistry.h"
 #include "Core/ResourcePaths.h"
 #include "Graphics/Shader.h"
 #include "Graphics/3D/CubeMap.h"
@@ -122,6 +122,8 @@ void gse::renderer::group::remove_light_source_component(const std::shared_ptr<l
 	}
 }
 
+
+
 void gse::renderer::initialize3d() {
 	enable_report_gl_errors();
 
@@ -132,7 +134,7 @@ void gse::renderer::initialize3d() {
 		json_parse::load_json(object_shaders_path + "object_shaders.json"),
 		[&](const std::string& key, const nlohmann::json& value) {
 			g_materials.emplace(key, material(object_shaders_path + value["vertex"].get<std::string>(),
-			object_shaders_path + value["fragment"].get<std::string>(), key));
+			object_shaders_path + value["fragment"].get<std::string>(), key, ENGINE_RESOURCES_PATH + value["texture"].get<std::string>()));
 		}
 	);
 
@@ -281,19 +283,12 @@ namespace {
 		if (const auto it = g_materials.find(entry.material_key); it != g_materials.end()) {
 			it->second.use(view_matrix, projection_matrix, entry.model_matrix);
 			it->second.shader.set_vec3("color", entry.color);
-			it->second.shader.set_bool("useTexture", entry.texture_id != 0);
-
-			if (entry.texture_id != 0) {
-				glActiveTexture(GL_TEXTURE0);
-				glBindTexture(GL_TEXTURE_2D, entry.texture_id);
-				it->second.shader.set_int("diffuseTexture", 0);
-			}
 
 			glBindVertexArray(entry.vao);
 			glDrawElements(entry.draw_mode, entry.vertex_count, GL_UNSIGNED_INT, nullptr);
 			glBindVertexArray(0);
 
-			if (entry.texture_id != 0) {
+			if (it->second.material_texture != 0) {
 				glBindTexture(GL_TEXTURE_2D, 0);
 			}
 		}
@@ -304,17 +299,10 @@ namespace {
 
 	void render_object_forward(const gse::shader& forward_rendering_shader, const gse::render_queue_entry& entry, const glm::mat4& view_matrix, const glm::mat4& projection_matrix) {
 		forward_rendering_shader.set_vec3("color", entry.color);
-		forward_rendering_shader.set_bool("useTexture", entry.texture_id != 0);
 		forward_rendering_shader.set_mat4("model", entry.model_matrix);
 		forward_rendering_shader.set_mat4("view", view_matrix);
 		forward_rendering_shader.set_mat4("projection", projection_matrix);
 		forward_rendering_shader.set_vec3("viewPos", g_camera.get_position().as<gse::units::meters>());
-
-		if (entry.texture_id != 0) {
-			glActiveTexture(GL_TEXTURE0);
-			glBindTexture(GL_TEXTURE_2D, entry.texture_id);
-			forward_rendering_shader.set_int("diffuseTexture", 0);
-		}
 
 		glActiveTexture(GL_TEXTURE2);
 		glBindTexture(GL_TEXTURE_2D, g_g_albedo_spec);
@@ -322,10 +310,6 @@ namespace {
 		glBindVertexArray(entry.vao);
 		glDrawElements(entry.draw_mode, entry.vertex_count, GL_UNSIGNED_INT, nullptr);
 		glBindVertexArray(0);
-
-		if (entry.texture_id != 0) {
-			glBindTexture(GL_TEXTURE_2D, 0);
-		}
 	}
 
 	void render_object(const gse::light_render_queue_entry& entry) {
