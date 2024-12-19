@@ -35,7 +35,7 @@ namespace gse {
 
 		virtual render_queue_entry get_queue_entry() const {
 			return {
-				m_shader_name,
+				m_material_name,
 				m_vao,
 				m_draw_mode,
 				get_vertex_count(),
@@ -63,7 +63,7 @@ namespace gse {
 		glm::mat4 m_model_matrix = glm::mat4(1.0f);
 		GLuint m_texture_id = 0;
 		GLuint m_draw_mode = GL_TRIANGLES;
-		std::string m_shader_name = "Lighting";
+		std::string m_material_name = "Concrete";
 		glm::vec3 m_color = { 1.0f, 1.0f, 1.0f };
 	};
 }

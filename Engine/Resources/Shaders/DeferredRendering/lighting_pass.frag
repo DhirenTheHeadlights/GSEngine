@@ -84,7 +84,7 @@ void main() {
         FragColor = vec4(vec3(depthValue), 1.0);
         return;
     }
-
+    vec3 texture_color = texture(diffuseTexture, TexCoords).rgb;
     vec3 FragPos = texture(gPosition, TexCoords).rgb;
     vec3 Normal = texture(gNormal, TexCoords).rgb;
     Normal = normalize(Normal);
@@ -97,6 +97,7 @@ void main() {
     float totalAttenuation = 0.0;
 
     for (int i = 0; i < lights.length(); ++i) {
+        
         vec3 lightDir = normalize(lights[i].position - FragPos);
         vec3 reflectDir = reflect(-lightDir, Normal);
         vec3 halfwayDir = normalize(lightDir + viewDir);

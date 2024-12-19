@@ -1,6 +1,7 @@
 #include "Graphics/3D/Renderer3D.h"
 
 #include <glm/gtx/string_cast.hpp>
+#include <stb_image.h>
 
 #include "Core/ObjectRegistry.h"
 #include "Core/JsonParser.h"
@@ -122,6 +123,8 @@ void gse::renderer::group::remove_light_source_component(const std::shared_ptr<l
 	}
 }
 
+
+
 void gse::renderer::initialize3d() {
 	enable_report_gl_errors();
 
@@ -132,7 +135,7 @@ void gse::renderer::initialize3d() {
 		json_parse::load_json(object_shaders_path + "object_shaders.json"),
 		[&](const std::string& key, const nlohmann::json& value) {
 			g_materials.emplace(key, material(object_shaders_path + value["vertex"].get<std::string>(),
-			object_shaders_path + value["fragment"].get<std::string>(), key));
+			object_shaders_path + value["fragment"].get<std::string>(), key, ENGINE_RESOURCES_PATH + value["texture"].get<std::string>()));
 		}
 	);
 
@@ -281,11 +284,11 @@ namespace {
 		if (const auto it = g_materials.find(entry.material_key); it != g_materials.end()) {
 			it->second.use(view_matrix, projection_matrix, entry.model_matrix);
 			it->second.shader.set_vec3("color", entry.color);
-			it->second.shader.set_bool("useTexture", entry.texture_id != 0);
+			it->second.shader.set_bool("useTexture", it->second.material_texture != 0);
 
-			if (entry.texture_id != 0) {
+			if (it->second.material_texture != 0) {
 				glActiveTexture(GL_TEXTURE0);
-				glBindTexture(GL_TEXTURE_2D, entry.texture_id);
+				glBindTexture(GL_TEXTURE_2D, it->second.material_texture);
 				it->second.shader.set_int("diffuseTexture", 0);
 			}
 
