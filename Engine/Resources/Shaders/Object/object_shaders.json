@@ -1,14 +1,18 @@
 {
   "SolidColor": {
     "vertex": "solid_color.vert",
-    "fragment": "solid_color.frag"
+    "fragment": "solid_color.frag",
+    "texture": "Textures/concrete_bricks_1.jpg"
   },
   "SolidNoColor": {
     "vertex": "solid_no_color.vert",
-    "fragment": "solid_no_color.frag"
+    "fragment": "solid_no_color.frag",
+    "texture": "Textures/concrete_bricks_1.jpg"
+
   },
-  "Lighting": {
+  "Concrete": {
     "vertex": "lighting.vert",
-    "fragment": "lighting.frag"
+    "fragment": "lighting.frag",
+    "texture": "Textures/concrete_bricks_1.jpg"
   }
 }
