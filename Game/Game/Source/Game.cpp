@@ -7,7 +7,9 @@
 #include "Player.h"
 #include "SphereLight.h"
 
-bool g_input_handling_enabled = true;
+namespace {
+	bool g_input_handling_enabled = true;
+}
 
 void game::set_input_handling_flag(const bool enabled) {
 	g_input_handling_enabled = enabled;

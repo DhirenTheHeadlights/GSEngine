@@ -30,7 +30,8 @@ namespace gse {
 	template <typename unit_or_quantity_a, typename unit_or_quantity_b>
 	concept has_same_quantity_tag = std::is_same_v<
 		typename get_quantity_tag_type<std::remove_cvref_t<unit_or_quantity_a>>::type,
-		typename get_quantity_tag_type<std::remove_cvref_t<unit_or_quantity_b>>::type>;
+		typename get_quantity_tag_type<std::remove_cvref_t<unit_or_quantity_b>>::type>
+		|| is_unitless<unit_or_quantity_a> || is_unitless<unit_or_quantity_b>;
 
 	template <typename unit_or_quantity_type, typename... arguments>
 	concept are_valid_vector_args = (((is_quantity<arguments> && has_same_quantity_tag<arguments, unit_or_quantity_type>) || std::is_convertible_v<arguments, float>) && ...);

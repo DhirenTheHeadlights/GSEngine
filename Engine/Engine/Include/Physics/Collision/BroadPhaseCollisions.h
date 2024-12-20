@@ -32,7 +32,7 @@ namespace gse::broad_phase_collision {
 
 	bool check_collision(const bounding_box& box1, const bounding_box& box2);
 	bool check_collision(const bounding_box& dynamic_box, const std::shared_ptr<physics::motion_component>& dynamic_motion_component, const bounding_box& other_box);
-	bool check_collision(const std::shared_ptr<physics::collision_component>& dynamic_object_collision_component, const std::shared_ptr<physics::motion_component>& dynamic_object_motion_component, const std::shared_ptr<physics::collision_component>& other_collision_component);
+	bool check_collision(physics::collision_component* dynamic_object_collision_component, physics::motion_component* dynamic_object_motion_component, physics::collision_component* other_collision_component);
 	bool check_collision(const vec3<length>& point, const bounding_box& box);
 	collision_information calculate_collision_information(const bounding_box& box1, const bounding_box& box2);
 	void set_collision_information(const bounding_box& box1, const bounding_box& box2);
