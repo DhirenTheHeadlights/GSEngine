@@ -1,6 +1,7 @@
 #include "Graphics/3D/Mesh.h"
 
 #include "glm/ext/matrix_transform.hpp"
+#include "Physics/Vector/Math.h"
 
 gse::mesh::mesh() {
 	glGenVertexArrays(1, &m_vao);
@@ -9,7 +10,7 @@ gse::mesh::mesh() {
 }
 
 gse::mesh::mesh(const std::vector<vertex>& vertices, const std::vector<unsigned int>& indices, const glm::vec3& color, const GLuint texture_id)
-	: m_vertices(vertices), m_indices(indices), m_texture_id(texture_id), m_color(color) {
+	: m_vertices(vertices), m_indices(indices), m_color(color) {
 	set_up_mesh();
 }
 

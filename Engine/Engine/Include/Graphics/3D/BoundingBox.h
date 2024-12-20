@@ -1,5 +1,7 @@
 #pragma once
 #include <glm/glm.hpp>
+
+#include "Physics/MotionComponent.h"
 #include "Physics/Units/Units.h"
 #include "Physics/Vector/Math.h"
 #include "Physics/Vector/Vec3.h"
@@ -21,14 +23,11 @@ namespace gse {
 	struct bounding_box {
 		bounding_box() = default;
 
-		// Only use this constructor if you know what you are doing
-		bounding_box(const vec3<length>& upper_bound, const vec3<length>& lower_bound)
-			: upper_bound(upper_bound), lower_bound(lower_bound) {}
+		bounding_box(const vec3<length>& center, const vec3<length>& size)
+			: upper_bound(center + size / 2.0f), lower_bound(center - size / 2.0f) {}
 
-		// Use this constructor for a centered bounding box
 		bounding_box(const vec3<length>& center, const length& width, const length& height, const length& depth)
-			: bounding_box(center + vec3<length>(width / 2.f, height / 2.f, depth / 2.f),
-			               center - vec3<length>(width / 2.f, height / 2.f, depth / 2.f)) {}
+			: bounding_box(center, vec3<length>(width, height, depth)) {}
 
 		vec3<length> upper_bound;
 		vec3<length> lower_bound;
@@ -42,7 +41,6 @@ namespace gse {
 		}
 
 		vec3<length> get_center() const { return (upper_bound + lower_bound) / 2.0f; }
-
 		vec3<length> get_size() const { return upper_bound - lower_bound; }
 	};
 
@@ -50,4 +48,5 @@ namespace gse {
 	vec3<length> get_right_bound(const bounding_box& bounding_box);
 	vec3<length> get_front_bound(const bounding_box& bounding_box);
 	vec3<length> get_back_bound(const bounding_box& bounding_box);
+	void set_position_lower_bound(physics::motion_component* component, bounding_box& bounding_box, const vec3<length>& new_position);
 }
