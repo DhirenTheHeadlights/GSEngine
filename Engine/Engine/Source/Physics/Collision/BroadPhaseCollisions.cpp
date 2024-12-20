@@ -43,7 +43,7 @@ bool gse::broad_phase_collision::check_collision(const vec3<length>& point, cons
 		   point.as_default_units().z > box.lower_bound.as_default_units().z && point.as_default_units().z < box.upper_bound.as_default_units().z;
 } 
 
-bool gse::broad_phase_collision::check_collision(const std::shared_ptr<physics::collision_component>& dynamic_object_collision_component, const std::shared_ptr<physics::motion_component>& dynamic_object_motion_component, const std::shared_ptr<physics::collision_component>& other_collision_component) {
+bool gse::broad_phase_collision::check_collision(physics::collision_component* dynamic_object_collision_component, physics::motion_component* dynamic_object_motion_component, physics::collision_component* other_collision_component) {
 	for (auto& box1 : dynamic_object_collision_component->bounding_boxes) {
 		for (auto& box2 : other_collision_component->bounding_boxes) {
 			if (check_collision(box1, box2)) {
@@ -52,7 +52,9 @@ bool gse::broad_phase_collision::check_collision(const std::shared_ptr<physics::
 				box1.collision_information.colliding = true;
 				box2.collision_information.colliding = true;
 
-				resolve_collision(box1, dynamic_object_motion_component, box2.collision_information);
+				if (dynamic_object_collision_component->resolve_collisions) {
+					resolve_collision(box1, dynamic_object_motion_component, box2.collision_information);
+				}
 
 				return true;
 			}
@@ -111,7 +113,7 @@ void gse::broad_phase_collision::set_collision_information(const bounding_box& b
 	box2.collision_information = calculate_collision_information(box2, box1);
 }
 
-void gse::broad_phase_collision::update(broad_phase_collision::group& group) {
+void gse::broad_phase_collision::update(group& group) {
 	for (auto& dynamic_object : group.get_dynamic_objects()) {
 		const auto dynamic_object_ptr = dynamic_object.collision_component.lock();
 		if (!dynamic_object_ptr) {
@@ -133,7 +135,7 @@ void gse::broad_phase_collision::update(broad_phase_collision::group& group) {
 				continue;
 			}
 
-			if (!check_collision(dynamic_object_ptr, motion_component_ptr, object_ptr)) {
+			if (!check_collision(dynamic_object_ptr.get(), motion_component_ptr.get(), object_ptr.get())) {
 				motion_component_ptr->airborne = true;
 			}
 		}

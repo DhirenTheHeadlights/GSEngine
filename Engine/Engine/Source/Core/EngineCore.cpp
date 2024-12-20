@@ -1,6 +1,7 @@
 #include "Core/EngineCore.h"
 
 #include "Core/Clock.h"
+#include "Core/ObjectRegistry.h"
 #include "Graphics/3D/Renderer3D.h"
 #include "Platform/PermaAssert.h"
 #include "Platform/GLFW/Input.h"
@@ -78,6 +79,8 @@ namespace {
 		if (!update_function()) {
 			gse::request_shutdown();
 		}
+
+		gse::registry::periodically_clean_up_stale_lists();
 
 		if (g_imgui_enabled) gse::reset_timer("Engine::render");
 	}
