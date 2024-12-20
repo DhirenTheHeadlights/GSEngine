@@ -86,6 +86,6 @@ private:
     int m_stacks;  // Number of stacks from top to bottom
 };
 
-gse::sphere::sphere(const vec3<length>& position, const length radius, const int sectors, const int stacks) {
+gse::sphere::sphere(const vec3<length>& position, const length radius, const int sectors, const int stacks) : object("Sphere") {
 	add_hook(std::make_unique<sphere_mesh_hook>(this, position, radius, sectors, stacks));
 }
