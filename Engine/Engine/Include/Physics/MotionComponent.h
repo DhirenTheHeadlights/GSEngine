@@ -17,6 +17,7 @@ namespace gse::physics {
 
 		velocity max_speed = meters_per_second(1.f);
 		mass mass = kilograms(1.f);
+		length most_recent_y_collision = meters(std::numeric_limits<float>::max());
 
 		bool affected_by_gravity = true;
 		bool moving = false;

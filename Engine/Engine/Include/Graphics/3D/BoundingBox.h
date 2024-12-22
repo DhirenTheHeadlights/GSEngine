@@ -14,8 +14,8 @@ namespace gse {
 		vec3<length> collision_point;
 
 		int get_axis() const {
-			if (!epsilon_equal_index(collision_normal, vec3(), x)) { return 0; }
-			if (!epsilon_equal_index(collision_normal, vec3(), y)) { return 1; }
+			if (!epsilon_equal_index(collision_normal, vec3(), x)) { return x; }
+			if (!epsilon_equal_index(collision_normal, vec3(), y)) { return y; }
 			return z; // Assume it is the z axis
 		}
 	};
