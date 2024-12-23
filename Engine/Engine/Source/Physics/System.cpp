@@ -156,7 +156,7 @@ void gse::physics::group::update() {
 	}
 }
 
-void gse::physics::resolve_collision(bounding_box& dynamic_bounding_box, motion_component* dynamic_motion_component, const collision_information& collision_info) {
+void gse::physics::resolve_collision(bounding_box& dynamic_bounding_box, motion_component* dynamic_motion_component, collision_information& collision_info) {
 	float& vel = dynamic_motion_component->current_velocity.as_default_units()[collision_info.get_axis()];
 	float& acc = dynamic_motion_component->current_acceleration.as_default_units()[collision_info.get_axis()];
 
@@ -178,7 +178,12 @@ void gse::physics::resolve_collision(bounding_box& dynamic_bounding_box, motion_
 	// Special case for ground collision (assumed Y-axis collision)
 	if (collision_info.get_axis() == 1 && collision_info.collision_normal.as_default_units().y > 0) {
 		dynamic_motion_component->airborne = false;
+		dynamic_motion_component->most_recent_y_collision = meters(dynamic_motion_component->current_position.as_default_units().y);
 		update_friction(dynamic_motion_component, get_surface_properties(surfaces::surface_type::concrete));
+
+		if (dynamic_motion_component->self_controlled) {
+			std::cout << "Ground collision detected!" << '\n';
+		}
 	}
 }
 

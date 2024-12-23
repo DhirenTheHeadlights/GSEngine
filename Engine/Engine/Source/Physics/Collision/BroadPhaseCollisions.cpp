@@ -135,8 +135,11 @@ void gse::broad_phase_collision::update(group& group) {
 				continue;
 			}
 
-			if (!check_collision(dynamic_object_ptr.get(), motion_component_ptr.get(), object_ptr.get())) {
-				motion_component_ptr->airborne = true;
+			check_collision(dynamic_object_ptr.get(), motion_component_ptr.get(), object_ptr.get());
+
+			if (std::fabs(motion_component_ptr->current_position.as_default_units().y - motion_component_ptr->most_recent_y_collision.as_default_unit()) < 0.01f) {
+				motion_component_ptr->airborne = false;
+				motion_component_ptr->most_recent_y_collision = meters(std::numeric_limits<float>::max());
 			}
 		}
 	}
