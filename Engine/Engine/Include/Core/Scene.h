@@ -34,6 +34,6 @@ namespace gse {
 
 		physics::group m_physics_system;
 		broad_phase_collision::group m_collision_group;
-		renderer::group m_render_group;
+		renderer3d::group m_render_group;
 	};
 }

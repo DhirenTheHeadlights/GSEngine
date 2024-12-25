@@ -180,10 +180,6 @@ void gse::physics::resolve_collision(bounding_box& dynamic_bounding_box, motion_
 		dynamic_motion_component->airborne = false;
 		dynamic_motion_component->most_recent_y_collision = meters(dynamic_motion_component->current_position.as_default_units().y);
 		update_friction(dynamic_motion_component, get_surface_properties(surfaces::surface_type::concrete));
-
-		if (dynamic_motion_component->self_controlled) {
-			std::cout << "Ground collision detected!" << '\n';
-		}
 	}
 }
 

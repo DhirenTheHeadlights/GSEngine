@@ -60,11 +60,11 @@ namespace {
 	}
 }
 
-void gse::renderer::group::add_render_component(const std::shared_ptr<render_component>& new_render_component) {
+void gse::renderer3d::group::add_render_component(const std::shared_ptr<render_component>& new_render_component) {
 	m_render_components.push_back(new_render_component);
 }
 
-void gse::renderer::group::add_light_source_component(const std::shared_ptr<light_source_component>& new_light_source_component) {
+void gse::renderer3d::group::add_light_source_component(const std::shared_ptr<light_source_component>& new_light_source_component) {
 	m_light_source_components.push_back(new_light_source_component);
 
 	for (const auto& light : new_light_source_component->get_lights()) {
@@ -96,13 +96,13 @@ void gse::renderer::group::add_light_source_component(const std::shared_ptr<ligh
 	}
 }
 
-void gse::renderer::group::remove_render_component(const std::shared_ptr<render_component>& render_component_to_remove) {
+void gse::renderer3d::group::remove_render_component(const std::shared_ptr<render_component>& render_component_to_remove) {
 	std::erase_if(m_render_components, [&](const std::weak_ptr<render_component>& component) {
 		return !component.owner_before(render_component_to_remove) && !render_component_to_remove.owner_before(component);
 		});
 }
 
-void gse::renderer::group::remove_light_source_component(const std::shared_ptr<light_source_component>& light_source_component_to_remove) {
+void gse::renderer3d::group::remove_light_source_component(const std::shared_ptr<light_source_component>& light_source_component_to_remove) {
 	const auto it = std::ranges::find_if(m_light_source_components,
 		[&](const std::weak_ptr<light_source_component>& component) {
 			return !component.owner_before(light_source_component_to_remove) && !light_source_component_to_remove.owner_before(component);
@@ -124,7 +124,7 @@ void gse::renderer::group::remove_light_source_component(const std::shared_ptr<l
 
 
 
-void gse::renderer::initialize3d() {
+void gse::renderer3d::initialize() {
 	enable_report_gl_errors();
 
 	const std::string shader_path = std::string(ENGINE_RESOURCES_PATH) + "Shaders/";
@@ -556,7 +556,7 @@ namespace {
 	}
 }
 
-void gse::renderer::render_objects(group& group) {
+void gse::renderer3d::render_objects(group& group) {
 	debug::add_imgui_callback([] {
 		ImGui::Begin("Renderer3D");
 
@@ -734,8 +734,10 @@ void gse::renderer::render_objects(group& group) {
 			group.remove_render_component(render_component.lock());
 		}
 	}
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-gse::camera& gse::renderer::get_camera() {
+gse::camera& gse::renderer3d::get_camera() {
 	return g_camera;
 }

@@ -21,7 +21,7 @@ namespace gse::physics {
 
 		bool affected_by_gravity = true;
 		bool moving = false;
-		bool airborne = false;
+		bool airborne = true;
 		bool self_controlled = false;
 
 		velocity get_speed() const {

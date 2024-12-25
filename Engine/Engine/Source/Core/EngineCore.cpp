@@ -2,6 +2,7 @@
 
 #include "Core/Clock.h"
 #include "Core/ObjectRegistry.h"
+#include "Graphics/2D/Renderer2D.h"
 #include "Graphics/3D/Renderer3D.h"
 #include "Platform/PermaAssert.h"
 #include "Platform/GLFW/Input.h"
@@ -10,7 +11,7 @@
 gse::scene_handler gse::g_scene_handler;
 
 gse::camera& gse::get_camera() {
-	return renderer::get_camera();
+	return renderer3d::get_camera();
 }
 
 namespace {
@@ -54,7 +55,8 @@ void gse::initialize(const std::function<void()>& initialize_function, const std
 
 	if (g_imgui_enabled) debug::set_up_imgui();
 
-	renderer::initialize3d();
+	renderer3d::initialize();
+	renderer2d::initialize();
 
 	initialize_function();
 
@@ -106,6 +108,7 @@ namespace {
 
 	void shutdown() {
 		g_game_shutdown_function();
+		gse::renderer2d::shutdown();
 		gse::window::shutdown();
 	}
 }
