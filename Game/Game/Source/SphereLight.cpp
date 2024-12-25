@@ -20,6 +20,8 @@ void game::sphere_light_hook::initialize() {
 	));*/
 
     m_owner->add_component(light_source_component);
+
+	m_owner->get_component<gse::physics::motion_component>()->affected_by_gravity = false;
 }
 
 void game::sphere_light_hook::update() {

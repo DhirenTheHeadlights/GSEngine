@@ -4,7 +4,7 @@
 #include "Graphics/3D/Camera.h"
 #include "Lights/LightSourceComponent.h"
 
-namespace gse::renderer {
+namespace gse::renderer3d {
 	class group {
 	public:
 		void add_render_component(const std::shared_ptr<render_component>& new_render_component);
@@ -23,7 +23,7 @@ namespace gse::renderer {
 		std::vector<std::weak_ptr<light_source_component>> m_light_source_components;
 	};
 
-	void initialize3d();
+	void initialize();
 	void render_objects(group& group);
 
 	camera& get_camera();

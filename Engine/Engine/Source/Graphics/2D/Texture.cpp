@@ -13,7 +13,7 @@ gse::texture::~texture() {
 
 void gse::texture::load_from_file(const std::string& filepath) {
 	stbi_set_flip_vertically_on_load(true);
-	unsigned char* data = stbi_load(filepath.c_str(), &m_dimensions.x, &m_dimensions.y, &m_channels, 0);
+	unsigned char* data = stbi_load(filepath.c_str(), &m_size.x, &m_size.y, &m_channels, 0);
 
 	if (!data) {
 		std::cerr << "Failed to load texture: " << filepath << '\n';
@@ -31,7 +31,7 @@ void gse::texture::load_from_file(const std::string& filepath) {
 		format = GL_RED;
 	}
 
-	glTexImage2D(GL_TEXTURE_2D, 0, format, m_dimensions.x, m_dimensions.y, 0, format, GL_UNSIGNED_BYTE, data);
+	glTexImage2D(GL_TEXTURE_2D, 0, static_cast<GLint>(format), m_size.x, m_size.y, 0, format, GL_UNSIGNED_BYTE, data);
 	glGenerateMipmap(GL_TEXTURE_2D);
 
 	stbi_image_free(data);
@@ -46,16 +46,16 @@ void gse::texture::unbind() const {
 	glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-void gse::texture::set_wrapping(const GLenum wrap_s, const GLenum wrap_t) {
+void gse::texture::set_wrapping(const GLenum wrap_s, const GLenum wrap_t) const {
 	glBindTexture(GL_TEXTURE_2D, m_texture_id);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap_s);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap_t);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, static_cast<GLint>(wrap_s));
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, static_cast<GLint>(wrap_t));
 	glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-void gse::texture::set_filtering(const GLenum min_filter, const GLenum mag_filter) {
+void gse::texture::set_filtering(const GLenum min_filter, const GLenum mag_filter) const {
 	glBindTexture(GL_TEXTURE_2D, m_texture_id);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, min_filter);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, mag_filter);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, static_cast<GLint>(min_filter));
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, static_cast<GLint>(mag_filter));
 	glBindTexture(GL_TEXTURE_2D, 0);
 }

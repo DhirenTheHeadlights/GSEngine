@@ -6,6 +6,7 @@
 #include "Engine.h"
 #include "Player.h"
 #include "SphereLight.h"
+#include "Graphics/2D/Renderer2D.h"
 
 namespace {
 	bool g_input_handling_enabled = true;
@@ -77,6 +78,7 @@ bool game::update() {
 }
 
 bool game::render() {
+	gse::renderer2d::draw_quad({ 100.f, 100.f }, { 100.f, 100.f }, { 1.f, 0.f, 0.f, 1.f });
 	return true;
 }
 

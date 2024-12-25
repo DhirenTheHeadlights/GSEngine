@@ -22,6 +22,7 @@ namespace gse {
         void set_mat4(const std::string& name, const glm::mat4& value) const;
 		void set_mat4_array(const std::string& name, const glm::mat4* values, unsigned int count) const;
 		void set_vec3(const std::string& name, const glm::vec3& value) const;
+		void set_vec4(const std::string& name, const glm::vec4& value) const;
 
     	unsigned int get_id() const { return m_id; }
     private:

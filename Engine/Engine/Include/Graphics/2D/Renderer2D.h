@@ -4,10 +4,8 @@
 
 #include "Texture.h"
 
-namespace gse::renderer {
-	void initialize2d();
-	void begin_frame();
-	void end_frame();
+namespace gse::renderer2d {
+	void initialize();
 	void shutdown();
 
 	void draw_quad(const glm::vec2& position, const glm::vec2& size, const glm::vec4& color);

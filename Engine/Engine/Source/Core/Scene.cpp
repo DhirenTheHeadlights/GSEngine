@@ -32,8 +32,8 @@ void gse::scene::remove_object(const object* object_to_remove) {
 	if (object_to_remove->get_scene_id().lock() == m_id) {
 		handle_component<physics::motion_component>(object_to_remove, m_physics_system, &physics::group::remove_motion_component);
 		handle_component<physics::collision_component>(object_to_remove, m_collision_group, &broad_phase_collision::group::remove_object);
-		handle_component<render_component>(object_to_remove, m_render_group, &renderer::group::remove_render_component);
-		handle_component<light_source_component>(object_to_remove, m_render_group, &renderer::group::remove_light_source_component);
+		handle_component<render_component>(object_to_remove, m_render_group, &renderer3d::group::remove_render_component);
+		handle_component<light_source_component>(object_to_remove, m_render_group, &renderer3d::group::remove_light_source_component);
 	}
 
 	std::erase_if(m_objects, [&object_to_remove](const std::unique_ptr<object>& required_object) {
@@ -50,8 +50,8 @@ void gse::scene::initialize() {
 		handle_component<physics::motion_component>(object.get(), m_physics_system, &physics::group::add_motion_component);
 		handle_component<physics::collision_component, physics::motion_component>(object.get(), m_collision_group, &broad_phase_collision::group::add_dynamic_object);
 		handle_component<physics::collision_component>(object.get(), m_collision_group, &broad_phase_collision::group::add_object);
-		handle_component<render_component>(object.get(), m_render_group, &renderer::group::add_render_component);
-		handle_component<light_source_component>(object.get(), m_render_group, &renderer::group::add_light_source_component);
+		handle_component<render_component>(object.get(), m_render_group, &renderer3d::group::add_render_component);
+		handle_component<light_source_component>(object.get(), m_render_group, &renderer3d::group::add_light_source_component);
 	}
 }
 

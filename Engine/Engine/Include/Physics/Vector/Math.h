@@ -14,10 +14,29 @@ namespace gse {
 	inline std::mt19937 g_gen(g_rd());
 
 	template <typename number_type>
-		requires std::is_floating_point_v<number_type> || std::is_integral_v<number_type>
-	number_type random_value(number_type min, number_type max) {
-		std::uniform_real_distribution<number_type> dis(min, max);
-		return dis(g_gen);
+		requires std::is_arithmetic_v<number_type>
+	number_type random_value(const number_type& min, const number_type& max) {
+		if constexpr (std::is_floating_point_v<number_type>) {
+			std::uniform_real_distribution<number_type> dis(min, max);
+			return dis(g_gen);
+		}
+		else {
+			std::uniform_int_distribution<number_type> dis(min, max);
+			return dis(g_gen);
+		}
+	}
+
+	template <typename number_type>
+		requires std::is_arithmetic_v<number_type>
+	number_type random_value(const number_type& max) {
+		if constexpr (std::is_floating_point_v<number_type>) {
+			std::uniform_real_distribution<number_type> dis(0, max);
+			return dis(g_gen);
+		}
+		else {
+			std::uniform_int_distribution<number_type> dis(0, max);
+			return dis(g_gen);
+		}
 	}
 }
 
