@@ -157,6 +157,23 @@ FetchContent_MakeAvailable(glm)
 
 ############################################
 
+############################################
+# FetchContent_Declare for ASSIMP
+############################################
+
+FetchContent_Declare(
+    assimp
+    GIT_REPOSITORY https://github.com/assimp/assimp.git
+    GIT_TAG        master
+)
+
+FetchContent_MakeAvailable(assimp)
+
+# Include ASSIMP in the Engine target
+target_include_directories(Engine PUBLIC ${assimp_SOURCE_DIR})
+
+############################################
+
 add_subdirectory(External/imgui-docking)
 
 # Include directories for engine headers
@@ -180,6 +197,7 @@ target_link_libraries(Engine PUBLIC
     imgui
     enet
     glm
+    assimp
 )
 
 # Visual Studio specific settings

@@ -48,7 +48,8 @@ namespace {
 gse::material::material(const std::string& vertex_path, const std::string& fragment_path, std::string material_type, const std::string& material_texture_path) :
 	material_type(std::move(material_type)) {
 	shader.create_shader_program(vertex_path, fragment_path);
-	material_texture = load_texture(material_texture_path.c_str(), true);
+	material_texture = material_texture_path != "" ? load_texture(material_texture_path.c_str(), true) : 0;
+	
 }
 
 void gse::material::use(const glm::mat4& view, const glm::mat4& projection, const glm::mat4& model) const {

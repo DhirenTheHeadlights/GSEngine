@@ -14,12 +14,19 @@ namespace gse {
 		glm::vec2 tex_coords;
 	};
 
+	struct model_texture {
+		unsigned int id;
+		std::string type;
+		std::string path;
+	};
+
 	class render_component;
 
 	class mesh {
 	public:
 		mesh();
 		mesh(const std::vector<vertex>& vertices, const std::vector<unsigned int>& indices, const glm::vec3& color = { 1.0f, 1.0f, 1.0f }, GLuint texture_id = 0);
+		mesh(const std::vector<vertex>& vertices, const std::vector<unsigned int>& indices, const std::vector<model_texture>& textures);
 		virtual ~mesh();
 
 		// Disable copy to avoid OpenGL resource duplication
@@ -61,6 +68,7 @@ namespace gse {
 		glm::mat4 m_model_matrix = glm::mat4(1.0f);
 		GLuint m_draw_mode = GL_TRIANGLES;
 		std::string m_material_name = "Concrete";
+		std::vector<model_texture> m_textures;
 		glm::vec3 m_color = { 1.0f, 1.0f, 1.0f };
 	};
 }
