@@ -1,15 +1,17 @@
 #version 330 core
-out vec4 FragColor;
+in vec2 vTexCoord;
 
-in vec2 TexCoord;
-
+uniform sampler2D uTexture;
 uniform bool uUseColor;
 uniform vec4 uColor;
-uniform sampler2D uTexture;
+
+out vec4 FragColor;
 
 void main() {
-    if(uUseColor)
+    if (uUseColor) {
         FragColor = uColor;
-    else
-        FragColor = texture(uTexture, TexCoord);
+    } else {
+        float alpha = texture(uTexture, vTexCoord).r;   // Assuming font atlas is single-channel (red)
+        FragColor = vec4(uColor.rgb, uColor.a * alpha);
+    }
 }

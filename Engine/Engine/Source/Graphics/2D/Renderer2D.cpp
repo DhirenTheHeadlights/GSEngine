@@ -7,6 +7,7 @@
 #include "Graphics/Shader.h"
 #include "Graphics/3D/Renderer3D.h"
 #include "Platform/GLFW/Window.h"
+#include "tests/caveview/glext.h"
 
 namespace {
 	GLuint g_vao, g_vbo, g_ebo;
@@ -78,15 +79,21 @@ void gse::renderer2d::initialize() {
     g_shader.set_mat4("projection", g_projection);
 }
 
+void gse::renderer2d::shutdown() {
+    glDeleteVertexArrays(1, &g_vao);
+    glDeleteBuffers(1, &g_vbo);
+    glDeleteBuffers(1, &g_ebo);
+}
+
 namespace {
-    void render_quad(const glm::vec2& position, const glm::vec2& size, const glm::vec4* color, const gse::texture* texture) {
+    void render_quad(const glm::vec2& position, const glm::vec2& size, const glm::vec4* color, const gse::texture* texture, const glm::vec4& uv_rect = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f)) {
         glDisable(GL_DEPTH_TEST);
         glDisable(GL_CULL_FACE);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
         g_shader.use();
-		g_shader.set_mat4("projection", g_projection);
+        g_shader.set_mat4("projection", g_projection);
 
         glm::mat4 model = translate(glm::mat4(1.0f), glm::vec3(position, 0.0f));
         model = scale(model, glm::vec3(size, 1.0f));
@@ -101,6 +108,28 @@ namespace {
             g_shader.set_vec4("uColor", *color);
         }
 
+        // Define the vertices with UVs based on uv_rect
+        struct vertex {
+            glm::vec2 position;
+            glm::vec2 texture_coordinate;
+        };
+
+        // Calculate the UV coordinates based on uv_rect
+        const glm::vec2 uv0 = { uv_rect.x, uv_rect.y + uv_rect.w };             // Top-left
+        const glm::vec2 uv1 = { uv_rect.x + uv_rect.z, uv_rect.y + uv_rect.w }; // Top-right
+        const glm::vec2 uv2 = { uv_rect.x + uv_rect.z, uv_rect.y };             // Bottom-right
+        const glm::vec2 uv3 = { uv_rect.x, uv_rect.y };                         // Bottom-left
+
+        vertex vertices[4] = {
+            { .position= {0.0f, 1.0f}, .texture_coordinate= uv0},
+	        { .position= {1.0f, 1.0f}, .texture_coordinate= uv1},
+	        { .position= {1.0f, 0.0f}, .texture_coordinate= uv2},
+	        { .position= {0.0f, 0.0f}, .texture_coordinate= uv3}
+        };
+
+        glBindBuffer(GL_ARRAY_BUFFER, g_vbo);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices);
+
         glBindVertexArray(g_vao);
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr);
         glBindVertexArray(0);
@@ -109,8 +138,8 @@ namespace {
             texture->unbind();
         }
 
-		glEnable(GL_DEPTH_TEST);
-		glDisable(GL_BLEND);
+        glEnable(GL_DEPTH_TEST);
+        glDisable(GL_BLEND);
     }
 }
 
@@ -122,8 +151,45 @@ void gse::renderer2d::draw_quad(const glm::vec2& position, const glm::vec2& size
 	render_quad(position, size, nullptr, &texture);
 }
 
-void gse::renderer2d::shutdown() {
-    glDeleteVertexArrays(1, &g_vao);
-    glDeleteBuffers(1, &g_vbo);
-    glDeleteBuffers(1, &g_ebo);
+void gse::renderer2d::draw_quad(const glm::vec2& position, const glm::vec2& size, const texture& texture, const glm::vec4& uv) {
+	render_quad(position, size, nullptr, &texture, uv);
+}
+
+void gse::renderer2d::draw_text(const font& font, const std::string& text, const glm::vec2& position, const float scale, const glm::vec4& color) {
+    if (text.empty()) return;
+
+	const texture& font_texture = font.get_texture();
+
+    g_shader.use();
+    g_shader.set_int("uUseColor", 0);
+    g_shader.set_vec4("uColor", color); 
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, font_texture.get_texture_id());
+
+    float start_x = position.x;
+    const float start_y = position.y;
+
+    for (const char c : text) {
+        const auto& [u0, v0, u1, v1, width, height, x_offset, y_offset, x_advance] = font.get_character(c);
+
+        if (width == 0.0f || height == 0.0f) continue;
+
+        const float x_pos = start_x + x_offset * scale;
+        const float y_pos = start_y - (height - y_offset) * scale;
+
+        const float w = width * scale;
+        const float h = height * scale;
+
+        // Define the UV rectangle for this glyph
+        // glm::vec4(x0, y0, width, height)
+        glm::vec4 uv_rect(u0, v0, u1 - u0, v1 - v0);
+
+        draw_quad(glm::vec2(x_pos, y_pos), glm::vec2(w, h), font_texture, uv_rect);
+
+        start_x += x_advance * scale;
+    }
+
+    // Unbind the texture
+    glBindTexture(GL_TEXTURE_2D, 0);
 }
