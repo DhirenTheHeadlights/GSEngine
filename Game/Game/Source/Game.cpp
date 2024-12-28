@@ -79,6 +79,7 @@ bool game::update() {
 
 bool game::render() {
 	gse::renderer2d::draw_quad({ 100.f, 100.f }, { 100.f, 100.f }, { 1.f, 0.f, 0.f, 1.f });
+	gse::gui::text("Hello, World!");
 	return true;
 }
 

@@ -7,6 +7,7 @@
 #include "Core/Object/Sphere.h"
 #include "Graphics/Debug.h"
 #include "Graphics/RenderComponent.h"
+#include "Graphics/2D/Gui.h"
 #include "Graphics/3D/Lights/DirectionalLight.h"
 #include "Graphics/3D/Lights/LightSourceComponent.h"
 #include "Graphics/3D/Lights/PointLight.h"
