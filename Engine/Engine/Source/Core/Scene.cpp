@@ -34,9 +34,6 @@ void gse::scene::update() const {
 	for (const auto& object : m_objects) {
 		object->update_hooks();
 	}
-
-	const auto pmc = registry::get_component<physics::motion_component>(grab_id("Player").lock().get());
-	print("accel", pmc.current_acceleration);
 }
 
 void gse::scene::render() const {

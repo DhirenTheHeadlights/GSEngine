@@ -60,18 +60,23 @@ namespace {
 	}
 
 	void update_air_resistance(gse::physics::motion_component& component) {
-		constexpr float air_density = 1.225f;												  // kg/m^3 (air density at sea level)
-		const gse::unitless drag_coefficient = component.airborne ? 0.47f : 1.05f;			  // Approx for a sphere vs a box
-		constexpr float cross_sectional_area = 1.0f;										  // Example area in m^2, adjust according to the object
-
 		// Calculate drag force magnitude: F_d = 0.5 * C_d * rho * A * v^2, Units are in Newtons
-		const gse::force drag_force_magnitude = gse::newtons(
-			0.5f * drag_coefficient.as_default_unit() * air_density * cross_sectional_area *
-			magnitude(component.current_velocity).as<gse::units::meters_per_second>() *
-			magnitude(component.current_velocity).as<gse::units::meters_per_second>()
-		);
+		for (int i = 0; i < 3; ++i) {
+			if (const float velocity = component.current_velocity.as_default_units()[i]; velocity != 0.0f) {
+				constexpr float air_density = 1.225f;												  // kg/m^3 (air density at sea level)
+				const gse::unitless drag_coefficient = component.airborne ? 0.47f : 1.05f;			  // Approx for a sphere vs a box
+				constexpr float cross_sectional_area = 1.0f;										  // Example area in m^2, adjust according to the object
 
-		apply_force(component, gse::vec3<gse::units::newtons>(-drag_force_magnitude.as<gse::units::newtons>() * normalize(component.current_velocity).as_default_units()));
+				const float drag_force_magnitude = 0.5f * drag_coefficient.as_default_unit() * air_density * cross_sectional_area * velocity * velocity;
+				gse::unitless direction = velocity > 0 ? -1.0f : 1.0f;
+				auto drag_force = gse::vec3<gse::units::newtons>(
+					i == 0 ? drag_force_magnitude * direction : 0.0f,
+					i == 1 ? drag_force_magnitude * direction : 0.0f,
+					i == 2 ? drag_force_magnitude * direction : 0.0f
+				);
+				apply_force(component, drag_force);
+			}
+		}
 	}
 
 	void update_friction(gse::physics::motion_component& component, const gse::surfaces::surface_properties& surface) {
@@ -171,7 +176,7 @@ void gse::physics::resolve_collision(bounding_box& dynamic_bounding_box, motion_
 	if (collision_info.get_axis() == y && collision_info.collision_normal.as_default_units().y > 0) {
 		dynamic_motion_component.airborne = false;
 		dynamic_motion_component.most_recent_y_collision = meters(dynamic_motion_component.current_position.as_default_units().y);
-		//update_friction(dynamic_motion_component, get_surface_properties(surfaces::surface_type::concrete));
+		update_friction(dynamic_motion_component, get_surface_properties(surfaces::surface_type::concrete));
 	}
 }
 
