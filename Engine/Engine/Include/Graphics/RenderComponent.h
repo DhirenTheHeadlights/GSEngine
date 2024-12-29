@@ -12,10 +12,16 @@ namespace gse {
 	class render_component final : public component {
 	public:
 		render_component(id* id) : component(id) {}
-		render_component(id* id, const std::vector<std::shared_ptr<mesh>>& meshes) : component(id), m_meshes(meshes) {}
+		render_component(id* id, std::vector<std::unique_ptr<mesh>> meshes) : component(id), m_meshes(std::move(meshes)) {}
 
-		void add_mesh(const std::shared_ptr<mesh>& mesh);
-		void add_bounding_box_mesh(const std::shared_ptr<bounding_box_mesh>& bounding_box_mesh);
+		render_component(render_component&&) noexcept = default;
+		render_component& operator=(render_component&&) noexcept = default;
+
+		render_component(const render_component&) = delete;
+		render_component& operator=(const render_component&) = delete;
+
+		void add_mesh(std::unique_ptr<mesh> mesh);
+		void add_bounding_box_mesh(std::unique_ptr<bounding_box_mesh> bounding_box_mesh);
 
 		void update_bounding_box_meshes() const;
 		void set_render(bool render, bool render_bounding_boxes);
@@ -24,11 +30,11 @@ namespace gse {
 
 		std::vector<render_queue_entry> get_queue_entries() const;
 		std::vector<render_queue_entry> get_bounding_box_queue_entries() const;
-		std::vector<std::shared_ptr<mesh>>& get_meshes() { return m_meshes; }
-		std::vector<std::shared_ptr<bounding_box_mesh>>& get_bounding_box_meshes() { return m_bounding_box_meshes; }
+		std::vector<mesh*> get_meshes() const;
+		std::vector<bounding_box_mesh*> get_bounding_box_meshes() const;
 	protected:
-		std::vector<std::shared_ptr<mesh>> m_meshes;
-		std::vector<std::shared_ptr<bounding_box_mesh>> m_bounding_box_meshes;
+		std::vector<std::unique_ptr<mesh>> m_meshes;
+		std::vector<std::unique_ptr<bounding_box_mesh>> m_bounding_box_meshes;
 
 		bool m_render = false;
 		bool m_render_bounding_boxes = false;

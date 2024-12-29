@@ -38,6 +38,16 @@ namespace gse {
 			return dis(g_gen);
 		}
 	}
+
+	template <typename T>
+	std::vector<T*> get_pointers(const std::vector<std::unique_ptr<T>>& unique_ptrs) {
+		std::vector<T*> pointers;
+		pointers.reserve(unique_ptrs.size());
+		for (const auto& unique_ptr : unique_ptrs) {
+			pointers.push_back(unique_ptr.get());
+		}
+		return pointers;
+	}
 }
 
 namespace gse {

@@ -1,6 +1,8 @@
 #include "Core/Object/Sphere.h"
 
 #include <imgui.h>
+
+#include "Core/ObjectRegistry.h"
 #include "Graphics/RenderComponent.h"
 
 struct sphere_mesh_hook final : gse::hook<gse::sphere> {
@@ -8,12 +10,11 @@ struct sphere_mesh_hook final : gse::hook<gse::sphere> {
 		: hook(owner), m_initial_position(position), m_radius(radius), m_sectors(sectors), m_stacks(stacks) {}
 
 	void initialize() override {
-		const auto id = m_owner->get_id().lock();
-        const auto new_motion_component = std::make_shared<gse::physics::motion_component>(id.get());
-        new_motion_component->current_position = m_initial_position;
-        m_owner->add_component(new_motion_component);
+        gse::physics::motion_component new_motion_component(m_id);
+        new_motion_component.current_position = m_initial_position;
+        gse::registry::add_component<gse::physics::motion_component>(std::move(new_motion_component));
 
-        const auto new_render_component = std::make_shared<gse::render_component>(id.get());
+		gse::render_component new_render_component(m_id);
 
         const float r = m_radius.as<gse::units::meters>();
 
@@ -47,7 +48,7 @@ struct sphere_mesh_hook final : gse::hook<gse::sphere> {
                     static_cast<float>(stack) / static_cast<float>(m_stacks)
                 };
 
-                vertices.push_back({ position, normal, tex_coords });
+                vertices.push_back({ .position= position, .normal= normal, .tex_coords= tex_coords});
             }
         }
 
@@ -68,16 +69,16 @@ struct sphere_mesh_hook final : gse::hook<gse::sphere> {
             }
         }
 
-        const auto new_mesh = std::make_shared<gse::mesh>(vertices, indices);
-        new_render_component->add_mesh(new_mesh);
-		new_render_component->set_render(true, true);
-        m_owner->add_component(new_render_component);
+        auto new_mesh = std::make_unique<gse::mesh>(vertices, indices);
+        new_render_component.add_mesh(std::move(new_mesh));
+		new_render_component.set_render(true, true);
+		gse::registry::add_component<gse::render_component>(std::move(new_render_component));
 	}
 
 	void update() override {
-        const auto position = m_owner->get_component<gse::physics::motion_component>()->current_position.as<gse::units::meters>();
+        const auto position = gse::registry::get_component<gse::physics::motion_component>(m_id).current_position.as<gse::units::meters>();
 
-        m_owner->get_component<gse::render_component>()->set_mesh_positions(position);
+        gse::registry::get_component<gse::render_component>(m_id).set_mesh_positions(position);
 	}
 private:
 	gse::vec3<gse::length> m_initial_position;

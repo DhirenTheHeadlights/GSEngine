@@ -3,6 +3,8 @@
 #include <ranges>
 #include <string>
 #include <unordered_map>
+#include <glad/glad.h>
+#include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 
 namespace gse::input {

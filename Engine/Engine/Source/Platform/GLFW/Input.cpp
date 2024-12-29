@@ -1,8 +1,5 @@
 #include "Platform/GLFW/Input.h"
 
-#include <glad/glad.h>
-#include <GLFW/glfw3.h>
-
 #include "Core/Clock.h"
 #include "Platform/GLFW/Window.h"
 

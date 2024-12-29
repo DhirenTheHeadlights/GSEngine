@@ -12,6 +12,7 @@
 namespace {
 	GLuint g_vao, g_vbo, g_ebo;
     gse::shader g_shader;
+	gse::shader g_msdf_shader;
 	glm::mat4 g_projection;
 }
 
@@ -77,6 +78,14 @@ void gse::renderer2d::initialize() {
     g_projection = glm::ortho(0.0f, static_cast<float>(window::get_window_size().x), 0.0f, static_cast<float>(window::get_window_size().y), -1.0f, 1.0f);
     g_shader.use();
     g_shader.set_mat4("projection", g_projection);
+
+	g_msdf_shader.create_shader_program(
+		ENGINE_RESOURCES_PATH "Shaders/2D/msdf_shader.vert",
+		ENGINE_RESOURCES_PATH "Shaders/2D/msdf_shader.frag"
+	);
+
+	g_msdf_shader.use();
+	g_msdf_shader.set_mat4("projection", g_projection);
 }
 
 void gse::renderer2d::shutdown() {
@@ -108,19 +117,17 @@ namespace {
             g_shader.set_vec4("uColor", *color);
         }
 
-        // Define the vertices with UVs based on uv_rect
         struct vertex {
             glm::vec2 position;
             glm::vec2 texture_coordinate;
         };
 
-        // Calculate the UV coordinates based on uv_rect
         const glm::vec2 uv0 = { uv_rect.x, uv_rect.y + uv_rect.w };             // Top-left
         const glm::vec2 uv1 = { uv_rect.x + uv_rect.z, uv_rect.y + uv_rect.w }; // Top-right
         const glm::vec2 uv2 = { uv_rect.x + uv_rect.z, uv_rect.y };             // Bottom-right
         const glm::vec2 uv3 = { uv_rect.x, uv_rect.y };                         // Bottom-left
 
-        vertex vertices[4] = {
+        const vertex vertices[4] = {
             { .position= {0.0f, 1.0f}, .texture_coordinate= uv0},
 	        { .position= {1.0f, 1.0f}, .texture_coordinate= uv1},
 	        { .position= {1.0f, 0.0f}, .texture_coordinate= uv2},
@@ -158,12 +165,12 @@ void gse::renderer2d::draw_quad(const glm::vec2& position, const glm::vec2& size
 void gse::renderer2d::draw_text(const font& font, const std::string& text, const glm::vec2& position, const float scale, const glm::vec4& color) {
     if (text.empty()) return;
 
-	const texture& font_texture = font.get_texture();
+    g_msdf_shader.use();
+    g_msdf_shader.set_int("uMSDF", 0);
+    g_msdf_shader.set_vec4("uColor", color);
+    g_msdf_shader.set_float("uRange", 4.0f);
 
-    g_shader.use();
-    g_shader.set_int("uUseColor", 0);
-    g_shader.set_vec4("uColor", color); 
-
+    const texture& font_texture = font.get_texture();
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, font_texture.get_texture_id());
 
@@ -173,7 +180,8 @@ void gse::renderer2d::draw_text(const font& font, const std::string& text, const
     for (const char c : text) {
         const auto& [u0, v0, u1, v1, width, height, x_offset, y_offset, x_advance] = font.get_character(c);
 
-        if (width == 0.0f || height == 0.0f) continue;
+        if (width == 0.0f || height == 0.0f)
+            continue;
 
         const float x_pos = start_x + x_offset * scale;
         const float y_pos = start_y - (height - y_offset) * scale;
@@ -181,15 +189,12 @@ void gse::renderer2d::draw_text(const font& font, const std::string& text, const
         const float w = width * scale;
         const float h = height * scale;
 
-        // Define the UV rectangle for this glyph
-        // glm::vec4(x0, y0, width, height)
-        glm::vec4 uv_rect(u0, v0, u1 - u0, v1 - v0);
+        glm::vec4 uv_rect(u0, v0, (u1 - u0), (v1 - v0));
 
         draw_quad(glm::vec2(x_pos, y_pos), glm::vec2(w, h), font_texture, uv_rect);
 
         start_x += x_advance * scale;
     }
 
-    // Unbind the texture
     glBindTexture(GL_TEXTURE_2D, 0);
 }

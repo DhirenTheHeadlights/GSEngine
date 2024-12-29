@@ -134,7 +134,7 @@ void editor::render() {
 
     const auto scenes = gse::g_scene_handler.get_all_scenes();
     const auto active_scenes = gse::g_scene_handler.get_active_scenes();
-    const std::string current_scene_name = active_scenes.empty() ? "No Active Scene" : active_scenes[0]->get_id()->tag;
+    const std::string current_scene_name = active_scenes.empty() ? "No Active Scene" : active_scenes[0]->get_id().lock()->tag;
     if (scenes.empty()) {
         ImGui::Text("No scenes available.");
     }
@@ -144,7 +144,7 @@ void editor::render() {
     else {
         if (ImGui::BeginCombo("Select Scene", current_scene_name.c_str())) {
             for (const auto& scene : scenes) {
-                const bool is_selected = !active_scenes.empty() && active_scenes[0]->get_id()->tag == scene->tag;
+                const bool is_selected = !active_scenes.empty() && active_scenes[0]->get_id().lock()->tag == scene->tag;
                 if (ImGui::Selectable(scene->tag.c_str(), is_selected)) {
                     if (!is_selected) { // Avoid redundant activation
                         gse::g_scene_handler.activate_scene(scene);

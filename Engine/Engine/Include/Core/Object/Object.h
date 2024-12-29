@@ -3,13 +3,12 @@
 #include <typeindex>
 #include <vector>
 
-#include "Core/EngineComponent.h"
 #include "Core/ID.h"
 #include "Core/Object/Hook.h"
 #include "Graphics/3D/BoundingBox.h"
 
 namespace gse {
-	class object : public hookable, public composable, public identifiable {
+	class object : public hookable, public identifiable {
 	public:
 		explicit object(const std::string& name = "Unnamed Entity") : identifiable(name) {}
 		virtual ~object() = default;
