@@ -59,7 +59,7 @@ struct game::player_hook final : gse::hook<player> {
 
 		gse::length height = gse::feet(6.0f);
 		gse::length width = gse::feet(3.0f);
-		collision_component.bounding_boxes.emplace_back(gse::vec3<gse::units::meters>(-10.f, -10.f, -10.f), height, width, width);
+		collision_component.bounding_box = { gse::vec3<gse::units::meters>(-10.f, -10.f, -10.f), height, width, width };
 
 		m_owner->m_wasd.insert({ GLFW_KEY_W, { 0.f, 0.f, 1.f } });
 		m_owner->m_wasd.insert({ GLFW_KEY_S, { 0.f, 0.f, -1.f } });
@@ -70,10 +70,8 @@ struct game::player_hook final : gse::hook<player> {
 		motion_component.max_speed = m_max_speed;
 		motion_component.self_controlled = true;
 
-		for (auto& bb : collision_component.bounding_boxes) {
-			auto bounding_box_mesh = std::make_unique<gse::bounding_box_mesh>(bb.upper_bound, bb.lower_bound);
-			render_component.add_bounding_box_mesh(std::move(bounding_box_mesh));
-		}
+		auto bounding_box_mesh = std::make_unique<gse::bounding_box_mesh>(collision_component.bounding_box.upper_bound, collision_component.bounding_box.lower_bound);
+		render_component.add_bounding_box_mesh(std::move(bounding_box_mesh));
 
 		render_component.set_render(true, true);
 
@@ -102,9 +100,7 @@ struct game::player_hook final : gse::hook<player> {
 			apply_impulse(motion_component, gse::vec3<gse::units::newtons>(0.f, m_jump_force, 0.f), gse::seconds(0.5f));
 		}
 
-		for (auto& bb : gse::registry::get_component<gse::physics::collision_component>(m_id).bounding_boxes) {
-			bb.set_position(motion_component.current_position);
-		}
+		gse::registry::get_component<gse::physics::collision_component>(m_id).bounding_box.set_position(motion_component.current_position);
 
 		gse::get_camera().set_position(motion_component.current_position + gse::vec3<gse::units::feet>(0.f, 6.f, 0.f));
 
@@ -119,7 +115,7 @@ struct game::player_hook final : gse::hook<player> {
 			const auto collision_component = gse::registry::get_component<gse::physics::collision_component>(m_id);
 
 			gse::debug::print_vector("Player Position", motion_component.current_position.as<gse::units::meters>(), gse::units::meters::unit_name);
-			gse::debug::print_vector("Player Bounding Box Position", collision_component.bounding_boxes[0].get_center().as<gse::units::meters>(), gse::units::meters::unit_name);
+			gse::debug::print_vector("Player Bounding Box Position", collision_component.bounding_box.get_center().as<gse::units::meters>(), gse::units::meters::unit_name);
 			gse::debug::print_vector("Player Velocity", motion_component.current_velocity.as<gse::units::meters_per_second>(), gse::units::meters_per_second::unit_name);
 			gse::debug::print_vector("Player Acceleration", motion_component.current_acceleration.as<gse::units::meters_per_second_squared>(), gse::units::meters_per_second_squared::unit_name);
 
@@ -127,7 +123,7 @@ struct game::player_hook final : gse::hook<player> {
 
 			ImGui::Text("Player Collision Information");
 
-			const auto [colliding, collision_normal, penetration, collision_point] = collision_component.bounding_boxes[0].collision_information;
+			const auto [colliding, collision_normal, penetration, collision_point] = collision_component.bounding_box.collision_information;
 			gse::debug::print_boolean("Player Colliding", colliding);
 			gse::debug::print_vector("Collision Normal", collision_normal.as_default_units(), "");
 			gse::debug::print_value("Penetration", penetration.as<gse::units::meters>(), gse::units::meters::unit_name);

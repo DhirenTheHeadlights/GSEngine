@@ -23,22 +23,21 @@ bool gse::broad_phase_collision::check_future_collision(const bounding_box& dyna
 bool gse::broad_phase_collision::check_collision(physics::collision_component& dynamic_object_collision_component, const physics::collision_component& other_collision_component) {
 	bool collision_detected = false;
 
-	for (auto& box1 : dynamic_object_collision_component.bounding_boxes) {
-		for (auto& box2 : other_collision_component.bounding_boxes) {
-			if (auto& box1_motion_component = registry::get_component<physics::motion_component>(dynamic_object_collision_component.get_id());
-				/*check_future_collision(box1, box1_motion_component, box2) ||*/ check_collision(box1, box2)) {
-				set_collision_information(box1, box2);
+	auto& box1_motion_component = registry::get_component<physics::motion_component>(dynamic_object_collision_component.get_id());
+	auto& box1 = dynamic_object_collision_component.bounding_box;
+	const auto& box2 = other_collision_component.bounding_box;
 
-				box1.collision_information.colliding = true;
-				box2.collision_information.colliding = true;
+	if (check_future_collision(box1, box1_motion_component, box2) || check_collision(box1, box2)) {
+		set_collision_information(box1, box2);
 
-				if (dynamic_object_collision_component.resolve_collisions) {
-					resolve_collision(box1, box1_motion_component, box2.collision_information);
-				}
+		box1.collision_information.colliding = true;
+		box2.collision_information.colliding = true;
 
-				collision_detected = true;
-			}
+		if (dynamic_object_collision_component.resolve_collisions) {
+			resolve_collision(box1, box1_motion_component, box2.collision_information);
 		}
+
+		collision_detected = true;
 	}
 
 	return collision_detected;
@@ -89,10 +88,10 @@ void gse::broad_phase_collision::set_collision_information(const bounding_box& b
 }
 
 void gse::broad_phase_collision::update() {
-	for (auto& objects = registry::get_components<physics::collision_component>(); auto& object : objects) {
-		for (const auto& bounding_box : object.bounding_boxes) {
-			bounding_box.collision_information = {};
-		}
+	auto& objects = registry::get_components<physics::collision_component>();
+
+	for (auto& object : objects) {
+		object.bounding_box.collision_information = {};
 
 		for (auto& other : objects) {
 			if (object.get_id() == other.get_id()) {
@@ -100,20 +99,22 @@ void gse::broad_phase_collision::update() {
 			}
 
 			check_collision(object, other);
-
-			const auto airborne_check = [](physics::motion_component& motion_component) {
-				if (std::fabs(motion_component.current_position.as_default_units().y - motion_component.most_recent_y_collision.as_default_unit()) < 0.01f) {
-					motion_component.airborne = false;
-				}
-				else {
-					motion_component.airborne = true;
-					motion_component.most_recent_y_collision = meters(std::numeric_limits<float>::max());
-				}
-			};
-
-			airborne_check(registry::get_component<physics::motion_component>(object.get_id()));
-			airborne_check(registry::get_component<physics::motion_component>(other.get_id()));
 		}
+	}
+
+	const auto airborne_check = [](physics::motion_component& motion_component, const physics::collision_component& collision_component) {
+		if (std::fabs(motion_component.current_position.as_default_units().y - motion_component.most_recent_y_collision.as_default_unit()) < 0.01f && collision_component.bounding_box.collision_information.colliding) {
+			motion_component.airborne = false;
+		}
+		else {
+			motion_component.airborne = true;
+			motion_component.most_recent_y_collision = meters(std::numeric_limits<float>::max());
+		}
+		};
+
+	for (auto& object : objects) {
+		auto& motion_component = registry::get_component<physics::motion_component>(object.get_id());
+		airborne_check(motion_component, object);
 	}
 }
 
