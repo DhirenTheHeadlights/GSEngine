@@ -9,7 +9,7 @@ namespace gse::gui {
 	void render();
 	void shutdown();
 
-	void create_menu(const std::string& name, const std::function<void()>& contents, const glm::vec2& position, const glm::vec2& size);
+	void create_menu(const std::string& name, const glm::vec2& position, const glm::vec2& size, const std::function<void()>& contents);
 
 	void text(const std::string& text);
 }

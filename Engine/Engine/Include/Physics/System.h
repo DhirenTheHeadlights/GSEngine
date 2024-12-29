@@ -8,18 +8,9 @@
 #include "Graphics/3D/BoundingBox.h"
 
 namespace gse::physics {
-	class group {
-	public:
-		void add_motion_component(const std::shared_ptr<motion_component>& object);
-		void remove_motion_component(const std::shared_ptr<motion_component>& object);
-
-		void update();
-	private:
-		std::vector<std::weak_ptr<motion_component>> m_motion_components;
-	};
-
-	void apply_force(motion_component* component, const vec3<force>& force);
-	void apply_impulse(motion_component* component, const vec3<force>& force, const time& duration);
-	void update_entity(motion_component* component);
-	void resolve_collision(bounding_box& dynamic_bounding_box, motion_component* dynamic_motion_component, collision_information& collision_info);
+	void apply_force(motion_component& component, const vec3<force>& force);
+	void apply_impulse(motion_component& component, const vec3<gse::force>& force, const time& duration);
+	void update_object(motion_component& component);
+	void update();
+	void resolve_collision(bounding_box& dynamic_bounding_box, motion_component& dynamic_motion_component, collision_information& collision_info);
 }

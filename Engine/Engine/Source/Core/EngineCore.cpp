@@ -2,6 +2,7 @@
 
 #include "Core/Clock.h"
 #include "Core/ObjectRegistry.h"
+#include "Graphics/2D/Gui.h"
 #include "Graphics/2D/Renderer2D.h"
 #include "Graphics/3D/Renderer3D.h"
 #include "Platform/PermaAssert.h"
@@ -53,6 +54,8 @@ void gse::initialize(const std::function<void()>& initialize_function, const std
 
 	window::initialize();
 
+	gui::initialize();
+
 	if (g_imgui_enabled) debug::set_up_imgui();
 
 	renderer3d::initialize();
@@ -100,6 +103,8 @@ namespace {
 
 		if (g_imgui_enabled) gse::display_timers();
 		if (g_imgui_enabled) gse::debug::render_imgui();
+
+		gse::gui::render();
 
 		gse::window::end_frame();
 

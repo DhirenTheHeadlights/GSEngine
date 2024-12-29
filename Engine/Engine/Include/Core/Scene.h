@@ -17,9 +17,9 @@ namespace gse {
 		void add_object(std::unique_ptr<object>&& object);
 		void remove_object(const object* object_to_remove);
 
-		void initialize();
-		void update();
-		void render();
+		void initialize() const;
+		void update() const;
+		void render() const;
 		void exit() const;
 
 		void set_active(const bool is_active) { this->m_is_active = is_active; }
@@ -31,9 +31,5 @@ namespace gse {
 		std::vector<std::unique_ptr<object>> m_objects;
 
 		bool m_is_active = false;
-
-		physics::group m_physics_system;
-		broad_phase_collision::group m_collision_group;
-		renderer3d::group m_render_group;
 	};
 }

@@ -10,14 +10,21 @@ namespace gse {
 	};
 
 	class object;
+	class id;
+
+	template <typename T>
+	concept has_id = requires(T t) {
+		{ t.get_id() } -> std::same_as<std::weak_ptr<id>>;
+	};
 
 	template <typename owner_type = object>
 	struct hook : base_hook {
 		hook() = default;
-		hook(owner_type* owner) : m_owner(owner) {}
+		hook(owner_type* owner) : m_owner(owner), m_id(owner->get_id().lock().get()) {}
 		~hook() override = default;
 	protected:
 		owner_type* m_owner;
+		id* m_id;
 	};
 
 	class scene;

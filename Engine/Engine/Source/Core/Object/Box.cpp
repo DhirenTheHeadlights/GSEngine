@@ -1,5 +1,7 @@
 #include "Core/Object/Box.h"
 #include <imgui.h>
+
+#include "Core/ObjectRegistry.h"
 #include "Graphics/RenderComponent.h"
 
 struct box_mesh_hook final : gse::hook<gse::box> {
@@ -7,18 +9,16 @@ struct box_mesh_hook final : gse::hook<gse::box> {
         : hook(owner), m_initial_position(initial_position), m_size(size) {}
 
     void initialize() override {
-		const auto id = m_owner->get_id().lock();
+        gse::physics::motion_component new_motion_component(m_id);
+        new_motion_component.current_position = m_initial_position;
+        new_motion_component.mass = gse::kilograms(100.f);
+		gse::registry::add_component<gse::physics::motion_component>(std::move(new_motion_component));
 
-        const auto new_motion_component = std::make_shared<gse::physics::motion_component>(id.get());
-        new_motion_component->current_position = m_initial_position;
-        new_motion_component->mass = gse::kilograms(100.f);
-        m_owner->add_component(new_motion_component);
+        gse::physics::collision_component new_collision_component(m_id);
+        new_collision_component.bounding_boxes.emplace_back(m_initial_position, m_size);
+		gse::registry::add_component<gse::physics::collision_component>(std::move(new_collision_component));
 
-        const auto new_collision_component = std::make_shared<gse::physics::collision_component>(id.get());
-        new_collision_component->bounding_boxes.emplace_back(m_initial_position, m_size);
-        m_owner->add_component(new_collision_component);
-
-        const auto new_render_component = std::make_shared<gse::render_component>(id.get());
+        gse::render_component new_render_component(m_id);
 
         const float half_width = m_size.as<gse::units::meters>().x / 2.f;
         const float half_height = m_size.as<gse::units::meters>().y / 2.f;
@@ -74,28 +74,28 @@ struct box_mesh_hook final : gse::hook<gse::box> {
         const std::vector<unsigned int> face_indices = { 0, 1, 2, 2, 3, 0 };
 
         for (size_t i = 0; i < 6; ++i) {
-            const auto new_mesh = std::make_shared<gse::mesh>(face_vertices[i], face_indices);
+            auto new_mesh = std::make_unique<gse::mesh>(face_vertices[i], face_indices);
             new_mesh->set_color(color);
-            new_render_component->add_mesh(new_mesh);
+            new_render_component.add_mesh(std::move(new_mesh));
         }
 
-        new_render_component->set_render(true, true);
+        new_render_component.set_render(true, true);
 
-        const auto new_bounding_box_mesh = std::make_shared<gse::bounding_box_mesh>(m_owner->get_component<gse::physics::collision_component>()->bounding_boxes[0]);
-        new_render_component->add_bounding_box_mesh(new_bounding_box_mesh);
+        auto new_bounding_box_mesh = std::make_unique<gse::bounding_box_mesh>(gse::registry::get_component<gse::physics::collision_component>(m_id).bounding_boxes[0]);
+        new_render_component.add_bounding_box_mesh(std::move(new_bounding_box_mesh));
 
-        m_owner->add_component(new_render_component);
+		gse::registry::add_component<gse::render_component>(std::move(new_render_component));
     }
 
     void update() override {
-        m_owner->get_component<gse::render_component>()->set_mesh_positions(m_owner->get_component<gse::physics::motion_component>()->current_position);
-        m_owner->get_component<gse::physics::collision_component>()->bounding_boxes[0].set_position(m_owner->get_component<gse::physics::motion_component>()->current_position);
+	    gse::registry::get_component<gse::render_component>(m_id).set_mesh_positions(gse::registry::get_component<gse::physics::motion_component>(m_id).current_position);
+        gse::registry::get_component<gse::physics::collision_component>(m_id).bounding_boxes[0].set_position(gse::registry::get_component<gse::physics::motion_component>(m_id).current_position);
     }
     void render() override {
 	    gse::debug::add_imgui_callback([this] {
             ImGui::Begin(m_owner->get_id().lock()->tag.c_str());
-            ImGui::SliderFloat3("Position", &m_owner->get_component<gse::physics::motion_component>()->current_position.as_default_units().x, -1000.f, 1000.f);
-            ImGui::Text("Colliding: %s", m_owner->get_component<gse::physics::collision_component>()->bounding_boxes[0].collision_information.colliding ? "true" : "false");
+            ImGui::SliderFloat3("Position", &gse::registry::get_component<gse::physics::motion_component>(m_id).current_position.as_default_units().x, -1000.f, 1000.f);
+            ImGui::Text("Colliding: %s", gse::registry::get_component<gse::physics::collision_component>(m_id).bounding_boxes[0].collision_information.colliding ? "true" : "false");
             ImGui::End();
             });
     }
