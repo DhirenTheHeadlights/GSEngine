@@ -31,7 +31,7 @@ struct scene1_hook final : gse::hook<gse::scene> {
 
 	void render() override {
 		gse::debug::add_imgui_callback([] {
-			if (gse::g_scene_handler.get_scene(gse::grab_id("Scene1").lock().get())->get_active()) {
+			if (gse::scene_loader::get_scene(gse::grab_id("Scene1").lock().get())->get_active()) {
 				ImGui::Begin("Game Data");
 
 				ImGui::Text("FPS: %d", gse::main_clock::get_frame_rate());
@@ -48,10 +48,10 @@ bool game::initialize() {
 
 	auto scene2 = std::make_unique<gse::scene>("Scene2");
 
-	gse::g_scene_handler.add_scene(scene1);
-	gse::g_scene_handler.add_scene(scene2);
+	gse::scene_loader::add_scene(scene1);
+	gse::scene_loader::add_scene(scene2);
 
-	gse::g_scene_handler.queue_scene_trigger(gse::grab_id("Scene1").lock().get(), [] { return true; });
+	gse::scene_loader::queue_scene_trigger(gse::grab_id("Scene1").lock().get(), [] { return true; });
 
 	return true;
 }

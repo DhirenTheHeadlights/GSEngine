@@ -2,11 +2,7 @@
 #include <functional>
 #include <memory>
 
-#include "ID.h"
-#include "SceneHandler.h"
 #include "Graphics/3D/Camera.h"
-#include "Graphics/3D/Renderer3D.h"
-#include "Object/Object.h"
 
 namespace gse {
 	void initialize(const std::function<void()>& initialize_function, const std::function<void()>& shutdown_function);
@@ -18,6 +14,4 @@ namespace gse {
 
 	void set_imgui_enabled(bool enabled);
 	camera& get_camera();
-
-	extern scene_handler g_scene_handler;
 }

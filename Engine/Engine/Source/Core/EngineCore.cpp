@@ -2,14 +2,13 @@
 
 #include "Core/Clock.h"
 #include "Core/ObjectRegistry.h"
+#include "Core/SceneLoader.h"
 #include "Graphics/2D/Gui.h"
 #include "Graphics/2D/Renderer2D.h"
 #include "Graphics/3D/Renderer3D.h"
 #include "Platform/PermaAssert.h"
 #include "Platform/GLFW/Input.h"
 #include "Platform/GLFW/Window.h"
-
-gse::scene_handler gse::g_scene_handler;
 
 gse::camera& gse::get_camera() {
 	return renderer3d::get_camera();
@@ -77,7 +76,7 @@ namespace {
 
 		gse::main_clock::update();
 
-		gse::g_scene_handler.update();
+		gse::scene_loader::update();
 
 		gse::input::update();
 
@@ -95,7 +94,7 @@ namespace {
 
 		gse::window::begin_frame();
 
-		gse::g_scene_handler.render();
+		gse::scene_loader::render();
 
 		if (!render_function()) {
 			gse::request_shutdown();
@@ -121,7 +120,7 @@ namespace {
 void gse::run(const std::function<bool()>& update_function, const std::function<bool()>& render_function) {
 	permaAssertComment(g_engine_state == engine_state::running, "Engine is not initialized");
 
-	g_scene_handler.set_engine_initialized(true);
+	scene_loader::set_engine_initialized(true);
 
 	while (g_engine_state == engine_state::running && !window::is_window_closed()) {
 		update(update_function);

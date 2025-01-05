@@ -122,10 +122,10 @@ namespace {
             glm::vec2 texture_coordinate;
         };
 
-        const glm::vec2 uv0 = { uv_rect.x, uv_rect.y + uv_rect.w };             // Top-left
-        const glm::vec2 uv1 = { uv_rect.x + uv_rect.z, uv_rect.y + uv_rect.w }; // Top-right
-        const glm::vec2 uv2 = { uv_rect.x + uv_rect.z, uv_rect.y };             // Bottom-right
-        const glm::vec2 uv3 = { uv_rect.x, uv_rect.y };                         // Bottom-left
+        const glm::vec2 uv0 = { uv_rect.x, uv_rect.y + uv_rect.w };                // Top-left
+        const glm::vec2 uv1 = { uv_rect.x + uv_rect.z, uv_rect.y + uv_rect.w };   // Top-right
+        const glm::vec2 uv2 = { uv_rect.x + uv_rect.z, uv_rect.y };                 // Bottom-right
+        const glm::vec2 uv3 = { uv_rect.x, uv_rect.y };                              // Bottom-left
 
         const vertex vertices[4] = {
             { .position= {0.0f, 1.0f}, .texture_coordinate= uv0},
