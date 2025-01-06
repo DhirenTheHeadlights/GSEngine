@@ -54,7 +54,7 @@ namespace gse::registry {
 	T& get_component(const id* desired_id) {
 		if (const auto it = internal::g_component_containers.find(typeid(T)); it != internal::g_component_containers.end()) {
 			for (auto& container = static_cast<component_container<T>&>(*it->second); auto& comp : container.components) {  // Removed 'const'
-				if (comp.get_id() == desired_id) {
+				if (comp.parent_id == desired_id) {
 					return comp;
 				}
 			}

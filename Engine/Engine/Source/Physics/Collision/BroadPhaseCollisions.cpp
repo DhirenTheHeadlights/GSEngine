@@ -23,7 +23,7 @@ bool gse::broad_phase_collision::check_future_collision(const bounding_box& dyna
 bool gse::broad_phase_collision::check_collision(physics::collision_component& dynamic_object_collision_component, const physics::collision_component& other_collision_component) {
 	bool collision_detected = false;
 
-	auto& box1_motion_component = registry::get_component<physics::motion_component>(dynamic_object_collision_component.get_id());
+	auto& box1_motion_component = registry::get_component<physics::motion_component>(dynamic_object_collision_component.parent_id);
 	auto& box1 = dynamic_object_collision_component.bounding_box;
 	const auto& box2 = other_collision_component.bounding_box;
 
@@ -94,7 +94,7 @@ void gse::broad_phase_collision::update() {
 		object.bounding_box.collision_information = {};
 
 		for (auto& other : objects) {
-			if (object.get_id() == other.get_id()) {
+			if (object.parent_id == other.parent_id) {
 				continue;
 			}
 
@@ -113,7 +113,7 @@ void gse::broad_phase_collision::update() {
 		};
 
 	for (auto& object : objects) {
-		auto& motion_component = registry::get_component<physics::motion_component>(object.get_id());
+		auto& motion_component = registry::get_component<physics::motion_component>(object.parent_id);
 		airborne_check(motion_component, object);
 	}
 }
