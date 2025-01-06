@@ -10,11 +10,11 @@ struct sphere_mesh_hook final : gse::hook<gse::sphere> {
 		: hook(owner), m_initial_position(position), m_radius(radius), m_sectors(sectors), m_stacks(stacks) {}
 
 	void initialize() override {
-        gse::physics::motion_component new_motion_component(m_id);
+        gse::physics::motion_component new_motion_component(m_owner_id);
         new_motion_component.current_position = m_initial_position;
         gse::registry::add_component<gse::physics::motion_component>(std::move(new_motion_component));
 
-		gse::render_component new_render_component(m_id);
+		gse::render_component new_render_component(m_owner_id);
 
         const float r = m_radius.as<gse::units::meters>();
 
@@ -69,16 +69,15 @@ struct sphere_mesh_hook final : gse::hook<gse::sphere> {
             }
         }
 
-        auto new_mesh = std::make_unique<gse::mesh>(vertices, indices);
-        new_render_component.add_mesh(std::move(new_mesh));
-		new_render_component.set_render(true, true);
+		new_render_component.meshes.emplace_back(vertices, indices);
+
 		gse::registry::add_component<gse::render_component>(std::move(new_render_component));
 	}
 
 	void update() override {
-        const auto position = gse::registry::get_component<gse::physics::motion_component>(m_id).current_position.as<gse::units::meters>();
+        const auto position = gse::registry::get_component<gse::physics::motion_component>(m_owner_id).current_position.as<gse::units::meters>();
 
-        gse::registry::get_component<gse::render_component>(m_id).set_mesh_positions(position);
+        gse::registry::get_component<gse::render_component>(m_owner_id).set_mesh_positions(position);
 	}
 private:
 	gse::vec3<gse::length> m_initial_position;

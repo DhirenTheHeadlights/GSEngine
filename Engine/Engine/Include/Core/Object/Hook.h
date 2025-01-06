@@ -20,11 +20,11 @@ namespace gse {
 	template <typename owner_type = object>
 	struct hook : base_hook {
 		hook() = default;
-		hook(owner_type* owner) : m_owner(owner), m_id(owner->get_id().lock().get()) {}
+		hook(owner_type* owner) : m_owner(owner), m_owner_id(owner->get_id().lock().get()) {}
 		~hook() override = default;
 	protected:
 		owner_type* m_owner;
-		id* m_id;
+		id* m_owner_id;
 	};
 
 	class scene;

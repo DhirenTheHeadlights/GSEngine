@@ -450,14 +450,15 @@ namespace {
 		glClear(GL_DEPTH_BUFFER_BIT);
 
 		for (const auto& render_component : render_components) {
-			if (gse::registry::is_id_in_list(light_ignore_list_id, render_component.get_id())) {
+			if (gse::registry::is_id_in_list(light_ignore_list_id, render_component.parent_id)) {
 				continue;
 			}
 
-			for (const auto& entry : render_component.get_queue_entries()) {
-				shadow_shader.set_mat4("model", entry.model_matrix);
-				glBindVertexArray(entry.vao);
-				glDrawElements(entry.draw_mode, entry.vertex_count, GL_UNSIGNED_INT, nullptr);
+			for (const auto& mesh : render_component.meshes) {
+				auto [material_key, vao, draw_mode, vertex_count, model_matrix, color] = mesh.get_queue_entry();
+				shadow_shader.set_mat4("model", model_matrix);
+				glBindVertexArray(vao);
+				glDrawElements(draw_mode, vertex_count, GL_UNSIGNED_INT, nullptr);
 				glBindVertexArray(0);
 			}
 		}
@@ -569,8 +570,8 @@ void gse::renderer3d::render() {
 	g_reflection_cube_map.update(glm::vec3(0.f), g_camera.get_projection_matrix(),
 		[&render_components, &forward_rendering_shader](const glm::mat4& view_matrix, const glm::mat4& projection_matrix) {
 			for (const auto& render_component : render_components) {
-				for (auto entries = render_component.get_queue_entries(); const auto& entry : entries) {
-					render_object_forward(forward_rendering_shader, entry, view_matrix, projection_matrix);
+				for (auto& mesh : render_component.meshes) {
+					render_object_forward(forward_rendering_shader, mesh.get_queue_entry(), view_matrix, projection_matrix);
 				}
 			}
 		});
@@ -595,14 +596,15 @@ void gse::renderer3d::render() {
 					shadow_shader.set_float("farPlane", point_light_ptr->get_render_queue_entry().far_plane.as<units::meters>());
 
 					for (const auto& render_component : render_components) {
-						if (registry::is_id_in_list(point_light_ptr->get_ignore_list_id(), render_component.get_id())) {
+						if (registry::is_id_in_list(point_light_ptr->get_ignore_list_id(), render_component.parent_id)) {
 							continue;
 						}
 
-						for (const auto& entry : render_component.get_queue_entries()) {
-							shadow_shader.set_mat4("model", entry.model_matrix);  // Object's model matrix
-							glBindVertexArray(entry.vao);
-							glDrawElements(entry.draw_mode, entry.vertex_count, GL_UNSIGNED_INT, nullptr);
+						for (const auto& mesh : render_component.meshes) {
+							auto [material_key, vao, draw_mode, vertex_count, model_matrix, color] = mesh.get_queue_entry();
+							shadow_shader.set_mat4("model", model_matrix);  // Object's model matrix
+							glBindVertexArray(vao);
+							glDrawElements(draw_mode, vertex_count, GL_UNSIGNED_INT, nullptr);
 						}
 					}
 					});
@@ -623,8 +625,8 @@ void gse::renderer3d::render() {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	for (const auto& render_component : render_components) {
-		for (auto entries = render_component.get_queue_entries(); const auto & entry : entries) {
-			render_object(entry, g_camera.get_view_matrix(), g_camera.get_projection_matrix());
+		for (const auto& mesh : render_component.meshes) {
+			render_object(mesh.get_queue_entry(), g_camera.get_view_matrix(), g_camera.get_projection_matrix());
 		}
 	}
 
@@ -659,17 +661,18 @@ void gse::renderer3d::render() {
 
 	// Finally, render bounding boxes
 	for (const auto& render_component : render_components) {
-		for (const auto& entry : render_component.get_bounding_box_queue_entries()) {
-			if (const auto it = g_materials.find(entry.material_key); it != g_materials.end()) {
-				it->second.use(g_camera.get_view_matrix(), g_camera.get_projection_matrix(), entry.model_matrix);
-				it->second.shader.set_vec3("color", entry.color);
+		for (const auto& mesh : render_component.meshes) {
+			auto [material_key, vao, draw_mode, vertex_count, model_matrix, color] = mesh.get_queue_entry();
+			if (const auto it = g_materials.find(material_key); it != g_materials.end()) {
+				it->second.use(g_camera.get_view_matrix(), g_camera.get_projection_matrix(), model_matrix);
+				it->second.shader.set_vec3("color", color);
 
-				glBindVertexArray(entry.vao);
-				glDrawArrays(entry.draw_mode, 0, entry.vertex_count);
+				glBindVertexArray(vao);
+				glDrawArrays(draw_mode, 0, vertex_count);
 				glBindVertexArray(0);
 			}
 			else {
-				std::cerr << "Shader program key not found: " << entry.material_key << '\n';
+				std::cerr << "Shader program key not found: " << material_key << '\n';
 			}
 		}
 	}

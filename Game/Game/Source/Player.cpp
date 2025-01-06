@@ -21,13 +21,13 @@ struct game::jetpack_hook final : gse::hook<player> {
 				m_boost_fuel = std::min(m_boost_fuel, 1000);
 			}
 
-			auto& motion_component = gse::registry::get_component<gse::physics::motion_component>(m_id);
+			auto& motion_component = gse::registry::get_component<gse::physics::motion_component>(m_owner_id);
 
 			apply_force(motion_component, gse::vec3<gse::units::newtons>(0.f, m_jetpack_force + boost_force, 0.f));
 
 			for (auto& [key, direction] : m_owner->m_wasd) {
 				if (gse::input::get_keyboard().keys[key].held) {
-					apply_force(gse::registry::get_component<gse::physics::motion_component>(m_id), gse::vec3<gse::units::newtons>(m_jetpack_side_force + boost_force, 0.f, m_jetpack_side_force + boost_force) * gse::get_camera().get_camera_direction_relative_to_origin(direction));
+					apply_force(gse::registry::get_component<gse::physics::motion_component>(m_owner_id), gse::vec3<gse::units::newtons>(m_jetpack_side_force + boost_force, 0.f, m_jetpack_side_force + boost_force) * gse::get_camera().get_camera_direction_relative_to_origin(direction));
 				}
 			}
 		}
@@ -53,9 +53,9 @@ struct game::player_hook final : gse::hook<player> {
 	using hook::hook;
 
 	void initialize() override {
-		gse::render_component render_component(m_id);
-		gse::physics::motion_component motion_component(m_id);
-		gse::physics::collision_component collision_component(m_id);
+		gse::render_component render_component(m_owner_id);
+		gse::physics::motion_component motion_component(m_owner_id);
+		gse::physics::collision_component collision_component(m_owner_id);
 
 		gse::length height = gse::feet(6.0f);
 		gse::length width = gse::feet(3.0f);
@@ -70,10 +70,7 @@ struct game::player_hook final : gse::hook<player> {
 		motion_component.max_speed = m_max_speed;
 		motion_component.self_controlled = true;
 
-		auto bounding_box_mesh = std::make_unique<gse::bounding_box_mesh>(collision_component.bounding_box.upper_bound, collision_component.bounding_box.lower_bound);
-		render_component.add_bounding_box_mesh(std::move(bounding_box_mesh));
-
-		render_component.set_render(true, true);
+		render_component.bounding_box_meshes.emplace_back(collision_component.bounding_box.upper_bound, collision_component.bounding_box.lower_bound);
 
 		gse::registry::add_component<gse::render_component>(std::move(render_component));
 		gse::registry::add_component<gse::physics::motion_component>(std::move(motion_component));
@@ -81,7 +78,7 @@ struct game::player_hook final : gse::hook<player> {
 	}
 
 	void update() override {
-		auto& motion_component = gse::registry::get_component<gse::physics::motion_component>(m_id);
+		auto& motion_component = gse::registry::get_component<gse::physics::motion_component>(m_owner_id);
 
 		for (auto& [key, direction] : m_owner->m_wasd) {
 			if (gse::input::get_keyboard().keys[key].held && !motion_component.airborne) {
@@ -100,19 +97,19 @@ struct game::player_hook final : gse::hook<player> {
 			apply_impulse(motion_component, gse::vec3<gse::units::newtons>(0.f, m_jump_force, 0.f), gse::seconds(0.5f));
 		}
 
-		gse::registry::get_component<gse::physics::collision_component>(m_id).bounding_box.set_position(motion_component.current_position);
+		gse::registry::get_component<gse::physics::collision_component>(m_owner_id).bounding_box.set_position(motion_component.current_position);
 
 		gse::get_camera().set_position(motion_component.current_position + gse::vec3<gse::units::feet>(0.f, 6.f, 0.f));
 
-		gse::registry::get_component<gse::render_component>(m_id).update_bounding_box_meshes();
+		gse::registry::get_component<gse::render_component>(m_owner_id).update_bounding_box_meshes();
 	}
 
 	void render() override {
 		gse::debug::add_imgui_callback([this] {
 			ImGui::Begin("Player");
 
-			const auto motion_component = gse::registry::get_component<gse::physics::motion_component>(m_id);
-			const auto collision_component = gse::registry::get_component<gse::physics::collision_component>(m_id);
+			const auto motion_component = gse::registry::get_component<gse::physics::motion_component>(m_owner_id);
+			const auto collision_component = gse::registry::get_component<gse::physics::collision_component>(m_owner_id);
 
 			gse::debug::print_vector("Player Position", motion_component.current_position.as<gse::units::meters>(), gse::units::meters::unit_name);
 			gse::debug::print_vector("Player Bounding Box Position", collision_component.bounding_box.get_center().as<gse::units::meters>(), gse::units::meters::unit_name);

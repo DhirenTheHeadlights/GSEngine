@@ -3,7 +3,7 @@
 #include "Core/ObjectRegistry.h"
 
 void game::sphere_light_hook::initialize() {
-	gse::light_source_component light_source_component(m_id);
+	gse::light_source_component light_source_component(m_owner_id);
 
     auto light = std::make_unique<gse::spot_light>(
         gse::vec3(1.f), gse::unitless(250.f), gse::vec3<gse::length>(), gse::vec3(0.0f, -1.0f, 0.0f), gse::unitless(1.0f), 0.09f, 0.032f, gse::degrees(35.f), gse::degrees(65.f), gse::unitless(0.025f)
@@ -21,21 +21,21 @@ void game::sphere_light_hook::initialize() {
 
 	gse::registry::add_component<gse::light_source_component>(std::move(light_source_component));
 
-	gse::registry::get_component<gse::physics::motion_component>(m_id).affected_by_gravity = false;
+	gse::registry::get_component<gse::physics::motion_component>(m_owner_id).affected_by_gravity = false;
 }
 
 void game::sphere_light_hook::update() {
-	gse::registry::get_component<gse::light_source_component>(m_id).get_lights().front()->set_position(gse::registry::get_component<gse::physics::motion_component>(m_id).current_position);
+	gse::registry::get_component<gse::light_source_component>(m_owner_id).get_lights().front()->set_position(gse::registry::get_component<gse::physics::motion_component>(m_owner_id).current_position);
 }
 
 void game::sphere_light_hook::render() {
-	for (const auto& light : gse::registry::get_component<gse::light_source_component>(m_id).get_lights()) {
+	for (const auto& light : gse::registry::get_component<gse::light_source_component>(m_owner_id).get_lights()) {
         light->show_debug_menu(m_owner->get_id().lock());
     }
 
 	gse::debug::add_imgui_callback([this] {
 		ImGui::Begin("Sphere Light");
-		ImGui::SliderFloat3("Position", &gse::registry::get_component<gse::physics::motion_component>(m_id).current_position.as_default_units().x, -1000.0f, 1000.0f);
+		ImGui::SliderFloat3("Position", &gse::registry::get_component<gse::physics::motion_component>(m_owner_id).current_position.as_default_units().x, -1000.0f, 1000.0f);
 		ImGui::End();
 		});
 }

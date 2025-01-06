@@ -4,7 +4,6 @@
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 
-#include "Graphics/RenderQueueEntry.h"
 #include "Physics/Vector/Vec3.h"
 
 namespace gse {
@@ -14,7 +13,16 @@ namespace gse {
 		glm::vec2 tex_coords;
 	};
 
-	class render_component;
+	struct render_queue_entry {
+		std::string material_key;
+		GLuint vao;
+		GLenum draw_mode;
+		GLsizei vertex_count;
+		glm::mat4 model_matrix;
+		glm::vec3 color;
+	};
+
+	struct render_component;
 
 	class mesh {
 	public:
@@ -22,11 +30,9 @@ namespace gse {
 		mesh(const std::vector<vertex>& vertices, const std::vector<unsigned int>& indices, const glm::vec3& color = { 1.0f, 1.0f, 1.0f }, GLuint texture_id = 0);
 		virtual ~mesh();
 
-		// Disable copy to avoid OpenGL resource duplication
 		mesh(const mesh&) = delete;
 		mesh& operator=(const mesh&) = delete;
 
-		// Allow move semantics
 		mesh(mesh&& other) noexcept;
 		mesh& operator=(mesh&& other) noexcept;
 
@@ -35,12 +41,12 @@ namespace gse {
 
 		virtual render_queue_entry get_queue_entry() const {
 			return {
-				m_material_name,
-				m_vao,
-				m_draw_mode,
-				get_vertex_count(),
-				m_model_matrix,
-				m_color
+				.material_key	= m_material_name,
+				.vao			= m_vao,
+				.draw_mode		= m_draw_mode,
+				.vertex_count	= get_vertex_count(),
+				.model_matrix	= m_model_matrix,
+				.color			= m_color
 			};
 		}
 
