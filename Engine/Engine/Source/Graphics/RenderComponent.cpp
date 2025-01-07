@@ -13,6 +13,7 @@ void gse::render_component::load_model(const std::string& path) {
         return;
     }
 
+
     std::vector<model_texture> textures_loaded;
     std::vector<mesh> meshes;
 
@@ -98,5 +99,11 @@ void gse::render_component::update_bounding_box_meshes() {
 void gse::render_component::set_mesh_positions(const vec3<length>& position) {
 	for (auto& mesh : meshes) {
 		mesh.set_position(position);
+	}
+}
+
+void gse::render_component::set_all_mesh_material_strings(const std::string& material_string) {
+	for (auto& mesh : meshes) {
+		mesh.m_material_name = material_string;
 	}
 }
