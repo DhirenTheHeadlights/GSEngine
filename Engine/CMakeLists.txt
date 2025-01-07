@@ -202,7 +202,7 @@ if (MSVC)
     SET_PROPERTY(TARGET Engine PROPERTY VS_USER_PROPS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Resources/Misc/msvc_build_stl_modules_workaround.props")
 
     # List of external targets to be grouped under "External"
-    set(EXTERNAL_TARGETS enet glad glad-generate-files glm imgui)
+    set(EXTERNAL_TARGETS enet glad glad-generate-files glm imgui assimp unit UpdateAssimpLibsDebugSymbolsAndDLLs zlibstatic)
 
     # Loop through each target and set its folder property
     foreach(target ${EXTERNAL_TARGETS})

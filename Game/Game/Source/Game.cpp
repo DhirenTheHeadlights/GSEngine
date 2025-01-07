@@ -70,15 +70,16 @@ struct scene2_hook final : gse::hook<gse::scene> {
 	}
 
 	void render() override {
-		gse::debug::add_imgui_callback([] {
-			if (gse::scene_loader::get_scene(gse::grab_id("Scene2").lock().get())->get_active()) {
-				ImGui::Begin("Game Data");
+		gse::registry::get_component<gse::light_source_component>(gse::grab_id("Box").lock().get()).get_lights().front()->show_debug_menu(gse::grab_id("Box").lock());
+        gse::debug::add_imgui_callback([] {
+            if (gse::scene_loader::get_scene(gse::grab_id("Scene2").lock().get())->get_active()) {
+                ImGui::Begin("Game Data");
 
-				ImGui::Text("FPS: %d", gse::main_clock::get_frame_rate());
+                ImGui::Text("FPS: %d", gse::main_clock::get_frame_rate());
 
-				ImGui::End();
-			}
-			});
+                ImGui::End();
+            }
+        });
 	}
 };
 
