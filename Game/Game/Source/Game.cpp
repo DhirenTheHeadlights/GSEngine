@@ -50,7 +50,7 @@ struct scene1_hook final : gse::hook<gse::scene> {
 };
 
 struct scene2_hook final : gse::hook<gse::scene> {
-	struct floor_hook final : gse::hook<> {
+	struct floor_hook final : hook<> {
 		using hook::hook;
 
 		void initialize() override {
@@ -70,7 +70,6 @@ struct scene2_hook final : gse::hook<gse::scene> {
 	}
 
 	void render() override {
-
 		gse::debug::add_imgui_callback([] {
 			if (gse::scene_loader::get_scene(gse::grab_id("Scene2").lock().get())->get_active()) {
 				ImGui::Begin("Game Data");
