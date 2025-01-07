@@ -15,7 +15,7 @@ namespace gse::registry {
 	};
 
 	template <typename T>
-		requires std::derived_from<T, gse::component>
+		requires std::derived_from<T, component>
 	struct component_container final : component_container_base {
 		std::vector<T> components;
 	};
@@ -29,11 +29,11 @@ namespace gse::registry {
 	void add_component(T&& component) {  // NOLINT(cppcoreguidelines-missing-std-forward)
 		if (const auto it = internal::g_component_containers.find(typeid(T)); it != internal::g_component_containers.end()) {
 			auto& container = static_cast<component_container<T>&>(*it->second);
-			container.components.push_back(std::move(component));  // NOLINT(bugprone-move-forwarding-reference)
+			container.components.push_back(std::move(component));   // NOLINT(bugprone-move-forwarding-reference)
 		}
 		else {
 			auto container = std::make_unique<component_container<T>>();
-			container->components.push_back(std::move(component));
+			container->components.push_back(std::move(component));  // NOLINT(bugprone-move-forwarding-reference)
 			internal::g_component_containers.insert({ typeid(T), std::move(container) });
 		}
 	}
@@ -51,6 +51,7 @@ namespace gse::registry {
 
 	template <typename T>
 		requires std::derived_from<T, component>
+	// ReSharper disable once CppNotAllPathsReturnValue - The assert_comment will always be triggered if the component is not found
 	T& get_component(const id* desired_id) {
 		if (const auto it = internal::g_component_containers.find(typeid(T)); it != internal::g_component_containers.end()) {
 			for (auto& container = static_cast<component_container<T>&>(*it->second); auto& comp : container.components) {  // Removed 'const'
@@ -59,7 +60,7 @@ namespace gse::registry {
 				}
 			}
 		}
-		throw std::runtime_error("No component of this type found for the given id.");
+		assert_comment(false, "Component not found");
 	}
 
 	template <typename T>

@@ -24,7 +24,7 @@ void gse::scene_loader::remove_scene(id* scene_id) {
 }
 
 void gse::scene_loader::activate_scene(id* scene_id) {
-	permaAssertComment(m_engine_initialized, "You are trying to activate a scene before the engine is initialized");
+	assert_comment(m_engine_initialized, "You are trying to activate a scene before the engine is initialized");
 	if (const auto scene = m_scenes.find(scene_id); scene != m_scenes.end()) {
 		if (!scene->second->get_active()) {
 			scene->second->initialize();

@@ -14,6 +14,11 @@ gse::mesh::mesh(const std::vector<vertex>& vertices, const std::vector<unsigned 
 	set_up_mesh();
 }
 
+gse::mesh::mesh(const std::vector<vertex>& vertices, const std::vector<unsigned int>& indices, const std::vector<model_texture>& textures)
+	: m_vertices(vertices), m_indices(indices), m_textures(textures) {
+	set_up_mesh();
+}
+
 gse::mesh::~mesh() {
 	glDeleteVertexArrays(1, &m_vao);
 	glDeleteBuffers(1, &m_vbo);

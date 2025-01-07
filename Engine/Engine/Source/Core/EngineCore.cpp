@@ -118,7 +118,7 @@ namespace {
 }
 
 void gse::run(const std::function<bool()>& update_function, const std::function<bool()>& render_function) {
-	permaAssertComment(g_engine_state == engine_state::running, "Engine is not initialized");
+	assert_comment(g_engine_state == engine_state::running, "Engine is not initialized");
 
 	scene_loader::set_engine_initialized(true);
 
