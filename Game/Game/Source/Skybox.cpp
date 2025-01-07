@@ -7,6 +7,7 @@ struct skybox_hook final : gse::hook<gse::box> {
 
 	void initialize() override {
 		gse::registry::get_component<gse::physics::collision_component>(m_owner_id).resolve_collisions = false;
+		gse::registry::get_component<gse::physics::collision_component>(m_owner_id).bounding_box = { gse::vec3(0.f), gse::vec3(0.f) };
 		gse::registry::get_component<gse::physics::motion_component>(m_owner_id).affected_by_gravity = false;
 		
 		gse::registry::get_component<gse::render_component>(m_owner_id).set_all_mesh_material_strings("Sky 1");
