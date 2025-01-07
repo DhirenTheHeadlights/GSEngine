@@ -22,6 +22,7 @@ namespace gse {
 
 		void update_bounding_box_meshes();
 		void set_mesh_positions(const vec3<length>& position);
+		void set_all_mesh_material_strings(const std::string& material_string);
 
 		std::vector<mesh> meshes;
 		std::vector<bounding_box_mesh> bounding_box_meshes;

@@ -6,6 +6,7 @@
 #include "Engine.h"
 #include "Player.h"
 #include "ResourcePaths.h"
+#include "Skybox.h"
 #include "SphereLight.h"
 #include "Graphics/2D/Renderer2D.h"
 
@@ -31,6 +32,7 @@ struct scene1_hook final : gse::hook<gse::scene> {
 
 		auto iron_man = std::make_unique<gse::object>("Iron Man");
 		gse::registry::add_component(gse::render_component(iron_man->get_id().lock().get(), GOONSQUAD_RESOURCES_PATH "Models/IronMan/iron_man.obj"));
+		gse::registry::get_component<gse::render_component>(iron_man->get_id().lock().get()).set_all_mesh_material_strings("NULL");
 		m_owner->add_object(std::move(iron_man));
 	}
 
@@ -47,16 +49,51 @@ struct scene1_hook final : gse::hook<gse::scene> {
 	}
 };
 
+struct scene2_hook final : gse::hook<gse::scene> {
+	struct floor_hook final : hook<> {
+		using hook::hook;
+
+		void initialize() override {
+			gse::registry::get_component<gse::physics::collision_component>(m_owner_id).resolve_collisions = false;
+			gse::registry::get_component<gse::physics::motion_component>(m_owner_id).affected_by_gravity = false;
+		}
+	};
+
+	using hook::hook;
+
+	void initialize() override {
+		game::skybox::create(m_owner);
+		m_owner->add_object(std::make_unique<game::player>());
+		auto floor = std::make_unique<gse::box>(gse::vec3<gse::units::meters>(0.f, -500.f, 0.f), gse::vec3<gse::units::meters>(1000.f, 10.f, 1000.f));
+		floor->add_hook(std::make_unique<floor_hook>(floor.get()));
+		m_owner->add_object(std::move(floor));
+	}
+
+	void render() override {
+		gse::debug::add_imgui_callback([] {
+			if (gse::scene_loader::get_scene(gse::grab_id("Scene2").lock().get())->get_active()) {
+				ImGui::Begin("Game Data");
+
+				ImGui::Text("FPS: %d", gse::main_clock::get_frame_rate());
+
+				ImGui::End();
+			}
+			});
+	}
+};
+
 bool game::initialize() {
 	auto scene1 = std::make_unique<gse::scene>("Scene1");
 	scene1->add_hook(std::make_unique<scene1_hook>(scene1.get()));
 
 	auto scene2 = std::make_unique<gse::scene>("Scene2");
+	scene2->add_hook(std::make_unique<scene2_hook>(scene2.get()));
 
 	gse::scene_loader::add_scene(scene1);
 	gse::scene_loader::add_scene(scene2);
 
-	gse::scene_loader::queue_scene_trigger(gse::grab_id("Scene1").lock().get(), [] { return true; });
+	gse::scene_loader::queue_scene_trigger(gse::grab_id("Scene1").lock().get(), [] { return gse::input::get_keyboard().keys[GLFW_KEY_F1].pressed; });
+	gse::scene_loader::queue_scene_trigger(gse::grab_id("Scene2").lock().get(), [] { return gse::input::get_keyboard().keys[GLFW_KEY_F2].pressed; });
 
 	return true;
 }

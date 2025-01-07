@@ -20,6 +20,8 @@ namespace gse::registry {
 		std::vector<T> components;
 	};
 
+
+
 	namespace internal {
 		inline std::unordered_map<std::type_index, std::unique_ptr<component_container_base>> g_component_containers;
 	}
