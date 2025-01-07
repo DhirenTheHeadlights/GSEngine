@@ -15,6 +15,11 @@ This is a dual development project for a simulation engine and a 3-D shooter gam
 - Light objects
 - Editor with hot-reloading enabled for game changes
 
+## Prerequisites (Follow online instructions for installation, ensuring all are added to system PATH variable)
+- CMake v3.16 or higher
+- Git 2.45.1.windows.1 or higher
+- Python 3.11.9 or higher
+
 ## Getting Started
 
 To get started, clone the respository. There are no dependencies required to run the project.
