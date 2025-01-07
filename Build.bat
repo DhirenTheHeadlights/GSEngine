@@ -30,17 +30,47 @@ if exist ".gitmodules" (
 
 echo.
 
-REM 2. Define the main build directory and the sub-build directory
+REM 2. Bootstrap vcpkg to ensure vcpkg.exe is ready
+echo =============================================================
+echo Bootstrapping vcpkg to ensure vcpkg.exe is available...
+echo =============================================================
+
+REM Define the relative path to vcpkg
+set "VCPKG_DIR=Engine\External\vcpkg"
+
+REM Check if vcpkg.exe exists in the specified directory
+if not exist "%VCPKG_DIR%\vcpkg.exe" (
+    echo vcpkg.exe not found. Bootstrapping vcpkg...
+    REM Navigate to the vcpkg directory
+    cd /d "%VCPKG_DIR%"
+    REM Run bootstrap-vcpkg.bat
+    call bootstrap-vcpkg.bat
+    if errorlevel 1 (
+        echo ERROR: Failed to bootstrap vcpkg.
+        set "ERROR_FLAG=1"
+        call :handle_error
+    ) else (
+        echo vcpkg bootstrapped successfully.
+    )
+    REM Navigate back to the original directory
+    cd /d "%~dp0"
+) else (
+    echo vcpkg.exe already exists. Skipping bootstrapping.
+)
+
+echo.
+
+REM 3. Define the main build directory and the sub-build directory
 set "MAIN_BUILD_DIR=build"
 set "SUB_BUILD_DIR=build"
 
-REM 3. Combine them to form the full path to the sub-build directory
+REM 4. Combine them to form the full path to the sub-build directory
 set "FULL_BUILD_DIR=%MAIN_BUILD_DIR%\%SUB_BUILD_DIR%"
 
-REM 4. Optionally delete the sub-build directory based on a parameter or condition
+REM 5. Optionally delete the sub-build directory based on a parameter or condition
 set "CLEAN_BUILD=false"  REM Change to true to enable cleaning
 
-if "%CLEAN_BUILD%"=="true" (
+if /i "%CLEAN_BUILD%"=="true" (
     if exist "%FULL_BUILD_DIR%" (
         echo Deleting existing sub-build directory: %FULL_BUILD_DIR%
         rmdir /s /q "%FULL_BUILD_DIR%"
@@ -58,7 +88,7 @@ if "%CLEAN_BUILD%"=="true" (
 
 echo.
 
-REM 5. Create the main build directory if it doesn't exist
+REM 6. Create the main build directory if it doesn't exist
 if not exist "%MAIN_BUILD_DIR%" (
     echo Creating main build directory: %MAIN_BUILD_DIR%
     mkdir "%MAIN_BUILD_DIR%"
@@ -73,8 +103,8 @@ if not exist "%MAIN_BUILD_DIR%" (
 
 echo.
 
-REM 6. Create the sub-build directory inside the main build directory
-if "%CLEAN_BUILD%"=="true" (
+REM 7. Create the sub-build directory inside the main build directory
+if /i "%CLEAN_BUILD%"=="true" (
     echo Creating sub-build directory: %FULL_BUILD_DIR%
     mkdir "%FULL_BUILD_DIR%"
     if errorlevel 1 (
@@ -85,7 +115,7 @@ if "%CLEAN_BUILD%"=="true" (
 ) else (
     echo Ensuring sub-build directory exists: %FULL_BUILD_DIR%
     if not exist "%FULL_BUILD_DIR%" (
-        echo Creating sub-build directory: %FULL_BUILD_DIR%"
+        echo Creating sub-build directory: %FULL_BUILD_DIR%
         mkdir "%FULL_BUILD_DIR%"
         if errorlevel 1 (
             echo ERROR: Failed to create sub-build directory.
@@ -99,37 +129,13 @@ if "%CLEAN_BUILD%"=="true" (
 
 echo.
 
-REM 7. Navigate to the vcpkg directory and install msdfgen and freetype
+REM 8. Navigate to the vcpkg directory and install msdfgen and freetype
 echo =============================================================
 echo Installing msdfgen and freetype via vcpkg...
 echo =============================================================
 
-REM Define the relative path to vcpkg
-set "VCPKG_DIR=Engine\External\vcpkg"
-
-REM Check if vcpkg.exe exists in the specified directory
-if not exist "%VCPKG_DIR%\vcpkg.exe" (
-    echo ERROR: vcpkg.exe not found in %VCPKG_DIR%
-    echo Please ensure vcpkg is cloned and located at %VCPKG_DIR%
-    set "ERROR_FLAG=1"
-    call :handle_error
-)
-
 REM Navigate to the vcpkg directory
 cd /d "%VCPKG_DIR%"
-
-REM Bootstrap vcpkg if not already done
-if not exist "vcpkg.exe" (
-    echo Bootstrapping vcpkg...
-    call bootstrap-vcpkg.bat
-    if errorlevel 1 (
-        echo ERROR: Failed to bootstrap vcpkg.
-        set "ERROR_FLAG=1"
-        call :handle_error
-    )
-) else (
-    echo vcpkg is already bootstrapped.
-)
 
 REM All dependencies
 echo Installing msdfgen and freetype for x64-windows...
@@ -153,10 +159,10 @@ if errorlevel 1 (
 
 echo.
 
-REM 8. Navigate back to the original directory (GoonSquad folder)
+REM 9. Navigate back to the original directory (GoonSquad folder)
 cd /d "%~dp0"
 
-REM 9. Navigate to the sub-build directory
+REM 10. Navigate to the sub-build directory
 cd /d "%FULL_BUILD_DIR%"
 if errorlevel 1 (
     echo ERROR: Failed to navigate to sub-build directory.
@@ -164,7 +170,7 @@ if errorlevel 1 (
     call :handle_error
 )
 
-REM 10. Run CMake to configure the project
+REM 11. Run CMake to configure the project
 echo =============================================================
 echo Configuring the CMake project...
 echo =============================================================
@@ -187,10 +193,10 @@ if errorlevel 1 (
 
 echo.
 
-REM 11. Navigate back to the root directory
+REM 12. Navigate back to the root directory
 cd /d "%~dp0"
 
-REM 12. Indicate that configuration is finished
+REM 13. Indicate that configuration is finished
 echo =============================================================
 echo Configuration finished successfully!
 echo =============================================================

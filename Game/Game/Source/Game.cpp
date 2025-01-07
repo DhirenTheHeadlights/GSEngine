@@ -3,10 +3,10 @@
 #include <imgui.h>
 
 #include "Arena.h"
-#include "Skybox.h"
 #include "Engine.h"
 #include "Player.h"
 #include "ResourcePaths.h"
+#include "Skybox.h"
 #include "SphereLight.h"
 #include "Graphics/2D/Renderer2D.h"
 
@@ -67,9 +67,6 @@ struct scene2_hook final : gse::hook<gse::scene> {
 		auto floor = std::make_unique<gse::box>(gse::vec3<gse::units::meters>(0.f, -500.f, 0.f), gse::vec3<gse::units::meters>(1000.f, 10.f, 1000.f));
 		floor->add_hook(std::make_unique<floor_hook>(floor.get()));
 		m_owner->add_object(std::move(floor));
-		
-
-
 	}
 
 	void render() override {
