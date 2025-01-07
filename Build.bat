@@ -8,18 +8,6 @@ REM 0. Ensure the script exits immediately if any command fails
 setlocal enabledelayedexpansion
 set "ERROR_FLAG=0"
 
-REM Function to handle errors
-:handle_error
-if !ERROR_FLAG! equ 1 (
-    echo =============================================================
-    echo ERROR: An unexpected error occurred.
-    echo =============================================================
-    echo.
-    pause
-    exit /b 1
-)
-exit /b 0
-
 REM 1. Initialize and update Git submodules
 echo =============================================================
 echo Initializing and updating Git submodules...
@@ -97,7 +85,7 @@ if "%CLEAN_BUILD%"=="true" (
 ) else (
     echo Ensuring sub-build directory exists: %FULL_BUILD_DIR%
     if not exist "%FULL_BUILD_DIR%" (
-        echo Creating sub-build directory: %FULL_BUILD_DIR%
+        echo Creating sub-build directory: %FULL_BUILD_DIR%"
         mkdir "%FULL_BUILD_DIR%"
         if errorlevel 1 (
             echo ERROR: Failed to create sub-build directory.
@@ -143,7 +131,7 @@ if not exist "vcpkg.exe" (
     echo vcpkg is already bootstrapped.
 )
 
-REM Install msdfgen and freetype for the x64-windows triplet
+REM All dependencies
 echo Installing msdfgen and freetype for x64-windows...
 vcpkg.exe install msdfgen:x64-windows freetype:x64-windows
 if errorlevel 1 (
@@ -208,3 +196,17 @@ echo Configuration finished successfully!
 echo =============================================================
 echo.
 pause
+
+REM =============================================================
+REM Error Handling Function
+REM =============================================================
+:handle_error
+if !ERROR_FLAG! equ 1 (
+    echo =============================================================
+    echo ERROR: An unexpected error occurred.
+    echo =============================================================
+    echo.
+    pause
+    exit /b 1
+)
+exit /b 0
