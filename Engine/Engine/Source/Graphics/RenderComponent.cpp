@@ -16,7 +16,7 @@ void gse::render_component::load_model(const std::string& path) {
     std::vector<model_texture> textures_loaded;
     std::vector<mesh> meshes;
 
-    auto load_textures = [&](const aiMaterial* mat, aiTextureType type, const std::string& typeName) -> std::vector<model_texture> {
+    auto load_textures = [&](const aiMaterial* mat, const aiTextureType type, const std::string& typeName) -> std::vector<model_texture> {
         std::vector<model_texture> textures;
         for (unsigned int i = 0; i < mat->GetTextureCount(type); i++) {
             aiString str;
@@ -30,7 +30,9 @@ void gse::render_component::load_model(const std::string& path) {
                 }
             }
             if (!skip) {
-                model_texture texture{ 0, typeName, str.C_Str() };
+                model_texture texture{
+                	.id= 0, .type= typeName, .path= str.C_Str()
+                };
                 textures.push_back(texture);
                 textures_loaded.push_back(texture);
             }
