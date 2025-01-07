@@ -14,5 +14,15 @@
     "vertex": "lighting.vert",
     "fragment": "lighting.frag",
     "texture": "Textures/concrete_bricks_1.jpg"
+  },
+  "Sky 1": {
+    "vertex": "lighting.vert",
+    "fragment": "lighting.frag",
+    "texture": "Textures/sky1.jpg"
+  },
+  "NULL": {
+    "vertex": "lighting.vert",
+    "fragment": "lighting.frag",
+    "texture": ""
   }
 }
