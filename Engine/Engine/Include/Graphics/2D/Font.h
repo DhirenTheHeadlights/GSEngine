@@ -25,6 +25,6 @@ namespace gse {
 		const texture& get_texture() const;
 	private:
 		texture m_texture;
-		std::unordered_map<char, glyph > m_glyphs;
+		std::unordered_map<char, glyph> m_glyphs;
 	};
 }

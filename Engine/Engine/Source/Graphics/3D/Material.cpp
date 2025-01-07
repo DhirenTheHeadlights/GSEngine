@@ -1,7 +1,7 @@
 #include "Graphics/3D/Material.h"
 
-#include "stb_image.h"
 #include <iostream>
+#include "stb_image.h"
 
 namespace {
 	unsigned int load_texture(char const* path, const bool gamma_correction) {
@@ -9,8 +9,7 @@ namespace {
 		glGenTextures(1, &texture_id);
 
 		int width = 0, height = 0, number_components = 0;
-		unsigned char* data = stbi_load(path, &width, &height, &number_components, 0);
-		if (data) {
+		if (unsigned char* data = stbi_load(path, &width, &height, &number_components, 0)) {
 			GLenum internal_format;
 			GLenum data_format;
 			if (number_components == 1) {
@@ -48,7 +47,7 @@ namespace {
 gse::material::material(const std::string& vertex_path, const std::string& fragment_path, std::string material_type, const std::string& material_texture_path) :
 	material_type(std::move(material_type)) {
 	shader.create_shader_program(vertex_path, fragment_path);
-	material_texture = load_texture(material_texture_path.c_str(), true);
+	material_texture = !material_texture_path.empty() ? load_texture(material_texture_path.c_str(), true) : 0;
 }
 
 void gse::material::use(const glm::mat4& view, const glm::mat4& projection, const glm::mat4& model) const {

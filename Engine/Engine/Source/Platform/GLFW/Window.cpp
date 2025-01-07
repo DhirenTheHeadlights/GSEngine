@@ -82,7 +82,7 @@ void gse::window::remove_rendering_interface(const std::shared_ptr<rendering_int
 }
 
 void gse::window::initialize() {
-	permaAssertComment(glfwInit(), "Error initializing GLFW");
+	assert_comment(glfwInit(), "Error initializing GLFW");
 	glfwWindowHint(GLFW_SAMPLES, 4);
 	glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
 	glfwWindowHint(GLFW_AUTO_ICONIFY, GLFW_FALSE);
@@ -113,7 +113,7 @@ void gse::window::initialize() {
 	glfwSetCursorPosCallback(g_window, cursor_position_callback);
 	glfwSetCharCallback(g_window, character_callback);
 
-	permaAssertComment(gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)), "Error Initializing GLAD");
+	assert_comment(gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)), "Error Initializing GLAD");
 }
 
 void gse::window::begin_frame() {

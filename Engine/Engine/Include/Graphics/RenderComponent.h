@@ -10,12 +10,15 @@ namespace gse {
 	struct render_component final : component {
 		render_component(id* id) : component(id) {}
 		render_component(id* id, std::vector<mesh> meshes) : component(id), meshes(std::move(meshes)) {}
+		render_component(id* id, const std::string& path) : component(id) { load_model(path); }
 
 		render_component(render_component&&) noexcept = default;
 		render_component& operator=(render_component&&) noexcept = default;
 
 		render_component(const render_component&) = delete;
 		render_component& operator=(const render_component&) = delete;
+
+		void load_model(const std::string& path);
 
 		void update_bounding_box_meshes();
 		void set_mesh_positions(const vec3<length>& position);

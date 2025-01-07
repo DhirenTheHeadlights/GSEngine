@@ -5,6 +5,7 @@
 #include "Arena.h"
 #include "Engine.h"
 #include "Player.h"
+#include "ResourcePaths.h"
 #include "SphereLight.h"
 #include "Graphics/2D/Renderer2D.h"
 
@@ -27,6 +28,10 @@ struct scene1_hook final : gse::hook<gse::scene> {
 		m_owner->add_object(std::make_unique<gse::box>(gse::vec3<gse::units::meters>(-20.f, -400.f, 20.f), gse::vec3<gse::units::meters>(40.f, 40.f, 40.f)));
 		m_owner->add_object(std::make_unique<game::sphere_light>(gse::vec3<gse::units::meters>(0.f, -300.f, 0.f), gse::meters(10.f)));
 		m_owner->add_object(std::make_unique<gse::sphere>(gse::vec3<gse::units::meters>(0.f, -00.f, 200.f), gse::meters(10.f)));
+
+		auto iron_man = std::make_unique<gse::object>("Iron Man");
+		gse::registry::add_component(gse::render_component(iron_man->get_id().lock().get(), GOONSQUAD_RESOURCES_PATH "Models/IronMan/iron_man.obj"));
+		m_owner->add_object(std::move(iron_man));
 	}
 
 	void render() override {

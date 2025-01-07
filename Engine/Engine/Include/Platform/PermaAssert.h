@@ -107,7 +107,7 @@ inline void assertFuncInternal(
 #if PRODUCTION_BUILD == 0
 #define permaAssert(expression) \
     ((expression) ? (void)0 : assert_func_internal(#expression, __FILE__, __LINE__))
-#define permaAssertComment(expression, comment) \
+#define assert_comment(expression, comment) \
     ((expression) ? (void)0 : assert_func_internal(#expression, __FILE__, __LINE__, comment))
 #else
 #define permaAssert(expression) \

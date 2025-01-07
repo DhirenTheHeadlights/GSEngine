@@ -345,12 +345,10 @@ namespace {
 		glBufferSubData(GL_UNIFORM_BUFFER, 0, light_space_matrices.size() * sizeof(glm::mat4), light_space_matrices.data());
 		glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
-		// Bind HDR frame buffer
 		glBindFramebuffer(GL_FRAMEBUFFER, g_hdr_fbo);
 		constexpr GLenum hdr_draw_buffers[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
 		glDrawBuffers(2, hdr_draw_buffers);
 
-		// Lighting pass
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		glDisable(GL_DEPTH_TEST);
 
@@ -368,7 +366,6 @@ namespace {
 		lighting_shader.set_bool("depthMapDebug", g_depth_map_debug);
 		lighting_shader.set_float("bloomThreshold", g_bloom_threshold);
 
-		// Pass other G-buffer textures
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, g_g_position);
 		glActiveTexture(GL_TEXTURE1);
@@ -382,9 +379,7 @@ namespace {
 
 		render_fullscreen_quad();
 
-		glEnable(GL_DEPTH_TEST);  // Re-enable depth testing after the lighting pass
-
-		// Unbind HDR frame buffer
+		glEnable(GL_DEPTH_TEST);
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
 
