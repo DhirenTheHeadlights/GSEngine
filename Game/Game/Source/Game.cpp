@@ -1,6 +1,8 @@
 #include "Game.h"
 
 #include <imgui.h>
+#include <memory>
+#include <memory>
 
 #include "Arena.h"
 #include "Engine.h"
@@ -18,22 +20,30 @@ auto game::set_input_handling_flag(const bool enabled) -> void {
 	g_input_handling_enabled = enabled;
 }
 
+struct iron_man_hook final : gse::hook<gse::entity> {
+	using hook::hook;
+
+	auto initialize() -> void override {
+		gse::registry::add_component(gse::render_component(owner_id, GOONSQUAD_RESOURCES_PATH "Models/IronMan/iron_man.obj"));
+		gse::registry::get_component<gse::render_component>(owner_id).set_all_mesh_material_strings("NULL");
+	}
+};
+
 struct scene1_hook final : gse::hook<gse::scene> {
 	using hook::hook;
 
 	auto initialize() -> void override {
 		game::arena::create(m_owner);
 
-		m_owner->add_object(game::create_player(), "Player");
-		m_owner->add_object(create_box(gse::vec3<gse::units::meters>(20.f, -400.f, 20.f), gse::vec3<gse::units::meters>(20.f, 20.f, 20.f)), "Bigger Box");
-		m_owner->add_object(create_box(gse::vec3<gse::units::meters>(-20.f, -400.f, 20.f), gse::vec3<gse::units::meters>(40.f, 40.f, 40.f)), "Smaller Box");
-		m_owner->add_object(game::create_sphere_light(gse::vec3<gse::units::meters>(0.f, -300.f, 0.f), gse::meters(10.f), 18), "Center Sphere Light");
-		m_owner->add_object(create_sphere(gse::vec3<gse::units::meters>(0.f, -00.f, 200.f), gse::meters(10.f)), "Second Sphere");
+		m_owner->add_entity(game::create_player(), "Player");
+		m_owner->add_entity(create_box(gse::vec3<gse::units::meters>(20.f, -400.f, 20.f), gse::vec3<gse::units::meters>(20.f, 20.f, 20.f)), "Bigger Box");
+		m_owner->add_entity(create_box(gse::vec3<gse::units::meters>(-20.f, -400.f, 20.f), gse::vec3<gse::units::meters>(40.f, 40.f, 40.f)), "Smaller Box");
+		m_owner->add_entity(game::create_sphere_light(gse::vec3<gse::units::meters>(0.f, -300.f, 0.f), gse::meters(10.f), 18), "Center Sphere Light");
+		m_owner->add_entity(create_sphere(gse::vec3<gse::units::meters>(0.f, -00.f, 200.f), gse::meters(10.f)), "Second Sphere");
 
-		/*gse::object iron_man;
-		gse::registry::add_component(gse::render_component(iron_man.index, GOONSQUAD_RESOURCES_PATH "Models/IronMan/iron_man.obj"));
-		gse::registry::get_component<gse::render_component>(iron_man.index).set_all_mesh_material_strings("NULL");
-		m_owner->add_object(std::move(iron_man), "Iron Man");*/
+		const std::uint32_t iron_man = gse::registry::create_entity();
+		gse::registry::add_entity_hook(iron_man, std::make_unique<iron_man_hook>());
+		m_owner->add_entity(iron_man, "Iron Man");
 	}
 
 	auto render() -> void override {
@@ -50,7 +60,7 @@ struct scene1_hook final : gse::hook<gse::scene> {
 };
 
 struct scene2_hook final : gse::hook<gse::scene> {
-	struct floor_hook final : hook<gse::object> {
+	struct floor_hook final : hook<gse::entity> {
 		using hook::hook;
 
 		auto initialize() -> void override {
@@ -63,14 +73,14 @@ struct scene2_hook final : gse::hook<gse::scene> {
 
 	auto initialize() -> void override {
 		game::skybox::create(m_owner);
-		m_owner->add_object(game::create_player(), "Player");
-		gse::object* floor = create_box(gse::vec3<gse::units::meters>(0.f, -500.f, 0.f), gse::vec3<gse::units::meters>(1000.f, 10.f, 1000.f));
-		gse::registry::add_object_hook(floor->index, floor_hook());
-		m_owner->add_object(floor, "Floor");
+		m_owner->add_entity(game::create_player(), "Player");
+		const std::uint32_t floor_uuid = create_box(gse::vec3<gse::units::meters>(0.f, -500.f, 0.f), gse::vec3<gse::units::meters>(1000.f, 10.f, 1000.f));
+		gse::registry::add_entity_hook(floor_uuid, std::make_unique<floor_hook>());
+		m_owner->add_entity(floor_uuid, "Floor");
 	}
 
 	auto render() -> void override {
-		gse::registry::get_component<gse::light_source_component>(gse::registry::get_object_id("Floor")).get_lights().front()->show_debug_menu("Skybox Light", gse::registry::get_object_id("Skybox"));
+		gse::registry::get_component<gse::light_source_component>(gse::registry::get_entity_id("Floor")).get_lights().front()->show_debug_menu("Skybox Light", gse::registry::get_entity_id("Skybox"));
         gse::debug::add_imgui_callback([] {
             if (gse::scene_loader::get_scene(gse::get_id("Scene2"))->get_active()) {
                 ImGui::Begin("Game Data");

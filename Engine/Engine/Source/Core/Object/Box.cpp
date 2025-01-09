@@ -4,7 +4,7 @@
 #include "Core/ObjectRegistry.h"
 #include "Graphics/RenderComponent.h"
 
-struct box_mesh_hook final : gse::hook<gse::object> {
+struct box_mesh_hook final : gse::hook<gse::entity> {
     box_mesh_hook(const gse::vec3<gse::length>& initial_position, const gse::vec3<gse::length>& size)
         : m_initial_position(initial_position), m_size(size) {}
 
@@ -90,7 +90,7 @@ struct box_mesh_hook final : gse::hook<gse::object> {
     }
     auto render() -> void override {
 	    gse::debug::add_imgui_callback([this] {
-			ImGui::Begin(gse::registry::get_object_name(owner_id).data());
+			ImGui::Begin(gse::registry::get_entity_name(owner_id).data());
             ImGui::SliderFloat3("Position", &gse::registry::get_component<gse::physics::motion_component>(owner_id).current_position.as_default_units().x, -1000.f, 1000.f);
             ImGui::Text("Colliding: %s", gse::registry::get_component<gse::physics::collision_component>(owner_id).bounding_box.collision_information.colliding ? "true" : "false");
             ImGui::End();
@@ -101,12 +101,12 @@ private:
 	gse::vec3<gse::length> m_size;
 };
 
-auto gse::create_box(const object* object, const vec3<length>& initial_position, const vec3<length>& size) -> void {
-    registry::add_object_hook(object->index, box_mesh_hook(initial_position, size));
+auto gse::create_box(const std::uint32_t object_uuid, const vec3<length>& initial_position, const vec3<length>& size) -> void {
+    registry::add_entity_hook(object_uuid, std::make_unique<box_mesh_hook>(initial_position, size));
 }
 
-auto gse::create_box(const vec3<length>& initial_position, const vec3<length>& size) -> object* {
-    object* box = registry::create_object();
-	create_box(box, initial_position, size);
-    return box;
-}
+auto gse::create_box(const vec3<length>& initial_position, const vec3<length>& size) -> std::uint32_t {
+    const std::uint32_t box_uuid = registry::create_entity();
+	create_box(box_uuid, initial_position, size);
+    return box_uuid;
+} 

@@ -12,8 +12,8 @@ namespace gse {
 	public:
 		scene(const std::string& name = "Unnamed Scene") : identifiable(name) {}
 
-		auto add_object(gse::object* object, const std::string& name) -> void;
-		auto remove_object(const std::string& name) -> void;
+		auto add_entity(std::uint32_t object_uuid, const std::string& name) -> void;
+		auto remove_entity(const std::string& name) -> void;
 
 		auto initialize() -> void;
 		auto update() const -> void;
@@ -23,11 +23,10 @@ namespace gse {
 		auto set_active(const bool is_active) -> void { this->m_is_active = is_active; }
 		auto get_active() const -> bool { return m_is_active; }
 
-		auto get_objects() const -> std::vector<object*>;
-
+		auto get_entities() const -> std::vector<std::uint32_t>;
 	private:
 		std::vector<std::uint32_t> m_object_indexes;
-		std::vector<object*> m_objects_to_add_upon_initialization;
+		std::vector<std::pair<std::uint32_t, std::string>> m_objects_to_add_upon_initialization;
 
 		bool m_is_active = false;
 	};

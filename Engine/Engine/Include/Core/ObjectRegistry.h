@@ -5,25 +5,29 @@
 
 #include "EngineComponent.h"
 #include "Core/Object/Hook.h"
-#include "Object/Object.h"
 #include "Physics/Units/Duration.h"
 
-namespace gse::registry {
-	auto create_object() -> object*;
+namespace gse {
+	struct entity;
+}
 
-	auto add_object_hook(std::uint32_t parent_id, hook<object>&& hook) -> void;
-	auto remove_object_hook(const hook<object>& hook) -> void;
+namespace gse::registry {
+	// Creates an object with a random TEMPORARY uuid
+	// The uuid will be replaced with its index in the object list when it is activated
+	auto create_entity() -> std::uint32_t;
+
+	auto add_entity_hook(std::uint32_t parent_id, std::unique_ptr<hook<entity>> hook) -> void;
+	auto remove_object_hook(const hook<entity>& hook) -> void;
 
 	auto initialize_hooks() -> void;
 	auto update_hooks() -> void;
 	auto render_hooks() -> void;
 
-	auto is_object_in_list(id* list_id, object* object) -> bool;
-	auto is_object_id_in_list(id* list_id, std::uint32_t id) -> bool;
+	auto is_entity_id_in_list(id* list_id, std::uint32_t id) -> bool;
 
-	auto does_object_exist(const std::string& name) -> bool;
-	auto does_object_exist(std::uint32_t index, std::uint32_t generation) -> bool;
-	auto does_object_exist(std::uint32_t index) -> bool;
+	auto does_entity_exist(const std::string& name) -> bool;
+	auto does_entity_exist(std::uint32_t index, std::uint32_t generation) -> bool;
+	auto does_entity_exist(std::uint32_t index) -> bool;
 
 	struct component_container_base {
 		virtual ~component_container_base() = default;
@@ -91,7 +95,7 @@ namespace gse::registry {
 	template <typename T>
 		requires std::derived_from<T, component>
 	auto add_component(T&& component) -> void {  // NOLINT(cppcoreguidelines-missing-std-forward)
-		if (does_object_exist(component.parent_id)) {
+		if (does_entity_exist(component.parent_id)) {
 			internal::add_component(std::forward<T>(component), internal::g_component_containers);  // NOLINT(bugprone-move-forwarding-reference)
 		}
 		else {
@@ -144,25 +148,18 @@ namespace gse::registry {
 		}
 	}
 
-	auto get_active_objects() -> std::vector<object>&;
-	auto get_object(const std::string& name) -> object*;
-	auto get_object(std::uint32_t index) -> object*;
-	auto get_object_name(std::uint32_t index) -> std::string_view;
-	auto get_object_id(const std::string& name) -> std::uint32_t;
+	auto get_active_objects() -> std::vector<std::uint32_t>&;
+	auto get_entity_name(std::uint32_t index) -> std::string_view;
+	auto get_entity_id(const std::string& name) -> std::uint32_t;
 	auto get_number_of_objects() -> std::uint32_t;
 
-	auto add_object(gse::object* object_ptr, const std::string& name = "Unnamed Entity") -> std::uint32_t;
-	auto remove_object(const std::string& name) -> std::uint32_t;
-	auto remove_object(std::uint32_t index) -> void;
+	auto activate_entity(std::uint32_t identifier, const std::string& name) -> std::uint32_t;
+	auto remove_entity(const std::string& name) -> std::uint32_t;
+	auto remove_entity(std::uint32_t index) -> void;
 
-	auto add_new_object_list(id* list_id, const std::vector<object*>& objects = {}) -> void;
-	auto add_new_id_list(id* list_id, const std::vector<std::uint32_t>& ids = {}) -> void;
-
-	auto add_object_to_list(id* list_id, object* object) -> void;
+	auto add_new_entity_list(id* list_id, const std::vector<std::uint32_t>& ids = {}) -> void;
 	auto add_id_to_list(id* list_id, std::uint32_t id) -> void;
-
-	auto remove_object_from_list(id* list_id, const object* object) -> void;
 	auto remove_id_from_list(id* list_id, std::uint32_t id) -> void;
 
-	auto periodically_clean_up_stale_lists(const time& clean_up_interval = seconds(60.f)) -> void;
+	auto periodically_clean_up_registry(const time& clean_up_interval = seconds(60.f)) -> void;
 }

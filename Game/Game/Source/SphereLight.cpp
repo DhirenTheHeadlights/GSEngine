@@ -1,12 +1,14 @@
 #include "SphereLight.h"
 
+#include <memory>
+
 #include "Core/ObjectRegistry.h"
 
 namespace {
 	int g_sphere_light_count = 1;
 }
 
-struct sphere_light_hook final : gse::hook<gse::object> {
+struct sphere_light_hook final : gse::hook<gse::entity> {
 	using hook::hook;
 	auto initialize() -> void override;
 	auto update() -> void override;
@@ -21,7 +23,7 @@ auto sphere_light_hook::initialize() -> void {
         );
 
 	const auto ignore_list_id = gse::generate_id("Sphere Light " + std::to_string(g_sphere_light_count) + " Ignore List");
-	gse::registry::add_new_id_list(ignore_list_id.get(), { owner_id });
+	gse::registry::add_new_entity_list(ignore_list_id.get(), { owner_id });
 	light->set_ignore_list_id(ignore_list_id.get());
 
 	light_source_component.add_light(std::move(light));
@@ -41,7 +43,7 @@ auto sphere_light_hook::update() -> void {
 
 auto sphere_light_hook::render() -> void {
 	for (const auto& light : gse::registry::get_component<gse::light_source_component>(owner_id).get_lights()) {
-		light->show_debug_menu(gse::registry::get_object_name(owner_id), owner_id);
+		light->show_debug_menu(gse::registry::get_entity_name(owner_id), owner_id);
     }
 
 	gse::debug::add_imgui_callback([this] {
@@ -51,8 +53,8 @@ auto sphere_light_hook::render() -> void {
 		});
 }
 
-auto game::create_sphere_light(const gse::vec3<gse::length>& position, const gse::length& radius, const int sectors) -> gse::object* {
-	const auto sphere_light = create_sphere(position, radius, sectors);
-	gse::registry::add_object_hook(sphere_light->index, sphere_light_hook());
-	return sphere_light;
+auto game::create_sphere_light(const gse::vec3<gse::length>& position, const gse::length& radius, const int sectors) -> std::uint32_t {
+	const auto sphere_light_uuid = create_sphere(position, radius, sectors);
+	gse::registry::add_entity_hook(sphere_light_uuid, std::make_unique<sphere_light_hook>());
+	return sphere_light_uuid;
 }

@@ -2,7 +2,7 @@
 #include <memory>
 
 namespace gse {
-	struct object;
+	struct entity;
 	class scene;
 	class id;
 
@@ -26,7 +26,7 @@ namespace gse {
 	};
 
 	template <>
-	struct hook<object> {
+	struct hook<entity> {
 		virtual ~hook() = default;
 		hook() = default;
 
