@@ -4,24 +4,24 @@
 #include "Physics/System.h"
 #include "Physics/Collision/BroadPhaseCollisions.h"
 
-auto gse::scene::add_object(object* object, const std::string& name) -> void {
+auto gse::scene::add_entity(std::uint32_t object_uuid, const std::string& name) -> void {
 	if (m_is_active) {
-		m_object_indexes.push_back(registry::add_object(object, name));
+		m_object_indexes.push_back(registry::activate_entity(object_uuid, name));
 	}
 	else {
-		m_objects_to_add_upon_initialization.push_back(object);
+		m_objects_to_add_upon_initialization.emplace_back(object_uuid, name);
 	}
 }
 
-auto gse::scene::remove_object(const std::string& name) -> void {
-	std::erase(m_object_indexes, registry::remove_object(name));
+auto gse::scene::remove_entity(const std::string& name) -> void {
+	std::erase(m_object_indexes, registry::remove_entity(name));
 }
 
 auto gse::scene::initialize() -> void {
 	initialize_hooks();
 
-	for (const auto& object : m_objects_to_add_upon_initialization) {
-		m_object_indexes.push_back(registry::add_object(object));
+	for (const auto& [object_uuid, name] : m_objects_to_add_upon_initialization) {
+		m_object_indexes.push_back(registry::activate_entity(object_uuid, name));
 	}
 
 	m_objects_to_add_upon_initialization.clear();
@@ -44,23 +44,15 @@ auto gse::scene::render() const -> void {
 
 	registry::render_hooks();
 	renderer3d::render();
-
-	auto& test = gse::registry::get_component_containers();
-	auto& test2 = gse::registry::get_queued_components();
 }
 
 auto gse::scene::exit() const -> void {
 	for (const auto& index : m_object_indexes) {
-		registry::remove_object(index);
+		registry::remove_entity(index);
 	}
 }
 
-auto gse::scene::get_objects() const -> std::vector<object*> {
-	std::vector<object*> objects;
-	objects.reserve(m_object_indexes.size());
-	for (const auto& index : m_object_indexes) {
-		objects.push_back(registry::get_object(index));
-	}
-	return objects;
+auto gse::scene::get_entities() const -> std::vector<std::uint32_t> {
+	return m_object_indexes;
 }
 

@@ -11,7 +11,6 @@ namespace gse {
     class id;
 
     auto generate_id(const std::string& tag) -> std::unique_ptr<id>;
-	auto generate_random_entity_placeholder_id() -> std::uint32_t;
 	auto remove_id(const id* id) -> void;
     auto get_id(std::int32_t number) -> id*;
     auto get_id(std::string_view tag) -> id*;
@@ -23,7 +22,6 @@ namespace gse {
         ~id() {
 			if (m_number != -1) {
                 remove_id(this);
-				std::cout << "Removed id " << m_number << '\n';
 			}
         }
 

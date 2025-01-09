@@ -3,44 +3,55 @@
 #include <ranges>
 
 #include "Core/Clock.h"
+#include "Physics/Vector/Math.h"
 #include "Platform/PermaAssert.h"
 
 namespace {
-	std::unordered_map<gse::id*, std::vector<gse::object*>> g_object_lists;
-	std::unordered_map<gse::id*, std::vector<std::uint32_t>> g_id_lists;
+	std::unordered_map<gse::id*, std::vector<std::uint32_t>> g_entity_lists;
 
 	std::unordered_map<std::string, std::uint32_t> g_string_to_index_map;
-	std::vector<gse::object> g_objects;
+	std::vector<gse::entity> g_entities;
 	std::vector<std::uint32_t> g_free_indices;
-	std::vector<gse::object> g_registered_inactive_objects;
+	std::vector<gse::entity> g_registered_inactive_entities;
 
-	std::vector<gse::hook<gse::object>> g_hooks;
-	std::vector<gse::hook<gse::object>> g_registered_inactive_hooks;
+	std::vector<std::unique_ptr<gse::hook<gse::entity>>> g_hooks;
+	std::vector<std::unique_ptr<gse::hook<gse::entity>>> g_registered_inactive_hooks;
 
 	gse::clock g_clean_up_clock;
+
+	auto generate_random_entity_placeholder_id() -> std::uint32_t {
+		return gse::random_value(std::numeric_limits<std::uint32_t>::max());
+	}
 }
 
-auto gse::registry::create_object() -> object* {
-	const object obj;
-	g_registered_inactive_objects.push_back(obj);
-	return &g_registered_inactive_objects.back();
+namespace gse {
+	struct entity {
+		std::uint32_t index = generate_random_entity_placeholder_id();
+		std::uint32_t generation = 0;
+	};
 }
 
-auto gse::registry::add_object_hook(const std::uint32_t parent_id, hook<object>&& hook) -> void {
-	const auto it = std::ranges::find_if(g_objects, [parent_id](const object& obj) {
+auto gse::registry::create_entity() -> std::uint32_t {
+	const entity obj;
+	g_registered_inactive_entities.push_back(obj);
+	return obj.index; // Return temp uuid
+}
+
+auto gse::registry::add_entity_hook(const std::uint32_t parent_id, std::unique_ptr<hook<entity>> hook) -> void {
+	const auto it = std::ranges::find_if(g_entities, [parent_id](const entity& obj) {
 		return obj.index == parent_id;
 		});
-	if (it != g_objects.end()) {
-		hook.owner_id = parent_id;
+	if (it != g_entities.end()) {
+		hook->owner_id = parent_id;
 		g_hooks.push_back(std::move(hook));
 		return;
 	}
 
-	const auto it2 = std::ranges::find_if(g_registered_inactive_objects, [parent_id](const object& obj) {
+	const auto it2 = std::ranges::find_if(g_registered_inactive_entities, [parent_id](const entity& obj) {
 		return obj.index == parent_id;
 		});
-	if (it2 != g_registered_inactive_objects.end()) {
-		hook.owner_id = parent_id;
+	if (it2 != g_registered_inactive_entities.end()) {
+		hook->owner_id = parent_id;
 		g_registered_inactive_hooks.push_back(std::move(hook));
 		return;
 	}
@@ -48,49 +59,39 @@ auto gse::registry::add_object_hook(const std::uint32_t parent_id, hook<object>&
 	assert_comment(false, "Object not found in registry when trying to add a hook to it");
 }
 
-auto gse::registry::remove_object_hook(const hook<object>& hook) -> void {
+auto gse::registry::remove_object_hook(const hook<entity>& hook) -> void {
 	/// TODO: Implement
 }
 
 auto gse::registry::initialize_hooks() -> void {
-	for (auto& hook : g_hooks) {
-		hook.initialize();
+	for (const auto& hook : g_hooks) {
+		hook->initialize();
 	}
 }
 
 auto gse::registry::update_hooks() -> void {
-	for (auto& hook : g_hooks) {
-		hook.update();
+	for (const auto& hook : g_hooks) {
+		hook->update();
 	}
 }
 
 auto gse::registry::render_hooks() -> void {
-	for (auto& hook : g_hooks) {
-		hook.render();
+	for (const auto& hook : g_hooks) {
+		hook->render();
 	}
 }
 
-auto gse::registry::get_active_objects() -> std::vector<object>& {
-	return g_objects;
-}
-
-auto gse::registry::get_object(const std::string& name) -> object* {
-	const auto it = g_string_to_index_map.find(name);
-	if (it == g_string_to_index_map.end()) {
-		return nullptr;
+auto gse::registry::get_active_objects() -> std::vector<std::uint32_t>& {
+	std::vector<std::uint32_t> active_objects;
+	active_objects.reserve(g_entities.size());
+	for (const auto& [index, generation] : g_entities) {
+		active_objects.push_back(index);
 	}
-	return &g_objects[it->second];
+	return active_objects;
 }
 
-auto gse::registry::get_object(const std::uint32_t index) -> object* {
-	if (index < 0 || index >= static_cast<std::uint32_t>(g_objects.size())) {
-		return nullptr;
-	}
-	return &g_objects[index];
-}
-
-auto gse::registry::get_object_name(const std::uint32_t index) -> std::string_view {
-	if (index < 0 || index >= static_cast<std::uint32_t>(g_objects.size())) {
+auto gse::registry::get_entity_name(const std::uint32_t index) -> std::string_view {
+	if (index < 0 || index >= static_cast<std::uint32_t>(g_entities.size())) {
 		return "Object not found in registry when trying to get its name";
 	}
 	for (const auto& [name, idx] : g_string_to_index_map) {
@@ -101,7 +102,7 @@ auto gse::registry::get_object_name(const std::uint32_t index) -> std::string_vi
 	return "Object not found in registry when trying to get its name";
 }
 
-auto gse::registry::get_object_id(const std::string& name) -> std::uint32_t {
+auto gse::registry::get_entity_id(const std::string& name) -> std::uint32_t {
 	const auto it = g_string_to_index_map.find(name);
 	if (it == g_string_to_index_map.end()) {
 		return -1;
@@ -110,11 +111,17 @@ auto gse::registry::get_object_id(const std::string& name) -> std::uint32_t {
 }
 
 auto gse::registry::get_number_of_objects() -> std::uint32_t {
-	return static_cast<std::uint32_t>(g_objects.size());
+	return static_cast<std::uint32_t>(g_entities.size());
 }
 
-auto gse::registry::add_object(object* object_ptr, const std::string& name) -> std::uint32_t {
-	auto& object = *object_ptr;
+auto gse::registry::activate_entity(std::uint32_t identifier, const std::string& name) -> std::uint32_t {
+	const auto it = std::ranges::find_if(g_registered_inactive_entities, [identifier](const entity& obj) {
+		return obj.index == identifier;
+		});
+
+	assert_comment(it != g_registered_inactive_entities.end(), "Object not found in registry when trying to activate it");
+
+	auto object = *it;
 
 	// First, we flush all the queued components to the final components.
 	// This must be done before we update the object's index and generation
@@ -129,21 +136,21 @@ auto gse::registry::add_object(object* object_ptr, const std::string& name) -> s
 		index = g_free_indices.back();
 		g_free_indices.pop_back();
 
-		g_objects[index].generation++;
+		g_entities[index].generation++;
 
-		object.generation = g_objects[index].generation;
+		object.generation = g_entities[index].generation;
 		object.index = index;
 
-		g_objects[index] = object;
+		g_entities[index] = object;
 	}
 	else {
-		index = static_cast<std::uint32_t>(g_objects.size());
+		index = static_cast<std::uint32_t>(g_entities.size());
 		object.index = index;
 		object.generation = 0;
-		g_objects.push_back(object);
+		g_entities.push_back(object);
 	}
 
-	if (const auto it = g_string_to_index_map.find(name); it != g_string_to_index_map.end()) {
+	if (const auto it2 = g_string_to_index_map.find(name); it2 != g_string_to_index_map.end()) {
 		const std::string new_name = name + std::to_string(index);
 		g_string_to_index_map[new_name] = index;
 	}
@@ -151,34 +158,42 @@ auto gse::registry::add_object(object* object_ptr, const std::string& name) -> s
 		g_string_to_index_map[name] = index;
 	}
 
-	for (auto& hook : g_hooks) {
-		if (hook.owner_id == previous_id) {
-			hook.owner_id = index;
+	for (const auto& hook : g_hooks) {
+		if (hook->owner_id == previous_id) {
+			hook->owner_id = index;
 		}
 	}
 
-	for (auto& hook : g_registered_inactive_hooks) {
-		if (hook.owner_id == previous_id) {
-			hook.owner_id = index;
+	for (const auto& hook : g_registered_inactive_hooks) {
+		if (hook->owner_id == previous_id) {
+			hook->owner_id = index;
 		}
 	}
 
-	std::erase_if(g_registered_inactive_hooks, [index](const hook<struct object>& hook) {
-		if (hook.owner_id == index) {
-			g_hooks.push_back(hook);
-			return true;
+	for (auto it3 = g_registered_inactive_hooks.begin(); it3 != g_registered_inactive_hooks.end(); ) {
+		if ((*it3)->owner_id == index) {
+			g_hooks.push_back(std::move(*it3));
+			it3 = g_registered_inactive_hooks.erase(it3);
 		}
-		return false;
-		});
+		else {
+			++it3;
+		}
+	}
 
-	std::erase_if(g_registered_inactive_objects, [index](const struct object& obj) {
-		return obj.index == index;
-		});
+	for (auto it4 = g_registered_inactive_entities.begin(); it4 != g_registered_inactive_entities.end(); ) {
+		if (it4->index == index) {
+			g_entities[index] = *it4;
+			it4 = g_registered_inactive_entities.erase(it4);
+		}
+		else {
+			++it4;
+		}
+	}
 
 	return index;
 }
 
-auto gse::registry::remove_object(const std::string& name) -> std::uint32_t {
+auto gse::registry::remove_entity(const std::string& name) -> std::uint32_t {
 	const auto it = g_string_to_index_map.find(name);
 	if (it == g_string_to_index_map.end()) {
 		assert_comment(false, "Object not found in registry when trying to remove it");
@@ -186,14 +201,14 @@ auto gse::registry::remove_object(const std::string& name) -> std::uint32_t {
 	const auto index = it->second;
 
 	g_string_to_index_map.erase(it);
-	g_objects[index].generation++;
+	g_entities[index].generation++;
 	g_free_indices.push_back(index);
 
 	return index;
 }
 
-auto gse::registry::remove_object(const std::uint32_t index) -> void {
-	if (index < 0 || index >= static_cast<std::uint32_t>(g_objects.size())) {
+auto gse::registry::remove_entity(const std::uint32_t index) -> void {
+	if (index < 0 || index >= static_cast<std::uint32_t>(g_entities.size())) {
 		return;
 	}
 
@@ -201,83 +216,60 @@ auto gse::registry::remove_object(const std::uint32_t index) -> void {
 		return pair.second == index;
 		});
 
-	g_objects[index].generation++;
+	std::erase_if(g_hooks, [index](const std::unique_ptr<hook<entity>>& hook) {
+		return hook->owner_id == index;
+		});
+
+	g_entities[index].generation++;
 	g_free_indices.push_back(index);
 }
 
-auto gse::registry::is_object_in_list(id* list_id, object* object) -> bool {
-	return std::ranges::find(g_object_lists[list_id], object) != g_object_lists[list_id].end();
+auto gse::registry::is_entity_id_in_list(id* list_id, const std::uint32_t id) -> bool {
+	return std::ranges::find(g_entity_lists[list_id], id) != g_entity_lists[list_id].end();
 }
 
-auto gse::registry::is_object_id_in_list(id* list_id, const std::uint32_t id) -> bool {
-	return std::ranges::find(g_id_lists[list_id], id) != g_id_lists[list_id].end();
-}
-
-auto gse::registry::does_object_exist(const std::string& name) -> bool {
+auto gse::registry::does_entity_exist(const std::string& name) -> bool {
 	return g_string_to_index_map.contains(name);
 }
 
-auto gse::registry::does_object_exist(const std::uint32_t index, const std::uint32_t generation) -> bool {
-	if (index >= static_cast<std::uint32_t>(g_objects.size())) {
+auto gse::registry::does_entity_exist(const std::uint32_t index, const std::uint32_t generation) -> bool {
+	if (index >= static_cast<std::uint32_t>(g_entities.size())) {
 		return false;
 	}
 
-	return g_objects[index].generation == generation;
+	return g_entities[index].generation == generation;
 }
 
-auto gse::registry::does_object_exist(const std::uint32_t index) -> bool {
-	if (index >= static_cast<std::uint32_t>(g_objects.size())) {
+auto gse::registry::does_entity_exist(const std::uint32_t index) -> bool {
+	if (index >= static_cast<std::uint32_t>(g_entities.size())) {
 		return false;
 	}
 
 	return true;
 }
 
-auto gse::registry::add_new_object_list(id* list_id, const std::vector<object*>& objects) -> void {
-	g_object_lists[list_id] = objects;
-}
-
-auto gse::registry::add_new_id_list(id* list_id, const std::vector<std::uint32_t>& ids) -> void {
-	g_id_lists[list_id] = ids;
-}
-
-auto gse::registry::add_object_to_list(id* list_id, object* object) -> void {
-	g_object_lists[list_id].push_back(object);
+auto gse::registry::add_new_entity_list(id* list_id, const std::vector<std::uint32_t>& ids) -> void {
+	g_entity_lists[list_id] = ids;
 }
 
 auto gse::registry::add_id_to_list(id* list_id, const std::uint32_t id) -> void {
-	g_id_lists[list_id].push_back(id);
-}
-
-auto gse::registry::remove_object_from_list(id* list_id, const object* object) -> void {
-	std::erase_if(g_object_lists[list_id], [&](const gse::object* obj) {
-		return obj == object;
-		});
+	g_entity_lists[list_id].push_back(id);
 }
 
 auto gse::registry::remove_id_from_list(id* list_id, const std::uint32_t id) -> void {
-	std::erase_if(g_id_lists[list_id], [&](const std::uint32_t obj) {
+	std::erase_if(g_entity_lists[list_id], [&](const std::uint32_t obj) {
 		return obj == id;
 		});
 }
 
-auto gse::registry::periodically_clean_up_stale_lists(const time& clean_up_interval) -> void {
+auto gse::registry::periodically_clean_up_registry(const time& clean_up_interval) -> void {
 	if (g_clean_up_clock.get_elapsed_time() < clean_up_interval) {
 		return;
 	}
 
-	for (auto it = g_object_lists.begin(); it != g_object_lists.end();) {
+	for (auto it = g_entity_lists.begin(); it != g_entity_lists.end();) {
 		if (does_id_exist(it->first->number())) {
-			it = g_object_lists.erase(it);
-		}
-		else {
-			++it;
-		}
-	}
-
-	for (auto it = g_id_lists.begin(); it != g_id_lists.end();) {
-		if (does_id_exist(it->first->number())) {
-			it = g_id_lists.erase(it);
+			it = g_entity_lists.erase(it);
 		}
 		else {
 			++it;

@@ -1,11 +1,12 @@
 #include "Core/Object/Sphere.h"
 
 #include <imgui.h>
+#include <memory>
 
 #include "Core/ObjectRegistry.h"
 #include "Graphics/RenderComponent.h"
 
-struct sphere_mesh_hook final : gse::hook<gse::object> {
+struct sphere_mesh_hook final : gse::hook<gse::entity> {
 	sphere_mesh_hook(const gse::vec3<gse::length>& position, const gse::length radius, const int sectors, const int stacks)
 		: m_initial_position(position), m_radius(radius), m_sectors(sectors), m_stacks(stacks) {}
 
@@ -86,12 +87,12 @@ private:
     int m_stacks;  // Number of stacks from top to bottom
 };
 
-auto gse::create_sphere(const object* object, const vec3<length>& position, const length radius, const int sectors, const int stacks) -> void {
-	registry::add_object_hook(object->index, sphere_mesh_hook(position, radius, sectors, stacks));
+auto gse::create_sphere(const std::uint32_t object_uuid, const vec3<length>& position, const length radius, const int sectors, const int stacks) -> void {
+	registry::add_entity_hook(object_uuid, std::make_unique<sphere_mesh_hook>(position, radius, sectors, stacks));
 }
 
-auto gse::create_sphere(const vec3<length>& position, const length radius, const int sectors, const int stacks) -> object* {
-	object* sphere = registry::create_object();
-	create_sphere(sphere, position, radius, sectors, stacks);
-	return sphere;
+auto gse::create_sphere(const vec3<length>& position, const length radius, const int sectors, const int stacks) -> std::uint32_t {
+	const std::uint32_t sphere_uuid = registry::create_entity();
+	create_sphere(sphere_uuid, position, radius, sectors, stacks);
+	return sphere_uuid;
 }

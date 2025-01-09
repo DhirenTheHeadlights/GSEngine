@@ -1,8 +1,10 @@
 #include "Skybox.h"
 
+#include <memory>
+
 #include "Core/ObjectRegistry.h"
 
-struct skybox_hook final : gse::hook<gse::object> {
+struct skybox_hook final : gse::hook<gse::entity> {
 	using hook::hook;
 
 	auto initialize() -> void override {
@@ -22,9 +24,9 @@ struct skybox_hook final : gse::hook<gse::object> {
 auto game::skybox::create(gse::scene* scene) -> void {
 	const auto skybox_position = gse::vec3<gse::units::meters>(0.f, 0.f, 0.f);
 	const gse::length skybox_size = gse::meters(2000.f);
-	gse::object* skybox = gse::registry::create_object();
-	create_box(skybox, skybox_position, skybox_size);
-	gse::registry::add_object_hook(skybox->index, skybox_hook());
-	scene->add_object(skybox, "Skybox");
+	const std::uint32_t skybox_uuid = gse::registry::create_entity();
+	create_box(skybox_uuid, skybox_position, skybox_size);
+	gse::registry::add_entity_hook(skybox_uuid, std::make_unique<skybox_hook>());
+	scene->add_entity(skybox_uuid, "Skybox");
 }
 

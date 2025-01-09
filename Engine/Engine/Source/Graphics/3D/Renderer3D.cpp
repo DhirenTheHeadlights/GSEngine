@@ -447,7 +447,7 @@ namespace {
 		glClear(GL_DEPTH_BUFFER_BIT);
 
 		for (const auto& render_component : render_components) {
-			if (gse::registry::is_object_id_in_list(light_ignore_list_id, render_component.parent_id)) {
+			if (gse::registry::is_entity_id_in_list(light_ignore_list_id, render_component.parent_id)) {
 				continue;
 			}
 
@@ -593,7 +593,7 @@ auto gse::renderer3d::render() -> void {
 					shadow_shader.set_float("farPlane", point_light_ptr->get_render_queue_entry().far_plane.as<units::meters>());
 
 					for (const auto& render_component : render_components) {
-						if (registry::is_object_id_in_list(point_light_ptr->get_ignore_list_id(), render_component.parent_id)) {
+						if (registry::is_entity_id_in_list(point_light_ptr->get_ignore_list_id(), render_component.parent_id)) {
 							continue;
 						}
 

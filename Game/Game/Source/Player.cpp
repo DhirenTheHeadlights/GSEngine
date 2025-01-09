@@ -1,5 +1,8 @@
 #include "Player.h"
 
+#include <memory>
+#include <memory>
+
 #include "Engine.h"
 
 namespace {
@@ -11,7 +14,7 @@ namespace {
 	};
 }
 
-struct jetpack_hook final : gse::hook<gse::object> {
+struct jetpack_hook final : gse::hook<gse::entity> {
 	using hook::hook;
 
 	auto update() -> void override {
@@ -58,7 +61,7 @@ private:
 	bool m_jetpack = false;
 };
 
-struct player_hook final : gse::hook<gse::object> {
+struct player_hook final : gse::hook<gse::entity> {
 	using hook::hook;
 
 	auto initialize() -> void override {
@@ -142,14 +145,14 @@ private:
 	gse::force m_jump_force = gse::newtons(1000.f);
 };
 
-auto game::create_player(const gse::object* object) -> void {
-	gse::registry::add_object_hook(object->index, player_hook());
-	gse::registry::add_object_hook(object->index, jetpack_hook());
+auto game::create_player(const std::uint32_t object_uuid) -> void {
+	gse::registry::add_entity_hook(object_uuid, std::make_unique<player_hook>());
+	gse::registry::add_entity_hook(object_uuid, std::make_unique<jetpack_hook>());
 }
 
-auto game::create_player() -> gse::object* {
-	gse::object* player = gse::registry::create_object();
-	create_player(player);
-	return player;
+auto game::create_player() -> std::uint32_t {
+	const std::uint32_t player_uuid = gse::registry::create_entity();
+	create_player(player_uuid);
+	return player_uuid;
 }
 

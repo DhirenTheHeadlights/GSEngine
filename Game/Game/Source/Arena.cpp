@@ -1,8 +1,10 @@
 #include "Arena.h"
 
+#include <memory>
+
 #include "Core/ObjectRegistry.h"
 
-struct wall_hook final : gse::hook<gse::object> {
+struct wall_hook final : gse::hook<gse::entity> {
 	using hook::hook;
 
 	auto initialize() -> void override {
@@ -12,10 +14,10 @@ struct wall_hook final : gse::hook<gse::object> {
 };
 
 namespace {
-	auto create_arena_wall(const gse::vec3<gse::units::meters>& position, const gse::vec3<gse::units::meters>& size) -> gse::object* {
-		gse::object* wall = create_box(position, size);
-		gse::registry::add_object_hook(wall->index, wall_hook());
-		return wall;
+	auto create_arena_wall(const gse::vec3<gse::units::meters>& position, const gse::vec3<gse::units::meters>& size) -> std::uint32_t {
+		const std::uint32_t wall_uuid = create_box(position, size);
+		gse::registry::add_entity_hook(wall_uuid, std::make_unique<wall_hook>());
+		return wall_uuid;
 	}
 }
 
@@ -25,10 +27,10 @@ auto game::arena::create(gse::scene* scene) -> void {
 	const gse::length arena_size = gse::meters(1000.f);
 	const gse::length wall_thickness = gse::meters(1.f);
 
-	scene->add_object(create_arena_wall(arena_position + gse::vec3<gse::units::meters>(0.f, 0.f, arena_size.as<gse::units::meters>() / 2.f), gse::vec3<gse::units::meters>(arena_size.as<gse::units::meters>(), arena_size.as<gse::units::meters>(), wall_thickness)), "Front Wall");
-	scene->add_object(create_arena_wall(arena_position + gse::vec3<gse::units::meters>(0.f, arena_size.as<gse::units::meters>() / 2.f, 0.f), gse::vec3<gse::units::meters>(arena_size.as<gse::units::meters>(), wall_thickness, arena_size.as<gse::units::meters>())), "Top Wall");
-	scene->add_object(create_arena_wall(arena_position + gse::vec3<gse::units::meters>(0.f, -arena_size.as<gse::units::meters>() / 2.f, 0.f), gse::vec3<gse::units::meters>(arena_size.as<gse::units::meters>(), wall_thickness, arena_size.as<gse::units::meters>())), "Bottom Wall");
-	scene->add_object(create_arena_wall(arena_position + gse::vec3<gse::units::meters>(-arena_size.as<gse::units::meters>() / 2.f, 0.f, 0.f), gse::vec3<gse::units::meters>(wall_thickness, arena_size.as<gse::units::meters>(), arena_size.as<gse::units::meters>())), "Left Wall");
-	scene->add_object(create_arena_wall(arena_position + gse::vec3<gse::units::meters>(arena_size.as<gse::units::meters>() / 2.f, 0.f, 0.f), gse::vec3<gse::units::meters>(wall_thickness, arena_size.as<gse::units::meters>(), arena_size.as<gse::units::meters>())), "Right Wall");
-	scene->add_object(create_arena_wall(arena_position + gse::vec3<gse::units::meters>(0.f, 0.f, -arena_size.as<gse::units::meters>() / 2.f), gse::vec3<gse::units::meters>(arena_size.as<gse::units::meters>(), arena_size.as<gse::units::meters>(), wall_thickness)), "Back Wall");
+	scene->add_entity(create_arena_wall(arena_position + gse::vec3<gse::units::meters>(0.f, 0.f, arena_size.as<gse::units::meters>() / 2.f), gse::vec3<gse::units::meters>(arena_size.as<gse::units::meters>(), arena_size.as<gse::units::meters>(), wall_thickness)), "Front Wall");
+	scene->add_entity(create_arena_wall(arena_position + gse::vec3<gse::units::meters>(0.f, arena_size.as<gse::units::meters>() / 2.f, 0.f), gse::vec3<gse::units::meters>(arena_size.as<gse::units::meters>(), wall_thickness, arena_size.as<gse::units::meters>())), "Top Wall");
+	scene->add_entity(create_arena_wall(arena_position + gse::vec3<gse::units::meters>(0.f, -arena_size.as<gse::units::meters>() / 2.f, 0.f), gse::vec3<gse::units::meters>(arena_size.as<gse::units::meters>(), wall_thickness, arena_size.as<gse::units::meters>())), "Bottom Wall");
+	scene->add_entity(create_arena_wall(arena_position + gse::vec3<gse::units::meters>(-arena_size.as<gse::units::meters>() / 2.f, 0.f, 0.f), gse::vec3<gse::units::meters>(wall_thickness, arena_size.as<gse::units::meters>(), arena_size.as<gse::units::meters>())), "Left Wall");
+	scene->add_entity(create_arena_wall(arena_position + gse::vec3<gse::units::meters>(arena_size.as<gse::units::meters>() / 2.f, 0.f, 0.f), gse::vec3<gse::units::meters>(wall_thickness, arena_size.as<gse::units::meters>(), arena_size.as<gse::units::meters>())), "Right Wall");
+	scene->add_entity(create_arena_wall(arena_position + gse::vec3<gse::units::meters>(0.f, 0.f, -arena_size.as<gse::units::meters>() / 2.f), gse::vec3<gse::units::meters>(arena_size.as<gse::units::meters>(), arena_size.as<gse::units::meters>(), wall_thickness)), "Back Wall");
 }

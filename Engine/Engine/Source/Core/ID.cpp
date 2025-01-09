@@ -61,14 +61,17 @@ auto gse::generate_id(const std::string& tag) -> std::unique_ptr<id> {
     return id_ptr;
 }
 
-auto gse::generate_random_entity_placeholder_id() -> std::uint32_t {
-	return random_value(registry::get_number_of_objects(), std::numeric_limits<std::uint32_t>::max());
-}
-
 auto gse::remove_id(const id* id) -> void {
-	if (id->number() < 0 || id->number() >= static_cast<int>(g_ids.size())) {
+	if (id->number() < 0 || (id->number() >= static_cast<int>(g_ids.size()) && g_ids.size() != 1)) {
 		assert_comment(false, "Object not found in registry when trying to remove it's id");
 	}
+
+    if (g_ids.size() == 1) {
+        g_id_map.clear();
+		g_tag_map.clear();
+		g_ids.clear();
+		return;
+    }
 
 	g_id_map.erase(id->number());
 	g_tag_map.erase(id->tag());
