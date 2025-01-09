@@ -5,30 +5,29 @@
 
 #include "Core/Object/Object.h"
 #include "Graphics/3D/Renderer3D.h"
-#include "Physics/System.h"
-#include "Physics/Collision/BroadPhaseCollisions.h"
+#include "Object/Hook.h"
 
 namespace gse {
-	class scene : public hookable, public identifiable {
+	class scene final : public hookable<scene>, public identifiable {
 	public:
 		scene(const std::string& name = "Unnamed Scene") : identifiable(name) {}
-		scene(const std::shared_ptr<id>& id) : identifiable(id) {}
 
-		void add_object(std::unique_ptr<object>&& object);
-		void remove_object(const object* object_to_remove);
+		auto add_object(gse::object* object, const std::string& name) -> void;
+		auto remove_object(const std::string& name) -> void;
 
-		void initialize() const;
-		void update() const;
-		void render() const;
-		void exit() const;
+		auto initialize() -> void;
+		auto update() const -> void;
+		auto render() const -> void;
+		auto exit() const -> void;
 
-		void set_active(const bool is_active) { this->m_is_active = is_active; }
-		bool get_active() const { return m_is_active; }
+		auto set_active(const bool is_active) -> void { this->m_is_active = is_active; }
+		auto get_active() const -> bool { return m_is_active; }
 
-		std::vector<object*> get_objects() const;
+		auto get_objects() const -> std::vector<object*>;
 
 	private:
-		std::vector<std::unique_ptr<object>> m_objects;
+		std::vector<std::uint32_t> m_object_indexes;
+		std::vector<object*> m_objects_to_add_upon_initialization;
 
 		bool m_is_active = false;
 	};

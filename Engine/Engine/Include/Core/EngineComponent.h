@@ -1,12 +1,11 @@
 #pragma once
 
-#include <typeindex>
-
-#include "ID.h"
+#include <string_view>
 
 namespace gse {
 	struct component {
-		component(id* id) : parent_id(id) {}
-		id* parent_id;
+		component(std::uint32_t initial_unique_id);
+		std::uint32_t parent_id = 0;
+		std::string_view parent_name;
 	};
 }

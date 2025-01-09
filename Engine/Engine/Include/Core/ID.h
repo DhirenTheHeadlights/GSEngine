@@ -1,47 +1,69 @@
 #pragma once
 
-#include <vector>
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "Platform/PermaAssert.h"
 
 namespace gse {
     class id;
 
-    std::shared_ptr<id> generate_id(const std::string& tag);
-    bool is_object_alive(int id);
-    std::weak_ptr<id> grab_id(int id);
-    std::weak_ptr<id> grab_id(const std::string& tag);
+    auto generate_id(const std::string& tag) -> std::unique_ptr<id>;
+	auto generate_random_entity_placeholder_id() -> std::uint32_t;
+	auto remove_id(const id* id) -> void;
+    auto get_id(std::int32_t number) -> id*;
+    auto get_id(std::string_view tag) -> id*;
+	auto does_id_exist(std::int32_t number) -> bool;
+	auto does_id_exist(std::string_view tag) -> bool;
 
     class id {
     public:
-        int number;
-		std::string tag = "You're grabbing an object without a tag. This should not be possible.\n";
+        ~id() {
+			if (m_number != -1) {
+                remove_id(this);
+				std::cout << "Removed id " << m_number << '\n';
+			}
+        }
 
-        bool operator==(const id& other) const {
-            if (number == -1 || other.number == -1) {
-				std::cerr << "You're comparing an object without and id.\n";
+        auto operator==(const id& other) const -> bool {
+            if (m_number == -1 || other.m_number == -1) {
+				std::cerr << "You're comparing something without an id.\n";
                 return false;
             }
-            return number == other.number;
+            return m_number == other.m_number;
         }
-    private:
-        explicit id(const int id, std::string tag) : number(id), tag(std::move(tag)) {}
-        id(std::string tag) : number(-1), tag(std::move(tag)) {}
 
-        friend std::shared_ptr<id> generate_id(const std::string& tag);
+        auto number() const -> std::int32_t {
+            return m_number;
+        }
+
+		auto tag() const -> std::string_view {
+			return m_tag;
+		}
+    private:
+        explicit id(const int id, const std::string& tag) : m_number(id), m_tag(tag) {}
+        id(const std::string& tag) : m_number(-1), m_tag(tag) {}
+
+        std::int32_t m_number;
+		std::string_view m_tag;
+
+		friend auto generate_id(const std::string& tag) -> std::unique_ptr<id>;
     };
 
     class identifiable {
 	public:
 		identifiable(const std::string& tag) : m_id(generate_id(tag)) {}
-		identifiable(const std::shared_ptr<id>& id) : m_id(id) {}
 
-		void set_id(const std::shared_ptr<id>& id) { m_id = id; }
-        std::weak_ptr<id> get_id() const { return m_id; }
-	protected:
-		std::shared_ptr<id> m_id;
+		auto get_id() const -> id* {
+			return m_id.get();
+		}
+
+		auto operator==(const identifiable& other) const -> bool {
+			return *m_id == *other.m_id;
+		}
+	private:
+		std::unique_ptr<id> m_id;
     };
 }

@@ -4,6 +4,7 @@
 #include <iostream>
 #include <msdfgen.h>
 #define STB_TRUETYPE_IMPLEMENTATION
+#include <algorithm>
 #include <stb_truetype.h>
 #include <vector>
 #include <freetype/freetype.h>
@@ -16,7 +17,7 @@ gse::font::font(const std::string& path) {
 }
 
 namespace {
-	bool read_file_binary(const std::string& path, std::vector<unsigned char>& out_data) {
+	auto read_file_binary(const std::string& path, std::vector<unsigned char>& out_data) -> bool {
         std::ifstream file(path, std::ios::binary);
         if (!file.is_open()) {
             std::cerr << "Failed to open font file: " << path << '\n';
@@ -35,7 +36,7 @@ namespace {
     }
 }
 
-void gse::font::load(const std::string& path) {
+auto gse::font::load(const std::string& path) -> void {
     std::vector<unsigned char> font_data_buffer;
     if (!read_file_binary(path, font_data_buffer)) {
         std::cerr << "Could not load font file!" << '\n';
@@ -49,7 +50,7 @@ void gse::font::load(const std::string& path) {
     }
 
     FT_Face face;
-    FT_Error error = FT_New_Memory_Face(
+    const FT_Error error = FT_New_Memory_Face(
         ft,
         font_data_buffer.data(),
         static_cast<FT_Long>(font_data_buffer.size()),
@@ -162,11 +163,11 @@ void gse::font::load(const std::string& path) {
         const FT_GlyphSlot glyph_slot = face->glyph;
 
         // Convert metrics from 26.6 fixed point to float
-        float advance = static_cast<float>(glyph_slot->advance.x) / 64.0f;
-        float bearing_x = static_cast<float>(glyph_slot->metrics.horiBearingX) / 64.0f;
-        float bearing_y = static_cast<float>(glyph_slot->metrics.horiBearingY) / 64.0f;
-        float width = static_cast<float>(glyph_slot->metrics.width) / 64.0f;
-        float height = static_cast<float>(glyph_slot->metrics.height) / 64.0f;
+        const float advance = static_cast<float>(glyph_slot->advance.x) / 64.0f;
+        const float bearing_x = static_cast<float>(glyph_slot->metrics.horiBearingX) / 64.0f;
+        const float bearing_y = static_cast<float>(glyph_slot->metrics.horiBearingY) / 64.0f;
+        const float width = static_cast<float>(glyph_slot->metrics.width) / 64.0f;
+        const float height = static_cast<float>(glyph_slot->metrics.height) / 64.0f;
 
         // UV coordinates in the atlas
         const float u0 = static_cast<float>(glyph_index % atlas_cols * glyph_cell_size)
@@ -215,7 +216,7 @@ void gse::font::load(const std::string& path) {
     std::cout << "Successfully loaded font with MSDF: " << path << "\n";
 }
 
-const gse::glyph& gse::font::get_character(const char c) const {
+auto gse::font::get_character(const char c) const -> const gse::glyph& {
     static glyph fallback;
 
     if (const auto it = m_glyphs.find(c); it != m_glyphs.end()) {
@@ -224,6 +225,6 @@ const gse::glyph& gse::font::get_character(const char c) const {
     return fallback;
 }
 
-const gse::texture& gse::font::get_texture() const {
+auto gse::font::get_texture() const -> const gse::texture& {
 	return m_texture;
 }

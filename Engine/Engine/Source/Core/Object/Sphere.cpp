@@ -5,16 +5,16 @@
 #include "Core/ObjectRegistry.h"
 #include "Graphics/RenderComponent.h"
 
-struct sphere_mesh_hook final : gse::hook<gse::sphere> {
-	sphere_mesh_hook(gse::sphere* owner, const gse::vec3<gse::length>& position, const gse::length radius, const int sectors, const int stacks)
-		: hook(owner), m_initial_position(position), m_radius(radius), m_sectors(sectors), m_stacks(stacks) {}
+struct sphere_mesh_hook final : gse::hook<gse::object> {
+	sphere_mesh_hook(const gse::vec3<gse::length>& position, const gse::length radius, const int sectors, const int stacks)
+		: m_initial_position(position), m_radius(radius), m_sectors(sectors), m_stacks(stacks) {}
 
-	void initialize() override {
-        gse::physics::motion_component new_motion_component(m_owner_id);
+	auto initialize() -> void override {
+        gse::physics::motion_component new_motion_component(owner_id);
         new_motion_component.current_position = m_initial_position;
         gse::registry::add_component<gse::physics::motion_component>(std::move(new_motion_component));
 
-		gse::render_component new_render_component(m_owner_id);
+		gse::render_component new_render_component(owner_id);
 
         const float r = m_radius.as<gse::units::meters>();
 
@@ -40,7 +40,7 @@ struct sphere_mesh_hook final : gse::hook<gse::sphere> {
                 };
 
                 // Calculate normal (normalized position for a sphere)
-                const glm::vec3 normal = glm::normalize(position);
+                const glm::vec3 normal = normalize(position);
 
                 // Calculate texture coordinates
                 const glm::vec2 tex_coords = {
@@ -74,10 +74,10 @@ struct sphere_mesh_hook final : gse::hook<gse::sphere> {
 		gse::registry::add_component<gse::render_component>(std::move(new_render_component));
 	}
 
-	void update() override {
-        const auto position = gse::registry::get_component<gse::physics::motion_component>(m_owner_id).current_position.as<gse::units::meters>();
+	auto update() -> void override {
+        const auto position = gse::registry::get_component<gse::physics::motion_component>(owner_id).current_position.as<gse::units::meters>();
 
-        gse::registry::get_component<gse::render_component>(m_owner_id).set_mesh_positions(position);
+        gse::registry::get_component<gse::render_component>(owner_id).set_mesh_positions(position);
 	}
 private:
 	gse::vec3<gse::length> m_initial_position;
@@ -86,6 +86,12 @@ private:
     int m_stacks;  // Number of stacks from top to bottom
 };
 
-gse::sphere::sphere(const vec3<length>& position, const length radius, const int sectors, const int stacks) : object("Sphere") {
-	add_hook(std::make_unique<sphere_mesh_hook>(this, position, radius, sectors, stacks));
+auto gse::create_sphere(const object* object, const vec3<length>& position, const length radius, const int sectors, const int stacks) -> void {
+	registry::add_object_hook(object->index, sphere_mesh_hook(position, radius, sectors, stacks));
+}
+
+auto gse::create_sphere(const vec3<length>& position, const length radius, const int sectors, const int stacks) -> object* {
+	object* sphere = registry::create_object();
+	create_sphere(sphere, position, radius, sectors, stacks);
+	return sphere;
 }
