@@ -1,6 +1,8 @@
 #pragma once
 
 #include <glm/glm.hpp>
+
+#include "Core/ID.h"
 #include "Graphics/Debug.h"
 
 namespace gse {
@@ -87,16 +89,16 @@ namespace gse {
 		light() = default;
 		virtual ~light() = default;
 
-		virtual light_render_queue_entry get_render_queue_entry() const = 0;
-        virtual void show_debug_menu(const std::shared_ptr<id>& light_id) = 0;
+		virtual auto get_render_queue_entry() const -> light_render_queue_entry = 0;
+        virtual auto show_debug_menu(const std::string_view& name, std::uint32_t parent_id) -> void = 0;
 
-		light_type get_type() const { return m_type; }
+		auto get_type() const -> light_type { return m_type; }
 
-		virtual void set_depth_map(GLuint depth_map, GLuint depth_map_fbo) {}
-		virtual void set_position(const vec3<length>& position) {}
+		virtual auto set_depth_map(GLuint depth_map, GLuint depth_map_fbo) -> void {}
+		virtual auto set_position(const vec3<length>& position) -> void {}
 
-		void set_ignore_list_id(const std::shared_ptr<id>& ignore_list_id) { m_ignore_list_id = ignore_list_id; }
-		const std::shared_ptr<id>& get_ignore_list_id() const { return m_ignore_list_id; }
+		auto set_ignore_list_id(id* ignore_list_id) -> void { m_ignore_list_id = ignore_list_id; }
+		auto get_ignore_list_id() const -> id* { return m_ignore_list_id; }
 	protected:
 		light(const vec3<>& color, const unitless& intensity, const light_type type)
 			: m_color(color), m_intensity(intensity), m_type(type) {}
@@ -108,6 +110,6 @@ namespace gse {
 		length m_near_plane = meters(10.f);
 		length m_far_plane = meters(1000.0f);
 
-        std::shared_ptr<id> m_ignore_list_id;
+		id* m_ignore_list_id = nullptr;
 	};
 }

@@ -9,7 +9,7 @@
 
 namespace gse::physics {
 	struct motion_component final : component {
-		motion_component(id* id) : component(id) {}
+		motion_component(const std::uint32_t id) : component(id) {}
 
 		vec3<length> current_position;
 		vec3<velocity> current_velocity;
@@ -24,7 +24,7 @@ namespace gse::physics {
 		bool airborne = true;
 		bool self_controlled = false;
 
-		velocity get_speed() const {
+		auto get_speed() const -> velocity {
 			return magnitude(current_velocity);
 		}
 	};

@@ -4,19 +4,19 @@
 #include "Core/ObjectRegistry.h"
 #include "Graphics/RenderComponent.h"
 
-struct box_mesh_hook final : gse::hook<gse::box> {
-    box_mesh_hook(gse::box* owner, const gse::vec3<gse::length>& initial_position, const gse::vec3<gse::length>& size)
-        : hook(owner), m_initial_position(initial_position), m_size(size) {}
+struct box_mesh_hook final : gse::hook<gse::entity> {
+    box_mesh_hook(const gse::vec3<gse::length>& initial_position, const gse::vec3<gse::length>& size)
+        : m_initial_position(initial_position), m_size(size) {}
 
-    void initialize() override {
-        gse::physics::motion_component new_motion_component(m_owner_id);
+    auto initialize() -> void override {
+        gse::physics::motion_component new_motion_component(owner_id);
         new_motion_component.current_position = m_initial_position;
         new_motion_component.mass = gse::kilograms(100.f);
 
-        gse::physics::collision_component new_collision_component(m_owner_id);
+        gse::physics::collision_component new_collision_component(owner_id);
         new_collision_component.bounding_box = { m_initial_position, m_size };
 
-        gse::render_component new_render_component(m_owner_id);
+        gse::render_component new_render_component(owner_id);
 
         const float half_width = m_size.as<gse::units::meters>().x / 2.f;
         const float half_height = m_size.as<gse::units::meters>().y / 2.f;
@@ -84,15 +84,15 @@ struct box_mesh_hook final : gse::hook<gse::box> {
 		gse::registry::add_component<gse::render_component>(std::move(new_render_component));
     }
 
-    void update() override {
-	    gse::registry::get_component<gse::render_component>(m_owner_id).set_mesh_positions(gse::registry::get_component<gse::physics::motion_component>(m_owner_id).current_position);
-        gse::registry::get_component<gse::physics::collision_component>(m_owner_id).bounding_box.set_position(gse::registry::get_component<gse::physics::motion_component>(m_owner_id).current_position);
+    auto update() -> void override {
+	    gse::registry::get_component<gse::render_component>(owner_id).set_mesh_positions(gse::registry::get_component<gse::physics::motion_component>(owner_id).current_position);
+        gse::registry::get_component<gse::physics::collision_component>(owner_id).bounding_box.set_position(gse::registry::get_component<gse::physics::motion_component>(owner_id).current_position);
     }
-    void render() override {
+    auto render() -> void override {
 	    gse::debug::add_imgui_callback([this] {
-            ImGui::Begin(m_owner->get_id().lock()->tag.c_str());
-            ImGui::SliderFloat3("Position", &gse::registry::get_component<gse::physics::motion_component>(m_owner_id).current_position.as_default_units().x, -1000.f, 1000.f);
-            ImGui::Text("Colliding: %s", gse::registry::get_component<gse::physics::collision_component>(m_owner_id).bounding_box.collision_information.colliding ? "true" : "false");
+			ImGui::Begin(gse::registry::get_entity_name(owner_id).data());
+            ImGui::SliderFloat3("Position", &gse::registry::get_component<gse::physics::motion_component>(owner_id).current_position.as_default_units().x, -1000.f, 1000.f);
+            ImGui::Text("Colliding: %s", gse::registry::get_component<gse::physics::collision_component>(owner_id).bounding_box.collision_information.colliding ? "true" : "false");
             ImGui::End();
             });
     }
@@ -101,6 +101,12 @@ private:
 	gse::vec3<gse::length> m_size;
 };
 
-gse::box::box(const vec3<length>& initial_position, const vec3<length>& size) : object("Box") {
-	add_hook(std::make_unique<box_mesh_hook>(this, initial_position, size));
+auto gse::create_box(const std::uint32_t object_uuid, const vec3<length>& initial_position, const vec3<length>& size) -> void {
+    registry::add_entity_hook(object_uuid, std::make_unique<box_mesh_hook>(initial_position, size));
 }
+
+auto gse::create_box(const vec3<length>& initial_position, const vec3<length>& size) -> std::uint32_t {
+    const std::uint32_t box_uuid = registry::create_entity();
+	create_box(box_uuid, initial_position, size);
+    return box_uuid;
+} 

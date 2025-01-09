@@ -1,11 +1,23 @@
 #include "Player.h"
 
+#include <memory>
+#include <memory>
+
 #include "Engine.h"
 
-struct game::jetpack_hook final : gse::hook<player> {
+namespace {
+	const std::unordered_map<int, gse::vec3<>> g_wasd{
+		{ GLFW_KEY_W, { 0.f, 0.f, 1.f } },
+		{ GLFW_KEY_S, { 0.f, 0.f, -1.f } },
+		{ GLFW_KEY_A, { -1.f, 0.f, 0.f } },
+		{ GLFW_KEY_D, { 1.f, 0.f, 0.f } }
+	};
+}
+
+struct jetpack_hook final : gse::hook<gse::entity> {
 	using hook::hook;
 
-	void update() override {
+	auto update() -> void override {
 		if (gse::input::get_keyboard().keys[GLFW_KEY_J].pressed) {
 			m_jetpack = !m_jetpack;
 		}
@@ -21,19 +33,19 @@ struct game::jetpack_hook final : gse::hook<player> {
 				m_boost_fuel = std::min(m_boost_fuel, 1000);
 			}
 
-			auto& motion_component = gse::registry::get_component<gse::physics::motion_component>(m_owner_id);
+			auto& motion_component = gse::registry::get_component<gse::physics::motion_component>(owner_id);
 
 			apply_force(motion_component, gse::vec3<gse::units::newtons>(0.f, m_jetpack_force + boost_force, 0.f));
 
-			for (auto& [key, direction] : m_owner->m_wasd) {
+			for (auto& [key, direction] : g_wasd) {
 				if (gse::input::get_keyboard().keys[key].held) {
-					apply_force(gse::registry::get_component<gse::physics::motion_component>(m_owner_id), gse::vec3<gse::units::newtons>(m_jetpack_side_force + boost_force, 0.f, m_jetpack_side_force + boost_force) * gse::get_camera().get_camera_direction_relative_to_origin(direction));
+					apply_force(gse::registry::get_component<gse::physics::motion_component>(owner_id), gse::vec3<gse::units::newtons>(m_jetpack_side_force + boost_force, 0.f, m_jetpack_side_force + boost_force) * gse::get_camera().get_camera_direction_relative_to_origin(direction));
 				}
 			}
 		}
 	}
 
-	void render() override {
+	auto render() -> void override {
 		gse::debug::add_imgui_callback([this] {
 			ImGui::Begin("Jetpack");
 			gse::debug::print_boolean("Player Jetpack", m_jetpack);
@@ -49,22 +61,17 @@ private:
 	bool m_jetpack = false;
 };
 
-struct game::player_hook final : gse::hook<player> {
+struct player_hook final : gse::hook<gse::entity> {
 	using hook::hook;
 
-	void initialize() override {
-		gse::render_component render_component(m_owner_id);
-		gse::physics::motion_component motion_component(m_owner_id);
-		gse::physics::collision_component collision_component(m_owner_id);
+	auto initialize() -> void override {
+		gse::render_component render_component(owner_id);
+		gse::physics::motion_component motion_component(owner_id);
+		gse::physics::collision_component collision_component(owner_id);
 
 		gse::length height = gse::feet(6.0f);
 		gse::length width = gse::feet(3.0f);
 		collision_component.bounding_box = { gse::vec3<gse::units::meters>(-10.f, -10.f, -10.f), height, width, width };
-
-		m_owner->m_wasd.insert({ GLFW_KEY_W, { 0.f, 0.f, 1.f } });
-		m_owner->m_wasd.insert({ GLFW_KEY_S, { 0.f, 0.f, -1.f } });
-		m_owner->m_wasd.insert({ GLFW_KEY_A, { -1.f, 0.f, 0.f } });
-		m_owner->m_wasd.insert({ GLFW_KEY_D, { 1.f, 0.f, 0.f } });
 
 		motion_component.mass = gse::pounds(180.f);
 		motion_component.max_speed = m_max_speed;
@@ -77,10 +84,10 @@ struct game::player_hook final : gse::hook<player> {
 		gse::registry::add_component<gse::physics::collision_component>(std::move(collision_component));
 	}
 
-	void update() override {
-		auto& motion_component = gse::registry::get_component<gse::physics::motion_component>(m_owner_id);
+	auto update() -> void override {
+		auto& motion_component = gse::registry::get_component<gse::physics::motion_component>(owner_id);
 
-		for (auto& [key, direction] : m_owner->m_wasd) {
+		for (auto& [key, direction] : g_wasd) {
 			if (gse::input::get_keyboard().keys[key].held && !motion_component.airborne) {
 				apply_force(motion_component, m_move_force * gse::get_camera().get_camera_direction_relative_to_origin(direction) * gse::vec3(1.f, 0.f, 1.f));
 			}
@@ -97,19 +104,19 @@ struct game::player_hook final : gse::hook<player> {
 			apply_impulse(motion_component, gse::vec3<gse::units::newtons>(0.f, m_jump_force, 0.f), gse::seconds(0.5f));
 		}
 
-		gse::registry::get_component<gse::physics::collision_component>(m_owner_id).bounding_box.set_position(motion_component.current_position);
+		gse::registry::get_component<gse::physics::collision_component>(owner_id).bounding_box.set_position(motion_component.current_position);
 
 		gse::get_camera().set_position(motion_component.current_position + gse::vec3<gse::units::feet>(0.f, 6.f, 0.f));
 
-		gse::registry::get_component<gse::render_component>(m_owner_id).update_bounding_box_meshes();
+		gse::registry::get_component<gse::render_component>(owner_id).update_bounding_box_meshes();
 	}
 
-	void render() override {
+	auto render() -> void override {
 		gse::debug::add_imgui_callback([this] {
 			ImGui::Begin("Player");
 
-			const auto motion_component = gse::registry::get_component<gse::physics::motion_component>(m_owner_id);
-			const auto collision_component = gse::registry::get_component<gse::physics::collision_component>(m_owner_id);
+			const auto motion_component = gse::registry::get_component<gse::physics::motion_component>(owner_id);
+			const auto collision_component = gse::registry::get_component<gse::physics::collision_component>(owner_id);
 
 			gse::debug::print_vector("Player Position", motion_component.current_position.as<gse::units::meters>(), gse::units::meters::unit_name);
 			gse::debug::print_vector("Player Bounding Box Position", collision_component.bounding_box.get_center().as<gse::units::meters>(), gse::units::meters::unit_name);
@@ -138,7 +145,14 @@ private:
 	gse::force m_jump_force = gse::newtons(1000.f);
 };
 
-game::player::player() : object("Player") {
-	add_hook(std::make_unique<player_hook>(this));
-	add_hook(std::make_unique<jetpack_hook>(this));
+auto game::create_player(const std::uint32_t object_uuid) -> void {
+	gse::registry::add_entity_hook(object_uuid, std::make_unique<player_hook>());
+	gse::registry::add_entity_hook(object_uuid, std::make_unique<jetpack_hook>());
 }
+
+auto game::create_player() -> std::uint32_t {
+	const std::uint32_t player_uuid = gse::registry::create_entity();
+	create_player(player_uuid);
+	return player_uuid;
+}
+

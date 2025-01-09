@@ -49,7 +49,8 @@ namespace {
 	bool g_bloom = true;
 	int g_amount_of_blur_passes_in_each_direction = 5;
 
-	void load_shaders(const std::string& shader_path, const std::string& shader_file_name, std::unordered_map<std::string, gse::shader>& shaders) {
+	auto load_shaders(const std::string& shader_path, const std::string& shader_file_name,
+	                  std::unordered_map<std::string, gse::shader>& shaders) -> void {
 		gse::json_parse::parse(
 			gse::json_parse::load_json(shader_path + shader_file_name),
 			[&](const std::string& key, const nlohmann::json& value) {
@@ -60,7 +61,7 @@ namespace {
 	}
 }
 
-void gse::renderer3d::initialize() {
+auto gse::renderer3d::initialize() -> void {
 	enable_report_gl_errors();
 
 	const std::string shader_path = std::string(ENGINE_RESOURCES_PATH) + "Shaders/";
@@ -214,7 +215,7 @@ void gse::renderer3d::initialize() {
 	post_processing_shader.set_bool("bloom", g_bloom);
 }
 
-void gse::renderer3d::initialize_objects() {
+auto gse::renderer3d::initialize_objects() -> void {
 	for (const auto& light_source_components = registry::get_components<light_source_component>(); auto& light_source_component : light_source_components) {
 		for (const auto& light : light_source_component.get_lights()) {
 			if (const auto point_light_ptr = dynamic_cast<point_light*>(light); point_light_ptr) {
@@ -247,7 +248,7 @@ void gse::renderer3d::initialize_objects() {
 }
 
 namespace {
-	void render_object(const gse::render_queue_entry& entry, const glm::mat4& view_matrix, const glm::mat4& projection_matrix) {
+	auto render_object(const gse::render_queue_entry& entry, const glm::mat4& view_matrix, const glm::mat4& projection_matrix) -> void {
 		if (const auto it = g_materials.find(entry.material_key); it != g_materials.end()) {
 			it->second.use(view_matrix, projection_matrix, entry.model_matrix);
 			it->second.shader.set_vec3("color", entry.color);
@@ -265,7 +266,7 @@ namespace {
 		}
 	}
 
-	void render_object_forward(const gse::shader& forward_rendering_shader, const gse::render_queue_entry& entry, const glm::mat4& view_matrix, const glm::mat4& projection_matrix) {
+	auto render_object_forward(const gse::shader& forward_rendering_shader, const gse::render_queue_entry& entry, const glm::mat4& view_matrix, const glm::mat4& projection_matrix) -> void {
 		forward_rendering_shader.set_vec3("color", entry.color);
 		forward_rendering_shader.set_mat4("model", entry.model_matrix);
 		forward_rendering_shader.set_mat4("view", view_matrix);
@@ -280,7 +281,7 @@ namespace {
 		glBindVertexArray(0);
 	}
 
-	void render_object(const gse::light_render_queue_entry& entry) {
+	auto render_object(const gse::light_render_queue_entry& entry) -> void {
 		if (const auto it = g_lighting_shaders.find(entry.shader_key); it != g_lighting_shaders.end()) {
 			it->second.use();
 			it->second.set_mat4("model", glm::mat4(1.0f));
@@ -295,7 +296,7 @@ namespace {
 		}
 	}
 
-	void render_fullscreen_quad() {
+	auto render_fullscreen_quad() -> void {
 		static unsigned int quad_vao = 0;
 		static unsigned int quad_vbo = 0;
 
@@ -327,7 +328,7 @@ namespace {
 		glBindVertexArray(0);
 	}
 
-	void render_lighting_pass(const gse::shader& lighting_shader, const std::vector<gse::light_shader_entry>& light_data, const std::vector<glm::mat4>& light_space_matrices, const std::vector<GLuint>& depth_maps) {
+	auto render_lighting_pass(const gse::shader& lighting_shader, const std::vector<gse::light_shader_entry>& light_data, const std::vector<glm::mat4>& light_space_matrices, const std::vector<GLuint>& depth_maps) -> void {
 		if (light_data.empty()) {
 			return;
 		}
@@ -383,7 +384,7 @@ namespace {
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
 
-	int render_blur_pass(const gse::shader& blur_shader) {
+	auto render_blur_pass(const gse::shader& blur_shader) -> int {
 		blur_shader.use();
 		blur_shader.set_int("image", 0);
 		blur_shader.set_int("blur_amount", g_amount_of_blur_passes_in_each_direction);
@@ -413,7 +414,8 @@ namespace {
 		return !horizontal;
 	}
 
-	void render_additional_post_processing(const gse::shader& post_processing_shader, const int current_texture) {
+	auto render_additional_post_processing(const gse::shader& post_processing_shader,
+	                                       const int current_texture) -> void {
 		post_processing_shader.use();
 		post_processing_shader.set_int("scene", 0);
 		post_processing_shader.set_bool("hdr", g_hdr);
@@ -437,7 +439,7 @@ namespace {
 		glBindTexture(GL_TEXTURE_2D, 0);
 	}
 
-	void render_shadow_pass(const gse::shader& shadow_shader, const std::vector<gse::render_component>& render_components, const glm::mat4& light_projection, const glm::mat4& light_view, const GLuint depth_map_fbo, const std::shared_ptr<gse::id>& light_ignore_list_id) {
+	auto render_shadow_pass(const gse::shader& shadow_shader, const std::vector<gse::render_component>& render_components, const glm::mat4& light_projection, const glm::mat4& light_view, const GLuint depth_map_fbo, gse::id* light_ignore_list_id) -> void {
 		shadow_shader.set_mat4("light_view", light_view);
 		shadow_shader.set_mat4("light_projection", light_projection);
 		glViewport(0, 0, static_cast<GLsizei>(g_shadow_width), static_cast<GLsizei>(g_shadow_height)); 
@@ -445,7 +447,7 @@ namespace {
 		glClear(GL_DEPTH_BUFFER_BIT);
 
 		for (const auto& render_component : render_components) {
-			if (gse::registry::is_id_in_list(light_ignore_list_id, render_component.parent_id)) {
+			if (gse::registry::is_entity_id_in_list(light_ignore_list_id, render_component.parent_id)) {
 				continue;
 			}
 
@@ -462,7 +464,7 @@ namespace {
 		glViewport(0, 0, gse::window::get_frame_buffer_size().x, gse::window::get_frame_buffer_size().y); // Restore viewport
 	}
 
-	glm::vec3 ensure_non_collinear_up(const glm::vec3& direction, const glm::vec3& up) {
+	auto ensure_non_collinear_up(const glm::vec3& direction, const glm::vec3& up) -> glm::vec3 {
 		constexpr float epsilon = 0.001f;
 
 		const glm::vec3 normalized_direction = normalize(direction);
@@ -480,7 +482,7 @@ namespace {
 		return normalized_up;
 	}
 
-	glm::mat4 calculate_light_projection(const gse::light* light) {
+	auto calculate_light_projection(const gse::light* light) -> glm::mat4 {
 		const auto& entry = light->get_render_queue_entry();
 
 		glm::mat4 light_projection(1.0f);
@@ -497,7 +499,7 @@ namespace {
 		return light_projection;
 	}
 
-	glm::mat4 calculate_light_view(const gse::light* light) {
+	auto calculate_light_view(const gse::light* light) -> glm::mat4 {
 		const auto& entry = light->get_render_queue_entry();
 		const glm::vec3 light_direction = entry.shader_entry.direction;
 
@@ -518,7 +520,7 @@ namespace {
 	}
 }
 
-void gse::renderer3d::render() {
+auto gse::renderer3d::render() -> void {
 	debug::add_imgui_callback([] {
 		ImGui::Begin("Renderer3D");
 
@@ -591,7 +593,7 @@ void gse::renderer3d::render() {
 					shadow_shader.set_float("farPlane", point_light_ptr->get_render_queue_entry().far_plane.as<units::meters>());
 
 					for (const auto& render_component : render_components) {
-						if (registry::is_id_in_list(point_light_ptr->get_ignore_list_id(), render_component.parent_id)) {
+						if (registry::is_entity_id_in_list(point_light_ptr->get_ignore_list_id(), render_component.parent_id)) {
 							continue;
 						}
 
@@ -675,6 +677,6 @@ void gse::renderer3d::render() {
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-gse::camera& gse::renderer3d::get_camera() {
+auto gse::renderer3d::get_camera() -> gse::camera& {
 	return g_camera;
 }
