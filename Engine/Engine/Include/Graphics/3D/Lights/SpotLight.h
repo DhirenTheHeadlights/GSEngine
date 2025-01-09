@@ -9,9 +9,9 @@ namespace gse {
 			: light(color, intensity, light_type::spot), m_constant(constant), m_linear(linear), m_quadratic(quadratic),
 			  m_cut_off(cut_off), m_outer_cut_off(outer_cut_off), m_position(position), m_direction(direction), m_ambient_strength(ambient_strength) {}
 
-		void show_debug_menu(const std::shared_ptr<id>& light_id) override {
-			debug::add_imgui_callback([this, light_id] {
-				ImGui::Begin(std::string("Spot Light " + light_id->tag).c_str());
+		auto show_debug_menu(const std::string_view& name, std::uint32_t parent_id) -> void override {
+			debug::add_imgui_callback([this, name, parent_id] {
+				ImGui::Begin(std::string("Spot Light " + std::string(name) + ": " + std::to_string(parent_id)).c_str());
 				ImGui::ColorEdit3("Color", &m_color.as_default_units().x);
 				debug::unit_slider("Intensity", m_intensity, unitless(0.0f), unitless(10000.0f));
 				debug::unit_slider("Constant", m_constant, unitless(0.0f), unitless(1.0f));
@@ -28,16 +28,16 @@ namespace gse {
 				});
 		}
 
-		light_render_queue_entry get_render_queue_entry() const override {
-			return { m_depth_map, m_depth_map_fbo, light_type::spot, m_color, m_intensity, m_position, m_direction, m_constant, m_linear, m_quadratic, m_cut_off > m_outer_cut_off ? m_outer_cut_off : m_cut_off, m_outer_cut_off, m_ambient_strength, m_near_plane, m_far_plane, m_ignore_list_id.get() };
+		auto get_render_queue_entry() const -> light_render_queue_entry override {
+			return { m_depth_map, m_depth_map_fbo, light_type::spot, m_color, m_intensity, m_position, m_direction, m_constant, m_linear, m_quadratic, m_cut_off > m_outer_cut_off ? m_outer_cut_off : m_cut_off, m_outer_cut_off, m_ambient_strength, m_near_plane, m_far_plane, m_ignore_list_id };
 		}
 
-		void set_depth_map(const GLuint depth_map, const GLuint depth_map_fbo) override {
+		auto set_depth_map(const GLuint depth_map, const GLuint depth_map_fbo) -> void override {
 			m_depth_map = depth_map;
 			m_depth_map_fbo = depth_map_fbo;
 		}
 
-		void set_position(const vec3<length>& position) override {
+		auto set_position(const vec3<length>& position) -> void override {
 			m_position = position;
 		}
 	private:

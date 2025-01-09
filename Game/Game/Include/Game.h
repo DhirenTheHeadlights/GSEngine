@@ -1,10 +1,10 @@
 #pragma once
 
 namespace game {
-	bool initialize();
-	bool update();
-	bool render();
-	bool close();
+	auto initialize() -> bool;
+	auto update() -> bool;
+	auto render() -> bool;
+	auto close() -> bool;
 
-	void set_input_handling_flag(bool enabled);
+	auto set_input_handling_flag(bool enabled) -> void;
 }
