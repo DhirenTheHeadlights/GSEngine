@@ -3,5 +3,5 @@
 #include "Engine.h"
 
 namespace game::arena {
-	void create(gse::scene* scene);
+	auto create(gse::scene* scene) -> void;
 }

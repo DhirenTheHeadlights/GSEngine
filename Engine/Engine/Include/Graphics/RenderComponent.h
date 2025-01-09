@@ -8,21 +8,21 @@
 
 namespace gse {
 	struct render_component final : component {
-		render_component(id* id) : component(id) {}
-		render_component(id* id, std::vector<mesh> meshes) : component(id), meshes(std::move(meshes)) {}
-		render_component(id* id, const std::string& path) : component(id) { load_model(path); }
+		render_component(const std::uint32_t id) : component(id) {}
+		render_component(const std::uint32_t id, std::vector<mesh> meshes) : component(id), meshes(std::move(meshes)) {}
+		render_component(const std::uint32_t id, const std::string& path) : component(id) { load_model(path); }
 
 		render_component(render_component&&) noexcept = default;
-		render_component& operator=(render_component&&) noexcept = default;
+		auto operator=(render_component&&) noexcept -> render_component& = default;
 
 		render_component(const render_component&) = delete;
-		render_component& operator=(const render_component&) = delete;
+		auto operator=(const render_component&) -> render_component& = delete;
 
-		void load_model(const std::string& path);
+		auto load_model(const std::string& path) -> void;
 
-		void update_bounding_box_meshes();
-		void set_mesh_positions(const vec3<length>& position);
-		void set_all_mesh_material_strings(const std::string& material_string);
+		auto update_bounding_box_meshes() -> void;
+		auto set_mesh_positions(const vec3<length>& position) -> void;
+		auto set_all_mesh_material_strings(const std::string& material_string) -> void;
 
 		std::vector<mesh> meshes;
 		std::vector<bounding_box_mesh> bounding_box_meshes;

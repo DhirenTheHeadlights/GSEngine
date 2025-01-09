@@ -84,7 +84,7 @@ namespace {
 			gse::request_shutdown();
 		}
 
-		gse::registry::periodically_clean_up_stale_lists();
+		gse::registry::periodically_clean_up_registry();
 
 		if (g_imgui_enabled) gse::reset_timer("Engine::render");
 	}

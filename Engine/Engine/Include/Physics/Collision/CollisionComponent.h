@@ -5,7 +5,7 @@
 
 namespace gse::physics {
 	struct collision_component final : component {
-		collision_component(id* id) : component(id) {}
+		collision_component(const std::uint32_t id) : component(id) {}
 		bounding_box bounding_box;
 
 		bool resolve_collisions = true;

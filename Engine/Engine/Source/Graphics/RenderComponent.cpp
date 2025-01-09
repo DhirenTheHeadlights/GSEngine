@@ -4,7 +4,7 @@
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
 
-void gse::render_component::load_model(const std::string& path) {
+auto gse::render_component::load_model(const std::string& path) -> void {
     Assimp::Importer importer;
     const aiScene* scene = importer.ReadFile(path, aiProcess_Triangulate | aiProcess_FlipUVs);
 
@@ -12,7 +12,6 @@ void gse::render_component::load_model(const std::string& path) {
         std::cerr << "ERROR::ASSIMP::" << importer.GetErrorString() << '\n';
         return;
     }
-
 
     std::vector<model_texture> textures_loaded;
     std::vector<mesh> meshes;
@@ -73,7 +72,7 @@ void gse::render_component::load_model(const std::string& path) {
             textures.insert(textures.end(), specular_maps.begin(), specular_maps.end());
         }
 
-        return gse::mesh{ vertices, indices, textures };
+        return mesh{ vertices, indices, textures };
         };
 
     std::function<void(const aiNode*)> process_node = [&](const aiNode* node) {
@@ -90,19 +89,19 @@ void gse::render_component::load_model(const std::string& path) {
     this->meshes = std::move(meshes);
 }
 
-void gse::render_component::update_bounding_box_meshes() {
+auto gse::render_component::update_bounding_box_meshes() -> void {
 	for (auto& bounding_box_mesh : bounding_box_meshes) {
 		bounding_box_mesh.update();
 	}
 }
 
-void gse::render_component::set_mesh_positions(const vec3<length>& position) {
+auto gse::render_component::set_mesh_positions(const vec3<length>& position) -> void {
 	for (auto& mesh : meshes) {
 		mesh.set_position(position);
 	}
 }
 
-void gse::render_component::set_all_mesh_material_strings(const std::string& material_string) {
+auto gse::render_component::set_all_mesh_material_strings(const std::string& material_string) -> void {
 	for (auto& mesh : meshes) {
 		mesh.m_material_name = material_string;
 	}

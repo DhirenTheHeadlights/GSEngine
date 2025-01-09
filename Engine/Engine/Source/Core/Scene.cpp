@@ -1,63 +1,58 @@
 #include "Core/Scene.h"
 
 #include "Core/ObjectRegistry.h"
+#include "Physics/System.h"
+#include "Physics/Collision/BroadPhaseCollisions.h"
 
-void gse::scene::add_object(std::unique_ptr<object>&& object) {
-	registry::register_object(object.get());
-	m_objects.push_back(std::move(object));
+auto gse::scene::add_entity(std::uint32_t object_uuid, const std::string& name) -> void {
+	if (m_is_active) {
+		m_object_indexes.push_back(registry::activate_entity(object_uuid, name));
+	}
+	else {
+		m_objects_to_add_upon_initialization.emplace_back(object_uuid, name);
+	}
 }
 
-void gse::scene::remove_object(const object* object_to_remove) {
-	registry::unregister_object(object_to_remove);
-
-	std::erase_if(m_objects, [&object_to_remove](const std::unique_ptr<object>& required_object) {
-		return required_object.get() == object_to_remove;
-		});
+auto gse::scene::remove_entity(const std::string& name) -> void {
+	std::erase(m_object_indexes, registry::remove_entity(name));
 }
 
-void gse::scene::initialize() const {
+auto gse::scene::initialize() -> void {
 	initialize_hooks();
 
-	for (const auto& object : m_objects) {
-		object->initialize_hooks();
+	for (const auto& [object_uuid, name] : m_objects_to_add_upon_initialization) {
+		m_object_indexes.push_back(registry::activate_entity(object_uuid, name));
 	}
+
+	m_objects_to_add_upon_initialization.clear();
+
+	registry::initialize_hooks();
 
 	renderer3d::initialize_objects();
 }
 
-void gse::scene::update() const {
+auto gse::scene::update() const -> void {
 	update_hooks();
 
+	registry::update_hooks();
 	physics::update();
 	broad_phase_collision::update();
-
-	for (const auto& object : m_objects) {
-		object->update_hooks();
-	}
 }
 
-void gse::scene::render() const {
+auto gse::scene::render() const -> void {
 	render_hooks();
 
+	registry::render_hooks();
 	renderer3d::render();
+}
 
-	for (const auto& object : m_objects) {
-		object->render_hooks();
+auto gse::scene::exit() const -> void {
+	for (const auto& index : m_object_indexes) {
+		registry::remove_entity(index);
 	}
 }
 
-void gse::scene::exit() const {
-	for (const auto& object : m_objects) {
-		registry::unregister_object(object.get());
-	}
-}
-
-std::vector<gse::object*> gse::scene::get_objects() const {
-	std::vector<object*> objects;
-	objects.reserve(m_objects.size());
-	for (const auto& object : m_objects) {
-		objects.push_back(object.get());
-	}
-	return objects;
+auto gse::scene::get_entities() const -> std::vector<std::uint32_t> {
+	return m_object_indexes;
 }
 

@@ -1,60 +1,69 @@
 #pragma once
+#include <memory>
 
 namespace gse {
-	struct base_hook {
-		virtual ~base_hook() = default;
-
-		virtual void initialize() {}
-		virtual void update() {}
-		virtual void render() {}
-	};
-
-	class object;
+	struct entity;
+	class scene;
 	class id;
 
 	template <typename T>
-	concept has_id = requires(T t) {
-		{ t.get_id() } -> std::same_as<std::weak_ptr<id>>;
+	struct hook_base {
+		virtual ~hook_base() = default;
+		hook_base(T* owner) : m_owner(owner) {}
+	protected:
+		T* m_owner;
 	};
 
-	template <typename owner_type = object>
-	struct hook : base_hook {
-		hook() = default;
-		hook(owner_type* owner) : m_owner(owner), m_owner_id(owner->get_id().lock().get()) {}
-		~hook() override = default;
+	template <typename T>
+	struct hook : hook_base<T> {
+		hook(T* owner, id* owner_id) : hook_base<T>(owner), m_owner_id(owner_id) {}
+
+		virtual auto initialize() -> void {}
+		virtual auto update() -> void {}
+		virtual auto render() -> void {}
 	protected:
-		owner_type* m_owner;
 		id* m_owner_id;
 	};
 
-	class scene;
+	template <>
+	struct hook<entity> {
+		virtual ~hook() = default;
+		hook() = default;
 
+		virtual auto initialize() -> void {}
+		virtual auto update() -> void {}
+		virtual auto render() -> void {}
+
+		std::uint32_t owner_id = 0;
+	};
+
+	template <typename T>
 	class hookable {
 	public:
-		void add_hook(std::unique_ptr<base_hook> hook) {
+		auto add_hook(std::unique_ptr<hook<T>> hook) -> void {
 			m_hooks.push_back(std::move(hook));
 		}
 
 	private:
-		void initialize_hooks() const {
+		auto initialize_hooks() const -> void {
 			for (auto& hook : m_hooks) {
 				hook->initialize();
 			}
 		}
 
-		void update_hooks() const {
+		auto update_hooks() const -> void {
 			for (auto& hook : m_hooks) {
 				hook->update();
 			}
 		}
 
-		void render_hooks() const {
+		auto render_hooks() const -> void {
 			for (auto& hook : m_hooks) {
 				hook->render();
 			}
 		}
 
-		std::vector<std::unique_ptr<base_hook>> m_hooks;
+		std::vector<std::unique_ptr<hook<T>>> m_hooks;
 
 		friend class scene;
 	};

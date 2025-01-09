@@ -1,6 +1,7 @@
 #include "Graphics/2D/Texture.h"
 
 #define STB_IMAGE_IMPLEMENTATION
+#include <iostream>
 #include <stb_image.h>
 
 gse::texture::texture(const std::string& filepath) : m_filepath(filepath) {
@@ -11,7 +12,7 @@ gse::texture::~texture() {
 	glDeleteTextures(1, &m_texture_id);
 }
 
-void gse::texture::load_from_file(const std::string& filepath) {
+auto gse::texture::load_from_file(const std::string& filepath) -> void {
 	stbi_set_flip_vertically_on_load(true);
 	unsigned char* data = stbi_load(filepath.c_str(), &m_size.x, &m_size.y, &m_channels, 0);
 
@@ -37,23 +38,23 @@ void gse::texture::load_from_file(const std::string& filepath) {
 	stbi_image_free(data);
 }
 
-void gse::texture::bind(const unsigned int unit) const {
+auto gse::texture::bind(const unsigned int unit) const -> void {
 	glActiveTexture(GL_TEXTURE0 + unit);
 	glBindTexture(GL_TEXTURE_2D, m_texture_id);
 }
 
-void gse::texture::unbind() const {
+auto gse::texture::unbind() const -> void {
 	glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-void gse::texture::set_wrapping(const GLenum wrap_s, const GLenum wrap_t) const {
+auto gse::texture::set_wrapping(const GLenum wrap_s, const GLenum wrap_t) const -> void {
 	glBindTexture(GL_TEXTURE_2D, m_texture_id);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, static_cast<GLint>(wrap_s));
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, static_cast<GLint>(wrap_t));
 	glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-void gse::texture::set_filtering(const GLenum min_filter, const GLenum mag_filter) const {
+auto gse::texture::set_filtering(const GLenum min_filter, const GLenum mag_filter) const -> void {
 	glBindTexture(GL_TEXTURE_2D, m_texture_id);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, static_cast<GLint>(min_filter));
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, static_cast<GLint>(mag_filter));

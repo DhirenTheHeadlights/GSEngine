@@ -5,29 +5,28 @@
 #include <signal.h>
 
 // Forward declarations of assert functions
-inline void assert_func_production(
-    const char* expression,
-    const char* file_name,
-    unsigned line_number,
-    const char* comment = "---");
+inline auto assert_func_production(
+	const char* expression,
+	const char* file_name,
+	unsigned line_number,
+	const char* comment = "---") -> void;
 
-inline void assert_func_internal(
-    const char* expression,
-    const char* file_name,
-    unsigned line_number,
-    const char* comment = "---");
+inline auto assert_func_internal(
+	const char* expression,
+	const char* file_name,
+	unsigned line_number,
+	const char* comment = "---") -> void;
 
 #ifdef _WIN32
 #define NOMINMAX
 #include <Windows.h>
 
 // Windows-specific implementations
-inline void assert_func_production(
-    const char* expression,
-    const char* file_name,
-    const unsigned line_number,
-    const char* comment)
-{
+inline auto assert_func_production(
+	const char* expression,
+	const char* file_name,
+	const unsigned line_number,
+	const char* comment) -> void {
     char message[1024];
     sprintf_s(message,
         "Assertion failed\n\n"
@@ -43,12 +42,11 @@ inline void assert_func_production(
     _exit(3);
 }
 
-inline void assert_func_internal(
-    const char* expression,
-    const char* file_name,
-    const unsigned line_number,
-    const char* comment)
-{
+inline auto assert_func_internal(
+	const char* expression,
+	const char* file_name,
+	const unsigned line_number,
+	const char* comment) -> void {
     char message[1024];
     sprintf_s(message,
         "Assertion failed\n\n"
@@ -59,7 +57,7 @@ inline void assert_func_internal(
         "Press retry to debug.",
         file_name, line_number, expression, comment);
 
-    const int action = MessageBoxA(nullptr, message, "Platform Layer",
+    const int action = MessageBoxA(nullptr, message, "Assert",
                                    MB_TASKMODAL | MB_ICONHAND | MB_ABORTRETRYIGNORE | MB_SETFOREGROUND);
 
     switch (action) {
@@ -128,7 +126,7 @@ inline void assertFuncInternal(
 #ifdef FORCE_LOG
 
 template<typename... Args>
-void generic_log(Args&&... args) {
+auto generic_log(Args&&... args) -> void {
     (std::cout << ... << args) << std::endl;
 }
 

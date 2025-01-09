@@ -1,52 +1,102 @@
 #include "Core/ID.h"
 
+#include "Core/ObjectRegistry.h"
+#include "Physics/Vector/Math.h"
+
 namespace {
-    std::vector<std::weak_ptr<gse::id>> g_ids;
-    std::unordered_map<int, std::weak_ptr<gse::id>> g_id_map;
-    std::unordered_map<std::string, std::weak_ptr<gse::id>> g_tag_map;
+    struct transparent_hash {
+        using is_transparent = void; // Indicates support for heterogeneous lookup
 
-    void register_object(const std::shared_ptr<gse::id>& obj) {
-        g_id_map[obj->number] = obj;
-        g_tag_map[obj->tag] = obj;
+        auto operator()(const std::string& s) const noexcept -> std::size_t {
+            return std::hash<std::string_view>{}(s);
+        }
+
+        auto operator()(const std::string_view sv) const noexcept -> std::size_t {
+            return std::hash<std::string_view>{}(sv);
+        }
+    };
+
+    struct transparent_equal {
+        using is_transparent = void; // Indicates support for heterogeneous lookup
+
+        auto operator()(const std::string& lhs, const std::string& rhs) const noexcept -> bool {
+            return lhs == rhs;
+        }
+
+        auto operator()(const std::string_view lhs, const std::string_view rhs) const noexcept -> bool {
+            return lhs == rhs;
+        }
+
+        auto operator()(const std::string& lhs, const std::string_view rhs) const noexcept -> bool {
+            return lhs == rhs;
+        }
+
+        auto operator()(const std::string_view lhs, const std::string& rhs) const noexcept -> bool {
+            return lhs == rhs;
+        }
+    };
+
+    std::vector<gse::id*> g_ids;
+    std::unordered_map<std::int32_t, gse::id*> g_id_map;
+	std::unordered_map<std::string, gse::id*, transparent_hash, transparent_equal> g_tag_map;
+
+    auto register_object(gse::id* obj, const std::string& tag) -> void {
+        g_id_map[obj->number()] = obj;
+		g_tag_map[tag] = obj;
     }
 }
 
-namespace gse {
-    std::shared_ptr<id> generate_id(const std::string& tag) {
-        const int new_id = static_cast<int>(g_ids.size());
+auto gse::generate_id(const std::string& tag) -> std::unique_ptr<id> {
+    const int new_id = static_cast<int>(g_ids.size());
 
-        std::string new_tag = tag;
-		if (const auto it = g_tag_map.find(tag); it != g_tag_map.end()) {
-			new_tag += std::to_string(new_id);
-		}
+    std::string new_tag = tag;
+	if (const auto it = g_tag_map.find(tag); it != g_tag_map.end()) {
+		new_tag += std::to_string(new_id);
+	}
 
-        auto id_ptr = std::shared_ptr<id>(new id(new_id, new_tag));
-        g_ids.push_back(id_ptr);
-        register_object(id_ptr);
-        return id_ptr;
-    }
+    auto id_ptr = std::unique_ptr<id>(new id(new_id, new_tag));
+    g_ids.push_back(id_ptr.get());
+	register_object(id_ptr.get(), new_tag);
 
-    bool is_object_alive(const int id) {
-        if (const auto it = g_id_map.find(id); it != g_id_map.end()) {
-            if (!it->second.expired()) {
-                return true;
-            }
-            g_id_map.erase(it);
-        }
-        return false;
-    }
-
-    std::weak_ptr<id> grab_id(const int id) {
-        if (const auto it = g_id_map.find(id); it != g_id_map.end()) {
-            return it->second;
-        }
-        return {};
-    }
-
-    std::weak_ptr<id> grab_id(const std::string& tag) {
-        if (const auto it = g_tag_map.find(tag); it != g_tag_map.end()) {
-            return it->second;
-        }
-        return {};
-    }
+    return id_ptr;
 }
+
+auto gse::remove_id(const id* id) -> void {
+	if (id->number() < 0 || (id->number() >= static_cast<int>(g_ids.size()) && g_ids.size() != 1)) {
+		assert_comment(false, "Object not found in registry when trying to remove it's id");
+	}
+
+    if (g_ids.size() == 1) {
+        g_id_map.clear();
+		g_tag_map.clear();
+		g_ids.clear();
+		return;
+    }
+
+	g_id_map.erase(id->number());
+	g_tag_map.erase(id->tag());
+	g_ids.erase(g_ids.begin() + id->number());
+}
+
+auto gse::get_id(const std::int32_t number) -> id* {
+	if (const auto it = g_id_map.find(number); it != g_id_map.end()) {
+        return it->second;
+	}
+	return nullptr;
+}
+
+auto gse::get_id(const std::string_view tag) -> id* {
+	if (const auto it = g_tag_map.find(tag); it != g_tag_map.end()) {
+        return it->second;
+	}
+	return nullptr;
+}
+
+auto gse::does_id_exist(const std::int32_t number) -> bool {
+	return g_id_map.contains(number);
+}
+
+auto gse::does_id_exist(const std::string_view tag) -> bool {
+	return g_tag_map.contains(tag);
+}
+
