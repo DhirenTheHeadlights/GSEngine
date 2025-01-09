@@ -1,10 +1,14 @@
 #include "Core/SceneLoader.h"
 
+#include <optional>
 #include <ranges>
+
+#include "glad/glad.h"
 
 namespace {
 	std::optional<GLuint> g_fbo = std::nullopt;
 	bool g_engine_initialized = false;
+	bool g_allow_multiple_active_scenes = false;
 
 	std::unordered_map<gse::id*, std::unique_ptr<gse::scene>> g_scenes;
 	std::unordered_map<gse::id*, std::function<bool()>> g_scene_triggers;
@@ -25,6 +29,16 @@ auto gse::scene_loader::remove_scene(id* scene_id) -> void {
 
 auto gse::scene_loader::activate_scene(id* scene_id) -> void {
 	assert_comment(g_engine_initialized, "You are trying to activate a scene before the engine is initialized");
+
+	if (!g_allow_multiple_active_scenes) {
+		for (const auto& scene : g_scenes | std::views::values) {
+			if (scene->get_active()) {
+				scene->exit();
+				scene->set_active(false);
+			}
+		}
+	}
+
 	if (const auto scene = g_scenes.find(scene_id); scene != g_scenes.end()) {
 		if (!scene->second->get_active()) {
 			scene->second->initialize();
@@ -74,6 +88,10 @@ auto gse::scene_loader::exit() -> void {
 
 auto gse::scene_loader::set_engine_initialized(const bool initialized) -> void {
 	g_engine_initialized = initialized;
+}
+
+auto gse::scene_loader::set_allow_multiple_active_scenes(const bool allow) -> void {
+	g_allow_multiple_active_scenes = allow;
 }
 
 auto gse::scene_loader::queue_scene_trigger(id* id, const std::function<bool()>& trigger) -> void {

@@ -74,13 +74,12 @@ struct scene2_hook final : gse::hook<gse::scene> {
 	auto initialize() -> void override {
 		game::skybox::create(m_owner);
 		m_owner->add_entity(game::create_player(), "Player");
-		const std::uint32_t floor_uuid = create_box(gse::vec3<gse::units::meters>(0.f, -500.f, 0.f), gse::vec3<gse::units::meters>(1000.f, 10.f, 1000.f));
+		const std::uint32_t floor_uuid = create_box(gse::vec3<gse::units::meters>(0.f, -500.f, 0.f), gse::vec3<gse::units::meters>(20000.f, 10.f, 20000.f));
 		gse::registry::add_entity_hook(floor_uuid, std::make_unique<floor_hook>());
 		m_owner->add_entity(floor_uuid, "Floor");
 	}
 
 	auto render() -> void override {
-		gse::registry::get_component<gse::light_source_component>(gse::registry::get_entity_id("Floor")).get_lights().front()->show_debug_menu("Skybox Light", gse::registry::get_entity_id("Skybox"));
         gse::debug::add_imgui_callback([] {
             if (gse::scene_loader::get_scene(gse::get_id("Scene2"))->get_active()) {
                 ImGui::Begin("Game Data");

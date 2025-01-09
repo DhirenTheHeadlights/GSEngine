@@ -3,6 +3,7 @@
 #include "Core/Clock.h"
 #include "Core/ObjectRegistry.h"
 #include "Core/SceneLoader.h"
+#include "Graphics/Debug.h"
 #include "Graphics/2D/Gui.h"
 #include "Graphics/2D/Renderer2D.h"
 #include "Graphics/3D/Renderer3D.h"

@@ -19,11 +19,15 @@ struct skybox_hook final : gse::hook<gse::entity> {
 		light_source_component.add_light(std::move(light));
 		gse::registry::add_component<gse::light_source_component>(std::move(light_source_component));
 	}
+
+	auto render() -> void override {
+		gse::registry::get_component<gse::light_source_component>(owner_id).get_lights().front()->show_debug_menu("Skybox Light", owner_id);
+	}
 };
 
 auto game::skybox::create(gse::scene* scene) -> void {
 	const auto skybox_position = gse::vec3<gse::units::meters>(0.f, 0.f, 0.f);
-	const gse::length skybox_size = gse::meters(2000.f);
+	const gse::length skybox_size = gse::meters(20000.f);
 	const std::uint32_t skybox_uuid = gse::registry::create_entity();
 	create_box(skybox_uuid, skybox_position, skybox_size);
 	gse::registry::add_entity_hook(skybox_uuid, std::make_unique<skybox_hook>());

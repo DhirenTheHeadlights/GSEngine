@@ -12,7 +12,7 @@ gse::cube_map::~cube_map() {
 	glDeleteRenderbuffers(1, &m_depth_render_buffer_id);
 }
 
-void gse::cube_map::create(const std::vector<std::string>& faces) {
+auto gse::cube_map::create(const std::vector<std::string>& faces) -> void {
     glGenTextures(1, &m_texture_id);
     glBindTexture(GL_TEXTURE_CUBE_MAP, m_texture_id);
 
@@ -36,7 +36,7 @@ void gse::cube_map::create(const std::vector<std::string>& faces) {
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 }
 
-void gse::cube_map::create(const int resolution, const bool depth_only) {
+auto gse::cube_map::create(const int resolution, const bool depth_only) -> void {
     this->m_resolution = resolution;
 	this->m_depth_only = depth_only;
 
@@ -75,12 +75,12 @@ void gse::cube_map::create(const int resolution, const bool depth_only) {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void gse::cube_map::bind(const GLuint unit) const {
+auto gse::cube_map::bind(const GLuint unit) const -> void {
 	glActiveTexture(GL_TEXTURE0 + unit);
 	glBindTexture(GL_TEXTURE_CUBE_MAP, m_texture_id);
 }
 
-void gse::cube_map::update(const glm::vec3& position, const glm::mat4& projection_matrix, const std::function<void(const glm::mat4&, const glm::mat4&)>& render_function) const {
+auto gse::cube_map::update(const glm::vec3& position, const glm::mat4& projection_matrix, const std::function<void(const glm::mat4&, const glm::mat4&)>& render_function) const -> void {
     glBindFramebuffer(GL_FRAMEBUFFER, m_frame_buffer_id);
     glViewport(0, 0, m_resolution, m_resolution);
 
@@ -106,7 +106,7 @@ void gse::cube_map::update(const glm::vec3& position, const glm::mat4& projectio
 	glViewport(0, 0, window::get_frame_buffer_size().x, window::get_frame_buffer_size().y);
 }
 
-std::vector<glm::mat4> gse::cube_map::get_view_matrices(const glm::vec3& position) {
+auto gse::cube_map::get_view_matrices(const glm::vec3& position) -> std::vector<glm::mat4> {
 	return {
 		lookAt(position, position + glm::vec3(1.0f, 0.0f,  0.0f), glm::vec3(0.0f, -1.0f, 0.0f)),  // +X
 		lookAt(position, position + glm::vec3(-1.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f)),  // -X
