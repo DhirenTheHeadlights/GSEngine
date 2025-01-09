@@ -77,7 +77,7 @@ struct box_mesh_hook final : gse::hook<gse::entity> {
 			new_render_component.meshes.push_back(std::move(new_mesh));
         }
 
-        new_render_component.bounding_box_meshes.emplace_back(new_collision_component.bounding_box);
+        //new_render_component.bounding_box_meshes.emplace_back(new_collision_component.bounding_box);
 
         gse::registry::add_component<gse::physics::motion_component>(std::move(new_motion_component));
         gse::registry::add_component<gse::physics::collision_component>(std::move(new_collision_component));

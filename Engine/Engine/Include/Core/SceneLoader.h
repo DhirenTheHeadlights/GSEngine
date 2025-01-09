@@ -13,6 +13,7 @@ namespace gse::scene_loader {
 	void exit();
 
 	void set_engine_initialized(bool initialized);
+	void set_allow_multiple_active_scenes(bool allow);
 	void queue_scene_trigger(id* id, const std::function<bool()>& trigger);
 
 	std::vector<scene*> get_active_scenes();

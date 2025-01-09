@@ -1,13 +1,11 @@
 #pragma once
 
-#include "Graphics/RenderComponent.h"
 #include "Graphics/3D/Camera.h"
-#include "Lights/LightSourceComponent.h"
 
 namespace gse::renderer3d {
-	void initialize();
-	void initialize_objects();
-	void render();
+	auto initialize() -> void;
+	auto initialize_objects() -> void;
+	auto render() -> void;
 
-	camera& get_camera();
+	auto get_camera() -> camera&;
 }

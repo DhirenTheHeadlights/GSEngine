@@ -39,7 +39,7 @@ glm::mat4 gse::camera::get_view_matrix() const {
 glm::mat4 gse::camera::get_projection_matrix() {
 	const glm::vec2 view_port_size = window::get_frame_buffer_size();
 	const float aspect_ratio = view_port_size.x / view_port_size.y;
-	return glm::perspective(glm::radians(45.0f), aspect_ratio, 0.1f, 10000.f);
+	return glm::perspective(glm::radians(45.0f), aspect_ratio, 0.1f, 10000000.f);
 }
 
 gse::vec3<gse::length> gse::camera::get_position() const {

@@ -5,7 +5,6 @@
 #include "Core/ObjectRegistry.h"
 #include "Core/SceneLoader.h"
 #include "Core/Object/Box.h"	
-#include "Core/Object/Object.h"
 #include "Core/Object/Sphere.h"
 #include "Graphics/Debug.h"
 #include "Graphics/RenderComponent.h"

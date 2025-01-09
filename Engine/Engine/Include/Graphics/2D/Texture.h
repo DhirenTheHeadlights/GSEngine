@@ -5,8 +5,6 @@
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 
-#include "Core/Object/Object.h"
-
 namespace gse {
     class texture {
     public:
@@ -14,14 +12,14 @@ namespace gse {
         explicit texture(const std::string& filepath);
         ~texture();
 
-        void load_from_file(const std::string& filepath);
-        void bind(unsigned int unit = 0) const;
-        void unbind() const;
-        void set_wrapping(GLenum wrap_s, GLenum wrap_t) const;
-        void set_filtering(GLenum min_filter, GLenum mag_filter) const;
+        auto load_from_file(const std::string& filepath) -> void;
+        auto bind(unsigned int unit = 0) const -> void;
+        auto unbind() const -> void;
+        auto set_wrapping(GLenum wrap_s, GLenum wrap_t) const -> void;
+        auto set_filtering(GLenum min_filter, GLenum mag_filter) const -> void;
 
-        glm::ivec2 get_dimensions() const { return m_size; }
-        GLuint get_texture_id() const { return m_texture_id; }
+        auto get_dimensions() const -> glm::ivec2 { return m_size; }
+        auto get_texture_id() const -> GLuint { return m_texture_id; }
 
     private:
         GLuint m_texture_id = 0;

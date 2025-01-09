@@ -267,14 +267,16 @@ auto gse::registry::periodically_clean_up_registry(const time& clean_up_interval
 		return;
 	}
 
-	for (auto it = g_entity_lists.begin(); it != g_entity_lists.end();) {
+	/// TODO: This causes a crash sometimes - not sure how to fix just yet
+
+	/*for (auto it = g_entity_lists.begin(); it != g_entity_lists.end();) {
 		if (does_id_exist(it->first->number())) {
 			it = g_entity_lists.erase(it);
 		}
 		else {
 			++it;
 		}
-	}
+	}*/
 
 	g_clean_up_clock.reset();
 }
