@@ -4,7 +4,7 @@
 #include "stb_image.h"
 
 namespace {
-	unsigned int load_texture(char const* path, const bool gamma_correction) {
+	auto load_texture(char const* path, const bool gamma_correction) -> unsigned int {
 		unsigned int texture_id;
 		glGenTextures(1, &texture_id);
 
@@ -22,6 +22,11 @@ namespace {
 			else if (number_components == 4) {
 				internal_format = gamma_correction ? GL_SRGB_ALPHA : GL_RGBA;
 				data_format = GL_RGBA;
+			}
+			else {
+				std::cout << "Texture format not supported\n";
+				stbi_image_free(data);
+				return 0;
 			}
 
 			glBindTexture(GL_TEXTURE_2D, texture_id);
@@ -50,7 +55,7 @@ gse::material::material(const std::string& vertex_path, const std::string& fragm
 	material_texture = !material_texture_path.empty() ? load_texture(material_texture_path.c_str(), true) : 0;
 }
 
-void gse::material::use(const glm::mat4& view, const glm::mat4& projection, const glm::mat4& model) const {
+auto gse::material::use(const glm::mat4& view, const glm::mat4& projection, const glm::mat4& model) const -> void {
 	shader.use();
 
 	shader.set_mat4("view", view);

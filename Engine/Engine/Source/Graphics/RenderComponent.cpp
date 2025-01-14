@@ -106,3 +106,11 @@ auto gse::render_component::set_all_mesh_material_strings(const std::string& mat
 		mesh.m_material_name = material_string;
 	}
 }
+
+auto gse::render_component::calculate_center_of_mass() -> void {
+	vec3<length> sum;
+	for (auto& mesh : meshes) {
+		sum += mesh.calculate_center_of_mass();
+	}
+	center_of_mass = sum / static_cast<float>(meshes.size());
+}

@@ -37,7 +37,7 @@ namespace gse {
 	concept are_valid_vector_args = (((is_quantity<arguments> && has_same_quantity_tag<arguments, unit_or_quantity_type>) || std::is_convertible_v<arguments, float>) && ...);
 
 	template <is_unit_or_quantity unit_or_quantity_type>
-	float convert_value_to_default_unit(const float value) {
+	auto convert_value_to_default_unit(const float value) -> float {
 		using quantity_type = typename unit_to_quantity<unit_or_quantity_type>::type;
 		return quantity_type::template from<typename quantity_type::default_unit>(value).as_default_unit();
 	}
@@ -49,7 +49,7 @@ namespace gse {
 	}
 
 	template <typename quantity_or_unit_type, typename argument_type>
-	[[nodiscard]] static float get_value(const argument_type& argument) {
+	[[nodiscard]] static auto get_value(const argument_type& argument) -> float {
 		if constexpr (is_quantity<argument_type>) {
 			return argument.as_default_unit();
 		}
@@ -65,7 +65,7 @@ namespace gse {
 	}
 
 	template <typename unit_or_quantity_type, typename... arguments>
-	[[nodiscard]] static glm::vec3 create_vec(arguments&&... args) {
+	[[nodiscard]] static auto create_vec(arguments&&... args) -> glm::vec3 {
 		if constexpr (sizeof...(arguments) == 0) {
 			return glm::vec3(0.0f);
 		}
@@ -99,7 +99,7 @@ namespace gse {
 
 		template <is_unit unit_type>
 			requires has_same_quantity_tag<unit_or_quantity_type, unit_type>
-		[[nodiscard]] glm::vec3 as() const {
+		[[nodiscard]] auto as() const -> glm::vec3 {
 			const float converted_magnitude = glm::length(m_vec) * unit_type::conversion_factor;
 			if (constexpr auto zero = glm::vec3(0.0f); m_vec == zero) {
 				return zero;
@@ -107,11 +107,11 @@ namespace gse {
 			return normalize(m_vec) * converted_magnitude;
 		}
 
-		[[nodiscard]] glm::vec3& as_default_units() {
+		[[nodiscard]] auto as_default_units() -> glm::vec3& {
 			return m_vec;
 		}
 
-		[[nodiscard]] const glm::vec3& as_default_units() const {
+		[[nodiscard]] auto as_default_units() const -> const glm::vec3& {
 			return m_vec;
 		}
 
@@ -186,12 +186,12 @@ namespace gse {
 	/// Comparison Operators
 
 	template <is_unit_or_quantity T>
-	bool operator==(const vec3<T>& lhs, const vec3<T>& rhs) {
+	auto operator==(const vec3<T>& lhs, const vec3<T>& rhs) -> bool {
 		return lhs.as_default_units() == rhs.as_default_units();
 	}
 
 	template <is_unit_or_quantity T>
-	bool operator!=(const vec3<T>& lhs, const vec3<T>& rhs) {
+	auto operator!=(const vec3<T>& lhs, const vec3<T>& rhs) -> bool {
 		return !(lhs == rhs);
 	}
 

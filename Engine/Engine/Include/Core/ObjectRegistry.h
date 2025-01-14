@@ -114,27 +114,47 @@ namespace gse::registry {
 		return empty_components;
 	}
 
+	namespace internal {
+		template <typename T>
+			requires std::derived_from<T, component>
+		// ReSharper disable once CppNotAllPathsReturnValue - The assert_comment will always be triggered if the component is not found
+		auto get_component(const std::uint32_t desired_id) -> T* {
+			if (const auto it = g_component_containers.find(typeid(T)); it != g_component_containers.end()) {
+				for (auto& container = static_cast<component_container<T>&>(*it->second); auto & comp : container.components) {  // Removed 'const'
+					if (comp.parent_id == desired_id) {
+						return &comp;
+					}
+				}
+			}
+
+			if (const auto it = g_queued_components.find(typeid(T)); it != g_queued_components.end()) {
+				for (auto& container = static_cast<component_container<T>&>(*it->second); auto & comp : container.components) {
+					if (comp.parent_id == desired_id) {
+						return &comp;
+					}
+				}
+			}
+
+			return nullptr;
+		}
+	}
+
 	template <typename T>
 		requires std::derived_from<T, component>
 	// ReSharper disable once CppNotAllPathsReturnValue - The assert_comment will always be triggered if the component is not found
 	auto get_component(const std::uint32_t desired_id) -> T& {
-		if (const auto it = internal::g_component_containers.find(typeid(T)); it != internal::g_component_containers.end()) {
-			for (auto& container = static_cast<component_container<T>&>(*it->second); auto& comp : container.components) {  // Removed 'const'
-				if (comp.parent_id == desired_id) {
-					return comp;
-				}
-			}
-		}
-
-		if (const auto it = internal::g_queued_components.find(typeid(T)); it != internal::g_queued_components.end()) {
-			for (auto& container = static_cast<component_container<T>&>(*it->second); auto& comp : container.components) {
-				if (comp.parent_id == desired_id) {
-					return comp;
-				}
-			}
+		if (auto* component = internal::get_component<T>(desired_id); component) {
+			return *component;
 		}
 
 		throw std::runtime_error("Component not found in registry");
+	}
+
+	template <typename T>
+		requires std::derived_from<T, component>
+	// Use this if unsure that a component exists for an object
+	auto get_component_ptr(const std::uint32_t desired_id) -> T* {
+		return internal::get_component<T>(desired_id);
 	}
 
 	template <typename T>

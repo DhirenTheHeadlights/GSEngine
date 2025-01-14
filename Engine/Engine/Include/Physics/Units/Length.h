@@ -37,31 +37,31 @@ namespace gse {
 		using quantity::quantity;
 	};
 
-	inline length kilometers(const float value) {
+	inline auto kilometers(const float value) -> length {
 		return length::from<units::kilometers>(value);
 	}
 
-	inline length meters(const float value) {
+	inline auto meters(const float value) -> length {
 		return length::from<units::meters>(value);
 	}
 
-	inline length centimeters(const float value) {
+	inline auto centimeters(const float value) -> length {
 		return length::from<units::centimeters>(value);
 	}
 
-	inline length millimeters(const float value) {
+	inline auto millimeters(const float value) -> length {
 		return length::from<units::millimeters>(value);
 	}
 
-	inline length yards(const float value) {
+	inline auto yards(const float value) -> length {
 		return length::from<units::yards>(value);
 	}
 
-	inline length feet(const float value) {
+	inline auto feet(const float value) -> length {
 		return length::from<units::feet>(value);
 	}
 
-	inline length inches(const float value) {
+	inline auto inches(const float value) -> length {
 		return length::from<units::inches>(value);
 	}
 }		

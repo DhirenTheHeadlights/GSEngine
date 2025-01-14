@@ -127,7 +127,7 @@ struct player_hook final : gse::hook<gse::entity> {
 
 			ImGui::Text("Player Collision Information");
 
-			const auto [colliding, collision_normal, penetration, collision_point] = collision_component.bounding_box.collision_information;
+			const auto [colliding, collision_normal, penetration, collision_point] = collision_component.collision_information;
 			gse::debug::print_boolean("Player Colliding", colliding);
 			gse::debug::print_vector("Collision Normal", collision_normal.as_default_units(), "");
 			gse::debug::print_value("Penetration", penetration.as<gse::units::meters>(), gse::units::meters::unit_name);

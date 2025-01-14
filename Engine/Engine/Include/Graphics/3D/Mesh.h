@@ -38,15 +38,16 @@ namespace gse {
 		virtual ~mesh();
 
 		mesh(const mesh&) = delete;
-		mesh& operator=(const mesh&) = delete;
+		auto operator=(const mesh&) -> mesh& = delete;
 
 		mesh(mesh&& other) noexcept;
-		mesh& operator=(mesh&& other) noexcept;
+		auto operator=(mesh&& other) noexcept -> mesh&;
 
-		GLuint get_vao() const;
-		GLsizei get_vertex_count() const { return static_cast<GLsizei>(m_indices.size()); }
+		auto get_vao() const -> GLuint;
+		auto get_vertex_count() const -> GLsizei ;
+		auto calculate_center_of_mass() -> vec3<length>;
 
-		virtual render_queue_entry get_queue_entry() const {
+		virtual auto get_queue_entry() const -> render_queue_entry {
 			return {
 				.material_key	= m_material_name,
 				.vao			= m_vao,
@@ -57,12 +58,12 @@ namespace gse {
 			};
 		}
 
-		void set_color(const glm::vec3& new_color) { m_color = new_color; }
-		void set_position(const vec3<length>& new_position);
+		auto set_color(const glm::vec3& new_color) -> void ;
+		auto set_position(const vec3<length>& new_position) -> void;
 
 	protected:
 		friend render_component;
-		void set_up_mesh();
+		auto set_up_mesh() -> void;
 
 		GLuint m_vao = 0;
 		GLuint m_vbo = 0;
@@ -76,5 +77,8 @@ namespace gse {
 		GLuint m_draw_mode = GL_TRIANGLES;
 		std::string m_material_name = "Concrete";
 		glm::vec3 m_color = { 1.0f, 1.0f, 1.0f };
+
+		vec3<length> m_center_of_mass;
+		bool m_com_calculated = false;
 	};
 }

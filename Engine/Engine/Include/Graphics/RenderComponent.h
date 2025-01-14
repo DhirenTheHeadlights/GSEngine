@@ -27,6 +27,9 @@ namespace gse {
 		std::vector<mesh> meshes;
 		std::vector<bounding_box_mesh> bounding_box_meshes;
 
+		auto calculate_center_of_mass() -> void;
+		vec3<length> center_of_mass;
+
 		bool render = true;
 		bool render_bounding_boxes = true;
 	};

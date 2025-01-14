@@ -6,49 +6,43 @@
 #include "Physics/System.h"
 #include "Physics/Vector/Math.h"
 
-bool gse::broad_phase_collision::check_collision(const bounding_box& box1, const bounding_box& box2) {
+auto gse::broad_phase_collision::check_collision(const axis_aligned_bounding_box& box1, const axis_aligned_bounding_box& box2) -> bool {
 	return box1.upper_bound.as_default_units().x > box2.lower_bound.as_default_units().x && box1.lower_bound.as_default_units().x < box2.upper_bound.as_default_units().x &&
 		   box1.upper_bound.as_default_units().y > box2.lower_bound.as_default_units().y && box1.lower_bound.as_default_units().y < box2.upper_bound.as_default_units().y &&
 		   box1.upper_bound.as_default_units().z > box2.lower_bound.as_default_units().z && box1.lower_bound.as_default_units().z < box2.upper_bound.as_default_units().z;
 }
 
-bool gse::broad_phase_collision::check_future_collision(const bounding_box& dynamic_box, const physics::motion_component& dynamic_motion_component, const bounding_box& other_box) {
-	bounding_box expanded_box = dynamic_box;										// Create a copy
-	physics::motion_component temp_component = dynamic_motion_component;
+auto gse::broad_phase_collision::check_future_collision(const axis_aligned_bounding_box& dynamic_box, const physics::motion_component* dynamic_motion_component, const axis_aligned_bounding_box& other_box) -> bool {
+	axis_aligned_bounding_box expanded_box = dynamic_box;							// Create a copy
+	physics::motion_component temp_component = *dynamic_motion_component;
 	update_object(temp_component);													// Update the entity's position in the direction of its current_velocity
 	expanded_box.set_position(temp_component.current_position);						// Set the expanded box's position to the updated position
 	return check_collision(expanded_box, other_box);								// Check for collision with the new expanded box
 }
 
-bool gse::broad_phase_collision::check_collision(physics::collision_component& dynamic_object_collision_component, const physics::collision_component& other_collision_component) {
-	bool collision_detected = false;
-
-	auto& box1_motion_component = registry::get_component<physics::motion_component>(dynamic_object_collision_component.parent_id);
+auto gse::broad_phase_collision::check_collision(physics::collision_component& dynamic_object_collision_component, physics::collision_component& other_collision_component) -> void {
+	auto* box1_motion_component = registry::get_component_ptr<physics::motion_component>(dynamic_object_collision_component.parent_id);
 	auto& box1 = dynamic_object_collision_component.bounding_box;
 	const auto& box2 = other_collision_component.bounding_box;
 
-	if (check_future_collision(box1, box1_motion_component, box2) || check_collision(box1, box2)) {
-		set_collision_information(box1, box2);
-
-		box1.collision_information.colliding = true;
-		box2.collision_information.colliding = true;
+	if (check_future_collision(box1, box1_motion_component, box2)) {
+		dynamic_object_collision_component.collision_information = calculate_collision_information(box1, box2);
+		other_collision_component.collision_information = calculate_collision_information(box2, box1);
 
 		if (dynamic_object_collision_component.resolve_collisions) {
-			resolve_collision(box1, box1_motion_component, box2.collision_information);
+			resolve_collision(box1, box1_motion_component, other_collision_component.collision_information);
 		}
-
-		collision_detected = true;
 	}
-
-	return collision_detected;
 }
 
-gse::collision_information gse::broad_phase_collision::calculate_collision_information(const bounding_box& box1, const bounding_box& box2) {
+auto gse::broad_phase_collision::calculate_collision_information(const axis_aligned_bounding_box& box1, const axis_aligned_bounding_box& box2) -> collision_information {
 	collision_information collision_information;
 
 	if (!check_collision(box1, box2)) {
 		return collision_information;
 	}
+
+	collision_information.colliding = true;
 
 	const length x_penetration_depth = min(box1.upper_bound, box2.upper_bound, x) - max(box1.lower_bound, box2.lower_bound, x);
 	const length y_penetration_depth = min(box1.upper_bound, box2.upper_bound, y) - max(box1.lower_bound, box2.lower_bound, y);
@@ -82,16 +76,11 @@ gse::collision_information gse::broad_phase_collision::calculate_collision_infor
 	return collision_information;
 }
 
-void gse::broad_phase_collision::set_collision_information(const bounding_box& box1, const bounding_box& box2) {
-	box1.collision_information = calculate_collision_information(box1, box2);
-	box2.collision_information = calculate_collision_information(box2, box1);
-}
-
-void gse::broad_phase_collision::update() {
+auto gse::broad_phase_collision::update() -> void {
 	auto& objects = registry::get_components<physics::collision_component>();
 
 	for (auto& object : objects) {
-		object.bounding_box.collision_information = {};
+		object.collision_information = {};
 
 		for (auto& other : objects) {
 			if (object.parent_id == other.parent_id) {
@@ -102,19 +91,20 @@ void gse::broad_phase_collision::update() {
 		}
 	}
 
-	const auto airborne_check = [](physics::motion_component& motion_component, const physics::collision_component& collision_component) {
-		if (std::fabs(motion_component.current_position.as_default_units().y - motion_component.most_recent_y_collision.as_default_unit()) < 0.01f && collision_component.bounding_box.collision_information.colliding) {
-			motion_component.airborne = false;
+	const auto airborne_check = [](physics::motion_component* motion_component, const physics::collision_component& collision_component) {
+		if (std::fabs(motion_component->current_position.as_default_units().y - motion_component->most_recent_y_collision.as_default_unit()) < 0.01f && collision_component.collision_information.colliding) {
+			motion_component->airborne = false;
 		}
 		else {
-			motion_component.airborne = true;
-			motion_component.most_recent_y_collision = meters(std::numeric_limits<float>::max());
+			motion_component->airborne = true;
+			motion_component->most_recent_y_collision = meters(std::numeric_limits<float>::max());
 		}
 		};
 
 	for (auto& object : objects) {
-		auto& motion_component = registry::get_component<physics::motion_component>(object.parent_id);
-		airborne_check(motion_component, object);
+		if (auto* motion_component = registry::get_component_ptr<physics::motion_component>(object.parent_id)) {
+			airborne_check(motion_component, object);
+		}
 	}
 }
 

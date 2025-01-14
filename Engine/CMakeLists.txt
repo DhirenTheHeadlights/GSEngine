@@ -20,9 +20,10 @@ file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/
 
 # Gather engine header files (h, hpp) from the "Include" folder
 file(GLOB_RECURSE ENGINE_HEADERS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/*.h")
+file(GLOB_RECURSE ENGINE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/*.ixx")
 
 # Add the engine as a static library including source and header files
-add_library(Engine STATIC ${ENGINE_SOURCES} ${ENGINE_HEADERS})
+add_library(Engine STATIC ${ENGINE_SOURCES} ${ENGINE_HEADERS} ${ENGINE_MODULES})
 
 # Option for production build
 option(PRODUCTION_BUILD "Make this a production build" OFF)

@@ -7,18 +7,18 @@ gse::bounding_box_mesh::bounding_box_mesh(const vec3<length>& lower, const vec3<
 	m_material_name = "SolidColor";
 }
 
-gse::bounding_box_mesh::bounding_box_mesh(const bounding_box& box)
+gse::bounding_box_mesh::bounding_box_mesh(const axis_aligned_bounding_box& box)
 	: bounding_box_mesh(box.lower_bound, box.upper_bound) {}
 
-gse::vertex gse::bounding_box_mesh::create_vertex(const glm::vec3& position) {
+auto gse::bounding_box_mesh::create_vertex(const glm::vec3& position) -> gse::vertex {
 	return {
-		position,
-		glm::vec3(0.0f),
-		glm::vec2(0.0f)
+		.position= position,
+		.normal= glm::vec3(0.0f),
+		.tex_coords= glm::vec2(0.0f)
 	};
 }
 
-void gse::bounding_box_mesh::update_grid() {
+auto gse::bounding_box_mesh::update_grid() -> void {
 	constexpr float cell_size = 10.0f;
 
 	m_vertices.clear();
@@ -87,7 +87,7 @@ void gse::bounding_box_mesh::update_grid() {
 	}
 }
 
-void gse::bounding_box_mesh::update() {
-	update_grid();
-	set_up_mesh();
+auto gse::bounding_box_mesh::update() -> void {
+	/*update_grid();
+	set_up_mesh();*/
 }
