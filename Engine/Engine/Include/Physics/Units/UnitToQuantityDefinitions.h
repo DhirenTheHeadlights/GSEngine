@@ -1,12 +1,12 @@
 #pragma once
 
-#include "Physics/Units/UnitTemplate.h"
 #include "Physics/Units/Units.h"
+#include "Physics/Units/UnitTemplate.h"
 
 // Default case: Assume the type is already a Quantity
-template <typename t>
+template <typename T>
 struct unit_to_quantity {
-	using type = t;  
+	using type = T;  
 };
 
 // Macro to define the relationship between a unit and a quantity
@@ -38,6 +38,8 @@ DEFINE_UNIT_TO_QUANTITY(gse::units::pounds, gse::mass);
 ////////////////////////////////////////////////////////////////////////
 DEFINE_UNIT_TO_QUANTITY(gse::units::newtons, gse::force);
 DEFINE_UNIT_TO_QUANTITY(gse::units::pounds_force, gse::force);
+DEFINE_UNIT_TO_QUANTITY(gse::units::newton_meters, gse::torque);
+DEFINE_UNIT_TO_QUANTITY(gse::units::pound_feet, gse::torque);
 ////////////////////////////////////////////////////////////////////////
 /// Energy
 ////////////////////////////////////////////////////////////////////////
@@ -62,6 +64,8 @@ DEFINE_UNIT_TO_QUANTITY(gse::units::meters_per_second, gse::velocity);
 DEFINE_UNIT_TO_QUANTITY(gse::units::kilometers_per_hour, gse::velocity);
 DEFINE_UNIT_TO_QUANTITY(gse::units::miles_per_hour, gse::velocity);
 DEFINE_UNIT_TO_QUANTITY(gse::units::feet_per_second, gse::velocity);
+DEFINE_UNIT_TO_QUANTITY(gse::units::radians_per_second, gse::angular_velocity);
+DEFINE_UNIT_TO_QUANTITY(gse::units::degrees_per_second, gse::angular_velocity);
 ////////////////////////////////////////////////////////////////////////
 /// Acceleration
 ////////////////////////////////////////////////////////////////////////
@@ -69,3 +73,5 @@ DEFINE_UNIT_TO_QUANTITY(gse::units::meters_per_second_squared, gse::acceleration
 DEFINE_UNIT_TO_QUANTITY(gse::units::kilometers_per_hour_squared, gse::acceleration);
 DEFINE_UNIT_TO_QUANTITY(gse::units::miles_per_hour_squared, gse::acceleration);
 DEFINE_UNIT_TO_QUANTITY(gse::units::feet_per_second_squared, gse::acceleration);
+DEFINE_UNIT_TO_QUANTITY(gse::units::radians_per_second_squared, gse::angular_acceleration);
+DEFINE_UNIT_TO_QUANTITY(gse::units::degrees_per_second_squared, gse::angular_acceleration);

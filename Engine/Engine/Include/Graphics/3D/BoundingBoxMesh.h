@@ -9,26 +9,26 @@ namespace gse {
 	class bounding_box_mesh final : public mesh {
 	public:
 		bounding_box_mesh(const vec3<length>& lower, const vec3<length>& upper);
-		bounding_box_mesh(const bounding_box& box);
+		bounding_box_mesh(const axis_aligned_bounding_box& box);
 
-		void update();
+		auto update() -> void;
 
-		render_queue_entry get_queue_entry() const override {
+		auto get_queue_entry() const -> render_queue_entry override {
 			return {
-				m_material_name,
-				m_vao,
-				m_draw_mode,
-				static_cast<GLsizei>(m_vertices.size() / 3),
-				m_model_matrix,
-				m_color
+				.material_key	= m_material_name,
+				.vao			= m_vao,
+				.draw_mode		= m_draw_mode,
+				.vertex_count	= static_cast<GLsizei>(m_vertices.size() / 3),
+				.model_matrix	= m_model_matrix,
+				.color			= m_color
 			};
 		}
 
-		void set_cell_size(const length& cell_size) { m_cell_size = cell_size; }
+		auto set_cell_size(const length& cell_size) -> void { m_cell_size = cell_size; }
 
 	private:
-		void update_grid();
-		static vertex create_vertex(const glm::vec3& position);
+		auto update_grid() -> void;
+		static auto create_vertex(const glm::vec3& position) -> vertex;
 
 		vec3<length> m_lower;
 		vec3<length> m_upper;

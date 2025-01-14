@@ -250,9 +250,14 @@ auto gse::renderer3d::initialize_objects() -> void {
 }
 
 namespace {
-	auto render_object(const gse::render_queue_entry& entry, const glm::mat4& view_matrix, const glm::mat4& projection_matrix) -> void {
+	auto render_object(const std::uint32_t object_id, const gse::render_queue_entry& entry, const glm::mat4& view_matrix, const glm::mat4& projection_matrix) -> void {
 		if (const auto it = g_materials.find(entry.material_key); it != g_materials.end()) {
-			it->second.use(view_matrix, projection_matrix, entry.model_matrix);
+			glm::mat4 model_matrix = entry.model_matrix;
+			if (const auto* motion_component = gse::registry::get_component_ptr<gse::physics::motion_component>(object_id); motion_component) {
+				model_matrix = motion_component->get_transformation_matrix();
+			}
+
+			it->second.use(view_matrix, projection_matrix, model_matrix);
 			it->second.shader.set_vec3("color", entry.color);
 
 			glBindVertexArray(entry.vao);
@@ -268,9 +273,14 @@ namespace {
 		}
 	}
 
-	auto render_object_forward(const gse::shader& forward_rendering_shader, const gse::render_queue_entry& entry, const glm::mat4& view_matrix, const glm::mat4& projection_matrix) -> void {
+	auto render_object_forward(const std::uint32_t object_id, const gse::shader& forward_rendering_shader, const gse::render_queue_entry& entry, const glm::mat4& view_matrix, const glm::mat4& projection_matrix) -> void {
+		glm::mat4 model_matrix = entry.model_matrix;
+		if (const auto* motion_component = gse::registry::get_component_ptr<gse::physics::motion_component>(object_id); motion_component) {
+			model_matrix = motion_component->get_transformation_matrix();
+		}
+
 		forward_rendering_shader.set_vec3("color", entry.color);
-		forward_rendering_shader.set_mat4("model", entry.model_matrix);
+		forward_rendering_shader.set_mat4("model", model_matrix);
 		forward_rendering_shader.set_mat4("view", view_matrix);
 		forward_rendering_shader.set_mat4("projection", projection_matrix);
 		forward_rendering_shader.set_vec3("viewPos", g_camera.get_position().as<gse::units::meters>());
@@ -455,6 +465,11 @@ namespace {
 
 			for (const auto& mesh : render_component.meshes) {
 				auto [material_key, vao, draw_mode, vertex_count, model_matrix, color] = mesh.get_queue_entry();
+
+				if (const auto* motion_component = gse::registry::get_component_ptr<gse::physics::motion_component>(render_component.parent_id); motion_component) {
+					model_matrix = motion_component->get_transformation_matrix();
+				}
+
 				shadow_shader.set_mat4("model", model_matrix);
 				glBindVertexArray(vao);
 				glDrawElements(draw_mode, vertex_count, GL_UNSIGNED_INT, nullptr);
@@ -570,7 +585,7 @@ auto gse::renderer3d::render() -> void {
 		[&render_components, &forward_rendering_shader](const glm::mat4& view_matrix, const glm::mat4& projection_matrix) {
 			for (const auto& render_component : render_components) {
 				for (auto& mesh : render_component.meshes) {
-					render_object_forward(forward_rendering_shader, mesh.get_queue_entry(), view_matrix, projection_matrix);
+					render_object_forward(render_component.parent_id, forward_rendering_shader, mesh.get_queue_entry(), view_matrix, projection_matrix);
 				}
 			}
 		});
@@ -625,7 +640,7 @@ auto gse::renderer3d::render() -> void {
 
 	for (const auto& render_component : render_components) {
 		for (const auto& mesh : render_component.meshes) {
-			render_object(mesh.get_queue_entry(), g_camera.get_view_matrix(), g_camera.get_projection_matrix());
+			render_object(render_component.parent_id, mesh.get_queue_entry(), g_camera.get_view_matrix(), g_camera.get_projection_matrix());
 		}
 	}
 

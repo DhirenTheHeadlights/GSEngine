@@ -8,7 +8,9 @@
 
 #include "Core/Clock.h"
 #include "Core/ObjectRegistry.h"
+#include "Graphics/RenderComponent.h"
 #include "Physics/Surfaces.h"
+#include "Physics/Collision/CollisionComponent.h"
 #include "Physics/Vector/Math.h"
 #include "Platform/GLFW/Input.h"
 
@@ -16,7 +18,7 @@ namespace {
 	auto g_gravity = gse::vec3<gse::units::meters_per_second_squared>(0.f, -9.8f, 0.f);
 }
 
-auto gse::physics::apply_force(motion_component& component, const vec3<force>& force) -> void {
+auto gse::physics::apply_force(motion_component& component, const vec3<force>& force, const vec3<length>& world_force_position) -> void {
 	if (is_zero(force)) {
 		return;
 	}
@@ -26,6 +28,16 @@ auto gse::physics::apply_force(motion_component& component, const vec3<force>& f
 		std::max(component.mass.as<units::kilograms>(), 0.0001f)
 	);
 
+	vec3<length> center_of_mass;
+
+	if (const auto* render_component = gse::registry::get_component_ptr<gse::render_component>(component.parent_id); render_component) {
+		center_of_mass = render_component->center_of_mass;
+	}
+	else {
+		center_of_mass = component.current_position;
+	}
+
+	component.current_torque += gse::vec3<units::newton_meters>(glm::cross((world_force_position - center_of_mass).as<units::meters>(), force.as<units::newtons>()));
 	component.current_acceleration += acceleration;
 }
 
@@ -52,7 +64,7 @@ namespace {
 				g_gravity.as<gse::units::meters_per_second_squared>() *
 				component.mass.as<gse::units::kilograms>()
 			);
-			apply_force(component, gravity_force);
+			apply_force(component, gravity_force, component.current_position);
 		}
 		else {
 			component.current_acceleration.as_default_units().y = std::max(0.f, component.current_acceleration.as_default_units().y);
@@ -74,7 +86,7 @@ namespace {
 					i == 1 ? drag_force_magnitude * direction : 0.0f,
 					i == 2 ? drag_force_magnitude * direction : 0.0f
 				);
-				apply_force(component, drag_force);
+				apply_force(component, drag_force, component.current_position);
 			}
 		}
 	}
@@ -93,7 +105,7 @@ namespace {
 
 		const gse::vec3<gse::units::newtons> friction_force(-friction.as<gse::units::newtons>() * normalize(component.current_velocity).as<gse::units::meters_per_second>());
 
-		apply_force(component, friction_force);
+		apply_force(component, friction_force, component.current_position);
 	}
 
 	auto update_velocity(gse::physics::motion_component& component) -> void {
@@ -129,6 +141,37 @@ namespace {
 			component.current_acceleration.as<gse::units::meters_per_second_squared>() * delta_time * delta_time
 		);
 	}
+
+	auto update_rotation(gse::physics::motion_component& component) -> void {
+		const float dt = gse::main_clock::get_delta_time().as<gse::units::seconds>();
+
+		const auto alpha = gse::vec3<gse::units::radians_per_second_squared>(
+			component.current_torque.as<gse::units::newton_meters>() / component.moment_of_inertia.as_default_unit() /* kg-m^2 */
+		);
+
+		component.angular_velocity += gse::vec3<gse::units::radians_per_second>(
+			alpha.as<gse::units::radians_per_second_squared>() * dt
+		);
+
+		component.current_torque = { 0.f, 0.f, 0.f };
+
+		const glm::vec3 angular_velocity = component.angular_velocity.as_default_units();
+		const glm::quat omega_quaternion = { 0.f, angular_velocity.x, angular_velocity.y, angular_velocity.z };
+
+		// dQ = 0.5 * omega_quaternion * orientation
+		const glm::quat delta_quaternion = 0.5f * omega_quaternion * component.orientation;
+		component.orientation += delta_quaternion * dt;
+		component.orientation = normalize(component.orientation);
+	}
+
+	auto update_obb(const gse::physics::motion_component& motion_component) {
+		if (auto* collision_component = gse::registry::get_component_ptr<gse::physics::collision_component>(motion_component.parent_id); collision_component) {
+			auto& obb = collision_component->oriented_bounding_box;
+			obb.center = motion_component.current_position;
+			obb.orientation = motion_component.orientation;
+			obb.update_axes();
+		}
+	}
 }
 
 auto gse::physics::update_object(motion_component& component) -> void {
@@ -143,6 +186,8 @@ auto gse::physics::update_object(motion_component& component) -> void {
 	update_air_resistance(component);
 	update_velocity(component);
 	update_position(component);
+	update_rotation(component);
+	update_obb(component);
 }
 
 auto gse::physics::update() -> void {
@@ -151,13 +196,13 @@ auto gse::physics::update() -> void {
 	}
 }
 
-auto gse::physics::resolve_collision(bounding_box& dynamic_bounding_box, motion_component& dynamic_motion_component, collision_information& collision_info) -> void {
-	float& vel = dynamic_motion_component.current_velocity.as_default_units()[collision_info.get_axis()];
-	float& acc = dynamic_motion_component.current_acceleration.as_default_units()[collision_info.get_axis()];
+auto gse::physics::resolve_collision(axis_aligned_bounding_box& dynamic_bounding_box, motion_component* dynamic_motion_component, collision_information& collision_info) -> void {
+	float& vel = dynamic_motion_component->current_velocity.as_default_units()[collision_info.get_axis()];
+	float& acc = dynamic_motion_component->current_acceleration.as_default_units()[collision_info.get_axis()];
 
 	// Project current_velocity and acceleration onto collision normal to check movement toward the surface
-	const float velocity_into_surface = dot(dynamic_motion_component.current_velocity, collision_info.collision_normal);
-	const float acceleration_into_surface = dot(dynamic_motion_component.current_acceleration, collision_info.collision_normal);
+	const float velocity_into_surface = dot(dynamic_motion_component->current_velocity, collision_info.collision_normal);
+	const float acceleration_into_surface = dot(dynamic_motion_component->current_acceleration, collision_info.collision_normal);
 
 	// Set current_velocity and acceleration to zero along the collision normal if moving into the surface
 	if (velocity_into_surface < 0) {
@@ -170,13 +215,13 @@ auto gse::physics::resolve_collision(bounding_box& dynamic_bounding_box, motion_
 	constexpr float slop = 0.001f;
 	const float corrected_penetration = std::max(collision_info.penetration.as_default_unit() - slop, 0.f);
 	const vec3<units::meters> correction = collision_info.collision_normal * meters(corrected_penetration);
-	dynamic_motion_component.current_position += correction;
+	dynamic_motion_component->current_position += correction;
 
 	// Special case for ground collision (assumed Y-axis collision)
 	if (collision_info.get_axis() == y && collision_info.collision_normal.as_default_units().y > 0) {
-		dynamic_motion_component.airborne = false;
-		dynamic_motion_component.most_recent_y_collision = meters(dynamic_motion_component.current_position.as_default_units().y);
-		update_friction(dynamic_motion_component, get_surface_properties(surfaces::surface_type::concrete));
+		dynamic_motion_component->airborne = false;
+		dynamic_motion_component->most_recent_y_collision = meters(dynamic_motion_component->current_position.as_default_units().y);
+		update_friction(*dynamic_motion_component, get_surface_properties(surfaces::surface_type::concrete));
 	}
 }
 

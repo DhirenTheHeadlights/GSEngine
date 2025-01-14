@@ -27,15 +27,15 @@ namespace gse {
 		using quantity::quantity;
 	};
 
-	inline mass kilograms(const float value) {
+	inline auto kilograms(const float value) -> mass {
 		return mass::from<units::kilograms>(value);
 	}
 
-	inline mass grams(const float value) {
+	inline auto grams(const float value) -> mass {
 		return mass::from<units::grams>(value);
 	}
 
-	inline mass pounds(const float value) {
+	inline auto pounds(const float value) -> mass {
 		return mass::from<units::pounds>(value);
 	}
 }
@@ -50,6 +50,14 @@ namespace gse::units {
 
 	using newtons = unit<force_tag, 1.0f, newtons_units>;
 	using pounds_force = unit<force_tag, 4.44822f, pounds_force_units>;
+
+	struct torque_tag {};
+
+	constexpr char newton_meters_units[] = "N-m";
+	constexpr char pound_feet_units[] = "lbf-ft";
+
+	using newton_meters = unit<torque_tag, 1.0f, newton_meters_units>;
+	using pound_feet = unit<torque_tag, 1.35582f, pound_feet_units>;
 }
 
 namespace gse {
@@ -62,11 +70,28 @@ namespace gse {
 		using quantity::quantity;
 	};
 
-	inline force newtons(const float value) {
+	inline auto newtons(const float value) -> force {
 		return force::from<units::newtons>(value);
 	}
 
-	inline force pounds_force(const float value) {
+	inline auto pounds_force(const float value) -> force {
 		return force::from<units::pounds_force>(value);
+	}
+
+	using torque_units = unit_list <
+		units::newton_meters,
+		units::pound_feet
+	>;
+
+	struct torque : quantity<torque, units::newton_meters, torque_units> {
+		using quantity::quantity;
+	};
+
+	inline auto newton_meters(const float value) -> torque {
+		return torque::from<units::newton_meters>(value);
+	}
+
+	inline auto pound_feet(const float value) -> torque {
+		return torque::from<units::pound_feet>(value);
 	}
 }
