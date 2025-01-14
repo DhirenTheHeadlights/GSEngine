@@ -58,6 +58,8 @@ namespace gse {
 			};
 		}
 
+		std::vector<model_texture> get_textures() const {return m_textures;}
+
 		auto set_color(const glm::vec3& new_color) -> void ;
 		auto set_position(const vec3<length>& new_position) -> void;
 

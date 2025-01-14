@@ -27,7 +27,7 @@ gse::mesh::~mesh() {
 
 gse::mesh::mesh(mesh&& other) noexcept
 	: m_vao(other.m_vao), m_vbo(other.m_vbo), m_ebo(other.m_ebo),
-	m_vertices(std::move(other.m_vertices)), m_indices(std::move(other.m_indices)) {
+	m_vertices(std::move(other.m_vertices)), m_indices(std::move(other.m_indices)), m_textures(std::move(other.m_textures)) {
 	other.m_vao = 0;
 	other.m_vbo = 0;
 	other.m_ebo = 0;

@@ -20,7 +20,7 @@ auto gse::scene::remove_entity(const std::string& name) -> void {
 auto gse::scene::initialize() -> void {
 	initialize_hooks();
 
-	for (const auto& [object_uuid, name] : m_objects_to_add_upon_initialization) {
+for (const auto& [object_uuid, name] : m_objects_to_add_upon_initialization) {
 		m_object_indexes.push_back(registry::activate_entity(object_uuid, name));
 	}
 

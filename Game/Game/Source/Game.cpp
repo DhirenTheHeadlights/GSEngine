@@ -29,6 +29,15 @@ struct iron_man_hook final : gse::hook<gse::entity> {
 	}
 };
 
+struct backpack_hook final : gse::hook<gse::entity> {
+	using hook::hook;
+
+	auto initialize() -> void override {
+		gse::registry::add_component(gse::render_component(owner_id, GOONSQUAD_RESOURCES_PATH "Models/Backpack/backpack.obj"));
+		gse::registry::get_component<gse::render_component>(owner_id).set_all_mesh_material_strings("NULL");
+	}
+};
+
 struct scene1_hook final : gse::hook<gse::scene> {
 	using hook::hook;
 
@@ -41,9 +50,12 @@ struct scene1_hook final : gse::hook<gse::scene> {
 		m_owner->add_entity(game::create_sphere_light(gse::vec3<gse::units::meters>(0.f, -300.f, 0.f), gse::meters(10.f), 18), "Center Sphere Light");
 		m_owner->add_entity(create_sphere(gse::vec3<gse::units::meters>(0.f, -00.f, 200.f), gse::meters(10.f)), "Second Sphere");
 
-		const std::uint32_t iron_man = gse::registry::create_entity();
+		/*const std::uint32_t iron_man = gse::registry::create_entity();
 		gse::registry::add_entity_hook(iron_man, std::make_unique<iron_man_hook>());
-		m_owner->add_entity(iron_man, "Iron Man");
+		m_owner->add_entity(iron_man, "Iron Man");*/
+		const std::uint32_t backpack = gse::registry::create_entity();
+		gse::registry::add_entity_hook(backpack, std::make_unique<backpack_hook>());
+		m_owner->add_entity(backpack, "Backpack");
 	}
 
 	auto render() -> void override {

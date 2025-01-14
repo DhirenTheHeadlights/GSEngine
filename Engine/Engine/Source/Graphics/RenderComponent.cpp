@@ -38,6 +38,7 @@ auto gse::render_component::load_model(const std::string& path) -> void {
             }
         }
         return textures;
+
         };
 
 
@@ -87,6 +88,7 @@ auto gse::render_component::load_model(const std::string& path) -> void {
 
     process_node(scene->mRootNode);
     this->meshes = std::move(meshes);
+
 }
 
 auto gse::render_component::update_bounding_box_meshes() -> void {
