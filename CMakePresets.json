@@ -2,15 +2,15 @@
   "version": 3,
   "cmakeMinimumRequired": {
     "major": 3,
-    "minor": 19,
+    "minor": 30,
     "patch": 0
   },
   "configurePresets": [
     {
       "name": "x64-Debug",
       "displayName": "x64 Debug",
-      "description": "Debug build using Ninja and vcpkg",
-      "generator": "Ninja",
+      "description": "Debug build using VS and vcpkg",
+      "generator": "Visual Studio 17 2022",
       "binaryDir": "${sourceDir}/out/build/x64-Debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
@@ -22,8 +22,8 @@
     {
       "name": "x64-Release",
       "displayName": "x64 Release",
-      "description": "Release build with RelWithDebInfo using Ninja and vcpkg",
-      "generator": "Ninja",
+      "description": "Release build with RelWithDebInfo using VS and vcpkg",
+      "generator": "Visual Studio 17 2022",
       "binaryDir": "${sourceDir}/out/build/x64-Release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",

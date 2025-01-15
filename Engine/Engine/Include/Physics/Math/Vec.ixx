@@ -1,7 +1,6 @@
 export module vec;
-#include <iostream>
-#include <tuple>
-#include <type_traits>
+
+import std;
 
 namespace gse::internal {
     export template<typename... Units>
@@ -100,8 +99,7 @@ namespace gse::internal {
 
     template <typename ArithmeticType, typename QuantityTagType, typename DefaultUnitType, typename ValidUnits>
         requires std::is_arithmetic_v<ArithmeticType>
-    constexpr auto quantity<ArithmeticType, QuantityTagType, DefaultUnitType,
-                            ValidUnits>::as_default_unit() const -> ArithmeticType {
+    constexpr auto quantity<ArithmeticType, QuantityTagType, DefaultUnitType, ValidUnits>::as_default_unit() const -> ArithmeticType {
         return m_val;
     }
 

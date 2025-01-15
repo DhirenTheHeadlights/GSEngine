@@ -1,8 +1,10 @@
-cmake_minimum_required(VERSION 3.26)
+cmake_minimum_required(VERSION 3.30)
 
 # Set project details and C++ standard
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD ON)
+set(CMAKE_EXPERIMENTAL_CXX_MODULE_DYNDEP ON)
 
 project(Engine)
 
@@ -22,8 +24,14 @@ file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/
 file(GLOB_RECURSE ENGINE_HEADERS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/*.h")
 file(GLOB_RECURSE ENGINE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/*.ixx")
 
-# Add the engine as a static library including source and header files
-add_library(Engine STATIC ${ENGINE_SOURCES} ${ENGINE_HEADERS} ${ENGINE_MODULES})
+add_library(Engine STATIC ${ENGINE_SOURCES} ${ENGINE_HEADERS})
+
+target_sources(Engine
+    PRIVATE
+        FILE_SET cxx_modules TYPE CXX_MODULES
+        BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include"
+        FILES ${ENGINE_MODULES}
+)
 
 # Option for production build
 option(PRODUCTION_BUILD "Make this a production build" OFF)
@@ -198,9 +206,6 @@ if (MSVC)
     # Add compiler options for SIMD optimizations and multi-core compilation
     add_compile_options(/arch:AVX2) # SIMD optimizations
     add_compile_options(/MP)        # Multi-core compilation
-
-    # We have to inject cpp 23 module build support using a property file to work with the current CMake version
-    SET_PROPERTY(TARGET Engine PROPERTY VS_USER_PROPS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Resources/Misc/msvc_build_stl_modules_workaround.props")
 
     # List of external targets to be grouped under "External"
     set(EXTERNAL_TARGETS enet glad glad-generate-files glm imgui assimp unit UpdateAssimpLibsDebugSymbolsAndDLLs zlibstatic)

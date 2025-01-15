@@ -1,6 +1,6 @@
 export module Length;
 
-//import vec;
+import vec;
 
 //namespace gse {
 //    namespace gse::units {
