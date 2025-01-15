@@ -1,0 +1,4 @@
+export module gse.platform;
+
+export import gse.platform.glfw.input;
+export import gse.platform.glfw.window;

@@ -10,37 +10,37 @@ namespace gse::units {
 	constexpr char minutes_units[] = "m";
 	constexpr char hours_units[] = "h";
 
-	using milliseconds = unit<time_tag, 0.001f, milliseconds_units>;
-	using seconds = unit<time_tag, 1.0f, seconds_units>;
-	using minutes = unit<time_tag, 60.0f, minutes_units>;
-	using hours = unit<time_tag, 3600.0f, hours_units>;
-}
+	export using milliseconds = unit<time_tag, 0.001f, milliseconds_units>;
+	export using seconds = unit<time_tag, 1.0f, seconds_units>;
+	export using minutes = unit<time_tag, 60.0f, minutes_units>;
+	export using hours = unit<time_tag, 3600.0f, hours_units>;
 
-namespace gse {
 	using time_units = unit_list<
 		units::milliseconds,
 		units::seconds,
 		units::minutes,
 		units::hours
 	>;
+}
 
-	struct time : quantity<time, units::seconds, time_units> {
+export namespace gse {
+	struct time : quantity<time, units::seconds, units::time_units> {
 		using quantity::quantity;
 	};
 
-	inline time milliseconds(const float value) {
+	time milliseconds(const float value) {
 		return time::from<units::milliseconds>(value);
 	}
 
-	inline time seconds(const float value) {
+	time seconds(const float value) {
 		return time::from<units::seconds>(value);
 	}
 
-	inline time minutes(const float value) {
+	time minutes(const float value) {
 		return time::from<units::minutes>(value);
 	}
 
-	inline time hours(const float value) {
+	time hours(const float value) {
 		return time::from<units::hours>(value);
 	}
 }

@@ -3,7 +3,7 @@ export module gse.core.scene_loader;
 import std;
 import gse.core.scene;
 
-namespace gse::scene_loader {
+export namespace gse::scene_loader {
 	void add_scene(std::unique_ptr<scene>& scene);
 	void remove_scene(id* scene_id);
 
@@ -23,7 +23,9 @@ namespace gse::scene_loader {
 	scene* get_scene(id* scene_id);
 }
 
-#include "glad/glad.h"
+import <glad/glad.h>;
+
+import gse.platform.perma_assert;
 
 std::optional<GLuint> g_fbo = std::nullopt;
 bool g_engine_initialized = false;

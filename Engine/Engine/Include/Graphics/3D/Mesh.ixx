@@ -2,12 +2,13 @@ export module gse.graphics.mesh;
 
 import std;
 
-#include <glad/glad.h>
-#include <glm/glm.hpp>
+import <glad/glad.h>;
+import <glm/glm.hpp>;
 
-import gse.physics.math;
+import gse.physics.math.vector;
+import gse.physics.units;
 
-namespace gse {
+export namespace gse {
 	struct vertex {
 		glm::vec3 position;
 		glm::vec3 normal;

@@ -1,5 +1,6 @@
-#include "Engine.h"
-#include "Game.h"
+import gse;
+import game;
+
 #include "ResourcePaths.h"
 
 auto main() -> int {

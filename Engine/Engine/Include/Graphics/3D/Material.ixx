@@ -2,10 +2,10 @@ export module gse.graphics.material;
 
 import std;
 
-#include "glm/gtc/type_ptr.hpp"
+import <glm/gtc/type_ptr.hpp>;
 import gse.graphics.shader;
 
-namespace gse {
+export namespace gse {
 	struct material {
 		material(const std::string& vertex_path, const std::string& fragment_path, std::string material_type, const std::string& material_texture_path);
 
@@ -17,7 +17,8 @@ namespace gse {
 	};
 }
 
-#include "stb_image.h"
+import <stb_image.h>;
+import <glad/glad.h>;
 
 namespace {
 	auto load_texture(char const* path, const bool gamma_correction) -> unsigned int {

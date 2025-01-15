@@ -1,11 +1,13 @@
 export module gse.graphics.renderer2d;
 
-#include <glm/glm.hpp>
+import std;
+
+import <glm/glm.hpp>;
 
 import gse.graphics.texture;
 import gse.graphics.font;
 
-namespace gse::renderer2d {
+export namespace gse::renderer2d {
 	void initialize();
 	void shutdown();
 
@@ -16,21 +18,18 @@ namespace gse::renderer2d {
 	void draw_text(const font& font, const std::string& text, const glm::vec2& position, float scale, const glm::vec4& color);
 }
 
-#include <glad/glad.h>
-#include <glm/gtc/matrix_transform.hpp>
+import <glad/glad.h>;
+import <glm/gtc/matrix_transform.hpp>;
 
-#include "Core/ResourcePaths.h"
+import <Core/ResourcePaths.h>;
 import gse.graphics.shader;
 import gse.graphics.renderer3d;
-import gse.platform.window;
-#include "tests/caveview/glext.h"
-
+import gse.platform.glfw.window;
 
 GLuint g_vao, g_vbo, g_ebo;
 gse::shader g_shader;
 gse::shader g_msdf_shader;
 glm::mat4 g_projection;
-
 
 void gse::renderer2d::initialize() {
     struct vertex {

@@ -4,7 +4,7 @@ import std;
 
 import gse.platform.perma_assert;
 
-namespace gse {
+export namespace gse {
     class id;
 
     auto generate_id(const std::string& tag) -> std::unique_ptr<id>;
@@ -63,8 +63,7 @@ namespace gse {
     };
 }
 
-import gse.core.object_registry;
-import gse.physics.math;
+import gse.physics.math.vector_math;
 
 struct transparent_hash {
     using is_transparent = void; // Indicates support for heterogeneous lookup

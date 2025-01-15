@@ -4,7 +4,7 @@ import std;
 
 import gse.graphics.texture;
 
-namespace gse {
+export namespace gse {
 	struct glyph {
 		float u0 = 0, v0 = 0;
 		float u1 = 0, v1 = 0;
@@ -28,13 +28,13 @@ namespace gse {
 	};
 }
 
-#include <msdfgen.h>
+import <msdfgen.h>;
 #define STB_TRUETYPE_IMPLEMENTATION
-#include <stb_truetype.h>
-#include <freetype/freetype.h>
+import <stb_truetype.h>;
+import <freetype/freetype.h>;
 
-#include "ext/import-font.h"
-#include "tests/caveview/glext.h"
+import <ext/import-font.h>;
+import <glad/glad.h>;
 
 gse::font::font(const std::string& path) {
     load(path);

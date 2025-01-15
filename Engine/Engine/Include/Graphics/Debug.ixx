@@ -1,14 +1,17 @@
 export module gse.graphics.debug;
 
 import std;
-#include <glm/glm.hpp>
-#include <glad/glad.h>
-#include <GLFW/glfw3.h>
 
-#include "imgui.h"
-import gse.physics.math;
+import <glm/glm.hpp>;
+import <glad/glad.h>;
+import <GLFW/glfw3.h>;
+import <imgui.h>;
 
-namespace gse::debug {
+import gse.physics.units;
+import gse.physics.units.quantity;
+import gse.physics.math.vector;
+
+export namespace gse::debug {
 	void set_up_imgui();
 	void update_imgui();
 	void render_imgui();
@@ -23,9 +26,9 @@ namespace gse::debug {
 	void unit_slider(const std::string& name, quantity_type& quantity, const quantity_type& min, const quantity_type& max) {
 		float value = quantity.template as<unit_type>();
 
-		if (ImGui::SliderFloat((name + " (" + unit_type::template unit_name + ")").c_str(), &value, min.template as<unit_type>(), max.template as<unit_type>())) {
+		/*if (ImGui::SliderFloat((name + " (" + unit_type::template unit_name + ")").c_str(), &value, min.template as<unit_type>(), max.template as<unit_type>())) {
 			quantity.template set<unit_type>(value);
-		}
+		}*/
 	}
 
 	void print_boolean(const std::string& name, const bool& value);
@@ -34,13 +37,12 @@ namespace gse::debug {
 	bool get_imgui_needs_inputs();
 }
 
-#include "imguiThemes.h"
-#include "backends/imgui_impl_glfw.h"
-#include "backends/imgui_impl_opengl3.h"
+import <imguiThemes.h>;
+import <backends/imgui_impl_glfw.h>;
+import <backends/imgui_impl_opengl3.h>;
 
 import gse.core.clock;
-import gse.core.engine_core;
-import gse.core.json_parser;
+import gse.core.json_parse;
 import gse.platform.glfw.window;
 
 namespace {
@@ -97,7 +99,7 @@ void gse::debug::update_imgui() {
 				save_imgui_state();
 			}
 			if (ImGui::MenuItem("Exit")) {
-				request_shutdown();
+				//request_shutdown();
 			}
 			ImGui::EndMenu();
 		}

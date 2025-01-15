@@ -1,11 +1,11 @@
 export module gse.network;
 
-#include "enet/enet.h"
+import <enet/enet.h>;
 
-namespace gse::network {
+export namespace gse::network {
 	void initialize_enet();
 	//void update();
-	inline void close_enet() { enet_deinitialize(); }
+	void close_enet() { enet_deinitialize(); }
 	//void createMultiplayerSession();
 	void join_network_session();
 	//void setOwnAddress(std::string IP, int port);

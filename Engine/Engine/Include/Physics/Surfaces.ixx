@@ -5,7 +5,7 @@ import std;
 import gse.physics.units;
 import gse.core.clock;
 
-namespace gse::surfaces {
+export namespace gse::surfaces {
 	enum class surface_type : std::uint8_t {
 		concrete,
 		grass,

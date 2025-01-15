@@ -1,119 +1,183 @@
 export module gse.platform.perma_assert;
 
-import std;
+// --- Standard/Compiler Headers ---
+#ifdef _MSC_VER
+  // For MSVC, optionally disable "unsafe" warnings
+#define _CRT_SECURE_NO_WARNINGS
+#endif
 
-// Forward declarations of assert functions
-inline auto assert_func_production(
-    const char* expression,
-    const char* file_name,
-    unsigned line_number,
-    const char* comment = "---") -> void;
+import <iostream>;
+import <cstdio>;    // For snprintf
+import <csignal>;   // For raise, SIGABRT
+import <string>;
 
-inline auto assert_func_internal(
-    const char* expression,
-    const char* file_name,
-    unsigned line_number,
-    const char* comment = "---") -> void;
-
+// Optional: If Windows-specific features are needed
 #ifdef _WIN32
 #define NOMINMAX
-#include <Windows.h>
+import <Windows.h>;
+#endif
 
-// Windows-specific implementations
-inline auto assert_func_production(
-    const char* expression,
-    const char* file_name,
-    const unsigned line_number,
-    const char* comment) -> void {
+// ------------------------------------------------------
+// Forward-Declarations of Underlying Assert Functions
+// ------------------------------------------------------
+inline void assert_func_production(
+    char const* expression,
+    char const* file_name,
+    unsigned    line_number,
+    char const* comment = "---");
+
+inline void assert_func_internal(
+    char const* expression,
+    char const* file_name,
+    unsigned    line_number,
+    char const* comment = "---");
+
+// ------------------------------------------------------
+// Windows vs. Non-Windows Implementations
+// ------------------------------------------------------
+inline void assert_func_production(
+    char const* expression,
+    char const* file_name,
+    unsigned    line_number,
+    char const* comment)
+{
+#ifdef _WIN32
     char message[1024];
-    sprintf_s(message,
-        "Assertion failed\n\n"
-        "File:\n%s\n\n"
-        "Line:\n%u\n\n"
-        "Expression:\n%s\n\n"
-        "Comment:\n%s\n\n"
+    std::snprintf(message, sizeof(message),
+        "Assertion failed (Production)\n\n"
+        "File: %s\n"
+        "Line: %u\n"
+        "Expression: %s\n"
+        "Comment: %s\n\n"
         "Please report this error to the developer.",
         file_name, line_number, expression, comment);
 
-    MessageBoxA(nullptr, message, "Platform Layer", MB_TASKMODAL | MB_ICONHAND | MB_OK | MB_SETFOREGROUND);
-    raise(SIGABRT);
-    _exit(3);
+    ::MessageBoxA(nullptr, message, "Platform Layer",
+        MB_TASKMODAL | MB_ICONHAND | MB_OK | MB_SETFOREGROUND);
+
+    std::raise(SIGABRT);
+    _exit(3);   // Typically not reached, but just in case
+#else
+    // Non-Windows production assertion
+    std::cerr << "[Production Assertion Failure]\n"
+        << "File: " << file_name << "\n"
+        << "Line: " << line_number << "\n"
+        << "Expression: " << expression << "\n"
+        << "Comment: " << comment << "\n";
+    std::raise(SIGABRT);
+#endif
 }
 
-inline auto assert_func_internal(
-    const char* expression,
-    const char* file_name,
-    const unsigned line_number,
-    const char* comment) -> void {
+inline void assert_func_internal(
+    char const* expression,
+    char const* file_name,
+    unsigned    line_number,
+    char const* comment)
+{
+#ifdef _WIN32
     char message[1024];
-    sprintf_s(message,
-        "Assertion failed\n\n"
-        "File:\n%s\n\n"
-        "Line:\n%u\n\n"
-        "Expression:\n%s\n\n"
-        "Comment:\n%s\n\n"
-        "Press retry to debug.",
+    std::snprintf(message, sizeof(message),
+        "Assertion failed (Internal)\n\n"
+        "File: %s\n"
+        "Line: %u\n"
+        "Expression: %s\n"
+        "Comment: %s\n\n"
+        "Press Retry to debug.",
         file_name, line_number, expression, comment);
 
-    const int action = MessageBoxA(nullptr, message, "Assert",
-        MB_TASKMODAL | MB_ICONHAND | MB_ABORTRETRYIGNORE | MB_SETFOREGROUND);
+    const int action = ::MessageBoxA(nullptr, message, "Internal Assert",
+        MB_TASKMODAL | MB_ICONHAND |
+        MB_ABORTRETRYIGNORE | MB_SETFOREGROUND);
 
     switch (action) {
     case IDABORT:
-        raise(SIGABRT);
+        std::raise(SIGABRT);
         _exit(3);
     case IDRETRY:
         __debugbreak();
         break;
     case IDIGNORE:
+        // do nothing and continue
         break;
     default:
-        abort();
+        std::abort();
+    }
+#else
+    // Non-Windows internal assertion
+    std::cerr << "[Internal Assertion Failure]\n"
+        << "File: " << file_name << "\n"
+        << "Line: " << line_number << "\n"
+        << "Expression: " << expression << "\n"
+        << "Comment: " << comment << "\n";
+    std::raise(SIGABRT);
+#endif
+}
+
+// ------------------------------------------------------
+// Exported Inline "Assert" Functions
+// (Replacing macros with inline C++ functions)
+// ------------------------------------------------------
+#if defined(PRODUCTION_BUILD) && (PRODUCTION_BUILD != 0)
+
+// Production build: calls production asserts
+export void perma_assert(
+    bool        condition,
+    char const* expression,
+	char const* file_name = "---",
+	unsigned    line_number = 0,
+    char const* comment = "---")
+{
+    if (!condition) {
+        assert_func_production(expression, file_name, line_number, comment);
     }
 }
 
-#else  // Non-Windows platforms
-
-// Non-Windows implementations
-inline void assertFuncProduction(
-    const char* expression,
-    const char* fileName,
-    unsigned lineNumber,
-    const char* comment)
+export void assert_comment(
+    bool        condition,
+    char const* expression,
+	char const* file_name = "---",
+	unsigned    line_number = 0,
+    char const* comment = "---")
 {
-    fprintf(stderr, "Assertion failed in production build:\nFile: %s\nLine: %u\nExpression: %s\nComment: %s\n",
-        fileName, lineNumber, expression, comment);
-    raise(SIGABRT);
+    if (!condition) {
+        assert_func_production(expression, file_name, line_number, comment);
+    }
 }
 
-inline void assertFuncInternal(
-    const char* expression,
-    const char* fileName,
-    unsigned lineNumber,
-    const char* comment)
-{
-    fprintf(stderr, "Assertion failed:\nFile: %s\nLine: %u\nExpression: %s\nComment: %s\n",
-        fileName, lineNumber, expression, comment);
-    raise(SIGABRT);
-}
-
-#endif  // _WIN32
-
-// Define permaAssert macros
-#if PRODUCTION_BUILD == 0
-#define permaAssert(expression) \
-    ((expression) ? (void)0 : assert_func_internal(#expression, __FILE__, __LINE__))
-#define assert_comment(expression, comment) \
-    ((expression) ? (void)0 : assert_func_internal(#expression, __FILE__, __LINE__, comment))
 #else
-#define permaAssert(expression) \
-    ((expression) ? (void)0 : assertFuncProduction(#expression, __FILE__, __LINE__))
-#define permaAssertComment(expression, comment) \
-    ((expression) ? (void)0 : assertFuncProduction(#expression, __FILE__, __LINE__, comment))
-#endif
 
-// Logging Macros
-#if PRODUCTION_BUILD == 0
+// Internal (debug) build: calls internal asserts
+export void perma_assert(
+    bool        condition,
+    char const* expression,
+	char const* file_name = "---",
+	unsigned    line_number = 0,
+    char const* comment = "---")
+{
+    if (!condition) {
+        assert_func_internal(expression, file_name, line_number, comment);
+    }
+}
+
+export void assert_comment(
+    bool        condition,
+    char const* expression,
+	char const* file_name = "---",
+	unsigned    line_number = 0,
+    char const* comment = "---")
+{
+    if (!condition) {
+        assert_func_internal(expression, file_name, line_number, comment);
+    }
+}
+
+#endif // PRODUCTION_BUILD
+
+// ------------------------------------------------------
+// Logging Function Templates
+// ------------------------------------------------------
+// Instead of macros, use templates toggled by #defines
+#if !defined(PRODUCTION_BUILD) || (PRODUCTION_BUILD == 0)
 #define FORCE_LOG
 #endif
 
@@ -123,27 +187,47 @@ inline void assertFuncInternal(
 
 #ifdef FORCE_LOG
 
-template<typename... Args>
-auto generic_log(Args&&... args) -> void {
+export template <typename... Args>
+inline void llog(Args&&... args) {
     (std::cout << ... << args) << std::endl;
 }
 
-#define DEFINE_LOG_FUNCTION(log_func)                \
-    template<typename... Args>                       \
-    void log_func(Args&&... args) {                  \
-        generic_log(std::forward<Args>(args)...);    \
-    }
+export template <typename... Args>
+inline void wlog(Args&&... args) {
+    (std::cout << ... << args) << std::endl;
+}
 
-#else
+export template <typename... Args>
+inline void ilog(Args&&... args) {
+    (std::cout << ... << args) << std::endl;
+}
 
-#define DEFINE_LOG_FUNCTION(log_func)                \
-    template<typename... Args>                       \
-    void log_func(Args&&...) {}
+export template <typename... Args>
+inline void glog(Args&&... args) {
+    (std::cout << ... << args) << std::endl;
+}
+
+export template <typename... Args>
+inline void elog(Args&&... args) {
+    (std::cout << ... << args) << std::endl;
+}
+
+#else // If FORCE_LOG is not defined, provide no-op versions
+
+export template <typename... Args>
+inline void llog(Args&&...) {}
+
+export template <typename... Args>
+inline void wlog(Args&&...) {}
+
+export template <typename... Args>
+inline void ilog(Args&&...) {}
+
+export template <typename... Args>
+inline void glog(Args&&...) {}
+
+export template <typename... Args>
+inline void elog(Args&&...) {}
 
 #endif
 
-DEFINE_LOG_FUNCTION(llog)
-DEFINE_LOG_FUNCTION(wlog)
-DEFINE_LOG_FUNCTION(ilog)
-DEFINE_LOG_FUNCTION(glog)
-DEFINE_LOG_FUNCTION(elog)

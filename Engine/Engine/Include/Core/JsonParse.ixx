@@ -1,8 +1,8 @@
-export module gse.core.json_parser;
+export module gse.core.json_parse;
 
 import std;
 
-#include "json.hpp"
+import <json.hpp>;
 
 export namespace gse::json_parse {
 	nlohmann::json load_json(const std::string& path);
@@ -33,11 +33,12 @@ export namespace gse::json_parse {
 	}
 }
 
-import gse.platform.perma_assert;
-
 nlohmann::json gse::json_parse::load_json(const std::string& path) {
 	std::ifstream file(path);
-	assert_comment(file.is_open(), std::string("Failed to open file: " + path).c_str());
+	if (!file.is_open()) {
+		std::cerr << "Json file not open\n";
+		return {};
+	}
 	try {
 		return nlohmann::json::parse(file);
 	}

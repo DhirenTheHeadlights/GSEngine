@@ -4,9 +4,9 @@ import std;
 
 import gse.core.id;
 import gse.graphics.renderer3d;
-import gse.object.hook;
+import gse.core.object.hook;
 
-namespace gse {
+export namespace gse {
 	class scene final : public hookable<scene>, public identifiable {
 	public:
 		scene(const std::string& name = "Unnamed Scene") : identifiable(name) {}

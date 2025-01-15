@@ -3,11 +3,16 @@ export module gse.graphics.bounding_box;
 import std;
 
 import gse.physics.motion_component;
-#include "Physics/Units/Units.h"
-#include "Physics/Vector/Math.h"
-#include "Physics/Vector/Vec3.h"
+import gse.physics.units;
+import gse.physics.math.vector_math;
+import gse.physics.math.vector;
 
-namespace gse {
+import <glm/glm.hpp>;
+import <glm/gtc/type_ptr.hpp>;
+import <glm/gtc/matrix_transform.hpp>;
+import <glm/gtc/quaternion.hpp>;
+
+export namespace gse {
 	struct collision_information {
 		bool colliding = false;
 		vec3<> collision_normal;

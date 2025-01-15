@@ -3,7 +3,11 @@ export module gse.physics.narrow_phase_collisions;
 import std;
 
 import gse.graphics.bounding_box;
-import gse.physics.collision.collision_component;
+import gse.physics.collision_component;
+import gse.physics.motion_component;
+import gse.physics.units;
+import gse.physics.math.vector;
+import gse.physics.math.vector_math;
 
 namespace gse::narrow_phase_collision {
 	auto resolve_collision(const physics::motion_component* object_motion_component, physics::collision_component& object_collision_component, const physics::collision_component& other_collision_component) -> void;

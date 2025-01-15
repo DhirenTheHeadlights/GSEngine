@@ -1,12 +1,13 @@
-#include "SphereLight.h"
+export module game.sphere_light;
 
-#include <memory>
+import std;
+import gse;
 
-#include "Core/ObjectRegistry.h"
-
-namespace {
-	int g_sphere_light_count = 1;
+namespace game {
+	auto create_sphere_light(const gse::vec3<gse::length>& position, const gse::length& radius, int sectors) -> std::uint32_t;
 }
+
+int g_sphere_light_count = 1;
 
 struct sphere_light_hook final : gse::hook<gse::entity> {
 	using hook::hook;
@@ -18,9 +19,9 @@ struct sphere_light_hook final : gse::hook<gse::entity> {
 auto sphere_light_hook::initialize() -> void {
 	gse::light_source_component light_source_component(owner_id);
 
-    auto light = std::make_unique<gse::spot_light>(
-        gse::vec3(1.f), gse::unitless(250.f), gse::vec3<gse::length>(), gse::vec3(0.0f, -1.0f, 0.0f), gse::unitless(1.0f), 0.09f, 0.032f, gse::degrees(35.f), gse::degrees(65.f), gse::unitless(0.025f)
-        );
+	auto light = std::make_unique<gse::spot_light>(
+		gse::vec3(1.f), gse::unitless(250.f), gse::vec3<gse::length>(), gse::vec3(0.0f, -1.0f, 0.0f), gse::unitless(1.0f), 0.09f, 0.032f, gse::degrees(35.f), gse::degrees(65.f), gse::unitless(0.025f)
+	);
 
 	const auto ignore_list_id = gse::generate_id("Sphere Light " + std::to_string(g_sphere_light_count) + " Ignore List");
 	gse::registry::add_new_entity_list(ignore_list_id.get(), { owner_id });
@@ -44,7 +45,7 @@ auto sphere_light_hook::update() -> void {
 auto sphere_light_hook::render() -> void {
 	for (const auto& light : gse::registry::get_component<gse::light_source_component>(owner_id).get_lights()) {
 		light->show_debug_menu(gse::registry::get_entity_name(owner_id), owner_id);
-    }
+	}
 
 	gse::debug::add_imgui_callback([this] {
 		ImGui::Begin("Sphere Light");

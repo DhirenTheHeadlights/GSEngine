@@ -2,13 +2,13 @@ export module gse.graphics.light_source_component;
 
 import std;
 
-#include <glm/glm.hpp>
+import <glm/glm.hpp>;
 
 import gse.core.engine_component;
 import gse.graphics.light;
-import gse.physics.math;
+import gse.physics.math.vector_math;
 
-namespace gse {
+export namespace gse {
 	class light_source_component final : public component {
 	public:
 		light_source_component(const std::uint32_t id) : component(id) {}

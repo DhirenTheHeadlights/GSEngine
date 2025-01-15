@@ -1,11 +1,14 @@
-export module gse.core.point_light;
+export module gse.graphics.point_light;
 
-#include <imgui.h>
+import <imgui.h>;
 
 import gse.graphics.light;
 import gse.graphics.cube_map;
+import gse.graphics.debug;
+import gse.physics.units;
+import gse.physics.math.vector;
 
-namespace gse {
+export namespace gse {
 	class point_light final : public light {
 	public:
 		point_light(const vec3<>& color, const unitless& intensity, const vec3<length>& position, const unitless& constant, const unitless& linear, const unitless& quadratic, const unitless& ambient_strength)

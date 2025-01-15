@@ -2,7 +2,7 @@ export module gse.physics.units.length;
 
 import gse.physics.units.quantity;
 
-namespace gse::units {
+export namespace gse::units {
 	struct length_tag {};
 
 	constexpr char kilometers_units[] = "km";
@@ -20,9 +20,7 @@ namespace gse::units {
 	using yards = unit<length_tag, 0.9144f, yards_units>;
 	using feet = unit<length_tag, 0.3048f, feet_units>;
 	using inches = unit<length_tag, 0.0254f, inches_units>;
-}
 
-namespace gse {
 	using length_units = unit_list<
 		units::kilometers,
 		units::meters,
@@ -32,36 +30,38 @@ namespace gse {
 		units::feet,
 		units::inches
 	>;
+}
 
-	struct length : quantity<length, units::meters, length_units> {
+export namespace gse {
+	struct length : quantity<length, units::meters, units::length_units> {
 		using quantity::quantity;
 	};
 
-	inline auto kilometers(const float value) -> length {
+	auto kilometers(const float value) -> length {
 		return length::from<units::kilometers>(value);
 	}
 
-	inline auto meters(const float value) -> length {
+	auto meters(const float value) -> length {
 		return length::from<units::meters>(value);
 	}
 
-	inline auto centimeters(const float value) -> length {
+	auto centimeters(const float value) -> length {
 		return length::from<units::centimeters>(value);
 	}
 
-	inline auto millimeters(const float value) -> length {
+	auto millimeters(const float value) -> length {
 		return length::from<units::millimeters>(value);
 	}
 
-	inline auto yards(const float value) -> length {
+	auto yards(const float value) -> length {
 		return length::from<units::yards>(value);
 	}
 
-	inline auto feet(const float value) -> length {
+	auto feet(const float value) -> length {
 		return length::from<units::feet>(value);
 	}
 
-	inline auto inches(const float value) -> length {
+	auto inches(const float value) -> length {
 		return length::from<units::inches>(value);
 	}
 }

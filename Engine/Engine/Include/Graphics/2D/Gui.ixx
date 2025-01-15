@@ -2,9 +2,9 @@ export module gse.graphics.gui;
 
 import std;
 
-#include <glm/glm.hpp>
+import <glm/glm.hpp>;
 
-namespace gse::gui {
+export namespace gse::gui {
 	void initialize();
 	void render();
 	void shutdown();

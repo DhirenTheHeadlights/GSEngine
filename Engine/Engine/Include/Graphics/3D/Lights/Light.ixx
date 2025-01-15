@@ -2,11 +2,15 @@ export module gse.graphics.light;
 
 import std;
 
-#include <glm/glm.hpp>
+import <glm/glm.hpp>;
+import <glad/glad.h>;
+
 import gse.core.id;
 import gse.graphics.debug;
+import gse.physics.units;
+import gse.physics.math.vector;
 
-namespace gse {
+export namespace gse {
     enum class light_type : std::uint8_t {
         directional,
         point,

@@ -1,16 +1,24 @@
 export module gse.core.object.box;
 
-import gse.physics.math;
+import std;
+
+import gse.physics.math.vector;
+import gse.physics.units.length;
 
 export namespace gse {
 	auto create_box(std::uint32_t object_uuid, const vec3<length>& initial_position, const vec3<length>& size) -> void;
 	auto create_box(const vec3<length>& initial_position, const vec3<length>& size) -> std::uint32_t;
 }
 
-#include <imgui.h>
+import <imgui.h>;
 
 import gse.core.object_registry;
+import gse.core.object.hook;
 import gse.graphics.render_component;
+import gse.physics.collision_component;
+import gse.physics.motion_component;
+import gse.physics.math.vector_math;
+import gse.graphics.debug;
 
 struct box_mesh_hook final : gse::hook<gse::entity> {
     box_mesh_hook(const gse::vec3<gse::length>& initial_position, const gse::vec3<gse::length>& size)
@@ -139,7 +147,7 @@ private:
 };
 
 auto gse::create_box(const std::uint32_t object_uuid, const vec3<length>& initial_position, const vec3<length>& size) -> void {
-    registry::add_entity_hook(object_uuid, std::make_unique<box_mesh_hook>(initial_position, size));
+    //registry::add_entity_hook(object_uuid, std::make_unique<box_mesh_hook>(initial_position, size));
 }
 
 auto gse::create_box(const vec3<length>& initial_position, const vec3<length>& size) -> std::uint32_t {

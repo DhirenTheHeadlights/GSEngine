@@ -1,8 +1,11 @@
-#include "Arena.h"
+export module game.arena;
 
-#include <memory>
+import gse;
+import std;
 
-#include "Core/ObjectRegistry.h"
+namespace game::arena {
+	auto create(gse::scene* scene) -> void;
+}
 
 struct wall_hook final : gse::hook<gse::entity> {
 	using hook::hook;
@@ -13,12 +16,10 @@ struct wall_hook final : gse::hook<gse::entity> {
 	}
 };
 
-namespace {
-	auto create_arena_wall(const gse::vec3<gse::units::meters>& position, const gse::vec3<gse::units::meters>& size) -> std::uint32_t {
-		const std::uint32_t wall_uuid = create_box(position, size);
-		gse::registry::add_entity_hook(wall_uuid, std::make_unique<wall_hook>());
-		return wall_uuid;
-	}
+auto create_arena_wall(const gse::vec3<gse::units::meters>& position, const gse::vec3<gse::units::meters>& size) -> std::uint32_t {
+	const std::uint32_t wall_uuid = create_box(position, size);
+	gse::registry::add_entity_hook(wall_uuid, std::make_unique<wall_hook>());
+	return wall_uuid;
 }
 
 auto game::arena::create(gse::scene* scene) -> void {

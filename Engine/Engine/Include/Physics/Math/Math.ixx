@@ -2,14 +2,14 @@ export module gse.physics.math.vector_math;
 
 import std;
 
-#include <glm/glm.hpp>
-#include <glm/gtc/epsilon.hpp>
+import <glm/glm.hpp>;
+import <glm/gtc/epsilon.hpp>;
 
 import gse.physics.math.vector;
 
-namespace gse {
-	inline std::random_device g_rd;
-	inline std::mt19937 g_gen(g_rd());
+export namespace gse {
+	std::random_device g_rd;
+	std::mt19937 g_gen(g_rd());
 
 	template <typename number_type>
 		requires std::is_arithmetic_v<number_type>
@@ -48,7 +48,7 @@ namespace gse {
 	}
 }
 
-namespace gse {
+export namespace gse {
 	enum : std::uint8_t {
 		x, y, z
 	};

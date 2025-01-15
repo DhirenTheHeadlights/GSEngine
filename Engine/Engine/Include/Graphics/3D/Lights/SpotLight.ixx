@@ -1,6 +1,11 @@
-export module gse.core.spot_light;
+export module gse.graphics.spot_light;
+
+import <imgui.h>;
 
 import gse.graphics.light;
+import gse.graphics.debug;
+import gse.physics.units;
+import gse.physics.math.vector;
 
 namespace gse {
 	class spot_light final : public light {

@@ -2,15 +2,16 @@ export module gse.physics.motion_component;
 
 import std;
 
-#include <glm/glm.hpp>
-#include "glm/detail/type_quat.hpp"
-#include "glm/gtc/quaternion.hpp"
+import <glm/glm.hpp>;
+import <glm/detail/type_quat.hpp>;
+import <glm/gtc/quaternion.hpp>;
 
 import gse.core.engine_component;
 import gse.physics.units;
-import gse.physics.math;
+import gse.physics.math.vector;
+import gse.physics.math.vector_math;
 
-namespace gse::physics {
+export namespace gse::physics {
 	struct motion_component final : component {
 		motion_component(const std::uint32_t id) : component(id) {}
 

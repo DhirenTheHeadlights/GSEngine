@@ -2,12 +2,15 @@ export module gse.physics.system;
 
 import std;
 
-#include <glm/glm.hpp>
+import <glm/glm.hpp>;
 
 import gse.physics.motion_component;
 import gse.graphics.bounding_box;
+import gse.physics.units;
+import gse.physics.math.vector;
+import gse.physics.math.vector_math;
 
-namespace gse::physics {
+export namespace gse::physics {
 	auto apply_force(motion_component& component, const vec3<force>& force, const vec3<length>& world_force_position = { 0.f, 0.f, 0.f }) -> void;
 	auto apply_impulse(motion_component& component, const vec3<force>& force, const time& duration) -> void;
 	auto update_object(motion_component& component) -> void;
@@ -16,15 +19,11 @@ namespace gse::physics {
 		collision_info) -> void;
 }
 
-#define GLM_ENABLE_EXPERIMENTAL
-#include <glm/gtx/norm.hpp>
-
-import gse.core.clock;
+import gse.core.main_clock;
 import gse.core.object_registry;
 import gse.graphics.render_component;
 import gse.physics.surfaces;
 import gse.physics.collision_component;
-import gse.physics.math;
 import gse.platform.glfw.input;
 
 auto g_gravity = gse::vec3<gse::units::meters_per_second_squared>(0.f, -9.8f, 0.f);

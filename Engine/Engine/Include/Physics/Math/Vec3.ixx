@@ -1,19 +1,11 @@
 export module gse.physics.math.vector;
 
-import std;
+import <glm/glm.hpp>;
 
-#include <glm/glm.hpp>
-
-#define GLM_ENABLE_EXPERIMENTAL
-#include <glm/gtx/norm.hpp>
-
-#pragma once
-
-#include "Physics/Units/Units.h"
-#include "Physics/Units/UnitTemplate.h"
+import gse.physics.units;
 
 // Default case: Assume the type is already a Quantity
-template <typename T>
+export template <typename T>
 struct unit_to_quantity {
 	using type = T;
 };
@@ -128,7 +120,7 @@ export namespace gse {
 	}
 
 	template <typename quantity_or_unit_type, typename argument_type>
-	[[nodiscard]] static auto get_value(const argument_type& argument) -> float {
+	[[nodiscard]] auto get_value(const argument_type& argument) -> float {
 		if constexpr (is_quantity<argument_type>) {
 			return argument.as_default_unit();
 		}
@@ -144,7 +136,7 @@ export namespace gse {
 	}
 
 	template <typename unit_or_quantity_type, typename... arguments>
-	[[nodiscard]] static auto create_vec(arguments&&... args) -> glm::vec3 {
+	[[nodiscard]] auto create_vec(arguments&&... args) -> glm::vec3 {
 		if constexpr (sizeof...(arguments) == 0) {
 			return glm::vec3(0.0f);
 		}

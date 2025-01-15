@@ -1,9 +1,9 @@
-export module gse.object.hook;
+export module gse.core.object.hook;
 
 import std;
 
 namespace gse {
-	struct entity;
+	export struct entity;
 	class scene;
 	class id;
 

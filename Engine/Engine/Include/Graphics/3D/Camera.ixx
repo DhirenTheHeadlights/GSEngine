@@ -1,11 +1,13 @@
 export module gse.graphics.camera;
 
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
+import <glm/glm.hpp>;
+import <glm/gtc/matrix_transform.hpp>;
 
-import gse.physics.math;
+import gse.physics.math.vector;
+import gse.physics.math.vector_math;
+import gse.physics.units;
 
-namespace gse {
+export namespace gse {
 	class camera {
 	public:
 		camera(const vec3<length>& initial_position = { 0.f }) : m_position(initial_position) {}

@@ -414,7 +414,7 @@ namespace gse::unit_vec3 {
 	}
 }
 
-export namespace gse {
+namespace gse {
 	template <unit_vec::is_quantity_or_unit Q, typename T = float>
 	struct vec3 : unit_vec3::vec3_t<typename unit_vec::get_quantity<Q>::type, T> {
 		using value_type = typename unit_vec::get_quantity<Q>::type::value_type;

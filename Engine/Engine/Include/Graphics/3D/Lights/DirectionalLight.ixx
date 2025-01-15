@@ -1,7 +1,11 @@
 export module gse.graphics.directional_light;
 
+import <imgui.h>;
+
 import gse.graphics.light;
 import gse.physics.math.vector;
+import gse.graphics.debug;
+import gse.physics.units;
 
 namespace gse {
 	class directional_light final : public light {

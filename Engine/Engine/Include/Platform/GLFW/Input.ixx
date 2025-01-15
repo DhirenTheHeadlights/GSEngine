@@ -2,11 +2,13 @@ export module gse.platform.glfw.input;
 
 import std;
 
-#include <glad/glad.h>
-#include <GLFW/glfw3.h>
-#include <glm/glm.hpp>
+import gse.physics.units.duration;
 
-namespace gse::input {
+import <glad/glad.h>;
+import <GLFW/glfw3.h>;
+import <glm/glm.hpp>;
+
+export namespace gse::input {
 	struct button {
 		std::uint8_t pressed = 0;
 		std::uint8_t held = 0;
@@ -68,7 +70,7 @@ namespace gse::input {
 
 		glm::vec2 position;
 		glm::vec2 delta;
-		glm::ivec2 last_position;
+		glm::vec2 last_position;
 
 		void reset() {
 			for (auto& snd : buttons | std::views::values) {
@@ -77,7 +79,7 @@ namespace gse::input {
 		}
 	};
 
-	void update();
+	void update(const time delta_time);
 	void set_up_key_maps();
 
 	keyboard& get_keyboard();
@@ -88,33 +90,29 @@ namespace gse::input {
 
 	namespace internal {
 		void process_event_button(button& button, bool new_state);
-		void update_button(button& button);
+		void update_button(button& button, time delta_time);
 
-		void update_all_buttons();
+		void update_all_buttons(time delta_time);
 		void reset_inputs_to_zero();
 
 		void add_to_typed_input(char input);
 		void reset_typed_input();
+
+		void set_current_mouse_position(const glm::ivec2& position);
 	};
 }
-
-#include "Platform/GLFW/Input.h"
-
-#include "Core/Clock.h"
-#include "Platform/GLFW/Window.h"
 
 gse::input::keyboard g_keyboard;
 gse::input::controller g_controller;
 gse::input::mouse g_mouse;
 
-void gse::input::update() {
-	internal::update_all_buttons();
+void gse::input::update(const time delta_time) {
+	internal::update_all_buttons(delta_time);
 	internal::reset_typed_input();
 }
 
-namespace {
-	bool g_block_inputs = false;
-}
+bool g_block_inputs = false;
+
 
 void gse::input::set_up_key_maps() {
 	for (int i = GLFW_KEY_A; i <= GLFW_KEY_Z; i++) {
@@ -166,7 +164,7 @@ void gse::input::internal::process_event_button(button& button, const bool new_s
 	button.new_state = static_cast<int8_t>(new_state);
 }
 
-void gse::input::internal::update_button(button& button) {
+void gse::input::internal::update_button(button& button, const time delta_time) {
 	if (button.new_state == 1) {
 		if (button.held) {
 			button.pressed = false;
@@ -195,7 +193,7 @@ void gse::input::internal::update_button(button& button) {
 		button.typed_time = 0.48f;
 	}
 	else if (button.held) {
-		button.typed_time -= main_clock::get_delta_time().as<units::seconds>();
+		button.typed_time -= delta_time.as<units::seconds>();
 
 		if (button.typed_time < 0.f)
 		{
@@ -214,11 +212,11 @@ void gse::input::internal::update_button(button& button) {
 	button.new_state = -1;
 }
 
-void gse::input::internal::update_all_buttons() {
+void gse::input::internal::update_all_buttons(const time delta_time) {
 	if (g_block_inputs) return;
 
 	for (auto& button : g_keyboard.keys | std::views::values) {
-		update_button(button);
+		update_button(button, delta_time);
 	}
 
 	for (int i = 0; i <= static_cast<int>(g_controller.buttons.size()); i++) {
@@ -234,7 +232,7 @@ void gse::input::internal::update_all_buttons() {
 				else if (state.buttons[b] == GLFW_RELEASE) {
 					process_event_button(button, false);
 				}
-				update_button(button);
+				update_button(button, delta_time);
 			}
 
 			g_controller.rt = state.axes[GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER];
@@ -251,11 +249,11 @@ void gse::input::internal::update_all_buttons() {
 	}
 
 	for (auto& button : g_mouse.buttons | std::views::values) {
-		update_button(button);
+		update_button(button, delta_time);
 	}
 
-	g_mouse.delta = window::get_rel_mouse_position() - g_mouse.last_position;
-	g_mouse.last_position = window::get_rel_mouse_position();
+	g_mouse.delta = g_mouse.position - g_mouse.last_position;
+	g_mouse.last_position = g_mouse.position;
 }
 
 void gse::input::internal::reset_inputs_to_zero() {
@@ -280,4 +278,8 @@ void gse::input::internal::add_to_typed_input(const char input) {
 
 void gse::input::internal::reset_typed_input() {
 	g_keyboard.typed_input.clear();
+}
+
+void gse::input::internal::set_current_mouse_position(const glm::ivec2& position) {
+	g_mouse.last_position = glm::vec2(position);
 }

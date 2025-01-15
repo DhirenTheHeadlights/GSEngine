@@ -1,10 +1,10 @@
-export module gse.core.texture;
+export module gse.graphics.texture;
 
 import std;
 
-#include <glad/glad.h>
-#include <GLFW/glfw3.h>
-#include <glm/glm.hpp>
+import <glad/glad.h>;
+import <GLFW/glfw3.h>;
+import <glm/glm.hpp>;
 
 export namespace gse {
     class texture {

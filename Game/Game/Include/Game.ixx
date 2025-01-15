@@ -1,20 +1,25 @@
-#include "Game.h"
+export module game;
+
+export namespace game {
+	auto initialize() -> bool;
+	auto update() -> bool;
+	auto render() -> bool;
+	auto close() -> bool;
+
+	auto set_input_handling_flag(bool enabled) -> void;
+}
+
+import std;
+import gse;
+import game.arena;
+import game.player;
+import game.skybox;
+import game.sphere_light;
 
 #include <imgui.h>
-#include <memory>
-#include <memory>
-
-#include "Arena.h"
-#include "Engine.h"
-#include "Player.h"
 #include "ResourcePaths.h"
-#include "Skybox.h"
-#include "SphereLight.h"
-#include "Graphics/2D/Renderer2D.h"
 
-namespace {
-	bool g_input_handling_enabled = true;
-}
+bool g_input_handling_enabled = true;
 
 auto game::set_input_handling_flag(const bool enabled) -> void {
 	g_input_handling_enabled = enabled;
@@ -80,15 +85,15 @@ struct scene2_hook final : gse::hook<gse::scene> {
 	}
 
 	auto render() -> void override {
-        gse::debug::add_imgui_callback([] {
-            if (gse::scene_loader::get_scene(gse::get_id("Scene2"))->get_active()) {
-                ImGui::Begin("Game Data");
+		gse::debug::add_imgui_callback([] {
+			if (gse::scene_loader::get_scene(gse::get_id("Scene2"))->get_active()) {
+				ImGui::Begin("Game Data");
 
-                ImGui::Text("FPS: %d", gse::main_clock::get_frame_rate());
+				ImGui::Text("FPS: %d", gse::main_clock::get_frame_rate());
 
-                ImGui::End();
-            }
-        });
+				ImGui::End();
+			}
+			});
 	}
 };
 

@@ -2,10 +2,10 @@ export module gse.graphics.shader;
 
 import std;
 
-#include <glad/glad.h>
-#include <glm/glm.hpp>
+import <glad/glad.h>;
+import <glm/glm.hpp>;
 
-namespace gse {
+export namespace gse {
     class shader {
     public:
         shader() = default;
@@ -38,7 +38,7 @@ namespace gse {
     };
 }
 
-#include "glm/gtc/type_ptr.hpp"
+import <glm/gtc/type_ptr.hpp>;
 
 gse::shader::shader(const std::string& vertex_path, const std::string& fragment_path, const std::string& geometry_path) {
     if (!geometry_path.empty()) {

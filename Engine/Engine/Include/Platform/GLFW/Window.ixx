@@ -2,10 +2,9 @@ export module gse.platform.glfw.window;
 
 import std;
 
-#include <glad/glad.h>
-#include <GLFW/glfw3.h>
-
-#include "glm/glm.hpp"
+import <glad/glad.h>;
+import <GLFW/glfw3.h>;
+import "glm/glm.hpp";
 
 export namespace gse::window {
     struct rendering_interface {
@@ -206,6 +205,8 @@ void gse::window::update() {
 	else {
 		glfwSetInputMode(g_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 	}
+
+	input::internal::set_current_mouse_position(get_rel_mouse_position());
 }
 
 void gse::window::end_frame() {

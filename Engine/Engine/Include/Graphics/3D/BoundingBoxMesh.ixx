@@ -6,7 +6,7 @@ import gse.graphics.bounding_box;
 import gse.graphics.mesh;
 import gse.physics.math.vector;
 
-namespace gse {
+export namespace gse {
 	class bounding_box_mesh final : public mesh {
 	public:
 		bounding_box_mesh(const vec3<length>& lower, const vec3<length>& upper);
@@ -37,6 +37,8 @@ namespace gse {
 		length m_cell_size = meters(10.0f);
 	};
 }
+
+import <glad/glad.h>;
 
 gse::bounding_box_mesh::bounding_box_mesh(const vec3<length>& lower, const vec3<length>& upper)
 	: m_lower(lower), m_upper(upper) {
