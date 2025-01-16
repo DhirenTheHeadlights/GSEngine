@@ -16,7 +16,8 @@ export namespace gse::registry {
 	// The uuid will be replaced with its index in the object list when it is activated
 	auto create_entity() -> std::uint32_t;
 
-	auto add_entity_hook(std::uint32_t parent_id, std::unique_ptr<hook<entity>> hook) -> void;
+	template <typename HookType, typename... Args>
+	auto add_entity_hook(std::uint32_t parent_id, Args&&... args) -> void;
 	auto remove_object_hook(const hook<entity>& hook) -> void;
 
 	auto initialize_hooks() -> void;
@@ -218,13 +219,18 @@ auto gse::registry::create_entity() -> std::uint32_t {
 	return obj.index; // Return temp uuid
 }
 
-auto gse::registry::add_entity_hook(const std::uint32_t parent_id, std::unique_ptr<hook<entity>> hook) -> void {
+template <typename HookType, typename... Args>
+auto gse::registry::add_entity_hook(std::uint32_t parent_id, Args&&... args) -> void {
+	auto derived_hook = std::make_unique<HookType>(std::forward<Args>(args)...);
+
+	std::unique_ptr<base_hook> base_hook = std::move(derived_hook);
+
 	const auto it = std::ranges::find_if(g_entities, [parent_id](const entity& obj) {
 		return obj.index == parent_id;
 		});
 	if (it != g_entities.end()) {
-		hook->owner_id = parent_id;
-		g_hooks.push_back(std::move(hook));
+		base_hook->owner_id = parent_id;
+		g_hooks.push_back(std::move(base_hook));
 		return;
 	}
 
@@ -232,8 +238,8 @@ auto gse::registry::add_entity_hook(const std::uint32_t parent_id, std::unique_p
 		return obj.index == parent_id;
 		});
 	if (it2 != g_registered_inactive_entities.end()) {
-		hook->owner_id = parent_id;
-		g_registered_inactive_hooks.push_back(std::move(hook));
+		base_hook->owner_id = parent_id;
+		g_registered_inactive_hooks.push_back(std::move(base_hook));
 		return;
 	}
 

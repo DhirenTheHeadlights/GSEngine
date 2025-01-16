@@ -3,7 +3,7 @@ export module game.arena;
 import gse;
 import std;
 
-namespace game::arena {
+export namespace game::arena {
 	auto create(gse::scene* scene) -> void;
 }
 
@@ -18,7 +18,7 @@ struct wall_hook final : gse::hook<gse::entity> {
 
 auto create_arena_wall(const gse::vec3<gse::units::meters>& position, const gse::vec3<gse::units::meters>& size) -> std::uint32_t {
 	const std::uint32_t wall_uuid = create_box(position, size);
-	gse::registry::add_entity_hook(wall_uuid, std::make_unique<wall_hook>());
+	gse::registry::add_entity_hook<wall_hook>(wall_uuid);
 	return wall_uuid;
 }
 

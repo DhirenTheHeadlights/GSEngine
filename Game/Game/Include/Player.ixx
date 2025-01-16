@@ -3,7 +3,10 @@ export module game.player;
 import std;
 import gse;
 
-namespace game {
+import <imgui.h>;
+import <GLFW/glfw3.h>;
+
+export namespace game {
 	auto create_player(std::uint32_t object_uuid) -> void;
 	auto create_player() -> std::uint32_t;
 }
@@ -147,8 +150,8 @@ private:
 };
 
 auto game::create_player(const std::uint32_t object_uuid) -> void {
-	gse::registry::add_entity_hook(object_uuid, std::make_unique<player_hook>());
-	gse::registry::add_entity_hook(object_uuid, std::make_unique<jetpack_hook>());
+	gse::registry::add_entity_hook<player_hook>(object_uuid);
+	gse::registry::add_entity_hook<jetpack_hook>(object_uuid);
 }
 
 auto game::create_player() -> std::uint32_t {

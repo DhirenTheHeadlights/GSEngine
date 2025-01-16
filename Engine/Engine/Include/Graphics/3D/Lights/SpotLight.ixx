@@ -7,7 +7,7 @@ import gse.graphics.debug;
 import gse.physics.units;
 import gse.physics.math.vector;
 
-namespace gse {
+export namespace gse {
 	class spot_light final : public light {
 	public:
 		spot_light(const vec3<>& color, const unitless& intensity, const vec3<length>& position, const vec3<>& direction, const unitless& constant, const unitless& linear, const unitless& quadratic, const angle& cut_off, const angle& outer_cut_off, const unitless& ambient_strength)

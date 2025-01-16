@@ -3,7 +3,7 @@ export module game.skybox;
 import std;
 import gse;
 
-namespace game::skybox {
+export namespace game::skybox {
 	auto create(gse::scene* scene) -> void;
 }
 

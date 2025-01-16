@@ -16,8 +16,8 @@ import game.player;
 import game.skybox;
 import game.sphere_light;
 
-#include <imgui.h>
-#include "ResourcePaths.h"
+import <imgui.h>;
+import <ResourcePaths.h>;
 
 bool g_input_handling_enabled = true;
 

@@ -17,14 +17,13 @@ set(INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Game/Include")
 
 # Gather game source files only for GoonSquadLib
 file(GLOB_RECURSE GAME_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Game/Source/*.cpp")
-file(GLOB_RECURSE GAME_HEADERS CONFIGURE_DEPENDS "${INCLUDE_DIR}/*.h")
 file(GLOB_RECURSE GAME_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Game/Include/*.ixx")
 
 # GoonSquadLib: Add as a static library
-add_library(GoonSquadLib STATIC ${GAME_SOURCES} ${GAME_HEADERS})
+add_library(GoonSquadLib)
 
 target_sources(GoonSquadLib
-    PRIVATE
+    PUBLIC
         FILE_SET cxx_modules TYPE CXX_MODULES
         BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Game/Include"
         FILES ${GAME_MODULES}

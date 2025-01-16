@@ -58,16 +58,13 @@ void gse::display_timers() {
 }
 
 /// Main Clock
+std::chrono::steady_clock::time_point g_last_update = std::chrono::steady_clock::now();
+gse::time g_dt;
 
-namespace {
-	std::chrono::steady_clock::time_point g_last_update = std::chrono::steady_clock::now();
-	gse::time g_dt;
-
-	int g_frame_rate = 0;
-	float g_frame_count = 0;
-	float g_num_frames_to_average = 40;
-	gse::time g_frame_rate_update_time;
-}
+int g_frame_rate = 0;
+float g_frame_count = 0;
+float g_num_frames_to_average = 40;
+gse::time g_frame_rate_update_time;
 
 void gse::main_clock::update() {
 	const auto now = std::chrono::steady_clock::now();

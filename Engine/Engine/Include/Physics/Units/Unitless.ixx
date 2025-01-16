@@ -2,16 +2,16 @@ export module gse.physics.units.unitless;
 
 import gse.physics.units.quantity;
 
-namespace gse::internal {
+export namespace gse::internal {
 	struct unitless_tag {};
-	constexpr char unitless_units[] = "Unitless";
-	export struct unitless_unit : unit<unitless_tag, 1.0f, unitless_units> {};
+	constexpr char unitless_units_c[] = "Unitless";
+	struct unitless_unit : unit<unitless_tag, 1.0f, unitless_units_c> {};
 }
 
-namespace gse {
+export namespace gse {
 	using unitless_units = unit_list<internal::unitless_unit>;
 
-	export struct unitless : quantity<unitless, internal::unitless_unit, unitless_units> {
+	struct unitless : quantity<unitless, internal::unitless_unit, unitless_units> {
 		using quantity::quantity;
 
 		unitless(const float value) : quantity(value) {}

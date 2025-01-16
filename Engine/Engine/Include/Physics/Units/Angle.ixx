@@ -2,12 +2,12 @@ export module gse.physics.units.angle;
 
 import gse.physics.units.quantity;
 
-namespace gse::units {
+export namespace gse::units {
 	constexpr char degrees_units[] = "deg";
 	constexpr char radians_units[] = "rad";
 
-	export using degrees = unit<float, 1.0f, degrees_units>;
-	export using radians = unit<float, 1 / 0.01745329252f, radians_units>;
+	using degrees = unit<float, 1.0f, degrees_units>;
+	using radians = unit<float, 1 / 0.01745329252f, radians_units>;
 
 	using angle_units = unit_list<
 		units::degrees,

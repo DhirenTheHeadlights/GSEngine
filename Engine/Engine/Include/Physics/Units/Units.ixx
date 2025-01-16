@@ -7,3 +7,4 @@ export import gse.physics.units.mass_and_force;
 export import gse.physics.units.movement;
 export import gse.physics.units.unitless;
 export import gse.physics.units.energy_and_power;
+export import gse.physics.units.quantity;

@@ -147,7 +147,7 @@ private:
 };
 
 auto gse::create_box(const std::uint32_t object_uuid, const vec3<length>& initial_position, const vec3<length>& size) -> void {
-    //registry::add_entity_hook(object_uuid, std::make_unique<box_mesh_hook>(initial_position, size));
+    registry::add_entity_hook<box_mesh_hook>(object_uuid, initial_position, size);
 }
 
 auto gse::create_box(const vec3<length>& initial_position, const vec3<length>& size) -> std::uint32_t {

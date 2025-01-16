@@ -1,4 +1,4 @@
-export module gse.object.sphere;
+export module gse.core.object.sphere;
 
 import std;
 
@@ -102,7 +102,7 @@ private:
 };
 
 auto gse::create_sphere(const std::uint32_t object_uuid, const vec3<length>& position, const length radius, const int sectors, const int stacks) -> void {
-    //registry::add_entity_hook(object_uuid, std::make_unique<sphere_mesh_hook>(position, radius, sectors, stacks));
+    registry::add_entity_hook<sphere_mesh_hook>(object_uuid, position, radius, sectors, stacks);
 }
 
 auto gse::create_sphere(const vec3<length>& position, const length radius, const int sectors, const int stacks) -> std::uint32_t {

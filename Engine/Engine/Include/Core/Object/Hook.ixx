@@ -2,8 +2,8 @@ export module gse.core.object.hook;
 
 import std;
 
-namespace gse {
-	export struct entity;
+export namespace gse {
+	struct entity;
 	class scene;
 	class id;
 
@@ -15,8 +15,8 @@ namespace gse {
 		T* m_owner;
 	};
 
-	export template <typename T>
-	struct hook : hook_base<T> {
+	template <typename T>
+	struct hook : hook_base<T> { 
 		hook(T* owner, id* owner_id) : hook_base<T>(owner), m_owner_id(owner_id) {}
 
 		virtual auto initialize() -> void {}
@@ -26,7 +26,7 @@ namespace gse {
 		id* m_owner_id;
 	};
 
-	export template <>
+	template <>
 	struct hook<entity> {
 		virtual ~hook() = default;
 		hook() = default;
@@ -38,7 +38,7 @@ namespace gse {
 		std::uint32_t owner_id = 0;
 	};
 
-	export template <typename T>
+	template <typename T>
 	class hookable {
 	public:
 		auto add_hook(std::unique_ptr<hook<T>> hook) -> void {

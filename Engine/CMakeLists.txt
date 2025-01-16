@@ -19,18 +19,22 @@ include(FetchContent)
 
 # Gather engine source files (cpp) from the "Source" folder
 file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/*.cpp")
-
-# Gather engine header files (h, hpp) from the "Include" folder
-file(GLOB_RECURSE ENGINE_HEADERS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/*.h")
 file(GLOB_RECURSE ENGINE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/*.ixx")
 
-add_library(Engine STATIC ${ENGINE_SOURCES} ${ENGINE_HEADERS})
+add_library(Engine)
+
+target_sources(Engine
+    PRIVATE
+        FILE_SET gse_modules TYPE CXX_MODULES
+        BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include"
+        FILES ${ENGINE_MODULES}
+)
 
 target_sources(Engine
     PUBLIC
-        FILE_SET cxx_modules TYPE CXX_MODULES
+        FILE_SET gse_modules_public TYPE CXX_MODULES
         BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include"
-        FILES ${ENGINE_MODULES}
+        FILES "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/Engine.ixx"
 )
 
 # Option for production build
@@ -174,11 +178,6 @@ find_package(msdfgen CONFIG REQUIRED)
 
 # Add subdirectory for imgui-docking
 add_subdirectory(External/imgui-docking)
-
-# Include directories for engine headers
-target_include_directories(
-    Engine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/"
-)
 
 # Include directories for third-party libraries (e.g., nlohmann)
 target_include_directories(

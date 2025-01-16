@@ -1,7 +1,7 @@
 import gse;
 import game;
 
-#include "ResourcePaths.h"
+import <ResourcePaths.h>;
 
 auto main() -> int {
 	gse::set_imgui_enabled(true);

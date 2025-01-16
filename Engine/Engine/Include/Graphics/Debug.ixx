@@ -45,13 +45,11 @@ import gse.core.clock;
 import gse.core.json_parse;
 import gse.platform.glfw.window;
 
-namespace {
-	gse::clock g_autosave_clock;
-	const gse::time g_autosave_time = gse::seconds(60.f);
-	std::string g_imgui_save_file_path;
+gse::clock g_autosave_clock;
+const gse::time g_autosave_time = gse::seconds(60.f);
+std::string g_imgui_save_file_path;
 
-	std::vector<std::function<void()>> g_render_call_backs;
-}
+std::vector<std::function<void()>> g_render_call_backs;
 
 void gse::debug::set_imgui_save_file_path(const std::string& path) {
 	g_imgui_save_file_path = path;

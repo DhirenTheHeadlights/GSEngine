@@ -7,7 +7,7 @@ import gse.physics.math.vector;
 import gse.graphics.debug;
 import gse.physics.units;
 
-namespace gse {
+export namespace gse {
 	class directional_light final : public light {
 	public:
 		directional_light(const vec3<>& color, const unitless& intensity, const vec3<>& direction, const unitless& ambient_strength)

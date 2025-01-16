@@ -4,16 +4,16 @@ import gse.physics.units.quantity;
 
 // Mass
 
-namespace gse::units {
+export namespace gse::units {
 	struct mass_tag {};
 
 	constexpr char kilograms_units[] = "kg";
 	constexpr char grams_units[] = "g";
 	constexpr char pounds_units[] = "lb";
 
-	export struct kilograms : unit<mass_tag, 1.0f, kilograms_units> {};
-	export struct grams : unit<mass_tag, 0.001f, grams_units> {};
-	export struct pounds : unit<mass_tag, 0.453592f, pounds_units> {};
+	struct kilograms : unit<mass_tag, 1.0f, kilograms_units> {};
+	struct grams : unit<mass_tag, 0.001f, grams_units> {};
+	struct pounds : unit<mass_tag, 0.453592f, pounds_units> {};
 
 	using mass_units = unit_list<
 		units::kilograms,

@@ -1,6 +1,6 @@
 export module gse.platform.error_reporting;
 
-#include <glad/glad.h>
+import <glad/glad.h>;
 
 void GLAPIENTRY gl_debug_output(GLenum source,
 	GLenum type,

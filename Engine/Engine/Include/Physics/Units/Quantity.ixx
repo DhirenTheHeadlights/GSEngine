@@ -2,20 +2,20 @@ export module gse.physics.units.quantity;
 
 import std;
 
-namespace gse {
-	export template<typename... Units>
+export namespace gse {
+	template<typename... Units>
 	struct unit_list {
 		using type = std::tuple<Units...>;
 	};
 
-	export template <typename QuantityTagType, float ConversionFactorType, const char UnitNameType[]>
+	template <typename QuantityTagType, float ConversionFactorType, const char UnitNameType[]>
 	struct unit {
 		using quantity_tag = QuantityTagType;
 		static constexpr float conversion_factor = ConversionFactorType;
 		static constexpr const char* unit_name = UnitNameType;
 	};
 
-	export template <typename T>
+	template <typename T>
 	concept is_unit = requires {
 		typename std::remove_cvref_t<T>::quantity_tag;
 		{ std::remove_cvref_t<T>::unit_name } -> std::convertible_to<const char*>;
@@ -29,7 +29,7 @@ namespace gse {
 		}, typename ValidUnits::type{});
 	}
 
-	export template <typename DerivedType, is_unit DefaultUnitType, typename ValidUnitsType>
+	template <typename DerivedType, is_unit DefaultUnitType, typename ValidUnitsType>
 	struct quantity {
 		using units = ValidUnitsType;
 		using default_unit = DefaultUnitType;

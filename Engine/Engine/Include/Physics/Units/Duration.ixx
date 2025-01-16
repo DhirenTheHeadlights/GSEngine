@@ -2,7 +2,7 @@ export module gse.physics.units.duration;
 
 import gse.physics.units.quantity;
 
-namespace gse::units {
+export namespace gse::units {
 	struct time_tag {};
 
 	constexpr char milliseconds_units[] = "ms";
@@ -10,10 +10,10 @@ namespace gse::units {
 	constexpr char minutes_units[] = "m";
 	constexpr char hours_units[] = "h";
 
-	export using milliseconds = unit<time_tag, 0.001f, milliseconds_units>;
-	export using seconds = unit<time_tag, 1.0f, seconds_units>;
-	export using minutes = unit<time_tag, 60.0f, minutes_units>;
-	export using hours = unit<time_tag, 3600.0f, hours_units>;
+	using milliseconds = unit<time_tag, 0.001f, milliseconds_units>;
+	using seconds = unit<time_tag, 1.0f, seconds_units>;
+	using minutes = unit<time_tag, 60.0f, minutes_units>;
+	using hours = unit<time_tag, 3600.0f, hours_units>;
 
 	using time_units = unit_list<
 		units::milliseconds,

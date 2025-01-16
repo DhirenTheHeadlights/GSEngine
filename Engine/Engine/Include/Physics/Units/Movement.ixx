@@ -4,7 +4,7 @@ import gse.physics.units.quantity;
 
 // Velocity
 
-namespace gse::units {
+export namespace gse::units {
 	struct velocity_tag {};
 
 	constexpr char meters_per_second_units[] = "m/s";
@@ -12,10 +12,10 @@ namespace gse::units {
 	constexpr char miles_per_hour_units[] = "mph";
 	constexpr char feet_per_second_units[] = "ft/s";
 
-	export using meters_per_second = unit<velocity_tag, 1.0f, meters_per_second_units>;
-	export using kilometers_per_hour = unit<velocity_tag, 0.27778f, kilometers_per_hour_units>;
-	export using miles_per_hour = unit<velocity_tag, 0.44704f, miles_per_hour_units>;
-	export using feet_per_second = unit<velocity_tag, 0.30480f, feet_per_second_units>;
+	using meters_per_second = unit<velocity_tag, 1.0f, meters_per_second_units>;
+	using kilometers_per_hour = unit<velocity_tag, 0.27778f, kilometers_per_hour_units>;
+	using miles_per_hour = unit<velocity_tag, 0.44704f, miles_per_hour_units>;
+	using feet_per_second = unit<velocity_tag, 0.30480f, feet_per_second_units>;
 
 	using velocity_units = unit_list<
 		units::meters_per_second,
@@ -29,8 +29,8 @@ namespace gse::units {
 	constexpr char radians_per_second_units[] = "rad/s";
 	constexpr char degrees_per_second_units[] = "deg/s";
 
-	export using radians_per_second = unit<angular_velocity_tag, 1.0f, radians_per_second_units>;
-	export using degrees_per_second = unit<angular_velocity_tag, 0.0174533f, degrees_per_second_units>;
+	using radians_per_second = unit<angular_velocity_tag, 1.0f, radians_per_second_units>;
+	using degrees_per_second = unit<angular_velocity_tag, 0.0174533f, degrees_per_second_units>;
 
 	using angular_velocity_units = unit_list <
 		units::radians_per_second,
@@ -74,7 +74,7 @@ export namespace gse {
 
 // Acceleration
 
-namespace gse::units {
+export namespace gse::units {
 	struct acceleration_tag {};
 
 	constexpr char meters_pr_second_squared_units[] = "m/s^2";
@@ -82,10 +82,10 @@ namespace gse::units {
 	constexpr char miles_pr_hour_squared_units[] = "mph^2";
 	constexpr char feet_pr_second_squared_units[] = "ft/s^2";
 
-	export using meters_per_second_squared = unit<acceleration_tag, 1.0f, meters_pr_second_squared_units>;
-	export using kilometers_per_hour_squared = unit<acceleration_tag, 0.00007716049382716f, kilometers_pr_hour_squared_units>;
-	export using miles_per_hour_squared = unit<acceleration_tag, 0.000124539617f, miles_pr_hour_squared_units>;
-	export using feet_per_second_squared = unit<acceleration_tag, 0.092903f, feet_pr_second_squared_units>;
+	using meters_per_second_squared = unit<acceleration_tag, 1.0f, meters_pr_second_squared_units>;
+	using kilometers_per_hour_squared = unit<acceleration_tag, 0.00007716049382716f, kilometers_pr_hour_squared_units>;
+	using miles_per_hour_squared = unit<acceleration_tag, 0.000124539617f, miles_pr_hour_squared_units>;
+	using feet_per_second_squared = unit<acceleration_tag, 0.092903f, feet_pr_second_squared_units>;
 
 	using acceleration_units = unit_list<
 		units::meters_per_second_squared,
@@ -99,8 +99,8 @@ namespace gse::units {
 	constexpr char radians_per_second_squared_units[] = "rad/s^2";
 	constexpr char degrees_per_second_squared_units[] = "deg/s^2";
 
-	export using radians_per_second_squared = unit<angular_acceleration_tag, 1.0f, radians_per_second_squared_units>;
-	export using degrees_per_second_squared = unit<angular_acceleration_tag, 0.0174533f, degrees_per_second_squared_units>;
+	using radians_per_second_squared = unit<angular_acceleration_tag, 1.0f, radians_per_second_squared_units>;
+	using degrees_per_second_squared = unit<angular_acceleration_tag, 0.0174533f, degrees_per_second_squared_units>;
 
 	using angular_acceleration_units = unit_list <
 		units::radians_per_second_squared,

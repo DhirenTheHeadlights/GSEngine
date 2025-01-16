@@ -31,7 +31,7 @@ export namespace gse {
 }
 
 #define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
+import <stb_image.h>;
 
 gse::texture::texture(const std::string& filepath) : m_filepath(filepath) {
 	load_from_file(filepath);
