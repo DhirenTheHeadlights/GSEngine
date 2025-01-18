@@ -11,7 +11,7 @@
 #include "Platform/GLFW/Input.h"
 #include "Platform/GLFW/Window.h"
 
-gse::camera& gse::get_camera() {
+auto gse::get_camera() -> gse::camera& {
 	return renderer3d::get_camera();
 }
 
@@ -31,7 +31,7 @@ namespace {
 	bool g_imgui_enabled = false;
 }
 
-void gse::request_shutdown() {
+auto gse::request_shutdown() -> void {
 	if (g_engine_shutdown_blocked) {
 		return;
 	}
@@ -39,15 +39,16 @@ void gse::request_shutdown() {
 }
 
 // Stops the engine from shutting down this frame
-void gse::block_shutdown_requests() {
+auto gse::block_shutdown_requests() -> void {
 	g_engine_shutdown_blocked = true;
 }
 
-void gse::set_imgui_enabled(const bool enabled) {
+auto gse::set_imgui_enabled(const bool enabled) -> void {
 	g_imgui_enabled = enabled;
 }
 
-void gse::initialize(const std::function<void()>& initialize_function, const std::function<void()>& shutdown_function) {
+auto gse::initialize(const std::function<void()>& initialize_function,
+                     const std::function<void()>& shutdown_function) -> void {
 	g_engine_state = engine_state::initializing;
 
 	g_game_shutdown_function = shutdown_function;
@@ -67,7 +68,7 @@ void gse::initialize(const std::function<void()>& initialize_function, const std
 }
 
 namespace {
-	void update(const std::function<bool()>& update_function) {
+	auto update(const std::function<bool()>& update_function) -> void {
 
 		if (g_imgui_enabled) gse::add_timer("Engine::update");
 
@@ -90,7 +91,7 @@ namespace {
 		if (g_imgui_enabled) gse::reset_timer("Engine::render");
 	}
 
-	void render(const std::function<bool()>& render_function) {
+	auto render(const std::function<bool()>& render_function) -> void {
 		if (g_imgui_enabled) gse::add_timer("Engine::render");
 
 		gse::window::begin_frame();
@@ -111,14 +112,14 @@ namespace {
 		if (g_imgui_enabled) gse::reset_timer("Engine::update");
 	}
 
-	void shutdown() {
+	auto shutdown() -> void {
 		g_game_shutdown_function();
 		gse::renderer2d::shutdown();
 		gse::window::shutdown();
 	}
 }
 
-void gse::run(const std::function<bool()>& update_function, const std::function<bool()>& render_function) {
+auto gse::run(const std::function<bool()>& update_function, const std::function<bool()>& render_function) -> void {
 	assert_comment(g_engine_state == engine_state::running, "Engine is not initialized");
 
 	scene_loader::set_engine_initialized(true);

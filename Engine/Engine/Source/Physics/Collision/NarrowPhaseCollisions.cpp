@@ -1,6 +1,9 @@
 #include "Physics/Collision/NarrowPhaseCollisions.h"
 
+#include "Core/ObjectRegistry.h"
 #include "Graphics/3D/Lights/Light.h"
+#include "Physics/Surfaces.h"
+#include "Physics/System.h"
 
 namespace {
 	auto overlaps_on_axis(const gse::oriented_bounding_box& box1, const gse::oriented_bounding_box& box2, const gse::vec3<gse::length>& axis, gse::length& penetration) -> bool {
@@ -88,8 +91,37 @@ namespace {
     }
 }
 
-auto gse::narrow_phase_collision::resolve_collision(const physics::motion_component* object_motion_component, physics::collision_component& object_collision_component, const physics::collision_component& other_collision_component) -> void {
+auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* object_motion_component, physics::collision_component& object_collision_component, const physics::collision_component& other_collision_component) -> void {
 	if (!sat_collision(object_collision_component.oriented_bounding_box, other_collision_component.oriented_bounding_box, object_collision_component.collision_information.collision_normal, object_collision_component.collision_information.penetration)) {
 		return;
 	}
+
+    object_collision_component.collision_information.colliding = true;
+
+    const auto  collision_normal = object_collision_component.collision_information.collision_normal;
+    const float penetration_depth = object_collision_component.collision_information.penetration.as_default_unit();
+
+    const float velocity_into_surface = dot(object_motion_component->current_velocity, collision_normal);
+    const float acceleration_into_surface = dot(object_motion_component->current_acceleration, collision_normal);
+
+    float& vel = object_motion_component->current_velocity.as_default_units()[object_collision_component.collision_information.get_axis()];
+    float& acc = object_motion_component->current_acceleration.as_default_units()[object_collision_component.collision_information.get_axis()];
+
+    if (velocity_into_surface < 0.0f) {
+		vel = 0.0f;
+    }
+    if (acceleration_into_surface < 0.0f) {
+		acc = 0.0f;
+    }
+
+    // Correct position to remove overlap (with a tiny slop)
+    constexpr float slop = 0.001f;
+    const float corrected_penetration = std::max(penetration_depth - slop, 0.0f);
+    const auto correction = collision_normal * meters(corrected_penetration);
+	object_motion_component->current_position -= correction;
+
+	if (collision_normal.as_default_units().y < 0.f) { // Normal here is inverted because the collision normal points from the other object to this object
+        object_motion_component->airborne = false;
+        object_motion_component->most_recent_y_collision = meters(object_motion_component->current_position.as_default_units().y);
+    }
 }

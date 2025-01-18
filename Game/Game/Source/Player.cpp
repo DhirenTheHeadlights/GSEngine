@@ -72,6 +72,7 @@ struct player_hook final : gse::hook<gse::entity> {
 		gse::length height = gse::feet(6.0f);
 		gse::length width = gse::feet(3.0f);
 		collision_component.bounding_box = { gse::vec3<gse::units::meters>(-10.f, -10.f, -10.f), height, width, width };
+		collision_component.oriented_bounding_box = { collision_component.bounding_box };
 
 		motion_component.mass = gse::pounds(180.f);
 		motion_component.max_speed = m_max_speed;

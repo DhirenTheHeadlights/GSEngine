@@ -10,6 +10,7 @@
 #include "Core/ObjectRegistry.h"
 #include "Graphics/RenderComponent.h"
 #include "Physics/Surfaces.h"
+#include "Physics/Collision/BroadPhaseCollisions.h"
 #include "Physics/Collision/CollisionComponent.h"
 #include "Physics/Vector/Math.h"
 #include "Platform/GLFW/Input.h"
@@ -54,6 +55,23 @@ auto gse::physics::apply_impulse(motion_component& component, const vec3<force>&
 }
 
 namespace {
+	auto update_friction(gse::physics::motion_component& component, const gse::surfaces::surface_properties& surface) -> void {
+		if (component.airborne) {
+			return;
+		}
+
+		const gse::force normal = gse::newtons(component.mass.as<gse::units::kilograms>() * magnitude(g_gravity).as<gse::units::meters_per_second_squared>());
+		gse::force friction = normal * surface.friction_coefficient;
+
+		if (component.self_controlled) {
+			friction *= 5.f;
+		}
+
+		const gse::vec3<gse::units::newtons> friction_force(-friction.as<gse::units::newtons>() * normalize(component.current_velocity).as<gse::units::meters_per_second>());
+
+		apply_force(component, friction_force, component.current_position);
+	}
+
 	auto update_gravity(gse::physics::motion_component& component) -> void {
 		if (!component.affected_by_gravity) {
 			return;
@@ -68,6 +86,7 @@ namespace {
 		}
 		else {
 			component.current_acceleration.as_default_units().y = std::max(0.f, component.current_acceleration.as_default_units().y);
+			update_friction(component, get_surface_properties(gse::surfaces::surface_type::concrete));
 		}
 	}
 
@@ -91,25 +110,8 @@ namespace {
 		}
 	}
 
-	auto update_friction(gse::physics::motion_component& component, const gse::surfaces::surface_properties& surface) -> void {
-		if (component.airborne) {
-			return;
-		}
-
-		const gse::force normal = gse::newtons(component.mass.as<gse::units::kilograms>() * magnitude(g_gravity).as<gse::units::meters_per_second_squared>());
-		gse::force friction = normal * surface.friction_coefficient;
-
-		if (component.self_controlled) {
-			friction *= 5.f;
-		}
-
-		const gse::vec3<gse::units::newtons> friction_force(-friction.as<gse::units::newtons>() * normalize(component.current_velocity).as<gse::units::meters_per_second>());
-
-		apply_force(component, friction_force, component.current_position);
-	}
-
 	auto update_velocity(gse::physics::motion_component& component) -> void {
-		const float delta_time = gse::main_clock::get_delta_time().as<gse::units::seconds>();
+		const float delta_time = gse::main_clock::get_constant_update_time().as<gse::units::seconds>();
 
 		if (component.self_controlled && !component.airborne) {
 			const gse::unitless damping_factor = 5.0f;
@@ -133,7 +135,7 @@ namespace {
 	}
 
 	auto update_position(gse::physics::motion_component& component) -> void {
-		const float delta_time = gse::main_clock::get_delta_time().as<gse::units::seconds>();
+		const float delta_time = gse::main_clock::get_constant_update_time().as<gse::units::seconds>();
 
 		// Update position using the kinematic equation: x = x0 + v0t + 0.5at^2
 		component.current_position += gse::vec3<gse::units::meters>(
@@ -143,7 +145,7 @@ namespace {
 	}
 
 	auto update_rotation(gse::physics::motion_component& component) -> void {
-		const float dt = gse::main_clock::get_delta_time().as<gse::units::seconds>();
+		const float dt = gse::main_clock::get_constant_update_time().as<gse::units::seconds>();
 
 		const auto alpha = gse::vec3<gse::units::radians_per_second_squared>(
 			component.current_torque.as<gse::units::newton_meters>() / component.moment_of_inertia.as_default_unit() /* kg-m^2 */
@@ -181,7 +183,7 @@ auto gse::physics::update_object(motion_component& component) -> void {
 	else {
 		component.moving = true;
 	}
-
+	
 	update_gravity(component);
 	update_air_resistance(component);
 	update_velocity(component);
@@ -190,38 +192,31 @@ auto gse::physics::update_object(motion_component& component) -> void {
 	update_obb(component);
 }
 
-auto gse::physics::update() -> void {
-	for (auto& object : gse::registry::get_components<motion_component>()) {
-		update_object(object);
-	}
+namespace {
+	const gse::time g_max_time_step = gse::seconds(0.25);
+	gse::time g_accumulator;
 }
 
-auto gse::physics::resolve_collision(axis_aligned_bounding_box& dynamic_bounding_box, motion_component* dynamic_motion_component, collision_information& collision_info) -> void {
-	float& vel = dynamic_motion_component->current_velocity.as_default_units()[collision_info.get_axis()];
-	float& acc = dynamic_motion_component->current_acceleration.as_default_units()[collision_info.get_axis()];
+auto gse::physics::update() -> void {
+	const time fixed_update_time = main_clock::get_constant_update_time();
+	time frame_time = main_clock::get_raw_delta_time();
 
-	// Project current_velocity and acceleration onto collision normal to check movement toward the surface
-	const float velocity_into_surface = dot(dynamic_motion_component->current_velocity, collision_info.collision_normal);
-	const float acceleration_into_surface = dot(dynamic_motion_component->current_acceleration, collision_info.collision_normal);
-
-	// Set current_velocity and acceleration to zero along the collision normal if moving into the surface
-	if (velocity_into_surface < 0) {
-		vel = 0;
-	}
-	if (acceleration_into_surface < 0) {
-		acc = 0;
+	if (frame_time > g_max_time_step) {
+		frame_time = g_max_time_step;
 	}
 
-	constexpr float slop = 0.001f;
-	const float corrected_penetration = std::max(collision_info.penetration.as_default_unit() - slop, 0.f);
-	const vec3<units::meters> correction = collision_info.collision_normal * meters(corrected_penetration);
-	dynamic_motion_component->current_position += correction;
+	g_accumulator += frame_time;
 
-	// Special case for ground collision (assumed Y-axis collision)
-	if (collision_info.get_axis() == y && collision_info.collision_normal.as_default_units().y > 0) {
-		dynamic_motion_component->airborne = false;
-		dynamic_motion_component->most_recent_y_collision = meters(dynamic_motion_component->current_position.as_default_units().y);
-		update_friction(*dynamic_motion_component, get_surface_properties(surfaces::surface_type::concrete));
+	while (g_accumulator >= fixed_update_time) {
+		for (int i = 0; i < 5; i++) {
+			broad_phase_collision::update();
+		}
+
+		for (auto& object : gse::registry::get_components<motion_component>()) {
+			update_object(object);
+		}
+
+		g_accumulator -= fixed_update_time;
 	}
 }
 
