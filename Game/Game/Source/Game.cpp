@@ -41,9 +41,9 @@ struct scene1_hook final : gse::hook<gse::scene> {
 		m_owner->add_entity(game::create_sphere_light(gse::vec3<gse::units::meters>(0.f, -300.f, 0.f), gse::meters(10.f), 18), "Center Sphere Light");
 		m_owner->add_entity(create_sphere(gse::vec3<gse::units::meters>(0.f, -00.f, 200.f), gse::meters(10.f)), "Second Sphere");
 
-		const std::uint32_t iron_man = gse::registry::create_entity();
+		/*const std::uint32_t iron_man = gse::registry::create_entity();
 		gse::registry::add_entity_hook(iron_man, std::make_unique<iron_man_hook>());
-		m_owner->add_entity(iron_man, "Iron Man");
+		m_owner->add_entity(iron_man, "Iron Man");*/
 	}
 
 	auto render() -> void override {

@@ -52,8 +52,8 @@ namespace gse {
 	struct oriented_bounding_box {
 		oriented_bounding_box() = default;
 
-		oriented_bounding_box(const vec3<length>& center, const vec3<length>& size, const glm::quat& orientation)
-			: center(center), size(size), orientation(orientation) {}
+		oriented_bounding_box(const axis_aligned_bounding_box& aabb, const glm::quat& orientation = glm::quat())
+			: center(aabb.get_center()), size(aabb.get_size()), orientation(orientation) {}
 
 		vec3<length> center;
 		vec3<length> size;

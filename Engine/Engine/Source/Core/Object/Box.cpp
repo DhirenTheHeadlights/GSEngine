@@ -15,6 +15,7 @@ struct box_mesh_hook final : gse::hook<gse::entity> {
 
         gse::physics::collision_component new_collision_component(owner_id);
         new_collision_component.bounding_box = { m_initial_position, m_size };
+		new_collision_component.oriented_bounding_box = { new_collision_component.bounding_box };
 
         gse::render_component new_render_component(owner_id);
 

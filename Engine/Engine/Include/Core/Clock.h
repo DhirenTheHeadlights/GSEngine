@@ -10,8 +10,8 @@ namespace gse {
 	public:
 		clock() : m_start_time(std::chrono::steady_clock::now()) {}
 
-		time reset();
-		time get_elapsed_time() const;
+		auto reset() -> time;
+		auto get_elapsed_time() const -> time;
 	private:
 		std::chrono::steady_clock::time_point m_start_time;
 	};
@@ -22,9 +22,9 @@ namespace gse {
 
 		~scoped_timer();
 
-		bool is_completed() const { return m_completed; }
-		std::string get_name() const { return m_name; }
-		void set_completed() { m_completed = true; }
+		auto is_completed() const -> bool { return m_completed; }
+		auto get_name() const -> std::string { return m_name; }
+		auto set_completed() -> void { m_completed = true; }
 	private:
 		std::string m_name;
 		bool m_print = false;
@@ -32,15 +32,16 @@ namespace gse {
 	};
 
 
-	void add_timer(const std::string& name);
-	void reset_timer(const std::string& name);
-	void remove_timer(const std::string& name);
-	void display_timers();
+	auto add_timer(const std::string& name) -> void;
+	auto reset_timer(const std::string& name) -> void;
+	auto remove_timer(const std::string& name) -> void;
+	auto display_timers() -> void;
 }
 
 namespace gse::main_clock {
-	void update();
-	time get_delta_time();
-	time get_constant_update_time(const float frame_rate);
-	int get_frame_rate();
+	auto update() -> void;
+	auto get_raw_delta_time() -> time;
+	auto get_current_time() -> time;
+	auto get_constant_update_time() -> time;
+	auto get_frame_rate() -> int;
 }

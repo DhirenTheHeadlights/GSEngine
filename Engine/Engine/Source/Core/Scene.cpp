@@ -36,7 +36,6 @@ auto gse::scene::update() const -> void {
 
 	registry::update_hooks();
 	physics::update();
-	broad_phase_collision::update();
 }
 
 auto gse::scene::render() const -> void {
