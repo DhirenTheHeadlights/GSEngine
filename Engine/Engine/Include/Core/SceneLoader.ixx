@@ -23,11 +23,9 @@ export namespace gse::scene_loader {
 	scene* get_scene(id* scene_id);
 }
 
-import <glad/glad.h>;
-
 import gse.platform.perma_assert;
 
-std::optional<GLuint> g_fbo = std::nullopt;
+std::optional<uint32_t> g_fbo = std::nullopt;
 bool g_engine_initialized = false;
 bool g_allow_multiple_active_scenes = false;
 

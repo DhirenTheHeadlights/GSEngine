@@ -1,8 +1,7 @@
 export module gse.graphics.gui;
 
 import std;
-
-import <glm/glm.hpp>;
+import glm;
 
 export namespace gse::gui {
 	void initialize();

@@ -1,11 +1,11 @@
 export module gse.graphics.debug;
 
 import std;
+import glm;
 
-import <glm/glm.hpp>;
+import <imgui.h>;
 import <glad/glad.h>;
 import <GLFW/glfw3.h>;
-import <imgui.h>;
 
 import gse.physics.units;
 import gse.physics.units.quantity;

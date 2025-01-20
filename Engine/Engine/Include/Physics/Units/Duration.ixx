@@ -16,10 +16,10 @@ export namespace gse::units {
 	using hours = unit<time_tag, 3600.0f, hours_units>;
 
 	using time_units = unit_list<
-		units::milliseconds,
-		units::seconds,
-		units::minutes,
-		units::hours
+		milliseconds,
+		seconds,
+		minutes,
+		hours
 	>;
 }
 

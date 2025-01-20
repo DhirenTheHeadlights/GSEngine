@@ -1,9 +1,11 @@
+module;
+
+#include <random>
+#include <glm/gtc/epsilon.hpp>
+
 export module gse.physics.math.vector_math;
 
-import std;
-
-import <glm/glm.hpp>;
-import <glm/gtc/epsilon.hpp>;
+import glm;
 
 import gse.physics.math.vector;
 
@@ -11,34 +13,34 @@ export namespace gse {
 	std::random_device g_rd;
 	std::mt19937 g_gen(g_rd());
 
-	template <typename number_type>
-		requires std::is_arithmetic_v<number_type>
-	number_type random_value(const number_type& min, const number_type& max) {
-		if constexpr (std::is_floating_point_v<number_type>) {
-			std::uniform_real_distribution<number_type> dis(min, max);
+	template <typename NumberType>
+		requires std::is_arithmetic_v<NumberType>
+	auto random_value(const NumberType& min, const NumberType& max) -> NumberType {
+		if constexpr (std::is_floating_point_v<NumberType>) {
+			std::uniform_real_distribution<NumberType> dis(min, max);
 			return dis(g_gen);
 		}
 		else {
-			std::uniform_int_distribution<number_type> dis(min, max);
+			std::uniform_int_distribution<NumberType> dis(min, max);
 			return dis(g_gen);
 		}
 	}
 
-	template <typename number_type>
-		requires std::is_arithmetic_v<number_type>
-	number_type random_value(const number_type& max) {
-		if constexpr (std::is_floating_point_v<number_type>) {
-			std::uniform_real_distribution<number_type> dis(0, max);
+	template <typename NumberType>
+		requires std::is_arithmetic_v<NumberType>
+	auto random_value(const NumberType& max) -> NumberType {
+		if constexpr (std::is_floating_point_v<NumberType>) {
+			std::uniform_real_distribution<NumberType> dis(0, max);
 			return dis(g_gen);
 		}
 		else {
-			std::uniform_int_distribution<number_type> dis(0, max);
+			std::uniform_int_distribution<NumberType> dis(0, max);
 			return dis(g_gen);
 		}
 	}
 
 	template <typename T>
-	std::vector<T*> get_pointers(const std::vector<std::unique_ptr<T>>& unique_ptrs) {
+	auto get_pointers(const std::vector<std::unique_ptr<T>>& unique_ptrs) -> std::vector<T*> {
 		std::vector<T*> pointers;
 		pointers.reserve(unique_ptrs.size());
 		for (const auto& unique_ptr : unique_ptrs) {
@@ -54,12 +56,13 @@ export namespace gse {
 	};
 
 	template <is_unit_or_quantity quantity_or_unit_type>
-	void print(const char* message, const vec3<quantity_or_unit_type>& a) {
+	auto print(const char* message, const vec3<quantity_or_unit_type>& a) -> void {
 		std::cout << message << ": " << a.as_default_units().x << ", " << a.as_default_units().y << ", " << a.as_default_units().z << std::endl;
 	}
 
 	template <is_unit_or_quantity quantity_or_unit_type_a, is_unit_or_quantity quantity_or_unit_type_b>
-	vec3<quantity_or_unit_type_a> max(const vec3<quantity_or_unit_type_a>& a, const vec3<quantity_or_unit_type_b>& b) {
+	auto max(const vec3<quantity_or_unit_type_a>& a,
+	         const vec3<quantity_or_unit_type_b>& b) -> vec3<quantity_or_unit_type_a> {
 		if (glm::max(a.as_default_units(), b.as_default_units()) == a.as_default_units()) {
 			return a;
 		}
@@ -67,7 +70,8 @@ export namespace gse {
 	}
 
 	template <is_unit_or_quantity quantity_or_unit_type>
-	vec3<quantity_or_unit_type> min(const vec3<quantity_or_unit_type>& a, const vec3<quantity_or_unit_type>& b) {
+	auto min(const vec3<quantity_or_unit_type>& a,
+	         const vec3<quantity_or_unit_type>& b) -> vec3<quantity_or_unit_type> {
 		if (glm::min(a.as_default_units(), b.as_default_units()) == a.as_default_units()) {
 			return a;
 		}
@@ -76,7 +80,8 @@ export namespace gse {
 
 	template <is_unit_or_quantity quantity_or_unit_type_a, is_unit_or_quantity quantity_or_unit_type_b>
 		requires has_same_quantity_tag<quantity_or_unit_type_a, quantity_or_unit_type_b>
-	typename unit_to_quantity<quantity_or_unit_type_a>::type max(const vec3<quantity_or_unit_type_a>& a, const vec3<quantity_or_unit_type_b>& b, const int index) {
+	auto max(const vec3<quantity_or_unit_type_a>& a, const vec3<quantity_or_unit_type_b>& b,
+	         const int index) -> typename unit_to_quantity<quantity_or_unit_type_a>::type {
 		float max = a.as_default_units()[index];
 		if (b.as_default_units()[index] > a.as_default_units()[index]) {
 			max = b.as_default_units()[index];
@@ -87,7 +92,8 @@ export namespace gse {
 
 	template <is_unit_or_quantity quantity_or_unit_type_a, is_unit_or_quantity quantity_or_unit_type_b>
 		requires has_same_quantity_tag<quantity_or_unit_type_a, quantity_or_unit_type_b>
-	typename unit_to_quantity<quantity_or_unit_type_a>::type min(const vec3<quantity_or_unit_type_a>& a, const vec3<quantity_or_unit_type_b>& b, const int index) {
+	auto min(const vec3<quantity_or_unit_type_a>& a, const vec3<quantity_or_unit_type_b>& b,
+	         const int index) -> typename unit_to_quantity<quantity_or_unit_type_a>::type {
 		float min = a.as_default_units()[index];
 
 		if (b.as_default_units()[index] < a.as_default_units()[index]) {
@@ -98,42 +104,45 @@ export namespace gse {
 	}
 
 	template <is_unit_or_quantity quantity_or_unit_type_a, is_unit_or_quantity quantity_or_unit_type_b>
-	float dot(const vec3<quantity_or_unit_type_a>& a, const vec3<quantity_or_unit_type_b>& b) {
+	auto dot(const vec3<quantity_or_unit_type_a>& a, const vec3<quantity_or_unit_type_b>& b) -> float {
 		return glm::dot(a.as_default_units(), b.as_default_units());
 	}
 
 	template <is_unit_or_quantity quantity_or_unit_type_a, is_unit_or_quantity quantity_or_unit_type_b>
 		requires has_same_quantity_tag<quantity_or_unit_type_a, quantity_or_unit_type_b>
-	bool epsilon_equal(const vec3<quantity_or_unit_type_a>& a, const vec3<quantity_or_unit_type_b>& b, const float epsilon = 0.00001f) {
+	auto epsilon_equal(const vec3<quantity_or_unit_type_a>& a, const vec3<quantity_or_unit_type_b>& b,
+	                   const float epsilon = 0.00001f) -> bool {
 		return glm::all(glm::epsilonEqual(a.as_default_units(), b.as_default_units(), epsilon));
 	}
 
 	template <is_unit_or_quantity quantity_or_unit_type_a, is_unit_or_quantity quantity_or_unit_type_b>
 		requires has_same_quantity_tag<quantity_or_unit_type_a, quantity_or_unit_type_b>
-	bool epsilon_equal_index(const vec3<quantity_or_unit_type_a>& a, const vec3<quantity_or_unit_type_b>& b, const int index, const float epsilon = 0.00001f) {
+	auto epsilon_equal_index(const vec3<quantity_or_unit_type_a>& a, const vec3<quantity_or_unit_type_b>& b,
+	                         const int index, const float epsilon = 0.00001f) -> bool {
 		return glm::epsilonEqual(a.as_default_units()[index], b.as_default_units()[index], epsilon);
 	}
 
 	template <is_unit_or_quantity quantity_or_unit_type>
-	bool is_zero(const vec3<quantity_or_unit_type>& a) {
+	auto is_zero(const vec3<quantity_or_unit_type>& a) -> bool {
 		return glm::all(glm::epsilonEqual(a.as_default_units(), vec3<quantity_or_unit_type>(0.0f).as_default_units(), 0.00001f));
 	}
 
 	template <is_unit_or_quantity quantity_or_unit_type>
-	typename unit_to_quantity<quantity_or_unit_type>::type magnitude(const vec3<quantity_or_unit_type>& a) {
+	auto magnitude(const vec3<quantity_or_unit_type>& a) -> typename unit_to_quantity<quantity_or_unit_type>::type {
 		if (is_zero(a)) return typename unit_to_quantity<quantity_or_unit_type>::type();
 		return convert_value_to_quantity<quantity_or_unit_type>(glm::length(a.as_default_units()));
 	}
 
 	template <is_unit_or_quantity quantity_or_unit_type>
-	vec3<quantity_or_unit_type> normalize(const vec3<quantity_or_unit_type>& a) {
+	auto normalize(const vec3<quantity_or_unit_type>& a) -> vec3<quantity_or_unit_type> {
 		if (is_zero(a)) return vec3<quantity_or_unit_type>(glm::vec3(0.0f));
 		return vec3<quantity_or_unit_type>(glm::normalize(a.as_default_units()));
 	}
 
 	template <is_unit_or_quantity quantity_or_unit_type_a, is_unit_or_quantity quantity_or_unit_type_b>
 		requires has_same_quantity_tag<quantity_or_unit_type_a, quantity_or_unit_type_b>
-	vec3<quantity_or_unit_type_a> cross(const vec3<quantity_or_unit_type_a>& a, const vec3<quantity_or_unit_type_b>& b) {
+	auto cross(const vec3<quantity_or_unit_type_a>& a,
+	           const vec3<quantity_or_unit_type_b>& b) -> vec3<quantity_or_unit_type_a> {
 		return vec3<quantity_or_unit_type_a>(glm::cross(a.as_default_units(), b.as_default_units()));
 	}
 }

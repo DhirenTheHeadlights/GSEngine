@@ -1,9 +1,14 @@
+module;
+
+#include <stdexcept>
+#include <vector>
+
+#include "glm/ext/matrix_transform.hpp"
+#include <glad/glad.h>
+
 export module gse.graphics.mesh;
 
-import std;
-
-import <glad/glad.h>;
-import <glm/glm.hpp>;
+import glm;
 
 import gse.physics.math.vector;
 import gse.physics.units;
@@ -85,8 +90,6 @@ export namespace gse {
 	};
 }
 
-#include "glm/ext/matrix_transform.hpp"
-
 gse::mesh::mesh() {
 	glGenVertexArrays(1, &m_vao);
 	glGenBuffers(1, &m_vbo);
@@ -117,7 +120,7 @@ gse::mesh::mesh(mesh&& other) noexcept
 	other.m_ebo = 0;
 }
 
-auto gse::mesh::operator=(mesh&& other) noexcept -> gse::mesh& {
+auto gse::mesh::operator=(mesh&& other) noexcept -> mesh& {
 	if (this != &other) {
 		glDeleteVertexArrays(1, &m_vao);
 		glDeleteBuffers(1, &m_vbo);

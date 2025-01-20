@@ -1,7 +1,5 @@
 export module gse.core.object.sphere;
 
-import std;
-
 import gse.physics.math.vector_math;
 import gse.physics.math.vector;
 import gse.physics.units;

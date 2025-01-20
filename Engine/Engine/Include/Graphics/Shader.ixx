@@ -1,7 +1,9 @@
 export module gse.graphics.shader;
 
-import std;
-
+import <fstream>;
+import <iostream>;
+import <sstream>;
+import <string>;
 import <glad/glad.h>;
 import <glm/glm.hpp>;
 
@@ -11,30 +13,30 @@ export namespace gse {
         shader() = default;
         shader(const std::string& vertex_path, const std::string& fragment_path, const std::string& geometry_path = "");
 
-        void create_shader_program(const std::string& vertex_path, const std::string& fragment_path, const std::string& geometry_path = "");
-        void use() const;
+        auto create_shader_program(const std::string& vertex_path, const std::string& fragment_path, const std::string& geometry_path = "") -> void;
+        auto use() const -> void;
 
         // Utility functions to set uniform values
-        void set_bool(const std::string& name, bool value) const;
-        void set_int(const std::string& name, int value) const;
-        void set_int_array(const std::string& name, const int* values, unsigned int count) const;
-        void set_float(const std::string& name, float value) const;
-        void set_mat4(const std::string& name, const glm::mat4& value) const;
-        void set_mat4_array(const std::string& name, const glm::mat4* values, unsigned int count) const;
-        void set_vec3(const std::string& name, const glm::vec3& value) const;
-        void set_vec4(const std::string& name, const glm::vec4& value) const;
+        auto set_bool(const std::string& name, bool value) const -> void;
+        auto set_int(const std::string& name, int value) const -> void;
+        auto set_int_array(const std::string& name, const int* values, unsigned int count) const -> void;
+        auto set_float(const std::string& name, float value) const -> void;
+        auto set_mat4(const std::string& name, const glm::mat4& value) const -> void;
+        auto set_mat4_array(const std::string& name, const glm::mat4* values, unsigned int count) const -> void;
+        auto set_vec3(const std::string& name, const glm::vec3& value) const -> void;
+        auto set_vec4(const std::string& name, const glm::vec4& value) const -> void;
 
-        unsigned int get_id() const { return m_id; }
+        auto get_id() const -> unsigned int { return m_id; }
     private:
         unsigned int m_id = 0;
 
-        static std::string load_shader_source(const std::string& file_path);
+        static auto load_shader_source(const std::string& file_path) -> std::string;
 
-        void cache_uniform_locations();
+        auto cache_uniform_locations() -> void;
 
         std::unordered_map<std::string, GLint> m_uniforms;
 
-        static void check_compile_errors(unsigned int shader, const std::string& type);
+        static auto check_compile_errors(unsigned int shader, const std::string& type) -> void;
     };
 }
 
@@ -73,8 +75,8 @@ auto gse::shader::create_shader_program(const std::string& vertex_path, const st
     // Geometry Shader
     const unsigned int geometry_shader = glCreateShader(GL_GEOMETRY_SHADER);
     if (!geometry_path.empty()) {
-        const char* g_shader_code = geometry_code.c_str();
-        glShaderSource(geometry_shader, 1, &g_shader_code, nullptr);
+        const char* shader_code = geometry_code.c_str();
+        glShaderSource(geometry_shader, 1, &shader_code, nullptr);
         glCompileShader(geometry_shader);
         check_compile_errors(geometry_shader, "GEOMETRY");
     }

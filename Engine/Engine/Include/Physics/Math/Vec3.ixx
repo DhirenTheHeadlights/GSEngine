@@ -1,8 +1,7 @@
 export module gse.physics.math.vector;
 
 import std;
-
-import <glm/glm.hpp>;
+import glm;
 
 import gse.physics.units;
 

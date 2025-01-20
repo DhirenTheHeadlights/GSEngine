@@ -223,7 +223,7 @@ template <typename HookType, typename... Args>
 auto gse::registry::add_entity_hook(std::uint32_t parent_id, Args&&... args) -> void {
 	auto derived_hook = std::make_unique<HookType>(std::forward<Args>(args)...);
 
-	std::unique_ptr<base_hook> base_hook = std::move(derived_hook);
+	std::unique_ptr<hook<entity>> base_hook = std::move(derived_hook);
 
 	const auto it = std::ranges::find_if(g_entities, [parent_id](const entity& obj) {
 		return obj.index == parent_id;

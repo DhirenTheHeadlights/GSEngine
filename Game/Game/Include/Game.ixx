@@ -1,4 +1,5 @@
 export module game;
+#include "GLFW/glfw3.h"
 
 export namespace game {
 	auto initialize() -> bool;

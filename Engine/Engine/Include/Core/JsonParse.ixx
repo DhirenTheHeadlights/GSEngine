@@ -1,27 +1,27 @@
 export module gse.core.json_parse;
 
-import std;
-
+import <fstream>;
+import <iostream>;
 import <json.hpp>;
 
 export namespace gse::json_parse {
-	nlohmann::json load_json(const std::string& path);
+	auto load_json(const std::string& path) -> nlohmann::json;
 
 	// Generic function to parse JSON objects
 	// Pass in a lambda that takes a key and a value
 	// And do whatever the fuck you want with it
-	template <typename function>
-	void parse(const nlohmann::json& json, function&& process_element) {
+	template <typename Function>
+	auto parse(const nlohmann::json& json, Function&& process_element) -> void {
 		for (const auto& [key, value] : json.items()) {
-			std::forward<function>(process_element)(key, value);
+			std::forward<Function>(process_element)(key, value);
 		}
 	}
 
 	// Generic function to write to a json file
 	// Pass in a lambda that takes a key and value
 	// And write it however the fuck you want
-	template <typename function>
-	void write_json(const std::string& path, function&& process_element) {
+	template <typename Function>
+	auto write_json(const std::string& path, Function&& process_element) -> void {
 		nlohmann::json json;
 		process_element(json);
 
@@ -33,7 +33,7 @@ export namespace gse::json_parse {
 	}
 }
 
-nlohmann::json gse::json_parse::load_json(const std::string& path) {
+auto gse::json_parse::load_json(const std::string& path) -> nlohmann::json {
 	std::ifstream file(path);
 	if (!file.is_open()) {
 		std::cerr << "Json file not open\n";

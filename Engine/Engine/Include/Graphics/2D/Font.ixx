@@ -1,6 +1,14 @@
-export module gse.graphics.font;
+module;
 
-import std;
+#include <algorithm>
+#include <fstream>
+#include <iostream>
+#include <string>
+#include <unordered_map>
+
+#include "glad/glad.h"
+
+export module gse.graphics.font;
 
 import gse.graphics.texture;
 
@@ -18,10 +26,10 @@ export namespace gse {
 		font() = default;
 		font(const std::string& path);
 
-		void load(const std::string& path);
+		auto load(const std::string& path) -> void;
 
-		const glyph& get_character(char c) const;
-		const texture& get_texture() const;
+		auto get_character(char c) const -> const glyph&;
+		auto get_texture() const -> const texture&;
 	private:
 		texture m_texture;
 		std::unordered_map<char, glyph> m_glyphs;

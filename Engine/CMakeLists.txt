@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.30)
+cmake_minimum_required(VERSION 3.29)
 
 # Set project details and C++ standard
 set(CMAKE_CXX_STANDARD 23)
@@ -146,6 +146,13 @@ target_include_directories(Engine PUBLIC ${miniaudio_SOURCE_DIR})
 # FetchContent for GLM
 ####################################################################################################################
 
+set(GLM_ENABLE_CXX_20 ON CACHE BOOL "Enable C++20 features in GLM" FORCE)
+set(GLM_ENABLE_LANG_EXTENSIONS ON CACHE BOOL "Enable GLM language extensions" FORCE)
+set(GLM_ENABLE_FAST_MATH OFF CACHE BOOL "Enable fast math optimizations" FORCE)
+set(GLM_ENABLE_SIMD_AVX2 ON CACHE BOOL "Enable AVX2 optimizations in GLM" FORCE)
+set(GLM_BUILD_TESTS OFF CACHE BOOL "Build the test programs" FORCE)
+set(GLM_BUILD_INSTALL OFF CACHE BOOL "Generate the install target" FORCE)
+
 FetchContent_Declare(
     glm
     GIT_REPOSITORY https://github.com/g-truc/glm.git
@@ -153,6 +160,15 @@ FetchContent_Declare(
 )
 
 FetchContent_MakeAvailable(glm)
+
+add_library(glm_module STATIC)
+target_sources(glm_module PUBLIC
+    FILE_SET CXX_MODULES
+    BASE_DIRS "${glm_SOURCE_DIR}/glm"
+    FILES "${glm_SOURCE_DIR}/glm/glm.cppm"
+)
+target_link_libraries(Engine PUBLIC glm_module)
+target_link_libraries(glm_module PUBLIC glm)
 
 ####################################################################################################################
 # FetchContent for Assimp
@@ -207,7 +223,7 @@ if (MSVC)
     add_compile_options(/MP)        # Multi-core compilation
 
     # List of external targets to be grouped under "External"
-    set(EXTERNAL_TARGETS enet glad glad-generate-files glm imgui assimp unit UpdateAssimpLibsDebugSymbolsAndDLLs zlibstatic)
+    set(EXTERNAL_TARGETS enet glad glad-generate-files glm imgui assimp unit UpdateAssimpLibsDebugSymbolsAndDLLs zlibstatic glm_module)
 
     # Loop through each target and set its folder property
     foreach(target ${EXTERNAL_TARGETS})

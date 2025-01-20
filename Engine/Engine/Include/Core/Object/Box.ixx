@@ -1,5 +1,10 @@
+module;
+
+#include <imgui.h>
+
 export module gse.core.object.box;
 
+import glm;
 import std;
 
 import gse.physics.math.vector;
@@ -9,8 +14,6 @@ export namespace gse {
 	auto create_box(std::uint32_t object_uuid, const vec3<length>& initial_position, const vec3<length>& size) -> void;
 	auto create_box(const vec3<length>& initial_position, const vec3<length>& size) -> std::uint32_t;
 }
-
-import <imgui.h>;
 
 import gse.core.object_registry;
 import gse.core.object.hook;

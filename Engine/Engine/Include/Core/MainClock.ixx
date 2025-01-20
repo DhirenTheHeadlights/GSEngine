@@ -1,6 +1,11 @@
 export module gse.core.main_clock;
 
-import std;
+import <imgui.h>;
+import <map>;
+import <string>;
+import <chrono>;
+import <unordered_map>;
+
 import gse.core.clock;
 import gse.physics.units;
 
@@ -17,8 +22,6 @@ export namespace gse {
 	void remove_timer(const std::string& name);
 	void display_timers();
 }
-
-import <imgui.h>;
 
 import gse.graphics.debug;
 

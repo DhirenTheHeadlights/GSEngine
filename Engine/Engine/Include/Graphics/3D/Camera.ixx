@@ -1,6 +1,6 @@
 export module gse.graphics.camera;
 
-import <glm/glm.hpp>;
+import glm;
 import <glm/gtc/matrix_transform.hpp>;
 
 import gse.physics.math.vector;

@@ -1,8 +1,6 @@
 export module gse.graphics.renderer2d;
 
-import std;
-
-import <glm/glm.hpp>;
+import glm;
 
 import gse.graphics.texture;
 import gse.graphics.font;

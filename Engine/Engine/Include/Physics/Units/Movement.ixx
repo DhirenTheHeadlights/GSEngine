@@ -18,10 +18,10 @@ export namespace gse::units {
 	using feet_per_second = unit<velocity_tag, 0.30480f, feet_per_second_units>;
 
 	using velocity_units = unit_list<
-		units::meters_per_second,
-		units::kilometers_per_hour,
-		units::miles_per_hour,
-		units::feet_per_second
+		meters_per_second,
+		kilometers_per_hour,
+		miles_per_hour,
+		feet_per_second
 	>;
 
 	struct angular_velocity_tag {};
@@ -33,8 +33,8 @@ export namespace gse::units {
 	using degrees_per_second = unit<angular_velocity_tag, 0.0174533f, degrees_per_second_units>;
 
 	using angular_velocity_units = unit_list <
-		units::radians_per_second,
-		units::degrees_per_second
+		radians_per_second,
+		degrees_per_second
 	>;
 }
 
@@ -88,10 +88,10 @@ export namespace gse::units {
 	using feet_per_second_squared = unit<acceleration_tag, 0.092903f, feet_pr_second_squared_units>;
 
 	using acceleration_units = unit_list<
-		units::meters_per_second_squared,
-		units::kilometers_per_hour_squared,
-		units::miles_per_hour_squared,
-		units::feet_per_second_squared
+		meters_per_second_squared,
+		kilometers_per_hour_squared,
+		miles_per_hour_squared,
+		feet_per_second_squared
 	>;
 
 	struct angular_acceleration_tag {};
@@ -103,8 +103,8 @@ export namespace gse::units {
 	using degrees_per_second_squared = unit<angular_acceleration_tag, 0.0174533f, degrees_per_second_squared_units>;
 
 	using angular_acceleration_units = unit_list <
-		units::radians_per_second_squared,
-		units::degrees_per_second_squared
+		radians_per_second_squared,
+		degrees_per_second_squared
 	>;
 }
 

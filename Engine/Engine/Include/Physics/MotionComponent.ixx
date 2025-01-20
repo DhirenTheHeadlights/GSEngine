@@ -1,8 +1,6 @@
 export module gse.physics.motion_component;
 
-import std;
-
-import <glm/glm.hpp>;
+import glm;
 import <glm/detail/type_quat.hpp>;
 import <glm/gtc/quaternion.hpp>;
 

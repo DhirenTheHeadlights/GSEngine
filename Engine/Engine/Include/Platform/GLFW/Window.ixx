@@ -1,10 +1,14 @@
+module;
+
+#include <memory>
+#include <optional>
+#include <vector>
+#include <glad/glad.h>
+#include <GLFW/glfw3.h>
+
 export module gse.platform.glfw.window;
 
-import std;
-
-import <glad/glad.h>;
-import <GLFW/glfw3.h>;
-import "glm/glm.hpp";
+import glm;
 
 export namespace gse::window {
     struct rendering_interface {
