@@ -5,6 +5,7 @@
 #include "Core/EngineComponent.h"
 #include "Graphics/3D/BoundingBoxMesh.h"
 #include "Graphics/3D/Mesh.h"
+#include "Graphics/3D/ModelLoader.h"
 
 namespace gse {
 	struct render_component final : component {

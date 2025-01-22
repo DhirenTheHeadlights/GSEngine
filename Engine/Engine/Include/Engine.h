@@ -13,6 +13,7 @@
 #include "Graphics/3D/Lights/LightSourceComponent.h"
 #include "Graphics/3D/Lights/PointLight.h"
 #include "Graphics/3D/Lights/SpotLight.h"
+#include "Graphics/3D/ModelLoader.h"
 #include "Physics/System.h"
 #include "Physics/Collision/CollisionComponent.h"
 #include "Physics/Units/Units.h"
