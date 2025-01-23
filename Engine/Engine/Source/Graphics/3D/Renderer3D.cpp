@@ -9,6 +9,7 @@
 #include "Graphics/Shader.h"
 #include "Graphics/3D/CubeMap.h"
 #include "Graphics/3D/Material.h"
+#include "Graphics/3D/ModelLoader.h"
 #include "Graphics/3D/Lights/LightSourceComponent.h"
 #include "Graphics/3D/Lights/PointLight.h"
 #include "Platform/GLFW/ErrorReporting.h"
@@ -464,17 +465,19 @@ namespace {
 				continue;
 			}
 
-			for (const auto& mesh : render_component.meshes) {
-				auto [material_key, vao, draw_mode, vertex_count, model_matrix, color] = mesh.get_queue_entry();
+			for (const auto& id : render_component.model_ids) {
+				for (const auto& mesh : gse::model_loader::get_model_by_id(id).meshes) {
+					auto [material_key, vao, draw_mode, vertex_count, model_matrix, color] = mesh.get_queue_entry();
 
-				if (const auto* motion_component = gse::registry::get_component_ptr<gse::physics::motion_component>(render_component.parent_id); motion_component) {
-					model_matrix = motion_component->get_transformation_matrix();
+					if (const auto* motion_component = gse::registry::get_component_ptr<gse::physics::motion_component>(render_component.parent_id); motion_component) {
+						model_matrix = motion_component->get_transformation_matrix();
+					}
+
+					shadow_shader.set_mat4("model", model_matrix);
+					glBindVertexArray(vao);
+					glDrawElements(draw_mode, vertex_count, GL_UNSIGNED_INT, nullptr);
+					glBindVertexArray(0);
 				}
-
-				shadow_shader.set_mat4("model", model_matrix);
-				glBindVertexArray(vao);
-				glDrawElements(draw_mode, vertex_count, GL_UNSIGNED_INT, nullptr);
-				glBindVertexArray(0);
 			}
 		}
 
@@ -585,8 +588,10 @@ auto gse::renderer3d::render() -> void {
 	g_reflection_cube_map.update(glm::vec3(0.f), g_camera.get_projection_matrix(),
 		[&render_components, &forward_rendering_shader](const glm::mat4& view_matrix, const glm::mat4& projection_matrix) {
 			for (const auto& render_component : render_components) {
-				for (auto& mesh : render_component.meshes) {
-					render_object_forward(render_component.parent_id, forward_rendering_shader, mesh.get_queue_entry(), view_matrix, projection_matrix);
+				for (const auto& id : render_component.model_ids) {
+					for (const auto& mesh : gse::model_loader::get_model_by_id(id).meshes) {
+						render_object_forward(render_component.parent_id, forward_rendering_shader, mesh.get_queue_entry(), view_matrix, projection_matrix);
+					}
 				}
 			}
 		});
@@ -615,12 +620,15 @@ auto gse::renderer3d::render() -> void {
 							continue;
 						}
 
-						for (const auto& mesh : render_component.meshes) {
-							auto [material_key, vao, draw_mode, vertex_count, model_matrix, color] = mesh.get_queue_entry();
-							shadow_shader.set_mat4("model", model_matrix);  // Object's model matrix
-							glBindVertexArray(vao);
-							glDrawElements(draw_mode, vertex_count, GL_UNSIGNED_INT, nullptr);
+						for (const auto& id : render_component.model_ids) {
+							for (const auto& mesh : gse::model_loader::get_model_by_id(id).meshes) {
+								auto [material_key, vao, draw_mode, vertex_count, model_matrix, color] = mesh.get_queue_entry();
+								shadow_shader.set_mat4("model", model_matrix);  // Object's model matrix
+								glBindVertexArray(vao);
+								glDrawElements(draw_mode, vertex_count, GL_UNSIGNED_INT, nullptr);
+							}
 						}
+
 					}
 					});
 			}
@@ -638,10 +646,13 @@ auto gse::renderer3d::render() -> void {
 	// Geometry pass
 	glBindFramebuffer(GL_FRAMEBUFFER, g_g_buffer);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
+	auto& models = gse::model_loader::get_models();
 	for (const auto& render_component : render_components) {
-		for (const auto& mesh : render_component.meshes) {
-			render_object(render_component.parent_id, mesh.get_queue_entry(), g_camera.get_view_matrix(), g_camera.get_projection_matrix());
+
+		for (const auto& id : render_component.model_ids) {
+			for (const auto& mesh : gse::model_loader::get_model_by_id(id).meshes) {
+				render_object(render_component.parent_id, mesh.get_queue_entry(), g_camera.get_view_matrix(), g_camera.get_projection_matrix());
+			}
 		}
 	}
 
@@ -676,21 +687,26 @@ auto gse::renderer3d::render() -> void {
 
 	// Finally, render bounding boxes
 	for (const auto& render_component : render_components) {
-		for (const auto& mesh : render_component.meshes) {
-			auto [material_key, vao, draw_mode, vertex_count, model_matrix, color] = mesh.get_queue_entry();
-			if (const auto it = g_materials.find(material_key); it != g_materials.end()) {
-				it->second.use(g_camera.get_view_matrix(), g_camera.get_projection_matrix(), model_matrix);
-				it->second.shader.set_vec3("color", color);
 
-				glBindVertexArray(vao);
-				glDrawArrays(draw_mode, 0, vertex_count);
-				glBindVertexArray(0);
-			}
-			else {
-				std::cerr << "Shader program key not found: " << material_key << '\n';
+		for (const auto& id : render_component.model_ids) {
+			for (const auto& mesh : gse::model_loader::get_model_by_id(id).meshes) {
+				auto [material_key, vao, draw_mode, vertex_count, model_matrix, color] = mesh.get_queue_entry();
+				if (const auto it = g_materials.find(material_key); it != g_materials.end()) {
+					it->second.use(g_camera.get_view_matrix(), g_camera.get_projection_matrix(), model_matrix);
+					it->second.shader.set_vec3("color", color);
+
+					glBindVertexArray(vao);
+					glDrawArrays(draw_mode, 0, vertex_count);
+					glBindVertexArray(0);
+				}
+				else {
+					std::cerr << "Shader program key not found: " << material_key << '\n';
+				}
 			}
 		}
-	}
+
+
+		}
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }

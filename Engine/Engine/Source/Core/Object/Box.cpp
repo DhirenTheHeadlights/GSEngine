@@ -16,7 +16,7 @@ struct box_mesh_hook final : gse::hook<gse::entity> {
         gse::physics::collision_component new_collision_component(owner_id);
         new_collision_component.bounding_box = { m_initial_position, m_size };
 
-        gse::render_component new_render_component(owner_id);
+       
 
         const float half_width = m_size.as<gse::units::meters>().x / 2.f;
         const float half_height = m_size.as<gse::units::meters>().y / 2.f;
@@ -97,11 +97,16 @@ struct box_mesh_hook final : gse::hook<gse::entity> {
 
         const std::vector<unsigned int> face_indices = { 0, 1, 2, 2, 3, 0 };
 
+        std::vector<gse::mesh> meshes;
+
         for (size_t i = 0; i < 6; ++i) {
             gse::mesh new_mesh(face_vertices[i], face_indices);
             new_mesh.set_color(color);
-			new_render_component.meshes.push_back(std::move(new_mesh));
+			meshes.push_back(std::move(new_mesh));
         }
+
+        gse::render_component new_render_component(owner_id, gse::model_loader::add_model(std::move(meshes), "Box"));
+
 
         //new_render_component.bounding_box_meshes.emplace_back(new_collision_component.bounding_box);
 

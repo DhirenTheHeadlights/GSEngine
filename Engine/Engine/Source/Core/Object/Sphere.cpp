@@ -15,7 +15,7 @@ struct sphere_mesh_hook final : gse::hook<gse::entity> {
         new_motion_component.current_position = m_initial_position;
         gse::registry::add_component<gse::physics::motion_component>(std::move(new_motion_component));
 
-		gse::render_component new_render_component(owner_id);
+        std::vector<gse::mesh> meshes;
 
         const float r = m_radius.as<gse::units::meters>();
 
@@ -70,7 +70,9 @@ struct sphere_mesh_hook final : gse::hook<gse::entity> {
             }
         }
 
-		new_render_component.meshes.emplace_back(vertices, indices);
+		meshes.emplace_back(vertices, indices);
+
+		gse::render_component new_render_component(owner_id, gse::model_loader::add_model(std::move(meshes), "Sphere"));
 
 		gse::registry::add_component<gse::render_component>(std::move(new_render_component));
 	}
