@@ -4,25 +4,25 @@
 
 #include "Core/EngineCore.h"
 
-auto gse::get_left_bound(const axis_aligned_bounding_box& bounding_box) -> gse::vec3<gse::length> {
+auto gse::get_left_bound(const axis_aligned_bounding_box& bounding_box) -> vec3<length> {
 	const vec3<length> center = bounding_box.get_center();
 	const length half_width = meters(bounding_box.get_size().as<units::meters>().x / 2.0f);
 	return center - vec3<units::meters>(half_width, 0.0f, 0.0f);
 }
 
-auto gse::get_right_bound(const axis_aligned_bounding_box& bounding_box) -> gse::vec3<gse::length> {
+auto gse::get_right_bound(const axis_aligned_bounding_box& bounding_box) -> vec3<length> {
 	const vec3<length> center = bounding_box.get_center();
 	const length half_width = meters(bounding_box.get_size().as<units::meters>().x / 2.0f);
 	return center + vec3<units::meters>(half_width, 0.0f, 0.0f);
 }
 
-auto gse::get_front_bound(const axis_aligned_bounding_box& bounding_box) -> gse::vec3<gse::length> {
+auto gse::get_front_bound(const axis_aligned_bounding_box& bounding_box) -> vec3<length> {
 	const vec3<length> center = bounding_box.get_center();
 	const length half_depth = meters(bounding_box.get_size().as<units::meters>().z / 2.0f);
 	return center - vec3<units::meters>(0.0f, 0.0f, half_depth);
 }
 
-auto gse::get_back_bound(const axis_aligned_bounding_box& bounding_box) -> gse::vec3<gse::length> {
+auto gse::get_back_bound(const axis_aligned_bounding_box& bounding_box) -> vec3<length> {
 	const vec3<length> center = bounding_box.get_center();
 	const length half_depth = meters(bounding_box.get_size().as<units::meters>().z / 2.0f);
 	return center + vec3<units::meters>(0.0f, 0.0f, half_depth);

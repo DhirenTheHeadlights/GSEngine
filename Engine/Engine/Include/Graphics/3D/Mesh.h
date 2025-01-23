@@ -1,4 +1,5 @@
 #pragma once
+
 #include <memory>
 #include <vector>
 #include <glad/glad.h>
@@ -23,7 +24,7 @@ namespace gse {
 	};
 
 	struct model_texture {
-		unsigned int id;
+		uint32_t id;
 		std::string type;
 		std::string path;
 	};
@@ -33,8 +34,8 @@ namespace gse {
 	class mesh {
 	public:
 		mesh();
-		mesh(const std::vector<vertex>& vertices, const std::vector<unsigned int>& indices, const glm::vec3& color = { 1.0f, 1.0f, 1.0f }, GLuint texture_id = 0);
-		mesh(const std::vector<vertex>& vertices, const std::vector<unsigned int>& indices, const std::vector<model_texture>& textures);
+		mesh(const std::vector<vertex>& vertices, const std::vector<uint32_t>& indices);
+		mesh(const std::vector<vertex>& vertices, const std::vector<uint32_t>& indices, const std::vector<model_texture>& textures);
 		virtual ~mesh();
 
 		mesh(const mesh&) = delete;
@@ -43,44 +44,16 @@ namespace gse {
 		mesh(mesh&& other) noexcept;
 		auto operator=(mesh&& other) noexcept -> mesh&;
 
-		auto get_vao() const -> GLuint;
-		auto get_vertex_count() const -> GLsizei ;
-		auto calculate_center_of_mass() -> vec3<length>;
+		auto initialize() -> void;
 
-		virtual auto get_queue_entry() const -> render_queue_entry {
-			return {
-				.material_key	= m_material_name,
-				.vao			= m_vao,
-				.draw_mode		= m_draw_mode,
-				.vertex_count	= get_vertex_count(),
-				.model_matrix	= m_model_matrix,
-				.color			= m_color
-			};
-		}
+		GLuint vao = 0;
+		GLuint vbo = 0;
+		GLuint ebo = 0;
 
-		std::vector<model_texture> get_textures() const {return m_textures;}
+		std::vector<vertex> vertices;
+		std::vector<uint32_t> indices;
+		std::vector<model_texture> textures;
 
-		auto set_color(const glm::vec3& new_color) -> void ;
-		auto set_position(const vec3<length>& new_position) -> void;
-
-	protected:
-		friend render_component;
-		auto set_up_mesh() -> void;
-
-		GLuint m_vao = 0;
-		GLuint m_vbo = 0;
-		GLuint m_ebo = 0;
-
-		std::vector<vertex> m_vertices;
-		std::vector<unsigned int> m_indices;
-		std::vector<model_texture> m_textures;
-
-		glm::mat4 m_model_matrix = glm::mat4(1.0f);
-		GLuint m_draw_mode = GL_TRIANGLES;
-		std::string m_material_name = "Concrete";
-		glm::vec3 m_color = { 1.0f, 1.0f, 1.0f };
-
-		vec3<length> m_center_of_mass;
-		bool m_com_calculated = false;
+		vec3<length> center_of_mass;
 	};
 }

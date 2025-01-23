@@ -13,17 +13,6 @@ namespace gse {
 
 		auto update() -> void;
 
-		auto get_queue_entry() const -> render_queue_entry override {
-			return {
-				.material_key	= m_material_name,
-				.vao			= m_vao,
-				.draw_mode		= m_draw_mode,
-				.vertex_count	= static_cast<GLsizei>(m_vertices.size() / 3),
-				.model_matrix	= m_model_matrix,
-				.color			= m_color
-			};
-		}
-
 		auto set_cell_size(const length& cell_size) -> void { m_cell_size = cell_size; }
 
 	private:
