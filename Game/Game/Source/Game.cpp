@@ -1,16 +1,18 @@
-#include "Game.h"
+module;
 
 #include <imgui.h>
-#include <memory>
-#include <memory>
-
-#include "Arena.h"
-#include "Engine.h"
-#include "Player.h"
+#include <GLFW/glfw3.h>
 #include "ResourcePaths.h"
-#include "Skybox.h"
-#include "SphereLight.h"
-#include "Graphics/2D/Renderer2D.h"
+
+module game;
+
+import gse;
+import std;
+
+import game.arena;
+import game.player;
+import game.skybox;
+import game.sphere_light;
 
 namespace {
 	bool g_input_handling_enabled = true;

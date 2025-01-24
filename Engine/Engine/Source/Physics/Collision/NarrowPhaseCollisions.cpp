@@ -1,9 +1,11 @@
-#include "Physics/Collision/NarrowPhaseCollisions.h"
+module gse.physics.narrow_phase_collisions;
 
-#include "Core/ObjectRegistry.h"
-#include "Graphics/3D/Lights/Light.h"
-#include "Physics/Surfaces.h"
-#include "Physics/System.h"
+import std;
+
+import gse.physics.math.vector;
+import gse.physics.math.vector_math;
+import gse.physics.math.units;
+import gse.physics.bounding_box;
 
 namespace {
 	auto overlaps_on_axis(const gse::oriented_bounding_box& box1, const gse::oriented_bounding_box& box2, const gse::vec3<gse::length>& axis, gse::length& penetration) -> bool {

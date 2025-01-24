@@ -1,4 +1,14 @@
-#include "Graphics/3D/BoundingBoxMesh.h"
+module;
+
+#include <glad/glad.h>
+
+module gse.graphics.bounding_box_mesh;
+
+import glm;
+
+import gse.physics.math.vector;
+import gse.physics.math.units;
+import gse.physics.bounding_box;
 
 gse::bounding_box_mesh::bounding_box_mesh(const vec3<length>& lower, const vec3<length>& upper)
 	: m_lower(lower), m_upper(upper) {

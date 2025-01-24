@@ -1,9 +1,16 @@
-#include "Platform/GLFW/Window.h"
-#include <fstream>
+module;
 
-#include "Core/Clock.h"
-#include "Platform/PermaAssert.h"
-#include "Platform/GLFW/Input.h"
+#include "glad/glad.h"
+#include "GLFW/glfw3.h"
+
+module gse.platform.glfw.window;
+
+
+import std;
+import glm;
+
+import gse.platform.glfw.input;
+import gse.platform.perma_assert;
 
 #undef max
 #undef min

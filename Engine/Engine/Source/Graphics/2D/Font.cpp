@@ -1,16 +1,21 @@
-#include "Graphics/2D/Font.h"
+module;
 
+#include <algorithm>
 #include <fstream>
 #include <iostream>
+#include <vector>
+
+#include <glad/glad.h>
+
 #include <msdfgen.h>
 #define STB_TRUETYPE_IMPLEMENTATION
-#include <algorithm>
 #include <stb_truetype.h>
-#include <vector>
 #include <freetype/freetype.h>
 
 #include "ext/import-font.h"
 #include "tests/caveview/glext.h"
+
+module gse.graphics.font;
 
 gse::font::font(const std::string& path) {
 	load(path);

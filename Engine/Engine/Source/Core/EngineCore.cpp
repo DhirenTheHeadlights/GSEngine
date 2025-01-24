@@ -1,15 +1,17 @@
-#include "Core/EngineCore.h"
+module gse.core.engine;
 
-#include "Core/Clock.h"
-#include "Core/ObjectRegistry.h"
-#include "Core/SceneLoader.h"
-#include "Graphics/Debug.h"
-#include "Graphics/2D/Gui.h"
-#include "Graphics/2D/Renderer2D.h"
-#include "Graphics/3D/Renderer3D.h"
-#include "Platform/PermaAssert.h"
-#include "Platform/GLFW/Input.h"
-#include "Platform/GLFW/Window.h"
+import std;
+
+import gse.core.clock;
+import gse.core.object_registry;
+import gse.core.scene_loader;
+import gse.graphics.debug;
+import gse.graphics.gui;
+import gse.graphics.renderer2d;
+import gse.graphics.renderer3d;
+import gse.platform.perma_assert;
+import gse.platform.glfw.input;
+import gse.platform.glfw.window;
 
 auto gse::get_camera() -> gse::camera& {
 	return renderer3d::get_camera();
@@ -18,7 +20,7 @@ auto gse::get_camera() -> gse::camera& {
 namespace {
 	std::function<void()> g_game_shutdown_function = [] {};
 
-	enum class engine_state : uint8_t {
+	enum class engine_state : std::uint8_t {
 		uninitialized,
 		initializing,
 		running,

@@ -1,8 +1,11 @@
-#include "SphereLight.h"
+module;
 
-#include <memory>
+#include <imgui.h>
 
-#include "Core/ObjectRegistry.h"
+module game.sphere_light;
+
+import std;
+import gse;
 
 namespace {
 	int g_sphere_light_count = 1;

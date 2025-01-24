@@ -1,7 +1,14 @@
-#include "Platform/GLFW/Input.h"
+module;
 
-#include "Core/Clock.h"
-#include "Platform/GLFW/Window.h"
+#include "GLFW/glfw3.h"
+
+module gse.platform.glfw.input;
+
+import std;
+import glm;
+
+import gse.core.clock;
+import gse.platform.glfw.window;
 
 gse::input::keyboard g_keyboard;
 gse::input::controller g_controller;

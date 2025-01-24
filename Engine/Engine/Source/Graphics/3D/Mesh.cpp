@@ -1,7 +1,11 @@
-#include "Graphics/3D/Mesh.h"
+module;
 
 #include "glm/ext/matrix_transform.hpp"
-#include "Physics/Vector/Math.h"
+#include <glad/glad.h>
+
+module gse.graphics.mesh;
+
+import gse.physics.math.vector_math;
 
 gse::mesh::mesh() {
 	glGenVertexArrays(1, &m_vao);

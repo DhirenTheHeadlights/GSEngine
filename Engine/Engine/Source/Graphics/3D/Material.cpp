@@ -1,7 +1,11 @@
-#include "Graphics/3D/Material.h"
+module;
 
 #include <iostream>
+
+#include <glad/glad.h>
 #include "stb_image.h"
+
+module gse.graphics.material;
 
 namespace {
 	auto load_texture(char const* path, const bool gamma_correction) -> unsigned int {

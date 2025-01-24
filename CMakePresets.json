@@ -10,7 +10,7 @@
       "name": "x64-Debug",
       "displayName": "x64 Debug",
       "description": "Debug build using Ninja and vcpkg",
-      "generator": "Ninja",
+      "generator": "Visual Studio 17 2022",
       "binaryDir": "${sourceDir}/out/build/x64-Debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
@@ -23,7 +23,7 @@
       "name": "x64-Release",
       "displayName": "x64 Release",
       "description": "Release build with RelWithDebInfo using Ninja and vcpkg",
-      "generator": "Ninja",
+      "generator": "Visual Studio 17 2022",
       "binaryDir": "${sourceDir}/out/build/x64-Release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",

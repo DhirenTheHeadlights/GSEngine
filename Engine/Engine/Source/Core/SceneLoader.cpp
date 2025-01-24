@@ -1,12 +1,13 @@
-#include "Core/SceneLoader.h"
+module gse.core.scene_loader;
 
-#include <optional>
-#include <ranges>
+import std;
 
-#include "glad/glad.h"
+import gse.core.id;
+import gse.core.scene;
+import gse.platform.perma_assert;
 
 namespace {
-	std::optional<GLuint> g_fbo = std::nullopt;
+	std::optional<std::uint32_t> g_fbo = std::nullopt;
 	bool g_engine_initialized = false;
 	bool g_allow_multiple_active_scenes = false;
 
