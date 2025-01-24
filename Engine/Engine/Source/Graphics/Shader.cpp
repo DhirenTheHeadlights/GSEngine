@@ -1,10 +1,14 @@
-#include "Graphics/Shader.h"
+module;
 
 #include <fstream>
 #include <iostream>
 #include <sstream>
 
+#include <glad/glad.h>
 #include "glm/gtc/type_ptr.hpp"
+#include "tests/caveview/glext.h"
+
+module gse.graphics.shader;
 
 gse::shader::shader(const std::string& vertex_path, const std::string& fragment_path, const std::string& geometry_path) {
 	if (!geometry_path.empty()) {

@@ -1,8 +1,9 @@
-#include "Graphics/3D/BoundingBox.h"
+module gse.physics.bounding_box;
 
-#include <iostream>
+import std;
 
-#include "Core/EngineCore.h"
+import gse.physics.math.vector;
+import gse.physics.math.units;
 
 auto gse::get_left_bound(const axis_aligned_bounding_box& bounding_box) -> gse::vec3<gse::length> {
 	const vec3<length> center = bounding_box.get_center();

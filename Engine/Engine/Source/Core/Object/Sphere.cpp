@@ -1,10 +1,19 @@
-#include "Core/Object/Sphere.h"
+module;
 
 #include <imgui.h>
-#include <memory>
 
-#include "Core/ObjectRegistry.h"
-#include "Graphics/RenderComponent.h"
+module gse.core.object.sphere;
+
+import glm;
+
+import gse.physics.math.vector;
+import gse.physics.math.vector_math;
+import gse.physics.math.units;
+import gse.core.object.hook;
+import gse.core.object_registry;
+import gse.graphics.render_component;
+import gse.physics.motion_component;
+import gse.graphics.debug;
 
 struct sphere_mesh_hook final : gse::hook<gse::entity> {
 	sphere_mesh_hook(const gse::vec3<gse::length>& position, const gse::length radius, const int sectors, const int stacks)
@@ -24,14 +33,14 @@ struct sphere_mesh_hook final : gse::hook<gse::entity> {
 
         // Generate vertices
         for (int stack = 0; stack <= m_stacks; ++stack) {
-            const float phi = glm::pi<float>() * (static_cast<float>(stack) / static_cast<float>(m_stacks)); // From 0 to PI
-            const float sin_phi = glm::sin(phi);
-            const float cos_phi = glm::cos(phi);
+            const float phi = std::numbers::pi_v<float> * (static_cast<float>(stack) / static_cast<float>(m_stacks)); // From 0 to PI
+            const float sin_phi = std::sin(phi);
+            const float cos_phi = std::cos(phi);
 
             for (int sector = 0; sector <= m_sectors; ++sector) {
-                const float theta = 2 * glm::pi<float>() * (static_cast<float>(sector) / static_cast<float>(m_sectors)); // From 0 to 2PI
-                const float sin_theta = glm::sin(theta);
-                const float cos_theta = glm::cos(theta);
+                const float theta = 2 * std::numbers::pi_v<float> * (static_cast<float>(sector) / static_cast<float>(m_sectors)); // From 0 to 2PI
+                const float sin_theta = std::sin(theta);
+                const float cos_theta = std::cos(theta);
 
                 // Calculate vertex position
                 glm::vec3 position = {

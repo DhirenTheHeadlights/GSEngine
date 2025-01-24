@@ -1,8 +1,7 @@
-#include "Skybox.h"
+module game.skybox;
 
-#include <memory>
-
-#include "Core/ObjectRegistry.h"
+import std;
+import gse;
 
 struct skybox_hook final : gse::hook<gse::entity> {
 	using hook::hook;

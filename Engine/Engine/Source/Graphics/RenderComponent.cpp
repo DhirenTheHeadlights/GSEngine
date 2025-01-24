@@ -1,8 +1,11 @@
-#include "Graphics/RenderComponent.h"
+module;
 
+#include <iostream>
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
+
+module gse.graphics.render_component;
 
 auto gse::render_component::load_model(const std::string& path) -> void {
     Assimp::Importer importer;

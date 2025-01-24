@@ -1,13 +1,22 @@
-#include "Graphics/2D/Renderer2D.h"
+module;
 
 #include <glad/glad.h>
 #include <glm/gtc/matrix_transform.hpp>
+#include <tests/caveview/glext.h>
 
 #include "Core/ResourcePaths.h"
-#include "Graphics/Shader.h"
-#include "Graphics/3D/Renderer3D.h"
-#include "Platform/GLFW/Window.h"
-#include "tests/caveview/glext.h"
+
+module gse.graphics.renderer2d;
+
+import std;
+import glm;
+
+import gse.graphics.shader;
+import gse.graphics.texture;
+import gse.graphics.font;
+import gse.graphics.renderer3d;
+import gse.graphics.camera;
+import gse.platform.glfw.window;
 
 namespace {
 	GLuint g_vao, g_vbo, g_ebo;

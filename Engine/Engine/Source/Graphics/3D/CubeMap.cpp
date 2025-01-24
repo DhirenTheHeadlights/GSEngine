@@ -1,10 +1,15 @@
-#include "Graphics/3D/CubeMap.h"
-#include <iostream>
-#include <stb_image.h>
+module;
 
+#include <iostream>
+
+#include <glad/glad.h>
+#include <stb_image.h>
 #include "glm/ext/matrix_clip_space.hpp"
 #include "glm/ext/matrix_transform.hpp"
-#include "Platform/GLFW/Window.h"
+
+module gse.graphics.cube_map;
+
+import gse.platform.glfw.window;
 
 gse::cube_map::~cube_map() {
 	glDeleteTextures(1, &m_texture_id);

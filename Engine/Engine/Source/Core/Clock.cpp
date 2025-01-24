@@ -1,10 +1,13 @@
-#include "Core/Clock.h"
-
-#include <iostream>
-#include <map>
+module;
 
 #include "imgui.h"
-#include "Graphics/Debug.h"
+
+module gse.core.clock;
+
+import std;
+
+import gse.graphics.debug;
+import gse.physics.math.units;
 
 /// Clock
 

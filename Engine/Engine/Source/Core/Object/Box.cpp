@@ -1,8 +1,18 @@
-#include "Core/Object/Box.h"
+module;
+
 #include <imgui.h>
 
-#include "Core/ObjectRegistry.h"
-#include "Graphics/RenderComponent.h"
+module gse.core.object.box;
+
+import gse.physics.collision_component;
+import gse.physics.motion_component;
+import gse.physics.math.vector;
+import gse.physics.math.vector_math;
+import gse.physics.math.units;
+import gse.core.object.hook;
+import gse.core.object_registry;
+import gse.graphics.render_component;
+import gse.graphics.debug;
 
 struct box_mesh_hook final : gse::hook<gse::entity> {
     box_mesh_hook(const gse::vec3<gse::length>& initial_position, const gse::vec3<gse::length>& size)

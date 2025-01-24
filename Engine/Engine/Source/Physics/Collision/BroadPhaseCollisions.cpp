@@ -1,11 +1,14 @@
-#include "Physics/Collision/BroadPhaseCollisions.h"
+module gse.physics.broad_phase_collision;
 
-#include <iostream>
+import std;
 
-#include "Core/ObjectRegistry.h"
-#include "Physics/System.h"
-#include "Physics/Collision/NarrowPhaseCollisions.h"
-#include "Physics/Vector/Math.h"
+import gse.physics.collision_component;
+import gse.physics.motion_component;
+import gse.physics.math.vector;
+import gse.physics.math.units;
+import gse.physics.narrow_phase_collisions;
+import gse.physics.system;
+import gse.core.object_registry;
 
 auto gse::broad_phase_collision::check_collision(const axis_aligned_bounding_box& box1, const axis_aligned_bounding_box& box2) -> bool {
 	return box1.upper_bound.as_default_units().x > box2.lower_bound.as_default_units().x && box1.lower_bound.as_default_units().x < box2.upper_bound.as_default_units().x &&

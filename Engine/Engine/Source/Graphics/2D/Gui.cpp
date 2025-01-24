@@ -1,14 +1,17 @@
-#include "Graphics/2D/Gui.h"
-
-#include <memory>
-#include <vector>
+module;
 
 #include "Core/ResourcePaths.h"
-#include "Graphics/2D/Font.h"
-#include "Graphics/2D/Renderer2D.h"
-#include "Graphics/2D/Texture.h"
-#include "Platform/GLFW/Input.h"
-#include "Platform/GLFW/Window.h"
+
+module gse.graphics.gui;
+
+import std;
+import glm;
+
+import gse.graphics.renderer2d;
+import gse.graphics.texture;
+import gse.graphics.font;
+import gse.platform.glfw.window;
+import gse.platform.glfw.input;
 
 namespace {
 	struct menu {

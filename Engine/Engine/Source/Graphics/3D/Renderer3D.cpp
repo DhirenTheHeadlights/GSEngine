@@ -1,19 +1,27 @@
-#include "Graphics/3D/Renderer3D.h"
+module;
 
+#define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/string_cast.hpp>
-
-#include "Core/JsonParser.h"
-#include "Core/ObjectRegistry.h"
+#include <glad/glad.h>
+#include "json.hpp"
+#include "imgui.h"
 #include "Core/ResourcePaths.h"
-#include "Graphics/RenderComponent.h"
-#include "Graphics/Shader.h"
-#include "Graphics/3D/CubeMap.h"
-#include "Graphics/3D/Material.h"
-#include "Graphics/3D/Lights/LightSourceComponent.h"
-#include "Graphics/3D/Lights/PointLight.h"
-#include "Platform/GLFW/ErrorReporting.h"
-#include "Platform/GLFW/Input.h"
-#include "Platform/GLFW/Window.h"
+
+module gse.graphics.renderer3d;
+
+import gse.core.json_parser;
+import gse.core.object_registry;
+import gse.graphics.render_component;
+import gse.graphics.mesh;
+import gse.graphics.shader;
+import gse.graphics.cube_map;
+import gse.graphics.material;
+import gse.graphics.light_source_component;
+import gse.graphics.point_light;
+import gse.physics.motion_component;
+import gse.platform.glfw.window;
+import gse.platform.glfw.input;
+import gse.platform.glfw.error_reporting;
 
 namespace {
 	gse::camera g_camera;

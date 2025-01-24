@@ -1,9 +1,12 @@
-#include "Player.h"
+module;
 
-#include <memory>
-#include <memory>
+#include "GLFW/glfw3.h"
+#include "imgui.h"
 
-#include "Engine.h"
+module game.player;
+
+import gse;
+import std;
 
 namespace {
 	const std::unordered_map<int, gse::vec3<>> g_wasd{

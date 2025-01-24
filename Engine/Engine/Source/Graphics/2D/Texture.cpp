@@ -1,8 +1,12 @@
-#include "Graphics/2D/Texture.h"
+module;
+
+#include <glad/glad.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <iostream>
 #include <stb_image.h>
+
+module gse.graphics.texture;
 
 gse::texture::texture(const std::string& filepath) : m_filepath(filepath) {
 	load_from_file(filepath);

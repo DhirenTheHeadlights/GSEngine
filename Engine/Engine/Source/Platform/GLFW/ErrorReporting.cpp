@@ -1,14 +1,18 @@
-#include "Platform/GLFW/ErrorReporting.h"
-#include <iostream>
+module;
 
-void GLAPIENTRY gl_debug_output(const GLenum source,
-                              const GLenum type,
-                              const unsigned int id,
-                              const GLenum severity,
-                              GLsizei length,
-                              const char* message,
-                              const void* user_param)
-{
+#include <iostream>
+#include "glad/glad.h"
+#include "tests/caveview/glext.h"
+
+module gse.platform.glfw.error_reporting;
+
+auto GLAPIENTRY gl_debug_output(const GLenum source,
+                                const GLenum type,
+                                const unsigned int id,
+                                const GLenum severity,
+                                GLsizei length,
+                                const char* message,
+                                const void* user_param) -> void {
 	// ignore non-significant error/warning codes
 	if (id == 131169 || id == 131185 || id == 131218 || id == 131204
 		|| id == 131222
@@ -55,8 +59,7 @@ void GLAPIENTRY gl_debug_output(const GLenum source,
 
 }
 
-void enable_report_gl_errors()
-{
+auto enable_report_gl_errors() -> void {
 	glEnable(GL_DEBUG_OUTPUT);
 	glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
 	glDebugMessageCallback(gl_debug_output, nullptr);

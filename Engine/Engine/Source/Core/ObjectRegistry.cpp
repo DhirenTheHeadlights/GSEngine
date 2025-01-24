@@ -1,10 +1,13 @@
-#include "Core/ObjectRegistry.h"
+module gse.core.object_registry;
 
-#include <ranges>
+import std;
 
-#include "Core/Clock.h"
-#include "Physics/Vector/Math.h"
-#include "Platform/PermaAssert.h"
+import gse.core.clock;
+import gse.core.id;
+import gse.core.object.hook;
+import gse.physics.math.units;
+import gse.physics.math.vector_math;
+import gse.platform.perma_assert;
 
 namespace {
 	std::unordered_map<gse::id*, std::vector<std::uint32_t>> g_entity_lists;
@@ -81,7 +84,7 @@ auto gse::registry::render_hooks() -> void {
 	}
 }
 
-auto gse::registry::get_active_objects() -> std::vector<std::uint32_t>& {
+auto gse::registry::get_active_objects() -> std::vector<std::uint32_t> {
 	std::vector<std::uint32_t> active_objects;
 	active_objects.reserve(g_entities.size());
 	for (const auto& [index, generation] : g_entities) {

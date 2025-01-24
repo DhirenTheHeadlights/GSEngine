@@ -1,19 +1,23 @@
-#include "Physics/System.h"
-
-#include <algorithm>
-#include <iostream>
+module;
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/norm.hpp>
 
-#include "Core/Clock.h"
-#include "Core/ObjectRegistry.h"
-#include "Graphics/RenderComponent.h"
-#include "Physics/Surfaces.h"
-#include "Physics/Collision/BroadPhaseCollisions.h"
-#include "Physics/Collision/CollisionComponent.h"
-#include "Physics/Vector/Math.h"
-#include "Platform/GLFW/Input.h"
+module gse.physics.system;
+
+import std;
+import glm;
+
+import gse.physics.math.units;
+import gse.physics.math.vector;
+import gse.core.object_registry;
+import gse.core.clock;
+import gse.graphics.render_component;
+import gse.physics.surfaces;
+import gse.physics.broad_phase_collision;
+import gse.physics.collision_component;
+import gse.physics.math.vector_math;
+import gse.platform.glfw.input;
 
 namespace {
 	auto g_gravity = gse::vec3<gse::units::meters_per_second_squared>(0.f, -9.8f, 0.f);
