@@ -116,7 +116,7 @@ export namespace gse {
 
 	template <is_unit_or_quantity quantity_or_unit_type>
 	auto is_zero(const vec3<quantity_or_unit_type>& a) -> bool {
-		return a.as_default_units().x < 0.00001f && a.as_default_units().y < 0.00001f && a.as_default_units().z < 0.00001f;
+		return std::fabs(a.as_default_units().x < 0.00001f) && std::fabs(a.as_default_units().y) < 0.00001f && std::fabs(a.as_default_units().z) < 0.00001f;
 	}
 
 	template <is_unit_or_quantity quantity_or_unit_type>
