@@ -26,7 +26,7 @@ export namespace gse {
 	};
 
 	struct model_texture {
-		unsigned int id;
+		std::uint32_t id;
 		std::string type;
 		std::string path;
 	};
