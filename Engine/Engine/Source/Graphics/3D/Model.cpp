@@ -1,9 +1,11 @@
 #include "Graphics/3D/Model.h"
 
+#include "glm/ext/matrix_transform.hpp"
+
 auto gse::model::initialize() -> void {
 	for (auto& mesh : meshes) {
 		mesh.initialize();
-		center_of_mass += mesh.calculate_center_of_mass();
+		center_of_mass += mesh.center_of_mass;
 	}
 }
 
@@ -11,9 +13,9 @@ gse::model_handle::model_handle(id* model_id, const model& model) : m_model_id(m
 	for (const auto& mesh : model.meshes) {
 		m_render_queue_entries.emplace_back(
 			"NULL",
-			mesh.get_vao(),
+			mesh.vao,
 			GL_TRIANGLES,
-			mesh.get_vertex_count(),
+			static_cast<GLsizei>(mesh.vertices.size() / 3),
 			glm::mat4(1.0f),
 			glm::vec3(1.0f)
 		);
@@ -22,15 +24,15 @@ gse::model_handle::model_handle(id* model_id, const model& model) : m_model_id(m
 
 auto gse::model_handle::set_position(const vec3<length>& position) -> void {
 	for (auto& render_queue_entry : m_render_queue_entries) {
-		render_queue_entry.model_matrix = glm::translate(glm::mat4(1.0f), position.as_default_units());
+		render_queue_entry.model_matrix = translate(glm::mat4(1.0f), position.as_default_units());
 	}
 }
 
 auto gse::model_handle::set_rotation(const vec3<angle>& rotation) -> void {
 	for (auto& render_queue_entry : m_render_queue_entries) {
-		render_queue_entry.model_matrix = glm::rotate(render_queue_entry.model_matrix, glm::radians(rotation.as<units::degrees>().x), glm::vec3(1.0f, 0.0f, 0.0f));
-		render_queue_entry.model_matrix = glm::rotate(render_queue_entry.model_matrix, glm::radians(rotation.as<units::degrees>().y), glm::vec3(0.0f, 1.0f, 0.0f));
-		render_queue_entry.model_matrix = glm::rotate(render_queue_entry.model_matrix, glm::radians(rotation.as<units::degrees>().z), glm::vec3(0.0f, 0.0f, 1.0f));
+		render_queue_entry.model_matrix = rotate(render_queue_entry.model_matrix, glm::radians(rotation.as<units::degrees>().x), glm::vec3(1.0f, 0.0f, 0.0f));
+		render_queue_entry.model_matrix = rotate(render_queue_entry.model_matrix, glm::radians(rotation.as<units::degrees>().y), glm::vec3(0.0f, 1.0f, 0.0f));
+		render_queue_entry.model_matrix = rotate(render_queue_entry.model_matrix, glm::radians(rotation.as<units::degrees>().z), glm::vec3(0.0f, 0.0f, 1.0f));
 	}
 }
 

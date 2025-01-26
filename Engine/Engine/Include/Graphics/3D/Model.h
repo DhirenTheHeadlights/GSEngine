@@ -6,7 +6,7 @@
 namespace gse {
 	class model_handle;
 
-	class model : identifiable {
+	class model : public identifiable {
 	public:
 		model(const std::string& tag) : identifiable(tag) {}
 
@@ -22,7 +22,7 @@ namespace gse {
 
 		auto set_position(const vec3<length>& position) -> void;
 		auto set_rotation(const vec3<angle>& rotation) -> void;
-		auto set_material(const std::string& material_tag) -> void;
+		auto set_material(const std::string& material_name) -> void;
 
 		auto get_render_queue_entries() const -> const std::vector<render_queue_entry>&;
 		auto get_model_id() const -> id*;

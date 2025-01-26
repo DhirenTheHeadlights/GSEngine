@@ -9,5 +9,4 @@ namespace gse::model_loader {
 	auto get_model_by_name(const std::string& model_name) -> const model&;
 	auto get_model_by_id(id* model_id) -> const model&;
 	auto get_models() -> const std::unordered_map<id*, model>&;
-	auto set_model_position(id* model_id, const vec3<length>& new_position) -> void;
 }

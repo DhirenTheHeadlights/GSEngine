@@ -24,9 +24,15 @@ namespace gse::debug {
 	void unit_slider(const std::string& name, quantity_type& quantity, const quantity_type& min, const quantity_type& max) {
 		float value = quantity.template as<unit_type>();
 
-		if (ImGui::SliderFloat((name + " (" + unit_type::template unit_name + ")").c_str(), &value, min.template as<unit_type>(), max.template as<unit_type>())) {
+		const std::string slider_label = name + " (" + unit_type::unit_name + ")";
+		if (ImGui::SliderFloat(slider_label.c_str(),
+			&value,
+			min.template as<unit_type>(),
+			max.template as<unit_type>()))
+		{
 			quantity.template set<unit_type>(value);
 		}
+
 	}
 
 	void print_boolean(const std::string& name, const bool& value);

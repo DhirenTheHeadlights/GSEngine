@@ -40,9 +40,9 @@ namespace {
     std::unordered_map<std::int32_t, gse::id*> g_id_map;
 	std::unordered_map<std::string, gse::id*, transparent_hash, transparent_equal> g_tag_map;
 
-    auto register_object(gse::id* obj, const std::string& tag) -> void {
+    auto register_object(gse::id* obj, std::string tag) -> void {
         g_id_map[obj->number()] = obj;
-		g_tag_map[tag] = obj;
+		g_tag_map[std::move(tag)] = obj;
     }
 }
 

@@ -80,7 +80,7 @@ struct sphere_mesh_hook final : gse::hook<gse::entity> {
 	auto update() -> void override {
         const auto position = gse::registry::get_component<gse::physics::motion_component>(owner_id).current_position.as<gse::units::meters>();
 
-        gse::registry::get_component<gse::render_component>(owner_id).set_mesh_positions(position);
+        gse::registry::get_component<gse::render_component>(owner_id).models[0].set_position(position);
 	}
 private:
 	gse::vec3<gse::length> m_initial_position;

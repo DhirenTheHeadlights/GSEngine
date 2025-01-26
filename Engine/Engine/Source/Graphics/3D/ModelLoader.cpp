@@ -97,6 +97,8 @@ auto gse::model_loader::load_obj_file(const std::string& model_path, const std::
 	pre_load_texcoords.clear();
 	pre_load_normals.clear();
 
+	model.initialize();
+
 	id* id_pointer = model.get_id();
 	g_loaded_model_paths.insert({ id_pointer, model_path });
 	g_models.insert({ id_pointer, std::move(model) });
@@ -107,6 +109,7 @@ auto gse::model_loader::load_obj_file(const std::string& model_path, const std::
 auto gse::model_loader::add_model(std::vector<mesh>&& meshes, const std::string& model_name) -> id* {
 	model model(model_name);
 	model.meshes = std::move(meshes);
+	model.initialize();
 	id* id_pointer = model.get_id();
 	g_models.insert({ id_pointer, std::move(model)});
 	return id_pointer;
