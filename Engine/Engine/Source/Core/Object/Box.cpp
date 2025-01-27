@@ -4,6 +4,8 @@ module;
 
 module gse.core.object.box;
 
+import glm;
+
 import gse.physics.collision_component;
 import gse.physics.motion_component;
 import gse.physics.math.vector;
@@ -12,6 +14,8 @@ import gse.physics.math.units;
 import gse.core.object.hook;
 import gse.core.object_registry;
 import gse.graphics.render_component;
+import gse.graphics.mesh;
+import gse.graphics.model_loader;
 import gse.graphics.debug;
 
 struct box_mesh_hook final : gse::hook<gse::entity> {
@@ -26,8 +30,6 @@ struct box_mesh_hook final : gse::hook<gse::entity> {
         gse::physics::collision_component new_collision_component(owner_id);
         new_collision_component.bounding_box = { m_initial_position, m_size };
 		new_collision_component.oriented_bounding_box = { new_collision_component.bounding_box };
-
-        gse::render_component new_render_component(owner_id);
 
         const float half_width = m_size.as<gse::units::meters>().x / 2.f;
         const float half_height = m_size.as<gse::units::meters>().y / 2.f;
@@ -106,15 +108,15 @@ struct box_mesh_hook final : gse::hook<gse::entity> {
             }
         };
 
-        const std::vector<unsigned int> face_indices = { 0, 1, 2, 2, 3, 0 };
+        constexpr std::vector<std::uint32_t> face_indices = { 0, 1, 2, 2, 3, 0 };
+
+		std::vector<gse::mesh> meshes;
 
         for (size_t i = 0; i < 6; ++i) {
-            gse::mesh new_mesh(face_vertices[i], face_indices);
-            new_mesh.set_color(color);
-			new_render_component.meshes.push_back(std::move(new_mesh));
+			meshes.emplace_back(face_vertices[i], face_indices);
         }
 
-        //new_render_component.bounding_box_meshes.emplace_back(new_collision_component.bounding_box);
+        gse::render_component new_render_component(owner_id, gse::model_loader::add_model(std::move(meshes), "Box"));
 
         gse::registry::add_component<gse::physics::motion_component>(std::move(new_motion_component));
         gse::registry::add_component<gse::physics::collision_component>(std::move(new_collision_component));
@@ -122,7 +124,7 @@ struct box_mesh_hook final : gse::hook<gse::entity> {
     }
 
     auto update() -> void override {
-	    gse::registry::get_component<gse::render_component>(owner_id).set_mesh_positions(gse::registry::get_component<gse::physics::motion_component>(owner_id).current_position);
+        gse::registry::get_component<gse::render_component>(owner_id).models[0].set_position(gse::registry::get_component<gse::physics::motion_component>(owner_id).current_position);
         gse::registry::get_component<gse::physics::collision_component>(owner_id).bounding_box.set_position(gse::registry::get_component<gse::physics::motion_component>(owner_id).current_position);
     }
     auto render() -> void override {
