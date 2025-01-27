@@ -648,7 +648,6 @@ auto gse::renderer3d::render() -> void {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	auto& models = model_loader::get_models();
 	for (const auto& render_component : render_components) {
-
 		for (const auto& model_handle : render_component.models) {
 			for (const auto& render_queue_entry : model_handle.get_render_queue_entries()) {
 				render_object(render_component.parent_id, render_queue_entry, g_camera.get_view_matrix(), g_camera.get_projection_matrix());

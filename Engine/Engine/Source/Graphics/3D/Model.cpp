@@ -12,10 +12,10 @@ auto gse::model::initialize() -> void {
 gse::model_handle::model_handle(id* model_id, const model& model) : m_model_id(model_id) {
 	for (const auto& mesh : model.meshes) {
 		m_render_queue_entries.emplace_back(
-			"NULL",
+			"Concrete",
 			mesh.vao,
 			GL_TRIANGLES,
-			static_cast<GLsizei>(mesh.vertices.size() / 3),
+			static_cast<GLsizei>(mesh.indices.size()),
 			glm::mat4(1.0f),
 			glm::vec3(1.0f)
 		);

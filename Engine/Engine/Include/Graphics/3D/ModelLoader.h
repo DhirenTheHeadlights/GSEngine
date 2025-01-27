@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Graphics/3D/Model.h"
 #include "Core/ID.h"
+#include "Graphics/3D/Model.h"
 
 namespace gse::model_loader {
 	auto load_obj_file(const std::string& model_path, const std::string& model_name) -> id*;

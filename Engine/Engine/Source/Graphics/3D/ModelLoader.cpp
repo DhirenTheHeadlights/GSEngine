@@ -25,7 +25,6 @@ auto gse::model_loader::load_obj_file(const std::string& model_path, const std::
 		}
 	}
 
-	// Reserve an ID and space for the model
 	model model(model_name);
 
 	auto split = [](const std::string& str, const char delimiter = ' ') -> std::vector<std::string> {
@@ -74,19 +73,19 @@ auto gse::model_loader::load_obj_file(const std::string& model_path, const std::
 				std::vector<std::string> vertex_map = split(split_line[i], '/');
 				if (vertex_map.size() == 3) {
 					final_vertices.emplace_back(pre_load_vertices[std::stoi(vertex_map[0]) - 1],
-						pre_load_normals[std::stoi(vertex_map[2]) - 1],
-						pre_load_texcoords[std::stoi(vertex_map[1]) - 1]);
+						pre_load_normals[static_cast<size_t>(std::stoi(vertex_map[2])) - 1],
+						pre_load_texcoords[static_cast<size_t>(std::stoi(vertex_map[1])) - 1]);
 				}
 				else {
 					if (!pre_load_normals.empty()) {
 						final_vertices.emplace_back(pre_load_vertices[std::stoi(vertex_map[0]) - 1],
-							pre_load_normals[std::stoi(vertex_map[1]) - 1],
+							pre_load_normals[static_cast<size_t>(std::stoi(vertex_map[1]) - 1)],
 							glm::vec2(0.f));
 					}
 					else if (!pre_load_texcoords.empty()) {
 						final_vertices.emplace_back(pre_load_vertices[std::stoi(vertex_map[0]) - 1],
 							glm::vec3(0.0f),
-							pre_load_texcoords[std::stoi(vertex_map[1]) - 1]);
+							pre_load_texcoords[static_cast<size_t>(std::stoi(vertex_map[1])) - 1]);
 					}
 				}
 			}
