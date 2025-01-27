@@ -13,25 +13,24 @@ import gse.physics.bounding_box;
 gse::bounding_box_mesh::bounding_box_mesh(const vec3<length>& lower, const vec3<length>& upper)
 	: m_lower(lower), m_upper(upper) {
 	update_grid();
-	m_draw_mode = GL_LINES;
-	m_material_name = "SolidColor";
 }
 
 gse::bounding_box_mesh::bounding_box_mesh(const axis_aligned_bounding_box& box)
-	: bounding_box_mesh(box.lower_bound, box.upper_bound) {}
+	: bounding_box_mesh(box.lower_bound, box.upper_bound) {
+}
 
-auto gse::bounding_box_mesh::create_vertex(const glm::vec3& position) -> gse::vertex {
+auto gse::bounding_box_mesh::create_vertex(const glm::vec3& position) -> vertex {
 	return {
-		.position= position,
-		.normal= glm::vec3(0.0f),
-		.tex_coords= glm::vec2(0.0f)
+		.position = position,
+		.normal = glm::vec3(0.0f),
+		.tex_coords = glm::vec2(0.0f)
 	};
 }
 
 auto gse::bounding_box_mesh::update_grid() -> void {
 	constexpr float cell_size = 10.0f;
 
-	m_vertices.clear();
+	vertices.clear();
 
 	const glm::vec3 min = m_lower.as<units::meters>();
 	const glm::vec3 max = m_upper.as<units::meters>();
@@ -40,25 +39,25 @@ auto gse::bounding_box_mesh::update_grid() -> void {
 	for (float y = min.y; y <= max.y; y += cell_size) {
 		for (float x = min.x; x <= max.x; x += cell_size) {
 			// Vertical lines (front and back faces)
-			m_vertices.push_back(create_vertex({ x, y, min.z }));
-			m_vertices.push_back(create_vertex({ x, y, max.z }));
+			vertices.push_back(create_vertex({ x, y, min.z }));
+			vertices.push_back(create_vertex({ x, y, max.z }));
 
 			// Horizontal lines along x-axis (front and back faces)
 			if (x + cell_size <= max.x) {
 				float x_end = x + cell_size;
-				m_vertices.push_back(create_vertex({ x, y, min.z }));
-				m_vertices.push_back(create_vertex({ x_end, y, min.z }));
+				vertices.push_back(create_vertex({ x, y, min.z }));
+				vertices.push_back(create_vertex({ x_end, y, min.z }));
 
-				m_vertices.push_back(create_vertex({ x, y, max.z }));
-				m_vertices.push_back(create_vertex({ x_end, y, max.z }));
+				vertices.push_back(create_vertex({ x, y, max.z }));
+				vertices.push_back(create_vertex({ x_end, y, max.z }));
 			}
 
 			// Horizontal lines along z-axis on left and right faces
 			if (std::abs(x - max.x) < 1e-5 || std::abs(x - min.x) < 1e-5) {
 				for (float z = min.z; z + cell_size <= max.z; z += cell_size) {
 					float z_end = z + cell_size;
-					m_vertices.push_back(create_vertex({ x, y, z }));
-					m_vertices.push_back(create_vertex({ x, y, z_end }));
+					vertices.push_back(create_vertex({ x, y, z }));
+					vertices.push_back(create_vertex({ x, y, z_end }));
 				}
 			}
 
@@ -66,8 +65,8 @@ auto gse::bounding_box_mesh::update_grid() -> void {
 			if (y + cell_size <= max.y) {
 				float y_end = y + cell_size;
 				for (float z = min.z; z <= max.z; z += cell_size) {
-					m_vertices.push_back(create_vertex({ x, y, z }));
-					m_vertices.push_back(create_vertex({ x, y_end, z }));
+					vertices.push_back(create_vertex({ x, y, z }));
+					vertices.push_back(create_vertex({ x, y_end, z }));
 				}
 			}
 		}
@@ -78,20 +77,20 @@ auto gse::bounding_box_mesh::update_grid() -> void {
 		for (float x = min.x; x <= max.x; x += cell_size) {
 			if (x + cell_size <= max.x) {
 				float x_end = x + cell_size;
-				m_vertices.push_back(create_vertex({ x, max.y, z }));
-				m_vertices.push_back(create_vertex({ x_end, max.y, z }));
+				vertices.push_back(create_vertex({ x, max.y, z }));
+				vertices.push_back(create_vertex({ x_end, max.y, z }));
 
-				m_vertices.push_back(create_vertex({ x, min.y, z }));
-				m_vertices.push_back(create_vertex({ x_end, min.y, z }));
+				vertices.push_back(create_vertex({ x, min.y, z }));
+				vertices.push_back(create_vertex({ x_end, min.y, z }));
 			}
 
 			if (z + cell_size <= max.z) {
 				float z_end = z + cell_size;
-				m_vertices.push_back(create_vertex({ x, max.y, z }));
-				m_vertices.push_back(create_vertex({ x, max.y, z_end }));
+				vertices.push_back(create_vertex({ x, max.y, z }));
+				vertices.push_back(create_vertex({ x, max.y, z_end }));
 
-				m_vertices.push_back(create_vertex({ x, min.y, z }));
-				m_vertices.push_back(create_vertex({ x, min.y, z_end }));
+				vertices.push_back(create_vertex({ x, min.y, z }));
+				vertices.push_back(create_vertex({ x, min.y, z_end }));
 			}
 		}
 	}
