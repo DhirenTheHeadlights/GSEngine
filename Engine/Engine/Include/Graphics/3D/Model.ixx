@@ -32,6 +32,7 @@ export namespace gse {
 		auto get_model_id() const->id*;
 	private:
 		std::vector<render_queue_entry> m_render_queue_entries;
+	
 		id* m_model_id;
 	};
 }

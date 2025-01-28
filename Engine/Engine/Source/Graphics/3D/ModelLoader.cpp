@@ -117,7 +117,3 @@ auto gse::model_loader::get_model_by_name(const std::string& model_name) -> cons
 auto gse::model_loader::get_model_by_id(id* model_id) -> const model& {
 	return g_models.at(model_id);
 }
-
-auto gse::model_loader::get_models() -> const std::unordered_map<id*, model>& {
-	return g_models;
-}

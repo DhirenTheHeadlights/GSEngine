@@ -23,6 +23,7 @@ export namespace gse {
 		GLsizei vertex_count;
 		glm::mat4 model_matrix;
 		glm::vec3 color;
+		std::span<uint32_t> texture_ids;
 	};
 
 	struct model_texture {

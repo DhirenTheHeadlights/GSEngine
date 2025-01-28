@@ -260,7 +260,7 @@ auto gse::renderer3d::initialize_objects() -> void {
 }
 
 namespace {
-	auto render_object(const std::uint32_t object_id, const gse::render_queue_entry& entry, const glm::mat4& view_matrix, const glm::mat4& projection_matrix) -> void {
+	auto render_object(const std::uint32_t object_id, const gse::render_queue_entry& entry, const glm::mat4& view_matrix, const glm::mat4& projection_matrix, const gse::model& model) -> void {
 		if (const auto it = g_materials.find(entry.material_key); it != g_materials.end()) {
 			glm::mat4 model_matrix = entry.model_matrix;
 			if (const auto* motion_component = gse::registry::get_component_ptr<gse::physics::motion_component>(object_id); motion_component) {
@@ -269,6 +269,22 @@ namespace {
 
 			it->second.use(view_matrix, projection_matrix, model_matrix);
 			it->second.shader.set_vec3("color", entry.color);
+			const auto& texture_shader = g_deferred_rendering_shaders["DefaultTexture"];
+
+			for (const auto& texture : entry.texture_ids) {
+				texture_shader.use();
+
+				texture_shader.set_mat4("view", view_matrix);
+				texture_shader.set_mat4("projection", projection_matrix);
+				texture_shader.set_mat4("model", model);
+				texture_shader.set_int("material_texture", 0);
+
+				texture_shader.set_bool("useTexture", texture != 0);
+
+				glActiveTexture(GL_TEXTURE0);
+				glBindTexture(GL_TEXTURE_2D, texture);
+			}
+
 
 			glBindVertexArray(entry.vao);
 			glDrawElements(entry.draw_mode, entry.vertex_count, GL_UNSIGNED_INT, nullptr);
@@ -655,11 +671,11 @@ auto gse::renderer3d::render() -> void {
 	// Geometry pass
 	glBindFramebuffer(GL_FRAMEBUFFER, g_g_buffer);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	auto& models = model_loader::get_models();
+
 	for (const auto& render_component : render_components) {
 		for (const auto& model_handle : render_component.models) {
 			for (const auto& render_queue_entry : model_handle.get_render_queue_entries()) {
-				render_object(render_component.parent_id, render_queue_entry, g_camera.get_view_matrix(), g_camera.get_projection_matrix());
+				render_object(render_component.parent_id, render_queue_entry, g_camera.get_view_matrix(), g_camera.get_projection_matrix(), model_loader::get_model_by_id(model_handle.get_model_id()));
 			}
 		}
 	}
