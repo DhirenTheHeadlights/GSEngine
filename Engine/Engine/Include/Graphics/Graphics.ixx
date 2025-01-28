@@ -2,7 +2,6 @@ export module gse.graphics;
 
 export import gse.graphics.font;
 export import gse.graphics.gui;
-export import gse.graphics.menu;
 export import gse.graphics.renderer2d;
 export import gse.graphics.texture;
 

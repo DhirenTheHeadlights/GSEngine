@@ -32,19 +32,19 @@ export namespace gse::registry {
 	};
 
 	namespace internal {
-		inline std::unordered_map<std::type_index, std::unique_ptr<component_container_base>> g_component_containers;
-		inline std::unordered_map<std::type_index, std::unique_ptr<component_container_base>> g_queued_components;
+		std::unordered_map<std::type_index, std::unique_ptr<component_container_base>> g_component_containers;
+		std::unordered_map<std::type_index, std::unique_ptr<component_container_base>> g_queued_components;
 
 		template <typename T>
 			requires std::derived_from<T, component>
 		auto add_component(T&& component, std::unordered_map<std::type_index, std::unique_ptr<component_container_base>>& component_container_list) -> void;
 	}
 
-	inline auto get_component_containers() -> std::unordered_map<std::type_index, std::unique_ptr<component_container_base>>& {
+	auto get_component_containers() -> std::unordered_map<std::type_index, std::unique_ptr<component_container_base>>& {
 		return internal::g_component_containers;
 	}
 
-	inline auto get_queued_components() -> std::unordered_map<std::type_index, std::unique_ptr<component_container_base>>& {
+	auto get_queued_components() -> std::unordered_map<std::type_index, std::unique_ptr<component_container_base>>& {
 		return internal::g_queued_components;
 	}
 
