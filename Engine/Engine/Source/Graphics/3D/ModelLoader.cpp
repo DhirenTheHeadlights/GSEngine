@@ -1,5 +1,6 @@
 module gse.graphics.model_loader;
 
+import glm;
 import std;
 
 import gse.graphics.model;
