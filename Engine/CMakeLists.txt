@@ -169,19 +169,6 @@ target_link_libraries(Engine PUBLIC glm_module)
 target_link_libraries(glm_module PUBLIC glm)
 
 ####################################################################################################################
-# FetchContent for Assimp
-####################################################################################################################
-
-FetchContent_Declare(
-    assimp
-    GIT_REPOSITORY https://github.com/assimp/assimp.git
-    GIT_TAG        master
-)
-FetchContent_MakeAvailable(assimp)
-
-target_include_directories(Engine PUBLIC ${assimp_SOURCE_DIR})
-
-####################################################################################################################
 # Grab freetype & msdfgen from the vcpkg registry
 ####################################################################################################################
 
@@ -212,7 +199,6 @@ target_link_libraries(Engine PUBLIC
     glm
     Freetype::Freetype
     msdfgen::msdfgen
-    assimp
 )
 
 # Visual Studio specific settings
@@ -229,7 +215,7 @@ if (MSVC)
     SET_PROPERTY(TARGET Engine PROPERTY VS_USER_PROPS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Resources/Misc/msvc_build_stl_modules_workaround.props")
 
     # List of external targets to be grouped under "External"
-    set(EXTERNAL_TARGETS enet glad glad-generate-files glm imgui assimp unit UpdateAssimpLibsDebugSymbolsAndDLLs zlibstatic glm_module)
+    set(EXTERNAL_TARGETS enet glad glad-generate-files glm imgui glm_module)
 
     # Loop through each target and set its folder property
     foreach(target ${EXTERNAL_TARGETS})

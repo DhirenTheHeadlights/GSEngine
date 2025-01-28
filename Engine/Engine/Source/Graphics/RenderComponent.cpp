@@ -1,11 +1,6 @@
-module;
-
-#include <iostream>
-#include <assimp/Importer.hpp>
-#include <assimp/postprocess.h>
-#include <assimp/scene.h>
-
 module gse.graphics.render_component;
+
+import std;
 
 import gse.graphics.model_loader;
 
