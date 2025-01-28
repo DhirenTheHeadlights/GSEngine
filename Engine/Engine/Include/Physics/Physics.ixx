@@ -9,3 +9,4 @@ export import gse.physics.motion_component;
 export import gse.physics.octree;
 export import gse.physics.surfaces;
 export import gse.physics.system;
+export import gse.physics.update;

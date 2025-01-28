@@ -4,6 +4,7 @@ export import gse.core.object.box;
 export import gse.core.object.sphere;
 export import gse.core.object.hook;
 export import gse.core.clock;
+export import gse.core.main_clock;
 export import gse.core.component;
 export import gse.core.engine;
 export import gse.core.id;
