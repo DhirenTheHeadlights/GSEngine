@@ -1,8 +1,7 @@
-#include "Skybox.h"
+module game.skybox;
 
-#include <memory>
-
-#include "Core/ObjectRegistry.h"
+import std;
+import gse;
 
 struct skybox_hook final : gse::hook<gse::entity> {
 	using hook::hook;
@@ -12,7 +11,7 @@ struct skybox_hook final : gse::hook<gse::entity> {
 		gse::registry::get_component<gse::physics::collision_component>(owner_id).bounding_box = { gse::vec3(0.f), gse::vec3(0.f) };
 		gse::registry::get_component<gse::physics::motion_component>(owner_id).affected_by_gravity = false;
 		
-		gse::registry::get_component<gse::render_component>(owner_id).set_all_mesh_material_strings("Sky 1");
+		gse::registry::get_component<gse::render_component>(owner_id).models[0].set_material("NULL");
 
 		gse::light_source_component light_source_component(owner_id);
 		auto light = std::make_unique<gse::directional_light>(gse::vec3(1.f), gse::unitless(1.f), gse::vec3(0.0f, -1.0f, 0.0f), gse::unitless(1.0f));

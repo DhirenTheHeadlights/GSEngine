@@ -15,15 +15,30 @@ file(MAKE_DIRECTORY "${FETCHCONTENT_BASE_DIR}")
 # Include FetchContent module
 include(FetchContent)
 
-# Gather engine source files (cpp) from the "Source" folder
+# Gather engine source files
 file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/*.cpp")
-
-# Gather engine header files (h, hpp) from the "Include" folder
-file(GLOB_RECURSE ENGINE_HEADERS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/*.h")
 file(GLOB_RECURSE ENGINE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/*.ixx")
 
-# Add the engine as a static library including source and header files
-add_library(Engine STATIC ${ENGINE_SOURCES} ${ENGINE_HEADERS} ${ENGINE_MODULES})
+add_library(Engine)
+
+target_sources(Engine
+    PRIVATE
+        ${ENGINE_SOURCES}
+)
+
+target_sources(Engine
+    PRIVATE
+        FILE_SET gse_modules TYPE CXX_MODULES
+        BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include"
+        FILES ${ENGINE_MODULES}
+)
+
+target_sources(Engine
+    PUBLIC
+        FILE_SET gse_modules_public TYPE CXX_MODULES
+        BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include"
+        FILES "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/Engine.ixx"
+)
 
 # Option for production build
 option(PRODUCTION_BUILD "Make this a production build" OFF)
@@ -134,6 +149,8 @@ target_include_directories(Engine PUBLIC ${miniaudio_SOURCE_DIR})
 # FetchContent for GLM
 ####################################################################################################################
 
+set(GLM_ENABLE_CXX_20 ON CACHE BOOL "Enable C++20 features in GLM" FORCE)
+
 FetchContent_Declare(
     glm
     GIT_REPOSITORY https://github.com/g-truc/glm.git
@@ -142,18 +159,14 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(glm)
 
-####################################################################################################################
-# FetchContent for Assimp
-####################################################################################################################
-
-FetchContent_Declare(
-    assimp
-    GIT_REPOSITORY https://github.com/assimp/assimp.git
-    GIT_TAG        master
+add_library(glm_module STATIC)
+target_sources(glm_module PUBLIC
+    FILE_SET CXX_MODULES
+    BASE_DIRS "${glm_SOURCE_DIR}/glm"
+    FILES "${glm_SOURCE_DIR}/glm/glm.cppm"
 )
-FetchContent_MakeAvailable(assimp)
-
-target_include_directories(Engine PUBLIC ${assimp_SOURCE_DIR})
+target_link_libraries(Engine PUBLIC glm_module)
+target_link_libraries(glm_module PUBLIC glm)
 
 ####################################################################################################################
 # Grab freetype & msdfgen from the vcpkg registry
@@ -186,7 +199,6 @@ target_link_libraries(Engine PUBLIC
     glm
     Freetype::Freetype
     msdfgen::msdfgen
-    assimp
 )
 
 # Visual Studio specific settings
@@ -203,7 +215,7 @@ if (MSVC)
     SET_PROPERTY(TARGET Engine PROPERTY VS_USER_PROPS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Resources/Misc/msvc_build_stl_modules_workaround.props")
 
     # List of external targets to be grouped under "External"
-    set(EXTERNAL_TARGETS enet glad glad-generate-files glm imgui assimp unit UpdateAssimpLibsDebugSymbolsAndDLLs zlibstatic)
+    set(EXTERNAL_TARGETS enet glad glad-generate-files glm imgui glm_module)
 
     # Loop through each target and set its folder property
     foreach(target ${EXTERNAL_TARGETS})

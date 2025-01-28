@@ -1,7 +1,14 @@
-#include "Platform/GLFW/Input.h"
+module;
 
-#include "Core/Clock.h"
-#include "Platform/GLFW/Window.h"
+#include "GLFW/glfw3.h"
+
+module gse.platform.glfw.input;
+
+import std;
+import glm;
+
+import gse.core.clock;
+import gse.platform.glfw.window;
 
 gse::input::keyboard g_keyboard;
 gse::input::controller g_controller;
@@ -95,7 +102,7 @@ void gse::input::internal::update_button(button& button) {
 		button.typed_time = 0.48f;
 	}
 	else if (button.held) {
-		button.typed_time -= main_clock::get_delta_time().as<units::seconds>();
+		button.typed_time -= main_clock::get_raw_delta_time().as<units::seconds>();
 
 		if (button.typed_time < 0.f)
 		{

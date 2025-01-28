@@ -1,7 +1,9 @@
-#include "Core/ID.h"
+module gse.core.id;
 
-#include "Core/ObjectRegistry.h"
-#include "Physics/Vector/Math.h"
+import std;
+
+import gse.core.object_registry;
+import gse.physics.math.vector_math;
 
 namespace {
     struct transparent_hash {

@@ -1,6 +1,12 @@
-#include "Core/JsonParser.h"
+module;
 
-#include "Platform/PermaAssert.h"
+#include "json.hpp"
+#include <fstream>
+#include <iostream>
+
+module gse.core.json_parser;
+
+import gse.platform.perma_assert;
 
 nlohmann::json gse::json_parse::load_json(const std::string& path) {
 	std::ifstream file(path);

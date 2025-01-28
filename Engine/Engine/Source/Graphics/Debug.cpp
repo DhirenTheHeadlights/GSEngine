@@ -1,11 +1,19 @@
-#include "Graphics/Debug.h"
+module;
+
 #include "imguiThemes.h"
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
-#include "Core/Clock.h"
-#include "Core/EngineCore.h"
-#include "Core/JsonParser.h"
-#include "Platform/GLFW/Window.h"
+#include "glad/glad.h"
+#include "glfw/glfw3.h"
+
+module gse.graphics.debug;
+
+import std;
+
+import gse.core.clock;
+import gse.core.engine;
+import gse.core.json_parser;
+import gse.platform.glfw.window;
 
 namespace {
 	gse::clock g_autosave_clock;
