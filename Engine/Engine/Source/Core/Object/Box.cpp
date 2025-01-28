@@ -108,7 +108,7 @@ struct box_mesh_hook final : gse::hook<gse::entity> {
             }
         };
 
-        constexpr std::vector<std::uint32_t> face_indices = { 0, 1, 2, 2, 3, 0 };
+        std::vector<std::uint32_t> face_indices = { 0, 1, 2, 2, 3, 0 };
 
 		std::vector<gse::mesh> meshes;
 

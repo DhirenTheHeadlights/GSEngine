@@ -3,6 +3,7 @@ export module gse.graphics.render_component;
 import std;
 
 import gse.core.component;
+import gse.core.id;
 import gse.graphics.mesh;
 import gse.graphics.model;
 import gse.graphics.bounding_box_mesh;
@@ -11,7 +12,7 @@ import gse.physics.math.vector;
 export namespace gse {
 	struct render_component final : component {
 		render_component(const std::uint32_t id) : component(id) {}
-		render_component(const std::uint32_t id, class id* model_id);
+		render_component(std::uint32_t id, class id* model_id);
 
 		render_component(render_component&&) noexcept = default;
 		auto operator=(render_component&&) noexcept -> render_component & = default;
