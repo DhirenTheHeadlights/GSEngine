@@ -35,9 +35,7 @@ gse::scoped_timer::~scoped_timer() {
 
 /// Global Timer State
 
-namespace {
-	std::map<std::string, std::unique_ptr<gse::scoped_timer>> g_timers;
-}
+std::map<std::string, std::unique_ptr<gse::scoped_timer>> g_timers;
 
 auto gse::add_timer(const std::string& name) -> void {
 	if (!g_timers.contains(name)) {
@@ -74,17 +72,15 @@ auto gse::display_timers() -> void {
 
 /// Main Clock
 
-namespace {
-	std::chrono::steady_clock::time_point g_last_update = std::chrono::steady_clock::now();
-	gse::time g_dt;
+std::chrono::steady_clock::time_point g_last_update = std::chrono::steady_clock::now();
+gse::time g_dt;
 
-	int g_frame_rate = 0;
-	float g_frame_count = 0;
-	float g_num_frames_to_average = 40;
-	gse::time g_frame_rate_update_time;
+int g_frame_rate = 0;
+float g_frame_count = 0;
+float g_num_frames_to_average = 40;
+gse::time g_frame_rate_update_time;
 
-	gse::clock g_main_clock;
-}
+gse::clock g_main_clock;
 
 auto gse::main_clock::update() -> void {
 	const auto now = std::chrono::steady_clock::now();
