@@ -15,29 +15,14 @@ export namespace gse {
 
     class id {
     public:
-        ~id() {
-			if (m_number != -1) {
-                remove_id(this);
-			}
-        }
+        ~id();
 
-        auto operator==(const id& other) const -> bool {
-            if (m_number == -1 || other.m_number == -1) {
-				std::cerr << "You're comparing something without an id.\n";
-                return false;
-            }
-            return m_number == other.m_number;
-        }
+		auto operator==(const id& other) const -> bool;
 
-        auto number() const -> std::int32_t {
-            return m_number;
-        }
-
-		auto tag() const -> std::string_view {
-			return m_tag;
-		}
+		auto number() const -> std::int32_t;
+		auto tag() const -> std::string_view;
     private:
-        explicit id(const int id, const std::string& tag) : m_number(id), m_tag(tag) {}
+        explicit id(int id, const std::string& tag);
         id(const std::string& tag) : m_number(-1), m_tag(tag) {}
 
         std::int32_t m_number;
@@ -48,15 +33,10 @@ export namespace gse {
 
     class identifiable {
 	public:
-		identifiable(const std::string& tag) : m_id(generate_id(tag)) {}
+		identifiable(const std::string& tag);
 
-		auto get_id() const -> id* {
-			return m_id.get();
-		}
-
-		auto operator==(const identifiable& other) const -> bool {
-			return *m_id == *other.m_id;
-		}
+		auto get_id() const -> id*;
+		auto operator==(const identifiable& other) const -> bool;
 	private:
 		std::unique_ptr<id> m_id;
     };

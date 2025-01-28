@@ -19,3 +19,6 @@ nlohmann::json gse::json_parse::load_json(const std::string& path) {
 		return nlohmann::json{}; // Return an empty JSON object on failure
 	}
 }
+
+//template <typename Function>
+//auto gse::json_parse::

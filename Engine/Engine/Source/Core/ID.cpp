@@ -5,47 +5,45 @@ import std;
 import gse.core.object_registry;
 import gse.physics.math.vector_math;
 
-namespace {
-    struct transparent_hash {
-        using is_transparent = void; // Indicates support for heterogeneous lookup
+struct transparent_hash {
+    using is_transparent = void; // Indicates support for heterogeneous lookup
 
-        auto operator()(const std::string& s) const noexcept -> std::size_t {
-            return std::hash<std::string_view>{}(s);
-        }
-
-        auto operator()(const std::string_view sv) const noexcept -> std::size_t {
-            return std::hash<std::string_view>{}(sv);
-        }
-    };
-
-    struct transparent_equal {
-        using is_transparent = void; // Indicates support for heterogeneous lookup
-
-        auto operator()(const std::string& lhs, const std::string& rhs) const noexcept -> bool {
-            return lhs == rhs;
-        }
-
-        auto operator()(const std::string_view lhs, const std::string_view rhs) const noexcept -> bool {
-            return lhs == rhs;
-        }
-
-        auto operator()(const std::string& lhs, const std::string_view rhs) const noexcept -> bool {
-            return lhs == rhs;
-        }
-
-        auto operator()(const std::string_view lhs, const std::string& rhs) const noexcept -> bool {
-            return lhs == rhs;
-        }
-    };
-
-    std::vector<gse::id*> g_ids;
-    std::unordered_map<std::int32_t, gse::id*> g_id_map;
-	std::unordered_map<std::string, gse::id*, transparent_hash, transparent_equal> g_tag_map;
-
-    auto register_object(gse::id* obj, const std::string& tag) -> void {
-        g_id_map[obj->number()] = obj;
-		g_tag_map[tag] = obj;
+    auto operator()(const std::string& s) const noexcept -> std::size_t {
+        return std::hash<std::string_view>{}(s);
     }
+
+    auto operator()(const std::string_view sv) const noexcept -> std::size_t {
+        return std::hash<std::string_view>{}(sv);
+    }
+};
+
+struct transparent_equal {
+    using is_transparent = void; // Indicates support for heterogeneous lookup
+
+    auto operator()(const std::string& lhs, const std::string& rhs) const noexcept -> bool {
+        return lhs == rhs;
+    }
+
+    auto operator()(const std::string_view lhs, const std::string_view rhs) const noexcept -> bool {
+        return lhs == rhs;
+    }
+
+    auto operator()(const std::string& lhs, const std::string_view rhs) const noexcept -> bool {
+        return lhs == rhs;
+    }
+
+    auto operator()(const std::string_view lhs, const std::string& rhs) const noexcept -> bool {
+        return lhs == rhs;
+    }
+};
+
+std::vector<gse::id*> g_ids;
+std::unordered_map<std::int32_t, gse::id*> g_id_map;
+std::unordered_map<std::string, gse::id*, transparent_hash, transparent_equal> g_tag_map;
+
+auto register_object(gse::id* obj, const std::string& tag) -> void {
+    g_id_map[obj->number()] = obj;
+	g_tag_map[tag] = obj;
 }
 
 auto gse::generate_id(const std::string& tag) -> std::unique_ptr<id> {
@@ -102,3 +100,40 @@ auto gse::does_id_exist(const std::string_view tag) -> bool {
 	return g_tag_map.contains(tag);
 }
 
+/// ID
+
+gse::id::id(const int id, const std::string& tag) : m_number(id), m_tag(tag) {}
+
+gse::id::~id() {
+	if (m_number != -1) {
+		gse::remove_id(this);
+	}
+}
+
+auto gse::id::operator==(const id& other) const -> bool {
+	if (m_number == -1 || other.m_number == -1) {
+		std::cerr << "You're comparing something without an id.\n";
+		return false;
+	}
+	return m_number == other.m_number;
+}
+
+auto gse::id::number() const -> std::int32_t {
+	return m_number;
+}
+
+auto gse::id::tag() const -> std::string_view {
+	return m_tag;
+}
+
+/// Identifiable
+
+gse::identifiable::identifiable(const std::string& tag) : m_id(generate_id(tag)) {}
+
+auto gse::identifiable::get_id() const -> id* {
+	return m_id.get();
+}
+
+auto gse::identifiable::operator==(const identifiable& other) const -> bool {
+	return *m_id == *other.m_id;
+}
