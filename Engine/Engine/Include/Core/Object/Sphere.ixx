@@ -5,15 +5,9 @@ module;
 export module gse.core.object.sphere;
 
 import std;
-import gse.physics.math.vector;
-
-export namespace gse {
-	auto create_sphere(std::uint32_t object_uuid, const vec3<length>& position, length radius, int sectors = 36, int stacks = 18) -> void;
-	auto create_sphere(const vec3<length>& position, length radius, int sectors = 36, int stacks = 18) -> std::uint32_t;
-}
-
 import glm;
 
+import gse.physics.math.vector;
 import gse.physics.math.vector_math;
 import gse.physics.math.units;
 import gse.core.object.hook;
@@ -24,7 +18,12 @@ import gse.graphics.debug;
 import gse.graphics.model_loader;
 import gse.graphics.mesh;
 
-struct sphere_mesh_hook final : gse::hook<gse::entity> {
+export namespace gse {
+	auto create_sphere(std::uint32_t object_uuid, const vec3<length>& position, length radius, int sectors = 36, int stacks = 18) -> void;
+	auto create_sphere(const vec3<length>& position, length radius, int sectors = 36, int stacks = 18) -> std::uint32_t;
+}
+
+export struct sphere_mesh_hook final : gse::hook<gse::entity> {
     sphere_mesh_hook(const gse::vec3<gse::length>& position, const gse::length radius, const int sectors, const int stacks)
         : m_initial_position(position), m_radius(radius), m_sectors(sectors), m_stacks(stacks) {
     }
