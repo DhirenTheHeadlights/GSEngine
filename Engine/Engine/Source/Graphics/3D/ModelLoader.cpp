@@ -3,6 +3,7 @@ module gse.graphics.model_loader;
 import std;
 
 import gse.graphics.model;
+import gse.core.id;
 
 std::unordered_map<gse::id*, gse::model> g_models;
 std::unordered_map<gse::id*, std::string> g_loaded_model_paths;
