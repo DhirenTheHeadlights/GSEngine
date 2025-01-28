@@ -1,8 +1,10 @@
-#include "Core/Scene.h"
+module gse.core.scene;
 
-#include "Core/ObjectRegistry.h"
-#include "Physics/System.h"
-#include "Physics/Collision/BroadPhaseCollisions.h"
+import std;
+
+import gse.core.object_registry;
+import gse.physics.system;
+import gse.physics.broad_phase_collision;
 
 auto gse::scene::add_entity(std::uint32_t object_uuid, const std::string& name) -> void {
 	if (m_is_active) {
@@ -36,7 +38,6 @@ auto gse::scene::update() const -> void {
 
 	registry::update_hooks();
 	physics::update();
-	broad_phase_collision::update();
 }
 
 auto gse::scene::render() const -> void {

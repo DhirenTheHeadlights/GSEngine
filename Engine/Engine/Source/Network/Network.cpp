@@ -1,8 +1,11 @@
-#include "Network/Network.h"
+module;
 
+#include <enet/enet.h>
 #include <unordered_map>
 #include <iostream>
 #include <string>
+
+module gse.network;
 
 bool as_server = false;
 //std::unordered_map<ENetPeer, char*> clientData;

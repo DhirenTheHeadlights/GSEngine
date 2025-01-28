@@ -1,7 +1,15 @@
-#include "Graphics/3D/Camera.h"
+module;
 
-#include "Physics/Vector/Math.h"
-#include "Platform/GLFW/Window.h"
+#include <glm/gtc/matrix_transform.hpp>
+
+module gse.graphics.camera;
+
+import glm;
+
+import gse.physics.math.vector;
+import gse.physics.math.vector_math;
+import gse.physics.math.units;
+import gse.platform.glfw.window;
 
 void gse::camera::move_relative_to_origin(const vec3<>& direction, const float distance, const float delta_time) {
 	const auto norm_direction = normalize(direction).as_default_units();
