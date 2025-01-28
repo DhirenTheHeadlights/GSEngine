@@ -3,6 +3,8 @@ export module gse.graphics.model;
 import std;
 
 import gse.graphics.mesh;
+import gse.physics.math.units;
+import gse.physics.math.vector;
 import gse.core.id;
 
 export namespace gse {

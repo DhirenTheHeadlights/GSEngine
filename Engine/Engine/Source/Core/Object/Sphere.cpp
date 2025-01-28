@@ -79,7 +79,10 @@ struct sphere_mesh_hook final : gse::hook<gse::entity> {
             }
         }
 
-        gse::render_component new_render_component(owner_id, gse::model_loader::add_model(gse::mesh(vertices, indices), "Sphere"));
+		std::vector<gse::mesh> new_meshes;
+		new_meshes.emplace_back(vertices, indices);
+
+        gse::render_component new_render_component(owner_id, gse::model_loader::add_model(std::move(new_meshes), "Sphere"));
 
 		gse::registry::add_component<gse::render_component>(std::move(new_render_component));
 	}

@@ -17,6 +17,8 @@ export import gse.graphics.camera;
 export import gse.graphics.cube_map;
 export import gse.graphics.material;
 export import gse.graphics.mesh;
+export import gse.graphics.model;
+export import gse.graphics.model_loader;
 export import gse.graphics.renderer3d;
 
 export import gse.graphics.debug;
