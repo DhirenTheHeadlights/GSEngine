@@ -31,8 +31,8 @@ namespace gse::internal {
         constexpr auto operator-() const->Derived;
     };
 
-    template <typename T, int N = 1>
-    struct vec : vec_base<vec<T, N>, N, T> {
+    template <typename Derived, typename T, int N = 1>
+    struct vec : vec_base<Derived, N, T> {
 		T data[N];
 
 		constexpr vec() : data{} {}
@@ -40,8 +40,8 @@ namespace gse::internal {
 		constexpr vec(const T* values) : data(values) {}
     };
 
-    template <typename T>
-    struct vec<T, 2> : vec_base<vec<T, 2>, 2, T> {
+    template <typename Derived, typename T>
+    struct vec<Derived, T, 2> : vec_base<Derived, 2, T> {
 		union {
 			struct { T x, y; };
 			T data[2];
@@ -53,8 +53,8 @@ namespace gse::internal {
         constexpr vec(const T& x, const T& y) : x(x), y(y) {}
     };
 
-    template <typename T>
-    struct vec<T, 3> : vec_base<vec<T, 3>, 3, T> {
+    template <typename Derived, typename T>
+    struct vec<Derived, T, 3> : vec_base<Derived, 3, T> {
 		union {
 			struct { T x, y, z; };
 			T data[3];
@@ -66,8 +66,8 @@ namespace gse::internal {
         constexpr vec(const T& x, const T& y, const T& z) : x(x), y(y), z(z) {}
     };
 
-    template <typename T>
-    struct vec<T, 4> : vec_base<vec<T, 4>, 4, T> {
+    template <typename Derived, typename T>
+    struct vec<Derived, T, 4> : vec_base<Derived, 4, T> {
         union {
             struct { T x, y, z, w; };
             T data[4];
@@ -78,30 +78,10 @@ namespace gse::internal {
         constexpr vec(const T* values) : x(values[0]), y(values[1]), z(values[2]), w(values[3]) {}
         constexpr vec(const T& x, const T& y, const T& z, const T& w) : x(x), y(y), z(z), w(w) {}
     };
-
-    template <typename T> using vec2 = vec<T, 2>;
-    template <typename T> using vec3 = vec<T, 3>;
-    template <typename T> using vec4 = vec<T, 4>;
 }
 
 export namespace gse::unitless_vec {
-    template <typename T, int N = 1> using vec_t = internal::vec<T, N>;
-
-	template <typename T> using vec2_t = vec_t<T, 2>;
-	template <typename T> using vec3_t = vec_t<T, 3>;
-	template <typename T> using vec4_t = vec_t<T, 4>;
-
-	using vec2 = vec2_t<float>;
-	using vec3 = vec3_t<float>;
-	using vec4 = vec4_t<float>;
-
-	using vec2d = vec2_t<double>;
-    using vec3d = vec3_t<double>;
-	using vec4d = vec4_t<double>;
-
-	using vec2i = vec2_t<int>;
-	using vec3i = vec3_t<int>;
-	using vec4i = vec4_t<int>;
+    template <typename Derived, typename T, int N = 1> using vec_t = internal::vec<Derived, T, N>;
 }
 
 template <typename Derived, int N, typename T>

@@ -9,7 +9,7 @@ import gse.physics.math.units.angle;
 import gse.physics.math.matrix;
 
 export namespace gse {
-	template <typename T>
+	template <typename T = float>
 	auto look_at(const vec3<length_t<T>>& position, const vec3<length_t<T>>& target, const vec3<length_t<T>>& up) -> mat4_t<T>;
 
 	template <typename T>
@@ -25,7 +25,7 @@ export namespace gse {
 	auto rotate(axis axis, angle_t<T> angle) -> mat4_t<T>;
 
 	template <typename T>
-	auto scale(const vec3<length_t<T>>& scale) -> mat4_t<T>;
+	auto scale(const mat4_t<T>& matrix, const vec3<length_t<T>>& scale) -> mat4_t<T>;
 }
 
 template <typename T>
@@ -34,7 +34,7 @@ auto gse::look_at(const vec3<length_t<T>>& position, const vec3<length_t<T>>& ta
 	auto x_axis = normalize(cross(up, z_axis));
 	auto y_axis = cross(z_axis, x_axis);
 	return mat4_t<T>{
-		unitless_vec4_t<T>{x_axis.x, y_axis.x, z_axis.x, 0},
+			unitless_vec4_t<T>{x_axis.x, y_axis.x, z_axis.x, 0},
 			unitless_vec4_t<T>{x_axis.y, y_axis.y, z_axis.y, 0},
 			unitless_vec4_t<T>{x_axis.z, y_axis.z, z_axis.z, 0},
 			unitless_vec4_t<T>{-dot(x_axis, position), -dot(y_axis, position), -dot(z_axis, position), 1
@@ -98,11 +98,11 @@ auto gse::rotate(const axis axis, angle_t<T> angle) -> mat4_t<T> {
 }
 
 template <typename T>
-auto gse::scale(const vec3<length_t<T>>& scale) -> mat4_t<T> {
-	return mat4_t<T>{
-		unitless_vec4_t<T>{scale.x, 0, 0, 0},
+auto gse::scale(const mat4_t<T>& matrix, const vec3<length_t<T>>& scale) -> mat4_t<T> {
+	return matrix * mat4_t<T>{
+			unitless_vec4_t<T>{scale.x, 0, 0, 0},
 			unitless_vec4_t<T>{0, scale.y, 0, 0},
 			unitless_vec4_t<T>{0, 0, scale.z, 0},
 			unitless_vec4_t<T>{0, 0, 0, 1}
-	};
+		};
 }

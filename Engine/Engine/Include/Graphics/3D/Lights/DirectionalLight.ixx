@@ -1,12 +1,12 @@
 module;
 
 #include <imgui.h>
+#include <string>
 
 export module gse.graphics.directional_light;
 
 import gse.graphics.light;
-import gse.physics.math.vector;
-import gse.physics.math.units;
+import gse.physics.math;
 import gse.graphics.debug;
 import gse.graphics.cube_map;
 
@@ -30,7 +30,7 @@ export namespace gse {
 			return { m_depth_map, m_depth_map_fbo, light_type::directional, m_color, m_intensity, vec3<length>(), m_direction, unitless(), unitless(), unitless(), angle(), angle(), m_ambient_strength, m_near_plane, m_far_plane, m_ignore_list_id };
 		}
 
-		auto set_depth_map(const GLuint depth_map, const GLuint depth_map_fbo) -> void override {
+		auto set_depth_map(const std::uint32_t depth_map, const std::uint32_t depth_map_fbo) -> void override {
 			m_depth_map = depth_map;
 			m_depth_map_fbo = depth_map_fbo;
 		}
@@ -38,7 +38,7 @@ export namespace gse {
 		vec3<> m_direction;
 		unitless m_ambient_strength;
 
-		GLuint m_depth_map = 0;
-		GLuint m_depth_map_fbo = 0;
+		std::uint32_t m_depth_map = 0;
+		std::uint32_t m_depth_map_fbo = 0;
 	};
 }

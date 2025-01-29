@@ -12,6 +12,10 @@ import std;
 import gse.graphics.font;
 import gse.graphics.texture;
 import gse.physics.math;
+import gse.graphics.shader;
+import gse.graphics.renderer3d;
+import gse.graphics.camera;
+import gse.platform.glfw.window;
 
 export namespace gse::renderer2d {
 	auto initialize() -> void;
@@ -24,17 +28,10 @@ export namespace gse::renderer2d {
 	auto draw_text(const font& font, const std::string& text, const vec2<length>& position, float scale, const vec4<>& color) -> void;
 }
 
-import gse.graphics.shader;
-import gse.graphics.renderer3d;
-import gse.graphics.camera;
-import gse.platform.glfw.window;
-
-namespace {
-    GLuint g_vao, g_vbo, g_ebo;
-    gse::shader g_shader;
-    gse::shader g_msdf_shader;
-    gse::mat4 g_projection;
-}
+GLuint g_vao, g_vbo, g_ebo;
+gse::shader g_shader;
+gse::shader g_msdf_shader;
+gse::mat4 g_projection;
 
 auto gse::renderer2d::initialize() -> void {
     struct vertex {
@@ -95,7 +92,7 @@ auto gse::renderer2d::initialize() -> void {
     );
 
 
-    g_projection = glm::ortho(0.0f, static_cast<float>(window::get_window_size().x), 0.0f, static_cast<float>(window::get_window_size().y), -1.0f, 1.0f);
+    g_projection = gse::orthographic(0.0f, static_cast<float>(window::get_window_size().x), 0.0f, static_cast<float>(window::get_window_size().y), -1.0f, 1.0f);
     g_shader.use();
     g_shader.set_mat4("projection", g_projection);
 
@@ -124,7 +121,7 @@ auto render_quad(const gse::vec2<gse::length>& position, const gse::vec2<gse::le
     g_shader.set_mat4("projection", g_projection);
 
     gse::mat4 model = translate(gse::mat4(1.0f), gse::vec3(position, 0.0f));
-    model = scale(model, glm::vec3(size, 1.0f));
+    model = scale(model, gse::vec3(size, 1.0f));
     g_shader.set_mat4("uModel", model);
 
     if (texture) {
@@ -137,14 +134,14 @@ auto render_quad(const gse::vec2<gse::length>& position, const gse::vec2<gse::le
     }
 
     struct vertex {
-        glm::vec2 position;
-        glm::vec2 texture_coordinate;
+        gse::vec2<gse::length> position;
+        gse::vec2<gse::length> texture_coordinate;
     };
 
-    const glm::vec2 uv0 = { uv_rect.x, uv_rect.y + uv_rect.w };                // Top-left
-    const glm::vec2 uv1 = { uv_rect.x + uv_rect.z, uv_rect.y + uv_rect.w };   // Top-right
-    const glm::vec2 uv2 = { uv_rect.x + uv_rect.z, uv_rect.y };                 // Bottom-right
-    const glm::vec2 uv3 = { uv_rect.x, uv_rect.y };                              // Bottom-left
+    const gse::vec2<gse::length> uv0 = { uv_rect.x, uv_rect.y + uv_rect.w };                // Top-left
+    const gse::vec2<gse::length> uv1 = { uv_rect.x + uv_rect.z, uv_rect.y + uv_rect.w };   // Top-right
+    const gse::vec2<gse::length> uv2 = { uv_rect.x + uv_rect.z, uv_rect.y };                 // Bottom-right
+    const gse::vec2<gse::length> uv3 = { uv_rect.x, uv_rect.y };                              // Bottom-left
 
     const vertex vertices[4] = {
         {.position = {0.0f, 1.0f}, .texture_coordinate = uv0},
@@ -168,19 +165,19 @@ auto render_quad(const gse::vec2<gse::length>& position, const gse::vec2<gse::le
     glDisable(GL_BLEND);
 }
 
-auto gse::renderer2d::draw_quad(const glm::vec2& position, const glm::vec2& size, const glm::vec4& color) -> void {
+auto gse::renderer2d::draw_quad(const vec2<length>& position, const vec2<length>& size, const vec4<>& color) -> void {
     render_quad(position, size, &color, nullptr);
 }
 
-auto gse::renderer2d::draw_quad(const glm::vec2& position, const glm::vec2& size, const texture& texture) -> void {
+auto gse::renderer2d::draw_quad(const vec2<length>& position, const vec2<length>& size, const texture& texture) -> void {
     render_quad(position, size, nullptr, &texture);
 }
 
-auto gse::renderer2d::draw_quad(const glm::vec2& position, const glm::vec2& size, const texture& texture, const glm::vec4& uv) -> void {
+auto gse::renderer2d::draw_quad(const vec2<length>& position, const vec2<length>& size, const texture& texture, const vec4<>& uv) -> void {
     render_quad(position, size, nullptr, &texture, uv);
 }
 
-auto gse::renderer2d::draw_text(const font& font, const std::string& text, const glm::vec2& position, const float scale, const glm::vec4& color) -> void {
+auto gse::renderer2d::draw_text(const font& font, const std::string& text, const vec2<length>& position, const float scale, const vec4<>& color) -> void {
     if (text.empty()) return;
 
     g_msdf_shader.use();
@@ -207,9 +204,9 @@ auto gse::renderer2d::draw_text(const font& font, const std::string& text, const
         const float w = width * scale;
         const float h = height * scale;
 
-        glm::vec4 uv_rect(u0, v0, (u1 - u0), (v1 - v0));
+        vec4 uv_rect(u0, v0, (u1 - u0), (v1 - v0));
 
-        draw_quad(glm::vec2(x_pos, y_pos), glm::vec2(w, h), font_texture, uv_rect);
+        draw_quad(vec2(x_pos, y_pos), vec2(w, h), font_texture, uv_rect);
 
         start_x += x_advance * scale;
     }

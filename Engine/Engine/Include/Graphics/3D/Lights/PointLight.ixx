@@ -1,12 +1,12 @@
 module;
 
 #include <imgui.h>
+#include <string>
 
 export module gse.graphics.point_light;
 
 import gse.graphics.light;
-import gse.physics.math.vector;
-import gse.physics.math.units;
+import gse.physics.math;
 import gse.graphics.debug;
 import gse.graphics.cube_map;
 

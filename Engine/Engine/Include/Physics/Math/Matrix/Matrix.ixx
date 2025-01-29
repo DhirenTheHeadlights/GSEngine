@@ -10,6 +10,7 @@ namespace gse {
 		std::array<unitless_vec_t<T, N>, M> data;
 
 		constexpr mat() = default;
+		constexpr mat(const T& value);
 		constexpr mat(const std::array<unitless_vec_t<T, N>, M>& data) : data(data) {}
 		constexpr mat(std::initializer_list<unitless_vec_t<T, N>> list);
 
@@ -57,6 +58,13 @@ export namespace gse {
 	using mat2d = mat<double, 2, 2>;
 	using mat3d = mat<double, 3, 3>;
 	using mat4d = mat<double, 4, 4>;
+}
+
+template <typename T, int N, int M>
+constexpr gse::mat<T, N, M>::mat(const T& value) {
+	for (size_t i = 0; i < M; ++i) {
+		data[i] = unitless_vec_t<T, N>(value);
+	}
 }
 
 template <typename T, int N, int M>

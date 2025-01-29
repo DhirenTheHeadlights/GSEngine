@@ -1,15 +1,9 @@
-module;
-
-#include <glad/glad.h>
-
 export module gse.graphics.light;
 
 import std;
-import glm;
 
 import gse.core.id;
-import gse.physics.math.units;
-import gse.physics.math.vector;
+import gse.physics.math;
 import gse.graphics.debug;
 
 export namespace gse {
@@ -20,22 +14,22 @@ export namespace gse {
     };
 
     struct alignas(16) light_shader_entry {
-        int light_type;             // Offset 0, Size 4 bytes
-		glm::vec3 padding1;         // Offset 4, Size 12 bytes (Padding to align to 16 bytes)
-        glm::vec3 position;         // Offset 16, Size 12 bytes
-        float padding2;             // Offset 28, Size 4 bytes (Padding to align to 16 bytes)
-        glm::vec3 direction;        // Offset 32, Size 12 bytes
-        float padding3;             // Offset 44, Size 4 bytes (Padding to align to 16 bytes)
-        glm::vec3 color;            // Offset 48, Size 12 bytes
+        int light_type;                 // Offset 0, Size 4 bytes
+		vec3<> padding1;                // Offset 4, Size 12 bytes (Padding to align to 16 bytes)
+        vec3<length> position;          // Offset 16, Size 12 bytes
+        float padding2;                 // Offset 28, Size 4 bytes (Padding to align to 16 bytes)
+        vec3<> direction;               // Offset 32, Size 12 bytes
+        float padding3;                 // Offset 44, Size 4 bytes (Padding to align to 16 bytes)
+        vec3<> color;                   // Offset 48, Size 12 bytes
 		// We don't need padding here, not sure why - it ends up working correctly without it
-        float intensity;            // Offset 64, Size 4 bytes
-        float constant;             // Offset 68, Size 4 bytes
-        float linear;               // Offset 72, Size 4 bytes
-        float quadratic;            // Offset 76, Size 4 bytes
-        float cut_off;              // Offset 80, Size 4 bytes
-        float outer_cut_off;        // Offset 84, Size 4 bytes
-        float ambient_strength;     // Offset 88, Size 4 bytes
-        float padding5;             // Offset 92, Size 4 bytes (Padding to align total size to multiple of 16 bytes)
+        unitless intensity;             // Offset 64, Size 4 bytes
+        unitless constant;              // Offset 68, Size 4 bytes
+        unitless linear;                // Offset 72, Size 4 bytes
+        unitless quadratic;             // Offset 76, Size 4 bytes
+        float cut_off;                  // Offset 80, Size 4 bytes
+        float outer_cut_off;            // Offset 84, Size 4 bytes
+        unitless ambient_strength;      // Offset 88, Size 4 bytes
+        float padding5;                 // Offset 92, Size 4 bytes (Padding to align total size to multiple of 16 bytes)
     };
 
     struct light_render_queue_entry {
@@ -43,15 +37,15 @@ export namespace gse {
         light_shader_entry shader_entry;
         const id* ignore_list_id = nullptr;
 
-        GLuint depth_map = 0;
-        GLuint depth_map_fbo = 0;
+        std::uint32_t depth_map = 0;
+        std::uint32_t depth_map_fbo = 0;
 
         length near_plane = meters(0.1f);
         length far_plane = meters(1000.0f);
 
         light_render_queue_entry(
-            GLuint depth_map,
-            GLuint depth_map_fbo,
+            const std::uint32_t depth_map,
+            const std::uint32_t depth_map_fbo,
             light_type type,
             const vec3<>& color,
             const unitless& intensity,
@@ -69,12 +63,12 @@ export namespace gse {
         )
             : shader_entry({
                     .light_type         = static_cast<int>(type),
-                    .padding1           = {0, 0, 0},
-                    .position           = position.as_default_units(),
+                    .padding1           = { 0.f, 0.f, 0.f },
+                    .position           = position,
                     .padding2           = 0,
-                    .direction          = direction.as_default_units(),
+                    .direction          = direction,
                     .padding3           = 0,
-                    .color              = color.as_default_units(),
+                    .color              = color,
                     .intensity          = intensity,
                     .constant           = constant,
                     .linear             = linear,
@@ -101,7 +95,7 @@ export namespace gse {
 
 		auto get_type() const -> light_type { return m_type; }
 
-		virtual auto set_depth_map(GLuint depth_map, GLuint depth_map_fbo) -> void {}
+		virtual auto set_depth_map(std::uint32_t depth_map, std::uint32_t depth_map_fbo) -> void {}
 		virtual auto set_position(const vec3<length>& position) -> void {}
 
 		auto set_ignore_list_id(id* ignore_list_id) -> void { m_ignore_list_id = ignore_list_id; }

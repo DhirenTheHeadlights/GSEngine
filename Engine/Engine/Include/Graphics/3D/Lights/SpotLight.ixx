@@ -7,8 +7,7 @@ export module gse.graphics.spot_light;
 import std;
 
 import gse.graphics.light;
-import gse.physics.math.vector;
-import gse.physics.math.units;
+import gse.physics.math;
 import gse.graphics.debug;
 import gse.graphics.cube_map;
 
@@ -22,7 +21,7 @@ export namespace gse {
 		auto show_debug_menu(const std::string_view& name, std::uint32_t parent_id) -> void override {
 			debug::add_imgui_callback([this, name, parent_id] {
 				ImGui::Begin(std::string("Spot Light " + std::string(name) + ": " + std::to_string(parent_id)).c_str());
-				ImGui::ColorEdit3("Color", &m_color.as_default_units().x);
+				ImGui::ColorEdit3("Color", &m_color.x);
 				debug::unit_slider("Intensity", m_intensity, unitless(0.0f), unitless(10000.0f));
 				debug::unit_slider("Constant", m_constant, unitless(0.0f), unitless(1.0f));
 				debug::unit_slider("Linear", m_linear, unitless(0.0f), unitless(1.0f));
@@ -42,7 +41,7 @@ export namespace gse {
 			return { m_depth_map, m_depth_map_fbo, light_type::spot, m_color, m_intensity, m_position, m_direction, m_constant, m_linear, m_quadratic, m_cut_off > m_outer_cut_off ? m_outer_cut_off : m_cut_off, m_outer_cut_off, m_ambient_strength, m_near_plane, m_far_plane, m_ignore_list_id };
 		}
 
-		auto set_depth_map(const GLuint depth_map, const GLuint depth_map_fbo) -> void override {
+		auto set_depth_map(const std::uint32_t depth_map, const std::uint32_t depth_map_fbo) -> void override {
 			m_depth_map = depth_map;
 			m_depth_map_fbo = depth_map_fbo;
 		}
@@ -60,7 +59,7 @@ export namespace gse {
 		vec3<> m_direction;
 		unitless m_ambient_strength;
 
-		GLuint m_depth_map = 0;
-		GLuint m_depth_map_fbo = 0;
+		std::uint32_t m_depth_map = 0;
+		std::uint32_t m_depth_map_fbo = 0;
 	};
 }

@@ -1,12 +1,10 @@
 export module gse.graphics.light_source_component;
 
 import std;
-import glm;
 
 import gse.core.component;
 import gse.graphics.light;
-import gse.physics.math.vector;
-import gse.physics.math.vector_math;
+import gse.physics.math;
 
 export namespace gse {
 	class light_source_component final : public component {
