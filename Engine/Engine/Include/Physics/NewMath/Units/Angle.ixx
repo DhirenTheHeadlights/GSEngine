@@ -33,7 +33,7 @@ export namespace gse {
 }
 
 export namespace gse::vec {
-	template <typename... Args>
+	template <internal::is_unit U, typename... Args>
 	constexpr auto angle(Args... args) -> vec_t<angle_t<std::common_type_t<Args...>>, sizeof...(Args)>;
 
 	template <typename... Args> constexpr auto degrees(Args... args) -> vec_t<angle_t<std::common_type_t<Args...>>, sizeof...(Args)>;
@@ -58,17 +58,17 @@ constexpr auto gse::radians(const float value) -> angle {
 	return radians_t<float>(value);
 }
 
-template <typename... Args>
+template <gse::internal::is_unit U, typename... Args>
 constexpr auto gse::vec::angle(Args... args) -> vec_t<angle_t<std::common_type_t<Args...>>, sizeof...(Args)> {
-	return vec_t<angle_t<std::common_type_t<Args...>>, sizeof...(Args)>(args...);
+	return { angle_t<std::common_type_t<Args...>>::template from<U>(args)... };
 }
 
 template <typename... Args>
 constexpr auto gse::vec::degrees(Args... args) -> vec_t<angle_t<std::common_type_t<Args...>>, sizeof...(Args)> {
-	return vec_t<angle_t<std::common_type_t<Args...>>, sizeof...(Args)>(args...);
+	return { angle_t<std::common_type_t<Args...>>::template from<units::degrees>(args)... };
 }
 
 template <typename... Args>
 constexpr auto gse::vec::radians(Args... args) -> vec_t<angle_t<std::common_type_t<Args...>>, sizeof...(Args)> {
-	return vec_t<angle_t<std::common_type_t<Args...>>, sizeof...(Args)>(args...);
+	return { angle_t<std::common_type_t<Args...>>::template from<units::radians>(args)... };
 }

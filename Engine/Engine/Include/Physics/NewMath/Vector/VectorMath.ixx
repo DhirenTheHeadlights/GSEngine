@@ -1,9 +1,9 @@
-export module gse.physics.math.vec.vec_math;
+export module gse.physics.math.vec_math;
 
 import std;
 
 import gse.physics.math.unit_vec;
-import gse.physics.math.mat;
+import gse.physics.math.matrix;
 
 export namespace gse {
     template <typename T, int N>

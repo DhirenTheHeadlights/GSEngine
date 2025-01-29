@@ -140,35 +140,35 @@ constexpr auto gse::vec::length(Args&&... args) -> vec_t<length_t<std::common_ty
 
 template <typename ... Args>
 constexpr auto gse::vec::centimeters(Args&&... args) -> vec_t<length_t<std::common_type_t<Args...>>, sizeof...(Args)> {
-    return length<units::centimeters>(args...);
+	return { length_t<std::common_type_t<Args...>>::template from<units::centimeters>(args)... };
 }
 
 template <typename ... Args>
 constexpr auto gse::vec::meters(Args&&... args) -> vec_t<length_t<std::common_type_t<Args...>>, sizeof...(Args)> {
-    return length<units::meters>(args...);
+	return { length_t<std::common_type_t<Args...>>::template from<units::meters>(args)... };
 }
 
 template <typename ... Args>
 constexpr auto gse::vec::millimeters(Args&&... args) -> vec_t<length_t<std::common_type_t<Args...>>, sizeof...(Args)> {
-    return length<units::millimeters>(args...);
+	return { length_t<std::common_type_t<Args...>>::template from<units::millimeters>(args)... };
 }
 
 template <typename ... Args>
 constexpr auto gse::vec::kilometers(Args&&... args) -> vec_t<length_t<std::common_type_t<Args...>>, sizeof...(Args)> {
-    return length<units::kilometers>(args...);
+	return { length_t<std::common_type_t<Args...>>::template from<units::kilometers>(args)... };
 }
 
 template <typename ... Args>
 constexpr auto gse::vec::yards(Args&&... args) -> vec_t<length_t<std::common_type_t<Args...>>, sizeof...(Args)> {
-    return length<units::yards>(args...);
+	return { length_t<std::common_type_t<Args...>>::template from<units::yards>(args)... };
 }
 
 template <typename ... Args>
 constexpr auto gse::vec::feet(Args&&... args) -> vec_t<length_t<std::common_type_t<Args...>>, sizeof...(Args)> {
-    return length<units::feet>(args...);
+	return { length_t<std::common_type_t<Args...>>::template from<units::feet>(args)... };
 }
 
 template <typename ... Args>
 constexpr auto gse::vec::inches(Args&&... args) -> vec_t<length_t<std::common_type_t<Args...>>, sizeof...(Args)> {
-    return length<units::inches>(args...);
+	return { length_t<std::common_type_t<Args...>>::template from<units::inches>(args)... };
 }
