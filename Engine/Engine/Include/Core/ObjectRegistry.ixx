@@ -28,144 +28,11 @@ export namespace gse::registry {
 	auto does_entity_exist(std::uint32_t index, std::uint32_t generation) -> bool;
 	auto does_entity_exist(std::uint32_t index) -> bool;
 
-	struct component_container_base {
-		virtual ~component_container_base() = default;
-
-		virtual auto flush_to_final(std::uint32_t parent_id) -> void = 0;
-	};
-
-	namespace internal {
-		std::unordered_map<std::type_index, std::unique_ptr<component_container_base>> g_component_containers;
-		std::unordered_map<std::type_index, std::unique_ptr<component_container_base>> g_queued_components;
-
-		template <typename T>
-			requires std::derived_from<T, component>
-		auto add_component(T&& component, std::unordered_map<std::type_index, std::unique_ptr<component_container_base>>& component_container_list) -> void;
-	}
-
-	auto get_component_containers() -> std::unordered_map<std::type_index, std::unique_ptr<component_container_base>>& {
-		return internal::g_component_containers;
-	}
-
-	auto get_queued_components() -> std::unordered_map<std::type_index, std::unique_ptr<component_container_base>>& {
-		return internal::g_queued_components;
-	}
-
-	template <typename T>
-		requires std::derived_from<T, component>
-	struct component_container final : component_container_base {
-		std::vector<T> components;
-
-		auto flush_to_final(const std::uint32_t parent_id) -> void override {
-			auto& final_map = internal::g_component_containers;
-
-			std::vector<T> to_move;
-
-			std::erase_if(components, [&](T& c) {
-				if (c.parent_id == parent_id) {
-					to_move.push_back(std::move(c));
-					return true;
-				}
-				return false;
-				});
-
-			for (auto& c : to_move) {
-				internal::add_component(std::move(c), final_map);
-			}
-		}
-	};
-
-	namespace internal {
-		template <typename T>
-			requires std::derived_from<T, component>
-		auto add_component(T&& component, std::unordered_map<std::type_index, std::unique_ptr<component_container_base>>& component_container_list) -> void {  // NOLINT(cppcoreguidelines-missing-std-forward)
-			if (const auto it = component_container_list.find(typeid(T)); it != component_container_list.end()) {
-				auto& container = static_cast<component_container<T>&>(*it->second);
-				container.components.push_back(std::move(component));   // NOLINT(bugprone-move-forwarding-reference)
-			}
-			else {
-				auto container = std::make_unique<component_container<T>>();
-				container->components.push_back(std::move(component));  // NOLINT(bugprone-move-forwarding-reference)
-				component_container_list.insert({ typeid(T), std::move(container) });
-			}
-		}
-	}
-
-	template <typename T>
-		requires std::derived_from<T, component>
-	auto add_component(T&& component) -> void {  // NOLINT(cppcoreguidelines-missing-std-forward)
-		if (does_entity_exist(component.parent_id)) {
-			internal::add_component(std::forward<T>(component), internal::g_component_containers);  // NOLINT(bugprone-move-forwarding-reference)
-		}
-		else {
-			internal::add_component(std::forward<T>(component), internal::g_queued_components);  // NOLINT(bugprone-move-forwarding-reference)
-		}
-	}
-
-	template <typename T>
-		requires std::derived_from<T, component>
-	auto get_components() -> std::vector<T>& {
-		if (const auto it = internal::g_component_containers.find(typeid(T)); it != internal::g_component_containers.end()) {
-			auto& container = static_cast<component_container<T>&>(*it->second);
-			return container.components;
-		}
-		static std::vector<T> empty_components;
-		return empty_components;
-	}
-
-	namespace internal {
-		template <typename T>
-			requires std::derived_from<T, component>
-		// ReSharper disable once CppNotAllPathsReturnValue - The assert_comment will always be triggered if the component is not found
-		auto get_component(const std::uint32_t desired_id) -> T* {
-			if (const auto it = g_component_containers.find(typeid(T)); it != g_component_containers.end()) {
-				for (auto& container = static_cast<component_container<T>&>(*it->second); auto & comp : container.components) {  // Removed 'const'
-					if (comp.parent_id == desired_id) {
-						return &comp;
-					}
-				}
-			}
-
-			if (const auto it = g_queued_components.find(typeid(T)); it != g_queued_components.end()) {
-				for (auto& container = static_cast<component_container<T>&>(*it->second); auto & comp : container.components) {
-					if (comp.parent_id == desired_id) {
-						return &comp;
-					}
-				}
-			}
-
-			return nullptr;
-		}
-	}
-
-	template <typename T>
-		requires std::derived_from<T, component>
-	// ReSharper disable once CppNotAllPathsReturnValue - The assert_comment will always be triggered if the component is not found
-	auto get_component(const std::uint32_t desired_id) -> T& {
-		if (auto* component = internal::get_component<T>(desired_id); component) {
-			return *component;
-		}
-
-		throw std::runtime_error("Component not found in registry");
-	}
-
-	template <typename T>
-		requires std::derived_from<T, component>
-	// Use this if unsure that a component exists for an object
-	auto get_component_ptr(const std::uint32_t desired_id) -> T* {
-		return internal::get_component<T>(desired_id);
-	}
-
-	template <typename T>
-		requires std::derived_from<T, component>
-	auto remove_component(const T& component) -> void {
-		if (const auto it = internal::g_component_containers.find(typeid(T)); it != internal::g_component_containers.end()) {
-			auto& container = static_cast<component_container<T>&>(*it->second);
-			std::erase_if(container.components, [&component](const T& required_component) {
-				return required_component == component;
-				});
-		}
-	}
+	template <typename T> requires std::derived_from<T, gse::component> auto add_component(T&& component) -> void;
+	template <typename T> requires std::derived_from<T, gse::component> auto get_components() -> std::vector<T>&;
+	template <typename T> requires std::derived_from<T, gse::component> auto get_component(std::uint32_t desired_id) -> T&;
+	template <typename T> requires std::derived_from<T, gse::component> auto get_component_ptr(std::uint32_t desired_id) -> T*; // May return nullptr
+	template <typename T> requires std::derived_from<T, gse::component> auto remove_component(const T& component) -> void;
 
 	auto get_active_objects() -> std::vector<std::uint32_t>;
 	auto get_entity_name(std::uint32_t index) -> std::string_view;
@@ -183,22 +50,29 @@ export namespace gse::registry {
 	auto periodically_clean_up_registry(const time& clean_up_interval = seconds(60.f)) -> void;
 }
 
-namespace {
-	std::unordered_map<gse::id*, std::vector<std::uint32_t>> g_entity_lists;
+std::unordered_map<gse::id*, std::vector<std::uint32_t>> g_entity_lists;
 
-	std::unordered_map<std::string, std::uint32_t> g_string_to_index_map;
-	std::vector<gse::entity> g_entities;
-	std::vector<std::uint32_t> g_free_indices;
-	std::vector<gse::entity> g_registered_inactive_entities;
+std::unordered_map<std::string, std::uint32_t> g_string_to_index_map;
+std::vector<gse::entity> g_entities;
+std::vector<std::uint32_t> g_free_indices;
+std::vector<gse::entity> g_registered_inactive_entities;
 
-	std::vector<std::unique_ptr<gse::hook<gse::entity>>> g_hooks;
-	std::vector<std::unique_ptr<gse::hook<gse::entity>>> g_registered_inactive_hooks;
+std::vector<std::unique_ptr<gse::hook<gse::entity>>> g_hooks;
+std::vector<std::unique_ptr<gse::hook<gse::entity>>> g_registered_inactive_hooks;
 
-	gse::clock g_clean_up_clock;
+struct component_container_base {
+	virtual ~component_container_base() = default;
 
-	auto generate_random_entity_placeholder_id() -> std::uint32_t {
-		return gse::random_value(std::numeric_limits<std::uint32_t>::max());
-	}
+	virtual auto flush_to_final(std::uint32_t parent_id) -> void = 0;
+};
+
+std::unordered_map<std::type_index, std::unique_ptr<component_container_base>> g_component_containers;
+std::unordered_map<std::type_index, std::unique_ptr<component_container_base>> g_queued_components;
+
+gse::clock g_clean_up_clock;
+
+auto generate_random_entity_placeholder_id() -> std::uint32_t {
+	return gse::random_value(std::numeric_limits<std::uint32_t>::max());
 }
 
 export namespace gse {
@@ -303,7 +177,7 @@ auto gse::registry::activate_entity(std::uint32_t identifier, const std::string&
 	// First, we flush all the queued components to the final components.
 	// This must be done before we update the object's index and generation
 	// as the index at this point functions as a parent id for the components.
-	for (const auto& val : internal::g_queued_components | std::views::values) {
+	for (const auto& val : g_queued_components | std::views::values) {
 		val->flush_to_final(object.index);
 	}
 
@@ -423,6 +297,115 @@ auto gse::registry::does_entity_exist(const std::uint32_t index) -> bool {
 	}
 
 	return true;
+}
+
+template <typename T>
+	requires std::derived_from<T, gse::component>
+auto add_component_to_container(T&& component, std::unordered_map<std::type_index, std::unique_ptr<component_container_base>>& component_container_list) -> void;
+
+template <typename T>
+	requires std::derived_from<T, gse::component>
+struct component_container final : component_container_base {
+	std::vector<T> components;
+
+	auto flush_to_final(const std::uint32_t parent_id) -> void override {
+		auto& final_map = g_component_containers;
+
+		std::vector<T> to_move;
+
+		std::erase_if(components, [&](T& c) {
+			if (c.parent_id == parent_id) {
+				to_move.push_back(std::move(c));
+				return true;
+			}
+			return false;
+			});
+
+		for (auto& c : to_move) {
+			add_component_to_container(std::move(c), final_map);
+		}
+	}
+};
+
+template <typename T>
+	requires std::derived_from<T, gse::component>
+auto add_component_to_container(T&& component, std::unordered_map<std::type_index, std::unique_ptr<component_container_base>>& component_container_list) -> void {  // NOLINT(cppcoreguidelines-missing-std-forward)
+	if (const auto it = component_container_list.find(typeid(T)); it != component_container_list.end()) {
+		auto& container = static_cast<component_container<T>&>(*it->second);
+		container.components.push_back(std::move(component));   // NOLINT(bugprone-move-forwarding-reference)
+	}
+	else {
+		auto container = std::make_unique<component_container<T>>();
+		container->components.push_back(std::move(component));  // NOLINT(bugprone-move-forwarding-reference)
+		component_container_list.insert({ typeid(T), std::move(container) });
+	}
+}
+
+template <typename T> requires std::derived_from<T, gse::component>
+auto gse::registry::add_component(T&& component) -> void {
+	if (registry::does_entity_exist(component.parent_id)) {
+		add_component_to_container(std::forward<T>(component), g_component_containers);  // NOLINT(bugprone-move-forwarding-reference)
+	}
+	else {
+		add_component_to_container(std::forward<T>(component), g_queued_components);  // NOLINT(bugprone-move-forwarding-reference)
+	}
+}
+
+template <typename T> requires std::derived_from<T, gse::component>
+auto gse::registry::get_components() -> std::vector<T>& {
+	if (const auto it = g_component_containers.find(typeid(T)); it != g_component_containers.end()) {
+		auto& container = static_cast<component_container<T>&>(*it->second);
+		return container.components;
+	}
+	static std::vector<T> empty_components;
+	return empty_components;
+}
+
+template <typename T>
+	requires std::derived_from<T, gse::component>
+// ReSharper disable once CppNotAllPathsReturnValue - The assert_comment will always be triggered if the component is not found
+auto internal_get_component(const std::uint32_t desired_id) -> T* {
+	if (const auto it = g_component_containers.find(typeid(T)); it != g_component_containers.end()) {
+		for (auto& container = static_cast<component_container<T>&>(*it->second); auto & comp : container.components) {  // Removed 'const'
+			if (comp.parent_id == desired_id) {
+				return &comp;
+			}
+		}
+	}
+
+	if (const auto it = g_queued_components.find(typeid(T)); it != g_queued_components.end()) {
+		for (auto& container = static_cast<component_container<T>&>(*it->second); auto & comp : container.components) {
+			if (comp.parent_id == desired_id) {
+				return &comp;
+			}
+		}
+	}
+
+	return nullptr;
+}
+
+template <typename T> requires std::derived_from<T, gse::component>
+auto gse::registry::get_component(const std::uint32_t desired_id) -> T& {
+	if (auto* component = internal_get_component<T>(desired_id); component) {
+		return *component;
+	}
+
+	throw std::runtime_error("Component not found in registry");
+}
+
+template <typename T> requires std::derived_from<T, gse::component>
+auto gse::registry::get_component_ptr(const std::uint32_t desired_id) -> T* {
+	return internal_get_component<T>(desired_id);
+}
+
+template <typename T> requires std::derived_from<T, gse::component>
+auto gse::registry::remove_component(const T& component) -> void {
+	if (const auto it = g_component_containers.find(typeid(T)); it != g_component_containers.end()) {
+		auto& container = static_cast<component_container<T>&>(*it->second);
+		std::erase_if(container.components, [&component](const T& required_component) {
+			return required_component == component;
+			});
+	}
 }
 
 auto gse::registry::add_new_entity_list(id* list_id, const std::vector<std::uint32_t>& ids) -> void {
