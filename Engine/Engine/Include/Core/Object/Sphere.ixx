@@ -7,9 +7,7 @@ export module gse.core.object.sphere;
 import std;
 import glm;
 
-import gse.physics.math.vector;
-import gse.physics.math.vector_math;
-import gse.physics.math.units;
+import gse.physics.math;
 import gse.core.object.hook;
 import gse.core.object_registry;
 import gse.graphics.render_component;
@@ -50,17 +48,17 @@ export struct sphere_mesh_hook final : gse::hook<gse::entity> {
                 const float cos_theta = std::cos(theta);
 
                 // Calculate vertex position
-                glm::vec3 position = {
+                gse::vec3 position = {
                     r * sin_phi * cos_theta,
                     r * cos_phi,
                     r * sin_phi * sin_theta
                 };
 
                 // Calculate normal (normalized position for a sphere)
-                const glm::vec3 normal = normalize(position);
+                const gse::vec3 normal = normalize(position);
 
                 // Calculate texture coordinates
-                const glm::vec2 tex_coords = {
+                const gse::vec2 tex_coords = {
                     static_cast<float>(sector) / static_cast<float>(m_sectors),
                     static_cast<float>(stack) / static_cast<float>(m_stacks)
                 };

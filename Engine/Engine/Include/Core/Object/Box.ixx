@@ -5,13 +5,11 @@ module;
 export module gse.core.object.box;
 
 import std;
-import glm;
 
-import gse.physics.math.vector;
+import gse.physics.math.vec;
 import gse.physics.collision_component;
 import gse.physics.motion_component;
-import gse.physics.math.vector_math;
-import gse.physics.math.units;
+import gse.physics.math;
 import gse.core.object.hook;
 import gse.core.object_registry;
 import gse.graphics.render_component;
@@ -42,76 +40,76 @@ export struct box_mesh_hook final : gse::hook<gse::entity> {
         const float half_height = m_size.as<gse::units::meters>().y / 2.f;
         const float half_depth = m_size.as<gse::units::meters>().z / 2.f;
 
-        const glm::vec3 color = { gse::random_value(0.f, 1.f), gse::random_value(0.f, 1.f), gse::random_value(0.f, 1.f) };
+        const gse::vec3 color = { gse::random_value(0.f, 1.f), gse::random_value(0.f, 1.f), gse::random_value(0.f, 1.f) };
 
         const float repeat_interval = 10.f; // 1 repeat per unit (meters in this case)
 
         const std::vector<std::vector<gse::vertex>> face_vertices = {
             // Front face
             {
-                {.position = glm::vec3(-half_width, -half_height, half_depth), .normal = glm::vec3(0.0f, 0.0f, repeat_interval), .tex_coords =
-                    glm::vec2(0.0f, 0.0f) },
-                {.position = glm::vec3(half_width, -half_height, half_depth), .normal = glm::vec3(0.0f, 0.0f, repeat_interval), .tex_coords =
-                    glm::vec2(repeat_interval, 0.0f) },
-                {.position = glm::vec3(half_width, half_height, half_depth), .normal = glm::vec3(0.0f, 0.0f, repeat_interval), .tex_coords =
-                    glm::vec2(repeat_interval, repeat_interval) },
-                {.position = glm::vec3(-half_width, half_height, half_depth), .normal = glm::vec3(0.0f, 0.0f, repeat_interval), .tex_coords =
-                    glm::vec2(0.0f, repeat_interval) }
+                {.position = gse::vec3(-half_width, -half_height, half_depth), .normal = gse::vec3(0.0f, 0.0f, repeat_interval), .tex_coords =
+                    gse::vec2(0.0f, 0.0f) },
+                {.position = gse::vec3(half_width, -half_height, half_depth), .normal = gse::vec3(0.0f, 0.0f, repeat_interval), .tex_coords =
+                    gse::vec2(repeat_interval, 0.0f) },
+                {.position = gse::vec3(half_width, half_height, half_depth), .normal = gse::vec3(0.0f, 0.0f, repeat_interval), .tex_coords =
+                    gse::vec2(repeat_interval, repeat_interval) },
+                {.position = gse::vec3(-half_width, half_height, half_depth), .normal = gse::vec3(0.0f, 0.0f, repeat_interval), .tex_coords =
+                    gse::vec2(0.0f, repeat_interval) }
             },
             // Back face
             {
-                {.position = glm::vec3(-half_width, -half_height, -half_depth), .normal = glm::vec3(0.0f, 0.0f, -repeat_interval), .tex_coords =
-                    glm::vec2(0.0f, 0.0f) },
-                {.position = glm::vec3(half_width, -half_height, -half_depth), .normal = glm::vec3(0.0f, 0.0f, -repeat_interval), .tex_coords =
-                    glm::vec2(repeat_interval, 0.0f) },
-                {.position = glm::vec3(half_width, half_height, -half_depth), .normal = glm::vec3(0.0f, 0.0f, -repeat_interval), .tex_coords =
-                    glm::vec2(repeat_interval, repeat_interval) },
-                {.position = glm::vec3(-half_width, half_height, -half_depth), .normal = glm::vec3(0.0f, 0.0f, -repeat_interval), .tex_coords =
-                    glm::vec2(0.0f, repeat_interval) }
+                {.position = gse::vec3(-half_width, -half_height, -half_depth), .normal = gse::vec3(0.0f, 0.0f, -repeat_interval), .tex_coords =
+                    gse::vec2(0.0f, 0.0f) },
+                {.position = gse::vec3(half_width, -half_height, -half_depth), .normal = gse::vec3(0.0f, 0.0f, -repeat_interval), .tex_coords =
+                    gse::vec2(repeat_interval, 0.0f) },
+                {.position = gse::vec3(half_width, half_height, -half_depth), .normal = gse::vec3(0.0f, 0.0f, -repeat_interval), .tex_coords =
+                    gse::vec2(repeat_interval, repeat_interval) },
+                {.position = gse::vec3(-half_width, half_height, -half_depth), .normal = gse::vec3(0.0f, 0.0f, -repeat_interval), .tex_coords =
+                    gse::vec2(0.0f, repeat_interval) }
             },
             // Left face
             {
-                {.position = glm::vec3(-half_width, -half_height, -half_depth), .normal = glm::vec3(-repeat_interval, 0.0f, 0.0f), .tex_coords =
-                    glm::vec2(0.0f, 0.0f) },
-                {.position = glm::vec3(-half_width, -half_height, half_depth), .normal = glm::vec3(-repeat_interval, 0.0f, 0.0f), .tex_coords =
-                    glm::vec2(repeat_interval, 0.0f) },
-                {.position = glm::vec3(-half_width, half_height, half_depth), .normal = glm::vec3(-repeat_interval, 0.0f, 0.0f), .tex_coords =
-                    glm::vec2(repeat_interval, repeat_interval) },
-                {.position = glm::vec3(-half_width, half_height, -half_depth), .normal = glm::vec3(-repeat_interval, 0.0f, 0.0f), .tex_coords =
-                    glm::vec2(0.0f, repeat_interval) }
+                {.position = gse::vec3(-half_width, -half_height, -half_depth), .normal = gse::vec3(-repeat_interval, 0.0f, 0.0f), .tex_coords =
+                    gse::vec2(0.0f, 0.0f) },
+                {.position = gse::vec3(-half_width, -half_height, half_depth), .normal = gse::vec3(-repeat_interval, 0.0f, 0.0f), .tex_coords =
+                    gse::vec2(repeat_interval, 0.0f) },
+                {.position = gse::vec3(-half_width, half_height, half_depth), .normal = gse::vec3(-repeat_interval, 0.0f, 0.0f), .tex_coords =
+                    gse::vec2(repeat_interval, repeat_interval) },
+                {.position = gse::vec3(-half_width, half_height, -half_depth), .normal = gse::vec3(-repeat_interval, 0.0f, 0.0f), .tex_coords =
+                    gse::vec2(0.0f, repeat_interval) }
             },
             // Right face
             {
-                {.position = glm::vec3(half_width, -half_height, -half_depth), .normal = glm::vec3(repeat_interval, 0.0f, 0.0f), .tex_coords =
-                    glm::vec2(0.0f, 0.0f) },
-                {.position = glm::vec3(half_width, -half_height, half_depth), .normal = glm::vec3(repeat_interval, 0.0f, 0.0f), .tex_coords =
-                    glm::vec2(repeat_interval, 0.0f) },
-                {.position = glm::vec3(half_width, half_height, half_depth), .normal = glm::vec3(repeat_interval, 0.0f, 0.0f), .tex_coords =
-                    glm::vec2(repeat_interval, repeat_interval) },
-                {.position = glm::vec3(half_width, half_height, -half_depth), .normal = glm::vec3(repeat_interval, 0.0f, 0.0f), .tex_coords =
-                    glm::vec2(0.0f, repeat_interval) }
+                {.position = gse::vec3(half_width, -half_height, -half_depth), .normal = gse::vec3(repeat_interval, 0.0f, 0.0f), .tex_coords =
+                    gse::vec2(0.0f, 0.0f) },
+                {.position = gse::vec3(half_width, -half_height, half_depth), .normal = gse::vec3(repeat_interval, 0.0f, 0.0f), .tex_coords =
+                    gse::vec2(repeat_interval, 0.0f) },
+                {.position = gse::vec3(half_width, half_height, half_depth), .normal = gse::vec3(repeat_interval, 0.0f, 0.0f), .tex_coords =
+                    gse::vec2(repeat_interval, repeat_interval) },
+                {.position = gse::vec3(half_width, half_height, -half_depth), .normal = gse::vec3(repeat_interval, 0.0f, 0.0f), .tex_coords =
+                    gse::vec2(0.0f, repeat_interval) }
             },
             // Top face
             {
-                {.position = glm::vec3(-half_width, half_height, half_depth), .normal = glm::vec3(0.0f, repeat_interval, 0.0f), .tex_coords =
-                    glm::vec2(0.0f, 0.0f) },
-                {.position = glm::vec3(half_width, half_height, half_depth), .normal = glm::vec3(0.0f, repeat_interval, 0.0f), .tex_coords =
-                    glm::vec2(repeat_interval, 0.0f) },
-                {.position = glm::vec3(half_width, half_height, -half_depth), .normal = glm::vec3(0.0f, repeat_interval, 0.0f), .tex_coords =
-                    glm::vec2(repeat_interval, repeat_interval) },
-                {.position = glm::vec3(-half_width, half_height, -half_depth), .normal = glm::vec3(0.0f, repeat_interval, 0.0f), .tex_coords =
-                    glm::vec2(0.0f, repeat_interval) }
+                {.position = gse::vec3(-half_width, half_height, half_depth), .normal = gse::vec3(0.0f, repeat_interval, 0.0f), .tex_coords =
+                    gse::vec2(0.0f, 0.0f) },
+                {.position = gse::vec3(half_width, half_height, half_depth), .normal = gse::vec3(0.0f, repeat_interval, 0.0f), .tex_coords =
+                    gse::vec2(repeat_interval, 0.0f) },
+                {.position = gse::vec3(half_width, half_height, -half_depth), .normal = gse::vec3(0.0f, repeat_interval, 0.0f), .tex_coords =
+                    gse::vec2(repeat_interval, repeat_interval) },
+                {.position = gse::vec3(-half_width, half_height, -half_depth), .normal = gse::vec3(0.0f, repeat_interval, 0.0f), .tex_coords =
+                    gse::vec2(0.0f, repeat_interval) }
             },
             // Bottom face
             {
-                {.position = glm::vec3(-half_width, -half_height, half_depth), .normal = glm::vec3(0.0f, -repeat_interval, 0.0f), .tex_coords =
-                    glm::vec2(0.0f, 0.0f) },
-                {.position = glm::vec3(half_width, -half_height, half_depth), .normal = glm::vec3(0.0f, -repeat_interval, 0.0f), .tex_coords =
-                    glm::vec2(repeat_interval, 0.0f) },
-                {.position = glm::vec3(half_width, -half_height, -half_depth), .normal = glm::vec3(0.0f, -repeat_interval, 0.0f), .tex_coords =
-                    glm::vec2(repeat_interval, repeat_interval) },
-                {.position = glm::vec3(-half_width, -half_height, -half_depth), .normal = glm::vec3(0.0f, -repeat_interval, 0.0f), .tex_coords =
-                    glm::vec2(0.0f, repeat_interval) }
+                {.position = gse::vec3(-half_width, -half_height, half_depth), .normal = gse::vec3(0.0f, -repeat_interval, 0.0f), .tex_coords =
+                    gse::vec2(0.0f, 0.0f) },
+                {.position = gse::vec3(half_width, -half_height, half_depth), .normal = gse::vec3(0.0f, -repeat_interval, 0.0f), .tex_coords =
+                    gse::vec2(repeat_interval, 0.0f) },
+                {.position = gse::vec3(half_width, -half_height, -half_depth), .normal = gse::vec3(0.0f, -repeat_interval, 0.0f), .tex_coords =
+                    gse::vec2(repeat_interval, repeat_interval) },
+                {.position = gse::vec3(-half_width, -half_height, -half_depth), .normal = gse::vec3(0.0f, -repeat_interval, 0.0f), .tex_coords =
+                    gse::vec2(0.0f, repeat_interval) }
             }
         };
 

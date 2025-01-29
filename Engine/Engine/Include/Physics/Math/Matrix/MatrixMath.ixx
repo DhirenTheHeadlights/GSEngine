@@ -4,11 +4,11 @@ import std;
 
 import gse.physics.math.unit_vec;
 import gse.physics.math.vec_math;
-import gse.physics.math.units.len;
-import gse.physics.math.units.ang;
+import gse.physics.math.units.length;
+import gse.physics.math.units.angle;
 import gse.physics.math.matrix;
 
-namespace gse {
+export namespace gse {
 	template <typename T>
 	auto look_at(const vec3<length_t<T>>& position, const vec3<length_t<T>>& target, const vec3<length_t<T>>& up) -> mat4_t<T>;
 
@@ -19,7 +19,7 @@ namespace gse {
 	auto orthographic(length_t<T> left, length_t<T> right, length_t<T> bottom, length_t<T> top, length_t<T> near, length_t<T> far) -> mat4_t<T>;
 
 	template <typename T>
-	auto translate(const vec3<length_t<T>>& translation) -> mat4_t<T>;
+	auto translate(const mat4_t<T>& matrix, const vec3<length_t<T>>& translation) -> mat4_t<T>;
 
 	template <typename T>
 	auto rotate(axis axis, angle_t<T> angle) -> mat4_t<T>;
@@ -66,16 +66,14 @@ auto gse::orthographic(length_t<T> left, length_t<T> right, length_t<T> bottom, 
 }
 
 template <typename T>
-auto gse::translate(const vec3<length_t<T>>& translation) -> mat4_t<T> {
-	return mat4_t<T>{
-		unitless_vec4_t<T>{1, 0, 0, 0},
+auto gse::translate(const mat4_t<T>& matrix, const vec3<length_t<T>>& translation) -> mat4_t<T> {
+	return matrix * mat4_t<T>{
+			unitless_vec4_t<T>{1, 0, 0, 0},
 			unitless_vec4_t<T>{0, 1, 0, 0},
 			unitless_vec4_t<T>{0, 0, 1, 0},
-			unitless_vec4_t<T>{translation.x, translation.y, translation.z, 1
-		}
-	};
+			unitless_vec4_t<T>{translation.x, translation.y, translation.z, 1}
+		};
 }
-
 template <typename T>
 constexpr auto get_axis_vector(const gse::axis axis) -> gse::unitless_vec3_t<T> {
 	switch (axis) {

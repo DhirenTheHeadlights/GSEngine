@@ -1,7 +1,6 @@
 module;
 
 #include <glad/glad.h>
-#include <glm/gtc/matrix_transform.hpp>
 #include <tests/caveview/glext.h>
 
 #include "Core/ResourcePaths.h"
@@ -9,20 +8,20 @@ module;
 export module gse.graphics.renderer2d;
 
 import std;
-import glm;
 
 import gse.graphics.font;
 import gse.graphics.texture;
+import gse.physics.math;
 
 export namespace gse::renderer2d {
 	auto initialize() -> void;
 	auto shutdown() -> void;
 
-	auto draw_quad(const glm::vec2& position, const glm::vec2& size, const glm::vec4& color) -> void;
-	auto draw_quad(const glm::vec2& position, const glm::vec2& size, const texture& texture) -> void;
-	auto draw_quad(const glm::vec2& position, const glm::vec2& size, const texture& texture, const glm::vec4& uv) -> void;
+	auto draw_quad(const vec2<length>& position, const vec2<length>& size, const vec4<>& color) -> void;
+	auto draw_quad(const vec2<length>& position, const vec2<length>& size, const texture& texture) -> void;
+	auto draw_quad(const vec2<length>& position, const vec2<length>& size, const texture& texture, const vec4<>& uv) -> void;
 
-	auto draw_text(const font& font, const std::string& text, const glm::vec2& position, float scale, const glm::vec4& color) -> void;
+	auto draw_text(const font& font, const std::string& text, const vec2<length>& position, float scale, const vec4<>& color) -> void;
 }
 
 import gse.graphics.shader;
@@ -34,13 +33,13 @@ namespace {
     GLuint g_vao, g_vbo, g_ebo;
     gse::shader g_shader;
     gse::shader g_msdf_shader;
-    glm::mat4 g_projection;
+    gse::mat4 g_projection;
 }
 
 auto gse::renderer2d::initialize() -> void {
     struct vertex {
-        glm::vec2 position;
-        glm::vec2 texture_coordinate;
+        vec2<length> position;
+        vec2<length> texture_coordinate;
     };
 
     // Define vertices for a unit quad (1x1), will be scaled via the model matrix
@@ -115,7 +114,7 @@ auto gse::renderer2d::shutdown() -> void {
     glDeleteBuffers(1, &g_ebo);
 }
 
-auto render_quad(const glm::vec2& position, const glm::vec2& size, const glm::vec4* color, const gse::texture* texture, const glm::vec4& uv_rect = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f)) -> void {
+auto render_quad(const gse::vec2<gse::length>& position, const gse::vec2<gse::length>& size, const gse::vec4<>* color, const gse::texture* texture, const gse::vec4<>& uv_rect = gse::vec4(0.0f, 0.0f, 1.0f, 1.0f)) -> void {
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     glEnable(GL_BLEND);
@@ -124,7 +123,7 @@ auto render_quad(const glm::vec2& position, const glm::vec2& size, const glm::ve
     g_shader.use();
     g_shader.set_mat4("projection", g_projection);
 
-    glm::mat4 model = translate(glm::mat4(1.0f), glm::vec3(position, 0.0f));
+    gse::mat4 model = translate(gse::mat4(1.0f), gse::vec3(position, 0.0f));
     model = scale(model, glm::vec3(size, 1.0f));
     g_shader.set_mat4("uModel", model);
 
