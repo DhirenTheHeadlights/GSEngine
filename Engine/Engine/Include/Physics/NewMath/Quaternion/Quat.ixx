@@ -3,7 +3,7 @@ export module gse.physics.math.quat;
 import std;
 
 import gse.physics.math.unit_vec;
-import gse.physics.math.vec.vec_math;
+import gse.physics.math.vec_math;
 import gse.physics.math.units.ang;
 
 namespace gse {
