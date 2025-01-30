@@ -11,6 +11,7 @@ import gse.graphics.mesh;
 import gse.physics.math.units;
 import gse.physics.math.vector;
 import gse.core.id;
+import gse.graphics.texture_loader;
 
 export namespace gse {
 	class model_handle;
@@ -37,6 +38,7 @@ export namespace gse {
 		auto get_model_id() const->id*;
 	private:
 		std::vector<render_queue_entry> m_render_queue_entries;
+
 		id* m_model_id;
 	};
 }
@@ -60,7 +62,8 @@ gse::model_handle::model_handle(id* model_id, const model& model) : m_model_id(m
 			GL_TRIANGLES,
 			static_cast<GLsizei>(mesh.indices.size()),
 			glm::mat4(1.0f),
-			glm::vec3(1.0f)
+			glm::vec3(1.0f),
+			std::span<const std::uint32_t>(mesh.texture_ids)
 		);
 	}
 }
@@ -84,6 +87,7 @@ auto gse::model_handle::set_material(const std::string& material_name) -> void {
 		render_queue_entry.material_key = material_name;
 	}
 }
+
 
 auto gse::model_handle::get_render_queue_entries() const -> const std::vector<render_queue_entry>& {
 	return m_render_queue_entries;

@@ -268,26 +268,39 @@ auto gse::renderer3d::initialize_objects() -> void {
 }
 
 auto render_object(const std::uint32_t object_id, const gse::render_queue_entry& entry, const glm::mat4& view_matrix, const glm::mat4& projection_matrix) -> void {
-	if (const auto it = g_materials.find(entry.material_key); it != g_materials.end()) {
-		glm::mat4 model_matrix = entry.model_matrix;
-		if (const auto* motion_component = gse::registry::get_component_ptr<gse::physics::motion_component>(object_id); motion_component) {
-			model_matrix = motion_component->get_transformation_matrix();
-		}
+	//if (const auto it = g_materials.find(entry.material_key); it != g_materials.end()) {
+	//	glm::mat4 model_matrix = entry.model_matrix;
+	//	if (const auto* motion_component = gse::registry::get_component_ptr<gse::physics::motion_component>(object_id); motion_component) {
+	//		model_matrix = motion_component->get_transformation_matrix();
+	//	}
 
-		it->second.use(view_matrix, projection_matrix, model_matrix);
-		it->second.shader.set_vec3("color", entry.color);
+	//	//it->second.use(view_matrix, projection_matrix, model_matrix);
+	//	it->second.shader.set_vec3("color", entry.color);
 
-		glBindVertexArray(entry.vao);
-		glDrawElements(entry.draw_mode, entry.vertex_count, GL_UNSIGNED_INT, nullptr);
-		glBindVertexArray(0);
+	//	const auto& texture_shader = g_deferred_rendering_shaders["DefaultTexture"];
+	//	texture_shader.use();
+	//	texture_shader.set_mat4("view", view_matrix);
+	//	texture_shader.set_mat4("projection", projection_matrix);
+	//	texture_shader.set_mat4("model", model_matrix);
+	//	texture_shader.set_vec3("color", entry.color);
+	//	texture_shader.set_int("diffuseTexture", 0);
 
-		if (it->second.material_texture != 0) {
-			glBindTexture(GL_TEXTURE_2D, 0);
-		}
-	}
-	else {
-		std::cerr << "Shader program key not found: " << entry.material_key << '\n';
-	}
+	//	for (const auto& texture : entry.texture_ids) {
+
+	//		texture_shader.set_bool("useTexture", true);
+
+	//		glActiveTexture(GL_TEXTURE0);
+	//		glBindTexture(GL_TEXTURE_2D, texture);
+	//	}
+
+	//	glBindVertexArray(entry.vao);
+	//	glDrawElements(entry.draw_mode, entry.vertex_count, GL_UNSIGNED_INT, nullptr);
+	//	glBindVertexArray(0);
+
+	//	if (it->second.material_texture != 0) {
+	//		glBindTexture(GL_TEXTURE_2D, 0);
+	//	}
+	//}
 }
 
 auto render_object_forward(const std::uint32_t object_id, const gse::shader& forward_rendering_shader, const gse::render_queue_entry& entry, const glm::mat4& view_matrix, const glm::mat4& projection_matrix) -> void {
@@ -481,7 +494,7 @@ auto render_shadow_pass(const gse::shader& shadow_shader, const std::vector<gse:
 		}
 
 		for (auto& model_handle : render_component.models) {
-			for (auto& [material_key, vao, draw_mode, vertex_count, model_matrix, color] : model_handle.get_render_queue_entries()) {
+			for (auto& [material_key, vao, draw_mode, vertex_count, model_matrix, color, textures] : model_handle.get_render_queue_entries()) {
 				glm::mat4 model_matrix_v = model_matrix;
 
 				if (const auto* motion_component = gse::registry::get_component_ptr<gse::physics::motion_component>(render_component.parent_id); motion_component) {
@@ -637,7 +650,7 @@ auto gse::renderer3d::render() -> void {
 						}
 
 						for (const auto& model_handle : render_component.models) {
-							for (const auto& [material_key, vao, draw_mode, vertex_count, model_matrix, color] : model_handle.get_render_queue_entries()) {
+							for (const auto& [material_key, vao, draw_mode, vertex_count, model_matrix, color, textures] : model_handle.get_render_queue_entries()) {
 								shadow_shader.set_mat4("model", model_matrix);  // Object's model matrix
 								glBindVertexArray(vao);
 								glDrawElements(draw_mode, vertex_count, GL_UNSIGNED_INT, nullptr);
@@ -703,7 +716,7 @@ auto gse::renderer3d::render() -> void {
 	for (const auto& render_component : render_components) {
 
 		for (const auto& model_handle : render_component.models) {
-			for (const auto& [material_key, vao, draw_mode, vertex_count, model_matrix, color] : model_handle.get_render_queue_entries()) {
+			for (const auto& [material_key, vao, draw_mode, vertex_count, model_matrix, color, textures] : model_handle.get_render_queue_entries()) {
 				if (const auto it = g_materials.find(material_key); it != g_materials.end()) {
 					it->second.use(g_camera.get_view_matrix(), g_camera.get_projection_matrix(), model_matrix);
 					it->second.shader.set_vec3("color", color);

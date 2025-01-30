@@ -14,5 +14,9 @@
   "PostProcessing": {
     "vertex": "post_processing.vert",
     "fragment": "post_processing.frag"
+  },
+  "DefaultTexture": {
+    "vertex": "default_texture.vert",
+    "fragment": "default_texture.frag"
   }
 }

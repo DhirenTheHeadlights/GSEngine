@@ -24,12 +24,7 @@ export namespace gse {
 		GLsizei vertex_count;
 		glm::mat4 model_matrix;
 		glm::vec3 color;
-	};
-
-	struct model_texture {
-		std::uint32_t id;
-		std::string type;
-		std::string path;
+		std::span<const std::uint32_t> texture_ids;
 	};
 
 	struct render_component;
@@ -37,7 +32,8 @@ export namespace gse {
 	struct mesh {
 		mesh();
 		mesh(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices);
-		mesh(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices, const std::vector<model_texture>& textures);
+		mesh(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices, const std::vector<std::uint32_t>& texture_ids);
+
 		virtual ~mesh();
 
 		mesh(const mesh&) = delete;
@@ -54,7 +50,7 @@ export namespace gse {
 
 		std::vector<vertex> vertices;
 		std::vector<std::uint32_t> indices;
-		std::vector<model_texture> textures;
+		std::vector<std::uint32_t> texture_ids;
 
 		vec3<length> center_of_mass;
 	};
@@ -72,8 +68,8 @@ gse::mesh::mesh(const std::vector<vertex>& vertices, const std::vector<uint32_t>
 	: vertices(vertices), indices(indices) {
 }
 
-gse::mesh::mesh(const std::vector<vertex>& vertices, const std::vector<uint32_t>& indices, const std::vector<model_texture>& textures)
-	: vertices(vertices), indices(indices), textures(textures) {
+gse::mesh::mesh(const std::vector<vertex>& vertices, const std::vector<uint32_t>& indices, const std::vector<uint32_t>& texture_ids)
+	: vertices(vertices), indices(indices), texture_ids(texture_ids) {
 }
 
 gse::mesh::~mesh() {
@@ -84,7 +80,7 @@ gse::mesh::~mesh() {
 
 gse::mesh::mesh(mesh&& other) noexcept
 	: vao(other.vao), vbo(other.vbo), ebo(other.ebo),
-	vertices(std::move(other.vertices)), indices(std::move(other.indices)), textures(std::move(other.textures)) {
+	vertices(std::move(other.vertices)), indices(std::move(other.indices)), texture_ids(std::move(other.texture_ids)) {
 	other.vao = 0;
 	other.vbo = 0;
 	other.ebo = 0;

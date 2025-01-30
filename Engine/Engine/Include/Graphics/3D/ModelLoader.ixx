@@ -6,6 +6,7 @@ import glm;
 import gse.core.id;
 import gse.graphics.model;
 import gse.graphics.mesh;
+import gse.graphics.texture_loader;
 
 export namespace gse::model_loader {
 	auto load_obj_file(const std::string& model_path, const std::string& model_name) -> id*;
