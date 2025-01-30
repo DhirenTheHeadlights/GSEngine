@@ -23,10 +23,10 @@ export namespace gse {
 		auto get_camera_direction_relative_to_origin(const vec3<>& direction) const->vec3<>;
 	private:
 		vec3<length> m_position;
-		vec3<> m_front = vec3<units::meters>(0.0f, 0.0f, -1.0f);
-		vec3<> m_up = vec3<units::meters>(0.0f, 1.0f, 0.0f);
-		vec3<> m_right = vec3<units::meters>(1.0f, 0.0f, 0.0f);
-		vec3<> m_world_up = vec3<units::meters>(0.0f, 1.0f, 0.0f);
+		vec3<> m_front = vec3(0.0f, 0.0f, -1.0f);
+		vec3<> m_up = vec3(0.0f, 1.0f, 0.0f);
+		vec3<> m_right = vec3(1.0f, 0.0f, 0.0f);
+		vec3<> m_world_up = vec3(0.0f, 1.0f, 0.0f);
 
 		float m_yaw = -90.0f;
 		float m_pitch = 0.0f;
@@ -73,10 +73,10 @@ auto gse::camera::get_view_matrix() const -> mat4 {
 auto gse::camera::get_projection_matrix() -> mat4 {
 	const vec2 view_port_size = window::get_frame_buffer_size();
 	const float aspect_ratio = view_port_size.x / view_port_size.y;
-	return perspective(radians(45.0f), aspect_ratio, 0.1f, 10000000.f);
+	return perspective(degrees(45.0f), aspect_ratio, meters(0.1f), meters(10000000.f));
 }
 
-auto gse::camera::get_position() const -> gse::vec3<gse::length> {
+auto gse::camera::get_position() const -> vec3<length> {
 	return m_position;
 }
 

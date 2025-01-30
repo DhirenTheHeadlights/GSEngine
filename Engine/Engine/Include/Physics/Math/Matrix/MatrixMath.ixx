@@ -12,10 +12,10 @@ import gse.physics.math.quat_math;
 
 export namespace gse {
 	template <typename T = float>
-	auto look_at(const vec3<length_t<T>>& position, const vec3<length_t<T>>& target, const vec3<length_t<T>>& up) -> mat4_t<T>;
+	auto look_at(const vec3<length_t<T>>& position, const vec3<length_t<T>>& target, const vec3<unitless_t<T>>& up) -> mat4_t<T>;
 
 	template <typename T>
-	auto perspective(float fov, float aspect, length_t<T> near, length_t<T> far) -> mat4_t<T>;
+	auto perspective(angle_t<T> fov, T aspect, length_t<T> near, length_t<T> far) -> mat4_t<T>;
 
 	template <typename T>
 	auto orthographic(length_t<T> left, length_t<T> right, length_t<T> bottom, length_t<T> top, length_t<T> near, length_t<T> far) -> mat4_t<T>;
@@ -34,7 +34,7 @@ export namespace gse {
 }
 
 template <typename T>
-auto gse::look_at(const vec3<length_t<T>>& position, const vec3<length_t<T>>& target, const vec3<length_t<T>>& up) -> mat4_t<T> {
+auto gse::look_at(const vec3<length_t<T>>& position, const vec3<length_t<T>>& target, const vec3<unitless_t<T>>& up) -> mat4_t<T> {
 	auto z_axis = normalize(target - position);
 	auto x_axis = normalize(cross(up, z_axis));
 	auto y_axis = cross(z_axis, x_axis);
@@ -48,10 +48,10 @@ auto gse::look_at(const vec3<length_t<T>>& position, const vec3<length_t<T>>& ta
 }
 
 template <typename T>
-auto gse::perspective(const float fov, const float aspect, length_t<T> near, length_t<T> far) -> mat4_t<T> {
-	auto f = 1 / std::tan(fov / 2);
+auto gse::perspective(const angle_t<T> fov, const T aspect, length_t<T> near, length_t<T> far) -> mat4_t<T> {
+	auto f = 1 / std::tan(fov.template as<units::radians>() / 2);
 	return mat4_t<T>{
-		unitless_vec4_t<T>{f / aspect, 0, 0, 0},
+			unitless_vec4_t<T>{f / aspect, 0, 0, 0},
 			unitless_vec4_t<T>{0, f, 0, 0},
 			unitless_vec4_t<T>{0, 0, (far + near) / (near - far), -1},
 			unitless_vec4_t<T>{0, 0, (2 * far * near) / (near - far), 0

@@ -109,10 +109,10 @@ auto gse::mesh::operator=(mesh&& other) noexcept -> mesh& {
 auto calculate_center_of_mass(const std::vector<std::uint32_t>& indices, const std::vector<gse::vertex>& vertices) -> gse::vec3<gse::length> {
 	const gse::vec3d<> reference_point(0.f);
 
-	float total_volume = 0.f;
+	gse::unitless_t<double> total_volume = 0.f;
 	gse::vec3 moment(0.f);
 
-	perma_assert(indices.size() % 3 != 0, "Indices count is not a multiple of 3. Ensure that each face is defined by exactly three indices.");)
+	perma_assert(indices.size() % 3 != 0, "Indices count is not a multiple of 3. Ensure that each face is defined by exactly three indices.");
 
 	for (size_t i = 0; i < indices.size(); i += 3) {
 		const unsigned int idx0 = indices[i];
@@ -121,19 +121,19 @@ auto calculate_center_of_mass(const std::vector<std::uint32_t>& indices, const s
 
 		perma_assert(idx0 >= vertices.size() || idx1 >= vertices.size() || idx2 >= vertices.size(), "Index out of range while accessing vertices.");
 
-		const gse::vec3d<> v0(vertices[idx0].position.as<gse::units::meters>());
-		const gse::vec3d<> v1(vertices[idx1].position.as<gse::units::meters>());
-		const gse::vec3d<> v2(vertices[idx2].position.as<gse::units::meters>());
+		const gse::vec3d v0(vertices[idx0].position.as<gse::units::meters>());
+		const gse::vec3d v1(vertices[idx1].position.as<gse::units::meters>());
+		const gse::vec3d v2(vertices[idx2].position.as<gse::units::meters>());
 
 		gse::vec3d<> a = v0 - reference_point;
 		gse::vec3d<> b = v1 - reference_point;
 		gse::vec3d<> c = v2 - reference_point;
 
-		double volume = gse::abs(gse::dot(a, gse::cross(b, c)) / 6.0);
+		auto volume = gse::abs(gse::dot(a, gse::cross(b, c)) / 6.0);
 		gse::vec3d tetra_com = (v0 + v1 + v2 + reference_point) / 4.0;
 
-		total_volume += static_cast<float>(volume);
-		moment += volume * tetra_com;
+		total_volume += volume;
+		moment += tetra_com * volume;
 	}
 
 	perma_assert(total_volume == 0.0, "Total volume is zero. Check if the mesh is closed and correctly oriented.");

@@ -30,16 +30,24 @@ namespace gse::unit_vec {
     }
 }
 
-export namespace gse {
-    template <typename T> using unitless_t = internal::quantity<T, void, void, void>;
-    struct unitless : internal::quantity<float, void, void, void> {
-        using quantity::quantity;
+namespace gse {
+	struct placeholder_tag {};
+	constexpr char placeholder_name[] = "placeholder";
+	using placeholder_unit = internal::unit<placeholder_tag, 1.0f, placeholder_name>;
+	using placeholder_units = internal::unit_list<placeholder_unit>;
 
-		explicit constexpr operator value_type() const {
+    export template <typename T>
+	class unitless_t : internal::quantity<T, placeholder_tag, placeholder_unit, placeholder_units> {
+    	using internal::quantity<T, placeholder_tag, placeholder_unit, placeholder_units>::quantity;
+
+    	constexpr operator T() const {
 			return this->m_val;
 		}
-    };
-	
+	};
+
+	static_assert(internal::is_quantity<unitless_t<float>>);
+
+    export using unitless = unitless_t<float>;
 }
 
 namespace gse::unit_vec {
@@ -52,11 +60,15 @@ namespace gse::unit_vec {
         constexpr vec_t(Args... args) : unitless_vec::vec_t<vec_t, value_type, N>(unit_vec::get_value<value_type>(args)...) {}
 
         template <internal::is_quantity U>
-			requires std::is_same_v<unitless_t<value_type>, U>
-		constexpr vec_t(const vec_t<U, N>& other) : unitless_vec::vec_t<vec_t, value_type, N>(other) {}
+			requires std::is_convertible_v<unitless_t<typename U::value_type>, U> || std::is_same_v<typename Q::quantity_tag, typename U::quantity_tag>
+        constexpr vec_t(const vec_t<U, N>& other) { // Convert from unitless or same unit/different value_type
+            for (size_t i = 0; i < N; ++i) {
+                this->data[i] = static_cast<value_type>(other[i]);
+            }
+        }
 
         template <typename U>
-           requires internal::is_unit<U>
+			requires internal::is_unit<U> && has_same_tag<Q, U>
         [[nodiscard]] constexpr auto as() const -> vec_t<unitless_t<value_type>, N> {
             for (int i = 0; i < N; ++i) {
                 this->data[i] *= U::conversion_factor;
