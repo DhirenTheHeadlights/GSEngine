@@ -1,6 +1,5 @@
 module;
 
-#include "glm/ext/matrix_transform.hpp"
 #include "glad/glad.h"
 
 export module gse.graphics.model;
@@ -8,8 +7,7 @@ export module gse.graphics.model;
 import std;
 
 import gse.graphics.mesh;
-import gse.physics.math.units;
-import gse.physics.math.vector;
+import gse.physics.math;
 import gse.core.id;
 
 export namespace gse {
@@ -59,23 +57,23 @@ gse::model_handle::model_handle(id* model_id, const model& model) : m_model_id(m
 			mesh.vao,
 			GL_TRIANGLES,
 			static_cast<GLsizei>(mesh.indices.size()),
-			glm::mat4(1.0f),
-			glm::vec3(1.0f)
+			mat4(1.0f),
+			vec3(1.0f)
 		);
 	}
 }
 
 auto gse::model_handle::set_position(const vec3<length>& position) -> void {
 	for (auto& render_queue_entry : m_render_queue_entries) {
-		render_queue_entry.model_matrix = translate(glm::mat4(1.0f), position.as_default_units());
+		render_queue_entry.model_matrix = translate(mat4(1.0f), position.as_default_units());
 	}
 }
 
 auto gse::model_handle::set_rotation(const vec3<angle>& rotation) -> void {
 	for (auto& render_queue_entry : m_render_queue_entries) {
-		render_queue_entry.model_matrix = rotate(render_queue_entry.model_matrix, glm::radians(rotation.as<units::degrees>().x), glm::vec3(1.0f, 0.0f, 0.0f));
-		render_queue_entry.model_matrix = rotate(render_queue_entry.model_matrix, glm::radians(rotation.as<units::degrees>().y), glm::vec3(0.0f, 1.0f, 0.0f));
-		render_queue_entry.model_matrix = rotate(render_queue_entry.model_matrix, glm::radians(rotation.as<units::degrees>().z), glm::vec3(0.0f, 0.0f, 1.0f));
+		render_queue_entry.model_matrix = rotate(render_queue_entry.model_matrix, axis::x, radians(rotation.as<units::degrees>().x));
+		render_queue_entry.model_matrix = rotate(render_queue_entry.model_matrix, axis::y, radians(rotation.as<units::degrees>().y));
+		render_queue_entry.model_matrix = rotate(render_queue_entry.model_matrix, axis::z, radians(rotation.as<units::degrees>().z));
 	}
 }
 

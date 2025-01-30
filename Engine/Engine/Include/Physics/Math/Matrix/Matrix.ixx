@@ -3,16 +3,23 @@ export module gse.physics.math.matrix;
 import std;
 
 import gse.physics.math.unit_vec;
+import gse.physics.math.vec_math;
+import gse.platform.perma_assert;
 
 namespace gse {
 	template <typename T, int N, int M>
 	struct mat {
+		using value_type = T;
+
 		std::array<unitless_vec_t<T, N>, M> data;
 
 		constexpr mat() = default;
 		constexpr mat(const T& value);
 		constexpr mat(const std::array<unitless_vec_t<T, N>, M>& data) : data(data) {}
 		constexpr mat(std::initializer_list<unitless_vec_t<T, N>> list);
+
+		template <int O, int Q>
+		constexpr mat(const mat<T, O, Q>& other);
 
 		constexpr auto operator[](size_t index) -> unitless_vec_t<T, N>&;
 		constexpr auto operator[](size_t index) const -> const unitless_vec_t<T, N>&;
@@ -70,8 +77,32 @@ constexpr gse::mat<T, N, M>::mat(const T& value) {
 template <typename T, int N, int M>
 constexpr gse::mat<T, N, M>::mat(std::initializer_list<unitless_vec_t<T, N>> list) {
 	size_t i = 0;
-	for (const constexpr auto& vec : list) {
+	for (const auto& vec : list) {
 		data[i++] = vec;
+	}
+}
+
+template <typename T, int N, int M>
+template <int O, int Q>
+constexpr gse::mat<T, N, M>::mat(const mat<T, O, Q>& other) {
+	static_assert(O >= 1 && Q >= 1, "Source matrix must have at least 1 row and 1 column.");
+
+	constexpr int rows_to_copy = O < M ? O : M;
+	constexpr int cols_to_copy = Q < N ? Q : N;
+
+	for (int i = 0; i < rows_to_copy; ++i) {
+		for (int j = 0; j < cols_to_copy; ++j) {
+			data[i][j] = other[i][j];
+		}
+		for (int j = cols_to_copy; j < N; ++j) {
+			data[i][j] = i == j ? static_cast<T>(1) : static_cast<T>(0);
+		}
+	}
+
+	for (int i = rows_to_copy; i < M; ++i) {
+		for (int j = 0; j < N; ++j) {
+			data[i][j] = i == j ? static_cast<T>(1) : static_cast<T>(0);
+		}
 	}
 }
 
@@ -115,12 +146,17 @@ constexpr auto gse::mat<T, N, M>::operator-(const mat& other) const -> mat {
 
 template <typename T, int N, int M>
 constexpr auto gse::mat<T, N, M>::operator*(const mat& other) const -> mat {
+	perma_assert(N == other.data.size(), "Matrix dimensions must be compatible for multiplication.");
+
 	mat result;
+	mat<T, M, N> other_transposed = other.transpose();
+
 	for (size_t i = 0; i < M; ++i) {
-		for (size_t j = 0; j < N; ++j) {
-			result[i][j] = data[i] * other[j];
+		for (size_t j = 0; j < other_transposed.data.size(); ++j) {
+			result[i][j] = dot(data[i], other_transposed[j]).as_default_unit();
 		}
 	}
+
 	return result;
 }
 
@@ -207,9 +243,7 @@ template <typename T, int N, int M>
 constexpr auto gse::mat<T, N, M>::inverse() const -> mat {
 	mat result;
 	T det = determinant();
-	if (det == 0) {
-		throw std::runtime_error("Matrix is singular and cannot be inverted.");
-	}
+	perma_assert(det != 0, "Matrix is singular and cannot be inverted.");
 	for (size_t i = 0; i < M; ++i) {
 		for (size_t j = 0; j < N; ++j) {
 			result[j][i] = data[i][j] / det;

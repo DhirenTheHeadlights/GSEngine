@@ -4,7 +4,7 @@ import std;
 
 import gse.physics.math.unit_vec;
 import gse.physics.math.vec_math;
-import gse.physics.math.units.ang;
+import gse.physics.math.units;
 
 namespace gse {
 	template <typename T>
@@ -50,7 +50,7 @@ export namespace gse {
 
 template <typename T>
 constexpr gse::quaternion<T>::quaternion(const unitless_vec_t<T, 3>& axis, angle_t<T> angle) {
-	auto half_angle = angle.as<units::degrees>() / 2;
+	auto half_angle = angle.template as<units::degrees>() / 2;
 	auto sin_half_angle = std::sin(half_angle);
 	v = axis * sin_half_angle;
 	s = std::cos(half_angle);

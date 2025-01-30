@@ -7,6 +7,8 @@ import gse.physics.math.vec_math;
 import gse.physics.math.units.length;
 import gse.physics.math.units.angle;
 import gse.physics.math.matrix;
+import gse.physics.math.quat;
+import gse.physics.math.quat_math;
 
 export namespace gse {
 	template <typename T = float>
@@ -22,10 +24,13 @@ export namespace gse {
 	auto translate(const mat4_t<T>& matrix, const vec3<length_t<T>>& translation) -> mat4_t<T>;
 
 	template <typename T>
-	auto rotate(axis axis, angle_t<T> angle) -> mat4_t<T>;
+	auto rotate(const mat4_t<T>& matrix, axis axis, angle_t<T> angle) -> mat4_t<T>;
 
 	template <typename T>
 	auto scale(const mat4_t<T>& matrix, const vec3<length_t<T>>& scale) -> mat4_t<T>;
+
+	template <typename T, int N, int M>
+	auto value_ptr(const mat_t<T, N, M>& matrix) -> typename mat_t<T, N, M>::value_type*;
 }
 
 template <typename T>
@@ -85,16 +90,21 @@ constexpr auto get_axis_vector(const gse::axis axis) -> gse::unitless_vec3_t<T> 
 }
 
 template <typename T>
-auto gse::rotate(const axis axis, angle_t<T> angle) -> mat4_t<T> {
-	auto a = get_axis_vector<T>(axis);
-	auto b = cross(a, unitless_vec3_t<T>{ 0, 0, 1 });
-	auto c = cross(a, b);
-	return mat4_t<T>{
-		unitless_vec4_t<T>{a.x, b.x, c.x, 0},
-			unitless_vec4_t<T>{a.y, b.y, c.y, 0},
-			unitless_vec4_t<T>{a.z, b.z, c.z, 0},
+auto gse::rotate(const mat4_t<T>& matrix, const axis axis, angle_t<T> angle) -> mat4_t<T> {
+	auto a = normalize(get_axis_vector<T>(axis));
+
+	T half_angle = angle.template as<units::degrees>() / 2;
+	T s = std::sin(half_angle);
+	T c = std::cos(half_angle);
+
+	auto q = normalize(quat_t<T>(c, a.x * s, a.y * s, a.z * s));
+	mat4_t <T> rotation_matrix = mat4_t<T>{
+			unitless_vec4_t<T>{1 - 2 * q.y * q.y - 2 * q.z * q.z, 2 * q.x * q.y - 2 * q.z * q.w, 2 * q.x * q.z + 2 * q.y * q.w, 0},
+			unitless_vec4_t<T>{2 * q.x * q.y + 2 * q.z * q.w, 1 - 2 * q.x * q.x - 2 * q.z * q.z, 2 * q.y * q.z - 2 * q.x * q.w, 0},
+			unitless_vec4_t<T>{2 * q.x * q.z - 2 * q.y * q.w, 2 * q.y * q.z + 2 * q.x * q.w, 1 - 2 * q.x * q.x - 2 * q.y * q.y, 0},
 			unitless_vec4_t<T>{0, 0, 0, 1}
-	} *rotate(b, angle)* rotate(c, angle);
+		};
+	return matrix * rotation_matrix;
 }
 
 template <typename T>
@@ -105,4 +115,9 @@ auto gse::scale(const mat4_t<T>& matrix, const vec3<length_t<T>>& scale) -> mat4
 			unitless_vec4_t<T>{0, 0, scale.z, 0},
 			unitless_vec4_t<T>{0, 0, 0, 1}
 		};
+}
+
+template <typename T, int N, int M>
+auto gse::value_ptr(const mat_t<T, N, M>& matrix) -> typename mat_t<T, N, M>::value_type* {
+	return matrix.data;
 }

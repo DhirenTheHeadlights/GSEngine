@@ -26,9 +26,9 @@ struct skybox_hook final : gse::hook<gse::entity> {
 
 auto game::skybox::create(gse::scene* scene) -> void {
 	const auto skybox_position = gse::vec3<gse::units::meters>(0.f, 0.f, 0.f);
-	const gse::length skybox_size = gse::meters(20000.f);
+	constexpr gse::length skybox_size = gse::meters(20000.f);
 	const std::uint32_t skybox_uuid = gse::registry::create_entity();
-	create_box(skybox_uuid, skybox_position, skybox_size);
+	gse::create_box(skybox_uuid, skybox_position, skybox_size);
 	gse::registry::add_entity_hook(skybox_uuid, std::make_unique<skybox_hook>());
 	scene->add_entity(skybox_uuid, "Skybox");
 }

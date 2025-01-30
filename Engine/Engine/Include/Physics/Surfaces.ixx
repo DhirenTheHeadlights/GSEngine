@@ -2,7 +2,7 @@ export module gse.physics.surfaces;
 
 import std;
 
-import gse.physics.math.units;
+import gse.physics.math;
 import gse.core.clock;
 
 export namespace gse::surfaces {

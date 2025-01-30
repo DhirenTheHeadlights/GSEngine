@@ -7,7 +7,7 @@ import gse.core.object.hook;
 import gse.core.component;
 import gse.physics.math.units;
 import gse.core.clock;
-import gse.physics.math.vector_math;
+import gse.physics.math;
 import gse.platform.perma_assert;
 
 export namespace gse::registry {

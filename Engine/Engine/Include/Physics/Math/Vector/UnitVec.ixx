@@ -6,19 +6,8 @@ import gse.physics.math.units.quant;
 import gse.physics.math.vec;
 
 namespace gse::unit_vec {
-    template <typename Q>
-    concept is_quantity = std::derived_from <
-        std::remove_cvref_t<Q>,
-        internal::quantity<
-        typename std::remove_cvref_t<Q>::value_type,
-        typename std::remove_cvref_t<Q>::quantity_tag,
-        typename std::remove_cvref_t<Q>::default_unit,
-        typename std::remove_cvref_t<Q>::units
-        >
-    >;
-
     template <typename T>
-    concept is_quantity_or_unit = is_quantity<T> || internal::is_unit<T>;
+    concept is_quantity_or_unit = internal::is_quantity<T> || internal::is_unit<T>;
 
     template <typename T, typename U>
     concept has_same_tag = std::is_same_v<typename T::quantity_tag, typename U::quantity_tag>;
@@ -32,7 +21,7 @@ namespace gse::unit_vec {
 
     template <typename Q, typename T>
     constexpr auto get_value(const T& value) -> Q {
-        if constexpr (is_quantity<T>) {
+        if constexpr (internal::is_quantity<T>) {
             return value.as_default_unit();
         }
         else {
@@ -43,19 +32,26 @@ namespace gse::unit_vec {
 
 export namespace gse {
     template <typename T> using unitless_t = internal::quantity<T, void, void, void>;
-    using unitless = internal::quantity<float, void, void, void>;
+    struct unitless : internal::quantity<float, void, void, void> {
+        using quantity::quantity;
+
+		explicit constexpr operator value_type() const {
+			return this->m_val;
+		}
+    };
+	
 }
 
 namespace gse::unit_vec {
-    template <is_quantity Q, int N>
+    template <internal::is_quantity Q, int N>
     struct vec_t : unitless_vec::vec_t<vec_t<Q, N>, typename Q::value_type, N> {
         using value_type = typename Q::value_type;
 
         template <typename... Args>
-            requires ((std::is_convertible_v<Args, typename Q::value_type> || unit_vec::is_quantity<Args>) && ...)
+            requires ((std::is_convertible_v<Args, typename Q::value_type> || internal::is_quantity<Args>) && ...)
         constexpr vec_t(Args... args) : unitless_vec::vec_t<vec_t, value_type, N>(unit_vec::get_value<value_type>(args)...) {}
 
-        template <typename U>
+        template <internal::is_quantity U>
 			requires std::is_same_v<unitless_t<value_type>, U>
 		constexpr vec_t(const vec_t<U, N>& other) : unitless_vec::vec_t<vec_t, value_type, N>(other) {}
 
@@ -177,4 +173,9 @@ constexpr auto gse::operator/(const T& scalar, const vec_t<U, N>& a) -> vec_t<no
 template <typename T, typename U> requires gse::is_unitless<T> || gse::is_unitless<U>
 constexpr auto gse::operator*(const T& a, const U& b) -> non_unitless_type<T, U> {
     return as_default_unit(a) * as_default_unit(b);
+}
+
+template <typename T, typename U> requires gse::is_unitless<T> || gse::is_unitless<U>
+constexpr auto gse::operator/(const T & a, const U & b) -> non_unitless_type<T, U> {
+	return as_default_unit(a) / as_default_unit(b);
 }

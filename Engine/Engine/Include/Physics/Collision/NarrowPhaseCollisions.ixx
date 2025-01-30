@@ -5,24 +5,22 @@ import std;
 import gse.physics.motion_component;
 import gse.physics.bounding_box;
 import gse.physics.collision_component;
-import gse.physics.math.vector;
-import gse.physics.math.vector_math;
-import gse.physics.math.units;
+import gse.physics.math;
 
 export namespace gse::narrow_phase_collision {
 	auto resolve_collision(physics::motion_component* object_motion_component, physics::collision_component& object_collision_component, const physics::collision_component& other_collision_component) -> void;
 }
 
 auto overlaps_on_axis(const gse::oriented_bounding_box& box1, const gse::oriented_bounding_box& box2, const gse::vec3<gse::length>& axis, gse::length& penetration) -> bool {
-    if (is_zero(axis)) {
+    if (gse::is_zero(axis)) {
         return true;
     }
 
-    const auto normalized_axis = normalize(axis);
+    const auto normalized_axis = gse::normalize(axis);
     const auto corners1 = box1.get_corners();
 
     auto project_point = [](const gse::vec3<gse::length>& point, const gse::vec3<gse::length>& projection_axis) -> float {
-        return dot(point, projection_axis);
+        return gse::dot(point, projection_axis);
         };
 
     float min1 = project_point(corners1[0], normalized_axis);
@@ -68,7 +66,7 @@ auto sat_collision(const gse::oriented_bounding_box& obb1, const gse::oriented_b
 
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {
-            if (gse::vec3<gse::length> cross = gse::cross(obb1.axes[i], obb2.axes[j]); magnitude(cross) > gse::meters(1e-6f)) { // Avoid near-zero vectors
+            if (gse::vec3<gse::length> cross = gse::cross(obb1.axes[i], obb2.axes[j]); gse::magnitude(cross) > gse::meters(1e-6f)) { // Avoid near-zero vectors
                 axes[axis_count++] = cross;
             }
         }
@@ -85,12 +83,12 @@ auto sat_collision(const gse::oriented_bounding_box& obb1, const gse::oriented_b
 
         if (penetration < min_penetration) {
             min_penetration = penetration;
-            collision_normal = normalize(axes[i]);
+            collision_normal = gse::normalize(axes[i]);
         }
     }
 
     // Ensure the collision normal points from obb1 to obb2
-    if (const gse::vec3<gse::length> direction = obb2.center - obb1.center; dot(direction, collision_normal) < 0.0f) {
+    if (const gse::vec3<gse::length> direction = obb2.center - obb1.center; gse::dot(direction, collision_normal) < 0.0f) {
         collision_normal = -collision_normal;
     }
 
@@ -110,8 +108,8 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
     const float velocity_into_surface = dot(object_motion_component->current_velocity, collision_normal);
     const float acceleration_into_surface = dot(object_motion_component->current_acceleration, collision_normal);
 
-    float& vel = object_motion_component->current_velocity.as_default_units()[object_collision_component.collision_information.get_axis()];
-    float& acc = object_motion_component->current_acceleration.as_default_units()[object_collision_component.collision_information.get_axis()];
+    float& vel = object_motion_component->current_velocity[object_collision_component.collision_information.get_axis()];
+    float& acc = object_motion_component->current_acceleration[object_collision_component.collision_information.get_axis()];
 
     if (velocity_into_surface < 0.0f) {
         vel = 0.0f;
@@ -126,8 +124,8 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
     const auto correction = collision_normal * meters(corrected_penetration);
     object_motion_component->current_position -= correction;
 
-    if (collision_normal.as_default_units().y < 0.f) { // Normal here is inverted because the collision normal points from the other object to this object
+    if (collision_normal.y < 0.f) { // Normal here is inverted because the collision normal points from the other object to this object
         object_motion_component->airborne = false;
-        object_motion_component->most_recent_y_collision = meters(object_motion_component->current_position.as_default_units().y);
+        object_motion_component->most_recent_y_collision = meters(object_motion_component->current_position.y);
     }
 }

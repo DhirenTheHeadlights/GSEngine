@@ -21,6 +21,19 @@ namespace gse::units {
 		kilometers_per_hour,
 		miles_per_hour
 	>;
+
+	struct angular_velocity_tag {};
+
+	constexpr char radians_per_second_units[] = "rad/s";
+	constexpr char degrees_per_second_units[] = "deg/s";
+
+	export using radians_per_second = internal::unit<angular_velocity_tag, 1.0f, radians_per_second_units>;
+	export using degrees_per_second = internal::unit<angular_velocity_tag, 0.0174532925f, degrees_per_second_units>;
+
+	using angular_velocity_units = internal::unit_list <
+		radians_per_second,
+		degrees_per_second
+	>;
 }
 
 export namespace gse {
@@ -35,6 +48,16 @@ export namespace gse {
 	constexpr auto meters_per_second(float value) -> velocity;
 	constexpr auto kilometers_per_hour(float value) -> velocity;
 	constexpr auto miles_per_hour(float value) -> velocity;
+
+	template <typename T = float> using angular_velocity_t = internal::quantity<T, units::angular_velocity_tag, units::radians_per_second, units::angular_velocity_units>;
+
+	using angular_velocity = angular_velocity_t<>;
+
+	template <typename T> constexpr auto radians_per_second_t(T value) -> angular_velocity_t<T>;
+	template <typename T> constexpr auto degrees_per_second_t(T value) -> angular_velocity_t<T>;
+
+	constexpr auto radians_per_second(float value) -> angular_velocity;
+	constexpr auto degrees_per_second(float value) -> angular_velocity;
 }
 
 export namespace gse::vec {
@@ -44,6 +67,12 @@ export namespace gse::vec {
 	template <typename... Args> constexpr auto meters_per_second(Args&&... args) -> vec_t<velocity_t<std::common_type_t<Args...>>, sizeof...(Args)>;
 	template <typename... Args> constexpr auto kilometers_per_hour(Args&&... args) -> vec_t<velocity_t<std::common_type_t<Args...>>, sizeof...(Args)>;
 	template <typename... Args> constexpr auto miles_per_hour(Args&&... args) -> vec_t<velocity_t<std::common_type_t<Args...>>, sizeof...(Args)>;
+
+	template <internal::is_unit U, typename... Args>
+	constexpr auto angular_velocity(Args&&... args) -> vec_t<angular_velocity_t<std::common_type_t<Args...>>, sizeof...(Args)>;
+
+	template <typename... Args> constexpr auto radians_per_second(Args&&... args) -> vec_t<angular_velocity_t<std::common_type_t<Args...>>, sizeof...(Args)>;
+	template <typename... Args> constexpr auto degrees_per_second(Args&&... args) -> vec_t<angular_velocity_t<std::common_type_t<Args...>>, sizeof...(Args)>;
 }
 
 template <typename T>
@@ -93,6 +122,39 @@ constexpr auto gse::vec::miles_per_hour(Args&&... args) -> vec_t<velocity_t<std:
 	return { velocity_t<std::common_type_t<Args...>>::template from<units::miles_per_hour>(args)... };
 }
 
+template <typename T>
+constexpr auto gse::radians_per_second_t(const T value) -> angular_velocity_t<T> {
+	return angular_velocity_t<T>::template from<units::radians_per_second>(value);
+}
+
+template <typename T>
+constexpr auto gse::degrees_per_second_t(const T value) -> angular_velocity_t<T> {
+	return angular_velocity_t<T>::template from<units::degrees_per_second>(value);
+}
+
+constexpr auto gse::radians_per_second(const float value) -> angular_velocity {
+	return radians_per_second_t<float>(value);
+}
+
+constexpr auto gse::degrees_per_second(const float value) -> angular_velocity {
+	return degrees_per_second_t<float>(value);
+}
+
+template <gse::internal::is_unit U, typename... Args>
+constexpr auto gse::vec::angular_velocity(Args&&... args) -> vec_t<angular_velocity_t<std::common_type_t<Args...>>, sizeof...(Args)> {
+	return { angular_velocity_t<std::common_type_t<Args...>>::template from<U>(args)... };
+}
+
+template <typename... Args>
+constexpr auto gse::vec::radians_per_second(Args&&... args) -> vec_t<angular_velocity_t<std::common_type_t<Args...>>, sizeof...(Args)> {
+	return { angular_velocity_t<std::common_type_t<Args...>>::template from<units::radians_per_second>(args)... };
+}
+
+template <typename... Args>
+constexpr auto gse::vec::degrees_per_second(Args&&... args) -> vec_t<angular_velocity_t<std::common_type_t<Args...>>, sizeof...(Args)> {
+	return { angular_velocity_t<std::common_type_t<Args...>>::template from<units::degrees_per_second>(args)... };
+}
+
 namespace gse::units {
 	struct acceleration_tag {};
 	
@@ -109,6 +171,19 @@ namespace gse::units {
 		kilometers_per_hour_squared,
 		miles_per_hour_squared
 	>;
+
+	struct angular_acceleration_tag {};
+
+	constexpr char radians_per_second_squared_units[] = "rad/s^2";
+	constexpr char degrees_per_second_squared_units[] = "deg/s^2";
+
+	export using radians_per_second_squared = internal::unit<angular_acceleration_tag, 1.0f, radians_per_second_squared_units>;
+	export using degrees_per_second_squared = internal::unit<angular_acceleration_tag, 0.000304617419786f, degrees_per_second_squared_units>;
+
+	using angular_acceleration_units = internal::unit_list <
+		radians_per_second_squared,
+		degrees_per_second_squared
+	>;
 }
 
 export namespace gse {
@@ -123,6 +198,16 @@ export namespace gse {
 	constexpr auto meters_per_second_squared(float value) -> acceleration;
 	constexpr auto kilometers_per_hour_squared(float value) -> acceleration;
 	constexpr auto miles_per_hour_squared(float value) -> acceleration;
+
+	template <typename T = float> using angular_acceleration_t = internal::quantity<T, units::angular_acceleration_tag, units::radians_per_second_squared, units::angular_acceleration_units>;
+
+	using angular_acceleration = angular_acceleration_t<>;
+
+	template <typename T> constexpr auto radians_per_second_squared_t(T value) -> angular_acceleration_t<T>;
+	template <typename T> constexpr auto degrees_per_second_squared_t(T value) -> angular_acceleration_t<T>;
+
+	constexpr auto radians_per_second_squared(float value) -> angular_acceleration;
+	constexpr auto degrees_per_second_squared(float value) -> angular_acceleration;
 }
 
 export namespace gse::vec {
@@ -132,6 +217,12 @@ export namespace gse::vec {
 	template <typename... Args> constexpr auto meters_per_second_squared(Args&&... args) -> vec_t<acceleration_t<std::common_type_t<Args...>>, sizeof...(Args)>;
 	template <typename... Args> constexpr auto kilometers_per_hour_squared(Args&&... args) -> vec_t<acceleration_t<std::common_type_t<Args...>>, sizeof...(Args)>;
 	template <typename... Args> constexpr auto miles_per_hour_squared(Args&&... args) -> vec_t<acceleration_t<std::common_type_t<Args...>>, sizeof...(Args)>;
+
+	template <internal::is_unit U, typename... Args>
+	constexpr auto angular_acceleration(Args&&... args) -> vec_t<angular_acceleration_t<std::common_type_t<Args...>>, sizeof...(Args)>;
+
+	template <typename... Args> constexpr auto radians_per_second_squared(Args&&... args) -> vec_t<angular_acceleration_t<std::common_type_t<Args...>>, sizeof...(Args)>;
+	template <typename... Args> constexpr auto degrees_per_second_squared(Args&&... args) -> vec_t<angular_acceleration_t<std::common_type_t<Args...>>, sizeof...(Args)>;
 }
 
 template <typename T>
@@ -161,6 +252,24 @@ constexpr auto gse::miles_per_hour_squared(const float value) -> acceleration {
 	return miles_per_hour_squared_t<float>(value);
 }
 
+template <typename T>
+constexpr auto gse::radians_per_second_squared_t(const T value) -> angular_acceleration_t<T> {
+	return angular_acceleration_t<T>::template from<units::radians_per_second_squared>(value);
+}
+
+template <typename T>
+constexpr auto gse::degrees_per_second_squared_t(const T value) -> angular_acceleration_t<T> {
+	return angular_acceleration_t<T>::template from<units::degrees_per_second_squared>(value);
+}
+
+constexpr auto gse::radians_per_second_squared(const float value) -> angular_acceleration {
+	return radians_per_second_squared_t<float>(value);
+}
+
+constexpr auto gse::degrees_per_second_squared(const float value) -> angular_acceleration {
+	return degrees_per_second_squared_t<float>(value);
+}
+
 template <gse::internal::is_unit U, typename... Args>
 constexpr auto gse::vec::acceleration(Args&&... args) -> vec_t<acceleration_t<std::common_type_t<Args...>>, sizeof...(Args)> {
 	return { acceleration_t<std::common_type_t<Args...>>::template from<U>(args)... };
@@ -179,4 +288,19 @@ constexpr auto gse::vec::kilometers_per_hour_squared(Args&&... args) -> vec_t<ac
 template <typename... Args>
 constexpr auto gse::vec::miles_per_hour_squared(Args&&... args) -> vec_t<acceleration_t<std::common_type_t<Args...>>, sizeof...(Args)> {
 	return { acceleration_t<std::common_type_t<Args...>>::template from<units::miles_per_hour_squared>(args)... };
+}
+
+template <gse::internal::is_unit U, typename... Args>
+constexpr auto gse::vec::angular_acceleration(Args&&... args) -> vec_t<angular_acceleration_t<std::common_type_t<Args...>>, sizeof...(Args)> {
+	return { angular_acceleration_t<std::common_type_t<Args...>>::template from<U>(args)... };
+}
+
+template <typename... Args>
+constexpr auto gse::vec::radians_per_second_squared(Args&&... args) -> vec_t<angular_acceleration_t<std::common_type_t<Args...>>, sizeof...(Args)> {
+	return { angular_acceleration_t<std::common_type_t<Args...>>::template from<units::radians_per_second_squared>(args)... };
+}
+
+template <typename... Args>
+constexpr auto gse::vec::degrees_per_second_squared(Args&&... args) -> vec_t<angular_acceleration_t<std::common_type_t<Args...>>, sizeof...(Args)> {
+	return { angular_acceleration_t<std::common_type_t<Args...>>::template from<units::degrees_per_second_squared>(args)... };
 }

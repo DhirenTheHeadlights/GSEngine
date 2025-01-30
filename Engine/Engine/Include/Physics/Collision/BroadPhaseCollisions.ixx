@@ -1,8 +1,14 @@
 export module gse.physics.broad_phase_collision;
 
+import std;
+
 import gse.physics.collision_component;
 import gse.physics.motion_component;
 import gse.physics.bounding_box;
+import gse.physics.math;
+import gse.physics.narrow_phase_collisions;
+import gse.physics.system;
+import gse.core.object_registry;
 
 export namespace gse::broad_phase_collision {
 	auto check_collision(const axis_aligned_bounding_box& box1, const axis_aligned_bounding_box& box2) -> bool;
@@ -13,18 +19,10 @@ export namespace gse::broad_phase_collision {
 	auto update() -> void;
 }
 
-import std;
-
-import gse.physics.math.vector;
-import gse.physics.math.units;
-import gse.physics.narrow_phase_collisions;
-import gse.physics.system;
-import gse.core.object_registry;
-
 auto gse::broad_phase_collision::check_collision(const axis_aligned_bounding_box& box1, const axis_aligned_bounding_box& box2) -> bool {
-	return box1.upper_bound.as_default_units().x > box2.lower_bound.as_default_units().x && box1.lower_bound.as_default_units().x < box2.upper_bound.as_default_units().x &&
-		box1.upper_bound.as_default_units().y > box2.lower_bound.as_default_units().y && box1.lower_bound.as_default_units().y < box2.upper_bound.as_default_units().y &&
-		box1.upper_bound.as_default_units().z > box2.lower_bound.as_default_units().z && box1.lower_bound.as_default_units().z < box2.upper_bound.as_default_units().z;
+	return box1.upper_bound.x > box2.lower_bound.x && box1.lower_bound.x < box2.upper_bound.x &&
+		   box1.upper_bound.y > box2.lower_bound.y && box1.lower_bound.y < box2.upper_bound.y &&
+		   box1.upper_bound.z > box2.lower_bound.z && box1.lower_bound.z < box2.upper_bound.z;
 }
 
 auto gse::broad_phase_collision::check_future_collision(const axis_aligned_bounding_box& dynamic_box, const physics::motion_component* dynamic_motion_component, const axis_aligned_bounding_box& other_box) -> bool {

@@ -1,21 +1,14 @@
-module;
-
-#define GLM_ENABLE_EXPERIMENTAL
-#include <glm/gtx/norm.hpp>
-
 export module gse.physics.system;
 
 import std;
 import glm;
 
-import gse.physics.math.units;
-import gse.physics.math.vector;
+import gse.physics.math;
 import gse.core.object_registry;
 import gse.core.main_clock;
 import gse.graphics.render_component;
 import gse.physics.surfaces;
 import gse.physics.collision_component;
-import gse.physics.math.vector_math;
 import gse.platform.glfw.input;
 import gse.physics.motion_component;
 
@@ -122,22 +115,22 @@ auto update_velocity(gse::physics::motion_component& component) -> void {
 	const float delta_time = gse::main_clock::get_constant_update_time().as<gse::units::seconds>();
 
 	if (component.self_controlled && !component.airborne) {
-		const gse::unitless damping_factor = 5.0f;
+		constexpr gse::unitless damping_factor = 5.0f;
 		component.current_velocity *= std::max(0.f, 1.0f - damping_factor.as_default_unit() * delta_time);
 	}
 
 	// Update current_velocity using the kinematic equation: v = v0 + at
 	component.current_velocity += gse::vec3<gse::units::meters_per_second>(component.current_acceleration.as<gse::units::meters_per_second_squared>() * delta_time);
 
-	if (magnitude(component.current_velocity) > component.max_speed && !component.airborne) {
+	if (gse::magnitude(component.current_velocity) > component.max_speed && !component.airborne) {
 		component.current_velocity = gse::vec3<gse::units::meters_per_second>(
-			normalize(component.current_velocity) * component.max_speed.as<gse::units::meters_per_second>()
+			gse::normalize(component.current_velocity) * component.max_speed.as<gse::units::meters_per_second>()
 		);
 	}
 
-	if (fabs(component.current_velocity.as_default_units().x) < 0.0001f) component.current_velocity.as_default_units().x = 0.f;
-	if (fabs(component.current_velocity.as_default_units().y) < 0.0001f) component.current_velocity.as_default_units().y = 0.f;
-	if (fabs(component.current_velocity.as_default_units().z) < 0.0001f) component.current_velocity.as_default_units().z = 0.f;
+	if (fabs(component.current_velocity.x) < 0.0001f) component.current_velocity.x = 0.f;
+	if (fabs(component.current_velocity.y) < 0.0001f) component.current_velocity.y = 0.f;
+	if (fabs(component.current_velocity.z) < 0.0001f) component.current_velocity.z = 0.f;
 
 	component.current_acceleration = { 0.f, 0.f, 0.f };
 }

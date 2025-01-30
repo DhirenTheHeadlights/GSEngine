@@ -8,14 +8,12 @@ module game.player;
 import gse;
 import std;
 
-namespace {
-	const std::unordered_map<int, gse::vec3<>> g_wasd{
-		{ GLFW_KEY_W, { 0.f, 0.f, 1.f } },
-		{ GLFW_KEY_S, { 0.f, 0.f, -1.f } },
-		{ GLFW_KEY_A, { -1.f, 0.f, 0.f } },
-		{ GLFW_KEY_D, { 1.f, 0.f, 0.f } }
-	};
-}
+const std::unordered_map<int, gse::vec3<>> g_wasd{
+	{ GLFW_KEY_W, { 0.f, 0.f, 1.f } },
+	{ GLFW_KEY_S, { 0.f, 0.f, -1.f } },
+	{ GLFW_KEY_A, { -1.f, 0.f, 0.f } },
+	{ GLFW_KEY_D, { 1.f, 0.f, 0.f } }
+};
 
 struct jetpack_hook final : gse::hook<gse::entity> {
 	using hook::hook;

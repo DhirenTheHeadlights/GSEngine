@@ -5,7 +5,7 @@ import std;
 namespace gse::internal {
     template <typename Derived, int N, typename T>
     struct vec_base {
-        T data[];
+        T data[N];
 
         constexpr auto operator[](std::size_t index) -> T& {
 			return data[index];

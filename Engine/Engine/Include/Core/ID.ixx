@@ -42,8 +42,6 @@ export namespace gse {
     };
 }
 
-import gse.physics.math.vector_math;
-
 struct transparent_hash {
 	using is_transparent = void; // Indicates support for heterogeneous lookup
 

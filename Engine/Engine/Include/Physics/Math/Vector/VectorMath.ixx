@@ -3,11 +3,13 @@ export module gse.physics.math.vec_math;
 import std;
 
 import gse.physics.math.unit_vec;
-import gse.physics.math.matrix;
 
 export namespace gse {
     template <typename T, int N>
     constexpr auto dot(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> T;
+
+	template <typename T, int N>
+	constexpr auto abs(const vec_t<T, N>& v) -> vec_t<T, N>;
 
     template <typename T>
     constexpr auto cross(const vec3<T>& lhs, const vec3<T>& rhs) -> vec3<T>;
@@ -48,12 +50,6 @@ export namespace gse {
     template <typename T, int N>
     constexpr auto component_divide(const vec_t<T, N>& a, const vec_t<T, N>& b) -> vec_t<T, N>;
 
-    template <typename T>
-    constexpr auto projection_matrix(const vec3<T>& normal) -> mat_t<typename vec3<T>::value_type, 3, 3>;
-
-    template <typename T>
-    constexpr auto reflection_matrix(const vec3<T>& normal) -> mat_t<typename vec3<T>::value_type, 3, 3>;
-
     template <typename T, typename U, int N>
     constexpr auto convert(const vec_t<T, N>& v) -> vec_t<U, N>;
 
@@ -86,9 +82,6 @@ export namespace gse {
 
     template <typename T>
     constexpr auto barycentric(const vec3<T>& p, const vec3<T>& a, const vec3<T>& b, const vec3<T>& c) -> std::tuple<T, T, T>;
-
-    template <typename T, int N, int M>
-    constexpr auto multiply(const mat_t<T, M, N>& matrix, const vec_t<T, N>& vector) -> vec_t<T, M>;
 
     template <typename T, int N>
     constexpr auto exp(const vec_t<T, N>& v) -> vec_t<T, N>;
@@ -137,6 +130,15 @@ export namespace gse {
 
     template <typename T, int N>
     constexpr auto deserialize(vec_t<T, N>& v, std::istream& is) -> std::istream&;
+
+	template <typename T, int N>
+	constexpr auto value_ptr(const vec_t<T, N>& v) -> typename vec_t<T, N>::value_type*;
+
+	template <typename T, int N>
+	constexpr auto value_ptr(const vec_t<T, N>& v) -> const typename vec_t<T, N>::value_type*;
+
+	template <typename T, int N>
+	constexpr auto epsilon_equal_index(const vec_t<T, N>& a, const vec_t<T, N>& b, const int index, typename vec_t<T, N>::value_type epsilon = std::numeric_limits<typename vec_t<T, N>::value_type>::epsilon()) -> bool;
 }
 
 template <typename T, int N>
@@ -144,6 +146,15 @@ constexpr auto gse::dot(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> T {
 	T result = 0;
 	for (int i = 0; i < N; ++i) {
 		result += lhs[i] * rhs[i];
+	}
+	return result;
+}
+
+template <typename T, int N>
+constexpr auto gse::abs(const vec_t<T, N>& v) -> vec_t<T, N> {
+	vec_t<T, N> result;
+	for (int i = 0; i < N; ++i) {
+		result[i] = std::abs(v[i]);
 	}
 	return result;
 }
@@ -163,7 +174,7 @@ constexpr auto gse::magnitude(const vec_t<T, N>& v) -> T {
 	for (int i = 0; i < N; ++i) {
 		sum += v[i] * v[i];
 	}
-	return std::sqrt(sum);
+	return std::sqrt(sum.template as<T::default_unit>());
 }
 
 template <typename T, int N>
@@ -250,24 +261,6 @@ constexpr auto gse::component_divide(const vec_t<T, N>& a, const vec_t<T, N>& b)
 		result[i] = a[i] / b[i];
 	}
 	return result;
-}
-
-template <typename T>
-constexpr auto gse::projection_matrix(const vec3<T>& normal) -> mat_t<typename vec3<T>::value_type, 3, 3> {
-	return gse::mat_t<T, 3, 3>{
-		1 - normal.x * normal.x, -normal.x * normal.y, -normal.x * normal.z,
-			-normal.y * normal.x, 1 - normal.y * normal.y, -normal.y * normal.z,
-			-normal.z * normal.x, -normal.z * normal.y, 1 - normal.z * normal.z
-	};
-}
-
-template <typename T>
-constexpr auto gse::reflection_matrix(const vec3<T>& normal) -> mat_t<typename vec3<T>::value_type, 3, 3> {
-	return gse::mat_t<T, 3, 3>{
-		1 - 2 * normal.x * normal.x, -2 * normal.x * normal.y, -2 * normal.x * normal.z,
-			-2 * normal.y * normal.x, 1 - 2 * normal.y * normal.y, -2 * normal.y * normal.z,
-			-2 * normal.z * normal.x, -2 * normal.z * normal.y, 1 - 2 * normal.z * normal.z
-	};
 }
 
 template <typename T, typename U, int N>
@@ -360,18 +353,6 @@ constexpr auto gse::barycentric(const vec3<T>& p, const vec3<T>& a, const vec3<T
 	T w = (d00 * d21 - d01 * d20) / denom;
 	T u = T(1) - v - w;
 	return { u, v, w };
-}
-
-template <typename T, int N, int M>
-constexpr auto gse::multiply(const mat_t<T, M, N>& matrix, const vec_t<T, N>& vector) -> vec_t<T, M> {
-	vec_t<T, M> result;
-	for (int i = 0; i < M; ++i) {
-		result[i] = 0;
-		for (int j = 0; j < N; ++j) {
-			result[i] += matrix[i][j] * vector[j];
-		}
-	}
-	return result;
 }
 
 template <typename T, int N>
@@ -523,5 +504,20 @@ constexpr auto gse::deserialize(vec_t<T, N>& v, std::istream& is) -> std::istrea
 	}
 	is >> ch;						// Read the closing brace
 	return is;
+}
+
+template <typename T, int N>
+constexpr auto gse::value_ptr(const vec_t<T, N>& v) -> typename vec_t<T, N>::value_type* {
+	return v.data;
+}
+
+template <typename T, int N>
+constexpr auto gse::value_ptr(const vec_t<T, N>& v) -> const typename vec_t<T, N>::value_type* {
+	return v.data;
+}
+
+template <typename T, int N>
+constexpr auto gse::epsilon_equal_index(const vec_t<T, N>& a, const vec_t<T, N>& b, const int index, typename vec_t<T, N>::value_type epsilon) -> bool {
+	return std::abs(a[index] - b[index]) < epsilon;
 }
 

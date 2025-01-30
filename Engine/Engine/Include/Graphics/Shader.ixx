@@ -4,13 +4,13 @@ module;
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <glad/glad.h>
-#include "glm/gtc/type_ptr.hpp"
 #include "tests/caveview/glext.h"
 
 export module gse.graphics.shader;
 
-import glm;
+import gse.physics.math;
 
 export namespace gse {
     class shader {
@@ -26,10 +26,10 @@ export namespace gse {
         auto set_int(const std::string& name, int value) const -> void;
 		auto set_int_array(const std::string& name, const int* values, unsigned int count) const -> void;
         auto set_float(const std::string& name, float value) const -> void;
-        auto set_mat4(const std::string& name, const glm::mat4& value) const -> void;
-		auto set_mat4_array(const std::string& name, const glm::mat4* values, unsigned int count) const -> void;
-		auto set_vec3(const std::string& name, const glm::vec3& value) const -> void;
-		auto set_vec4(const std::string& name, const glm::vec4& value) const -> void;
+        auto set_mat4(const std::string& name, const mat4& value) const -> void;
+		auto set_mat4_array(const std::string& name, const mat4* values, unsigned int count) const -> void;
+		auto set_vec3(const std::string& name, const vec3<>& value) const -> void;
+		auto set_vec4(const std::string& name, const vec4<>& value) const -> void;
 
     	auto get_id() const -> unsigned int { return m_id; }
     private:
@@ -164,7 +164,6 @@ auto gse::shader::check_compile_errors(const unsigned int shader, const std::str
     }
 }
 
-// Utility functions for setting shader uniforms
 auto gse::shader::set_bool(const std::string& name, const bool value) const -> void {
     glUniform1i(glGetUniformLocation(m_id, name.c_str()), static_cast<int>(value));
 }
@@ -181,18 +180,18 @@ auto gse::shader::set_float(const std::string& name, const float value) const ->
     glUniform1f(glGetUniformLocation(m_id, name.c_str()), value);
 }
 
-auto gse::shader::set_mat4(const ::std::string& name, const glm::mat4& value) const -> void {
+auto gse::shader::set_mat4(const std::string& name, const mat4& value) const -> void {
     glUniformMatrix4fv(glGetUniformLocation(m_id, name.c_str()), 1, GL_FALSE, value_ptr(value));
 }
 
-auto gse::shader::set_mat4_array(const ::std::string& name, const glm::mat4* values, const unsigned int count) const -> void {
+auto gse::shader::set_mat4_array(const std::string& name, const mat4* values, const unsigned int count) const -> void {
     glUniformMatrix4fv(glGetUniformLocation(m_id, name.c_str()), count, GL_FALSE, value_ptr(*values));
 }
 
-auto gse::shader::set_vec3(const ::std::string& name, const glm::vec3& value) const -> void {
+auto gse::shader::set_vec3(const std::string& name, const vec3<>& value) const -> void {
     glUniform3fv(glGetUniformLocation(m_id, name.c_str()), 1, value_ptr(value));
 }
 
-auto gse::shader::set_vec4(const ::std::string& name, const glm::vec4& value) const -> void {
+auto gse::shader::set_vec4(const std::string& name, const vec4<>& value) const -> void {
     glUniform4fv(glGetUniformLocation(m_id, name.c_str()), 1, value_ptr(value));
 }

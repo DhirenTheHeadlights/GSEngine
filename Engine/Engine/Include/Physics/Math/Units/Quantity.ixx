@@ -46,7 +46,7 @@ namespace gse::internal {
         template <is_unit UnitType>
         constexpr auto as() const -> float;
 
-        constexpr auto as_default_unit() const->ArithmeticType;
+        constexpr auto as_default_unit() const -> ArithmeticType;
 
         constexpr auto operator=(const quantity& other) -> quantity&;
         constexpr auto operator+(const quantity& other) const->quantity;
@@ -70,12 +70,22 @@ namespace gse::internal {
 
         template <is_unit UnitType>
         constexpr static auto from(ArithmeticType value) -> quantity;
-    private:
+    protected:
         template <is_unit UnitType>
         constexpr auto get_converted_value(float value) const -> float;
 
         ArithmeticType m_val = static_cast<ArithmeticType>(0);
     };
+
+    export template <typename Q>
+    concept is_quantity = std::derived_from<
+        std::remove_cvref_t<Q>, quantity<
+        typename std::remove_cvref_t<Q>::value_type,
+        typename std::remove_cvref_t<Q>::quantity_tag,
+        typename std::remove_cvref_t<Q>::default_unit,
+        typename std::remove_cvref_t<Q>::units
+        >
+    >;
 }
 
 template <typename UnitType, typename ValidUnits>

@@ -10,11 +10,8 @@ module;
 export module gse.graphics.debug;
 
 import std;
-import glm;
 
-import gse.physics.math.units;
-import gse.physics.math.units.quantity;
-import gse.physics.math.vector;
+import gse.physics.math;
 
 export namespace gse::debug {
 	auto set_up_imgui() -> void;
@@ -24,7 +21,7 @@ export namespace gse::debug {
 
 	auto set_imgui_save_file_path(const std::string& path) -> void;
 
-	auto print_vector(const std::string& name, const glm::vec3& vec, const char* unit = nullptr) -> void;
+	auto print_vector(const std::string& name, const vec3<>& vec, const char* unit = nullptr) -> void;
 	auto print_value(const std::string& name, const float& value, const char* unit = nullptr) -> void;
 
 	template <is_unit UnitType = internal::unitless_unit, is_quantity QuantityType>
@@ -128,7 +125,7 @@ auto gse::debug::render_imgui() -> void {
 
 	ImGui::Render();
 
-	const glm::ivec2 window_size = window::get_window_size();
+	const vec2i window_size = window::get_window_size();
 	glViewport(0, 0, window_size.x, window_size.y);
 
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -146,7 +143,7 @@ auto gse::debug::save_imgui_state() -> void {
 	ImGui::SaveIniSettingsToDisk(g_imgui_save_file_path.c_str());
 }
 
-auto gse::debug::print_vector(const std::string& name, const glm::vec3& vec, const char* unit) -> void {
+auto gse::debug::print_vector(const std::string& name, const vec3<>& vec, const char* unit) -> void {
 	if (unit) {
 		ImGui::InputFloat3((name + " - " + unit).c_str(), const_cast<float*>(&vec.x));
 	}

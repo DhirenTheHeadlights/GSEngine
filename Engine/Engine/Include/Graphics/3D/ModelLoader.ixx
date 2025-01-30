@@ -1,7 +1,6 @@
 export module gse.graphics.model_loader;
 
 import std;
-import glm;
 
 import gse.core.id;
 import gse.graphics.model;
@@ -47,9 +46,9 @@ auto gse::model_loader::load_obj_file(const std::string& model_path, const std::
 	std::string file_line;
 	bool push_back_mesh = false;
 
-	std::vector<glm::vec3> pre_load_vertices;
-	std::vector<glm::vec2> pre_load_texcoords;
-	std::vector<glm::vec3> pre_load_normals;
+	std::vector<vec3<>> pre_load_vertices;
+	std::vector<vec2<>> pre_load_texcoords;
+	std::vector<vec3<>> pre_load_normals;
 	std::vector<vertex> final_vertices;
 
 	while (std::getline(model_file, file_line)) {
@@ -86,11 +85,11 @@ auto gse::model_loader::load_obj_file(const std::string& model_path, const std::
 					if (!pre_load_normals.empty()) {
 						final_vertices.emplace_back(pre_load_vertices[std::stoi(vertex_map[0]) - 1],
 							pre_load_normals[static_cast<size_t>(std::stoi(vertex_map[1]) - 1)],
-							glm::vec2(0.f));
+							vec2(0.f));
 					}
 					else if (!pre_load_texcoords.empty()) {
 						final_vertices.emplace_back(pre_load_vertices[std::stoi(vertex_map[0]) - 1],
-							glm::vec3(0.0f),
+							vec3(0.0f),
 							pre_load_texcoords[static_cast<size_t>(std::stoi(vertex_map[1])) - 1]);
 					}
 				}

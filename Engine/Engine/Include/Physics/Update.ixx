@@ -13,7 +13,7 @@ export namespace gse::physics {
 	auto update() -> void;
 }
 
-const gse::time g_max_time_step = gse::seconds(0.25);
+constexpr gse::time g_max_time_step = gse::seconds(0.25);
 gse::time g_accumulator;
 
 auto gse::physics::update() -> void {
