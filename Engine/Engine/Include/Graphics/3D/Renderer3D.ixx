@@ -34,6 +34,7 @@ import gse.physics.motion_component;
 import gse.platform.glfw.window;
 import gse.platform.glfw.input;
 import gse.platform.glfw.error_reporting;
+import gse.graphics.texture_loader;
 
 gse::camera g_camera;
 
@@ -41,6 +42,7 @@ std::unordered_map<std::string, gse::material> g_materials;
 std::unordered_map<std::string, gse::shader> g_deferred_rendering_shaders;
 std::unordered_map<std::string, gse::shader> g_forward_rendering_shaders;
 std::unordered_map<std::string, gse::shader> g_lighting_shaders;
+std::unordered_map<std::string, gse::shader> g_texture_shaders;
 
 GLuint g_g_buffer = 0;
 GLuint g_g_position = 0;
@@ -98,6 +100,7 @@ auto gse::renderer3d::initialize() -> void {
 	load_shaders(shader_path + "DeferredRendering/", "deferred_rendering.json", g_deferred_rendering_shaders);
 	load_shaders(shader_path + "ForwardRendering/", "forward_rendering.json", g_forward_rendering_shaders);
 	load_shaders(shader_path + "Lighting/", "light_shaders.json", g_lighting_shaders);
+	load_shaders(shader_path + "TextureShaders/", "texture_shaders.json", g_texture_shaders);
 
 	const GLsizei screen_width = window::get_frame_buffer_size().x;
 	const GLsizei screen_height = window::get_frame_buffer_size().y;
@@ -233,6 +236,7 @@ auto gse::renderer3d::initialize() -> void {
 	post_processing_shader.set_float("exposure", g_hdr_exposure);
 	post_processing_shader.set_int("bloomBlur", 1);
 	post_processing_shader.set_bool("bloom", g_bloom);
+
 }
 
 auto gse::renderer3d::initialize_objects() -> void {
@@ -268,39 +272,39 @@ auto gse::renderer3d::initialize_objects() -> void {
 }
 
 auto render_object(const std::uint32_t object_id, const gse::render_queue_entry& entry, const glm::mat4& view_matrix, const glm::mat4& projection_matrix) -> void {
-	//if (const auto it = g_materials.find(entry.material_key); it != g_materials.end()) {
-	//	glm::mat4 model_matrix = entry.model_matrix;
-	//	if (const auto* motion_component = gse::registry::get_component_ptr<gse::physics::motion_component>(object_id); motion_component) {
-	//		model_matrix = motion_component->get_transformation_matrix();
-	//	}
+	if (const auto it = g_materials.find(entry.material_key); it != g_materials.end()) {
+		glm::mat4 model_matrix = entry.model_matrix;
+		if (const auto* motion_component = gse::registry::get_component_ptr<gse::physics::motion_component>(object_id); motion_component) {
+			model_matrix = motion_component->get_transformation_matrix();
+		}
 
-	//	//it->second.use(view_matrix, projection_matrix, model_matrix);
-	//	it->second.shader.set_vec3("color", entry.color);
+		//it->second.use(view_matrix, projection_matrix, model_matrix);
+		//it->second.shader.set_vec3("color", entry.color);
 
-	//	const auto& texture_shader = g_deferred_rendering_shaders["DefaultTexture"];
-	//	texture_shader.use();
-	//	texture_shader.set_mat4("view", view_matrix);
-	//	texture_shader.set_mat4("projection", projection_matrix);
-	//	texture_shader.set_mat4("model", model_matrix);
-	//	texture_shader.set_vec3("color", entry.color);
-	//	texture_shader.set_int("diffuseTexture", 0);
+		const auto& texture_shader = g_texture_shaders["DefaultTexture"];
+		texture_shader.use();
+		texture_shader.set_mat4("view", view_matrix);
+		texture_shader.set_mat4("projection", projection_matrix);
+		texture_shader.set_mat4("model", model_matrix);
+		texture_shader.set_vec3("color", entry.color);
+		texture_shader.set_int("diffuseTexture", 0);
 
-	//	for (const auto& texture : entry.texture_ids) {
+		for (const auto& texture : entry.texture_ids) {
 
-	//		texture_shader.set_bool("useTexture", true);
+			texture_shader.set_bool("useTexture", true);
 
-	//		glActiveTexture(GL_TEXTURE0);
-	//		glBindTexture(GL_TEXTURE_2D, texture);
-	//	}
+			glActiveTexture(GL_TEXTURE0);
+			glBindTexture(GL_TEXTURE_2D, texture);
+		}
 
-	//	glBindVertexArray(entry.vao);
-	//	glDrawElements(entry.draw_mode, entry.vertex_count, GL_UNSIGNED_INT, nullptr);
-	//	glBindVertexArray(0);
+		glBindVertexArray(entry.vao);
+		glDrawElements(entry.draw_mode, entry.vertex_count, GL_UNSIGNED_INT, nullptr);
+		glBindVertexArray(0);
 
-	//	if (it->second.material_texture != 0) {
-	//		glBindTexture(GL_TEXTURE_2D, 0);
-	//	}
-	//}
+		if (it->second.material_texture != 0) {
+			glBindTexture(GL_TEXTURE_2D, 0);
+		}
+	}
 }
 
 auto render_object_forward(const std::uint32_t object_id, const gse::shader& forward_rendering_shader, const gse::render_queue_entry& entry, const glm::mat4& view_matrix, const glm::mat4& projection_matrix) -> void {

@@ -23,10 +23,9 @@ std::unordered_map<gse::id*, texture> g_textures;
 
 class texture : public gse::identifiable {
 public:
-	texture(const std::string& tag) : identifiable(tag) {}
+	texture(const std::string& tag, const std::uint32_t texture_id) : identifiable(tag), texture_id(texture_id) {}
 	std::uint32_t texture_id;
 };
-
 
 
 auto gse::texture_loader::load_texture(const std::string& path, bool gamma_correction) -> std::uint32_t {
@@ -76,7 +75,7 @@ auto gse::texture_loader::load_texture(const std::string& path, bool gamma_corre
 			stbi_image_free(data);
 		}
 
-		texture new_texture(path);
+		texture new_texture(path, texture_id);
 
 		g_textures.insert({ new_texture.get_id(), std::move(new_texture) });
 

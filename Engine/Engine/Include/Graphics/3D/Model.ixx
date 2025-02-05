@@ -33,6 +33,7 @@ export namespace gse {
 		auto set_position(const vec3<length>& position) -> void;
 		auto set_rotation(const vec3<angle>& rotation) -> void;
 		auto set_material(const std::string& material_name) -> void;
+		auto set_all_mesh_textures(const std::vector<std::uint32_t>& texture_ids) -> void;
 
 		auto get_render_queue_entries() const -> const std::vector<render_queue_entry>&;
 		auto get_model_id() const->id*;
@@ -88,6 +89,11 @@ auto gse::model_handle::set_material(const std::string& material_name) -> void {
 	}
 }
 
+auto gse::model_handle::set_all_mesh_textures(const std::vector<std::uint32_t>& texture_ids) -> void {
+	for (auto& render_queue_entry : m_render_queue_entries) {
+		render_queue_entry.texture_ids = texture_ids;
+	}
+}
 
 auto gse::model_handle::get_render_queue_entries() const -> const std::vector<render_queue_entry>& {
 	return m_render_queue_entries;
