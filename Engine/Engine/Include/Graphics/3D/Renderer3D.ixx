@@ -54,10 +54,10 @@ GLuint g_hdr_color_buffer[2] = { 0, 0 };
 GLuint g_blur_fbo[2] = { 0, 0 };
 GLuint g_blur_color_buffer[2] = { 0, 0 };
 
-gse::unitless g_hdr_exposure = 0.5f;
-gse::unitless g_bloom_intensity = 1.f;
-gse::unitless g_bloom_threshold = 0.25f;
-gse::unitless g_blur_radius = 1.0f;
+float g_hdr_exposure = 0.5f;
+float g_bloom_intensity = 1.f;
+float g_bloom_threshold = 0.25f;
+float g_blur_radius = 1.0f;
 
 gse::cube_map g_reflection_cube_map;
 
@@ -568,10 +568,10 @@ auto gse::renderer3d::render() -> void {
 		ImGui::SliderInt("Blur Amount", &g_amount_of_blur_passes_in_each_direction, 0, 10);
 
 
-		debug::unit_slider("Exposure", g_hdr_exposure, unitless(0.1f), unitless(10.f));
-		debug::unit_slider("Bloom Intensity", g_bloom_intensity, unitless(0.1f), unitless(10.f));
-		debug::unit_slider("Bloom Threshold", g_bloom_threshold, unitless(0.1f), unitless(10.f));
-		debug::unit_slider("Bloom Radius", g_blur_radius, unitless(0.1f), unitless(10.f));
+		debug::unit_slider("Exposure", g_hdr_exposure,(0.1f),(10.f));
+		debug::unit_slider("Bloom Intensity", g_bloom_intensity,(0.1f),(10.f));
+		debug::unit_slider("Bloom Threshold", g_bloom_threshold,(0.1f),(10.f));
+		debug::unit_slider("Bloom Radius", g_blur_radius,(0.1f),(10.f));
 		ImGui::End();
 		});
 

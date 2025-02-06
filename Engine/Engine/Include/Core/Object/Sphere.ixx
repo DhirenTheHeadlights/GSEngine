@@ -7,9 +7,7 @@ export module gse.core.object.sphere;
 import std;
 import glm;
 
-import gse.physics.math.vector;
-import gse.physics.math.vector_math;
-import gse.physics.math.units;
+import gse.physics.math;
 import gse.core.object.hook;
 import gse.core.object_registry;
 import gse.graphics.render_component;

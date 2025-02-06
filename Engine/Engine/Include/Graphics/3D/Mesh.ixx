@@ -8,7 +8,7 @@ export module gse.graphics.mesh;
 import std;
 import glm;
 
-import gse.physics.math.vector;
+import gse.physics.math;
 
 export namespace gse {
 	struct vertex {
@@ -59,8 +59,6 @@ export namespace gse {
 		vec3<length> center_of_mass;
 	};
 }
-
-import gse.physics.math.vector_math;
 
 gse::mesh::mesh() {
 	glGenVertexArrays(1, &vao);
@@ -148,7 +146,8 @@ namespace {
 			throw std::runtime_error("Total volume is zero. Check if the mesh is closed and correctly oriented.");
 		}
 
-		return moment / total_volume;
+		auto result = moment / total_volume;
+		return gse::vec3<gse::length>(result.x, result.y, result.z);
 	}
 }
 

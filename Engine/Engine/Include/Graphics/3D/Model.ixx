@@ -8,8 +8,7 @@ export module gse.graphics.model;
 import std;
 
 import gse.graphics.mesh;
-import gse.physics.math.units;
-import gse.physics.math.vector;
+import gse.physics.math;
 import gse.core.id;
 
 export namespace gse {
@@ -67,7 +66,7 @@ gse::model_handle::model_handle(id* model_id, const model& model) : m_model_id(m
 
 auto gse::model_handle::set_position(const vec3<length>& position) -> void {
 	for (auto& render_queue_entry : m_render_queue_entries) {
-		render_queue_entry.model_matrix = translate(glm::mat4(1.0f), position.as_default_units());
+		render_queue_entry.model_matrix = translate(glm::mat4(1.0f), to_glm_vec(position));
 	}
 }
 

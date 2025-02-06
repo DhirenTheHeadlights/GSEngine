@@ -12,9 +12,7 @@ export module gse.graphics.debug;
 import std;
 import glm;
 
-import gse.physics.math.units;
-import gse.physics.math.units.quantity;
-import gse.physics.math.vector;
+import gse.physics.math;
 
 export namespace gse::debug {
 	auto set_up_imgui() -> void;
@@ -27,7 +25,7 @@ export namespace gse::debug {
 	auto print_vector(const std::string& name, const glm::vec3& vec, const char* unit = nullptr) -> void;
 	auto print_value(const std::string& name, const float& value, const char* unit = nullptr) -> void;
 
-	template <is_unit UnitType = internal::unitless_unit, is_quantity QuantityType>
+	template <internal::is_unit UnitType, internal::is_quantity QuantityType>
 	auto unit_slider(const std::string& name, QuantityType& quantity, const QuantityType& min, const QuantityType& max) -> void {
 		float value = quantity.template as<UnitType>();
 
@@ -39,6 +37,11 @@ export namespace gse::debug {
 		{
 			quantity.template set<UnitType>(value);
 		}
+	}
+
+	auto unit_slider(const std::string& name, float& val, const float& min, const float& max) -> void {
+		const std::string slider_label = name + " (unitless)";
+		ImGui::SliderFloat(slider_label.c_str(), &val, min, max);
 	}
 
 	auto print_boolean(const std::string& name, const bool& value) -> void;

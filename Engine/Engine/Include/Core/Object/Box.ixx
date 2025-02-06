@@ -7,11 +7,9 @@ export module gse.core.object.box;
 import std;
 import glm;
 
-import gse.physics.math.vector;
 import gse.physics.collision_component;
 import gse.physics.motion_component;
-import gse.physics.math.vector_math;
-import gse.physics.math.units;
+import gse.physics.math;
 import gse.core.object.hook;
 import gse.core.object_registry;
 import gse.graphics.render_component;
@@ -138,7 +136,7 @@ export struct box_mesh_hook final : gse::hook<gse::entity> {
         gse::debug::add_imgui_callback([this] {
             auto& render_component = gse::registry::get_component<gse::render_component>(owner_id);
             ImGui::Begin(gse::registry::get_entity_name(owner_id).data());
-            ImGui::SliderFloat3("Position", &gse::registry::get_component<gse::physics::motion_component>(owner_id).current_position.as_default_units().x, -1000.f, 1000.f);
+            ImGui::SliderFloat3("Position", &gse::registry::get_component<gse::physics::motion_component>(owner_id).current_position.x.as_default_unit(), -1000.f, 1000.f);
             ImGui::Text("Colliding: %s", gse::registry::get_component<gse::physics::collision_component>(owner_id).collision_information.colliding ? "true" : "false");
             ImGui::Text("Center of Mass: %f, %f, %f", render_component.center_of_mass.as_default_units().x, render_component.center_of_mass.as_default_units().y, render_component.center_of_mass.as_default_units().z);
             ImGui::End();

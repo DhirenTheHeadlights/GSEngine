@@ -8,8 +8,7 @@ import std;
 import glm;
 
 import gse.core.component;
-import gse.physics.math.units;
-import gse.physics.math.vector;
+import gse.physics.math;
 
 export namespace gse::physics {
 	struct motion_component final : component {
@@ -27,7 +26,7 @@ export namespace gse::physics {
 		glm::quat orientation = glm::quat(1.f, 0.f, 0.f, 0.f);
 		vec3<angular_velocity> angular_velocity;
 		vec3<angular_acceleration> angular_acceleration;
-		unitless moment_of_inertia = 1.f;
+		float moment_of_inertia = 1.f;
 
 		bool affected_by_gravity = true;
 		bool moving = false;
@@ -36,18 +35,16 @@ export namespace gse::physics {
 
 		auto get_speed() const -> velocity;
 
-		auto get_transformation_matrix() const -> glm::mat4 ;
+		auto get_transformation_matrix() const -> glm::mat4;
 	};
 }
 
-import gse.physics.math.vector_math;
-
 auto gse::physics::motion_component::get_speed() const -> velocity {
-	return magnitude(current_velocity);
+	return glm::length(to_glm_vec(current_velocity));
 }
 
 auto gse::physics::motion_component::get_transformation_matrix() const -> glm::mat4 {
-	const glm::mat4 translation = translate(glm::mat4(1.0f), current_position.as_default_units());
+	const glm::mat4 translation = glm::translate(glm::mat4(1.0f), to_glm_vec(current_position));
 	const auto rotation = glm::mat4(mat3_cast(orientation));
 	const glm::mat4 transformation = translation * rotation; // * scale
 	return transformation;

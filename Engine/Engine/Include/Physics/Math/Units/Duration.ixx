@@ -1,46 +1,157 @@
 export module gse.physics.math.units.duration;
 
-import gse.physics.math.units.quantity;
+import std;
 
-export namespace gse::units {
+import gse.physics.math.units.quant;
+import gse.physics.math.unit_vec;
+
+namespace gse::units {
 	struct time_tag {};
 
-	constexpr char milliseconds_units[] = "ms";
+	constexpr char hours_units[] = "hrs";
+	constexpr char minutes_units[] = "min";
 	constexpr char seconds_units[] = "s";
-	constexpr char minutes_units[] = "m";
-	constexpr char hours_units[] = "h";
+	constexpr char milliseconds_units[] = "ms";
+	constexpr char microseconds_units[] = "us";
+	constexpr char nanoseconds_units[] = "ns";
 
-	using milliseconds = unit<time_tag, 0.001f, milliseconds_units>;
-	using seconds = unit<time_tag, 1.0f, seconds_units>;
-	using minutes = unit<time_tag, 60.0f, minutes_units>;
-	using hours = unit<time_tag, 3600.0f, hours_units>;
+	export using hours = internal::unit<time_tag, 3600.0f, hours_units>;
+	export using minutes = internal::unit<time_tag, 60.0f, minutes_units>;
+	export using seconds = internal::unit<time_tag, 1.0f, seconds_units>;
+	export using milliseconds = internal::unit<time_tag, 0.001f, milliseconds_units>;
+	export using microseconds = internal::unit<time_tag, 0.000001f, microseconds_units>;
+	export using nanoseconds = internal::unit<time_tag, 0.000000001f, nanoseconds_units>;
+
+	using time_units = internal::unit_list <
+		hours,
+		minutes,
+		seconds,
+		milliseconds,
+		microseconds,
+		nanoseconds
+	>;
 }
 
 export namespace gse {
-	using time_units = unit_list<
-		units::milliseconds,
-		units::seconds,
-		units::minutes,
-		units::hours
-	>;
-
-	struct time : quantity<time, units::seconds, time_units> {
-		using quantity::quantity;
+	template <typename T = float>
+	struct time_t : internal::quantity<time_t<T>, T, units::time_tag, units::seconds, units::time_units> {
+		using internal::quantity<time_t<T>, T, units::time_tag, units::seconds, units::time_units>::quantity;
 	};
+	
+	using time = time_t<>;
+	
+	template <typename T> constexpr auto hours_t(T value) -> time_t<T>;
+	template <typename T> constexpr auto minutes_t(T value) -> time_t<T>;
+	template <typename T> constexpr auto seconds_t(T value) -> time_t<T>;
+	template <typename T> constexpr auto milliseconds_t(T value) -> time_t<T>;
+	template <typename T> constexpr auto microseconds_t(T value) -> time_t<T>;
+	template <typename T> constexpr auto nanoseconds_t(T value) -> time_t<T>;
 
-	inline auto milliseconds(const float value) -> time {
-		return time::from<units::milliseconds>(value);
-	}
-	 
-	inline auto seconds(const float value) -> time {
-		return time::from<units::seconds>(value);
-	}
+	constexpr auto hours(float value) -> time;
+	constexpr auto minutes(float value) -> time;
+	constexpr auto seconds(float value) -> time;
+	constexpr auto milliseconds(float value) -> time;
+	constexpr auto microseconds(float value) -> time;
+	constexpr auto nanoseconds(float value) -> time;
+}
 
-	inline auto minutes(const float value) -> time {
-		return time::from<units::minutes>(value);
-	}
+export namespace gse::vec {
+	template <internal::is_unit U, typename... Args>
+	constexpr auto time(Args&&... args) -> vec_t<time_t<std::common_type_t<Args...>>, sizeof...(Args)>;
 
-	inline auto hours(const float value) -> time {
-		return time::from<units::hours>(value);
-	}
+	template <typename... Args> constexpr auto hours(Args&&... args) -> vec_t<time_t<std::common_type_t<Args...>>, sizeof...(Args)>;
+	template <typename... Args> constexpr auto minutes(Args&&... args) -> vec_t<time_t<std::common_type_t<Args...>>, sizeof...(Args)>;
+	template <typename... Args> constexpr auto seconds(Args&&... args) -> vec_t<time_t<std::common_type_t<Args...>>, sizeof...(Args)>;
+	template <typename... Args> constexpr auto milliseconds(Args&&... args) -> vec_t<time_t<std::common_type_t<Args...>>, sizeof...(Args)>;
+	template <typename... Args> constexpr auto microseconds(Args&&... args) -> vec_t<time_t<std::common_type_t<Args...>>, sizeof...(Args)>;
+	template <typename... Args> constexpr auto nanoseconds(Args&&... args) -> vec_t<time_t<std::common_type_t<Args...>>, sizeof...(Args)>;
+}
+
+template <typename T>
+constexpr auto gse::hours_t(const T value) -> time_t<T> {
+	return time_t<T>::template from<units::hours>(value);
+}
+
+template <typename T>
+constexpr auto gse::minutes_t(const T value) -> time_t<T> {
+	return time_t<T>::template from<units::minutes>(value);
+}
+
+template <typename T>
+constexpr auto gse::seconds_t(const T value) -> time_t<T> {
+	return time_t<T>::template from<units::seconds>(value);
+}
+
+template <typename T>
+constexpr auto gse::milliseconds_t(const T value) -> time_t<T> {
+	return time_t<T>::template from<units::milliseconds>(value);
+}
+
+template <typename T>
+constexpr auto gse::microseconds_t(const T value) -> time_t<T> {
+	return time_t<T>::template from<units::microseconds>(value);
+}
+
+template <typename T>
+constexpr auto gse::nanoseconds_t(const T value) -> time_t<T> {
+	return time_t<T>::template from<units::nanoseconds>(value);
+}
+
+constexpr auto gse::hours(const float value) -> time {
+	return hours_t<float>(value);
+}
+
+constexpr auto gse::minutes(const float value) -> time {
+	return minutes_t<float>(value);
+}
+
+constexpr auto gse::seconds(const float value) -> time {
+	return seconds_t<float>(value);
+}
+
+constexpr auto gse::milliseconds(const float value) -> time {
+	return milliseconds_t<float>(value);
+}
+
+constexpr auto gse::microseconds(const float value) -> time {
+	return microseconds_t<float>(value);
+}
+
+constexpr auto gse::nanoseconds(const float value) -> time {
+	return nanoseconds_t<float>(value);
+}
+
+template <gse::internal::is_unit U, typename... Args>
+constexpr auto gse::vec::time(Args&&... args) -> vec_t<time_t<std::common_type_t<Args...>>, sizeof...(Args)> {
+	return { time_t<std::common_type_t<Args...>>::template from<U>(args)... };
+}
+
+template <typename... Args>
+constexpr auto gse::vec::hours(Args&&... args) -> vec_t<time_t<std::common_type_t<Args...>>, sizeof...(Args)> {
+	return { time_t<std::common_type_t<Args...>>::template from<units::hours>(args)... };
+}
+
+template <typename... Args>
+constexpr auto gse::vec::minutes(Args&&... args) -> vec_t<time_t<std::common_type_t<Args...>>, sizeof...(Args)> {
+	return { time_t<std::common_type_t<Args...>>::template from<units::minutes>(args)... };
+}
+
+template <typename... Args>
+constexpr auto gse::vec::seconds(Args&&... args) -> vec_t<time_t<std::common_type_t<Args...>>, sizeof...(Args)> {
+	return { time_t<std::common_type_t<Args...>>::template from<units::seconds>(args)... };
+}
+
+template <typename... Args>
+constexpr auto gse::vec::milliseconds(Args&&... args) -> vec_t<time_t<std::common_type_t<Args...>>, sizeof...(Args)> {
+	return { time_t<std::common_type_t<Args...>>::template from<units::milliseconds>(args)... };
+}
+
+template <typename... Args>
+constexpr auto gse::vec::microseconds(Args&&... args) -> vec_t<time_t<std::common_type_t<Args...>>, sizeof...(Args)> {
+	return { time_t<std::common_type_t<Args...>>::template from<units::microseconds>(args)... };
+}
+
+template <typename... Args>
+constexpr auto gse::vec::nanoseconds(Args&&... args) -> vec_t<time_t<std::common_type_t<Args...>>, sizeof...(Args)> {
+	return { time_t<std::common_type_t<Args...>>::template from<units::nanoseconds>(args)... };
 }
