@@ -47,11 +47,11 @@ auto sphere_light_hook::update() -> void {
 auto sphere_light_hook::render() -> void {
 	for (const auto& light : gse::registry::get_component<gse::light_source_component>(owner_id).get_lights()) {
 		light->show_debug_menu(gse::registry::get_entity_name(owner_id), owner_id);
-    }
+	}
 
 	gse::debug::add_imgui_callback([this] {
 		ImGui::Begin("Sphere Light");
-		ImGui::SliderFloat3("Position", &gse::registry::get_component<gse::physics::motion_component>(owner_id).current_position.as_default_units().x, -1000.0f, 1000.0f);
+		ImGui::SliderFloat3("Position", &gse::registry::get_component<gse::physics::motion_component>(owner_id).current_position.x.as_default_unit(), -1000.0f, 1000.0f);
 		ImGui::End();
 		});
 }

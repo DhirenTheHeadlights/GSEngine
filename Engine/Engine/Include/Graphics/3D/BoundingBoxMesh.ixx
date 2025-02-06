@@ -8,8 +8,7 @@ import std;
 import glm;
 
 import gse.graphics.mesh;
-import gse.physics.math.vector;
-import gse.physics.math.units;
+import gse.physics.math;
 import gse.physics.bounding_box;
 
 export namespace gse {

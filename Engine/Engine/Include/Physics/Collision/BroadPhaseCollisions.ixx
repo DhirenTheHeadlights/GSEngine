@@ -15,8 +15,7 @@ export namespace gse::broad_phase_collision {
 
 import std;
 
-import gse.physics.math.vector;
-import gse.physics.math.units;
+import gse.physics.math;
 import gse.physics.narrow_phase_collisions;
 import gse.physics.system;
 import gse.core.object_registry;

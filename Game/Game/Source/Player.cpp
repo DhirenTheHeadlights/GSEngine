@@ -8,14 +8,12 @@ module game.player;
 import gse;
 import std;
 
-namespace {
-	const std::unordered_map<int, gse::vec3<>> g_wasd{
-		{ GLFW_KEY_W, { 0.f, 0.f, 1.f } },
-		{ GLFW_KEY_S, { 0.f, 0.f, -1.f } },
-		{ GLFW_KEY_A, { -1.f, 0.f, 0.f } },
-		{ GLFW_KEY_D, { 1.f, 0.f, 0.f } }
-	};
-}
+const std::unordered_map<int, gse::unitless::vec3> g_wasd{
+	{ GLFW_KEY_W, { 0.f, 0.f, 1.f } },
+	{ GLFW_KEY_S, { 0.f, 0.f, -1.f } },
+	{ GLFW_KEY_A, { -1.f, 0.f, 0.f } },
+	{ GLFW_KEY_D, { 1.f, 0.f, 0.f } }
+};
 
 struct jetpack_hook final : gse::hook<gse::entity> {
 	using hook::hook;
@@ -38,11 +36,11 @@ struct jetpack_hook final : gse::hook<gse::entity> {
 
 			auto& motion_component = gse::registry::get_component<gse::physics::motion_component>(owner_id);
 
-			apply_force(motion_component, gse::vec3<gse::units::newtons>(0.f, m_jetpack_force + boost_force, 0.f));
+			apply_force(motion_component, gse::vec3<gse::force>(0.f, m_jetpack_force + boost_force, 0.f));
 
 			for (auto& [key, direction] : g_wasd) {
 				if (gse::input::get_keyboard().keys[key].held) {
-					apply_force(gse::registry::get_component<gse::physics::motion_component>(owner_id), gse::vec3<gse::units::newtons>(m_jetpack_side_force + boost_force, 0.f, m_jetpack_side_force + boost_force) * gse::get_camera().get_camera_direction_relative_to_origin(direction));
+					apply_force(gse::registry::get_component<gse::physics::motion_component>(owner_id), gse::vec3<gse::force>(m_jetpack_side_force + boost_force, 0.f, m_jetpack_side_force + boost_force) * gse::get_camera().get_camera_direction_relative_to_origin(direction));
 				}
 			}
 		}
@@ -74,7 +72,7 @@ struct player_hook final : gse::hook<gse::entity> {
 
 		gse::length height = gse::feet(6.0f);
 		gse::length width = gse::feet(3.0f);
-		collision_component.bounding_box = { gse::vec3<gse::units::meters>(-10.f, -10.f, -10.f), height, width, width };
+		collision_component.bounding_box = { gse::vec::meters(-10.f, -10.f, -10.f), height, width, width };
 		collision_component.oriented_bounding_box = { collision_component.bounding_box };
 
 		motion_component.mass = gse::pounds(180.f);
@@ -93,24 +91,19 @@ struct player_hook final : gse::hook<gse::entity> {
 
 		for (auto& [key, direction] : g_wasd) {
 			if (gse::input::get_keyboard().keys[key].held && !motion_component.airborne) {
-				apply_force(motion_component, m_move_force * gse::get_camera().get_camera_direction_relative_to_origin(direction) * gse::vec3(1.f, 0.f, 1.f));
+				apply_force(motion_component, m_move_force * gse::get_camera().get_camera_direction_relative_to_origin(direction) * gse::unitless::vec3(1.f, 0.f, 1.f));
 			}
 		}
 
-		if (gse::input::get_keyboard().keys[GLFW_KEY_LEFT_SHIFT].held) {
-			motion_component.max_speed = m_shift_max_speed;
-		}
-		else {
-			motion_component.max_speed = m_max_speed;
-		}
+		motion_component.max_speed = gse::input::get_keyboard().keys[GLFW_KEY_LEFT_SHIFT].held ? m_shift_max_speed : m_max_speed;
 
 		if (gse::input::get_keyboard().keys[GLFW_KEY_SPACE].pressed && !motion_component.airborne) {
-			apply_impulse(motion_component, gse::vec3<gse::units::newtons>(0.f, m_jump_force, 0.f), gse::seconds(0.5f));
+			apply_impulse(motion_component, gse::vec3<gse::force>(0.f, m_jump_force, 0.f), gse::seconds(0.5f));
 		}
 
 		gse::registry::get_component<gse::physics::collision_component>(owner_id).bounding_box.set_position(motion_component.current_position);
 
-		gse::get_camera().set_position(motion_component.current_position + gse::vec3<gse::units::feet>(0.f, 6.f, 0.f));
+		gse::get_camera().set_position(motion_component.current_position + gse::vec::feet(0.f, 6.f, 0.f));
 
 		gse::registry::get_component<gse::render_component>(owner_id).update_bounding_box_meshes();
 	}
@@ -133,7 +126,7 @@ struct player_hook final : gse::hook<gse::entity> {
 
 			const auto [colliding, collision_normal, penetration, collision_point] = collision_component.collision_information;
 			gse::debug::print_boolean("Player Colliding", colliding);
-			gse::debug::print_vector("Collision Normal", collision_normal.as_default_units(), "");
+			gse::debug::print_vector("Collision Normal", gse::to_glm_vec(collision_normal), "");
 			gse::debug::print_value("Penetration", penetration.as<gse::units::meters>(), gse::units::meters::unit_name);
 			gse::debug::print_vector("Collision Point", collision_point.as<gse::units::meters>(), gse::units::meters::unit_name);
 			gse::debug::print_boolean("Player Airborne", motion_component.airborne);
@@ -159,4 +152,3 @@ auto game::create_player() -> std::uint32_t {
 	create_player(player_uuid);
 	return player_uuid;
 }
-
