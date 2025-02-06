@@ -16,20 +16,20 @@ export namespace gse {
 
 template <gse::internal::is_quantity T, int N>
 constexpr auto gse::magnitude(const vec_t<T, N>& v) -> T {
-	return T(magnitude(v.template as_test<T::default_unit>()));
+	return T(magnitude(v.template as<T::default_unit>()));
 }
 
 template <gse::internal::is_quantity T, int N>
 constexpr auto gse::is_zero(const vec_t<T, N>& v) -> bool {
-	return is_zero(v.template as_test<T::default_unit>());
+	return is_zero(v.template as<T::default_unit>());
 }
 
 template <gse::internal::is_quantity T, int N>
 constexpr auto gse::normalize(const vec_t<T, N>& v) -> unitless::vec_t<typename T::value_type, N> {
-	return normalize(v.template as_test<T::default_unit>());
+	return normalize(v.template as<T::default_unit>());
 }
 
 template <gse::internal::is_quantity T, int N>
 constexpr auto gse::dot(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> T {
-	return T(dot(lhs.template as_test<T::default_unit>(), rhs.template as_test<T::default_unit>()));
+	return T(dot(lhs.template as<T::default_unit>(), rhs.template as<T::default_unit>()));
 }

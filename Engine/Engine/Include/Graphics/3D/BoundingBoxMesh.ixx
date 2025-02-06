@@ -5,7 +5,6 @@ module;
 export module gse.graphics.bounding_box_mesh;
 
 import std;
-import glm;
 
 import gse.graphics.mesh;
 import gse.physics.math;
@@ -22,7 +21,7 @@ export namespace gse {
 		auto set_cell_size(const length& cell_size) -> void { m_cell_size = cell_size; }
 	private:
 		auto update_grid() -> void;
-		static auto create_vertex(const glm::vec3& position) -> vertex;
+		static auto create_vertex(const vec3<length>& position) -> vertex;
 
 		vec3<length> m_lower;
 		vec3<length> m_upper;
@@ -40,11 +39,9 @@ gse::bounding_box_mesh::bounding_box_mesh(const axis_aligned_bounding_box& box)
 	: bounding_box_mesh(box.lower_bound, box.upper_bound) {
 }
 
-auto gse::bounding_box_mesh::create_vertex(const glm::vec3& position) -> vertex {
+auto gse::bounding_box_mesh::create_vertex(const vec3<length>& position) -> vertex {
 	return {
-		.position = position,
-		.normal = glm::vec3(0.0f),
-		.tex_coords = glm::vec2(0.0f)
+		.position = to_glm_vec(position)
 	};
 }
 
@@ -53,8 +50,8 @@ auto gse::bounding_box_mesh::update_grid() -> void {
 
 	vertices.clear();
 
-	const glm::vec3 min = m_lower.as<units::meters>();
-	const glm::vec3 max = m_upper.as<units::meters>();
+	const auto min = m_lower.as<units::meters>();
+	const auto max = m_upper.as<units::meters>();
 
 	// Generate grid lines for each face
 	for (float y = min.y; y <= max.y; y += cell_size) {

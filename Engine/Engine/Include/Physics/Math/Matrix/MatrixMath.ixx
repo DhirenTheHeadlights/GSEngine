@@ -28,7 +28,7 @@ constexpr auto gse::look_at(const vec3<length_t<T>>& position, const vec3<length
 	auto z_axis = normalize(target - position);
 	auto x_axis = normalize(cross(z_axis, up));
 	auto y_axis = cross(x_axis, z_axis);
-	auto position_in_default_units = position.as_test<length_t<T>::default_unit>();
+	auto position_in_default_units = position.as<length_t<T>::default_unit>();
 	return mat4_t<T>{
 		unitless::vec4_t<T>{x_axis.x, y_axis.x, -z_axis.x, 0},
 		unitless::vec4_t<T>{x_axis.y, y_axis.y, -z_axis.y, 0},
