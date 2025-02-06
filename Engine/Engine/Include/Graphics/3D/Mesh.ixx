@@ -9,6 +9,7 @@ import std;
 import glm;
 
 import gse.physics.math.vector;
+import gse.graphics.material;
 
 export namespace gse {
 	struct vertex {
@@ -25,6 +26,7 @@ export namespace gse {
 		glm::mat4 model_matrix;
 		glm::vec3 color;
 		std::span<const std::uint32_t> texture_ids;
+		gse::mtl_material* material;
 	};
 
 	struct render_component;
@@ -32,6 +34,7 @@ export namespace gse {
 	struct mesh {
 		mesh();
 		mesh(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices);
+		mesh(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices, gse::mtl_material* material);
 		mesh(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices, const std::vector<std::uint32_t>& texture_ids);
 
 		virtual ~mesh();
@@ -51,6 +54,7 @@ export namespace gse {
 		std::vector<vertex> vertices;
 		std::vector<std::uint32_t> indices;
 		std::vector<std::uint32_t> texture_ids;
+		gse::mtl_material* material = nullptr;
 
 		vec3<length> center_of_mass;
 	};
@@ -66,6 +70,10 @@ gse::mesh::mesh() {
 
 gse::mesh::mesh(const std::vector<vertex>& vertices, const std::vector<uint32_t>& indices)
 	: vertices(vertices), indices(indices) {
+}
+
+gse::mesh::mesh(const std::vector<vertex>& vertices, const std::vector<uint32_t>& indices, gse::mtl_material* material)
+	: vertices(vertices), indices(indices), material(material) {
 }
 
 gse::mesh::mesh(const std::vector<vertex>& vertices, const std::vector<uint32_t>& indices, const std::vector<uint32_t>& texture_ids)

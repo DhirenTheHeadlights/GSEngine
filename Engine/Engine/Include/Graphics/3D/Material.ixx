@@ -20,6 +20,20 @@ export namespace gse {
 		std::string material_type;
 		std::uint32_t material_texture;
 	};
+	struct mtl_material {
+		glm::vec3 ambient = glm::vec3(1.0f);
+		glm::vec3 diffuse = glm::vec3(1.0f);
+		glm::vec3 specular = glm::vec3(1.0f);
+		glm::vec3 emission = glm::vec3(0.0f);
+		float shininess = 0.0f;
+		float optical_density = 1.0f;
+		float transparency = 1.0f;
+		int illumination_model = 0;
+
+		uint32_t diffuse_texture = 0;
+		uint32_t normal_texture = 0;
+		uint32_t specular_texture = 0;
+	};
 }
 
 auto load_texture(char const* path, const bool gamma_correction) -> unsigned int {
