@@ -66,7 +66,7 @@ auto sat_collision(const gse::oriented_bounding_box& obb1, const gse::oriented_b
 
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {
-            if (gse::vec3<gse::length> cross = gse::cross(obb1.axes[i].as_test<gse::units::meters>(), obb2.axes[j].as_test<gse::units::meters>()); !is_zero(cross)) { // Avoid near-zero vectors
+            if (gse::vec3<gse::length> cross = gse::cross(obb1.axes[i].as<gse::units::meters>(), obb2.axes[j].as<gse::units::meters>()); !is_zero(cross)) { // Avoid near-zero vectors
                 axes[axis_count++] = cross;
             }
         }
@@ -88,7 +88,7 @@ auto sat_collision(const gse::oriented_bounding_box& obb1, const gse::oriented_b
     }
 
     // Ensure the collision normal points from obb1 to obb2
-    if (const gse::unitless::vec3 direction = (obb2.center - obb1.center).as_test<gse::units::meters>(); gse::dot(direction, collision_normal) < 0.0f) {
+    if (const gse::unitless::vec3 direction = (obb2.center - obb1.center).as<gse::units::meters>(); gse::dot(direction, collision_normal) < 0.0f) {
         collision_normal *= -1;
     }
 
@@ -105,8 +105,8 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
     const auto  collision_normal = object_collision_component.collision_information.collision_normal;
     const float penetration_depth = object_collision_component.collision_information.penetration.as_default_unit();
 
-    const float velocity_into_surface = dot(object_motion_component->current_velocity.as_test<units::meters_per_second>(), collision_normal);
-    const float acceleration_into_surface = dot(object_motion_component->current_acceleration.as_test<units::meters_per_second_squared>(), collision_normal);
+    const float velocity_into_surface = dot(object_motion_component->current_velocity.as<units::meters_per_second>(), collision_normal);
+    const float acceleration_into_surface = dot(object_motion_component->current_acceleration.as<units::meters_per_second_squared>(), collision_normal);
 
     velocity& vel = object_motion_component->current_velocity[object_collision_component.collision_information.get_axis()];
     acceleration& acc = object_motion_component->current_acceleration[object_collision_component.collision_information.get_axis()];

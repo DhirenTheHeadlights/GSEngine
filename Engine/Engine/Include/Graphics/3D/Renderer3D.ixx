@@ -6,6 +6,7 @@ module;
 #include "json.hpp"
 #include "imgui.h"
 #include "Core/ResourcePaths.h"
+#include "iostream"
 
 export module gse.graphics.renderer3d;
 
@@ -20,7 +21,9 @@ export namespace gse::renderer3d {
 }
 
 import gse.core.json_parser;
+import gse.core.id;
 import gse.core.object_registry;
+import gse.graphics.debug;
 import gse.graphics.render_component;
 import gse.graphics.mesh;
 import gse.graphics.shader;
@@ -28,9 +31,11 @@ import gse.graphics.cube_map;
 import gse.graphics.material;
 import gse.graphics.model;
 import gse.graphics.model_loader;
+import gse.graphics.light;
 import gse.graphics.light_source_component;
 import gse.graphics.point_light;
 import gse.physics.motion_component;
+import gse.physics.math;
 import gse.platform.glfw.window;
 import gse.platform.glfw.input;
 import gse.platform.glfw.error_reporting;
@@ -300,7 +305,7 @@ auto render_object_forward(const std::uint32_t object_id, const gse::shader& for
 	forward_rendering_shader.set_mat4("model", model_matrix);
 	forward_rendering_shader.set_mat4("view", view_matrix);
 	forward_rendering_shader.set_mat4("projection", projection_matrix);
-	forward_rendering_shader.set_vec3("viewPos", g_camera.get_position().as<gse::units::meters>());
+	forward_rendering_shader.set_vec3("viewPos", gse::to_glm_vec(g_camera.get_position().as<gse::units::meters>()));
 
 	glActiveTexture(GL_TEXTURE2);
 	glBindTexture(GL_TEXTURE_2D, g_g_albedo_spec);
@@ -579,6 +584,7 @@ auto gse::renderer3d::render() -> void {
 	const auto& light_source_components = registry::get_components<light_source_component>();
 
 	g_camera.update_camera_vectors();
+
 	if (!window::is_mouse_visible()) g_camera.process_mouse_movement(window::get_mouse_delta());
 
 	std::vector<light_shader_entry> light_data;

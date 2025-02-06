@@ -54,31 +54,13 @@ namespace gse::unit {
 
         template <typename U>
 			requires internal::is_unit<U> && has_same_tag<Q, U>
-        [[nodiscard]] constexpr auto as_test() const -> unitless::vec_t<value_type, N> {
+        [[nodiscard]] constexpr auto as() const -> unitless::vec_t<value_type, N> {
 			unitless::vec_t<value_type, N> result;
             for (int i = 0; i < N; ++i) {
                 result[i] = this->storage.data[i].as_default_unit() * U::conversion_factor;
             }
 			return result;
         }
-
-		template <typename U>
-			requires internal::is_unit<U> && has_same_tag<Q, U>
-		[[nodiscard]] constexpr auto as() const -> glm::vec<N, value_type> {
-			glm::vec<N, value_type> result;
-			for (int i = 0; i < N; ++i) {
-				result[i] = this->storage.data[i].as_default_unit() * U::conversion_factor;
-			}
-			return result;
-		}
-
-		[[nodiscard]] constexpr auto as_default_units() const -> glm::vec<N, value_type> {
-			glm::vec<N, value_type> result;
-			for (int i = 0; i < N; ++i) {
-				result[i] = this->storage.data[i].as_default_unit();
-			}
-			return result;
-		}
 
 		constexpr vec_t(const glm::vec<N, value_type>& other) : internal::vec<vec_t, Q, N>() {
 			for (size_t i = 0; i < N; ++i) { this->storage.data[i] = Q(other[i]); }

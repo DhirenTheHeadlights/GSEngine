@@ -126,7 +126,7 @@ struct player_hook final : gse::hook<gse::entity> {
 
 			const auto [colliding, collision_normal, penetration, collision_point] = collision_component.collision_information;
 			gse::debug::print_boolean("Player Colliding", colliding);
-			gse::debug::print_vector("Collision Normal", gse::to_glm_vec(collision_normal), "");
+			gse::debug::print_vector("Collision Normal", collision_normal, "");
 			gse::debug::print_value("Penetration", penetration.as<gse::units::meters>(), gse::units::meters::unit_name);
 			gse::debug::print_vector("Collision Point", collision_point.as<gse::units::meters>(), gse::units::meters::unit_name);
 			gse::debug::print_boolean("Player Airborne", motion_component.airborne);
