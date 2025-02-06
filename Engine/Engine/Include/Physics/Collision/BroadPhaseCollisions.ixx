@@ -44,9 +44,6 @@ auto gse::broad_phase_collision::check_collision(physics::collision_component& d
 			narrow_phase_collision::resolve_collision(box1_motion_component, dynamic_object_collision_component, other_collision_component);
 		}
 	}
-	else {
-		dynamic_object_collision_component.collision_information.colliding = false;
-	}
 }
 
 auto gse::broad_phase_collision::update() -> void {

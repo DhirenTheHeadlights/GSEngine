@@ -2,11 +2,15 @@ module;
 
 #include <glm/gtc/matrix_transform.hpp>
 
+#include "imgui.h"
+
 export module gse.graphics.camera;
 
 import glm;
+import std;
 
 import gse.physics.math;
+import gse.graphics.debug;
 
 export namespace gse {
 	class camera {
@@ -61,9 +65,9 @@ auto gse::camera::process_mouse_movement(const vec2<length>& offset) -> void {
 
 auto gse::camera::update_camera_vectors() -> void {
 	const vec3<length> new_front(
-		std::cos(m_yaw) * std::cos(m_pitch),
-		std::sin(m_pitch),
-		std::sin(m_yaw) * std::cos(m_pitch)
+		std::cos(glm::radians(m_yaw)) * std::cos(glm::radians(m_pitch)),
+		std::sin(glm::radians(m_pitch)),
+		std::sin(glm::radians(m_yaw)) * std::cos(glm::radians(m_pitch))
 	);
 
 	m_front = normalize(new_front);
