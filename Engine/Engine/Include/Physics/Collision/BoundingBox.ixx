@@ -122,9 +122,9 @@ gse::oriented_bounding_box::oriented_bounding_box(const axis_aligned_bounding_bo
 
 auto gse::oriented_bounding_box::update_axes() -> void {
 	const auto rotation_matrix = mat3_cast(orientation);
-	axes[0] = rotation_matrix[0];
-	axes[1] = rotation_matrix[1];
-	axes[2] = rotation_matrix[2];
+	axes[0] = to_unitless_vec(rotation_matrix[0]);
+	axes[1] = to_unitless_vec(rotation_matrix[1]);
+	axes[2] = to_unitless_vec(rotation_matrix[2]);
 }
 
 auto gse::oriented_bounding_box::get_corners() const -> std::array<vec3<length>, 8> {

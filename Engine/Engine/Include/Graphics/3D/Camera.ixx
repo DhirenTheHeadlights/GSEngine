@@ -76,13 +76,13 @@ auto gse::camera::update_camera_vectors() -> void {
 }
 
 auto gse::camera::get_view_matrix() const -> glm::mat4 {
-	return lookAt(m_position.as<units::meters>(), (m_position + m_front).as<units::meters>(), to_glm_vec(m_up));
+	return to_glm_mat(look_at(m_position, m_position + m_front, m_up));
 }
 
 auto gse::camera::get_projection_matrix() -> glm::mat4 {
-	const glm::vec2 view_port_size = window::get_frame_buffer_size();
+	const unitless::vec2 view_port_size = { static_cast<float>(window::get_frame_buffer_size().x), static_cast<float>(window::get_frame_buffer_size().y) };
 	const float aspect_ratio = view_port_size.x / view_port_size.y;
-	return glm::perspective(glm::radians(45.0f), aspect_ratio, 0.1f, 10000000.f);
+	return to_glm_mat(perspective(degrees(45.0f), aspect_ratio, meters(0.1f), meters(10000000.f)));
 }
 
 auto gse::camera::get_position() const -> vec3<length> {
