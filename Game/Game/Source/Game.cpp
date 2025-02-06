@@ -40,7 +40,7 @@ struct raw_backpack_hook final : gse::hook<gse::entity> {
 		gse::model_loader::load_obj_file(GOONSQUAD_RESOURCES_PATH "Models/Backpack/backpack.obj", "Backpack");
 		gse::registry::add_component(gse::render_component(owner_id, gse::get_id("Backpack")));
 		gse::registry::get_component<gse::render_component>(owner_id).set_model_material("NULL");
-		gse::registry::get_component<gse::render_component>(owner_id).models[0].set_position(gse::vec3<gse::units::meters>(0.f, 0.f, 0.f));
+		gse::registry::get_component<gse::render_component>(owner_id).models[0].set_position(gse::vec::meters(0.f, 0.f, 0.f));
 	}
 };
 
