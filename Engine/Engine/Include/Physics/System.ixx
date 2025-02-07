@@ -169,11 +169,19 @@ auto update_rotation(gse::physics::motion_component& component) -> void {
 
 	component.current_torque = { 0.f, 0.f, 0.f };
 
-	const glm::vec3 angular_velocity = to_glm_vec(component.angular_velocity);
-	const glm::quat omega_quaternion = { 0.f, angular_velocity.x, angular_velocity.y, angular_velocity.z };
+	const glm::vec3 angular_velocity_ = to_glm_vec(component.angular_velocity);
+	const glm::quat omega_quaternion_ = { 0.f, angular_velocity_.x, angular_velocity_.y, angular_velocity_.z };
 
 	// dQ = 0.5 * omega_quaternion * orientation
-	const glm::quat delta_quaternion = 0.5f * omega_quaternion * component.orientation;
+	const glm::quat delta_quaternion_ = 0.5f * omega_quaternion_ * to_glm_quat(component.orientation);
+	auto res = to_glm_quat(component.orientation) + delta_quaternion_ * dt;
+	res = glm::normalize(res);
+
+	const gse::unitless::vec3 angular_velocity = component.angular_velocity.as<gse::units::radians_per_second>();
+	const gse::quat omega_quaternion = { 0.f, angular_velocity.x, angular_velocity.y, angular_velocity.z };
+
+	// dQ = 0.5 * omega_quaternion * orientation
+	const gse::quat delta_quaternion = 0.5f * omega_quaternion * component.orientation;
 	component.orientation += delta_quaternion * dt;
 	component.orientation = normalize(component.orientation);
 }

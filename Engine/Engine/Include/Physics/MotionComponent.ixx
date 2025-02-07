@@ -23,7 +23,7 @@ export namespace gse::physics {
 		mass mass = kilograms(1.f);
 		length most_recent_y_collision = meters(std::numeric_limits<float>::max());
 
-		glm::quat orientation = glm::quat(1.f, 0.f, 0.f, 0.f);
+		quat orientation = quat(1.f, 0.f, 0.f, 0.f);
 		vec3<angular_velocity> angular_velocity;
 		vec3<angular_acceleration> angular_acceleration;
 		float moment_of_inertia = 1.f;
@@ -40,12 +40,12 @@ export namespace gse::physics {
 }
 
 auto gse::physics::motion_component::get_speed() const -> velocity {
-	return glm::length(to_glm_vec(current_velocity));
+	return magnitude(current_velocity);
 }
 
 auto gse::physics::motion_component::get_transformation_matrix() const -> glm::mat4 {
-	const glm::mat4 translation = glm::translate(glm::mat4(1.0f), to_glm_vec(current_position));
-	const auto rotation = glm::mat4(mat3_cast(orientation));
-	const glm::mat4 transformation = translation * rotation; // * scale
-	return transformation;
+	const mat4 translation = translate(mat4(1.0f), current_position);
+	const auto rotation = mat4(mat3_cast(orientation));
+	const mat4 transformation = translation * rotation; // * scale
+	return to_glm_mat(transformation);
 }
