@@ -153,15 +153,15 @@ constexpr auto gse::mat<T, Cols, Rows>::operator-(const mat& other) const -> mat
 
 template <typename T, int Cols, int Rows>
 constexpr auto gse::mat<T, Cols, Rows>::operator*(const mat& other) const -> mat {
-    perma_assert(Rows == other.data.size(), "Matrix dimensions must be compatible for multiplication.");
-
     mat result;
-    // Transpose other so that we can use dot products along the vectors.
-    auto other_transposed = other.transpose();
 
     for (size_t i = 0; i < Cols; ++i) {
         for (size_t j = 0; j < Rows; ++j) {
-            result[i][j] = dot(data[i], other_transposed[j]);
+            T sum = T(0);
+            for (size_t k = 0; k < Cols; ++k) {
+                sum += (*this)[k][j] * other[i][k];
+            }
+            result[i][j] = sum;
         }
     }
 

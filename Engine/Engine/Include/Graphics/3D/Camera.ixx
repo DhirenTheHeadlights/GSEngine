@@ -55,7 +55,6 @@ auto gse::camera::move_relative_to_origin(const unitless::vec3& direction, const
 }
 
 auto gse::camera::process_mouse_movement(const vec2<length>& offset) -> void {
-	std::cout << "Mouse movement: " << offset.x.as_default_unit() << offset.y.as_default_unit() << std::endl;
 	const vec2 transformed_offset = offset * m_mouse_sensitivity;
 	m_yaw += transformed_offset.x.as_default_unit();
 	m_pitch -= transformed_offset.y.as_default_unit();

@@ -3,7 +3,7 @@ export module gse.physics.math.quat_math;
 import std;
 
 import gse.physics.math.units;
-import gse.physics.math.vec_math;
+import gse.physics.math.unitless_vec;
 import gse.physics.math.quat;
 import gse.physics.math.matrix;
 
@@ -18,21 +18,21 @@ export namespace gse {
 
 template <typename T>
 constexpr auto gse::normalize(const quat_t<T>& q) -> quat_t<T> {
-	auto mag = magnitude(q.v);
+	auto mag = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.s * q.s);
 	if (mag == 0) {
 		return quat_t<T>{};
 	}
-	return { q.v / mag, q.s / mag };
+	return { q.s / mag, q.x / mag, q.y / mag, q.z / mag };
 }
 
 template <typename T>
 constexpr auto gse::conjugate(const quat_t<T>& q) -> quat_t<T> {
-	return { -q.v, q.s };
+	return { q.s, -q.x, -q.y, -q.z };
 }
 
 template <typename T>
 constexpr auto gse::norm_sqrd(const quat_t<T>& q) -> T {
-	return dot(q, q) + q.s * q.s;
+	return dot(q, q);
 }
 
 template <typename T>
@@ -42,7 +42,11 @@ constexpr auto gse::inverse(const quat_t<T>& q) -> quat_t<T> {
 
 template <typename T>
 constexpr auto gse::dot(const quat_t<T>& lhs, const quat_t<T>& rhs) -> T {
-	return dot(lhs.v, rhs.v) + lhs.s * rhs.s;
+	T result = 0;
+	for (int i = 0; i < 4; ++i) {
+		result += lhs[i] * rhs[i];
+	}
+	return result;
 }
 
 template <typename T>

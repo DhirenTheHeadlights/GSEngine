@@ -1,10 +1,5 @@
-module;
-
-#include "glm/gtc/quaternion.hpp"
-
 export module gse.physics.bounding_box;
 
-import glm;
 import std;
 
 import gse.physics.motion_component;
@@ -46,11 +41,11 @@ export namespace gse {
 
 	struct oriented_bounding_box {
 		oriented_bounding_box() = default;
-		oriented_bounding_box(const axis_aligned_bounding_box& aabb, const glm::quat& orientation = glm::quat());
+		oriented_bounding_box(const axis_aligned_bounding_box& aabb, const quat& orientation = quat());
 
 		vec3<length> center;
 		vec3<length> size;
-		glm::quat orientation;
+		quat orientation;
 		std::array<vec3<length>, 3> axes;
 
 		auto update_axes() -> void;
@@ -116,15 +111,14 @@ auto gse::axis_aligned_bounding_box::get_size() const -> vec3<length> {
 
 /// OBB
 
-gse::oriented_bounding_box::oriented_bounding_box(const axis_aligned_bounding_box& aabb, const glm::quat& orientation)
-	: center(aabb.get_center()), size(aabb.get_size()), orientation(orientation) {
-}
+gse::oriented_bounding_box::oriented_bounding_box(const axis_aligned_bounding_box& aabb, const quat& orientation)
+	: center(aabb.get_center()), size(aabb.get_size()), orientation(orientation) {}
 
 auto gse::oriented_bounding_box::update_axes() -> void {
 	const auto rotation_matrix = mat3_cast(orientation);
-	axes[0] = to_unitless_vec(rotation_matrix[0]);
-	axes[1] = to_unitless_vec(rotation_matrix[1]);
-	axes[2] = to_unitless_vec(rotation_matrix[2]);
+	axes[0] = rotation_matrix[0];
+	axes[1] = rotation_matrix[1];
+	axes[2] = rotation_matrix[2];
 }
 
 auto gse::oriented_bounding_box::get_corners() const -> std::array<vec3<length>, 8> {

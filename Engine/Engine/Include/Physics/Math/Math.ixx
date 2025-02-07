@@ -103,4 +103,9 @@ export namespace gse {
 		}
 		return result;
 	}
+
+	template <typename T>
+	constexpr auto to_glm_quat(const quat_t<T>& q) -> glm::quat {
+		return glm::quat(q.s, q.x, q.y, q.z);
+	}
 }
