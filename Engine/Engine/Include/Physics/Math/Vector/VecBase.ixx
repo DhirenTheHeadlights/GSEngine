@@ -68,7 +68,7 @@ export namespace gse::internal {
     };
 
     template <typename T, int N>
-    struct alignas(N * sizeof(T)) vec_storage {
+    struct vec_storage {
         T data[N];
     };
 
@@ -92,14 +92,14 @@ export namespace gse::internal {
         using vec_from_lesser<Derived, T, 3>::vec_from_lesser;
 
         union {
-            vec_storage<T, 4> storage;
-            struct { T x, y, z, _pad; }; // _pad ensures 16-byte alignment.
+            vec_storage<T, 3> storage;
+            struct { T x, y, z; };
         };
 
-        constexpr vec() : storage{ { static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0) } } {}
-        constexpr vec(const T& value) : storage{ { value, value, value, static_cast<T>(0) } } {}
-        constexpr vec(const T* values) : storage{ { values[0], values[1], values[2], static_cast<T>(0) } } {}
-        constexpr vec(const T& x, const T& y, const T& z) : storage{ { x, y, z, static_cast<T>(0) } } {}
+        constexpr vec() : storage{ { static_cast<T>(0), static_cast<T>(0), static_cast<T>(0) } } {}
+        constexpr vec(const T& value) : storage{ { value, value, value } } {}
+        constexpr vec(const T* values) : storage{ { values[0], values[1], values[2] } } {}
+        constexpr vec(const T& x, const T& y, const T& z) : storage{ { x, y, z } } {}
     };
 
     template <typename Derived, typename T>
