@@ -29,8 +29,8 @@ export namespace gse {
 
 		auto set_position(const vec3<length>& center) -> void;
 
-		auto get_center() const -> vec3<length> ;
-		auto get_size() const -> vec3<length> ;
+		auto get_center() const->vec3<length>;
+		auto get_size() const->vec3<length>;
 	};
 
 	auto get_left_bound(const axis_aligned_bounding_box& bounding_box) -> vec3<length>;
@@ -49,7 +49,7 @@ export namespace gse {
 		std::array<vec3<length>, 3> axes;
 
 		auto update_axes() -> void;
-		auto get_corners() const -> std::array<vec3<length>, 8>;
+		auto get_corners() const->std::array<vec3<length>, 8>;
 	};
 }
 
@@ -111,8 +111,7 @@ auto gse::axis_aligned_bounding_box::get_size() const -> vec3<length> {
 
 /// OBB
 
-gse::oriented_bounding_box::oriented_bounding_box(const axis_aligned_bounding_box& aabb, const quat& orientation)
-	: center(aabb.get_center()), size(aabb.get_size()), orientation(orientation) {}
+gse::oriented_bounding_box::oriented_bounding_box(const axis_aligned_bounding_box& aabb, const quat& orientation) : center(aabb.get_center()), size(aabb.get_size()), orientation(orientation) {}
 
 auto gse::oriented_bounding_box::update_axes() -> void {
 	const auto rotation_matrix = mat3_cast(orientation);
