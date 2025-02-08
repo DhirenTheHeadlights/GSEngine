@@ -19,22 +19,22 @@ export namespace gse {
     };
 
     struct alignas(16) light_shader_entry {
-        int light_type;             // Offset 0, Size 4 bytes
-		glm::vec3 padding1;         // Offset 4, Size 12 bytes (Padding to align to 16 bytes)
-        glm::vec3 position;         // Offset 16, Size 12 bytes
-        float padding2;             // Offset 28, Size 4 bytes (Padding to align to 16 bytes)
-        glm::vec3 direction;        // Offset 32, Size 12 bytes
-        float padding3;             // Offset 44, Size 4 bytes (Padding to align to 16 bytes)
-        glm::vec3 color;            // Offset 48, Size 12 bytes
+        int light_type;                                     // Offset 0, Size 4 bytes
+		vec::raw3f padding1 = { 0.f, 0.f, 0.f };            // Offset 4, Size 12 bytes (Padding to align to 16 bytes)
+        vec::raw3f position;                                // Offset 16, Size 12 bytes
+        float padding2 = 0;                                 // Offset 28, Size 4 bytes (Padding to align to 16 bytes)
+        vec::raw3f direction;                               // Offset 32, Size 12 bytes
+        float padding3 = 0;                                 // Offset 44, Size 4 bytes (Padding to align to 16 bytes)
+        vec::raw3f color;                                   // Offset 48, Size 12 bytes
 		// We don't need padding here, not sure why - it ends up working correctly without it
-        float intensity;            // Offset 64, Size 4 bytes
-        float constant;             // Offset 68, Size 4 bytes
-        float linear;               // Offset 72, Size 4 bytes
-        float quadratic;            // Offset 76, Size 4 bytes
-        float cut_off;              // Offset 80, Size 4 bytes
-        float outer_cut_off;        // Offset 84, Size 4 bytes
-        float ambient_strength;     // Offset 88, Size 4 bytes
-        float padding5;             // Offset 92, Size 4 bytes (Padding to align total size to multiple of 16 bytes)
+        float intensity;                                    // Offset 64, Size 4 bytes
+        float constant;                                     // Offset 68, Size 4 bytes
+        float linear;                                       // Offset 72, Size 4 bytes
+        float quadratic;                                    // Offset 76, Size 4 bytes
+        float cut_off;                                      // Offset 80, Size 4 bytes
+        float outer_cut_off;                                // Offset 84, Size 4 bytes
+        float ambient_strength;                             // Offset 88, Size 4 bytes
+        float padding5 = 0;                                 // Offset 92, Size 4 bytes (Padding to align total size to multiple of 16 bytes)
     };
 
     struct light_render_queue_entry {
@@ -54,26 +54,23 @@ export namespace gse {
             light_type type,
             const unitless::vec3& color,
             const float intensity,
-            const vec3<length>& position = vec3<length>(),           // Default: No position for non-point lights
+            const vec3<length>& position = vec3<length>(),              // Default: No position for non-point lights
             const unitless::vec3& direction = unitless::vec3(),         // Default: No direction for non-directional lights
-            const float constant = 1.0f,                     // Default: No attenuation
+            const float constant = 1.0f,                                // Default: No attenuation
             const float linear = 0.0f,
             const float quadratic = 0.0f,
-            const angle cut_off = degrees(0.0f),            // Default: No spotlight cutoff
-            const angle outer_cut_off = degrees(0.0f),	        // Default: No spotlight outer cutoff
-            const float ambient_strength = 0.0f,                     // Default: No ambient strength
-            const length near_plane = meters(0.1f),             // Default: Near plane for shadow mapping
-            const length far_plane = meters(1000.0f),          // Default: Far plane for shadow mapping
-            const id* ignore_list_id = nullptr 			        // Default: No ignore list
+            const angle cut_off = degrees(0.0f),                        // Default: No spotlight cutoff
+            const angle outer_cut_off = degrees(0.0f),	                // Default: No spotlight outer cutoff
+            const float ambient_strength = 0.0f,                        // Default: No ambient strength
+            const length near_plane = meters(0.1f),                     // Default: Near plane for shadow mapping
+            const length far_plane = meters(1000.0f),                   // Default: Far plane for shadow mapping
+            const id* ignore_list_id = nullptr 			                // Default: No ignore list
         )
             : shader_entry({
                     .light_type = static_cast<int>(type),
-                    .padding1 = { 0.f, 0.f, 0.f },
-                    .position = to_glm_vec(position),
-                    .padding2 = 0,
-                    .direction = to_glm_vec(direction),
-                    .padding3 = 0,
-                    .color = to_glm_vec(color),
+                    .position = position.as<units::meters>().data(),
+                    .direction = direction.data(),
+                    .color = color.data(),
                     .intensity = intensity,
                     .constant = constant,
                     .linear = linear,
@@ -81,7 +78,6 @@ export namespace gse {
                     .cut_off = std::cos(cut_off.as<units::radians>()),
                     .outer_cut_off = std::cos(outer_cut_off.as<units::radians>()),
                     .ambient_strength = ambient_strength,
-                    .padding5 = 0
                 }),
             ignore_list_id(ignore_list_id),
             depth_map(depth_map),

@@ -8,6 +8,7 @@ export import gse.physics.math.matrix;
 export import gse.physics.math.matrix_math;
 export import gse.physics.math.quat;
 export import gse.physics.math.quat_math;
+export import gse.physics.math.base_vec;
 export import gse.physics.math.unitless_vec;
 export import gse.physics.math.unit_vec;
 export import gse.physics.math.vec_math;
@@ -90,6 +91,19 @@ export namespace gse {
 		}
 		else if constexpr (N == 4) {
 			return { v.x, v.y, v.z, v.w };
+		}
+	}
+
+	template <typename T, int N>
+	constexpr auto to_glm_vec(const vec::storage<T, N>& storage) -> glm::vec<N, T> {
+		if constexpr (N == 2) {
+			return glm::vec<2, T>(storage.data[0], storage.data[1]);
+		}
+		else if constexpr (N == 3) {
+			return glm::vec<3, T>(storage.data[0], storage.data[1], storage.data[2]);
+		}
+		else if constexpr (N == 4) {
+			return glm::vec<4, T>(storage.data[0], storage.data[1], storage.data[2], storage.data[3]);
 		}
 	}
 

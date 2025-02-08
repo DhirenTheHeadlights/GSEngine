@@ -32,6 +32,7 @@ export namespace gse {
 		auto set_mat4_array(const std::string& name, const glm::mat4* values, unsigned int count) const -> void;
 		auto set_vec3(const std::string& name, const glm::vec3& value) const -> void;
 		auto set_vec3(const std::string& name, const unitless::vec3& value) const -> void;
+		auto set_vec3(const std::string& name, const vec::raw3f& value) const -> void;
 		auto set_vec4(const std::string& name, const glm::vec4& value) const -> void;
 		auto set_vec4(const std::string& name, const unitless::vec4& value) const -> void;
 
@@ -202,6 +203,10 @@ auto gse::shader::set_vec3(const ::std::string& name, const glm::vec3& value) co
 }
 
 auto gse::shader::set_vec3(const ::std::string& name, const unitless::vec3& value) const -> void {
+	glUniform3fv(glGetUniformLocation(m_id, name.c_str()), 1, value_ptr(value));
+}
+
+auto gse::shader::set_vec3(const ::std::string& name, const vec::raw3f& value) const -> void {
 	glUniform3fv(glGetUniformLocation(m_id, name.c_str()), 1, value_ptr(value));
 }
 

@@ -11,7 +11,7 @@ namespace gse {
 		requires std::is_arithmetic_v<T>
 	struct quaternion {
 		union {
-			internal::vec_storage<T, 4> v;
+			vec::storage<T, 4> v;
 			struct {
 				T s, x, y, z;
 			};

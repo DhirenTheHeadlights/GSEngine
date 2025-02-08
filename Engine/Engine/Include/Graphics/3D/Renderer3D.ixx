@@ -507,7 +507,7 @@ auto render_shadow_pass(const gse::shader& shadow_shader, const std::vector<gse:
 	glViewport(0, 0, gse::window::get_frame_buffer_size().x, gse::window::get_frame_buffer_size().y); // Restore viewport
 }
 
-auto ensure_non_collinear_up(const glm::vec3& direction, const glm::vec3& up) -> glm::vec3 {
+auto ensure_non_collinear_up(const glm::vec3& direction, const glm::vec3& up) -> gse::unitless::vec3 {
 	constexpr float epsilon = 0.001f;
 
 	const glm::vec3 normalized_direction = normalize(direction);
@@ -522,7 +522,7 @@ auto ensure_non_collinear_up(const glm::vec3& direction, const glm::vec3& up) ->
 		}
 	}
 
-	return normalized_up;
+	return { normalized_up.x, normalized_up.y, normalized_up.z };
 }
 
 auto calculate_light_projection(const gse::light* light) -> glm::mat4 {
@@ -544,9 +544,9 @@ auto calculate_light_projection(const gse::light* light) -> glm::mat4 {
 
 auto calculate_light_view(const gse::light* light) -> glm::mat4 {
 	const auto& entry = light->get_render_queue_entry();
-	const glm::vec3 light_direction = entry.shader_entry.direction;
+	const gse::unitless::vec3 light_direction = entry.shader_entry.direction;
 
-	glm::vec3 light_pos(0.0f);
+	gse::vec3<gse::length> light_pos(0.0f);
 
 	if (light->get_type() == gse::light_type::directional) {
 		light_pos = -light_direction * 10.0f;
@@ -555,10 +555,10 @@ auto calculate_light_view(const gse::light* light) -> glm::mat4 {
 		light_pos = entry.shader_entry.position;
 	}
 
-	return lookAt(
+	return to_glm_mat(look_at(
 		light_pos,
 		light_pos + light_direction,
-		ensure_non_collinear_up(light_direction, glm::vec3(0.0f, 1.0f, 0.0f))
+		ensure_non_collinear_up(gse::to_glm_vec(light_direction), glm::vec3(0.0f, 1.0f, 0.0f)))
 	);
 }
 
@@ -630,7 +630,7 @@ auto gse::renderer3d::render() -> void {
 			if (const auto point_light_ptr = dynamic_cast<point_light*>(light); point_light_ptr) {
 				const auto light_pos = point_light_ptr->get_render_queue_entry().shader_entry.position;
 
-				point_light_ptr->get_shadow_map().update(light_pos, glm::mat4(1.f), [&](const glm::mat4& view_matrix, const glm::mat4& projection_matrix) {
+				point_light_ptr->get_shadow_map().update(to_glm_vec(light_pos), glm::mat4(1.f), [&](const glm::mat4& view_matrix, const glm::mat4& projection_matrix) {
 					shadow_shader.use();
 					shadow_shader.set_mat4("view", view_matrix);
 					shadow_shader.set_mat4("projection", projection_matrix);

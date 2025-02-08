@@ -34,22 +34,33 @@ namespace gse::unit {
 
 namespace gse::unit {
     template <internal::is_quantity Q, int N>
-	struct vec_t : internal::vec<vec_t<Q, N>, Q, N> {
-		using internal::vec<vec_t, Q, N>::vec;
+	struct vec_t : internal::vec_t<vec_t<Q, N>, Q, N> {
+		using internal::vec_t<vec_t, Q, N>::vec_t;
         using value_type = typename Q::value_type;
 
         template <typename... Args>
             requires ((std::is_convertible_v<Args, typename Q::value_type> || internal::is_quantity<Args>) && ...)
-        constexpr vec_t(Args... args) : internal::vec<vec_t, Q, N>(unit::get_value<value_type>(args)...) {}
+        constexpr vec_t(Args... args) : internal::vec_t<vec_t, Q, N>(unit::get_value<value_type>(args)...) {}
 
         template <internal::is_quantity U>
-		constexpr vec_t(const vec_t<U, N>& other) : internal::vec<vec_t, Q, N>() {
-	        for (size_t i = 0; i < N; ++i) { this->storage.data[i] = Q(static_cast<value_type>(other[i].as_default_unit())); }
+		constexpr vec_t(const vec_t<U, N>& other) : internal::vec_t<vec_t, Q, N>() {
+	        for (size_t i = 0; i < N; ++i) {
+		        this->storage.data[i] = Q(static_cast<value_type>(other[i].as_default_unit()));
+	        }
         }
 
 		template <typename U>
-		constexpr vec_t(const unitless::vec_t<U, N>& other) : internal::vec<vec_t, Q, N>() {
-			for (size_t i = 0; i < N; ++i) { this->storage.data[i] = Q(static_cast<value_type>(other[i])); }
+		constexpr vec_t(const unitless::vec_t<U, N>& other) : internal::vec_t<vec_t, Q, N>() {
+			for (size_t i = 0; i < N; ++i) {
+				this->storage.data[i] = Q(static_cast<value_type>(other[i]));
+			}
+		}
+
+		template <typename U> requires std::is_arithmetic_v<U>
+		constexpr vec_t(const vec::storage<U, N> other) : internal::vec_t<vec_t, Q, N>() {
+			for (size_t i = 0; i < N; ++i) {
+				this->storage.data[i] = Q(static_cast<value_type>(other[i]));
+			}
 		}
 
         template <typename U>
@@ -62,7 +73,7 @@ namespace gse::unit {
 			return result;
         }
 
-		constexpr vec_t(const glm::vec<N, value_type>& other) : internal::vec<vec_t, Q, N>() {
+		constexpr vec_t(const glm::vec<N, value_type>& other) : internal::vec_t<vec_t, Q, N>() {
 			for (size_t i = 0; i < N; ++i) { this->storage.data[i] = Q(other[i]); }
 		}
     };
