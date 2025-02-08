@@ -6,8 +6,8 @@ import gse.physics.math.base_vec;
 
 export namespace gse::unitless {
 	template <typename T, int N>
-	struct vec_t : internal::vec<vec_t<T, N>, T, N> {
-		using internal::vec<vec_t, T, N>::vec;
+	struct vec_t : internal::vec_t<vec_t<T, N>, T, N> {
+		using internal::vec_t<vec_t, T, N>::vec_t;
 
 		template <typename U>
 		constexpr vec_t(const vec_t<U, N>& other) {
@@ -51,23 +51,23 @@ export namespace gse::unitless {
 	template <typename T, int N> constexpr auto operator*=(vec_t<T, N>& lhs, const T& rhs) -> vec_t<T, N>&;
 	template <typename T, int N> constexpr auto operator/=(vec_t<T, N>& lhs, const T& rhs) -> vec_t<T, N>&;
 
-	template <typename Derived1, typename Derived2, typename T1, typename T2, int N> requires (!std::is_same_v<Derived1, Derived2> || !std::is_same_v<T1, T2>) constexpr auto operator+(const internal::vec<Derived1, T1, N>& lhs, const internal::vec<Derived2, T2, N>& rhs) -> vec_t<std::common_type_t<T1, T2>, N>;
-	template <typename Derived1, typename Derived2, typename T1, typename T2, int N> requires (!std::is_same_v<Derived1, Derived2> || !std::is_same_v<T1, T2>) constexpr auto operator-(const internal::vec<Derived1, T1, N>& lhs, const internal::vec<Derived2, T2, N>& rhs) -> vec_t<std::common_type_t<T1, T2>, N>;
-	template <typename Derived1, typename Derived2, typename T1, typename T2, int N> requires (!std::is_same_v<Derived1, Derived2> || !std::is_same_v<T1, T2>) constexpr auto operator*(const internal::vec<Derived1, T1, N>& lhs, const internal::vec<Derived2, T2, N>& rhs) -> vec_t<std::common_type_t<T1, T2>, N>;
-	template <typename Derived1, typename Derived2, typename T1, typename T2, int N> requires (!std::is_same_v<Derived1, Derived2> || !std::is_same_v<T1, T2>) constexpr auto operator/(const internal::vec<Derived1, T1, N>& lhs, const internal::vec<Derived2, T2, N>& rhs) -> vec_t<std::common_type_t<T1, T2>, N>;
+	template <typename Derived1, typename Derived2, typename T1, typename T2, int N> requires (!std::is_same_v<Derived1, Derived2> || !std::is_same_v<T1, T2>) constexpr auto operator+(const internal::vec_t<Derived1, T1, N>& lhs, const internal::vec_t<Derived2, T2, N>& rhs) -> vec_t<std::common_type_t<T1, T2>, N>;
+	template <typename Derived1, typename Derived2, typename T1, typename T2, int N> requires (!std::is_same_v<Derived1, Derived2> || !std::is_same_v<T1, T2>) constexpr auto operator-(const internal::vec_t<Derived1, T1, N>& lhs, const internal::vec_t<Derived2, T2, N>& rhs) -> vec_t<std::common_type_t<T1, T2>, N>;
+	template <typename Derived1, typename Derived2, typename T1, typename T2, int N> requires (!std::is_same_v<Derived1, Derived2> || !std::is_same_v<T1, T2>) constexpr auto operator*(const internal::vec_t<Derived1, T1, N>& lhs, const internal::vec_t<Derived2, T2, N>& rhs) -> vec_t<std::common_type_t<T1, T2>, N>;
+	template <typename Derived1, typename Derived2, typename T1, typename T2, int N> requires (!std::is_same_v<Derived1, Derived2> || !std::is_same_v<T1, T2>) constexpr auto operator/(const internal::vec_t<Derived1, T1, N>& lhs, const internal::vec_t<Derived2, T2, N>& rhs) -> vec_t<std::common_type_t<T1, T2>, N>;
 
-	template <typename Derived1, typename Derived2, typename T1, typename T2, int N> requires (!std::is_same_v<Derived1, Derived2> || !std::is_same_v<T1, T2>) constexpr auto operator+=(internal::vec<Derived1, T1, N>& lhs, const internal::vec<Derived2, T2, N>& rhs) -> internal::vec<Derived1, T1, N>&;
-	template <typename Derived1, typename Derived2, typename T1, typename T2, int N> requires (!std::is_same_v<Derived1, Derived2> || !std::is_same_v<T1, T2>) constexpr auto operator-=(internal::vec<Derived1, T1, N>& lhs, const internal::vec<Derived2, T2, N>& rhs) -> internal::vec<Derived1, T1, N>&;
-	template <typename Derived1, typename Derived2, typename T1, typename T2, int N> requires (!std::is_same_v<Derived1, Derived2> || !std::is_same_v<T1, T2>) constexpr auto operator*=(internal::vec<Derived1, T1, N>& lhs, const internal::vec<Derived2, T2, N>& rhs) -> internal::vec<Derived1, T1, N>&;
-	template <typename Derived1, typename Derived2, typename T1, typename T2, int N> requires (!std::is_same_v<Derived1, Derived2> || !std::is_same_v<T1, T2>) constexpr auto operator/=(internal::vec<Derived1, T1, N>& lhs, const internal::vec<Derived2, T2, N>& rhs) -> internal::vec<Derived1, T1, N>&;
+	template <typename Derived1, typename Derived2, typename T1, typename T2, int N> requires (!std::is_same_v<Derived1, Derived2> || !std::is_same_v<T1, T2>) constexpr auto operator+=(internal::vec_t<Derived1, T1, N>& lhs, const internal::vec_t<Derived2, T2, N>& rhs) -> internal::vec_t<Derived1, T1, N>&;
+	template <typename Derived1, typename Derived2, typename T1, typename T2, int N> requires (!std::is_same_v<Derived1, Derived2> || !std::is_same_v<T1, T2>) constexpr auto operator-=(internal::vec_t<Derived1, T1, N>& lhs, const internal::vec_t<Derived2, T2, N>& rhs) -> internal::vec_t<Derived1, T1, N>&;
+	template <typename Derived1, typename Derived2, typename T1, typename T2, int N> requires (!std::is_same_v<Derived1, Derived2> || !std::is_same_v<T1, T2>) constexpr auto operator*=(internal::vec_t<Derived1, T1, N>& lhs, const internal::vec_t<Derived2, T2, N>& rhs) -> internal::vec_t<Derived1, T1, N>&;
+	template <typename Derived1, typename Derived2, typename T1, typename T2, int N> requires (!std::is_same_v<Derived1, Derived2> || !std::is_same_v<T1, T2>) constexpr auto operator/=(internal::vec_t<Derived1, T1, N>& lhs, const internal::vec_t<Derived2, T2, N>& rhs) -> internal::vec_t<Derived1, T1, N>&;
 
-	template <typename Derived, typename T, typename U, int N> requires std::is_arithmetic_v<U> && !std::is_same_v<T, U> constexpr auto operator*(const internal::vec<Derived, T, N>& lhs, const U& rhs) -> Derived;
-	template <typename Derived, typename T, typename U, int N> requires std::is_arithmetic_v<U> && !std::is_same_v<T, U> constexpr auto operator*(const U& lhs, const internal::vec<Derived, T, N>& rhs) -> Derived;
-	template <typename Derived, typename T, typename U, int N> requires std::is_arithmetic_v<U> && !std::is_same_v<T, U> constexpr auto operator/(const internal::vec<Derived, T, N>& lhs, const U& rhs) -> Derived;
-	template <typename Derived, typename T, typename U, int N> requires std::is_arithmetic_v<U> && !std::is_same_v<T, U> constexpr auto operator/(const U& lhs, const internal::vec<Derived, T, N>& rhs) -> Derived;
+	template <typename Derived, typename T, typename U, int N> requires std::is_arithmetic_v<U> && !std::is_same_v<T, U> constexpr auto operator*(const internal::vec_t<Derived, T, N>& lhs, const U& rhs) -> Derived;
+	template <typename Derived, typename T, typename U, int N> requires std::is_arithmetic_v<U> && !std::is_same_v<T, U> constexpr auto operator*(const U& lhs, const internal::vec_t<Derived, T, N>& rhs) -> Derived;
+	template <typename Derived, typename T, typename U, int N> requires std::is_arithmetic_v<U> && !std::is_same_v<T, U> constexpr auto operator/(const internal::vec_t<Derived, T, N>& lhs, const U& rhs) -> Derived;
+	template <typename Derived, typename T, typename U, int N> requires std::is_arithmetic_v<U> && !std::is_same_v<T, U> constexpr auto operator/(const U& lhs, const internal::vec_t<Derived, T, N>& rhs) -> Derived;
 
-	template <typename Derived, typename T, typename U, int N> requires std::is_arithmetic_v<U> && !std::is_same_v<T, U> constexpr auto operator*=(internal::vec<Derived, T, N>& lhs, const U& rhs) -> internal::vec<Derived, T, N>&;
-	template <typename Derived, typename T, typename U, int N> requires std::is_arithmetic_v<U> && !std::is_same_v<T, U> constexpr auto operator/=(internal::vec<Derived, T, N>& lhs, const U& rhs) -> internal::vec<Derived, T, N>&;
+	template <typename Derived, typename T, typename U, int N> requires std::is_arithmetic_v<U> && !std::is_same_v<T, U> constexpr auto operator*=(internal::vec_t<Derived, T, N>& lhs, const U& rhs) -> internal::vec_t<Derived, T, N>&;
+	template <typename Derived, typename T, typename U, int N> requires std::is_arithmetic_v<U> && !std::is_same_v<T, U> constexpr auto operator/=(internal::vec_t<Derived, T, N>& lhs, const U& rhs) -> internal::vec_t<Derived, T, N>&;
 
 	template <typename T, int N> requires std::is_integral_v<T> constexpr auto operator==(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> bool;
 	template <typename T, int N> requires std::is_integral_v<T> constexpr auto operator!=(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> bool;
@@ -198,7 +198,7 @@ constexpr auto gse::unitless::operator/=(vec_t<T, N>& lhs, const T& rhs) -> vec_
 }
 
 template <typename Derived1, typename Derived2, typename T1, typename T2, int N> requires (!std::is_same_v<Derived1, Derived2> || !std::is_same_v<T1, T2>)
-constexpr auto gse::unitless::operator+(const internal::vec<Derived1, T1, N>& lhs, const internal::vec<Derived2, T2, N>& rhs) -> vec_t<std::common_type_t<T1, T2>, N> {
+constexpr auto gse::unitless::operator+(const internal::vec_t<Derived1, T1, N>& lhs, const internal::vec_t<Derived2, T2, N>& rhs) -> vec_t<std::common_type_t<T1, T2>, N> {
 	vec_t<std::common_type_t<T1, T2>, N> result;
 	for (int i = 0; i < N; ++i) {
 		result[i] = lhs[i] + rhs[i];
@@ -207,7 +207,7 @@ constexpr auto gse::unitless::operator+(const internal::vec<Derived1, T1, N>& lh
 }
 
 template <typename Derived1, typename Derived2, typename T1, typename T2, int N> requires (!std::is_same_v<Derived1, Derived2> || !std::is_same_v<T1, T2>)
-constexpr auto gse::unitless::operator-(const internal::vec<Derived1, T1, N>& lhs, const internal::vec<Derived2, T2, N>& rhs) -> vec_t<std::common_type_t<T1, T2>, N> {
+constexpr auto gse::unitless::operator-(const internal::vec_t<Derived1, T1, N>& lhs, const internal::vec_t<Derived2, T2, N>& rhs) -> vec_t<std::common_type_t<T1, T2>, N> {
 	vec_t<std::common_type_t<T1, T2>, N> result;
 	for (int i = 0; i < N; ++i) {
 		result[i] = lhs[i] - rhs[i];
@@ -216,7 +216,7 @@ constexpr auto gse::unitless::operator-(const internal::vec<Derived1, T1, N>& lh
 }
 
 template <typename Derived1, typename Derived2, typename T1, typename T2, int N> requires (!std::is_same_v<Derived1, Derived2> || !std::is_same_v<T1, T2>)
-constexpr auto gse::unitless::operator*(const internal::vec<Derived1, T1, N>& lhs, const internal::vec<Derived2, T2, N>& rhs) -> vec_t<std::common_type_t<T1, T2>, N> {
+constexpr auto gse::unitless::operator*(const internal::vec_t<Derived1, T1, N>& lhs, const internal::vec_t<Derived2, T2, N>& rhs) -> vec_t<std::common_type_t<T1, T2>, N> {
 	vec_t<std::common_type_t<T1, T2>, N> result;
 	for (int i = 0; i < N; ++i) {
 		result[i] = lhs[i] * rhs[i];
@@ -225,7 +225,7 @@ constexpr auto gse::unitless::operator*(const internal::vec<Derived1, T1, N>& lh
 }
 
 template <typename Derived1, typename Derived2, typename T1, typename T2, int N> requires (!std::is_same_v<Derived1, Derived2> || !std::is_same_v<T1, T2>)
-constexpr auto gse::unitless::operator/(const internal::vec<Derived1, T1, N>& lhs, const internal::vec<Derived2, T2, N>& rhs) -> vec_t<std::common_type_t<T1, T2>, N> {
+constexpr auto gse::unitless::operator/(const internal::vec_t<Derived1, T1, N>& lhs, const internal::vec_t<Derived2, T2, N>& rhs) -> vec_t<std::common_type_t<T1, T2>, N> {
 	vec_t<std::common_type_t<T1, T2>, N> result;
 	for (int i = 0; i < N; ++i) {
 		result[i] = lhs[i] / rhs[i];
@@ -234,7 +234,7 @@ constexpr auto gse::unitless::operator/(const internal::vec<Derived1, T1, N>& lh
 }
 
 template <typename Derived1, typename Derived2, typename T1, typename T2, int N> requires (!std::is_same_v<Derived1, Derived2> || !std::is_same_v<T1, T2>)
-constexpr auto gse::unitless::operator+=(internal::vec<Derived1, T1, N>& lhs, const internal::vec<Derived2, T2, N>& rhs) -> internal::vec<Derived1, T1, N>& {
+constexpr auto gse::unitless::operator+=(internal::vec_t<Derived1, T1, N>& lhs, const internal::vec_t<Derived2, T2, N>& rhs) -> internal::vec_t<Derived1, T1, N>& {
 	for (int i = 0; i < N; ++i) {
 		lhs[i] += rhs[i];
 	}
@@ -242,7 +242,7 @@ constexpr auto gse::unitless::operator+=(internal::vec<Derived1, T1, N>& lhs, co
 }
 
 template <typename Derived1, typename Derived2, typename T1, typename T2, int N> requires (!std::is_same_v<Derived1, Derived2> || !std::is_same_v<T1, T2>)
-constexpr auto gse::unitless::operator-=(internal::vec<Derived1, T1, N>& lhs, const internal::vec<Derived2, T2, N>& rhs) -> internal::vec<Derived1, T1, N>& {
+constexpr auto gse::unitless::operator-=(internal::vec_t<Derived1, T1, N>& lhs, const internal::vec_t<Derived2, T2, N>& rhs) -> internal::vec_t<Derived1, T1, N>& {
 	for (int i = 0; i < N; ++i) {
 		lhs[i] -= rhs[i];
 	}
@@ -250,7 +250,7 @@ constexpr auto gse::unitless::operator-=(internal::vec<Derived1, T1, N>& lhs, co
 }
 
 template <typename Derived1, typename Derived2, typename T1, typename T2, int N> requires (!std::is_same_v<Derived1, Derived2> || !std::is_same_v<T1, T2>)
-constexpr auto gse::unitless::operator*=(internal::vec<Derived1, T1, N>& lhs, const internal::vec<Derived2, T2, N>& rhs) -> internal::vec<Derived1, T1, N>& {
+constexpr auto gse::unitless::operator*=(internal::vec_t<Derived1, T1, N>& lhs, const internal::vec_t<Derived2, T2, N>& rhs) -> internal::vec_t<Derived1, T1, N>& {
 	for (int i = 0; i < N; ++i) {
 		lhs[i] *= rhs[i];
 	}
@@ -258,7 +258,7 @@ constexpr auto gse::unitless::operator*=(internal::vec<Derived1, T1, N>& lhs, co
 }
 
 template <typename Derived1, typename Derived2, typename T1, typename T2, int N> requires (!std::is_same_v<Derived1, Derived2> || !std::is_same_v<T1, T2>)
-constexpr auto gse::unitless::operator/=(internal::vec<Derived1, T1, N>& lhs, const internal::vec<Derived2, T2, N>& rhs) -> internal::vec<Derived1, T1, N>& {
+constexpr auto gse::unitless::operator/=(internal::vec_t<Derived1, T1, N>& lhs, const internal::vec_t<Derived2, T2, N>& rhs) -> internal::vec_t<Derived1, T1, N>& {
 	for (int i = 0; i < N; ++i) {
 		lhs[i] /= rhs[i];
 	}
@@ -266,7 +266,7 @@ constexpr auto gse::unitless::operator/=(internal::vec<Derived1, T1, N>& lhs, co
 }
 
 template <typename Derived, typename T, typename U, int N> requires std::is_arithmetic_v<U> && !std::is_same_v<T, U>
-constexpr auto gse::unitless::operator*(const internal::vec<Derived, T, N>& lhs, const U& rhs) -> Derived {
+constexpr auto gse::unitless::operator*(const internal::vec_t<Derived, T, N>& lhs, const U& rhs) -> Derived {
 	Derived result;
 	for (int i = 0; i < N; ++i) {
 		result[i] = lhs[i] * rhs;
@@ -275,7 +275,7 @@ constexpr auto gse::unitless::operator*(const internal::vec<Derived, T, N>& lhs,
 }
 
 template <typename Derived, typename T, typename U, int N> requires std::is_arithmetic_v<U> && !std::is_same_v<T, U>
-constexpr auto gse::unitless::operator*(const U& lhs, const internal::vec<Derived, T, N>& rhs) -> Derived {
+constexpr auto gse::unitless::operator*(const U& lhs, const internal::vec_t<Derived, T, N>& rhs) -> Derived {
 	Derived result;
 	for (int i = 0; i < N; ++i) {
 		result[i] = lhs * rhs[i];
@@ -284,7 +284,7 @@ constexpr auto gse::unitless::operator*(const U& lhs, const internal::vec<Derive
 }
 
 template <typename Derived, typename T, typename U, int N> requires std::is_arithmetic_v<U> && !std::is_same_v<T, U>
-constexpr auto gse::unitless::operator/(const internal::vec<Derived, T, N>& lhs, const U& rhs) -> Derived {
+constexpr auto gse::unitless::operator/(const internal::vec_t<Derived, T, N>& lhs, const U& rhs) -> Derived {
 	Derived result;
 	for (int i = 0; i < N; ++i) {
 		result[i] = lhs[i] / rhs;
@@ -293,7 +293,7 @@ constexpr auto gse::unitless::operator/(const internal::vec<Derived, T, N>& lhs,
 }
 
 template <typename Derived, typename T, typename U, int N> requires std::is_arithmetic_v<U> && !std::is_same_v<T, U>
-constexpr auto gse::unitless::operator/(const U& lhs, const internal::vec<Derived, T, N>& rhs) -> Derived {
+constexpr auto gse::unitless::operator/(const U& lhs, const internal::vec_t<Derived, T, N>& rhs) -> Derived {
 	Derived result;
 	for (int i = 0; i < N; ++i) {
 		result[i] = lhs / rhs[i];
@@ -302,13 +302,13 @@ constexpr auto gse::unitless::operator/(const U& lhs, const internal::vec<Derive
 }
 
 template <typename Derived, typename T, typename U, int N> requires std::is_arithmetic_v<U> && !std::is_same_v<T, U>
-constexpr auto gse::unitless::operator*=(internal::vec<Derived, T, N>& lhs, const U& rhs) -> internal::vec<Derived, T, N>& {
+constexpr auto gse::unitless::operator*=(internal::vec_t<Derived, T, N>& lhs, const U& rhs) -> internal::vec_t<Derived, T, N>& {
 	lhs = lhs * rhs;
 	return lhs;
 }
 
 template <typename Derived, typename T, typename U, int N> requires std::is_arithmetic_v<U> && !std::is_same_v<T, U>
-constexpr auto gse::unitless::operator/=(internal::vec<Derived, T, N>& lhs, const U& rhs) -> internal::vec<Derived, T, N>& {
+constexpr auto gse::unitless::operator/=(internal::vec_t<Derived, T, N>& lhs, const U& rhs) -> internal::vec_t<Derived, T, N>& {
 	lhs = lhs / rhs;
 	return lhs;
 }
