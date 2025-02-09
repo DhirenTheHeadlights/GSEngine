@@ -72,10 +72,6 @@ namespace gse::unit {
             }
 			return result;
         }
-
-		constexpr vec_t(const glm::vec<N, value_type>& other) : internal::vec_t<vec_t, Q, N>() {
-			for (size_t i = 0; i < N; ++i) { this->storage.data[i] = Q(other[i]); }
-		}
     };
 }
 

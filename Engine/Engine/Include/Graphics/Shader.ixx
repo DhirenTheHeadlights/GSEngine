@@ -30,6 +30,7 @@ export namespace gse {
         auto set_mat4(const std::string& name, const glm::mat4& value) const -> void;
 		auto set_mat4(const std::string& name, const mat4& value) const -> void;
 		auto set_mat4_array(const std::string& name, const glm::mat4* values, unsigned int count) const -> void;
+		auto set_mat4_array(const std::string& name, const mat4* values, unsigned int count) const -> void;
 		auto set_vec3(const std::string& name, const glm::vec3& value) const -> void;
 		auto set_vec3(const std::string& name, const unitless::vec3& value) const -> void;
 		auto set_vec3(const std::string& name, const vec::raw3f& value) const -> void;
@@ -196,6 +197,10 @@ auto gse::shader::set_mat4(const ::std::string& name, const mat4& value) const -
 
 auto gse::shader::set_mat4_array(const ::std::string& name, const glm::mat4* values, const unsigned int count) const -> void {
     glUniformMatrix4fv(glGetUniformLocation(m_id, name.c_str()), count, GL_FALSE, value_ptr(*values));
+}
+
+auto gse::shader::set_mat4_array(const ::std::string& name, const mat4* values, const unsigned int count) const -> void {
+	glUniformMatrix4fv(glGetUniformLocation(m_id, name.c_str()), count, GL_FALSE, value_ptr(*values));
 }
 
 auto gse::shader::set_vec3(const ::std::string& name, const glm::vec3& value) const -> void {

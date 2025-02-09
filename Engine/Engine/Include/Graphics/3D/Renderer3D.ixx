@@ -362,7 +362,7 @@ auto render_fullscreen_quad() -> void {
 	glBindVertexArray(0);
 }
 
-auto render_lighting_pass(const gse::shader& lighting_shader, const std::vector<gse::light_shader_entry>& light_data, const std::vector<glm::mat4>& light_space_matrices, const std::vector<GLuint>& depth_maps) -> void {
+auto render_lighting_pass(const gse::shader& lighting_shader, const std::vector<gse::light_shader_entry>& light_data, const std::vector<gse::mat4>& light_space_matrices, const std::vector<GLuint>& depth_maps) -> void {
 	if (light_data.empty()) {
 		return;
 	}
@@ -472,7 +472,7 @@ auto render_additional_post_processing(const gse::shader& post_processing_shader
 	glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-auto render_shadow_pass(const gse::shader& shadow_shader, const std::vector<gse::render_component>& render_components, const glm::mat4& light_projection, const glm::mat4& light_view, const GLuint depth_map_fbo, gse::id* light_ignore_list_id) -> void {
+auto render_shadow_pass(const gse::shader& shadow_shader, const std::vector<gse::render_component>& render_components, const gse::mat4& light_projection, const gse::mat4& light_view, const GLuint depth_map_fbo, gse::id* light_ignore_list_id) -> void {
 	shadow_shader.set_mat4("light_view", light_view);
 	shadow_shader.set_mat4("light_projection", light_projection);
 
@@ -525,24 +525,29 @@ auto ensure_non_collinear_up(const glm::vec3& direction, const glm::vec3& up) ->
 	return { normalized_up.x, normalized_up.y, normalized_up.z };
 }
 
-auto calculate_light_projection(const gse::light* light) -> glm::mat4 {
+auto calculate_light_projection(const gse::light* light) -> gse::mat4 {
 	const auto& entry = light->get_render_queue_entry();
 
-	glm::mat4 light_projection(1.0f);
+	gse::mat4 light_projection(1.0f);
 
 	if (light->get_type() == gse::light_type::directional) {
-		light_projection = glm::ortho(-10000.0f, 10000.0f, -10000.0f, 1000.0f,
-			entry.near_plane.as<gse::units::meters>(), entry.far_plane.as<gse::units::meters>());
+		light_projection = orthographic(
+			gse::meters(-10000.0f),
+			gse::meters(10000.0f),
+			gse::meters(-10000.0f),
+			gse::meters(1000.0f),
+			entry.near_plane,
+			entry.far_plane);
 	}
 	else if (light->get_type() == gse::light_type::spot) {
-		const float cutoff = entry.shader_entry.cut_off;
-		light_projection = glm::perspective(cutoff, 1.0f, entry.near_plane.as<gse::units::meters>(), entry.far_plane.as<gse::units::meters>());
+		const auto cutoff = gse::radians(entry.shader_entry.cut_off);
+		light_projection = perspective(cutoff, 1.0f, entry.near_plane, entry.far_plane);
 	}
 
 	return light_projection;
 }
 
-auto calculate_light_view(const gse::light* light) -> glm::mat4 {
+auto calculate_light_view(const gse::light* light) -> gse::mat4 {
 	const auto& entry = light->get_render_queue_entry();
 	const gse::unitless::vec3 light_direction = entry.shader_entry.direction;
 
@@ -555,10 +560,10 @@ auto calculate_light_view(const gse::light* light) -> glm::mat4 {
 		light_pos = entry.shader_entry.position;
 	}
 
-	return to_glm_mat(look_at(
+	return look_at(
 		light_pos,
 		light_pos + light_direction,
-		ensure_non_collinear_up(gse::to_glm_vec(light_direction), glm::vec3(0.0f, 1.0f, 0.0f)))
+		ensure_non_collinear_up(gse::to_glm_vec(light_direction), glm::vec3(0.0f, 1.0f, 0.0f))
 	);
 }
 
@@ -620,7 +625,7 @@ auto gse::renderer3d::render() -> void {
 
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
-	std::vector<glm::mat4> light_space_matrices;
+	std::vector<mat4> light_space_matrices;
 
 	const auto& shadow_shader = g_deferred_rendering_shaders["ShadowPass"];
 	shadow_shader.use();
