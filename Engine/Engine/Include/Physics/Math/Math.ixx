@@ -68,6 +68,11 @@ export namespace gse {
 		}
 	}
 
+	template <typename T, typename U, int N> constexpr auto operator*(const vec::storage<T, N>& lhs, const U& rhs) -> vec::storage<decltype(lhs[0] * rhs), N>;
+    template <typename T, typename U, int N> constexpr auto operator*(const U& lhs, const vec::storage<T, N>& rhs) -> vec::storage<decltype(lhs * rhs[0]), N>;
+    template <typename T, typename U, int N> constexpr auto operator/(const vec::storage<T, N>& lhs, const U& rhs) -> vec::storage<decltype(lhs[0] / rhs), N>;
+    template <typename T, typename U, int N> constexpr auto operator/(const U& lhs, const vec::storage<T, N>& rhs) -> vec::storage<decltype(lhs / rhs[0]), N>;
+
 	template <typename T, int N>
 	constexpr auto to_glm_vec(const unitless::vec_t<T, N> v) -> glm::vec<N, T> {
 		if constexpr (N == 2) {

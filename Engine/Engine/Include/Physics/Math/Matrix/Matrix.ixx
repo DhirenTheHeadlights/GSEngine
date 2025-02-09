@@ -2,6 +2,7 @@ export module gse.physics.math.matrix;
 
 import std;
 
+import gse.physics.math.base_vec;
 import gse.physics.math.unitless_vec;
 import gse.physics.math.unit_vec;
 import gse.physics.math.vec_math;
@@ -12,18 +13,18 @@ namespace gse {
 	struct mat {
 		using value_type = T;
 
-		std::array<unitless::vec_t<T, Rows>, Cols> data;
+		std::array<vec::storage<T, Rows>, Cols> data;
 
 		constexpr mat() = default;
 		constexpr mat(const T& value);
-		constexpr mat(const std::array<unitless::vec_t<T, Rows>, Cols>& data) : data(data) {}
-		constexpr mat(std::initializer_list<unitless::vec_t<T, Rows>> list);
+		constexpr mat(const std::array<vec::storage<T, Rows>, Cols>& data) : data(data) {}
+        constexpr mat(std::initializer_list<unitless::vec_t<T, Rows>> list);
 
 		template <int O, int Q>
 		constexpr mat(const mat<T, O, Q>& other);
 
-		constexpr auto operator[](size_t index) -> unitless::vec_t<T, Rows>&;
-		constexpr auto operator[](size_t index) const -> const unitless::vec_t<T, Rows>&;
+		constexpr auto operator[](size_t index) -> vec::storage<T, Rows>&;
+		constexpr auto operator[](size_t index) const -> const vec::storage<T, Rows>&;
 
 		constexpr auto operator==(const mat& other) const -> bool;
 		constexpr auto operator!=(const mat& other) const -> bool;
@@ -70,7 +71,7 @@ export namespace gse {
 
 template <typename T, int Cols, int Rows>
 constexpr gse::mat<T, Cols, Rows>::mat(const T& value) : data{} {
-    const int n = (Rows < Cols ? Rows : Cols);
+    const int n = Rows < Cols ? Rows : Cols;
     for (int j = 0; j < Cols; ++j) {
         if (j < n) {
             data[j][j] = value;
@@ -83,38 +84,38 @@ constexpr gse::mat<T, Cols, Rows>::mat(const T& value) : data{} {
 
 template <typename T, int Cols, int Rows>
 constexpr gse::mat<T, Cols, Rows>::mat(std::initializer_list<unitless::vec_t<T, Rows>> list) : data{} {
-    auto it = list.begin();
-    for (int j = 0; j < Cols && it != list.end(); ++j, ++it) {
-        data[j] = *it;
-    }
+	auto it = list.begin();
+	for (int j = 0; j < Cols && it != list.end(); ++j, ++it) {
+        data[j] = it->storage;
+	}
 }
 
 template <typename T, int Cols, int Rows>
 template <int SourceCols, int SourceRows>
 constexpr gse::mat<T, Cols, Rows>::mat(const mat<T, SourceCols, SourceRows>& other) : data{} {
-    const int minRows = (Rows < SourceRows ? Rows : SourceRows);
-    const int minCols = (Cols < SourceCols ? Cols : SourceCols);
-    for (int j = 0; j < minCols; ++j) {
-        for (int i = 0; i < minRows; ++i) {
+    const int min_rows = Rows < SourceRows ? Rows : SourceRows;
+    const int min_cols = Cols < SourceCols ? Cols : SourceCols;
+    for (int j = 0; j < min_cols; ++j) {
+        for (int i = 0; i < min_rows; ++i) {
             data[j][i] = other[j][i];
         }
     }
     for (int j = 0; j < Cols; ++j) {
         for (int i = 0; i < Rows; ++i) {
-            if (i >= minRows || j >= minCols) {
-                data[j][i] = (i == j ? static_cast<T>(1) : static_cast<T>(0));
+            if (i >= min_rows || j >= min_cols) {
+                data[j][i] = i == j ? static_cast<T>(1) : static_cast<T>(0);
             }
         }
     }
 }
 
 template <typename T, int Cols, int Rows>
-constexpr auto gse::mat<T, Cols, Rows>::operator[](size_t index) -> unitless::vec_t<T, Rows>& {
+constexpr auto gse::mat<T, Cols, Rows>::operator[](size_t index) -> vec::storage<T, Rows>& {
     return data[index];
 }
 
 template <typename T, int Cols, int Rows>
-constexpr auto gse::mat<T, Cols, Rows>::operator[](size_t index) const -> const unitless::vec_t<T, Rows>& {
+constexpr auto gse::mat<T, Cols, Rows>::operator[](size_t index) const -> const vec::storage<T, Rows>& {
     return data[index];
 }
 
