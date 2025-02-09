@@ -35,7 +35,7 @@ export namespace gse::physics {
 
 		auto get_speed() const -> velocity;
 
-		auto get_transformation_matrix() const -> glm::mat4;
+		auto get_transformation_matrix() const -> mat4;
 	};
 }
 
@@ -43,9 +43,9 @@ auto gse::physics::motion_component::get_speed() const -> velocity {
 	return magnitude(current_velocity);
 }
 
-auto gse::physics::motion_component::get_transformation_matrix() const -> glm::mat4 {
+auto gse::physics::motion_component::get_transformation_matrix() const -> mat4 {
 	const mat4 translation = translate(mat4(1.0f), current_position);
 	const auto rotation = mat4(mat3_cast(orientation));
 	const mat4 transformation = translation * rotation; // * scale
-	return to_glm_mat(transformation);
+	return transformation;
 }

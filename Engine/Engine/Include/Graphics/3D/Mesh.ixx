@@ -22,7 +22,7 @@ export namespace gse {
 		GLuint vao;
 		GLenum draw_mode;
 		GLsizei vertex_count;
-		glm::mat4 model_matrix;
+		mat4 model_matrix;
 		glm::vec3 color;
 	};
 
