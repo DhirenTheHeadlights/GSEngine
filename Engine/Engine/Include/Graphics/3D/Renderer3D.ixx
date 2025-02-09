@@ -272,7 +272,7 @@ auto gse::renderer3d::initialize_objects() -> void {
 	}
 }
 
-auto render_object(const std::uint32_t object_id, const gse::render_queue_entry& entry, const glm::mat4& view_matrix, const glm::mat4& projection_matrix) -> void {
+auto render_object(const std::uint32_t object_id, const gse::render_queue_entry& entry, const gse::mat4& view_matrix, const gse::mat4& projection_matrix) -> void {
 	if (const auto it = g_materials.find(entry.material_key); it != g_materials.end()) {
 		gse::mat4 model_matrix = entry.model_matrix;
 		if (const auto* motion_component = gse::registry::get_component_ptr<gse::physics::motion_component>(object_id); motion_component) {
@@ -295,7 +295,7 @@ auto render_object(const std::uint32_t object_id, const gse::render_queue_entry&
 	}
 }
 
-auto render_object_forward(const std::uint32_t object_id, const gse::shader& forward_rendering_shader, const gse::render_queue_entry& entry, const glm::mat4& view_matrix, const glm::mat4& projection_matrix) -> void {
+auto render_object_forward(const std::uint32_t object_id, const gse::shader& forward_rendering_shader, const gse::render_queue_entry& entry, const gse::mat4& view_matrix, const gse::mat4& projection_matrix) -> void {
 	gse::mat4 model_matrix = entry.model_matrix;
 	if (const auto* motion_component = gse::registry::get_component_ptr<gse::physics::motion_component>(object_id); motion_component) {
 		model_matrix = motion_component->get_transformation_matrix();
@@ -612,8 +612,8 @@ auto gse::renderer3d::render() -> void {
 	glBufferData(GL_SHADER_STORAGE_BUFFER, static_cast<GLsizeiptr>(light_data.size()) * sizeof(light_shader_entry), light_data.data(), GL_DYNAMIC_DRAW);
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, g_ssbo_lights);
 
-	g_reflection_cube_map.update(glm::vec3(0.f), g_camera.get_projection_matrix(),
-		[&render_components, &forward_rendering_shader](const glm::mat4& view_matrix, const glm::mat4& projection_matrix) {
+	g_reflection_cube_map.update(unitless::vec3(0.f), g_camera.get_projection_matrix(),
+		[&render_components, &forward_rendering_shader](const mat4& view_matrix, const mat4& projection_matrix) {
 			for (const auto& render_component : render_components) {
 				for (const auto& model_handle : render_component.models) {
 					for (const auto& render_queue_entry : model_handle.get_render_queue_entries()) {
@@ -635,7 +635,7 @@ auto gse::renderer3d::render() -> void {
 			if (const auto point_light_ptr = dynamic_cast<point_light*>(light); point_light_ptr) {
 				const auto light_pos = point_light_ptr->get_render_queue_entry().shader_entry.position;
 
-				point_light_ptr->get_shadow_map().update(to_glm_vec(light_pos), glm::mat4(1.f), [&](const glm::mat4& view_matrix, const glm::mat4& projection_matrix) {
+				point_light_ptr->get_shadow_map().update(light_pos, mat4(1.f), [&](const mat4& view_matrix, const mat4& projection_matrix) {
 					shadow_shader.use();
 					shadow_shader.set_mat4("view", view_matrix);
 					shadow_shader.set_mat4("projection", projection_matrix);

@@ -2,6 +2,7 @@ export module gse.physics.math.vec_math;
 
 import std;
 
+import gse.physics.math.base_vec;
 import gse.physics.math.unit_vec;
 import gse.physics.math.unitless_vec;
 
@@ -420,12 +421,12 @@ constexpr auto gse::deserialize(unitless::vec_t<T, N>& v, std::istream& is) -> s
 
 template <typename T, int N> requires std::is_arithmetic_v<T>
 constexpr auto gse::value_ptr(unitless::vec_t<T, N>& v) -> T* {
-	return &v[0];
+	return value_ptr(v.storage);
 }
 
 template <typename T, int N> requires std::is_arithmetic_v<T>
 constexpr auto gse::value_ptr(const unitless::vec_t<T, N>& v) -> const T* {
-	return &v[0];
+	return value_ptr(v.storage);
 }
 
 template <typename T, int N> requires std::is_arithmetic_v<T>

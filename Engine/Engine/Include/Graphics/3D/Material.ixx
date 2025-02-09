@@ -15,7 +15,7 @@ export namespace gse {
 	struct material {
 		material(const std::string& vertex_path, const std::string& fragment_path, std::string material_type, const std::string& material_texture_path);
 
-		auto use(const glm::mat4& view, const glm::mat4& projection, const mat4& model) const -> void;
+		auto use(const mat4& view, const mat4& projection, const mat4& model) const -> void;
 		
 		shader shader;
 		std::string material_type;
@@ -73,7 +73,7 @@ gse::material::material(const std::string& vertex_path, const std::string& fragm
 	material_texture = !material_texture_path.empty() ? load_texture(material_texture_path.c_str(), true) : 0;
 }
 
-auto gse::material::use(const glm::mat4& view, const glm::mat4& projection, const mat4& model) const -> void {
+auto gse::material::use(const mat4& view, const mat4& projection, const mat4& model) const -> void {
 	shader.use();
 
 	shader.set_mat4("view", view);
