@@ -24,8 +24,8 @@ export namespace gse {
 
 		auto set_position(const vec3<length>& position) -> void { this->m_position = position; }
 
-		auto get_view_matrix() const -> glm::mat4;
-		auto get_projection_matrix() -> glm::mat4;
+		auto get_view_matrix() const -> mat4;
+		auto get_projection_matrix() -> mat4;
 		auto get_position() const -> vec3<length>;
 		auto get_camera_direction_relative_to_origin(const unitless::vec3& direction) const -> unitless::vec3;
 	private:
@@ -75,14 +75,14 @@ auto gse::camera::update_camera_vectors() -> void {
 	m_up = normalize(cross(m_right, m_front));
 }
 
-auto gse::camera::get_view_matrix() const -> glm::mat4 {
-	return to_glm_mat(look_at(m_position, m_position + m_front, m_up));
+auto gse::camera::get_view_matrix() const -> mat4 {
+	return look_at(m_position, m_position + m_front, m_up);
 }
 
-auto gse::camera::get_projection_matrix() -> glm::mat4 {
+auto gse::camera::get_projection_matrix() -> mat4 {
 	const unitless::vec2 view_port_size = { static_cast<float>(window::get_frame_buffer_size().x), static_cast<float>(window::get_frame_buffer_size().y) };
 	const float aspect_ratio = view_port_size.x / view_port_size.y;
-	return to_glm_mat(perspective(degrees(45.0f), aspect_ratio, meters(0.1f), meters(10000000.f)));
+	return perspective(degrees(45.0f), aspect_ratio, meters(0.1f), meters(10000000.f));
 }
 
 auto gse::camera::get_position() const -> vec3<length> {
