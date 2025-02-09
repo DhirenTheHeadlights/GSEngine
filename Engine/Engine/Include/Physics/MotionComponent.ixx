@@ -1,7 +1,3 @@
-module;
-
-#include "glm/gtc/quaternion.hpp"
-
 export module gse.physics.motion_component;
 
 import std;
