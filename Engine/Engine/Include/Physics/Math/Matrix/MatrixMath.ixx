@@ -85,7 +85,7 @@ template <typename T>
 constexpr auto gse::rotate(const mat4_t<T>& matrix, const axis axis, angle_t<T> angle) -> mat4_t<T> {
 	auto a = normalize(get_axis_vector<T>(axis));
 
-	T half_angle = angle.template as<units::degrees>() / 2;
+	T half_angle = angle.template as<units::radians>() / 2;
 	T s = std::sin(half_angle);
 	T c = std::cos(half_angle);
 
