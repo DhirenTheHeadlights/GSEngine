@@ -241,7 +241,7 @@ auto gse::renderer3d::initialize() -> void {
 }
 
 auto gse::renderer3d::initialize_objects() -> void {
-	for (const auto& light_source_components = registry::get_components<light_source_component>(); auto & light_source_component : light_source_components) {
+	for (const auto& light_source_components = registry::get_components<light_source_component>(); auto& light_source_component : light_source_components) {
 		for (const auto& light : light_source_component.get_lights()) {
 			if (const auto point_light_ptr = dynamic_cast<point_light*>(light); point_light_ptr) {
 				point_light_ptr->get_shadow_map().create(static_cast<int>((g_shadow_width + g_shadow_height) / 2.f), true);
@@ -507,22 +507,20 @@ auto render_shadow_pass(const gse::shader& shadow_shader, const std::vector<gse:
 	glViewport(0, 0, gse::window::get_frame_buffer_size().x, gse::window::get_frame_buffer_size().y); // Restore viewport
 }
 
-auto ensure_non_collinear_up(const glm::vec3& direction, const glm::vec3& up) -> gse::unitless::vec3 {
-	constexpr float epsilon = 0.001f;
+auto ensure_non_collinear_up(const gse::unitless::vec3& direction, const gse::unitless::vec3& up) -> gse::unitless::vec3 {
+	const gse::unitless::vec3 normalized_direction = gse::normalize(direction);
+	gse::unitless::vec3 normalized_up = gse::normalize(up);
 
-	const glm::vec3 normalized_direction = normalize(direction);
-	glm::vec3 normalized_up = normalize(up);
-
-	if (const float dot_product = dot(normalized_direction, normalized_up); glm::abs(dot_product) > 1.0f - epsilon) {
-		if (glm::abs(normalized_direction.y) > 0.9f) {
-			normalized_up = glm::vec3(0.0f, 0.0f, 1.0f); // Z-axis
+	if (const float dot_product = gse::dot(normalized_direction, normalized_up); std::abs(dot_product) > 1.0f - std::numeric_limits<float>::epsilon()) {
+		if (std::abs(normalized_direction.y) > 0.9f) {
+			normalized_up = gse::unitless::vec3(0.0f, 0.0f, 1.0f); // Z-axis
 		}
 		else {
-			normalized_up = glm::vec3(0.0f, 1.0f, 0.0f); // Y-axis
+			normalized_up = gse::unitless::vec3(0.0f, 1.0f, 0.0f); // Y-axis
 		}
 	}
 
-	return { normalized_up.x, normalized_up.y, normalized_up.z };
+	return normalized_up;
 }
 
 auto calculate_light_projection(const gse::light* light) -> gse::mat4 {
@@ -563,7 +561,7 @@ auto calculate_light_view(const gse::light* light) -> gse::mat4 {
 	return look_at(
 		light_pos,
 		light_pos + light_direction,
-		ensure_non_collinear_up(gse::to_glm_vec(light_direction), glm::vec3(0.0f, 1.0f, 0.0f))
+		ensure_non_collinear_up(light_direction, { 0.0f, 1.0f, 0.0f })
 	);
 }
 
