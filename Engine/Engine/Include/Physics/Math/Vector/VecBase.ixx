@@ -183,9 +183,14 @@ export namespace gse::vec {
     template <typename T, typename U, int N> constexpr auto operator/=(storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<T, N>&;
 
     template <typename T, int N> constexpr auto operator*(const storage<T, N>& lhs, const T& rhs) -> storage<decltype(lhs[0] * rhs), N>;
-    template <typename T, int N> constexpr auto operator*(const T& lhs, const storage<T, N>& rhs) -> storage<decltype(lhs* rhs[0]), N>;
+    template <typename T, int N> constexpr auto operator*(const T& lhs, const storage<T, N>& rhs) -> storage<decltype(lhs * rhs[0]), N>;
     template <typename T, int N> constexpr auto operator/(const storage<T, N>& lhs, const T& rhs) -> storage<decltype(lhs[0] / rhs), N>;
     template <typename T, int N> constexpr auto operator/(const T& lhs, const storage<T, N>& rhs) -> storage<decltype(lhs / rhs[0]), N>;
+
+	template <typename T, typename U, int N> constexpr auto operator*(const storage<T, N>& lhs, const U& rhs) -> storage<decltype(lhs[0] * rhs), N>;
+	template <typename T, typename U, int N> constexpr auto operator*(const U& lhs, const storage<T, N>& rhs) -> storage<decltype(lhs * rhs[0]), N>;
+	template <typename T, typename U, int N> constexpr auto operator/(const storage<T, N>& lhs, const U& rhs) -> storage<decltype(lhs[0] / rhs), N>;
+	template <typename T, typename U, int N> constexpr auto operator/(const U& lhs, const storage<T, N>& rhs) -> storage<decltype(lhs / rhs[0]), N>;
 
     template <typename T, typename U, int N> constexpr auto operator*=(storage<T, N>& lhs, const U& rhs) -> storage<T, N>&;
     template <typename T, typename U, int N> constexpr auto operator/=(storage<T, N>& lhs, const U& rhs) -> storage<T, N>&;
@@ -355,6 +360,38 @@ constexpr auto gse::vec::operator/(const T& lhs, const storage<T, N>& rhs) -> st
     for (int i = 0; i < N; ++i)
         result[i] = lhs / rhs[i];
     return result;
+}
+
+template <typename T, typename U, int N>
+constexpr auto gse::vec::operator*(const storage<T, N>& lhs, const U& rhs) -> storage<decltype(lhs[0] * rhs), N> {
+	storage<decltype(lhs[0] * rhs), N> result{};
+	for (int i = 0; i < N; ++i)
+		result[i] = lhs[i] * rhs;
+	return result;
+}
+
+template <typename T, typename U, int N>
+constexpr auto gse::vec::operator*(const U& lhs, const storage<T, N>& rhs) -> storage<decltype(lhs* rhs[0]), N> {
+	storage<decltype(lhs* rhs[0]), N> result{};
+	for (int i = 0; i < N; ++i)
+		result[i] = lhs * rhs[i];
+	return result;
+}
+
+template <typename T, typename U, int N>
+constexpr auto gse::vec::operator/(const storage<T, N>& lhs, const U& rhs) -> storage<decltype(lhs[0] / rhs), N> {
+	storage<decltype(lhs[0] / rhs), N> result{};
+	for (int i = 0; i < N; ++i)
+		result[i] = lhs[i] / rhs;
+	return result;
+}
+
+template <typename T, typename U, int N>
+constexpr auto gse::vec::operator/(const U& lhs, const storage<T, N>& rhs) -> storage<decltype(lhs / rhs[0]), N> {
+	storage<decltype(lhs / rhs[0]), N> result{};
+	for (int i = 0; i < N; ++i)
+		result[i] = lhs / rhs[i];
+	return result;
 }
 
 template <typename T, typename U, int N>

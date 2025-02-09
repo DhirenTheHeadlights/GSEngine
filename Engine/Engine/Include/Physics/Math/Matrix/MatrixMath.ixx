@@ -91,9 +91,9 @@ constexpr auto gse::rotate(const mat4_t<T>& matrix, const axis axis, angle_t<T> 
 
 	auto q = normalize(quat_t<T>(c, a.x * s, a.y * s, a.z * s));
 	mat4_t <T> rotation_matrix = mat4_t<T>{
-		{1 - 2 * q.y * q.y - 2 * q.z * q.z, 2 * q.x * q.y - 2 * q.z * q.w, 2 * q.x * q.z + 2 * q.y * q.w, 0},
-		{2 * q.x * q.y + 2 * q.z * q.w, 1 - 2 * q.x * q.x - 2 * q.z * q.z, 2 * q.y * q.z - 2 * q.x * q.w, 0},
-		{2 * q.x * q.z - 2 * q.y * q.w, 2 * q.y * q.z + 2 * q.x * q.w, 1 - 2 * q.x * q.x - 2 * q.y * q.y, 0},
+		{1 - 2 * q.y * q.y - 2 * q.z * q.z, 2 * q.x * q.y - 2 * q.z * q.s, 2 * q.x * q.z + 2 * q.y * q.s, 0},
+		{2 * q.x * q.y + 2 * q.z * q.s, 1 - 2 * q.x * q.x - 2 * q.z * q.z, 2 * q.y * q.z - 2 * q.x * q.s, 0},
+		{2 * q.x * q.z - 2 * q.y * q.s, 2 * q.y * q.z + 2 * q.x * q.s, 1 - 2 * q.x * q.x - 2 * q.y * q.y, 0},
 		{0, 0, 0, 1}
 	};
 	return matrix * rotation_matrix;
