@@ -1,7 +1,6 @@
 export module gse.graphics.light_source_component;
 
 import std;
-import glm;
 
 import gse.core.component;
 import gse.graphics.light;

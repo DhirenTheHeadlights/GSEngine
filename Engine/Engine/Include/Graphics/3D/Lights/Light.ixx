@@ -1,11 +1,6 @@
-module;
-
-#include <glad/glad.h>
-
 export module gse.graphics.light;
 
 import std;
-import glm;
 
 import gse.core.id;
 import gse.physics.math;

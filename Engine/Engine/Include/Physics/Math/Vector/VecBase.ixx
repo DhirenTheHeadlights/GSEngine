@@ -4,16 +4,16 @@ import std;
 
 export namespace gse::vec {
     template <typename T, int N>
-    struct storage {
-        std::array<T, N> data;
+	struct storage {
+	    std::array<T, N> data = {};
 
-        constexpr auto operator[](std::size_t index) -> T& {
-            return data[index];
-        }
+		constexpr auto operator[](std::size_t index) -> T& {
+			return data[index];
+		}
 
-        constexpr auto operator[](std::size_t index) const -> const T& {
-            return data[index];
-        }
+		constexpr auto operator[](std::size_t index) const -> const T& {
+			return data[index];
+		}
     };
 
     using raw2i = storage<int, 2>;
@@ -158,7 +158,7 @@ export namespace gse {
 
 template <typename T, int N>
 constexpr auto gse::value_ptr(const vec::storage<T, N>& storage) -> const T* {
-    return storage.data.data();
+    return &storage[0];
 }
 
 export namespace gse::vec {
