@@ -41,7 +41,7 @@ gse::bounding_box_mesh::bounding_box_mesh(const axis_aligned_bounding_box& box)
 
 auto gse::bounding_box_mesh::create_vertex(const vec3<length>& position) -> vertex {
 	return {
-		.position = to_glm_vec(position)
+		.position = position.as<units::meters>()
 	};
 }
 

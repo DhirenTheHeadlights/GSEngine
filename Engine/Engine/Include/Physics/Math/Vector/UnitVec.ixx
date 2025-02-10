@@ -1,7 +1,6 @@
 export module gse.physics.math.unit_vec;
 
 import std;
-import glm;
 
 import gse.physics.math.units.quant;
 import gse.physics.math.base_vec;

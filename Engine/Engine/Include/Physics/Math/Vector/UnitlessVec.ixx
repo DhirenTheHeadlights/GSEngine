@@ -15,6 +15,17 @@ export namespace gse::unitless {
 				this->storage[i] = static_cast<T>(other[i]);
 			}
 		}
+
+		template <typename U>
+		constexpr vec_t(const vec::storage<U, N>& other) {
+			for (int i = 0; i < N; ++i) {
+				this->storage[i] = static_cast<T>(other[i]);
+			}
+		}
+
+		constexpr operator vec::storage<T, N>() const {
+			return this->storage;
+		}
 	};
 
 	template <typename T> using vec2_t = vec_t<T, 2>;

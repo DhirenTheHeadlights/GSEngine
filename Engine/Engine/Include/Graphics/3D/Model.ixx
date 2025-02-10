@@ -1,6 +1,5 @@
 module;
 
-#include "glm/ext/matrix_transform.hpp"
 #include "glad/glad.h"
 
 export module gse.graphics.model;
@@ -40,10 +39,6 @@ export namespace gse {
 	};
 }
 
-import glm;
-
-import gse.graphics.mesh;
-
 auto gse::model::initialize() -> void {
 	for (auto& mesh : meshes) {
 		mesh.initialize();
@@ -59,7 +54,7 @@ gse::model_handle::model_handle(id* model_id, const model& model) : m_model_id(m
 			GL_TRIANGLES,
 			static_cast<GLsizei>(mesh.indices.size()),
 			mat4(1.0f),
-			glm::vec3(1.0f)
+			unitless::vec3(1.0f)
 		);
 	}
 }

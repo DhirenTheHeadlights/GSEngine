@@ -116,21 +116,6 @@ FetchContent_MakeAvailable(stb_image)
 target_include_directories(Engine PUBLIC ${stb_image_SOURCE_DIR})
 
 ####################################################################################################################
-# FetchContent for enet
-####################################################################################################################
-
-FetchContent_Declare(
-    enet
-    GIT_REPOSITORY https://github.com/lsalzman/enet.git
-    GIT_TAG        v1.3.17
-)
-
-FetchContent_MakeAvailable(enet)
-
-# Include ENet headers
-target_include_directories(Engine PUBLIC ${enet_SOURCE_DIR}/include)
-
-####################################################################################################################
 # FetchContent for miniaudio
 ####################################################################################################################
 
@@ -144,29 +129,6 @@ FetchContent_MakeAvailable(miniaudio)
 
 # Include miniaudio headers
 target_include_directories(Engine PUBLIC ${miniaudio_SOURCE_DIR})
-
-####################################################################################################################
-# FetchContent for GLM
-####################################################################################################################
-
-set(GLM_ENABLE_CXX_20 ON CACHE BOOL "Enable C++20 features in GLM" FORCE)
-
-FetchContent_Declare(
-    glm
-    GIT_REPOSITORY https://github.com/g-truc/glm.git
-    GIT_TAG        master
-)
-
-FetchContent_MakeAvailable(glm)
-
-add_library(glm_module STATIC)
-target_sources(glm_module PUBLIC
-    FILE_SET CXX_MODULES
-    BASE_DIRS "${glm_SOURCE_DIR}/glm"
-    FILES "${glm_SOURCE_DIR}/glm/glm.cppm"
-)
-target_link_libraries(Engine PUBLIC glm_module)
-target_link_libraries(glm_module PUBLIC glm)
 
 ####################################################################################################################
 # Grab freetype & msdfgen from the vcpkg registry
@@ -195,8 +157,6 @@ target_link_libraries(Engine PUBLIC
     glfw
     glad
     imgui
-    enet
-    glm
     Freetype::Freetype
     msdfgen::msdfgen
 )
@@ -215,7 +175,7 @@ if (MSVC)
     SET_PROPERTY(TARGET Engine PROPERTY VS_USER_PROPS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Resources/Misc/msvc_build_stl_modules_workaround.props")
 
     # List of external targets to be grouped under "External"
-    set(EXTERNAL_TARGETS enet glad glad-generate-files glm imgui glm_module)
+    set(EXTERNAL_TARGETS glad glad-generate-files imgui)
 
     # Loop through each target and set its folder property
     foreach(target ${EXTERNAL_TARGETS})

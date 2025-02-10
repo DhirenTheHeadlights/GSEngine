@@ -5,14 +5,15 @@ module;
 export module gse.graphics.gui;
 
 import std;
-import glm;
+
+import gse.physics.math;
 
 export namespace gse::gui {
 	auto initialize() -> void;
 	auto render() -> void;
 	auto shutdown() -> void;
 
-	auto create_menu(const std::string& name, const glm::vec2& position, const glm::vec2& size, const std::function<void()>& contents) -> void;
+	auto create_menu(const std::string& name, const vec2<length>& position, const gse::vec2<length>& size, const std::function<void()>& contents) -> void;
 
 	auto text(const std::string& text) -> void;
 }
@@ -25,8 +26,8 @@ import gse.platform.glfw.input;
 
 struct menu {
 	gse::texture texture;
-	glm::vec2 position;
-	glm::vec2 size;
+	gse::vec2<gse::length> position;
+	gse::vec2<gse::length> size;
 
 	std::function<void()> contents;
 };
@@ -52,7 +53,7 @@ auto gse::gui::shutdown() -> void {
 	g_menus.clear();
 }
 
-auto gse::gui::create_menu(const std::string& name, const glm::vec2& position, const glm::vec2& size, const std::function<void()>& contents) -> void {
+auto gse::gui::create_menu(const std::string& name, const vec2<length>& position, const vec2<length>& size, const std::function<void()>& contents) -> void {
 	g_menus.push_back({ .texture = texture(name), .position = position, .size = size, .contents = contents });
 	g_current_menu = &g_menus.back();
 }
