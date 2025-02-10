@@ -1,55 +1,34 @@
-## 3-D Shooter Project
+## GSEngine
 
-This is a dual development project for a simulation engine and a 3-D shooter game as a demo. The game will feature multiplayer and single player modes.
+GSEngine is a custom game engine built from the ground up with the goal of providing a simple, yet powerful, framework for game development. The engine is built with C++ 20 modules, and is designed to be easily extendable and modifiable. The engine is currently in development, and is not yet feature complete. The engine was originally for a 3D shooter game, but the infrastructure is designed to be easily adapted to other types of games.
 
 ## Features
-- OpenGL, GLFW, and ImGui window/context creation
-- Unit system for common units (force, length, etc.) wrapping glm's vector implemenations
-  - Gives complete clarity in mathematical equations & dimentional analysis used; also allows for units to show on debug outputs
-- Physics engine
-- Broad phase collision using axis aligned bounding boxes
-- Entity component system
-- Rendering pipeline
-- Scene based rendering system
-- Basic lighting shaders
-- Light objects
-- Editor with hot-reloading enabled for game changes
+- Built with C++ 20 module - requires a compiler and build system that supports this feature
+- Requires minimal dependencies with plans of eliminating most in the future
+- Custom 3D math library, with support for robust matrix, quaternion, and vector operations. Vectors can optionally be templated for a specific unit-type (SI units are default)
+- Physics engine with broad and narrow phase collision detection, supporting axis-aligned and oriented bounding boxes
+- Custom entity-component system with support for entity and component queuing
+- All entities are controlled by integrating hooks into the engine's registry separating functionality between user-defined modules.
+- Rendering pipeline, currently utilizing OpenGL, with support for custom shaders and lighting
+- Basic shaders and models are included in the project
+- Custom model loading from both .obj and .mtl files. Models are stored and re-used when possible
+- Scene based engine with support for multiple scenes, completely extendable through inheritance
+- Editor utilizing ImGui for runtime adjustments and hot reloading of game code
 
 ## Prerequisites (Follow online instructions for installation, ensuring all are added to system PATH variable)
-- CMake v3.16 or higher
-- Git 2.45.1.windows.1 or higher
+- CMake v3.26 or higher
+- Git 2.45 or higher
 - Python 3.11.9 or higher
+- Compiler with C++ 20 modules support
 
 ## Getting Started
 
-To get started, clone the respository. There are no dependencies required to run the project.
+To get started, clone the repository.
 Run the `build.bat` file to build the project. This will generate a `build` folder with the project files.
 
 ### Code Structure
 
-The files in this project are divided into the following categories:
-
-- `Engine` - Contains all the engine specific code
-- `Game` - Contains all the game logic
-- `Editor` - Contains logic for an editor that links the game as a DLL for easy runtime adjustments/hot reloading
-
-Engine statically links all required third party libraries. Game contains all the game logic and is also statically linked to the engine.
-
-The `Build` folder will contain the Visual Studio solution file. Open this file to start working on the project using VS, or, if you prefer, open and run in `Folder View` mode to run using just CMake & Ninja.
-
-When you end up adding a file to the project, VS will prompt you to update the `CMakeLists.txt` file. DO NOT UPDATE THIS FILE. Select `Cancel` when prompted.
-
-To steamline developing new objects, you might want to add a `Code Snippet` to Visual Studio. To do this, follow these steps:
-
-1. Open Visual Studio
-2. Go to `Tools` -> `Code Snippets Manager`
-3. Click `Import`
-4. Navigate to the `resources/Code Snippets` folder in the repository
-5. Select the file and click `Open`
-6. Click `Finish`
-
-To use the code snippet, type `gameobject` and press `Tab` twice. This will generate a new GameObject class for you to use.
-Visual studio will automatically highlight the class name for you to change. All you need to do is type the new class name and press `Enter`.
+This project follows the standard library's code style. The main branch is protected, and all changes must be made through pull requests.
 
 ### Prerequisites
 
@@ -58,6 +37,6 @@ Install ReSharper C++ for Visual Studio for style enforcement & many helpful too
 Integrating team style guide into your ReSharper C++:
 
 1. Go to `Extensions` -> `ReSharper` -> `Manage Options`
-2. Highlight `Solution "Goon Squad" Team Shared`
-3. Hit the drop down `Copy to` and select `This computer` or `Solution "Goon Squad" Team Shared`
+2. Highlight `Solution "" Personal`
+3. Hit the drop down `Copy to` and select `style_guide`
 4. Select all of the options and hit `OK`
