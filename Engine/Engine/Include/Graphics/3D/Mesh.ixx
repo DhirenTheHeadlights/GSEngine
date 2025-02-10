@@ -1,20 +1,20 @@
 module;
 
+#include <cstddef>
 #include <glad/glad.h>
-#include "glm/ext/matrix_transform.hpp"
 
 export module gse.graphics.mesh;
 
 import std;
-import glm;
 
-import gse.physics.math.vector;
+import gse.physics.math;
+import gse.platform.perma_assert;
 
 export namespace gse {
 	struct vertex {
-		glm::vec3 position;
-		glm::vec3 normal;
-		glm::vec2 tex_coords;
+		vec::raw3f position;
+		vec::raw3f normal;
+		vec::raw2f tex_coords;
 	};
 
 	struct render_queue_entry {
@@ -22,8 +22,8 @@ export namespace gse {
 		GLuint vao;
 		GLenum draw_mode;
 		GLsizei vertex_count;
-		glm::mat4 model_matrix;
-		glm::vec3 color;
+		mat4 model_matrix;
+		unitless::vec3 color;
 	};
 
 	struct model_texture {
@@ -59,8 +59,6 @@ export namespace gse {
 		vec3<length> center_of_mass;
 	};
 }
-
-import gse.physics.math.vector_math;
 
 gse::mesh::mesh() {
 	glGenVertexArrays(1, &vao);
@@ -109,47 +107,39 @@ auto gse::mesh::operator=(mesh&& other) noexcept -> mesh& {
 	return *this;
 }
 
-namespace {
-	auto calculate_center_of_mass(const std::vector<uint32_t>& indices, const std::vector<gse::vertex>& vertices) -> gse::vec3<gse::length> {
-		constexpr glm::dvec3 reference_point(0.f);
+auto calculate_center_of_mass(const std::vector<std::uint32_t>& indices, const std::vector<gse::vertex>& vertices) -> gse::vec3<gse::length> {
+	constexpr gse::unitless::vec3d reference_point(0.f);
 
-		float total_volume = 0.f;
-		glm::vec3 moment(0.f);
+	double total_volume = 0.f;
+	gse::unitless::vec3 moment(0.f);
 
-		if (indices.size() % 3 != 0) {
-			throw std::runtime_error("Indices count is not a multiple of 3. Ensure that each face is defined by exactly three indices.");
-		}
+	perma_assert(indices.size() % 3 == 0, "Indices count is not a multiple of 3. Ensure that each face is defined by exactly three indices.");
 
-		for (size_t i = 0; i < indices.size(); i += 3) {
-			unsigned int idx0 = indices[i];
-			unsigned int idx1 = indices[i + 1];
-			unsigned int idx2 = indices[i + 2];
+	for (size_t i = 0; i < indices.size(); i += 3) {
+		const unsigned int idx0 = indices[i];
+		const unsigned int idx1 = indices[i + 1];
+		const unsigned int idx2 = indices[i + 2];
 
-			if (idx0 >= vertices.size() || idx1 >= vertices.size() || idx2 >= vertices.size()) {
-				throw std::out_of_range("Index out of range while accessing vertices.");
-			}
+		perma_assert(idx0 <= vertices.size() || idx1 <= vertices.size() || idx2 <= vertices.size(), "Index out of range while accessing vertices.");
 
-			const glm::dvec3 v0(vertices[idx0].position);
-			const glm::dvec3 v1(vertices[idx1].position);
-			const glm::dvec3 v2(vertices[idx2].position);
+		const gse::unitless::vec3d v0(vertices[idx0].position);
+		const gse::unitless::vec3d v1(vertices[idx1].position);
+		const gse::unitless::vec3d v2(vertices[idx2].position);
 
-			glm::dvec3 a = v0 - reference_point;
-			glm::dvec3 b = v1 - reference_point;
-			glm::dvec3 c = v2 - reference_point;
+		gse::unitless::vec3d a = v0 - reference_point;
+		gse::unitless::vec3d b = v1 - reference_point;
+		gse::unitless::vec3d c = v2 - reference_point;
 
-			double volume = glm::abs(glm::dot(a, glm::cross(b, c)) / 6.0);
-			glm::dvec3 tetra_com = (v0 + v1 + v2 + reference_point) / 4.0;
+		auto volume = std::abs(gse::dot(a, gse::cross(b, c)) / 6.0);
+		gse::unitless::vec3d tetra_com = (v0 + v1 + v2 + reference_point) / 4.0;
 
-			total_volume += static_cast<float>(volume);
-			moment += volume * tetra_com;
-		}
-
-		if (total_volume == 0.0) {
-			throw std::runtime_error("Total volume is zero. Check if the mesh is closed and correctly oriented.");
-		}
-
-		return moment / total_volume;
+		total_volume += volume;
+		moment += tetra_com * volume;
 	}
+
+	perma_assert(total_volume != 0.0, "Total volume is zero. Check if the mesh is closed and correctly oriented.");
+
+	return moment / total_volume;
 }
 
 auto gse::mesh::initialize() -> void {

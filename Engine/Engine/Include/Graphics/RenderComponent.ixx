@@ -8,7 +8,7 @@ import gse.graphics.mesh;
 import gse.graphics.model;
 import gse.graphics.model_loader;
 import gse.graphics.bounding_box_mesh;
-import gse.physics.math.vector;
+import gse.physics.math;
 
 export namespace gse {
 	struct render_component final : component {

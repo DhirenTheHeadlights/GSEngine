@@ -6,59 +6,59 @@ module;
 export module gse.platform.glfw.window;
 
 import std;
-import glm;
 
 import gse.platform.glfw.input;
 import gse.platform.perma_assert;
+import gse.physics.math;
 
 #undef max
 #undef min
 
 export namespace gse::window {
-    struct rendering_interface {
-        virtual ~rendering_interface() = default;
-        virtual auto on_pre_render() -> void;
-        virtual auto on_post_render() -> void = 0;
-    };
+	struct rendering_interface {
+		virtual ~rendering_interface() = default;
+		virtual auto on_pre_render() -> void;
+		virtual auto on_post_render() -> void = 0;
+	};
 
-    auto add_rendering_interface(const std::shared_ptr<rendering_interface>& rendering_interface) -> void;
-    auto remove_rendering_interface(const std::shared_ptr<rendering_interface>& rendering_interface) -> void;
+	auto add_rendering_interface(const std::shared_ptr<rendering_interface>& rendering_interface) -> void;
+	auto remove_rendering_interface(const std::shared_ptr<rendering_interface>& rendering_interface) -> void;
 
-    auto initialize() -> void;
-    auto begin_frame() -> void;
-    auto update() -> void;
-    auto end_frame() -> void;
-    auto shutdown() -> void;
+	auto initialize() -> void;
+	auto begin_frame() -> void;
+	auto update() -> void;
+	auto end_frame() -> void;
+	auto shutdown() -> void;
 
-    auto get_window() -> GLFWwindow*;
+	auto get_window() -> GLFWwindow*;
 
-    auto is_window_closed() -> bool;
-    auto is_full_screen() -> bool;
-    auto is_focused() -> bool;
+	auto is_window_closed() -> bool;
+	auto is_full_screen() -> bool;
+	auto is_focused() -> bool;
 	auto is_minimized() -> bool;
-    auto is_mouse_visible() -> bool;
-    auto has_mouse_moved() -> int;
+	auto is_mouse_visible() -> bool;
+	auto has_mouse_moved() -> int;
 
-    auto get_current_monitor() -> GLFWmonitor*;
-	auto get_mouse_delta() -> glm::vec2;
+	auto get_current_monitor() -> GLFWmonitor*;
+	auto get_mouse_delta() -> unitless::vec2;
 
-    auto get_fbo() -> std::optional<GLuint>;
-    auto get_frame_buffer_size() -> glm::ivec2;
-    auto get_rel_mouse_position() -> glm::ivec2;
-    auto get_window_size() -> glm::ivec2;
-    auto get_viewport_size() -> glm::ivec2;
+	auto get_fbo() -> std::optional<GLuint>;
+	auto get_frame_buffer_size() -> unitless::vec2i;
+	auto get_rel_mouse_position() -> unitless::vec2;
+	auto get_window_size() -> unitless::vec2i;
+	auto get_viewport_size() -> unitless::vec2i;
 
-    auto set_fbo(GLuint fbo_in, const glm::ivec2& size) -> void;
-    auto set_mouse_pos_relative_to_window(const glm::ivec2& position) -> void;
-    auto set_full_screen(bool fs) -> void;
-    auto set_window_focused(bool focused) -> void;
-    auto set_mouse_visible(bool show) -> void;
+	auto set_fbo(GLuint fbo_in, const unitless::vec2i& size) -> void;
+	auto set_mouse_pos_relative_to_window(const unitless::vec2i& position) -> void;
+	auto set_full_screen(bool fs) -> void;
+	auto set_window_focused(bool focused) -> void;
+	auto set_mouse_visible(bool show) -> void;
 }
 
 GLFWwindow* g_window = nullptr;
 
 std::optional<GLuint> g_fbo;
-glm::ivec2 g_fbo_size = { 1, 1 };
+gse::unitless::vec2i g_fbo_size = { 1, 1 };
 
 bool g_current_full_screen = false;
 bool g_full_screen = false;
@@ -287,10 +287,10 @@ auto gse::window::get_current_monitor() -> GLFWmonitor* {
 	return best_monitor;
 }
 
-glm::vec2 g_last_mouse_position = { 0, 0 };
+gse::unitless::vec2 g_last_mouse_position = { 0, 0 };
 
-auto gse::window::get_mouse_delta() -> glm::vec2 {
-	const auto current_mouse_position = glm::vec2(get_rel_mouse_position());
+auto gse::window::get_mouse_delta() -> unitless::vec2 {
+	const auto current_mouse_position = unitless::vec2(get_rel_mouse_position());
 	const auto delta = current_mouse_position - g_last_mouse_position;
 	g_last_mouse_position = current_mouse_position;
 	return delta;
@@ -300,9 +300,9 @@ auto gse::window::get_fbo() -> std::optional<GLuint> {
 	return g_fbo;
 }
 
-auto gse::window::get_frame_buffer_size() -> glm::ivec2 {
+auto gse::window::get_frame_buffer_size() -> unitless::vec2i {
 	if (g_fbo.has_value()) {
-		if (g_fbo_size == glm::ivec2(0, 0)) {
+		if (g_fbo_size == unitless::vec2i(0, 0)) {
 			return { 1, 1 };
 		}
 		return g_fbo_size;
@@ -316,30 +316,30 @@ auto gse::window::get_frame_buffer_size() -> glm::ivec2 {
 	return { x, y };
 }
 
-auto gse::window::get_rel_mouse_position() -> glm::ivec2 {
+auto gse::window::get_rel_mouse_position() -> unitless::vec2 {
 	double x = 0, y = 0;
 	glfwGetCursorPos(g_window, &x, &y);
-	return { x, y };
+	return { static_cast<float>(x), static_cast<float>(y) };
 }
 
-auto gse::window::get_window_size() -> glm::ivec2 {
+auto gse::window::get_window_size() -> unitless::vec2i {
 	int x = 0; int y = 0;
 	glfwGetWindowSize(g_window, &x, &y);
 	return { x, y };
 }
 
-auto gse::window::get_viewport_size() -> glm::ivec2 {
+auto gse::window::get_viewport_size() -> unitless::vec2i {
 	GLint viewport[4];
 	glGetIntegerv(GL_VIEWPORT, viewport);
 	return { viewport[2], viewport[3] };
 }
 
-auto gse::window::set_fbo(const GLuint fbo_in, const glm::ivec2& size) -> void {
+auto gse::window::set_fbo(const GLuint fbo_in, const unitless::vec2i& size) -> void {
 	g_fbo = fbo_in;
 	g_fbo_size = size;
 }
 
-auto gse::window::set_mouse_pos_relative_to_window(const glm::ivec2& position) -> void {
+auto gse::window::set_mouse_pos_relative_to_window(const unitless::vec2i& position) -> void {
 	glfwSetCursorPos(g_window, position.x, position.y);
 }
 
