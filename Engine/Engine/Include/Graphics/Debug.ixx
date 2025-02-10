@@ -10,11 +10,11 @@ module;
 export module gse.graphics.debug;
 
 import std;
-import glm;
 
-import gse.physics.math.units;
-import gse.physics.math.units.quantity;
-import gse.physics.math.vector;
+import gse.physics.math;
+import gse.core.clock;
+import gse.core.json_parser;
+import gse.platform.glfw.window;
 
 export namespace gse::debug {
 	auto set_up_imgui() -> void;
@@ -24,10 +24,10 @@ export namespace gse::debug {
 
 	auto set_imgui_save_file_path(const std::string& path) -> void;
 
-	auto print_vector(const std::string& name, const glm::vec3& vec, const char* unit = nullptr) -> void;
+	auto print_vector(const std::string& name, const unitless::vec3& vec, const char* unit = nullptr) -> void;
 	auto print_value(const std::string& name, const float& value, const char* unit = nullptr) -> void;
 
-	template <is_unit UnitType = internal::unitless_unit, is_quantity QuantityType>
+	template <internal::is_unit UnitType, internal::is_quantity QuantityType>
 	auto unit_slider(const std::string& name, QuantityType& quantity, const QuantityType& min, const QuantityType& max) -> void {
 		float value = quantity.template as<UnitType>();
 
@@ -41,15 +41,16 @@ export namespace gse::debug {
 		}
 	}
 
+	auto unit_slider(const std::string& name, float& val, const float& min, const float& max) -> void {
+		const std::string slider_label = name + " (unitless)";
+		ImGui::SliderFloat(slider_label.c_str(), &val, min, max);
+	}
+
 	auto print_boolean(const std::string& name, const bool& value) -> void;
 
 	auto add_imgui_callback(const std::function<void()>& callback) -> void;
 	auto get_imgui_needs_inputs() -> bool;
 }
-
-import gse.core.clock;
-import gse.core.json_parser;
-import gse.platform.glfw.window;
 
 gse::clock g_autosave_clock;
 const gse::time g_autosave_time = gse::seconds(60.f);
@@ -128,7 +129,7 @@ auto gse::debug::render_imgui() -> void {
 
 	ImGui::Render();
 
-	const glm::ivec2 window_size = window::get_window_size();
+	const unitless::vec2i window_size = window::get_window_size();
 	glViewport(0, 0, window_size.x, window_size.y);
 
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -146,7 +147,7 @@ auto gse::debug::save_imgui_state() -> void {
 	ImGui::SaveIniSettingsToDisk(g_imgui_save_file_path.c_str());
 }
 
-auto gse::debug::print_vector(const std::string& name, const glm::vec3& vec, const char* unit) -> void {
+auto gse::debug::print_vector(const std::string& name, const unitless::vec3& vec, const char* unit) -> void {
 	if (unit) {
 		ImGui::InputFloat3((name + " - " + unit).c_str(), const_cast<float*>(&vec.x));
 	}
