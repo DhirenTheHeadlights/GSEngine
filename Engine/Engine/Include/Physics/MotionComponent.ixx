@@ -1,7 +1,6 @@
 export module gse.physics.motion_component;
 
 import std;
-import glm;
 
 import gse.core.component;
 import gse.physics.math;

@@ -1,7 +1,6 @@
 export module gse.physics.math;
 
 import std;
-import glm;
 
 export import gse.physics.math.units;
 export import gse.physics.math.matrix;
@@ -52,79 +51,5 @@ export namespace gse {
 			pointers.push_back(unique_ptr.get());
 		}
 		return pointers;
-	}
-
-	template <internal::is_quantity T, int N>
-	constexpr auto to_glm_vec(const vec_t<T, N>& v) -> glm::vec<N, typename vec_t<T, N>::value_type> {
-		using value_type = typename vec_t<T, N>::value_type;
-		if constexpr (N == 2) {
-			return glm::vec<2, value_type>(v.x.as_default_unit(), v.y.as_default_unit());
-		}
-		else if constexpr (N == 3) {
-			return glm::vec<3, value_type>(v.x.as_default_unit(), v.y.as_default_unit(), v.z.as_default_unit());
-		}
-		else if constexpr (N == 4) {
-			return glm::vec<4, value_type>(v.x.as_default_unit(), v.y.as_default_unit(), v.z.as_default_unit(), v.w.as_default_unit());
-		}
-	}
-
-	template <typename T, typename U, int N> constexpr auto operator*(const vec::storage<T, N>& lhs, const U& rhs) -> vec::storage<decltype(lhs[0] * rhs), N>;
-    template <typename T, typename U, int N> constexpr auto operator*(const U& lhs, const vec::storage<T, N>& rhs) -> vec::storage<decltype(lhs * rhs[0]), N>;
-    template <typename T, typename U, int N> constexpr auto operator/(const vec::storage<T, N>& lhs, const U& rhs) -> vec::storage<decltype(lhs[0] / rhs), N>;
-    template <typename T, typename U, int N> constexpr auto operator/(const U& lhs, const vec::storage<T, N>& rhs) -> vec::storage<decltype(lhs / rhs[0]), N>;
-
-	template <typename T, int N>
-	constexpr auto to_glm_vec(const unitless::vec_t<T, N> v) -> glm::vec<N, T> {
-		if constexpr (N == 2) {
-			return glm::vec<2, T>(v.x, v.y);
-		}
-		else if constexpr (N == 3) {
-			return glm::vec<3, T>(v.x, v.y, v.z);
-		}
-		else if constexpr (N == 4) {
-			return glm::vec<4, T>(v.x, v.y, v.z, v.w);
-		}
-	}
-
-	template <typename T, int N>
-	constexpr auto to_unitless_vec(const glm::vec<N, T>& v) -> unitless::vec_t<T, N> {
-		if constexpr (N == 2) {
-			return { v.x, v.y };
-		}
-		else if constexpr (N == 3) {
-			return { v.x, v.y, v.z };
-		}
-		else if constexpr (N == 4) {
-			return { v.x, v.y, v.z, v.w };
-		}
-	}
-
-	template <typename T, int N>
-	constexpr auto to_glm_vec(const vec::storage<T, N>& storage) -> glm::vec<N, T> {
-		if constexpr (N == 2) {
-			return glm::vec<2, T>(storage.data[0], storage.data[1]);
-		}
-		else if constexpr (N == 3) {
-			return glm::vec<3, T>(storage.data[0], storage.data[1], storage.data[2]);
-		}
-		else if constexpr (N == 4) {
-			return glm::vec<4, T>(storage.data[0], storage.data[1], storage.data[2], storage.data[3]);
-		}
-	}
-
-	template <typename T, int Cols, int Rows>
-	constexpr auto to_glm_mat(const mat_t<T, Cols, Rows>& m) -> glm::mat<Rows, Cols, T> {
-		glm::mat<Rows, Cols, T> result;
-		for (int i = 0; i < Rows; ++i) {
-			for (int j = 0; j < Cols; ++j) {
-				result[i][j] = m[i][j];
-			}
-		}
-		return result;
-	}
-
-	template <typename T>
-	constexpr auto to_glm_quat(const quat_t<T>& q) -> glm::quat {
-		return glm::quat(q.s, q.x, q.y, q.z);
 	}
 }

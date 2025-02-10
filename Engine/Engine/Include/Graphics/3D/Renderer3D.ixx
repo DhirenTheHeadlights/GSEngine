@@ -1,7 +1,5 @@
 module;
 
-#define GLM_ENABLE_EXPERIMENTAL
-#include <glm/gtx/string_cast.hpp>
 #include <glad/glad.h>
 #include "json.hpp"
 #include "imgui.h"
@@ -152,7 +150,7 @@ auto gse::renderer3d::initialize() -> void {
 	// Set up the UBO for light space matrices
 	glGenBuffers(1, &g_light_space_block_ubo);
 	glBindBuffer(GL_UNIFORM_BUFFER, g_light_space_block_ubo);
-	constexpr size_t buffer_size = sizeof(glm::mat4) * 10; // MAX_LIGHTS is 10 in the shader
+	constexpr size_t buffer_size = sizeof(mat4) * 10; // MAX_LIGHTS is 10 in the shader
 	glBufferData(GL_UNIFORM_BUFFER, static_cast<GLsizeiptr>(buffer_size), nullptr, GL_DYNAMIC_DRAW);
 	glBindBufferBase(GL_UNIFORM_BUFFER, 4, g_light_space_block_ubo);
 	glBindBuffer(GL_UNIFORM_BUFFER, 0);
@@ -305,7 +303,7 @@ auto render_object_forward(const std::uint32_t object_id, const gse::shader& for
 	forward_rendering_shader.set_mat4("model", model_matrix);
 	forward_rendering_shader.set_mat4("view", view_matrix);
 	forward_rendering_shader.set_mat4("projection", projection_matrix);
-	forward_rendering_shader.set_vec3("viewPos", gse::to_glm_vec(g_camera.get_position().as<gse::units::meters>()));
+	forward_rendering_shader.set_vec3("viewPos", g_camera.get_position().as<gse::units::meters>());
 
 	glActiveTexture(GL_TEXTURE2);
 	glBindTexture(GL_TEXTURE_2D, g_g_albedo_spec);
@@ -318,7 +316,7 @@ auto render_object_forward(const std::uint32_t object_id, const gse::shader& for
 auto render_object(const gse::light_render_queue_entry& entry) -> void {
 	if (const auto it = g_lighting_shaders.find(entry.shader_key); it != g_lighting_shaders.end()) {
 		it->second.use();
-		it->second.set_mat4("model", glm::mat4(1.0f));
+		it->second.set_mat4("model", gse::mat4(1.0f));
 		it->second.set_mat4("view", g_camera.get_view_matrix());
 		it->second.set_mat4("projection", g_camera.get_projection_matrix());
 
@@ -377,7 +375,7 @@ auto render_lighting_pass(const gse::shader& lighting_shader, const std::vector<
 
 	// Update UBO with light space matrices
 	glBindBuffer(GL_UNIFORM_BUFFER, g_light_space_block_ubo);
-	glBufferSubData(GL_UNIFORM_BUFFER, 0, light_space_matrices.size() * sizeof(glm::mat4), light_space_matrices.data());
+	glBufferSubData(GL_UNIFORM_BUFFER, 0, light_space_matrices.size() * sizeof(gse::mat4), light_space_matrices.data());
 	glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
 	glBindFramebuffer(GL_FRAMEBUFFER, g_hdr_fbo);
@@ -670,7 +668,7 @@ auto gse::renderer3d::render() -> void {
 	// Geometry pass
 	glBindFramebuffer(GL_FRAMEBUFFER, g_g_buffer);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	auto& models = model_loader::get_models();
+
 	for (const auto& render_component : render_components) {
 		for (const auto& model_handle : render_component.models) {
 			for (const auto& render_queue_entry : model_handle.get_render_queue_entries()) {

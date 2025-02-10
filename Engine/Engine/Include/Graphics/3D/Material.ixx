@@ -6,7 +6,6 @@ module;
 export module gse.graphics.material;
 
 import std;
-import glm;
 
 import gse.graphics.shader;
 import gse.physics.math;
