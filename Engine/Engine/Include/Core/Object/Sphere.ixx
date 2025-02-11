@@ -1,15 +1,8 @@
-module;
-
-#include <imgui.h>
-
 export module gse.core.object.sphere;
 
 import std;
-import glm;
 
-import gse.physics.math.vector;
-import gse.physics.math.vector_math;
-import gse.physics.math.units;
+import gse.physics.math;
 import gse.core.object.hook;
 import gse.core.object_registry;
 import gse.graphics.render_component;
@@ -19,8 +12,8 @@ import gse.graphics.model_loader;
 import gse.graphics.mesh;
 
 export namespace gse {
-	auto create_sphere(std::uint32_t object_uuid, const vec3<length>& position, length radius, int sectors = 36, int stacks = 18) -> void;
-	auto create_sphere(const vec3<length>& position, length radius, int sectors = 36, int stacks = 18) -> std::uint32_t;
+    auto create_sphere(std::uint32_t object_uuid, const vec3<length>& position, length radius, int sectors = 36, int stacks = 18) -> void;
+    auto create_sphere(const vec3<length>& position, length radius, int sectors = 36, int stacks = 18) -> std::uint32_t;
 }
 
 export struct sphere_mesh_hook final : gse::hook<gse::entity> {
@@ -50,22 +43,22 @@ export struct sphere_mesh_hook final : gse::hook<gse::entity> {
                 const float cos_theta = std::cos(theta);
 
                 // Calculate vertex position
-                glm::vec3 position = {
+                gse::vec3<gse::length> position = {
                     r * sin_phi * cos_theta,
                     r * cos_phi,
                     r * sin_phi * sin_theta
                 };
 
                 // Calculate normal (normalized position for a sphere)
-                const glm::vec3 normal = normalize(position);
+                const gse::unitless::vec3 normal = normalize(position);
 
                 // Calculate texture coordinates
-                const glm::vec2 tex_coords = {
+                const gse::unitless::vec2 tex_coords = {
                     static_cast<float>(sector) / static_cast<float>(m_sectors),
                     static_cast<float>(stack) / static_cast<float>(m_stacks)
                 };
 
-                vertices.push_back({ .position = position, .normal = normal, .tex_coords = tex_coords });
+                vertices.push_back({ .position = position.as<gse::units::meters>(), .normal = normal, .tex_coords = tex_coords});
             }
         }
 
@@ -95,7 +88,7 @@ export struct sphere_mesh_hook final : gse::hook<gse::entity> {
     }
 
     auto update() -> void override {
-        const auto position = gse::registry::get_component<gse::physics::motion_component>(owner_id).current_position.as<gse::units::meters>();
+        const auto position = gse::registry::get_component<gse::physics::motion_component>(owner_id).current_position;
         gse::registry::get_component<gse::render_component>(owner_id).models[0].set_position(position);
     }
 private:

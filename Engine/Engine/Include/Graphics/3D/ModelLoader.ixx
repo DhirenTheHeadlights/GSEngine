@@ -1,7 +1,6 @@
 export module gse.graphics.model_loader;
 
 import std;
-import glm;
 
 import gse.core.id;
 import gse.graphics.model;
@@ -47,9 +46,9 @@ auto gse::model_loader::load_obj_file(const std::string& model_path, const std::
 	std::string file_line;
 	bool push_back_mesh = false;
 
-	std::vector<glm::vec3> pre_load_vertices;
-	std::vector<glm::vec2> pre_load_texcoords;
-	std::vector<glm::vec3> pre_load_normals;
+	std::vector<vec::raw3f> pre_load_vertices;
+	std::vector<vec::raw2f> pre_load_texcoords;
+	std::vector<vec::raw3f> pre_load_normals;
 	std::vector<vertex> final_vertices;
 
 	while (std::getline(model_file, file_line)) {
@@ -65,13 +64,13 @@ auto gse::model_loader::load_obj_file(const std::string& model_path, const std::
 				final_vertices.clear();
 			}
 
-			pre_load_vertices.emplace_back(std::stof(split_line[1]), std::stof(split_line[2]), std::stof(split_line[3]));
+			pre_load_vertices.push_back({ std::stof(split_line[1]), std::stof(split_line[2]), std::stof(split_line[3]) });
 		}
 		else if (file_line.substr(0, 3) == "vt ") {
-			pre_load_texcoords.emplace_back(std::stof(split_line[1]), std::stof(split_line[2]));
+			pre_load_texcoords.push_back({ std::stof(split_line[1]), std::stof(split_line[2]) });
 		}
 		else if (file_line.substr(0, 3) == "vn ") {
-			pre_load_normals.emplace_back(std::stof(split_line[1]), std::stof(split_line[2]), std::stof(split_line[3]));
+			pre_load_normals.push_back({ std::stof(split_line[1]), std::stof(split_line[2]), std::stof(split_line[3]) });
 		}
 		else if (file_line.substr(0, 2) == "f ") {
 			push_back_mesh = true;
@@ -85,11 +84,11 @@ auto gse::model_loader::load_obj_file(const std::string& model_path, const std::
 					if (!pre_load_normals.empty()) {
 						final_vertices.emplace_back(pre_load_vertices[std::stoi(vertex_map[0]) - 1],
 							pre_load_normals[static_cast<size_t>(std::stoi(vertex_map[1]) - 1)],
-							glm::vec2(0.f));
+							vec::raw2f());
 					}
 					else if (!pre_load_texcoords.empty()) {
 						final_vertices.emplace_back(pre_load_vertices[std::stoi(vertex_map[0]) - 1],
-							glm::vec3(0.0f),
+							vec::raw3f(),
 							pre_load_texcoords[static_cast<size_t>(std::stoi(vertex_map[1])) - 1]);
 					}
 				}

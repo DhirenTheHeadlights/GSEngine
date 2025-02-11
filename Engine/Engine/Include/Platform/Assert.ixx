@@ -21,25 +21,25 @@ import <Windows.h>;
 // Forward-Declarations of Underlying Assert Functions
 // ------------------------------------------------------
 inline auto assert_func_production(
-	char const* expression,
-	char const* file_name,
-	unsigned line_number,
-	char const* comment = "---") -> void;
+    char const* expression,
+    char const* file_name,
+    unsigned line_number,
+    char const* comment = "---") -> void;
 
 inline auto assert_func_internal(
-	char const* expression,
-	char const* file_name,
-	unsigned line_number,
-	char const* comment = "---") -> void;
+    char const* expression,
+    char const* file_name,
+    unsigned line_number,
+    char const* comment = "---") -> void;
 
 // ------------------------------------------------------
 // Windows vs. Non-Windows Implementations
 // ------------------------------------------------------
 inline auto assert_func_production(
-	char const* expression,
-	char const* file_name,
-	unsigned line_number,
-	char const* comment) -> void {
+    char const* expression,
+    char const* file_name,
+    unsigned line_number,
+    char const* comment) -> void {
 #ifdef _WIN32
     char message[1024];
     std::snprintf(message, sizeof(message),
@@ -68,10 +68,10 @@ inline auto assert_func_production(
 }
 
 inline auto assert_func_internal(
-	char const* expression,
-	char const* file_name,
-	unsigned line_number,
-	char const* comment) -> void {
+    char const* expression,
+    char const* file_name,
+    unsigned line_number,
+    char const* comment) -> void {
 #ifdef _WIN32
     char message[1024];
     std::snprintf(message, sizeof(message),
@@ -146,22 +146,22 @@ export void assert_comment(
 
 // Internal (debug) build: calls internal asserts
 export auto perma_assert(
-	bool condition,
-	char const* expression,
-	char const* file_name = "---",
-	unsigned line_number = 0,
-	char const* comment = "---") -> void {
+    bool condition,
+    char const* expression,
+    char const* file_name = "---",
+    unsigned line_number = 0,
+    char const* comment = "---") -> void {
     if (!condition) {
         assert_func_internal(expression, file_name, line_number, comment);
     }
 }
 
 export auto assert_comment(
-	bool condition,
-	char const* expression,
-	char const* file_name = "---",
-	unsigned line_number = 0,
-	char const* comment = "---") -> void {
+    bool condition,
+    char const* expression,
+    char const* file_name = "---",
+    unsigned line_number = 0,
+    char const* comment = "---") -> void {
     if (!condition) {
         assert_func_internal(expression, file_name, line_number, comment);
     }
