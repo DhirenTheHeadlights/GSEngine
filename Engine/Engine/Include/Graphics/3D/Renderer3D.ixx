@@ -693,7 +693,7 @@ auto gse::renderer3d::render() -> void {
 						}
 
 						for (const auto& model_handle : render_component.models) {
-							for (const auto& [material_key, vao, draw_mode, vertex_count, model_matrix, color, , textures, material] : model_handle.get_render_queue_entries()) {
+							for (const auto& [material_key, vao, draw_mode, vertex_count, model_matrix, color, textures, material] : model_handle.get_render_queue_entries()) {
 								shadow_shader.set_mat4("model", model_matrix);  // Object's model matrix
 								glBindVertexArray(vao);
 								glDrawElements(draw_mode, vertex_count, GL_UNSIGNED_INT, nullptr);

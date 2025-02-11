@@ -26,7 +26,7 @@ export namespace gse {
         id(const std::string& tag) : m_number(-1), m_tag(tag) {}
 
         std::int32_t m_number;
-		std::string_view m_tag;
+		std::string m_tag;
 
 		friend auto generate_id(const std::string& tag) -> std::unique_ptr<id>;
     };
