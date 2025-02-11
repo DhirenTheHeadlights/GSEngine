@@ -150,9 +150,9 @@ auto game::update() -> bool {
 }
 
 auto game::render() -> bool {
-	/*gse::gui::create_menu("Test", { 100.f, 100.f }, { 200.f, 200.f }, [] {
+	gse::gui::create_menu("Test", { 100.f, 100.f }, { 200.f, 200.f }, [] {
 		gse::gui::text("Hello, World!");
-		});*/
+		});
 	return true;
 }
 

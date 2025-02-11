@@ -91,6 +91,8 @@ namespace {
 
 		if (g_imgui_enabled) gse::debug::update_imgui();
 
+		gse::gui::update();
+
 		gse::main_clock::update();
 
 		gse::scene_loader::update();
