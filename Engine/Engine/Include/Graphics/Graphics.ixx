@@ -19,6 +19,7 @@ export import gse.graphics.mesh;
 export import gse.graphics.model;
 export import gse.graphics.model_loader;
 export import gse.graphics.renderer3d;
+export import gse.graphics.texture_loader;
 
 export import gse.graphics.debug;
 export import gse.graphics.render_component;

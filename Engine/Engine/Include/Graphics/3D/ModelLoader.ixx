@@ -5,6 +5,8 @@ import std;
 import gse.core.id;
 import gse.graphics.model;
 import gse.graphics.mesh;
+import gse.graphics.texture_loader;
+import gse.graphics.material;
 
 export namespace gse::model_loader {
 	auto load_obj_file(const std::string& model_path, const std::string& model_name) -> id*;
@@ -16,6 +18,7 @@ export namespace gse::model_loader {
 
 std::unordered_map<gse::id*, gse::model> g_models;
 std::unordered_map<gse::id*, std::string> g_loaded_model_paths;
+std::unordered_map<std::string, gse::mtl_material> g_materials;
 
 auto gse::model_loader::load_obj_file(const std::string& model_path, const std::string& model_name) -> id* {
 	std::ifstream model_file(model_path);
@@ -50,14 +53,22 @@ auto gse::model_loader::load_obj_file(const std::string& model_path, const std::
 	std::vector<vec::raw2f> pre_load_texcoords;
 	std::vector<vec::raw3f> pre_load_normals;
 	std::vector<vertex> final_vertices;
+	std::vector<std::uint32_t> loaded_texture_ids;
+	std::string current_material = "";
 
 	while (std::getline(model_file, file_line)) {
 		std::vector<std::string> split_line = split(file_line, ' ');
+		// Detect vertices for each mesh. Load and output mesh if push_back_mesh is true.
 		if (file_line.substr(0, 2) == "v ") {
 			if (push_back_mesh) {
 				std::vector<std::uint32_t> final_indices(final_vertices.size());
 				for (size_t i = 0; i < final_vertices.size(); i++) final_indices[i] = i;
-				model.meshes.emplace_back(final_vertices, final_indices);
+				if (current_material.empty()) {
+					model.meshes.emplace_back(final_vertices, final_indices);
+				}
+				else {
+					model.meshes.emplace_back(final_vertices, final_indices, &g_materials[current_material]);
+				}
 
 				// Clear data to load next mesh
 				push_back_mesh = false;
@@ -66,12 +77,15 @@ auto gse::model_loader::load_obj_file(const std::string& model_path, const std::
 
 			pre_load_vertices.push_back({ std::stof(split_line[1]), std::stof(split_line[2]), std::stof(split_line[3]) });
 		}
+		// Detect texcoords for each vertex
 		else if (file_line.substr(0, 3) == "vt ") {
 			pre_load_texcoords.push_back({ std::stof(split_line[1]), std::stof(split_line[2]) });
 		}
+		// Detect normals for each vertex
 		else if (file_line.substr(0, 3) == "vn ") {
 			pre_load_normals.push_back({ std::stof(split_line[1]), std::stof(split_line[2]), std::stof(split_line[3]) });
 		}
+		// Detect maps for each mesh to corresponding vertices, texcoords, material, etc. This marks the end of a mesh, so set push_back_mesh to be true.
 		else if (file_line.substr(0, 2) == "f ") {
 			push_back_mesh = true;
 			for (int i = 1; i <= 3; i++) {
@@ -93,6 +107,47 @@ auto gse::model_loader::load_obj_file(const std::string& model_path, const std::
 					}
 				}
 			}
+		}
+		// Detect MTL file and load material data
+		else if (file_line.substr(0, 7) == "mtllib ") {
+			std::string mtl_filename = split_line[1];
+			std::string mtl_path = model_path.substr(0, model_path.find_last_of("/")) + "/" + mtl_filename;
+			std::string directory_path = mtl_path.substr(0, mtl_path.find_last_of("/")) + "/";
+			std::ifstream mtl_file(mtl_path);
+			if (!mtl_file.is_open()) {
+				std::cerr << "Failed to open material file: " << mtl_path << '\n';
+			}
+
+			std::string line;
+			// Load mtl data to g_materials
+			while (std::getline(mtl_file, line)) {
+				auto tokens = split(line, ' ');
+				if (tokens.empty()) continue;
+
+				if (tokens[0] == "newmtl") {
+					current_material = tokens[1];
+					g_materials[current_material] = gse::mtl_material();
+				}
+				else if (!current_material.empty()) {
+					gse::mtl_material& mat = g_materials[current_material];
+
+					if (tokens[0] == "Ns") mat.shininess = std::stof(tokens[1]);
+					else if (tokens[0] == "Ka") mat.ambient = glm::vec3(std::stof(tokens[1]), std::stof(tokens[2]), std::stof(tokens[3]));
+					else if (tokens[0] == "Kd") mat.diffuse = glm::vec3(std::stof(tokens[1]), std::stof(tokens[2]), std::stof(tokens[3]));
+					else if (tokens[0] == "Ks") mat.specular = glm::vec3(std::stof(tokens[1]), std::stof(tokens[2]), std::stof(tokens[3]));
+					else if (tokens[0] == "Ke") mat.emission = glm::vec3(std::stof(tokens[1]), std::stof(tokens[2]), std::stof(tokens[3]));
+					else if (tokens[0] == "Ni") mat.optical_density = std::stof(tokens[1]);
+					else if (tokens[0] == "d") mat.transparency = std::stof(tokens[1]);
+					else if (tokens[0] == "illum") mat.illumination_model = std::stoi(tokens[1]);
+					else if (tokens[0] == "map_Kd") mat.diffuse_texture = gse::texture_loader::load_texture(directory_path + tokens[1], false);
+					else if (tokens[0] == "map_Bump") mat.normal_texture = gse::texture_loader::load_texture(directory_path + tokens[1], false);
+					else if (tokens[0] == "map_Ks") mat.specular_texture = gse::texture_loader::load_texture(directory_path + tokens[1], false);
+				}
+			}
+		}
+		// Detect material for each mesh
+		else if (file_line.substr(0, 7) == "usemtl ") {
+			current_material = split_line[1];
 		}
 	}
 
