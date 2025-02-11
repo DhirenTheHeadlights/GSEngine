@@ -1,0 +1,6 @@
+{
+  "DefaultTexture": {
+    "vertex": "default_textures.vert",
+    "fragment": "default_textures.frag"
+  }
+}
