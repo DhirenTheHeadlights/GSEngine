@@ -15,6 +15,7 @@ import gse.graphics.render_component;
 import gse.graphics.mesh;
 import gse.graphics.model_loader;
 import gse.graphics.debug;
+import gse.graphics.texture_loader;
 
 export namespace gse {
     auto create_box(std::uint32_t object_uuid, const vec3<length>& initial_position, const vec3<length>& size) -> void;
@@ -117,7 +118,7 @@ export struct box_mesh_hook final : gse::hook<gse::entity> {
         std::vector<gse::mesh> meshes;
 
         for (size_t i = 0; i < 6; ++i) {
-            meshes.emplace_back(face_vertices[i], face_indices);
+            meshes.emplace_back(face_vertices[i], face_indices, std::vector<std::uint32_t> { gse::texture_loader::get_texture_by_path("C:/Users/scbel/source/repos/DhirenTheHeadlights/GSEngine/Engine/Resources/Textures/concrete_bricks_1.jpg") });
         }
 
         gse::render_component new_render_component(owner_id, gse::model_loader::add_model(std::move(meshes), "Box"));
