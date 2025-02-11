@@ -76,8 +76,7 @@ auto gse::model_loader::load_obj_file(const std::string& model_path, const std::
 		else if (file_line.substr(0, 2) == "f ") {
 			push_back_mesh = true;
 			for (int i = 1; i <= 3; i++) {
-				std::vector<std::string> vertex_map = split(split_line[i], '/');
-				if (vertex_map.size() == 3) {
+				if (std::vector<std::string> vertex_map = split(split_line[i], '/'); vertex_map.size() == 3) {
 					final_vertices.emplace_back(pre_load_vertices[std::stoi(vertex_map[0]) - 1],
 						pre_load_normals[static_cast<size_t>(std::stoi(vertex_map[2])) - 1],
 						pre_load_texcoords[static_cast<size_t>(std::stoi(vertex_map[1])) - 1]);

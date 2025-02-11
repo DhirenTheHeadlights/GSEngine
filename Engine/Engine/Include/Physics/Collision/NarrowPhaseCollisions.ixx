@@ -97,6 +97,54 @@ auto sat_collision(const gse::oriented_bounding_box& obb1, const gse::oriented_b
     return true; // No separating axis found, collision detected
 }
 
+struct plane {
+	gse::unitless::vec3 normal;
+	gse::length offset;
+};
+
+auto create_plane(const gse::vec3<gse::length>& point, const gse::unitless::vec3& edge_direction) -> plane {
+	const auto normal = gse::normalize(gse::cross(edge_direction, gse::unitless::vec3(0.0f, 1.0f, 0.0f)));
+    return {
+        .normal = normal,
+        .offset = gse::dot(normal, point.as<gse::units::meters>())
+    };
+}
+
+auto clip_polygon_against_plane(const std::array<gse::vec3<gse::length>, 4>& polygon, const plane& plane) -> std::vector<gse::vec3<gse::length>> {
+	std::vector<gse::vec3<gse::length>> clipped_polygon;
+
+	const auto& normal = plane.normal;
+	const auto& offset = plane.offset;
+
+	for (size_t i = 0; i < polygon.size(); ++i) {
+		const auto& current_vertex = polygon[i];
+		const auto& next_vertex = polygon[(i + 1) % polygon.size()];
+        const float current_distance = gse::dot(normal, current_vertex.as<gse::units::meters>()) - offset.as<gse::units::meters>();
+		const float next_distance = gse::dot(normal, next_vertex.as<gse::units::meters>()) - offset.as<gse::units::meters>();
+
+		if (current_distance >= 0) {
+			clipped_polygon.push_back(current_vertex);
+		}
+
+		if (current_distance * next_distance < 0) {
+			const float t = current_distance / (current_distance - next_distance);
+			clipped_polygon.push_back(current_vertex + t * (next_vertex - current_vertex));
+		}
+	}
+
+	return clipped_polygon;
+}
+
+auto compute_contact_point(const std::vector<gse::vec3<gse::length>>& clipped_polygon) -> gse::vec3<gse::length> {
+	gse::vec3<gse::length> contact_point;
+
+	for (const auto& vertex : clipped_polygon) {
+		contact_point += vertex;
+	}
+
+	return contact_point / static_cast<float>(clipped_polygon.size());
+}
+
 auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* object_motion_component, physics::collision_component& object_collision_component, const physics::collision_component& other_collision_component) -> void {
     if (!sat_collision(object_collision_component.oriented_bounding_box, other_collision_component.oriented_bounding_box, object_collision_component.collision_information.collision_normal, object_collision_component.collision_information.penetration)) {
         return;
@@ -130,4 +178,24 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
         object_motion_component->airborne = false;
         object_motion_component->most_recent_y_collision = meters(object_motion_component->current_position.as_default_units().y);
     }
+
+	const auto contact_point = compute_contact_point(clip_polygon_against_plane(
+        object_collision_component.oriented_bounding_box.get_face_vertices(object_collision_component.collision_information.get_axis(), true), 
+        create_plane(object_motion_component->current_position, object_collision_component.collision_information.collision_normal)
+    ));
+
+	const auto r_a = contact_point - object_motion_component->current_position;
+	const auto r_b = contact_point - other_collision_component.oriented_bounding_box.center;
+
+	const auto contact_velocity = object_motion_component->current_velocity.as<units::meters_per_second>() + cross(object_motion_component->angular_velocity.as<units::radians_per_second>(), r_a.as<units::meters>());
+	const float relative_velocity_along_normal = dot(contact_velocity, object_collision_component.collision_information.collision_normal);
+
+	/*float denom = 1.f / object_motion_component->mass.as<units::kilograms>()
+		+ dot(collision_normal, cross(object_motion_component->inverse_inertia_tensor * cross(r_a.as<units::meters>(), collision_normal), r_a.as<units::meters>())).as_default_unit()
+		+ cross(other_collision_component.oriented_bounding_box.inverse_inertia_tensor * cross(r_b.as<units::meters>(), collision_normal), r_b.as<units::meters>()).as_default_unit();*/
+
+	object_collision_component.collision_information.collision_point = contact_point;
+	const auto lever_arm = contact_point - object_motion_component->current_position;
+	const auto torque = cross(lever_arm.as<units::meters>(), object_collision_component.collision_information.collision_normal);
+	object_motion_component->current_torque += gse::vec3<gse::torque>(torque) * 100.f;
 }

@@ -57,6 +57,7 @@ export namespace gse {
 
 		auto update_axes() -> void;
 		auto get_corners() const -> std::array<vec3<length>, 8>;
+		auto get_face_vertices(axis axis, bool positive) const -> std::array<vec3<length>, 4>;
 	};
 }
 
@@ -144,3 +145,26 @@ auto gse::oriented_bounding_box::get_corners() const -> std::array<vec3<length>,
 
 	return corners;
 }
+
+auto gse::oriented_bounding_box::get_face_vertices(axis axis, const bool positive) const -> std::array<vec3<length>, 4> {
+	const auto half_size = size / 2.0f;
+
+	const int i = static_cast<int>(axis);
+	const int j = (i + 1) % 3;
+	const int k = (i + 2) % 3;
+
+	// Compute the face center by moving from the box center along the face axis.
+	const auto face_center = center + axes[i] * (positive ? half_size[i] : -half_size[i]);
+
+	const auto extent_j = half_size[j];
+	const auto extent_k = half_size[k];
+
+	// Compute the four vertices of the face (a rectangle)
+	return {
+		face_center + axes[j] * extent_j + axes[k] * extent_k,
+		face_center + axes[j] * extent_j - axes[k] * extent_k,
+		face_center - axes[j] * extent_j - axes[k] * extent_k,
+		face_center - axes[j] * extent_j + axes[k] * extent_k
+	};
+}
+
