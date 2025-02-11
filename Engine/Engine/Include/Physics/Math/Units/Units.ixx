@@ -6,25 +6,25 @@ export import gse.physics.math.units.energy_and_power;
 export import gse.physics.math.units.length;
 export import gse.physics.math.units.mass_and_force;
 export import gse.physics.math.units.movement;
-
-import gse.physics.math.units.quantity;
-
-export namespace gse::internal {
-	struct unitless_tag {};
-	constexpr char unitless_units[] = "Unitless";
-	struct unitless_unit : unit<unitless_tag, 1.0f, unitless_units> {};
-}
+export import gse.physics.math.units.quant;
 
 export namespace gse {
-	using unitless_units = unit_list<internal::unitless_unit>;
+	template <typename T> requires internal::is_quantity<T> auto abs(const T& value) -> T;
+	template <typename T> requires internal::is_quantity<T> auto min(const T& a, const T& b) -> T;
+	template <typename T> requires internal::is_quantity<T> auto max(const T& a, const T& b) -> T;
+}
 
-	struct unitless : quantity<unitless, internal::unitless_unit, unitless_units> {
-		unitless() = default;
+template <typename T> requires gse::internal::is_quantity<T>
+auto gse::abs(const T& value) -> T {
+	return value >= T() ? value : -value;
+}
 
-		unitless(const float value) : quantity(value) {}
+template <typename T> requires gse::internal::is_quantity<T>
+auto gse::min(const T& a, const T& b) -> T {
+	return a < b ? a : b;
+}
 
-		operator float() const {
-			return m_val;
-		}
-	};
+template <typename T> requires gse::internal::is_quantity<T>
+auto gse::max(const T& a, const T& b) -> T {
+	return a > b ? a : b;
 }

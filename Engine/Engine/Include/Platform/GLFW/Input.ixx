@@ -6,9 +6,9 @@ module;
 export module gse.platform.glfw.input;
 
 import std;
-import glm;
 
 import gse.core.main_clock;
+import gse.physics.math;
 
 export namespace gse::input {
 	struct button {
@@ -70,7 +70,7 @@ export namespace gse::input {
 	struct mouse {
 		std::unordered_map<int, button> buttons;
 
-		glm::vec2 position;
+		unitless::vec2 position;
 
 		auto reset() -> void {
 			for (auto& snd : buttons | std::views::values) {

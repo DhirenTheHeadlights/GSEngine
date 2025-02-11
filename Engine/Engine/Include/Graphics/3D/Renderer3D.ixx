@@ -1,11 +1,10 @@
 module;
 
-#define GLM_ENABLE_EXPERIMENTAL
-#include <glm/gtx/string_cast.hpp>
 #include <glad/glad.h>
 #include "json.hpp"
 #include "imgui.h"
 #include "Core/ResourcePaths.h"
+#include "iostream"
 
 export module gse.graphics.renderer3d;
 
@@ -20,7 +19,9 @@ export namespace gse::renderer3d {
 }
 
 import gse.core.json_parser;
+import gse.core.id;
 import gse.core.object_registry;
+import gse.graphics.debug;
 import gse.graphics.render_component;
 import gse.graphics.mesh;
 import gse.graphics.shader;
@@ -28,9 +29,11 @@ import gse.graphics.cube_map;
 import gse.graphics.material;
 import gse.graphics.model;
 import gse.graphics.model_loader;
+import gse.graphics.light;
 import gse.graphics.light_source_component;
 import gse.graphics.point_light;
 import gse.physics.motion_component;
+import gse.physics.math;
 import gse.platform.glfw.window;
 import gse.platform.glfw.input;
 import gse.platform.glfw.error_reporting;
@@ -54,10 +57,10 @@ GLuint g_hdr_color_buffer[2] = { 0, 0 };
 GLuint g_blur_fbo[2] = { 0, 0 };
 GLuint g_blur_color_buffer[2] = { 0, 0 };
 
-gse::unitless g_hdr_exposure = 0.5f;
-gse::unitless g_bloom_intensity = 1.f;
-gse::unitless g_bloom_threshold = 0.25f;
-gse::unitless g_blur_radius = 1.0f;
+float g_hdr_exposure = 0.5f;
+float g_bloom_intensity = 1.f;
+float g_bloom_threshold = 0.25f;
+float g_blur_radius = 1.0f;
 
 gse::cube_map g_reflection_cube_map;
 
@@ -147,7 +150,7 @@ auto gse::renderer3d::initialize() -> void {
 	// Set up the UBO for light space matrices
 	glGenBuffers(1, &g_light_space_block_ubo);
 	glBindBuffer(GL_UNIFORM_BUFFER, g_light_space_block_ubo);
-	constexpr size_t buffer_size = sizeof(glm::mat4) * 10; // MAX_LIGHTS is 10 in the shader
+	constexpr size_t buffer_size = sizeof(mat4) * 10; // MAX_LIGHTS is 10 in the shader
 	glBufferData(GL_UNIFORM_BUFFER, static_cast<GLsizeiptr>(buffer_size), nullptr, GL_DYNAMIC_DRAW);
 	glBindBufferBase(GL_UNIFORM_BUFFER, 4, g_light_space_block_ubo);
 	glBindBuffer(GL_UNIFORM_BUFFER, 0);
@@ -236,7 +239,7 @@ auto gse::renderer3d::initialize() -> void {
 }
 
 auto gse::renderer3d::initialize_objects() -> void {
-	for (const auto& light_source_components = registry::get_components<light_source_component>(); auto & light_source_component : light_source_components) {
+	for (const auto& light_source_components = registry::get_components<light_source_component>(); auto& light_source_component : light_source_components) {
 		for (const auto& light : light_source_component.get_lights()) {
 			if (const auto point_light_ptr = dynamic_cast<point_light*>(light); point_light_ptr) {
 				point_light_ptr->get_shadow_map().create(static_cast<int>((g_shadow_width + g_shadow_height) / 2.f), true);
@@ -267,9 +270,9 @@ auto gse::renderer3d::initialize_objects() -> void {
 	}
 }
 
-auto render_object(const std::uint32_t object_id, const gse::render_queue_entry& entry, const glm::mat4& view_matrix, const glm::mat4& projection_matrix) -> void {
+auto render_object(const std::uint32_t object_id, const gse::render_queue_entry& entry, const gse::mat4& view_matrix, const gse::mat4& projection_matrix) -> void {
 	if (const auto it = g_materials.find(entry.material_key); it != g_materials.end()) {
-		glm::mat4 model_matrix = entry.model_matrix;
+		gse::mat4 model_matrix = entry.model_matrix;
 		if (const auto* motion_component = gse::registry::get_component_ptr<gse::physics::motion_component>(object_id); motion_component) {
 			model_matrix = motion_component->get_transformation_matrix();
 		}
@@ -290,8 +293,8 @@ auto render_object(const std::uint32_t object_id, const gse::render_queue_entry&
 	}
 }
 
-auto render_object_forward(const std::uint32_t object_id, const gse::shader& forward_rendering_shader, const gse::render_queue_entry& entry, const glm::mat4& view_matrix, const glm::mat4& projection_matrix) -> void {
-	glm::mat4 model_matrix = entry.model_matrix;
+auto render_object_forward(const std::uint32_t object_id, const gse::shader& forward_rendering_shader, const gse::render_queue_entry& entry, const gse::mat4& view_matrix, const gse::mat4& projection_matrix) -> void {
+	gse::mat4 model_matrix = entry.model_matrix;
 	if (const auto* motion_component = gse::registry::get_component_ptr<gse::physics::motion_component>(object_id); motion_component) {
 		model_matrix = motion_component->get_transformation_matrix();
 	}
@@ -313,7 +316,7 @@ auto render_object_forward(const std::uint32_t object_id, const gse::shader& for
 auto render_object(const gse::light_render_queue_entry& entry) -> void {
 	if (const auto it = g_lighting_shaders.find(entry.shader_key); it != g_lighting_shaders.end()) {
 		it->second.use();
-		it->second.set_mat4("model", glm::mat4(1.0f));
+		it->second.set_mat4("model", gse::mat4(1.0f));
 		it->second.set_mat4("view", g_camera.get_view_matrix());
 		it->second.set_mat4("projection", g_camera.get_projection_matrix());
 
@@ -357,7 +360,7 @@ auto render_fullscreen_quad() -> void {
 	glBindVertexArray(0);
 }
 
-auto render_lighting_pass(const gse::shader& lighting_shader, const std::vector<gse::light_shader_entry>& light_data, const std::vector<glm::mat4>& light_space_matrices, const std::vector<GLuint>& depth_maps) -> void {
+auto render_lighting_pass(const gse::shader& lighting_shader, const std::vector<gse::light_shader_entry>& light_data, const std::vector<gse::mat4>& light_space_matrices, const std::vector<GLuint>& depth_maps) -> void {
 	if (light_data.empty()) {
 		return;
 	}
@@ -372,7 +375,7 @@ auto render_lighting_pass(const gse::shader& lighting_shader, const std::vector<
 
 	// Update UBO with light space matrices
 	glBindBuffer(GL_UNIFORM_BUFFER, g_light_space_block_ubo);
-	glBufferSubData(GL_UNIFORM_BUFFER, 0, light_space_matrices.size() * sizeof(glm::mat4), light_space_matrices.data());
+	glBufferSubData(GL_UNIFORM_BUFFER, 0, light_space_matrices.size() * sizeof(gse::mat4), light_space_matrices.data());
 	glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
 	glBindFramebuffer(GL_FRAMEBUFFER, g_hdr_fbo);
@@ -467,7 +470,7 @@ auto render_additional_post_processing(const gse::shader& post_processing_shader
 	glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-auto render_shadow_pass(const gse::shader& shadow_shader, const std::vector<gse::render_component>& render_components, const glm::mat4& light_projection, const glm::mat4& light_view, const GLuint depth_map_fbo, gse::id* light_ignore_list_id) -> void {
+auto render_shadow_pass(const gse::shader& shadow_shader, const std::vector<gse::render_component>& render_components, const gse::mat4& light_projection, const gse::mat4& light_view, const GLuint depth_map_fbo, gse::id* light_ignore_list_id) -> void {
 	shadow_shader.set_mat4("light_view", light_view);
 	shadow_shader.set_mat4("light_projection", light_projection);
 
@@ -482,7 +485,7 @@ auto render_shadow_pass(const gse::shader& shadow_shader, const std::vector<gse:
 
 		for (auto& model_handle : render_component.models) {
 			for (auto& [material_key, vao, draw_mode, vertex_count, model_matrix, color] : model_handle.get_render_queue_entries()) {
-				glm::mat4 model_matrix_v = model_matrix;
+				gse::mat4 model_matrix_v = model_matrix;
 
 				if (const auto* motion_component = gse::registry::get_component_ptr<gse::physics::motion_component>(render_component.parent_id); motion_component) {
 					if (const auto& transformed_model_matrix = motion_component->get_transformation_matrix(); transformed_model_matrix != model_matrix) {
@@ -502,46 +505,49 @@ auto render_shadow_pass(const gse::shader& shadow_shader, const std::vector<gse:
 	glViewport(0, 0, gse::window::get_frame_buffer_size().x, gse::window::get_frame_buffer_size().y); // Restore viewport
 }
 
-auto ensure_non_collinear_up(const glm::vec3& direction, const glm::vec3& up) -> glm::vec3 {
-	constexpr float epsilon = 0.001f;
+auto ensure_non_collinear_up(const gse::unitless::vec3& direction, const gse::unitless::vec3& up) -> gse::unitless::vec3 {
+	const gse::unitless::vec3 normalized_direction = gse::normalize(direction);
+	gse::unitless::vec3 normalized_up = gse::normalize(up);
 
-	const glm::vec3 normalized_direction = normalize(direction);
-	glm::vec3 normalized_up = normalize(up);
-
-	if (const float dot_product = dot(normalized_direction, normalized_up); glm::abs(dot_product) > 1.0f - epsilon) {
-		if (glm::abs(normalized_direction.y) > 0.9f) {
-			normalized_up = glm::vec3(0.0f, 0.0f, 1.0f); // Z-axis
+	if (const float dot_product = gse::dot(normalized_direction, normalized_up); std::abs(dot_product) > 1.0f - std::numeric_limits<float>::epsilon()) {
+		if (std::abs(normalized_direction.y) > 0.9f) {
+			normalized_up = gse::unitless::vec3(0.0f, 0.0f, 1.0f); // Z-axis
 		}
 		else {
-			normalized_up = glm::vec3(0.0f, 1.0f, 0.0f); // Y-axis
+			normalized_up = gse::unitless::vec3(0.0f, 1.0f, 0.0f); // Y-axis
 		}
 	}
 
 	return normalized_up;
 }
 
-auto calculate_light_projection(const gse::light* light) -> glm::mat4 {
+auto calculate_light_projection(const gse::light* light) -> gse::mat4 {
 	const auto& entry = light->get_render_queue_entry();
 
-	glm::mat4 light_projection(1.0f);
+	gse::mat4 light_projection(1.0f);
 
 	if (light->get_type() == gse::light_type::directional) {
-		light_projection = glm::ortho(-10000.0f, 10000.0f, -10000.0f, 1000.0f,
-			entry.near_plane.as<gse::units::meters>(), entry.far_plane.as<gse::units::meters>());
+		light_projection = orthographic(
+			gse::meters(-10000.0f),
+			gse::meters(10000.0f),
+			gse::meters(-10000.0f),
+			gse::meters(1000.0f),
+			entry.near_plane,
+			entry.far_plane);
 	}
 	else if (light->get_type() == gse::light_type::spot) {
-		const float cutoff = entry.shader_entry.cut_off;
-		light_projection = glm::perspective(cutoff, 1.0f, entry.near_plane.as<gse::units::meters>(), entry.far_plane.as<gse::units::meters>());
+		const auto cutoff = gse::radians(entry.shader_entry.cut_off);
+		light_projection = perspective(cutoff, 1.0f, entry.near_plane, entry.far_plane);
 	}
 
 	return light_projection;
 }
 
-auto calculate_light_view(const gse::light* light) -> glm::mat4 {
+auto calculate_light_view(const gse::light* light) -> gse::mat4 {
 	const auto& entry = light->get_render_queue_entry();
-	const glm::vec3 light_direction = entry.shader_entry.direction;
+	const gse::unitless::vec3 light_direction = entry.shader_entry.direction;
 
-	glm::vec3 light_pos(0.0f);
+	gse::vec3<gse::length> light_pos(0.0f);
 
 	if (light->get_type() == gse::light_type::directional) {
 		light_pos = -light_direction * 10.0f;
@@ -550,10 +556,10 @@ auto calculate_light_view(const gse::light* light) -> glm::mat4 {
 		light_pos = entry.shader_entry.position;
 	}
 
-	return lookAt(
+	return look_at(
 		light_pos,
 		light_pos + light_direction,
-		ensure_non_collinear_up(light_direction, glm::vec3(0.0f, 1.0f, 0.0f))
+		ensure_non_collinear_up(light_direction, { 0.0f, 1.0f, 0.0f })
 	);
 }
 
@@ -568,10 +574,10 @@ auto gse::renderer3d::render() -> void {
 		ImGui::SliderInt("Blur Amount", &g_amount_of_blur_passes_in_each_direction, 0, 10);
 
 
-		debug::unit_slider("Exposure", g_hdr_exposure, unitless(0.1f), unitless(10.f));
-		debug::unit_slider("Bloom Intensity", g_bloom_intensity, unitless(0.1f), unitless(10.f));
-		debug::unit_slider("Bloom Threshold", g_bloom_threshold, unitless(0.1f), unitless(10.f));
-		debug::unit_slider("Bloom Radius", g_blur_radius, unitless(0.1f), unitless(10.f));
+		debug::unit_slider("Exposure", g_hdr_exposure,(0.1f),(10.f));
+		debug::unit_slider("Bloom Intensity", g_bloom_intensity,(0.1f),(10.f));
+		debug::unit_slider("Bloom Threshold", g_bloom_threshold,(0.1f),(10.f));
+		debug::unit_slider("Bloom Radius", g_blur_radius,(0.1f),(10.f));
 		ImGui::End();
 		});
 
@@ -579,6 +585,7 @@ auto gse::renderer3d::render() -> void {
 	const auto& light_source_components = registry::get_components<light_source_component>();
 
 	g_camera.update_camera_vectors();
+
 	if (!window::is_mouse_visible()) g_camera.process_mouse_movement(window::get_mouse_delta());
 
 	std::vector<light_shader_entry> light_data;
@@ -601,8 +608,8 @@ auto gse::renderer3d::render() -> void {
 	glBufferData(GL_SHADER_STORAGE_BUFFER, static_cast<GLsizeiptr>(light_data.size()) * sizeof(light_shader_entry), light_data.data(), GL_DYNAMIC_DRAW);
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, g_ssbo_lights);
 
-	g_reflection_cube_map.update(glm::vec3(0.f), g_camera.get_projection_matrix(),
-		[&render_components, &forward_rendering_shader](const glm::mat4& view_matrix, const glm::mat4& projection_matrix) {
+	g_reflection_cube_map.update(unitless::vec3(0.f), g_camera.get_projection_matrix(),
+		[&render_components, &forward_rendering_shader](const mat4& view_matrix, const mat4& projection_matrix) {
 			for (const auto& render_component : render_components) {
 				for (const auto& model_handle : render_component.models) {
 					for (const auto& render_queue_entry : model_handle.get_render_queue_entries()) {
@@ -614,7 +621,7 @@ auto gse::renderer3d::render() -> void {
 
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
-	std::vector<glm::mat4> light_space_matrices;
+	std::vector<mat4> light_space_matrices;
 
 	const auto& shadow_shader = g_deferred_rendering_shaders["ShadowPass"];
 	shadow_shader.use();
@@ -624,7 +631,7 @@ auto gse::renderer3d::render() -> void {
 			if (const auto point_light_ptr = dynamic_cast<point_light*>(light); point_light_ptr) {
 				const auto light_pos = point_light_ptr->get_render_queue_entry().shader_entry.position;
 
-				point_light_ptr->get_shadow_map().update(light_pos, glm::mat4(1.f), [&](const glm::mat4& view_matrix, const glm::mat4& projection_matrix) {
+				point_light_ptr->get_shadow_map().update(light_pos, mat4(1.f), [&](const mat4& view_matrix, const mat4& projection_matrix) {
 					shadow_shader.use();
 					shadow_shader.set_mat4("view", view_matrix);
 					shadow_shader.set_mat4("projection", projection_matrix);
@@ -661,7 +668,7 @@ auto gse::renderer3d::render() -> void {
 	// Geometry pass
 	glBindFramebuffer(GL_FRAMEBUFFER, g_g_buffer);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	auto& models = model_loader::get_models();
+
 	for (const auto& render_component : render_components) {
 		for (const auto& model_handle : render_component.models) {
 			for (const auto& render_queue_entry : model_handle.get_render_queue_entries()) {

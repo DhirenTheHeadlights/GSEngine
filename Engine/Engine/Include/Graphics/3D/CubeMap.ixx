@@ -2,36 +2,35 @@ module;
 
 #include <glad/glad.h>
 #include <stb_image.h>
-#include "glm/ext/matrix_clip_space.hpp"
-#include "glm/ext/matrix_transform.hpp"
 
 export module gse.graphics.cube_map;
 
 import std;
-import glm;
+
+import gse.physics.math;
 
 export namespace gse {
-	class cube_map {
-	public:
-		cube_map() = default;
-		~cube_map();
+    class cube_map {
+    public:
+        cube_map() = default;
+        ~cube_map();
 
-		auto create(const std::vector<std::string>& faces) -> void;
-		auto create(int resolution, bool depth_only = false) -> void;
-		auto bind(GLuint unit) const -> void;
-		auto update(const glm::vec3& position, const glm::mat4& projection_matrix, const std::function<void(const glm::mat4&, const glm::mat4&)>& render_function) const -> void;
+        auto create(const std::vector<std::string>& faces) -> void;
+        auto create(int resolution, bool depth_only = false) -> void;
+        auto bind(std::uint32_t unit) const -> void;
+        auto update(const vec3<length>& position, const mat4& projection_matrix, const std::function<void(const mat4&, const mat4&)>& render_function) const -> void;
 
-		auto get_texture_id() const -> GLuint { return m_texture_id; }
-		auto get_frame_buffer_id() const -> GLuint { return m_frame_buffer_id; }
-	private:
-		GLuint m_texture_id;
-		GLuint m_frame_buffer_id;
-		GLuint m_depth_render_buffer_id;
-		int m_resolution;
-		bool m_depth_only;
+        auto get_texture_id() const -> std::uint32_t { return m_texture_id; }
+        auto get_frame_buffer_id() const -> std::uint32_t { return m_frame_buffer_id; }
+    private:
+        std::uint32_t m_texture_id;
+        std::uint32_t m_frame_buffer_id;
+        std::uint32_t m_depth_render_buffer_id;
+        int m_resolution;
+        bool m_depth_only;
 
-		static auto get_view_matrices(const glm::vec3& position) -> std::vector<glm::mat4>;
-	};
+        static auto get_view_matrices(const vec3<length>& position) -> std::vector<mat4>;
+    };
 }
 
 import gse.platform.glfw.window;
@@ -105,16 +104,16 @@ auto gse::cube_map::create(const int resolution, const bool depth_only) -> void 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-auto gse::cube_map::bind(const GLuint unit) const -> void {
+auto gse::cube_map::bind(const std::uint32_t unit) const -> void {
     glActiveTexture(GL_TEXTURE0 + unit);
     glBindTexture(GL_TEXTURE_CUBE_MAP, m_texture_id);
 }
 
-auto gse::cube_map::update(const glm::vec3& position, const glm::mat4& projection_matrix, const std::function<void(const glm::mat4&, const glm::mat4&)>& render_function) const -> void {
+auto gse::cube_map::update(const vec3<length>& position, const mat4& projection_matrix, const std::function<void(const mat4&, const mat4&)>& render_function) const -> void {
     glBindFramebuffer(GL_FRAMEBUFFER, m_frame_buffer_id);
     glViewport(0, 0, m_resolution, m_resolution);
 
-    const std::vector<glm::mat4> view_matrices = get_view_matrices(position);
+    const std::vector<mat4> view_matrices = get_view_matrices(position);
 
     for (unsigned int i = 0; i < 6; i++) {
         if (m_depth_only) {
@@ -136,14 +135,13 @@ auto gse::cube_map::update(const glm::vec3& position, const glm::mat4& projectio
     glViewport(0, 0, window::get_frame_buffer_size().x, window::get_frame_buffer_size().y);
 }
 
-auto gse::cube_map::get_view_matrices(const glm::vec3& position) -> std::vector<glm::mat4> {
+auto gse::cube_map::get_view_matrices(const vec3<length>& position) -> std::vector<mat4> {
     return {
-        lookAt(position, position + glm::vec3(1.0f, 0.0f,  0.0f), glm::vec3(0.0f, -1.0f, 0.0f)),  // +X
-        lookAt(position, position + glm::vec3(-1.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f)),  // -X
-        lookAt(position, position + glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 0.0f,  1.0f)),   // +Y
-        lookAt(position, position + glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f)),  // -Y
-        lookAt(position, position + glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f, -1.0f, 0.0f)),   // +Z
-        lookAt(position, position + glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, -1.0f, 0.0f))   // -Z
+        look_at(position, position + vec3<length>(1.0f, 0.0f,  0.0f), { 0.0f, -1.0f, 0.0f }),  // +X
+        look_at(position, position + vec3<length>(-1.0f, 0.0f, 0.0f), { 0.0f, -1.0f, 0.0f }),  // -X
+        look_at(position, position + vec3<length>(0.0f, 1.0f, 0.0f),  { 0.0f, 0.0f,  1.0f }),  // +Y
+        look_at(position, position + vec3<length>(0.0f, -1.0f, 0.0f), { 0.0f, 0.0f, -1.0f }),  // -Y
+        look_at(position, position + vec3<length>(0.0f, 0.0f, 1.0f),  { 0.0f, -1.0f, 0.0f }),  // +Z
+        look_at(position, position + vec3<length>(0.0f, 0.0f, -1.0f), { 0.0f, -1.0f, 0.0f })   // -Z
     };
 }
-

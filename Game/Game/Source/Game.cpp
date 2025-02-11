@@ -29,7 +29,7 @@ struct iron_man_hook final : gse::hook<gse::entity> {
 		gse::model_loader::load_obj_file(GOONSQUAD_RESOURCES_PATH "Models/IronMan/iron_man.obj", "Iron Man");
 		gse::registry::add_component(gse::render_component(owner_id, gse::get_id("Iron Man")));
 		gse::registry::get_component<gse::render_component>(owner_id).set_model_material("NULL");
-		gse::registry::get_component<gse::render_component>(owner_id).models[0].set_position(gse::vec3<gse::units::meters>(0.f, 0.f, 0.f));
+		gse::registry::get_component<gse::render_component>(owner_id).models[0].set_position(gse::vec::meters(0.f, 0.f, 0.f));
 	}
 };
 
@@ -40,7 +40,7 @@ struct raw_backpack_hook final : gse::hook<gse::entity> {
 		gse::model_loader::load_obj_file(GOONSQUAD_RESOURCES_PATH "Models/Backpack/backpack.obj", "Backpack");
 		gse::registry::add_component(gse::render_component(owner_id, gse::get_id("Backpack")));
 		gse::registry::get_component<gse::render_component>(owner_id).set_model_material("NULL");
-		gse::registry::get_component<gse::render_component>(owner_id).models[0].set_position(gse::vec3<gse::units::meters>(0.f, 0.f, 0.f));
+		gse::registry::get_component<gse::render_component>(owner_id).models[0].set_position(gse::vec::meters(0.f, 0.f, 0.f));
 	}
 };
 
@@ -51,10 +51,10 @@ struct scene1_hook final : gse::hook<gse::scene> {
 		game::arena::create(m_owner);
 
 		m_owner->add_entity(game::create_player(), "Player");
-		m_owner->add_entity(create_box(gse::vec3<gse::units::meters>(20.f, -400.f, 20.f), gse::vec3<gse::units::meters>(20.f, 20.f, 20.f)), "Bigger Box");
-		m_owner->add_entity(create_box(gse::vec3<gse::units::meters>(-20.f, -400.f, 20.f), gse::vec3<gse::units::meters>(40.f, 40.f, 40.f)), "Smaller Box");
-		m_owner->add_entity(game::create_sphere_light(gse::vec3<gse::units::meters>(0.f, -300.f, 0.f), gse::meters(10.f), 18), "Center Sphere Light");
-		m_owner->add_entity(create_sphere(gse::vec3<gse::units::meters>(0.f, -00.f, 200.f), gse::meters(10.f)), "Second Sphere");
+		m_owner->add_entity(create_box(gse::vec::meters(20.f, -400.f, 20.f), gse::vec::meters(20.f, 20.f, 20.f)), "Bigger Box");
+		m_owner->add_entity(create_box(gse::vec::meters(-20.f, -400.f, 20.f), gse::vec::meters(40.f, 40.f, 40.f)), "Smaller Box");
+		m_owner->add_entity(game::create_sphere_light(gse::vec::meters(0.f, -300.f, 0.f), gse::meters(10.f), 18), "Center Sphere Light");
+		m_owner->add_entity(create_sphere(gse::vec::meters(0.f, -00.f, 200.f), gse::meters(10.f)), "Second Sphere");
 
 
 
@@ -94,7 +94,7 @@ struct scene2_hook final : gse::hook<gse::scene> {
 	auto initialize() -> void override {
 		game::skybox::create(m_owner);
 		m_owner->add_entity(game::create_player(), "Player");
-		const std::uint32_t floor_uuid = create_box(gse::vec3<gse::units::meters>(0.f, -500.f, 0.f), gse::vec3<gse::units::meters>(20000.f, 10.f, 20000.f));
+		const std::uint32_t floor_uuid = create_box(gse::vec::meters(0.f, -500.f, 0.f), gse::vec::meters(20000.f, 10.f, 20000.f));
 		gse::registry::add_entity_hook(floor_uuid, std::make_unique<floor_hook>());
 		m_owner->add_entity(floor_uuid, "Floor");
 	}
@@ -150,9 +150,9 @@ auto game::update() -> bool {
 }
 
 auto game::render() -> bool {
-	/*gse::gui::create_menu("Test", { 100.f, 100.f }, { 200.f, 200.f }, [] {
+	gse::gui::create_menu("Test", { 100.f, 100.f }, { 200.f, 200.f }, [] {
 		gse::gui::text("Hello, World!");
-		});*/
+		});
 	return true;
 }
 
