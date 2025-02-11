@@ -10,6 +10,7 @@ import gse.physics.motion_component;
 import gse.graphics.debug;
 import gse.graphics.model_loader;
 import gse.graphics.mesh;
+import gse.graphics.texture_loader;
 
 export namespace gse {
     auto create_sphere(std::uint32_t object_uuid, const vec3<length>& position, length radius, int sectors = 36, int stacks = 18) -> void;
@@ -80,7 +81,7 @@ export struct sphere_mesh_hook final : gse::hook<gse::entity> {
         }
 
         std::vector<gse::mesh> new_meshes;
-        new_meshes.emplace_back(vertices, indices);
+        new_meshes.emplace_back(vertices, indices, std::vector<std::uint32_t> { gse::texture_loader::get_texture_by_path("C:/Users/scbel/source/repos/DhirenTheHeadlights/GSEngine/Engine/Resources/Textures/sun.jpg") });
 
         gse::render_component new_render_component(owner_id, gse::model_loader::add_model(std::move(new_meshes), "Sphere"));
 

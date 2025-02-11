@@ -132,10 +132,10 @@ auto gse::model_loader::load_obj_file(const std::string& model_path, const std::
 					gse::mtl_material& mat = g_materials[current_material];
 
 					if (tokens[0] == "Ns") mat.shininess = std::stof(tokens[1]);
-					else if (tokens[0] == "Ka") mat.ambient = glm::vec3(std::stof(tokens[1]), std::stof(tokens[2]), std::stof(tokens[3]));
-					else if (tokens[0] == "Kd") mat.diffuse = glm::vec3(std::stof(tokens[1]), std::stof(tokens[2]), std::stof(tokens[3]));
-					else if (tokens[0] == "Ks") mat.specular = glm::vec3(std::stof(tokens[1]), std::stof(tokens[2]), std::stof(tokens[3]));
-					else if (tokens[0] == "Ke") mat.emission = glm::vec3(std::stof(tokens[1]), std::stof(tokens[2]), std::stof(tokens[3]));
+					else if (tokens[0] == "Ka") mat.ambient = gse::unitless::vec3(std::stof(tokens[1]), std::stof(tokens[2]), std::stof(tokens[3]));
+					else if (tokens[0] == "Kd") mat.diffuse = gse::unitless::vec3(std::stof(tokens[1]), std::stof(tokens[2]), std::stof(tokens[3]));
+					else if (tokens[0] == "Ks") mat.specular = gse::unitless::vec3(std::stof(tokens[1]), std::stof(tokens[2]), std::stof(tokens[3]));
+					else if (tokens[0] == "Ke") mat.emission = gse::unitless::vec3(std::stof(tokens[1]), std::stof(tokens[2]), std::stof(tokens[3]));
 					else if (tokens[0] == "Ni") mat.optical_density = std::stof(tokens[1]);
 					else if (tokens[0] == "d") mat.transparency = std::stof(tokens[1]);
 					else if (tokens[0] == "illum") mat.illumination_model = std::stoi(tokens[1]);

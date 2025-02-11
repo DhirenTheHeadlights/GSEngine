@@ -56,7 +56,7 @@ gse::model_handle::model_handle(id* model_id, const model& model) : m_model_id(m
 			GL_TRIANGLES,
 			static_cast<GLsizei>(mesh.indices.size()),
 			mat4(1.0f),
-			glm::vec3(1.0f),
+			gse::unitless::vec3(1.0f),
 			std::span<const std::uint32_t>(mesh.texture_ids),
 			mesh.material
 		);
