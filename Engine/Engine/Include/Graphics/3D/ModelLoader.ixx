@@ -37,11 +37,22 @@ auto gse::model_loader::load_obj_file(const std::string& model_path, const std::
 
 	auto split = [](const std::string& str, const char delimiter = ' ') -> std::vector<std::string> {
 		std::vector<std::string> tokens;
-		std::istringstream stream(str);
-		std::string token;
-
-		while (std::getline(stream, token, delimiter)) {
-			tokens.push_back(token);
+		size_t length = str.length();
+		size_t i = 0;
+		while (i < length) {
+			// Skip multiple delimiters
+			while (i < length && str[i] == delimiter) {
+				++i;
+			}
+			// Start of a token
+			size_t start = i;
+			while (i < length && str[i] != delimiter) {
+				++i;
+			}
+			// Add non-empty tokens to the list
+			if (start < i) {
+				tokens.emplace_back(str.substr(start, i - start));
+			}
 		}
 		return tokens;
 		};
@@ -150,12 +161,14 @@ auto gse::model_loader::load_obj_file(const std::string& model_path, const std::
 			current_material = split_line[1];
 		}
 	}
+	model.initialize();
+
 
 	pre_load_vertices.clear();
 	pre_load_texcoords.clear();
 	pre_load_normals.clear();
 
-	model.initialize();
+	
 
 	id* id_pointer = model.get_id();
 	g_loaded_model_paths.insert({ id_pointer, model_path });
