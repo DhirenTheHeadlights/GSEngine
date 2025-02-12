@@ -9,6 +9,7 @@ import std;
 import gse.graphics.mesh;
 import gse.physics.math;
 import gse.core.id;
+import gse.graphics.texture_loader;
 
 export namespace gse {
 	class model_handle;
@@ -30,6 +31,7 @@ export namespace gse {
 		auto set_position(const vec3<length>& position) -> void;
 		auto set_rotation(const vec3<angle>& rotation) -> void;
 		auto set_material(const std::string& material_name) -> void;
+		auto set_all_mesh_textures(const std::vector<std::uint32_t>& texture_ids) -> void;
 
 		auto get_render_queue_entries() const -> const std::vector<render_queue_entry>&;
 		auto get_model_id() const->id*;
@@ -54,7 +56,9 @@ gse::model_handle::model_handle(id* model_id, const model& model) : m_model_id(m
 			GL_TRIANGLES,
 			static_cast<GLsizei>(mesh.indices.size()),
 			mat4(1.0f),
-			unitless::vec3(1.0f)
+			gse::unitless::vec3(1.0f),
+			std::span<const std::uint32_t>(mesh.texture_ids),
+			mesh.material
 		);
 	}
 }
@@ -62,6 +66,12 @@ gse::model_handle::model_handle(id* model_id, const model& model) : m_model_id(m
 auto gse::model_handle::set_position(const vec3<length>& position) -> void {
 	for (auto& render_queue_entry : m_render_queue_entries) {
 		render_queue_entry.model_matrix = translate(mat4(1.0f), position);
+	}
+}
+
+auto gse::model_handle::set_all_mesh_textures(const std::vector<std::uint32_t>& texture_ids) -> void {
+	for (auto& render_queue_entry : m_render_queue_entries) {
+		render_queue_entry.texture_ids = texture_ids;
 	}
 }
 

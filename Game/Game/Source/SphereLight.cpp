@@ -21,19 +21,20 @@ struct sphere_light_hook final : gse::hook<gse::entity> {
 auto sphere_light_hook::initialize() -> void {
 	gse::light_source_component light_source_component(owner_id);
 
-	auto light = std::make_unique<gse::spot_light>(
+	auto spot_light = std::make_unique<gse::spot_light>(
 		gse::unitless::vec3(1.f), 250.f, gse::vec3<gse::length>(), gse::unitless::vec3(0.0f, -1.0f, 0.0f), 1.0f, 0.09f, 0.032f, gse::degrees(35.f), gse::degrees(65.f), 0.025f
 	);
 
+	//auto point_light = std::make_unique<gse::point_light>(
+	//gse::vec3(1.f), gse::unitless(250.f), gse::vec3<gse::length>(), gse::unitless(1.f), 0.09f, 0.032f, gse::unitless(0.025f)
+	//);
+
 	const auto ignore_list_id = gse::generate_id("Sphere Light " + std::to_string(g_sphere_light_count) + " Ignore List");
 	gse::registry::add_new_entity_list(ignore_list_id.get(), { owner_id });
-	light->set_ignore_list_id(ignore_list_id.get());
+	spot_light->set_ignore_list_id(ignore_list_id.get());
 
-	light_source_component.add_light(std::move(light));
-
-	/*light_source_component->add_light(std::make_shared<gse::point_light>(
-		gse::vec3(1.f), gse::unitless(1.f), m_owner->get_position(), gse::unitless(1.f), gse::unitless(1.f), gse::unitless(0.09f), gse::unitless(0.032f)
-	));*/
+	light_source_component.add_light(std::move(spot_light));
+	//light_source_component.add_light(std::move(point_light));
 
 	gse::registry::add_component<gse::light_source_component>(std::move(light_source_component));
 
