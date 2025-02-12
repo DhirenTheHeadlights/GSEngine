@@ -120,7 +120,14 @@ auto render_quad(const gse::vec2<gse::length>& position, const gse::vec2<gse::le
     g_shader.use();
     g_shader.set_mat4("projection", g_projection);
 
-    gse::mat4 model = translate(gse::mat4(1.0f), gse::vec3<gse::length>(position, gse::meters(0.0f)));
+    gse::mat4 model = translate(
+        gse::mat4(1.0f),
+        gse::vec3<gse::length>(
+            position.x,
+            position.y - size.y,  // move the quad down by its height
+            gse::meters(0.0f)
+        )
+    );
     model = scale(model, gse::vec3<gse::length>(size, 1.0f));
     g_shader.set_mat4("uModel", model);
 
@@ -144,10 +151,10 @@ auto render_quad(const gse::vec2<gse::length>& position, const gse::vec2<gse::le
     const gse::vec::raw2f uv3 = { uv_rect.x, uv_rect.y };                                // Bottom-left
 
     const vertex vertices[4] = {
-        {.position = {0.0f, 1.0f}, .texture_coordinate = uv0},
-        {.position = {1.0f, 1.0f}, .texture_coordinate = uv1},
-        {.position = {1.0f, 0.0f}, .texture_coordinate = uv2},
-        {.position = {0.0f, 0.0f}, .texture_coordinate = uv3}
+        {.position = {0.0f, 0.0f}, .texture_coordinate = uv3},
+		{.position = {1.0f, 0.0f}, .texture_coordinate = uv2},
+		{.position = {1.0f, 1.0f}, .texture_coordinate = uv1},
+		{.position = {0.0f, 1.0f}, .texture_coordinate = uv0}
     };
 
     glBindBuffer(GL_ARRAY_BUFFER, g_vbo);

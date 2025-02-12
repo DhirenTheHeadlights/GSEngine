@@ -40,11 +40,13 @@ export namespace gse::window {
 	auto has_mouse_moved() -> int;
 
 	auto get_current_monitor() -> GLFWmonitor*;
-	auto get_mouse_delta() -> unitless::vec2;
+	auto get_mouse_delta_rel_top_left() -> unitless::vec2;
+	auto get_mouse_delta_rel_bottom_left() -> unitless::vec2;
 
 	auto get_fbo() -> std::optional<GLuint>;
 	auto get_frame_buffer_size() -> unitless::vec2i;
-	auto get_rel_mouse_position() -> unitless::vec2;
+	auto get_mouse_position_rel_top_left() -> unitless::vec2;
+	auto get_mouse_position_rel_bottom_left() -> unitless::vec2;
 	auto get_window_size() -> unitless::vec2i;
 	auto get_viewport_size() -> unitless::vec2i;
 
@@ -289,11 +291,17 @@ auto gse::window::get_current_monitor() -> GLFWmonitor* {
 
 gse::unitless::vec2 g_last_mouse_position = { 0, 0 };
 
-auto gse::window::get_mouse_delta() -> unitless::vec2 {
-	const auto current_mouse_position = unitless::vec2(get_rel_mouse_position());
+auto gse::window::get_mouse_delta_rel_top_left() -> unitless::vec2 {
+	const auto current_mouse_position = unitless::vec2(get_mouse_position_rel_top_left());
 	const auto delta = current_mouse_position - g_last_mouse_position;
 	g_last_mouse_position = current_mouse_position;
 	return delta;
+}
+
+auto gse::window::get_mouse_delta_rel_bottom_left() -> unitless::vec2 {
+	auto delta_top_left = get_mouse_delta_rel_top_left();
+	delta_top_left.y *= -1;
+	return delta_top_left;
 }
 
 auto gse::window::get_fbo() -> std::optional<GLuint> {
@@ -316,10 +324,16 @@ auto gse::window::get_frame_buffer_size() -> unitless::vec2i {
 	return { x, y };
 }
 
-auto gse::window::get_rel_mouse_position() -> unitless::vec2 {
+auto gse::window::get_mouse_position_rel_top_left() -> unitless::vec2 {
 	double x = 0, y = 0;
 	glfwGetCursorPos(g_window, &x, &y);
 	return { static_cast<float>(x), static_cast<float>(y) };
+}
+
+auto gse::window::get_mouse_position_rel_bottom_left() -> unitless::vec2 {
+	const auto top_left = get_mouse_position_rel_top_left();
+	const auto window_size = get_window_size();
+	return { top_left.x, window_size.y - top_left.y - 1 };
 }
 
 auto gse::window::get_window_size() -> unitless::vec2i {

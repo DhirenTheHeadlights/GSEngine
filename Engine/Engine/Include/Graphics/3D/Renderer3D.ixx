@@ -586,7 +586,7 @@ auto gse::renderer3d::render() -> void {
 
 	g_camera.update_camera_vectors();
 
-	if (!window::is_mouse_visible()) g_camera.process_mouse_movement(window::get_mouse_delta());
+	if (!window::is_mouse_visible()) g_camera.process_mouse_movement(window::get_mouse_delta_rel_top_left());
 
 	std::vector<light_shader_entry> light_data;
 	light_data.reserve(light_source_components.size());
