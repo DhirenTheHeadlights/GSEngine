@@ -32,9 +32,9 @@ struct menu {
 	gse::unitless::vec2 size;
 	gse::unitless::vec2 pre_docked_size;
 	std::string name = "";
-	gse::timed_lock<bool> grabbed{ false, gse::seconds(0.01)};
+	gse::quota_timed_lock<bool, 2> grabbed{ false, gse::seconds(0.1)};
 	gse::unitless::vec2 offset;
-	bool docked = false;
+	gse::timed_lock<bool> docked{ true, gse::seconds(0.5) };
 
 	std::function<void()> contents;
 };
@@ -107,13 +107,17 @@ auto gse::gui::update() -> void {
 	for (auto& [texture, position, size, pre_docked_size, name, grabbed, grab_offset, docked, contents] : g_menus) {
 		const auto mouse_position = window::get_mouse_position_rel_bottom_left();
 
-		if (input::get_mouse().buttons[GLFW_MOUSE_BUTTON_LEFT].held) {
-			if (!grabbed.get_value()) {
+		if (input::get_mouse().buttons[GLFW_MOUSE_BUTTON_LEFT].toggled) {
+			if (grabbed.get_value() == false) {
 				if (intersects(position, size, mouse_position, { 0.f, 0.f })) {
 					grabbed = true;
-					docked = false;
-					size = pre_docked_size;
 					grab_offset = position - mouse_position;
+
+					if (docked.get_value() == true && docked.is_value_mutable() && magnitude(grab_offset) > 10.f) {
+						docked = false;
+						size = pre_docked_size;
+						position = mouse_position + grab_offset;
+					}
 				}
 			}
 
@@ -122,7 +126,7 @@ auto gse::gui::update() -> void {
 				position = clamp(position, unitless::vec2(0.f, 0.f), unitless::vec2(window::get_window_size()));
 
 				for (auto& dock : g_docks) {
-					if (intersects(position, size, dock.position, docking_area::size) && !docked) {
+					if (intersects(position, size, dock.position, docking_area::size) && !docked.get_value() && docked.is_value_mutable()) {
 						docked = true;
 						grabbed = false;
 						position = dock.docked_position;
