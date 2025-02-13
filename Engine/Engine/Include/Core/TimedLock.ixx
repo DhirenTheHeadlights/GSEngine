@@ -1,82 +1,99 @@
 export module gse.core.timed_lock;
 
 import std;
-
 import gse.core.main_clock;
 import gse.physics.math.units.duration;
 
 export namespace gse {
-	template <typename T>
-	class timed_lock {
-	public:
-		timed_lock() = default;
 
-		timed_lock(const T& value, const time duration) : m_value(value), m_duration(duration) {}
+    template <typename T>
+    class timed_lock {
+    public:
+        virtual ~timed_lock() = default;
+        timed_lock() = default;
 
-		template <typename... Args>
-		timed_lock(const time duration, Args&&... args) : m_value(std::forward<Args>(args)...), m_duration(duration) {}
+        timed_lock(const T& value, const time duration)
+            : m_value(value), m_duration(duration) {
+        }
 
-		// Updates m_value only if the cooldown has expired.
-		// If the cooldown is still active, the assignment is silently ignored.
-		auto operator=(const T& value) -> timed_lock&;
+        template <typename... Args>
+        timed_lock(const time duration, Args&&... args)
+            : m_value(std::forward<Args>(args)...), m_duration(duration) {
+        }
 
-		// Returns a mutable pointer to the value if the cooldown has expired.
-		// If still cooling down, returns nullptr.
-		// Note: calling this function resets the cooldown timer upon a successful retrieval.
-		auto try_get_mutable_value() -> T*;
+        // If the cooldown has expired, assign the value and update the timer.
+        virtual auto operator=(const T& value) -> timed_lock& {
+	        if (const auto now = main_clock::get_current_time(); now - m_start_time >= m_duration) {
+                m_value = value;
+                m_start_time = now;
+            }
+            return *this;
+        }
 
-		// Always returns the value (read-only).
-		auto get_value() const -> const T*;
+        // If the cooldown has expired, reset the timer and return a mutable pointer.
+        virtual auto try_get_mutable_value() -> T* {
+	        if (const auto now = main_clock::get_current_time(); now - m_start_time >= m_duration) {
+                m_start_time = now;
+                return &m_value;
+            }
+            return nullptr;
+        }
 
-		// Returns true if the value is currently mutable (i.e. the cooldown period has expired).
-		auto is_value_mutable() const -> bool;
+        // Always returns the value (read-only).
+        auto get_value() const -> const T& {
+            return m_value;
+        }
 
-	protected:
-		T m_value;
-		time m_duration;
-		time m_start_time = main_clock::get_current_time();
-	};
+        // Returns true if the cooldown period has expired.
+        auto is_value_mutable() const -> bool {
+            return main_clock::get_current_time() - m_start_time >= m_duration;
+        }
 
-	struct unlockable_timed_lock : timed_lock<bool> {
-		unlockable_timed_lock(const time duration) : timed_lock(duration, false) {}
-		auto unlock() -> void {
-			m_value = true;
-		}
-	};
-}
+    protected:
+        T m_value;
+        time m_duration;
+        time m_start_time = main_clock::get_current_time();
+    };
 
-template <typename T>
-auto gse::timed_lock<T>::operator=(const T& value) -> timed_lock& {
-	const auto now = main_clock::get_current_time();
+    template <typename T, int N>
+    class quota_timed_lock final : public timed_lock<T> {
+        using timed_lock<T>::timed_lock;
+    public:
+        // Uses quota or, if quota is exhausted but the cooldown has expired,
+        // resets the quota and then updates the value.
+        auto operator=(const T& value) -> quota_timed_lock& override {
+            const auto now = main_clock::get_current_time();
+            if (m_quota > 0) {
+                m_quota--;
+                this->m_value = value;
+                this->m_start_time = now;
+            }
+            else if (now - this->m_start_time >= this->m_duration) {
+                m_quota = N - 1;  // reset quota (using one use for the current assignment)
+                this->m_value = value;
+                this->m_start_time = now;
+            }
+            return *this;
+        }
 
-	if (now - m_start_time < m_duration) {
-		return *this;
-	}
+        // Returns a mutable pointer if quota is available or, if quota is exhausted,
+        // the cooldown has expired (in which case the quota resets).
+        auto try_get_mutable_value() -> T* override {
+            const auto now = main_clock::get_current_time();
+            if (m_quota > 0) {
+                m_quota--;
+                this->m_start_time = now;
+                return &this->m_value;
+            }
+            if (now - this->m_start_time >= this->m_duration) {
+	            m_quota = N - 1;
+	            this->m_start_time = now;
+	            return &this->m_value;
+            }
+            return nullptr;
+        }
 
-	m_value = value;
-	m_start_time = now;
-
-	return *this;
-}
-
-template <typename T>
-auto gse::timed_lock<T>::try_get_mutable_value() -> T* {
-	const auto now = main_clock::get_current_time();
-	if (now - m_start_time < m_duration) {
-		return nullptr;
-	}
-
-	m_start_time = now;
-	return &m_value;
-}
-
-template <typename T>
-auto gse::timed_lock<T>::get_value() const -> const T* {
-	return &m_value;
-}
-
-template <typename T>
-auto gse::timed_lock<T>::is_value_mutable() const -> bool {
-	const auto now = main_clock::get_current_time();
-	return now - m_start_time >= m_duration;
+    private:
+        int m_quota = N;
+    };
 }
