@@ -37,11 +37,22 @@ auto gse::model_loader::load_obj_file(const std::string& model_path, const std::
 
 	auto split = [](const std::string& str, const char delimiter = ' ') -> std::vector<std::string> {
 		std::vector<std::string> tokens;
-		std::istringstream stream(str);
-		std::string token;
-
-		while (std::getline(stream, token, delimiter)) {
-			tokens.push_back(token);
+		size_t length = str.length();
+		size_t i = 0;
+		while (i < length) {
+			// Skip multiple delimiters
+			while (i < length && str[i] == delimiter) {
+				++i;
+			}
+			// Start of a token
+			size_t start = i;
+			while (i < length && str[i] != delimiter) {
+				++i;
+			}
+			// Add non-empty tokens to the list
+			if (start < i) {
+				tokens.emplace_back(str.substr(start, i - start));
+			}
 		}
 		return tokens;
 		};
@@ -88,24 +99,54 @@ auto gse::model_loader::load_obj_file(const std::string& model_path, const std::
 		// Detect maps for each mesh to corresponding vertices, texcoords, material, etc. This marks the end of a mesh, so set push_back_mesh to be true.
 		else if (file_line.substr(0, 2) == "f ") {
 			push_back_mesh = true;
-			for (int i = 1; i <= 3; i++) {
-				if (std::vector<std::string> vertex_map = split(split_line[i], '/'); vertex_map.size() == 3) {
-					final_vertices.emplace_back(pre_load_vertices[std::stoi(vertex_map[0]) - 1],
-						pre_load_normals[static_cast<size_t>(std::stoi(vertex_map[2])) - 1],
-						pre_load_texcoords[static_cast<size_t>(std::stoi(vertex_map[1])) - 1]);
-				}
-				else {
-					if (!pre_load_normals.empty()) {
+			// Handle meshes that are provided as triangles
+			if (split_line.size() - 1 == 3) {
+				for (int i = 1; i <= 3; i++) {
+					if (std::vector<std::string> vertex_map = split(split_line[i], '/'); vertex_map.size() == 3) {
 						final_vertices.emplace_back(pre_load_vertices[std::stoi(vertex_map[0]) - 1],
-							pre_load_normals[static_cast<size_t>(std::stoi(vertex_map[1]) - 1)],
-							vec::raw2f());
-					}
-					else if (!pre_load_texcoords.empty()) {
-						final_vertices.emplace_back(pre_load_vertices[std::stoi(vertex_map[0]) - 1],
-							vec::raw3f(),
+							pre_load_normals[static_cast<size_t>(std::stoi(vertex_map[2])) - 1],
 							pre_load_texcoords[static_cast<size_t>(std::stoi(vertex_map[1])) - 1]);
 					}
+					else {
+						if (!pre_load_normals.empty()) {
+							final_vertices.emplace_back(pre_load_vertices[std::stoi(vertex_map[0]) - 1],
+								pre_load_normals[static_cast<size_t>(std::stoi(vertex_map[1]) - 1)],
+								vec::raw2f());
+						}
+						else if (!pre_load_texcoords.empty()) {
+							final_vertices.emplace_back(pre_load_vertices[std::stoi(vertex_map[0]) - 1],
+								vec::raw3f(),
+								pre_load_texcoords[static_cast<size_t>(std::stoi(vertex_map[1])) - 1]);
+						}
+					}
 				}
+			}
+			// Handle meshes that are provided as quads. This requires each to be converted to two triangles
+			else if (split_line.size() - 1 == 4) {
+				std::vector<std::string> triangle_1 = { split_line[1], split_line[2], split_line[3] };
+				std::vector<std::string> triangle_2 = { split_line[1], split_line[3], split_line[4] };
+				for (auto& triangle : { triangle_1, triangle_2 }) {
+					for (int i = 0; i < 3; i++) {
+						if (std::vector<std::string> vertex_map = split(triangle[i], '/'); vertex_map.size() == 3) {
+							final_vertices.emplace_back(pre_load_vertices[std::stoi(vertex_map[0]) - 1],
+								pre_load_normals[static_cast<size_t>(std::stoi(vertex_map[2])) - 1],
+								pre_load_texcoords[static_cast<size_t>(std::stoi(vertex_map[1])) - 1]);
+						}
+						else {
+							if (!pre_load_normals.empty()) {
+								final_vertices.emplace_back(pre_load_vertices[std::stoi(vertex_map[0]) - 1],
+									pre_load_normals[static_cast<size_t>(std::stoi(vertex_map[1]) - 1)],
+									vec::raw2f());
+							}
+							else if (!pre_load_texcoords.empty()) {
+								final_vertices.emplace_back(pre_load_vertices[std::stoi(vertex_map[0]) - 1],
+									vec::raw3f(),
+									pre_load_texcoords[static_cast<size_t>(std::stoi(vertex_map[1])) - 1]);
+							}
+						}
+					}
+				}
+
 			}
 		}
 		// Detect MTL file and load material data
@@ -148,14 +189,37 @@ auto gse::model_loader::load_obj_file(const std::string& model_path, const std::
 		// Detect material for each mesh
 		else if (file_line.substr(0, 7) == "usemtl ") {
 			current_material = split_line[1];
+
+			// Check if the material exists in the map
+			if (g_materials.find(current_material) == g_materials.end()) {
+				std::cerr << "Warning: Material '" << current_material << "' not found in g_materials.\n";
+			}
 		}
 	}
+	// Load final mesh or in case model is single mesh
+	if (push_back_mesh) {
+		std::vector<std::uint32_t> final_indices(final_vertices.size());
+		for (size_t i = 0; i < final_vertices.size(); i++) final_indices[i] = i;
+		if (current_material.empty()) {
+			model.meshes.emplace_back(final_vertices, final_indices);
+		}
+		else {
+			model.meshes.emplace_back(final_vertices, final_indices, &g_materials[current_material]);
+		}
+
+		// Clear data to load next mesh
+		push_back_mesh = false;
+		final_vertices.clear();
+	}
+
+	model.initialize();
+
 
 	pre_load_vertices.clear();
 	pre_load_texcoords.clear();
 	pre_load_normals.clear();
 
-	model.initialize();
+	
 
 	id* id_pointer = model.get_id();
 	g_loaded_model_paths.insert({ id_pointer, model_path });

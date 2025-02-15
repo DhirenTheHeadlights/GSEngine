@@ -85,7 +85,7 @@ gse::mesh::~mesh() {
 
 gse::mesh::mesh(mesh&& other) noexcept
 	: vao(other.vao), vbo(other.vbo), ebo(other.ebo),
-	vertices(std::move(other.vertices)), indices(std::move(other.indices)), texture_ids(std::move(other.texture_ids)) {
+	vertices(std::move(other.vertices)), indices(std::move(other.indices)), texture_ids(std::move(other.texture_ids)), material(other.material) {
 	other.vao = 0;
 	other.vbo = 0;
 	other.ebo = 0;
