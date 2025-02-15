@@ -290,6 +290,12 @@ auto render_object(const std::uint32_t object_id, const gse::render_queue_entry&
 		texture_shader.set_mat4("model", model_matrix);
 		texture_shader.set_vec3("color", entry.color);
 		texture_shader.set_int("texture_diffuse1", 0);
+		texture_shader.set_vec3("viewPos", g_camera.get_position().as<gse::units::meters>());
+
+		constexpr GLuint binding_unit = 5;
+		g_reflection_cube_map.bind(binding_unit);
+		texture_shader.set_int("environmentMap", binding_unit);
+
 		// Entry has no mtl data
 		if (entry.material == nullptr) {
 			texture_shader.set_bool("usemtl", false);
