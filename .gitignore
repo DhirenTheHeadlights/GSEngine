@@ -8,3 +8,4 @@ Makefile
 /resources
 /Folder.DotSettings.user
 *.ini
+/vc140.pdb
