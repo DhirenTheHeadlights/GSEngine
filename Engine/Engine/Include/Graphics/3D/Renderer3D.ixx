@@ -290,6 +290,12 @@ auto render_object(const std::uint32_t object_id, const gse::render_queue_entry&
 		texture_shader.set_mat4("model", model_matrix);
 		texture_shader.set_vec3("color", entry.color);
 		texture_shader.set_int("texture_diffuse1", 0);
+		texture_shader.set_vec3("viewPos", g_camera.get_position().as<gse::units::meters>());
+
+		constexpr GLuint binding_unit = 5;
+		g_reflection_cube_map.bind(binding_unit);
+		texture_shader.set_int("environmentMap", binding_unit);
+
 		// Entry has no mtl data
 		if (entry.material == nullptr) {
 			texture_shader.set_bool("usemtl", false);
@@ -306,13 +312,13 @@ auto render_object(const std::uint32_t object_id, const gse::render_queue_entry&
 		else {
 			texture_shader.set_bool("usemtl", true);
 			texture_shader.set_int("texture_diffuse1", 0);
-			texture_shader.set_bool("useDiffuseTexture", true);
+			texture_shader.set_bool("useDiffuseTexture", entry.material->diffuse_texture != 0);
 
-			texture_shader.set_int("texture_specular1", 0);
-			texture_shader.set_bool("useSpecularTexture", true);
+			texture_shader.set_int("texture_specular1", 1);
+			texture_shader.set_bool("useSpecularTexture", entry.material->specular_texture != 0);
 
-			texture_shader.set_int("ntexture_normal1", 0);
-			texture_shader.set_bool("useNormalTexture", true);
+			texture_shader.set_int("ntexture_normal1", 2);
+			texture_shader.set_bool("useNormalTexture", entry.material->normal_texture != 0);
 
 			texture_shader.set_vec3("ambient", entry.material->ambient);
 			texture_shader.set_vec3("diffuse", entry.material->diffuse);
@@ -329,7 +335,7 @@ auto render_object(const std::uint32_t object_id, const gse::render_queue_entry&
 			glActiveTexture(GL_TEXTURE1);
 			glBindTexture(GL_TEXTURE_2D, entry.material->specular_texture);
 			glActiveTexture(GL_TEXTURE2);
-			glBindTexture(GL_TEXTURE_2D, entry.material->diffuse_texture);
+			glBindTexture(GL_TEXTURE_2D, entry.material->normal_texture);
 		}
 
 		glBindVertexArray(entry.vao);

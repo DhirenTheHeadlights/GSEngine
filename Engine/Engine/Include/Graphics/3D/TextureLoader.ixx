@@ -29,6 +29,7 @@ public:
 
 
 auto gse::texture_loader::load_texture(const std::string& path, bool gamma_correction) -> std::uint32_t {
+	stbi_set_flip_vertically_on_load(false);
 	for (const auto& [id, gl_texture] : g_textures) {
 		if (id->tag() == path) {
 			return gl_texture.texture_id; // Already loaded
@@ -78,7 +79,7 @@ auto gse::texture_loader::load_texture(const std::string& path, bool gamma_corre
 	texture new_texture(path, texture_id);
 
 	g_textures.insert({ new_texture.get_id(), std::move(new_texture) });
-
+	stbi_set_flip_vertically_on_load(true);
 	return texture_id;
 }
 auto gse::texture_loader::get_texture_by_path(std::string_view texture_path) -> std::uint32_t {
