@@ -29,6 +29,7 @@ export namespace gse {
 		std::string m_tag;
 
 		friend auto generate_id(const std::string& tag) -> std::unique_ptr<id>;
+		friend auto remove_id(const id* id) -> void;
     };
 
     class identifiable {
@@ -101,20 +102,22 @@ auto gse::generate_id(const std::string& tag) -> std::unique_ptr<id> {
 }
 
 auto gse::remove_id(const id* id) -> void {
-	if (id->number() < 0 || (id->number() >= static_cast<int>(g_ids.size()) && g_ids.size() != 1)) {
-		assert_comment(false, "Object not found in registry when trying to remove it's id");
-	}
-
-	if (g_ids.size() == 1) {
-		g_id_map.clear();
-		g_tag_map.clear();
-		g_ids.clear();
+	const int index = id->number();
+	if (index < 0 || index >= static_cast<int>(g_ids.size())) {
+		assert_comment(false, "Object not found in registry when trying to remove its id");
 		return;
 	}
 
-	g_id_map.erase(id->number());
+	g_id_map.erase(index);
 	g_tag_map.erase(id->tag());
-	g_ids.erase(g_ids.begin() + id->number());
+
+	if (index != static_cast<int>(g_ids.size()) - 1) {
+		std::swap(g_ids[index], g_ids.back());
+		g_ids[index]->m_number = index;
+		g_id_map[index] = g_ids[index];
+	}
+
+	g_ids.pop_back();
 }
 
 auto gse::get_id(const std::int32_t number) -> id* {

@@ -26,7 +26,7 @@ struct texture : gse::identifiable {
 };
 
 
-auto gse::texture_loader::load_texture(const std::string& path, bool gamma_correction) -> std::uint32_t {
+auto gse::texture_loader::load_texture(const std::filesystem::path& path, const bool gamma_correction) -> std::uint32_t {
 	stbi_set_flip_vertically_on_load(false);
 	for (const auto& [id, gl_texture] : g_textures) {
 		if (id->tag() == path) {
