@@ -1,0 +1,8 @@
+export module game.config;
+
+import std;
+
+export namespace game::config {
+   const std::filesystem::path resource_path = "@GOONSQUAD_RESOURCES_PATH@";
+}
+

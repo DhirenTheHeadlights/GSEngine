@@ -5,10 +5,9 @@ module;
 #include <glad/glad.h>
 #include <tests/caveview/glext.h>
 
-#include "Core/ResourcePaths.h"
-
 export module gse.graphics.renderer2d;
 
+import gse.core.config;
 import gse.graphics.font;
 import gse.graphics.texture;
 import gse.physics.math;
@@ -87,18 +86,17 @@ auto gse::renderer2d::initialize() -> void {
     glBindVertexArray(0);
 
     g_shader.create_shader_program(
-        ENGINE_RESOURCES_PATH "Shaders/2D/ui_2d_shader.vert",
-        ENGINE_RESOURCES_PATH "Shaders/2D/ui_2d_shader.frag"
+        config::resource_path / "Shaders/2D/ui_2d_shader.vert",
+        config::resource_path / "Shaders/2D/ui_2d_shader.frag"
     );
-
 
     g_projection = orthographic(meters(0.0f), meters(window::get_window_size().x), meters(0.0f), meters(window::get_window_size().y), meters(-1.0f), meters(1.0f));
     g_shader.use();
     g_shader.set_mat4("projection", g_projection);
 
     g_msdf_shader.create_shader_program(
-        ENGINE_RESOURCES_PATH "Shaders/2D/msdf_shader.vert",
-        ENGINE_RESOURCES_PATH "Shaders/2D/msdf_shader.frag"
+        config::resource_path / "Shaders/2D/msdf_shader.vert",
+        config::resource_path / "Shaders/2D/msdf_shader.frag"
     );
 
     g_msdf_shader.use();

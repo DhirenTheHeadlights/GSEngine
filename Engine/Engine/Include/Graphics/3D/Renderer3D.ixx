@@ -1,10 +1,9 @@
 module;
 
 #include <glad/glad.h>
-#include "json.hpp"
 #include "imgui.h"
-#include "Core/ResourcePaths.h"
 #include "iostream"
+#include "json.hpp"
 
 export module gse.graphics.renderer3d;
 
@@ -18,6 +17,7 @@ export namespace gse::renderer3d {
 	auto get_camera() -> camera&;
 }
 
+import gse.core.config;
 import gse.core.json_parser;
 import gse.core.id;
 import gse.core.object_registry;
@@ -75,13 +75,13 @@ bool g_hdr = true;
 bool g_bloom = true;
 int g_amount_of_blur_passes_in_each_direction = 5;
 
-auto load_shaders(const std::string& shader_path, const std::string& shader_file_name,
+auto load_shaders(const std::filesystem::path& shader_path, const std::filesystem::path& shader_file_name,
 	std::unordered_map<std::string, gse::shader>& shaders) -> void {
 	gse::json_parse::parse(
-		gse::json_parse::load_json(shader_path + shader_file_name),
+		gse::json_parse::load_json(shader_path / shader_file_name),
 		[&](const std::string& key, const nlohmann::json& value) {
-			shaders.emplace(key, gse::shader(shader_path + value["vertex"].get<std::string>(),
-				shader_path + value["fragment"].get<std::string>()));
+			shaders.emplace(key, gse::shader(shader_path / value["vertex"].get<std::string>(),
+				shader_path / value["fragment"].get<std::string>()));
 		}
 	);
 }
@@ -89,21 +89,21 @@ auto load_shaders(const std::string& shader_path, const std::string& shader_file
 auto gse::renderer3d::initialize() -> void {
 	enable_report_gl_errors();
 
-	const std::string shader_path = std::string(ENGINE_RESOURCES_PATH) + "Shaders/";
+	const std::filesystem::path shader_path = config::resource_path / "Shaders/";
 
-	const std::string object_shaders_path = shader_path + "Object/";
+	const std::filesystem::path object_shaders_path = shader_path / "Object/";
 	json_parse::parse(
-		json_parse::load_json(object_shaders_path + "object_shaders.json"),
+		json_parse::load_json(object_shaders_path / "object_shaders.json"),
 		[&](const std::string& key, const nlohmann::json& value) {
-			g_materials.emplace(key, material(object_shaders_path + value["vertex"].get<std::string>(),
-				object_shaders_path + value["fragment"].get<std::string>(), key, ENGINE_RESOURCES_PATH + value["texture"].get<std::string>()));
+			g_materials.emplace(key, material(object_shaders_path / value["vertex"].get<std::string>(),
+				object_shaders_path / value["fragment"].get<std::string>(), key, config::resource_path / value["texture"].get<std::string>()));
 		}
 	);
 
-	load_shaders(shader_path + "DeferredRendering/", "deferred_rendering.json", g_deferred_rendering_shaders);
-	load_shaders(shader_path + "ForwardRendering/", "forward_rendering.json", g_forward_rendering_shaders);
-	load_shaders(shader_path + "Lighting/", "light_shaders.json", g_lighting_shaders);
-	load_shaders(shader_path + "TextureShaders/", "texture_shaders.json", g_texture_shaders);
+	load_shaders(shader_path / "DeferredRendering/", "deferred_rendering.json", g_deferred_rendering_shaders);
+	load_shaders(shader_path / "ForwardRendering/", "forward_rendering.json", g_forward_rendering_shaders);
+	load_shaders(shader_path / "Lighting/", "light_shaders.json", g_lighting_shaders);
+	load_shaders(shader_path / "TextureShaders/", "texture_shaders.json", g_texture_shaders);
 
 	const GLsizei screen_width = window::get_frame_buffer_size().x;
 	const GLsizei screen_height = window::get_frame_buffer_size().y;

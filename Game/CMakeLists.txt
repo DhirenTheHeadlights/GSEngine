@@ -1,21 +1,12 @@
 cmake_minimum_required(VERSION 3.26)
 
-# Set C++ standard
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Define the project
 project(GoonSquadProject)
 
-# Option for production build
-option(PRODUCTION_BUILD "Make this a production build" OFF)
-
-# Include directories
-set(INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Game/Include")
-
-# Gather game source files only for GoonSquadLib
-file(GLOB_RECURSE GAME_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Game/Source/*.cpp")
-file(GLOB_RECURSE GAME_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Game/Include/*.ixx")
+file(GLOB_RECURSE GAME_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Game/*.cpp")
+file(GLOB_RECURSE GAME_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Game/*.ixx")
 
 # GoonSquadLib: Add as a static library
 add_library(GoonSquadLib)
@@ -44,8 +35,8 @@ target_link_libraries(GoonSquadLib PRIVATE Engine)
 # GoonSquad: Add as an executable, without sources
 add_executable(GoonSquad ${GAME_SOURCES})
 
-# Define the resource path
-if(PRODUCTION_BUILD)
+# Resource path definition
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
     set(GOONSQUAD_RESOURCES_PATH "./Game/Resources/")
 else()
     set(GOONSQUAD_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
@@ -56,10 +47,11 @@ target_link_libraries(GoonSquad PRIVATE GoonSquadLib Engine)
 
 # Configure the header file
 configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/Game/Include/ResourcePaths.h.in
-    ${CMAKE_CURRENT_BINARY_DIR}/Game/Include/ResourcePaths.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/Game/Include/Config.ixx.in
+    ${CMAKE_CURRENT_BINARY_DIR}/Game/Include/Config.ixx
     @ONLY
 )
+target_sources(GoonSquadLib PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/Game/Include/Config.ixx")
 
 # MSVC-specific compile options
 if(MSVC)

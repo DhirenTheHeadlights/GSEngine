@@ -22,7 +22,7 @@ export namespace gse::debug {
 	auto render_imgui() -> void;
 	auto save_imgui_state() -> void;
 
-	auto set_imgui_save_file_path(const std::string& path) -> void;
+	auto set_imgui_save_file_path(const std::filesystem::path& path) -> void;
 
 	auto print_vector(const std::string& name, const unitless::vec3& vec, const char* unit = nullptr) -> void;
 	auto print_value(const std::string& name, const float& value, const char* unit = nullptr) -> void;
@@ -53,12 +53,12 @@ export namespace gse::debug {
 }
 
 gse::clock g_autosave_clock;
-const gse::time g_autosave_time = gse::seconds(60.f);
-std::string g_imgui_save_file_path;
+constexpr gse::time g_autosave_time = gse::seconds(60.f);
+std::filesystem::path g_imgui_save_file_path;
 
 std::vector<std::function<void()>> g_render_call_backs;
 
-auto gse::debug::set_imgui_save_file_path(const std::string& path) -> void {
+auto gse::debug::set_imgui_save_file_path(const std::filesystem::path& path) -> void {
 	g_imgui_save_file_path = path;
 }
 
@@ -83,8 +83,8 @@ auto gse::debug::set_up_imgui() -> void {
 	ImGui_ImplGlfw_InitForOpenGL(window::get_window(), true);
 	ImGui_ImplOpenGL3_Init("#version 330");
 
-	if (std::filesystem::exists(g_imgui_save_file_path)) {
-		ImGui::LoadIniSettingsFromDisk(g_imgui_save_file_path.c_str());
+	if (exists(g_imgui_save_file_path)) {
+		ImGui::LoadIniSettingsFromDisk(g_imgui_save_file_path.string().c_str());
 	}
 }
 
@@ -144,7 +144,7 @@ auto gse::debug::render_imgui() -> void {
 }
 
 auto gse::debug::save_imgui_state() -> void {
-	ImGui::SaveIniSettingsToDisk(g_imgui_save_file_path.c_str());
+	ImGui::SaveIniSettingsToDisk(g_imgui_save_file_path.string().c_str());
 }
 
 auto gse::debug::print_vector(const std::string& name, const unitless::vec3& vec, const char* unit) -> void {

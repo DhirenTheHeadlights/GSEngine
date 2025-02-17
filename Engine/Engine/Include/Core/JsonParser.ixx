@@ -7,7 +7,7 @@ module;
 export module gse.core.json_parser;
 
 export namespace gse::json_parse {
-	auto load_json(const std::string& path) -> nlohmann::json;
+	auto load_json(const std::filesystem::path& path) -> nlohmann::json;
 
 	// Generic function to parse JSON objects
 	// Pass in a lambda that takes a key and a value
@@ -37,9 +37,9 @@ export namespace gse::json_parse {
 
 import gse.platform.perma_assert;
 
-auto gse::json_parse::load_json(const std::string& path) -> nlohmann::json {
+auto gse::json_parse::load_json(const std::filesystem::path& path) -> nlohmann::json {
 	std::ifstream file(path);
-	assert_comment(file.is_open(), std::string("Failed to open file: " + path).c_str());
+	assert_comment(file.is_open(), std::string("Failed to open file: " + path.string()).c_str());
 	try {
 		return nlohmann::json::parse(file);
 	}

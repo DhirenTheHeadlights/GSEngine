@@ -12,7 +12,7 @@ import gse.physics.math;
 
 export namespace gse {
 	struct material {
-		material(const std::string& vertex_path, const std::string& fragment_path, std::string material_type, const std::string& material_texture_path);
+		material(const std::filesystem::path& vertex_path, const std::filesystem::path& fragment_path, const std::string& material_type, const std::filesystem::path& material_texture_path);
 
 		auto use(const mat4& view, const mat4& projection, const mat4& model) const -> void;
 		
@@ -20,19 +20,21 @@ export namespace gse {
 		std::string material_type;
 		std::uint32_t material_texture;
 	};
+
 	struct mtl_material {
-		gse::unitless::vec3 ambient = gse::unitless::vec3(1.0f);
-		gse::unitless::vec3 diffuse = gse::unitless::vec3(1.0f);
-		gse::unitless::vec3 specular = gse::unitless::vec3(1.0f);
-		gse::unitless::vec3 emission = gse::unitless::vec3(0.0f);
+		unitless::vec3 ambient = unitless::vec3(1.0f);
+		unitless::vec3 diffuse = unitless::vec3(1.0f);
+		unitless::vec3 specular = unitless::vec3(1.0f);
+		unitless::vec3 emission = unitless::vec3(0.0f);
+
 		float shininess = 0.0f;
 		float optical_density = 1.0f;
 		float transparency = 1.0f;
 		int illumination_model = 0;
 
-		uint32_t diffuse_texture = 0;
-		uint32_t normal_texture = 0;
-		uint32_t specular_texture = 0;
+		std::uint32_t diffuse_texture = 0;
+		std::uint32_t normal_texture = 0;
+		std::uint32_t specular_texture = 0;
 	};
 }
 
@@ -80,10 +82,10 @@ auto load_texture(char const* path, const bool gamma_correction) -> unsigned int
 	return texture_id;
 }
 
-gse::material::material(const std::string& vertex_path, const std::string& fragment_path, std::string material_type, const std::string& material_texture_path) :
+gse::material::material(const std::filesystem::path& vertex_path, const std::filesystem::path& fragment_path, const std::string& material_type, const std::filesystem::path& material_texture_path) :
 	material_type(std::move(material_type)) {
 	shader.create_shader_program(vertex_path, fragment_path);
-	material_texture = !material_texture_path.empty() ? load_texture(material_texture_path.c_str(), true) : 0;
+	material_texture = !material_texture_path.empty() ? load_texture(material_texture_path.string().c_str(), true) : 0;
 }
 
 auto gse::material::use(const mat4& view, const mat4& projection, const mat4& model) const -> void {

@@ -1,0 +1,7 @@
+export module gse.core.config;
+
+import std;
+
+export namespace gse::config {
+   const std::filesystem::path resource_path = "@ENGINE_RESOURCES_PATH@";
+}
