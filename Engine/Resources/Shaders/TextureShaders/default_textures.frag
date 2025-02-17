@@ -17,6 +17,9 @@ uniform bool useDiffuseTexture;
 uniform bool useSpecularTexture;
 uniform bool useNormalTexture;
 
+uniform samplerCube environmentMap;
+uniform vec3 viewPos;
+
 // Material properties
 uniform bool usemtl;
 uniform vec3 ambient;
@@ -55,22 +58,27 @@ void main() {
         }
 
         // Color Assignments
-        vec3 finalDiffuse = diffuse;
-        vec3 finalSpecular = specular;
+        vec3 finalDiffuse = useDiffuseTexture ? texture(texture_diffuse1, TexCoords).rgb : diffuse;
+        vec3 finalSpecular = useSpecularTexture ? texture(texture_specular1, TexCoords).rgb : specular;
+        vec3 ambientLight = ambient * finalDiffuse;
 
-        if (useDiffuseTexture) {
-            finalDiffuse = texture(texture_diffuse1, TexCoords).rgb;
+            // Apply illumination model behavior
+        vec3 finalColor = vec3(0.0);
+    
+        if (illumination_model == 0) {  // No lighting (constant shading)
+            finalColor = finalDiffuse;
         }
-
-        if (useSpecularTexture) {
-            finalSpecular = texture(texture_specular1, TexCoords).rgb;
+        else if (illumination_model == 1) {  // Diffuse lighting only
+            finalColor = ambientLight + finalDiffuse;
         }
+        else if (illumination_model == 2) {  // Diffuse + Specular
+            finalColor = ambientLight + finalDiffuse + finalSpecular;
+        }
+        
+        finalColor += emission;
 
         // Store diffuse color in RGB and specular intensity in Alpha
         gAlbedoSpec.rgb = finalDiffuse;
-        gAlbedoSpec.a = max(finalSpecular.r, max(finalSpecular.g, finalSpecular.b));
-
-        // Apply emission color
-        gAlbedoSpec.rgb += emission * transparency;
+        gAlbedoSpec.a = max(finalSpecular.r, max(finalSpecular.g, finalSpecular.b)) * transparency;
     }
 }

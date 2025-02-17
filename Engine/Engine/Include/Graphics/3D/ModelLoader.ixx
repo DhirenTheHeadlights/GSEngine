@@ -214,9 +214,12 @@ auto gse::model_loader::load_obj_file(const std::filesystem::path& model_path, c
 
 	model.initialize();
 
+
 	pre_load_vertices.clear();
 	pre_load_texcoords.clear();
 	pre_load_normals.clear();
+
+	
 
 	id* id_pointer = model.get_id();
 	g_loaded_model_paths.insert({ id_pointer, model_path });
