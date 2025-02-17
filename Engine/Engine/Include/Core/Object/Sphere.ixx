@@ -5,7 +5,7 @@ import std;
 import gse.core.config;
 import gse.physics.math;
 import gse.core.object.hook;
-import gse.core.object_registry;
+import gse.core.registry;
 import gse.graphics.render_component;
 import gse.physics.motion_component;
 import gse.graphics.debug;

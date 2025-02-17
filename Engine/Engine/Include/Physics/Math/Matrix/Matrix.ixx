@@ -6,7 +6,7 @@ import gse.physics.math.base_vec;
 import gse.physics.math.unitless_vec;
 import gse.physics.math.unit_vec;
 import gse.physics.math.vec_math;
-import gse.platform.perma_assert;
+import gse.platform.assert;
 
 namespace gse {
 	template <typename T, int Cols, int Rows>
@@ -171,9 +171,9 @@ constexpr auto gse::mat<T, Cols, Rows>::operator*(const mat& other) const -> mat
 
 template <typename T, int Cols, int Rows>
 constexpr auto gse::mat<T, Cols, Rows>::operator*(const unitless::vec_t<T, Cols>& vec) const -> unitless::vec_t<T, Rows> {
-    unitless::vec_t<T, Rows> result;
+    vec::storage<T, Rows> result;
     for (int j = 0; j < Cols; ++j) {
-        result = result + data[j] * vec[j];
+        result += data[j] * vec[j];
     }
     return result;
 }
@@ -294,13 +294,13 @@ constexpr auto gse::mat<T, Cols, Rows>::determinant() const -> T {
     if (Rows != Cols) {
         throw std::runtime_error("Determinant is only defined for square matrices.");
     }
-    if (Cols == 2) {
+    if constexpr (Cols == 2) {
         return det_2x2(*this);
     }
-    if (Cols == 3) {
+    if constexpr (Cols == 3) {
         return det_3x3(*this);
     }
-    if (Cols == 4) {
+    if constexpr (Cols == 4) {
         return det_4x4(*this);
     }
 

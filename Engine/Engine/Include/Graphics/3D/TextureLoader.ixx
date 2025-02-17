@@ -8,7 +8,7 @@ export module gse.graphics.texture_loader;
 import std;
 
 import gse.core.id;
-import gse.platform.perma_assert;
+import gse.platform.assert;
 
 export namespace gse::texture_loader {
 	auto load_texture(const std::filesystem::path& path, bool gamma_correction) -> std::uint32_t;

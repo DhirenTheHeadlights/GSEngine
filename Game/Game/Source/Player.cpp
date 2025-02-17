@@ -67,13 +67,14 @@ struct player_hook final : gse::hook<gse::entity> {
 
 	auto initialize() -> void override {
 		gse::render_component render_component(owner_id);
-		gse::physics::motion_component motion_component(owner_id);
 		gse::physics::collision_component collision_component(owner_id);
 
 		gse::length height = gse::feet(6.0f);
 		gse::length width = gse::feet(3.0f);
 		collision_component.bounding_box = { gse::vec::meters(-10.f, -10.f, -10.f), height, width, width };
 		collision_component.oriented_bounding_box = { collision_component.bounding_box };
+
+		gse::physics::motion_component motion_component(owner_id, collision_component.bounding_box.get_size());
 
 		motion_component.mass = gse::pounds(180.f);
 		motion_component.max_speed = m_max_speed;

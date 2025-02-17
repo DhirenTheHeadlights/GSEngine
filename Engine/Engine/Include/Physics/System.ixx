@@ -3,7 +3,7 @@ export module gse.physics.system;
 import std;
 
 import gse.physics.math;
-import gse.core.object_registry;
+import gse.core.registry;
 import gse.core.main_clock;
 import gse.graphics.render_component;
 import gse.physics.surfaces;
@@ -76,18 +76,12 @@ auto update_gravity(gse::physics::motion_component& component) -> void {
 		return;
 	}
 
-	constexpr auto v1 = gse::unitless::vec3(2.f, 3.f, 4.f);
-	const auto v2 = gse::vec3<gse::length>(2.f, 3.f, 4.f);
-
 	if (component.airborne) {
 		const auto gravity_force = gse::vec3<gse::force>(
 			g_gravity.as<gse::units::meters_per_second_squared>() *
 			component.mass.as<gse::units::kilograms>()
 		);
 		apply_force(component, gravity_force, component.current_position);
-		auto a = g_gravity.x;
-		auto b = g_gravity.y;
-		auto c = g_gravity.z;
 	}
 	else {
 		component.current_acceleration.y = max({ 0.f }, component.current_acceleration.y);
@@ -153,8 +147,12 @@ auto update_position(gse::physics::motion_component& component) -> void {
 auto update_rotation(gse::physics::motion_component& component) -> void {
 	const float dt = gse::main_clock::get_constant_update_time().as<gse::units::seconds>();
 
+	if (is_zero(component.inertial_tensor)) {
+		return;
+	}
+
 	const auto alpha = gse::vec3<gse::angular_acceleration>(
-		component.current_torque.as<gse::units::newton_meters>() / component.moment_of_inertia /* kg-m^2 */
+		component.inertial_tensor.inverse() * component.current_torque.as<gse::units::newton_meters>()
 	);
 
 	component.angular_velocity += gse::vec3<gse::angular_velocity>(

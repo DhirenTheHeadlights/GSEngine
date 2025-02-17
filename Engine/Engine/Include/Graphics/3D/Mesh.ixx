@@ -8,7 +8,7 @@ export module gse.graphics.mesh;
 import std;
 
 import gse.physics.math;
-import gse.platform.perma_assert;
+import gse.platform.assert;
 import gse.graphics.material;
 
 export namespace gse {

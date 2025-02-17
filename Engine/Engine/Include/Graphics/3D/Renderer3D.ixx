@@ -20,7 +20,7 @@ export namespace gse::renderer3d {
 import gse.core.config;
 import gse.core.json_parser;
 import gse.core.id;
-import gse.core.object_registry;
+import gse.core.registry;
 import gse.graphics.debug;
 import gse.graphics.render_component;
 import gse.graphics.mesh;
@@ -47,17 +47,17 @@ std::unordered_map<std::string, gse::shader> g_forward_rendering_shaders;
 std::unordered_map<std::string, gse::shader> g_lighting_shaders;
 std::unordered_map<std::string, gse::shader> g_texture_shaders;
 
-GLuint g_g_buffer = 0;
-GLuint g_g_position = 0;
-GLuint g_g_normal = 0;
-GLuint g_g_albedo_spec = 0;
-GLuint g_ssbo_lights = 0;
-GLuint g_light_space_block_ubo = 0;
+std::uint32_t g_g_buffer = 0;
+std::uint32_t g_g_position = 0;
+std::uint32_t g_g_normal = 0;
+std::uint32_t g_g_albedo_spec = 0;
+std::uint32_t g_ssbo_lights = 0;
+std::uint32_t g_light_space_block_ubo = 0;
 
-GLuint g_hdr_fbo = 0;
-GLuint g_hdr_color_buffer[2] = { 0, 0 };
-GLuint g_blur_fbo[2] = { 0, 0 };
-GLuint g_blur_color_buffer[2] = { 0, 0 };
+std::uint32_t g_hdr_fbo = 0;
+std::uint32_t g_hdr_color_buffer[2] = { 0, 0 };
+std::uint32_t g_blur_fbo[2] = { 0, 0 };
+std::uint32_t g_blur_color_buffer[2] = { 0, 0 };
 
 float g_hdr_exposure = 0.5f;
 float g_bloom_intensity = 1.f;
@@ -139,10 +139,10 @@ auto gse::renderer3d::initialize() -> void {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, g_g_albedo_spec, 0);
 
-	constexpr GLuint attachments[3] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
+	constexpr std::uint32_t attachments[3] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
 	glDrawBuffers(3, attachments);
 
-	GLuint rbo_depth;
+	std::uint32_t rbo_depth;
 	glGenRenderbuffers(1, &rbo_depth);
 	glBindRenderbuffer(GL_RENDERBUFFER, rbo_depth);
 	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, screen_width, screen_height);
@@ -182,7 +182,7 @@ auto gse::renderer3d::initialize() -> void {
 	constexpr GLenum hdr_draw_buffers[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
 	glDrawBuffers(2, hdr_draw_buffers);
 
-	GLuint hdr_rbo_depth;
+	std::uint32_t hdr_rbo_depth;
 	glGenRenderbuffers(1, &hdr_rbo_depth);
 	glBindRenderbuffer(GL_RENDERBUFFER, hdr_rbo_depth);
 	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, screen_width, screen_height);
@@ -248,7 +248,7 @@ auto gse::renderer3d::initialize_objects() -> void {
 				point_light_ptr->get_shadow_map().create(static_cast<int>((g_shadow_width + g_shadow_height) / 2.f), true);
 			}
 			else {
-				GLuint depth_map, depth_map_fbo;
+				std::uint32_t depth_map, depth_map_fbo;
 				glGenTextures(1, &depth_map);
 				glBindTexture(GL_TEXTURE_2D, depth_map);
 				glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, static_cast<GLsizei>(g_shadow_width), static_cast<GLsizei>(g_shadow_height), 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
@@ -274,78 +274,66 @@ auto gse::renderer3d::initialize_objects() -> void {
 }
 
 auto render_object(const std::uint32_t object_id, const gse::render_queue_entry& entry, const gse::mat4& view_matrix, const gse::mat4& projection_matrix) -> void {
-	if (const auto it = g_materials.find(entry.material_key); it != g_materials.end()) {
-		gse::mat4 model_matrix = entry.model_matrix;
-		if (const auto* motion_component = gse::registry::get_component_ptr<gse::physics::motion_component>(object_id); motion_component) {
-			model_matrix = motion_component->get_transformation_matrix();
-		}
+	gse::mat4 model_matrix = entry.model_matrix;
+	if (const auto* motion_component = gse::registry::get_component_ptr<gse::physics::motion_component>(object_id); motion_component) {
+		model_matrix = motion_component->get_transformation_matrix();
+	}
 
-		//it->second.use(view_matrix, projection_matrix, model_matrix);
-//it->second.shader.set_vec3("color", entry.color);
+	const auto& texture_shader = g_texture_shaders["DefaultTexture"];
+	texture_shader.use();
+	texture_shader.set_mat4("view", view_matrix);
+	texture_shader.set_mat4("projection", projection_matrix);
+	texture_shader.set_mat4("model", model_matrix);
+	texture_shader.set_vec3("color", entry.color);
+	texture_shader.set_int("texture_diffuse1", 0);
+	texture_shader.set_vec3("viewPos", g_camera.get_position().as<gse::units::meters>());
 
-		const auto& texture_shader = g_texture_shaders["DefaultTexture"];
-		texture_shader.use();
-		texture_shader.set_mat4("view", view_matrix);
-		texture_shader.set_mat4("projection", projection_matrix);
-		texture_shader.set_mat4("model", model_matrix);
-		texture_shader.set_vec3("color", entry.color);
-		texture_shader.set_int("texture_diffuse1", 0);
-		texture_shader.set_vec3("viewPos", g_camera.get_position().as<gse::units::meters>());
+	constexpr std::uint32_t binding_unit = 5;
+	g_reflection_cube_map.bind(binding_unit);
+	texture_shader.set_int("environmentMap", binding_unit);
 
-		constexpr GLuint binding_unit = 5;
-		g_reflection_cube_map.bind(binding_unit);
-		texture_shader.set_int("environmentMap", binding_unit);
+	if (entry.material == nullptr) {
+		texture_shader.set_bool("usemtl", false);
+		texture_shader.set_bool("useDiffuseTexture", true);
+		texture_shader.set_bool("useSpecularTexture", false);
+		texture_shader.set_bool("useNormalTexture", false);
 
-		// Entry has no mtl data
-		if (entry.material == nullptr) {
-			texture_shader.set_bool("usemtl", false);
-			texture_shader.set_bool("useDiffuseTexture", true);
-			texture_shader.set_bool("useSpecularTexture", false);
-			texture_shader.set_bool("useNormalTexture", false);
-
-			for (const auto& texture : entry.texture_ids) {
-				glActiveTexture(GL_TEXTURE0);
-				glBindTexture(GL_TEXTURE_2D, texture);
-			}
-		}
-		//entry is using mtl textures
-		else {
-			texture_shader.set_bool("usemtl", true);
-			texture_shader.set_int("texture_diffuse1", 0);
-			texture_shader.set_bool("useDiffuseTexture", entry.material->diffuse_texture != 0);
-
-			texture_shader.set_int("texture_specular1", 1);
-			texture_shader.set_bool("useSpecularTexture", entry.material->specular_texture != 0);
-
-			texture_shader.set_int("ntexture_normal1", 2);
-			texture_shader.set_bool("useNormalTexture", entry.material->normal_texture != 0);
-
-			texture_shader.set_vec3("ambient", entry.material->ambient);
-			texture_shader.set_vec3("diffuse", entry.material->diffuse);
-			texture_shader.set_vec3("specular", entry.material->specular);
-			texture_shader.set_vec3("emission", entry.material->emission);
-			texture_shader.set_float("shininess", entry.material->shininess);
-			texture_shader.set_float("optical_density", entry.material->optical_density);
-			texture_shader.set_float("transparency", entry.material->transparency);
-			texture_shader.set_int("illumination_model", entry.material->illumination_model);
-
-
+		for (const auto& texture : entry.texture_ids) {
 			glActiveTexture(GL_TEXTURE0);
-			glBindTexture(GL_TEXTURE_2D, entry.material->diffuse_texture);
-			glActiveTexture(GL_TEXTURE1);
-			glBindTexture(GL_TEXTURE_2D, entry.material->specular_texture);
-			glActiveTexture(GL_TEXTURE2);
-			glBindTexture(GL_TEXTURE_2D, entry.material->normal_texture);
-		}
-
-		glBindVertexArray(entry.vao);
-		glDrawElements(entry.draw_mode, entry.vertex_count, GL_UNSIGNED_INT, nullptr);
-		glBindVertexArray(0);
-
-		if (it->second.material_texture != 0) {
-			glBindTexture(GL_TEXTURE_2D, 0);
+			glBindTexture(GL_TEXTURE_2D, texture);
 		}
 	}
+	else {
+		texture_shader.set_bool("usemtl", true);
+		texture_shader.set_int("texture_diffuse1", 0);
+		texture_shader.set_bool("useDiffuseTexture", entry.material->diffuse_texture != 0);
+
+		texture_shader.set_int("texture_specular1", 1);
+		texture_shader.set_bool("useSpecularTexture", entry.material->specular_texture != 0);
+
+		texture_shader.set_int("ntexture_normal1", 2);
+		texture_shader.set_bool("useNormalTexture", entry.material->normal_texture != 0);
+
+		texture_shader.set_vec3("ambient", entry.material->ambient);
+		texture_shader.set_vec3("diffuse", entry.material->diffuse);
+		texture_shader.set_vec3("specular", entry.material->specular);
+		texture_shader.set_vec3("emission", entry.material->emission);
+		texture_shader.set_float("shininess", entry.material->shininess);
+		texture_shader.set_float("optical_density", entry.material->optical_density);
+		texture_shader.set_float("transparency", entry.material->transparency);
+		texture_shader.set_int("illumination_model", entry.material->illumination_model);
+
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, entry.material->diffuse_texture);
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, entry.material->specular_texture);
+		glActiveTexture(GL_TEXTURE2);
+		glBindTexture(GL_TEXTURE_2D, entry.material->normal_texture);
+	}
+
+	glBindVertexArray(entry.vao);
+	glDrawElements(entry.draw_mode, entry.vertex_count, GL_UNSIGNED_INT, nullptr);
+	glBindVertexArray(0);
 }
 
 auto render_object_forward(const std::uint32_t object_id, const gse::shader& forward_rendering_shader, const gse::render_queue_entry& entry, const gse::mat4& view_matrix, const gse::mat4& projection_matrix) -> void {
@@ -415,7 +403,7 @@ auto render_fullscreen_quad() -> void {
 	glBindVertexArray(0);
 }
 
-auto render_lighting_pass(const gse::shader& lighting_shader, const std::vector<gse::light_shader_entry>& light_data, const std::vector<gse::mat4>& light_space_matrices, const std::vector<GLuint>& depth_maps) -> void {
+auto render_lighting_pass(const gse::shader& lighting_shader, const std::vector<gse::light_shader_entry>& light_data, const std::vector<gse::mat4>& light_space_matrices, const std::vector<std::uint32_t>& depth_maps) -> void {
 	if (light_data.empty()) {
 		return;
 	}
@@ -461,7 +449,7 @@ auto render_lighting_pass(const gse::shader& lighting_shader, const std::vector<
 	glActiveTexture(GL_TEXTURE2);
 	glBindTexture(GL_TEXTURE_2D, g_g_albedo_spec);
 
-	constexpr GLuint binding_unit = 5;
+	constexpr std::uint32_t binding_unit = 5;
 	g_reflection_cube_map.bind(binding_unit);
 	lighting_shader.set_int("environmentMap", binding_unit);
 
@@ -480,7 +468,7 @@ auto render_blur_pass(const gse::shader& blur_shader) -> int {
 
 	bool horizontal = true;
 	bool first_iteration = true;
-	const GLuint input_texture = g_hdr_color_buffer[1];
+	const std::uint32_t input_texture = g_hdr_color_buffer[1];
 
 	for (int i = 0; i < (2 * g_amount_of_blur_passes_in_each_direction); ++i) {
 		glBindFramebuffer(GL_FRAMEBUFFER, g_blur_fbo[horizontal]);
@@ -525,7 +513,7 @@ auto render_additional_post_processing(const gse::shader& post_processing_shader
 	glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-auto render_shadow_pass(const gse::shader& shadow_shader, const std::vector<gse::render_component>& render_components, const gse::mat4& light_projection, const gse::mat4& light_view, const GLuint depth_map_fbo, gse::id* light_ignore_list_id) -> void {
+auto render_shadow_pass(const gse::shader& shadow_shader, const std::vector<gse::render_component>& render_components, const gse::mat4& light_projection, const gse::mat4& light_view, const std::uint32_t depth_map_fbo, gse::id* light_ignore_list_id) -> void {
 	shadow_shader.set_mat4("light_view", light_view);
 	shadow_shader.set_mat4("light_projection", light_projection);
 
@@ -646,7 +634,7 @@ auto gse::renderer3d::render() -> void {
 	std::vector<light_shader_entry> light_data;
 	light_data.reserve(light_source_components.size());
 
-	std::vector<GLuint> depth_maps;
+	std::vector<std::uint32_t> depth_maps;
 	depth_maps.reserve(light_source_components.size());
 
 	for (const auto& light_source_component : light_source_components) {
@@ -763,7 +751,6 @@ auto gse::renderer3d::render() -> void {
 
 	// Finally, render bounding boxes
 	for (const auto& render_component : render_components) {
-
 		for (const auto& model_handle : render_component.models) {
 			for (const auto& [material_key, vao, draw_mode, vertex_count, model_matrix, color, textures, material] : model_handle.get_render_queue_entries()) {
 				if (const auto it = g_materials.find(material_key); it != g_materials.end()) {
@@ -779,8 +766,6 @@ auto gse::renderer3d::render() -> void {
 				}
 			}
 		}
-
-
 	}
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);

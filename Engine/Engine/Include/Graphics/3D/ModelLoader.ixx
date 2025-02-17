@@ -37,7 +37,7 @@ auto gse::model_loader::load_obj_file(const std::filesystem::path& model_path, c
 
 	auto split = [](const std::string& str, const char delimiter = ' ') -> std::vector<std::string> {
 		std::vector<std::string> tokens;
-		size_t length = str.length();
+		const size_t length = str.length();
 		size_t i = 0;
 		while (i < length) {
 			// Skip multiple delimiters
@@ -123,8 +123,8 @@ auto gse::model_loader::load_obj_file(const std::filesystem::path& model_path, c
 			}
 			// Handle meshes that are provided as quads. This requires each to be converted to two triangles
 			else if (split_line.size() - 1 == 4) {
-				std::vector<std::string> triangle_1 = { split_line[1], split_line[2], split_line[3] };
-				std::vector<std::string> triangle_2 = { split_line[1], split_line[3], split_line[4] };
+				std::vector triangle_1 = { split_line[1], split_line[2], split_line[3] };
+				std::vector triangle_2 = { split_line[1], split_line[3], split_line[4] };
 				for (auto& triangle : { triangle_1, triangle_2 }) {
 					for (int i = 0; i < 3; i++) {
 						if (std::vector<std::string> vertex_map = split(triangle[i], '/'); vertex_map.size() == 3) {
@@ -160,7 +160,7 @@ auto gse::model_loader::load_obj_file(const std::filesystem::path& model_path, c
 			}
 
 			std::string line;
-			// Load mtl data to g_materials
+
 			while (std::getline(mtl_file, line)) {
 				auto tokens = split(line, ' ');
 				if (tokens.empty()) continue;
@@ -190,8 +190,7 @@ auto gse::model_loader::load_obj_file(const std::filesystem::path& model_path, c
 		else if (file_line.substr(0, 7) == "usemtl ") {
 			current_material = split_line[1];
 
-			// Check if the material exists in the map
-			if (g_materials.find(current_material) == g_materials.end()) {
+			if (!g_materials.contains(current_material)) {
 				std::cerr << "Warning: Material '" << current_material << "' not found in g_materials.\n";
 			}
 		}

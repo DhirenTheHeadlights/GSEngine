@@ -8,7 +8,7 @@ import gse.physics.bounding_box;
 import gse.physics.math;
 import gse.physics.narrow_phase_collisions;
 import gse.physics.system;
-import gse.core.object_registry;
+import gse.core.registry;
 
 export namespace gse::broad_phase_collision {
 	auto check_collision(const axis_aligned_bounding_box& box1, const axis_aligned_bounding_box& box2) -> bool;

@@ -3,7 +3,7 @@ export module gse.physics.update;
 import std;
 
 import gse.core.main_clock;
-import gse.core.object_registry;
+import gse.core.registry;
 import gse.physics.broad_phase_collision;
 import gse.physics.motion_component;
 import gse.physics.math.units.duration;

@@ -25,7 +25,7 @@ export namespace gse::scene_loader {
 	auto get_scene(id* scene_id) -> scene*;
 }
 
-import gse.platform.perma_assert;
+import gse.platform.assert;
 
 std::optional<std::uint32_t> g_fbo = std::nullopt;
 bool g_engine_initialized = false;

@@ -21,6 +21,7 @@ export namespace gse {
 	template <typename T>					constexpr auto scale(const mat4_t<T>& matrix, const vec3<length_t<T>>& scale) -> mat4_t<T>;
 	template <typename T, int N, int M>		constexpr auto value_ptr(mat_t<T, N, M>& matrix) -> T*;
 	template <typename T, int N, int M>		constexpr auto value_ptr(const mat_t<T, N, M>& matrix) -> const T*;
+	template <typename T, int N, int M>     constexpr auto is_zero(const mat_t<T, N, M>& matrix, const T& epsilon = std::numeric_limits<T>::epsilon()) -> bool;
 }
 
 template <typename T>
@@ -117,4 +118,16 @@ constexpr auto gse::value_ptr(mat_t<T, Cols, Rows>& matrix) -> T* {
 template <typename T, int Cols, int Rows>
 constexpr auto gse::value_ptr(const mat_t<T, Cols, Rows>& matrix) -> const T* {
 	return &matrix[0][0];
+}
+
+template <typename T, int Cols, int Rows>
+constexpr auto gse::is_zero(const mat_t<T, Cols, Rows>& matrix, const T& epsilon) -> bool {
+	for (size_t i = 0; i < Cols; ++i) {
+		for (size_t j = 0; j < Rows; ++j) {
+			if (std::abs(matrix[i][j]) > epsilon) {
+				return false;
+			}
+		}
+	}
+	return true;
 }

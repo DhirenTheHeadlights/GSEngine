@@ -31,7 +31,7 @@ export namespace gse {
 	};
 }
 
-import gse.core.object_registry;
+import gse.core.registry;
 import gse.physics.update;
 import gse.physics.broad_phase_collision;
 

@@ -1,4 +1,4 @@
-export module gse.platform.perma_assert;
+export module gse.platform.assert;
 
 // --- Standard/Compiler Headers ---
 #ifdef _MSC_VER
@@ -146,10 +146,10 @@ export void assert_comment(
 
 // Internal (debug) build: calls internal asserts
 export auto perma_assert(
-    bool condition,
+    const bool condition,
     char const* expression,
     char const* file_name = "---",
-    unsigned line_number = 0,
+    const unsigned line_number = 0,
     char const* comment = "---") -> void {
     if (!condition) {
         assert_func_internal(expression, file_name, line_number, comment);
@@ -157,10 +157,10 @@ export auto perma_assert(
 }
 
 export auto assert_comment(
-    bool condition,
+    const bool condition,
     char const* expression,
     char const* file_name = "---",
-    unsigned line_number = 0,
+    const unsigned line_number = 0,
     char const* comment = "---") -> void {
     if (!condition) {
         assert_func_internal(expression, file_name, line_number, comment);

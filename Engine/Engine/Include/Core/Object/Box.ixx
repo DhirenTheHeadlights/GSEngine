@@ -11,7 +11,7 @@ import gse.physics.collision_component;
 import gse.physics.motion_component;
 import gse.physics.math;
 import gse.core.object.hook;
-import gse.core.object_registry;
+import gse.core.registry;
 import gse.graphics.render_component;
 import gse.graphics.mesh;
 import gse.graphics.model_loader;
@@ -29,13 +29,13 @@ export struct box_mesh_hook final : gse::hook<gse::entity> {
     }
 
     auto initialize() -> void override {
-        gse::physics::motion_component new_motion_component(owner_id);
-        new_motion_component.current_position = m_initial_position;
-        new_motion_component.mass = gse::kilograms(100.f);
-
         gse::physics::collision_component new_collision_component(owner_id);
         new_collision_component.bounding_box = { m_initial_position, m_size };
         new_collision_component.oriented_bounding_box = { new_collision_component.bounding_box };
+
+		gse::physics::motion_component new_motion_component(owner_id, m_size);
+        new_motion_component.current_position = m_initial_position;
+        new_motion_component.mass = gse::kilograms(100.f);
 
         const float half_width = m_size.as<gse::units::meters>().x / 2.f;
         const float half_height = m_size.as<gse::units::meters>().y / 2.f;
