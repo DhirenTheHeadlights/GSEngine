@@ -31,6 +31,17 @@ struct iron_man_hook final : gse::hook<gse::entity> {
 	}
 };
 
+struct black_knight_hook final : gse::hook<gse::entity> {
+	using hook::hook;
+
+	auto initialize() -> void override {
+		gse::model_loader::load_obj_file(GOONSQUAD_RESOURCES_PATH "Models/BlackKnight/base.obj", "Black Knight");
+		gse::registry::add_component(gse::render_component(owner_id, gse::get_id("Black Knight")));
+		gse::registry::get_component<gse::render_component>(owner_id).set_model_material("NULL");
+		gse::registry::get_component<gse::render_component>(owner_id).models[0].set_position(gse::vec::meters(0.f, 0.f, 0.f));
+	}
+};
+
 struct raw_backpack_hook final : gse::hook<gse::entity> {
 	using hook::hook;
 	//std::vector<std::uint32_t> m_texture_ids = { gse::texture_loader::get_texture_by_path(game::config::resource_path / "Models/Backpack/diffuse.jpg") };
@@ -56,12 +67,17 @@ struct scene1_hook final : gse::hook<gse::scene> {
 		m_owner->add_entity(game::create_sphere_light(gse::vec::meters(0.f, -300.f, 0.f), gse::meters(10.f), 18), "Center Sphere Light");
 		m_owner->add_entity(create_sphere(gse::vec::meters(0.f, -00.f, 200.f), gse::meters(10.f)), "Second Sphere");
 
-		//const std::uint32_t iron_man = gse::registry::create_entity();
-		//gse::registry::add_entity_hook(iron_man, std::make_unique<iron_man_hook>());
-		//m_owner->add_entity(iron_man, "Iron Man");
-		const std::uint32_t raw_backpack = gse::registry::create_entity();
-		gse::registry::add_entity_hook(raw_backpack, std::make_unique<raw_backpack_hook>());
-		m_owner->add_entity(raw_backpack, "Backpack");
+
+
+		const std::uint32_t iron_man = gse::registry::create_entity();
+		gse::registry::add_entity_hook(iron_man, std::make_unique<iron_man_hook>());
+		m_owner->add_entity(iron_man, "Iron Man");
+		//const std::uint32_t raw_backpack = gse::registry::create_entity();
+		//gse::registry::add_entity_hook(raw_backpack, std::make_unique<raw_backpack_hook>());
+		//m_owner->add_entity(raw_backpack, "Backpack");
+		//const std::uint32_t black_knight = gse::registry::create_entity();
+		//gse::registry::add_entity_hook(black_knight, std::make_unique<black_knight_hook>());
+		//m_owner->add_entity(black_knight, "Black Knight");
 	}
 
 	auto render() -> void override {
