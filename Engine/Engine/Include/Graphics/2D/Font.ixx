@@ -10,11 +10,10 @@ module;
 
 #include <msdfgen.h>
 #define STB_TRUETYPE_IMPLEMENTATION
-#include <stb_truetype.h>
+#include <filesystem>
 #include <freetype/freetype.h>
 
 #include "ext/import-font.h"
-#include "tests/caveview/glext.h"
 
 export module gse.graphics.font;
 
@@ -32,9 +31,9 @@ export namespace gse {
     class font {
     public:
         font() = default;
-        font(const std::string& path);
+		font(const std::filesystem::path& path);
 
-        auto load(const std::string& path) -> void;
+        auto load(const std::filesystem::path& path) -> void;
 
         auto get_character(char c) const -> const glyph&;
         auto get_texture() const -> const texture&;
@@ -44,11 +43,11 @@ export namespace gse {
     };
 }
 
-gse::font::font(const std::string& path) {
+gse::font::font(const std::filesystem::path& path) {
     load(path);
 }
 
-auto read_file_binary(const std::string& path, std::vector<unsigned char>& out_data) -> bool {
+auto read_file_binary(const std::filesystem::path& path, std::vector<unsigned char>& out_data) -> bool {
     std::ifstream file(path, std::ios::binary);
     if (!file.is_open()) {
         std::cerr << "Failed to open font file: " << path << '\n';
@@ -66,7 +65,7 @@ auto read_file_binary(const std::string& path, std::vector<unsigned char>& out_d
     return true;
 }
 
-auto gse::font::load(const std::string& path) -> void {
+auto gse::font::load(const std::filesystem::path& path) -> void {
     std::vector<unsigned char> font_data_buffer;
     if (!read_file_binary(path, font_data_buffer)) {
         std::cerr << "Could not load font file!" << '\n';
@@ -246,7 +245,7 @@ auto gse::font::load(const std::string& path) -> void {
     std::cout << "Successfully loaded font with MSDF: " << path << "\n";
 }
 
-auto gse::font::get_character(const char c) const -> const gse::glyph& {
+auto gse::font::get_character(const char c) const -> const glyph& {
     static glyph fallback;
 
     if (const auto it = m_glyphs.find(c); it != m_glyphs.end()) {

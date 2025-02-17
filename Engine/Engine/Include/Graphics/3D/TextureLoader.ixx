@@ -11,24 +11,21 @@ import gse.core.id;
 import gse.platform.perma_assert;
 
 export namespace gse::texture_loader {
-	auto load_texture(const std::string& path, bool gamma_correction) -> std::uint32_t;
-	auto get_texture_by_path(std::string_view texture_path) -> std::uint32_t;
+	auto load_texture(const std::filesystem::path& path, bool gamma_correction) -> std::uint32_t;
+	auto get_texture_by_path(const std::filesystem::path& texture_path) -> std::uint32_t;
 	auto get_texture_by_id(id* texture_id) -> std::uint32_t;
-
 }
 
-class texture;
+struct texture;
 
 std::unordered_map<gse::id*, texture> g_textures;
 
-class texture : public gse::identifiable {
-public:
+struct texture : gse::identifiable {
 	texture(const std::string& tag, const std::uint32_t texture_id) : identifiable(tag), texture_id(texture_id) {}
 	std::uint32_t texture_id;
 };
 
-
-auto gse::texture_loader::load_texture(const std::string& path, bool gamma_correction) -> std::uint32_t {
+auto gse::texture_loader::load_texture(const std::filesystem::path& path, const bool gamma_correction) -> std::uint32_t {
 	for (const auto& [id, gl_texture] : g_textures) {
 		if (id->tag() == path) {
 			return gl_texture.texture_id; // Already loaded
@@ -39,7 +36,7 @@ auto gse::texture_loader::load_texture(const std::string& path, bool gamma_corre
 	glGenTextures(1, &texture_id);
 
 	int width = 0, height = 0, number_components = 0;
-	if (unsigned char* data = stbi_load(path.c_str(), &width, &height, &number_components, 0)) {
+	if (unsigned char* data = stbi_load(path.string().c_str(), &width, &height, &number_components, 0)) {
 		GLenum internal_format;
 		GLenum data_format;
 		if (number_components == 1) {
@@ -75,20 +72,22 @@ auto gse::texture_loader::load_texture(const std::string& path, bool gamma_corre
 		stbi_image_free(data);
 	}
 
-	texture new_texture(path, texture_id);
+	texture new_texture(path.string(), texture_id);
 
 	g_textures.insert({ new_texture.get_id(), std::move(new_texture) });
 
 	return texture_id;
 }
-auto gse::texture_loader::get_texture_by_path(std::string_view texture_path) -> std::uint32_t {
+
+auto gse::texture_loader::get_texture_by_path(const std::filesystem::path& texture_path) -> std::uint32_t {
 	const auto it = std::ranges::find_if(g_textures, [&texture_path](const auto& texture) { return texture.first->tag() == texture_path; });
 	if (it != g_textures.end()) {
 		return it->second.texture_id;
 	}
 	std::cerr << "Grabbing non-existent texture; Loading in as a new texture without gamma correction... \n";
-	return load_texture(std::string(texture_path), false);
+	return load_texture(texture_path, false);
 }
+
 auto gse::texture_loader::get_texture_by_id(id* texture_id) -> std::uint32_t {
 	const auto it = g_textures.find(texture_id);
 	perma_assert(it != g_textures.end(), "Grabbing non-existent texture by id, could not find.");

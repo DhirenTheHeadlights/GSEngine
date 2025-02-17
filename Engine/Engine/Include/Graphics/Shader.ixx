@@ -12,12 +12,11 @@ export namespace gse {
     class shader {
     public:
         shader() = default;
-		shader(const std::string& vertex_path, const std::string& fragment_path, const std::string& geometry_path = "");
+		shader(const std::filesystem::path& vertex_path, const std::filesystem::path& fragment_path, const std::filesystem::path& geometry_path = "");
 
-		auto create_shader_program(const std::string& vertex_path, const std::string& fragment_path, const std::string& geometry_path = "") -> void;
+		auto create_shader_program(const std::filesystem::path& vertex_path, const std::filesystem::path& fragment_path, const std::filesystem::path& geometry_path = "") -> void;
         auto use() const -> void;
 
-        // Utility functions to set uniform values
         auto set_bool(const std::string& name, bool value) const -> void;
         auto set_int(const std::string& name, int value) const -> void;
 		auto set_int_array(const std::string& name, const int* values, unsigned int count) const -> void;
@@ -32,7 +31,7 @@ export namespace gse {
     private:
         unsigned int m_id = 0;
 
-        static auto load_shader_source(const std::string& file_path) -> std::string;
+        static auto load_shader_source(const std::filesystem::path& file_path) -> std::string;
 
         auto cache_uniform_locations() -> void;
         
@@ -42,7 +41,7 @@ export namespace gse {
     };
 }
 
-gse::shader::shader(const std::string& vertex_path, const std::string& fragment_path, const std::string& geometry_path) {
+gse::shader::shader(const std::filesystem::path& vertex_path, const std::filesystem::path& fragment_path, const std::filesystem::path& geometry_path) {
     if (!geometry_path.empty()) {
         create_shader_program(vertex_path, fragment_path, geometry_path);
     }
@@ -51,7 +50,7 @@ gse::shader::shader(const std::string& vertex_path, const std::string& fragment_
     }
 }
 
-auto gse::shader::create_shader_program(const std::string& vertex_path, const std::string& fragment_path, const std::string& geometry_path) -> void {
+auto gse::shader::create_shader_program(const std::filesystem::path& vertex_path, const std::filesystem::path& fragment_path, const std::filesystem::path& geometry_path) -> void {
     // 1. Retrieve the vertex and fragment shader source code from file paths
     const std::string vertex_code = load_shader_source(vertex_path);
     const std::string fragment_code = load_shader_source(fragment_path);
@@ -106,7 +105,7 @@ auto gse::shader::use() const -> void {
     glUseProgram(m_id);
 }
 
-auto gse::shader::load_shader_source(const std::string& file_path) -> std::string {
+auto gse::shader::load_shader_source(const std::filesystem::path& file_path) -> std::string {
     std::ifstream shader_file;
     std::stringstream shader_stream;
 

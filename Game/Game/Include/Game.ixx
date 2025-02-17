@@ -1,5 +1,7 @@
 export module game;
 
+export import game.config;
+
 export namespace game {
 	auto initialize() -> bool;
 	auto update() -> bool;

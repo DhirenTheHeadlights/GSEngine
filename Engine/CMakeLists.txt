@@ -29,8 +29,8 @@ target_sources(Engine
 target_sources(Engine
     PRIVATE
         FILE_SET gse_modules TYPE CXX_MODULES
-        BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include"
-        FILES ${ENGINE_MODULES}
+        BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Engine" 
+        FILES ${ENGINE_MODULES} ${ENGINE_SOURCES}
 )
 
 target_sources(Engine
@@ -50,18 +50,13 @@ else()
     set(ENGINE_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
 endif()
 
-# Configure the header file with the resource path
+# Configure a module file with the resource path
 configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/Core/ResourcePaths.h.in
-    ${CMAKE_CURRENT_BINARY_DIR}/Engine/Include/Core/ResourcePaths.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/Core/Config.ixx.in
+    ${CMAKE_CURRENT_BINARY_DIR}/Engine/Source/Core/Config.ixx
     @ONLY
 )
-
-# Add the binary directory to include paths so that generated headers are found
-target_include_directories(Engine PUBLIC
-    "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include"
-    "${CMAKE_CURRENT_BINARY_DIR}/Engine/Include"
-)
+target_sources(Engine PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/Engine/Source/Core/Config.ixx")
 
 ####################################################################################################################
 # FetchContent for glfw
@@ -142,12 +137,7 @@ find_package(msdfgen CONFIG REQUIRED)
 # Add subdirectory for imgui-docking
 add_subdirectory(External/imgui-docking)
 
-# Include directories for engine headers
-target_include_directories(
-    Engine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/"
-)
-
-# Include directories for third-party libraries (e.g., nlohmann)
+# Include directories for third-party libraries
 target_include_directories(
     Engine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/External/nlohmann"
 )
@@ -183,14 +173,8 @@ if (MSVC)
     endforeach()
 
     # Move glfw-related projects under External/GLFW3
-
-    # Collect targets from the glfw root directory
     get_property(ROOT_SUBPROJECTS DIRECTORY "${glfw_SOURCE_DIR}" PROPERTY BUILDSYSTEM_TARGETS)
-
-    # Collect targets from the glfw 'src' directory
     get_property(SRC_SUBPROJECTS DIRECTORY "${glfw_SOURCE_DIR}/src" PROPERTY BUILDSYSTEM_TARGETS)
-
-    # Combine both sets of subprojects into one list
     set(GLFW_SUBPROJECTS ${ROOT_SUBPROJECTS} ${SRC_SUBPROJECTS})
 
     # Loop through the combined list of subprojects
@@ -223,11 +207,4 @@ if (MSVC)
     # Removing "Engine/Source" and "Engine/Include" from the beginning of the path
     create_source_groups_by_dir("${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source" "Source" "Engine\\Source")
     create_source_groups_by_dir("${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include" "Include" "Engine\\Include")
-
-    # Manually include glm headers in a visible group
-    file(GLOB_RECURSE GLM_HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/External/glm/glm/*.hpp")
-    source_group("External\\glm" FILES ${GLM_HEADERS})
 endif()
-
-# Suppress Winsock deprecation warnings globally for the Engine target
-target_compile_definitions(Engine PUBLIC _WINSOCK_DEPRECATED_NO_WARNINGS)

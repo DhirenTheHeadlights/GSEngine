@@ -6,6 +6,7 @@ export module gse.core.object.box;
 
 import std;
 
+import gse.core.config;
 import gse.physics.collision_component;
 import gse.physics.motion_component;
 import gse.physics.math;
@@ -118,7 +119,7 @@ export struct box_mesh_hook final : gse::hook<gse::entity> {
         std::vector<gse::mesh> meshes;
 
         for (size_t i = 0; i < 6; ++i) {
-            meshes.emplace_back(face_vertices[i], face_indices, std::vector<std::uint32_t> { gse::texture_loader::get_texture_by_path("C:/Users/scbel/source/repos/DhirenTheHeadlights/GSEngine/Engine/Resources/Textures/concrete_bricks_1.jpg") });
+            meshes.emplace_back(face_vertices[i], face_indices, std::vector { gse::texture_loader::get_texture_by_path(gse::config::resource_path / "Textures/concrete_bricks_1.jpg") });
         }
 
         gse::render_component new_render_component(owner_id, gse::model_loader::add_model(std::move(meshes), "Box"));
