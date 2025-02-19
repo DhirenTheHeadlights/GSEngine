@@ -126,11 +126,28 @@ FetchContent_MakeAvailable(miniaudio)
 target_include_directories(Engine PUBLIC ${miniaudio_SOURCE_DIR})
 
 ####################################################################################################################
-# Grab freetype & msdfgen from the vcpkg registry
+# Grab freetype, msdfgen, and Vulkan from the vcpkg registry
 ####################################################################################################################
 
 find_package(Freetype CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
+find_package(Vulkan REQUIRED)
+
+# Set up Vulkan C++ module as a library
+add_library(VulkanHppModule)
+
+target_sources(VulkanHppModule PRIVATE
+  FILE_SET CXX_MODULES
+  BASE_DIRS ${Vulkan_INCLUDE_DIR}
+  FILES ${Vulkan_INCLUDE_DIR}/vulkan/vulkan.cppm
+)
+
+target_compile_features(VulkanHppModule PUBLIC cxx_std_20)
+target_link_libraries(VulkanHppModule PUBLIC Vulkan::Headers)
+
+target_compile_definitions(VulkanHppModule PUBLIC
+  VULKAN_HPP_DISPATCH_LOADER_DYNAMIC = 1
+)
 
 ####################################################################################################################
 
@@ -149,6 +166,7 @@ target_link_libraries(Engine PUBLIC
     imgui
     Freetype::Freetype
     msdfgen::msdfgen
+    VulkanHppModule
 )
 
 # Visual Studio specific settings

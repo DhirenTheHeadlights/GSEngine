@@ -15,6 +15,7 @@ import gse.graphics.renderer3d;
 import gse.platform.perma_assert;
 import gse.platform.glfw.input;
 import gse.platform.glfw.window;
+import gse.platform.vulkan.context;
 
 export namespace gse {
 	auto initialize(const std::function<void()>& initialize_function, const std::function<void()>& shutdown_function) -> void;
@@ -69,7 +70,7 @@ auto gse::initialize(const std::function<void()>& initialize_function,
 	g_game_shutdown_function = shutdown_function;
 
 	window::initialize();
-
+	vulkan::initialize();
 	gui::initialize();
 
 	if (g_imgui_enabled) debug::set_up_imgui();
@@ -82,58 +83,54 @@ auto gse::initialize(const std::function<void()>& initialize_function,
 	g_engine_state = engine_state::running;
 }
 
-namespace {
-	auto update(const std::function<bool()>& update_function) -> void {
+auto update(const std::function<bool()>& update_function) -> void {
 
-		if (g_imgui_enabled) gse::add_timer("Engine::update");
+	if (g_imgui_enabled) gse::add_timer("Engine::update");
 
-		gse::window::update();
+	gse::window::update();
 
-		if (g_imgui_enabled) gse::debug::update_imgui();
+	if (g_imgui_enabled) gse::debug::update_imgui();
 
-		gse::gui::update();
+	gse::gui::update();
+	gse::main_clock::update();
+	gse::scene_loader::update();
+	gse::input::update();
 
-		gse::main_clock::update();
-
-		gse::scene_loader::update();
-
-		gse::input::update();
-
-		if (!update_function()) {
-			gse::request_shutdown();
-		}
-
-		gse::registry::periodically_clean_up_registry();
-
-		if (g_imgui_enabled) gse::reset_timer("Engine::render");
+	if (!update_function()) {
+		gse::request_shutdown();
 	}
 
-	auto render(const std::function<bool()>& render_function) -> void {
-		if (g_imgui_enabled) gse::add_timer("Engine::render");
+	gse::registry::periodically_clean_up_registry();
 
-		gse::window::begin_frame();
+	if (g_imgui_enabled) gse::reset_timer("Engine::render");
+}
 
-		gse::scene_loader::render();
+auto render(const std::function<bool()>& render_function) -> void {
+	if (g_imgui_enabled) gse::add_timer("Engine::render");
 
-		if (!render_function()) {
-			gse::request_shutdown();
-		}
+	gse::window::begin_frame();
 
-		if (g_imgui_enabled) gse::display_timers();
-		if (g_imgui_enabled) gse::debug::render_imgui();
+	gse::scene_loader::render();
 
-		gse::gui::render();
-
-		gse::window::end_frame();
-
-		if (g_imgui_enabled) gse::reset_timer("Engine::update");
+	if (!render_function()) {
+		gse::request_shutdown();
 	}
 
-	auto shutdown() -> void {
-		g_game_shutdown_function();
-		gse::renderer2d::shutdown();
-		gse::window::shutdown();
-	}
+	if (g_imgui_enabled) gse::display_timers();
+	if (g_imgui_enabled) gse::debug::render_imgui();
+
+	gse::gui::render();
+
+	gse::window::end_frame();
+
+	if (g_imgui_enabled) gse::reset_timer("Engine::update");
+}
+
+auto shutdown() -> void {
+	g_game_shutdown_function();
+	gse::renderer2d::shutdown();
+	gse::vulkan::exit();
+	gse::window::shutdown();
 }
 
 auto gse::run(const std::function<bool()>& update_function, const std::function<bool()>& render_function) -> void {
