@@ -129,9 +129,9 @@ if /i "%CLEAN_BUILD%"=="true" (
 
 echo.
 
-REM 8. Navigate to the vcpkg directory and install msdfgen and freetype
+REM 8. Navigate to the vcpkg directory and install dependencies
 echo =============================================================
-echo Installing msdfgen and freetype via vcpkg...
+echo Installing dependencies via vcpkg...
 echo =============================================================
 
 REM Navigate to the vcpkg directory
@@ -139,7 +139,7 @@ cd /d "%VCPKG_DIR%"
 
 REM All dependencies
 echo Installing msdfgen and freetype for x64-windows...
-vcpkg.exe install msdfgen:x64-windows freetype:x64-windows
+vcpkg.exe install msdfgen:x64-windows freetype:x64-windows vulkan:x64-windows
 if errorlevel 1 (
     echo ERROR: Failed to install msdfgen and/or freetype via vcpkg.
     set "ERROR_FLAG=1"
@@ -150,69 +150,12 @@ REM Verify installation
 echo Verifying installation of msdfgen and freetype...
 vcpkg.exe list | findstr /i "msdfgen freetype"
 if errorlevel 1 (
-    echo ERROR: msdfgen and/or freetype were not installed successfully.
+    echo ERROR: dependencies were not installed successfully.
     set "ERROR_FLAG=1"
     call :handle_error
 ) else (
-    echo msdfgen and freetype installed successfully.
+    echo dependencies installed successfully.
 )
 
-echo.
-
-REM 9. Navigate back to the original directory (GoonSquad folder)
-cd /d "%~dp0"
-
-REM 10. Navigate to the sub-build directory
-cd /d "%FULL_BUILD_DIR%"
-if errorlevel 1 (
-    echo ERROR: Failed to navigate to sub-build directory.
-    set "ERROR_FLAG=1"
-    call :handle_error
-)
-
-REM 11. Run CMake to configure the project
-echo =============================================================
-echo Configuring the CMake project...
-echo =============================================================
-
-REM Define the path to the vcpkg toolchain file relative to the build directory
-set "CMAKE_TOOLCHAIN_FILE=Engine\External\vcpkg\scripts\buildsystems\vcpkg.cmake"
-
-REM Run CMake configuration
-cmake -G "Visual Studio 17 2022" -A x64 ^
-      -DCMAKE_BUILD_TYPE=Release ^
-      -DCMAKE_TOOLCHAIN_FILE=%CMAKE_TOOLCHAIN_FILE% ^
-      ../../
-if errorlevel 1 (
-    echo ERROR: CMake configuration failed.
-    set "ERROR_FLAG=1"
-    call :handle_error
-) else (
-    echo CMake configuration completed successfully.
-)
-
-echo.
-
-REM 12. Navigate back to the root directory
-cd /d "%~dp0"
-
-REM 13. Indicate that configuration is finished
-echo =============================================================
-echo Configuration finished successfully!
-echo =============================================================
 echo.
 pause
-
-REM =============================================================
-REM Error Handling Function
-REM =============================================================
-:handle_error
-if !ERROR_FLAG! equ 1 (
-    echo =============================================================
-    echo ERROR: An unexpected error occurred.
-    echo =============================================================
-    echo.
-    pause
-    exit /b 1
-)
-exit /b 0
