@@ -2,8 +2,12 @@ module;
 
 #include <vulkan/vulkan_hpp_macros.hpp>
 
+#include <GLFW/glfw3.h>
+
 #include <iostream>
 #include <vector>
+#include <optional>
+#include <set>
 
 export module gse.platform.vulkan.context;
 
@@ -13,26 +17,31 @@ import vulkan_hpp;
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 #endif
 
+struct queue_family {
+	std::optional<std::uint32_t> graphics_family;
+	std::optional<std::uint32_t> present_family;
+
+	auto complete() const -> bool {
+		return graphics_family.has_value() && present_family.has_value();
+	}
+};
+
 vk::Instance g_instance;
 vk::PhysicalDevice g_physical_device;
+vk::Device g_device;
+vk::Queue g_graphics_queue;
+vk::Queue g_present_queue;
 
 export namespace gse::vulkan {
-	auto initialize() -> void;
-	auto exit() -> void;
-}
-
-namespace gse::vulkan {
 	auto create_instance() -> void;
 	auto select_gpu() -> void;
+	auto find_queue_families(vk::PhysicalDevice device, vk::SurfaceKHR surface) -> queue_family;
+	auto create_logical_device(vk::SurfaceKHR surface) -> void;
 	auto destroy_instance() -> void;
-}
 
-auto gse::vulkan::initialize() -> void {
-	create_instance();
-}
-
-auto gse::vulkan::exit() -> void {
-	destroy_instance();
+	auto get_instance() -> vk::Instance& {
+		return g_instance;
+	}
 }
 
 auto gse::vulkan::create_instance() -> void {
@@ -41,13 +50,13 @@ auto gse::vulkan::create_instance() -> void {
     };
 
 #if VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
-    VULKAN_HPP_DEFAULT_DISPATCHER.init();
+	VULKAN_HPP_DEFAULT_DISPATCHER.init();
 #endif
 
     constexpr vk::ApplicationInfo app_info(
-        "My Vulkan Renderer", 1,            // App name and version
-        "No Engine", 1,                     // Engine name and version
-		vk::makeApiVersion(1, 0, 0, 0)       // Vulkan version
+        "My Vulkan Renderer", 1,                // App name and version
+        "No Engine", 1,                         // Engine name and version
+		vk::makeApiVersion(1, 0, 0, 0)          // Vulkan version
     );
 
     const vk::InstanceCreateInfo create_info(
@@ -65,6 +74,10 @@ auto gse::vulkan::create_instance() -> void {
     catch (vk::SystemError& err) {
         std::cerr << "Failed to create Vulkan instance: " << err.what() << "\n";
     }
+
+#if VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
+	VULKAN_HPP_DEFAULT_DISPATCHER.init(g_instance);
+#endif
 }
 
 auto gse::vulkan::select_gpu() -> void {
@@ -96,7 +109,57 @@ auto gse::vulkan::select_gpu() -> void {
     std::cout << "Selected GPU: " << g_physical_device.getProperties().deviceName << "\n";
 }
 
+auto gse::vulkan::find_queue_families(const vk::PhysicalDevice device, const vk::SurfaceKHR surface) -> queue_family {
+	queue_family indices;
+
+	const auto queue_families = device.getQueueFamilyProperties();
+
+	for (std::uint32_t i = 0; i < queue_families.size(); i++) {
+		if (queue_families[i].queueFlags & vk::QueueFlagBits::eGraphics) {
+			indices.graphics_family = i;
+		}
+		if (device.getSurfaceSupportKHR(i, surface)) {
+			indices.present_family = i;
+		}
+		if (indices.complete()) {
+			break;
+		}
+	}
+
+	return indices;
+}
+
+auto gse::vulkan::create_logical_device(vk::SurfaceKHR surface) -> void {
+    auto [graphics_family, present_family] = find_queue_families(g_physical_device, surface);
+
+    std::vector<vk::DeviceQueueCreateInfo> queue_create_infos;
+    std::set unique_queue_families = {
+        graphics_family.value(),
+        present_family.value()
+    };
+
+    float queue_priority = 1.0f;
+    for (uint32_t queue_family : unique_queue_families) {
+        vk::DeviceQueueCreateInfo queue_create_info({}, queue_family, 1, &queue_priority);
+        queue_create_infos.push_back(queue_create_info);
+    }
+
+    vk::PhysicalDeviceFeatures device_features{};
+
+    vk::DeviceCreateInfo create_info(
+        {}, queue_create_infos.size(), queue_create_infos.data(),
+        0, nullptr, 0, nullptr, &device_features
+    );
+
+    g_device = g_physical_device.createDevice(create_info);
+    g_graphics_queue = g_device.getQueue(graphics_family.value(), 0);
+    g_present_queue = g_device.getQueue(present_family.value(), 0);
+
+    std::cout << "Logical Device Created Successfully!\n";
+}
+
 auto gse::vulkan::destroy_instance() -> void {
 	g_instance.destroy();
+    g_device.destroy();
 }
 

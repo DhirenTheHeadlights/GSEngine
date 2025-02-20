@@ -6,13 +6,12 @@ module;
 export module gse.platform.glfw.window;
 
 import std;
+import vulkan_hpp;
 
 import gse.platform.glfw.input;
 import gse.platform.perma_assert;
+import gse.platform.vulkan.context;
 import gse.physics.math;
-
-#undef max
-#undef min
 
 export namespace gse::window {
 	struct rendering_interface {
@@ -25,6 +24,7 @@ export namespace gse::window {
 	auto remove_rendering_interface(const std::shared_ptr<rendering_interface>& rendering_interface) -> void;
 
 	auto initialize() -> void;
+	auto initialize_vk() -> void;
 	auto begin_frame() -> void;
 	auto update() -> void;
 	auto end_frame() -> void;
@@ -58,6 +58,7 @@ export namespace gse::window {
 }
 
 GLFWwindow* g_window = nullptr;
+GLFWwindow* g_vk_window = nullptr;
 
 std::optional<GLuint> g_fbo;
 gse::unitless::vec2i g_fbo_size = { 1, 1 };
@@ -161,6 +162,17 @@ auto gse::window::initialize() -> void {
 	glfwSetCharCallback(g_window, character_callback);
 
 	assert_comment(gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)), "Error Initializing GLAD");
+}
+
+auto gse::window::initialize_vk() -> void {
+	assert_comment(glfwInit(), "Error initializing GLFW");
+
+	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+
+	g_vk_window = glfwCreateWindow(1, 1, "Vulkan", nullptr, g_window);
+
+	vk::SurfaceKHR surface;
+	assert_comment(glfw(vulkan::get_instance(), g_vk_window, nullptr, &surface) == vk::Result::eSuccess, "Error creating window surface");
 }
 
 auto gse::window::begin_frame() -> void {
