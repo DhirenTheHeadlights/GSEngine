@@ -19,7 +19,7 @@ export namespace gse {
 	};
 
 	struct render_queue_entry {
-		std::string material_key;
+		std::string shader_key;
 		GLuint vao;
 		GLenum draw_mode;
 		GLsizei vertex_count;

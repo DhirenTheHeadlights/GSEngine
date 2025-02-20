@@ -46,6 +46,11 @@ std::unordered_map<std::string, gse::shader> g_deferred_rendering_shaders;
 std::unordered_map<std::string, gse::shader> g_forward_rendering_shaders;
 std::unordered_map<std::string, gse::shader> g_lighting_shaders;
 std::unordered_map<std::string, gse::shader> g_texture_shaders;
+std::unordered_map<std::string, gse::shader> g_all_shaders;
+
+std::string_view g_current_shader_batch;
+std::uint32_t g_current_texture_batch;
+gse::mtl_material* g_current_material_batch = nullptr;
 
 GLuint g_g_buffer = 0;
 GLuint g_g_position = 0;
@@ -85,6 +90,75 @@ auto load_shaders(const std::filesystem::path& shader_path, const std::filesyste
 		}
 	);
 }
+// Shader batch
+auto batch(const std::string& shader_key) -> void {
+	if (g_current_shader_batch != shader_key) {
+		g_current_shader_batch = shader_key;
+		g_all_shaders[shader_key].use();
+	}
+}
+// Texture batch
+auto batch(const std::uint32_t texture_id) {
+	if (g_current_texture_batch != texture_id) {
+		g_current_texture_batch = texture_id;
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, texture_id);
+	}
+}
+
+auto batch(const std::vector<std::uint32_t>& texture_ids) -> void {
+	for (int i = 0; i < texture_ids.size(); i++) {
+		if (g_current_texture_batch != texture_ids[i]) {
+			g_current_texture_batch = texture_ids[i];
+			glActiveTexture(GL_TEXTURE0 + i);
+			glBindTexture(GL_TEXTURE_2D, texture_ids[i]);
+		}
+	}
+}
+// Shader and texture batch
+auto batch(const std::string& shader_key, const std::uint32_t texture_id) -> void {
+	if (g_current_shader_batch != shader_key) {
+		g_current_shader_batch = shader_key;
+		g_all_shaders[shader_key].use();
+	}
+	if (g_current_texture_batch != texture_id) {
+		g_current_texture_batch = texture_id;
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, texture_id);
+	}
+}
+// Material batch
+auto batch(const std::string& shader_key, gse::mtl_material* material) -> void {
+	gse::shader& batched_shader = g_texture_shaders[shader_key];
+	if (material != g_current_material_batch) {
+		g_current_material_batch = material;
+		batched_shader.set_bool("usemtl", true);
+		batched_shader.set_int("texture_diffuse1", 0);
+		batched_shader.set_bool("useDiffuseTexture", material->diffuse_texture != 0);
+
+		batched_shader.set_int("texture_specular1", 1);
+		batched_shader.set_bool("useSpecularTexture", material->specular_texture != 0);
+
+		batched_shader.set_int("ntexture_normal1", 2);
+		batched_shader.set_bool("useNormalTexture", material->normal_texture != 0);
+
+		batched_shader.set_vec3("ambient", material->ambient);
+		batched_shader.set_vec3("diffuse", material->diffuse);
+		batched_shader.set_vec3("specular", material->specular);
+		batched_shader.set_vec3("emission", material->emission);
+		batched_shader.set_float("shininess", material->shininess);
+		batched_shader.set_float("optical_density", material->optical_density);
+		batched_shader.set_float("transparency", material->transparency);
+		batched_shader.set_int("illumination_model", material->illumination_model);
+
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, material->diffuse_texture);
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, material->specular_texture);
+		glActiveTexture(GL_TEXTURE2);
+		glBindTexture(GL_TEXTURE_2D, material->normal_texture);
+	}
+}
 
 auto gse::renderer3d::initialize() -> void {
 	enable_report_gl_errors();
@@ -104,6 +178,13 @@ auto gse::renderer3d::initialize() -> void {
 	load_shaders(shader_path / "ForwardRendering/", "forward_rendering.json", g_forward_rendering_shaders);
 	load_shaders(shader_path / "Lighting/", "light_shaders.json", g_lighting_shaders);
 	load_shaders(shader_path / "TextureShaders/", "texture_shaders.json", g_texture_shaders);
+
+
+	//Separate map solely for shader batching universalization
+	g_all_shaders.insert(g_deferred_rendering_shaders.begin(), g_deferred_rendering_shaders.end());
+	g_all_shaders.insert(g_forward_rendering_shaders.begin(), g_forward_rendering_shaders.end());
+	g_all_shaders.insert(g_lighting_shaders.begin(), g_lighting_shaders.end());
+	g_all_shaders.insert(g_texture_shaders.begin(), g_texture_shaders.end());
 
 	const GLsizei screen_width = window::get_frame_buffer_size().x;
 	const GLsizei screen_height = window::get_frame_buffer_size().y;
@@ -273,22 +354,16 @@ auto gse::renderer3d::initialize_objects() -> void {
 	}
 }
 
-auto render_object(const std::uint32_t object_id, const gse::render_queue_entry& entry, const gse::mat4& view_matrix, const gse::mat4& projection_matrix) -> void {
-	if (const auto it = g_materials.find(entry.material_key); it != g_materials.end()) {
-		gse::mat4 model_matrix = entry.model_matrix;
-		if (const auto* motion_component = gse::registry::get_component_ptr<gse::physics::motion_component>(object_id); motion_component) {
-			model_matrix = motion_component->get_transformation_matrix();
-		}
+auto render_object(const gse::render_queue_entry* entry, const gse::mat4& view_matrix, const gse::mat4& projection_matrix) -> void {
+		gse::mat4 model_matrix = entry->model_matrix;
 
-		//it->second.use(view_matrix, projection_matrix, model_matrix);
-//it->second.shader.set_vec3("color", entry.color);
+		batch(entry->shader_key);
 
-		const auto& texture_shader = g_texture_shaders["DefaultTexture"];
-		texture_shader.use();
+		const auto& texture_shader = g_texture_shaders[entry->shader_key];
 		texture_shader.set_mat4("view", view_matrix);
 		texture_shader.set_mat4("projection", projection_matrix);
 		texture_shader.set_mat4("model", model_matrix);
-		texture_shader.set_vec3("color", entry.color);
+		texture_shader.set_vec3("color", entry->color);
 		texture_shader.set_int("texture_diffuse1", 0);
 		texture_shader.set_vec3("viewPos", g_camera.get_position().as<gse::units::meters>());
 
@@ -297,55 +372,25 @@ auto render_object(const std::uint32_t object_id, const gse::render_queue_entry&
 		texture_shader.set_int("environmentMap", binding_unit);
 
 		// Entry has no mtl data
-		if (entry.material == nullptr) {
+		if (entry->material == nullptr) {
 			texture_shader.set_bool("usemtl", false);
 			texture_shader.set_bool("useDiffuseTexture", true);
 			texture_shader.set_bool("useSpecularTexture", false);
 			texture_shader.set_bool("useNormalTexture", false);
 
-			for (const auto& texture : entry.texture_ids) {
-				glActiveTexture(GL_TEXTURE0);
-				glBindTexture(GL_TEXTURE_2D, texture);
+			for (const auto& texture : entry->texture_ids) {
+				batch(texture);
 			}
 		}
 		//entry is using mtl textures
 		else {
-			texture_shader.set_bool("usemtl", true);
-			texture_shader.set_int("texture_diffuse1", 0);
-			texture_shader.set_bool("useDiffuseTexture", entry.material->diffuse_texture != 0);
-
-			texture_shader.set_int("texture_specular1", 1);
-			texture_shader.set_bool("useSpecularTexture", entry.material->specular_texture != 0);
-
-			texture_shader.set_int("ntexture_normal1", 2);
-			texture_shader.set_bool("useNormalTexture", entry.material->normal_texture != 0);
-
-			texture_shader.set_vec3("ambient", entry.material->ambient);
-			texture_shader.set_vec3("diffuse", entry.material->diffuse);
-			texture_shader.set_vec3("specular", entry.material->specular);
-			texture_shader.set_vec3("emission", entry.material->emission);
-			texture_shader.set_float("shininess", entry.material->shininess);
-			texture_shader.set_float("optical_density", entry.material->optical_density);
-			texture_shader.set_float("transparency", entry.material->transparency);
-			texture_shader.set_int("illumination_model", entry.material->illumination_model);
-
-
-			glActiveTexture(GL_TEXTURE0);
-			glBindTexture(GL_TEXTURE_2D, entry.material->diffuse_texture);
-			glActiveTexture(GL_TEXTURE1);
-			glBindTexture(GL_TEXTURE_2D, entry.material->specular_texture);
-			glActiveTexture(GL_TEXTURE2);
-			glBindTexture(GL_TEXTURE_2D, entry.material->normal_texture);
+			batch(entry->shader_key, entry->material);
 		}
 
-		glBindVertexArray(entry.vao);
-		glDrawElements(entry.draw_mode, entry.vertex_count, GL_UNSIGNED_INT, nullptr);
+		glBindVertexArray(entry->vao);
+		glDrawElements(entry->draw_mode, entry->vertex_count, GL_UNSIGNED_INT, nullptr);
 		glBindVertexArray(0);
 
-		if (it->second.material_texture != 0) {
-			glBindTexture(GL_TEXTURE_2D, 0);
-		}
-	}
 }
 
 auto render_object_forward(const std::uint32_t object_id, const gse::shader& forward_rendering_shader, const gse::render_queue_entry& entry, const gse::mat4& view_matrix, const gse::mat4& projection_matrix) -> void {
@@ -369,8 +414,10 @@ auto render_object_forward(const std::uint32_t object_id, const gse::shader& for
 }
 
 auto render_object(const gse::light_render_queue_entry& entry) -> void {
-	if (const auto it = g_lighting_shaders.find(entry.shader_key); it != g_lighting_shaders.end()) {
-		it->second.use();
+
+	batch(entry.shader_key);
+
+	if (const auto it = g_texture_shaders.find(entry.shader_key); it != g_texture_shaders.end()) {
 		it->second.set_mat4("model", gse::mat4(1.0f));
 		it->second.set_mat4("view", g_camera.get_view_matrix());
 		it->second.set_mat4("projection", g_camera.get_projection_matrix());
@@ -420,7 +467,6 @@ auto render_lighting_pass(const gse::shader& lighting_shader, const std::vector<
 		return;
 	}
 
-	lighting_shader.use();
 
 	// Update SSBO with light data
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, g_ssbo_lights);
@@ -472,7 +518,6 @@ auto render_lighting_pass(const gse::shader& lighting_shader, const std::vector<
 }
 
 auto render_blur_pass(const gse::shader& blur_shader) -> int {
-	blur_shader.use();
 	blur_shader.set_int("image", 0);
 	blur_shader.set_int("blur_amount", g_amount_of_blur_passes_in_each_direction);
 	blur_shader.set_float("bloom_intensity", g_bloom_intensity);
@@ -502,7 +547,6 @@ auto render_blur_pass(const gse::shader& blur_shader) -> int {
 }
 
 auto render_additional_post_processing(const gse::shader& post_processing_shader, const int current_texture) -> void {
-	post_processing_shader.use();
 	post_processing_shader.set_int("scene", 0);
 	post_processing_shader.set_bool("hdr", g_hdr);
 	post_processing_shader.set_float("exposure", g_hdr_exposure);
@@ -525,7 +569,7 @@ auto render_additional_post_processing(const gse::shader& post_processing_shader
 	glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-auto render_shadow_pass(const gse::shader& shadow_shader, const std::vector<gse::render_component>& render_components, const gse::mat4& light_projection, const gse::mat4& light_view, const GLuint depth_map_fbo, gse::id* light_ignore_list_id) -> void {
+auto render_shadow_pass(const gse::shader& shadow_shader, std::vector<gse::render_component>& render_components, const gse::mat4& light_projection, const gse::mat4& light_view, const GLuint depth_map_fbo, gse::id* light_ignore_list_id) -> void {
 	shadow_shader.set_mat4("light_view", light_view);
 	shadow_shader.set_mat4("light_projection", light_projection);
 
@@ -539,7 +583,7 @@ auto render_shadow_pass(const gse::shader& shadow_shader, const std::vector<gse:
 		}
 
 		for (auto& model_handle : render_component.models) {
-			for (auto& [material_key, vao, draw_mode, vertex_count, model_matrix, color, textures, material] : model_handle.get_render_queue_entries()) {
+			for (auto& [shader_key, vao, draw_mode, vertex_count, model_matrix, color, textures, material] : model_handle.get_render_queue_entries()) {
 				gse::mat4 model_matrix_v = model_matrix;
 
 				if (const auto* motion_component = gse::registry::get_component_ptr<gse::physics::motion_component>(render_component.parent_id); motion_component) {
@@ -636,7 +680,51 @@ auto gse::renderer3d::render() -> void {
 		ImGui::End();
 		});
 
+	auto sorted_render_queue_shader_indeces = [&](std::vector<const render_queue_entry*> render_queue_entries) {
+		std::vector<size_t> indices;
+		std::vector<std::string> shader_keys;
+		indices.reserve(render_queue_entries.size());
+		bool additional_shader_keys_to_process = true;
+		while (additional_shader_keys_to_process) {
+			additional_shader_keys_to_process = false;
+			std::string current_shader_key = "";
+			for (int i = 0; i < render_queue_entries.size(); i++) {
+				if (std::find(shader_keys.begin(), shader_keys.end(), render_queue_entries[i]->shader_key) == shader_keys.end()) {
+					if (current_shader_key == "") {
+						current_shader_key = render_queue_entries[i]->shader_key;
+						shader_keys.push_back(render_queue_entries[i]->shader_key);
+						indices.push_back(i);
+					}
+
+					else {
+						additional_shader_keys_to_process = true;
+					}
+				}
+
+				else if (current_shader_key == render_queue_entries[i]->shader_key) {
+					indices.push_back(i);
+				}
+
+			}
+		}
+		return indices;
+	};
+
 	auto& render_components = registry::get_components<render_component>();
+	
+	std::vector<const render_queue_entry*> render_queue_entries;
+
+	for (auto& render_component : render_components) {
+		for (auto& model_handle : render_component.models) {
+			render_queue_entries.reserve(render_queue_entries.size() + model_handle.get_render_queue_entries().size());
+			for (auto& render_queue_entry : model_handle.get_render_queue_entries()) {
+				render_queue_entries.push_back(&render_queue_entry);
+			}
+		}
+	}
+
+	std::vector<size_t> render_queue_entry_indeces = sorted_render_queue_shader_indeces(render_queue_entries);
+
 	const auto& light_source_components = registry::get_components<light_source_component>();
 
 	g_camera.update_camera_vectors();
@@ -656,8 +744,9 @@ auto gse::renderer3d::render() -> void {
 		}
 	}
 
+	// For shader batching
+	batch("ForwardRendering");
 	const auto& forward_rendering_shader = g_forward_rendering_shaders["ForwardRendering"];
-	forward_rendering_shader.use();
 
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, g_ssbo_lights);
 	glBufferData(GL_SHADER_STORAGE_BUFFER, static_cast<GLsizeiptr>(light_data.size()) * sizeof(light_shader_entry), light_data.data(), GL_DYNAMIC_DRAW);
@@ -665,9 +754,9 @@ auto gse::renderer3d::render() -> void {
 
 	g_reflection_cube_map.update(unitless::vec3(0.f), g_camera.get_projection_matrix(),
 		[&render_components, &forward_rendering_shader](const mat4& view_matrix, const mat4& projection_matrix) {
-			for (const auto& render_component : render_components) {
-				for (const auto& model_handle : render_component.models) {
-					for (const auto& render_queue_entry : model_handle.get_render_queue_entries()) {
+			for (auto& render_component : render_components) {
+				for (auto& model_handle : render_component.models) {
+					for (auto& render_queue_entry : model_handle.get_render_queue_entries()) {
 						render_object_forward(render_component.parent_id, forward_rendering_shader, render_queue_entry, view_matrix, projection_matrix);
 					}
 				}
@@ -678,8 +767,8 @@ auto gse::renderer3d::render() -> void {
 
 	std::vector<mat4> light_space_matrices;
 
+	batch("ShadowPass");
 	const auto& shadow_shader = g_deferred_rendering_shaders["ShadowPass"];
-	shadow_shader.use();
 
 	for (auto& light_source_component : light_source_components) {
 		for (const auto& light : light_source_component.get_lights()) {
@@ -687,19 +776,18 @@ auto gse::renderer3d::render() -> void {
 				const auto light_pos = point_light_ptr->get_render_queue_entry().shader_entry.position;
 
 				point_light_ptr->get_shadow_map().update(light_pos, mat4(1.f), [&](const mat4& view_matrix, const mat4& projection_matrix) {
-					shadow_shader.use();
 					shadow_shader.set_mat4("view", view_matrix);
 					shadow_shader.set_mat4("projection", projection_matrix);
 					shadow_shader.set_vec3("lightPos", light_pos);
 					shadow_shader.set_float("farPlane", point_light_ptr->get_render_queue_entry().far_plane.as<units::meters>());
 
-					for (const auto& render_component : render_components) {
+					for (auto& render_component : render_components) {
 						if (registry::is_entity_id_in_list(point_light_ptr->get_ignore_list_id(), render_component.parent_id)) {
 							continue;
 						}
 
-						for (const auto& model_handle : render_component.models) {
-							for (const auto& [material_key, vao, draw_mode, vertex_count, model_matrix, color, textures, material] : model_handle.get_render_queue_entries()) {
+						for (auto& model_handle : render_component.models) {
+							for (auto& [shader_key, vao, draw_mode, vertex_count, model_matrix, color, textures, material] : model_handle.get_render_queue_entries()) {
 								shadow_shader.set_mat4("model", model_matrix);  // Object's model matrix
 								glBindVertexArray(vao);
 								glDrawElements(draw_mode, vertex_count, GL_UNSIGNED_INT, nullptr);
@@ -724,12 +812,19 @@ auto gse::renderer3d::render() -> void {
 	glBindFramebuffer(GL_FRAMEBUFFER, g_g_buffer);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-	for (const auto& render_component : render_components) {
-		for (const auto& model_handle : render_component.models) {
-			for (const auto& render_queue_entry : model_handle.get_render_queue_entries()) {
-				render_object(render_component.parent_id, render_queue_entry, g_camera.get_view_matrix(), g_camera.get_projection_matrix());
+	for (auto& render_component : render_components) {
+		for (auto& model_handle : render_component.models) {
+			for (auto& render_queue_entry : model_handle.get_render_queue_entries()) {
+
+				if (gse::physics::motion_component* motion_component = gse::registry::get_component_ptr<gse::physics::motion_component>(render_component.parent_id); motion_component) {
+					render_queue_entry.model_matrix = motion_component->get_transformation_matrix();
+				}
 			}
 		}
+	}
+
+	for (size_t index : render_queue_entry_indeces) {
+		render_object(render_queue_entries[index], g_camera.get_view_matrix(), g_camera.get_projection_matrix());
 	}
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -741,6 +836,7 @@ auto gse::renderer3d::render() -> void {
 
 	for (const auto& light_source_component : light_source_components) {
 		for (const auto& entry : light_source_component.get_render_queue_entries()) {
+
 			render_object(entry);
 		}
 	}
@@ -748,8 +844,10 @@ auto gse::renderer3d::render() -> void {
 	glEnable(GL_DEPTH_TEST);
 	glDisable(GL_BLEND);
 
+	batch("LightingPass");
 	render_lighting_pass(g_deferred_rendering_shaders["LightingPass"], light_data, light_space_matrices, depth_maps);
 
+	batch("GaussianBlur");
 	const int current_texture = render_blur_pass(g_deferred_rendering_shaders["GaussianBlur"]);
 
 	if (window::get_fbo().has_value()) {
@@ -759,32 +857,32 @@ auto gse::renderer3d::render() -> void {
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
 
+	batch("PostProcessing");
 	render_additional_post_processing(g_deferred_rendering_shaders["PostProcessing"], current_texture);
 
 	// Finally, render bounding boxes
-	for (const auto& render_component : render_components) {
+	for (auto& render_component : render_components) {
 
-		for (const auto& model_handle : render_component.models) {
-			for (const auto& [material_key, vao, draw_mode, vertex_count, model_matrix, color, textures, material] : model_handle.get_render_queue_entries()) {
-				if (const auto it = g_materials.find(material_key); it != g_materials.end()) {
-					it->second.use(g_camera.get_view_matrix(), g_camera.get_projection_matrix(), model_matrix);
-					it->second.shader.set_vec3("color", color);
+		for (auto& model_handle : render_component.models) {
+			for (auto& [shader_key, vao, draw_mode, vertex_count, model_matrix, color, textures, material] : model_handle.get_render_queue_entries()) {
+				const auto& texture_shader = g_texture_shaders[shader_key];
+					texture_shader.use();
+					texture_shader.set_mat4("view", g_camera.get_view_matrix());
+					texture_shader.set_mat4("projection", g_camera.get_projection_matrix());
+					texture_shader.set_mat4("model", model_matrix);
+					texture_shader.set_int("material_texture", 0);
+					texture_shader.set_vec3("color", color);
 
 					glBindVertexArray(vao);
 					glDrawArrays(draw_mode, 0, vertex_count);
 					glBindVertexArray(0);
 				}
-				else {
-					std::cerr << "Shader program key not found: " << material_key << '\n';
-				}
 			}
 		}
 
-
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
 
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-}
 
 auto gse::renderer3d::get_camera() -> camera& {
 	return g_camera;

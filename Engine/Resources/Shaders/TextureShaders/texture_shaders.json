@@ -2,5 +2,9 @@
   "DefaultTexture": {
     "vertex": "default_textures.vert",
     "fragment": "default_textures.frag"
+  },
+  "Emissive": {
+    "vertex": "emissive.vert",
+    "fragment": "emissive.frag"
   }
 }
