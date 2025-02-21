@@ -70,7 +70,7 @@ auto gse::initialize(const std::function<void()>& initialize_function,
 	g_game_shutdown_function = shutdown_function;
 
 	window::initialize();
-	vulkan::initialize();
+	window::initialize_vk();
 	gui::initialize();
 
 	if (g_imgui_enabled) debug::set_up_imgui();
@@ -129,7 +129,6 @@ auto render(const std::function<bool()>& render_function) -> void {
 auto shutdown() -> void {
 	g_game_shutdown_function();
 	gse::renderer2d::shutdown();
-	gse::vulkan::exit();
 	gse::window::shutdown();
 }
 

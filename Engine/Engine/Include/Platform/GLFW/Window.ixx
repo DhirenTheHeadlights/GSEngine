@@ -1,6 +1,7 @@
 module;
 
 #include <glad/glad.h>
+#define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
 export module gse.platform.glfw.window;
@@ -136,19 +137,11 @@ auto gse::window::initialize() -> void {
 	glfwWindowHint(GLFW_AUTO_ICONIFY, GLFW_FALSE);
 	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
-#ifdef __APPLE__
-	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, 1);
-	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-#endif
-
 	GLFWmonitor* monitor = glfwGetPrimaryMonitor();
 	const GLFWvidmode* mode = glfwGetVideoMode(monitor);
 	const int w = mode->width;
 	const int h = mode->height;
 
-	// Create window in full screen mode
 	g_window = glfwCreateWindow(w, h, "SavantShooter", nullptr, nullptr);
 	glfwSetWindowPos(g_window, 0.f, 0.f);
 	glfwMakeContextCurrent(g_window);
@@ -166,13 +159,13 @@ auto gse::window::initialize() -> void {
 
 auto gse::window::initialize_vk() -> void {
 	assert_comment(glfwInit(), "Error initializing GLFW");
+	assert_comment(glfwVulkanSupported(), "Vulkan not supported");
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
-	g_vk_window = glfwCreateWindow(1, 1, "Vulkan", nullptr, g_window);
+	g_vk_window = glfwCreateWindow(1, 1, "Vulkan", nullptr, g_vk_window);
 
-	vk::SurfaceKHR surface;
-	assert_comment(glfw(vulkan::get_instance(), g_vk_window, nullptr, &surface) == vk::Result::eSuccess, "Error creating window surface");
+	vulkan::initialize(g_vk_window);
 }
 
 auto gse::window::begin_frame() -> void {
@@ -237,6 +230,7 @@ auto gse::window::end_frame() -> void {
 
 auto gse::window::shutdown() -> void {
 	glfwTerminate();
+	vulkan::shutdown();
 }
 
 /// Getters and Setters
