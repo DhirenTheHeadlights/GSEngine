@@ -11,8 +11,6 @@ module;
 #include <set>
 #include <vector>
 
-#include "vulkan/vulkan_core.h"
-
 export module gse.platform.vulkan.context;
 
 import vulkan_hpp;
@@ -100,10 +98,21 @@ auto gse::vulkan::create_instance(GLFWwindow* window) -> void {
 	VULKAN_HPP_DEFAULT_DISPATCHER.init();
 #endif
 
-    constexpr vk::ApplicationInfo app_info(
+	const uint32_t highest_supported_version = vk::enumerateInstanceVersion();
+
+    const uint32_t major = vk::apiVersionMajor(highest_supported_version);
+    const uint32_t minor = vk::apiVersionMinor(highest_supported_version);
+    const uint32_t patch = vk::apiVersionPatch(highest_supported_version);
+
+	std::cout << "Running Vulkan " << major << "." << minor << "." << patch << "\n";
+
+    constexpr uint32_t min_supported_version = vk::makeApiVersion(1, 1, 0, 0);
+	const uint32_t selected_version = std::max(min_supported_version, highest_supported_version);
+
+    const vk::ApplicationInfo app_info(
         "My Vulkan Renderer", 1,                // App name and version
         "No Engine", 1,                         // Engine name and version
-		vk::makeApiVersion(1, 0, 0, 0)          // Vulkan version
+        selected_version                        // Vulkan API version
     );
 
     uint32_t glfw_extension_count = 0;
@@ -131,7 +140,7 @@ auto gse::vulkan::create_instance(GLFWwindow* window) -> void {
 #endif
 
     VkSurfaceKHR surface;
-    assert_comment(glfwCreateWindowSurface(g_instance, window, nullptr, &surface) == VK_SUCCESS, "Error creating window surface");
+    assert_comment(glfwCreateWindowSurface(g_instance, window, nullptr, &surface) == static_cast<int>(vk::Result::eSuccess), "Error creating window surface");
 	g_surface = surface;
 }
 
@@ -202,14 +211,14 @@ auto gse::vulkan::create_logical_device(vk::SurfaceKHR surface) -> void {
 
     vk::PhysicalDeviceFeatures device_features{};
     if (supported_features.samplerAnisotropy) {
-        device_features.samplerAnisotropy = VK_TRUE;
+        device_features.samplerAnisotropy = vk::True;
     }
     else {
         std::cerr << "Warning: samplerAnisotropy not supported by selected GPU.\n";
     }
 
     const std::vector device_extensions = {
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME
+        vk::KHRSwapchainExtensionName
     };
 
     vk::DeviceCreateInfo create_info(
@@ -353,7 +362,7 @@ auto gse::vulkan::choose_swap_chain_present_mode(const std::vector<vk::PresentMo
 }
 
 auto gse::vulkan::choose_swap_chain_extent(const vk::SurfaceCapabilitiesKHR& capabilities, GLFWwindow* window) -> vk::Extent2D {
-	if (capabilities.currentExtent.width != UINT32_MAX) {
+	if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
 		return capabilities.currentExtent;
 	}
 
