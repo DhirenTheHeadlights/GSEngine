@@ -86,16 +86,18 @@ def hold_window():
     input("Press Enter to exit...")
 
 def main():
-    current_dir = os.getcwd()
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    print(current_dir)
 
     # Initialize submodules if .gitmodules exists.
     print("Checking for .gitmodules...")
     if path_exists(os.path.join(current_dir, ".gitmodules")):
-        run_command("git submodule update --init --recursive")
+    	run_command("git submodule update --init --recursive", cwd=current_dir)
 
     # Bootstrap vcpkg.
     print("Bootstrapping vcpkg...")
-    vcpkg_path = os.path.join(current_dir, "Engine", "External", "vcpkg")
+    vcpkg_path = os.path.join(current_dir, "Engine", "External", "vcpkg")    
+    print(vcpkg_path)
     if not path_exists(os.path.join(vcpkg_path, "vcpkg.exe")):
         run_command("bootstrap-vcpkg.bat", cwd=vcpkg_path)
 
