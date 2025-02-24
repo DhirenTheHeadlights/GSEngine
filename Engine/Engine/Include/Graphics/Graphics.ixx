@@ -11,7 +11,6 @@ export import gse.graphics.light_source_component;
 export import gse.graphics.point_light;
 export import gse.graphics.spot_light;
 
-export import gse.graphics.bounding_box_mesh;
 export import gse.graphics.camera;
 export import gse.graphics.cube_map;
 export import gse.graphics.material;

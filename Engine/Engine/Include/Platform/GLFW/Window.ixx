@@ -25,7 +25,6 @@ export namespace gse::window {
 	auto remove_rendering_interface(const std::shared_ptr<rendering_interface>& rendering_interface) -> void;
 
 	auto initialize() -> void;
-	auto initialize_vk() -> void;
 	auto begin_frame() -> void;
 	auto update() -> void;
 	auto end_frame() -> void;
@@ -59,7 +58,6 @@ export namespace gse::window {
 }
 
 GLFWwindow* g_window = nullptr;
-GLFWwindow* g_vk_window = nullptr;
 
 std::optional<GLuint> g_fbo;
 gse::unitless::vec2i g_fbo_size = { 1, 1 };
@@ -132,40 +130,13 @@ auto gse::window::remove_rendering_interface(const std::shared_ptr<rendering_int
 
 auto gse::window::initialize() -> void {
 	assert_comment(glfwInit(), "Error initializing GLFW");
-	glfwWindowHint(GLFW_SAMPLES, 4);
-	glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
-	glfwWindowHint(GLFW_AUTO_ICONIFY, GLFW_FALSE);
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
-
-	GLFWmonitor* monitor = glfwGetPrimaryMonitor();
-	const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-	const int w = mode->width;
-	const int h = mode->height;
-
-	g_window = glfwCreateWindow(w, h, "SavantShooter", nullptr, nullptr);
-	glfwSetWindowPos(g_window, 0.f, 0.f);
-	glfwMakeContextCurrent(g_window);
-	glfwSwapInterval(1);
-
-	glfwSetKeyCallback(g_window, key_callback);
-	glfwSetMouseButtonCallback(g_window, mouse_callback);
-	glfwSetWindowFocusCallback(g_window, window_focus_callback);
-	glfwSetWindowSizeCallback(g_window, window_size_callback);
-	glfwSetCursorPosCallback(g_window, cursor_position_callback);
-	glfwSetCharCallback(g_window, character_callback);
-
-	assert_comment(gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)), "Error Initializing GLAD");
-}
-
-auto gse::window::initialize_vk() -> void {
-	assert_comment(glfwInit(), "Error initializing GLFW");
 	assert_comment(glfwVulkanSupported(), "Vulkan not supported");
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
-	g_vk_window = glfwCreateWindow(1, 1, "Vulkan", nullptr, g_vk_window);
+	g_window = glfwCreateWindow(1, 1, "Vulkan", nullptr, g_window);
 
-	vulkan::initialize(g_vk_window);
+	vulkan::initialize(g_window);
 }
 
 auto gse::window::begin_frame() -> void {
