@@ -22,7 +22,6 @@ export namespace gse {
 		auto operator=(const render_component&) -> render_component & = delete;
 
 		auto update_bounding_box_meshes() -> void;
-		auto set_model_material(const std::string& material_string) -> void;
 		auto set_model_positions(const vec3<length>& position) -> void;
 
 		std::vector<model_handle> models;
@@ -50,12 +49,6 @@ auto gse::render_component::update_bounding_box_meshes() -> void {
 auto gse::render_component::set_model_positions(const vec3<length>& position) -> void {
 	for (auto& model_handle : models) {
 		model_handle.set_position(position);
-	}
-}
-
-auto gse::render_component::set_model_material(const std::string& material_string) -> void {
-	for (auto& model_handle : models) {
-		model_handle.set_material(material_string);
 	}
 }
 

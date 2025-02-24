@@ -146,7 +146,7 @@ target_compile_features(VulkanHppModule PUBLIC cxx_std_20)
 target_link_libraries(VulkanHppModule PUBLIC Vulkan::Headers)
 
 target_compile_definitions(VulkanHppModule PUBLIC
-  VULKAN_HPP_DISPATCH_LOADER_DYNAMIC = 1
+  VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
 )
 
 ####################################################################################################################

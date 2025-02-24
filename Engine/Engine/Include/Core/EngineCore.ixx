@@ -11,7 +11,7 @@ import gse.core.scene_loader;
 import gse.graphics.debug;
 import gse.graphics.gui;
 import gse.graphics.renderer2d;
-import gse.graphics.renderer3d;
+import gse.graphics.vulkan.renderer3d;
 import gse.platform.perma_assert;
 import gse.platform.glfw.input;
 import gse.platform.glfw.window;
@@ -30,7 +30,7 @@ export namespace gse {
 }
 
 auto gse::get_camera() -> camera& {
-	return renderer3d::get_camera();
+	return vulkan::renderer3d::get_camera();
 }
 
 std::function<void()> g_game_shutdown_function = [] {};
@@ -70,12 +70,11 @@ auto gse::initialize(const std::function<void()>& initialize_function,
 	g_game_shutdown_function = shutdown_function;
 
 	window::initialize();
-	window::initialize_vk();
 	gui::initialize();
 
 	if (g_imgui_enabled) debug::set_up_imgui();
 
-	renderer3d::initialize();
+	vulkan::renderer3d::initialize();
 	renderer2d::initialize();
 
 	initialize_function();

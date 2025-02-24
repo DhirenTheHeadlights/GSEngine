@@ -1,1 +1,0 @@
-export module gse.graphics.vulkan.renderer3d;
