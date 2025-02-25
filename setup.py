@@ -5,21 +5,34 @@ import urllib.request
 import winreg
 import sys
 
-def run_command(command, cwd=None):
-    """Run a shell command and return its output. Raises an error if it fails."""
+def run_command(command, cwd=None, capture_output=False):
+    """Run a shell command and stream its output live. If capture_output is True, return the output."""
     try:
-        result = subprocess.run(
-            command, shell=True, cwd=cwd, check=True,
-            capture_output=True, text=True
+        process = subprocess.Popen(
+            command, shell=True, cwd=cwd,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )
-        print(result.stdout)
-        return result.stdout.strip()
-    except subprocess.CalledProcessError as e:
-        print(f"Error running command: {command}")
-        print(f"Exit Code: {e.returncode}")
-        print(f"Error Output: {e.stderr}")
+
+        output_lines = []
+        for line in process.stdout:
+            print(line, end="")  # Print live output
+            output_lines.append(line.strip())  # Store output if needed
+
+        process.wait()
+
+        if process.returncode != 0:
+            print(f"Error running command: {command}")
+            print(f"Exit Code: {process.returncode}")
+            for line in process.stderr:
+                print(line, end="")  # Print error output
+            hold_window()
+            return None  # Return None to indicate failure
+
+        return "\n".join(output_lines) if capture_output else True  # Return full output if needed
+    except Exception as e:
+        print(f"Unexpected error running command: {command}\n{e}")
         hold_window()
-        return None  # Instead of exiting, return None so script continues
+        return None
 
 def path_exists(path):
     """Check if a given file or directory exists."""
@@ -62,7 +75,7 @@ def install_dependencies(vcpkg_path, dependencies):
 
 def verify_dependencies(vcpkg_path, dependencies):
     print("Verifying dependency installations...")
-    installed_output = run_command("vcpkg.exe list", cwd=vcpkg_path)
+    installed_output = run_command("vcpkg.exe list", cwd=vcpkg_path, capture_output=True)
     if installed_output is None:
         print("ERROR: Failed to check installed packages.")
         hold_window()
@@ -104,7 +117,8 @@ def main():
     # Define dependencies.
     dependencies = [
         "msdfgen:x64-windows",
-        "freetype:x64-windows"
+        "freetype:x64-windows",
+	"vulkan:x64-windows",
     ]
 
     install_dependencies(vcpkg_path, dependencies)
