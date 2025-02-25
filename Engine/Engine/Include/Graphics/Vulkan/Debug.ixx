@@ -9,6 +9,8 @@ module;
 export module gse.graphics.debug;
 
 import std;
+import vulkan_hpp;
+
 import gse.physics.math;
 import gse.core.clock;
 import gse.core.json_parser;
@@ -16,9 +18,9 @@ import gse.platform.glfw.window;
 import gse.platform.context;
 
 export namespace gse::debug {
-    auto set_up_imgui() -> void;
+	auto set_up_imgui(const vk::RenderPass& render_pass) -> void;
     auto update_imgui() -> void;
-    auto render_imgui() -> void;
+	auto render_imgui(const vk::CommandBuffer& command_buffer) -> void;
     auto save_imgui_state() -> void;
 
     auto set_imgui_save_file_path(const std::filesystem::path& path) -> void;
@@ -60,7 +62,7 @@ auto gse::debug::set_imgui_save_file_path(const std::filesystem::path& path) -> 
     g_imgui_save_file_path = path;
 }
 
-auto gse::debug::set_up_imgui() -> void {
+auto gse::debug::set_up_imgui(const vk::RenderPass& render_pass) -> void {
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
     imguiThemes::embraceTheDarkness();
@@ -85,7 +87,7 @@ auto gse::debug::set_up_imgui() -> void {
     init_info.MinImageCount = 2;
     init_info.ImageCount = 3;
     init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-    ImGui_ImplVulkan_Init(&init_info, g_render_pass);
+    ImGui_ImplVulkan_Init(&init_info, render_pass);
 
     if (exists(g_imgui_save_file_path)) {
         ImGui::LoadIniSettingsFromDisk(g_imgui_save_file_path.string().c_str());
@@ -102,14 +104,14 @@ auto gse::debug::update_imgui() -> void {
     }
 }
 
-auto gse::debug::render_imgui() -> void {
+auto gse::debug::render_imgui(const vk::CommandBuffer& command_buffer) -> void {
     for (const auto& callback : g_render_call_backs) {
         callback();
     }
     g_render_call_backs.clear();
 
     ImGui::Render();
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), g_command_buffer);
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer);
 }
 
 auto gse::debug::save_imgui_state() -> void {

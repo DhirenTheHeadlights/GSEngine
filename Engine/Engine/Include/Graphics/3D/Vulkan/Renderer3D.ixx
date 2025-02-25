@@ -5,9 +5,12 @@ import vulkan_hpp;
 
 import gse.core.config;
 import gse.core.id;
+import gse.core.object_registry;
 import gse.graphics.camera;
+import gse.graphics.debug;
 import gse.graphics.mesh;
 import gse.graphics.model;
+import gse.graphics.render_component;
 import gse.graphics.shader;
 import gse.platform.glfw.window;
 import gse.platform.perma_assert;
@@ -472,51 +475,21 @@ auto gse::renderer3d::initialize() -> void {
 		nullptr, &viewport_state, &rasterizer, nullptr, &depth_stencil, &color_blending, nullptr, g_pipeline_layout, g_render_pass, 0
 	);
 	g_pipeline = device.createGraphicsPipeline(nullptr, pipeline_info).value;
-}
 
-std::vector<gse::vertex> g_cube_vertices = {
-	// Front face
-	{{-1.f, -1.f,  1.f}, { 0.f,  0.f,  1.f}, {0.f, 0.f}},
-	{{ 1.f, -1.f,  1.f}, { 0.f,  0.f,  1.f}, {1.f, 0.f}},
-	{{ 1.f,  1.f,  1.f}, { 0.f,  0.f,  1.f}, {1.f, 1.f}},
-	{{-1.f,  1.f,  1.f}, { 0.f,  0.f,  1.f}, {0.f, 1.f}},
-
-	// Back face
-	{{-1.f, -1.f, -1.f}, { 0.f,  0.f, -1.f}, {1.f, 0.f}},
-	{{ 1.f, -1.f, -1.f}, { 0.f,  0.f, -1.f}, {0.f, 0.f}},
-	{{ 1.f,  1.f, -1.f}, { 0.f,  0.f, -1.f}, {0.f, 1.f}},
-	{{-1.f,  1.f, -1.f}, { 0.f,  0.f, -1.f}, {1.f, 1.f}}
-};
-
-std::vector<std::uint32_t> g_cube_indices = {
-	0, 1, 2, 2, 3, 0,
-	4, 5, 6, 6, 7, 4,
-	0, 4, 7, 7, 3, 0,
-	1, 5, 6, 6, 2, 1,
-	0, 1, 5, 5, 4, 0,
-	3, 2, 6, 6, 7, 3
-};
-
-std::vector<gse::model> g_models;
-std::vector<gse::model_handle> g_model_handles;
-
-auto gse::renderer3d::initialize_objects() -> void {
-	auto cube_mesh = mesh(g_cube_vertices, g_cube_indices);
-	auto cube = model("cube");
-	cube.meshes.push_back(std::move(cube_mesh));
-	cube.initialize();
-	g_models.push_back(std::move(cube));
-	const auto new_model_handle = model_handle({}, g_models.back());
-	g_model_handles.push_back(new_model_handle);
+	debug::set_up_imgui(g_render_pass);
 }
 
 auto gse::renderer3d::render() -> void {
-	for (const auto model : g_model_handles) {
-		for (const auto entry : model.get_render_queue_entries()) {
-			g_command_buffers[0].bindPipeline(vk::PipelineBindPoint::eGraphics, g_pipeline);
+	for (const auto components = registry::get_components<render_component>(); const auto component : components) {
+		for (const auto model_handle : component.models) {
+			for (const auto entry : model_handle.get_render_queue_entries()) {
+				g_command_buffers[0].bindPipeline(vk::PipelineBindPoint::eGraphics, g_pipeline);
 
-			entry.mesh->bind(g_command_buffers[0]);
-			entry.mesh->draw(g_command_buffers[0]);
+				entry.mesh->bind(g_command_buffers[0]);
+				entry.mesh->draw(g_command_buffers[0]);
+			}
 		}
 	}
+
+	debug::render_imgui(g_command_buffers[0]);
 }
