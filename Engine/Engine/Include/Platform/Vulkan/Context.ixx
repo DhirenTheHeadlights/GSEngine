@@ -19,7 +19,7 @@ import vulkan_hpp;
 export VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 #endif
 
-import gse.platform.perma_assert;
+import gse.platform.assert;
 
 struct queue_family {
     std::optional<std::uint32_t> graphics_family;
@@ -52,6 +52,9 @@ vk::Queue g_present_queue;
 vk::SurfaceKHR g_surface;
 vk::CommandPool g_command_pool;
 vk::DescriptorPool g_descriptor_pool;
+vk::Semaphore g_image_available_semaphore;
+vk::Semaphore g_render_finished_semaphore;
+vk::Fence g_in_flight_fence;
 
 export namespace gse::vulkan {
     auto initialize(GLFWwindow* window) -> void;
@@ -90,7 +93,8 @@ export namespace gse::vulkan {
 		return g_descriptor_pool;
 	}
 
-    auto find_memory_type(const std::uint32_t type_filter, const vk::MemoryPropertyFlags properties) -> std::uint32_t;
+    auto get_next_image(vk::SwapchainKHR swap_chain) -> std::uint32_t;
+    auto find_memory_type(std::uint32_t type_filter, vk::MemoryPropertyFlags properties) -> std::uint32_t;
 
 	auto begin_single_line_commands() -> vk::CommandBuffer;
 	auto end_single_line_commands(vk::CommandBuffer command_buffer) -> void;
@@ -107,12 +111,14 @@ namespace gse::vulkan {
     auto choose_swap_chain_surface_format(const std::vector<vk::SurfaceFormatKHR>& available_formats) -> vk::SurfaceFormatKHR;
     auto choose_swap_chain_present_mode(const std::vector<vk::PresentModeKHR>& available_present_modes) -> vk::PresentModeKHR;
     auto choose_swap_chain_extent(const vk::SurfaceCapabilitiesKHR& capabilities, GLFWwindow* window) -> vk::Extent2D;
+	auto create_sync_objects() -> void;
 }
 
 auto gse::vulkan::initialize(GLFWwindow* window) -> void {
     create_instance(window);
     select_gpu();
     create_logical_device(g_surface);
+	create_sync_objects();
 }
 
 auto gse::vulkan::get_swap_chain(GLFWwindow* window) -> swap_chain_config {
@@ -325,6 +331,15 @@ auto gse::vulkan::choose_swap_chain_extent(const vk::SurfaceCapabilitiesKHR& cap
     actual_extent.width = std::clamp(actual_extent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
     actual_extent.height = std::clamp(actual_extent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
     return actual_extent;
+}
+
+auto gse::vulkan::create_sync_objects() -> void {
+	constexpr vk::SemaphoreCreateInfo semaphore_info;
+	constexpr vk::FenceCreateInfo fence_info(vk::FenceCreateFlagBits::eSignaled);
+
+    g_image_available_semaphore = g_device.createSemaphore(semaphore_info);
+    g_render_finished_semaphore = g_device.createSemaphore(semaphore_info);
+    g_in_flight_fence = g_device.createFence(fence_info);
 }
 
 auto gse::vulkan::shutdown() -> void {

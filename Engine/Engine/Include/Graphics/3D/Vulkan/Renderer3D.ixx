@@ -13,7 +13,7 @@ import gse.graphics.model;
 import gse.graphics.render_component;
 import gse.graphics.shader;
 import gse.platform.glfw.window;
-import gse.platform.perma_assert;
+import gse.platform.assert;
 import gse.platform.context;
 
 gse::camera g_camera;
@@ -31,15 +31,14 @@ vk::Pipeline g_pipeline;
 vk::PipelineLayout g_pipeline_layout;
 
 std::vector<vk::Framebuffer> g_frame_buffers;
-std::vector<vk::Framebuffer> g_swap_chain_frame_buffers;
-
 std::vector<vk::CommandBuffer> g_command_buffers;
 
 vk::SwapchainKHR g_swap_chain;
+std::vector<vk::Framebuffer> g_swap_chain_frame_buffers;
 std::vector<vk::Image> g_swap_chain_images;
+std::vector<vk::ImageView> g_swap_chain_image_views;
 vk::Format g_swap_chain_image_format;
 vk::Extent2D g_swap_chain_extent;
-std::vector<vk::ImageView> g_swap_chain_image_views;
 
 vk::Image g_position_image, g_normal_image, g_albedo_image, g_depth_image;
 vk::DeviceMemory g_position_image_memory, g_normal_image_memory, g_albedo_image_memory, g_depth_image_memory;
@@ -444,7 +443,7 @@ auto gse::renderer3d::initialize() -> void {
 
 	g_pipeline_layout = device.createPipelineLayout({});
 
-	shader geometry_shader(vulkan::get_device(), config::resource_path / "DeferredRendering/geometry_pass.vert", config::resource_path / "DeferredRendering/geometry_pass.frag");
+	shader geometry_shader(config::resource_path / "DeferredRendering/geometry_pass.vert", config::resource_path / "DeferredRendering/geometry_pass.frag");
 
 	vk::PipelineVertexInputStateCreateInfo vertex_input_info({}, 0, nullptr, 0, nullptr);
 	vk::PipelineInputAssemblyStateCreateInfo input_assembly({}, vk::PrimitiveTopology::eTriangleList, vk::False);

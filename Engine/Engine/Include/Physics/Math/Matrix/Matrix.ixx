@@ -6,7 +6,7 @@ import gse.physics.math.base_vec;
 import gse.physics.math.unitless_vec;
 import gse.physics.math.unit_vec;
 import gse.physics.math.vec_math;
-import gse.platform.perma_assert;
+import gse.platform.assert;
 
 namespace gse {
 	template <typename T, int Cols, int Rows>

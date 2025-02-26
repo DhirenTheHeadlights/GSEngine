@@ -7,7 +7,7 @@ import gse.core.object.hook;
 import gse.core.component;
 import gse.physics.math;
 import gse.core.clock;
-import gse.platform.perma_assert;
+import gse.platform.assert;
 
 export namespace gse::registry {
 	// Creates an object with a random TEMPORARY uuid

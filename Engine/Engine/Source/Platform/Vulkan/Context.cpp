@@ -7,6 +7,12 @@ module gse.platform.context;
 
 import vulkan_hpp;
 
+auto gse::vulkan::get_next_image(const vk::SwapchainKHR swap_chain) -> std::uint32_t {
+	const auto result = get_device().acquireNextImageKHR(swap_chain, std::numeric_limits<std::uint64_t>::max(), g_image_available_semaphore, nullptr);
+	perma_assert(result.result != vk::Result::eSuccess, "Failed to acquire next image!");
+	return result.value;
+}
+
 auto gse::vulkan::find_memory_type(const std::uint32_t type_filter, const vk::MemoryPropertyFlags properties) -> std::uint32_t {
 	const auto memory_properties = g_physical_device.getMemoryProperties();
 	for (std::uint32_t i = 0; i < memory_properties.memoryTypeCount; i++) {
