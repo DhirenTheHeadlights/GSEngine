@@ -35,6 +35,13 @@ export namespace gse {
 		std::uint32_t diffuse_texture = 0;
 		std::uint32_t normal_texture = 0;
 		std::uint32_t specular_texture = 0;
+
+		//Helper to allow textures to be set with iterators
+		std::vector<uint32_t*> texture_slots = {
+		&diffuse_texture,
+		&specular_texture,
+		&normal_texture
+		};
 	};
 }
 

@@ -25,7 +25,6 @@ export namespace gse {
 		GLsizei vertex_count;
 		mat4 model_matrix;
 		unitless::vec3 color;
-		std::span<const std::uint32_t> texture_ids;
 		gse::mtl_material* material;
 	};
 
@@ -73,10 +72,6 @@ gse::mesh::mesh(const std::vector<vertex>& vertices, const std::vector<uint32_t>
 	: vertices(vertices), indices(indices), material(material) {
 }
 
-gse::mesh::mesh(const std::vector<vertex>& vertices, const std::vector<uint32_t>& indices, const std::vector<uint32_t>& texture_ids)
-	: vertices(vertices), indices(indices), texture_ids(texture_ids) {
-}
-
 gse::mesh::~mesh() {
 	glDeleteVertexArrays(1, &vao);
 	glDeleteBuffers(1, &vbo);
@@ -90,6 +85,7 @@ gse::mesh::mesh(mesh&& other) noexcept
 	other.vbo = 0;
 	other.ebo = 0;
 }
+
 
 auto gse::mesh::operator=(mesh&& other) noexcept -> mesh& {
 	if (this != &other) {

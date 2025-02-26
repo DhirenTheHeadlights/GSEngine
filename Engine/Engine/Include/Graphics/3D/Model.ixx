@@ -31,7 +31,6 @@ export namespace gse {
 		auto set_position(const vec3<length>& position) -> void;
 		auto set_rotation(const vec3<angle>& rotation) -> void;
 		auto set_material(const std::string& material_name) -> void;
-		auto set_all_mesh_textures(const std::vector<std::uint32_t>& texture_ids) -> void;
 		auto set_shader_key(const std::string& shader_key) -> void;
 
 		auto get_render_queue_entries() -> std::vector<render_queue_entry>&;
@@ -51,6 +50,7 @@ auto gse::model::initialize() -> void {
 
 gse::model_handle::model_handle(id* model_id, const model& model) : m_model_id(model_id) {
 	for (const auto& mesh : model.meshes) {
+		
 		m_render_queue_entries.emplace_back(
 			"DefaultTexture",
 			mesh.vao,
@@ -58,7 +58,6 @@ gse::model_handle::model_handle(id* model_id, const model& model) : m_model_id(m
 			static_cast<GLsizei>(mesh.indices.size()),
 			mat4(1.0f),
 			gse::unitless::vec3(1.0f),
-			std::span<const std::uint32_t>(mesh.texture_ids),
 			mesh.material
 		);
 	}
@@ -73,12 +72,6 @@ auto gse::model_handle::set_shader_key(const std::string& shader_key) -> void {
 auto gse::model_handle::set_position(const vec3<length>& position) -> void {
 	for (auto& render_queue_entry : m_render_queue_entries) {
 		render_queue_entry.model_matrix = translate(mat4(1.0f), position);
-	}
-}
-
-auto gse::model_handle::set_all_mesh_textures(const std::vector<std::uint32_t>& texture_ids) -> void {
-	for (auto& render_queue_entry : m_render_queue_entries) {
-		render_queue_entry.texture_ids = texture_ids;
 	}
 }
 

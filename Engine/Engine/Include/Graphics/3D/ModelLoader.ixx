@@ -14,11 +14,35 @@ export namespace gse::model_loader {
 	auto get_model_by_name(const std::string& model_name) -> const model&;
 	auto get_model_by_id(id* model_id) -> const model&;
 	auto get_models() -> const std::unordered_map<id*, model>&;
+	auto get_materials() -> std::unordered_map<std::string, mtl_material>&;
+	auto create_blank_material(const std::vector<std::uint32_t>& texture_ids) -> mtl_material*;
 }
 
 std::unordered_map<gse::id*, gse::model> g_models;
 std::unordered_map<gse::id*, std::filesystem::path> g_loaded_model_paths;
 std::unordered_map<std::string, gse::mtl_material> g_materials;
+
+auto gse::model_loader::create_blank_material(const std::vector<std::uint32_t>& texture_ids) -> gse::mtl_material* {
+	gse::mtl_material blank_material;
+
+
+	for (size_t i = 0; i < texture_ids.size() && i < blank_material.texture_slots.size(); i++) {
+		*blank_material.texture_slots[i] = texture_ids[i];
+	}
+
+	// Create material name
+	std::string material_name = "BlankMaterial" + std::to_string(g_materials.size());
+
+	// Emplace into material storage
+	g_materials.emplace(material_name, std::move(blank_material));
+
+	// Retrieve the newly added material (safe way to get its reference)
+	return &g_materials[material_name];
+}
+
+auto gse::model_loader::get_materials() -> std::unordered_map<std::string, mtl_material>& {
+	return g_materials;
+}
 
 auto gse::model_loader::load_obj_file(const std::filesystem::path& model_path, const std::string& model_name) -> id* {
 	std::ifstream model_file(model_path);
@@ -167,10 +191,10 @@ auto gse::model_loader::load_obj_file(const std::filesystem::path& model_path, c
 
 				if (tokens[0] == "newmtl") {
 					current_material = tokens[1];
-					g_materials[current_material] = mtl_material();
+					g_materials[current_material] = {};
 				}
 				else if (!current_material.empty()) {
-					auto& [ambient, diffuse, specular, emission, shininess, optical_density, transparency, illumination_model, diffuse_texture, normal_texture, specular_texture] = g_materials[current_material];
+					auto& [ambient, diffuse, specular, emission, shininess, optical_density, transparency, illumination_model, diffuse_texture, normal_texture, specular_texture, texture_slots] = g_materials[current_material];
 
 					if (tokens[0] == "Ns") shininess = std::stof(tokens[1]);
 					else if (tokens[0] == "Ka") ambient = unitless::vec3(std::stof(tokens[1]), std::stof(tokens[2]), std::stof(tokens[3]));
