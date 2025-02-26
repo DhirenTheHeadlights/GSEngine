@@ -6,13 +6,10 @@ module;
 #include <unordered_map>
 #include <vector>
 
-#include <glad/glad.h>
-
 #include <msdfgen.h>
 #define STB_TRUETYPE_IMPLEMENTATION
 #include <filesystem>
 #include <freetype/freetype.h>
-
 #include "ext/import-font.h"
 
 export module gse.graphics.font;
@@ -199,42 +196,15 @@ auto gse::font::load(const std::filesystem::path& path) -> void {
         const float height = static_cast<float>(glyph_slot->metrics.height) / 64.0f;
 
         // UV coordinates in the atlas
-        const float u0 = static_cast<float>(glyph_index % atlas_cols * glyph_cell_size)
-            / static_cast<float>(atlas_width);
-        const float v0 = static_cast<float>(glyph_index / atlas_cols * glyph_cell_size)
-            / static_cast<float>(atlas_height);
-        const float u1 = static_cast<float>(glyph_index % atlas_cols * glyph_cell_size + glyph_cell_size)
-            / static_cast<float>(atlas_width);
-        const float v1 = static_cast<float>(glyph_index / atlas_cols * glyph_cell_size + glyph_cell_size)
-            / static_cast<float>(atlas_height);
+        const float u0 = static_cast<float>(glyph_index % atlas_cols * glyph_cell_size) / static_cast<float>(atlas_width);
+        const float v0 = static_cast<float>(glyph_index / atlas_cols * glyph_cell_size) / static_cast<float>(atlas_height);
+        const float u1 = static_cast<float>(glyph_index % atlas_cols * glyph_cell_size + glyph_cell_size) / static_cast<float>(atlas_width);
+        const float v1 = static_cast<float>(glyph_index / atlas_cols * glyph_cell_size + glyph_cell_size) / static_cast<float>(atlas_height);
 
         m_glyphs[static_cast<char>(c)] = { u0, v0, u1, v1, width, height, bearing_x, bearing_y, advance };
     }
 
-    GLuint texture_id = m_texture.get_texture_id();
-    if (texture_id == 0) {
-        glGenTextures(1, &texture_id);
-    }
-    glBindTexture(GL_TEXTURE_2D, texture_id);
-
-    glTexImage2D(
-        GL_TEXTURE_2D,
-        0,
-        GL_RGB,
-        atlas_width,
-        atlas_height,
-        0,
-        GL_RGB,
-        GL_UNSIGNED_BYTE,
-        atlas_data.data()
-    );
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-    glBindTexture(GL_TEXTURE_2D, 0);
+	m_texture.load_from_memory(atlas_data, atlas_width, atlas_height, 3);
 
     destroyFont(font_handle);
     deinitializeFreetype(ft_handle);

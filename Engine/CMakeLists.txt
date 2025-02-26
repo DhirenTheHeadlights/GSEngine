@@ -78,23 +78,6 @@ FetchContent_MakeAvailable(glfw)
 target_include_directories(Engine PUBLIC ${glfw_SOURCE_DIR}/include)
 
 ####################################################################################################################
-# FetchContent for glad
-####################################################################################################################
-
-option(GLAD_GENERATE "Generate GLAD source files" OFF)
-
-FetchContent_Declare(
-    glad
-    GIT_REPOSITORY https://github.com/Dav1dde/glad.git
-    GIT_TAG        v0.1.36
-)
-
-FetchContent_MakeAvailable(glad)
-
-# Include GLAD headers
-target_include_directories(Engine PUBLIC ${glad_SOURCE_DIR}/include)
-
-####################################################################################################################
 # FetchContent for stb_image and stb_truetype
 ####################################################################################################################
 
@@ -162,7 +145,6 @@ target_include_directories(
 # Link the third-party libraries to the engine
 target_link_libraries(Engine PUBLIC
     glfw
-    glad
     imgui
     Freetype::Freetype
     msdfgen::msdfgen
@@ -183,7 +165,7 @@ if (MSVC)
     SET_PROPERTY(TARGET Engine PROPERTY VS_USER_PROPS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Resources/Misc/msvc_build_stl_modules_workaround.props")
 
     # List of external targets to be grouped under "External"
-    set(EXTERNAL_TARGETS glad glad-generate-files imgui)
+    set(EXTERNAL_TARGETS imgui VulkanHppModule)
 
     # Loop through each target and set its folder property
     foreach(target ${EXTERNAL_TARGETS})

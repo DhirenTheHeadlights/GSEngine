@@ -1,4 +1,4 @@
-export module gse.platform.perma_assert;
+export module gse.platform.assert;
 
 // --- Standard/Compiler Headers ---
 #ifdef _MSC_VER

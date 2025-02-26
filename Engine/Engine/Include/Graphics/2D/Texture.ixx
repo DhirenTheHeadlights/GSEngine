@@ -1,93 +1,218 @@
 module;
 
-#include <glad/glad.h>
-#define STB_IMAGE_IMPLEMENTATION
-#include <iostream>
+#include <cstring>
 #include <stb_image.h>
 
 export module gse.graphics.texture;
 
 import std;
-
 import gse.physics.math;
+import gse.platform.context;
+import vulkan_hpp;
 
 export namespace gse {
-	class texture {
-	public:
-		texture() = default;
-		explicit texture(const std::string& filepath);
-		~texture();
+    class texture {
+    public:
+        texture() = default;
+        explicit texture(const std::string& filepath);
+        ~texture();
 
-		auto load_from_file(const std::string& filepath) -> void;
-		auto bind(unsigned int unit = 0) const -> void;
-		auto unbind() const -> void;
-		auto set_wrapping(GLenum wrap_s, GLenum wrap_t) const -> void;
-		auto set_filtering(GLenum min_filter, GLenum mag_filter) const -> void;
+        auto load_from_file(const std::string& filepath) -> void;
+		auto load_from_memory(const std::span<std::uint8_t>& data, int width, int height, int channels) -> void;
+        auto get_descriptor_info() const->vk::DescriptorImageInfo;
+        auto get_dimensions() const -> unitless::vec2i { return m_size; }
+    private:
+        auto create_texture_image(const unsigned char* data, int width, int height, int channels) -> void;
+        auto create_texture_image_view() -> void;
+        auto create_texture_sampler() -> void;
 
-		auto get_dimensions() const -> unitless::vec2i { return m_size; }
-		auto get_texture_id() const -> GLuint { return m_texture_id; }
+        vk::Image m_texture_image;
+        vk::DeviceMemory m_texture_image_memory;
+        vk::ImageView m_texture_image_view;
+        vk::Sampler m_texture_sampler;
 
-	private:
-		GLuint m_texture_id = 0;
-		unitless::vec2i m_size = { 0, 0 };
-		std::string m_filepath;
-		int m_channels = 0;
-	};
+        unitless::vec2i m_size = { 0, 0 };
+        std::string m_filepath;
+        int m_channels = 0;
+    };
+
 }
 
 gse::texture::texture(const std::string& filepath) : m_filepath(filepath) {
-	load_from_file(filepath);
+    load_from_file(filepath);
 }
 
 gse::texture::~texture() {
-	glDeleteTextures(1, &m_texture_id);
+	const auto device = vulkan::get_device();
+    device.destroySampler(m_texture_sampler);
+    device.destroyImageView(m_texture_image_view);
+    device.destroyImage(m_texture_image);
+    device.freeMemory(m_texture_image_memory);
 }
 
 auto gse::texture::load_from_file(const std::string& filepath) -> void {
-	stbi_set_flip_vertically_on_load(true);
-	unsigned char* data = stbi_load(filepath.c_str(), &m_size.x, &m_size.y, &m_channels, 0);
+    stbi_set_flip_vertically_on_load(true);
+    unsigned char* data = stbi_load(filepath.c_str(), &m_size.x, &m_size.y, &m_channels, 0);
+    if (!data) {
+        throw std::runtime_error("Failed to load texture image: " + filepath);
+    }
 
-	if (!data) {
-		std::cerr << "Failed to load texture: " << filepath << '\n';
-		return;
-	}
+    create_texture_image(data, m_size.x, m_size.y, m_channels);
+    stbi_image_free(data);
 
-	glGenTextures(1, &m_texture_id);
-	glBindTexture(GL_TEXTURE_2D, m_texture_id);
-
-	GLenum format = GL_RGB;
-	if (m_channels == 4) {
-		format = GL_RGBA;
-	}
-	else if (m_channels == 1) {
-		format = GL_RED;
-	}
-
-	glTexImage2D(GL_TEXTURE_2D, 0, static_cast<GLint>(format), m_size.x, m_size.y, 0, format, GL_UNSIGNED_BYTE, data);
-	glGenerateMipmap(GL_TEXTURE_2D);
-
-	stbi_image_free(data);
+    create_texture_image_view();
+    create_texture_sampler();
 }
 
-auto gse::texture::bind(const unsigned int unit) const -> void {
-	glActiveTexture(GL_TEXTURE0 + unit);
-	glBindTexture(GL_TEXTURE_2D, m_texture_id);
+auto gse::texture::load_from_memory(const std::span<std::uint8_t>& data, const int width, const int height, const int channels) -> void {
+	m_size = { width, height };
+	m_channels = channels;
+	create_texture_image(data.data(), width, height, channels);
+	create_texture_image_view();
+	create_texture_sampler();
 }
 
-auto gse::texture::unbind() const -> void {
-	glBindTexture(GL_TEXTURE_2D, 0);
+auto gse::texture::create_texture_image(const unsigned char* data, const int width, const int height, const int channels) -> void {
+    const auto device = vulkan::get_device();
+    const vk::DeviceSize image_size = width * height * channels;
+
+    const vk::BufferCreateInfo buffer_info(
+        {},
+        image_size,
+        vk::BufferUsageFlagBits::eTransferSrc,
+        vk::SharingMode::eExclusive
+    );
+    const vk::Buffer staging_buffer = device.createBuffer(buffer_info);
+
+    vk::MemoryRequirements mem_requirements = device.getBufferMemoryRequirements(staging_buffer);
+    vk::MemoryAllocateInfo alloc_info(
+        mem_requirements.size,
+        vulkan::find_memory_type(
+            mem_requirements.memoryTypeBits,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+        )
+    );
+
+    const vk::DeviceMemory staging_buffer_memory = device.allocateMemory(alloc_info);
+    device.bindBufferMemory(staging_buffer, staging_buffer_memory, 0);
+
+    void* mapped_data = device.mapMemory(staging_buffer_memory, 0, image_size);
+    std::memcpy(mapped_data, data, image_size);
+    device.unmapMemory(staging_buffer_memory);
+
+    const vk::Format format = channels == 4 ? vk::Format::eR8G8B8A8Srgb : channels == 1 ? vk::Format::eR8Unorm : vk::Format::eR8G8B8Srgb; // Note: 3-channel formats might require special handling
+
+    const vk::ImageCreateInfo image_info(
+        {},
+        vk::ImageType::e2D,
+        format,
+        vk::Extent3D{ static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), 1 },
+        1, 1,
+		vk::SampleCountFlagBits::e1,
+        vk::ImageTiling::eOptimal,
+        vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+        vk::SharingMode::eExclusive,
+        0, nullptr,
+        vk::ImageLayout::eUndefined
+    );
+    m_texture_image = device.createImage(image_info);
+
+    mem_requirements = device.getImageMemoryRequirements(m_texture_image);
+    alloc_info = vk::MemoryAllocateInfo(
+        mem_requirements.size,
+        vulkan::find_memory_type(
+            mem_requirements.memoryTypeBits,
+            vk::MemoryPropertyFlagBits::eDeviceLocal
+        )
+    );
+    m_texture_image_memory = device.allocateMemory(alloc_info);
+    device.bindImageMemory(m_texture_image, m_texture_image_memory, 0);
+
+    const vk::CommandBuffer command_buffer = vulkan::begin_single_line_commands();
+    vk::ImageMemoryBarrier barrier(
+        {},
+        vk::AccessFlagBits::eTransferWrite,
+        vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eTransferDstOptimal,
+        vk::QueueFamilyIgnored, vk::QueueFamilyIgnored,
+        m_texture_image,
+        vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
+    );
+    command_buffer.pipelineBarrier(
+        vk::PipelineStageFlagBits::eTopOfPipe,
+        vk::PipelineStageFlagBits::eTransfer,
+        {},
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+    );
+
+    const vk::BufferImageCopy region(
+        0, 0, 0,
+        vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1),
+        vk::Offset3D{ 0, 0, 0 },
+        vk::Extent3D{ static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), 1 }
+    );
+    command_buffer.copyBufferToImage(
+        staging_buffer,
+        m_texture_image,
+        vk::ImageLayout::eTransferDstOptimal,
+        1, &region
+    );
+
+    barrier = vk::ImageMemoryBarrier(
+        vk::AccessFlagBits::eTransferWrite,
+        vk::AccessFlagBits::eShaderRead,
+        vk::ImageLayout::eTransferDstOptimal,
+        vk::ImageLayout::eShaderReadOnlyOptimal,
+        vk::QueueFamilyIgnored, vk::QueueFamilyIgnored,
+        m_texture_image,
+        vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
+    );
+    command_buffer.pipelineBarrier(
+        vk::PipelineStageFlagBits::eTransfer,
+        vk::PipelineStageFlagBits::eFragmentShader,
+        {},
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+    );
+
+    vulkan::end_single_line_commands(command_buffer);
+
+    device.destroyBuffer(staging_buffer);
+    device.freeMemory(staging_buffer_memory);
 }
 
-auto gse::texture::set_wrapping(const GLenum wrap_s, const GLenum wrap_t) const -> void {
-	glBindTexture(GL_TEXTURE_2D, m_texture_id);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, static_cast<GLint>(wrap_s));
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, static_cast<GLint>(wrap_t));
-	glBindTexture(GL_TEXTURE_2D, 0);
+auto gse::texture::create_texture_image_view() -> void {
+    const vk::Format format = (m_channels == 4) ? vk::Format::eR8G8B8A8Srgb : m_channels == 1 ? vk::Format::eR8Unorm : vk::Format::eR8G8B8Srgb;
+    const vk::ImageViewCreateInfo view_info(
+        {},
+        m_texture_image,
+        vk::ImageViewType::e2D,
+        format,
+        {},
+        vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
+    );
+    m_texture_image_view = vulkan::get_device().createImageView(view_info);
 }
 
-auto gse::texture::set_filtering(const GLenum min_filter, const GLenum mag_filter) const -> void {
-	glBindTexture(GL_TEXTURE_2D, m_texture_id);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, static_cast<GLint>(min_filter));
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, static_cast<GLint>(mag_filter));
-	glBindTexture(GL_TEXTURE_2D, 0);
+auto gse::texture::create_texture_sampler() -> void {
+	constexpr vk::SamplerCreateInfo sampler_info(
+        {},
+        vk::Filter::eLinear, vk::Filter::eLinear,
+        vk::SamplerMipmapMode::eLinear,
+        vk::SamplerAddressMode::eRepeat,
+        vk::SamplerAddressMode::eRepeat,
+        vk::SamplerAddressMode::eRepeat,
+        0.0f, vk::True, 16, vk::False, vk::CompareOp::eAlways,
+        0.0f, 0.0f,
+        vk::BorderColor::eIntOpaqueBlack
+    );
+    m_texture_sampler = vulkan::get_device().createSampler(sampler_info);
 }
+
+auto gse::texture::get_descriptor_info() const -> vk::DescriptorImageInfo {
+    return vk::DescriptorImageInfo(m_texture_sampler, m_texture_image_view, vk::ImageLayout::eShaderReadOnlyOptimal);
+}
+

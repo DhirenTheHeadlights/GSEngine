@@ -12,7 +12,7 @@ import gse.graphics.debug;
 import gse.graphics.gui;
 import gse.graphics.renderer2d;
 import gse.graphics.vulkan.renderer3d;
-import gse.platform.perma_assert;
+import gse.platform.assert;
 import gse.platform.glfw.input;
 import gse.platform.glfw.window;
 import gse.platform.vulkan.context;

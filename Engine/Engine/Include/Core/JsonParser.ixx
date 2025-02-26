@@ -35,7 +35,7 @@ export namespace gse::json_parse {
 	}
 }
 
-import gse.platform.perma_assert;
+import gse.platform.assert;
 
 auto gse::json_parse::load_json(const std::filesystem::path& path) -> nlohmann::json {
 	std::ifstream file(path);

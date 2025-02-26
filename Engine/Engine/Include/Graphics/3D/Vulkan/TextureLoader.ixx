@@ -9,7 +9,7 @@ import std;
 import vulkan_hpp;
 
 import gse.core.id;
-import gse.platform.perma_assert;
+import gse.platform.assert;
 import gse.platform.context;
 
 export namespace gse::texture_loader {

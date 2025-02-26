@@ -1,7 +1,7 @@
 export module gse.core.id;
 
 import std;
-import gse.platform.perma_assert;
+import gse.platform.assert;
 
 export namespace gse {
     class id;

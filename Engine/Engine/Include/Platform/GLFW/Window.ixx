@@ -10,7 +10,7 @@ import std;
 import vulkan_hpp;
 
 import gse.platform.glfw.input;
-import gse.platform.perma_assert;
+import gse.platform.assert;
 import gse.platform.vulkan.context;
 import gse.physics.math;
 
