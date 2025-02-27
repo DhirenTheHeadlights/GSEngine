@@ -1,6 +1,5 @@
 module;
 
-#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
 export module gse.platform.glfw.input;

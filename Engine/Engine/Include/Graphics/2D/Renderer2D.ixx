@@ -13,7 +13,6 @@ import gse.graphics.camera;
 import gse.platform.glfw.window;
 import gse.platform.context;
 import gse.platform.assert;
-#include "vulkan/vulkan_structs.hpp"
 
 export namespace gse::renderer2d {
     auto initialize() -> void;
