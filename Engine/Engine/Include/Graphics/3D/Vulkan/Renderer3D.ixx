@@ -33,13 +33,6 @@ vk::PipelineLayout g_pipeline_layout;
 std::vector<vk::Framebuffer> g_frame_buffers;
 std::vector<vk::CommandBuffer> g_command_buffers;
 
-vk::SwapchainKHR g_swap_chain;
-std::vector<vk::Framebuffer> g_swap_chain_frame_buffers;
-std::vector<vk::Image> g_swap_chain_images;
-std::vector<vk::ImageView> g_swap_chain_image_views;
-vk::Format g_swap_chain_image_format;
-vk::Extent2D g_swap_chain_extent;
-
 vk::Image g_position_image, g_normal_image, g_albedo_image, g_depth_image;
 vk::DeviceMemory g_position_image_memory, g_normal_image_memory, g_albedo_image_memory, g_depth_image_memory;
 vk::ImageView g_position_image_view, g_normal_image_view, g_albedo_image_view, g_depth_image_view;
@@ -49,67 +42,8 @@ auto gse::renderer3d::get_camera() -> const camera& {
 }
 
 auto gse::renderer3d::initialize() -> void {
-	auto device = vulkan::get_device();
-	auto [surface_format, present_mode, extent, details] = vulkan::get_swap_chain(window::get_window());
-
-	std::uint32_t image_count = details.capabilities.minImageCount + 1;
-	if (details.capabilities.maxImageCount > 0 && image_count > details.capabilities.maxImageCount) {
-		image_count = details.capabilities.maxImageCount;
-	}
-
-	vk::SwapchainCreateInfoKHR create_info(
-		{}, vulkan::get_surface(), image_count, surface_format.format, surface_format.colorSpace,
-		extent, 1, vk::ImageUsageFlagBits::eColorAttachment
-	);
-
-	auto [graphics_family, present_family] = vulkan::get_queue_families();
-	const std::uint32_t queue_family_indices[] = { graphics_family.value(), present_family.value() };
-
-	if (graphics_family != present_family) {
-		create_info.imageSharingMode = vk::SharingMode::eConcurrent;
-		create_info.queueFamilyIndexCount = 2;
-		create_info.pQueueFamilyIndices = queue_family_indices;
-	}
-	else {
-		create_info.imageSharingMode = vk::SharingMode::eExclusive;
-	}
-
-	create_info.preTransform = details.capabilities.currentTransform;
-	create_info.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque;
-	create_info.presentMode = present_mode;
-	create_info.clipped = true;
-
-	g_swap_chain = device.createSwapchainKHR(create_info);
-
-	g_swap_chain_images = device.getSwapchainImagesKHR(g_swap_chain);
-	g_swap_chain_image_format = surface_format.format;
-	g_swap_chain_extent = extent;
-
-	std::cout << "Swapchain Created Successfully!\n";
-
-	g_swap_chain_image_views.resize(g_swap_chain_images.size());
-
-	for (size_t i = 0; i < g_swap_chain_images.size(); i++) {
-		vk::ImageViewCreateInfo image_create_info(
-			{},
-			g_swap_chain_images[i],
-			vk::ImageViewType::e2D,
-			g_swap_chain_image_format,
-			{
-				vk::ComponentSwizzle::eIdentity,
-				vk::ComponentSwizzle::eIdentity,
-				vk::ComponentSwizzle::eIdentity,
-				vk::ComponentSwizzle::eIdentity
-			},
-			{
-				vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1
-			}
-		);
-
-		g_swap_chain_image_views[i] = device.createImageView(image_create_info);
-	}
-
-	std::cout << "Image Views Created Successfully!\n";
+	const auto [physical_device, device] = vulkan::get_device_config();
+	const auto [swap_chain, surface_format, present_mode, extent, swap_chain_frame_buffers, swap_chain_images, swap_chain_image_views, swap_chain_image_format, details] = vulkan::get_swap_chain_config(window::get_window());
 
 	constexpr std::array attachments{
 		vk::AttachmentDescription{ // Position
