@@ -40,7 +40,7 @@ struct jetpack_hook final : gse::hook<gse::entity> {
 
 			for (auto& [key, direction] : g_wasd) {
 				if (gse::input::get_keyboard().keys[key].held) {
-					apply_force(gse::registry::get_component<gse::physics::motion_component>(owner_id), gse::vec3<gse::force>(m_jetpack_side_force + boost_force, 0.f, m_jetpack_side_force + boost_force) * gse::get_camera().get_camera_direction_relative_to_origin(direction));
+					apply_force(gse::registry::get_component<gse::physics::motion_component>(owner_id), gse::vec3<gse::force>(m_jetpack_side_force + boost_force, 0.f, m_jetpack_side_force + boost_force) * gse::renderer3d::get_camera().get_camera_direction_relative_to_origin(direction));
 				}
 			}
 		}
@@ -91,7 +91,7 @@ struct player_hook final : gse::hook<gse::entity> {
 
 		for (auto& [key, direction] : g_wasd) {
 			if (gse::input::get_keyboard().keys[key].held && !motion_component.airborne) {
-				apply_force(motion_component, m_move_force * gse::get_camera().get_camera_direction_relative_to_origin(direction) * gse::unitless::vec3(1.f, 0.f, 1.f));
+				apply_force(motion_component, m_move_force * gse::renderer3d::get_camera().get_camera_direction_relative_to_origin(direction) * gse::unitless::vec3(1.f, 0.f, 1.f));
 			}
 		}
 
@@ -103,7 +103,7 @@ struct player_hook final : gse::hook<gse::entity> {
 
 		gse::registry::get_component<gse::physics::collision_component>(owner_id).bounding_box.set_position(motion_component.current_position);
 
-		gse::get_camera().set_position(motion_component.current_position + gse::vec::feet(0.f, 6.f, 0.f));
+		gse::renderer3d::get_camera().set_position(motion_component.current_position + gse::vec::feet(0.f, 6.f, 0.f));
 
 		gse::registry::get_component<gse::render_component>(owner_id).update_bounding_box_meshes();
 	}

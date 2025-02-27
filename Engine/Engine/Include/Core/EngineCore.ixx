@@ -25,11 +25,6 @@ export namespace gse {
 	auto block_shutdown_requests() -> void;
 
 	auto set_imgui_enabled(bool enabled) -> void;
-	auto get_camera() -> camera&;
-}
-
-auto gse::get_camera() -> camera& {
-	return renderer3d::get_camera();
 }
 
 std::function<void()> g_game_shutdown_function = [] {};

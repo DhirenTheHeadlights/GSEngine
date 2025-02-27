@@ -34,7 +34,6 @@ export namespace gse {
 		mesh();
 		mesh(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices);
 		mesh(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices, gse::mtl_material* material);
-		mesh(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices, const std::vector<std::uint32_t>& texture_ids);
 		virtual ~mesh();
 
 		mesh(const mesh&) = delete;
@@ -51,7 +50,6 @@ export namespace gse {
 
 		std::vector<vertex> vertices;
 		std::vector<std::uint32_t> indices;
-		std::vector<std::uint32_t> texture_ids;
 		gse::mtl_material* material = nullptr;
 
 		vec3<length> center_of_mass;
@@ -80,7 +78,7 @@ gse::mesh::~mesh() {
 
 gse::mesh::mesh(mesh&& other) noexcept
 	: vao(other.vao), vbo(other.vbo), ebo(other.ebo),
-	vertices(std::move(other.vertices)), indices(std::move(other.indices)), texture_ids(std::move(other.texture_ids)), material(other.material) {
+	vertices(std::move(other.vertices)), indices(std::move(other.indices)), material(other.material) {
 	other.vao = 0;
 	other.vbo = 0;
 	other.ebo = 0;

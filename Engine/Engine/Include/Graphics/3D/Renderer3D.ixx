@@ -1,3 +1,4 @@
+
 module;
 
 #include <glad/glad.h>
@@ -39,9 +40,9 @@ import gse.platform.glfw.input;
 import gse.platform.glfw.error_reporting;
 import gse.graphics.texture_loader;
 
+
 gse::camera g_camera;
 
-std::unordered_map<std::string, gse::material> g_materials;
 std::unordered_map<std::string, gse::shader> g_deferred_rendering_shaders;
 std::unordered_map<std::string, gse::shader> g_forward_rendering_shaders;
 std::unordered_map<std::string, gse::shader> g_lighting_shaders;
@@ -49,7 +50,7 @@ std::unordered_map<std::string, gse::shader> g_texture_shaders;
 std::unordered_map<std::string, gse::shader> g_all_shaders;
 
 std::string_view g_current_shader_batch;
-std::uint32_t g_current_texture_batch;
+std::uint32_t g_current_texture_batch = 0;
 gse::mtl_material* g_current_material_batch = nullptr;
 
 GLuint g_g_buffer = 0;
@@ -161,18 +162,12 @@ auto batch(const std::string& shader_key, gse::mtl_material* material) -> void {
 }
 
 auto gse::renderer3d::initialize() -> void {
+
 	enable_report_gl_errors();
 
 	const std::filesystem::path shader_path = config::resource_path / "Shaders/";
 
 	const std::filesystem::path object_shaders_path = shader_path / "Object/";
-	json_parse::parse(
-		json_parse::load_json(object_shaders_path / "object_shaders.json"),
-		[&](const std::string& key, const nlohmann::json& value) {
-			g_materials.emplace(key, material(object_shaders_path / value["vertex"].get<std::string>(),
-				object_shaders_path / value["fragment"].get<std::string>(), key, config::resource_path / value["texture"].get<std::string>()));
-		}
-	);
 
 	load_shaders(shader_path / "DeferredRendering/", "deferred_rendering.json", g_deferred_rendering_shaders);
 	load_shaders(shader_path / "ForwardRendering/", "forward_rendering.json", g_forward_rendering_shaders);
@@ -320,7 +315,9 @@ auto gse::renderer3d::initialize() -> void {
 	post_processing_shader.set_float("exposure", g_hdr_exposure);
 	post_processing_shader.set_int("bloomBlur", 1);
 	post_processing_shader.set_bool("bloom", g_bloom);
+
 }
+
 
 auto gse::renderer3d::initialize_objects() -> void {
 	for (const auto& light_source_components = registry::get_components<light_source_component>(); auto& light_source_component : light_source_components) {
@@ -370,22 +367,7 @@ auto render_object(const gse::render_queue_entry* entry, const gse::mat4& view_m
 		constexpr GLuint binding_unit = 5;
 		g_reflection_cube_map.bind(binding_unit);
 		texture_shader.set_int("environmentMap", binding_unit);
-
-		// Entry has no mtl data
-		if (entry->material == nullptr) {
-			texture_shader.set_bool("usemtl", false);
-			texture_shader.set_bool("useDiffuseTexture", true);
-			texture_shader.set_bool("useSpecularTexture", false);
-			texture_shader.set_bool("useNormalTexture", false);
-
-			for (const auto& texture : entry->material->texture_slots) {
-				batch(*texture);
-			}
-		}
-		//entry is using mtl textures
-		else {
-			batch(entry->shader_key, entry->material);
-		}
+		batch(entry->shader_key, entry->material);
 
 		glBindVertexArray(entry->vao);
 		glDrawElements(entry->draw_mode, entry->vertex_count, GL_UNSIGNED_INT, nullptr);
@@ -687,7 +669,7 @@ auto gse::renderer3d::render() -> void {
 
 		// Build the mapping of shader-texture pairs to their indices
 		for (size_t i = 0; i < render_queue_entries.size(); i++) {
-			shader_texture_map[{render_queue_entries[i]->shader_key, render_queue_entries[i]->material->diffuse_texture}];
+			shader_texture_map[{render_queue_entries[i]->shader_key, render_queue_entries[i]->material->diffuse_texture}].push_back(i);
 		}
 
 		// Process the shader-texture pairs in sorted order for consistent batch rendering
@@ -712,7 +694,6 @@ auto gse::renderer3d::render() -> void {
 	}
 	std::vector<size_t> render_queue_entry_indeces = sorted_render_queue_indices(render_queue_entries);
 
-	std::cout << "Render Queue Entry sorting time: " << elapsed.count() << " ms\n";
 	const auto& light_source_components = registry::get_components<light_source_component>();
 
 	g_camera.update_camera_vectors();
@@ -871,7 +852,8 @@ auto gse::renderer3d::render() -> void {
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
 
-
+#pragma optimize("", off)
 auto gse::renderer3d::get_camera() -> camera& {
 	return g_camera;
 }
+#pragma optimize("", on)
