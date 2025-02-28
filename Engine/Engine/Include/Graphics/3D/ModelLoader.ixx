@@ -5,27 +5,26 @@ import std;
 import gse.core.id;
 import gse.graphics.model;
 import gse.graphics.mesh;
+import gse.graphics.texture;
 import gse.graphics.texture_loader;
 import gse.graphics.material;
+import gse.platform.assert;
 
 export namespace gse::model_loader {
-	auto load_obj_file(const std::filesystem::path& model_path, const std::string& model_name) -> id*;
-	auto add_model(std::vector<mesh>&& meshes, const std::string& model_name) -> id*;
-	auto get_model_by_name(const std::string& model_name) -> const model&;
-	auto get_model_by_id(id* model_id) -> const model&;
-	auto get_models() -> const std::unordered_map<id*, model>&;
+	auto load_obj_file(const std::filesystem::path& model_path, const std::string& model_name) -> uuid;
+	auto add_model(const std::vector<mesh_data>& mesh_data, const std::string& model_name) -> uuid;
+	auto get_model_by_name(const std::string_view& model_name) -> const model&;
+	auto get_model_by_id(const id* model_id) -> const model&;
+	auto get_model_by_id(uuid model_id) -> const model&;
+	auto get_models() -> const std::unordered_map<uuid, model>&;
 }
 
-std::unordered_map<gse::id*, gse::model> g_models;
-std::unordered_map<gse::id*, std::filesystem::path> g_loaded_model_paths;
-std::unordered_map<std::string, gse::mtl_material> g_materials;
+std::unordered_map<gse::uuid, gse::model> g_models;
+std::unordered_map<gse::uuid, std::filesystem::path> g_loaded_model_paths;
 
-auto gse::model_loader::load_obj_file(const std::filesystem::path& model_path, const std::string& model_name) -> id* {
+auto gse::model_loader::load_obj_file(const std::filesystem::path& model_path, const std::string& model_name) -> uuid {
 	std::ifstream model_file(model_path);
-	if (!model_file.is_open()) {
-		std::cerr << "Failed to open model file: " << model_path << '\n';
-		return nullptr;
-	}
+	perma_assert(model_file.is_open(), "Failed to open model file.");
 
 	for (const auto& [id, path] : g_loaded_model_paths) {
 		if (path == model_path) {
@@ -78,7 +77,7 @@ auto gse::model_loader::load_obj_file(const std::filesystem::path& model_path, c
 					model.meshes.emplace_back(final_vertices, final_indices);
 				}
 				else {
-					model.meshes.emplace_back(final_vertices, final_indices, &g_materials[current_material]);
+					model.meshes.emplace_back(final_vertices, final_indices, get_material(current_material));
 				}
 
 				// Clear data to load next mesh
@@ -167,10 +166,10 @@ auto gse::model_loader::load_obj_file(const std::filesystem::path& model_path, c
 
 				if (tokens[0] == "newmtl") {
 					current_material = tokens[1];
-					g_materials[current_material] = mtl_material();
+					generate_material(-1, -1, -1, current_material);
 				}
 				else if (!current_material.empty()) {
-					auto& [ambient, diffuse, specular, emission, shininess, optical_density, transparency, illumination_model, diffuse_texture, normal_texture, specular_texture] = g_materials[current_material];
+					auto& [ambient, diffuse, specular, emission, shininess, optical_density, transparency, illumination_model, diffuse_texture, normal_texture, specular_texture] = get_material(current_material);
 
 					if (tokens[0] == "Ns") shininess = std::stof(tokens[1]);
 					else if (tokens[0] == "Ka") ambient = unitless::vec3(std::stof(tokens[1]), std::stof(tokens[2]), std::stof(tokens[3]));
@@ -180,28 +179,30 @@ auto gse::model_loader::load_obj_file(const std::filesystem::path& model_path, c
 					else if (tokens[0] == "Ni") optical_density = std::stof(tokens[1]);
 					else if (tokens[0] == "d") transparency = std::stof(tokens[1]);
 					else if (tokens[0] == "illum") illumination_model = std::stoi(tokens[1]);
-					else if (tokens[0] == "map_Kd") diffuse_texture = texture_loader::load_texture(directory_path + tokens[1], false);
-					else if (tokens[0] == "map_Bump") normal_texture = texture_loader::load_texture(directory_path + tokens[1], false);
-					else if (tokens[0] == "map_Ks") specular_texture = texture_loader::load_texture(directory_path + tokens[1], false);
+					else if (tokens[0] == "map_Kd") diffuse_texture.load_from_file(directory_path + tokens[1]);
+					else if (tokens[0] == "map_Bump") normal_texture.load_from_file(directory_path + tokens[1]);
+					else if (tokens[0] == "map_Ks") specular_texture.load_from_file(directory_path + tokens[1]);
 				}
 			}
 		}
+
 		// Detect material for each mesh
 		else if (file_line.substr(0, 7) == "usemtl ") {
 			current_material = split_line[1];
 
 			// Check if the material exists in the map
-			if (g_materials.find(current_material) == g_materials.end()) {
+			if (!g_materials.contains(current_material)) {
 				std::cerr << "Warning: Material '" << current_material << "' not found in g_materials.\n";
 			}
 		}
 	}
+
 	// Load final mesh or in case model is single mesh
 	if (push_back_mesh) {
 		std::vector<std::uint32_t> final_indices(final_vertices.size());
 		for (size_t i = 0; i < final_vertices.size(); i++) final_indices[i] = i;
 		if (current_material.empty()) {
-			model.meshes.emplace_back(final_vertices, final_indices);
+			model.meshes.emplace_back(final_vertices, final_indices, nullptr);
 		}
 		else {
 			model.meshes.emplace_back(final_vertices, final_indices, &g_materials[current_material]);
@@ -218,30 +219,53 @@ auto gse::model_loader::load_obj_file(const std::filesystem::path& model_path, c
 	pre_load_texcoords.clear();
 	pre_load_normals.clear();
 
-	id* id_pointer = model.get_id();
-	g_loaded_model_paths.insert({ id_pointer, model_path });
-	g_models.insert({ id_pointer, std::move(model) });
+	auto id = model.get_id()->number();
+	g_loaded_model_paths.insert({ id, model_path });
+	g_models.insert({ id, std::move(model) });
 
-	return id_pointer;
+	return id;
 }
 
-auto gse::model_loader::add_model(std::vector<mesh>&& meshes, const std::string& model_name) -> id* {
+auto gse::model_loader::add_model(const std::vector<mesh_data>& mesh_data, const std::string& model_name) -> uuid {
+	for (const auto& [id, path] : g_loaded_model_paths) {
+		if (path == model_name) {
+			return id; // Already loaded
+		}
+	}
+
 	model model(model_name);
-	model.meshes = std::move(meshes);
+
+	for (const auto& data : mesh_data) {
+		model.meshes.emplace_back(data);
+	}
+	
 	model.initialize();
-	id* id_pointer = model.get_id();
-	g_models.insert({ id_pointer, std::move(model) });
-	return id_pointer;
+
+	auto id = model.get_id()->number();
+	g_models.insert({ id, std::move(model) });
+
+	return id;
 }
 
-auto gse::model_loader::get_model_by_name(const std::string& model_name) -> const model& {
-	return std::ranges::find_if(g_models, [&model_name](const auto& model) { return model.first->tag() == model_name; })->second;
+auto gse::model_loader::get_model_by_name(const std::string_view& model_name) -> const model& {
+	const auto it = std::ranges::find_if(g_models, [&model_name](const auto& pair) {
+		return pair.second->get_id()->tag() == model_name;
+		});
+
+	perma_assert(it != g_models.end(), "Model with the given name was not found.");
+
+	return it->second;
 }
 
-auto gse::model_loader::get_model_by_id(id* model_id) -> const model& {
+auto gse::model_loader::get_model_by_id(const id* model_id) -> const model& {
+	return get_model_by_id(model_id->number());
+}
+
+auto gse::model_loader::get_model_by_id(const uuid model_id) -> const model& {
+	perma_assert(g_models.contains(model_id), "Model with the given ID was not found.");
 	return g_models.at(model_id);
 }
 
-auto gse::model_loader::get_models() -> const std::unordered_map<id*, model>& {
+auto gse::model_loader::get_models() -> const std::unordered_map<uuid, model>& {
 	return g_models;
 }

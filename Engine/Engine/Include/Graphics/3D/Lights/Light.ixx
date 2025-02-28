@@ -1,6 +1,7 @@
 export module gse.graphics.light;
 
 import std;
+import vulkan_hpp;
 
 import gse.core.id;
 import gse.physics.math;
@@ -37,15 +38,17 @@ export namespace gse {
         light_shader_entry shader_entry;
         const id* ignore_list_id = nullptr;
 
-        std::uint32_t depth_map = 0;
-        std::uint32_t depth_map_fbo = 0;
+        vk::Image depth_image;
+        vk::ImageView depth_image_view;
+        vk::DeviceMemory depth_image_memory;
+        vk::Framebuffer depth_framebuffer;
+        vk::RenderPass shadow_render_pass;
+        vk::Sampler depth_sampler;
 
         length near_plane = meters(0.1f);
         length far_plane = meters(1000.0f);
 
         light_render_queue_entry(
-            const std::uint32_t depth_map,
-            const std::uint32_t depth_map_fbo,
             light_type type,
             const unitless::vec3& color,
             const float intensity,
@@ -75,8 +78,6 @@ export namespace gse {
                     .ambient_strength = ambient_strength,
                 }),
             ignore_list_id(ignore_list_id),
-            depth_map(depth_map),
-            depth_map_fbo(depth_map_fbo),
             near_plane(near_plane),
             far_plane(far_plane) {
         }
@@ -87,12 +88,10 @@ export namespace gse {
         light() = default;
         virtual ~light() = default;
 
-        virtual auto get_render_queue_entry() const->light_render_queue_entry = 0;
+        virtual auto get_render_queue_entry() const -> light_render_queue_entry = 0;
         virtual auto show_debug_menu(const std::string_view& name, std::uint32_t parent_id) -> void = 0;
 
         auto get_type() const -> light_type { return m_type; }
-
-        virtual auto set_depth_map(std::uint32_t depth_map, std::uint32_t depth_map_fbo) -> void {}
         virtual auto set_position(const vec3<length>& position) -> void {}
 
         auto set_ignore_list_id(id* ignore_list_id) -> void { m_ignore_list_id = ignore_list_id; }

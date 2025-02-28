@@ -9,8 +9,8 @@ module;
 #include <iostream>
 #include <optional>
 #include <set>
-#include <vector>
 #include <span>
+#include <vector>
 
 export module gse.platform.context;
 
@@ -52,6 +52,8 @@ struct command_config {
 
 struct descriptor_config {
     vk::DescriptorPool descriptor_pool;
+    vk::DescriptorSet descriptor_set;
+    vk::DescriptorSetLayout descriptor_set_layout;
 };
 
 struct sync_objects {
@@ -71,45 +73,35 @@ struct swap_chain_config {
     vk::SurfaceFormatKHR surface_format;
     vk::PresentModeKHR present_mode;
     vk::Extent2D extent;
-	std::span<const vk::Framebuffer> frame_buffers;
-	std::span<const vk::Image> images;
-	std::span<const vk::ImageView> image_views;
+	std::vector<vk::Framebuffer> frame_buffers;
+	std::vector<vk::Image> images;
+	std::vector<vk::ImageView> image_views;
     vk::Format format;
 
     swap_chain_details details;
 };
 
-vk::Instance                    g_instance;
-vk::PhysicalDevice              g_physical_device;
-vk::Device                      g_device;
-vk::Queue                       g_graphics_queue;
-vk::Queue                       g_present_queue;
-vk::SurfaceKHR                  g_surface;
-vk::CommandPool                 g_command_pool;
-vk::DescriptorPool              g_descriptor_pool;
-vk::Semaphore                   g_image_available_semaphore;
-vk::Semaphore                   g_render_finished_semaphore;
-vk::Fence                       g_in_flight_fence;
-vk::SwapchainKHR                g_swap_chain;
-std::vector<vk::Framebuffer>    g_swap_chain_frame_buffers;
-std::vector<vk::Image>          g_swap_chain_images;
-std::vector<vk::ImageView>      g_swap_chain_image_views;
-vk::Format                      g_swap_chain_image_format;
-vk::Extent2D                    g_swap_chain_extent;
+instance_config     g_instance_config;
+device_config       g_device_config;
+queue_config        g_queue_config;
+command_config      g_command_config;
+descriptor_config   g_descriptor_config;
+sync_objects        g_sync_objects;
+swap_chain_config   g_swap_chain_config;
 
 export namespace gse::vulkan {
     auto initialize(GLFWwindow* window) -> void;
     auto get_queue_families() -> queue_family;
 
-	auto get_swap_chain_config(GLFWwindow* window) -> swap_chain_config;
-	auto get_instance_config() -> instance_config;
-	auto get_device_config() -> device_config;
-	auto get_queue_config() -> queue_config;
-	auto get_command_config() -> command_config;
-	auto get_descriptor_config() -> descriptor_config;
-	auto get_sync_objects() -> sync_objects;
+	auto get_swap_chain_config()                    -> swap_chain_config&;
+	auto get_instance_config()                      -> instance_config&;
+	auto get_device_config()                        -> device_config&;
+	auto get_queue_config()                         -> queue_config&;
+	auto get_command_config()                       -> command_config&;
+	auto get_descriptor_config()                    -> descriptor_config&;
+	auto get_sync_objects()                         -> sync_objects&;
 
-    auto get_next_image(vk::SwapchainKHR swap_chain) -> std::uint32_t;
+    auto get_next_image() -> std::uint32_t;
     auto find_memory_type(std::uint32_t type_filter, vk::MemoryPropertyFlags properties) -> std::uint32_t;
 
 	auto begin_single_line_commands() -> vk::CommandBuffer;
@@ -127,60 +119,10 @@ namespace gse::vulkan {
     auto choose_swap_chain_surface_format(const std::vector<vk::SurfaceFormatKHR>& available_formats) -> vk::SurfaceFormatKHR;
     auto choose_swap_chain_present_mode(const std::vector<vk::PresentModeKHR>& available_present_modes) -> vk::PresentModeKHR;
     auto choose_swap_chain_extent(const vk::SurfaceCapabilitiesKHR& capabilities, GLFWwindow* window) -> vk::Extent2D;
-	auto create_swap_chain() -> void;
+	auto create_swap_chain(GLFWwindow* window) -> void;
 	auto create_image_views() -> void;
 	auto create_sync_objects() -> void;
-}
-
-auto gse::vulkan::initialize(GLFWwindow* window) -> void {
-    create_instance(window);
-    select_gpu();
-    create_logical_device(g_surface);
-	create_sync_objects();
-}
-
-auto gse::vulkan::get_swap_chain_config(GLFWwindow* window) -> swap_chain_config {
-    const auto swap_chain_details = query_swap_chain_support(g_physical_device, g_surface);
-
-    return {
-		g_swap_chain,
-        choose_swap_chain_surface_format(swap_chain_details.formats),
-        choose_swap_chain_present_mode(swap_chain_details.present_modes),
-        choose_swap_chain_extent(swap_chain_details.capabilities, window),
-        g_swap_chain_frame_buffers,
-		g_swap_chain_images,
-		g_swap_chain_image_views,
-		g_swap_chain_image_format,
-        swap_chain_details
-    };
-}
-
-auto gse::vulkan::get_instance_config() -> instance_config {
-	return { g_instance, g_surface };
-}
-
-auto gse::vulkan::get_device_config() -> device_config {
-	return { g_physical_device, g_device };
-}
-
-auto gse::vulkan::get_queue_config() -> queue_config {
-	return { g_graphics_queue, g_present_queue };
-}
-
-auto gse::vulkan::get_command_config() -> command_config {
-	return { g_command_pool };
-}
-
-auto gse::vulkan::get_descriptor_config() -> descriptor_config {
-	return { g_descriptor_pool };
-}
-
-auto gse::vulkan::get_sync_objects() -> sync_objects {
-	return { g_image_available_semaphore, g_render_finished_semaphore, g_in_flight_fence };
-}
-
-auto gse::vulkan::get_queue_families() -> queue_family {
-    return find_queue_families(g_physical_device, g_surface);
+    auto create_descriptors() -> void;
 }
 
 auto gse::vulkan::create_instance(GLFWwindow* window) -> void {
@@ -221,8 +163,11 @@ auto gse::vulkan::create_instance(GLFWwindow* window) -> void {
         glfw_extensions
     );
 
+	auto& instance = g_instance_config.instance;
+	auto& surface = g_instance_config.surface;
+
     try {
-        g_instance = createInstance(create_info);
+        instance = createInstance(create_info);
         std::cout << "Vulkan Instance Created Successfully!\n";
     }
     catch (vk::SystemError& err) {
@@ -230,21 +175,19 @@ auto gse::vulkan::create_instance(GLFWwindow* window) -> void {
     }
 
 #if VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
-    VULKAN_HPP_DEFAULT_DISPATCHER.init(g_instance);
+	VULKAN_HPP_DEFAULT_DISPATCHER.init(g_device_config.device);
 #endif
 
-    VkSurfaceKHR surface;
-    assert_comment(glfwCreateWindowSurface(g_instance, window, nullptr, &surface) == static_cast<int>(vk::Result::eSuccess), "Error creating window surface");
-    g_surface = surface;
+    VkSurfaceKHR temp_surface;
+    assert_comment(glfwCreateWindowSurface(instance, window, nullptr, &temp_surface) == static_cast<int>(vk::Result::eSuccess), "Error creating window surface");
+	surface = temp_surface;
 }
 
 auto gse::vulkan::select_gpu() -> void {
-    const auto devices = g_instance.enumeratePhysicalDevices();
-    if (devices.empty()) {
-        std::cerr << "ERROR: No Vulkan-compatible GPUs found!\n";
-        return;
-    }
+	const auto devices = g_instance_config.instance.enumeratePhysicalDevices();
+	auto& physical_device = g_device_config.physical_device;
 
+	perma_assert(!devices.empty(), "No Vulkan-compatible GPUs found!");
     std::cout << "Found " << devices.size() << " Vulkan-compatible GPU(s):\n";
 
     for (const auto& device : devices) {
@@ -254,16 +197,16 @@ auto gse::vulkan::select_gpu() -> void {
 
     for (const auto& device : devices) {
         if (device.getProperties().deviceType == vk::PhysicalDeviceType::eDiscreteGpu) {
-            g_physical_device = device;
+            physical_device = device;
             break;
         }
     }
 
-    if (!g_physical_device) {
-        g_physical_device = devices[0];
+    if (!physical_device) {
+        physical_device = devices[0];
     }
 
-    std::cout << "Selected GPU: " << g_physical_device.getProperties().deviceName << "\n";
+    std::cout << "Selected GPU: " << physical_device.getProperties().deviceName << "\n";
 }
 
 auto gse::vulkan::find_queue_families(const vk::PhysicalDevice device, const vk::SurfaceKHR surface) -> queue_family {
@@ -287,7 +230,9 @@ auto gse::vulkan::find_queue_families(const vk::PhysicalDevice device, const vk:
 }
 
 auto gse::vulkan::create_logical_device(vk::SurfaceKHR surface) -> void {
-    auto [graphics_family, present_family] = find_queue_families(g_physical_device, surface);
+	auto& [physical_device, device] = g_device_config;
+	auto& [g_graphics_queue, g_present_queue] = g_queue_config;
+    auto [graphics_family, present_family] = find_queue_families(physical_device, surface);
 
     std::vector<vk::DeviceQueueCreateInfo> queue_create_infos;
     std::set unique_queue_families = {
@@ -301,7 +246,7 @@ auto gse::vulkan::create_logical_device(vk::SurfaceKHR surface) -> void {
         queue_create_infos.push_back(queue_create_info);
     }
 
-    vk::PhysicalDeviceFeatures supported_features = g_physical_device.getFeatures();
+    vk::PhysicalDeviceFeatures supported_features = physical_device.getFeatures();
 
     vk::PhysicalDeviceFeatures device_features{};
     if (supported_features.samplerAnisotropy) {
@@ -325,12 +270,12 @@ auto gse::vulkan::create_logical_device(vk::SurfaceKHR surface) -> void {
         &device_features
     );
 
-    g_device = g_physical_device.createDevice(create_info);
-    g_graphics_queue = g_device.getQueue(graphics_family.value(), 0);
-    g_present_queue = g_device.getQueue(present_family.value(), 0);
+    device = physical_device.createDevice(create_info);
+    g_graphics_queue = device.getQueue(graphics_family.value(), 0);
+    g_present_queue = device.getQueue(present_family.value(), 0);
 
 #if VK_HPP_DISPATCH_LOADER_DYNAMIC == 1
-    VULKAN_HPP_DEFAULT_DISPATCHER.init(g_device);
+	VULKAN_HPP_DEFAULT_DISPATCHER.init(device);
 #endif
 
     std::cout << "Logical Device Created Successfully!\n";
@@ -380,20 +325,36 @@ auto gse::vulkan::choose_swap_chain_extent(const vk::SurfaceCapabilitiesKHR& cap
     return actual_extent;
 }
 
-auto gse::vulkan::create_swap_chain() -> void {
-    auto [swap_chain, surface_format, present_mode, extent, swap_chain_frame_buffers, swap_chain_images, swap_chain_image_views, swap_chain_image_format, details] = vulkan::get_swap_chain_config(window::get_window());
+auto gse::vulkan::create_swap_chain(GLFWwindow* window) -> void {
+    auto& [instance, surface] = g_instance_config;
+    auto& [physical_device, device] = g_device_config;
+    auto& swap_chain_details = g_swap_chain_config.details;
 
-    std::uint32_t image_count = details.capabilities.minImageCount + 1;
-    if (details.capabilities.maxImageCount > 0 && image_count > details.capabilities.maxImageCount) {
-        image_count = details.capabilities.maxImageCount;
+    swap_chain_details = query_swap_chain_support(physical_device, surface);
+
+	auto& [swap_chain, surface_format, present_mode, swap_chain_extent, swap_chain_frame_buffers, swap_chain_images, swap_chain_image_views, swap_chain_image_format, details] = g_swap_chain_config;
+
+    surface_format = choose_swap_chain_surface_format(swap_chain_details.formats);
+    present_mode = choose_swap_chain_present_mode(swap_chain_details.present_modes);
+	swap_chain_extent = choose_swap_chain_extent(swap_chain_details.capabilities, window);
+
+    std::uint32_t image_count = swap_chain_details.capabilities.minImageCount + 1;
+    if (swap_chain_details.capabilities.maxImageCount > 0 && image_count > swap_chain_details.capabilities.maxImageCount) {
+        image_count = swap_chain_details.capabilities.maxImageCount;
     }
 
     vk::SwapchainCreateInfoKHR create_info(
-        {}, g_surface, image_count, surface_format.format, surface_format.colorSpace,
-        extent, 1, vk::ImageUsageFlagBits::eColorAttachment
+        {},
+        surface,
+        image_count,
+        surface_format.format,
+        surface_format.colorSpace,
+        swap_chain_extent,
+        1,
+        vk::ImageUsageFlagBits::eColorAttachment
     );
 
-	auto [graphics_family, present_family] = get_queue_families();
+    auto [graphics_family, present_family] = get_queue_families();
     const std::uint32_t queue_family_indices[] = { graphics_family.value(), present_family.value() };
 
     if (graphics_family != present_family) {
@@ -405,29 +366,32 @@ auto gse::vulkan::create_swap_chain() -> void {
         create_info.imageSharingMode = vk::SharingMode::eExclusive;
     }
 
-    create_info.preTransform = details.capabilities.currentTransform;
+    create_info.preTransform = swap_chain_details.capabilities.currentTransform;
     create_info.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque;
     create_info.presentMode = present_mode;
     create_info.clipped = true;
 
-    g_swap_chain = g_device.createSwapchainKHR(create_info);
+    swap_chain = device.createSwapchainKHR(create_info);
 
-    g_swap_chain_images = g_device.getSwapchainImagesKHR(g_swap_chain);
-    g_swap_chain_image_format = surface_format.format;
-    g_swap_chain_extent = extent;
+    swap_chain_images = device.getSwapchainImagesKHR(swap_chain);
+    swap_chain_image_format = surface_format.format;
 
     std::cout << "Swapchain Created Successfully!\n";
 }
 
 auto gse::vulkan::create_image_views() -> void {
-    g_swap_chain_image_views.resize(g_swap_chain_images.size());
+	const auto& swap_chain_images = g_swap_chain_config.images;
+    const auto& swap_chain_image_format = g_swap_chain_config.format;
+	auto& swap_chain_image_views = g_swap_chain_config.image_views;
 
-    for (size_t i = 0; i < g_swap_chain_images.size(); i++) {
+    swap_chain_image_views.resize(swap_chain_images.size());
+
+    for (size_t i = 0; i < swap_chain_images.size(); i++) {
         vk::ImageViewCreateInfo image_create_info(
             {},
-            g_swap_chain_images[i],
+            swap_chain_images[i],
             vk::ImageViewType::e2D,
-            g_swap_chain_image_format,
+            swap_chain_image_format,
             {
                 vk::ComponentSwizzle::eIdentity,
                 vk::ComponentSwizzle::eIdentity,
@@ -439,26 +403,69 @@ auto gse::vulkan::create_image_views() -> void {
             }
         );
 
-        g_swap_chain_image_views[i] = g_device.createImageView(image_create_info);
+        swap_chain_image_views[i] = g_device_config.device.createImageView(image_create_info);
     }
 
     std::cout << "Image Views Created Successfully!\n";
 }
 
-
 auto gse::vulkan::create_sync_objects() -> void {
 	constexpr vk::SemaphoreCreateInfo semaphore_info;
 	constexpr vk::FenceCreateInfo fence_info(vk::FenceCreateFlagBits::eSignaled);
 
-    g_image_available_semaphore = g_device.createSemaphore(semaphore_info);
-    g_render_finished_semaphore = g_device.createSemaphore(semaphore_info);
-    g_in_flight_fence = g_device.createFence(fence_info);
+	const auto& device = g_device_config.device;
+	auto& [image_available_semaphore, render_finished_semaphore, in_flight_fence] = g_sync_objects;
+
+    image_available_semaphore = device.createSemaphore(semaphore_info);
+    render_finished_semaphore = device.createSemaphore(semaphore_info);
+    in_flight_fence = device.createFence(fence_info);
+}
+
+auto gse::vulkan::create_descriptors() -> void {
+    const auto& device = g_device_config.device;
+
+	constexpr vk::DescriptorSetLayoutBinding texture_binding(
+        0, vk::DescriptorType::eCombinedImageSampler, 1,
+        vk::ShaderStageFlagBits::eFragment
+    );
+
+	const vk::DescriptorSetLayoutCreateInfo layout_info({}, 1, &texture_binding);
+    g_descriptor_config.descriptor_set_layout = device.createDescriptorSetLayout(layout_info);
+
+    const vk::DescriptorPoolSize pool_size(
+        vk::DescriptorType::eCombinedImageSampler, 100  // Support up to 100 textures
+    );
+
+    const vk::DescriptorPoolCreateInfo pool_info({}, 100, 1, &pool_size);
+    g_descriptor_config.descriptor_pool = device.createDescriptorPool(pool_info);
+
+    const vk::DescriptorSetAllocateInfo alloc_info(
+        g_descriptor_config.descriptor_pool,
+        1, &g_descriptor_config.descriptor_set_layout
+    );
+
+    g_descriptor_config.descriptor_set = device.allocateDescriptorSets(alloc_info).front();
 }
 
 auto gse::vulkan::shutdown() -> void {
-	g_device.destroyCommandPool(g_command_pool);
-    g_instance.destroySurfaceKHR(g_surface);
-    g_instance.destroy();
-    g_device.destroy();
+    const auto device = get_device_config().device;
+
+    device.waitIdle();
+    device.destroyDescriptorPool(g_descriptor_config.descriptor_pool);
+    device.destroyDescriptorSetLayout(g_descriptor_config.descriptor_set_layout);
+
+    device.destroySemaphore(g_sync_objects.image_available_semaphore);
+    device.destroySemaphore(g_sync_objects.render_finished_semaphore);
+    device.destroyFence(g_sync_objects.in_flight_fence);
+
+    for (const auto& image_view : g_swap_chain_config.image_views) {
+        device.destroyImageView(image_view);
+    }
+
+    device.destroySwapchainKHR(g_swap_chain_config.swap_chain);
+    device.destroy();
+
+    g_instance_config.instance.destroySurfaceKHR(g_instance_config.surface);
+    g_instance_config.instance.destroy();
 }
 

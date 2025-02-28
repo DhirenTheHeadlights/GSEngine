@@ -2,15 +2,17 @@ export module gse.core.id;
 
 import std;
 import gse.platform.assert;
+import gse.physics.math;
 
 export namespace gse {
     class id;
+	using uuid = std::int32_t;
 
     auto generate_id(const std::string& tag) -> std::unique_ptr<id>;
 	auto remove_id(const id* id) -> void;
-    auto get_id(std::int32_t number) -> id*;
+    auto get_id(uuid number) -> id*;
     auto get_id(std::string_view tag) -> id*;
-	auto does_id_exist(std::int32_t number) -> bool;
+	auto does_id_exist(uuid number) -> bool;
 	auto does_id_exist(std::string_view tag) -> bool;
 
     class id {
@@ -19,13 +21,13 @@ export namespace gse {
 
 		auto operator==(const id& other) const -> bool;
 
-		auto number() const -> std::int32_t;
+		auto number() const -> uuid;
 		auto tag() const -> std::string_view;
     private:
         explicit id(int id, const std::string& tag);
         id(const std::string& tag) : m_number(-1), m_tag(tag) {}
 
-        std::int32_t m_number;
+        uuid m_number;
 		std::string m_tag;
 
 		friend auto generate_id(const std::string& tag) -> std::unique_ptr<id>;
@@ -42,8 +44,6 @@ export namespace gse {
 		std::unique_ptr<id> m_id;
     };
 }
-
-import gse.physics.math;
 
 struct transparent_hash {
 	using is_transparent = void; // Indicates support for heterogeneous lookup
@@ -134,7 +134,7 @@ auto gse::get_id(const std::string_view tag) -> id* {
 	return nullptr;
 }
 
-auto gse::does_id_exist(const std::int32_t number) -> bool {
+auto gse::does_id_exist(const uuid number) -> bool {
 	return g_id_map.contains(number);
 }
 
@@ -144,7 +144,7 @@ auto gse::does_id_exist(const std::string_view tag) -> bool {
 
 /// ID
 
-gse::id::id(const int id, const std::string& tag) : m_number(id), m_tag(tag) {}
+gse::id::id(const uuid id, const std::string& tag) : m_number(id), m_tag(tag) {}
 
 gse::id::~id() {
 	if (m_number != -1) {
@@ -160,7 +160,7 @@ auto gse::id::operator==(const id& other) const -> bool {
 	return m_number == other.m_number;
 }
 
-auto gse::id::number() const -> std::int32_t {
+auto gse::id::number() const -> uuid {
 	return m_number;
 }
 

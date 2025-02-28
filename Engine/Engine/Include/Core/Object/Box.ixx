@@ -13,6 +13,7 @@ import gse.physics.math;
 import gse.core.object.hook;
 import gse.core.object_registry;
 import gse.graphics.render_component;
+import gse.graphics.material;
 import gse.graphics.mesh;
 import gse.graphics.model_loader;
 import gse.graphics.debug;
@@ -116,10 +117,10 @@ export struct box_mesh_hook final : gse::hook<gse::entity> {
 
         std::vector<std::uint32_t> face_indices = { 0, 1, 2, 2, 3, 0 };
 
-        std::vector<gse::mesh> meshes;
+        std::vector<gse::mesh_data> meshes;
 
         for (size_t i = 0; i < 6; ++i) {
-            meshes.emplace_back(face_vertices[i], face_indices, std::vector { gse::texture_loader::get_texture_by_path(gse::config::resource_path / "Textures/concrete_bricks_1.jpg") });
+            meshes.emplace_back(face_vertices[i], face_indices, gse::generate_material(gse::texture_loader::get_texture_id(gse::config::resource_path / "Textures/concrete_bricks_1.jpg"), -1, -1));
         }
 
         gse::render_component new_render_component(owner_id, gse::model_loader::add_model(std::move(meshes), "Box"));

@@ -4,7 +4,7 @@ import std;
 
 import gse.core.id;
 import gse.core.object.hook;
-import gse.graphics.vulkan.renderer3d;
+import gse.graphics.renderer3d;
 
 export namespace gse {
 	class scene final : public hookable<scene>, public identifiable {
@@ -58,8 +58,7 @@ auto gse::scene::initialize() -> void {
 	m_objects_to_add_upon_initialization.clear();
 
 	registry::initialize_hooks();
-
-	vulkan::renderer3d::initialize_objects();
+	renderer3d::initialize_objects();
 }
 
 auto gse::scene::update() const -> void {
@@ -73,7 +72,7 @@ auto gse::scene::render() const -> void {
 	render_hooks();
 
 	registry::render_hooks();
-	vulkan::renderer3d::render();
+	renderer3d::render();
 }
 
 auto gse::scene::exit() const -> void {

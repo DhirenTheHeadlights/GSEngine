@@ -30,7 +30,7 @@ gse::shader::shader(const std::filesystem::path& vert_path, const std::filesyste
 }
 
 gse::shader::~shader() {
-	const auto device = vulkan::get_device();
+	const auto device = vulkan::get_device_config().device;
 	device.destroyShaderModule(m_vert_module);
 	device.destroyShaderModule(m_frag_module);
 }
@@ -67,7 +67,7 @@ auto gse::shader::create_shader_module(const std::vector<char>& code) -> vk::Sha
 		reinterpret_cast<const std::uint32_t*>(code.data())
 	};
 
-	return vulkan::get_device().createShaderModule(create_info);
+	return vulkan::get_device_config().device.createShaderModule(create_info);
 }
 
 auto gse::read_file(const std::filesystem::path& path) -> std::vector<char> {

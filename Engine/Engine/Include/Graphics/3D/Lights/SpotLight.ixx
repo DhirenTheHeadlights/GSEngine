@@ -38,12 +38,7 @@ export namespace gse {
 		}
 
 		auto get_render_queue_entry() const -> light_render_queue_entry override {
-			return { m_depth_map, m_depth_map_fbo, light_type::spot, m_color, m_intensity, m_position, m_direction, m_constant, m_linear, m_quadratic, m_cut_off > m_outer_cut_off ? m_outer_cut_off : m_cut_off, m_outer_cut_off, m_ambient_strength, m_near_plane, m_far_plane, m_ignore_list_id };
-		}
-
-		auto set_depth_map(const std::uint32_t depth_map, const std::uint32_t depth_map_fbo) -> void override {
-			m_depth_map = depth_map;
-			m_depth_map_fbo = depth_map_fbo;
+			return { light_type::spot, m_color, m_intensity, m_position, m_direction, m_constant, m_linear, m_quadratic, m_cut_off > m_outer_cut_off ? m_outer_cut_off : m_cut_off, m_outer_cut_off, m_ambient_strength, m_near_plane, m_far_plane, m_ignore_list_id };
 		}
 
 		auto set_position(const vec3<length>& position) -> void override {
@@ -58,8 +53,5 @@ export namespace gse {
 		vec3<length> m_position;
 		unitless::vec3 m_direction;
 		float m_ambient_strength;
-
-		std::uint32_t m_depth_map = 0;
-		std::uint32_t m_depth_map_fbo = 0;
 	};
 }

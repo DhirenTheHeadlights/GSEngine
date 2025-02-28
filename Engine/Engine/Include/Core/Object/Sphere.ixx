@@ -82,7 +82,7 @@ export struct sphere_mesh_hook final : gse::hook<gse::entity> {
         }
 
         std::vector<gse::mesh> new_meshes;
-        new_meshes.emplace_back(vertices, indices, std::vector<std::uint32_t> { gse::texture_loader::get_texture_by_path(gse::config::resource_path / "Textures/sun.jpg") });
+        new_meshes.emplace_back(vertices, indices, std::vector{ gse::texture_loader::get_texture_id(gse::config::resource_path / "Textures/sun.jpg") });
 
         gse::render_component new_render_component(owner_id, gse::model_loader::add_model(std::move(new_meshes), "Sphere"));
 

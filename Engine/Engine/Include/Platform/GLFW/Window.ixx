@@ -1,6 +1,5 @@
 module;
 
-#include <glad/glad.h>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
@@ -11,7 +10,7 @@ import vulkan_hpp;
 
 import gse.platform.glfw.input;
 import gse.platform.assert;
-import gse.platform.vulkan.context;
+import gse.platform.context;
 import gse.physics.math;
 
 export namespace gse::window {

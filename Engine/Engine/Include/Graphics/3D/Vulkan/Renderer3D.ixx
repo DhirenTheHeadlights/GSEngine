@@ -42,8 +42,8 @@ auto gse::renderer3d::get_camera() -> const camera& {
 }
 
 auto gse::renderer3d::initialize() -> void {
-	const auto [physical_device, device] = vulkan::get_device_config();
-	const auto [swap_chain, surface_format, present_mode, extent, swap_chain_frame_buffers, swap_chain_images, swap_chain_image_views, swap_chain_image_format, details] = vulkan::get_swap_chain_config(window::get_window());
+	const auto& [physical_device, device] = vulkan::get_device_config();
+	auto& [swap_chain, surface_format, present_mode, swap_chain_extent, swap_chain_frame_buffers, swap_chain_images, swap_chain_image_views, swap_chain_image_format, details] = vulkan::get_swap_chain_config();
 
 	constexpr std::array attachments{
 		vk::AttachmentDescription{ // Position
@@ -121,9 +121,9 @@ auto gse::renderer3d::initialize() -> void {
 
 	std::cout << "Render Pass Created Successfully!\n";
 
-	g_frame_buffers.resize(g_swap_chain_image_views.size());
+	g_frame_buffers.resize(swap_chain_frame_buffers.size());
 
-	for (size_t i = 0; i < g_swap_chain_image_views.size(); i++) {
+	for (size_t i = 0; i < swap_chain_frame_buffers.size(); i++) {
 		std::array all_attachments = {
 			g_position_image_view, g_normal_image_view,
 			g_albedo_image_view, g_depth_image_view
@@ -131,18 +131,18 @@ auto gse::renderer3d::initialize() -> void {
 
 		vk::FramebufferCreateInfo framebuffer_info(
 			{}, g_render_pass, static_cast<std::uint32_t>(all_attachments.size()), all_attachments.data(),
-			g_swap_chain_extent.width, g_swap_chain_extent.height, 1
+			swap_chain_extent.width, swap_chain_extent.height, 1
 		);
 
-		g_swap_chain_frame_buffers[i] = device.createFramebuffer(framebuffer_info);
+		swap_chain_frame_buffers[i] = device.createFramebuffer(framebuffer_info);
 	}
 
 	std::cout << "G-Buffer Framebuffers Created Successfully!\n";
 
-	g_command_buffers.resize(g_swap_chain_frame_buffers.size());
+	g_command_buffers.resize(swap_chain_frame_buffers.size());
 
 	vk::CommandBufferAllocateInfo alloc_info(
-		vulkan::get_command_pool(), vk::CommandBufferLevel::ePrimary,
+		vulkan::get_command_config().command_pool, vk::CommandBufferLevel::ePrimary,
 		static_cast<std::uint32_t>(g_command_buffers.size())
 	);
 
@@ -156,7 +156,7 @@ auto gse::renderer3d::initialize() -> void {
 		{},																						// flags
 		vk::ImageType::e2D,																		// type
 		vk::Format::eR16G16B16A16Sfloat,														// format (for position, high precision)
-		vk::Extent3D{ g_swap_chain_extent.width, g_swap_chain_extent.height, 1 },
+		vk::Extent3D{ swap_chain_extent.width, swap_chain_extent.height, 1 },
 		1,																						// mipLevels
 		1,																						// arrayLayers
 		vk::SampleCountFlagBits::e1,															// samples
@@ -196,7 +196,7 @@ auto gse::renderer3d::initialize() -> void {
 		{},																						// flags
 		vk::ImageType::e2D,																		// type
 		vk::Format::eR16G16B16A16Sfloat,														// format (for normal, high precision)
-		vk::Extent3D{ g_swap_chain_extent.width, g_swap_chain_extent.height, 1 },
+		vk::Extent3D{ swap_chain_extent.width, swap_chain_extent.height, 1 },
 		1,																						// mipLevels
 		1,																						// arrayLayers
 		vk::SampleCountFlagBits::e1,															// samples
@@ -236,7 +236,7 @@ auto gse::renderer3d::initialize() -> void {
 		{},																						// flags
 		vk::ImageType::e2D,																		// type
 		vk::Format::eR16G16B16A16Sfloat,														// format (for albedo, high precision)
-		vk::Extent3D{ g_swap_chain_extent.width, g_swap_chain_extent.height, 1 },
+		vk::Extent3D{ swap_chain_extent.width, swap_chain_extent.height, 1 },
 		1,																						// mipLevels
 		1,																						// arrayLayers
 		vk::SampleCountFlagBits::e1,															// samples
@@ -276,7 +276,7 @@ auto gse::renderer3d::initialize() -> void {
 		{},																						// flags
 		vk::ImageType::e2D,																		// type
 		vk::Format::eD32Sfloat,																	// format (for depth, high precision)
-		vk::Extent3D{ g_swap_chain_extent.width, g_swap_chain_extent.height, 1 },
+		vk::Extent3D{ swap_chain_extent.width, swap_chain_extent.height, 1 },
 		1,																						// mipLevels
 		1,																						// arrayLayers
 		vk::SampleCountFlagBits::e1,															// samples
@@ -312,7 +312,7 @@ auto gse::renderer3d::initialize() -> void {
 
 	auto transition_image_layout = [device](const vk::Image image, const vk::ImageLayout old_layout, const vk::ImageLayout new_layout) -> void {
 		const vk::CommandBufferAllocateInfo cmd_buffer_alloc_info(
-			vulkan::get_command_pool(), vk::CommandBufferLevel::ePrimary, 1
+			vulkan::get_command_config().command_pool, vk::CommandBufferLevel::ePrimary, 1
 		);
 
 		const vk::CommandBuffer command_buffer = device.allocateCommandBuffers(cmd_buffer_alloc_info)[0];
@@ -367,7 +367,7 @@ auto gse::renderer3d::initialize() -> void {
 			0, nullptr, nullptr, 1, &command_buffer, 0, nullptr
 		);
 
-		vulkan::get_graphics_queue().submit(submit_info, nullptr);
+		vulkan::get_queue_config().graphics_queue.submit(submit_info, nullptr);
 		};
 
 	transition_image_layout(g_position_image, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal);
@@ -382,8 +382,8 @@ auto gse::renderer3d::initialize() -> void {
 	vk::PipelineVertexInputStateCreateInfo vertex_input_info({}, 0, nullptr, 0, nullptr);
 	vk::PipelineInputAssemblyStateCreateInfo input_assembly({}, vk::PrimitiveTopology::eTriangleList, vk::False);
 
-	vk::Viewport viewport(0.f, 0.f, static_cast<float>(g_swap_chain_extent.width), static_cast<float>(g_swap_chain_extent.height), 0.f, 1.f);
-	vk::Rect2D scissor({ 0, 0 }, g_swap_chain_extent);
+	vk::Viewport viewport(0.f, 0.f, static_cast<float>(swap_chain_extent.width), static_cast<float>(swap_chain_extent.height), 0.f, 1.f);
+	vk::Rect2D scissor({ 0, 0 }, swap_chain_extent);
 	vk::PipelineViewportStateCreateInfo viewport_state({}, 1, & viewport, 1, & scissor);
 
 	vk::PipelineRasterizationStateCreateInfo rasterizer(

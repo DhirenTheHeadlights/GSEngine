@@ -7,13 +7,12 @@ import gse.core.id;
 import gse.graphics.mesh;
 import gse.graphics.model;
 import gse.graphics.model_loader;
-import gse.graphics.bounding_box_mesh;
 import gse.physics.math;
 
 export namespace gse {
 	struct render_component final : component {
 		render_component(const std::uint32_t id) : component(id) {}
-		render_component(std::uint32_t id, class id* model_id);
+		render_component(std::uint32_t id, uuid model_id);
 
 		render_component(render_component&&) noexcept = default;
 		auto operator=(render_component&&) noexcept -> render_component & = default;
@@ -25,7 +24,7 @@ export namespace gse {
 		auto set_model_positions(const vec3<length>& position) -> void;
 
 		std::vector<model_handle> models;
-		std::vector<bounding_box_mesh> bounding_box_meshes;
+		std::vector<mesh> bounding_box_meshes;
 
 		auto calculate_center_of_mass() -> void;
 		vec3<length> center_of_mass;
@@ -35,14 +34,14 @@ export namespace gse {
 	};
 }
 
-gse::render_component::render_component(const std::uint32_t id, class id* model_id) : component(id) {
-	models.emplace_back(model_id, model_loader::get_model_by_id(model_id));
+gse::render_component::render_component(const std::uint32_t id, const uuid model_id) : component(id) {
+	models.emplace_back(model_loader::get_model_by_id(model_id));
 	calculate_center_of_mass();
 }
 
 auto gse::render_component::update_bounding_box_meshes() -> void {
 	for (auto& bounding_box_mesh : bounding_box_meshes) {
-		bounding_box_mesh.update();
+		// TODO: Implement this
 	}
 }
 

@@ -224,6 +224,6 @@ auto gse::font::get_character(const char c) const -> const glyph& {
     return fallback;
 }
 
-auto gse::font::get_texture() const -> const gse::texture& {
+auto gse::font::get_texture() const -> const texture& {
     return m_texture;
 }

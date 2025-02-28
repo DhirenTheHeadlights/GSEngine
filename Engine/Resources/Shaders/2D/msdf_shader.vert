@@ -1,14 +1,16 @@
-#version 330 core
+#version 450
 
-layout(location = 0) in vec3 aPos;
-layout(location = 1) in vec2 aUV;  
+layout (location = 0) in vec2 in_position;
+layout (location = 1) in vec2 in_tex_coord;
 
-uniform mat4 uProjection;          
-uniform mat4 uModel;                 
+layout (binding = 0) uniform uniform_buffer_object {
+    mat4 projection;
+    mat4 model;
+} ubo;
 
-out vec2 vTexCoord;
+layout (location = 0) out vec2 frag_tex_coord;
 
 void main() {
-    vTexCoord = aUV;
-    gl_Position = uProjection * uModel * vec4(aPos, 1.0);
+    frag_tex_coord = in_tex_coord;
+    gl_Position = ubo.projection * ubo.model * vec4(in_position, 0.0, 1.0);
 }

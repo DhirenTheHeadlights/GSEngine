@@ -24,12 +24,12 @@ export namespace gse {
 
     class model_handle {
     public:
-        model_handle(id* model_id, const model& model);
+        model_handle(const model& model);
 
         auto set_position(const vec3<length>& position) -> void;
         auto set_rotation(const vec3<angle>& rotation) -> void;
         auto get_render_queue_entries() const -> const std::vector<render_queue_entry>&;
-        auto get_model_id() const->id*;
+        auto get_model_id() const -> id*;
 
     private:
         std::vector<render_queue_entry> m_render_queue_entries;
@@ -44,7 +44,7 @@ auto gse::model::initialize() -> void {
     }
 }
 
-gse::model_handle::model_handle(id* model_id, const model& model) : m_model_id(model_id) {
+gse::model_handle::model_handle(const model& model) : m_model_id(model.get_id()) {
     for (const auto& mesh : model.meshes) {
         m_render_queue_entries.emplace_back(
 			&mesh,
