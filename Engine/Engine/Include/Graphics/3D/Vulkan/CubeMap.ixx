@@ -35,7 +35,7 @@ export namespace gse {
 }
 
 gse::cube_map::~cube_map() {
-    const auto device = vulkan::get_device();
+	const auto device = vulkan::get_device_config().device;
     device.destroyFramebuffer(m_frame_buffer);
     device.destroyImageView(m_image_view);
     device.destroyImage(m_image);
@@ -44,7 +44,7 @@ gse::cube_map::~cube_map() {
 }
 
 auto gse::cube_map::create(const std::vector<std::string>& faces) -> void {
-    const auto device = vulkan::get_device();
+	const auto device = vulkan::get_device_config().device;
 
     int width, height, nr_channels;
     std::vector<unsigned char*> face_data;
@@ -99,7 +99,7 @@ auto gse::cube_map::create(const int resolution, const bool depth_only) -> void 
     this->m_resolution = resolution;
     this->m_depth_only = depth_only;
 
-    const auto device = vulkan::get_device();
+	const auto device = vulkan::get_device_config().device;
 
     const vk::Format format = depth_only ? vk::Format::eD32Sfloat : vk::Format::eR16G16B16A16Sfloat;
     const vk::ImageUsageFlags usage = depth_only ? vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled : vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled;

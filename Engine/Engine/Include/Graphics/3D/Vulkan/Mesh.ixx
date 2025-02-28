@@ -3,6 +3,7 @@ export module gse.graphics.mesh;
 import std;
 import vulkan_hpp;
 
+import gse.graphics.material;
 import gse.platform.context;
 import gse.platform.assert;
 import gse.physics.bounding_box;
@@ -23,8 +24,15 @@ export namespace gse {
 		unitless::vec3 color;
     };
 
+	struct mesh_data {
+		std::vector<vertex> vertices;
+		std::vector<std::uint32_t> indices;
+		material_handle material;
+	};
+
     struct mesh {
-        mesh(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices, const axis_aligned_bounding_box* aabb = nullptr);
+		mesh(const mesh_data& data);
+		mesh(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices, material_handle material = {});
         ~mesh();
 
         mesh(const mesh&) = delete;
@@ -45,8 +53,7 @@ export namespace gse {
 
         std::vector<vertex> vertices;
         std::vector<std::uint32_t> indices;
-
-        std::vector<mesh> bounding_box_meshes;
+		material_handle material;
 
 		vec3<length> center_of_mass;
     };
@@ -55,15 +62,15 @@ export namespace gse {
 	auto generate_bounding_box_mesh(const axis_aligned_bounding_box& aabb) -> mesh;
 }
 
-gse::mesh::mesh(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices, const axis_aligned_bounding_box* aabb)
-    : vertices(vertices), indices(indices) {
+gse::mesh::mesh(const mesh_data& data) : vertices(std::move(data.vertices)), indices(std::move(data.indices)), material(data.material) {
     initialize();
 	center_of_mass = calculate_center_of_mass(indices, vertices);
+}
 
-	if (aabb) {
-		const auto aabb_mesh = generate_bounding_box_mesh(*aabb);
-		bounding_box_meshes.push_back(std::move(aabb_mesh));
-	}
+gse::mesh::mesh(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices, const material_handle material)
+	: vertices(vertices), indices(indices), material(material) {
+	initialize();
+	center_of_mass = calculate_center_of_mass(indices, vertices);
 }
 
 gse::mesh::~mesh() {
@@ -71,13 +78,14 @@ gse::mesh::~mesh() {
 }
 
 gse::mesh::mesh(mesh&& other) noexcept
-    : vertex_buffer(other.vertex_buffer), vertex_memory(other.vertex_memory),
-    index_buffer(other.index_buffer), index_memory(other.index_memory),
-	vertices(std::move(other.vertices)), indices(std::move(other.indices)), center_of_mass(other.center_of_mass) {
-    other.vertex_buffer = nullptr;
-    other.vertex_memory = nullptr;
-    other.index_buffer = nullptr;
-    other.index_memory = nullptr;
+	: vertex_buffer(other.vertex_buffer), vertex_memory(other.vertex_memory),
+	  index_buffer(other.index_buffer), index_memory(other.index_memory),
+	  vertices(std::move(other.vertices)), indices(std::move(other.indices)), material(nullptr),
+	  center_of_mass(other.center_of_mass) {
+	other.vertex_buffer = nullptr;
+	other.vertex_memory = nullptr;
+	other.index_buffer = nullptr;
+	other.index_memory = nullptr;
 }
 
 auto gse::mesh::operator=(mesh&& other) noexcept -> mesh& {
@@ -101,7 +109,7 @@ auto gse::mesh::operator=(mesh&& other) noexcept -> mesh& {
 }
 
 auto gse::mesh::initialize() -> void {
-    const auto device = vulkan::get_device();
+	const auto device = vulkan::get_device_config().device;
 
     const vk::DeviceSize vertex_size = sizeof(vertex) * vertices.size();
     const vk::DeviceSize index_size = sizeof(std::uint32_t) * indices.size();
@@ -116,7 +124,7 @@ auto gse::mesh::initialize() -> void {
     const vk::MemoryRequirements vertex_mem_req = device.getBufferMemoryRequirements(vertex_buffer);
     const vk::MemoryAllocateInfo vertex_alloc_info(
         vertex_mem_req.size,
-        find_memory_type(vertex_mem_req.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
+        vulkan::find_memory_type(vertex_mem_req.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
     );
     vertex_memory = device.allocateMemory(vertex_alloc_info);
     device.bindBufferMemory(vertex_buffer, vertex_memory, 0);
@@ -139,7 +147,7 @@ auto gse::mesh::initialize() -> void {
 }
 
 auto gse::mesh::destroy() const -> void {
-    const auto device = vulkan::get_device();
+	const auto device = vulkan::get_device_config().device;
     if (vertex_buffer) {
         device.destroyBuffer(vertex_buffer);
         device.freeMemory(vertex_memory);
@@ -195,18 +203,24 @@ auto gse::calculate_center_of_mass(const std::vector<std::uint32_t>& indices, co
 }
 
 auto gse::generate_bounding_box_mesh(const axis_aligned_bounding_box& aabb) -> mesh {
-	const auto lower = aabb.lower_bound;
-	const auto upper = aabb.upper_bound;
-	const std::vector<vertex> vertices = {
-		mesh::create_vertex({ lower.x, lower.y, lower.z }),
-		mesh::create_vertex({ upper.x, lower.y, lower.z }),
-		mesh::create_vertex({ upper.x, upper.y, lower.z }),
-		mesh::create_vertex({ lower.x, upper.y, lower.z }),
-		mesh::create_vertex({ lower.x, lower.y, upper.z }),
-		mesh::create_vertex({ upper.x, lower.y, upper.z }),
-		mesh::create_vertex({ upper.x, upper.y, upper.z }),
-		mesh::create_vertex({ lower.x, upper.y, upper.z })
+	const auto lower = aabb.lower_bound.as<units::meters>();
+	const auto upper = aabb.upper_bound.as<units::meters>();
+
+	auto create_vertex = [](const vec::raw3f& position) -> vertex {
+		return vertex{ position, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f} };
+		};
+
+	const std::vector vertices = {
+		create_vertex({ lower.x, lower.y, lower.z }),
+		create_vertex({ upper.x, lower.y, lower.z }),
+		create_vertex({ upper.x, upper.y, lower.z }),
+		create_vertex({ lower.x, upper.y, lower.z }),
+		create_vertex({ lower.x, lower.y, upper.z }),
+		create_vertex({ upper.x, lower.y, upper.z }),
+		create_vertex({ upper.x, upper.y, upper.z }),
+		create_vertex({ lower.x, upper.y, upper.z })
 	};
+
 	const std::vector<std::uint32_t> indices = {
 		0, 1, 2, 2, 3, 0,
 		4, 5, 6, 6, 7, 4,
@@ -215,5 +229,6 @@ auto gse::generate_bounding_box_mesh(const axis_aligned_bounding_box& aabb) -> m
 		0, 1, 5, 5, 4, 0,
 		3, 2, 6, 6, 7, 3
 	};
+
 	return mesh(vertices, indices);
 }

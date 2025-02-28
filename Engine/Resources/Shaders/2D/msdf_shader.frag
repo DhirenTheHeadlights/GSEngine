@@ -1,30 +1,22 @@
-#version 330 core
+#version 450
 
-in vec2 vTexCoord;
-out vec4 FragColor;
+layout (location = 0) in vec2 frag_tex_coord;
+layout (location = 0) out vec4 out_color;
 
-uniform sampler2D uMSDF;
-uniform vec4 uColor;
+layout (binding = 1) uniform sampler2D u_msdf;
+layout (binding = 2) uniform msdf_uniforms {
+    vec4 color;
+    float range;
+} msdf_uniforms;
 
-uniform float uRange;
-
-float median3(float r, float g, float b) {
+float median_3(float r, float g, float b) {
     return max(min(r, g), min(max(r, g), b));
 }
 
 void main() {
-    // For a multi-channel SDF, each channel encodes distance; we take the median.
-    vec3 sample = texture(uMSDF, vTexCoord).rgb;
-    float dist = median3(sample.r, sample.g, sample.b);
-
-    // The function fwidth() gives us the approximate size of one screen pixel
-    // in the distance field's range for anti-aliased edges.
-    float pixelWidth = fwidth(dist);
-
-    // Shift the threshold from 0.5. The MSDF data is centered at 0.5.
-    // We'll smooth-step around 0.5 to get crisp edges.
-    float alpha = smoothstep(0.5 - pixelWidth, 0.5 + pixelWidth, dist);
-
-    // Multiply alpha with the color's alpha channel
-    FragColor = vec4(uColor.rgb, uColor.a * alpha);
+    vec3 sample = texture(u_msdf, frag_tex_coord).rgb;
+    float dist = median_3(sample.r, sample.g, sample.b);
+    float pixel_width = fwidth(dist);
+    float alpha = smoothstep(0.5 - pixel_width, 0.5 + pixel_width, dist);
+    out_color = vec4(msdf_uniforms.color.rgb, msdf_uniforms.color.a * alpha);
 }

@@ -1,17 +1,14 @@
 export module gse.platform.assert;
 
-// --- Standard/Compiler Headers ---
 #ifdef _MSC_VER
-  // For MSVC, optionally disable "unsafe" warnings
 #define _CRT_SECURE_NO_WARNINGS
 #endif
 
-import <csignal>;   // For raise, SIGABRT
-import <cstdio>;    // For snprintf
+import <csignal>;
+import <cstdio>;
 import <iostream>;
 import <string>;
 
-// Optional: If Windows-specific features are needed
 #ifdef _WIN32
 #define NOMINMAX
 import <Windows.h>;
@@ -20,13 +17,13 @@ import <Windows.h>;
 // ------------------------------------------------------
 // Forward-Declarations of Underlying Assert Functions
 // ------------------------------------------------------
-inline auto assert_func_production(
+auto assert_func_production(
     char const* expression,
     char const* file_name,
     unsigned line_number,
     char const* comment = "---") -> void;
 
-inline auto assert_func_internal(
+auto assert_func_internal(
     char const* expression,
     char const* file_name,
     unsigned line_number,
@@ -35,7 +32,7 @@ inline auto assert_func_internal(
 // ------------------------------------------------------
 // Windows vs. Non-Windows Implementations
 // ------------------------------------------------------
-inline auto assert_func_production(
+auto assert_func_production(
     char const* expression,
     char const* file_name,
     unsigned line_number,
@@ -67,7 +64,7 @@ inline auto assert_func_production(
 #endif
 }
 
-inline auto assert_func_internal(
+auto assert_func_internal(
     char const* expression,
     char const* file_name,
     unsigned line_number,
@@ -111,63 +108,64 @@ inline auto assert_func_internal(
 #endif
 }
 
-// ------------------------------------------------------
-// Exported Inline "Assert" Functions
-// (Replacing macros with inline C++ functions)
-// ------------------------------------------------------
+export namespace gse {
+    // ------------------------------------------------------
+    // Exported "Assert" Functions
+    // (Replacing macros with C++ functions)
+    // ------------------------------------------------------
 #if defined(PRODUCTION_BUILD) && (PRODUCTION_BUILD != 0)
 
 // Production build: calls production asserts
-export void perma_assert(
-    bool        condition,
-    char const* expression,
-    char const* file_name = "---",
-    unsigned    line_number = 0,
-    char const* comment = "---")
-{
-    if (!condition) {
-        assert_func_production(expression, file_name, line_number, comment);
+    export void perma_assert(
+        bool        condition,
+        char const* expression,
+        char const* file_name = "---",
+        unsigned    line_number = 0,
+        char const* comment = "---")
+    {
+        if (!condition) {
+            assert_func_production(expression, file_name, line_number, comment);
+        }
     }
-}
 
-export void assert_comment(
-    bool        condition,
-    char const* expression,
-    char const* file_name = "---",
-    unsigned    line_number = 0,
-    char const* comment = "---")
-{
-    if (!condition) {
-        assert_func_production(expression, file_name, line_number, comment);
+    export void assert_comment(
+        bool        condition,
+        char const* expression,
+        char const* file_name = "---",
+        unsigned    line_number = 0,
+        char const* comment = "---")
+    {
+        if (!condition) {
+            assert_func_production(expression, file_name, line_number, comment);
+        }
     }
-}
 
 #else
-
-// Internal (debug) build: calls internal asserts
-export auto perma_assert(
-    bool condition,
-    char const* expression,
-    char const* file_name = "---",
-    unsigned line_number = 0,
-    char const* comment = "---") -> void {
-    if (!condition) {
-        assert_func_internal(expression, file_name, line_number, comment);
+	// Internal (debug) build: calls internal asserts
+	auto perma_assert(
+        const bool condition,
+        char const* expression,
+        char const* file_name = "---",
+        const unsigned line_number = 0,
+        char const* comment = "---") -> void {
+        if (!condition) {
+            assert_func_internal(expression, file_name, line_number, comment);
+        }
     }
-}
 
-export auto assert_comment(
-    bool condition,
-    char const* expression,
-    char const* file_name = "---",
-    unsigned line_number = 0,
-    char const* comment = "---") -> void {
-    if (!condition) {
-        assert_func_internal(expression, file_name, line_number, comment);
+    auto assert_comment(
+        const bool condition,
+        char const* expression,
+        char const* file_name = "---",
+        const unsigned line_number = 0,
+        char const* comment = "---") -> void {
+        if (!condition) {
+            assert_func_internal(expression, file_name, line_number, comment);
+        }
     }
-}
 
 #endif // PRODUCTION_BUILD
+}
 
 // ------------------------------------------------------
 // Logging Function Templates
@@ -184,45 +182,45 @@ export auto assert_comment(
 #ifdef FORCE_LOG
 
 export template <typename... Args>
-inline auto llog(Args&&... args) -> void {
+auto llog(Args&&... args) -> void {
     (std::cout << ... << args) << std::endl;
 }
 
 export template <typename... Args>
-inline auto wlog(Args&&... args) -> void {
+auto wlog(Args&&... args) -> void {
     (std::cout << ... << args) << std::endl;
 }
 
 export template <typename... Args>
-inline auto ilog(Args&&... args) -> void {
+auto ilog(Args&&... args) -> void {
     (std::cout << ... << args) << std::endl;
 }
 
 export template <typename... Args>
-inline auto glog(Args&&... args) -> void {
+auto glog(Args&&... args) -> void {
     (std::cout << ... << args) << std::endl;
 }
 
 export template <typename... Args>
-inline auto elog(Args&&... args) -> void {
+auto elog(Args&&... args) -> void {
     (std::cout << ... << args) << std::endl;
 }
 
 #else // If FORCE_LOG is not defined, provide no-op versions
 
 export template <typename... Args>
-inline void llog(Args&&...) {}
+void llog(Args&&...) {}
 
 export template <typename... Args>
-inline void wlog(Args&&...) {}
+void wlog(Args&&...) {}
 
 export template <typename... Args>
-inline void ilog(Args&&...) {}
+void ilog(Args&&...) {}
 
 export template <typename... Args>
-inline void glog(Args&&...) {}
+void glog(Args&&...) {}
 
 export template <typename... Args>
-inline void elog(Args&&...) {}
+void elog(Args&&...) {}
 
 #endif
