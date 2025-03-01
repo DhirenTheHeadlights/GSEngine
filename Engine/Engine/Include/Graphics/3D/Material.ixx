@@ -29,9 +29,13 @@ namespace gse {
 export namespace gse {
 	class material_handle {
 	public:
-		material_handle(material* material = nullptr) : m_material(material) {}
+		explicit material_handle(material* material = nullptr) : m_material(material) {}
 
-		constexpr auto operator->() const -> const material* {
+		auto operator->() const -> const material* {
+			return m_material;
+		}
+
+		auto get_data() const -> material* {
 			return m_material;
 		}
 	private:
