@@ -350,7 +350,7 @@ auto render_quad(const gse::vec2<gse::length>& position, const gse::vec2<gse::le
 	const auto& swap_chain = gse::vulkan::get_swap_chain_config().swap_chain;
 
     const vk::PresentInfoKHR present_info(1, &render_finished_semaphore, 1, &swap_chain, &image_index);
-	perma_assert(present_queue.presentKHR(present_info) != vk::Result::eSuccess, "Failed to present image!");
+    gse::perma_assert(present_queue.presentKHR(present_info) != vk::Result::eSuccess, "Failed to present image!");
 
     device.destroySemaphore(image_available_semaphore);
     device.destroySemaphore(render_finished_semaphore);
