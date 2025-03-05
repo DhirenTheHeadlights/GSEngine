@@ -29,3 +29,7 @@ auto gse::network::shutdown() -> void {
 	}
 }
 
+enum class packet_data_type {
+	POSITION,
+
+};

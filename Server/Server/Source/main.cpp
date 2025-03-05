@@ -1,6 +1,6 @@
 import gse;
 
 int main() {
-	gse::initialize();
-	gse::run();
+	gse::initialize({}, {});
+	gse::run({}, {});
 }

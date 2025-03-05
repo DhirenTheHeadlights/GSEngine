@@ -852,8 +852,8 @@ auto gse::renderer3d::render() -> void {
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
 
-#pragma optimize("", off)
+
 auto gse::renderer3d::get_camera() -> camera& {
 	return g_camera;
 }
-#pragma optimize("", on)
+

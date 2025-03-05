@@ -8,18 +8,17 @@ project(Server)
 file(GLOB_RECURSE SERVER_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Server/Source/*.cpp")
 file(GLOB_RECURSE SERVER_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Server/Include/*.ixx")
 
-add_library(Server)
+add_executable(Server)
 
 target_sources(Server
-	Public
-		FILE_SET cxx_modules TYPE CXX_MODULES
-		BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Server/Include"
-		FILES ${SERVER_MODULES}
+	PRIVATE
+		FILE_SET server_modules TYPE CXX_MODULES
+		BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Server"
+		FILES ${SERVER_MODULES} ${SERVER_SOURCES}
 )
 
 target_link_libraries(Server PRIVATE Engine)
-
-add_executable(Server ${SERVER_SOURCES})
+target_link_libraries(Server PRIVATE GoonSquadLib)
 
 # MSVC-specific compile options
 if(MSVC)
