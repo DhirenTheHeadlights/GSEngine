@@ -8,6 +8,7 @@ module;
 
 export module gse.server;
 
+import gse;
 import std;
 
 export namespace gse::server {

@@ -16,3 +16,4 @@ export namespace gse::physics {
 		bool resolve_collisions = true;
 	};
 }
+	
