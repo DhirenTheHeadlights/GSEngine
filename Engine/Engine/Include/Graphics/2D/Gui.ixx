@@ -6,12 +6,14 @@ export module gse.graphics.gui;
 
 import std;
 
+import gse.core.id;
 import gse.core.config;
 import gse.core.clock;
 import gse.physics.math;
 import gse.core.timed_lock;
 import gse.graphics.renderer2d;
 import gse.graphics.texture;
+import gse.graphics.texture_loader;
 import gse.graphics.font;
 import gse.platform.glfw.window;
 import gse.platform.glfw.input;
@@ -28,7 +30,7 @@ export namespace gse::gui {
 }
 
 struct menu {
-	gse::texture texture;
+	gse::uuid texture_id;
 	gse::unitless::vec2 position;
 	gse::unitless::vec2 size;
 	gse::unitless::vec2 pre_docked_size;
@@ -136,14 +138,14 @@ auto gse::gui::update() -> void {
 				m.position = mouse_position + m.offset;
 				m.position = clamp(m.position, unitless::vec2(0.f, 0.f), unitless::vec2(window::get_window_size()));
 
-				for (auto& dock : g_docks) {
-					if (intersects(m.position, m.size, dock.position, docking_area::size) &&
+				for (auto& [position, docked_position, docked_size] : g_docks) {
+					if (intersects(m.position, m.size, position, docking_area::size) &&
 						!m.docked.get_value() && m.docked.is_value_mutable()) {
 						clock hover_clock;
 
 						while (hover_clock.get_elapsed_time() < seconds(0.25)) {
 							g_render_docking_preview = true;
-							if (!intersects(m.position, m.size, dock.position, docking_area::size)) {
+							if (!intersects(m.position, m.size, position, docking_area::size)) {
 								g_render_docking_preview = false;
 								break;
 							}
@@ -151,8 +153,8 @@ auto gse::gui::update() -> void {
 
 						m.docked = true;
 						m.grabbed = false;
-						m.position = dock.docked_position;
-						m.size = dock.docked_size;
+						m.position = docked_position;
+						m.size = docked_size;
 						m.docked_waiting_for_release = true;
 
 						g_render_docking_preview = false;
@@ -193,7 +195,7 @@ auto gse::gui::create_menu(const std::string& name, const unitless::vec2& top_le
 	}
 
 	g_menus.push_back({
-		.texture = texture(name),
+		.texture_id = texture_loader::get_texture_id(name),
 		.position = top_left,
 		.size = size,
 		.pre_docked_size = size,

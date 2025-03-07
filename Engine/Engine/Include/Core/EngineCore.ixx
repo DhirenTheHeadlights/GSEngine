@@ -10,12 +10,13 @@ import gse.core.object_registry;
 import gse.core.scene_loader;
 import gse.graphics.debug;
 import gse.graphics.gui;
+import gse.graphics.renderer;
 import gse.graphics.renderer2d;
-import gse.graphics.vulkan.renderer3d;
+import gse.graphics.renderer3d;
 import gse.platform.assert;
 import gse.platform.glfw.input;
 import gse.platform.glfw.window;
-import gse.platform.vulkan.context;
+import gse.platform.context;
 
 export namespace gse {
 	auto initialize(const std::function<void()>& initialize_function, const std::function<void()>& shutdown_function) -> void;
@@ -30,7 +31,7 @@ export namespace gse {
 }
 
 auto gse::get_camera() -> camera& {
-	return vulkan::renderer3d::get_camera();
+	return renderer3d::get_camera();
 }
 
 std::function<void()> g_game_shutdown_function = [] {};
@@ -69,13 +70,10 @@ auto gse::initialize(const std::function<void()>& initialize_function,
 
 	g_game_shutdown_function = shutdown_function;
 
-	window::initialize();
+	renderer::initialize();
 	gui::initialize();
 
-	if (g_imgui_enabled) debug::set_up_imgui();
-
-	vulkan::renderer3d::initialize();
-	renderer2d::initialize();
+	if (g_imgui_enabled) debug::set_up_imgui(renderer3d::get_render_pass());
 
 	initialize_function();
 
@@ -107,7 +105,7 @@ auto update(const std::function<bool()>& update_function) -> void {
 auto render(const std::function<bool()>& render_function) -> void {
 	if (g_imgui_enabled) gse::add_timer("Engine::render");
 
-	gse::window::begin_frame();
+	gse::renderer::begin_frame();
 
 	gse::scene_loader::render();
 
@@ -116,19 +114,18 @@ auto render(const std::function<bool()>& render_function) -> void {
 	}
 
 	if (g_imgui_enabled) gse::display_timers();
-	if (g_imgui_enabled) gse::debug::render_imgui();
+	if (g_imgui_enabled) gse::debug::render_imgui(gse::renderer3d::get_current_command_buffer());
 
 	gse::gui::render();
 
-	gse::window::end_frame();
+	gse::renderer::end_frame();
 
 	if (g_imgui_enabled) gse::reset_timer("Engine::update");
 }
 
 auto shutdown() -> void {
 	g_game_shutdown_function();
-	gse::renderer2d::shutdown();
-	gse::window::shutdown();
+	gse::renderer::shutdown();
 }
 
 auto gse::run(const std::function<bool()>& update_function, const std::function<bool()>& render_function) -> void {

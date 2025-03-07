@@ -12,6 +12,7 @@ import gse.physics.math;
 export namespace gse {
 	struct render_component final : component {
 		render_component(const std::uint32_t id) : component(id) {}
+		render_component(std::uint32_t id, const class id* model_id);
 		render_component(std::uint32_t id, uuid model_id);
 
 		render_component(render_component&&) noexcept = default;
@@ -32,6 +33,11 @@ export namespace gse {
 		bool render = true;
 		bool render_bounding_boxes = true;
 	};
+}
+
+gse::render_component::render_component(const std::uint32_t id, const class id* model_id) : component(id) {
+	models.emplace_back(model_loader::get_model_by_id(model_id));
+	calculate_center_of_mass();
 }
 
 gse::render_component::render_component(const std::uint32_t id, const uuid model_id) : component(id) {

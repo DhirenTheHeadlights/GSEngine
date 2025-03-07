@@ -4,7 +4,11 @@ import std;
 
 import gse.core.id;
 import gse.core.object.hook;
+import gse.core.object_registry;
+import gse.graphics.renderer;
 import gse.graphics.renderer3d;
+import gse.physics.update;
+import gse.physics.broad_phase_collision;
 
 export namespace gse {
 	class scene final : public hookable<scene>, public identifiable {
@@ -30,10 +34,6 @@ export namespace gse {
 		bool m_is_active = false;
 	};
 }
-
-import gse.core.object_registry;
-import gse.physics.update;
-import gse.physics.broad_phase_collision;
 
 auto gse::scene::add_entity(std::uint32_t object_uuid, const std::string& name) -> void {
 	if (m_is_active) {
@@ -72,7 +72,7 @@ auto gse::scene::render() const -> void {
 	render_hooks();
 
 	registry::render_hooks();
-	renderer3d::render();
+	renderer::render();
 }
 
 auto gse::scene::exit() const -> void {

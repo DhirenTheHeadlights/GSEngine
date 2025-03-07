@@ -14,10 +14,12 @@ import gse.graphics.camera;
 import gse.platform.glfw.window;
 import gse.platform.context;
 import gse.platform.assert;
-#include "vulkan/vulkan_structs.hpp"
 
 export namespace gse::renderer2d {
     auto initialize() -> void;
+	auto begin_frame() -> void;
+	auto render() -> void;
+	auto end_frame() -> void;
     auto shutdown() -> void;
 
     auto draw_quad(const vec2<length>& position, const vec2<length>& size, const unitless::vec4& color) -> void;
@@ -132,7 +134,7 @@ auto gse::renderer2d::initialize() -> void {
         0, sizeof(unitless::vec2) * 2 + sizeof(unitless::vec4) * 2
     );
 
-	g_pipeline_layout = device.createPipelineLayout({{}, 1, nullptr, 1, &push_constant_range });
+	g_pipeline_layout = device.createPipelineLayout({{}, 0, nullptr, 1, &push_constant_range });
     
     g_shader.create(
         config::resource_path / "Shaders/2D/ui_2d_shader.vert",
@@ -230,7 +232,7 @@ auto gse::renderer2d::initialize() -> void {
         0, sizeof(unitless::vec4)
     );
 
-	vk::PipelineLayoutCreateInfo pipeline_layout_info({}, 1, nullptr, 1, &msdf_push_constant_range);
+	vk::PipelineLayoutCreateInfo pipeline_layout_info({}, 0, nullptr, 1, &msdf_push_constant_range);
     g_msdf_pipeline_layout = device.createPipelineLayout(pipeline_layout_info);
 
     vk::PipelineColorBlendAttachmentState blend_state(
@@ -284,6 +286,65 @@ auto gse::renderer2d::initialize() -> void {
     g_msdf_descriptor_pool = device.createDescriptorPool(pool_info);
 }
 
+auto gse::renderer2d::begin_frame() -> void {
+    const auto& fence = vulkan::get_sync_objects().in_flight_fence;
+    const auto& swap_chain_config = vulkan::get_swap_chain_config();
+    const auto& device = vulkan::get_device_config().device;
+
+    perma_assert(
+        device.waitForFences(1, &fence, vk::True, std::numeric_limits<std::uint64_t>::max()) == vk::Result::eSuccess,
+        "Failed to wait for fence!"
+    );
+
+    perma_assert(device.resetFences(1, &fence) == vk::Result::eSuccess, "Failed to reset fence!");
+
+    constexpr vk::CommandBufferBeginInfo begin_info(vk::CommandBufferUsageFlagBits::eSimultaneousUse);
+	g_command_buffer.begin(begin_info);
+
+	constexpr vk::ClearValue clear_value = vk::ClearColorValue(std::array{ 0.0f, 0.0f, 0.0f, 1.0f });
+
+	const vk::RenderPassBeginInfo render_pass_info(
+        g_render_pass,
+		swap_chain_config.frame_buffers[vulkan::get_next_image(window::get_window())],
+        vk::Rect2D({ 0, 0 }, swap_chain_config.extent),
+        1, &clear_value
+    );
+
+	g_command_buffer.beginRenderPass(render_pass_info, vk::SubpassContents::eInline);
+}
+
+auto gse::renderer2d::render() -> void {
+	
+}
+
+auto gse::renderer2d::end_frame() -> void {
+    const auto current_frame = vulkan::get_current_frame();
+    g_command_buffer.endRenderPass();
+    g_command_buffer.end();
+
+    const auto& [image_available_semaphore, render_finished_semaphore, in_flight_fence] = vulkan::get_sync_objects();
+
+    vk::Semaphore wait_semaphores[] = { image_available_semaphore };
+    vk::PipelineStageFlags wait_stages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
+
+    const vk::SubmitInfo info(
+        1, wait_semaphores, wait_stages,
+        1, &g_command_buffer,
+        1, &render_finished_semaphore
+    );
+
+    vulkan::get_queue_config().graphics_queue.submit(info, in_flight_fence);
+
+    const vk::PresentInfoKHR present_info(
+        1, &render_finished_semaphore,
+        1, &vulkan::get_swap_chain_config().swap_chain,
+        &current_frame
+    );
+
+    const vk::Result present_result = vulkan::get_queue_config().present_queue.presentKHR(present_info);
+    perma_assert(present_result == vk::Result::eSuccess || present_result == vk::Result::eSuboptimalKHR, "Failed to present image!");
+}
+
 auto gse::renderer2d::shutdown() -> void {
     auto [physical_device, device] = vulkan::get_device_config();
 
@@ -308,7 +369,7 @@ auto render_quad(const gse::vec2<gse::length>& position, const gse::vec2<gse::le
     const vk::Semaphore image_available_semaphore = device.createSemaphore({});
     const vk::Semaphore render_finished_semaphore = device.createSemaphore({});
 
-    std::uint32_t image_index = gse::vulkan::get_next_image();
+    std::uint32_t image_index = gse::vulkan::get_next_image(gse::window::get_window());
 
     constexpr vk::CommandBufferBeginInfo begin_info(vk::CommandBufferUsageFlagBits::eSimultaneousUse);
     g_command_buffer.begin(begin_info);
@@ -320,8 +381,7 @@ auto render_quad(const gse::vec2<gse::length>& position, const gse::vec2<gse::le
     g_command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, g_pipeline);
 
     const vk::Buffer vertex_buffers[] = { g_vertex_buffer };
-    constexpr vk::DeviceSize offsets[] = {};
-    g_command_buffer.bindVertexBuffers(0, vertex_buffers, offsets);
+    g_command_buffer.bindVertexBuffers(0, vertex_buffers, {});
     g_command_buffer.bindIndexBuffer(g_index_buffer, 0, vk::IndexType::eUint16);
 
     const struct push_constants {
@@ -384,8 +444,7 @@ auto gse::renderer2d::draw_text(const font& font, const std::string& text, const
     g_command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, g_msdf_pipeline);
 
     const vk::Buffer vertex_buffers[] = { g_vertex_buffer };
-    constexpr vk::DeviceSize offsets[] = {};
-    g_command_buffer.bindVertexBuffers(0, vertex_buffers, offsets);
+    g_command_buffer.bindVertexBuffers(0, vertex_buffers, {});
     g_command_buffer.bindIndexBuffer(g_index_buffer, 0, vk::IndexType::eUint16);
 
     const struct msdf_push_constants {
