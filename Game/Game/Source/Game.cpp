@@ -26,7 +26,6 @@ struct iron_man_hook final : gse::hook<gse::entity> {
 	auto initialize() -> void override {
 		gse::model_loader::load_obj_file(game::config::resource_path / "Models/IronMan/iron_man.obj", "Iron Man");
 		gse::registry::add_component(gse::render_component(owner_id, gse::get_id("Iron Man")));
-		gse::registry::get_component<gse::render_component>(owner_id).set_model_material("NULL");
 		gse::registry::get_component<gse::render_component>(owner_id).models[0].set_position(gse::vec::meters(0.f, 0.f, 0.f));
 	}
 };
@@ -37,7 +36,6 @@ struct black_knight_hook final : gse::hook<gse::entity> {
 	auto initialize() -> void override {
 		gse::model_loader::load_obj_file(game::config::resource_path / "Models/BlackKnight/base.obj", "Black Knight");
 		gse::registry::add_component(gse::render_component(owner_id, gse::get_id("Black Knight")));
-		gse::registry::get_component<gse::render_component>(owner_id).set_model_material("NULL");
 		gse::registry::get_component<gse::render_component>(owner_id).models[0].set_position(gse::vec::meters(0.f, 0.f, 0.f));
 	}
 };
@@ -49,7 +47,6 @@ struct raw_backpack_hook final : gse::hook<gse::entity> {
 	auto initialize() -> void override {
 		gse::model_loader::load_obj_file(game::config::resource_path / "Models/Backpack/backpack.obj", "Backpack");
 		gse::registry::add_component(gse::render_component(owner_id, gse::get_id("Backpack")));
-		gse::registry::get_component<gse::render_component>(owner_id).set_model_material("NULL");
 		gse::registry::get_component<gse::render_component>(owner_id).models[0].set_position(gse::vec::meters(0.f, 0.f, 0.f));
 		//gse::registry::get_component<gse::render_component>(owner_id).models[0].set_all_mesh_textures(m_texture_ids);
 	}

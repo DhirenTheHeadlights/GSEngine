@@ -191,7 +191,7 @@ auto gse::model_loader::load_obj_file(const std::filesystem::path& model_path, c
 			current_material = split_line[1];
 
 			// Check if the material exists in the map
-			if (!g_materials.contains(current_material)) {
+			if (!does_material_exist(current_material)) {
 				std::cerr << "Warning: Material '" << current_material << "' not found in g_materials.\n";
 			}
 		}
@@ -205,7 +205,7 @@ auto gse::model_loader::load_obj_file(const std::filesystem::path& model_path, c
 			model.meshes.emplace_back(final_vertices, final_indices, nullptr);
 		}
 		else {
-			model.meshes.emplace_back(final_vertices, final_indices, &g_materials[current_material]);
+			model.meshes.emplace_back(final_vertices, final_indices, get_material(current_material));
 		}
 
 		// Clear data to load next mesh
@@ -249,7 +249,7 @@ auto gse::model_loader::add_model(const std::vector<mesh_data>& mesh_data, const
 
 auto gse::model_loader::get_model_by_name(const std::string_view& model_name) -> const model& {
 	const auto it = std::ranges::find_if(g_models, [&model_name](const auto& pair) {
-		return pair.second->get_id()->tag() == model_name;
+		return pair.second.get_id()->tag() == model_name;
 		});
 
 	perma_assert(it != g_models.end(), "Model with the given name was not found.");

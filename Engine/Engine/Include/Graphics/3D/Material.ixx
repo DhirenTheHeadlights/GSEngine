@@ -29,7 +29,7 @@ namespace gse {
 export namespace gse {
 	class material_handle {
 	public:
-		explicit material_handle(material* material = nullptr) : m_material(material) {}
+		material_handle(material* material = nullptr) : m_material(material) {}
 
 		auto operator->() const -> const material* {
 			return m_material;
@@ -43,6 +43,7 @@ export namespace gse {
 	};
 
 	auto get_material(const std::string& name) -> material_handle;
+	auto does_material_exist(const std::string& name) -> bool;
 	auto generate_material(const unitless::vec3& ambient, const unitless::vec3& diffuse, const unitless::vec3& specular, const unitless::vec3& emission, float shininess, float optical_density, float transparency, int illumination_model, const std::string& name = "") -> material_handle;
 	auto generate_material(uuid diffuse_texture, uuid normal_texture, uuid specular_texture, const std::string& name = "") -> material_handle;
 }
@@ -53,6 +54,10 @@ std::unordered_map<std::string, std::vector<gse::material_handle>> g_materials_h
 auto gse::get_material(const std::string& name) -> material_handle {
 	perma_assert(g_materials.contains(name), "Material not found.");
 	return &g_materials[name];
+}
+
+auto gse::does_material_exist(const std::string& name) -> bool {
+	return g_materials.contains(name);
 }
 
 auto gse::generate_material(const unitless::vec3& ambient, const unitless::vec3& diffuse, const unitless::vec3& specular, const unitless::vec3& emission, const float shininess, const float optical_density, const float transparency, const int illumination_model, const std::string& name) -> material_handle {

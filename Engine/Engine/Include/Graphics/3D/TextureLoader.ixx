@@ -11,7 +11,7 @@ export namespace gse::texture_loader {
     auto get_texture(const std::filesystem::path& texture_path) -> const texture&;
 	auto get_texture_id(const std::filesystem::path& texture_path) -> uuid;
     auto get_texture(const id* texture_id) -> texture&;
-    auto get_texture(const uuid id) -> texture&;
+    auto get_texture(uuid id) -> texture&;
 }
 
 std::unordered_map<std::string, gse::texture> g_textures_by_path;

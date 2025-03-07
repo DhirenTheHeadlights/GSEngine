@@ -1,21 +1,14 @@
 cmake_minimum_required(VERSION 3.26)
 
-# Set project details and C++ standard
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 project(Engine)
 
-# Define the base directory for FetchContent dependencies
 set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/Engine/External" CACHE STRING "Base directory for FetchContent dependencies" FORCE)
 
-# Ensure the FetchContent base directory exists
-file(MAKE_DIRECTORY "${FETCHCONTENT_BASE_DIR}")
-
-# Include FetchContent module
 include(FetchContent)
 
-# Gather engine source files
 file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/*.cpp")
 file(GLOB_RECURSE ENGINE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/*.ixx")
 
@@ -50,7 +43,6 @@ else()
     set(ENGINE_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
 endif()
 
-# Configure a module file with the resource path
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/Core/Config.ixx.in
     ${CMAKE_CURRENT_BINARY_DIR}/Engine/Source/Core/Config.ixx

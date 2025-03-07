@@ -6,6 +6,7 @@ import gse.core.config;
 import gse.physics.math;
 import gse.core.object.hook;
 import gse.core.object_registry;
+import gse.graphics.material;
 import gse.graphics.render_component;
 import gse.physics.motion_component;
 import gse.graphics.debug;
@@ -81,8 +82,8 @@ export struct sphere_mesh_hook final : gse::hook<gse::entity> {
             }
         }
 
-        std::vector<gse::mesh> new_meshes;
-        new_meshes.emplace_back(vertices, indices, std::vector{ gse::texture_loader::get_texture_id(gse::config::resource_path / "Textures/sun.jpg") });
+        std::vector<gse::mesh_data> new_meshes;
+        new_meshes.emplace_back(vertices, indices, gse::generate_material(gse::texture_loader::get_texture_id(gse::config::resource_path / "Textures/sun.jpg"), -1, -1));
 
         gse::render_component new_render_component(owner_id, gse::model_loader::add_model(std::move(new_meshes), "Sphere"));
 

@@ -89,6 +89,13 @@ descriptor_config   g_descriptor_config;
 sync_objects        g_sync_objects;
 swap_chain_config   g_swap_chain_config;
 
+vk::RenderPass g_render_pass;
+
+vk::DebugUtilsMessengerEXT g_debug_utils_messenger;
+
+std::uint32_t g_current_frame = 0;
+constexpr std::uint32_t max_frames_in_flight = 2;
+
 export namespace gse::vulkan {
     auto initialize(GLFWwindow* window) -> void;
     auto get_queue_families() -> queue_family;
@@ -101,7 +108,8 @@ export namespace gse::vulkan {
 	auto get_descriptor_config()                    -> descriptor_config&;
 	auto get_sync_objects()                         -> sync_objects&;
 
-    auto get_next_image() -> std::uint32_t;
+    auto get_next_image(GLFWwindow* window) -> std::uint32_t;
+	auto get_current_frame() -> std::uint32_t;
     auto find_memory_type(std::uint32_t type_filter, vk::MemoryPropertyFlags properties) -> std::uint32_t;
 
 	auto begin_single_line_commands() -> vk::CommandBuffer;
@@ -123,6 +131,12 @@ namespace gse::vulkan {
 	auto create_image_views() -> void;
 	auto create_sync_objects() -> void;
     auto create_descriptors() -> void;
+	auto create_command_pool() -> void;
+}
+
+auto debug_callback(vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity, vk::DebugUtilsMessageTypeFlagsEXT message_type, const vk::DebugUtilsMessengerCallbackDataEXT* callback_data, void* user_data) -> vk::Bool32 {
+	std::cerr << "Validation layer: " << callback_data->pMessage << "\n";
+	return vk::False;
 }
 
 auto gse::vulkan::create_instance(GLFWwindow* window) -> void {
@@ -154,13 +168,24 @@ auto gse::vulkan::create_instance(GLFWwindow* window) -> void {
     uint32_t glfw_extension_count = 0;
     const char** glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extension_count);
 
+	std::vector extensions(glfw_extensions, glfw_extensions + glfw_extension_count);
+	extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+
+    const vk::DebugUtilsMessengerCreateInfoEXT debug_create_info(
+        {},
+        vk::DebugUtilsMessageSeverityFlagBitsEXT::eError | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose,
+        vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance,
+        reinterpret_cast<PFN_vkDebugUtilsMessengerCallbackEXT>(debug_callback)
+	);
+
     const vk::InstanceCreateInfo create_info(
         {},
         &app_info,
         static_cast<uint32_t>(validation_layers.size()),
         validation_layers.data(),
-        glfw_extension_count,
-        glfw_extensions
+        static_cast<uint32_t>(extensions.size()),
+        extensions.data(),
+		&debug_create_info
     );
 
 	auto& instance = g_instance_config.instance;
@@ -175,8 +200,16 @@ auto gse::vulkan::create_instance(GLFWwindow* window) -> void {
     }
 
 #if VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
-	VULKAN_HPP_DEFAULT_DISPATCHER.init(g_device_config.device);
+	VULKAN_HPP_DEFAULT_DISPATCHER.init(instance);
 #endif
+
+    try {
+        g_debug_utils_messenger = instance.createDebugUtilsMessengerEXT(debug_create_info);
+        std::cout << "Debug Messenger Created Successfully!\n";
+    }
+    catch (vk::SystemError& err) {
+        std::cerr << "Failed to create Debug Messenger: " << err.what() << "\n";
+    }
 
     VkSurfaceKHR temp_surface;
     assert_comment(glfwCreateWindowSurface(instance, window, nullptr, &temp_surface) == static_cast<int>(vk::Result::eSuccess), "Error creating window surface");
@@ -376,6 +409,26 @@ auto gse::vulkan::create_swap_chain(GLFWwindow* window) -> void {
     swap_chain_images = device.getSwapchainImagesKHR(swap_chain);
     swap_chain_image_format = surface_format.format;
 
+	swap_chain_frame_buffers.resize(swap_chain_images.size());
+
+    for (size_t i = 0; i < swap_chain_image_views.size(); i++) {
+        vk::ImageView attachments[] = {
+            swap_chain_image_views[i]
+        };
+
+        vk::FramebufferCreateInfo framebuffer_info(
+            {},
+            g_render_pass,
+            static_cast<uint32_t>(std::size(attachments)),
+            attachments,
+			swap_chain_extent.width,
+			swap_chain_extent.height,
+            1
+        );
+
+        swap_chain_frame_buffers[i] = device.createFramebuffer(framebuffer_info);
+    }
+
     std::cout << "Swapchain Created Successfully!\n";
 }
 
@@ -419,6 +472,8 @@ auto gse::vulkan::create_sync_objects() -> void {
     image_available_semaphore = device.createSemaphore(semaphore_info);
     render_finished_semaphore = device.createSemaphore(semaphore_info);
     in_flight_fence = device.createFence(fence_info);
+
+	std::cout << "Sync Objects Created Successfully!\n";
 }
 
 auto gse::vulkan::create_descriptors() -> void {
@@ -445,6 +500,22 @@ auto gse::vulkan::create_descriptors() -> void {
     );
 
     g_descriptor_config.descriptor_set = device.allocateDescriptorSets(alloc_info).front();
+
+	std::cout << "Descriptor Set Created Successfully!\n";
+}
+
+auto gse::vulkan::create_command_pool() -> void {
+	const auto& [physical_device, device] = g_device_config;
+	const auto [graphics_family, present_family] = find_queue_families(physical_device, g_instance_config.surface);
+
+	const vk::CommandPoolCreateInfo pool_info(
+		vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+		graphics_family.value()
+	);
+
+	g_command_config.command_pool = device.createCommandPool(pool_info);
+
+	std::cout << "Command Pool Created Successfully!\n";
 }
 
 auto gse::vulkan::shutdown() -> void {

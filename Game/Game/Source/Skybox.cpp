@@ -11,8 +11,6 @@ struct skybox_hook final : gse::hook<gse::entity> {
 		gse::registry::get_component<gse::physics::collision_component>(owner_id).bounding_box = {};
 		gse::registry::get_component<gse::physics::motion_component>(owner_id).affected_by_gravity = false;
 
-		gse::registry::get_component<gse::render_component>(owner_id).models[0].set_material("NULL");
-
 		gse::light_source_component light_source_component(owner_id);
 		auto light = std::make_unique<gse::directional_light>(gse::unitless::vec3(1.f), 1.f, gse::unitless::vec3(0.0f, -1.0f, 0.0f), 1.0f);
 		light_source_component.add_light(std::move(light));

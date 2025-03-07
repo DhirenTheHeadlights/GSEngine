@@ -21,24 +21,37 @@ gse::camera g_camera;
 export namespace gse::renderer3d {
 	auto initialize() -> void;
 	auto initialize_objects() -> void;
+	auto begin_frame() -> void;
 	auto render() -> void;
+	auto end_frame() -> void;
+	auto shutdown() -> void;
 
-	auto get_camera() -> const camera&;
+	auto get_camera() -> camera&;
+	auto get_render_pass() -> const vk::RenderPass&;
+	auto get_current_command_buffer() -> vk::CommandBuffer;
 }
 
 vk::RenderPass g_render_pass;
 vk::Pipeline g_pipeline;
 vk::PipelineLayout g_pipeline_layout;
 
-std::vector<vk::Framebuffer> g_frame_buffers;
+std::vector<vk::Framebuffer> g_deferred_frame_buffers;
 std::vector<vk::CommandBuffer> g_command_buffers;
 
 vk::Image g_position_image, g_normal_image, g_albedo_image, g_depth_image;
 vk::DeviceMemory g_position_image_memory, g_normal_image_memory, g_albedo_image_memory, g_depth_image_memory;
 vk::ImageView g_position_image_view, g_normal_image_view, g_albedo_image_view, g_depth_image_view;
 
-auto gse::renderer3d::get_camera() -> const camera& {
+auto gse::renderer3d::get_camera() -> camera& {
 	return g_camera;
+}
+
+auto gse::renderer3d::get_render_pass() -> const vk::RenderPass& {
+	return g_render_pass;
+}
+
+auto gse::renderer3d::get_current_command_buffer() -> vk::CommandBuffer {
+	return g_command_buffers[vulkan::get_current_frame()];
 }
 
 auto gse::renderer3d::initialize() -> void {
@@ -120,35 +133,6 @@ auto gse::renderer3d::initialize() -> void {
 	g_render_pass = device.createRenderPass(render_pass_info);
 
 	std::cout << "Render Pass Created Successfully!\n";
-
-	g_frame_buffers.resize(swap_chain_frame_buffers.size());
-
-	for (size_t i = 0; i < swap_chain_frame_buffers.size(); i++) {
-		std::array all_attachments = {
-			g_position_image_view, g_normal_image_view,
-			g_albedo_image_view, g_depth_image_view
-		};
-
-		vk::FramebufferCreateInfo framebuffer_info(
-			{}, g_render_pass, static_cast<std::uint32_t>(all_attachments.size()), all_attachments.data(),
-			swap_chain_extent.width, swap_chain_extent.height, 1
-		);
-
-		swap_chain_frame_buffers[i] = device.createFramebuffer(framebuffer_info);
-	}
-
-	std::cout << "G-Buffer Framebuffers Created Successfully!\n";
-
-	g_command_buffers.resize(swap_chain_frame_buffers.size());
-
-	vk::CommandBufferAllocateInfo alloc_info(
-		vulkan::get_command_config().command_pool, vk::CommandBufferLevel::ePrimary,
-		static_cast<std::uint32_t>(g_command_buffers.size())
-	);
-
-	g_command_buffers = device.allocateCommandBuffers(alloc_info);
-
-	std::cout << "Command Buffers Created Successfully!\n";
 
 	// Position
 
@@ -310,6 +294,35 @@ auto gse::renderer3d::initialize() -> void {
 		}
 	);
 
+	g_deferred_frame_buffers.resize(swap_chain_frame_buffers.size());
+
+	for (size_t i = 0; i < g_deferred_frame_buffers.size(); i++) {
+		std::array all_attachments = {
+			g_position_image_view, g_normal_image_view,
+			g_albedo_image_view, g_depth_image_view
+		};
+
+		vk::FramebufferCreateInfo framebuffer_info(
+			{}, g_render_pass, static_cast<std::uint32_t>(all_attachments.size()), all_attachments.data(),
+			swap_chain_extent.width, swap_chain_extent.height, 1
+		);
+
+		g_deferred_frame_buffers[i] = device.createFramebuffer(framebuffer_info);
+	}
+
+	std::cout << "G-Buffer Framebuffers Created Successfully!\n";
+
+	g_command_buffers.resize(swap_chain_frame_buffers.size());
+
+	vk::CommandBufferAllocateInfo alloc_info(
+		vulkan::get_command_config().command_pool, vk::CommandBufferLevel::ePrimary,
+		static_cast<std::uint32_t>(g_command_buffers.size())
+	);
+
+	g_command_buffers = device.allocateCommandBuffers(alloc_info);
+
+	std::cout << "Command Buffers Created Successfully!\n";
+
 	auto transition_image_layout = [device](const vk::Image image, const vk::ImageLayout old_layout, const vk::ImageLayout new_layout) -> void {
 		const vk::CommandBufferAllocateInfo cmd_buffer_alloc_info(
 			vulkan::get_command_config().command_pool, vk::CommandBufferLevel::ePrimary, 1
@@ -352,6 +365,18 @@ auto gse::renderer3d::initialize() -> void {
 			source_stage = vk::PipelineStageFlagBits::eTransfer;
 			destination_stage = vk::PipelineStageFlagBits::eFragmentShader;
 		}
+		else if (old_layout == vk::ImageLayout::eUndefined && new_layout == vk::ImageLayout::eColorAttachmentOptimal) {
+			barrier.srcAccessMask = {};
+			barrier.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+			source_stage = vk::PipelineStageFlagBits::eTopOfPipe;
+			destination_stage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+		}
+		else if (old_layout == vk::ImageLayout::eUndefined && new_layout == vk::ImageLayout::eDepthStencilAttachmentOptimal) {
+			barrier.srcAccessMask = {};
+			barrier.dstAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+			source_stage = vk::PipelineStageFlagBits::eTopOfPipe;
+			destination_stage = vk::PipelineStageFlagBits::eEarlyFragmentTests;
+		}
 		else {
 			throw std::invalid_argument("Unsupported layout transition!");
 		}
@@ -377,7 +402,7 @@ auto gse::renderer3d::initialize() -> void {
 
 	g_pipeline_layout = device.createPipelineLayout({});
 
-	shader geometry_shader(config::resource_path / "DeferredRendering/geometry_pass.vert", config::resource_path / "DeferredRendering/geometry_pass.frag");
+	shader geometry_shader(config::resource_path / "Shaders/DeferredRendering/geometry_pass.vert", config::resource_path / "Shaders/DeferredRendering/geometry_pass.frag");
 
 	vk::PipelineVertexInputStateCreateInfo vertex_input_info({}, 0, nullptr, 0, nullptr);
 	vk::PipelineInputAssemblyStateCreateInfo input_assembly({}, vk::PrimitiveTopology::eTriangleList, vk::False);
@@ -412,10 +437,48 @@ auto gse::renderer3d::initialize() -> void {
 	debug::set_up_imgui(g_render_pass);
 }
 
+auto gse::renderer3d::initialize_objects() -> void {
+	
+}
+
+auto gse::renderer3d::begin_frame() -> void {
+	const auto& fence = vulkan::get_sync_objects().in_flight_fence;
+	const auto& swap_chain_config = vulkan::get_swap_chain_config();
+	const auto& device = vulkan::get_device_config().device;
+
+	perma_assert(
+		device.waitForFences(1, &fence, vk::True, std::numeric_limits<std::uint64_t>::max()) == vk::Result::eSuccess,
+		"Failed to wait for fence!"
+	);
+
+	perma_assert(device.resetFences(1, &fence) == vk::Result::eSuccess, "Failed to reset fence!");
+
+	const auto image_index = vulkan::get_next_image(window::get_window());
+
+	constexpr vk::CommandBufferBeginInfo begin_info(vk::CommandBufferUsageFlagBits::eSimultaneousUse);
+	g_command_buffers[image_index].begin(begin_info);
+
+	std::array<vk::ClearValue, 4> clear_values;
+	clear_values[0].color = vk::ClearColorValue(std::array{ 0.0f, 0.0f, 0.0f, 1.0f });
+	clear_values[1].color = vk::ClearColorValue(std::array{ 0.0f, 0.0f, 0.0f, 1.0f });
+	clear_values[2].color = vk::ClearColorValue(std::array{ 0.0f, 0.0f, 0.0f, 1.0f });
+	clear_values[3].depthStencil = vk::ClearDepthStencilValue(1.0f, 0);
+
+	const vk::RenderPassBeginInfo render_pass_info(
+		g_render_pass,
+		swap_chain_config.frame_buffers[image_index],
+		{ {0, 0}, swap_chain_config.extent },
+		static_cast<std::uint32_t>(clear_values.size()), 
+		clear_values.data()
+	);
+
+	g_command_buffers[image_index].beginRenderPass(render_pass_info, vk::SubpassContents::eInline);
+}
+
 auto gse::renderer3d::render() -> void {
-	for (const auto components = registry::get_components<render_component>(); const auto component : components) {
-		for (const auto model_handle : component.models) {
-			for (const auto entry : model_handle.get_render_queue_entries()) {
+	for (const auto& components = registry::get_components<render_component>(); const auto& component : components) {
+		for (const auto& model_handle : component.models) {
+			for (const auto& entry : model_handle.get_render_queue_entries()) {
 				g_command_buffers[0].bindPipeline(vk::PipelineBindPoint::eGraphics, g_pipeline);
 
 				entry.mesh->bind(g_command_buffers[0]);
@@ -425,4 +488,42 @@ auto gse::renderer3d::render() -> void {
 	}
 
 	debug::render_imgui(g_command_buffers[0]);
+}
+
+auto gse::renderer3d::end_frame() -> void {
+	const auto current_frame = vulkan::get_current_frame();
+	g_command_buffers[current_frame].endRenderPass();
+	g_command_buffers[current_frame].end();
+
+	const auto& [image_available_semaphore, render_finished_semaphore, in_flight_fence] = vulkan::get_sync_objects();
+
+	vk::Semaphore wait_semaphores[] = { image_available_semaphore };
+	vk::PipelineStageFlags wait_stages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
+
+	const vk::SubmitInfo info(
+		1, wait_semaphores, wait_stages,
+		1, &g_command_buffers[current_frame],
+		1, &render_finished_semaphore
+	);
+
+	vulkan::get_queue_config().graphics_queue.submit(info, in_flight_fence);
+
+	const vk::PresentInfoKHR present_info(
+		1, &render_finished_semaphore,
+		1, &vulkan::get_swap_chain_config().swap_chain,
+		&current_frame
+	);
+
+	const vk::Result present_result = vulkan::get_queue_config().present_queue.presentKHR(present_info);
+	perma_assert(present_result == vk::Result::eSuccess || present_result == vk::Result::eSuboptimalKHR, "Failed to present image!");
+}
+
+auto gse::renderer3d::shutdown() -> void {
+	const auto& device = vulkan::get_device_config().device;
+	device.destroyPipeline(g_pipeline);
+	device.destroyPipelineLayout(g_pipeline_layout);
+	device.destroyRenderPass(g_render_pass);
+	for (const auto& framebuffer : g_deferred_frame_buffers) {
+		device.destroyFramebuffer(framebuffer);
+	}
 }

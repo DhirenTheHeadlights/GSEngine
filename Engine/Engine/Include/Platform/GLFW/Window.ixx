@@ -139,9 +139,6 @@ auto gse::window::initialize() -> void {
 }
 
 auto gse::window::begin_frame() -> void {
-	glViewport(0, 0, get_frame_buffer_size().x, get_frame_buffer_size().y);
-	glClear(GL_COLOR_BUFFER_BIT);
-
 	for (const auto& rendering_interface : g_rendering_interfaces) {
 		rendering_interface->on_pre_render();
 	}
@@ -190,11 +187,6 @@ auto gse::window::update() -> void {
 }
 
 auto gse::window::end_frame() -> void {
-	for (const auto& rendering_interface : g_rendering_interfaces) {
-		rendering_interface->on_post_render();
-	}
-
-	glfwSwapBuffers(g_window);
 	glfwPollEvents();
 }
 
@@ -319,9 +311,8 @@ auto gse::window::get_window_size() -> unitless::vec2i {
 }
 
 auto gse::window::get_viewport_size() -> unitless::vec2i {
-	GLint viewport[4];
-	glGetIntegerv(GL_VIEWPORT, viewport);
-	return { viewport[2], viewport[3] };
+	const auto& swap_chain_extent = vulkan::get_swap_chain_config().extent;
+	return { static_cast<int>(swap_chain_extent.width), static_cast<int>(swap_chain_extent.height) };
 }
 
 auto gse::window::set_fbo(const GLuint fbo_in, const unitless::vec2i& size) -> void {

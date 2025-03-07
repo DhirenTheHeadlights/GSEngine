@@ -79,7 +79,7 @@ struct player_hook final : gse::hook<gse::entity> {
 		motion_component.max_speed = m_max_speed;
 		motion_component.self_controlled = true;
 
-		render_component.bounding_box_meshes.emplace_back(collision_component.bounding_box.upper_bound, collision_component.bounding_box.lower_bound);
+		render_component.bounding_box_meshes.emplace_back(generate_bounding_box_mesh(collision_component.bounding_box));
 
 		gse::registry::add_component<gse::render_component>(std::move(render_component));
 		gse::registry::add_component<gse::physics::motion_component>(std::move(motion_component));
