@@ -156,7 +156,7 @@ auto gse::vulkan::create_instance(GLFWwindow* window) -> void {
 
     std::cout << "Running Vulkan " << major << "." << minor << "." << patch << "\n";
 
-    constexpr uint32_t min_supported_version = vk::makeApiVersion(1, 1, 0, 0);
+    constexpr uint32_t min_supported_version = vk::makeApiVersion(0, 1, 0, 0);
     const uint32_t selected_version = std::max(min_supported_version, highest_supported_version);
 
     const vk::ApplicationInfo app_info(

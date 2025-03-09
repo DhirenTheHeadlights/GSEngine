@@ -13,6 +13,7 @@ import gse.graphics.gui;
 import gse.graphics.renderer;
 import gse.graphics.renderer2d;
 import gse.graphics.renderer3d;
+import gse.graphics.shader_loader;
 import gse.platform.assert;
 import gse.platform.glfw.input;
 import gse.platform.glfw.window;
@@ -64,14 +65,14 @@ auto gse::set_imgui_enabled(const bool enabled) -> void {
 	g_imgui_enabled = enabled;
 }
 
-auto gse::initialize(const std::function<void()>& initialize_function,
-	const std::function<void()>& shutdown_function) -> void {
+auto gse::initialize(const std::function<void()>& initialize_function, const std::function<void()>& shutdown_function) -> void {
 	g_engine_state = engine_state::initializing;
 
 	g_game_shutdown_function = shutdown_function;
 
 	renderer::initialize();
 	gui::initialize();
+	shader_loader::load_shaders();
 
 	if (g_imgui_enabled) debug::set_up_imgui(renderer3d::get_render_pass());
 

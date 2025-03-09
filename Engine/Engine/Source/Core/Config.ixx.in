@@ -4,4 +4,5 @@ import std;
 
 export namespace gse::config {
    const std::filesystem::path resource_path = "@ENGINE_RESOURCES_PATH@";
+   const std::filesystem::path shader_spirv_path = "@SPRIV";
 }

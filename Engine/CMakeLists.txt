@@ -5,10 +5,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 project(Engine)
 
-set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/Engine/External" CACHE STRING "Base directory for FetchContent dependencies" FORCE)
-
-include(FetchContent)
-
 file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/*.cpp")
 file(GLOB_RECURSE ENGINE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/*.ixx")
 
@@ -33,117 +29,95 @@ target_sources(Engine
         FILES "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/Engine.ixx"
 )
 
-# Option for production build
-option(PRODUCTION_BUILD "Make this a production build" OFF)
+target_sources(Engine PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/Engine/Source/Core/Config.ixx")
 
-# Define the resource path based on build type
-if(PRODUCTION_BUILD)
-    set(ENGINE_RESOURCES_PATH "./Resources/")
-else()
-    set(ENGINE_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
+####################################################################################################################
+# Grab dependencies from vcpkg
+####################################################################################################################
+
+find_package(glfw3 CONFIG REQUIRED)
+find_package(Stb REQUIRED)
+find_path(miniaudio_INCLUDE_DIR "miniaudio.h")
+find_package(Freetype CONFIG REQUIRED)
+find_package(msdfgen CONFIG REQUIRED)
+find_package(Vulkan REQUIRED)
+
+# Set up Vulkan C++ module as a library
+add_library(Vulkan)
+
+target_sources(Vulkan PRIVATE
+  FILE_SET CXX_MODULES
+  BASE_DIRS ${Vulkan_INCLUDE_DIR}
+  FILES ${Vulkan_INCLUDE_DIR}/vulkan/vulkan.cppm
+)
+
+target_compile_features(Vulkan PUBLIC cxx_std_20)
+target_link_libraries(Vulkan PUBLIC Vulkan::Headers)
+
+target_compile_definitions(Vulkan PUBLIC
+  VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
+)
+
+####################################################################################################################
+
+add_subdirectory(External/imgui-docking)
+
+target_include_directories(Engine
+    PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/External/imgui-docking"
+        "${CMAKE_CURRENT_SOURCE_DIR}/External/nlohmann"
+        ${Stb_INCLUDE_DIR},
+        ${miniaudio_INCLUDE_DIR}
+)
+
+target_link_libraries(Engine PUBLIC
+    glfw
+    imgui
+    Freetype::Freetype
+    msdfgen::msdfgen
+    Vulkan
+)
+
+####################################################################################################################
+# Compile shader files
+####################################################################################################################
+
+find_program(GLSLC glslc)
+if(NOT GLSLC)
+  message(FATAL_ERROR "glslc not found! Please install the Vulkan SDK and ensure glslc is in your PATH.")
 endif()
+
+file(GLOB_RECURSE SHADER_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Shaders/*.vert" "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Shaders/*.frag")
+
+set(ENGINE_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
+set(SPIRV "")
+set(ADDED_SHADERS "")
+
+foreach(shader ${SHADER_FILES})
+    get_filename_component(shader_name ${shader} NAME_WE)
+    set(shader_output "${CMAKE_CURRENT_BINARY_DIR}/Resources/Shaders/${shader_name}.spv")
+
+    list(FIND ADDED_SHADERS ${shader_output} shader_exists)
+    if(shader_exists EQUAL -1)
+        add_custom_command(
+            OUTPUT ${shader_output}
+            COMMAND ${GLSLC} ${shader} -o ${shader_output}
+            DEPENDS ${shader}
+        )
+        list(APPEND SPIRV ${shader_output})
+        list(APPEND ADDED_SHADERS ${shader_output})
+    endif()
+endforeach()
+
+add_custom_target(Shaders DEPENDS ${SPIRV})
+add_dependencies(Engine Shaders)
 
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/Core/Config.ixx.in
     ${CMAKE_CURRENT_BINARY_DIR}/Engine/Source/Core/Config.ixx
     @ONLY
 )
-target_sources(Engine PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/Engine/Source/Core/Config.ixx")
 
-####################################################################################################################
-# FetchContent for glfw
-####################################################################################################################
-
-set(GLFW_BUILD_DOCS OFF CACHE BOOL "GLFW: Build documentation" FORCE)
-set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "GLFW: Build examples" FORCE)
-set(GLFW_BUILD_TESTS OFF CACHE BOOL "GLFW: Build tests" FORCE)
-
-FetchContent_Declare(
-    glfw
-    GIT_REPOSITORY https://github.com/glfw/glfw.git
-    GIT_TAG        3.3.8
-)
-
-FetchContent_MakeAvailable(glfw)
-
-# Include GLFW headers
-target_include_directories(Engine PUBLIC ${glfw_SOURCE_DIR}/include)
-
-####################################################################################################################
-# FetchContent for stb_image and stb_truetype
-####################################################################################################################
-
-# stb_image
-FetchContent_Declare(
-    stb_image
-    GIT_REPOSITORY https://github.com/nothings/stb.git
-    GIT_TAG        master 
-)
-
-FetchContent_MakeAvailable(stb_image)
-
-# Include stb_image headers
-target_include_directories(Engine PUBLIC ${stb_image_SOURCE_DIR})
-
-####################################################################################################################
-# FetchContent for miniaudio
-####################################################################################################################
-
-FetchContent_Declare(
-    miniaudio
-    GIT_REPOSITORY https://github.com/mackron/miniaudio.git
-    GIT_TAG        master
-)
-
-FetchContent_MakeAvailable(miniaudio)
-
-# Include miniaudio headers
-target_include_directories(Engine PUBLIC ${miniaudio_SOURCE_DIR})
-
-####################################################################################################################
-# Grab freetype, msdfgen, and Vulkan from the vcpkg registry
-####################################################################################################################
-
-find_package(Freetype CONFIG REQUIRED)
-find_package(msdfgen CONFIG REQUIRED)
-find_package(Vulkan REQUIRED)
-
-# Set up Vulkan C++ module as a library
-add_library(VulkanHppModule)
-
-target_sources(VulkanHppModule PRIVATE
-  FILE_SET CXX_MODULES
-  BASE_DIRS ${Vulkan_INCLUDE_DIR}
-  FILES ${Vulkan_INCLUDE_DIR}/vulkan/vulkan.cppm
-)
-
-target_compile_features(VulkanHppModule PUBLIC cxx_std_20)
-target_link_libraries(VulkanHppModule PUBLIC Vulkan::Headers)
-
-target_compile_definitions(VulkanHppModule PUBLIC
-  VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
-)
-
-####################################################################################################################
-
-# Add subdirectory for imgui-docking
-add_subdirectory(External/imgui-docking)
-
-# Include directories for third-party libraries
-target_include_directories(
-    Engine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/External/nlohmann"
-)
-
-# Link the third-party libraries to the engine
-target_link_libraries(Engine PUBLIC
-    glfw
-    imgui
-    Freetype::Freetype
-    msdfgen::msdfgen
-    VulkanHppModule
-)
-
-# Visual Studio specific settings
 if (MSVC)
     # Configure the MSVC runtime library
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Release>:Release>")
@@ -153,50 +127,11 @@ if (MSVC)
     add_compile_options(/arch:AVX2) # SIMD optimizations
     add_compile_options(/MP)        # Multi-core compilation
 
-    # We have to inject cpp 23 module build support using a property file to work with the current CMake version
-    SET_PROPERTY(TARGET Engine PROPERTY VS_USER_PROPS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Resources/Misc/msvc_build_stl_modules_workaround.props")
-
     # List of external targets to be grouped under "External"
-    set(EXTERNAL_TARGETS imgui VulkanHppModule)
+    set(EXTERNAL_TARGETS imgui Vulkan)
 
     # Loop through each target and set its folder property
     foreach(target ${EXTERNAL_TARGETS})
         set_property(TARGET ${target} PROPERTY FOLDER "External")
     endforeach()
-
-    # Move glfw-related projects under External/GLFW3
-    get_property(ROOT_SUBPROJECTS DIRECTORY "${glfw_SOURCE_DIR}" PROPERTY BUILDSYSTEM_TARGETS)
-    get_property(SRC_SUBPROJECTS DIRECTORY "${glfw_SOURCE_DIR}/src" PROPERTY BUILDSYSTEM_TARGETS)
-    set(GLFW_SUBPROJECTS ${ROOT_SUBPROJECTS} ${SRC_SUBPROJECTS})
-
-    # Loop through the combined list of subprojects
-    foreach(subproject ${GLFW_SUBPROJECTS})
-        set_property(TARGET ${subproject} PROPERTY FOLDER "External/GLFW3")
-    endforeach()
-
-    # Function to create source groups by full directory hierarchy and remove unnecessary prefix
-    function(create_source_groups_by_dir root_dir base_group remove_prefix)
-        file(GLOB_RECURSE files LIST_DIRECTORIES false "${root_dir}/*")
-
-        foreach(file_path ${files})
-            file(RELATIVE_PATH relative_path "${CMAKE_CURRENT_SOURCE_DIR}" "${file_path}")
-            get_filename_component(dir "${relative_path}" DIRECTORY)
-            string(REPLACE "/" "\\" group_path "${dir}")
-        
-            # Remove the unnecessary prefix
-            string(REPLACE "${remove_prefix}" "" group_path "${group_path}")
-
-            # Add base group if provided
-            if (NOT "${base_group}" STREQUAL "")
-                set(group_path "${base_group}\\${group_path}")
-            endif()
-
-            source_group("${group_path}" FILES "${file_path}")
-        endforeach()
-    endfunction()
-
-    # Call the function for source and header files
-    # Removing "Engine/Source" and "Engine/Include" from the beginning of the path
-    create_source_groups_by_dir("${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source" "Source" "Engine\\Source")
-    create_source_groups_by_dir("${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include" "Include" "Engine\\Include")
 endif()
