@@ -5,17 +5,17 @@ import urllib.request
 import winreg
 import sys
 
-def run_command(command, cwd=None, capture_output=False):
+def run_command(command, cwd = None, capture_output = False):
     """Run a shell command and stream its output live. If capture_output is True, return the output."""
     try:
         process = subprocess.Popen(
-            command, shell=True, cwd=cwd,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            command, shell = True, cwd = cwd,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text = True
         )
 
         output_lines = []
         for line in process.stdout:
-            print(line, end="")  # Print live output
+            print(line, end = "")  # Print live output
             output_lines.append(line.strip())  # Store output if needed
 
         process.wait()
@@ -24,7 +24,7 @@ def run_command(command, cwd=None, capture_output=False):
             print(f"Error running command: {command}")
             print(f"Exit Code: {process.returncode}")
             for line in process.stderr:
-                print(line, end="")  # Print error output
+                print(line, end = "")  # Print error output
             hold_window()
             return None  # Return None to indicate failure
 
@@ -75,7 +75,7 @@ def install_dependencies(vcpkg_path, dependencies):
 
 def verify_dependencies(vcpkg_path, dependencies):
     print("Verifying dependency installations...")
-    installed_output = run_command("vcpkg.exe list", cwd=vcpkg_path, capture_output=True)
+    installed_output = run_command("vcpkg.exe list", cwd = vcpkg_path, capture_output = True)
     if installed_output is None:
         print("ERROR: Failed to check installed packages.")
         hold_window()
@@ -105,20 +105,24 @@ def main():
     # Initialize submodules if .gitmodules exists.
     print("Checking for .gitmodules...")
     if path_exists(os.path.join(current_dir, ".gitmodules")):
-    	run_command("git submodule update --init --recursive", cwd=current_dir)
+    	run_command("git submodule update --init --recursive", cwd = current_dir)
 
     # Bootstrap vcpkg.
     print("Bootstrapping vcpkg...")
     vcpkg_path = os.path.join(current_dir, "Engine", "External", "vcpkg")    
     print(vcpkg_path)
     if not path_exists(os.path.join(vcpkg_path, "vcpkg.exe")):
-        run_command("bootstrap-vcpkg.bat", cwd=vcpkg_path)
+        run_command("bootstrap-vcpkg.bat", cwd = vcpkg_path)
 
     # Define dependencies.
     dependencies = [
         "msdfgen:x64-windows",
         "freetype:x64-windows",
-	"vulkan:x64-windows",
+	    "vulkan:x64-windows",
+        "glfw3:x64-windows",
+        "stb:x64-windows",
+        "miniaudio:x64-windows",
+        "nlohmann-json:x64-windows",
     ]
 
     install_dependencies(vcpkg_path, dependencies)
