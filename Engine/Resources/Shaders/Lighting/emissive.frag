@@ -1,17 +1,19 @@
-#version 430 core
+#version 450
 
-in vec2 TexCoords;
+layout (location = 0) out vec4 frag_color;
 
-out vec4 FragColor;
+layout (location = 0) in vec2 tex_coords;
 
-uniform sampler2D diffuseTexture;
-uniform sampler2D emissiveTexture; // Optional emissive texture
+layout (binding = 0) uniform sampler2D diffuse_texture;
+layout (binding = 1) uniform sampler2D emissive_texture; // Optional emissive texture
 
-uniform vec3 color;
-uniform float intensity;
+layout (push_constant) uniform PushConstants {
+    vec3 color;
+    float intensity;
+} push_constants;
 
 void main() {
-	vec3 texColor = texture(diffuseTexture, TexCoords).rgb;
-	vec3 emissive = texture(emissiveTexture, TexCoords).rgb * color * intensity;
-    FragColor = vec4(texColor + emissive, 1.0);
+    vec3 tex_color = texture(diffuse_texture, tex_coords).rgb;
+    vec3 emissive = texture(emissive_texture, tex_coords).rgb * push_constants.color * push_constants.intensity;
+    frag_color = vec4(tex_color + emissive, 1.0);
 }

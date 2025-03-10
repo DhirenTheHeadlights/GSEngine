@@ -5,6 +5,7 @@ import vulkan_hpp;
 
 import gse.graphics.renderer3d;
 import gse.graphics.renderer2d;
+import gse.graphics.shader_loader;
 import gse.platform.glfw.window;
 
 export namespace gse::renderer {
@@ -17,6 +18,7 @@ export namespace gse::renderer {
 
 auto gse::renderer::initialize() -> void {
 	window::initialize();
+	shader_loader::load_shaders();
 	renderer3d::initialize();
 	renderer2d::initialize();
 }

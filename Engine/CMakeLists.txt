@@ -91,11 +91,13 @@ file(GLOB_RECURSE SHADER_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Re
 
 set(ENGINE_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
 set(SPIRV "")
+set(SHADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/Resources/Shaders")
 set(ADDED_SHADERS "")
 
 foreach(shader ${SHADER_FILES})
     get_filename_component(shader_name ${shader} NAME_WE)
-    set(shader_output "${CMAKE_CURRENT_BINARY_DIR}/Resources/Shaders/${shader_name}.spv")
+    get_filename_component(shader_ext ${shader} EXT) # Get extension (.vert, .frag, etc.)
+    set(shader_output "${SHADER_DIR}/${shader_name}${shader_ext}.spv")
 
     list(FIND ADDED_SHADERS ${shader_output} shader_exists)
     if(shader_exists EQUAL -1)

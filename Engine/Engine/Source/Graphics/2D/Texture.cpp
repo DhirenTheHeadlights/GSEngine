@@ -187,7 +187,7 @@ auto gse::texture::create_texture_sampler() -> void {
 auto gse::texture::create_descriptor_set() -> void {
     const auto device = vulkan::get_device_config().device;
 
-    const auto [descriptor_pool, descriptor_set, descriptor_set_layout] = vulkan::get_descriptor_config();
+    const auto descriptor_pool = vulkan::get_descriptor_config().descriptor_pool;
 
     const vk::DescriptorSetAllocateInfo alloc_info(descriptor_pool, 1, &descriptor_set_layout);
     m_descriptor_set = device.allocateDescriptorSets(alloc_info).front();

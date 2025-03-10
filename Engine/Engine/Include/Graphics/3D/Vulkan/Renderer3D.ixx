@@ -1,6 +1,16 @@
-﻿export module gse.graphics.renderer3d;
+﻿module;
+
+#include <cstddef>
+
+#include "vulkan/vulkan_handles.hpp"
+#include "vulkan/vulkan_handles.hpp"
+#include "vulkan/vulkan_structs.hpp"
+#include "vulkan/vulkan_structs.hpp"
+
+export module gse.graphics.renderer3d;
 
 import std;
+import std.compat;
 import vulkan_hpp;
 
 import gse.core.config;
@@ -11,7 +21,7 @@ import gse.graphics.debug;
 import gse.graphics.mesh;
 import gse.graphics.model;
 import gse.graphics.render_component;
-import gse.graphics.shader;
+import gse.graphics.shader_loader;
 import gse.platform.glfw.window;
 import gse.platform.assert;
 import gse.platform.context;
@@ -323,7 +333,7 @@ auto gse::renderer3d::initialize() -> void {
 
 	std::cout << "Command Buffers Created Successfully!\n";
 
-	auto transition_image_layout = [device](const vk::Image image, const vk::ImageLayout old_layout, const vk::ImageLayout new_layout) -> void {
+	auto transition_image_layout = [device](const vk::Image image, const vk::ImageLayout old_layout, const vk::ImageLayout new_layout, bool depth = false) -> void {
 		const vk::CommandBufferAllocateInfo cmd_buffer_alloc_info(
 			vulkan::get_command_config().command_pool, vk::CommandBufferLevel::ePrimary, 1
 		);
@@ -345,7 +355,7 @@ auto gse::renderer3d::initialize() -> void {
 			vk::QueueFamilyIgnored,
 			image,
 			vk::ImageSubresourceRange{
-				vk::ImageAspectFlagBits::eColor,
+				depth ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor,
 				0, 1, 0, 1
 			}
 		);
@@ -398,13 +408,88 @@ auto gse::renderer3d::initialize() -> void {
 	transition_image_layout(g_position_image, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal);
 	transition_image_layout(g_normal_image, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal);
 	transition_image_layout(g_albedo_image, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal);
-	transition_image_layout(g_depth_image, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilAttachmentOptimal);
+	transition_image_layout(g_depth_image, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilAttachmentOptimal, true);
 
-	g_pipeline_layout = device.createPipelineLayout({});
+	std::array<vk::DescriptorSetLayoutBinding, 2> vertex_bindings = { {
+	{ 0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex }, // camera_ubo
+	{ 1, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex }  // model_ubo
+	} };
 
-	shader geometry_shader(config::resource_path / "Shaders/DeferredRendering/geometry_pass.vert", config::resource_path / "Shaders/DeferredRendering/geometry_pass.frag");
+	const auto& geometry_shader = shader_loader::get_shader("geometry_pass");
 
-	vk::PipelineVertexInputStateCreateInfo vertex_input_info({}, 0, nullptr, 0, nullptr);
+	vk::DescriptorSetLayoutCreateInfo vertex_layout_info({}, static_cast<std::uint32_t>(vertex_bindings.size()), vertex_bindings.data());
+	const vk::DescriptorSetLayout vertex_descriptor_set_layout = device.createDescriptorSetLayout(vertex_layout_info);
+
+	std::array<vk::DescriptorSetLayoutBinding, 1> fragment_bindings = { {
+	{ 0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment } // texture_sampler
+	} };
+
+	vk::DescriptorSetLayoutCreateInfo fragment_layout_info({}, static_cast<std::uint32_t>(fragment_bindings.size()), fragment_bindings.data());
+	const vk::DescriptorSetLayout fragment_descriptor_set_layout = device.createDescriptorSetLayout(fragment_layout_info);
+
+	std::array descriptor_set_layouts = { vertex_descriptor_set_layout, fragment_descriptor_set_layout };
+
+	const auto descriptor_pool = vulkan::get_descriptor_config().descriptor_pool;
+
+	vk::DescriptorSetAllocateInfo descriptor_alloc_info = {
+		descriptor_pool, static_cast<std::uint32_t>(descriptor_set_layouts.size()), descriptor_set_layouts.data()
+	};
+
+	std::vector descriptor_sets = device.allocateDescriptorSets(descriptor_alloc_info);
+
+	auto vertex_descriptor_set = descriptor_sets[0];
+
+	struct camera_ubo {
+		mat4 view;
+		mat4 projection;
+	};
+
+	vk::DeviceMemory camera_ubo_memory;
+	vk::Buffer camera_buffer = vulkan::create_buffer(
+		sizeof(camera_ubo), 
+		vk::BufferUsageFlagBits::eUniformBuffer,
+		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+		camera_ubo_memory
+	);
+
+	vk::DescriptorBufferInfo camera_buffer_info(camera_buffer, 0, sizeof(camera_ubo));
+
+	struct model_ubo {
+		mat4 model;
+	};
+
+	vk::DeviceMemory model_ubo_memory;
+	vk::Buffer model_buffer = vulkan::create_buffer(
+		sizeof(model_ubo),
+		vk::BufferUsageFlagBits::eUniformBuffer,
+		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+		model_ubo_memory
+	);
+
+	vk::DescriptorBufferInfo model_buffer_info(model_buffer, 0, sizeof(model_ubo));
+
+	std::array<vk::WriteDescriptorSet, 2> descriptor_writes = { {
+		vk::WriteDescriptorSet(
+			vertex_descriptor_set, 0, 0, 1, vk::DescriptorType::eUniformBuffer, nullptr, &camera_buffer_info, nullptr
+		),
+		vk::WriteDescriptorSet(
+			vertex_descriptor_set, 1, 0, 1, vk::DescriptorType::eUniformBuffer, nullptr, &model_buffer_info, nullptr
+		)
+	} };
+
+	device.updateDescriptorSets(descriptor_writes, nullptr);
+
+	g_pipeline_layout = device.createPipelineLayout({ {}, static_cast<std::uint32_t>(descriptor_set_layouts.size()), descriptor_set_layouts.data() });
+
+	vk::VertexInputBindingDescription binding_description(0, sizeof(vertex), vk::VertexInputRate::eVertex);
+
+	std::array attribute_descriptions{
+		vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32B32Sfloat, offsetof(vertex, position)),
+		vk::VertexInputAttributeDescription(1, 0, vk::Format::eR32G32B32Sfloat, offsetof(vertex, normal)),
+		vk::VertexInputAttributeDescription(2, 0, vk::Format::eR32G32Sfloat, offsetof(vertex, tex_coords))
+	};
+
+	vk::PipelineVertexInputStateCreateInfo vertex_input_info({}, 1, &binding_description, static_cast<std::uint32_t>(attribute_descriptions.size()), attribute_descriptions.data());
 	vk::PipelineInputAssemblyStateCreateInfo input_assembly({}, vk::PrimitiveTopology::eTriangleList, vk::False);
 
 	vk::Viewport viewport(0.f, 0.f, static_cast<float>(swap_chain_extent.width), static_cast<float>(swap_chain_extent.height), 0.f, 1.f);
@@ -428,9 +513,31 @@ auto gse::renderer3d::initialize() -> void {
 
 	auto shader_stages = geometry_shader.get_shader_stages();
 
+	vk::PipelineMultisampleStateCreateInfo multisampling(
+		{},
+		vk::SampleCountFlagBits::e1,   // No multi-sampling, but still needs to be valid
+		vk::False,
+		1.0f,
+		nullptr,
+		vk::False,
+		vk::False
+	);
+
 	vk::GraphicsPipelineCreateInfo pipeline_info(
-		{}, static_cast<std::uint32_t>(shader_stages.size()), shader_stages.data(), &vertex_input_info, &input_assembly,
-		nullptr, &viewport_state, &rasterizer, nullptr, &depth_stencil, &color_blending, nullptr, g_pipeline_layout, g_render_pass, 0
+		{}, 
+		static_cast<std::uint32_t>(shader_stages.size()), 
+		shader_stages.data(), 
+		&vertex_input_info, 
+		&input_assembly,
+		nullptr, 
+		&viewport_state, 
+		&rasterizer,
+		&multisampling,
+		&depth_stencil, 
+		&color_blending, 
+		nullptr, 
+		g_pipeline_layout, 
+		g_render_pass, 0
 	);
 	g_pipeline = device.createGraphicsPipeline(nullptr, pipeline_info).value;
 

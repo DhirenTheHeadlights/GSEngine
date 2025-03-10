@@ -1,3 +1,7 @@
+module;
+
+#include <cstddef>
+
 export module gse.graphics.renderer2d;
 
 import std;
@@ -8,7 +12,7 @@ import gse.core.config;
 import gse.graphics.font;
 import gse.graphics.texture;
 import gse.physics.math;
-import gse.graphics.shader;
+import gse.graphics.shader_loader;
 import gse.graphics.renderer3d;
 import gse.graphics.camera;
 import gse.platform.glfw.window;
@@ -48,8 +52,6 @@ vk::PipelineLayout 	    g_msdf_pipeline_layout;
 vk::DescriptorSetLayout g_msdf_descriptor_set_layout;
 vk::DescriptorPool      g_msdf_descriptor_pool;
 
-gse::shader             g_shader;
-gse::shader             g_msdf_shader;
 gse::mat4               g_projection;
 
 auto gse::renderer2d::initialize() -> void {
@@ -136,14 +138,7 @@ auto gse::renderer2d::initialize() -> void {
 
 	g_pipeline_layout = device.createPipelineLayout({{}, 0, nullptr, 1, &push_constant_range });
     
-    g_shader.create(
-        config::resource_path / "Shaders/2D/ui_2d_shader.vert",
-        config::resource_path / "Shaders/2D/ui_2d_shader.frag"
-    );
-    g_msdf_shader.create(
-        config::resource_path / "Shaders/2D/msdf_shader.vert",
-        config::resource_path / "Shaders/2D/msdf_shader.frag"
-    );
+	const auto& element_shader = shader_loader::get_shader("ui_2d_shader");
 
     vk::PipelineVertexInputStateCreateInfo vertex_input_info;
 	vk::PipelineInputAssemblyStateCreateInfo input_assembly({}, vk::PrimitiveTopology::eTriangleList, vk::False);
@@ -170,7 +165,7 @@ auto gse::renderer2d::initialize() -> void {
     vk::GraphicsPipelineCreateInfo pipeline_info(
         {},
 		2,
-        g_shader.get_shader_stages().data(),
+        element_shader.get_shader_stages().data(),
         &vertex_input_info,
         &input_assembly,
         nullptr,
@@ -227,10 +222,23 @@ auto gse::renderer2d::initialize() -> void {
 
 	/// Generate MSDF pipeline
 
+    const auto& msdf_shader = shader_loader::get_shader("msdf_shader");
+
+    vk::VertexInputBindingDescription binding_description{
+		0, sizeof(vertex), vk::VertexInputRate::eVertex
+	};
+
+	std::array attribute_descriptions{
+		vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32Sfloat, offsetof(vertex, position)),
+		vk::VertexInputAttributeDescription(1, 0, vk::Format::eR32G32Sfloat, offsetof(vertex, texture_coordinate))
+	};
+
     vk::PushConstantRange msdf_push_constant_range(
         vk::ShaderStageFlagBits::eFragment,
         0, sizeof(unitless::vec4)
     );
+
+	vk::PipelineVertexInputStateCreateInfo msdf_vertex_input_info({}, 1, &binding_description, static_cast<std::uint32_t>(attribute_descriptions.size()), attribute_descriptions.data());
 
 	vk::PipelineLayoutCreateInfo pipeline_layout_info({}, 0, nullptr, 1, &msdf_push_constant_range);
     g_msdf_pipeline_layout = device.createPipelineLayout(pipeline_layout_info);
@@ -257,8 +265,8 @@ auto gse::renderer2d::initialize() -> void {
     vk::GraphicsPipelineCreateInfo msdf_pipeline_info(
         {},
         2,
-        g_msdf_shader.get_shader_stages().data(),
-        &vertex_input_info,
+        msdf_shader.get_shader_stages().data(),
+        &msdf_vertex_input_info,
         &input_assembly,
         nullptr,
         &viewport_state,

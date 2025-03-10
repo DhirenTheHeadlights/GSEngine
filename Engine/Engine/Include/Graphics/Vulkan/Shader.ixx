@@ -13,6 +13,9 @@ namespace gse {
 		shader(const std::filesystem::path& vert_path, const std::filesystem::path& frag_path);
 		~shader();
 
+		shader(const shader&) = delete;
+		auto operator=(const shader&) -> shader & = delete;
+
 		auto create(const std::filesystem::path& vert_path, const std::filesystem::path& frag_path) -> void;
 		auto get_shader_stages() const -> std::array<vk::PipelineShaderStageCreateInfo, 2>;
 	private:
