@@ -1,11 +1,16 @@
-#version 430 core
+#version 450
 
-layout (location = 0) in vec3 aPos;
+layout (location = 0) in vec3 in_position;
 
-layout (location = 0) uniform mat4 light_view;
-layout (location = 1) uniform mat4 light_projection;
-layout (location = 2) uniform mat4 model;
+layout (binding = 0) uniform LightUBO {
+    mat4 light_view;
+    mat4 light_projection;
+} light_ubo;
+
+layout (binding = 1) uniform ModelUBO {
+    mat4 model;
+} model_ubo;
 
 void main() {
-    gl_Position = light_projection * light_view * model * vec4(aPos, 1.0);
+    gl_Position = light_ubo.light_projection * light_ubo.light_view * model_ubo.model * vec4(in_position, 1.0);
 }

@@ -1,35 +1,36 @@
-#version 330 core
+#version 450
 
-out vec4 FragColor;
+layout (location = 0) out vec4 frag_color;
 
-in vec2 TexCoords;
+layout (location = 0) in vec2 tex_coords;
 
-uniform sampler2D scene;
-uniform bool hdr;
-uniform float exposure;
+layout (binding = 0) uniform sampler2D scene_texture;
+layout (binding = 1) uniform sampler2D bloom_blur_texture;
 
-uniform sampler2D bloomBlur; 
-uniform bool bloom;
+layout (push_constant) uniform PushConstants {
+    float exposure;
+    bool hdr;
+    bool bloom;
+} push_constants;
 
-void main()
-{
-    vec3 result = texture(scene, TexCoords).rgb;
-     if (bloom) {
-        vec3 bloomColor = texture(bloomBlur, TexCoords).rgb;
-        result += bloomColor;
+void main() {
+    vec3 result = texture(scene_texture, tex_coords).rgb;
+
+    if (push_constants.bloom) {
+        vec3 bloom_color = texture(bloom_blur_texture, tex_coords).rgb;
+        result += bloom_color;
     }
 
     const float gamma = 2.2;
 
-    if (hdr) {
+    if (push_constants.hdr) {
         // Reinhard or exponential tone mapping
-        vec3 mapped = vec3(1.0) - exp(-result * exposure);
+        vec3 mapped = vec3(1.0) - exp(-result * push_constants.exposure);
         mapped = pow(mapped, vec3(1.0 / gamma));
-        FragColor = vec4(mapped, 1.0);
+        frag_color = vec4(mapped, 1.0);
     } else {
         // Just gamma correction
         vec3 mapped = pow(result, vec3(1.0 / gamma));
-        FragColor = vec4(mapped, 1.0);
+        frag_color = vec4(mapped, 1.0);
     }
 }
-

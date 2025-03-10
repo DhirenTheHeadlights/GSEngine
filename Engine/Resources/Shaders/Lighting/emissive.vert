@@ -1,16 +1,21 @@
-#version 330 core
+#version 450
 
-layout(location = 0) in vec3 aPosition;
-layout(location = 1) in vec3 aNormal;
-layout(location = 2) in vec2 aTexCoords;
+layout (location = 0) in vec3 in_position;
+layout (location = 1) in vec3 in_normal;
+layout (location = 2) in vec2 in_tex_coords;
 
-out vec2 TexCoords;
+layout (location = 0) out vec2 tex_coords;
 
-uniform mat4 model;
-uniform mat4 view;
-uniform mat4 projection;
+layout (binding = 0) uniform CameraUBO {
+    mat4 view;
+    mat4 projection;
+} camera_ubo;
+
+layout (binding = 1) uniform ModelUBO {
+    mat4 model;
+} model_ubo;
 
 void main() {
-    gl_Position = projection * view * model * vec4(aPosition, 1.0);
-    TexCoords = aTexCoords;
+    gl_Position = camera_ubo.projection * camera_ubo.view * model_ubo.model * vec4(in_position, 1.0);
+    tex_coords = in_tex_coords;
 }

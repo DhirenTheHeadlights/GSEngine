@@ -105,3 +105,20 @@ auto gse::vulkan::end_single_line_commands(const vk::CommandBuffer command_buffe
 	graphics_queue.waitIdle();
 	g_device_config.device.freeCommandBuffers(g_command_config.command_pool, command_buffer);
 }
+
+auto gse::vulkan::create_buffer(const vk::DeviceSize size, const vk::BufferUsageFlags usage, const vk::MemoryPropertyFlags properties, vk::DeviceMemory& buffer_memory) -> vk::Buffer {
+	const vk::BufferCreateInfo buffer_info(
+		{}, size, usage, vk::SharingMode::eExclusive
+	);
+
+	const vk::Buffer buffer = g_device_config.device.createBuffer(buffer_info);
+	const vk::MemoryRequirements mem_requirements = g_device_config.device.getBufferMemoryRequirements(buffer);
+	const vk::MemoryAllocateInfo alloc_info(
+		mem_requirements.size, find_memory_type(mem_requirements.memoryTypeBits, properties)
+	);
+
+	buffer_memory = g_device_config.device.allocateMemory(alloc_info);
+	g_device_config.device.bindBufferMemory(buffer, buffer_memory, 0);
+
+	return buffer;
+}

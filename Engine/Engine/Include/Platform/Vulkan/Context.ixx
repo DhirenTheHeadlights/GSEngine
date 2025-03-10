@@ -51,9 +51,7 @@ struct command_config {
 };
 
 struct descriptor_config {
-    vk::DescriptorPool descriptor_pool;
-    vk::DescriptorSet descriptor_set;
-    vk::DescriptorSetLayout descriptor_set_layout;
+	vk::DescriptorPool descriptor_pool;
 };
 
 struct sync_objects {
@@ -114,6 +112,7 @@ export namespace gse::vulkan {
 
 	auto begin_single_line_commands() -> vk::CommandBuffer;
 	auto end_single_line_commands(vk::CommandBuffer command_buffer) -> void;
+	auto create_buffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties, vk::DeviceMemory& buffer_memory) -> vk::Buffer;
 
     auto shutdown() -> void;
 }
@@ -160,9 +159,9 @@ auto gse::vulkan::create_instance(GLFWwindow* window) -> void {
     const uint32_t selected_version = std::max(min_supported_version, highest_supported_version);
 
     const vk::ApplicationInfo app_info(
-        "My Vulkan Renderer", 1,                // App name and version
-        "No Engine", 1,                         // Engine name and version
-        selected_version                        // Vulkan API version
+        "GSEngine", 1,
+        "GSEngine", 1,
+        selected_version
     );
 
     uint32_t glfw_extension_count = 0;
@@ -178,6 +177,19 @@ auto gse::vulkan::create_instance(GLFWwindow* window) -> void {
         reinterpret_cast<PFN_vkDebugUtilsMessengerCallbackEXT>(debug_callback)
 	);
 
+    constexpr vk::ValidationFeatureEnableEXT enables[] = {
+		vk::ValidationFeatureEnableEXT::eBestPractices,
+		vk::ValidationFeatureEnableEXT::eGpuAssisted,
+		vk::ValidationFeatureEnableEXT::eDebugPrintf
+	};
+
+	const vk::ValidationFeaturesEXT features(
+		std::size(enables),
+		enables,
+		0, nullptr,
+        &debug_create_info
+	);
+
     const vk::InstanceCreateInfo create_info(
         {},
         &app_info,
@@ -185,7 +197,7 @@ auto gse::vulkan::create_instance(GLFWwindow* window) -> void {
         validation_layers.data(),
         static_cast<uint32_t>(extensions.size()),
         extensions.data(),
-		&debug_create_info
+		&features
     );
 
 	auto& instance = g_instance_config.instance;
@@ -477,29 +489,12 @@ auto gse::vulkan::create_sync_objects() -> void {
 }
 
 auto gse::vulkan::create_descriptors() -> void {
-    const auto& device = g_device_config.device;
-
-	constexpr vk::DescriptorSetLayoutBinding texture_binding(
-        0, vk::DescriptorType::eCombinedImageSampler, 1,
-        vk::ShaderStageFlagBits::eFragment
-    );
-
-	const vk::DescriptorSetLayoutCreateInfo layout_info({}, 1, &texture_binding);
-    g_descriptor_config.descriptor_set_layout = device.createDescriptorSetLayout(layout_info);
-
-    const vk::DescriptorPoolSize pool_size(
+    constexpr vk::DescriptorPoolSize pool_size(
         vk::DescriptorType::eCombinedImageSampler, 100  // Support up to 100 textures
     );
 
     const vk::DescriptorPoolCreateInfo pool_info({}, 100, 1, &pool_size);
-    g_descriptor_config.descriptor_pool = device.createDescriptorPool(pool_info);
-
-    const vk::DescriptorSetAllocateInfo alloc_info(
-        g_descriptor_config.descriptor_pool,
-        1, &g_descriptor_config.descriptor_set_layout
-    );
-
-    g_descriptor_config.descriptor_set = device.allocateDescriptorSets(alloc_info).front();
+    g_descriptor_config.descriptor_pool = g_device_config.device.createDescriptorPool(pool_info);
 
 	std::cout << "Descriptor Set Created Successfully!\n";
 }
@@ -523,7 +518,6 @@ auto gse::vulkan::shutdown() -> void {
 
     device.waitIdle();
     device.destroyDescriptorPool(g_descriptor_config.descriptor_pool);
-    device.destroyDescriptorSetLayout(g_descriptor_config.descriptor_set_layout);
 
     device.destroySemaphore(g_sync_objects.image_available_semaphore);
     device.destroySemaphore(g_sync_objects.render_finished_semaphore);

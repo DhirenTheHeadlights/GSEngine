@@ -73,7 +73,7 @@ auto gse::shader_loader::load_shaders() -> void {
 
 	for (const auto& info : shader_files | std::views::values) {
 		perma_assert(!info.vert_path.empty() && !info.frag_path.empty(), "Missing shader file");
-		g_shaders[info] = shader(info.vert_path, info.frag_path);
+		g_shaders.emplace(std::piecewise_construct, std::forward_as_tuple(info), std::forward_as_tuple(info.vert_path, info.frag_path));
 		std::cout << "Loaded shader: " << info.name << '\n';
 	}
 }
@@ -84,7 +84,7 @@ auto gse::shader_loader::get_shader(const std::filesystem::path& vert_path, cons
 	return it->second;
 }
 
-auto gse::shader_loader::get_shader(const std::string_view name) {
+auto gse::shader_loader::get_shader(const std::string_view name) -> const shader& {
 	const auto it = g_shaders.find(name);
 	perma_assert(it != g_shaders.end(), "Shader not found");
 	return it->second;

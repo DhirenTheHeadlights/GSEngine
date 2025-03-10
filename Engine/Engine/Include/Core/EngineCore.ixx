@@ -13,7 +13,6 @@ import gse.graphics.gui;
 import gse.graphics.renderer;
 import gse.graphics.renderer2d;
 import gse.graphics.renderer3d;
-import gse.graphics.shader_loader;
 import gse.platform.assert;
 import gse.platform.glfw.input;
 import gse.platform.glfw.window;
@@ -72,7 +71,6 @@ auto gse::initialize(const std::function<void()>& initialize_function, const std
 
 	renderer::initialize();
 	gui::initialize();
-	shader_loader::load_shaders();
 
 	if (g_imgui_enabled) debug::set_up_imgui(renderer3d::get_render_pass());
 

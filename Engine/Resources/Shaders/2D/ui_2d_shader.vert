@@ -1,22 +1,22 @@
 #version 450
 
-layout (location = 0) in vec2 inPosition;
-layout (location = 1) in vec2 inTexCoord;
+layout (location = 0) in vec2 in_position;
+layout (location = 1) in vec2 in_tex_coord;
 
 layout (push_constant) uniform PushConstants {
     vec2 position;
     vec2 size;
     vec4 color;
     vec4 uv_rect;
-} push;
+} push_constants;
 
-layout (location = 0) out vec2 fragTexCoord;
-layout (location = 1) out vec4 fragColor;
+layout (location = 0) out vec2 frag_tex_coord;
+layout (location = 1) out vec4 frag_color;
 
 void main() {
-    vec2 scaledPos = inPosition * push.size + push.position;
-    gl_Position = vec4(scaledPos, 0.0, 1.0);
+    vec2 scaled_pos = in_position * push_constants.size + push_constants.position;
+    gl_Position = vec4(scaled_pos, 0.0, 1.0);
     
-    fragTexCoord = push.uv_rect.xy + inTexCoord * push.uv_rect.zw;
-    fragColor = push.color;
+    frag_tex_coord = push_constants.uv_rect.xy + in_tex_coord * push_constants.uv_rect.zw;
+    frag_color = push_constants.color;
 }
