@@ -24,7 +24,7 @@ GSEngine is a custom game engine built from the ground up with the goal of provi
 ## Getting Started
 
 To get started, clone the repository.
-Run the `build.bat` file to build the project. This will generate a `build` folder with the project files.
+Run the `build.bat` file to automatically clone and build vcpkg. The required dependencies will be downloaded and compiled.
 
 ### Code Structure
 
