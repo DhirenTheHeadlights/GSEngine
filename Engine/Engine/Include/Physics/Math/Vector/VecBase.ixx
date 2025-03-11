@@ -441,7 +441,7 @@ constexpr auto gse::vec::operator==(const storage<T, N>& lhs, const storage<T, N
         if (!(lhs[i] == rhs[i]))
             return false;
     return true;
-}
+}   
 
 template <typename T, int N>
 constexpr auto gse::vec::operator!=(const storage<T, N>& lhs, const storage<T, N>& rhs) -> bool {
