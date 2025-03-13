@@ -179,9 +179,9 @@ auto gse::model_loader::load_obj_file(const std::filesystem::path& model_path, c
 					else if (tokens[0] == "Ni") optical_density = std::stof(tokens[1]);
 					else if (tokens[0] == "d") transparency = std::stof(tokens[1]);
 					else if (tokens[0] == "illum") illumination_model = std::stoi(tokens[1]);
-					else if (tokens[0] == "map_Kd") texture_loader::get_texture(diffuse_texture).load_from_file(directory_path + tokens[1], TODO);
-					else if (tokens[0] == "map_Bump") texture_loader::get_texture(normal_texture).load_from_file(directory_path + tokens[1], TODO);
-					else if (tokens[0] == "map_Ks") texture_loader::get_texture(specular_texture).load_from_file(directory_path + tokens[1], TODO);
+					else if (tokens[0] == "map_Kd") texture_loader::get_texture(diffuse_texture).load_from_file(directory_path + tokens[1]);
+					else if (tokens[0] == "map_Bump") texture_loader::get_texture(normal_texture).load_from_file(directory_path + tokens[1]);
+					else if (tokens[0] == "map_Ks") texture_loader::get_texture(specular_texture).load_from_file(directory_path + tokens[1]);
 				}
 			}
 		}

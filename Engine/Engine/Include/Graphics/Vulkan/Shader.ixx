@@ -1,6 +1,6 @@
 module;
 
-#include <spirv_reflect.h>
+#include <SPIRV-Reflect/spirv_reflect.h>
 
 export module gse.graphics.shader;
 
@@ -23,6 +23,7 @@ namespace gse {
 		auto create(const std::filesystem::path& vert_path, const std::filesystem::path& frag_path) -> void;
 		auto get_shader_stages() const -> std::array<vk::PipelineShaderStageCreateInfo, 2>;
 		auto get_descriptor_set_layout() const -> vk::DescriptorSetLayout { return m_descriptor_set_layout; }
+		auto get_descriptor_sets() const -> const std::vector<vk::DescriptorSet>& { return m_descriptor_sets; }
 	private:
 		static auto create_shader_module(const std::vector<char>& code) -> vk::ShaderModule;
 
@@ -52,7 +53,50 @@ auto gse::shader::create(const std::filesystem::path& vert_path, const std::file
 	m_vert_module = create_shader_module(vert_code);
 	m_frag_module = create_shader_module(frag_code);
 
-	
+	std::vector<vk::DescriptorSetLayoutBinding> bindings;
+
+	auto extract_bindings = [&](const std::vector<char>& spirv_code) {
+		SpvReflectShaderModule reflect_module;
+		const SpvReflectResult result = spvReflectCreateShaderModule(spirv_code.size(), spirv_code.data(), &reflect_module);
+		perma_assert(result == SPV_REFLECT_RESULT_SUCCESS, "Failed to parse SPIR-V!");
+
+		uint32_t binding_count = 0;
+		spvReflectEnumerateDescriptorBindings(&reflect_module, &binding_count, nullptr);
+		std::vector<SpvReflectDescriptorBinding*> reflect_bindings(binding_count);
+		spvReflectEnumerateDescriptorBindings(&reflect_module, &binding_count, reflect_bindings.data());
+
+		for (const auto* binding : reflect_bindings) {
+			vk::DescriptorSetLayoutBinding layout_binding(
+				binding->binding,													// Binding index
+				static_cast<vk::DescriptorType>(binding->descriptor_type),			// Descriptor type
+				1,																	// Descriptor count
+				static_cast<vk::ShaderStageFlagBits>(reflect_module.shader_stage)	// Shader stage
+			);
+			bindings.push_back(layout_binding);
+		}
+
+		spvReflectDestroyShaderModule(&reflect_module);
+		};
+
+	extract_bindings(vert_code);
+	extract_bindings(frag_code);
+
+	const vk::DescriptorSetLayoutCreateInfo layout_info(
+		{},
+		bindings.size(),
+		bindings.data()
+	);
+
+	m_descriptor_set_layout = vulkan::get_device_config().device.createDescriptorSetLayout(layout_info);
+
+	const auto descriptor_pool = vulkan::get_descriptor_config().descriptor_pool;
+	const vk::DescriptorSetAllocateInfo alloc_info(
+		descriptor_pool,
+		1,
+		&m_descriptor_set_layout
+	);
+
+	m_descriptor_sets = vulkan::get_device_config().device.allocateDescriptorSets(alloc_info);
 }
 
 auto gse::shader::get_shader_stages() const -> std::array<vk::PipelineShaderStageCreateInfo, 2> {

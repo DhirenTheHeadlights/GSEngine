@@ -43,19 +43,16 @@ find_package(msdfgen CONFIG REQUIRED)
 find_package(Vulkan REQUIRED)
 
 # Set up Vulkan C++ module as a library
-add_library(Vulkan)
+add_library(VulkanModule)
 
-target_sources(Vulkan PRIVATE
+target_compile_features(VulkanModule PUBLIC cxx_std_20)
+target_compile_definitions(VulkanModule PUBLIC VULKAN_HPP_DISPATCH_LOADER_DYNAMIC)
+target_link_libraries(VulkanModule PUBLIC Vulkan::Vulkan)
+
+target_sources(VulkanModule PRIVATE
   FILE_SET CXX_MODULES
   BASE_DIRS ${Vulkan_INCLUDE_DIR}
   FILES ${Vulkan_INCLUDE_DIR}/vulkan/vulkan.cppm
-)
-
-target_compile_features(Vulkan PUBLIC cxx_std_20)
-target_link_libraries(Vulkan PUBLIC Vulkan::Headers)
-
-target_compile_definitions(Vulkan PUBLIC
-  VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
 )
 
 set(VULKAN_SDK_PATH $ENV{VULKAN_SDK})
@@ -63,10 +60,6 @@ set(VULKAN_SDK_PATH $ENV{VULKAN_SDK})
 if(NOT VULKAN_SDK_PATH)
     message(FATAL_ERROR "Vulkan SDK not found! Make sure the VULKAN_SDK environment variable is set.")
 endif()
-
-target_include_directories(Vulkan PUBLIC
-    "${VULKAN_SDK_PATH}/Include"
-)
 
 ####################################################################################################################
 
@@ -78,6 +71,8 @@ target_include_directories(Engine
         "${CMAKE_CURRENT_SOURCE_DIR}/External/nlohmann"
         ${Stb_INCLUDE_DIR},
         ${miniaudio_INCLUDE_DIR}
+        "${VULKAN_SDK_PATH}/Include"
+        "${VULKAN_SDK_PATH}/Source"
 )
 
 target_link_libraries(Engine PUBLIC
@@ -85,7 +80,7 @@ target_link_libraries(Engine PUBLIC
     imgui
     Freetype::Freetype
     msdfgen::msdfgen
-    Vulkan
+    VulkanModule
 )
 
 ####################################################################################################################
@@ -140,7 +135,7 @@ if (MSVC)
     add_compile_options(/MP)        # Multi-core compilation
 
     # List of external targets to be grouped under "External"
-    set(EXTERNAL_TARGETS imgui Vulkan)
+    set(EXTERNAL_TARGETS imgui VulkanModule)
 
     # Loop through each target and set its folder property
     foreach(target ${EXTERNAL_TARGETS})
