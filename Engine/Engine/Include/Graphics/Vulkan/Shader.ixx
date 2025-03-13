@@ -1,3 +1,7 @@
+module;
+
+#include <spirv_reflect.h>
+
 export module gse.graphics.shader;
 
 import vulkan_hpp;
@@ -18,11 +22,15 @@ namespace gse {
 
 		auto create(const std::filesystem::path& vert_path, const std::filesystem::path& frag_path) -> void;
 		auto get_shader_stages() const -> std::array<vk::PipelineShaderStageCreateInfo, 2>;
+		auto get_descriptor_set_layout() const -> vk::DescriptorSetLayout { return m_descriptor_set_layout; }
 	private:
 		static auto create_shader_module(const std::vector<char>& code) -> vk::ShaderModule;
 
 		vk::ShaderModule m_vert_module;
 		vk::ShaderModule m_frag_module;
+
+		vk::DescriptorSetLayout m_descriptor_set_layout;
+		std::vector<vk::DescriptorSet> m_descriptor_sets;
 	};
 
 	auto read_file(const std::filesystem::path& path) -> std::vector<char>;
@@ -43,6 +51,8 @@ auto gse::shader::create(const std::filesystem::path& vert_path, const std::file
 	const auto frag_code = read_file(frag_path);
 	m_vert_module = create_shader_module(vert_code);
 	m_frag_module = create_shader_module(frag_code);
+
+	
 }
 
 auto gse::shader::get_shader_stages() const -> std::array<vk::PipelineShaderStageCreateInfo, 2> {
