@@ -2,11 +2,6 @@
 
 #include <cstddef>
 
-#include "vulkan/vulkan_handles.hpp"
-#include "vulkan/vulkan_handles.hpp"
-#include "vulkan/vulkan_structs.hpp"
-#include "vulkan/vulkan_structs.hpp"
-
 export module gse.graphics.renderer3d;
 
 import std;

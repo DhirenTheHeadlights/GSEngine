@@ -461,7 +461,7 @@ auto gse::renderer2d::draw_text(const font& font, const std::string& text, const
 
     g_command_buffer.pushConstants(g_msdf_pipeline_layout, vk::ShaderStageFlagBits::eFragment, 0, sizeof(msdf_push_constants), &push_constants);
 
-    const vk::DescriptorSet text_descriptor_set = font.get_texture().get_descriptor_set();
+	const vk::DescriptorSet text_descriptor_set = shader_loader::get_shader("msdf_shader").get_descriptor_set();
     g_command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, g_msdf_pipeline_layout, 0, 1, &text_descriptor_set, 0, nullptr);
 
     float start_x = position.x.as_default_unit();
