@@ -9,8 +9,8 @@ module gse.graphics.texture;
 import std;
 import vulkan_hpp;
 
-gse::texture::texture(const std::filesystem::path& filepath) : identifiable(filepath.string()), m_filepath(filepath) {
-    load_from_file(filepath);
+gse::texture::texture(const std::filesystem::path& filepath, const vk::DescriptorSetLayout& layout) : identifiable(filepath.string()), m_filepath(filepath) {
+    load_from_file(filepath, layout);
 }
 
 gse::texture::~texture() {
@@ -21,7 +21,7 @@ gse::texture::~texture() {
     device.freeMemory(m_texture_image_memory);
 }
 
-auto gse::texture::load_from_file(const std::filesystem::path& filepath) -> void {
+auto gse::texture::load_from_file(const std::filesystem::path& filepath, const vk::DescriptorSetLayout& layout) -> void {
     stbi_set_flip_vertically_on_load(true);
     unsigned char* data = stbi_load(filepath.string().c_str(), &m_size.x, &m_size.y, &m_channels, 0);
     perma_assert(data, "Failed to load texture image.");
@@ -31,7 +31,7 @@ auto gse::texture::load_from_file(const std::filesystem::path& filepath) -> void
 
     create_texture_image_view();
     create_texture_sampler();
-    create_descriptor_set();
+    create_descriptor_set(layout);
 }
 
 auto gse::texture::load_from_memory(const std::span<std::uint8_t>& data, const int width, const int height, const int channels) -> void {
@@ -184,7 +184,7 @@ auto gse::texture::create_texture_sampler() -> void {
     m_texture_sampler = vulkan::get_device_config().device.createSampler(sampler_info);
 }
 
-auto gse::texture::create_descriptor_set() -> void {
+auto gse::texture::create_descriptor_set(const vk::DescriptorSetLayout& descriptor_set_layout) -> void {
     const auto device = vulkan::get_device_config().device;
 
     const auto descriptor_pool = vulkan::get_descriptor_config().descriptor_pool;

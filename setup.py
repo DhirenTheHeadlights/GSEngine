@@ -118,7 +118,6 @@ def main():
     dependencies = [
         "msdfgen:x64-windows",
         "freetype:x64-windows",
-	    "vulkan:x64-windows",
         "glfw3:x64-windows",
         "stb:x64-windows",
         "miniaudio:x64-windows",

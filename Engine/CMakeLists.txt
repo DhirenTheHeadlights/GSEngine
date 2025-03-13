@@ -58,6 +58,16 @@ target_compile_definitions(Vulkan PUBLIC
   VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
 )
 
+set(VULKAN_SDK_PATH $ENV{VULKAN_SDK})
+
+if(NOT VULKAN_SDK_PATH)
+    message(FATAL_ERROR "Vulkan SDK not found! Make sure the VULKAN_SDK environment variable is set.")
+endif()
+
+target_include_directories(Vulkan PUBLIC
+    "${VULKAN_SDK_PATH}/Include"
+)
+
 ####################################################################################################################
 
 add_subdirectory(External/imgui-docking)
