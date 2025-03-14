@@ -13,7 +13,10 @@ import gse.core.component;
 import gse.graphics.render_component;
 import gse.network.socket;
 import gse.platform.perma_assert;
-import gse.physics;
+import gse.physics.collision_component;
+import gse.physics.math;
+import gse.physics.motion_component;
+
 
 
 
@@ -23,6 +26,7 @@ export namespace gse::network {
 	auto shutdown() -> void;
 	auto bind_socket() -> void;
 	auto send_components(address target_address, udp_socket socket) -> void;
+	auto receive_components(address target_address, udp_socket socket) -> void;
 }
 
 namespace gse::network {
@@ -30,7 +34,7 @@ namespace gse::network {
 	template <typename T, int N> auto write_to_buffer(uint8_t*& ptr, const gse::unitless::vec_t<T, N>& data) -> void;
 	template <typename T, int N> auto write_to_buffer(uint8_t*& ptr, const gse::vec_t<T, N>& data) -> void;
 	template <typename T, typename Field> auto read_from_buffer(uint8_t* buffer, T& component, Field T::* field) -> void;
-	auto serialize_motion_component(uint8_t* buffer, const gse::physics::motion_component& motion) -> void;
+	auto serialize_motion_component(uint8_t* buffer, const gse::physics::motion_component& motion, uint8_t(&buffer_debug)[256]) -> void;
 	auto deserialize_component(uint8_t* buffer) -> void;
 	auto serialize_collision_component(uint8_t* buffer, const gse::physics::collision_component& collision) -> void;
 	auto serialize_render_component(uint8_t* buffer, const gse::render_component& render) -> void;
@@ -57,7 +61,7 @@ auto gse::network::write_to_buffer(uint8_t*& ptr, const T& data) -> void {
 
 template <typename T, int N>
 auto gse::network::write_to_buffer(uint8_t*& ptr, const gse::unitless::vec_t<T, N>& data) -> void {
-	memcpy(ptr, data.data(), sizeof(T) * N);
+	memcpy(ptr, value_ptr(data), sizeof(T) * N);
 	ptr += sizeof(T) * N;
 }
 
@@ -81,7 +85,7 @@ auto gse::network::read_from_buffer(uint8_t* buffer, T& component, Field T::* me
 auto gse::network::send_components(address target_address, udp_socket socket) -> void {
 	uint8_t buffer[256];
 	for (const auto& component : gse::registry::get_components<gse::render_component>()) {
-		memset(buffer, 0, sizeof(buffer));
+		std::fill(std::begin(buffer), std::end(buffer), 0);
 		serialize_render_component(buffer, component);
 		packet new_packet{ buffer, sizeof(buffer) };
 		deserialize_component(buffer);
@@ -89,14 +93,14 @@ auto gse::network::send_components(address target_address, udp_socket socket) ->
 
 	}
 	for (const auto& component : gse::registry::get_components<gse::physics::motion_component>()) {
-		memset(buffer, 0, sizeof(buffer));
-		serialize_motion_component(buffer, component);		
+		std::fill(std::begin(buffer), std::end(buffer), 0);
+		serialize_motion_component(buffer, component, buffer);		
 		packet new_packet{ buffer, sizeof(buffer) };
 		deserialize_component(buffer);
 		//socket.send_data(new_packet, target_address);
 	}
 	for (const auto& component : gse::registry::get_components<gse::physics::collision_component>()) {
-		memset(buffer, 0, sizeof(buffer));
+		std::fill(std::begin(buffer), std::end(buffer), 0);
 		serialize_collision_component(buffer, component);		
 		packet new_packet{ buffer, sizeof(buffer) };
 		deserialize_component(buffer);
@@ -105,10 +109,17 @@ auto gse::network::send_components(address target_address, udp_socket socket) ->
 
 }
 
-auto gse::network::serialize_motion_component(uint8_t* buffer, const gse::physics::motion_component& motion) -> void{
+auto gse::network::receive_components(address target_address, udp_socket socket) -> void {
+	uint8_t buffer[256];
+	packet incoming_packet{ buffer, sizeof(buffer) };
+	socket.receive_data(incoming_packet, target_address);
+	deserialize_component(buffer);
+}
+
+auto gse::network::serialize_motion_component(uint8_t* buffer, const gse::physics::motion_component& motion, uint8_t(&buffer_debug)[256]) -> void{
     uint8_t* ptr = buffer;
     *ptr++ = 1; // Packet type: Motion Update
-	write_to_buffer(ptr, sizeof(gse::physics::motion_component));
+	write_to_buffer(ptr, static_cast<uint8_t>(sizeof(gse::physics::motion_component) + 1));
     write_to_buffer(ptr, motion.parent_id);
 	write_to_buffer(ptr, motion.current_position);
 	write_to_buffer(ptr, motion.current_velocity);
@@ -130,7 +141,7 @@ auto gse::network::serialize_motion_component(uint8_t* buffer, const gse::physic
 auto gse::network::deserialize_component(uint8_t* ptr) -> void {
 	switch (ptr[0]) {
 	case (1): {
-		gse::physics::motion_component& motion = gse::registry::get_component<gse::physics::motion_component>(ptr[1]);
+		gse::physics::motion_component& motion = gse::registry::get_component<gse::physics::motion_component>(ptr[2]);
 		read_from_buffer<gse::physics::motion_component>(ptr, motion, &gse::physics::motion_component::parent_id);
 		read_from_buffer<gse::physics::motion_component>(ptr, motion, &gse::physics::motion_component::current_position);
 		read_from_buffer<gse::physics::motion_component>(ptr, motion, &gse::physics::motion_component::current_velocity);
@@ -151,10 +162,10 @@ auto gse::network::deserialize_component(uint8_t* ptr) -> void {
 		}
 
 	case (2): {
-		gse::physics::collision_component& collision = gse::registry::get_component<gse::physics::collision_component>(ptr[1]);
+		gse::physics::collision_component& collision = gse::registry::get_component<gse::physics::collision_component>(ptr[2]);
 		read_from_buffer<gse::physics::collision_component>(ptr, collision, &gse::physics::collision_component::parent_id);
-		read_from_buffer<gse::physics::collision_component>(ptr, collision, &gse::physics::collision_component::bounding_box);
-		read_from_buffer<gse::physics::collision_component>(ptr, collision, &gse::physics::collision_component::oriented_bounding_box);
+		//read_from_buffer<gse::physics::collision_component>(ptr, collision, &gse::physics::collision_component::bounding_box);
+		//read_from_buffer<gse::physics::collision_component>(ptr, collision, &gse::physics::collision_component::oriented_bounding_box);
 		read_from_buffer<gse::physics::collision_component>(ptr, collision, &gse::physics::collision_component::collision_information);
 		read_from_buffer<gse::physics::collision_component>(ptr, collision, &gse::physics::collision_component::resolve_collisions);
 		break;
@@ -162,13 +173,9 @@ auto gse::network::deserialize_component(uint8_t* ptr) -> void {
 
 
 	case (3): {
-		gse::render_component& render = gse::registry::get_component<gse::render_component>(ptr[1]);
-		read_from_buffer<gse::render_component>(ptr, render, &gse::render_component::parent_id);
-		read_from_buffer<gse::render_component>(ptr, render, &gse::render_component::models);
-		read_from_buffer<gse::render_component>(ptr, render, &gse::render_component::bounding_box_meshes);
-		read_from_buffer<gse::render_component>(ptr, render, &gse::render_component::center_of_mass);
-		read_from_buffer<gse::render_component>(ptr, render, &gse::render_component::render);
-		read_from_buffer<gse::render_component>(ptr, render, &gse::render_component::render_bounding_boxes);
+		//gse::render_component& render = gse::registry::get_component<gse::render_component>(ptr[1]);
+		//read_from_buffer<gse::render_component>(ptr, render, &gse::render_component::parent_id);
+		//read_from_buffer<gse::render_component>(ptr, render, &gse::render_component::center_of_mass);
 		break;
 		}
 	}
@@ -177,7 +184,7 @@ auto gse::network::deserialize_component(uint8_t* ptr) -> void {
 auto gse::network::serialize_collision_component(uint8_t* buffer, const gse::physics::collision_component& collision) -> void {
 	uint8_t* ptr = buffer;
 	*ptr++ = 2; // Packet type: Collision Update
-	write_to_buffer(ptr, sizeof(gse::physics::collision_component));
+	write_to_buffer(ptr, static_cast < uint8_t>(sizeof(gse::physics::collision_component) + 1));
 	write_to_buffer(ptr, collision.parent_id);
 	write_to_buffer(ptr, collision.bounding_box);
 	write_to_buffer(ptr, collision.oriented_bounding_box);
@@ -188,7 +195,7 @@ auto gse::network::serialize_collision_component(uint8_t* buffer, const gse::phy
 auto gse::network::serialize_render_component(uint8_t* buffer, const gse::render_component& render) -> void {
 	uint8_t* ptr = buffer;
 	*ptr++ = 3; // Packet type: Render Update
-	write_to_buffer(ptr, sizeof(gse::render_component));
+	write_to_buffer(ptr, static_cast < uint8_t>(sizeof(gse::render_component) + 1));
 	write_to_buffer(ptr, render.parent_id);
 	write_to_buffer(ptr, render.models);
 	write_to_buffer(ptr, render.bounding_box_meshes);

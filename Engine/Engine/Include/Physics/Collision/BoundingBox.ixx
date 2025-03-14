@@ -17,6 +17,13 @@ export namespace gse {
 			if (!epsilon_equal_index(collision_normal, unitless::vec3(), static_cast<int>(axis::y))) { return axis::y; }
 			return axis::z; // Assume it is the z axis
 		}
+
+		constexpr auto operator==(collision_information& other) -> bool {
+			return (this->colliding == other.colliding) && (this->collision_normal == other.collision_normal) && (this->penetration == other.penetration) && (this->collision_point == other.collision_point);
+		}
+		constexpr auto operator!=(collision_information& other) -> bool {
+			return !((this->colliding == other.colliding) && (this->collision_normal == other.collision_normal) && (this->penetration == other.penetration) && (this->collision_point == other.collision_point));
+		}
 	};
 
 	struct axis_aligned_bounding_box {
@@ -31,6 +38,9 @@ export namespace gse {
 
 		auto get_center() const->vec3<length>;
 		auto get_size() const->vec3<length>;
+
+		constexpr auto operator==(axis_aligned_bounding_box& rhs) -> bool;
+		constexpr auto operator!=(axis_aligned_bounding_box& rhs) -> bool;
 	};
 
 	auto get_left_bound(const axis_aligned_bounding_box& bounding_box) -> vec3<length>;
@@ -51,6 +61,8 @@ export namespace gse {
 		auto update_axes() -> void;
 		auto get_corners() const -> std::array<vec3<length>, 8>;
 		auto get_face_vertices(axis axis, bool positive) const -> std::array<vec3<length>, 4>;
+		constexpr auto operator==(oriented_bounding_box& rhs) -> bool;
+		constexpr auto operator!=(oriented_bounding_box& rhs) -> bool;
 	};
 }
 
@@ -110,6 +122,13 @@ auto gse::axis_aligned_bounding_box::get_size() const -> vec3<length> {
 	return upper_bound - lower_bound;
 }
 
+constexpr auto gse::axis_aligned_bounding_box::operator==(axis_aligned_bounding_box& rhs) -> bool {
+	return (this->upper_bound == rhs.upper_bound) && (this->lower_bound == rhs.lower_bound);
+}
+constexpr auto gse::axis_aligned_bounding_box::operator!=(axis_aligned_bounding_box& rhs) -> bool {
+	return !((this->upper_bound == rhs.upper_bound) && (this->lower_bound == rhs.lower_bound));
+}
+
 /// OBB
 
 gse::oriented_bounding_box::oriented_bounding_box(const axis_aligned_bounding_box& aabb, const quat& orientation) : center(aabb.get_center()), size(aabb.get_size()), orientation(orientation) {}
@@ -157,5 +176,13 @@ auto gse::oriented_bounding_box::get_face_vertices(axis axis, const bool positiv
 		face_center - axes[j] * extent_j - axes[k] * extent_k,
 		face_center - axes[j] * extent_j + axes[k] * extent_k
 	};
+}
+
+constexpr auto gse::oriented_bounding_box::operator==(oriented_bounding_box& rhs) -> bool {
+	return (this->center == rhs.center) && (this->size == rhs.size) && (this->orientation == rhs.orientation) && (this->axes == rhs.axes);
+}
+
+constexpr auto gse::oriented_bounding_box::operator!=(oriented_bounding_box& rhs) -> bool {
+	return !((this->center == rhs.center) && (this->size == rhs.size) && (this->orientation == rhs.orientation) && (this->axes == rhs.axes));
 }
 
