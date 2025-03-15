@@ -61,6 +61,17 @@ if(NOT VULKAN_SDK_PATH)
     message(FATAL_ERROR "Vulkan SDK not found! Make sure the VULKAN_SDK environment variable is set.")
 endif()
 
+# Add SPIRV-Reflect
+
+file(TO_CMAKE_PATH "${VULKAN_SDK_PATH}/Source/SPIRV-Reflect" SPIRV_REFLECT_DIR)
+
+add_library(SPIRV-Reflect STATIC
+    "${SPIRV_REFLECT_DIR}/spirv_reflect.c"
+    "${SPIRV_REFLECT_DIR}/spirv_reflect.h"
+)
+
+target_include_directories(SPIRV-Reflect PUBLIC "${SPIRV_REFLECT_DIR}")
+
 ####################################################################################################################
 
 add_subdirectory(External/imgui-docking)
@@ -81,6 +92,7 @@ target_link_libraries(Engine PUBLIC
     Freetype::Freetype
     msdfgen::msdfgen
     VulkanModule
+    SPIRV-Reflect
 )
 
 ####################################################################################################################
@@ -135,7 +147,7 @@ if (MSVC)
     add_compile_options(/MP)        # Multi-core compilation
 
     # List of external targets to be grouped under "External"
-    set(EXTERNAL_TARGETS imgui VulkanModule)
+    set(EXTERNAL_TARGETS imgui VulkanModule SPIRV-Reflect)
 
     # Loop through each target and set its folder property
     foreach(target ${EXTERNAL_TARGETS})
