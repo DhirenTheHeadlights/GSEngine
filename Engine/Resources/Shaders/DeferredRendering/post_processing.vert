@@ -1,4 +1,7 @@
 #version 450
+#extension GL_KHR_vulkan_glsl : enable
+
+layout (constant_id = 99) const int descriptor_layout_type = 5;
 
 layout (location = 0) in vec2 in_position;
 layout (location = 1) in vec2 in_tex_coords;
