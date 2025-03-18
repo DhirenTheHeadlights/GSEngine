@@ -439,7 +439,7 @@ auto gse::renderer2d::draw_quad(const vec2<length>& position, const vec2<length>
 auto gse::renderer2d::draw_text(const font& font, const std::string& text, const vec2<length>& position, const float scale, const unitless::vec4& color) -> void {
     if (text.empty()) return;
 
-    constexpr vk::ClearValue clear_value = vk::ClearColorValue(std::array{0.0f, 0.0f, 0.0f, 1.0f});
+    constexpr vk::ClearValue clear_value = vk::ClearColorValue(std::array{ 0.0f, 0.0f, 0.0f, 1.0f });
 
     const vk::RenderPassBeginInfo render_pass_info(
         g_render_pass,
@@ -488,6 +488,6 @@ auto gse::renderer2d::draw_text(const font& font, const std::string& text, const
     g_command_buffer.end();
 
     constexpr vk::SubmitInfo submit_info({}, {}, {}, 1, &g_command_buffer);
-    auto [graphics_queue, present_queue] = vulkan::get_queue_config();
+    auto& [graphics_queue, present_queue] = vulkan::get_queue_config();
     graphics_queue.submit(submit_info, nullptr);
 }
