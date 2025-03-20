@@ -12,6 +12,7 @@ import gse.core.object_registry;
 import gse.core.component;
 import gse.graphics.render_component;
 import gse.network.socket;
+import gse.network.transfer_templates;
 import gse.platform.perma_assert;
 import gse.physics.collision_component;
 import gse.physics.math;
@@ -34,10 +35,12 @@ namespace gse::network {
 	template <typename T, int N> auto write_to_buffer(uint8_t*& ptr, const gse::unitless::vec_t<T, N>& data) -> void;
 	template <typename T, int N> auto write_to_buffer(uint8_t*& ptr, const gse::vec_t<T, N>& data) -> void;
 	template <typename T, typename Field> auto read_from_buffer(uint8_t* buffer, T& component, Field T::* field) -> void;
-	auto serialize_motion_component(uint8_t* buffer, const gse::physics::motion_component& motion, uint8_t(&buffer_debug)[256]) -> void;
+	auto serialize_motion_component(uint8_t* buffer, const gse::physics::motion_component& motion) -> void;
 	auto deserialize_component(uint8_t* buffer) -> void;
 	auto serialize_collision_component(uint8_t* buffer, const gse::physics::collision_component& collision) -> void;
 	auto serialize_render_component(uint8_t* buffer, const gse::render_component& render) -> void;
+
+	bool network_down = false;
 }
 
 auto gse::network::initialize() -> void {
@@ -48,6 +51,7 @@ auto gse::network::initialize() -> void {
 }
 
 auto gse::network::shutdown() -> void {
+	network_down = true;
 	if (const auto result = WSACleanup(); result != 0) {
 		std::cerr << "WSACleanup failed: " << result << '\n';
 	}
@@ -83,6 +87,10 @@ auto gse::network::read_from_buffer(uint8_t* buffer, T& component, Field T::* me
 
 
 auto gse::network::send_components(address target_address, udp_socket socket) -> void {
+	if (network_down) {
+		return;
+	}
+
 	uint8_t buffer[256];
 	for (const auto& component : gse::registry::get_components<gse::render_component>()) {
 		std::fill(std::begin(buffer), std::end(buffer), 0);
@@ -94,7 +102,7 @@ auto gse::network::send_components(address target_address, udp_socket socket) ->
 	}
 	for (const auto& component : gse::registry::get_components<gse::physics::motion_component>()) {
 		std::fill(std::begin(buffer), std::end(buffer), 0);
-		serialize_motion_component(buffer, component, buffer);		
+		serialize_motion_component(buffer, component);		
 		packet new_packet{ buffer, sizeof(buffer) };
 		deserialize_component(buffer);
 		//socket.send_data(new_packet, target_address);
@@ -116,58 +124,95 @@ auto gse::network::receive_components(address target_address, udp_socket socket)
 	deserialize_component(buffer);
 }
 
-auto gse::network::serialize_motion_component(uint8_t* buffer, const gse::physics::motion_component& motion, uint8_t(&buffer_debug)[256]) -> void{
-    uint8_t* ptr = buffer;
-    *ptr++ = 1; // Packet type: Motion Update
-	write_to_buffer(ptr, static_cast<uint8_t>(sizeof(gse::physics::motion_component) + 1));
-    write_to_buffer(ptr, motion.parent_id);
-	write_to_buffer(ptr, motion.current_position);
-	write_to_buffer(ptr, motion.current_velocity);
-	write_to_buffer(ptr, motion.current_acceleration);
-	write_to_buffer(ptr, motion.current_torque);
-	write_to_buffer(ptr, motion.orientation);
-	write_to_buffer(ptr, motion.angular_velocity);
-	write_to_buffer(ptr, motion.angular_acceleration);
-	write_to_buffer(ptr, motion.max_speed);
-	write_to_buffer(ptr, motion.mass);
-	write_to_buffer(ptr, motion.most_recent_y_collision);
-	write_to_buffer(ptr, motion.moment_of_inertia);
-	write_to_buffer(ptr, motion.affected_by_gravity);
-	write_to_buffer(ptr, motion.moving);
-	write_to_buffer(ptr, motion.airborne);
-	write_to_buffer(ptr, motion.self_controlled);
+auto gse::network::serialize_motion_component(uint8_t* buffer, const gse::physics::motion_component& motion) -> void{
+		uint8_t* ptr = buffer;
+		*ptr++ = 1; // Packet type: Motion Update
+
+		motion_component_transfer transfer_data{
+			motion.parent_id,
+			motion.current_position,
+			motion.current_velocity,
+			motion.current_acceleration,
+			motion.current_torque,
+			motion.orientation,
+			motion.angular_velocity,
+			motion.angular_acceleration,
+			motion.max_speed,
+			motion.mass,
+			motion.most_recent_y_collision,
+			motion.moment_of_inertia,
+			motion.affected_by_gravity,
+			motion.moving,
+			motion.airborne,
+			motion.self_controlled
+		};
+
+		write_to_buffer(ptr, transfer_data);
 }
+
+
+auto gse::network::serialize_collision_component(uint8_t* buffer, const gse::physics::collision_component& collision) -> void {
+	uint8_t* ptr = buffer;
+	*ptr++ = 2; // Packet type: Collision Update
+
+	collision_component_transfer transfer_data{
+		collision.parent_id,
+		collision.bounding_box,
+		collision.oriented_bounding_box,
+		collision.collision_information,
+		collision.resolve_collisions
+	};
+
+	write_to_buffer(ptr, transfer_data);
+}
+
+auto gse::network::serialize_render_component(uint8_t* buffer, const gse::render_component& render) -> void {
+	uint8_t* ptr = buffer;
+	*ptr++ = 3; // Packet type: Render Update
+	render_component_transfer transfer_data{
+		render.parent_id,
+		render.models,
+		render.render,
+		render.render_bounding_boxes
+	};
+
+	write_to_buffer(ptr, transfer_data);
+} 
 
 auto gse::network::deserialize_component(uint8_t* ptr) -> void {
 	switch (ptr[0]) {
 	case (1): {
-		gse::physics::motion_component& motion = gse::registry::get_component<gse::physics::motion_component>(ptr[2]);
-		read_from_buffer<gse::physics::motion_component>(ptr, motion, &gse::physics::motion_component::parent_id);
-		read_from_buffer<gse::physics::motion_component>(ptr, motion, &gse::physics::motion_component::current_position);
-		read_from_buffer<gse::physics::motion_component>(ptr, motion, &gse::physics::motion_component::current_velocity);
-		read_from_buffer<gse::physics::motion_component>(ptr, motion, &gse::physics::motion_component::current_acceleration);
-		read_from_buffer<gse::physics::motion_component>(ptr, motion, &gse::physics::motion_component::current_torque);
-		read_from_buffer<gse::physics::motion_component>(ptr, motion, &gse::physics::motion_component::orientation);
-		read_from_buffer<gse::physics::motion_component>(ptr, motion, &gse::physics::motion_component::angular_velocity);
-		read_from_buffer<gse::physics::motion_component>(ptr, motion, &gse::physics::motion_component::angular_acceleration);
-		read_from_buffer<gse::physics::motion_component>(ptr, motion, &gse::physics::motion_component::max_speed);
-		read_from_buffer<gse::physics::motion_component>(ptr, motion, &gse::physics::motion_component::mass);
-		read_from_buffer<gse::physics::motion_component>(ptr, motion, &gse::physics::motion_component::most_recent_y_collision);
-		read_from_buffer<gse::physics::motion_component>(ptr, motion, &gse::physics::motion_component::moment_of_inertia);
-		read_from_buffer<gse::physics::motion_component>(ptr, motion, &gse::physics::motion_component::affected_by_gravity);
-		read_from_buffer<gse::physics::motion_component>(ptr, motion, &gse::physics::motion_component::moving);
-		read_from_buffer<gse::physics::motion_component>(ptr, motion, &gse::physics::motion_component::airborne);
-		read_from_buffer<gse::physics::motion_component>(ptr, motion, &gse::physics::motion_component::self_controlled);
+		motion_component_transfer transfer_data;
+		std::memcpy(&transfer_data, ptr + 1, sizeof(transfer_data));
+
+		gse::physics::motion_component& motion = gse::registry::get_component<gse::physics::motion_component>(transfer_data.parent_id);
+		motion.current_position = transfer_data.current_position;
+		motion.current_velocity = transfer_data.current_velocity;
+		motion.current_acceleration = transfer_data.current_acceleration;
+		motion.current_torque = transfer_data.current_torque;
+		motion.orientation = transfer_data.orientation;
+		motion.angular_velocity = transfer_data.angular_velocity;
+		motion.angular_acceleration = transfer_data.angular_acceleration;
+		motion.max_speed = transfer_data.max_speed;
+		motion.mass = transfer_data.mass;
+		motion.most_recent_y_collision = transfer_data.most_recent_y_collision;
+		motion.moment_of_inertia = transfer_data.moment_of_inertia;
+		motion.affected_by_gravity = transfer_data.affected_by_gravity;
+		motion.moving = transfer_data.moving;
+		motion.airborne = transfer_data.airborne;
+		motion.self_controlled = transfer_data.self_controlled;
 		break;
 		}
 
 	case (2): {
-		gse::physics::collision_component& collision = gse::registry::get_component<gse::physics::collision_component>(ptr[2]);
-		read_from_buffer<gse::physics::collision_component>(ptr, collision, &gse::physics::collision_component::parent_id);
-		//read_from_buffer<gse::physics::collision_component>(ptr, collision, &gse::physics::collision_component::bounding_box);
-		//read_from_buffer<gse::physics::collision_component>(ptr, collision, &gse::physics::collision_component::oriented_bounding_box);
-		read_from_buffer<gse::physics::collision_component>(ptr, collision, &gse::physics::collision_component::collision_information);
-		read_from_buffer<gse::physics::collision_component>(ptr, collision, &gse::physics::collision_component::resolve_collisions);
+		collision_component_transfer transfer_data;
+		std::memcpy(&transfer_data, ptr + 1, sizeof(transfer_data));
+
+		gse::physics::collision_component& collision = gse::registry::get_component<gse::physics::collision_component>(transfer_data.parent_id);
+		collision.bounding_box = transfer_data.bounding_box;
+		collision.oriented_bounding_box = transfer_data.oriented_bounding_box;
+		collision.collision_information = transfer_data.collision_information;
+		collision.resolve_collisions = transfer_data.resolve_collisions;
 		break;
 		}
 
@@ -180,26 +225,3 @@ auto gse::network::deserialize_component(uint8_t* ptr) -> void {
 		}
 	}
 }
-
-auto gse::network::serialize_collision_component(uint8_t* buffer, const gse::physics::collision_component& collision) -> void {
-	uint8_t* ptr = buffer;
-	*ptr++ = 2; // Packet type: Collision Update
-	write_to_buffer(ptr, static_cast < uint8_t>(sizeof(gse::physics::collision_component) + 1));
-	write_to_buffer(ptr, collision.parent_id);
-	write_to_buffer(ptr, collision.bounding_box);
-	write_to_buffer(ptr, collision.oriented_bounding_box);
-	write_to_buffer(ptr, collision.collision_information);
-	write_to_buffer(ptr, collision.resolve_collisions);
-}
-
-auto gse::network::serialize_render_component(uint8_t* buffer, const gse::render_component& render) -> void {
-	uint8_t* ptr = buffer;
-	*ptr++ = 3; // Packet type: Render Update
-	write_to_buffer(ptr, static_cast < uint8_t>(sizeof(gse::render_component) + 1));
-	write_to_buffer(ptr, render.parent_id);
-	write_to_buffer(ptr, render.models);
-	write_to_buffer(ptr, render.bounding_box_meshes);
-	write_to_buffer(ptr, render.center_of_mass);
-	write_to_buffer(ptr, render.render);
-	write_to_buffer(ptr, render.render_bounding_boxes);
-} 

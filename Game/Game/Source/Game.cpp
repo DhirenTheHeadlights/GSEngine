@@ -169,5 +169,6 @@ auto game::render() -> bool {
 }
 
 auto game::close() -> bool {
+
 	return true;
 }

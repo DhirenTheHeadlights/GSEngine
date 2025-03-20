@@ -9,6 +9,7 @@ export module gse.network.socket;
 import gse.platform.perma_assert;
 
 export namespace gse::network {
+	
 	struct packet {
 		std::uint8_t* data;
 		std::size_t size;
