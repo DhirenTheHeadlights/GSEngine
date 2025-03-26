@@ -12,13 +12,14 @@ import gse.graphics.debug;
 import gse.graphics.gui;
 import gse.graphics.renderer2d;
 import gse.graphics.renderer3d;
+import gse.network;
 import gse.platform.perma_assert;
 import gse.platform.glfw.input;
 import gse.platform.glfw.window;
 
 export namespace gse {
 	auto initialize(const std::function<void()>& initialize_function, const std::function<void()>& shutdown_function) -> void;
-	auto run(const std::function<bool()>& update_function, const std::function<bool()>& render_function) -> void;
+	auto run(const std::function<bool()>& update_function = {}, const std::function<bool()>& render_function = {}) -> void;
 
 	/// Request the engine to shut down after the current frame.
 	auto request_shutdown() -> void;
@@ -71,6 +72,8 @@ auto gse::initialize(const std::function<void()>& initialize_function,
 
 	renderer3d::initialize();
 	renderer2d::initialize();
+
+	network::initialize();
 
 	initialize_function();
 

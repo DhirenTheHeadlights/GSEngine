@@ -156,7 +156,6 @@ auto game::update() -> bool {
 			return false;
 		}
 	}
-	//gse::network::send_components({}, {});
 	return true;
 }
 

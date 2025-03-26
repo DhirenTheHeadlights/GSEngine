@@ -11,21 +11,16 @@ export module gse.network;
 import gse.core.object_registry;
 import gse.core.component;
 import gse.graphics.render_component;
-import gse.network.socket;
+export import gse.network.socket;
 import gse.network.transfer_templates;
 import gse.platform.perma_assert;
 import gse.physics.collision_component;
 import gse.physics.math;
 import gse.physics.motion_component;
 
-
-
-
-
 export namespace gse::network {
 	auto initialize() -> void;
 	auto shutdown() -> void;
-	auto bind_socket() -> void;
 	auto send_components(address target_address, udp_socket socket) -> void;
 	auto receive_components(address target_address, udp_socket socket) -> void;
 }
