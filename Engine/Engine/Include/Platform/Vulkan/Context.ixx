@@ -291,15 +291,19 @@ auto gse::vulkan::create_logical_device(vk::SurfaceKHR surface) -> void {
         queue_create_infos.push_back(queue_create_info);
     }
 
-    vk::PhysicalDeviceFeatures supported_features = physical_device.getFeatures();
+    vk::PhysicalDeviceFeatures2 features2{};
+    vk::PhysicalDeviceVulkan12Features vulkan12_features{};
+    vk::PhysicalDeviceVulkan13Features vulkan13_features{};
 
-    vk::PhysicalDeviceFeatures device_features{};
-    if (supported_features.samplerAnisotropy) {
-        device_features.samplerAnisotropy = vk::True;
-    }
-    else {
-        std::cerr << "Warning: samplerAnisotropy not supported by selected GPU.\n";
-    }
+    features2.pNext = &vulkan12_features;
+    vulkan12_features.pNext = &vulkan13_features;
+
+    g_device_config.physical_device.getFeatures2(&features2);
+
+    features2.features.samplerAnisotropy = vk::True;
+    vulkan12_features.timelineSemaphore = vk::True;
+    vulkan12_features.bufferDeviceAddress = vk::True;
+    vulkan13_features.synchronization2 = vk::True;
 
     const std::vector device_extensions = {
         vk::KHRSwapchainExtensionName
@@ -311,9 +315,9 @@ auto gse::vulkan::create_logical_device(vk::SurfaceKHR surface) -> void {
         queue_create_infos.data(),
         0, nullptr,
         static_cast<uint32_t>(device_extensions.size()),
-        device_extensions.data(),
-        &device_features
+        device_extensions.data()
     );
+	create_info.pNext = &features2;
 
     device = physical_device.createDevice(create_info);
     g_graphics_queue = device.getQueue(graphics_family.value(), 0);
