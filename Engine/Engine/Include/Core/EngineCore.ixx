@@ -80,7 +80,6 @@ auto gse::initialize(const std::function<void()>& initialize_function, const std
 }
 
 auto update(const std::function<bool()>& update_function) -> void {
-
 	if (g_imgui_enabled) gse::add_timer("Engine::update");
 
 	gse::window::update();
