@@ -136,7 +136,6 @@ auto game::initialize() -> bool {
 	gse::scene_loader::queue_scene_trigger(gse::get_id("Scene1"), [] { return gse::input::get_keyboard().keys[GLFW_KEY_F1].pressed; });
 	gse::scene_loader::queue_scene_trigger(gse::get_id("Scene2"), [] { return gse::input::get_keyboard().keys[GLFW_KEY_F2].pressed; });
 
-	gse::network::initialize();
 	return true;
 }
 
@@ -157,7 +156,7 @@ auto game::update() -> bool {
 			return false;
 		}
 	}
-	gse::network::send_components({}, {});
+	//gse::network::send_components({}, {});
 	return true;
 }
 
@@ -169,6 +168,5 @@ auto game::render() -> bool {
 }
 
 auto game::close() -> bool {
-
 	return true;
 }
