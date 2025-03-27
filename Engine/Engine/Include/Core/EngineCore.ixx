@@ -18,8 +18,8 @@ import gse.platform.glfw.input;
 import gse.platform.glfw.window;
 
 export namespace gse {
-	auto initialize(const std::function<void()>& initialize_function, const std::function<void()>& shutdown_function) -> void;
-	auto run(const std::function<bool()>& update_function = {}, const std::function<bool()>& render_function = {}) -> void;
+	auto initialize(const std::function<void()>& initialize_function, const std::function<void()>& shutdown_function, bool rendering = true) -> void;
+	auto run(const std::function<bool()>& update_function = {}, const std::function<bool()>& render_function = {}, bool rendering = true) -> void;
 
 	/// Request the engine to shut down after the current frame.
 	auto request_shutdown() -> void;
@@ -58,20 +58,21 @@ auto gse::set_imgui_enabled(const bool enabled) -> void {
 	g_imgui_enabled = enabled;
 }
 
-auto gse::initialize(const std::function<void()>& initialize_function,
-	const std::function<void()>& shutdown_function) -> void {
+auto gse::initialize(const std::function<void()>& initialize_function, const std::function<void()>& shutdown_function, bool rendering) -> void {
 	g_engine_state = engine_state::initializing;
 
 	g_game_shutdown_function = shutdown_function;
+		
+	if (rendering) {
+		window::initialize();
 
-	window::initialize();
+		gui::initialize();
 
-	gui::initialize();
+		if (g_imgui_enabled) debug::set_up_imgui();
 
-	if (g_imgui_enabled) debug::set_up_imgui();
-
-	renderer3d::initialize();
-	renderer2d::initialize();
+		renderer3d::initialize();
+		renderer2d::initialize();
+	}
 
 	network::initialize();
 
@@ -81,15 +82,17 @@ auto gse::initialize(const std::function<void()>& initialize_function,
 }
 
 namespace {
-	auto update(const std::function<bool()>& update_function) -> void {
+	auto update(const std::function<bool()>& update_function, bool rendering) -> void {
+			
+		if (rendering) {
+			if (g_imgui_enabled) gse::add_timer("Engine::update");
 
-		if (g_imgui_enabled) gse::add_timer("Engine::update");
+			gse::window::update();
 
-		gse::window::update();
+			if (g_imgui_enabled) gse::debug::update_imgui();
 
-		if (g_imgui_enabled) gse::debug::update_imgui();
-
-		gse::gui::update();
+			gse::gui::update();
+		}
 
 		gse::main_clock::update();
 
@@ -134,14 +137,14 @@ namespace {
 	}
 }
 
-auto gse::run(const std::function<bool()>& update_function, const std::function<bool()>& render_function) -> void {
+auto gse::run(const std::function<bool()>& update_function, const std::function<bool()>& render_function, bool rendering) -> void {
 	assert_comment(g_engine_state == engine_state::running, "Engine is not initialized");
 
 	scene_loader::set_engine_initialized(true);
 
-	while (g_engine_state == engine_state::running && !window::is_window_closed()) {
-		update(update_function);
-		render(render_function);
+	while (g_engine_state == engine_state::running && (!rendering || !window::is_window_closed())) {
+		update(update_function, rendering);
+		if (rendering) { render(render_function); }
 	}
 
 	shutdown();

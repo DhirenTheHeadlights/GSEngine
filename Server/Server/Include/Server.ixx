@@ -10,7 +10,6 @@ export module gse.server;
 
 import game;
 import gse;
-import gse.network.socket;
 import std;
 
 export namespace gse::server {
@@ -41,7 +40,9 @@ std::unordered_map<std::string, client_info> clients;
 
 
 auto gse::server::initialize() -> void {
-	gse::initialize(game::initialize, {});
+	game::initialize();
+
+	gse::network::initialize_socket(server_socket);
 	uint32_t port = 12345; // Default port for the server
 	server_socket.bind_socket(port);
 
@@ -95,7 +96,6 @@ auto gse::server::generate_new_player_id() -> uint32_t {
 }
 
 auto gse::server::run() -> bool {
-
 	//gse::server::game_update(update_function);
 	game::update();
 	gse::server::network_update();

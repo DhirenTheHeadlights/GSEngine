@@ -28,20 +28,15 @@ export namespace gse::network {
 	};
 
 	struct udp_socket {
-		udp_socket();
+		udp_socket() = default;
 		~udp_socket();
 
 		auto send_data(const packet& packet, const address& address) const -> socket_state;
 		auto receive_data(packet& packet, address& sender_address) const -> socket_state;
 		auto bind_socket(uint16_t port) -> bool;
 
-		std::uint64_t socket_id;
+		std::uint64_t socket_id = INVALID_SOCKET;
 	};
-}
-
-gse::network::udp_socket::udp_socket() : socket_id(INVALID_SOCKET) {
-	socket_id = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	perma_assert(socket_id != INVALID_SOCKET, "Failed to create socket.");
 }
 
 gse::network::udp_socket::~udp_socket() {

@@ -21,8 +21,13 @@ import gse.physics.motion_component;
 export namespace gse::network {
 	auto initialize() -> void;
 	auto shutdown() -> void;
-	auto send_components(address target_address, udp_socket socket) -> void;
+	auto send_components(address target_address, udp_socket socket, 
+		std::vector<gse::render_component>& render_components, 
+		std::vector<gse::physics::motion_component>& motion_components, 
+		std::vector<gse::physics::collision_component>& collision_components) -> void;
 	auto receive_components(address target_address, udp_socket socket) -> void;
+	auto client_network_update(address target_address, udp_socket socket) -> void;
+	auto initialize_socket(udp_socket& socket) -> void;
 }
 
 namespace gse::network {
@@ -81,33 +86,34 @@ auto gse::network::read_from_buffer(uint8_t* buffer, T& component, Field T::* me
 
 
 
-auto gse::network::send_components(address target_address, udp_socket socket) -> void {
+auto gse::network::send_components(address target_address, udp_socket socket, 
+	std::vector<gse::render_component>& render_components, 
+	std::vector<gse::physics::motion_component>& motion_components, 
+	std::vector<gse::physics::collision_component>& collision_components) -> void {
+
 	if (network_down) {
 		return;
 	}
 
 	uint8_t buffer[256];
-	for (const auto& component : gse::registry::get_components<gse::render_component>()) {
+	for (const auto& component : render_components) {
 		std::fill(std::begin(buffer), std::end(buffer), 0);
 		serialize_render_component(buffer, component);
 		packet new_packet{ buffer, sizeof(buffer) };
-		deserialize_component(buffer);
-		//socket.send_data(new_packet, target_address);
+		socket.send_data(new_packet, target_address);
 
 	}
-	for (const auto& component : gse::registry::get_components<gse::physics::motion_component>()) {
+	for (const auto& component : motion_components) {
 		std::fill(std::begin(buffer), std::end(buffer), 0);
 		serialize_motion_component(buffer, component);		
 		packet new_packet{ buffer, sizeof(buffer) };
-		deserialize_component(buffer);
-		//socket.send_data(new_packet, target_address);
+		socket.send_data(new_packet, target_address);
 	}
-	for (const auto& component : gse::registry::get_components<gse::physics::collision_component>()) {
+	for (const auto& component : collision_components) {
 		std::fill(std::begin(buffer), std::end(buffer), 0);
 		serialize_collision_component(buffer, component);		
 		packet new_packet{ buffer, sizeof(buffer) };
-		deserialize_component(buffer);
-		//socket.send_data(new_packet, target_address);
+		socket.send_data(new_packet, target_address);
 	}
 
 }
@@ -117,6 +123,12 @@ auto gse::network::receive_components(address target_address, udp_socket socket)
 	packet incoming_packet{ buffer, sizeof(buffer) };
 	socket.receive_data(incoming_packet, target_address);
 	deserialize_component(buffer);
+}
+
+auto gse::network::initialize_socket(udp_socket& null_socket) -> void {
+	perma_assert(null_socket.socket_id == INVALID_SOCKET, "Socket already initialized.");
+	null_socket.socket_id = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	perma_assert(null_socket.socket_id != INVALID_SOCKET, "Failed to create socket.");
 }
 
 auto gse::network::serialize_motion_component(uint8_t* buffer, const gse::physics::motion_component& motion) -> void{
