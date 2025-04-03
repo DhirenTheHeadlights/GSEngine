@@ -8,6 +8,7 @@ module;
 
 export module gse.network;
 
+import std;
 import gse.core.object_registry;
 import gse.core.component;
 import gse.graphics.render_component;
@@ -22,11 +23,11 @@ export namespace gse::network {
 	auto initialize() -> void;
 	auto shutdown() -> void;
 	auto send_components(address target_address, udp_socket socket, 
-		std::vector<gse::render_component>& render_components, 
-		std::vector<gse::physics::motion_component>& motion_components, 
-		std::vector<gse::physics::collision_component>& collision_components) -> void;
+		std::vector<gse::render_component>& render_components = gse::registry::get_components<gse::render_component>(),
+		std::vector<gse::physics::motion_component>& motion_components = gse::registry::get_components<gse::physics::motion_component>(),
+		std::vector<gse::physics::collision_component>& collision_components = gse::registry::get_components<gse::physics::collision_component>()) -> void;
 	auto receive_components(address target_address, udp_socket socket) -> void;
-	auto client_network_update(address target_address, udp_socket socket) -> void;
+	//auto client_network_update(address target_address, udp_socket socket) -> void;
 	auto initialize_socket(udp_socket& socket) -> void;
 }
 
