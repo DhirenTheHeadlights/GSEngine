@@ -11,6 +11,7 @@ import std;
 import gse.graphics.model;
 import gse.physics.bounding_box;
 import gse.physics.math;
+import gse.platform.glfw.input;
 
 export namespace gse::network {
 	#pragma pack(push, 1) // Transfer Structs must have no padding
@@ -46,6 +47,13 @@ export namespace gse::network {
 		std::vector<gse::model_handle> models;
 		bool render;
 		bool render_bounding_boxes;
+	};
+	
+	struct input_transfer {
+		uint32_t parent_id;
+		gse::input::keyboard keyboard;
+		gse::input::controller controller;
+		gse::input::mouse mouse;
 	};
 	#pragma pack(pop) // Restore default alignment
 } 

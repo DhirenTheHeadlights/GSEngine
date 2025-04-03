@@ -67,7 +67,7 @@ struct player_hook final : gse::hook<gse::entity> {
 	using hook::hook;
 
 	auto initialize() -> void override {
-		gse::input::set_up_key_maps(owner_id);
+		if (!gse::input::get_all_keyboards().contains(input_id)) gse::input::set_up_key_maps(input_id);
 
 		gse::render_component render_component(owner_id);
 		gse::physics::motion_component motion_component(owner_id);
