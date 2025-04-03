@@ -80,11 +80,11 @@ export namespace gse::input {
 	};
 
 	auto update() -> void;
-	auto set_up_key_maps(uint32_t id) -> void;
+	auto set_up_key_maps(uint32_t id = 0) -> void;
 
-	auto get_keyboard(uint32_t id) -> keyboard&;
-	auto get_controller(uint32_t id) -> controller&;
-	auto get_mouse(uint32_t id) -> mouse&;
+	auto get_keyboard(uint32_t id = 0) -> keyboard&;
+	auto get_controller(uint32_t id = 0) -> controller&;
+	auto get_mouse(uint32_t id = 0) -> mouse&;
 
 	auto set_inputs_blocked(bool blocked) -> void;
 
@@ -92,11 +92,11 @@ export namespace gse::input {
 		auto process_event_button(button& button, bool new_state) -> void;
 		auto update_button(button& button) -> void;
 
-		auto update_all_buttons(uint32_t id) -> void;
-		auto reset_inputs_to_zero(uint32_t id) -> void;
+		auto update_all_buttons(uint32_t id = 0) -> void;
+		auto reset_inputs_to_zero(uint32_t id = 0) -> void;
 
-		auto add_to_typed_input(char input, uint32_t id) -> void;
-		auto reset_typed_input(uint32_t id) -> void;
+		auto add_to_typed_input(char input, uint32_t id = 0) -> void;
+		auto reset_typed_input(uint32_t id = 0) -> void;
 	};
 }
 

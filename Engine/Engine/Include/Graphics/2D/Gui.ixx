@@ -117,7 +117,7 @@ auto gse::gui::update() -> void {
 	for (auto& m : g_menus) {
 		const auto mouse_position = window::get_mouse_position_rel_bottom_left();
 
-		if (input::get_mouse(0).buttons[GLFW_MOUSE_BUTTON_LEFT].held) {
+		if (input::get_mouse().buttons[GLFW_MOUSE_BUTTON_LEFT].held) {
 			if (!m.grabbed.get_value() && !(m.docked.get_value() && m.docked_waiting_for_release)) {
 				if (intersects(m.position, m.size, mouse_position, { 0.f, 0.f })) {
 					m.grabbed = true;
