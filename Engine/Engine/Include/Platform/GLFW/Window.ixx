@@ -73,23 +73,23 @@ std::vector<std::shared_ptr<gse::window::rendering_interface>> g_rendering_inter
 /// Callbacks
 
 auto key_callback(GLFWwindow* window, const int key, int scancode, const int action, int mods) -> void {
-	if (gse::input::get_keyboard().keys.contains(key)) {
+	if (gse::input::get_keyboard(0).keys.contains(key)) {
 		if (action == GLFW_PRESS) {
-			gse::input::internal::process_event_button(gse::input::get_keyboard().keys[key], true);
+			gse::input::internal::process_event_button(gse::input::get_keyboard(0).keys[key], true);
 		}
 		else if (action == GLFW_RELEASE) {
-			gse::input::internal::process_event_button(gse::input::get_keyboard().keys[key], false);
+			gse::input::internal::process_event_button(gse::input::get_keyboard(0).keys[key], false);
 		}
 	}
 }
 
 auto mouse_callback(GLFWwindow* window, const int button, const int action, int mods) -> void {
-	if (gse::input::get_mouse().buttons.contains(button)) {
+	if (gse::input::get_mouse(0).buttons.contains(button)) {
 		if (action == GLFW_PRESS) {
-			gse::input::internal::process_event_button(gse::input::get_mouse().buttons[button], true);
+			gse::input::internal::process_event_button(gse::input::get_mouse(0).buttons[button], true);
 		}
 		else if (action == GLFW_RELEASE) {
-			gse::input::internal::process_event_button(gse::input::get_mouse().buttons[button], false);
+			gse::input::internal::process_event_button(gse::input::get_mouse(0).buttons[button], false);
 		}
 	}
 }
@@ -100,12 +100,12 @@ auto window_focus_callback(GLFWwindow* window, const int focused) -> void {
 	}
 	else {
 		g_window_focused = false;
-		gse::input::internal::reset_inputs_to_zero(); // To reset buttons
+		gse::input::internal::reset_inputs_to_zero(0); // To reset buttons
 	}
 }
 
 auto window_size_callback(GLFWwindow* window, int x, int y) -> void {
-	gse::input::internal::reset_inputs_to_zero();
+	gse::input::internal::reset_inputs_to_zero(0);
 }
 
 auto cursor_position_callback(GLFWwindow* window, double xpos, double ypos) -> void {
@@ -114,7 +114,7 @@ auto cursor_position_callback(GLFWwindow* window, double xpos, double ypos) -> v
 
 auto character_callback(GLFWwindow* window, const unsigned int codepoint) -> void {
 	if (codepoint < 127) {
-		gse::input::internal::add_to_typed_input(codepoint);
+		gse::input::internal::add_to_typed_input(codepoint, 0);
 	}
 }
 

@@ -31,6 +31,7 @@ struct client_info {
     uint32_t player_id;
     gse::network::address address;
     bool connected;
+	gse::platform::glfw::input::keyboard client_inputs;
 };
 
 gse::network::udp_socket server_socket;
