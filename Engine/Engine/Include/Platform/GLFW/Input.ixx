@@ -7,8 +7,11 @@ export module gse.platform.glfw.input;
 
 import std;
 import gse.platform.glfw.input.key_defs;
+import gse.platform.perma_assert;
 import gse.core.main_clock;
 import gse.physics.math;
+
+struct callback;
 
 export namespace gse::input {
 	
@@ -83,6 +86,8 @@ export namespace gse::input {
 	auto update() -> void;
 	auto set_up_key_maps(uint32_t id = 0) -> void;
 
+	auto add_callback(const int64_t& id, gse::input::key key, std::function<void(uint32_t)> func, gse::time cooldown = 0) -> void;
+	auto get_callback(const int64_t& id, gse::input::key key) -> callback&;
 	auto get_all_keyboards() -> std::unordered_map<uint32_t, keyboard>&;
 	auto get_keyboard(uint32_t id = 0) -> keyboard&;
 	auto get_controller(uint32_t id = 0) -> controller&;
@@ -102,6 +107,36 @@ export namespace gse::input {
 	};
 }
 
+
+struct callback {
+	int64_t id;
+	std::function<void(uint32_t)> func;
+	gse::time cooldown = 0;
+	gse::time last_triggered = gse::main_clock::get_current_time();
+
+	auto use() -> void {
+		if (gse::main_clock::get_current_time() - last_triggered < cooldown) return;
+		last_triggered = gse::main_clock::get_current_time();
+		func(id);
+	}
+};
+
+template <typename T>
+struct input_hasher {
+	std::size_t operator()(T t) const noexcept {
+		using key_type = std::underlying_type_t<T>;
+		return std::hash<key_type>{}(static_cast<key_type>(t));
+	}
+};
+
+template <typename T>
+struct callback_key_hasher {
+	std::size_t operator()(const std::pair<int64_t, T>& p) const noexcept {
+		return std::hash<int64_t>{}(p.first) ^ input_hasher<T>{}(p.second);
+	}
+};
+
+std::unordered_map<std::pair<uint32_t, gse::input::key>, callback, callback_key_hasher<gse::input::key>> g_key_callbacks;
 std::unordered_map<uint32_t, gse::input::keyboard> g_keyboards = { { 0,  gse::input::keyboard() } };
 std::unordered_map<uint32_t, gse::input::controller> g_controllers = { { 0, gse::input::controller() } };
 std::unordered_map<uint32_t, gse::input::mouse> g_mice = { { 0, gse::input::mouse() } };
@@ -141,7 +176,7 @@ auto gse::input::set_up_key_maps(uint32_t id) -> void {
 
 
 	if (g_controllers.find(id) == g_controllers.end()) g_controllers.insert({ id, controller() });
-	for (int i = 0; i <= static_cast<int>(gamepad::gamepad_last; i++) {
+	for (int i = 0; i <= static_cast<int>(gamepad::gamepad_last); i++) {
 		g_controllers[id].buttons.insert(std::make_pair(static_cast<gamepad>(i), button()));
 	}
 
@@ -149,6 +184,16 @@ auto gse::input::set_up_key_maps(uint32_t id) -> void {
 	for (int i = 0; i <= static_cast<int>(mouse_button::mouse_button_last); i++) {
 		g_mice[id].buttons.insert(std::make_pair(static_cast<mouse_button>(i), button()));
 	}
+}
+
+auto gse::input::add_callback(const int64_t& id, gse::input::key key, std::function<void(uint32_t)> func, gse::time cooldown) -> void {
+	g_key_callbacks.insert({ { id, key }, { id, func, cooldown } });
+}
+
+auto gse::input::get_callback(const int64_t& id, gse::input::key key) -> callback& {
+	auto it = g_key_callbacks.find({ id, key });
+	perma_assert(it != g_key_callbacks.end(), "Callback does not exist.\n");
+	return it->second;
 }
 
 auto gse::input::get_all_keyboards() -> std::unordered_map<uint32_t, keyboard>& {
@@ -238,10 +283,10 @@ auto gse::input::internal::update_all_buttons(uint32_t id) -> void {
 
 		if (glfwGetGamepadState(i, &state)) {
 			for (auto& [b, button] : g_controllers[id].buttons) {
-				if (state.buttons[b] == GLFW_PRESS) {
+				if (state.buttons[static_cast<int>(b)] == static_cast<int>(gamepad::press)) {
 					process_event_button(button, true);
 				}
-				else if (state.buttons[b] == GLFW_RELEASE) {
+				else if (state.buttons[static_cast<int>(b)] == static_cast<int>(gamepad::release)) {
 					process_event_button(button, false);
 				}
 				update_button(button);

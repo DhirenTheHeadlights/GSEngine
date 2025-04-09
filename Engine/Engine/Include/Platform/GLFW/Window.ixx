@@ -73,23 +73,23 @@ std::vector<std::shared_ptr<gse::window::rendering_interface>> g_rendering_inter
 /// Callbacks
 
 auto key_callback(GLFWwindow* window, const int key, int scancode, const int action, int mods) -> void {
-	if (gse::input::get_keyboard().keys.contains(key)) {
+	if (gse::input::get_keyboard().keys.contains(static_cast<gse::input::key>(key))) {
 		if (action == GLFW_PRESS) {
-			gse::input::internal::process_event_button(gse::input::get_keyboard().keys[key], true);
+			gse::input::internal::process_event_button(gse::input::get_keyboard().keys[static_cast<gse::input::key>(key)], true);
 		}
 		else if (action == GLFW_RELEASE) {
-			gse::input::internal::process_event_button(gse::input::get_keyboard().keys[key], false);
+			gse::input::internal::process_event_button(gse::input::get_keyboard().keys[static_cast<gse::input::key>(key)], false);
 		}
 	}
 }
 
 auto mouse_callback(GLFWwindow* window, const int button, const int action, int mods) -> void {
-	if (gse::input::get_mouse().buttons.contains(button)) {
+	if (gse::input::get_mouse().buttons.contains(static_cast<gse::input::mouse_button>(button))) {
 		if (action == GLFW_PRESS) {
-			gse::input::internal::process_event_button(gse::input::get_mouse().buttons[button], true);
+			gse::input::internal::process_event_button(gse::input::get_mouse().buttons[static_cast<gse::input::mouse_button>(button)], true);
 		}
 		else if (action == GLFW_RELEASE) {
-			gse::input::internal::process_event_button(gse::input::get_mouse().buttons[button], false);
+			gse::input::internal::process_event_button(gse::input::get_mouse().buttons[static_cast<gse::input::mouse_button>(button)], false);
 		}
 	}
 }

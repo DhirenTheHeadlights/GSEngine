@@ -6,7 +6,11 @@ module;
 export module gse.platform.glfw.input.key_defs;
 
 export namespace gse::input {
+
+
 	enum class key {
+		press = GLFW_PRESS,
+		release = GLFW_RELEASE,
 		key_unknown = GLFW_KEY_UNKNOWN,
 		hat_centered = GLFW_HAT_CENTERED,
 		hat_up = GLFW_HAT_UP,
@@ -146,6 +150,8 @@ export namespace gse::input {
 		mod_num_lock = GLFW_MOD_NUM_LOCK
 	};
 	enum class mouse_button {
+		press = GLFW_PRESS,
+		release = GLFW_RELEASE,
 		mouse_button_1 = GLFW_MOUSE_BUTTON_1,
 		mouse_button_2 = GLFW_MOUSE_BUTTON_2,
 		mouse_button_3 = GLFW_MOUSE_BUTTON_3,
@@ -179,6 +185,8 @@ export namespace gse::input {
 		joystick_last = GLFW_JOYSTICK_LAST
 	};
 	enum class gamepad {
+		press = GLFW_PRESS,
+		release = GLFW_RELEASE,
 		gamepad_a = GLFW_GAMEPAD_BUTTON_A,
 		gamepad_b = GLFW_GAMEPAD_BUTTON_B,
 		gamepad_x = GLFW_GAMEPAD_BUTTON_X,
