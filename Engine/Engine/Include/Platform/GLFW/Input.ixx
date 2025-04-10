@@ -38,7 +38,7 @@ export namespace gse::input {
 	};
 
 	struct controller {
-		std::unordered_map<gamepad, button> buttons;
+		std::unordered_map<control, button> buttons;
 
 		float lt = 0.f;
 		float rt = 0.f;
@@ -60,7 +60,7 @@ export namespace gse::input {
 	};
 
 	struct keyboard {
-		std::unordered_map<key, button> keys;
+		std::unordered_map<control, button> keys;
 
 		std::string typed_input;
 
@@ -72,7 +72,7 @@ export namespace gse::input {
 	};
 
 	struct mouse {
-		std::unordered_map<mouse_button, button> buttons;
+		std::unordered_map<control, button> buttons;
 
 		unitless::vec2 position;
 
@@ -86,8 +86,8 @@ export namespace gse::input {
 	auto update() -> void;
 	auto set_up_key_maps(uint32_t id = 0) -> void;
 
-	auto add_callback(const int64_t& id, gse::input::key key, std::function<void(uint32_t)> func, gse::time cooldown = 0) -> void;
-	auto get_callback(const int64_t& id, gse::input::key key) -> callback&;
+	template <typename... Keys> auto add_callback(std::function<void(uint32_t, control)> func, gse::time cooldown, const int64_t& id, Keys... keys) -> void;
+	auto get_callback(const int64_t& id, gse::input::control key) -> callback&;
 	auto get_all_keyboards() -> std::unordered_map<uint32_t, keyboard>&;
 	auto get_keyboard(uint32_t id = 0) -> keyboard&;
 	auto get_controller(uint32_t id = 0) -> controller&;
@@ -108,16 +108,18 @@ export namespace gse::input {
 }
 
 
+
 struct callback {
 	int64_t id;
-	std::function<void(uint32_t)> func;
+	gse::input::control trigger;
+	std::function<void(std::int64_t, gse::input::control)> func;
 	gse::time cooldown = 0;
 	gse::time last_triggered = gse::main_clock::get_current_time();
 
 	auto use() -> void {
 		if (gse::main_clock::get_current_time() - last_triggered < cooldown) return;
 		last_triggered = gse::main_clock::get_current_time();
-		func(id);
+		func(id, trigger);
 	}
 };
 
@@ -136,7 +138,7 @@ struct callback_key_hasher {
 	}
 };
 
-std::unordered_map<std::pair<uint32_t, gse::input::key>, callback, callback_key_hasher<gse::input::key>> g_key_callbacks;
+std::unordered_map<std::pair<uint32_t, gse::input::control>, callback, callback_key_hasher<gse::input::control>> g_key_callbacks;
 std::unordered_map<uint32_t, gse::input::keyboard> g_keyboards = { { 0,  gse::input::keyboard() } };
 std::unordered_map<uint32_t, gse::input::controller> g_controllers = { { 0, gse::input::controller() } };
 std::unordered_map<uint32_t, gse::input::mouse> g_mice = { { 0, gse::input::mouse() } };
@@ -153,45 +155,47 @@ bool g_block_inputs = false;
 auto gse::input::set_up_key_maps(uint32_t id) -> void {
 
 	if (g_keyboards.find(id) == g_keyboards.end()) g_keyboards.insert({ id, keyboard() });
-	for (int i = static_cast<int>(key::a); i <= static_cast<int>(key::z); i++) {
-		g_keyboards[id].keys.insert(std::make_pair(static_cast<key>(i), button()));
+	for (int i = static_cast<int>(control::a); i <= static_cast<int>(control::z); i++) {
+		g_keyboards[id].keys.insert(std::make_pair(static_cast<control>(i), button()));
 	}
 	
-	for (int i = static_cast<int>(key::num_0); i <= static_cast<int>(key::num_9); i++) {
-		g_keyboards[id].keys.insert(std::make_pair(static_cast<key>(i), button()));
+	for (int i = static_cast<int>(control::num_0); i <= static_cast<int>(control::num_9); i++) {
+		g_keyboards[id].keys.insert(std::make_pair(static_cast<control>(i), button()));
 	}
 
 
-	g_keyboards[id].keys.insert(std::make_pair(key::space, button()));
-	g_keyboards[id].keys.insert(std::make_pair(key::enter, button()));
-	g_keyboards[id].keys.insert(std::make_pair(key::escape, button()));
-	g_keyboards[id].keys.insert(std::make_pair(key::up, button()));
-	g_keyboards[id].keys.insert(std::make_pair(key::down, button()));
-	g_keyboards[id].keys.insert(std::make_pair(key::left, button()));
-	g_keyboards[id].keys.insert(std::make_pair(key::right, button()));
-	g_keyboards[id].keys.insert(std::make_pair(key::left_control, button()));
-	g_keyboards[id].keys.insert(std::make_pair(key::tab, button()));
-	g_keyboards[id].keys.insert(std::make_pair(key::left_shift, button()));
-	g_keyboards[id].keys.insert(std::make_pair(key::left_alt, button()));
+	g_keyboards[id].keys.insert(std::make_pair(control::space, button()));
+	g_keyboards[id].keys.insert(std::make_pair(control::enter, button()));
+	g_keyboards[id].keys.insert(std::make_pair(control::escape, button()));
+	g_keyboards[id].keys.insert(std::make_pair(control::up, button()));
+	g_keyboards[id].keys.insert(std::make_pair(control::down, button()));
+	g_keyboards[id].keys.insert(std::make_pair(control::left, button()));
+	g_keyboards[id].keys.insert(std::make_pair(control::right, button()));
+	g_keyboards[id].keys.insert(std::make_pair(control::left_control, button()));
+	g_keyboards[id].keys.insert(std::make_pair(control::tab, button()));
+	g_keyboards[id].keys.insert(std::make_pair(control::left_shift, button()));
+	g_keyboards[id].keys.insert(std::make_pair(control::left_alt, button()));
 
 
 	if (g_controllers.find(id) == g_controllers.end()) g_controllers.insert({ id, controller() });
-	for (int i = 0; i <= static_cast<int>(gamepad::gamepad_last); i++) {
-		g_controllers[id].buttons.insert(std::make_pair(static_cast<gamepad>(i), button()));
+	for (int i = 0; i <= static_cast<int>(control::gamepad_last); i++) {
+		g_controllers[id].buttons.insert(std::make_pair(static_cast<control>(i), button()));
 	}
 
 	if (g_mice.find(id) == g_mice.end()) g_mice.insert({ id, mouse() });
-	for (int i = 0; i <= static_cast<int>(mouse_button::mouse_button_last); i++) {
-		g_mice[id].buttons.insert(std::make_pair(static_cast<mouse_button>(i), button()));
+	for (int i = 0; i <= static_cast<int>(control::mouse_button_last); i++) {
+		g_mice[id].buttons.insert(std::make_pair(static_cast<control>(i), button()));
 	}
 }
 
-auto gse::input::add_callback(const int64_t& id, gse::input::key key, std::function<void(uint32_t)> func, gse::time cooldown) -> void {
-	g_key_callbacks.insert({ { id, key }, { id, func, cooldown } });
+
+template <typename... Keys>
+auto gse::input::add_callback(std::function<void(uint32_t, control)> func, gse::time cooldown, const int64_t& id, Keys... keys) -> void {
+	(g_key_callbacks.insert({ std::make_pair(id, keys), { id, keys,  func, cooldown } }), ...);
 }
 
-auto gse::input::get_callback(const int64_t& id, gse::input::key key) -> callback& {
-	auto it = g_key_callbacks.find({ id, key });
+auto gse::input::get_callback(const int64_t& id, gse::input::control key) -> callback& {
+	auto it = g_key_callbacks.find(std::make_pair( id, key ));
 	perma_assert(it != g_key_callbacks.end(), "Callback does not exist.\n");
 	return it->second;
 }
@@ -283,23 +287,23 @@ auto gse::input::internal::update_all_buttons(uint32_t id) -> void {
 
 		if (glfwGetGamepadState(i, &state)) {
 			for (auto& [b, button] : g_controllers[id].buttons) {
-				if (state.buttons[static_cast<int>(b)] == static_cast<int>(gamepad::press)) {
+				if (state.buttons[static_cast<int>(b)] == static_cast<int>(control::press)) {
 					process_event_button(button, true);
 				}
-				else if (state.buttons[static_cast<int>(b)] == static_cast<int>(gamepad::release)) {
+				else if (state.buttons[static_cast<int>(b)] == static_cast<int>(control::release)) {
 					process_event_button(button, false);
 				}
 				update_button(button);
 			}
 
-			g_controllers[id].rt = state.axes[static_cast<int>(gamepad::gamepad_axis_right_trigger)];
-			g_controllers[id].rt = state.axes[static_cast<int>(gamepad::gamepad_axis_left_trigger)];
+			g_controllers[id].rt = state.axes[static_cast<int>(control::gamepad_axis_right_trigger)];
+			g_controllers[id].rt = state.axes[static_cast<int>(control::gamepad_axis_left_trigger)];
 
-			g_controllers[id].l_stick.x = state.axes[static_cast<int>(gamepad::gamepad_axis_left_x)];
-			g_controllers[id].l_stick.y = state.axes[static_cast<int>(gamepad::gamepad_axis_left_y)];
+			g_controllers[id].l_stick.x = state.axes[static_cast<int>(control::gamepad_axis_left_x)];
+			g_controllers[id].l_stick.y = state.axes[static_cast<int>(control::gamepad_axis_left_y)];
 
-			g_controllers[id].r_stick.x = state.axes[static_cast<int>(gamepad::gamepad_axis_right_x)];
-			g_controllers[id].r_stick.y = state.axes[static_cast<int>(gamepad::gamepad_axis_right_y)];
+			g_controllers[id].r_stick.x = state.axes[static_cast<int>(control::gamepad_axis_right_x)];
+			g_controllers[id].r_stick.y = state.axes[static_cast<int>(control::gamepad_axis_right_y)];
 
 			break;
 		}

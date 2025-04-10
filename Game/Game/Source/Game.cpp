@@ -133,21 +133,21 @@ auto game::initialize() -> bool {
 	gse::scene_loader::add_scene(scene1);
 	gse::scene_loader::add_scene(scene2);
 
-	gse::scene_loader::queue_scene_trigger(gse::get_id("Scene1"), [] { return gse::input::get_keyboard().keys[gse::input::key::f1].pressed; });
-	gse::scene_loader::queue_scene_trigger(gse::get_id("Scene2"), [] { return gse::input::get_keyboard().keys[gse::input::key::f2].pressed; });
+	gse::scene_loader::queue_scene_trigger(gse::get_id("Scene1"), [] { return gse::input::get_keyboard().keys[gse::input::control::f1].pressed; });
+	gse::scene_loader::queue_scene_trigger(gse::get_id("Scene2"), [] { return gse::input::get_keyboard().keys[gse::input::control::f2].pressed; });
 
 	return true;
 }
 
 auto game::update() -> bool {
 	if (g_input_handling_enabled) {
-		gse::window::set_mouse_visible(gse::input::get_mouse().buttons[gse::input::mouse_button::mouse_button_middle].toggled || gse::input::get_keyboard().keys[gse::input::key::n].toggled);
+		gse::window::set_mouse_visible(gse::input::get_mouse().buttons[gse::input::control::mouse_button_middle].toggled || gse::input::get_keyboard().keys[gse::input::control::n].toggled);
 
-		if (gse::input::get_keyboard().keys[gse::input::key::enter].pressed && gse::input::get_keyboard().keys[gse::input::key::left_alt].held) {
+		if (gse::input::get_keyboard().keys[gse::input::control::enter].pressed && gse::input::get_keyboard().keys[gse::input::control::left_alt].held) {
 			gse::window::set_full_screen(!gse::window::is_full_screen());
 		}
 
-		if (gse::input::get_keyboard().keys[gse::input::key::escape].pressed) {
+		if (gse::input::get_keyboard().keys[gse::input::control::escape].pressed) {
 			if (close()) {
 				std::cerr << "Game closed properly." << '\n';
 				return false;
