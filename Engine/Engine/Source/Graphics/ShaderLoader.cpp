@@ -63,74 +63,76 @@ enum class descriptor_layout : std::uint8_t {
     custom          = 99
 };
 
-const std::unordered_map<descriptor_layout, vk::DescriptorSetLayout> g_descriptor_layouts = {
-    { descriptor_layout::standard_3d,
-	    gse::vulkan::get_device_config().device.createDescriptorSetLayout({
-            {},
-            3,
-            std::array{
-                vk::DescriptorSetLayoutBinding{ 0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment }, // Global: ViewProj
-                vk::DescriptorSetLayoutBinding{ 1, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex }, // Per-object: Model matrix
-                vk::DescriptorSetLayoutBinding{ 2, vk::DescriptorType::eCombinedImageSampler, 3, vk::ShaderStageFlagBits::eFragment } // Textures (Diffuse, Normal, Roughness)
-            }.data()
-        })
-    },
-    { descriptor_layout::deferred_3d,
-	    gse::vulkan::get_device_config().device.createDescriptorSetLayout({
-            {},
-            3,
-            std::array{
-                vk::DescriptorSetLayoutBinding{ 0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment },    // Global: ViewProj
-                vk::DescriptorSetLayoutBinding{ 1, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex },                                         // Per-object: Model matrix
-                vk::DescriptorSetLayoutBinding{ 2, vk::DescriptorType::eCombinedImageSampler, 3, vk::ShaderStageFlagBits::eFragment }                                 // Albedo, Normal, Depth (G-buffer)
-            }.data()
-        })
-    },
-    { descriptor_layout::forward_3d,
-	    gse::vulkan::get_device_config().device.createDescriptorSetLayout({
-            {},
-            4,
-            std::array{
-                vk::DescriptorSetLayoutBinding{ 0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment },    // Global: ViewProj, Lights
-                vk::DescriptorSetLayoutBinding{ 1, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex },                                         // Per-object: Model matrix
-                vk::DescriptorSetLayoutBinding{ 2, vk::DescriptorType::eCombinedImageSampler, 3, vk::ShaderStageFlagBits::eFragment },                                // Textures (Diffuse, Normal, Roughness)
-                vk::DescriptorSetLayoutBinding{ 3, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment }                                 // Shadow map (if needed)
-            }.data()
-        })
-    },
-    { descriptor_layout::forward_2d,
-	    gse::vulkan::get_device_config().device.createDescriptorSetLayout({
-            {},
-            2,
-            std::array{
-                vk::DescriptorSetLayoutBinding{ 0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex },                                         // Global 2D Transform (Ortho Projection)
-                vk::DescriptorSetLayoutBinding{ 1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment }                                 // Texture (UI, Sprite)
-            }.data()
-        })
-    },
-    { descriptor_layout::post_process,
-	    gse::vulkan::get_device_config().device.createDescriptorSetLayout({
-            {},
-            1,
-            std::array{
-                vk::DescriptorSetLayoutBinding{ 0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment }                                 // Screen Texture (HDR, Bloom, etc.)
-            }.data()
-        })
-    },
-    { descriptor_layout::custom,
-	    gse::vulkan::get_device_config().device.createDescriptorSetLayout({
-            {},
-            0, nullptr // Empty layout; users define custom sets dynamically.
-        })
-    }
-};
+auto create_descriptor_layouts() -> std::unordered_map<descriptor_layout, vk::DescriptorSetLayout> {
+	return {
+		{ descriptor_layout::standard_3d,
+		   gse::vulkan::get_device_config().device.createDescriptorSetLayout({
+			   {},
+			   3,
+			   std::array{
+				   vk::DescriptorSetLayoutBinding{ 0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment },  // Global: ViewProj
+				   vk::DescriptorSetLayoutBinding{ 1, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex },                                       // Per-object: Model matrix
+				   vk::DescriptorSetLayoutBinding{ 2, vk::DescriptorType::eCombinedImageSampler, 3, vk::ShaderStageFlagBits::eFragment }                               // Textures (Diffuse, Normal, Roughness)
+			   }.data()
+		   })
+	   },
+	   { descriptor_layout::deferred_3d,
+		   gse::vulkan::get_device_config().device.createDescriptorSetLayout({
+			   {},
+			   3,
+			   std::array{
+				   vk::DescriptorSetLayoutBinding{ 0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment },    // Global: ViewProj
+				   vk::DescriptorSetLayoutBinding{ 1, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex },                                         // Per-object: Model matrix
+				   vk::DescriptorSetLayoutBinding{ 2, vk::DescriptorType::eCombinedImageSampler, 3, vk::ShaderStageFlagBits::eFragment }                                 // Albedo, Normal, Depth (G-buffer)
+			   }.data()
+		   })
+	   },
+	   { descriptor_layout::forward_3d,
+		   gse::vulkan::get_device_config().device.createDescriptorSetLayout({
+			   {},
+			   4,
+			   std::array{
+				   vk::DescriptorSetLayoutBinding{ 0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment },    // Global: ViewProj, Lights
+				   vk::DescriptorSetLayoutBinding{ 1, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex },                                         // Per-object: Model matrix
+				   vk::DescriptorSetLayoutBinding{ 2, vk::DescriptorType::eCombinedImageSampler, 3, vk::ShaderStageFlagBits::eFragment },                                // Textures (Diffuse, Normal, Roughness)
+				   vk::DescriptorSetLayoutBinding{ 3, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment }                                 // Shadow map (if needed)
+			   }.data()
+		   })
+	   },
+	   { descriptor_layout::forward_2d,
+		   gse::vulkan::get_device_config().device.createDescriptorSetLayout({
+			   {},
+			   2,
+			   std::array{
+				   vk::DescriptorSetLayoutBinding{ 0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex },                                         // Global 2D Transform (Ortho Projection)
+				   vk::DescriptorSetLayoutBinding{ 1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment }                                 // Texture (UI, Sprite)
+			   }.data()
+		   })
+	   },
+	   { descriptor_layout::post_process,
+		   gse::vulkan::get_device_config().device.createDescriptorSetLayout({
+			   {},
+			   1,
+			   std::array{
+				   vk::DescriptorSetLayoutBinding{ 0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment }                                 // Screen Texture (HDR, Bloom, etc.)
+			   }.data()
+		   })
+	   },
+	   { descriptor_layout::custom,
+		   gse::vulkan::get_device_config().device.createDescriptorSetLayout({
+			   {},
+			   0, nullptr // Empty layout; users define custom sets dynamically.
+		   })
+	   }
+	};
+}
 
 namespace gse::shader_loader {
     auto compile_shaders() -> std::vector<descriptor_layout>;
 }
 
 auto gse::shader_loader::load_shaders() -> void {
-	const auto descriptor_sets = load_shaders();
+	create_descriptor_layouts();
 
 	const auto shader_path = config::shader_spirv_path;
 	std::unordered_map<std::string, shader_info> shader_files;
