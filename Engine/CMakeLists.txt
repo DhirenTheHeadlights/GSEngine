@@ -95,21 +95,16 @@ target_link_libraries(Engine PUBLIC
     SPIRV-Reflect
 )
 
-####################################################################################################################
-# Compile shader files
-####################################################################################################################
-
-find_program(GLSLC glslc)
-if(NOT GLSLC)
-  message(FATAL_ERROR "glslc not found! Please install the Vulkan SDK and ensure glslc is in your PATH.")
-endif()
-
-file(GLOB_RECURSE SHADER_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Shaders/*.vert" "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Shaders/*.frag")
+file(GLOB_RECURSE SHADER_SOURCE_FILES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Shaders/*.vert"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Shaders/*.frag"
+)
 
 set(ENGINE_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
-set(SPIRV "")
-set(SHADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/Resources/Shaders")
-set(ADDED_SHADERS "")
+set(SPIRV_DIR "${CMAKE_CURRENT_BINARY_DIR}/Resources/Shaders")
+set(RAW_SHADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/Resources/ShaderRaw")
+
+file(COPY ${SHADER_SOURCE_FILES} DESTINATION ${RAW_SHADER_DIR})
 
 foreach(shader ${SHADER_FILES})
     get_filename_component(shader_name ${shader} NAME_WE)

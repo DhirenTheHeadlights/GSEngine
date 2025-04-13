@@ -14,13 +14,13 @@ namespace gse {
 	export class shader {
 	public:
 		shader() = default;
-		shader(const std::filesystem::path& vert_path, const std::filesystem::path& frag_path);
+		shader(const std::filesystem::path& vert_path, const std::filesystem::path& frag_path, const vk::DescriptorSetLayout* layout = nullptr);
 		~shader();
 
 		shader(const shader&) = delete;
 		auto operator=(const shader&) -> shader & = delete;
 
-		auto create(const std::filesystem::path& vert_path, const std::filesystem::path& frag_path) -> void;
+		auto create(const std::filesystem::path& vert_path, const std::filesystem::path& frag_path, const vk::DescriptorSetLayout* layout = nullptr) -> void;
 		auto get_shader_stages() const -> std::array<vk::PipelineShaderStageCreateInfo, 2>;
 		auto get_descriptor_set_layout() const -> vk::DescriptorSetLayout { return m_descriptor_set_layout; }
 		auto get_descriptor_sets() const -> const std::vector<vk::DescriptorSet>& { return m_descriptor_sets; }
@@ -37,8 +37,8 @@ namespace gse {
 	auto read_file(const std::filesystem::path& path) -> std::vector<char>;
 }
 
-gse::shader::shader(const std::filesystem::path& vert_path, const std::filesystem::path& frag_path) {
-	create(vert_path, frag_path);
+gse::shader::shader(const std::filesystem::path& vert_path, const std::filesystem::path& frag_path, const vk::DescriptorSetLayout* layout) {
+	create(vert_path, frag_path, layout);
 }
 
 gse::shader::~shader() {
@@ -47,11 +47,17 @@ gse::shader::~shader() {
 	device.destroyShaderModule(m_frag_module);
 }
 
-auto gse::shader::create(const std::filesystem::path& vert_path, const std::filesystem::path& frag_path) -> void {
+auto gse::shader::create(const std::filesystem::path& vert_path, const std::filesystem::path& frag_path, const vk::DescriptorSetLayout* layout) -> void {
 	const auto vert_code = read_file(vert_path);
 	const auto frag_code = read_file(frag_path);
 	m_vert_module = create_shader_module(vert_code);
 	m_frag_module = create_shader_module(frag_code);
+
+	if (layout) {
+		m_descriptor_set_layout = *layout;
+		m_descriptor_sets = vulkan::get_device_config().device.allocateDescriptorSets({ vulkan::get_descriptor_config().descriptor_pool, 1, &m_descriptor_set_layout });
+		return;
+	}
 
 	std::vector<vk::DescriptorSetLayoutBinding> bindings;
 
