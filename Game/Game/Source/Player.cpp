@@ -71,7 +71,7 @@ struct player_hook final : gse::hook<gse::entity> {
 	using hook::hook;
 
 	auto initialize() -> void override {
-		if (!gse::input::get_all_keyboards().contains(input_id)) gse::input::set_up_key_maps(input_id);
+		if (!gse::input::get_all_keyboards().contains(input_id)) gse::input::initialize(input_id);
 
 		gse::render_component render_component(owner_id);
 		gse::physics::motion_component motion_component(owner_id);
@@ -92,14 +92,15 @@ struct player_hook final : gse::hook<gse::entity> {
 		gse::registry::add_component<gse::physics::motion_component>(std::move(motion_component));
 		gse::registry::add_component<gse::physics::collision_component>(std::move(collision_component));
 
-		gse::input::add_callback(
-			[this](uint32_t id, const gse::input::control key) { 
-			auto& motion = gse::registry::get_component<gse::physics::motion_component>(id);
-			if (gse::input::get_keyboard().keys[key].held && !motion.airborne) apply_force(motion, m_move_force * gse::renderer3d::get_camera().get_camera_direction_relative_to_origin(g_wasd.at(key) * gse::unitless::vec3(1.f, 0.f, 1.f)));
+		gse::input::add_callback<gse::input::control::w, gse::input::control::a, gse::input::control::s, gse::input::control::d>(
+			[this](const uint32_t id, const gse::input::control key) { 
+				auto& motion = gse::registry::get_component<gse::physics::motion_component>(id);
+				if (gse::input::get_keyboard().keys[key].held && !motion.airborne) {
+					apply_force(motion, m_move_force * gse::renderer3d::get_camera().get_camera_direction_relative_to_origin(g_wasd.at(key)) * gse::unitless::vec3(1.f, 0.f, 1.f));
+				}
 			},
-			gse::time(0), owner_id, gse::input::control::w, gse::input::control::a, gse::input::control::s, gse::input::control::d
+			gse::seconds(0), owner_id
 		);
-
 	}
 
 	auto update() -> void override {
@@ -107,7 +108,7 @@ struct player_hook final : gse::hook<gse::entity> {
 
 
 		for (const auto& key : g_wasd | std::views::keys) {
-			gse::input::get_callback(owner_id, key).use();
+			get_callback(owner_id, key).use();
 		}
 
 		motion_component.max_speed = gse::input::get_keyboard(input_id).keys[gse::input::control::left_shift].held ? m_shift_max_speed : m_max_speed;

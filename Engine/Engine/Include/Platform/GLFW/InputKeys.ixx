@@ -6,8 +6,6 @@ module;
 export module gse.platform.glfw.input.key_defs;
 
 export namespace gse::input {
-
-
 	enum class control {
 		press = GLFW_PRESS,
 		release = GLFW_RELEASE,
