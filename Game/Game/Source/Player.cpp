@@ -23,13 +23,13 @@ struct jetpack_hook final : gse::hook<gse::entity> {
 	}
 
 	auto update() -> void override {
-		if (gse::input::get_keyboard(input_id).keys[gse::input::control::j].pressed) {
+		if (gse::input::get_keyboard(m_input_id).keys[gse::input::control::j].pressed) {
 			m_jetpack = !m_jetpack;
 		}
 
-		if (m_jetpack && gse::input::get_keyboard(input_id).keys[gse::input::control::space].held) {
+		if (m_jetpack && gse::input::get_keyboard(m_input_id).keys[gse::input::control::space].held) {
 			gse::force boost_force;
-			if (gse::input::get_keyboard(input_id).keys[gse::input::control::left_shift].held && m_boost_fuel > 0) {
+			if (gse::input::get_keyboard(m_input_id).keys[gse::input::control::left_shift].held && m_boost_fuel > 0) {
 				boost_force = gse::newtons(2000.f);
 				m_boost_fuel -= 1;
 			}
@@ -43,7 +43,7 @@ struct jetpack_hook final : gse::hook<gse::entity> {
 			apply_force(motion_component, gse::vec3<gse::force>(0.f, m_jetpack_force + boost_force, 0.f));
 
 			for (auto& [key, direction] : g_wasd) {
-				if (gse::input::get_keyboard(input_id).keys[key].held) {
+				if (gse::input::get_keyboard(m_input_id).keys[key].held) {
 					apply_force(gse::registry::get_component<gse::physics::motion_component>(owner_id), gse::vec3<gse::force>(m_jetpack_side_force + boost_force, 0.f, m_jetpack_side_force + boost_force) * gse::renderer3d::get_camera().get_camera_direction_relative_to_origin(direction));
 				}
 			}
@@ -59,7 +59,7 @@ struct jetpack_hook final : gse::hook<gse::entity> {
 			});
 	}
 private:
-	uint32_t input_id = gse::network::is_server() ? owner_id : 0;
+	uint32_t m_input_id = gse::network::is_server() ? owner_id : 0;
 	gse::force m_jetpack_force = gse::newtons(1000.f);
 	gse::force m_jetpack_side_force = gse::newtons(500.f);
 
@@ -93,7 +93,7 @@ struct player_hook final : gse::hook<gse::entity> {
 		gse::registry::add_component<gse::physics::collision_component>(std::move(collision_component));
 
 		gse::input::add_callback(
-			[this](uint32_t id, gse::input::control key) { 
+			[this](uint32_t id, const gse::input::control key) { 
 			auto& motion = gse::registry::get_component<gse::physics::motion_component>(id);
 			if (gse::input::get_keyboard().keys[key].held && !motion.airborne) apply_force(motion, m_move_force * gse::renderer3d::get_camera().get_camera_direction_relative_to_origin(g_wasd.at(key) * gse::unitless::vec3(1.f, 0.f, 1.f)));
 			},
@@ -106,7 +106,7 @@ struct player_hook final : gse::hook<gse::entity> {
 		auto& motion_component = gse::registry::get_component<gse::physics::motion_component>(owner_id);
 
 
-		for (auto& [key, direction] : g_wasd) {
+		for (const auto& key : g_wasd | std::views::keys) {
 			gse::input::get_callback(owner_id, key).use();
 		}
 

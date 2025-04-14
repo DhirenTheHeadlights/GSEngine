@@ -125,7 +125,7 @@ struct callback {
 
 template <typename T>
 struct input_hasher {
-	std::size_t operator()(T t) const noexcept {
+	auto operator()(T t) const noexcept -> std::size_t {
 		using key_type = std::underlying_type_t<T>;
 		return std::hash<key_type>{}(static_cast<key_type>(t));
 	}
@@ -133,7 +133,7 @@ struct input_hasher {
 
 template <typename T>
 struct callback_key_hasher {
-	std::size_t operator()(const std::pair<int64_t, T>& p) const noexcept {
+	auto operator()(const std::pair<int64_t, T>& p) const noexcept -> std::size_t {
 		return std::hash<int64_t>{}(p.first) ^ input_hasher<T>{}(p.second);
 	}
 };
@@ -154,7 +154,7 @@ bool g_block_inputs = false;
 
 auto gse::input::set_up_key_maps(uint32_t id) -> void {
 
-	if (g_keyboards.find(id) == g_keyboards.end()) g_keyboards.insert({ id, keyboard() });
+	if (!g_keyboards.contains(id)) g_keyboards.insert({ id, keyboard() });
 	for (int i = static_cast<int>(control::a); i <= static_cast<int>(control::z); i++) {
 		g_keyboards[id].keys.insert(std::make_pair(static_cast<control>(i), button()));
 	}
@@ -177,12 +177,12 @@ auto gse::input::set_up_key_maps(uint32_t id) -> void {
 	g_keyboards[id].keys.insert(std::make_pair(control::left_alt, button()));
 
 
-	if (g_controllers.find(id) == g_controllers.end()) g_controllers.insert({ id, controller() });
+	if (!g_controllers.contains(id)) g_controllers.insert({ id, controller() });
 	for (int i = 0; i <= static_cast<int>(control::gamepad_last); i++) {
 		g_controllers[id].buttons.insert(std::make_pair(static_cast<control>(i), button()));
 	}
 
-	if (g_mice.find(id) == g_mice.end()) g_mice.insert({ id, mouse() });
+	if (!g_mice.contains(id)) g_mice.insert({ id, mouse() });
 	for (int i = 0; i <= static_cast<int>(control::mouse_button_last); i++) {
 		g_mice[id].buttons.insert(std::make_pair(static_cast<control>(i), button()));
 	}
@@ -195,7 +195,7 @@ auto gse::input::add_callback(std::function<void(uint32_t, control)> func, gse::
 }
 
 auto gse::input::get_callback(const int64_t& id, gse::input::control key) -> callback& {
-	auto it = g_key_callbacks.find(std::make_pair( id, key ));
+	const auto it = g_key_callbacks.find(std::make_pair( id, key ));
 	perma_assert(it != g_key_callbacks.end(), "Callback does not exist.\n");
 	return it->second;
 }
@@ -204,15 +204,15 @@ auto gse::input::get_all_keyboards() -> std::unordered_map<uint32_t, keyboard>& 
 	return g_keyboards;
 }
 
-auto gse::input::get_keyboard(uint32_t id) -> keyboard& {
+auto gse::input::get_keyboard(const uint32_t id) -> keyboard& {
 	return g_keyboards[id];
 }
 
-auto gse::input::get_controller(uint32_t id) -> controller& {
+auto gse::input::get_controller(const uint32_t id) -> controller& {
 	return g_controllers[id];
 }
 
-auto gse::input::get_mouse(uint32_t id) -> mouse& {
+auto gse::input::get_mouse(const uint32_t id) -> mouse& {
 	return g_mice[id];
 }
 
@@ -272,7 +272,7 @@ auto gse::input::internal::update_button(button& button) -> void {
 	button.new_state = -1;
 }
 
-auto gse::input::internal::update_all_buttons(uint32_t id) -> void {
+auto gse::input::internal::update_all_buttons(const uint32_t id) -> void {
 	if (g_block_inputs) return;
 
 
@@ -314,7 +314,7 @@ auto gse::input::internal::update_all_buttons(uint32_t id) -> void {
 	}
 }
 
-auto gse::input::internal::reset_inputs_to_zero(uint32_t id) -> void {
+auto gse::input::internal::reset_inputs_to_zero(const uint32_t id) -> void {
 	reset_typed_input(id);
 
 	for (auto& snd : g_keyboards[id].keys | std::views::values) {
@@ -330,10 +330,10 @@ auto gse::input::internal::reset_inputs_to_zero(uint32_t id) -> void {
 	}
 }
 
-auto gse::input::internal::add_to_typed_input(const char input, uint32_t id) -> void {
+auto gse::input::internal::add_to_typed_input(const char input, const uint32_t id) -> void {
 	g_keyboards[id].typed_input += input;
 }
 
-auto gse::input::internal::reset_typed_input(uint32_t id) -> void {
+auto gse::input::internal::reset_typed_input(const uint32_t id) -> void {
 	g_keyboards[id].typed_input.clear();
 }
