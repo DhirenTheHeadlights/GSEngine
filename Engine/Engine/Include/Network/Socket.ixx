@@ -9,7 +9,6 @@ export module gse.network.socket;
 import gse.platform.perma_assert;
 
 export namespace gse::network {
-	
 	struct packet {
 		std::uint8_t* data;
 		std::size_t size;
@@ -17,7 +16,7 @@ export namespace gse::network {
 
 	struct address {
 		std::string ip;
-		std::uint16_t port;
+		std::uint16_t port = 0;
 	};
 
 	enum struct socket_state {
@@ -32,8 +31,8 @@ export namespace gse::network {
 		~udp_socket();
 
 		auto send_data(const packet& packet, const address& address) const -> socket_state;
-		auto receive_data(packet& packet, address& sender_address) const -> socket_state;
-		auto bind_socket(uint16_t port) -> bool;
+		auto receive_data(const packet& packet, address& sender_address) const -> socket_state;
+		auto bind_socket(uint16_t port) const -> bool;
 
 		std::uint64_t socket_id = INVALID_SOCKET;
 	};
@@ -60,7 +59,7 @@ auto gse::network::udp_socket::send_data(const packet& packet, const address& ad
 	return socket_state::sending;
 }
 
-auto gse::network::udp_socket::bind_socket(uint16_t port) -> bool {
+auto gse::network::udp_socket::bind_socket(const uint16_t port) const -> bool {
 	sockaddr_in addr{};
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(port);
@@ -72,12 +71,11 @@ auto gse::network::udp_socket::bind_socket(uint16_t port) -> bool {
 	return true;
 }
 
-auto gse::network::udp_socket::receive_data(packet& packet, address& sender_address) const -> socket_state {
+auto gse::network::udp_socket::receive_data(const packet& packet, address& sender_address) const -> socket_state {
 	sockaddr_in addr;
 	int addr_len = sizeof(addr);
 
-	auto result = recvfrom(socket_id, reinterpret_cast<char*>(packet.data), packet.size, 0,
-		reinterpret_cast<sockaddr*>(&addr), &addr_len);
+	const auto result = recvfrom(socket_id, reinterpret_cast<char*>(packet.data), packet.size, 0, reinterpret_cast<sockaddr*>(&addr), &addr_len);
 	if (result == SOCKET_ERROR) {
 		return socket_state::error;
 	}

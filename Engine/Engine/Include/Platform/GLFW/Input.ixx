@@ -97,7 +97,7 @@ namespace gse::input::controller {
 	}
 }
 
-namespace gse::input {
+export namespace gse::input {
 	struct callback {
 		int64_t id;
 		control trigger;
@@ -156,7 +156,7 @@ export namespace gse::input {
 	};
 }
 
-std::vector<callback> g_key_callbacks;
+std::vector<gse::input::callback> g_key_callbacks;
 
 auto gse::input::update() -> void {
 	internal::update_all_buttons();
