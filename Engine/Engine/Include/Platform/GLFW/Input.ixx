@@ -97,30 +97,32 @@ namespace gse::input::controller {
 	}
 }
 
-struct callback {
-	int64_t id;
-	gse::input::control trigger;
-	std::function<void(std::int64_t, gse::input::control)> func;
-	gse::time cooldown = 0;
-	gse::time last_triggered = gse::main_clock::get_current_time();
-
-	auto use() -> void {
-		if (gse::main_clock::get_current_time() - last_triggered < cooldown) return;
-		last_triggered = gse::main_clock::get_current_time();
-		func(id, trigger);
-	}
-
-	struct handle {
+export namespace gse::input {
+	struct callback {
 		int64_t id;
-		gse::input::control trigger;
-		gse::time cooldown = 0;
-		gse::time last_triggered = gse::main_clock::get_current_time();
-	};
+		control trigger;
+		std::function<void(std::int64_t, control)> func;
+		time cooldown = 0;
+		time last_triggered = main_clock::get_current_time();
 
-	explicit operator handle() const {
-		return handle{ id, trigger, cooldown, last_triggered };
-	}
-};
+		auto use() -> void {
+			if (main_clock::get_current_time() - last_triggered < cooldown) return;
+			last_triggered = main_clock::get_current_time();
+			func(id, trigger);
+		}
+
+		struct handle {
+			int64_t id;
+			control trigger;
+			time cooldown = 0;
+			time last_triggered = main_clock::get_current_time();
+		};
+
+		explicit operator handle() const {
+			return handle{ id, trigger, cooldown, last_triggered };
+		}
+	};
+}
 
 export namespace gse::input {
 	auto initialize(uint32_t id = 0) -> void;
@@ -154,7 +156,7 @@ export namespace gse::input {
 	};
 }
 
-std::vector<callback> g_key_callbacks;
+std::vector<gse::input::callback> g_key_callbacks;
 
 auto gse::input::update() -> void {
 	internal::update_all_buttons();
