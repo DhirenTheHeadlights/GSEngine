@@ -49,7 +49,7 @@ namespace gse::input::keyboard {
 		}
 	}
 
-	auto key(const control key) -> button& {
+	export auto key(const control key) -> button& {
 		perma_assert(keys.contains(key), "Keyboard key not found in keyboard keys map");
 		return keys[key];
 	}
@@ -65,7 +65,7 @@ namespace gse::input::mouse {
 		}
 	}
 
-	auto button(const control key) -> button& {
+	export auto button(const control key) -> button& {
 		perma_assert(buttons.contains(key), "Mouse button not found in mouse buttons map");
 		return buttons[key];
 	}
@@ -91,36 +91,38 @@ namespace gse::input::controller {
 		l_stick.y = 0.f;
 	}
 
-	auto button(const control key) -> button& {
+	export auto button(const control key) -> button& {
 		perma_assert(buttons.contains(key), "Controller button not found in controller buttons map");
 		return buttons[key];
 	}
 }
 
-struct callback {
-	int64_t id;
-	gse::input::control trigger;
-	std::function<void(std::int64_t, gse::input::control)> func;
-	gse::time cooldown = 0;
-	gse::time last_triggered = gse::main_clock::get_current_time();
-
-	auto use() -> void {
-		if (gse::main_clock::get_current_time() - last_triggered < cooldown) return;
-		last_triggered = gse::main_clock::get_current_time();
-		func(id, trigger);
-	}
-
-	struct handle {
+namespace gse::input {
+	struct callback {
 		int64_t id;
-		gse::input::control trigger;
-		gse::time cooldown = 0;
-		gse::time last_triggered = gse::main_clock::get_current_time();
-	};
+		control trigger;
+		std::function<void(std::int64_t, control)> func;
+		time cooldown = 0;
+		time last_triggered = main_clock::get_current_time();
 
-	explicit operator handle() const {
-		return handle{ id, trigger, cooldown, last_triggered };
-	}
-};
+		auto use() -> void {
+			if (main_clock::get_current_time() - last_triggered < cooldown) return;
+			last_triggered = main_clock::get_current_time();
+			func(id, trigger);
+		}
+
+		struct handle {
+			int64_t id;
+			control trigger;
+			time cooldown = 0;
+			time last_triggered = main_clock::get_current_time();
+		};
+
+		explicit operator handle() const {
+			return handle{ id, trigger, cooldown, last_triggered };
+		}
+	};
+}
 
 export namespace gse::input {
 	auto initialize(uint32_t id = 0) -> void;

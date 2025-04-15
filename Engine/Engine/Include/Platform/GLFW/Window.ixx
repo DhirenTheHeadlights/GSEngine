@@ -8,6 +8,7 @@ export module gse.platform.glfw.window;
 import std;
 
 import gse.platform.glfw.input;
+import gse.platform.glfw.input.key_defs;
 import gse.platform.perma_assert;
 import gse.physics.math;
 
@@ -73,24 +74,20 @@ std::vector<std::shared_ptr<gse::window::rendering_interface>> g_rendering_inter
 /// Callbacks
 
 auto key_callback(GLFWwindow* window, const int key, int scancode, const int action, int mods) -> void {
-	if (gse::input::get_keyboard().keys.contains(static_cast<gse::input::control>(key))) {
-		if (action == GLFW_PRESS) {
-			gse::input::internal::process_event_button(gse::input::keyboard::keys[static_cast<gse::input::control>(key)], true);
-		}
-		else if (action == GLFW_RELEASE) {
-			gse::input::internal::process_event_button(gse::input::get_keyboard().keys[static_cast<gse::input::control>(key)], false);
-		}
+	if (action == GLFW_PRESS) {
+		gse::input::internal::process_event_button(gse::input::keyboard::key(static_cast<gse::input::control>(key)), true);
+	}
+	else if (action == GLFW_RELEASE) {
+		gse::input::internal::process_event_button(gse::input::keyboard::key(static_cast<gse::input::control>(key)), false);
 	}
 }
 
 auto mouse_callback(GLFWwindow* window, const int button, const int action, int mods) -> void {
-	if (gse::input::get_mouse().buttons.contains(static_cast<gse::input::control>(button))) {
-		if (action == GLFW_PRESS) {
-			gse::input::internal::process_event_button(gse::input::get_mouse().buttons[static_cast<gse::input::control>(button)], true);
-		}
-		else if (action == GLFW_RELEASE) {
-			gse::input::internal::process_event_button(gse::input::get_mouse().buttons[static_cast<gse::input::control>(button)], false);
-		}
+	if (action == GLFW_PRESS) {
+		gse::input::internal::process_event_button(gse::input::mouse::button(static_cast<gse::input::control>(button)), true);
+	}
+	else if (action == GLFW_RELEASE) {
+		gse::input::internal::process_event_button(gse::input::mouse::button(static_cast<gse::input::control>(button)), false);
 	}
 }
 

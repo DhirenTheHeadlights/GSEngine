@@ -17,16 +17,16 @@ export namespace gse::network {
 	#pragma pack(push, 1) // Transfer Structs must have no padding
 	struct motion_component_transfer {
 		uint32_t parent_id;
-		gse::vec3<gse::length> current_position;
-		gse::vec3<gse::velocity> current_velocity;
-		gse::vec3<gse::acceleration> current_acceleration;
-		gse::vec3<gse::torque> current_torque;
-		gse::quat orientation;
-		gse::vec3<gse::angular_velocity> angular_velocity;
-		gse::vec3<gse::angular_acceleration> angular_acceleration;
-		gse::velocity max_speed;
-		gse::mass mass;
-		gse::length most_recent_y_collision;
+		vec3<length> current_position;
+		vec3<velocity> current_velocity;
+		vec3<acceleration> current_acceleration;
+		vec3<torque> current_torque;
+		quat orientation;
+		vec3<angular_velocity> angular_velocity;
+		vec3<angular_acceleration> angular_acceleration;
+		velocity max_speed;
+		mass mass;
+		length most_recent_y_collision;
 		float moment_of_inertia;
 		bool affected_by_gravity;
 		bool moving;
@@ -36,24 +36,21 @@ export namespace gse::network {
 
 	struct collision_component_transfer {
 		uint32_t parent_id;
-		gse::axis_aligned_bounding_box bounding_box;
-		gse::oriented_bounding_box oriented_bounding_box;
-		gse::collision_information collision_information;
+		axis_aligned_bounding_box bounding_box;
+		oriented_bounding_box oriented_bounding_box;
+		collision_information collision_information;
 		bool resolve_collisions;
 	};
 
 	struct render_component_transfer {
 		uint32_t parent_id;
-		std::vector<gse::model_handle> models;
+		std::vector<model_handle> models;
 		bool render;
 		bool render_bounding_boxes;
 	};
 	
 	struct input_transfer {
-		uint32_t parent_id;
-		gse::input::keyboard keyboard;
-		gse::input::controller controller;
-		gse::input::mouse mouse;
+		std::vector<input::ca
 	};
 	#pragma pack(pop) // Restore default alignment
 } 
