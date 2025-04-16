@@ -1,7 +1,3 @@
-module;
-
-#include "imgui.h"
-
 export module gse.core.main_clock;
 
 import std;

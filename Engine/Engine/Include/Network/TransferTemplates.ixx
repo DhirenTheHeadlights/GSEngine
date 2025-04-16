@@ -50,7 +50,7 @@ export namespace gse::network {
 	};
 	
 	struct input_transfer {
-		std::vector<input::ca
+		std::vector<input::callback::handle> callbacks;
 	};
 	#pragma pack(pop) // Restore default alignment
 } 

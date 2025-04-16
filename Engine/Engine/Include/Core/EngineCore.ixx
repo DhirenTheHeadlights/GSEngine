@@ -37,16 +37,6 @@ enum class engine_state : std::uint8_t {
 	shutdown
 };
 
-enum class feature : std::uint8_t {
-	none = 0,
-	window = 1 << 0,
-	renderer2d = 1 << 1,
-	renderer3d = 1 << 2,
-	gui = 1 << 3,
-	network = 1 << 4,
-	debug = 1 << 5
-};;
-
 auto g_engine_state = engine_state::uninitialized;
 
 bool g_engine_shutdown_blocked = false;
@@ -76,7 +66,7 @@ auto gse::initialize(const std::function<void()>& initialize_function, const std
 
 	gui::initialize();
 
-	if (g_imgui_enabled) debug::set_up_imgui();
+	if (g_imgui_enabled) debug::initialize();
 
 	renderer3d::initialize();
 	renderer2d::initialize();
@@ -94,7 +84,7 @@ auto update(const std::function<bool()>& update_function) -> void {
 
 	gse::window::update();
 
-	if (g_imgui_enabled) gse::debug::update_imgui();
+	if (g_imgui_enabled) gse::debug::update();
 
 	gse::gui::update();
 
@@ -125,7 +115,7 @@ auto render(const std::function<bool()>& render_function) -> void {
 	}
 
 	if (g_imgui_enabled) gse::display_timers();
-	if (g_imgui_enabled) gse::debug::render_imgui();
+	if (g_imgui_enabled) gse::debug::render();
 
 	gse::gui::render();
 

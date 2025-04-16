@@ -1,7 +1,3 @@
-module;
-
-#include "GLFW/glfw3.h"
-
 export module gse.graphics.gui;
 
 import std;
@@ -15,6 +11,7 @@ import gse.graphics.texture;
 import gse.graphics.font;
 import gse.platform.glfw.window;
 import gse.platform.glfw.input;
+import gse.platform.glfw.input.key_defs;
 
 export namespace gse::gui {
 	auto initialize() -> void;
@@ -117,7 +114,7 @@ auto gse::gui::update() -> void {
 	for (auto& m : g_menus) {
 		const auto mouse_position = window::get_mouse_position_rel_bottom_left();
 
-		if (input::get_mouse().buttons[input::control::mouse_button_left].held) {
+		if (input::mouse::button(input::control::mouse_button_left).held) {
 			if (!m.grabbed.get_value() && !(m.docked.get_value() && m.docked_waiting_for_release)) {
 				if (intersects(m.position, m.size, mouse_position, { 0.f, 0.f })) {
 					m.grabbed = true;

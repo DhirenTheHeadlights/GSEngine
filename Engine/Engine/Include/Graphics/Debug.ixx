@@ -17,9 +17,9 @@ import gse.core.json_parser;
 import gse.platform.glfw.window;
 
 export namespace gse::debug {
-	auto set_up_imgui() -> void;
-	auto update_imgui() -> void;
-	auto render_imgui() -> void;
+	auto initialize() -> void;
+	auto update() -> void;
+	auto render() -> void;
 	auto save_imgui_state() -> void;
 
 	auto set_imgui_save_file_path(const std::filesystem::path& path) -> void;
@@ -62,7 +62,7 @@ auto gse::debug::set_imgui_save_file_path(const std::filesystem::path& path) -> 
 	g_imgui_save_file_path = path;
 }
 
-auto gse::debug::set_up_imgui() -> void {
+auto gse::debug::initialize() -> void {
 	ImGui::CreateContext();
 	ImGui::StyleColorsDark();
 	imguiThemes::embraceTheDarkness();
@@ -88,7 +88,7 @@ auto gse::debug::set_up_imgui() -> void {
 	}
 }
 
-auto gse::debug::update_imgui() -> void {
+auto gse::debug::update() -> void {
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
@@ -121,7 +121,7 @@ auto gse::debug::update_imgui() -> void {
 	}
 }
 
-auto gse::debug::render_imgui() -> void {
+auto gse::debug::render() -> void {
 	for (const auto& callback : g_render_call_backs) {
 		callback();
 	}
