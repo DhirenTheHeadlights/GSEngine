@@ -5,16 +5,9 @@ import std;
 import gse.graphics.camera;
 import gse.core.clock;
 import gse.core.main_clock;
+import gse.core.system_backend;
 import gse.core.timer;
-import gse.core.object_registry;
-import gse.core.scene_loader;
-import gse.graphics.debug;
-import gse.graphics.gui;
-import gse.graphics.renderer2d;
-import gse.graphics.renderer3d;
-import gse.network;
 import gse.platform.perma_assert;
-import gse.platform.glfw.input;
 import gse.platform.glfw.window;
 
 export namespace gse {
@@ -39,22 +32,8 @@ enum class engine_state : std::uint8_t {
 
 auto g_engine_state = engine_state::uninitialized;
 
-bool g_engine_shutdown_blocked = false;
-bool g_imgui_enabled = false;
-
 auto gse::request_shutdown() -> void {
-	if (g_engine_shutdown_blocked) {
-		return;
-	}
 	g_engine_state = engine_state::shutdown;
-}
-
-auto gse::block_shutdown_requests() -> void {
-	g_engine_shutdown_blocked = true;
-}
-
-auto gse::set_imgui_enabled(const bool enabled) -> void {
-	g_imgui_enabled = enabled;
 }
 
 auto gse::initialize(const std::function<void()>& initialize_function, const std::function<void()>& shutdown_function) -> void {
@@ -62,16 +41,7 @@ auto gse::initialize(const std::function<void()>& initialize_function, const std
 
 	g_game_shutdown_function = shutdown_function;
 
-	window::initialize();
-
-	gui::initialize();
-
-	if (g_imgui_enabled) debug::initialize();
-
-	renderer3d::initialize();
-	renderer2d::initialize();
-
-	network::initialize();
+	systems::initialize();
 
 	initialize_function();
 
@@ -82,17 +52,7 @@ auto update(const std::function<bool()>& update_function) -> void {
 
 	if (g_imgui_enabled) gse::add_timer("Engine::update");
 
-	gse::window::update();
-
-	if (g_imgui_enabled) gse::debug::update();
-
-	gse::gui::update();
-
-	gse::main_clock::update();
-
-	gse::scene_loader::update();
-
-	gse::input::update();
+	gse::systems::update();
 
 	if (!update_function()) {
 		gse::request_shutdown();
