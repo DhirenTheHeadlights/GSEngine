@@ -60,24 +60,8 @@ namespace gse::core {
 }
 
 namespace call {
-	template<typename System> auto initialize() -> void {
-		if constexpr (std::is_invocable_v<decltype(System::initialize)>) {
-			System::initialize();
-		}
-	}
-	template<typename System> auto update() -> void {
-		if constexpr (std::is_invocable_v<decltype(System::update)>) {
-			System::update();
-		}
-	}
-	template<typename System> auto render() -> void {
-		if constexpr (std::is_invocable_v<decltype(System::render)>) {
-			System::render();
-		}
-	}
-	template<typename System> auto shutdown() -> void {
-		if constexpr (std::is_invocable_v<decltype(System::shutdown)>) {
-			System::shutdown();
-		}
-	}
+	template<typename System> auto initialize() -> void { System::initialize(); }
+	template<typename System> auto update() -> void { System::update(); }
+	template<typename System> auto render() -> void { System::render(); }
+	template<typename System> auto shutdown() -> void { System::shutdown(); }
 }
