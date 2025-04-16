@@ -12,12 +12,18 @@ import gse.graphics.renderer3d;
 import gse.platform.glfw.input;
 import gse.platform.glfw.window;
 
+export namespace gse::systems {
+	auto initialize() -> void;
+	auto update() -> void;
+	auto render() -> void;
+}
+
 namespace gse::core {
-	template<auto Initialize, auto Update, auto Render, auto Shutdown, auto... Dependencies>
+	template <auto Initialize, auto Update, auto Render, auto Shutdown, auto... Dependencies>
 	struct system;
 }
 
-export namespace gse::system {
+namespace gse::system {
 	using clock			= core::system<nullptr, &main_clock::update, nullptr, nullptr>;
 	using scene_loader	= core::system<nullptr, &scene_loader::update, &scene_loader::render, &scene_loader::exit>;
 	using renderer2d	= core::system<&renderer2d::initialize, nullptr, nullptr, &renderer2d::shutdown>;
@@ -29,17 +35,17 @@ export namespace gse::system {
 }
 
 namespace gse::core {
-	template<auto Fn>
+	template <auto Fn>
 	concept callable = requires {
 		requires std::is_invocable_v<decltype(Fn)> || Fn == nullptr;
 	};
 
-	template<auto Fn>
+	template <auto Fn>
 	concept valid_fn = requires {
 		requires (std::is_invocable_v<decltype(Fn)> || Fn == nullptr);
 	};
 
-	template<
+	template <
 		auto Initialize,
 		auto Update,
 		auto Render,
@@ -56,12 +62,33 @@ namespace gse::core {
 		constexpr static auto render = Render;
 		constexpr static auto shutdown = Shutdown;
 		constexpr static auto dependencies = std::tuple<Dependencies...>{};
+
+		template <typename T>
+		constexpr static auto id() {
+			return std::type_index(typeid(T));
+		}
 	};
 }
 
-namespace call {
-	template<typename System> auto initialize() -> void { System::initialize(); }
-	template<typename System> auto update() -> void { System::update(); }
-	template<typename System> auto render() -> void { System::render(); }
-	template<typename System> auto shutdown() -> void { System::shutdown(); }
+using system_list = std::tuple<
+	gse::system::window,
+	gse::system::input,
+	gse::system::renderer2d,
+	gse::system::renderer3d,
+	gse::system::gui,
+	gse::system::debug,
+	gse::system::scene_loader,
+	gse::system::clock
+>;
+
+auto gse::systems::initialize() -> void {
+	
+}
+
+auto gse::systems::update() -> void {
+	
+}
+
+auto gse::systems::render() -> void {
+
 }
