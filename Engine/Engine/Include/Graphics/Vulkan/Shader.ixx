@@ -31,7 +31,9 @@ namespace gse {
 		vk::ShaderModule m_frag_module;
 
 		vk::DescriptorSetLayout m_descriptor_set_layout;
+		int descriptor_layout_type = 0;
 		std::vector<vk::DescriptorSet> m_descriptor_sets;
+		//vk::PipelineLayout pipeline_layout;
 	};
 
 	auto read_file(const std::filesystem::path& path) -> std::vector<char>;
@@ -56,6 +58,7 @@ auto gse::shader::create(const std::filesystem::path& vert_path, const std::file
 	if (layout) {
 		m_descriptor_set_layout = *layout;
 		m_descriptor_sets = vulkan::get_device_config().device.allocateDescriptorSets({ vulkan::get_descriptor_config().descriptor_pool, 1, &m_descriptor_set_layout });
+		//pipeline_layout = vulkan::get_device_config().device.createPipelineLayout({ {}, 1, gse::shader_loader::get_descriptor_layout(layout) });
 		return;
 	}
 

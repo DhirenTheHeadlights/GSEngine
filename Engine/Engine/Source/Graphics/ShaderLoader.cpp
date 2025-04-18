@@ -132,7 +132,7 @@ namespace gse::shader_loader {
 }
 
 auto gse::shader_loader::load_shaders() -> void {
-	create_descriptor_layouts();
+    std::unordered_map<descriptor_layout, vk::DescriptorSetLayout> descriptor_layouts = create_descriptor_layouts();
 
 	const auto shader_path = config::shader_spirv_path;
 	std::unordered_map<std::string, shader_info> shader_files;
@@ -158,9 +158,11 @@ auto gse::shader_loader::load_shaders() -> void {
         }
     }
 
+	std::unordered_map<std::string, descriptor_layout> layouts = compile_shaders();
+
 	for (const auto& info : shader_files | std::views::values) {
 		perma_assert(!info.vert_path.empty() && !info.frag_path.empty(), "Missing shader file");
-		g_shaders.emplace(std::piecewise_construct, std::forward_as_tuple(info), std::forward_as_tuple(info.vert_path, info.frag_path));
+		g_shaders.emplace(std::piecewise_construct, std::forward_as_tuple(info), std::forward_as_tuple(info.vert_path, info.frag_path), descriptor_layouts[layouts.at(info.name)]);
 		std::cout << "Loaded shader: " << info.name << '\n';
 	}
 }
@@ -177,11 +179,11 @@ auto gse::shader_loader::get_shader(const std::string_view name) -> const shader
 	return it->second;
 }
 
-auto gse::shader_loader::compile_shaders() -> std::vector<descriptor_layout> {
+auto gse::shader_loader::compile_shaders() -> std::unordered_map<std::string, descriptor_layout> {
 	const auto root_path = config::shader_raw_path;
 	const auto destination_path = config::shader_spirv_path;
 
-	std::vector<descriptor_layout> layouts;
+	std::unordered_map<std::string, descriptor_layout> layouts;
 
 	glslang::InitializeProcess();
 
@@ -199,7 +201,7 @@ auto gse::shader_loader::compile_shaders() -> std::vector<descriptor_layout> {
                 std::string value_str = line.substr(pos, end - pos);
                 value_str.erase(std::ranges::remove_if(value_str, isspace).begin(), value_str.end());
                 int layout_value = std::stoi(value_str);
-                layouts.push_back(static_cast<descriptor_layout>(layout_value));
+                layouts[entry.path().stem().stem().string()] = static_cast<descriptor_layout>(layout_value));
                 break;
             }
         }
@@ -250,4 +252,5 @@ auto gse::shader_loader::compile_shaders() -> std::vector<descriptor_layout> {
     }
 
     glslang::FinalizeProcess();
+    return layouts;
 }
