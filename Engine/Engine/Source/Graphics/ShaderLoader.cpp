@@ -185,17 +185,12 @@ auto gse::shader_loader::compile_shaders() -> std::vector<descriptor_layout> {
 
 	glslang::InitializeProcess();
 
-    auto infer_shader_stage = [](const std::filesystem::path& path) -> EShLanguage {
-        
-        return {};
-        };
-
     for (const auto& entry : std::filesystem::recursive_directory_iterator(root_path)) {
         /// Grab descriptor layout type. Shader sets in this format: 'layout (constant_id = 99) const int descriptor_layout_type = 1;'
 		std::ifstream file(entry.path());
 		std::string line;
 
-        constexpr std::string token = "const int descriptor_layout_type =";
+        const std::string token = "const int descriptor_layout_type =";
 
         while (std::getline(file, line)) {
 	        if (auto pos = line.find(token); pos != std::string::npos) {
