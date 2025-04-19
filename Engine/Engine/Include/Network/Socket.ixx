@@ -39,7 +39,7 @@ export namespace gse::network {
 
 gse::network::udp_socket::udp_socket() : socket_id(INVALID_SOCKET) {
 	socket_id = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	perma_assert(socket_id != INVALID_SOCKET, "Failed to create socket.");
+	assert(socket_id != INVALID_SOCKET, "Failed to create socket.");
 }
 
 gse::network::udp_socket::~udp_socket() {

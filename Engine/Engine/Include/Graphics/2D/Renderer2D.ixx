@@ -299,12 +299,12 @@ auto gse::renderer2d::begin_frame() -> void {
     const auto& swap_chain_config = vulkan::get_swap_chain_config();
     const auto& device = vulkan::get_device_config().device;
 
-    perma_assert(
+    assert(
         device.waitForFences(1, &fence, vk::True, std::numeric_limits<std::uint64_t>::max()) == vk::Result::eSuccess,
         "Failed to wait for fence!"
     );
 
-    perma_assert(device.resetFences(1, &fence) == vk::Result::eSuccess, "Failed to reset fence!");
+    assert(device.resetFences(1, &fence) == vk::Result::eSuccess, "Failed to reset fence!");
 
     constexpr vk::CommandBufferBeginInfo begin_info(vk::CommandBufferUsageFlagBits::eSimultaneousUse);
 	g_command_buffer.begin(begin_info);
@@ -350,7 +350,7 @@ auto gse::renderer2d::end_frame() -> void {
     );
 
     const vk::Result present_result = vulkan::get_queue_config().present_queue.presentKHR(present_info);
-    perma_assert(present_result == vk::Result::eSuccess || present_result == vk::Result::eSuboptimalKHR, "Failed to present image!");
+    assert(present_result == vk::Result::eSuccess || present_result == vk::Result::eSuboptimalKHR, "Failed to present image!");
 }
 
 auto gse::renderer2d::shutdown() -> void {
@@ -418,7 +418,7 @@ auto render_quad(const gse::vec2<gse::length>& position, const gse::vec2<gse::le
 	const auto& swap_chain = gse::vulkan::get_swap_chain_config().swap_chain;
 
     const vk::PresentInfoKHR present_info(1, &render_finished_semaphore, 1, &swap_chain, &image_index);
-    gse::perma_assert(present_queue.presentKHR(present_info) != vk::Result::eSuccess, "Failed to present image!");
+    gse::assert(present_queue.presentKHR(present_info) != vk::Result::eSuccess, "Failed to present image!");
 
     device.destroySemaphore(image_available_semaphore);
     device.destroySemaphore(render_finished_semaphore);

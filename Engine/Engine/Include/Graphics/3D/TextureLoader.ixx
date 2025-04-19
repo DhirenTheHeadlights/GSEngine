@@ -35,11 +35,11 @@ auto gse::texture_loader::get_texture_id(const std::filesystem::path& texture_pa
 }
 
 auto gse::texture_loader::get_texture(const id* texture_id) -> texture& {
-    perma_assert(g_textures_by_id.contains(texture_id->number()), "Trying to access a non-existent texture by ID.");
+    assert(g_textures_by_id.contains(texture_id->number()), "Trying to access a non-existent texture by ID.");
     return *g_textures_by_id.at(texture_id->number());
 }
 
 auto gse::texture_loader::get_texture(const uuid id) -> texture& {
-    perma_assert(g_textures_by_id.contains(id), "Trying to access a non-existent texture by ID");
+    assert(g_textures_by_id.contains(id), "Trying to access a non-existent texture by ID");
     return *g_textures_by_id.at(id);
 }

@@ -224,7 +224,7 @@ auto gse::vulkan::create_instance(GLFWwindow* window) -> void {
     }
 
     VkSurfaceKHR temp_surface;
-    assert_comment(glfwCreateWindowSurface(instance, window, nullptr, &temp_surface) == static_cast<int>(vk::Result::eSuccess), "Error creating window surface");
+    assert(glfwCreateWindowSurface(instance, window, nullptr, &temp_surface) == static_cast<int>(vk::Result::eSuccess), "Error creating window surface");
 	surface = temp_surface;
 }
 
@@ -232,7 +232,7 @@ auto gse::vulkan::select_gpu() -> void {
 	const auto devices = g_instance_config.instance.enumeratePhysicalDevices();
 	auto& physical_device = g_device_config.physical_device;
 
-	perma_assert(!devices.empty(), "No Vulkan-compatible GPUs found!");
+	assert(!devices.empty(), "No Vulkan-compatible GPUs found!");
     std::cout << "Found " << devices.size() << " Vulkan-compatible GPU(s):\n";
 
     for (const auto& device : devices) {

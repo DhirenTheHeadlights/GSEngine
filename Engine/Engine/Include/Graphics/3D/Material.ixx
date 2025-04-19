@@ -52,7 +52,7 @@ std::unordered_map<std::string, gse::material> g_materials;
 std::unordered_map<std::string, std::vector<gse::material_handle>> g_materials_handles;
 
 auto gse::get_material(const std::string& name) -> material_handle {
-	perma_assert(g_materials.contains(name), "Material not found.");
+	assert(g_materials.contains(name), "Material not found.");
 	return &g_materials[name];
 }
 

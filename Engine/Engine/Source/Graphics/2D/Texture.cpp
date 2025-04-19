@@ -3,6 +3,7 @@ module;
 #include <cstring>
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+#undef assert
 
 module gse.graphics.texture;
 
@@ -24,7 +25,7 @@ gse::texture::~texture() {
 auto gse::texture::load_from_file(const std::filesystem::path& filepath) -> void {
     stbi_set_flip_vertically_on_load(true);
     unsigned char* data = stbi_load(filepath.string().c_str(), &m_size.x, &m_size.y, &m_channels, 0);
-    perma_assert(data, "Failed to load texture image.");
+    assert(data, "Failed to load texture image.");
 
     create_texture_image(data, m_size.x, m_size.y, m_channels);
     stbi_image_free(data);

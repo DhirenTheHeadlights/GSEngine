@@ -104,7 +104,7 @@ auto gse::generate_id(const std::string& tag) -> std::unique_ptr<id> {
 auto gse::remove_id(const id* id) -> void {
 	const int index = id->number();
 	if (index < 0 || index >= static_cast<int>(g_ids.size())) {
-		assert_comment(false, "Object not found in registry when trying to remove its id");
+		assert(false, "Object not found in registry when trying to remove its id");
 		return;
 	}
 

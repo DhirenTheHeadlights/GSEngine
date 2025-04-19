@@ -48,7 +48,7 @@ auto gse::scene_loader::remove_scene(id* scene_id) -> void {
 }
 
 auto gse::scene_loader::activate_scene(id* scene_id) -> void {
-	assert_comment(g_engine_initialized, "You are trying to activate a scene before the engine is initialized");
+	assert(g_engine_initialized, "You are trying to activate a scene before the engine is initialized");
 
 	if (!g_allow_multiple_active_scenes) {
 		for (const auto& scene : g_scenes | std::views::values) {

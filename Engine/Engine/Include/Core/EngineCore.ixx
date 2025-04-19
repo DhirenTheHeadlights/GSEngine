@@ -127,7 +127,7 @@ auto shutdown() -> void {
 }
 
 auto gse::run(const std::function<bool()>& update_function, const std::function<bool()>& render_function) -> void {
-	assert_comment(g_engine_state == engine_state::running, "Engine is not initialized");
+	assert(g_engine_state == engine_state::running, "Engine is not initialized");
 
 	scene_loader::set_engine_initialized(true);
 

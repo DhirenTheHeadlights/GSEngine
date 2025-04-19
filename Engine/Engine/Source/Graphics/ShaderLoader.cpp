@@ -128,16 +128,18 @@ auto create_descriptor_layouts() -> std::unordered_map<descriptor_layout, vk::De
 }
 
 namespace gse::shader_loader {
-    auto compile_shaders() -> std::vector<descriptor_layout>;
+    auto compile_shaders() -> std::unordered_map<std::string, descriptor_layout>;
 }
 
 auto gse::shader_loader::load_shaders() -> void {
     std::unordered_map<descriptor_layout, vk::DescriptorSetLayout> descriptor_layouts = create_descriptor_layouts();
 
+    std::unordered_map<std::string, descriptor_layout> layouts = compile_shaders();
+
 	const auto shader_path = config::shader_spirv_path;
 	std::unordered_map<std::string, shader_info> shader_files;
 
-	perma_assert(exists(shader_path) && is_directory(shader_path), "Shader directory does not exist");
+	assert(exists(shader_path) && is_directory(shader_path), "Shader directory does not exist");
 
     for (const auto& entry : std::filesystem::directory_iterator(shader_path)) {
         if (!entry.is_regular_file()) continue;
@@ -158,24 +160,30 @@ auto gse::shader_loader::load_shaders() -> void {
         }
     }
 
-	std::unordered_map<std::string, descriptor_layout> layouts = compile_shaders();
-
 	for (const auto& info : shader_files | std::views::values) {
-		perma_assert(!info.vert_path.empty() && !info.frag_path.empty(), "Missing shader file");
-		g_shaders.emplace(std::piecewise_construct, std::forward_as_tuple(info), std::forward_as_tuple(info.vert_path, info.frag_path), descriptor_layouts[layouts.at(info.name)]);
+		assert(!info.vert_path.empty() && !info.frag_path.empty(), "Missing shader file");
+		g_shaders.emplace(
+            std::piecewise_construct, 
+            std::forward_as_tuple(info), 
+            std::forward_as_tuple(
+                info.vert_path, 
+                info.frag_path, 
+                &descriptor_layouts[layouts.at(info.name)]
+            )
+        );
 		std::cout << "Loaded shader: " << info.name << '\n';
 	}
 }
 
 auto gse::shader_loader::get_shader(const std::filesystem::path& vert_path, const std::filesystem::path& frag_path) -> const shader& {
 	const auto it = g_shaders.find(std::make_pair(vert_path, frag_path));
-	perma_assert(it != g_shaders.end(), "Shader not found");
+	assert(it != g_shaders.end(), "Shader not found");
 	return it->second;
 }
 
 auto gse::shader_loader::get_shader(const std::string_view name) -> const shader& {
 	const auto it = g_shaders.find(name);
-	perma_assert(it != g_shaders.end(), "Shader not found");
+	assert(it != g_shaders.end(), "Shader not found");
 	return it->second;
 }
 
@@ -201,7 +209,7 @@ auto gse::shader_loader::compile_shaders() -> std::unordered_map<std::string, de
                 std::string value_str = line.substr(pos, end - pos);
                 value_str.erase(std::ranges::remove_if(value_str, isspace).begin(), value_str.end());
                 int layout_value = std::stoi(value_str);
-                layouts[entry.path().stem().stem().string()] = static_cast<descriptor_layout>(layout_value));
+                layouts[entry.path().stem().stem().string()] = static_cast<descriptor_layout>(layout_value);
                 break;
             }
         }
@@ -224,7 +232,7 @@ auto gse::shader_loader::compile_shaders() -> std::unordered_map<std::string, de
 		else if (ext == ".geom") stage = EShLangGeometry;
 		else if (ext == ".tesc") stage = EShLangTessControl;
 		else if (ext == ".tese") stage = EShLangTessEvaluation;
-        else perma_assert(false, "Unknown shader extension: {}", ext.c_str());
+        else assert(false, "Unknown shader extension: {}", ext.c_str());
 
         const char* code = source_path.string().c_str();
 
@@ -235,22 +243,28 @@ auto gse::shader_loader::compile_shaders() -> std::unordered_map<std::string, de
         shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_2);
         shader.setEnvTarget(glslang::EShTargetSpv, glslang::EShTargetSpv_1_5);
 
-        perma_assert(shader.parse(GetDefaultResources(), 100, false, EShMsgDefault), "GLSL parse error:\n{}", shader.getInfoLog());
+        assert(
+            shader.parse(GetDefaultResources(), 100, false, EShMsgDefault),
+            "GLSL parse error:\n{}\n{}",
+            shader.getInfoLog(),
+            shader.getInfoDebugLog()
+        );
 
         glslang::TProgram program;
         program.addShader(&shader);
-        perma_assert(program.link(EShMsgDefault), "GLSL link error:\n{}", program.getInfoLog());
+        assert(program.link(EShMsgDefault), "GLSL link error:\n{}", program.getInfoLog());
 
         std::vector<uint32_t> spirv;
         GlslangToSpv(*program.getIntermediate(stage), spirv);
 
         std::ofstream out(destination_file, std::ios::binary);
-        perma_assert(out.is_open(), "Failed to write compiled SPIR-V: {}", destination_file.string().c_str());
+        assert(out.is_open(), "Failed to write compiled SPIR-V: {}", destination_file.string().c_str());
         out.write(reinterpret_cast<const char*>(spirv.data()), spirv.size() * sizeof(uint32_t));
 
 		std::cout << "Compiled shader: " << destination_file.string() << '\n';
     }
 
     glslang::FinalizeProcess();
+
     return layouts;
 }

@@ -86,6 +86,10 @@ target_include_directories(Engine
         "${VULKAN_SDK_PATH}/Source"
 )
 
+target_link_directories(Engine PUBLIC
+  "${VULKAN_SDK_PATH}/Lib"
+)
+
 target_link_libraries(Engine PUBLIC
     glfw
     imgui
@@ -93,6 +97,8 @@ target_link_libraries(Engine PUBLIC
     msdfgen::msdfgen
     VulkanModule
     SPIRV-Reflect
+    "${VULKAN_SDK_PATH}/Lib/shaderc_combinedd.lib"
+    "${VULKAN_SDK_PATH}/Lib/glslang-default-resource-limitsd.lib"
 )
 
 file(GLOB_RECURSE SHADER_SOURCE_FILES CONFIGURE_DEPENDS
