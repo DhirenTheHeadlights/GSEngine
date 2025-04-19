@@ -548,12 +548,12 @@ auto gse::renderer3d::begin_frame() -> void {
 	const auto& swap_chain_config = vulkan::get_swap_chain_config();
 	const auto& device = vulkan::get_device_config().device;
 
-	perma_assert(
+	assert(
 		device.waitForFences(1, &fence, vk::True, std::numeric_limits<std::uint64_t>::max()) == vk::Result::eSuccess,
 		"Failed to wait for fence!"
 	);
 
-	perma_assert(device.resetFences(1, &fence) == vk::Result::eSuccess, "Failed to reset fence!");
+	assert(device.resetFences(1, &fence) == vk::Result::eSuccess, "Failed to reset fence!");
 
 	const auto image_index = vulkan::get_next_image(window::get_window());
 
@@ -617,7 +617,7 @@ auto gse::renderer3d::end_frame() -> void {
 	);
 
 	const vk::Result present_result = vulkan::get_queue_config().present_queue.presentKHR(present_info);
-	perma_assert(present_result == vk::Result::eSuccess || present_result == vk::Result::eSuboptimalKHR, "Failed to present image!");
+	assert(present_result == vk::Result::eSuccess || present_result == vk::Result::eSuboptimalKHR, "Failed to present image!");
 }
 
 auto gse::renderer3d::shutdown() -> void {

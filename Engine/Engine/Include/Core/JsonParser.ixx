@@ -39,7 +39,7 @@ export module gse.core.json_parser;
 //
 //auto gse::json_parse::load_json(const std::filesystem::path& path) -> nlohmann::json {
 //	std::ifstream file(path);
-//	assert_comment(file.is_open(), std::string("Failed to open file: " + path.string()).c_str());
+//	assert(file.is_open(), std::string("Failed to open file: " + path.string()).c_str());
 //	try {
 //		return nlohmann::json::parse(file);
 //	}

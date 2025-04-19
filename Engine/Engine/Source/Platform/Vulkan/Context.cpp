@@ -51,8 +51,8 @@ auto gse::vulkan::get_sync_objects() -> sync_objects& {
 }
 
 auto gse::vulkan::get_next_image(GLFWwindow* window) -> std::uint32_t {
-	perma_assert(g_device_config.device.waitForFences(1, &g_sync_objects.in_flight_fence, true, std::numeric_limits<std::uint64_t>::max()) != vk::Result::eSuccess, "Failed to wait for fence!");
-	perma_assert(g_device_config.device.resetFences(1, &g_sync_objects.in_flight_fence) != vk::Result::eSuccess, "Failed to reset fence!");
+	assert(g_device_config.device.waitForFences(1, &g_sync_objects.in_flight_fence, true, std::numeric_limits<std::uint64_t>::max()) != vk::Result::eSuccess, "Failed to wait for fence!");
+	assert(g_device_config.device.resetFences(1, &g_sync_objects.in_flight_fence) != vk::Result::eSuccess, "Failed to reset fence!");
 
 	std::uint32_t image_index = 0;
 	const auto result = g_device_config.device.acquireNextImageKHR(g_swap_chain_config.swap_chain, std::numeric_limits<std::uint64_t>::max(), g_sync_objects.image_available_semaphore, {}, &image_index);

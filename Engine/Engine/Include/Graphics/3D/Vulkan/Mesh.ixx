@@ -173,14 +173,14 @@ auto gse::calculate_center_of_mass(const std::vector<std::uint32_t>& indices, co
     double total_volume = 0.f;
     unitless::vec3 moment(0.f);
 
-    perma_assert(indices.size() % 3 == 0, "Indices count is not a multiple of 3. Ensure that each face is defined by exactly three indices.");
+    assert(indices.size() % 3 == 0, "Indices count is not a multiple of 3. Ensure that each face is defined by exactly three indices.");
 
     for (size_t i = 0; i < indices.size(); i += 3) {
         const unsigned int idx0 = indices[i];
         const unsigned int idx1 = indices[i + 1];
         const unsigned int idx2 = indices[i + 2];
 
-        perma_assert(idx0 <= vertices.size() || idx1 <= vertices.size() || idx2 <= vertices.size(), "Index out of range while accessing vertices.");
+        assert(idx0 <= vertices.size() || idx1 <= vertices.size() || idx2 <= vertices.size(), "Index out of range while accessing vertices.");
 
         const unitless::vec3d v0(vertices[idx0].position);
         const unitless::vec3d v1(vertices[idx1].position);
@@ -197,7 +197,7 @@ auto gse::calculate_center_of_mass(const std::vector<std::uint32_t>& indices, co
         moment += tetra_com * volume;
     }
 
-    perma_assert(total_volume != 0.0, "Total volume is zero. Check if the mesh is closed and correctly oriented.");
+    assert(total_volume != 0.0, "Total volume is zero. Check if the mesh is closed and correctly oriented.");
 
     return moment / total_volume;
 }

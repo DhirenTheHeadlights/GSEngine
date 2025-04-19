@@ -128,8 +128,8 @@ auto gse::window::remove_rendering_interface(const std::shared_ptr<rendering_int
 }
 
 auto gse::window::initialize() -> void {
-	assert_comment(glfwInit(), "Error initializing GLFW");
-	assert_comment(glfwVulkanSupported(), "Vulkan not supported");
+	assert(glfwInit(), "Error initializing GLFW");
+	assert(glfwVulkanSupported(), "Vulkan not supported");
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 

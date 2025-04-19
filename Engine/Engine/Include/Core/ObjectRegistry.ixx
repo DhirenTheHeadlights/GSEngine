@@ -106,7 +106,7 @@ auto gse::registry::add_entity_hook(const std::uint32_t parent_id, std::unique_p
 		return;
 	}
 
-	assert_comment(false, "Object not found in registry when trying to add a hook to it");
+	assert(false, "Object not found in registry when trying to add a hook to it");
 }
 
 auto gse::registry::remove_object_hook(const hook<entity>& hook) -> void {
@@ -169,7 +169,7 @@ auto gse::registry::activate_entity(std::uint32_t identifier, const std::string&
 		return obj.index == identifier;
 		});
 
-	assert_comment(it != g_registered_inactive_entities.end(), "Object not found in registry when trying to activate it");
+	assert(it != g_registered_inactive_entities.end(), "Object not found in registry when trying to activate it");
 
 	auto object = *it;
 
@@ -246,7 +246,7 @@ auto gse::registry::activate_entity(std::uint32_t identifier, const std::string&
 auto gse::registry::remove_entity(const std::string& name) -> std::uint32_t {
 	const auto it = g_string_to_index_map.find(name);
 	if (it == g_string_to_index_map.end()) {
-		assert_comment(false, "Object not found in registry when trying to remove it");
+		assert(false, "Object not found in registry when trying to remove it");
 	}
 	const auto index = it->second;
 
@@ -362,7 +362,7 @@ auto gse::registry::get_components() -> std::vector<T>& {
 
 template <typename T>
 	requires std::derived_from<T, gse::component>
-// ReSharper disable once CppNotAllPathsReturnValue - The assert_comment will always be triggered if the component is not found
+// ReSharper disable once CppNotAllPathsReturnValue - The assert will always be triggered if the component is not found
 auto internal_get_component(const std::uint32_t desired_id) -> T* {
 	if (const auto it = g_component_containers.find(typeid(T)); it != g_component_containers.end()) {
 		for (auto& container = static_cast<component_container<T>&>(*it->second); auto & comp : container.components) {  // Removed 'const'

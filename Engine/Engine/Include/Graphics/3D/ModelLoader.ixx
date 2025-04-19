@@ -24,7 +24,7 @@ std::unordered_map<gse::uuid, std::filesystem::path> g_loaded_model_paths;
 
 auto gse::model_loader::load_obj_file(const std::filesystem::path& model_path, const std::string& model_name) -> uuid {
 	std::ifstream model_file(model_path);
-	perma_assert(model_file.is_open(), "Failed to open model file.");
+	assert(model_file.is_open(), "Failed to open model file.");
 
 	for (const auto& [id, path] : g_loaded_model_paths) {
 		if (path == model_path) {
@@ -252,7 +252,7 @@ auto gse::model_loader::get_model_by_name(const std::string_view& model_name) ->
 		return pair.second.get_id()->tag() == model_name;
 		});
 
-	perma_assert(it != g_models.end(), "Model with the given name was not found.");
+	assert(it != g_models.end(), "Model with the given name was not found.");
 
 	return it->second;
 }
@@ -262,7 +262,7 @@ auto gse::model_loader::get_model_by_id(const id* model_id) -> const model& {
 }
 
 auto gse::model_loader::get_model_by_id(const uuid model_id) -> const model& {
-	perma_assert(g_models.contains(model_id), "Model with the given ID was not found.");
+	assert(g_models.contains(model_id), "Model with the given ID was not found.");
 	return g_models.at(model_id);
 }
 

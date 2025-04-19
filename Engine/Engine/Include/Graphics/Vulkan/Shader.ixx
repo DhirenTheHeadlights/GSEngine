@@ -67,7 +67,7 @@ auto gse::shader::create(const std::filesystem::path& vert_path, const std::file
 	auto extract_bindings = [&](const std::vector<char>& spirv_code) {
 		SpvReflectShaderModule reflect_module;
 		const SpvReflectResult result = spvReflectCreateShaderModule(spirv_code.size(), spirv_code.data(), &reflect_module);
-		perma_assert(result == SPV_REFLECT_RESULT_SUCCESS, "Failed to parse SPIR-V!");
+		assert(result == SPV_REFLECT_RESULT_SUCCESS, "Failed to parse SPIR-V!");
 
 		uint32_t binding_count = 0;
 		spvReflectEnumerateDescriptorBindings(&reflect_module, &binding_count, nullptr);
@@ -139,7 +139,7 @@ auto gse::shader::create_shader_module(const std::vector<char>& code) -> vk::Sha
 auto gse::read_file(const std::filesystem::path& path) -> std::vector<char> {
 	std::ifstream file(path, std::ios::ate | std::ios::binary);
 
-	perma_assert(file.is_open(), "Failed to open file!");
+	assert(file.is_open(), "Failed to open file!");
 
 	const size_t file_size = file.tellg();
 	std::vector<char> buffer(file_size);
