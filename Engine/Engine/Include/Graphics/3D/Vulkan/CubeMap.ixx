@@ -50,7 +50,7 @@ auto gse::cube_map::create(const std::vector<std::string>& faces) -> void {
     std::vector<unsigned char*> face_data;
     for (const auto& face : faces) {
         unsigned char* data = stbi_load(face.c_str(), &width, &height, &nr_channels, STBI_rgb_alpha);
-		assert(data, "Failed to load texture image: {}", face);
+		assert(data, std::format("Failed to load texture image: {}", face));
         face_data.push_back(data);
     }
 

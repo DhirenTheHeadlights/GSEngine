@@ -9,7 +9,7 @@ layout (location = 2) in vec2 in_tex_coord;
 
 layout (binding = 0) uniform CameraUBO {
     mat4 view;
-    mat4 proj;
+    mat4 proj; 
 } camera_ubo;
 
 layout (binding = 1) uniform ModelUBO {
