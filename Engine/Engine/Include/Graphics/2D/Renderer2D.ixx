@@ -240,7 +240,7 @@ auto gse::renderer2d::initialize() -> void {
 
 	vk::PipelineVertexInputStateCreateInfo msdf_vertex_input_info({}, 1, &binding_description, static_cast<std::uint32_t>(attribute_descriptions.size()), attribute_descriptions.data());
 
-	vk::PipelineLayoutCreateInfo pipeline_layout_info({}, 0, nullptr, 1, &msdf_push_constant_range);
+	vk::PipelineLayoutCreateInfo pipeline_layout_info({}, 1, msdf_shader.get_descriptor_set_layout(), 1, &msdf_push_constant_range);
     g_msdf_pipeline_layout = device.createPipelineLayout(pipeline_layout_info);
 
     vk::PipelineColorBlendAttachmentState blend_state(
