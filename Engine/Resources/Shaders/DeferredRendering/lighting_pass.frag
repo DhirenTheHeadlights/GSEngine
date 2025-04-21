@@ -1,11 +1,11 @@
 #version 450
 #extension GL_KHR_vulkan_glsl : enable
 
-layout(constant_id = 99) const int descriptor_layout_type = 2;
+layout (constant_id = 99) const int descriptor_layout_type = 2;
 
-layout(location = 0) in  vec2 tex_coords;
-layout(location = 0) out vec4 frag_color;
-layout(location = 1) out vec4 bright_color;
+layout (location = 0) in  vec2 tex_coords;
+layout (location = 0) out vec4 frag_color;
+layout (location = 1) out vec4 bright_color;
 
 #define MAX_LIGHTS 10
 
@@ -13,8 +13,8 @@ layout(set=0, binding=0) uniform sampler2D g_position;
 layout(set=0, binding=1) uniform sampler2D g_normal;
 layout(set=0, binding=2) uniform sampler2D g_albedo_spec;
 
-layout(set=0, binding=3) uniform sampler2D   shadow_maps[ MAX_LIGHTS ];
-layout(set=0, binding=4) uniform samplerCube shadow_cube_maps[ MAX_LIGHTS ];
+layout(set=0, binding=3) uniform sampler2D   shadow_maps[MAX_LIGHTS];
+layout(set=0, binding=4) uniform samplerCube shadow_cube_maps[MAX_LIGHTS];
 
 layout(set=0, binding=5) uniform LightSpaceBlock {
     mat4 light_space_matrices[ MAX_LIGHTS ];
@@ -22,10 +22,6 @@ layout(set=0, binding=5) uniform LightSpaceBlock {
 
 layout(set=0, binding=6) uniform sampler2D   diffuse_texture;
 layout(set=0, binding=7) uniform samplerCube environment_map;
-
-layout(set=0, binding=8) buffer Lights {
-    Light lights[];
-};
 
 layout(push_constant) uniform PushConstants {
     vec3 view_pos;

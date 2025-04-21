@@ -264,11 +264,9 @@ auto gse::shader_loader::compile_shaders() -> std::unordered_map<std::string, de
             auto debug = shader.getInfoDebugLog();  // now populated
 
             auto msg = std::format(
-                "GLSL parse error:\n{}\n{}",
-                info, debug
+                "File ({}) GLSL parse error:\n{}\n{}",
+                source_path.filename().string(), info, debug
             );
-
-            std::cout << "[PARSE FAILED]\n" << msg << "\n";
             assert(false, msg);
         }
 

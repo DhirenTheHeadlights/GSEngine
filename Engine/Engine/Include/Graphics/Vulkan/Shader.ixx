@@ -22,7 +22,7 @@ namespace gse {
 
 		auto create(const std::filesystem::path& vert_path, const std::filesystem::path& frag_path, const vk::DescriptorSetLayout* layout = nullptr) -> void;
 		auto get_shader_stages() const -> std::array<vk::PipelineShaderStageCreateInfo, 2>;
-		auto get_descriptor_set_layout() const -> vk::DescriptorSetLayout { return m_descriptor_set_layout; }
+		auto get_descriptor_set_layout() const -> const vk::DescriptorSetLayout* { return &m_descriptor_set_layout; }
 		auto get_descriptor_sets() const -> const std::vector<vk::DescriptorSet>& { return m_descriptor_sets; }
 	private:
 		static auto create_shader_module(const std::vector<char>& code) -> vk::ShaderModule;
