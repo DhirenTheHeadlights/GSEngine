@@ -53,15 +53,7 @@ struct shader_info_equal {
 };
 
 std::unordered_map<shader_info, gse::shader, shader_info_hash, shader_info_equal> g_shaders;
-
-enum class descriptor_layout : std::uint8_t {
-    standard_3d     = 1,
-    deferred_3d     = 2,
-    forward_3d      = 3,
-    forward_2d      = 4,
-    post_process    = 5,
-    custom          = 99
-};
+std::unordered_map<descriptor_layout, vk::DescriptorSetLayout> g_layouts;
 
 constexpr int max_lights = 10;
 
@@ -126,12 +118,8 @@ auto create_descriptor_layouts() -> std::unordered_map<descriptor_layout, vk::De
     };
 }
 
-namespace gse::shader_loader {
-    auto compile_shaders() -> std::unordered_map<std::string, descriptor_layout>;
-}
-
 auto gse::shader_loader::load_shaders() -> void {
-    std::unordered_map<descriptor_layout, vk::DescriptorSetLayout> descriptor_layouts = create_descriptor_layouts();
+    g_layouts = create_descriptor_layouts();
 
     std::unordered_map<std::string, descriptor_layout> layouts = compile_shaders();
 
@@ -167,7 +155,7 @@ auto gse::shader_loader::load_shaders() -> void {
             std::forward_as_tuple(
                 info.vert_path, 
                 info.frag_path, 
-                &descriptor_layouts[layouts.at(info.name)]
+                &g_layouts[layouts.at(info.name)]
             )
         );
 		std::cout << "Loaded shader: " << info.name << '\n';
@@ -287,4 +275,8 @@ auto gse::shader_loader::compile_shaders() -> std::unordered_map<std::string, de
     glslang::FinalizeProcess();
 
     return layouts;
+}
+
+auto gse::shader_loader::get_descriptor_layout(const descriptor_layout layout_type) -> vk::DescriptorSetLayout* {
+    return &g_layouts[layout_type];
 }
