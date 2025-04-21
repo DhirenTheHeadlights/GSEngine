@@ -117,7 +117,7 @@ Other changes:
   advertised as supported in 1.89.4). (#6199, #6256, #5856) [@cfillion]
 - Backends: OpenGL3: Fixed GL loader crash when GL_VERSION returns NULL. (#6154, #4445, #3530)
 - Examples: Windows: Added 'misc/debuggers/imgui.natstepfilter' file to all Visual Studio projects,
-  now that VS 2022 17.6 Preview 2 support adding Debug Step Filter spec files into projects.
+  now that vs 2022 17.6 Preview 2 support adding Debug Step Filter spec files into projects.
 - Examples: SDL3: Updated for latest WIP SDL3 branch. (#6243)
 
 Docking+Viewports Branch:
@@ -567,7 +567,7 @@ Other Changes:
 - Demo: Improved "Constrained-resizing window" example, more clearly showcase aspect-ratio. (#5627)
 - Demo: Added more explicit "Center window" mode to "Overlay example". (#5618)
 - Demo: Fixed Log & Console from losing scrolling position with Auto-Scroll when child is clipped. (#5721)
-- Examples: Added all SDL examples to default VS solution.
+- Examples: Added all SDL examples to default vs solution.
 - Examples: Win32: Always use RegisterClassW() to ensure windows are Unicode. (#5725)
 - Examples: Android: Enable .ini file loading/saving into application internal data folder. (#5836) [@rewtio]
 - Backends: GLFW: Honor GLFW_CURSOR_DISABLED by not setting mouse position. (#5625) [@scorpion-26]
@@ -768,7 +768,7 @@ Decorated log and release notes: https://github.com/ocornut/imgui/releases/tag/v
 
 Breaking Changes:
 
-- Removed support for pre-C++11 compilers. We'll stop supporting VS2010. (#4537)
+- Removed support for pre-C++11 compilers. We'll stop supporting vs2010. (#4537)
 - Reworked IO mouse input API: (#4921, #4858) [@thedmd, @ocornut]
   - Added io.AddMousePosEvent(), io.AddMouseButtonEvent(), io.AddMouseWheelEvent() functions,
     obsoleting writing directly to io.MousePos, io.MouseDown[], io.MouseWheel, etc.
@@ -1048,7 +1048,7 @@ Docking+Viewports Branch:
 Decorated log and release notes: https://github.com/ocornut/imgui/releases/tag/v1.85
 
 This is the last release officially supporting C++03 and Visual Studio 2008/2010. (#4537)
-We expect that the next release will require a subset of the C++11 language (VS 2012~, GCC 4.8.1, Clang 3.3).
+We expect that the next release will require a subset of the C++11 language (vs 2012~, GCC 4.8.1, Clang 3.3).
 We may use some C++11 language features but we will not use any C++ library headers.
 If you are stuck on ancient compiler you may need to stay at this version onward.
 
@@ -1291,7 +1291,7 @@ Other Changes:
 - Examples: OpenGL3+GLFW,SDL: Remove include cruft to support variety of GL loaders (no longer necessary). [@rokups]
 - Examples: OSX+OpenGL2: Fix event forwarding (fix key remaining stuck when using shortcuts with Cmd/Super key).
   Other OSX examples were not affected. (#4253, #1873) [@rokups]
-- Examples: Updated all .vcxproj to VS2015 (toolset v140) to facilitate usage with vcpkg.
+- Examples: Updated all .vcxproj to vs2015 (toolset v140) to facilitate usage with vcpkg.
 - Examples: SDL2: Accommodate  for vcpkg install having headers in SDL2/SDL.h vs SDL.h.
 
 Docking+Viewports Branch:
@@ -1855,7 +1855,7 @@ Breaking Changes:
 - Obsoleted use of the trailing 'float power=1.0f' parameter for those functions: [@Shironekoben, @ocornut]
   - DragFloat(), DragFloat2(), DragFloat3(), DragFloat4(), DragFloatRange2(), DragScalar(), DragScalarN()
   - SliderFloat(), SliderFloat2(), SliderFloat3(), SliderFloat4(), SliderScalar(), SliderScalarN()
-  - VSliderFloat(), VSliderScalar()
+  - vsliderFloat(), vsliderScalar()
   Replaced the final 'float power=1.0f' argument with ImGuiSliderFlags defaulting to 0 (as with all our flags).
   Worked out a backward-compatibility scheme so hopefully most C++ codebase should not be affected.
   In short, when calling those functions:
@@ -1873,7 +1873,7 @@ Breaking Changes:
       and get a _similar_ effect as previous uses of power >1.0f.
   See https://github.com/ocornut/imgui/issues/3361 for all details.
   For shared code, you can version check at compile-time with `#if IMGUI_VERSION_NUM >= 17704`.
-  Kept inline redirection functions (will obsolete) apart for: DragFloatRange2(), VSliderFloat(), VSliderScalar().
+  Kept inline redirection functions (will obsolete) apart for: DragFloatRange2(), vsliderFloat(), vsliderScalar().
   For those three the 'float power=1.0f' version was removed directly as they were most unlikely ever used.
 - DragInt, DragFloat, DragScalar: Obsoleted use of v_min > v_max to lock edits (introduced in 1.73, this was not
   demoed nor documented much, will be replaced a more generic ReadOnly feature).
@@ -1989,7 +1989,7 @@ Other Changes:
   or _OpenOnArrow would open the node. (#143)
 - Windows: Fix unintended feedback loops when resizing windows close to main viewport edges. [@rokups]
 - Tabs: Added style.TabMinWidthForUnselectedCloseButton settings:
-  - Set to 0.0f (default) to always make a close button appear on hover (same as Chrome, VS).
+  - Set to 0.0f (default) to always make a close button appear on hover (same as Chrome, vs).
   - Set to FLT_MAX to only display a close button when selected (merely hovering is not enough).
   - Set to an intermediary value to toggle behavior based on width (same as Firefox).
 - Tabs: Added a ImGuiTabItemFlags_NoTooltip flag to disable the tooltip for individual tab item
@@ -2224,7 +2224,7 @@ Other Changes:
 - Misc: Added misc/single_file/imgui_single_file.h, We use this to validate compiling all *.cpp
   files in a same compilation unit. Actual users of that technique (also called "Unity builds")
   can generally provide this themselves, so we don't really recommend you use this. [@rokups]
-- CI: Added PVS-Studio static analysis on the continuous-integration server. [@rokups]
+- CI: Added Pvs-Studio static analysis on the continuous-integration server. [@rokups]
 - Backends: GLFW, SDL, Win32, OSX, Allegro: Added support for ImGuiMouseCursor_NotAllowed. [@rokups]
 - Backends: GLFW: Added support for the missing mouse cursors newly added in GLFW 3.4+. [@rokups]
 - Backends: SDL: Wayland: use SDL_GetMouseState (because there is no global mouse state available
@@ -2931,7 +2931,7 @@ Other Changes:
 - ImFontAtlas: FreeType: Fixed abnormally high atlas height.
 - ImFontAtlas: FreeType: Fixed support for any values of TexGlyphPadding (not just only 1).
 - ImDrawList: Optimized some of the functions for performance of debug builds where non-inline function call cost are non-negligible.
-  (Our test UI scene on VS2015 Debug Win64 with /RTC1 went ~5.9 ms -> ~4.9 ms. In Release same scene stays at ~0.3 ms.)
+  (Our test UI scene on vs2015 Debug Win64 with /RTC1 went ~5.9 ms -> ~4.9 ms. In Release same scene stays at ~0.3 ms.)
 - IO: Added BackendPlatformUserData, BackendRendererUserData, BackendLanguageUserData void* for storage use by backends.
 - IO: Renamed InputCharacters[], marked internal as was always intended. Please don't access directly, and use AddInputCharacter() instead!
 - IO: AddInputCharacter() goes into a queue which can receive as many characters as needed during the frame. This is useful
@@ -3010,7 +3010,7 @@ Other Changes:
 - RenderText(): Some optimization for very large text buffers, useful for non-optimized builds.
 - BeginMenu(): Fixed menu popup horizontal offset being off the item in the menu bar when WindowPadding=0.0f.
 - ArrowButton(): Fixed arrow shape being horizontally misaligned by (FramePadding.y-FramePadding.x) if they are different.
-- Demo: Split the contents of ShowDemoWindow() into smaller functions as it appears to speed up link time with VS. (#2152)
+- Demo: Split the contents of ShowDemoWindow() into smaller functions as it appears to speed up link time with vs. (#2152)
 - Drag and Drop: Added GetDragDropPayload() to peek directly into the payload (if any) from anywhere. (#143)
 - ImGuiTextBuffer: Avoid heap allocation when empty.
 - ImDrawList: Fixed AddConvexPolyFilled() undefined behavior when passing points_count smaller than 3,
@@ -4144,7 +4144,7 @@ Changes:
 - Demo: Horizontal scrollbar demo allows to enable simultanaeous scrollbars on both axises.
 - Tools: binary_to_compressed_c.cpp: added -nocompress option.
 - Examples: Added example for the Marmalade platform.
-- Examples: Added batch files to build Windows examples with VS.
+- Examples: Added batch files to build Windows examples with vs.
 - Examples: OpenGL3: Saving/restoring more GL state correctly. (#347)
 - Examples: OpenGL2/3: Added msys2/mingw64 target to Makefiles.
 
@@ -4486,7 +4486,7 @@ Other Changes:
 - Style: Added style.ScrollbarRounding. (#212)
 - Style: Added ImGuiCol_TextDisabled for disabled text. Added TextDisabled() helper.
 - Style: Added style.WindowTitleAlign alignment options, to e.g. center title on windows. (#222)
-- ImVector: tweak growth strategy, matches vector from VS2010.
+- ImVector: tweak growth strategy, matches vector from vs2010.
 - ImFontAtlas: Added ClearFonts(), making the different clear funcs more explicit. (#224)
 - ImFontAtlas: Fixed appending new fonts without clearing existing fonts. Clearing input data left to application. (#224)
 - ImDrawList: Merge draw command better, cases of multiple Begin/End gets merged properly.
@@ -4615,7 +4615,7 @@ Other Changes:
 - Added Indent() / Unindent().
 - Added InputInt2(), InputInt3(), InputInt4() for completeness.
 - Added GetItemRectSize().
-- Added VSliderFloat(), VSliderInt(), vertical sliders.
+- Added vsliderFloat(), vsliderInt(), vertical sliders.
 - Added IsRootWindowFocused(), IsRootWindowOrAnyChildFocused().
 - Added io.KeyAlt + support in examples apps, in prevision for future usage of Alt modifier (was missing).
 - Added ImGuiStyleVar_GrabMinSize enum value for PushStyleVar().

@@ -1,16 +1,19 @@
 #version 450
+#extension GL_KHR_vulkan_glsl : enable
 
-layout (location = 0) out vec4 frag_color;
-layout (location = 0) in vec2 tex_coords;
+layout(constant_id = 99) const int descriptor_layout_type = 5;
 
-layout (binding = 0) uniform sampler2D image;
+layout(set=0, binding=0) uniform sampler2D image;
 
-layout (push_constant) uniform PushConstants {
-    int blur_amount;
+layout(push_constant) uniform PushConstants {
+    int   blur_amount;
     float blur_radius;
     float bloom_intensity;
-    bool horizontal;
+    bool  horizontal;
 } push_constants;
+
+layout(location = 0) in  vec2 tex_coords;
+layout(location = 0) out vec4 frag_color;
 
 float gaussian_weight(int x, float sigma) {
     return exp(-(x * x) / (2.0 * sigma * sigma)) / (sqrt(2.0 * 3.14159) * sigma);

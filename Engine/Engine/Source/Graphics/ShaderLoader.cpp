@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #include <glslang/Public/ResourceLimits.h>
 #include <glslang/Public/ShaderLang.h>
@@ -63,68 +63,67 @@ enum class descriptor_layout : std::uint8_t {
     custom          = 99
 };
 
+constexpr int max_lights = 10;
+
+constexpr auto vs = vk::ShaderStageFlagBits::eVertex;
+constexpr auto fs = vk::ShaderStageFlagBits::eFragment;
+
+auto create_layout(const vk::Device device, const std::vector<vk::DescriptorSetLayoutBinding>& bindings) -> vk::DescriptorSetLayout {
+	return device.createDescriptorSetLayout({
+		{},
+		static_cast<std::uint32_t>(bindings.size()),
+		bindings.data()
+		});
+}
+
 auto create_descriptor_layouts() -> std::unordered_map<descriptor_layout, vk::DescriptorSetLayout> {
-	return {
-		{ descriptor_layout::standard_3d,
-		   gse::vulkan::get_device_config().device.createDescriptorSetLayout({
-			   {},
-			   3,
-			   std::array{
-				   vk::DescriptorSetLayoutBinding{ 0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment },  // Global: ViewProj
-				   vk::DescriptorSetLayoutBinding{ 1, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex },                                       // Per-object: Model matrix
-				   vk::DescriptorSetLayoutBinding{ 2, vk::DescriptorType::eCombinedImageSampler, 3, vk::ShaderStageFlagBits::eFragment }                               // Textures (Diffuse, Normal, Roughness)
-			   }.data()
-		   })
-	   },
-	   { descriptor_layout::deferred_3d,
-		   gse::vulkan::get_device_config().device.createDescriptorSetLayout({
-			   {},
-			   3,
-			   std::array{
-				   vk::DescriptorSetLayoutBinding{ 0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment },    // Global: ViewProj
-				   vk::DescriptorSetLayoutBinding{ 1, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex },                                         // Per-object: Model matrix
-				   vk::DescriptorSetLayoutBinding{ 2, vk::DescriptorType::eCombinedImageSampler, 3, vk::ShaderStageFlagBits::eFragment }                                 // Albedo, Normal, Depth (G-buffer)
-			   }.data()
-		   })
-	   },
-	   { descriptor_layout::forward_3d,
-		   gse::vulkan::get_device_config().device.createDescriptorSetLayout({
-			   {},
-			   4,
-			   std::array{
-				   vk::DescriptorSetLayoutBinding{ 0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment },    // Global: ViewProj, Lights
-				   vk::DescriptorSetLayoutBinding{ 1, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex },                                         // Per-object: Model matrix
-				   vk::DescriptorSetLayoutBinding{ 2, vk::DescriptorType::eCombinedImageSampler, 3, vk::ShaderStageFlagBits::eFragment },                                // Textures (Diffuse, Normal, Roughness)
-				   vk::DescriptorSetLayoutBinding{ 3, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment }                                 // Shadow map (if needed)
-			   }.data()
-		   })
-	   },
-	   { descriptor_layout::forward_2d,
-		   gse::vulkan::get_device_config().device.createDescriptorSetLayout({
-			   {},
-			   2,
-			   std::array{
-				   vk::DescriptorSetLayoutBinding{ 0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex },                                         // Global 2D Transform (Ortho Projection)
-				   vk::DescriptorSetLayoutBinding{ 1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment }                                 // Texture (UI, Sprite)
-			   }.data()
-		   })
-	   },
-	   { descriptor_layout::post_process,
-		   gse::vulkan::get_device_config().device.createDescriptorSetLayout({
-			   {},
-			   1,
-			   std::array{
-				   vk::DescriptorSetLayoutBinding{ 0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment }                                 // Screen Texture (HDR, Bloom, etc.)
-			   }.data()
-		   })
-	   },
-	   { descriptor_layout::custom,
-		   gse::vulkan::get_device_config().device.createDescriptorSetLayout({
-			   {},
-			   0, nullptr // Empty layout; users define custom sets dynamically.
-		   })
-	   }
-	};
+    const auto& device = gse::vulkan::get_device_config().device;
+    return {
+        // standard 3D: viewProj, model, textures[]
+        { descriptor_layout::standard_3d, create_layout(device, {
+            { 0, vk::DescriptorType::eUniformBuffer,        1, vs | fs },
+            { 1, vk::DescriptorType::eUniformBuffer,        1, vs    },
+            { 2, vk::DescriptorType::eCombinedImageSampler, 3, fs    },
+        })},
+
+        // deferred 3D: camera UBO, model UBO, G‑buffer samplers, shadows, lights, etc.
+        { descriptor_layout::deferred_3d, create_layout(device, {
+            { 0, vk::DescriptorType::eUniformBuffer,        1, vs | fs },
+            { 1, vk::DescriptorType::eUniformBuffer,        1, vs    },
+            { 2, vk::DescriptorType::eCombinedImageSampler, 3, fs    },
+            { 3, vk::DescriptorType::eCombinedImageSampler, max_lights, fs },
+            { 4, vk::DescriptorType::eCombinedImageSampler, max_lights, fs },
+            { 5, vk::DescriptorType::eUniformBuffer,        1, fs    },
+            { 6, vk::DescriptorType::eCombinedImageSampler, 1, fs    },
+            { 7, vk::DescriptorType::eCombinedImageSampler, 1, fs    },
+            { 8, vk::DescriptorType::eStorageBuffer,        1, fs    },
+        })},
+
+        // Forward 3D
+        { descriptor_layout::forward_3d, create_layout(device, {
+            { 0, vk::DescriptorType::eUniformBuffer,        1, vs | fs },
+            { 1, vk::DescriptorType::eUniformBuffer,        1, vs    },
+            { 2, vk::DescriptorType::eCombinedImageSampler, 3, fs    },
+            { 3, vk::DescriptorType::eCombinedImageSampler, 1, fs    },
+        })},
+
+        // Forward 2D (UI)
+        { descriptor_layout::forward_2d, create_layout(device, {
+            { 0, vk::DescriptorType::eUniformBuffer,        1, vs    },
+            { 1, vk::DescriptorType::eCombinedImageSampler, 1, fs    },
+        })},
+
+        // Post process: scene + bloom blur
+        { descriptor_layout::post_process, create_layout(device, {
+            { 0, vk::DescriptorType::eCombinedImageSampler, 1, fs },  // scene_texture
+            { 1, vk::DescriptorType::eCombinedImageSampler, 1, fs },  // bloom_blur_texture
+        })},
+
+        // Custom (empty by default)
+        { descriptor_layout::custom, device.createDescriptorSetLayout({
+            /*flags=*/{}, /*bindingCount=*/0, /*pBindings=*/nullptr
+        }) },
+    };
 }
 
 namespace gse::shader_loader {
@@ -232,9 +231,21 @@ auto gse::shader_loader::compile_shaders() -> std::unordered_map<std::string, de
 		else if (ext == ".geom") stage = EShLangGeometry;
 		else if (ext == ".tesc") stage = EShLangTessControl;
 		else if (ext == ".tese") stage = EShLangTessEvaluation;
-        else assert(false, "Unknown shader extension: {}", ext.c_str());
+        else assert(false, std::format("Unknown shader extension: {}", ext));
 
-        const char* code = source_path.string().c_str();
+		std::ifstream in(source_path, std::ios::ate | std::ios::binary);
+		assert(in.is_open(), std::format("Failed to open shader file: {}", source_path.string().c_str()));
+
+		size_t n = in.tellg();
+		std::string source(n, '\0');
+		in.seekg(0);
+		in.read(source.data(), n);
+
+		if (source.size() > 3 && source[0] == 0xEF && source[1] == 0xBB && source[2] == 0xBF) {
+			source.erase(0, 3); // Remove BOM
+		}
+
+        const char* code = source.c_str();
 
         glslang::TShader shader(stage);
 
@@ -243,22 +254,33 @@ auto gse::shader_loader::compile_shaders() -> std::unordered_map<std::string, de
         shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_2);
         shader.setEnvTarget(glslang::EShTargetSpv, glslang::EShTargetSpv_1_5);
 
-        assert(
-            shader.parse(GetDefaultResources(), 100, false, EShMsgDefault),
-            "GLSL parse error:\n{}\n{}",
-            shader.getInfoLog(),
-            shader.getInfoDebugLog()
-        );
+        bool ok = shader.parse(GetDefaultResources(),
+            450,
+            /*forwardCompatible=*/false,
+            EShMsgDefault);
+
+        if (!ok) {
+            auto info = shader.getInfoLog();       // now populated
+            auto debug = shader.getInfoDebugLog();  // now populated
+
+            auto msg = std::format(
+                "GLSL parse error:\n{}\n{}",
+                info, debug
+            );
+
+            std::cout << "[PARSE FAILED]\n" << msg << "\n";
+            assert(false, msg);
+        }
 
         glslang::TProgram program;
         program.addShader(&shader);
-        assert(program.link(EShMsgDefault), "GLSL link error:\n{}", program.getInfoLog());
+        assert(program.link(EShMsgDefault), std::format("GLSL link error:\n{}", program.getInfoLog()));
 
         std::vector<uint32_t> spirv;
         GlslangToSpv(*program.getIntermediate(stage), spirv);
 
         std::ofstream out(destination_file, std::ios::binary);
-        assert(out.is_open(), "Failed to write compiled SPIR-V: {}", destination_file.string().c_str());
+        assert(out.is_open(), std::format("Failed to write compiled SPIR-V: {}", destination_file.string().c_str()));
         out.write(reinterpret_cast<const char*>(spirv.data()), spirv.size() * sizeof(uint32_t));
 
 		std::cout << "Compiled shader: " << destination_file.string() << '\n';

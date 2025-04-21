@@ -89,17 +89,6 @@ auto gse::renderer2d::initialize() -> void {
 
     g_render_target_view = device.createImageView(view_info);
 
-    vk::FramebufferCreateInfo framebuffer_info(
-        {}, 
-        g_render_pass, 
-        1, 
-        &g_render_target_view, 
-        swap_chain_extent.width, 
-        swap_chain_extent.height, 
-        1
-    );
-    g_framebuffer = device.createFramebuffer(framebuffer_info);
-
     vk::AttachmentDescription color_attachment{
         {},
         vk::Format::eB8G8R8A8Srgb,   // Image format for color buffer
@@ -130,6 +119,17 @@ auto gse::renderer2d::initialize() -> void {
 		1, &sub_pass
 		}
     );
+
+    vk::FramebufferCreateInfo framebuffer_info(
+        {},
+        g_render_pass,
+        1,
+        &g_render_target_view,
+        swap_chain_extent.width,
+        swap_chain_extent.height,
+        1
+    );
+    g_framebuffer = device.createFramebuffer(framebuffer_info);
 
     vk::PushConstantRange push_constant_range(
         vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,

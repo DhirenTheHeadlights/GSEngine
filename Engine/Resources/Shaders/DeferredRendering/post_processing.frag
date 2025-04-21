@@ -1,16 +1,18 @@
 #version 450
+#extension GL_KHR_vulkan_glsl : enable
 
-layout (location = 0) out vec4 frag_color;
+layout(constant_id = 99) const int descriptor_layout_type = 5;
 
-layout (location = 0) in vec2 tex_coords;
+layout(location = 0) in  vec2 tex_coords;
+layout(location = 0) out vec4 frag_color;
 
-layout (binding = 0) uniform sampler2D scene_texture;
-layout (binding = 1) uniform sampler2D bloom_blur_texture;
+layout(set=0, binding=0) uniform sampler2D scene_texture;
+layout(set=0, binding=1) uniform sampler2D bloom_blur_texture;
 
-layout (push_constant) uniform PushConstants {
+layout(push_constant) uniform PushConstants {
     float exposure;
-    bool hdr;
-    bool bloom;
+    bool  hdr;
+    bool  bloom;
 } push_constants;
 
 void main() {
