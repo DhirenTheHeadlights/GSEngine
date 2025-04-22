@@ -1,7 +1,7 @@
 #version 450
 #extension GL_KHR_vulkan_glsl : enable
 
-layout(constant_id = 99) const int descriptor_layout_type = 5;
+layout(constant_id = 99) const int descriptor_layout_type = 4;
 
 layout(set=0, binding=0) uniform sampler2D image;
 

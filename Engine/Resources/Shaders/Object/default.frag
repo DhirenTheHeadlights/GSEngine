@@ -1,4 +1,7 @@
 #version 450
+#extension GL_KHR_vulkan_glsl : enable
+
+layout (constant_id = 99) const int descriptor_layout_type = 0;
 
 layout (location = 0) out vec3 g_position;
 layout (location = 1) out vec3 g_normal;

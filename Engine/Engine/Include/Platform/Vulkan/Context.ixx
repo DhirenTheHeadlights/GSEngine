@@ -493,14 +493,24 @@ auto gse::vulkan::create_sync_objects() -> void {
 }
 
 auto gse::vulkan::create_descriptors() -> void {
-    constexpr vk::DescriptorPoolSize pool_size(
-        vk::DescriptorType::eCombinedImageSampler, 100  // Support up to 100 textures
-    );
+    constexpr uint32_t max_sets = 512;
 
-    const vk::DescriptorPoolCreateInfo pool_info({}, 100, 1, &pool_size);
+    std::vector<vk::DescriptorPoolSize> pool_sizes = {
+        { vk::DescriptorType::eUniformBuffer,         1024 },  // enough for global UBOs + per-object data
+        { vk::DescriptorType::eCombinedImageSampler,  1024 },  // textures for materials, post fx, etc.
+        { vk::DescriptorType::eStorageBuffer,          256 },  // e.g., light buffer, SSBOs
+    };
+
+    const vk::DescriptorPoolCreateInfo pool_info{
+        {},
+        max_sets,
+        static_cast<uint32_t>(pool_sizes.size()),
+        pool_sizes.data()
+    };
+
     g_descriptor_config.descriptor_pool = g_device_config.device.createDescriptorPool(pool_info);
 
-	std::cout << "Descriptor Set Created Successfully!\n";
+    std::cout << "Descriptor Pool Created Successfully!\n";
 }
 
 auto gse::vulkan::create_command_pool() -> void {

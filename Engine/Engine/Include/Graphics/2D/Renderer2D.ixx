@@ -136,7 +136,7 @@ auto gse::renderer2d::initialize() -> void {
         0, sizeof(unitless::vec2) * 2 + sizeof(unitless::vec4) * 2
     );
 
-	g_pipeline_layout = device.createPipelineLayout({{}, 0, nullptr, 1, &push_constant_range });
+	g_pipeline_layout = device.createPipelineLayout({{}, 2, shader_loader::get_descriptor_layout(descriptor_layout::forward_2d), 1, &push_constant_range });
     
 	const auto& element_shader = shader_loader::get_shader("ui_2d_shader");
 
@@ -240,7 +240,7 @@ auto gse::renderer2d::initialize() -> void {
 
 	vk::PipelineVertexInputStateCreateInfo msdf_vertex_input_info({}, 1, &binding_description, static_cast<std::uint32_t>(attribute_descriptions.size()), attribute_descriptions.data());
 
-	vk::PipelineLayoutCreateInfo pipeline_layout_info({}, 1, msdf_shader.get_descriptor_set_layout(), 1, &msdf_push_constant_range);
+	vk::PipelineLayoutCreateInfo pipeline_layout_info({}, 2, shader_loader::get_descriptor_layout(descriptor_layout::forward_2d), 1, &msdf_push_constant_range);
     g_msdf_pipeline_layout = device.createPipelineLayout(pipeline_layout_info);
 
     vk::PipelineColorBlendAttachmentState blend_state(
@@ -286,7 +286,7 @@ auto gse::renderer2d::initialize() -> void {
         vk::ShaderStageFlagBits::eFragment
     );
 
-    vk::DescriptorSetLayoutCreateInfo layout_info({}, 1, & texture_binding);
+    vk::DescriptorSetLayoutCreateInfo layout_info({}, 1, &texture_binding);
     g_msdf_descriptor_set_layout = device.createDescriptorSetLayout(layout_info);
 
     vk::DescriptorPoolSize pool_size(vk::DescriptorType::eCombinedImageSampler, 100);  // Adjust pool size as needed

@@ -1,7 +1,7 @@
 #version 450
 #extension GL_KHR_vulkan_glsl : enable
 
-layout (constant_id = 99) const int descriptor_layout_type = 2;
+layout (constant_id = 99) const int descriptor_layout_type = 1;
 
 layout (location = 0) in  vec2 tex_coords;
 layout (location = 0) out vec4 frag_color;
