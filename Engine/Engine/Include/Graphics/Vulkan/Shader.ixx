@@ -31,9 +31,7 @@ namespace gse {
 		vk::ShaderModule m_frag_module;
 
 		vk::DescriptorSetLayout m_descriptor_set_layout;
-		int descriptor_layout_type = 0;
 		std::vector<vk::DescriptorSet> m_descriptor_sets;
-		//vk::PipelineLayout pipeline_layout;
 	};
 
 	auto read_file(const std::filesystem::path& path) -> std::vector<char>;
@@ -57,11 +55,78 @@ auto gse::shader::create(const std::filesystem::path& vert_path, const std::file
 
 	if (layout) {
 		m_descriptor_set_layout = *layout;
-		m_descriptor_sets = vulkan::get_device_config().device.allocateDescriptorSets({ vulkan::get_descriptor_config().descriptor_pool, 1, &m_descriptor_set_layout });
-		//pipeline_layout = vulkan::get_device_config().device.createPipelineLayout({ {}, 1, gse::shader_loader::get_descriptor_layout(layout) });
+
+		const auto device = vulkan::get_device_config().device;
+
+		// Reflect bindings from both vert + frag
+		std::vector<SpvReflectDescriptorBinding*> reflect_bindings;
+
+		auto reflect_from = [&](const std::vector<char>& code) {
+			SpvReflectShaderModule module;
+			const SpvReflectResult result = spvReflectCreateShaderModule(code.size(), code.data(), &module);
+			assert(result == SPV_REFLECT_RESULT_SUCCESS, "SPIRV-Reflect failed");
+
+			uint32_t count = 0;
+			spvReflectEnumerateDescriptorBindings(&module, &count, nullptr);
+			std::vector<SpvReflectDescriptorBinding*> bindings(count);
+			spvReflectEnumerateDescriptorBindings(&module, &count, bindings.data());
+
+			reflect_bindings.insert(reflect_bindings.end(), bindings.begin(), bindings.end());
+			spvReflectDestroyShaderModule(&module);
+			};
+
+		reflect_from(vert_code);
+		reflect_from(frag_code);
+
+		// Build dummy writes for all reflected bindings
+		std::vector<vk::WriteDescriptorSet> writes;
+		std::vector<vk::DescriptorImageInfo> dummy_images;
+		std::vector<vk::DescriptorBufferInfo> dummy_buffers;
+
+		for (auto* binding : reflect_bindings) {
+			vk::WriteDescriptorSet write{};
+			write.dstSet = m_descriptor_sets[0];
+			write.dstBinding = binding->binding;
+			write.descriptorCount = 1;
+			write.descriptorType = static_cast<vk::DescriptorType>(binding->descriptor_type);
+
+			switch (binding->descriptor_type) {
+			case SPV_REFLECT_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+			case SPV_REFLECT_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+			case SPV_REFLECT_DESCRIPTOR_TYPE_SAMPLER: {
+				vk::DescriptorImageInfo info{};
+				info.sampler = nullptr;
+				info.imageView = nullptr;
+				info.imageLayout = vk::ImageLayout::eUndefined;
+				dummy_images.push_back(info);
+				write.pImageInfo = &dummy_images.back();
+				break;
+			}
+			case SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+			case SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_BUFFER: {
+				vk::DescriptorBufferInfo info{};
+				info.buffer = nullptr;
+				info.offset = 0;
+				info.range = vk::WholeSize;
+				dummy_buffers.push_back(info);
+				write.pBufferInfo = &dummy_buffers.back();
+				break;
+			}
+			default:
+				continue;  // skip unhandled types
+			}
+
+			writes.push_back(write);
+		}
+
+		if (!writes.empty()) {
+			device.updateDescriptorSets(writes, {});
+		}
+
 		return;
 	}
 
+	// No layout provided — use SPIRV-Reflect to generate layout
 	std::vector<vk::DescriptorSetLayoutBinding> bindings;
 
 	auto extract_bindings = [&](const std::vector<char>& spirv_code) {
@@ -76,10 +141,10 @@ auto gse::shader::create(const std::filesystem::path& vert_path, const std::file
 
 		for (const auto* binding : reflect_bindings) {
 			vk::DescriptorSetLayoutBinding layout_binding(
-				binding->binding,													// Binding index
-				static_cast<vk::DescriptorType>(binding->descriptor_type),			// Descriptor type
-				1,																	// Descriptor count
-				static_cast<vk::ShaderStageFlagBits>(reflect_module.shader_stage)	// Shader stage
+				binding->binding,
+				static_cast<vk::DescriptorType>(binding->descriptor_type),
+				1,
+				static_cast<vk::ShaderStageFlagBits>(reflect_module.shader_stage)
 			);
 			bindings.push_back(layout_binding);
 		}
@@ -92,7 +157,7 @@ auto gse::shader::create(const std::filesystem::path& vert_path, const std::file
 
 	const vk::DescriptorSetLayoutCreateInfo layout_info(
 		{},
-		bindings.size(),
+		static_cast<uint32_t>(bindings.size()),
 		bindings.data()
 	);
 

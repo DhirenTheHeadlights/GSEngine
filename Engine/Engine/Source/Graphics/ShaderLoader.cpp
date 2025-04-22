@@ -101,8 +101,12 @@ auto create_descriptor_layouts() -> std::unordered_map<descriptor_layout, vk::De
 
         // Forward 2D (UI)
         { descriptor_layout::forward_2d, create_layout(device, {
-            { 0, vk::DescriptorType::eUniformBuffer,        1, vs    },
-            { 1, vk::DescriptorType::eCombinedImageSampler, 1, fs    },
+            // binding 0 = UBO for both shaders (projection/model or push‑constants in VS)
+            { 0, vk::DescriptorType::eUniformBuffer,        1, vk::ShaderStageFlagBits::eVertex },
+            // binding 1 = sampler2D for ui_2d_shader and msdf_shader
+            { 1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment },
+            // binding 2 = UBO block MSDFUniforms in msdf_shader
+            { 2, vk::DescriptorType::eUniformBuffer,        1, vk::ShaderStageFlagBits::eFragment },
         })},
 
         // Post process: scene + bloom blur
@@ -110,18 +114,13 @@ auto create_descriptor_layouts() -> std::unordered_map<descriptor_layout, vk::De
             { 0, vk::DescriptorType::eCombinedImageSampler, 1, fs },  // scene_texture
             { 1, vk::DescriptorType::eCombinedImageSampler, 1, fs },  // bloom_blur_texture
         })},
-
-        // Custom (empty by default)
-        { descriptor_layout::custom, device.createDescriptorSetLayout({
-            /*flags=*/{}, /*bindingCount=*/0, /*pBindings=*/nullptr
-        }) },
     };
 }
 
 auto gse::shader_loader::load_shaders() -> void {
     g_layouts = create_descriptor_layouts();
 
-    std::unordered_map<std::string, descriptor_layout> layouts = compile_shaders();
+    const std::unordered_map<std::string, descriptor_layout> layouts = compile_shaders();
 
 	const auto shader_path = config::shader_spirv_path;
 	std::unordered_map<std::string, shader_info> shader_files;
@@ -149,15 +148,24 @@ auto gse::shader_loader::load_shaders() -> void {
 
 	for (const auto& info : shader_files | std::views::values) {
 		assert(!info.vert_path.empty() && !info.frag_path.empty(), "Missing shader file");
-		g_shaders.emplace(
-            std::piecewise_construct, 
-            std::forward_as_tuple(info), 
+		std::cout << "Loading shader: " << info.name << '\n';
+
+        auto layout_type = layouts.at(info.name);
+        const vk::DescriptorSetLayout* layout_ptr =
+            layout_type == descriptor_layout::custom
+            ? nullptr
+            : &g_layouts[layout_type];
+
+        g_shaders.emplace(
+            std::piecewise_construct,
+            std::forward_as_tuple(info),
             std::forward_as_tuple(
-                info.vert_path, 
-                info.frag_path, 
-                &g_layouts[layouts.at(info.name)]
+                info.vert_path,
+                info.frag_path,
+                layout_ptr
             )
         );
+
 		std::cout << "Loaded shader: " << info.name << '\n';
 	}
 }
@@ -277,6 +285,6 @@ auto gse::shader_loader::compile_shaders() -> std::unordered_map<std::string, de
     return layouts;
 }
 
-auto gse::shader_loader::get_descriptor_layout(const descriptor_layout layout_type) -> vk::DescriptorSetLayout* {
+auto gse::shader_loader::get_descriptor_layout(const descriptor_layout layout_type) -> const vk::DescriptorSetLayout* {
     return &g_layouts[layout_type];
 }
