@@ -73,12 +73,12 @@ auto gse::vulkan::allocator::allocate(const vk::MemoryRequirements& requirements
 	}
 
 	g_memory_blocks[memory_type_index].emplace_back(
-		.memory = memory,
-		.size = requirements.size,
-		.offset = 0,
-		.alignment = requirements.alignment,
-		.mapped = mapped,
-		.in_use = true
+		memory,
+		requirements.size,
+		0,
+		requirements.alignment,
+		mapped,
+		true
 	);
 
 	return {
