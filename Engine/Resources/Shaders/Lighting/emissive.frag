@@ -7,8 +7,8 @@ layout (location = 0) out vec4 frag_color;
 
 layout (location = 0) in vec2 tex_coords;
 
-layout (binding = 0) uniform sampler2D diffuse_texture;
-layout (binding = 1) uniform sampler2D emissive_texture; // Optional emissive texture
+layout (binding = 2) uniform sampler2D diffuse_texture;
+layout (binding = 4) uniform sampler2D emissive_texture; // Optional emissive texture
 
 layout (push_constant) uniform PushConstants {
     vec3 color;

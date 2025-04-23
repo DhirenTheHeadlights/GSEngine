@@ -8,10 +8,10 @@ layout (location = 0) in vec3 frag_position;
 layout (location = 1) in vec3 normal;
 layout (location = 2) in vec2 tex_coords;
 
-layout (binding = 0) uniform sampler2D texture_diffuse;
-layout (binding = 1) uniform sampler2D texture_specular;
-layout (binding = 2) uniform sampler2D texture_normal;
-layout (binding = 3) uniform samplerCube environment_map;
+layout (binding = 2) uniform sampler2D texture_diffuse;
+layout (binding = 4) uniform sampler2D texture_specular;
+layout (binding = 5) uniform sampler2D texture_normal;
+layout (binding = 6) uniform samplerCube environment_map;
 
 layout (push_constant) uniform PushConstants {
     vec3 color;

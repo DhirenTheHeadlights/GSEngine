@@ -101,16 +101,8 @@ target_link_libraries(Engine PUBLIC
     "${VULKAN_SDK_PATH}/Lib/glslang-default-resource-limitsd.lib"
 )
 
-file(GLOB_RECURSE SHADER_SOURCE_FILES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Shaders/*.vert"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Shaders/*.frag"
-)
-
 set(ENGINE_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
 set(SPIRV_DIR "${CMAKE_CURRENT_BINARY_DIR}/Resources/Shaders")
-set(RAW_SHADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/Resources/ShaderRaw")
-
-file(COPY ${SHADER_SOURCE_FILES} DESTINATION ${RAW_SHADER_DIR})
 
 foreach(shader ${SHADER_FILES})
     get_filename_component(shader_name ${shader} NAME_WE)
