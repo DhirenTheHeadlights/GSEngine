@@ -72,8 +72,6 @@ auto gse::initialize(const std::function<void()>& initialize_function, const std
 	renderer::initialize();
 	gui::initialize();
 
-	if (g_imgui_enabled) debug::set_up_imgui(renderer3d::get_render_pass());
-
 	initialize_function();
 
 	g_engine_state = engine_state::running;
@@ -112,7 +110,6 @@ auto render(const std::function<bool()>& render_function) -> void {
 	}
 
 	if (g_imgui_enabled) gse::display_timers();
-	if (g_imgui_enabled) gse::debug::render_imgui(gse::renderer3d::get_current_command_buffer());
 
 	gse::gui::render();
 
