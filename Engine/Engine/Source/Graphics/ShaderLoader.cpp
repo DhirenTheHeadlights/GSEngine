@@ -309,7 +309,7 @@ auto gse::shader_loader::compile_shaders() -> std::unordered_map<std::string, de
         assert(out.is_open(), std::format("Failed to write compiled SPIR-V: {}", destination_file.string().c_str()));
         out.write(reinterpret_cast<const char*>(spirv.data()), spirv.size() * sizeof(uint32_t));
 
-		std::cout << "Compiled shader: " << destination_file.filename().string() << '\n';
+		std::cout << "Compiled shader: " << destination_file.filename().string() << "\n";
     }
 
     glslang::FinalizeProcess();
