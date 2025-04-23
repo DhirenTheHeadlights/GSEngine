@@ -9,6 +9,7 @@ import std.compat;
 import vulkan_hpp;
 
 import gse.core.config;
+import gse.graphics.debug;
 import gse.graphics.font;
 import gse.graphics.texture;
 import gse.physics.math;
@@ -136,7 +137,7 @@ auto gse::renderer2d::initialize() -> void {
         0, sizeof(unitless::vec2) * 2 + sizeof(unitless::vec4) * 2
     );
 
-	g_pipeline_layout = device.createPipelineLayout({{}, 2, shader_loader::get_descriptor_layout(descriptor_layout::forward_2d), 1, &push_constant_range });
+	g_pipeline_layout = device.createPipelineLayout({{}, 1, shader_loader::get_descriptor_layout(descriptor_layout::forward_2d), 1, &push_constant_range });
     
 	const auto& element_shader = shader_loader::get_shader("ui_2d_shader");
 
@@ -181,18 +182,6 @@ auto gse::renderer2d::initialize() -> void {
 
     g_pipeline = device.createGraphicsPipeline({}, pipeline_info).value;
 
-    auto create_buffer = [device](const vk::DeviceSize size, const vk::BufferUsageFlags usage, const vk::MemoryPropertyFlags properties, vk::Buffer& buffer, vk::DeviceMemory& buffer_memory) -> void {
-        const vk::BufferCreateInfo buffer_info({}, size, usage, vk::SharingMode::eExclusive);
-        buffer = device.createBuffer(buffer_info);
-
-        const vk::MemoryRequirements mem_requirements = device.getBufferMemoryRequirements(buffer);
-
-        const vk::MemoryAllocateInfo memory_allocate_info(mem_requirements.size, vulkan::find_memory_type(mem_requirements.memoryTypeBits, properties));
-        buffer_memory = device.allocateMemory(memory_allocate_info);
-
-        device.bindBufferMemory(buffer, buffer_memory, 0);
-        };
-
     struct vertex {
         vec::raw2f position;
         vec::raw2f texture_coordinate;
@@ -209,8 +198,8 @@ auto gse::renderer2d::initialize() -> void {
 	vk::DeviceSize vertex_buffer_size = sizeof(vertices);
 	vk::DeviceSize index_buffer_size = sizeof(indices);
 
-	create_buffer(vertex_buffer_size, vk::BufferUsageFlagBits::eVertexBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, g_vertex_buffer, g_vertex_memory);
-	create_buffer(index_buffer_size, vk::BufferUsageFlagBits::eIndexBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, g_index_buffer, g_index_memory);
+    g_vertex_buffer = vulkan::create_buffer(vertex_buffer_size, vk::BufferUsageFlagBits::eVertexBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, g_vertex_memory);
+    g_index_buffer = vulkan::create_buffer(index_buffer_size, vk::BufferUsageFlagBits::eIndexBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, g_index_memory);
 
     void* data = device.mapMemory(g_vertex_memory, 0, vertex_buffer_size);
     memcpy(data, vertices, vertex_buffer_size);
@@ -240,7 +229,7 @@ auto gse::renderer2d::initialize() -> void {
 
 	vk::PipelineVertexInputStateCreateInfo msdf_vertex_input_info({}, 1, &binding_description, static_cast<std::uint32_t>(attribute_descriptions.size()), attribute_descriptions.data());
 
-	vk::PipelineLayoutCreateInfo pipeline_layout_info({}, 2, shader_loader::get_descriptor_layout(descriptor_layout::forward_2d), 1, &msdf_push_constant_range);
+	vk::PipelineLayoutCreateInfo pipeline_layout_info({}, 1, shader_loader::get_descriptor_layout(descriptor_layout::forward_2d), 1, &msdf_push_constant_range);
     g_msdf_pipeline_layout = device.createPipelineLayout(pipeline_layout_info);
 
     vk::PipelineColorBlendAttachmentState blend_state(
@@ -292,6 +281,8 @@ auto gse::renderer2d::initialize() -> void {
     vk::DescriptorPoolSize pool_size(vk::DescriptorType::eCombinedImageSampler, 100);  // Adjust pool size as needed
     vk::DescriptorPoolCreateInfo pool_info({}, 100, 1, & pool_size);
     g_msdf_descriptor_pool = device.createDescriptorPool(pool_info);
+
+    debug::set_up_imgui(g_render_pass);
 }
 
 auto gse::renderer2d::begin_frame() -> void {
@@ -322,7 +313,7 @@ auto gse::renderer2d::begin_frame() -> void {
 }
 
 auto gse::renderer2d::render() -> void {
-	
+	debug::render_imgui(g_command_buffer);
 }
 
 auto gse::renderer2d::end_frame() -> void {

@@ -12,7 +12,6 @@ import gse.core.config;
 import gse.core.id;
 import gse.core.object_registry;
 import gse.graphics.camera;
-import gse.graphics.debug;
 import gse.graphics.mesh;
 import gse.graphics.model;
 import gse.graphics.render_component;
@@ -405,24 +404,10 @@ auto gse::renderer3d::initialize() -> void {
 	transition_image_layout(g_albedo_image, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal);
 	transition_image_layout(g_depth_image, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilAttachmentOptimal, true);
 
-	std::array<vk::DescriptorSetLayoutBinding, 2> vertex_bindings = { {
-	{ 0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex }, // camera_ubo
-	{ 1, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex }  // model_ubo
-	} };
-
 	const auto& geometry_shader = shader_loader::get_shader("geometry_pass");
+	const auto& layout = shader_loader::get_descriptor_layout(descriptor_layout::standard_3d);
 
-	vk::DescriptorSetLayoutCreateInfo vertex_layout_info({}, static_cast<std::uint32_t>(vertex_bindings.size()), vertex_bindings.data());
-	const vk::DescriptorSetLayout vertex_descriptor_set_layout = device.createDescriptorSetLayout(vertex_layout_info);
-
-	std::array<vk::DescriptorSetLayoutBinding, 1> fragment_bindings = { {
-	{ 0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment } // texture_sampler
-	} };
-
-	vk::DescriptorSetLayoutCreateInfo fragment_layout_info({}, static_cast<std::uint32_t>(fragment_bindings.size()), fragment_bindings.data());
-	const vk::DescriptorSetLayout fragment_descriptor_set_layout = device.createDescriptorSetLayout(fragment_layout_info);
-
-	std::array descriptor_set_layouts = { vertex_descriptor_set_layout, fragment_descriptor_set_layout };
+	std::array descriptor_set_layouts = { *layout };
 
 	const auto descriptor_pool = vulkan::get_descriptor_config().descriptor_pool;
 
@@ -535,8 +520,6 @@ auto gse::renderer3d::initialize() -> void {
 		g_render_pass, 0
 	);
 	g_pipeline = device.createGraphicsPipeline(nullptr, pipeline_info).value;
-
-	debug::set_up_imgui(g_render_pass);
 }
 
 auto gse::renderer3d::initialize_objects() -> void {
@@ -568,7 +551,7 @@ auto gse::renderer3d::begin_frame() -> void {
 
 	const vk::RenderPassBeginInfo render_pass_info(
 		g_render_pass,
-		swap_chain_config.frame_buffers[image_index],
+		g_deferred_frame_buffers[image_index],
 		{ {0, 0}, swap_chain_config.extent },
 		static_cast<std::uint32_t>(clear_values.size()), 
 		clear_values.data()
@@ -588,8 +571,6 @@ auto gse::renderer3d::render() -> void {
 			}
 		}
 	}
-
-	debug::render_imgui(g_command_buffers[0]);
 }
 
 auto gse::renderer3d::end_frame() -> void {
