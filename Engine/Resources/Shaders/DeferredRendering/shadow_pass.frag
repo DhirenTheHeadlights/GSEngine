@@ -1,7 +1,7 @@
 #version 450
 #extension GL_KHR_vulkan_glsl : enable
 
-layout (constant_id = 99 ) const int descriptor_layout_type = 1;
+layout (constant_id = 99 ) const int descriptor_layout_type = 0;
 
 void main() {
     // No output needed; depth values are automatically written to the depth buffer

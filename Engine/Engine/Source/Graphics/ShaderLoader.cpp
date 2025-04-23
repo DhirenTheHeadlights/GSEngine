@@ -20,6 +20,11 @@ struct shader_info {
     std::filesystem::path frag_path;
 };
 
+struct descriptor_layout_info {
+    vk::DescriptorSetLayout layout;
+    std::vector<vk::DescriptorSetLayoutBinding> bindings;
+};
+
 struct shader_info_hash {
     using is_transparent = void;
     auto operator()(const shader_info& s) const -> size_t {
@@ -53,7 +58,7 @@ struct shader_info_equal {
 };
 
 std::unordered_map<shader_info, gse::shader, shader_info_hash, shader_info_equal> g_shaders;
-std::unordered_map<descriptor_layout, vk::DescriptorSetLayout> g_layouts;
+std::unordered_map<descriptor_layout, descriptor_layout_info> g_layouts;
 
 constexpr int max_lights = 10;
 
@@ -61,64 +66,76 @@ constexpr auto vs = vk::ShaderStageFlagBits::eVertex;
 constexpr auto fs = vk::ShaderStageFlagBits::eFragment;
 
 auto create_layout(const vk::Device device, const std::vector<vk::DescriptorSetLayoutBinding>& bindings) -> vk::DescriptorSetLayout {
-	return device.createDescriptorSetLayout({
+    return device.createDescriptorSetLayout({
 		{},
 		static_cast<std::uint32_t>(bindings.size()),
 		bindings.data()
 		});
 }
 
-auto create_descriptor_layouts() -> std::unordered_map<descriptor_layout, vk::DescriptorSetLayout> {
+auto init_descriptor_layouts() -> void {
     const auto& device = gse::vulkan::get_device_config().device;
-    return {
-        // standard 3D: viewProj, model, textures[]
-        { descriptor_layout::standard_3d, create_layout(device, {
-            { 0, vk::DescriptorType::eUniformBuffer,        1, vs | fs },
-            { 1, vk::DescriptorType::eUniformBuffer,        1, vs    },
-            { 2, vk::DescriptorType::eCombinedImageSampler, 3, fs    },
+
+    constexpr auto vs = vk::ShaderStageFlagBits::eVertex;
+    constexpr auto fs = vk::ShaderStageFlagBits::eFragment;
+    constexpr int max_lights = 10;
+
+    auto create_layout = [&](std::vector<vk::DescriptorSetLayoutBinding> bindings) {
+        const vk::DescriptorSetLayout layout = device.createDescriptorSetLayout({
+            {},
+        	static_cast<uint32_t>(bindings.size()),
+        	bindings.data()
+            });
+
+        return descriptor_layout_info{ layout, std::move(bindings) };
+        };
+
+    g_layouts = {
+        { descriptor_layout::standard_3d, create_layout({
+            { 0, vk::DescriptorType::eUniformBuffer,        1, vs },
+            { 1, vk::DescriptorType::eUniformBuffer,        1, vs },
+            { 2, vk::DescriptorType::eCombinedImageSampler, 1, fs },
+            { 3, vk::DescriptorType::eStorageBuffer,        1, fs },
+			{ 4, vk::DescriptorType::eCombinedImageSampler, 1, fs },
+			{ 5, vk::DescriptorType::eCombinedImageSampler, 1, fs },
+            { 6, vk::DescriptorType::eCombinedImageSampler, 1, fs },
         })},
 
-        // deferred 3D: camera UBO, model UBO, G‑buffer samplers, shadows, lights, etc.
-        { descriptor_layout::deferred_3d, create_layout(device, {
-            { 0, vk::DescriptorType::eUniformBuffer,        1, vs | fs },
-            { 1, vk::DescriptorType::eUniformBuffer,        1, vs    },
-            { 2, vk::DescriptorType::eCombinedImageSampler, 3, fs    },
-            { 3, vk::DescriptorType::eCombinedImageSampler, max_lights, fs },
-            { 4, vk::DescriptorType::eCombinedImageSampler, max_lights, fs },
-            { 5, vk::DescriptorType::eUniformBuffer,        1, fs    },
-            { 6, vk::DescriptorType::eCombinedImageSampler, 1, fs    },
-            { 7, vk::DescriptorType::eCombinedImageSampler, 1, fs    },
-            { 8, vk::DescriptorType::eStorageBuffer,        1, fs    },
+        { descriptor_layout::deferred_3d, create_layout({
+	      { 0, vk::DescriptorType::eCombinedImageSampler, 1, fs },              // g_position
+	      { 1, vk::DescriptorType::eCombinedImageSampler, 1, fs },              // g_normal
+	      { 2, vk::DescriptorType::eCombinedImageSampler, 1, fs },              // g_albedo_spec
+	      { 3, vk::DescriptorType::eCombinedImageSampler, max_lights, fs },
+	      { 4, vk::DescriptorType::eCombinedImageSampler, max_lights, fs },
+		  { 5, vk::DescriptorType::eUniformBuffer,        1, fs },              // light_space_matrix
+	      { 6, vk::DescriptorType::eCombinedImageSampler, 1, fs },              // diffuse_texture
+	      { 7, vk::DescriptorType::eCombinedImageSampler, 1, fs },              // environment_map
+		  { 8, vk::DescriptorType::eStorageBuffer,        1, fs },              // light buffer
         })},
 
-        // Forward 3D
-        { descriptor_layout::forward_3d, create_layout(device, {
-            { 0, vk::DescriptorType::eUniformBuffer,        1, vs | fs },
-            { 1, vk::DescriptorType::eUniformBuffer,        1, vs    },
-            { 2, vk::DescriptorType::eCombinedImageSampler, 3, fs    },
-            { 3, vk::DescriptorType::eCombinedImageSampler, 1, fs    },
+        { descriptor_layout::forward_3d, create_layout({
+            { 0, vk::DescriptorType::eUniformBuffer,        1, vs },
+            { 1, vk::DescriptorType::eUniformBuffer,        1, vs },
+            { 2, vk::DescriptorType::eCombinedImageSampler, 3, fs },
+            { 3, vk::DescriptorType::eCombinedImageSampler, 1, fs },
+			{ 4, vk::DescriptorType::eStorageBuffer,        1, fs },
         })},
 
-        // Forward 2D (UI)
-        { descriptor_layout::forward_2d, create_layout(device, {
-            // binding 0 = UBO for both shaders (projection/model or push‑constants in VS)
-            { 0, vk::DescriptorType::eUniformBuffer,        1, vk::ShaderStageFlagBits::eVertex },
-            // binding 1 = sampler2D for ui_2d_shader and msdf_shader
-            { 1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment },
-            // binding 2 = UBO block MSDFUniforms in msdf_shader
-            { 2, vk::DescriptorType::eUniformBuffer,        1, vk::ShaderStageFlagBits::eFragment },
+        { descriptor_layout::forward_2d, create_layout({
+            { 0, vk::DescriptorType::eUniformBuffer,        1, vs },
+            { 1, vk::DescriptorType::eCombinedImageSampler, 1, fs },
+            { 2, vk::DescriptorType::eUniformBuffer,        1, fs },
         })},
 
-        // Post process: scene + bloom blur
-        { descriptor_layout::post_process, create_layout(device, {
-            { 0, vk::DescriptorType::eCombinedImageSampler, 1, fs },  // scene_texture
-            { 1, vk::DescriptorType::eCombinedImageSampler, 1, fs },  // bloom_blur_texture
+        { descriptor_layout::post_process, create_layout({
+            { 0, vk::DescriptorType::eCombinedImageSampler, 1, fs },
+            { 1, vk::DescriptorType::eCombinedImageSampler, 1, fs },
         })},
     };
 }
 
 auto gse::shader_loader::load_shaders() -> void {
-    g_layouts = create_descriptor_layouts();
+    init_descriptor_layouts();
 
     const std::unordered_map<std::string, descriptor_layout> layouts = compile_shaders();
 
@@ -127,7 +144,7 @@ auto gse::shader_loader::load_shaders() -> void {
 
 	assert(exists(shader_path) && is_directory(shader_path), "Shader directory does not exist");
 
-    for (const auto& entry : std::filesystem::directory_iterator(shader_path)) {
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(shader_path)) {
         if (!entry.is_regular_file()) continue;
 
         const std::filesystem::path file_path = entry.path();
@@ -151,10 +168,11 @@ auto gse::shader_loader::load_shaders() -> void {
 		std::cout << "Loading shader: " << info.name << '\n';
 
         auto layout_type = layouts.at(info.name);
+		auto [layout, bindings] = g_layouts.at(layout_type);
         const vk::DescriptorSetLayout* layout_ptr =
             layout_type == descriptor_layout::custom
             ? nullptr
-            : &g_layouts[layout_type];
+			: &layout;
 
         g_shaders.emplace(
             std::piecewise_construct,
@@ -162,7 +180,8 @@ auto gse::shader_loader::load_shaders() -> void {
             std::forward_as_tuple(
                 info.vert_path,
                 info.frag_path,
-                layout_ptr
+                layout_ptr,
+				bindings
             )
         );
 
@@ -191,33 +210,46 @@ auto gse::shader_loader::compile_shaders() -> std::unordered_map<std::string, de
 	glslang::InitializeProcess();
 
     for (const auto& entry : std::filesystem::recursive_directory_iterator(root_path)) {
-        /// Grab descriptor layout type. Shader sets in this format: 'layout (constant_id = 99) const int descriptor_layout_type = 1;'
-		std::ifstream file(entry.path());
-		std::string line;
+		if (!entry.is_regular_file()) continue;
 
-        const std::string token = "const int descriptor_layout_type =";
+		const auto ext = entry.path().extension().string();
+		if (ext != ".vert" && ext != ".frag" && ext != ".comp" && ext != ".geom" && ext != ".tesc" && ext != ".tese") continue;
 
-        while (std::getline(file, line)) {
-	        if (auto pos = line.find(token); pos != std::string::npos) {
-                pos += token.size();
-                auto end = line.find(';', pos);
-                std::string value_str = line.substr(pos, end - pos);
-                value_str.erase(std::ranges::remove_if(value_str, isspace).begin(), value_str.end());
-                int layout_value = std::stoi(value_str);
-                layouts[entry.path().stem().stem().string()] = static_cast<descriptor_layout>(layout_value);
-                break;
+        if (ext == ".vert" || ext == ".frag") {
+            /// Grab descriptor layout type. Shader sets in this format: 'layout (constant_id = 99) const int descriptor_layout_type = 1;'
+            std::ifstream file(entry.path());
+            std::string line;
+
+            const std::string token = "const int descriptor_layout_type =";
+
+            while (std::getline(file, line)) {
+                if (auto pos = line.find(token); pos != std::string::npos) {
+                    pos += token.size();
+                    auto end = line.find(';', pos);
+                    std::string value_str = line.substr(pos, end - pos);
+                    value_str.erase(std::ranges::remove_if(value_str, isspace).begin(), value_str.end());
+                    int layout_value = std::stoi(value_str);
+                    layouts[entry.path().stem().stem().string()] = static_cast<descriptor_layout>(layout_value);
+                    break;
+                }
             }
         }
-
-        if (!entry.is_regular_file()) continue;
-        const auto ext = entry.path().extension().string();
-        if (ext != ".vert" && ext != ".frag" && ext != ".comp" && ext != ".geom" && ext != ".tesc" && ext != ".tese") continue;
 
         const auto source_path = entry.path();
         const auto destination_relative = relative(source_path, root_path);
         const auto destination_file = destination_path / (destination_relative.string() + ".spv");
 
-        create_directories(destination_file.parent_path());
+        if (exists(destination_file)) {
+            auto src_time = last_write_time(source_path);
+            auto dst_time = last_write_time(destination_file);
+			if (src_time <= dst_time) {
+				std::cout << "Shader already compiled: " << destination_file.filename().string() << '\n';
+			}
+		} else {
+            if (auto dst_dir = destination_file.parent_path(); !exists(dst_dir)) {
+                create_directories(dst_dir);
+            }
+		}
 
         EShLanguage stage;
 
@@ -277,7 +309,7 @@ auto gse::shader_loader::compile_shaders() -> std::unordered_map<std::string, de
         assert(out.is_open(), std::format("Failed to write compiled SPIR-V: {}", destination_file.string().c_str()));
         out.write(reinterpret_cast<const char*>(spirv.data()), spirv.size() * sizeof(uint32_t));
 
-		std::cout << "Compiled shader: " << destination_file.string() << '\n';
+		std::cout << "Compiled shader: " << destination_file.filename().string() << '\n';
     }
 
     glslang::FinalizeProcess();
@@ -286,5 +318,5 @@ auto gse::shader_loader::compile_shaders() -> std::unordered_map<std::string, de
 }
 
 auto gse::shader_loader::get_descriptor_layout(const descriptor_layout layout_type) -> const vk::DescriptorSetLayout* {
-    return &g_layouts[layout_type];
+    return &g_layouts[layout_type].layout;
 }
