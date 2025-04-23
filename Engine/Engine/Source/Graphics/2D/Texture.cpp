@@ -71,7 +71,8 @@ auto gse::texture::create_texture_image(const unsigned char* data, const int wid
     std::memcpy(mapped_data, data, image_size);
     device.unmapMemory(staging_buffer_memory);
 
-    const vk::Format format = channels == 4 ? vk::Format::eR8G8B8A8Srgb : channels == 1 ? vk::Format::eR8Unorm : vk::Format::eR8G8B8Srgb; // Note: 3-channel formats might require special handling
+    const vk::Format format = vk::Format::eR8G8B8A8Srgb; /*channels == 4 ? vk::Format::eR8G8B8A8Srgb : channels == 1 ? vk::Format::eR8Unorm : vk::Format::eR8G8B8Srgb;*/ // Note: 3-channel formats might require special handling
+
 
     const vk::ImageCreateInfo image_info(
         {},
@@ -86,6 +87,7 @@ auto gse::texture::create_texture_image(const unsigned char* data, const int wid
         0, nullptr,
         vk::ImageLayout::eUndefined
     );
+
     m_texture_image = device.createImage(image_info);
 
     mem_requirements = device.getImageMemoryRequirements(m_texture_image);
