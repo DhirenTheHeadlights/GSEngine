@@ -1,16 +1,16 @@
-export module gse.platform.allocator;
+export module gse.platform.persistent_allocator;
 
 import std;
 import vulkan_hpp;
 
-struct memory_block;
+struct sub_allocation;
 
 export namespace gse::vulkan::allocator {
 	struct allocation {
 		vk::DeviceMemory memory;
 		vk::DeviceSize size = 0, offset = 0;
 		void* mapped = nullptr;
-		memory_block* owner = nullptr;
+		sub_allocation* owner = nullptr;
 	};
 
 	auto initialize() -> void;
