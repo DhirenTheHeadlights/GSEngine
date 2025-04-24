@@ -29,7 +29,7 @@ constexpr vk::DeviceSize g_default_block_size = 1024 * 1024 * 64; // 64 MB
 
 std::unordered_map<std::uint32_t, pool> g_memory_pools;
 
-auto gse::vulkan::allocator::initialize() -> void {
+auto gse::vulkan::persistent_allocator::initialize() -> void {
 	for (auto& [_, blocks] : g_memory_pools | std::views::values) {
 		for (const auto& block : blocks) {
 			const auto& device = get_device_config().device;
@@ -42,11 +42,11 @@ auto gse::vulkan::allocator::initialize() -> void {
 	g_memory_pools.clear();
 }
 
-auto gse::vulkan::allocator::shutdown() -> void {
+auto gse::vulkan::persistent_allocator::shutdown() -> void {
 	
 }
 
-auto gse::vulkan::allocator::allocate(const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties) -> allocation {
+auto gse::vulkan::persistent_allocator::allocate(const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties) -> allocation {
 	const auto mem_properties = get_device_config().physical_device.getMemoryProperties();
 	auto memory_type_index = std::numeric_limits<std::uint32_t>::max();
 
@@ -57,7 +57,7 @@ auto gse::vulkan::allocator::allocate(const vk::MemoryRequirements& requirements
 		}
 	}
 
-	assert(memory_type_index != 0, std::format("Failed to find suitable memory type for allocation!"));
+	assert(memory_type_index != std::numeric_limits<std::uint32_t>::max(), std::format("Failed to find suitable memory type for allocation!"));
 
 	for (auto pool : g_memory_pools | std::views::values) {
 		if (pool.memory_type_index != memory_type_index) {
@@ -103,7 +103,7 @@ auto gse::vulkan::allocator::allocate(const vk::MemoryRequirements& requirements
 	return allocate(requirements, properties); 
 }
 
-auto gse::vulkan::allocator::free(allocation& alloc) -> void {
+auto gse::vulkan::persistent_allocator::free(allocation& alloc) -> void {
 	if (alloc.owner) {
 		alloc.owner->in_use = false;
 		alloc.owner = nullptr;
