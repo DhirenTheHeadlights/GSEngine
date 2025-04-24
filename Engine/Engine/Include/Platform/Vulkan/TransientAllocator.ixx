@@ -1,0 +1,1 @@
+export module gse.platform.transient_allocator;
