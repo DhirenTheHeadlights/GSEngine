@@ -40,9 +40,8 @@ gse::shader::shader(const std::filesystem::path& vert_path, const std::filesyste
 }
 
 gse::shader::~shader() {
-	const auto device = vulkan::get_device_config().device;
-	device.destroyShaderModule(m_vert_module);
-	device.destroyShaderModule(m_frag_module);
+	vulkan::config::device::device.destroyShaderModule(m_vert_module);
+	vulkan::config::device::device.destroyShaderModule(m_frag_module);
 }
 
 auto gse::shader::create(const std::filesystem::path& vert_path, const std::filesystem::path& frag_path, const vk::DescriptorSetLayout* layout, std::span<vk::DescriptorSetLayoutBinding> expected_bindings) -> void {
@@ -114,7 +113,7 @@ auto gse::shader::create(const std::filesystem::path& vert_path, const std::file
 		reflected_bindings.data()
 	};
 
-	m_descriptor_set_layout = vulkan::get_device_config().device.createDescriptorSetLayout(layout_info);
+	m_descriptor_set_layout = vulkan::config::device::device.createDescriptorSetLayout(layout_info);
 }
 
 auto gse::shader::get_shader_stages() const -> std::array<vk::PipelineShaderStageCreateInfo, 2> {

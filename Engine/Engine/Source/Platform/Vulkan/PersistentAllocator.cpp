@@ -32,11 +32,10 @@ std::unordered_map<std::uint32_t, pool> g_memory_pools;
 auto gse::vulkan::persistent_allocator::initialize() -> void {
 	for (auto& [_, blocks] : g_memory_pools | std::views::values) {
 		for (const auto& block : blocks) {
-			const auto& device = get_device_config().device;
 			if (block.mapped) {
-				device.unmapMemory(block.memory);
+				config::device::device.unmapMemory(block.memory);
 			}
-			device.freeMemory(block.memory);
+			config::device::device.freeMemory(block.memory);
 		}
 	}
 	g_memory_pools.clear();
@@ -47,7 +46,7 @@ auto gse::vulkan::persistent_allocator::shutdown() -> void {
 }
 
 auto gse::vulkan::persistent_allocator::allocate(const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties) -> allocation {
-	const auto mem_properties = get_device_config().physical_device.getMemoryProperties();
+	const auto mem_properties = config::device::physical_device.getMemoryProperties();
 	auto memory_type_index = std::numeric_limits<std::uint32_t>::max();
 
 	for (std::uint32_t i = 0; i < mem_properties.memoryTypeCount; i++) {
@@ -93,7 +92,7 @@ auto gse::vulkan::persistent_allocator::allocate(const vk::MemoryRequirements& r
 	new_block.size = std::max(requirements.size, g_default_block_size);
 	new_block.properties = properties;
 
-	new_block.memory = get_device_config().device.allocateMemory(
+	new_block.memory = config::device::device.allocateMemory(
 		vk::MemoryAllocateInfo{
 			new_block.size,
 			memory_type_index

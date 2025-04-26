@@ -55,13 +55,10 @@ auto gse::renderer3d::get_render_pass() -> const vk::RenderPass& {
 }
 
 auto gse::renderer3d::get_current_command_buffer() -> vk::CommandBuffer {
-	return g_command_buffers[vulkan::get_current_frame()];
+	return g_command_buffers[vulkan::config::sync::current_frame()];
 }
 
 auto gse::renderer3d::initialize() -> void {
-	const auto& [physical_device, device] = vulkan::get_device_config();
-	auto& [swap_chain, surface_format, present_mode, swap_chain_extent, swap_chain_frame_buffers, swap_chain_images, swap_chain_image_views, swap_chain_image_format, details] = vulkan::get_swap_chain_config();
-
 	constexpr std::array attachments{
 		vk::AttachmentDescription{ // Position
 			{},
@@ -134,17 +131,17 @@ auto gse::renderer3d::initialize() -> void {
 		1, &sub_pass, 1, &dependency
 	);
 
-	g_render_pass = device.createRenderPass(render_pass_info);
+	g_render_pass = vulkan::config::device::device.createRenderPass(render_pass_info);
 
 	std::cout << "Render Pass Created Successfully!\n";
 
 	// Position
 
-	g_position_image = device.createImage({
+	g_position_image = vulkan::config::device::device.createImage({
 		{},																						// flags
 		vk::ImageType::e2D,																		// type
 		vk::Format::eR16G16B16A16Sfloat,														// format (for position, high precision)
-		vk::Extent3D{ swap_chain_extent.width, swap_chain_extent.height, 1 },
+		vk::Extent3D{vulkan::config::swap_chain::extent.width, vulkan::config::swap_chain::extent.height, 1 },
 		1,																						// mipLevels
 		1,																						// arrayLayers
 		vk::SampleCountFlagBits::e1,															// samples
@@ -155,17 +152,17 @@ auto gse::renderer3d::initialize() -> void {
 		vk::ImageLayout::eUndefined																// initial layout
 		});
 
-	vk::MemoryRequirements position_memory_requirements = device.getImageMemoryRequirements(g_position_image);
+	vk::MemoryRequirements position_memory_requirements = vulkan::config::device::device.getImageMemoryRequirements(g_position_image);
 
 	vk::MemoryAllocateInfo position_memory_alloc_info{
 		position_memory_requirements.size,
 		vulkan::find_memory_type(position_memory_requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
 	};
 
-	vk::DeviceMemory position_image_memory = device.allocateMemory(position_memory_alloc_info);
-	device.bindImageMemory(g_position_image, position_image_memory, 0);
+	vk::DeviceMemory position_image_memory = vulkan::config::device::device.allocateMemory(position_memory_alloc_info);
+	vulkan::config::device::device.bindImageMemory(g_position_image, position_image_memory, 0);
 
-	g_position_image_view = device.createImageView({
+	g_position_image_view = vulkan::config::device::device.createImageView({
 		{},
 		g_position_image,
 		vk::ImageViewType::e2D,
@@ -180,11 +177,11 @@ auto gse::renderer3d::initialize() -> void {
 
 	// Normal
 
-	g_normal_image = device.createImage({
+	g_normal_image = vulkan::config::device::device.createImage({
 		{},																						// flags
 		vk::ImageType::e2D,																		// type
 		vk::Format::eR16G16B16A16Sfloat,														// format (for normal, high precision)
-		vk::Extent3D{ swap_chain_extent.width, swap_chain_extent.height, 1 },
+		vk::Extent3D{vulkan::config::swap_chain::extent.width, vulkan::config::swap_chain::extent.height, 1 },
 		1,																						// mipLevels
 		1,																						// arrayLayers
 		vk::SampleCountFlagBits::e1,															// samples
@@ -195,17 +192,17 @@ auto gse::renderer3d::initialize() -> void {
 		vk::ImageLayout::eUndefined																// initial layout
 		});
 
-	vk::MemoryRequirements normal_memory_requirements = device.getImageMemoryRequirements(g_normal_image);
+	vk::MemoryRequirements normal_memory_requirements = vulkan::config::device::device.getImageMemoryRequirements(g_normal_image);
 
 	vk::MemoryAllocateInfo normal_memory_alloc_info{
 		normal_memory_requirements.size,
 		vulkan::find_memory_type(normal_memory_requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
 	};
 
-	vk::DeviceMemory normal_image_memory = device.allocateMemory(normal_memory_alloc_info);
-	device.bindImageMemory(g_normal_image, normal_image_memory, 0);
+	vk::DeviceMemory normal_image_memory = vulkan::config::device::device.allocateMemory(normal_memory_alloc_info);
+	vulkan::config::device::device.bindImageMemory(g_normal_image, normal_image_memory, 0);
 
-	g_normal_image_view = device.createImageView({
+	g_normal_image_view = vulkan::config::device::device.createImageView({
 		{},
 		g_normal_image,
 		vk::ImageViewType::e2D,
@@ -220,11 +217,11 @@ auto gse::renderer3d::initialize() -> void {
 
 	// Albedo
 
-	g_albedo_image = device.createImage({
+	g_albedo_image = vulkan::config::device::device.createImage({
 		{},																						// flags
 		vk::ImageType::e2D,																		// type
 		vk::Format::eR16G16B16A16Sfloat,														// format (for albedo, high precision)
-		vk::Extent3D{ swap_chain_extent.width, swap_chain_extent.height, 1 },
+		vk::Extent3D{vulkan::config::swap_chain::extent.width, vulkan::config::swap_chain::extent.height, 1 },
 		1,																						// mipLevels
 		1,																						// arrayLayers
 		vk::SampleCountFlagBits::e1,															// samples
@@ -235,17 +232,17 @@ auto gse::renderer3d::initialize() -> void {
 		vk::ImageLayout::eUndefined																// initial layout
 		});
 
-	vk::MemoryRequirements albedo_memory_requirements = device.getImageMemoryRequirements(g_albedo_image);
+	vk::MemoryRequirements albedo_memory_requirements = vulkan::config::device::device.getImageMemoryRequirements(g_albedo_image);
 
 	vk::MemoryAllocateInfo albedo_memory_alloc_info{
 		albedo_memory_requirements.size,
 		vulkan::find_memory_type(albedo_memory_requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
 	};
 
-	vk::DeviceMemory albedo_image_memory = device.allocateMemory(albedo_memory_alloc_info);
-	device.bindImageMemory(g_albedo_image, albedo_image_memory, 0);
+	vk::DeviceMemory albedo_image_memory = vulkan::config::device::device.allocateMemory(albedo_memory_alloc_info);
+	vulkan::config::device::device.bindImageMemory(g_albedo_image, albedo_image_memory, 0);
 
-	g_albedo_image_view = device.createImageView({
+	g_albedo_image_view = vulkan::config::device::device.createImageView({
 		{},
 		g_albedo_image,
 		vk::ImageViewType::e2D,
@@ -260,11 +257,11 @@ auto gse::renderer3d::initialize() -> void {
 
 	// Depth
 
-	g_depth_image = device.createImage({
+	g_depth_image = vulkan::config::device::device.createImage({
 		{},																						// flags
 		vk::ImageType::e2D,																		// type
 		vk::Format::eD32Sfloat,																	// format (for depth, high precision)
-		vk::Extent3D{ swap_chain_extent.width, swap_chain_extent.height, 1 },
+		vk::Extent3D{vulkan::config::swap_chain::extent.width, vulkan::config::swap_chain::extent.height, 1 },
 		1,																						// mipLevels
 		1,																						// arrayLayers
 		vk::SampleCountFlagBits::e1,															// samples
@@ -275,17 +272,17 @@ auto gse::renderer3d::initialize() -> void {
 		vk::ImageLayout::eUndefined																// initial layout
 		});
 
-	vk::MemoryRequirements depth_memory_requirements = device.getImageMemoryRequirements(g_depth_image);
+	vk::MemoryRequirements depth_memory_requirements = vulkan::config::device::device.getImageMemoryRequirements(g_depth_image);
 
 	vk::MemoryAllocateInfo depth_memory_alloc_info{
 		depth_memory_requirements.size,
 		vulkan::find_memory_type(depth_memory_requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
 	};
 
-	vk::DeviceMemory depth_image_memory = device.allocateMemory(depth_memory_alloc_info);
-	device.bindImageMemory(g_depth_image, depth_image_memory, 0);
+	vk::DeviceMemory depth_image_memory = vulkan::config::device::device.allocateMemory(depth_memory_alloc_info);
+	vulkan::config::device::device.bindImageMemory(g_depth_image, depth_image_memory, 0);
 
-	g_depth_image_view = device.createImageView({
+	g_depth_image_view = vulkan::config::device::device.createImageView({
 		{},
 		g_depth_image,
 		vk::ImageViewType::e2D,
@@ -298,7 +295,7 @@ auto gse::renderer3d::initialize() -> void {
 		}
 	);
 
-	g_deferred_frame_buffers.resize(swap_chain_frame_buffers.size());
+	g_deferred_frame_buffers.resize(vulkan::config::swap_chain::frame_buffers.size());
 
 	for (size_t i = 0; i < g_deferred_frame_buffers.size(); i++) {
 		std::array all_attachments = {
@@ -308,31 +305,31 @@ auto gse::renderer3d::initialize() -> void {
 
 		vk::FramebufferCreateInfo framebuffer_info(
 			{}, g_render_pass, static_cast<std::uint32_t>(all_attachments.size()), all_attachments.data(),
-			swap_chain_extent.width, swap_chain_extent.height, 1
+			vulkan::config::swap_chain::extent.width, vulkan::config::swap_chain::extent.height, 1
 		);
 
-		g_deferred_frame_buffers[i] = device.createFramebuffer(framebuffer_info);
+		g_deferred_frame_buffers[i] = vulkan::config::device::device.createFramebuffer(framebuffer_info);
 	}
 
 	std::cout << "G-Buffer Framebuffers Created Successfully!\n";
 
-	g_command_buffers.resize(swap_chain_frame_buffers.size());
+	g_command_buffers.resize(vulkan::config::swap_chain::frame_buffers.size());
 
 	vk::CommandBufferAllocateInfo alloc_info(
-		vulkan::get_command_config().command_pool, vk::CommandBufferLevel::ePrimary,
+		vulkan::config::command::pool, vk::CommandBufferLevel::ePrimary,
 		static_cast<std::uint32_t>(g_command_buffers.size())
 	);
 
-	g_command_buffers = device.allocateCommandBuffers(alloc_info);
+	g_command_buffers = vulkan::config::device::device.allocateCommandBuffers(alloc_info);
 
 	std::cout << "Command Buffers Created Successfully!\n";
 
-	auto transition_image_layout = [device](const vk::Image image, const vk::ImageLayout old_layout, const vk::ImageLayout new_layout, bool depth = false) -> void {
+	auto transition_image_layout = [](const vk::Image image, const vk::ImageLayout old_layout, const vk::ImageLayout new_layout, const bool depth = false) -> void {
 		const vk::CommandBufferAllocateInfo cmd_buffer_alloc_info(
-			vulkan::get_command_config().command_pool, vk::CommandBufferLevel::ePrimary, 1
+			vulkan::config::command::pool, vk::CommandBufferLevel::ePrimary, 1
 		);
 
-		const vk::CommandBuffer command_buffer = device.allocateCommandBuffers(cmd_buffer_alloc_info)[0];
+		const vk::CommandBuffer command_buffer = vulkan::config::device::device.allocateCommandBuffers(cmd_buffer_alloc_info)[0];
 
 		constexpr vk::CommandBufferBeginInfo begin_info(
 			vk::CommandBufferUsageFlagBits::eOneTimeSubmit
@@ -396,7 +393,7 @@ auto gse::renderer3d::initialize() -> void {
 			0, nullptr, nullptr, 1, &command_buffer, 0, nullptr
 		);
 
-		vulkan::get_queue_config().graphics_queue.submit(submit_info, nullptr);
+		vulkan::config::queue::graphics.submit(submit_info, nullptr);
 		};
 
 	transition_image_layout(g_position_image, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal);
@@ -409,13 +406,13 @@ auto gse::renderer3d::initialize() -> void {
 
 	std::array descriptor_set_layouts = { *layout };
 
-	const auto descriptor_pool = vulkan::get_descriptor_config().descriptor_pool;
+	const auto descriptor_pool = vulkan::config::descriptor::pool;
 
 	vk::DescriptorSetAllocateInfo descriptor_alloc_info = {
 		descriptor_pool, static_cast<std::uint32_t>(descriptor_set_layouts.size()), descriptor_set_layouts.data()
 	};
 
-	std::vector descriptor_sets = device.allocateDescriptorSets(descriptor_alloc_info);
+	std::vector descriptor_sets = vulkan::config::device::device.allocateDescriptorSets(descriptor_alloc_info);
 
 	auto vertex_descriptor_set = descriptor_sets[0];
 
@@ -457,9 +454,9 @@ auto gse::renderer3d::initialize() -> void {
 		)
 	} };
 
-	device.updateDescriptorSets(descriptor_writes, nullptr);
+	vulkan::config::device::device.updateDescriptorSets(descriptor_writes, nullptr);
 
-	g_pipeline_layout = device.createPipelineLayout({ {}, static_cast<std::uint32_t>(descriptor_set_layouts.size()), descriptor_set_layouts.data() });
+	g_pipeline_layout = vulkan::config::device::device.createPipelineLayout({ {}, static_cast<std::uint32_t>(descriptor_set_layouts.size()), descriptor_set_layouts.data() });
 
 	vk::VertexInputBindingDescription binding_description(0, sizeof(vertex), vk::VertexInputRate::eVertex);
 
@@ -519,7 +516,7 @@ auto gse::renderer3d::initialize() -> void {
 		g_pipeline_layout, 
 		g_render_pass, 0
 	);
-	g_pipeline = device.createGraphicsPipeline(nullptr, pipeline_info).value;
+	g_pipeline = vulkan::config::device::device.createGraphicsPipeline(nullptr, pipeline_info).value;
 }
 
 auto gse::renderer3d::initialize_objects() -> void {
@@ -527,16 +524,12 @@ auto gse::renderer3d::initialize_objects() -> void {
 }
 
 auto gse::renderer3d::begin_frame() -> void {
-	const auto& fence = vulkan::get_sync_objects().in_flight_fence;
-	const auto& swap_chain_config = vulkan::get_swap_chain_config();
-	const auto& device = vulkan::get_device_config().device;
-
 	assert(
-		device.waitForFences(1, &fence, vk::True, std::numeric_limits<std::uint64_t>::max()) == vk::Result::eSuccess,
+		vulkan::config::device::device.waitForFences(1, &vulkan::config::sync::in_flight_fence, vk::True, std::numeric_limits<std::uint64_t>::max()) == vk::Result::eSuccess,
 		"Failed to wait for fence!"
 	);
 
-	assert(device.resetFences(1, &fence) == vk::Result::eSuccess, "Failed to reset fence!");
+	assert(vulkan::config::device::device.resetFences(1, &vulkan::config::sync::in_flight_fence) == vk::Result::eSuccess, "Failed to reset fence!");
 
 	const auto image_index = vulkan::get_next_image(window::get_window());
 
@@ -552,7 +545,7 @@ auto gse::renderer3d::begin_frame() -> void {
 	const vk::RenderPassBeginInfo render_pass_info(
 		g_render_pass,
 		g_deferred_frame_buffers[image_index],
-		{ {0, 0}, swap_chain_config.extent },
+		{ {0, 0}, vulkan::config::swap_chain::extent },
 		static_cast<std::uint32_t>(clear_values.size()), 
 		clear_values.data()
 	);
@@ -574,39 +567,35 @@ auto gse::renderer3d::render() -> void {
 }
 
 auto gse::renderer3d::end_frame() -> void {
-	const auto current_frame = vulkan::get_current_frame();
-	g_command_buffers[current_frame].endRenderPass();
-	g_command_buffers[current_frame].end();
+	g_command_buffers[vulkan::config::sync::current_frame].endRenderPass();
+	g_command_buffers[vulkan::config::sync::current_frame].end();
 
-	const auto& [image_available_semaphore, render_finished_semaphore, in_flight_fence] = vulkan::get_sync_objects();
-
-	vk::Semaphore wait_semaphores[] = { image_available_semaphore };
+	vk::Semaphore wait_semaphores[] = { vulkan::config::sync::image_available_semaphore };
 	vk::PipelineStageFlags wait_stages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
 
 	const vk::SubmitInfo info(
 		1, wait_semaphores, wait_stages,
-		1, &g_command_buffers[current_frame],
-		1, &render_finished_semaphore
+		1, &g_command_buffers[vulkan::config::sync::current_frame],
+		1, &vulkan::config::sync::render_finished_semaphore
 	);
 
-	vulkan::get_queue_config().graphics_queue.submit(info, in_flight_fence);
+	vulkan::config::queue::graphics.submit(info, vulkan::config::sync::in_flight_fence);
 
 	const vk::PresentInfoKHR present_info(
-		1, &render_finished_semaphore,
-		1, &vulkan::get_swap_chain_config().swap_chain,
-		&current_frame
+		1, &vulkan::config::sync::render_finished_semaphore,
+		1, &vulkan::config::swap_chain::swap_chain,
+		&vulkan::config::sync::current_frame
 	);
 
-	const vk::Result present_result = vulkan::get_queue_config().present_queue.presentKHR(present_info);
+	const vk::Result present_result = vulkan::config::queue::present.presentKHR(present_info);
 	assert(present_result == vk::Result::eSuccess || present_result == vk::Result::eSuboptimalKHR, "Failed to present image!");
 }
 
 auto gse::renderer3d::shutdown() -> void {
-	const auto& device = vulkan::get_device_config().device;
-	device.destroyPipeline(g_pipeline);
-	device.destroyPipelineLayout(g_pipeline_layout);
-	device.destroyRenderPass(g_render_pass);
+	vulkan::config::device::device.destroyPipeline(g_pipeline);
+	vulkan::config::device::device.destroyPipelineLayout(g_pipeline_layout);
+	vulkan::config::device::device.destroyRenderPass(g_render_pass);
 	for (const auto& framebuffer : g_deferred_frame_buffers) {
-		device.destroyFramebuffer(framebuffer);
+		vulkan::config::device::device.destroyFramebuffer(framebuffer);
 	}
 }
