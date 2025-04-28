@@ -99,9 +99,7 @@ export namespace gse::vulkan {
 
     auto shutdown() -> void;
 
-	auto get_memory_properties() -> vk::PhysicalDeviceMemoryProperties {
-		return config::device::physical_device.getMemoryProperties();
-	}
+    auto get_memory_properties() -> vk::PhysicalDeviceMemoryProperties;
 }
 
 namespace gse::vulkan {

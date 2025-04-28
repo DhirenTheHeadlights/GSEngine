@@ -55,7 +55,7 @@ auto gse::renderer3d::get_render_pass() -> const vk::RenderPass& {
 }
 
 auto gse::renderer3d::get_current_command_buffer() -> vk::CommandBuffer {
-	return g_command_buffers[vulkan::config::sync::current_frame()];
+	return g_command_buffers[vulkan::config::sync::current_frame];
 }
 
 auto gse::renderer3d::initialize() -> void {
@@ -469,8 +469,8 @@ auto gse::renderer3d::initialize() -> void {
 	vk::PipelineVertexInputStateCreateInfo vertex_input_info({}, 1, &binding_description, static_cast<std::uint32_t>(attribute_descriptions.size()), attribute_descriptions.data());
 	vk::PipelineInputAssemblyStateCreateInfo input_assembly({}, vk::PrimitiveTopology::eTriangleList, vk::False);
 
-	vk::Viewport viewport(0.f, 0.f, static_cast<float>(swap_chain_extent.width), static_cast<float>(swap_chain_extent.height), 0.f, 1.f);
-	vk::Rect2D scissor({ 0, 0 }, swap_chain_extent);
+	vk::Viewport viewport(0.f, 0.f, static_cast<float>(vulkan::config::swap_chain::extent.width), static_cast<float>(vulkan::config::swap_chain::extent.height), 0.f, 1.f);
+	vk::Rect2D scissor({ 0, 0 }, vulkan::config::swap_chain::extent);
 	vk::PipelineViewportStateCreateInfo viewport_state({}, 1, & viewport, 1, & scissor);
 
 	vk::PipelineRasterizationStateCreateInfo rasterizer(

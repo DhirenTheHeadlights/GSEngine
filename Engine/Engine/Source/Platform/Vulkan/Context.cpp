@@ -109,6 +109,11 @@ auto gse::vulkan::shutdown() -> void {
     config::instance::instance.destroy();
 }
 
+auto gse::vulkan::get_memory_properties() -> vk::PhysicalDeviceMemoryProperties {
+    const auto props = config::device::physical_device.getMemoryProperties();
+    return props;
+}
+
 auto gse::vulkan::select_gpu() -> void {
     const auto devices = config::instance::instance.enumeratePhysicalDevices();
 
