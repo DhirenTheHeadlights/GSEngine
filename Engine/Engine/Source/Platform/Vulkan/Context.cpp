@@ -7,6 +7,7 @@ module gse.platform.context;
 import std;
 import vulkan_hpp;
 
+import gse.platform.vulkan.objects;
 import gse.platform.assert;
 
 auto gse::vulkan::initialize(GLFWwindow* window) -> void {
@@ -107,11 +108,6 @@ auto gse::vulkan::shutdown() -> void {
 
     config::instance::instance.destroySurfaceKHR(config::instance::surface);
     config::instance::instance.destroy();
-}
-
-auto gse::vulkan::get_memory_properties() -> vk::PhysicalDeviceMemoryProperties {
-    const auto props = config::device::physical_device.getMemoryProperties();
-    return props;
 }
 
 auto gse::vulkan::select_gpu() -> void {
