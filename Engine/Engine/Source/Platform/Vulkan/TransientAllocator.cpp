@@ -27,7 +27,7 @@ auto align_up(const vk::DeviceSize offset, const vk::DeviceSize alignment) -> vk
 }
 
 auto gse::vulkan::transient_allocator::allocate(const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties) -> allocation {
-	const auto mem_properties = config::device::physical_device.getMemoryProperties();
+	const auto mem_properties = get_memory_properties();
 	auto req_memory_type_index = std::numeric_limits<std::uint32_t>::max();
 
 	for (std::uint32_t i = 0; i < mem_properties.memoryTypeCount; i++) {
@@ -47,14 +47,14 @@ auto gse::vulkan::transient_allocator::allocate(const vk::MemoryRequirements& re
 		}
 
 		if (const vk::DeviceSize aligned_offset = align_up(cursor, requirements.alignment); aligned_offset + requirements.size <= size) {
-			const allocation alloc{
+			cursor = aligned_offset + requirements.size;
+
+			return {
 				.memory = memory,
 				.size = requirements.size,
 				.offset = aligned_offset,
 				.mapped = mapped ? static_cast<std::byte*>(mapped) + aligned_offset : nullptr
 			};
-			cursor = aligned_offset + requirements.size;
-			return alloc;
 		}
 	}
 

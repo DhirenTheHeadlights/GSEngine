@@ -1,19 +1,10 @@
 module;
 
-#include <algorithm>
-#include <vulkan/vulkan_hpp_macros.hpp>
-
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
-
-#include <iostream>
-#include <optional>
-#include <set>
-#include <span>
-#include <vector>
+#include <compare>
 
 module gse.platform.context;
 
+import std;
 import vulkan_hpp;
 
 import gse.platform.assert;
@@ -47,13 +38,14 @@ auto gse::vulkan::get_next_image(GLFWwindow* window) -> std::uint32_t {
 }
 
 auto gse::vulkan::find_memory_type(const std::uint32_t type_filter, const vk::MemoryPropertyFlags properties) -> std::uint32_t {
-    const auto memory_properties = config::device::physical_device.getMemoryProperties();
+    /*const auto memory_properties = config::device::physical_device.getMemoryProperties();
     for (std::uint32_t i = 0; i < memory_properties.memoryTypeCount; i++) {
         if (type_filter & 1 << i && (memory_properties.memoryTypes[i].propertyFlags & properties) == properties) {
             return i;
         }
     }
-    throw std::runtime_error("Failed to find suitable memory type!");
+    throw std::runtime_error("Failed to find suitable memory type!");*/
+	return 0;
 }
 
 auto gse::vulkan::begin_single_line_commands() -> vk::CommandBuffer {
@@ -115,98 +107,6 @@ auto gse::vulkan::shutdown() -> void {
 
     config::instance::instance.destroySurfaceKHR(config::instance::surface);
     config::instance::instance.destroy();
-}
-
-auto debug_callback(vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity, vk::DebugUtilsMessageTypeFlagsEXT message_type, const vk::DebugUtilsMessengerCallbackDataEXT* callback_data, void* user_data) -> vk::Bool32 {
-    std::cerr << "Validation layer: " << callback_data->pMessage << "\n";
-    return vk::False;
-}
-
-auto gse::vulkan::create_instance(GLFWwindow* window) -> void {
-    const std::vector validation_layers = {
-           "VK_LAYER_KHRONOS_validation"
-    };
-
-#if VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
-    VULKAN_HPP_DEFAULT_DISPATCHER.init();
-#endif
-
-    const uint32_t highest_supported_version = vk::enumerateInstanceVersion();
-
-    const uint32_t major = vk::apiVersionMajor(highest_supported_version);
-    const uint32_t minor = vk::apiVersionMinor(highest_supported_version);
-    const uint32_t patch = vk::apiVersionPatch(highest_supported_version);
-
-    std::cout << "Running Vulkan " << major << "." << minor << "." << patch << "\n";
-
-    constexpr uint32_t min_supported_version = vk::makeApiVersion(0, 1, 0, 0);
-    const uint32_t selected_version = std::max(min_supported_version, highest_supported_version);
-
-    const vk::ApplicationInfo app_info(
-        "GSEngine", 1,
-        "GSEngine", 1,
-        selected_version
-    );
-
-    uint32_t glfw_extension_count = 0;
-    const char** glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extension_count);
-
-    std::vector extensions(glfw_extensions, glfw_extensions + glfw_extension_count);
-    extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-
-    const vk::DebugUtilsMessengerCreateInfoEXT debug_create_info(
-        {},
-        vk::DebugUtilsMessageSeverityFlagBitsEXT::eError | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose,
-        vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance,
-        reinterpret_cast<PFN_vkDebugUtilsMessengerCallbackEXT>(debug_callback)
-    );
-
-    constexpr vk::ValidationFeatureEnableEXT enables[] = {
-        vk::ValidationFeatureEnableEXT::eBestPractices,
-        vk::ValidationFeatureEnableEXT::eGpuAssisted,
-        vk::ValidationFeatureEnableEXT::eDebugPrintf
-    };
-
-    const vk::ValidationFeaturesEXT features(
-        std::size(enables),
-        enables,
-        0, nullptr,
-        &debug_create_info
-    );
-
-    const vk::InstanceCreateInfo create_info(
-        {},
-        &app_info,
-        static_cast<uint32_t>(validation_layers.size()),
-        validation_layers.data(),
-        static_cast<uint32_t>(extensions.size()),
-        extensions.data(),
-        &features
-    );
-
-    try {
-        config::instance::instance = createInstance(create_info);
-        std::cout << "Vulkan Instance Created Successfully!\n";
-    }
-    catch (vk::SystemError& err) {
-        std::cerr << "Failed to create Vulkan instance: " << err.what() << "\n";
-    }
-
-#if VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
-    VULKAN_HPP_DEFAULT_DISPATCHER.init(config::instance::instance);
-#endif
-
-    try {
-        g_debug_utils_messenger = config::instance::instance.createDebugUtilsMessengerEXT(debug_create_info);
-        std::cout << "Debug Messenger Created Successfully!\n";
-    }
-    catch (vk::SystemError& err) {
-        std::cerr << "Failed to create Debug Messenger: " << err.what() << "\n";
-    }
-
-    VkSurfaceKHR temp_surface;
-    assert(glfwCreateWindowSurface(config::instance::instance, window, nullptr, &temp_surface) == static_cast<int>(vk::Result::eSuccess), "Error creating window surface");
-    config::instance::surface = temp_surface;
 }
 
 auto gse::vulkan::select_gpu() -> void {
@@ -332,24 +232,6 @@ auto gse::vulkan::choose_swap_chain_present_mode(const std::vector<vk::PresentMo
         }
     }
     return vk::PresentModeKHR::eFifo;
-}
-
-auto gse::vulkan::choose_swap_chain_extent(const vk::SurfaceCapabilitiesKHR& capabilities, GLFWwindow* window) -> vk::Extent2D {
-    if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
-        return capabilities.currentExtent;
-    }
-
-    int width, height;
-    glfwGetFramebufferSize(window, &width, &height);
-
-    vk::Extent2D actual_extent = {
-        static_cast<uint32_t>(width),
-        static_cast<uint32_t>(height)
-    };
-
-    actual_extent.width = std::clamp(actual_extent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
-    actual_extent.height = std::clamp(actual_extent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
-    return actual_extent;
 }
 
 auto gse::vulkan::create_swap_chain(GLFWwindow* window) -> void {

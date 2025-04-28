@@ -15,11 +15,10 @@ gse::texture::texture(const std::filesystem::path& filepath) : identifiable(file
 }
 
 gse::texture::~texture() {
-    const auto device = vulkan::get_device_config().device;
-    device.destroySampler(m_texture_sampler);
-    device.destroyImageView(m_texture_image_view);
-    device.destroyImage(m_texture_image);
-    device.freeMemory(m_texture_image_memory);
+	vulkan::config::device::device.destroySampler(m_texture_sampler);
+	vulkan::config::device::device.destroyImageView(m_texture_image_view);
+	vulkan::config::device::device.destroyImage(m_texture_image);
+	vulkan::config::device::device.freeMemory(m_texture_image_memory);
 }
 
 auto gse::texture::load_from_file(const std::filesystem::path& filepath) -> void {
@@ -44,7 +43,6 @@ auto gse::texture::load_from_memory(const std::span<std::uint8_t>& data, const i
 }
 
 auto gse::texture::create_texture_image(const unsigned char* data, const int width, const int height, const int channels) -> void {
-    const auto device = vulkan::get_device_config().device;
     const vk::DeviceSize image_size = width * height * channels;
 
     const vk::BufferCreateInfo buffer_info(
@@ -53,9 +51,9 @@ auto gse::texture::create_texture_image(const unsigned char* data, const int wid
         vk::BufferUsageFlagBits::eTransferSrc,
         vk::SharingMode::eExclusive
     );
-    const vk::Buffer staging_buffer = device.createBuffer(buffer_info);
+    const vk::Buffer staging_buffer = vulkan::config::device::device.createBuffer(buffer_info);
 
-    vk::MemoryRequirements mem_requirements = device.getBufferMemoryRequirements(staging_buffer);
+    vk::MemoryRequirements mem_requirements = vulkan::config::device::device.getBufferMemoryRequirements(staging_buffer);
     vk::MemoryAllocateInfo alloc_info(
         mem_requirements.size,
         vulkan::find_memory_type(
@@ -64,15 +62,14 @@ auto gse::texture::create_texture_image(const unsigned char* data, const int wid
         )
     );
 
-    const vk::DeviceMemory staging_buffer_memory = device.allocateMemory(alloc_info);
-    device.bindBufferMemory(staging_buffer, staging_buffer_memory, 0);
+    const vk::DeviceMemory staging_buffer_memory = vulkan::config::device::device.allocateMemory(alloc_info);
+    vulkan::config::device::device.bindBufferMemory(staging_buffer, staging_buffer_memory, 0);
 
-    void* mapped_data = device.mapMemory(staging_buffer_memory, 0, image_size);
+    void* mapped_data = vulkan::config::device::device.mapMemory(staging_buffer_memory, 0, image_size);
     std::memcpy(mapped_data, data, image_size);
-    device.unmapMemory(staging_buffer_memory);
+    vulkan::config::device::device.unmapMemory(staging_buffer_memory);
 
-    const vk::Format format = vk::Format::eR8G8B8A8Srgb; /*channels == 4 ? vk::Format::eR8G8B8A8Srgb : channels == 1 ? vk::Format::eR8Unorm : vk::Format::eR8G8B8Srgb;*/ // Note: 3-channel formats might require special handling
-
+    constexpr vk::Format format = vk::Format::eR8G8B8A8Srgb; /*channels == 4 ? vk::Format::eR8G8B8A8Srgb : channels == 1 ? vk::Format::eR8Unorm : vk::Format::eR8G8B8Srgb;*/ // Note: 3-channel formats might require special handling
 
     const vk::ImageCreateInfo image_info(
         {},
@@ -88,9 +85,9 @@ auto gse::texture::create_texture_image(const unsigned char* data, const int wid
         vk::ImageLayout::eUndefined
     );
 
-    m_texture_image = device.createImage(image_info);
+    m_texture_image = vulkan::config::device::device.createImage(image_info);
 
-    mem_requirements = device.getImageMemoryRequirements(m_texture_image);
+    mem_requirements = vulkan::config::device::device.getImageMemoryRequirements(m_texture_image);
     alloc_info = vk::MemoryAllocateInfo(
         mem_requirements.size,
         vulkan::find_memory_type(
@@ -98,8 +95,8 @@ auto gse::texture::create_texture_image(const unsigned char* data, const int wid
             vk::MemoryPropertyFlagBits::eDeviceLocal
         )
     );
-    m_texture_image_memory = device.allocateMemory(alloc_info);
-    device.bindImageMemory(m_texture_image, m_texture_image_memory, 0);
+    m_texture_image_memory = vulkan::config::device::device.allocateMemory(alloc_info);
+    vulkan::config::device::device.bindImageMemory(m_texture_image, m_texture_image_memory, 0);
 
     const vk::CommandBuffer command_buffer = vulkan::begin_single_line_commands();
     vk::ImageMemoryBarrier barrier(
@@ -153,8 +150,8 @@ auto gse::texture::create_texture_image(const unsigned char* data, const int wid
 
     vulkan::end_single_line_commands(command_buffer);
 
-    device.destroyBuffer(staging_buffer);
-    device.freeMemory(staging_buffer_memory);
+    vulkan::config::device::device.destroyBuffer(staging_buffer);
+    vulkan::config::device::device.freeMemory(staging_buffer_memory);
 }
 
 auto gse::texture::create_texture_image_view() -> void {
@@ -167,7 +164,7 @@ auto gse::texture::create_texture_image_view() -> void {
         {},
         vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
     );
-    m_texture_image_view = vulkan::get_device_config().device.createImageView(view_info);
+    m_texture_image_view = vulkan::config::device::device.createImageView(view_info);
 }
 
 auto gse::texture::create_texture_sampler() -> void {
@@ -182,7 +179,7 @@ auto gse::texture::create_texture_sampler() -> void {
         0.0f, 0.0f,
         vk::BorderColor::eIntOpaqueBlack
     );
-    m_texture_sampler = vulkan::get_device_config().device.createSampler(sampler_info);
+    m_texture_sampler = vulkan::config::device::device.createSampler(sampler_info);
 }
 
 auto gse::texture::get_descriptor_info() const -> vk::DescriptorImageInfo {

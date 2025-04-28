@@ -109,8 +109,6 @@ auto gse::mesh::operator=(mesh&& other) noexcept -> mesh& {
 }
 
 auto gse::mesh::initialize() -> void {
-	const auto device = vulkan::get_device_config().device;
-
     const vk::DeviceSize vertex_size = sizeof(vertex) * vertices.size();
     const vk::DeviceSize index_size = sizeof(std::uint32_t) * indices.size();
 
@@ -119,42 +117,41 @@ auto gse::mesh::initialize() -> void {
         vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
         vk::SharingMode::eExclusive
     );
-    vertex_buffer = device.createBuffer(vertex_buffer_info);
+    vertex_buffer = vulkan::config::device::device.createBuffer(vertex_buffer_info);
 
-    const vk::MemoryRequirements vertex_mem_req = device.getBufferMemoryRequirements(vertex_buffer);
+    const vk::MemoryRequirements vertex_mem_req = vulkan::config::device::device.getBufferMemoryRequirements(vertex_buffer);
     const vk::MemoryAllocateInfo vertex_alloc_info(
         vertex_mem_req.size,
         vulkan::find_memory_type(vertex_mem_req.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
     );
-    vertex_memory = device.allocateMemory(vertex_alloc_info);
-    device.bindBufferMemory(vertex_buffer, vertex_memory, 0);
+    vertex_memory = vulkan::config::device::device.allocateMemory(vertex_alloc_info);
+    vulkan::config::device::device.bindBufferMemory(vertex_buffer, vertex_memory, 0);
 
     const vk::BufferCreateInfo index_buffer_info(
         {}, index_size,
         vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
         vk::SharingMode::eExclusive
     );
-    index_buffer = device.createBuffer(index_buffer_info);
+    index_buffer = vulkan::config::device::device.createBuffer(index_buffer_info);
 
-    const vk::MemoryRequirements index_mem_req = device.getBufferMemoryRequirements(index_buffer);
+    const vk::MemoryRequirements index_mem_req = vulkan::config::device::device.getBufferMemoryRequirements(index_buffer);
     const vk::MemoryAllocateInfo index_alloc_info(
         index_mem_req.size,
         vulkan::find_memory_type(index_mem_req.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
     );
 
-    index_memory = device.allocateMemory(index_alloc_info);
-    device.bindBufferMemory(index_buffer, index_memory, 0);
+    index_memory = vulkan::config::device::device.allocateMemory(index_alloc_info);
+    vulkan::config::device::device.bindBufferMemory(index_buffer, index_memory, 0);
 }
 
 auto gse::mesh::destroy() const -> void {
-	const auto device = vulkan::get_device_config().device;
     if (vertex_buffer) {
-        device.destroyBuffer(vertex_buffer);
-        device.freeMemory(vertex_memory);
+	    vulkan::config::device::device.destroyBuffer(vertex_buffer);
+	    vulkan::config::device::device.freeMemory(vertex_memory);
     }
     if (index_buffer) {
-        device.destroyBuffer(index_buffer);
-        device.freeMemory(index_memory);
+	    vulkan::config::device::device.destroyBuffer(index_buffer);
+	    vulkan::config::device::device.freeMemory(index_memory);
     }
 }
 

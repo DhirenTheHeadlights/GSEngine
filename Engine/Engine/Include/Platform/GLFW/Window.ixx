@@ -311,8 +311,7 @@ auto gse::window::get_window_size() -> unitless::vec2i {
 }
 
 auto gse::window::get_viewport_size() -> unitless::vec2i {
-	const auto& swap_chain_extent = vulkan::get_swap_chain_config().extent;
-	return { static_cast<int>(swap_chain_extent.width), static_cast<int>(swap_chain_extent.height) };
+	return { static_cast<int>(vulkan::config::swap_chain::extent.width), static_cast<int>(vulkan::config::swap_chain::extent.height) };
 }
 
 auto gse::window::set_fbo(const GLuint fbo_in, const unitless::vec2i& size) -> void {
