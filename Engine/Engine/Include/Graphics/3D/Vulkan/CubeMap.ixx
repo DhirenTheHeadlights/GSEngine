@@ -35,17 +35,14 @@ export namespace gse {
 }
 
 gse::cube_map::~cube_map() {
-	const auto device = vulkan::get_device_config().device;
-    device.destroyFramebuffer(m_frame_buffer);
-    device.destroyImageView(m_image_view);
-    device.destroyImage(m_image);
-    device.freeMemory(m_image_memory);
-    device.destroySampler(m_sampler);
+	vulkan::config::device::device.destroyFramebuffer(m_frame_buffer);
+	vulkan::config::device::device.destroyImageView(m_image_view);
+	vulkan::config::device::device.destroyImage(m_image);
+	vulkan::config::device::device.freeMemory(m_image_memory);
+	vulkan::config::device::device.destroySampler(m_sampler);
 }
 
 auto gse::cube_map::create(const std::vector<std::string>& faces) -> void {
-	const auto device = vulkan::get_device_config().device;
-
     int width, height, nr_channels;
     std::vector<unsigned char*> face_data;
     for (const auto& face : faces) {
@@ -70,15 +67,15 @@ auto gse::cube_map::create(const std::vector<std::string>& faces) -> void {
     );
     image_info.flags = vk::ImageCreateFlagBits::eCubeCompatible;
 
-    m_image = device.createImage(image_info);
+    m_image = vulkan::config::device::device.createImage(image_info);
 
-    const vk::MemoryRequirements mem_requirements = device.getImageMemoryRequirements(m_image);
+    const vk::MemoryRequirements mem_requirements = vulkan::config::device::device.getImageMemoryRequirements(m_image);
     const vk::MemoryAllocateInfo alloc_info(
         mem_requirements.size,
         vulkan::find_memory_type(mem_requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
     );
-    m_image_memory = device.allocateMemory(alloc_info);
-    device.bindImageMemory(m_image, m_image_memory, 0);
+    m_image_memory = vulkan::config::device::device.allocateMemory(alloc_info);
+    vulkan::config::device::device.bindImageMemory(m_image, m_image_memory, 0);
 
     const vk::ImageViewCreateInfo view_info(
         {},
@@ -88,7 +85,7 @@ auto gse::cube_map::create(const std::vector<std::string>& faces) -> void {
         {},
         { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 6 }
     );
-    m_image_view = device.createImageView(view_info);
+    m_image_view = vulkan::config::device::device.createImageView(view_info);
 
     for (auto* data : face_data) {
         stbi_image_free(data);
@@ -98,8 +95,6 @@ auto gse::cube_map::create(const std::vector<std::string>& faces) -> void {
 auto gse::cube_map::create(const int resolution, const bool depth_only) -> void {
     this->m_resolution = resolution;
     this->m_depth_only = depth_only;
-
-	const auto device = vulkan::get_device_config().device;
 
     const vk::Format format = depth_only ? vk::Format::eD32Sfloat : vk::Format::eR16G16B16A16Sfloat;
     const vk::ImageUsageFlags usage = depth_only ? vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled : vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled;
@@ -119,13 +114,13 @@ auto gse::cube_map::create(const int resolution, const bool depth_only) -> void 
     );
     image_info.flags = vk::ImageCreateFlagBits::eCubeCompatible;
 
-    m_image = device.createImage(image_info);
+    m_image = vulkan::config::device::device.createImage(image_info);
 
-    const vk::MemoryRequirements mem_requirements = device.getImageMemoryRequirements(m_image);
+    const vk::MemoryRequirements mem_requirements = vulkan::config::device::device.getImageMemoryRequirements(m_image);
     const vk::MemoryAllocateInfo alloc_info(mem_requirements.size, vulkan::find_memory_type(mem_requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal));
-    m_image_memory = device.allocateMemory(alloc_info);
-    device.bindImageMemory(m_image, m_image_memory, 0);
+    m_image_memory = vulkan::config::device::device.allocateMemory(alloc_info);
+    vulkan::config::device::device.bindImageMemory(m_image, m_image_memory, 0);
 
     const vk::ImageViewCreateInfo view_info({}, m_image, vk::ImageViewType::eCube, format, {}, { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 6 });
-    m_image_view = device.createImageView(view_info);
+    m_image_view = vulkan::config::device::device.createImageView(view_info);
 }

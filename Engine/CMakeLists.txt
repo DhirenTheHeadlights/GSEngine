@@ -138,6 +138,7 @@ if (MSVC)
     # Add compiler options for SIMD optimizations and multi-core compilation
     add_compile_options(/arch:AVX2) # SIMD optimizations
     add_compile_options(/MP)        # Multi-core compilation
+    add_compile_options(/Zm500)     # Increase the maximum number of template instantiations; needed for Vulkan
 
     # List of external targets to be grouped under "External"
     set(EXTERNAL_TARGETS imgui VulkanModule SPIRV-Reflect)

@@ -74,14 +74,12 @@ auto create_layout(const vk::Device device, const std::vector<vk::DescriptorSetL
 }
 
 auto init_descriptor_layouts() -> void {
-    const auto& device = gse::vulkan::get_device_config().device;
-
     constexpr auto vs = vk::ShaderStageFlagBits::eVertex;
     constexpr auto fs = vk::ShaderStageFlagBits::eFragment;
     constexpr int max_lights = 10;
 
     auto create_layout = [&](std::vector<vk::DescriptorSetLayoutBinding> bindings) {
-        const vk::DescriptorSetLayout layout = device.createDescriptorSetLayout({
+        const vk::DescriptorSetLayout layout = gse::vulkan::config::device::device.createDescriptorSetLayout({
             {},
         	static_cast<uint32_t>(bindings.size()),
         	bindings.data()

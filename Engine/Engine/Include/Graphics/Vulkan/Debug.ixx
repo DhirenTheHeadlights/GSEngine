@@ -75,13 +75,13 @@ auto gse::debug::set_up_imgui(const vk::RenderPass& render_pass) -> void {
 
     ImGui_ImplGlfw_InitForVulkan(window::get_window(), true);
     ImGui_ImplVulkan_InitInfo init_info = {};
-	init_info.Instance = vulkan::get_instance_config().instance;
-	init_info.PhysicalDevice = vulkan::get_device_config().physical_device;
-	init_info.Device = vulkan::get_device_config().device;
-	init_info.QueueFamily = vulkan::get_queue_families().graphics_family.value();
-	init_info.Queue = vulkan::get_queue_config().graphics_queue;
+	init_info.Instance = vulkan::config::instance::instance;
+	init_info.PhysicalDevice = vulkan::config::device::physical_device;
+	init_info.Device = vulkan::config::device::device;
+	init_info.QueueFamily = vulkan::find_queue_families().graphics_family.value();
+	init_info.Queue = vulkan::config::queue::graphics;
     init_info.PipelineCache = VK_NULL_HANDLE;
-	init_info.DescriptorPool = vulkan::get_descriptor_config().descriptor_pool;
+	init_info.DescriptorPool = vulkan::config::descriptor::pool;
     init_info.Subpass = 0;
     init_info.MinImageCount = 2;
     init_info.ImageCount = 3;
