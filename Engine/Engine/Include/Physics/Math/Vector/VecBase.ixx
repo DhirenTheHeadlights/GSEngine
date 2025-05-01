@@ -1,7 +1,6 @@
 module;
 //SIMD Support
 #include <intrin.h> 
-#include <cpuid.h>
 
 export module gse.physics.math.base_vec;
 
@@ -20,9 +19,6 @@ export namespace gse::vec {
             return data[index];
         }
     };
-
-
-    simd_check g_simd_info;
 
     using raw2i = storage<int, 2>;
     using raw3i = storage<int, 3>;
@@ -169,78 +165,80 @@ namespace gse::simd {
     auto check_cpu_supports_sse() -> bool;
     auto check_cpu_supports_sse2() -> bool;
     auto check_cpu_supports_avx2() -> bool;
-    bool sse_supported = check_cpu_supports_sse()
-        bool sse2_supported = check_cpu_supports_sse2();
+    bool sse_supported = check_cpu_supports_sse();
+    bool sse2_supported = check_cpu_supports_sse2();
     bool avx_supported = check_cpu_supports_avx();
     bool avx2_supported = check_cpu_supports_avx2();
 
 
-    template <typename T, int N> auto add(const storage<T, N>& lhs, const storage<T, N>& rhs, storage<T, N>& result) -> bool;
-    template <typename T, int N> auto subtract(const storage<T, N>& lhs, const storage<T, N>& rhs, storage<T, N>& result) -> bool;
-    template <typename T, int N> auto multiply(const storage<T, N>& lhs, const storage<T, N>& rhs, storage<T, N>& result) -> bool;
-    template <typename T, int N> auto divide(const storage<T, N>& lhs, const storage<T, N>& rhs, storage<T, N>& result) -> bool;
+    template <typename T, int N> auto add(const gse::vec::storage<T, N>& lhs, const gse::vec::storage<T, N>& rhs, gse::vec::storage<T, N>& result) -> bool;
+    template <typename T, int N> auto subtract(const gse::vec::storage<T, N>& lhs, const gse::vec::storage<T, N>& rhs, gse::vec::storage<T, N>& result) -> bool;
+    template <typename T, int N> auto multiply(const gse::vec::storage<T, N>& lhs, const gse::vec::storage<T, N>& rhs, gse::vec::storage<T, N>& result) -> bool;
+    template <typename T, int N> auto divide(const gse::vec::storage<T, N>& lhs, const gse::vec::storage<T, N>& rhs, gse::vec::storage<T, N>& result) -> bool;
 
-    template <typename T, int N> auto add(const T& lhs, const storage<T, N>& rhs, storage<T, N>& result) -> bool;
-    template <typename T, int N> auto subtract(const T& lhs, const storage<T, N>& rhs, storage<T, N>& result) -> bool;
-    template <typename T, int N> auto subtract(const storage<T, N>& lhs, const T& rhs, storage<T, N>& result) -> bool;
-    template <typename T, int N> auto multiply(const T& lhs, const storage<T, N>& rhs, storage<T, N>& result) -> bool;
-    template <typename T, int N> auto divide(const T& lhs, const storage<T, N>& rhs, storage<T, N>& result) -> bool;
-    template <typename T, int N> auto divide(const storage<T, N>& lhs, const T& rhs, storage<T, N>& result) -> bool;
+    template <typename T, int N> auto add(const T& lhs, const gse::vec::storage<T, N>& rhs, gse::vec::storage<T, N>& result) -> bool;
+    template <typename T, int N> auto subtract(const T& lhs, const gse::vec::storage<T, N>& rhs, gse::vec::storage<T, N>& result) -> bool;
+    template <typename T, int N> auto subtract(const gse::vec::storage<T, N>& lhs, const T& rhs, gse::vec::storage<T, N>& result) -> bool;
+    template <typename T, int N> auto multiply(const T& lhs, const gse::vec::storage<T, N>& rhs, gse::vec::storage<T, N>& result) -> bool;
+    template <typename T, int N> auto divide(const T& lhs, const gse::vec::storage<T, N>& rhs, gse::vec::storage<T, N>& result) -> bool;
+    template <typename T, int N> auto divide(const gse::vec::storage<T, N>& lhs, const T& rhs, gse::vec::storage<T, N>& result) -> bool;
 };
-}
+
 
 auto gse::simd::check_cpu_supports_sse() -> bool {
     int info[4];
     __cpuid(info, 1);
-    return (info[3] & (1 << 25)) != 0;
+    return (info[3] & (1 << 25)) != 0; // SSE bit in EDX
 }
+
 auto gse::simd::check_cpu_supports_sse2() -> bool {
     int info[4];
     __cpuid(info, 1);
-    return (info[3] & (1 << 26)) != 0;
+    return (info[3] & (1 << 26)) != 0; // SSE2 bit in EDX
 }
+
 auto gse::simd::check_cpu_supports_avx() -> bool {
-    unsigned int eax, ebx, ecx, edx;
+    int info[4];
+    __cpuid(info, 1);
 
-    __cpuid(1, eax, ebx, ecx, edx);
-    bool os_uses_xsave_xrstore = (ecx & (1 << 27)) != 0;
-    bool cpu_avx_support = (ecx & (1 << 28)) != 0;
+    bool os_uses_xsave = (info[2] & (1 << 27)) != 0;
+    bool cpu_supports_avx = (info[2] & (1 << 28)) != 0;
 
-    if (os_uses_xsave_xrstore && cpu_avx_support) {
-        uint64_t xcr_feature_mask = _xgetbv(_XCR_XFEATURE_ENABLED_MASK);
-        return (xcr_feature_mask & 0x6) == 0x6; // XMM and YMM state
+    if (os_uses_xsave && cpu_supports_avx) {
+        std::uint64_t xcr_mask = _xgetbv(_XCR_XFEATURE_ENABLED_MASK);
+        return (xcr_mask & 0x6) == 0x6; // XMM (bit 1) and YMM (bit 2)
     }
+
     return false;
 }
+
 auto gse::simd::check_cpu_supports_avx2() -> bool {
     int info[4];
 
-    // Step 1: Check AVX support in CPUID.1:ECX (bit 28)
+    // First check AVX and OS support
     __cpuid(info, 1);
-    bool os_supports_xsave = (info[2] & (1 << 27)) != 0;
+    bool os_uses_xsave = (info[2] & (1 << 27)) != 0;
     bool cpu_supports_avx = (info[2] & (1 << 28)) != 0;
 
-    // Step 2: Check OS has enabled saving of YMM registers via XCR0
-    if (!(os_supports_xsave && cpu_supports_avx)) {
+    if (!(os_uses_xsave && cpu_supports_avx)) {
         return false;
     }
 
-    // _xgetbv(0) returns XFEATURE_ENABLED_MASK (XCR0)
-    unsigned long long xcrFeatureMask = _xgetbv(0);
-    bool xmm_enabled = (xcrFeatureMask & 0x2) != 0;
-    bool ymm_enabled = (xcrFeatureMask & 0x4) != 0;
+    std::uint64_t xcr_mask = _xgetbv(_XCR_XFEATURE_ENABLED_MASK);
+    bool xmm_enabled = (xcr_mask & 0x2) != 0;
+    bool ymm_enabled = (xcr_mask & 0x4) != 0;
 
     if (!(xmm_enabled && ymm_enabled)) {
         return false;
     }
 
-    // Step 3: Check AVX2 feature bit in CPUID.7:EBX (bit 5)
+    // Then check AVX2 bit in CPUID.7:EBX
     __cpuidex(info, 7, 0);
-    return (info[1] & (1 << 5)) != 0;
+    return (info[1] & (1 << 5)) != 0; // AVX2 bit in EBX
 }
 
 template <typename T, int N>
-auto gse::simd::add(const storage<T, N>& lhs, const storage<T, N>& rhs, storage<T, N>& result) -> bool {
+auto gse::simd::add(const gse::vec::storage<T, N>& lhs, const gse::vec::storage<T, N>& rhs, gse::vec::storage<T, N>& result) -> bool {
     if constexpr (std::is_integral_v<T>) {
         // AVX2: 256-bit SIMD with integer operation
         if (simd::avx2_supported && N == 8) {
@@ -282,7 +280,7 @@ auto gse::simd::add(const storage<T, N>& lhs, const storage<T, N>& rhs, storage<
 }
 
 template <typename T, int N>
-auto gse::simd::subtract(const storage<T, N>& lhs, const storage<T, N>& rhs, storage<T, N>& result) -> bool {
+auto gse::simd::subtract(const gse::vec::storage<T, N>& lhs, const gse::vec::storage<T, N>& rhs, gse::vec::storage<T, N>& result) -> bool {
     if constexpr (std::is_integral_v<T>) {
         // AVX2: 256-bit SIMD with integer operation
         if (simd::avx2_supported && N == 8) {
@@ -324,7 +322,7 @@ auto gse::simd::subtract(const storage<T, N>& lhs, const storage<T, N>& rhs, sto
 }
 
 template <typename T, int N>
-auto gse::simd::multiply(const storage<T, N>& lhs, const storage<T, N>& rhs, storage<T, N>& result) -> bool {
+auto gse::simd::multiply(const gse::vec::storage<T, N>& lhs, const gse::vec::storage<T, N>& rhs, gse::vec::storage<T, N>& result) -> bool {
     if constexpr (std::is_integral_v<T>) {
         // AVX2: 256-bit SIMD with integer operation
         if (simd::avx2_supported && N == 8) {
@@ -366,7 +364,7 @@ auto gse::simd::multiply(const storage<T, N>& lhs, const storage<T, N>& rhs, sto
 }
 
 template <typename T, int N>
-auto gse::simd::divide(const storage<T, N>& lhs, const storage<T, N>& rhs, storage<T, N>& result) -> bool {
+auto gse::simd::divide(const gse::vec::storage<T, N>& lhs, const gse::vec::storage<T, N>& rhs, gse::vec::storage<T, N>& result) -> bool {
     if constexpr (std::is_integral_v<T>) {
         // AVX2: 256-bit SIMD with integer operation
         if (simd::avx2_supported && N == 8) {
@@ -409,7 +407,7 @@ auto gse::simd::divide(const storage<T, N>& lhs, const storage<T, N>& rhs, stora
 
 
 template <typename T, int N>
-auto gse::simd::add(const T& lhs, const storage<T, N>& rhs, storage<T, N>& result) -> bool {
+auto gse::simd::add(const T& lhs, const gse::vec::storage<T, N>& rhs, gse::vec::storage<T, N>& result) -> bool {
     if constexpr (std::is_integral_v<T>) {
         // AVX2: 256-bit SIMD with integer operation
         if (simd::avx2_supported && N == 8) {
@@ -451,7 +449,7 @@ auto gse::simd::add(const T& lhs, const storage<T, N>& rhs, storage<T, N>& resul
 }
 
 template <typename T, int N>
-auto gse::simd::subtract(const T& lhs, const storage<T, N>& rhs, storage<T, N>& result) -> bool {
+auto gse::simd::subtract(const T& lhs, const gse::vec::storage<T, N>& rhs, gse::vec::storage<T, N>& result) -> bool {
     if constexpr (std::is_integral_v<T>) {
         // AVX2: 256-bit SIMD with integer operation
         if (simd::avx2_supported && N == 8) {
@@ -493,12 +491,12 @@ auto gse::simd::subtract(const T& lhs, const storage<T, N>& rhs, storage<T, N>& 
 }
 
 template <typename T, int N>
-auto gse::simd::subtract(const storage<T, N>& lhs, const T& rhs, storage<T, N>& result) -> bool {
+auto gse::simd::subtract(const gse::vec::storage<T, N>& lhs, const T& rhs, gse::vec::storage<T, N>& result) -> bool {
     if constexpr (std::is_integral_v<T>) {
         // AVX2: 256-bit SIMD with integer operation
         if (simd::avx2_supported && N == 8) {
-            __m256i a = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs.data()
-                __m256i b = _mm256_set1_epi32(rhs);
+            __m256i a = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs.data()));
+            __m256i b = _mm256_set1_epi32(rhs);
             __m256i c = _mm256_sub_epi32(a, b);
             _mm256_storeu_si256(reinterpret_cast<__m256i*>(result.data()), c);
             return true;
@@ -535,7 +533,7 @@ auto gse::simd::subtract(const storage<T, N>& lhs, const T& rhs, storage<T, N>& 
 }
 
 template <typename T, int N>
-auto gse::simd::multiply(const T& lhs, const storage<T, N>& rhs, storage<T, N>& result) -> bool {
+auto gse::simd::multiply(const T& lhs, const gse::vec::storage<T, N>& rhs, gse::vec::storage<T, N>& result) -> bool {
     if constexpr (std::is_integral_v<T>) {
         // AVX2: 256-bit SIMD with integer operation
         if (simd::avx2_supported && N == 8) {
@@ -577,7 +575,7 @@ auto gse::simd::multiply(const T& lhs, const storage<T, N>& rhs, storage<T, N>& 
 }
 
 template <typename T, int N>
-auto gse::simd::divide(const T& lhs, const storage<T, N>& rhs, storage<T, N>& result) -> bool {
+auto gse::simd::divide(const T& lhs, const gse::vec::storage<T, N>& rhs, gse::vec::storage<T, N>& result) -> bool {
     if constexpr (std::is_integral_v<T>) {
         // AVX2: 256-bit SIMD with integer operation
         if (simd::avx2_supported && N == 8) {
@@ -598,33 +596,33 @@ auto gse::simd::divide(const T& lhs, const storage<T, N>& rhs, storage<T, N>& re
     }
     else if constexpr (std::is_floating_point_v<T>) {
         // AVX: 256-bit SIMD with float operation
-    else if (simd::avx_supported && N == 8) {
-        __m256 a = _mm_set1_ps(lhs);
-        __m256 b = _mm256_loadu_ps(rhs.data());
-        __m256 c = _mm256_div_ps(a, b);
-        _mm256_storeu_ps(result.data(), c);
-        return true;
-    }
+        if (simd::avx_supported && N == 8) {
+            __m256 a = _mm_set1_ps(lhs);
+            __m256 b = _mm256_loadu_ps(rhs.data());
+            __m256 c = _mm256_div_ps(a, b);
+            _mm256_storeu_ps(result.data(), c);
+            return true;
+        }
 
-    // SSE: 128-bit SIMD with float operation
-    else if (simd::sse_supported && N == 4) {
-        __m128 a = _mm_set1_ps(lhs);
-        __m128 b = _mm_loadu_ps(rhs.data());
-        __m128 c = _mm_div_ps(a, b);
-        _mm_storeu_ps(result.data(), c);
-        return true;
-    }
+        // SSE: 128-bit SIMD with float operation
+        else if (simd::sse_supported && N == 4) {
+            __m128 a = _mm_set1_ps(lhs);
+            __m128 b = _mm_loadu_ps(rhs.data());
+            __m128 c = _mm_div_ps(a, b);
+            _mm_storeu_ps(result.data(), c);
+            return true;
+        }
     }
     return false;
 }
 
 template <typename T, int N>
-auto gse::simd::divide(const storage<T, N>& lhs, const T& rhs, storage<T, N>& result) -> bool {
+auto gse::simd::divide(const gse::vec::storage<T, N>& lhs, const T& rhs, gse::vec::storage<T, N>& result) -> bool {
     if constexpr (std::is_integral_v<T>) {
         // AVX2: 256-bit SIMD with integer operation
         if (simd::avx2_supported && N == 8) {
-            __m256i a = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs.data()
-                __m256i b = _mm256_set1_epi32(rhs);
+            __m256i a = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs.data()));
+            __m256i b = _mm256_set1_epi32(rhs);
             __m256i c = _mm256_div_epi32(a, b);
             _mm256_storeu_si256(reinterpret_cast<__m256i*>(result.data()), c);
             return true;
@@ -752,7 +750,7 @@ constexpr auto gse::vec::operator*(const storage<T, N>& lhs, const storage<T, N>
 template <typename T, int N>
 constexpr auto gse::vec::operator/(const storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<decltype(lhs[0] / rhs[0]), N> {
     storage<decltype(lhs[0] / rhs[0]), N> result{};
-    if (!simd::divide(lhs, rhs, result) {
+    if (!simd::divide(lhs, rhs, result)) {
         for (int i = 0; i < N; ++i)
             result[i] = lhs[i] / rhs[i];
     }
@@ -796,7 +794,7 @@ template <typename T, typename U, int N>
 constexpr auto gse::vec::operator/(const storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<decltype(lhs[0] / rhs[0]), N> {
     storage<decltype(lhs[0] / rhs[0]), N> result{};
 
-    if (!simd::divide(lhs, rhs, result) {
+    if (!simd::divide(lhs, rhs, result)) {
         for (int i = 0; i < N; ++i)
             result[i] = lhs[i] / rhs[i];
     }
@@ -805,7 +803,7 @@ constexpr auto gse::vec::operator/(const storage<T, N>& lhs, const storage<U, N>
 
 template <typename T, int N>
 constexpr auto gse::vec::operator+=(storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>& {
-    if (!simd:add(lhs, rhs, lhs) {
+    if (!simd::add(lhs, rhs, lhs)) {
         for (int i = 0; i < N; ++i)
             lhs[i] += rhs[i];
     }
