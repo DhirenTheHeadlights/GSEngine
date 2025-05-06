@@ -13,14 +13,8 @@ module;
 
 export module gse.platform.context;
 
-import vulkan_hpp;
-
 export import gse.platform.vulkan.objects;
 import gse.platform.assert;
-
-#if defined(VULKAN_HPP_DISPATCH_LOADER_DYNAMIC) && (VULKAN_HPP_DISPATCH_LOADER_DYNAMIC == 1)
-export VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
-#endif
 
 vk::DebugUtilsMessengerEXT g_debug_utils_messenger;
 
