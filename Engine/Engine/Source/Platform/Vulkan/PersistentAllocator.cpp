@@ -46,7 +46,7 @@ auto gse::vulkan::persistent_allocator::shutdown() -> void {
 }
 
 auto gse::vulkan::persistent_allocator::allocate(const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties) -> allocation {
-	const auto mem_properties = config::device::physical_device.getMemoryProperties();
+	const auto mem_properties = get_memory_properties();
 	auto memory_type_index = std::numeric_limits<std::uint32_t>::max();
 
 	for (std::uint32_t i = 0; i < mem_properties.memoryTypeCount; i++) {
