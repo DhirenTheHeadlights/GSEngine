@@ -7,8 +7,7 @@ export module gse.graphics.shader;
 import vulkan_hpp;
 import std;
 
-import gse.platform.context;
-import gse.platform.assert;
+import gse.platform;
 
 namespace gse {
 	export class shader {

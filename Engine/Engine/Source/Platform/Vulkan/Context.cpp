@@ -2,12 +2,12 @@ module;
 
 #include <compare>
 
-module gse.platform.context;
+module gse.platform.vulkan.context;
 
 import std;
 import vulkan_hpp;
 
-import gse.platform.vulkan.objects;
+import gse.platform.vulkan.config;
 import gse.platform.assert;
 
 auto gse::vulkan::initialize(GLFWwindow* window) -> void {

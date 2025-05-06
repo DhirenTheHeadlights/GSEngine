@@ -13,8 +13,7 @@ import vulkan_hpp;
 import gse.physics.math;
 import gse.core.clock;
 import gse.core.json_parser;
-import gse.platform.glfw.window;
-import gse.platform.context;
+import gse.platform;
 
 export namespace gse::debug {
 	auto set_up_imgui(const vk::RenderPass& render_pass) -> void;

@@ -11,8 +11,7 @@ import vulkan_hpp;
 
 import gse.core.config;
 import gse.graphics.shader;
-import gse.platform.assert;
-import gse.platform.context;
+import gse.platform;
 
 struct shader_info {
     std::string name;

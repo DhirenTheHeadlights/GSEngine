@@ -1,9 +1,9 @@
-module gse.vulkan.transient_allocator;
+module gse.platform.vulkan.transient_allocator;
 
 import std;
 import vulkan_hpp;
 
-import gse.platform.context;
+import gse.platform.vulkan.context
 import gse.platform.assert;
 
 struct memory_block {
@@ -86,6 +86,14 @@ auto gse::vulkan::transient_allocator::allocate(const vk::MemoryRequirements& re
 		.offset = 0,
 		.mapped = static_cast<std::byte*>(block.mapped)
 	};
+}
+
+auto gse::vulkan::transient_allocator::bind(vk::Buffer buffer, const allocation& alloc) -> void {
+	config::device::device.bindBufferMemory(buffer, alloc.memory, alloc.offset);
+}
+
+auto gse::vulkan::transient_allocator::bind(vk::Image image, const allocation& alloc) -> void {
+	config::device::device.bindImageMemory(image, alloc.memory, alloc.offset);
 }
 
 auto gse::vulkan::transient_allocator::end_frame() -> void {

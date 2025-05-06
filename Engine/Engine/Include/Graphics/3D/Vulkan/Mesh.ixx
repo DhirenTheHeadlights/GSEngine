@@ -4,8 +4,7 @@ import std;
 import vulkan_hpp;
 
 import gse.graphics.material;
-import gse.platform.context;
-import gse.platform.assert;
+import gse.platform;
 import gse.physics.bounding_box;
 import gse.physics.math;
 
