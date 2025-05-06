@@ -18,10 +18,6 @@ import vulkan_hpp;
 import gse.platform.vulkan.config;
 import gse.platform.assert;
 
-#if defined(VULKAN_HPP_DISPATCH_LOADER_DYNAMIC) && (VULKAN_HPP_DISPATCH_LOADER_DYNAMIC == 1)
-export VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
-#endif
-
 vk::DebugUtilsMessengerEXT g_debug_utils_messenger;
 
 constexpr std::uint32_t max_frames_in_flight = 2;
