@@ -196,11 +196,11 @@ auto gse::renderer2d::initialize() -> void {
     g_index_buffer = vulkan::create_buffer(index_buffer_size, vk::BufferUsageFlagBits::eIndexBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, g_index_memory);
 
     void* data = vulkan::config::device::device.mapMemory(g_vertex_memory, 0, vertex_buffer_size);
-    memcpy(data, vertices, vertex_buffer_size);
+    std::memcpy(data, vertices, vertex_buffer_size);
     vulkan::config::device::device.unmapMemory(g_vertex_memory);
 
     data = vulkan::config::device::device.mapMemory(g_index_memory, 0, index_buffer_size);
-    memcpy(data, indices, index_buffer_size);
+    std::memcpy(data, indices, index_buffer_size);
     vulkan::config::device::device.unmapMemory(g_index_memory);
 
 	/// Generate MSDF pipeline

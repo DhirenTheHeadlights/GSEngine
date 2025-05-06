@@ -1,7 +1,7 @@
 export module gse.platform.vulkan.config;
 
 import std;
-import vulkan_hpp;
+export import vulkan_hpp;
 
 export namespace gse::vulkan::config {
     namespace instance {
@@ -64,4 +64,10 @@ export namespace gse::vulkan {
             return graphics_family.has_value() && present_family.has_value();
         }
     };
+
+    auto get_memory_properties() -> vk::PhysicalDeviceMemoryProperties;
 }
+
+#if defined(VULKAN_HPP_DISPATCH_LOADER_DYNAMIC) && (VULKAN_HPP_DISPATCH_LOADER_DYNAMIC == 1)
+export VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
+#endif
