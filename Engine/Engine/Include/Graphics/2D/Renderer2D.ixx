@@ -39,11 +39,11 @@ vk::CommandPool         g_command_pool;
 vk::CommandBuffer       g_command_buffer;
 vk::Framebuffer         g_framebuffer;
 vk::Buffer              g_vertex_buffer;
-vk::DeviceMemory        g_vertex_memory;
 vk::Buffer              g_index_buffer;
-vk::DeviceMemory        g_index_memory;
+gse::vulkan::persistent_allocator::allocation           g_vertex_allocation;
+gse::vulkan::persistent_allocator::allocation           g_index_allocation;
 vk::Image               g_render_target;
-gse::vulkan::persistent_allocator::allocation        g_render_target_memory;
+gse::vulkan::persistent_allocator::allocation           g_render_target_memory;
 vk::ImageView           g_render_target_view;
 
 vk::Pipeline 		    g_msdf_pipeline;
@@ -67,11 +67,7 @@ auto gse::renderer2d::initialize() -> void {
     );
 
     g_render_target = vulkan::config::device::device.createImage(image_info);
-
-    vk::MemoryRequirements mem_reqs = vulkan::config::device::device.getImageMemoryRequirements(g_render_target);
-    g_render_target_memory = vulkan::persistent_allocator::allocate(mem_reqs);
-
-    vulkan::config::device::device.bindImageMemory(g_render_target, g_render_target_memory, 0);
+    g_render_target_memory = vulkan::persistent_allocator::bind(g_render_target);
 
     vk::ImageViewCreateInfo view_info(
         {}, 
@@ -187,21 +183,26 @@ auto gse::renderer2d::initialize() -> void {
         {.position = {1.0f, 0.0f}, .texture_coordinate = {1.0f, 0.0f}}, // Bottom-right
         {.position = {0.0f, 0.0f}, .texture_coordinate = {0.0f, 0.0f}}  // Bottom-left
     };
-	constexpr std::uint32_t indices[6] = { 0, 1, 2, 2, 3, 0 };
+    constexpr std::uint32_t indices[6] = { 0, 1, 2, 2, 3, 0 };
 
-	vk::DeviceSize vertex_buffer_size = sizeof(vertices);
-	vk::DeviceSize index_buffer_size = sizeof(indices);
+    vk::DeviceSize vertex_buffer_size = sizeof(vertices);
+    vk::DeviceSize index_buffer_size = sizeof(indices);
 
-    g_vertex_buffer = vulkan::create_buffer(vertex_buffer_size, vk::BufferUsageFlagBits::eVertexBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, g_vertex_memory);
-    g_index_buffer = vulkan::create_buffer(index_buffer_size, vk::BufferUsageFlagBits::eIndexBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, g_index_memory);
+    std::tie(g_vertex_buffer, g_vertex_allocation) =
+        vulkan::persistent_allocator::create_buffer(
+            vertex_buffer_size,
+            vk::BufferUsageFlagBits::eVertexBuffer,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            vertices
+        );
 
-    void* data = vulkan::config::device::device.mapMemory(g_vertex_memory, 0, vertex_buffer_size);
-    std::memcpy(data, vertices, vertex_buffer_size);
-    vulkan::config::device::device.unmapMemory(g_vertex_memory);
-
-    data = vulkan::config::device::device.mapMemory(g_index_memory, 0, index_buffer_size);
-    std::memcpy(data, indices, index_buffer_size);
-    vulkan::config::device::device.unmapMemory(g_index_memory);
+    std::tie(g_index_buffer, g_index_allocation) =
+        vulkan::persistent_allocator::create_buffer(
+            index_buffer_size,
+            vk::BufferUsageFlagBits::eIndexBuffer,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            indices
+        );
 
 	/// Generate MSDF pipeline
 
@@ -338,11 +339,11 @@ auto gse::renderer2d::shutdown() -> void {
 	vulkan::config::device::device.destroyFramebuffer(g_framebuffer);
 	vulkan::config::device::device.destroyImageView(g_render_target_view);
 	vulkan::config::device::device.destroyImage(g_render_target);
-	vulkan::config::device::device.freeMemory(g_render_target_memory);
+	vulkan::persistent_allocator::free(g_render_target_memory);
 	vulkan::config::device::device.destroyBuffer(g_vertex_buffer);
-	vulkan::config::device::device.freeMemory(g_vertex_memory);
 	vulkan::config::device::device.destroyBuffer(g_index_buffer);
-	vulkan::config::device::device.freeMemory(g_index_memory);
+	vulkan::persistent_allocator::free(g_vertex_allocation);
+	vulkan::persistent_allocator::free(g_index_allocation);
 	vulkan::config::device::device.destroyCommandPool(g_command_pool);
 }
 

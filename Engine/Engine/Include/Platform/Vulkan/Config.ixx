@@ -1,3 +1,7 @@
+module;
+
+#include <vulkan/vulkan_hpp_macros.hpp>
+
 export module gse.platform.vulkan.config;
 
 import std;

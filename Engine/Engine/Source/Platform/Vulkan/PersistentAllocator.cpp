@@ -6,6 +6,24 @@ import vulkan_hpp;
 import gse.platform.vulkan.context;
 import gse.platform.vulkan.config;
 import gse.platform.assert;
+#include <vulkan/vulkan_enums.hpp>
+#include <vulkan/vulkan_enums.hpp>
+#include <vulkan/vulkan_enums.hpp>
+#include <vulkan/vulkan_enums.hpp>
+#include <vulkan/vulkan_enums.hpp>
+#include <vulkan/vulkan_enums.hpp>
+#include <vulkan/vulkan_handles.hpp>
+#include <vulkan/vulkan_handles.hpp>
+#include <vulkan/vulkan_handles.hpp>
+#include <vulkan/vulkan_handles.hpp>
+#include <vulkan/vulkan_handles.hpp>
+#include <vulkan/vulkan_handles.hpp>
+#include <vulkan/vulkan_structs.hpp>
+#include <vulkan/vulkan_structs.hpp>
+#include <vulkan/vulkan_structs.hpp>
+#include <vulkan/vulkan_structs.hpp>
+#include <vulkan/vulkan_structs.hpp>
+#include <vulkan/vulkan_structs.hpp>
 
 struct sub_allocation {
 	vk::DeviceSize offset;
@@ -103,12 +121,55 @@ auto gse::vulkan::persistent_allocator::allocate(const vk::MemoryRequirements& r
 	return allocate(requirements, properties); 
 }
 
-auto gse::vulkan::persistent_allocator::bind(vk::Buffer buffer, const allocation& alloc) -> void {
-	config::device::device.bindBufferMemory(buffer, alloc.memory, alloc.offset);
+auto gse::vulkan::persistent_allocator::bind(const vk::Buffer buffer, const vk::MemoryPropertyFlags properties, vk::MemoryRequirements requirements) -> allocation {
+	if (requirements.size == 0) {
+		requirements = config::device::device.getBufferMemoryRequirements(buffer);
+	}
+
+	const auto& allocation = allocate(requirements, properties);
+	config::device::device.bindBufferMemory(buffer, allocation.memory, allocation.offset);
+	return allocation;
 }
 
-auto gse::vulkan::persistent_allocator::bind(vk::Image image, const allocation& alloc) -> void {
-	config::device::device.bindImageMemory(image, alloc.memory, alloc.offset);
+auto gse::vulkan::persistent_allocator::bind(const vk::Image image, const vk::MemoryPropertyFlags properties, vk::MemoryRequirements requirements) -> allocation {
+	if (requirements.size == 0) {
+		requirements = config::device::device.getImageMemoryRequirements(image);
+	}
+
+	const auto& allocation = allocate(requirements, properties);
+	config::device::device.bindImageMemory(image, allocation.memory, allocation.offset);
+	return allocation;
+}
+
+auto gse::vulkan::persistent_allocator::create_buffer(vk::DeviceSize size, vk::BufferUsageFlags usage, const vk::MemoryPropertyFlags properties, const void* data) -> std::pair<vk::Buffer, allocation> {
+	const vk::BufferCreateInfo buffer_info{
+		.size = size,
+		.usage = usage,
+		.sharingMode = vk::SharingMode::eExclusive
+	};
+
+	auto buffer = config::device::device.createBuffer(buffer_info);
+	const auto requirements = config::device::device.getBufferMemoryRequirements(buffer);
+	auto alloc = bind(buffer, properties, requirements);
+
+	if (data && alloc.mapped) {
+		std::memcpy(alloc.mapped, data, size);
+	}
+
+	return { buffer, alloc };
+}
+
+auto gse::vulkan::persistent_allocator::create_image(const vk::ImageCreateInfo& info, const vk::MemoryPropertyFlags properties, const void* data) -> std::pair<vk::Image, allocation> {
+	auto image = config::device::device.createImage(info);
+
+	const auto requirements = config::device::device.getImageMemoryRequirements(image);
+
+	auto alloc = bind(image, properties, requirements);
+	if (data && alloc.mapped) {
+		std::memcpy(alloc.mapped, data, config::swap_chain::extent.width * config::swap_chain::extent.height * 4); // Assuming 4 bytes per pixel
+	}
+
+	return { image, alloc };
 }
 
 auto gse::vulkan::persistent_allocator::free(allocation& alloc) -> void {
