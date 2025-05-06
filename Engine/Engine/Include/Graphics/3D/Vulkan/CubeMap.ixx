@@ -8,8 +8,7 @@ import std;
 import vulkan_hpp;
 
 import gse.physics.math;
-import gse.platform.context;
-import gse.platform.assert;
+import gse.platform;
 
 export namespace gse {
     class cube_map {

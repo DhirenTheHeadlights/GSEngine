@@ -16,9 +16,7 @@ import gse.graphics.mesh;
 import gse.graphics.model;
 import gse.graphics.render_component;
 import gse.graphics.shader_loader;
-import gse.platform.glfw.window;
-import gse.platform.assert;
-import gse.platform.context;
+import gse.platform;
 
 gse::camera g_camera;
 

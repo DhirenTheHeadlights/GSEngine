@@ -5,8 +5,7 @@ import vulkan_hpp;
 
 import gse.core.id;
 import gse.physics.math;
-import gse.platform.assert;
-import gse.platform.context;
+import gse.platform;
 
 export namespace gse {
     class texture : public identifiable {

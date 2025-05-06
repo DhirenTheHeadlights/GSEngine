@@ -10,7 +10,7 @@ import vulkan_hpp;
 
 import gse.platform.glfw.input;
 import gse.platform.assert;
-import gse.platform.context;
+import gse.platform.vulkan;
 import gse.physics.math;
 
 export namespace gse::window {

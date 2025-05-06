@@ -2,21 +2,13 @@ export module gse.core.engine;
 
 import std;
 
-import gse.graphics.camera;
 import gse.core.clock;
 import gse.core.main_clock;
 import gse.core.timer;
 import gse.core.object_registry;
 import gse.core.scene_loader;
-import gse.graphics.debug;
-import gse.graphics.gui;
-import gse.graphics.renderer;
-import gse.graphics.renderer2d;
-import gse.graphics.renderer3d;
-import gse.platform.assert;
-import gse.platform.glfw.input;
-import gse.platform.glfw.window;
-import gse.platform.context;
+import gse.graphics;
+import gse.platform;
 
 export namespace gse {
 	auto initialize(const std::function<void()>& initialize_function, const std::function<void()>& shutdown_function) -> void;

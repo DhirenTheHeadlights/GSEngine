@@ -4,10 +4,9 @@ import std;
 import vulkan_hpp;
 
 import gse.graphics.mesh;
-import gse.platform.assert;
+import gse.platform;
 import gse.physics.math;
 import gse.core.id;
-import gse.platform.context;
 
 export namespace gse {
     class model_handle;

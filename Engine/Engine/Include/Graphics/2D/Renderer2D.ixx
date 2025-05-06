@@ -16,9 +16,7 @@ import gse.physics.math;
 import gse.graphics.shader_loader;
 import gse.graphics.renderer3d;
 import gse.graphics.camera;
-import gse.platform.glfw.window;
-import gse.platform.context;
-import gse.platform.assert;
+import gse.platform;
 
 export namespace gse::renderer2d {
     auto initialize() -> void;
@@ -45,7 +43,7 @@ vk::DeviceMemory        g_vertex_memory;
 vk::Buffer              g_index_buffer;
 vk::DeviceMemory        g_index_memory;
 vk::Image               g_render_target;
-vk::DeviceMemory        g_render_target_memory;
+gse::vulkan::persistent_allocator::allocation        g_render_target_memory;
 vk::ImageView           g_render_target_view;
 
 vk::Pipeline 		    g_msdf_pipeline;
@@ -71,8 +69,7 @@ auto gse::renderer2d::initialize() -> void {
     g_render_target = vulkan::config::device::device.createImage(image_info);
 
     vk::MemoryRequirements mem_reqs = vulkan::config::device::device.getImageMemoryRequirements(g_render_target);
-    vk::MemoryAllocateInfo alloc_info(mem_reqs.size, vulkan::find_memory_type(mem_reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal));
-    g_render_target_memory = vulkan::config::device::device.allocateMemory(alloc_info);
+    g_render_target_memory = vulkan::persistent_allocator::allocate(mem_reqs);
 
     vulkan::config::device::device.bindImageMemory(g_render_target, g_render_target_memory, 0);
 

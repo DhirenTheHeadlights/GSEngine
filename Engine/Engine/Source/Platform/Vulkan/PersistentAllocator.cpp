@@ -1,9 +1,10 @@
-module gse.platform.persistent_allocator;
+module gse.platform.vulkan.persistent_allocator;
 
 import std;
 import vulkan_hpp;
 
-import gse.platform.context;
+import gse.platform.vulkan.context;
+import gse.platform.vulkan.config;
 import gse.platform.assert;
 
 struct sub_allocation {
@@ -100,6 +101,14 @@ auto gse::vulkan::persistent_allocator::allocate(const vk::MemoryRequirements& r
 	);
 
 	return allocate(requirements, properties); 
+}
+
+auto gse::vulkan::persistent_allocator::bind(vk::Buffer buffer, const allocation& alloc) -> void {
+	config::device::device.bindBufferMemory(buffer, alloc.memory, alloc.offset);
+}
+
+auto gse::vulkan::persistent_allocator::bind(vk::Image image, const allocation& alloc) -> void {
+	config::device::device.bindImageMemory(image, alloc.memory, alloc.offset);
 }
 
 auto gse::vulkan::persistent_allocator::free(allocation& alloc) -> void {

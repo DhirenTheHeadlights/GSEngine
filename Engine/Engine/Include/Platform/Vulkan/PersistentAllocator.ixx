@@ -1,4 +1,4 @@
-export module gse.platform.persistent_allocator;
+export module gse.platform.vulkan.persistent_allocator;
 
 import std;
 import vulkan_hpp;
@@ -17,5 +17,7 @@ export namespace gse::vulkan::persistent_allocator {
 	auto shutdown() -> void;
 
 	auto allocate(const vk::MemoryRequirements& requirements, vk::MemoryPropertyFlags properties = vk::MemoryPropertyFlagBits::eDeviceLocal) -> allocation;
+	auto bind(vk::Buffer buffer, const allocation& alloc) -> void;
+	auto bind(vk::Image image, const allocation& alloc) -> void;
 	auto free(allocation& alloc) -> void;
 }

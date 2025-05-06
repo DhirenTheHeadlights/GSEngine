@@ -11,11 +11,11 @@ module;
 #include <span>
 #include <vector>
 
-export module gse.platform.context;
+export module gse.platform.vulkan.context;
 
 import vulkan_hpp;
 
-export import gse.platform.vulkan.objects;
+import gse.platform.vulkan.config;
 import gse.platform.assert;
 
 #if defined(VULKAN_HPP_DISPATCH_LOADER_DYNAMIC) && (VULKAN_HPP_DISPATCH_LOADER_DYNAMIC == 1)

@@ -1,5 +1,5 @@
-module gse.platform.vulkan.objects;
+module gse.platform.vulkan.config;
 
 import vulkan_hpp;
 
-import gse.platform.context;
+import gse.platform.vulkan.context;

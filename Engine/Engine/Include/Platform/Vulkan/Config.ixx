@@ -1,4 +1,4 @@
-export module gse.platform.vulkan.objects;
+export module gse.platform.vulkan.config;
 
 import std;
 import vulkan_hpp;
