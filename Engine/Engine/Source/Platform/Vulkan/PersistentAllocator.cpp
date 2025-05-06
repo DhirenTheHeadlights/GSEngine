@@ -6,24 +6,6 @@ import vulkan_hpp;
 import gse.platform.vulkan.context;
 import gse.platform.vulkan.config;
 import gse.platform.assert;
-#include <vulkan/vulkan_enums.hpp>
-#include <vulkan/vulkan_enums.hpp>
-#include <vulkan/vulkan_enums.hpp>
-#include <vulkan/vulkan_enums.hpp>
-#include <vulkan/vulkan_enums.hpp>
-#include <vulkan/vulkan_enums.hpp>
-#include <vulkan/vulkan_handles.hpp>
-#include <vulkan/vulkan_handles.hpp>
-#include <vulkan/vulkan_handles.hpp>
-#include <vulkan/vulkan_handles.hpp>
-#include <vulkan/vulkan_handles.hpp>
-#include <vulkan/vulkan_handles.hpp>
-#include <vulkan/vulkan_structs.hpp>
-#include <vulkan/vulkan_structs.hpp>
-#include <vulkan/vulkan_structs.hpp>
-#include <vulkan/vulkan_structs.hpp>
-#include <vulkan/vulkan_structs.hpp>
-#include <vulkan/vulkan_structs.hpp>
 
 struct sub_allocation {
 	vk::DeviceSize offset;
@@ -141,11 +123,11 @@ auto gse::vulkan::persistent_allocator::bind(const vk::Image image, const vk::Me
 	return allocation;
 }
 
-auto gse::vulkan::persistent_allocator::create_buffer(vk::DeviceSize size, vk::BufferUsageFlags usage, const vk::MemoryPropertyFlags properties, const void* data) -> std::pair<vk::Buffer, allocation> {
+auto gse::vulkan::persistent_allocator::create_buffer(const vk::DeviceSize size, const vk::BufferUsageFlags usage, const vk::MemoryPropertyFlags properties, const void* data) -> std::pair<vk::Buffer, allocation> {
 	const vk::BufferCreateInfo buffer_info{
-		.size = size,
-		.usage = usage,
-		.sharingMode = vk::SharingMode::eExclusive
+		{},
+		size,
+		usage
 	};
 
 	auto buffer = config::device::device.createBuffer(buffer_info);
