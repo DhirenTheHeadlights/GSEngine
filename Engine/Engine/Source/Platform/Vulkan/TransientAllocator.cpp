@@ -3,7 +3,8 @@ module gse.platform.vulkan.transient_allocator;
 import std;
 import vulkan_hpp;
 
-import gse.platform.vulkan.context
+import gse.platform.vulkan.context;
+import gse.platform.vulkan.config;
 import gse.platform.assert;
 
 struct memory_block {

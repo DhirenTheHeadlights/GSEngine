@@ -26,12 +26,10 @@ export namespace gse::vulkan {
     auto initialize(GLFWwindow* window) -> void;
 
     auto get_next_image(GLFWwindow* window) -> std::uint32_t;
-    auto find_memory_type(std::uint32_t type_filter, vk::MemoryPropertyFlags properties) -> std::uint32_t;
 	auto find_queue_families(vk::PhysicalDevice device = config::device::physical_device, vk::SurfaceKHR surface = config::instance::surface) -> queue_family;
 
 	auto begin_single_line_commands() -> vk::CommandBuffer;
 	auto end_single_line_commands(vk::CommandBuffer command_buffer) -> void;
-	auto create_buffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties, vk::DeviceMemory& buffer_memory) -> vk::Buffer;
 
     auto shutdown() -> void;
 }

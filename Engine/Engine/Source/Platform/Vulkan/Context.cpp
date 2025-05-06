@@ -38,17 +38,6 @@ auto gse::vulkan::get_next_image(GLFWwindow* window) -> std::uint32_t {
     return image_index;
 }
 
-auto gse::vulkan::find_memory_type(const std::uint32_t type_filter, const vk::MemoryPropertyFlags properties) -> std::uint32_t {
-    /*const auto memory_properties = config::device::physical_device.getMemoryProperties();
-    for (std::uint32_t i = 0; i < memory_properties.memoryTypeCount; i++) {
-        if (type_filter & 1 << i && (memory_properties.memoryTypes[i].propertyFlags & properties) == properties) {
-            return i;
-        }
-    }
-    throw std::runtime_error("Failed to find suitable memory type!");*/
-	return 0;
-}
-
 auto gse::vulkan::begin_single_line_commands() -> vk::CommandBuffer {
     const vk::CommandBufferAllocateInfo alloc_info(
 	    config::command::pool, vk::CommandBufferLevel::ePrimary, 1
@@ -72,23 +61,6 @@ auto gse::vulkan::end_single_line_commands(const vk::CommandBuffer command_buffe
     config::queue::graphics.submit(submit_info, nullptr);
     config::queue::graphics.waitIdle();
     config::device::device.freeCommandBuffers(config::command::pool, command_buffer);
-}
-
-auto gse::vulkan::create_buffer(const vk::DeviceSize size, const vk::BufferUsageFlags usage, const vk::MemoryPropertyFlags properties, vk::DeviceMemory& buffer_memory) -> vk::Buffer {
-    const vk::BufferCreateInfo buffer_info(
-        {}, size, usage, vk::SharingMode::eExclusive
-    );
-
-    const vk::Buffer buffer = config::device::device.createBuffer(buffer_info);
-    const vk::MemoryRequirements mem_requirements = config::device::device.getBufferMemoryRequirements(buffer);
-    const vk::MemoryAllocateInfo alloc_info(
-        mem_requirements.size, find_memory_type(mem_requirements.memoryTypeBits, properties)
-    );
-
-    buffer_memory = config::device::device.allocateMemory(alloc_info);
-    config::device::device.bindBufferMemory(buffer, buffer_memory, 0);
-
-    return buffer;
 }
 
 auto gse::vulkan::shutdown() -> void {
