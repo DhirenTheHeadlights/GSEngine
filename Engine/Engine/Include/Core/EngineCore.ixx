@@ -61,8 +61,8 @@ auto gse::initialize(const std::function<void()>& initialize_function, const std
 
 	g_game_shutdown_function = shutdown_function;
 
+	platform::initialize();
 	renderer::initialize();
-	gui::initialize();
 
 	initialize_function();
 
@@ -76,10 +76,9 @@ auto update(const std::function<bool()>& update_function) -> void {
 
 	if (g_imgui_enabled) gse::debug::update_imgui();
 
-	gse::gui::update();
+	gse::renderer::update();
 	gse::main_clock::update();
 	gse::scene_loader::update();
-	gse::input::update();
 
 	if (!update_function()) {
 		gse::request_shutdown();
@@ -103,8 +102,6 @@ auto render(const std::function<bool()>& render_function) -> void {
 
 	if (g_imgui_enabled) gse::display_timers();
 
-	gse::gui::render();
-
 	gse::renderer::end_frame();
 
 	if (g_imgui_enabled) gse::reset_timer("Engine::update");
@@ -113,6 +110,7 @@ auto render(const std::function<bool()>& render_function) -> void {
 auto shutdown() -> void {
 	g_game_shutdown_function();
 	gse::renderer::shutdown();
+	gse::platform::shutdown();
 }
 
 auto gse::run(const std::function<bool()>& update_function, const std::function<bool()>& render_function) -> void {

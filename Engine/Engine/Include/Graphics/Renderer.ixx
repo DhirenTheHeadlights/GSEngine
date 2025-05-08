@@ -6,11 +6,13 @@ import vulkan_hpp;
 import gse.graphics.renderer3d;
 import gse.graphics.renderer2d;
 import gse.graphics.shader_loader;
+import gse.graphics.gui;
 import gse.platform.glfw.window;
 
 export namespace gse::renderer {
 	auto initialize() -> void;
 	auto begin_frame() -> void;
+	auto update() -> void;
 	auto render() -> void;
 	auto end_frame() -> void;
 	auto shutdown() -> void;
@@ -21,6 +23,7 @@ auto gse::renderer::initialize() -> void {
 	shader_loader::load_shaders();
 	renderer3d::initialize();
 	renderer2d::initialize();
+	gui::initialize();
 }
 
 auto gse::renderer::begin_frame() -> void {
@@ -29,15 +32,21 @@ auto gse::renderer::begin_frame() -> void {
 	renderer2d::begin_frame();
 }
 
+auto gse::renderer::update() -> void {
+	gui::update();
+}
+
 auto gse::renderer::render() -> void {
 	renderer3d::render();
 	renderer2d::render();
+	gui::render();
 }
 
 auto gse::renderer::end_frame() -> void {
 	renderer3d::end_frame();
 	renderer2d::end_frame();
 	window::end_frame();
+	vulkan::transient_allocator::end_frame();
 }
 
 auto gse::renderer::shutdown() -> void {

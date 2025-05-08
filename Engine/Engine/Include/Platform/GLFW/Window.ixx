@@ -134,8 +134,6 @@ auto gse::window::initialize() -> void {
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
 	g_window = glfwCreateWindow(1, 1, "Vulkan", nullptr, g_window);
-
-	vulkan::initialize(g_window);
 }
 
 auto gse::window::begin_frame() -> void {
