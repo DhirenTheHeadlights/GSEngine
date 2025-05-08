@@ -13,9 +13,6 @@ export namespace gse::vulkan::persistent_allocator {
 		sub_allocation* owner = nullptr;
 	};
 
-	auto initialize() -> void;
-	auto shutdown() -> void;
-
 	auto allocate(const vk::MemoryRequirements& requirements, vk::MemoryPropertyFlags properties = vk::MemoryPropertyFlagBits::eDeviceLocal) -> allocation;
 	auto bind(vk::Buffer buffer, vk::MemoryPropertyFlags properties = vk::MemoryPropertyFlagBits::eDeviceLocal, vk::MemoryRequirements requirements = {}) -> allocation;
 	auto bind(vk::Image image, vk::MemoryPropertyFlags properties = vk::MemoryPropertyFlagBits::eDeviceLocal, vk::MemoryRequirements requirements = {}) -> allocation;

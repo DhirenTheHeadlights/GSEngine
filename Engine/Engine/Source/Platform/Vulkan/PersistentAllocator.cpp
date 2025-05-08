@@ -30,22 +30,6 @@ constexpr vk::DeviceSize g_default_block_size = 1024 * 1024 * 64; // 64 MB
 
 std::unordered_map<std::uint32_t, pool> g_memory_pools;
 
-auto gse::vulkan::persistent_allocator::initialize() -> void {
-	for (auto& [_, blocks] : g_memory_pools | std::views::values) {
-		for (const auto& block : blocks) {
-			if (block.mapped) {
-				config::device::device.unmapMemory(block.memory);
-			}
-			config::device::device.freeMemory(block.memory);
-		}
-	}
-	g_memory_pools.clear();
-}
-
-auto gse::vulkan::persistent_allocator::shutdown() -> void {
-	
-}
-
 auto gse::vulkan::persistent_allocator::allocate(const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties) -> allocation {
 	const auto mem_properties = get_memory_properties();
 	auto memory_type_index = std::numeric_limits<std::uint32_t>::max();
