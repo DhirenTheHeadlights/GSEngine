@@ -57,8 +57,10 @@ export namespace gse {
 template <typename T, int N> requires std::is_arithmetic_v<T>
 constexpr auto gse::dot(const unitless::vec_t<T, N>& lhs, const unitless::vec_t<T, N>& rhs) -> T {
 	T result = 0;
-	for (int i = 0; i < N; ++i) {
-		result += lhs[i] * rhs[i];
+	if (!gse::internal::dot(lhs.storage, rhs.storage, result)) {
+		for (int i = 0; i < N; ++i) {
+			result += lhs[i] * rhs[i];
+		}
 	}
 	return result;
 }

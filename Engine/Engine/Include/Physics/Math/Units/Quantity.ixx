@@ -2,6 +2,11 @@ export module gse.physics.math.units.quant;
 
 import std;
 
+namespace gse::vec {
+	template <typename T, int N>
+	struct storage;
+}
+
 export namespace gse::internal {
 	template<typename... Units>
     struct unit_list {
@@ -57,6 +62,11 @@ export namespace gse::internal {
         constexpr auto get_converted_value(ArithmeticType value) const -> ArithmeticType;
 
         ArithmeticType m_val = static_cast<ArithmeticType>(0);
+
+		operator ArithmeticType() const {
+			return m_val;
+		}
+
     };
 
     template <typename Q>
@@ -74,8 +84,10 @@ export namespace gse::internal {
     template <is_quantity T> constexpr auto operator-(const T& lhs, const T& rhs) -> T;
     template <is_quantity T, typename U> requires std::is_arithmetic_v<U> constexpr auto operator*(const T& lhs, const U& rhs) -> T;
     template <is_quantity T, typename U> requires std::is_arithmetic_v<U> constexpr auto operator*(const U& lhs, const T& rhs) -> T;
+	template <is_quantity T, is_quantity U> constexpr auto operator*(const T& lhs, const U& rhs) -> typename T::value_type;
     template <is_quantity T, typename U> requires std::is_arithmetic_v<U> constexpr auto operator/(const T& lhs, const U& rhs) -> T;
     template <is_quantity T, typename U> requires std::is_arithmetic_v<U> constexpr auto operator/(const U& lhs, const T& rhs) -> T;
+	template <is_quantity T, is_quantity U> constexpr auto operator/(const T& lhs, const U& rhs) -> typename T::value_type;
 
 	template <is_quantity T> constexpr auto operator*(const T& lhs, const T& rhs) -> typename T::value_type;
 	template <is_quantity T> constexpr auto operator/(const T& lhs, const T& rhs) -> typename T::value_type;
@@ -176,6 +188,11 @@ constexpr auto gse::internal::operator*(const U& lhs, const T& rhs) -> T {
 	return result;
 }
 
+template <gse::internal::is_quantity T, gse::internal::is_quantity U>
+constexpr auto gse::internal::operator*(const T& lhs, const U& rhs) -> typename T::value_type {
+	return lhs.as_default_unit() * rhs.as_default_unit();
+}
+
 template <gse::internal::is_quantity T, typename U> requires std::is_arithmetic_v<U>
 constexpr auto gse::internal::operator/(const T& lhs, const U& rhs) -> T {
 	T result(lhs.as_default_unit() / rhs);
@@ -186,6 +203,11 @@ template <gse::internal::is_quantity T, typename U> requires std::is_arithmetic_
 constexpr auto gse::internal::operator/(const U& lhs, const T& rhs) -> T {
 	T result(lhs / rhs.as_default_unit());
 	return result;
+}
+
+template <gse::internal::is_quantity T, gse::internal::is_quantity U>
+constexpr auto gse::internal::operator/(const T& lhs, const U& rhs) -> typename T::value_type {
+	return lhs.as_default_unit() / rhs.as_default_unit();
 }
 
 template <gse::internal::is_quantity T>
