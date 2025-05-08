@@ -137,38 +137,22 @@ export namespace gse {
 
 template <gse::internal::is_quantity T, int N>
 constexpr auto gse::operator+(const unit::vec_t<T, N>& lhs, const unit::vec_t<T, N>& rhs) -> unit::vec_t<T, N> {
-	unit::vec_t<T, N> result;
-	for (int i = 0; i < N; ++i) {
-		result[i] = lhs[i] + rhs[i];
-	}
-	return result;
+	return unit::vec_t<T, N>(lhs.storage + rhs.storage);
 }
 
 template <gse::internal::is_quantity T, int N>
 constexpr auto gse::operator-(const unit::vec_t<T, N>& lhs, const unit::vec_t<T, N>& rhs) -> unit::vec_t<T, N> {
-	unit::vec_t<T, N> result;
-	for (int i = 0; i < N; ++i) {
-		result[i] = lhs[i] - rhs[i];
-	}
-	return result;
+	return unit::vec_t<T, N>(lhs.storage - rhs.storage);
 }
 
 template <gse::internal::is_quantity T, typename U, int N> requires std::is_arithmetic_v<U>
 constexpr auto gse::operator*(const unit::vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<T, N> {
-	unit::vec_t<T, N> result;
-	for (int i = 0; i < N; ++i) {
-		result[i] = lhs[i] * rhs;
-	}
-	return result;
+	return unit::vec_t<T, N>(lhs.storage * rhs);
 }
 
 template <typename U, gse::internal::is_quantity T, int N> requires std::is_arithmetic_v<U>
 constexpr auto gse::operator*(const U& lhs, const unit::vec_t<T, N>& rhs) -> unit::vec_t<T, N> {
-	unit::vec_t<T, N> result;
-	for (int i = 0; i < N; ++i) {
-		result[i] = lhs * rhs[i];
-	}
-	return result;
+	return unit::vec_t<T, N>(lhs * rhs.storage);
 }
 
 template <gse::internal::is_quantity T, typename U, int N> requires std::is_arithmetic_v<U>
