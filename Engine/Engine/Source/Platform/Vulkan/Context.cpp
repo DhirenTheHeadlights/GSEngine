@@ -10,40 +10,83 @@ import vulkan_hpp;
 import gse.platform.vulkan.config;
 import gse.platform.assert;
 
-auto gse::vulkan::initialize(GLFWwindow* window) -> void {
-    create_instance(window);
-    select_gpu();
-    create_logical_device(config::instance::surface);
-    create_sync_objects();
-    create_descriptors();
-    create_swap_chain(window);
-    create_image_views();
-    create_command_pool();
+auto gse::vulkan::initialize(GLFWwindow* window) -> config {
+    auto configuration = create_instance(window);
+
+    select_gpu(configuration);
+    create_logical_device(configuration);
+    create_sync_objects(configuration);
+    create_descriptors(configuration);
+    create_swap_chain(window, configuration);
+    create_image_views(configuration);
+    create_command_pool(configuration);
+
+    return configuration;
 }
 
-auto gse::vulkan::get_next_image(GLFWwindow* window) -> std::uint32_t {
-    assert(config::device::device.waitForFences(1, &config::sync::in_flight_fence, true, std::numeric_limits<std::uint64_t>::max()) != vk::Result::eSuccess, "Failed to wait for fence!");
-    assert(config::device::device.resetFences(1, &config::sync::in_flight_fence) != vk::Result::eSuccess, "Failed to reset fence!");
+auto gse::vulkan::begin_frame(GLFWwindow* window, config& config) -> void {
+    const auto& device = config.device_data.device;
 
-    std::uint32_t image_index = 0;
-    const auto result = config::device::device.acquireNextImageKHR(config::swap_chain::swap_chain, std::numeric_limits<std::uint64_t>::max(), config::sync::image_available_semaphore, {}, &image_index);
+    assert(device.waitForFences(1, &config.sync.in_flight_fence, true, std::numeric_limits<std::uint64_t>::max()) == vk::Result::eSuccess, "Failed to wait for fence!");
+    assert(device.resetFences(1, &config.sync.in_flight_fence) == vk::Result::eSuccess, "Failed to reset fence!");
 
-    if (result == vk::Result::eErrorOutOfDateKHR) {
-        create_swap_chain(window);
-        return get_next_image(window);
-    }
-
-    config::sync::current_frame = (config::sync::current_frame + 1) % max_frames_in_flight;
-
-    return image_index;
-}
-
-auto gse::vulkan::begin_single_line_commands() -> vk::CommandBuffer {
-    const vk::CommandBufferAllocateInfo alloc_info(
-	    config::command::pool, vk::CommandBufferLevel::ePrimary, 1
+    std::uint32_t image_index;
+    const auto result = device.acquireNextImageKHR(
+        config.swap_chain_data.swap_chain,
+        std::numeric_limits<std::uint64_t>::max(),
+        config.sync.image_available_semaphore,
+        {},
+        &image_index
     );
 
-    const vk::CommandBuffer command_buffer = config::device::device.allocateCommandBuffers(alloc_info)[0];
+    assert(result == vk::Result::eSuccess || result == vk::Result::eSuboptimalKHR, "Failed to acquire swap chain image!");
+
+    if (result == vk::Result::eErrorOutOfDateKHR) {
+        create_swap_chain(window, config);
+        return begin_frame(window, config);
+    }
+
+    config.frame_context = {
+        .image_index = image_index,
+        .command_buffer = config.command.buffers[image_index],
+        .framebuffer = config.swap_chain_data.frame_buffers[image_index]
+	};
+}
+
+auto gse::vulkan::end_frame(const config& config) -> void {
+    config.frame_context.command_buffer.end();
+
+    const vk::Semaphore wait_semaphores[] = { config.sync.image_available_semaphore };
+    constexpr vk::PipelineStageFlags wait_stages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
+
+    const vk::SubmitInfo submit_info(
+        1, wait_semaphores, wait_stages,
+        1, &config.frame_context.command_buffer,
+        1, &config.sync.render_finished_semaphore
+    );
+
+    config.queue.graphics.submit(submit_info, config.sync.in_flight_fence);
+
+    const vk::PresentInfoKHR present_info(
+        1, &config.sync.render_finished_semaphore,
+        1, &config.swap_chain_data.swap_chain,
+        &config.frame_context.image_index
+    );
+
+    const vk::Result present_result = config.queue.present.presentKHR(present_info);
+
+    assert(
+        present_result == vk::Result::eSuccess || present_result == vk::Result::eSuboptimalKHR,
+        "Failed to present image!"
+    );
+}
+
+auto gse::vulkan::begin_single_line_commands(const config& config) -> vk::CommandBuffer {
+    const vk::CommandBufferAllocateInfo alloc_info(
+	    config.command.pool, vk::CommandBufferLevel::ePrimary, 1
+    );
+
+    const vk::CommandBuffer command_buffer = config.device_data.device.allocateCommandBuffers(alloc_info)[0];
     constexpr vk::CommandBufferBeginInfo begin_info(
         vk::CommandBufferUsageFlagBits::eOneTimeSubmit
     );
@@ -52,38 +95,38 @@ auto gse::vulkan::begin_single_line_commands() -> vk::CommandBuffer {
     return command_buffer;
 }
 
-auto gse::vulkan::end_single_line_commands(const vk::CommandBuffer command_buffer) -> void {
+auto gse::vulkan::end_single_line_commands(const vk::CommandBuffer command_buffer, const config& config) -> void {
     command_buffer.end();
     const vk::SubmitInfo submit_info(
         0, nullptr, nullptr, 1, &command_buffer, 0, nullptr
     );
 
-    config::queue::graphics.submit(submit_info, nullptr);
-    config::queue::graphics.waitIdle();
-    config::device::device.freeCommandBuffers(config::command::pool, command_buffer);
+    config.queue.graphics.submit(submit_info, nullptr);
+    config.queue.graphics.waitIdle();
+    config.device_data.device.freeCommandBuffers(config.command.pool, command_buffer);
 }
 
-auto gse::vulkan::shutdown() -> void {
-    config::device::device.waitIdle();
-    config::device::device.destroyDescriptorPool(config::descriptor::pool);
+auto gse::vulkan::shutdown(const config& config) -> void {
+    config.device_data.device.waitIdle();
+    config.device_data.device.destroyDescriptorPool(config.descriptor.pool);
 
-    config::device::device.destroySemaphore(config::sync::image_available_semaphore);
-    config::device::device.destroySemaphore(config::sync::render_finished_semaphore);
-    config::device::device.destroyFence(config::sync::in_flight_fence);
+    config.device_data.device.destroySemaphore(config.sync.image_available_semaphore);
+    config.device_data.device.destroySemaphore(config.sync.render_finished_semaphore);
+    config.device_data.device.destroyFence(config.sync.in_flight_fence);
 
-    for (const auto& image_view : config::swap_chain::image_views) {
-        config::device::device.destroyImageView(image_view);
+    for (const auto& image_view : config.swap_chain_data.image_views) {
+        config.device_data.device.destroyImageView(image_view);
     }
 
-    config::device::device.destroySwapchainKHR(config::swap_chain::swap_chain);
-    config::device::device.destroy();
+    config.device_data.device.destroySwapchainKHR(config.swap_chain_data.swap_chain);
+    config.device_data.device.destroy();
 
-    config::instance::instance.destroySurfaceKHR(config::instance::surface);
-    config::instance::instance.destroy();
+    config.instance_data.instance.destroySurfaceKHR(config.instance_data.surface);
+    config.instance_data.instance.destroy();
 }
 
-auto gse::vulkan::select_gpu() -> void {
-    const auto devices = config::instance::instance.enumeratePhysicalDevices();
+auto gse::vulkan::select_gpu(config& config) -> void {
+    const auto devices = config.instance_data.instance.enumeratePhysicalDevices();
 
     assert(!devices.empty(), "No Vulkan-compatible GPUs found!");
     std::cout << "Found " << devices.size() << " Vulkan-compatible GPU(s):\n";
@@ -95,16 +138,16 @@ auto gse::vulkan::select_gpu() -> void {
 
     for (const auto& device : devices) {
         if (device.getProperties().deviceType == vk::PhysicalDeviceType::eDiscreteGpu) {
-            config::device::physical_device = device;
+            config.device_data.physical_device = device;
             break;
         }
     }
 
-    if (!config::device::physical_device) {
-        config::device::physical_device = devices[0];
+    if (!config.device_data.physical_device) {
+        config.device_data.physical_device = devices[0];
     }
 
-    std::cout << "Selected GPU: " << config::device::physical_device.getProperties().deviceName << "\n";
+    std::cout << "Selected GPU: " << config.device_data.physical_device.getProperties().deviceName << "\n";
 }
 
 auto gse::vulkan::find_queue_families(const vk::PhysicalDevice device, const vk::SurfaceKHR surface) -> queue_family {
@@ -127,8 +170,8 @@ auto gse::vulkan::find_queue_families(const vk::PhysicalDevice device, const vk:
     return indices;
 }
 
-auto gse::vulkan::create_logical_device(vk::SurfaceKHR surface) -> void {
-    auto [graphics_family, present_family] = find_queue_families(config::device::physical_device, surface);
+auto gse::vulkan::create_logical_device(config& config) -> void {
+    auto [graphics_family, present_family] = find_queue_families(config.device_data.physical_device, config.instance_data.surface);
 
     std::vector<vk::DeviceQueueCreateInfo> queue_create_infos;
     std::set unique_queue_families = {
@@ -149,7 +192,7 @@ auto gse::vulkan::create_logical_device(vk::SurfaceKHR surface) -> void {
     features2.pNext = &vulkan12_features;
     vulkan12_features.pNext = &vulkan13_features;
 
-    config::device::physical_device.getFeatures2(&features2);
+    config.device_data.physical_device.getFeatures2(&features2);
 
     features2.features.samplerAnisotropy = vk::True;
     vulkan12_features.timelineSemaphore = vk::True;
@@ -170,12 +213,12 @@ auto gse::vulkan::create_logical_device(vk::SurfaceKHR surface) -> void {
     );
     create_info.pNext = &features2;
 
-    config::device::device = config::device::physical_device.createDevice(create_info);
-    config::queue::graphics = config::device::device.getQueue(graphics_family.value(), 0);
-    config::queue::present = config::device::device.getQueue(present_family.value(), 0);
+    config.device_data.device = config.device_data.physical_device.createDevice(create_info);
+    config.queue.graphics = config.device_data.device.getQueue(graphics_family.value(), 0);
+    config.queue.present = config.device_data.device.getQueue(present_family.value(), 0);
 
 #if VK_HPP_DISPATCH_LOADER_DYNAMIC == 1
-    VULKAN_HPP_DEFAULT_DISPATCHER.init(device);
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(config.device_data.device);
 #endif
 
     std::cout << "Logical Device Created Successfully!\n";
@@ -207,30 +250,30 @@ auto gse::vulkan::choose_swap_chain_present_mode(const std::vector<vk::PresentMo
     return vk::PresentModeKHR::eFifo;
 }
 
-auto gse::vulkan::create_swap_chain(GLFWwindow* window) -> void {
-    config::swap_chain::details = query_swap_chain_support(config::device::physical_device, config::instance::surface);
+auto gse::vulkan::create_swap_chain(GLFWwindow* window, config& config) -> void {
+    config.swap_chain_data.details = query_swap_chain_support(config.device_data.physical_device, config.instance_data.surface);
 
-    config::swap_chain::surface_format = choose_swap_chain_surface_format(config::swap_chain::details.formats);
-    config::swap_chain::present_mode = choose_swap_chain_present_mode(config::swap_chain::details.present_modes);
-    config::swap_chain::extent = choose_swap_chain_extent(config::swap_chain::details.capabilities, window);
+    config.swap_chain_data.surface_format = choose_swap_chain_surface_format(config.swap_chain_data.details.formats);
+    config.swap_chain_data.present_mode = choose_swap_chain_present_mode(config.swap_chain_data.details.present_modes);
+    config.swap_chain_data.extent = choose_swap_chain_extent(config.swap_chain_data.details.capabilities, window);
 
-    std::uint32_t image_count = config::swap_chain::details.capabilities.minImageCount + 1;
-    if (config::swap_chain::details.capabilities.maxImageCount > 0 && image_count > config::swap_chain::details.capabilities.maxImageCount) {
-        image_count = config::swap_chain::details.capabilities.maxImageCount;
+    std::uint32_t image_count = config.swap_chain_data.details.capabilities.minImageCount + 1;
+    if (config.swap_chain_data.details.capabilities.maxImageCount > 0 && image_count > config.swap_chain_data.details.capabilities.maxImageCount) {
+        image_count = config.swap_chain_data.details.capabilities.maxImageCount;
     }
 
     vk::SwapchainCreateInfoKHR create_info(
         {},
-        config::instance::surface,
+        config.instance_data.surface,
         image_count,
-        config::swap_chain::surface_format.format,
-        config::swap_chain::surface_format.colorSpace,
-        config::swap_chain::extent,
+        config.swap_chain_data.surface_format.format,
+        config.swap_chain_data.surface_format.colorSpace,
+        config.swap_chain_data.extent,
         1,
         vk::ImageUsageFlagBits::eColorAttachment
     );
 
-    auto [graphics_family, present_family] = find_queue_families(config::device::physical_device, config::instance::surface);
+    auto [graphics_family, present_family] = find_queue_families(config.device_data.physical_device, config.instance_data.surface);
     const std::uint32_t queue_family_indices[] = { graphics_family.value(), present_family.value() };
 
     if (graphics_family != present_family) {
@@ -242,48 +285,48 @@ auto gse::vulkan::create_swap_chain(GLFWwindow* window) -> void {
         create_info.imageSharingMode = vk::SharingMode::eExclusive;
     }
 
-    create_info.preTransform = config::swap_chain::details.capabilities.currentTransform;
+    create_info.preTransform = config.swap_chain_data.details.capabilities.currentTransform;
     create_info.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque;
-    create_info.presentMode = config::swap_chain::present_mode;
+    create_info.presentMode = config.swap_chain_data.present_mode;
     create_info.clipped = true;
 
-    config::swap_chain::swap_chain = config::device::device.createSwapchainKHR(create_info);
+    config.swap_chain_data.swap_chain = config.device_data.device.createSwapchainKHR(create_info);
 
-    config::swap_chain::images = config::device::device.getSwapchainImagesKHR(config::swap_chain::swap_chain);
-    config::swap_chain::format = config::swap_chain::surface_format.format;
+    config.swap_chain_data.images = config.device_data.device.getSwapchainImagesKHR(config.swap_chain_data.swap_chain);
+    config.swap_chain_data.format = config.swap_chain_data.surface_format.format;
 
-    config::swap_chain::frame_buffers.resize(config::swap_chain::images.size());
+    config.swap_chain_data.frame_buffers.resize(config.swap_chain_data.images.size());
 
-    for (size_t i = 0; i < config::swap_chain::image_views.size(); i++) {
+    for (size_t i = 0; i < config.swap_chain_data.image_views.size(); i++) {
         vk::ImageView attachments[] = {
-	        config::swap_chain::image_views[i]
+	        config.swap_chain_data.image_views[i]
         };
 
         vk::FramebufferCreateInfo framebuffer_info(
             {},
-	        config::render_pass,
+	        config.render_pass,
             static_cast<uint32_t>(std::size(attachments)),
             attachments,
-	        config::swap_chain::extent.width,
-	        config::swap_chain::extent.height,
+	        config.swap_chain_data.extent.width,
+	        config.swap_chain_data.extent.height,
             1
         );
 
-        config::swap_chain::frame_buffers[i] = config::device::device.createFramebuffer(framebuffer_info);
+        config.swap_chain_data.frame_buffers[i] = config.device_data.device.createFramebuffer(framebuffer_info);
     }
 
     std::cout << "Swapchain Created Successfully!\n";
 }
 
-auto gse::vulkan::create_image_views() -> void {
-    config::swap_chain::image_views.resize(config::swap_chain::images.size());
+auto gse::vulkan::create_image_views(config& config) -> void {
+    config.swap_chain_data.image_views.resize(config.swap_chain_data.images.size());
 
-    for (size_t i = 0; i < config::swap_chain::images.size(); i++) {
+    for (size_t i = 0; i < config.swap_chain_data.images.size(); i++) {
         vk::ImageViewCreateInfo image_create_info(
             {},
-            config::swap_chain::images[i],
+            config.swap_chain_data.images[i],
             vk::ImageViewType::e2D,
-            config::swap_chain::format,
+            config.swap_chain_data.format,
             {
                 vk::ComponentSwizzle::eIdentity,
                 vk::ComponentSwizzle::eIdentity,
@@ -295,24 +338,24 @@ auto gse::vulkan::create_image_views() -> void {
             }
         );
 
-        config::swap_chain::image_views[i] = config::device::device.createImageView(image_create_info);
+        config.swap_chain_data.image_views[i] = config.device_data.device.createImageView(image_create_info);
     }
 
     std::cout << "Image Views Created Successfully!\n";
 }
 
-auto gse::vulkan::create_sync_objects() -> void {
+auto gse::vulkan::create_sync_objects(config& config) -> void {
     constexpr vk::SemaphoreCreateInfo semaphore_info;
     constexpr vk::FenceCreateInfo fence_info(vk::FenceCreateFlagBits::eSignaled);
 
-    config::sync::image_available_semaphore = config::device::device.createSemaphore(semaphore_info);
-    config::sync::render_finished_semaphore = config::device::device.createSemaphore(semaphore_info);
-    config::sync::in_flight_fence = config::device::device.createFence(fence_info);
+    config.sync.image_available_semaphore = config.device_data.device.createSemaphore(semaphore_info);
+    config.sync.render_finished_semaphore = config.device_data.device.createSemaphore(semaphore_info);
+    config.sync.in_flight_fence = config.device_data.device.createFence(fence_info);
 
     std::cout << "Sync Objects Created Successfully!\n";
 }
 
-auto gse::vulkan::create_descriptors() -> void {
+auto gse::vulkan::create_descriptors(config& config) -> void {
     constexpr uint32_t max_sets = 512;
 
     std::vector<vk::DescriptorPoolSize> pool_sizes = {
@@ -328,20 +371,31 @@ auto gse::vulkan::create_descriptors() -> void {
         pool_sizes.data()
     };
 
-    config::descriptor::pool = config::device::device.createDescriptorPool(pool_info);
+    config.descriptor.pool = config.device_data.device.createDescriptorPool(pool_info);
 
     std::cout << "Descriptor Pool Created Successfully!\n";
 }
 
-auto gse::vulkan::create_command_pool() -> void {
-    const auto [graphics_family, present_family] = find_queue_families(config::device::physical_device, config::instance::surface);
+auto gse::vulkan::create_command_pool(config& config) -> void {
+    const auto [graphics_family, present_family] = find_queue_families(config.device_data.physical_device, config.instance_data.surface);
 
     const vk::CommandPoolCreateInfo pool_info(
         vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
         graphics_family.value()
     );
 
-    config::command::pool = config::device::device.createCommandPool(pool_info);
+    config.command.pool = config.device_data.device.createCommandPool(pool_info);
 
     std::cout << "Command Pool Created Successfully!\n";
+
+    config.command.buffers.resize(config.swap_chain_data.frame_buffers.size());
+
+    const vk::CommandBufferAllocateInfo alloc_info(
+        config.command.pool, vk::CommandBufferLevel::ePrimary,
+        static_cast<std::uint32_t>(config.command.buffers.size())
+    );
+
+    config.command.buffers = config.device_data.device.allocateCommandBuffers(alloc_info);
+
+    std::cout << "Command Buffers Created Successfully!\n";
 }

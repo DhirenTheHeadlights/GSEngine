@@ -3,16 +3,16 @@ module gse.platform;
 import gse.platform.vulkan;
 import gse.platform.glfw.window;
 
-auto gse::platform::initialize() -> void {
+auto gse::platform::initialize() -> vulkan::config {
 	window::initialize();
-	vulkan::initialize(window::get_window());
+	return vulkan::initialize(window::get_window());
 }
 
 auto gse::platform::update() -> void {
 	input::update();
 }
 
-auto gse::platform::shutdown() -> void {
-	vulkan::shutdown();
+auto gse::platform::shutdown(const vulkan::config& config) -> void {
+	vulkan::shutdown(config);
 	window::shutdown();
 }

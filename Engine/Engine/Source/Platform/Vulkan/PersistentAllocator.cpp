@@ -26,9 +26,9 @@ struct pool {
 	std::vector<memory_block> blocks;
 };
 
-constexpr vk::DeviceSize g_default_block_size = 1024 * 1024 * 64; // 64 MB
+constexpr vk::DeviceSize g_persistent_default_block_size = 1024 * 1024 * 64; // 64 MB
 
-std::unordered_map<std::uint32_t, pool> g_memory_pools;
+std::unordered_map<std::uint32_t, pool> g_persistent_memory_pools;
 
 auto gse::vulkan::persistent_allocator::allocate(const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties) -> allocation {
 	const auto mem_properties = get_memory_properties();
@@ -43,48 +43,87 @@ auto gse::vulkan::persistent_allocator::allocate(const vk::MemoryRequirements& r
 
 	assert(memory_type_index != std::numeric_limits<std::uint32_t>::max(), std::format("Failed to find suitable memory type for allocation!"));
 
-	for (auto pool : g_memory_pools | std::views::values) {
-		if (pool.memory_type_index != memory_type_index) {
-			continue;
-		}
-
-		for (auto& block : pool.blocks) {
-			if (block.properties != properties) {
-				continue;
-			}
-
-			for (auto& sub : block.allocations) {
-				if (sub.in_use || sub.size <= requirements.size) {
-					continue;
-				}
-
-				if (const vk::DeviceSize aligned_offset = sub.offset + requirements.alignment - 1 & ~(requirements.alignment - 1); aligned_offset + requirements.size <= sub.offset + sub.size) {
-					sub.in_use = true;
-					return {
-						.memory = block.memory,
-						.size = requirements.size,
-						.offset = aligned_offset,
-						.mapped = block.mapped ? static_cast<char*>(block.mapped) + aligned_offset : nullptr,
-						.owner = &sub
-					};
-				}
-			}
-		}
+	auto& pool = g_persistent_memory_pools[memory_type_index];
+	if (pool.blocks.empty()) {
+		pool.memory_type_index = memory_type_index;
 	}
 
-	// No suitable block found, create a new one
-	auto& new_block = g_memory_pools[memory_type_index].blocks.emplace_back();
-	new_block.size = std::max(requirements.size, g_default_block_size);
-	new_block.properties = properties;
+	memory_block*  best_block = nullptr;
+	std::size_t    best_index = std::numeric_limits<std::size_t>::max();
+	vk::DeviceSize best_leftover = std::numeric_limits<vk::DeviceSize>::max();
+	vk::DeviceSize aligned_offset = 0;
 
-	new_block.memory = config::device::device.allocateMemory(
-		vk::MemoryAllocateInfo{
-			new_block.size,
-			memory_type_index
+	for (auto& block : pool.blocks) {
+		if (block.properties != properties) continue;
+
+		for (std::size_t i = 0; i < block.allocations.size(); ++i) {
+			const auto& sub = block.allocations[i];
+			if (sub.in_use) continue;
+
+			const vk::DeviceSize aligned = sub.offset + requirements.alignment - 1 & ~(requirements.alignment - 1);
+			if (aligned + requirements.size > sub.offset + sub.size) continue;
+			const vk::DeviceSize leftover = sub.size - (aligned - sub.offset) - requirements.size;
+
+			if (leftover < best_leftover) {
+				best_block = &block;
+				best_index = i;
+				best_leftover = leftover;
+				aligned_offset = aligned;
+				if (leftover == 0) break; // exact fit
+			}
 		}
-	);
+		if (best_leftover == 0) break;
+	}
 
-	return allocate(requirements, properties); 
+	if (best_block) {
+		auto& vec = best_block->allocations;
+		const auto sub_copy = vec[best_index]; 
+
+		const vk::DeviceSize prefix = aligned_offset - sub_copy.offset;
+		const vk::DeviceSize suffix = sub_copy.size - prefix - requirements.size;
+
+		vec[best_index] = { aligned_offset, requirements.size, true };
+
+		std::size_t insert_at = best_index;
+
+		if (suffix) {
+			vec.insert(vec.begin() + ++insert_at, { aligned_offset + requirements.size, suffix, false });
+		}
+
+		if (prefix) {
+			vec.insert(vec.begin() + best_index, { sub_copy.offset, prefix, false });
+		}
+
+		return {
+			best_block->memory,
+			requirements.size,
+			aligned_offset,
+			best_block->mapped ? static_cast<char*>(best_block->mapped) + aligned_offset : nullptr,
+			&vec[best_index] 
+		};
+	}
+
+	auto& new_block = pool.blocks.emplace_back();
+	new_block.size = std::max(requirements.size, g_persistent_default_block_size);
+	new_block.properties = properties;
+	new_block.memory = config::device::device.allocateMemory({ new_block.size, memory_type_index });
+	new_block.allocations.push_back({ .offset = 0, .size = new_block.size, .in_use = false });
+
+	if (properties & vk::MemoryPropertyFlagBits::eHostVisible) {
+		new_block.mapped = config::device::device.mapMemory(new_block.memory, 0, new_block.size);
+	}
+
+	auto& sub = new_block.allocations.front();
+	aligned_offset = sub.offset + requirements.alignment - 1 & ~(requirements.alignment - 1);
+	sub.in_use = true;
+
+	return {
+		.memory = new_block.memory,
+		.size = requirements.size,
+		.offset = aligned_offset,
+		.mapped = new_block.mapped ? static_cast<char*>(new_block.mapped) + aligned_offset : nullptr,
+		.owner = &sub
+	};
 }
 
 auto gse::vulkan::persistent_allocator::bind(const vk::Buffer buffer, const vk::MemoryPropertyFlags properties, vk::MemoryRequirements requirements) -> allocation {
@@ -107,40 +146,103 @@ auto gse::vulkan::persistent_allocator::bind(const vk::Image image, const vk::Me
 	return allocation;
 }
 
-auto gse::vulkan::persistent_allocator::create_buffer(const vk::DeviceSize size, const vk::BufferUsageFlags usage, const vk::MemoryPropertyFlags properties, const void* data) -> std::pair<vk::Buffer, allocation> {
-	const vk::BufferCreateInfo buffer_info{
-		{},
-		size,
-		usage
-	};
-
-	auto buffer = config::device::device.createBuffer(buffer_info);
+auto gse::vulkan::persistent_allocator::create_buffer(const vk::BufferCreateInfo& buffer_info, const vk::MemoryPropertyFlags properties, const void* data) -> buffer_resource {
+	const auto buffer = config::device::device.createBuffer(buffer_info);
 	const auto requirements = config::device::device.getBufferMemoryRequirements(buffer);
-	auto alloc = bind(buffer, properties, requirements);
+	const auto alloc = bind(buffer, properties, requirements);
 
 	if (data && alloc.mapped) {
-		std::memcpy(alloc.mapped, data, size);
+		std::memcpy(alloc.mapped, data, requirements.size);
 	}
 
 	return { buffer, alloc };
 }
 
-auto gse::vulkan::persistent_allocator::create_image(const vk::ImageCreateInfo& info, const vk::MemoryPropertyFlags properties, const void* data) -> std::pair<vk::Image, allocation> {
-	auto image = config::device::device.createImage(info);
-
+auto gse::vulkan::persistent_allocator::create_image(const vk::ImageCreateInfo& info, const vk::MemoryPropertyFlags properties, vk::ImageViewCreateInfo view_info, const void* data) -> image_resource {
+	vk::Image image = config::device::device.createImage(info);
 	const auto requirements = config::device::device.getImageMemoryRequirements(image);
 
-	auto alloc = bind(image, properties, requirements);
+	const allocation alloc = bind(image, properties, requirements);
+
 	if (data && alloc.mapped) {
-		std::memcpy(alloc.mapped, data, config::swap_chain::extent.width * config::swap_chain::extent.height * 4); // Assuming 4 bytes per pixel
+		std::memcpy(alloc.mapped, data, requirements.size);
 	}
 
-	return { image, alloc };
+	vk::ImageView view;
+
+	if (view_info != vk::ImageViewCreateInfo{}) {
+		assert(view_info.image == nullptr, std::format("Image view info must not have an image set yet!"));
+		vk::ImageViewCreateInfo actual_view_info = view_info;
+		actual_view_info.image = image;
+		view = config::device::device.createImageView(actual_view_info);
+	}
+	else {
+		// Create default view
+		view = config::device::device.createImageView({
+			{}, image,
+			vk::ImageViewType::e2D,
+			info.format,
+			{}, // Default swizzle
+			{
+				(info.usage & vk::ImageUsageFlagBits::eDepthStencilAttachment)
+					? vk::ImageAspectFlagBits::eDepth
+					: vk::ImageAspectFlagBits::eColor,
+				0, info.mipLevels, 0, info.arrayLayers
+			}
+			});
+	}
+
+	return { image, view, alloc };
 }
 
 auto gse::vulkan::persistent_allocator::free(allocation& alloc) -> void {
-	if (alloc.owner) {
-		alloc.owner->in_use = false;
-		alloc.owner = nullptr;
+	if (!alloc.owner) return;
+
+	auto* sub = alloc.owner;
+	sub->in_use = false;
+	alloc.owner = nullptr;
+
+	for (auto& [memory_type_index, blocks] : g_persistent_memory_pools | std::views::values) {
+		for (auto& block : blocks) {
+			if (block.allocations.empty()) continue;
+
+			if (sub < &block.allocations.front() || sub > &block.allocations.back()) continue;
+
+			auto& allocations = block.allocations;
+			std::size_t write = 0;
+
+			for (std::size_t read = 1; read < allocations.size(); ++read) {
+				auto& [offset, size, in_use] = allocations[write];
+
+				if (const auto& cur = allocations[read]; !in_use && !cur.in_use && offset + size == cur.offset) {
+					size += cur.size; // merge
+				}
+				else {
+					++write;
+					if (write != read) allocations[write] = cur;
+				}
+			}
+
+			allocations.resize(write + 1);
+
+			return;
+		}
 	}
+}
+
+
+auto gse::vulkan::persistent_allocator::free(buffer_resource& resource) -> void {
+	config::device::device.destroyBuffer(resource.buffer);
+	free(resource.allocation);
+	resource.buffer = nullptr;
+	resource.allocation = {};
+}
+
+auto gse::vulkan::persistent_allocator::free(image_resource& resource) -> void {
+	config::device::device.destroyImage(resource.image);
+	config::device::device.destroyImageView(resource.view);
+	free(resource.allocation);
+	resource.image = nullptr;
+	resource.view = nullptr;
+	resource.allocation = {};
 }

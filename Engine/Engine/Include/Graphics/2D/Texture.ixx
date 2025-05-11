@@ -20,13 +20,7 @@ export namespace gse {
         auto get_descriptor_info() const -> vk::DescriptorImageInfo;
         auto get_dimensions() const -> unitless::vec2i { return m_size; }
     private:
-        auto create_texture_image(const unsigned char* data, int width, int height, int channels) -> void;
-        auto create_texture_image_view() -> void;
-        auto create_texture_sampler() -> void;
-
-        vk::Image m_texture_image;
-        vk::DeviceMemory m_texture_image_memory;
-        vk::ImageView m_texture_image_view;
+		vulkan::persistent_allocator::image_resource m_texture_image;
         vk::Sampler m_texture_sampler;
 
         unitless::vec2i m_size = { 0, 0 };

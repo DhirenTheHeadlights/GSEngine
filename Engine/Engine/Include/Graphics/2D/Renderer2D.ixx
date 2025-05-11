@@ -19,11 +19,11 @@ import gse.graphics.camera;
 import gse.platform;
 
 export namespace gse::renderer2d {
-    auto initialize() -> void;
-	auto begin_frame() -> void;
-	auto render() -> void;
-	auto end_frame() -> void;
-    auto shutdown() -> void;
+    auto initialize(vulkan::config& config) -> void;
+    auto begin_frame(const vulkan::config& config) -> void;
+    auto render(const vulkan::config& config) -> void;
+    auto end_frame(const vulkan::config& config) -> void;
+    auto shutdown(const vulkan::config& config) -> void;
 
     auto draw_quad(const vec2<length>& position, const vec2<length>& size, const unitless::vec4& color) -> void;
     auto draw_quad(const vec2<length>& position, const vec2<length>& size, const texture& texture) -> void;
@@ -35,50 +35,33 @@ export namespace gse::renderer2d {
 vk::Pipeline            g_pipeline;
 vk::PipelineLayout      g_pipeline_layout;
 vk::RenderPass          g_render_pass;
-vk::CommandPool         g_command_pool;
-vk::CommandBuffer       g_command_buffer;
 vk::Framebuffer         g_framebuffer;
-vk::Buffer              g_vertex_buffer;
-vk::Buffer              g_index_buffer;
-gse::vulkan::persistent_allocator::allocation           g_vertex_allocation;
-gse::vulkan::persistent_allocator::allocation           g_index_allocation;
-vk::Image               g_render_target;
-gse::vulkan::persistent_allocator::allocation           g_render_target_memory;
-vk::ImageView           g_render_target_view;
 
-vk::Pipeline 		    g_msdf_pipeline;
-vk::PipelineLayout 	    g_msdf_pipeline_layout;
-vk::DescriptorSetLayout g_msdf_descriptor_set_layout;
-vk::DescriptorPool      g_msdf_descriptor_pool;
+gse::vulkan::persistent_allocator::buffer_resource g_vertex_buffer;
+gse::vulkan::persistent_allocator::buffer_resource g_index_buffer;
+gse::vulkan::persistent_allocator::image_resource  g_render_target;
 
-gse::mat4               g_projection;
+vk::Pipeline             g_msdf_pipeline;
+vk::PipelineLayout       g_msdf_pipeline_layout;
+vk::DescriptorSetLayout  g_msdf_descriptor_set_layout;
+vk::DescriptorPool       g_msdf_descriptor_pool;
 
-auto gse::renderer2d::initialize() -> void {
+gse::mat4                g_projection;
+
+auto gse::renderer2d::initialize(vulkan::config& config) -> void {
     vk::ImageCreateInfo image_info(
-        {}, 
-        vk::ImageType::e2D, 
+        {},
+        vk::ImageType::e2D,
         vk::Format::eB8G8R8A8Srgb,
-        {vulkan::config::swap_chain::extent.width, vulkan::config::swap_chain::extent.height, 1 },
-        1, 1, 
-        vk::SampleCountFlagBits::e1, 
+        { config.swap_chain_data.extent.width, config.swap_chain_data.extent.height, 1 },
+        1, 1,
+        vk::SampleCountFlagBits::e1,
         vk::ImageTiling::eOptimal,
         vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferDst,
         vk::SharingMode::eExclusive
     );
 
-    g_render_target = vulkan::config::device::device.createImage(image_info);
-    g_render_target_memory = vulkan::persistent_allocator::bind(g_render_target);
-
-    vk::ImageViewCreateInfo view_info(
-        {}, 
-        g_render_target, 
-        vk::ImageViewType::e2D, 
-        vk::Format::eB8G8R8A8Srgb,
-        {}, 
-        { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 }
-    );
-
-    g_render_target_view = vulkan::config::device::device.createImageView(view_info);
+    g_render_target = vulkan::persistent_allocator::create_image(image_info);
 
     vk::AttachmentDescription color_attachment{
         {},
@@ -86,76 +69,99 @@ auto gse::renderer2d::initialize() -> void {
         vk::SampleCountFlagBits::e1, // No multi-sampling
         vk::AttachmentLoadOp::eClear,
         vk::AttachmentStoreOp::eStore,
-		vk::AttachmentLoadOp::eDontCare,
-		vk::AttachmentStoreOp::eDontCare,
-		vk::ImageLayout::eUndefined,
-		vk::ImageLayout::ePresentSrcKHR
+        vk::AttachmentLoadOp::eDontCare,
+        vk::AttachmentStoreOp::eDontCare,
+        vk::ImageLayout::eUndefined,
+        vk::ImageLayout::ePresentSrcKHR
     };
 
-	vk::AttachmentReference color_attachment_ref{
-		0, vk::ImageLayout::eColorAttachmentOptimal
-	};
+    vk::AttachmentReference color_attachment_ref{
+        0, vk::ImageLayout::eColorAttachmentOptimal
+    };
 
-	vk::SubpassDescription sub_pass{
-		{},
-		vk::PipelineBindPoint::eGraphics,
-		0, nullptr,
-		1, &color_attachment_ref,
-		nullptr, nullptr
-	};
+    vk::SubpassDescription sub_pass{
+        {},
+        vk::PipelineBindPoint::eGraphics,
+        0, nullptr,
+        1, &color_attachment_ref,
+        nullptr, nullptr
+    };
 
-	g_render_pass = vulkan::config::device::device.createRenderPass({
-		{},
-		1, &color_attachment,
-		1, &sub_pass
-		}
-    );
+    config.device_data.device.createRenderPass({
+        {},
+        1, &color_attachment,
+        1, &sub_pass
+        }, nullptr);
+    // store in config
+    config.render_pass = config.device_data.device.createRenderPass({
+        {},1, &color_attachment,1, &sub_pass
+        });
+    g_render_pass = config.render_pass;
 
     vk::FramebufferCreateInfo framebuffer_info(
         {},
         g_render_pass,
         1,
-        &g_render_target_view,
-        vulkan::config::swap_chain::extent.width,
-        vulkan::config::swap_chain::extent.height,
+        &g_render_target.view,
+        config.swap_chain_data.extent.width,
+        config.swap_chain_data.extent.height,
         1
     );
-    g_framebuffer = vulkan::config::device::device.createFramebuffer(framebuffer_info);
+    g_framebuffer = config.device_data.device.createFramebuffer(framebuffer_info);
 
     vk::PushConstantRange push_constant_range(
         vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         0, sizeof(unitless::vec2) * 2 + sizeof(unitless::vec4) * 2
     );
 
-	g_pipeline_layout = vulkan::config::device::device.createPipelineLayout({{}, 1, shader_loader::get_descriptor_layout(descriptor_layout::forward_2d), 1, &push_constant_range });
-    
-	const auto& element_shader = shader_loader::get_shader("ui_2d_shader");
+    g_pipeline_layout = config.device_data.device.createPipelineLayout({ {}, 1, shader_loader::get_descriptor_layout(descriptor_layout::forward_2d), 1, &push_constant_range });
 
-    vk::PipelineVertexInputStateCreateInfo vertex_input_info;
-	vk::PipelineInputAssemblyStateCreateInfo input_assembly({}, vk::PrimitiveTopology::eTriangleList, vk::False);
+    const auto& element_shader = shader_loader::get_shader("ui_2d_shader");
 
-	vk::Viewport viewport(0.0f, 0.0f, static_cast<float>(window::get_window_size().x), static_cast<float>(window::get_window_size().y), 0.0f, 1.0f);
-	vk::Rect2D scissor({ 0, 0 }, { static_cast<std::uint32_t>(window::get_window_size().x), static_cast<std::uint32_t>(window::get_window_size().y) });
-	vk::PipelineViewportStateCreateInfo viewport_state({}, viewport, scissor);
+    vk::PipelineInputAssemblyStateCreateInfo input_assembly({}, vk::PrimitiveTopology::eTriangleList, vk::False);
 
-	vk::PipelineRasterizationStateCreateInfo rasterizer({}, vk::False, vk::False, vk::PolygonMode::eFill, vk::CullModeFlagBits::eBack, vk::FrontFace::eCounterClockwise, vk::False, 0.0f, 0.0f, 0.0f, 1.0f);
-	vk::PipelineMultisampleStateCreateInfo multisampling({}, vk::SampleCountFlagBits::e1, vk::False, 1.0f, nullptr, vk::False, vk::False);
+    vk::Viewport viewport(0.0f, 0.0f, static_cast<float>(window::get_window_size().x), static_cast<float>(window::get_window_size().y), 0.0f, 1.0f);
+    vk::Rect2D scissor({ 0, 0 }, { static_cast<std::uint32_t>(window::get_window_size().x), static_cast<std::uint32_t>(window::get_window_size().y) });
+    vk::PipelineViewportStateCreateInfo viewport_state({}, viewport, scissor);
 
-	vk::PipelineColorBlendAttachmentState color_blend_attachment(
-		vk::True,
-		vk::BlendFactor::eSrcAlpha,
+    vk::PipelineRasterizationStateCreateInfo rasterizer({}, vk::False, vk::False, vk::PolygonMode::eFill, vk::CullModeFlagBits::eBack, vk::FrontFace::eCounterClockwise, vk::False, 0.0f, 0.0f, 0.0f, 1.0f);
+    vk::PipelineMultisampleStateCreateInfo multisampling({}, vk::SampleCountFlagBits::e1, vk::False, 1.0f, nullptr, vk::False, vk::False);
+
+    vk::PipelineColorBlendAttachmentState color_blend_attachment(
+        vk::True,
+        vk::BlendFactor::eSrcAlpha,
         vk::BlendFactor::eOneMinusSrcAlpha,
-		vk::BlendOp::eAdd,
-		vk::BlendFactor::eOne, vk::BlendFactor::eZero,
-		vk::BlendOp::eAdd,
-		vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
-	);
+        vk::BlendOp::eAdd,
+        vk::BlendFactor::eOne, vk::BlendFactor::eZero,
+        vk::BlendOp::eAdd,
+        vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
+    );
 
     vk::PipelineColorBlendStateCreateInfo color_blending({}, vk::False, {}, color_blend_attachment);
 
+    struct vertex {
+        vec::raw2f position;
+        vec::raw2f texture_coordinate;
+    };
+
+    vk::VertexInputBindingDescription binding_description{
+        0, sizeof(vertex), vk::VertexInputRate::eVertex
+    };
+
+    std::array attribute_descriptions{
+        vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32Sfloat, offsetof(vertex, position)),
+        vk::VertexInputAttributeDescription(1, 0, vk::Format::eR32G32Sfloat, offsetof(vertex, texture_coordinate))
+    };
+
+    vk::PipelineVertexInputStateCreateInfo vertex_input_info(
+        {},
+        1, &binding_description,
+        static_cast<std::uint32_t>(attribute_descriptions.size()), attribute_descriptions.data()
+    );
+
     vk::GraphicsPipelineCreateInfo pipeline_info(
         {},
-		2,
+        2,
         element_shader.get_shader_stages().data(),
         &vertex_input_info,
         &input_assembly,
@@ -168,14 +174,9 @@ auto gse::renderer2d::initialize() -> void {
         nullptr,
         g_pipeline_layout,
         g_render_pass
-	);
+    );
 
-    g_pipeline = vulkan::config::device::device.createGraphicsPipeline({}, pipeline_info).value;
-
-    struct vertex {
-        vec::raw2f position;
-        vec::raw2f texture_coordinate;
-    };
+    g_pipeline = config.device_data.device.createGraphicsPipeline({}, pipeline_info).value;
 
     constexpr vertex vertices[4] = {
         {.position = {0.0f, 1.0f}, .texture_coordinate = {0.0f, 1.0f}}, // Top-left
@@ -188,44 +189,56 @@ auto gse::renderer2d::initialize() -> void {
     vk::DeviceSize vertex_buffer_size = sizeof(vertices);
     vk::DeviceSize index_buffer_size = sizeof(indices);
 
-    std::tie(g_vertex_buffer, g_vertex_allocation) =
+    vk::BufferCreateInfo vertex_buffer_info(
+        {},
+        vertex_buffer_size,
+        vk::BufferUsageFlagBits::eVertexBuffer,
+        vk::SharingMode::eExclusive
+    );
+
+    g_vertex_buffer =
         vulkan::persistent_allocator::create_buffer(
-            vertex_buffer_size,
-            vk::BufferUsageFlagBits::eVertexBuffer,
+            vertex_buffer_info,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
             vertices
         );
 
-    std::tie(g_index_buffer, g_index_allocation) =
+    vk::BufferCreateInfo index_buffer_info(
+        {},
+        index_buffer_size,
+        vk::BufferUsageFlagBits::eIndexBuffer,
+        vk::SharingMode::eExclusive
+    );
+
+    g_index_buffer =
         vulkan::persistent_allocator::create_buffer(
-            index_buffer_size,
-            vk::BufferUsageFlagBits::eIndexBuffer,
+            index_buffer_info,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
             indices
         );
 
-	/// Generate MSDF pipeline
+    /// Generate MSDF pipeline
 
     const auto& msdf_shader = shader_loader::get_shader("msdf_shader");
 
-    vk::VertexInputBindingDescription binding_description{
-		0, sizeof(vertex), vk::VertexInputRate::eVertex
-	};
+    binding_description = {
+        0, sizeof(vertex), vk::VertexInputRate::eVertex
+    };
 
-	std::array attribute_descriptions{
-		vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32Sfloat, offsetof(vertex, position)),
-		vk::VertexInputAttributeDescription(1, 0, vk::Format::eR32G32Sfloat, offsetof(vertex, texture_coordinate))
-	};
+    attribute_descriptions = {
+        vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32Sfloat, offsetof(vertex, position)),
+        vk::VertexInputAttributeDescription(1, 0, vk::Format::eR32G32Sfloat, offsetof(vertex, texture_coordinate))
+    };
 
     vk::PushConstantRange msdf_push_constant_range(
         vk::ShaderStageFlagBits::eFragment,
         0, sizeof(unitless::vec4)
     );
 
-	vk::PipelineVertexInputStateCreateInfo msdf_vertex_input_info({}, 1, &binding_description, static_cast<std::uint32_t>(attribute_descriptions.size()), attribute_descriptions.data());
+    vk::PipelineVertexInputStateCreateInfo msdf_vertex_input_info({}, 1, &binding_description, static_cast<std::uint32_t>(attribute_descriptions.size()), attribute_descriptions.data());
 
-	vk::PipelineLayoutCreateInfo pipeline_layout_info({}, 1, shader_loader::get_descriptor_layout(descriptor_layout::forward_2d), 1, &msdf_push_constant_range);
-    g_msdf_pipeline_layout = vulkan::config::device::device.createPipelineLayout(pipeline_layout_info);
+    vk::PipelineLayoutCreateInfo pipeline_layout_info({}, 1, shader_loader::get_descriptor_layout(descriptor_layout::forward_2d), 1, &msdf_push_constant_range);
+    g_msdf_pipeline_layout = config.device_data.device.createPipelineLayout(pipeline_layout_info);
 
     vk::PipelineColorBlendAttachmentState blend_state(
         vk::True,
@@ -263,7 +276,7 @@ auto gse::renderer2d::initialize() -> void {
         g_render_pass
     );
 
-    g_msdf_pipeline = vulkan::config::device::device.createGraphicsPipeline({}, msdf_pipeline_info).value;
+    g_msdf_pipeline = config.device_data.device.createGraphicsPipeline({}, msdf_pipeline_info).value;
 
     vk::DescriptorSetLayoutBinding texture_binding(
         0, vk::DescriptorType::eCombinedImageSampler, 1,
@@ -271,129 +284,94 @@ auto gse::renderer2d::initialize() -> void {
     );
 
     vk::DescriptorSetLayoutCreateInfo layout_info({}, 1, &texture_binding);
-    g_msdf_descriptor_set_layout = vulkan::config::device::device.createDescriptorSetLayout(layout_info);
+    g_msdf_descriptor_set_layout = config.device_data.device.createDescriptorSetLayout(layout_info);
 
     vk::DescriptorPoolSize pool_size(vk::DescriptorType::eCombinedImageSampler, 100);  // Adjust pool size as needed
-    vk::DescriptorPoolCreateInfo pool_info({}, 100, 1, & pool_size);
-    g_msdf_descriptor_pool = vulkan::config::device::device.createDescriptorPool(pool_info);
+    vk::DescriptorPoolCreateInfo pool_info({}, 100, 1, &pool_size);
+    g_msdf_descriptor_pool = config.device_data.device.createDescriptorPool(pool_info);
 
-    debug::set_up_imgui(g_render_pass);
+    debug::initialize_imgui(config.render_pass);
 }
 
-auto gse::renderer2d::begin_frame() -> void {
-    assert(
-	    vulkan::config::device::device.waitForFences(1, &vulkan::config::sync::in_flight_fence, vk::True, std::numeric_limits<std::uint64_t>::max()) == vk::Result::eSuccess,
-        "Failed to wait for fence!"
-    );
-
-    assert(vulkan::config::device::device.resetFences(1, &vulkan::config::sync::in_flight_fence) == vk::Result::eSuccess, "Failed to reset fence!");
+auto gse::renderer2d::begin_frame(const vulkan::config& config) -> void {
+    const vk::CommandBuffer& cmd = config.command.buffers[0];
 
     constexpr vk::CommandBufferBeginInfo begin_info(vk::CommandBufferUsageFlagBits::eSimultaneousUse);
-	g_command_buffer.begin(begin_info);
+    cmd.begin(begin_info);
 
-	constexpr vk::ClearValue clear_value = vk::ClearColorValue(std::array{ 0.0f, 0.0f, 0.0f, 1.0f });
+    constexpr vk::ClearValue clear_value = vk::ClearColorValue(std::array{ 0.0f, 0.0f, 0.0f, 1.0f });
 
-	const vk::RenderPassBeginInfo render_pass_info(
-        g_render_pass,
-        vulkan::config::swap_chain::frame_buffers[vulkan::get_next_image(window::get_window())],
-        vk::Rect2D({ 0, 0 }, vulkan::config::swap_chain::extent),
+    const vk::RenderPassBeginInfo render_pass_info(
+        config.render_pass,
+		config.swap_chain_data.frame_buffers[config.frame_context.image_index],
+        vk::Rect2D({ 0, 0 }, config.swap_chain_data.extent),
         1, &clear_value
     );
 
-	g_command_buffer.beginRenderPass(render_pass_info, vk::SubpassContents::eInline);
+    cmd.beginRenderPass(render_pass_info, vk::SubpassContents::eInline);
 }
 
-auto gse::renderer2d::render() -> void {
-	debug::render_imgui(g_command_buffer);
+auto gse::renderer2d::render(const vulkan::config& config) -> void {
+    debug::render_imgui(config.command.buffers[0]);
 }
 
-auto gse::renderer2d::end_frame() -> void {
-    g_command_buffer.endRenderPass();
-    g_command_buffer.end();
+auto gse::renderer2d::end_frame(const vulkan::config& config) -> void {
+    config.command.buffers[0].endRenderPass();
+    config.command.buffers[0].end();
 
-    vk::Semaphore wait_semaphores[] = { vulkan::config::sync::image_available_semaphore };
+    vk::Semaphore wait_semaphores[] = { config.sync.image_available_semaphore };
     vk::PipelineStageFlags wait_stages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
 
     const vk::SubmitInfo info(
         1, wait_semaphores, wait_stages,
-        1, &g_command_buffer,
-        1, &vulkan::config::sync::render_finished_semaphore
+        1, &config.command.buffers[0],
+        1, &config.sync.render_finished_semaphore
     );
 
-    vulkan::config::queue::graphics.submit(info, vulkan::config::sync::in_flight_fence);
+    config.queue.graphics.submit(info, config.sync.in_flight_fence);
 
     const vk::PresentInfoKHR present_info(
-        1, &vulkan::config::sync::render_finished_semaphore,
-        1, &vulkan::config::swap_chain::swap_chain,
-        &vulkan::config::sync::current_frame
+        1, &config.sync.render_finished_semaphore,
+        1, &config.swap_chain_data.swap_chain,
+        &config.frame_context.image_index
     );
 
-    const vk::Result present_result = vulkan::config::queue::present.presentKHR(present_info);
+    const vk::Result present_result = config.queue.present.presentKHR(present_info);
     assert(present_result == vk::Result::eSuccess || present_result == vk::Result::eSuboptimalKHR, "Failed to present image!");
 }
 
-auto gse::renderer2d::shutdown() -> void {
-	vulkan::config::device::device.destroyPipeline(g_pipeline);
-	vulkan::config::device::device.destroyPipelineLayout(g_pipeline_layout);
-	vulkan::config::device::device.destroyRenderPass(g_render_pass);
-	vulkan::config::device::device.destroyFramebuffer(g_framebuffer);
-	vulkan::config::device::device.destroyImageView(g_render_target_view);
-	vulkan::config::device::device.destroyImage(g_render_target);
-	vulkan::persistent_allocator::free(g_render_target_memory);
-	vulkan::config::device::device.destroyBuffer(g_vertex_buffer);
-	vulkan::config::device::device.destroyBuffer(g_index_buffer);
-	vulkan::persistent_allocator::free(g_vertex_allocation);
-	vulkan::persistent_allocator::free(g_index_allocation);
-	vulkan::config::device::device.destroyCommandPool(g_command_pool);
+auto gse::renderer2d::shutdown(const vulkan::config& config) -> void {
+    config.device_data.device.destroyPipeline(g_pipeline);
+    config.device_data.device.destroyPipelineLayout(g_pipeline_layout);
+    config.device_data.device.destroyRenderPass(config.render_pass);
+    config.device_data.device.destroyFramebuffer(g_framebuffer);
+    free(g_render_target);
+    free(g_vertex_buffer);
+    free(g_index_buffer);
 }
 
 auto render_quad(const gse::vec2<gse::length>& position, const gse::vec2<gse::length>& size, const gse::unitless::vec4* color, const gse::texture* texture, const gse::unitless::vec4& uv_rect = { 0.0f, 0.0f, 1.0f, 1.0f }) -> void {
-    const vk::Semaphore image_available_semaphore = gse::vulkan::config::device::device.createSemaphore({});
-    const vk::Semaphore render_finished_semaphore = gse::vulkan::config::device::device.createSemaphore({});
+	/*const auto& command_buffer = gse::vulkan::config::command::buffers[0];
+	command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, g_pipeline);
 
-    std::uint32_t image_index = gse::vulkan::get_next_image(gse::window::get_window());
-
-    constexpr vk::CommandBufferBeginInfo begin_info(vk::CommandBufferUsageFlagBits::eSimultaneousUse);
-    g_command_buffer.begin(begin_info);
-
-    constexpr vk::ClearValue clear_value(vk::ClearColorValue(std::array{0.0f, 0.0f, 0.0f, 1.0f}));
-    const vk::RenderPassBeginInfo render_pass_info(g_render_pass, g_framebuffer, { {0, 0}, { static_cast<std::uint32_t>(gse::window::get_window_size().x), static_cast<std::uint32_t>(gse::window::get_window_size().y) } }, 1, &clear_value);
-
-    g_command_buffer.beginRenderPass(render_pass_info, vk::SubpassContents::eInline);
-    g_command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, g_pipeline);
-
-    const vk::Buffer vertex_buffers[] = { g_vertex_buffer };
-    g_command_buffer.bindVertexBuffers(0, vertex_buffers, {});
-    g_command_buffer.bindIndexBuffer(g_index_buffer, 0, vk::IndexType::eUint16);
+    const vk::Buffer vertex_buffers[] = { g_vertex_buffer.buffer };
+    command_buffer.bindVertexBuffers(0, vertex_buffers, {});
+    command_buffer.bindIndexBuffer(g_index_buffer.buffer, 0, vk::IndexType::eUint16);
 
     const struct push_constants {
         gse::unitless::vec2 position;
         gse::unitless::vec2 size;
-		gse::unitless::vec4 color;
-		gse::unitless::vec4 uv_rect;
-    } push_constants {
+        gse::unitless::vec4 color;
+        gse::unitless::vec4 uv_rect;
+    } pc{
         { position.x.as_default_unit(), position.y.as_default_unit() },
         { size.x.as_default_unit(), size.y.as_default_unit() },
-		color ? *color : gse::unitless::vec4(1.0f),
-		uv_rect
+        color ? *color : gse::unitless::vec4(1.0f),
+        uv_rect
     };
 
-    g_command_buffer.pushConstants(g_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(push_constants), &push_constants);
-    g_command_buffer.drawIndexed(6, 1, 0, 0, 0);
-
-    g_command_buffer.endRenderPass();
-    g_command_buffer.end();
-
-    vk::PipelineStageFlags wait_stages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
-    const vk::SubmitInfo submit_info(1, &image_available_semaphore, wait_stages, 1, &g_command_buffer, 1, &render_finished_semaphore);
-
-    gse::vulkan::config::queue::graphics.submit(submit_info, nullptr);
-
-    const vk::PresentInfoKHR present_info(1, &render_finished_semaphore, 1, &gse::vulkan::config::swap_chain::swap_chain, &image_index);
-    gse::assert(gse::vulkan::config::queue::present.presentKHR(present_info) != vk::Result::eSuccess, "Failed to present image!");
-
-    gse::vulkan::config::device::device.destroySemaphore(image_available_semaphore);
-    gse::vulkan::config::device::device.destroySemaphore(render_finished_semaphore);
+    command_buffer.pushConstants(g_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(pc), &pc);
+    command_buffer.drawIndexed(6, 1, 0, 0, 0);*/
 }
 
 auto gse::renderer2d::draw_quad(const vec2<length>& position, const vec2<length>& size, const unitless::vec4& color) -> void {
@@ -409,56 +387,51 @@ auto gse::renderer2d::draw_quad(const vec2<length>& position, const vec2<length>
 }
 
 auto gse::renderer2d::draw_text(const font& font, const std::string& text, const vec2<length>& position, const float scale, const unitless::vec4& color) -> void {
-    if (text.empty()) return;
+ //   if (text.empty()) return;
 
-    constexpr vk::ClearValue clear_value = vk::ClearColorValue(std::array{ 0.0f, 0.0f, 0.0f, 1.0f });
+	//const auto& command_buffer = vulkan::config::command::buffers[0];
+ //   command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, g_msdf_pipeline);
 
-    const vk::RenderPassBeginInfo render_pass_info(
-        g_render_pass,
-        g_framebuffer,
-        { {0, 0}, { static_cast<std::uint32_t>(window::get_window_size().x), static_cast<std::uint32_t>(window::get_window_size().y) } }, // Render area
-        1, &clear_value
-    );
+ //   const vk::Buffer vertex_buffers[] = { g_vertex_buffer.buffer };
+ //   command_buffer.bindVertexBuffers(0, vertex_buffers, {});
+ //   command_buffer.bindIndexBuffer(g_index_buffer.buffer, 0, vk::IndexType::eUint16);
 
-    g_command_buffer.beginRenderPass(render_pass_info, vk::SubpassContents::eInline);
-    g_command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, g_msdf_pipeline);
+ //   const struct msdf_push_constants {
+ //       unitless::vec4 color;
+ //   } push_constants{ color };
 
-    const vk::Buffer vertex_buffers[] = { g_vertex_buffer };
-    g_command_buffer.bindVertexBuffers(0, vertex_buffers, {});
-    g_command_buffer.bindIndexBuffer(g_index_buffer, 0, vk::IndexType::eUint16);
+ //   command_buffer.pushConstants(g_msdf_pipeline_layout, vk::ShaderStageFlagBits::eFragment, 0, sizeof(msdf_push_constants), &push_constants);
 
-    const struct msdf_push_constants {
-        unitless::vec4 color;
-    } push_constants{ color };
+ //   // TODO: Ideally allocate this once, not every draw call
+ //   const vk::DescriptorSet text_descriptor_set =
+ //       vulkan::config::device::device.allocateDescriptorSets(
+ //           vk::DescriptorSetAllocateInfo(g_msdf_descriptor_pool, 1, &g_msdf_descriptor_set_layout))[0];
 
-    g_command_buffer.pushConstants(g_msdf_pipeline_layout, vk::ShaderStageFlagBits::eFragment, 0, sizeof(msdf_push_constants), &push_constants);
+ //   command_buffer.bindDescriptorSets(
+ //       vk::PipelineBindPoint::eGraphics,
+ //       g_msdf_pipeline_layout,
+ //       0, 1,
+ //       &text_descriptor_set,
+ //       0, nullptr
+ //   );
 
-	const vk::DescriptorSet text_descriptor_set = vulkan::config::device::device.allocateDescriptorSets(vk::DescriptorSetAllocateInfo(g_msdf_descriptor_pool, 1, &g_msdf_descriptor_set_layout))[0];
-    g_command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, g_msdf_pipeline_layout, 0, 1, &text_descriptor_set, 0, nullptr);
+ //   float start_x = position.x.as_default_unit();
+ //   const float start_y = position.y.as_default_unit();
 
-    float start_x = position.x.as_default_unit();
-    const float start_y = position.y.as_default_unit();
+ //   for (const char c : text) {
+ //       const auto& [u0, v0, u1, v1, width, height, x_offset, y_offset, x_advance] = font.get_character(c);
 
-    for (const char c : text) {
-        const auto& [u0, v0, u1, v1, width, height, x_offset, y_offset, x_advance] = font.get_character(c);
+ //       if (width == 0.0f || height == 0.0f)
+ //           continue;
 
-        if (width == 0.0f || height == 0.0f)
-            continue;
+ //       const float x_pos = start_x + x_offset * scale;
+ //       const float y_pos = start_y - (height - y_offset) * scale;
+ //       const float w = width * scale;
+ //       const float h = height * scale;
 
-        const float x_pos = start_x + x_offset * scale;
-        const float y_pos = start_y - (height - y_offset) * scale;
-        const float w = width * scale;
-        const float h = height * scale;
+ //       unitless::vec4 uv_rect(u0, v0, u1 - u0, v1 - v0);
 
-        unitless::vec4 uv_rect(u0, v0, u1 - u0, v1 - v0);
-
-        draw_quad(unitless::vec2(x_pos, y_pos), unitless::vec2(w, h), font.get_texture(), uv_rect);
-        start_x += x_advance * scale;
-    }
-
-    g_command_buffer.endRenderPass();
-    g_command_buffer.end();
-
-    constexpr vk::SubmitInfo submit_info({}, {}, {}, 1, &g_command_buffer);
-    vulkan::config::queue::graphics.submit(submit_info, nullptr);
+ //       draw_quad(unitless::vec2(x_pos, y_pos), unitless::vec2(w, h), font.get_texture(), uv_rect);
+ //       start_x += x_advance * scale;
+ //   }
 }

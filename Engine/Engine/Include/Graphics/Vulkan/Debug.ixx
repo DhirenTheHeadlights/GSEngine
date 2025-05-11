@@ -16,7 +16,7 @@ import gse.core.json_parser;
 import gse.platform;
 
 export namespace gse::debug {
-	auto set_up_imgui(const vk::RenderPass& render_pass) -> void;
+	auto initialize_imgui(const vk::RenderPass& render_pass) -> void;
     auto update_imgui() -> void;
 	auto render_imgui(const vk::CommandBuffer& command_buffer) -> void;
     auto save_imgui_state() -> void;
@@ -60,7 +60,7 @@ auto gse::debug::set_imgui_save_file_path(const std::filesystem::path& path) -> 
     g_imgui_save_file_path = path;
 }
 
-auto gse::debug::set_up_imgui(const vk::RenderPass& render_pass) -> void {
+auto gse::debug::initialize_imgui(const vk::RenderPass& render_pass) -> void {
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
     imguiThemes::embraceTheDarkness();
@@ -86,6 +86,14 @@ auto gse::debug::set_up_imgui(const vk::RenderPass& render_pass) -> void {
     init_info.ImageCount = 3;
     init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     ImGui_ImplVulkan_Init(&init_info, render_pass);
+
+    const vk::CommandBuffer cmd = vulkan::begin_single_line_commands();
+
+    ImGui_ImplVulkan_CreateFontsTexture(cmd);
+
+    vulkan::end_single_line_commands(cmd);
+
+    ImGui_ImplVulkan_DestroyFontUploadObjects();
 
     if (exists(g_imgui_save_file_path)) {
         ImGui::LoadIniSettingsFromDisk(g_imgui_save_file_path.string().c_str());

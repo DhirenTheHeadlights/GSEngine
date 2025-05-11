@@ -15,8 +15,7 @@ import gse.graphics.renderer2d;
 import gse.graphics.texture;
 import gse.graphics.texture_loader;
 import gse.graphics.font;
-import gse.platform.glfw.window;
-import gse.platform.glfw.input;
+import gse.platform;
 
 export namespace gse::gui {
 	auto initialize() -> void;

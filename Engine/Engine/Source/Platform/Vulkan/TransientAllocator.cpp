@@ -19,9 +19,9 @@ struct pool {
 	std::vector<memory_block> blocks;
 };
 
-constexpr vk::DeviceSize g_default_block_size = 64 * 1024 * 1024;
+constexpr vk::DeviceSize g_transient_default_block_size = 64 * 1024 * 1024;
 
-std::unordered_map<std::uint32_t, pool> g_memory_pools;
+std::unordered_map<std::uint32_t, pool> g_transient_memory_pools;
 
 auto align_up(const vk::DeviceSize offset, const vk::DeviceSize alignment) -> vk::DeviceSize {
 	return offset + alignment - 1 & ~(alignment - 1);
@@ -40,7 +40,7 @@ auto gse::vulkan::transient_allocator::allocate(const vk::MemoryRequirements& re
 
 	assert(req_memory_type_index != std::numeric_limits<std::uint32_t>::max(), std::format("Failed to find suitable memory type for allocation!"));
 
-	auto& [memory_type_index, blocks] = g_memory_pools[req_memory_type_index];
+	auto& [memory_type_index, blocks] = g_transient_memory_pools[req_memory_type_index];
 
 	for (auto& [memory, size, cursor, block_properties, mapped] : blocks) {
 		if (block_properties != properties) {
@@ -61,18 +61,18 @@ auto gse::vulkan::transient_allocator::allocate(const vk::MemoryRequirements& re
 
 	// Allocate a new memory block
 	const vk::DeviceMemory memory = config::device::device.allocateMemory({
-		g_default_block_size,
+		g_transient_default_block_size,
 		memory_type_index
 		});
 
 	void* mapped = nullptr;
 	if (properties & vk::MemoryPropertyFlagBits::eHostVisible) {
-		mapped = config::device::device.mapMemory(memory, 0, g_default_block_size);
+		mapped = config::device::device.mapMemory(memory, 0, g_transient_default_block_size);
 	}
 
 	memory_block new_block{
 		.memory = memory,
-		.size = g_default_block_size,
+		.size = g_transient_default_block_size,
 		.cursor = requirements.size,
 		.properties = properties,
 		.mapped = mapped
@@ -98,7 +98,7 @@ auto gse::vulkan::transient_allocator::bind(vk::Image image, const allocation& a
 }
 
 auto gse::vulkan::transient_allocator::end_frame() -> void {
-	for (auto& [memory_type_index, blocks] : g_memory_pools | std::views::values) {
+	for (auto& [memory_type_index, blocks] : g_transient_memory_pools | std::views::values) {
 		for (auto& block : blocks) {
 			block.cursor = 0;
 		}

@@ -204,7 +204,16 @@ auto gse::font::load(const std::filesystem::path& path) -> void {
         m_glyphs[static_cast<char>(c)] = { u0, v0, u1, v1, width, height, bearing_x, bearing_y, advance };
     }
 
-	m_texture.load_from_memory(atlas_data, atlas_width, atlas_height, 3);
+	// Convert atlas_data to RGBA format
+    std::vector<std::uint8_t> rgba_data(atlas_width* atlas_height * 4);
+    for (int i = 0; i < atlas_width * atlas_height; ++i) {
+        rgba_data[i * 4 + 0] = atlas_data[i * 3 + 0];
+        rgba_data[i * 4 + 1] = atlas_data[i * 3 + 1];
+        rgba_data[i * 4 + 2] = atlas_data[i * 3 + 2];
+        rgba_data[i * 4 + 3] = 255;
+    }
+
+    m_texture.load_from_memory(rgba_data, atlas_width, atlas_height, 4);
 
     destroyFont(font_handle);
     deinitializeFreetype(ft_handle);
