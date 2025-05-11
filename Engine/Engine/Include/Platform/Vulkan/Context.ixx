@@ -23,30 +23,39 @@ vk::DebugUtilsMessengerEXT g_debug_utils_messenger;
 constexpr std::uint32_t max_frames_in_flight = 2;
 
 export namespace gse::vulkan {
-    auto initialize(GLFWwindow* window) -> void;
+	auto initialize(GLFWwindow* window) -> config;
 
-    auto get_next_image(GLFWwindow* window) -> std::uint32_t;
-	auto find_queue_families(vk::PhysicalDevice device = config::device::physical_device, vk::SurfaceKHR surface = config::instance::surface) -> queue_family;
+    struct frame_context {
+        std::uint32_t image_index;
+        vk::CommandBuffer command_buffer;
+        vk::Framebuffer framebuffer;
+    };
 
-	auto begin_single_line_commands() -> vk::CommandBuffer;
-	auto end_single_line_commands(vk::CommandBuffer command_buffer) -> void;
+	auto begin_frame(GLFWwindow* window, config& config) -> void;
+	auto end_frame(const config& config) -> void;
+	auto find_queue_families(vk::PhysicalDevice device, vk::SurfaceKHR surface) -> queue_family;
 
-    auto shutdown() -> void;
+	auto begin_single_line_commands(const config& config) -> vk::CommandBuffer;
+	auto end_single_line_commands(vk::CommandBuffer command_buffer, const config& config) -> void;
+
+    auto shutdown(const config& config) -> void;
 }
 
 namespace gse::vulkan {
-    auto create_instance(GLFWwindow* window) -> void;
-    auto select_gpu() -> void;
-    auto create_logical_device(vk::SurfaceKHR surface) -> void;
+    auto create_instance(GLFWwindow* window) -> config;
+    auto select_gpu(config& config) -> void;
+    auto create_logical_device(config& config) -> void;
+
     auto query_swap_chain_support(vk::PhysicalDevice device, vk::SurfaceKHR surface) -> config::swap_chain_details;
     auto choose_swap_chain_surface_format(const std::vector<vk::SurfaceFormatKHR>& available_formats) -> vk::SurfaceFormatKHR;
     auto choose_swap_chain_present_mode(const std::vector<vk::PresentModeKHR>& available_present_modes) -> vk::PresentModeKHR;
     auto choose_swap_chain_extent(const vk::SurfaceCapabilitiesKHR& capabilities, GLFWwindow* window) -> vk::Extent2D;
-	auto create_swap_chain(GLFWwindow* window) -> void;
-	auto create_image_views() -> void;
-	auto create_sync_objects() -> void;
-    auto create_descriptors() -> void;
-	auto create_command_pool() -> void;
+
+	auto create_swap_chain(GLFWwindow* window, config& config) -> void;
+	auto create_image_views(config& config) -> void;
+	auto create_sync_objects(config& config) -> void;
+    auto create_descriptors(config& config) -> void;
+	auto create_command_pool(config& config) -> void;
 }
 
 auto debug_callback(vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity, vk::DebugUtilsMessageTypeFlagsEXT message_type, const vk::DebugUtilsMessengerCallbackDataEXT* callback_data, void* user_data) -> vk::Bool32 {
@@ -54,7 +63,7 @@ auto debug_callback(vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity, v
     return vk::False;
 }
 
-auto gse::vulkan::create_instance(GLFWwindow* window) -> void {
+auto gse::vulkan::create_instance(GLFWwindow* window) -> config {
     const std::vector validation_layers = {
            "VK_LAYER_KHRONOS_validation"
     };
@@ -115,9 +124,11 @@ auto gse::vulkan::create_instance(GLFWwindow* window) -> void {
         extensions.data(),
         &features
     );
+    
+    config data;
 
     try {
-        config::instance::instance = createInstance(create_info);
+        data.instance_data.instance = createInstance(create_info);
         std::cout << "Vulkan Instance Created Successfully!\n";
     }
     catch (vk::SystemError& err) {
@@ -125,11 +136,11 @@ auto gse::vulkan::create_instance(GLFWwindow* window) -> void {
     }
 
 #if VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
-    VULKAN_HPP_DEFAULT_DISPATCHER.init(config::instance::instance);
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(data.instance_data.instance);
 #endif
 
     try {
-        g_debug_utils_messenger = config::instance::instance.createDebugUtilsMessengerEXT(debug_create_info);
+        g_debug_utils_messenger = data.instance_data.instance.createDebugUtilsMessengerEXT(debug_create_info);
         std::cout << "Debug Messenger Created Successfully!\n";
     }
     catch (vk::SystemError& err) {
@@ -137,8 +148,10 @@ auto gse::vulkan::create_instance(GLFWwindow* window) -> void {
     }
 
     VkSurfaceKHR temp_surface;
-    assert(glfwCreateWindowSurface(config::instance::instance, window, nullptr, &temp_surface) == static_cast<int>(vk::Result::eSuccess), "Error creating window surface");
-    config::instance::surface = temp_surface;
+    assert(glfwCreateWindowSurface(data.instance_data.instance, window, nullptr, &temp_surface) == static_cast<int>(vk::Result::eSuccess), "Error creating window surface");
+    data.instance_data.surface = temp_surface;
+
+    return data;
 }
 
 auto gse::vulkan::choose_swap_chain_extent(const vk::SurfaceCapabilitiesKHR& capabilities, GLFWwindow* window) -> vk::Extent2D {

@@ -132,8 +132,26 @@ auto gse::window::initialize() -> void {
 	assert(glfwVulkanSupported(), "Vulkan not supported");
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+	glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
+	glfwWindowHint(GLFW_AUTO_ICONIFY, GLFW_FALSE);
+	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
-	g_window = glfwCreateWindow(1, 1, "Vulkan", nullptr, g_window);
+	GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+	const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+	const int w = mode->width;
+	const int h = mode->height;
+
+	g_window = glfwCreateWindow(w, h, "Vulkan", nullptr, nullptr);
+	assert(g_window != nullptr, "Failed to create GLFW window!");
+
+	glfwSetWindowPos(g_window, 0, 0);
+
+	glfwSetKeyCallback(g_window, key_callback);
+	glfwSetMouseButtonCallback(g_window, mouse_callback);
+	glfwSetWindowFocusCallback(g_window, window_focus_callback);
+	glfwSetWindowSizeCallback(g_window, window_size_callback);
+	glfwSetCursorPosCallback(g_window, cursor_position_callback);
+	glfwSetCharCallback(g_window, character_callback);
 }
 
 auto gse::window::begin_frame() -> void {

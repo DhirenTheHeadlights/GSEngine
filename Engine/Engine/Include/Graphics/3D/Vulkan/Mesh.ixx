@@ -40,15 +40,13 @@ export namespace gse {
         auto operator=(mesh&& other) noexcept -> mesh&;
 
         auto initialize() -> void;
-        auto destroy() const -> void;
+        auto destroy() -> void;
 
         auto bind(vk::CommandBuffer command_buffer) const -> void;
         auto draw(vk::CommandBuffer command_buffer) const -> void;
 
-        vk::Buffer vertex_buffer;
-        vk::DeviceMemory vertex_memory;
-        vk::Buffer index_buffer;
-        vk::DeviceMemory index_memory;
+		vulkan::persistent_allocator::buffer_resource vertex_buffer;
+        vulkan::persistent_allocator::buffer_resource index_buffer;
 
         std::vector<vertex> vertices;
         std::vector<std::uint32_t> indices;
@@ -77,14 +75,11 @@ gse::mesh::~mesh() {
 }
 
 gse::mesh::mesh(mesh&& other) noexcept
-	: vertex_buffer(other.vertex_buffer), vertex_memory(other.vertex_memory),
-	  index_buffer(other.index_buffer), index_memory(other.index_memory),
+	: vertex_buffer(other.vertex_buffer), index_buffer(other.index_buffer),
 	  vertices(std::move(other.vertices)), indices(std::move(other.indices)), material(nullptr),
 	  center_of_mass(other.center_of_mass) {
-	other.vertex_buffer = nullptr;
-	other.vertex_memory = nullptr;
-	other.index_buffer = nullptr;
-	other.index_memory = nullptr;
+	other.vertex_buffer = {};
+	other.index_buffer = {};
 }
 
 auto gse::mesh::operator=(mesh&& other) noexcept -> mesh& {
@@ -92,17 +87,13 @@ auto gse::mesh::operator=(mesh&& other) noexcept -> mesh& {
         destroy();
 
         vertex_buffer = other.vertex_buffer;
-        vertex_memory = other.vertex_memory;
         index_buffer = other.index_buffer;
-        index_memory = other.index_memory;
         vertices = std::move(other.vertices);
         indices = std::move(other.indices);
 		center_of_mass = other.center_of_mass;
 
-        other.vertex_buffer = nullptr;
-        other.vertex_memory = nullptr;
-        other.index_buffer = nullptr;
-        other.index_memory = nullptr;
+        other.vertex_buffer = {};
+        other.index_buffer = {};
     }
     return *this;
 }
@@ -116,47 +107,24 @@ auto gse::mesh::initialize() -> void {
         vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
         vk::SharingMode::eExclusive
     );
-    vertex_buffer = vulkan::config::device::device.createBuffer(vertex_buffer_info);
-
-    const vk::MemoryRequirements vertex_mem_req = vulkan::config::device::device.getBufferMemoryRequirements(vertex_buffer);
-    const vk::MemoryAllocateInfo vertex_alloc_info(
-        vertex_mem_req.size,
-        vulkan::find_memory_type(vertex_mem_req.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
-    );
-    vertex_memory = vulkan::config::device::device.allocateMemory(vertex_alloc_info);
-    vulkan::config::device::device.bindBufferMemory(vertex_buffer, vertex_memory, 0);
+	vertex_buffer = vulkan::persistent_allocator::create_buffer(vertex_buffer_info);
 
     const vk::BufferCreateInfo index_buffer_info(
         {}, index_size,
         vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
         vk::SharingMode::eExclusive
     );
-    index_buffer = vulkan::config::device::device.createBuffer(index_buffer_info);
-
-    const vk::MemoryRequirements index_mem_req = vulkan::config::device::device.getBufferMemoryRequirements(index_buffer);
-    const vk::MemoryAllocateInfo index_alloc_info(
-        index_mem_req.size,
-        vulkan::find_memory_type(index_mem_req.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
-    );
-
-    index_memory = vulkan::config::device::device.allocateMemory(index_alloc_info);
-    vulkan::config::device::device.bindBufferMemory(index_buffer, index_memory, 0);
+	index_buffer = vulkan::persistent_allocator::create_buffer(index_buffer_info);
 }
 
-auto gse::mesh::destroy() const -> void {
-    if (vertex_buffer) {
-	    vulkan::config::device::device.destroyBuffer(vertex_buffer);
-	    vulkan::config::device::device.freeMemory(vertex_memory);
-    }
-    if (index_buffer) {
-	    vulkan::config::device::device.destroyBuffer(index_buffer);
-	    vulkan::config::device::device.freeMemory(index_memory);
-    }
+auto gse::mesh::destroy() -> void {
+	free(vertex_buffer);
+	free(index_buffer);
 }
 
 auto gse::mesh::bind(const vk::CommandBuffer command_buffer) const -> void {
-    command_buffer.bindVertexBuffers(0, vertex_buffer, {});
-    command_buffer.bindIndexBuffer(index_buffer, 0, vk::IndexType::eUint32);
+    command_buffer.bindVertexBuffers(0, vertex_buffer.buffer, {});
+    command_buffer.bindIndexBuffer(index_buffer.buffer, 0, vk::IndexType::eUint32);
 }
 
 auto gse::mesh::draw(const vk::CommandBuffer command_buffer) const -> void {

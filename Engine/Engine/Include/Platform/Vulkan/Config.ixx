@@ -7,56 +7,64 @@ export module gse.platform.vulkan.config;
 import std;
 export import vulkan_hpp;
 
-export namespace gse::vulkan::config {
-    namespace instance {
-        vk::Instance instance;
-        vk::SurfaceKHR surface;
-    }
+export namespace gse::vulkan {
+    struct config {
+        struct instance_data {
+            vk::Instance instance;
+            vk::SurfaceKHR surface;
+        } instance_data;
 
-    namespace device {
-        vk::PhysicalDevice physical_device;
-        vk::Device device;
-    }
+        struct device_data {
+            vk::PhysicalDevice physical_device;
+            vk::Device device;
+		} device_data;
 
-    namespace queue {
-        vk::Queue graphics;
-        vk::Queue present;
-    }
+        struct queue {
+            vk::Queue graphics;
+            vk::Queue present;
+		} queue;
 
-    namespace command {
-        vk::CommandPool pool;
-    }
+        struct command {
+            vk::CommandPool pool;
+            std::vector<vk::CommandBuffer> buffers;
+		} command;
 
-    namespace descriptor {
-        vk::DescriptorPool pool;
-    }
+        struct descriptor {
+            vk::DescriptorPool pool;
+        } descriptor;
 
-    namespace sync {
-        vk::Semaphore image_available_semaphore;
-        vk::Semaphore render_finished_semaphore;
-        vk::Fence in_flight_fence;
-        std::uint32_t current_frame = 0;
-    }
+        struct sync {
+            vk::Semaphore image_available_semaphore;
+            vk::Semaphore render_finished_semaphore;
+            vk::Fence in_flight_fence;
+		} sync;
 
-    struct swap_chain_details {
-        vk::SurfaceCapabilitiesKHR capabilities;
-        std::vector<vk::SurfaceFormatKHR> formats;
-        std::vector<vk::PresentModeKHR> present_modes;
+        struct swap_chain_details {
+            vk::SurfaceCapabilitiesKHR capabilities;
+            std::vector<vk::SurfaceFormatKHR> formats;
+            std::vector<vk::PresentModeKHR> present_modes;
+        };
+
+        struct swap_chain_data {
+            vk::SwapchainKHR swap_chain;
+            vk::SurfaceFormatKHR surface_format;
+            vk::PresentModeKHR present_mode;
+            vk::Extent2D extent;
+            std::vector<vk::Framebuffer> frame_buffers;
+            std::vector<vk::Image> images;
+            std::vector<vk::ImageView> image_views;
+            vk::Format format;
+            swap_chain_details details;
+        } swap_chain_data;
+
+        struct frame_context {
+            std::uint32_t image_index;
+            vk::CommandBuffer command_buffer;
+            vk::Framebuffer framebuffer;
+		} frame_context;
+
+        vk::RenderPass render_pass;
     };
-
-    namespace swap_chain {
-        vk::SwapchainKHR swap_chain;
-        vk::SurfaceFormatKHR surface_format;
-        vk::PresentModeKHR present_mode;
-        vk::Extent2D extent;
-        std::vector<vk::Framebuffer> frame_buffers;
-        std::vector<vk::Image> images;
-        std::vector<vk::ImageView> image_views;
-        vk::Format format;
-        swap_chain_details details;
-    }
-
-    vk::RenderPass render_pass;
 }
 
 export namespace gse::vulkan {

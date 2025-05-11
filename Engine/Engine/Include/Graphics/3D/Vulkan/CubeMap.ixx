@@ -1,7 +1,3 @@
-module;
-
-#include <stb_image.h>
-
 export module gse.graphics.cube_map;
 
 import std;
@@ -16,45 +12,31 @@ export namespace gse {
         cube_map() = default;
         ~cube_map();
 
-        auto create(const std::vector<std::string>& faces) -> void;
+        auto create(const std::array<std::filesystem::path, 6>& face_paths) -> void;
         auto create(int resolution, bool depth_only = false) -> void;
 
-        auto get_image() const -> vk::Image { return m_image; }
-        auto get_image_view() const -> vk::ImageView { return m_image_view; }
-        auto get_frame_buffer() const -> vk::Framebuffer { return m_frame_buffer; }
+		auto get_image_resource() const -> const vulkan::persistent_allocator::image_resource& { return m_image_resource; }
     private:
-        vk::Image m_image;
-        vk::DeviceMemory m_image_memory;
-        vk::ImageView m_image_view;
+		vulkan::persistent_allocator::image_resource m_image_resource;
         vk::Sampler m_sampler;
-        vk::Framebuffer m_frame_buffer;
         int m_resolution;
         bool m_depth_only;
     };
 }
 
 gse::cube_map::~cube_map() {
-	vulkan::config::device::device.destroyFramebuffer(m_frame_buffer);
-	vulkan::config::device::device.destroyImageView(m_image_view);
-	vulkan::config::device::device.destroyImage(m_image);
-	vulkan::config::device::device.freeMemory(m_image_memory);
 	vulkan::config::device::device.destroySampler(m_sampler);
+    free(m_image_resource);
 }
 
-auto gse::cube_map::create(const std::vector<std::string>& faces) -> void {
-    int width, height, nr_channels;
-    std::vector<unsigned char*> face_data;
-    for (const auto& face : faces) {
-        unsigned char* data = stbi_load(face.c_str(), &width, &height, &nr_channels, STBI_rgb_alpha);
-		assert(data, std::format("Failed to load texture image: {}", face));
-        face_data.push_back(data);
-    }
+auto gse::cube_map::create(const std::array<std::filesystem::path, 6>& face_paths) -> void {
+    auto faces = stb::image::load_cube_faces(face_paths);
 
-    vk::ImageCreateInfo image_info(
-        {},
+    const vk::ImageCreateInfo image_info(
+        vk::ImageCreateFlagBits::eCubeCompatible,
         vk::ImageType::e2D,
         vk::Format::eR8G8B8A8Srgb,
-        { static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), 1 },
+        { (faces[0].size.x), (faces[0].size.y), 1 },
         1,
         6,
         vk::SampleCountFlagBits::e1,
@@ -64,31 +46,43 @@ auto gse::cube_map::create(const std::vector<std::string>& faces) -> void {
         {},
         vk::ImageLayout::eUndefined
     );
-    image_info.flags = vk::ImageCreateFlagBits::eCubeCompatible;
 
-    m_image = vulkan::config::device::device.createImage(image_info);
-
-    const vk::MemoryRequirements mem_requirements = vulkan::config::device::device.getImageMemoryRequirements(m_image);
-    const vk::MemoryAllocateInfo alloc_info(
-        mem_requirements.size,
-        vulkan::find_memory_type(mem_requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)
-    );
-    m_image_memory = vulkan::config::device::device.allocateMemory(alloc_info);
-    vulkan::config::device::device.bindImageMemory(m_image, m_image_memory, 0);
-
-    const vk::ImageViewCreateInfo view_info(
+    constexpr vk::ImageViewCreateInfo view_info(
         {},
-        m_image,
+        nullptr,
         vk::ImageViewType::eCube,
         vk::Format::eR8G8B8A8Srgb,
         {},
         { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 6 }
     );
-    m_image_view = vulkan::config::device::device.createImageView(view_info);
 
-    for (auto* data : face_data) {
-        stbi_image_free(data);
-    }
+    m_image_resource = vulkan::persistent_allocator::create_image(image_info, vk::MemoryPropertyFlagBits::eDeviceLocal, view_info);
+
+    vulkan::uploader::upload_image_layers(
+        m_image_resource.image,
+        vk::Format::eR8G8B8A8Srgb,
+        faces[0].size.x,
+        faces[0].size.y,
+        reinterpret_cast<const std::vector<const void*>&>(faces),
+        faces[0].size_bytes(),
+        vk::ImageLayout::eShaderReadOnlyOptimal
+    );
+
+    constexpr vk::SamplerCreateInfo sampler_info(
+        {},
+        vk::Filter::eLinear, vk::Filter::eLinear,
+        vk::SamplerMipmapMode::eLinear,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerAddressMode::eClampToEdge,
+        0.0f, vk::False, 1.0f, vk::False,
+        vk::CompareOp::eAlways,
+        0.0f, 0.0f,
+        vk::BorderColor::eIntOpaqueBlack,
+        vk::False
+    );
+
+    m_sampler = vulkan::config::device::device.createSampler(sampler_info);
 }
 
 auto gse::cube_map::create(const int resolution, const bool depth_only) -> void {
@@ -98,11 +92,11 @@ auto gse::cube_map::create(const int resolution, const bool depth_only) -> void 
     const vk::Format format = depth_only ? vk::Format::eD32Sfloat : vk::Format::eR16G16B16A16Sfloat;
     const vk::ImageUsageFlags usage = depth_only ? vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled : vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled;
 
-    vk::ImageCreateInfo image_info(
-        {},
+    const vk::ImageCreateInfo image_info(
+        vk::ImageCreateFlagBits::eCubeCompatible,
         vk::ImageType::e2D,
         format,
-        { static_cast<uint32_t>(resolution), static_cast<uint32_t>(resolution), 1 },
+        { static_cast<std::uint32_t>(resolution), static_cast<std::uint32_t>(resolution), 1 },
         1,
         6,
         vk::SampleCountFlagBits::e1,
@@ -111,15 +105,31 @@ auto gse::cube_map::create(const int resolution, const bool depth_only) -> void 
         {},
         vk::ImageLayout::eUndefined
     );
-    image_info.flags = vk::ImageCreateFlagBits::eCubeCompatible;
 
-    m_image = vulkan::config::device::device.createImage(image_info);
+    const vk::ImageViewCreateInfo view_info(
+        {}, 
+        nullptr, 
+        vk::ImageViewType::eCube, 
+        format, 
+        {}, 
+        { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 6 }
+    );
 
-    const vk::MemoryRequirements mem_requirements = vulkan::config::device::device.getImageMemoryRequirements(m_image);
-    const vk::MemoryAllocateInfo alloc_info(mem_requirements.size, vulkan::find_memory_type(mem_requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal));
-    m_image_memory = vulkan::config::device::device.allocateMemory(alloc_info);
-    vulkan::config::device::device.bindImageMemory(m_image, m_image_memory, 0);
+	m_image_resource = vulkan::persistent_allocator::create_image(image_info, vk::MemoryPropertyFlagBits::eDeviceLocal, view_info);
 
-    const vk::ImageViewCreateInfo view_info({}, m_image, vk::ImageViewType::eCube, format, {}, { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 6 });
-    m_image_view = vulkan::config::device::device.createImageView(view_info);
+    constexpr vk::SamplerCreateInfo sampler_info(
+        {},
+        vk::Filter::eLinear, vk::Filter::eLinear,
+        vk::SamplerMipmapMode::eLinear,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerAddressMode::eClampToEdge,
+        vk::SamplerAddressMode::eClampToEdge,
+        0.0f, vk::False, 1.0f, vk::False,
+        vk::CompareOp::eAlways,
+        0.0f, 0.0f,
+        vk::BorderColor::eIntOpaqueBlack,
+        vk::False
+    );
+
+    m_sampler = vulkan::config::device::device.createSampler(sampler_info);
 }
