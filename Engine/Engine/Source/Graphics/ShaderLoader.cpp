@@ -72,13 +72,13 @@ auto create_layout(const vk::Device device, const std::vector<vk::DescriptorSetL
 		});
 }
 
-auto init_descriptor_layouts() -> void {
+auto init_descriptor_layouts(const vk::Device& device) -> void {
     constexpr auto vs = vk::ShaderStageFlagBits::eVertex;
     constexpr auto fs = vk::ShaderStageFlagBits::eFragment;
     constexpr int max_lights = 10;
 
     auto create_layout = [&](std::vector<vk::DescriptorSetLayoutBinding> bindings) {
-        const vk::DescriptorSetLayout layout = gse::vulkan::config::device::device.createDescriptorSetLayout({
+        const vk::DescriptorSetLayout layout = device.createDescriptorSetLayout({
             {},
         	static_cast<uint32_t>(bindings.size()),
         	bindings.data()
@@ -131,8 +131,8 @@ auto init_descriptor_layouts() -> void {
     };
 }
 
-auto gse::shader_loader::load_shaders() -> void {
-    init_descriptor_layouts();
+auto gse::shader_loader::load_shaders(const vulkan::config& config) -> void {
+    init_descriptor_layouts(config.device_data.device);
 
     const std::unordered_map<std::string, descriptor_layout> layouts = compile_shaders();
 
@@ -175,6 +175,7 @@ auto gse::shader_loader::load_shaders() -> void {
             std::piecewise_construct,
             std::forward_as_tuple(info),
             std::forward_as_tuple(
+                config.device_data.device,
                 info.vert_path,
                 info.frag_path,
                 layout_ptr,

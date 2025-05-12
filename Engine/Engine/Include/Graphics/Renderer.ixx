@@ -23,7 +23,7 @@ gse::vulkan::config g_config;
 
 auto gse::renderer::initialize() -> void {
 	g_config = platform::initialize();
-	shader_loader::load_shaders();
+	shader_loader::load_shaders(TODO);
 	renderer3d::initialize(g_config);
 	renderer2d::initialize(g_config);
 	gui::initialize();

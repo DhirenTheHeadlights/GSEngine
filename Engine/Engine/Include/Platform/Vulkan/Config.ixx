@@ -1,6 +1,9 @@
 module;
 
+#include <vulkan/vulkan_handles.hpp>
+#include <vulkan/vulkan_handles.hpp>
 #include <vulkan/vulkan_hpp_macros.hpp>
+#include <vulkan/vulkan_structs.hpp>
 
 export module gse.platform.vulkan.config;
 
@@ -77,7 +80,7 @@ export namespace gse::vulkan {
         }
     };
 
-    auto get_memory_properties() -> vk::PhysicalDeviceMemoryProperties;
+    auto get_memory_properties(device) -> vk::PhysicalDeviceMemoryProperties;
 }
 
 #if defined(VULKAN_HPP_DISPATCH_LOADER_DYNAMIC) && (VULKAN_HPP_DISPATCH_LOADER_DYNAMIC == 1)
