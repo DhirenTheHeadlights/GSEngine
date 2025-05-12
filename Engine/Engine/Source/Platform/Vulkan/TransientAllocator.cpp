@@ -27,8 +27,8 @@ auto align_up(const vk::DeviceSize offset, const vk::DeviceSize alignment) -> vk
 	return offset + alignment - 1 & ~(alignment - 1);
 }
 
-auto gse::vulkan::transient_allocator::allocate(const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties) -> allocation {
-	const auto mem_properties = get_memory_properties(TODO);
+auto gse::vulkan::transient_allocator::allocate(const config::device_config config, const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties) -> allocation {
+	const auto mem_properties = get_memory_properties(config.physical_device);
 	auto req_memory_type_index = std::numeric_limits<std::uint32_t>::max();
 
 	for (std::uint32_t i = 0; i < mem_properties.memoryTypeCount; i++) {
@@ -60,14 +60,14 @@ auto gse::vulkan::transient_allocator::allocate(const vk::MemoryRequirements& re
 	}
 
 	// Allocate a new memory block
-	const vk::DeviceMemory memory = config::device::device.allocateMemory({
+	const vk::DeviceMemory memory = config.device.allocateMemory({
 		g_transient_default_block_size,
 		memory_type_index
 		});
 
 	void* mapped = nullptr;
 	if (properties & vk::MemoryPropertyFlagBits::eHostVisible) {
-		mapped = config::device::device.mapMemory(memory, 0, g_transient_default_block_size);
+		mapped = config.device.mapMemory(memory, 0, g_transient_default_block_size);
 	}
 
 	memory_block new_block{
@@ -89,12 +89,12 @@ auto gse::vulkan::transient_allocator::allocate(const vk::MemoryRequirements& re
 	};
 }
 
-auto gse::vulkan::transient_allocator::bind(vk::Buffer buffer, const allocation& alloc) -> void {
-	config::device::device.bindBufferMemory(buffer, alloc.memory, alloc.offset);
+auto gse::vulkan::transient_allocator::bind(const config::device_config config, const vk::Buffer buffer, const allocation& alloc) -> void {
+	config.device.bindBufferMemory(buffer, alloc.memory, alloc.offset);
 }
 
-auto gse::vulkan::transient_allocator::bind(vk::Image image, const allocation& alloc) -> void {
-	config::device::device.bindImageMemory(image, alloc.memory, alloc.offset);
+auto gse::vulkan::transient_allocator::bind(const config::device_config config, const vk::Image image, const allocation& alloc) -> void {
+	config.device.bindImageMemory(image, alloc.memory, alloc.offset);
 }
 
 auto gse::vulkan::transient_allocator::end_frame() -> void {

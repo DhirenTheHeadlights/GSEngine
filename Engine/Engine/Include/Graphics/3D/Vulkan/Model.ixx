@@ -38,7 +38,7 @@ export namespace gse {
 
 auto gse::model::initialize() -> void {
     for (auto& mesh : meshes) {
-        mesh.initialize();
+        mesh.initialize(TODO);
         center_of_mass += mesh.center_of_mass;
     }
 }

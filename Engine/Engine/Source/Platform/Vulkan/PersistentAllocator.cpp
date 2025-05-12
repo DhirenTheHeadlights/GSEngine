@@ -30,8 +30,8 @@ constexpr vk::DeviceSize g_persistent_default_block_size = 1024 * 1024 * 64; // 
 
 std::unordered_map<std::uint32_t, pool> g_persistent_memory_pools;
 
-auto gse::vulkan::persistent_allocator::allocate(const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties) -> allocation {
-	const auto mem_properties = get_memory_properties();
+auto gse::vulkan::persistent_allocator::allocate(const config::device_config config, const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties) -> allocation {
+	const auto mem_properties = get_memory_properties(config.physical_device);
 	auto memory_type_index = std::numeric_limits<std::uint32_t>::max();
 
 	for (std::uint32_t i = 0; i < mem_properties.memoryTypeCount; i++) {
@@ -106,11 +106,11 @@ auto gse::vulkan::persistent_allocator::allocate(const vk::MemoryRequirements& r
 	auto& new_block = pool.blocks.emplace_back();
 	new_block.size = std::max(requirements.size, g_persistent_default_block_size);
 	new_block.properties = properties;
-	new_block.memory = config::device::device.allocateMemory({ new_block.size, memory_type_index });
+	new_block.memory = config.device.allocateMemory({ new_block.size, memory_type_index });
 	new_block.allocations.push_back({ .offset = 0, .size = new_block.size, .in_use = false });
 
 	if (properties & vk::MemoryPropertyFlagBits::eHostVisible) {
-		new_block.mapped = config::device::device.mapMemory(new_block.memory, 0, new_block.size);
+		new_block.mapped = config.device.mapMemory(new_block.memory, 0, new_block.size);
 	}
 
 	auto& sub = new_block.allocations.front();
@@ -126,30 +126,30 @@ auto gse::vulkan::persistent_allocator::allocate(const vk::MemoryRequirements& r
 	};
 }
 
-auto gse::vulkan::persistent_allocator::bind(const vk::Buffer buffer, const vk::MemoryPropertyFlags properties, vk::MemoryRequirements requirements) -> allocation {
+auto gse::vulkan::persistent_allocator::bind(const config::device_config config, const vk::Buffer buffer, const vk::MemoryPropertyFlags properties, vk::MemoryRequirements requirements) -> allocation {
 	if (requirements.size == 0) {
-		requirements = config::device::device.getBufferMemoryRequirements(buffer);
+		requirements = config.device.getBufferMemoryRequirements(buffer);
 	}
 
-	const auto& allocation = allocate(requirements, properties);
-	config::device::device.bindBufferMemory(buffer, allocation.memory, allocation.offset);
+	const auto& allocation = allocate(config, requirements, properties);
+	config.device.bindBufferMemory(buffer, allocation.memory, allocation.offset);
 	return allocation;
 }
 
-auto gse::vulkan::persistent_allocator::bind(const vk::Image image, const vk::MemoryPropertyFlags properties, vk::MemoryRequirements requirements) -> allocation {
+auto gse::vulkan::persistent_allocator::bind(const config::device_config config, const vk::Image image, const vk::MemoryPropertyFlags properties, vk::MemoryRequirements requirements) -> allocation {
 	if (requirements.size == 0) {
-		requirements = config::device::device.getImageMemoryRequirements(image);
+		requirements = config.device.getImageMemoryRequirements(image);
 	}
 
-	const auto& allocation = allocate(requirements, properties);
-	config::device::device.bindImageMemory(image, allocation.memory, allocation.offset);
+	const auto& allocation = allocate(config, requirements, properties);
+	config.device.bindImageMemory(image, allocation.memory, allocation.offset);
 	return allocation;
 }
 
-auto gse::vulkan::persistent_allocator::create_buffer(const vk::BufferCreateInfo& buffer_info, const vk::MemoryPropertyFlags properties, const void* data) -> buffer_resource {
-	const auto buffer = config::device::device.createBuffer(buffer_info);
-	const auto requirements = config::device::device.getBufferMemoryRequirements(buffer);
-	const auto alloc = bind(buffer, properties, requirements);
+auto gse::vulkan::persistent_allocator::create_buffer(const config::device_config config, const vk::BufferCreateInfo& buffer_info, const vk::MemoryPropertyFlags properties, const void* data) -> buffer_resource {
+	const auto buffer = config.device.createBuffer(buffer_info);
+	const auto requirements = config.device.getBufferMemoryRequirements(buffer);
+	const auto alloc = bind(config, buffer, properties, requirements);
 
 	if (data && alloc.mapped) {
 		std::memcpy(alloc.mapped, data, requirements.size);
@@ -158,11 +158,11 @@ auto gse::vulkan::persistent_allocator::create_buffer(const vk::BufferCreateInfo
 	return { buffer, alloc };
 }
 
-auto gse::vulkan::persistent_allocator::create_image(const vk::ImageCreateInfo& info, const vk::MemoryPropertyFlags properties, vk::ImageViewCreateInfo view_info, const void* data) -> image_resource {
-	vk::Image image = config::device::device.createImage(info);
-	const auto requirements = config::device::device.getImageMemoryRequirements(image);
+auto gse::vulkan::persistent_allocator::create_image(const config::device_config config, const vk::ImageCreateInfo& info, const vk::MemoryPropertyFlags properties, vk::ImageViewCreateInfo view_info, const void* data) -> image_resource {
+	vk::Image image = config.device.createImage(info);
+	const auto requirements = config.device.getImageMemoryRequirements(image);
 
-	const allocation alloc = bind(image, properties, requirements);
+	const allocation alloc = bind(config, image, properties, requirements);
 
 	if (data && alloc.mapped) {
 		std::memcpy(alloc.mapped, data, requirements.size);
@@ -174,11 +174,11 @@ auto gse::vulkan::persistent_allocator::create_image(const vk::ImageCreateInfo& 
 		assert(view_info.image == nullptr, std::format("Image view info must not have an image set yet!"));
 		vk::ImageViewCreateInfo actual_view_info = view_info;
 		actual_view_info.image = image;
-		view = config::device::device.createImageView(actual_view_info);
+		view = config.device.createImageView(actual_view_info);
 	}
 	else {
 		// Create default view
-		view = config::device::device.createImageView({
+		view = config.device.createImageView({
 			{}, image,
 			vk::ImageViewType::e2D,
 			info.format,
@@ -231,16 +231,16 @@ auto gse::vulkan::persistent_allocator::free(allocation& alloc) -> void {
 }
 
 
-auto gse::vulkan::persistent_allocator::free(buffer_resource& resource) -> void {
-	config::device::device.destroyBuffer(resource.buffer);
+auto gse::vulkan::persistent_allocator::free(const config::device_config config, buffer_resource& resource) -> void {
+	config.device.destroyBuffer(resource.buffer);
 	free(resource.allocation);
 	resource.buffer = nullptr;
 	resource.allocation = {};
 }
 
-auto gse::vulkan::persistent_allocator::free(image_resource& resource) -> void {
-	config::device::device.destroyImage(resource.image);
-	config::device::device.destroyImageView(resource.view);
+auto gse::vulkan::persistent_allocator::free(const config::device_config config, image_resource& resource) -> void {
+	config.device.destroyImage(resource.image);
+	config.device.destroyImageView(resource.view);
 	free(resource.allocation);
 	resource.image = nullptr;
 	resource.view = nullptr;

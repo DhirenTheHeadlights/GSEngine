@@ -57,7 +57,7 @@ auto gse::renderer::end_frame() -> void {
 }
 
 auto gse::renderer::shutdown() -> void {
-	renderer2d::shutdown();
+	renderer2d::shutdown(g_config);
 	renderer3d::shutdown(g_config);
 	window::shutdown();
 	platform::shutdown(g_config);

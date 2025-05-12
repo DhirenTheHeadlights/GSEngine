@@ -1,9 +1,6 @@
 module;
 
-#include <vulkan/vulkan_handles.hpp>
-#include <vulkan/vulkan_handles.hpp>
 #include <vulkan/vulkan_hpp_macros.hpp>
-#include <vulkan/vulkan_structs.hpp>
 
 export module gse.platform.vulkan.config;
 
@@ -12,31 +9,31 @@ export import vulkan_hpp;
 
 export namespace gse::vulkan {
     struct config {
-        struct instance_data {
+        struct instance_config {
             vk::Instance instance;
             vk::SurfaceKHR surface;
         } instance_data;
 
-        struct device_data {
+        struct device_config {
             vk::PhysicalDevice physical_device;
             vk::Device device;
 		} device_data;
 
-        struct queue {
+        struct queue_config {
             vk::Queue graphics;
             vk::Queue present;
 		} queue;
 
-        struct command {
+        struct command_config {
             vk::CommandPool pool;
             std::vector<vk::CommandBuffer> buffers;
 		} command;
 
-        struct descriptor {
+        struct descriptor_config {
             vk::DescriptorPool pool;
         } descriptor;
 
-        struct sync {
+        struct sync_config {
             vk::Semaphore image_available_semaphore;
             vk::Semaphore render_finished_semaphore;
             vk::Fence in_flight_fence;
@@ -48,7 +45,7 @@ export namespace gse::vulkan {
             std::vector<vk::PresentModeKHR> present_modes;
         };
 
-        struct swap_chain_data {
+        struct swap_chain_config {
             vk::SwapchainKHR swap_chain;
             vk::SurfaceFormatKHR surface_format;
             vk::PresentModeKHR present_mode;
@@ -60,7 +57,7 @@ export namespace gse::vulkan {
             swap_chain_details details;
         } swap_chain_data;
 
-        struct frame_context {
+        struct frame_context_config {
             std::uint32_t image_index;
             vk::CommandBuffer command_buffer;
             vk::Framebuffer framebuffer;
@@ -80,7 +77,7 @@ export namespace gse::vulkan {
         }
     };
 
-    auto get_memory_properties(device) -> vk::PhysicalDeviceMemoryProperties;
+    auto get_memory_properties(vk::PhysicalDevice device) -> vk::PhysicalDeviceMemoryProperties;
 }
 
 #if defined(VULKAN_HPP_DISPATCH_LOADER_DYNAMIC) && (VULKAN_HPP_DISPATCH_LOADER_DYNAMIC == 1)

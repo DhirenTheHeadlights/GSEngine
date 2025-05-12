@@ -30,8 +30,8 @@ export namespace gse {
 	};
 
     struct mesh {
-		mesh(const mesh_data& data);
-		mesh(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices, material_handle material = {});
+		mesh(vulkan::config::device_config config, const mesh_data& data);
+		mesh(const vulkan::config::device_config config, const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices, material_handle material = {});
         ~mesh();
 
         mesh(const mesh&) = delete;
@@ -39,7 +39,7 @@ export namespace gse {
         mesh(mesh&& other) noexcept;
         auto operator=(mesh&& other) noexcept -> mesh&;
 
-        auto initialize() -> void;
+        auto initialize(vulkan::config::device_config config) -> void;
         auto destroy() -> void;
 
         auto bind(vk::CommandBuffer command_buffer) const -> void;
@@ -47,6 +47,8 @@ export namespace gse {
 
 		vulkan::persistent_allocator::buffer_resource vertex_buffer;
         vulkan::persistent_allocator::buffer_resource index_buffer;
+
+		vulkan::config::device_config device_config;
 
         std::vector<vertex> vertices;
         std::vector<std::uint32_t> indices;
@@ -56,17 +58,17 @@ export namespace gse {
     };
 
     auto calculate_center_of_mass(const std::vector<std::uint32_t>& indices, const std::vector<vertex>& vertices) -> vec3<length>;
-	auto generate_bounding_box_mesh(const axis_aligned_bounding_box& aabb) -> mesh;
+	auto generate_bounding_box_mesh(vulkan::config::device_config config, const axis_aligned_bounding_box& aabb) -> mesh;
 }
 
-gse::mesh::mesh(const mesh_data& data) : vertices(std::move(data.vertices)), indices(std::move(data.indices)), material(data.material) {
-    initialize();
+gse::mesh::mesh(const vulkan::config::device_config config, const mesh_data& data) : device_config(config), vertices(std::move(data.vertices)), indices(std::move(data.indices)), material(data.material) {
+    initialize(config);
 	center_of_mass = calculate_center_of_mass(indices, vertices);
 }
 
-gse::mesh::mesh(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices, const material_handle material)
-	: vertices(vertices), indices(indices), material(material) {
-	initialize();
+gse::mesh::mesh(const vulkan::config::device_config config, const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices, const material_handle material)
+	: device_config(config), vertices(vertices), indices(indices), material(material) {
+	initialize(config);
 	center_of_mass = calculate_center_of_mass(indices, vertices);
 }
 
@@ -98,7 +100,7 @@ auto gse::mesh::operator=(mesh&& other) noexcept -> mesh& {
     return *this;
 }
 
-auto gse::mesh::initialize() -> void {
+auto gse::mesh::initialize(const vulkan::config::device_config config) -> void {
     const vk::DeviceSize vertex_size = sizeof(vertex) * vertices.size();
     const vk::DeviceSize index_size = sizeof(std::uint32_t) * indices.size();
 
@@ -107,19 +109,19 @@ auto gse::mesh::initialize() -> void {
         vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
         vk::SharingMode::eExclusive
     );
-	vertex_buffer = vulkan::persistent_allocator::create_buffer(vertex_buffer_info);
+	vertex_buffer = vulkan::persistent_allocator::create_buffer(config, vertex_buffer_info);
 
     const vk::BufferCreateInfo index_buffer_info(
         {}, index_size,
         vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
         vk::SharingMode::eExclusive
     );
-	index_buffer = vulkan::persistent_allocator::create_buffer(index_buffer_info);
+	index_buffer = vulkan::persistent_allocator::create_buffer(config, index_buffer_info);
 }
 
 auto gse::mesh::destroy() -> void {
-	free(vertex_buffer);
-	free(index_buffer);
+	free(device_config, vertex_buffer);
+	free(device_config, index_buffer);
 }
 
 auto gse::mesh::bind(const vk::CommandBuffer command_buffer) const -> void {
@@ -166,7 +168,7 @@ auto gse::calculate_center_of_mass(const std::vector<std::uint32_t>& indices, co
     return moment / total_volume;
 }
 
-auto gse::generate_bounding_box_mesh(const axis_aligned_bounding_box& aabb) -> mesh {
+auto gse::generate_bounding_box_mesh(const vulkan::config::device_config config, const axis_aligned_bounding_box& aabb) -> mesh {
 	const auto lower = aabb.lower_bound.as<units::meters>();
 	const auto upper = aabb.upper_bound.as<units::meters>();
 
@@ -194,5 +196,5 @@ auto gse::generate_bounding_box_mesh(const axis_aligned_bounding_box& aabb) -> m
 		3, 2, 6, 6, 7, 3
 	};
 
-	return mesh(vertices, indices);
+	return mesh(config, vertices, indices);
 }

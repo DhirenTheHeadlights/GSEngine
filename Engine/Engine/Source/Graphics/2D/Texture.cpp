@@ -3,16 +3,16 @@ module gse.graphics.texture;
 import std;
 import vulkan_hpp;
 
-gse::texture::texture(const std::filesystem::path& filepath) : identifiable(filepath.string()), m_filepath(filepath) {
-    load_from_file(filepath);
+gse::texture::texture(const vulkan::config& config, const std::filesystem::path& filepath) : identifiable(filepath.string()), m_device_config(config.device_data), m_filepath(filepath) {
+    load_from_file(config, filepath);
 }
 
 gse::texture::~texture() {
-	vulkan::config::device::device.destroySampler(m_texture_sampler);
-	free(m_texture_image);
+	m_device_config.device.destroySampler(m_texture_sampler);
+	free(m_device_config, m_texture_image);
 }
 
-auto gse::texture::load_from_file(const std::filesystem::path& filepath) -> void {
+auto gse::texture::load_from_file(const vulkan::config& config, const std::filesystem::path& filepath) -> void {
 	auto data = stb::image::load(filepath);
 
     const vk::BufferCreateInfo buffer_info(
@@ -22,7 +22,7 @@ auto gse::texture::load_from_file(const std::filesystem::path& filepath) -> void
         vk::SharingMode::eExclusive
     );
 
-	auto staging_buffer = vulkan::persistent_allocator::create_buffer(buffer_info);
+	auto staging_buffer = vulkan::persistent_allocator::create_buffer(m_device_config, buffer_info);
 
     const auto format = data.channels == 4 ? vk::Format::eR8G8B8A8Srgb : data.channels == 1 ? vk::Format::eR8Unorm : vk::Format::eR8G8B8Srgb; // Note: 3-channel formats might require special handling
 
@@ -49,9 +49,9 @@ auto gse::texture::load_from_file(const std::filesystem::path& filepath) -> void
         vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
     );
 
-	m_texture_image = vulkan::persistent_allocator::create_image(image_info, vk::MemoryPropertyFlagBits::eDeviceLocal, view_info);
+	m_texture_image = vulkan::persistent_allocator::create_image(config.device_data, image_info, vk::MemoryPropertyFlagBits::eDeviceLocal, view_info);
 
-    const vk::CommandBuffer command_buffer = vulkan::begin_single_line_commands();
+    const vk::CommandBuffer command_buffer = begin_single_line_commands(config);
 
     vk::ImageMemoryBarrier barrier(
         {},
@@ -105,9 +105,9 @@ auto gse::texture::load_from_file(const std::filesystem::path& filepath) -> void
         1, &barrier
     );
 
-    vulkan::end_single_line_commands(command_buffer);
+    end_single_line_commands(command_buffer, config);
 
-	free(staging_buffer);
+	free(config.device_data, staging_buffer);
 
     constexpr vk::SamplerCreateInfo sampler_info(
         {},
@@ -121,10 +121,10 @@ auto gse::texture::load_from_file(const std::filesystem::path& filepath) -> void
         vk::BorderColor::eIntOpaqueBlack
     );
 
-    m_texture_sampler = vulkan::config::device::device.createSampler(sampler_info);
+    m_texture_sampler = config.device_data.device.createSampler(sampler_info);
 }
 
-auto gse::texture::load_from_memory(const std::span<std::uint8_t>& data, const int width, const int height, const int channels) -> void {
+auto gse::texture::load_from_memory(vulkan::config& config, std::span<std::uint8_t> data, const int width, const int height, const int channels) -> void {
     m_size = { width, height };
     m_channels = channels;
 
@@ -132,6 +132,7 @@ auto gse::texture::load_from_memory(const std::span<std::uint8_t>& data, const i
     const std::size_t image_size = static_cast<std::size_t>(width) * height * channels;
 
     m_texture_image = vulkan::persistent_allocator::create_image(
+        m_device_config,
         vk::ImageCreateInfo(
             {},
             vk::ImageType::e2D,
@@ -156,6 +157,7 @@ auto gse::texture::load_from_memory(const std::span<std::uint8_t>& data, const i
     );
 
     vulkan::uploader::upload_image_2d(
+		config,
         m_texture_image.image,
         format,
         width,

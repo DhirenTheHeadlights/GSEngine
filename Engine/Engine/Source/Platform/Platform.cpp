@@ -1,5 +1,7 @@
 module gse.platform;
 
+import std;
+
 import gse.platform.vulkan;
 import gse.platform.glfw.window;
 
