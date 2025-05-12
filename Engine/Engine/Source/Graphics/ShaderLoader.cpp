@@ -175,7 +175,7 @@ auto gse::shader_loader::load_shaders(const vulkan::config& config) -> void {
             std::piecewise_construct,
             std::forward_as_tuple(info),
             std::forward_as_tuple(
-                config.device_data.device,
+                config,
                 info.vert_path,
                 info.frag_path,
                 layout_ptr,

@@ -11,15 +11,16 @@ export namespace gse {
     class texture : public identifiable {
     public:
         texture() : identifiable("Unnamed Texture") {}
-        texture(const std::filesystem::path& filepath);
+        texture(const vulkan::config& config, const std::filesystem::path& filepath);
         ~texture();
 
-        auto load_from_file(const std::filesystem::path& filepath) -> void;
-		auto load_from_memory(const std::span<std::uint8_t>& data, int width, int height, int channels) -> void;
+        auto load_from_file(const vulkan::config& config, const std::filesystem::path& filepath) -> void;
+		auto load_from_memory(vulkan::config& config, std::span<std::uint8_t> data, int width, int height, int channels) -> void;
 
         auto get_descriptor_info() const -> vk::DescriptorImageInfo;
         auto get_dimensions() const -> unitless::vec2i { return m_size; }
     private:
+		vulkan::config::device_config m_device_config;
 		vulkan::persistent_allocator::image_resource m_texture_image;
         vk::Sampler m_texture_sampler;
 

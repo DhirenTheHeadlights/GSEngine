@@ -16,7 +16,7 @@ import gse.core.json_parser;
 import gse.platform;
 
 export namespace gse::debug {
-	auto initialize_imgui(const vk::RenderPass& render_pass) -> void;
+	auto initialize_imgui(const vulkan::config& config) -> void;
     auto update_imgui() -> void;
 	auto render_imgui(const vk::CommandBuffer& command_buffer) -> void;
     auto save_imgui_state() -> void;
@@ -60,7 +60,7 @@ auto gse::debug::set_imgui_save_file_path(const std::filesystem::path& path) -> 
     g_imgui_save_file_path = path;
 }
 
-auto gse::debug::initialize_imgui(const vk::RenderPass& render_pass) -> void {
+auto gse::debug::initialize_imgui(const vulkan::config& config) -> void {
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
     imguiThemes::embraceTheDarkness();
@@ -74,24 +74,24 @@ auto gse::debug::initialize_imgui(const vk::RenderPass& render_pass) -> void {
 
     ImGui_ImplGlfw_InitForVulkan(window::get_window(), true);
     ImGui_ImplVulkan_InitInfo init_info = {};
-	init_info.Instance = vulkan::config::instance::instance;
-	init_info.PhysicalDevice = vulkan::config::device::physical_device;
-	init_info.Device = vulkan::config::device::device;
-	init_info.QueueFamily = vulkan::find_queue_families().graphics_family.value();
-	init_info.Queue = vulkan::config::queue::graphics;
+    init_info.Instance = config.instance_data.instance;
+    init_info.PhysicalDevice = config.device_data.physical_device;
+	init_info.Device = config.device_data.device;
+	init_info.QueueFamily = vulkan::find_queue_families(config.device_data.physical_device, config.instance_data.surface).graphics_family.value();
+	init_info.Queue = config.queue.graphics;
     init_info.PipelineCache = VK_NULL_HANDLE;
-	init_info.DescriptorPool = vulkan::config::descriptor::pool;
+	init_info.DescriptorPool = config.descriptor.pool;
     init_info.Subpass = 0;
     init_info.MinImageCount = 2;
     init_info.ImageCount = 3;
     init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-    ImGui_ImplVulkan_Init(&init_info, render_pass);
+    ImGui_ImplVulkan_Init(&init_info, config.render_pass);
 
-    const vk::CommandBuffer cmd = vulkan::begin_single_line_commands();
+    const vk::CommandBuffer cmd = vulkan::begin_single_line_commands(config);
 
     ImGui_ImplVulkan_CreateFontsTexture(cmd);
 
-    vulkan::end_single_line_commands(cmd);
+    vulkan::end_single_line_commands(cmd, config);
 
     ImGui_ImplVulkan_DestroyFontUploadObjects();
 

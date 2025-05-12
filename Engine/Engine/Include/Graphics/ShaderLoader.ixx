@@ -4,6 +4,7 @@ import std;
 import vulkan_hpp;
 
 import gse.graphics.shader;
+import gse.platform;
 
 export enum class descriptor_layout : std::uint8_t {
 	standard_3d		= 0,

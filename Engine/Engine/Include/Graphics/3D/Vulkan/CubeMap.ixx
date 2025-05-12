@@ -9,10 +9,10 @@ import gse.platform;
 export namespace gse {
     class cube_map {
     public:
-	    explicit cube_map(const vk::Device device) : m_device(device) {}
+	    explicit cube_map(const vulkan::config::device_config device) : m_device_config(device) {}
         ~cube_map();
 
-        auto create(const std::array<std::filesystem::path, 6>& face_paths) -> void;
+        auto create(vulkan::config& config, const std::array<std::filesystem::path, 6>& face_paths) -> void;
         auto create(int resolution, bool depth_only = false) -> void;
 
 		auto get_image_resource() const -> const vulkan::persistent_allocator::image_resource& { return m_image_resource; }
@@ -20,7 +20,7 @@ export namespace gse {
 		vulkan::persistent_allocator::image_resource m_image_resource;
         vk::Sampler m_sampler;
 
-        vk::Device m_device;
+        vulkan::config::device_config m_device_config;
 
         int m_resolution = 0;
         bool m_depth_only = false;
@@ -28,11 +28,11 @@ export namespace gse {
 }
 
 gse::cube_map::~cube_map() {
-	m_device.destroySampler(m_sampler);
-    free(m_image_resource);
+	m_device_config.device.destroySampler(m_sampler);
+    free(m_device_config, m_image_resource);
 }
 
-auto gse::cube_map::create(const std::array<std::filesystem::path, 6>& face_paths) -> void {
+auto gse::cube_map::create(vulkan::config& config, const std::array<std::filesystem::path, 6>& face_paths) -> void {
     auto faces = stb::image::load_cube_faces(face_paths);
 
     const vk::ImageCreateInfo image_info(
@@ -59,9 +59,10 @@ auto gse::cube_map::create(const std::array<std::filesystem::path, 6>& face_path
         { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 6 }
     );
 
-    m_image_resource = vulkan::persistent_allocator::create_image(image_info, vk::MemoryPropertyFlagBits::eDeviceLocal, view_info);
+    m_image_resource = vulkan::persistent_allocator::create_image(config.device_data, image_info, vk::MemoryPropertyFlagBits::eDeviceLocal, view_info);
 
     vulkan::uploader::upload_image_layers(
+		config,
         m_image_resource.image,
         vk::Format::eR8G8B8A8Srgb,
         faces[0].size.x,
@@ -85,7 +86,7 @@ auto gse::cube_map::create(const std::array<std::filesystem::path, 6>& face_path
         vk::False
     );
 
-    m_sampler = m_device.createSampler(sampler_info);
+    m_sampler = m_device_config.device.createSampler(sampler_info);
 }
 
 auto gse::cube_map::create(const int resolution, const bool depth_only) -> void {
@@ -118,7 +119,7 @@ auto gse::cube_map::create(const int resolution, const bool depth_only) -> void 
         { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 6 }
     );
 
-	m_image_resource = vulkan::persistent_allocator::create_image(image_info, vk::MemoryPropertyFlagBits::eDeviceLocal, view_info);
+	m_image_resource = vulkan::persistent_allocator::create_image(m_device_config, image_info, vk::MemoryPropertyFlagBits::eDeviceLocal, view_info);
 
     constexpr vk::SamplerCreateInfo sampler_info(
         {},
@@ -134,5 +135,5 @@ auto gse::cube_map::create(const int resolution, const bool depth_only) -> void 
         vk::False
     );
 
-    m_sampler = m_device.createSampler(sampler_info);
+    m_sampler = m_device_config.device.createSampler(sampler_info);
 }
