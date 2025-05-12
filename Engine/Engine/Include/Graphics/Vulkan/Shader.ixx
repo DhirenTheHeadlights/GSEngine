@@ -1,6 +1,15 @@
 module;
 
 #include <SPIRV-Reflect/spirv_reflect.h>
+#include <vulkan/vulkan_handles.hpp>
+#include <vulkan/vulkan_handles.hpp>
+#include <vulkan/vulkan_handles.hpp>
+#include <vulkan/vulkan_handles.hpp>
+#include <vulkan/vulkan_structs.hpp>
+#include <vulkan/vulkan_structs.hpp>
+
+#include "json.hpp"
+#include "json.hpp"
 
 export module gse.graphics.shader;
 
@@ -13,13 +22,14 @@ namespace gse {
 	export class shader {
 	public:
 		shader() = default;
-		shader(const std::filesystem::path& vert_path, const std::filesystem::path& frag_path, const vk::DescriptorSetLayout* layout = nullptr, std::span<vk::DescriptorSetLayoutBinding> bindings = {});
+		shader(vk::Device device, const std::filesystem::path& vert_path, const std::filesystem::path& frag_path, const vk::DescriptorSetLayout* layout = nullptr, std::span<vk::DescriptorSetLayoutBinding> bindings = {});
 		~shader();
 
 		shader(const shader&) = delete;
 		auto operator=(const shader&) -> shader & = delete;
 
-		auto create(const std::filesystem::path& vert_path, const std::filesystem::path& frag_path, const vk::DescriptorSetLayout* layout = nullptr, std::span<vk::DescriptorSetLayoutBinding> expected_bindings = {}) -> void;
+		auto create(device, const ::std::filesystem::path& vert_path, const ::std::filesystem::path& frag_path, const vk::
+		            DescriptorSetLayout* layout = nullptr, std::span<vk::DescriptorSetLayoutBinding> expected_bindings = {}) -> void;
 		auto get_shader_stages() const -> std::array<vk::PipelineShaderStageCreateInfo, 2>;
 		auto get_descriptor_set_layout() const -> const vk::DescriptorSetLayout* { return &m_descriptor_set_layout; }
 	private:
@@ -28,22 +38,26 @@ namespace gse {
 		vk::ShaderModule m_vert_module;
 		vk::ShaderModule m_frag_module;
 
+		vk::Device m_device;
+
 		vk::DescriptorSetLayout m_descriptor_set_layout;
 	};
 
 	auto read_file(const std::filesystem::path& path) -> std::vector<char>;
 }
 
-gse::shader::shader(const std::filesystem::path& vert_path, const std::filesystem::path& frag_path, const vk::DescriptorSetLayout* layout, std::span<vk::DescriptorSetLayoutBinding> bindings) {
-	create(vert_path, frag_path, layout, bindings);
+gse::shader::shader(const vk::Device device, const std::filesystem::path& vert_path, const std::filesystem::path& frag_path, const vk::DescriptorSetLayout* layout, const std::span<vk::DescriptorSetLayoutBinding> bindings) : m_device(device) {
+	create(device, vert_path, frag_path, layout, bindings);
 }
 
 gse::shader::~shader() {
-	vulkan::config::device::device.destroyShaderModule(m_vert_module);
-	vulkan::config::device::device.destroyShaderModule(m_frag_module);
+	m_device.destroyShaderModule(m_vert_module);
+	m_device.destroyShaderModule(m_frag_module);
 }
 
-auto gse::shader::create(const std::filesystem::path& vert_path, const std::filesystem::path& frag_path, const vk::DescriptorSetLayout* layout, std::span<vk::DescriptorSetLayoutBinding> expected_bindings) -> void {
+auto gse::shader::create(const vk::Device device, const std::filesystem::path& vert_path, const std::filesystem::path& frag_path, const vk::DescriptorSetLayout* layout, std::span<vk::DescriptorSetLayoutBinding> expected_bindings) -> void {
+	this->m_device = device;
+
 	const auto vert_code = read_file(vert_path);
 	const auto frag_code = read_file(frag_path);
 	m_vert_module = create_shader_module(vert_code);

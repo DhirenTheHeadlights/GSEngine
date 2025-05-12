@@ -9,7 +9,7 @@ import gse.platform;
 export namespace gse {
     class cube_map {
     public:
-        cube_map() = default;
+	    explicit cube_map(const vk::Device device) : m_device(device) {}
         ~cube_map();
 
         auto create(const std::array<std::filesystem::path, 6>& face_paths) -> void;
@@ -19,13 +19,16 @@ export namespace gse {
     private:
 		vulkan::persistent_allocator::image_resource m_image_resource;
         vk::Sampler m_sampler;
-        int m_resolution;
-        bool m_depth_only;
+
+        vk::Device m_device;
+
+        int m_resolution = 0;
+        bool m_depth_only = false;
     };
 }
 
 gse::cube_map::~cube_map() {
-	vulkan::config::device::device.destroySampler(m_sampler);
+	m_device.destroySampler(m_sampler);
     free(m_image_resource);
 }
 
@@ -82,7 +85,7 @@ auto gse::cube_map::create(const std::array<std::filesystem::path, 6>& face_path
         vk::False
     );
 
-    m_sampler = vulkan::config::device::device.createSampler(sampler_info);
+    m_sampler = m_device.createSampler(sampler_info);
 }
 
 auto gse::cube_map::create(const int resolution, const bool depth_only) -> void {
@@ -131,5 +134,5 @@ auto gse::cube_map::create(const int resolution, const bool depth_only) -> void 
         vk::False
     );
 
-    m_sampler = vulkan::config::device::device.createSampler(sampler_info);
+    m_sampler = m_device.createSampler(sampler_info);
 }

@@ -28,7 +28,7 @@ auto align_up(const vk::DeviceSize offset, const vk::DeviceSize alignment) -> vk
 }
 
 auto gse::vulkan::transient_allocator::allocate(const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties) -> allocation {
-	const auto mem_properties = get_memory_properties();
+	const auto mem_properties = get_memory_properties(TODO);
 	auto req_memory_type_index = std::numeric_limits<std::uint32_t>::max();
 
 	for (std::uint32_t i = 0; i < mem_properties.memoryTypeCount; i++) {
