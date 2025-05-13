@@ -66,6 +66,7 @@ auto gse::scene::update() const -> void {
 
 	registry::update_hooks();
 	physics::update();
+	renderer::update();
 }
 
 auto gse::scene::render() const -> void {

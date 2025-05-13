@@ -11,7 +11,9 @@ module gse.platform.stb.image_loader;
 import gse.platform.assert;
 
 auto gse::stb::image::load(const std::filesystem::path& path) -> data {
-	data img_data;
+    data img_data{
+        .path = path
+    };
 
     int w, h, c;
     auto* pixels = stbi_load(path.string().c_str(), &w, &h, &c, 0);
@@ -44,7 +46,9 @@ auto gse::stb::image::load_cube_faces(const std::array<std::filesystem::path, 6>
 }
 
 auto gse::stb::image::load_raw(const std::filesystem::path& path, const std::uint32_t channels) -> data {
-    data img_data;
+    data img_data {
+        .path = path
+	};
 
     int w, h, c;
     auto* pixels = stbi_load(path.string().c_str(), &w, &h, &c, 0);
@@ -60,7 +64,7 @@ auto gse::stb::image::load_raw(const std::filesystem::path& path, const std::uin
     return img_data;
 }
 
-auto gse::stb::image::dimensions(const std::filesystem::path& path) -> unitless::vec2_t<std::uint32_t> {
+auto gse::stb::image::dimensions(const std::filesystem::path& path) -> unitless::vec2u {
     int w, h, c;
     auto* pixels = stbi_load(path.string().c_str(), &w, &h, &c, 0);
     stbi_image_free(pixels);

@@ -213,7 +213,7 @@ auto gse::font::load(const std::filesystem::path& path) -> void {
         rgba_data[i * 4 + 3] = 255;
     }
 
-    m_texture.load_from_memory(TODO, rgba_data, atlas_width, atlas_height, 4);
+    //m_texture.load_from_memory(TODO, rgba_data, TODO, 4);
 
     destroyFont(font_handle);
     deinitializeFreetype(ft_handle);

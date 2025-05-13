@@ -131,8 +131,8 @@ auto init_descriptor_layouts(const vk::Device& device) -> void {
     };
 }
 
-auto gse::shader_loader::load_shaders(const vulkan::config& config) -> void {
-    init_descriptor_layouts(config.device_data.device);
+auto gse::shader_loader::load_shaders(const vk::Device device) -> void {
+    init_descriptor_layouts(device);
 
     const std::unordered_map<std::string, descriptor_layout> layouts = compile_shaders();
 
@@ -175,7 +175,7 @@ auto gse::shader_loader::load_shaders(const vulkan::config& config) -> void {
             std::piecewise_construct,
             std::forward_as_tuple(info),
             std::forward_as_tuple(
-                config,
+                device,
                 info.vert_path,
                 info.frag_path,
                 layout_ptr,

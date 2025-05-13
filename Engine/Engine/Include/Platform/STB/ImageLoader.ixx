@@ -6,7 +6,8 @@ import gse.platform.assert;
 
 export namespace gse::stb::image {
 	struct data {
-		unitless::vec2_t<std::uint32_t> size;
+		std::filesystem::path path;
+		unitless::vec2u size;
 		std::uint32_t channels = 0;
 		std::vector<std::byte> pixels;
 
@@ -21,5 +22,5 @@ export namespace gse::stb::image {
 	auto load_rgba(const std::filesystem::path& path) -> data;
 	auto load_cube_faces(const std::array<std::filesystem::path, 6>& paths) -> std::array<data, 6>;
 	auto load_raw(const std::filesystem::path& path, std::uint32_t channels) -> data;
-	auto dimensions(const std::filesystem::path& path) -> unitless::vec2_t<std::uint32_t>;
+	auto dimensions(const std::filesystem::path& path) -> unitless::vec2u;
 }
