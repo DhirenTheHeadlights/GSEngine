@@ -3,34 +3,23 @@ module gse.graphics.texture;
 import std;
 import vulkan_hpp;
 
-gse::texture::texture(const vulkan::config& config, const std::filesystem::path& filepath) : identifiable(filepath.string()), m_device_config(config.device_data), m_filepath(filepath) {
-    load_from_file(config, filepath);
-}
-
-gse::texture::~texture() {
-	m_device_config.device.destroySampler(m_texture_sampler);
-	free(m_device_config, m_texture_image);
-}
-
-auto gse::texture::load_from_file(const vulkan::config& config, const std::filesystem::path& filepath) -> void {
-	auto data = stb::image::load(filepath);
-
+auto gse::texture::load(const vulkan::config& config) -> void {
     const vk::BufferCreateInfo buffer_info(
         {},
-        data.size_bytes(),
+        m_image_data.size_bytes(),
         vk::BufferUsageFlagBits::eTransferSrc,
         vk::SharingMode::eExclusive
     );
 
-	auto staging_buffer = vulkan::persistent_allocator::create_buffer(m_device_config, buffer_info);
+	auto staging_buffer = vulkan::persistent_allocator::create_buffer(config.device_data, buffer_info);
 
-    const auto format = data.channels == 4 ? vk::Format::eR8G8B8A8Srgb : data.channels == 1 ? vk::Format::eR8Unorm : vk::Format::eR8G8B8Srgb; // Note: 3-channel formats might require special handling
+    const auto format = m_image_data.channels == 4 ? vk::Format::eR8G8B8A8Srgb : m_image_data.channels == 1 ? vk::Format::eR8Unorm : vk::Format::eR8G8B8Srgb; // Note: 3-channel formats might require special handling
 
     const vk::ImageCreateInfo image_info(
         {},
         vk::ImageType::e2D,
         format,
-        vk::Extent3D{ (data.size.x), (data.size.y), 1 },
+        vk::Extent3D{ (m_image_data.size.x), (m_image_data.size.y), 1 },
         1, 1,
         vk::SampleCountFlagBits::e1,
         vk::ImageTiling::eOptimal,
@@ -76,7 +65,7 @@ auto gse::texture::load_from_file(const vulkan::config& config, const std::files
         0, 0, 0,
         vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1),
         vk::Offset3D{ 0, 0, 0 },
-        vk::Extent3D{ (data.size.x), (data.size.y), 1 }
+        vk::Extent3D{ (m_image_data.size.x), (m_image_data.size.y), 1 }
     );
 
     command_buffer.copyBufferToImage(
@@ -124,20 +113,24 @@ auto gse::texture::load_from_file(const vulkan::config& config, const std::files
     m_texture_sampler = config.device_data.device.createSampler(sampler_info);
 }
 
-auto gse::texture::load_from_memory(vulkan::config& config, std::span<std::uint8_t> data, const int width, const int height, const int channels) -> void {
-    m_size = { width, height };
-    m_channels = channels;
+auto gse::texture::load_from_memory(vulkan::config& config, const std::vector<std::byte>& data, const unitless::vec2u size, const std::uint32_t channels) -> void {
+    m_image_data = stb::image::data {
+		.path = "",
+		.size = size,
+        .channels = channels,
+        .pixels = data
+    };
 
     const vk::Format format = channels == 4 ? vk::Format::eR8G8B8A8Srgb : channels == 1 ? vk::Format::eR8Unorm : vk::Format::eR8G8B8Srgb;
-    const std::size_t image_size = static_cast<std::size_t>(width) * height * channels;
+    const std::size_t image_size = static_cast<std::size_t>(size.x) * size.y * channels;
 
     m_texture_image = vulkan::persistent_allocator::create_image(
-        m_device_config,
+        config.device_data,
         vk::ImageCreateInfo(
             {},
             vk::ImageType::e2D,
             format,
-            vk::Extent3D{ static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height), 1 },
+            vk::Extent3D{ static_cast<std::uint32_t>(size.x), static_cast<std::uint32_t>(size.y), 1 },
             1, 1,
             vk::SampleCountFlagBits::e1,
             vk::ImageTiling::eOptimal,
@@ -160,8 +153,8 @@ auto gse::texture::load_from_memory(vulkan::config& config, std::span<std::uint8
 		config,
         m_texture_image.image,
         format,
-        width,
-        height,
+        size.x,
+        size.y,
         data.data(),
         image_size,
         vk::ImageLayout::eShaderReadOnlyOptimal

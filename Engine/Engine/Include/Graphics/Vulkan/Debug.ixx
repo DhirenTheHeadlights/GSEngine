@@ -91,7 +91,7 @@ auto gse::debug::initialize_imgui(const vulkan::config& config) -> void {
 
     ImGui_ImplVulkan_CreateFontsTexture(cmd);
 
-    vulkan::end_single_line_commands(cmd, config);
+    end_single_line_commands(cmd, config);
 
     ImGui_ImplVulkan_DestroyFontUploadObjects();
 

@@ -16,6 +16,8 @@ import gse.graphics.mesh;
 import gse.graphics.model;
 import gse.graphics.render_component;
 import gse.graphics.shader_loader;
+import gse.graphics.point_light;
+import gse.graphics.light_source_component;
 import gse.platform;
 
 gse::camera g_camera;
@@ -143,19 +145,21 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 			}
 	);
 
-	g_position_image_resource = vulkan::persistent_allocator::create_image({
-		{},																						// flags
-		vk::ImageType::e2D,																		// type
-		vk::Format::eR16G16B16A16Sfloat,														// format (for position, high precision)
-		vk::Extent3D{ config.swap_chain_data.extent.width, config.swap_chain_data.extent.height, 1 },
-		1,																						// mipLevels
-		1,																						// arrayLayers
-		vk::SampleCountFlagBits::e1,															// samples
-		vk::ImageTiling::eOptimal,																// tiling
-		vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment,	// usage flags (input for later shader stages if needed)
-		vk::SharingMode::eExclusive,
-		0, nullptr,
-		vk::ImageLayout::eUndefined																// initial layout
+	g_position_image_resource = vulkan::persistent_allocator::create_image(
+		config.device_data,
+		{
+			{},																						// flags
+			vk::ImageType::e2D,																		// type
+			vk::Format::eR16G16B16A16Sfloat,														// format (for position, high precision)
+			vk::Extent3D{ config.swap_chain_data.extent.width, config.swap_chain_data.extent.height, 1 },
+			1,																						// mipLevels
+			1,																						// arrayLayers
+			vk::SampleCountFlagBits::e1,															// samples
+			vk::ImageTiling::eOptimal,																// tiling
+			vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment,	// usage flags (input for later shader stages if needed)
+			vk::SharingMode::eExclusive,
+			0, nullptr,
+			vk::ImageLayout::eUndefined																// initial layout
 		},
 		vk::MemoryPropertyFlagBits::eDeviceLocal,
 		position_image_view_info
@@ -172,6 +176,7 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 	);
 
 	g_normal_image_resource = vulkan::persistent_allocator::create_image(
+		config.device_data,
 		{
 			{}, vk::ImageType::e2D,
 			vk::Format::eR16G16B16A16Sfloat,
@@ -199,6 +204,7 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 	);
 
 	g_albedo_image_resource = vulkan::persistent_allocator::create_image(
+		config.device_data,
 		{
 			{}, vk::ImageType::e2D,
 			vk::Format::eR16G16B16A16Sfloat,
@@ -226,6 +232,7 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 	);
 
 	g_depth_image_resource = vulkan::persistent_allocator::create_image(
+		config.device_data,
 		{
 			{}, vk::ImageType::e2D,
 			vk::Format::eD32Sfloat,
@@ -262,82 +269,15 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 
 	std::cout << "G-Buffer Framebuffers Created Successfully!\n";
 
-	auto transition_image_layout = [config](const vk::Image image, const vk::ImageLayout old_layout, const vk::ImageLayout new_layout, const bool depth = false) -> void {
-		const vk::CommandBufferAllocateInfo cmd_buffer_alloc_info(
-			config.command.pool, vk::CommandBufferLevel::ePrimary, 1
-		);
 
-		const vk::CommandBuffer command_buffer = config.device_data.device.allocateCommandBuffers(cmd_buffer_alloc_info)[0];
+	const vk::CommandBuffer cmd = begin_single_line_commands(config);
 
-		constexpr vk::CommandBufferBeginInfo begin_info(
-			vk::CommandBufferUsageFlagBits::eOneTimeSubmit
-		);
+	vulkan::uploader::transition_image_layout(cmd, g_position_image_resource.image, vk::Format::eR16G16B16A16Sfloat, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal, 1, 1);
+	vulkan::uploader::transition_image_layout(cmd, g_normal_image_resource.image, vk::Format::eR16G16B16A16Sfloat, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal, 1, 1);
+	vulkan::uploader::transition_image_layout(cmd, g_albedo_image_resource.image, vk::Format::eR16G16B16A16Sfloat, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal, 1, 1);
+	vulkan::uploader::transition_image_layout(cmd, g_depth_image_resource.image, vk::Format::eD32Sfloat, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilAttachmentOptimal, 1, 1);
 
-		command_buffer.begin(begin_info);
-
-		vk::ImageMemoryBarrier barrier(
-			{},
-			{},
-			old_layout,
-			new_layout,
-			vk::QueueFamilyIgnored,
-			vk::QueueFamilyIgnored,
-			image,
-			vk::ImageSubresourceRange{
-				depth ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor,
-				0, 1, 0, 1
-			}
-		);
-
-		vk::PipelineStageFlags source_stage;
-		vk::PipelineStageFlags destination_stage;
-
-		if (old_layout == vk::ImageLayout::eUndefined && new_layout == vk::ImageLayout::eTransferDstOptimal) {
-			barrier.srcAccessMask = {};
-			barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
-			source_stage = vk::PipelineStageFlagBits::eTopOfPipe;
-			destination_stage = vk::PipelineStageFlagBits::eTransfer;
-		}
-		else if (old_layout == vk::ImageLayout::eTransferDstOptimal && new_layout == vk::ImageLayout::eShaderReadOnlyOptimal) {
-			barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-			barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-			source_stage = vk::PipelineStageFlagBits::eTransfer;
-			destination_stage = vk::PipelineStageFlagBits::eFragmentShader;
-		}
-		else if (old_layout == vk::ImageLayout::eUndefined && new_layout == vk::ImageLayout::eColorAttachmentOptimal) {
-			barrier.srcAccessMask = {};
-			barrier.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-			source_stage = vk::PipelineStageFlagBits::eTopOfPipe;
-			destination_stage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-		}
-		else if (old_layout == vk::ImageLayout::eUndefined && new_layout == vk::ImageLayout::eDepthStencilAttachmentOptimal) {
-			barrier.srcAccessMask = {};
-			barrier.dstAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-			source_stage = vk::PipelineStageFlagBits::eTopOfPipe;
-			destination_stage = vk::PipelineStageFlagBits::eEarlyFragmentTests;
-		}
-		else {
-			throw std::invalid_argument("Unsupported layout transition!");
-		}
-
-		command_buffer.pipelineBarrier(
-			source_stage, destination_stage,
-			{}, 0, nullptr, 0, nullptr, 1, &barrier
-		);
-
-		command_buffer.end();
-
-		const vk::SubmitInfo submit_info(
-			0, nullptr, nullptr, 1, &command_buffer, 0, nullptr
-		);
-
-		config.queue.graphics.submit(submit_info, nullptr);
-		};
-
-	transition_image_layout(g_position_image_resource.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal);
-	transition_image_layout(g_normal_image_resource.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal);
-	transition_image_layout(g_albedo_image_resource.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal);
-	transition_image_layout(g_depth_image_resource.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilAttachmentOptimal, true);
+	end_single_line_commands(cmd, config);
 
 	const auto& geometry_shader = shader_loader::get_shader("geometry_pass");
 	const auto& layout = shader_loader::get_descriptor_layout(descriptor_layout::standard_3d);
@@ -367,6 +307,7 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 	);
 
 	auto [camera_buffer, camera_alloc] = vulkan::persistent_allocator::create_buffer(
+		config.device_data,
 		camera_info,
 		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
 	);
@@ -385,6 +326,7 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 	);
 
 	auto [model_buffer, model_alloc] = vulkan::persistent_allocator::create_buffer(
+		config.device_data,
 		model_info,
 		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
 	);
@@ -466,13 +408,18 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 }
 
 auto gse::renderer3d::initialize_objects() -> void {
-	
+	const auto& light_source_components = registry::get_components<light_source_component>();
+
+	for (const auto& light_source_component : light_source_components) {
+		for (const auto light : light_source_component.get_lights()) {
+			if (const auto point_light_ptr = dynamic_cast<point_light*>(light); point_light_ptr) {
+				point_light_ptr->get_shadow_map().create({}, {});
+			}
+		}
+	}
 }
 
 auto gse::renderer3d::begin_frame(const vulkan::config& config) -> void {
-	constexpr vk::CommandBufferBeginInfo begin_info(vk::CommandBufferUsageFlagBits::eSimultaneousUse);
-	config.command.buffers[config.frame_context.image_index].begin(begin_info);
-
 	std::array<vk::ClearValue, 4> clear_values;
 	clear_values[0].color = vk::ClearColorValue(std::array{ 0.0f, 0.0f, 0.0f, 1.0f });
 	clear_values[1].color = vk::ClearColorValue(std::array{ 0.0f, 0.0f, 0.0f, 1.0f });
@@ -502,7 +449,6 @@ auto gse::renderer3d::render(vulkan::config& config) -> void {
 
 auto gse::renderer3d::end_frame(const vulkan::config& config) -> void {
 	config.frame_context.command_buffer.endRenderPass();
-	config.frame_context.command_buffer.end();
 }
 
 auto gse::renderer3d::shutdown(const vulkan::config& config) -> void {
@@ -511,5 +457,13 @@ auto gse::renderer3d::shutdown(const vulkan::config& config) -> void {
 	config.device_data.device.destroyRenderPass(g_render_pass);
 	for (const auto& framebuffer : g_deferred_frame_buffers) {
 		config.device_data.device.destroyFramebuffer(framebuffer);
+	}
+
+	for (const auto& light_source_components = registry::get_components<light_source_component>(); const auto& light_source_component : light_source_components) {
+		for (const auto& light : light_source_component.get_lights()) {
+			if (const auto point_light_ptr = dynamic_cast<point_light*>(light); point_light_ptr) {
+				point_light_ptr->get_shadow_map().destroy({});
+			}
+		}
 	}
 }

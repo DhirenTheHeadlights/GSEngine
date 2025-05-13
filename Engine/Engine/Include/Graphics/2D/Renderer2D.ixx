@@ -23,7 +23,7 @@ export namespace gse::renderer2d {
     auto begin_frame(const vulkan::config& config) -> void;
     auto render(const vulkan::config& config) -> void;
     auto end_frame(const vulkan::config& config) -> void;
-    auto shutdown(const vulkan::config& config) -> void;
+    auto shutdown(vulkan::config::device_config device_data) -> void;
 
     auto draw_quad(const vec2<length>& position, const vec2<length>& size, const unitless::vec4& color) -> void;
     auto draw_quad(const vec2<length>& position, const vec2<length>& size, const texture& texture) -> void;
@@ -34,12 +34,9 @@ export namespace gse::renderer2d {
 
 vk::Pipeline            g_pipeline;
 vk::PipelineLayout      g_pipeline_layout;
-vk::RenderPass          g_render_pass;
-vk::Framebuffer         g_framebuffer;
 
 gse::vulkan::persistent_allocator::buffer_resource g_vertex_buffer;
 gse::vulkan::persistent_allocator::buffer_resource g_index_buffer;
-gse::vulkan::persistent_allocator::image_resource  g_render_target;
 
 vk::Pipeline             g_msdf_pipeline;
 vk::PipelineLayout       g_msdf_pipeline_layout;
@@ -49,66 +46,6 @@ vk::DescriptorPool       g_msdf_descriptor_pool;
 gse::mat4                g_projection;
 
 auto gse::renderer2d::initialize(vulkan::config& config) -> void {
-    vk::ImageCreateInfo image_info(
-        {},
-        vk::ImageType::e2D,
-        vk::Format::eB8G8R8A8Srgb,
-        { config.swap_chain_data.extent.width, config.swap_chain_data.extent.height, 1 },
-        1, 1,
-        vk::SampleCountFlagBits::e1,
-        vk::ImageTiling::eOptimal,
-        vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferDst,
-        vk::SharingMode::eExclusive
-    );
-
-    g_render_target = vulkan::persistent_allocator::create_image(image_info);
-
-    vk::AttachmentDescription color_attachment{
-        {},
-        vk::Format::eB8G8R8A8Srgb,   // Image format for color buffer
-        vk::SampleCountFlagBits::e1, // No multi-sampling
-        vk::AttachmentLoadOp::eClear,
-        vk::AttachmentStoreOp::eStore,
-        vk::AttachmentLoadOp::eDontCare,
-        vk::AttachmentStoreOp::eDontCare,
-        vk::ImageLayout::eUndefined,
-        vk::ImageLayout::ePresentSrcKHR
-    };
-
-    vk::AttachmentReference color_attachment_ref{
-        0, vk::ImageLayout::eColorAttachmentOptimal
-    };
-
-    vk::SubpassDescription sub_pass{
-        {},
-        vk::PipelineBindPoint::eGraphics,
-        0, nullptr,
-        1, &color_attachment_ref,
-        nullptr, nullptr
-    };
-
-    config.device_data.device.createRenderPass({
-        {},
-        1, &color_attachment,
-        1, &sub_pass
-        }, nullptr);
-    // store in config
-    config.render_pass = config.device_data.device.createRenderPass({
-        {},1, &color_attachment,1, &sub_pass
-        });
-    g_render_pass = config.render_pass;
-
-    vk::FramebufferCreateInfo framebuffer_info(
-        {},
-        g_render_pass,
-        1,
-        &g_render_target.view,
-        config.swap_chain_data.extent.width,
-        config.swap_chain_data.extent.height,
-        1
-    );
-    g_framebuffer = config.device_data.device.createFramebuffer(framebuffer_info);
-
     vk::PushConstantRange push_constant_range(
         vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
         0, sizeof(unitless::vec2) * 2 + sizeof(unitless::vec4) * 2
@@ -173,7 +110,7 @@ auto gse::renderer2d::initialize(vulkan::config& config) -> void {
         &color_blending,
         nullptr,
         g_pipeline_layout,
-        g_render_pass
+        config.render_pass
     );
 
     g_pipeline = config.device_data.device.createGraphicsPipeline({}, pipeline_info).value;
@@ -198,6 +135,7 @@ auto gse::renderer2d::initialize(vulkan::config& config) -> void {
 
     g_vertex_buffer =
         vulkan::persistent_allocator::create_buffer(
+            config.device_data,
             vertex_buffer_info,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
             vertices
@@ -212,6 +150,7 @@ auto gse::renderer2d::initialize(vulkan::config& config) -> void {
 
     g_index_buffer =
         vulkan::persistent_allocator::create_buffer(
+            config.device_data,
             index_buffer_info,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
             indices
@@ -273,7 +212,7 @@ auto gse::renderer2d::initialize(vulkan::config& config) -> void {
         &msdf_color_blending,
         nullptr,
         g_msdf_pipeline_layout,
-        g_render_pass
+        config.render_pass
     );
 
     g_msdf_pipeline = config.device_data.device.createGraphicsPipeline({}, msdf_pipeline_info).value;
@@ -290,14 +229,11 @@ auto gse::renderer2d::initialize(vulkan::config& config) -> void {
     vk::DescriptorPoolCreateInfo pool_info({}, 100, 1, &pool_size);
     g_msdf_descriptor_pool = config.device_data.device.createDescriptorPool(pool_info);
 
-    debug::initialize_imgui(config.render_pass);
+    debug::initialize_imgui(config);
 }
 
 auto gse::renderer2d::begin_frame(const vulkan::config& config) -> void {
-    const vk::CommandBuffer& cmd = config.command.buffers[0];
-
-    constexpr vk::CommandBufferBeginInfo begin_info(vk::CommandBufferUsageFlagBits::eSimultaneousUse);
-    cmd.begin(begin_info);
+    const vk::CommandBuffer& cmd = config.frame_context.command_buffer;
 
     constexpr vk::ClearValue clear_value = vk::ClearColorValue(std::array{ 0.0f, 0.0f, 0.0f, 1.0f });
 
@@ -312,42 +248,23 @@ auto gse::renderer2d::begin_frame(const vulkan::config& config) -> void {
 }
 
 auto gse::renderer2d::render(const vulkan::config& config) -> void {
-    debug::render_imgui(config.command.buffers[0]);
+    debug::render_imgui(config.frame_context.command_buffer);
 }
 
 auto gse::renderer2d::end_frame(const vulkan::config& config) -> void {
-    config.command.buffers[0].endRenderPass();
-    config.command.buffers[0].end();
-
-    vk::Semaphore wait_semaphores[] = { config.sync.image_available_semaphore };
-    vk::PipelineStageFlags wait_stages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
-
-    const vk::SubmitInfo info(
-        1, wait_semaphores, wait_stages,
-        1, &config.command.buffers[0],
-        1, &config.sync.render_finished_semaphore
-    );
-
-    config.queue.graphics.submit(info, config.sync.in_flight_fence);
-
-    const vk::PresentInfoKHR present_info(
-        1, &config.sync.render_finished_semaphore,
-        1, &config.swap_chain_data.swap_chain,
-        &config.frame_context.image_index
-    );
-
-    const vk::Result present_result = config.queue.present.presentKHR(present_info);
-    assert(present_result == vk::Result::eSuccess || present_result == vk::Result::eSuboptimalKHR, "Failed to present image!");
+    config.frame_context.command_buffer.endRenderPass();
 }
 
-auto gse::renderer2d::shutdown(const vulkan::config& config) -> void {
-    config.device_data.device.destroyPipeline(g_pipeline);
-    config.device_data.device.destroyPipelineLayout(g_pipeline_layout);
-    config.device_data.device.destroyRenderPass(config.render_pass);
-    config.device_data.device.destroyFramebuffer(g_framebuffer);
-    free(g_render_target);
-    free(g_vertex_buffer);
-    free(g_index_buffer);
+auto gse::renderer2d::shutdown(const vulkan::config::device_config device_data) -> void {
+    device_data.device.destroyPipeline(g_pipeline);
+    device_data.device.destroyPipelineLayout(g_pipeline_layout);
+    free(device_data, g_vertex_buffer);
+    free(device_data, g_index_buffer);
+
+    device_data.device.destroyPipeline(g_msdf_pipeline);
+    device_data.device.destroyPipelineLayout(g_msdf_pipeline_layout);
+    device_data.device.destroyDescriptorSetLayout(g_msdf_descriptor_set_layout);
+    device_data.device.destroyDescriptorPool(g_msdf_descriptor_pool);
 }
 
 auto render_quad(const gse::vec2<gse::length>& position, const gse::vec2<gse::length>& size, const gse::unitless::vec4* color, const gse::texture* texture, const gse::unitless::vec4& uv_rect = { 0.0f, 0.0f, 1.0f, 1.0f }) -> void {

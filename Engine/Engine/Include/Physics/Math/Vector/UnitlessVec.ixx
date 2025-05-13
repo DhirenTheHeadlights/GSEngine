@@ -32,6 +32,10 @@ export namespace gse::unitless {
 	template <typename T> using vec3_t = vec_t<T, 3>;
 	template <typename T> using vec4_t = vec_t<T, 4>;
 
+	using vec2u = vec2_t<std::uint32_t>;
+	using vec3u = vec3_t<std::uint32_t>;
+	using vec4u = vec4_t<std::uint32_t>;
+
 	using vec2i = vec2_t<int>;
 	using vec3i = vec3_t<int>;
 	using vec4i = vec4_t<int>;

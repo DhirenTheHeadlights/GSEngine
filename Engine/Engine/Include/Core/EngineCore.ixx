@@ -72,9 +72,6 @@ auto update(const std::function<bool()>& update_function) -> void {
 	if (g_imgui_enabled) gse::add_timer("Engine::update");
 
 	gse::platform::update();
-	gse::renderer::update();
-
-	if (g_imgui_enabled) gse::debug::update_imgui();
 
 	gse::main_clock::update();
 	gse::scene_loader::update();
@@ -99,7 +96,7 @@ auto render(const std::function<bool()>& render_function) -> void {
 		gse::request_shutdown();
 	}
 
-	if (g_imgui_enabled) gse::display_timers();
+	if (g_imgui_enabled) 
 
 	gse::renderer::end_frame();
 

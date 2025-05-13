@@ -15,7 +15,7 @@ export namespace gse {
     public:
         model(const std::string& tag) : identifiable(tag) {}
 
-        auto initialize() -> void;
+        auto initialize(vulkan::config::device_config config) -> void;
 
         std::vector<mesh> meshes;
         vec3<length> center_of_mass;
@@ -36,9 +36,9 @@ export namespace gse {
     };
 }
 
-auto gse::model::initialize() -> void {
+auto gse::model::initialize(const vulkan::config::device_config config) -> void {
     for (auto& mesh : meshes) {
-        mesh.initialize(TODO);
+        mesh.initialize(config);
         center_of_mass += mesh.center_of_mass;
     }
 }
