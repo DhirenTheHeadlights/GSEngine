@@ -61,7 +61,7 @@ auto gse::does_material_exist(const std::string& name) -> bool {
 }
 
 auto gse::generate_material(const unitless::vec3& ambient, const unitless::vec3& diffuse, const unitless::vec3& specular, const unitless::vec3& emission, const float shininess, const float optical_density, const float transparency, const int illumination_model, const std::string& name) -> material_handle {
-	auto [it, inserted] = g_materials.emplace(name, material{ ambient, diffuse, specular, emission, shininess, optical_density, transparency, illumination_model, -1, -1, -1 });
+	auto [it, inserted] = g_materials.emplace(name, material{ ambient, diffuse, specular, emission, shininess, optical_density, transparency, illumination_model, static_cast<std::uint64_t>(-1), static_cast<std::uint64_t>(-1), static_cast<std::uint64_t>(-1) });
 	return  &it->second;
 }
 

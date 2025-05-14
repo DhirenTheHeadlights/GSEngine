@@ -13,7 +13,7 @@ export namespace gse {
 
     class model : public identifiable {
     public:
-        model(const std::string& tag) : identifiable(tag) {}
+	    explicit model(const std::string& tag) : identifiable(tag) {}
 
         auto initialize(vulkan::config::device_config config) -> void;
 
@@ -23,16 +23,19 @@ export namespace gse {
 
     class model_handle {
     public:
-        model_handle(const model& model);
+	    explicit model_handle(const model& model);
 
         auto set_position(const vec3<length>& position) -> void;
         auto set_rotation(const vec3<angle>& rotation) -> void;
         auto get_render_queue_entries() const -> const std::vector<render_queue_entry>&;
-        auto get_model_id() const -> id*;
+        auto get_model_id() const -> id;
 
+		auto operator==(const model_handle& other) const -> bool {
+			return m_model_id == other.m_model_id;
+		}
     private:
         std::vector<render_queue_entry> m_render_queue_entries;
-        id* m_model_id;
+        id m_model_id;
     };
 }
 
@@ -71,6 +74,6 @@ auto gse::model_handle::get_render_queue_entries() const -> const std::vector<re
     return m_render_queue_entries;
 }
 
-auto gse::model_handle::get_model_id() const -> id* {
+auto gse::model_handle::get_model_id() const -> id {
     return m_model_id;
 }

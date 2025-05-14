@@ -30,8 +30,8 @@ auto sphere_light_hook::initialize() -> void {
 	//);
 
 	const auto ignore_list_id = gse::generate_id("Sphere Light " + std::to_string(g_sphere_light_count) + " Ignore List");
-	gse::registry::add_new_entity_list(ignore_list_id.get(), { owner_id });
-	spot_light->set_ignore_list_id(ignore_list_id.get());
+	gse::registry::add_new_entity_list(ignore_list_id, { owner_id });
+	spot_light->set_ignore_list_id(ignore_list_id);
 
 	light_source_component.add_light(std::move(spot_light));
 	//light_source_component.add_light(std::move(point_light));
