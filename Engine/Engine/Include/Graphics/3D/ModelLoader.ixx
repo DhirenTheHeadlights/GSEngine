@@ -11,27 +11,33 @@ import gse.graphics.material;
 import gse.platform;
 
 export namespace gse::model_loader {
-	auto load_obj_file(const std::filesystem::path& model_path, const std::string& model_name) -> uuid;
+	auto load_obj_file(const std::filesystem::path& model_path, const std::string& model_name) -> model_handle;
 	auto add_model(const std::vector<mesh_data>& mesh_data, const std::string& model_name) -> model_handle;
-	auto get_model_by_name(const std::string_view& model_name) -> const model&;
-	auto get_model_by_id(const id* model_id) -> const model&;
-	auto get_model_by_id(uuid model_id) -> const model&;
-	auto get_models() -> const std::unordered_map<uuid, model>&;
+	auto get_model(const model_handle& handle) -> const model&;
+	auto get_model(const id& id) -> const model&;
 
 	auto load_queued_models(const vulkan::config::device_config& config) -> void;
 }
 
-std::unordered_map<gse::uuid, gse::model> g_models;
-std::unordered_map<gse::uuid, std::filesystem::path> g_loaded_model_paths;
+export template<>
+struct std::hash<gse::model_handle> {
+	auto operator()(const gse::model_handle& handle) const noexcept -> std::size_t {
+		return std::hash<gse::uuid>{}(handle.get_model_id().number());
+	}
+};
+
+std::unordered_map<gse::model_handle, gse::model> g_models;
+std::unordered_map<gse::model_handle, std::filesystem::path> g_loaded_model_paths;
 std::vector<std::pair<gse::model, std::filesystem::path>> g_queued_models;
 
-auto gse::model_loader::load_obj_file(const std::filesystem::path& model_path, const std::string& model_name) -> uuid {
+auto gse::model_loader::load_obj_file(const std::filesystem::path& model_path, const std::string& model_name) ->
+	model_handle {
 	std::ifstream model_file(model_path);
 	assert(model_file.is_open(), "Failed to open model file.");
 
-	for (const auto& [id, path] : g_loaded_model_paths) {
+	for (const auto& [handle, path] : g_loaded_model_paths) {
 		if (path == model_path) {
-			return id; // Already loaded
+			return handle; // Already loaded
 		}
 	}
 
@@ -182,9 +188,9 @@ auto gse::model_loader::load_obj_file(const std::filesystem::path& model_path, c
 					else if (tokens[0] == "Ni") optical_density = std::stof(tokens[1]);
 					else if (tokens[0] == "d") transparency = std::stof(tokens[1]);
 					else if (tokens[0] == "illum") illumination_model = std::stoi(tokens[1]);
-					else if (tokens[0] == "map_Kd") diffuse_texture = texture_loader::get_texture(directory_path + tokens[1]).get_id()->number();
-					else if (tokens[0] == "map_Bump") normal_texture = texture_loader::get_texture(directory_path + tokens[1]).get_id()->number();
-					else if (tokens[0] == "map_Ks") specular_texture = texture_loader::get_texture(directory_path + tokens[1]).get_id()->number();
+					else if (tokens[0] == "map_Kd") diffuse_texture = texture_loader::get_texture(directory_path + tokens[1]).get_id().number();
+					else if (tokens[0] == "map_Bump") normal_texture = texture_loader::get_texture(directory_path + tokens[1]).get_id().number();
+					else if (tokens[0] == "map_Ks") specular_texture = texture_loader::get_texture(directory_path + tokens[1]).get_id().number();
 				}
 			}
 		}
@@ -220,11 +226,11 @@ auto gse::model_loader::load_obj_file(const std::filesystem::path& model_path, c
 	pre_load_texcoords.clear();
 	pre_load_normals.clear();
 
-	auto id = model.get_id()->number();
-	g_loaded_model_paths.insert({ id, model_path });
+	model_handle handle(model);
+	g_loaded_model_paths.insert(std::make_pair(handle, model_path));
 	g_queued_models.emplace_back(std::move(model), model_path);
 
-	return id;
+	return handle;
 }
 
 auto gse::model_loader::add_model(const std::vector<mesh_data>& mesh_data, const std::string& model_name) -> model_handle {
@@ -240,42 +246,30 @@ auto gse::model_loader::add_model(const std::vector<mesh_data>& mesh_data, const
 		model.meshes.emplace_back(data);
 	}
 
-	auto id = model.get_id()->number();
-	g_loaded_model_paths.insert({ id, model_name });
+	model_handle handle(model);
+	g_loaded_model_paths.insert(std::make_pair(handle, model_name));
 	g_queued_models.emplace_back(std::move(model), model_name);
 
-	return id;
+	return handle;
 }
 
-auto gse::model_loader::get_model_by_name(const std::string_view& model_name) -> const model& {
-	const auto it = std::ranges::find_if(g_models, [&model_name](const auto& pair) {
-		return pair.second.get_id()->tag() == model_name;
-		});
+auto gse::model_loader::get_model(const model_handle& handle) -> const model& {
+	assert(g_models.contains(handle), "Model not found.");
+	return g_models.at(handle);
+}
 
-	assert(it != g_models.end(), "Model with the given name was not found.");
-
+auto gse::model_loader::get_model(const id& id) -> const model& {
+	const auto it = std::ranges::find_if(g_models, [&id](const auto& pair) { return pair.first.get_model_id() == id; });
+	assert(it != g_models.end(), "Model not found.");
 	return it->second;
-}
-
-auto gse::model_loader::get_model_by_id(const id* model_id) -> const model& {
-	return get_model_by_id(model_id->number());
-}
-
-auto gse::model_loader::get_model_by_id(const uuid model_id) -> const model& {
-	assert(g_models.contains(model_id), "Model with the given ID was not found.");
-	return g_models.at(model_id);
-}
-
-auto gse::model_loader::get_models() -> const std::unordered_map<uuid, model>& {
-	return g_models;
 }
 
 auto gse::model_loader::load_queued_models(const vulkan::config::device_config& config) -> void {
 	for (auto& [model, path] : g_queued_models) {
 		model.initialize(config);
-		auto id = model.get_id()->number();
-		g_models.insert({ id, std::move(model) });
-		g_loaded_model_paths[id] = std::move(path);
+		auto handle = model_handle(model);
+		g_models.insert(std::make_pair(handle, std::move(model)));
+		g_loaded_model_paths[handle] = std::move(path);
 	}
 	g_queued_models.clear();
 }

@@ -10,20 +10,20 @@ namespace gse {
 	export template <typename T>
 	struct hook_base {
 		virtual ~hook_base() = default;
-		hook_base(T* owner) : m_owner(owner) {}
+		explicit hook_base(T* owner) : m_owner(owner) {}
 	protected:
 		T* m_owner;
 	};
 
 	export template <typename T>
 	struct hook : hook_base<T> {
-		hook(T* owner, id* owner_id) : hook_base<T>(owner), m_owner_id(owner_id) {}
+		hook(T* owner, const id& owner_id) : hook_base<T>(owner), m_owner_id(owner_id) {}
 
 		virtual auto initialize() -> void {}
 		virtual auto update() -> void {}
 		virtual auto render() -> void {}
 	protected:
-		id* m_owner_id;
+		id m_owner_id;
 	};
 
 	export template <>

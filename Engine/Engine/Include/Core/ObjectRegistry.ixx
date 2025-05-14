@@ -21,7 +21,7 @@ export namespace gse::registry {
 	auto update_hooks() -> void;
 	auto render_hooks() -> void;
 
-	auto is_entity_id_in_list(id* list_id, std::uint32_t id) -> bool;
+	auto is_entity_id_in_list(const gse::id& list_id, std::uint32_t id) -> bool;
 
 	auto does_entity_exist(const std::string& name) -> bool;
 	auto does_entity_exist(std::uint32_t index, std::uint32_t generation) -> bool;
@@ -42,14 +42,14 @@ export namespace gse::registry {
 	auto remove_entity(const std::string& name) -> std::uint32_t;
 	auto remove_entity(std::uint32_t index) -> void;
 
-	auto add_new_entity_list(id* list_id, const std::vector<std::uint32_t>& ids = {}) -> void;
-	auto add_id_to_list(id* list_id, std::uint32_t id) -> void;
-	auto remove_id_from_list(id* list_id, std::uint32_t id) -> void;
+	auto add_new_entity_list(const id& list_id, const std::vector<std::uint32_t>& ids = {}) -> void;
+	auto add_id_to_list(const gse::id& list_id, std::uint32_t id) -> void;
+	auto remove_id_from_list(const gse::id& list_id, std::uint32_t id) -> void;
 
 	auto periodically_clean_up_registry(const time& clean_up_interval = seconds(60.f)) -> void;
 }
 
-std::unordered_map<gse::id*, std::vector<std::uint32_t>> g_entity_lists;
+std::unordered_map<gse::id, std::vector<std::uint32_t>> g_entity_lists;
 
 std::unordered_map<std::string, std::uint32_t> g_string_to_index_map;
 std::vector<gse::entity> g_entities;
@@ -274,7 +274,7 @@ auto gse::registry::remove_entity(const std::uint32_t index) -> void {
 	g_free_indices.push_back(index);
 }
 
-auto gse::registry::is_entity_id_in_list(id* list_id, const std::uint32_t id) -> bool {
+auto gse::registry::is_entity_id_in_list(const id& list_id, const std::uint32_t id) -> bool {
 	return std::ranges::find(g_entity_lists[list_id], id) != g_entity_lists[list_id].end();
 }
 
@@ -407,15 +407,15 @@ auto gse::registry::remove_component(const T& component) -> void {
 	}
 }
 
-auto gse::registry::add_new_entity_list(id* list_id, const std::vector<std::uint32_t>& ids) -> void {
+auto gse::registry::add_new_entity_list(const id& list_id, const std::vector<std::uint32_t>& ids) -> void {
 	g_entity_lists[list_id] = ids;
 }
 
-auto gse::registry::add_id_to_list(id* list_id, const std::uint32_t id) -> void {
+auto gse::registry::add_id_to_list(const id& list_id, const std::uint32_t id) -> void {
 	g_entity_lists[list_id].push_back(id);
 }
 
-auto gse::registry::remove_id_from_list(id* list_id, const std::uint32_t id) -> void {
+auto gse::registry::remove_id_from_list(const id& list_id, const std::uint32_t id) -> void {
 	std::erase_if(g_entity_lists[list_id], [&](const std::uint32_t obj) {
 		return obj == id;
 		});

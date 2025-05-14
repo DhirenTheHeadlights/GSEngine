@@ -36,7 +36,7 @@ export namespace gse {
     struct light_render_queue_entry {
         std::string shader_key = "Emissive";
         light_shader_entry shader_entry;
-        const id* ignore_list_id = nullptr;
+        id ignore_list_id;
 
         vk::Image depth_image;
         vk::ImageView depth_image_view;
@@ -62,7 +62,7 @@ export namespace gse {
             const float ambient_strength = 0.0f,                        // Default: No ambient strength
             const length near_plane = meters(0.1f),                     // Default: Near plane for shadow mapping
             const length far_plane = meters(1000.0f),                   // Default: Far plane for shadow mapping
-            const id* ignore_list_id = nullptr 			                // Default: No ignore list
+            const id& ignore_list_id = {} 			                    // Default: No ignore list
         )
             : shader_entry({
                     .light_type = static_cast<int>(type),
@@ -94,12 +94,11 @@ export namespace gse {
         auto get_type() const -> light_type { return m_type; }
         virtual auto set_position(const vec3<length>& position) -> void {}
 
-        auto set_ignore_list_id(id* ignore_list_id) -> void { m_ignore_list_id = ignore_list_id; }
-        auto get_ignore_list_id() const -> id* { return m_ignore_list_id; }
+        auto set_ignore_list_id(const id& ignore_list_id) -> void { m_ignore_list_id = ignore_list_id; }
+        auto get_ignore_list_id() const -> id { return m_ignore_list_id; }
     protected:
         light(const unitless::vec3& color, const float& intensity, const light_type type)
-            : m_color(color), m_intensity(intensity), m_type(type) {
-        }
+	        : m_color(color), m_intensity(intensity), m_type(type), m_ignore_list_id() {}
 
         unitless::vec3 m_color;
         float m_intensity = 1.0f;
@@ -108,6 +107,6 @@ export namespace gse {
         length m_near_plane = meters(10.f);
         length m_far_plane = meters(1000.0f);
 
-        id* m_ignore_list_id = nullptr;
+        id m_ignore_list_id;
     };
 }
