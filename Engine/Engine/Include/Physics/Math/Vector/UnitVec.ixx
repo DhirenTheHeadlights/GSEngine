@@ -137,223 +137,153 @@ export namespace gse {
 
 template <gse::internal::is_quantity T, int N>
 constexpr auto gse::operator+(const unit::vec_t<T, N>& lhs, const unit::vec_t<T, N>& rhs) -> unit::vec_t<T, N> {
-	return unit::vec_t<T, N>(lhs.storage + rhs.storage);
+	return unit::vec_t<T, N>(lhs.template as<typename T::default_unit>().storage + rhs.template as<typename T::default_unit>().storage);
 }
 
 template <gse::internal::is_quantity T, int N>
 constexpr auto gse::operator-(const unit::vec_t<T, N>& lhs, const unit::vec_t<T, N>& rhs) -> unit::vec_t<T, N> {
-	return unit::vec_t<T, N>(lhs.storage - rhs.storage);
+	return unit::vec_t<T, N>(lhs.template as<typename T::default_unit>().storage - rhs.template as<typename T::default_unit>().storage);
 }
 
 template <gse::internal::is_quantity T, typename U, int N> requires std::is_arithmetic_v<U>
 constexpr auto gse::operator*(const unit::vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<T, N> {
-	return unit::vec_t<T, N>(lhs.storage * rhs);
+	return unit::vec_t<T, N>(lhs.template as<typename T::default_unit>().storage * rhs);
 }
 
 template <typename U, gse::internal::is_quantity T, int N> requires std::is_arithmetic_v<U>
 constexpr auto gse::operator*(const U& lhs, const unit::vec_t<T, N>& rhs) -> unit::vec_t<T, N> {
-	return unit::vec_t<T, N>(lhs * rhs.storage);
+	return unit::vec_t<T, N>(lhs * rhs.template as<typename T::default_unit>().storage);
 }
 
 template <gse::internal::is_quantity T, typename U, int N> requires std::is_arithmetic_v<U>
 constexpr auto gse::operator/(const unit::vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<T, N> {
-	unit::vec_t<T, N> result;
-	for (int i = 0; i < N; ++i) {
-		result[i] = lhs[i] / rhs;
-	}
-	return result;
+	return unit::vec_t<T, N>(lhs.template as<typename T::default_unit>().storage / rhs);
 }
 
 template <typename U, gse::internal::is_quantity T, int N> requires std::is_arithmetic_v<U>
 constexpr auto gse::operator/(const U& lhs, const unit::vec_t<T, N>& rhs) -> unit::vec_t<T, N> {
-	unit::vec_t<T, N> result;
-	for (int i = 0; i < N; ++i) {
-		result[i] = lhs / rhs[i];
-	}
-	return result;
+	return unit::vec_t<T, N>(lhs / rhs.template as<typename T::default_unit>().storage);
 }
 
 template <gse::internal::is_quantity T, int N>
 constexpr auto gse::operator+=(unit::vec_t<T, N>& lhs, const unit::vec_t<T, N>& rhs) -> unit::vec_t<T, N>& {
-	for (int i = 0; i < N; ++i) {
-		lhs[i] += rhs[i];
-	}
+	auto v1 = lhs.template as<typename T::default_unit>();
+	auto v2 = rhs.template as<typename T::default_unit>();
+
+	v1.storage += v2.storage; 
+	lhs = unit::vec_t<T, N>(v1); 
 	return lhs;
 }
 
 template <gse::internal::is_quantity T, int N>
 constexpr auto gse::operator-=(unit::vec_t<T, N>& lhs, const unit::vec_t<T, N>& rhs) -> unit::vec_t<T, N>& {
-	for (int i = 0; i < N; ++i) {
-		lhs[i] -= rhs[i];
-	}
+	auto v1 = lhs.template as<typename T::default_unit>();
+	auto v2 = rhs.template as<typename T::default_unit>();
+
+	v1.storage -= v2.storage;
+	lhs = unit::vec_t<T, N>(v1);
 	return lhs;
 }
 
 template <gse::internal::is_quantity T, typename U, int N> requires std::is_arithmetic_v<U>
 constexpr auto gse::operator*=(unit::vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<T, N>& {
-	for (int i = 0; i < N; ++i) {
-		lhs[i] *= rhs;
-	}
+	auto v1 = lhs.template as<typename T::default_unit>();
+
+	v1.storage *= rhs;
+	lhs = unit::vec_t<T, N>(v1);
 	return lhs;
 }
 
 template <gse::internal::is_quantity T, typename U, int N> requires std::is_arithmetic_v<U>
 constexpr auto gse::operator/=(unit::vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<T, N>& {
-	for (int i = 0; i < N; ++i) {
-		lhs[i] /= rhs;
-	}
+	auto v1 = lhs.template as<typename T::default_unit>();
+
+	v1.storage /= rhs;
+	lhs = unit::vec_t<T, N>(v1);
 	return lhs;
 }
 
 template <gse::internal::is_quantity T, typename U, int N>
 constexpr auto gse::operator+(const unit::vec_t<T, N>& lhs, const unitless::vec_t<U, N>& rhs) -> unit::vec_t<T, N> {
-	unit::vec_t<T, N> result;
-	for (int i = 0; i < N; ++i) {
-		result[i] = lhs[i] + T(rhs[i]);
-	}
-	return result;
+	return unit::vec_t<T, N>(lhs.template as<typename T::default_unit>().storage + rhs.storage);
 }
 
 template <typename T, gse::internal::is_quantity U, int N>
 constexpr auto gse::operator+(const unitless::vec_t<T, N>& lhs, const unit::vec_t<U, N>& rhs) -> unit::vec_t<T, N> {
-	unit::vec_t<T, N> result;
-	for (int i = 0; i < N; ++i) {
-		result[i] = U(lhs[i]) + rhs[i];
-	}
-	return result;
+	return unit::vec_t<T, N>(lhs.storage + rhs.template as<typename T::default_unit>().storage);
 }
 
 template <gse::internal::is_quantity T, typename U, int N>
 constexpr auto gse::operator-(const unit::vec_t<T, N>& lhs, const unitless::vec_t<U, N>& rhs) -> unit::vec_t<T, N> {
-	unit::vec_t<T, N> result;
-	for (int i = 0; i < N; ++i) {
-		result[i] = lhs[i] - T(rhs[i]);
-	}
-	return result;
+	return unit::vec_t<T, N>(lhs.template as<typename T::default_unit>().storage - rhs.storage);
 }
 
 template <typename T, gse::internal::is_quantity U, int N>
 constexpr auto gse::operator-(const unitless::vec_t<T, N>& lhs, const unit::vec_t<U, N>& rhs) -> unit::vec_t<T, N> {
-	unit::vec_t<T, N> result;
-	for (int i = 0; i < N; ++i) {
-		result[i] = U(lhs[i]) - rhs[i];
-	}
-	return result;
+	return unit::vec_t<T, N>(lhs.storage - rhs.template as<typename T::default_unit>().storage);
 }
 
 template <gse::internal::is_quantity T, typename U, int N>
 constexpr auto gse::operator*(const unit::vec_t<T, N>& lhs, const unitless::vec_t<U, N>& rhs) -> unit::vec_t<T, N> {
-	unit::vec_t<T, N> result;
-	for (int i = 0; i < N; ++i) {
-		result[i] = lhs[i] * rhs[i];
-	}
-	return result;
+	return unit::vec_t<T, N>(lhs.template as<typename T::default_unit>().storage * rhs.storage);
 }
 
 template <typename T, gse::internal::is_quantity U, int N>
 constexpr auto gse::operator*(const unitless::vec_t<T, N>& lhs, const unit::vec_t<U, N>& rhs) -> unit::vec_t<T, N> {
-	unit::vec_t<T, N> result;
-	for (int i = 0; i < N; ++i) {
-		result[i] = lhs[i] * rhs[i];
-	}
-	return result;
+	return unit::vec_t<T, N>(lhs.storage * rhs.template as<typename T::default_unit>().storage);
 }
 
 template <gse::internal::is_quantity T, typename U, int N>
 constexpr auto gse::operator/(const unit::vec_t<T, N>& lhs, const unitless::vec_t<U, N>& rhs) -> unit::vec_t<T, N> {
-	unit::vec_t<T, N> result;
-	for (int i = 0; i < N; ++i) {
-		result[i] = lhs[i] / rhs[i];
-	}
-	return result;
+	return unit::vec_t<T, N>(lhs.template as<typename T::default_unit>().storage / rhs.storage);
 }
 
 template <typename T, gse::internal::is_quantity U, int N>
 constexpr auto gse::operator/(const unitless::vec_t<T, N>& lhs, const unit::vec_t<U, N>& rhs) -> unit::vec_t<T, N> {
-	unit::vec_t<T, N> result;
-	for (int i = 0; i < N; ++i) {
-		result[i] = lhs[i] / rhs[i];
-	}
-	return result;
+	return unit::vec_t<T, N>(lhs.storage / rhs.template as<typename T::default_unit>().storage);
 }
 
 template <typename T, int N, gse::internal::is_quantity U>
 constexpr auto gse::operator*(const unit::vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<U, N> {
-	unit::vec_t<U, N> result;
-	for (int i = 0; i < N; ++i) {
-		result[i] = lhs[i] * rhs;
-	}
-	return result;
+	return unit::vec_t<T, N>(lhs.template as<typename T::default_unit>().storage * rhs.template as<typename T::default_unit>());
 }
 
 template <typename T, int N, gse::internal::is_quantity U>
 constexpr auto gse::operator*(const U& lhs, const unit::vec_t<T, N>& rhs) -> unit::vec_t<U, N> {
-	unit::vec_t<U, N> result;
-	for (int i = 0; i < N; ++i) {
-		result[i] = lhs * rhs[i];
-	}
-	return result;
+	return unit::vec_t<T, N>(lhs.template as<typename T::default_unit>() * rhs.template as<typename T::default_unit>().storage);
 }
 
 template <typename T, int N, gse::internal::is_quantity U>
 constexpr auto gse::operator/(const unit::vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<U, N> {
-	unit::vec_t<U, N> result;
-	for (int i = 0; i < N; ++i) {
-		result[i] = lhs[i] / rhs;
-	}
-	return result;
+	return unit::vec_t<T, N>(lhs.template as<typename T::default_unit>().storage / rhs.template as<typename T::default_unit>());
 }
 
 template <typename T, int N, gse::internal::is_quantity U>
 constexpr auto gse::operator/(const U& lhs, const unit::vec_t<T, N>& rhs) -> unit::vec_t<U, N> {
-	unit::vec_t<U, N> result;
-	for (int i = 0; i < N; ++i) {
-		result[i] = lhs / rhs[i];
-	}
-	return result;
+	return unit::vec_t<T, N>(lhs.template as<typename T::default_unit>() / rhs.template as<typename T::default_unit>().storage);
 }
 
 template <typename T, int N, gse::internal::is_quantity U>
 constexpr auto gse::operator*(const unitless::vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<U, N> {
-	unit::vec_t<U, N> result;
-	for (int i = 0; i < N; ++i) {
-		result[i] = lhs[i] * rhs;
-	}
-	return result;
+	return unit::vec_t<U, N>(lhs.storage * rhs.template as<typename U::default_unit>());
 }
 
 template <typename T, int N, gse::internal::is_quantity U>
 constexpr auto gse::operator*(const U& lhs, const unitless::vec_t<T, N>& rhs) -> unit::vec_t<U, N> {
-	unit::vec_t<U, N> result;
-	for (int i = 0; i < N; ++i) {
-		result[i] = lhs * rhs[i];
-	}
-	return result;
+	return unit::vec_t<U, N>(lhs.template as<typename U::default_unit>() * rhs.storage);
 }
 
 template <typename T, int N, gse::internal::is_quantity U>
 constexpr auto gse::operator/(const unitless::vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<U, N> {
-	unit::vec_t<U, N> result;
-	for (int i = 0; i < N; ++i) {
-		result[i] = lhs[i] / rhs;
-	}
-	return result;
+	return unit::vec_t<U, N>(lhs.storage / rhs.template as<typename U::default_unit>());
 }
 
 template <typename T, int N, gse::internal::is_quantity U>
 constexpr auto gse::operator/(const U& lhs, const unitless::vec_t<T, N>& rhs) -> unit::vec_t<U, N> {
-	unit::vec_t<U, N> result;
-	for (int i = 0; i < N; ++i) {
-		result[i] = lhs / rhs[i];
-	}
-	return result;
+	return unit::vec_t<U, N>(lhs.template as<typename U::default_unit>() / rhs.storage);
 }
 
 template <gse::internal::is_quantity T, int N>
 constexpr auto gse::operator-(const unit::vec_t<T, N>& value) -> unit::vec_t<T, N> {
-	unit::vec_t<T, N> result;
-	for (int i = 0; i < N; ++i) {
-		result[i] = -value[i];
-	}
-	return result;
+	return unit::vec_t<T, N>(-value.template as<typename T::default_unit>().storage);
 }
