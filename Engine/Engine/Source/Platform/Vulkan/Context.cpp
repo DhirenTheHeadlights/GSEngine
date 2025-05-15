@@ -8,6 +8,7 @@ import std;
 import vulkan_hpp;
 
 import gse.platform.vulkan.config;
+import gse.platform.vulkan.uploader;
 import gse.platform.assert;
 
 auto gse::vulkan::initialize(GLFWwindow* window) -> config {
@@ -57,6 +58,15 @@ auto gse::vulkan::begin_frame(GLFWwindow* window, config& config) -> void {
 }
 
 auto gse::vulkan::end_frame(const config& config) -> void {
+    uploader::transition_image_layout(
+        config.frame_context.command_buffer,
+        config.swap_chain_data.images[config.frame_context.image_index],
+        config.swap_chain_data.format,
+        vk::ImageLayout::eColorAttachmentOptimal,
+        vk::ImageLayout::ePresentSrcKHR,
+        1, 1
+    );
+
     config.frame_context.command_buffer.end();
 
     const vk::Semaphore wait_semaphores[] = { config.sync.image_available_semaphore };

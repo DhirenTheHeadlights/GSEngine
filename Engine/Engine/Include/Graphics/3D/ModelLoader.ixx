@@ -254,14 +254,25 @@ auto gse::model_loader::add_model(const std::vector<mesh_data>& mesh_data, const
 }
 
 auto gse::model_loader::get_model(const model_handle& handle) -> const model& {
-	assert(g_models.contains(handle), "Model not found.");
-	return g_models.at(handle);
+	if (const auto it = g_models.find(handle); it != g_models.end()) {
+		return it->second;
+	}
+
+	const auto it2 = std::ranges::find_if(g_queued_models, [&handle](const auto& pair) { return pair.first.get_id() == handle.get_model_id(); });
+	assert(it2 != g_queued_models.end(), "Model not found.");
+
+	return it2->first;
 }
 
 auto gse::model_loader::get_model(const id& id) -> const model& {
-	const auto it = std::ranges::find_if(g_models, [&id](const auto& pair) { return pair.first.get_model_id() == id; });
-	assert(it != g_models.end(), "Model not found.");
-	return it->second;
+	if (const auto it = std::ranges::find_if(g_models, [&id](const auto& pair) { return pair.first.get_model_id() == id; }); it != g_models.end()) {
+		return it->second;
+	}
+
+	const auto it2 = std::ranges::find_if(g_queued_models, [&id](const auto& pair) { return pair.first.get_id() == id; });
+
+	assert(it2 != g_queued_models.end(), "Model not found.");
+	return it2->first;
 }
 
 auto gse::model_loader::load_queued_models(const vulkan::config::device_config& config) -> void {
