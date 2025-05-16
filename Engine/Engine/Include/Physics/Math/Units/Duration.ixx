@@ -6,7 +6,6 @@ import gse.physics.math.units.quant;
 import gse.physics.math.unit_vec;
 
 namespace gse::units {
-	struct time_tag {};
 
 	constexpr char hours_units[] = "hrs";
 	constexpr char minutes_units[] = "min";
@@ -34,8 +33,8 @@ namespace gse::units {
 
 export namespace gse {
 	template <typename T = float>
-	struct time_t : internal::quantity<time_t<T>, T, units::time_tag, units::seconds, units::time_units> {
-		using internal::quantity<time_t<T>, T, units::time_tag, units::seconds, units::time_units>::quantity;
+	struct time_t : internal::quantity<time_t<T>, T, units::dimensions::dim<0, 1, 0>, units::time_tag, units::seconds, units::time_units> {
+		using internal::quantity<time_t<T>, T, units::dimensions::dim<0, 1, 0>, units::time_tag, units::seconds, units::time_units>::quantity;
 	};
 	
 	using time = time_t<>;

@@ -6,7 +6,6 @@ import gse.physics.math.units.quant;
 import gse.physics.math.unit_vec;
 
 namespace gse::units {
-	struct energy_tag {};
 	
 	constexpr char joules_units[] = "J";
 	constexpr char kilojoules_units[] = "kJ";
@@ -34,8 +33,8 @@ namespace gse::units {
 
 export namespace gse {
 	template <typename T = float>
-	struct energy_t : internal::quantity<energy_t<T>, T, units::energy_tag, units::joules, units::energy_units> {
-		using internal::quantity<energy_t<T>, T, units::energy_tag, units::joules, units::energy_units>::quantity;
+	struct energy_t : internal::quantity<energy_t<T>, T, units::dimensions::dim<2, -2, 1>, units::energy_tag, units::joules, units::energy_units> {
+		using internal::quantity<energy_t<T>, T, units::dimensions::dim<2, -2, 1>, units::energy_tag, units::joules, units::energy_units>::quantity;
 	};
 
 	using energy = energy_t<>;
@@ -157,7 +156,6 @@ constexpr auto gse::vec::kilocalories(Args&&... args) -> vec_t<energy_t<std::com
 }
 
 namespace gse::units {
-	struct power_tag {};
 
 	constexpr char watts_units[] = "W";
 	constexpr char kilowatts_units[] = "kW";
@@ -182,8 +180,8 @@ namespace gse::units {
 
 export namespace gse {
 	template <typename T = float>
-	struct power_t : internal::quantity<power_t<T>, T, units::power_tag, units::watts, units::power_units> {
-		using internal::quantity<power_t<T>, T, units::power_tag, units::watts, units::power_units>::quantity;
+	struct power_t : internal::quantity<power_t<T>, T, units::dimensions::dim<2, -3, 1>, units::power_tag, units::watts, units::power_units> {
+		using internal::quantity<power_t<T>, T, units::dimensions::dim<2, -3, 1>, units::power_tag, units::watts, units::power_units>::quantity;
 	};
 	
 	using power = power_t<>;

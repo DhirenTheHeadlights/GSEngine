@@ -6,7 +6,6 @@ import gse.physics.math.units.quant;
 import gse.physics.math.unit_vec;
 
 namespace gse::units {
-    struct length_tag {};
 
     inline constexpr char kilometers_units[] = "km";
     inline constexpr char meters_units[] = "m";
@@ -37,8 +36,8 @@ namespace gse::units {
 
 export namespace gse {
 	template <typename T = float>
-	struct length_t : internal::quantity<length_t<T>, T, units::length_tag, units::meters, units::length_units> {
-		using internal::quantity<length_t, T, units::length_tag, units::meters, units::length_units>::quantity;
+	struct length_t : internal::quantity<length_t<T>, T, units::dimensions::dim<1, 0, 0>, units::length_tag, units::meters, units::length_units> {
+		using internal::quantity<length_t, T, units::dimensions::dim<1, 0, 0>, units::length_tag, units::meters, units::length_units>::quantity;
 	};
 
     using length = length_t<>;

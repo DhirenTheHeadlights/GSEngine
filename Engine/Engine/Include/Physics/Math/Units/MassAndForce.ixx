@@ -6,7 +6,6 @@ import gse.physics.math.units.quant;
 import gse.physics.math.unit_vec;
 
 namespace gse::units {
-	struct mass_tag {};
 	
 	constexpr char kilograms_units[] = "kg";
 	constexpr char grams_units[] = "g";
@@ -31,8 +30,8 @@ namespace gse::units {
 
 export namespace gse {
 	template <typename T = float>
-	struct mass_t : internal::quantity<mass_t<T>, T, units::mass_tag, units::kilograms, units::mass_units> {
-		using internal::quantity<mass_t, T, units::mass_tag, units::kilograms, units::mass_units>::quantity;
+	struct mass_t : internal::quantity<mass_t<T>, T, units::dimensions::dim<0, 0, 1>, units::mass_tag, units::kilograms, units::mass_units> {
+		using internal::quantity<mass_t, T, units::dimensions::dim<0, 0, 1>, units::mass_tag, units::kilograms, units::mass_units>::quantity;
 	};
 
 	using mass = mass_t<>;
@@ -137,7 +136,6 @@ constexpr auto gse::vec::ounces(Args&&... args) -> vec_t<mass_t<std::common_type
 }
 
 namespace gse::units {
-	struct force_tag {};
 
 	constexpr char newtons_units[] = "N";
 	constexpr char pounds_force_units[] = "lbf";
@@ -166,8 +164,8 @@ namespace gse::units {
 
 export namespace gse {
 	template <typename T = float>
-	struct force_t : internal::quantity<force_t<T>, T, units::force_tag, units::newtons, units::force_units> {
-		using internal::quantity<force_t, T, units::force_tag, units::newtons, units::force_units>::quantity;
+	struct force_t : internal::quantity<force_t<T>, T, units::dimensions::dim<1, -2, 1>, units::force_tag, units::newtons, units::force_units> {
+		using internal::quantity<force_t, T, units::dimensions::dim<1, -2, 1>, units::force_tag, units::newtons, units::force_units>::quantity;
 	};
 	
 	using force = force_t<>;
@@ -179,8 +177,8 @@ export namespace gse {
 	constexpr auto pounds_force(float value) -> force;
 
 	template <typename T = float>
-	struct torque_t : internal::quantity<torque_t<T>, T, units::torque_tag, units::newton_meters, units::torque_units> {
-		using internal::quantity<torque_t, T, units::torque_tag, units::newton_meters, units::torque_units>::quantity;
+	struct torque_t : internal::quantity<torque_t<T>, T, units::dimensions::dim<2, -2, 1>, units::torque_tag, units::newton_meters, units::torque_units> {
+		using internal::quantity<torque_t, T, units::dimensions::dim<2, -2, 1>, units::torque_tag, units::newton_meters, units::torque_units>::quantity;
 	};
 
 	using torque = torque_t<>;
