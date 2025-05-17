@@ -2,10 +2,12 @@ export module gse.physics.math.units.duration;
 
 import std;
 
+import gse.physics.math.units.dimension;
 import gse.physics.math.units.quant;
 import gse.physics.math.unit_vec;
 
 namespace gse::units {
+	struct time_tag {};
 
 	constexpr char hours_units[] = "hrs";
 	constexpr char minutes_units[] = "min";
@@ -31,11 +33,16 @@ namespace gse::units {
 	>;
 }
 
+export template <>
+struct gse::internal::dimension_traits<gse::internal::dim<0, 1, 0>> {
+	using tag = units::time_tag;
+	using default_unit = units::seconds;
+	using valid_units = units::time_units;
+};
+
 export namespace gse {
 	template <typename T = float>
-	struct time_t : internal::quantity<time_t<T>, T, units::dimensions::dim<0, 1, 0>, units::time_tag, units::seconds, units::time_units> {
-		using internal::quantity<time_t<T>, T, units::dimensions::dim<0, 1, 0>, units::time_tag, units::seconds, units::time_units>::quantity;
-	};
+	using time_t = internal::quantity<T, internal::dim<0, 1, 0>>;
 	
 	using time = time_t<>;
 	

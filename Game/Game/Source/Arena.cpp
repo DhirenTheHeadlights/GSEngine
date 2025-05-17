@@ -13,7 +13,7 @@ struct wall_hook final : gse::hook<gse::entity> {
 };
 
 auto create_arena_wall(const gse::vec3<gse::length>& position, const gse::vec3<gse::length>& size) -> std::uint32_t {
-	const std::uint32_t wall_uuid = create_box(position, size);
+	const std::uint32_t wall_uuid = gse::create_box(position, size);
 	gse::registry::add_entity_hook(wall_uuid, std::make_unique<wall_hook>());
 	return wall_uuid;
 }

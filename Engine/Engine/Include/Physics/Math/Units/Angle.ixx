@@ -2,10 +2,12 @@ export module gse.physics.math.units.angle;
 
 import std;
 
+import gse.physics.math.units.dimension;
 import gse.physics.math.units.quant;
 import gse.physics.math.unit_vec;
 
 namespace gse::units {
+	struct angle_tag {};
 
 	constexpr char degrees_units[] = "deg";
 	constexpr char radians_units[] = "rad";
@@ -19,11 +21,16 @@ namespace gse::units {
 	>;
 }
 
+export template <>
+struct gse::internal::dimension_traits<gse::internal::dim<0, 0, 0>> {
+	using tag = units::angle_tag;
+	using default_unit = units::degrees;
+	using valid_units = units::angle_units;
+};
+
 export namespace gse {
 	template <typename T = float>
-	struct angle_t : internal::quantity<angle_t<T>, T, units::dimensions::dim<0 ,0, 0>, units::angle_tag, units::degrees, units::angle_units> {
-		using internal::quantity<angle_t, T, units::dimensions::dim<0, 0, 0>, units::angle_tag, units::degrees, units::angle_units>::quantity;
-	};
+	using angle_t = internal::quantity<T, internal::dim<0, 0, 0>>;
 
 	using angle = angle_t<>;
 

@@ -2,10 +2,12 @@ export module gse.physics.math.units.movement;
 
 import std;
 
+import gse.physics.math.units.dimension;
 import gse.physics.math.units.quant;
 import gse.physics.math.unit_vec;
 
 namespace gse::units {
+	struct velocity_tag {};
 
 	constexpr char meters_per_second_units[] = "m/s";
 	constexpr char kilometers_per_hour_units[] = "km/h";
@@ -35,11 +37,23 @@ namespace gse::units {
 	>;
 }
 
+export template <>
+struct gse::internal::dimension_traits<gse::internal::dim<1, -1, 0>> {
+	using tag = units::velocity_tag;
+	using default_unit = units::meters_per_second;
+	using valid_units = units::velocity_units;
+};
+
+export template <>
+struct gse::internal::dimension_traits<gse::internal::dim<0, -1, 0>> {
+	using tag = units::angular_velocity_tag;
+	using default_unit = units::radians_per_second;
+	using valid_units = units::angular_velocity_units;
+};
+
 export namespace gse {
 	template <typename T = float>
-	struct velocity_t : internal::quantity<velocity_t<T>, T, units::dimensions::dim<1,-1,0>, units::velocity_tag, units::meters_per_second, units::velocity_units> {
-		using internal::quantity<velocity_t, T, units::dimensions::dim<1, -1, 0>, units::velocity_tag, units::meters_per_second, units::velocity_units>::quantity;
-	};
+	using velocity_t = internal::quantity<T, internal::dim<1, -1, 0>>;
 	
 	using velocity = velocity_t<>;
 	
@@ -52,9 +66,7 @@ export namespace gse {
 	constexpr auto miles_per_hour(float value) -> velocity;
 
 	template <typename T = float>
-	struct angular_velocity_t : internal::quantity<angular_velocity_t<T>, T, units::dimensions::dim<0, -1, 0>, units::angular_velocity_tag, units::radians_per_second, units::angular_velocity_units> {
-		using internal::quantity<angular_velocity_t, T, units::dimensions::dim<0, -1, 0>, units::angular_velocity_tag, units::radians_per_second, units::angular_velocity_units>::quantity;
-	};
+	using angular_velocity_t = internal::quantity<T, internal::dim<0, -1, 0>>;
 
 	using angular_velocity = angular_velocity_t<>;
 
@@ -161,6 +173,7 @@ constexpr auto gse::vec::degrees_per_second(Args&&... args) -> vec_t<angular_vel
 }
 
 namespace gse::units {
+	struct acceleration_tag {};
 
 	constexpr char meters_per_second_squared_units[] = "m/s^2";
 	constexpr char kilometers_per_hour_squared_units[] = "km/h^2";
@@ -190,11 +203,23 @@ namespace gse::units {
 	>;
 }
 
+template <>
+struct gse::internal::dimension_traits<gse::internal::dim<1, -2, 0>> {
+	using tag = units::acceleration_tag;
+	using default_unit = units::meters_per_second_squared;
+	using valid_units = units::acceleration_units;
+};
+
+template <>
+struct gse::internal::dimension_traits<gse::internal::dim<0, -2, 0>> {
+	using tag = units::angular_acceleration_tag;
+	using default_unit = units::radians_per_second_squared;
+	using valid_units = units::angular_acceleration_units;
+};
+
 export namespace gse {
 	template <typename T = float>
-	struct acceleration_t : internal::quantity<acceleration_t<T>, T, units::dimensions::dim<1, -2, 0>, units::acceleration_tag, units::meters_per_second_squared, units::acceleration_units> {
-		using internal::quantity<acceleration_t, T, units::dimensions::dim<1, -2, 0>, units::acceleration_tag, units::meters_per_second_squared, units::acceleration_units>::quantity;
-	};
+	using acceleration_t = internal::quantity<T, internal::dim<1, -2, 0>>;
 
 	using acceleration = acceleration_t<>;
 
@@ -207,9 +232,7 @@ export namespace gse {
 	constexpr auto miles_per_hour_squared(float value) -> acceleration;
 
 	template <typename T = float>
-	struct angular_acceleration_t : internal::quantity<angular_acceleration_t<T>, T, units::dimensions::dim<0, -2, 0>, units::angular_acceleration_tag, units::radians_per_second_squared, units::angular_acceleration_units> {
-		using internal::quantity<angular_acceleration_t, T, units::dimensions::dim<0, -2, 0>, units::angular_acceleration_tag, units::radians_per_second_squared, units::angular_acceleration_units>::quantity;
-	};
+	using angular_acceleration_t = internal::quantity<T, internal::dim<0, -2, 0>>;
 
 	using angular_acceleration = angular_acceleration_t<>;
 

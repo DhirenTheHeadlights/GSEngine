@@ -8,6 +8,7 @@ import std;
 
 import gse.core.clock;
 import gse.graphics.debug;
+import gse.physics.math;
 
 export namespace gse {
 	class scoped_timer : public clock {

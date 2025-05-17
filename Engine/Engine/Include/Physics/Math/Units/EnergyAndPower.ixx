@@ -2,10 +2,12 @@ export module gse.physics.math.units.energy_and_power;
 
 import std;
 
+import gse.physics.math.units.dimension;
 import gse.physics.math.units.quant;
 import gse.physics.math.unit_vec;
 
 namespace gse::units {
+	struct energy_tag {};
 	
 	constexpr char joules_units[] = "J";
 	constexpr char kilojoules_units[] = "kJ";
@@ -31,11 +33,16 @@ namespace gse::units {
 	>;
 }
 
+export template <>
+struct gse::internal::dimension_traits<gse::internal::dim<2, -2, 1>> {
+	using tag = units::energy_tag;
+	using default_unit = units::joules;
+	using valid_units = units::energy_units;
+};
+
 export namespace gse {
 	template <typename T = float>
-	struct energy_t : internal::quantity<energy_t<T>, T, units::dimensions::dim<2, -2, 1>, units::energy_tag, units::joules, units::energy_units> {
-		using internal::quantity<energy_t<T>, T, units::dimensions::dim<2, -2, 1>, units::energy_tag, units::joules, units::energy_units>::quantity;
-	};
+	using energy_t = internal::quantity<T, internal::dim<2, -2, 1>>;
 
 	using energy = energy_t<>;
 
@@ -156,6 +163,7 @@ constexpr auto gse::vec::kilocalories(Args&&... args) -> vec_t<energy_t<std::com
 }
 
 namespace gse::units {
+	struct power_tag {};
 
 	constexpr char watts_units[] = "W";
 	constexpr char kilowatts_units[] = "kW";
@@ -178,11 +186,16 @@ namespace gse::units {
 	>;
 }
 
+export template <>
+struct gse::internal::dimension_traits<gse::internal::dim<2, -3, 1>> {
+	using tag = units::power_tag;
+	using default_unit = units::watts;
+	using valid_units = units::power_units;
+};
+
 export namespace gse {
 	template <typename T = float>
-	struct power_t : internal::quantity<power_t<T>, T, units::dimensions::dim<2, -3, 1>, units::power_tag, units::watts, units::power_units> {
-		using internal::quantity<power_t<T>, T, units::dimensions::dim<2, -3, 1>, units::power_tag, units::watts, units::power_units>::quantity;
-	};
+	using power_t = internal::quantity<T, internal::dim<2, -3, 1>>;
 	
 	using power = power_t<>;
 	
@@ -201,7 +214,6 @@ export namespace gse {
 
 export namespace gse::vec {
 	template <internal::is_unit U, typename... Args>
-	
 	constexpr auto power(Args&&... args) -> vec_t<power_t<std::common_type_t<Args...>>, sizeof...(Args)>;
 	
 	template <typename... Args> constexpr auto watts(Args&&... args) -> vec_t<power_t<std::common_type_t<Args...>>, sizeof...(Args)>;

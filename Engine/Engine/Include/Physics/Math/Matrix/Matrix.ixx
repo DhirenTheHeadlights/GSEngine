@@ -9,11 +9,14 @@ import gse.physics.math.vec_math;
 import gse.platform.perma_assert;
 
 namespace gse {
+    template <typename T, int Rows>
+	using col_storage = std::conditional_t<Rows == 3, vec::storage<T, 4>, vec::storage<T, Rows>>;
+
 	template <typename T, int Cols, int Rows>
 	struct mat {
 		using value_type = T;
 
-		std::array<vec::storage<T, Rows>, Cols> data;
+		std::array<col_storage<T, Rows>, Cols> data;
 
 		constexpr mat() = default;
 		constexpr mat(const T& value);
@@ -23,8 +26,8 @@ namespace gse {
 		template <int O, int Q>
 		constexpr mat(const mat<T, O, Q>& other);
 
-		constexpr auto operator[](size_t index) -> vec::storage<T, Rows>&;
-		constexpr auto operator[](size_t index) const -> const vec::storage<T, Rows>&;
+		constexpr auto operator[](size_t index) -> auto&;
+		constexpr auto operator[](size_t index) const -> const auto&;
 
 		constexpr auto operator==(const mat& other) const -> bool;
 		constexpr auto operator!=(const mat& other) const -> bool;
@@ -110,12 +113,12 @@ constexpr gse::mat<T, Cols, Rows>::mat(const mat<T, SourceCols, SourceRows>& oth
 }
 
 template <typename T, int Cols, int Rows>
-constexpr auto gse::mat<T, Cols, Rows>::operator[](size_t index) -> vec::storage<T, Rows>& {
+constexpr auto gse::mat<T, Cols, Rows>::operator[](size_t index) -> auto& {
     return data[index];
 }
 
 template <typename T, int Cols, int Rows>
-constexpr auto gse::mat<T, Cols, Rows>::operator[](size_t index) const -> const vec::storage<T, Rows>& {
+constexpr auto gse::mat<T, Cols, Rows>::operator[](size_t index) const -> const auto& {
     return data[index];
 }
 

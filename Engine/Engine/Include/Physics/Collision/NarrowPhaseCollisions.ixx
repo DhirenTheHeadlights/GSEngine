@@ -12,15 +12,15 @@ export namespace gse::narrow_phase_collision {
 }
 
 auto overlaps_on_axis(const gse::oriented_bounding_box& box1, const gse::oriented_bounding_box& box2, const gse::vec3<gse::length>& axis, gse::length& penetration) -> bool {
-    if (is_zero(axis)) {
+    if (gse::is_zero(axis)) {
         return true;
     }
 
-    const auto normalized_axis = normalize(axis);
+    const auto normalized_axis = gse::normalize(axis);
     const auto corners1 = box1.get_corners();
 
     auto project_point = [](const gse::vec3<gse::length>& point, const gse::vec3<gse::length>& projection_axis) -> gse::length {
-        return dot(point, projection_axis);
+        return gse::dot(point, projection_axis);
         };
 
     gse::length min1 = project_point(corners1[0], normalized_axis);
@@ -66,7 +66,7 @@ auto sat_collision(const gse::oriented_bounding_box& obb1, const gse::oriented_b
 
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {
-            if (gse::vec3<gse::length> cross = gse::cross(obb1.axes[i].as<gse::units::meters>(), obb2.axes[j].as<gse::units::meters>()); !is_zero(cross)) { // Avoid near-zero vectors
+            if (gse::vec3<gse::length> cross = gse::cross(obb1.axes[i], obb2.axes[j]); !gse::is_zero(cross)) { // Avoid near-zero vectors
                 axes[axis_count++] = cross;
             }
         }
@@ -83,7 +83,7 @@ auto sat_collision(const gse::oriented_bounding_box& obb1, const gse::oriented_b
 
         if (penetration < min_penetration) {
             min_penetration = penetration;
-            collision_normal = normalize(axes[i]);
+            collision_normal = gse::normalize(axes[i]);
         }
     }
 

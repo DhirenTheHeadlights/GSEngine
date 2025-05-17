@@ -7,7 +7,7 @@ import gse.physics.math;
 
 export namespace gse::physics {
 	struct motion_component final : component {
-		motion_component(const std::uint32_t id) : component(id) {}
+		explicit motion_component(const std::uint32_t id) : component(id) {}
 
 		vec3<length> current_position;
 		vec3<velocity> current_velocity;
@@ -21,7 +21,7 @@ export namespace gse::physics {
 		quat orientation = quat(1.f, 0.f, 0.f, 0.f);
 		vec3<angular_velocity> angular_velocity;
 		vec3<angular_acceleration> angular_acceleration;
-		float moment_of_inertia = 1.f;
+		inertia moment_of_inertia = 1.f;
 
 		bool affected_by_gravity = true;
 		bool moving = false;
