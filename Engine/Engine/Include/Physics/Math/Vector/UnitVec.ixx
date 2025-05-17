@@ -41,13 +41,6 @@ namespace gse::unit {
             requires ((std::is_convertible_v<Args, typename Q::value_type> || internal::is_quantity<Args>) && ...)
         constexpr vec_t(Args... args) : internal::vec_t<vec_t, Q, N>(unit::get_value<value_type>(args)...) {}
 
-        template <internal::is_quantity U>
-		constexpr vec_t(const vec_t<U, N>& other) : internal::vec_t<vec_t, Q, N>() {
-	        for (size_t i = 0; i < N; ++i) {
-		        this->storage[i] = Q(static_cast<value_type>(other[i].as_default_unit()));
-	        }
-        }
-
 		template <typename U>
 		constexpr vec_t(const unitless::vec_t<U, N>& other) : internal::vec_t<vec_t, Q, N>() {
 			for (size_t i = 0; i < N; ++i) {
@@ -55,15 +48,22 @@ namespace gse::unit {
 			}
 		}
 
-		template <typename U> requires std::is_arithmetic_v<U>
+		template <internal::is_arithmetic U> 
 		constexpr vec_t(const vec::storage<U, N> other) : internal::vec_t<vec_t, Q, N>() {
 			for (size_t i = 0; i < N; ++i) {
 				this->storage[i] = Q(static_cast<value_type>(other[i]));
 			}
 		}
 
-        template <typename U>
-			requires internal::is_unit<U> && has_same_tag<Q, U>
+		template <int M = N> requires (M == 3)
+		constexpr vec_t(const vec::storage<typename Q::value_type, 4>& s) : internal::vec_t<vec_t, Q, M>() {
+			this->storage[0] = Q(s[0]);
+			this->storage[1] = Q(s[1]);
+			this->storage[2] = Q(s[2]);
+			this->storage[3] = Q(static_cast<typename Q::value_type>(0));
+		}
+
+        template <internal::is_unit U> requires has_same_tag<Q, U>
         [[nodiscard]] constexpr auto as() const -> unitless::vec_t<value_type, N> {
 			unitless::vec_t<value_type, N> result;
             for (int i = 0; i < N; ++i) {
@@ -74,39 +74,54 @@ namespace gse::unit {
     };
 }
 
-export namespace gse {
-	template <internal::is_quantity T, int N>												constexpr auto operator+(const unit::vec_t<T, N>& lhs, const unit::vec_t<T, N>& rhs) -> unit::vec_t<T, N>;
-	template <internal::is_quantity T, int N>												constexpr auto operator-(const unit::vec_t<T, N>& lhs, const unit::vec_t<T, N>& rhs) -> unit::vec_t<T, N>;
-	template <internal::is_quantity T, typename U, int N> requires std::is_arithmetic_v<U>	constexpr auto operator*(const unit::vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<T, N>;
-	template <typename U, internal::is_quantity T, int N> requires std::is_arithmetic_v<U>	constexpr auto operator*(const U& lhs, const unit::vec_t<T, N>& rhs) -> unit::vec_t<T, N>;
-	template <internal::is_quantity T, typename U, int N> requires std::is_arithmetic_v<U>	constexpr auto operator/(const unit::vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<T, N>;
-	template <typename U, internal::is_quantity T, int N> requires std::is_arithmetic_v<U>	constexpr auto operator/(const U& lhs, const unit::vec_t<T, N>& rhs) -> unit::vec_t<T, N>;
+export namespace gse::unit {
+	template <internal::is_quantity T, int N>								constexpr auto operator+(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> vec_t<T, N>;
+	template <internal::is_quantity T, int N>								constexpr auto operator-(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> vec_t<T, N>;
 
-	template <internal::is_quantity T, int N>												constexpr auto operator+=(unit::vec_t<T, N>& lhs, const unit::vec_t<T, N>& rhs) -> unit::vec_t<T, N>&;
-	template <internal::is_quantity T, int N>												constexpr auto operator-=(unit::vec_t<T, N>& lhs, const unit::vec_t<T, N>& rhs) -> unit::vec_t<T, N>&;
-	template <internal::is_quantity T, typename U, int N> requires std::is_arithmetic_v<U>	constexpr auto operator*=(unit::vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<T, N>&;
-	template <internal::is_quantity T, typename U, int N> requires std::is_arithmetic_v<U>	constexpr auto operator/=(unit::vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<T, N>&;
+	template <internal::is_quantity T, internal::is_arithmetic U, int N>	constexpr auto operator*(const vec_t<T, N>& lhs, const U& rhs) -> vec_t<T, N>;
+	template <internal::is_arithmetic U, internal::is_quantity T, int N> 	constexpr auto operator*(const U& lhs, const vec_t<T, N>& rhs) -> vec_t<T, N>;
+	template <internal::is_quantity T, internal::is_arithmetic U, int N> 	constexpr auto operator/(const vec_t<T, N>& lhs, const U& rhs) -> vec_t<T, N>;
+	template <internal::is_arithmetic U, internal::is_quantity T, int N>	constexpr auto operator/(const U& lhs, const vec_t<T, N>& rhs) -> vec_t<T, N>;
 
-    template <internal::is_quantity T, typename U, int N>									constexpr auto operator+(const unit::vec_t<T, N>& lhs, const unitless::vec_t<U, N>& rhs) -> unit::vec_t<T, N>;
-    template <typename T, internal::is_quantity U, int N>									constexpr auto operator+(const unitless::vec_t<T, N>& lhs, const unit::vec_t<U, N>& rhs) -> unit::vec_t<T, N>;
-    template <internal::is_quantity T, typename U, int N>									constexpr auto operator-(const unit::vec_t<T, N>& lhs, const unitless::vec_t<U, N>& rhs) -> unit::vec_t<T, N>;
-    template <typename T, internal::is_quantity U, int N>									constexpr auto operator-(const unitless::vec_t<T, N>& lhs, const unit::vec_t<U, N>& rhs) -> unit::vec_t<T, N>;
-    template <internal::is_quantity T, typename U, int N>									constexpr auto operator*(const unit::vec_t<T, N>& lhs, const unitless::vec_t<U, N>& rhs) -> unit::vec_t<T, N>;
-    template <typename T, internal::is_quantity U, int N>									constexpr auto operator*(const unitless::vec_t<T, N>& lhs, const unit::vec_t<U, N>& rhs) -> unit::vec_t<T, N>;
-    template <internal::is_quantity T, typename U, int N>									constexpr auto operator/(const unit::vec_t<T, N>& lhs, const unitless::vec_t<U, N>& rhs) -> unit::vec_t<T, N>;
-    template <typename T, internal::is_quantity U, int N>									constexpr auto operator/(const unitless::vec_t<T, N>& lhs, const unit::vec_t<U, N>& rhs) -> unit::vec_t<T, N>;
+	template <internal::is_quantity T, internal::is_quantity U, int N>		constexpr auto operator*(const vec_t<T, N>& lhs, const vec_t<U, N>& rhs);
+	template <internal::is_quantity T, internal::is_quantity U, int N>		constexpr auto operator/(const vec_t<T, N>& lhs, const vec_t<U, N>& rhs);
+	template <internal::is_quantity T, int N>								constexpr auto operator/(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> unitless::vec_t<typename T::value_type, N>;
 
-    template <typename T, int N, internal::is_quantity U>									constexpr auto operator*(const unit::vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<U, N>;
-    template <typename T, int N, internal::is_quantity U>									constexpr auto operator*(const U& lhs, const unit::vec_t<T, N>& rhs) -> unit::vec_t<U, N>;
-    template <typename T, int N, internal::is_quantity U>									constexpr auto operator/(const unit::vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<U, N>;
-    template <typename T, int N, internal::is_quantity U>									constexpr auto operator/(const U& lhs, const unit::vec_t<T, N>& rhs) -> unit::vec_t<U, N>;
+	template <internal::is_quantity T, internal::is_quantity U, int N>		constexpr auto operator*(const vec_t<T, N>& lhs, const U& rhs);
+	template <internal::is_quantity T, internal::is_quantity U, int N>		constexpr auto operator/(const vec_t<T, N>& lhs, const U& rhs);
+	template <internal::is_quantity T, internal::is_quantity U, int N>		constexpr auto operator*(const U& lhs, const vec_t<T, N>& rhs);
+	template <internal::is_quantity T, internal::is_quantity U, int N>		constexpr auto operator/(const U& lhs, const vec_t<T, N>& rhs);
 
-	template <typename T, int N, internal::is_quantity U>									constexpr auto operator*(const unitless::vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<U, N>;
-	template <typename T, int N, internal::is_quantity U>									constexpr auto operator*(const U& lhs, const unitless::vec_t<T, N>& rhs) -> unit::vec_t<U, N>;
-	template <typename T, int N, internal::is_quantity U>									constexpr auto operator/(const unitless::vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<U, N>;
-	template <typename T, int N, internal::is_quantity U>									constexpr auto operator/(const U& lhs, const unitless::vec_t<T, N>& rhs) -> unit::vec_t<U, N>;
+	template <internal::is_quantity T, int N>								constexpr auto operator/(const vec_t<T, N>& lhs, const T& rhs) -> unitless::vec_t<typename T::value_type, N>;
+	template <internal::is_quantity T, int N>								constexpr auto operator/(const T& lhs, const vec_t<T, N>& rhs) -> unitless::vec_t<typename T::value_type, N>;
 
-	template <internal::is_quantity T, int N>												constexpr auto operator-(const unit::vec_t<T, N>& value)->unit::vec_t<T, N>;
+	template <internal::is_quantity T, int N>								constexpr auto operator+=(vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> vec_t<T, N>&;
+	template <internal::is_quantity T, int N>								constexpr auto operator-=(vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> vec_t<T, N>&;
+	template <internal::is_quantity T, internal::is_arithmetic U, int N>	constexpr auto operator*=(vec_t<T, N>& lhs, const U& rhs) -> vec_t<T, N>&;
+	template <internal::is_quantity T, internal::is_arithmetic U, int N>	constexpr auto operator/=(vec_t<T, N>& lhs, const U& rhs) -> vec_t<T, N>&;
+
+    template <internal::is_quantity T, internal::is_arithmetic U, int N>	constexpr auto operator+(const vec_t<T, N>& lhs, const unitless::vec_t<U, N>& rhs) -> vec_t<T, N>;
+    template <internal::is_arithmetic T, internal::is_quantity U, int N>	constexpr auto operator+(const unitless::vec_t<T, N>& lhs, const vec_t<U, N>& rhs) -> vec_t<T, N>;
+    template <internal::is_quantity T, internal::is_arithmetic U, int N>	constexpr auto operator-(const vec_t<T, N>& lhs, const unitless::vec_t<U, N>& rhs) -> vec_t<T, N>;
+    template <internal::is_arithmetic T, internal::is_quantity U, int N>	constexpr auto operator-(const unitless::vec_t<T, N>& lhs, const vec_t<U, N>& rhs) -> vec_t<T, N>;
+    template <internal::is_quantity T, internal::is_arithmetic U, int N>	constexpr auto operator*(const vec_t<T, N>& lhs, const unitless::vec_t<U, N>& rhs) -> vec_t<T, N>;
+    template <internal::is_arithmetic T, internal::is_quantity U, int N>	constexpr auto operator*(const unitless::vec_t<T, N>& lhs, const vec_t<U, N>& rhs) -> vec_t<T, N>;
+    template <internal::is_quantity T, internal::is_arithmetic U, int N>	constexpr auto operator/(const vec_t<T, N>& lhs, const unitless::vec_t<U, N>& rhs) -> vec_t<T, N>;
+    template <internal::is_arithmetic T, internal::is_quantity U, int N>	constexpr auto operator/(const unitless::vec_t<T, N>& lhs, const vec_t<U, N>& rhs) -> vec_t<T, N>;
+
+    template <internal::is_arithmetic T, int N, internal::is_quantity U>	constexpr auto operator*(const vec_t<T, N>& lhs, const U& rhs) -> vec_t<U, N>;
+    template <internal::is_arithmetic T, int N, internal::is_quantity U>	constexpr auto operator*(const U& lhs, const vec_t<T, N>& rhs) -> vec_t<U, N>;
+    template <internal::is_arithmetic T, int N, internal::is_quantity U>	constexpr auto operator/(const vec_t<T, N>& lhs, const U& rhs) -> vec_t<U, N>;
+    template <internal::is_arithmetic T, int N, internal::is_quantity U>    constexpr auto operator/(const U& lhs, const vec_t<T, N>& rhs) -> vec_t<U, N>;
+
+	template <internal::is_quantity T, int N>			    constexpr auto operator-(const vec_t<T, N>& value)->vec_t<T, N>;
+}
+
+export namespace gse::unitless {
+	template <typename T, int N, internal::is_quantity U>	constexpr auto operator*(const vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<U, N>;
+	template <typename T, int N, internal::is_quantity U>	constexpr auto operator*(const U& lhs, const vec_t<T, N>& rhs) -> unit::vec_t<U, N>;
+	template <typename T, int N, internal::is_quantity U>	constexpr auto operator/(const vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<U, N>;
+	template <typename T, int N, internal::is_quantity U>	constexpr auto operator/(const U& lhs, const vec_t<T, N>& rhs) -> unit::vec_t<U, N>;
 }
 
 export namespace gse {
@@ -136,37 +151,88 @@ export namespace gse {
 }
 
 template <gse::internal::is_quantity T, int N>
-constexpr auto gse::operator+(const unit::vec_t<T, N>& lhs, const unit::vec_t<T, N>& rhs) -> unit::vec_t<T, N> {
+constexpr auto gse::unit::operator+(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> vec_t<T, N> {
 	return unit::vec_t<T, N>(lhs.template as<typename T::default_unit>().storage + rhs.template as<typename T::default_unit>().storage);
 }
 
 template <gse::internal::is_quantity T, int N>
-constexpr auto gse::operator-(const unit::vec_t<T, N>& lhs, const unit::vec_t<T, N>& rhs) -> unit::vec_t<T, N> {
+constexpr auto gse::unit::operator-(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> vec_t<T, N> {
 	return unit::vec_t<T, N>(lhs.template as<typename T::default_unit>().storage - rhs.template as<typename T::default_unit>().storage);
 }
 
-template <gse::internal::is_quantity T, typename U, int N> requires std::is_arithmetic_v<U>
-constexpr auto gse::operator*(const unit::vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<T, N> {
+template <gse::internal::is_quantity T, gse::internal::is_arithmetic U, int N> 
+constexpr auto gse::unit::operator*(const vec_t<T, N>& lhs, const U& rhs) -> vec_t<T, N> {
 	return unit::vec_t<T, N>(lhs.template as<typename T::default_unit>().storage * rhs);
 }
 
-template <typename U, gse::internal::is_quantity T, int N> requires std::is_arithmetic_v<U>
-constexpr auto gse::operator*(const U& lhs, const unit::vec_t<T, N>& rhs) -> unit::vec_t<T, N> {
+template <gse::internal::is_arithmetic U, gse::internal::is_quantity T, int N> 
+constexpr auto gse::unit::operator*(const U& lhs, const vec_t<T, N>& rhs) -> vec_t<T, N> {
 	return unit::vec_t<T, N>(lhs * rhs.template as<typename T::default_unit>().storage);
 }
 
-template <gse::internal::is_quantity T, typename U, int N> requires std::is_arithmetic_v<U>
-constexpr auto gse::operator/(const unit::vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<T, N> {
+template <gse::internal::is_quantity T, gse::internal::is_arithmetic U, int N>
+constexpr auto gse::unit::operator/(const vec_t<T, N>& lhs, const U& rhs) -> vec_t<T, N> {
 	return unit::vec_t<T, N>(lhs.template as<typename T::default_unit>().storage / rhs);
 }
 
-template <typename U, gse::internal::is_quantity T, int N> requires std::is_arithmetic_v<U>
-constexpr auto gse::operator/(const U& lhs, const unit::vec_t<T, N>& rhs) -> unit::vec_t<T, N> {
+template <gse::internal::is_arithmetic U, gse::internal::is_quantity T, int N>
+constexpr auto gse::unit::operator/(const U& lhs, const vec_t<T, N>& rhs) -> vec_t<T, N> {
 	return unit::vec_t<T, N>(lhs / rhs.template as<typename T::default_unit>().storage);
 }
 
+template <gse::internal::is_quantity T, gse::internal::is_quantity U, int N>
+constexpr auto gse::unit::operator*(const vec_t<T, N>& lhs, const vec_t<U, N>& rhs) {
+	using result_q = decltype(T()* U());
+	return unit::vec_t<result_q, N>(lhs.template as<typename T::default_unit>().storage * rhs.template as<typename U::default_unit>().storage);
+}
+
+template <gse::internal::is_quantity T, gse::internal::is_quantity U, int N>
+constexpr auto gse::unit::operator/(const vec_t<T, N>& lhs, const vec_t<U, N>& rhs) {
+	using result_q = decltype(T() / U());
+	return unit::vec_t<result_q, N>(lhs.template as<typename T::default_unit>().storage / rhs.template as<typename U::default_unit>().storage);
+}
+
 template <gse::internal::is_quantity T, int N>
-constexpr auto gse::operator+=(unit::vec_t<T, N>& lhs, const unit::vec_t<T, N>& rhs) -> unit::vec_t<T, N>& {
+constexpr auto gse::unit::operator/(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> unitless::vec_t<typename T::value_type, N> {
+	return unitless::vec_t<typename T::value_type, N>(lhs.template as<typename T::default_unit>().storage / rhs.template as<typename T::default_unit>().storage);
+}
+
+template <gse::internal::is_quantity T, gse::internal::is_quantity U, int N>
+constexpr auto gse::unit::operator*(const vec_t<T, N>& lhs, const U& rhs) {
+	using result_q = decltype(T() * U());
+	return unit::vec_t<result_q, N>(lhs.template as<typename T::default_unit>().storage * rhs.template as<typename U::default_unit>());
+}
+
+template <gse::internal::is_quantity T, gse::internal::is_quantity U, int N>
+constexpr auto gse::unit::operator/(const vec_t<T, N>& lhs, const U& rhs) {
+	using result_q = decltype(T() / U());
+	return unit::vec_t<result_q, N>(lhs.template as<typename T::default_unit>().storage / rhs.template as<typename U::default_unit>());
+}
+
+template <gse::internal::is_quantity T, gse::internal::is_quantity U, int N>
+constexpr auto gse::unit::operator*(const U& lhs, const vec_t<T, N>& rhs) {
+	using result_q = decltype(U() * T());
+	return unit::vec_t<result_q, N>(lhs.template as<typename U::default_unit>() * rhs.template as<typename T::default_unit>());
+}
+
+template <gse::internal::is_quantity T, gse::internal::is_quantity U, int N>
+constexpr auto gse::unit::operator/(const U& lhs, const vec_t<T, N>& rhs) {
+	using result_q = decltype(U() / T());
+	return unit::vec_t<result_q, N>(lhs.template as<typename U::default_unit>() / rhs.template as<typename T::default_unit>());
+}
+
+template <gse::internal::is_quantity T, int N>
+constexpr auto gse::unit::operator/(const vec_t<T, N>& lhs, const T& rhs) -> unitless::vec_t<typename T::value_type, N> {
+	return unitless::vec_t<typename T::value_type, N>(lhs.template as<typename T::default_unit>().storage / rhs);
+}
+
+template <gse::internal::is_quantity T, int N>
+constexpr auto gse::unit::operator/(const T& lhs, const vec_t<T, N>& rhs) -> unitless::vec_t<typename T::value_type, N> {
+	return unitless::vec_t<typename T::value_type, N>(lhs / rhs.template as<typename T::default_unit>().storage);
+}
+
+template <gse::internal::is_quantity T, int N>
+constexpr auto gse::unit::operator+=(vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> vec_t<T, N>& {
 	auto v1 = lhs.template as<typename T::default_unit>();
 	auto v2 = rhs.template as<typename T::default_unit>();
 
@@ -176,7 +242,7 @@ constexpr auto gse::operator+=(unit::vec_t<T, N>& lhs, const unit::vec_t<T, N>& 
 }
 
 template <gse::internal::is_quantity T, int N>
-constexpr auto gse::operator-=(unit::vec_t<T, N>& lhs, const unit::vec_t<T, N>& rhs) -> unit::vec_t<T, N>& {
+constexpr auto gse::unit::operator-=(vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> vec_t<T, N>& {
 	auto v1 = lhs.template as<typename T::default_unit>();
 	auto v2 = rhs.template as<typename T::default_unit>();
 
@@ -185,8 +251,8 @@ constexpr auto gse::operator-=(unit::vec_t<T, N>& lhs, const unit::vec_t<T, N>& 
 	return lhs;
 }
 
-template <gse::internal::is_quantity T, typename U, int N> requires std::is_arithmetic_v<U>
-constexpr auto gse::operator*=(unit::vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<T, N>& {
+template <gse::internal::is_quantity T, gse::internal::is_arithmetic U, int N>
+constexpr auto gse::unit::operator*=(vec_t<T, N>& lhs, const U& rhs) -> vec_t<T, N>& {
 	auto v1 = lhs.template as<typename T::default_unit>();
 
 	v1.storage *= rhs;
@@ -194,8 +260,8 @@ constexpr auto gse::operator*=(unit::vec_t<T, N>& lhs, const U& rhs) -> unit::ve
 	return lhs;
 }
 
-template <gse::internal::is_quantity T, typename U, int N> requires std::is_arithmetic_v<U>
-constexpr auto gse::operator/=(unit::vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<T, N>& {
+template <gse::internal::is_quantity T, gse::internal::is_arithmetic U, int N>
+constexpr auto gse::unit::operator/=(vec_t<T, N>& lhs, const U& rhs) -> vec_t<T, N>& {
 	auto v1 = lhs.template as<typename T::default_unit>();
 
 	v1.storage /= rhs;
@@ -203,87 +269,87 @@ constexpr auto gse::operator/=(unit::vec_t<T, N>& lhs, const U& rhs) -> unit::ve
 	return lhs;
 }
 
-template <gse::internal::is_quantity T, typename U, int N>
-constexpr auto gse::operator+(const unit::vec_t<T, N>& lhs, const unitless::vec_t<U, N>& rhs) -> unit::vec_t<T, N> {
+template <gse::internal::is_quantity T, gse::internal::is_arithmetic U, int N>
+constexpr auto gse::unit::operator+(const vec_t<T, N>& lhs, const unitless::vec_t<U, N>& rhs) -> vec_t<T, N> {
 	return unit::vec_t<T, N>(lhs.template as<typename T::default_unit>().storage + rhs.storage);
 }
 
-template <typename T, gse::internal::is_quantity U, int N>
-constexpr auto gse::operator+(const unitless::vec_t<T, N>& lhs, const unit::vec_t<U, N>& rhs) -> unit::vec_t<T, N> {
+template <gse::internal::is_arithmetic T, gse::internal::is_quantity U, int N>
+constexpr auto gse::unit::operator+(const unitless::vec_t<T, N>& lhs, const vec_t<U, N>& rhs) -> vec_t<T, N> {
 	return unit::vec_t<T, N>(lhs.storage + rhs.template as<typename T::default_unit>().storage);
 }
 
-template <gse::internal::is_quantity T, typename U, int N>
-constexpr auto gse::operator-(const unit::vec_t<T, N>& lhs, const unitless::vec_t<U, N>& rhs) -> unit::vec_t<T, N> {
+template <gse::internal::is_quantity T, gse::internal::is_arithmetic U, int N>
+constexpr auto gse::unit::operator-(const vec_t<T, N>& lhs, const unitless::vec_t<U, N>& rhs) -> vec_t<T, N> {
 	return unit::vec_t<T, N>(lhs.template as<typename T::default_unit>().storage - rhs.storage);
 }
 
-template <typename T, gse::internal::is_quantity U, int N>
-constexpr auto gse::operator-(const unitless::vec_t<T, N>& lhs, const unit::vec_t<U, N>& rhs) -> unit::vec_t<T, N> {
+template <gse::internal::is_arithmetic T, gse::internal::is_quantity U, int N>
+constexpr auto gse::unit::operator-(const unitless::vec_t<T, N>& lhs, const vec_t<U, N>& rhs) -> vec_t<T, N> {
 	return unit::vec_t<T, N>(lhs.storage - rhs.template as<typename T::default_unit>().storage);
 }
 
-template <gse::internal::is_quantity T, typename U, int N>
-constexpr auto gse::operator*(const unit::vec_t<T, N>& lhs, const unitless::vec_t<U, N>& rhs) -> unit::vec_t<T, N> {
+template <gse::internal::is_quantity T, gse::internal::is_arithmetic U, int N>
+constexpr auto gse::unit::operator*(const vec_t<T, N>& lhs, const unitless::vec_t<U, N>& rhs) -> vec_t<T, N> {
 	return unit::vec_t<T, N>(lhs.template as<typename T::default_unit>().storage * rhs.storage);
 }
 
-template <typename T, gse::internal::is_quantity U, int N>
-constexpr auto gse::operator*(const unitless::vec_t<T, N>& lhs, const unit::vec_t<U, N>& rhs) -> unit::vec_t<T, N> {
+template <gse::internal::is_arithmetic T, gse::internal::is_quantity U, int N>
+constexpr auto gse::unit::operator*(const unitless::vec_t<T, N>& lhs, const vec_t<U, N>& rhs) -> vec_t<T, N> {
 	return unit::vec_t<T, N>(lhs.storage * rhs.template as<typename T::default_unit>().storage);
 }
 
-template <gse::internal::is_quantity T, typename U, int N>
-constexpr auto gse::operator/(const unit::vec_t<T, N>& lhs, const unitless::vec_t<U, N>& rhs) -> unit::vec_t<T, N> {
+template <gse::internal::is_quantity T, gse::internal::is_arithmetic U, int N>
+constexpr auto gse::unit::operator/(const vec_t<T, N>& lhs, const unitless::vec_t<U, N>& rhs) -> vec_t<T, N> {
 	return unit::vec_t<T, N>(lhs.template as<typename T::default_unit>().storage / rhs.storage);
 }
 
-template <typename T, gse::internal::is_quantity U, int N>
-constexpr auto gse::operator/(const unitless::vec_t<T, N>& lhs, const unit::vec_t<U, N>& rhs) -> unit::vec_t<T, N> {
+template <gse::internal::is_arithmetic T, gse::internal::is_quantity U, int N>
+constexpr auto gse::unit::operator/(const unitless::vec_t<T, N>& lhs, const vec_t<U, N>& rhs) -> vec_t<T, N> {
 	return unit::vec_t<T, N>(lhs.storage / rhs.template as<typename T::default_unit>().storage);
 }
 
-template <typename T, int N, gse::internal::is_quantity U>
-constexpr auto gse::operator*(const unit::vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<U, N> {
+template <gse::internal::is_arithmetic T, int N, gse::internal::is_quantity U>
+constexpr auto gse::unit::operator*(const vec_t<T, N>& lhs, const U& rhs) -> vec_t<U, N> {
 	return unit::vec_t<T, N>(lhs.template as<typename T::default_unit>().storage * rhs.template as<typename T::default_unit>());
 }
 
-template <typename T, int N, gse::internal::is_quantity U>
-constexpr auto gse::operator*(const U& lhs, const unit::vec_t<T, N>& rhs) -> unit::vec_t<U, N> {
+template <gse::internal::is_arithmetic T, int N, gse::internal::is_quantity U>
+constexpr auto gse::unit::operator*(const U& lhs, const vec_t<T, N>& rhs) -> vec_t<U, N> {
 	return unit::vec_t<T, N>(lhs.template as<typename T::default_unit>() * rhs.template as<typename T::default_unit>().storage);
 }
 
-template <typename T, int N, gse::internal::is_quantity U>
-constexpr auto gse::operator/(const unit::vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<U, N> {
+template <gse::internal::is_arithmetic T, int N, gse::internal::is_quantity U>
+constexpr auto gse::unit::operator/(const vec_t<T, N>& lhs, const U& rhs) -> vec_t<U, N> {
 	return unit::vec_t<T, N>(lhs.template as<typename T::default_unit>().storage / rhs.template as<typename T::default_unit>());
 }
 
-template <typename T, int N, gse::internal::is_quantity U>
-constexpr auto gse::operator/(const U& lhs, const unit::vec_t<T, N>& rhs) -> unit::vec_t<U, N> {
+template <gse::internal::is_arithmetic T, int N, gse::internal::is_quantity U>
+constexpr auto gse::unit::operator/(const U& lhs, const vec_t<T, N>& rhs) -> vec_t<U, N> {
 	return unit::vec_t<T, N>(lhs.template as<typename T::default_unit>() / rhs.template as<typename T::default_unit>().storage);
 }
 
+template <gse::internal::is_quantity T, int N>
+constexpr auto gse::unit::operator-(const vec_t<T, N>& value) -> vec_t<T, N> {
+	return unit::vec_t<T, N>(-value.template as<typename T::default_unit>().storage);
+}
+
 template <typename T, int N, gse::internal::is_quantity U>
-constexpr auto gse::operator*(const unitless::vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<U, N> {
+constexpr auto gse::unitless::operator*(const vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<U, N> {
 	return unit::vec_t<U, N>(lhs.storage * rhs.template as<typename U::default_unit>());
 }
 
 template <typename T, int N, gse::internal::is_quantity U>
-constexpr auto gse::operator*(const U& lhs, const unitless::vec_t<T, N>& rhs) -> unit::vec_t<U, N> {
+constexpr auto gse::unitless::operator*(const U& lhs, const vec_t<T, N>& rhs) -> unit::vec_t<U, N> {
 	return unit::vec_t<U, N>(lhs.template as<typename U::default_unit>() * rhs.storage);
 }
 
 template <typename T, int N, gse::internal::is_quantity U>
-constexpr auto gse::operator/(const unitless::vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<U, N> {
+constexpr auto gse::unitless::operator/(const vec_t<T, N>& lhs, const U& rhs) -> unit::vec_t<U, N> {
 	return unit::vec_t<U, N>(lhs.storage / rhs.template as<typename U::default_unit>());
 }
 
 template <typename T, int N, gse::internal::is_quantity U>
-constexpr auto gse::operator/(const U& lhs, const unitless::vec_t<T, N>& rhs) -> unit::vec_t<U, N> {
+constexpr auto gse::unitless::operator/(const U& lhs, const vec_t<T, N>& rhs) -> unit::vec_t<U, N> {
 	return unit::vec_t<U, N>(lhs.template as<typename U::default_unit>() / rhs.storage);
-}
-
-template <gse::internal::is_quantity T, int N>
-constexpr auto gse::operator-(const unit::vec_t<T, N>& value) -> unit::vec_t<T, N> {
-	return unit::vec_t<T, N>(-value.template as<typename T::default_unit>().storage);
 }

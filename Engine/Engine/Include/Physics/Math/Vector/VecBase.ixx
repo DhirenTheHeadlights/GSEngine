@@ -78,11 +78,11 @@ export namespace gse::internal {
             return static_cast<const Derived*>(this)->storage[static_cast<std::size_t>(index)];
         }
 
-        constexpr auto data() -> vec::storage<T, N>& {
+        constexpr auto data() -> auto& {
             return static_cast<Derived*>(this)->storage;
         }
 
-        constexpr auto data() const -> const vec::storage<T, N>& {
+        constexpr auto data() const -> const auto& {
             return static_cast<const Derived*>(this)->storage;
         }
     };
@@ -128,15 +128,16 @@ export namespace gse::internal {
         using vec_from_lesser<Derived, T, 3>::vec_from_lesser;
 
         union {
-            vec::storage<T, 3> storage;
-            struct { T x, y, z; };
+            vec::storage<T, 4> storage;
+            struct { T x, y, z, _pad; };
         };
 
-        constexpr vec_t() : storage{ { static_cast<T>(0), static_cast<T>(0), static_cast<T>(0) } } {}
-        constexpr vec_t(const vec::storage<T, 3>& storage) : storage(storage) {}
-        constexpr vec_t(const T& value) : storage{ { value, value, value } } {}
-        constexpr vec_t(const T* values) : storage{ { values[0], values[1], values[2] } } {}
-        constexpr vec_t(const T& x, const T& y, const T& z) : storage{ { x, y, z } } {}
+        constexpr vec_t() : storage{ { static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0) }} {}
+		constexpr vec_t(const vec::storage<T, 3>& storage) : storage{ storage[0], storage[1], storage[2], static_cast<T>(0) } {}
+		constexpr vec_t(const vec::storage<T, 4>& storage) : storage{ storage[0], storage[1], storage[2], static_cast<T>(0) } {}
+        constexpr vec_t(const T& value) : storage{ { value, value, value, static_cast<T>(0) }} {}
+		constexpr vec_t(const T* values) : storage{ { values[0], values[1], values[2], static_cast<T>(0) } } {}
+		constexpr vec_t(const T& x, const T& y, const T& z) : storage{ { x, y, z, static_cast<T>(0) } } {}
     };
 
     template <typename Derived, typename T>
@@ -165,32 +166,29 @@ export namespace gse::internal {
     auto check_cpu_supports_sse() -> bool;
     auto check_cpu_supports_sse2() -> bool;
     auto check_cpu_supports_avx2() -> bool;
+
     bool sse_supported = check_cpu_supports_sse();
     bool sse2_supported = check_cpu_supports_sse2();
     bool avx_supported = check_cpu_supports_avx();
     bool avx2_supported = check_cpu_supports_avx2();
 
+    template <typename T, typename U, typename V, int N> auto add(const vec::storage<T, N>& lhs, const vec::storage<U, N>& rhs, vec::storage<V, N>& result) -> bool;
+    template <typename T, typename U, typename V, int N> auto subtract(const vec::storage<T, N>& lhs, const vec::storage<U, N>& rhs, vec::storage<V, N>& result) -> bool;
+    template <typename T, typename U, typename V, int N> auto multiply(const vec::storage<T, N>& lhs, const vec::storage<U, N>& rhs, vec::storage<V, N>& result) -> bool;
+    template <typename T, typename U, typename V, int N> auto divide(const vec::storage<T, N>& lhs, const vec::storage<U, N>& rhs, vec::storage<V, N>& result) -> bool;
 
+    template <typename T, typename U, typename V, int N> auto add(const T& lhs, const vec::storage<U, N>& rhs, vec::storage<V, N>& result) -> bool;
+    template <typename T, typename U, typename V, int N> auto add(const vec::storage<U, N>& lhs, const T& rhs, vec::storage<V, N>& result) -> bool;
+    template <typename T, typename U, typename V, int N> auto subtract(const T& lhs, const vec::storage<U, N>& rhs, vec::storage<V, N>& result) -> bool;
+    template <typename T, typename U, typename V, int N> auto subtract(const vec::storage<T, N>& lhs, const U& rhs, vec::storage<V, N>& result) -> bool;
+    template <typename T, typename U, typename V, int N> auto multiply(const T& lhs, const vec::storage<U, N>& rhs, vec::storage<V, N>& result) -> bool;
+    template <typename T, typename U, typename V, int N> auto multiply(const vec::storage<T, N>& lhs, const U& rhs, vec::storage<V, N>& result) -> bool;
+    template <typename T, typename U, typename V, int N> auto divide(const T& lhs, const vec::storage<U, N>& rhs, vec::storage<V, N>& result) -> bool;
+    template <typename T, typename U, typename V, int N> auto divide(const vec::storage<T, N>& lhs, const U& rhs, vec::storage<V, N>& result) -> bool;
 
+    template <typename T, typename U, typename V, int N> auto dot(const vec::storage<T, N>& lhs, const vec::storage<U, N>& rhs, V& result) -> bool;
 
-    template <typename T, typename U, typename V, int N> auto add(const gse::vec::storage<T, N>& lhs, const gse::vec::storage<U, N>& rhs, gse::vec::storage<V, N>& result) -> bool;
-    template <typename T, typename U, typename V, int N> auto subtract(const gse::vec::storage<T, N>& lhs, const gse::vec::storage<U, N>& rhs, gse::vec::storage<V, N>& result) -> bool;
-    template <typename T, typename U, typename V, int N> auto multiply(const gse::vec::storage<T, N>& lhs, const gse::vec::storage<U, N>& rhs, gse::vec::storage<V, N>& result) -> bool;
-    template <typename T, typename U, typename V, int N> auto divide(const gse::vec::storage<T, N>& lhs, const gse::vec::storage<U, N>& rhs, gse::vec::storage<V, N>& result) -> bool;
-
-    template <typename T, typename U, typename V, int N> auto add(const T& lhs, const gse::vec::storage<U, N>& rhs, gse::vec::storage<V, N>& result) -> bool;
-    template <typename T, typename U, typename V, int N> auto add(const gse::vec::storage<U, N>& lhs, const T& rhs, gse::vec::storage<V, N>& result) -> bool;
-    template <typename T, typename U, typename V, int N> auto subtract(const T& lhs, const gse::vec::storage<U, N>& rhs, gse::vec::storage<V, N>& result) -> bool;
-    template <typename T, typename U, typename V, int N> auto subtract(const gse::vec::storage<T, N>& lhs, const U& rhs, gse::vec::storage<V, N>& result) -> bool;
-    template <typename T, typename U, typename V, int N>  auto multiply(const T& lhs, const gse::vec::storage<U, N>& rhs, gse::vec::storage<V, N>& result) -> bool;
-    template <typename T, typename U, typename V, int N> auto multiply(const gse::vec::storage<T, N>& lhs, const U& rhs, gse::vec::storage<V, N>& result) -> bool;
-    template <typename T, typename U, typename V, int N> auto divide(const T& lhs, const gse::vec::storage<U, N>& rhs, gse::vec::storage<V, N>& result) -> bool;
-    template <typename T, typename U, typename V, int N> auto divide(const gse::vec::storage<T, N>& lhs, const U& rhs, gse::vec::storage<V, N>& result) -> bool;
-
-    template <typename T, typename U, typename V, int N> auto dot(const gse::vec::storage<T, N>& lhs, const gse::vec::storage<U, N>& rhs, V& result) -> bool;
-
-};
-
+};  
 
 auto gse::internal::check_cpu_supports_sse() -> bool {
     int info[4];
@@ -208,11 +206,11 @@ auto gse::internal::check_cpu_supports_avx() -> bool {
     int info[4];
     __cpuid(info, 1);
 
-    bool os_uses_xsave = (info[2] & (1 << 27)) != 0;
-    bool cpu_supports_avx = (info[2] & (1 << 28)) != 0;
+    const bool os_uses_xsave = (info[2] & (1 << 27)) != 0;
+    const bool cpu_supports_avx = (info[2] & (1 << 28)) != 0;
 
     if (os_uses_xsave && cpu_supports_avx) {
-        std::uint64_t xcr_mask = _xgetbv(_XCR_XFEATURE_ENABLED_MASK);
+    	const std::uint64_t xcr_mask = _xgetbv(_XCR_XFEATURE_ENABLED_MASK);
         return (xcr_mask & 0x6) == 0x6; // XMM (bit 1) and YMM (bit 2)
     }
 
@@ -224,16 +222,16 @@ auto gse::internal::check_cpu_supports_avx2() -> bool {
 
     // First check AVX and OS support
     __cpuid(info, 1);
-    bool os_uses_xsave = (info[2] & (1 << 27)) != 0;
-    bool cpu_supports_avx = (info[2] & (1 << 28)) != 0;
+    const bool os_uses_xsave = (info[2] & (1 << 27)) != 0;
+    const bool cpu_supports_avx = (info[2] & (1 << 28)) != 0;
 
     if (!(os_uses_xsave && cpu_supports_avx)) {
         return false;
     }
 
-    std::uint64_t xcr_mask = _xgetbv(_XCR_XFEATURE_ENABLED_MASK);
-    bool xmm_enabled = (xcr_mask & 0x2) != 0;
-    bool ymm_enabled = (xcr_mask & 0x4) != 0;
+    const std::uint64_t xcr_mask = _xgetbv(_XCR_XFEATURE_ENABLED_MASK);
+    const bool xmm_enabled = (xcr_mask & 0x2) != 0;
+    const bool ymm_enabled = (xcr_mask & 0x4) != 0;
 
     if (!(xmm_enabled && ymm_enabled)) {
         return false;
@@ -245,68 +243,49 @@ auto gse::internal::check_cpu_supports_avx2() -> bool {
 }
 
 template <typename T, typename U, typename V, int N>
-auto gse::internal::add(const gse::vec::storage<T, N>& lhs, const gse::vec::storage<U, N>& rhs, gse::vec::storage<V, N>& result) -> bool {
+auto gse::internal::add(const vec::storage<T, N>& lhs, const vec::storage<U, N>& rhs, vec::storage<V, N>& result) -> bool {
 	if constexpr (std::is_integral_v<T> && std::is_integral_v<U>) {
         // AVX2: 256-bit SIMD with integer operation
         if (avx2_supported && N == 8) {
-            __m256i a = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs.data.data()));
-            __m256i b = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(rhs.data.data()));
-            __m256i c = _mm256_add_epi32(a, b);
+        	const __m256i a = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs.data.data()));
+            const __m256i b = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(rhs.data.data()));
+            const __m256i c = _mm256_add_epi32(a, b);
             _mm256_storeu_si256(reinterpret_cast<__m256i*>(result.data.data()), c);
             return true;
         }
         // SSE2: 128-bit SIMD with integer operation
-        else if (sse2_supported && N == 4) {
-            __m128i a = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data.data()));
-            __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data.data()));
-            __m128i c = _mm_add_epi32(a, b);
-            _mm_storeu_si128(reinterpret_cast<__m128i*>(result.data.data()), c);
-            return true;
+        if (sse2_supported && N == 4) {
+        	const __m128i a = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data.data()));
+	        const __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data.data()));
+	        const __m128i c = _mm_add_epi32(a, b);
+	        _mm_storeu_si128(reinterpret_cast<__m128i*>(result.data.data()), c);
+	        return true;
         }
-    }
-    else if constexpr ( std::is_same_v<T, float> && std::is_same_v<U, float>) {
+	}
+    else if constexpr (std::is_same_v<T, float> && std::is_same_v<U, float>) {
         // AVX: 256-bit SIMD with float operation
         if (avx_supported && N == 8) {
-            __m256 a = _mm256_loadu_ps(lhs.data.data());
-            __m256 b = _mm256_loadu_ps(rhs.data.data());
-            __m256 c = _mm256_add_ps(a, b);
+        	const __m256 a = _mm256_loadu_ps(lhs.data.data());
+            const __m256 b = _mm256_loadu_ps(rhs.data.data());
+            const __m256 c = _mm256_add_ps(a, b);
             _mm256_storeu_ps(result.data.data(), c);
             return true;
         }
         // SSE: 128-bit SIMD with float operation
-        else if (sse_supported && N == 4) {
-            __m128 a = _mm_loadu_ps(lhs.data.data());
-            __m128 b = _mm_loadu_ps(rhs.data.data());
-            __m128 c = _mm_add_ps(a, b);
-            _mm_storeu_ps(result.data.data(), c);
-            return true;
+        if (sse_supported && N == 4) {
+        	const __m128 a = _mm_loadu_ps(lhs.data.data());
+	        const __m128 b = _mm_loadu_ps(rhs.data.data());
+	        const __m128 c = _mm_add_ps(a, b);
+	        _mm_storeu_ps(result.data.data(), c);
+	        return true;
         }
-    }
-	else if constexpr (std::is_same_v<T, double> && std::is_same_v<U, float>) {
-		// AVX: 256-bit SIMD with double operation
-		if (avx_supported && N == 4) {
-			__m256d a = _mm256_loadu_pd(lhs.data.data());
-			__m256d b = _mm256_loadu_pd(rhs.data.data());
-			__m256d c = _mm256_add_pd(a, b);
-			_mm256_storeu_pd(result.data.data(), c);
-			return true;
-		}
-		// SSE: 128-bit SIMD with double operation
-		else if (sse_supported && N == 2) {
-			__m128d a = _mm_loadu_pd(lhs.data.data());
-			__m128d b = _mm_loadu_pd(rhs.data.data());
-			__m128d c = _mm_add_pd(a, b);
-			_mm_storeu_pd(result.data.data(), c);
-			return true;
-		}
 	}
 
     return false;
 }
 
 template <typename T, typename U, typename V, int N>
-auto gse::internal::subtract(const gse::vec::storage<T, N>& lhs, const gse::vec::storage<U, N>& rhs, gse::vec::storage<V, N>& result) -> bool {
-    
+auto gse::internal::subtract(const vec::storage<T, N>& lhs, const vec::storage<U, N>& rhs, vec::storage<V, N>& result) -> bool {
     if constexpr (std::is_integral_v<T> && std::is_integral_v<U>) {
         // AVX2: 256-bit SIMD with integer operation
         if (avx2_supported && N == 8) {
@@ -317,659 +296,478 @@ auto gse::internal::subtract(const gse::vec::storage<T, N>& lhs, const gse::vec:
             return true;
         }
         // SSE2: 128-bit SIMD with integer operation
-        else if (sse2_supported && N == 4) {
-            __m128i a = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data.data()));
-            __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data.data()));
-            __m128i c = _mm_sub_epi32(a, b);
-            _mm_storeu_si128(reinterpret_cast<__m128i*>(result.data.data()), c);
-            return true;
-        }
-    }
-    else if constexpr ( std::is_same_v<T, float> && std::is_same_v<U, float>) {
-        // AVX: 256-bit SIMD with float operation
-        if (avx_supported && N == 8) {
-            __m256 a = _mm256_loadu_ps(lhs.data.data());
-            __m256 b = _mm256_loadu_ps(rhs.data.data());
-            __m256 c = _mm256_sub_ps(a, b);
-            _mm256_storeu_ps(result.data.data(), c);
-            return true;
-        }
-        // SSE: 128-bit SIMD with float operation
-        else if (sse_supported && N == 4) {
-            __m128 a = _mm_loadu_ps(lhs.data.data());
-            __m128 b = _mm_loadu_ps(rhs.data.data());
-            __m128 c = _mm_sub_ps(a, b);
-            _mm_storeu_ps(result.data.data(), c);
-            return true;
-        }
-    }
-    else if constexpr (std::is_same_v<T, double> && std::is_same_v<U, float>) {
-		// AVX: 256-bit SIMD with double operation
-		if (avx_supported && N == 4) {
-			__m256d a = _mm256_loadu_pd(lhs.data.data());
-			__m256d b = _mm256_loadu_pd(rhs.data.data());
-			__m256d c = _mm256_sub_pd(a, b);
-			_mm256_storeu_pd(result.data.data(), c);
-			return true;
-		}
-		// SSE: 128-bit SIMD with double operation
-		else if (sse_supported && N == 2) {
-			__m128d a = _mm_loadu_pd(lhs.data.data());
-			__m128d b = _mm_loadu_pd(rhs.data.data());
-			__m128d c = _mm_sub_pd(a, b);
-			_mm_storeu_pd(result.data.data(), c);
-			return true;
-		}
-	}
-
-    return false;
-}
-
-template <typename T, typename U, typename V, int N>
-auto gse::internal::multiply(const gse::vec::storage<T, N>& lhs, const gse::vec::storage<U, N>& rhs, gse::vec::storage<V, N>& result) -> bool {
-    if constexpr (std::is_integral_v<T> && std::is_integral_v<U>) {
-        // AVX2: 256-bit SIMD with integer operation
-        if (avx2_supported && N == 8) {
-            __m256i a = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs.data.data()));
-            __m256i b = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(rhs.data.data()));
-            __m256i c = _mm256_mul_epi32(a, b);
-            _mm256_storeu_si256(reinterpret_cast<__m256i*>(result.data.data()), c);
-            return true;
-        }
-        // SSE2: 128-bit SIMD with integer operation
-        else if (sse2_supported && N == 4) {
-            __m128i a = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data.data()));
-            __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data.data()));
-            __m128i c = _mm_mul_epi32(a, b);
-            _mm_storeu_si128(reinterpret_cast<__m128i*>(result.data.data()), c);
-            return true;
-        }
-    }
-    else if constexpr ( std::is_same_v<T, float> && std::is_same_v<U, float>) {
-        // AVX: 256-bit SIMD with float operation
-        if (avx_supported && N == 8) {
-            __m256 a = _mm256_loadu_ps(lhs.data.data());
-            __m256 b = _mm256_loadu_ps(rhs.data.data());
-            __m256 c = _mm256_mul_ps(a, b);
-            _mm256_storeu_ps(result.data.data(), c);
-            return true;
-        }
-        // SSE: 128-bit SIMD with float operation
-        else if (sse_supported && N == 4) {
-            __m128 a = _mm_loadu_ps(lhs.data.data());
-            __m128 b = _mm_loadu_ps(rhs.data.data());
-            __m128 c = _mm_mul_ps(a, b);
-            _mm_storeu_ps(result.data.data(), c);
-            return true;
-        }
-    }
-	else if constexpr (std::is_same_v<T, double> && std::is_same_v<U, float>) {
-		// AVX: 256-bit SIMD with double operation
-		if (avx_supported && N == 4) {
-			__m256d a = _mm256_loadu_pd(lhs.data.data());
-			__m256d b = _mm256_loadu_pd(rhs.data.data());
-			__m256d c = _mm256_mul_pd(a, b);
-			_mm256_storeu_pd(result.data.data(), c);
-			return true;
-		}
-		// SSE: 128-bit SIMD with double operation
-		else if (sse_supported && N == 2) {
-			__m128d a = _mm_loadu_pd(lhs.data.data());
-			__m128d b = _mm_loadu_pd(rhs.data.data());
-			__m128d c = _mm_mul_pd(a, b);
-			_mm_storeu_pd(result.data.data(), c);
-			return true;
-		}
-	}
-    return false;
-}
-
-template <typename T, typename U, typename V, int N>
-auto gse::internal::divide(const gse::vec::storage<T, N>& lhs, const gse::vec::storage<U, N>& rhs, gse::vec::storage<V, N>& result) -> bool {
-    if constexpr (std::is_integral_v<T> && std::is_integral_v<U>) {
-        // AVX2: 256-bit SIMD with integer operation
-        if (avx2_supported && N == 8) {
-            __m256i a = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs.data.data()));
-            __m256i b = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(rhs.data.data()));
-            __m256i c = _mm256_div_epi32(a, b);
-            _mm256_storeu_si256(reinterpret_cast<__m256i*>(result.data.data()), c);
-            return true;
-        }
-        // SSE2: 128-bit SIMD with integer operation
-        else if (sse2_supported && N == 4) {
-            __m128i a = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data.data()));
-            __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data.data()));
-            __m128i c = _mm_div_epi32(a, b);
-            _mm_storeu_si128(reinterpret_cast<__m128i*>(result.data.data()), c);
-            return true;
-        }
-    }
-    else if constexpr ( std::is_same_v<T, float> && std::is_same_v<U, float>) {
-        // AVX: 256-bit SIMD with float operation
-        if (avx_supported && N == 8) {
-            __m256 a = _mm256_loadu_ps(lhs.data.data());
-            __m256 b = _mm256_loadu_ps(rhs.data.data());
-            __m256 c = _mm256_div_ps(a, b);
-            _mm256_storeu_ps(result.data.data(), c);
-            return true;
-        }
-        // SSE: 128-bit SIMD with float operation
-        else if (sse_supported && N == 4) {
-            __m128 a = _mm_loadu_ps(lhs.data.data());
-            __m128 b = _mm_loadu_ps(rhs.data.data());
-            __m128 c = _mm_div_ps(a, b);
-            _mm_storeu_ps(result.data.data(), c);
-            return true;
-        }
-    }
-	else if constexpr (std::is_same_v<T, double> && std::is_same_v<U, float>) {
-		// AVX: 256-bit SIMD with double operation
-		if (avx_supported && N == 4) {
-			__m256d a = _mm256_loadu_pd(lhs.data.data());
-			__m256d b = _mm256_loadu_pd(rhs.data.data());
-			__m256d c = _mm256_div_pd(a, b);
-			_mm256_storeu_pd(result.data.data(), c);
-			return true;
-		}
-		// SSE: 128-bit SIMD with double operation
-		else if (sse_supported && N == 2) {
-			__m128d a = _mm_loadu_pd(lhs.data.data());
-			__m128d b = _mm_loadu_pd(rhs.data.data());
-			__m128d c = _mm_div_pd(a, b);
-			_mm_storeu_pd(result.data.data(), c);
-			return true;
-		}
-	}
-
-    return false;
-}
-
-
-template <typename T, typename U, typename V, int N>
-auto gse::internal::add(const T& lhs, const gse::vec::storage<U, N>& rhs, gse::vec::storage<V, N>& result) -> bool {
-    if constexpr (std::is_integral_v<T> && std::is_integral_v<U>) {
-        // AVX2: 256-bit SIMD with integer operation
-        if (avx2_supported && N == 8) {
-            __m256i a = _mm256_set1_epi32(lhs);
-            __m256i b = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(rhs.data.data()));
-            __m256i c = _mm256_add_epi32(a, b);
-            _mm256_storeu_si256(reinterpret_cast<__m256i*>(result.data.data()), c);
-            return true;
-        }
-        // SSE2: 128-bit SIMD with integer operation
-        else if (sse2_supported && N == 4) {
-            __m128i a = _mm_set1_epi32(lhs);
-            __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data.data()));
-            __m128i c = _mm_add_epi32(a, b);
-            _mm_storeu_si128(reinterpret_cast<__m128i*>(result.data.data()), c);
-            return true;
-        }
-    }
-    else if constexpr ( std::is_same_v<T, float> && std::is_same_v<U, float>) {
-        // AVX: 256-bit SIMD with float operation
-        if (avx_supported && N == 8) {
-            __m256 a = _mm256_set1_ps(lhs);
-            __m256 b = _mm256_loadu_ps(rhs.data.data());
-            __m256 c = _mm256_add_ps(a, b);
-            _mm256_storeu_ps(result.data.data(), c);
-            return true;
-        }
-
-        // SSE: 128-bit SIMD with float operation
-        else if (sse_supported && N == 4) {
-            __m128 a = _mm_set1_ps(lhs);
-            __m128 b = _mm_loadu_ps(rhs.data.data());
-            __m128 c = _mm_add_ps(a, b);
-            _mm_storeu_ps(result.data.data(), c);
-            return true;
-        }
-    }
-	else if constexpr (std::is_same_v<T, double> && std::is_same_v<U, float>) {
-		// AVX: 256-bit SIMD with double operation
-		if (avx_supported && N == 4) {
-			__m256d a = _mm256_set1_pd(lhs);
-			__m256d b = _mm256_loadu_pd(rhs.data.data());
-			__m256d c = _mm256_add_pd(a, b);
-			_mm256_storeu_pd(result.data.data(), c);
-			return true;
-		}
-		// SSE: 128-bit SIMD with double operation
-		else if (sse_supported && N == 2) {
-			__m128d a = _mm_set1_pd(lhs);
-			__m128d b = _mm_loadu_pd(rhs.data.data());
-			__m128d c = _mm_add_pd(a, b);
-			_mm_storeu_pd(result.data.data(), c);
-			return true;
-		}
-	}
-    return false;
-}
-
-template <typename T, typename U, typename V, int N>
-auto gse::internal::add(const gse::vec::storage<U, N>& lhs, const T& rhs, gse::vec::storage<V, N>& result) -> bool {
-    if constexpr (std::is_integral_v<T> && std::is_integral_v<U>) {
-        // AVX2: 256-bit SIMD with integer operation
-        if (avx2_supported && N == 8) {
-            __m256i a = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs.data.data()));
-            __m256i b = _mm256_set1_epi32(rhs);
-            __m256i c = _mm256_add_epi32(a, b);
-            _mm256_storeu_si256(reinterpret_cast<__m256i*>(result.data.data()), c);
-            return true;
-        }
-        // SSE2: 128-bit SIMD with integer operation
-        else if (sse2_supported && N == 4) {
-            __m128i a = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data.data()));
-            __m128i b = _mm_set1_epi32(rhs);
-            __m128i c = _mm_add_epi32(a, b);
-            _mm_storeu_si128(reinterpret_cast<__m128i*>(result.data.data()), c);
-            return true;
+        if (sse2_supported && N == 4) {
+	        __m128i a = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data.data()));
+	        __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data.data()));
+	        __m128i c = _mm_sub_epi32(a, b);
+	        _mm_storeu_si128(reinterpret_cast<__m128i*>(result.data.data()), c);
+	        return true;
         }
     }
     else if constexpr (std::is_same_v<T, float> && std::is_same_v<U, float>) {
         // AVX: 256-bit SIMD with float operation
         if (avx_supported && N == 8) {
             __m256 a = _mm256_loadu_ps(lhs.data.data());
-            __m256 b = _mm256_set1_ps(rhs);
-            __m256 c = _mm256_add_ps(a, b);
+            __m256 b = _mm256_loadu_ps(rhs.data.data());
+            __m256 c = _mm256_sub_ps(a, b);
             _mm256_storeu_ps(result.data.data(), c);
             return true;
         }
-
         // SSE: 128-bit SIMD with float operation
-        else if (sse_supported && N == 4) {
-            __m128 a = _mm_loadu_ps(lhs.data.data());
-            __m128 b = _mm_set1_ps(rhs);
-            __m128 c = _mm_add_ps(a, b);
-            _mm_storeu_ps(result.data.data(), c);
-            return true;
+        if (sse_supported && N == 4) {
+	        __m128 a = _mm_loadu_ps(lhs.data.data());
+	        __m128 b = _mm_loadu_ps(rhs.data.data());
+	        __m128 c = _mm_sub_ps(a, b);
+	        _mm_storeu_ps(result.data.data(), c);
+	        return true;
         }
     }
     else if constexpr (std::is_same_v<T, double> && std::is_same_v<U, float>) {
-        // AVX: 256-bit SIMD with double operation
-        if (avx_supported && N == 4) {
-            __m256d a = _mm256_loadu_pd(lhs.data.data());
-            __m256d b = _mm256_set1_pd(rhs);
-            __m256d c = _mm256_add_pd(a, b);
-            _mm256_storeu_pd(result.data.data(), c);
-            return true;
-        }
-        // SSE: 128-bit SIMD with double operation
-        else if (sse_supported && N == 2) {
-            __m128d a = _mm_loadu_pd(lhs.data.data());
-            __m128d b = _mm_set1_pd(rhs);
-            __m128d c = _mm_add_pd(a, b);
-            _mm_storeu_pd(result.data.data(), c);
-            return true;
-        }
-    }
-    return false;
-}
-
-template <typename T, typename U, typename V, int N>
-auto gse::internal::subtract(const T& lhs, const gse::vec::storage<U, N>& rhs, gse::vec::storage<V, N>& result) -> bool {
-    if constexpr (std::is_integral_v<T> && std::is_integral_v<U>) {
-        // AVX2: 256-bit SIMD with integer operation
-        if (avx2_supported && N == 8) {
-            __m256i a = _mm256_set1_epi32(lhs);
-            __m256i b = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(rhs.data.data()));
-            __m256i c = _mm256_sub_epi32(a, b);
-            _mm256_storeu_si256(reinterpret_cast<__m256i*>(result.data.data()), c);
-            return true;
-        }
-        // SSE2: 128-bit SIMD with integer operation
-        else if (sse2_supported && N == 4) {
-            __m128i a = _mm_set1_epi32(lhs);
-            __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data.data()));
-            __m128i c = _mm_sub_epi32(a, b);
-            _mm_storeu_si128(reinterpret_cast<__m128i*>(result.data.data()), c);
-            return true;
-        }
-    }
-    else if constexpr ( std::is_same_v<T, float> && std::is_same_v<U, float>) {
-        // AVX: 256-bit SIMD with float operation
-        if (avx_supported && N == 8) {
-            __m256 a = _mm256_set1_ps(lhs);
-            __m256 b = _mm256_loadu_ps(rhs.data.data());
-            __m256 c = _mm256_sub_ps(a, b);
-            _mm256_storeu_ps(result.data.data(), c);
-            return true;
-        }
-
-        // SSE: 128-bit SIMD with float operation
-        else if (sse_supported && N == 4) {
-            __m128 a = _mm_set1_ps(lhs);
-            __m128 b = _mm_loadu_ps(rhs.data.data());
-            __m128 c = _mm_sub_ps(a, b);
-            _mm_storeu_ps(result.data.data(), c);
-            return true;
-        }
-    }
-	else if constexpr (std::is_same_v<T, double> && std::is_same_v<U, float>) {
-		// AVX: 256-bit SIMD with double operation
-		if (avx_supported && N == 4) {
-			__m256d a = _mm256_set1_pd(lhs);
-			__m256d b = _mm256_loadu_pd(rhs.data.data());
-			__m256d c = _mm256_sub_pd(a, b);
-			_mm256_storeu_pd(result.data.data(), c);
-			return true;
-		}
-		// SSE: 128-bit SIMD with double operation
-		else if (sse_supported && N == 2) {
-			__m128d a = _mm_set1_pd(lhs);
-			__m128d b = _mm_loadu_pd(rhs.data.data());
-			__m128d c = _mm_sub_pd(a, b);
-			_mm_storeu_pd(result.data.data(), c);
-			return true;
-		}
-	}
-            
-    return false;
-}
-
-template <typename T, typename U, typename V, int N>
-auto gse::internal::subtract(const gse::vec::storage<T, N>& lhs, const U& rhs, gse::vec::storage<V, N>& result) -> bool {
-    if constexpr (std::is_integral_v<T> && std::is_integral_v<U>) {
-        // AVX2: 256-bit SIMD with integer operation
-        if (avx2_supported && N == 8) {
-            __m256i a = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs.data.data()));
-            __m256i b = _mm256_set1_epi32(rhs);
-            __m256i c = _mm256_sub_epi32(a, b);
-            _mm256_storeu_si256(reinterpret_cast<__m256i*>(result.data.data()), c);
-            return true;
-        }
-        // SSE2: 128-bit SIMD with integer operation
-        else if (sse2_supported && N == 4) {
-            __m128i a = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data.data()));
-            __m128i b = _mm_set1_epi32(rhs);
-            __m128i c = _mm_sub_epi32(a, b);
-            _mm_storeu_si128(reinterpret_cast<__m128i*>(result.data.data()), c);
-            return true;
-        }
-    }
-    else if constexpr ( std::is_same_v<T, float> && std::is_same_v<U, float>) {
-        // AVX: 256-bit SIMD with float operation
-        if (avx_supported && N == 8) {
-            __m256 a = _mm256_loadu_ps(lhs.data.data());
-            __m256 b = _mm256_set1_ps(rhs);
-            __m256 c = _mm256_sub_ps(a, b);
-            _mm256_storeu_ps(result.data.data(), c);
-            return true;
-        }
-
-        // SSE: 128-bit SIMD with float operation
-        else if (sse_supported && N == 4) {
-            __m128 a = _mm_loadu_ps(lhs.data.data());
-            __m128 b = _mm_set1_ps(rhs);
-            __m128 c = _mm_sub_ps(a, b);
-            _mm_storeu_ps(result.data.data(), c);
-            return true;
-        }
-    }
-	else if constexpr (std::is_same_v<T, double> && std::is_same_v<U, float>) {
 		// AVX: 256-bit SIMD with double operation
 		if (avx_supported && N == 4) {
 			__m256d a = _mm256_loadu_pd(lhs.data.data());
-			__m256d b = _mm256_set1_pd(rhs);
+			__m256d b = _mm256_loadu_pd(rhs.data.data());
 			__m256d c = _mm256_sub_pd(a, b);
 			_mm256_storeu_pd(result.data.data(), c);
 			return true;
 		}
 		// SSE: 128-bit SIMD with double operation
-		else if (sse_supported && N == 2) {
+		if (sse_supported && N == 2) {
 			__m128d a = _mm_loadu_pd(lhs.data.data());
-			__m128d b = _mm_set1_pd(rhs);
+			__m128d b = _mm_loadu_pd(rhs.data.data());
 			__m128d c = _mm_sub_pd(a, b);
 			_mm_storeu_pd(result.data.data(), c);
 			return true;
 		}
-	}
+    }
+
     return false;
 }
 
 template <typename T, typename U, typename V, int N>
-auto gse::internal::multiply(const T& lhs, const gse::vec::storage<U, N>& rhs, gse::vec::storage<V, N>& result) -> bool {
+auto gse::internal::multiply(const vec::storage<T, N>& lhs, const vec::storage<U, N>& rhs, vec::storage<V, N>& result) -> bool {
     if constexpr (std::is_integral_v<T> && std::is_integral_v<U>) {
         // AVX2: 256-bit SIMD with integer operation
         if (avx2_supported && N == 8) {
-            __m256i a = _mm256_set1_epi32(reinterpret_cast<int>(lhs));
-            __m256i b = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(rhs.data.data()));
-            __m256i c = _mm256_mul_epi32(a, b);
+        	const __m256i a = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs.data.data()));
+            const __m256i b = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(rhs.data.data()));
+            const __m256i c = _mm256_mul_epi32(a, b);
             _mm256_storeu_si256(reinterpret_cast<__m256i*>(result.data.data()), c);
             return true;
         }
         // SSE2: 128-bit SIMD with integer operation
-        else if (sse2_supported && N == 4) {
-            __m128i a = _mm_set1_epi32(lhs);
-            __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data.data()));
-            __m128i c = _mm_mul_epi32(a, b);
-            _mm_storeu_si128(reinterpret_cast<__m128i*>(result.data.data()), c);
-            return true;
-        }
-    }
-    else if constexpr ( std::is_same_v<T, float> && std::is_same_v<U, float>) {
-        // AVX: 256-bit SIMD with float operation
-        if (avx_supported && N == 8) {
-            __m256 a = _mm256_set1_ps(lhs);
-            __m256 b = _mm256_loadu_ps(rhs.data.data());
-            __m256 c = _mm256_mul_ps(a, b);
-            _mm256_storeu_ps(result.data.data(), c);
-            return true;
-        }
-
-        // SSE: 128-bit SIMD with float operation
-        else if (sse_supported && N == 4) {
-            __m128 a = _mm_set1_ps(lhs);
-            __m128 b = _mm_loadu_ps(rhs.data.data());
-            __m128 c = _mm_mul_ps(a, b);
-            _mm_storeu_ps(result.data.data(), c);
-            return true;
-        }
-    }
-	else if constexpr (std::is_same_v<T, double> && std::is_same_v<U, float>) {
-		// AVX: 256-bit SIMD with double operation
-		if (avx_supported && N == 4) {
-			__m256d a = _mm256_set1_pd(lhs);
-			__m256d b = _mm256_loadu_pd(rhs.data.data());
-			__m256d c = _mm256_mul_pd(a, b);
-			_mm256_storeu_pd(result.data.data(), c);
-			return true;
-		}
-		// SSE: 128-bit SIMD with double operation
-		else if (sse_supported && N == 2) {
-			__m128d a = _mm_set1_pd(lhs);
-			__m128d b = _mm_loadu_pd(rhs.data.data());
-			__m128d c = _mm_mul_pd(a, b);
-			_mm_storeu_pd(result.data.data(), c);
-			return true;
-		}
-	}
-    return false;
-}
-
-template <typename T, typename U, typename V, int N>
-auto gse::internal::multiply(const gse::vec::storage<T, N>& lhs, const U& rhs, gse::vec::storage<V, N>& result) -> bool {
-    if constexpr (std::is_integral_v<T> && std::is_integral_v<U>) {
-        // AVX2: 256-bit SIMD with integer operation
-        if (avx2_supported && N == 8) {
-            __m256i a = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs.data.data()));
-            __m256i b = _mm256_set1_epi32(reinterpret_cast<int>(rhs));
-            __m256i c = _mm256_mul_epi32(a, b);
-            _mm256_storeu_si256(reinterpret_cast<__m256i*>(result.data.data()), c);
-            return true;
-        }
-        // SSE2: 128-bit SIMD with integer operation
-        else if (sse2_supported && N == 4) {
-            __m128i a = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data.data()));
-            __m128i b = _mm_set1_epi32(rhs);
-            __m128i c = _mm_mul_epi32(a, b);
-            _mm_storeu_si128(reinterpret_cast<__m128i*>(result.data.data()), c);
-            return true;
+        if (sse2_supported && N == 4) {
+        	const __m128i a = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data.data()));
+	        const __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data.data()));
+	        const __m128i c = _mm_mul_epi32(a, b);
+	        _mm_storeu_si128(reinterpret_cast<__m128i*>(result.data.data()), c);
+	        return true;
         }
     }
     else if constexpr (std::is_same_v<T, float> && std::is_same_v<U, float>) {
         // AVX: 256-bit SIMD with float operation
         if (avx_supported && N == 8) {
-            __m256 a = _mm256_loadu_ps(lhs.data.data());
-            __m256 b = _mm256_set1_ps(rhs);
-            __m256 c = _mm256_mul_ps(a, b);
+        	const __m256 a = _mm256_loadu_ps(lhs.data.data());
+            const __m256 b = _mm256_loadu_ps(rhs.data.data());
+            const __m256 c = _mm256_mul_ps(a, b);
             _mm256_storeu_ps(result.data.data(), c);
             return true;
         }
-
         // SSE: 128-bit SIMD with float operation
-        else if (sse_supported && N == 4) {
-            __m128 a = _mm_loadu_ps(lhs.data.data());
-            __m128 b = _mm_set1_ps(rhs);
-            __m128 c = _mm_mul_ps(a, b);
-            _mm_storeu_ps(result.data.data(), c);
-            return true;
-        }
-    }
-    else if constexpr (std::is_same_v<T, double> && std::is_same_v<U, float>) {
-        // AVX: 256-bit SIMD with double operation
-        if (avx_supported && N == 4) {
-            __m256d a = _mm256_loadu_pd(lhs.data.data());
-            __m256d b = _mm256_set1_pd(rhs);
-            __m256d c = _mm256_mul_pd(a, b);
-            _mm256_storeu_pd(result.data.data(), c);
-            return true;
-        }
-        // SSE: 128-bit SIMD with double operation
-        else if (sse_supported && N == 2) {
-            __m128d a = _mm_loadu_pd(lhs.data.data());
-            __m128d b = _mm_set1_pd(rhs);
-            __m128d c = _mm_mul_pd(a, b);
-            _mm_storeu_pd(result.data.data(), c);
-            return true;
+        if (sse_supported && N == 4) {
+        	const __m128 a = _mm_loadu_ps(lhs.data.data());
+	        const __m128 b = _mm_loadu_ps(rhs.data.data());
+	        const __m128 c = _mm_mul_ps(a, b);
+	        _mm_storeu_ps(result.data.data(), c);
+	        return true;
         }
     }
     return false;
 }
 
 template <typename T, typename U, typename V, int N>
-auto gse::internal::divide(const T& lhs, const gse::vec::storage<U, N>& rhs, gse::vec::storage<V, N>& result) -> bool {
+auto gse::internal::divide(const vec::storage<T, N>& lhs, const vec::storage<U, N>& rhs, vec::storage<V, N>& result) -> bool {
     if constexpr (std::is_integral_v<T> && std::is_integral_v<U>) {
         // AVX2: 256-bit SIMD with integer operation
         if (avx2_supported && N == 8) {
-            __m256i a = _mm256_set1_epi32(lhs);
-            __m256i b = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(rhs.data.data()));
-            __m256i c = _mm256_div_epi32(a, b);
+        	const __m256i a = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs.data.data()));
+            const __m256i b = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(rhs.data.data()));
+            const __m256i c = _mm256_div_epi32(a, b);
             _mm256_storeu_si256(reinterpret_cast<__m256i*>(result.data.data()), c);
             return true;
         }
         // SSE2: 128-bit SIMD with integer operation
-        else if (sse2_supported && N == 4) {
-            __m128i a = _mm_set1_epi32(lhs);
-            __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data.data()));
-            __m128i c = _mm_div_epi32(a, b);
-            _mm_storeu_si128(reinterpret_cast<__m128i*>(result.data.data()), c);
+        if (sse2_supported && N == 4) {
+        	const __m128i a = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data.data()));
+	        const __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data.data()));
+	        const __m128i c = _mm_div_epi32(a, b);
+	        _mm_storeu_si128(reinterpret_cast<__m128i*>(result.data.data()), c);
+	        return true;
+        }
+    }
+    else if constexpr (std::is_same_v<T, float> && std::is_same_v<U, float>) {
+        // AVX: 256-bit SIMD with float operation
+        if (avx_supported && N == 8) {
+        	const __m256 a = _mm256_loadu_ps(lhs.data.data());
+            const __m256 b = _mm256_loadu_ps(rhs.data.data());
+            const __m256 c = _mm256_div_ps(a, b);
+            _mm256_storeu_ps(result.data.data(), c);
             return true;
+        }
+        // SSE: 128-bit SIMD with float operation
+        if (sse_supported && N == 4) {
+        	const __m128 a = _mm_loadu_ps(lhs.data.data());
+	        const __m128 b = _mm_loadu_ps(rhs.data.data());
+	        const __m128 c = _mm_div_ps(a, b);
+	        _mm_storeu_ps(result.data.data(), c);
+	        return true;
+        }
+    }
+    return false;
+}
+
+
+template <typename T, typename U, typename V, int N>
+auto gse::internal::add(const T& lhs, const vec::storage<U, N>& rhs, vec::storage<V, N>& result) -> bool {
+    if constexpr (std::is_integral_v<T> && std::is_integral_v<U>) {
+        // AVX2: 256-bit SIMD with integer operation
+        if (avx2_supported && N == 8) {
+        	const __m256i a = _mm256_set1_epi32(lhs);
+            const __m256i b = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(rhs.data.data()));
+            const __m256i c = _mm256_add_epi32(a, b);
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(result.data.data()), c);
+            return true;
+        }
+        // SSE2: 128-bit SIMD with integer operation
+        if (sse2_supported && N == 4) {
+        	const __m128i a = _mm_set1_epi32(lhs);
+	        const __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data.data()));
+	        const __m128i c = _mm_add_epi32(a, b);
+	        _mm_storeu_si128(reinterpret_cast<__m128i*>(result.data.data()), c);
+	        return true;
+        }
+    }
+    else if constexpr (std::is_same_v<T, float> && std::is_same_v<U, float>) {
+        // AVX: 256-bit SIMD with float operation
+        if (avx_supported && N == 8) {
+        	const __m256 a = _mm256_set1_ps(lhs);
+            const __m256 b = _mm256_loadu_ps(rhs.data.data());
+            const __m256 c = _mm256_add_ps(a, b);
+            _mm256_storeu_ps(result.data.data(), c);
+            return true;
+        }
+
+        // SSE: 128-bit SIMD with float operation
+        if (sse_supported && N == 4) {
+        	const __m128 a = _mm_set1_ps(lhs);
+	        const __m128 b = _mm_loadu_ps(rhs.data.data());
+	        const __m128 c = _mm_add_ps(a, b);
+	        _mm_storeu_ps(result.data.data(), c);
+	        return true;
+        }
+    }
+    return false;
+}
+
+template <typename T, typename U, typename V, int N>
+auto gse::internal::add(const vec::storage<U, N>& lhs, const T& rhs, vec::storage<V, N>& result) -> bool {
+    if constexpr (std::is_integral_v<T> && std::is_integral_v<U>) {
+        // AVX2: 256-bit SIMD with integer operation
+        if (avx2_supported && N == 8) {
+        	const __m256i a = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs.data.data()));
+            const __m256i b = _mm256_set1_epi32(rhs);
+            const __m256i c = _mm256_add_epi32(a, b);
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(result.data.data()), c);
+            return true;
+        }
+        // SSE2: 128-bit SIMD with integer operation
+        if (sse2_supported && N == 4) {
+        	const __m128i a = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data.data()));
+	        const __m128i b = _mm_set1_epi32(rhs);
+	        const __m128i c = _mm_add_epi32(a, b);
+	        _mm_storeu_si128(reinterpret_cast<__m128i*>(result.data.data()), c);
+	        return true;
+        }
+    }
+    else if constexpr (std::is_same_v<T, float> && std::is_same_v<U, float>) {
+        // AVX: 256-bit SIMD with float operation
+        if (avx_supported && N == 8) {
+        	const __m256 a = _mm256_loadu_ps(lhs.data.data());
+            const __m256 b = _mm256_set1_ps(rhs);
+            const __m256 c = _mm256_add_ps(a, b);
+            _mm256_storeu_ps(result.data.data(), c);
+            return true;
+        }
+
+        // SSE: 128-bit SIMD with float operation
+        if (sse_supported && N == 4) {
+        	const __m128 a = _mm_loadu_ps(lhs.data.data());
+	        const __m128 b = _mm_set1_ps(rhs);
+	        const __m128 c = _mm_add_ps(a, b);
+	        _mm_storeu_ps(result.data.data(), c);
+	        return true;
+        }
+    }
+    return false;
+}
+
+template <typename T, typename U, typename V, int N>
+auto gse::internal::subtract(const T& lhs, const vec::storage<U, N>& rhs, vec::storage<V, N>& result) -> bool {
+    if constexpr (std::is_integral_v<T> && std::is_integral_v<U>) {
+        // AVX2: 256-bit SIMD with integer operation
+        if (avx2_supported && N == 8) {
+        	const __m256i a = _mm256_set1_epi32(lhs);
+            const __m256i b = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(rhs.data.data()));
+            const __m256i c = _mm256_sub_epi32(a, b);
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(result.data.data()), c);
+            return true;
+        }
+        // SSE2: 128-bit SIMD with integer operation
+        if (sse2_supported && N == 4) {
+        	const __m128i a = _mm_set1_epi32(lhs);
+	        const __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data.data()));
+	        const __m128i c = _mm_sub_epi32(a, b);
+	        _mm_storeu_si128(reinterpret_cast<__m128i*>(result.data.data()), c);
+	        return true;
         }
     }
     else if constexpr ( std::is_same_v<T, float> && std::is_same_v<U, float>) {
         // AVX: 256-bit SIMD with float operation
         if (avx_supported && N == 8) {
-            __m256 a = _mm256_set1_ps(lhs);
-            __m256 b = _mm256_loadu_ps(rhs.data.data());
-            __m256 c = _mm256_div_ps(a, b);
+        	const __m256 a = _mm256_set1_ps(lhs);
+            const __m256 b = _mm256_loadu_ps(rhs.data.data());
+            const __m256 c = _mm256_sub_ps(a, b);
             _mm256_storeu_ps(result.data.data(), c);
             return true;
         }
 
         // SSE: 128-bit SIMD with float operation
-        else if (sse_supported && N == 4) {
-            __m128 a = _mm_set1_ps(lhs);
-            __m128 b = _mm_loadu_ps(rhs.data.data());
-            __m128 c = _mm_div_ps(a, b);
-            _mm_storeu_ps(result.data.data(), c);
-            return true;
+        if (sse_supported && N == 4) {
+        	const __m128 a = _mm_set1_ps(lhs);
+	        const __m128 b = _mm_loadu_ps(rhs.data.data());
+	        const __m128 c = _mm_sub_ps(a, b);
+	        _mm_storeu_ps(result.data.data(), c);
+	        return true;
         }
     }
-	else if constexpr (std::is_same_v<T, double> && std::is_same_v<U, float>) {
-		// AVX: 256-bit SIMD with double operation
-		if (avx_supported && N == 4) {
-			__m256d a = _mm256_set1_pd(lhs);
-			__m256d b = _mm256_loadu_pd(rhs.data.data());
-			__m256d c = _mm256_div_pd(a, b);
-			_mm256_storeu_pd(result.data.data(), c);
-			return true;
-		}
-		// SSE: 128-bit SIMD with double operation
-		else if (sse_supported && N == 2) {
-			__m128d a = _mm_set1_pd(lhs);
-			__m128d b = _mm_loadu_pd(rhs.data.data());
-			__m128d c = _mm_div_pd(a, b);
-			_mm_storeu_pd(result.data.data(), c);
-			return true;
-		}
-	}
 
     return false;
 }
 
 template <typename T, typename U, typename V, int N>
-auto gse::internal::divide(const gse::vec::storage<T, N>& lhs, const U& rhs, gse::vec::storage<V, N>& result) -> bool {
+auto gse::internal::subtract(const vec::storage<T, N>& lhs, const U& rhs, vec::storage<V, N>& result) -> bool {
     if constexpr (std::is_integral_v<T> && std::is_integral_v<U>) {
         // AVX2: 256-bit SIMD with integer operation
         if (avx2_supported && N == 8) {
-            __m256i a = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs.data.data()));
-            __m256i b = _mm256_set1_epi32(rhs);
-            __m256i c = _mm256_div_epi32(a, b);
+        	const __m256i a = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs.data.data()));
+            const __m256i b = _mm256_set1_epi32(rhs);
+            const __m256i c = _mm256_sub_epi32(a, b);
             _mm256_storeu_si256(reinterpret_cast<__m256i*>(result.data.data()), c);
             return true;
         }
         // SSE2: 128-bit SIMD with integer operation
-        else if (sse2_supported && N == 4) {
-            __m128i a = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data.data()));
-            __m128i b = _mm_set1_epi32(rhs);
-            __m128i c = _mm_div_epi32(a, b);
-            _mm_storeu_si128(reinterpret_cast<__m128i*>(result.data.data()), c);
-            return true;
+        if (sse2_supported && N == 4) {
+        	const __m128i a = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data.data()));
+	        const __m128i b = _mm_set1_epi32(rhs);
+	        const __m128i c = _mm_sub_epi32(a, b);
+	        _mm_storeu_si128(reinterpret_cast<__m128i*>(result.data.data()), c);
+	        return true;
         }
     }
     else if constexpr ( std::is_same_v<T, float> && std::is_same_v<U, float>) {
         // AVX: 256-bit SIMD with float operation
         if (avx_supported && N == 8) {
-            __m256 a = _mm256_loadu_ps(lhs.data.data());
-            __m256 b = _mm256_set1_ps(rhs);
-            __m256 c = _mm256_div_ps(a, b);
+        	const __m256 a = _mm256_loadu_ps(lhs.data.data());
+            const __m256 b = _mm256_set1_ps(rhs);
+            const __m256 c = _mm256_sub_ps(a, b);
             _mm256_storeu_ps(result.data.data(), c);
             return true;
         }
 
         // SSE: 128-bit SIMD with float operation
-        else if (sse_supported && N == 4) {
-            __m128 a = _mm_loadu_ps(lhs.data.data());
-            __m128 b = _mm_set1_ps(rhs);
-            __m128 c = _mm_div_ps(a, b);
-            _mm_storeu_ps(result.data.data(), c);
-            return true;
+        if (sse_supported && N == 4) {
+        	const __m128 a = _mm_loadu_ps(lhs.data.data());
+	        const __m128 b = _mm_set1_ps(rhs);
+	        const __m128 c = _mm_sub_ps(a, b);
+	        _mm_storeu_ps(result.data.data(), c);
+	        return true;
         }
     }
-	else if constexpr (std::is_same_v<T, double> && std::is_same_v<U, float>) {
-		// AVX: 256-bit SIMD with double operation
-		if (avx_supported && N == 4) {
-			__m256d a = _mm256_loadu_pd(lhs.data.data());
-			__m256d b = _mm256_set1_pd(rhs);
-			__m256d c = _mm256_div_pd(a, b);
-			_mm256_storeu_pd(result.data.data(), c);
-			return true;
-		}
-		// SSE: 128-bit SIMD with double operation
-		else if (sse_supported && N == 2) {
-			__m128d a = _mm_loadu_pd(lhs.data.data());
-			__m128d b = _mm_set1_pd(rhs);
-			__m128d c = _mm_div_pd(a, b);
-			_mm_storeu_pd(result.data.data(), c);
-			return true;
-		}
-	}
+    return false;
+}
+
+template <typename T, typename U, typename V, int N>
+auto gse::internal::multiply(const T& lhs, const vec::storage<U, N>& rhs, vec::storage<V, N>& result) -> bool {
+    if constexpr (std::is_integral_v<T> && std::is_integral_v<U>) {
+        // AVX2: 256-bit SIMD with integer operation
+        if (avx2_supported && N == 8) {
+        	const __m256i a = _mm256_set1_epi32(reinterpret_cast<int>(lhs));
+            const __m256i b = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(rhs.data.data()));
+            const __m256i c = _mm256_mul_epi32(a, b);
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(result.data.data()), c);
+            return true;
+        }
+        // SSE2: 128-bit SIMD with integer operation
+        if (sse2_supported && N == 4) {
+        	const __m128i a = _mm_set1_epi32(lhs);
+	        const __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data.data()));
+	        const __m128i c = _mm_mul_epi32(a, b);
+	        _mm_storeu_si128(reinterpret_cast<__m128i*>(result.data.data()), c);
+	        return true;
+        }
+    }
+    else if constexpr ( std::is_same_v<T, float> && std::is_same_v<U, float>) {
+        // AVX: 256-bit SIMD with float operation
+        if (avx_supported && N == 8) {
+        	const __m256 a = _mm256_set1_ps(lhs);
+            const __m256 b = _mm256_loadu_ps(rhs.data.data());
+            const __m256 c = _mm256_mul_ps(a, b);
+            _mm256_storeu_ps(result.data.data(), c);
+            return true;
+        }
+
+        // SSE: 128-bit SIMD with float operation
+        if (sse_supported && N == 4) {
+        	const __m128 a = _mm_set1_ps(lhs);
+	        const __m128 b = _mm_loadu_ps(rhs.data.data());
+	        const __m128 c = _mm_mul_ps(a, b);
+	        _mm_storeu_ps(result.data.data(), c);
+	        return true;
+        }
+    }
+    return false;
+}
+
+template <typename T, typename U, typename V, int N>
+auto gse::internal::multiply(const vec::storage<T, N>& lhs, const U& rhs, vec::storage<V, N>& result) -> bool {
+    if constexpr (std::is_integral_v<T> && std::is_integral_v<U>) {
+        // AVX2: 256-bit SIMD with integer operation
+        if (avx2_supported && N == 8) {
+        	const __m256i a = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs.data.data()));
+            const __m256i b = _mm256_set1_epi32(reinterpret_cast<int>(rhs));
+            const __m256i c = _mm256_mul_epi32(a, b);
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(result.data.data()), c);
+            return true;
+        }
+        // SSE2: 128-bit SIMD with integer operation
+        if (sse2_supported && N == 4) {
+        	const __m128i a = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data.data()));
+	        const __m128i b = _mm_set1_epi32(rhs);
+	        const __m128i c = _mm_mul_epi32(a, b);
+	        _mm_storeu_si128(reinterpret_cast<__m128i*>(result.data.data()), c);
+	        return true;
+        }
+    }
+    else if constexpr (std::is_same_v<T, float> && std::is_same_v<U, float>) {
+        // AVX: 256-bit SIMD with float operation
+        if (avx_supported && N == 8) {
+        	const __m256 a = _mm256_loadu_ps(lhs.data.data());
+            const __m256 b = _mm256_set1_ps(rhs);
+            const __m256 c = _mm256_mul_ps(a, b);
+            _mm256_storeu_ps(result.data.data(), c);
+            return true;
+        }
+
+        // SSE: 128-bit SIMD with float operation
+        if (sse_supported && N == 4) {
+        	const __m128 a = _mm_loadu_ps(lhs.data.data());
+	        const __m128 b = _mm_set1_ps(rhs);
+	        const __m128 c = _mm_mul_ps(a, b);
+	        _mm_storeu_ps(result.data.data(), c);
+	        return true;
+        }
+    }
+    return false;
+}
+
+template <typename T, typename U, typename V, int N>
+auto gse::internal::divide(const T& lhs, const vec::storage<U, N>& rhs, vec::storage<V, N>& result) -> bool {
+    if constexpr (std::is_integral_v<T> && std::is_integral_v<U>) {
+        // AVX2: 256-bit SIMD with integer operation
+        if (avx2_supported && N == 8) {
+        	const __m256i a = _mm256_set1_epi32(lhs);
+            const __m256i b = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(rhs.data.data()));
+            const __m256i c = _mm256_div_epi32(a, b);
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(result.data.data()), c);
+            return true;
+        }
+        // SSE2: 128-bit SIMD with integer operation
+        if (sse2_supported && N == 4) {
+        	const __m128i a = _mm_set1_epi32(lhs);
+	        const __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data.data()));
+	        const __m128i c = _mm_div_epi32(a, b);
+	        _mm_storeu_si128(reinterpret_cast<__m128i*>(result.data.data()), c);
+	        return true;
+        }
+    }
+    else if constexpr ( std::is_same_v<T, float> && std::is_same_v<U, float>) {
+        // AVX: 256-bit SIMD with float operation
+        if (avx_supported && N == 8) {
+        	const __m256 a = _mm256_set1_ps(lhs);
+            const __m256 b = _mm256_loadu_ps(rhs.data.data());
+            const __m256 c = _mm256_div_ps(a, b);
+            _mm256_storeu_ps(result.data.data(), c);
+            return true;
+        }
+
+        // SSE: 128-bit SIMD with float operation
+        if (sse_supported && N == 4) {
+        	const __m128 a = _mm_set1_ps(lhs);
+	        const __m128 b = _mm_loadu_ps(rhs.data.data());
+	        const __m128 c = _mm_div_ps(a, b);
+	        _mm_storeu_ps(result.data.data(), c);
+	        return true;
+        }
+    }
 
     return false;
 }
 
 template <typename T, typename U, typename V, int N>
-auto gse::internal::dot(const gse::vec::storage<T, N>& lhs, const gse::vec::storage<U, N>& rhs, V& result) -> bool {
+auto gse::internal::divide(const vec::storage<T, N>& lhs, const U& rhs, vec::storage<V, N>& result) -> bool {
+    if constexpr (std::is_integral_v<T> && std::is_integral_v<U>) {
+        // AVX2: 256-bit SIMD with integer operation
+        if (avx2_supported && N == 8) {
+        	const __m256i a = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs.data.data()));
+            const __m256i b = _mm256_set1_epi32(rhs);
+            const __m256i c = _mm256_div_epi32(a, b);
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(result.data.data()), c);
+            return true;
+        }
+        // SSE2: 128-bit SIMD with integer operation
+        if (sse2_supported && N == 4) {
+        	const __m128i a = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data.data()));
+	        const __m128i b = _mm_set1_epi32(rhs);
+	        const __m128i c = _mm_div_epi32(a, b);
+	        _mm_storeu_si128(reinterpret_cast<__m128i*>(result.data.data()), c);
+	        return true;
+        }
+    }
+    else if constexpr ( std::is_same_v<T, float> && std::is_same_v<U, float>) {
+        // AVX: 256-bit SIMD with float operation
+        if (avx_supported && N == 8) {
+        	const __m256 a = _mm256_loadu_ps(lhs.data.data());
+            const __m256 b = _mm256_set1_ps(rhs);
+            const __m256 c = _mm256_div_ps(a, b);
+            _mm256_storeu_ps(result.data.data(), c);
+            return true;
+        }
+
+        // SSE: 128-bit SIMD with float operation
+        if (sse_supported && N == 4) {
+        	const __m128 a = _mm_loadu_ps(lhs.data.data());
+	        const __m128 b = _mm_set1_ps(rhs);
+	        const __m128 c = _mm_div_ps(a, b);
+	        _mm_storeu_ps(result.data.data(), c);
+	        return true;
+        }
+    }
+
+    return false;
+}
+
+template <typename T, typename U, typename V, int N>
+auto gse::internal::dot(const vec::storage<T, N>& lhs, const vec::storage<U, N>& rhs, V& result) -> bool {
     result = V{};
 
     if constexpr (std::is_integral_v<T> && std::is_integral_v<U>) {
@@ -985,16 +783,16 @@ auto gse::internal::dot(const gse::vec::storage<T, N>& lhs, const gse::vec::stor
 
                 return true;
             }
-            else if (sse2_supported && N == 4) {
-                __m128i a = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data.data()));
-                __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data.data()));
-                __m128i product = _mm_mullo_epi32(a, b);
+            if (sse2_supported && N == 4) {
+	            __m128i a = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data.data()));
+	            __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data.data()));
+	            __m128i product = _mm_mullo_epi32(a, b);
 
-                alignas(16) int tmp[4];
-                _mm_store_si128(reinterpret_cast<__m128i*>(tmp), product);
-                for (int i = 0; i < 4; ++i) result += tmp[i];
+	            alignas(16) int tmp[4];
+	            _mm_store_si128(reinterpret_cast<__m128i*>(tmp), product);
+	            for (int i = 0; i < 4; ++i) result += tmp[i];
 
-                return true;
+	            return true;
             }
         }
     }
@@ -1014,15 +812,15 @@ auto gse::internal::dot(const gse::vec::storage<T, N>& lhs, const gse::vec::stor
             result = _mm_cvtss_f32(sum128);
             return true;
         }
-        else if (sse_supported && N == 4) {
-            __m128 a = _mm_loadu_ps(lhs.data.data());
-            __m128 b = _mm_loadu_ps(rhs.data.data());
-            __m128 product = _mm_mul_ps(a, b);
-            product = _mm_hadd_ps(product, product);
-            product = _mm_hadd_ps(product, product);
+        if (sse_supported && N == 4) {
+	        __m128 a = _mm_loadu_ps(lhs.data.data());
+	        __m128 b = _mm_loadu_ps(rhs.data.data());
+	        __m128 product = _mm_mul_ps(a, b);
+	        product = _mm_hadd_ps(product, product);
+	        product = _mm_hadd_ps(product, product);
 
-            result = _mm_cvtss_f32(product);
-            return true;
+	        result = _mm_cvtss_f32(product);
+	        return true;
         }
     }
 
@@ -1040,14 +838,14 @@ auto gse::internal::dot(const gse::vec::storage<T, N>& lhs, const gse::vec::stor
             result = _mm_cvtsd_f64(sum128);
             return true;
         }
-        else if (sse_supported && N == 2) {
-            __m128d a = _mm_loadu_pd(lhs.data.data());
-            __m128d b = _mm_loadu_pd(rhs.data.data());
-            __m128d product = _mm_mul_pd(a, b);
-            product = _mm_hadd_pd(product, product);
+        if (sse_supported && N == 2) {
+	        __m128d a = _mm_loadu_pd(lhs.data.data());
+	        __m128d b = _mm_loadu_pd(rhs.data.data());
+	        __m128d product = _mm_mul_pd(a, b);
+	        product = _mm_hadd_pd(product, product);
 
-            result = _mm_cvtsd_f64(product);
-            return true;
+	        result = _mm_cvtsd_f64(product);
+	        return true;
         }
     }
     return false;
@@ -1065,10 +863,14 @@ export namespace gse::vec {
     template <typename T, int N> constexpr auto operator*(const storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<decltype(lhs[0] * rhs[0]), N>;
     template <typename T, int N> constexpr auto operator/(const storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<decltype(lhs[0] / rhs[0]), N>;
 
-    template <typename T, typename U, int N> constexpr auto operator+(const storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<decltype(lhs[0] + rhs[0]), N>;
-    template <typename T, typename U, int N> constexpr auto operator-(const storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<decltype(lhs[0] - rhs[0]), N>;
-    template <typename T, typename U, int N> constexpr auto operator*(const storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<decltype(lhs[0] * rhs[0]), N>;
-    template <typename T, typename U, int N> constexpr auto operator/(const storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<decltype(lhs[0] / rhs[0]), N>;
+    template <typename T, typename U, int N> [[deprecated("Mixing types in vector operations loses SIMD & is not recommended in hot paths")]]
+	constexpr auto operator+(const storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<decltype(lhs[0] + rhs[0]), N>;
+	template <typename T, typename U, int N> [[deprecated("Mixing types in vector operations loses SIMD & is not recommended in hot paths")]]
+	constexpr auto operator-(const storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<decltype(lhs[0] - rhs[0]), N>;
+	template <typename T, typename U, int N> [[deprecated("Mixing types in vector operations loses SIMD & is not recommended in hot paths")]]
+	constexpr auto operator*(const storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<decltype(lhs[0] * rhs[0]), N>;
+	template <typename T, typename U, int N> [[deprecated("Mixing types in vector operations loses SIMD & is not recommended in hot paths")]]
+	constexpr auto operator/(const storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<decltype(lhs[0] / rhs[0]), N>;
 
     template <typename T, int N> constexpr auto operator+=(storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>&;
     template <typename T, int N> constexpr auto operator-=(storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>&;
@@ -1080,10 +882,10 @@ export namespace gse::vec {
     template <typename T, typename U, int N> constexpr auto operator*=(storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<T, N>&;
     template <typename T, typename U, int N> constexpr auto operator/=(storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<T, N>&;
 
-    template <typename T, int N> constexpr auto operator*(const storage<T, N>& lhs, const T& rhs) -> storage<decltype(lhs[0] * rhs), N>;
-    template <typename T, int N> constexpr auto operator*(const T& lhs, const storage<T, N>& rhs) -> storage<decltype(lhs* rhs[0]), N>;
-    template <typename T, int N> constexpr auto operator/(const storage<T, N>& lhs, const T& rhs) -> storage<decltype(lhs[0] / rhs), N>;
-    template <typename T, int N> constexpr auto operator/(const T& lhs, const storage<T, N>& rhs) -> storage<decltype(lhs / rhs[0]), N>;
+    template <typename T, int N> constexpr auto operator*(const storage<T, N>& lhs, const T& rhs) -> storage<T, N>;
+    template <typename T, int N> constexpr auto operator*(const T& lhs, const storage<T, N>& rhs) -> storage<T, N>;
+    template <typename T, int N> constexpr auto operator/(const storage<T, N>& lhs, const T& rhs) -> storage<T, N>;
+    template <typename T, int N> constexpr auto operator/(const T& lhs, const storage<T, N>& rhs) -> storage<T, N>;
 
     template <typename T, typename U, int N> constexpr auto operator*(const storage<T, N>& lhs, const U& rhs) -> storage<decltype(lhs[0] * rhs), N>;
     template <typename T, typename U, int N> constexpr auto operator*(const U& lhs, const storage<T, N>& rhs) -> storage<decltype(lhs* rhs[0]), N>;
@@ -1270,7 +1072,7 @@ constexpr auto gse::vec::operator/=(storage<T, N>& lhs, const storage<U, N>& rhs
 }
 
 template <typename T, int N>
-constexpr auto gse::vec::operator*(const storage<T, N>& lhs, const T& rhs) -> storage<decltype(lhs[0] * rhs), N> {
+constexpr auto gse::vec::operator*(const storage<T, N>& lhs, const T& rhs) -> storage<T, N> {
     storage<decltype(lhs[0] * rhs), N> result{};
 
     if (!internal::multiply(rhs, lhs, result)) {
@@ -1281,7 +1083,7 @@ constexpr auto gse::vec::operator*(const storage<T, N>& lhs, const T& rhs) -> st
 }
 
 template <typename T, int N>
-constexpr auto gse::vec::operator*(const T& lhs, const storage<T, N>& rhs) -> storage<decltype(lhs* rhs[0]), N> {
+constexpr auto gse::vec::operator*(const T& lhs, const storage<T, N>& rhs) -> storage<T, N> {
     storage<decltype(lhs* rhs[0]), N> result{};
 
     if (!internal::multiply(lhs, rhs, result)) {
@@ -1292,7 +1094,7 @@ constexpr auto gse::vec::operator*(const T& lhs, const storage<T, N>& rhs) -> st
 }
 
 template <typename T, int N>
-constexpr auto gse::vec::operator/(const storage<T, N>& lhs, const T& rhs) -> storage<decltype(lhs[0] / rhs), N> {
+constexpr auto gse::vec::operator/(const storage<T, N>& lhs, const T& rhs) -> storage<T, N> {
     storage<decltype(lhs[0] / rhs), N> result{};
 
     if (!internal::divide(lhs, rhs, result)) {
@@ -1303,7 +1105,7 @@ constexpr auto gse::vec::operator/(const storage<T, N>& lhs, const T& rhs) -> st
 }
 
 template <typename T, int N>
-constexpr auto gse::vec::operator/(const T& lhs, const storage<T, N>& rhs) -> storage<decltype(lhs / rhs[0]), N> {
+constexpr auto gse::vec::operator/(const T& lhs, const storage<T, N>& rhs) -> storage<T, N> {
     storage<decltype(lhs / rhs[0]), N> result{};
     if (!internal::divide(lhs, rhs, result)) {
         for (int i = 0; i < N; ++i)
