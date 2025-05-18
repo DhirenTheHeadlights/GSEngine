@@ -20,6 +20,7 @@ export namespace gse::shader_loader {
 	auto get_shader(const std::filesystem::path& vert_path, const std::filesystem::path& frag_path) -> const shader&;
 	auto get_shader(std::string_view name) -> const shader&;
 	auto get_descriptor_layout(descriptor_layout layout_type) -> const vk::DescriptorSetLayout*;
+	auto destroy_shaders(vk::Device device) -> void;
 }
 
 namespace gse::shader_loader {

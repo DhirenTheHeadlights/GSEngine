@@ -35,3 +35,7 @@ export namespace gse::vulkan::persistent_allocator {
 	auto free(config::device_config config, buffer_resource& resource) -> void;
 	auto free(config::device_config config, image_resource& resource) -> void;
 }
+
+namespace gse::vulkan::persistent_allocator {
+	auto get_memory_flag_preferences(vk::BufferUsageFlags usage) -> std::vector<vk::MemoryPropertyFlags>;
+}

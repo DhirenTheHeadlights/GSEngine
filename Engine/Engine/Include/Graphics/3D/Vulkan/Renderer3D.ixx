@@ -25,14 +25,17 @@ gse::camera g_camera;
 export namespace gse::renderer3d {
 	auto initialize(vulkan::config& config) -> void;
 	auto initialize_objects() -> void;
-	auto begin_frame(const vulkan::config& config) -> void;
-	auto render(vulkan::config& config) -> void;
-	auto end_frame(const vulkan::config& config) -> void;
+	auto render(const vulkan::config& config) -> void;
 	auto shutdown(const vulkan::config& config) -> void;
 
 	auto get_camera() -> camera&;
 	auto get_render_pass() -> const vk::RenderPass&;
 	auto get_current_command_buffer() -> vk::CommandBuffer;
+}
+
+namespace gse::renderer3d {
+	auto begin_frame(const vulkan::config& config) -> vk::CommandBuffer;
+	auto end_frame(vk::CommandBuffer command, const vulkan::config& config) -> void;
 }
 
 vk::RenderPass g_render_pass;
@@ -48,10 +51,6 @@ gse::vulkan::persistent_allocator::image_resource g_depth_image_resource;
 
 auto gse::renderer3d::get_camera() -> camera& {
 	return g_camera;
-}
-
-auto gse::renderer3d::get_render_pass() -> const vk::RenderPass& {
-	return g_render_pass;
 }
 
 auto gse::renderer3d::initialize(vulkan::config& config) -> void {
@@ -419,7 +418,9 @@ auto gse::renderer3d::initialize_objects() -> void {
 	}
 }
 
-auto gse::renderer3d::begin_frame(const vulkan::config& config) -> void {
+auto gse::renderer3d::begin_frame(const vulkan::config& config) -> vk::CommandBuffer {
+	const auto command = begin_single_line_commands(config);
+
 	std::array<vk::ClearValue, 4> clear_values;
 	clear_values[0].color = vk::ClearColorValue(std::array{ 0.0f, 0.0f, 0.0f, 1.0f });
 	clear_values[1].color = vk::ClearColorValue(std::array{ 0.0f, 0.0f, 0.0f, 1.0f });
@@ -434,10 +435,13 @@ auto gse::renderer3d::begin_frame(const vulkan::config& config) -> void {
 		clear_values.data()
 	);
 
-	config.command.buffers[config.frame_context.image_index].beginRenderPass(render_pass_info, vk::SubpassContents::eInline);
+	command.beginRenderPass(render_pass_info, vk::SubpassContents::eInline);
+	return command;
 }
 
-auto gse::renderer3d::render(vulkan::config& config) -> void {
+auto gse::renderer3d::render(const vulkan::config& config) -> void {
+	const auto command = begin_frame(config);
+
 	for (const auto& components = registry::get_components<render_component>(); const auto& component : components) {
 		for (const auto& model_handle : component.models) {
 			for (const auto& entry : model_handle.get_render_queue_entries()) {
@@ -445,10 +449,13 @@ auto gse::renderer3d::render(vulkan::config& config) -> void {
 			}
 		}
 	}
+
+	end_frame(command, config);
 }
 
-auto gse::renderer3d::end_frame(const vulkan::config& config) -> void {
-	config.frame_context.command_buffer.endRenderPass();
+auto gse::renderer3d::end_frame(const vk::CommandBuffer command, const vulkan::config& config) -> void {
+	command.endRenderPass();
+	end_single_line_commands(command, config);
 }
 
 auto gse::renderer3d::shutdown(const vulkan::config& config) -> void {

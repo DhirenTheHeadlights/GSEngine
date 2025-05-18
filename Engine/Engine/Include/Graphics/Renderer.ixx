@@ -37,11 +37,13 @@ auto gse::renderer::initialize() -> void {
 }
 
 auto gse::renderer::begin_frame() -> void {
-	window::begin_frame();
-	vulkan::begin_frame(window::get_window(), g_config);
 	texture_loader::load_queued_textures(g_config);
 	model_loader::load_queued_models(g_config.device_data);
-	renderer3d::begin_frame(g_config);
+
+	renderer3d::render(g_config);
+
+	window::begin_frame();
+	vulkan::begin_frame(window::get_window(), g_config);
 }
 
 auto gse::renderer::update() -> void {
@@ -51,11 +53,9 @@ auto gse::renderer::update() -> void {
 }
 
 auto gse::renderer::render() -> void {
-	renderer3d::render(g_config);
-	renderer3d::end_frame(g_config);
-	display_timers();
 	renderer2d::begin_frame(g_config);
 	renderer2d::render(g_config);
+	display_timers();
 	gui::render();
 	std::cout << "Rendering frame..." << std::endl;
 }
@@ -69,6 +69,7 @@ auto gse::renderer::end_frame() -> void {
 auto gse::renderer::shutdown() -> void {
 	renderer2d::shutdown(g_config.device_data);
 	renderer3d::shutdown(g_config);
+	shader_loader::destroy_shaders(g_config.device_data.device);
 	window::shutdown();
 	platform::shutdown(g_config);
 }

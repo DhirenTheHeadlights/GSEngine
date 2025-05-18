@@ -318,3 +318,9 @@ auto gse::shader_loader::compile_shaders() -> std::unordered_map<std::string, de
 auto gse::shader_loader::get_descriptor_layout(const descriptor_layout layout_type) -> const vk::DescriptorSetLayout* {
     return &g_layouts[layout_type].layout;
 }
+
+auto gse::shader_loader::destroy_shaders(const vk::Device device) -> void {
+	for (auto& [layout, bindings] : g_layouts | std::views::values) {
+		device.destroyDescriptorSetLayout(layout);
+	}
+}

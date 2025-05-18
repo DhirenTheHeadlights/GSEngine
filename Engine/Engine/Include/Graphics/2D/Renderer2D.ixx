@@ -233,7 +233,7 @@ auto gse::renderer2d::initialize(vulkan::config& config) -> void {
 }
 
 auto gse::renderer2d::begin_frame(const vulkan::config& config) -> void {
-    const vk::CommandBuffer& cmd = config.frame_context.command_buffer;
+   /* const vk::CommandBuffer& cmd = config.frame_context.command_buffer;
 
     constexpr vk::ClearValue clear_value = vk::ClearColorValue(std::array{ 0.0f, 0.0f, 0.0f, 1.0f });
 
@@ -244,7 +244,7 @@ auto gse::renderer2d::begin_frame(const vulkan::config& config) -> void {
         1, &clear_value
     );
 
-    cmd.beginRenderPass(render_pass_info, vk::SubpassContents::eInline);
+    cmd.beginRenderPass(render_pass_info, vk::SubpassContents::eInline);*/
 }
 
 auto gse::renderer2d::render(const vulkan::config& config) -> void {
@@ -252,7 +252,7 @@ auto gse::renderer2d::render(const vulkan::config& config) -> void {
 }
 
 auto gse::renderer2d::end_frame(const vulkan::config& config) -> void {
-    config.frame_context.command_buffer.endRenderPass();
+    //config.frame_context.command_buffer.endRenderPass();
 }
 
 auto gse::renderer2d::shutdown(const vulkan::config::device_config device_data) -> void {
