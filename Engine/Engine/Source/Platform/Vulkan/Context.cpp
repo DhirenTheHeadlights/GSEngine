@@ -44,6 +44,7 @@ auto gse::vulkan::begin_frame(GLFWwindow* window, config& config) -> void {
 
     if (result == vk::Result::eErrorOutOfDateKHR) {
         create_swap_chain(window, config);
+		create_image_views(config);
         return begin_frame(window, config);
     }
 
@@ -55,18 +56,20 @@ auto gse::vulkan::begin_frame(GLFWwindow* window, config& config) -> void {
 
     constexpr vk::CommandBufferBeginInfo begin_info{};
     config.frame_context.command_buffer.begin(begin_info);
+
+    vk::ClearValue clear{ std::array{0.1f, 0.1f, 0.1f, 1.0f} };
+    const vk::RenderPassBeginInfo render_pass_begin_info{
+        config.render_pass,
+        config.frame_context.framebuffer,
+        { { 0,0 }, config.swap_chain_data.extent },
+        1, &clear
+    };
+
+    config.frame_context.command_buffer.beginRenderPass(render_pass_begin_info, vk::SubpassContents::eInline);
 }
 
 auto gse::vulkan::end_frame(const config& config) -> void {
-    uploader::transition_image_layout(
-        config.frame_context.command_buffer,
-        config.swap_chain_data.images[config.frame_context.image_index],
-        config.swap_chain_data.format,
-        vk::ImageLayout::eColorAttachmentOptimal,
-        vk::ImageLayout::ePresentSrcKHR,
-        1, 1
-    );
-
+    config.frame_context.command_buffer.endRenderPass();
     config.frame_context.command_buffer.end();
 
     const vk::Semaphore wait_semaphores[] = { config.sync.image_available_semaphore };
@@ -302,61 +305,9 @@ auto gse::vulkan::create_swap_chain(GLFWwindow* window, config& config) -> void 
     create_info.clipped = true;
 
     config.swap_chain_data.swap_chain = config.device_data.device.createSwapchainKHR(create_info);
-
     config.swap_chain_data.images = config.device_data.device.getSwapchainImagesKHR(config.swap_chain_data.swap_chain);
     config.swap_chain_data.format = config.swap_chain_data.surface_format.format;
-
     config.swap_chain_data.frame_buffers.resize(config.swap_chain_data.images.size());
-
-    for (size_t i = 0; i < config.swap_chain_data.image_views.size(); i++) {
-        vk::ImageView attachments[] = {
-	        config.swap_chain_data.image_views[i]
-        };
-
-        vk::FramebufferCreateInfo framebuffer_info(
-            {},
-	        config.render_pass,
-            static_cast<uint32_t>(std::size(attachments)),
-            attachments,
-	        config.swap_chain_data.extent.width,
-	        config.swap_chain_data.extent.height,
-            1
-        );
-
-        config.swap_chain_data.frame_buffers[i] = config.device_data.device.createFramebuffer(framebuffer_info);
-    }
-
-    std::cout << "Swapchain Created Successfully!\n";
-
-    vk::AttachmentDescription color_attachment{
-	    {},
-	    config.swap_chain_data.format,
-	    vk::SampleCountFlagBits::e1,
-	    vk::AttachmentLoadOp::eClear,
-	    vk::AttachmentStoreOp::eStore,
-	    vk::AttachmentLoadOp::eDontCare,
-	    vk::AttachmentStoreOp::eDontCare,
-	    vk::ImageLayout::eUndefined,
-	    vk::ImageLayout::ePresentSrcKHR
-    };
-
-    vk::AttachmentReference color_ref{ 0, vk::ImageLayout::eColorAttachmentOptimal };
-
-    vk::SubpassDescription sub_pass{
-        {}, vk::PipelineBindPoint::eGraphics,
-        0, nullptr,
-        1, &color_ref,
-        nullptr, nullptr
-    };
-
-    const vk::RenderPassCreateInfo rp_info{
-        {}, 1, &color_attachment,
-        1, &sub_pass
-    };
-
-    config.render_pass = config.device_data.device.createRenderPass(rp_info);
-
-	std::cout << "Render Pass Created Successfully!\n";
 }
 
 auto gse::vulkan::create_image_views(config& config) -> void {
@@ -383,6 +334,65 @@ auto gse::vulkan::create_image_views(config& config) -> void {
     }
 
     std::cout << "Image Views Created Successfully!\n";
+
+    vk::AttachmentDescription color_attachment{
+        {},
+        config.swap_chain_data.format,
+        vk::SampleCountFlagBits::e1,
+        vk::AttachmentLoadOp::eClear,
+        vk::AttachmentStoreOp::eStore,
+        vk::AttachmentLoadOp::eDontCare,
+        vk::AttachmentStoreOp::eDontCare,
+        vk::ImageLayout::eUndefined,
+        vk::ImageLayout::ePresentSrcKHR,
+    };
+
+    vk::AttachmentReference color_ref{ 0, vk::ImageLayout::eColorAttachmentOptimal };
+
+    vk::SubpassDescription sub_pass{
+        {}, vk::PipelineBindPoint::eGraphics,
+        0, nullptr,
+        1, &color_ref,
+        nullptr, nullptr
+    };
+
+    vk::SubpassDependency dep{
+        vk::SubpassExternal,
+        0,
+        vk::PipelineStageFlagBits::eColorAttachmentOutput,
+        vk::PipelineStageFlagBits::eColorAttachmentOutput,
+        {},
+        vk::AccessFlagBits::eColorAttachmentWrite,
+    };
+
+    const vk::RenderPassCreateInfo rp_info{
+        {}, 1, &color_attachment,
+		1, &sub_pass, 1, &dep
+    };
+
+    config.render_pass = config.device_data.device.createRenderPass(rp_info);
+
+    std::cout << "Render Pass Created Successfully!\n";
+
+    for (size_t i = 0; i < config.swap_chain_data.image_views.size(); i++) {
+        vk::ImageView attachments[] = {
+            config.swap_chain_data.image_views[i]
+        };
+
+        vk::FramebufferCreateInfo framebuffer_info(
+            {},
+            config.render_pass,
+            static_cast<uint32_t>(std::size(attachments)),
+            attachments,
+            config.swap_chain_data.extent.width,
+            config.swap_chain_data.extent.height,
+            1
+        );
+
+        config.swap_chain_data.frame_buffers[i] = config.device_data.device.createFramebuffer(framebuffer_info);
+    }
+
+    std::cout << "Swapchain Created Successfully!\n";
 }
 
 auto gse::vulkan::create_sync_objects(config& config) -> void {
