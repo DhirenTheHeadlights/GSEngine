@@ -32,8 +32,17 @@ namespace gse {
 			const vk::DescriptorSetLayout* layout = nullptr, 
 			std::span<vk::DescriptorSetLayoutBinding> expected_bindings = {}
 		) -> void;
+
 		auto get_shader_stages() const -> std::array<vk::PipelineShaderStageCreateInfo, 2>;
 		auto get_descriptor_set_layout() const -> const vk::DescriptorSetLayout* { return &m_descriptor_set_layout; }
+		auto get_bindings() const -> const std::unordered_map<std::string, vk::DescriptorSetLayoutBinding>& { return m_bindings; }
+		auto get_binding(const std::string& name) const -> std::optional< vk::DescriptorSetLayoutBinding>;
+		auto get_required_bindings() const -> std::vector<std::string>;
+		auto get_descriptor_writes(
+			vk::DescriptorSet set,
+			const std::unordered_map<std::string, vk::DescriptorBufferInfo>& buffer_infos,
+			const std::unordered_map<std::string, vk::DescriptorImageInfo>& image_infos
+		) const -> std::vector<vk::WriteDescriptorSet>;
 	private:
 		auto create_shader_module(const std::vector<char>& code) const -> vk::ShaderModule;
 
@@ -43,6 +52,7 @@ namespace gse {
 		vk::Device m_device;
 
 		vk::DescriptorSetLayout m_descriptor_set_layout;
+		std::unordered_map<std::string, vk::DescriptorSetLayoutBinding> m_bindings;
 	};
 
 	auto read_file(const std::filesystem::path& path) -> std::vector<char>;
@@ -85,6 +95,8 @@ auto gse::shader::create(const vk::Device device, const std::filesystem::path& v
 				1,
 				static_cast<vk::ShaderStageFlagBits>(module.shader_stage)
 			);
+
+			m_bindings.try_emplace(b->name, reflected_bindings.back());
 		}
 
 		spvReflectDestroyShaderModule(&module);
@@ -157,6 +169,61 @@ auto gse::shader::create_shader_module(const std::vector<char>& code) const -> v
 	};
 
 	return m_device.createShaderModule(create_info);
+}
+
+auto gse::shader::get_binding(const std::string& name) const -> std::optional<vk::DescriptorSetLayoutBinding> {
+	assert(m_bindings.contains(name), std::format("Binding {} not found", name));
+	return m_bindings.at(name);
+}
+
+auto gse::shader::get_required_bindings() const -> std::vector<std::string> {
+	std::vector<std::string> required_bindings;
+	required_bindings.reserve(m_bindings.size());
+	for (const auto& [name, binding] : m_bindings) {
+		if (binding.descriptorCount > 0) {
+			required_bindings.push_back(name);
+		}
+	}
+	return required_bindings;
+}
+
+auto gse::shader::get_descriptor_writes(vk::DescriptorSet set, const std::unordered_map<std::string, vk::DescriptorBufferInfo>& buffer_infos, const std::unordered_map<std::string, vk::DescriptorImageInfo>& image_infos) const -> std::vector<vk::WriteDescriptorSet> {
+	std::vector<vk::WriteDescriptorSet> writes;
+
+	for (const auto& [name, binding] : m_bindings) {
+		switch (binding.descriptorType) {
+		case vk::DescriptorType::eUniformBuffer:
+		case vk::DescriptorType::eUniformBufferDynamic:
+		case vk::DescriptorType::eStorageBuffer:
+		case vk::DescriptorType::eStorageBufferDynamic: {
+			auto it = buffer_infos.find(name);
+			if (it != buffer_infos.end()) {
+				writes.emplace_back(
+					set, binding.binding, 0, binding.descriptorCount, binding.descriptorType,
+					nullptr, &it->second, nullptr
+				);
+			}
+			break;
+		}
+		case vk::DescriptorType::eCombinedImageSampler:
+		case vk::DescriptorType::eSampledImage:
+		case vk::DescriptorType::eStorageImage:
+		case vk::DescriptorType::eSampler: {
+			auto it = image_infos.find(name);
+			if (it != image_infos.end()) {
+				writes.emplace_back(
+					set, binding.binding, 0, binding.descriptorCount, binding.descriptorType,
+					&it->second, nullptr, nullptr
+				);
+			}
+			break;
+		}
+		default:
+			break;
+		}
+	}
+
+	return writes;
 }
 
 auto gse::read_file(const std::filesystem::path& path) -> std::vector<char> {

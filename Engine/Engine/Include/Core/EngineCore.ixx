@@ -72,9 +72,9 @@ auto update(const std::function<bool()>& update_function) -> void {
 	if (g_imgui_enabled) gse::add_timer("Engine::update");
 
 	gse::platform::update();
-
 	gse::main_clock::update();
 	gse::scene_loader::update();
+	gse::renderer::update();
 
 	if (!update_function()) {
 		gse::request_shutdown();
@@ -82,25 +82,21 @@ auto update(const std::function<bool()>& update_function) -> void {
 
 	gse::registry::periodically_clean_up_registry();
 
-	if (g_imgui_enabled) gse::reset_timer("Engine::render");
+	if (g_imgui_enabled) gse::reset_timer("Engine::update");
 }
 
 auto render(const std::function<bool()>& render_function) -> void {
-	if (g_imgui_enabled) gse::add_timer("Engine::render");
+	gse::renderer::render([render_function] {
+		if (g_imgui_enabled) gse::add_timer("Engine::render");
 
-	gse::renderer::begin_frame();
+		gse::scene_loader::render();
 
-	gse::scene_loader::render();
+		if (!render_function()) {
+			gse::request_shutdown();
+		}
 
-	if (!render_function()) {
-		gse::request_shutdown();
-	}
-
-	if (g_imgui_enabled) 
-
-	gse::renderer::end_frame();
-
-	if (g_imgui_enabled) gse::reset_timer("Engine::update");
+		if (g_imgui_enabled) gse::reset_timer("Engine::render");
+	});
 }
 
 auto shutdown() -> void {

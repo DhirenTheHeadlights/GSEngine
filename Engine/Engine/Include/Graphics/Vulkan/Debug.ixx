@@ -118,6 +118,8 @@ auto gse::debug::render_imgui(const vk::CommandBuffer& command_buffer) -> void {
 
     ImGui::Render();
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer);
+    ImGui::UpdatePlatformWindows();
+    ImGui::RenderPlatformWindowsDefault();
 }
 
 auto gse::debug::save_imgui_state() -> void {
