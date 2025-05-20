@@ -6,7 +6,7 @@ import gse.physics.math.units.quant;
 import gse.physics.math.base_vec;
 
 export namespace gse::unitless {
-	template <typename T, int N> requires std::is_arithmetic_v<T>
+	template <internal::is_arithmetic T, int N>
 	struct vec_t : internal::vec_t<vec_t<T, N>, T, N> {
 		using internal::vec_t<vec_t, T, N>::vec_t;
 

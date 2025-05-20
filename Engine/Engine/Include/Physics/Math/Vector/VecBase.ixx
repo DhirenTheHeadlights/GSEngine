@@ -850,46 +850,48 @@ auto gse::internal::dot(const vec::storage<T, N>& lhs, const vec::storage<U, N>&
     return false;
 }
 
-
 template <typename T, int N>
 constexpr auto gse::value_ptr(const vec::storage<T, N>& storage) -> const T* {
     return &storage[0];
 }
 
+template <typename T, int N>
+using pass_t = std::conditional_t<sizeof(T) * N <= 16, gse::vec::storage<T, N>, const gse::vec::storage<T, N>&>;
+
 export namespace gse::vec {
-    template <typename T, int N> constexpr auto operator+(const storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>;
-    template <typename T, int N> constexpr auto operator-(const storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>;
-    template <typename T, int N> constexpr auto operator*(const storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<decltype(lhs[0] * rhs[0]), N>;
-    template <typename T, int N> constexpr auto operator/(const storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<decltype(lhs[0] / rhs[0]), N>;
+    template <typename T, int N> constexpr auto operator+(pass_t<T, N> lhs, pass_t<T, N> rhs) -> storage<T, N>;
+    template <typename T, int N> constexpr auto operator-(pass_t<T, N> lhs, pass_t<T, N> rhs) -> storage<T, N>;
+    template <typename T, int N> constexpr auto operator*(pass_t<T, N> lhs, pass_t<T, N> rhs) -> storage<decltype(lhs[0] * rhs[0]), N>;
+    template <typename T, int N> constexpr auto operator/(pass_t<T, N> lhs, pass_t<T, N> rhs) -> storage<decltype(lhs[0] / rhs[0]), N>;
 
     template <typename T, typename U, int N> [[deprecated("Mixing types in vector operations loses SIMD & is not recommended in hot paths")]]
-	constexpr auto operator+(const storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<decltype(lhs[0] + rhs[0]), N>;
+	constexpr auto operator+(pass_t<T, N> lhs, pass_t<U, N> rhs) -> storage<decltype(lhs[0] + rhs[0]), N>;
 	template <typename T, typename U, int N> [[deprecated("Mixing types in vector operations loses SIMD & is not recommended in hot paths")]]
-	constexpr auto operator-(const storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<decltype(lhs[0] - rhs[0]), N>;
+	constexpr auto operator-(pass_t<T, N> lhs, pass_t<U, N> rhs) -> storage<decltype(lhs[0] - rhs[0]), N>;
 	template <typename T, typename U, int N> [[deprecated("Mixing types in vector operations loses SIMD & is not recommended in hot paths")]]
-	constexpr auto operator*(const storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<decltype(lhs[0] * rhs[0]), N>;
+	constexpr auto operator*(pass_t<T, N> lhs, pass_t<U, N> rhs) -> storage<decltype(lhs[0] * rhs[0]), N>;
 	template <typename T, typename U, int N> [[deprecated("Mixing types in vector operations loses SIMD & is not recommended in hot paths")]]
-	constexpr auto operator/(const storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<decltype(lhs[0] / rhs[0]), N>;
+	constexpr auto operator/(pass_t<T, N> lhs, pass_t<U, N> rhs) -> storage<decltype(lhs[0] / rhs[0]), N>;
 
-    template <typename T, int N> constexpr auto operator+=(storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>&;
-    template <typename T, int N> constexpr auto operator-=(storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>&;
-    template <typename T, int N> constexpr auto operator*=(storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>&;
-    template <typename T, int N> constexpr auto operator/=(storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>&;
+    template <typename T, int N> constexpr auto operator+=(storage<T, N>& lhs, pass_t<T, N> rhs) -> storage<T, N>&;
+    template <typename T, int N> constexpr auto operator-=(storage<T, N>& lhs, pass_t<T, N> rhs) -> storage<T, N>&;
+    template <typename T, int N> constexpr auto operator*=(storage<T, N>& lhs, pass_t<T, N> rhs) -> storage<T, N>&;
+    template <typename T, int N> constexpr auto operator/=(storage<T, N>& lhs, pass_t<T, N> rhs) -> storage<T, N>&;
 
-    template <typename T, typename U, int N> constexpr auto operator+=(storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<T, N>&;
-    template <typename T, typename U, int N> constexpr auto operator-=(storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<T, N>&;
-    template <typename T, typename U, int N> constexpr auto operator*=(storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<T, N>&;
-    template <typename T, typename U, int N> constexpr auto operator/=(storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<T, N>&;
+    template <typename T, typename U, int N> constexpr auto operator+=(storage<T, N>& lhs, pass_t<U, N> rhs) -> storage<T, N>&;
+    template <typename T, typename U, int N> constexpr auto operator-=(storage<T, N>& lhs, pass_t<U, N> rhs) -> storage<T, N>&;
+    template <typename T, typename U, int N> constexpr auto operator*=(storage<T, N>& lhs, pass_t<U, N> rhs) -> storage<T, N>&;
+    template <typename T, typename U, int N> constexpr auto operator/=(storage<T, N>& lhs, pass_t<U, N> rhs) -> storage<T, N>&;
 
-    template <typename T, int N> constexpr auto operator*(const storage<T, N>& lhs, const T& rhs) -> storage<T, N>;
-    template <typename T, int N> constexpr auto operator*(const T& lhs, const storage<T, N>& rhs) -> storage<T, N>;
-    template <typename T, int N> constexpr auto operator/(const storage<T, N>& lhs, const T& rhs) -> storage<T, N>;
-    template <typename T, int N> constexpr auto operator/(const T& lhs, const storage<T, N>& rhs) -> storage<T, N>;
+    template <typename T, int N> constexpr auto operator*(pass_t<T, N> lhs, const T& rhs) -> storage<T, N>;
+    template <typename T, int N> constexpr auto operator*(const T& lhs, pass_t<T, N> rhs) -> storage<T, N>;
+    template <typename T, int N> constexpr auto operator/(pass_t<T, N> lhs, const T& rhs) -> storage<T, N>;
+    template <typename T, int N> constexpr auto operator/(const T& lhs, pass_t<T, N> rhs) -> storage<T, N>;
 
-    template <typename T, typename U, int N> constexpr auto operator*(const storage<T, N>& lhs, const U& rhs) -> storage<decltype(lhs[0] * rhs), N>;
-    template <typename T, typename U, int N> constexpr auto operator*(const U& lhs, const storage<T, N>& rhs) -> storage<decltype(lhs* rhs[0]), N>;
-    template <typename T, typename U, int N> constexpr auto operator/(const storage<T, N>& lhs, const U& rhs) -> storage<decltype(lhs[0] / rhs), N>;
-    template <typename T, typename U, int N> constexpr auto operator/(const U& lhs, const storage<T, N>& rhs) -> storage<decltype(lhs / rhs[0]), N>;
+    template <typename T, typename U, int N> constexpr auto operator*(pass_t<T, N> lhs, const U& rhs) -> storage<decltype(lhs[0] * rhs), N>;
+    template <typename T, typename U, int N> constexpr auto operator*(const U& lhs, pass_t<T, N> rhs) -> storage<decltype(lhs* rhs[0]), N>;
+    template <typename T, typename U, int N> constexpr auto operator/(pass_t<T, N> lhs, const U& rhs) -> storage<decltype(lhs[0] / rhs), N>;
+    template <typename T, typename U, int N> constexpr auto operator/(const U& lhs, pass_t<T, N> rhs) -> storage<decltype(lhs / rhs[0]), N>;
 
     template <typename T, typename U, int N> constexpr auto operator*=(storage<T, N>& lhs, const U& rhs) -> storage<T, N>&;
     template <typename T, typename U, int N> constexpr auto operator/=(storage<T, N>& lhs, const U& rhs) -> storage<T, N>&;
@@ -897,21 +899,21 @@ export namespace gse::vec {
     template <typename T, int N> constexpr auto operator*=(storage<T, N>& lhs, const T& rhs) -> storage<T, N>&;
     template <typename T, int N> constexpr auto operator/=(storage<T, N>& lhs, const T& rhs) -> storage<T, N>&;
 
-    template <typename T, int N> constexpr auto operator+(const storage<T, N>& v) -> storage<T, N>;
-    template <typename T, int N> constexpr auto operator-(const storage<T, N>& v) -> storage<T, N>;
+    template <typename T, int N> constexpr auto operator+(pass_t<T, N> v) -> storage<T, N>;
+    template <typename T, int N> constexpr auto operator-(pass_t<T, N> v) -> storage<T, N>;
 
-    template <typename T, int N> constexpr auto operator==(const storage<T, N>& lhs, const storage<T, N>& rhs) -> bool;
-    template <typename T, int N> constexpr auto operator!=(const storage<T, N>& lhs, const storage<T, N>& rhs) -> bool;
+    template <typename T, int N> constexpr auto operator==(pass_t<T, N> lhs, pass_t<T, N> rhs) -> bool;
+    template <typename T, int N> constexpr auto operator!=(pass_t<T, N> lhs, pass_t<T, N> rhs) -> bool;
 
-    template <typename T, int N> constexpr auto operator>(const storage<T, N>& lhs, const storage<T, N>& rhs) -> bool;
-    template <typename T, int N> constexpr auto operator>=(const storage<T, N>& lhs, const storage<T, N>& rhs) -> bool;
-    template <typename T, int N> constexpr auto operator<(const storage<T, N>& lhs, const storage<T, N>& rhs) -> bool;
-    template <typename T, int N> constexpr auto operator<=(const storage<T, N>& lhs, const storage<T, N>& rhs) -> bool;
+    template <typename T, int N> constexpr auto operator>(pass_t<T, N> lhs, pass_t<T, N> rhs) -> bool;
+    template <typename T, int N> constexpr auto operator>=(pass_t<T, N> lhs, pass_t<T, N> rhs) -> bool;
+    template <typename T, int N> constexpr auto operator<(pass_t<T, N> lhs, pass_t<T, N> rhs) -> bool;
+    template <typename T, int N> constexpr auto operator<=(pass_t<T, N> lhs, pass_t<T, N> rhs) -> bool;
 
 }
 
 template <typename T, int N>
-constexpr auto gse::vec::operator+(const storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N> {
+constexpr auto gse::vec::operator+(pass_t<T, N> lhs, pass_t<T, N> rhs) -> storage<T, N> {
     storage<T, N> result{};
     if (!internal::add(lhs, rhs, result)) {
         for (int i = 0; i < N; ++i)
@@ -922,7 +924,7 @@ constexpr auto gse::vec::operator+(const storage<T, N>& lhs, const storage<T, N>
 }
 
 template <typename T, int N>
-constexpr auto gse::vec::operator-(const storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N> {
+constexpr auto gse::vec::operator-(pass_t<T, N> lhs, pass_t<T, N> rhs) -> storage<T, N> {
     storage<T, N> result{};
 
     if (!internal::subtract(lhs, rhs, result)) {
@@ -934,7 +936,7 @@ constexpr auto gse::vec::operator-(const storage<T, N>& lhs, const storage<T, N>
 }
 
 template <typename T, int N>
-constexpr auto gse::vec::operator*(const storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<decltype(lhs[0] * rhs[0]), N> {
+constexpr auto gse::vec::operator*(pass_t<T, N> lhs, pass_t<T, N> rhs) -> storage<decltype(lhs[0] * rhs[0]), N> {
     storage<decltype(lhs[0] * rhs[0]), N> result{};
 
     if (!internal::multiply(lhs, rhs, result)) {
@@ -945,7 +947,7 @@ constexpr auto gse::vec::operator*(const storage<T, N>& lhs, const storage<T, N>
 }
 
 template <typename T, int N>
-constexpr auto gse::vec::operator/(const storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<decltype(lhs[0] / rhs[0]), N> {
+constexpr auto gse::vec::operator/(pass_t<T, N> lhs, pass_t<T, N> rhs) -> storage<decltype(lhs[0] / rhs[0]), N> {
     storage<decltype(lhs[0] / rhs[0]), N> result{};
     if (!internal::divide(lhs, rhs, result)) {
         for (int i = 0; i < N; ++i)
@@ -955,7 +957,7 @@ constexpr auto gse::vec::operator/(const storage<T, N>& lhs, const storage<T, N>
 }
 
 template <typename T, typename U, int N>
-constexpr auto gse::vec::operator+(const storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<decltype(lhs[0] + rhs[0]), N> {
+constexpr auto gse::vec::operator+(pass_t<T, N> lhs, pass_t<U, N> rhs) -> storage<decltype(lhs[0] + rhs[0]), N> {
     storage<decltype(lhs[0] + rhs[0]), N> result{};
 
     if (!internal::add(lhs, rhs, result)) {
@@ -966,7 +968,7 @@ constexpr auto gse::vec::operator+(const storage<T, N>& lhs, const storage<U, N>
 }
 
 template <typename T, typename U, int N>
-constexpr auto gse::vec::operator-(const storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<decltype(lhs[0] - rhs[0]), N> {
+constexpr auto gse::vec::operator-(pass_t<T, N> lhs, pass_t<U, N> rhs) -> storage<decltype(lhs[0] - rhs[0]), N> {
     storage<decltype(lhs[0] - rhs[0]), N> result{};
 
     if (!internal::subtract(lhs, rhs, result)) {
@@ -977,7 +979,7 @@ constexpr auto gse::vec::operator-(const storage<T, N>& lhs, const storage<U, N>
 }
 
 template <typename T, typename U, int N>
-constexpr auto gse::vec::operator*(const storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<decltype(lhs[0] * rhs[0]), N> {
+constexpr auto gse::vec::operator*(pass_t<T, N> lhs, pass_t<U, N> rhs) -> storage<decltype(lhs[0] * rhs[0]), N> {
     storage<decltype(lhs[0] * rhs[0]), N> result{};
 
     if (!internal::multiply(lhs, rhs, result)) {
@@ -988,7 +990,7 @@ constexpr auto gse::vec::operator*(const storage<T, N>& lhs, const storage<U, N>
 }
 
 template <typename T, typename U, int N>
-constexpr auto gse::vec::operator/(const storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<decltype(lhs[0] / rhs[0]), N> {
+constexpr auto gse::vec::operator/(pass_t<T, N> lhs, pass_t<U, N> rhs) -> storage<decltype(lhs[0] / rhs[0]), N> {
     storage<decltype(lhs[0] / rhs[0]), N> result{};
 
     if (!internal::divide(lhs, rhs, result)) {
@@ -999,7 +1001,7 @@ constexpr auto gse::vec::operator/(const storage<T, N>& lhs, const storage<U, N>
 }
 
 template <typename T, int N>
-constexpr auto gse::vec::operator+=(storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>& {
+constexpr auto gse::vec::operator+=(storage<T, N>& lhs, pass_t<T, N> rhs) -> storage<T, N>& {
     if (!internal::add(lhs, rhs, lhs)) {
         for (int i = 0; i < N; ++i)
             lhs[i] += rhs[i];
@@ -1008,7 +1010,7 @@ constexpr auto gse::vec::operator+=(storage<T, N>& lhs, const storage<T, N>& rhs
 }
 
 template <typename T, int N>
-constexpr auto gse::vec::operator-=(storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>& {
+constexpr auto gse::vec::operator-=(storage<T, N>& lhs, pass_t<T, N> rhs) -> storage<T, N>& {
     if (!internal::subtract(lhs, rhs, lhs)) {
         for (int i = 0; i < N; ++i)
             lhs[i] -= rhs[i];
@@ -1017,7 +1019,7 @@ constexpr auto gse::vec::operator-=(storage<T, N>& lhs, const storage<T, N>& rhs
 }
 
 template <typename T, int N>
-constexpr auto gse::vec::operator*=(storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>& {
+constexpr auto gse::vec::operator*=(storage<T, N>& lhs, pass_t<T, N> rhs) -> storage<T, N>& {
     if (!internal::multiply(lhs, rhs, lhs)) {
         for (int i = 0; i < N; ++i)
             lhs[i] *= rhs[i];
@@ -1026,7 +1028,7 @@ constexpr auto gse::vec::operator*=(storage<T, N>& lhs, const storage<T, N>& rhs
 }
 
 template <typename T, int N>
-constexpr auto gse::vec::operator/=(storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>& {
+constexpr auto gse::vec::operator/=(storage<T, N>& lhs, pass_t<T, N> rhs) -> storage<T, N>& {
     if (!internal::divide(lhs, rhs, lhs)) {
         for (int i = 0; i < N; ++i)
             lhs[i] /= rhs[i];
@@ -1035,7 +1037,7 @@ constexpr auto gse::vec::operator/=(storage<T, N>& lhs, const storage<T, N>& rhs
 }
 
 template <typename T, typename U, int N>
-constexpr auto gse::vec::operator+=(storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<T, N>& {
+constexpr auto gse::vec::operator+=(storage<T, N>& lhs, pass_t<U, N> rhs) -> storage<T, N>& {
     if (!internal::add(lhs, rhs, lhs)) {
         for (int i = 0; i < N; ++i)
             lhs[i] += rhs[i];
@@ -1044,7 +1046,7 @@ constexpr auto gse::vec::operator+=(storage<T, N>& lhs, const storage<U, N>& rhs
 }
 
 template <typename T, typename U, int N>
-constexpr auto gse::vec::operator-=(storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<T, N>& {
+constexpr auto gse::vec::operator-=(storage<T, N>& lhs, pass_t<U, N> rhs) -> storage<T, N>& {
     if (!internal::subtract(lhs, rhs, lhs)) {
         for (int i = 0; i < N; ++i)
             lhs[i] -= rhs[i];
@@ -1053,7 +1055,7 @@ constexpr auto gse::vec::operator-=(storage<T, N>& lhs, const storage<U, N>& rhs
 }
 
 template <typename T, typename U, int N>
-constexpr auto gse::vec::operator*=(storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<T, N>& {
+constexpr auto gse::vec::operator*=(storage<T, N>& lhs, pass_t<U, N> rhs) -> storage<T, N>& {
     if (!internal::multiply(lhs, rhs, lhs)) {
         for (int i = 0; i < N; ++i)
             lhs[i] *= rhs[i];
@@ -1062,7 +1064,7 @@ constexpr auto gse::vec::operator*=(storage<T, N>& lhs, const storage<U, N>& rhs
 }
 
 template <typename T, typename U, int N>
-constexpr auto gse::vec::operator/=(storage<T, N>& lhs, const storage<U, N>& rhs) -> storage<T, N>& {
+constexpr auto gse::vec::operator/=(storage<T, N>& lhs, pass_t<U, N> rhs) -> storage<T, N>& {
     if (!internal::divide(lhs, rhs, lhs)) {
         for (int i = 0; i < N; ++i)
             lhs[i] /= rhs[i];
@@ -1071,7 +1073,7 @@ constexpr auto gse::vec::operator/=(storage<T, N>& lhs, const storage<U, N>& rhs
 }
 
 template <typename T, int N>
-constexpr auto gse::vec::operator*(const storage<T, N>& lhs, const T& rhs) -> storage<T, N> {
+constexpr auto gse::vec::operator*(pass_t<T, N> lhs, const T& rhs) -> storage<T, N> {
     storage<decltype(lhs[0] * rhs), N> result{};
 
     if (!internal::multiply(rhs, lhs, result)) {
@@ -1082,7 +1084,7 @@ constexpr auto gse::vec::operator*(const storage<T, N>& lhs, const T& rhs) -> st
 }
 
 template <typename T, int N>
-constexpr auto gse::vec::operator*(const T& lhs, const storage<T, N>& rhs) -> storage<T, N> {
+constexpr auto gse::vec::operator*(const T& lhs, pass_t<T, N> rhs) -> storage<T, N> {
     storage<decltype(lhs* rhs[0]), N> result{};
 
     if (!internal::multiply(lhs, rhs, result)) {
@@ -1093,7 +1095,7 @@ constexpr auto gse::vec::operator*(const T& lhs, const storage<T, N>& rhs) -> st
 }
 
 template <typename T, int N>
-constexpr auto gse::vec::operator/(const storage<T, N>& lhs, const T& rhs) -> storage<T, N> {
+constexpr auto gse::vec::operator/(pass_t<T, N> lhs, const T& rhs) -> storage<T, N> {
     storage<decltype(lhs[0] / rhs), N> result{};
 
     if (!internal::divide(lhs, rhs, result)) {
@@ -1104,7 +1106,7 @@ constexpr auto gse::vec::operator/(const storage<T, N>& lhs, const T& rhs) -> st
 }
 
 template <typename T, int N>
-constexpr auto gse::vec::operator/(const T& lhs, const storage<T, N>& rhs) -> storage<T, N> {
+constexpr auto gse::vec::operator/(const T& lhs, pass_t<T, N> rhs) -> storage<T, N> {
     storage<decltype(lhs / rhs[0]), N> result{};
     if (!internal::divide(lhs, rhs, result)) {
         for (int i = 0; i < N; ++i)
@@ -1114,7 +1116,7 @@ constexpr auto gse::vec::operator/(const T& lhs, const storage<T, N>& rhs) -> st
 }
 
 template <typename T, typename U, int N>
-constexpr auto gse::vec::operator*(const storage<T, N>& lhs, const U& rhs) -> storage<decltype(lhs[0] * rhs), N> {
+constexpr auto gse::vec::operator*(pass_t<T, N> lhs, const U& rhs) -> storage<decltype(lhs[0] * rhs), N> {
     storage<decltype(lhs[0] * rhs), N> result{};
     if (!internal::multiply(rhs, lhs, result)) {
         for (int i = 0; i < N; ++i)
@@ -1124,7 +1126,7 @@ constexpr auto gse::vec::operator*(const storage<T, N>& lhs, const U& rhs) -> st
 }
 
 template <typename T, typename U, int N>
-constexpr auto gse::vec::operator*(const U& lhs, const storage<T, N>& rhs) -> storage<decltype(lhs* rhs[0]), N> {
+constexpr auto gse::vec::operator*(const U& lhs, pass_t<T, N> rhs) -> storage<decltype(lhs* rhs[0]), N> {
     storage<decltype(lhs* rhs[0]), N> result{};
     if (!internal::multiply(lhs, rhs, result)) {
         for (int i = 0; i < N; ++i)
@@ -1134,7 +1136,7 @@ constexpr auto gse::vec::operator*(const U& lhs, const storage<T, N>& rhs) -> st
 }
 
 template <typename T, typename U, int N>
-constexpr auto gse::vec::operator/(const storage<T, N>& lhs, const U& rhs) -> storage<decltype(lhs[0] / rhs), N> {
+constexpr auto gse::vec::operator/(pass_t<T, N> lhs, const U& rhs) -> storage<decltype(lhs[0] / rhs), N> {
     storage<decltype(lhs[0] / rhs), N> result{};
     if (!internal::divide(lhs, rhs, result)) {
         for (int i = 0; i < N; ++i)
@@ -1144,7 +1146,7 @@ constexpr auto gse::vec::operator/(const storage<T, N>& lhs, const U& rhs) -> st
 }
 
 template <typename T, typename U, int N>
-constexpr auto gse::vec::operator/(const U& lhs, const storage<T, N>& rhs) -> storage<decltype(lhs / rhs[0]), N> {
+constexpr auto gse::vec::operator/(const U& lhs, pass_t<T, N> rhs) -> storage<decltype(lhs / rhs[0]), N> {
     storage<decltype(lhs / rhs[0]), N> result{};
     if (!internal::divide(lhs, rhs, result)) {
         for (int i = 0; i < N; ++i)
@@ -1190,12 +1192,12 @@ constexpr auto gse::vec::operator/=(storage<T, N>& lhs, const T& rhs) -> storage
 }
 
 template <typename T, int N>
-constexpr auto gse::vec::operator+(const storage<T, N>& v) -> storage<T, N> {
+constexpr auto gse::vec::operator+(pass_t<T, N> v) -> storage<T, N> {
     return v;
 }
 
 template <typename T, int N>
-constexpr auto gse::vec::operator-(const storage<T, N>& v) -> storage<T, N> {
+constexpr auto gse::vec::operator-(pass_t<T, N> v) -> storage<T, N> {
     storage<T, N> result{};
     if (!internal::multiply(-1.0f, v, result)) {
         for (int i = 0; i < N; ++i)
@@ -1205,7 +1207,7 @@ constexpr auto gse::vec::operator-(const storage<T, N>& v) -> storage<T, N> {
 }
 
 template <typename T, int N>
-constexpr auto gse::vec::operator==(const storage<T, N>& lhs, const storage<T, N>& rhs) -> bool {
+constexpr auto gse::vec::operator==(pass_t<T, N> lhs, pass_t<T, N> rhs) -> bool {
     for (int i = 0; i < N; ++i)
         if (!(lhs[i] == rhs[i]))
             return false;
@@ -1213,12 +1215,12 @@ constexpr auto gse::vec::operator==(const storage<T, N>& lhs, const storage<T, N
 }
 
 template <typename T, int N>
-constexpr auto gse::vec::operator!=(const storage<T, N>& lhs, const storage<T, N>& rhs) -> bool {
+constexpr auto gse::vec::operator!=(pass_t<T, N> lhs, pass_t<T, N> rhs) -> bool {
     return !(lhs == rhs);
 }
 
 template <typename T, int N>
-constexpr auto gse::vec::operator>(const storage<T, N>& lhs, const storage<T, N>& rhs) -> bool {
+constexpr auto gse::vec::operator>(pass_t<T, N> lhs, pass_t<T, N> rhs) -> bool {
     for (int i = 0; i < N; ++i)
         if (!(lhs[i] > rhs[i]))
             return false;
@@ -1226,7 +1228,7 @@ constexpr auto gse::vec::operator>(const storage<T, N>& lhs, const storage<T, N>
 }
 
 template <typename T, int N>
-constexpr auto gse::vec::operator>=(const storage<T, N>& lhs, const storage<T, N>& rhs) -> bool {
+constexpr auto gse::vec::operator>=(pass_t<T, N> lhs, pass_t<T, N> rhs) -> bool {
     for (int i = 0; i < N; ++i)
         if (!(lhs[i] >= rhs[i]))
             return false;
@@ -1234,7 +1236,7 @@ constexpr auto gse::vec::operator>=(const storage<T, N>& lhs, const storage<T, N
 }
 
 template <typename T, int N>
-constexpr auto gse::vec::operator<(const storage<T, N>& lhs, const storage<T, N>& rhs) -> bool {
+constexpr auto gse::vec::operator<(pass_t<T, N> lhs, pass_t<T, N> rhs) -> bool {
     for (int i = 0; i < N; ++i)
         if (!(lhs[i] < rhs[i]))
             return false;
@@ -1242,7 +1244,7 @@ constexpr auto gse::vec::operator<(const storage<T, N>& lhs, const storage<T, N>
 }
 
 template <typename T, int N>
-constexpr auto gse::vec::operator<=(const storage<T, N>& lhs, const storage<T, N>& rhs) -> bool {
+constexpr auto gse::vec::operator<=(pass_t<T, N> lhs, pass_t<T, N> rhs) -> bool {
     for (int i = 0; i < N; ++i)
         if (!(lhs[i] <= rhs[i]))
             return false;
