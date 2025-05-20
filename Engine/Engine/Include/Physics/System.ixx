@@ -128,7 +128,7 @@ auto update_position(gse::physics::motion_component& component) -> void {
 	const auto delta_time = gse::main_clock::get_constant_update_time();
 
 	// Update position using the kinematic equation: x = x0 + v0t + 0.5at^2
-	component.current_position = component.current_velocity * delta_time + 0.5f * component.current_acceleration * delta_time * delta_time;
+	component.current_position += component.current_velocity * delta_time + 0.5f * component.current_acceleration * delta_time * delta_time;
 }
 
 auto update_rotation(gse::physics::motion_component& component) -> void {
