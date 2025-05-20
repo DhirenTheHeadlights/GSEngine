@@ -66,14 +66,12 @@ auto gse::scene::update() const -> void {
 
 	registry::update_hooks();
 	physics::update();
-	renderer::update();
 }
 
 auto gse::scene::render() const -> void {
 	render_hooks();
 
 	registry::render_hooks();
-	renderer::render();
 }
 
 auto gse::scene::exit() const -> void {

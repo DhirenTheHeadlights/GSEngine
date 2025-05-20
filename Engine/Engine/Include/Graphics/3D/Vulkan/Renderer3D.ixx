@@ -49,6 +49,18 @@ gse::vulkan::persistent_allocator::image_resource g_normal_image_resource;
 gse::vulkan::persistent_allocator::image_resource g_albedo_image_resource;
 gse::vulkan::persistent_allocator::image_resource g_depth_image_resource;
 
+gse::vulkan::persistent_allocator::buffer_resource g_camera_buffer;
+gse::vulkan::persistent_allocator::buffer_resource g_model_buffer;
+
+struct camera_ubo {
+	gse::mat4 view;
+	gse::mat4 projection;
+};
+
+struct model_ubo {
+	gse::mat4 model;
+};
+
 auto gse::renderer3d::get_camera() -> camera& {
 	return g_camera;
 }
@@ -293,11 +305,6 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 
 	auto vertex_descriptor_set = descriptor_sets[0];
 
-	struct camera_ubo {
-		mat4 view;
-		mat4 projection;
-	};
-
 	vk::BufferCreateInfo camera_info(
 		{},                  
 		sizeof(camera_ubo),          
@@ -305,17 +312,13 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 		vk::SharingMode::eExclusive
 	);
 
-	auto [camera_buffer, camera_alloc] = vulkan::persistent_allocator::create_buffer(
+	g_camera_buffer = vulkan::persistent_allocator::create_buffer(
 		config.device_data,
 		camera_info,
 		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
 	);
 
-	vk::DescriptorBufferInfo camera_buffer_info(camera_buffer, 0, sizeof(camera_ubo));
-
-	struct model_ubo {
-		mat4 model;
-	};
+	vk::DescriptorBufferInfo camera_buffer_info(g_camera_buffer.buffer, 0, sizeof(camera_ubo));
 
 	vk::BufferCreateInfo model_info(
 		{},
@@ -324,13 +327,13 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 		vk::SharingMode::eExclusive
 	);
 
-	auto [model_buffer, model_alloc] = vulkan::persistent_allocator::create_buffer(
+	g_model_buffer = vulkan::persistent_allocator::create_buffer(
 		config.device_data,
 		model_info,
 		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
 	);
 
-	vk::DescriptorBufferInfo model_buffer_info(model_buffer, 0, sizeof(model_ubo));
+	vk::DescriptorBufferInfo model_buffer_info(g_model_buffer.buffer, 0, sizeof(model_ubo));
 
 	std::array<vk::WriteDescriptorSet, 2> descriptor_writes = { {
 		vk::WriteDescriptorSet(
@@ -441,6 +444,23 @@ auto gse::renderer3d::begin_frame(const vulkan::config& config) -> vk::CommandBu
 
 auto gse::renderer3d::render(const vulkan::config& config) -> void {
 	const auto command = begin_frame(config);
+
+	command.bindPipeline(vk::PipelineBindPoint::eGraphics, g_pipeline);
+
+	if (g_camera_buffer.allocation.mapped) {
+		auto* data = static_cast<camera_ubo*>(g_camera_buffer.allocation.mapped);
+		data->view = g_camera.get_view_matrix();
+		data->projection = g_camera.get_projection_matrix();
+	}
+
+	auto camera_binding = shader_loader::get_shader("geometry_pass").get_binding("camera_ubo");
+
+	command.bindDescriptorSets(
+		vk::PipelineBindPoint::eGraphics,
+		g_pipeline_layout,
+		0, 1, &camera_binding.value(),
+		0, nullptr
+	);
 
 	for (const auto& components = registry::get_components<render_component>(); const auto& component : components) {
 		for (const auto& model_handle : component.models) {

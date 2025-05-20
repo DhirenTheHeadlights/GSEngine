@@ -410,9 +410,9 @@ auto gse::vulkan::create_descriptors(config& config) -> void {
     constexpr uint32_t max_sets = 512;
 
     std::vector<vk::DescriptorPoolSize> pool_sizes = {
-        { vk::DescriptorType::eUniformBuffer,         1024 },  // enough for global UBOs + per-object data
-        { vk::DescriptorType::eCombinedImageSampler,  1024 },  // textures for materials, post fx, etc.
-        { vk::DescriptorType::eStorageBuffer,          256 },  // e.g., light buffer, SSBOs
+        { vk::DescriptorType::eUniformBuffer,         4096 },  // enough for global UBOs + per-object data
+        { vk::DescriptorType::eCombinedImageSampler,  4096 },  // textures for materials, post fx, etc.
+        { vk::DescriptorType::eStorageBuffer,         1024 },  // e.g., light buffer, SSBOs
     };
 
     const vk::DescriptorPoolCreateInfo pool_info{
