@@ -9,14 +9,11 @@ import gse.physics.math.vec_math;
 import gse.platform.perma_assert;
 
 namespace gse {
-    template <typename T, int Rows>
-	using col_storage = std::conditional_t<Rows == 3, vec::storage<T, 4>, vec::storage<T, Rows>>;
-
 	template <typename T, int Cols, int Rows>
 	struct mat {
 		using value_type = T;
 
-		std::array<col_storage<T, Rows>, Cols> data;
+		std::array<vec::storage<T, Rows>, Cols> data;
 
 		constexpr mat() = default;
 		constexpr mat(const T& value);

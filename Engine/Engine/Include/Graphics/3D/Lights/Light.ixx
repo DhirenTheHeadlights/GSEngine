@@ -15,12 +15,12 @@ export namespace gse {
 
     struct alignas(16) light_shader_entry {
         int light_type;                                     // Offset 0, Size 4 bytes
-		vec::raw4f padding1 = { 0.f, 0.f, 0.f, 0.0f };      // Offset 4, Size 12 bytes (Padding to align to 16 bytes)
-        vec::raw4f position;                                // Offset 16, Size 12 bytes
+		vec::raw3f padding1 = { 0.f, 0.f, 0.f };            // Offset 4, Size 12 bytes (Padding to align to 16 bytes)
+        vec::raw3f position;                                // Offset 16, Size 12 bytes
         float padding2 = 0;                                 // Offset 28, Size 4 bytes (Padding to align to 16 bytes)
-        vec::raw4f direction;                               // Offset 32, Size 12 bytes
+        vec::raw3f direction;                               // Offset 32, Size 12 bytes
         float padding3 = 0;                                 // Offset 44, Size 4 bytes (Padding to align to 16 bytes)
-        vec::raw4f color;                                   // Offset 48, Size 12 bytes
+        vec::raw3f color;                                   // Offset 48, Size 12 bytes
 		// We don't need padding here, not sure why - it ends up working correctly without it
         float intensity;                                    // Offset 64, Size 4 bytes
         float constant;                                     // Offset 68, Size 4 bytes
@@ -78,8 +78,7 @@ export namespace gse {
             depth_map(depth_map),
             depth_map_fbo(depth_map_fbo),
             near_plane(near_plane),
-            far_plane(far_plane) {
-        }
+            far_plane(far_plane) {}
     };
 
     class light {

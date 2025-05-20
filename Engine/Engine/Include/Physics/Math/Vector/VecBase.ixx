@@ -128,16 +128,15 @@ export namespace gse::internal {
         using vec_from_lesser<Derived, T, 3>::vec_from_lesser;
 
         union {
-            vec::storage<T, 4> storage;
-            struct { T x, y, z, _pad; };
+            vec::storage<T, 3> storage;
+            struct { T x, y, z; };
         };
 
-        constexpr vec_t() : storage{ { static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0) }} {}
-		constexpr vec_t(const vec::storage<T, 3>& storage) : storage{ storage[0], storage[1], storage[2], static_cast<T>(0) } {}
-		constexpr vec_t(const vec::storage<T, 4>& storage) : storage{ storage[0], storage[1], storage[2], static_cast<T>(0) } {}
-        constexpr vec_t(const T& value) : storage{ { value, value, value, static_cast<T>(0) }} {}
-		constexpr vec_t(const T* values) : storage{ { values[0], values[1], values[2], static_cast<T>(0) } } {}
-		constexpr vec_t(const T& x, const T& y, const T& z) : storage{ { x, y, z, static_cast<T>(0) } } {}
+        constexpr vec_t() : storage{ { static_cast<T>(0), static_cast<T>(0), static_cast<T>(0) }} {}
+		constexpr vec_t(const vec::storage<T, 3>& storage) : storage{ storage[0], storage[1], storage[2] } {}
+        constexpr vec_t(const T& value) : storage{ { value, value, value }} {}
+		constexpr vec_t(const T* values) : storage{ { values[0], values[1], values[2] } } {}
+		constexpr vec_t(const T& x, const T& y, const T& z) : storage{ { x, y, z } } {}
     };
 
     template <typename Derived, typename T>
