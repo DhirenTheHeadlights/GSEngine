@@ -23,8 +23,8 @@ namespace gse {
 		template <int O, int Q>
 		constexpr mat(const mat<T, O, Q>& other);
 
-		constexpr auto operator[](size_t index) -> auto&;
-		constexpr auto operator[](size_t index) const -> const auto&;
+		constexpr auto operator[](size_t index) -> vec::storage<T, Rows>&;
+		constexpr auto operator[](size_t index) const -> const vec::storage<T, Rows>&;
 
 		constexpr auto operator==(const mat& other) const -> bool;
 		constexpr auto operator!=(const mat& other) const -> bool;
@@ -110,12 +110,12 @@ constexpr gse::mat<T, Cols, Rows>::mat(const mat<T, SourceCols, SourceRows>& oth
 }
 
 template <typename T, int Cols, int Rows>
-constexpr auto gse::mat<T, Cols, Rows>::operator[](size_t index) -> auto& {
+constexpr auto gse::mat<T, Cols, Rows>::operator[](size_t index) -> vec::storage<T, Rows>& {
     return data[index];
 }
 
 template <typename T, int Cols, int Rows>
-constexpr auto gse::mat<T, Cols, Rows>::operator[](size_t index) const -> const auto& {
+constexpr auto gse::mat<T, Cols, Rows>::operator[](size_t index) const -> const vec::storage<T, Rows>& {
     return data[index];
 }
 
