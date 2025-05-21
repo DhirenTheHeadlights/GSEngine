@@ -57,28 +57,10 @@ export namespace gse::unitless {
 	template <typename T, int N> constexpr auto operator*(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> vec_t<T, N>;
 	template <typename T, int N> constexpr auto operator/(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> vec_t<T, N>;
 
-	template <typename T, typename U, int N> constexpr auto operator+(const vec_t<T, N>& lhs, const vec_t<U, N>& rhs) -> vec_t<std::common_type_t<T, U>, N>;
-	template <typename T, typename U, int N> constexpr auto operator-(const vec_t<T, N>& lhs, const vec_t<U, N>& rhs) -> vec_t<std::common_type_t<T, U>, N>;
-	template <typename T, typename U, int N> constexpr auto operator*(const vec_t<T, N>& lhs, const vec_t<U, N>& rhs) -> vec_t<std::common_type_t<T, U>, N>;
-	template <typename T, typename U, int N> constexpr auto operator/(const vec_t<T, N>& lhs, const vec_t<U, N>& rhs) -> vec_t<std::common_type_t<T, U>, N>;
-
 	template <typename T, int N> constexpr auto operator+=(vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> vec_t<T, N>&;
 	template <typename T, int N> constexpr auto operator-=(vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> vec_t<T, N>&;
 	template <typename T, int N> constexpr auto operator*=(vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> vec_t<T, N>&;
 	template <typename T, int N> constexpr auto operator/=(vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> vec_t<T, N>&;
-
-	template <typename T, typename U, int N> constexpr auto operator+=(vec_t<T, N>& lhs, const vec_t<U, N>& rhs) -> vec_t<T, N>&;
-	template <typename T, typename U, int N> constexpr auto operator-=(vec_t<T, N>& lhs, const vec_t<U, N>& rhs) -> vec_t<T, N>&;
-	template <typename T, typename U, int N> constexpr auto operator*=(vec_t<T, N>& lhs, const vec_t<U, N>& rhs) -> vec_t<T, N>&;
-	template <typename T, typename U, int N> constexpr auto operator/=(vec_t<T, N>& lhs, const vec_t<U, N>& rhs) -> vec_t<T, N>&;
-
-	template <typename T, internal::is_arithmetic U, int N> constexpr auto operator*(const vec_t<T, N>& lhs, const U& rhs) -> vec_t<std::common_type_t<T, U>, N>;
-	template <typename T, internal::is_arithmetic U, int N> constexpr auto operator*(const U& lhs, const vec_t<T, N>& rhs) -> vec_t<std::common_type_t<T, U>, N>;
-	template <typename T, internal::is_arithmetic U, int N> constexpr auto operator/(const vec_t<T, N>& lhs, const U& rhs) -> vec_t<std::common_type_t<T, U>, N>;
-	template <typename T, internal::is_arithmetic U, int N> constexpr auto operator/(const U& lhs, const vec_t<T, N>& rhs) -> vec_t<std::common_type_t<T, U>, N>;
-
-	template <typename T, internal::is_arithmetic U, int N> constexpr auto operator*=(vec_t<T, N>& lhs, const U& rhs) -> vec_t<T, N>&;
-	template <typename T, internal::is_arithmetic U, int N> constexpr auto operator/=(vec_t<T, N>& lhs, const U& rhs) -> vec_t<T, N>&;
 
 	template <typename T, int N> constexpr auto operator*(const vec_t<T, N>& lhs, const T& rhs) -> vec_t<T, N>;
 	template <typename T, int N> constexpr auto operator*(const T& lhs, const vec_t<T, N>& rhs) -> vec_t<T, N>;
@@ -120,26 +102,6 @@ constexpr auto gse::unitless::operator/(const vec_t<T, N>& lhs, const vec_t<T, N
 	return unitless::vec_t<T, N>(lhs.storage / rhs.storage);
 }
 
-template <typename T, typename U, int N>
-constexpr auto gse::unitless::operator+(const vec_t<T, N>& lhs, const vec_t<U, N>& rhs) -> vec_t<std::common_type_t<T, U>, N> {
-	return unitless::vec_t<std::common_type_t<T, U>, N>(lhs.storage + rhs.storage);
-}
-
-template <typename T, typename U, int N>
-constexpr auto gse::unitless::operator-(const vec_t<T, N>& lhs, const vec_t<U, N>& rhs) -> vec_t<std::common_type_t<T, U>, N> {
-	return unitless::vec_t<std::common_type_t<T, U>, N>(lhs.storage - rhs.storage);
-}
-
-template <typename T, typename U, int N>
-constexpr auto gse::unitless::operator*(const vec_t<T, N>& lhs, const vec_t<U, N>& rhs) -> vec_t<std::common_type_t<T, U>, N> {
-	return unitless::vec_t<std::common_type_t<T, U>, N>(lhs.storage * rhs.storage);
-}
-
-template <typename T, typename U, int N>
-constexpr auto gse::unitless::operator/(const vec_t<T, N>& lhs, const vec_t<U, N>& rhs) -> vec_t<std::common_type_t<T, U>, N> {
-	return unitless::vec_t<std::common_type_t<T, U>, N>(lhs.storage / rhs.storage);
-}
-
 template <typename T, int N>
 constexpr auto gse::unitless::operator+=(vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> vec_t<T, N>& {
 	lhs.storage += rhs.storage;
@@ -161,62 +123,6 @@ constexpr auto gse::unitless::operator*=(vec_t<T, N>& lhs, const vec_t<T, N>& rh
 template <typename T, int N>
 constexpr auto gse::unitless::operator/=(vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> vec_t<T, N>& {
 	lhs.storage /= rhs.storage;
-	return lhs;
-}
-
-template <typename T, typename U, int N>
-constexpr auto gse::unitless::operator+=(vec_t<T, N>& lhs, const vec_t<U, N>& rhs) -> vec_t<T, N>& {
-	lhs.storage += rhs.storage;
-	return lhs;
-}
-
-template <typename T, typename U, int N>
-constexpr auto gse::unitless::operator-=(vec_t<T, N>& lhs, const vec_t<U, N>& rhs) -> vec_t<T, N>& {
-	lhs.storage -= rhs.storage;
-	return lhs;
-}
-
-template <typename T, typename U, int N>
-constexpr auto gse::unitless::operator*=(vec_t<T, N>& lhs, const vec_t<U, N>& rhs) -> vec_t<T, N>& {
-	lhs.storage *= rhs.storage;
-	return lhs;
-}
-
-template <typename T, typename U, int N>
-constexpr auto gse::unitless::operator/=(vec_t<T, N>& lhs, const vec_t<U, N>& rhs) -> vec_t<T, N>& {
-	lhs.storage /= rhs.storage;
-	return lhs;
-}
-
-template <typename T, gse::internal::is_arithmetic U, int N>
-constexpr auto gse::unitless::operator*(const vec_t<T, N>& lhs, const U& rhs) -> vec_t<std::common_type_t<T, U>, N> {
-	return unitless::vec_t<std::common_type_t<T, U>, N>(lhs.storage * rhs);
-}
-
-template <typename T, gse::internal::is_arithmetic U, int N>
-constexpr auto gse::unitless::operator*(const U& lhs, const vec_t<T, N>& rhs) -> vec_t<std::common_type_t<T, U>, N> {
-	return unitless::vec_t<std::common_type_t<T, U>, N>(lhs * rhs.storage);
-}
-
-template <typename T, gse::internal::is_arithmetic U, int N>
-constexpr auto gse::unitless::operator/(const vec_t<T, N>& lhs, const U& rhs) -> vec_t<std::common_type_t<T, U>, N> {
-	return unitless::vec_t<std::common_type_t<T, U>, N>(lhs.storage / rhs);
-}
-
-template <typename T, gse::internal::is_arithmetic U, int N>
-constexpr auto gse::unitless::operator/(const U& lhs, const vec_t<T, N>& rhs) -> vec_t<std::common_type_t<T, U>, N> {
-	return unitless::vec_t<std::common_type_t<T, U>, N>(lhs / rhs.storage);
-}
-
-template <typename T, gse::internal::is_arithmetic U, int N>
-constexpr auto gse::unitless::operator*=(vec_t<T, N>& lhs, const U& rhs) -> vec_t<T, N>& {
-	lhs.storage *= rhs;
-	return lhs;
-}
-
-template <typename T, gse::internal::is_arithmetic U, int N>
-constexpr auto gse::unitless::operator/=(vec_t<T, N>& lhs, const U& rhs) -> vec_t<T, N>& {
-	lhs.storage /= rhs;
 	return lhs;
 }
 

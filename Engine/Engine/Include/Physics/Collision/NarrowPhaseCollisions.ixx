@@ -89,7 +89,7 @@ auto sat_collision(const gse::oriented_bounding_box& obb1, const gse::oriented_b
 
     // Ensure the collision normal points from obb1 to obb2
     if (const gse::unitless::vec3 direction = (obb2.center - obb1.center).as<gse::units::meters>(); gse::dot(direction, collision_normal) < 0.0f) {
-        collision_normal *= -1;
+        collision_normal *= -1.f;
     }
 
     return true; // No separating axis found, collision detected
