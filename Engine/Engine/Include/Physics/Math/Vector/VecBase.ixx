@@ -173,13 +173,8 @@ concept ref_t = sizeof(T) * N > 16;
 template <typename T, int N>
 concept val_t = !ref_t<T, N>;
 
-template<typename T, int N>
-using vec_param_t = std::conditional_t<ref_t<T, N>,
-    const gse::vec::storage<T, N>&,
-    gse::vec::storage<T, N>>;
-
 export namespace gse::vec {
-    template <typename T, int N> requires ref_t<T, N> constexpr auto operator+(vec_param_t<T, N> lhs, vec_param_t<T, N> rhs) -> storage<T, N>;
+    template <typename T, int N> requires ref_t<T, N> constexpr auto operator+(const storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>;
     template <typename T, int N> requires ref_t<T, N> constexpr auto operator-(const storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>;
     template <typename T, int N> requires ref_t<T, N> constexpr auto operator*(const storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>;
 	template <typename T, int N> requires ref_t<T, N> constexpr auto operator/(const storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>;
@@ -227,7 +222,7 @@ export namespace gse::vec {
 }
 
 template <typename T, int N>  requires ref_t<T, N>
-constexpr auto gse::vec::operator+(vec_param_t<T, N> lhs, vec_param_t<T, N> rhs) -> storage<T, N> {
+constexpr auto gse::vec::operator+(const storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N> {
     storage<T, N> result{};
 
 	simd::add(std::span<const T, N>(lhs.data), std::span<const T, N>(rhs.data), std::span<T, N>(result.data));
