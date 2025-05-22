@@ -309,6 +309,7 @@ auto render_object(const std::uint32_t object_id, const gse::render_queue_entry&
 			}
 		}
 		//entry is using mtl textures
+		
 		else {
 			texture_shader.set_bool("usemtl", true);
 			texture_shader.set_int("texture_diffuse1", 0);
