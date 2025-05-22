@@ -219,6 +219,7 @@ export namespace gse::vec {
     template <typename T, int N> constexpr auto operator<=(const storage<T, N>& lhs, const storage<T, N>& rhs) -> bool;
 
 	template <typename T, int N> constexpr auto dot(const storage<T, N>& lhs, const storage<T, N>& rhs) -> T;
+
 }
 
 template <typename T, int N>  requires ref_t<T, N>
@@ -480,6 +481,8 @@ constexpr auto gse::vec::dot(const storage<T, N>& lhs, const storage<T, N>& rhs)
 	simd::dot(std::span<const T, N>(lhs.data), std::span<const T, N>(rhs.data), result);
 	return result;
 }
+
+
 
 
 
