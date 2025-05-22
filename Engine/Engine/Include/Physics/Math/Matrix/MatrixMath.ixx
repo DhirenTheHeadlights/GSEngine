@@ -21,6 +21,7 @@ export namespace gse {
 	template <typename T>					constexpr auto scale(const mat4_t<T>& matrix, const vec3<length_t<T>>& scale) -> mat4_t<T>;
 	template <typename T, int N, int M>		constexpr auto value_ptr(mat_t<T, N, M>& matrix) -> T*;
 	template <typename T, int N, int M>		constexpr auto value_ptr(const mat_t<T, N, M>& matrix) -> const T*;
+	template <typename T, int N, int M> constexpr auto identity() -> mat_t<T, N, M>;
 }
 
 template <typename T>
@@ -117,4 +118,15 @@ constexpr auto gse::value_ptr(mat_t<T, Cols, Rows>& matrix) -> T* {
 template <typename T, int Cols, int Rows>
 constexpr auto gse::value_ptr(const mat_t<T, Cols, Rows>& matrix) -> const T* {
 	return &matrix[0][0];
+}
+
+template <typename T, int N, int M>
+constexpr auto gse::identity() -> mat_t<T, N, M> {
+	mat_t<T, N, M> result;
+	for (int i = 0; i < N; ++i) {
+		for (int j = 0; j < M; ++j) {
+			result[i][j] = (i == j) ? static_cast<T>(1) : static_cast<T>(0);
+		}
+	}
+	return result;
 }

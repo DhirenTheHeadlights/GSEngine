@@ -31,6 +31,8 @@ export namespace gse::physics {
 		auto get_speed() const -> velocity;
 
 		auto get_transformation_matrix() const -> mat4;
+
+		auto get_inverse_inertia_tensor_world() const -> mat3;
 	};
 }
 
@@ -43,4 +45,11 @@ auto gse::physics::motion_component::get_transformation_matrix() const -> mat4 {
 	const auto rotation = mat4(mat3_cast(orientation));
 	const mat4 transformation = translation * rotation; // * scale
 	return transformation;
+}
+
+auto gse::physics::motion_component::get_inverse_inertia_tensor_world() const -> mat3 {
+	const float i_body = moment_of_inertia.as_default_unit();
+	const mat3 inv_i_body = gse::identity<float, 3, 3>() * (1.f / i_body);
+	const auto rotation = mat3_cast(orientation);
+	return rotation * inv_i_body * rotation.transpose();
 }

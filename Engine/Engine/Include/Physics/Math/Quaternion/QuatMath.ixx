@@ -14,6 +14,7 @@ export namespace gse {
 	template <typename T> constexpr auto inverse(const quat_t<T>& q) -> quat_t<T>;
 	template <typename T> constexpr auto dot(const quat_t<T>& lhs, const quat_t<T>& rhs) -> T;
 	template <typename T> constexpr auto mat3_cast(const quat_t<T>& q) -> mat3_t<T>;
+	template <typename T> constexpr auto identity() -> quat_t<T>;
 }
 
 template <typename T>
@@ -72,4 +73,9 @@ constexpr auto gse::mat3_cast(const quat_t<T>& q) -> mat3_t<T> {
 			unitless::vec3_t<T>{xy - wz, 1 - (xx + zz), yz + wx},
 			unitless::vec3_t<T>{xz + wy, yz - wx, 1 - (xx + yy)}
 	};
+}
+
+template <typename T>
+constexpr auto gse::identity() -> gse::quat_t<T> {
+	return quat_t<T>{ 1, 0, 0, 0 };
 }

@@ -185,15 +185,64 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
 	const auto r_a = contact_point - object_motion_component->current_position;
 	const auto r_b = contact_point - other_collision_component.oriented_bounding_box.center;
 
+    const mat3 inv_i_a = object_motion_component->get_inverse_inertia_tensor_world();
+    /////// FOR USE WITH NON-STATIC OTHER OBJECT; REQUIRES OBJECT B MOTION COMPONENT
+    //const mat3 inv_i_b = other_object_motion_component->get_inverse_inertia_tensor_world();
+
+    const auto rcross_a = cross(r_a.as<units::meters>(), collision_normal);
+    const auto rcross_b = cross(r_b.as<units::meters>(), collision_normal);
+
 	const auto contact_velocity = object_motion_component->current_velocity.as<units::meters_per_second>() + cross(object_motion_component->angular_velocity.as<units::radians_per_second>(), r_a.as<units::meters>());
 	const float relative_velocity_along_normal = dot(contact_velocity, object_collision_component.collision_information.collision_normal);
 
-	/*float denom = 1.f / object_motion_component->mass.as<units::kilograms>()
-		+ dot(collision_normal, cross(object_motion_component->inverse_inertia_tensor * cross(r_a.as<units::meters>(), collision_normal), r_a.as<units::meters>())).as_default_unit()
-		+ cross(other_collision_component.oriented_bounding_box.inverse_inertia_tensor * cross(r_b.as<units::meters>(), collision_normal), r_b.as<units::meters>()).as_default_unit();*/
+    const float rot_term_a = dot(
+        collision_normal,
+        cross(inv_i_a * rcross_a, r_a.as<units::meters>())
+    );
+
+    const float rot_term_b = 0.f;
+
+    /////// FOR USE WITH NON-STATIC OTHER OBJECT; REQUIRES OBJECT B MOTION COMPONENT
+    /*const float rot_term_b = dot(
+        collision_normal,
+        cross(inv_i_b * rcross_b, r_b.as<units::meters>())
+    ).as_default_unit();*/
+
+    const float denom =
+        1.f / object_motion_component->mass.as<units::kilograms>()
+        + rot_term_a
+        + rot_term_b;
+
+
+    // Arbitrary coefficient; should be based off material.
+    const float restitution = 0.5f;
+
+    const float inv_mass = 1.f / object_motion_component->mass.as<units::kilograms>();
+
+    if (relative_velocity_along_normal < 0.0f) {
+        const float j = -(1.f + restitution)
+            * relative_velocity_along_normal
+            / denom;
+        object_motion_component->current_velocity +=
+            vec3<velocity>(collision_normal * (j * inv_mass));
+
+
+        auto torque_impulse = cross(
+            r_a.as<units::meters>(),
+            collision_normal * j
+        );
+        auto delta_omega = vec3<angular_velocity>(inv_i_a * torque_impulse);
+
+        object_motion_component->angular_velocity += delta_omega;
+    }
+
+    //Damping to prevent infinite spin
+    constexpr float angular_velocity_damping = 0.99f;
+	object_motion_component->angular_velocity *= angular_velocity_damping;
+
 
 	object_collision_component.collision_information.collision_point = contact_point;
-	const auto lever_arm = contact_point - object_motion_component->current_position;
-	const auto torque = cross(lever_arm.as<units::meters>(), object_collision_component.collision_information.collision_normal);
-	object_motion_component->current_torque += gse::vec3<gse::torque>(torque) * 100.f;
+	//const auto lever_arm = contact_point - object_motion_component->current_position;
+	//const auto torque = cross(lever_arm.as<units::meters>(), object_collision_component.collision_information.collision_normal);
+	//object_motion_component->current_torque += gse::vec3<gse::torque>(torque);
 }
