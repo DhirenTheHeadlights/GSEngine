@@ -55,14 +55,6 @@ namespace gse::unit {
 			}
 		}
 
-		template <int M = N> requires (M == 3)
-		constexpr vec_t(const vec::storage<typename Q::value_type, 4>& s) : internal::vec_t<vec_t, Q, M>() {
-			this->storage[0] = Q(s[0]);
-			this->storage[1] = Q(s[1]);
-			this->storage[2] = Q(s[2]);
-			this->storage[3] = Q(static_cast<typename Q::value_type>(0));
-		}
-
         template <internal::is_unit U> requires has_same_tag<Q, U>
         [[nodiscard]] constexpr auto as() const -> unitless::vec_t<value_type, N> {
 			unitless::vec_t<value_type, N> result;
