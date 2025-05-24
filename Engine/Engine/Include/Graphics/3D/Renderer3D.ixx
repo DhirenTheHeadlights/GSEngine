@@ -309,6 +309,7 @@ auto render_object(const std::uint32_t object_id, const gse::render_queue_entry&
 			}
 		}
 		//entry is using mtl textures
+		
 		else {
 			texture_shader.set_bool("usemtl", true);
 			texture_shader.set_int("texture_diffuse1", 0);
@@ -582,7 +583,7 @@ auto calculate_light_projection(const gse::light* light) -> gse::mat4 {
 	gse::mat4 light_projection(1.0f);
 
 	if (light->get_type() == gse::light_type::directional) {
-		light_projection = orthographic(
+		light_projection = gse::orthographic(
 			gse::meters(-10000.0f),
 			gse::meters(10000.0f),
 			gse::meters(-10000.0f),
@@ -592,7 +593,7 @@ auto calculate_light_projection(const gse::light* light) -> gse::mat4 {
 	}
 	else if (light->get_type() == gse::light_type::spot) {
 		const auto cutoff = gse::radians(entry.shader_entry.cut_off);
-		light_projection = perspective(cutoff, 1.0f, entry.near_plane, entry.far_plane);
+		light_projection = gse::perspective(cutoff, 1.0f, entry.near_plane, entry.far_plane);
 	}
 
 	return light_projection;
@@ -611,7 +612,7 @@ auto calculate_light_view(const gse::light* light) -> gse::mat4 {
 		light_pos = entry.shader_entry.position;
 	}
 
-	return look_at(
+	return gse::look_at(
 		light_pos,
 		light_pos + light_direction,
 		ensure_non_collinear_up(light_direction, { 0.0f, 1.0f, 0.0f })

@@ -52,15 +52,15 @@ export struct sphere_mesh_hook final : gse::hook<gse::entity> {
                 };
 
                 // Calculate normal (normalized position for a sphere)
-                const gse::unitless::vec3 normal = normalize(position);
+                const gse::vec::raw3f normal = gse::normalize(position).data();
 
                 // Calculate texture coordinates
-                const gse::unitless::vec2 tex_coords = {
+                const gse::vec::raw2f tex_coords = {
                     static_cast<float>(sector) / static_cast<float>(m_sectors),
                     static_cast<float>(stack) / static_cast<float>(m_stacks)
                 };
 
-                vertices.push_back({ .position = position.as<gse::units::meters>(), .normal = normal, .tex_coords = tex_coords});
+                vertices.push_back({ .position = position.as<gse::units::meters>().data(), .normal = normal, .tex_coords = tex_coords});
             }
         }
 
