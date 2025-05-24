@@ -78,8 +78,7 @@ export namespace gse {
             depth_map(depth_map),
             depth_map_fbo(depth_map_fbo),
             near_plane(near_plane),
-            far_plane(far_plane) {
-        }
+            far_plane(far_plane) {}
     };
 
     class light {

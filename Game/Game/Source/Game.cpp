@@ -62,10 +62,10 @@ struct scene1_hook final : gse::hook<gse::scene> {
 		game::arena::create(m_owner);
 
 		m_owner->add_entity(game::create_player(), "Player");
-		m_owner->add_entity(create_box(gse::vec::meters(20.f, -400.f, 20.f), gse::vec::meters(20.f, 20.f, 20.f)), "Bigger Box");
-		m_owner->add_entity(create_box(gse::vec::meters(-20.f, -400.f, 20.f), gse::vec::meters(40.f, 40.f, 40.f)), "Smaller Box");
+		m_owner->add_entity(gse::create_box(gse::vec::meters(20.f, -400.f, 20.f), gse::vec::meters(20.f, 20.f, 20.f)), "Smaller Box");
+		m_owner->add_entity(gse::create_box(gse::vec::meters(-20.f, -400.f, 20.f), gse::vec::meters(40.f, 40.f, 40.f)), "Bigger Box");
 		m_owner->add_entity(game::create_sphere_light(gse::vec::meters(0.f, -300.f, 0.f), gse::meters(10.f), 18), "Center Sphere Light");
-		m_owner->add_entity(create_sphere(gse::vec::meters(0.f, -00.f, 200.f), gse::meters(10.f)), "Second Sphere");
+		m_owner->add_entity(gse::create_sphere(gse::vec::meters(0.f, -00.f, 200.f), gse::meters(10.f)), "Second Sphere");
 
 
 
@@ -108,7 +108,7 @@ struct scene2_hook final : gse::hook<gse::scene> {
 	auto initialize() -> void override {
 		game::skybox::create(m_owner);
 		m_owner->add_entity(game::create_player(), "Player");
-		const std::uint32_t floor_uuid = create_box(gse::vec::meters(0.f, -500.f, 0.f), gse::vec::meters(20000.f, 10.f, 20000.f));
+		const std::uint32_t floor_uuid = gse::create_box(gse::vec::meters(0.f, -500.f, 0.f), gse::vec::meters(20000.f, 10.f, 20000.f));
 		gse::registry::add_entity_hook(floor_uuid, std::make_unique<floor_hook>());
 		m_owner->add_entity(floor_uuid, "Floor");
 	}

@@ -137,12 +137,12 @@ auto calculate_center_of_mass(const std::vector<std::uint32_t>& indices, const s
 		gse::unitless::vec3d tetra_com = (v0 + v1 + v2 + reference_point) / 4.0;
 
 		total_volume += volume;
-		moment += tetra_com * volume;
+		moment += gse::unitless::vec3(tetra_com * volume);
 	}
 
 	perma_assert(total_volume != 0.0, "Total volume is zero. Check if the mesh is closed and correctly oriented.");
 
-	return moment / total_volume;
+	return moment / static_cast<float>(total_volume);
 }
 
 auto gse::mesh::initialize() -> void {

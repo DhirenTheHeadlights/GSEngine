@@ -171,7 +171,7 @@ constexpr auto gse::mat<T, Cols, Rows>::operator*(const mat& other) const -> mat
 
 template <typename T, int Cols, int Rows>
 constexpr auto gse::mat<T, Cols, Rows>::operator*(const unitless::vec_t<T, Cols>& vec) const -> unitless::vec_t<T, Rows> {
-    unitless::vec_t<T, Rows> result;
+    vec::storage<T, Rows> result;
     for (int j = 0; j < Cols; ++j) {
         result = result + data[j] * vec[j];
     }
@@ -347,3 +347,4 @@ constexpr auto gse::mat<T, Cols, Rows>::trace() const -> T {
     }
     return trace;
 }
+
