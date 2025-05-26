@@ -210,7 +210,7 @@ auto gse::vulkan::persistent_allocator::create_image(const config::device_config
 			info.format,
 			{}, // Default swizzle
 			{
-				(info.usage & vk::ImageUsageFlagBits::eDepthStencilAttachment)
+				info.usage & vk::ImageUsageFlagBits::eDepthStencilAttachment
 					? vk::ImageAspectFlagBits::eDepth
 					: vk::ImageAspectFlagBits::eColor,
 				0, info.mipLevels, 0, info.arrayLayers
@@ -271,6 +271,22 @@ auto gse::vulkan::persistent_allocator::free(const config::device_config config,
 	resource.image = nullptr;
 	resource.view = nullptr;
 	resource.allocation = {};
+}
+
+auto gse::vulkan::persistent_allocator::clean_up(const vk::Device device) -> void {
+	for (auto& [memory_type_index, blocks] : g_persistent_memory_pools | std::views::values) {
+		for (auto& block : blocks) {
+			if (block.mapped) {
+				block.mapped = nullptr;
+			}
+			if (block.memory) {
+				device.freeMemory(block.memory);
+				block.memory = nullptr;
+			}
+		}
+		blocks.clear();
+	}
+	g_persistent_memory_pools.clear();
 }
 
 auto gse::vulkan::persistent_allocator::get_memory_flag_preferences(const vk::BufferUsageFlags usage) -> std::vector<vk::MemoryPropertyFlags> {

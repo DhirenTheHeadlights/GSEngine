@@ -9,6 +9,7 @@ import std.compat;
 import vulkan_hpp;
 
 import gse.core.config;
+import gse.core.timer;
 import gse.graphics.debug;
 import gse.graphics.font;
 import gse.graphics.texture;
@@ -233,26 +234,15 @@ auto gse::renderer2d::initialize(vulkan::config& config) -> void {
 }
 
 auto gse::renderer2d::begin_frame(const vulkan::config& config) -> void {
-   /* const vk::CommandBuffer& cmd = config.frame_context.command_buffer;
-
-    constexpr vk::ClearValue clear_value = vk::ClearColorValue(std::array{ 0.0f, 0.0f, 0.0f, 1.0f });
-
-    const vk::RenderPassBeginInfo render_pass_info(
-        config.render_pass,
-		config.swap_chain_data.frame_buffers[config.frame_context.image_index],
-        vk::Rect2D({ 0, 0 }, config.swap_chain_data.extent),
-        1, &clear_value
-    );
-
-    cmd.beginRenderPass(render_pass_info, vk::SubpassContents::eInline);*/
+    debug::update_imgui();
 }
 
 auto gse::renderer2d::render(const vulkan::config& config) -> void {
-    debug::render_imgui(config.frame_context.command_buffer);
+    display_timers();
 }
 
 auto gse::renderer2d::end_frame(const vulkan::config& config) -> void {
-    //config.frame_context.command_buffer.endRenderPass();
+    debug::render_imgui(config.frame_context.command_buffer);
 }
 
 auto gse::renderer2d::shutdown(const vulkan::config::device_config device_data) -> void {

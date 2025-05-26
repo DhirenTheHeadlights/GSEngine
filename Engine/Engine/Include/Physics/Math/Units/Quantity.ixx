@@ -3,7 +3,7 @@ export module gse.physics.math.units.quant;
 import std;
 
 export namespace gse::internal {
-	template<typename... Units>
+	template <typename... Units>
     struct unit_list {
         using type = std::tuple<Units...>;
     };

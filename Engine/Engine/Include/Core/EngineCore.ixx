@@ -88,17 +88,12 @@ auto update(const std::function<bool()>& update_function) -> void {
 auto render(const std::function<bool()>& render_function) -> void {
 	if (g_imgui_enabled) gse::add_timer("Engine::render");
 
-	gse::renderer::begin_frame();
-
-	gse::scene_loader::render();
-
-	if (!render_function()) {
-		gse::request_shutdown();
-	}
-
-	if (g_imgui_enabled) 
-
-	gse::renderer::end_frame();
+	gse::renderer::render([render_function] {
+		gse::scene_loader::render();
+		if (!render_function()) {
+			gse::request_shutdown();
+		}
+		});
 
 	if (g_imgui_enabled) gse::reset_timer("Engine::update");
 }

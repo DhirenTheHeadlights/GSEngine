@@ -73,7 +73,6 @@ auto gse::scene::render() const -> void {
 	render_hooks();
 
 	registry::render_hooks();
-	renderer::render();
 }
 
 auto gse::scene::exit() const -> void {
