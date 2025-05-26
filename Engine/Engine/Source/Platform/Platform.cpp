@@ -15,6 +15,7 @@ auto gse::platform::update() -> void {
 }
 
 auto gse::platform::shutdown(const vulkan::config& config) -> void {
+	vulkan::persistent_allocator::clean_up(config.device_data.device);
 	vulkan::shutdown(config);
 	window::shutdown();
 }
