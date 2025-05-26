@@ -34,6 +34,7 @@ export namespace gse::vulkan::persistent_allocator {
 	auto free(allocation& alloc) -> void;
 	auto free(config::device_config config, buffer_resource& resource) -> void;
 	auto free(config::device_config config, image_resource& resource) -> void;
+	auto clean_up(vk::Device device) -> void;
 }
 
 namespace gse::vulkan::persistent_allocator {

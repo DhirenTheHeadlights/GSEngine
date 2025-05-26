@@ -83,3 +83,7 @@ export namespace gse::vulkan {
 #if defined(VULKAN_HPP_DISPATCH_LOADER_DYNAMIC) && (VULKAN_HPP_DISPATCH_LOADER_DYNAMIC == 1)
 export VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 #endif
+
+export namespace gse::vulkan {
+	
+}

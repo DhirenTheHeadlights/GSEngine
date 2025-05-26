@@ -121,19 +121,28 @@ auto gse::vulkan::end_single_line_commands(const vk::CommandBuffer command_buffe
 }
 
 auto gse::vulkan::shutdown(const config& config) -> void {
-    config.device_data.device.waitIdle();
-    config.device_data.device.destroyDescriptorPool(config.descriptor.pool);
+    const auto& device = config.device_data.device;
 
-    config.device_data.device.destroySemaphore(config.sync.image_available_semaphore);
-    config.device_data.device.destroySemaphore(config.sync.render_finished_semaphore);
-    config.device_data.device.destroyFence(config.sync.in_flight_fence);
+    device.waitIdle();
+    device.destroyRenderPass(config.render_pass);
 
-    for (const auto& image_view : config.swap_chain_data.image_views) {
-        config.device_data.device.destroyImageView(image_view);
+    for (const auto& framebuffer : config.swap_chain_data.frame_buffers) {
+        device.destroyFramebuffer(framebuffer);
     }
 
-    config.device_data.device.destroySwapchainKHR(config.swap_chain_data.swap_chain);
-    config.device_data.device.destroy();
+    for (const auto& image_view : config.swap_chain_data.image_views) {
+        device.destroyImageView(image_view);
+    }
+
+    device.destroyDescriptorPool(config.descriptor.pool);
+    device.destroyCommandPool(config.command.pool);
+
+    device.destroySemaphore(config.sync.image_available_semaphore);
+    device.destroySemaphore(config.sync.render_finished_semaphore);
+    device.destroyFence(config.sync.in_flight_fence);
+
+    device.destroySwapchainKHR(config.swap_chain_data.swap_chain);
+    device.destroy();
 
     config.instance_data.instance.destroySurfaceKHR(config.instance_data.surface);
     config.instance_data.instance.destroy();
