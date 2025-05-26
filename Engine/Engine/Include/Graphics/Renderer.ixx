@@ -16,13 +16,12 @@ import gse.platform;
 export namespace gse::renderer {
 	auto initialize() -> void;
 	auto update() -> void;
-	auto render(const std::function<void()>& within_frame) -> void;
+	auto render(const std::function<void()>& in_frame) -> void;
 	auto shutdown() -> void;
 }
 
 namespace gse::renderer {
 	auto begin_frame() -> void;
-	auto render() -> void;
 	auto end_frame() -> void;
 }
 
@@ -36,34 +35,28 @@ auto gse::renderer::initialize() -> void {
 	gui::initialize();
 }
 
-auto gse::renderer::update() -> void {
-	window::update();
-	gui::update();
-	debug::update_imgui();
-}
-
-auto gse::renderer::render(const std::function<void()>& within_frame) -> void {
-	begin_frame();
-	render();
-	within_frame();
-	end_frame();
-}
-
 auto gse::renderer::begin_frame() -> void {
 	texture_loader::load_queued_textures(g_config);
 	model_loader::load_queued_models(g_config.device_data);
-	vulkan::begin_frame(window::get_window(), g_config);
 
 	renderer3d::render(g_config);
 
 	window::begin_frame();
+	vulkan::begin_frame(window::get_window(), g_config);
+	renderer2d::begin_frame(g_config);
 }
 
-auto gse::renderer::render() -> void {
-	display_timers();
-	renderer2d::begin_frame(g_config);
+auto gse::renderer::update() -> void {
+	window::update(); 
+	gui::update();
+}
+
+auto gse::renderer::render(const std::function<void()>& in_frame) -> void {
+	begin_frame();
 	renderer2d::render(g_config);
 	gui::render();
+	in_frame();
+	end_frame();
 }
 
 auto gse::renderer::end_frame() -> void {
@@ -76,6 +69,5 @@ auto gse::renderer::shutdown() -> void {
 	renderer2d::shutdown(g_config.device_data);
 	renderer3d::shutdown(g_config);
 	shader_loader::destroy_shaders(g_config.device_data.device);
-	window::shutdown();
-	platform::shutdown(g_config);
+	platform::shutdown(g_config); 
 }

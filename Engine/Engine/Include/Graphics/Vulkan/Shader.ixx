@@ -35,9 +35,9 @@ namespace gse {
 
 		auto get_shader_stages() const -> std::array<vk::PipelineShaderStageCreateInfo, 2>;
 		auto get_descriptor_set_layout() const -> const vk::DescriptorSetLayout* { return &m_descriptor_set_layout; }
-		auto get_bindings() const -> const std::unordered_map<std::string, vk::DescriptorSetLayoutBinding>& { return m_bindings; }
-		auto get_binding(const std::string& name) const -> std::optional< vk::DescriptorSetLayoutBinding>;
 		auto get_required_bindings() const -> std::vector<std::string>;
+		auto get_binding(const std::string& name) const -> std::optional<vk::DescriptorSetLayoutBinding>;
+
 		auto get_descriptor_writes(
 			vk::DescriptorSet set,
 			const std::unordered_map<std::string, vk::DescriptorBufferInfo>& buffer_infos,
@@ -95,8 +95,7 @@ auto gse::shader::create(const vk::Device device, const std::filesystem::path& v
 				1,
 				static_cast<vk::ShaderStageFlagBits>(module.shader_stage)
 			);
-
-			m_bindings.try_emplace(b->name, reflected_bindings.back());
+			m_bindings[b->name] = reflected_bindings.back();
 		}
 
 		spvReflectDestroyShaderModule(&module);
@@ -138,7 +137,7 @@ auto gse::shader::create(const vk::Device device, const std::filesystem::path& v
 		{},
 		static_cast<uint32_t>(reflected_bindings.size()),
 		reflected_bindings.data()
-	};
+	};	
 
 	m_descriptor_set_layout = m_device.createDescriptorSetLayout(layout_info);
 }
@@ -161,6 +160,60 @@ auto gse::shader::get_shader_stages() const -> std::array<vk::PipelineShaderStag
 	return shader_stages;
 }
 
+auto gse::shader::get_required_bindings() const -> std::vector<std::string> {
+	std::vector<std::string> required_bindings;
+	for (const auto& [name, binding] : m_bindings) {
+		if (binding.descriptorType == vk::DescriptorType::eStorageBuffer) {
+			required_bindings.push_back(name);
+		}
+	}
+	return required_bindings;
+}
+
+auto gse::shader::get_binding(const std::string& name) const -> std::optional<vk::DescriptorSetLayoutBinding> {
+	if (const auto it = m_bindings.find(name); it != m_bindings.end()) {
+		return it->second;
+	}
+	return std::nullopt;
+}
+
+auto gse::shader::get_descriptor_writes(
+	vk::DescriptorSet set,
+	const std::unordered_map<std::string, vk::DescriptorBufferInfo>& buffer_infos,
+	const std::unordered_map<std::string, vk::DescriptorImageInfo>& image_infos
+) const -> std::vector<vk::WriteDescriptorSet> {
+	std::vector<vk::WriteDescriptorSet> writes;
+	std::unordered_set<std::string> used_keys;
+
+	for (const auto& [name, binding] : m_bindings) {
+		if (auto it = buffer_infos.find(name); it != buffer_infos.end()) {
+			writes.emplace_back(
+				set, binding.binding, 0, binding.descriptorCount, binding.descriptorType,
+				nullptr, &it->second, nullptr
+			);
+			used_keys.insert(name);
+		}
+		else if (auto it2 = image_infos.find(name); it2 != image_infos.end()) {
+			writes.emplace_back(
+				set, binding.binding, 0, binding.descriptorCount, binding.descriptorType,
+				&it2->second, nullptr, nullptr
+			);
+			used_keys.insert(name);
+		}
+		else {
+			assert(false, std::format("Missing required binding: '{}'", name));
+		}
+	}
+
+	const auto total_inputs = buffer_infos.size() + image_infos.size();
+	assert(
+		used_keys.size() == total_inputs,
+		"Some descriptor inputs were not used. Possibly extra or misnamed keys?"
+	);
+
+	return writes;
+}
+
 auto gse::shader::create_shader_module(const std::vector<char>& code) const -> vk::ShaderModule {
 	const vk::ShaderModuleCreateInfo create_info{
 		{},
@@ -169,61 +222,6 @@ auto gse::shader::create_shader_module(const std::vector<char>& code) const -> v
 	};
 
 	return m_device.createShaderModule(create_info);
-}
-
-auto gse::shader::get_binding(const std::string& name) const -> std::optional<vk::DescriptorSetLayoutBinding> {
-	assert(m_bindings.contains(name), std::format("Binding {} not found", name));
-	return m_bindings.at(name);
-}
-
-auto gse::shader::get_required_bindings() const -> std::vector<std::string> {
-	std::vector<std::string> required_bindings;
-	required_bindings.reserve(m_bindings.size());
-	for (const auto& [name, binding] : m_bindings) {
-		if (binding.descriptorCount > 0) {
-			required_bindings.push_back(name);
-		}
-	}
-	return required_bindings;
-}
-
-auto gse::shader::get_descriptor_writes(vk::DescriptorSet set, const std::unordered_map<std::string, vk::DescriptorBufferInfo>& buffer_infos, const std::unordered_map<std::string, vk::DescriptorImageInfo>& image_infos) const -> std::vector<vk::WriteDescriptorSet> {
-	std::vector<vk::WriteDescriptorSet> writes;
-
-	for (const auto& [name, binding] : m_bindings) {
-		switch (binding.descriptorType) {
-		case vk::DescriptorType::eUniformBuffer:
-		case vk::DescriptorType::eUniformBufferDynamic:
-		case vk::DescriptorType::eStorageBuffer:
-		case vk::DescriptorType::eStorageBufferDynamic: {
-			auto it = buffer_infos.find(name);
-			if (it != buffer_infos.end()) {
-				writes.emplace_back(
-					set, binding.binding, 0, binding.descriptorCount, binding.descriptorType,
-					nullptr, &it->second, nullptr
-				);
-			}
-			break;
-		}
-		case vk::DescriptorType::eCombinedImageSampler:
-		case vk::DescriptorType::eSampledImage:
-		case vk::DescriptorType::eStorageImage:
-		case vk::DescriptorType::eSampler: {
-			auto it = image_infos.find(name);
-			if (it != image_infos.end()) {
-				writes.emplace_back(
-					set, binding.binding, 0, binding.descriptorCount, binding.descriptorType,
-					&it->second, nullptr, nullptr
-				);
-			}
-			break;
-		}
-		default:
-			break;
-		}
-	}
-
-	return writes;
 }
 
 auto gse::read_file(const std::filesystem::path& path) -> std::vector<char> {
