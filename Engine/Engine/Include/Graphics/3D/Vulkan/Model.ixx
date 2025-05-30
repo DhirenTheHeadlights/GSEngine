@@ -27,7 +27,7 @@ export namespace gse {
 
         auto set_position(const vec3<length>& position) -> void;
         auto set_rotation(const vec3<angle>& rotation) -> void;
-        auto get_render_queue_entries() const -> const std::vector<render_queue_entry>&;
+        auto get_render_queue_entries() const -> std::span<const render_queue_entry>;
         auto get_model_id() const -> id;
 
 		auto operator==(const model_handle& other) const -> bool {
@@ -70,7 +70,7 @@ auto gse::model_handle::set_rotation(const vec3<angle>& rotation) -> void {
     }
 }
 
-auto gse::model_handle::get_render_queue_entries() const -> const std::vector<render_queue_entry>& {
+auto gse::model_handle::get_render_queue_entries() const -> std::span<const render_queue_entry> {
     return m_render_queue_entries;
 }
 

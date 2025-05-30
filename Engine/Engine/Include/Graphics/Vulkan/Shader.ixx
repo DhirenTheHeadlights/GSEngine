@@ -11,6 +11,20 @@ import gse.platform;
 
 namespace gse {
 	export class shader {
+		struct uniform_member {
+			std::string name;
+			std::string type_name;
+			std::uint32_t offset = 0;
+			std::uint32_t size = 0;
+			std::uint32_t array_size = 0;
+		};
+		struct uniform_block {
+			std::string name;
+			std::uint32_t binding = 0;
+			std::uint32_t set = 0;
+			std::uint32_t size = 0;
+			std::vector<uniform_member> members;
+		};
 	public:
 		shader() = default;
 		shader(
@@ -34,6 +48,7 @@ namespace gse {
 		) -> void;
 
 		auto get_shader_stages() const -> std::array<vk::PipelineShaderStageCreateInfo, 2>;
+		auto get_uniform_blocks() const -> const std::unordered_map<std::string, uniform_block>& { return m_uniform_blocks; }
 		auto get_descriptor_set_layout() const -> const vk::DescriptorSetLayout* { return &m_descriptor_set_layout; }
 		auto get_required_bindings() const -> std::vector<std::string>;
 		auto get_binding(const std::string& name) const -> std::optional<vk::DescriptorSetLayoutBinding>;
@@ -53,6 +68,7 @@ namespace gse {
 
 		vk::DescriptorSetLayout m_descriptor_set_layout;
 		std::unordered_map<std::string, vk::DescriptorSetLayoutBinding> m_bindings;
+		std::unordered_map<std::string, uniform_block> m_uniform_blocks;
 	};
 
 	auto read_file(const std::filesystem::path& path) -> std::vector<char>;
@@ -140,6 +156,73 @@ auto gse::shader::create(const vk::Device device, const std::filesystem::path& v
 	};	
 
 	m_descriptor_set_layout = m_device.createDescriptorSetLayout(layout_info);
+
+	auto reflect_uniforms = [](const std::span<const char> spirv_code) -> std::vector<uniform_block> {
+		std::vector<uniform_block> blocks;
+
+		SpvReflectShaderModule module;
+		const SpvReflectResult result = spvReflectCreateShaderModule(spirv_code.size(), spirv_code.data(), &module);
+		assert(result == SPV_REFLECT_RESULT_SUCCESS, "SPIR-V reflection failed");
+
+		uint32_t binding_count = 0;
+		spvReflectEnumerateDescriptorBindings(&module, &binding_count, nullptr);
+		std::vector<SpvReflectDescriptorBinding*> bindings(binding_count);
+		spvReflectEnumerateDescriptorBindings(&module, &binding_count, bindings.data());
+
+		for (const auto* b : bindings) {
+			if (b->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
+				uniform_block block {
+					.name = b->name,
+					.binding = b->binding,
+					.set = b->set,
+					.size = b->block.size
+				};
+
+				for (uint32_t i = 0; i < b->block.member_count; ++i) {
+					const SpvReflectBlockVariable& member = b->block.members[i];
+					block.members.emplace_back(
+						member.name, 
+						member.type_description->type_name ? member.type_description->type_name : "", 
+						member.offset,
+						member.size,
+						member.array.dims_count ? member.array.dims[0] : 0
+					);
+				}
+
+				blocks.push_back(block);
+			}
+		}
+
+		spvReflectDestroyShaderModule(&module);
+		return blocks;
+		};
+
+	const auto vert_bindings = reflect_uniforms(vert_code);
+	const auto frag_bindings = reflect_uniforms(frag_code);
+
+	for (const auto& block : vert_bindings) {
+		m_uniform_blocks[block.name] = block;
+	}
+
+	for (const auto& block : frag_bindings) {
+		if (m_uniform_blocks.contains(block.name)) {
+			const auto& existing = m_uniform_blocks[block.name];
+			assert(
+				existing.binding == block.binding && existing.set == block.set, 
+				std::format(
+					"Uniform block '{}' has conflicting bindings: existing (set={}, binding={}) vs new (set={}, binding={})", 
+					block.name, 
+					existing.set, 
+					existing.binding, 
+					block.set, 
+					block.binding
+				)
+			);
+		}
+		else {
+			m_uniform_blocks[block.name] = block;
+		}
+	}
 }
 
 auto gse::shader::get_shader_stages() const -> std::array<vk::PipelineShaderStageCreateInfo, 2> {

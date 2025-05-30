@@ -52,6 +52,8 @@ gse::vulkan::persistent_allocator::image_resource g_depth_image_resource;
 gse::vulkan::persistent_allocator::buffer_resource g_camera_buffer_resource;
 gse::vulkan::persistent_allocator::buffer_resource g_model_buffer_resource;
 
+std::unordered_map<std::string, gse::vulkan::persistent_allocator::buffer_resource> g_ubo_allocations;
+
 auto gse::renderer3d::get_camera() -> camera& {
 	return g_camera;
 }
@@ -296,53 +298,39 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 
 	auto vertex_descriptor_set = descriptor_sets[0];
 
-	struct camera_ubo {
-		mat4 view;
-		mat4 projection;
-	};
+	std::unordered_map<std::string, vk::Buffer> uniform_buffers;
+	std::unordered_map<std::string, vk::DescriptorBufferInfo> buffer_infos;
 
-	vk::BufferCreateInfo camera_info(
-		{},                  
-		sizeof(camera_ubo),          
-		vk::BufferUsageFlagBits::eUniformBuffer,
-		vk::SharingMode::eExclusive
-	);
+	for (const auto& [block_name, block] : geometry_shader.get_uniform_blocks()) {
+		auto size = block.size;
 
-	g_camera_buffer_resource = vulkan::persistent_allocator::create_buffer(
-		config.device_data,
-		camera_info,
-		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
-	);
+		if (block_name == "model_ubo") {
+			size_t max_entries = 1024;
+			vk::DeviceSize model_stride = block.size;
+			size = model_stride * max_entries;
+		}
 
-	vk::DescriptorBufferInfo camera_buffer_info(g_camera_buffer_resource.buffer, 0, sizeof(camera_ubo));
+		vk::BufferCreateInfo buffer_info(
+			{},
+			size,
+			vk::BufferUsageFlagBits::eUniformBuffer,
+			vk::SharingMode::eExclusive
+		);
 
-	struct model_ubo {
-		mat4 model;
-	};
+		auto buffer = vulkan::persistent_allocator::create_buffer(
+			config.device_data,
+			buffer_info,
+			vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+		);
 
-	vk::BufferCreateInfo model_info(
-		{},
-		sizeof(model_ubo),              
-		vk::BufferUsageFlagBits::eUniformBuffer,
-		vk::SharingMode::eExclusive
-	);
-
-	g_model_buffer_resource = vulkan::persistent_allocator::create_buffer(
-		config.device_data,
-		model_info,
-		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
-	);
-
-	vk::DescriptorBufferInfo model_buffer_info(g_model_buffer_resource.buffer, 0, sizeof(model_ubo));
-
-	std::unordered_map<std::string, vk::DescriptorBufferInfo> buffer_infos = {
-		{ "camera_ubo", camera_buffer_info },
-		{ "model_ubo", model_buffer_info }
-	};
+		g_ubo_allocations[block_name] = buffer;
+		uniform_buffers[block_name] = buffer.buffer;
+		buffer_infos[block_name] = vk::DescriptorBufferInfo(buffer.buffer, 0, block.size);
+	}
 
 	std::unordered_map<std::string, vk::DescriptorImageInfo> image_infos = {};
 
-	auto writes = geometry_shader.get_descriptor_writes(descriptor_sets[0], buffer_infos, image_infos);
+	auto writes = geometry_shader.get_descriptor_writes(vertex_descriptor_set, buffer_infos, image_infos);
 
 	config.device_data.device.updateDescriptorSets(writes, nullptr);
 
@@ -445,10 +433,10 @@ auto gse::renderer3d::begin_frame(const vulkan::config& config) -> vk::CommandBu
 auto gse::renderer3d::render(const vulkan::config& config) -> void {
 	const auto command = begin_frame(config);
 
-	for (const auto& components = registry::get_components<render_component>(); const auto& component : components) {
+	for (const auto& component : registry::get_components<render_component>()) {
 		for (const auto& model_handle : component.models) {
 			for (const auto& entry : model_handle.get_render_queue_entries()) {
-
+				
 			}
 		}
 	}

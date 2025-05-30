@@ -46,7 +46,7 @@ auto gse::broad_phase_collision::check_collision(physics::collision_component& d
 }
 
 auto gse::broad_phase_collision::update() -> void {
-	auto& objects = registry::get_components<physics::collision_component>();
+	auto objects = registry::get_components<physics::collision_component>();
 
 	for (auto& object : objects) {
 		object.collision_information = {
