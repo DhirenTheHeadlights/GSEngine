@@ -13,7 +13,7 @@ import gse.core.object_registry;
 export namespace gse::broad_phase_collision {
 	auto check_collision(const axis_aligned_bounding_box& box1, const axis_aligned_bounding_box& box2) -> bool;
 	auto check_future_collision(const axis_aligned_bounding_box& dynamic_box, const physics::motion_component* dynamic_motion_component, const  axis_aligned_bounding_box& other_box) -> bool;
-	auto check_collision(physics::collision_component& dynamic_object_collision_component, const physics::collision_component& other_collision_component) -> void;
+	auto check_collision(physics::collision_component& dynamic_object_collision_component, physics::collision_component& other_collision_component) -> void;
 	auto calculate_collision_information(const axis_aligned_bounding_box& box1, const axis_aligned_bounding_box& box2) -> collision_information;
 
 	auto update() -> void;
@@ -33,14 +33,16 @@ auto gse::broad_phase_collision::check_future_collision(const axis_aligned_bound
 	return check_collision(expanded_box, other_box);								// Check for collision with the new expanded box
 }
 
-auto gse::broad_phase_collision::check_collision(physics::collision_component& dynamic_object_collision_component, const physics::collision_component& other_collision_component) -> void {
+auto gse::broad_phase_collision::check_collision(physics::collision_component& dynamic_object_collision_component, physics::collision_component& other_collision_component) -> void {
 	auto* box1_motion_component = registry::get_component_ptr<physics::motion_component>(dynamic_object_collision_component.parent_id);
+	auto* box2_motion_component = registry::get_component_ptr<physics::motion_component>(other_collision_component.parent_id);
 	const auto& box1 = dynamic_object_collision_component.bounding_box;
 	const auto& box2 = other_collision_component.bounding_box;
 
 	if (check_future_collision(box1, box1_motion_component, box2)) {
 		if (dynamic_object_collision_component.resolve_collisions) {
-			narrow_phase_collision::resolve_collision(box1_motion_component, dynamic_object_collision_component, other_collision_component);
+			narrow_phase_collision::resolve_collision(box1_motion_component, dynamic_object_collision_component, box2_motion_component, other_collision_component);
+
 		}
 	}
 }

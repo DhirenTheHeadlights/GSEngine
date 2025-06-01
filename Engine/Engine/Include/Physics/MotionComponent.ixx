@@ -9,6 +9,8 @@ export namespace gse::physics {
 	struct motion_component final : component {
 		explicit motion_component(const std::uint32_t id) : component(id) {}
 
+		bool position_locked = false;
+
 		vec3<length> current_position;
 		vec3<velocity> current_velocity;
 		vec3<acceleration> current_acceleration;

@@ -8,7 +8,7 @@ import gse.physics.collision_component;
 import gse.physics.math;
 
 export namespace gse::narrow_phase_collision {
-    auto resolve_collision(physics::motion_component* object_motion_component, physics::collision_component& object_collision_component, const physics::collision_component& other_collision_component) -> void;
+    auto resolve_collision(physics::motion_component* object_motion_component, physics::collision_component& object_collision_component, physics::motion_component* other_motion_component, physics::collision_component& other_collision_component) -> void;
 }
 
 auto overlaps_on_axis(const gse::oriented_bounding_box& box1, const gse::oriented_bounding_box& box2, const gse::vec3<gse::length>& axis, gse::length& penetration) -> bool {
@@ -108,11 +108,11 @@ auto create_plane(const gse::vec3<gse::length>& point, const gse::unitless::vec3
     };
 }
 
-auto clip_polygon_against_plane(const std::array<gse::vec3<gse::length>, 4>& polygon, const plane& plane) -> std::vector<gse::vec3<gse::length>> {
+auto clip_polygon_against_plane(const std::array<gse::vec3<gse::length>, 4>& polygon, const plane& c_plane) -> std::vector<gse::vec3<gse::length>> {
 	std::vector<gse::vec3<gse::length>> clipped_polygon;
 
-	const auto& normal = plane.normal;
-	const auto& offset = plane.offset;
+	const auto& normal = c_plane.normal;
+	const auto& offset = c_plane.offset;
 
 	for (size_t i = 0; i < polygon.size(); ++i) {
 		const auto& current_vertex = polygon[i];
@@ -140,10 +140,10 @@ auto compute_contact_point(const std::vector<gse::vec3<gse::length>>& clipped_po
 		contact_point += vertex;
 	}
 
-	return contact_point / static_cast<float>(clipped_polygon.size());
+    return clipped_polygon.empty() ? gse::vec3<gse::length>{ 0.f, 0.f, 0.f } : (contact_point / static_cast<float>(clipped_polygon.size()));
 }
 
-auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* object_motion_component, physics::collision_component& object_collision_component, const physics::collision_component& other_collision_component) -> void {
+auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* object_motion_component, physics::collision_component& object_collision_component, physics::motion_component* other_motion_component, physics::collision_component& other_collision_component) -> void {
     if (!sat_collision(object_collision_component.oriented_bounding_box, other_collision_component.oriented_bounding_box, object_collision_component.collision_information.collision_normal, object_collision_component.collision_information.penetration)) {
         return;
     }
@@ -166,11 +166,22 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
         acc = 0.0f;
     }
 
+    const float inv_mass_a = 1.f / object_motion_component->mass.as<units::kilograms>();
+	const float inv_mass_b = 1.f / other_motion_component->mass.as<units::kilograms>();
+
+	const float total_inv_mass = inv_mass_a + inv_mass_b;
+	const float percentage_a = inv_mass_a / total_inv_mass;
+	const float percentage_b = inv_mass_b / total_inv_mass;
+
     // Correct position to remove overlap (with a tiny slop)
     constexpr float slop = 0.001f;
     const float corrected_penetration = std::max(penetration_depth - slop, 0.0f);
-    const auto correction = collision_normal * meters(corrected_penetration);
-    object_motion_component->current_position -= correction;
+
+    const auto correction_a = collision_normal * meters(corrected_penetration * percentage_a);
+	const auto correction_b = collision_normal * meters(corrected_penetration * percentage_b);
+    object_motion_component->current_position -= correction_a;
+	other_motion_component->current_position += correction_b;
+
 
     if (collision_normal.y < 0.f) { // Normal here is inverted because the collision normal points from the other object to this object
         object_motion_component->airborne = false;
@@ -187,12 +198,15 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
 
     const mat3 inv_i_a = object_motion_component->get_inverse_inertia_tensor_world();
     /////// FOR USE WITH NON-STATIC OTHER OBJECT; REQUIRES OBJECT B MOTION COMPONENT
-    //const mat3 inv_i_b = other_object_motion_component->get_inverse_inertia_tensor_world();
+    const mat3 inv_i_b = other_motion_component->get_inverse_inertia_tensor_world();
 
     const auto rcross_a = cross(r_a.as<units::meters>(), collision_normal);
     const auto rcross_b = cross(r_b.as<units::meters>(), collision_normal);
 
-	const auto contact_velocity = object_motion_component->current_velocity.as<units::meters_per_second>() + cross(object_motion_component->angular_velocity.as<units::radians_per_second>(), r_a.as<units::meters>());
+
+	const auto contact_velocity_a = object_motion_component->current_velocity.as<units::meters_per_second>() + cross(object_motion_component->angular_velocity.as<units::radians_per_second>(), r_a.as<units::meters>());
+	const auto contact_velocity_b = other_motion_component->current_velocity.as<units::meters_per_second>() + cross(other_motion_component->angular_velocity.as<units::radians_per_second>(), r_b.as<units::meters>());
+	const auto contact_velocity = contact_velocity_a - contact_velocity_b;
 	const float relative_velocity_along_normal = dot(contact_velocity, object_collision_component.collision_information.collision_normal);
 
     const float rot_term_a = dot(
@@ -200,13 +214,11 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
         cross(inv_i_a * rcross_a, r_a.as<units::meters>())
     );
 
-    const float rot_term_b = 0.f;
-
     /////// FOR USE WITH NON-STATIC OTHER OBJECT; REQUIRES OBJECT B MOTION COMPONENT
-    /*const float rot_term_b = dot(
+    const float rot_term_b = dot(
         collision_normal,
         cross(inv_i_b * rcross_b, r_b.as<units::meters>())
-    ).as_default_unit();*/
+    );
 
     const float denom =
         1.f / object_motion_component->mass.as<units::kilograms>()
@@ -217,31 +229,33 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
     // Arbitrary coefficient; should be based off material.
     const float restitution = 0.5f;
 
-    const float inv_mass = 1.f / object_motion_component->mass.as<units::kilograms>();
+ 
 
     if (relative_velocity_along_normal < 0.0f) {
-        const float j = -(1.f + restitution)
-            * relative_velocity_along_normal
-            / denom;
-        object_motion_component->current_velocity +=
-            vec3<velocity>(collision_normal * (j * inv_mass));
+        const float j = -(1.f + restitution) * relative_velocity_along_normal / denom;
+        auto torque_impulse_a = cross(r_a.as<units::meters>(), collision_normal * j);
+		auto torque_impulse_b = cross(r_b.as<units::meters>(), collision_normal * j);
+        auto delta_omega_a = vec3<angular_velocity>(inv_i_a * torque_impulse_a);
+		auto delta_omega_b = vec3<angular_velocity>(inv_i_b * torque_impulse_b);
+
+        object_motion_component->current_velocity += vec3<velocity>(collision_normal * (j * inv_mass_a));
+		object_motion_component->angular_velocity += delta_omega_a;
+
+        if (!other_motion_component->position_locked) {
+            other_motion_component->current_velocity -= vec3<velocity>(collision_normal * (j * inv_mass_b));
+            other_motion_component->angular_velocity -= delta_omega_b;
+        }
 
 
-        auto torque_impulse = cross(
-            r_a.as<units::meters>(),
-            collision_normal * j
-        );
-        auto delta_omega = vec3<angular_velocity>(inv_i_a * torque_impulse);
-
-        object_motion_component->angular_velocity += delta_omega;
     }
 
     //Damping to prevent infinite spin
-    constexpr float angular_velocity_damping = 0.99f;
+    constexpr float angular_velocity_damping = 0.98f;
 	object_motion_component->angular_velocity *= angular_velocity_damping;
 
 
 	object_collision_component.collision_information.collision_point = contact_point;
+
 	//const auto lever_arm = contact_point - object_motion_component->current_position;
 	//const auto torque = cross(lever_arm.as<units::meters>(), object_collision_component.collision_information.collision_normal);
 	//object_motion_component->current_torque += gse::vec3<gse::torque>(torque);
