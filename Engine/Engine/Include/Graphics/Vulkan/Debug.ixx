@@ -105,8 +105,60 @@ auto gse::debug::update_imgui() -> void {
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    if (const ImGuiIO& io = ImGui::GetIO(); io.ConfigFlags & ImGuiConfigFlags_DockingEnable) {
-        ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
+    const ImGuiIO& io = ImGui::GetIO();
+
+    if (io.ConfigFlags & ImGuiConfigFlags_DockingEnable) {
+    	const ImGuiViewport* viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(viewport->WorkPos);  
+        ImGui::SetNextWindowSize(viewport->WorkSize);          
+        ImGui::SetNextWindowViewport(viewport->ID);
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+
+        ImGuiWindowFlags host_window_flags = 0;
+        host_window_flags |= ImGuiWindowFlags_NoTitleBar;
+        host_window_flags |= ImGuiWindowFlags_NoCollapse;
+        host_window_flags |= ImGuiWindowFlags_NoResize;
+        host_window_flags |= ImGuiWindowFlags_NoMove;
+        host_window_flags |= ImGuiWindowFlags_NoDocking;
+        host_window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus;
+        host_window_flags |= ImGuiWindowFlags_NoNavFocus;
+
+        ImGui::Begin("MainDockSpaceHost", nullptr, host_window_flags);
+
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar(3);  
+
+        ImGuiID dockspace_id = ImGui::GetID("MyMainDockSpace");
+        ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
+
+        ImGui::End();
+    }
+
+    if (ImGui::BeginMainMenuBar()) {
+        if (ImGui::BeginMenu("File")) {
+            if (ImGui::MenuItem("Save State")) {
+                save_imgui_state();
+            }
+            if (ImGui::MenuItem("Exit")) {
+                // request_shutdown();
+            }
+            ImGui::EndMenu();
+        }
+        ImGui::EndMainMenuBar();
+    }
+
+    if (io.WantCaptureMouse) {
+        window::set_mouse_visible(true);
+    }
+
+    if (g_autosave_clock.get_elapsed_time() > g_autosave_time) {
+        save_imgui_state();
+        g_autosave_clock.reset();
     }
 }
 
@@ -117,9 +169,13 @@ auto gse::debug::render_imgui(const vk::CommandBuffer& command_buffer) -> void {
     g_render_call_backs.clear();
 
     ImGui::Render();
+
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer);
-	ImGui::UpdatePlatformWindows();
-    ImGui::RenderPlatformWindowsDefault();
+
+    if (const auto& io = ImGui::GetIO(); io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+        ImGui::UpdatePlatformWindows();
+        ImGui::RenderPlatformWindowsDefault();
+	}
 }
 
 auto gse::debug::save_imgui_state() -> void {

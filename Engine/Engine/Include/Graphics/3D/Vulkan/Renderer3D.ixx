@@ -356,9 +356,6 @@ auto gse::renderer3d::initialize_objects() -> void {
 }
 
 auto gse::renderer3d::render(const vulkan::config& config) -> void {
-	g_camera.m_position = vec3<length>{ meters(0.f), meters(0.f), meters(-5.f) };
-	g_camera.m_yaw = degrees(-90.0f);
-	g_camera.m_pitch = degrees(0.0f);
 	g_camera.update_camera_vectors();
 	if (!window::is_mouse_visible()) g_camera.process_mouse_movement(window::get_mouse_delta_rel_top_left());
 

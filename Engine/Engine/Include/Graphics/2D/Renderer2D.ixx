@@ -21,9 +21,7 @@ import gse.platform;
 
 export namespace gse::renderer2d {
     auto initialize(vulkan::config& config) -> void;
-    auto begin_frame() -> void;
-    auto render() -> void;
-    auto end_frame(const vulkan::config& config) -> void;
+    auto render(const vulkan::config& config) -> void;
     auto shutdown(vulkan::config::device_config device_data) -> void;
 
     auto draw_quad(const vec2<length>& position, const vec2<length>& size, const unitless::vec4& color) -> void;
@@ -235,15 +233,9 @@ auto gse::renderer2d::initialize(vulkan::config& config) -> void {
     debug::initialize_imgui(config);
 }
 
-auto gse::renderer2d::begin_frame() -> void {
+auto gse::renderer2d::render(const vulkan::config& config) -> void {
     debug::update_imgui();
-}
-
-auto gse::renderer2d::render() -> void {
     display_timers();
-}
-
-auto gse::renderer2d::end_frame(const vulkan::config& config) -> void {
     debug::render_imgui(config.frame_context.command_buffer);
 }
 

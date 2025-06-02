@@ -107,7 +107,7 @@ export struct box_mesh_hook final : gse::hook<gse::entity> {
     }
 
     auto update() -> void override {
-        gse::registry::get_component<gse::render_component>(owner_id).models[0].set_position(gse::registry::get_component<gse::physics::motion_component>(owner_id).current_position);
+        //gse::registry::get_component<gse::render_component>(owner_id).models[0].set_position(gse::registry::get_component<gse::physics::motion_component>(owner_id).current_position);
         gse::registry::get_component<gse::physics::collision_component>(owner_id).bounding_box.set_position(gse::registry::get_component<gse::physics::motion_component>(owner_id).current_position);
     }
 
