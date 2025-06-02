@@ -4,26 +4,33 @@ import std;
 import vulkan_hpp;
 
 import gse.platform.vulkan.config;
-
-struct sub_allocation;
+import gse.platform.assert;
+import gse.platform.vulkan.resources;
 
 export namespace gse::vulkan::persistent_allocator {
-	struct allocation {
-		vk::DeviceMemory memory;
-		vk::DeviceSize size = 0, offset = 0;
-		void* mapped = nullptr;
-		sub_allocation* owner = nullptr;
-	};
+	template <typename T>
+	struct mapped_buffer_view {
+		void* base = nullptr;
+		vk::DeviceSize stride = sizeof(T);
 
-	struct image_resource {
-		vk::Image image;
-		vk::ImageView view;
-		allocation allocation;
-	};
+		auto operator[](const size_t index) -> T& {
+			assert(base != nullptr, "mapped_buffer_view base is null");
+			return *reinterpret_cast<T*>(static_cast<std::byte*>(base) + index * stride);
+		}
 
-	struct buffer_resource {
-		vk::Buffer buffer;
-		allocation allocation;
+		auto get_offset(const size_t index) const -> vk::DeviceSize {
+			return index * stride;
+		}
+
+		auto get_span(const size_t index) const -> std::span<const std::byte> {
+			const auto ptr = static_cast<const std::byte*>(base) + index * stride;
+			return std::span{ ptr, stride };
+		}
+			
+		auto get_span(const size_t index) -> std::span<std::byte> {
+			const auto ptr = static_cast<std::byte*>(base) + index * stride;
+			return std::span{ ptr, stride };
+		}
 	};
 
 	auto allocate(config::device_config config, const vk::MemoryRequirements& requirements, vk::MemoryPropertyFlags properties = vk::MemoryPropertyFlagBits::eDeviceLocal) -> allocation;

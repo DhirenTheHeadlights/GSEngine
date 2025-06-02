@@ -61,7 +61,7 @@ export struct sphere_mesh_hook final : gse::hook<gse::entity> {
                     static_cast<float>(stack) / static_cast<float>(m_stacks)
                 };
 
-                vertices.push_back({ .position = position.as<gse::units::meters>(), .normal = normal, .tex_coords = tex_coords});
+                vertices.push_back({ .position = position.as<gse::units::meters>().storage, .normal = normal.storage, .tex_coords = tex_coords.storage });
             }
         }
 

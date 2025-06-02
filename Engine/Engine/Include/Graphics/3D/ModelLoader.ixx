@@ -16,7 +16,7 @@ export namespace gse::model_loader {
 	auto get_model(const model_handle& handle) -> const model&;
 	auto get_model(const id& id) -> const model&;
 
-	auto load_queued_models(const vulkan::config::device_config& config) -> void;
+	auto load_queued_models(const vulkan::config& config) -> void;
 }
 
 export template<>
@@ -275,7 +275,7 @@ auto gse::model_loader::get_model(const id& id) -> const model& {
 	return it2->first;
 }
 
-auto gse::model_loader::load_queued_models(const vulkan::config::device_config& config) -> void {
+auto gse::model_loader::load_queued_models(const vulkan::config& config) -> void {
 	for (auto& [model, path] : g_queued_models) {
 		model.initialize(config);
 		auto handle = model_handle(model);

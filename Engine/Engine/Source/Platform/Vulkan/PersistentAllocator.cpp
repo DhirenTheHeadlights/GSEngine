@@ -3,21 +3,16 @@ module gse.platform.vulkan.persistent_allocator;
 import std;
 import vulkan_hpp;
 
+import gse.platform.vulkan.resources;
 import gse.platform.vulkan.context;
 import gse.platform.vulkan.config;
 import gse.platform.assert;
-
-struct sub_allocation {
-	vk::DeviceSize offset;
-	vk::DeviceSize size;
-	bool in_use = false;
-};
 
 struct memory_block {
 	vk::DeviceMemory memory;
 	vk::DeviceSize size;
 	vk::MemoryPropertyFlags properties;
-	std::vector<sub_allocation> allocations;
+	std::vector<gse::vulkan::persistent_allocator::sub_allocation> allocations;
 	void* mapped = nullptr;
 };
 
@@ -178,7 +173,7 @@ auto gse::vulkan::persistent_allocator::create_buffer(const config::device_confi
 	const auto alloc = bind(config, buffer, properties, requirements);
 
 	if (data && alloc.mapped) {
-		std::memcpy(alloc.mapped, data, requirements.size);
+		std::memcpy(alloc.mapped, data, buffer_info.size);
 	}
 
 	return { buffer, alloc };

@@ -39,16 +39,21 @@ constexpr auto gse::look_at(const vec3<length_t<T>>& position, const vec3<length
 
 template <typename T>
 constexpr auto gse::perspective(const angle_t<T> fov, const T aspect, length_t<T> near, length_t<T> far) -> mat4_t<T> {
-	auto f = T(1) / std::tan(fov.template as<units::radians>() / T(2));
-	auto near_m = near.template as<length_t<T>::default_unit>();
-	auto far_m = far.template as<length_t<T>::default_unit>();
+	const T f = T(1) / std::tan(fov.template as<units::radians>() / T(2));
+	auto n = near.template as<typename length_t<T>::default_unit>();
+	auto f_dist = far.template as<typename length_t<T>::default_unit>();
 
-	return mat4_t<T>{
-		{f / aspect, 0, 0, 0},
-		{0, f, 0, 0},
-		{0, 0, (far_m + near_m) / (near_m - far_m), -1},
-		{0, 0, 2 * far_m * near_m / (near_m - far_m), 0}
-	};
+	mat4_t<T> result{};
+
+	result[0][0] = f / aspect;
+	result[1][1] = f;
+	result[2][2] = f_dist / (n - f_dist);
+	result[2][3] = T(-1);
+	result[3][2] = n * f_dist / (n - f_dist);
+
+	result[1][1] *= -1; 
+
+	return result;
 }
 
 template <typename T>

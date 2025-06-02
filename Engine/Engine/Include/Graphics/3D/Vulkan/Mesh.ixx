@@ -38,7 +38,7 @@ export namespace gse {
         mesh(mesh&& other) noexcept;
 		auto operator=(mesh&& other) noexcept -> mesh& = delete;
 
-        auto initialize(vulkan::config::device_config config) -> void;
+        auto initialize(const vulkan::config& config) -> void;
         auto destroy(const vulkan::config::device_config config) -> void;
 
         auto bind(vk::CommandBuffer command_buffer) const -> void;
@@ -71,25 +71,47 @@ gse::mesh::mesh(mesh&& other) noexcept
     other.index_buffer = {};
 }
 
-auto gse::mesh::initialize(const vulkan::config::device_config config) -> void {
-    const vk::DeviceSize vertex_size = sizeof(vertex) * vertices.size();
-    const vk::DeviceSize index_size = sizeof(std::uint32_t) * indices.size();
+auto gse::mesh::initialize(const vulkan::config& config) -> void {
+    // --- TEMPORARY DEBUGGING VERSION ---
+    // This version skips the staging buffer and creates host-visible buffers directly.
+    // This is slower for rendering but excellent for debugging data uploads.
 
+    if (vertices.empty() || indices.empty()) {
+        // Don't try to create zero-sized buffers
+        return;
+    }
+
+    // 1. Create and upload vertex buffer directly
+    const vk::DeviceSize vertex_buffer_size = sizeof(vertex) * vertices.size();
     const vk::BufferCreateInfo vertex_buffer_info(
-        {}, vertex_size,
-        vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-        vk::SharingMode::eExclusive
+        {},
+        vertex_buffer_size,
+        vk::BufferUsageFlagBits::eVertexBuffer // No need for TransferDst
     );
-	vertex_buffer = vulkan::persistent_allocator::create_buffer(config, vertex_buffer_info);
+    this->vertex_buffer = vulkan::persistent_allocator::create_buffer(
+        config.device_data,
+        vertex_buffer_info,
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+        vertices.data() // Copy data directly using your fixed allocator
+    );
 
+    // 2. Create and upload index buffer directly
+    const vk::DeviceSize index_buffer_size = sizeof(std::uint32_t) * indices.size();
     const vk::BufferCreateInfo index_buffer_info(
-        {}, index_size,
-        vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-        vk::SharingMode::eExclusive
+        {},
+        index_buffer_size,
+        vk::BufferUsageFlagBits::eIndexBuffer // No need for TransferDst
     );
-	index_buffer = vulkan::persistent_allocator::create_buffer(config, index_buffer_info);
+    this->index_buffer = vulkan::persistent_allocator::create_buffer(
+        config.device_data,
+        index_buffer_info,
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+        indices.data() // Copy data directly using your fixed allocator
+    );
 
-	this->center_of_mass = calculate_center_of_mass(indices, vertices);
+    // No copy commands or staging buffers are needed for this test.
+
+    this->center_of_mass = calculate_center_of_mass(indices, vertices);
 }
 
 auto gse::mesh::destroy(const vulkan::config::device_config config) -> void {
@@ -98,7 +120,7 @@ auto gse::mesh::destroy(const vulkan::config::device_config config) -> void {
 }
 
 auto gse::mesh::bind(const vk::CommandBuffer command_buffer) const -> void {
-    command_buffer.bindVertexBuffers(0, vertex_buffer.buffer, {});
+    command_buffer.bindVertexBuffers(0, { vertex_buffer.buffer }, { 0 });
     command_buffer.bindIndexBuffer(index_buffer.buffer, 0, vk::IndexType::eUint32);
 }
 

@@ -90,6 +90,7 @@ auto render(const std::function<bool()>& render_function) -> void {
 
 	gse::renderer::render([render_function] {
 		gse::scene_loader::render();
+
 		if (!render_function()) {
 			gse::request_shutdown();
 		}

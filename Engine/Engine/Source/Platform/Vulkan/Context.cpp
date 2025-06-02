@@ -9,6 +9,7 @@ import vulkan_hpp;
 
 import gse.platform.vulkan.config;
 import gse.platform.vulkan.uploader;
+import gse.platform.vulkan.persistent_allocator;
 import gse.platform.assert;
 
 auto gse::vulkan::initialize(GLFWwindow* window) -> config {
@@ -27,7 +28,6 @@ auto gse::vulkan::initialize(GLFWwindow* window) -> config {
 
 auto gse::vulkan::begin_frame(GLFWwindow* window, config& config) -> void {
     const auto& device = config.device_data.device;
-
     assert(device.waitForFences(1, &config.sync.in_flight_fence, true, std::numeric_limits<std::uint64_t>::max()) == vk::Result::eSuccess, "Failed to wait for fence!");
     assert(device.resetFences(1, &config.sync.in_flight_fence) == vk::Result::eSuccess, "Failed to reset fence!");
 
@@ -39,12 +39,10 @@ auto gse::vulkan::begin_frame(GLFWwindow* window, config& config) -> void {
         {},
         &image_index
     );
-
     assert(result == vk::Result::eSuccess || result == vk::Result::eSuboptimalKHR, "Failed to acquire swap chain image!");
-
     if (result == vk::Result::eErrorOutOfDateKHR) {
         create_swap_chain(window, config);
-		create_image_views(config);
+        create_image_views(config);
         return begin_frame(window, config);
     }
 
@@ -52,19 +50,24 @@ auto gse::vulkan::begin_frame(GLFWwindow* window, config& config) -> void {
         .image_index = image_index,
         .command_buffer = config.command.buffers[image_index],
         .framebuffer = config.swap_chain_data.frame_buffers[image_index]
-	};
-
+    };
     constexpr vk::CommandBufferBeginInfo begin_info{};
     config.frame_context.command_buffer.begin(begin_info);
 
-    vk::ClearValue clear{ std::array{0.1f, 0.1f, 0.1f, 1.0f} };
-    const vk::RenderPassBeginInfo render_pass_begin_info{
+    std::array<vk::ClearValue, 5> clear_values;
+    clear_values[0].color = vk::ClearColorValue(std::array{ 0.0f, 0.0f, 0.0f, 1.0f });
+    clear_values[1].color = vk::ClearColorValue(std::array{ 0.0f, 0.0f, 0.0f, 1.0f });
+    clear_values[2].color = vk::ClearColorValue(std::array{ 0.0f, 0.0f, 0.0f, 1.0f });
+    clear_values[3].depthStencil = vk::ClearDepthStencilValue(1.0f, 0);
+    clear_values[4].color = vk::ClearColorValue(std::array{ 0.1f, 0.1f, 0.1f, 1.0f });
+
+    const vk::RenderPassBeginInfo render_pass_begin_info(
         config.render_pass,
         config.frame_context.framebuffer,
-        { { 0,0 }, config.swap_chain_data.extent },
-        1, &clear
-    };
-
+        { {0, 0}, config.swap_chain_data.extent },
+        static_cast<std::uint32_t>(clear_values.size()),
+        clear_values.data()
+    );
     config.frame_context.command_buffer.beginRenderPass(render_pass_begin_info, vk::SubpassContents::eInline);
 }
 
@@ -320,7 +323,122 @@ auto gse::vulkan::create_swap_chain(GLFWwindow* window, config& config) -> void 
 }
 
 auto gse::vulkan::create_image_views(config& config) -> void {
+	const auto device = config.device_data.device;
+    if (config.render_pass) {
+        device.destroyRenderPass(config.render_pass);
+    }
+    for (const auto& framebuffer : config.swap_chain_data.frame_buffers) {
+        if (framebuffer) {
+            device.destroyFramebuffer(framebuffer);
+        }
+    }
+    for (const auto& image_view : config.swap_chain_data.image_views) {
+        if (image_view) {
+            device.destroyImageView(image_view);
+        }
+    }
+
     config.swap_chain_data.image_views.resize(config.swap_chain_data.images.size());
+
+    // Position G-buffer
+    vk::ImageViewCreateInfo position_image_view_info(
+        {},
+        nullptr,
+        vk::ImageViewType::e2D,
+        vk::Format::eR16G16B16A16Sfloat,
+        {},
+        { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 }
+    );
+    config.position_image = vulkan::persistent_allocator::create_image(
+        config.device_data,
+        {
+            {},
+            vk::ImageType::e2D,
+            vk::Format::eR16G16B16A16Sfloat,
+            { config.swap_chain_data.extent.width, config.swap_chain_data.extent.height, 1 },
+            1, 1,
+            vk::SampleCountFlagBits::e1,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment,
+            vk::SharingMode::eExclusive,
+            0, nullptr,
+            vk::ImageLayout::eUndefined
+        },
+        vk::MemoryPropertyFlagBits::eDeviceLocal,
+        position_image_view_info
+    );
+
+    // Normal G-buffer
+    vk::ImageViewCreateInfo normal_image_view_info(
+        {}, nullptr, vk::ImageViewType::e2D, vk::Format::eR16G16B16A16Sfloat, {},
+        { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 }
+    );
+    config.normal_image = vulkan::persistent_allocator::create_image(
+        config.device_data,
+        {
+            {},
+            vk::ImageType::e2D,
+            vk::Format::eR16G16B16A16Sfloat,
+            { config.swap_chain_data.extent.width, config.swap_chain_data.extent.height, 1 },
+            1, 1,
+            vk::SampleCountFlagBits::e1,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment,
+            vk::SharingMode::eExclusive,
+            0, nullptr,
+            vk::ImageLayout::eUndefined
+        },
+        vk::MemoryPropertyFlagBits::eDeviceLocal,
+        normal_image_view_info
+    );
+
+    // Albedo G-buffer
+    vk::ImageViewCreateInfo albedo_image_view_info(
+        {}, nullptr, vk::ImageViewType::e2D, vk::Format::eR16G16B16A16Sfloat, {},
+        { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 }
+    );
+    config.albedo_image = vulkan::persistent_allocator::create_image(
+        config.device_data,
+        {
+            {},
+            vk::ImageType::e2D,
+            vk::Format::eR16G16B16A16Sfloat,
+            { config.swap_chain_data.extent.width, config.swap_chain_data.extent.height, 1 },
+            1, 1,
+            vk::SampleCountFlagBits::e1,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment,
+            vk::SharingMode::eExclusive,
+            0, nullptr,
+            vk::ImageLayout::eUndefined
+        },
+        vk::MemoryPropertyFlagBits::eDeviceLocal,
+        albedo_image_view_info
+    );
+
+    // Depth G-buffer
+    vk::ImageViewCreateInfo depth_image_view_info(
+        {}, nullptr, vk::ImageViewType::e2D, vk::Format::eD32Sfloat, {},
+        { vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1 }
+    );
+    config.depth_image = persistent_allocator::create_image(
+        config.device_data,
+        {
+            {},
+            vk::ImageType::e2D,
+            vk::Format::eD32Sfloat,
+            { config.swap_chain_data.extent.width, config.swap_chain_data.extent.height, 1 },
+            1, 1,
+            vk::SampleCountFlagBits::e1,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eDepthStencilAttachment,
+            vk::SharingMode::eExclusive,
+            0, nullptr,
+            vk::ImageLayout::eUndefined
+        },
+        vk::MemoryPropertyFlagBits::eDeviceLocal,
+        depth_image_view_info
+    );
 
     for (size_t i = 0; i < config.swap_chain_data.images.size(); i++) {
         vk::ImageViewCreateInfo image_create_info(
@@ -338,70 +456,117 @@ auto gse::vulkan::create_image_views(config& config) -> void {
                 vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1
             }
         );
-
         config.swap_chain_data.image_views[i] = config.device_data.device.createImageView(image_create_info);
     }
 
-    std::cout << "Image Views Created Successfully!\n";
-
-    vk::AttachmentDescription color_attachment{
-        {},
-        config.swap_chain_data.format,
-        vk::SampleCountFlagBits::e1,
-        vk::AttachmentLoadOp::eClear,
-        vk::AttachmentStoreOp::eStore,
-        vk::AttachmentLoadOp::eDontCare,
-        vk::AttachmentStoreOp::eDontCare,
-        vk::ImageLayout::eUndefined,
-        vk::ImageLayout::ePresentSrcKHR,
+    vk::AttachmentDescription attachments[5] = {
+        vk::AttachmentDescription(
+            {}, vk::Format::eR16G16B16A16Sfloat, vk::SampleCountFlagBits::e1,
+            vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore,
+            vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal
+        ),
+        vk::AttachmentDescription(
+            {}, vk::Format::eR16G16B16A16Sfloat, vk::SampleCountFlagBits::e1,
+            vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore,
+            vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal
+        ),
+        vk::AttachmentDescription(
+            {}, vk::Format::eR16G16B16A16Sfloat, vk::SampleCountFlagBits::e1,
+            vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore,
+            vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal
+        ),
+        vk::AttachmentDescription(
+            {}, vk::Format::eD32Sfloat, vk::SampleCountFlagBits::e1,
+            vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore,
+            vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilAttachmentOptimal
+        ),
+        vk::AttachmentDescription(
+            {}, config.swap_chain_data.format, vk::SampleCountFlagBits::e1,
+            vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore,
+            vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::ePresentSrcKHR
+        )
     };
 
-    vk::AttachmentReference color_ref{ 0, vk::ImageLayout::eColorAttachmentOptimal };
+    vk::AttachmentReference color_refs[3] = {
+        { 0, vk::ImageLayout::eColorAttachmentOptimal },
+        { 1, vk::ImageLayout::eColorAttachmentOptimal },
+        { 2, vk::ImageLayout::eColorAttachmentOptimal }
+    };
 
-    vk::SubpassDescription sub_pass{
+    constexpr vk::AttachmentReference depth_ref{ 3, vk::ImageLayout::eDepthStencilAttachmentOptimal };
+    const vk::SubpassDescription sub_pass0(
         {}, vk::PipelineBindPoint::eGraphics,
         0, nullptr,
-        1, &color_ref,
-        nullptr, nullptr
+        3, color_refs,
+        nullptr, &depth_ref
+    );
+
+    vk::AttachmentReference input_refs[3] = {
+        { 0, vk::ImageLayout::eShaderReadOnlyOptimal },
+        { 1, vk::ImageLayout::eShaderReadOnlyOptimal },
+        { 2, vk::ImageLayout::eShaderReadOnlyOptimal }
+    };
+    vk::AttachmentReference swapchain_ref{ 4, vk::ImageLayout::eColorAttachmentOptimal };
+    const vk::SubpassDescription sub_pass1(
+        {}, vk::PipelineBindPoint::eGraphics,
+        3, input_refs,
+        1, &swapchain_ref
+    );
+
+    const vk::SubpassDescription sub_pass2(
+        {}, vk::PipelineBindPoint::eGraphics,
+        0, nullptr,
+        1, &swapchain_ref
+    );
+
+    std::array dependencies = {
+        vk::SubpassDependency(
+            vk::SubpassExternal, 0,
+            vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eColorAttachmentOutput,
+            {}, vk::AccessFlagBits::eColorAttachmentWrite, vk::DependencyFlagBits::eByRegion
+        ),
+        vk::SubpassDependency(
+            0, 1,
+            vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eFragmentShader,
+            vk::AccessFlagBits::eColorAttachmentWrite, vk::AccessFlagBits::eShaderRead, vk::DependencyFlagBits::eByRegion
+        ),
+        vk::SubpassDependency(
+            1, 2,
+            vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eColorAttachmentOutput,
+            vk::AccessFlagBits::eColorAttachmentWrite, vk::AccessFlagBits::eColorAttachmentWrite, vk::DependencyFlagBits::eByRegion
+        )
     };
 
-    vk::SubpassDependency dep{
-        vk::SubpassExternal,
-        0,
-        vk::PipelineStageFlagBits::eColorAttachmentOutput,
-        vk::PipelineStageFlagBits::eColorAttachmentOutput,
-        {},
-        vk::AccessFlagBits::eColorAttachmentWrite,
-    };
-
-    const vk::RenderPassCreateInfo rp_info{
-        {}, 1, &color_attachment,
-		1, &sub_pass, 1, &dep
-    };
-
+    const std::array sub_passes = { sub_pass0, sub_pass1, sub_pass2 };
+    const vk::RenderPassCreateInfo rp_info(
+        {}, 5, attachments,
+        static_cast<uint32_t>(sub_passes.size()), sub_passes.data(),
+        3, dependencies.data()
+    );
     config.render_pass = config.device_data.device.createRenderPass(rp_info);
 
-    std::cout << "Render Pass Created Successfully!\n";
-
+    config.swap_chain_data.frame_buffers.resize(config.swap_chain_data.image_views.size());
     for (size_t i = 0; i < config.swap_chain_data.image_views.size(); i++) {
-        vk::ImageView attachments[] = {
+        vk::ImageView fb_attachments[5] = {
+            config.position_image.view,
+            config.normal_image.view,
+            config.albedo_image.view,
+            config.depth_image.view,
             config.swap_chain_data.image_views[i]
         };
-
-        vk::FramebufferCreateInfo framebuffer_info(
-            {},
-            config.render_pass,
-            static_cast<uint32_t>(std::size(attachments)),
-            attachments,
+        vk::FramebufferCreateInfo fb_info(
+            {}, config.render_pass, 5, fb_attachments,
             config.swap_chain_data.extent.width,
             config.swap_chain_data.extent.height,
             1
         );
-
-        config.swap_chain_data.frame_buffers[i] = config.device_data.device.createFramebuffer(framebuffer_info);
+        config.swap_chain_data.frame_buffers[i] = config.device_data.device.createFramebuffer(fb_info);
     }
-
-    std::cout << "Swapchain Created Successfully!\n";
 }
 
 auto gse::vulkan::create_sync_objects(config& config) -> void {
@@ -422,6 +587,7 @@ auto gse::vulkan::create_descriptors(config& config) -> void {
         { vk::DescriptorType::eUniformBuffer,         4096 },  // enough for global UBOs + per-object data
         { vk::DescriptorType::eCombinedImageSampler,  4096 },  // textures for materials, post fx, etc.
         { vk::DescriptorType::eStorageBuffer,         1024 },  // e.g., light buffer, SSBOs
+        { vk::DescriptorType::eInputAttachment,       4096 },
     };
 
     const vk::DescriptorPoolCreateInfo pool_info{
