@@ -7,6 +7,8 @@ export module gse.platform.vulkan.config;
 import std;
 export import vulkan_hpp;
 
+import gse.platform.vulkan.resources;
+
 export namespace gse::vulkan {
     struct config {
         struct instance_config {
@@ -64,6 +66,11 @@ export namespace gse::vulkan {
 		} frame_context;
 
         vk::RenderPass render_pass;
+
+        persistent_allocator::image_resource position_image;
+        persistent_allocator::image_resource normal_image;
+        persistent_allocator::image_resource albedo_image;
+        persistent_allocator::image_resource depth_image;
     };
 }
 

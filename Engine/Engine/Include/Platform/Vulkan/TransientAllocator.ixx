@@ -4,14 +4,9 @@ import std;
 import vulkan_hpp;
 
 import gse.platform.vulkan.config;
+import gse.platform.vulkan.resources;
 
 export namespace gse::vulkan::transient_allocator {
-	struct allocation {
-		vk::DeviceMemory memory;
-		vk::DeviceSize size = 0, offset = 0;
-		void* mapped = nullptr;
-	};
-
 	auto allocate(config::device_config config, const vk::MemoryRequirements& requirements, vk::MemoryPropertyFlags properties = vk::MemoryPropertyFlagBits::eDeviceLocal) -> allocation;
 	auto bind(config::device_config config, vk::Buffer buffer, const allocation& alloc) -> void;
 	auto bind(config::device_config config, vk::Image image, const allocation& alloc) -> void;

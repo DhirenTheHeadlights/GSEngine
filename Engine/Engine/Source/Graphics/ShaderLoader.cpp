@@ -99,9 +99,9 @@ auto init_descriptor_layouts(const vk::Device& device) -> void {
         })},
 
         { descriptor_layout::deferred_3d, create_layout({
-	      { 0, vk::DescriptorType::eCombinedImageSampler, 1, fs },              // g_position
-	      { 1, vk::DescriptorType::eCombinedImageSampler, 1, fs },              // g_normal
-	      { 2, vk::DescriptorType::eCombinedImageSampler, 1, fs },              // g_albedo_spec
+	      { 0, vk::DescriptorType::eInputAttachment, 1, fs },              // g_position
+	      { 1, vk::DescriptorType::eInputAttachment, 1, fs },              // g_normal
+	      { 2, vk::DescriptorType::eInputAttachment, 1, fs },              // g_albedo_spec
 	      { 3, vk::DescriptorType::eCombinedImageSampler, max_lights, fs },
 	      { 4, vk::DescriptorType::eCombinedImageSampler, max_lights, fs },
 		  { 5, vk::DescriptorType::eUniformBuffer,        1, fs },              // light_space_matrix

@@ -107,12 +107,14 @@ auto gse::vulkan::transient_allocator::allocate(const config::device_config conf
 
 	vk::DeviceSize size = std::max(requirements.size, g_transient_default_block_size);
 	auto& new_block = blocks.emplace_back(
-		config.device.allocateMemory({ size, req_memory_type_index }),
-		size,
-		0,
-		properties,
-		{},
-		nullptr
+		memory_block{
+			config.device.allocateMemory({ size, req_memory_type_index }),
+			size,
+			0,
+			properties,
+			{},
+			nullptr
+		}
 	);
 
 	if (properties & vk::MemoryPropertyFlagBits::eHostVisible) {

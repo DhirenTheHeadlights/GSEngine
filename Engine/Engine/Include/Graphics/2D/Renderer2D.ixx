@@ -21,8 +21,8 @@ import gse.platform;
 
 export namespace gse::renderer2d {
     auto initialize(vulkan::config& config) -> void;
-    auto begin_frame(const vulkan::config& config) -> void;
-    auto render(const vulkan::config& config) -> void;
+    auto begin_frame() -> void;
+    auto render() -> void;
     auto end_frame(const vulkan::config& config) -> void;
     auto shutdown(vulkan::config::device_config device_data) -> void;
 
@@ -111,7 +111,8 @@ auto gse::renderer2d::initialize(vulkan::config& config) -> void {
         &color_blending,
         nullptr,
         g_pipeline_layout,
-        config.render_pass
+        config.render_pass,
+        2
     );
 
     g_pipeline = config.device_data.device.createGraphicsPipeline({}, pipeline_info).value;
@@ -215,6 +216,7 @@ auto gse::renderer2d::initialize(vulkan::config& config) -> void {
         g_msdf_pipeline_layout,
         config.render_pass
     );
+	msdf_pipeline_info.subpass = 2;
 
     g_msdf_pipeline = config.device_data.device.createGraphicsPipeline({}, msdf_pipeline_info).value;
 
@@ -233,11 +235,11 @@ auto gse::renderer2d::initialize(vulkan::config& config) -> void {
     debug::initialize_imgui(config);
 }
 
-auto gse::renderer2d::begin_frame(const vulkan::config& config) -> void {
+auto gse::renderer2d::begin_frame() -> void {
     debug::update_imgui();
 }
 
-auto gse::renderer2d::render(const vulkan::config& config) -> void {
+auto gse::renderer2d::render() -> void {
     display_timers();
 }
 

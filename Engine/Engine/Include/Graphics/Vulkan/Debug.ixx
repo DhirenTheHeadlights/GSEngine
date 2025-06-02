@@ -81,13 +81,13 @@ auto gse::debug::initialize_imgui(const vulkan::config& config) -> void {
 	init_info.Queue = config.queue.graphics;
     init_info.PipelineCache = VK_NULL_HANDLE;
 	init_info.DescriptorPool = config.descriptor.pool;
-    init_info.Subpass = 0;
+    init_info.Subpass = 2;
     init_info.MinImageCount = 2;
     init_info.ImageCount = 3;
     init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     ImGui_ImplVulkan_Init(&init_info, config.render_pass);
 
-    const vk::CommandBuffer cmd = vulkan::begin_single_line_commands(config);
+    const vk::CommandBuffer cmd = begin_single_line_commands(config);
 
     ImGui_ImplVulkan_CreateFontsTexture(cmd);
 

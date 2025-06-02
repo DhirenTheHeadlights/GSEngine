@@ -58,6 +58,16 @@ namespace gse {
 			const std::unordered_map<std::string, vk::DescriptorBufferInfo>& buffer_infos,
 			const std::unordered_map<std::string, vk::DescriptorImageInfo>& image_infos
 		) const -> std::vector<vk::WriteDescriptorSet>;
+
+		template <typename T>
+		auto set_uniform(std::string_view full_name, const T& value, const vulkan::persistent_allocator::allocation& alloc) const -> void;
+
+		template <typename T>
+		auto set_uniform_block(
+			std::string_view block_name,
+			const std::unordered_map<std::string, std::span<const std::byte>>& data,
+			const vulkan::persistent_allocator::allocation& alloc
+		) const -> void;
 	private:
 		auto create_shader_module(const std::vector<char>& code) const -> vk::ShaderModule;
 
@@ -83,7 +93,13 @@ gse::shader::~shader() {
 	m_device.destroyShaderModule(m_frag_module);
 }
 
-auto gse::shader::create(const vk::Device device, const std::filesystem::path& vert_path, const std::filesystem::path& frag_path, const vk::DescriptorSetLayout* layout, std::span<vk::DescriptorSetLayoutBinding> expected_bindings) -> void {
+auto gse::shader::create(
+	const vk::Device device,
+	const std::filesystem::path& vert_path,
+	const std::filesystem::path& frag_path,
+	const vk::DescriptorSetLayout* layout,
+	const std::span<vk::DescriptorSetLayoutBinding> expected_bindings
+) -> void {
 	this->m_device = device;
 
 	const auto vert_code = read_file(vert_path);
@@ -91,9 +107,7 @@ auto gse::shader::create(const vk::Device device, const std::filesystem::path& v
 	m_vert_module = create_shader_module(vert_code);
 	m_frag_module = create_shader_module(frag_code);
 
-	// Reflect bindings from both vertex and fragment
 	std::vector<vk::DescriptorSetLayoutBinding> reflected_bindings;
-
 	auto reflect_from = [&](const std::vector<char>& spirv_code) {
 		SpvReflectShaderModule module;
 		const auto result = spvReflectCreateShaderModule(spirv_code.size(), spirv_code.data(), &module);
@@ -111,6 +125,7 @@ auto gse::shader::create(const vk::Device device, const std::filesystem::path& v
 				1,
 				static_cast<vk::ShaderStageFlagBits>(module.shader_stage)
 			);
+
 			m_bindings[b->name] = reflected_bindings.back();
 		}
 
@@ -120,44 +135,7 @@ auto gse::shader::create(const vk::Device device, const std::filesystem::path& v
 	reflect_from(vert_code);
 	reflect_from(frag_code);
 
-	// If a layout was passed in, validate its bindings
-	if (layout && !expected_bindings.empty()) {
-		std::unordered_map<uint32_t, vk::DescriptorSetLayoutBinding> layout_map;
-		for (auto& e : expected_bindings) {
-			layout_map[e.binding] = e;
-		}
-
-		for (auto& b : reflected_bindings) {
-			auto it = layout_map.find(b.binding);
-			assert(it != layout_map.end(), std::format("Shader uses binding {} but layout did not include it\n", b.binding));
-
-			auto const& a = it->second;
-			assert(
-				a.descriptorType == b.descriptorType &&
-				(a.stageFlags & b.stageFlags) == b.stageFlags,
-				std::format(
-					"Descriptor mismatch at binding {}: shader({}/{}) vs layout({}/{})\n",
-					b.binding,
-					to_string(b.descriptorType), to_string(b.stageFlags),
-					to_string(a.descriptorType), to_string(a.stageFlags)
-				)
-			);
-		}
-
-		m_descriptor_set_layout = *layout;
-		return;
-	}
-
-	// If no layout or expected bindings were passed, generate from reflection
-	const vk::DescriptorSetLayoutCreateInfo layout_info{
-		{},
-		static_cast<uint32_t>(reflected_bindings.size()),
-		reflected_bindings.data()
-	};	
-
-	m_descriptor_set_layout = m_device.createDescriptorSetLayout(layout_info);
-
-	auto reflect_uniforms = [](const std::span<const char> spirv_code) -> std::vector<uniform_block> {
+	auto reflect_uniforms = [&](const std::span<const char> spirv_code) -> std::vector<uniform_block> {
 		std::vector<uniform_block> blocks;
 
 		SpvReflectShaderModule module;
@@ -171,7 +149,7 @@ auto gse::shader::create(const vk::Device device, const std::filesystem::path& v
 
 		for (const auto* b : bindings) {
 			if (b->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
-				uniform_block block {
+				uniform_block block{
 					.name = b->name,
 					.binding = b->binding,
 					.set = b->set,
@@ -181,14 +159,13 @@ auto gse::shader::create(const vk::Device device, const std::filesystem::path& v
 				for (uint32_t i = 0; i < b->block.member_count; ++i) {
 					const SpvReflectBlockVariable& member = b->block.members[i];
 					block.members.emplace_back(
-						member.name, 
-						member.type_description->type_name ? member.type_description->type_name : "", 
+						member.name,
+						member.type_description->type_name ? member.type_description->type_name : "",
 						member.offset,
 						member.size,
 						member.array.dims_count ? member.array.dims[0] : 0
 					);
 				}
-
 				blocks.push_back(block);
 			}
 		}
@@ -197,24 +174,24 @@ auto gse::shader::create(const vk::Device device, const std::filesystem::path& v
 		return blocks;
 		};
 
-	const auto vert_bindings = reflect_uniforms(vert_code);
-	const auto frag_bindings = reflect_uniforms(frag_code);
+	const auto vert_blocks = reflect_uniforms(vert_code);
+	const auto frag_blocks = reflect_uniforms(frag_code);
 
-	for (const auto& block : vert_bindings) {
+	for (const auto& block : vert_blocks) {
 		m_uniform_blocks[block.name] = block;
 	}
 
-	for (const auto& block : frag_bindings) {
+	for (const auto& block : frag_blocks) {
 		if (m_uniform_blocks.contains(block.name)) {
 			const auto& existing = m_uniform_blocks[block.name];
 			assert(
-				existing.binding == block.binding && existing.set == block.set, 
+				existing.binding == block.binding && existing.set == block.set,
 				std::format(
-					"Uniform block '{}' has conflicting bindings: existing (set={}, binding={}) vs new (set={}, binding={})", 
-					block.name, 
-					existing.set, 
-					existing.binding, 
-					block.set, 
+					"Uniform block '{}' has conflicting bindings: existing (set={}, binding={}) vs new (set={}, binding={})",
+					block.name,
+					existing.set,
+					existing.binding,
+					block.set,
 					block.binding
 				)
 			);
@@ -223,6 +200,40 @@ auto gse::shader::create(const vk::Device device, const std::filesystem::path& v
 			m_uniform_blocks[block.name] = block;
 		}
 	}
+
+	if (layout && !expected_bindings.empty()) {
+		std::unordered_map<uint32_t, vk::DescriptorSetLayoutBinding> layout_map;
+		for (auto& e : expected_bindings) {
+			layout_map[e.binding] = e;
+		}
+		for (auto& b : reflected_bindings) {
+			auto it = layout_map.find(b.binding);
+			assert(it != layout_map.end(),
+				std::format("Shader uses binding {} but layout did not include it", b.binding));
+
+			const auto& a = it->second;
+			assert(
+				a.descriptorType == b.descriptorType
+				&& (a.stageFlags & b.stageFlags) == b.stageFlags,
+				std::format(
+					"Descriptor mismatch at binding {}: shader({}/{}) vs layout({}/{})",
+					b.binding,
+					to_string(b.descriptorType), to_string(b.stageFlags),
+					to_string(a.descriptorType), to_string(a.stageFlags)
+				)
+			);
+		}
+
+		m_descriptor_set_layout = *layout;
+		return; 
+	}
+
+	const vk::DescriptorSetLayoutCreateInfo layout_info{
+		{},
+		static_cast<uint32_t>(reflected_bindings.size()),
+		reflected_bindings.data()
+	};
+	m_descriptor_set_layout = m_device.createDescriptorSetLayout(layout_info);
 }
 
 auto gse::shader::get_shader_stages() const -> std::array<vk::PipelineShaderStageCreateInfo, 2> {
@@ -295,6 +306,55 @@ auto gse::shader::get_descriptor_writes(
 	);
 
 	return writes;
+}
+
+template <typename T>
+auto gse::shader::set_uniform(std::string_view full_name, const T& value, const vulkan::persistent_allocator::allocation& alloc) const -> void {
+	const auto dot_pos = full_name.find('.');
+	assert(dot_pos != std::string_view::npos, std::format("Uniform name '{}' must be in the format 'Block.member'", full_name));
+
+	const auto block_name = std::string(full_name.substr(0, dot_pos));
+	const auto member_name = std::string(full_name.substr(dot_pos + 1));
+
+	const auto block_it = m_uniform_blocks.find(block_name);
+	assert(block_it != m_uniform_blocks.end(), std::format("Uniform block '{}' not found", block_name));
+
+	const auto& block = block_it->second;
+	const auto member_it = std::find_if(block.members.begin(), block.members.end(), [&](const auto& member) {
+		return member.name == member_name;
+		});
+	assert(member_it != block.members.end(), std::format("Member '{}' not found in block '{}'", member_name, block_name));
+
+	const auto& member = *member_it;
+	assert(sizeof(T) <= member.size, std::format("Value size {} exceeds member '{}' size {}", sizeof(T), member_name, member.size));
+	assert(alloc.mapped, std::format("Attempted to set uniform '{}.{}' but memory is not mapped", block_name, member_name));
+
+	std::memcpy(static_cast<std::byte*>(alloc.mapped) + member.offset, &value, sizeof(T));
+}
+
+template <typename T>
+auto gse::shader::set_uniform_block(
+	std::string_view block_name,
+	const std::unordered_map<std::string, std::span<const std::byte>>& data,
+	const vulkan::persistent_allocator::allocation& alloc
+) const -> void {
+	const auto block_it = m_uniform_blocks.find(std::string(block_name));
+	assert(block_it != m_uniform_blocks.end(), std::format("Uniform block '{}' not found", block_name));
+
+	const auto& block = block_it->second;
+	assert(alloc.mapped, "Attempted to set uniform block but memory is not mapped");
+
+	for (const auto& [name, bytes] : data) {
+		const auto member_it = std::find_if(block.members.begin(), block.members.end(), [&](const auto& m) {
+			return m.name == name;
+			});
+
+		assert(member_it != block.members.end(), std::format("Uniform member '{}' not found in block '{}'", name, block_name));
+		assert(bytes.size() <= member_it->size, std::format("Data size {} > member size {} for '{}.{}'", bytes.size(), member_it->size, block_name, name));
+		assert(alloc.mapped, std::format("Memory not mapped for '{}.{}'", block_name, name));
+
+		std::memcpy(static_cast<std::byte*>(alloc.mapped) + member_it->offset, bytes.data(), bytes.size());
+	}
 }
 
 auto gse::shader::create_shader_module(const std::vector<char>& code) const -> vk::ShaderModule {
