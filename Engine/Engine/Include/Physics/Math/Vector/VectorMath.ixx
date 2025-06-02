@@ -7,63 +7,59 @@ import gse.physics.math.unit_vec;
 import gse.physics.math.unitless_vec;
 
 export namespace gse {
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto dot(const unitless::vec_t<T, N>& lhs, const unitless::vec_t<T, N>& rhs) -> T;
-	template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto abs(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>;
-    template <typename T> requires std::is_arithmetic_v<T>						constexpr auto cross(const unitless::vec3_t<T>& lhs, const unitless::vec3_t<T>& rhs) -> unitless::vec3_t<T>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto magnitude(const unitless::vec_t<T, N>& v) -> T;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto normalize(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto distance(const unitless::vec_t<T, N>& lhs, const unitless::vec_t<T, N>& rhs) -> T;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto project(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto reflect(const unitless::vec_t<T, N>& v, const unitless::vec_t<T, N>& normal) -> unitless::vec_t<T, N>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto angle_between(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> T;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto lerp(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b, T t) -> unitless::vec_t<T, N>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto min(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto max(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto clamp(const unitless::vec_t<T, N>& v, const unitless::vec_t<T, N>& min_val, const unitless::vec_t<T, N>& max_val) -> unitless::vec_t<T, N>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto component_multiply(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto component_divide(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N>;
-    template <typename T, typename U, int N> requires std::is_arithmetic_v<T>	constexpr auto convert(const unitless::vec_t<T, N>& v) -> vec_t<U, N>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto less_than(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> std::array<bool, N>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto greater_than(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> std::array<bool, N>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto min(const unitless::vec_t<T, N>& v, T scalar) -> unitless::vec_t<T, N>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto max(const unitless::vec_t<T, N>& v, T scalar) -> unitless::vec_t<T, N>;
-    template <typename T, int N, int...Indices> requires std::is_arithmetic_v<T> constexpr auto swizzle(const unitless::vec_t<T, N>& v, std::integer_sequence<int, Indices...>) -> vec_t<T, sizeof...(Indices)>;
-	template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto is_zero(const unitless::vec_t<T, N>& v, T epsilon = std::numeric_limits<T>::epsilon()) -> bool;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto random_vector(T min = T(0), T max = T(1)) -> unitless::vec_t<T, N>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto is_normalized(const unitless::vec_t<T, N>& v, T epsilon = std::numeric_limits<T>::epsilon()) -> bool;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto perpendicular(const vec2<T>& v) -> vec2<T>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto barycentric(const unitless::vec3_t<T>& p, const unitless::vec3_t<T>& a, const unitless::vec3_t<T>& b, const unitless::vec3_t<T>& c) -> std::tuple<T, T, T>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto exp(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto log(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto min_norm_vector(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto max_norm_vector(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto approx_equal(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b, T epsilon = std::numeric_limits<T>::epsilon()) -> bool;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto reflect_across(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto hadamard_product(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto sin(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto cos(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto ceil(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto floor(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto pow(const unitless::vec_t<T, N>& v, T exponent) -> unitless::vec_t<T, N>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto to_string(const unitless::vec_t<T, N>& v) -> std::string;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto swizzle(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto serialize(const unitless::vec_t<T, N>& v, std::ostream& os) -> std::ostream&;
-    template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto deserialize(unitless::vec_t<T, N>& v, std::istream& is) -> std::istream&;
-	template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto value_ptr(unitless::vec_t<T, N>& v) -> T*;
-	template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto value_ptr(const unitless::vec_t<T, N>& v) -> const T*;
-	template <typename T, int N> requires std::is_arithmetic_v<T>				constexpr auto epsilon_equal_index(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b, const int index, T epsilon = std::numeric_limits<T>::epsilon()) -> bool;
+    template <typename T, int N> 				constexpr auto dot(const unitless::vec_t<T, N>& lhs, const unitless::vec_t<T, N>& rhs) -> T;
+	template <typename T, int N> 				constexpr auto abs(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>;
+    template <typename T> 						constexpr auto cross(const unitless::vec3_t<T>& lhs, const unitless::vec3_t<T>& rhs) -> unitless::vec3_t<T>;
+    template <typename T, int N> 				constexpr auto magnitude(const unitless::vec_t<T, N>& v) -> T;
+    template <typename T, int N> 				constexpr auto normalize(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>;
+    template <typename T, int N> 				constexpr auto distance(const unitless::vec_t<T, N>& lhs, const unitless::vec_t<T, N>& rhs) -> T;
+    template <typename T, int N> 				constexpr auto project(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N>;
+    template <typename T, int N> 				constexpr auto reflect(const unitless::vec_t<T, N>& v, const unitless::vec_t<T, N>& normal) -> unitless::vec_t<T, N>;
+    template <typename T, int N> 				constexpr auto angle_between(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> T;
+    template <typename T, int N> 				constexpr auto lerp(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b, T t) -> unitless::vec_t<T, N>;
+    template <typename T, int N> 				constexpr auto min(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N>;
+    template <typename T, int N> 				constexpr auto max(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N>;
+    template <typename T, int N> 				constexpr auto clamp(const unitless::vec_t<T, N>& v, const unitless::vec_t<T, N>& min_val, const unitless::vec_t<T, N>& max_val) -> unitless::vec_t<T, N>;
+    template <typename T, int N> 				constexpr auto component_multiply(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N>;
+    template <typename T, int N> 				constexpr auto component_divide(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N>;
+    template <typename T, typename U, int N> 	constexpr auto convert(const unitless::vec_t<T, N>& v) -> vec_t<U, N>;
+    template <typename T, int N> 				constexpr auto less_than(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> std::array<bool, N>;
+    template <typename T, int N> 				constexpr auto greater_than(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> std::array<bool, N>;
+    template <typename T, int N> 				constexpr auto min(const unitless::vec_t<T, N>& v, T scalar) -> unitless::vec_t<T, N>;
+    template <typename T, int N> 				constexpr auto max(const unitless::vec_t<T, N>& v, T scalar) -> unitless::vec_t<T, N>;
+    template <typename T, int N, int...Indices> constexpr auto swizzle(const unitless::vec_t<T, N>& v, std::integer_sequence<int, Indices...>) -> vec_t<T, sizeof...(Indices)>;
+	template <typename T, int N> 				constexpr auto is_zero(const unitless::vec_t<T, N>& v, T epsilon = std::numeric_limits<T>::epsilon()) -> bool;
+    template <typename T, int N> 				constexpr auto random_vector(T min = T(0), T max = T(1)) -> unitless::vec_t<T, N>;
+    template <typename T, int N> 				constexpr auto is_normalized(const unitless::vec_t<T, N>& v, T epsilon = std::numeric_limits<T>::epsilon()) -> bool;
+    template <typename T, int N> 				constexpr auto perpendicular(const vec2<T>& v) -> vec2<T>;
+    template <typename T, int N> 				constexpr auto barycentric(const unitless::vec3_t<T>& p, const unitless::vec3_t<T>& a, const unitless::vec3_t<T>& b, const unitless::vec3_t<T>& c) -> std::tuple<T, T, T>;
+    template <typename T, int N> 				constexpr auto exp(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>;
+    template <typename T, int N> 				constexpr auto log(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>;
+    template <typename T, int N> 				constexpr auto min_norm_vector(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N>;
+    template <typename T, int N> 				constexpr auto max_norm_vector(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N>;
+    template <typename T, int N> 				constexpr auto approx_equal(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b, T epsilon = std::numeric_limits<T>::epsilon()) -> bool;
+    template <typename T, int N> 				constexpr auto reflect_across(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N>;
+    template <typename T, int N> 				constexpr auto hadamard_product(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N>;
+    template <typename T, int N> 				constexpr auto sin(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>;
+    template <typename T, int N> 				constexpr auto cos(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>;
+    template <typename T, int N> 				constexpr auto ceil(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>;
+    template <typename T, int N> 				constexpr auto floor(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>;
+    template <typename T, int N> 				constexpr auto pow(const unitless::vec_t<T, N>& v, T exponent) -> unitless::vec_t<T, N>;
+    template <typename T, int N> 				constexpr auto to_string(const unitless::vec_t<T, N>& v) -> std::string;
+    template <typename T, int N> 				constexpr auto swizzle(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>;
+    template <typename T, int N> 				constexpr auto serialize(const unitless::vec_t<T, N>& v, std::ostream& os) -> std::ostream&;
+    template <typename T, int N> 				constexpr auto deserialize(unitless::vec_t<T, N>& v, std::istream& is) -> std::istream&;
+	template <typename T, int N> 				constexpr auto value_ptr(unitless::vec_t<T, N>& v) -> T*;
+	template <typename T, int N> 				constexpr auto value_ptr(const unitless::vec_t<T, N>& v) -> const T*;
+	template <typename T, int N> 				constexpr auto epsilon_equal_index(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b, const int index, T epsilon = std::numeric_limits<T>::epsilon()) -> bool;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::dot(const unitless::vec_t<T, N>& lhs, const unitless::vec_t<T, N>& rhs) -> T {
-	T result = 0;
-	for (int i = 0; i < N; ++i) {
-		result += lhs[i] * rhs[i];
-	}
-	return result;
+	return vec::dot(lhs.storage, rhs.storage);
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::abs(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N> {
 	unitless::vec_t<T, N> result;
 	for (int i = 0; i < N; ++i) {
@@ -72,7 +68,7 @@ constexpr auto gse::abs(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>
 	return result;
 }
 
-template <typename T> requires std::is_arithmetic_v<T>
+template <typename T> 
 constexpr auto gse::cross(const unitless::vec3_t<T>& lhs, const unitless::vec3_t<T>& rhs) -> unitless::vec3_t<T> {
 	return unitless::vec3_t<T>(
 		lhs.y * rhs.z - lhs.z * rhs.y,
@@ -81,7 +77,7 @@ constexpr auto gse::cross(const unitless::vec3_t<T>& lhs, const unitless::vec3_t
 	);
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::magnitude(const unitless::vec_t<T, N>& v) -> T {
 	T sum = 0;
 	for (int i = 0; i < N; ++i) {
@@ -90,7 +86,7 @@ constexpr auto gse::magnitude(const unitless::vec_t<T, N>& v) -> T {
 	return std::sqrt(sum);
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::normalize(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N> {
 	auto mag = magnitude(v);
 	if (mag == 0) {
@@ -99,23 +95,23 @@ constexpr auto gse::normalize(const unitless::vec_t<T, N>& v) -> unitless::vec_t
 	return v / mag;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::distance(const unitless::vec_t<T, N>& lhs, const unitless::vec_t<T, N>& rhs) -> T {
 	return magnitude(lhs - rhs);
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::project(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N> {
 	auto b_normalized = normalize(b);
 	return dot(a, b_normalized) * b_normalized;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::reflect(const unitless::vec_t<T, N>& v, const unitless::vec_t<T, N>& normal) -> unitless::vec_t<T, N> {
 	return v - 2 * dot(v, normal) * normal;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::angle_between(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> T {
 	auto dot_product = dot(a, b);
 	auto mag_a = magnitude(a);
@@ -126,12 +122,12 @@ constexpr auto gse::angle_between(const unitless::vec_t<T, N>& a, const unitless
 	return std::acos(dot_product / (mag_a * mag_b));
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::lerp(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b, T t) -> unitless::vec_t<T, N> {
 	return a + t * (b - a);
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::min(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N> {
 	unitless::vec_t<T, N> result;
 	for (int i = 0; i < N; ++i) {
@@ -140,7 +136,7 @@ constexpr auto gse::min(const unitless::vec_t<T, N>& a, const unitless::vec_t<T,
 	return result;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::max(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N> {
 	unitless::vec_t<T, N> result;
 	for (int i = 0; i < N; ++i) {
@@ -149,7 +145,7 @@ constexpr auto gse::max(const unitless::vec_t<T, N>& a, const unitless::vec_t<T,
 	return result;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::clamp(const unitless::vec_t<T, N>& v, const unitless::vec_t<T, N>& min_val, const unitless::vec_t<T, N>& max_val) -> unitless::vec_t<T, N> {
 	unitless::vec_t<T, N> result;
 	for (int i = 0; i < N; ++i) {
@@ -158,7 +154,7 @@ constexpr auto gse::clamp(const unitless::vec_t<T, N>& v, const unitless::vec_t<
 	return result;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::component_multiply(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N> {
 	unitless::vec_t<T, N> result;
 	for (int i = 0; i < N; ++i) {
@@ -167,7 +163,7 @@ constexpr auto gse::component_multiply(const unitless::vec_t<T, N>& a, const uni
 	return result;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::component_divide(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N> {
 	unitless::vec_t<T, N> result;
 	for (int i = 0; i < N; ++i) {
@@ -176,7 +172,7 @@ constexpr auto gse::component_divide(const unitless::vec_t<T, N>& a, const unitl
 	return result;
 }
 
-template <typename T, typename U, int N> requires std::is_arithmetic_v<T>
+template <typename T, typename U, int N> 
 constexpr auto gse::convert(const unitless::vec_t<T, N>& v) -> vec_t<U, N> {
 	vec_t<U, N> result;
 	for (int i = 0; i < N; ++i) {
@@ -185,7 +181,7 @@ constexpr auto gse::convert(const unitless::vec_t<T, N>& v) -> vec_t<U, N> {
 	return result;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::less_than(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> std::array<bool, N> {
 	std::array<bool, N> result;
 	for (int i = 0; i < N; ++i) {
@@ -194,7 +190,7 @@ constexpr auto gse::less_than(const unitless::vec_t<T, N>& a, const unitless::ve
 	return result;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::greater_than(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> std::array<bool, N> {
 	std::array<bool, N> result;
 	for (int i = 0; i < N; ++i) {
@@ -203,7 +199,7 @@ constexpr auto gse::greater_than(const unitless::vec_t<T, N>& a, const unitless:
 	return result;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::min(const unitless::vec_t<T, N>& v, T scalar) -> unitless::vec_t<T, N> {
 	unitless::vec_t<T, N> result;
 	for (int i = 0; i < N; ++i) {
@@ -212,7 +208,7 @@ constexpr auto gse::min(const unitless::vec_t<T, N>& v, T scalar) -> unitless::v
 	return result;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::max(const unitless::vec_t<T, N>& v, T scalar) -> unitless::vec_t<T, N> {
 	unitless::vec_t<T, N> result;
 	for (int i = 0; i < N; ++i) {
@@ -221,17 +217,17 @@ constexpr auto gse::max(const unitless::vec_t<T, N>& v, T scalar) -> unitless::v
 	return result;
 }
 
-template <typename T, int N, int... Indices> requires std::is_arithmetic_v<T>
+template <typename T, int N, int... Indices> 
 constexpr auto gse::swizzle(const unitless::vec_t<T, N>& v, std::integer_sequence<int, Indices...>) -> vec_t<T, sizeof...(Indices)> {
 	return { v[Indices]... };
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::is_zero(const unitless::vec_t<T, N>& v, T epsilon) -> bool {
 	return approx_equal(v, unitless::vec_t<T, N>{}, epsilon);
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::random_vector(T min, T max) -> unitless::vec_t<T, N> {
 	unitless::vec_t<T, N> result;
 	for (int i = 0; i < N; ++i) {
@@ -240,17 +236,17 @@ constexpr auto gse::random_vector(T min, T max) -> unitless::vec_t<T, N> {
 	return result;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::is_normalized(const unitless::vec_t<T, N>& v, T epsilon) -> bool {
 	return std::abs(magnitude(v) - 1) < epsilon;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::perpendicular(const vec2<T>& v) -> vec2<T> {
 	return { -v.y, v.x };
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::barycentric(const unitless::vec3_t<T>& p, const unitless::vec3_t<T>& a, const unitless::vec3_t<T>& b, const unitless::vec3_t<T>& c) -> std::tuple<T, T, T> {
 	vec_t<T, 3> v0 = b - a, v1 = c - a, v2 = p - a;
 	T d00 = dot(v0, v0);
@@ -268,7 +264,7 @@ constexpr auto gse::barycentric(const unitless::vec3_t<T>& p, const unitless::ve
 	return { u, v, w };
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::exp(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N> {
 	unitless::vec_t<T, N> result;
 	for (int i = 0; i < N; ++i) {
@@ -277,7 +273,7 @@ constexpr auto gse::exp(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>
 	return result;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::log(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N> {
 	unitless::vec_t<T, N> result;
 	for (int i = 0; i < N; ++i) {
@@ -286,7 +282,7 @@ constexpr auto gse::log(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>
 	return result;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::min_norm_vector(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N> {
 	unitless::vec_t<T, N> result;
 	for (int i = 0; i < N; ++i) {
@@ -295,7 +291,7 @@ constexpr auto gse::min_norm_vector(const unitless::vec_t<T, N>& a, const unitle
 	return result;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::max_norm_vector(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N> {
 	unitless::vec_t<T, N> result;
 	for (int i = 0; i < N; ++i) {
@@ -304,7 +300,7 @@ constexpr auto gse::max_norm_vector(const unitless::vec_t<T, N>& a, const unitle
 	return result;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::approx_equal(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b, T epsilon) -> bool {
 	for (int i = 0; i < N; ++i) {
 		if (std::abs(a[i] - b[i]) > epsilon) {
@@ -314,12 +310,12 @@ constexpr auto gse::approx_equal(const unitless::vec_t<T, N>& a, const unitless:
 	return true;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::reflect_across(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N> {
 	return a - 2 * dot(a, b) * b;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::hadamard_product(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N> {
 	unitless::vec_t<T, N> result;
 	for (int i = 0; i < N; ++i) {
@@ -328,7 +324,7 @@ constexpr auto gse::hadamard_product(const unitless::vec_t<T, N>& a, const unitl
 	return result;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::sin(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N> {
 	unitless::vec_t<T, N> result;
 	for (int i = 0; i < N; ++i) {
@@ -337,7 +333,7 @@ constexpr auto gse::sin(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>
 	return result;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::cos(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N> {
 	unitless::vec_t<T, N> result;
 	for (int i = 0; i < N; ++i) {
@@ -346,7 +342,7 @@ constexpr auto gse::cos(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>
 	return result;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::ceil(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N> {
 	unitless::vec_t<T, N> result;
 	for (int i = 0; i < N; ++i) {
@@ -355,7 +351,7 @@ constexpr auto gse::ceil(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N
 	return result;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::floor(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N> {
 	unitless::vec_t<T, N> result;
 	for (int i = 0; i < N; ++i) {
@@ -364,7 +360,7 @@ constexpr auto gse::floor(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, 
 	return result;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::pow(const unitless::vec_t<T, N>& v, T exponent) -> unitless::vec_t<T, N> {
 	unitless::vec_t<T, N> result;
 	for (int i = 0; i < N; ++i) {
@@ -373,7 +369,7 @@ constexpr auto gse::pow(const unitless::vec_t<T, N>& v, T exponent) -> unitless:
 	return result;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::to_string(const unitless::vec_t<T, N>& v) -> std::string {
 	std::ostringstream oss;
 	oss << "(";
@@ -387,12 +383,12 @@ constexpr auto gse::to_string(const unitless::vec_t<T, N>& v) -> std::string {
 	return oss.str();
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::swizzle(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N> {
 	return v;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::serialize(const unitless::vec_t<T, N>& v, std::ostream& os) -> std::ostream& {
 	os << "{";
 	for (int i = 0; i < N; ++i) {
@@ -405,7 +401,7 @@ constexpr auto gse::serialize(const unitless::vec_t<T, N>& v, std::ostream& os) 
 	return os;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::deserialize(unitless::vec_t<T, N>& v, std::istream& is) -> std::istream& {
 	char ch;
 	is >> ch;						 // Read the opening brace
@@ -419,17 +415,17 @@ constexpr auto gse::deserialize(unitless::vec_t<T, N>& v, std::istream& is) -> s
 	return is;
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::value_ptr(unitless::vec_t<T, N>& v) -> T* {
 	return value_ptr(v.storage);
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::value_ptr(const unitless::vec_t<T, N>& v) -> const T* {
 	return value_ptr(v.storage);
 }
 
-template <typename T, int N> requires std::is_arithmetic_v<T>
+template <typename T, int N> 
 constexpr auto gse::epsilon_equal_index(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b, const int index, T epsilon) -> bool {
 	return std::abs(a[index] - b[index]) < epsilon;
 }

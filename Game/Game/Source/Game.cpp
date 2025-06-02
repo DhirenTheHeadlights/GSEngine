@@ -24,7 +24,7 @@ struct iron_man_hook final : gse::hook<gse::entity> {
 	using hook::hook;
 
 	auto initialize() -> void override {
-		auto handle = gse::model_loader::load_obj_file(game::config::resource_path / "Models/IronMan/iron_man.obj", "Iron Man");
+		const auto handle = gse::model_loader::load_obj_file(game::config::resource_path / "Models/IronMan/iron_man.obj", "Iron Man");
 		gse::registry::add_component(gse::render_component(owner_id, handle));
 		gse::registry::get_component<gse::render_component>(owner_id).models[0].set_position(gse::vec::meters(0.f, 0.f, 0.f));
 	}
@@ -34,7 +34,7 @@ struct black_knight_hook final : gse::hook<gse::entity> {
 	using hook::hook;
 
 	auto initialize() -> void override {
-		auto handle = gse::model_loader::load_obj_file(game::config::resource_path / "Models/BlackKnight/base.obj", "Black Knight");
+		const auto handle = gse::model_loader::load_obj_file(game::config::resource_path / "Models/BlackKnight/base.obj", "Black Knight");
 		gse::registry::add_component(gse::render_component(owner_id, handle));
 		gse::registry::get_component<gse::render_component>(owner_id).models[0].set_position(gse::vec::meters(0.f, 0.f, 0.f));
 	}
@@ -42,13 +42,11 @@ struct black_knight_hook final : gse::hook<gse::entity> {
 
 struct raw_backpack_hook final : gse::hook<gse::entity> {
 	using hook::hook;
-	//std::vector<std::uint32_t> m_texture_ids = { gse::texture_loader::get_texture_by_path(game::config::resource_path / "Models/Backpack/diffuse.jpg") };
 
 	auto initialize() -> void override {
-		auto handle = gse::model_loader::load_obj_file(game::config::resource_path / "Models/Backpack/backpack.obj", "Backpack");
+		const auto handle = gse::model_loader::load_obj_file(game::config::resource_path / "Models/BlackKnight/base.obj", "Black Knight");
 		gse::registry::add_component(gse::render_component(owner_id, handle));
 		gse::registry::get_component<gse::render_component>(owner_id).models[0].set_position(gse::vec::meters(0.f, 0.f, 0.f));
-		//gse::registry::get_component<gse::render_component>(owner_id).models[0].set_all_mesh_textures(m_texture_ids);
 	}
 };
 
@@ -56,19 +54,19 @@ struct scene1_hook final : gse::hook<gse::scene> {
 	using hook::hook;
 
 	auto initialize() -> void override {
-		//game::arena::create(m_owner);
+		game::arena::create(m_owner);
 
 		m_owner->add_entity(game::create_player(), "Player");
-		m_owner->add_entity(create_box(gse::vec::meters(0.f, 0.f, 0.f), gse::vec::meters(20.f, 20.f, 20.f)), "Bigger Box");/*
-		m_owner->add_entity(create_box(gse::vec::meters(-20.f, -400.f, 20.f), gse::vec::meters(40.f, 40.f, 40.f)), "Smaller Box");
+		m_owner->add_entity(gse::create_box(gse::vec::meters(20.f, -400.f, 20.f), gse::vec::meters(20.f, 20.f, 20.f)), "Smaller Box");
+		m_owner->add_entity(gse::create_box(gse::vec::meters(-20.f, -400.f, 20.f), gse::vec::meters(40.f, 40.f, 40.f)), "Bigger Box");
 		m_owner->add_entity(game::create_sphere_light(gse::vec::meters(0.f, -300.f, 0.f), gse::meters(10.f), 18), "Center Sphere Light");
-		m_owner->add_entity(create_sphere(gse::vec::meters(0.f, -00.f, 200.f), gse::meters(10.f)), "Second Sphere");*/
+		m_owner->add_entity(gse::create_sphere(gse::vec::meters(0.f, -00.f, 200.f), gse::meters(10.f)), "Second Sphere");
 
 
 
-		/*const std::uint32_t iron_man = gse::registry::create_entity();
+		const std::uint32_t iron_man = gse::registry::create_entity();
 		gse::registry::add_entity_hook(iron_man, std::make_unique<iron_man_hook>());
-		m_owner->add_entity(iron_man, "Iron Man");*/
+		m_owner->add_entity(iron_man, "Iron Man");
 		//const std::uint32_t raw_backpack = gse::registry::create_entity();
 		//gse::registry::add_entity_hook(raw_backpack, std::make_unique<raw_backpack_hook>());
 		//m_owner->add_entity(raw_backpack, "Backpack");
@@ -105,7 +103,7 @@ struct scene2_hook final : gse::hook<gse::scene> {
 	auto initialize() -> void override {
 		game::skybox::create(m_owner);
 		m_owner->add_entity(game::create_player(), "Player");
-		const std::uint32_t floor_uuid = create_box(gse::vec::meters(0.f, -500.f, 0.f), gse::vec::meters(20000.f, 10.f, 20000.f));
+		const std::uint32_t floor_uuid = gse::create_box(gse::vec::meters(0.f, -500.f, 0.f), gse::vec::meters(20000.f, 10.f, 20000.f));
 		gse::registry::add_entity_hook(floor_uuid, std::make_unique<floor_hook>());
 		m_owner->add_entity(floor_uuid, "Floor");
 	}

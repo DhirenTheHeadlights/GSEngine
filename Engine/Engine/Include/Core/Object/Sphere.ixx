@@ -53,7 +53,7 @@ export struct sphere_mesh_hook final : gse::hook<gse::entity> {
                 };
 
                 // Calculate normal (normalized position for a sphere)
-                const gse::unitless::vec3 normal = normalize(position);
+                const gse::unitless::vec3 normal = gse::normalize(position);
 
                 // Calculate texture coordinates
                 const gse::unitless::vec2 tex_coords = {

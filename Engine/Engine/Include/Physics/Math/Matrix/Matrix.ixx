@@ -19,9 +19,9 @@ namespace gse {
 		constexpr mat(const T& value);
 		constexpr mat(const std::array<vec::storage<T, Rows>, Cols>& data) : data(data) {}
         constexpr mat(std::initializer_list<unitless::vec_t<T, Rows>> list);
-		template <typename... Args> requires (sizeof...(Args) == Cols) constexpr mat(Args... args) : data{ args... } {}
 
-		template <int O, int Q> constexpr mat(const mat<T, O, Q>& other);
+		template <int O, int Q>
+		constexpr mat(const mat<T, O, Q>& other);
 
 		constexpr auto operator[](size_t index) -> vec::storage<T, Rows>&;
 		constexpr auto operator[](size_t index) const -> const vec::storage<T, Rows>&;
@@ -171,7 +171,7 @@ constexpr auto gse::mat<T, Cols, Rows>::operator*(const mat& other) const -> mat
 
 template <typename T, int Cols, int Rows>
 constexpr auto gse::mat<T, Cols, Rows>::operator*(const unitless::vec_t<T, Cols>& vec) const -> unitless::vec_t<T, Rows> {
-    unitless::vec_t<T, Rows> result;
+    vec::storage<T, Rows> result;
     for (int j = 0; j < Cols; ++j) {
         result = result + data[j] * vec[j];
     }
@@ -347,3 +347,4 @@ constexpr auto gse::mat<T, Cols, Rows>::trace() const -> T {
     }
     return trace;
 }
+

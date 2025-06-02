@@ -285,8 +285,17 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 	vk::PipelineViewportStateCreateInfo viewport_state2({}, 1, &viewport2, 1, &scissor2);
 
 	vk::PipelineRasterizationStateCreateInfo rasterizer2(
-		{}, vk::False, vk::False, vk::PolygonMode::eFill, vk::CullModeFlagBits::eNone, vk::FrontFace::eCounterClockwise,
-		vk::False, 0.f, 0.f, 0.f, 1.f
+		{},                                 // flags
+		vk::False,                          // depthClampEnable
+		vk::False,                          // rasterizerDiscardEnable
+		vk::PolygonMode::eFill,             // polygonMode
+		vk::CullModeFlagBits::eBack,        // cullMode (or eNone for testing)
+		vk::FrontFace::eCounterClockwise,   // frontFace
+		vk::True,                           // depthBiasEnable 
+		2.0f,                               // depthBiasConstantFactor (experiment with this)
+		0.0f,                               // depthBiasClamp (usually 0.0)
+		2.0f,                               // depthBiasSlopeFactor (experiment with this)
+		1.0f                                // lineWidth (usually 1.0 for solid fill)
 	);
 
 	vk::PipelineDepthStencilStateCreateInfo depth_stencil({

@@ -2,11 +2,12 @@ export module gse.physics.math.units.length;
 
 import std;
 
+import gse.physics.math.units.dimension;
 import gse.physics.math.units.quant;
 import gse.physics.math.unit_vec;
 
 namespace gse::units {
-    struct length_tag {};
+	struct length_tag {};
 
     inline constexpr char kilometers_units[] = "km";
     inline constexpr char meters_units[] = "m";
@@ -35,11 +36,16 @@ namespace gse::units {
     >;
 }
 
+export template <>
+struct gse::internal::dimension_traits<gse::internal::dim<1, 0, 0>> {
+    using tag = units::length_tag;
+    using default_unit = units::meters;
+    using valid_units = units::length_units;
+};
+
 export namespace gse {
 	template <typename T = float>
-	struct length_t : internal::quantity<length_t<T>, T, units::length_tag, units::meters, units::length_units> {
-		using internal::quantity<length_t, T, units::length_tag, units::meters, units::length_units>::quantity;
-	};
+	using length_t = internal::quantity<T, internal::dim<1, 0, 0>>;
 
     using length = length_t<>;
 
