@@ -46,7 +46,7 @@ export namespace gse {
 		vec3<length> center;
 		vec3<length> size;
 		quat orientation;
-		std::array<vec3<length>, 3> axes;
+		std::array<unitless::vec3, 3> axes;
 
 		auto update_axes() -> void;
 		auto get_corners() const -> std::array<vec3<length>, 8>;

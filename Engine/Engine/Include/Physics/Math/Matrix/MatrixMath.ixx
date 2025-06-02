@@ -21,6 +21,7 @@ export namespace gse {
 	template <typename T>					constexpr auto scale(const mat4_t<T>& matrix, const vec3<length_t<T>>& scale) -> mat4_t<T>;
 	template <typename T, int N, int M>		constexpr auto value_ptr(mat_t<T, N, M>& matrix) -> T*;
 	template <typename T, int N, int M>		constexpr auto value_ptr(const mat_t<T, N, M>& matrix) -> const T*;
+	template <typename T, int N, int M> constexpr auto identity() -> mat_t<T, N, M>;
 }
 
 template <typename T>
@@ -39,21 +40,16 @@ constexpr auto gse::look_at(const vec3<length_t<T>>& position, const vec3<length
 
 template <typename T>
 constexpr auto gse::perspective(const angle_t<T> fov, const T aspect, length_t<T> near, length_t<T> far) -> mat4_t<T> {
-	const T f = T(1) / std::tan(fov.template as<units::radians>() / T(2));
-	auto n = near.template as<typename length_t<T>::default_unit>();
-	auto f_dist = far.template as<typename length_t<T>::default_unit>();
+	auto f = T(1) / std::tan(fov.template as<units::radians>() / T(2));
+	auto near_m = near.template as<length_t<T>::default_unit>();
+	auto far_m = far.template as<length_t<T>::default_unit>();
 
-	mat4_t<T> result{};
-
-	result[0][0] = f / aspect;
-	result[1][1] = f;
-	result[2][2] = f_dist / (n - f_dist);
-	result[2][3] = T(-1);
-	result[3][2] = n * f_dist / (n - f_dist);
-
-	result[1][1] *= -1; 
-
-	return result;
+	return mat4_t<T>{
+		{f / aspect, 0, 0, 0},
+		{0, f, 0, 0},
+		{0, 0, (far_m + near_m) / (near_m - far_m), -1},
+		{0, 0, 2 * far_m * near_m / (near_m - far_m), 0}
+	};
 }
 
 template <typename T>
@@ -122,4 +118,15 @@ constexpr auto gse::value_ptr(mat_t<T, Cols, Rows>& matrix) -> T* {
 template <typename T, int Cols, int Rows>
 constexpr auto gse::value_ptr(const mat_t<T, Cols, Rows>& matrix) -> const T* {
 	return &matrix[0][0];
+}
+
+template <typename T, int N, int M>
+constexpr auto gse::identity() -> mat_t<T, N, M> {
+	mat_t<T, N, M> result;
+	for (int i = 0; i < N; ++i) {
+		for (int j = 0; j < M; ++j) {
+			result[i][j] = (i == j) ? static_cast<T>(1) : static_cast<T>(0);
+		}
+	}
+	return result;
 }

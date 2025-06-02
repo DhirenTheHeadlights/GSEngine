@@ -2,6 +2,7 @@ export module gse.physics.math.units.mass_and_force;
 
 import std;
 
+import gse.physics.math.units.dimension;
 import gse.physics.math.units.quant;
 import gse.physics.math.unit_vec;
 
@@ -29,11 +30,16 @@ namespace gse::units {
 	>;
 }
 
+export template <>
+struct gse::internal::dimension_traits<gse::internal::dim<0, 0, 1>> {
+	using tag = units::mass_tag;
+	using default_unit = units::kilograms;
+	using valid_units = units::mass_units;
+};
+
 export namespace gse {
 	template <typename T = float>
-	struct mass_t : internal::quantity<mass_t<T>, T, units::mass_tag, units::kilograms, units::mass_units> {
-		using internal::quantity<mass_t, T, units::mass_tag, units::kilograms, units::mass_units>::quantity;
-	};
+	using mass_t = internal::quantity<T, internal::dim<0, 0, 1>>;
 
 	using mass = mass_t<>;
 	
@@ -164,11 +170,23 @@ namespace gse::units {
 	>;
 }
 
+export template <>
+struct gse::internal::dimension_traits<gse::internal::dim<1, -2, 1>> {
+	using tag = units::force_tag;
+	using default_unit = units::newtons;
+	using valid_units = units::force_units;
+};
+
+export template <>
+struct gse::internal::dimension_traits<gse::internal::dim<2, -2, 1>> {
+	using tag = units::torque_tag;
+	using default_unit = units::newton_meters;
+	using valid_units = units::torque_units;
+};
+
 export namespace gse {
 	template <typename T = float>
-	struct force_t : internal::quantity<force_t<T>, T, units::force_tag, units::newtons, units::force_units> {
-		using internal::quantity<force_t, T, units::force_tag, units::newtons, units::force_units>::quantity;
-	};
+	using force_t = internal::quantity<T, internal::dim<1, -2, 1>>;
 	
 	using force = force_t<>;
 	
@@ -179,9 +197,7 @@ export namespace gse {
 	constexpr auto pounds_force(float value) -> force;
 
 	template <typename T = float>
-	struct torque_t : internal::quantity<torque_t<T>, T, units::torque_tag, units::newton_meters, units::torque_units> {
-		using internal::quantity<torque_t, T, units::torque_tag, units::newton_meters, units::torque_units>::quantity;
-	};
+	using torque_t = internal::quantity<T, internal::dim<2, -2, 1>>;
 
 	using torque = torque_t<>;
 
@@ -272,3 +288,78 @@ constexpr auto gse::vec::pound_feet(Args&&... args) -> vec_t<torque_t<std::commo
 	return { torque_t<std::common_type_t<Args...>>::template from<units::pound_feet>(args)... };
 }
 
+namespace gse::units {
+	struct inertia_tag {};
+
+	constexpr char kilograms_meters_squared_units[] = "kg-m^2";
+	constexpr char pounds_feet_squared_units[] = "lb-ft^2";
+
+	export using kilograms_meters_squared = internal::unit<inertia_tag, 1.0f, kilograms_meters_squared_units>;
+	export using pounds_feet_squared = internal::unit<inertia_tag, 0.09290304f, pounds_feet_squared_units>;
+
+	using inertia_units = internal::unit_list<
+		kilograms_meters_squared,
+		pounds_feet_squared
+	>;
+}
+
+export template <>
+struct gse::internal::dimension_traits<gse::internal::dim<2, 0, 1>> {
+	using tag = units::inertia_tag;
+	using default_unit = units::kilograms_meters_squared;
+	using valid_units = units::inertia_units;
+};
+
+export namespace gse {
+	template <typename T = float>
+	using inertia_t = internal::quantity<T, internal::dim<2, 0, 1>>;
+
+	using inertia = inertia_t<>;
+
+	template <typename T> constexpr auto kilograms_meters_squared_t(T value) -> inertia_t<T>;
+	template <typename T> constexpr auto pounds_feet_squared_t(T value) -> inertia_t<T>;
+
+	constexpr auto kilograms_meters_squared(float value) -> inertia;
+	constexpr auto pounds_feet_squared(float value) -> inertia;
+}
+
+export namespace gse::vec {
+	template <internal::is_unit U, typename... Args>
+	constexpr auto inertia(Args&&... args) -> vec_t<inertia_t<std::common_type_t<Args...>>, sizeof...(Args)>;
+
+	template <typename... Args> constexpr auto kilograms_meters_squared(Args&&... args) -> vec_t<inertia_t<std::common_type_t<Args...>>, sizeof...(Args)>;
+	template <typename... Args> constexpr auto pounds_feet_squared(Args&&... args) -> vec_t<inertia_t<std::common_type_t<Args...>>, sizeof...(Args)>;
+}
+
+template <typename T>
+constexpr auto gse::kilograms_meters_squared_t(const T value) -> inertia_t<T> {
+	return inertia_t<T>::template from<units::kilograms_meters_squared>(value);
+}
+
+template <typename T>
+constexpr auto gse::pounds_feet_squared_t(const T value) -> inertia_t<T> {
+	return inertia_t<T>::template from<units::pounds_feet_squared>(value);
+}
+
+constexpr auto gse::kilograms_meters_squared(const float value) -> inertia {
+	return kilograms_meters_squared_t<float>(value);
+}
+
+constexpr auto gse::pounds_feet_squared(const float value) -> inertia {
+	return pounds_feet_squared_t<float>(value);
+}
+
+template <gse::internal::is_unit U, typename... Args>
+constexpr auto gse::vec::inertia(Args&&... args) -> vec_t<inertia_t<std::common_type_t<Args...>>, sizeof...(Args)> {
+	return { inertia_t<std::common_type_t<Args...>>::template from<U>(args)... };
+}
+
+template <typename... Args>
+constexpr auto gse::vec::kilograms_meters_squared(Args&&... args) -> vec_t<inertia_t<std::common_type_t<Args...>>, sizeof...(Args)> {
+	return { inertia_t<std::common_type_t<Args...>>::template from<units::kilograms_meters_squared>(args)... };
+}
+
+template <typename... Args>
+constexpr auto gse::vec::pounds_feet_squared(Args&&... args) -> vec_t<inertia_t<std::common_type_t<Args...>>, sizeof...(Args)> {
+	return { inertia_t<std::common_type_t<Args...>>::template from<units::pounds_feet_squared>(args)... };
+}

@@ -58,7 +58,7 @@ auto sphere_light_hook::render() -> void {
 }
 
 auto game::create_sphere_light(const gse::vec3<gse::length>& position, const gse::length& radius, const int sectors) -> std::uint32_t {
-	const auto sphere_light_uuid = create_sphere(position, radius, sectors);
+	const auto sphere_light_uuid = gse::create_sphere(position, radius, sectors);
 	gse::registry::add_entity_hook(sphere_light_uuid, std::make_unique<sphere_light_hook>());
 	return sphere_light_uuid;
 }
