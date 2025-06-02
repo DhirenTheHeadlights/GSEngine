@@ -21,8 +21,10 @@ layout (location = 1) out vec3 frag_normal;
 layout (location = 2) out vec2 frag_tex_coord;
 
 void main() {
-    gl_Position = camera_ubo.proj * camera_ubo.view * model_ubo.model * vec4(in_position, 1.0);
-    frag_position = vec3(0.0);
-    frag_normal = vec3(0.0, 1.0, 0.0);
+    vec4 world_position = model_ubo.model * vec4(in_position, 1.0);
+    frag_position = world_position.xyz;
+    frag_normal = normalize(mat3(model_ubo.model) * in_normal);
     frag_tex_coord = in_tex_coord;
+
+    gl_Position = camera_ubo.proj * camera_ubo.view * world_position;
 }

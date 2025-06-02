@@ -40,7 +40,6 @@ auto gse::renderer::begin_frame() -> void {
 	model_loader::load_queued_models(g_config);
 	window::begin_frame();
 	vulkan::begin_frame(window::get_window(), g_config);
-	renderer2d::begin_frame();
 }
 
 auto gse::renderer::update() -> void {
@@ -52,14 +51,13 @@ auto gse::renderer::render(const std::function<void()>& in_frame) -> void {
 	begin_frame();
 	renderer3d::render(g_config);
 	g_config.frame_context.command_buffer.nextSubpass(vk::SubpassContents::eInline);
-	renderer2d::render();
+	renderer2d::render(g_config);
 	gui::render();
 	in_frame();
 	end_frame();
 }
 
 auto gse::renderer::end_frame() -> void {
-	renderer2d::end_frame(g_config);
 	vulkan::end_frame(g_config);
 	window::end_frame();
 	vulkan::transient_allocator::end_frame();
