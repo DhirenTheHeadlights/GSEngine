@@ -29,7 +29,8 @@ auto gse::physics::apply_force(motion_component& component, const vec3<force>& f
 	vec3<length> center_of_mass;
 
 	if (const auto* render_component = gse::registry::get_component_ptr<gse::render_component>(component.parent_id); render_component) {
-		center_of_mass = render_component->center_of_mass;
+		/*center_of_mass = render_component->center_of_mass;*/
+		center_of_mass = component.current_position;
 	}
 	else {
 		center_of_mass = component.current_position;

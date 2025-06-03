@@ -15,6 +15,8 @@ import game.skybox;
 import game.sphere_light;
 
 bool g_input_handling_enabled = true;
+bool scene_activated = false;
+gse::clock physics_timer;
 
 auto game::set_input_handling_flag(const bool enabled) -> void {
 	g_input_handling_enabled = enabled;
@@ -69,9 +71,9 @@ struct scene1_hook final : gse::hook<gse::scene> {
 
 
 
-		const std::uint32_t iron_man = gse::registry::create_entity();
-		gse::registry::add_entity_hook(iron_man, std::make_unique<iron_man_hook>());
-		m_owner->add_entity(iron_man, "Iron Man");
+		//const std::uint32_t iron_man = gse::registry::create_entity();
+		//gse::registry::add_entity_hook(iron_man, std::make_unique<iron_man_hook>());
+		//m_owner->add_entity(iron_man, "Iron Man");
 		//const std::uint32_t raw_backpack = gse::registry::create_entity();
 		//gse::registry::add_entity_hook(raw_backpack, std::make_unique<raw_backpack_hook>());
 		//m_owner->add_entity(raw_backpack, "Backpack");
@@ -83,6 +85,7 @@ struct scene1_hook final : gse::hook<gse::scene> {
 	auto render() -> void override {
 		gse::debug::add_imgui_callback([] {
 			if (gse::scene_loader::get_scene(gse::get_id("Scene1"))->get_active()) {
+
 				ImGui::Begin("Game Data");
 
 				ImGui::Text("FPS: %d", gse::main_clock::get_frame_rate());
@@ -90,6 +93,23 @@ struct scene1_hook final : gse::hook<gse::scene> {
 				ImGui::End();
 			}
 			});
+
+		//if (gse::scene_loader::get_scene(gse::get_id("Scene1"))->get_active()) {
+		//		auto& smaller_box_motion = gse::registry::get_component<gse::physics::motion_component>(gse::registry::get_entity_id("Smaller Box"));
+		//		auto& bigger_box_motion = gse::registry::get_component<gse::physics::motion_component>(gse::registry::get_entity_id("Bigger Box"));
+		//	if (!scene_activated) {
+		//		physics_timer.reset();
+		//		
+		//		smaller_box_motion.current_velocity = gse::vec::meters_per_second(0.f, -15.f, 0.f);
+		//		smaller_box_motion.current_acceleration = gse::vec::meters_per_second_squared(0.f, 0.f, 0.f);
+		//		bigger_box_motion.current_velocity = gse::vec::meters_per_second(0.f, 15.f, 0.f);
+		//		bigger_box_motion.current_acceleration = gse::vec::meters_per_second_squared(0.f, 0.f, 0.f);
+		//		scene_activated = true;
+		//	}
+		//	if (physics_timer.get_elapsed_time() >= gse::seconds(1.4167f)) {
+		//		physics_timer.reset();
+		//	}
+		//}
 	}
 };
 

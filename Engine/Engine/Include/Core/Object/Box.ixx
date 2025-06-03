@@ -103,9 +103,8 @@ export struct box_mesh_hook final : gse::hook<gse::entity> {
         gse::registry::add_component<gse::physics::motion_component>(std::move(new_motion_component));
         gse::registry::add_component<gse::physics::collision_component>(std::move(new_collision_component));
         gse::registry::add_component<gse::render_component>(std::move(new_render_component));
+        /*gse::registry::get_component<gse::physics::motion_component>(owner_id).affected_by_gravity = false;*/
 
-        gse::registry::get_component<gse::physics::motion_component>(owner_id).affected_by_gravity = false;
-        gse::registry::get_component<gse::physics::motion_component>(owner_id).position_locked = true;
     }
 
     auto update() -> void override {
