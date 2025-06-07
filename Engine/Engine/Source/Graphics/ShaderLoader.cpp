@@ -199,6 +199,7 @@ auto gse::shader_loader::get_shader(const std::string_view name) -> const shader
 	return it->second;
 }
 
+__declspec(no_sanitize_address)
 auto gse::shader_loader::compile_shaders() -> std::unordered_map<std::string, descriptor_layout> {
 	const auto root_path = config::shader_raw_path;
 	const auto destination_path = config::shader_spirv_path;

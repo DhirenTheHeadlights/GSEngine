@@ -32,7 +32,7 @@ export namespace gse::vulkan {
     };
 
 	auto begin_frame(GLFWwindow* window, config& config) -> void;
-	auto end_frame(const config& config) -> void;
+	auto end_frame(vulkan::config& config) -> void;
 	auto find_queue_families(vk::PhysicalDevice device, vk::SurfaceKHR surface) -> queue_family;
 
 	auto begin_single_line_commands(const config& config) -> vk::CommandBuffer;
