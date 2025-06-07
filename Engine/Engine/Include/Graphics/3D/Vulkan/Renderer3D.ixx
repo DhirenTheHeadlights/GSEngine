@@ -29,13 +29,6 @@ export namespace gse::renderer3d {
 	auto shutdown(const vulkan::config& config) -> void;
 
 	auto get_camera() -> camera&;
-	auto get_render_pass() -> const vk::RenderPass&;
-	auto get_current_command_buffer() -> vk::CommandBuffer;
-}
-
-namespace gse::renderer3d {
-	auto begin_frame(const vulkan::config& config) -> vk::CommandBuffer;
-	auto end_frame(vk::CommandBuffer command, const vulkan::config& config) -> void;
 }
 
 vk::Pipeline g_pipeline;
@@ -246,7 +239,7 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 
 	vk::GraphicsPipelineCreateInfo lighting_pipeline_info{
 		{},
-		static_cast<uint32_t>(lighting_stages.size()),
+		static_cast<std::uint32_t>(lighting_stages.size()),
 		lighting_stages.data(),
 		&empty_vertex_input,
 		&input_assembly,
@@ -393,7 +386,7 @@ auto gse::renderer3d::render(const vulkan::config& config) -> void {
 	for (const auto& component : components) {
 		for (const auto& model_handle : component.models) {
 			for (const auto& entry : model_handle.get_render_queue_entries()) {
-				model_view[model_index] = mat4(1.0f);
+				model_view[model_index] = entry.model_matrix;
 
 				model_index++;
 

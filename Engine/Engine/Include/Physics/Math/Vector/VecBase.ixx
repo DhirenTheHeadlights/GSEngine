@@ -1,7 +1,3 @@
-module;
-
-#include <intrin.h> 
-
 export module gse.physics.math.base_vec;
 
 import std;
@@ -36,6 +32,24 @@ export namespace gse::vec {
 }
 
 export namespace gse::internal {
+    template <typename T, int N>
+    constexpr auto from_value(const T& value) -> vec::storage<T, N> {
+        const auto make_storage = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+            return vec::storage<T, N>{ { (void(Is), value)... } };
+        };
+
+        return make_storage(std::make_index_sequence<N>{});
+    }
+
+    template <typename T, int N>
+    constexpr auto from_pointer(const T* values) -> vec::storage<T, N> {
+        const auto make_storage = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+            return vec::storage<T, N>{ { values[Is]... } };
+        };
+
+        return make_storage(std::make_index_sequence<N>{});
+    }
+
     template <typename Derived, typename T, int N>
     struct vec_t;
 
@@ -61,7 +75,23 @@ export namespace gse::internal {
     };
 
     template <typename Derived, typename T, int N>
-    struct vec_base {
+    struct vec_t_common : vec_from_lesser<Derived, T, N> {
+        using vec_from_lesser<Derived, T, N>::vec_from_lesser;
+
+        constexpr vec_t_common() = default;
+
+        constexpr vec_t_common(const vec::storage<T, N>& s) {
+            static_cast<Derived*>(this)->storage = s;
+        }
+
+        constexpr vec_t_common(const T& value) {
+            static_cast<Derived*>(this)->storage = from_value<T, N>(value);
+        }
+
+        constexpr vec_t_common(const T* values) {
+            static_cast<Derived*>(this)->storage = from_pointer<T, N>(values);
+        }
+
         constexpr auto operator[](std::size_t index) -> T& {
             return static_cast<Derived*>(this)->storage[index];
         }
@@ -89,72 +119,52 @@ export namespace gse::internal {
         }
     };
 
-    template <typename Derived, typename T, int N = 1>
-    struct vec_t : vec_base<Derived, T, N>, vec_from_lesser<Derived, T, N> {
-        using vec_from_lesser<Derived, T, N>::vec_from_lesser;
+    template <typename Derived, typename T, int N>
+    struct vec_t : vec_t_common<Derived, T, N> {
+        using vec_t_common<Derived, T, N>::vec_t_common;
 
-        vec::storage<T, N> storage;
+        union {
+            vec::storage<T, N> storage;
+        };
 
         constexpr vec_t() : storage{} {}
-        constexpr vec_t(const vec::storage<T, N>& storage) : storage(storage) {}
-        constexpr vec_t(const T& value) {
-            for (int i = 0; i < N; ++i) {
-                storage[i] = value;
-            }
-        }
-        constexpr vec_t(const T* values) {
-            for (int i = 0; i < N; ++i) {
-                storage[i] = values[i];
-            }
-        }
     };
 
     template <typename Derived, typename T>
-    struct vec_t<Derived, T, 2> : vec_base<Derived, T, 2>, vec_from_lesser<Derived, T, 2> {
-        using vec_from_lesser<Derived, T, 2>::vec_from_lesser;
+    struct vec_t<Derived, T, 2> : vec_t_common<Derived, T, 2> {
+        using vec_t_common<Derived, T, 2>::vec_t_common;
 
         union {
             vec::storage<T, 2> storage;
             struct { T x, y; };
         };
 
-        constexpr vec_t() : storage{ { static_cast<T>(0), static_cast<T>(0) } } {}
-        constexpr vec_t(const vec::storage<T, 2>& storage) : storage(storage) {}
-        constexpr vec_t(const T& value) : storage{ { value, value } } {}
-        constexpr vec_t(const T* values) : storage{ { values[0], values[1] } } {}
-        constexpr vec_t(const T& x, const T& y) : storage{ { x, y } } {}
+        constexpr vec_t() : storage{} {}
+        constexpr vec_t(T x, T y) : x(x), y(y) {}
     };
 
     template <typename Derived, typename T>
-    struct vec_t<Derived, T, 3> : vec_base<Derived, T, 3>, vec_from_lesser<Derived, T, 3> {
-        using vec_from_lesser<Derived, T, 3>::vec_from_lesser;
+    struct vec_t<Derived, T, 3> : vec_t_common<Derived, T, 3> {
+        using vec_t_common<Derived, T, 3>::vec_t_common;
 
         union {
             vec::storage<T, 3> storage;
             struct { T x, y, z; };
         };
 
-        constexpr vec_t() : storage{ { static_cast<T>(0), static_cast<T>(0), static_cast<T>(0) } } {}
-        constexpr vec_t(const vec::storage<T, 3>& storage) : storage{ storage[0], storage[1], storage[2] } {}
-        constexpr vec_t(const T& value) : storage{ { value, value, value } } {}
-        constexpr vec_t(const T* values) : storage{ { values[0], values[1], values[2] } } {}
-        constexpr vec_t(const T& x, const T& y, const T& z) : storage{ { x, y, z } } {}
+        constexpr vec_t(T x, T y, T z) : x(x), y(y), z(z) {}
     };
 
     template <typename Derived, typename T>
-    struct vec_t<Derived, T, 4> : vec_base<Derived, T, 4>, vec_from_lesser<Derived, T, 4> {
-        using vec_from_lesser<Derived, T, 4>::vec_from_lesser;
+    struct vec_t<Derived, T, 4> : vec_t_common<Derived, T, 4> {
+        using vec_t_common<Derived, T, 4>::vec_t_common;
 
         union {
             vec::storage<T, 4> storage;
             struct { T x, y, z, w; };
         };
 
-        constexpr vec_t() : storage{ { static_cast<T>(0), static_cast<T>(0), static_cast<T>(0), static_cast<T>(0) } } {}
-        constexpr vec_t(const vec::storage<T, 4>& storage) : storage(storage) {}
-        constexpr vec_t(const T& value) : storage{ { value, value, value, value } } {}
-        constexpr vec_t(const T* values) : storage{ { values[0], values[1], values[2], values[3] } } {}
-        constexpr vec_t(const T& x, const T& y, const T& z, const T& w) : storage{ { x, y, z, w } } {}
+        constexpr vec_t(T x, T y, T z, T w) : x(x), y(y), z(z), w(w) {}
     };
 }
 
@@ -166,6 +176,27 @@ template <typename T, int N>
 constexpr auto gse::value_ptr(const vec::storage<T, N>& storage) -> const T* {
     return &storage[0];
 }
+
+export template <typename T, int N, typename CharT>
+struct std::formatter<gse::vec::storage<T, N>, CharT> {
+    std::formatter<T, CharT> element_formatter;
+
+    constexpr auto parse(std::format_parse_context& ctx) {
+        return element_formatter.parse(ctx);
+    }
+
+    template <typename FormatContext>
+    auto format(const gse::vec::storage<T, N>& v, FormatContext& ctx) const {
+        auto out = ctx.out();
+        out = std::format_to(out, "(");
+        for (int i = 0; i < N; ++i) {
+            if (i > 0) out = std::format_to(out, ", ");
+            out = element_formatter.format(v[i], ctx);
+        }
+        return std::format_to(out, ")");
+    }
+};
+\
 
 template <typename T, int N>
 concept ref_t = sizeof(T) * N > 16;

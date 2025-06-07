@@ -179,7 +179,6 @@ export namespace gse::internal {
 }
 
 namespace gse::internal {
-
     template <is_quantity T>
     constexpr auto internal::operator+(const T& lhs, const T& rhs) -> T {
         return lhs.as_default_unit() + rhs.as_default_unit();
@@ -288,4 +287,19 @@ namespace gse::internal {
         return -value.as_default_unit();
     }
 }
+
+template <gse::internal::is_quantity Q, typename CharT>
+struct std::formatter<Q, CharT> {
+    std::formatter<typename Q::value_type, CharT> value_fmt;
+
+    constexpr auto parse(std::format_parse_context& ctx) {
+        return value_fmt.parse(ctx);
+    }
+
+    template <typename FormatContext>
+    auto format(const Q& q, FormatContext& ctx) const {
+        return std::format_to(ctx.out(), "{} {}", value_fmt.format(q.as_default_unit(), ctx), Q::default_unit::unit_name);
+    }
+};
+
 
