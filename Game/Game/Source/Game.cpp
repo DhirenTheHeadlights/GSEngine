@@ -121,6 +121,28 @@ struct scene2_hook final : gse::hook<gse::scene> {
 	}
 };
 
+struct scene3_hook final : gse::hook<gse::scene> {
+	struct positioned_object_hook final : hook<gse::entity> {
+		positioned_object_hook(const gse::vec3<gse::length> position) : position(position) {}
+
+		gse::vec3<gse::length> position;
+
+		auto update() -> void override {
+			gse::registry::get_component<gse::physics::motion_component>(this->owner_id).current_position = position;
+		}
+	};
+
+	using hook::hook;
+	auto initialize() -> void override {
+		const auto player_id = game::create_player();
+		gse::registry::add_entity_hook(player_id, std::make_unique<positioned_object_hook>(gse::vec::meters(0.f, 0.f, 15.f)));
+		m_owner->add_entity(player_id, "Player");
+		const auto box_id = gse::create_box(gse::vec::meters(0.f, 0.f, 0.f), gse::vec::meters(10.f, 10.f, 10.f));
+		gse::registry::add_entity_hook(box_id, std::make_unique<positioned_object_hook>(gse::vec::meters(0.f, 0.f, 0.f)));
+		m_owner->add_entity(box_id, "Box");
+	}
+};
+
 auto game::initialize() -> bool {
 	auto scene1 = std::make_unique<gse::scene>("Scene1");
 	scene1->add_hook(std::make_unique<scene1_hook>(scene1.get(), scene1->get_id()));
@@ -128,11 +150,16 @@ auto game::initialize() -> bool {
 	auto scene2 = std::make_unique<gse::scene>("Scene2");
 	scene2->add_hook(std::make_unique<scene2_hook>(scene2.get(), scene2->get_id()));
 
+	auto scene3 = std::make_unique<gse::scene>("Scene3");
+	scene3->add_hook(std::make_unique<scene3_hook>(scene3.get(), scene3->get_id()));
+
 	gse::scene_loader::add_scene(scene1);
 	gse::scene_loader::add_scene(scene2);
+	gse::scene_loader::add_scene(scene3);
 
 	gse::scene_loader::queue_scene_trigger(gse::get_id("Scene1"), [] { return gse::input::get_keyboard().keys[GLFW_KEY_F1].pressed; });
 	gse::scene_loader::queue_scene_trigger(gse::get_id("Scene2"), [] { return gse::input::get_keyboard().keys[GLFW_KEY_F2].pressed; });
+	gse::scene_loader::queue_scene_trigger(gse::get_id("Scene3"), [] { return gse::input::get_keyboard().keys[GLFW_KEY_F3].pressed; });
 
 	return true;
 }
