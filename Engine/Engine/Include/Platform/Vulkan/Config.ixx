@@ -36,9 +36,9 @@ export namespace gse::vulkan {
         } descriptor;
 
         struct sync_config {
-            vk::Semaphore image_available_semaphore;
-            vk::Semaphore render_finished_semaphore;
-            vk::Fence in_flight_fence;
+            vk::Semaphore timeline;
+            std::uint64_t value = 0;
+            std::vector<vk::Fence> in_flight_fences;
 		} sync;
 
         struct swap_chain_details {
@@ -65,6 +65,7 @@ export namespace gse::vulkan {
             vk::Framebuffer framebuffer;
 		} frame_context;
 
+		std::uint32_t current_frame = 0;
         vk::RenderPass render_pass;
 
         persistent_allocator::image_resource position_image;

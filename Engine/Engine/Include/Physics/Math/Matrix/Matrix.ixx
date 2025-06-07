@@ -50,6 +50,31 @@ namespace gse {
 	};
 }
 
+export template <typename T, int N, typename CharT>
+struct std::formatter<gse::mat<T, N, N>, CharT> {
+    std::formatter<gse::vec::storage<T, N>, CharT> vec_formatter;
+
+    constexpr auto parse(std::format_parse_context& ctx) {
+        return vec_formatter.parse(ctx);
+    }
+
+    template <typename FormatContext>
+    auto format(const gse::mat<T, N, N>& m, FormatContext& ctx) const {
+        auto out = ctx.out();
+        out = std::format_to(out, "mat{}x{}[\n", N, N);
+        for (int row = 0; row < N; ++row) {
+            gse::vec::storage<T, N> row_vec;
+            for (int col = 0; col < N; ++col) {
+                row_vec[col] = m.data[col][row];
+            }
+            out = vec_formatter.format(row_vec, ctx);
+            if (row != N - 1) out = std::format_to(out, ",\n");
+        }
+        out = std::format_to(out, "\n]");
+        return out;
+    }
+};
+
 export namespace gse {
 	template <typename T, int Cols, int Rows> using mat_t = mat<T, Cols, Rows>;
 	template <typename T> using mat2_t = mat<T, 2, 2>;

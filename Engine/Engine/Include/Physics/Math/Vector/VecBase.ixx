@@ -196,7 +196,6 @@ struct std::formatter<gse::vec::storage<T, N>, CharT> {
         return std::format_to(out, ")");
     }
 };
-\
 
 template <typename T, int N>
 concept ref_t = sizeof(T) * N > 16;

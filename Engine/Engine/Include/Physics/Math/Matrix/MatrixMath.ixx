@@ -13,15 +13,15 @@ import gse.physics.math.quat;
 import gse.physics.math.quat_math;
 
 export namespace gse {
-	template <typename T = float>			constexpr auto look_at(const vec3<length_t<T>>& position, const vec3<length_t<T>>& target, const unitless::vec3_t<T>& up) -> mat4_t<T>;
-	template <typename T>					constexpr auto perspective(angle_t<T> fov, T aspect, length_t<T> near, length_t<T> far) -> mat4_t<T>;
-	template <typename T>					constexpr auto orthographic(length_t<T> left, length_t<T> right, length_t<T> bottom, length_t<T> top, length_t<T> near, length_t<T> far) -> mat4_t<T>;
-	template <typename T>					constexpr auto translate(const mat4_t<T>& matrix, const vec3<length_t<T>>& translation) -> mat4_t<T>;
-	template <typename T>					constexpr auto rotate(const mat4_t<T>& matrix, axis axis, angle_t<T> angle) -> mat4_t<T>;
-	template <typename T>					constexpr auto scale(const mat4_t<T>& matrix, const vec3<length_t<T>>& scale) -> mat4_t<T>;
-	template <typename T, int N, int M>		constexpr auto value_ptr(mat_t<T, N, M>& matrix) -> T*;
-	template <typename T, int N, int M>		constexpr auto value_ptr(const mat_t<T, N, M>& matrix) -> const T*;
-	template <typename T, int N, int M> constexpr auto identity() -> mat_t<T, N, M>;
+	template <typename T = float>		constexpr auto look_at(const vec3<length_t<T>>& position, const vec3<length_t<T>>& target, const unitless::vec3_t<T>& up) -> mat4_t<T>;
+	template <typename T>				constexpr auto perspective(angle_t<T> fov, T aspect, length_t<T> near, length_t<T> far) -> mat4_t<T>;
+	template <typename T>				constexpr auto orthographic(length_t<T> left, length_t<T> right, length_t<T> bottom, length_t<T> top, length_t<T> near, length_t<T> far) -> mat4_t<T>;
+	template <typename T>				constexpr auto translate(const mat4_t<T>& matrix, const vec3<length_t<T>>& translation) -> mat4_t<T>;
+	template <typename T>				constexpr auto rotate(const mat4_t<T>& matrix, axis axis, angle_t<T> angle) -> mat4_t<T>;
+	template <typename T>				constexpr auto scale(const mat4_t<T>& matrix, const vec3<length_t<T>>& scale) -> mat4_t<T>;
+	template <typename T, int N, int M>	constexpr auto value_ptr(mat_t<T, N, M>& matrix) -> T*;
+	template <typename T, int N, int M> constexpr auto value_ptr(const mat_t<T, N, M>& matrix) -> const T*;
+	template <typename T, int N, int M>	constexpr auto identity() -> mat_t<T, N, M>;
 }
 
 template <typename T>

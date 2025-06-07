@@ -28,23 +28,39 @@ auto gse::vulkan::initialize(GLFWwindow* window) -> config {
 
 auto gse::vulkan::begin_frame(GLFWwindow* window, config& config) -> void {
     const auto& device = config.device_data.device;
-    assert(device.waitForFences(1, &config.sync.in_flight_fence, true, std::numeric_limits<std::uint64_t>::max()) == vk::Result::eSuccess, "Failed to wait for fence!");
-    assert(device.resetFences(1, &config.sync.in_flight_fence) == vk::Result::eSuccess, "Failed to reset fence!");
+
+    assert(
+        device.waitForFences(
+            1, 
+            &config.sync.in_flight_fences[config.current_frame], 
+            true, std::numeric_limits<std::uint64_t>::max()
+        ) == vk::Result::eSuccess, 
+        "Failed to wait for fence!"
+    );
 
     std::uint32_t image_index;
     const auto result = device.acquireNextImageKHR(
         config.swap_chain_data.swap_chain,
         std::numeric_limits<std::uint64_t>::max(),
-        config.sync.image_available_semaphore,
+        {},
         {},
         &image_index
     );
+
     assert(result == vk::Result::eSuccess || result == vk::Result::eSuboptimalKHR, "Failed to acquire swap chain image!");
     if (result == vk::Result::eErrorOutOfDateKHR) {
         create_swap_chain(window, config);
         create_image_views(config);
         return begin_frame(window, config);
     }
+
+    assert(
+        device.resetFences(
+            1,
+            &config.sync.in_flight_fences[config.current_frame]
+        ) == vk::Result::eSuccess,
+        "Failed to reset fence!"
+    );
 
     config.frame_context = {
         .image_index = image_index,
@@ -71,23 +87,54 @@ auto gse::vulkan::begin_frame(GLFWwindow* window, config& config) -> void {
     config.frame_context.command_buffer.beginRenderPass(render_pass_begin_info, vk::SubpassContents::eInline);
 }
 
-auto gse::vulkan::end_frame(const config& config) -> void {
+auto gse::vulkan::end_frame(config& config) -> void {
     config.frame_context.command_buffer.endRenderPass();
     config.frame_context.command_buffer.end();
 
-    const vk::Semaphore wait_semaphores[] = { config.sync.image_available_semaphore };
+	auto wait = config.sync.value;
+	auto signal = wait + 1;
+
+    vk::SemaphoreSubmitInfo wait_info{
+		config.sync.timeline,
+    	wait,
+    	vk::PipelineStageFlagBits2::eColorAttachmentOutput
+    };
+
+    vk::SemaphoreSubmitInfo signal_info{
+        config.sync.timeline,
+        signal,
+        vk::PipelineStageFlagBits2::eAllCommands
+    };
+
+    vk::CommandBufferSubmitInfo command_info(config.frame_context.command_buffer);
+
+    vk::SubmitInfo2 submit_info{
+		{},
+        1, &wait_info,
+        1, &command_info,
+		1, &signal_info
+    };
+
+	config.queue.graphics.submit2(submit_info, config.sync.in_flight_fences[config.current_frame]);
+
+    vk::PresentWaitInfoKHR present_wait_info{
+        1, &config.sync.timeline,
+        signal
+	};
+
+    const vk::Semaphore wait_semaphores[] = { config.sync.image_available_semaphores[config.current_frame] };
     constexpr vk::PipelineStageFlags wait_stages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
 
     const vk::SubmitInfo submit_info(
         1, wait_semaphores, wait_stages,
         1, &config.frame_context.command_buffer,
-        1, &config.sync.render_finished_semaphore
+        1, &config.sync.render_finished_semaphores[config.current_frame]
     );
 
-    config.queue.graphics.submit(submit_info, config.sync.in_flight_fence);
+    config.queue.graphics.submit(submit_info, config.sync.in_flight_fences[config.current_frame]);
 
     const vk::PresentInfoKHR present_info(
-        1, &config.sync.render_finished_semaphore,
+        1, &config.sync.render_finished_semaphores[config.current_frame],
         1, &config.swap_chain_data.swap_chain,
         &config.frame_context.image_index
     );
@@ -98,6 +145,8 @@ auto gse::vulkan::end_frame(const config& config) -> void {
         present_result == vk::Result::eSuccess || present_result == vk::Result::eSuboptimalKHR,
         "Failed to present image!"
     );
+
+	config.current_frame = (config.current_frame + 1) % max_frames_in_flight;
 }
 
 auto gse::vulkan::begin_single_line_commands(const config& config) -> vk::CommandBuffer {
@@ -132,7 +181,6 @@ auto gse::vulkan::shutdown(const config& config) -> void {
     for (const auto& framebuffer : config.swap_chain_data.frame_buffers) {
         device.destroyFramebuffer(framebuffer);
     }
-
     for (const auto& image_view : config.swap_chain_data.image_views) {
         device.destroyImageView(image_view);
     }
@@ -140,9 +188,10 @@ auto gse::vulkan::shutdown(const config& config) -> void {
     device.destroyDescriptorPool(config.descriptor.pool);
     device.destroyCommandPool(config.command.pool);
 
-    device.destroySemaphore(config.sync.image_available_semaphore);
-    device.destroySemaphore(config.sync.render_finished_semaphore);
-    device.destroyFence(config.sync.in_flight_fence);
+    device.destroySemaphore(config.sync.timeline);
+    for (const auto& fence : config.sync.in_flight_fences) {
+        device.destroyFence(fence);
+    }
 
     device.destroySwapchainKHR(config.swap_chain_data.swap_chain);
     device.destroy();
@@ -226,7 +275,8 @@ auto gse::vulkan::create_logical_device(config& config) -> void {
     vulkan13_features.synchronization2 = vk::True;
 
     const std::vector device_extensions = {
-        vk::KHRSwapchainExtensionName
+        vk::KHRSwapchainExtensionName,
+		vk::KHRMaintenance1ExtensionName,
     };
 
     vk::DeviceCreateInfo create_info(
@@ -318,6 +368,7 @@ auto gse::vulkan::create_swap_chain(GLFWwindow* window, config& config) -> void 
 
     config.swap_chain_data.swap_chain = config.device_data.device.createSwapchainKHR(create_info);
     config.swap_chain_data.images = config.device_data.device.getSwapchainImagesKHR(config.swap_chain_data.swap_chain);
+    config.sync.images_in_flight.resize(config.swap_chain_data.images.size(), nullptr);
     config.swap_chain_data.format = config.swap_chain_data.surface_format.format;
     config.swap_chain_data.frame_buffers.resize(config.swap_chain_data.images.size());
 }
@@ -570,12 +621,26 @@ auto gse::vulkan::create_image_views(config& config) -> void {
 }
 
 auto gse::vulkan::create_sync_objects(config& config) -> void {
-    constexpr vk::SemaphoreCreateInfo semaphore_info;
+    config.sync.in_flight_fences.resize(max_frames_in_flight);
+
     constexpr vk::FenceCreateInfo fence_info(vk::FenceCreateFlagBits::eSignaled);
 
-    config.sync.image_available_semaphore = config.device_data.device.createSemaphore(semaphore_info);
-    config.sync.render_finished_semaphore = config.device_data.device.createSemaphore(semaphore_info);
-    config.sync.in_flight_fence = config.device_data.device.createFence(fence_info);
+    for (auto& fence : config.sync.in_flight_fences) {
+        fence = config.device_data.device.createFence(fence_info);
+	}
+
+    vk::SemaphoreTypeCreateInfo type_info {
+        vk::SemaphoreType::eTimeline,
+        0  
+	};
+
+    const vk::SemaphoreCreateInfo semaphore_info{
+        {},
+        &type_info
+    };
+
+	config.sync.timeline = config.device_data.device.createSemaphore(semaphore_info);
+    config.sync.value = 0;
 
     std::cout << "Sync Objects Created Successfully!\n";
 }

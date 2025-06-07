@@ -2,6 +2,8 @@
 
 #include <cstddef>
 
+#include "GLFW/glfw3.h"
+
 export module gse.graphics.renderer3d;
 
 import std;
@@ -18,6 +20,7 @@ import gse.graphics.render_component;
 import gse.graphics.shader_loader;
 import gse.graphics.point_light;
 import gse.graphics.light_source_component;
+import gse.physics.math;
 import gse.platform;
 
 gse::camera g_camera;
@@ -372,6 +375,11 @@ auto gse::renderer3d::render(const vulkan::config& config) -> void {
 	const auto& geometry_shader = shader_loader::get_shader("geometry_pass");
 	const auto model_size = geometry_shader.get_uniform_blocks().at("model_ubo").size;
 
+	if (input::get_keyboard().keys[GLFW_KEY_F12].pressed) {
+		std::print("Camera view matrix: {}\n", g_camera.get_view_matrix());
+		std::print("Camera projection matrix: {}\n", g_camera.get_projection_matrix());
+	}
+
 	geometry_shader.set_uniform("camera_ubo.view", g_camera.get_view_matrix(), g_ubo_allocations.at("camera_ubo").allocation);
 	geometry_shader.set_uniform("camera_ubo.proj", g_camera.get_projection_matrix(), g_ubo_allocations.at("camera_ubo").allocation);
 
@@ -386,7 +394,7 @@ auto gse::renderer3d::render(const vulkan::config& config) -> void {
 	for (const auto& component : components) {
 		for (const auto& model_handle : component.models) {
 			for (const auto& entry : model_handle.get_render_queue_entries()) {
-				model_view[model_index] = entry.model_matrix;
+				model_view[0] = mat4(1.0f);
 
 				model_index++;
 
