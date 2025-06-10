@@ -45,7 +45,7 @@ find_package(Vulkan REQUIRED)
 add_library(VulkanModule)
 
 target_compile_features(VulkanModule PUBLIC cxx_std_20)
-target_compile_definitions(VulkanModule PUBLIC VULKAN_HPP_DISPATCH_LOADER_DYNAMIC VULKAN_HPP_ENABLE_EXTENSION_PRESENT_WAIT_KHR)
+target_compile_definitions(VulkanModule PUBLIC VULKAN_HPP_DISPATCH_LOADER_DYNAMIC)
 target_link_libraries(VulkanModule PUBLIC Vulkan::Vulkan)
 
 target_sources(VulkanModule PRIVATE

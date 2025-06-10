@@ -74,22 +74,22 @@ auto gse::debug::initialize_imgui(const vulkan::config& config) -> void {
 
     ImGui_ImplGlfw_InitForVulkan(window::get_window(), true);
     ImGui_ImplVulkan_InitInfo init_info = {};
-    init_info.Instance = config.instance_data.instance;
-    init_info.PhysicalDevice = config.device_data.physical_device;
-	init_info.Device = config.device_data.device;
+    init_info.Instance = *config.instance_data.instance;
+    init_info.PhysicalDevice = *config.device_data.physical_device;
+	init_info.Device = *config.device_data.device;
 	init_info.QueueFamily = vulkan::find_queue_families(config.device_data.physical_device, config.instance_data.surface).graphics_family.value();
-	init_info.Queue = config.queue.graphics;
+	init_info.Queue = *config.queue.graphics;
     init_info.PipelineCache = VK_NULL_HANDLE;
-	init_info.DescriptorPool = config.descriptor.pool;
+	init_info.DescriptorPool = *config.descriptor.pool;
     init_info.Subpass = 2;
     init_info.MinImageCount = 2;
     init_info.ImageCount = 3;
     init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-    ImGui_ImplVulkan_Init(&init_info, config.render_pass);
+    ImGui_ImplVulkan_Init(&init_info, *config.swap_chain_data.render_pass);
 
-    const vk::CommandBuffer cmd = begin_single_line_commands(config);
+    const auto cmd = begin_single_line_commands(config);
 
-    ImGui_ImplVulkan_CreateFontsTexture(cmd);
+    ImGui_ImplVulkan_CreateFontsTexture(*cmd);
 
     end_single_line_commands(cmd, config);
 

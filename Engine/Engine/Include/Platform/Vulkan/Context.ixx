@@ -1,15 +1,9 @@
 module;
 
-#include <algorithm>
-#include <vulkan/vulkan_hpp_macros.hpp>
-
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-#include <iostream>
-#include <optional>
-#include <span>
-#include <vector>
+#include <compare>
 
 export module gse.platform.vulkan.context;
 
@@ -20,157 +14,67 @@ import gse.platform.assert;
 
 vk::DebugUtilsMessengerEXT g_debug_utils_messenger;
 
-constexpr std::uint32_t max_frames_in_flight = 2;
-
 export namespace gse::vulkan {
-	auto initialize(GLFWwindow* window) -> config;
+	auto initialize(
+        GLFWwindow* window
+    ) -> config;
 
-    struct frame_context {
-        std::uint32_t image_index;
-        vk::CommandBuffer command_buffer;
-        vk::Framebuffer framebuffer;
-    };
+	auto begin_frame(
+        GLFWwindow* window, 
+        config& config
+    ) -> void;
 
-	auto begin_frame(GLFWwindow* window, config& config) -> void;
-	auto end_frame(vulkan::config& config) -> void;
-	auto find_queue_families(vk::PhysicalDevice device, vk::SurfaceKHR surface) -> queue_family;
+	auto end_frame(
+        GLFWwindow* window, 
+        config& config
+    ) -> void;
 
-	auto begin_single_line_commands(const config& config) -> vk::CommandBuffer;
-	auto end_single_line_commands(vk::CommandBuffer command_buffer, const config& config) -> void;
+	auto find_queue_families(
+        const vk::raii::PhysicalDevice& device, 
+        const vk::raii::SurfaceKHR& surface
+    ) -> queue_family;
 
-    auto shutdown(const config& config) -> void;
+	auto begin_single_line_commands(
+        const config& config
+    ) -> vk::raii::CommandBuffer;
+
+	auto end_single_line_commands(
+		const vk::raii::CommandBuffer& command_buffer,
+		const vulkan::config& config
+	) -> void;
+
+    auto shutdown(
+        const config& config
+    ) -> void;
 }
 
 namespace gse::vulkan {
-    auto create_instance(GLFWwindow* window) -> config;
-    auto select_gpu(config& config) -> void;
-    auto create_logical_device(config& config) -> void;
+    auto create_instance_and_surface(
+        GLFWwindow* window
+    ) -> config::instance_config;
 
-    auto query_swap_chain_support(vk::PhysicalDevice device, vk::SurfaceKHR surface) -> config::swap_chain_details;
-    auto choose_swap_chain_surface_format(const std::vector<vk::SurfaceFormatKHR>& available_formats) -> vk::SurfaceFormatKHR;
-    auto choose_swap_chain_present_mode(const std::vector<vk::PresentModeKHR>& available_present_modes) -> vk::PresentModeKHR;
-    auto choose_swap_chain_extent(const vk::SurfaceCapabilitiesKHR& capabilities, GLFWwindow* window) -> vk::Extent2D;
+    auto create_device_and_queues(
+        const config::instance_config& instance_data
+    ) -> std::tuple<config::device_config, config::queue_config>;
 
-	auto create_swap_chain(GLFWwindow* window, config& config) -> void;
-	auto create_image_views(config& config) -> void;
-	auto create_sync_objects(config& config) -> void;
-    auto create_descriptors(config& config) -> void;
-	auto create_command_pool(config& config) -> void;
+    auto create_command_objects(
+        const config::device_config& device_data, 
+        const config::instance_config& instance_data, 
+        std::uint32_t image_count
+    ) -> config::command_config;
+
+    auto create_descriptor_pool(
+        const config::device_config& device_data
+    ) -> config::descriptor_config;
+
+    auto create_sync_objects(
+        const config::device_config& device_data, 
+        std::uint32_t image_count
+    ) -> config::sync_config;
+
+    auto create_swap_chain_resources(
+        GLFWwindow* window,
+        const config::instance_config& instance_data,
+        const config::device_config& device_data
+    ) -> config::swap_chain_config;
 }
-
-auto debug_callback(vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity, vk::DebugUtilsMessageTypeFlagsEXT message_type, const vk::DebugUtilsMessengerCallbackDataEXT* callback_data, void* user_data) -> vk::Bool32 {
-    std::cerr << "Validation layer: " << callback_data->pMessage << "\n";
-    return vk::False;
-}
-
-auto gse::vulkan::create_instance(GLFWwindow* window) -> config {
-    const std::vector validation_layers = {
-           "VK_LAYER_KHRONOS_validation"
-    };
-
-#if VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
-    VULKAN_HPP_DEFAULT_DISPATCHER.init();
-#endif
-
-    const uint32_t highest_supported_version = vk::enumerateInstanceVersion();
-
-    const uint32_t major = vk::apiVersionMajor(highest_supported_version);
-    const uint32_t minor = vk::apiVersionMinor(highest_supported_version);
-    const uint32_t patch = vk::apiVersionPatch(highest_supported_version);
-
-    std::cout << "Running Vulkan " << major << "." << minor << "." << patch << "\n";
-
-    constexpr uint32_t min_supported_version = vk::makeApiVersion(0, 1, 0, 0);
-    const uint32_t selected_version = std::max(min_supported_version, highest_supported_version);
-
-    const vk::ApplicationInfo app_info(
-        "GSEngine", 1,
-        "GSEngine", 1,
-        selected_version
-    );
-
-    uint32_t glfw_extension_count = 0;
-    const char** glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extension_count);
-
-    std::vector extensions(glfw_extensions, glfw_extensions + glfw_extension_count);
-    extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-
-    const vk::DebugUtilsMessengerCreateInfoEXT debug_create_info(
-        {},
-        vk::DebugUtilsMessageSeverityFlagBitsEXT::eError | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose,
-        vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance,
-        reinterpret_cast<PFN_vkDebugUtilsMessengerCallbackEXT>(debug_callback)
-    );
-
-    constexpr vk::ValidationFeatureEnableEXT enables[] = {
-        vk::ValidationFeatureEnableEXT::eBestPractices,
-        vk::ValidationFeatureEnableEXT::eGpuAssisted,
-        vk::ValidationFeatureEnableEXT::eDebugPrintf
-    };
-
-    const vk::ValidationFeaturesEXT features(
-        std::size(enables),
-        enables,
-        0, nullptr,
-        &debug_create_info
-    );
-
-    const vk::InstanceCreateInfo create_info(
-        {},
-        &app_info,
-        static_cast<uint32_t>(validation_layers.size()),
-        validation_layers.data(),
-        static_cast<uint32_t>(extensions.size()),
-        extensions.data(),
-        &features
-    );
-    
-    config data;
-
-    try {
-        data.instance_data.instance = createInstance(create_info);
-        std::cout << "Vulkan Instance Created Successfully!\n";
-    }
-    catch (vk::SystemError& err) {
-        std::cerr << "Failed to create Vulkan instance: " << err.what() << "\n";
-    }
-
-#if VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
-    VULKAN_HPP_DEFAULT_DISPATCHER.init(data.instance_data.instance);
-#endif
-
-    try {
-        g_debug_utils_messenger = data.instance_data.instance.createDebugUtilsMessengerEXT(debug_create_info);
-        std::cout << "Debug Messenger Created Successfully!\n";
-    }
-    catch (vk::SystemError& err) {
-        std::cerr << "Failed to create Debug Messenger: " << err.what() << "\n";
-    }
-
-    VkSurfaceKHR temp_surface;
-    assert(glfwCreateWindowSurface(data.instance_data.instance, window, nullptr, &temp_surface) == static_cast<int>(vk::Result::eSuccess), "Error creating window surface");
-    data.instance_data.surface = temp_surface;
-
-    return data;
-}
-
-auto gse::vulkan::choose_swap_chain_extent(const vk::SurfaceCapabilitiesKHR& capabilities, GLFWwindow* window) -> vk::Extent2D {
-    if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
-        return capabilities.currentExtent;
-    }
-
-    int width, height;
-    glfwGetFramebufferSize(window, &width, &height);
-
-    vk::Extent2D actual_extent = {
-        static_cast<uint32_t>(width),
-        static_cast<uint32_t>(height)
-    };
-
-    actual_extent.width = std::clamp(actual_extent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
-    actual_extent.height = std::clamp(actual_extent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
-    return actual_extent;
-}
-
-
-

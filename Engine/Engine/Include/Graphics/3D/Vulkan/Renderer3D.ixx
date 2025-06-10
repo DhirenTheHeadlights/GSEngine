@@ -34,14 +34,14 @@ export namespace gse::renderer3d {
 	auto get_camera() -> camera&;
 }
 
-vk::Pipeline g_pipeline;
-vk::PipelineLayout g_pipeline_layout;
+vk::raii::Pipeline g_pipeline = nullptr;
+vk::raii::PipelineLayout g_pipeline_layout = nullptr;
 
-vk::Pipeline g_lighting_pipeline;
-vk::PipelineLayout g_lighting_pipeline_layout;
+vk::raii::Pipeline g_lighting_pipeline = nullptr;
+vk::raii::PipelineLayout g_lighting_pipeline_layout = nullptr;
 
-vk::DescriptorSet g_vertex_descriptor_set;
-vk::DescriptorSet g_lighting_descriptor_set;
+vk::raii::DescriptorSet g_vertex_descriptor_set = nullptr;
+vk::raii::DescriptorSet g_lighting_descriptor_set = nullptr;
 
 std::unordered_map<std::string, gse::vulkan::persistent_allocator::buffer_resource> g_ubo_allocations;
 
@@ -50,29 +50,29 @@ auto gse::renderer3d::get_camera() -> camera& {
 }
 
 auto gse::renderer3d::initialize(vulkan::config& config) -> void {
-	const vk::CommandBuffer cmd = begin_single_line_commands(config);
+	const auto cmd = begin_single_line_commands(config);
 
-	vulkan::uploader::transition_image_layout(cmd, config.position_image.image, vk::Format::eR16G16B16A16Sfloat, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal, 1, 1);
-	vulkan::uploader::transition_image_layout(cmd, config.normal_image.image, vk::Format::eR16G16B16A16Sfloat, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal, 1, 1);
-	vulkan::uploader::transition_image_layout(cmd, config.albedo_image.image, vk::Format::eR16G16B16A16Sfloat, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal, 1, 1);
-	vulkan::uploader::transition_image_layout(cmd, config.depth_image.image, vk::Format::eD32Sfloat, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilAttachmentOptimal, 1, 1);
+	vulkan::uploader::transition_image_layout(cmd, config.swap_chain_data.position_image.image, vk::Format::eR16G16B16A16Sfloat, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal, 1, 1);
+	vulkan::uploader::transition_image_layout(cmd, config.swap_chain_data.normal_image.image, vk::Format::eR16G16B16A16Sfloat, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal, 1, 1);
+	vulkan::uploader::transition_image_layout(cmd, config.swap_chain_data.albedo_image.image, vk::Format::eR8G8B8A8Srgb, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal, 1, 1);
+	vulkan::uploader::transition_image_layout(cmd, config.swap_chain_data.depth_image.image, vk::Format::eD32Sfloat, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilAttachmentOptimal, 1, 1);
 
 	end_single_line_commands(cmd, config);
 
 	const auto& geometry_shader = shader_loader::get_shader("geometry_pass");
-	const auto& layout = shader_loader::get_descriptor_layout(descriptor_layout::standard_3d);
+	const auto layout = shader_loader::get_descriptor_layout(descriptor_layout::standard_3d);
 
-	std::array descriptor_set_layouts = { *layout };
+	std::array descriptor_set_layouts = { layout };
 
-	const auto descriptor_pool = config.descriptor.pool;
+	const auto& descriptor_pool = config.descriptor.pool;
 
 	vk::DescriptorSetAllocateInfo descriptor_alloc_info = {
-		descriptor_pool, static_cast<std::uint32_t>(descriptor_set_layouts.size()), descriptor_set_layouts.data()
+		*descriptor_pool, static_cast<std::uint32_t>(descriptor_set_layouts.size()), descriptor_set_layouts.data()
 	};
 
 	std::vector descriptor_sets = config.device_data.device.allocateDescriptorSets(descriptor_alloc_info);
 
-	g_vertex_descriptor_set = descriptor_sets[0];
+	g_vertex_descriptor_set = std::move(descriptor_sets[0]);
 
 	std::unordered_map<std::string, vk::Buffer> uniform_buffers;
 	std::unordered_map<std::string, vk::DescriptorBufferInfo> buffer_infos;
@@ -99,9 +99,9 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 			vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
 		);
 
-		g_ubo_allocations[block_name] = buffer;
 		uniform_buffers[block_name] = buffer.buffer;
 		buffer_infos[block_name] = vk::DescriptorBufferInfo(buffer.buffer, 0, block.size);
+		g_ubo_allocations[block_name] = std::move(buffer);
 	}
 
 	std::unordered_map<std::string, vk::DescriptorImageInfo> image_infos = {};
@@ -113,29 +113,28 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 	g_pipeline_layout = config.device_data.device.createPipelineLayout({ {}, static_cast<std::uint32_t>(descriptor_set_layouts.size()), descriptor_set_layouts.data() });
 
 	const auto& lighting_shader = shader_loader::get_shader("lighting_pass");
-
-	auto lighting_layout_ptr = lighting_shader.get_descriptor_set_layout();
+	auto lighting_layout = lighting_shader.get_descriptor_set_layout();
 
 	vk::DescriptorSetAllocateInfo lighting_alloc_info{
 		config.descriptor.pool,
 		1,
-		lighting_layout_ptr
+		&lighting_layout
 	};
-	g_lighting_descriptor_set = config.device_data.device.allocateDescriptorSets(lighting_alloc_info)[0];
+	g_lighting_descriptor_set = std::move(config.device_data.device.allocateDescriptorSets(lighting_alloc_info)[0]);
 
 	vk::DescriptorImageInfo position_input_info{
 		nullptr,
-		config.position_image.view,
+		config.swap_chain_data.position_image.view,
 		vk::ImageLayout::eShaderReadOnlyOptimal
 	};
 	vk::DescriptorImageInfo normal_input_info{
 		nullptr,
-		config.normal_image.view,
+		config.swap_chain_data.normal_image.view,
 		vk::ImageLayout::eShaderReadOnlyOptimal
 	};
 	vk::DescriptorImageInfo albedo_input_info{
 		nullptr,
-		config.albedo_image.view,
+		config.swap_chain_data.albedo_image.view,
 		vk::ImageLayout::eShaderReadOnlyOptimal
 	};
 
@@ -182,7 +181,7 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 	vk::PipelineLayoutCreateInfo lighting_pipeline_layout_info{
 		{},
 		1,
-		lighting_layout_ptr
+		&lighting_layout
 	};
 	g_lighting_pipeline_layout = config.device_data.device.createPipelineLayout(lighting_pipeline_layout_info);
 
@@ -254,16 +253,13 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 		&color_blend_state,
 		nullptr,                       
 		g_lighting_pipeline_layout,    
-		config.render_pass,                 
+		config.swap_chain_data.render_pass,
 		1,                             
 		nullptr,
 		-1
 	};
 
-	auto result = config.device_data.device.createGraphicsPipeline(nullptr, lighting_pipeline_info);
-	assert(result.result == vk::Result::eSuccess, "Failed to create lighting‐pass pipeline");
-
-	g_lighting_pipeline = result.value;
+	g_lighting_pipeline = config.device_data.device.createGraphicsPipeline(nullptr, lighting_pipeline_info);
 
 	vk::VertexInputBindingDescription binding_description(0, sizeof(vertex), vk::VertexInputRate::eVertex);
 
@@ -342,10 +338,10 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 		&color_blending, 
 		nullptr, 
 		g_pipeline_layout, 
-		config.render_pass, 
+		config.swap_chain_data.render_pass, 
 		0
 	);
-	g_pipeline = config.device_data.device.createGraphicsPipeline(nullptr, pipeline_info).value;
+	g_pipeline = config.device_data.device.createGraphicsPipeline(nullptr, pipeline_info);
 }
 
 auto gse::renderer3d::initialize_objects() -> void {
@@ -354,7 +350,6 @@ auto gse::renderer3d::initialize_objects() -> void {
 	for (const auto& light_source_component : light_source_components) {
 		for (const auto light : light_source_component.get_lights()) {
 			if (const auto point_light_ptr = dynamic_cast<point_light*>(light); point_light_ptr) {
-				point_light_ptr->get_shadow_map().create({}, {});
 			}
 		}
 	}
@@ -386,7 +381,7 @@ auto gse::renderer3d::render(const vulkan::config& config) -> void {
 	command.bindPipeline(vk::PipelineBindPoint::eGraphics, g_pipeline);
 
 	vulkan::persistent_allocator::mapped_buffer_view<mat4> model_view{
-		.base = g_ubo_allocations.at("model_ubo").allocation.mapped,
+		.base = g_ubo_allocations.at("model_ubo").allocation.mapped(),
 		.stride = model_size,
 	};
 
@@ -419,26 +414,12 @@ auto gse::renderer3d::render(const vulkan::config& config) -> void {
 	command.bindDescriptorSets(
 		vk::PipelineBindPoint::eGraphics,
 		g_lighting_pipeline_layout,
-		0, 1, &g_lighting_descriptor_set,
+		0, 1, &*g_lighting_descriptor_set,
 		0, nullptr
 	);
 	command.draw(3, 1, 0, 0);
 }
 
 auto gse::renderer3d::shutdown(const vulkan::config& config) -> void {
-	config.device_data.device.destroyPipeline(g_pipeline);
-	config.device_data.device.destroyPipelineLayout(g_pipeline_layout);
-	config.device_data.device.destroyRenderPass(config.render_pass);
 
-	for (const auto& light_source_components = registry::get_components<light_source_component>(); const auto& light_source_component : light_source_components) {
-		for (const auto& light : light_source_component.get_lights()) {
-			if (const auto point_light_ptr = dynamic_cast<point_light*>(light); point_light_ptr) {
-				point_light_ptr->get_shadow_map().destroy({});
-			}
-		}
-	}
-
-	for (auto& resource : g_ubo_allocations | std::views::values) {
-		free(config.device_data, resource);
-	}
 }

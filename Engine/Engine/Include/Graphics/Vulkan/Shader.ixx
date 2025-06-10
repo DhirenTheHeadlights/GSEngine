@@ -4,8 +4,8 @@ module;
 
 export module gse.graphics.shader;
 
-import vulkan_hpp;
 import std;
+import vulkan_hpp;
 
 import gse.platform;
 
@@ -28,28 +28,32 @@ namespace gse {
 	public:
 		shader() = default;
 		shader(
-			vk::Device device,
+			const vk::raii::Device& device,
 			const std::filesystem::path& vert_path,
 			const std::filesystem::path& frag_path, 
-			const vk::DescriptorSetLayout* layout = nullptr, 
+			vk::DescriptorSetLayout layout = nullptr, 
 			std::span<vk::DescriptorSetLayoutBinding> bindings = {}
 		);
-		~shader();
 
 		shader(const shader&) = delete;
 		auto operator=(const shader&) -> shader & = delete;
 
 		auto create(
-			vk::Device device, 
+			const vk::raii::Device& device, 
 			const std::filesystem::path& vert_path, 
-			const std::filesystem::path& frag_path, 
-			const vk::DescriptorSetLayout* layout = nullptr, 
+			const std::filesystem::path& frag_path,
+			vk::DescriptorSetLayout layout = nullptr, 
 			std::span<vk::DescriptorSetLayoutBinding> expected_bindings = {}
 		) -> void;
 
 		auto get_shader_stages() const -> std::array<vk::PipelineShaderStageCreateInfo, 2>;
 		auto get_uniform_blocks() const -> const std::unordered_map<std::string, uniform_block>& { return m_uniform_blocks; }
-		auto get_descriptor_set_layout() const -> const vk::DescriptorSetLayout* { return &m_descriptor_set_layout; }
+		auto get_descriptor_set_layout() const -> vk::DescriptorSetLayout {
+			if (m_custom_layout) {
+				return *m_descriptor_set_layout;
+			}
+			return m_shared_layout;
+		}
 		auto get_required_bindings() const -> std::vector<std::string>;
 		auto get_binding(const std::string& name) const -> std::optional<vk::DescriptorSetLayoutBinding>;
 
@@ -60,7 +64,11 @@ namespace gse {
 		) const -> std::vector<vk::WriteDescriptorSet>;
 
 		template <typename T>
-		auto set_uniform(std::string_view full_name, const T& value, const vulkan::persistent_allocator::allocation& alloc) const -> void;
+		auto set_uniform(
+			std::string_view full_name, 
+			const T& value, 
+			const vulkan::persistent_allocator::allocation& alloc
+		) const -> void;
 
 		template <typename T>
 		auto set_uniform_block(
@@ -69,14 +77,13 @@ namespace gse {
 			const vulkan::persistent_allocator::allocation& alloc
 		) const -> void;
 	private:
-		auto create_shader_module(const std::vector<char>& code) const -> vk::ShaderModule;
+		vk::raii::ShaderModule m_vert_module = nullptr;
+		vk::raii::ShaderModule m_frag_module = nullptr;
 
-		vk::ShaderModule m_vert_module;
-		vk::ShaderModule m_frag_module;
+		bool m_custom_layout = false;
+		vk::raii::DescriptorSetLayout m_descriptor_set_layout = nullptr;
+		vk::DescriptorSetLayout m_shared_layout = nullptr;
 
-		vk::Device m_device;
-
-		vk::DescriptorSetLayout m_descriptor_set_layout;
 		std::unordered_map<std::string, vk::DescriptorSetLayoutBinding> m_bindings;
 		std::unordered_map<std::string, uniform_block> m_uniform_blocks;
 	};
@@ -84,26 +91,29 @@ namespace gse {
 	auto read_file(const std::filesystem::path& path) -> std::vector<char>;
 }
 
-gse::shader::shader(const vk::Device device, const std::filesystem::path& vert_path, const std::filesystem::path& frag_path, const vk::DescriptorSetLayout* layout, const std::span<vk::DescriptorSetLayoutBinding> bindings) : m_device(device) {
+gse::shader::shader(const vk::raii::Device& device, const std::filesystem::path& vert_path, const std::filesystem::path& frag_path, vk::DescriptorSetLayout layout, const std::span<vk::DescriptorSetLayoutBinding> bindings) {
 	create(device, vert_path, frag_path, layout, bindings);
 }
 
-gse::shader::~shader() {
-	m_device.destroyShaderModule(m_vert_module);
-	m_device.destroyShaderModule(m_frag_module);
-}
-
 auto gse::shader::create(
-	const vk::Device device,
+	const vk::raii::Device& device,
 	const std::filesystem::path& vert_path,
 	const std::filesystem::path& frag_path,
-	const vk::DescriptorSetLayout* layout,
+	const vk::DescriptorSetLayout layout,
 	const std::span<vk::DescriptorSetLayoutBinding> expected_bindings
 ) -> void {
-	this->m_device = device;
-
 	const auto vert_code = read_file(vert_path);
 	const auto frag_code = read_file(frag_path);
+
+	auto create_shader_module = [&](const std::vector<char>& code) -> vk::raii::ShaderModule {
+		const vk::ShaderModuleCreateInfo create_info{
+			{},
+			code.size() * sizeof(char),
+			reinterpret_cast<const uint32_t*>(code.data())
+		};
+		return device.createShaderModule(create_info);
+		};
+
 	m_vert_module = create_shader_module(vert_code);
 	m_frag_module = create_shader_module(frag_code);
 
@@ -224,7 +234,7 @@ auto gse::shader::create(
 			);
 		}
 
-		m_descriptor_set_layout = *layout;
+		m_shared_layout = layout;
 		return; 
 	}
 
@@ -233,7 +243,8 @@ auto gse::shader::create(
 		static_cast<uint32_t>(reflected_bindings.size()),
 		reflected_bindings.data()
 	};
-	m_descriptor_set_layout = m_device.createDescriptorSetLayout(layout_info);
+	m_descriptor_set_layout = device.createDescriptorSetLayout(layout_info);
+	m_custom_layout = true;
 }
 
 auto gse::shader::get_shader_stages() const -> std::array<vk::PipelineShaderStageCreateInfo, 2> {
@@ -327,14 +338,14 @@ auto gse::shader::set_uniform(std::string_view full_name, const T& value, const 
 
 	const auto& member = *member_it;
 	assert(sizeof(T) <= member.size, std::format("Value size {} exceeds member '{}' size {}", sizeof(T), member_name, member.size));
-	assert(alloc.mapped, std::format("Attempted to set uniform '{}.{}' but memory is not mapped", block_name, member_name));
+	assert(alloc.mapped(), std::format("Attempted to set uniform '{}.{}' but memory is not mapped", block_name, member_name));
 
-	std::memcpy(static_cast<std::byte*>(alloc.mapped) + member.offset, &value, sizeof(T));
+	std::memcpy(static_cast<std::byte*>(alloc.mapped()) + member.offset, &value, sizeof(T));
 }
 
 template <typename T>
 auto gse::shader::set_uniform_block(
-	std::string_view block_name,
+	const std::string_view block_name,
 	const std::unordered_map<std::string, std::span<const std::byte>>& data,
 	const vulkan::persistent_allocator::allocation& alloc
 ) const -> void {
@@ -342,7 +353,7 @@ auto gse::shader::set_uniform_block(
 	assert(block_it != m_uniform_blocks.end(), std::format("Uniform block '{}' not found", block_name));
 
 	const auto& block = block_it->second;
-	assert(alloc.mapped, "Attempted to set uniform block but memory is not mapped");
+	assert(alloc.mapped(), "Attempted to set uniform block but memory is not mapped");
 
 	for (const auto& [name, bytes] : data) {
 		const auto member_it = std::find_if(block.members.begin(), block.members.end(), [&](const auto& m) {
@@ -351,20 +362,10 @@ auto gse::shader::set_uniform_block(
 
 		assert(member_it != block.members.end(), std::format("Uniform member '{}' not found in block '{}'", name, block_name));
 		assert(bytes.size() <= member_it->size, std::format("Data size {} > member size {} for '{}.{}'", bytes.size(), member_it->size, block_name, name));
-		assert(alloc.mapped, std::format("Memory not mapped for '{}.{}'", block_name, name));
+		assert(alloc.mapped(), std::format("Memory not mapped for '{}.{}'", block_name, name));
 
-		std::memcpy(static_cast<std::byte*>(alloc.mapped) + member_it->offset, bytes.data(), bytes.size());
+		std::memcpy(static_cast<std::byte*>(alloc.mapped()) + member_it->offset, bytes.data(), bytes.size());
 	}
-}
-
-auto gse::shader::create_shader_module(const std::vector<char>& code) const -> vk::ShaderModule {
-	const vk::ShaderModuleCreateInfo create_info{
-		{},
-		code.size(),
-		reinterpret_cast<const std::uint32_t*>(code.data())
-	};
-
-	return m_device.createShaderModule(create_info);
 }
 
 auto gse::read_file(const std::filesystem::path& path) -> std::vector<char> {

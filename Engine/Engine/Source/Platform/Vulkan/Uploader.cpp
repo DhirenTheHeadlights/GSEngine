@@ -4,10 +4,11 @@ import std;
 
 import gse.platform.vulkan.config;
 import gse.platform.vulkan.context;
+import gse.platform.vulkan.resources;
 import gse.platform.vulkan.persistent_allocator;
 
 auto gse::vulkan::uploader::upload_image_2d(const config& config, const vk::Image image, const vk::Format format, const std::uint32_t width, const std::uint32_t height, const void* pixel_data, const size_t data_size, const vk::ImageLayout final_layout) -> void {
-    auto staging = persistent_allocator::create_buffer(
+    auto [buffer, allocation] = persistent_allocator::create_buffer(
         config.device_data,
         vk::BufferCreateInfo{
 	        {},
@@ -30,10 +31,9 @@ auto gse::vulkan::uploader::upload_image_2d(const config& config, const vk::Imag
     region.imageSubresource.layerCount = 1;
     region.imageExtent = vk::Extent3D{ width, height, 1 };
 
-    cmd.copyBufferToImage(staging.buffer, image, vk::ImageLayout::eTransferDstOptimal, region);
+    cmd.copyBufferToImage(buffer, image, vk::ImageLayout::eTransferDstOptimal, region);
     transition_image_layout(cmd, image, format, vk::ImageLayout::eTransferDstOptimal, final_layout, 1, 1);
     end_single_line_commands(cmd, config);
-    free(config.device_data, staging);
 }
 
 auto gse::vulkan::uploader::upload_image_layers(const config& config, const vk::Image image, const vk::Format format, const std::uint32_t width, const std::uint32_t height, const std::vector<const void*>& face_data, const size_t bytes_per_face, const vk::ImageLayout final_layout) -> void {
@@ -51,7 +51,7 @@ auto gse::vulkan::uploader::upload_image_layers(const config& config, const vk::
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
     );
 
-    const auto mapped = static_cast<std::byte*>(staging.allocation.mapped);
+    const auto mapped = static_cast<std::byte*>(staging.allocation.mapped());
 
     for (size_t i = 0; i < layer_count; ++i) {
         std::memcpy(mapped + i * bytes_per_face, face_data[i], bytes_per_face);
@@ -75,7 +75,6 @@ auto gse::vulkan::uploader::upload_image_layers(const config& config, const vk::
     cmd.copyBufferToImage(staging.buffer, image, vk::ImageLayout::eTransferDstOptimal, regions);
     transition_image_layout(cmd, image, format, vk::ImageLayout::eTransferDstOptimal, final_layout, 1, layer_count);
     end_single_line_commands(cmd, config);
-    free(config.device_data, staging);
 }
 
 auto gse::vulkan::uploader::upload_image_3d(const config& config, const vk::Image image, const vk::Format format, const std::uint32_t width, const std::uint32_t height, const std::uint32_t depth, const void* pixel_data, const size_t data_size, const vk::ImageLayout final_layout) -> void {
@@ -105,7 +104,6 @@ auto gse::vulkan::uploader::upload_image_3d(const config& config, const vk::Imag
 	cmd.copyBufferToImage(staging.buffer, image, vk::ImageLayout::eTransferDstOptimal, region);
     transition_image_layout(cmd, image, format, vk::ImageLayout::eTransferDstOptimal, final_layout, 1, 1);
     end_single_line_commands(cmd, config);
-    free(config.device_data, staging);
 }
 
 auto gse::vulkan::uploader::upload_mip_mapped_image(const config& config, const vk::Image image, const vk::Format format, const std::span<mip_level_data>& mip_levels, const vk::ImageLayout final_layout) -> void {
@@ -130,7 +128,7 @@ auto gse::vulkan::uploader::upload_mip_mapped_image(const config& config, const 
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
             pixels
         );
-        staging_buffers.push_back(staging);
+        staging_buffers.push_back(std::move(staging));
 
         vk::BufferImageCopy region{};
         region.bufferOffset = 0;
@@ -145,10 +143,6 @@ auto gse::vulkan::uploader::upload_mip_mapped_image(const config& config, const 
 
     transition_image_layout(cmd, image, format, vk::ImageLayout::eTransferDstOptimal, final_layout, mip_count, 1);
     end_single_line_commands(cmd, config);
-
-    for (auto& staging : staging_buffers) {
-        free(config.device_data, staging);
-    }
 }
 
 auto gse::vulkan::uploader::transition_image_layout(const vk::CommandBuffer cmd, const vk::Image image, const vk::Format format, const vk::ImageLayout old_layout, const vk::ImageLayout new_layout, const std::uint32_t mip_levels, const std::uint32_t layer_count) -> void {
