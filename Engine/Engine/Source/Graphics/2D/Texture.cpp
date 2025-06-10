@@ -40,7 +40,7 @@ auto gse::texture::load(const vulkan::config& config) -> void {
 
 	m_texture_image = vulkan::persistent_allocator::create_image(config.device_data, image_info, vk::MemoryPropertyFlagBits::eDeviceLocal, view_info);
 
-    const vk::CommandBuffer command_buffer = begin_single_line_commands(config);
+    const auto command_buffer = begin_single_line_commands(config);
 
     vk::ImageMemoryBarrier barrier(
         {},
@@ -56,9 +56,9 @@ auto gse::texture::load(const vulkan::config& config) -> void {
         vk::PipelineStageFlagBits::eTopOfPipe,
         vk::PipelineStageFlagBits::eTransfer,
         {},
-        0, nullptr,
-        0, nullptr,
-        1, &barrier
+        nullptr,
+        nullptr,
+        barrier
     );
 
     const vk::BufferImageCopy region(
@@ -72,7 +72,7 @@ auto gse::texture::load(const vulkan::config& config) -> void {
         staging_buffer.buffer,
         m_texture_image.image,
         vk::ImageLayout::eTransferDstOptimal,
-        1, &region
+        region
     );
 
     barrier = vk::ImageMemoryBarrier(
@@ -89,14 +89,12 @@ auto gse::texture::load(const vulkan::config& config) -> void {
         vk::PipelineStageFlagBits::eTransfer,
         vk::PipelineStageFlagBits::eFragmentShader,
         {},
-        0, nullptr,
-        0, nullptr,
-        1, &barrier
+        nullptr,
+        nullptr,
+        barrier
     );
 
     end_single_line_commands(command_buffer, config);
-
-	free(config.device_data, staging_buffer);
 
     constexpr vk::SamplerCreateInfo sampler_info(
         {},
@@ -113,7 +111,7 @@ auto gse::texture::load(const vulkan::config& config) -> void {
     m_texture_sampler = config.device_data.device.createSampler(sampler_info);
 }
 
-auto gse::texture::load_from_memory(vulkan::config& config, const std::vector<std::byte>& data, const unitless::vec2u size, const std::uint32_t channels) -> void {
+auto gse::texture::load_from_memory(const vulkan::config& config, const std::vector<std::byte>& data, const unitless::vec2u size, const std::uint32_t channels) -> void {
     m_image_data = stb::image::data {
 		.path = "",
 		.size = size,

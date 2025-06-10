@@ -22,7 +22,7 @@ import gse.platform;
 export namespace gse::renderer2d {
     auto initialize(vulkan::config& config) -> void;
     auto render(const vulkan::config& config) -> void;
-    auto shutdown(vulkan::config::device_config device_data) -> void;
+    auto shutdown(const vulkan::config::device_config& device_data) -> void;
 
     auto draw_quad(const vec2<length>& position, const vec2<length>& size, const unitless::vec4& color) -> void;
     auto draw_quad(const vec2<length>& position, const vec2<length>& size, const texture& texture) -> void;
@@ -31,18 +31,16 @@ export namespace gse::renderer2d {
     auto draw_text(const font& font, const std::string& text, const vec2<length>& position, float scale, const unitless::vec4& color) -> void;
 }
 
-vk::Pipeline            g_pipeline;
-vk::PipelineLayout      g_pipeline_layout;
+vk::raii::Pipeline            g_pipeline = nullptr;
+vk::raii::PipelineLayout      g_pipeline_layout = nullptr;
 
 gse::vulkan::persistent_allocator::buffer_resource g_vertex_buffer;
 gse::vulkan::persistent_allocator::buffer_resource g_index_buffer;
 
-vk::Pipeline             g_msdf_pipeline;
-vk::PipelineLayout       g_msdf_pipeline_layout;
-vk::DescriptorSetLayout  g_msdf_descriptor_set_layout;
-vk::DescriptorPool       g_msdf_descriptor_pool;
+vk::raii::Pipeline             g_msdf_pipeline = nullptr;
+vk::raii::PipelineLayout       g_msdf_pipeline_layout = nullptr;
 
-gse::mat4                g_projection;
+gse::mat4 g_projection;
 
 auto gse::renderer2d::initialize(vulkan::config& config) -> void {
     vk::PushConstantRange push_constant_range(
@@ -50,7 +48,9 @@ auto gse::renderer2d::initialize(vulkan::config& config) -> void {
         0, sizeof(unitless::vec2) * 2 + sizeof(unitless::vec4) * 2
     );
 
-    g_pipeline_layout = config.device_data.device.createPipelineLayout({ {}, 1, shader_loader::get_descriptor_layout(descriptor_layout::forward_2d), 1, &push_constant_range });
+	auto layout = shader_loader::get_descriptor_layout(descriptor_layout::forward_2d);
+
+    g_pipeline_layout = config.device_data.device.createPipelineLayout({ {}, 1, &layout, 1, &push_constant_range });
 
     const auto& element_shader = shader_loader::get_shader("ui_2d_shader");
 
@@ -109,11 +109,11 @@ auto gse::renderer2d::initialize(vulkan::config& config) -> void {
         &color_blending,
         nullptr,
         g_pipeline_layout,
-        config.render_pass,
+        config.swap_chain_data.render_pass,
         2
     );
 
-    g_pipeline = config.device_data.device.createGraphicsPipeline({}, pipeline_info).value;
+    g_pipeline = config.device_data.device.createGraphicsPipeline(nullptr, pipeline_info);
 
     constexpr vertex vertices[4] = {
         {.position = {0.0f, 1.0f}, .texture_coordinate = {0.0f, 1.0f}}, // Top-left
@@ -176,7 +176,7 @@ auto gse::renderer2d::initialize(vulkan::config& config) -> void {
 
     vk::PipelineVertexInputStateCreateInfo msdf_vertex_input_info({}, 1, &binding_description, static_cast<std::uint32_t>(attribute_descriptions.size()), attribute_descriptions.data());
 
-    vk::PipelineLayoutCreateInfo pipeline_layout_info({}, 1, shader_loader::get_descriptor_layout(descriptor_layout::forward_2d), 1, &msdf_push_constant_range);
+    vk::PipelineLayoutCreateInfo pipeline_layout_info({}, 1, &layout, 1, &msdf_push_constant_range);
     g_msdf_pipeline_layout = config.device_data.device.createPipelineLayout(pipeline_layout_info);
 
     vk::PipelineColorBlendAttachmentState blend_state(
@@ -212,23 +212,11 @@ auto gse::renderer2d::initialize(vulkan::config& config) -> void {
         &msdf_color_blending,
         nullptr,
         g_msdf_pipeline_layout,
-        config.render_pass
+        config.swap_chain_data.render_pass
     );
 	msdf_pipeline_info.subpass = 2;
 
-    g_msdf_pipeline = config.device_data.device.createGraphicsPipeline({}, msdf_pipeline_info).value;
-
-    vk::DescriptorSetLayoutBinding texture_binding(
-        0, vk::DescriptorType::eCombinedImageSampler, 1,
-        vk::ShaderStageFlagBits::eFragment
-    );
-
-    vk::DescriptorSetLayoutCreateInfo layout_info({}, 1, &texture_binding);
-    g_msdf_descriptor_set_layout = config.device_data.device.createDescriptorSetLayout(layout_info);
-
-    vk::DescriptorPoolSize pool_size(vk::DescriptorType::eCombinedImageSampler, 100);  // Adjust pool size as needed
-    vk::DescriptorPoolCreateInfo pool_info({}, 100, 1, &pool_size);
-    g_msdf_descriptor_pool = config.device_data.device.createDescriptorPool(pool_info);
+    g_msdf_pipeline = config.device_data.device.createGraphicsPipeline(nullptr, msdf_pipeline_info);
 
     debug::initialize_imgui(config);
 }
@@ -239,16 +227,7 @@ auto gse::renderer2d::render(const vulkan::config& config) -> void {
     debug::render_imgui(config.frame_context.command_buffer);
 }
 
-auto gse::renderer2d::shutdown(const vulkan::config::device_config device_data) -> void {
-    device_data.device.destroyPipeline(g_pipeline);
-    device_data.device.destroyPipelineLayout(g_pipeline_layout);
-    free(device_data, g_vertex_buffer);
-    free(device_data, g_index_buffer);
-
-    device_data.device.destroyPipeline(g_msdf_pipeline);
-    device_data.device.destroyPipelineLayout(g_msdf_pipeline_layout);
-    device_data.device.destroyDescriptorSetLayout(g_msdf_descriptor_set_layout);
-    device_data.device.destroyDescriptorPool(g_msdf_descriptor_pool);
+auto gse::renderer2d::shutdown(const vulkan::config::device_config& device_data) -> void {
 }
 
 auto render_quad(const gse::vec2<gse::length>& position, const gse::vec2<gse::length>& size, const gse::unitless::vec4* color, const gse::texture* texture, const gse::unitless::vec4& uv_rect = { 0.0f, 0.0f, 1.0f, 1.0f }) -> void {

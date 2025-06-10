@@ -30,7 +30,7 @@ export namespace gse {
 	};
 
     struct mesh {
-		mesh(const mesh_data& data) : vertices(std::move(data.vertices)), indices(std::move(data.indices)), material(data.material) {}
+	    explicit mesh(const mesh_data& data) : vertices(std::move(data.vertices)), indices(std::move(data.indices)), material(data.material) {}
 		mesh(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices, material_handle material = {});
 
         mesh(const mesh&) = delete;
@@ -39,15 +39,12 @@ export namespace gse {
 		auto operator=(mesh&& other) noexcept -> mesh& = delete;
 
         auto initialize(const vulkan::config& config) -> void;
-        auto destroy(const vulkan::config::device_config config) -> void;
 
         auto bind(vk::CommandBuffer command_buffer) const -> void;
         auto draw(vk::CommandBuffer command_buffer) const -> void;
 
 		vulkan::persistent_allocator::buffer_resource vertex_buffer;
         vulkan::persistent_allocator::buffer_resource index_buffer;
-
-		vulkan::config::device_config device_config;
 
         std::vector<vertex> vertices;
         std::vector<std::uint32_t> indices;
@@ -64,7 +61,7 @@ gse::mesh::mesh(const std::vector<vertex>& vertices, const std::vector<std::uint
 	: vertices(vertices), indices(indices), material(material) {}
 
 gse::mesh::mesh(mesh&& other) noexcept
-    : vertex_buffer(other.vertex_buffer), index_buffer(other.index_buffer),
+    : vertex_buffer(std::move(other.vertex_buffer)), index_buffer(std::move(other.index_buffer)),
     vertices(std::move(other.vertices)), indices(std::move(other.indices)), material(nullptr),
     center_of_mass(other.center_of_mass) {
     other.vertex_buffer = {};
@@ -112,11 +109,6 @@ auto gse::mesh::initialize(const vulkan::config& config) -> void {
     // No copy commands or staging buffers are needed for this test.
 
     this->center_of_mass = calculate_center_of_mass(indices, vertices);
-}
-
-auto gse::mesh::destroy(const vulkan::config::device_config config) -> void {
-	free(config, vertex_buffer);
-	free(config, index_buffer);
 }
 
 auto gse::mesh::bind(const vk::CommandBuffer command_buffer) const -> void {

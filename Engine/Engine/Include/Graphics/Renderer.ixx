@@ -25,47 +25,48 @@ namespace gse::renderer {
 	auto end_frame() -> void;
 }
 
-gse::vulkan::config g_config;
+std::optional<gse::vulkan::config> g_config;
 
 auto gse::renderer::initialize() -> void {
-	g_config = platform::initialize();
-	shader_loader::load_shaders(g_config.device_data.device);
-	renderer3d::initialize(g_config);
-	renderer2d::initialize(g_config);
+	g_config.emplace(platform::initialize());
+
+	shader_loader::load_shaders(g_config->device_data.device);
+	renderer3d::initialize(*g_config);
+	renderer2d::initialize(*g_config);
 	gui::initialize();
 }
 
 auto gse::renderer::begin_frame() -> void {
-	texture_loader::load_queued_textures(g_config);
-	model_loader::load_queued_models(g_config);
+	texture_loader::load_queued_textures(*g_config);
+	model_loader::load_queued_models(*g_config);
 	window::begin_frame();
-	vulkan::begin_frame(window::get_window(), g_config);
+	vulkan::begin_frame(window::get_window(), *g_config);
 }
 
 auto gse::renderer::update() -> void {
-	window::update(); 
+	window::update();
 	gui::update();
 }
 
 auto gse::renderer::render(const std::function<void()>& in_frame) -> void {
 	begin_frame();
-	renderer3d::render(g_config);
-	g_config.frame_context.command_buffer.nextSubpass(vk::SubpassContents::eInline);
-	renderer2d::render(g_config);
+	renderer3d::render(*g_config);
+	g_config->frame_context.command_buffer.nextSubpass(vk::SubpassContents::eInline);
+	renderer2d::render(*g_config);
 	gui::render();
 	in_frame();
 	end_frame();
 }
 
 auto gse::renderer::end_frame() -> void {
-	vulkan::end_frame(g_config);
+	vulkan::end_frame(window::get_window(), *g_config);
 	window::end_frame();
 	vulkan::transient_allocator::end_frame();
 }
 
 auto gse::renderer::shutdown() -> void {
-	renderer2d::shutdown(g_config.device_data);
-	renderer3d::shutdown(g_config);
-	shader_loader::destroy_shaders(g_config.device_data.device);
-	platform::shutdown(g_config); 
+	renderer2d::shutdown(g_config->device_data);
+	renderer3d::shutdown(*g_config);
+	platform::shutdown(*g_config);
+	g_config.reset();
 }

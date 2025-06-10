@@ -7,22 +7,7 @@ auto gse::cube_map::get_image_resource() const -> const vulkan::persistent_alloc
     return m_image_resource;
 }
 
-gse::cube_map::~cube_map() {
-    assert(!m_initialized, "cube_map::~cube_map(): GPU resources were not destroyed. Call destroy(config).");
-}
-
-auto gse::cube_map::destroy(const vulkan::config& config) -> void {
-    if (!m_initialized) return;
-
-    config.device_data.device.destroySampler(m_sampler);
-    free(config.device_data, m_image_resource);
-
-    m_sampler = nullptr;
-    m_image_resource = {};
-    m_initialized = false;
-}
-
-auto gse::cube_map::create(vulkan::config& config, const std::array<std::filesystem::path, 6>& face_paths) -> void {
+auto gse::cube_map::create(const vulkan::config& config, const std::array<std::filesystem::path, 6>& face_paths) -> void {
     auto faces = stb::image::load_cube_faces(face_paths);
 
     const vk::ImageCreateInfo image_info(
