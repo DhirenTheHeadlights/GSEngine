@@ -39,12 +39,12 @@ auto gse::broad_phase_collision::check_collision(physics::collision_component& d
 	const auto& box1 = dynamic_object_collision_component.bounding_box;
 	const auto& box2 = other_collision_component.bounding_box;
 
-	if (check_future_collision(box1, box1_motion_component, box2)) {
+	//if (check_future_collision(box1, box1_motion_component, box2)) {
 		if (dynamic_object_collision_component.resolve_collisions) {
 			narrow_phase_collision::resolve_collision(box1_motion_component, dynamic_object_collision_component, box2_motion_component, other_collision_component);
 
 		}
-	}
+	//}
 }
 
 auto gse::broad_phase_collision::update() -> void {

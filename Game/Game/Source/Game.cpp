@@ -71,10 +71,10 @@ struct scene1_hook final : gse::hook<gse::scene> {
 
 
 
-		//const std::uint32_t iron_man = gse::registry::create_entity();
-		//gse::registry::add_entity_hook(iron_man, std::make_unique<iron_man_hook>());
-		//m_owner->add_entity(iron_man, "Iron Man");
-		//const std::uint32_t raw_backpack = gse::registry::create_entity();
+		const std::uint32_t iron_man = gse::registry::create_entity();
+		gse::registry::add_entity_hook(iron_man, std::make_unique<iron_man_hook>());
+		m_owner->add_entity(iron_man, "Iron Man");
+		const std::uint32_t raw_backpack = gse::registry::create_entity();
 		//gse::registry::add_entity_hook(raw_backpack, std::make_unique<raw_backpack_hook>());
 		//m_owner->add_entity(raw_backpack, "Backpack");
 		//const std::uint32_t black_knight = gse::registry::create_entity();

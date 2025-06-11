@@ -29,7 +29,8 @@ export namespace gse {
 		std::vector<bounding_box_mesh> bounding_box_meshes;
 
 		auto calculate_center_of_mass() -> void;
-		vec3<length> center_of_mass;
+		auto global_center_of_mass_position() const -> vec3<length>;
+		vec3<length> relative_center_of_mass;
 
 		bool render = true;
 		bool render_bounding_boxes = true;
@@ -70,5 +71,5 @@ auto gse::render_component::calculate_center_of_mass() -> void {
 		}
 	}
 
-	center_of_mass = sum / static_cast<float>(number_of_meshes);
+	relative_center_of_mass = sum / static_cast<float>(number_of_meshes);
 }

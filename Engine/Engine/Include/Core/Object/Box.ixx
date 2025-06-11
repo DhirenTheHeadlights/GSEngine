@@ -113,12 +113,14 @@ export struct box_mesh_hook final : gse::hook<gse::entity> {
     }
 
     auto render() -> void override {
+        
         gse::debug::add_imgui_callback([this] {
             auto& render_component = gse::registry::get_component<gse::render_component>(owner_id);
             ImGui::Begin(gse::registry::get_entity_name(owner_id).data());
             ImGui::SliderFloat3("Position", &gse::registry::get_component<gse::physics::motion_component>(owner_id).current_position.x.as_default_unit(), -1000.f, 1000.f);
             ImGui::Text("Colliding: %s", gse::registry::get_component<gse::physics::collision_component>(owner_id).collision_information.colliding ? "true" : "false");
-            ImGui::Text("Center of Mass: %f, %f, %f", render_component.center_of_mass.x.as_default_unit(), render_component.center_of_mass.y.as_default_unit(), render_component.center_of_mass.z.as_default_unit());
+            gse::vec3<gse::length> current_center_of_mass = render_component.relative_center_of_mass + gse::registry::get_component<gse::physics::motion_component>(owner_id).current_position;
+            ImGui::Text("Center of Mass: %f, %f, %f", current_center_of_mass.x.as_default_unit(), current_center_of_mass.y.as_default_unit(), current_center_of_mass.z.as_default_unit());
             ImGui::End();
             });
     }

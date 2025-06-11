@@ -29,14 +29,14 @@ auto gse::physics::apply_force(motion_component& component, const vec3<force>& f
 	vec3<length> center_of_mass;
 
 	if (const auto* render_component = gse::registry::get_component_ptr<gse::render_component>(component.parent_id); render_component) {
-		/*center_of_mass = render_component->center_of_mass;*/
-		center_of_mass = component.current_position;
+		center_of_mass = render_component->relative_center_of_mass + component.current_position;
 	}
 	else {
 		center_of_mass = component.current_position;
 	}
 
 	component.current_torque += cross(world_force_position - center_of_mass, force);
+
 	component.current_acceleration += acceleration;
 }
 
@@ -133,21 +133,35 @@ auto update_position(gse::physics::motion_component& component) -> void {
 }
 
 auto update_rotation(gse::physics::motion_component& component) -> void {
+	// 1) Grab a fixed dt
 	const gse::time dt = gse::main_clock::get_constant_update_time();
 
-	const auto alpha = component.current_torque / component.moment_of_inertia;
+	// 2) Turn current_torque into an angular?acceleration increment
+	//    (for a uniform inertia scalar; for a full tensor use get_inverse_inertia_tensor_world())
+	component.angular_acceleration +=
+		component.current_torque / component.moment_of_inertia;
 
-	component.angular_velocity += alpha * dt;
+	// 3) Integrate angular velocity
+	component.angular_velocity += component.angular_acceleration * dt;
 
+	// 4) Damping to bleed off spin
+	constexpr float angular_velocity_damping = 0.98f;
+	component.angular_velocity *= angular_velocity_damping;
+
+	// 5) Turn ? ? quaternion derivative:  
+	//    ?_quat = (0, ??, ??, ?_z),  dQ = ½ * ?_quat * Q
+	auto w = component.angular_velocity
+		.as<gse::units::radians_per_second>();
+	const gse::quat omega_quat{ 0.f, w.x, w.y, w.z };
+	const gse::quat delta_q = 0.5f * omega_quat * component.orientation;
+
+	// 6) Integrate orientation and normalize
+	component.orientation += delta_q * dt.as_default_unit();
+	component.orientation = gse::normalize(component.orientation);
+
+	// 7) Clear accumulators for the next frame
 	component.current_torque = {};
-
-	const gse::unitless::vec3 angular_velocity = component.angular_velocity.as<gse::units::radians_per_second>();
-	const gse::quat omega_quaternion = { 0.f, angular_velocity.x, angular_velocity.y, angular_velocity.z };
-
-	// dQ = 0.5 * omega_quaternion * orientation
-	const gse::quat delta_quaternion = 0.5f * omega_quaternion * component.orientation;
-	component.orientation += delta_quaternion * dt.as_default_unit();
-	component.orientation = normalize(component.orientation);
+	component.angular_acceleration = {};
 }
 
 auto update_obb(const gse::physics::motion_component& motion_component) {

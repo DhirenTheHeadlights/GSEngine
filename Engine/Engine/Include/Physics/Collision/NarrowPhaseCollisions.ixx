@@ -147,6 +147,9 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
     if (!sat_collision(object_collision_component.oriented_bounding_box, other_collision_component.oriented_bounding_box, object_collision_component.collision_information.collision_normal, object_collision_component.collision_information.penetration)) {
         return;
     }
+    if (object_motion_component->position_locked){
+        return;
+    }
 
     object_collision_component.collision_information.colliding = true;
 
@@ -180,7 +183,7 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
     const auto correction_a = collision_normal * meters(corrected_penetration * percentage_a);
 	const auto correction_b = collision_normal * meters(corrected_penetration * percentage_b);
     object_motion_component->current_position -= correction_a;
-	other_motion_component->current_position += correction_b;
+    if (other_motion_component->position_locked) { other_motion_component->current_position += correction_b; }
 
 
     if (collision_normal.y < 0.f) { // Normal here is inverted because the collision normal points from the other object to this object
@@ -215,7 +218,7 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
     );
 
     /////// FOR USE WITH NON-STATIC OTHER OBJECT; REQUIRES OBJECT B MOTION COMPONENT
-    const float rot_term_b = dot(
+    const float rot_term_b = other_motion_component->position_locked ? 0.f : dot(
         collision_normal,
         cross(inv_i_b * rcross_b, r_b.as<units::meters>())
     );
@@ -233,17 +236,16 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
 
     if (relative_velocity_along_normal < 0.0f) {
         const float j = -(1.f + restitution) * relative_velocity_along_normal / denom;
-        auto torque_impulse_a = cross(r_a.as<units::meters>(), collision_normal * j);
-		auto torque_impulse_b = cross(r_b.as<units::meters>(), collision_normal * j);
-        auto delta_omega_a = vec3<angular_velocity>(inv_i_a * torque_impulse_a);
-		auto delta_omega_b = vec3<angular_velocity>(inv_i_b * torque_impulse_b);
-
+        
+        auto torque_impulse_a = gse::vec3<gse::torque>(cross(r_a.as<units::meters>(), collision_normal * j));
+        object_motion_component->current_torque += torque_impulse_a;
         object_motion_component->current_velocity += vec3<velocity>(collision_normal * (j * inv_mass_a));
-		object_motion_component->angular_velocity += delta_omega_a;
 
         if (!other_motion_component->position_locked) {
+            auto torque_impulse_b = gse::vec3<gse::torque>(cross(r_b.as<units::meters>(), collision_normal * j));
+            other_motion_component->current_torque -= torque_impulse_b;
             other_motion_component->current_velocity -= vec3<velocity>(collision_normal * (j * inv_mass_b));
-            other_motion_component->angular_velocity -= delta_omega_b;
+
         }
 
 

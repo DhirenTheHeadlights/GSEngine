@@ -33,6 +33,7 @@ export namespace gse {
 		auto set_material(const std::string& material_name) -> void;
 		auto set_all_mesh_textures(const std::vector<std::uint32_t>& texture_ids) -> void;
 
+		auto get_position() const->vec3<length>;
 		auto get_render_queue_entries() const -> const std::vector<render_queue_entry>&;
 		auto get_model_id() const->id*;
 	private:
