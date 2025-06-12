@@ -145,7 +145,7 @@ auto update_rotation(gse::physics::motion_component& component) -> void {
 	component.angular_velocity += component.angular_acceleration * dt;
 
 	// 4) Damping to bleed off spin
-	constexpr float angular_velocity_damping = 0.98f;
+	constexpr float angular_velocity_damping = .98f;
 	component.angular_velocity *= angular_velocity_damping;
 
 	// 5) Turn ? ? quaternion derivative:  

@@ -26,7 +26,7 @@ auto gse::broad_phase_collision::check_collision(const axis_aligned_bounding_box
 }
 
 auto gse::broad_phase_collision::check_future_collision(const axis_aligned_bounding_box& dynamic_box, const physics::motion_component* dynamic_motion_component, const axis_aligned_bounding_box& other_box) -> bool {
-	axis_aligned_bounding_box expanded_box = dynamic_box;							// Create a copy
+	axis_aligned_bounding_box expanded_box = dynamic_box;// Create a copy
 	physics::motion_component temp_component = *dynamic_motion_component;
 	update_object(temp_component);													// Update the entity's position in the direction of its current_velocity
 	expanded_box.set_position(temp_component.current_position);						// Set the expanded box's position to the updated position
@@ -39,12 +39,16 @@ auto gse::broad_phase_collision::check_collision(physics::collision_component& d
 	const auto& box1 = dynamic_object_collision_component.bounding_box;
 	const auto& box2 = other_collision_component.bounding_box;
 
-	//if (check_future_collision(box1, box1_motion_component, box2)) {
+	if (check_future_collision(box1, box1_motion_component, box2)) {
 		if (dynamic_object_collision_component.resolve_collisions) {
-			narrow_phase_collision::resolve_collision(box1_motion_component, dynamic_object_collision_component, box2_motion_component, other_collision_component);
-
+			if (box1_motion_component->position_locked || box2_motion_component->position_locked) {
+				narrow_phase_collision::resolve_static_collision(box1_motion_component, dynamic_object_collision_component, other_collision_component);
+			}
+			else {
+				narrow_phase_collision::resolve_dynamic_collision(box1_motion_component, dynamic_object_collision_component, box2_motion_component, other_collision_component);
+			}
 		}
-	//}
+	}
 }
 
 auto gse::broad_phase_collision::update() -> void {
