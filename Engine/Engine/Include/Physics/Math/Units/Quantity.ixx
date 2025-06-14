@@ -103,6 +103,8 @@ namespace gse::internal {
 			result.m_val = result.template get_converted_value<UnitType>(value);
 			return result;
 		}
+
+        constexpr auto operator<=>(const quantity_t&) const = default;
     protected:
         template <is_unit UnitType>
 		constexpr auto get_converted_value(ArithmeticType value) const -> ArithmeticType {
@@ -167,13 +169,6 @@ export namespace gse::internal {
     template <is_quantity T> constexpr auto operator-=(T& lhs, const T& rhs) -> T&;
     template <is_quantity T, is_arithmetic U> constexpr auto operator*=(T& lhs, const U& rhs) -> T&;
     template <is_quantity T, is_arithmetic U> constexpr auto operator/=(T& lhs, const U& rhs) -> T&;
-
-    template <is_quantity T> constexpr auto operator==(const T& lhs, const T& rhs) -> bool;
-    template <is_quantity T> constexpr auto operator!=(const T& lhs, const T& rhs) -> bool;
-	template <is_quantity T> constexpr auto operator<(const T& lhs, const T& rhs) -> bool;
-	template <is_quantity T> constexpr auto operator>(const T& lhs, const T& rhs) -> bool;
-	template <is_quantity T> constexpr auto operator<=(const T& lhs, const T& rhs) -> bool;
-	template <is_quantity T> constexpr auto operator>=(const T& lhs, const T& rhs) -> bool;
 
     template <is_quantity T> constexpr auto operator-(const T& value) -> T;
 }
@@ -250,36 +245,6 @@ namespace gse::internal {
     constexpr auto internal::operator/=(T& lhs, const U& rhs) -> T& {
         lhs.set<T::default_unit>(lhs.as_default_unit() / rhs);
         return lhs;
-    }
-
-    template <is_quantity T>
-    constexpr auto internal::operator==(const T& lhs, const T& rhs) -> bool {
-        return lhs.as_default_unit() == rhs.as_default_unit();
-    }
-
-    template <is_quantity T>
-    constexpr auto internal::operator!=(const T& lhs, const T& rhs) -> bool {
-        return lhs.as_default_unit() != rhs.as_default_unit();
-    }
-
-    template <is_quantity T>
-    constexpr auto internal::operator<(const T& lhs, const T& rhs) -> bool {
-        return lhs.as_default_unit() < rhs.as_default_unit();
-    }
-
-    template <is_quantity T>
-    constexpr auto internal::operator>(const T& lhs, const T& rhs) -> bool {
-        return lhs.as_default_unit() > rhs.as_default_unit();
-    }
-
-    template <is_quantity T>
-    constexpr auto internal::operator<=(const T& lhs, const T& rhs) -> bool {
-        return lhs.as_default_unit() <= rhs.as_default_unit();
-    }
-
-    template <is_quantity T>
-    constexpr auto internal::operator>=(const T& lhs, const T& rhs) -> bool {
-        return lhs.as_default_unit() >= rhs.as_default_unit();
     }
 
     template <is_quantity T>

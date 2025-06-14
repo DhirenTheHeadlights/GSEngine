@@ -25,6 +25,10 @@ namespace gse {
 			std::uint32_t size = 0;
 			std::vector<uniform_member> members;
 		};
+		struct binding {
+			vk::DescriptorSetLayoutBinding layout_binding;
+			std::uint32_t set;
+		};
 	public:
 		shader() = default;
 		shader(
@@ -76,6 +80,13 @@ namespace gse {
 			const std::unordered_map<std::string, std::span<const std::byte>>& data,
 			const vulkan::persistent_allocator::allocation& alloc
 		) const -> void;
+
+		auto push(
+			vk::CommandBuffer command,
+			vk::PipelineLayout layout,
+			std::string_view name,
+			const vk::DescriptorImageInfo& image_info
+		) const -> void;
 	private:
 		vk::raii::ShaderModule m_vert_module = nullptr;
 		vk::raii::ShaderModule m_frag_module = nullptr;
@@ -84,14 +95,14 @@ namespace gse {
 		vk::raii::DescriptorSetLayout m_descriptor_set_layout = nullptr;
 		vk::DescriptorSetLayout m_shared_layout = nullptr;
 
-		std::unordered_map<std::string, vk::DescriptorSetLayoutBinding> m_bindings;
+		std::unordered_map<std::string, binding> m_bindings;
 		std::unordered_map<std::string, uniform_block> m_uniform_blocks;
 	};
 
 	auto read_file(const std::filesystem::path& path) -> std::vector<char>;
 }
 
-gse::shader::shader(const vk::raii::Device& device, const std::filesystem::path& vert_path, const std::filesystem::path& frag_path, vk::DescriptorSetLayout layout, const std::span<vk::DescriptorSetLayoutBinding> bindings) {
+gse::shader::shader(const vk::raii::Device& device, const std::filesystem::path& vert_path, const std::filesystem::path& frag_path, const vk::DescriptorSetLayout layout, const std::span<vk::DescriptorSetLayoutBinding> bindings) {
 	create(device, vert_path, frag_path, layout, bindings);
 }
 
@@ -136,7 +147,10 @@ auto gse::shader::create(
 				static_cast<vk::ShaderStageFlagBits>(module.shader_stage)
 			);
 
-			m_bindings[b->name] = reflected_bindings.back();
+			m_bindings[b->name] = {
+				.layout_binding = reflected_bindings.back(),
+				.set = b->set
+			};
 		}
 
 		spvReflectDestroyShaderModule(&module);
@@ -268,7 +282,7 @@ auto gse::shader::get_shader_stages() const -> std::array<vk::PipelineShaderStag
 auto gse::shader::get_required_bindings() const -> std::vector<std::string> {
 	std::vector<std::string> required_bindings;
 	for (const auto& [name, binding] : m_bindings) {
-		if (binding.descriptorType == vk::DescriptorType::eStorageBuffer) {
+		if (binding.layout_binding.descriptorType == vk::DescriptorType::eStorageBuffer) {
 			required_bindings.push_back(name);
 		}
 	}
@@ -277,7 +291,7 @@ auto gse::shader::get_required_bindings() const -> std::vector<std::string> {
 
 auto gse::shader::get_binding(const std::string& name) const -> std::optional<vk::DescriptorSetLayoutBinding> {
 	if (const auto it = m_bindings.find(name); it != m_bindings.end()) {
-		return it->second;
+		return it->second.layout_binding;
 	}
 	return std::nullopt;
 }
@@ -293,20 +307,17 @@ auto gse::shader::get_descriptor_writes(
 	for (const auto& [name, binding] : m_bindings) {
 		if (auto it = buffer_infos.find(name); it != buffer_infos.end()) {
 			writes.emplace_back(
-				set, binding.binding, 0, binding.descriptorCount, binding.descriptorType,
+				set, binding.set, 0, binding.layout_binding.descriptorCount, binding.layout_binding.descriptorType,
 				nullptr, &it->second, nullptr
 			);
 			used_keys.insert(name);
 		}
 		else if (auto it2 = image_infos.find(name); it2 != image_infos.end()) {
 			writes.emplace_back(
-				set, binding.binding, 0, binding.descriptorCount, binding.descriptorType,
+				set, binding.set, 0, binding.layout_binding.descriptorCount, binding.layout_binding.descriptorType,
 				&it2->second, nullptr, nullptr
 			);
 			used_keys.insert(name);
-		}
-		else {
-			assert(false, std::format("Missing required binding: '{}'", name));
 		}
 	}
 
@@ -366,6 +377,32 @@ auto gse::shader::set_uniform_block(
 
 		std::memcpy(static_cast<std::byte*>(alloc.mapped()) + member_it->offset, bytes.data(), bytes.size());
 	}
+}
+
+auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout layout, std::string_view name, const vk::DescriptorImageInfo& image_info) const -> void {
+	const auto it = m_bindings.find(std::string(name));
+
+	assert(it != m_bindings.end(), std::format("Binding '{}' not found in shader", name));
+
+	const auto& [binding, set] = it->second;
+
+	assert(binding.descriptorType == vk::DescriptorType::eCombinedImageSampler, std::format("Binding '{}' is not a combined image sampler", name));
+
+	command.pushDescriptorSetKHR(
+		vk::PipelineBindPoint::eGraphics,
+		layout,
+		set,
+		{
+			vk::WriteDescriptorSet{
+				{},
+				binding.binding,
+				0,
+				1,
+				binding.descriptorType,
+				&image_info,
+			}
+		}
+	);
 }
 
 auto gse::read_file(const std::filesystem::path& path) -> std::vector<char> {

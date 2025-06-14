@@ -183,16 +183,14 @@ auto gse::input::internal::update_button(button& button) -> void {
 		button.released = false;
 	}
 
-	if (button.pressed)
-	{
+	if (button.pressed) {
 		button.typed = true;
 		button.typed_time = 0.48f;
 	}
 	else if (button.held) {
 		button.typed_time -= main_clock::get_raw_delta_time().as<units::seconds>();
 
-		if (button.typed_time < 0.f)
-		{
+		if (button.typed_time < 0.f) {
 			button.typed_time += 0.07f;
 			button.typed = true;
 		}

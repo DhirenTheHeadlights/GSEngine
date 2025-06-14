@@ -18,6 +18,7 @@ import gse.graphics.mesh;
 import gse.graphics.model;
 import gse.graphics.render_component;
 import gse.graphics.shader_loader;
+import gse.graphics.texture_loader;
 import gse.graphics.point_light;
 import gse.graphics.light_source_component;
 import gse.physics.math;
@@ -367,7 +368,7 @@ auto gse::renderer3d::render(const vulkan::config& config) -> void {
 		return;
 	}
 
-	const auto& geometry_shader = shader_loader::get_shader("geometry_pass");
+	auto& geometry_shader = shader_loader::get_shader("geometry_pass");
 	const auto model_size = geometry_shader.get_uniform_blocks().at("model_ubo").size;
 
 	if (input::get_keyboard().keys[GLFW_KEY_F12].pressed) {
@@ -377,6 +378,8 @@ auto gse::renderer3d::render(const vulkan::config& config) -> void {
 
 	geometry_shader.set_uniform("camera_ubo.view", g_camera.get_view_matrix(), g_ubo_allocations.at("camera_ubo").allocation);
 	geometry_shader.set_uniform("camera_ubo.proj", g_camera.get_projection_matrix(), g_ubo_allocations.at("camera_ubo").allocation);
+
+	std::uint32_t diffuse_binding = geometry_shader.get_binding("diffuse_sampler")->binding;
 
 	command.bindPipeline(vk::PipelineBindPoint::eGraphics, g_pipeline);
 
@@ -401,6 +404,13 @@ auto gse::renderer3d::render(const vulkan::config& config) -> void {
 					0,
 					vk::ArrayProxy<const vk::DescriptorSet>(1, sets),
 					{}
+				);
+
+				geometry_shader.push(
+					command,
+					g_pipeline_layout,
+					"diffuse_sampler",
+					texture_loader::get_texture(entry.mesh->material->diffuse_texture).get_descriptor_info()
 				);
 
 				entry.mesh->bind(command);

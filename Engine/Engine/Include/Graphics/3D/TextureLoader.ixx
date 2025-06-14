@@ -9,7 +9,7 @@ import gse.platform;
 
 export namespace gse::texture_loader {
     auto get_texture(const std::filesystem::path& texture_path) -> texture&;
-    auto get_texture_id(const std::filesystem::path& texture_path) -> uuid;
+    auto get_texture_id(const std::filesystem::path& texture_path) -> id;
     auto get_texture(const id& texture_id) -> texture&;
 
     auto load_queued_textures(const vulkan::config& config) -> void;
@@ -30,11 +30,11 @@ auto gse::texture_loader::get_texture(const std::filesystem::path& texture_path)
     return tex;
 }
 
-auto gse::texture_loader::get_texture_id(const std::filesystem::path& texture_path) -> uuid {
+auto gse::texture_loader::get_texture_id(const std::filesystem::path& texture_path) -> id {
     if (const auto it = g_textures_by_path.find(texture_path); it != g_textures_by_path.end()) {
-        return it->second.get_id().number();
+        return it->second.get_id();
     }
-    return -1;
+    return {};
 }
 
 auto gse::texture_loader::get_texture(const id& texture_id) -> texture& {

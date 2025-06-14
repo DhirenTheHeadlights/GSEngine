@@ -44,12 +44,16 @@ constexpr auto gse::perspective(const angle_t<T> fov, const T aspect, length_t<T
 	auto near_m = near.template as<length_t<T>::default_unit>();
 	auto far_m = far.template as<length_t<T>::default_unit>();
 
-	return mat4_t<T>{
+	mat4_t<T> result = {
 		{f / aspect, 0, 0, 0},
 		{0, f, 0, 0},
-		{0, 0, (far_m + near_m) / (near_m - far_m), -1},
-		{0, 0, 2 * far_m * near_m / (near_m - far_m), 0}
+		{0, 0, far_m / (near_m - far_m), -1},
+		{0, 0, -(far_m * near_m) / (far_m - near_m), 0}
 	};
+
+	result[1][1] *= -1;
+
+	return result;
 }
 
 template <typename T>

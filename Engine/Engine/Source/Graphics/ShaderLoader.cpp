@@ -19,12 +19,20 @@ struct shader_info {
     std::filesystem::path frag_path;
 };
 
-struct descriptor_layout_info {
-    descriptor_layout_info(vk::raii::DescriptorSetLayout layout, std::vector<vk::DescriptorSetLayoutBinding> bindings)
-		: layout(std::move(layout)), bindings(std::move(bindings)) {
-	}
-    vk::raii::DescriptorSetLayout layout;
-    std::vector<vk::DescriptorSetLayoutBinding> bindings;
+struct set {
+    enum class binding_type : std::uint8_t {
+        persistent = 0,
+        push = 1,
+        bind_less = 2,
+	};
+
+    binding_type type;
+	vk::raii::DescriptorSetLayout layout;
+	std::vector<vk::DescriptorSetLayoutBinding> bindings;
+};
+
+struct layout {
+    std::unordered_map<set::binding_type, set> sets;
 };
 
 struct shader_info_hash {
@@ -60,7 +68,7 @@ struct shader_info_equal {
 };
 
 std::unordered_map<shader_info, gse::shader, shader_info_hash, shader_info_equal> g_shaders;
-std::unordered_map<descriptor_layout, descriptor_layout_info> g_layouts;
+std::unordered_map<descriptor_layout, layout> g_layouts;
 
 constexpr int max_lights = 10;
 
@@ -80,12 +88,12 @@ auto init_descriptor_layouts(const vk::raii::Device& device) -> void {
 
     auto create_layout = [&](std::vector<vk::DescriptorSetLayoutBinding> bindings) {
     	vk::raii::DescriptorSetLayout layout = device.createDescriptorSetLayout({
-            {},
+            vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
         	static_cast<uint32_t>(bindings.size()),
         	bindings.data()
             });
 
-        return descriptor_layout_info{ std::move(layout), std::move(bindings) };
+        return { std::move(layout), std::move(bindings) };
         };
 
     g_layouts.clear();

@@ -175,7 +175,7 @@ auto gse::model_loader::load_obj_file(const std::filesystem::path& model_path, c
 
 				if (tokens[0] == "newmtl") {
 					current_material = tokens[1];
-					generate_material(-1, -1, -1, current_material);
+					generate_material({}, {}, {}, current_material);
 				}
 				else if (!current_material.empty()) {
 					auto& [ambient, diffuse, specular, emission, shininess, optical_density, transparency, illumination_model, diffuse_texture, normal_texture, specular_texture] = *get_material(current_material).get_data();
@@ -188,9 +188,9 @@ auto gse::model_loader::load_obj_file(const std::filesystem::path& model_path, c
 					else if (tokens[0] == "Ni") optical_density = std::stof(tokens[1]);
 					else if (tokens[0] == "d") transparency = std::stof(tokens[1]);
 					else if (tokens[0] == "illum") illumination_model = std::stoi(tokens[1]);
-					else if (tokens[0] == "map_Kd") diffuse_texture = texture_loader::get_texture(directory_path + tokens[1]).get_id().number();
-					else if (tokens[0] == "map_Bump") normal_texture = texture_loader::get_texture(directory_path + tokens[1]).get_id().number();
-					else if (tokens[0] == "map_Ks") specular_texture = texture_loader::get_texture(directory_path + tokens[1]).get_id().number();
+					else if (tokens[0] == "map_Kd") diffuse_texture = texture_loader::get_texture(directory_path + tokens[1]).get_id();
+					else if (tokens[0] == "map_Bump") normal_texture = texture_loader::get_texture(directory_path + tokens[1]).get_id();
+					else if (tokens[0] == "map_Ks") specular_texture = texture_loader::get_texture(directory_path + tokens[1]).get_id();
 				}
 			}
 		}

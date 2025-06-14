@@ -29,7 +29,7 @@ export namespace gse::gui {
 }
 
 struct menu {
-	gse::uuid texture_id;
+	gse::id texture_id;
 	gse::unitless::vec2 position;
 	gse::unitless::vec2 size;
 	gse::unitless::vec2 pre_docked_size;

@@ -169,6 +169,7 @@ auto gse::physics::update_object(motion_component& component) -> void {
 	update_gravity(component);
 	update_air_resistance(component);
 	update_velocity(component);
+
 	update_position(component);
 	update_rotation(component);
 	update_obb(component);

@@ -63,6 +63,8 @@ namespace gse::unit {
             }
 			return result;
         }
+
+		constexpr auto operator<=>(const vec_t& other) const = default;
     };
 }
 

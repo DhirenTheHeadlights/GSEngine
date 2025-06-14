@@ -20,9 +20,9 @@ namespace gse {
 		float transparency = 1.0f;
 		int illumination_model = 0;
 
-		uuid diffuse_texture;
-		uuid normal_texture;
-		uuid specular_texture;
+		id diffuse_texture;
+		id normal_texture;
+		id specular_texture;
 	};
 }
 
@@ -45,7 +45,7 @@ export namespace gse {
 	auto get_material(const std::string& name) -> material_handle;
 	auto does_material_exist(const std::string& name) -> bool;
 	auto generate_material(const unitless::vec3& ambient, const unitless::vec3& diffuse, const unitless::vec3& specular, const unitless::vec3& emission, float shininess, float optical_density, float transparency, int illumination_model, const std::string& name = "") -> material_handle;
-	auto generate_material(uuid diffuse_texture, uuid normal_texture, uuid specular_texture, const std::string& name = "") -> material_handle;
+	auto generate_material(id diffuse_texture, id normal_texture, id specular_texture, const std::string& name = "") -> material_handle;
 }
 
 std::unordered_map<std::string, gse::material> g_materials;
@@ -61,11 +61,11 @@ auto gse::does_material_exist(const std::string& name) -> bool {
 }
 
 auto gse::generate_material(const unitless::vec3& ambient, const unitless::vec3& diffuse, const unitless::vec3& specular, const unitless::vec3& emission, const float shininess, const float optical_density, const float transparency, const int illumination_model, const std::string& name) -> material_handle {
-	auto [it, inserted] = g_materials.emplace(name, material{ ambient, diffuse, specular, emission, shininess, optical_density, transparency, illumination_model, static_cast<std::uint64_t>(-1), static_cast<std::uint64_t>(-1), static_cast<std::uint64_t>(-1) });
+	auto [it, inserted] = g_materials.emplace(name, material{ ambient, diffuse, specular, emission, shininess, optical_density, transparency, illumination_model, {}, {}, {} });
 	return  &it->second;
 }
 
-auto gse::generate_material(const uuid diffuse_texture, const uuid normal_texture, const uuid specular_texture, const std::string& name) -> material_handle {
+auto gse::generate_material(const id diffuse_texture, const id normal_texture, const id specular_texture, const std::string& name) -> material_handle {
 	if (g_materials.contains(name)) {
 		g_materials[name].diffuse_texture = diffuse_texture;
 	}

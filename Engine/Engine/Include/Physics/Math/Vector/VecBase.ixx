@@ -16,6 +16,8 @@ export namespace gse::vec {
         constexpr auto operator[](std::size_t index) const -> const T& {
             return data[index];
         }
+
+        constexpr auto operator<=>(const storage&) const = default;
     };
 
     using raw2i = storage<int, 2>;
@@ -128,6 +130,10 @@ export namespace gse::internal {
         };
 
         constexpr vec_t() : storage{} {}
+
+        constexpr auto operator<=>(const vec_t& other) const {
+            return this->storage <=> other.storage;
+        }
     };
 
     template <typename Derived, typename T>
@@ -153,6 +159,7 @@ export namespace gse::internal {
         };
 
         constexpr vec_t(T x, T y, T z) : x(x), y(y), z(z) {}
+        constexpr vec_t() : storage{} {}
     };
 
     template <typename Derived, typename T>
@@ -165,6 +172,7 @@ export namespace gse::internal {
         };
 
         constexpr vec_t(T x, T y, T z, T w) : x(x), y(y), z(z), w(w) {}
+        constexpr vec_t() : storage{} {}
     };
 }
 
@@ -239,14 +247,6 @@ export namespace gse::vec {
 
     template <typename T, int N> constexpr auto operator+(const storage<T, N>& v) -> storage<T, N>;
     template <typename T, int N> constexpr auto operator-(const storage<T, N>& v) -> storage<T, N>;
-
-    template <typename T, int N> constexpr auto operator==(const storage<T, N>& lhs, const storage<T, N>& rhs) -> bool;
-    template <typename T, int N> constexpr auto operator!=(const storage<T, N>& lhs, const storage<T, N>& rhs) -> bool;
-
-    template <typename T, int N> constexpr auto operator>(const storage<T, N>& lhs, const storage<T, N>& rhs) -> bool;
-    template <typename T, int N> constexpr auto operator>=(const storage<T, N>& lhs, const storage<T, N>& rhs) -> bool;
-    template <typename T, int N> constexpr auto operator<(const storage<T, N>& lhs, const storage<T, N>& rhs) -> bool;
-    template <typename T, int N> constexpr auto operator<=(const storage<T, N>& lhs, const storage<T, N>& rhs) -> bool;
 
 	template <typename T, int N> constexpr auto dot(const storage<T, N>& lhs, const storage<T, N>& rhs) -> T;
 
@@ -458,51 +458,6 @@ constexpr auto gse::vec::operator-(const storage<T, N>& v) -> storage<T, N> {
     storage<T, N> result{};
 	simd::mul_s(std::span<const T, N>(v.data), static_cast<T>(-1), std::span<T, N>(result.data));
     return result;
-}
-
-template <typename T, int N>
-constexpr auto gse::vec::operator==(const storage<T, N>& lhs, const storage<T, N>& rhs) -> bool {
-    for (int i = 0; i < N; ++i)
-        if (!(lhs[i] == rhs[i]))
-            return false;
-    return true;
-}
-
-template <typename T, int N>
-constexpr auto gse::vec::operator!=(const storage<T, N>& lhs, const storage<T, N>& rhs) -> bool {
-    return !(lhs == rhs);
-}
-
-template <typename T, int N>
-constexpr auto gse::vec::operator>(const storage<T, N>& lhs, const storage<T, N>& rhs) -> bool {
-    for (int i = 0; i < N; ++i)
-        if (!(lhs[i] > rhs[i]))
-            return false;
-    return true;
-}
-
-template <typename T, int N>
-constexpr auto gse::vec::operator>=(const storage<T, N>& lhs, const storage<T, N>& rhs) -> bool {
-    for (int i = 0; i < N; ++i)
-        if (!(lhs[i] >= rhs[i]))
-            return false;
-    return true;
-}
-
-template <typename T, int N>
-constexpr auto gse::vec::operator<(const storage<T, N>& lhs, const storage<T, N>& rhs) -> bool {
-    for (int i = 0; i < N; ++i)
-        if (!(lhs[i] < rhs[i]))
-            return false;
-    return true;
-}
-
-template <typename T, int N>
-constexpr auto gse::vec::operator<=(const storage<T, N>& lhs, const storage<T, N>& rhs) -> bool {
-    for (int i = 0; i < N; ++i)
-        if (!(lhs[i] <= rhs[i]))
-            return false;
-    return true;
 }
 
 template <typename T, int N>
