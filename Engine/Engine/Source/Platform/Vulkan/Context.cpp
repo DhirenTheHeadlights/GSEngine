@@ -342,6 +342,7 @@ auto gse::vulkan::create_device_and_queues(const config::instance_config& instan
 
     const std::vector device_extensions = {
         vk::KHRSwapchainExtensionName,
+		vk::KHRPushDescriptorExtensionName,
     };
 
     vk::DeviceCreateInfo create_info(

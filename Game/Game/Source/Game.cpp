@@ -64,7 +64,7 @@ struct scene1_hook final : gse::hook<gse::scene> {
 
 
 
-		const std::uint32_t iron_man = gse::registry::create_entity();
+		const auto iron_man = gse::registry::create_entity();
 		gse::registry::add_entity_hook(iron_man, std::make_unique<iron_man_hook>());
 		m_owner->add_entity(iron_man, "Iron Man");
 		//const std::uint32_t raw_backpack = gse::registry::create_entity();
@@ -103,7 +103,7 @@ struct scene2_hook final : gse::hook<gse::scene> {
 	auto initialize() -> void override {
 		game::skybox::create(m_owner);
 		m_owner->add_entity(game::create_player(), "Player");
-		const std::uint32_t floor_uuid = gse::create_box(gse::vec::meters(0.f, -500.f, 0.f), gse::vec::meters(20000.f, 10.f, 20000.f));
+		const auto floor_uuid = gse::create_box(gse::vec::meters(0.f, -500.f, 0.f), gse::vec::meters(20000.f, 10.f, 20000.f));
 		gse::registry::add_entity_hook(floor_uuid, std::make_unique<floor_hook>());
 		m_owner->add_entity(floor_uuid, "Floor");
 	}
@@ -128,7 +128,7 @@ struct scene3_hook final : gse::hook<gse::scene> {
 		gse::vec3<gse::length> position;
 
 		auto update() -> void override {
-			gse::registry::get_component<gse::physics::motion_component>(this->owner_id).current_position = position;
+			//gse::registry::get_component<gse::physics::motion_component>(this->owner_id).current_position = position;
 		}
 	};
 

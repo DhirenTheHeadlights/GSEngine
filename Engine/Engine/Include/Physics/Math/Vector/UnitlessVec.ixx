@@ -32,6 +32,13 @@ export namespace gse::unitless {
 				return vec::storage<T, N>{};
 			}
 		}
+
+		constexpr auto operator<=>(const vec_t& other) const {
+			return this->storage <=> other.storage;
+		}
+		constexpr auto operator==(const vec_t& other) const -> bool {
+			return this->storage == other.storage;
+		}
 	};
 
 	template <typename T> using vec2_t = vec_t<T, 2>;
@@ -76,14 +83,6 @@ export namespace gse::unitless {
 
 	template <typename T, int N> constexpr auto operator+(const vec_t<T, N>& value) -> vec_t<T, N>;
 	template <typename T, int N> constexpr auto operator-(const vec_t<T, N>& value) -> vec_t<T, N>;
-
-	template <typename T, int N> constexpr auto operator==(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> bool;
-	template <typename T, int N> constexpr auto operator!=(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> bool;
-
-	template <typename T, int N> constexpr auto operator>(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> bool;
-	template <typename T, int N> constexpr auto operator>=(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> bool;
-	template <typename T, int N> constexpr auto operator<(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> bool;
-	template <typename T, int N> constexpr auto operator<=(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> bool;
 }
 
 template <typename T, int N>
@@ -170,34 +169,4 @@ constexpr auto gse::unitless::operator+(const vec_t<T, N>& value) -> vec_t<T, N>
 template <typename T, int N>
 constexpr auto gse::unitless::operator-(const vec_t<T, N>& value) -> vec_t<T, N> {
 	return unitless::vec_t<T, N>(-value.storage);
-}
-
-template <typename T, int N>
-constexpr auto gse::unitless::operator==(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> bool {
-	return lhs.storage == rhs.storage;
-}
-
-template <typename T, int N>
-constexpr auto gse::unitless::operator!=(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> bool {
-	return lhs.storage != rhs.storage;
-}
-
-template <typename T, int N>
-constexpr auto gse::unitless::operator>(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> bool {
-	return lhs.storage > rhs.storage;
-}
-
-template <typename T, int N>
-constexpr auto gse::unitless::operator>=(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> bool {
-	return lhs.storage >= rhs.storage;
-}
-
-template <typename T, int N>
-constexpr auto gse::unitless::operator<(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> bool {
-	return lhs.storage < rhs.storage;
-}
-
-template <typename T, int N>
-constexpr auto gse::unitless::operator<=(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> bool {
-	return lhs.storage <= rhs.storage;
 }

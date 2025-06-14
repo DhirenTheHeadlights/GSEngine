@@ -69,44 +69,60 @@ gse::mesh::mesh(mesh&& other) noexcept
 }
 
 auto gse::mesh::initialize(const vulkan::config& config) -> void {
-    // --- TEMPORARY DEBUGGING VERSION ---
-    // This version skips the staging buffer and creates host-visible buffers directly.
-    // This is slower for rendering but excellent for debugging data uploads.
-
-    if (vertices.empty() || indices.empty()) {
-        // Don't try to create zero-sized buffers
-        return;
-    }
-
-    // 1. Create and upload vertex buffer directly
     const vk::DeviceSize vertex_buffer_size = sizeof(vertex) * vertices.size();
-    const vk::BufferCreateInfo vertex_buffer_info(
-        {},
-        vertex_buffer_size,
-        vk::BufferUsageFlagBits::eVertexBuffer // No need for TransferDst
+
+    const vk::BufferCreateInfo vertex_staging_info(
+        {}, vertex_buffer_size, vk::BufferUsageFlagBits::eTransferSrc
+    );
+
+    const auto [vertex_buffer, vertex_allocation] = vulkan::persistent_allocator::create_buffer(
+        config.device_data,
+        vertex_staging_info,
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+        vertices.data()
+    );
+
+    const vk::BufferCreateInfo vertex_final_info(
+        {}, vertex_buffer_size,
+        vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst
     );
     this->vertex_buffer = vulkan::persistent_allocator::create_buffer(
         config.device_data,
-        vertex_buffer_info,
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-        vertices.data() // Copy data directly using your fixed allocator
+        vertex_final_info,
+        vk::MemoryPropertyFlagBits::eDeviceLocal
     );
 
-    // 2. Create and upload index buffer directly
     const vk::DeviceSize index_buffer_size = sizeof(std::uint32_t) * indices.size();
-    const vk::BufferCreateInfo index_buffer_info(
-        {},
-        index_buffer_size,
-        vk::BufferUsageFlagBits::eIndexBuffer // No need for TransferDst
+
+    const vk::BufferCreateInfo index_staging_info(
+        {}, index_buffer_size, vk::BufferUsageFlagBits::eTransferSrc
+    );
+    const auto [index_buffer, index_allocation] = vulkan::persistent_allocator::create_buffer(
+        config.device_data,
+        index_staging_info,
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+        indices.data()
+    );
+
+    const vk::BufferCreateInfo index_final_info(
+        {}, index_buffer_size,
+        vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst
     );
     this->index_buffer = vulkan::persistent_allocator::create_buffer(
         config.device_data,
-        index_buffer_info,
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-        indices.data() // Copy data directly using your fixed allocator
+        index_final_info,
+        vk::MemoryPropertyFlagBits::eDeviceLocal
     );
 
-    // No copy commands or staging buffers are needed for this test.
+    const auto command_buffer = begin_single_line_commands(config);
+
+    const vk::BufferCopy vertex_copy_region(0, 0, vertex_buffer_size);
+    command_buffer.copyBuffer(vertex_buffer, this->vertex_buffer.buffer, vertex_copy_region);
+
+    const vk::BufferCopy index_copy_region(0, 0, index_buffer_size);
+    command_buffer.copyBuffer(index_buffer, this->index_buffer.buffer, index_copy_region);
+
+    end_single_line_commands(command_buffer, config);
 
     this->center_of_mass = calculate_center_of_mass(indices, vertices);
 }
