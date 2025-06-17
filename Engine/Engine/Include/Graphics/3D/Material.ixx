@@ -38,6 +38,10 @@ export namespace gse {
 		auto get_data() const -> material* {
 			return m_material;
 		}
+
+		auto exists() const -> bool {
+			return m_material != nullptr;
+		}
 	private:
 		material* m_material = nullptr;
 	};
@@ -45,7 +49,7 @@ export namespace gse {
 	auto get_material(const std::string& name) -> material_handle;
 	auto does_material_exist(const std::string& name) -> bool;
 	auto generate_material(const unitless::vec3& ambient, const unitless::vec3& diffuse, const unitless::vec3& specular, const unitless::vec3& emission, float shininess, float optical_density, float transparency, int illumination_model, const std::string& name = "") -> material_handle;
-	auto generate_material(id diffuse_texture, id normal_texture, id specular_texture, const std::string& name = "") -> material_handle;
+	auto generate_material(const id& diffuse_texture, const id& normal_texture, const id& specular_texture, const std::string& name = "") -> material_handle;
 }
 
 std::unordered_map<std::string, gse::material> g_materials;
@@ -65,7 +69,7 @@ auto gse::generate_material(const unitless::vec3& ambient, const unitless::vec3&
 	return  &it->second;
 }
 
-auto gse::generate_material(const id diffuse_texture, const id normal_texture, const id specular_texture, const std::string& name) -> material_handle {
+auto gse::generate_material(const id& diffuse_texture, const id& normal_texture, const id& specular_texture, const std::string& name) -> material_handle {
 	if (g_materials.contains(name)) {
 		g_materials[name].diffuse_texture = diffuse_texture;
 	}

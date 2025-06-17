@@ -1,7 +1,6 @@
 ﻿module;
 
 #include <cstddef>
-
 #include "GLFW/glfw3.h"
 
 export module gse.graphics.renderer3d;
@@ -21,6 +20,7 @@ import gse.graphics.shader_loader;
 import gse.graphics.texture_loader;
 import gse.graphics.point_light;
 import gse.graphics.light_source_component;
+import gse.graphics.shader;
 import gse.physics.math;
 import gse.platform;
 
@@ -61,29 +61,20 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 	end_single_line_commands(cmd, config);
 
 	const auto& geometry_shader = shader_loader::get_shader("geometry_pass");
-	const auto layout = shader_loader::get_descriptor_layout(descriptor_layout::standard_3d);
-
-	std::array descriptor_set_layouts = { layout };
-
-	const auto& descriptor_pool = config.descriptor.pool;
-
-	vk::DescriptorSetAllocateInfo descriptor_alloc_info = {
-		*descriptor_pool, static_cast<std::uint32_t>(descriptor_set_layouts.size()), descriptor_set_layouts.data()
-	};
-
-	std::vector descriptor_sets = config.device_data.device.allocateDescriptorSets(descriptor_alloc_info);
-
-	g_vertex_descriptor_set = std::move(descriptor_sets[0]);
+	auto descriptor_set_layouts = geometry_shader.layouts();
+	g_vertex_descriptor_set = geometry_shader.descriptor_set(config.device_data.device, config.descriptor.pool, shader::set::binding_type::persistent);
 
 	std::unordered_map<std::string, vk::Buffer> uniform_buffers;
 	std::unordered_map<std::string, vk::DescriptorBufferInfo> buffer_infos;
 
-	for (const auto& [block_name, block] : geometry_shader.get_uniform_blocks()) {
-		auto size = block.size;
+	for (auto [name, binding, set, size, members] : geometry_shader.uniform_blocks()) {
+		if (set != static_cast<uint32_t>(shader::set::binding_type::persistent)) {
+			continue;
+		}
 
-		if (block_name == "model_ubo") {
-			size_t max_entries = 1024;
-			vk::DeviceSize model_stride = block.size;
+		if (name == "model_ubo") {
+			std::size_t max_entries = 1024;
+			vk::DeviceSize model_stride = size;
 			size = model_stride * max_entries;
 		}
 
@@ -100,21 +91,27 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 			vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
 		);
 
-		uniform_buffers[block_name] = buffer.buffer;
-		buffer_infos[block_name] = vk::DescriptorBufferInfo(buffer.buffer, 0, block.size);
-		g_ubo_allocations[block_name] = std::move(buffer);
+		uniform_buffers[name] = buffer.buffer;
+		buffer_infos[name] = vk::DescriptorBufferInfo(buffer.buffer, 0, size);
+		g_ubo_allocations[name] = std::move(buffer);
 	}
 
 	std::unordered_map<std::string, vk::DescriptorImageInfo> image_infos = {};
 
-	auto writes = geometry_shader.get_descriptor_writes(g_vertex_descriptor_set, buffer_infos, image_infos);
+	config.device_data.device.updateDescriptorSets(
+		geometry_shader.descriptor_writes(g_vertex_descriptor_set, buffer_infos, image_infos), 
+		nullptr
+	);
 
-	config.device_data.device.updateDescriptorSets(writes, nullptr);
-
-	g_pipeline_layout = config.device_data.device.createPipelineLayout({ {}, static_cast<std::uint32_t>(descriptor_set_layouts.size()), descriptor_set_layouts.data() });
+	g_pipeline_layout = config.device_data.device.createPipelineLayout(
+		{
+			{},
+			descriptor_set_layouts
+		}
+	);
 
 	const auto& lighting_shader = shader_loader::get_shader("lighting_pass");
-	auto lighting_layout = lighting_shader.get_descriptor_set_layout();
+	auto lighting_layout = lighting_shader.layout(shader::set::binding_type::persistent);
 
 	vk::DescriptorSetAllocateInfo lighting_alloc_info{
 		config.descriptor.pool,
@@ -141,7 +138,7 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 
 	std::vector<vk::WriteDescriptorSet> lighting_writes;
 
-	auto bind_idx = lighting_shader.get_binding("g_position")->binding;
+	auto bind_idx = lighting_shader.binding("g_position")->binding;
 	lighting_writes.emplace_back(
 		g_lighting_descriptor_set,   // dstSet
 		bind_idx,                  // dstBinding
@@ -153,7 +150,7 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 		nullptr                    // pTexelBufferView
 	);
 
-	bind_idx = lighting_shader.get_binding("g_normal")->binding; // should be 1
+	bind_idx = lighting_shader.binding("g_normal")->binding; // should be 1
 	lighting_writes.emplace_back(
 		g_lighting_descriptor_set,
 		bind_idx,
@@ -165,7 +162,7 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 		nullptr
 	);
 
-	bind_idx = lighting_shader.get_binding("g_albedo_spec")->binding; // should be 2
+	bind_idx = lighting_shader.binding("g_albedo_spec")->binding;
 	lighting_writes.emplace_back(
 		g_lighting_descriptor_set,
 		bind_idx,
@@ -186,7 +183,7 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 	};
 	g_lighting_pipeline_layout = config.device_data.device.createPipelineLayout(lighting_pipeline_layout_info);
 
-	auto lighting_stages = lighting_shader.get_shader_stages();
+	auto lighting_stages = lighting_shader.shader_stages();
 
 	vk::PipelineVertexInputStateCreateInfo empty_vertex_input{
 		{},
@@ -313,7 +310,7 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 	}
 	vk::PipelineColorBlendStateCreateInfo color_blending({}, vk::False, vk::LogicOp::eCopy, static_cast<std::uint32_t>(color_blend_attachments.size()), color_blend_attachments.data());
 
-	auto shader_stages = geometry_shader.get_shader_stages();
+	auto shader_stages = geometry_shader.shader_stages();
 
 	vk::PipelineMultisampleStateCreateInfo multisampling(
 		{},
@@ -369,7 +366,7 @@ auto gse::renderer3d::render(const vulkan::config& config) -> void {
 	}
 
 	auto& geometry_shader = shader_loader::get_shader("geometry_pass");
-	const auto model_size = geometry_shader.get_uniform_blocks().at("model_ubo").size;
+	const auto model_size = geometry_shader.uniform_block("model_ubo").size;
 
 	if (input::get_keyboard().keys[GLFW_KEY_F12].pressed) {
 		std::print("Camera view matrix: {}\n", g_camera.get_view_matrix());
@@ -379,8 +376,6 @@ auto gse::renderer3d::render(const vulkan::config& config) -> void {
 	geometry_shader.set_uniform("camera_ubo.view", g_camera.get_view_matrix(), g_ubo_allocations.at("camera_ubo").allocation);
 	geometry_shader.set_uniform("camera_ubo.proj", g_camera.get_projection_matrix(), g_ubo_allocations.at("camera_ubo").allocation);
 
-	std::uint32_t diffuse_binding = geometry_shader.get_binding("diffuse_sampler")->binding;
-
 	command.bindPipeline(vk::PipelineBindPoint::eGraphics, g_pipeline);
 
 	vulkan::persistent_allocator::mapped_buffer_view<mat4> model_view{
@@ -388,11 +383,11 @@ auto gse::renderer3d::render(const vulkan::config& config) -> void {
 		.stride = model_size,
 	};
 
-	size_t model_index = 0;
+	std::size_t model_index = 0;
 	for (const auto& component : components) {
 		for (const auto& model_handle : component.models) {
 			for (const auto& entry : model_handle.get_render_queue_entries()) {
-				model_view[0] = mat4(1.0f);
+				model_view[model_index] = entry.model_matrix;
 
 				model_index++;
 
@@ -406,15 +401,17 @@ auto gse::renderer3d::render(const vulkan::config& config) -> void {
 					{}
 				);
 
-				geometry_shader.push(
-					command,
-					g_pipeline_layout,
-					"diffuse_sampler",
-					texture_loader::get_texture(entry.mesh->material->diffuse_texture).get_descriptor_info()
-				);
+				if (entry.mesh->material.exists()) {
+					geometry_shader.push(
+						command,
+						g_pipeline_layout,
+						"diffuse_sampler",
+						texture_loader::get_texture(entry.mesh->material->diffuse_texture).get_descriptor_info()
+					);
 
-				entry.mesh->bind(command);
-				entry.mesh->draw(command);
+					entry.mesh->bind(command);
+					entry.mesh->draw(command);
+				}
 			}
 		}
 	}

@@ -9,8 +9,8 @@ layout (location = 0) in vec3 frag_position;
 layout (location = 1) in vec3 normal;
 layout (location = 2) in vec2 tex_coords;
 
-layout (binding = 2) uniform sampler2D albedo_spec;
-layout (binding = 3) uniform sampler2D diffuse_texture;
+layout (set = 1, binding = 2) uniform sampler2D albedo_spec;
+layout (set = 1, binding = 3) uniform sampler2D diffuse_texture;
 
 layout (push_constant) uniform PushConstants {
     vec3 view_pos;

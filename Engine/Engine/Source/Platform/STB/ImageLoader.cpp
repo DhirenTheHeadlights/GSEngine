@@ -16,9 +16,9 @@ auto gse::stb::image::load(const std::filesystem::path& path) -> data {
     };
 
     int w, h, c;
-    auto* pixels = stbi_load(path.string().c_str(), &w, &h, &c, 0);
+    auto* pixels = stbi_load(path.string().c_str(), &w, &h, &c, STBI_rgb_alpha);
     img_data.size = { static_cast<uint32_t>(w), static_cast<uint32_t>(h) };
-    img_data.channels = static_cast<uint32_t>(c);
+    img_data.channels = 4;
 
 	assert(pixels, std::format("Failed to load image: {}", path.string()));
 

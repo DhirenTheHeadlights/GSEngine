@@ -78,7 +78,7 @@ auto gse::vulkan::uploader::upload_image_layers(const config& config, const vk::
 }
 
 auto gse::vulkan::uploader::upload_image_3d(const config& config, const vk::Image image, const vk::Format format, const std::uint32_t width, const std::uint32_t height, const std::uint32_t depth, const void* pixel_data, const size_t data_size, const vk::ImageLayout final_layout) -> void {
-    auto staging = persistent_allocator::create_buffer(
+    auto [buffer, allocation] = persistent_allocator::create_buffer(
         config.device_data,
         vk::BufferCreateInfo{
 	        {},
@@ -101,7 +101,7 @@ auto gse::vulkan::uploader::upload_image_3d(const config& config, const vk::Imag
     region.imageSubresource.layerCount = 1;
     region.imageExtent = vk::Extent3D{ width, height, depth };
 
-	cmd.copyBufferToImage(staging.buffer, image, vk::ImageLayout::eTransferDstOptimal, region);
+	cmd.copyBufferToImage(buffer, image, vk::ImageLayout::eTransferDstOptimal, region);
     transition_image_layout(cmd, image, format, vk::ImageLayout::eTransferDstOptimal, final_layout, 1, 1);
     end_single_line_commands(cmd, config);
 }

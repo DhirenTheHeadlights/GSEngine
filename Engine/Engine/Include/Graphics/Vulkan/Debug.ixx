@@ -85,6 +85,7 @@ auto gse::debug::initialize_imgui(const vulkan::config& config) -> void {
     init_info.MinImageCount = 2;
     init_info.ImageCount = 3;
     init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    init_info.Subpass = 2;
     ImGui_ImplVulkan_Init(&init_info, *config.swap_chain_data.render_pass);
 
     const auto cmd = begin_single_line_commands(config);

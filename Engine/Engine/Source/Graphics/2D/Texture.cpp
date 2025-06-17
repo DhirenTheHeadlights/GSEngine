@@ -11,7 +11,12 @@ auto gse::texture::load(const vulkan::config& config) -> void {
         vk::SharingMode::eExclusive
     );
 
-	auto staging_buffer = vulkan::persistent_allocator::create_buffer(config.device_data, buffer_info);
+	auto [buffer, allocation] = vulkan::persistent_allocator::create_buffer(
+        config.device_data,
+        buffer_info,
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+		m_image_data.pixels.data()
+    );
 
     const auto format = m_image_data.channels == 4 ? vk::Format::eR8G8B8A8Srgb : m_image_data.channels == 1 ? vk::Format::eR8Unorm : vk::Format::eR8G8B8Srgb; // Note: 3-channel formats might require special handling
 
@@ -69,7 +74,7 @@ auto gse::texture::load(const vulkan::config& config) -> void {
     );
 
     command_buffer.copyBufferToImage(
-        staging_buffer.buffer,
+        buffer,
         m_texture_image.image,
         vk::ImageLayout::eTransferDstOptimal,
         region

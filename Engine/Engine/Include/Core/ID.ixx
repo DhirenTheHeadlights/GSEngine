@@ -20,11 +20,11 @@ export namespace gse {
 		auto operator==(const id& other) const -> bool;
 
 		auto number() const -> uuid;
-		auto tag() const -> std::string_view;
+		auto tag() const -> std::string;
     private:
         explicit id(uuid id, const std::string& tag);
 
-        uuid m_number;
+		uuid m_number = std::numeric_limits<uuid>::max();
 		std::string m_tag;
 
 		friend auto generate_id(std::string_view tag) -> id;
@@ -140,7 +140,7 @@ auto gse::id::number() const -> uuid {
 	return m_number;
 }
 
-auto gse::id::tag() const -> std::string_view {
+auto gse::id::tag() const -> std::string {
 	return m_tag;
 }
 
