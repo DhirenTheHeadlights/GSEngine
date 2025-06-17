@@ -194,7 +194,7 @@ auto gse::gui::create_menu(const std::string& name, const unitless::vec2& top_le
 	}
 
 	g_menus.push_back({
-		.texture_id = texture_loader::get_texture_id(name),
+		.texture_id = {},
 		.position = top_left,
 		.size = size,
 		.pre_docked_size = size,

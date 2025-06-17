@@ -1,4 +1,7 @@
 #version 450
+#extension GL_KHR_vulkan_glsl : enable
+
+layout (constant_id = 99) const int descriptor_layout_type = 2;
 
 layout(location = 0) in vec3 frag_position;
 layout(location = 1) in vec3 frag_normal;
@@ -8,7 +11,7 @@ layout(location = 0) out vec4 out_position;
 layout(location = 1) out vec4 out_normal;
 layout(location = 2) out vec4 out_albedo;
 
-layout(binding = 2) uniform sampler2D diffuse_sampler;
+layout(set = 1, binding = 2) uniform sampler2D diffuse_sampler;
 
 void main() {
     out_position = vec4(frag_position, 1.0);

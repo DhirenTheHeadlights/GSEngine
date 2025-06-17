@@ -138,44 +138,63 @@ auto gse::vulkan::end_frame(GLFWwindow* window, config& config) -> void {
 
     const std::uint32_t image_index = config.frame_context.image_index;
 
-    const vk::Semaphore wait_semaphores[] = {
-        config.sync.image_available_semaphores[config.current_frame]
-    };
-    constexpr vk::PipelineStageFlags wait_stages[] = {
-        vk::PipelineStageFlagBits::eColorAttachmentOutput
-    };
-    const vk::Semaphore signal_semaphores[] = {
-        config.sync.render_finished_semaphores[config.frame_context.image_index]
-    };
-
-    const vk::SubmitInfo submit_info(
-        1, wait_semaphores,
-        wait_stages,
-        1, &config.frame_context.command_buffer,
-        1, signal_semaphores
+    const vk::SemaphoreSubmitInfo wait_info(
+        *config.sync.image_available_semaphores[config.current_frame], 
+        0,
+        vk::PipelineStageFlagBits2::eTopOfPipe,
+        0
     );
 
-    config.queue.graphics.submit(
-        submit_info,
+    const vk::CommandBufferSubmitInfo cmd_info(
+        config.frame_context.command_buffer
+    );
+
+    const vk::SemaphoreSubmitInfo signal_info(
+        *config.sync.render_finished_semaphores[image_index],         
+        0,                                                            
+        vk::PipelineStageFlagBits2::eBottomOfPipe,
+        0
+    );                                                            
+
+    const vk::SubmitInfo2 submit_info2(
+        {},                 
+        1, &wait_info,         
+        1, &cmd_info,            
+        1, &signal_info
+    );        
+
+    config.queue.graphics.submit2(
+        submit_info2,
         config.sync.in_flight_fences[config.current_frame]
     );
 
     const vk::PresentInfoKHR present_info(
-        signal_semaphores,
-        *config.swap_chain_data.swap_chain,
-        image_index
+        1,
+        &*config.sync.render_finished_semaphores[image_index],
+        1,
+        &*config.swap_chain_data.swap_chain,
+        &image_index
     );
 
     const vk::Result present_result = config.queue.present.presentKHR(present_info);
 
-    if (present_result == vk::Result::eErrorOutOfDateKHR || present_result == vk::Result::eSuboptimalKHR) {
+    if (present_result == vk::Result::eErrorOutOfDateKHR ||
+        present_result == vk::Result::eSuboptimalKHR) {
         config.device_data.device.waitIdle();
-		config.swap_chain_data = create_swap_chain_resources(window, config.instance_data, config.device_data);
-		config.sync = create_sync_objects(config.device_data, config.swap_chain_data.images.size());
+        config.swap_chain_data =
+            create_swap_chain_resources(window,
+                config.instance_data,
+                config.device_data);
+        config.sync =
+            create_sync_objects(config.device_data,
+                config.swap_chain_data.images.size());
         return;
     }
 
-    assert(present_result == vk::Result::eSuccess, "Failed to present swap chain image!");
+    assert(
+        present_result == vk::Result::eSuccess,
+        "Failed to present swap chain image!"
+    );
 
     config.current_frame = (config.current_frame + 1) % g_max_frames_in_flight;
 }
@@ -243,7 +262,8 @@ auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> config::ins
     constexpr vk::ValidationFeatureEnableEXT enables[] = {
         vk::ValidationFeatureEnableEXT::eBestPractices,
         vk::ValidationFeatureEnableEXT::eGpuAssisted,
-        vk::ValidationFeatureEnableEXT::eDebugPrintf
+        vk::ValidationFeatureEnableEXT::eDebugPrintf,
+        vk::ValidationFeatureEnableEXT::eSynchronizationValidation
     };
 
     const vk::ValidationFeaturesEXT features(
@@ -640,11 +660,47 @@ auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const config::
     const vk::SubpassDescription ui_pass({}, vk::PipelineBindPoint::eGraphics, 0, nullptr, 1, &lighting_color_ref);
 
     std::array sub_passes = { gbuffer_pass, lighting_pass, ui_pass };
-    std::array dependencies = {
-        vk::SubpassDependency(VK_SUBPASS_EXTERNAL, 0, vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eColorAttachmentOutput, {}, vk::AccessFlagBits::eColorAttachmentWrite, vk::DependencyFlagBits::eByRegion),
-        vk::SubpassDependency(0, 1, vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eFragmentShader, vk::AccessFlagBits::eColorAttachmentWrite, vk::AccessFlagBits::eShaderRead, vk::DependencyFlagBits::eByRegion),
-        vk::SubpassDependency(1, 2, vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::AccessFlagBits::eColorAttachmentWrite, vk::AccessFlagBits::eColorAttachmentWrite, vk::DependencyFlagBits::eByRegion)
-    };
+    std::array<vk::SubpassDependency, 3> dependencies;
+
+    dependencies[0] = vk::SubpassDependency(
+        VK_SUBPASS_EXTERNAL,                                      // Producer: Operations before the render pass
+        0,                                                        // Consumer: G-buffer pass
+        vk::PipelineStageFlagBits::eBottomOfPipe,                 // Producer Stage: Wait for everything before
+        vk::PipelineStageFlagBits::eColorAttachmentOutput |       // Consumer Stage: Wait until ready to write color/depth
+        vk::PipelineStageFlagBits::eEarlyFragmentTests,
+        vk::AccessFlagBits::eMemoryRead,                          // Producer Access: ...
+        vk::AccessFlagBits::eColorAttachmentWrite |               // Consumer Access: Allow writing to color and depth
+        vk::AccessFlagBits::eDepthStencilAttachmentWrite,
+        vk::DependencyFlagBits::eByRegion
+    );
+
+    // Dependency 2: G-buffer pass (0) -> Lighting pass (1)
+    // Ensures G-buffer writes are finished before the lighting pass reads them as textures.
+    dependencies[1] = vk::SubpassDependency(
+        0,                                                        // Producer: G-buffer pass
+        1,                                                        // Consumer: Lighting pass
+        vk::PipelineStageFlagBits::eColorAttachmentOutput |       // Producer Stage: Where G-buffer (color+depth) is written
+        vk::PipelineStageFlagBits::eLateFragmentTests,
+        vk::PipelineStageFlagBits::eColorAttachmentOutput | 
+        vk::PipelineStageFlagBits::eFragmentShader,               // Consumer Stage: Where G-buffer is read
+        vk::AccessFlagBits::eColorAttachmentWrite |               // Producer Access: Make color/depth writes available
+        vk::AccessFlagBits::eDepthStencilAttachmentWrite,
+        vk::AccessFlagBits::eShaderRead | 
+        vk::AccessFlagBits::eColorAttachmentWrite,                // Consumer Access: Allow reading from shaders
+        vk::DependencyFlagBits::eByRegion
+    );
+
+    // Dependency 3: Lighting pass (1) -> UI pass (2)
+    // Ensures the lighting pass finishes writing to the final color buffer before the UI pass draws on top.
+    dependencies[2] = vk::SubpassDependency(
+        1,                                                        // Producer: Lighting pass
+        2,                                                        // Consumer: UI pass
+        vk::PipelineStageFlagBits::eColorAttachmentOutput,        // Producer Stage: Where lighting output is written
+        vk::PipelineStageFlagBits::eColorAttachmentOutput,        // Consumer Stage: Where UI is written
+        vk::AccessFlagBits::eColorAttachmentWrite,                // Producer Access: Make lighting output available
+        vk::AccessFlagBits::eColorAttachmentWrite,                // Consumer Access: Allow writing UI
+        vk::DependencyFlagBits::eByRegion
+    );
 
     const vk::RenderPassCreateInfo rp_info({}, attachments, sub_passes, dependencies);
     auto render_pass = device_data.device.createRenderPass(rp_info);

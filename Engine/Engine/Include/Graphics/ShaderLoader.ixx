@@ -19,7 +19,6 @@ export namespace gse::shader_loader {
 	auto load_shaders(const ::vk::raii::Device& device) -> void;
 	auto get_shader(const std::filesystem::path& vert_path, const std::filesystem::path& frag_path) -> const shader&;
 	auto get_shader(std::string_view name) -> const shader&;
-	auto get_descriptor_layout(descriptor_layout layout_type) -> vk::DescriptorSetLayout;
 }
 
 namespace gse::shader_loader {

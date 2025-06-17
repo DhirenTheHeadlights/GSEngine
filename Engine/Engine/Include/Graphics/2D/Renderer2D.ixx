@@ -17,6 +17,7 @@ import gse.physics.math;
 import gse.graphics.shader_loader;
 import gse.graphics.renderer3d;
 import gse.graphics.camera;
+import gse.graphics.shader;
 import gse.platform;
 
 export namespace gse::renderer2d {
@@ -48,11 +49,10 @@ auto gse::renderer2d::initialize(vulkan::config& config) -> void {
         0, sizeof(unitless::vec2) * 2 + sizeof(unitless::vec4) * 2
     );
 
-	auto layout = shader_loader::get_descriptor_layout(descriptor_layout::forward_2d);
+    const auto& element_shader = shader_loader::get_shader("ui_2d_shader");
+    const auto& layout = element_shader.layout(shader::set::binding_type::persistent);
 
     g_pipeline_layout = config.device_data.device.createPipelineLayout({ {}, 1, &layout, 1, &push_constant_range });
-
-    const auto& element_shader = shader_loader::get_shader("ui_2d_shader");
 
     vk::PipelineInputAssemblyStateCreateInfo input_assembly({}, vk::PrimitiveTopology::eTriangleList, vk::False);
 
@@ -98,7 +98,7 @@ auto gse::renderer2d::initialize(vulkan::config& config) -> void {
     vk::GraphicsPipelineCreateInfo pipeline_info(
         {},
         2,
-        element_shader.get_shader_stages().data(),
+        element_shader.shader_stages().data(),
         &vertex_input_info,
         &input_assembly,
         nullptr,
@@ -201,7 +201,7 @@ auto gse::renderer2d::initialize(vulkan::config& config) -> void {
     vk::GraphicsPipelineCreateInfo msdf_pipeline_info(
         {},
         2,
-        msdf_shader.get_shader_stages().data(),
+        msdf_shader.shader_stages().data(),
         &msdf_vertex_input_info,
         &input_assembly,
         nullptr,

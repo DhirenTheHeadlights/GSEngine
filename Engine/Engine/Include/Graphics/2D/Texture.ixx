@@ -21,7 +21,7 @@ export namespace gse {
 		auto get_image_resource() const -> const vulkan::persistent_allocator::image_resource& { return m_texture_image; }
     private:
 		vulkan::persistent_allocator::image_resource m_texture_image;
-        vk::Sampler m_texture_sampler;
+		vk::raii::Sampler m_texture_sampler = nullptr;
         stb::image::data m_image_data;
     };
 }

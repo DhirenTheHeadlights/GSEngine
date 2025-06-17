@@ -11,8 +11,8 @@ export namespace gse::vulkan::persistent_allocator {
 	auto allocate(
 		const config::device_config& config, 
 		const vk::MemoryRequirements& requirements, 
-		vk::MemoryPropertyFlags properties = vk::MemoryPropertyFlagBits::eDeviceLocal)
-	-> allocation;
+		vk::MemoryPropertyFlags properties = vk::MemoryPropertyFlagBits::eDeviceLocal
+	) -> allocation;
 
 	auto create_buffer(
 		const config::device_config& config, 
