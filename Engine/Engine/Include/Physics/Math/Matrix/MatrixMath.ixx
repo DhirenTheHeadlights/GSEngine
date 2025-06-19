@@ -26,15 +26,16 @@ export namespace gse {
 
 template <typename T>
 constexpr auto gse::look_at(const vec3<length_t<T>>& position, const vec3<length_t<T>>& target, const unitless::vec3_t<T>& up) -> mat4_t<T> {
-	auto z_axis = normalize(target - position);
-	auto x_axis = normalize(cross(z_axis, up));
-	auto y_axis = cross(x_axis, z_axis);
-	auto position_in_default_units = position.as<length_t<T>::default_unit>();
+	const auto forward = normalize(position - target);
+	const auto right = normalize(cross(up, forward));
+	const auto camera_up = cross(forward, right);
+	const auto position_in_default_units = position.as<length_t<T>::default_unit>();
+
 	return mat4_t<T>{
-		{x_axis.x, y_axis.x, -z_axis.x, 0},
-		{x_axis.y, y_axis.y, -z_axis.y, 0},
-		{x_axis.z, y_axis.z, -z_axis.z, 0},
-		{-dot(x_axis, position_in_default_units), -dot(y_axis, position_in_default_units), dot(z_axis, position_in_default_units), 1}
+		{ right.x, camera_up.x, forward.x, 0 },
+		{ right.y, camera_up.y, forward.y, 0 },
+		{ right.z, camera_up.z, forward.z, 0 },
+		{ -dot(right, position_in_default_units), -dot(camera_up, position_in_default_units), -dot(forward, position_in_default_units), 1 }
 	};
 }
 

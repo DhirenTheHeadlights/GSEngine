@@ -20,6 +20,7 @@ import gse.graphics.shader_loader;
 import gse.graphics.texture_loader;
 import gse.graphics.point_light;
 import gse.graphics.light_source_component;
+import gse.graphics.material;
 import gse.graphics.shader;
 import gse.physics.math;
 import gse.platform;
@@ -279,8 +280,8 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 		vk::False,                          // depthClampEnable
 		vk::False,                          // rasterizerDiscardEnable
 		vk::PolygonMode::eFill,             // polygonMode
-		vk::CullModeFlagBits::eBack,        // cullMode (or eNone for testing)
-		vk::FrontFace::eCounterClockwise,   // frontFace
+		vk::CullModeFlagBits::eNone,        // cullMode (or eNone for testing)
+		vk::FrontFace::eClockwise,   // frontFace
 		vk::True,                           // depthBiasEnable 
 		2.0f,                               // depthBiasConstantFactor (experiment with this)
 		0.0f,                               // depthBiasClamp (usually 0.0)
@@ -382,6 +383,9 @@ auto gse::renderer3d::render(const vulkan::config& config) -> void {
 		.base = g_ubo_allocations.at("model_ubo").allocation.mapped(),
 		.stride = model_size,
 	};
+
+	auto& all_textures = texture_loader::get_all_textures();
+	auto& all_mats = gse::get_materials();
 
 	std::size_t model_index = 0;
 	for (const auto& component : components) {

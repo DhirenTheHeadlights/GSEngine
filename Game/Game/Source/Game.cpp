@@ -64,9 +64,9 @@ struct scene1_hook final : gse::hook<gse::scene> {
 
 
 
-		const auto iron_man = gse::registry::create_entity();
-		gse::registry::add_entity_hook(iron_man, std::make_unique<iron_man_hook>());
-		m_owner->add_entity(iron_man, "Iron Man");
+		//const auto iron_man = gse::registry::create_entity();
+		//gse::registry::add_entity_hook(iron_man, std::make_unique<iron_man_hook>());
+		//m_owner->add_entity(iron_man, "Iron Man");
 		//const std::uint32_t raw_backpack = gse::registry::create_entity();
 		//gse::registry::add_entity_hook(raw_backpack, std::make_unique<raw_backpack_hook>());
 		//m_owner->add_entity(raw_backpack, "Backpack");
@@ -140,6 +140,7 @@ struct scene3_hook final : gse::hook<gse::scene> {
 		const auto box_id = gse::create_box(gse::vec::meters(0.f, 0.f, 0.f), gse::vec::meters(10.f, 10.f, 10.f));
 		gse::registry::add_entity_hook(box_id, std::make_unique<positioned_object_hook>(gse::vec::meters(0.f, 0.f, 0.f)));
 		m_owner->add_entity(box_id, "Box");
+		game::arena::create(m_owner);
 	}
 };
 

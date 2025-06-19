@@ -9,7 +9,7 @@ layout (location = 2) in vec2 in_tex_coord;
 
 layout (binding = 0) uniform CameraUBO {
     mat4 view;
-    mat4 proj; 
+    mat4 proj;
 } camera_ubo;
 
 layout (binding = 1) uniform ModelUBO {
@@ -20,11 +20,28 @@ layout (location = 0) out vec3 frag_position;
 layout (location = 1) out vec3 frag_normal;
 layout (location = 2) out vec2 frag_tex_coord;
 
-void main() {
-    vec4 world_position = model_ubo.model * vec4(in_position, 1.0);
-    frag_position = world_position.xyz;
-    frag_normal = normalize(mat3(model_ubo.model) * in_normal);
-    frag_tex_coord = in_tex_coord;
+// ??? debug outputs ????????????????????????????????????????????????????????????
+layout (location = 3) out vec4 dbg_world_pos;  // post?model
+layout (location = 4) out vec4 dbg_view_pos;   // post?view
+layout (location = 5) out vec4 dbg_clip_pos;   // post?proj
+// ????????????????????????????????????????????????????????????????????????????????
 
-    gl_Position = camera_ubo.proj * camera_ubo.view * world_position;
+void main() {
+    // world?space
+    vec4 world_position = model_ubo.model * vec4(in_position, 1.0);
+    frag_position   = world_position.xyz;
+    frag_normal     = normalize(mat3(model_ubo.model) * in_normal);
+    frag_tex_coord  = in_tex_coord;
+
+    // stash each stage
+    dbg_world_pos = world_position;
+
+    vec4 view_position = camera_ubo.view * world_position;
+    dbg_view_pos  = view_position;
+
+    vec4 clip_position = camera_ubo.proj * view_position;
+    dbg_clip_pos  = clip_position;
+
+    // final
+    gl_Position = clip_position;
 }

@@ -62,7 +62,7 @@ gse::mesh::mesh(const std::vector<vertex>& vertices, const std::vector<std::uint
 
 gse::mesh::mesh(mesh&& other) noexcept
     : vertex_buffer(std::move(other.vertex_buffer)), index_buffer(std::move(other.index_buffer)),
-    vertices(std::move(other.vertices)), indices(std::move(other.indices)), material(nullptr),
+    vertices(std::move(other.vertices)), indices(std::move(other.indices)), material(std::move(other.material)),
     center_of_mass(other.center_of_mass) {
     other.vertex_buffer = {};
     other.index_buffer = {};
