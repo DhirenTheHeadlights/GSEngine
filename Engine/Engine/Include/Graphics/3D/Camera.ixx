@@ -20,7 +20,7 @@ export namespace gse {
 		auto get_projection_matrix() const -> mat4;
 		auto get_position() const -> vec3<length>;
 		auto get_camera_direction_relative_to_origin(const unitless::vec3& direction) const -> unitless::vec3;
-	public:
+	private:
 		vec3<length> m_position;
 		unitless::vec3 m_front{ 0.0f, 0.0f, -1.0f };
 		unitless::vec3 m_up{ 0.0f, 1.0f, 0.0f };
@@ -34,7 +34,7 @@ export namespace gse {
 		float m_mouse_sensitivity = 0.1f;
 
 		length m_near_plane = meters(0.1f);
-		length m_far_plane = meters(1000.0f);
+		length m_far_plane = meters(10000.0f);
 	};
 }
 
