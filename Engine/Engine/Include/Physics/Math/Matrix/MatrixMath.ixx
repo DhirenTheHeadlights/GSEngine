@@ -26,31 +26,34 @@ export namespace gse {
 
 template <typename T>
 constexpr auto gse::look_at(const vec3<length_t<T>>& position, const vec3<length_t<T>>& target, const unitless::vec3_t<T>& up) -> mat4_t<T> {
-	const auto forward = normalize(position - target);
-	const auto right = normalize(cross(up, forward));
-	const auto camera_up = cross(forward, right);
+	const auto forward = normalize(target - position);
+
+	const auto right = normalize(cross(forward, up));
+	const auto camera_up = cross(right, forward);
 	const auto position_in_default_units = position.as<length_t<T>::default_unit>();
 
 	return mat4_t<T>{
-		{ right.x, camera_up.x, forward.x, 0 },
-		{ right.y, camera_up.y, forward.y, 0 },
-		{ right.z, camera_up.z, forward.z, 0 },
-		{ -dot(right, position_in_default_units), -dot(camera_up, position_in_default_units), -dot(forward, position_in_default_units), 1 }
+		{ right.x, camera_up.x, -forward.x, 0 },
+		{ right.y, camera_up.y, -forward.y, 0 },
+		{ right.z, camera_up.z, -forward.z, 0 },
+		{ -dot(right, position_in_default_units), -dot(camera_up, position_in_default_units), dot(forward, position_in_default_units), 1 }
 	};
 }
 
 template <typename T>
 constexpr auto gse::perspective(const angle_t<T> fov, const T aspect, length_t<T> near, length_t<T> far) -> mat4_t<T> {
-	auto f = T(1) / std::tan(fov.template as<units::radians>() / T(2));
+	const auto tan_half_fov_y = std::tan(fov.template as<units::radians>() / T(2));
 	auto near_m = near.template as<length_t<T>::default_unit>();
 	auto far_m = far.template as<length_t<T>::default_unit>();
 
-	mat4_t<T> result = {
-		{f / aspect, 0, 0, 0},
-		{0, f, 0, 0},
-		{0, 0, far_m / (near_m - far_m), -1},
-		{0, 0, -(far_m * near_m) / (far_m - near_m), 0}
-	};
+	mat4_t<T> result = { {0,0,0,0}, {0,0,0,0}, {0,0,0,0}, {0,0,0,0} };
+
+	result[0][0] = T(1) / (aspect * tan_half_fov_y);
+	result[1][1] = T(1) / (tan_half_fov_y);
+
+	result[2][2] = far_m / (far_m - near_m);
+	result[2][3] = T(1);
+	result[3][2] = -(far_m * near_m) / (far_m - near_m);
 
 	result[1][1] *= -1;
 

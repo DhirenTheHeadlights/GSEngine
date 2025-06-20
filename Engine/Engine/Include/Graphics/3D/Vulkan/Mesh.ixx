@@ -71,9 +71,10 @@ gse::mesh::mesh(mesh&& other) noexcept
 auto gse::mesh::initialize(const vulkan::config& config) -> void {
     const vk::DeviceSize vertex_buffer_size = sizeof(vertex) * vertices.size();
 
-    const vk::BufferCreateInfo vertex_staging_info(
-        {}, vertex_buffer_size, vk::BufferUsageFlagBits::eTransferSrc
-    );
+    const vk::BufferCreateInfo vertex_staging_info{
+        .size = vertex_buffer_size,
+        .usage = vk::BufferUsageFlagBits::eTransferSrc
+    };
 
     const auto [vertex_buffer, vertex_allocation] = vulkan::persistent_allocator::create_buffer(
         config.device_data,
@@ -82,10 +83,10 @@ auto gse::mesh::initialize(const vulkan::config& config) -> void {
         vertices.data()
     );
 
-    const vk::BufferCreateInfo vertex_final_info(
-        {}, vertex_buffer_size,
-        vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst
-    );
+    const vk::BufferCreateInfo vertex_final_info{
+        .size = vertex_buffer_size,
+        .usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst
+    };
     this->vertex_buffer = vulkan::persistent_allocator::create_buffer(
         config.device_data,
         vertex_final_info,
@@ -94,9 +95,10 @@ auto gse::mesh::initialize(const vulkan::config& config) -> void {
 
     const vk::DeviceSize index_buffer_size = sizeof(std::uint32_t) * indices.size();
 
-    const vk::BufferCreateInfo index_staging_info(
-        {}, index_buffer_size, vk::BufferUsageFlagBits::eTransferSrc
-    );
+    const vk::BufferCreateInfo index_staging_info{
+        .size = index_buffer_size,
+        .usage = vk::BufferUsageFlagBits::eTransferSrc
+    };
     const auto [index_buffer, index_allocation] = vulkan::persistent_allocator::create_buffer(
         config.device_data,
         index_staging_info,
@@ -104,10 +106,10 @@ auto gse::mesh::initialize(const vulkan::config& config) -> void {
         indices.data()
     );
 
-    const vk::BufferCreateInfo index_final_info(
-        {}, index_buffer_size,
-        vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst
-    );
+    const vk::BufferCreateInfo index_final_info{
+        .size = index_buffer_size,
+        .usage = vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst
+    };
     this->index_buffer = vulkan::persistent_allocator::create_buffer(
         config.device_data,
         index_final_info,

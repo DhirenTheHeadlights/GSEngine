@@ -109,7 +109,10 @@ auto gse::vulkan::persistent_allocator::allocate(const config::device_config& co
 	auto& new_block = pool.blocks.emplace_back(nullptr);
 	new_block.size = std::max(requirements.size, g_persistent_default_block_size);
 	new_block.properties = properties;
-	new_block.memory = config.device.allocateMemory({ new_block.size, memory_type_index });
+	new_block.memory = config.device.allocateMemory({ 
+		.allocationSize = new_block.size,
+		.memoryTypeIndex = memory_type_index
+	});
 
 	if (properties & vk::MemoryPropertyFlagBits::eHostVisible) {
 		new_block.mapped = new_block.memory.mapMemory(0, new_block.size);
@@ -135,7 +138,9 @@ auto gse::vulkan::persistent_allocator::allocate(const config::device_config& co
 
 auto gse::vulkan::persistent_allocator::create_buffer(const config::device_config& config, const vk::BufferCreateInfo& buffer_info, const vk::MemoryPropertyFlags properties, const void* data) -> buffer_resource {
 	auto buffer = config.device.createBuffer(buffer_info);
-	const vk::BufferMemoryRequirementsInfo2 buffer_requirements_info{ buffer };
+	const vk::BufferMemoryRequirementsInfo2 buffer_requirements_info{
+		.buffer = buffer
+	};
 	const auto requirements = config.device.getBufferMemoryRequirements2(buffer_requirements_info).memoryRequirements;
 
 	auto alloc = allocate(config, requirements, properties);
@@ -150,7 +155,8 @@ auto gse::vulkan::persistent_allocator::create_buffer(const config::device_confi
 
 auto gse::vulkan::persistent_allocator::create_image(const config::device_config& config, const vk::ImageCreateInfo& info, const vk::MemoryPropertyFlags properties, vk::ImageViewCreateInfo view_info, const void* data) -> image_resource {
 	vk::raii::Image image = config.device.createImage(info);
-	const auto requirements = config.device.getImageMemoryRequirements2(*image).memoryRequirements;
+	const auto requirement_info = vk::ImageMemoryRequirementsInfo2{ .image = image };
+	const auto requirements = config.device.getImageMemoryRequirements2(requirement_info).memoryRequirements;
 
 	allocation alloc = allocate(config, requirements, properties);
 	image.bindMemory(alloc.memory(), alloc.offset());
@@ -169,17 +175,21 @@ auto gse::vulkan::persistent_allocator::create_image(const config::device_config
 	}
 	else {
 		view = config.device.createImageView({
-			{}, image,
-			vk::ImageViewType::e2D,
-			info.format,
-			{},
-			{
-				info.usage & vk::ImageUsageFlagBits::eDepthStencilAttachment
-					? vk::ImageAspectFlagBits::eDepth
-					: vk::ImageAspectFlagBits::eColor,
-				0, info.mipLevels, 0, info.arrayLayers
+			.flags = {},
+			.image = *image,
+			.viewType = vk::ImageViewType::e2D,
+			.format = info.format,
+			.components = {},
+			.subresourceRange = {
+				.aspectMask = info.usage & vk::ImageUsageFlagBits::eDepthStencilAttachment
+								  ? vk::ImageAspectFlagBits::eDepth
+								  : vk::ImageAspectFlagBits::eColor,
+				.baseMipLevel = 0,
+				.levelCount = info.mipLevels,
+				.baseArrayLayer = 0,
+				.layerCount = info.arrayLayers
 			}
-			});
+		});
 	}
 
 	return { std::move(image), std::move(view), std::move(alloc) };

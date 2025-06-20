@@ -11,18 +11,15 @@ layout (location = 0) out vec3 frag_position;
 layout (location = 1) out vec3 normal;
 layout (location = 2) out vec2 tex_coords;
 
-layout (binding = 0) uniform CameraUBO {
+layout (push_constant) uniform PushConstants {
     mat4 view;
     mat4 projection;
-} camera_ubo;
-
-layout (binding = 1) uniform ModelUBO {
     mat4 model;
-} model_ubo;
+} push_constants;
 
 void main() {
-    frag_position = vec3(model_ubo.model * vec4(in_position, 1.0));
-    normal = normalize(mat3(transpose(inverse(model_ubo.model))) * in_normal);  // Adjust normal for transformations
+    frag_position = vec3(push_constants.model * vec4(in_position, 1.0));
+    normal = normalize(mat3(transpose(inverse(push_constants.model))) * in_normal); 
     tex_coords = in_tex_coords;
-    gl_Position = camera_ubo.projection * camera_ubo.view * model_ubo.model * vec4(in_position, 1.0);
+    gl_Position = push_constants.projection * push_constants.view * push_constants.model * vec4(in_position, 1.0);
 }

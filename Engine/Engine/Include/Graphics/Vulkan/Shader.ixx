@@ -39,7 +39,7 @@ namespace gse {
 		struct set {
 			enum class binding_type : std::uint8_t {
 				persistent = 0,
-				push = 1,
+				push = 1, 
 				bind_less = 2,
 			};
 
@@ -55,7 +55,7 @@ namespace gse {
 		shader(
 			const vk::raii::Device& device,
 			const std::filesystem::path& vert_path,
-			const std::filesystem::path& frag_path, 
+			const std::filesystem::path& frag_path,
 			const layout* layout = nullptr
 		);
 
@@ -76,6 +76,7 @@ namespace gse {
 		auto binding(const std::string& name) const -> std::optional<vk::DescriptorSetLayoutBinding>;
 		auto layout(const set::binding_type type) const -> vk::DescriptorSetLayout;
 		auto layouts() const -> std::vector<vk::DescriptorSetLayout>;
+		auto push_constant_range(const std::string_view& name, vk::ShaderStageFlags stages) const -> vk::PushConstantRange;
 
 		auto descriptor_writes(
 			vk::DescriptorSet set,
@@ -85,8 +86,8 @@ namespace gse {
 
 		template <typename T>
 		auto set_uniform(
-			std::string_view full_name, 
-			const T& value, 
+			std::string_view full_name,
+			const T& value,
 			const vulkan::persistent_allocator::allocation& alloc
 		) const -> void;
 
@@ -104,6 +105,23 @@ namespace gse {
 			const vk::DescriptorImageInfo& image_info
 		) const -> void;
 
+		auto push(
+			vk::CommandBuffer command,
+			vk::PipelineLayout layout,
+			std::string_view block_name,
+			const void* data,
+			std::size_t offset = 0,
+			vk::ShaderStageFlags stages = vk::ShaderStageFlagBits::eVertex
+		) const -> void;
+
+		auto push(
+			vk::CommandBuffer command,
+			vk::PipelineLayout layout,
+			std::string_view block_name,
+			const std::unordered_map<std::string, std::span<const std::byte>>& values,
+			vk::ShaderStageFlags stages = vk::ShaderStageFlagBits::eVertex
+		) const -> void;
+
 		auto descriptor_set(
 			const vk::raii::Device& device,
 			vk::DescriptorPool pool,
@@ -114,11 +132,13 @@ namespace gse {
 			const vk::raii::Device& device,
 			vk::DescriptorPool pool, set::binding_type type
 		) const -> vk::raii::DescriptorSet;
+
 	private:
 		vk::raii::ShaderModule m_vert_module = nullptr;
 		vk::raii::ShaderModule m_frag_module = nullptr;
 
 		struct layout m_layout;
+		std::vector<struct uniform_block> m_push_constants;
 		info m_info;
 
 		static auto layout(const set& set) -> vk::DescriptorSetLayout {
@@ -136,24 +156,24 @@ namespace gse {
 	auto read_file(const std::filesystem::path& path) -> std::vector<char>;
 }
 
-gse::shader::shader(const vk::raii::Device& device, const std::filesystem::path& vert_path, const std::filesystem::path& frag_path, const struct layout* layout) : m_info{ vert_path.filename().string(), vert_path, frag_path } {
+gse::shader::shader(const vk::raii::Device & device, const std::filesystem::path & vert_path, const std::filesystem::path & frag_path, const struct layout* layout) : m_info{ vert_path.filename().string(), vert_path, frag_path } {
 	create(device, vert_path, frag_path, layout);
 }
 
 auto gse::shader::create(
-	const vk::raii::Device& device,
-	const std::filesystem::path& vert_path,
-	const std::filesystem::path& frag_path,
+	const vk::raii::Device & device,
+	const std::filesystem::path & vert_path,
+	const std::filesystem::path & frag_path,
 	const struct layout* provided_layout
 ) -> void {
 	const auto vert_code = read_file(vert_path);
 	const auto frag_code = read_file(frag_path);
 
-	auto make_module = [&](const std::vector<char>& code) { 
+	auto make_module = [&](const std::vector<char>& code) {
 		const vk::ShaderModuleCreateInfo ci{
-			{},
-			code.size(),
-			reinterpret_cast<const uint32_t*>(code.data())
+			.flags = {},
+			.codeSize = code.size(),
+			.pCode = reinterpret_cast<const uint32_t*>(code.data())
 		};
 		return device.createShaderModule(ci);
 		};
@@ -162,9 +182,9 @@ auto gse::shader::create(
 	m_frag_module = make_module(frag_code);
 
 	struct reflected_binding {
-		std::string                          name;
-		vk::DescriptorSetLayoutBinding      layout_binding;
-		std::uint32_t                        set_index;
+		std::string name;
+		vk::DescriptorSetLayoutBinding layout_binding;
+		std::uint32_t set_index;
 	};
 	std::vector<reflected_binding> all_reflected;
 
@@ -210,11 +230,11 @@ auto gse::shader::create(
 
 		for (const auto* b : reflected) {
 			if (b->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
-				struct uniform_block ub{
+				struct uniform_block ub {
 					.name = b->name,
-					.binding = b->binding,
-					.set = b->set,
-					.size = b->block.size
+						.binding = b->binding,
+						.set = b->set,
+						.size = b->block.size
 				};
 				for (uint32_t i = 0; i < b->block.member_count; ++i) {
 					auto& mem = b->block.members[i];
@@ -237,6 +257,55 @@ auto gse::shader::create(
 	auto blocks = reflect_uniforms(vert_code);
 	auto more_blocks = reflect_uniforms(frag_code);
 	blocks.insert(blocks.end(), more_blocks.begin(), more_blocks.end());
+
+	auto reflect_push_constants = [&](const std::vector<char>& spirv) {
+		std::vector<struct uniform_block> pc_blocks;
+		SpvReflectShaderModule reflect_module;
+		const auto result = spvReflectCreateShaderModule(spirv.size(), spirv.data(), &reflect_module);
+		assert(result == SPV_REFLECT_RESULT_SUCCESS, "SPIR-V reflection for push constants failed");
+
+		uint32_t count = 0;
+		spvReflectEnumeratePushConstantBlocks(&reflect_module, &count, nullptr);
+		if (count > 0) {
+			std::vector<SpvReflectBlockVariable*> reflected(count);
+			spvReflectEnumeratePushConstantBlocks(&reflect_module, &count, reflected.data());
+
+			for (const auto* block_var : reflected) {
+				struct uniform_block pcb {
+					.name = block_var->name ? block_var->name : "push_constants",
+						.binding = 0, // Not applicable
+						.set = 0,     // Not applicable
+						.size = block_var->size
+				};
+				for (uint32_t i = 0; i < block_var->member_count; ++i) {
+					const auto& mem = block_var->members[i];
+					pcb.members.emplace_back(
+						mem.name,
+						mem.type_description->type_name ? mem.type_description->type_name : "",
+						mem.offset,
+						mem.size,
+						mem.array.dims_count ? mem.array.dims[0] : 0
+					);
+				}
+				pc_blocks.push_back(std::move(pcb));
+			}
+		}
+		spvReflectDestroyShaderModule(&reflect_module);
+		return pc_blocks;
+		};
+
+	m_push_constants.clear();
+	auto vert_pcs = reflect_push_constants(vert_code);
+	auto frag_pcs = reflect_push_constants(frag_code);
+	m_push_constants.insert(m_push_constants.end(), std::make_move_iterator(vert_pcs.begin()), std::make_move_iterator(vert_pcs.end()));
+	m_push_constants.insert(m_push_constants.end(), std::make_move_iterator(frag_pcs.begin()), std::make_move_iterator(frag_pcs.end()));
+
+	if (!m_push_constants.empty()) {
+		std::ranges::sort(m_push_constants, {}, &uniform_block::name);
+		auto [new_end, _] = std::ranges::unique(m_push_constants, {}, &uniform_block::name);
+		m_push_constants.erase(new_end, m_push_constants.end());
+	}
+
 
 	std::unordered_map<set::binding_type, std::vector<struct binding>> grouped;
 	for (auto& [name, layout_binding, set_index] : all_reflected) {
@@ -264,6 +333,10 @@ auto gse::shader::create(
 		);
 	}
 
+	if (!grouped.empty() && !grouped.contains(set::binding_type::persistent)) {
+		grouped.emplace(set::binding_type::persistent, std::vector<struct binding>{});
+	}
+
 	if (provided_layout) {
 		for (const auto& [type, user_set] : provided_layout->sets) {
 			std::vector<struct binding> complete_bindings;
@@ -281,8 +354,8 @@ auto gse::shader::create(
 					it != user_set.bindings.end(),
 					std::format(
 						"Reflected binding '{}' (at binding {}) not found in provided layout for set {}",
-						name, 
-						layout_binding.binding, 
+						name,
+						layout_binding.binding,
 						static_cast<int>(type)
 					)
 				);
@@ -290,7 +363,7 @@ auto gse::shader::create(
 				assert(it->layout_binding.descriptorType == layout_binding.descriptorType,
 					std::format(
 						"Descriptor type mismatch for '{}' in set {}",
-						name, 
+						name,
 						static_cast<int>(type)
 					)
 				);
@@ -308,7 +381,7 @@ auto gse::shader::create(
 				complete_bindings.emplace_back(
 					name,
 					layout_binding,
-					std::move(block_info)  
+					std::move(block_info)
 				);
 			}
 
@@ -331,14 +404,14 @@ auto gse::shader::create(
 			for (auto& b : binds) raw.push_back(b.layout_binding);
 
 			vk::DescriptorSetLayoutCreateInfo ci{
-				{},
-				static_cast<uint32_t>(raw.size()),
-				raw.data()
+				.flags = {},
+				.bindingCount = static_cast<uint32_t>(raw.size()),
+				.pBindings = raw.data()
 			};
 			auto raii_layout = device.createDescriptorSetLayout(ci);
 
 			m_layout.sets.emplace(
-				type, 
+				type,
 				set{
 					.type = type,
 					.layout = std::move(raii_layout),
@@ -352,16 +425,16 @@ auto gse::shader::create(
 auto gse::shader::shader_stages() const -> std::array<vk::PipelineShaderStageCreateInfo, 2> {
 	return {
 		vk::PipelineShaderStageCreateInfo{
-			{},
-			vk::ShaderStageFlagBits::eVertex,
-			*m_vert_module,
-			"main"
+			.flags = {},
+			.stage = vk::ShaderStageFlagBits::eVertex,
+			.module = *m_vert_module,
+			.pName = "main"
 		},
 		vk::PipelineShaderStageCreateInfo{
-			{},
-			vk::ShaderStageFlagBits::eFragment,
-			*m_frag_module,
-			"main"
+			.flags = {},
+			.stage = vk::ShaderStageFlagBits::eFragment,
+			.module = *m_frag_module,
+			.pName = "main"
 		}
 	};
 }
@@ -378,7 +451,7 @@ auto gse::shader::required_bindings() const -> std::vector<std::string> {
 	return required_bindings;
 }
 
-auto gse::shader::uniform_block(const std::string& name) const -> class uniform_block {
+auto gse::shader::uniform_block(const std::string & name) const -> class uniform_block {
 	for (const auto& s : m_layout.sets | std::views::values) {
 		for (const auto& b : s.bindings) {
 			if (b.member.has_value() && b.member.value().name == name) {
@@ -405,7 +478,7 @@ auto gse::shader::uniform_blocks() const -> std::vector<struct uniform_block> {
 	return blocks;
 }
 
-auto gse::shader::binding(const std::string& name) const -> std::optional<vk::DescriptorSetLayoutBinding> {
+auto gse::shader::binding(const std::string & name) const -> std::optional<vk::DescriptorSetLayoutBinding> {
 	for (const auto& s : m_layout.sets | std::views::values) {
 		for (const auto& [binding_name, layout_binding, member] : s.bindings) {
 			if (binding_name == name) {
@@ -418,9 +491,9 @@ auto gse::shader::binding(const std::string& name) const -> std::optional<vk::De
 
 auto gse::shader::layout(const set::binding_type type) const -> vk::DescriptorSetLayout {
 	assert(
-		m_layout.sets.contains(type), 
+		m_layout.sets.contains(type),
 		std::format(
-			"Shader does not have set of type {}", 
+			"Shader does not have set of type {}",
 			static_cast<int>(type)
 		)
 	);
@@ -440,30 +513,56 @@ auto gse::shader::layouts() const -> std::vector<vk::DescriptorSetLayout> {
 	return result;
 }
 
-auto gse::shader::descriptor_writes(
-	vk::DescriptorSet set,
-	const std::unordered_map<std::string, vk::DescriptorBufferInfo>& buffer_infos,
-	const std::unordered_map<std::string, vk::DescriptorImageInfo>& image_infos
-) const -> std::vector<vk::WriteDescriptorSet> {
+auto gse::shader::push_constant_range(const std::string_view & name, const vk::ShaderStageFlags stages) const -> vk::PushConstantRange {
+	auto it = std::ranges::find_if(m_push_constants, [&](const auto& block) {
+		return block.name == name;
+		});
+
+	assert(it != m_push_constants.end(), std::format("Push constant block '{}' not found in shader", name));
+
+	return vk::PushConstantRange{
+		stages,
+		0,      
+		it->size
+	};
+}
+
+
+auto gse::shader::descriptor_writes(const vk::DescriptorSet set, const std::unordered_map<std::string, vk::DescriptorBufferInfo>&buffer_infos, const std::unordered_map<std::string, vk::DescriptorImageInfo>&image_infos) const -> std::vector<vk::WriteDescriptorSet> {
 	std::vector<vk::WriteDescriptorSet> writes;
 	std::unordered_set<std::string> used_keys;
 
 	for (const auto& s : m_layout.sets | std::views::values) {
 		for (const auto& [binding_name, layout_binding, member] : s.bindings) {
 			if (auto it = buffer_infos.find(binding_name); it != buffer_infos.end()) {
-				writes.emplace_back(
-					set, layout_binding.binding, 0, layout_binding.descriptorCount, layout_binding.descriptorType,
-					nullptr, &it->second, nullptr
-				);
+				writes.emplace_back(vk::WriteDescriptorSet{
+					.pNext = nullptr,
+					.dstSet = set,
+					.dstBinding = layout_binding.binding,
+					.dstArrayElement = 0,
+					.descriptorCount = layout_binding.descriptorCount,
+					.descriptorType = layout_binding.descriptorType,
+					.pImageInfo = nullptr,
+					.pBufferInfo = &it->second,
+					.pTexelBufferView = nullptr
+					});
 				used_keys.insert(binding_name);
 			}
 			else if (auto it2 = image_infos.find(binding_name); it2 != image_infos.end()) {
-				writes.emplace_back(
-					set, layout_binding.binding, 0, layout_binding.descriptorCount, layout_binding.descriptorType,
-					&it2->second, nullptr, nullptr
-				);
+				writes.emplace_back(vk::WriteDescriptorSet{
+					.pNext = nullptr,
+					.dstSet = set,
+					.dstBinding = layout_binding.binding,
+					.dstArrayElement = 0,
+					.descriptorCount = layout_binding.descriptorCount,
+					.descriptorType = layout_binding.descriptorType,
+					.pImageInfo = &it2->second,
+					.pBufferInfo = nullptr,
+					.pTexelBufferView = nullptr
+					});
 				used_keys.insert(binding_name);
 			}
+
 		}
 	}
 	const auto total_inputs = buffer_infos.size() + image_infos.size();
@@ -476,7 +575,7 @@ auto gse::shader::descriptor_writes(
 
 
 template <typename T>
-auto gse::shader::set_uniform(std::string_view full_name, const T& value, const vulkan::persistent_allocator::allocation& alloc) const -> void {
+auto gse::shader::set_uniform(std::string_view full_name, const T & value, const vulkan::persistent_allocator::allocation & alloc) const -> void {
 	const auto dot_pos = full_name.find('.');
 
 	assert(
@@ -499,7 +598,7 @@ auto gse::shader::set_uniform(std::string_view full_name, const T& value, const 
 			assert(
 				b.member.has_value(),
 				std::format(
-					"No uniform block data for '{}'", 
+					"No uniform block data for '{}'",
 					block_name
 				)
 			);
@@ -507,18 +606,18 @@ auto gse::shader::set_uniform(std::string_view full_name, const T& value, const 
 			const auto& ub = b.member.value();
 
 			auto mem_it = std::find_if(
-				ub.members.begin(), 
+				ub.members.begin(),
 				ub.members.end(),
-				[&](auto& m) { 
-					return m.name == member_name; 
+				[&](auto& m) {
+					return m.name == member_name;
 				}
 			);
 
 			assert(
 				mem_it != ub.members.end(),
 				std::format(
-					"Member '{}' not found in block '{}'", 
-					member_name, 
+					"Member '{}' not found in block '{}'",
+					member_name,
 					block_name
 				)
 			);
@@ -560,11 +659,7 @@ auto gse::shader::set_uniform(std::string_view full_name, const T& value, const 
 }
 
 template <typename T>
-auto gse::shader::set_uniform_block(
-	const std::string_view block_name,
-	const std::unordered_map<std::string, std::span<const std::byte>>& data,
-	const vulkan::persistent_allocator::allocation& alloc
-) const -> void {
+auto gse::shader::set_uniform_block(const std::string_view block_name, const std::unordered_map<std::string, std::span<const std::byte>>&data, const vulkan::persistent_allocator::allocation & alloc) const -> void {
 	const struct binding* block_binding = nullptr;
 	for (const auto& set : m_layout.sets | std::views::values) {
 		for (const auto& b : set.bindings) {
@@ -589,8 +684,8 @@ auto gse::shader::set_uniform_block(
 		assert(
 			member_it != block.members.end(),
 			std::format(
-				"Uniform member '{}' not found in block '{}'", 
-				name, 
+				"Uniform member '{}' not found in block '{}'",
+				name,
 				block_name
 			)
 		);
@@ -599,9 +694,9 @@ auto gse::shader::set_uniform_block(
 			bytes.size() <= member_it->size,
 			std::format(
 				"Data size {} > member size {} for '{}.{}'",
-				bytes.size(), 
-				member_it->size, 
-				block_name, 
+				bytes.size(),
+				member_it->size,
+				block_name,
 				name
 			)
 		);
@@ -609,8 +704,8 @@ auto gse::shader::set_uniform_block(
 		assert(
 			alloc.mapped(),
 			std::format(
-				"Memory not mapped for '{}.{}'", 
-				block_name, 
+				"Memory not mapped for '{}.{}'",
+				block_name,
 				name
 			)
 		);
@@ -634,12 +729,12 @@ auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout
 					static_cast<std::uint32_t>(s.type),
 					{
 						vk::WriteDescriptorSet{
-							{},
-							layout_binding.binding,
-							0,
-							1,
-							layout_binding.descriptorType,
-							&image_info,
+							.pNext = {},
+							.dstBinding = layout_binding.binding,
+							.dstArrayElement = 0,
+							.descriptorCount = 1,
+							.descriptorType = layout_binding.descriptorType,
+							.pImageInfo = &image_info,
 						}
 					}
 				);
@@ -650,46 +745,100 @@ auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout
 	assert(false, std::format("Binding '{}' not found in shader", name));
 }
 
-auto gse::shader::descriptor_set(
-	const vk::raii::Device& device,
-	const vk::DescriptorPool pool,
-	const set::binding_type type,
-	const std::uint32_t count
-) const -> std::vector<vk::raii::DescriptorSet> {
+auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout layout, std::string_view block_name, const void* data, const std::size_t offset, const vk::ShaderStageFlags stages) const -> void {
+	const auto it = std::ranges::find_if(m_push_constants, [&](const auto& block) {
+		return block.name == block_name;
+		});
+
+	assert(it != m_push_constants.end(), std::format("Push constant block '{}' not found in shader", block_name));
+
+	const auto& block = *it;
+	assert(offset + block.size <= 128, "Push constant default limit is 128 bytes");
+
+	command.pushConstants(
+		layout,
+		stages,
+		static_cast<uint32_t>(offset),
+		block.size, 
+		data
+	);
+}
+
+auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout layout, std::string_view block_name, const std::unordered_map<std::string, std::span<const std::byte>>&values, const vk::ShaderStageFlags stages) const -> void {
+	const auto it = std::ranges::find_if(m_push_constants, [&](const auto& b) {
+		return b.name == block_name;
+		});
+
+	assert(it != m_push_constants.end(), std::format("Push constant block '{}' not found in shader", block_name));
+
+	const auto& block = *it;
+	std::vector buffer(block.size, std::byte{ 0 });
+
+	for (const auto& [name, data_span] : values) {
+		auto member_it = std::ranges::find_if(block.members, [&](const auto& m) {
+			return m.name == name;
+			});
+
+		assert(
+			member_it != block.members.end(), 
+			std::format(
+				"Member '{}' not found in push constant block '{}'", 
+				name, 
+				block_name
+			)
+		);
+
+		assert(
+			data_span.size() <= member_it->size,
+			std::format(
+				"Provided bytes for '{}' (size {}) exceed member size ({})",
+				member_it->name, data_span.size(), member_it->size
+			)
+		);
+		std::memcpy(buffer.data() + member_it->offset, data_span.data(), data_span.size());
+	}
+
+	command.pushConstants(
+		layout,
+		stages,
+		0,
+		static_cast<uint32_t>(buffer.size()),
+		buffer.data()
+	);
+}
+
+
+auto gse::shader::descriptor_set(const vk::raii::Device & device, const vk::DescriptorPool pool, const set::binding_type type, const std::uint32_t count) const -> std::vector<vk::raii::DescriptorSet> {
 	assert(
-		m_layout.sets.contains(type), 
+		m_layout.sets.contains(type),
 		std::format(
-			"Shader does not have set of type {}", 
+			"Shader does not have set of type {}",
 			static_cast<int>(type)
 		)
 	);
 
 	const auto& set_info = layout(m_layout.sets.at(type));
 	assert(
-		set_info, 
+		set_info,
 		"Descriptor set layout is not initialized"
 	);
 
 	const vk::DescriptorSetAllocateInfo alloc_info{
-		pool,
-		count,
-		&set_info
+		.descriptorPool = pool,
+		.descriptorSetCount = count,
+		.pSetLayouts = &set_info
 	};
 
 	return device.allocateDescriptorSets(alloc_info);
 }
 
-auto gse::shader::descriptor_set(
-	const vk::raii::Device& device,
-	const vk::DescriptorPool pool,
-	const set::binding_type type
-) const -> vk::raii::DescriptorSet {
+auto gse::shader::descriptor_set(const vk::raii::Device & device, const vk::DescriptorPool pool, const set::binding_type type) const -> vk::raii::DescriptorSet {
 	auto sets = descriptor_set(device, pool, type, 1);
 	assert(!sets.empty(), "Failed to allocate descriptor set for shader layout");
 	return std::move(sets.front());
 }
 
-auto gse::read_file(const std::filesystem::path& path) -> std::vector<char> {
+auto gse::read_file(const std::filesystem::path & path) -> std::vector<char> {
 	std::ifstream file(path, std::ios::ate | std::ios::binary);
 
 	assert(file.is_open(), "Failed to open file!");

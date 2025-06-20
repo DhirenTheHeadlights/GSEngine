@@ -6,8 +6,6 @@
 export module gse.graphics.renderer3d;
 
 import std;
-import std.compat;
-import vulkan_hpp;
 
 import gse.core.config;
 import gse.core.id;
@@ -42,7 +40,6 @@ vk::raii::PipelineLayout g_pipeline_layout = nullptr;
 vk::raii::Pipeline g_lighting_pipeline = nullptr;
 vk::raii::PipelineLayout g_lighting_pipeline_layout = nullptr;
 
-vk::raii::DescriptorSet g_vertex_descriptor_set = nullptr;
 vk::raii::DescriptorSet g_lighting_descriptor_set = nullptr;
 
 std::unordered_map<std::string, gse::vulkan::persistent_allocator::buffer_resource> g_ubo_allocations;
@@ -63,283 +60,302 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 
 	const auto& geometry_shader = shader_loader::get_shader("geometry_pass");
 	auto descriptor_set_layouts = geometry_shader.layouts();
-	g_vertex_descriptor_set = geometry_shader.descriptor_set(config.device_data.device, config.descriptor.pool, shader::set::binding_type::persistent);
 
-	std::unordered_map<std::string, vk::Buffer> uniform_buffers;
-	std::unordered_map<std::string, vk::DescriptorBufferInfo> buffer_infos;
+	std::vector ranges = {
+		geometry_shader.push_constant_range("push_constants", vk::ShaderStageFlagBits::eVertex)
+	};
 
-	for (auto [name, binding, set, size, members] : geometry_shader.uniform_blocks()) {
-		if (set != static_cast<uint32_t>(shader::set::binding_type::persistent)) {
-			continue;
-		}
+	const vk::PipelineLayoutCreateInfo pipeline_layout_info{
+		.flags = {},
+		.setLayoutCount = static_cast<std::uint32_t>(descriptor_set_layouts.size()),
+		.pSetLayouts = descriptor_set_layouts.data(),
+		.pushConstantRangeCount = static_cast<std::uint32_t>(ranges.size()),
+		.pPushConstantRanges = ranges.data()
+	};
 
-		if (name == "model_ubo") {
-			std::size_t max_entries = 1024;
-			vk::DeviceSize model_stride = size;
-			size = model_stride * max_entries;
-		}
+	g_pipeline_layout = config.device_data.device.createPipelineLayout(pipeline_layout_info);
 
-		vk::BufferCreateInfo buffer_info(
-			{},
-			size,
-			vk::BufferUsageFlagBits::eUniformBuffer,
-			vk::SharingMode::eExclusive
-		);
-
-		auto buffer = vulkan::persistent_allocator::create_buffer(
-			config.device_data,
-			buffer_info,
-			vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
-		);
-
-		uniform_buffers[name] = buffer.buffer;
-		buffer_infos[name] = vk::DescriptorBufferInfo(buffer.buffer, 0, size);
-		g_ubo_allocations[name] = std::move(buffer);
-	}
-
-	std::unordered_map<std::string, vk::DescriptorImageInfo> image_infos = {};
-
-	config.device_data.device.updateDescriptorSets(
-		geometry_shader.descriptor_writes(g_vertex_descriptor_set, buffer_infos, image_infos), 
-		nullptr
-	);
-
-	g_pipeline_layout = config.device_data.device.createPipelineLayout(
-		{
-			{},
-			descriptor_set_layouts
-		}
-	);
-
+	// --- Lighting Pass Descriptor Sets ---
 	const auto& lighting_shader = shader_loader::get_shader("lighting_pass");
 	auto lighting_layout = lighting_shader.layout(shader::set::binding_type::persistent);
 
-	vk::DescriptorSetAllocateInfo lighting_alloc_info{
-		config.descriptor.pool,
-		1,
-		&lighting_layout
+	const vk::DescriptorSetAllocateInfo lighting_alloc_info{
+		.descriptorPool = *config.descriptor.pool,
+		.descriptorSetCount = 1,
+		.pSetLayouts = &lighting_layout
 	};
 	g_lighting_descriptor_set = std::move(config.device_data.device.allocateDescriptorSets(lighting_alloc_info)[0]);
 
-	vk::DescriptorImageInfo position_input_info{
-		nullptr,
-		config.swap_chain_data.position_image.view,
-		vk::ImageLayout::eShaderReadOnlyOptimal
+	const vk::DescriptorImageInfo position_input_info{
+		.sampler = nullptr,
+		.imageView = *config.swap_chain_data.position_image.view,
+		.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
 	};
-	vk::DescriptorImageInfo normal_input_info{
-		nullptr,
-		config.swap_chain_data.normal_image.view,
-		vk::ImageLayout::eShaderReadOnlyOptimal
+	const vk::DescriptorImageInfo normal_input_info{
+		.sampler = nullptr,
+		.imageView = *config.swap_chain_data.normal_image.view,
+		.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
 	};
-	vk::DescriptorImageInfo albedo_input_info{
-		nullptr,
-		config.swap_chain_data.albedo_image.view,
-		vk::ImageLayout::eShaderReadOnlyOptimal
+	const vk::DescriptorImageInfo albedo_input_info{
+		.sampler = nullptr,
+		.imageView = *config.swap_chain_data.albedo_image.view,
+		.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
 	};
 
 	std::vector<vk::WriteDescriptorSet> lighting_writes;
-
-	auto bind_idx = lighting_shader.binding("g_position")->binding;
-	lighting_writes.emplace_back(
-		g_lighting_descriptor_set,   // dstSet
-		bind_idx,                  // dstBinding
-		0,                         // dstArrayElement
-		1,                         // descriptorCount
-		vk::DescriptorType::eInputAttachment,
-		&position_input_info,      // pImageInfo
-		nullptr,                   // pBufferInfo
-		nullptr                    // pTexelBufferView
-	);
-
-	bind_idx = lighting_shader.binding("g_normal")->binding; // should be 1
-	lighting_writes.emplace_back(
-		g_lighting_descriptor_set,
-		bind_idx,
-		0,
-		1,
-		vk::DescriptorType::eInputAttachment,
-		&normal_input_info,
-		nullptr,
-		nullptr
-	);
-
-	bind_idx = lighting_shader.binding("g_albedo_spec")->binding;
-	lighting_writes.emplace_back(
-		g_lighting_descriptor_set,
-		bind_idx,
-		0,
-		1,
-		vk::DescriptorType::eInputAttachment,
-		&albedo_input_info,
-		nullptr,
-		nullptr
-	);
+	lighting_writes.emplace_back(vk::WriteDescriptorSet{
+		.dstSet = *g_lighting_descriptor_set,
+		.dstBinding = lighting_shader.binding("g_position")->binding,
+		.dstArrayElement = 0,
+		.descriptorCount = 1,
+		.descriptorType = vk::DescriptorType::eInputAttachment,
+		.pImageInfo = &position_input_info
+		});
+	lighting_writes.emplace_back(vk::WriteDescriptorSet{
+		.dstSet = *g_lighting_descriptor_set,
+		.dstBinding = lighting_shader.binding("g_normal")->binding,
+		.dstArrayElement = 0,
+		.descriptorCount = 1,
+		.descriptorType = vk::DescriptorType::eInputAttachment,
+		.pImageInfo = &normal_input_info
+		});
+	lighting_writes.emplace_back(vk::WriteDescriptorSet{
+		.dstSet = *g_lighting_descriptor_set,
+		.dstBinding = lighting_shader.binding("g_albedo_spec")->binding,
+		.dstArrayElement = 0,
+		.descriptorCount = 1,
+		.descriptorType = vk::DescriptorType::eInputAttachment,
+		.pImageInfo = &albedo_input_info
+		});
 
 	config.device_data.device.updateDescriptorSets(lighting_writes, nullptr);
 
-	vk::PipelineLayoutCreateInfo lighting_pipeline_layout_info{
-		{},
-		1,
-		&lighting_layout
+	// --- Lighting Pass Pipeline ---
+	const vk::PipelineLayoutCreateInfo lighting_pipeline_layout_info{
+		.flags = {},
+		.setLayoutCount = 1,
+		.pSetLayouts = &lighting_layout
 	};
 	g_lighting_pipeline_layout = config.device_data.device.createPipelineLayout(lighting_pipeline_layout_info);
 
 	auto lighting_stages = lighting_shader.shader_stages();
 
-	vk::PipelineVertexInputStateCreateInfo empty_vertex_input{
-		{},
-		0, 
-		nullptr,
-		0,
-		nullptr
+	constexpr vk::PipelineVertexInputStateCreateInfo empty_vertex_input{
+		.flags = {},
+		.vertexBindingDescriptionCount = 0,
+		.pVertexBindingDescriptions = nullptr,
+		.vertexAttributeDescriptionCount = 0,
+		.pVertexAttributeDescriptions = nullptr
 	};
 
-	vk::PipelineInputAssemblyStateCreateInfo input_assembly{
-		{}, vk::PrimitiveTopology::eTriangleList, vk::False
+	constexpr vk::PipelineInputAssemblyStateCreateInfo input_assembly{
+		.flags = {},
+		.topology = vk::PrimitiveTopology::eTriangleList,
+		.primitiveRestartEnable = vk::False
 	};
 
-	vk::Viewport viewport(
-		0.0f, 0.0f,
-		static_cast<float>(config.swap_chain_data.extent.width),
-		static_cast<float>(config.swap_chain_data.extent.height),
-		0.0f, 1.0f
-	);
-
-	vk::Rect2D scissor({ 0,0 }, config.swap_chain_data.extent);
-	vk::PipelineViewportStateCreateInfo viewport_state{
-		{}, 1, &viewport, 1, &scissor
+	const vk::Viewport viewport{
+		.x = 0.0f,
+		.y = 0.0f,
+		.width = static_cast<float>(config.swap_chain_data.extent.width),
+		.height = static_cast<float>(config.swap_chain_data.extent.height),
+		.minDepth = 0.0f,
+		.maxDepth = 1.0f
 	};
 
-	vk::PipelineRasterizationStateCreateInfo rasterizer{
-		{}, vk::False, vk::False,
-		vk::PolygonMode::eFill,
-		vk::CullModeFlagBits::eNone,
-		vk::FrontFace::eCounterClockwise,
-		vk::False, 0, 0, 0, 1.0f
+	const vk::Rect2D scissor{
+		.offset = { 0, 0 },
+		.extent = config.swap_chain_data.extent
 	};
 
-	vk::PipelineDepthStencilStateCreateInfo* depth_stencil_state = nullptr;
-
-	vk::PipelineMultisampleStateCreateInfo multi_sample_state{
-		{}, vk::SampleCountFlagBits::e1, vk::False, 1.0f,
-		nullptr, vk::False, vk::False
+	const vk::PipelineViewportStateCreateInfo viewport_state{
+		.flags = {},
+		.viewportCount = 1,
+		.pViewports = &viewport,
+		.scissorCount = 1,
+		.pScissors = &scissor
 	};
 
-	vk::PipelineColorBlendAttachmentState color_blend_attachment{
-		vk::False,
-		vk::BlendFactor::eOne, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
-		vk::BlendFactor::eOne, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
-		vk::ColorComponentFlagBits::eR |
-		vk::ColorComponentFlagBits::eG |
-		vk::ColorComponentFlagBits::eB |
-		vk::ColorComponentFlagBits::eA
-	};
-	vk::PipelineColorBlendStateCreateInfo color_blend_state{
-		{}, vk::False, vk::LogicOp::eCopy, 1, &color_blend_attachment
-	};
-
-	vk::GraphicsPipelineCreateInfo lighting_pipeline_info{
-		{},
-		static_cast<std::uint32_t>(lighting_stages.size()),
-		lighting_stages.data(),
-		&empty_vertex_input,
-		&input_assembly,
-		nullptr,
-		&viewport_state,
-		&rasterizer,
-		&multi_sample_state,
-		depth_stencil_state,           
-		&color_blend_state,
-		nullptr,                       
-		g_lighting_pipeline_layout,    
-		config.swap_chain_data.render_pass,
-		1,                             
-		nullptr,
-		-1
+	constexpr vk::PipelineRasterizationStateCreateInfo rasterizer{
+		.flags = {},
+		.depthClampEnable = vk::False,
+		.rasterizerDiscardEnable = vk::False,
+		.polygonMode = vk::PolygonMode::eFill,
+		.cullMode = vk::CullModeFlagBits::eNone,
+		.frontFace = vk::FrontFace::eCounterClockwise,
+		.depthBiasEnable = vk::False,
+		.depthBiasConstantFactor = 0.0f,
+		.depthBiasClamp = 0.0f,
+		.depthBiasSlopeFactor = 0.0f,
+		.lineWidth = 1.0f
 	};
 
+	constexpr vk::PipelineMultisampleStateCreateInfo multi_sample_state{
+		.flags = {},
+		.rasterizationSamples = vk::SampleCountFlagBits::e1,
+		.sampleShadingEnable = vk::False,
+		.minSampleShading = 1.0f,
+		.pSampleMask = nullptr,
+		.alphaToCoverageEnable = vk::False,
+		.alphaToOneEnable = vk::False
+	};
+
+	const vk::PipelineColorBlendAttachmentState color_blend_attachment{
+		.blendEnable = vk::False,
+		.srcColorBlendFactor = vk::BlendFactor::eOne,
+		.dstColorBlendFactor = vk::BlendFactor::eZero,
+		.colorBlendOp = vk::BlendOp::eAdd,
+		.srcAlphaBlendFactor = vk::BlendFactor::eOne,
+		.dstAlphaBlendFactor = vk::BlendFactor::eZero,
+		.alphaBlendOp = vk::BlendOp::eAdd,
+		.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
+	};
+
+	const vk::PipelineColorBlendStateCreateInfo color_blend_state{
+		.flags = {},
+		.logicOpEnable = vk::False,
+		.logicOp = vk::LogicOp::eCopy,
+		.attachmentCount = 1,
+		.pAttachments = &color_blend_attachment,
+		.blendConstants = std::array{0.0f, 0.0f, 0.0f, 0.0f}
+	};
+
+	const vk::GraphicsPipelineCreateInfo lighting_pipeline_info{
+		.flags = {},
+		.stageCount = static_cast<std::uint32_t>(lighting_stages.size()),
+		.pStages = lighting_stages.data(),
+		.pVertexInputState = &empty_vertex_input,
+		.pInputAssemblyState = &input_assembly,
+		.pTessellationState = nullptr,
+		.pViewportState = &viewport_state,
+		.pRasterizationState = &rasterizer,
+		.pMultisampleState = &multi_sample_state,
+		.pDepthStencilState = nullptr,
+		.pColorBlendState = &color_blend_state,
+		.pDynamicState = nullptr,
+		.layout = *g_lighting_pipeline_layout,
+		.renderPass = *config.swap_chain_data.render_pass,
+		.subpass = 1,
+		.basePipelineHandle = nullptr,
+		.basePipelineIndex = -1
+	};
 	g_lighting_pipeline = config.device_data.device.createGraphicsPipeline(nullptr, lighting_pipeline_info);
 
-	vk::VertexInputBindingDescription binding_description(0, sizeof(vertex), vk::VertexInputRate::eVertex);
-
-	std::array attribute_descriptions{
-		vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32B32Sfloat, offsetof(vertex, position)),
-		vk::VertexInputAttributeDescription(1, 0, vk::Format::eR32G32B32Sfloat, offsetof(vertex, normal)),
-		vk::VertexInputAttributeDescription(2, 0, vk::Format::eR32G32Sfloat, offsetof(vertex, tex_coords))
+	constexpr vk::VertexInputBindingDescription binding_description{
+		.binding = 0,
+		.stride = sizeof(vertex),
+		.inputRate = vk::VertexInputRate::eVertex
 	};
 
-	vk::PipelineVertexInputStateCreateInfo vertex_input_info({}, 1, &binding_description, static_cast<std::uint32_t>(attribute_descriptions.size()), attribute_descriptions.data());
-	vk::PipelineInputAssemblyStateCreateInfo input_assembly2({}, vk::PrimitiveTopology::eTriangleList, vk::False);
-
-	vk::Viewport viewport2(0.f, 0.f, static_cast<float>(config.swap_chain_data.extent.width), static_cast<float>(config.swap_chain_data.extent.height), 0.f, 1.f);
-	vk::Rect2D scissor2({ 0, 0 }, config.swap_chain_data.extent);
-	vk::PipelineViewportStateCreateInfo viewport_state2({}, 1, &viewport2, 1, &scissor2);
-
-	vk::PipelineRasterizationStateCreateInfo rasterizer2(
-		{},                                 // flags
-		vk::False,                          // depthClampEnable
-		vk::False,                          // rasterizerDiscardEnable
-		vk::PolygonMode::eFill,             // polygonMode
-		vk::CullModeFlagBits::eNone,        // cullMode (or eNone for testing)
-		vk::FrontFace::eClockwise,   // frontFace
-		vk::True,                           // depthBiasEnable 
-		2.0f,                               // depthBiasConstantFactor (experiment with this)
-		0.0f,                               // depthBiasClamp (usually 0.0)
-		2.0f,                               // depthBiasSlopeFactor (experiment with this)
-		1.0f                                // lineWidth (usually 1.0 for solid fill)
-	);
-
-	vk::PipelineDepthStencilStateCreateInfo depth_stencil({
-		{},               // flags
-		vk::True,         // depthTestEnable
-		vk::True,         // depthWriteEnable 
-		vk::CompareOp::eLess, // compareOp (pixels with smaller Z pass)
-		vk::False,        // depthBoundsTestEnable
-		vk::False,        // stencilTestEnable
-		{},               // front
-		{},               // back
-		0.0f,             // minDepthBounds
-		1.0f              // maxDepthBounds
+	const std::array attribute_descriptions{
+		vk::VertexInputAttributeDescription{
+			.location = 0,
+			.binding = 0,
+			.format = vk::Format::eR32G32B32Sfloat,
+			.offset = offsetof(vertex, position)
+		},
+		vk::VertexInputAttributeDescription{
+			.location = 1,
+			.binding = 0,
+			.format = vk::Format::eR32G32B32Sfloat,
+			.offset = offsetof(vertex, normal)
+		},
+		vk::VertexInputAttributeDescription{
+			.location = 2,
+			.binding = 0,
+			.format = vk::Format::eR32G32Sfloat,
+			.offset = offsetof(vertex, tex_coords)
 		}
-	);
+	};
+
+	const vk::PipelineVertexInputStateCreateInfo vertex_input_info{
+		.flags = {},
+		.vertexBindingDescriptionCount = 1,
+		.pVertexBindingDescriptions = &binding_description,
+		.vertexAttributeDescriptionCount = static_cast<std::uint32_t>(attribute_descriptions.size()),
+		.pVertexAttributeDescriptions = attribute_descriptions.data()
+	};
+
+	constexpr vk::PipelineInputAssemblyStateCreateInfo input_assembly2{
+		.flags = {},
+		.topology = vk::PrimitiveTopology::eTriangleList,
+		.primitiveRestartEnable = vk::False
+	};
+
+	constexpr vk::PipelineRasterizationStateCreateInfo rasterizer2{
+		.flags = {},
+		.depthClampEnable = vk::False,
+		.rasterizerDiscardEnable = vk::False,
+		.polygonMode = vk::PolygonMode::eFill,
+		.cullMode = vk::CullModeFlagBits::eBack,
+		.frontFace = vk::FrontFace::eCounterClockwise,
+		.depthBiasEnable = vk::False,
+		.depthBiasConstantFactor = 2.0f,
+		.depthBiasClamp = 0.0f,
+		.depthBiasSlopeFactor = 2.0f,
+		.lineWidth = 1.0f
+	};
+
+	constexpr vk::PipelineDepthStencilStateCreateInfo depth_stencil{
+		.flags = {},
+		.depthTestEnable = vk::True,
+		.depthWriteEnable = vk::True,
+		.depthCompareOp = vk::CompareOp::eLess,
+		.depthBoundsTestEnable = vk::False,
+		.stencilTestEnable = vk::False,
+		.front = {},
+		.back = {},
+		.minDepthBounds = 0.0f,
+		.maxDepthBounds = 1.0f
+	};
 
 	std::array<vk::PipelineColorBlendAttachmentState, 3> color_blend_attachments;
 	for (auto& attachment : color_blend_attachments) {
-		attachment = vk::PipelineColorBlendAttachmentState(vk::False, {}, {}, {}, {}, {}, {},
-			vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
-			vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA);
+		attachment = vk::PipelineColorBlendAttachmentState{
+			.blendEnable = vk::False,
+			.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
+		};
 	}
-	vk::PipelineColorBlendStateCreateInfo color_blending({}, vk::False, vk::LogicOp::eCopy, static_cast<std::uint32_t>(color_blend_attachments.size()), color_blend_attachments.data());
+
+	const vk::PipelineColorBlendStateCreateInfo color_blending{
+		.flags = {},
+		.logicOpEnable = vk::False,
+		.logicOp = vk::LogicOp::eCopy,
+		.attachmentCount = static_cast<std::uint32_t>(color_blend_attachments.size()),
+		.pAttachments = color_blend_attachments.data()
+	};
 
 	auto shader_stages = geometry_shader.shader_stages();
 
-	vk::PipelineMultisampleStateCreateInfo multisampling(
-		{},
-		vk::SampleCountFlagBits::e1,   // No multi-sampling, but still needs to be valid
-		vk::False,
-		1.0f,
-		nullptr,
-		vk::False,
-		vk::False
-	);
+	constexpr vk::PipelineMultisampleStateCreateInfo multisampling{
+		.flags = {},
+		.rasterizationSamples = vk::SampleCountFlagBits::e1,
+		.sampleShadingEnable = vk::False,
+		.minSampleShading = 1.0f,
+		.pSampleMask = nullptr,
+		.alphaToCoverageEnable = vk::False,
+		.alphaToOneEnable = vk::False
+	};
 
-	vk::GraphicsPipelineCreateInfo pipeline_info(
-		{}, 
-		static_cast<std::uint32_t>(shader_stages.size()), 
-		shader_stages.data(), 
-		&vertex_input_info, 
-		&input_assembly2,
-		nullptr, 
-		&viewport_state2, 
-		&rasterizer2,
-		&multisampling,
-		&depth_stencil, 
-		&color_blending, 
-		nullptr, 
-		g_pipeline_layout, 
-		config.swap_chain_data.render_pass, 
-		0
-	);
+	const vk::GraphicsPipelineCreateInfo pipeline_info{
+		.flags = {},
+		.stageCount = static_cast<std::uint32_t>(shader_stages.size()),
+		.pStages = shader_stages.data(),
+		.pVertexInputState = &vertex_input_info,
+		.pInputAssemblyState = &input_assembly2,
+		.pTessellationState = nullptr,
+		.pViewportState = &viewport_state,
+		.pRasterizationState = &rasterizer2,
+		.pMultisampleState = &multisampling,
+		.pDepthStencilState = &depth_stencil,
+		.pColorBlendState = &color_blending,
+		.pDynamicState = nullptr,
+		.layout = *g_pipeline_layout,
+		.renderPass = *config.swap_chain_data.render_pass,
+		.subpass = 0,
+		.basePipelineHandle = nullptr,
+		.basePipelineIndex = 0
+	};
 	g_pipeline = config.device_data.device.createGraphicsPipeline(nullptr, pipeline_info);
 }
 
@@ -367,42 +383,27 @@ auto gse::renderer3d::render(const vulkan::config& config) -> void {
 	}
 
 	auto& geometry_shader = shader_loader::get_shader("geometry_pass");
-	const auto model_size = geometry_shader.uniform_block("model_ubo").size;
-
-	if (input::get_keyboard().keys[GLFW_KEY_F12].pressed) {
-		std::print("Camera view matrix: {}\n", g_camera.get_view_matrix());
-		std::print("Camera projection matrix: {}\n", g_camera.get_projection_matrix());
-	}
-
-	geometry_shader.set_uniform("camera_ubo.view", g_camera.get_view_matrix(), g_ubo_allocations.at("camera_ubo").allocation);
-	geometry_shader.set_uniform("camera_ubo.proj", g_camera.get_projection_matrix(), g_ubo_allocations.at("camera_ubo").allocation);
-
 	command.bindPipeline(vk::PipelineBindPoint::eGraphics, g_pipeline);
 
-	vulkan::persistent_allocator::mapped_buffer_view<mat4> model_view{
-		.base = g_ubo_allocations.at("model_ubo").allocation.mapped(),
-		.stride = model_size,
+	const auto view = g_camera.get_view_matrix();
+	const auto proj = g_camera.get_projection_matrix();
+
+	std::unordered_map<std::string, std::span<const std::byte>> push_constants = {
+		{"view", std::as_bytes(std::span{ &view, 1 })},
+		{"proj", std::as_bytes(std::span{ &proj, 1 })}
 	};
 
-	auto& all_textures = texture_loader::get_all_textures();
-	auto& all_mats = gse::get_materials();
-
-	std::size_t model_index = 0;
 	for (const auto& component : components) {
 		for (const auto& model_handle : component.models) {
 			for (const auto& entry : model_handle.get_render_queue_entries()) {
-				model_view[model_index] = entry.model_matrix;
+				push_constants["model"] = std::as_bytes(std::span{ &entry.model_matrix, 1 });
 
-				model_index++;
-
-				const vk::DescriptorSet sets[] = { g_vertex_descriptor_set };
-
-				command.bindDescriptorSets(
-					vk::PipelineBindPoint::eGraphics,
+				geometry_shader.push(
+					command,
 					g_pipeline_layout,
-					0,
-					vk::ArrayProxy<const vk::DescriptorSet>(1, sets),
-					{}
+					"push_constants",
+					push_constants,
+					vk::ShaderStageFlagBits::eVertex
 				);
 
 				if (entry.mesh->material.exists()) {
@@ -424,9 +425,12 @@ auto gse::renderer3d::render(const vulkan::config& config) -> void {
 	command.bindPipeline(vk::PipelineBindPoint::eGraphics, g_lighting_pipeline);
 	command.bindDescriptorSets(
 		vk::PipelineBindPoint::eGraphics,
-		g_lighting_pipeline_layout,
-		0, 1, &*g_lighting_descriptor_set,
-		0, nullptr
+		*g_lighting_pipeline_layout,
+		0,
+		1,
+		&*g_lighting_descriptor_set,
+		0,
+		nullptr
 	);
 	command.draw(3, 1, 0, 0);
 }
