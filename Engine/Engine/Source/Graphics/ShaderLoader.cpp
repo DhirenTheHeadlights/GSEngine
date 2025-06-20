@@ -55,10 +55,9 @@ constexpr auto fs = vk::ShaderStageFlagBits::eFragment;
 
 auto create_layout(const vk::Device device, const std::vector<vk::DescriptorSetLayoutBinding>& bindings) -> vk::DescriptorSetLayout {
     return device.createDescriptorSetLayout({
-		{},
-		static_cast<std::uint32_t>(bindings.size()),
-		bindings.data()
-		});
+        .bindingCount = static_cast<uint32_t>(bindings.size()),
+        .pBindings = bindings.data(),
+    });
 }
 
 auto init_descriptor_layouts(const vk::raii::Device& device) -> void {
@@ -71,9 +70,9 @@ auto init_descriptor_layouts(const vk::raii::Device& device) -> void {
         ) -> void {
     	vk::raii::DescriptorSetLayout descriptor_set_layout = device.createDescriptorSetLayout(
             vk::DescriptorSetLayoutCreateInfo{
-				type == gse::shader::set::binding_type::push ? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR : vk::DescriptorSetLayoutCreateFlags(),
-        		static_cast<uint32_t>(bindings.size()),
-        		bindings.data()
+				.flags = type == gse::shader::set::binding_type::push ? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR : vk::DescriptorSetLayoutCreateFlags(),
+        		.bindingCount = static_cast<uint32_t>(bindings.size()),
+        		.pBindings = bindings.data()
             }
         );
 
@@ -126,12 +125,12 @@ auto init_descriptor_layouts(const vk::raii::Device& device) -> void {
     struct gse::shader::layout for_3d;
 
     create_layout(for_3d, gse::shader::set::binding_type::persistent, {
-        { 0, vk::DescriptorType::eUniformBuffer,        1, vs },
-        { 1, vk::DescriptorType::eUniformBuffer,        1, vs },
-        { 4, vk::DescriptorType::eStorageBuffer,        1, fs },
-        });
+		{ 4, vk::DescriptorType::eStorageBuffer, 1, fs }
+    });
 
     create_layout(for_3d, gse::shader::set::binding_type::push, {
+        { 0, vk::DescriptorType::eUniformBuffer,        1, vs },
+        { 1, vk::DescriptorType::eUniformBuffer,        1, vs },
         { 2, vk::DescriptorType::eCombinedImageSampler, 1, fs },
         { 3, vk::DescriptorType::eCombinedImageSampler, 1, fs },
 		});

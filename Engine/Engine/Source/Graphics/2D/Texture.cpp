@@ -4,58 +4,77 @@ import std;
 import vulkan_hpp;
 
 auto gse::texture::load(const vulkan::config& config) -> void {
-    const vk::BufferCreateInfo buffer_info(
-        {},
-        m_image_data.size_bytes(),
-        vk::BufferUsageFlagBits::eTransferSrc,
-        vk::SharingMode::eExclusive
-    );
+    const vk::BufferCreateInfo buffer_info{
+        .flags = {},
+        .size = m_image_data.size_bytes(),
+        .usage = vk::BufferUsageFlagBits::eTransferSrc,
+        .sharingMode = vk::SharingMode::eExclusive
+    };
 
-	auto [buffer, allocation] = vulkan::persistent_allocator::create_buffer(
+    auto [buffer, allocation] = vulkan::persistent_allocator::create_buffer(
         config.device_data,
         buffer_info,
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-		m_image_data.pixels.data()
+        m_image_data.pixels.data()
     );
 
-    const auto format = m_image_data.channels == 4 ? vk::Format::eR8G8B8A8Srgb : m_image_data.channels == 1 ? vk::Format::eR8Unorm : vk::Format::eR8G8B8Srgb; // Note: 3-channel formats might require special handling
+    const auto format = m_image_data.channels == 4 ? vk::Format::eR8G8B8A8Srgb : m_image_data.channels == 1 ? vk::Format::eR8Unorm : vk::Format::eR8G8B8Srgb;
 
-    const vk::ImageCreateInfo image_info(
-        {},
-        vk::ImageType::e2D,
-        format,
-        vk::Extent3D{ (m_image_data.size.x), (m_image_data.size.y), 1 },
-        1, 1,
-        vk::SampleCountFlagBits::e1,
-        vk::ImageTiling::eOptimal,
-        vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-        vk::SharingMode::eExclusive,
-        0, nullptr,
-        vk::ImageLayout::eUndefined
-    );
+    const vk::ImageCreateInfo image_info{
+        .flags = {},
+        .imageType = vk::ImageType::e2D,
+        .format = format,
+        .extent = {
+            .width = m_image_data.size.x,
+            .height = m_image_data.size.y,
+            .depth = 1
+        },
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = vk::SampleCountFlagBits::e1,
+        .tiling = vk::ImageTiling::eOptimal,
+        .usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+        .sharingMode = vk::SharingMode::eExclusive,
+        .queueFamilyIndexCount = 0,
+        .pQueueFamilyIndices = nullptr,
+        .initialLayout = vk::ImageLayout::eUndefined
+    };
 
-	const vk::ImageViewCreateInfo view_info(
-        {},
-        nullptr,
-        vk::ImageViewType::e2D,
-        format,
-        {},
-        vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
-    );
+    const vk::ImageViewCreateInfo view_info{
+        .flags = {},
+        .image = nullptr,
+        .viewType = vk::ImageViewType::e2D,
+        .format = format,
+        .components = {},
+        .subresourceRange = {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        }
+    };
 
-	m_texture_image = vulkan::persistent_allocator::create_image(config.device_data, image_info, vk::MemoryPropertyFlagBits::eDeviceLocal, view_info);
+    m_texture_image = vulkan::persistent_allocator::create_image(config.device_data, image_info, vk::MemoryPropertyFlagBits::eDeviceLocal, view_info);
 
     const auto command_buffer = begin_single_line_commands(config);
 
-    vk::ImageMemoryBarrier barrier(
-        {},
-        vk::AccessFlagBits::eTransferWrite,
-        vk::ImageLayout::eUndefined,
-        vk::ImageLayout::eTransferDstOptimal,
-        vk::QueueFamilyIgnored, vk::QueueFamilyIgnored,
-        m_texture_image.image,
-        vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
-    );
+    const vk::ImageMemoryBarrier to_transfer_barrier{
+        .srcAccessMask = {},
+        .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
+        .oldLayout = vk::ImageLayout::eUndefined,
+        .newLayout = vk::ImageLayout::eTransferDstOptimal,
+        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .image = *m_texture_image.image,
+        .subresourceRange = {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        }
+    };
 
     command_buffer.pipelineBarrier(
         vk::PipelineStageFlagBits::eTopOfPipe,
@@ -63,32 +82,50 @@ auto gse::texture::load(const vulkan::config& config) -> void {
         {},
         nullptr,
         nullptr,
-        barrier
+        to_transfer_barrier
     );
 
-    const vk::BufferImageCopy region(
-        0, 0, 0,
-        vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1),
-        vk::Offset3D{ 0, 0, 0 },
-        vk::Extent3D{ (m_image_data.size.x), (m_image_data.size.y), 1 }
-    );
+    const vk::BufferImageCopy region{
+        .bufferOffset = 0,
+        .bufferRowLength = 0,
+        .bufferImageHeight = 0,
+        .imageSubresource = {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .mipLevel = 0,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        },
+        .imageOffset = {.x = 0, .y = 0, .z = 0 },
+        .imageExtent = {
+            .width = m_image_data.size.x,
+            .height = m_image_data.size.y,
+            .depth = 1
+        }
+    };
 
     command_buffer.copyBufferToImage(
-        buffer,
-        m_texture_image.image,
+        *buffer,
+        *m_texture_image.image,
         vk::ImageLayout::eTransferDstOptimal,
         region
     );
 
-    barrier = vk::ImageMemoryBarrier(
-        vk::AccessFlagBits::eTransferWrite,
-        vk::AccessFlagBits::eShaderRead,
-        vk::ImageLayout::eTransferDstOptimal,
-        vk::ImageLayout::eShaderReadOnlyOptimal,
-        vk::QueueFamilyIgnored, vk::QueueFamilyIgnored,
-        m_texture_image.image,
-        vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
-    );
+    const vk::ImageMemoryBarrier to_shader_read_barrier{
+        .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
+        .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+        .oldLayout = vk::ImageLayout::eTransferDstOptimal,
+        .newLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .image = *m_texture_image.image,
+        .subresourceRange = {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        }
+    };
 
     command_buffer.pipelineBarrier(
         vk::PipelineStageFlagBits::eTransfer,
@@ -96,65 +133,83 @@ auto gse::texture::load(const vulkan::config& config) -> void {
         {},
         nullptr,
         nullptr,
-        barrier
+        to_shader_read_barrier
     );
 
     end_single_line_commands(command_buffer, config);
 
-    constexpr vk::SamplerCreateInfo sampler_info(
-        {},
-        vk::Filter::eLinear, vk::Filter::eLinear,
-        vk::SamplerMipmapMode::eLinear,
-        vk::SamplerAddressMode::eRepeat,
-        vk::SamplerAddressMode::eRepeat,
-        vk::SamplerAddressMode::eRepeat,
-        0.0f, vk::True, 16, vk::False, vk::CompareOp::eAlways,
-        0.0f, 0.0f,
-        vk::BorderColor::eIntOpaqueBlack
-    );
+    constexpr vk::SamplerCreateInfo sampler_info{
+        .flags = {},
+        .magFilter = vk::Filter::eLinear,
+        .minFilter = vk::Filter::eLinear,
+        .mipmapMode = vk::SamplerMipmapMode::eLinear,
+        .addressModeU = vk::SamplerAddressMode::eRepeat,
+        .addressModeV = vk::SamplerAddressMode::eRepeat,
+        .addressModeW = vk::SamplerAddressMode::eRepeat,
+        .mipLodBias = 0.0f,
+        .anisotropyEnable = vk::True,
+        .maxAnisotropy = 16.0f,
+        .compareEnable = vk::False,
+        .compareOp = vk::CompareOp::eAlways,
+        .minLod = 0.0f,
+        .maxLod = 0.0f,
+        .borderColor = vk::BorderColor::eIntOpaqueBlack,
+        .unnormalizedCoordinates = vk::False
+    };
 
     m_texture_sampler = config.device_data.device.createSampler(sampler_info);
 }
 
 auto gse::texture::load_from_memory(const vulkan::config& config, const std::vector<std::byte>& data, const unitless::vec2u size, const std::uint32_t channels) -> void {
-    m_image_data = stb::image::data {
-		.path = "",
-		.size = size,
+    m_image_data = stb::image::data{
+        .path = "",
+        .size = size,
         .channels = channels,
         .pixels = data
     };
 
-    const vk::Format format = channels == 4 ? vk::Format::eR8G8B8A8Srgb : channels == 1 ? vk::Format::eR8Unorm : vk::Format::eR8G8B8Srgb;
+    const auto format = channels == 4 ? vk::Format::eR8G8B8A8Srgb : channels == 1 ? vk::Format::eR8Unorm : vk::Format::eR8G8B8Srgb;
     const std::size_t image_size = static_cast<std::size_t>(size.x) * size.y * channels;
 
     m_texture_image = vulkan::persistent_allocator::create_image(
         config.device_data,
-        vk::ImageCreateInfo(
-            {},
-            vk::ImageType::e2D,
-            format,
-            vk::Extent3D{ static_cast<std::uint32_t>(size.x), static_cast<std::uint32_t>(size.y), 1 },
-            1, 1,
-            vk::SampleCountFlagBits::e1,
-            vk::ImageTiling::eOptimal,
-            vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
-            vk::SharingMode::eExclusive,
-            {},
-            vk::ImageLayout::eUndefined
-        ),
+        vk::ImageCreateInfo{
+            .flags = {},
+            .imageType = vk::ImageType::e2D,
+            .format = format,
+            .extent = {
+                .width = static_cast<std::uint32_t>(size.x),
+                .height = static_cast<std::uint32_t>(size.y),
+                .depth = 1
+            },
+            .mipLevels = 1,
+            .arrayLayers = 1,
+            .samples = vk::SampleCountFlagBits::e1,
+            .tiling = vk::ImageTiling::eOptimal,
+            .usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
+            .sharingMode = vk::SharingMode::eExclusive,
+            .initialLayout = vk::ImageLayout::eUndefined
+        },
         vk::MemoryPropertyFlagBits::eDeviceLocal,
-        vk::ImageViewCreateInfo(
-            {}, nullptr,
-            vk::ImageViewType::e2D,
-            format,
-            {},
-            { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 }
-        )
+        vk::ImageViewCreateInfo{
+            .flags = {},
+            .image = nullptr,
+            .viewType = vk::ImageViewType::e2D,
+            .format = format,
+            .components = {},
+            .subresourceRange = {
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1
+            }
+        }
     );
 
     vulkan::uploader::upload_image_2d(
-		config,
-        m_texture_image.image,
+        config,
+        *m_texture_image.image,
         format,
         size.x,
         size.y,
@@ -165,7 +220,9 @@ auto gse::texture::load_from_memory(const vulkan::config& config, const std::vec
 }
 
 auto gse::texture::get_descriptor_info() const -> vk::DescriptorImageInfo {
-    return { m_texture_sampler, m_texture_image.view, vk::ImageLayout::eShaderReadOnlyOptimal };
+    return vk::DescriptorImageInfo{
+        .sampler = *m_texture_sampler,
+        .imageView = *m_texture_image.view,
+        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+    };
 }
-
-

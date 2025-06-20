@@ -275,15 +275,65 @@ constexpr auto gse::mat<T, Cols, Rows>::transpose() const -> mat<T, Rows, Cols> 
 
 template <typename T, int Cols, int Rows>
 constexpr auto gse::mat<T, Cols, Rows>::inverse() const -> mat {
-    mat result;
-    T det = determinant();
-    perma_assert(det != 0, "Matrix is singular and cannot be inverted.");
-    for (size_t i = 0; i < Rows; ++i) {
-        for (size_t j = 0; j < Cols; ++j) {
-            result[j][i] = data[i][j] / det;
-        }
-    }
-    return result;
+    const mat& m = *this;
+
+    T coef_00 = m[2][2] * m[3][3] - m[3][2] * m[2][3];
+    T coef_02 = m[1][2] * m[3][3] - m[3][2] * m[1][3];
+    T coef_03 = m[1][2] * m[2][3] - m[2][2] * m[1][3];
+    T coef_04 = m[2][1] * m[3][3] - m[3][1] * m[2][3];
+    T coef_06 = m[1][1] * m[3][3] - m[3][1] * m[1][3];
+    T coef_07 = m[1][1] * m[2][3] - m[2][1] * m[1][3];
+    T coef_08 = m[2][1] * m[3][2] - m[3][1] * m[2][2];
+    T coef_10 = m[1][1] * m[3][2] - m[3][1] * m[1][2];
+    T coef_11 = m[1][1] * m[2][2] - m[2][1] * m[1][2];
+    T coef_12 = m[2][0] * m[3][3] - m[3][0] * m[2][3];
+    T coef_14 = m[1][0] * m[3][3] - m[3][0] * m[1][3];
+    T coef_15 = m[1][0] * m[2][3] - m[2][0] * m[1][3];
+    T coef_16 = m[2][0] * m[3][2] - m[3][0] * m[2][2];
+    T coef_18 = m[1][0] * m[3][2] - m[3][0] * m[1][2];
+    T coef_19 = m[1][0] * m[2][2] - m[2][0] * m[1][2];
+    T coef_20 = m[2][0] * m[3][1] - m[3][0] * m[2][1];
+    T coef_22 = m[1][0] * m[3][1] - m[3][0] * m[1][1];
+    T coef_23 = m[1][0] * m[2][1] - m[2][0] * m[1][1];
+
+    vec::storage<T, 4> fac_0 = { coef_00, coef_00, coef_02, coef_03 };
+    vec::storage<T, 4> fac_1 = { coef_04, coef_04, coef_06, coef_07 };
+    vec::storage<T, 4> fac_2 = { coef_08, coef_08, coef_10, coef_11 };
+    vec::storage<T, 4> fac_3 = { coef_12, coef_12, coef_14, coef_15 };
+    vec::storage<T, 4> fac_4 = { coef_16, coef_16, coef_18, coef_19 };
+    vec::storage<T, 4> fac_5 = { coef_20, coef_20, coef_22, coef_23 };
+
+    vec::storage<T, 4> vec_0 = { m[1][0], m[0][0], m[0][0], m[0][0] };
+    vec::storage<T, 4> vec_1 = { m[1][1], m[0][1], m[0][1], m[0][1] };
+    vec::storage<T, 4> vec_2 = { m[1][2], m[0][2], m[0][2], m[0][2] };
+    vec::storage<T, 4> vec_3 = { m[1][3], m[0][3], m[0][3], m[0][3] };
+
+    vec::storage<T, 4> inv_0 = (vec_1 * fac_0) - (vec_2 * fac_1) + (vec_3 * fac_2);
+    vec::storage<T, 4> inv_1 = (vec_0 * fac_0) - (vec_2 * fac_3) + (vec_3 * fac_4);
+    vec::storage<T, 4> inv_2 = (vec_0 * fac_1) - (vec_1 * fac_3) + (vec_3 * fac_5);
+    vec::storage<T, 4> inv_3 = (vec_0 * fac_2) - (vec_1 * fac_4) + (vec_2 * fac_5);
+
+    vec::storage<T, 4> sign_a = { +1, -1, +1, -1 };
+    vec::storage<T, 4> sign_b = { -1, +1, -1, +1 };
+
+    mat<T, 4, 4> inverse_matrix;
+    inverse_matrix[0] = inv_0 * sign_a;
+    inverse_matrix[1] = inv_1 * sign_b;
+    inverse_matrix[2] = inv_2 * sign_a;
+    inverse_matrix[3] = inv_3 * sign_b;
+
+    vec::storage<T, 4> row_0 = { inverse_matrix[0][0], inverse_matrix[1][0], inverse_matrix[2][0], inverse_matrix[3][0] };
+    vec::storage<T, 4> dot_0 = m[0] * row_0;
+    T dot_1 = (dot_0.x + dot_0.y) + (dot_0.z + dot_0.w);
+
+    assert(
+        dot_1 != static_cast<T>(0), 
+		std::format("Matrix {} is not invertible, determinant is zero.", *this)
+    );
+
+    T one_over_determinant = static_cast<T>(1) / dot_1;
+
+    return inverse_matrix * one_over_determinant;
 }
 
 template <typename T>

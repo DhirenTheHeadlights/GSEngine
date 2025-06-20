@@ -59,7 +59,10 @@ auto gse::vulkan::transient_allocator::allocate(const config::device_config& con
 	auto& new_block = pool.blocks.emplace_back();
 	new_block.properties = properties;
 	new_block.size = new_block_size;
-	new_block.memory = config.device.allocateMemory({ new_block_size, req_memory_type_index });
+	new_block.memory = config.device.allocateMemory({
+		.allocationSize = new_block_size,
+		.memoryTypeIndex = req_memory_type_index
+	});
 
 	if (properties & vk::MemoryPropertyFlagBits::eHostVisible) {
 		new_block.mapped = new_block.memory.mapMemory(0, new_block.size);
@@ -75,7 +78,9 @@ auto gse::vulkan::transient_allocator::allocate(const config::device_config& con
 auto gse::vulkan::transient_allocator::create_buffer(const config::device_config& config, const vk::BufferCreateInfo& buffer_info, const vk::MemoryPropertyFlags properties, const void* data) -> persistent_allocator::buffer_resource {
 	vk::raii::Buffer buffer = config.device.createBuffer(buffer_info);
 
-	const vk::BufferMemoryRequirementsInfo2 info{ *buffer };
+	const vk::BufferMemoryRequirementsInfo2 info{
+		.buffer = *buffer
+	};
 	const auto requirements = config.device.getBufferMemoryRequirements2(info).memoryRequirements;
 
 	const auto alloc = allocate(config, requirements, properties);
