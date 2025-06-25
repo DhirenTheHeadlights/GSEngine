@@ -32,6 +32,7 @@ import gse.graphics.model_loader;
 import gse.graphics.light;
 import gse.graphics.light_source_component;
 import gse.graphics.point_light;
+import gse.physics.collision_component;
 import gse.physics.motion_component;
 import gse.physics.math;
 import gse.platform.glfw.window;
@@ -74,6 +75,72 @@ bool g_brightness_extraction_debug = false;
 bool g_hdr = true;
 bool g_bloom = true;
 int g_amount_of_blur_passes_in_each_direction = 5;
+
+GLuint g_debug_point_vao = 0;
+GLuint g_debug_point_vbo = 0;
+GLuint g_debug_point_ebo = 0;
+GLsizei g_debug_point_index_count = 0;
+
+auto create_debug_sphere_vao() -> void {
+	constexpr int sector_count = 18; // Longitude
+	constexpr int stack_count = 12;  // Latitude
+	constexpr float radius = 1.0f;
+
+	std::vector<float> vertices;
+	std::vector<uint32_t> indices;
+
+	for (int i = 0; i <= stack_count; ++i) {
+		float stack_angle = 3.1415926 / 2 - i * 3.1415926 / stack_count;
+		float xy = radius * cosf(stack_angle);
+		float z = radius * sinf(stack_angle);
+
+		for (int j = 0; j <= sector_count; ++j) {
+			float sector_angle = j * 2 * 3.1415926 / sector_count;
+			float x = xy * cosf(sector_angle);
+			float y = xy * sinf(sector_angle);
+			vertices.push_back(x);
+			vertices.push_back(y);
+			vertices.push_back(z);
+		}
+	}
+
+	for (int i = 0; i < stack_count; ++i) {
+		int k1 = i * (sector_count + 1);
+		int k2 = k1 + sector_count + 1;
+
+		for (int j = 0; j < sector_count; ++j, ++k1, ++k2) {
+			if (i != 0) {
+				indices.push_back(k1);
+				indices.push_back(k2);
+				indices.push_back(k1 + 1);
+			}
+			if (i != (stack_count - 1)) {
+				indices.push_back(k1 + 1);
+				indices.push_back(k2);
+				indices.push_back(k2 + 1);
+			}
+		}
+	}
+
+	g_debug_point_index_count = static_cast<GLsizei>(indices.size());
+
+	glGenVertexArrays(1, &g_debug_point_vao);
+	glGenBuffers(1, &g_debug_point_vbo);
+	glGenBuffers(1, &g_debug_point_ebo);
+
+	glBindVertexArray(g_debug_point_vao);
+
+	glBindBuffer(GL_ARRAY_BUFFER, g_debug_point_vbo);
+	glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
+
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g_debug_point_ebo);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(uint32_t), indices.data(), GL_STATIC_DRAW);
+
+	glEnableVertexAttribArray(0); // layout(location = 0)
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
+
+	glBindVertexArray(0);
+}
 
 auto load_shaders(const std::filesystem::path& shader_path, const std::filesystem::path& shader_file_name,
 	std::unordered_map<std::string, gse::shader>& shaders) -> void {
@@ -212,6 +279,8 @@ auto gse::renderer3d::initialize() -> void {
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
+	create_debug_sphere_vao();
+
 	const auto& blur_shader = g_deferred_rendering_shaders["GaussianBlur"];
 
 	blur_shader.use();
@@ -273,80 +342,112 @@ auto gse::renderer3d::initialize_objects() -> void {
 	}
 }
 
+
 auto render_object(const std::uint32_t object_id, const gse::render_queue_entry& entry, const gse::mat4& view_matrix, const gse::mat4& projection_matrix) -> void {
-	if (const auto it = g_materials.find(entry.material_key); it != g_materials.end()) {
-		gse::mat4 model_matrix = entry.model_matrix;
-		if (const auto* motion_component = gse::registry::get_component_ptr<gse::physics::motion_component>(object_id); motion_component) {
-			model_matrix = motion_component->get_transformation_matrix();
-		}
+	//check if object's render component has render_bounding_boxes enables
+		if (const auto it = g_materials.find(entry.material_key); it != g_materials.end()) {
+			gse::mat4 model_matrix = entry.model_matrix;
+			if (const auto* motion_component = gse::registry::get_component_ptr<gse::physics::motion_component>(object_id); motion_component) {
+				model_matrix = motion_component->get_transformation_matrix();
+			}
 
-		//it->second.use(view_matrix, projection_matrix, model_matrix);
-//it->second.shader.set_vec3("color", entry.color);
+			it->second.use(view_matrix, projection_matrix, model_matrix);
+			it->second.shader.set_vec3("color", entry.color);
 
-		const auto& texture_shader = g_texture_shaders["DefaultTexture"];
-		texture_shader.use();
-		texture_shader.set_mat4("view", view_matrix);
-		texture_shader.set_mat4("projection", projection_matrix);
-		texture_shader.set_mat4("model", model_matrix);
-		texture_shader.set_vec3("color", entry.color);
-		texture_shader.set_int("texture_diffuse1", 0);
-		texture_shader.set_vec3("viewPos", g_camera.get_position().as<gse::units::meters>());
+			const auto& texture_shader = g_texture_shaders["DefaultTexture"];
+			texture_shader.use();
+			texture_shader.set_mat4("view", view_matrix);
+			texture_shader.set_mat4("projection", projection_matrix);
+			texture_shader.set_mat4("model", model_matrix);
+			texture_shader.set_vec3("color", entry.color);
+			texture_shader.set_int("texture_diffuse1", 0);
+			texture_shader.set_vec3("viewPos", g_camera.get_position().as<gse::units::meters>());
 
-		constexpr GLuint binding_unit = 5;
-		g_reflection_cube_map.bind(binding_unit);
-		texture_shader.set_int("environmentMap", binding_unit);
+			constexpr GLuint binding_unit = 5;
+			g_reflection_cube_map.bind(binding_unit);
+			texture_shader.set_int("environmentMap", binding_unit);
 
-		// Entry has no mtl data
-		if (entry.material == nullptr) {
-			texture_shader.set_bool("usemtl", false);
-			texture_shader.set_bool("useDiffuseTexture", true);
-			texture_shader.set_bool("useSpecularTexture", false);
-			texture_shader.set_bool("useNormalTexture", false);
+			 //Entry has no mtl data
+			if (entry.material == nullptr) {
+				texture_shader.set_bool("usemtl", false);
+				texture_shader.set_bool("useDiffuseTexture", true);
+				texture_shader.set_bool("useSpecularTexture", false);
+				texture_shader.set_bool("useNormalTexture", false);
 
-			for (const auto& texture : entry.texture_ids) {
+				for (const auto& texture : entry.texture_ids) {
+					glActiveTexture(GL_TEXTURE0);
+					glBindTexture(GL_TEXTURE_2D, texture);
+				}
+			}
+			//entry is using mtl textures
+		
+			else {
+				texture_shader.set_bool("usemtl", true);
+				texture_shader.set_int("texture_diffuse1", 0);
+				texture_shader.set_bool("useDiffuseTexture", entry.material->diffuse_texture != 0);
+
+				texture_shader.set_int("texture_specular1", 1);
+				texture_shader.set_bool("useSpecularTexture", entry.material->specular_texture != 0);
+
+				texture_shader.set_int("ntexture_normal1", 2);
+				texture_shader.set_bool("useNormalTexture", entry.material->normal_texture != 0);
+
+				texture_shader.set_vec3("ambient", entry.material->ambient);
+				texture_shader.set_vec3("diffuse", entry.material->diffuse);
+				texture_shader.set_vec3("specular", entry.material->specular);
+				texture_shader.set_vec3("emission", entry.material->emission);
+				texture_shader.set_float("shininess", entry.material->shininess);
+				texture_shader.set_float("optical_density", entry.material->optical_density);
+				texture_shader.set_float("transparency", entry.material->transparency);
+				texture_shader.set_int("illumination_model", entry.material->illumination_model);
+
+
 				glActiveTexture(GL_TEXTURE0);
-				glBindTexture(GL_TEXTURE_2D, texture);
+				glBindTexture(GL_TEXTURE_2D, entry.material->diffuse_texture);
+				glActiveTexture(GL_TEXTURE1);
+				glBindTexture(GL_TEXTURE_2D, entry.material->specular_texture);
+				glActiveTexture(GL_TEXTURE2);
+				glBindTexture(GL_TEXTURE_2D, entry.material->normal_texture);
+			}
+
+			glBindVertexArray(entry.vao);
+			glDrawElements(entry.draw_mode, entry.vertex_count, GL_UNSIGNED_INT, nullptr);
+			glBindVertexArray(0);
+
+			if (const auto* collision_component = gse::registry::get_component_ptr<gse::physics::collision_component>(object_id);
+				collision_component && collision_component->collision_information.colliding) {
+
+				gse::vec3<gse::length> contact_world_pos = collision_component->collision_information.collision_point.as<gse::units::meters>();
+
+				// Disable depth test so point draws over everything
+				glDisable(GL_DEPTH_TEST);
+
+				// Use a simple shader for point rendering
+				const auto& point_shader = g_texture_shaders["DebugPoint"];
+				point_shader.use();
+				point_shader.set_mat4("view", view_matrix);
+				point_shader.set_mat4("projection", projection_matrix);
+				point_shader.set_vec3("color", gse::unitless::vec3({ 1.0f, 0.0f, 0.0f })); // Bright red
+
+				// Build a model matrix to place the point
+				gse::mat4 point_model = gse::translate(gse::mat4(1.0f), contact_world_pos);
+				point_model = gse::scale(point_model, gse::vec3<gse::length>(0.05f)); // Small point size
+
+				point_shader.set_mat4("model", point_model);
+
+				glBindVertexArray(g_debug_point_vao);
+				glDrawElements(GL_TRIANGLES, g_debug_point_index_count, GL_UNSIGNED_INT, nullptr);
+				glBindVertexArray(0);
+
+
+				// Restore depth test
+				glEnable(GL_DEPTH_TEST);
+			}
+
+			if (it->second.material_texture != 0) {
+				glBindTexture(GL_TEXTURE_2D, 0);
 			}
 		}
-		//entry is using mtl textures
-		
-		else {
-			texture_shader.set_bool("usemtl", true);
-			texture_shader.set_int("texture_diffuse1", 0);
-			texture_shader.set_bool("useDiffuseTexture", entry.material->diffuse_texture != 0);
-
-			texture_shader.set_int("texture_specular1", 1);
-			texture_shader.set_bool("useSpecularTexture", entry.material->specular_texture != 0);
-
-			texture_shader.set_int("ntexture_normal1", 2);
-			texture_shader.set_bool("useNormalTexture", entry.material->normal_texture != 0);
-
-			texture_shader.set_vec3("ambient", entry.material->ambient);
-			texture_shader.set_vec3("diffuse", entry.material->diffuse);
-			texture_shader.set_vec3("specular", entry.material->specular);
-			texture_shader.set_vec3("emission", entry.material->emission);
-			texture_shader.set_float("shininess", entry.material->shininess);
-			texture_shader.set_float("optical_density", entry.material->optical_density);
-			texture_shader.set_float("transparency", entry.material->transparency);
-			texture_shader.set_int("illumination_model", entry.material->illumination_model);
-
-
-			glActiveTexture(GL_TEXTURE0);
-			glBindTexture(GL_TEXTURE_2D, entry.material->diffuse_texture);
-			glActiveTexture(GL_TEXTURE1);
-			glBindTexture(GL_TEXTURE_2D, entry.material->specular_texture);
-			glActiveTexture(GL_TEXTURE2);
-			glBindTexture(GL_TEXTURE_2D, entry.material->normal_texture);
-		}
-
-		glBindVertexArray(entry.vao);
-		glDrawElements(entry.draw_mode, entry.vertex_count, GL_UNSIGNED_INT, nullptr);
-		glBindVertexArray(0);
-
-		if (it->second.material_texture != 0) {
-			glBindTexture(GL_TEXTURE_2D, 0);
-		}
-	}
 }
 
 auto render_object_forward(const std::uint32_t object_id, const gse::shader& forward_rendering_shader, const gse::render_queue_entry& entry, const gse::mat4& view_matrix, const gse::mat4& projection_matrix) -> void {

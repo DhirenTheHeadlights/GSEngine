@@ -12,6 +12,7 @@ export namespace gse {
 	template <internal::is_quantity T, int N> constexpr auto is_zero(const vec_t<T, N>& v) -> bool;
 	template <internal::is_quantity T, int N> constexpr auto normalize(const vec_t<T, N>& v) -> unitless::vec_t<typename T::value_type, N>;
 	template <internal::is_quantity T, int N> constexpr auto dot(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> T;
+
 	template <internal::is_quantity T, internal::is_quantity U, int N> constexpr auto cross(const vec_t<T, N>& lhs, const vec_t<U, N>& rhs);
 }
 

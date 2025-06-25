@@ -2,5 +2,9 @@
   "DefaultTexture": {
     "vertex": "default_textures.vert",
     "fragment": "default_textures.frag"
+  },
+  "DebugPoint": {
+    "vertex": "debug_point.vert",
+    "fragment": "debug_point.frag"
   }
 }

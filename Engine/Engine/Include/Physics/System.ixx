@@ -71,7 +71,7 @@ auto update_gravity(gse::physics::motion_component& component) -> void {
 	if (!component.affected_by_gravity) {
 		return;
 	}
-
+		
 	if (component.airborne) {
 		const auto gravity_force = g_gravity * component.mass;
 		apply_force(component, gravity_force, component.current_position);

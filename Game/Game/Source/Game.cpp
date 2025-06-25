@@ -67,17 +67,17 @@ struct scene1_hook final : gse::hook<gse::scene> {
 		m_owner->add_entity(gse::create_box(gse::vec::meters(20.f, -400.f, 20.f), gse::vec::meters(20.f, 20.f, 20.f)), "Smaller Box");
 		//rotate smaller box's motion component to be 43 degrees on each axis
 
-		m_owner->add_entity(gse::create_box(gse::vec::meters(-20.f, -400.f, 20.f), gse::vec::meters(40.f, 40.f, 40.f)), "Bigger Box");
-		m_owner->add_entity(gse::create_box(gse::vec::meters(20.f, -400.f, -20.f), gse::vec::meters(1.f, 1.f, 1.f)), "Tiny Box");
+		//m_owner->add_entity(gse::create_box(gse::vec::meters(-20.f, -400.f, 20.f), gse::vec::meters(40.f, 40.f, 40.f)), "Bigger Box");
+		//m_owner->add_entity(gse::create_box(gse::vec::meters(20.f, -400.f, -20.f), gse::vec::meters(1.f, 1.f, 1.f)), "Tiny Box");
 		m_owner->add_entity(game::create_sphere_light(gse::vec::meters(0.f, -300.f, 0.f), gse::meters(10.f), 18), "Center Sphere Light");
 		m_owner->add_entity(gse::create_sphere(gse::vec::meters(0.f, -00.f, 200.f), gse::meters(10.f)), "Second Sphere");
 
 
 
-		const std::uint32_t iron_man = gse::registry::create_entity();
-		gse::registry::add_entity_hook(iron_man, std::make_unique<iron_man_hook>());
-		m_owner->add_entity(iron_man, "Iron Man");
-		const std::uint32_t raw_backpack = gse::registry::create_entity();
+		//const std::uint32_t iron_man = gse::registry::create_entity();
+		//gse::registry::add_entity_hook(iron_man, std::make_unique<iron_man_hook>());
+		//m_owner->add_entity(iron_man, "Iron Man");
+		//const std::uint32_t raw_backpack = gse::registry::create_entity();
 		//gse::registry::add_entity_hook(raw_backpack, std::make_unique<raw_backpack_hook>());
 		//m_owner->add_entity(raw_backpack, "Backpack");
 		//const std::uint32_t black_knight = gse::registry::create_entity();
@@ -97,23 +97,23 @@ struct scene1_hook final : gse::hook<gse::scene> {
 			}
 			});
 
-		//if (gse::scene_loader::get_scene(gse::get_id("Scene1"))->get_active()) {
-		//		//auto& smaller_box_motion = gse::registry::get_component<gse::physics::motion_component>(gse::registry::get_entity_id("Smaller Box"));
-		//		//auto& bigger_box_motion = gse::registry::get_component<gse::physics::motion_component>(gse::registry::get_entity_id("Bigger Box"));
-		//	if (!scene_activated) {
-		//		physics_timer.reset();
-		//		
-		//		gse::registry::get_component<gse::physics::motion_component>(gse::registry::get_entity_id("Smaller Box")).orientation = gse::quat(
-		//			/*w=*/ 0.85415f,
-		//			/*x=*/ 0.19241f,
-		//			/*y=*/ 0.44403f,
-		//			/*z=*/ 0.19232f);
-		//		scene_activated = true;
-		//	}
-		//	if (physics_timer.get_elapsed_time() >= gse::seconds(1.4167f)) {
-		//		physics_timer.reset();
-		//	}
-		//}
+		if (gse::scene_loader::get_scene(gse::get_id("Scene1"))->get_active()) {
+				//auto& smaller_box_motion = gse::registry::get_component<gse::physics::motion_component>(gse::registry::get_entity_id("Smaller Box"));
+				//auto& bigger_box_motion = gse::registry::get_component<gse::physics::motion_component>(gse::registry::get_entity_id("Bigger Box"));
+			if (!scene_activated) {
+				physics_timer.reset();
+				
+				gse::registry::get_component<gse::physics::motion_component>(gse::registry::get_entity_id("Smaller Box")).orientation = gse::quat(
+					/*w=*/ 0.85415f,
+					/*x=*/ 0.19241f,
+					/*y=*/ 0.44403f,
+					/*z=*/ 0.19232f);
+				scene_activated = true;
+			}
+			if (physics_timer.get_elapsed_time() >= gse::seconds(1.4167f)) {
+				physics_timer.reset();
+			}
+		}
 	}
 };
 

@@ -62,6 +62,22 @@ struct sat_result {
 
 auto sat_collision(const gse::oriented_bounding_box& obb1, const gse::oriented_bounding_box& obb2, sat_result& out) -> bool
 {
+
+	//std::cout << "Entered sat_collision\n";
+	for (const auto& corner : obb1.get_corners()) {
+		//std::cout << "OBB1 corner: " << corner.x.as_default_unit() << ", " << corner.y.as_default_unit() << ", " << corner.z.as_default_unit() << "\n";
+	}
+    //print obb1 axes
+	for (const auto& axis : obb1.axes) {
+		//std::cout << "OBB1 axis: " << axis.x << ", " << axis.y << ", " << axis.z << "\n";
+	}
+	for (const auto& corner : obb2.get_corners()) {
+		//std::cout << "OBB2 corner: " << corner.x.as_default_unit() << ", " << corner.y.as_default_unit() << ", " << corner.z.as_default_unit() << "\n";
+	}
+	//print obb2 axes
+	for (const auto& axis : obb2.axes) {
+		//std::cout << "OBB2 axis: " << axis.x << ", " << axis.y << ", " << axis.z << "\n";
+	}
     std::array<gse::vec3<gse::length>, 15> axes;
     int axis_count = 0;
 
@@ -76,7 +92,6 @@ auto sat_collision(const gse::oriented_bounding_box& obb1, const gse::oriented_b
     // 3) edge cross product
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {
-            auto cross = gse::cross(obb1.axes[i], obb2.axes[j]);
             auto c = gse::cross(obb1.axes[i], (obb2.axes[j]));
             if (gse::dot(c, c) > 1e-6f) axes[axis_count++] = c;
         }
@@ -92,6 +107,7 @@ auto sat_collision(const gse::oriented_bounding_box& obb1, const gse::oriented_b
         gse::length pen;
         if (!overlaps_on_axis(obb1, obb2, axes[i], pen)) {
             out.collided = false;
+			//std::cout << "No overlap on axis " << i << "\n";
             return false;   // found a separating axis
         }
         if (pen < out.penetration) {
@@ -103,14 +119,15 @@ auto sat_collision(const gse::oriented_bounding_box& obb1, const gse::oriented_b
 
     // Ensure normal points from obb1 ? obb2
     {
-        auto direction = (obb2.center - obb1.center).as<gse::units::meters>();
+        auto direction = (obb1.center - obb2.center).as<gse::units::meters>();
         if (gse::dot(direction, out.normal) < 0.0f) {
             out.normal *= -1.f;
         }
     }
-
+	//std::cout << "Collision detected! Normal: " << out.normal.x << ", " << out.normal.y << ", " << out.normal.z << " Penetration: " << out.penetration.as_default_unit() << " Axis index: " << out.axis_index << "\n";
     return true;
 }
+
 
 struct plane {
 	gse::unitless::vec3 normal;
@@ -119,8 +136,14 @@ struct plane {
 
 auto create_plane(const gse::vec3<gse::length>& p,
     const gse::unitless::vec3& collision_normal) -> plane {
-    return { collision_normal,
-             gse::dot(collision_normal, p.as<gse::units::meters>()) };
+    // if n is almost vertical, cross with X; else cross with Y
+    gse::unitless::vec3 helper =
+        (fabs(collision_normal.y) > 0.99f
+            ? gse::unitless::vec3{ 1,0,0 }
+    : gse::unitless::vec3{ 0,1,0 });
+    gse::unitless::vec3 plane_n = gse::normalize(gse::cross(collision_normal, helper));
+    return { plane_n,
+             gse::dot(plane_n, p.as<gse::units::meters>()) };
 }
 
 auto clip_polygon_against_plane(const std::array<gse::vec3<gse::length>, 4>& polygon, const plane& c_plane) -> std::vector<gse::vec3<gse::length>> {
@@ -172,21 +195,21 @@ auto gse::narrow_phase_collision::resolve_dynamic_collision(physics::motion_comp
     object_collision_component.collision_information.penetration = sat_res.penetration;
 
     const auto  collision_normal = object_collision_component.collision_information.collision_normal;
-    const float penetration_depth = object_collision_component.collision_information.penetration.as_default_unit();
+    const float penetration_depth = object_collision_component.collision_information.penetration.as_default_unit() * 0.1f;
 
-	std::cout << "collision normal: " << collision_normal.x << ", " << collision_normal.y << ", " << collision_normal.z << "\n";
+	//std::cout << "collision normal: " << collision_normal.x << ", " << collision_normal.y << ", " << collision_normal.z << "\n";
 
     const float velocity_into_surface = dot(object_motion_component->current_velocity.as<units::meters_per_second>(), collision_normal);
     const float acceleration_into_surface = dot(object_motion_component->current_acceleration.as<units::meters_per_second_squared>(), collision_normal);
 
-	std::cout << "velocity into surface: " << velocity_into_surface << "\n";
-	std::cout << "acceleration into surface: " << acceleration_into_surface << "\n";
+	//std::cout << "velocity into surface: " << velocity_into_surface << "\n";
+	//std::cout << "acceleration into surface: " << acceleration_into_surface << "\n";
 
     velocity& vel = object_motion_component->current_velocity[object_collision_component.collision_information.get_axis()];
     acceleration& acc = object_motion_component->current_acceleration[object_collision_component.collision_information.get_axis()];
 
-	std::cout << "pre-collision velocity: " << object_motion_component->current_velocity.x.as_default_unit() << ", " << object_motion_component->current_velocity.y.as_default_unit() << ", " << object_motion_component->current_velocity.z.as_default_unit() << "\n";
-	std::cout << "pre-collision acceleration: " << object_motion_component->current_acceleration.x.as_default_unit() << ", " << object_motion_component->current_acceleration.y.as_default_unit() << ", " << object_motion_component->current_acceleration.z.as_default_unit() << "\n";
+	//std::cout << "pre-collision velocity: " << object_motion_component->current_velocity.x.as_default_unit() << ", " << object_motion_component->current_velocity.y.as_default_unit() << ", " << object_motion_component->current_velocity.z.as_default_unit() << "\n";
+	//std::cout << "pre-collision acceleration: " << object_motion_component->current_acceleration.x.as_default_unit() << ", " << object_motion_component->current_acceleration.y.as_default_unit() << ", " << object_motion_component->current_acceleration.z.as_default_unit() << "\n";
 
     if (velocity_into_surface < 0.0f) {
         vel = 0.0f;
@@ -206,8 +229,8 @@ auto gse::narrow_phase_collision::resolve_dynamic_collision(physics::motion_comp
     constexpr float slop = 0.001f;
     const float corrected_penetration = std::max(penetration_depth - slop, 0.0f);
 
-    const auto correction_a = collision_normal * meters(corrected_penetration * percentage_a);
-	const auto correction_b = collision_normal * meters(corrected_penetration * percentage_b);
+    const auto correction_a = -collision_normal * meters(corrected_penetration * percentage_a);
+	const auto correction_b = -collision_normal * meters(corrected_penetration * percentage_b);
     object_motion_component->current_position -= correction_a;
     if (other_motion_component->position_locked) { other_motion_component->current_position += correction_b; }
 
@@ -219,50 +242,59 @@ auto gse::narrow_phase_collision::resolve_dynamic_collision(physics::motion_comp
 
     int  face_axis;
     bool edge_edge_sim = false;
-    auto ref_obb = &object_collision_component.oriented_bounding_box;
+    bool box_a_face = false;
+    auto* ref_obb = &object_collision_component.oriented_bounding_box;
 
+    // decide which face we hit (or fall back to an edge–edge sim)
     if (sat_res.axis_index < 3) {
-        face_axis = sat_res.axis_index;            // face i of box A  
+        face_axis = sat_res.axis_index;
+        box_a_face = true;
+        ref_obb = &object_collision_component.oriented_bounding_box;
     }
     else if (sat_res.axis_index < 6) {
-        face_axis = sat_res.axis_index - 3;  // face i of box B  
+        face_axis = sat_res.axis_index - 3;
         ref_obb = &other_collision_component.oriented_bounding_box;
     }
     else {
-        // pure edge–edge case  
+        // pure edge–edge: just pick any axis for fallback
         edge_edge_sim = true;
         face_axis = static_cast<int>(object_collision_component.collision_information.get_axis());
         ref_obb = &object_collision_component.oriented_bounding_box;
     }
-    auto face_center = ref_obb->center;
 
-    gse::unitless::vec3  n = sat_res.normal;
-    float offset = gse::dot(n, face_center.as<units::meters>());
-    plane clip_plane{ n, meters(offset) };
- 
+    // get the geometric center of that face
+    auto face_center = ref_obb->center;
+    auto n = sat_res.normal;
+    float offset_val = gse::dot(n, face_center.as<gse::units::meters>());
+    plane clip_plane{ n, gse::meters(offset_val) };
+
+    // build the face polygon for clipping
     bool positive = (n[face_axis] >= 0.f);
     auto face_verts = ref_obb->get_face_vertices(static_cast<gse::axis>(face_axis), positive);
- 
+
+    // final contact point
     gse::vec3<gse::length> contact_point;
+
     if (edge_edge_sim) {
-        // Edge-edge: just project the face center onto the plane  
-        float d = gse::dot(n, face_center.as<units::meters>()) - clip_plane.offset.as<units::meters>();
-        contact_point = face_center - n * meters(d);
+        // project the face center onto the plane
+        float d = gse::dot(n, face_center.as<gse::units::meters>()) - clip_plane.offset.as<gse::units::meters>();
+        contact_point = face_center - n * gse::meters(d);
     }
     else {
         auto clipped = clip_polygon_against_plane(face_verts, clip_plane);
-        if (clipped.empty()) {
-            float d = gse::dot(n, face_center.as<units::meters>())
-                - clip_plane.offset.as<units::meters>();
-            contact_point = face_center - n * meters(d);
+        if (clipped.size() >= 3) {
+            // use the centroid of the clipped polygon
+            contact_point = compute_contact_point(clipped);
         }
         else {
-            // Normal case: take centroid of clipped polygon  
-            contact_point = compute_contact_point(clipped);
+            // degenerate: fall back to projecting the face center
+            float d = gse::dot(n, face_center.as<gse::units::meters>()) - clip_plane.offset.as<gse::units::meters>();
+            contact_point = face_center - n * gse::meters(d);
         }
     }
 
-	std::cout << "contact point: " << contact_point.x.as_default_unit() << ", " << contact_point.y.as_default_unit() << ", " << contact_point.z.as_default_unit() << "\n";
+    object_collision_component.collision_information.collision_point = contact_point;
+	//std::cout << "contact point: " << contact_point.x.as_default_unit() << ", " << contact_point.y.as_default_unit() << ", " << contact_point.z.as_default_unit() << "\n";
 
 	const auto r_a = contact_point - object_motion_component->current_position;
 	const auto r_b = contact_point - other_collision_component.oriented_bounding_box.center;
@@ -277,6 +309,14 @@ auto gse::narrow_phase_collision::resolve_dynamic_collision(physics::motion_comp
 	const auto contact_velocity_b = other_motion_component->current_velocity.as<units::meters_per_second>() + cross(other_motion_component->angular_velocity.as<units::radians_per_second>(), r_b.as<units::meters>());
 	const auto contact_velocity = contact_velocity_a - contact_velocity_b;
 	const float relative_velocity_along_normal = dot(contact_velocity, object_collision_component.collision_information.collision_normal);
+
+    std::cout << "contact velocity a: " << contact_velocity_a.x << ", " << contact_velocity_a.y << ", " << contact_velocity_a.z << "\n";
+    std::cout << "contact velocity b: " << contact_velocity_b.x << ", " << contact_velocity_b.y << ", " << contact_velocity_b.z << "\n";
+    std::cout << "contact normal : " << object_collision_component.collision_information.collision_normal.x << ", "
+        << object_collision_component.collision_information.collision_normal.y << ", "
+        << object_collision_component.collision_information.collision_normal.z << "\n";
+
+    std::cout << "Relative velocity along normal: " << relative_velocity_along_normal << "\n";
 
     const float rot_term_a = dot(
         collision_normal,
@@ -299,7 +339,7 @@ auto gse::narrow_phase_collision::resolve_dynamic_collision(physics::motion_comp
 
  
 
-    if (relative_velocity_along_normal > 0.0f) {
+    if (relative_velocity_along_normal < 0.0f) {
         const float j = -(1.f + restitution) * relative_velocity_along_normal / denom;
         
         auto torque_impulse_a = gse::vec3<gse::torque>(cross(r_a.as<units::meters>(), collision_normal * j));
@@ -316,7 +356,7 @@ auto gse::narrow_phase_collision::resolve_dynamic_collision(physics::motion_comp
         }
 
 
-    }
+    }   
 
 	object_collision_component.collision_information.collision_point = contact_point;
 
@@ -324,6 +364,16 @@ auto gse::narrow_phase_collision::resolve_dynamic_collision(physics::motion_comp
 
 auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_component* object_motion_component, physics::collision_component& object_collision_component, physics::collision_component& other_collision_component) -> void {
     sat_result sat_res;
+    //print both motion component orientations
+	/*std::cout << "Object OBB orientation: "
+		<< object_collision_component.oriented_bounding_box.axes[0].x << ", " << object_collision_component.oriented_bounding_box.axes[0].y << ", " << object_collision_component.oriented_bounding_box.axes[0].z << " | "
+		<< object_collision_component.oriented_bounding_box.axes[1].x << ", " << object_collision_component.oriented_bounding_box.axes[1].y << ", " << object_collision_component.oriented_bounding_box.axes[1].z << " | "
+		<< object_collision_component.oriented_bounding_box.axes[2].x << ", " << object_collision_component.oriented_bounding_box.axes[2].y << ", " << object_collision_component.oriented_bounding_box.axes[2].z << "\n";
+	std::cout << "Other OBB orientation: "
+		<< other_collision_component.oriented_bounding_box.axes[0].x << ", " << other_collision_component.oriented_bounding_box.axes[0].y << ", " << other_collision_component.oriented_bounding_box.axes[0].z << " | "
+		<< other_collision_component.oriented_bounding_box.axes[1].x << ", " << other_collision_component.oriented_bounding_box.axes[1].y << ", " << other_collision_component.oriented_bounding_box.axes[1].z << " | "
+		<< other_collision_component.oriented_bounding_box.axes[2].x << ", " << other_collision_component.oriented_bounding_box.axes[2].y << ", " << other_collision_component.oriented_bounding_box.axes[2].z << "\n";*/
+
     if (!sat_collision(object_collision_component.oriented_bounding_box, other_collision_component.oriented_bounding_box, sat_res)) {
         return;
     }
@@ -332,7 +382,7 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
     }
 
         //console output "collision detected betweenb [name of object 1] [object 2]"
-    std::cout << "collision detected" << std::endl;
+   /* std::cout << "collision detected" << std::endl;*/
 
     object_collision_component.collision_information.colliding = true;
     object_collision_component.collision_information.collision_normal = sat_res.normal;
@@ -347,12 +397,7 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
     velocity& vel = object_motion_component->current_velocity[object_collision_component.collision_information.get_axis()];
     acceleration& acc = object_motion_component->current_acceleration[object_collision_component.collision_information.get_axis()];
 
-    if (velocity_into_surface < 0.0f) {
-        vel = 0.0f;
-    }
-    if (acceleration_into_surface < 0.0f) {
-        acc = 0.0f;
-    }
+
 
     const float inv_mass = 1.f / object_motion_component->mass.as<units::kilograms>();
 
@@ -361,7 +406,7 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
     constexpr float slop = 0.001f;
     const float corrected_penetration = std::max(penetration_depth - slop, 0.0f);
 
-    const auto correction_a = collision_normal * meters(corrected_penetration);
+    const auto correction_a = -collision_normal * meters(corrected_penetration);
     object_motion_component->current_position -= correction_a;
 
 
@@ -373,48 +418,60 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
 
     int  face_axis;
     bool edge_edge_sim = false;
-    auto ref_obb = &object_collision_component.oriented_bounding_box;
+    bool box_a_face = false;
+    auto* ref_obb = &object_collision_component.oriented_bounding_box;
 
+    // decide which face we hit (or fall back to an edge–edge sim)
     if (sat_res.axis_index < 3) {
-        face_axis = sat_res.axis_index;            // face i of box A  
+        face_axis = sat_res.axis_index;
+        box_a_face = true;
+        ref_obb = &object_collision_component.oriented_bounding_box;
     }
     else if (sat_res.axis_index < 6) {
-        face_axis = sat_res.axis_index - 3;  // face i of box B  
+        face_axis = sat_res.axis_index - 3;
         ref_obb = &other_collision_component.oriented_bounding_box;
     }
     else {
-        // pure edge–edge case  
+        // pure edge–edge: just pick any axis for fallback
         edge_edge_sim = true;
         face_axis = static_cast<int>(object_collision_component.collision_information.get_axis());
         ref_obb = &object_collision_component.oriented_bounding_box;
     }
+
+    // get the geometric center of that face
     auto face_center = ref_obb->center;
+    auto n = sat_res.normal;
+    float offset_val = gse::dot(n, face_center.as<gse::units::meters>());
+    plane clip_plane{ n, gse::meters(offset_val) };
 
-    gse::unitless::vec3  n = sat_res.normal;
-    float offset = gse::dot(n, face_center.as<units::meters>());
-    plane clip_plane{ n, meters(offset) };
-
+    // build the face polygon for clipping
     bool positive = (n[face_axis] >= 0.f);
     auto face_verts = ref_obb->get_face_vertices(static_cast<gse::axis>(face_axis), positive);
 
+    // final contact point
     gse::vec3<gse::length> contact_point;
+
+
     if (edge_edge_sim) {
-        // Edge-edge: just project the face center onto the plane  
-        float d = gse::dot(n, face_center.as<units::meters>()) - clip_plane.offset.as<units::meters>();
-        contact_point = face_center - n * meters(d);
+        // project the face center onto the plane
+        float d = gse::dot(n, face_center.as<gse::units::meters>())
+            - clip_plane.offset.as<gse::units::meters>();
+        contact_point = face_center - n * gse::meters(d);
     }
     else {
         auto clipped = clip_polygon_against_plane(face_verts, clip_plane);
-        if (clipped.empty()) {
-            float d = gse::dot(n, face_center.as<units::meters>())
-                - clip_plane.offset.as<units::meters>();
-            contact_point = face_center - n * meters(d);
-        }
-        else {
-            // Normal case: take centroid of clipped polygon  
+        if (clipped.size() >= 3) {
+            // use the centroid of the clipped polygon
             contact_point = compute_contact_point(clipped);
         }
+        else {
+            // degenerate: fall back to projecting the face center
+            float d = gse::dot(n, face_center.as<gse::units::meters>())
+                - clip_plane.offset.as<gse::units::meters>();
+            contact_point = face_center - n * gse::meters(d);
+        }
     }
+    object_collision_component.collision_information.collision_point = contact_point;
 
     const auto r_a = contact_point - object_motion_component->current_position;
 
@@ -434,24 +491,36 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
     const float rot_term_b = 0.f;
 
     const float denom =
-        1.f / object_motion_component->mass.as<units::kilograms>()
-        + rot_term_a;
+        inv_mass + rot_term_a;
 
 
     // Arbitrary coefficient; should be based off material.
     const float restitution = 0.5f;
+    std::cout << "contact velocity a: " << contact_velocity.x << ", " << contact_velocity.y << ", " << contact_velocity.z << "\n";
+    std::cout << "contact normal : " << object_collision_component.collision_information.collision_normal.x << ", "
+        << object_collision_component.collision_information.collision_normal.y << ", "
+        << object_collision_component.collision_information.collision_normal.z << "\n";
 
+    std::cout << "Relative velocity along normal: " << relative_velocity_along_normal << "\n";
 
-std::cout << "collision normal: " << collision_normal.x << ", " << collision_normal.y << ", " << collision_normal.z << "\n";
-	std::cout << "velocity into surface: " << velocity_into_surface << "\n";
-	std::cout << "acceleration into surface: " << acceleration_into_surface << "\n";
-	std::cout << "pre-collision velocity: " << object_motion_component->current_velocity.x.as_default_unit() << ", " << object_motion_component->current_velocity.y.as_default_unit() << ", " << object_motion_component->current_velocity.z.as_default_unit() << "\n";
-	std::cout << "pre-collision acceleration: " << object_motion_component->current_acceleration.x.as_default_unit() << ", " << object_motion_component->current_acceleration.y.as_default_unit() << ", " << object_motion_component->current_acceleration.z.as_default_unit() << "\n";
-
-    if (relative_velocity_along_normal > 0.0f) {
+//std::cout << "collision normal: " << collision_normal.x << ", " << collision_normal.y << ", " << collision_normal.z << "\n";
+//	std::cout << "velocity into surface: " << velocity_into_surface << "\n";
+//	std::cout << "acceleration into surface: " << acceleration_into_surface << "\n";
+//	std::cout << "pre-collision velocity: " << object_motion_component->current_velocity.x.as_default_unit() << ", " << object_motion_component->current_velocity.y.as_default_unit() << ", " << object_motion_component->current_velocity.z.as_default_unit() << "\n";
+//	std::cout << "pre-collision acceleration: " << object_motion_component->current_acceleration.x.as_default_unit() << ", " << object_motion_component->current_acceleration.y.as_default_unit() << ", " << object_motion_component->current_acceleration.z.as_default_unit() << "\n";
+//	std::cout << "lever arm: " << r_a.x.as_default_unit() << ", " << r_a.y.as_default_unit() << ", " << r_a.z.as_default_unit() << "\n";
+    if (relative_velocity_along_normal < 0.0f) {
         const float j = -(1.f + restitution) * relative_velocity_along_normal / denom;
+		//std::cout << "rotation term a: " << rot_term_a << "\n";
+		//std::cout << "rotation term b: " << rot_term_b << "\n";
+		//std::cout << "j: " << j << "\n";
+		//std::cout << "denom: " << denom << "\n";
 
         auto torque_impulse = gse::vec3<gse::torque>(cross(r_a.as<units::meters>(), collision_normal * j));
+        constexpr float epsilon_torque = 0.01f;
+        if (std::abs(torque_impulse.x.as_default_unit()) < epsilon_torque) {
+            torque_impulse.x = epsilon_torque * std::copysign(1.0f, torque_impulse.x.as_default_unit());
+        }
         object_motion_component->current_torque += torque_impulse;
         object_motion_component->current_velocity += vec3<velocity>(collision_normal * (j * inv_mass));
 
@@ -468,7 +537,12 @@ std::cout << "collision normal: " << collision_normal.x << ", " << collision_nor
 
 
 	//std::cout all the same diagnositcs as in the dynamic collision function
-	
+	if (velocity_into_surface < 0.0f) {
+    vel = 0.0f;
+    }
+    if (acceleration_into_surface < 0.0f) {
+        acc = 0.0f;
+    }
     
     //const auto lever_arm = contact_point - object_motion_component->current_position;
     //const auto torque = cross(lever_arm.as<units::meters>(), object_collision_component.collision_information.collision_normal);
