@@ -5,6 +5,7 @@ import std;
 import gse.physics.math;
 import gse.core.object_registry;
 import gse.core.main_clock;
+import gse.graphics.debug_rendering;
 import gse.graphics.render_component;
 import gse.physics.surfaces;
 import gse.physics.collision_component;
@@ -38,6 +39,7 @@ auto gse::physics::apply_force(motion_component& component, const vec3<force>& f
 	component.current_torque += cross(world_force_position - center_of_mass, force);
 
 	component.current_acceleration += acceleration;
+
 }
 
 auto gse::physics::apply_impulse(motion_component& component, const vec3<force>& force, const time& duration) -> void {

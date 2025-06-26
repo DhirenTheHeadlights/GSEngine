@@ -2,6 +2,7 @@ export module gse.physics.narrow_phase_collisions;
 
 import std;
 
+import gse.graphics.debug_rendering;
 import gse.physics.motion_component;
 import gse.physics.bounding_box;
 import gse.physics.collision_component;
@@ -294,6 +295,7 @@ auto gse::narrow_phase_collision::resolve_dynamic_collision(physics::motion_comp
     }
 
     object_collision_component.collision_information.collision_point = contact_point;
+	gse::debug_renderer::add_debug_point(contact_point);
 	//std::cout << "contact point: " << contact_point.x.as_default_unit() << ", " << contact_point.y.as_default_unit() << ", " << contact_point.z.as_default_unit() << "\n";
 
 	const auto r_a = contact_point - object_motion_component->current_position;
@@ -415,63 +417,66 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
         object_motion_component->most_recent_y_collision = object_motion_component->current_position.y;
     }
 
+    const auto contact_point = compute_contact_point(clip_polygon_against_plane(
+        object_collision_component.oriented_bounding_box.get_face_vertices(object_collision_component.collision_information.get_axis(), true),
+        create_plane(object_motion_component->current_position, object_collision_component.collision_information.collision_normal)
+    ));
 
-    int  face_axis;
-    bool edge_edge_sim = false;
-    bool box_a_face = false;
-    auto* ref_obb = &object_collision_component.oriented_bounding_box;
+    //int  face_axis;
+    //bool edge_edge_sim = false;
+    //bool box_a_face = false;
+    //auto* ref_obb = &object_collision_component.oriented_bounding_box;
 
-    // decide which face we hit (or fall back to an edge–edge sim)
-    if (sat_res.axis_index < 3) {
-        face_axis = sat_res.axis_index;
-        box_a_face = true;
-        ref_obb = &object_collision_component.oriented_bounding_box;
-    }
-    else if (sat_res.axis_index < 6) {
-        face_axis = sat_res.axis_index - 3;
-        ref_obb = &other_collision_component.oriented_bounding_box;
-    }
-    else {
-        // pure edge–edge: just pick any axis for fallback
-        edge_edge_sim = true;
-        face_axis = static_cast<int>(object_collision_component.collision_information.get_axis());
-        ref_obb = &object_collision_component.oriented_bounding_box;
-    }
+    //// decide which face we hit (or fall back to an edge–edge sim)
+    //if (sat_res.axis_index < 3) {
+    //    face_axis = sat_res.axis_index;
+    //    box_a_face = true;
+    //    ref_obb = &object_collision_component.oriented_bounding_box;
+    //}
+    //else if (sat_res.axis_index < 6) {
+    //    face_axis = sat_res.axis_index - 3;
+    //    ref_obb = &other_collision_component.oriented_bounding_box;
+    //}
+    //else {
+    //    // pure edge–edge: just pick any axis for fallback
+    //    edge_edge_sim = true;
+    //    face_axis = static_cast<int>(object_collision_component.collision_information.get_axis());
+    //    ref_obb = &object_collision_component.oriented_bounding_box;
+    //}
 
-    // get the geometric center of that face
-    auto face_center = ref_obb->center;
-    auto n = sat_res.normal;
-    float offset_val = gse::dot(n, face_center.as<gse::units::meters>());
-    plane clip_plane{ n, gse::meters(offset_val) };
+    //// get the geometric center of that face
+    //auto face_center = ref_obb->center;
+    //auto n = sat_res.normal;
+    //float offset_val = gse::dot(n, face_center.as<gse::units::meters>());
+    //plane clip_plane{ n, gse::meters(offset_val) };
 
-    // build the face polygon for clipping
-    bool positive = (n[face_axis] >= 0.f);
-    auto face_verts = ref_obb->get_face_vertices(static_cast<gse::axis>(face_axis), positive);
+    //// build the face polygon for clipping
+    //bool positive = (n[face_axis] >= 0.f);
+    //auto face_verts = object_collision_component.oriented_bounding_box.get_face_vertices(static_cast<gse::axis>(face_axis), positive);
 
-    // final contact point
-    gse::vec3<gse::length> contact_point;
+    //// final contact point
+    //gse::vec3<gse::length> contact_point;
 
 
-    if (edge_edge_sim) {
-        // project the face center onto the plane
-        float d = gse::dot(n, face_center.as<gse::units::meters>())
-            - clip_plane.offset.as<gse::units::meters>();
-        contact_point = face_center - n * gse::meters(d);
-    }
-    else {
-        auto clipped = clip_polygon_against_plane(face_verts, clip_plane);
-        if (clipped.size() >= 3) {
-            // use the centroid of the clipped polygon
-            contact_point = compute_contact_point(clipped);
-        }
-        else {
-            // degenerate: fall back to projecting the face center
-            float d = gse::dot(n, face_center.as<gse::units::meters>())
-                - clip_plane.offset.as<gse::units::meters>();
-            contact_point = face_center - n * gse::meters(d);
-        }
-    }
-    object_collision_component.collision_information.collision_point = contact_point;
+    //if (edge_edge_sim) {
+    //    // project the face center onto the plane
+    //    float d = gse::dot(n, face_center.as<gse::units::meters>())
+    //        - clip_plane.offset.as<gse::units::meters>();
+    //    contact_point = face_center - n * gse::meters(d);
+    //}
+    //else {
+    //    auto clipped = clip_polygon_against_plane(face_verts, clip_plane);
+    //    if (clipped.size() >= 3) {
+    //        // use the centroid of the clipped polygon
+    //        contact_point = compute_contact_point(clipped);
+    //    }
+    //    else {
+    //        // degenerate: fall back to projecting the face center
+    //        float d = gse::dot(n, face_center.as<gse::units::meters>())
+    //            - clip_plane.offset.as<gse::units::meters>();
+    //        contact_point = face_center - n * gse::meters(d);
+    //    }
+    //}
 
     const auto r_a = contact_point - object_motion_component->current_position;
 
@@ -523,7 +528,6 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
         }
         object_motion_component->current_torque += torque_impulse;
         object_motion_component->current_velocity += vec3<velocity>(collision_normal * (j * inv_mass));
-
     
 	std::cout << "applied torque impulse: " << torque_impulse.x.as_default_unit() << ", " << torque_impulse.y.as_default_unit() << ", " << torque_impulse.z.as_default_unit() << "\n";
     }
@@ -534,7 +538,7 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
 
 
     object_collision_component.collision_information.collision_point = contact_point;
-
+    gse::debug_renderer::add_debug_point(contact_point);
 
 	//std::cout all the same diagnositcs as in the dynamic collision function
 	if (velocity_into_surface < 0.0f) {

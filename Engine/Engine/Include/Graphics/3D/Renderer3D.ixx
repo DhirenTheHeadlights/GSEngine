@@ -22,6 +22,7 @@ import gse.core.json_parser;
 import gse.core.id;
 import gse.core.object_registry;
 import gse.graphics.debug;
+import gse.graphics.debug_rendering;
 import gse.graphics.render_component;
 import gse.graphics.mesh;
 import gse.graphics.shader;
@@ -39,6 +40,10 @@ import gse.platform.glfw.window;
 import gse.platform.glfw.input;
 import gse.platform.glfw.error_reporting;
 import gse.graphics.texture_loader;
+
+///////TEMPORARY
+bool debug_rendering = true;
+
 
 gse::camera g_camera;
 
@@ -76,71 +81,6 @@ bool g_hdr = true;
 bool g_bloom = true;
 int g_amount_of_blur_passes_in_each_direction = 5;
 
-GLuint g_debug_point_vao = 0;
-GLuint g_debug_point_vbo = 0;
-GLuint g_debug_point_ebo = 0;
-GLsizei g_debug_point_index_count = 0;
-
-auto create_debug_sphere_vao() -> void {
-	constexpr int sector_count = 18; // Longitude
-	constexpr int stack_count = 12;  // Latitude
-	constexpr float radius = 1.0f;
-
-	std::vector<float> vertices;
-	std::vector<uint32_t> indices;
-
-	for (int i = 0; i <= stack_count; ++i) {
-		float stack_angle = 3.1415926 / 2 - i * 3.1415926 / stack_count;
-		float xy = radius * cosf(stack_angle);
-		float z = radius * sinf(stack_angle);
-
-		for (int j = 0; j <= sector_count; ++j) {
-			float sector_angle = j * 2 * 3.1415926 / sector_count;
-			float x = xy * cosf(sector_angle);
-			float y = xy * sinf(sector_angle);
-			vertices.push_back(x);
-			vertices.push_back(y);
-			vertices.push_back(z);
-		}
-	}
-
-	for (int i = 0; i < stack_count; ++i) {
-		int k1 = i * (sector_count + 1);
-		int k2 = k1 + sector_count + 1;
-
-		for (int j = 0; j < sector_count; ++j, ++k1, ++k2) {
-			if (i != 0) {
-				indices.push_back(k1);
-				indices.push_back(k2);
-				indices.push_back(k1 + 1);
-			}
-			if (i != (stack_count - 1)) {
-				indices.push_back(k1 + 1);
-				indices.push_back(k2);
-				indices.push_back(k2 + 1);
-			}
-		}
-	}
-
-	g_debug_point_index_count = static_cast<GLsizei>(indices.size());
-
-	glGenVertexArrays(1, &g_debug_point_vao);
-	glGenBuffers(1, &g_debug_point_vbo);
-	glGenBuffers(1, &g_debug_point_ebo);
-
-	glBindVertexArray(g_debug_point_vao);
-
-	glBindBuffer(GL_ARRAY_BUFFER, g_debug_point_vbo);
-	glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
-
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g_debug_point_ebo);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(uint32_t), indices.data(), GL_STATIC_DRAW);
-
-	glEnableVertexAttribArray(0); // layout(location = 0)
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
-
-	glBindVertexArray(0);
-}
 
 auto load_shaders(const std::filesystem::path& shader_path, const std::filesystem::path& shader_file_name,
 	std::unordered_map<std::string, gse::shader>& shaders) -> void {
@@ -279,8 +219,6 @@ auto gse::renderer3d::initialize() -> void {
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-	create_debug_sphere_vao();
-
 	const auto& blur_shader = g_deferred_rendering_shaders["GaussianBlur"];
 
 	blur_shader.use();
@@ -308,6 +246,8 @@ auto gse::renderer3d::initialize() -> void {
 	post_processing_shader.set_float("exposure", g_hdr_exposure);
 	post_processing_shader.set_int("bloomBlur", 1);
 	post_processing_shader.set_bool("bloom", g_bloom);
+
+	if (debug_rendering) debug_renderer::initialize();
 }
 
 auto gse::renderer3d::initialize_objects() -> void {
@@ -413,41 +353,12 @@ auto render_object(const std::uint32_t object_id, const gse::render_queue_entry&
 			glBindVertexArray(entry.vao);
 			glDrawElements(entry.draw_mode, entry.vertex_count, GL_UNSIGNED_INT, nullptr);
 			glBindVertexArray(0);
-
-			if (const auto* collision_component = gse::registry::get_component_ptr<gse::physics::collision_component>(object_id);
-				collision_component && collision_component->collision_information.colliding) {
-
-				gse::vec3<gse::length> contact_world_pos = collision_component->collision_information.collision_point.as<gse::units::meters>();
-
-				// Disable depth test so point draws over everything
-				glDisable(GL_DEPTH_TEST);
-
-				// Use a simple shader for point rendering
-				const auto& point_shader = g_texture_shaders["DebugPoint"];
-				point_shader.use();
-				point_shader.set_mat4("view", view_matrix);
-				point_shader.set_mat4("projection", projection_matrix);
-				point_shader.set_vec3("color", gse::unitless::vec3({ 1.0f, 0.0f, 0.0f })); // Bright red
-
-				// Build a model matrix to place the point
-				gse::mat4 point_model = gse::translate(gse::mat4(1.0f), contact_world_pos);
-				point_model = gse::scale(point_model, gse::vec3<gse::length>(0.05f)); // Small point size
-
-				point_shader.set_mat4("model", point_model);
-
-				glBindVertexArray(g_debug_point_vao);
-				glDrawElements(GL_TRIANGLES, g_debug_point_index_count, GL_UNSIGNED_INT, nullptr);
-				glBindVertexArray(0);
-
-
-				// Restore depth test
-				glEnable(GL_DEPTH_TEST);
-			}
-
+							
+			
 			if (it->second.material_texture != 0) {
 				glBindTexture(GL_TEXTURE_2D, 0);
 			}
-		}
+		}		
 }
 
 auto render_object_forward(const std::uint32_t object_id, const gse::shader& forward_rendering_shader, const gse::render_queue_entry& entry, const gse::mat4& view_matrix, const gse::mat4& projection_matrix) -> void {
@@ -883,6 +794,11 @@ auto gse::renderer3d::render() -> void {
 		}
 
 
+	}
+
+	if (debug_rendering) {
+		debug_renderer::update();
+		debug_renderer::render_debug_entities(g_camera.get_view_matrix(), g_camera.get_projection_matrix(), g_texture_shaders);
 	}
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
