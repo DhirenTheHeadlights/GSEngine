@@ -3,13 +3,13 @@ module;
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-export module gse.platform.glfw.window;
+export module gse.platform:window;
 
 import std;
-import vulkan_hpp;
 
-import gse.platform.glfw.input;
-import gse.platform.assert;
+import :input;
+
+import gse.assert;
 import gse.platform.vulkan;
 import gse.physics.math;
 

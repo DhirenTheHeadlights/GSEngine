@@ -7,9 +7,9 @@ struct skybox_hook final : gse::hook<gse::entity> {
 	using hook::hook;
 
 	auto initialize() -> void override {
-		gse::registry::get_component<gse::physics::collision_component>(owner_id).resolve_collisions = false;
-		gse::registry::get_component<gse::physics::collision_component>(owner_id).bounding_box = {};
-		gse::registry::get_component<gse::physics::motion_component>(owner_id).affected_by_gravity = false;
+		gse::registry::component<gse::physics::collision_component>(owner_id).resolve_collisions = false;
+		gse::registry::component<gse::physics::collision_component>(owner_id).bounding_box = {};
+		gse::registry::component<gse::physics::motion_component>(owner_id).affected_by_gravity = false;
 
 		gse::light_source_component light_source_component(owner_id);
 		auto light = std::make_unique<gse::directional_light>(gse::unitless::vec3(1.f), 1.f, gse::unitless::vec3(0.0f, -1.0f, 0.0f), 1.0f);
@@ -18,7 +18,7 @@ struct skybox_hook final : gse::hook<gse::entity> {
 	}
 
 	auto render() -> void override {
-		gse::registry::get_component<gse::light_source_component>(owner_id).get_lights().front()->show_debug_menu("Skybox Light", owner_id);
+		gse::registry::component<gse::light_source_component>(owner_id).get_lights().front()->show_debug_menu("Skybox Light", owner_id);
 	}
 };
 

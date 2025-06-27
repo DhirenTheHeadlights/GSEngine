@@ -6,7 +6,7 @@ module;
 
 export module gse.network.socket;
 
-import gse.platform.assert;
+import gse.assert;
 
 export namespace gse::network {
 	struct packet {

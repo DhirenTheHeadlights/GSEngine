@@ -2,7 +2,7 @@ module;
 
 #include <intrin.h> 
 
-export module gse.physics.math.simd;
+export module gse.physics.math:simd;
 
 import std;
 

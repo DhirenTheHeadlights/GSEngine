@@ -1,18 +1,17 @@
-export module gse.graphics.mesh;
+export module gse.graphics:mesh;
 
 import std;
-import vulkan_hpp;
 
-import gse.graphics.material;
+import :material;
+
 import gse.platform;
-import gse.physics.bounding_box;
 import gse.physics.math;
 
 export namespace gse {
     struct vertex {
-        vec::raw3f position;
-        vec::raw3f normal;
-        vec::raw2f tex_coords;
+        raw3f position;
+        raw3f normal;
+        raw2f tex_coords;
     };
 
     struct mesh;
@@ -54,7 +53,7 @@ export namespace gse {
     };
 
     auto calculate_center_of_mass(const std::vector<std::uint32_t>& indices, const std::vector<vertex>& vertices) -> vec3<length>;
-	auto generate_bounding_box_mesh(const axis_aligned_bounding_box& aabb) -> mesh;
+	auto generate_bounding_box_mesh(vec3<length> upper, vec3<length> lower) -> mesh;
 }
 
 gse::mesh::mesh(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices, const material_handle material)
@@ -173,12 +172,9 @@ auto gse::calculate_center_of_mass(const std::vector<std::uint32_t>& indices, co
     return moment / static_cast<float>(total_volume);
 }
 
-auto gse::generate_bounding_box_mesh(const axis_aligned_bounding_box& aabb) -> mesh {
-	const auto lower = aabb.lower_bound.as<units::meters>();
-	const auto upper = aabb.upper_bound.as<units::meters>();
-
-	auto create_vertex = [](const vec::raw3f& position) -> vertex {
-		return vertex{ position, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f} };
+auto gse::generate_bounding_box_mesh(const vec3<length> upper, const vec3<length> lower) -> mesh {
+	auto create_vertex = [](const vec3<length>& position) -> vertex {
+		return vertex{ position.as<units::meters>(), {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}};
 		};
 
 	const std::vector vertices = {

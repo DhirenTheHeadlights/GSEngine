@@ -1,7 +1,10 @@
 export module gse;
 
-export import gse.core;
+export import gse.utility;
+export import gse.runtime;
+export import gse.examples;
 export import gse.graphics;
 export import gse.network;
 export import gse.physics;
 export import gse.platform;
+export import gse.assert;

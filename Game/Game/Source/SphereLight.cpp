@@ -38,21 +38,21 @@ auto sphere_light_hook::initialize() -> void {
 
 	gse::registry::add_component<gse::light_source_component>(std::move(light_source_component));
 
-	gse::registry::get_component<gse::physics::motion_component>(owner_id).affected_by_gravity = false;
+	gse::registry::component<gse::physics::motion_component>(owner_id).affected_by_gravity = false;
 }
 
 auto sphere_light_hook::update() -> void {
-	gse::registry::get_component<gse::light_source_component>(owner_id).get_lights().front()->set_position(gse::registry::get_component<gse::physics::motion_component>(owner_id).current_position);
+	gse::registry::component<gse::light_source_component>(owner_id).get_lights().front()->set_position(gse::registry::component<gse::physics::motion_component>(owner_id).current_position);
 }
 
 auto sphere_light_hook::render() -> void {
-	for (const auto& light : gse::registry::get_component<gse::light_source_component>(owner_id).get_lights()) {
-		light->show_debug_menu(gse::registry::get_entity_name(owner_id), owner_id);
+	for (const auto& light : gse::registry::component<gse::light_source_component>(owner_id).get_lights()) {
+		light->show_debug_menu(gse::registry::entity_name(owner_id), owner_id);
 	}
 
 	gse::debug::add_imgui_callback([this] {
 		ImGui::Begin("Sphere Light");
-		ImGui::SliderFloat3("Position", &gse::registry::get_component<gse::physics::motion_component>(owner_id).current_position.x.as_default_unit(), -1000.0f, 1000.0f);
+		ImGui::SliderFloat3("Position", &gse::registry::component<gse::physics::motion_component>(owner_id).current_position.x.as_default_unit(), -1000.0f, 1000.0f);
 		ImGui::End();
 		});
 }

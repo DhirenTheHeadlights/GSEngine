@@ -1,7 +1,8 @@
-export module gse.core.id;
+export module gse.utility:id;
 
 import std;
-import gse.platform.assert;
+
+import gse.assert;
 import gse.physics.math;
 
 export namespace gse {
@@ -34,10 +35,10 @@ export namespace gse {
 	public:
 	    explicit identifiable(const std::string& tag);
 
-		auto get_id() const -> id;
+		auto id() const -> id;
 		auto operator==(const identifiable& other) const -> bool;
 	private:
-		id m_id;
+		class id m_id;
     };
 }
 
@@ -80,48 +81,59 @@ struct transparent_equal {
 	}
 };
 
-std::vector<gse::id> g_ids;
-std::unordered_map<gse::uuid, gse::id> g_id_map;
-std::unordered_map<std::string, gse::id, transparent_hash, transparent_equal> g_tag_map;
+auto& ids() {
+    static std::vector<gse::id> ids;
+    return ids;
+}
+
+auto& id_map() {
+    static std::unordered_map<gse::uuid, gse::id> id_map;
+    return id_map;
+}
+
+auto& tag_map() {
+    static std::unordered_map<std::string, gse::id, transparent_hash, transparent_equal> tag_map;
+    return tag_map;
+}
 
 auto register_object(const gse::id& obj, const std::string& tag) -> void {
-	g_id_map.insert_or_assign(obj.number(), obj);
-	g_tag_map.insert_or_assign(tag, obj);
+	id_map().insert_or_assign(obj.number(), obj);
+	tag_map().insert_or_assign(tag, obj);
 }
 
 auto gse::generate_id(const std::string_view tag) -> id {
-	const uuid new_id = g_ids.size();
+	const uuid new_id = ids().size();
 
 	std::string new_tag(tag);
-	if (g_tag_map.contains(new_tag)) {
+	if (tag_map().contains(new_tag)) {
 		new_tag += std::to_string(new_id);
 	}
 
 	const id id(new_id, new_tag);
-	g_ids.push_back(id);
+	ids().push_back(id);
 	register_object(id, new_tag);
 
 	return id;
 }
 
 auto gse::get_id(const uuid number) -> id {
-	const auto it = g_id_map.find(number);
-	assert(it != g_id_map.end(), std::format("ID {} not found", number));
+	const auto it = id_map().find(number);
+	assert(it != id_map().end(), std::format("ID {} not found", number));
 	return it->second;
 }
 
 auto gse::get_id(const std::string_view tag) -> id {
-	const auto it = g_tag_map.find(tag);
-	assert(it != g_tag_map.end(), std::format("Tag {} not found", tag));
+	const auto it = tag_map().find(tag);
+	assert(it != tag_map().end(), std::format("Tag {} not found", tag));
 	return it->second;
 }
 
 auto gse::does_id_exist(const uuid number) -> bool {
-	return g_id_map.contains(number);
+	return id_map().contains(number);
 }
 
 auto gse::does_id_exist(const std::string_view tag) -> bool {
-	return g_tag_map.contains(tag);
+	return tag_map().contains(tag);
 }
 
 /// ID
@@ -148,7 +160,7 @@ auto gse::id::tag() const -> std::string {
 
 gse::identifiable::identifiable(const std::string& tag) : m_id(generate_id(tag)) {}
 
-auto gse::identifiable::get_id() const -> id {
+auto gse::identifiable::id() const -> class id {
 	return m_id;
 }
 

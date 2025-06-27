@@ -1,8 +1,8 @@
 export module gse.platform.vulkan;
 
-export import gse.platform.vulkan.context;
-export import gse.platform.vulkan.config;
-export import gse.platform.vulkan.resources;
-export import gse.platform.vulkan.transient_allocator;
-export import gse.platform.vulkan.persistent_allocator;
-export import gse.platform.vulkan.uploader;
+export import :context;
+export import :config;
+export import :resources;
+export import :transient_allocator;
+export import :persistent_allocator;
+export import :uploader;

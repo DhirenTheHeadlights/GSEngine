@@ -3,12 +3,13 @@ module;
 #include <imgui.h>
 #include <string>
 
-export module gse.graphics.point_light;
+export module gse.graphics:point_light;
 
-import gse.graphics.light;
+import :light;
+import :debug;
+import :cube_map;
+
 import gse.physics.math;
-import gse.graphics.debug;
-import gse.graphics.cube_map;
 
 export namespace gse {
 	class point_light final : public light {
@@ -30,11 +31,11 @@ export namespace gse {
 				});
 		}
 
-		auto get_render_queue_entry() const -> light_render_queue_entry override {
+		auto render_queue_entry() const -> light_render_queue_entry override {
 			return { light_type::point, m_color, m_intensity, m_position, unitless::vec3(), m_constant, m_linear, m_quadratic, angle(), angle(), m_ambient_strength, m_near_plane, m_far_plane, m_ignore_list_id };
 		}
 
-		auto get_shadow_map() -> cube_map& { return m_shadow_map; }
+		auto shadow_map() -> cube_map& { return m_shadow_map; }
 
 		auto set_position(const vec3<length>& position) -> void override {
 			m_position = position;

@@ -1,13 +1,9 @@
-module;
-
-#include "imgui.h"
-
-export module gse.core.main_clock;
+export module gse.runtime:main_clock;
 
 import std;
 
-import gse.core.clock;
-import gse.physics.math.units;
+import gse.utility;
+import gse.physics.math;
 
 export namespace gse::main_clock {
 	auto update() -> void;
@@ -16,8 +12,6 @@ export namespace gse::main_clock {
 	auto get_constant_update_time() -> time;
 	auto get_frame_rate() -> int;
 }
-
-/// Main Clock
 
 std::chrono::steady_clock::time_point g_last_update = std::chrono::steady_clock::now();
 gse::time g_dt;
@@ -52,7 +46,7 @@ auto gse::main_clock::get_raw_delta_time() -> time {
 }
 
 auto gse::main_clock::get_current_time() -> time {
-	return g_main_clock.get_elapsed_time();
+	return g_main_clock.elapsed();
 }
 
 auto gse::main_clock::get_constant_update_time() -> time {

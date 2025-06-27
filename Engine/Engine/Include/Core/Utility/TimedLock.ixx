@@ -1,11 +1,12 @@
-export module gse.core.timed_lock;
+export module gse.utility:timed_lock;
 
 import std;
-import gse.core.main_clock;
-import gse.physics.math.units.duration;
+
+import :clock;
+
+import gse.physics.math;
 
 export namespace gse {
-
     template <typename T>
     class timed_lock {
     public:
@@ -21,38 +22,38 @@ export namespace gse {
             : m_value(std::forward<Args>(args)...), m_duration(duration) {
         }
 
-        // If the cooldown has expired, assign the value and update the timer.
+        // If the cooldown has expired, assign the value and reset the internal clock.
         virtual auto operator=(const T& value) -> timed_lock& {
-	        if (const auto now = main_clock::get_current_time(); now - m_start_time >= m_duration) {
+            if (m_clock.elapsed() >= m_duration) {
                 m_value = value;
-                m_start_time = now;
+                m_clock.reset();
             }
             return *this;
         }
 
-        // If the cooldown has expired, reset the timer and return a mutable pointer.
+        // If the cooldown has expired, reset the internal clock and return a mutable pointer.
         virtual auto try_get_mutable_value() -> T* {
-	        if (const auto now = main_clock::get_current_time(); now - m_start_time >= m_duration) {
-                m_start_time = now;
+            if (m_clock.elapsed() >= m_duration) {
+                m_clock.reset();
                 return &m_value;
             }
             return nullptr;
         }
 
         // Always returns the value (read-only).
-        auto get_value() const -> const T& {
+        auto value() const -> const T& {
             return m_value;
         }
 
         // Returns true if the cooldown period has expired.
-        auto is_value_mutable() const -> bool {
-            return main_clock::get_current_time() - m_start_time >= m_duration;
+        auto value_mutable() const -> bool {
+            return m_clock.elapsed() >= m_duration;
         }
 
     protected:
         T m_value;
         time m_duration;
-        time m_start_time = main_clock::get_current_time();
+        clock m_clock;
     };
 
     template <typename T, int N>
@@ -61,17 +62,16 @@ export namespace gse {
     public:
         // Uses quota or, if quota is exhausted but the cooldown has expired,
         // resets the quota and then updates the value.
-        auto operator=(const T& value) -> quota_timed_lock& override {
-            const auto now = main_clock::get_current_time();
+        auto operator=(const T& value) -> quota_timed_lock & override {
             if (m_quota > 0) {
                 m_quota--;
                 this->m_value = value;
-                this->m_start_time = now;
+                this->m_clock.reset();
             }
-            else if (now - this->m_start_time >= this->m_duration) {
+            else if (this->m_clock.elapsed() >= this->m_duration) {
                 m_quota = N - 1;  // reset quota (using one use for the current assignment)
                 this->m_value = value;
-                this->m_start_time = now;
+                this->m_clock.reset();
             }
             return *this;
         }
@@ -79,17 +79,18 @@ export namespace gse {
         // Returns a mutable pointer if quota is available or, if quota is exhausted,
         // the cooldown has expired (in which case the quota resets).
         auto try_get_mutable_value() -> T* override {
-            const auto now = main_clock::get_current_time();
             if (m_quota > 0) {
                 m_quota--;
-                this->m_start_time = now;
+                this->m_clock.reset();
                 return &this->m_value;
             }
-            if (now - this->m_start_time >= this->m_duration) {
-	            m_quota = N - 1;
-	            this->m_start_time = now;
-	            return &this->m_value;
+
+            if (this->m_clock.elapsed() >= this->m_duration) {
+                m_quota = N - 1;
+                this->m_clock.reset();
+                return &this->m_value;
             }
+
             return nullptr;
         }
 

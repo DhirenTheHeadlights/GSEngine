@@ -1,8 +1,8 @@
-export module gse.physics.math.units.quant;
+export module gse.physics.math:quant;
 
 import std;
 
-import gse.physics.math.units.dimension;
+import :dimension;
 
 namespace gse::internal {
     export template<typename... Units>

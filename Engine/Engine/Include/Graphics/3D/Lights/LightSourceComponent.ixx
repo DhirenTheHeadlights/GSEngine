@@ -1,10 +1,11 @@
-export module gse.graphics.light_source_component;
+export module gse.graphics:light_source_component;
 
 import std;
 
-import gse.core.component;
-import gse.graphics.light;
+import :light;
+
 import gse.physics.math;
+import gse.utility;
 
 export namespace gse {
 	class light_source_component final : public component {
@@ -30,7 +31,7 @@ export namespace gse {
 			std::vector<light_render_queue_entry> entries;
 			entries.reserve(m_lights.size());
 			for (const auto& light : m_lights) {
-				entries.push_back(light->get_render_queue_entry());
+				entries.push_back(light->render_queue_entry());
 			}
 			return entries;
 		}

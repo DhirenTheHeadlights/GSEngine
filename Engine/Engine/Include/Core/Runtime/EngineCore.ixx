@@ -1,14 +1,14 @@
-export module gse.core.engine;
+export module gse.runtime:engine;
 
 import std;
 
-import gse.core.clock;
-import gse.core.main_clock;
-import gse.core.timer;
-import gse.core.object_registry;
-import gse.core.scene_loader;
+import :object_registry;
+import :scene_loader;
+
+import gse.utility;
 import gse.graphics;
 import gse.platform;
+import gse.assert;
 
 export namespace gse {
 	auto initialize(const std::function<void()>& initialize_function, const std::function<void()>& shutdown_function) -> void;
@@ -23,7 +23,7 @@ export namespace gse {
 }
 
 auto gse::get_camera() -> camera& {
-	return renderer3d::get_camera();
+	return renderer3d::camera();
 }
 
 std::function<void()> g_game_shutdown_function = [] {};
@@ -75,6 +75,7 @@ auto update(const std::function<bool()>& update_function) -> void {
 
 	gse::main_clock::update();
 	gse::scene_loader::update();
+	gse::gui::update();
 
 	if (!update_function()) {
 		gse::request_shutdown();
@@ -88,13 +89,16 @@ auto update(const std::function<bool()>& update_function) -> void {
 auto render(const std::function<bool()>& render_function) -> void {
 	if (g_imgui_enabled) gse::add_timer("Engine::render");
 
-	gse::renderer::render([render_function] {
-		gse::scene_loader::render();
+	gse::renderer::render(
+		[render_function] {
+			gse::scene_loader::render();
 
-		if (!render_function()) {
-			gse::request_shutdown();
-		}
-		});
+			if (!render_function()) {
+				gse::request_shutdown();
+			}
+		},
+		gse::registry::components<gse::render_component>()
+	);
 
 	if (g_imgui_enabled) gse::reset_timer("Engine::update");
 }

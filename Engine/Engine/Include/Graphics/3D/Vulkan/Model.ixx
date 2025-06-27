@@ -1,12 +1,12 @@
-export module gse.graphics.model;
+export module gse.graphics:model;
 
 import std;
-import vulkan_hpp;
 
-import gse.graphics.mesh;
+import :mesh;
+
 import gse.platform;
 import gse.physics.math;
-import gse.core.id;
+import gse.utility;
 
 export namespace gse {
     class model_handle;
@@ -27,8 +27,8 @@ export namespace gse {
 
         auto set_position(const vec3<length>& position) -> void;
         auto set_rotation(const vec3<angle>& rotation) -> void;
-        auto get_render_queue_entries() const -> std::span<const render_queue_entry>;
-        auto get_model_id() const -> id;
+        auto render_queue_entries() const -> std::span<const render_queue_entry>;
+        auto model_id() const -> id;
 
 		auto operator==(const model_handle& other) const -> bool {
 			return m_model_id == other.m_model_id;
@@ -46,7 +46,7 @@ auto gse::model::initialize(const vulkan::config& config) -> void {
     }
 }
 
-gse::model_handle::model_handle(const model& model) : m_model_id(model.get_id()) {
+gse::model_handle::model_handle(const model& model) : m_model_id(model.id()) {
     for (const auto& mesh : model.meshes) {
         m_render_queue_entries.emplace_back(
 			&mesh,
@@ -70,10 +70,10 @@ auto gse::model_handle::set_rotation(const vec3<angle>& rotation) -> void {
     }
 }
 
-auto gse::model_handle::get_render_queue_entries() const -> std::span<const render_queue_entry> {
+auto gse::model_handle::render_queue_entries() const -> std::span<const render_queue_entry> {
     return m_render_queue_entries;
 }
 
-auto gse::model_handle::get_model_id() const -> id {
+auto gse::model_handle::model_id() const -> id {
     return m_model_id;
 }

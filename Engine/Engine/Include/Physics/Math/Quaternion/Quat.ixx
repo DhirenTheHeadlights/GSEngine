@@ -1,10 +1,10 @@
-export module gse.physics.math.quat;
+export module gse.physics.math:quat;
 
 import std;
-import gse.physics.math.unitless_vec;
-import gse.physics.math.base_vec;
-import gse.physics.math.vec_math;
-import gse.physics.math.units;
+import :unitless_vec;
+import :base_vec;
+import :vec_math;
+import :angle;
 
 namespace gse {
 	template <typename T>

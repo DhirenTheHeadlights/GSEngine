@@ -3,12 +3,13 @@ module;
 #include <imgui.h>
 #include <string>
 
-export module gse.graphics.directional_light;
+export module gse.graphics:directional_light;
 
-import gse.graphics.light;
+import :light;
+import :debug;
+import :cube_map;
+
 import gse.physics.math;
-import gse.graphics.debug;
-import gse.graphics.cube_map;
 
 export namespace gse {
 	class directional_light final : public light {
@@ -27,7 +28,7 @@ export namespace gse {
 				});
 		}
 
-		auto get_render_queue_entry() const -> light_render_queue_entry override {
+		auto render_queue_entry() const -> light_render_queue_entry override {
 			return { light_type::directional, m_color, m_intensity, vec3<length>(), m_direction, 0, 0, 0, angle(), angle(), m_ambient_strength, m_near_plane, m_far_plane, m_ignore_list_id };
 		}
 	private:

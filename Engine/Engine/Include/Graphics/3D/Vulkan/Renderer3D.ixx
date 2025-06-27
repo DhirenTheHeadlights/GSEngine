@@ -1,37 +1,31 @@
-﻿module;
-
-#include <cstddef>
-#include "GLFW/glfw3.h"
-
-export module gse.graphics.renderer3d;
+﻿export module gse.graphics:renderer3d;
 
 import std;
 
-import gse.core.config;
-import gse.core.id;
-import gse.core.object_registry;
-import gse.graphics.camera;
-import gse.graphics.mesh;
-import gse.graphics.model;
-import gse.graphics.render_component;
-import gse.graphics.shader_loader;
-import gse.graphics.texture_loader;
-import gse.graphics.point_light;
-import gse.graphics.light_source_component;
-import gse.graphics.material;
-import gse.graphics.shader;
+import :camera;
+import :mesh;
+import :model;
+import :render_component;
+import :shader_loader;
+import :texture_loader;
+import :point_light;
+import :light_source_component;
+import :material;
+import :shader;
+
 import gse.physics.math;
+import gse.utility;
 import gse.platform;
 
 gse::camera g_camera;
 
 export namespace gse::renderer3d {
 	auto initialize(vulkan::config& config) -> void;
-	auto initialize_objects() -> void;
-	auto render(const vulkan::config& config) -> void;
+	auto initialize_objects(std::span<light_source_component> light_source_components) -> void;
+	auto render(const vulkan::config& config, std::span<render_component> render_components) -> void;
 	auto shutdown(const vulkan::config& config) -> void;
 
-	auto get_camera() -> camera&;
+	auto camera() -> camera&;
 }
 
 vk::raii::Pipeline g_pipeline = nullptr;
@@ -44,7 +38,7 @@ vk::raii::DescriptorSet g_lighting_descriptor_set = nullptr;
 
 std::unordered_map<std::string, gse::vulkan::persistent_allocator::buffer_resource> g_ubo_allocations;
 
-auto gse::renderer3d::get_camera() -> camera& {
+auto gse::renderer3d::camera() -> class camera& {
 	return g_camera;
 }
 
@@ -58,7 +52,7 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 
 	end_single_line_commands(cmd, config);
 
-	const auto& geometry_shader = shader_loader::get_shader("geometry_pass");
+	const auto& geometry_shader = shader_loader::shader("geometry_pass");
 	auto descriptor_set_layouts = geometry_shader.layouts();
 
 	std::vector ranges = {
@@ -75,62 +69,46 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 
 	g_pipeline_layout = config.device_data.device.createPipelineLayout(pipeline_layout_info);
 
-	// --- Lighting Pass Descriptor Sets ---
-	const auto& lighting_shader = shader_loader::get_shader("lighting_pass");
+	const auto& lighting_shader = shader_loader::shader("lighting_pass");
 	auto lighting_layout = lighting_shader.layout(shader::set::binding_type::persistent);
 
-	const vk::DescriptorSetAllocateInfo lighting_alloc_info{
-		.descriptorPool = *config.descriptor.pool,
-		.descriptorSetCount = 1,
-		.pSetLayouts = &lighting_layout
-	};
-	g_lighting_descriptor_set = std::move(config.device_data.device.allocateDescriptorSets(lighting_alloc_info)[0]);
+	g_lighting_descriptor_set = lighting_shader.descriptor_set(config.device_data.device, config.descriptor.pool, shader::set::binding_type::persistent);
 
-	const vk::DescriptorImageInfo position_input_info{
-		.sampler = nullptr,
-		.imageView = *config.swap_chain_data.position_image.view,
-		.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
-	};
-	const vk::DescriptorImageInfo normal_input_info{
-		.sampler = nullptr,
-		.imageView = *config.swap_chain_data.normal_image.view,
-		.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
-	};
-	const vk::DescriptorImageInfo albedo_input_info{
-		.sampler = nullptr,
-		.imageView = *config.swap_chain_data.albedo_image.view,
-		.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+	const std::unordered_map<std::string, vk::DescriptorImageInfo> lighting_image_infos = {
+		{
+			"g_position",
+			{
+				.sampler = nullptr,
+				.imageView = *config.swap_chain_data.position_image.view,
+				.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+			}
+		},
+		{
+			"g_normal",
+			{
+				.sampler = nullptr,
+				.imageView = *config.swap_chain_data.normal_image.view,
+				.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+			}
+		},
+		{
+			"g_albedo_spec",
+			{
+				.sampler = nullptr,
+				.imageView = *config.swap_chain_data.albedo_image.view,
+				.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+			}
+		}
 	};
 
-	std::vector<vk::WriteDescriptorSet> lighting_writes;
-	lighting_writes.emplace_back(vk::WriteDescriptorSet{
-		.dstSet = *g_lighting_descriptor_set,
-		.dstBinding = lighting_shader.binding("g_position")->binding,
-		.dstArrayElement = 0,
-		.descriptorCount = 1,
-		.descriptorType = vk::DescriptorType::eInputAttachment,
-		.pImageInfo = &position_input_info
-		});
-	lighting_writes.emplace_back(vk::WriteDescriptorSet{
-		.dstSet = *g_lighting_descriptor_set,
-		.dstBinding = lighting_shader.binding("g_normal")->binding,
-		.dstArrayElement = 0,
-		.descriptorCount = 1,
-		.descriptorType = vk::DescriptorType::eInputAttachment,
-		.pImageInfo = &normal_input_info
-		});
-	lighting_writes.emplace_back(vk::WriteDescriptorSet{
-		.dstSet = *g_lighting_descriptor_set,
-		.dstBinding = lighting_shader.binding("g_albedo_spec")->binding,
-		.dstArrayElement = 0,
-		.descriptorCount = 1,
-		.descriptorType = vk::DescriptorType::eInputAttachment,
-		.pImageInfo = &albedo_input_info
-		});
+	auto lighting_writes = lighting_shader.descriptor_writes(
+		g_lighting_descriptor_set,
+		{},
+		lighting_image_infos
+	);
 
 	config.device_data.device.updateDescriptorSets(lighting_writes, nullptr);
 
-	// --- Lighting Pass Pipeline ---
 	const vk::PipelineLayoutCreateInfo lighting_pipeline_layout_info{
 		.flags = {},
 		.setLayoutCount = 1,
@@ -241,41 +219,6 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 	};
 	g_lighting_pipeline = config.device_data.device.createGraphicsPipeline(nullptr, lighting_pipeline_info);
 
-	constexpr vk::VertexInputBindingDescription binding_description{
-		.binding = 0,
-		.stride = sizeof(vertex),
-		.inputRate = vk::VertexInputRate::eVertex
-	};
-
-	const std::array attribute_descriptions{
-		vk::VertexInputAttributeDescription{
-			.location = 0,
-			.binding = 0,
-			.format = vk::Format::eR32G32B32Sfloat,
-			.offset = offsetof(vertex, position)
-		},
-		vk::VertexInputAttributeDescription{
-			.location = 1,
-			.binding = 0,
-			.format = vk::Format::eR32G32B32Sfloat,
-			.offset = offsetof(vertex, normal)
-		},
-		vk::VertexInputAttributeDescription{
-			.location = 2,
-			.binding = 0,
-			.format = vk::Format::eR32G32Sfloat,
-			.offset = offsetof(vertex, tex_coords)
-		}
-	};
-
-	const vk::PipelineVertexInputStateCreateInfo vertex_input_info{
-		.flags = {},
-		.vertexBindingDescriptionCount = 1,
-		.pVertexBindingDescriptions = &binding_description,
-		.vertexAttributeDescriptionCount = static_cast<std::uint32_t>(attribute_descriptions.size()),
-		.pVertexAttributeDescriptions = attribute_descriptions.data()
-	};
-
 	constexpr vk::PipelineInputAssemblyStateCreateInfo input_assembly2{
 		.flags = {},
 		.topology = vk::PrimitiveTopology::eTriangleList,
@@ -337,6 +280,8 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 		.alphaToOneEnable = vk::False
 	};
 
+	auto vertex_input_info = geometry_shader.vertex_input_state();
+
 	const vk::GraphicsPipelineCreateInfo pipeline_info{
 		.flags = {},
 		.stageCount = static_cast<std::uint32_t>(shader_stages.size()),
@@ -359,9 +304,7 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 	g_pipeline = config.device_data.device.createGraphicsPipeline(nullptr, pipeline_info);
 }
 
-auto gse::renderer3d::initialize_objects() -> void {
-	const auto& light_source_components = registry::get_components<light_source_component>();
-
+auto gse::renderer3d::initialize_objects(std::span<light_source_component> const light_source_components) -> void {
 	for (const auto& light_source_component : light_source_components) {
 		for (const auto light : light_source_component.get_lights()) {
 			if (const auto point_light_ptr = dynamic_cast<point_light*>(light); point_light_ptr) {
@@ -370,32 +313,31 @@ auto gse::renderer3d::initialize_objects() -> void {
 	}
 }
 
-auto gse::renderer3d::render(const vulkan::config& config) -> void {
+auto gse::renderer3d::render(const vulkan::config& config, const std::span<render_component> render_components) -> void {
 	g_camera.update_camera_vectors();
 	if (!window::is_mouse_visible()) g_camera.process_mouse_movement(window::get_mouse_delta_rel_top_left());
 
-	const auto components = registry::get_components<render_component>();
 	const auto command = config.frame_context.command_buffer;
 
-	if (components.empty()) {
+	if (render_components.empty()) {
 		command.nextSubpass(vk::SubpassContents::eInline);
 		return;
 	}
 
-	auto& geometry_shader = shader_loader::get_shader("geometry_pass");
+	auto& geometry_shader = shader_loader::shader("geometry_pass");
 	command.bindPipeline(vk::PipelineBindPoint::eGraphics, g_pipeline);
 
-	const auto view = g_camera.get_view_matrix();
-	const auto proj = g_camera.get_projection_matrix();
+	const auto view = g_camera.view();
+	const auto proj = g_camera.projection();
 
 	std::unordered_map<std::string, std::span<const std::byte>> push_constants = {
 		{"view", std::as_bytes(std::span{ &view, 1 })},
 		{"proj", std::as_bytes(std::span{ &proj, 1 })}
 	};
 
-	for (const auto& component : components) {
+	for (const auto& component : render_components) {
 		for (const auto& model_handle : component.models) {
-			for (const auto& entry : model_handle.get_render_queue_entries()) {
+			for (const auto& entry : model_handle.render_queue_entries()) {
 				push_constants["model"] = std::as_bytes(std::span{ &entry.model_matrix, 1 });
 
 				geometry_shader.push(

@@ -2,11 +2,10 @@ module;
 
 #include <GLFW/glfw3.h>
 
-export module gse.platform.glfw.input;
+export module gse.platform:input;
 
 import std;
 
-import gse.core.main_clock;
 import gse.physics.math;
 
 export namespace gse::input {
@@ -188,7 +187,7 @@ auto gse::input::internal::update_button(button& button) -> void {
 		button.typed_time = 0.48f;
 	}
 	else if (button.held) {
-		button.typed_time -= main_clock::get_raw_delta_time().as<units::seconds>();
+		//button.typed_time -= main_clock::get_raw_delta_time().as<units::seconds>();
 
 		if (button.typed_time < 0.f) {
 			button.typed_time += 0.07f;

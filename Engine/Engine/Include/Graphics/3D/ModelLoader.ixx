@@ -1,21 +1,22 @@
-export module gse.graphics.model_loader;
+export module gse.graphics:model_loader;
 
 import std;
 
-import gse.core.id;
-import gse.graphics.model;
-import gse.graphics.mesh;
-import gse.graphics.texture;
-import gse.graphics.texture_loader;
-import gse.graphics.material;
+import :model;
+import :mesh;
+import :texture;
+import :texture_loader;
+import :material;
+
 import gse.physics.math;
+import gse.utility;
 import gse.platform;
 
 export namespace gse::model_loader {
 	auto load_obj_file(const std::filesystem::path& model_path, const std::string& model_name) -> model_handle;
 	auto add_model(const std::vector<mesh_data>& mesh_data, const std::string& model_name) -> model_handle;
-	auto get_model(const model_handle& handle) -> const model&;
-	auto get_model(const id& id) -> const model&;
+	auto model(const model_handle& handle) -> const model&;
+	auto model(const id& id) -> const class model&;
 
 	auto load_queued_models(const vulkan::config& config) -> void;
 }
@@ -23,7 +24,7 @@ export namespace gse::model_loader {
 export template<>
 struct std::hash<gse::model_handle> {
 	auto operator()(const gse::model_handle& handle) const noexcept -> std::size_t {
-		return std::hash<gse::uuid>{}(handle.get_model_id().number());
+		return std::hash<gse::uuid>{}(handle.model_id().number());
 	}
 };
 
@@ -31,8 +32,7 @@ std::unordered_map<gse::model_handle, std::unique_ptr<gse::model>> g_models;
 std::unordered_map<gse::model_handle, std::filesystem::path> g_loaded_model_paths;
 std::vector<gse::model_handle> g_models_to_initialize;
 
-auto gse::model_loader::load_obj_file(const std::filesystem::path& model_path, const std::string& model_name) ->
-model_handle {
+auto gse::model_loader::load_obj_file(const std::filesystem::path& model_path, const std::string& model_name) -> model_handle {
 	std::ifstream model_file(model_path);
 	assert(model_file.is_open(), "Failed to open model file.");
 
@@ -42,7 +42,7 @@ model_handle {
 		}
 	}
 
-	auto model_ptr = std::make_unique<model>(model_name);
+	auto model_ptr = std::make_unique<class model>(model_name);
 
 	auto split = [](const std::string& str, const char delimiter = ' ') -> std::vector<std::string> {
 		std::vector<std::string> tokens;
@@ -66,9 +66,9 @@ model_handle {
 	std::string file_line;
 	bool push_back_mesh = false;
 
-	std::vector<vec::raw3f> pre_load_vertices;
-	std::vector<vec::raw2f> pre_load_texcoords;
-	std::vector<vec::raw3f> pre_load_normals;
+	std::vector<raw3f> pre_load_vertices;
+	std::vector<raw2f> pre_load_texcoords;
+	std::vector<raw3f> pre_load_normals;
 	std::vector<vertex> final_vertices;
 	std::vector<std::uint32_t> loaded_texture_ids;
 	std::string current_material = "";
@@ -111,11 +111,11 @@ model_handle {
 						if (!pre_load_normals.empty()) {
 							final_vertices.emplace_back(pre_load_vertices[std::stoi(vertex_map[0]) - 1],
 								pre_load_normals[static_cast<size_t>(std::stoi(vertex_map[1])) - 1],
-								vec::raw2f());
+								raw2f());
 						}
 						else if (!pre_load_texcoords.empty()) {
 							final_vertices.emplace_back(pre_load_vertices[std::stoi(vertex_map[0]) - 1],
-								vec::raw3f(),
+								raw3f(),
 								pre_load_texcoords[static_cast<size_t>(std::stoi(vertex_map[1])) - 1]);
 						}
 					}
@@ -136,13 +136,13 @@ model_handle {
 								final_vertices.emplace_back(
 									pre_load_vertices[std::stoi(vertex_map[0]) - 1],
 									pre_load_normals[static_cast<size_t>(std::stoi(vertex_map[1])) - 1],
-									vec::raw2f()
+									raw2f()
 								);
 							}
 							else if (!pre_load_texcoords.empty()) {
 								final_vertices.emplace_back(
 									pre_load_vertices[std::stoi(vertex_map[0]) - 1],
-									vec::raw3f(),
+									raw3f(),
 									pre_load_texcoords[static_cast<size_t>(std::stoi(vertex_map[1])) - 1]
 								);
 							}
@@ -171,7 +171,7 @@ model_handle {
 					generate_material({}, {}, {}, current_material);
 				}
 				else if (!current_material.empty()) {
-					auto& [ambient, diffuse, specular, emission, shininess, optical_density, transparency, illumination_model, diffuse_texture, normal_texture, specular_texture] = *get_material(current_material).get_data();
+					auto& [ambient, diffuse, specular, emission, shininess, optical_density, transparency, illumination_model, diffuse_texture, normal_texture, specular_texture] = *get_material(current_material).data();
 
 					if (tokens[0] == "Ns") shininess = std::stof(tokens[1]);
 					else if (tokens[0] == "Ka") ambient = unitless::vec3(std::stof(tokens[1]), std::stof(tokens[2]), std::stof(tokens[3]));
@@ -181,9 +181,9 @@ model_handle {
 					else if (tokens[0] == "Ni") optical_density = std::stof(tokens[1]);
 					else if (tokens[0] == "d") transparency = std::stof(tokens[1]);
 					else if (tokens[0] == "illum") illumination_model = std::stoi(tokens[1]);
-					else if (tokens[0] == "map_Kd") diffuse_texture = texture_loader::get_texture(directory_path + tokens[1]).get_id();
-					else if (tokens[0] == "map_Bump") normal_texture = texture_loader::get_texture(directory_path + tokens[1]).get_id();
-					else if (tokens[0] == "map_Ks") specular_texture = texture_loader::get_texture(directory_path + tokens[1]).get_id();
+					else if (tokens[0] == "map_Kd") diffuse_texture = texture_loader::get_texture(directory_path + tokens[1]).id();
+					else if (tokens[0] == "map_Bump") normal_texture = texture_loader::get_texture(directory_path + tokens[1]).id();
+					else if (tokens[0] == "map_Ks") specular_texture = texture_loader::get_texture(directory_path + tokens[1]).id();
 				}
 			}
 		}
@@ -222,7 +222,7 @@ auto gse::model_loader::add_model(const std::vector<mesh_data>& mesh_data, const
 		}
 	}
 
-	auto model_ptr = std::make_unique<model>(model_name);
+	auto model_ptr = std::make_unique<class model>(model_name);
 
 	for (const auto& d : mesh_data) {
 		model_ptr->meshes.emplace_back(d);
@@ -236,15 +236,15 @@ auto gse::model_loader::add_model(const std::vector<mesh_data>& mesh_data, const
 	return handle;
 }
 
-auto gse::model_loader::get_model(const model_handle& handle) -> const model& {
+auto gse::model_loader::model(const model_handle& handle) -> const class model& {
 	const auto it = g_models.find(handle);
 	assert(it != g_models.end(), "Model not found.");
 	return *it->second;
 }
 
-auto gse::model_loader::get_model(const id& id) -> const model& {
+auto gse::model_loader::model(const id& id) -> const class model& {
 	const auto it = std::ranges::find_if(g_models, [&id](const auto& pair) {
-		return pair.first.get_model_id() == id;
+		return pair.first.model_id() == id;
 		});
 
 	assert(it != g_models.end(), "Model not found.");

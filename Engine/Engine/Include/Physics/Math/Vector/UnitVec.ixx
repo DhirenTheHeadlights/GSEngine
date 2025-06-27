@@ -1,10 +1,10 @@
-export module gse.physics.math.unit_vec;
+export module gse.physics.math:unit_vec;
 
 import std;
 
-import gse.physics.math.units.quant;
-import gse.physics.math.base_vec;
-import gse.physics.math.unitless_vec;
+import :quant;
+import :base_vec;
+import :unitless_vec;
 
 namespace gse::unit {
     template <typename T>

@@ -1,18 +1,11 @@
-export module gse.core.object.sphere;
+export module gse.examples:sphere;
 
 import std;
 
-import gse.core.config;
-import gse.physics.math;
-import gse.core.object.hook;
-import gse.core.object_registry;
-import gse.graphics.material;
-import gse.graphics.render_component;
-import gse.physics.motion_component;
-import gse.graphics.debug;
-import gse.graphics.model_loader;
-import gse.graphics.mesh;
-import gse.graphics.texture_loader;
+import gse.runtime;
+import gse.utility;
+import gse.graphics;
+import gse.physics;
 
 export namespace gse {
     auto create_sphere(std::uint32_t object_uuid, const vec3<length>& position, length radius, int sectors = 36, int stacks = 18) -> void;
@@ -91,8 +84,8 @@ export struct sphere_mesh_hook final : gse::hook<gse::entity> {
     }
 
     auto update() -> void override {
-        const auto position = gse::registry::get_component<gse::physics::motion_component>(owner_id).current_position;
-        gse::registry::get_component<gse::render_component>(owner_id).models[0].set_position(position);
+        const auto position = gse::registry::component<gse::physics::motion_component>(owner_id).current_position;
+        gse::registry::component<gse::render_component>(owner_id).models[0].set_position(position);
     }
 private:
     gse::vec3<gse::length> m_initial_position;

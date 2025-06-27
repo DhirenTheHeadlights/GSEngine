@@ -1,4 +1,4 @@
-export module gse.core.component;
+export module gse.utility:component;
 
 import std;
 

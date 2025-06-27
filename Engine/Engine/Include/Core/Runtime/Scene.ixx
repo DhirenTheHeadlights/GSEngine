@@ -1,14 +1,13 @@
-export module gse.core.scene;
+export module gse.runtime:scene;
 
 import std;
 
-import gse.core.id;
-import gse.core.object.hook;
-import gse.core.object_registry;
-import gse.graphics.renderer;
-import gse.graphics.renderer3d;
-import gse.physics.update;
-import gse.physics.broad_phase_collision;
+import :object_registry;
+import :main_clock;
+
+import gse.utility;
+import gse.graphics;
+import gse.physics;
 
 export namespace gse {
 	class scene final : public hookable<scene>, public identifiable {
@@ -24,9 +23,8 @@ export namespace gse {
 		auto exit() const -> void;
 
 		auto set_active(const bool is_active) -> void { this->m_is_active = is_active; }
-		auto get_active() const -> bool { return m_is_active; }
-
-		auto get_entities() const -> std::vector<std::uint32_t>;
+		auto active() const -> bool { return m_is_active; }
+		auto entities() const -> std::vector<std::uint32_t>;
 	private:
 		std::vector<std::uint32_t> m_object_indexes;
 		std::vector<std::pair<std::uint32_t, std::string>> m_objects_to_add_upon_initialization;
@@ -58,14 +56,20 @@ auto gse::scene::initialize() -> void {
 	m_objects_to_add_upon_initialization.clear();
 
 	registry::initialize_hooks();
-	renderer3d::initialize_objects();
+	renderer3d::initialize_objects(registry::components<light_source_component>());
 }
 
 auto gse::scene::update() const -> void {
 	update_hooks();
 
 	registry::update_hooks();
-	physics::update();
+	physics::update(
+		registry::components<physics::motion_component>(),
+		registry::components<physics::collision_component>(),
+		registry::components<render_component>(),
+		main_clock::get_constant_update_time(),
+		main_clock::get_raw_delta_time()
+	);
 }
 
 auto gse::scene::render() const -> void {
@@ -80,7 +84,7 @@ auto gse::scene::exit() const -> void {
 	}
 }
 
-auto gse::scene::get_entities() const -> std::vector<std::uint32_t> {
+auto gse::scene::entities() const -> std::vector<std::uint32_t> {
 	return m_object_indexes;
 }
 

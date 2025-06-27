@@ -1,10 +1,10 @@
-export module gse.physics.math.units.mass_and_force;
+export module gse.physics.math:mass_and_force;
 
 import std;
 
-import gse.physics.math.units.dimension;
-import gse.physics.math.units.quant;
-import gse.physics.math.unit_vec;
+import :dimension;
+import :quant;
+import :unit_vec;
 
 namespace gse::units {
 	struct mass_tag {};

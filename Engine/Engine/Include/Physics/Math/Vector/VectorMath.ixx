@@ -1,10 +1,10 @@
-export module gse.physics.math.vec_math;
+export module gse.physics.math:vec_math;
 
 import std;
 
-import gse.physics.math.base_vec;
-import gse.physics.math.unit_vec;
-import gse.physics.math.unitless_vec;
+import :base_vec;
+import :unit_vec;
+import :unitless_vec;
 
 export namespace gse {
     template <typename T, int N> 				constexpr auto dot(const unitless::vec_t<T, N>& lhs, const unitless::vec_t<T, N>& rhs) -> T;

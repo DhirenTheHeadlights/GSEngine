@@ -1,8 +1,8 @@
-export module gse.core.object.hook;
+export module gse.utility:hook;
 
 import std;
 
-import gse.core.id;
+import :id;
 
 namespace gse {
 	export struct entity;

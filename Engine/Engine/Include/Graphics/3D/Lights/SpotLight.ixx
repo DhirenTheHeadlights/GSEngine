@@ -2,14 +2,15 @@ module;
 
 #include <imgui.h>
 
-export module gse.graphics.spot_light;
+export module gse.graphics:spot_light;
 
 import std;
 
-import gse.graphics.light;
+import :light;
+import :debug;
+import :cube_map;
+
 import gse.physics.math;
-import gse.graphics.debug;
-import gse.graphics.cube_map;
 
 export namespace gse {
 	class spot_light final : public light {
@@ -37,7 +38,7 @@ export namespace gse {
 				});
 		}
 
-		auto get_render_queue_entry() const -> light_render_queue_entry override {
+		auto render_queue_entry() const -> light_render_queue_entry override {
 			return { light_type::spot, m_color, m_intensity, m_position, m_direction, m_constant, m_linear, m_quadratic, m_cut_off > m_outer_cut_off ? m_outer_cut_off : m_cut_off, m_outer_cut_off, m_ambient_strength, m_near_plane, m_far_plane, m_ignore_list_id };
 		}
 

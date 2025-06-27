@@ -1,9 +1,9 @@
-export module gse.platform.vulkan.resources;
+export module gse.platform.vulkan:resources;
 
 import std;
 import vulkan_hpp;
 
-import gse.platform.assert;
+import gse.assert;
 
 export namespace gse::vulkan::persistent_allocator {
 	class allocation;
