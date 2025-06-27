@@ -1,11 +1,12 @@
-export module gse.graphics.light;
+export module gse.graphics:light;
 
 import std;
 import vulkan_hpp;
 
-import gse.core.id;
+import :debug;
+
+import gse.utility;
 import gse.physics.math;
-import gse.graphics.debug;
 
 export namespace gse {
     enum class light_type : std::uint8_t {
@@ -16,12 +17,12 @@ export namespace gse {
 
     struct alignas(16) light_shader_entry {
         int light_type;                                     // Offset 0, Size 4 bytes
-		vec::raw3f padding1 = { 0.f, 0.f, 0.f };            // Offset 4, Size 12 bytes (Padding to align to 16 bytes)
-        vec::raw3f position;                                // Offset 16, Size 12 bytes
+		raw3f padding1 = { 0.f, 0.f, 0.f };            // Offset 4, Size 12 bytes (Padding to align to 16 bytes)
+        raw3f position;                                // Offset 16, Size 12 bytes
         float padding2 = 0;                                 // Offset 28, Size 4 bytes (Padding to align to 16 bytes)
-        vec::raw3f direction;                               // Offset 32, Size 12 bytes
+        raw3f direction;                               // Offset 32, Size 12 bytes
         float padding3 = 0;                                 // Offset 44, Size 4 bytes (Padding to align to 16 bytes)
-        vec::raw3f color;                                   // Offset 48, Size 12 bytes
+        raw3f color;                                   // Offset 48, Size 12 bytes
 		// We don't need padding here, not sure why - it ends up working correctly without it
         float intensity;                                    // Offset 64, Size 4 bytes
         float constant;                                     // Offset 68, Size 4 bytes
@@ -88,17 +89,17 @@ export namespace gse {
         light() = default;
         virtual ~light() = default;
 
-        virtual auto get_render_queue_entry() const -> light_render_queue_entry = 0;
+        virtual auto render_queue_entry() const -> light_render_queue_entry = 0;
         virtual auto show_debug_menu(const std::string_view& name, std::uint32_t parent_id) -> void = 0;
 
-        auto get_type() const -> light_type { return m_type; }
+        auto type() const -> light_type { return m_type; }
         virtual auto set_position(const vec3<length>& position) -> void {}
 
         auto set_ignore_list_id(const id& ignore_list_id) -> void { m_ignore_list_id = ignore_list_id; }
-        auto get_ignore_list_id() const -> id { return m_ignore_list_id; }
+        auto ignore_list_id() const -> id { return m_ignore_list_id; }
     protected:
         light(const unitless::vec3& color, const float& intensity, const light_type type)
-	        : m_color(color), m_intensity(intensity), m_type(type), m_ignore_list_id() {}
+	        : m_color(color), m_intensity(intensity), m_type(type) {}
 
         unitless::vec3 m_color;
         float m_intensity = 1.0f;

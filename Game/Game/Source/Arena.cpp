@@ -7,8 +7,8 @@ struct wall_hook final : gse::hook<gse::entity> {
 	using hook::hook;
 
 	auto initialize() -> void override {
-		gse::registry::get_component<gse::physics::collision_component>(owner_id).resolve_collisions = false;
-		gse::registry::get_component<gse::physics::motion_component>(owner_id).affected_by_gravity = false;
+		gse::registry::component<gse::physics::collision_component>(owner_id).resolve_collisions = false;
+		gse::registry::component<gse::physics::motion_component>(owner_id).affected_by_gravity = false;
 	}
 };
 

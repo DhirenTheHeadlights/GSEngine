@@ -1,1 +1,1 @@
-export module gse.physics.octree;
+export module gse.physics:octree;

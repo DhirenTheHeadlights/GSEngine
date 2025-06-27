@@ -26,7 +26,7 @@ struct iron_man_hook final : gse::hook<gse::entity> {
 	auto initialize() -> void override {
 		const auto handle = gse::model_loader::load_obj_file(game::config::resource_path / "Models/IronMan/iron_man.obj", "Iron Man");
 		gse::registry::add_component(gse::render_component(owner_id, handle));
-		gse::registry::get_component<gse::render_component>(owner_id).models[0].set_position(gse::vec::meters(0.f, 0.f, 0.f));
+		gse::registry::component<gse::render_component>(owner_id).models[0].set_position(gse::vec::meters(0.f, 0.f, 0.f));
 	}
 };
 
@@ -36,7 +36,7 @@ struct black_knight_hook final : gse::hook<gse::entity> {
 	auto initialize() -> void override {
 		const auto handle = gse::model_loader::load_obj_file(game::config::resource_path / "Models/BlackKnight/base.obj", "Black Knight");
 		gse::registry::add_component(gse::render_component(owner_id, handle));
-		gse::registry::get_component<gse::render_component>(owner_id).models[0].set_position(gse::vec::meters(0.f, 0.f, 0.f));
+		gse::registry::component<gse::render_component>(owner_id).models[0].set_position(gse::vec::meters(0.f, 0.f, 0.f));
 	}
 };
 
@@ -46,7 +46,7 @@ struct raw_backpack_hook final : gse::hook<gse::entity> {
 	auto initialize() -> void override {
 		const auto handle = gse::model_loader::load_obj_file(game::config::resource_path / "Models/BlackKnight/base.obj", "Black Knight");
 		gse::registry::add_component(gse::render_component(owner_id, handle));
-		gse::registry::get_component<gse::render_component>(owner_id).models[0].set_position(gse::vec::meters(0.f, 0.f, 0.f));
+		gse::registry::component<gse::render_component>(owner_id).models[0].set_position(gse::vec::meters(0.f, 0.f, 0.f));
 	}
 };
 
@@ -77,7 +77,7 @@ struct scene1_hook final : gse::hook<gse::scene> {
 
 	auto render() -> void override {
 		gse::debug::add_imgui_callback([] {
-			if (gse::scene_loader::get_scene(gse::get_id("Scene1"))->get_active()) {
+			if (gse::scene_loader::scene(gse::get_id("Scene1"))->active()) {
 				ImGui::Begin("Game Data");
 
 				ImGui::Text("FPS: %d", gse::main_clock::get_frame_rate());
@@ -93,8 +93,8 @@ struct scene2_hook final : gse::hook<gse::scene> {
 		using hook::hook;
 
 		auto initialize() -> void override {
-			gse::registry::get_component<gse::physics::collision_component>(owner_id).resolve_collisions = false;
-			gse::registry::get_component<gse::physics::motion_component>(owner_id).affected_by_gravity = false;
+			gse::registry::component<gse::physics::collision_component>(owner_id).resolve_collisions = false;
+			gse::registry::component<gse::physics::motion_component>(owner_id).affected_by_gravity = false;
 		}
 	};
 
@@ -110,7 +110,7 @@ struct scene2_hook final : gse::hook<gse::scene> {
 
 	auto render() -> void override {
 		gse::debug::add_imgui_callback([] {
-			if (gse::scene_loader::get_scene(gse::get_id("Scene2"))->get_active()) {
+			if (gse::scene_loader::scene(gse::get_id("Scene2"))->active()) {
 				ImGui::Begin("Game Data");
 
 				ImGui::Text("FPS: %d", gse::main_clock::get_frame_rate());
@@ -146,13 +146,13 @@ struct scene3_hook final : gse::hook<gse::scene> {
 
 auto game::initialize() -> bool {
 	auto scene1 = std::make_unique<gse::scene>("Scene1");
-	scene1->add_hook(std::make_unique<scene1_hook>(scene1.get(), scene1->get_id()));
+	scene1->add_hook(std::make_unique<scene1_hook>(scene1.get(), scene1->id()));
 
 	auto scene2 = std::make_unique<gse::scene>("Scene2");
-	scene2->add_hook(std::make_unique<scene2_hook>(scene2.get(), scene2->get_id()));
+	scene2->add_hook(std::make_unique<scene2_hook>(scene2.get(), scene2->id()));
 
 	auto scene3 = std::make_unique<gse::scene>("Scene3");
-	scene3->add_hook(std::make_unique<scene3_hook>(scene3.get(), scene3->get_id()));
+	scene3->add_hook(std::make_unique<scene3_hook>(scene3.get(), scene3->id()));
 
 	gse::scene_loader::add_scene(scene1);
 	gse::scene_loader::add_scene(scene2);
@@ -188,7 +188,7 @@ auto game::update() -> bool {
 
 auto game::render() -> bool {
 	gse::gui::create_menu("Test", { 100.f, 100.f }, { 200.f, 200.f }, [] {
-		gse::gui::text("Hello, World!");
+		gse::gui::text("Hello, world!");
 		});
 	return true;
 }

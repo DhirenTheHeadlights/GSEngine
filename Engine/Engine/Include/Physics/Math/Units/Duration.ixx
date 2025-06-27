@@ -1,10 +1,10 @@
-export module gse.physics.math.units.duration;
+export module gse.physics.math:duration;
 
 import std;
 
-import gse.physics.math.units.dimension;
-import gse.physics.math.units.quant;
-import gse.physics.math.unit_vec;
+import :dimension;
+import :quant;
+import :unit_vec;
 
 namespace gse::units {
 	struct time_tag {};

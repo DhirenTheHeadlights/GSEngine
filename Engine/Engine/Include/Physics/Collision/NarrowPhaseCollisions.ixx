@@ -1,10 +1,10 @@
-export module gse.physics.narrow_phase_collisions;
+export module gse.physics:narrow_phase_collisions;
 
 import std;
 
-import gse.physics.motion_component;
-import gse.physics.bounding_box;
-import gse.physics.collision_component;
+import :motion_component;
+import :bounding_box;
+import :collision_component;
 import gse.physics.math;
 
 export namespace gse::narrow_phase_collision {

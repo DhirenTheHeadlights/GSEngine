@@ -1,12 +1,13 @@
-export module gse.graphics.material;
+export module gse.graphics:material;
 
 import std;
 
-import gse.core.id;
-import gse.graphics.texture;
-import gse.graphics.shader;
+import :texture;
+import :shader;
+
 import gse.physics.math;
-import gse.platform.assert;
+import gse.utility;
+import gse.platform;
 
 export namespace gse {
     struct material {
@@ -29,7 +30,7 @@ export namespace gse {
     public:
 	    material_handle(material* m = nullptr) : m_material(m) {}
         auto operator->() const -> const material* { return m_material; }
-        auto get_data() const -> material* { return m_material; }
+        auto data() const -> material* { return m_material; }
         auto exists() const -> bool { return m_material != nullptr; }
 
     private:

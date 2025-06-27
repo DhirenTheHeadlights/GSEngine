@@ -1,10 +1,10 @@
-export module gse.physics.math.units.energy_and_power;
+export module gse.physics.math:energy_and_power;
 
 import std;
 
-import gse.physics.math.units.dimension;
-import gse.physics.math.units.quant;
-import gse.physics.math.unit_vec;
+import :dimension;
+import :quant;
+import :unit_vec;
 
 namespace gse::units {
 	struct energy_tag {};

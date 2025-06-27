@@ -34,13 +34,13 @@ struct jetpack_hook final : gse::hook<gse::entity> {
 				m_boost_fuel = std::min(m_boost_fuel, 1000);
 			}
 
-			auto& motion_component = gse::registry::get_component<gse::physics::motion_component>(owner_id);
+			auto& motion_component = gse::registry::component<gse::physics::motion_component>(owner_id);
 
-			apply_force(motion_component, gse::vec3<gse::force>(0.f, m_jetpack_force + boost_force, 0.f));
+			apply_force(motion_component, gse::registry::component_ptr<gse::render_component>(owner_id), gse::vec3<gse::force>(0.f, m_jetpack_force + boost_force, 0.f));
 
 			for (auto& [key, direction] : g_wasd) {
 				if (gse::input::get_keyboard().keys[key].held) {
-					apply_force(gse::registry::get_component<gse::physics::motion_component>(owner_id), gse::vec3<gse::force>(m_jetpack_side_force + boost_force, 0.f, m_jetpack_side_force + boost_force) * gse::get_camera().get_camera_direction_relative_to_origin(direction));
+					apply_force(gse::registry::component<gse::physics::motion_component>(owner_id), gse::registry::component_ptr<gse::render_component>(owner_id), gse::vec3<gse::force>(m_jetpack_side_force + boost_force, 0.f, m_jetpack_side_force + boost_force) * gse::get_camera().direction_relative_to_origin(direction));
 				}
 			}
 		}
@@ -79,7 +79,7 @@ struct player_hook final : gse::hook<gse::entity> {
 		motion_component.max_speed = m_max_speed;
 		motion_component.self_controlled = true;
 
-		render_component.bounding_box_meshes.emplace_back(generate_bounding_box_mesh(collision_component.bounding_box));
+		render_component.bounding_box_meshes.emplace_back(gse::generate_bounding_box_mesh(collision_component.bounding_box.upper_bound, collision_component.bounding_box.lower_bound));
 
 		gse::registry::add_component<gse::render_component>(std::move(render_component));
 		gse::registry::add_component<gse::physics::motion_component>(std::move(motion_component));
@@ -87,11 +87,11 @@ struct player_hook final : gse::hook<gse::entity> {
 	}
 
 	auto update() -> void override {
-		auto& motion_component = gse::registry::get_component<gse::physics::motion_component>(owner_id);
+		auto& motion_component = gse::registry::component<gse::physics::motion_component>(owner_id);
 
 		for (auto& [key, direction] : g_wasd) {
 			if (gse::input::get_keyboard().keys[key].held && !motion_component.airborne) {
-				apply_force(motion_component, m_move_force * gse::get_camera().get_camera_direction_relative_to_origin(direction) * gse::unitless::vec3(1.f, 0.f, 1.f));
+				apply_force(motion_component, gse::registry::component_ptr<gse::render_component>(owner_id), m_move_force * gse::get_camera().direction_relative_to_origin(direction) * gse::unitless::vec3(1.f, 0.f, 1.f));
 			}
 		}
 
@@ -101,19 +101,19 @@ struct player_hook final : gse::hook<gse::entity> {
 			apply_impulse(motion_component, gse::vec3<gse::force>(0.f, m_jump_force, 0.f), gse::seconds(0.5f));
 		}
 
-		gse::registry::get_component<gse::physics::collision_component>(owner_id).bounding_box.set_position(motion_component.current_position);
+		gse::registry::component<gse::physics::collision_component>(owner_id).bounding_box.set_position(motion_component.current_position);
 
 		gse::get_camera().set_position(motion_component.current_position + gse::vec::feet(0.f, 6.f, 0.f));
 
-		gse::registry::get_component<gse::render_component>(owner_id).update_bounding_box_meshes();
+		gse::registry::component<gse::render_component>(owner_id).update_bounding_box_meshes();
 	}
 
 	auto render() -> void override {
 		gse::debug::add_imgui_callback([this] {
 			ImGui::Begin("Player");
 
-			const auto motion_component = gse::registry::get_component<gse::physics::motion_component>(owner_id);
-			const auto collision_component = gse::registry::get_component<gse::physics::collision_component>(owner_id);
+			const auto motion_component = gse::registry::component<gse::physics::motion_component>(owner_id);
+			const auto collision_component = gse::registry::component<gse::physics::collision_component>(owner_id);
 
 			gse::debug::print_vector("Player Position", motion_component.current_position.as<gse::units::meters>(), gse::units::meters::unit_name);
 			gse::debug::print_vector("Player Bounding Box Position", collision_component.bounding_box.get_center().as<gse::units::meters>(), gse::units::meters::unit_name);

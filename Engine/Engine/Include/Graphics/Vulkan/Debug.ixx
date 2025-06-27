@@ -5,14 +5,12 @@ module;
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_vulkan.h"
 
-export module gse.graphics.debug;
+export module gse.graphics:debug;
 
 import std;
-import vulkan_hpp;
 
 import gse.physics.math;
-import gse.core.clock;
-import gse.core.json_parser;
+import gse.utility;
 import gse.platform;
 
 export namespace gse::debug {
@@ -26,7 +24,7 @@ export namespace gse::debug {
     auto print_vector(const std::string& name, const unitless::vec3& vec, const char* unit = nullptr) -> void;
     auto print_value(const std::string& name, const float& value, const char* unit = nullptr) -> void;
 
-    template <internal::is_unit UnitType, internal::is_quantity QuantityType>
+    template <is_unit UnitType, is_quantity QuantityType>
     auto unit_slider(const std::string& name, QuantityType& quantity, const QuantityType& min, const QuantityType& max) -> void {
         float value = quantity.template as<UnitType>();
 
@@ -157,7 +155,7 @@ auto gse::debug::update_imgui() -> void {
         window::set_mouse_visible(true);
     }
 
-    if (g_autosave_clock.get_elapsed_time() > g_autosave_time) {
+    if (g_autosave_clock.elapsed() > g_autosave_time) {
         save_imgui_state();
         g_autosave_clock.reset();
     }

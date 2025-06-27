@@ -1,12 +1,12 @@
-export module gse.graphics.render_component;
+export module gse.graphics:render_component;
 
 import std;
 
-import gse.core.component;
-import gse.core.id;
-import gse.graphics.mesh;
-import gse.graphics.model;
-import gse.graphics.model_loader;
+import :mesh;
+import :model;
+import :model_loader;
+
+import gse.utility;
 import gse.physics.math;
 
 export namespace gse {
@@ -35,7 +35,7 @@ export namespace gse {
 }
 
 gse::render_component::render_component(const std::uint32_t id, const model_handle& handle) : component(id) {
-	models.emplace_back(model_loader::get_model(handle));
+	models.emplace_back(model_loader::model(handle));
 	calculate_center_of_mass();
 }
 
@@ -55,7 +55,7 @@ auto gse::render_component::calculate_center_of_mass() -> void {
 	vec3<length> sum;
 	int number_of_meshes = 0;
 	for (const auto& model_handle : models) {
-		for (const auto& model = model_loader::get_model(model_handle); auto& model_mesh : model.meshes) {
+		for (const auto& model = model_loader::model(model_handle); auto& model_mesh : model.meshes) {
 			sum += model_mesh.center_of_mass;
 			number_of_meshes += static_cast<int>(model.meshes.size());
 		}

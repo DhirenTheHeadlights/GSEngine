@@ -2,11 +2,11 @@ module;
 
 #include <SPIRV-Reflect/spirv_reflect.h>
 
-export module gse.graphics.shader;
+export module gse.graphics:shader;
 
 import std;
-import vulkan_hpp;
 
+import gse.assert;
 import gse.platform;
 
 namespace gse {
@@ -16,6 +16,10 @@ namespace gse {
 			std::string name;
 			std::filesystem::path vert_path;
 			std::filesystem::path frag_path;
+		};
+		struct vertex_input {
+			std::vector<vk::VertexInputBindingDescription> bindings;
+			std::vector<vk::VertexInputAttributeDescription> attributes;
 		};
 		struct uniform_member {
 			std::string name;
@@ -74,9 +78,10 @@ namespace gse {
 		auto uniform_block(const std::string& name) const -> uniform_block;
 		auto uniform_blocks() const -> std::vector<class uniform_block>;
 		auto binding(const std::string& name) const -> std::optional<vk::DescriptorSetLayoutBinding>;
-		auto layout(const set::binding_type type) const -> vk::DescriptorSetLayout;
+		auto layout(set::binding_type type) const -> vk::DescriptorSetLayout;
 		auto layouts() const -> std::vector<vk::DescriptorSetLayout>;
 		auto push_constant_range(const std::string_view& name, vk::ShaderStageFlags stages) const -> vk::PushConstantRange;
+		auto vertex_input_state() const -> vk::PipelineVertexInputStateCreateInfo;
 
 		auto descriptor_writes(
 			vk::DescriptorSet set,
@@ -125,12 +130,14 @@ namespace gse {
 		auto descriptor_set(
 			const vk::raii::Device& device,
 			vk::DescriptorPool pool,
-			set::binding_type type, std::uint32_t count
+			set::binding_type type, 
+			std::uint32_t count
 		) const -> std::vector<vk::raii::DescriptorSet>;
 
 		auto descriptor_set(
 			const vk::raii::Device& device,
-			vk::DescriptorPool pool, set::binding_type type
+			vk::DescriptorPool pool, 
+			set::binding_type type
 		) const -> vk::raii::DescriptorSet;
 
 	private:
@@ -138,6 +145,7 @@ namespace gse {
 		vk::raii::ShaderModule m_frag_module = nullptr;
 
 		struct layout m_layout;
+		vertex_input m_vertex_input;
 		std::vector<struct uniform_block> m_push_constants;
 		info m_info;
 
@@ -160,12 +168,7 @@ gse::shader::shader(const vk::raii::Device & device, const std::filesystem::path
 	create(device, vert_path, frag_path, layout);
 }
 
-auto gse::shader::create(
-	const vk::raii::Device & device,
-	const std::filesystem::path & vert_path,
-	const std::filesystem::path & frag_path,
-	const struct layout* provided_layout
-) -> void {
+auto gse::shader::create(const vk::raii::Device& device, const std::filesystem::path& vert_path, const std::filesystem::path& frag_path, const struct layout* provided_layout) -> void {
 	const auto vert_code = read_file(vert_path);
 	const auto frag_code = read_file(frag_path);
 
@@ -180,6 +183,66 @@ auto gse::shader::create(
 
 	m_vert_module = make_module(vert_code);
 	m_frag_module = make_module(frag_code);
+
+	SpvReflectShaderModule vertex_input_reflect_module;
+	auto vertex_input_reflect_module_result = spvReflectCreateShaderModule(vert_code.size(), vert_code.data(), &vertex_input_reflect_module);
+	assert(vertex_input_reflect_module_result == SPV_REFLECT_RESULT_SUCCESS, "SPIR-V reflection for vertex inputs failed");
+
+	uint32_t vertex_input_count = 0;
+	spvReflectEnumerateInputVariables(&vertex_input_reflect_module, &vertex_input_count, nullptr);
+	std::vector<SpvReflectInterfaceVariable*> inputs(vertex_input_count);
+	spvReflectEnumerateInputVariables(&vertex_input_reflect_module, &vertex_input_count, inputs.data());
+
+	m_vertex_input.attributes.clear();
+	m_vertex_input.bindings.clear();
+
+	for (const auto* var : inputs) {
+		if (var->storage_class == SpvStorageClassInput && var->built_in == -1) {
+			m_vertex_input.attributes.push_back(vk::VertexInputAttributeDescription{
+				.location = var->location,
+				.binding = 0, 
+				.format = static_cast<vk::Format>(var->format),
+				.offset = 0 
+				}
+			);
+		}
+	}
+
+	std::ranges::sort(m_vertex_input.attributes, {}, &vk::VertexInputAttributeDescription::location);
+
+	uint32_t current_offset = 0;
+	uint32_t stride = 0;
+
+	auto get_format_size = [](const vk::Format format) -> uint32_t {
+		switch (format) {
+		case vk::Format::eR32Sfloat:          return 4;
+		case vk::Format::eR32G32Sfloat:       return 8;
+		case vk::Format::eR32G32B32Sfloat:    return 12;
+		case vk::Format::eR32G32B32A32Sfloat: return 16;
+			// Add other formats used in your project
+		default:
+			assert(false, "Unsupported vertex format for size calculation");
+			return 0;
+		}
+		};
+
+	for (auto& attr : m_vertex_input.attributes) {
+		attr.offset = current_offset;
+		uint32_t format_size = get_format_size(attr.format);
+		current_offset += format_size;
+	}
+
+	stride = current_offset;
+
+	if (!m_vertex_input.attributes.empty()) {
+		m_vertex_input.bindings.push_back(vk::VertexInputBindingDescription{
+			.binding = 0,
+			.stride = stride,
+			.inputRate = vk::VertexInputRate::eVertex
+			});
+	}
+
+	spvReflectDestroyShaderModule(&vertex_input_reflect_module);
 
 	struct reflected_binding {
 		std::string name;
@@ -305,7 +368,6 @@ auto gse::shader::create(
 		auto [new_end, _] = std::ranges::unique(m_push_constants, {}, &uniform_block::name);
 		m_push_constants.erase(new_end, m_push_constants.end());
 	}
-
 
 	std::unordered_map<set::binding_type, std::vector<struct binding>> grouped;
 	for (auto& [name, layout_binding, set_index] : all_reflected) {
@@ -514,7 +576,7 @@ auto gse::shader::layouts() const -> std::vector<vk::DescriptorSetLayout> {
 }
 
 auto gse::shader::push_constant_range(const std::string_view & name, const vk::ShaderStageFlags stages) const -> vk::PushConstantRange {
-	auto it = std::ranges::find_if(m_push_constants, [&](const auto& block) {
+	const auto it = std::ranges::find_if(m_push_constants, [&](const auto& block) {
 		return block.name == name;
 		});
 
@@ -527,6 +589,15 @@ auto gse::shader::push_constant_range(const std::string_view & name, const vk::S
 	};
 }
 
+auto gse::shader::vertex_input_state() const -> vk::PipelineVertexInputStateCreateInfo {
+	return {
+		.flags = {},
+		.vertexBindingDescriptionCount = static_cast<uint32_t>(m_vertex_input.bindings.size()),
+		.pVertexBindingDescriptions = m_vertex_input.bindings.data(),
+		.vertexAttributeDescriptionCount = static_cast<uint32_t>(m_vertex_input.attributes.size()),
+		.pVertexAttributeDescriptions = m_vertex_input.attributes.data()
+	};
+}
 
 auto gse::shader::descriptor_writes(const vk::DescriptorSet set, const std::unordered_map<std::string, vk::DescriptorBufferInfo>&buffer_infos, const std::unordered_map<std::string, vk::DescriptorImageInfo>&image_infos) const -> std::vector<vk::WriteDescriptorSet> {
 	std::vector<vk::WriteDescriptorSet> writes;

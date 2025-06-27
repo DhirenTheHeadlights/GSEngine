@@ -1,22 +1,23 @@
 module;
 
-#include <cstddef>
+#include <imgui.h>
 
-export module gse.graphics.renderer2d;
+export module gse.graphics:renderer2d;
 
 import std;
 
-import gse.core.config;
-import gse.core.timer;
-import gse.graphics.debug;
-import gse.graphics.font;
-import gse.graphics.texture;
-import gse.physics.math;
-import gse.graphics.shader_loader;
-import gse.graphics.renderer3d;
-import gse.graphics.camera;
-import gse.graphics.shader;
+import :debug;
+import :font;
+import :texture;
+import :shader_loader;
+import :texture_loader;
+import :renderer3d;
+import :camera;
+import :shader;
+
 import gse.platform;
+import gse.utility;
+import gse.physics.math;
 
 export namespace gse::renderer2d {
     auto initialize(vulkan::config& config) -> void;
@@ -24,89 +25,79 @@ export namespace gse::renderer2d {
     auto shutdown(const vulkan::config::device_config& device_data) -> void;
 
     auto draw_quad(const vec2<length>& position, const vec2<length>& size, const unitless::vec4& color) -> void;
-    auto draw_quad(const vec2<length>& position, const vec2<length>& size, const texture& texture) -> void;
-    auto draw_quad(const vec2<length>& position, const vec2<length>& size, const texture& texture, const unitless::vec4& uv) -> void;
+    auto draw_quad(const vec2<length>& position, const vec2<length>& size, texture& texture) -> void;
+    auto draw_quad(const vec2<length>& position, const vec2<length>& size, texture& texture, const unitless::vec4& uv) -> void;
 
-    auto draw_text(const font& font, const std::string& text, const vec2<length>& position, float scale, const unitless::vec4& color) -> void;
+    auto draw_text(font& font, const std::string& text, const vec2<length>& position, float scale, const unitless::vec4& color) -> void;
 }
 
-vk::raii::Pipeline            g_pipeline = nullptr;
-vk::raii::PipelineLayout      g_pipeline_layout = nullptr;
+vk::raii::Pipeline          g_2d_pipeline = nullptr;
+vk::raii::PipelineLayout    g_2d_pipeline_layout = nullptr;
 
 gse::vulkan::persistent_allocator::buffer_resource g_vertex_buffer;
 gse::vulkan::persistent_allocator::buffer_resource g_index_buffer;
 
-vk::raii::Pipeline            g_msdf_pipeline = nullptr;
-vk::raii::PipelineLayout      g_msdf_pipeline_layout = nullptr;
+vk::raii::Pipeline          g_msdf_pipeline = nullptr;
+vk::raii::PipelineLayout    g_msdf_pipeline_layout = nullptr;
 
 gse::mat4 g_projection;
 
+struct quad_command {
+    gse::vec2<gse::length> position;
+    gse::vec2<gse::length> size;
+    gse::unitless::vec4 color = { 1.0f, 1.0f, 1.0f, 1.0f };
+    gse::texture* texture = nullptr;
+    gse::unitless::vec4 uv_rect = { 0.0f, 0.0f, 1.0f, 1.0f };
+};
+
+struct text_command {
+    gse::font* font = nullptr;
+    std::string text;
+    gse::vec2<gse::length> position;
+    float scale = 1.0f;
+    gse::unitless::vec4 color = { 1.0f, 1.0f, 1.0f, 1.0f };
+};
+
+std::vector<quad_command> g_quad_draw_commands;
+std::vector<text_command> g_text_draw_commands;
+
 auto gse::renderer2d::initialize(vulkan::config& config) -> void {
-    const vk::PushConstantRange element_push_constant_range{
-        .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-        .offset = 0,
-        .size = sizeof(unitless::vec2) * 2 + sizeof(unitless::vec4) * 2
-    };
-
-    const auto& element_shader = shader_loader::get_shader("ui_2d_shader");
-    const auto& element_layout = element_shader.layout(shader::set::binding_type::persistent);
-
-    const vk::PipelineLayoutCreateInfo element_pipeline_layout_info{
-        .flags = {},
-        .setLayoutCount = 1,
-        .pSetLayouts = &element_layout,
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges = &element_push_constant_range
-    };
-    g_pipeline_layout = config.device_data.device.createPipelineLayout(element_pipeline_layout_info);
-
-    const vk::PipelineInputAssemblyStateCreateInfo input_assembly{
-        .flags = {},
-        .topology = vk::PrimitiveTopology::eTriangleList,
-        .primitiveRestartEnable = vk::False
+    constexpr vk::PipelineInputAssemblyStateCreateInfo input_assembly{
+        .topology = vk::PrimitiveTopology::eTriangleList
     };
 
     const vk::Viewport viewport{
         .x = 0.0f,
-        .y = 0.0f,
-        .width = static_cast<float>(window::get_window_size().x),
-        .height = static_cast<float>(window::get_window_size().y),
+        .y = static_cast<float>(config.swap_chain_data.extent.height),
+        .width = static_cast<float>(config.swap_chain_data.extent.width),
+        .height = -static_cast<float>(config.swap_chain_data.extent.height),
         .minDepth = 0.0f,
         .maxDepth = 1.0f
     };
     const vk::Rect2D scissor{
-        .offset = { 0, 0 },
-        .extent = {
-            .width = static_cast<std::uint32_t>(window::get_window_size().x),
-            .height = static_cast<std::uint32_t>(window::get_window_size().y)
-        }
+        { 0, 0 },
+        { config.swap_chain_data.extent.width, config.swap_chain_data.extent.height }
     };
+
     const vk::PipelineViewportStateCreateInfo viewport_state{
-        .flags = {},
         .viewportCount = 1,
         .pViewports = &viewport,
         .scissorCount = 1,
         .pScissors = &scissor
     };
 
-    const vk::PipelineRasterizationStateCreateInfo rasterizer{
-        .flags = {},
-        .depthClampEnable = vk::False,
-        .rasterizerDiscardEnable = vk::False,
+    constexpr vk::PipelineRasterizationStateCreateInfo rasterizer{
         .polygonMode = vk::PolygonMode::eFill,
-        .cullMode = vk::CullModeFlagBits::eBack,
-        .frontFace = vk::FrontFace::eCounterClockwise,
-        .depthBiasEnable = vk::False,
+        .cullMode = vk::CullModeFlagBits::eNone,
+        .frontFace = vk::FrontFace::eClockwise,
         .lineWidth = 1.0f
     };
 
-    const vk::PipelineMultisampleStateCreateInfo multisampling{
-        .flags = {},
-        .rasterizationSamples = vk::SampleCountFlagBits::e1,
-        .sampleShadingEnable = vk::False
+    constexpr vk::PipelineMultisampleStateCreateInfo multisampling{
+        .rasterizationSamples = vk::SampleCountFlagBits::e1
     };
 
-    const vk::PipelineColorBlendAttachmentState color_blend_attachment{
+    constexpr vk::PipelineColorBlendAttachmentState color_blend_attachment{
         .blendEnable = vk::True,
         .srcColorBlendFactor = vk::BlendFactor::eSrcAlpha,
         .dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
@@ -118,230 +109,262 @@ auto gse::renderer2d::initialize(vulkan::config& config) -> void {
     };
 
     const vk::PipelineColorBlendStateCreateInfo color_blending{
-        .flags = {},
-        .logicOpEnable = vk::False,
-        .logicOp = vk::LogicOp::eCopy,
         .attachmentCount = 1,
         .pAttachments = &color_blend_attachment
     };
 
-    struct vertex {
-        vec::raw2f position;
-        vec::raw2f texture_coordinate;
+    const vk::PipelineDepthStencilStateCreateInfo opaque_depth_stencil_state{
+        .depthTestEnable = vk::True,
+        .depthWriteEnable = vk::True,
+        .depthCompareOp = vk::CompareOp::eLess,
+        .stencilTestEnable = vk::False
     };
 
-    const vk::VertexInputBindingDescription binding_description{
-        .binding = 0,
-        .stride = sizeof(vertex),
-        .inputRate = vk::VertexInputRate::eVertex
+    const vk::PipelineDepthStencilStateCreateInfo transparent_depth_stencil_state{
+        .depthTestEnable = vk::True,
+        .depthWriteEnable = vk::False,
+        .depthCompareOp = vk::CompareOp::eLess,
+        .stencilTestEnable = vk::False
     };
 
-    const std::array attribute_descriptions{
-        vk::VertexInputAttributeDescription{
-            .location = 0, .binding = 0, .format = vk::Format::eR32G32Sfloat, .offset = offsetof(vertex, position)
-        },
-        vk::VertexInputAttributeDescription{
-            .location = 1, .binding = 0, .format = vk::Format::eR32G32Sfloat, .offset = offsetof(vertex, texture_coordinate)
-        }
-    };
+    const auto& element_shader = shader_loader::shader("ui_2d_shader");
+    const auto& quad_dsl = element_shader.layouts();
 
-    const vk::PipelineVertexInputStateCreateInfo vertex_input_info{
-        .flags = {},
-        .vertexBindingDescriptionCount = 1,
-        .pVertexBindingDescriptions = &binding_description,
-        .vertexAttributeDescriptionCount = static_cast<std::uint32_t>(attribute_descriptions.size()),
-        .pVertexAttributeDescriptions = attribute_descriptions.data()
-    };
+    const auto quad_pc_range = element_shader.push_constant_range("push_constants", vk::ShaderStageFlagBits::eVertex);
 
-    const vk::GraphicsPipelineCreateInfo pipeline_info{
-        .flags = {},
+    const vk::PipelineLayoutCreateInfo quad_pipeline_layout_info{
+        .setLayoutCount = static_cast<std::uint32_t>(quad_dsl.size()),
+        .pSetLayouts = quad_dsl.data(),
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &quad_pc_range
+    };
+    g_2d_pipeline_layout = config.device_data.device.createPipelineLayout(quad_pipeline_layout_info);
+
+    const auto vertex_input_info = element_shader.vertex_input_state();
+
+    vk::GraphicsPipelineCreateInfo pipeline_info{
         .stageCount = 2,
         .pStages = element_shader.shader_stages().data(),
         .pVertexInputState = &vertex_input_info,
         .pInputAssemblyState = &input_assembly,
-        .pTessellationState = nullptr,
         .pViewportState = &viewport_state,
         .pRasterizationState = &rasterizer,
         .pMultisampleState = &multisampling,
-        .pDepthStencilState = nullptr,
+        .pDepthStencilState = &opaque_depth_stencil_state,
         .pColorBlendState = &color_blending,
-        .pDynamicState = nullptr,
-        .layout = *g_pipeline_layout,
+        .layout = *g_2d_pipeline_layout,
         .renderPass = *config.swap_chain_data.render_pass,
         .subpass = 2
     };
     g_pipeline = config.device_data.device.createGraphicsPipeline(nullptr, pipeline_info);
 
-    constexpr vertex vertices[4] = {
-        {.position = {0.0f, 1.0f}, .texture_coordinate = {0.0f, 1.0f}},
-        {.position = {1.0f, 1.0f}, .texture_coordinate = {1.0f, 1.0f}},
-        {.position = {1.0f, 0.0f}, .texture_coordinate = {1.0f, 0.0f}},
-        {.position = {0.0f, 0.0f}, .texture_coordinate = {0.0f, 0.0f}}
-    };
-    constexpr std::uint32_t indices[6] = { 0, 1, 2, 2, 3, 0 };
+    const auto& msdf_shader = shader_loader::shader("msdf_shader");
 
-    const vk::BufferCreateInfo vertex_buffer_info{
-        .flags = {},
-        .size = sizeof(vertices),
-        .usage = vk::BufferUsageFlagBits::eVertexBuffer,
-        .sharingMode = vk::SharingMode::eExclusive
-    };
-    g_vertex_buffer = vulkan::persistent_allocator::create_buffer(
-        config.device_data, vertex_buffer_info,
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-        vertices
+    const auto& msdf_dsl = msdf_shader.layouts();
+    const auto msdf_pc_range = msdf_shader.push_constant_range(
+        "pc",
+        vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
     );
-
-    const vk::BufferCreateInfo index_buffer_info{
-        .flags = {},
-        .size = sizeof(indices),
-        .usage = vk::BufferUsageFlagBits::eIndexBuffer,
-        .sharingMode = vk::SharingMode::eExclusive
-    };
-    g_index_buffer = vulkan::persistent_allocator::create_buffer(
-        config.device_data, index_buffer_info,
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-        indices
-    );
-
-    const auto& msdf_shader = shader_loader::get_shader("msdf_shader");
-
-    const vk::PushConstantRange msdf_push_constant_range{
-        .stageFlags = vk::ShaderStageFlagBits::eFragment,
-        .offset = 0,
-        .size = sizeof(unitless::vec4)
-    };
 
     const vk::PipelineLayoutCreateInfo msdf_pipeline_layout_info{
-        .flags = {},
-        .setLayoutCount = 1,
-        .pSetLayouts = &element_layout,
+        .setLayoutCount = static_cast<std::uint32_t>(msdf_dsl.size()),
+        .pSetLayouts = msdf_dsl.data(),
         .pushConstantRangeCount = 1,
-        .pPushConstantRanges = &msdf_push_constant_range
+        .pPushConstantRanges = &msdf_pc_range
     };
     g_msdf_pipeline_layout = config.device_data.device.createPipelineLayout(msdf_pipeline_layout_info);
 
-    const vk::PipelineColorBlendStateCreateInfo msdf_color_blending{
-        .flags = {},
-        .logicOpEnable = vk::False,
-        .logicOp = vk::LogicOp::eCopy,
-        .attachmentCount = 1,
-        .pAttachments = &color_blend_attachment
-    };
-
-    vk::GraphicsPipelineCreateInfo msdf_pipeline_info{
-        .flags = {},
-        .stageCount = 2,
-        .pStages = msdf_shader.shader_stages().data(),
-        .pVertexInputState = &vertex_input_info,
-        .pInputAssemblyState = &input_assembly,
-        .pTessellationState = nullptr,
-        .pViewportState = &viewport_state,
-        .pRasterizationState = &rasterizer,
-        .pMultisampleState = &multisampling,
-        .pDepthStencilState = nullptr,
-        .pColorBlendState = &msdf_color_blending,
-        .pDynamicState = nullptr,
-        .layout = *g_msdf_pipeline_layout,
-        .renderPass = *config.swap_chain_data.render_pass,
-        .subpass = 2
-    };
+    vk::GraphicsPipelineCreateInfo msdf_pipeline_info = pipeline_info;
+    msdf_pipeline_info.pStages = msdf_shader.shader_stages().data();
+    msdf_pipeline_info.layout = *g_msdf_pipeline_layout;
+    msdf_pipeline_info.pDepthStencilState = &transparent_depth_stencil_state;
     g_msdf_pipeline = config.device_data.device.createGraphicsPipeline(nullptr, msdf_pipeline_info);
+
+    struct vertex { raw2f pos; raw2f uv; };
+
+    constexpr vertex vertices[4] = {
+	    {{0.0f,  0.0f}, {0.0f, 0.0f}}, // Top-left corner (pos & uv)
+	    {{1.0f,  0.0f}, {1.0f, 0.0f}}, // Top-right corner (pos & uv)
+	    {{1.0f, -1.0f}, {1.0f, 1.0f}}, // Bottom-right corner (pos & uv)
+	    {{0.0f, -1.0f}, {0.0f, 1.0f}}  // Bottom-left corner (pos & uv)
+    };
+    constexpr std::uint32_t indices[6] = { 0, 1, 2, 2, 3, 0 };
+
+    g_vertex_buffer = vulkan::persistent_allocator::create_buffer(config.device_data, { .size = sizeof(vertices), .usage = vk::BufferUsageFlagBits::eVertexBuffer }, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, vertices);
+    g_index_buffer = vulkan::persistent_allocator::create_buffer(config.device_data, { .size = sizeof(indices), .usage = vk::BufferUsageFlagBits::eIndexBuffer }, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, indices);
 
     debug::initialize_imgui(config);
 }
 
 auto gse::renderer2d::render(const vulkan::config& config) -> void {
+    if (g_quad_draw_commands.empty() && g_text_draw_commands.empty()) {
+        debug::update_imgui();
+        debug::render_imgui(config.frame_context.command_buffer);
+        return;
+    }
+
+    const auto& command = config.frame_context.command_buffer;
+    const auto [width, height] = config.swap_chain_data.extent;
+
+    const auto projection = orthographic(
+        meters(0.0f),
+        meters(width),
+        meters(0.0f),
+        meters(height),
+        meters(-1.0f),
+        meters(1.0f)
+    );
+
+    command.bindVertexBuffers(
+        0,
+        { g_vertex_buffer.buffer },
+        { 0 }
+    );
+
+    command.bindIndexBuffer(
+        g_index_buffer.buffer,
+        0,
+        vk::IndexType::eUint32
+    );
+
+    if (!g_quad_draw_commands.empty()) {
+        command.bindPipeline(vk::PipelineBindPoint::eGraphics, *g_pipeline);
+
+        const auto& shader = shader_loader::shader("ui_2d_shader");
+
+        for (auto& [position, size, color, texture, uv_rect] : g_quad_draw_commands) {
+            std::unordered_map<std::string, std::span<const std::byte>> push_constants = {
+                { "projection", std::as_bytes(std::span(&projection, 1)) },
+                { "position", std::as_bytes(std::span(&position, 1)) },
+                { "size", std::as_bytes(std::span(&size, 1)) },
+                { "color", std::as_bytes(std::span(&color, 1)) },
+                { "uv_rect", std::as_bytes(std::span(&uv_rect, 1)) }
+            };
+
+            shader.push(
+                command,
+                g_2d_pipeline_layout,
+                "push_constants",
+                push_constants,
+                vk::ShaderStageFlagBits::eVertex
+            );
+
+            shader.push(
+                command,
+                g_2d_pipeline_layout,
+                "ui_texture",
+                texture->get_descriptor_info()
+            );
+
+            command.drawIndexed(6, 1, 0, 0, 0);
+        }
+    }
+
+    if (!g_text_draw_commands.empty()) {
+        command.bindPipeline(vk::PipelineBindPoint::eGraphics, *g_msdf_pipeline);
+        const auto& shader = shader_loader::shader("msdf_shader");
+
+        for (const auto& [font, text, position, scale, color] : g_text_draw_commands) {
+            if (!font || text.empty()) continue;
+
+            shader.push(
+                command,
+                g_msdf_pipeline_layout,
+                "msdf_texture",
+                font->texture().get_descriptor_info()
+            );
+
+            const auto text_height = font->line_height(scale);
+            const vec2<length> baseline_start_pos = {
+	            position.x,
+	            position.y - meters(text_height)
+            };
+
+            const auto glyphs = font->text_layout(text, baseline_start_pos.as<units::meters>(), scale);
+
+            for (const auto& [position, size, uv] : glyphs) {
+                const vec2<length> adjusted_pos = { position.x, position.y + size.y };
+
+                std::unordered_map<std::string, std::span<const std::byte>> push_constants = {
+                    { "projection", std::as_bytes(std::span(&projection, 1)) },
+                    { "position",   std::as_bytes(std::span(&adjusted_pos, 1)) },
+                    { "size",       std::as_bytes(std::span(&size, 1)) },
+                    { "color",      std::as_bytes(std::span(&color, 1)) },
+                    { "uv_rect",    std::as_bytes(std::span(&uv, 1)) }
+                };
+
+                shader.push(
+                    command,
+                    g_msdf_pipeline_layout,
+                    "pc",
+                    push_constants,
+                    vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
+                );
+
+                command.drawIndexed(6, 1, 0, 0, 0);
+            }
+        }
+    }
+
+    g_quad_draw_commands.clear();
+    g_text_draw_commands.clear();
+
     debug::update_imgui();
-    display_timers();
+    auto& timers = get_timers();
+
+    ImGui::Begin("Timers");
+    for (auto it = timers.begin(); it != timers.end();) {
+        const auto& timer = it->second;
+        debug::print_value(timer.name(), timer.elapsed().as<units::milliseconds>(), units::milliseconds::unit_name);
+        if (timer.completed()) {
+            it = timers.erase(it); // Remove completed timers
+        }
+        else {
+            ++it;
+        }
+    }
+    ImGui::End();
+
     debug::render_imgui(config.frame_context.command_buffer);
 }
 
 auto gse::renderer2d::shutdown(const vulkan::config::device_config& device_data) -> void {
 }
 
-auto render_quad(const gse::vec2<gse::length>& position, const gse::vec2<gse::length>& size, const gse::unitless::vec4* color, const gse::texture* texture, const gse::unitless::vec4& uv_rect = { 0.0f, 0.0f, 1.0f, 1.0f }) -> void {
-    /*const auto& command_buffer = gse::vulkan::config::command::buffers[0];
-    command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, g_pipeline);
-
-    const vk::Buffer vertex_buffers[] = { g_vertex_buffer.buffer };
-    command_buffer.bindVertexBuffers(0, vertex_buffers, {});
-    command_buffer.bindIndexBuffer(g_index_buffer.buffer, 0, vk::IndexType::eUint16);
-
-    const struct push_constants {
-        gse::unitless::vec2 position;
-        gse::unitless::vec2 size;
-        gse::unitless::vec4 color;
-        gse::unitless::vec4 uv_rect;
-    } pc{
-        { position.x.as_default_unit(), position.y.as_default_unit() },
-        { size.x.as_default_unit(), size.y.as_default_unit() },
-        color ? *color : gse::unitless::vec4(1.0f),
-        uv_rect
-    };
-
-    command_buffer.pushConstants(g_pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(pc), &pc);
-    command_buffer.drawIndexed(6, 1, 0, 0, 0);*/
+auto render_quad(const gse::vec2<gse::length>& position, const gse::vec2<gse::length>& size, const gse::unitless::vec4& color, gse::texture& texture, const gse::unitless::vec4& uv_rect = { 0.0f, 0.0f, 1.0f, 1.0f }) -> void {
+    g_quad_draw_commands.emplace_back(
+        quad_command{
+            .position = position,
+            .size = size,
+            .color = color,
+            .texture = &texture,
+            .uv_rect = {0.0f, 0.0f, 1.0f, 1.0f}
+        }
+    );
 }
 
 auto gse::renderer2d::draw_quad(const vec2<length>& position, const vec2<length>& size, const unitless::vec4& color) -> void {
-    render_quad(position, size, &color, nullptr);
+    render_quad(position, size, color, texture_loader::blank());
 }
 
-auto gse::renderer2d::draw_quad(const vec2<length>& position, const vec2<length>& size, const texture& texture) -> void {
-    render_quad(position, size, nullptr, &texture);
+auto gse::renderer2d::draw_quad(const vec2<length>& position, const vec2<length>& size, texture& texture = texture_loader::blank()) -> void {
+    render_quad(position, size, {}, texture);
 }
 
-auto gse::renderer2d::draw_quad(const vec2<length>& position, const vec2<length>& size, const texture& texture, const unitless::vec4& uv) -> void {
-    render_quad(position, size, nullptr, &texture, uv);
+auto gse::renderer2d::draw_quad(const vec2<length>& position, const vec2<length>& size, texture& texture, const unitless::vec4& uv) -> void {
+    render_quad(position, size, {}, texture, uv);
 }
 
-auto gse::renderer2d::draw_text(const font& font, const std::string& text, const vec2<length>& position, const float scale, const unitless::vec4& color) -> void {
-    //  if (text.empty()) return;
+auto gse::renderer2d::draw_text(font& font, const std::string& text, const vec2<length>& position, const float scale, const unitless::vec4& color) -> void {
+    if (text.empty()) return;
 
-    //const auto& command_buffer = vulkan::config::command::buffers[0];
-    //  command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, g_msdf_pipeline);
-
-    //  const vk::Buffer vertex_buffers[] = { g_vertex_buffer.buffer };
-    //  command_buffer.bindVertexBuffers(0, vertex_buffers, {});
-    //  command_buffer.bindIndexBuffer(g_index_buffer.buffer, 0, vk::IndexType::eUint16);
-
-    //  const struct msdf_push_constants {
-    //      unitless::vec4 color;
-    //  } push_constants{ color };
-
-    //  command_buffer.pushConstants(g_msdf_pipeline_layout, vk::ShaderStageFlagBits::eFragment, 0, sizeof(msdf_push_constants), &push_constants);
-
-    //  // TODO: Ideally allocate this once, not every draw call
-    //  const vk::DescriptorSet text_descriptor_set =
-    //      vulkan::config::device::device.allocateDescriptorSets(
-    //          vk::DescriptorSetAllocateInfo(g_msdf_descriptor_pool, 1, &g_msdf_descriptor_set_layout))[0];
-
-    //  command_buffer.bindDescriptorSets(
-    //      vk::PipelineBindPoint::eGraphics,
-    //      g_msdf_pipeline_layout,
-    //      0, 1,
-    //      &text_descriptor_set,
-    //      0, nullptr
-    //  );
-
-    //  float start_x = position.x.as_default_unit();
-    //  const float start_y = position.y.as_default_unit();
-
-    //  for (const char c : text) {
-    //      const auto& [u0, v0, u1, v1, width, height, x_offset, y_offset, x_advance] = font.get_character(c);
-
-    //      if (width == 0.0f || height == 0.0f)
-    //          continue;
-
-    //      const float x_pos = start_x + x_offset * scale;
-    //      const float y_pos = start_y - (height - y_offset) * scale;
-    //      const float w = width * scale;
-    //      const float h = height * scale;
-
-    //      unitless::vec4 uv_rect(u0, v0, u1 - u0, v1 - v0);
-
-    //      draw_quad(unitless::vec2(x_pos, y_pos), unitless::vec2(w, h), font.get_texture(), uv_rect);
-    //      start_x += x_advance * scale;
-    //  }
+    g_text_draw_commands.emplace_back(
+        text_command{
+            .font = &font,
+            .text = text,
+            .position = position,
+            .scale = scale,
+            .color = color
+        }
+    );
 }

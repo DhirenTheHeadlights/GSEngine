@@ -8,7 +8,7 @@ module;
 
 export module gse.network;
 
-import gse.platform.assert;
+import gse.utility;
 
 export namespace gse::network {
 	auto initialize() -> void;

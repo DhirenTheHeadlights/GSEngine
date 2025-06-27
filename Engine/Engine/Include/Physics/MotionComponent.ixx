@@ -1,8 +1,8 @@
-export module gse.physics.motion_component;
+export module gse.physics:motion_component;
 
 import std;
 
-import gse.core.component;
+import gse.utility;
 import gse.physics.math;
 
 export namespace gse::physics {

@@ -1,25 +1,24 @@
-export module gse.physics.system;
+export module gse.physics:system;
 
 import std;
 
+import :surfaces;
+import :collision_component;
+import :motion_component;
+
+import gse.graphics;
+import gse.platform;
 import gse.physics.math;
-import gse.core.object_registry;
-import gse.core.main_clock;
-import gse.graphics.render_component;
-import gse.physics.surfaces;
-import gse.physics.collision_component;
-import gse.platform.glfw.input;
-import gse.physics.motion_component;
 
 export namespace gse::physics {
-	auto apply_force(motion_component& component, const vec3<force>& force, const vec3<length>& world_force_position = { 0.f, 0.f, 0.f }) -> void;
+	auto apply_force(motion_component& component, const render_component* render_component, const vec3<force>& force, const vec3<length>& world_force_position = { 0.f, 0.f, 0.f }) -> void;
 	auto apply_impulse(motion_component& component, const vec3<force>& force, const time& duration) -> void;
-	auto update_object(motion_component& component) -> void;
+	auto update_object(motion_component& component, time delta_time, collision_component* collision_component, const render_component* render_component) -> void;
 }
 
 constexpr auto g_gravity = gse::vec3<gse::acceleration>(0.f, -9.8f, 0.f);
 
-auto gse::physics::apply_force(motion_component& component, const vec3<force>& force, const vec3<length>& world_force_position) -> void {
+auto gse::physics::apply_force(motion_component& component, const render_component* render_component, const vec3<force>& force, const vec3<length>& world_force_position) -> void {
 	if (is_zero(force)) {
 		return;
 	}
@@ -28,7 +27,7 @@ auto gse::physics::apply_force(motion_component& component, const vec3<force>& f
 
 	vec3<length> center_of_mass;
 
-	if (const auto* render_component = gse::registry::get_component_ptr<gse::render_component>(component.parent_id); render_component) {
+	if (render_component) {
 		center_of_mass = render_component->center_of_mass;
 	}
 	else {
@@ -49,7 +48,7 @@ auto gse::physics::apply_impulse(motion_component& component, const vec3<force>&
 	component.current_velocity += delta_velocity;
 }
 
-auto update_friction(gse::physics::motion_component& component, const gse::surfaces::surface_properties& surface) -> void {
+auto update_friction(gse::physics::motion_component& component, const gse::render_component* render_component, const gse::surfaces::surface_properties& surface) -> void {
 	if (component.airborne) {
 		return;
 	}
@@ -63,25 +62,25 @@ auto update_friction(gse::physics::motion_component& component, const gse::surfa
 
 	const gse::vec3 friction_force(-friction * gse::normalize(component.current_velocity));
 
-	apply_force(component, friction_force, component.current_position);
+	apply_force(component, render_component, friction_force, component.current_position);
 }
 
-auto update_gravity(gse::physics::motion_component& component) -> void {
+auto update_gravity(gse::physics::motion_component& component, const gse::render_component* render_component) -> void {
 	if (!component.affected_by_gravity) {
 		return;
 	}
 
 	if (component.airborne) {
 		const auto gravity_force = g_gravity * component.mass;
-		apply_force(component, gravity_force, component.current_position);
+		apply_force(component, render_component, gravity_force, component.current_position);
 	}
 	else {
 		component.current_acceleration.y = gse::max({ 0.f }, component.current_acceleration.y);
-		update_friction(component, get_surface_properties(gse::surfaces::surface_type::concrete));
+		update_friction(component, render_component, get_surface_properties(gse::surfaces::surface_type::concrete));
 	}
 }
 
-auto update_air_resistance(gse::physics::motion_component& component) -> void {
+auto update_air_resistance(gse::physics::motion_component& component, const gse::render_component* render_component) -> void {
 	// Calculate drag force magnitude: F_d = 0.5 * C_d * rho * A * v^2, Units are in Newtons
 	for (int i = 0; i < 3; ++i) {
 		if (const gse::velocity velocity = component.current_velocity[i]; velocity != gse::meters_per_second(0.0f)) {
@@ -97,14 +96,12 @@ auto update_air_resistance(gse::physics::motion_component& component) -> void {
 				i == 2 ? drag_force_magnitude * direction : 0.0f
 			);
 
-			apply_force(component, drag_force, component.current_position);
+			apply_force(component, render_component, drag_force, component.current_position);
 		}
 	}
 }
 
-auto update_velocity(gse::physics::motion_component& component) -> void {
-	const auto delta_time = gse::main_clock::get_constant_update_time();
-
+auto update_velocity(gse::physics::motion_component& component, const gse::time delta_time) -> void {
 	if (component.self_controlled && !component.airborne) {
 		constexpr float damping_factor = 5.0f;
 		component.current_velocity *= std::max(0.f, 1.0f - damping_factor * delta_time.as_default_unit());
@@ -124,19 +121,15 @@ auto update_velocity(gse::physics::motion_component& component) -> void {
 	component.current_acceleration = { 0.f, 0.f, 0.f };
 }
 
-auto update_position(gse::physics::motion_component& component) -> void {
-	const auto delta_time = gse::main_clock::get_constant_update_time();
-
+auto update_position(gse::physics::motion_component& component, const gse::time delta_time) -> void {
 	// Update position using the kinematic equation: x = x0 + v0t + 0.5at^2
 	component.current_position += component.current_velocity * delta_time + 0.5f * component.current_acceleration * delta_time * delta_time;
 }
 
-auto update_rotation(gse::physics::motion_component& component) -> void {
-	const gse::time dt = gse::main_clock::get_constant_update_time();
-
+auto update_rotation(gse::physics::motion_component& component, const gse::time delta_time) -> void {
 	const auto alpha = component.current_torque / component.moment_of_inertia;
 
-	component.angular_velocity += alpha * dt;
+	component.angular_velocity += alpha * delta_time;
 
 	component.current_torque = {};
 
@@ -145,20 +138,18 @@ auto update_rotation(gse::physics::motion_component& component) -> void {
 
 	// dQ = 0.5 * omega_quaternion * orientation
 	const gse::quat delta_quaternion = 0.5f * omega_quaternion * component.orientation;
-	component.orientation += delta_quaternion * dt.as_default_unit();
+	component.orientation += delta_quaternion * delta_time.as_default_unit();
 	component.orientation = normalize(component.orientation);
 }
 
-auto update_obb(const gse::physics::motion_component& motion_component) {
-	if (auto* collision_component = gse::registry::get_component_ptr<gse::physics::collision_component>(motion_component.parent_id); collision_component) {
-		auto& obb = collision_component->oriented_bounding_box;
-		obb.center = motion_component.current_position;
-		obb.orientation = motion_component.orientation;
-		obb.update_axes();
-	}
+auto update_obb(const gse::physics::motion_component& motion_component, gse::physics::collision_component& collision_component) {
+	auto& obb = collision_component.oriented_bounding_box;
+	obb.center = motion_component.current_position;
+	obb.orientation = motion_component.orientation;
+	obb.update_axes();
 }
 
-auto gse::physics::update_object(motion_component& component) -> void {
+auto gse::physics::update_object(motion_component& component, const time delta_time, collision_component* collision_component, const render_component* render_component) -> void {
 	if (is_zero(component.current_velocity) && is_zero(component.current_acceleration)) {
 		component.moving = false;
 	}
@@ -166,11 +157,14 @@ auto gse::physics::update_object(motion_component& component) -> void {
 		component.moving = true;
 	}
 
-	update_gravity(component);
-	update_air_resistance(component);
-	update_velocity(component);
+	update_gravity(component, render_component);
+	update_air_resistance(component, render_component);
+	update_velocity(component, delta_time);
 
-	update_position(component);
-	update_rotation(component);
-	update_obb(component);
+	update_position(component, delta_time);
+	update_rotation(component, delta_time);
+
+	if (collision_component) {
+		update_obb(component, *collision_component);
+	}
 }

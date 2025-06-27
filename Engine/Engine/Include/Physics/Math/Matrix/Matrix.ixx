@@ -1,12 +1,13 @@
-export module gse.physics.math.matrix;
+export module gse.physics.math:matrix;
 
 import std;
 
-import gse.physics.math.base_vec;
-import gse.physics.math.unitless_vec;
-import gse.physics.math.unit_vec;
-import gse.physics.math.vec_math;
-import gse.platform.assert;
+import :base_vec;
+import :unitless_vec;
+import :unit_vec;
+import :vec_math;
+
+import gse.assert;
 
 namespace gse {
 	template <typename T, int Cols, int Rows>

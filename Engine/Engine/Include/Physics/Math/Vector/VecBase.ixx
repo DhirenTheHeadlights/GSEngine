@@ -1,8 +1,8 @@
-export module gse.physics.math.base_vec;
+export module gse.physics.math:base_vec;
 
 import std;
 
-import gse.physics.math.simd;
+import :simd;
 
 export namespace gse::vec {
     template <typename T, int N>
@@ -19,18 +19,6 @@ export namespace gse::vec {
 
         constexpr auto operator<=>(const storage&) const = default;
     };
-
-    using raw2i = storage<int, 2>;
-    using raw3i = storage<int, 3>;
-    using raw4i = storage<int, 4>;
-
-    using raw2f = storage<float, 2>;
-    using raw3f = storage<float, 3>;
-    using raw4f = storage<float, 4>;
-
-    using raw2d = storage<double, 2>;
-    using raw3d = storage<double, 3>;
-    using raw4d = storage<double, 4>;
 }
 
 export namespace gse::internal {

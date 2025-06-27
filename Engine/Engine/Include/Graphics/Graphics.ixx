@@ -1,26 +1,25 @@
 export module gse.graphics;
 
-export import gse.graphics.font;
-export import gse.graphics.gui;
-export import gse.graphics.renderer2d;
-export import gse.graphics.texture;
+export import :font;
+export import :gui;
+export import :renderer2d;
+export import :texture;
 
-export import gse.graphics.directional_light;
-export import gse.graphics.light;
-export import gse.graphics.light_source_component;
-export import gse.graphics.point_light;
-export import gse.graphics.spot_light;
+export import :directional_light;
+export import :light;
+export import :light_source_component;
+export import :point_light;
+export import :spot_light;
 
-export import gse.graphics.camera;
-export import gse.graphics.cube_map;
-export import gse.graphics.material;
-export import gse.graphics.mesh;
-export import gse.graphics.model;
-export import gse.graphics.model_loader;
-export import gse.graphics.renderer3d;
-export import gse.graphics.texture_loader;
-export import gse.graphics.renderer;
+export import :camera;
+export import :material;
+export import :mesh;
+export import :model;
+export import :model_loader;
+export import :renderer3d;
+export import :texture_loader;
+export import :renderer;
 
-export import gse.graphics.debug;
-export import gse.graphics.render_component;
-export import gse.graphics.shader;
+export import :debug;
+export import :render_component;
+export import :shader;

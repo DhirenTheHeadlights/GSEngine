@@ -1,9 +1,9 @@
-export module gse.physics.math.unitless_vec;
+export module gse.physics.math:unitless_vec;
 
 import std;
 
-import gse.physics.math.units.quant;
-import gse.physics.math.base_vec;
+import :quant;
+import :base_vec;
 
 export namespace gse::unitless {
 	template <internal::is_arithmetic T, int N>

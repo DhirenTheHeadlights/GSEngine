@@ -4,7 +4,7 @@
 //#include <iostream>
 //#include "json.hpp"
 
-export module gse.core.json_parser;
+export module gse.utility:json;
 
 //import gse.platform.assert;
 //

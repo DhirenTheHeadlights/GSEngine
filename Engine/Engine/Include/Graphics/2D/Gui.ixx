@@ -2,23 +2,21 @@ module;
 
 #include "GLFW/glfw3.h"
 
-export module gse.graphics.gui;
+export module gse.graphics:gui;
 
 import std;
 
-import gse.core.id;
-import gse.core.config;
-import gse.core.clock;
-import gse.physics.math;
-import gse.core.timed_lock;
-import gse.graphics.renderer2d;
-import gse.graphics.texture;
-import gse.graphics.texture_loader;
-import gse.graphics.font;
+import :renderer2d;
+import :texture;
+import :texture_loader;
+import :font;
+
 import gse.platform;
+import gse.utility;
+import gse.physics.math;
 
 export namespace gse::gui {
-	auto initialize() -> void;
+	auto initialize(const vulkan::config& config) -> void;
 	auto update() -> void;
 	auto render() -> void;
 	auto shutdown() -> void;
@@ -63,8 +61,8 @@ bool g_render_docking_preview = false;
 gse::unitless::vec2 docking_area::size = { 10.f, 10.f };
 gse::unitless::vec4 docking_area::color = { 0.f, 1.f, 0.f, 1.f }; // Green
 
-auto gse::gui::initialize() -> void {
-	g_font.load(config::resource_path / "Fonts/MonaspaceNeon-Regular.otf");
+auto gse::gui::initialize(const vulkan::config& config) -> void {
+	g_font.load(config::resource_path / "Fonts/MonaspaceNeon-Regular.otf", config);
 
 	const auto window_size = window::get_window_size();
 	const auto top_left = unitless::vec2(0.f, window_size.y);
@@ -119,12 +117,12 @@ auto gse::gui::update() -> void {
 		const auto mouse_position = window::get_mouse_position_rel_bottom_left();
 
 		if (input::get_mouse().buttons[GLFW_MOUSE_BUTTON_LEFT].held) {
-			if (!m.grabbed.get_value() && !(m.docked.get_value() && m.docked_waiting_for_release)) {
+			if (!m.grabbed.value() && !(m.docked.value() && m.docked_waiting_for_release)) {
 				if (intersects(m.position, m.size, mouse_position, { 0.f, 0.f })) {
 					m.grabbed = true;
 					m.offset = m.position - mouse_position;
 
-					if (m.docked.get_value() && m.docked.is_value_mutable() && magnitude(m.offset) > 10.f) {
+					if (m.docked.value() && m.docked.value_mutable() && magnitude(m.offset) > 10.f) {
 						m.docked = false;
 						m.size = m.pre_docked_size;
 						m.offset = {};
@@ -133,16 +131,16 @@ auto gse::gui::update() -> void {
 				}
 			}
 
-			if (m.grabbed.get_value()) {
+			if (m.grabbed.value()) {
 				m.position = mouse_position + m.offset;
 				m.position = clamp(m.position, unitless::vec2(0.f, 0.f), unitless::vec2(window::get_window_size()));
 
 				for (auto& [position, docked_position, docked_size] : g_docks) {
 					if (intersects(m.position, m.size, position, docking_area::size) &&
-						!m.docked.get_value() && m.docked.is_value_mutable()) {
+						!m.docked.value() && m.docked.value_mutable()) {
 						clock hover_clock;
 
-						while (hover_clock.get_elapsed_time() < seconds(0.25)) {
+						while (hover_clock.elapsed() < seconds(0.25)) {
 							g_render_docking_preview = true;
 							if (!intersects(m.position, m.size, position, docking_area::size)) {
 								g_render_docking_preview = false;
@@ -177,7 +175,7 @@ auto gse::gui::render() -> void {
 			render_docking_preview();
 		}
 
-		if (m.grabbed.get_value()) {
+		if (m.grabbed.value()) {
 			render_docking_visual();
 		}
 	}
@@ -207,5 +205,12 @@ auto gse::gui::create_menu(const std::string& name, const unitless::vec2& top_le
 
 
 auto gse::gui::text(const std::string& text) -> void {
-	renderer2d::draw_text(g_font, text, g_current_menu->position, 1.f, { 1.f, 1.f, 1.f, 1.f });
+	constexpr float padding = 5.0f;
+
+	gse::unitless::vec2 text_pos = g_current_menu->position;
+
+	text_pos.x += padding;
+	text_pos.y -= padding;
+
+	renderer2d::draw_text(g_font, text, text_pos, 32.f, { 1.f, 1.f, 1.f, 1.f });
 }

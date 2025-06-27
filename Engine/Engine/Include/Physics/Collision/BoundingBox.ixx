@@ -1,8 +1,8 @@
-export module gse.physics.bounding_box;
+export module gse.physics:bounding_box;
 
 import std;
 
-import gse.physics.motion_component;
+import :motion_component;
 import gse.physics.math;
 
 export namespace gse {

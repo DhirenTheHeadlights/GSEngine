@@ -1,9 +1,9 @@
-export module gse.physics.collision_component;
+export module gse.physics:collision_component;
 
 import std;
 
-import gse.physics.bounding_box;
-import gse.core.component;
+import :bounding_box;
+import gse.utility;
 
 export namespace gse::physics {
 	struct collision_component final : component {

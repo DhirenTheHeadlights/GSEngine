@@ -1,16 +1,16 @@
-export module gse.physics.math.matrix_math;
+export module gse.physics.math:matrix_math;
 
 import std;
 
-import gse.physics.math.unit_vec;
-import gse.physics.math.unit_vec_math;
-import gse.physics.math.unitless_vec;
-import gse.physics.math.vec_math;
-import gse.physics.math.units.length;
-import gse.physics.math.units.angle;
-import gse.physics.math.matrix;
-import gse.physics.math.quat;
-import gse.physics.math.quat_math;
+import :unit_vec;
+import :unit_vec_math;
+import :unitless_vec;
+import :vec_math;
+import :length;
+import :angle;
+import :matrix;
+import :quat;
+import :quat_math;
 
 export namespace gse {
 	template <typename T = float>		constexpr auto look_at(const vec3<length_t<T>>& position, const vec3<length_t<T>>& target, const unitless::vec3_t<T>& up) -> mat4_t<T>;

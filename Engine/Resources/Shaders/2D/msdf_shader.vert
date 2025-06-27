@@ -6,14 +6,21 @@ layout (constant_id = 99) const int descriptor_layout_type = 3;
 layout (location = 0) in vec2 in_position;
 layout (location = 1) in vec2 in_tex_coord;
 
-layout (binding = 0) uniform uniform_buffer_object {
+layout(push_constant) uniform PushConstants {
     mat4 projection;
-    mat4 model;
-} ubo;
+    vec2 position;
+    vec2 size;
+    vec4 color;
+    vec4 uv_rect;
+} pc;
 
 layout (location = 0) out vec2 frag_tex_coord;
+layout (location = 1) out vec4 frag_color;
 
 void main() {
-    frag_tex_coord = in_tex_coord;
-    gl_Position = ubo.projection * ubo.model * vec4(in_position, 0.0, 1.0);
+    vec2 final_pos = in_position * pc.size + pc.position;
+    gl_Position = pc.projection * vec4(final_pos, 0.0, 1.0);
+    
+    frag_tex_coord = pc.uv_rect.xy + in_tex_coord * pc.uv_rect.zw;
+    frag_color = pc.color;
 }

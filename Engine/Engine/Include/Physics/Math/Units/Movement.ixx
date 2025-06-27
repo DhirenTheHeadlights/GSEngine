@@ -1,10 +1,10 @@
-export module gse.physics.math.units.movement;
+export module gse.physics.math:movement;
 
 import std;
 
-import gse.physics.math.units.dimension;
-import gse.physics.math.units.quant;
-import gse.physics.math.unit_vec;
+import :dimension;
+import :quant;
+import :unit_vec;
 
 namespace gse::units {
 	struct velocity_tag {};

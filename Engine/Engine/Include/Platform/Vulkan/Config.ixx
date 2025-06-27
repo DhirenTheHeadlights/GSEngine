@@ -2,11 +2,11 @@ module;
 
 #include <vulkan/vulkan_hpp_macros.hpp>
 
-export module gse.platform.vulkan.config;
+export module gse.platform.vulkan:config;
 
 import std;
 export import vulkan_hpp;
-import gse.platform.vulkan.resources;
+import :resources;
 
 export namespace gse::vulkan {
     struct config {
@@ -202,3 +202,7 @@ export namespace gse::vulkan {
 #if defined(VULKAN_HPP_DISPATCH_LOADER_DYNAMIC) && (VULKAN_HPP_DISPATCH_LOADER_DYNAMIC == 1)
 export VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 #endif
+
+auto gse::vulkan::get_memory_properties(const vk::PhysicalDevice device) -> vk::PhysicalDeviceMemoryProperties {
+    return device.getMemoryProperties();
+}

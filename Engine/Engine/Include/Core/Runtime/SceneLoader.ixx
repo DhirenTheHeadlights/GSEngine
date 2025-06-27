@@ -1,9 +1,11 @@
-export module gse.core.scene_loader;
+export module gse.runtime:scene_loader;
 
 import std;
 
-import gse.core.id;
-import gse.core.scene;
+import :scene;
+
+import gse.assert;
+import gse.utility;
 
 export namespace gse::scene_loader {
 	auto add_scene(std::unique_ptr<scene>& scene) -> void;
@@ -19,13 +21,11 @@ export namespace gse::scene_loader {
 	auto set_allow_multiple_active_scenes(bool allow) -> void;
 	auto queue_scene_trigger(gse::id id, const std::function<bool()>& trigger) -> void;
 
-	auto get_active_scenes() -> std::vector<scene*>;
-	auto get_all_scenes() -> std::vector<id>;
-	auto get_active_scene_ids() -> std::vector<id>;
-	auto get_scene(const id& scene_id) -> scene*;
+	auto active_scenes() -> std::vector<scene*>;
+	auto all_scenes() -> std::vector<id>;
+	auto active_scene_ids() -> std::vector<id>;
+	auto scene(const id& scene_id) -> scene*;
 }
-
-import gse.platform.assert;
 
 std::optional<std::uint32_t> g_fbo = std::nullopt;
 bool g_engine_initialized = false;
@@ -34,13 +34,13 @@ bool g_allow_multiple_active_scenes = false;
 std::unordered_map<gse::id, std::unique_ptr<gse::scene>> g_scenes;
 std::unordered_map<gse::id, std::function<bool()>> g_scene_triggers;
 
-auto gse::scene_loader::add_scene(std::unique_ptr<scene>& scene) -> void {
-	g_scenes.insert({ scene->get_id(), std::move(scene) });
+auto gse::scene_loader::add_scene(std::unique_ptr<class scene>& scene) -> void {
+	g_scenes.insert({ scene->id(), std::move(scene) });
 }
 
 auto gse::scene_loader::remove_scene(const id& scene_id) -> void {
 	if (const auto scene = g_scenes.find(scene_id); scene != g_scenes.end()) {
-		if (scene->second->get_active()) {
+		if (scene->second->active()) {
 			scene->second->exit();
 		}
 		g_scenes.erase(scene);
@@ -52,7 +52,7 @@ auto gse::scene_loader::activate_scene(const id& scene_id) -> void {
 
 	if (!g_allow_multiple_active_scenes) {
 		for (const auto& scene : g_scenes | std::views::values) {
-			if (scene->get_active()) {
+			if (scene->active()) {
 				scene->exit();
 				scene->set_active(false);
 			}
@@ -60,7 +60,7 @@ auto gse::scene_loader::activate_scene(const id& scene_id) -> void {
 	}
 
 	if (const auto scene = g_scenes.find(scene_id); scene != g_scenes.end()) {
-		if (!scene->second->get_active()) {
+		if (!scene->second->active()) {
 			scene->second->initialize();
 			scene->second->set_active(true);
 		}
@@ -69,7 +69,7 @@ auto gse::scene_loader::activate_scene(const id& scene_id) -> void {
 
 auto gse::scene_loader::deactivate_scene(const id& scene_id) -> void {
 	if (const auto scene = g_scenes.find(scene_id); scene != g_scenes.end()) {
-		if (scene->second->get_active()) {
+		if (scene->second->active()) {
 			scene->second->exit();
 			scene->second->set_active(false);
 		}
@@ -78,7 +78,7 @@ auto gse::scene_loader::deactivate_scene(const id& scene_id) -> void {
 
 auto gse::scene_loader::update() -> void {
 	for (const auto& scene : g_scenes | std::views::values) {
-		if (scene->get_active()) {
+		if (scene->active()) {
 			scene->update();
 		}
 	}
@@ -92,7 +92,7 @@ auto gse::scene_loader::update() -> void {
 
 auto gse::scene_loader::render() -> void {
 	for (const auto& scene : g_scenes | std::views::values) {
-		if (scene->get_active()) {
+		if (scene->active()) {
 			scene->render();
 		}
 	}
@@ -100,7 +100,7 @@ auto gse::scene_loader::render() -> void {
 
 auto gse::scene_loader::exit() -> void {
 	for (const auto& scene : g_scenes | std::views::values) {
-		if (scene->get_active()) {
+		if (scene->active()) {
 			scene->exit();
 		}
 	}
@@ -118,18 +118,18 @@ auto gse::scene_loader::queue_scene_trigger(id id, const std::function<bool()>& 
 	g_scene_triggers.insert({ id, trigger });
 }
 
-auto gse::scene_loader::get_active_scenes() -> std::vector<scene*> {
-	std::vector<scene*> active_scenes;
+auto gse::scene_loader::active_scenes() -> std::vector<class scene*> {
+	std::vector<class scene*> active_scenes;
 	active_scenes.reserve(g_scenes.size());
 	for (const auto& scene : g_scenes | std::views::values) {
-		if (scene->get_active()) {
+		if (scene->active()) {
 			active_scenes.push_back(scene.get());
 		}
 	}
 	return active_scenes;
 }
 
-auto gse::scene_loader::get_all_scenes() -> std::vector<id> {
+auto gse::scene_loader::all_scenes() -> std::vector<id> {
 	std::vector<id> all_scenes;
 	all_scenes.reserve(g_scenes.size());
 	for (const auto& id : g_scenes | std::views::keys) {
@@ -138,18 +138,18 @@ auto gse::scene_loader::get_all_scenes() -> std::vector<id> {
 	return all_scenes;
 }
 
-auto gse::scene_loader::get_active_scene_ids() -> std::vector<id> {
+auto gse::scene_loader::active_scene_ids() -> std::vector<id> {
 	std::vector<id> active_scene_ids;
 	active_scene_ids.reserve(g_scenes.size());
 	for (const auto& id : g_scenes | std::views::keys) {
-		if (g_scenes.at(id)->get_active()) {
+		if (g_scenes.at(id)->active()) {
 			active_scene_ids.push_back(id);
 		}
 	}
 	return active_scene_ids;
 }
 
-auto gse::scene_loader::get_scene(const id& scene_id) -> scene* {
+auto gse::scene_loader::scene(const id& scene_id) -> class scene* {
 	if (const auto scene = g_scenes.find(scene_id); scene != g_scenes.end()) {
 		return scene->second.get();
 	}

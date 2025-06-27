@@ -1,11 +1,11 @@
-export module gse.physics.math.quat_math;
+export module gse.physics.math:quat_math;
 
 import std;
 
-import gse.physics.math.units;
-import gse.physics.math.unitless_vec;
-import gse.physics.math.quat;
-import gse.physics.math.matrix;
+import :angle;
+import :unitless_vec;
+import :quat;
+import :matrix;
 
 export namespace gse {
 	template <typename T> constexpr auto normalize(const quat_t<T>& q) -> quat_t<T>;

@@ -1,13 +1,11 @@
-export module gse.core.object_registry;
+export module gse.runtime:object_registry;
 
 import std;
 
-import gse.core.id;
-import gse.core.object.hook;
-import gse.core.component;
+import gse.assert;
+import gse.utility;
 import gse.physics.math;
-import gse.core.clock;
-import gse.platform.assert;
+import gse.platform;
 
 export namespace gse::registry {
 	// Creates an object with a random TEMPORARY uuid
@@ -15,7 +13,7 @@ export namespace gse::registry {
 	auto create_entity() -> std::uint32_t;
 
 	auto add_entity_hook(std::uint32_t parent_id, std::unique_ptr<hook<entity>> hook) -> void;
-	auto remove_object_hook(const hook<entity>& hook) -> void;
+	auto remove_entity_hook(const hook<entity>& hook) -> void;
 
 	auto initialize_hooks() -> void;
 	auto update_hooks() -> void;
@@ -31,15 +29,15 @@ export namespace gse::registry {
 	concept is_component = std::derived_from<T, component>;
 
 	auto add_component(is_component auto&& component) -> void;
-	template <is_component T> auto get_components() -> std::span<T>;
-	template <is_component T> auto get_component(std::uint32_t desired_id) -> T&;
-	template <is_component T> auto get_component_ptr(std::uint32_t desired_id) -> T*;
+	template <is_component T> auto components() -> std::span<T>;
+	template <is_component T> auto component(std::uint32_t desired_id) -> T&;
+	template <is_component T> auto component_ptr(std::uint32_t desired_id) -> T*;
 	auto remove_component(const is_component auto& component) -> void;
 	 
-	auto get_active_objects() -> std::vector<std::uint32_t>;
-	auto get_entity_name(std::uint32_t index) -> std::string_view;
-	auto get_entity_id(const std::string& name) -> std::uint32_t;
-	auto get_number_of_objects() -> std::uint32_t;
+	auto active_objects() -> std::vector<std::uint32_t>;
+	auto entity_name(std::uint32_t index) -> std::string_view;
+	auto entity_id(const std::string& name) -> std::uint32_t;
+	auto number_of_entities() -> std::uint32_t;
 
 	auto activate_entity(std::uint32_t identifier, const std::string& name) -> std::uint32_t;
 	auto remove_entity(const std::string& name) -> std::uint32_t;
@@ -112,7 +110,7 @@ auto gse::registry::add_entity_hook(const std::uint32_t parent_id, std::unique_p
 	assert(false, "Object not found in registry when trying to add a hook to it");
 }
 
-auto gse::registry::remove_object_hook(const hook<entity>& hook) -> void {
+auto gse::registry::remove_entity_hook(const hook<entity>& hook) -> void {
 	/// TODO: Implement
 }
 
@@ -134,7 +132,7 @@ auto gse::registry::render_hooks() -> void {
 	}
 }
 
-auto gse::registry::get_active_objects() -> std::vector<std::uint32_t> {
+auto gse::registry::active_objects() -> std::vector<std::uint32_t> {
 	std::vector<std::uint32_t> active_objects;
 	active_objects.reserve(g_entities.size());
 	for (const auto& [index, generation] : g_entities) {
@@ -143,7 +141,7 @@ auto gse::registry::get_active_objects() -> std::vector<std::uint32_t> {
 	return active_objects;
 }
 
-auto gse::registry::get_entity_name(const std::uint32_t index) -> std::string_view {
+auto gse::registry::entity_name(const std::uint32_t index) -> std::string_view {
 	if (index < 0 || index >= static_cast<std::uint32_t>(g_entities.size())) {
 		return "Object not found in registry when trying to get its name";
 	}
@@ -155,7 +153,7 @@ auto gse::registry::get_entity_name(const std::uint32_t index) -> std::string_vi
 	return "Object not found in registry when trying to get its name";
 }
 
-auto gse::registry::get_entity_id(const std::string& name) -> std::uint32_t {
+auto gse::registry::entity_id(const std::string& name) -> std::uint32_t {
 	const auto it = g_string_to_index_map.find(name);
 	if (it == g_string_to_index_map.end()) {
 		return -1;
@@ -163,7 +161,7 @@ auto gse::registry::get_entity_id(const std::string& name) -> std::uint32_t {
 	return it->second;
 }
 
-auto gse::registry::get_number_of_objects() -> std::uint32_t {
+auto gse::registry::number_of_entities() -> std::uint32_t {
 	return static_cast<std::uint32_t>(g_entities.size());
 }
 
@@ -353,7 +351,7 @@ auto gse::registry::add_component(is_component auto&& component) -> void {
 }
 
 template <gse::registry::is_component T> 
-auto gse::registry::get_components() -> std::span<T> {
+auto gse::registry::components() -> std::span<T> {
 	if (const auto it = g_component_containers.find(typeid(T)); it != g_component_containers.end()) {
 		auto& container = static_cast<component_container<T>&>(*it->second);
 		return container.components;
@@ -384,7 +382,7 @@ auto internal_get_component(const std::uint32_t desired_id) -> T* {
 }
 
 template <gse::registry::is_component T>
-auto gse::registry::get_component(const std::uint32_t desired_id) -> T& {
+auto gse::registry::component(const std::uint32_t desired_id) -> T& {
 	if (auto* component = internal_get_component<T>(desired_id); component) {
 		return *component;
 	}
@@ -393,7 +391,7 @@ auto gse::registry::get_component(const std::uint32_t desired_id) -> T& {
 }
 
 template <gse::registry::is_component T>
-auto gse::registry::get_component_ptr(const std::uint32_t desired_id) -> T* {
+auto gse::registry::component_ptr(const std::uint32_t desired_id) -> T* {
 	return internal_get_component<T>(desired_id);
 }
 
@@ -422,7 +420,7 @@ auto gse::registry::remove_id_from_list(const id& list_id, const std::uint32_t i
 }
 
 auto gse::registry::periodically_clean_up_registry(const time& clean_up_interval) -> void {
-	if (g_clean_up_clock.get_elapsed_time() < clean_up_interval) {
+	if (g_clean_up_clock.elapsed() < clean_up_interval) {
 		return;
 	}
 

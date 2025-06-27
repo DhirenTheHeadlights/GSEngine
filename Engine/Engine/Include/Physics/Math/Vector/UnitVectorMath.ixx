@@ -1,11 +1,11 @@
-export module gse.physics.math.unit_vec_math;
+export module gse.physics.math:unit_vec_math;
 
 import std;
 
-import gse.physics.math.unit_vec;
-import gse.physics.math.vec_math;
-import gse.physics.math.unitless_vec;
-import gse.physics.math.units.quant;
+import :unit_vec;
+import :vec_math;
+import :unitless_vec;
+import :quant;
 
 export namespace gse {
 	template <internal::is_quantity T, int N> constexpr auto magnitude(const vec_t<T, N>& v) -> T;

@@ -1,9 +1,9 @@
-export module gse.physics.surfaces;
+export module gse.physics:surfaces;
 
 import std;
 
 import gse.physics.math;
-import gse.core.clock;
+import gse.utility;
 
 export namespace gse::surfaces {
 	enum class surface_type : std::uint8_t {
