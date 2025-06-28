@@ -22,7 +22,8 @@ gse::camera g_camera;
 export namespace gse::renderer3d {
 	auto initialize(vulkan::config& config) -> void;
 	auto initialize_objects(std::span<light_source_component> light_source_components) -> void;
-	auto render(const vulkan::config& config, std::span<render_component> render_components) -> void;
+	auto render_geometry(const vulkan::config& config, std::span<render_component> render_components) -> void;
+	auto render_lighting(const vulkan::config& config, std::span<render_component> render_components) -> void;
 	auto shutdown(const vulkan::config& config) -> void;
 
 	auto camera() -> camera&;
@@ -70,7 +71,7 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 	g_pipeline_layout = config.device_data.device.createPipelineLayout(pipeline_layout_info);
 
 	const auto& lighting_shader = shader_loader::shader("lighting_pass");
-	auto lighting_layout = lighting_shader.layout(shader::set::binding_type::persistent);
+	auto lighting_layouts = lighting_shader.layouts();
 
 	g_lighting_descriptor_set = lighting_shader.descriptor_set(config.device_data.device, config.descriptor.pool, shader::set::binding_type::persistent);
 
@@ -111,8 +112,8 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 
 	const vk::PipelineLayoutCreateInfo lighting_pipeline_layout_info{
 		.flags = {},
-		.setLayoutCount = 1,
-		.pSetLayouts = &lighting_layout
+		.setLayoutCount = static_cast<std::uint32_t>(lighting_layouts.size()),
+		.pSetLayouts = lighting_layouts.data()
 	};
 	g_lighting_pipeline_layout = config.device_data.device.createPipelineLayout(lighting_pipeline_layout_info);
 
@@ -178,7 +179,7 @@ auto gse::renderer3d::initialize(vulkan::config& config) -> void {
 		.alphaToOneEnable = vk::False
 	};
 
-	const vk::PipelineColorBlendAttachmentState color_blend_attachment{
+	constexpr vk::PipelineColorBlendAttachmentState color_blend_attachment{
 		.blendEnable = vk::False,
 		.srcColorBlendFactor = vk::BlendFactor::eOne,
 		.dstColorBlendFactor = vk::BlendFactor::eZero,
@@ -313,14 +314,13 @@ auto gse::renderer3d::initialize_objects(std::span<light_source_component> const
 	}
 }
 
-auto gse::renderer3d::render(const vulkan::config& config, const std::span<render_component> render_components) -> void {
+auto gse::renderer3d::render_geometry(const vulkan::config& config, const std::span<render_component> render_components) -> void {
 	g_camera.update_camera_vectors();
 	if (!window::is_mouse_visible()) g_camera.process_mouse_movement(window::get_mouse_delta_rel_top_left());
 
 	const auto command = config.frame_context.command_buffer;
 
 	if (render_components.empty()) {
-		command.nextSubpass(vk::SubpassContents::eInline);
 		return;
 	}
 
@@ -362,8 +362,11 @@ auto gse::renderer3d::render(const vulkan::config& config, const std::span<rende
 			}
 		}
 	}
+}
 
-	command.nextSubpass(vk::SubpassContents::eInline);
+auto gse::renderer3d::render_lighting(const vulkan::config& config, std::span<render_component> render_components) -> void {
+	const auto command = config.frame_context.command_buffer;
+
 	command.bindPipeline(vk::PipelineBindPoint::eGraphics, g_lighting_pipeline);
 	command.bindDescriptorSets(
 		vk::PipelineBindPoint::eGraphics,
@@ -376,6 +379,7 @@ auto gse::renderer3d::render(const vulkan::config& config, const std::span<rende
 	);
 	command.draw(3, 1, 0, 0);
 }
+
 
 auto gse::renderer3d::shutdown(const vulkan::config& config) -> void {
 
