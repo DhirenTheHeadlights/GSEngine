@@ -1,19 +1,20 @@
 #version 450
 #extension GL_KHR_vulkan_glsl : enable
 
-layout (constant_id = 99) const int descriptor_layout_type = 1;
+layout(constant_id = 99) const int descriptor_layout_type = 1;
 
-layout (input_attachment_index = 0, set = 0, binding = 0) uniform subpassInput g_position;
-layout (input_attachment_index = 1, set = 0, binding = 1) uniform subpassInput g_normal;
-layout (input_attachment_index = 2, set = 0, binding = 2) uniform subpassInput g_albedo_spec;
+layout(location = 0) in vec2 inUV;
+
+layout(set = 0, binding = 0) uniform sampler2D g_position;
+layout(set = 0, binding = 1) uniform sampler2D g_normal;
+layout(set = 0, binding = 2) uniform sampler2D g_albedo_spec;
 
 layout(location = 0) out vec4 frag_color;
 
 void main() {
-    vec3 frag_pos = subpassLoad(g_position).rgb;
-    vec3 normal = normalize(subpassLoad(g_normal).rgb);
-    vec3 albedo = subpassLoad(g_albedo_spec).rgb;
-    float specular = subpassLoad(g_albedo_spec).a;
+    vec3 position = texture(g_position, inUV).rgb;
+    vec3 normal = texture(g_normal, inUV).rgb;
+    vec4 albedo = texture(g_albedo_spec, inUV);
 
-    frag_color = vec4(albedo, 1.0); 
+    frag_color = vec4(albedo.rgb * normal, albedo.a); 
 }

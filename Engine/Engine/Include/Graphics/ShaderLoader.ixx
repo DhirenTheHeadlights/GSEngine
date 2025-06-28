@@ -128,9 +128,9 @@ auto init_descriptor_layouts(const vk::raii::Device& device) -> void {
     struct gse::shader::layout def_3d;
 
     create_layout(def_3d, gse::shader::set::binding_type::persistent, {
-        { 0, vk::DescriptorType::eInputAttachment,      1, fs }, // g_position
-        { 1, vk::DescriptorType::eInputAttachment,      1, fs }, // g_normal
-        { 2, vk::DescriptorType::eInputAttachment,      1, fs }, // g_albedo_spec
+        { 0, vk::DescriptorType::eCombinedImageSampler,      1, fs }, // g_position
+        { 1, vk::DescriptorType::eCombinedImageSampler,      1, fs }, // g_normal
+        { 2, vk::DescriptorType::eCombinedImageSampler,      1, fs }, // g_albedo_spec
         { 3, vk::DescriptorType::eCombinedImageSampler, max_lights, fs },
         { 4, vk::DescriptorType::eCombinedImageSampler, max_lights, fs },
         { 5, vk::DescriptorType::eUniformBuffer,        1, fs }, // light_space_matrix

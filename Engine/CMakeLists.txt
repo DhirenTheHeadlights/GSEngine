@@ -29,7 +29,10 @@ target_sources(Engine
         FILES "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/Engine.ixx"
 )
 
-target_sources(Engine PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/Engine/Source/Core/Config.ixx")
+target_sources(Engine PRIVATE 
+    "${CMAKE_CURRENT_BINARY_DIR}/Engine/Source/Core/Config.ixx"
+    "${CMAKE_CURRENT_SOURCE_DIR}/External/ImguiVulkan/imgui_impl_vulkan.cpp"
+)
 
 ####################################################################################################################
 # Grab dependencies from vcpkg
@@ -41,6 +44,7 @@ find_path(miniaudio_INCLUDE_DIR "miniaudio.h")
 find_package(Freetype CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
 find_package(Vulkan REQUIRED)
+find_package(imgui CONFIG REQUIRED)
 
 add_library(VulkanModule)
 
@@ -73,16 +77,13 @@ target_include_directories(SPIRV-Reflect PUBLIC "${SPIRV_REFLECT_DIR}")
 
 ####################################################################################################################
 
-add_subdirectory(External/imgui-docking)
-
 target_include_directories(Engine
     PUBLIC
-        "${CMAKE_CURRENT_SOURCE_DIR}/External/imgui-docking"
-        "${CMAKE_CURRENT_SOURCE_DIR}/External/nlohmann"
         ${Stb_INCLUDE_DIR},
         ${miniaudio_INCLUDE_DIR}
         "${VULKAN_SDK_PATH}/Include"
         "${VULKAN_SDK_PATH}/Source"
+        "${CMAKE_CURRENT_SOURCE_DIR}/External/ImguiVulkan"
 )
 
 target_link_directories(Engine PUBLIC
@@ -91,13 +92,13 @@ target_link_directories(Engine PUBLIC
 
 target_link_libraries(Engine PUBLIC
     glfw
-    imgui
     Freetype::Freetype
     msdfgen::msdfgen
     VulkanModule
     SPIRV-Reflect
     "${VULKAN_SDK_PATH}/Lib/shaderc_combinedd.lib"
     "${VULKAN_SDK_PATH}/Lib/glslang-default-resource-limitsd.lib"
+    imgui::imgui
 )
 
 set(ENGINE_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
@@ -105,7 +106,7 @@ set(SPIRV_DIR "${CMAKE_CURRENT_BINARY_DIR}/Resources/Shaders")
 
 foreach(shader ${SHADER_FILES})
     get_filename_component(shader_name ${shader} NAME_WE)
-    get_filename_component(shader_ext ${shader} EXT) # Get extension (.vert, .frag, etc.)
+    get_filename_component(shader_ext ${shader} EXT)
     set(shader_output "${SHADER_DIR}/${shader_name}${shader_ext}.spv")
 
     list(FIND ADDED_SHADERS ${shader_output} shader_exists)
@@ -140,7 +141,7 @@ if (MSVC)
     add_compile_options(/Zm500)     # Increase the maximum number of template instantiations; needed for Vulkan
 
     # List of external targets to be grouped under "External"
-    set(EXTERNAL_TARGETS imgui VulkanModule SPIRV-Reflect)
+    set(EXTERNAL_TARGETS VulkanModule SPIRV-Reflect)
 
     # Loop through each target and set its folder property
     foreach(target ${EXTERNAL_TARGETS})

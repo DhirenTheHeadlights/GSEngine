@@ -4,29 +4,24 @@
 #define _CRT_SECURE_NO_WARNINGS
 #endif
 
-import <csignal>;
-import <cstdio>;
-import <format>;
-import <iostream>;
-import <source_location>;
-import <string>;
-import <string_view>;
 #ifdef _WIN32
 #define NOMINMAX
 import <Windows.h>;
 #endif
 
+import std;
+
 export namespace gse {
     auto assert(
         bool condition,
-		std::string_view formatted_string,
-		const std::source_location& loc = std::source_location::current()
+        std::string_view formatted_string,
+        const std::source_location& loc = std::source_location::current()
     ) -> void;
 }
 
 namespace gse {
-	auto assert_func_production(char const* message) -> void;
-	auto assert_func_internal(char const* message) -> void;
+    auto assert_func_production(std::string_view message) noexcept -> void;
+    auto assert_func_internal(std::string_view message) noexcept -> void;
 }
 
 auto gse::assert(
@@ -39,41 +34,50 @@ auto gse::assert(
             "[Assertion Failure]\n"
             "File: {}\n"
             "Line: {}\n"
-            "Expression: {}\n"
+            "Function: {}\n"
             "Comment: {}\n",
-            loc.file_name(), loc.line(), formatted_string, loc.function_name()
+            loc.file_name(),
+            loc.line(),
+            loc.function_name(),
+            formatted_string
         );
 
-        assert_func_internal(message.c_str());
+        assert_func_internal(message);
     }
 }
 
-auto gse::assert_func_production(char const* message) -> void {
+auto gse::assert_func_production(const std::string_view message) noexcept -> void {
 #ifdef _WIN32
-    MessageBoxA(nullptr, message, "GSEngine",
+    MessageBoxA(nullptr, message.data(), "GSEngine",
         MB_TASKMODAL | MB_ICONHAND | MB_OK | MB_SETFOREGROUND);
-
-    std::raise(SIGABRT);
-    _exit(3);
-#else
-    std::cerr << message << "\n";
-    std::raise(SIGABRT);
 #endif
+    std::terminate();
 }
 
-auto gse::assert_func_internal(char const* message) -> void {
+auto gse::assert_func_internal(std::string_view message) noexcept -> void {
 #ifdef _WIN32
-    const int action = ::MessageBoxA(nullptr, message, "Internal Assert",
-        MB_TASKMODAL | MB_ICONHAND | MB_ABORTRETRYIGNORE | MB_SETFOREGROUND);
+    const int action = MessageBoxA(
+        nullptr,
+        message.data(),
+        "Internal Assert",
+        MB_TASKMODAL | MB_ICONHAND | MB_ABORTRETRYIGNORE | MB_SETFOREGROUND
+    );
 
     switch (action) {
-    case IDABORT:  std::raise(SIGABRT); _exit(3); break;
-    case IDRETRY:  __debugbreak();                break;
-    case IDIGNORE:                                break;
-    default:      std::abort();                   break;
+    case IDABORT:
+        std::terminate();
+        break;
+    case IDRETRY:
+        __debugbreak();
+        break;
+    case IDIGNORE:
+        break;
+    default:
+        std::terminate();
+        break;
     }
 #else
-    std::cerr << message << "\n";
-    std::raise(SIGABRT);
+    std::cerr << message << '\n';
+    std::terminate();
 #endif
 }

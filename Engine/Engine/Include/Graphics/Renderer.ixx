@@ -54,10 +54,8 @@ auto gse::renderer::update() -> void {
 auto gse::renderer::render(const std::function<void()>& in_frame, const std::span<render_component> components) -> void {
 	begin_frame();
 	render_geometry(g_renderer3d_context, *g_config, components);
-	g_config->frame_context.command_buffer.nextSubpass(vk::SubpassContents::eInline);
 	render_lighting(g_renderer3d_context, *g_config, components);
-	g_config->frame_context.command_buffer.nextSubpass(vk::SubpassContents::eInline);
-	renderer2d::render(g_renderer2d_context, *g_config);
+	//renderer2d::render(g_renderer2d_context, *g_config);
 	gui::render();
 	in_frame();
 	end_frame();

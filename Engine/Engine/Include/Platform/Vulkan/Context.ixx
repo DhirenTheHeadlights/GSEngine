@@ -5,6 +5,7 @@ module;
 #include <vulkan/vulkan_hpp_macros.hpp>
 
 #include <compare>
+#include <functional>
 
 export module gse.platform.vulkan:context;
 
@@ -17,32 +18,40 @@ vk::DebugUtilsMessengerEXT g_debug_utils_messenger;
 std::uint32_t g_max_frames_in_flight = 2;
 
 export namespace gse::vulkan {
-	auto initialize(
+    auto initialize(
         GLFWwindow* window
     ) -> config;
 
-	auto begin_frame(
-        GLFWwindow* window, 
+    auto begin_frame(
+        GLFWwindow* window,
         config& config
     ) -> void;
 
-	auto end_frame(
-        GLFWwindow* window, 
+    auto end_frame(
+        GLFWwindow* window,
         config& config
     ) -> void;
 
-	auto find_queue_families(
-        const vk::raii::PhysicalDevice& device, 
+    auto find_queue_families(
+        const vk::raii::PhysicalDevice& device,
         const vk::raii::SurfaceKHR& surface
     ) -> queue_family;
 
-	auto begin_single_line_commands(
+    auto single_line_commands(
+	    const config& config, const std::function<void(const vk::raii::CommandBuffer&)>& commands
+    ) -> void;
+
+    auto begin_single_line_commands(
         const config& config
     ) -> vk::raii::CommandBuffer;
 
-	auto end_single_line_commands(
-		const vk::raii::CommandBuffer& command_buffer,
-		const vulkan::config& config
+    auto end_single_line_commands(
+        const vk::raii::CommandBuffer& command_buffer,
+        const config& config
+    ) -> void;
+
+	auto render(
+		const vulkan::config& config, const vk::RenderingInfo& begin_info, const std::function<void()>& render
 	) -> void;
 
     auto shutdown(
@@ -60,8 +69,8 @@ namespace gse::vulkan {
     ) -> std::tuple<config::device_config, config::queue_config>;
 
     auto create_command_objects(
-        const config::device_config& device_data, 
-        const config::instance_config& instance_data, 
+        const config::device_config& device_data,
+        const config::instance_config& instance_data,
         std::uint32_t image_count
     ) -> config::command_config;
 
@@ -70,7 +79,7 @@ namespace gse::vulkan {
     ) -> config::descriptor_config;
 
     auto create_sync_objects(
-        const config::device_config& device_data, 
+        const config::device_config& device_data,
         std::uint32_t image_count
     ) -> config::sync_config;
 
@@ -91,8 +100,7 @@ auto gse::vulkan::initialize(GLFWwindow* window) -> config {
 
     config::frame_context_config frame_context(
         0,
-        *command.buffers[0],
-        *swap_chain_data.frame_buffers[0]
+        *command.buffers[0]
     );
 
     return config(
@@ -162,63 +170,51 @@ auto gse::vulkan::begin_frame(GLFWwindow* window, config& config) -> void {
 
     config.frame_context = {
         image_index,
-        *config.command.buffers[config.current_frame],
-        *config.swap_chain_data.frame_buffers[image_index]
+        *config.command.buffers[config.current_frame]
     };
 
     config.frame_context.command_buffer.reset({});
 
     constexpr vk::CommandBufferBeginInfo begin_info{
-        .flags = {},
-        .pInheritanceInfo = nullptr
+	    .flags = {},
+	    .pInheritanceInfo = nullptr
     };
+
     config.frame_context.command_buffer.begin(begin_info);
 
-    std::array clear_values{
-        vk::ClearValue{
-            .color = vk::ClearColorValue{
-                .float32 = std::array{ 0.0f, 0.0f, 0.0f, 1.0f }
-            }
-        }, // Position
-        vk::ClearValue{
-            .color = vk::ClearColorValue{
-                .float32 = std::array{ 0.0f, 0.0f, 0.0f, 1.0f }
-            }
-        }, // Normal
-        vk::ClearValue{
-            .color = vk::ClearColorValue{
-                .float32 = std::array{ 0.0f, 0.0f, 0.0f, 1.0f }
-            }
-        }, // Albedo
-        vk::ClearValue{
-            .depthStencil = vk::ClearDepthStencilValue{
-                .depth = 1.0f,
-                .stencil = 0
-            }
-        }, // Depth
-        vk::ClearValue{
-            .color = vk::ClearColorValue{
-                .float32 = std::array{ 0.1f, 0.1f, 0.1f, 1.0f }
-            }
-        } // Final color
+    const vk::ImageMemoryBarrier2 swap_chain_pre_barrier{
+        .srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,  
+        .srcAccessMask = {},                                       
+        .dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        .dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,      
+        .oldLayout = vk::ImageLayout::eUndefined,
+        .newLayout = vk::ImageLayout::eColorAttachmentOptimal,
+        .image = config.swap_chain_data.images[config.frame_context.image_index],
+        .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
     };
 
-    const vk::RenderPassBeginInfo render_pass_begin_info{
-        .renderPass = *config.swap_chain_data.render_pass,
-        .framebuffer = config.frame_context.framebuffer,
-        .renderArea = {
-            .offset = {.x = 0, .y = 0 },
-            .extent = config.swap_chain_data.extent
-        },
-        .clearValueCount = static_cast<std::uint32_t>(clear_values.size()),
-        .pClearValues = clear_values.data()
-    };
-
-    config.frame_context.command_buffer.beginRenderPass(render_pass_begin_info, vk::SubpassContents::eInline);
+    config.frame_context.command_buffer.pipelineBarrier2({ .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &swap_chain_pre_barrier });
 }
 
 auto gse::vulkan::end_frame(GLFWwindow* window, config& config) -> void {
-    config.frame_context.command_buffer.endRenderPass();
+    const vk::ImageMemoryBarrier2 present_barrier{
+        .srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        .srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eBottomOfPipe,
+        .dstAccessMask = {},
+        .oldLayout = vk::ImageLayout::eColorAttachmentOptimal,
+        .newLayout = vk::ImageLayout::ePresentSrcKHR,
+        .image = config.swap_chain_data.images[config.frame_context.image_index],
+        .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
+    };
+
+    config.frame_context.command_buffer.pipelineBarrier2(
+        {
+        	.imageMemoryBarrierCount = 1,
+        	.pImageMemoryBarriers = &present_barrier
+        }
+    );
+
     config.frame_context.command_buffer.end();
 
     const std::uint32_t image_index = config.frame_context.image_index;
@@ -270,13 +266,15 @@ auto gse::vulkan::end_frame(GLFWwindow* window, config& config) -> void {
     if (present_result == vk::Result::eErrorOutOfDateKHR ||
         present_result == vk::Result::eSuboptimalKHR) {
         config.device_data.device.waitIdle();
-        config.swap_chain_data =
-            create_swap_chain_resources(window,
-                config.instance_data,
-                config.device_data);
-        config.sync =
-            create_sync_objects(config.device_data,
-                config.swap_chain_data.images.size());
+        config.swap_chain_data = create_swap_chain_resources(
+            window,
+            config.instance_data,
+            config.device_data
+        );
+        config.sync = create_sync_objects(
+            config.device_data,
+            config.swap_chain_data.images.size()
+        );
         return;
     }
 
@@ -320,6 +318,12 @@ auto gse::vulkan::end_single_line_commands(const vk::raii::CommandBuffer& comman
 
     config.queue.graphics.submit(submit_info, nullptr);
     config.queue.graphics.waitIdle();
+}
+
+auto gse::vulkan::render(const config& config, const vk::RenderingInfo& begin_info, const std::function<void()>& render) -> void {
+    config.frame_context.command_buffer.beginRendering(begin_info);
+	render();
+    config.frame_context.command_buffer.endRendering();
 }
 
 auto gse::vulkan::shutdown(const config& config) -> void {
@@ -458,23 +462,26 @@ auto gse::vulkan::create_device_and_queues(const config::instance_config& instan
     }
 
     vk::PhysicalDeviceVulkan13Features vulkan13_features{};
+    vulkan13_features.dynamicRendering = vk::True;
     vk::PhysicalDeviceVulkan12Features vulkan12_features{};
     vulkan12_features.pNext = &vulkan13_features;
-
-    vk::PhysicalDeviceFeatures2 features2 = physical_device.getFeatures2();
-    features2.pNext = &vulkan12_features;
-
-    features2.features.samplerAnisotropy = vk::True;
     vulkan12_features.timelineSemaphore = vk::True;
     vulkan12_features.bufferDeviceAddress = vk::True;
     vulkan13_features.synchronization2 = vk::True;
 
+    vk::PhysicalDeviceFeatures2 features2{};
+    features2.pNext = &vulkan12_features;
+    features2.features.samplerAnisotropy = vk::True;
+
     const std::vector device_extensions = {
         vk::KHRSwapchainExtensionName,
         vk::KHRPushDescriptorExtensionName,
+        vk::KHRSynchronization2ExtensionName,
+        vk::KHRDynamicRenderingExtensionName
     };
 
     vk::DeviceCreateInfo create_info{
+        .pNext = &features2,
         .flags = {},
         .queueCreateInfoCount = static_cast<uint32_t>(queue_create_infos.size()),
         .pQueueCreateInfos = queue_create_infos.data(),
@@ -483,7 +490,6 @@ auto gse::vulkan::create_device_and_queues(const config::instance_config& instan
         .enabledExtensionCount = static_cast<uint32_t>(device_extensions.size()),
         .ppEnabledExtensionNames = device_extensions.data()
     };
-    create_info.pNext = &features2;
 
     vk::raii::Device device = physical_device.createDevice(create_info);
 
@@ -531,10 +537,10 @@ auto gse::vulkan::create_descriptor_pool(const config::device_config& device_dat
     constexpr uint32_t max_sets = 512;
 
     std::vector<vk::DescriptorPoolSize> pool_sizes = {
-        { vk::DescriptorType::eUniformBuffer,         4096 },
+        { vk::DescriptorType::eUniformBuffer,          4096 },
         { vk::DescriptorType::eCombinedImageSampler,  4096 },
-        { vk::DescriptorType::eStorageBuffer,         1024 },
-        { vk::DescriptorType::eInputAttachment,       4096 },
+        { vk::DescriptorType::eStorageBuffer,          1024 },
+        { vk::DescriptorType::eInputAttachment,        4096 },
     };
 
     const vk::DescriptorPoolCreateInfo pool_info{
@@ -606,6 +612,37 @@ auto gse::vulkan::find_queue_families(const vk::raii::PhysicalDevice& device, co
     }
 
     return indices;
+}
+
+auto gse::vulkan::single_line_commands(const config& config, const std::function<void(const vk::raii::CommandBuffer&)>& commands) -> void {
+    const vk::CommandBufferAllocateInfo alloc_info{
+        .commandPool = *config.command.pool,
+        .level = vk::CommandBufferLevel::ePrimary,
+        .commandBufferCount = 1
+    };
+
+    auto buffers = config.device_data.device.allocateCommandBuffers(alloc_info);
+    const vk::raii::CommandBuffer command_buffer = std::move(buffers[0]);
+
+    constexpr vk::CommandBufferBeginInfo begin_info{
+        .flags = {},
+        .pInheritanceInfo = nullptr
+    };
+
+    command_buffer.begin(begin_info);
+
+    commands(command_buffer);
+
+    command_buffer.end();
+    const vk::SubmitInfo submit_info{
+        .waitSemaphoreCount = 0,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &*command_buffer,
+        .signalSemaphoreCount = 0,
+    };
+
+    config.queue.graphics.submit(submit_info);
+    config.queue.graphics.waitIdle();
 }
 
 auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const config::instance_config& instance_data, const config::device_config& device_data) -> config::swap_chain_config {
@@ -711,7 +748,7 @@ auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const config::
             .arrayLayers = 1,
             .samples = vk::SampleCountFlagBits::e1,
             .tiling = vk::ImageTiling::eOptimal,
-            .usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment
+            .usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled
         }, vk::MemoryPropertyFlagBits::eDeviceLocal, position_iv_info
     );
 
@@ -739,7 +776,7 @@ auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const config::
             .arrayLayers = 1,
             .samples = vk::SampleCountFlagBits::e1,
             .tiling = vk::ImageTiling::eOptimal,
-            .usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment
+            .usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled
         }, vk::MemoryPropertyFlagBits::eDeviceLocal, normal_iv_info
     );
 
@@ -767,7 +804,7 @@ auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const config::
             .arrayLayers = 1,
             .samples = vk::SampleCountFlagBits::e1,
             .tiling = vk::ImageTiling::eOptimal,
-            .usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment
+            .usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled
         }, vk::MemoryPropertyFlagBits::eDeviceLocal, albedo_iv_info
     );
 
@@ -819,169 +856,9 @@ auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const config::
         image_views.emplace_back(device_data.device, iv_create_info);
     }
 
-    vk::AttachmentDescription attachments[5] = {
-        { // Position
-            .flags = {},
-            .format = vk::Format::eR16G16B16A16Sfloat,
-            .samples = vk::SampleCountFlagBits::e1,
-            .loadOp = vk::AttachmentLoadOp::eClear,
-            .storeOp = vk::AttachmentStoreOp::eStore,
-            .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
-            .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
-            .initialLayout = vk::ImageLayout::eUndefined,
-            .finalLayout = vk::ImageLayout::eShaderReadOnlyOptimal
-        },
-        { // Normal
-            .flags = {},
-            .format = vk::Format::eR16G16B16A16Sfloat,
-            .samples = vk::SampleCountFlagBits::e1,
-            .loadOp = vk::AttachmentLoadOp::eClear,
-            .storeOp = vk::AttachmentStoreOp::eStore,
-            .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
-            .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
-            .initialLayout = vk::ImageLayout::eUndefined,
-            .finalLayout = vk::ImageLayout::eShaderReadOnlyOptimal
-        },
-        { // Albedo
-            .flags = {},
-            .format = vk::Format::eR8G8B8A8Srgb,
-            .samples = vk::SampleCountFlagBits::e1,
-            .loadOp = vk::AttachmentLoadOp::eClear,
-            .storeOp = vk::AttachmentStoreOp::eStore,
-            .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
-            .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
-            .initialLayout = vk::ImageLayout::eUndefined,
-            .finalLayout = vk::ImageLayout::eShaderReadOnlyOptimal
-        },
-        { // Depth
-            .flags = {},
-            .format = vk::Format::eD32Sfloat,
-            .samples = vk::SampleCountFlagBits::e1,
-            .loadOp = vk::AttachmentLoadOp::eClear,
-            .storeOp = vk::AttachmentStoreOp::eStore,
-            .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
-            .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
-            .initialLayout = vk::ImageLayout::eUndefined,
-            .finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal
-        },
-        { // Final color
-            .flags = {},
-            .format = format,
-            .samples = vk::SampleCountFlagBits::e1,
-            .loadOp = vk::AttachmentLoadOp::eClear,
-            .storeOp = vk::AttachmentStoreOp::eStore,
-            .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
-            .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
-            .initialLayout = vk::ImageLayout::eUndefined,
-            .finalLayout = vk::ImageLayout::ePresentSrcKHR
-        }
-    };
-
-    const std::array<vk::AttachmentReference, 3> g_buffer_color_refs{
-        vk::AttachmentReference(0, vk::ImageLayout::eColorAttachmentOptimal),
-        vk::AttachmentReference(1, vk::ImageLayout::eColorAttachmentOptimal),
-        vk::AttachmentReference(2, vk::ImageLayout::eColorAttachmentOptimal)
-    };
-
-    constexpr vk::AttachmentReference depth_ref{ 3, vk::ImageLayout::eDepthStencilAttachmentOptimal };
-    const vk::SubpassDescription g_buffer_pass{
-        .flags = {},
-        .pipelineBindPoint = vk::PipelineBindPoint::eGraphics,
-        .inputAttachmentCount = 0,
-        .pInputAttachments = nullptr,
-        .colorAttachmentCount = 3,
-        .pColorAttachments = g_buffer_color_refs.data(),
-        .pResolveAttachments = nullptr,
-        .pDepthStencilAttachment = &depth_ref
-    };
-
-    vk::AttachmentReference lighting_input_refs[] = {
-        { 0, vk::ImageLayout::eShaderReadOnlyOptimal },
-        { 1, vk::ImageLayout::eShaderReadOnlyOptimal },
-        { 2, vk::ImageLayout::eShaderReadOnlyOptimal }
-    };
-    vk::AttachmentReference lighting_color_ref{ 4, vk::ImageLayout::eColorAttachmentOptimal };
-    const vk::SubpassDescription lighting_pass{
-        .flags = {},
-        .pipelineBindPoint = vk::PipelineBindPoint::eGraphics,
-        .inputAttachmentCount = 3,
-        .pInputAttachments = lighting_input_refs,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &lighting_color_ref
-    };
-
-    const vk::SubpassDescription ui_pass{
-        .flags = {},
-        .pipelineBindPoint = vk::PipelineBindPoint::eGraphics,
-        .inputAttachmentCount = 0,
-        .pInputAttachments = nullptr,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &lighting_color_ref
-    };
-
-    std::array sub_passes = { g_buffer_pass, lighting_pass, ui_pass };
-    std::array<vk::SubpassDependency, 3> dependencies;
-
-    dependencies[0] = {
-        .srcSubpass = VK_SUBPASS_EXTERNAL,
-        .dstSubpass = 0,
-        .srcStageMask = vk::PipelineStageFlagBits::eBottomOfPipe,
-        .dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
-        .srcAccessMask = vk::AccessFlagBits::eMemoryRead,
-        .dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite,
-        .dependencyFlags = vk::DependencyFlagBits::eByRegion
-    };
-
-    dependencies[1] = {
-        .srcSubpass = 0,
-        .dstSubpass = 1,
-        .srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eLateFragmentTests,
-        .dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eFragmentShader,
-        .srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite,
-        .dstAccessMask = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eColorAttachmentWrite,
-        .dependencyFlags = vk::DependencyFlagBits::eByRegion
-    };
-
-    dependencies[2] = {
-        .srcSubpass = 1,
-        .dstSubpass = 2,
-        .srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput,
-        .dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput,
-        .srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
-        .dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
-        .dependencyFlags = vk::DependencyFlagBits::eByRegion
-    };
-
-    const vk::RenderPassCreateInfo rp_info{
-        .flags = {},
-        .attachmentCount = static_cast<uint32_t>(std::size(attachments)),
-        .pAttachments = attachments,
-        .subpassCount = static_cast<uint32_t>(sub_passes.size()),
-        .pSubpasses = sub_passes.data(),
-        .dependencyCount = static_cast<uint32_t>(dependencies.size()),
-        .pDependencies = dependencies.data()
-    };
-    auto render_pass = device_data.device.createRenderPass(rp_info);
-
-    std::vector<vk::raii::Framebuffer> frame_buffers;
-    frame_buffers.reserve(image_views.size());
-    for (const auto& view : image_views) {
-        std::array fb_attachments = { *position_image.view, *normal_image.view, *albedo_image.view, *depth_image.view, *view };
-        vk::FramebufferCreateInfo fb_info{
-            .flags = {},
-            .renderPass = *render_pass,
-            .attachmentCount = static_cast<uint32_t>(fb_attachments.size()),
-            .pAttachments = fb_attachments.data(),
-            .width = extent.width,
-            .height = extent.height,
-            .layers = 1
-        };
-        frame_buffers.emplace_back(device_data.device, fb_info);
-    }
-
     return config::swap_chain_config(
-        std::move(swap_chain), surface_format, present_mode, extent, std::move(frame_buffers),
-        std::move(images), std::move(image_views), format, std::move(details), std::move(render_pass),
+        std::move(swap_chain), surface_format, present_mode, extent,
+        std::move(images), std::move(image_views), format, std::move(details),
         std::move(position_image), std::move(normal_image), std::move(albedo_image), std::move(depth_image)
     );
 }

@@ -58,12 +58,17 @@ export namespace gse::vulkan::uploader {
     ) -> void;
 
     auto transition_image_layout(
-	    vk::CommandBuffer cmd,
-	    vk::Image image,
-	    vk::Format format,
-	    vk::ImageLayout old_layout,
-	    vk::ImageLayout new_layout,
-	    std::uint32_t mip_levels, std::uint32_t layer_count
+        vk::CommandBuffer cmd,
+        vk::Image image,
+        vk::ImageLayout old_layout,
+        vk::ImageLayout new_layout,
+        vk::ImageAspectFlags aspect_mask,
+        vk::PipelineStageFlags2 src_stage,
+        vk::AccessFlags2 src_access,
+        vk::PipelineStageFlags2 dst_stage,
+        vk::AccessFlags2 dst_access,
+        std::uint32_t mip_levels = 1,
+        std::uint32_t layer_count = 1
     ) -> void;
 }
 
@@ -81,7 +86,14 @@ auto gse::vulkan::uploader::upload_image_2d(const config& config, const vk::Imag
     );
 
     const auto cmd = begin_single_line_commands(config);
-    transition_image_layout(*cmd, image, format, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, 1, 1);
+    transition_image_layout(
+        *cmd, image,
+        vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
+        vk::ImageAspectFlagBits::eColor,
+        vk::PipelineStageFlagBits2::eTopOfPipe, {},
+        vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite,
+        1, 1
+    );
 
     const vk::BufferImageCopy region{
         .bufferOffset = 0,
@@ -101,8 +113,15 @@ auto gse::vulkan::uploader::upload_image_2d(const config& config, const vk::Imag
         }
     };
 
-    cmd.copyBufferToImage(*buffer, image, vk::ImageLayout::eTransferDstOptimal, region);
-    transition_image_layout(*cmd, image, format, vk::ImageLayout::eTransferDstOptimal, final_layout, 1, 1);
+    cmd.copyBufferToImage(buffer, image, vk::ImageLayout::eTransferDstOptimal, region);
+    transition_image_layout(
+        *cmd, image,
+        vk::ImageLayout::eTransferDstOptimal, final_layout,
+        vk::ImageAspectFlagBits::eColor,
+        vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite,
+        vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderRead,
+        1, 1
+    );
     end_single_line_commands(cmd, config);
 }
 
@@ -128,7 +147,14 @@ auto gse::vulkan::uploader::upload_image_layers(const config& config, const vk::
     }
 
     const auto cmd = begin_single_line_commands(config);
-    transition_image_layout(*cmd, image, format, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, 1, layer_count);
+    transition_image_layout(
+        *cmd, image,
+        vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
+        vk::ImageAspectFlagBits::eColor,
+        vk::PipelineStageFlagBits2::eTopOfPipe, {},
+        vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite,
+        1, layer_count
+    );
 
     std::vector<vk::BufferImageCopy> regions;
     regions.reserve(layer_count);
@@ -150,7 +176,14 @@ auto gse::vulkan::uploader::upload_image_layers(const config& config, const vk::
     }
 
     cmd.copyBufferToImage(*staging.buffer, image, vk::ImageLayout::eTransferDstOptimal, regions);
-    transition_image_layout(*cmd, image, format, vk::ImageLayout::eTransferDstOptimal, final_layout, 1, layer_count);
+    transition_image_layout(
+        *cmd, image,
+        vk::ImageLayout::eTransferDstOptimal, final_layout,
+        vk::ImageAspectFlagBits::eColor,
+        vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite,
+        vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderRead,
+        1, layer_count
+    );
     end_single_line_commands(cmd, config);
 }
 
@@ -168,7 +201,14 @@ auto gse::vulkan::uploader::upload_image_3d(const config& config, const vk::Imag
     );
 
     const auto cmd = begin_single_line_commands(config);
-    transition_image_layout(*cmd, image, format, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, 1, 1);
+    transition_image_layout(
+        *cmd, image,
+        vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
+        vk::ImageAspectFlagBits::eColor,
+        vk::PipelineStageFlagBits2::eTopOfPipe, {},
+        vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite,
+        1, 1
+    );
 
     const vk::BufferImageCopy region{
         .bufferOffset = 0,
@@ -186,7 +226,14 @@ auto gse::vulkan::uploader::upload_image_3d(const config& config, const vk::Imag
     };
 
     cmd.copyBufferToImage(*buffer, image, vk::ImageLayout::eTransferDstOptimal, region);
-    transition_image_layout(*cmd, image, format, vk::ImageLayout::eTransferDstOptimal, final_layout, 1, 1);
+    transition_image_layout(
+        *cmd, image,
+        vk::ImageLayout::eTransferDstOptimal, final_layout,
+        vk::ImageAspectFlagBits::eColor,
+        vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite,
+        vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderRead,
+        1, 1
+    );
     end_single_line_commands(cmd, config);
 }
 
@@ -194,7 +241,14 @@ auto gse::vulkan::uploader::upload_mip_mapped_image(const config& config, const 
     const auto cmd = begin_single_line_commands(config);
     const std::uint32_t mip_count = static_cast<std::uint32_t>(mip_levels.size());
 
-    transition_image_layout(*cmd, image, format, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, mip_count, 1);
+    transition_image_layout(
+        *cmd, image,
+        vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
+        vk::ImageAspectFlagBits::eColor,
+        vk::PipelineStageFlagBits2::eTopOfPipe, {},
+        vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite,
+        mip_count, 1
+    );
 
     std::vector<persistent_allocator::buffer_resource> staging_buffers;
     staging_buffers.reserve(mip_levels.size());
@@ -232,51 +286,23 @@ auto gse::vulkan::uploader::upload_mip_mapped_image(const config& config, const 
         cmd.copyBufferToImage(*staging.buffer, image, vk::ImageLayout::eTransferDstOptimal, region);
     }
 
-    transition_image_layout(*cmd, image, format, vk::ImageLayout::eTransferDstOptimal, final_layout, mip_count, 1);
+    transition_image_layout(
+        *cmd, image,
+        vk::ImageLayout::eTransferDstOptimal, final_layout,
+        vk::ImageAspectFlagBits::eColor,
+        vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite,
+        vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderRead,
+        mip_count, 1
+    );
+
     end_single_line_commands(cmd, config);
 }
 
-auto gse::vulkan::uploader::transition_image_layout(const vk::CommandBuffer cmd, const vk::Image image, const vk::Format format, const vk::ImageLayout old_layout, const vk::ImageLayout new_layout, const std::uint32_t mip_levels, const std::uint32_t layer_count) -> void {
-    auto choose_aspect = [](const vk::Format fmt) -> vk::ImageAspectFlags {
-        switch (fmt) {
-        case vk::Format::eD16Unorm:
-        case vk::Format::eD32Sfloat:
-        case vk::Format::eX8D24UnormPack32:
-            return vk::ImageAspectFlagBits::eDepth;
-        case vk::Format::eD24UnormS8Uint:
-        case vk::Format::eD32SfloatS8Uint:
-            return vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil;
-        default:
-            return vk::ImageAspectFlagBits::eColor;
-        }
-        };
-
-    vk::PipelineStageFlags src_stage;
-    vk::PipelineStageFlags dst_stage;
-    vk::AccessFlags src_access;
-    vk::AccessFlags dst_access;
-
-    if (old_layout == vk::ImageLayout::eUndefined && new_layout == vk::ImageLayout::eTransferDstOptimal) {
-        src_stage = vk::PipelineStageFlagBits::eTopOfPipe;
-        dst_stage = vk::PipelineStageFlagBits::eTransfer;
-        src_access = {};
-        dst_access = vk::AccessFlagBits::eTransferWrite;
-    }
-    else if (old_layout == vk::ImageLayout::eTransferDstOptimal && new_layout == vk::ImageLayout::eShaderReadOnlyOptimal) {
-        src_stage = vk::PipelineStageFlagBits::eTransfer;
-        dst_stage = vk::PipelineStageFlagBits::eFragmentShader;
-        src_access = vk::AccessFlagBits::eTransferWrite;
-        dst_access = vk::AccessFlagBits::eShaderRead;
-    }
-    else {
-        src_stage = vk::PipelineStageFlagBits::eTopOfPipe;
-        dst_stage = vk::PipelineStageFlagBits::eTopOfPipe;
-        src_access = {};
-        dst_access = {};
-    }
-
-    const vk::ImageMemoryBarrier barrier{
+auto gse::vulkan::uploader::transition_image_layout(const vk::CommandBuffer cmd, const vk::Image image, const vk::ImageLayout old_layout, const vk::ImageLayout new_layout, vk::ImageAspectFlags aspect_mask, vk::PipelineStageFlags2 src_stage, vk::AccessFlags2 src_access, vk::PipelineStageFlags2 dst_stage, vk::AccessFlags2 dst_access, const std::uint32_t mip_levels, const std::uint32_t layer_count) -> void {
+    const vk::ImageMemoryBarrier2 barrier{
+        .srcStageMask = src_stage,
         .srcAccessMask = src_access,
+        .dstStageMask = dst_stage,
         .dstAccessMask = dst_access,
         .oldLayout = old_layout,
         .newLayout = new_layout,
@@ -284,7 +310,7 @@ auto gse::vulkan::uploader::transition_image_layout(const vk::CommandBuffer cmd,
         .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
         .image = image,
         .subresourceRange = {
-            .aspectMask = choose_aspect(format),
+            .aspectMask = aspect_mask,
             .baseMipLevel = 0,
             .levelCount = mip_levels,
             .baseArrayLayer = 0,
@@ -292,5 +318,5 @@ auto gse::vulkan::uploader::transition_image_layout(const vk::CommandBuffer cmd,
         }
     };
 
-    cmd.pipelineBarrier(src_stage, dst_stage, {}, nullptr, nullptr, barrier);
+    cmd.pipelineBarrier2({ .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier });
 }

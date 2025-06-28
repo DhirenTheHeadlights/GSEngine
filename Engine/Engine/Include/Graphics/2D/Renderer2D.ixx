@@ -24,9 +24,9 @@ export namespace gse::renderer2d {
         vk::raii::Pipeline pipeline = nullptr;
         vk::raii::PipelineLayout pipeline_layout = nullptr;
         vk::raii::Pipeline msdf_pipeline = nullptr;
-		vk::raii::PipelineLayout msdf_pipeline_layout = nullptr;
+        vk::raii::PipelineLayout msdf_pipeline_layout = nullptr;
         vulkan::persistent_allocator::buffer_resource vertex_buffer;
-		vulkan::persistent_allocator::buffer_resource index_buffer;
+        vulkan::persistent_allocator::buffer_resource index_buffer;
     };
 
     auto initialize(context& context, vulkan::config& config) -> void;
@@ -139,7 +139,15 @@ auto gse::renderer2d::initialize(context& context, vulkan::config& config) -> vo
 
     const auto vertex_input_info = element_shader.vertex_input_state();
 
+    const vk::Format color_format = config.swap_chain_data.surface_format.format;
+
+    const vk::PipelineRenderingCreateInfoKHR pipeline_rendering_info{
+        .colorAttachmentCount = 1,
+        .pColorAttachmentFormats = &color_format
+    };
+
     vk::GraphicsPipelineCreateInfo pipeline_info{
+        .pNext = &pipeline_rendering_info,
         .stageCount = 2,
         .pStages = element_shader.shader_stages().data(),
         .pVertexInputState = &vertex_input_info,
@@ -149,9 +157,7 @@ auto gse::renderer2d::initialize(context& context, vulkan::config& config) -> vo
         .pMultisampleState = &multisampling,
         .pDepthStencilState = &opaque_depth_stencil_state,
         .pColorBlendState = &color_blending,
-        .layout = context.pipeline_layout,
-        .renderPass = *config.swap_chain_data.render_pass,
-        .subpass = 2
+        .layout = context.pipeline_layout
     };
     context.pipeline = config.device_data.device.createGraphicsPipeline(nullptr, pipeline_info);
 
@@ -180,30 +186,30 @@ auto gse::renderer2d::initialize(context& context, vulkan::config& config) -> vo
     struct vertex { raw2f pos; raw2f uv; };
 
     constexpr vertex vertices[4] = {
-	    {{0.0f,  0.0f}, {0.0f, 0.0f}}, // Top-left corner (pos & uv)
-	    {{1.0f,  0.0f}, {1.0f, 0.0f}}, // Top-right corner (pos & uv)
-	    {{1.0f, -1.0f}, {1.0f, 1.0f}}, // Bottom-right corner (pos & uv)
-	    {{0.0f, -1.0f}, {0.0f, 1.0f}}  // Bottom-left corner (pos & uv)
+        {{0.0f,  0.0f}, {0.0f, 0.0f}}, // Top-left corner (pos & uv)
+        {{1.0f,  0.0f}, {1.0f, 0.0f}}, // Top-right corner (pos & uv)
+        {{1.0f, -1.0f}, {1.0f, 1.0f}}, // Bottom-right corner (pos & uv)
+        {{0.0f, -1.0f}, {0.0f, 1.0f}}  // Bottom-left corner (pos & uv)
     };
     constexpr std::uint32_t indices[6] = { 0, 1, 2, 2, 3, 0 };
 
     context.vertex_buffer = vulkan::persistent_allocator::create_buffer(
-        config.device_data, 
+        config.device_data,
         {
-        	.size = sizeof(vertices),
-        	.usage = vk::BufferUsageFlagBits::eVertexBuffer
-        }, 
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, 
+            .size = sizeof(vertices),
+            .usage = vk::BufferUsageFlagBits::eVertexBuffer
+        },
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
         vertices
     );
 
     context.index_buffer = vulkan::persistent_allocator::create_buffer(
-        config.device_data, 
+        config.device_data,
         {
-        	.size = sizeof(indices),
-        	.usage = vk::BufferUsageFlagBits::eIndexBuffer
-        }, 
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, 
+            .size = sizeof(indices),
+            .usage = vk::BufferUsageFlagBits::eIndexBuffer
+        },
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
         indices
     );
 
@@ -211,138 +217,157 @@ auto gse::renderer2d::initialize(context& context, vulkan::config& config) -> vo
 }
 
 auto gse::renderer2d::render(context& context, const vulkan::config& config) -> void {
-    if (g_quad_draw_commands.empty() && g_text_draw_commands.empty()) {
-        debug::update_imgui();
-        debug::render_imgui(config.frame_context.command_buffer);
-        return;
-    }
-
     const auto& command = config.frame_context.command_buffer;
-    const auto [width, height] = config.swap_chain_data.extent;
 
-    const auto projection = orthographic(
-        meters(0.0f),
-        meters(width),
-        meters(0.0f),
-        meters(height),
-        meters(-1.0f),
-        meters(1.0f)
-    );
+    vk::RenderingAttachmentInfo color_attachment{
+        .imageView = *config.swap_chain_data.image_views[config.frame_context.image_index],
+        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+        .loadOp = vk::AttachmentLoadOp::eClear,
+        .storeOp = vk::AttachmentStoreOp::eStore,
+        .clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = std::array{ 0.1f, 0.1f, 0.1f, 1.0f }}}
+    };
 
-    command.bindVertexBuffers(
-        0,
-        { context.vertex_buffer.buffer },
-        { 0 }
-    );
+    const vk::RenderingInfo rendering_info{
+        .renderArea = {{0, 0}, config.swap_chain_data.extent},
+        .layerCount = 1,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &color_attachment,
+        .pDepthAttachment = nullptr
+    };
 
-    command.bindIndexBuffer(
-        context.index_buffer.buffer,
-        0,
-        vk::IndexType::eUint32
-    );
+    render(config, rendering_info, [&] {
+	        if (g_quad_draw_commands.empty() && g_text_draw_commands.empty()) {
+	            debug::update_imgui();
+	            debug::render_imgui(config.frame_context.command_buffer);
+	            return;
+	        }
 
-    if (!g_quad_draw_commands.empty()) {
-        command.bindPipeline(vk::PipelineBindPoint::eGraphics, context.pipeline);
+	        const auto [width, height] = config.swap_chain_data.extent;
 
-        const auto& shader = shader_loader::shader("ui_2d_shader");
+	        const auto projection = orthographic(
+	            meters(0.0f),
+	            meters(width),
+	            meters(0.0f),
+	            meters(height),
+	            meters(-1.0f),
+	            meters(1.0f)
+	        );
 
-        for (auto& [position, size, color, texture, uv_rect] : g_quad_draw_commands) {
-            std::unordered_map<std::string, std::span<const std::byte>> push_constants = {
-                { "projection", std::as_bytes(std::span(&projection, 1)) },
-                { "position", std::as_bytes(std::span(&position, 1)) },
-                { "size", std::as_bytes(std::span(&size, 1)) },
-                { "color", std::as_bytes(std::span(&color, 1)) },
-                { "uv_rect", std::as_bytes(std::span(&uv_rect, 1)) }
-            };
+	        command.bindVertexBuffers(
+	            0,
+	            { context.vertex_buffer.buffer },
+	            { 0 }
+	        );
 
-            shader.push(
-                command,
-                context.pipeline_layout,
-                "push_constants",
-                push_constants,
-                vk::ShaderStageFlagBits::eVertex
-            );
+	        command.bindIndexBuffer(
+	            context.index_buffer.buffer,
+	            0,
+	            vk::IndexType::eUint32
+	        );
 
-            shader.push(
-                command,
-                context.pipeline_layout,
-                "ui_texture",
-                texture->get_descriptor_info()
-            );
+	        if (!g_quad_draw_commands.empty()) {
+	            command.bindPipeline(vk::PipelineBindPoint::eGraphics, context.pipeline);
 
-            command.drawIndexed(6, 1, 0, 0, 0);
-        }
-    }
+	            const auto& shader = shader_loader::shader("ui_2d_shader");
 
-    if (!g_text_draw_commands.empty()) {
-        command.bindPipeline(vk::PipelineBindPoint::eGraphics, context.msdf_pipeline);
-        const auto& shader = shader_loader::shader("msdf_shader");
+	            for (auto& [position, size, color, texture, uv_rect] : g_quad_draw_commands) {
+	                std::unordered_map<std::string, std::span<const std::byte>> push_constants = {
+	                    { "projection", std::as_bytes(std::span(&projection, 1)) },
+	                    { "position", std::as_bytes(std::span(&position, 1)) },
+	                    { "size", std::as_bytes(std::span(&size, 1)) },
+	                    { "color", std::as_bytes(std::span(&color, 1)) },
+	                    { "uv_rect", std::as_bytes(std::span(&uv_rect, 1)) }
+	                };
 
-        for (const auto& [font, text, position, scale, color] : g_text_draw_commands) {
-            if (!font || text.empty()) continue;
+	                shader.push(
+	                    command,
+	                    context.pipeline_layout,
+	                    "push_constants",
+	                    push_constants,
+	                    vk::ShaderStageFlagBits::eVertex
+	                );
 
-            shader.push(
-                command,
-                context.msdf_pipeline_layout,
-                "msdf_texture",
-                font->texture().get_descriptor_info()
-            );
+	                shader.push(
+	                    command,
+	                    context.pipeline_layout,
+	                    "ui_texture",
+	                    texture->get_descriptor_info()
+	                );
 
-            const auto text_height = font->line_height(scale);
-            const vec2<length> baseline_start_pos = {
-	            position.x,
-	            position.y - meters(text_height)
-            };
+	                command.drawIndexed(6, 1, 0, 0, 0);
+	            }
+	        }
 
-            const auto glyphs = font->text_layout(text, baseline_start_pos.as<units::meters>(), scale);
+	        if (!g_text_draw_commands.empty()) {
+	            command.bindPipeline(vk::PipelineBindPoint::eGraphics, context.msdf_pipeline);
+	            const auto& shader = shader_loader::shader("msdf_shader");
 
-            for (const auto& [position, size, uv] : glyphs) {
-                const vec2<length> adjusted_pos = { position.x, position.y + size.y };
+	            for (const auto& [font, text, position, scale, color] : g_text_draw_commands) {
+	                if (!font || text.empty()) continue;
 
-                std::unordered_map<std::string, std::span<const std::byte>> push_constants = {
-                    { "projection", std::as_bytes(std::span(&projection, 1)) },
-                    { "position",   std::as_bytes(std::span(&adjusted_pos, 1)) },
-                    { "size",       std::as_bytes(std::span(&size, 1)) },
-                    { "color",      std::as_bytes(std::span(&color, 1)) },
-                    { "uv_rect",    std::as_bytes(std::span(&uv, 1)) }
-                };
+	                shader.push(
+	                    command,
+	                    context.msdf_pipeline_layout,
+	                    "msdf_texture",
+	                    font->texture().get_descriptor_info()
+	                );
 
-                shader.push(
-                    command,
-                    context.msdf_pipeline_layout,
-                    "pc",
-                    push_constants,
-                    vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
-                );
+	                const auto text_height = font->line_height(scale);
+	                const vec2<length> baseline_start_pos = {
+	                    position.x,
+	                    position.y - meters(text_height)
+	                };
 
-                command.drawIndexed(6, 1, 0, 0, 0);
-            }
-        }
-    }
+	                const auto glyphs = font->text_layout(text, baseline_start_pos.as<units::meters>(), scale);
 
-    g_quad_draw_commands.clear();
-    g_text_draw_commands.clear();
+	                for (const auto& [position, size, uv] : glyphs) {
+	                    const vec2<length> adjusted_pos = { position.x, position.y + size.y };
 
-    debug::add_imgui_callback(
-        [] {
-            auto& timers = get_timers();
-            ImGui::Begin("Timers");
-            for (auto it = timers.begin(); it != timers.end();) {
-                const auto& timer = it->second;
-                debug::print_value(timer.name(), timer.elapsed().as<units::milliseconds>(), units::milliseconds::unit_name);
-                if (timer.completed()) {
-                    it = timers.erase(it); // Remove completed timers
-                }
-                else {
-                    ++it;
-                }
-            }
-            ImGui::End();
-        }
-    );
+	                    std::unordered_map<std::string, std::span<const std::byte>> push_constants = {
+	                        { "projection", std::as_bytes(std::span(&projection, 1)) },
+	                        { "position",   std::as_bytes(std::span(&adjusted_pos, 1)) },
+	                        { "size",       std::as_bytes(std::span(&size, 1)) },
+	                        { "color",      std::as_bytes(std::span(&color, 1)) },
+	                        { "uv_rect",    std::as_bytes(std::span(&uv, 1)) }
+	                    };
 
-    debug::update_imgui();
-    debug::render_imgui(config.frame_context.command_buffer);
+	                    shader.push(
+	                        command,
+	                        context.msdf_pipeline_layout,
+	                        "pc",
+	                        push_constants,
+	                        vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
+	                    );
+
+	                    command.drawIndexed(6, 1, 0, 0, 0);
+	                }
+	            }
+	        }
+
+	        g_quad_draw_commands.clear();
+	        g_text_draw_commands.clear();
+
+	        debug::add_imgui_callback(
+	            [] {
+	                auto& timers = get_timers();
+	                ImGui::Begin("Timers");
+	                for (auto it = timers.begin(); it != timers.end();) {
+	                    const auto& timer = it->second;
+	                    debug::print_value(timer.name(), timer.elapsed().as<units::milliseconds>(), units::milliseconds::unit_name);
+	                    if (timer.completed()) {
+	                        it = timers.erase(it); // Remove completed timers
+	                    }
+	                    else {
+	                        ++it;
+	                    }
+	                }
+	                ImGui::End();
+	            }
+	        );
+
+	        debug::update_imgui();
+	        debug::render_imgui(config.frame_context.command_buffer);
+        });
 }
 
 auto render_quad(const gse::vec2<gse::length>& position, const gse::vec2<gse::length>& size, const gse::unitless::vec4& color, gse::texture& texture, const gse::unitless::vec4& uv_rect = { 0.0f, 0.0f, 1.0f, 1.0f }) -> void {
