@@ -20,9 +20,17 @@ import gse.utility;
 import gse.physics.math;
 
 export namespace gse::renderer2d {
-    auto initialize(vulkan::config& config) -> void;
-    auto render(const vulkan::config& config) -> void;
-    auto shutdown(const vulkan::config::device_config& device_data) -> void;
+    struct context {
+        vk::raii::Pipeline pipeline = nullptr;
+        vk::raii::PipelineLayout pipeline_layout = nullptr;
+        vk::raii::Pipeline msdf_pipeline = nullptr;
+		vk::raii::PipelineLayout msdf_pipeline_layout = nullptr;
+        vulkan::persistent_allocator::buffer_resource vertex_buffer;
+		vulkan::persistent_allocator::buffer_resource index_buffer;
+    };
+
+    auto initialize(context& context, vulkan::config& config) -> void;
+    auto render(context& context, const vulkan::config& config) -> void;
 
     auto draw_quad(const vec2<length>& position, const vec2<length>& size, const unitless::vec4& color) -> void;
     auto draw_quad(const vec2<length>& position, const vec2<length>& size, texture& texture) -> void;
@@ -30,17 +38,6 @@ export namespace gse::renderer2d {
 
     auto draw_text(font& font, const std::string& text, const vec2<length>& position, float scale, const unitless::vec4& color) -> void;
 }
-
-vk::raii::Pipeline          g_2d_pipeline = nullptr;
-vk::raii::PipelineLayout    g_2d_pipeline_layout = nullptr;
-
-gse::vulkan::persistent_allocator::buffer_resource g_vertex_buffer;
-gse::vulkan::persistent_allocator::buffer_resource g_index_buffer;
-
-vk::raii::Pipeline          g_msdf_pipeline = nullptr;
-vk::raii::PipelineLayout    g_msdf_pipeline_layout = nullptr;
-
-gse::mat4 g_projection;
 
 struct quad_command {
     gse::vec2<gse::length> position;
@@ -61,7 +58,7 @@ struct text_command {
 std::vector<quad_command> g_quad_draw_commands;
 std::vector<text_command> g_text_draw_commands;
 
-auto gse::renderer2d::initialize(vulkan::config& config) -> void {
+auto gse::renderer2d::initialize(context& context, vulkan::config& config) -> void {
     constexpr vk::PipelineInputAssemblyStateCreateInfo input_assembly{
         .topology = vk::PrimitiveTopology::eTriangleList
     };
@@ -138,7 +135,7 @@ auto gse::renderer2d::initialize(vulkan::config& config) -> void {
         .pushConstantRangeCount = 1,
         .pPushConstantRanges = &quad_pc_range
     };
-    g_2d_pipeline_layout = config.device_data.device.createPipelineLayout(quad_pipeline_layout_info);
+    context.pipeline_layout = config.device_data.device.createPipelineLayout(quad_pipeline_layout_info);
 
     const auto vertex_input_info = element_shader.vertex_input_state();
 
@@ -152,11 +149,11 @@ auto gse::renderer2d::initialize(vulkan::config& config) -> void {
         .pMultisampleState = &multisampling,
         .pDepthStencilState = &opaque_depth_stencil_state,
         .pColorBlendState = &color_blending,
-        .layout = *g_2d_pipeline_layout,
+        .layout = context.pipeline_layout,
         .renderPass = *config.swap_chain_data.render_pass,
         .subpass = 2
     };
-    g_pipeline = config.device_data.device.createGraphicsPipeline(nullptr, pipeline_info);
+    context.pipeline = config.device_data.device.createGraphicsPipeline(nullptr, pipeline_info);
 
     const auto& msdf_shader = shader_loader::shader("msdf_shader");
 
@@ -172,13 +169,13 @@ auto gse::renderer2d::initialize(vulkan::config& config) -> void {
         .pushConstantRangeCount = 1,
         .pPushConstantRanges = &msdf_pc_range
     };
-    g_msdf_pipeline_layout = config.device_data.device.createPipelineLayout(msdf_pipeline_layout_info);
+    context.msdf_pipeline_layout = config.device_data.device.createPipelineLayout(msdf_pipeline_layout_info);
 
     vk::GraphicsPipelineCreateInfo msdf_pipeline_info = pipeline_info;
     msdf_pipeline_info.pStages = msdf_shader.shader_stages().data();
-    msdf_pipeline_info.layout = *g_msdf_pipeline_layout;
+    msdf_pipeline_info.layout = context.msdf_pipeline_layout;
     msdf_pipeline_info.pDepthStencilState = &transparent_depth_stencil_state;
-    g_msdf_pipeline = config.device_data.device.createGraphicsPipeline(nullptr, msdf_pipeline_info);
+    context.msdf_pipeline = config.device_data.device.createGraphicsPipeline(nullptr, msdf_pipeline_info);
 
     struct vertex { raw2f pos; raw2f uv; };
 
@@ -190,13 +187,30 @@ auto gse::renderer2d::initialize(vulkan::config& config) -> void {
     };
     constexpr std::uint32_t indices[6] = { 0, 1, 2, 2, 3, 0 };
 
-    g_vertex_buffer = vulkan::persistent_allocator::create_buffer(config.device_data, { .size = sizeof(vertices), .usage = vk::BufferUsageFlagBits::eVertexBuffer }, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, vertices);
-    g_index_buffer = vulkan::persistent_allocator::create_buffer(config.device_data, { .size = sizeof(indices), .usage = vk::BufferUsageFlagBits::eIndexBuffer }, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, indices);
+    context.vertex_buffer = vulkan::persistent_allocator::create_buffer(
+        config.device_data, 
+        {
+        	.size = sizeof(vertices),
+        	.usage = vk::BufferUsageFlagBits::eVertexBuffer
+        }, 
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, 
+        vertices
+    );
+
+    context.index_buffer = vulkan::persistent_allocator::create_buffer(
+        config.device_data, 
+        {
+        	.size = sizeof(indices),
+        	.usage = vk::BufferUsageFlagBits::eIndexBuffer
+        }, 
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, 
+        indices
+    );
 
     debug::initialize_imgui(config);
 }
 
-auto gse::renderer2d::render(const vulkan::config& config) -> void {
+auto gse::renderer2d::render(context& context, const vulkan::config& config) -> void {
     if (g_quad_draw_commands.empty() && g_text_draw_commands.empty()) {
         debug::update_imgui();
         debug::render_imgui(config.frame_context.command_buffer);
@@ -217,18 +231,18 @@ auto gse::renderer2d::render(const vulkan::config& config) -> void {
 
     command.bindVertexBuffers(
         0,
-        { g_vertex_buffer.buffer },
+        { context.vertex_buffer.buffer },
         { 0 }
     );
 
     command.bindIndexBuffer(
-        g_index_buffer.buffer,
+        context.index_buffer.buffer,
         0,
         vk::IndexType::eUint32
     );
 
     if (!g_quad_draw_commands.empty()) {
-        command.bindPipeline(vk::PipelineBindPoint::eGraphics, *g_pipeline);
+        command.bindPipeline(vk::PipelineBindPoint::eGraphics, context.pipeline);
 
         const auto& shader = shader_loader::shader("ui_2d_shader");
 
@@ -243,7 +257,7 @@ auto gse::renderer2d::render(const vulkan::config& config) -> void {
 
             shader.push(
                 command,
-                g_2d_pipeline_layout,
+                context.pipeline_layout,
                 "push_constants",
                 push_constants,
                 vk::ShaderStageFlagBits::eVertex
@@ -251,7 +265,7 @@ auto gse::renderer2d::render(const vulkan::config& config) -> void {
 
             shader.push(
                 command,
-                g_2d_pipeline_layout,
+                context.pipeline_layout,
                 "ui_texture",
                 texture->get_descriptor_info()
             );
@@ -261,7 +275,7 @@ auto gse::renderer2d::render(const vulkan::config& config) -> void {
     }
 
     if (!g_text_draw_commands.empty()) {
-        command.bindPipeline(vk::PipelineBindPoint::eGraphics, *g_msdf_pipeline);
+        command.bindPipeline(vk::PipelineBindPoint::eGraphics, context.msdf_pipeline);
         const auto& shader = shader_loader::shader("msdf_shader");
 
         for (const auto& [font, text, position, scale, color] : g_text_draw_commands) {
@@ -269,7 +283,7 @@ auto gse::renderer2d::render(const vulkan::config& config) -> void {
 
             shader.push(
                 command,
-                g_msdf_pipeline_layout,
+                context.msdf_pipeline_layout,
                 "msdf_texture",
                 font->texture().get_descriptor_info()
             );
@@ -295,7 +309,7 @@ auto gse::renderer2d::render(const vulkan::config& config) -> void {
 
                 shader.push(
                     command,
-                    g_msdf_pipeline_layout,
+                    context.msdf_pipeline_layout,
                     "pc",
                     push_constants,
                     vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
@@ -309,30 +323,26 @@ auto gse::renderer2d::render(const vulkan::config& config) -> void {
     g_quad_draw_commands.clear();
     g_text_draw_commands.clear();
 
-
-    //debug::add_imgui_callback(
-    //    [] {
-    //        auto& timers = get_timers();
-    //        ImGui::Begin("Timers");
-    //        for (auto it = timers.begin(); it != timers.end();) {
-    //            const auto& timer = it->second;
-    //            debug::print_value(timer.name(), timer.elapsed().as<units::milliseconds>(), units::milliseconds::unit_name);
-    //            if (timer.completed()) {
-    //                it = timers.erase(it); // Remove completed timers
-    //            }
-    //            else {
-    //                ++it;
-    //            }
-    //        }
-    //        ImGui::End();
-    //    }
-    //);
+    debug::add_imgui_callback(
+        [] {
+            auto& timers = get_timers();
+            ImGui::Begin("Timers");
+            for (auto it = timers.begin(); it != timers.end();) {
+                const auto& timer = it->second;
+                debug::print_value(timer.name(), timer.elapsed().as<units::milliseconds>(), units::milliseconds::unit_name);
+                if (timer.completed()) {
+                    it = timers.erase(it); // Remove completed timers
+                }
+                else {
+                    ++it;
+                }
+            }
+            ImGui::End();
+        }
+    );
 
     debug::update_imgui();
     debug::render_imgui(config.frame_context.command_buffer);
-}
-
-auto gse::renderer2d::shutdown(const vulkan::config::device_config& device_data) -> void {
 }
 
 auto render_quad(const gse::vec2<gse::length>& position, const gse::vec2<gse::length>& size, const gse::unitless::vec4& color, gse::texture& texture, const gse::unitless::vec4& uv_rect = { 0.0f, 0.0f, 1.0f, 1.0f }) -> void {

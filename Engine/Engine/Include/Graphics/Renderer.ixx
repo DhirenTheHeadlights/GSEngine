@@ -27,13 +27,15 @@ namespace gse::renderer {
 }
 
 std::optional<gse::vulkan::config> g_config;
+gse::renderer3d::context g_renderer3d_context;
+gse::renderer2d::context g_renderer2d_context;
 
 auto gse::renderer::initialize() -> void {
 	g_config.emplace(platform::initialize());
 
 	shader_loader::load_shaders(g_config->device_data.device);
-	renderer3d::initialize(*g_config);
-	renderer2d::initialize(*g_config);
+	renderer3d::initialize(g_renderer3d_context, *g_config);
+	renderer2d::initialize(g_renderer2d_context, *g_config);
 	gui::initialize(*g_config);
 }
 
@@ -51,11 +53,11 @@ auto gse::renderer::update() -> void {
 
 auto gse::renderer::render(const std::function<void()>& in_frame, const std::span<render_component> components) -> void {
 	begin_frame();
-	renderer3d::render_geometry(*g_config, components);
+	render_geometry(g_renderer3d_context, *g_config, components);
 	g_config->frame_context.command_buffer.nextSubpass(vk::SubpassContents::eInline);
-	renderer3d::render_lighting(*g_config, components);
+	render_lighting(g_renderer3d_context, *g_config, components);
 	g_config->frame_context.command_buffer.nextSubpass(vk::SubpassContents::eInline);
-	renderer2d::render(*g_config);
+	renderer2d::render(g_renderer2d_context, *g_config);
 	gui::render();
 	in_frame();
 	end_frame();
@@ -69,8 +71,6 @@ auto gse::renderer::end_frame() -> void {
 
 auto gse::renderer::shutdown() -> void {
 	g_config->device_data.device.waitIdle();
-	renderer2d::shutdown(g_config->device_data);
-	renderer3d::shutdown(*g_config);
 	platform::shutdown(*g_config);
 	g_config.reset();
 }
