@@ -113,15 +113,15 @@ auto gse::renderer2d::initialize(vulkan::config& config) -> void {
         .pAttachments = &color_blend_attachment
     };
 
-    const vk::PipelineDepthStencilStateCreateInfo opaque_depth_stencil_state{
-        .depthTestEnable = vk::True,
-        .depthWriteEnable = vk::True,
+    constexpr vk::PipelineDepthStencilStateCreateInfo opaque_depth_stencil_state{
+        .depthTestEnable = vk::False,
+        .depthWriteEnable = vk::False,
         .depthCompareOp = vk::CompareOp::eLess,
         .stencilTestEnable = vk::False
     };
 
-    const vk::PipelineDepthStencilStateCreateInfo transparent_depth_stencil_state{
-        .depthTestEnable = vk::True,
+    constexpr vk::PipelineDepthStencilStateCreateInfo transparent_depth_stencil_state{
+        .depthTestEnable = vk::False,
         .depthWriteEnable = vk::False,
         .depthCompareOp = vk::CompareOp::eLess,
         .stencilTestEnable = vk::False
@@ -309,22 +309,26 @@ auto gse::renderer2d::render(const vulkan::config& config) -> void {
     g_quad_draw_commands.clear();
     g_text_draw_commands.clear();
 
+
+    //debug::add_imgui_callback(
+    //    [] {
+    //        auto& timers = get_timers();
+    //        ImGui::Begin("Timers");
+    //        for (auto it = timers.begin(); it != timers.end();) {
+    //            const auto& timer = it->second;
+    //            debug::print_value(timer.name(), timer.elapsed().as<units::milliseconds>(), units::milliseconds::unit_name);
+    //            if (timer.completed()) {
+    //                it = timers.erase(it); // Remove completed timers
+    //            }
+    //            else {
+    //                ++it;
+    //            }
+    //        }
+    //        ImGui::End();
+    //    }
+    //);
+
     debug::update_imgui();
-    auto& timers = get_timers();
-
-    ImGui::Begin("Timers");
-    for (auto it = timers.begin(); it != timers.end();) {
-        const auto& timer = it->second;
-        debug::print_value(timer.name(), timer.elapsed().as<units::milliseconds>(), units::milliseconds::unit_name);
-        if (timer.completed()) {
-            it = timers.erase(it); // Remove completed timers
-        }
-        else {
-            ++it;
-        }
-    }
-    ImGui::End();
-
     debug::render_imgui(config.frame_context.command_buffer);
 }
 
