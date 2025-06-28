@@ -1,9 +1,8 @@
 module;
 
 #include "imgui.h"
-#include "imguiThemes.h"
-#include "backends/imgui_impl_glfw.h"
-#include "backends/imgui_impl_vulkan.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_vulkan.h"
 
 export module gse.graphics:debug;
 
@@ -14,9 +13,9 @@ import gse.utility;
 import gse.platform;
 
 export namespace gse::debug {
-	auto initialize_imgui(const vulkan::config& config) -> void;
+    auto initialize_imgui(const vulkan::config& config) -> void;
     auto update_imgui() -> void;
-	auto render_imgui(const vk::CommandBuffer& command_buffer) -> void;
+    auto render_imgui(const vk::CommandBuffer& command_buffer) -> void;
     auto save_imgui_state() -> void;
 
     auto set_imgui_save_file_path(const std::filesystem::path& path) -> void;
@@ -61,7 +60,6 @@ auto gse::debug::set_imgui_save_file_path(const std::filesystem::path& path) -> 
 auto gse::debug::initialize_imgui(const vulkan::config& config) -> void {
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
-    imguiThemes::embraceTheDarkness();
 
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
@@ -71,28 +69,30 @@ auto gse::debug::initialize_imgui(const vulkan::config& config) -> void {
     io.ConfigViewportsNoTaskBarIcon = true;
 
     ImGui_ImplGlfw_InitForVulkan(window::get_window(), true);
+
+    const auto color_format = static_cast<VkFormat>(config.swap_chain_data.surface_format.format);
+
+    const VkPipelineRenderingCreateInfoKHR pipeline_rendering_create_info = {
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR,
+		.colorAttachmentCount = 1,
+		.pColorAttachmentFormats = &color_format,
+    };
+
     ImGui_ImplVulkan_InitInfo init_info = {};
     init_info.Instance = *config.instance_data.instance;
     init_info.PhysicalDevice = *config.device_data.physical_device;
-	init_info.Device = *config.device_data.device;
-	init_info.QueueFamily = vulkan::find_queue_families(config.device_data.physical_device, config.instance_data.surface).graphics_family.value();
-	init_info.Queue = *config.queue.graphics;
+    init_info.Device = *config.device_data.device;
+    init_info.QueueFamily = vulkan::find_queue_families(config.device_data.physical_device, config.instance_data.surface).graphics_family.value();
+    init_info.Queue = *config.queue.graphics;
     init_info.PipelineCache = VK_NULL_HANDLE;
-	init_info.DescriptorPool = *config.descriptor.pool;
-    init_info.Subpass = 2;
+    init_info.DescriptorPool = *config.descriptor.pool;
     init_info.MinImageCount = 2;
-    init_info.ImageCount = 3;
+	init_info.ImageCount = config.swap_chain_data.images.size();
     init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-    init_info.Subpass = 2;
-    ImGui_ImplVulkan_Init(&init_info, *config.swap_chain_data.render_pass);
+    init_info.UseDynamicRendering = true;
+    init_info.PipelineRenderingCreateInfo = pipeline_rendering_create_info;
 
-    const auto cmd = begin_single_line_commands(config);
-
-    ImGui_ImplVulkan_CreateFontsTexture(*cmd);
-
-    end_single_line_commands(cmd, config);
-
-    ImGui_ImplVulkan_DestroyFontUploadObjects();
+    ImGui_ImplVulkan_Init(&init_info);
 
     if (exists(g_imgui_save_file_path)) {
         ImGui::LoadIniSettingsFromDisk(g_imgui_save_file_path.string().c_str());
@@ -107,9 +107,9 @@ auto gse::debug::update_imgui() -> void {
     const ImGuiIO& io = ImGui::GetIO();
 
     if (io.ConfigFlags & ImGuiConfigFlags_DockingEnable) {
-    	const ImGuiViewport* viewport = ImGui::GetMainViewport();
-        ImGui::SetNextWindowPos(viewport->WorkPos);  
-        ImGui::SetNextWindowSize(viewport->WorkSize);          
+        const ImGuiViewport* viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(viewport->WorkPos);
+        ImGui::SetNextWindowSize(viewport->WorkSize);
         ImGui::SetNextWindowViewport(viewport->ID);
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
@@ -130,7 +130,7 @@ auto gse::debug::update_imgui() -> void {
         ImGui::Begin("MainDockSpaceHost", nullptr, host_window_flags);
 
         ImGui::PopStyleColor();
-        ImGui::PopStyleVar(3);  
+        ImGui::PopStyleVar(3);
 
         ImGuiID dockspace_id = ImGui::GetID("MyMainDockSpace");
         ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
@@ -174,7 +174,7 @@ auto gse::debug::render_imgui(const vk::CommandBuffer& command_buffer) -> void {
     if (const auto& io = ImGui::GetIO(); io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
         ImGui::UpdatePlatformWindows();
         ImGui::RenderPlatformWindowsDefault();
-	}
+    }
 }
 
 auto gse::debug::save_imgui_state() -> void {

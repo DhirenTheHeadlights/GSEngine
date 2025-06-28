@@ -99,12 +99,10 @@ export namespace gse::vulkan {
             vk::SurfaceFormatKHR surface_format;
             vk::PresentModeKHR present_mode;
             vk::Extent2D extent;
-            std::vector<vk::raii::Framebuffer> frame_buffers;
             std::vector<vk::Image> images;
             std::vector<vk::raii::ImageView> image_views;
             vk::Format format;
             swap_chain_details details;
-            vk::raii::RenderPass render_pass;
             persistent_allocator::image_resource position_image;
             persistent_allocator::image_resource normal_image;
             persistent_allocator::image_resource albedo_image;
@@ -115,12 +113,10 @@ export namespace gse::vulkan {
                 const vk::SurfaceFormatKHR surface_format,
                 const vk::PresentModeKHR present_mode,
                 const vk::Extent2D extent,
-                std::vector<vk::raii::Framebuffer>&& frame_buffers,
                 std::vector<vk::Image>&& images,
                 std::vector<vk::raii::ImageView>&& image_views,
                 const vk::Format format,
                 swap_chain_details&& details,
-                vk::raii::RenderPass&& render_pass,
                 persistent_allocator::image_resource&& position_image,
                 persistent_allocator::image_resource&& normal_image,
                 persistent_allocator::image_resource&& albedo_image,
@@ -130,12 +126,10 @@ export namespace gse::vulkan {
                 surface_format(surface_format),
                 present_mode(present_mode),
                 extent(extent),
-                frame_buffers(std::move(frame_buffers)),
                 images(std::move(images)),
                 image_views(std::move(image_views)),
                 format(format),
                 details(std::move(details)),
-                render_pass(std::move(render_pass)),
                 position_image(std::move(position_image)),
                 normal_image(std::move(normal_image)),
                 albedo_image(std::move(albedo_image)),
@@ -148,14 +142,11 @@ export namespace gse::vulkan {
         struct frame_context_config {
             std::uint32_t image_index;
             vk::CommandBuffer command_buffer;
-            vk::Framebuffer framebuffer;
             frame_context_config(
                 const std::uint32_t image_index,
-                const vk::CommandBuffer command_buffer,
-                const vk::Framebuffer framebuffer)
+                const vk::CommandBuffer command_buffer)
                 : image_index(image_index),
-                command_buffer(command_buffer),
-                framebuffer(framebuffer) {
+                command_buffer(command_buffer) {
             }
             frame_context_config(frame_context_config&&) = default;
             auto operator=(frame_context_config&&) -> frame_context_config& = default;
