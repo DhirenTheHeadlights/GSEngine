@@ -11,7 +11,7 @@ import :resources;
 export namespace gse::vulkan {
     struct config {
         struct instance_config {
-            vk::raii::Context  context;
+            vk::raii::Context context;
             vk::raii::Instance instance;
             vk::raii::SurfaceKHR surface;
             instance_config(vk::raii::Context&& context, vk::raii::Instance&& instance, vk::raii::SurfaceKHR&& surface)
@@ -86,11 +86,10 @@ export namespace gse::vulkan {
             swap_chain_details(
                 vk::SurfaceCapabilitiesKHR capabilities,
                 std::vector<vk::SurfaceFormatKHR>&& formats,
-                std::vector<vk::PresentModeKHR>&& present_modes)
-                : capabilities(std::move(capabilities)),
+                std::vector<vk::PresentModeKHR>&& present_modes
+            ) : capabilities(std::move(capabilities)),
                 formats(std::move(formats)),
-                present_modes(std::move(present_modes)) {
-            }
+                present_modes(std::move(present_modes)) {}
             swap_chain_details(swap_chain_details&&) = default;
             auto operator=(swap_chain_details&&) -> swap_chain_details& = default;
         };
