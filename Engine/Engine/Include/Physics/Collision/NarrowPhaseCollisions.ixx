@@ -295,7 +295,7 @@ auto gse::narrow_phase_collision::resolve_dynamic_collision(physics::motion_comp
     }
 
     object_collision_component.collision_information.collision_point = contact_point;
-	gse::debug_renderer::add_debug_point(contact_point);
+	gse::debug_renderer::add_debug_point(object_collision_component.parent_id, contact_point);
 	//std::cout << "contact point: " << contact_point.x.as_default_unit() << ", " << contact_point.y.as_default_unit() << ", " << contact_point.z.as_default_unit() << "\n";
 
 	const auto r_a = contact_point - object_motion_component->current_position;
@@ -347,14 +347,14 @@ auto gse::narrow_phase_collision::resolve_dynamic_collision(physics::motion_comp
         auto torque_impulse_a = gse::vec3<gse::torque>(cross(r_a.as<units::meters>(), collision_normal * j));
         object_motion_component->current_torque += torque_impulse_a;
         object_motion_component->current_velocity += vec3<velocity>(collision_normal * (j * inv_mass_a));
-
+        gse::debug_renderer::add_debug_vector(object_collision_component.parent_id, contact_point, torque_impulse_a);
 		std::cout << "applied torque impulse: " << torque_impulse_a.x.as_default_unit() << ", " << torque_impulse_a.y.as_default_unit() << ", " << torque_impulse_a.z.as_default_unit() << "\n";
 
         if (!other_motion_component->position_locked) {
             auto torque_impulse_b = gse::vec3<gse::torque>(cross(r_b.as<units::meters>(), collision_normal * j));
             other_motion_component->current_torque -= torque_impulse_b;
             other_motion_component->current_velocity -= vec3<velocity>(collision_normal * (j * inv_mass_b));
-
+            gse::debug_renderer::add_debug_vector(other_collision_component.parent_id, contact_point, torque_impulse_b);
         }
 
 
@@ -528,8 +528,9 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
         }
         object_motion_component->current_torque += torque_impulse;
         object_motion_component->current_velocity += vec3<velocity>(collision_normal * (j * inv_mass));
-    
-	std::cout << "applied torque impulse: " << torque_impulse.x.as_default_unit() << ", " << torque_impulse.y.as_default_unit() << ", " << torque_impulse.z.as_default_unit() << "\n";
+	    gse::debug_renderer::add_debug_vector(object_collision_component.parent_id, contact_point, torque_impulse);
+		std::cout << "applied torque impulse: " << torque_impulse.x.as_default_unit() << ", " << torque_impulse.y.as_default_unit() << ", " << torque_impulse.z.as_default_unit() << "\n";
+	    torque_impulse *= 1000.f;
     }
 
     //Damping to prevent infinite spin
@@ -538,7 +539,8 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
 
 
     object_collision_component.collision_information.collision_point = contact_point;
-    gse::debug_renderer::add_debug_point(contact_point);
+    gse::debug_renderer::add_debug_point(object_collision_component.parent_id, contact_point);
+    
 
 	//std::cout all the same diagnositcs as in the dynamic collision function
 	if (velocity_into_surface < 0.0f) {

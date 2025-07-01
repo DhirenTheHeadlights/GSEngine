@@ -40,6 +40,8 @@ auto gse::physics::apply_force(motion_component& component, const vec3<force>& f
 
 	component.current_acceleration += acceleration;
 
+	debug_renderer::add_debug_vector(component.parent_id, center_of_mass, force);
+
 }
 
 auto gse::physics::apply_impulse(motion_component& component, const vec3<force>& force, const time& duration) -> void {
