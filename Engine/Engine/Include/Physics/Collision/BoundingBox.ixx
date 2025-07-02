@@ -28,6 +28,7 @@ export namespace gse {
 		vec3<length> lower_bound;
 
 		auto set_position(const vec3<length>& center) -> void;
+		auto scale_size(float scalar) -> void;
 
 		auto get_center() const->vec3<length>;
 		auto get_size() const->vec3<length>;
@@ -49,8 +50,8 @@ export namespace gse {
 		std::array<unitless::vec3, 3> axes;
 
 		auto update_axes() -> void;
-		auto get_corners() const -> std::array<vec3<length>, 8>;
-		auto get_face_vertices(axis axis, bool positive) const -> std::array<vec3<length>, 4>;
+		auto corners() const -> std::array<vec3<length>, 8>;
+		auto face_vertices(axis axis, bool positive) const -> std::array<vec3<length>, 4>;
 	};
 }
 
@@ -102,6 +103,13 @@ auto gse::axis_aligned_bounding_box::set_position(const vec3<length>& center) ->
 	lower_bound = center - half_size;
 }
 
+auto gse::axis_aligned_bounding_box::scale_size(float scalar) -> void {
+	const vec3<length> center = get_center();
+	const vec3<length> size = get_size() * scalar;
+	upper_bound = center + size / 2.0f;
+	lower_bound = center - size / 2.0f;
+}
+
 auto gse::axis_aligned_bounding_box::get_center() const -> vec3<length> {
 	return (upper_bound + lower_bound) / 2.0f;
 }
@@ -121,7 +129,7 @@ auto gse::oriented_bounding_box::update_axes() -> void {
 	axes[2] = rotation_matrix[2];
 }
 
-auto gse::oriented_bounding_box::get_corners() const -> std::array<vec3<length>, 8> {
+auto gse::oriented_bounding_box::corners() const -> std::array<vec3<length>, 8> {
 	std::array<vec3<length>, 8> corners;
 
 	const auto half_size = size / 2.0f;
@@ -137,7 +145,7 @@ auto gse::oriented_bounding_box::get_corners() const -> std::array<vec3<length>,
 	return corners;
 }
 
-auto gse::oriented_bounding_box::get_face_vertices(axis axis, const bool positive) const -> std::array<vec3<length>, 4> {
+auto gse::oriented_bounding_box::face_vertices(axis axis, const bool positive) const -> std::array<vec3<length>, 4> {
 	const auto half_size = size / 2.0f;
 
 	const int i = static_cast<int>(axis);

@@ -4,6 +4,7 @@ module;
 #include "imgui.h"
 #include "iostream"
 #include "json.hpp"
+#include "GLFW/glfw3.h"
 
 export module gse.graphics.renderer3d;
 
@@ -802,6 +803,9 @@ auto gse::renderer3d::render() -> void {
 	}
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glfwSwapBuffers(window::get_window());
+
+	//glfwPollEvents();
 }
 
 auto gse::renderer3d::get_camera() -> camera& {

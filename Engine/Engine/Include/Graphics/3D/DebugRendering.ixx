@@ -36,9 +36,10 @@ struct debug_vector {
 std::unordered_map<std::uint32_t, debug_point> debug_points;
 
 std::unordered_map<std::uint32_t, debug_vector> debug_vectors;
+std::unordered_map<std::uint32_t, debug_vector> debug_torque_vectors;
 
 gse::time g_debug_point_lifetime = gse::seconds(2.0f);
-gse::time g_debug_vector_lifetime = gse::seconds(2.0f);
+gse::time g_debug_vector_lifetime = gse::seconds(0.2f);
 
 
 GLuint g_debug_point_vao = 0;
@@ -186,6 +187,25 @@ auto render_debug_vectors(const gse::mat4& view_matrix, const gse::mat4& project
 		glEnable(GL_DEPTH_TEST);
 		glBindVertexArray(0);
 	}
+	for (auto& [id, debug_torque_vec] : debug_torque_vectors) {
+		GLfloat verts[6] = {
+			debug_torque_vec.start.x.as_default_unit(), debug_torque_vec.start.y.as_default_unit(), debug_torque_vec.start.z.as_default_unit(),
+			debug_torque_vec.end.x.as_default_unit(),   debug_torque_vec.end.y.as_default_unit(),   debug_torque_vec.end.z.as_default_unit()
+		};
+		glBindVertexArray(g_debug_vector_vao);
+		glBindBuffer(GL_ARRAY_BUFFER, g_debug_vector_vbo);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
+		glDisable(GL_DEPTH_TEST);
+		const auto& vector_shader = texture_shaders["DebugPoint"];
+		vector_shader.use();
+		vector_shader.set_mat4("view", view_matrix);
+		vector_shader.set_mat4("model", gse::mat4(1.0f));
+		vector_shader.set_mat4("projection", projection_matrix);
+		vector_shader.set_vec3("color", gse::unitless::vec3({ 1.0f, 0.0f, 1.0f })); // purple for torque vectors
+		glDrawArrays(GL_LINES, 0, 2);
+		glEnable(GL_DEPTH_TEST);
+		glBindVertexArray(0);
+	}
 
 }
 
@@ -224,7 +244,7 @@ auto gse::debug_renderer::add_debug_vector(const std::uint32_t owner_id, const g
 	auto axis = gse::normalize(torque_vec);
 	auto scaled = axis * gse::meters(mag * torque_visual_scale);
 
-	debug_vectors[owner_id] = { start, start + scaled, gse::main_clock::get_current_time() };
+	debug_torque_vectors[owner_id] = { start, start + scaled, gse::main_clock::get_current_time() };
 }
 
 template <typename T>

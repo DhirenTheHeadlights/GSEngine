@@ -30,6 +30,9 @@ auto gse::broad_phase_collision::check_future_collision(const axis_aligned_bound
 	physics::motion_component temp_component = *dynamic_motion_component;
 	update_object(temp_component);													// Update the entity's position in the direction of its current_velocity
 	expanded_box.set_position(temp_component.current_position);						// Set the expanded box's position to the updated position
+	//inflate the box by sqrt(3) to account for furthest possible cube corner distance
+	expanded_box.scale_size(1.5f);										// Scale the box to account for the furthest possible distance in any direction
+
 	return check_collision(expanded_box, other_box);								// Check for collision with the new expanded box
 }
 

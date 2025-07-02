@@ -19,7 +19,7 @@ auto overlaps_on_axis(const gse::oriented_bounding_box& box1, const gse::oriente
     }
 
     const auto normalized_axis = gse::normalize(axis);
-    const auto corners1 = box1.get_corners();
+    const auto corners1 = box1.corners();
 
     auto project_point = [](const gse::vec3<gse::length>& point, const gse::vec3<gse::length>& projection_axis) -> gse::length {
         return gse::dot(point, projection_axis);
@@ -34,7 +34,7 @@ auto overlaps_on_axis(const gse::oriented_bounding_box& box1, const gse::oriente
         max1 = std::max(max1, projection);
     }
 
-    const auto corners2 = box2.get_corners();
+    const auto corners2 = box2.corners();
 
     gse::length min2 = project_point(corners2[0], normalized_axis);
     gse::length max2 = min2;
@@ -65,14 +65,14 @@ auto sat_collision(const gse::oriented_bounding_box& obb1, const gse::oriented_b
 {
 
 	//std::cout << "Entered sat_collision\n";
-	for (const auto& corner : obb1.get_corners()) {
+	for (const auto& corner : obb1.corners()) {
 		//std::cout << "OBB1 corner: " << corner.x.as_default_unit() << ", " << corner.y.as_default_unit() << ", " << corner.z.as_default_unit() << "\n";
 	}
     //print obb1 axes
 	for (const auto& axis : obb1.axes) {
 		//std::cout << "OBB1 axis: " << axis.x << ", " << axis.y << ", " << axis.z << "\n";
 	}
-	for (const auto& corner : obb2.get_corners()) {
+	for (const auto& corner : obb2.corners()) {
 		//std::cout << "OBB2 corner: " << corner.x.as_default_unit() << ", " << corner.y.as_default_unit() << ", " << corner.z.as_default_unit() << "\n";
 	}
 	//print obb2 axes
@@ -271,7 +271,7 @@ auto gse::narrow_phase_collision::resolve_dynamic_collision(physics::motion_comp
 
     // build the face polygon for clipping
     bool positive = (n[face_axis] >= 0.f);
-    auto face_verts = ref_obb->get_face_vertices(static_cast<gse::axis>(face_axis), positive);
+    auto face_verts = ref_obb->face_vertices(static_cast<gse::axis>(face_axis), positive);
 
     // final contact point
     gse::vec3<gse::length> contact_point;
@@ -364,8 +364,45 @@ auto gse::narrow_phase_collision::resolve_dynamic_collision(physics::motion_comp
 
 }
 
+auto adjust_orientations_together(gse::physics::motion_component* object_motion_component, gse::physics::collision_component& other_collision_component, float constant) -> void {
+    /*take object 1's quaternion orientation and halve the gap between it and object 2's quaternion orientation*/
+
+    const auto& q1 = object_motion_component->orientation;
+    auto q2 = other_collision_component.oriented_bounding_box.orientation;
+
+    // dot product
+    float dot = q1.x * q2.x + q1.y * q2.y + q1.z * q2.z + q1.s * q2.s;
+
+    // If dot < 0, negate q2
+    if (dot < 0.0f) {
+        q2 = -q2;
+        dot = -dot;
+    }
+
+    // Clamp dot
+    dot = std::clamp(dot, -1.0f, 1.0f);
+
+    // Compute angle
+    float theta_0 = std::acos(dot);
+    float theta = theta_0 * constant;
+
+    // Orthonormal basis
+    gse::quat q3 = q2 - q1 * dot;
+    q3 = gse::normalize(q3);
+
+    // Final slerp
+    gse::quat result = q1 * std::cos(theta) + q3 * std::sin(theta);
+
+    // Save back
+    object_motion_component->orientation = result;
+
+}
+
 auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_component* object_motion_component, physics::collision_component& object_collision_component, physics::collision_component& other_collision_component) -> void {
     sat_result sat_res;
+
+    
+
     //print both motion component orientations
 	/*std::cout << "Object OBB orientation: "
 		<< object_collision_component.oriented_bounding_box.axes[0].x << ", " << object_collision_component.oriented_bounding_box.axes[0].y << ", " << object_collision_component.oriented_bounding_box.axes[0].z << " | "
@@ -392,6 +429,8 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
 
     const auto  collision_normal = object_collision_component.collision_information.collision_normal;
     const float penetration_depth = object_collision_component.collision_information.penetration.as_default_unit();
+    //if (penetration_depth > 0.1f) {adjust_orientations_together(object_motion_component, other_collision_component, 0.01f);
+    //}
 
     const float velocity_into_surface = dot(object_motion_component->current_velocity.as<units::meters_per_second>(), collision_normal);
     const float acceleration_into_surface = dot(object_motion_component->current_acceleration.as<units::meters_per_second_squared>(), collision_normal);
@@ -418,7 +457,7 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
     }
 
     const auto contact_point = compute_contact_point(clip_polygon_against_plane(
-        object_collision_component.oriented_bounding_box.get_face_vertices(object_collision_component.collision_information.get_axis(), true),
+        object_collision_component.oriented_bounding_box.face_vertices(object_collision_component.collision_information.get_axis(), true),
         create_plane(object_motion_component->current_position, object_collision_component.collision_information.collision_normal)
     ));
 
@@ -452,7 +491,7 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
 
     //// build the face polygon for clipping
     //bool positive = (n[face_axis] >= 0.f);
-    //auto face_verts = object_collision_component.oriented_bounding_box.get_face_vertices(static_cast<gse::axis>(face_axis), positive);
+    //auto face_verts = object_collision_component.oriented_bounding_box.face_vertices(static_cast<gse::axis>(face_axis), positive);
 
     //// final contact point
     //gse::vec3<gse::length> contact_point;
@@ -526,11 +565,18 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
         if (std::abs(torque_impulse.x.as_default_unit()) < epsilon_torque) {
             torque_impulse.x = epsilon_torque * std::copysign(1.0f, torque_impulse.x.as_default_unit());
         }
+        torque_impulse *= 1.3f;
         object_motion_component->current_torque += torque_impulse;
         object_motion_component->current_velocity += vec3<velocity>(collision_normal * (j * inv_mass));
 	    gse::debug_renderer::add_debug_vector(object_collision_component.parent_id, contact_point, torque_impulse);
 		std::cout << "applied torque impulse: " << torque_impulse.x.as_default_unit() << ", " << torque_impulse.y.as_default_unit() << ", " << torque_impulse.z.as_default_unit() << "\n";
-	    torque_impulse *= 1000.f;
+
+        //slightly adjust object angular acceleration in the direction of the torque impulse to prevent sticking
+		//object_motion_component->angular_acceleration += (torque_impulse / object_motion_component->moment_of_inertia);
+		
+         
+
+
     }
 
     //Damping to prevent infinite spin
@@ -540,7 +586,6 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
 
     object_collision_component.collision_information.collision_point = contact_point;
     gse::debug_renderer::add_debug_point(object_collision_component.parent_id, contact_point);
-    
 
 	//std::cout all the same diagnositcs as in the dynamic collision function
 	if (velocity_into_surface < 0.0f) {

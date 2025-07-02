@@ -78,6 +78,10 @@ export namespace gse {
 
 	template <typename T> constexpr auto operator*=(quat_t<T>& lhs, const T& rhs) -> quat_t<T>&;
 	template <typename T> constexpr auto operator/=(quat_t<T>& lhs, const T& rhs) -> quat_t<T>&;
+
+	template <typename T> constexpr auto operator-(const quat_t<T>& v) -> quat_t<T>;
+
+
 }
 
 template <typename T>
@@ -168,4 +172,9 @@ template <typename T>
 constexpr auto gse::operator/=(quat_t<T>& lhs, const T& rhs) -> quat_t<T>& {
 	lhs = lhs / rhs;
 	return lhs;
+}
+
+template <typename T>
+constexpr auto gse::operator-(const quat_t<T>& v) -> quat_t<T> {
+	return quat_t<T>(-v.s, -v.x, -v.y, -v.z);
 }

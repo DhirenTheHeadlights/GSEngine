@@ -75,15 +75,15 @@ auto update_gravity(gse::physics::motion_component& component) -> void {
 	if (!component.affected_by_gravity) {
 		return;
 	}
-		
-	if (component.airborne) {
 		const auto gravity_force = g_gravity * component.mass;
 		apply_force(component, gravity_force, component.current_position);
+	if (component.airborne) {
+		
 	}
-	else {
-		component.current_acceleration.y = gse::max({ 0.f }, component.current_acceleration.y);
-		update_friction(component, get_surface_properties(gse::surfaces::surface_type::concrete));
-	}
+	//else {
+	//	component.current_acceleration.y = gse::max({ 0.f }, component.current_acceleration.y);
+	//	update_friction(component, get_surface_properties(gse::surfaces::surface_type::concrete));
+	//}
 }
 
 auto update_air_resistance(gse::physics::motion_component& component) -> void {
