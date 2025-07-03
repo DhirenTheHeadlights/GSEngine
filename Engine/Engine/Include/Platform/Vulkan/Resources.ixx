@@ -86,6 +86,8 @@ export namespace gse::vulkan::persistent_allocator {
 	struct image_resource {
 		vk::raii::Image image = nullptr;
 		vk::raii::ImageView view = nullptr;
+		vk::Format format = vk::Format::eUndefined;
+		vk::ImageLayout current_layout = vk::ImageLayout::eUndefined;
 		allocation allocation;
 	};
 

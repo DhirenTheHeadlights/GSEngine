@@ -9,7 +9,7 @@ export import gse.platform.vulkan;
 export namespace gse::platform {
 	auto initialize() -> vulkan::config;
 	auto update() -> void;
-	auto shutdown(const vulkan::config& config) -> void;
+	auto shutdown() -> void;
 }
 
 auto gse::platform::initialize() -> vulkan::config {
@@ -21,8 +21,7 @@ auto gse::platform::update() -> void {
 	input::update();
 }
 
-auto gse::platform::shutdown(const vulkan::config& config) -> void {
-	vulkan::persistent_allocator::clean_up(config.device_data.device);
-	vulkan::shutdown(config);
+auto gse::platform::shutdown() -> void {
+	vulkan::persistent_allocator::clean_up();
 	window::shutdown();
 }

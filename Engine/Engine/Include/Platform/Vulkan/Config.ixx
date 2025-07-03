@@ -103,7 +103,6 @@ export namespace gse::vulkan {
             std::vector<vk::raii::ImageView> image_views;
             vk::Format format;
             swap_chain_details details;
-            persistent_allocator::image_resource position_image;
             persistent_allocator::image_resource normal_image;
             persistent_allocator::image_resource albedo_image;
             persistent_allocator::image_resource depth_image;
@@ -117,7 +116,6 @@ export namespace gse::vulkan {
                 std::vector<vk::raii::ImageView>&& image_views,
                 const vk::Format format,
                 swap_chain_details&& details,
-                persistent_allocator::image_resource&& position_image,
                 persistent_allocator::image_resource&& normal_image,
                 persistent_allocator::image_resource&& albedo_image,
                 persistent_allocator::image_resource&& depth_image
@@ -130,7 +128,6 @@ export namespace gse::vulkan {
                 image_views(std::move(image_views)),
                 format(format),
                 details(std::move(details)),
-                position_image(std::move(position_image)),
                 normal_image(std::move(normal_image)),
                 albedo_image(std::move(albedo_image)),
                 depth_image(std::move(depth_image)) {
@@ -171,6 +168,9 @@ export namespace gse::vulkan {
             frame_context(std::move(frame_context)) {}
         config(config&&) = default;
         auto operator=(config&&) -> config& = default;
+        ~config() {
+            std::println("Destroying Config");
+        }
 
         std::uint32_t current_frame = 0;
     };

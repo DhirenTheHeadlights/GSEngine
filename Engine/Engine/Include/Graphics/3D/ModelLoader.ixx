@@ -12,7 +12,21 @@ import gse.physics.math;
 import gse.utility;
 import gse.platform;
 
+export template<>
+struct std::hash<gse::model_handle> {
+	auto operator()(const gse::model_handle& handle) const noexcept -> std::size_t {
+		return std::hash<gse::uuid>{}(handle.model_id().number());
+	}
+};
+
 export namespace gse::model_loader {
+	struct model_context {
+		std::unordered_map<model_handle, std::unique_ptr<model>> models;
+		std::unordered_map<model_handle, std::filesystem::path> loaded_model_paths;
+		std::vector<model_handle> models_to_initialize;
+	};
+
+	auto initialize(model_context& context) -> void;
 	auto load_obj_file(const std::filesystem::path& model_path, const std::string& model_name) -> model_handle;
 	auto add_model(const std::vector<mesh_data>& mesh_data, const std::string& model_name) -> model_handle;
 	auto model(const model_handle& handle) -> const model&;
@@ -21,22 +35,19 @@ export namespace gse::model_loader {
 	auto load_queued_models(const vulkan::config& config) -> void;
 }
 
-export template<>
-struct std::hash<gse::model_handle> {
-	auto operator()(const gse::model_handle& handle) const noexcept -> std::size_t {
-		return std::hash<gse::uuid>{}(handle.model_id().number());
-	}
-};
+namespace gse::model_loader {
+	model_context* g_model_context = nullptr;
+}
 
-std::unordered_map<gse::model_handle, std::unique_ptr<gse::model>> g_models;
-std::unordered_map<gse::model_handle, std::filesystem::path> g_loaded_model_paths;
-std::vector<gse::model_handle> g_models_to_initialize;
+auto gse::model_loader::initialize(model_context& context) -> void {
+	g_model_context = &context;
+}
 
 auto gse::model_loader::load_obj_file(const std::filesystem::path& model_path, const std::string& model_name) -> model_handle {
 	std::ifstream model_file(model_path);
 	assert(model_file.is_open(), "Failed to open model file.");
 
-	for (const auto& [handle, path] : g_loaded_model_paths) {
+	for (const auto& [handle, path] : g_model_context->loaded_model_paths) {
 		if (path == model_path) {
 			return handle;
 		}
@@ -208,15 +219,15 @@ auto gse::model_loader::load_obj_file(const std::filesystem::path& model_path, c
 	}
 
 	model_handle handle(*model_ptr);
-	g_models_to_initialize.push_back(handle);
-	g_loaded_model_paths.emplace(handle, model_path);
-	g_models.emplace(handle, std::move(model_ptr));
+	g_model_context->models_to_initialize.push_back(handle);
+	g_model_context->loaded_model_paths.emplace(handle, model_path);
+	g_model_context->models.emplace(handle, std::move(model_ptr));
 
 	return handle;
 }
 
 auto gse::model_loader::add_model(const std::vector<mesh_data>& mesh_data, const std::string& model_name) -> model_handle {
-	for (const auto& [handle, path] : g_loaded_model_paths) {
+	for (const auto& [handle, path] : g_model_context->loaded_model_paths) {
 		if (path == model_name) {
 			return handle;
 		}
@@ -229,33 +240,33 @@ auto gse::model_loader::add_model(const std::vector<mesh_data>& mesh_data, const
 	}
 
 	model_handle handle(*model_ptr);
-	g_models_to_initialize.push_back(handle);
-	g_loaded_model_paths.emplace(handle, model_name);
-	g_models.emplace(handle, std::move(model_ptr));
+	g_model_context->models_to_initialize.push_back(handle);
+	g_model_context->loaded_model_paths.emplace(handle, model_name);
+	g_model_context->models.emplace(handle, std::move(model_ptr));
 
 	return handle;
 }
 
 auto gse::model_loader::model(const model_handle& handle) -> const class model& {
-	const auto it = g_models.find(handle);
-	assert(it != g_models.end(), "Model not found.");
+	const auto it = g_model_context->models.find(handle);
+	assert(it != g_model_context->models.end(), "Model not found.");
 	return *it->second;
 }
 
 auto gse::model_loader::model(const id& id) -> const class model& {
-	const auto it = std::ranges::find_if(g_models, [&id](const auto& pair) {
+	const auto it = std::ranges::find_if(g_model_context->models, [&id](const auto& pair) {
 		return pair.first.model_id() == id;
 		});
 
-	assert(it != g_models.end(), "Model not found.");
+	assert(it != g_model_context->models.end(), "Model not found.");
 	return *it->second;
 }
 
 auto gse::model_loader::load_queued_models(const vulkan::config& config) -> void {
-	for (const auto& handle : g_models_to_initialize) {
-		if (auto it = g_models.find(handle); it != g_models.end()) {
+	for (const auto& handle : g_model_context->models_to_initialize) {
+		if (auto it = g_model_context->models.find(handle); it != g_model_context->models.end()) {
 			it->second->initialize(config);
 		}
 	}
-	g_models_to_initialize.clear();
+	g_model_context->models_to_initialize.clear();
 }

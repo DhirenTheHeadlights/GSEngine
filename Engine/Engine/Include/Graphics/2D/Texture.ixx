@@ -19,6 +19,9 @@ export namespace gse {
 		texture() : identifiable("Unnamed Texture") {}
 		texture(const std::filesystem::path& filepath) : identifiable(filepath.string()), m_image_data(image::load(filepath)) {}
         texture(const unitless::vec4& color, unitless::vec2u size = { 1, 1 });
+        ~texture() {
+            std::println("Destroying Texture: {}", m_image_data.path.string());
+        }
 
         auto load(const vulkan::config& config) -> void;
 		auto load_from_memory(
@@ -29,9 +32,9 @@ export namespace gse {
             profile texture_profile = profile::generic_repeat
         ) -> void;
 
-        auto get_descriptor_info() const -> vk::DescriptorImageInfo;
-        auto get_image_data() const -> const image::data& { return m_image_data; }
-		auto get_image_resource() const -> const vulkan::persistent_allocator::image_resource& { return m_texture_image; }
+        auto descriptor_info() const -> vk::DescriptorImageInfo;
+        auto image_data() const -> const image::data& { return m_image_data; }
+		auto image_resource() const -> const vulkan::persistent_allocator::image_resource& { return m_texture_image; }
     private:
 		vulkan::persistent_allocator::image_resource m_texture_image;
 		vk::raii::Sampler m_texture_sampler = nullptr;
@@ -268,8 +271,7 @@ auto gse::texture::load_from_memory(const vulkan::config& config, const std::vec
 
     vulkan::uploader::upload_image_2d(
         config,
-        *m_texture_image.image,
-        format,
+        m_texture_image,
         size.x,
         size.y,
         data.data(),
@@ -319,7 +321,7 @@ auto gse::texture::load_from_memory(const vulkan::config& config, const std::vec
     m_texture_sampler = config.device_data.device.createSampler(sampler_info);
 }
 
-auto gse::texture::get_descriptor_info() const -> vk::DescriptorImageInfo {
+auto gse::texture::descriptor_info() const -> vk::DescriptorImageInfo {
     return vk::DescriptorImageInfo{
         .sampler = *m_texture_sampler,
         .imageView = *m_texture_image.view,

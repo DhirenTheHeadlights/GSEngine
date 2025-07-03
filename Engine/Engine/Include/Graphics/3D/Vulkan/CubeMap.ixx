@@ -64,8 +64,7 @@ auto gse::cube_map::create(const vulkan::config& config, const std::array<std::f
 
     vulkan::uploader::upload_image_layers(
         config,
-        *m_image_resource.image,
-        vk::Format::eR8G8B8A8Srgb,
+        m_image_resource,
         faces[0].size.x,
         faces[0].size.y,
         reinterpret_cast<const std::vector<const void*>&>(faces),
@@ -91,7 +90,7 @@ auto gse::cube_map::create(const vulkan::config& config, const std::array<std::f
         .borderColor = vk::BorderColor::eIntOpaqueBlack,
         .unnormalizedCoordinates = vk::False
     };
-
+     
     m_sampler = config.device_data.device.createSampler(sampler_info);
     m_initialized = true;
 }
