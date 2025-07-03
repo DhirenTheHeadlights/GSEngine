@@ -225,10 +225,8 @@ auto gse::font::load(const std::filesystem::path& path, const vulkan::config& co
                 const float g = std::clamp(msdf_bitmap(x, y)[1], 0.0f, 1.0f);
                 const float b = std::clamp(msdf_bitmap(x, y)[2], 0.0f, 1.0f);
 
-                // Flip Y-axis if needed
                 const int atlas_x = glyph_index % atlas_cols * m_glyph_cell_size + x;
-                const int atlas_y = glyph_index / atlas_cols * m_glyph_cell_size
-                    + (msdf_bitmap.height() - 1 - y);
+                const int atlas_y = glyph_index / atlas_cols * m_glyph_cell_size + y;
                 const int idx = (atlas_y * atlas_width + atlas_x) * 3;
 
                 atlas_data[idx + 0] = static_cast<unsigned char>(r * 255.0f);
@@ -266,7 +264,7 @@ auto gse::font::load(const std::filesystem::path& path, const vulkan::config& co
             .width = width,
             .height = height,
             .x_offset = bearing_x,
-            .y_offset = bearing_y - height,
+            .y_offset = bearing_y,
             .x_advance = advance,
             .shape_w = static_cast<float>(shape_w),
             .shape_h = static_cast<float>(shape_h)
@@ -304,7 +302,10 @@ auto gse::font::text_layout(const std::string_view text, const unitless::vec2 st
     std::vector<positioned_glyph> positioned_glyphs;
     if (text.empty() || !m_face) return positioned_glyphs;
 
-    auto cursor = start;
+    auto baseline = start;
+    baseline.y -= m_ascender * scale;
+
+	auto cursor = baseline;
     std::uint32_t previous_glyph_index = 0;
 
     for (const char c : text) {
@@ -321,9 +322,9 @@ auto gse::font::text_layout(const std::string_view text, const unitless::vec2 st
             cursor.x += static_cast<float>(kerning_vector.x) / 64.0f * scale;
         }
 
-        const auto quad_pos = cursor + unitless::vec2{
-            current_glyph.bearing().x * scale,
-            current_glyph.bearing().y * scale
+        const auto quad_pos = unitless::vec2{
+		    cursor.x + current_glyph.bearing().x * scale,
+            cursor.y + current_glyph.bearing().y * scale
         };
         const auto quad_size = current_glyph.size() * scale;
 
@@ -347,10 +348,11 @@ auto gse::font::text_layout(const std::string_view text, const unitless::vec2 st
             static_cast<float>(glyph_pixel_height) / m_glyph_cell_size * full_cell_uv.w
         };
 
-        positioned_glyphs.emplace_back(positioned_glyph{
-            .position = quad_pos,
-            .size = quad_size,
-			.uv = corrected_uv
+        positioned_glyphs.emplace_back(
+            positioned_glyph{
+	            .position = quad_pos,
+	            .size = quad_size,
+				.uv = corrected_uv
             }
         );
 

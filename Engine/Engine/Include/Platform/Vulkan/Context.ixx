@@ -53,10 +53,6 @@ export namespace gse::vulkan {
 	auto render(
 		const vulkan::config& config, const vk::RenderingInfo& begin_info, const std::function<void()>& render
 	) -> void;
-
-    auto shutdown(
-        const config& config
-    ) -> void;
 }
 
 namespace gse::vulkan {
@@ -326,10 +322,6 @@ auto gse::vulkan::render(const config& config, const vk::RenderingInfo& begin_in
     config.frame_context.command_buffer.endRendering();
 }
 
-auto gse::vulkan::shutdown(const config& config) -> void {
-    config.device_data.device.waitIdle();
-}
-
 auto debug_callback(vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity, vk::DebugUtilsMessageTypeFlagsEXT message_type, const vk::DebugUtilsMessengerCallbackDataEXT* callback_data, void* user_data) -> vk::Bool32 {
     std::print("Validation layer: {}\n", callback_data->pMessage);
     return vk::False;
@@ -544,7 +536,7 @@ auto gse::vulkan::create_descriptor_pool(const config::device_config& device_dat
     };
 
     const vk::DescriptorPoolCreateInfo pool_info{
-        .flags = {},
+		.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
         .maxSets = max_sets,
         .poolSizeCount = static_cast<uint32_t>(pool_sizes.size()),
         .pPoolSizes = pool_sizes.data()
@@ -724,106 +716,69 @@ auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const config::
     auto images = swap_chain.getImages();
     auto format = surface_format.format;
 
-    vk::ImageViewCreateInfo position_iv_info{
-        .flags = {},
-        .image = nullptr,
-        .viewType = vk::ImageViewType::e2D,
-        .format = vk::Format::eR16G16B16A16Sfloat,
-        .components = {},
-        .subresourceRange = {
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1
-        }
-    };
-    auto position_image = persistent_allocator::create_image(
-        device_data, {
-            .flags = {},
-            .imageType = vk::ImageType::e2D,
-            .format = vk::Format::eR16G16B16A16Sfloat,
-            .extent = { extent.width, extent.height, 1 },
-            .mipLevels = 1,
-            .arrayLayers = 1,
-            .samples = vk::SampleCountFlagBits::e1,
-            .tiling = vk::ImageTiling::eOptimal,
-            .usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled
-        }, vk::MemoryPropertyFlagBits::eDeviceLocal, position_iv_info
-    );
-
-    vk::ImageViewCreateInfo normal_iv_info{
-        .flags = {},
-        .image = nullptr,
-        .viewType = vk::ImageViewType::e2D,
-        .format = vk::Format::eR16G16B16A16Sfloat,
-        .components = {},
-        .subresourceRange = {
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1
-        }
-    };
     auto normal_image = persistent_allocator::create_image(
-        device_data, {
+        device_data, 
+        {
             .flags = {},
             .imageType = vk::ImageType::e2D,
-            .format = vk::Format::eR16G16B16A16Sfloat,
+            .format = vk::Format::eR8G8Snorm,
             .extent = { extent.width, extent.height, 1 },
             .mipLevels = 1,
             .arrayLayers = 1,
             .samples = vk::SampleCountFlagBits::e1,
             .tiling = vk::ImageTiling::eOptimal,
             .usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled
-        }, vk::MemoryPropertyFlagBits::eDeviceLocal, normal_iv_info
+        }, 
+        vk::MemoryPropertyFlagBits::eDeviceLocal,
+		{
+            .flags = {},
+	        .image = nullptr,
+	        .viewType = vk::ImageViewType::e2D,
+	        .format = vk::Format::eR8G8Snorm,
+	        .components = {},
+	        .subresourceRange = {
+	            .aspectMask = vk::ImageAspectFlagBits::eColor,
+	            .baseMipLevel = 0,
+	            .levelCount = 1,
+	            .baseArrayLayer = 0,
+	            .layerCount = 1
+	        }
+		}
     );
 
-    vk::ImageViewCreateInfo albedo_iv_info{
-        .flags = {},
-        .image = nullptr,
-        .viewType = vk::ImageViewType::e2D,
-        .format = vk::Format::eR8G8B8A8Srgb,
-        .components = {},
-        .subresourceRange = {
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1
-        }
-    };
     auto albedo_image = persistent_allocator::create_image(
-        device_data, {
+        device_data, 
+        {
             .flags = {},
             .imageType = vk::ImageType::e2D,
-            .format = vk::Format::eR8G8B8A8Srgb,
+            .format = vk::Format::eB10G11R11UfloatPack32,
             .extent = { extent.width, extent.height, 1 },
             .mipLevels = 1,
             .arrayLayers = 1,
             .samples = vk::SampleCountFlagBits::e1,
             .tiling = vk::ImageTiling::eOptimal,
             .usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled
-        }, vk::MemoryPropertyFlagBits::eDeviceLocal, albedo_iv_info
+        }, 
+        vk::MemoryPropertyFlagBits::eDeviceLocal,
+		{
+            .flags = {},
+	        .image = nullptr,
+	        .viewType = vk::ImageViewType::e2D,
+	        .format = vk::Format::eB10G11R11UfloatPack32,
+	        .components = {},
+	        .subresourceRange = {
+	            .aspectMask = vk::ImageAspectFlagBits::eColor,
+	            .baseMipLevel = 0,
+	            .levelCount = 1,
+	            .baseArrayLayer = 0,
+	            .layerCount = 1
+	        }
+		}
     );
 
-    vk::ImageViewCreateInfo depth_iv_info{
-        .flags = {},
-        .image = nullptr,
-        .viewType = vk::ImageViewType::e2D,
-        .format = vk::Format::eD32Sfloat,
-        .components = {},
-        .subresourceRange = {
-            .aspectMask = vk::ImageAspectFlagBits::eDepth,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1
-        }
-    };
     auto depth_image = persistent_allocator::create_image(
-        device_data, {
+        device_data, 
+        {
             .flags = {},
             .imageType = vk::ImageType::e2D,
             .format = vk::Format::eD32Sfloat,
@@ -832,8 +787,23 @@ auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const config::
             .arrayLayers = 1,
             .samples = vk::SampleCountFlagBits::e1,
             .tiling = vk::ImageTiling::eOptimal,
-            .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment
-        }, vk::MemoryPropertyFlagBits::eDeviceLocal, depth_iv_info
+			.usage = vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled
+        }, 
+        vk::MemoryPropertyFlagBits::eDeviceLocal,
+		{
+            .flags = {},
+	        .image = nullptr,
+	        .viewType = vk::ImageViewType::e2D,
+	        .format = vk::Format::eD32Sfloat,
+	        .components = {},
+	        .subresourceRange = {
+	            .aspectMask = vk::ImageAspectFlagBits::eDepth,
+	            .baseMipLevel = 0,
+	            .levelCount = 1,
+	            .baseArrayLayer = 0,
+	            .layerCount = 1
+	        }
+		}
     );
 
     std::vector<vk::raii::ImageView> image_views;
@@ -859,6 +829,6 @@ auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const config::
     return config::swap_chain_config(
         std::move(swap_chain), surface_format, present_mode, extent,
         std::move(images), std::move(image_views), format, std::move(details),
-        std::move(position_image), std::move(normal_image), std::move(albedo_image), std::move(depth_image)
+        std::move(normal_image), std::move(albedo_image), std::move(depth_image)
     );
 }

@@ -24,19 +24,27 @@ export namespace gse::renderer {
 namespace gse::renderer {
 	auto begin_frame() -> void;
 	auto end_frame() -> void;
-}
 
-std::optional<gse::vulkan::config> g_config;
-gse::renderer3d::context g_renderer3d_context;
-gse::renderer2d::context g_renderer2d_context;
+	std::optional<vulkan::config> g_config;
+	renderer3d::context g_renderer3d_context;
+	renderer2d::context g_renderer2d_context;
+	std::optional<font> g_gui_font;
+	shader_loader::shader_context g_shader_context;
+	model_loader::model_context g_model_loader_context;
+	std::optional<texture_loader::texture_loader_context> g_texture_loader_context;
+}
 
 auto gse::renderer::initialize() -> void {
 	g_config.emplace(platform::initialize());
+	g_texture_loader_context.emplace();
+	g_gui_font.emplace();
 
-	shader_loader::load_shaders(g_config->device_data.device);
+	model_loader::initialize(g_model_loader_context);
+	load_shaders(g_shader_context, g_config->device_data.device);
 	renderer3d::initialize(g_renderer3d_context, *g_config);
 	renderer2d::initialize(g_renderer2d_context, *g_config);
-	gui::initialize(*g_config);
+	gui::initialize(&*g_gui_font, *g_config);
+	texture_loader::initialize(*g_texture_loader_context, *g_config);
 }
 
 auto gse::renderer::begin_frame() -> void {
@@ -52,11 +60,12 @@ auto gse::renderer::update() -> void {
 }
 
 auto gse::renderer::render(const std::function<void()>& in_frame, const std::span<render_component> components) -> void {
+	gui::render();
+
 	begin_frame();
 	render_geometry(g_renderer3d_context, *g_config, components);
 	render_lighting(g_renderer3d_context, *g_config, components);
-	//renderer2d::render(g_renderer2d_context, *g_config);
-	gui::render();
+	renderer2d::render(g_renderer2d_context, *g_config);
 	in_frame();
 	end_frame();
 }
@@ -69,6 +78,13 @@ auto gse::renderer::end_frame() -> void {
 
 auto gse::renderer::shutdown() -> void {
 	g_config->device_data.device.waitIdle();
-	platform::shutdown(*g_config);
+	gui::shutdown();
+	g_texture_loader_context.reset();
+	g_gui_font.reset();
+	g_model_loader_context = {};
+	g_shader_context = {};
+	g_renderer2d_context = {};
+	g_renderer3d_context = {};
 	g_config.reset();
+	platform::shutdown();
 }

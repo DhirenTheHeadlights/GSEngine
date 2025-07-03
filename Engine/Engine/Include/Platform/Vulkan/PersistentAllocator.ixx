@@ -24,11 +24,11 @@ export namespace gse::vulkan::persistent_allocator {
 	auto create_image(
 		const config::device_config& config, 
 		const vk::ImageCreateInfo& info, 
-		vk::MemoryPropertyFlags properties = vk::MemoryPropertyFlagBits::eDeviceLocal, 
-		vk::ImageViewCreateInfo view_info = {}, const void* data = nullptr
+		vk::MemoryPropertyFlags properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
+		const vk::ImageViewCreateInfo& view_info = {}, const void* data = nullptr
 	) -> image_resource;
 
-	auto clean_up(vk::Device device) -> void;
+	auto clean_up() -> void;
 }
 
 namespace gse::vulkan::persistent_allocator {
@@ -186,7 +186,7 @@ auto gse::vulkan::persistent_allocator::create_buffer(const config::device_confi
 	return { std::move(buffer), std::move(alloc) };
 }
 
-auto gse::vulkan::persistent_allocator::create_image(const config::device_config& config, const vk::ImageCreateInfo& info, const vk::MemoryPropertyFlags properties, vk::ImageViewCreateInfo view_info, const void* data) -> image_resource {
+auto gse::vulkan::persistent_allocator::create_image(const config::device_config& config, const vk::ImageCreateInfo& info, const vk::MemoryPropertyFlags properties, const vk::ImageViewCreateInfo& view_info, const void* data) -> image_resource {
 	vk::raii::Image image = config.device.createImage(info);
 	const auto requirement_info = vk::ImageMemoryRequirementsInfo2{ .image = image };
 	const auto requirements = config.device.getImageMemoryRequirements2(requirement_info).memoryRequirements;
@@ -225,7 +225,7 @@ auto gse::vulkan::persistent_allocator::create_image(const config::device_config
 			});
 	}
 
-	return { std::move(image), std::move(view), std::move(alloc) };
+	return { std::move(image), std::move(view), info.format, info.initialLayout, std::move(alloc) };
 }
 
 auto gse::vulkan::persistent_allocator::free(allocation& alloc) -> void {
@@ -258,10 +258,11 @@ auto gse::vulkan::persistent_allocator::free(allocation& alloc) -> void {
 	}
 }
 
-auto gse::vulkan::persistent_allocator::clean_up(const vk::Device device) -> void {
+auto gse::vulkan::persistent_allocator::clean_up() -> void {
 	for (auto& [memory_type_index, blocks] : g_persistent_memory_pools | std::views::values) {
 		for (auto& block : blocks) {
 			if (block.mapped) {
+				block.memory.unmapMemory();
 				block.mapped = nullptr;
 			}
 		}

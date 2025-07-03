@@ -128,19 +128,17 @@ struct scene3_hook final : gse::hook<gse::scene> {
 		gse::vec3<gse::length> position;
 
 		auto update() -> void override {
-			//gse::registry::get_component<gse::physics::motion_component>(this->owner_id).current_position = position;
+			gse::registry::component<gse::physics::motion_component>(this->owner_id).current_position = position;
 		}
 	};
 
 	using hook::hook;
 	auto initialize() -> void override {
-		const auto player_id = game::create_player();
-		gse::registry::add_entity_hook(player_id, std::make_unique<positioned_object_hook>(gse::vec::meters(0.f, 0.f, 15.f)));
-		m_owner->add_entity(player_id, "Player");
 		const auto box_id = gse::create_box(gse::vec::meters(0.f, 0.f, 0.f), gse::vec::meters(10.f, 10.f, 10.f));
 		gse::registry::add_entity_hook(box_id, std::make_unique<positioned_object_hook>(gse::vec::meters(0.f, 0.f, 0.f)));
 		m_owner->add_entity(box_id, "Box");
-		game::arena::create(m_owner);
+		const auto free_camera_id = gse::create_free_camera(gse::vec::meters(0.f, 0.f, 5.f));
+		m_owner->add_entity(free_camera_id, "Free Camera");
 	}
 };
 
@@ -189,6 +187,10 @@ auto game::update() -> bool {
 auto game::render() -> bool {
 	gse::gui::create_menu("Test", { 100.f, 100.f }, { 200.f, 200.f }, [] {
 		gse::gui::text("Hello, world!");
+		gse::gui::value("Test Value", 42);
+		gse::gui::value("Test Quantity", gse::meters(5.0f));
+		gse::gui::vec("Test Vec", gse::vec::meters(1.f, 2.f, 3.f));
+		gse::gui::vec("Test Vec2", gse::window::get_mouse_position_rel_bottom_left());
 		});
 	return true;
 }

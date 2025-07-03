@@ -64,7 +64,7 @@ gse::unitless::vec2i g_fbo_size = { 1, 1 };
 bool g_current_full_screen = false;
 bool g_full_screen = false;
 bool g_window_focused = true;
-bool g_mouse_visible = true;
+bool g_mouse_visible = false;
 int g_mouse_moved = 0;
 
 std::vector<std::shared_ptr<gse::window::rendering_interface>> g_rendering_interfaces;
@@ -152,6 +152,8 @@ auto gse::window::initialize() -> void {
 	glfwSetWindowSizeCallback(g_window, window_size_callback);
 	glfwSetCursorPosCallback(g_window, cursor_position_callback);
 	glfwSetCharCallback(g_window, character_callback);
+
+	glfwSetInputMode(g_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 }
 
 auto gse::window::begin_frame() -> void {
@@ -194,8 +196,14 @@ auto gse::window::update() -> void {
 		g_mouse_moved = 0;
 	}
 
+	static bool last_mouse_visible_state = g_mouse_visible;
+
 	if (g_mouse_visible) {
 		glfwSetInputMode(g_window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+		if (!last_mouse_visible_state) {
+			const auto window_size = get_window_size();
+			glfwSetCursorPos(g_window, static_cast<double>(window_size.x) / 2.0, static_cast<double>(window_size.y) / 2.0);
+		}
 	}
 	else {
 		glfwSetInputMode(g_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);

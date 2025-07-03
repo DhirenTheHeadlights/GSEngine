@@ -16,6 +16,9 @@ export namespace gse {
 		auto update_camera_vectors() -> void;
 
 		auto set_position(const vec3<length>& position) -> void { this->m_position = position; }
+		auto move(const vec3<length>& offset) -> void {
+			m_position += offset;
+		}
 
 		auto view() const -> mat4;
 		auto projection() const -> mat4;

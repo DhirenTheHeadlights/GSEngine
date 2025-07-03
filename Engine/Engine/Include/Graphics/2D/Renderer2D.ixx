@@ -32,11 +32,33 @@ export namespace gse::renderer2d {
     auto initialize(context& context, vulkan::config& config) -> void;
     auto render(context& context, const vulkan::config& config) -> void;
 
-    auto draw_quad(const vec2<length>& position, const vec2<length>& size, const unitless::vec4& color) -> void;
-    auto draw_quad(const vec2<length>& position, const vec2<length>& size, texture& texture) -> void;
-    auto draw_quad(const vec2<length>& position, const vec2<length>& size, texture& texture, const unitless::vec4& uv) -> void;
+    auto draw_quad(
+        const vec2<length>& position, 
+        const vec2<length>& size, const 
+        unitless::vec4& color
+    ) -> void;
 
-    auto draw_text(font& font, const std::string& text, const vec2<length>& position, float scale, const unitless::vec4& color) -> void;
+    auto draw_quad(
+        const vec2<length>& position, 
+        const vec2<length>& size, 
+        texture& texture
+    ) -> void;
+
+    auto draw_quad(
+        const vec2<length>& position, 
+        const vec2<length>& size, 
+        texture& texture, 
+        const unitless::vec4& uv
+    ) -> void;
+
+    auto draw_text(
+        font& font, 
+        const std::string& text, 
+        const vec2<length>& position, 
+        float scale, 
+        const unitless::vec4& color,
+        std::optional<length> max_width = std::nullopt
+    ) -> void;
 }
 
 struct quad_command {
@@ -53,6 +75,7 @@ struct text_command {
     gse::vec2<gse::length> position;
     float scale = 1.0f;
     gse::unitless::vec4 color = { 1.0f, 1.0f, 1.0f, 1.0f };
+	std::optional<gse::length> max_width = std::nullopt;
 };
 
 std::vector<quad_command> g_quad_draw_commands;
@@ -186,12 +209,13 @@ auto gse::renderer2d::initialize(context& context, vulkan::config& config) -> vo
     struct vertex { raw2f pos; raw2f uv; };
 
     constexpr vertex vertices[4] = {
-        {{0.0f,  0.0f}, {0.0f, 0.0f}}, // Top-left corner (pos & uv)
-        {{1.0f,  0.0f}, {1.0f, 0.0f}}, // Top-right corner (pos & uv)
-        {{1.0f, -1.0f}, {1.0f, 1.0f}}, // Bottom-right corner (pos & uv)
-        {{0.0f, -1.0f}, {0.0f, 1.0f}}  // Bottom-left corner (pos & uv)
+	    {{0.0f,  0.0f}, {0.0f, 0.0f}},
+	    {{1.0f,  0.0f}, {1.0f, 0.0f}},
+	    {{1.0f, -1.0f}, {1.0f, 1.0f}},
+	    {{0.0f, -1.0f}, {0.0f, 1.0f}}
     };
-    constexpr std::uint32_t indices[6] = { 0, 1, 2, 2, 3, 0 };
+    
+    constexpr std::uint32_t indices[6] = { 0, 2, 1, 0, 3, 2 };
 
     context.vertex_buffer = vulkan::persistent_allocator::create_buffer(
         config.device_data,
@@ -222,7 +246,7 @@ auto gse::renderer2d::render(context& context, const vulkan::config& config) -> 
     vk::RenderingAttachmentInfo color_attachment{
         .imageView = *config.swap_chain_data.image_views[config.frame_context.image_index],
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .loadOp = vk::AttachmentLoadOp::eClear,
+        .loadOp = vk::AttachmentLoadOp::eLoad,
         .storeOp = vk::AttachmentStoreOp::eStore,
         .clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = std::array{ 0.1f, 0.1f, 0.1f, 1.0f }}}
     };
@@ -235,6 +259,25 @@ auto gse::renderer2d::render(context& context, const vulkan::config& config) -> 
         .pDepthAttachment = nullptr
     };
 
+    if (window::is_mouse_visible()) {
+        constexpr auto size = unitless::vec2(20, 20);
+		const auto window_size = window::get_window_size();
+        auto position = window::get_mouse_position_rel_bottom_left();
+		position.x = std::clamp(position.x, 0.f, window_size.x - size.x);
+		position.y = std::clamp(position.y, 0.f, window_size.y - size.y);
+        constexpr auto color = unitless::vec4{ 1.0f, 1.0f, 1.0f, 1.0f };
+        const auto half_size = size / 2.f;
+        constexpr auto half_thickness = 5.f;
+
+        const vec2<length> horizontal_pos = { position.x - half_size.x, position.y - half_thickness };
+        const vec2<length> horizontal_size = { size.x, meters(10) };
+        draw_quad(horizontal_pos, horizontal_size, color);
+
+        const vec2<length> vertical_pos = { position.x - half_thickness, position.y - half_size.y };
+        const vec2<length> vertical_size = { meters(10), size.y };
+        draw_quad(vertical_pos, vertical_size, color);
+    }
+
     render(config, rendering_info, [&] {
 	        if (g_quad_draw_commands.empty() && g_text_draw_commands.empty()) {
 	            debug::update_imgui();
@@ -244,14 +287,14 @@ auto gse::renderer2d::render(context& context, const vulkan::config& config) -> 
 
 	        const auto [width, height] = config.swap_chain_data.extent;
 
-	        const auto projection = orthographic(
-	            meters(0.0f),
-	            meters(width),
-	            meters(0.0f),
-	            meters(height),
-	            meters(-1.0f),
-	            meters(1.0f)
-	        );
+            const auto projection = orthographic(
+                meters(0.0f),    
+                meters(width),   
+                meters(0.0),    
+                meters(height),
+                meters(-1.0f),
+                meters(1.0f)
+            );
 
 	        command.bindVertexBuffers(
 	            0,
@@ -291,7 +334,7 @@ auto gse::renderer2d::render(context& context, const vulkan::config& config) -> 
 	                    command,
 	                    context.pipeline_layout,
 	                    "ui_texture",
-	                    texture->get_descriptor_info()
+	                    texture->descriptor_info()
 	                );
 
 	                command.drawIndexed(6, 1, 0, 0, 0);
@@ -302,30 +345,24 @@ auto gse::renderer2d::render(context& context, const vulkan::config& config) -> 
 	            command.bindPipeline(vk::PipelineBindPoint::eGraphics, context.msdf_pipeline);
 	            const auto& shader = shader_loader::shader("msdf_shader");
 
-	            for (const auto& [font, text, position, scale, color] : g_text_draw_commands) {
+	            for (const auto& [font, text, position, scale, color, max_width] : g_text_draw_commands) {
 	                if (!font || text.empty()) continue;
 
 	                shader.push(
 	                    command,
 	                    context.msdf_pipeline_layout,
 	                    "msdf_texture",
-	                    font->texture().get_descriptor_info()
+	                    font->texture().descriptor_info()
 	                );
 
-	                const auto text_height = font->line_height(scale);
-	                const vec2<length> baseline_start_pos = {
-	                    position.x,
-	                    position.y - meters(text_height)
-	                };
+	                const auto glyphs = font->text_layout(text, position.as<units::meters>(), scale);
 
-	                const auto glyphs = font->text_layout(text, baseline_start_pos.as<units::meters>(), scale);
-
-	                for (const auto& [position, size, uv] : glyphs) {
-	                    const vec2<length> adjusted_pos = { position.x, position.y + size.y };
+	                for (const auto& [glyph_position, size, uv] : glyphs) {
+                        if (max_width && glyph_position.x > max_width) continue;
 
 	                    std::unordered_map<std::string, std::span<const std::byte>> push_constants = {
 	                        { "projection", std::as_bytes(std::span(&projection, 1)) },
-	                        { "position",   std::as_bytes(std::span(&adjusted_pos, 1)) },
+	                        { "position",   std::as_bytes(std::span(&glyph_position, 1)) },
 	                        { "size",       std::as_bytes(std::span(&size, 1)) },
 	                        { "color",      std::as_bytes(std::span(&color, 1)) },
 	                        { "uv_rect",    std::as_bytes(std::span(&uv, 1)) }
@@ -377,7 +414,7 @@ auto render_quad(const gse::vec2<gse::length>& position, const gse::vec2<gse::le
             .size = size,
             .color = color,
             .texture = &texture,
-            .uv_rect = {0.0f, 0.0f, 1.0f, 1.0f}
+            .uv_rect = { 0.0f, 0.0f, 1.0f, 1.0f }
         }
     );
 }
@@ -394,7 +431,7 @@ auto gse::renderer2d::draw_quad(const vec2<length>& position, const vec2<length>
     render_quad(position, size, {}, texture, uv);
 }
 
-auto gse::renderer2d::draw_text(font& font, const std::string& text, const vec2<length>& position, const float scale, const unitless::vec4& color) -> void {
+auto gse::renderer2d::draw_text(font& font, const std::string& text, const vec2<length>& position, const float scale, const unitless::vec4& color, const std::optional<length> max_width) -> void {
     if (text.empty()) return;
 
     g_text_draw_commands.emplace_back(
@@ -403,7 +440,8 @@ auto gse::renderer2d::draw_text(font& font, const std::string& text, const vec2<
             .text = text,
             .position = position,
             .scale = scale,
-            .color = color
+            .color = color,
+			.max_width = max_width
         }
     );
 }

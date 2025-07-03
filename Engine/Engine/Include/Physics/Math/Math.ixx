@@ -36,6 +36,9 @@ export namespace gse {
 	using raw4d = vec::storage<double, 4>;
 
 	template <typename T>
+	concept is_arithmetic = internal::is_arithmetic<T>;
+
+	template <typename T>
 	concept is_unit = internal::is_unit<T>;
 
 	template <typename T>

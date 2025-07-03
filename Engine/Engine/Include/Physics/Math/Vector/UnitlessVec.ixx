@@ -62,6 +62,20 @@ export namespace gse::unitless {
 	using vec4d = vec4_t<double>;
 }
 
+export template <gse::internal::is_arithmetic T, int N, typename CharT>
+struct std::formatter<gse::unitless::vec_t<T, N>, CharT> {
+	std::formatter<gse::vec::storage<T, N>, CharT> storage_formatter;
+
+	constexpr auto parse(std::format_parse_context& ctx) {
+		return storage_formatter.parse(ctx);
+	}
+
+	template <typename FormatContext>
+	auto format(const gse::unitless::vec_t<T, N>& v, FormatContext& ctx) const {
+		return storage_formatter.format(v.storage, ctx);
+	}
+};
+
 export namespace gse::unitless {
 	template <typename T, int N> constexpr auto operator+(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> vec_t<T, N>;
 	template <typename T, int N> constexpr auto operator-(const vec_t<T, N>& lhs, const vec_t<T, N>& rhs) -> vec_t<T, N>;

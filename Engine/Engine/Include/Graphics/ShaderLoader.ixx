@@ -22,16 +22,6 @@ export enum class descriptor_layout : std::uint8_t {
 	custom			= 99
 };
 
-export namespace gse::shader_loader {
-	auto load_shaders(const ::vk::raii::Device& device) -> void;
-	auto shader(const std::filesystem::path& vert_path, const std::filesystem::path& frag_path) -> const shader&;
-	auto shader(std::string_view name) -> const class shader&;
-}
-
-namespace gse::shader_loader {
-	auto compile_shaders() -> std::unordered_map<std::string, descriptor_layout>;
-}
-
 struct shader_info_hash {
     using is_transparent = void;
     auto operator()(const gse::shader::info& s) const -> size_t {
@@ -64,10 +54,22 @@ struct shader_info_equal {
     }
 };
 
-std::unordered_map<gse::shader::info, gse::shader, shader_info_hash, shader_info_equal> g_shaders;
-std::unordered_map<descriptor_layout, struct gse::shader::layout> g_layouts;
+export namespace gse::shader_loader {
+    struct shader_context {
+        std::unordered_map<shader::info, shader, shader_info_hash, shader_info_equal> shaders;
+        std::unordered_map<descriptor_layout, struct shader::layout> layouts;
+    };
 
-constexpr int max_lights = 10;
+	auto load_shaders(shader_context& context, const vk::raii::Device& device) -> void;
+	auto shader(const std::filesystem::path& vert_path, const std::filesystem::path& frag_path) -> const shader&;
+	auto shader(std::string_view name) -> const class shader&;
+}
+
+namespace gse::shader_loader {
+	auto compile_shaders() -> std::unordered_map<std::string, descriptor_layout>;
+
+    shader_context* g_shader_context;
+}
 
 constexpr auto vs = vk::ShaderStageFlagBits::eVertex;
 constexpr auto fs = vk::ShaderStageFlagBits::eFragment;
@@ -79,7 +81,7 @@ auto create_layout(const vk::Device device, const std::vector<vk::DescriptorSetL
         });
 }
 
-auto init_descriptor_layouts(const vk::raii::Device& device) -> void {
+auto init_descriptor_layouts(gse::shader_loader::shader_context& context, const vk::raii::Device& device) -> void {
     constexpr int max_lights = 10;
 
     auto create_layout = [&](
@@ -109,7 +111,7 @@ auto init_descriptor_layouts(const vk::raii::Device& device) -> void {
             };
         };
 
-    g_layouts.clear();
+    context.layouts.clear();
 
     struct gse::shader::layout std_3d;
 
@@ -123,27 +125,28 @@ auto init_descriptor_layouts(const vk::raii::Device& device) -> void {
         { 6, vk::DescriptorType::eCombinedImageSampler, 1, fs },
         });
 
-    g_layouts.emplace(descriptor_layout::standard_3d, std::move(std_3d));
+    context.layouts.emplace(descriptor_layout::standard_3d, std::move(std_3d));
 
     struct gse::shader::layout def_3d;
 
     create_layout(def_3d, gse::shader::set::binding_type::persistent, {
-        { 0, vk::DescriptorType::eCombinedImageSampler,      1, fs }, // g_position
+        { 0, vk::DescriptorType::eCombinedImageSampler,      1, fs }, // g_albedo
         { 1, vk::DescriptorType::eCombinedImageSampler,      1, fs }, // g_normal
-        { 2, vk::DescriptorType::eCombinedImageSampler,      1, fs }, // g_albedo_spec
+        { 2, vk::DescriptorType::eCombinedImageSampler,      1, fs }, // g_depth
         { 3, vk::DescriptorType::eCombinedImageSampler, max_lights, fs },
         { 4, vk::DescriptorType::eCombinedImageSampler, max_lights, fs },
-        { 5, vk::DescriptorType::eUniformBuffer,        1, fs }, // light_space_matrix
+        { 5, vk::DescriptorType::eUniformBuffer,        1, vs | fs }, // light_space_matrix
         { 6, vk::DescriptorType::eCombinedImageSampler, 1, fs }, // diffuse_texture
         { 7, vk::DescriptorType::eCombinedImageSampler, 1, fs }, // environment_map
         { 8, vk::DescriptorType::eStorageBuffer,        1, fs }, // light buffer
         });
 
-    g_layouts.emplace(descriptor_layout::deferred_3d, std::move(def_3d));
+    context.layouts.emplace(descriptor_layout::deferred_3d, std::move(def_3d));
 
     struct gse::shader::layout for_3d;
 
     create_layout(for_3d, gse::shader::set::binding_type::persistent, {
+		{ 0, vk::DescriptorType::eUniformBuffer, 1, vs | fs },
         { 4, vk::DescriptorType::eStorageBuffer, 1, fs }
         });
 
@@ -154,7 +157,7 @@ auto init_descriptor_layouts(const vk::raii::Device& device) -> void {
         { 3, vk::DescriptorType::eCombinedImageSampler, 1, fs },
         });
 
-    g_layouts.emplace(descriptor_layout::forward_3d, std::move(for_3d));
+    context.layouts.emplace(descriptor_layout::forward_3d, std::move(for_3d));
 
     struct gse::shader::layout for_2d;
 
@@ -164,7 +167,7 @@ auto init_descriptor_layouts(const vk::raii::Device& device) -> void {
         { 0, vk::DescriptorType::eCombinedImageSampler, 1, fs },
         });
 
-    g_layouts.emplace(descriptor_layout::forward_2d, std::move(for_2d));
+    context.layouts.emplace(descriptor_layout::forward_2d, std::move(for_2d));
 
     struct gse::shader::layout post_process;
 
@@ -173,16 +176,18 @@ auto init_descriptor_layouts(const vk::raii::Device& device) -> void {
         { 1, vk::DescriptorType::eCombinedImageSampler, 1, fs },
         });
 
-    g_layouts.emplace(descriptor_layout::post_process, std::move(post_process));
+    context.layouts.emplace(descriptor_layout::post_process, std::move(post_process));
 }
 
-auto gse::shader_loader::load_shaders(const vk::raii::Device& device) -> void {
-    init_descriptor_layouts(device);
+auto gse::shader_loader::load_shaders(shader_context& context, const vk::raii::Device& device) -> void {
+	g_shader_context = &context;
+
+    init_descriptor_layouts(context, device);
 
     const std::unordered_map<std::string, descriptor_layout> layouts = compile_shaders();
 
     const auto shader_path = config::shader_spirv_path;
-    std::unordered_map<std::string, gse::shader::info> shader_files;
+    std::unordered_map<std::string, shader::info> shader_files;
 
     assert(exists(shader_path) && is_directory(shader_path), "Shader directory does not exist");
 
@@ -210,9 +215,9 @@ auto gse::shader_loader::load_shaders(const vk::raii::Device& device) -> void {
         std::cout << "Loading shader: " << info.name << '\n';
 
         auto layout_type = layouts.at(info.name);
-        auto* layout = &g_layouts.at(layout_type);
+        auto* layout = &context.layouts.at(layout_type);
 
-        g_shaders.emplace(
+        context.shaders.emplace(
             std::piecewise_construct,
             std::forward_as_tuple(info),
             std::forward_as_tuple(
@@ -228,14 +233,14 @@ auto gse::shader_loader::load_shaders(const vk::raii::Device& device) -> void {
 }
 
 auto gse::shader_loader::shader(const std::filesystem::path& vert_path, const std::filesystem::path& frag_path) -> const class shader& {
-    const auto it = g_shaders.find(std::make_pair(vert_path, frag_path));
-    assert(it != g_shaders.end(), "Shader not found");
+    const auto it = g_shader_context->shaders.find(std::make_pair(vert_path, frag_path));
+    assert(it != g_shader_context->shaders.end(), "Shader not found");
     return it->second;
 }
 
 auto gse::shader_loader::shader(const std::string_view name) -> const class shader& {
-    const auto it = g_shaders.find(name);
-    assert(it != g_shaders.end(), "Shader not found");
+    const auto it = g_shader_context->shaders.find(name);
+    assert(it != g_shader_context->shaders.end(), "Shader not found");
     return it->second;
 }
 

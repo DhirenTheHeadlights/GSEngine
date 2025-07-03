@@ -23,16 +23,18 @@ export namespace gse::renderer3d {
 	struct context {
 		vk::raii::Pipeline pipeline = nullptr;
 		vk::raii::PipelineLayout pipeline_layout = nullptr;
+		vk::raii::DescriptorSet descriptor_set = nullptr;
 		vk::raii::Pipeline lighting_pipeline = nullptr;
 		vk::raii::PipelineLayout lighting_pipeline_layout = nullptr;
 		vk::raii::DescriptorSet lighting_descriptor_set = nullptr;
 		vk::raii::Sampler buffer_sampler = nullptr;
+		std::unordered_map<std::string, vulkan::persistent_allocator::buffer_resource> ubo_allocations;
 	};
 
 	auto initialize(context& context, vulkan::config& config) -> void;
 	auto initialize_objects(std::span<light_source_component> light_source_components) -> void;
-	auto render_geometry(const context& context, const vulkan::config& config, std::span<render_component> render_components) -> void;
-	auto render_lighting(const context& context, const vulkan::config& config, std::span<render_component> render_components) -> void;
+	auto render_geometry(const renderer3d::context& context, vulkan::config& config, std::span<render_component> render_components) -> void;
+	auto render_lighting(const renderer3d::context& context, const vulkan::config& config, std::span<render_component> render_components) -> void;
 
 	auto camera() -> camera&;
 }
@@ -45,35 +47,19 @@ auto gse::renderer3d::initialize(context& context, vulkan::config& config) -> vo
 	const auto cmd = begin_single_line_commands(config);
 
 	vulkan::uploader::transition_image_layout(
-		cmd, config.swap_chain_data.position_image.image,
-		vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
-		vk::ImageAspectFlagBits::eColor,
-		vk::PipelineStageFlagBits2::eTopOfPipe, {},
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite
+		cmd, config.swap_chain_data.albedo_image,
+		vk::ImageLayout::eColorAttachmentOptimal, vk::ImageAspectFlagBits::eColor,
+		vk::PipelineStageFlagBits2::eTopOfPipe,
+		{}, vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+		vk::AccessFlagBits2::eColorAttachmentWrite
 	);
 
 	vulkan::uploader::transition_image_layout(
-		cmd, config.swap_chain_data.normal_image.image,
-		vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
-		vk::ImageAspectFlagBits::eColor,
-		vk::PipelineStageFlagBits2::eTopOfPipe, {},
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite
-	);
-
-	vulkan::uploader::transition_image_layout(
-		cmd, config.swap_chain_data.albedo_image.image,
-		vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
-		vk::ImageAspectFlagBits::eColor,
-		vk::PipelineStageFlagBits2::eTopOfPipe, {},
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite
-	);
-
-	vulkan::uploader::transition_image_layout(
-		cmd, config.swap_chain_data.depth_image.image,
-		vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilAttachmentOptimal,
-		vk::ImageAspectFlagBits::eDepth,
-		vk::PipelineStageFlagBits2::eTopOfPipe, {}, // Source: Nothing has happened yet
-		vk::PipelineStageFlagBits2::eEarlyFragmentTests, vk::AccessFlagBits2::eDepthStencilAttachmentWrite // Destination: Will be written during depth testing
+		cmd, config.swap_chain_data.depth_image,
+		vk::ImageLayout::eDepthStencilAttachmentOptimal, vk::ImageAspectFlagBits::eDepth,
+		vk::PipelineStageFlagBits2::eTopOfPipe,
+		{}, vk::PipelineStageFlagBits2::eEarlyFragmentTests, 
+		vk::AccessFlagBits2::eDepthStencilAttachmentWrite
 	);
 
 	end_single_line_commands(cmd, config);
@@ -81,8 +67,48 @@ auto gse::renderer3d::initialize(context& context, vulkan::config& config) -> vo
 	const auto& geometry_shader = shader_loader::shader("geometry_pass");
 	auto descriptor_set_layouts = geometry_shader.layouts();
 
+	context.descriptor_set = geometry_shader.descriptor_set(
+		config.device_data.device, 
+		config.descriptor.pool, 
+		shader::set::binding_type::persistent
+	);
+
+	const auto camera_ubo = geometry_shader.uniform_block("camera_ubo");
+
+	vk::BufferCreateInfo camera_ubo_buffer_info{
+		.size = camera_ubo.size,
+		.usage = vk::BufferUsageFlagBits::eUniformBuffer,
+		.sharingMode = vk::SharingMode::eExclusive
+	};
+
+	auto camera_ubo_buffer = vulkan::persistent_allocator::create_buffer(
+		config.device_data,
+		camera_ubo_buffer_info,
+		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+	);
+
+	context.ubo_allocations["camera_ubo"] = std::move(camera_ubo_buffer);
+
+	std::unordered_map<std::string, vk::DescriptorBufferInfo> buffer_infos{
+		{
+			"camera_ubo",
+			{
+				.buffer = context.ubo_allocations["camera_ubo"].buffer,
+				.offset = 0,
+				.range = camera_ubo.size
+			}
+		}
+	};
+
+	std::unordered_map<std::string, vk::DescriptorImageInfo> image_infos = {};
+
+	config.device_data.device.updateDescriptorSets(
+		geometry_shader.descriptor_writes(context.descriptor_set, buffer_infos, image_infos),
+		nullptr
+	);
+
 	std::vector ranges = {
-		geometry_shader.push_constant_range("push_constants", vk::ShaderStageFlagBits::eVertex)
+		geometry_shader.push_constant_range("pc", vk::ShaderStageFlagBits::eVertex)
 	};
 
 	const vk::PipelineLayoutCreateInfo pipeline_layout_info{
@@ -116,12 +142,39 @@ auto gse::renderer3d::initialize(context& context, vulkan::config& config) -> vo
 
 	context.lighting_descriptor_set = lighting_shader.descriptor_set(config.device_data.device, config.descriptor.pool, shader::set::binding_type::persistent);
 
+	const auto cam_block = lighting_shader.uniform_block("cam");
+
+	vk::BufferCreateInfo cam_buffer_info{
+		.size = cam_block.size,
+		.usage = vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eStorageBuffer,
+		.sharingMode = vk::SharingMode::eExclusive
+	};
+
+	auto buffer = vulkan::persistent_allocator::create_buffer(
+		config.device_data,
+		cam_buffer_info,
+		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+	);
+
+	context.ubo_allocations["cam"] = std::move(buffer);
+
+	const std::unordered_map<std::string, vk::DescriptorBufferInfo> lighting_buffer_infos = {
+		{
+			"cam",
+			{
+				.buffer = context.ubo_allocations["cam"].buffer,
+				.offset = 0,
+				.range = cam_block.size
+			}
+		}
+	};
+
 	const std::unordered_map<std::string, vk::DescriptorImageInfo> lighting_image_infos = {
 		{
-			"g_position",
+			"g_albedo",
 			{
 				.sampler = *context.buffer_sampler,
-				.imageView = *config.swap_chain_data.position_image.view,
+				.imageView = *config.swap_chain_data.albedo_image.view,
 				.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
 			}
 		},
@@ -134,18 +187,18 @@ auto gse::renderer3d::initialize(context& context, vulkan::config& config) -> vo
 			}
 		},
 		{
-			"g_albedo_spec",
+			"g_depth",
 			{
 				.sampler = *context.buffer_sampler,
-				.imageView = *config.swap_chain_data.albedo_image.view,
-				.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+				.imageView = *config.swap_chain_data.depth_image.view,
+				.imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal
 			}
 		}
 	};
 
 	auto lighting_writes = lighting_shader.descriptor_writes(
 		context.lighting_descriptor_set,
-		{},
+		lighting_buffer_infos,
 		lighting_image_infos
 	);
 
@@ -197,7 +250,7 @@ auto gse::renderer3d::initialize(context& context, vulkan::config& config) -> vo
 		.rasterizerDiscardEnable = vk::False,
 		.polygonMode = vk::PolygonMode::eFill,
 		.cullMode = vk::CullModeFlagBits::eNone,
-		.frontFace = vk::FrontFace::eCounterClockwise,
+		.frontFace = vk::FrontFace::eClockwise,
 		.depthBiasEnable = vk::False,
 		.depthBiasConstantFactor = 0.0f,
 		.depthBiasClamp = 0.0f,
@@ -267,8 +320,8 @@ auto gse::renderer3d::initialize(context& context, vulkan::config& config) -> vo
 		.depthClampEnable = vk::False,
 		.rasterizerDiscardEnable = vk::False,
 		.polygonMode = vk::PolygonMode::eFill,
-		.cullMode = vk::CullModeFlagBits::eBack,
-		.frontFace = vk::FrontFace::eCounterClockwise,
+		.cullMode = vk::CullModeFlagBits::eNone,
+		.frontFace = vk::FrontFace::eClockwise,
 		.depthBiasEnable = vk::False,
 		.depthBiasConstantFactor = 2.0f,
 		.depthBiasClamp = 0.0f,
@@ -288,7 +341,12 @@ auto gse::renderer3d::initialize(context& context, vulkan::config& config) -> vo
 		.maxDepthBounds = 1.0f
 	};
 
-	std::array<vk::PipelineColorBlendAttachmentState, 3> color_blend_attachments;
+	const std::array g_buffer_color_formats = {
+		config.swap_chain_data.albedo_image.format,
+		config.swap_chain_data.normal_image.format,
+	};
+
+	std::array<vk::PipelineColorBlendAttachmentState, g_buffer_color_formats.size()> color_blend_attachments;
 	for (auto& attachment : color_blend_attachments) {
 		attachment = {
 			.blendEnable = vk::False,
@@ -315,12 +373,6 @@ auto gse::renderer3d::initialize(context& context, vulkan::config& config) -> vo
 	};
 
 	auto vertex_input_info = geometry_shader.vertex_input_state();
-
-	const std::array<vk::Format, 3> g_buffer_color_formats = {
-		vk::Format::eR16G16B16A16Sfloat,
-		vk::Format::eR16G16B16A16Sfloat,
-		vk::Format::eR8G8B8A8Srgb
-	};
 
 	const vk::PipelineRenderingCreateInfoKHR geometry_rendering_info = {
 		.colorAttachmentCount = static_cast<uint32_t>(g_buffer_color_formats.size()),
@@ -357,39 +409,44 @@ auto gse::renderer3d::initialize_objects(std::span<light_source_component> const
 	}
 }
 
-auto gse::renderer3d::render_geometry(const context& context, const vulkan::config& config, const std::span<render_component> render_components) -> void {
+auto gse::renderer3d::render_geometry(const context& context, vulkan::config& config, const std::span<render_component> render_components) -> void {
 	const auto command = config.frame_context.command_buffer;
 
-	vulkan::uploader::transition_image_layout(
-		command, config.swap_chain_data.position_image.image,
-		vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
-		vk::ImageAspectFlagBits::eColor,
-		vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderRead,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite
-	);
-	vulkan::uploader::transition_image_layout(
-		command, config.swap_chain_data.normal_image.image,
-		vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
-		vk::ImageAspectFlagBits::eColor,
-		vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderRead,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite
-	);
-	vulkan::uploader::transition_image_layout(
-		command, config.swap_chain_data.albedo_image.image,
-		vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
-		vk::ImageAspectFlagBits::eColor,
-		vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderRead,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::AccessFlagBits2::eColorAttachmentWrite
-	);
+	const vk::ImageMemoryBarrier2 barriers[] = {
+		{ // Albedo Image
+			.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
+			.srcAccessMask = {},
+			.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			.dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
+			.oldLayout = config.swap_chain_data.albedo_image.current_layout,
+			.newLayout = vk::ImageLayout::eColorAttachmentOptimal,
+			.image = config.swap_chain_data.albedo_image.image,
+			.subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 }
+		},
+		{ // Normal Image
+			.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
+			.srcAccessMask = {},
+			.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			.dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
+			.oldLayout = config.swap_chain_data.normal_image.current_layout,
+			.newLayout = vk::ImageLayout::eColorAttachmentOptimal,
+			.image = config.swap_chain_data.normal_image.image,
+			.subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 }
+		},
+		{ // Depth Image
+			.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
+			.srcAccessMask = {},
+			.dstStageMask = vk::PipelineStageFlagBits2::eEarlyFragmentTests,
+			.dstAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+			.oldLayout = config.swap_chain_data.depth_image.current_layout,
+			.newLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
+			.image = config.swap_chain_data.depth_image.image,
+			.subresourceRange = { vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1 }
+		}
+	};
+	command.pipelineBarrier2({ .imageMemoryBarrierCount = std::size(barriers), .pImageMemoryBarriers = barriers });
 
 	std::array color_attachments{
-		vk::RenderingAttachmentInfo{
-			.imageView = *config.swap_chain_data.position_image.view,
-			.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-			.loadOp = vk::AttachmentLoadOp::eClear,
-			.storeOp = vk::AttachmentStoreOp::eStore,
-			.clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = std::array{ 0.0f, 0.0f, 0.0f, 1.0f }}}
-		},
 		vk::RenderingAttachmentInfo{
 			.imageView = *config.swap_chain_data.normal_image.view,
 			.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
@@ -432,15 +489,23 @@ auto gse::renderer3d::render_geometry(const context& context, const vulkan::conf
 			}
 
 			auto& geometry_shader = shader_loader::shader("geometry_pass");
+
+			geometry_shader.set_uniform("camera_ubo.view", g_camera.view(), context.ubo_allocations.at("camera_ubo").allocation);
+			geometry_shader.set_uniform("camera_ubo.proj", g_camera.projection(), context.ubo_allocations.at("camera_ubo").allocation);
+
 			command.bindPipeline(vk::PipelineBindPoint::eGraphics, context.pipeline);
 
-			const auto view = g_camera.view();
-			const auto proj = g_camera.projection();
+			const vk::DescriptorSet descriptor_set[] = { context.descriptor_set };
 
-			std::unordered_map<std::string, std::span<const std::byte>> push_constants = {
-				{"view", std::as_bytes(std::span{ &view, 1 })},
-				{"proj", std::as_bytes(std::span{ &proj, 1 })}
-			};
+			command.bindDescriptorSets(
+				vk::PipelineBindPoint::eGraphics,
+				context.pipeline_layout,
+				0,
+				vk::ArrayProxy<const vk::DescriptorSet>(1, descriptor_set),
+				{}
+			);
+
+			std::unordered_map<std::string, std::span<const std::byte>> push_constants = {};
 
 			for (const auto& component : render_components) {
 				for (const auto& model_handle : component.models) {
@@ -450,7 +515,7 @@ auto gse::renderer3d::render_geometry(const context& context, const vulkan::conf
 						geometry_shader.push(
 							command,
 							context.pipeline_layout,
-							"push_constants",
+							"pc",
 							push_constants,
 							vk::ShaderStageFlagBits::eVertex
 						);
@@ -460,7 +525,7 @@ auto gse::renderer3d::render_geometry(const context& context, const vulkan::conf
 								command,
 								context.pipeline_layout,
 								"diffuse_sampler",
-								texture_loader::texture(entry.mesh->material->diffuse_texture).get_descriptor_info()
+								texture_loader::texture(entry.mesh->material->diffuse_texture).descriptor_info()
 							);
 
 							entry.mesh->bind(command);
@@ -473,33 +538,19 @@ auto gse::renderer3d::render_geometry(const context& context, const vulkan::conf
 	);
 
 	vulkan::uploader::transition_image_layout(
-		command, 
-		config.swap_chain_data.position_image.image,
-		vk::ImageLayout::eColorAttachmentOptimal, 
-		vk::ImageLayout::eShaderReadOnlyOptimal,
+		command,
+		config.swap_chain_data.albedo_image,
+		vk::ImageLayout::eShaderReadOnlyOptimal, 
 		vk::ImageAspectFlagBits::eColor,
 		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::AccessFlagBits2::eColorAttachmentWrite,
+		vk::AccessFlagBits2::eColorAttachmentWrite, 
 		vk::PipelineStageFlagBits2::eFragmentShader,
 		vk::AccessFlagBits2::eShaderRead
 	);
 
 	vulkan::uploader::transition_image_layout(
-		command, 
-		config.swap_chain_data.normal_image.image,
-		vk::ImageLayout::eColorAttachmentOptimal, 
-		vk::ImageLayout::eShaderReadOnlyOptimal,
-		vk::ImageAspectFlagBits::eColor,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput, 
-		vk::AccessFlagBits2::eColorAttachmentWrite,
-		vk::PipelineStageFlagBits2::eFragmentShader, 
-		vk::AccessFlagBits2::eShaderRead
-	);
-
-	vulkan::uploader::transition_image_layout(
-		command, 
-		config.swap_chain_data.albedo_image.image,
-		vk::ImageLayout::eColorAttachmentOptimal,
+		command,
+		config.swap_chain_data.normal_image,
 		vk::ImageLayout::eShaderReadOnlyOptimal,
 		vk::ImageAspectFlagBits::eColor,
 		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
@@ -512,6 +563,40 @@ auto gse::renderer3d::render_geometry(const context& context, const vulkan::conf
 auto gse::renderer3d::render_lighting(const context& context, const vulkan::config& config, std::span<render_component> render_components) -> void {
 	const auto command = config.frame_context.command_buffer;
 
+	const vk::ImageMemoryBarrier2 barriers[] = {
+		{ // Albedo Image
+			.srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			.srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
+			.dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader,
+			.dstAccessMask = vk::AccessFlagBits2::eShaderRead,
+			.oldLayout = vk::ImageLayout::eColorAttachmentOptimal,
+			.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+			.image = config.swap_chain_data.albedo_image.image,
+			.subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 }
+		},
+		{ // Normal Image
+			.srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+			.srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
+			.dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader,
+			.dstAccessMask = vk::AccessFlagBits2::eShaderRead,
+			.oldLayout = vk::ImageLayout::eColorAttachmentOptimal,
+			.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+			.image = config.swap_chain_data.normal_image.image,
+			.subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 }
+		},
+		{ // Depth Image
+			.srcStageMask = vk::PipelineStageFlagBits2::eLateFragmentTests,
+			.srcAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+			.dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader,
+			.dstAccessMask = vk::AccessFlagBits2::eShaderRead,
+			.oldLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
+			.newLayout = vk::ImageLayout::eDepthReadOnlyOptimal,
+			.image = config.swap_chain_data.depth_image.image,
+			.subresourceRange = { vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1 }
+		}
+	};
+	command.pipelineBarrier2({ .imageMemoryBarrierCount = std::size(barriers), .pImageMemoryBarriers = barriers });
+
 	vk::RenderingAttachmentInfo color_attachment{
 		.imageView = *config.swap_chain_data.image_views[config.frame_context.image_index],
 		.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
@@ -521,7 +606,7 @@ auto gse::renderer3d::render_lighting(const context& context, const vulkan::conf
 	};
 
 	const vk::RenderingInfo lighting_rendering_info{
-		.renderArea = {{0, 0}, config.swap_chain_data.extent},
+		.renderArea = {{ 0, 0 }, config.swap_chain_data.extent},
 		.layerCount = 1,
 		.colorAttachmentCount = 1,
 		.pColorAttachments = &color_attachment,
