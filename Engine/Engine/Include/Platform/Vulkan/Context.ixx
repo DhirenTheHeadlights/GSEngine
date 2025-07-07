@@ -20,7 +20,7 @@ std::uint32_t g_max_frames_in_flight = 2;
 export namespace gse::vulkan {
     auto initialize(
         GLFWwindow* window
-    ) -> config;
+    ) -> std::unique_ptr<config>;
 
     auto begin_frame(
         GLFWwindow* window,
@@ -38,16 +38,8 @@ export namespace gse::vulkan {
     ) -> queue_family;
 
     auto single_line_commands(
-	    const config& config, const std::function<void(const vk::raii::CommandBuffer&)>& commands
-    ) -> void;
-
-    auto begin_single_line_commands(
-        const config& config
-    ) -> vk::raii::CommandBuffer;
-
-    auto end_single_line_commands(
-        const vk::raii::CommandBuffer& command_buffer,
-        const config& config
+	    const config& config, 
+        const std::function<void(const vk::raii::CommandBuffer&)>& commands
     ) -> void;
 
 	auto render(
@@ -86,7 +78,7 @@ namespace gse::vulkan {
     ) -> config::swap_chain_config;
 }
 
-auto gse::vulkan::initialize(GLFWwindow* window) -> config {
+auto gse::vulkan::initialize(GLFWwindow* window) -> std::unique_ptr<config> {
     auto instance_data = create_instance_and_surface(window);
     auto [device_data, queue] = create_device_and_queues(instance_data);
     auto descriptor = create_descriptor_pool(device_data);
@@ -99,7 +91,7 @@ auto gse::vulkan::initialize(GLFWwindow* window) -> config {
         *command.buffers[0]
     );
 
-    return config(
+    return std::make_unique<config>(
         std::move(instance_data),
         std::move(device_data),
         std::move(queue),
@@ -280,40 +272,6 @@ auto gse::vulkan::end_frame(GLFWwindow* window, config& config) -> void {
     );
 
     config.current_frame = (config.current_frame + 1) % g_max_frames_in_flight;
-}
-
-auto gse::vulkan::begin_single_line_commands(const config& config) -> vk::raii::CommandBuffer {
-    const vk::CommandBufferAllocateInfo alloc_info{
-        .commandPool = *config.command.pool,
-        .level = vk::CommandBufferLevel::ePrimary,
-        .commandBufferCount = 1
-    };
-
-    auto buffers = config.device_data.device.allocateCommandBuffers(alloc_info);
-    vk::raii::CommandBuffer command_buffer = std::move(buffers[0]);
-
-    constexpr vk::CommandBufferBeginInfo begin_info{
-        .flags = {},
-        .pInheritanceInfo = nullptr
-    };
-    command_buffer.begin(begin_info);
-    return command_buffer;
-}
-
-auto gse::vulkan::end_single_line_commands(const vk::raii::CommandBuffer& command_buffer, const config& config) -> void {
-    command_buffer.end();
-    const vk::SubmitInfo submit_info{
-        .waitSemaphoreCount = 0,
-        .pWaitSemaphores = nullptr,
-        .pWaitDstStageMask = nullptr,
-        .commandBufferCount = 1,
-        .pCommandBuffers = &*command_buffer,
-        .signalSemaphoreCount = 0,
-        .pSignalSemaphores = nullptr
-    };
-
-    config.queue.graphics.submit(submit_info, nullptr);
-    config.queue.graphics.waitIdle();
 }
 
 auto gse::vulkan::render(const config& config, const vk::RenderingInfo& begin_info, const std::function<void()>& render) -> void {
@@ -512,6 +470,14 @@ auto gse::vulkan::create_command_objects(const config::device_config& device_dat
 
     std::cout << "Command Pool Created Successfully!\n";
 
+    const std::string pool_name = "Primary Command Pool";
+    const vk::DebugUtilsObjectNameInfoEXT pool_name_info{
+        .objectType = vk::ObjectType::eCommandPool,
+        .objectHandle = reinterpret_cast<uint64_t>(static_cast<VkCommandPool>(*pool)),
+        .pObjectName = pool_name.c_str()
+    };
+    device_data.device.setDebugUtilsObjectNameEXT(pool_name_info);
+
     const vk::CommandBufferAllocateInfo alloc_info{
         .commandPool = *pool,
         .level = vk::CommandBufferLevel::ePrimary,
@@ -522,6 +488,16 @@ auto gse::vulkan::create_command_objects(const config::device_config& device_dat
 
     std::cout << "Command Buffers Created Successfully!\n";
 
+    for (std::uint32_t i = 0; i < buffers.size(); ++i) {
+        const std::string name = "Primary Command Buffer " + std::to_string(i);
+        const vk::DebugUtilsObjectNameInfoEXT name_info{
+            .objectType = vk::ObjectType::eCommandBuffer,
+            .objectHandle = reinterpret_cast<uint64_t>(static_cast<VkCommandBuffer>(*buffers[i])),
+            .pObjectName = name.c_str()
+        };
+        device_data.device.setDebugUtilsObjectNameEXT(name_info);
+    }
+
     return config::command_config(std::move(pool), std::move(buffers));
 }
 
@@ -530,7 +506,7 @@ auto gse::vulkan::create_descriptor_pool(const config::device_config& device_dat
 
     std::vector<vk::DescriptorPoolSize> pool_sizes = {
         { vk::DescriptorType::eUniformBuffer,          4096 },
-        { vk::DescriptorType::eCombinedImageSampler,  4096 },
+        { vk::DescriptorType::eCombinedImageSampler,   4096 },
         { vk::DescriptorType::eStorageBuffer,          1024 },
         { vk::DescriptorType::eInputAttachment,        4096 },
     };
@@ -615,6 +591,14 @@ auto gse::vulkan::single_line_commands(const config& config, const std::function
 
     auto buffers = config.device_data.device.allocateCommandBuffers(alloc_info);
     const vk::raii::CommandBuffer command_buffer = std::move(buffers[0]);
+
+    const std::string name = "Single-Time Command Buffer";
+    const vk::DebugUtilsObjectNameInfoEXT name_info{
+        .objectType = vk::ObjectType::eCommandBuffer,
+        .objectHandle = reinterpret_cast<uint64_t>(static_cast<VkCommandBuffer>(*command_buffer)),
+        .pObjectName = name.c_str()
+    };
+    config.device_data.device.setDebugUtilsObjectNameEXT(name_info);
 
     constexpr vk::CommandBufferBeginInfo begin_info{
         .flags = {},

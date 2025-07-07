@@ -34,7 +34,7 @@ export namespace gse::renderer3d {
 	auto initialize(context& context, vulkan::config& config) -> void;
 	auto initialize_objects(std::span<light_source_component> light_source_components) -> void;
 	auto render_geometry(const renderer3d::context& context, vulkan::config& config, std::span<render_component> render_components) -> void;
-	auto render_lighting(const renderer3d::context& context, const vulkan::config& config, std::span<render_component> render_components) -> void;
+	auto render_lighting(const renderer3d::context& context, vulkan::config& config, std::span<render_component> render_components) -> void;
 
 	auto camera() -> camera&;
 }
@@ -44,25 +44,26 @@ auto gse::renderer3d::camera() -> class camera& {
 }
 
 auto gse::renderer3d::initialize(context& context, vulkan::config& config) -> void {
-	const auto cmd = begin_single_line_commands(config);
+	single_line_commands(
+		config,
+		[&](const vk::raii::CommandBuffer& cmd) {
+			vulkan::uploader::transition_image_layout(
+				cmd, config.swap_chain_data.albedo_image,
+				vk::ImageLayout::eColorAttachmentOptimal, vk::ImageAspectFlagBits::eColor,
+				vk::PipelineStageFlagBits2::eTopOfPipe,
+				{}, vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+				vk::AccessFlagBits2::eColorAttachmentWrite
+			);
 
-	vulkan::uploader::transition_image_layout(
-		cmd, config.swap_chain_data.albedo_image,
-		vk::ImageLayout::eColorAttachmentOptimal, vk::ImageAspectFlagBits::eColor,
-		vk::PipelineStageFlagBits2::eTopOfPipe,
-		{}, vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::AccessFlagBits2::eColorAttachmentWrite
+			vulkan::uploader::transition_image_layout(
+				cmd, config.swap_chain_data.depth_image,
+				vk::ImageLayout::eDepthStencilAttachmentOptimal, vk::ImageAspectFlagBits::eDepth,
+				vk::PipelineStageFlagBits2::eTopOfPipe,
+				{}, vk::PipelineStageFlagBits2::eEarlyFragmentTests,
+				vk::AccessFlagBits2::eDepthStencilAttachmentWrite
+			);
+		}
 	);
-
-	vulkan::uploader::transition_image_layout(
-		cmd, config.swap_chain_data.depth_image,
-		vk::ImageLayout::eDepthStencilAttachmentOptimal, vk::ImageAspectFlagBits::eDepth,
-		vk::PipelineStageFlagBits2::eTopOfPipe,
-		{}, vk::PipelineStageFlagBits2::eEarlyFragmentTests, 
-		vk::AccessFlagBits2::eDepthStencilAttachmentWrite
-	);
-
-	end_single_line_commands(cmd, config);
 
 	const auto& geometry_shader = shader_loader::shader("geometry_pass");
 	auto descriptor_set_layouts = geometry_shader.layouts();
@@ -320,8 +321,8 @@ auto gse::renderer3d::initialize(context& context, vulkan::config& config) -> vo
 		.depthClampEnable = vk::False,
 		.rasterizerDiscardEnable = vk::False,
 		.polygonMode = vk::PolygonMode::eFill,
-		.cullMode = vk::CullModeFlagBits::eNone,
-		.frontFace = vk::FrontFace::eClockwise,
+		.cullMode = vk::CullModeFlagBits::eBack,
+		.frontFace = vk::FrontFace::eCounterClockwise,
 		.depthBiasEnable = vk::False,
 		.depthBiasConstantFactor = 2.0f,
 		.depthBiasClamp = 0.0f,
@@ -412,67 +413,63 @@ auto gse::renderer3d::initialize_objects(std::span<light_source_component> const
 auto gse::renderer3d::render_geometry(const context& context, vulkan::config& config, const std::span<render_component> render_components) -> void {
 	const auto command = config.frame_context.command_buffer;
 
-	const vk::ImageMemoryBarrier2 barriers[] = {
-		{ // Albedo Image
-			.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
-			.srcAccessMask = {},
-			.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-			.dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
-			.oldLayout = config.swap_chain_data.albedo_image.current_layout,
-			.newLayout = vk::ImageLayout::eColorAttachmentOptimal,
-			.image = config.swap_chain_data.albedo_image.image,
-			.subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 }
-		},
-		{ // Normal Image
-			.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
-			.srcAccessMask = {},
-			.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-			.dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
-			.oldLayout = config.swap_chain_data.normal_image.current_layout,
-			.newLayout = vk::ImageLayout::eColorAttachmentOptimal,
-			.image = config.swap_chain_data.normal_image.image,
-			.subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 }
-		},
-		{ // Depth Image
-			.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
-			.srcAccessMask = {},
-			.dstStageMask = vk::PipelineStageFlagBits2::eEarlyFragmentTests,
-			.dstAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-			.oldLayout = config.swap_chain_data.depth_image.current_layout,
-			.newLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
-			.image = config.swap_chain_data.depth_image.image,
-			.subresourceRange = { vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1 }
-		}
-	};
-	command.pipelineBarrier2({ .imageMemoryBarrierCount = std::size(barriers), .pImageMemoryBarriers = barriers });
+	vulkan::uploader::transition_image_layout(
+		command, config.swap_chain_data.albedo_image,
+		vk::ImageLayout::eColorAttachmentOptimal,
+		vk::ImageAspectFlagBits::eColor,
+		vk::PipelineStageFlagBits2::eFragmentShader,
+		vk::AccessFlagBits2::eShaderSampledRead,
+		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+		vk::AccessFlagBits2::eColorAttachmentWrite
+	);
+
+	vulkan::uploader::transition_image_layout(
+		command, config.swap_chain_data.normal_image,
+		vk::ImageLayout::eColorAttachmentOptimal,
+		vk::ImageAspectFlagBits::eColor,
+		vk::PipelineStageFlagBits2::eFragmentShader,
+		vk::AccessFlagBits2::eShaderSampledRead,
+		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+		vk::AccessFlagBits2::eColorAttachmentWrite
+	);
+
+	vulkan::uploader::transition_image_layout(
+		command, config.swap_chain_data.depth_image,
+		vk::ImageLayout::eDepthStencilAttachmentOptimal,
+		vk::ImageAspectFlagBits::eDepth,
+		vk::PipelineStageFlagBits2::eFragmentShader,
+		vk::AccessFlagBits2::eShaderSampledRead,
+		vk::PipelineStageFlagBits2::eEarlyFragmentTests,
+		vk::AccessFlagBits2::eDepthStencilAttachmentWrite
+	);
 
 	std::array color_attachments{
 		vk::RenderingAttachmentInfo{
-			.imageView = *config.swap_chain_data.normal_image.view,
-			.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+			.imageView = config.swap_chain_data.albedo_image.view,
+			.imageLayout = config.swap_chain_data.albedo_image.current_layout,
 			.loadOp = vk::AttachmentLoadOp::eClear,
 			.storeOp = vk::AttachmentStoreOp::eStore,
-			.clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = std::array{ 0.0f, 0.0f, 0.0f, 1.0f }}}
+			.clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = std::array{ 0.0f, 0.0f, 0.0f, 1.0f } } }
 		},
 		vk::RenderingAttachmentInfo{
-			.imageView = *config.swap_chain_data.albedo_image.view,
-			.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+			.imageView = config.swap_chain_data.normal_image.view,
+			.imageLayout = config.swap_chain_data.normal_image.current_layout,
 			.loadOp = vk::AttachmentLoadOp::eClear,
 			.storeOp = vk::AttachmentStoreOp::eStore,
-			.clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = std::array{ 0.0f, 0.0f, 0.0f, 1.0f }}}
+			.clearValue = vk::ClearValue{.color = vk::ClearColorValue{ .float32 = std::array{ 0.0f, 0.0f, 0.0f, 1.0f } } }
 		}
 	};
 
 	vk::RenderingAttachmentInfo depth_attachment{
-		.imageView = *config.swap_chain_data.depth_image.view,
-		.imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+		.imageView = config.swap_chain_data.depth_image.view,
+		.imageLayout = config.swap_chain_data.depth_image.current_layout,
 		.loadOp = vk::AttachmentLoadOp::eClear,
 		.storeOp = vk::AttachmentStoreOp::eStore,
-		.clearValue = vk::ClearValue{.depthStencil = vk::ClearDepthStencilValue{.depth = 1.0f}}
+		.clearValue = vk::ClearValue{ .depthStencil = vk::ClearDepthStencilValue{ .depth = 1.0f } }
 	};
 
 	const vk::RenderingInfo geometry_rendering_info{
-		.renderArea = {{0, 0}, config.swap_chain_data.extent},
+		.renderArea = { { 0, 0 }, config.swap_chain_data.extent },
 		.layerCount = 1,
 		.colorAttachmentCount = static_cast<uint32_t>(color_attachments.size()),
 		.pColorAttachments = color_attachments.data(),
@@ -536,66 +533,40 @@ auto gse::renderer3d::render_geometry(const context& context, vulkan::config& co
 			}
 		}
 	);
+}
+
+auto gse::renderer3d::render_lighting(const context& context, vulkan::config& config, std::span<render_component> render_components) -> void {
+	const auto command = config.frame_context.command_buffer;
 
 	vulkan::uploader::transition_image_layout(
-		command,
-		config.swap_chain_data.albedo_image,
+		command, config.swap_chain_data.albedo_image,
 		vk::ImageLayout::eShaderReadOnlyOptimal, 
 		vk::ImageAspectFlagBits::eColor,
 		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::AccessFlagBits2::eColorAttachmentWrite, 
+		vk::AccessFlagBits2::eColorAttachmentWrite,
 		vk::PipelineStageFlagBits2::eFragmentShader,
-		vk::AccessFlagBits2::eShaderRead
+		vk::AccessFlagBits2::eShaderSampledRead
 	);
 
 	vulkan::uploader::transition_image_layout(
-		command,
-		config.swap_chain_data.normal_image,
+		command, config.swap_chain_data.normal_image,
 		vk::ImageLayout::eShaderReadOnlyOptimal,
 		vk::ImageAspectFlagBits::eColor,
 		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
 		vk::AccessFlagBits2::eColorAttachmentWrite,
 		vk::PipelineStageFlagBits2::eFragmentShader,
-		vk::AccessFlagBits2::eShaderRead
+		vk::AccessFlagBits2::eShaderSampledRead
 	);
-}
 
-auto gse::renderer3d::render_lighting(const context& context, const vulkan::config& config, std::span<render_component> render_components) -> void {
-	const auto command = config.frame_context.command_buffer;
-
-	const vk::ImageMemoryBarrier2 barriers[] = {
-		{ // Albedo Image
-			.srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-			.srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
-			.dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader,
-			.dstAccessMask = vk::AccessFlagBits2::eShaderRead,
-			.oldLayout = vk::ImageLayout::eColorAttachmentOptimal,
-			.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-			.image = config.swap_chain_data.albedo_image.image,
-			.subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 }
-		},
-		{ // Normal Image
-			.srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-			.srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
-			.dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader,
-			.dstAccessMask = vk::AccessFlagBits2::eShaderRead,
-			.oldLayout = vk::ImageLayout::eColorAttachmentOptimal,
-			.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
-			.image = config.swap_chain_data.normal_image.image,
-			.subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 }
-		},
-		{ // Depth Image
-			.srcStageMask = vk::PipelineStageFlagBits2::eLateFragmentTests,
-			.srcAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-			.dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader,
-			.dstAccessMask = vk::AccessFlagBits2::eShaderRead,
-			.oldLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
-			.newLayout = vk::ImageLayout::eDepthReadOnlyOptimal,
-			.image = config.swap_chain_data.depth_image.image,
-			.subresourceRange = { vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1 }
-		}
-	};
-	command.pipelineBarrier2({ .imageMemoryBarrierCount = std::size(barriers), .pImageMemoryBarriers = barriers });
+	vulkan::uploader::transition_image_layout(
+		command, config.swap_chain_data.depth_image,
+		vk::ImageLayout::eDepthReadOnlyOptimal,
+		vk::ImageAspectFlagBits::eDepth,
+		vk::PipelineStageFlagBits2::eLateFragmentTests,
+		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+		vk::PipelineStageFlagBits2::eFragmentShader,
+		vk::AccessFlagBits2::eShaderSampledRead
+	);
 
 	vk::RenderingAttachmentInfo color_attachment{
 		.imageView = *config.swap_chain_data.image_views[config.frame_context.image_index],
@@ -606,7 +577,7 @@ auto gse::renderer3d::render_lighting(const context& context, const vulkan::conf
 	};
 
 	const vk::RenderingInfo lighting_rendering_info{
-		.renderArea = {{ 0, 0 }, config.swap_chain_data.extent},
+		.renderArea = { { 0, 0 }, config.swap_chain_data.extent },
 		.layerCount = 1,
 		.colorAttachmentCount = 1,
 		.pColorAttachments = &color_attachment,

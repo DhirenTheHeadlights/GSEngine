@@ -352,7 +352,7 @@ auto gse::renderer2d::render(context& context, const vulkan::config& config) -> 
 	                    command,
 	                    context.msdf_pipeline_layout,
 	                    "msdf_texture",
-	                    font->texture().descriptor_info()
+	                    font->texture()->descriptor_info()
 	                );
 
 	                const auto glyphs = font->text_layout(text, position.as<units::meters>(), scale);

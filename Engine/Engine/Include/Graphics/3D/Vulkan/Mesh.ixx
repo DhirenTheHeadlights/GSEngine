@@ -25,12 +25,12 @@ export namespace gse {
 	struct mesh_data {
 		std::vector<vertex> vertices;
 		std::vector<std::uint32_t> indices;
-		material_handle material;
+		id material;
 	};
 
     struct mesh {
 	    explicit mesh(const mesh_data& data) : vertices(std::move(data.vertices)), indices(std::move(data.indices)), material(data.material) {}
-		mesh(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices, material_handle material = {});
+		mesh(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices, const id& material = {});
 
         mesh(const mesh&) = delete;
         auto operator=(const mesh&) -> mesh & = delete;
@@ -47,7 +47,7 @@ export namespace gse {
 
         std::vector<vertex> vertices;
         std::vector<std::uint32_t> indices;
-		material_handle material;
+		id material;
 
 		vec3<length> center_of_mass;
     };
@@ -56,7 +56,7 @@ export namespace gse {
 	auto generate_bounding_box_mesh(vec3<length> upper, vec3<length> lower) -> mesh;
 }
 
-gse::mesh::mesh(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices, const material_handle material)
+gse::mesh::mesh(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices, const id& material)
 	: vertices(vertices), indices(indices), material(material) {}
 
 gse::mesh::mesh(mesh&& other) noexcept
@@ -115,15 +115,16 @@ auto gse::mesh::initialize(const vulkan::config& config) -> void {
         vk::MemoryPropertyFlagBits::eDeviceLocal
     );
 
-    const auto command_buffer = begin_single_line_commands(config);
+    single_line_commands(
+        config,
+        [&](const vk::raii::CommandBuffer& command_buffer) {
+            const vk::BufferCopy vertex_copy_region(0, 0, vertex_buffer_size);
+            command_buffer.copyBuffer(vertex_buffer, this->vertex_buffer.buffer, vertex_copy_region);
 
-    const vk::BufferCopy vertex_copy_region(0, 0, vertex_buffer_size);
-    command_buffer.copyBuffer(vertex_buffer, this->vertex_buffer.buffer, vertex_copy_region);
-
-    const vk::BufferCopy index_copy_region(0, 0, index_buffer_size);
-    command_buffer.copyBuffer(index_buffer, this->index_buffer.buffer, index_copy_region);
-
-    end_single_line_commands(command_buffer, config);
+            const vk::BufferCopy index_copy_region(0, 0, index_buffer_size);
+            command_buffer.copyBuffer(index_buffer, this->index_buffer.buffer, index_copy_region);
+        }
+    );
 
     this->center_of_mass = calculate_center_of_mass(indices, vertices);
 }

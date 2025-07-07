@@ -8,3 +8,4 @@ export import :id;
 export import :json;
 export import :timed_lock;
 export import :timer;
+export import :non_copyable;

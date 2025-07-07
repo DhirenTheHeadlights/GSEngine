@@ -16,6 +16,7 @@ export namespace gse::debug {
     auto initialize_imgui(const vulkan::config& config) -> void;
     auto update_imgui() -> void;
     auto render_imgui(const vk::CommandBuffer& command_buffer) -> void;
+	auto shutdown_imgui() -> void;
     auto save_imgui_state() -> void;
 
     auto set_imgui_save_file_path(const std::filesystem::path& path) -> void;
@@ -175,6 +176,12 @@ auto gse::debug::render_imgui(const vk::CommandBuffer& command_buffer) -> void {
         ImGui::UpdatePlatformWindows();
         ImGui::RenderPlatformWindowsDefault();
     }
+}
+
+auto gse::debug::shutdown_imgui() -> void {
+    ImGui_ImplVulkan_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
 }
 
 auto gse::debug::save_imgui_state() -> void {

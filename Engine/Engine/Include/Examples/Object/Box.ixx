@@ -39,49 +39,55 @@ export struct box_mesh_hook final : gse::hook<gse::entity> {
         const float repeat_interval = 10.f; // 1 repeat per unit (meters in this case)
 
         const std::vector<std::vector<gse::vertex>> face_vertices = {
-            // Front face
+            // ?? Front  (-Z) ?????????????????????????????????????????????
             {
-                {.position = {-half_width, -half_height, half_depth}, .normal = {0.0f, 0.0f, repeat_interval}, .tex_coords = {0.0f, 0.0f} },
-                {.position = {half_width, -half_height, half_depth}, .normal = {0.0f, 0.0f, repeat_interval}, .tex_coords = {repeat_interval, 0.0f} },
-                {.position = {half_width, half_height, half_depth}, .normal = {0.0f, 0.0f, repeat_interval}, .tex_coords = {repeat_interval, repeat_interval} },
-                {.position = {-half_width, half_height, half_depth}, .normal = {0.0f, 0.0f, repeat_interval}, .tex_coords = {0.0f, repeat_interval} }
+                { { -half_width, -half_height, -half_depth }, {  0.0f,  0.0f, -1.0f }, { 0.0f,          0.0f } },
+                { { -half_width,  half_height, -half_depth }, {  0.0f,  0.0f, -1.0f }, { 0.0f,  repeat_interval } },
+                { {  half_width,  half_height, -half_depth }, {  0.0f,  0.0f, -1.0f }, { repeat_interval, repeat_interval } },
+                { {  half_width, -half_height, -half_depth }, {  0.0f,  0.0f, -1.0f }, { repeat_interval, 0.0f } }
             },
-            // Back face
+
+            // ?? Back   (+Z) ?????????????????????????????????????????????
             {
-                {.position = {-half_width, -half_height, -half_depth}, .normal = {0.0f, 0.0f, -repeat_interval}, .tex_coords = {0.0f, 0.0f} },
-                {.position = {half_width, -half_height, -half_depth}, .normal = {0.0f, 0.0f, -repeat_interval}, .tex_coords = {repeat_interval, 0.0f} },
-                {.position = {half_width, half_height, -half_depth}, .normal = {0.0f, 0.0f, -repeat_interval}, .tex_coords = {repeat_interval, repeat_interval} },
-                {.position = {-half_width, half_height, -half_depth}, .normal = {0.0f, 0.0f, -repeat_interval}, .tex_coords = {0.0f, repeat_interval} }
+                { { -half_width, -half_height,  half_depth }, {  0.0f,  0.0f,  1.0f }, { 0.0f,          0.0f } },
+                { {  half_width, -half_height,  half_depth }, {  0.0f,  0.0f,  1.0f }, { repeat_interval, 0.0f } },
+                { {  half_width,  half_height,  half_depth }, {  0.0f,  0.0f,  1.0f }, { repeat_interval, repeat_interval } },
+                { { -half_width,  half_height,  half_depth }, {  0.0f,  0.0f,  1.0f }, { 0.0f,  repeat_interval } }
             },
-            // Left face
+
+            // ?? Left  (-X) ??????????????????????????????????????????????
             {
-                {.position = {-half_width, -half_height, -half_depth}, .normal = {-repeat_interval, 0.0f, 0.0f}, .tex_coords = {0.0f, 0.0f} },
-                {.position = {-half_width, -half_height, half_depth}, .normal = {-repeat_interval, 0.0f, 0.0f}, .tex_coords = {repeat_interval, 0.0f} },
-                {.position = {-half_width, half_height, half_depth}, .normal = {-repeat_interval, 0.0f, 0.0f}, .tex_coords = {repeat_interval, repeat_interval} },
-                {.position = {-half_width, half_height, -half_depth}, .normal = {-repeat_interval, 0.0f, 0.0f}, .tex_coords = {0.0f, repeat_interval} }
+                { { -half_width, -half_height,  half_depth }, { -1.0f,  0.0f,  0.0f }, { 0.0f,          0.0f } },
+                { { -half_width,  half_height,  half_depth }, { -1.0f,  0.0f,  0.0f }, { 0.0f,  repeat_interval } },
+                { { -half_width,  half_height, -half_depth }, { -1.0f,  0.0f,  0.0f }, { repeat_interval, repeat_interval } },
+                { { -half_width, -half_height, -half_depth }, { -1.0f,  0.0f,  0.0f }, { repeat_interval, 0.0f } }
             },
-            // Right face
+
+            // ?? Right (+X) ??????????????????????????????????????????????
             {
-                {.position = {half_width, -half_height, -half_depth}, .normal = {repeat_interval, 0.0f, 0.0f}, .tex_coords = {0.0f, 0.0f} },
-                {.position = {half_width, -half_height, half_depth}, .normal = {repeat_interval, 0.0f, 0.0f}, .tex_coords = {repeat_interval, 0.0f} },
-                {.position = {half_width, half_height, half_depth}, .normal = {repeat_interval, 0.0f, 0.0f}, .tex_coords = {repeat_interval, repeat_interval} },
-                {.position = {half_width, half_height, -half_depth}, .normal = {repeat_interval, 0.0f, 0.0f}, .tex_coords = {0.0f, repeat_interval} }
+                { {  half_width, -half_height, -half_depth }, {  1.0f,  0.0f,  0.0f }, { 0.0f,          0.0f } },
+                { {  half_width,  half_height, -half_depth }, {  1.0f,  0.0f,  0.0f }, { 0.0f,  repeat_interval } },
+                { {  half_width,  half_height,  half_depth }, {  1.0f,  0.0f,  0.0f }, { repeat_interval, repeat_interval } },
+                { {  half_width, -half_height,  half_depth }, {  1.0f,  0.0f,  0.0f }, { repeat_interval, 0.0f } }
             },
-            // Top face
+
+            // ?? Top   (+Y) ??????????????????????????????????????????????
             {
-                {.position = {-half_width, half_height, half_depth}, .normal = {0.0f, repeat_interval, 0.0f}, .tex_coords = {0.0f, 0.0f} },
-                {.position = {half_width, half_height, half_depth}, .normal = {0.0f, repeat_interval, 0.0f}, .tex_coords = {repeat_interval, 0.0f} },
-                {.position = {half_width, half_height, -half_depth}, .normal = {0.0f, repeat_interval, 0.0f}, .tex_coords = {repeat_interval, repeat_interval} },
-                {.position = {-half_width, half_height, -half_depth}, .normal = {0.0f, repeat_interval, 0.0f}, .tex_coords = {0.0f, repeat_interval} }
+                { { -half_width,  half_height, -half_depth }, {  0.0f,  1.0f,  0.0f }, { 0.0f,          0.0f } },
+                { { -half_width,  half_height,  half_depth }, {  0.0f,  1.0f,  0.0f }, { 0.0f,  repeat_interval } },
+                { {  half_width,  half_height,  half_depth }, {  0.0f,  1.0f,  0.0f }, { repeat_interval, repeat_interval } },
+                { {  half_width,  half_height, -half_depth }, {  0.0f,  1.0f,  0.0f }, { repeat_interval, 0.0f } }
             },
-            // Bottom face
+
+            // ?? Bottom (-Y) ?????????????????????????????????????????????
             {
-                {.position = {-half_width, -half_height, half_depth}, .normal = {0.0f, -repeat_interval, 0.0f}, .tex_coords = {0.0f, 0.0f} },
-                {.position = {half_width, -half_height, half_depth}, .normal = {0.0f, -repeat_interval, 0.0f}, .tex_coords = {repeat_interval, 0.0f} },
-                {.position = {half_width, -half_height, -half_depth}, .normal = {0.0f, -repeat_interval, 0.0f}, .tex_coords = {repeat_interval, repeat_interval} },
-                {.position = {-half_width, -half_height, -half_depth}, .normal = {0.0f, -repeat_interval, 0.0f}, .tex_coords = {0.0f, repeat_interval} }
+                { { -half_width, -half_height,  half_depth }, {  0.0f, -1.0f,  0.0f }, { 0.0f,          0.0f } },
+                { { -half_width, -half_height, -half_depth }, {  0.0f, -1.0f,  0.0f }, { 0.0f,  repeat_interval } },
+                { {  half_width, -half_height, -half_depth }, {  0.0f, -1.0f,  0.0f }, { repeat_interval, repeat_interval } },
+                { {  half_width, -half_height,  half_depth }, {  0.0f, -1.0f,  0.0f }, { repeat_interval, 0.0f } }
             }
         };
+
 
         std::vector<std::uint32_t> face_indices = { 0, 1, 2, 2, 3, 0 };
 

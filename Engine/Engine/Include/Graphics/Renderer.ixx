@@ -10,9 +10,33 @@ import :texture_loader;
 import :model_loader;
 import :gui;
 import :render_component;
+import :resource_loader;
+import :material;
+import :rendering_context;
 
 import gse.utility;
 import gse.platform;
+
+namespace gse {
+	renderer::context g_rendering_context;
+}
+
+export namespace gse {
+	template <typename Resource>
+	auto get(const id& id) -> typename Resource::handle {
+		return g_rendering_context.resource<Resource>(id);
+	}
+
+	template <typename Resource>
+	auto queue(const std::filesystem::path& path, const std::string& name) -> void {
+		g_rendering_context.queue<Resource>(path, name);
+	}
+
+	template <typename Resource>
+	auto resource_state(const id& id) -> resource_loader_base::state {
+		return g_rendering_context.resource_state<Resource>(id);
+	}
+}
 
 export namespace gse::renderer {
 	auto initialize() -> void;
@@ -25,33 +49,30 @@ namespace gse::renderer {
 	auto begin_frame() -> void;
 	auto end_frame() -> void;
 
-	std::optional<vulkan::config> g_config;
 	renderer3d::context g_renderer3d_context;
 	renderer2d::context g_renderer2d_context;
-	std::optional<font> g_gui_font;
-	shader_loader::shader_context g_shader_context;
-	model_loader::model_context g_model_loader_context;
-	std::optional<texture_loader::texture_loader_context> g_texture_loader_context;
 }
 
 auto gse::renderer::initialize() -> void {
-	g_config.emplace(platform::initialize());
-	g_texture_loader_context.emplace();
-	g_gui_font.emplace();
+	auto* texture_loader = g_rendering_context.add_loader<gse::texture_loader>();
+	texture_loader->load_blank(g_rendering_context.config());
 
-	model_loader::initialize(g_model_loader_context);
-	load_shaders(g_shader_context, g_config->device_data.device);
-	renderer3d::initialize(g_renderer3d_context, *g_config);
-	renderer2d::initialize(g_renderer2d_context, *g_config);
-	gui::initialize(&*g_gui_font, *g_config);
-	texture_loader::initialize(*g_texture_loader_context, *g_config);
+	g_rendering_context.add_loader<material_loader>();
+	g_rendering_context.add_loader<model_loader>();
+	g_rendering_context.add_loader<shader_loader>();
+
+	shader::generate_global_layouts(g_rendering_context.config().device_data.device);
+
+	renderer3d::initialize(g_renderer3d_context, g_rendering_context.config());
+	renderer2d::initialize(g_renderer2d_context, g_rendering_context.config());
+	gui::initialize(&*g_gui_font, g_rendering_context.config());
 }
 
 auto gse::renderer::begin_frame() -> void {
-	texture_loader::load_queued_textures(*g_config);
-	model_loader::load_queued_models(*g_config);
+	g_rendering_context.flush_all_queues();
+
 	window::begin_frame();
-	vulkan::begin_frame(window::get_window(), *g_config);
+	vulkan::begin_frame(window::get_window(), g_rendering_context.config());
 }
 
 auto gse::renderer::update() -> void {
@@ -63,28 +84,28 @@ auto gse::renderer::render(const std::function<void()>& in_frame, const std::spa
 	gui::render();
 
 	begin_frame();
-	render_geometry(g_renderer3d_context, *g_config, components);
-	render_lighting(g_renderer3d_context, *g_config, components);
-	renderer2d::render(g_renderer2d_context, *g_config);
+	render_geometry(g_renderer3d_context, g_rendering_context.config(), components);
+	render_lighting(g_renderer3d_context, g_rendering_context.config(), components);
+	renderer2d::render(g_renderer2d_context, g_rendering_context.config());
 	in_frame();
 	end_frame();
 }
 
 auto gse::renderer::end_frame() -> void {
-	vulkan::end_frame(window::get_window(), *g_config);
+	vulkan::end_frame(window::get_window(), g_rendering_context.config());
 	window::end_frame();
 	vulkan::transient_allocator::end_frame();
 }
 
 auto gse::renderer::shutdown() -> void {
-	g_config->device_data.device.waitIdle();
+	g_rendering_context.config().device_data.device.waitIdle();
+	debug::shutdown_imgui();
 	gui::shutdown();
-	g_texture_loader_context.reset();
 	g_gui_font.reset();
-	g_model_loader_context = {};
-	g_shader_context = {};
 	g_renderer2d_context = {};
 	g_renderer3d_context = {};
-	g_config.reset();
+	g_rendering_context.config().swap_chain_data.albedo_image = {};
+	g_rendering_context.config().swap_chain_data.normal_image = {};
+	g_rendering_context.config().swap_chain_data.depth_image = {};
 	platform::shutdown();
 }

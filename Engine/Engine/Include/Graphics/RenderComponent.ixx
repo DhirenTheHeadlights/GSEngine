@@ -55,9 +55,9 @@ auto gse::render_component::calculate_center_of_mass() -> void {
 	vec3<length> sum;
 	int number_of_meshes = 0;
 	for (const auto& model_handle : models) {
-		for (const auto& model = model_loader::model(model_handle); auto& model_mesh : model.meshes) {
+		for (const auto& model = model_loader::model(model_handle); auto& model_mesh : model.m_meshes) {
 			sum += model_mesh.center_of_mass;
-			number_of_meshes += static_cast<int>(model.meshes.size());
+			number_of_meshes += static_cast<int>(model.m_meshes.size());
 		}
 	}
 

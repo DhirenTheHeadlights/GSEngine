@@ -212,7 +212,7 @@ auto gse::input::internal::update_all_buttons() -> void {
 		update_button(button);
 	}
 
-	for (int i = 0; i <= static_cast<int>(g_controller.buttons.size()); i++) {
+	/*for (int i = 0; i <= static_cast<int>(g_controller.buttons.size()); i++) {
 		if (!(glfwJoystickPresent(i) && glfwJoystickIsGamepad(i))) continue;
 
 		GLFWgamepadstate state;
@@ -239,7 +239,7 @@ auto gse::input::internal::update_all_buttons() -> void {
 
 			break;
 		}
-	}
+	}*/
 
 	for (auto& button : g_mouse.buttons | std::views::values) {
 		update_button(button);
