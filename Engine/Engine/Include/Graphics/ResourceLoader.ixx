@@ -76,6 +76,13 @@ export namespace gse {
 			const std::filesystem::path& path
 		) -> id override;
 
+		template <typename... Args>
+			requires std::constructible_from<Resource, Args...>
+		auto queue(
+			const std::string& name,
+			Args&&... args
+		) -> id;
+
 		auto add(Resource&& resource) -> void;
 
 		auto resource_state(const id& id) -> state override;
@@ -181,6 +188,36 @@ auto gse::resource_loader<Resource, Handle, RenderingContext>::queue(const std::
 		std::move(temp_resource),
 		state::queued,
 		path
+	);
+
+	return resource_id;
+}
+
+template <typename Resource, typename Handle, typename RenderingContext>
+	requires gse::resource<Resource, RenderingContext> && gse::resource_handle<Handle, Resource>
+template <typename ... Args>
+	requires std::constructible_from<Resource, Args...>
+auto gse::resource_loader<Resource, Handle, RenderingContext>::queue(const std::string& name, Args&&... args) -> id {
+	const auto it = std::ranges::find_if(
+		m_resources,
+		[&](const auto& pair) {
+			return pair.first.tag() == name;
+		}
+	);
+
+	if (it != m_resources.end()) {
+		assert(false, std::format("Resource with name '{}' already exists.", name));
+		return {};
+	}
+
+	auto temp_resource = std::make_unique<Resource>(std::forward<Args>(args)...);
+	const auto resource_id = temp_resource->id();
+
+	m_resources.try_emplace(
+		resource_id,
+		std::move(temp_resource),
+		state::queued,
+		std::filesystem::path()
 	);
 
 	return resource_id;
