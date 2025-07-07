@@ -7,12 +7,12 @@ export import :image_loader;
 export import gse.platform.vulkan;
 
 export namespace gse::platform {
-	auto initialize() -> vulkan::config;
+	auto initialize() -> std::unique_ptr<vulkan::config>;
 	auto update() -> void;
 	auto shutdown() -> void;
 }
 
-auto gse::platform::initialize() -> vulkan::config {
+auto gse::platform::initialize() -> std::unique_ptr<vulkan::config> {
 	window::initialize();
 	return vulkan::initialize(window::get_window());
 }

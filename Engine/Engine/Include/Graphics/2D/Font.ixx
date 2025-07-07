@@ -16,6 +16,7 @@ export module gse.graphics:font;
 
 import :texture;
 
+import gse.assert;
 import gse.physics.math;
 import gse.platform;
 
@@ -48,19 +49,24 @@ export namespace gse {
         unitless::vec4 uv;
     };
 
-    class font {
+	class font : public identifiable {
     public:
-        font() = default;
-		font(const std::filesystem::path& path, const vulkan::config& config);
+        struct handle {
+			handle(font& f) : font(&f) {}
+            font* font;
+        };
+
+        font(const std::filesystem::path& path);
         ~font();
 
-        auto load(const std::filesystem::path& path, const vulkan::config& config) -> void;
+        auto load(const vulkan::config& config) -> void;
+		auto unload() -> void;
 
-        auto texture() const -> const texture&;
+        auto texture() const -> const texture*;
         auto text_layout(std::string_view text, unitless::vec2 start, float scale = 1.0f) const -> std::vector<positioned_glyph>;
         auto line_height(float scale = 1.0f) const -> float;
     private:
-        class texture m_texture;
+        std::unique_ptr<gse::texture> m_texture;
         std::unordered_map<char, glyph> m_glyphs;
 
         float m_glyph_cell_size = 64.f;
@@ -68,13 +74,18 @@ export namespace gse {
         float m_ascender = 0.0f;
         float m_descender = 0.0f;
 
-        FT_Face m_face;
-		FT_Library m_ft;
+		FT_Face m_face = nullptr;
+        FT_Library m_ft = nullptr;
+
+		std::filesystem::path m_path;
     };
 }
 
-gse::font::font(const std::filesystem::path& path, const vulkan::config& config) {
-	load(path, config);
+gse::font::font(const std::filesystem::path& path) : identifiable(path.stem().string()), m_path(path) {
+    assert(
+        exists(path),
+        std::format("Font file '{}' does not exist.", path.string())
+	);
 }
 
 gse::font::~font() {
@@ -104,9 +115,9 @@ auto read_file_binary(const std::filesystem::path& path, std::vector<unsigned ch
     return true;
 }
 
-auto gse::font::load(const std::filesystem::path& path, const vulkan::config& config) -> void {
+auto gse::font::load(const vulkan::config& config) -> void {
     std::vector<unsigned char> font_data_buffer;
-    if (!read_file_binary(path, font_data_buffer)) {
+    if (!read_file_binary(m_path, font_data_buffer)) {
         std::cerr << "Could not load font file!" << '\n';
         return;
     }
@@ -280,7 +291,7 @@ auto gse::font::load(const std::filesystem::path& path, const vulkan::config& co
         rgba_data[static_cast<std::size_t>(i) * 4 + 3] = static_cast<std::byte>(255);
     }
 
-    m_texture.load_from_memory(
+	m_texture = std::make_unique<gse::texture>(
         config,
         rgba_data,
         unitless::vec2u{ static_cast<std::uint32_t>(atlas_width), static_cast<std::uint32_t>(atlas_height) },
@@ -291,11 +302,25 @@ auto gse::font::load(const std::filesystem::path& path, const vulkan::config& co
     destroyFont(font_handle);
     deinitializeFreetype(ft_handle);
 
-    std::cout << "Successfully loaded font with MSDF: " << path << "\n";
+    std::cout << "Successfully loaded font with MSDF: " << m_path << "\n";
 }
 
-auto gse::font::texture() const -> const class texture& {
-    return m_texture;
+auto gse::font::unload() -> void {
+	m_path = std::filesystem::path();
+    m_glyphs.clear();
+    m_texture.reset();
+    if (m_face) {
+        FT_Done_Face(m_face);
+        m_face = nullptr;
+    }
+    if (m_ft) {
+        FT_Done_FreeType(m_ft);
+        m_ft = nullptr;
+    }
+}
+
+auto gse::font::texture() const -> const gse::texture* {
+    return m_texture.get();
 }
 
 auto gse::font::text_layout(const std::string_view text, const unitless::vec2 start, const float scale) const -> std::vector<positioned_glyph> {

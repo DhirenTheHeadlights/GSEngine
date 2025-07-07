@@ -1,26 +1,33 @@
 module;
 
+#include <glslang/Public/ResourceLimits.h>
+#include <glslang/Public/ShaderLang.h>
+#include <glslang/SPIRV/GlslangToSpv.h>
 #include <SPIRV-Reflect/spirv_reflect.h>
 
 export module gse.graphics:shader;
 
 import std;
 
+import :rendering_context;
+
 import gse.assert;
 import gse.platform;
 
 namespace gse {
-	export class shader {
+	export class shader final : non_copyable {
 	public:
 		struct info {
 			std::string name;
 			std::filesystem::path vert_path;
 			std::filesystem::path frag_path;
 		};
+
 		struct vertex_input {
 			std::vector<vk::VertexInputBindingDescription> bindings;
 			std::vector<vk::VertexInputAttributeDescription> attributes;
 		};
+
 		struct uniform_member {
 			std::string name;
 			std::string type_name;
@@ -28,6 +35,7 @@ namespace gse {
 			std::uint32_t size = 0;
 			std::uint32_t array_size = 0;
 		};
+
 		struct uniform_block {
 			std::string name;
 			std::uint32_t binding = 0;
@@ -35,11 +43,13 @@ namespace gse {
 			std::uint32_t size = 0;
 			std::vector<uniform_member> members;
 		};
+
 		struct binding {
 			std::string name;
 			vk::DescriptorSetLayoutBinding layout_binding;
 			std::optional<uniform_block> member;
 		};
+
 		struct set {
 			enum class binding_type : std::uint8_t {
 				persistent = 0,
@@ -51,27 +61,35 @@ namespace gse {
 			std::variant<std::monostate, vk::raii::DescriptorSetLayout, vk::DescriptorSetLayout> layout;
 			std::vector<binding> bindings;
 		};
+
 		struct layout {
 			std::unordered_map<set::binding_type, set> sets;
 		};
 
+		struct handle {
+			handle(shader& sh) : shader(&sh) {}
+			shader* shader = nullptr;
+		};
+
+		enum class descriptor_layout : std::uint8_t {
+			standard_3d = 0,
+			deferred_3d = 1,
+			forward_3d = 2,
+			forward_2d = 3,
+			post_process = 4,
+			custom = 99
+		};
+
 		shader() = default;
-		shader(
-			const vk::raii::Device& device,
-			const std::filesystem::path& vert_path,
-			const std::filesystem::path& frag_path,
-			const layout* layout = nullptr
-		);
+		shader(const std::filesystem::path& path);
 
-		shader(const shader&) = delete;
-		auto operator=(const shader&) -> shader & = delete;
-
-		auto create(
-			const vk::raii::Device& device,
-			const std::filesystem::path& vert_path,
-			const std::filesystem::path& frag_path,
-			const layout* provided_layout = nullptr
+		auto load(
+			renderer::context& context
 		) -> void;
+
+		static auto generate_global_layouts(const vk::raii::Device& device) -> void;
+
+		auto unload() -> void;
 
 		auto shader_stages() const -> std::array<vk::PipelineShaderStageCreateInfo, 2>;
 		auto required_bindings() const -> std::vector<std::string>;
@@ -139,7 +157,6 @@ namespace gse {
 			vk::DescriptorPool pool, 
 			set::binding_type type
 		) const -> vk::raii::DescriptorSet;
-
 	private:
 		vk::raii::ShaderModule m_vert_module = nullptr;
 		vk::raii::ShaderModule m_frag_module = nullptr;
@@ -159,18 +176,168 @@ namespace gse {
 			assert(false, "Shader set layout is not initialized");
 			return {};
 		}
+
+		static std::unordered_map<descriptor_layout, struct layout> m_global_layouts;
 	};
 
 	auto read_file(const std::filesystem::path& path) -> std::vector<char>;
 }
 
-gse::shader::shader(const vk::raii::Device & device, const std::filesystem::path & vert_path, const std::filesystem::path & frag_path, const struct layout* layout) : m_info{ vert_path.filename().string(), vert_path, frag_path } {
-	create(device, vert_path, frag_path, layout);
+gse::shader::shader(const std::filesystem::path& path) {
+	const auto dir = path.parent_path();
+	const auto stem = path.stem().string();
+
+	m_info.name = stem;
+	m_info.vert_path = dir / (stem + ".vert.spv");
+	m_info.frag_path = dir / (stem + ".frag.spv");
+
+	assert(
+		exists(m_info.vert_path) && exists(m_info.frag_path),
+		std::format("Shader files not found: {} and {}", m_info.vert_path.string(), m_info.frag_path.string())
+	);
 }
 
-auto gse::shader::create(const vk::raii::Device& device, const std::filesystem::path& vert_path, const std::filesystem::path& frag_path, const struct layout* provided_layout) -> void {
-	const auto vert_code = read_file(vert_path);
-	const auto frag_code = read_file(frag_path);
+
+auto gse::shader::load(renderer::context& context) -> void {
+	if (m_global_layouts.empty()) {
+		generate_global_layouts(context.config().device_data.device);
+	}
+
+	const auto parse = [&](
+		const std::filesystem::path& path
+		) -> std::pair<std::filesystem::path, descriptor_layout> {
+			glslang::InitializeProcess();
+
+			const auto root_path = config::shader_raw_path;
+			const auto destination_path = config::shader_spirv_path;
+
+			const auto ext = path.extension().string();
+			if (ext != ".vert" && ext != ".frag" && ext != ".comp" && ext != ".geom" && ext != ".tesc" && ext != ".tese") return {};
+
+			auto layout = descriptor_layout::custom;
+
+			if (ext == ".vert" || ext == ".frag") {
+				/// Grab descriptor layout type. Shader sets in this format: 'layout (constant_id = 99) const int descriptor_layout_type = 1;'
+				std::ifstream file(path);
+				std::string line;
+
+				const std::string token = "const int descriptor_layout_type =";
+
+				while (std::getline(file, line)) {
+					if (auto pos = line.find(token); pos != std::string::npos) {
+						pos += token.size();
+						auto end = line.find(';', pos);
+						std::string value_str = line.substr(pos, end - pos);
+						value_str.erase(std::ranges::remove_if(value_str, isspace).begin(), value_str.end());
+						int layout_value = std::stoi(value_str);
+						layout = static_cast<descriptor_layout>(layout_value);
+						break;
+					}
+				}
+			}
+
+			const auto source_path = path;
+			const auto destination_relative = relative(source_path, root_path);
+			const auto destination_file = destination_path / (destination_relative.string() + ".spv");
+
+			if (exists(destination_file)) {
+				auto src_time = last_write_time(source_path);
+				auto dst_time = last_write_time(destination_file);
+				if (src_time <= dst_time) {
+					std::cout << "Shader already compiled: " << destination_file.filename().string() << '\n';
+				}
+			}
+			else {
+				if (auto dst_dir = destination_file.parent_path(); !exists(dst_dir)) {
+					create_directories(dst_dir);
+				}
+			}
+
+			EShLanguage stage;
+
+			if (ext == ".vert") stage = EShLangVertex;
+			else if (ext == ".frag") stage = EShLangFragment;
+			else if (ext == ".comp") stage = EShLangCompute;
+			else if (ext == ".geom") stage = EShLangGeometry;
+			else if (ext == ".tesc") stage = EShLangTessControl;
+			else if (ext == ".tese") stage = EShLangTessEvaluation;
+			else assert(false, std::format("Unknown shader extension: {}", ext));
+
+			std::ifstream in(source_path, std::ios::ate | std::ios::binary);
+			assert(in.is_open(), std::format("Failed to open shader file: {}", source_path.string().c_str()));
+
+			size_t n = in.tellg();
+			std::string source(n, '\0');
+			in.seekg(0);
+			in.read(source.data(), n);
+
+			if (source.size() > 3 && source[0] == 0xEF && source[1] == 0xBB && source[2] == 0xBF) {
+				source.erase(0, 3);
+			}
+
+			const char* code = source.c_str();
+
+			glslang::TShader shader(stage);
+
+			shader.setStrings(&code, 1);
+			shader.setEnvInput(glslang::EShSourceGlsl, stage, glslang::EShClientVulkan, 100);
+			shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_2);
+			shader.setEnvTarget(glslang::EShTargetSpv, glslang::EShTargetSpv_1_5);
+
+			bool ok = shader.parse(
+				GetDefaultResources(),
+				450,
+				false,
+				EShMsgDefault
+			);
+
+			if (!ok) {
+				auto info = shader.getInfoLog();
+				auto debug = shader.getInfoDebugLog();
+
+				auto msg = std::format(
+					"File ({}) GLSL parse error:\n{}\n{}",
+					source_path.filename().string(), info, debug
+				);
+				assert(false, msg);
+			}
+
+			glslang::TProgram program;
+			program.addShader(&shader);
+			assert(program.link(EShMsgDefault), std::format("GLSL link error:\n{}", program.getInfoLog()));
+
+			std::vector<uint32_t> spirv;
+			GlslangToSpv(*program.getIntermediate(stage), spirv);
+
+			std::ofstream out(destination_file, std::ios::binary);
+			assert(out.is_open(), std::format("Failed to write compiled SPIR-V: {}", destination_file.string().c_str()));
+			out.write(reinterpret_cast<const char*>(spirv.data()), spirv.size() * sizeof(uint32_t));
+
+			glslang::FinalizeProcess();
+
+			return { destination_file, layout };
+		};
+
+	const auto [vert_parse_path, layout_type] = parse(m_info.vert_path);
+	const auto [frag_parse_path, layout_type_check] = parse(m_info.frag_path);
+
+	assert(
+		layout_type == layout_type_check,
+		std::format(
+			"Shader layout type mismatch: {} vs {}",
+			static_cast<std::uint8_t>(layout_type),
+			static_cast<std::uint8_t>(layout_type_check)
+		)
+	);
+
+	m_info = {
+		.name = m_info.name,
+		.vert_path = vert_parse_path,
+		.frag_path = frag_parse_path
+	};
+
+	const auto vert_code = read_file(m_info.vert_path);
+	const auto frag_code = read_file(m_info.frag_path);
 
 	auto make_module = [&](const std::vector<char>& code) {
 		const vk::ShaderModuleCreateInfo ci{
@@ -178,7 +345,7 @@ auto gse::shader::create(const vk::raii::Device& device, const std::filesystem::
 			.codeSize = code.size(),
 			.pCode = reinterpret_cast<const uint32_t*>(code.data())
 		};
-		return device.createShaderModule(ci);
+		return context.config().device_data.device.createShaderModule(ci);
 		};
 
 	m_vert_module = make_module(vert_code);
@@ -219,7 +386,7 @@ auto gse::shader::create(const vk::raii::Device& device, const std::filesystem::
 		case vk::Format::eR32G32Sfloat:       return 8;
 		case vk::Format::eR32G32B32Sfloat:    return 12;
 		case vk::Format::eR32G32B32A32Sfloat: return 16;
-			// Add other formats used in your project
+			// Add other formats
 		default:
 			assert(false, "Unsupported vertex format for size calculation");
 			return 0;
@@ -399,8 +566,8 @@ auto gse::shader::create(const vk::raii::Device& device, const std::filesystem::
 		grouped.emplace(set::binding_type::persistent, std::vector<struct binding>{});
 	}
 
-	if (provided_layout) {
-		for (const auto& [type, user_set] : provided_layout->sets) {
+	if (const auto it = m_global_layouts.find(layout_type); it != m_global_layouts.end()) {
+		for (const auto& [sets] = it->second; const auto& [type, user_set] : sets) {
 			std::vector<struct binding> complete_bindings;
 
 			auto reflected_in_set = all_reflected | std::views::filter([&](const auto& r) {
@@ -408,12 +575,12 @@ auto gse::shader::create(const vk::raii::Device& device, const std::filesystem::
 				});
 
 			for (const auto& [name, layout_binding, set_index] : reflected_in_set) {
-				auto it = std::ranges::find_if(user_set.bindings, [&](const auto& b) {
+				auto it2 = std::ranges::find_if(user_set.bindings, [&](const auto& b) {
 					return b.layout_binding.binding == layout_binding.binding;
 					});
 
 				assert(
-					it != user_set.bindings.end(),
+					it2 != user_set.bindings.end(),
 					std::format(
 						"Reflected binding '{}' (at binding {}) not found in provided layout for set {}",
 						name,
@@ -422,7 +589,7 @@ auto gse::shader::create(const vk::raii::Device& device, const std::filesystem::
 					)
 				);
 
-				assert(it->layout_binding.descriptorType == layout_binding.descriptorType,
+				assert(it2->layout_binding.descriptorType == layout_binding.descriptorType,
 					std::format(
 						"Descriptor type mismatch for '{}' in set {}",
 						name,
@@ -470,7 +637,7 @@ auto gse::shader::create(const vk::raii::Device& device, const std::filesystem::
 				.bindingCount = static_cast<uint32_t>(raw.size()),
 				.pBindings = raw.data()
 			};
-			auto raii_layout = device.createDescriptorSetLayout(ci);
+			auto raii_layout = context.config().device_data.device.createDescriptorSetLayout(ci);
 
 			m_layout.sets.emplace(
 				type,
@@ -482,6 +649,15 @@ auto gse::shader::create(const vk::raii::Device& device, const std::filesystem::
 			);
 		}
 	}
+}
+
+auto gse::shader::unload() -> void {
+	m_vert_module = nullptr;
+	m_frag_module = nullptr;
+	m_layout = {};
+	m_vertex_input = {};
+	m_push_constants.clear();
+	m_info = {};
 }
 
 auto gse::shader::shader_stages() const -> std::array<vk::PipelineShaderStageCreateInfo, 2> {
@@ -907,6 +1083,112 @@ auto gse::shader::descriptor_set(const vk::raii::Device & device, const vk::Desc
 	auto sets = descriptor_set(device, pool, type, 1);
 	assert(!sets.empty(), "Failed to allocate descriptor set for shader layout");
 	return std::move(sets.front());
+}
+
+auto gse::shader::generate_global_layouts(const vk::raii::Device& device) -> void {
+	assert(
+		m_global_layouts.empty(),
+		"Global shader layouts already generated"
+	);
+
+	constexpr auto vs = vk::ShaderStageFlagBits::eVertex;
+	constexpr auto fs = vk::ShaderStageFlagBits::eFragment;
+
+	constexpr int max_lights = 10;
+
+	auto create_layout = [&](
+		struct layout& layout,
+		const set::binding_type type,
+		const std::vector<vk::DescriptorSetLayoutBinding>& bindings
+		) -> void {
+			vk::raii::DescriptorSetLayout descriptor_set_layout = device.createDescriptorSetLayout(
+				vk::DescriptorSetLayoutCreateInfo{
+					.flags = type == set::binding_type::push ? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR : vk::DescriptorSetLayoutCreateFlags(),
+					.bindingCount = static_cast<uint32_t>(bindings.size()),
+					.pBindings = bindings.data()
+				}
+			);
+
+			std::vector<struct binding> shader_bindings;
+			shader_bindings.reserve(bindings.size());
+
+			for (const auto& binding : bindings) {
+				shader_bindings.emplace_back(std::string(), binding, std::nullopt);
+			}
+
+			layout.sets[type] = {
+				.type = type,
+				.layout = std::move(descriptor_set_layout),
+				.bindings = std::move(shader_bindings)
+			};
+		};
+
+	m_global_layouts.clear();
+
+	struct layout std_3d;
+
+	create_layout(std_3d, set::binding_type::persistent, {
+		{ 0, vk::DescriptorType::eUniformBuffer,        1, vs },
+		{ 1, vk::DescriptorType::eUniformBuffer,        1, vs },
+		{ 2, vk::DescriptorType::eCombinedImageSampler, 1, fs },
+		{ 3, vk::DescriptorType::eStorageBuffer,        1, fs },
+		{ 4, vk::DescriptorType::eCombinedImageSampler, 1, fs },
+		{ 5, vk::DescriptorType::eCombinedImageSampler, 1, fs },
+		{ 6, vk::DescriptorType::eCombinedImageSampler, 1, fs },
+		});
+
+	m_global_layouts.emplace(descriptor_layout::standard_3d, std::move(std_3d));
+
+	struct layout def_3d;
+
+	create_layout(def_3d, set::binding_type::persistent, {
+		{ 0, vk::DescriptorType::eCombinedImageSampler,      1, fs },	// g_albedo
+		{ 1, vk::DescriptorType::eCombinedImageSampler,      1, fs },	// g_normal
+		{ 2, vk::DescriptorType::eCombinedImageSampler,      1, fs },	// g_depth
+		{ 3, vk::DescriptorType::eCombinedImageSampler, max_lights, fs },
+		{ 4, vk::DescriptorType::eCombinedImageSampler, max_lights, fs },
+		{ 5, vk::DescriptorType::eUniformBuffer,        1, vs | fs },	// light_space_matrix
+		{ 6, vk::DescriptorType::eCombinedImageSampler, 1, fs },		// diffuse_texture
+		{ 7, vk::DescriptorType::eCombinedImageSampler, 1, fs },		// environment_map
+		{ 8, vk::DescriptorType::eStorageBuffer,        1, fs },		// light buffer
+		});
+
+	m_global_layouts.emplace(descriptor_layout::deferred_3d, std::move(def_3d));
+
+	struct layout for_3d;
+
+	create_layout(for_3d, set::binding_type::persistent, {
+		{ 0, vk::DescriptorType::eUniformBuffer, 1, vs | fs },
+		{ 4, vk::DescriptorType::eStorageBuffer, 1, fs }
+		});
+
+	create_layout(for_3d, set::binding_type::push, {
+		{ 0, vk::DescriptorType::eUniformBuffer,        1, vs },
+		{ 1, vk::DescriptorType::eUniformBuffer,        1, vs },
+		{ 2, vk::DescriptorType::eCombinedImageSampler, 1, fs },
+		{ 3, vk::DescriptorType::eCombinedImageSampler, 1, fs },
+		});
+
+	m_global_layouts.emplace(descriptor_layout::forward_3d, std::move(for_3d));
+
+	struct layout for_2d;
+
+	create_layout(for_2d, set::binding_type::persistent, {});
+
+	create_layout(for_2d, set::binding_type::push, {
+		{ 0, vk::DescriptorType::eCombinedImageSampler, 1, fs },
+		});
+
+	m_global_layouts.emplace(descriptor_layout::forward_2d, std::move(for_2d));
+
+	struct layout post_process;
+
+	create_layout(post_process, set::binding_type::persistent, {
+		{ 0, vk::DescriptorType::eCombinedImageSampler, 1, fs },
+		{ 1, vk::DescriptorType::eCombinedImageSampler, 1, fs },
+		});
+
+	m_global_layouts.emplace(descriptor_layout::post_process, std::move(post_process));
 }
 
 auto gse::read_file(const std::filesystem::path & path) -> std::vector<char> {
