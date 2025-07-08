@@ -40,8 +40,6 @@ export namespace gse {
 
 		std::filesystem::path path;
     };
-
-    using material_loader = resource_loader<material, material::handle, renderer::context>;
 }
 
 auto gse::material::load(renderer::context& context) -> void {

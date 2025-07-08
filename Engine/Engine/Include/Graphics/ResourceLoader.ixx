@@ -49,6 +49,7 @@ export namespace gse {
 		virtual auto queue(
 			const std::filesystem::path& path
 		) -> id = 0;
+		virtual auto instantly_load(const id& name) -> void = 0;
 		virtual auto resource_state(const id& id) -> state = 0;
 	};
 
@@ -82,6 +83,8 @@ export namespace gse {
 			const std::string& name,
 			Args&&... args
 		) -> id;
+
+		auto instantly_load(const id& id) -> void override;
 
 		auto add(Resource&& resource) -> void;
 
@@ -222,6 +225,53 @@ auto gse::resource_loader<Resource, Handle, RenderingContext>::queue(const std::
 
 	return resource_id;
 }
+
+template <typename Resource, typename Handle, typename RenderingContext>
+	requires gse::resource<Resource, RenderingContext>&& gse::resource_handle<Handle, Resource>
+auto gse::resource_loader<Resource, Handle, RenderingContext>::instantly_load(const id& id) -> void {
+	auto it = m_resources.find(id);
+	if (it == m_resources.end()) {
+		assert(false, std::format("Resource with ID {} not found.", id.number()));
+		return;
+	}
+
+	auto& slot = it->second;
+	auto current = slot.current_state.load(std::memory_order_acquire);
+
+	if (current == state::loaded)
+		return;
+	if (current == state::loading) {
+		return;
+	}
+
+	try {
+		if (!slot.resource) {
+			if constexpr (std::constructible_from<Resource, std::filesystem::path>) {
+				slot.resource = std::make_unique<Resource>(slot.path);
+			}
+			else {
+				assert(false, "Resource is not constructible from path!");
+				slot.current_state.store(state::failed, std::memory_order_release);
+				return;
+			}
+		}
+		if constexpr (requires { slot.resource->load(m_context); }) {
+			slot.resource->load(m_context);
+		}
+		else {
+			slot.resource->load(m_context.config());
+		}
+		slot.current_state.store(state::loaded, std::memory_order_release);
+	}
+	catch (const std::exception& e) {
+		std::println("Failed to instantly load resource '{}': {}", slot.path.string(), e.what());
+		slot.current_state.store(state::failed, std::memory_order_release);
+	}
+	catch (...) {
+		slot.current_state.store(state::failed, std::memory_order_release);
+	}
+}
+
 
 template <typename Resource, typename Handle, typename RenderingContext>
 	requires gse::resource<Resource, RenderingContext>&& gse::resource_handle<Handle, Resource>
