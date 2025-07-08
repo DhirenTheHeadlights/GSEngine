@@ -6,8 +6,6 @@ import :camera;
 import :mesh;
 import :model;
 import :render_component;
-import :shader_loader;
-import :texture_loader;
 import :point_light;
 import :light_source_component;
 import :material;

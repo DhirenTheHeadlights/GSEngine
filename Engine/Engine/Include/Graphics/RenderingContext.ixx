@@ -16,6 +16,9 @@ export namespace gse::renderer {
 		template <typename T> auto add_loader() -> T*;
 		template <typename T> auto resource(const id& id) -> typename T::handle;
 		template <typename T> auto queue(const std::filesystem::path& path) -> id;
+		template <typename T, typename... Args> auto queue(const std::string& name, Args&&... args) -> id;
+		template <typename T> auto instantly_load(const id& id) -> void;
+		template <typename T> auto add(T&& resource) -> void;
 		auto flush_all_queues() -> void;
 
 		template <typename T> auto resource_state(const id& id) -> resource_loader_base::state;
@@ -41,7 +44,7 @@ template <typename T>
 auto gse::renderer::context::add_loader() -> T* {
 	const auto type_index = std::type_index(typeid(T));
 	assert(!m_resource_loaders.contains(type_index), std::format("Resource loader for type {} already exists.", type_index.name()));
-	m_resource_loaders[type_index] = std::make_unique<T>(*this);
+	m_resource_loaders[type_index] = std::make_unique<resource_loader<T, typename T::handle, context>>(*this);
 	return m_resource_loaders[type_index].get();
 }
 
@@ -57,6 +60,27 @@ auto gse::renderer::context::queue(const std::filesystem::path& path) -> id {
 	const auto type_index = std::type_index(typeid(T));
 	assert(m_resource_loaders.contains(type_index), std::format("Resource loader for type {} does not exist.", type_index.name()));
 	return m_resource_loaders[type_index]->queue(path);
+}
+
+template <typename T, typename ... Args>
+auto gse::renderer::context::queue(const std::string& name, Args&&... args) -> id {
+	const auto type_index = std::type_index(typeid(T));
+	assert(m_resource_loaders.contains(type_index), std::format("Resource loader for type {} does not exist.", type_index.name()));
+	return static_cast<resource_loader<T, typename T::handle, context>*>(m_resource_loaders[type_index].get())->queue(name, std::forward<Args>(args)...);
+}
+
+template <typename T>
+auto gse::renderer::context::instantly_load(const id& id) -> void {
+	const auto type_index = std::type_index(typeid(T));
+	assert(m_resource_loaders.contains(type_index), std::format("Resource loader for type {} does not exist.", type_index.name()));
+	m_resource_loaders[type_index]->instantly_load(id);
+}
+
+template <typename T>
+auto gse::renderer::context::add(T&& resource) -> void {
+	const auto type_index = std::type_index(typeid(T));
+	assert(m_resource_loaders.contains(type_index), std::format("Resource loader for type {} does not exist.", type_index.name()));
+	static_cast<resource_loader<T, typename T::handle, context>*>(m_resource_loaders[type_index].get())->add(std::forward<T>(resource));
 }
 
 auto gse::renderer::context::flush_all_queues() -> void {

@@ -80,7 +80,6 @@ namespace gse {
 			custom = 99
 		};
 
-		shader() = default;
 		shader(const std::filesystem::path& path);
 
 		auto load(

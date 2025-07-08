@@ -5,9 +5,6 @@ import std;
 import :debug;
 import :renderer3d;
 import :renderer2d;
-import :shader_loader;
-import :texture_loader;
-import :model_loader;
 import :gui;
 import :render_component;
 import :resource_loader;
@@ -33,6 +30,16 @@ export namespace gse {
 	}
 
 	template <typename Resource>
+	auto instantly_load(const id& id) -> void {
+		g_rendering_context.instantly_load<Resource>(id);
+	}
+
+	template <typename Resource>
+	auto add(Resource&& resource) -> void {
+		g_rendering_context.add<Resource>(std::forward<Resource>(resource));
+	}
+
+	template <typename Resource>
 	auto resource_state(const id& id) -> resource_loader_base::state {
 		return g_rendering_context.resource_state<Resource>(id);
 	}
@@ -54,14 +61,10 @@ namespace gse::renderer {
 }
 
 auto gse::renderer::initialize() -> void {
-	auto* texture_loader = g_rendering_context.add_loader<gse::texture_loader>();
-	texture_loader->load_blank(g_rendering_context.config());
-
-	g_rendering_context.add_loader<material_loader>();
-	g_rendering_context.add_loader<model_loader>();
-	g_rendering_context.add_loader<shader_loader>();
-
-	shader::generate_global_layouts(g_rendering_context.config().device_data.device);
+	g_rendering_context.add_loader<texture>();
+	g_rendering_context.add_loader<model>();
+	g_rendering_context.add_loader<shader>();
+	g_rendering_context.add_loader<font>();
 
 	renderer3d::initialize(g_renderer3d_context, g_rendering_context.config());
 	renderer2d::initialize(g_renderer2d_context, g_rendering_context.config());
@@ -101,7 +104,6 @@ auto gse::renderer::shutdown() -> void {
 	g_rendering_context.config().device_data.device.waitIdle();
 	debug::shutdown_imgui();
 	gui::shutdown();
-	g_gui_font.reset();
 	g_renderer2d_context = {};
 	g_renderer3d_context = {};
 	g_rendering_context.config().swap_chain_data.albedo_image = {};
