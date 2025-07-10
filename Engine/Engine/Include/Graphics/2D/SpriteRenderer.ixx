@@ -9,15 +9,29 @@ import std;
 import :debug;
 import :font;
 import :texture;
-import :shader_loader;
-import :texture_loader;
-import :renderer3d;
 import :camera;
 import :shader;
+import :base_renderer;
 
 import gse.platform;
 import gse.utility;
 import gse.physics.math;
+
+export namespace gse::renderer {
+	class sprite final : public base_renderer {
+	public:
+		explicit sprite(const std::unique_ptr<context>& context) : base_renderer(context) {}
+
+		auto initialize() -> void override;
+		auto render(std::span<render_component> components) -> void override;
+	private:
+		vk::raii::Pipeline m_pipeline = nullptr;
+		vk::raii::PipelineLayout m_pipeline_layout = nullptr;
+	};
+}
+
+auto gse::renderer::sprite::initialize() -> void {
+}
 
 export namespace gse::renderer2d {
     struct context {

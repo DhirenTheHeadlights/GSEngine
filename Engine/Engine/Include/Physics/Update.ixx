@@ -38,7 +38,7 @@ auto gse::physics::update(const std::span<motion_component> motion_components, c
 			if (const auto collision_it = std::ranges::find_if(
 				collision_components, 
 				[object](const auto& c) {
-					return c.parent_id == object.parent_id;
+					return c.owner_id == object.owner_id;
 				}
 			); collision_it != collision_components.end()) {
 				collision = &*collision_it;
@@ -48,7 +48,7 @@ auto gse::physics::update(const std::span<motion_component> motion_components, c
 			if (const auto render_it = std::ranges::find_if(
 				render_components, 
 				[object](const auto& r) {
-					return r.parent_id == object.parent_id;
+					return r.owner_id == object.owner_id;
 				}
 			); render_it != render_components.end()) {
 				render = &*render_it;

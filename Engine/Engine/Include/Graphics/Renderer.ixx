@@ -3,7 +3,8 @@ export module gse.graphics:renderer;
 import std;
 
 import :debug;
-import :renderer3d;
+import :lighting_renderer;
+import :geometry_renderer;
 import :renderer2d;
 import :gui;
 import :render_component;
@@ -27,6 +28,11 @@ export namespace gse {
 	template <typename Resource>
 	auto queue(const std::filesystem::path& path, const std::string& name) -> void {
 		g_rendering_context.queue<Resource>(path, name);
+	}
+
+	template <typename Resource, typename... Args>
+	auto queue(const id& id, Args&&... args) -> void {
+		g_rendering_context.queue<Resource>(id, std::forward<Args>(args)...);
 	}
 
 	template <typename Resource>
@@ -68,11 +74,11 @@ auto gse::renderer::initialize() -> void {
 
 	renderer3d::initialize(g_renderer3d_context, g_rendering_context.config());
 	renderer2d::initialize(g_renderer2d_context, g_rendering_context.config());
-	gui::initialize(&*g_gui_font, g_rendering_context.config());
+	gui::initialize(g_rendering_context);
 }
 
 auto gse::renderer::begin_frame() -> void {
-	g_rendering_context.flush_all_queues();
+	g_rendering_context.flush_queues();
 
 	window::begin_frame();
 	vulkan::begin_frame(window::get_window(), g_rendering_context.config());

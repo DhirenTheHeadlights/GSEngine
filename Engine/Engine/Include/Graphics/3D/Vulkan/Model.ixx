@@ -16,8 +16,7 @@ export namespace gse {
     public:
         class handle {
         public:
-            explicit handle(const model& model)
-                : m_render_queue_entries(model.m_meshes.size()) {
+            explicit handle(model& model) : m_render_queue_entries(model.m_meshes.size()), m_owner(&model) {
                 for (size_t i = 0; i < model.m_meshes.size(); ++i) {
                     m_render_queue_entries[i] = render_queue_entry(
                         &model.m_meshes[i],
@@ -49,20 +48,21 @@ export namespace gse {
                 return m_model_id;
             }
 
+            auto owner() const -> const model& {
+                return *m_owner;
+			}
         private:
             std::vector<render_queue_entry> m_render_queue_entries;
             gse::id m_model_id;
+			model* m_owner = nullptr;
         };
 
-        explicit model(const std::filesystem::path& model_path)
-            : identifiable(model_path.stem().string())
-            , m_model_path(model_path)
-        {
-        }
+        explicit model(const std::filesystem::path& model_path) : identifiable(model_path.stem().string()), m_model_path(model_path) {}
 
         auto load(renderer::context& context) -> void;
         auto unload() -> void;
 
+        auto meshes() const -> std::span<const mesh>;
     private:
         std::vector<mesh> m_meshes;
         vec3<length>  m_center_of_mass{};
@@ -210,4 +210,8 @@ auto gse::model::load(renderer::context& context) -> void {
 
 auto gse::model::unload() -> void {
     m_meshes.clear();
+}
+
+auto gse::model::meshes() const -> std::span<const mesh> {
+    return m_meshes;
 }
