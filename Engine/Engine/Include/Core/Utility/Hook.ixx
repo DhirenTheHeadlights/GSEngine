@@ -5,8 +5,6 @@ import std;
 import :id;
 
 namespace gse {
-	export struct entity;
-
 	export template <typename T>
 	struct hook_base {
 		virtual ~hook_base() = default;
@@ -24,18 +22,6 @@ namespace gse {
 		virtual auto render() -> void {}
 	protected:
 		id m_owner_id;
-	};
-
-	export template <>
-	struct hook<entity> {
-		virtual ~hook() = default;
-		hook() = default;
-
-		virtual auto initialize() -> void {}
-		virtual auto update() -> void {}
-		virtual auto render() -> void {}
-
-		std::uint32_t owner_id = 0;
 	};
 
 	export template <typename T>

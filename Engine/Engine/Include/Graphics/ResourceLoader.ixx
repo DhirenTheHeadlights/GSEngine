@@ -49,7 +49,7 @@ export namespace gse {
 		virtual auto queue(
 			const std::filesystem::path& path
 		) -> id = 0;
-		virtual auto instantly_load(const id& name) -> void = 0;
+		virtual auto instantly_load(const id& name) -> std::any = 0;
 		virtual auto resource_state(const id& id) -> state = 0;
 	};
 
@@ -84,7 +84,7 @@ export namespace gse {
 			Args&&... args
 		) -> id;
 
-		auto instantly_load(const id& id) -> void override;
+		auto instantly_load(const id& id) -> std::any override;
 
 		auto add(Resource&& resource) -> void;
 
@@ -228,20 +228,21 @@ auto gse::resource_loader<Resource, Handle, RenderingContext>::queue(const std::
 
 template <typename Resource, typename Handle, typename RenderingContext>
 	requires gse::resource<Resource, RenderingContext>&& gse::resource_handle<Handle, Resource>
-auto gse::resource_loader<Resource, Handle, RenderingContext>::instantly_load(const id& id) -> void {
+auto gse::resource_loader<Resource, Handle, RenderingContext>::instantly_load(const id& id) -> std::any {
 	auto it = m_resources.find(id);
 	if (it == m_resources.end()) {
 		assert(false, std::format("Resource with ID {} not found.", id.number()));
-		return;
+		return {};
 	}
 
 	auto& slot = it->second;
 	auto current = slot.current_state.load(std::memory_order_acquire);
 
-	if (current == state::loaded)
-		return;
+	if (current == state::loaded) {
+		return {};
+	}
 	if (current == state::loading) {
-		return;
+		return {};
 	}
 
 	try {
@@ -252,7 +253,7 @@ auto gse::resource_loader<Resource, Handle, RenderingContext>::instantly_load(co
 			else {
 				assert(false, "Resource is not constructible from path!");
 				slot.current_state.store(state::failed, std::memory_order_release);
-				return;
+				return {};
 			}
 		}
 		if constexpr (requires { slot.resource->load(m_context); }) {
@@ -270,6 +271,8 @@ auto gse::resource_loader<Resource, Handle, RenderingContext>::instantly_load(co
 	catch (...) {
 		slot.current_state.store(state::failed, std::memory_order_release);
 	}
+
+	return Resource::handle(*slot.resource);
 }
 
 

@@ -31,7 +31,7 @@ gse::scoped_timer::~scoped_timer() {
 	m_completed = true;
 	const time elapsed_time = reset();
 	if (m_print) {
-		std::cout << m_name << ": " << elapsed_time.as<units::milliseconds>() << "ms\n";
+		std::println("Timer '{}' completed in {}ms", m_name, elapsed_time.as<units::milliseconds>());
 	}
 }
 

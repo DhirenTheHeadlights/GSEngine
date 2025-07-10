@@ -4,7 +4,6 @@ import std;
 
 import :mesh;
 import :model;
-import :model_loader;
 
 import gse.utility;
 import gse.physics.math;
@@ -12,7 +11,7 @@ import gse.physics.math;
 export namespace gse {
 	struct render_component final : component {
 		render_component(const std::uint32_t id) : component(id) {}
-		render_component(std::uint32_t id, const model_handle& handle);
+		render_component(std::uint32_t id, const model::handle& handle);
 
 		render_component(render_component&&) noexcept = default;
 		auto operator=(render_component&&) noexcept -> render_component & = default;
@@ -23,7 +22,7 @@ export namespace gse {
 		auto update_bounding_box_meshes() -> void;
 		auto set_model_positions(const vec3<length>& position) -> void;
 
-		std::vector<model_handle> models;
+		std::vector<model::handle> models;
 		std::vector<mesh> bounding_box_meshes;
 
 		auto calculate_center_of_mass() -> void;
@@ -34,8 +33,8 @@ export namespace gse {
 	};
 }
 
-gse::render_component::render_component(const std::uint32_t id, const model_handle& handle) : component(id) {
-	models.emplace_back(model_loader::model(handle));
+gse::render_component::render_component(const std::uint32_t id, const model::handle& handle) : component(id) {
+	models.emplace_back(handle);
 	calculate_center_of_mass();
 }
 
@@ -55,10 +54,10 @@ auto gse::render_component::calculate_center_of_mass() -> void {
 	vec3<length> sum;
 	int number_of_meshes = 0;
 	for (const auto& model_handle : models) {
-		for (const auto& model = model_loader::model(model_handle); auto& model_mesh : model.m_meshes) {
-			sum += model_mesh.center_of_mass;
-			number_of_meshes += static_cast<int>(model.m_meshes.size());
+		for (const auto& mesh : model_handle.owner().meshes()) {
+			sum += mesh.center_of_mass;
 		}
+		number_of_meshes += static_cast<int>(model_handle.owner().meshes().size());
 	}
 
 	center_of_mass = sum / static_cast<float>(number_of_meshes);
