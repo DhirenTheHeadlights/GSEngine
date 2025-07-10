@@ -149,7 +149,7 @@ auto update_rotation(gse::physics::motion_component& component) -> void {
 	component.angular_velocity += component.angular_acceleration * dt;
 
 	// 4) Damping to bleed off spin
-	constexpr float angular_velocity_damping = .98f;
+	constexpr float angular_velocity_damping = .95f;
 	component.angular_velocity *= angular_velocity_damping;
 
 	// 5) Turn ? ? quaternion derivative:  
@@ -161,7 +161,7 @@ auto update_rotation(gse::physics::motion_component& component) -> void {
 
 	// 6) Integrate orientation and normalize
 	component.orientation += delta_q * dt.as_default_unit();
-	component.orientation = gse::normalize(component.orientation);
+	//component.orientation = gse::normalize(component.orientation);
 
 	// 7) Clear accumulators for the next frame
 	component.current_torque = {};

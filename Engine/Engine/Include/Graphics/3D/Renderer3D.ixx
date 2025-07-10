@@ -43,7 +43,7 @@ import gse.platform.glfw.error_reporting;
 import gse.graphics.texture_loader;
 
 ///////TEMPORARY
-bool debug_rendering = true;
+bool debug_rendering = false;
 
 
 gse::camera g_camera;
@@ -636,6 +636,7 @@ auto gse::renderer3d::render() -> void {
 	debug::add_imgui_callback([] {
 		ImGui::Begin("Renderer3D");
 
+		ImGui::Checkbox("Debug Rendering", &debug_rendering);
 		ImGui::Checkbox("HDR", &g_hdr);
 		ImGui::Checkbox("Bloom", &g_bloom);
 		ImGui::Checkbox("Depth Map Debug", &g_depth_map_debug);

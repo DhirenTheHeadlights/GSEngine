@@ -447,7 +447,7 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
     constexpr float slop = 0.001f;
     const float corrected_penetration = std::max(penetration_depth - slop, 0.0f);
 
-    const auto correction_a = -collision_normal * meters(corrected_penetration);
+    const auto correction_a = -collision_normal * 0.1f * meters(corrected_penetration);
     object_motion_component->current_position -= correction_a;
 
 
@@ -519,6 +519,7 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
 
     const auto r_a = contact_point - object_motion_component->current_position;
 
+
     const mat3 inv_inertial_tensor = object_motion_component->get_inverse_inertia_tensor_world();
 
     const auto rcross = cross(r_a.as<units::meters>(), collision_normal);
@@ -527,7 +528,7 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
     const float relative_velocity_along_normal = dot(contact_velocity, object_collision_component.collision_information.collision_normal);
 
     const float rot_term_a = dot(
-        collision_normal,
+        -collision_normal,
         cross(inv_inertial_tensor * rcross, r_a.as<units::meters>())
     );
 
@@ -553,7 +554,7 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
 //	std::cout << "pre-collision velocity: " << object_motion_component->current_velocity.x.as_default_unit() << ", " << object_motion_component->current_velocity.y.as_default_unit() << ", " << object_motion_component->current_velocity.z.as_default_unit() << "\n";
 //	std::cout << "pre-collision acceleration: " << object_motion_component->current_acceleration.x.as_default_unit() << ", " << object_motion_component->current_acceleration.y.as_default_unit() << ", " << object_motion_component->current_acceleration.z.as_default_unit() << "\n";
 //	std::cout << "lever arm: " << r_a.x.as_default_unit() << ", " << r_a.y.as_default_unit() << ", " << r_a.z.as_default_unit() << "\n";
-    if (relative_velocity_along_normal < 0.0f) {
+    if (/*relative_velocity_along_normal < 0.0f*/true) {
         const float j = -(1.f + restitution) * relative_velocity_along_normal / denom;
 		//std::cout << "rotation term a: " << rot_term_a << "\n";
 		//std::cout << "rotation term b: " << rot_term_b << "\n";
@@ -561,13 +562,14 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
 		//std::cout << "denom: " << denom << "\n";
 
         auto torque_impulse = gse::vec3<gse::torque>(cross(r_a.as<units::meters>(), collision_normal * j));
-        constexpr float epsilon_torque = 0.01f;
-        if (std::abs(torque_impulse.x.as_default_unit()) < epsilon_torque) {
-            torque_impulse.x = epsilon_torque * std::copysign(1.0f, torque_impulse.x.as_default_unit());
-        }
-        torque_impulse *= 1.3f;
+        //torque_impulse *= 3.f;
+        //torque_impulse *= 1 / std::min(corrected_penetration, 0.0001f);
+        //constexpr float epsilon_torque = 0.01f;
+        //if (std::abs(torque_impulse.x.as_default_unit()) < epsilon_torque) {
+        //    torque_impulse.x = epsilon_torque * std::copysign(1.0f, torque_impulse.x.as_default_unit());
+        //}
         object_motion_component->current_torque += torque_impulse;
-        object_motion_component->current_velocity += vec3<velocity>(collision_normal * (j * inv_mass));
+        //object_motion_component->current_velocity += vec3<velocity>(collision_normal * (j * inv_mass));
 	    gse::debug_renderer::add_debug_vector(object_collision_component.parent_id, contact_point, torque_impulse);
 		std::cout << "applied torque impulse: " << torque_impulse.x.as_default_unit() << ", " << torque_impulse.y.as_default_unit() << ", " << torque_impulse.z.as_default_unit() << "\n";
 
@@ -578,10 +580,6 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
 
 
     }
-
-    //Damping to prevent infinite spin
-    constexpr float angular_velocity_damping = 0.98f;
-    object_motion_component->angular_velocity *= angular_velocity_damping;
 
 
     object_collision_component.collision_information.collision_point = contact_point;
