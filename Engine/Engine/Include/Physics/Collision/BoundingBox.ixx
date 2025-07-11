@@ -52,6 +52,8 @@ export namespace gse {
 		auto update_axes() -> void;
 		auto corners() const -> std::array<vec3<length>, 8>;
 		auto face_vertices(axis axis, bool positive) const -> std::array<vec3<length>, 4>;
+
+		auto contains(vec3<length> point) const -> bool;
 	};
 }
 
@@ -165,5 +167,20 @@ auto gse::oriented_bounding_box::face_vertices(axis axis, const bool positive) c
 		face_center - axes[j] * extent_j - axes[k] * extent_k,
 		face_center - axes[j] * extent_j + axes[k] * extent_k
 	};
+}
+
+auto gse::oriented_bounding_box::contains(vec3<length> point) const -> bool {
+	const auto d = (point - center);
+
+	const auto local_x = dot(d, gse::vec3<gse::length>(axes[0]));
+	const auto local_y = dot(d, gse::vec3<gse::length>(axes[1]));
+	const auto local_z = dot(d, gse::vec3<gse::length>(axes[2]));
+
+	const auto half_size = size / 2.0f;
+
+	return std::abs(local_x.as_default_unit()) <= half_size.x.as_default_unit() &&
+		std::abs(local_y.as_default_unit()) <= half_size.y.as_default_unit() &&
+		std::abs(local_z.as_default_unit()) <= half_size.z.as_default_unit();
+	
 }
 

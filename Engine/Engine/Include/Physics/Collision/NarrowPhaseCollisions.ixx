@@ -129,6 +129,14 @@ auto sat_collision(const gse::oriented_bounding_box& obb1, const gse::oriented_b
     return true;
 }
 
+auto get_obb_overlap_vertices(const gse::oriented_bounding_box& obb1, const gse::oriented_bounding_box& obb2, std::vector<gse::vec3<gse::length>>& overlap_vertices) {
+	//find each vertex of obb1 that is inside obb2 and apnd it to overlap_vertices
+    for (const auto& corner : obb1.corners()) {
+        if (obb2.contains(corner)) {
+            overlap_vertices.push_back(corner);
+        }
+	}
+}
 
 struct plane {
 	gse::unitless::vec3 normal;
@@ -139,9 +147,7 @@ auto create_plane(const gse::vec3<gse::length>& p,
     const gse::unitless::vec3& collision_normal) -> plane {
     // if n is almost vertical, cross with X; else cross with Y
     gse::unitless::vec3 helper =
-        (fabs(collision_normal.y) > 0.99f
-            ? gse::unitless::vec3{ 1,0,0 }
-    : gse::unitless::vec3{ 0,1,0 });
+        (fabs(collision_normal.y) > 0.99 ? gse::unitless::vec3{ 1,0,0 }  : gse::unitless::vec3{ 0,1,0 });
     gse::unitless::vec3 plane_n = gse::normalize(gse::cross(collision_normal, helper));
     return { plane_n,
              gse::dot(plane_n, p.as<gse::units::meters>()) };
@@ -399,7 +405,15 @@ auto adjust_orientations_together(gse::physics::motion_component* object_motion_
 }
 
 auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_component* object_motion_component, physics::collision_component& object_collision_component, physics::collision_component& other_collision_component) -> void {
-    sat_result sat_res;
+    //check for nans in posiitions
+    if (std::isnan(object_motion_component->current_position.x.as_default_unit()) ||
+        std::isnan(object_motion_component->current_position.y.as_default_unit()) ||
+        std::isnan(object_motion_component->current_position.z.as_default_unit())) {
+        std::cerr << "NaN detected in object position!\n";
+        return;
+	}
+	sat_result sat_res;
+    std::vector<gse::vec3<gse::length>> contact_points;
 
     
 
@@ -423,6 +437,8 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
         //console output "collision detected betweenb [name of object 1] [object 2]"
    /* std::cout << "collision detected" << std::endl;*/
 
+    get_obb_overlap_vertices(object_collision_component.oriented_bounding_box, other_collision_component.oriented_bounding_box, contact_points);
+	std::cout << "Contact points size: " << contact_points.size() << "\n";
     object_collision_component.collision_information.colliding = true;
     object_collision_component.collision_information.collision_normal = sat_res.normal;
     object_collision_component.collision_information.penetration = sat_res.penetration;
@@ -447,7 +463,7 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
     constexpr float slop = 0.001f;
     const float corrected_penetration = std::max(penetration_depth - slop, 0.0f);
 
-    const auto correction_a = -collision_normal * 0.1f * meters(corrected_penetration);
+    const auto correction_a = -collision_normal  * meters(corrected_penetration);
     object_motion_component->current_position -= correction_a;
 
 
@@ -456,12 +472,12 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
         object_motion_component->most_recent_y_collision = object_motion_component->current_position.y;
     }
 
-    const auto contact_point = compute_contact_point(clip_polygon_against_plane(
+    const auto main_contact_point = compute_contact_point(clip_polygon_against_plane(
         object_collision_component.oriented_bounding_box.face_vertices(object_collision_component.collision_information.get_axis(), true),
         create_plane(object_motion_component->current_position, object_collision_component.collision_information.collision_normal)
     ));
-
-    //int  face_axis;
+	contact_points.push_back(main_contact_point);
+    /*//int  face_axis;
     //bool edge_edge_sim = false;
     //bool box_a_face = false;
     //auto* ref_obb = &object_collision_component.oriented_bounding_box;
@@ -515,75 +531,79 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
     //            - clip_plane.offset.as<gse::units::meters>();
     //        contact_point = face_center - n * gse::meters(d);
     //    }
-    //}
+    //}*/
 
-    const auto r_a = contact_point - object_motion_component->current_position;
+    for (auto& contact_point : contact_points){
 
-
-    const mat3 inv_inertial_tensor = object_motion_component->get_inverse_inertia_tensor_world();
-
-    const auto rcross = cross(r_a.as<units::meters>(), collision_normal);
-
-    const auto contact_velocity = object_motion_component->current_velocity.as<units::meters_per_second>() + cross(object_motion_component->angular_velocity.as<units::radians_per_second>(), r_a.as<units::meters>());
-    const float relative_velocity_along_normal = dot(contact_velocity, object_collision_component.collision_information.collision_normal);
-
-    const float rot_term_a = dot(
-        -collision_normal,
-        cross(inv_inertial_tensor * rcross, r_a.as<units::meters>())
-    );
-
-    /////// FOR USE WITH NON-STATIC OTHER OBJECT; REQUIRES OBJECT B MOTION COMPONENT
-    const float rot_term_b = 0.f;
-
-    const float denom =
-        inv_mass + rot_term_a;
+	    const auto r_a = contact_point - object_motion_component->current_position;
 
 
-    // Arbitrary coefficient; should be based off material.
-    const float restitution = 0.5f;
-    std::cout << "contact velocity a: " << contact_velocity.x << ", " << contact_velocity.y << ", " << contact_velocity.z << "\n";
-    std::cout << "contact normal : " << object_collision_component.collision_information.collision_normal.x << ", "
-        << object_collision_component.collision_information.collision_normal.y << ", "
-        << object_collision_component.collision_information.collision_normal.z << "\n";
+	    const mat3 inv_inertial_tensor = object_motion_component->get_inverse_inertia_tensor_world();
 
-    std::cout << "Relative velocity along normal: " << relative_velocity_along_normal << "\n";
+	    const auto rcross = cross(r_a.as<units::meters>(), collision_normal);
 
-//std::cout << "collision normal: " << collision_normal.x << ", " << collision_normal.y << ", " << collision_normal.z << "\n";
-//	std::cout << "velocity into surface: " << velocity_into_surface << "\n";
-//	std::cout << "acceleration into surface: " << acceleration_into_surface << "\n";
-//	std::cout << "pre-collision velocity: " << object_motion_component->current_velocity.x.as_default_unit() << ", " << object_motion_component->current_velocity.y.as_default_unit() << ", " << object_motion_component->current_velocity.z.as_default_unit() << "\n";
-//	std::cout << "pre-collision acceleration: " << object_motion_component->current_acceleration.x.as_default_unit() << ", " << object_motion_component->current_acceleration.y.as_default_unit() << ", " << object_motion_component->current_acceleration.z.as_default_unit() << "\n";
-//	std::cout << "lever arm: " << r_a.x.as_default_unit() << ", " << r_a.y.as_default_unit() << ", " << r_a.z.as_default_unit() << "\n";
-    if (/*relative_velocity_along_normal < 0.0f*/true) {
-        const float j = -(1.f + restitution) * relative_velocity_along_normal / denom;
-		//std::cout << "rotation term a: " << rot_term_a << "\n";
-		//std::cout << "rotation term b: " << rot_term_b << "\n";
-		//std::cout << "j: " << j << "\n";
-		//std::cout << "denom: " << denom << "\n";
+	    const auto contact_velocity = object_motion_component->current_velocity.as<units::meters_per_second>() + cross(object_motion_component->angular_velocity.as<units::radians_per_second>(), r_a.as<units::meters>());
+	    const float relative_velocity_along_normal = dot(contact_velocity, object_collision_component.collision_information.collision_normal);
 
-        auto torque_impulse = gse::vec3<gse::torque>(cross(r_a.as<units::meters>(), collision_normal * j));
-        //torque_impulse *= 3.f;
-        //torque_impulse *= 1 / std::min(corrected_penetration, 0.0001f);
-        //constexpr float epsilon_torque = 0.01f;
-        //if (std::abs(torque_impulse.x.as_default_unit()) < epsilon_torque) {
-        //    torque_impulse.x = epsilon_torque * std::copysign(1.0f, torque_impulse.x.as_default_unit());
-        //}
-        object_motion_component->current_torque += torque_impulse;
-        //object_motion_component->current_velocity += vec3<velocity>(collision_normal * (j * inv_mass));
-	    gse::debug_renderer::add_debug_vector(object_collision_component.parent_id, contact_point, torque_impulse);
-		std::cout << "applied torque impulse: " << torque_impulse.x.as_default_unit() << ", " << torque_impulse.y.as_default_unit() << ", " << torque_impulse.z.as_default_unit() << "\n";
+	    const float rot_term_a = dot(
+	        collision_normal,
+	        cross(inv_inertial_tensor * rcross, r_a.as<units::meters>())
+	    );
 
-        //slightly adjust object angular acceleration in the direction of the torque impulse to prevent sticking
-		//object_motion_component->angular_acceleration += (torque_impulse / object_motion_component->moment_of_inertia);
+	    /////// FOR USE WITH NON-STATIC OTHER OBJECT; REQUIRES OBJECT B MOTION COMPONENT
+	    constexpr const float epsilon = 0.00001f; // small value to prevent division by zero
+	    const float rot_term_b = 0.f;
 		
-         
+
+	    const float denom =
+	        std::max(epsilon, inv_mass + rot_term_a);
 
 
-    }
+	    // Arbitrary coefficient; should be based off material.
+	    const float restitution = 0.5f;
+	    std::cout << "contact velocity a: " << contact_velocity.x << ", " << contact_velocity.y << ", " << contact_velocity.z << "\n";
+	    std::cout << "contact normal : " << object_collision_component.collision_information.collision_normal.x << ", "
+	        << object_collision_component.collision_information.collision_normal.y << ", "
+	        << object_collision_component.collision_information.collision_normal.z << "\n";
+
+	    std::cout << "Relative velocity along normal: " << relative_velocity_along_normal << "\n";
+
+	//std::cout << "collision normal: " << collision_normal.x << ", " << collision_normal.y << ", " << collision_normal.z << "\n";
+	//	std::cout << "velocity into surface: " << velocity_into_surface << "\n";
+	//	std::cout << "acceleration into surface: " << acceleration_into_surface << "\n";
+	//	std::cout << "pre-collision velocity: " << object_motion_component->current_velocity.x.as_default_unit() << ", " << object_motion_component->current_velocity.y.as_default_unit() << ", " << object_motion_component->current_velocity.z.as_default_unit() << "\n";
+	//	std::cout << "pre-collision acceleration: " << object_motion_component->current_acceleration.x.as_default_unit() << ", " << object_motion_component->current_acceleration.y.as_default_unit() << ", " << object_motion_component->current_acceleration.z.as_default_unit() << "\n";
+	//	std::cout << "lever arm: " << r_a.x.as_default_unit() << ", " << r_a.y.as_default_unit() << ", " << r_a.z.as_default_unit() << "\n";
+	    if (relative_velocity_along_normal > 0.0f) {
+	        const float j = -(1.f + restitution) * relative_velocity_along_normal / denom;
+			//std::cout << "rotation term a: " << rot_term_a << "\n";
+			//std::cout << "rotation term b: " << rot_term_b << "\n";
+			//std::cout << "j: " << j << "\n";
+			//std::cout << "denom: " << denom << "\n";
+
+	        auto torque_impulse = gse::vec3<gse::torque>(cross(r_a.as<units::meters>(), collision_normal * j));
+	        //torque_impulse *= 3.f;
+	        //torque_impulse *= 1 / std::min(corrected_penetration, 0.0001f);
+	        //constexpr float epsilon_torque = 0.01f;
+	        //if (std::abs(torque_impulse.x.as_default_unit()) < epsilon_torque) {
+	        //    torque_impulse.x = epsilon_torque * std::copysign(1.0f, torque_impulse.x.as_default_unit());
+	        //}
+	        object_motion_component->current_torque += torque_impulse;
+	        //object_motion_component->current_velocity += vec3<velocity>(collision_normal * (j * inv_mass));
+		    gse::debug_renderer::add_debug_vector(object_collision_component.parent_id, contact_point, torque_impulse);
+			std::cout << "applied torque impulse: " << torque_impulse.x.as_default_unit() << ", " << torque_impulse.y.as_default_unit() << ", " << torque_impulse.z.as_default_unit() << "\n";
+
+	        //slightly adjust object angular acceleration in the direction of the torque impulse to prevent sticking
+			//object_motion_component->angular_acceleration += (torque_impulse / object_motion_component->moment_of_inertia);
+			
+	         
 
 
-    object_collision_component.collision_information.collision_point = contact_point;
-    gse::debug_renderer::add_debug_point(object_collision_component.parent_id, contact_point);
+	    }
+
+	}
+    object_collision_component.collision_information.collision_point = main_contact_point;
+    gse::debug_renderer::add_debug_point(object_collision_component.parent_id, main_contact_point);
 
 	//std::cout all the same diagnositcs as in the dynamic collision function
 	if (velocity_into_surface < 0.0f) {
