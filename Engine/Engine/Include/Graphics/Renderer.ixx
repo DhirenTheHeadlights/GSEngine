@@ -71,6 +71,7 @@ auto gse::renderer::initialize() -> void {
 	g_rendering_context.add_loader<model>();
 	g_rendering_context.add_loader<shader>();
 	g_rendering_context.add_loader<font>();
+	g_rendering_context.add_loader<material>();
 
 	renderer3d::initialize(g_renderer3d_context, g_rendering_context.config());
 	renderer2d::initialize(g_renderer2d_context, g_rendering_context.config());

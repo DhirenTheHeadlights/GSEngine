@@ -55,7 +55,7 @@ export namespace gse {
 
 	template <typename Resource, typename Handle, typename RenderingContext>
 		requires resource<Resource, RenderingContext> && resource_handle<Handle, Resource>
-	class resource_loader : public resource_loader_base, public non_copyable {
+	class resource_loader final : public resource_loader_base, public non_copyable {
 	public:
 		struct slot {
 			std::unique_ptr<Resource> resource;
