@@ -7,52 +7,46 @@ import gse.physics.math;
 
 export namespace gse::main_clock {
 	auto update() -> void;
-	auto get_raw_delta_time() -> time;
-	auto get_current_time() -> time;
-	auto get_constant_update_time() -> time;
-	auto get_frame_rate() -> int;
+
+	auto raw_dt() -> time;
+	auto current_time() -> time;
+	auto frame_rate() -> std::uint32_t;
+
+	constexpr time const_update_time = seconds(1.f / 100.f);
 }
 
-std::chrono::steady_clock::time_point g_last_update = std::chrono::steady_clock::now();
-gse::time g_dt;
+namespace gse::main_clock {
+	static constinit clock main_clock;
+	static constinit clock dt_clock;
+	static constinit time dt;
+	static constinit time frame_rate_update_time;
 
-int g_frame_rate = 0;
-float g_frame_count = 0;
-float g_num_frames_to_average = 40;
-gse::time g_frame_rate_update_time;
-
-gse::clock g_main_clock;
+	static constinit std::uint32_t frame_count = 0;
+	static constinit std::uint32_t frame_rate_count = 0;
+	constexpr std::uint32_t frame_rate_update_interval = 60; 
+}
 
 auto gse::main_clock::update() -> void {
-	const auto now = std::chrono::steady_clock::now();
-	const std::chrono::duration<float> delta_time = now - g_last_update;
-	g_last_update = now;
+	dt = std::min(dt, const_update_time);
 
-	// Update delta time (clamped to a max of 0.16 seconds to avoid big time jumps)
-	g_dt = seconds(std::min(delta_time.count(), 0.16f));
+	++frame_count;
+	frame_rate_update_time += dt;
 
-	++g_frame_count;
-	g_frame_rate_update_time += g_dt;
-
-	if (g_frame_count >= g_num_frames_to_average) {
-		g_frame_rate = static_cast<int>(g_frame_count / g_frame_rate_update_time.as<units::seconds>());
-		g_frame_rate_update_time = time();
-		g_frame_count = 0.f;
+	if (frame_count >= frame_rate_update_interval) {
+		frame_rate_count = static_cast<int>(frame_count / frame_rate_update_time.as<units::seconds>());
+		frame_rate_update_time = {};
+		frame_count = 0.f;
 	}
 }
 
-auto gse::main_clock::get_raw_delta_time() -> time {
-	return g_dt;
+auto gse::main_clock::raw_dt() -> time {
+	return dt;
 }
 
-auto gse::main_clock::get_current_time() -> time {
-	return g_main_clock.elapsed();
+auto gse::main_clock::current_time() -> time {
+	return main_clock.elapsed();
 }
 
-auto gse::main_clock::get_constant_update_time() -> time {
-	return seconds(0.01f);
-}
-
-auto gse::main_clock::get_frame_rate() -> int {
-	return g_frame_rate;
+auto gse::main_clock::frame_rate() -> std::uint32_t {
+	return frame_rate_count;
 }

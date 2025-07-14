@@ -80,7 +80,7 @@ struct scene1_hook final : gse::hook<gse::scene> {
 			if (gse::scene_loader::scene(gse::get_id("Scene1"))->active()) {
 				ImGui::Begin("Game Data");
 
-				ImGui::Text("FPS: %d", gse::main_clock::get_frame_rate());
+				ImGui::Text("FPS: %d", gse::main_clock::frame_rate());
 
 				ImGui::End();
 			}
@@ -113,7 +113,7 @@ struct scene2_hook final : gse::hook<gse::scene> {
 			if (gse::scene_loader::scene(gse::get_id("Scene2"))->active()) {
 				ImGui::Begin("Game Data");
 
-				ImGui::Text("FPS: %d", gse::main_clock::get_frame_rate());
+				ImGui::Text("FPS: %d", gse::main_clock::frame_rate());
 
 				ImGui::End();
 			}
@@ -152,13 +152,13 @@ auto game::initialize() -> bool {
 	auto scene3 = std::make_unique<gse::scene>("Scene3");
 	scene3->add_hook(std::make_unique<scene3_hook>(scene3.get(), scene3->id()));
 
-	gse::scene_loader::add_scene(scene1);
-	gse::scene_loader::add_scene(scene2);
-	gse::scene_loader::add_scene(scene3);
+	gse::scene_loader::add(scene1);
+	gse::scene_loader::add(scene2);
+	gse::scene_loader::add(scene3);
 
-	gse::scene_loader::queue_scene_trigger(gse::get_id("Scene1"), [] { return gse::input::get_keyboard().keys[GLFW_KEY_F1].pressed; });
-	gse::scene_loader::queue_scene_trigger(gse::get_id("Scene2"), [] { return gse::input::get_keyboard().keys[GLFW_KEY_F2].pressed; });
-	gse::scene_loader::queue_scene_trigger(gse::get_id("Scene3"), [] { return gse::input::get_keyboard().keys[GLFW_KEY_F3].pressed; });
+	gse::scene_loader::queue(gse::get_id("Scene1"), [] { return gse::input::get_keyboard().keys[GLFW_KEY_F1].pressed; });
+	gse::scene_loader::queue(gse::get_id("Scene2"), [] { return gse::input::get_keyboard().keys[GLFW_KEY_F2].pressed; });
+	gse::scene_loader::queue(gse::get_id("Scene3"), [] { return gse::input::get_keyboard().keys[GLFW_KEY_F3].pressed; });
 
 	return true;
 }

@@ -2,10 +2,10 @@ export module gse.utility:component;
 
 import std;
 
+import :id;
+
 export namespace gse {
-	struct component {
-		explicit component(const std::uint32_t initial_unique_id) : owner_id(initial_unique_id) {}
-		std::uint32_t owner_id = 0;
-		std::string_view parent_name;
+	struct component : identifiable_owned {
+		explicit component(const id& owner_id) : identifiable_owned(owner_id) {}
 	};
 }

@@ -12,8 +12,8 @@ export namespace gse {
     auto generate_id(std::string_view tag) -> id;
 	auto get_id(uuid number) -> id;
 	auto get_id(std::string_view tag) -> id;
-	auto does_id_exist(uuid number) -> bool;
-	auto does_id_exist(std::string_view tag) -> bool;
+	auto exists(uuid number) -> bool;
+	auto exists(std::string_view tag) -> bool;
 
     class id {
     public:
@@ -22,6 +22,7 @@ export namespace gse {
 
 		auto number() const -> uuid;
 		auto tag() const -> std::string;
+		auto exists() const -> bool { return m_number < std::numeric_limits<uuid>::max(); }
     private:
         explicit id(uuid id, const std::string& tag);
 
@@ -33,13 +34,26 @@ export namespace gse {
 
     class identifiable {
 	public:
-	    explicit identifiable(const std::string& tag);
+	    explicit identifiable(const std::string& tag) : m_id(generate_id(tag)) {}
 
-		auto id() const -> id;
-		auto operator==(const identifiable& other) const -> bool;
+		auto id() const -> id { return m_id; }
+		auto operator==(const identifiable& other) const -> bool = default;
 	private:
 		class id m_id;
     };
+
+	class identifiable_owned {
+	public:
+		explicit identifiable_owned(const id& tag) : m_owner_id(tag) {}
+
+		auto owner_id() const -> id { return m_owner_id; }
+		auto operator==(const identifiable_owned& other) const -> bool = default;
+	private:
+		id m_owner_id;
+	};
+
+	template <typename T>
+	concept is_identifiable = std::derived_from<T, identifiable>;
 }
 
 export template <>
@@ -81,59 +95,52 @@ struct transparent_equal {
 	}
 };
 
-auto& ids() {
-    static std::vector<gse::id> ids;
-    return ids;
+namespace gse {
+	static constinit std::vector<id> ids;
+	static constinit std::unordered_map<uuid, id> id_map;
+	static constinit std::unordered_map<std::string, id, transparent_hash, transparent_equal> tag_map;
+
+	auto register_object(const id& obj, const std::string& tag) -> void;
 }
 
-auto& id_map() {
-    static std::unordered_map<gse::uuid, gse::id> id_map;
-    return id_map;
-}
-
-auto& tag_map() {
-    static std::unordered_map<std::string, gse::id, transparent_hash, transparent_equal> tag_map;
-    return tag_map;
-}
-
-auto register_object(const gse::id& obj, const std::string& tag) -> void {
-	id_map().insert_or_assign(obj.number(), obj);
-	tag_map().insert_or_assign(tag, obj);
+auto gse::register_object(const id& obj, const std::string& tag) -> void {
+	id_map.insert_or_assign(obj.number(), obj);
+	tag_map.insert_or_assign(tag, obj);
 }
 
 auto gse::generate_id(const std::string_view tag) -> id {
-	const uuid new_id = ids().size();
+	const uuid new_id = ids.size();
 
 	std::string new_tag(tag);
-	if (tag_map().contains(new_tag)) {
+	if (tag_map.contains(new_tag)) {
 		new_tag += std::to_string(new_id);
 	}
 
 	const id id(new_id, new_tag);
-	ids().push_back(id);
+	ids.push_back(id);
 	register_object(id, new_tag);
 
 	return id;
 }
 
 auto gse::get_id(const uuid number) -> id {
-	const auto it = id_map().find(number);
-	assert(it != id_map().end(), std::format("ID {} not found", number));
+	const auto it = id_map.find(number);
+	assert(it != id_map.end(), std::format("ID {} not found", number));
 	return it->second;
 }
 
 auto gse::get_id(const std::string_view tag) -> id {
-	const auto it = tag_map().find(tag);
-	assert(it != tag_map().end(), std::format("Tag {} not found", tag));
+	const auto it = tag_map.find(tag);
+	assert(it != tag_map.end(), std::format("Tag {} not found", tag));
 	return it->second;
 }
 
-auto gse::does_id_exist(const uuid number) -> bool {
-	return id_map().contains(number);
+auto gse::exists(const uuid number) -> bool {
+	return id_map.contains(number);
 }
 
-auto gse::does_id_exist(const std::string_view tag) -> bool {
-	return tag_map().contains(tag);
+auto gse::exists(const std::string_view tag) -> bool {
+	return tag_map.contains(tag);
 }
 
 /// ID
@@ -154,16 +161,4 @@ auto gse::id::number() const -> uuid {
 
 auto gse::id::tag() const -> std::string {
 	return m_tag;
-}
-
-/// Identifiable
-
-gse::identifiable::identifiable(const std::string& tag) : m_id(generate_id(tag)) {}
-
-auto gse::identifiable::id() const -> class id {
-	return m_id;
-}
-
-auto gse::identifiable::operator==(const identifiable& other) const -> bool {
-	return m_id == other.m_id;
 }
