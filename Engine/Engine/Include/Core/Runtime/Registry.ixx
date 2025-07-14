@@ -54,7 +54,7 @@ export namespace gse {
 				if (it == m_queued_objects.end()) {
 					return;
 				}
-				\
+				
 				m_linked_objects.push_back(*it);
 				m_id_to_index_map.insert({ id, m_linked_objects.size() - 1 });
 
@@ -188,7 +188,7 @@ auto gse::registry::activate(const uuid id, const std::string& name) -> uuid {
 }
 
 auto gse::registry::remove(const uuid id) -> void {
-	assert(id < m_active_objects.size(), "Object ID out of bounds when trying to remove it.");
+	assert(id < m_active_objects.size(), std::format("Object with id {} does not exist in registry when trying to remove it", id));
 
 	m_free_indices.push_back(id);
 	m_active_objects[id].generation++;
