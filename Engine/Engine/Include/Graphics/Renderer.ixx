@@ -54,7 +54,7 @@ export namespace gse {
 export namespace gse::renderer {
 	auto initialize() -> void;
 	auto update() -> void;
-	auto render(const std::function<void()>& in_frame, std::span<render_component> components) -> void;
+	auto render(const std::function<void()>& in_frame) -> void;
 	auto shutdown() -> void;
 }
 
@@ -90,12 +90,11 @@ auto gse::renderer::update() -> void {
 	gui::update();
 }
 
-auto gse::renderer::render(const std::function<void()>& in_frame, const std::span<render_component> components) -> void {
+auto gse::renderer::render(const std::function<void()>& in_frame) -> void {
 	gui::render();
-
 	begin_frame();
-	render_geometry(g_renderer3d_context, g_rendering_context.config(), components);
-	render_lighting(g_renderer3d_context, g_rendering_context.config(), components);
+	render_geometry(g_renderer3d_context, g_rendering_context.config());
+	render_lighting(g_renderer3d_context, g_rendering_context.config());
 	renderer2d::render(g_renderer2d_context, g_rendering_context.config());
 	in_frame();
 	end_frame();

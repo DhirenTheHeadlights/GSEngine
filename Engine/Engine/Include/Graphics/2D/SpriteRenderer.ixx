@@ -20,13 +20,50 @@ import gse.physics.math;
 export namespace gse::renderer {
 	class sprite final : public base_renderer {
 	public:
-		explicit sprite(const std::unique_ptr<context>& context) : base_renderer(context) {}
+		explicit sprite(const std::unique_ptr<context>& context, registry& registry) : base_renderer(context, registry) {}
 
 		auto initialize() -> void override;
-		auto render(std::span<render_component> components) -> void override;
+		auto render() -> void override;
+
+        auto draw_quad(
+            const vec2<length>& position,
+            const vec2<length>& size, 
+            const unitless::vec4& color
+        ) -> void;
+
+        auto draw_quad(
+            const vec2<length>& position,
+            const vec2<length>& size,
+            texture& texture
+        ) -> void;
+
+        auto draw_quad(
+            const vec2<length>& position,
+            const vec2<length>& size,
+            texture& texture,
+            const unitless::vec4& uv
+        ) -> void;
 	private:
 		vk::raii::Pipeline m_pipeline = nullptr;
 		vk::raii::PipelineLayout m_pipeline_layout = nullptr;
+
+        struct quad_command {
+            vec2<length> position;
+            vec2<length> size;
+            unitless::vec4 color = { 1.0f, 1.0f, 1.0f, 1.0f };
+            texture* texture = nullptr;
+            unitless::vec4 uv_rect = { 0.0f, 0.0f, 1.0f, 1.0f };
+        };
+
+        std::vector<quad_command> m_draw_commands;
+
+        auto queue(
+            const vec2<length>& position, 
+            const vec2<length>& size, 
+            const unitless::vec4& color, 
+            texture& texture, 
+            const unitless::vec4& uv_rect = { 0.0f, 0.0f, 1.0f, 1.0f }
+        ) -> void;
 	};
 }
 
@@ -400,7 +437,7 @@ auto gse::renderer2d::render(context& context, const vulkan::config& config) -> 
 
 	        debug::add_imgui_callback(
 	            [] {
-	                auto& timers = get_timers();
+	                auto& timers = timers();
 	                ImGui::Begin("Timers");
 	                for (auto it = timers.begin(); it != timers.end();) {
 	                    const auto& timer = it->second;
