@@ -7,10 +7,10 @@ import :base_renderer;
 export namespace gse::renderer {
 	class lighting final : public base_renderer {
 	public:
-		explicit lighting(const std::unique_ptr<context>& context) : base_renderer(context) {}
+		explicit lighting(const std::unique_ptr<context>& context, registry& registry) : base_renderer(context, registry) {}
 
 		auto initialize() -> void override;
-		auto render(std::span<render_component> components) -> void override;
+		auto render() -> void override;
 	private:
 		vk::raii::Pipeline m_pipeline = nullptr;
 		vk::raii::PipelineLayout m_pipeline_layout = nullptr;
@@ -218,7 +218,7 @@ auto gse::renderer::lighting::initialize() -> void {
 	m_pipeline = config.device_data.device.createGraphicsPipeline(nullptr, lighting_pipeline_info);
 }
 
-auto gse::renderer::lighting::render(std::span<render_component> components) -> void {
+auto gse::renderer::lighting::render() -> void {
 	auto& config = m_context->config();
 	const auto command = config.frame_context.command_buffer;
 
