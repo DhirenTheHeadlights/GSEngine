@@ -13,34 +13,51 @@ import gse.assert;
 export namespace gse {
 	auto initialize(const std::function<void()>& initialize_function, const std::function<void()>& shutdown_function) -> void;
 	auto run(const std::function<void()>& update_function, const std::function<void()>& render_function) -> void;
+
+	hookable<void> engine;
 }
 
 namespace gse {
-	struct engine {
-		enum class state : std::uint8_t {
-			uninitialized,
-			initializing,
-			running,
-			shutdown
-		};
-
-		std::function<void()> game_shutdown_function;
-		state state;
-		registry registry;
-		scene_loader loader;
-	} engine;
-
 	auto gse::update(const std::function<void()>& update_function) -> void;
 	auto gse::render(const std::function<void()>& render_function) -> void;
 	auto gse::shutdown() -> void;
+
+	struct base_engine_hook final : hook<void> {
+		using hook::hook;
+
+		auto initialize() -> void override {
+			renderer::initialize();
+		}
+
+		auto update() -> void override {
+			add_timer("Engine::update");
+
+			platform::update();
+			main_clock::update();
+			scene_loader::update();
+			gui::update();
+
+			reset_timer("Engine::render");
+		}
+
+		auto render() -> void override {
+			add_timer("Engine::render");
+
+			renderer::render(
+				[] {
+					scene_loader::render();
+				}
+			);
+
+			reset_timer("Engine::render");
+		}
+	};
 }
 
 auto gse::initialize(const std::function<void()>& initialize_function, const std::function<void()>& shutdown_function) -> void {
-	engine.state = engine::state::initializing;
 	engine.game_shutdown_function = shutdown_function;
 	renderer::initialize();
 	initialize_function();
-	engine.state = engine::state::running;
 }
 
 auto gse::update(const std::function<void()>& update_function) -> void {
@@ -48,7 +65,7 @@ auto gse::update(const std::function<void()>& update_function) -> void {
 
 	platform::update();
 	main_clock::update();
-	engine.loader.update();
+	scene_loader::update();
 	gui::update();
 
 	reset_timer("Engine::render");
@@ -59,7 +76,7 @@ auto gse::render(const std::function<void()>& render_function) -> void {
 
 	renderer::render(
 		[render_function] {
-			engine.loader.render();
+			scene_loader::render();
 			render_function();
 		},
 		engine.registry.linked_objects<render_component>()
