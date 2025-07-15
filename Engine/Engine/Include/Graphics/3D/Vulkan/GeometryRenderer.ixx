@@ -21,7 +21,7 @@ gse::camera g_camera;
 export namespace gse::renderer {
 	class geometry final : base_renderer {
 	public:
-		explicit geometry(const std::unique_ptr<context>& context, registry& registry) : base_renderer(context, registry) {}
+		explicit geometry(context& context, std::span<std::reference_wrapper<registry>> registries) : base_renderer(context, registries) {}
 		auto initialize() -> void override;
 		auto render() -> void override;
 	private:
@@ -34,7 +34,7 @@ export namespace gse::renderer {
 }
 
 auto gse::renderer::geometry::initialize() -> void {
-	auto& config = m_context->config();
+	auto& config = m_context.config();
 
 	single_line_commands(
 		config,
@@ -57,9 +57,9 @@ auto gse::renderer::geometry::initialize() -> void {
 		}
 	);
 
-	const auto id = m_context->queue<shader>(config::shader_spirv_path / "geometry_pass.vert.spv");
+	const auto id = m_context.queue<shader>(config::shader_spirv_path / "geometry_pass.vert.spv");
 
-	const auto* geometry_shader = m_context->instantly_load<shader>(id).shader;
+	const auto* geometry_shader = m_context.instantly_load<shader>(id).shader;
 	auto descriptor_set_layouts = geometry_shader->layouts();
 
 	m_descriptor_set = geometry_shader->descriptor_set(
@@ -226,7 +226,7 @@ auto gse::renderer::geometry::initialize() -> void {
 }
 
 auto gse::renderer::geometry::render() -> void {
-	auto& config = m_context->config();
+	auto& config = m_context.config();
 	const auto command = config.frame_context.command_buffer;
 
 	vulkan::uploader::transition_image_layout(
@@ -297,13 +297,11 @@ auto gse::renderer::geometry::render() -> void {
 			g_camera.update_camera_vectors();
 			if (!window::is_mouse_visible()) g_camera.process_mouse_movement(window::get_mouse_delta_rel_top_left());
 
-			const auto components = m_registry.linked_objects<render_component>();
-
-			if (components.empty()) {
+			if (!registry::any_components<render_component>(m_registries)) {
 				return;
 			}
 
-			auto* geometry_shader = m_context->resource<shader>(get_id("geometry_pass")).shader;
+			const auto* geometry_shader = m_context.resource<shader>(find("geometry_pass")).shader;
 
 			geometry_shader->set_uniform("camera_ubo.view", g_camera.view(), m_ubo_allocations.at("camera_ubo").allocation);
 			geometry_shader->set_uniform("camera_ubo.proj", g_camera.projection(), m_ubo_allocations.at("camera_ubo").allocation);
@@ -322,29 +320,31 @@ auto gse::renderer::geometry::render() -> void {
 
 			std::unordered_map<std::string, std::span<const std::byte>> push_constants = {};
 
-			for (const auto& component : components) {
-				for (const auto& model_handle : component.models) {
-					for (const auto& entry : model_handle.render_queue_entries()) {
-						push_constants["model"] = std::as_bytes(std::span{ &entry.model_matrix, 1 });
+			for (const auto& registry : m_registries) {
+				for (const auto& component : registry.get().linked_objects<render_component>()) {
+					for (const auto& model_handle : component.models) {
+						for (const auto& entry : model_handle.render_queue_entries()) {
+							push_constants["model"] = std::as_bytes(std::span{ &entry.model_matrix, 1 });
 
-						geometry_shader->push(
-							command,
-							m_pipeline_layout,
-							"pc",
-							push_constants,
-							vk::ShaderStageFlagBits::eVertex
-						);
-
-						if (entry.mesh->material.exists()) {
 							geometry_shader->push(
 								command,
 								m_pipeline_layout,
-								"diffuse_sampler",
-								m_context->resource<texture>(m_context->resource<material>(entry.mesh->material).data->diffuse_texture).descriptor_info
+								"pc",
+								push_constants,
+								vk::ShaderStageFlagBits::eVertex
 							);
 
-							entry.mesh->bind(command);
-							entry.mesh->draw(command);
+							if (entry.mesh->material.exists()) {
+								geometry_shader->push(
+									command,
+									m_pipeline_layout,
+									"diffuse_sampler",
+									m_context.resource<texture>(m_context.resource<material>(entry.mesh->material).data->diffuse_texture).descriptor_info
+								);
+
+								entry.mesh->bind(command);
+								entry.mesh->draw(command);
+							}
 						}
 					}
 				}

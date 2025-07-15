@@ -46,6 +46,12 @@ export namespace gse {
 	template <typename T>
 	class hookable {
 	public:
+		hookable() = default;
+
+		hookable(std::initializer_list<std::unique_ptr<hook<T>>> hooks) {
+			for (auto&& h : hooks) m_hooks.push_back(std::move(const_cast<std::unique_ptr<hook<T>>&>(h)));
+		}
+
 		auto add_hook(std::unique_ptr<hook<T>> hook) -> void {
 			m_hooks.push_back(std::move(hook));
 		}
@@ -64,6 +70,13 @@ export namespace gse {
 
 		auto render() const -> void {
 			for (auto& hook : m_hooks) {
+				hook->render();
+			}
+		}
+
+		auto loop() const -> void {
+			for (auto& hook : m_hooks) {
+				hook->update();
 				hook->render();
 			}
 		}

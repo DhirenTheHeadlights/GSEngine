@@ -10,9 +10,7 @@ import :system;
 
 export namespace gse::physics {
 	auto update(
-		std::span<motion_component> motion_components,
-		std::span<collision_component> collision_components,
-		std::span<render_component> render_components, 
+		std::span<std::reference_wrapper<registry>> registries,
 		time fixed_update_time, 
 		time frame_time
 	) -> void;
@@ -21,7 +19,7 @@ export namespace gse::physics {
 constexpr gse::time g_max_time_step = gse::seconds(0.25);
 gse::time g_accumulator;
 
-auto gse::physics::update(const std::span<motion_component> motion_components, const std::span<collision_component> collision_components, const std::span<render_component> render_components, const time fixed_update_time, time frame_time) -> void {
+auto gse::physics::update(const std::span<std::reference_wrapper<registry>> registries, const time fixed_update_time, time frame_time) -> void {
 	if (frame_time > g_max_time_step) {
 		frame_time = g_max_time_step;
 	}
@@ -30,31 +28,39 @@ auto gse::physics::update(const std::span<motion_component> motion_components, c
 
 	while (g_accumulator >= fixed_update_time) {
 		for (int i = 0; i < 5; i++) {
-			broad_phase_collision::update(collision_components, motion_components, fixed_update_time);
+			for (auto& registry : registries) {
+				broad_phase_collision::update(
+					registry.get().linked_objects<collision_component>(), 
+					registry.get().linked_objects<motion_component>(), 
+					fixed_update_time
+				);
+			}
 		}
 
-		for (auto& object : motion_components) {
-			collision_component* collision = nullptr;
-			if (const auto collision_it = std::ranges::find_if(
-				collision_components, 
-				[object](const auto& c) {
-					return c.owner_id == object.owner_id;
+		for (auto& registry : registries) {
+			for (auto& object : registry.get().linked_objects<motion_component>()) {
+				collision_component* collision = nullptr;
+				if (const auto collision_it = std::ranges::find_if(
+					registry.get().linked_objects<collision_component>(),
+					[object](const auto& c) {
+						return c.owner_id == object.owner_id;
+					}
+				); collision_it != registry.get().linked_objects<collision_component>().end()) {
+					collision = &*collision_it;
 				}
-			); collision_it != collision_components.end()) {
-				collision = &*collision_it;
-			}
 
-			const render_component* render = nullptr;
-			if (const auto render_it = std::ranges::find_if(
-				render_components, 
-				[object](const auto& r) {
-					return r.owner_id == object.owner_id;
+				const render_component* render = nullptr;
+				if (const auto render_it = std::ranges::find_if(
+					registry.get().linked_objects<render_component>(),
+					[object](const auto& r) {
+						return r.owner_id == object.owner_id;
+					}
+				); render_it != registry.get().linked_objects<render_component>().end()) {
+					render = &*render_it;
 				}
-			); render_it != render_components.end()) {
-				render = &*render_it;
-			}
 
-			update_object(object, fixed_update_time, collision, render);
+				update_object(object, fixed_update_time, collision, render);
+			}
 		}
 
 		g_accumulator -= fixed_update_time;

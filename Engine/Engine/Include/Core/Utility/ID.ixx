@@ -10,8 +10,8 @@ export namespace gse {
 	using uuid = std::uint64_t;
 
     auto generate_id(std::string_view tag) -> id;
-	auto get_id(uuid number) -> id;
-	auto get_id(std::string_view tag) -> id;
+	auto find(uuid number) -> id;
+	auto find(std::string_view tag) -> id;
 	auto exists(uuid number) -> bool;
 	auto exists(std::string_view tag) -> bool;
 
@@ -96,9 +96,9 @@ struct transparent_equal {
 };
 
 namespace gse {
-	static constinit std::vector<id> ids;
-	static constinit std::unordered_map<uuid, id> id_map;
-	static constinit std::unordered_map<std::string, id, transparent_hash, transparent_equal> tag_map;
+	std::vector<id> ids;
+	std::unordered_map<uuid, id> id_map;
+	std::unordered_map<std::string, id, transparent_hash, transparent_equal> tag_map;
 
 	auto register_object(const id& obj, const std::string& tag) -> void;
 }
@@ -123,13 +123,13 @@ auto gse::generate_id(const std::string_view tag) -> id {
 	return id;
 }
 
-auto gse::get_id(const uuid number) -> id {
+auto gse::find(const uuid number) -> id {
 	const auto it = id_map.find(number);
 	assert(it != id_map.end(), std::format("ID {} not found", number));
 	return it->second;
 }
 
-auto gse::get_id(const std::string_view tag) -> id {
+auto gse::find(const std::string_view tag) -> id {
 	const auto it = tag_map.find(tag);
 	assert(it != tag_map.end(), std::format("Tag {} not found", tag));
 	return it->second;

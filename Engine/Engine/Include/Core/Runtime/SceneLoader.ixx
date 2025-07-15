@@ -13,6 +13,8 @@ export namespace gse::scene_loader {
 
 	auto activate(const id& scene_id) -> void;
 	auto deactivate(const id& scene_id) -> void;
+
+	auto initialize() -> void;
 	auto update() -> void;
 	auto render() -> void;
 
@@ -25,6 +27,8 @@ export namespace gse::scene_loader {
 namespace gse::scene_loader {
 	static constinit std::unordered_map<id, std::unique_ptr<gse::scene>> scenes;
 	static constinit std::unordered_map<id, std::function<bool()>> scene_triggers;
+
+	auto registries() -> std::span<std::reference_wrapper<registry>>;
 }
 
 auto gse::scene_loader::add(std::unique_ptr<gse::scene>& new_scene) -> void {
@@ -54,6 +58,10 @@ auto gse::scene_loader::deactivate(const id& scene_id) -> void {
 	}
 }
 
+auto gse::scene_loader::initialize() -> void {
+	renderer::initialize(registries());
+}
+
 auto gse::scene_loader::update() -> void {
 	for (const auto& scene : scenes | std::views::values) {
 		if (scene->active()) {
@@ -66,14 +74,24 @@ auto gse::scene_loader::update() -> void {
 			activate(id);
 		}
 	}
+
+	physics::update(
+		registries(),
+		main_clock::const_update_time,
+		main_clock::raw_dt()
+	);
 }
 
 auto gse::scene_loader::render() -> void {
-	for (const auto& scene : scenes | std::views::values) {
-		if (scene->active()) {
-			scene->render();
+	renderer::render(
+		[] {
+			for (const auto& scene : scenes | std::views::values) {
+				if (scene->active()) {
+					scene->render();
+				}
+			}
 		}
-	}
+	);
 }
 
 auto gse::scene_loader::queue(const id& id, const std::function<bool()>& trigger) -> void {
@@ -97,4 +115,16 @@ auto gse::scene_loader::scene(const id& scene_id) -> gse::scene* {
 		return scene->second.get();
 	}
 	return nullptr;
+}
+
+auto gse::scene_loader::registries() -> std::span<std::reference_wrapper<registry>> {
+	std::vector<std::reference_wrapper<registry>> registries;
+	for (const auto& scene : scenes | std::views::values) {
+		if (!scene->active()) {
+			continue;
+		}
+
+		registries.push_back(std::ref(scene->registry()));
+	}
+	return registries;
 }

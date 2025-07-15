@@ -10,13 +10,13 @@ import gse.utility;
 export namespace gse {
 	class base_renderer {
 	public:
-		explicit base_renderer(const std::unique_ptr<renderer::context>& context, registry& registry) : m_context(context.get()), m_registry(registry) {}
+		explicit base_renderer(renderer::context& context, const std::span<std::reference_wrapper<registry>> registries) : m_context(context), m_registries(registries) {}
 		virtual ~base_renderer() = default;
 
 		virtual auto initialize() -> void = 0;
 		virtual auto render() -> void = 0;
 	protected:
-		renderer::context* m_context;
-		registry& m_registry;
+		renderer::context& m_context;
+		std::span<std::reference_wrapper<registry>> m_registries;
 	};
 }

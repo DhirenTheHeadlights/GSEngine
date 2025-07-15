@@ -144,6 +144,9 @@ export namespace gse {
 
 		auto exists(const id& id) const -> bool;
 		auto active(const id& id) const -> bool;
+
+		template <linkable_object U>
+		static auto any_components(const std::span<std::reference_wrapper<registry>> registries) -> bool;
 	private:
 		std::vector<entity> m_active_objects;
 		std::vector<entity> m_inactive_objects;
@@ -269,4 +272,14 @@ auto gse::registry::exists(const id& id) const -> bool {
 
 auto gse::registry::active(const id& id) const -> bool {
 	return m_entity_map.contains(id) && m_active_objects[m_entity_map.at(id)].generation % 2 == 0;
+}
+
+template <gse::linkable_object U>
+auto gse::registry::any_components(const std::span<std::reference_wrapper<registry>> registries) -> bool {
+	return std::ranges::any_of(
+		registries,
+		[](const std::reference_wrapper<registry>& reg) {
+			return !reg.get().linked_objects<U>().empty();
+		}
+	);
 }
