@@ -6,20 +6,20 @@ export module gse.graphics:gui;
 
 import std;
 
-import :renderer2d;
-import :texture;
-import :texture_loader;
 import :font;
+import :rendering_context;
+import :sprite_renderer;
+import :texture;
+import :text_renderer;
 
 import gse.platform;
 import gse.utility;
 import gse.physics.math;
 
 export namespace gse::gui {
-	auto initialize(font* font, const vulkan::config& config) -> void;
+	auto initialize(renderer::context& context) -> void;
 	auto update() -> void;
-	auto render() -> void;
-	auto shutdown() -> void;
+	auto render(renderer::context& context, renderer::sprite& sprite_renderer, renderer::text& text_renderer) -> void;
 
 	auto create_menu(const std::string& name, const unitless::vec2& top_left, const unitless::vec2& size, const std::function<void()>& contents) -> void;
 
@@ -48,9 +48,9 @@ struct menu {
 	gse::unitless::vec2 offset;
 	gse::timed_lock<bool> docked{ false, gse::seconds(0.25) };
 	bool docked_waiting_for_release = false;
-	std::uint32_t counter = 0;
 
 	std::function<void()> contents;
+	std::vector<std::string> items;
 };
 
 struct docking_area {
@@ -62,49 +62,47 @@ struct docking_area {
 	gse::unitless::vec2 docked_size;
 };
 
-std::vector<menu> g_menus;
-std::array<docking_area, 5> g_docks;
+namespace gse::gui {
+	static constinit std::vector<menu> menus;
+	static constinit std::array<docking_area, 5> docks;
+	static constinit menu* current_menu = nullptr;
+	static constinit id font_id;
 
-menu* g_current_menu = nullptr;
+	unitless::vec2 docking_area::size = { 10.f, 10.f };
+	unitless::vec4 docking_area::color = { 0.f, 1.f, 0.f, 1.f };
 
-gse::font* g_font;
+	static constinit bool render_docking_preview = false;
+	constexpr float padding = 10.f;
+}
 
-bool g_render_docking_preview = false;
+auto gse::gui::initialize(renderer::context& context) -> void {
+	font_id = context.queue<font>(config::resource_path / "Fonts/MonaspaceNeon-Regular.otf");
 
-gse::unitless::vec2 docking_area::size = { 10.f, 10.f };
-gse::unitless::vec4 docking_area::color = { 0.f, 1.f, 0.f, 1.f }; // Green
+	const auto window_size = window::get_window_size();
+	const auto top_left = unitless::vec2(0.f, window_size.y);
 
-constexpr float padding = 10.f;
-
-auto gse::gui::initialize(font* font, const vulkan::config& config) -> void {
-    g_font = font;
-    g_font->load(config::resource_path / "Fonts/MonaspaceNeon-Regular.otf", config);
-
-    const auto window_size = window::get_window_size();
-    const auto top_left = unitless::vec2(0.f, window_size.y);
-
-	g_docks = {
-		docking_area { // Left
+	docks = {
+		docking_area {
 			.position = unitless::vec2(0.f, window_size.y / 2 - docking_area::size.y),
 			.docked_position = top_left,
 			.docked_size = { static_cast<float>(window_size.x) / 2, static_cast<float>(window_size.y) }
 		},
-		docking_area { // Top
+		docking_area {
 			.position = unitless::vec2(window_size.x / 2 - docking_area::size.x / 2, window_size.y),
 			.docked_position = top_left,
 			.docked_size = { static_cast<float>(window_size.x), static_cast<float>(window_size.y) / 2 }
 		},
-		docking_area { // Right
+		docking_area {
 			.position = unitless::vec2(window_size.x - docking_area::size.x, window_size.y / 2 - docking_area::size.y / 2),
 			.docked_position = { static_cast<float>(window_size.x) / 2, static_cast<float>(window_size.y) },
 			.docked_size = { static_cast<float>(window_size.x) / 2, static_cast<float>(window_size.y) }
 		},
-		docking_area { // Bottom
+		docking_area {
 			.position = unitless::vec2(window_size.x / 2 - docking_area::size.x / 2, docking_area::size.y),
 			.docked_position = { 0.f, static_cast<float>(window_size.y) / 2 },
 			.docked_size = { static_cast<float>(window_size.x), static_cast<float>(window_size.y) / 2 }
 		},
-		docking_area { // Center
+		docking_area {
 			.position = unitless::vec2(window_size.x / 2 - docking_area::size.x / 2, window_size.y / 2 - docking_area::size.y / 2),
 			.docked_position = top_left,
 			.docked_size = window_size
@@ -112,24 +110,12 @@ auto gse::gui::initialize(font* font, const vulkan::config& config) -> void {
 	};
 }
 
-auto render_docking_preview() -> void {
-	for (const auto& dock : g_docks) {
-		gse::renderer2d::draw_quad(dock.position, docking_area::size, { 0.f, 0.f, 1.f, 1.f });
-	}
-}
-
-auto render_docking_visual() {
-	for (const auto& dock : g_docks) {
-		gse::renderer2d::draw_quad(dock.position, docking_area::size, docking_area::color);
-	}
-}
-
 auto intersects(const gse::unitless::vec2& pos1, const gse::unitless::vec2& size1, const gse::unitless::vec2& pos2, const gse::unitless::vec2& size2) -> bool {
 	return pos1.x < pos2.x + size2.x && pos1.x + size1.x > pos2.x && pos1.y > pos2.y - size2.y && pos1.y - size1.y < pos2.y;
 }
 
 auto gse::gui::update() -> void {
-	for (auto& m : g_menus) {
+	for (auto& m : menus) {
 		const auto mouse_position = window::get_mouse_position_rel_bottom_left();
 
 		if (input::get_mouse().buttons[GLFW_MOUSE_BUTTON_LEFT].held) {
@@ -151,15 +137,15 @@ auto gse::gui::update() -> void {
 				m.position = mouse_position + m.offset;
 				m.position = clamp(m.position, unitless::vec2(0.f, 0.f), unitless::vec2(window::get_window_size()));
 
-				for (auto& [position, docked_position, docked_size] : g_docks) {
+				for (auto& [position, docked_position, docked_size] : docks) {
 					if (intersects(m.position, m.size, position, docking_area::size) &&
 						!m.docked.value() && m.docked.value_mutable()) {
 						clock hover_clock;
 
 						while (hover_clock.elapsed() < seconds(0.25)) {
-							g_render_docking_preview = true;
+							render_docking_preview = true;
 							if (!intersects(m.position, m.size, position, docking_area::size)) {
-								g_render_docking_preview = false;
+								render_docking_preview = false;
 								break;
 							}
 						}
@@ -170,7 +156,7 @@ auto gse::gui::update() -> void {
 						m.size = docked_size;
 						m.docked_waiting_for_release = true;
 
-						g_render_docking_preview = false;
+						render_docking_preview = false;
 					}
 				}
 			}
@@ -182,122 +168,92 @@ auto gse::gui::update() -> void {
 	}
 }
 
-auto gse::gui::render() -> void {
-	renderer2d::draw_text(
-		*g_font, 
-		std::format(
-			"{}", 
-			window::get_mouse_position_rel_bottom_left()
-		), 
-		window::get_mouse_position_rel_bottom_left(),
-		16.f, { 1, 1, 1, 1 }
-	);
+auto gse::gui::render(renderer::context& context, renderer::sprite& sprite_renderer, renderer::text& text_renderer) -> void {
+	for (auto& m : menus) {
+		constexpr float font_size = 16.f;
+		sprite_renderer.queue({ m.position, m.size, { 1.f, 0.f, 0.f, 1.f } });
 
-	for (auto& m : g_menus) {
-		renderer2d::draw_quad(m.position, m.size, { 1.f, 0.f, 0.f, 1.f });
-
-		renderer2d::draw_text(
-			*g_font,
-			m.name,
-			m.position + unitless::vec2(padding, -padding),
-			16.f,
-			{ 1.f, 1.f, 1.f, 1.f }
-		);
-
+		current_menu = &m;
 		m.contents();
 
-		if (g_render_docking_preview) {
-			render_docking_preview();
+		const float line_height = context.resource<font>(font_id).font->line_height(font_size);
+
+		text_renderer.draw_text({ font_id, m.name, m.position + unitless::vec2(padding, -padding), font_size, { 1.f, 1.f, 1.f, 1.f } });
+
+		for (size_t i = 0; i < m.items.size(); ++i) {
+			unitless::vec2 text_pos = m.position;
+			text_pos.x += padding;
+			text_pos.y -= padding + ((i + 1) * line_height);
+
+			text_renderer.draw_text({ font_id, m.items[i], text_pos, font_size, { 1.f, 1.f, 1.f, 1.f } });
+		}
+
+		if (render_docking_preview) {
+			for (const auto& dock : docks) {
+				sprite_renderer.queue({ dock.position, docking_area::size, { 0.f, 0.f, 1.f, 1.f } });
+			}
 		}
 
 		if (m.grabbed.value()) {
-			render_docking_visual();
+			for (const auto& dock : docks) {
+				sprite_renderer.queue({ dock.position, docking_area::size, docking_area::color });
+			}
 		}
 
-		m.counter = 0;
+		m.items.clear();
 	}
-}
-
-auto gse::gui::shutdown() -> void {
-	g_menus.clear();
+	current_menu = nullptr;
 }
 
 auto gse::gui::create_menu(const std::string& name, const unitless::vec2& top_left, const unitless::vec2& size, const std::function<void()>& contents) -> void {
-	if (const auto it = std::ranges::find_if(g_menus, [&](const menu& m) { return m.name == name; }); it != g_menus.end()) {
-		g_current_menu = &*it;
+	if (const auto it = std::ranges::find_if(menus, [&](const menu& m) { return m.name == name; }); it != menus.end()) {
+		current_menu = &*it;
 		return;
 	}
 
-	std::println("Creating menu: {}", name);
-
-	g_menus.push_back({
+	menus.push_back({
 		.texture_id = {},
 		.position = top_left,
 		.size = size,
 		.pre_docked_size = size,
 		.name = name,
-		.contents = contents
+		.contents = contents,
+		.items = {}
 		});
 
-	g_current_menu = &g_menus.back();
+	current_menu = &menus.back();
 }
 
-
 auto gse::gui::text(const std::string& text) -> void {
-	g_current_menu->counter++;
-
-	unitless::vec2 text_pos = g_current_menu->position - unitless::vec2{ 0.f, g_current_menu->counter * g_font->line_height(16.f) + padding };
-
-	text_pos.x += padding;
-	text_pos.y -= padding;
-
-	renderer2d::draw_text(*g_font, text, text_pos, 16.f, { 1.f, 1.f, 1.f, 1.f });
+	if (current_menu) {
+		current_menu->items.emplace_back(text);
+	}
 }
 
 template <gse::is_arithmetic T>
 auto gse::gui::value(const std::string& name, T value) -> void {
-	g_current_menu->counter++;
-
-	unitless::vec2 text_pos = g_current_menu->position - unitless::vec2{ 0.f, g_current_menu->counter * g_font->line_height(16.f) + padding };
-
-	text_pos.x += padding;
-	text_pos.y -= padding;
-
-	renderer2d::draw_text(*g_font, std::format("{}: {}", name, value), text_pos, 16.f, { 1.f, 1.f, 1.f, 1.f });
+	if (current_menu) {
+		current_menu->items.emplace_back(std::format("{}: {}", name, value));
+	}
 }
 
 template <gse::is_quantity T, typename Unit>
 auto gse::gui::value(const std::string& name, T value) -> void {
-	g_current_menu->counter++;
-
-	unitless::vec2 text_pos = g_current_menu->position - unitless::vec2{ 0.f, g_current_menu->counter * g_font->line_height(16.f) + padding };
-
-	text_pos.x += padding;
-	text_pos.y -= padding;
-
-	renderer2d::draw_text(*g_font, std::format("{}: {} {}", name, value.template as<Unit>(), Unit::unit_name), text_pos, 16.f, { 1.f, 1.f, 1.f, 1.f });
+	if (current_menu) {
+		current_menu->items.emplace_back(std::format("{}: {} {}", name, value.template as<Unit>(), Unit::unit_name));
+	}
 }
 
 template <typename T, int N>
 auto gse::gui::vec(const std::string& name, unitless::vec_t<T, N> vec) -> void {
-	g_current_menu->counter++;
-
-	unitless::vec2 text_pos = g_current_menu->position - unitless::vec2{ 0.f, g_current_menu->counter * g_font->line_height(16.f) + padding };
-
-	text_pos.x += padding;
-	text_pos.y -= padding;
-
-	renderer2d::draw_text(*g_font, std::format("{}: {}", name, vec), text_pos, 16.f, { 1.f, 1.f, 1.f, 1.f });
+	if (current_menu) {
+		current_menu->items.emplace_back(std::format("{}: {}", name, vec));
+	}
 }
 
 template <typename T, int N, typename Unit>
 auto gse::gui::vec(const std::string& name, vec_t<T, N> vec) -> void {
-	g_current_menu->counter++;
-
-	unitless::vec2 text_pos = g_current_menu->position - unitless::vec2{ 0.f, g_current_menu->counter * g_font->line_height(16.f) + padding };
-
-	text_pos.x += padding;
-	text_pos.y -= padding;
-
-	renderer2d::draw_text(*g_font, std::format("{}: {} {}", name, vec.template as<Unit>(), Unit::unit_name), text_pos, 16.f, { 1.f, 1.f, 1.f, 1.f });
+	if (current_menu) {
+		current_menu->items.emplace_back(std::format("{}: {} {}", name, vec.template as<Unit>(), Unit::unit_name));
+	}
 }

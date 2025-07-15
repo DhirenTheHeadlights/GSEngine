@@ -7,7 +7,7 @@ import :base_renderer;
 export namespace gse::renderer {
 	class lighting final : public base_renderer {
 	public:
-		explicit lighting(const std::unique_ptr<context>& context, registry& registry) : base_renderer(context, registry) {}
+		explicit lighting(context& context, const std::span<std::reference_wrapper<registry>> registries) : base_renderer(context, registries) {}
 
 		auto initialize() -> void override;
 		auto render() -> void override;
@@ -22,10 +22,10 @@ export namespace gse::renderer {
 }
 
 auto gse::renderer::lighting::initialize() -> void {
-	auto& config = m_context->config();
-	const auto id = m_context->queue<shader>(config::shader_spirv_path / "lighting_pass.vert.spv");
+	auto& config = m_context.config();
+	const auto id = m_context.queue<shader>(config::shader_spirv_path / "lighting_pass.vert.spv");
 
-	const auto* lighting_shader = m_context->instantly_load<shader>(id).shader;
+	const auto* lighting_shader = m_context.instantly_load<shader>(id).shader;
 	auto lighting_layouts = lighting_shader->layouts();
 
 	m_descriptor_set = lighting_shader->descriptor_set(config.device_data.device, config.descriptor.pool, shader::set::binding_type::persistent);
@@ -219,7 +219,7 @@ auto gse::renderer::lighting::initialize() -> void {
 }
 
 auto gse::renderer::lighting::render() -> void {
-	auto& config = m_context->config();
+	auto& config = m_context.config();
 	const auto command = config.frame_context.command_buffer;
 
 	vulkan::uploader::transition_image_layout(

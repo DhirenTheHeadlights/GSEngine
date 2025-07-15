@@ -2,9 +2,9 @@ export module gse.runtime:scene;
 
 import std;
 
-import :registry;
 import :main_clock;
 
+import gse.assert;
 import gse.utility;
 import gse.physics;
 
@@ -19,8 +19,9 @@ export namespace gse {
 		auto set_active(const bool is_active) -> void { this->m_is_active = is_active; }
 		auto active() const -> bool { return m_is_active; }
 		auto entities() const -> std::span<const gse::id>;
+		auto registry() -> registry& { return m_registry; }
 	private:
-		registry m_registry;
+		gse::registry m_registry;
 		std::vector<gse::id> m_entities;
 		std::vector<gse::id> m_queue;
 
@@ -41,32 +42,15 @@ gse::scene::scene(const std::string& name) : identifiable(name) {
 
 			m_owner->m_queue.clear();
 
-			for (auto& hook : m_owner->m_registry.linked_objects<hook<entity>>()) {
-				hook.initialize();
-			}
+			bulk_invoke(m_owner->m_registry.linked_objects<hook<entity>>(), &hook<entity>::initialize);
 		}
 
 		auto update() -> void override {
-			for (auto& hook : m_owner->m_registry.linked_objects<hook<entity>>()) {
-				hook.update();
-			}
-
-			physics::update(
-				m_owner->m_registry.linked_objects<physics::motion_component>(),
-				m_owner->m_registry.linked_objects<physics::collision_component>(),
-				m_owner->m_registry.linked_objects<render_component>(),
-				main_clock::const_update_time,
-				main_clock::raw_dt()
-			);
+			bulk_invoke(m_owner->m_registry.linked_objects<hook<entity>>(), &hook<entity>::update);
 		}
 
 		auto render() -> void override {
-			renderer::render(
-				[&] {
-					bulk_invoke(m_owner->m_registry.linked_objects<hook>(), &hook<scene>::render);
-				},
-				m_owner->m_registry.linked_objects<render_component>()
-			);
+			bulk_invoke(m_owner->m_registry.linked_objects<hook<entity>>(), &hook<entity>::render);
 		}
 	};
 
