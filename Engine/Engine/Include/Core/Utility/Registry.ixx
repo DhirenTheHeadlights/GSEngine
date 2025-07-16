@@ -130,7 +130,7 @@ export namespace gse {
 		auto activate(const id& id) -> void;
 		auto remove(const id& id) -> void;
 
-		template <linkable_object U> requires !std::derived_from<U, hook<entity>>
+		template <gse::linkable_object U> requires !std::derived_from<U, gse::hook<gse::entity>>
 		auto add_link(const id& id) -> U*;
 
 		template <linkable_object U>
@@ -224,11 +224,12 @@ auto gse::registry::add_link(const id& id) -> U* {
 	);
 
 	if (!m_links.contains(typeid(U))) {
-		m_links[typeid(U)] = std::make_unique<link<U>>();
+		m_links[typeid(U)] =
+			std::make_unique<registry::template link<U>>();
 	}
 
-	auto& link = static_cast<link<U>&>(*m_links.at(typeid(U)));
-	return static_cast<void*>(link.add(id));
+	auto& lnk = static_cast<typename registry::template link<U>&>(*m_links.at(typeid(U)));
+	return static_cast<U*>(lnk.add(id));
 }
 
 template <gse::linkable_object U>
@@ -244,8 +245,8 @@ auto gse::registry::remove_link(const id& id) -> void {
 template <gse::linkable_object U>
 auto gse::registry::linked_objects() -> std::span<U> {
 	if (const auto it = m_links.find(typeid(U)); it != m_links.end()) {
-		auto& link = static_cast<link<U>&>(*it->second);
-		return link.m_linked_objects;
+		auto& lnk = static_cast<typename registry::template link<U>&>(*it->second);
+		return lnk.objects();         
 	}
 	return {};
 }
@@ -257,13 +258,13 @@ auto gse::registry::linked_object(const id& id) -> U& {
 		throw std::runtime_error("Link type not found in registry.");
 	}
 
-	const auto& link = static_cast<link<U>&>(*it->second);
-	const auto it2 = link.m_id_to_index_map.find(id);
-	if (it2 == link.m_id_to_index_map.end()) {
+	auto& lnk = static_cast<typename registry::template link<U>&>(*it->second);
+	const auto it2 = lnk.m_id_to_index_map.find(id);
+	if (it2 == lnk.m_id_to_index_map.end()) {
 		throw std::runtime_error(std::format("Object with id {} doesn't have a link of this type.", id));
 	}
 
-	return link.m_linked_objects[it2->second];
+	return lnk.m_linked_objects[it2->second];
 }
 
 auto gse::registry::exists(const id& id) const -> bool {

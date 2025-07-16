@@ -56,6 +56,17 @@ export namespace gse {
 	concept is_identifiable = std::derived_from<T, identifiable>;
 }
 
+template <>
+struct std::formatter<gse::id> {
+	constexpr auto parse(std::format_parse_context& ctx) -> std::format_parse_context::iterator {
+		return ctx.begin();
+	}
+
+	auto format(const gse::id& value, std::format_context& ctx) const -> std::format_context::iterator {
+		return std::format_to(ctx.out(), "[{}: {}]", value.number(), value.tag());
+	}
+};
+
 export template <>
 struct std::hash<gse::id> {
 	auto operator()(const gse::id& id) const noexcept -> std::size_t {

@@ -16,8 +16,8 @@ export namespace gse::main_clock {
 }
 
 namespace gse::main_clock {
-	static constinit clock main_clock;
-	static constinit clock dt_clock;
+	clock main_clock;
+	clock dt_clock;
 	static constinit time dt;
 	static constinit time frame_rate_update_time;
 
