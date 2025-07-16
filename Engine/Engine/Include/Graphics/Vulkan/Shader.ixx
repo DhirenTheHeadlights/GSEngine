@@ -566,7 +566,7 @@ auto gse::shader::load(renderer::context& context) -> void {
 	}
 
 	if (const auto it = m_global_layouts.find(layout_type); it != m_global_layouts.end()) {
-		for (const auto& [sets] = it->second; const auto& [type, user_set] : sets) {
+		for (const auto& [type, user_set] : it->second.sets) {
 			std::vector<struct binding> complete_bindings;
 
 			auto reflected_in_set = all_reflected | std::views::filter([&](const auto& r) {

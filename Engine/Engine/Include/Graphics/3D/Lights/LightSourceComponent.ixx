@@ -8,16 +8,10 @@ import gse.physics.math;
 import gse.utility;
 
 export namespace gse {
-	class light_source_component final : public component {
+	class light_source_component final : public component, non_copyable {
 	public:
-		light_source_component(const std::uint32_t id) : component(id) {}
-		light_source_component(const std::uint32_t id, std::vector<std::unique_ptr<light>> lights) : component(id), m_lights(std::move(lights)) {}
-
-		light_source_component(light_source_component&&) noexcept = default;
-		auto operator=(light_source_component&&) noexcept -> light_source_component& = default;
-
-		light_source_component(const light_source_component&) = delete;
-		auto operator=(const light_source_component&) -> light_source_component& = delete;
+		explicit light_source_component(const id& id) : component(id) {}
+		light_source_component(const id& id, std::vector<std::unique_ptr<light>> lights) : component(id), m_lights(std::move(lights)) {}
 
 		auto add_light(std::unique_ptr<light> light) -> void {
 			m_lights.push_back(std::move(light));

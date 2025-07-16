@@ -7,7 +7,7 @@ import gse.physics.math;
 
 export namespace gse::physics {
 	struct motion_component final : component {
-		explicit motion_component(const std::uint32_t id) : component(id) {}
+		explicit motion_component(const id& id) : component(id) {}
 
 		vec3<length> current_position;
 		vec3<velocity> current_velocity;
