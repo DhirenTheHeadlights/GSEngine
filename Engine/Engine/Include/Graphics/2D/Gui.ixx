@@ -38,35 +38,35 @@ export namespace gse::gui {
 	auto vec(const std::string& name, vec_t<T, N> vec) -> void;
 }
 
-struct menu {
-	gse::id texture_id;
-	gse::unitless::vec2 position;
-	gse::unitless::vec2 size;
-	gse::unitless::vec2 pre_docked_size;
-	std::string name = "";
-	gse::quota_timed_lock<bool, 2> grabbed{ false, gse::seconds(0.05) };
-	gse::unitless::vec2 offset;
-	gse::timed_lock<bool> docked{ false, gse::seconds(0.25) };
-	bool docked_waiting_for_release = false;
-
-	std::function<void()> contents;
-	std::vector<std::string> items;
-};
-
-struct docking_area {
-	gse::unitless::vec2 position;
-	static gse::unitless::vec2 size;
-	static gse::unitless::vec4 color;
-
-	gse::unitless::vec2 docked_position;
-	gse::unitless::vec2 docked_size;
-};
-
 namespace gse::gui {
-	static constinit std::vector<menu> menus;
+	struct menu {
+		id texture_id;
+		unitless::vec2 position;
+		unitless::vec2 size;
+		unitless::vec2 pre_docked_size;
+		std::string name = "";
+		quota_timed_lock<bool, 2> grabbed{ false, seconds(0.05) };
+		unitless::vec2 offset;
+		timed_lock<bool> docked{ false, seconds(0.25) };
+		bool docked_waiting_for_release = false;
+
+		std::function<void()> contents;
+		std::vector<std::string> items;
+	};
+
+	struct docking_area {
+		unitless::vec2 position;
+		static unitless::vec2 size;
+		static unitless::vec4 color;
+
+		unitless::vec2 docked_position;
+		unitless::vec2 docked_size;
+	};
+
+	std::vector<menu> menus;
 	static constinit std::array<docking_area, 5> docks;
-	static constinit menu* current_menu = nullptr;
-	static constinit id font_id;
+	menu* current_menu = nullptr;
+	id font_id;
 
 	unitless::vec2 docking_area::size = { 10.f, 10.f };
 	unitless::vec4 docking_area::color = { 0.f, 1.f, 0.f, 1.f };
@@ -171,7 +171,7 @@ auto gse::gui::update() -> void {
 auto gse::gui::render(renderer::context& context, renderer::sprite& sprite_renderer, renderer::text& text_renderer) -> void {
 	for (auto& m : menus) {
 		constexpr float font_size = 16.f;
-		sprite_renderer.queue({ m.position, m.size, { 1.f, 0.f, 0.f, 1.f } });
+		sprite_renderer.queue({ m.position, m.size, { 1.f, 0.f, 0.f, 1.f }, context.resource<texture>(find("blank")), { 1.f, 1.f, 1.f, 1.f } });
 
 		current_menu = &m;
 		m.contents();
@@ -190,13 +190,13 @@ auto gse::gui::render(renderer::context& context, renderer::sprite& sprite_rende
 
 		if (render_docking_preview) {
 			for (const auto& dock : docks) {
-				sprite_renderer.queue({ dock.position, docking_area::size, { 0.f, 0.f, 1.f, 1.f } });
+				sprite_renderer.queue({ dock.position, docking_area::size, { 0.f, 0.f, 1.f, 1.f }, context.resource<texture>(find("blank")), { 1.f, 1.f, 1.f, 0.5f } });
 			}
 		}
 
 		if (m.grabbed.value()) {
 			for (const auto& dock : docks) {
-				sprite_renderer.queue({ dock.position, docking_area::size, docking_area::color });
+				sprite_renderer.queue({ dock.position, docking_area::size, docking_area::color, context.resource<texture>(find("blank")), { 1.f, 1.f, 1.f, 0.5f } });
 			}
 		}
 

@@ -15,7 +15,7 @@ import gse.assert;
 import gse.platform;
 
 namespace gse {
-	export class shader final : non_copyable {
+	export class shader final : public identifiable, non_copyable {
 	public:
 		struct info {
 			std::string name;
@@ -182,7 +182,7 @@ namespace gse {
 	auto read_file(const std::filesystem::path& path) -> std::vector<char>;
 }
 
-gse::shader::shader(const std::filesystem::path& path) {
+gse::shader::shader(const std::filesystem::path& path) : identifiable(path.stem().string()) {
 	const auto dir = path.parent_path();
 	const auto stem = path.stem().string();
 

@@ -1,15 +1,14 @@
-export module gse.runtime:scene;
+export module gse.utility:scene;
 
 import std;
 
-import :main_clock;
+import :registry;
+import :misc;
 
 import gse.assert;
-import gse.utility;
-import gse.physics;
 
 export namespace gse {
-	class scene final : public hookable<scene>, public identifiable {
+	class scene final : public hookable<scene> {
 	public:
 		explicit scene(const std::string& name = "Unnamed Scene");
 
@@ -29,10 +28,14 @@ export namespace gse {
 	};
 }
 
-gse::scene::scene(const std::string& name) : identifiable(name) {
-	struct default_scene_hook : hook<scene> {
-		explicit default_scene_hook(scene* owner) : hook(owner) {}
-		~default_scene_hook() override;
+template <typename T>
+auto gse::hook<gse::entity>::component() -> T& {
+	return m_scene->registry().linked_object<T>(owner_id());
+}
+
+gse::scene::scene(const std::string& name) : hookable(name) {
+	class default_scene final : public hook<scene> {
+		explicit default_scene(scene* owner) : hook(owner) {}
 
 		auto initialize() -> void override {
 			for (const auto& object_id : m_owner->m_queue) {
@@ -54,7 +57,7 @@ gse::scene::scene(const std::string& name) : identifiable(name) {
 		}
 	};
 
-	add_hook(std::make_unique<default_scene_hook>(this));
+	add_hook(std::make_unique<default_scene>(this));
 }
 
 auto gse::scene::add_entity(const std::string& name) -> gse::id {

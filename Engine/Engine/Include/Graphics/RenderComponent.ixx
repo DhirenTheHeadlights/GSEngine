@@ -10,8 +10,8 @@ import gse.physics.math;
 
 export namespace gse {
 	struct render_component final : component {
-		render_component(const std::uint32_t id) : component(id) {}
-		render_component(std::uint32_t id, const model::handle& handle);
+		render_component(const id& id) : component(id) {}
+		render_component(const id& id, const model::handle& handle);
 
 		render_component(render_component&&) noexcept = default;
 		auto operator=(render_component&&) noexcept -> render_component & = default;
@@ -33,7 +33,7 @@ export namespace gse {
 	};
 }
 
-gse::render_component::render_component(const std::uint32_t id, const model::handle& handle) : component(id) {
+gse::render_component::render_component(const id& id, const model::handle& handle) : component(id) {
 	models.emplace_back(handle);
 	calculate_center_of_mass();
 }

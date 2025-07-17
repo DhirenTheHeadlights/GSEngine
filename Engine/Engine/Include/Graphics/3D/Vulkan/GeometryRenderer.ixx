@@ -19,7 +19,7 @@ import gse.platform;
 gse::camera g_camera;
 
 export namespace gse::renderer {
-	class geometry final : base_renderer {
+	class geometry final : public base_renderer {
 	public:
 		explicit geometry(context& context, std::span<std::reference_wrapper<registry>> registries) : base_renderer(context, registries) {}
 		auto initialize() -> void override;

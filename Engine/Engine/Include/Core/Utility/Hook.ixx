@@ -6,9 +6,14 @@ import :id;
 
 import gse.physics.math;
 
+namespace gse {
+	class scene;
+}
+
 export namespace gse {
 	template <is_identifiable T>
-	struct hook_base {
+	class hook_base {
+	public:
 		virtual ~hook_base() = default;
 		explicit hook_base(T* owner) : m_owner(owner) {}
 
@@ -20,7 +25,8 @@ export namespace gse {
 	};
 
 	template <typename T>
-	struct hook : hook_base<T> {
+	class hook : public hook_base<T> {
+	public:
 		explicit hook(T* owner) : hook_base<T>(owner) {}
 
 		virtual auto initialize() -> void {}
@@ -36,21 +42,25 @@ export namespace gse {
 	};
 
 	template <>
-	struct hook<entity> : identifiable_owned {
+	class hook<entity> : public identifiable_owned {
+	public:
 		virtual ~hook() = default;
-		explicit hook(const id& owner_id) : identifiable_owned(owner_id) {}
+		explicit hook(const id& owner_id, scene* scene) : identifiable_owned(owner_id), m_scene(scene) {}
 
 		virtual auto initialize() -> void {}
 		virtual auto update() -> void {}
 		virtual auto render() -> void {}
+
+		template <typename T>
+		auto component() -> T&;
+	protected:
+		scene* m_scene = nullptr;
 	};
 
 	template <typename T>
-	class hookable {
+	class hookable : public identifiable {
 	public:
-		hookable() = default;
-
-		hookable(std::initializer_list<std::unique_ptr<hook<T>>> hooks) {
+		hookable(const std::string& name, std::initializer_list<std::unique_ptr<hook<T>>> hooks = {}) : identifiable(name) {
 			for (auto&& h : hooks) m_hooks.push_back(std::move(const_cast<std::unique_ptr<hook<T>>&>(h)));
 		}
 

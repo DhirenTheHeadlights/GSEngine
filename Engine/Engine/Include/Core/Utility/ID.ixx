@@ -39,7 +39,7 @@ export namespace gse {
 		auto id() const -> id { return m_id; }
 		auto operator==(const identifiable& other) const -> bool = default;
 	private:
-		class id m_id;
+		gse::id m_id;
     };
 
 	class identifiable_owned {

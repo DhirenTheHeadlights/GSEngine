@@ -90,14 +90,14 @@ auto gse::broad_phase_collision::update(const std::span<physics::collision_compo
 
 		physics::motion_component* motion = nullptr;
 		const auto it = std::ranges::find_if(motion_components, [&](const physics::motion_component& motion_component) {
-				return motion_component.owner_id == collision_component.owner_id;
+				return motion_component.owner_id() == collision_component.owner_id();
 			});
 		if (it != motion_components.end()) {
 			motion = &*it;
 		}
 
 		for (auto& other_collision_component : collision_components) {
-			if (collision_component.owner_id == other_collision_component.owner_id) {
+			if (collision_component.owner_id() == other_collision_component.owner_id()) {
 				continue;
 			}
 

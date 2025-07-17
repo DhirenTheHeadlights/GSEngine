@@ -6,28 +6,15 @@ import gse.utility;
 import gse.assert;
 
 namespace gse {
-	template<typename Resource, typename Context, typename... Args>
+	template<typename Resource, typename Context>
 	concept resource =
-		requires(Resource res, Args&&... a, Context& c) {
-		Resource(std::forward<Args>(a)...);
-		{ res.load(c) } -> std::same_as<void>;
-		{ res.unload() } -> std::same_as<void>;
-	}
-	&& (
-		requires(Resource res, Context& ctx) {
-			{
-				res.load(ctx)
-			} -> std::same_as<void>;
-		} || 
 		requires(Resource res, Context & ctx) {
-			{
-				res.load(ctx.config())
-			} -> std::same_as<void>;
-		}
-	);
+			{ res.load(ctx) } -> std::same_as<void>;
+			{ res.unload() } -> std::same_as<void>;
+		};
 
 	template <typename Handle, typename Resource>
-	concept resource_handle = requires(const Resource& resource) {
+	concept resource_handle = requires(Resource& resource) {
 		Handle(resource);
 	};
 }
@@ -66,7 +53,7 @@ export namespace gse {
 				: resource(std::move(res)), current_state(s), path(p) {}
 		};
 
-		explicit resource_loader(const RenderingContext& context) : m_context(context) {}
+		explicit resource_loader(RenderingContext& context) : m_context(context) {}
 		~resource_loader() override;
 
 		auto flush() -> void override;
@@ -90,7 +77,7 @@ export namespace gse {
 
 		auto resource_state(const id& id) -> state override;
 	private:
-		const RenderingContext& m_context;
+		RenderingContext& m_context;
 		std::unordered_map<id, slot> m_resources;
 		std::vector<std::future<void>> m_loading_futures;
 	};
@@ -119,16 +106,7 @@ auto gse::resource_loader<Resource, Handle, RenderingContext>::flush() -> void {
 					[this, &slot] {
 						try {
 							slot.resource = std::make_unique<Resource>(slot.path);
-							if constexpr (
-								requires {
-									slot.resource->load(m_context);
-								}
-							) {
-								slot.resource->load(m_context);
-							}
-							else {
-								slot.resource->load(m_context.config());
-							}
+							slot.resource->load(m_context);
 							slot.current_state.store(state::loaded, std::memory_order_release);
 						}
 						catch (const std::exception& e) {
@@ -247,21 +225,9 @@ auto gse::resource_loader<Resource, Handle, RenderingContext>::instantly_load(co
 
 	try {
 		if (!slot.resource) {
-			if constexpr (std::constructible_from<Resource, std::filesystem::path>) {
-				slot.resource = std::make_unique<Resource>(slot.path);
-			}
-			else {
-				assert(false, "Resource is not constructible from path!");
-				slot.current_state.store(state::failed, std::memory_order_release);
-				return {};
-			}
+			slot.resource = std::make_unique<Resource>(slot.path);
 		}
-		if constexpr (requires { slot.resource->load(m_context); }) {
-			slot.resource->load(m_context);
-		}
-		else {
-			slot.resource->load(m_context.config());
-		}
+		slot.resource->load(m_context);
 		slot.current_state.store(state::loaded, std::memory_order_release);
 	}
 	catch (const std::exception& e) {

@@ -2,6 +2,8 @@ export module gse.graphics:texture;
 
 import std;
 
+import :rendering_context;
+
 import gse.utility;
 import gse.physics.math;
 import gse.platform;
@@ -42,7 +44,7 @@ export namespace gse {
             const std::string& name = std::string("Texture from Data")
         );
 
-        auto load(const vulkan::config& config) -> void;
+        auto load(const renderer::context& context) -> void;
 		auto unload() -> void;
 
         auto descriptor_info() const -> vk::DescriptorImageInfo {
@@ -180,7 +182,9 @@ gse::texture::texture(const vulkan::config& config, const std::vector<std::byte>
     m_texture_sampler = config.device_data.device.createSampler(sampler_info);
 }
 
-auto gse::texture::load(const vulkan::config& config) -> void {
+auto gse::texture::load(const renderer::context& context) -> void {
+    const auto& config = context.config();
+
     if (!m_image_data.path.empty()) {
         m_image_data = image::load(m_image_data.path);
     }

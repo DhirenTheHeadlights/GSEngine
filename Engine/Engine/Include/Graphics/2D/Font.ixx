@@ -59,7 +59,7 @@ export namespace gse {
         font(const std::filesystem::path& path);
         ~font();
 
-        auto load(const vulkan::config& config) -> void;
+        auto load(const renderer::context& context) -> void;
 		auto unload() -> void;
 
         auto texture() const -> const texture*;
@@ -115,7 +115,9 @@ auto read_file_binary(const std::filesystem::path& path, std::vector<unsigned ch
     return true;
 }
 
-auto gse::font::load(const vulkan::config& config) -> void {
+auto gse::font::load(const renderer::context& context) -> void {
+	auto& config = context.config();
+
     std::vector<unsigned char> font_data_buffer;
     if (!read_file_binary(m_path, font_data_buffer)) {
         std::cerr << "Could not load font file!" << '\n';

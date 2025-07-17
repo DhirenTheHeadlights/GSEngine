@@ -11,7 +11,7 @@ import gse.utility;
 import gse.platform;
 
 export namespace gse {
-    struct material {
+	struct material : identifiable {
         struct handle {
 			handle(const material& mat) : data(&mat) {}
             const material* data = nullptr;
@@ -19,9 +19,37 @@ export namespace gse {
             auto exists() const -> bool { return data != nullptr; }
         };
 
-		material(const std::filesystem::path& path) : path(path) {}
+		material(const std::filesystem::path& path) : identifiable(path.stem().string()), path(path) {}
 
         auto load(renderer::context& context) -> void;
+        auto load(
+            const unitless::vec3 ambient,
+            const unitless::vec3 diffuse,
+            const unitless::vec3 specular,
+            const unitless::vec3 emission,
+            const float shininess = 0.0f,
+            const float optical_density = 1.0f,
+            const float transparency = 1.0f,
+            const int illumination_model = 0
+        ) -> void {
+            this->ambient = ambient;
+            this->diffuse = diffuse;
+            this->specular = specular;
+            this->emission = emission;
+            this->shininess = shininess;
+            this->optical_density = optical_density;
+            this->transparency = transparency;
+            this->illumination_model = illumination_model;
+		}
+        auto load(
+			const gse::id& diffuse_texture,
+			const gse::id& normal_texture = {},
+			const gse::id& specular_texture = {}
+        ) -> void {
+            this->diffuse_texture = diffuse_texture;
+            this->normal_texture = normal_texture;
+            this->specular_texture = specular_texture;
+		}
         auto unload() -> void;
 
         unitless::vec3 ambient = unitless::vec3(1.0f);
@@ -34,9 +62,9 @@ export namespace gse {
         float transparency = 1.0f;
         int illumination_model = 0;
 
-        id diffuse_texture;
-        id normal_texture;
-        id specular_texture;
+        gse::id diffuse_texture;
+        gse::id normal_texture;
+        gse::id specular_texture;
 
 		std::filesystem::path path;
     };
