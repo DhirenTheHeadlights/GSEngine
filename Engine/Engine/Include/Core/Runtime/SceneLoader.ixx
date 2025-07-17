@@ -2,10 +2,10 @@ export module gse.runtime:scene_loader;
 
 import std;
 
-import :scene;
-
 import gse.assert;
 import gse.utility;
+import gse.physics;
+import gse.graphics;
 
 export namespace gse::scene_loader {
 	auto add(std::unique_ptr<scene>& new_scene) -> void;
@@ -25,13 +25,14 @@ export namespace gse::scene_loader {
 }
 
 namespace gse::scene_loader {
-	static constinit std::unordered_map<id, std::unique_ptr<gse::scene>> scenes;
-	static constinit std::unordered_map<id, std::function<bool()>> scene_triggers;
+	std::unordered_map<id, std::unique_ptr<gse::scene>> scenes;
+	std::unordered_map<id, std::function<bool()>> scene_triggers;
 
 	auto registries() -> std::span<std::reference_wrapper<registry>>;
 }
 
 auto gse::scene_loader::add(std::unique_ptr<gse::scene>& new_scene) -> void {
+	new_scene->add_hook(std::make_unique<default_scene>());
 	scenes.insert({ new_scene->id(), std::move(new_scene) });
 }
 

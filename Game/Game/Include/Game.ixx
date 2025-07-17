@@ -2,11 +2,23 @@ export module game;
 
 export import game.config;
 
-export namespace game {
-	auto initialize() -> bool;
-	auto update() -> bool;
-	auto render() -> bool;
-	auto close() -> bool;
+import gse;
 
-	auto set_input_handling_flag(bool enabled) -> void;
+export namespace gs {
+	class game final : public gse::hook<gse::engine> {
+	public:
+		explicit game(gse::engine* owner) : hook(owner) {}
+
+		auto initialize() -> void  override {
+
+		}
+
+		auto update() -> void  override {
+
+		}
+
+		auto render() -> void  override {
+
+		}
+	};
 }

@@ -15,16 +15,16 @@ export namespace gse {
 	auto create_free_camera(const vec3<length>& initial_position) -> uuid;
 }
 
-struct free_camera_hook final : gse::hook<gse::entity> {
-	free_camera_hook(const gse::vec3<gse::length>& initial_position)
-		: m_initial_position(initial_position) {}
+class free_camera final : gse::hook<gse::entity> {
+public:
+	free_camera(const gse::id& owner_id, const gse::vec3<gse::length>& initial_position) : hook(owner_id), m_initial_position(initial_position) {}
 
 	auto initialize() -> void override {
-		gse::get_camera().set_position(m_initial_position);
+		gse::renderer::camera().set_position(m_initial_position);
 	}
 
 	auto update() -> void override {
-		auto& camera = gse::get_camera();
+		auto& camera = gse::renderer::camera();
 		// Move Forward (-Z)
 		if (gse::input::get_keyboard().keys[GLFW_KEY_W].held) {
 			camera.move(camera.direction_relative_to_origin({ 0.f, 0.f, -1.f }));
@@ -50,12 +50,6 @@ struct free_camera_hook final : gse::hook<gse::entity> {
 			camera.move(camera.direction_relative_to_origin({ 0.f, -1.f, 0.f }));
 		}
 	}
-
+private:
 	gse::vec3<gse::length> m_initial_position;
 };
-
-auto gse::create_free_camera(const vec3<length>& initial_position) -> uuid {
-	const auto camera_id = registry::create_entity();
-	registry::add_entity_hook(camera_id, std::make_unique<free_camera_hook>(initial_position));
-	return camera_id;
-}

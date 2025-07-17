@@ -10,7 +10,9 @@ import gse.platform;
 import gse.assert;
 
 namespace gse {
-	struct base_engine_hook final : hook<void> {
+	export struct engine : identifiable {};
+
+	struct base_engine_hook final : hook<engine> {
 		using hook::hook;
 
 		auto update() -> void override {
@@ -21,7 +23,7 @@ namespace gse {
 			scene_loader::update();
 			gui::update();
 
-			reset_timer("Engine::render");
+			reset_timer("Engine::update");
 		}
 
 		auto render() -> void override {
@@ -32,14 +34,17 @@ namespace gse {
 			reset_timer("Engine::render");
 		}
 	};
-}
 
-export namespace gse {
-	static constinit hookable<void> engine({ std::make_unique<base_engine_hook>(nullptr) });
+	hookable<engine> engine({ std::make_unique<base_engine_hook>(nullptr) });
+
+	export template <typename... Args>
 	auto start() -> void;
 }
 
+export template <typename... Args>
 auto gse::start() -> void {
+	(engine.add_hook(std::make_unique<Args>(engine.id())), ...);
+
 	engine.initialize();
 
 	while (true) {

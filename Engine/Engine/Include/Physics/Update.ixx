@@ -43,7 +43,7 @@ auto gse::physics::update(const std::span<std::reference_wrapper<registry>> regi
 				if (const auto collision_it = std::ranges::find_if(
 					registry.get().linked_objects<collision_component>(),
 					[object](const auto& c) {
-						return c.owner_id == object.owner_id;
+						return c.owner_id() == object.owner_id();
 					}
 				); collision_it != registry.get().linked_objects<collision_component>().end()) {
 					collision = &*collision_it;
@@ -53,7 +53,7 @@ auto gse::physics::update(const std::span<std::reference_wrapper<registry>> regi
 				if (const auto render_it = std::ranges::find_if(
 					registry.get().linked_objects<render_component>(),
 					[object](const auto& r) {
-						return r.owner_id == object.owner_id;
+						return r.owner_id() == object.owner_id();
 					}
 				); render_it != registry.get().linked_objects<render_component>().end()) {
 					render = &*render_it;

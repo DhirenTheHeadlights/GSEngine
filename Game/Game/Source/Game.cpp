@@ -14,42 +14,6 @@ import game.player;
 import game.skybox;
 import game.sphere_light;
 
-bool g_input_handling_enabled = true;
-
-auto game::set_input_handling_flag(const bool enabled) -> void {
-	g_input_handling_enabled = enabled;
-}
-
-struct iron_man_hook final : gse::hook<gse::entity> {
-	using hook::hook;
-
-	auto initialize() -> void override {
-		const auto handle = gse::model_loader::load_obj_file(game::config::resource_path / "Models/IronMan/iron_man.obj", "Iron Man");
-		gse::registry::add_component(gse::render_component(owner_id, handle));
-		gse::registry::component<gse::render_component>(owner_id).models[0].set_position(gse::vec::meters(0.f, 0.f, 0.f));
-	}
-};
-
-struct black_knight_hook final : gse::hook<gse::entity> {
-	using hook::hook;
-
-	auto initialize() -> void override {
-		const auto handle = gse::model_loader::load_obj_file(game::config::resource_path / "Models/BlackKnight/base.obj", "Black Knight");
-		gse::registry::add_component(gse::render_component(owner_id, handle));
-		gse::registry::component<gse::render_component>(owner_id).models[0].set_position(gse::vec::meters(0.f, 0.f, 0.f));
-	}
-};
-
-struct raw_backpack_hook final : gse::hook<gse::entity> {
-	using hook::hook;
-
-	auto initialize() -> void override {
-		const auto handle = gse::model_loader::load_obj_file(game::config::resource_path / "Models/BlackKnight/base.obj", "Black Knight");
-		gse::registry::add_component(gse::render_component(owner_id, handle));
-		gse::registry::component<gse::render_component>(owner_id).models[0].set_position(gse::vec::meters(0.f, 0.f, 0.f));
-	}
-};
-
 struct scene1_hook final : gse::hook<gse::scene> {
 	using hook::hook;
 
@@ -61,30 +25,20 @@ struct scene1_hook final : gse::hook<gse::scene> {
 		m_owner->add_entity(gse::create_box(gse::vec::meters(-20.f, -400.f, 20.f), gse::vec::meters(40.f, 40.f, 40.f)), "Bigger Box");
 		m_owner->add_entity(game::create_sphere_light(gse::vec::meters(0.f, -300.f, 0.f), gse::meters(10.f), 18), "Center Sphere Light");
 		m_owner->add_entity(gse::create_sphere(gse::vec::meters(0.f, -00.f, 200.f), gse::meters(10.f)), "Second Sphere");
-
-
-
-		//const auto iron_man = gse::registry::create_entity();
-		//gse::registry::add_entity_hook(iron_man, std::make_unique<iron_man_hook>());
-		//m_owner->add_entity(iron_man, "Iron Man");
-		//const std::uint32_t raw_backpack = gse::registry::create_entity();
-		//gse::registry::add_entity_hook(raw_backpack, std::make_unique<raw_backpack_hook>());
-		//m_owner->add_entity(raw_backpack, "Backpack");
-		//const std::uint32_t black_knight = gse::registry::create_entity();
-		//gse::registry::add_entity_hook(black_knight, std::make_unique<black_knight_hook>());
-		//m_owner->add_entity(black_knight, "Black Knight");
 	}
 
 	auto render() -> void override {
-		gse::debug::add_imgui_callback([] {
-			if (gse::scene_loader::scene(gse::find("Scene1"))->active()) {
-				ImGui::Begin("Game Data");
+		gse::debug::add_imgui_callback(
+			[] {
+				if (gse::scene_loader::scene(gse::find("Scene1"))->active()) {
+					ImGui::Begin("Game Data");
 
-				ImGui::Text("FPS: %d", gse::main_clock::frame_rate());
+					ImGui::Text("FPS: %d", gse::main_clock::frame_rate());
 
-				ImGui::End();
+					ImGui::End();
+				}
 			}
-			});
+		);
 	}
 };
 

@@ -17,8 +17,8 @@ import gse.utility;
 import gse.platform;
 
 namespace gse {
-	static constinit renderer::context rendering_context;
-	static constinit std::unordered_map<std::type_index, std::unique_ptr<base_renderer>> renderers;
+	renderer::context rendering_context;
+	std::unordered_map<std::type_index, std::unique_ptr<base_renderer>> renderers;
 }
 
 export namespace gse {
@@ -28,18 +28,18 @@ export namespace gse {
 	}
 
 	template <typename Resource>
-	auto queue(const std::filesystem::path& path, const std::string& name) -> void {
-		rendering_context.queue<Resource>(path, name);
+	auto queue(const std::filesystem::path& path, const std::string& name) -> id {
+		return rendering_context.queue<Resource>(path, name);
 	}
 
 	template <typename Resource, typename... Args>
-	auto queue(const id& id, Args&&... args) -> void {
-		rendering_context.queue<Resource>(id, std::forward<Args>(args)...);
+	auto queue(const std::string& name, Args&&... args) -> gse::id {
+		return rendering_context.queue<Resource>(name, std::forward<Args>(args)...);
 	}
 
 	template <typename Resource>
-	auto instantly_load(const id& id) -> void {
-		rendering_context.instantly_load<Resource>(id);
+	auto instantly_load(const id& id) -> typename Resource::handle {
+		return rendering_context.instantly_load<Resource>(id);
 	}
 
 	template <typename Resource>
@@ -58,6 +58,7 @@ export namespace gse::renderer {
 	auto update() -> void;
 	auto render(const std::function<void()>& in_frame = {}) -> void;
 	auto shutdown() -> void;
+	auto camera() -> camera&;
 }
 
 namespace gse::renderer {
@@ -81,10 +82,10 @@ auto gse::renderer::initialize(const std::span<std::reference_wrapper<registry>>
 	rendering_context.add_loader<font>();
 	rendering_context.add_loader<material>();
 
-	renderers.emplace(std::type_index(typeid(geometry)), std::unique_ptr<base_renderer>(std::make_unique<geometry>(rendering_context, registries)));
-	renderers.emplace(std::type_index(typeid(lighting)), std::unique_ptr<base_renderer>(std::make_unique<lighting>(rendering_context, registries)));
-	renderers.emplace(std::type_index(typeid(sprite)), std::unique_ptr<base_renderer>(std::make_unique<sprite>(rendering_context, registries)));
-	renderers.emplace(std::type_index(typeid(text)), std::unique_ptr<base_renderer>(std::make_unique<text>(rendering_context, registries)));
+	renderers.emplace(std::type_index(typeid(geometry)), std::make_unique<geometry>(rendering_context, registries));
+	renderers.emplace(std::type_index(typeid(lighting)), std::make_unique<lighting>(rendering_context, registries));
+	renderers.emplace(std::type_index(typeid(sprite)), std::make_unique<sprite>(rendering_context, registries));
+	renderers.emplace(std::type_index(typeid(text)), std::make_unique<text>(rendering_context, registries));
 
 	for (const auto& renderer : renderers | std::views::values) {
 		renderer->initialize();
@@ -136,4 +137,8 @@ auto gse::renderer::shutdown() -> void {
 	rendering_context.config().swap_chain_data.depth_image = {};
 
 	platform::shutdown();
+}
+
+auto gse::renderer::camera() -> gse::camera& {
+	return rendering_context.camera();
 }

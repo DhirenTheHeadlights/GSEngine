@@ -5,6 +5,7 @@ import std;
 import :hook;
 import :id;
 import :non_copyable;
+import :entity;
 
 import gse.assert;
 import gse.physics.math;
@@ -25,7 +26,6 @@ export namespace gse {
 		class link_base {
 		public:
 			virtual ~link_base() = default;
-			virtual auto add(const id& id) -> void* = 0;
 			virtual auto activate(const id& id) -> void = 0;
 			virtual auto remove(const id& id) -> void = 0;
 		};
@@ -33,14 +33,15 @@ export namespace gse {
 		template <linkable_object T>
 		class link final : public link_base {
 		public:
-			auto add(const id& id) -> void* override {
+			template <typename... Args>
+			auto add(const id& id, Args&&... args) -> void* {
 				m_id_to_index_map[id] = m_queued_objects.size();
 
 				if constexpr (is_hook<T>) {
-					m_queued_objects.emplace_back(std::make_unique<T>(id));
+					m_queued_objects.emplace_back(std::make_unique<T>(id, std::forward<Args>(args)...));
 				}
 				else {
-					m_queued_objects.emplace_back(id);
+					m_queued_objects.emplace_back(id, std::forward<Args>(args)...);
 				}
 
 				return pointer_to_object(m_queued_objects.back());
@@ -94,6 +95,10 @@ export namespace gse {
 					m_id_to_index_map[last_element_owner_id] = index_to_remove;
 				}
 			}
+
+			auto objects() -> auto& {
+				return m_linked_objects;
+			}
 		private:
 			using container_type = std::conditional_t<
 				is_hook<T>,
@@ -130,14 +135,14 @@ export namespace gse {
 		auto activate(const id& id) -> void;
 		auto remove(const id& id) -> void;
 
-		template <gse::linkable_object U> requires !std::derived_from<U, gse::hook<gse::entity>>
-		auto add_link(const id& id) -> U*;
+		template <gse::linkable_object U, typename... Args> requires !std::derived_from<U, gse::hook<gse::entity>>
+		auto add_link(const id& id, Args&&... args) -> U*;
 
 		template <linkable_object U>
 		auto remove_link(const id& id) -> void;
 
 		template <linkable_object U>
-		auto linked_objects() -> std::span<U>;
+		auto linked_objects() -> auto&;
 
 		template <linkable_object U>
 		auto linked_object(const id& id) -> U&;
@@ -216,20 +221,19 @@ auto gse::registry::remove(const id& id) -> void {
 	}
 }
 
-template <gse::linkable_object U> requires !std::derived_from<U, gse::hook<gse::entity>>
-auto gse::registry::add_link(const id& id) -> U* {
+template <gse::linkable_object U, typename... Args> requires !std::derived_from<U, gse::hook<gse::entity>>
+auto gse::registry::add_link(const id& id, Args&&... args) -> U* {
 	assert(
 		exists(id),
 		std::format("Object with id {} does not exist in registry when trying to add a link", id)
 	);
 
 	if (!m_links.contains(typeid(U))) {
-		m_links[typeid(U)] =
-			std::make_unique<registry::template link<U>>();
+		m_links[typeid(U)] = std::make_unique<registry::template link<U>>();
 	}
 
 	auto& lnk = static_cast<typename registry::template link<U>&>(*m_links.at(typeid(U)));
-	return static_cast<U*>(lnk.add(id));
+	return static_cast<U*>(lnk.add_with_args(id, std::forward<Args>(args)...));
 }
 
 template <gse::linkable_object U>
@@ -243,12 +247,13 @@ auto gse::registry::remove_link(const id& id) -> void {
 }
 
 template <gse::linkable_object U>
-auto gse::registry::linked_objects() -> std::span<U> {
-	if (const auto it = m_links.find(typeid(U)); it != m_links.end()) {
-		auto& lnk = static_cast<typename registry::template link<U>&>(*it->second);
-		return lnk.objects();         
-	}
-	return {};
+auto gse::registry::linked_objects() -> auto& {
+	const auto it = m_links.find(typeid(U));
+
+	assert(it != m_links.end(), std::format("Link type {} not found in registry.", typeid(U).name()));
+
+	auto& lnk = static_cast<typename registry::template link<U>&>(*it->second);
+	return lnk.objects();         
 }
 
 template <gse::linkable_object U>
