@@ -53,6 +53,9 @@ export namespace gse {
 
 		template <typename T>
 		auto component() -> T&;
+
+		template <typename T>
+		auto try_component() -> T*;
 	protected:
 		scene* m_scene = nullptr;
 	};

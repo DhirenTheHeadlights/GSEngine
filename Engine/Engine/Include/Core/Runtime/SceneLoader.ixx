@@ -2,6 +2,8 @@ export module gse.runtime:scene_loader;
 
 import std;
 
+import :main_clock;
+
 import gse.assert;
 import gse.utility;
 import gse.physics;
@@ -32,7 +34,6 @@ namespace gse::scene_loader {
 }
 
 auto gse::scene_loader::add(std::unique_ptr<gse::scene>& new_scene) -> void {
-	new_scene->add_hook(std::make_unique<default_scene>());
 	scenes.insert({ new_scene->id(), std::move(new_scene) });
 }
 

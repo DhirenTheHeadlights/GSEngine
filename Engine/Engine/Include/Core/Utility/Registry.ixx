@@ -5,7 +5,6 @@ import std;
 import :hook;
 import :id;
 import :non_copyable;
-import :entity;
 
 import gse.assert;
 import gse.physics.math;
@@ -135,7 +134,7 @@ export namespace gse {
 		auto activate(const id& id) -> void;
 		auto remove(const id& id) -> void;
 
-		template <gse::linkable_object U, typename... Args> requires !std::derived_from<U, gse::hook<gse::entity>>
+		template <linkable_object U, typename... Args>
 		auto add_link(const id& id, Args&&... args) -> U*;
 
 		template <linkable_object U>
@@ -146,6 +145,9 @@ export namespace gse {
 
 		template <linkable_object U>
 		auto linked_object(const id& id) -> U&;
+
+		template <linkable_object U>
+		auto try_linked_object(const id& id) -> U*;
 
 		auto exists(const id& id) const -> bool;
 		auto active(const id& id) const -> bool;
@@ -221,7 +223,7 @@ auto gse::registry::remove(const id& id) -> void {
 	}
 }
 
-template <gse::linkable_object U, typename... Args> requires !std::derived_from<U, gse::hook<gse::entity>>
+template <gse::linkable_object U, typename... Args>
 auto gse::registry::add_link(const id& id, Args&&... args) -> U* {
 	assert(
 		exists(id),
@@ -229,11 +231,13 @@ auto gse::registry::add_link(const id& id, Args&&... args) -> U* {
 	);
 
 	if (!m_links.contains(typeid(U))) {
-		m_links[typeid(U)] = std::make_unique<registry::template link<U>>();
+		m_links[typeid(U)] = std::make_unique<registry::link<U>>();
 	}
 
-	auto& lnk = static_cast<typename registry::template link<U>&>(*m_links.at(typeid(U)));
-	return static_cast<U*>(lnk.add_with_args(id, std::forward<Args>(args)...));
+	auto& lnk = static_cast<typename registry::link<U>&>(*m_links.at(typeid(U)));
+	void* obj_ptr = lnk.add(id, std::forward<Args>(args)...);
+
+	return static_cast<U*>(obj_ptr);
 }
 
 template <gse::linkable_object U>
@@ -270,6 +274,22 @@ auto gse::registry::linked_object(const id& id) -> U& {
 	}
 
 	return lnk.m_linked_objects[it2->second];
+}
+
+template <gse::linkable_object U>
+auto gse::registry::try_linked_object(const id& id) -> U* {
+	const auto it = m_links.find(typeid(U));
+	if (it == m_links.end()) {
+		return nullptr;
+	}
+
+	auto& lnk = static_cast<typename registry::template link<U>&>(*it->second);
+	const auto it2 = lnk.m_id_to_index_map.find(id);
+	if (it2 == lnk.m_id_to_index_map.end()) {
+		return nullptr;
+	}
+
+	return &lnk.m_linked_objects[it2->second];
 }
 
 auto gse::registry::exists(const id& id) const -> bool {
