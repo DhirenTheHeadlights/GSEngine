@@ -3,8 +3,6 @@ export module gse.utility;
 export import :clock;
 export import :component;
 export import :config;
-export import :default_scene;
-export import :entity;
 export import :hook;
 export import :id;
 export import :json;

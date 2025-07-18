@@ -86,6 +86,10 @@ export namespace gse {
 
     class light {
     public:
+        struct ignore_list : identifiable_owned {
+	        
+        };
+
         light() = default;
         virtual ~light() = default;
 
@@ -98,8 +102,7 @@ export namespace gse {
         auto set_ignore_list_id(const id& ignore_list_id) -> void { m_ignore_list_id = ignore_list_id; }
         auto ignore_list_id() const -> id { return m_ignore_list_id; }
     protected:
-        light(const unitless::vec3& color, const float& intensity, const light_type type)
-	        : m_color(color), m_intensity(intensity), m_type(type) {}
+        light(const unitless::vec3& color, const float intensity, const light_type type) : m_color(color), m_intensity(intensity), m_type(type) {}
 
         unitless::vec3 m_color;
         float m_intensity = 1.0f;

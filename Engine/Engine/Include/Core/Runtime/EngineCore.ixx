@@ -35,7 +35,7 @@ namespace gse {
 		}
 	};
 
-	hookable<engine> engine({ std::make_unique<base_engine_hook>(nullptr) });
+	hookable<engine> engine("Engine");
 
 	export template <typename... Args>
 	auto start() -> void;
@@ -43,6 +43,7 @@ namespace gse {
 
 export template <typename... Args>
 auto gse::start() -> void {
+	engine.add_hook(std::make_unique<base_engine_hook>(&engine));
 	(engine.add_hook(std::make_unique<Args>(engine.id())), ...);
 
 	engine.initialize();

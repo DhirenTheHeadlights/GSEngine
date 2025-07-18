@@ -7,20 +7,15 @@ import gse.utility;
 import gse.graphics;
 import gse.physics;
 
-export namespace gse {
-    auto create_sphere(std::uint32_t object_uuid, const vec3<length>& position, length radius, int sectors = 36, int stacks = 18) -> void;
-    auto create_sphere(const vec3<length>& position, length radius, int sectors = 36, int stacks = 18) -> std::uint32_t;
-}
-
-export struct sphere_mesh_hook final : gse::hook<gse::entity> {
-    sphere_mesh_hook(const gse::vec3<gse::length>& position, const gse::length radius, const int sectors, const int stacks)
-        : m_initial_position(position), m_radius(radius), m_sectors(sectors), m_stacks(stacks) {
+export class sphere_mesh_hook final : gse::hook<gse::entity> {
+public:
+    sphere_mesh_hook(const gse::id& owner_id, gse::scene* scene, const gse::vec3<gse::length>& position, const gse::length radius, const int sectors, const int stacks)
+        : hook(owner_id, scene), m_initial_position(position), m_radius(radius), m_sectors(sectors), m_stacks(stacks) {
     }
 
     auto initialize() -> void override {
-        gse::physics::motion_component new_motion_component(owner_id);
-        new_motion_component.current_position = m_initial_position;
-        gse::registry::add_component<gse::physics::motion_component>(std::move(new_motion_component));
+        auto* mc = m_scene->registry().add_link<gse::physics::motion_component>(owner_id());
+        mc->current_position = m_initial_position;
 
         const float r = m_radius.as<gse::units::meters>();
 
@@ -76,16 +71,20 @@ export struct sphere_mesh_hook final : gse::hook<gse::entity> {
         }
 
         std::vector<gse::mesh_data> new_meshes;
-        new_meshes.emplace_back(vertices, indices, generate_material(gse::texture_loader::get_texture_id(gse::config::resource_path / "Textures/sun.jpg"), {}, {}));
+        new_meshes.emplace_back(
+            vertices,
+            indices,
+            gse::queue<gse::material>(
+                "sun_material",
+                gse::queue<gse::texture>(gse::config::resource_path / "Textures/sun.jpg", "sun")
+            )
+        );
 
-        gse::render_component new_render_component(owner_id, gse::model_loader::add_model(std::move(new_meshes), "Sphere"));
-
-        gse::registry::add_component<gse::render_component>(std::move(new_render_component));
+        m_scene->registry().add_link<gse::render_component>(owner_id(), gse::queue<gse::model>("Sphere", std::move(new_meshes)));
     }
 
     auto update() -> void override {
-        const auto position = gse::registry::component<gse::physics::motion_component>(owner_id).current_position;
-        gse::registry::component<gse::render_component>(owner_id).models[0].set_position(position);
+        component<gse::render_component>().models[0].set_position(component<gse::physics::motion_component>().current_position);
     }
 private:
     gse::vec3<gse::length> m_initial_position;
@@ -93,13 +92,3 @@ private:
     int m_sectors; // Number of slices around the sphere
     int m_stacks;  // Number of stacks from top to bottom
 };
-
-auto gse::create_sphere(const std::uint32_t object_uuid, const vec3<length>& position, const length radius, const int sectors, const int stacks) -> void {
-    registry::add_entity_hook(object_uuid, std::make_unique<sphere_mesh_hook>(position, radius, sectors, stacks));
-}
-
-auto gse::create_sphere(const vec3<length>& position, const length radius, const int sectors, const int stacks) -> std::uint32_t {
-    const std::uint32_t sphere_uuid = registry::create_entity();
-    create_sphere(sphere_uuid, position, radius, sectors, stacks);
-    return sphere_uuid;
-}

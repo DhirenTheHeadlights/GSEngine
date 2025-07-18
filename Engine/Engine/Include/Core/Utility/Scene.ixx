@@ -33,8 +33,14 @@ auto gse::hook<gse::entity>::component() -> T& {
 	return m_scene->registry().linked_object<T>(owner_id());
 }
 
+template <typename T>
+auto gse::hook<gse::entity>::try_component() -> T* {
+	return m_scene->registry().try_linked_object<T>(owner_id());
+}
+
 gse::scene::scene(const std::string& name) : hookable(name) {
 	class default_scene final : public hook<scene> {
+	public:
 		explicit default_scene(scene* owner) : hook(owner) {}
 
 		auto initialize() -> void override {
