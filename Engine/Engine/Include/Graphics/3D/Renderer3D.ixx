@@ -43,7 +43,7 @@ import gse.platform.glfw.error_reporting;
 import gse.graphics.texture_loader;
 
 ///////TEMPORARY
-bool debug_rendering = false;
+bool debug_rendering = true;
 
 
 gse::camera g_camera;

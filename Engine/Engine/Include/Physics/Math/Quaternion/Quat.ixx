@@ -81,23 +81,19 @@ export namespace gse {
 
 	template <typename T> constexpr auto operator-(const quat_t<T>& v) -> quat_t<T>;
 
+	template <typename T> constexpr auto operator==(const quat_t<T>& lhs, const quat_t<T>& rhs) -> bool;
+
 
 }
 
 template <typename T>
 constexpr auto gse::operator+(const quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T> {
-	quat_t<T> result;
-	for (int i = 0; i < 4; ++i)
-		result[i] = lhs[i] + rhs[i];
-	return result;
+	return quat_t<T>(lhs.v + rhs.v);
 }
 
 template <typename T>
 constexpr auto gse::operator-(const quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T> {
-	quat_t<T> result;
-	for (int i = 0; i < 4; ++i)
-		result[i] = lhs[i] - rhs[i];
-	return result;
+	return quat_t<T>(lhs.v - rhs.v);
 }
 
 template <typename T>
@@ -142,17 +138,17 @@ constexpr auto gse::operator/=(quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T
 
 template <typename T>
 constexpr auto gse::operator*(const quat_t<T>& lhs, const T& rhs) -> quat_t<T> {
-	return quat_t<T>(lhs.s * rhs, lhs.x * rhs, lhs.y * rhs, lhs.z * rhs);
+	return quat_t<T>(lhs.v * rhs);
 }
 
 template <typename T>
 constexpr auto gse::operator*(const T& lhs, const quat_t<T>& rhs) -> quat_t<T> {
-	return rhs * lhs;
+	return quat_t<T>(rhs.v * lhs);
 }
 
 template <typename T>
 constexpr auto gse::operator/(const quat_t<T>& lhs, const T& rhs) -> quat_t<T> {
-	return quat_t<T>(lhs.x / rhs, lhs.y / rhs, lhs.z / rhs, lhs.s / rhs);
+	return quat_t<T>(lhs.v / rhs);
 }
 
 template <typename T>
@@ -177,4 +173,9 @@ constexpr auto gse::operator/=(quat_t<T>& lhs, const T& rhs) -> quat_t<T>& {
 template <typename T>
 constexpr auto gse::operator-(const quat_t<T>& v) -> quat_t<T> {
 	return quat_t<T>(-v.s, -v.x, -v.y, -v.z);
+}
+
+template <typename T>
+constexpr auto gse::operator==(const quat_t<T>& lhs, const quat_t<T>& rhs) -> bool {
+	return lhs.s == rhs.s && lhs.x == rhs.x && lhs.y == rhs.y && lhs.z == rhs.z;
 }

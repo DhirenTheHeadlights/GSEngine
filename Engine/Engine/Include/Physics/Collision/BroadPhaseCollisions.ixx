@@ -74,6 +74,7 @@ auto gse::broad_phase_collision::update() -> void {
 	}
 
 	const auto airborne_check = [](physics::motion_component* motion_component, const physics::collision_component& collision_component) {
+
 		if (abs(motion_component->current_position.y - motion_component->most_recent_y_collision) < meters(0.1f) && collision_component.collision_information.colliding) {
 			motion_component->airborne = false;
 		}

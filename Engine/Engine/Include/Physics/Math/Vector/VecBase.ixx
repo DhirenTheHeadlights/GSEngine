@@ -252,9 +252,14 @@ constexpr auto gse::vec::operator*(const storage<T, N>& lhs, const storage<T, N>
 template <typename T, int N> requires ref_t<T, N>
 constexpr auto gse::vec::operator/(const storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N> {
     storage<T, N> result{};
-
+    for (int i = 0; i < N; ++i) {
+        if (rhs[i] == 0 || std::isnan(rhs[i])) {
+            std::cerr << "/////////////\nDivision by zero or NaN in vector division\n//////////////\n";
+            //result[i] = T(0); // Handle division by zero gracefully
+        }
+	}
 	simd::div(std::span<const T, N>(lhs.data), std::span<const T, N>(rhs.data), std::span<T, N>(result.data));
-
+    
     return result;
 }
 
@@ -289,6 +294,13 @@ template <typename T, int N> requires val_t<T, N>
 constexpr auto gse::vec::operator/(storage<T, N> lhs, storage<T, N> rhs) -> storage<T, N> {
 	storage<T, N> result{};
 
+    for (int i = 0; i < N; ++i) {
+        if (rhs[i] == 0 || std::isnan(rhs[i])) {
+            std::cerr << "/////////////\nDivision by zero or NaN in vector division\n//////////////\n";
+            //result[i] = T(0); // Handle division by zero gracefully
+        }
+    }
+
 	simd::div(std::span<const T, N>(lhs.data), std::span<const T, N>(rhs.data), std::span<T, N>(result.data));
 
 	return result;
@@ -314,6 +326,12 @@ constexpr auto gse::vec::operator*=(storage<T, N>& lhs, const storage<T, N>& rhs
 
 template <typename T, int N> requires ref_t<T, N>
 constexpr auto gse::vec::operator/=(storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>& {
+    for (int i = 0; i < N; ++i) {
+        if (rhs[i] == 0 || std::isnan(rhs[i])) {
+            std::cerr << "/////////////\nDivision by zero or NaN in vector division\n//////////////\n";
+            //result[i] = T(0); // Handle division by zero gracefully
+        }
+    }
 	simd::div(std::span<T, N>(lhs.data), std::span<const T, N>(rhs.data), std::span<T, N>(lhs.data));
     return lhs;
 }
@@ -338,6 +356,12 @@ constexpr auto gse::vec::operator*=(storage<T, N>& lhs, storage<T, N> rhs) -> st
 
 template <typename T, int N> requires val_t<T, N>
 constexpr auto gse::vec::operator/=(storage<T, N>& lhs, storage<T, N> rhs) -> storage<T, N>& {
+    for (int i = 0; i < N; ++i) {
+        if (rhs[i] == 0 || std::isnan(rhs[i])) {
+            std::cerr << "/////////////\nDivision by zero or NaN in vector division\n//////////////\n";
+            //result[i] = T(0); // Handle division by zero gracefully
+        }
+    }
 	simd::div(std::span<T, N>(lhs.data), std::span<const T, N>(rhs.data), std::span<T, N>(lhs.data));
 	return lhs;
 }
@@ -363,6 +387,10 @@ constexpr auto gse::vec::operator*(T lhs, const storage<T, N>& rhs) -> storage<T
 template <typename T, int N> requires ref_t<T, N>
 constexpr auto gse::vec::operator/(const storage<T, N>& lhs, T rhs) -> storage<T, N> {
     storage<T, N> result{};
+    if (rhs == 0 || std::isnan(rhs)) {
+        std::cerr << "/////////////\nDivision by zero or NaN in vector division\n//////////////\n";
+        //result[i] = T(0); // Handle division by zero gracefully
+    }
 
 	simd::div_s(std::span<const T, N>(lhs.data), rhs, std::span<T, N>(result.data));
 
@@ -372,7 +400,12 @@ constexpr auto gse::vec::operator/(const storage<T, N>& lhs, T rhs) -> storage<T
 template <typename T, int N> requires ref_t<T, N>
 constexpr auto gse::vec::operator/(T lhs, const storage<T, N>& rhs) -> storage<T, N> {
     storage<T, N> result{};
-
+    for (int i = 0; i < N; ++i) {
+        if (rhs[i] == 0 || std::isnan(rhs[i])) {
+            std::cerr << "/////////////\nDivision by zero or NaN in vector division\n//////////////\n";
+            //result[i] = T(0); // Handle division by zero gracefully
+        }
+    }
 	simd::div_s(std::span<const T, N>(rhs.data), lhs, std::span<T, N>(result.data));
 
     return result;
@@ -395,6 +428,10 @@ constexpr auto gse::vec::operator*(T lhs, storage<T, N> rhs) -> storage<T, N> {
 template <typename T, int N> requires val_t<T, N>
 constexpr auto gse::vec::operator/(storage<T, N> lhs, T rhs) -> storage<T, N> {
 	storage<T, N> result{};
+    if (rhs == 0 || std::isnan(rhs)) {
+        std::cerr << "/////////////\nDivision by zero or NaN in vector division\n//////////////\n";
+        //result[i] = T(0); // Handle division by zero gracefully
+    }
 	simd::div_s(std::span<const T, N>(lhs.data), rhs, std::span<T, N>(result.data));
 	return result;
 }
@@ -402,6 +439,12 @@ constexpr auto gse::vec::operator/(storage<T, N> lhs, T rhs) -> storage<T, N> {
 template <typename T, int N> requires val_t<T, N>
 constexpr auto gse::vec::operator/(T lhs, storage<T, N> rhs) -> storage<T, N> {
     storage<T, N> result{};
+    for (int i = 0; i < N; ++i) {
+        if (rhs[i] == 0 || std::isnan(rhs[i])) {
+            std::cerr << "/////////////\nDivision by zero or NaN in vector division\n//////////////\n";
+            //result[i] = T(0); // Handle division by zero gracefully
+        }
+    }
     simd::div_s(std::span<const T, N>(rhs.data), lhs, std::span<T, N>(result.data));
     return result;
 }
@@ -414,6 +457,12 @@ constexpr auto gse::vec::operator*=(storage<T, N>& lhs, T rhs) -> storage<T, N>&
 
 template <typename T, int N>
 constexpr auto gse::vec::operator/=(storage<T, N>& lhs, T rhs) -> storage<T, N>& {
+    for (int i = 0; i < N; ++i) {
+        if (rhs[i] == 0 || std::isnan(rhs[i])) {
+            std::cerr << "/////////////\nDivision by zero or NaN in vector division\n//////////////\n";
+            //result[i] = T(0); // Handle division by zero gracefully
+        }
+    }
 	simd::div_s(std::span<T, N>(lhs.data), rhs, std::span<T, N>(lhs.data));
     return lhs;
 }

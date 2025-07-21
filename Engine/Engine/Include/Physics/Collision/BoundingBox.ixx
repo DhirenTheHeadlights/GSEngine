@@ -178,9 +178,9 @@ auto gse::oriented_bounding_box::contains(vec3<length> point) const -> bool {
 
 	const auto half_size = size / 2.0f;
 
-	return std::abs(local_x.as_default_unit()) <= half_size.x.as_default_unit() &&
-		std::abs(local_y.as_default_unit()) <= half_size.y.as_default_unit() &&
-		std::abs(local_z.as_default_unit()) <= half_size.z.as_default_unit();
+	return abs(local_x) <= half_size.x &&
+		abs(local_y) <= half_size.y &&
+		abs(local_z) <= half_size.z;
 	
 }
 
