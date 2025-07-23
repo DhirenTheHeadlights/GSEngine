@@ -36,7 +36,7 @@ export namespace gse::vulkan::uploader {
         std::uint32_t width,
         std::uint32_t height,
         std::uint32_t depth,
-        const void* voxel_data,
+        const void* pixel_data,
         size_t data_size,
         vk::ImageLayout final_layout = vk::ImageLayout::eShaderReadOnlyOptimal
     ) -> void;
@@ -75,7 +75,6 @@ auto gse::vulkan::uploader::upload_image_2d(const config& config, persistent_all
             .size = data_size,
             .usage = vk::BufferUsageFlagBits::eTransferSrc
         },
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
         pixel_data
     );
 
@@ -120,16 +119,15 @@ auto gse::vulkan::uploader::upload_image_layers(const config& config, persistent
     const std::uint32_t layer_count = static_cast<std::uint32_t>(face_data.size());
     const size_t total_size = layer_count * bytes_per_face;
 
-    auto staging = persistent_allocator::create_buffer(
+    auto [buffer, allocation] = persistent_allocator::create_buffer(
         config.device_data,
         vk::BufferCreateInfo{
             .size = total_size,
             .usage = vk::BufferUsageFlagBits::eTransferSrc
-        },
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+        }
     );
 
-    const auto mapped = static_cast<std::byte*>(staging.allocation.mapped());
+    const auto mapped = static_cast<std::byte*>(allocation.mapped());
 
     for (size_t i = 0; i < layer_count; ++i) {
         std::memcpy(mapped + i * bytes_per_face, face_data[i], bytes_per_face);
@@ -161,7 +159,7 @@ auto gse::vulkan::uploader::upload_image_layers(const config& config, persistent
                     });
             }
 
-            cmd.copyBufferToImage(*staging.buffer, *resource.image, vk::ImageLayout::eTransferDstOptimal, regions);
+            cmd.copyBufferToImage(*buffer, *resource.image, vk::ImageLayout::eTransferDstOptimal, regions);
 
             transition_image_layout(
                 *cmd, resource,
@@ -181,7 +179,6 @@ auto gse::vulkan::uploader::upload_image_3d(const config& config, persistent_all
             .size = data_size,
             .usage = vk::BufferUsageFlagBits::eTransferSrc
         },
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
         pixel_data
     );
 
@@ -239,10 +236,9 @@ auto gse::vulkan::uploader::upload_mip_mapped_image(const config& config, persis
                 auto staging = persistent_allocator::create_buffer(
                     config.device_data,
                     vk::BufferCreateInfo{
-                        .size = mip_level, // Assuming this is byte_size
+                        .size = mip_level,
                         .usage = vk::BufferUsageFlagBits::eTransferSrc,
                     },
-                    vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
                     pixels
                     );
 

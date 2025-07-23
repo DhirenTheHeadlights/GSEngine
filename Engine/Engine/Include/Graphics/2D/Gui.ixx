@@ -66,7 +66,8 @@ namespace gse::gui {
 	std::vector<menu> menus;
 	static constinit std::array<docking_area, 5> docks;
 	menu* current_menu = nullptr;
-	id font_id;
+	resource::handle<font> font;
+	resource::handle<texture> blank;
 
 	unitless::vec2 docking_area::size = { 10.f, 10.f };
 	unitless::vec4 docking_area::color = { 0.f, 1.f, 0.f, 1.f };
@@ -76,7 +77,8 @@ namespace gse::gui {
 }
 
 auto gse::gui::initialize(renderer::context& context) -> void {
-	font_id = context.queue<font>(config::resource_path / "Fonts/MonaspaceNeon-Regular.otf");
+	font = context.get<gse::font>("MonaspaceNeon-Regular");
+	blank = context.queue<texture>("blank", context, unitless::vec4(1, 1, 1, 1));
 
 	const auto window_size = window::get_window_size();
 	const auto top_left = unitless::vec2(0.f, window_size.y);
@@ -169,34 +171,38 @@ auto gse::gui::update() -> void {
 }
 
 auto gse::gui::render(renderer::context& context, renderer::sprite& sprite_renderer, renderer::text& text_renderer) -> void {
+	if (font.state() != resource::state::loaded) {
+		return;
+	}
+
 	for (auto& m : menus) {
 		constexpr float font_size = 16.f;
-		sprite_renderer.queue({ m.position, m.size, { 1.f, 0.f, 0.f, 1.f }, context.resource<texture>(find("blank")), { 1.f, 1.f, 1.f, 1.f } });
+		sprite_renderer.queue({ m.position, m.size, { 1.f, 0.f, 0.f, 1.f }, blank, { 1.f, 1.f, 1.f, 1.f } });
 
 		current_menu = &m;
 		m.contents();
 
-		const float line_height = context.resource<font>(font_id).font->line_height(font_size);
+		const float line_height = font->line_height(font_size);
 
-		text_renderer.draw_text({ font_id, m.name, m.position + unitless::vec2(padding, -padding), font_size, { 1.f, 1.f, 1.f, 1.f } });
+		text_renderer.draw_text({ font, m.name, m.position + unitless::vec2(padding, -padding), font_size, { 1.f, 1.f, 1.f, 1.f } });
 
 		for (size_t i = 0; i < m.items.size(); ++i) {
 			unitless::vec2 text_pos = m.position;
 			text_pos.x += padding;
 			text_pos.y -= padding + ((i + 1) * line_height);
 
-			text_renderer.draw_text({ font_id, m.items[i], text_pos, font_size, { 1.f, 1.f, 1.f, 1.f } });
+			text_renderer.draw_text({ font, m.items[i], text_pos, font_size, { 1.f, 1.f, 1.f, 1.f } });
 		}
 
 		if (render_docking_preview) {
 			for (const auto& dock : docks) {
-				sprite_renderer.queue({ dock.position, docking_area::size, { 0.f, 0.f, 1.f, 1.f }, context.resource<texture>(find("blank")), { 1.f, 1.f, 1.f, 0.5f } });
+				sprite_renderer.queue({ dock.position, docking_area::size, { 0.f, 0.f, 1.f, 1.f }, blank, { 1.f, 1.f, 1.f, 0.5f } });
 			}
 		}
 
 		if (m.grabbed.value()) {
 			for (const auto& dock : docks) {
-				sprite_renderer.queue({ dock.position, docking_area::size, docking_area::color, context.resource<texture>(find("blank")), { 1.f, 1.f, 1.f, 0.5f } });
+				sprite_renderer.queue({ dock.position, docking_area::size, docking_area::color, blank, { 1.f, 1.f, 1.f, 0.5f } });
 			}
 		}
 

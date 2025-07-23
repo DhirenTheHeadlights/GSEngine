@@ -5,6 +5,7 @@ import std;
 import :motion_component;
 import :bounding_box;
 import :collision_component;
+
 import gse.physics.math;
 
 export namespace gse::narrow_phase_collision {
@@ -12,7 +13,7 @@ export namespace gse::narrow_phase_collision {
 }
 
 auto overlaps_on_axis(const gse::oriented_bounding_box& box1, const gse::oriented_bounding_box& box2, const gse::vec3<gse::length>& axis, gse::length& penetration) -> bool {
-    if (gse::is_zero(axis)) {
+	if (gse::is_zero(axis)) {
         return true;
     }
 
@@ -185,7 +186,7 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
 	const auto r_a = contact_point - object_motion_component->current_position;
 	const auto r_b = contact_point - other_collision_component.oriented_bounding_box.center;
 
-    const mat3 inv_i_a = object_motion_component->get_inverse_inertia_tensor_world();
+    const mat3 inv_i_a = object_motion_component->inv_inertial_tensor();
     /////// FOR USE WITH NON-STATIC OTHER OBJECT; REQUIRES OBJECT B MOTION COMPONENT
     //const mat3 inv_i_b = other_object_motion_component->get_inverse_inertia_tensor_world();
 

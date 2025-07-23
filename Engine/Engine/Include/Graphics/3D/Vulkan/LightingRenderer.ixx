@@ -17,20 +17,22 @@ export namespace gse::renderer {
 		vk::raii::DescriptorSet m_descriptor_set = nullptr;
 		vk::raii::Sampler m_buffer_sampler = nullptr;
 
+		resource::handle<shader> m_shader;
+
 		std::unordered_map<std::string, vulkan::persistent_allocator::buffer_resource> m_ubo_allocations;
 	};
 }
 
 auto gse::renderer::lighting::initialize() -> void {
 	auto& config = m_context.config();
-	const auto id = m_context.queue<shader>(config::shader_spirv_path / "lighting_pass.vert.spv");
+	m_shader = m_context.get<shader>("lighting_pass");
+	m_context.instantly_load(m_shader);
 
-	const auto* lighting_shader = m_context.instantly_load<shader>(id).shader;
-	auto lighting_layouts = lighting_shader->layouts();
+	auto lighting_layouts = m_shader->layouts();
 
-	m_descriptor_set = lighting_shader->descriptor_set(config.device_data.device, config.descriptor.pool, shader::set::binding_type::persistent);
+	m_descriptor_set = m_shader->descriptor_set(config.device_data.device, config.descriptor.pool, shader::set::binding_type::persistent);
 
-	const auto cam_block = lighting_shader->uniform_block("cam");
+	const auto cam_block = m_shader->uniform_block("cam");
 
 	vk::BufferCreateInfo cam_buffer_info{
 		.size = cam_block.size,
@@ -40,8 +42,7 @@ auto gse::renderer::lighting::initialize() -> void {
 
 	auto buffer = vulkan::persistent_allocator::create_buffer(
 		config.device_data,
-		cam_buffer_info,
-		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+		cam_buffer_info
 	);
 
 	m_ubo_allocations["cam"] = std::move(buffer);
@@ -56,7 +57,6 @@ auto gse::renderer::lighting::initialize() -> void {
 			}
 		}
 	};
-
 
 	constexpr vk::SamplerCreateInfo sampler_create_info{
 		.magFilter = vk::Filter::eNearest,
@@ -102,7 +102,7 @@ auto gse::renderer::lighting::initialize() -> void {
 		}
 	};
 
-	auto writes = lighting_shader->descriptor_writes(
+	auto writes = m_shader->descriptor_writes(
 		m_descriptor_set,
 		lighting_buffer_infos,
 		lighting_image_infos
@@ -116,7 +116,7 @@ auto gse::renderer::lighting::initialize() -> void {
 	};
 	m_pipeline_layout = config.device_data.device.createPipelineLayout(pipeline_layout_info);
 
-	auto lighting_stages = lighting_shader->shader_stages();
+	auto lighting_stages = m_shader->shader_stages();
 
 	constexpr vk::PipelineVertexInputStateCreateInfo empty_vertex_input{
 		.vertexBindingDescriptionCount = 0,

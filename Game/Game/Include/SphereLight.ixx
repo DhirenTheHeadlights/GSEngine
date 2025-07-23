@@ -5,41 +5,52 @@ import std;
 import gse;
 
 export namespace gs {
-	class sphere_light_hook final : gse::hook<gse::entity> {
+	class sphere_light final : public gse::hook<gse::entity> {
 	public:
-		using hook::hook;
-		auto initialize() -> void override {
-			auto lsc = m_scene->registry().add_link<gse::light_source_component>(owner_id());
+		using params = gse::sphere::params;
 
-			auto spot_light = std::make_unique<gse::spot_light>(
-				gse::unitless::vec3(1.f),
-				250.f,
-				gse::vec3<gse::length>(),
-				gse::unitless::vec3(0.0f, -1.0f, 0.0f),
-				1.0f,
-				0.09f,
-				0.032f,
-				gse::degrees(35.f),
-				gse::degrees(65.f),
-				0.025f
-			);
-
-			const auto ignore_list_id = gse::generate_id("Sphere Light " + std::to_string(m_count++) + " Ignore List");
-			gse::registry::add_new_entity_list(ignore_list_id, { owner_id });
-			spot_light->set_ignore_list_id(ignore_list_id);
-
-			light_source_component.add_light(std::move(spot_light));
-			//light_source_component.add_light(std::move(point_light));
-
-			gse::registry::add_component<gse::light_source_component>(std::move(light_source_component));
-
-			gse::registry::component<gse::physics::motion_component>(owner_id).affected_by_gravity = false;
+		sphere_light(const gse::id& owner_id, gse::registry* reg, const params& p) : hook(owner_id, reg), m_position(p.initial_position), m_radius(p.radius), m_sectors(p.sectors), m_stacks(p.stacks) {
+			m_count++;
 		}
-		auto update() -> void override;
-		auto render() -> void override;
+
+		auto initialize() -> void override {
+			add_hook<gse::sphere>({
+				.initial_position = m_position,
+				.radius = m_radius,
+				.sectors = m_sectors,
+				.stacks = m_stacks,
+			});
+
+			auto [lsc_id, lsc] = add_component<gse::spot_light_component>({
+				.color = gse::unitless::vec3(1.f),
+				.intensity = 250.f,
+				.position = m_position,
+				.direction = gse::unitless::vec3(0.0f, -1.0f, 0.0f),
+				.constant = 1.0f,
+				.linear = 0.09f,
+				.quadratic = 0.032f,
+				.cut_off = gse::degrees(35.f),
+				.outer_cut_off = gse::degrees(65.f),
+				.ambient_strength = 0.025f,
+				.near_plane = gse::meters(0.1f),
+				.far_plane = gse::meters(10000.f),
+				.ignore_list_ids = { owner_id() }
+			});
+
+			component<gse::physics::motion_component>().affected_by_gravity = false;
+		}
+
+		auto render() -> void override {
+			component<gse::spot_light_component>().debug_menu("Sphere Light", owner_id().number());
+		}
 	private:
 		static std::size_t m_count;
+
+		gse::vec3<gse::length> m_position;
+		gse::length m_radius;
+		int m_sectors;
+		int m_stacks;
 	};
 
-	std::size_t sphere_light_hook::m_count = 0;
+	std::size_t sphere_light::m_count = 0;
 }

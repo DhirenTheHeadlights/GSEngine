@@ -51,7 +51,7 @@ auto gse::broad_phase_collision::check_collision(const axis_aligned_bounding_box
 auto gse::broad_phase_collision::check_future_collision(const axis_aligned_bounding_box& dynamic_box, const physics::motion_component* dynamic_motion_component, const axis_aligned_bounding_box& other_box, const time dt) -> bool {
 	axis_aligned_bounding_box expanded_box = dynamic_box;							// Create a copy
 	physics::motion_component temp_component = *dynamic_motion_component;
-	update_object(temp_component, dt, nullptr, nullptr);							// Update the entity's position in the direction of its current_velocity
+	update_object(temp_component, dt, nullptr);										// Update the entity's position in the direction of its current_velocity
 	expanded_box.set_position(temp_component.current_position);						// Set the expanded box's position to the updated position
 	return check_collision(expanded_box, other_box);								// Check for collision with the new expanded box
 }
@@ -89,11 +89,19 @@ auto gse::broad_phase_collision::update(const std::span<physics::collision_compo
 		};
 
 		physics::motion_component* motion = nullptr;
-		const auto it = std::ranges::find_if(motion_components, [&](const physics::motion_component& motion_component) {
+
+		const auto it = std::ranges::find_if(
+			motion_components, 
+			[&](const physics::motion_component& motion_component) {
 				return motion_component.owner_id() == collision_component.owner_id();
-			});
+			}
+		);
+
 		if (it != motion_components.end()) {
 			motion = &*it;
+			collision_component.bounding_box.set_position( 
+				motion->current_position
+			);
 		}
 
 		for (auto& other_collision_component : collision_components) {

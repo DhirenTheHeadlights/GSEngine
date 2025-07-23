@@ -102,7 +102,7 @@ target_link_libraries(Engine PUBLIC
 )
 
 set(ENGINE_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
-set(SPIRV_DIR "${CMAKE_CURRENT_BINARY_DIR}/Resources/Shaders")
+set(BAKED_RESOURCES_PATH "${CMAKE_CURRENT_BINARY_DIR}/Resources/")
 
 foreach(shader ${SHADER_FILES})
     get_filename_component(shader_name ${shader} NAME_WE)

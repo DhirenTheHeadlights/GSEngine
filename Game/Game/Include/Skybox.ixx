@@ -1,7 +1,38 @@
-export module game.skybox;
+export module gs:skybox;
 
+import std;
 import gse;
 
-export namespace game::skybox {
-	auto create(gse::scene* scene) -> void;
+export namespace gs {
+	class skybox final : public gse::hook<gse::entity> {
+	public:
+		using params = gse::box::params;
+
+		skybox(const gse::id& owner_id, gse::registry* reg, const params& p) : hook(owner_id, reg), m_initial_position(p.initial_position), m_size(p.size) {}
+
+		auto initialize() -> void override {
+			add_hook<gse::box>({
+				.initial_position = m_initial_position,
+				.size = m_size
+			});
+
+			component<gse::physics::collision_component>().resolve_collisions = false;
+			component<gse::physics::collision_component>().bounding_box = {};
+			component<gse::physics::motion_component>().affected_by_gravity = false;
+
+			add_component<gse::directional_light_component>({
+				.color = gse::unitless::vec3(1.f),
+				.intensity = 1.f,
+				.direction = gse::unitless::vec3(0.0f, -1.0f, 0.0f),
+				.ambient_strength = 1.0f
+			});
+		}
+
+		auto render() -> void override {
+			component<gse::directional_light_component>().debug_menu("Skybox Light", owner_id().number());
+		}
+	private:
+		gse::vec3<gse::length> m_initial_position;
+		gse::vec3<gse::length> m_size;
+	};
 }

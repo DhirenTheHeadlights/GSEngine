@@ -9,23 +9,23 @@ import gse.assert;
 
 export namespace gse::vulkan::persistent_allocator {
 	auto allocate(
-		const config::device_config& config, 
-		const vk::MemoryRequirements& requirements, 
+		const config::device_config& config,
+		const vk::MemoryRequirements& requirements,
 		vk::MemoryPropertyFlags properties = vk::MemoryPropertyFlagBits::eDeviceLocal
-	) -> allocation;
+	) -> std::expected<allocation, std::string>;
 
 	auto create_buffer(
-		const config::device_config& config, 
-		const vk::BufferCreateInfo& buffer_info, 
-		vk::MemoryPropertyFlags properties = vk::MemoryPropertyFlagBits::eDeviceLocal, 
+		const config::device_config& config,
+		const vk::BufferCreateInfo& buffer_info,
 		const void* data = nullptr
 	) -> buffer_resource;
 
 	auto create_image(
-		const config::device_config& config, 
-		const vk::ImageCreateInfo& info, 
+		const config::device_config& config,
+		const vk::ImageCreateInfo& info,
 		vk::MemoryPropertyFlags properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
-		const vk::ImageViewCreateInfo& view_info = {}, const void* data = nullptr
+		const vk::ImageViewCreateInfo& view_info = {},
+		const void* data = nullptr
 	) -> image_resource;
 
 	auto clean_up() -> void;
@@ -33,48 +33,62 @@ export namespace gse::vulkan::persistent_allocator {
 
 namespace gse::vulkan::persistent_allocator {
 	auto free(
-		allocation& alloc
+		const allocation& alloc
 	) -> void;
 
 	auto get_memory_flag_preferences(
 		vk::BufferUsageFlags usage
 	) -> std::vector<vk::MemoryPropertyFlags>;
+
+	struct memory_block {
+		vk::raii::DeviceMemory memory;
+		vk::DeviceSize size;
+		vk::MemoryPropertyFlags properties;
+		std::list<sub_allocation> allocations;
+		void* mapped = nullptr;
+	};
+
+	struct pool {
+		std::uint32_t memory_type_index;
+		std::list<memory_block> blocks;
+	};
+
+	struct pool_key {
+		std::uint32_t memory_type_index;
+		vk::MemoryPropertyFlags properties;
+
+		auto operator==(const pool_key& other) const -> bool {
+			return memory_type_index == other.memory_type_index && properties == other.properties;
+		}
+	};
+
 }
 
-struct memory_block {
-	vk::raii::DeviceMemory memory;
-	vk::DeviceSize size;
-	vk::MemoryPropertyFlags properties;
-	std::list<gse::vulkan::persistent_allocator::sub_allocation> allocations;
-	void* mapped = nullptr;
-};
-
-struct pool {
-	std::uint32_t memory_type_index;
-	std::deque<memory_block> blocks;
-};
-
-struct pool_key {
-	std::uint32_t memory_type_index;
-	vk::MemoryPropertyFlags properties;
-
-	auto operator==(const pool_key& other) const -> bool {
-		return memory_type_index == other.memory_type_index && properties == other.properties;
-	}
-};
-
 template <>
-struct std::hash<pool_key> {
-	auto operator()(const pool_key& key) const noexcept -> std::size_t {
+struct std::hash<gse::vulkan::persistent_allocator::pool_key> {
+	auto operator()(const gse::vulkan::persistent_allocator::pool_key& key) const noexcept -> std::size_t {
 		return std::hash<std::uint32_t>()(key.memory_type_index) ^ std::hash<vk::MemoryPropertyFlags>()(key.properties);
 	}
 };
 
-constexpr vk::DeviceSize g_persistent_default_block_size = 1024 * 1024 * 64; // 64 MB
+namespace gse::vulkan::persistent_allocator {
+	constexpr vk::DeviceSize g_persistent_default_block_size = 1024 * 1024 * 64;
 
-std::unordered_map<pool_key, pool> g_persistent_memory_pools;
+	auto persistent_memory_pools() -> std::unordered_map<pool_key, pool>& {
+		static std::unordered_map<pool_key, pool> pools;
+		return pools;
+	}
 
-auto gse::vulkan::persistent_allocator::allocate(const config::device_config& config, const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties) -> allocation {
+	auto get_pools_mutex() -> std::mutex& {
+		static std::mutex mtx;
+		return mtx;
+	}
+}
+
+
+auto gse::vulkan::persistent_allocator::allocate(const config::device_config& config, const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties) -> std::expected<allocation, std::string> {
+	std::lock_guard lock(get_pools_mutex());
+
 	const auto mem_props = get_memory_properties(config.physical_device);
 
 	std::uint32_t memory_type_index = std::numeric_limits<std::uint32_t>::max();
@@ -86,12 +100,11 @@ auto gse::vulkan::persistent_allocator::allocate(const config::device_config& co
 		}
 	}
 
-	assert(
-		memory_type_index != std::numeric_limits<std::uint32_t>::max(),
-		std::format("Failed to find suitable memory type for allocation!")
-	);
+	if (memory_type_index == std::numeric_limits<std::uint32_t>::max()) {
+		return std::unexpected{ "Failed to find suitable memory type for allocation!" };
+	}
 
-	auto& pool = g_persistent_memory_pools[{ memory_type_index, properties }];
+	auto& pool = persistent_memory_pools()[{ memory_type_index, properties }];
 	if (pool.blocks.empty()) pool.memory_type_index = memory_type_index;
 
 	memory_block* best_block = nullptr;
@@ -99,23 +112,24 @@ auto gse::vulkan::persistent_allocator::allocate(const config::device_config& co
 	vk::DeviceSize best_leftover = std::numeric_limits<vk::DeviceSize>::max();
 	vk::DeviceSize best_aligned_offset = 0;
 
-	for (auto& block : pool.blocks) {
-		for (auto it = block.allocations.begin(); it != block.allocations.end(); ++it) {
-			if (it->in_use) continue;
+	if (!pool.blocks.empty()) {
+		for (auto& block : pool.blocks) {
+			for (auto it = block.allocations.begin(); it != block.allocations.end(); ++it) {
+				if (it->in_use) continue;
 
-			const vk::DeviceSize aligned_offset = (it->offset + requirements.alignment - 1) & ~(requirements.alignment - 1);
-			if (aligned_offset + requirements.size > it->offset + it->size) continue;
+				const vk::DeviceSize aligned_offset = (it->offset + requirements.alignment - 1) & ~(requirements.alignment - 1);
+				if (aligned_offset + requirements.size > it->offset + it->size) continue;
 
-			const vk::DeviceSize leftover = it->size - (aligned_offset - it->offset) - requirements.size;
-			if (leftover < best_leftover) {
-				best_block = &block;
-				best_sub_it = it;
-				best_leftover = leftover;
-				best_aligned_offset = aligned_offset;
-				if (leftover == 0) break;
+				if (const vk::DeviceSize leftover = it->size - (aligned_offset - it->offset) - requirements.size; leftover < best_leftover) {
+					best_block = &block;
+					best_sub_it = it;
+					best_leftover = leftover;
+					best_aligned_offset = aligned_offset;
+					if (leftover == 0) break;
+				}
 			}
+			if (best_leftover == 0) break;
 		}
-		if (best_leftover == 0) break;
 	}
 
 	if (best_block) {
@@ -130,7 +144,7 @@ auto gse::vulkan::persistent_allocator::allocate(const config::device_config& co
 		const auto owner_it = list.insert(next_it, { best_aligned_offset, requirements.size, true });
 		if (suffix_size) list.insert(next_it, { best_aligned_offset + requirements.size, suffix_size, false });
 
-		return {
+		return allocation{
 			best_block->memory,
 			requirements.size,
 			best_aligned_offset,
@@ -139,28 +153,37 @@ auto gse::vulkan::persistent_allocator::allocate(const config::device_config& co
 		};
 	}
 
-	auto& new_block = pool.blocks.emplace_back(nullptr);
-	new_block.size = std::max(requirements.size, g_persistent_default_block_size);
-	new_block.properties = properties;
-	new_block.memory = config.device.allocateMemory({
-		.allocationSize = new_block.size,
-		.memoryTypeIndex = memory_type_index
-		});
+	const vk::DeviceSize aligned_offset = (0 + requirements.alignment - 1) & ~(requirements.alignment - 1);
+	const vk::DeviceSize required_space = aligned_offset + requirements.size;
+	const auto new_block_size = std::max(required_space, g_persistent_default_block_size);
+
+	pool.blocks.emplace_back(
+		std::move(
+			vk::raii::DeviceMemory{
+				config.device.allocateMemory({
+					.allocationSize = new_block_size,
+					.memoryTypeIndex = memory_type_index
+				})
+			}),
+		new_block_size,
+		properties
+	);
+
+	auto& new_block = pool.blocks.back();
 
 	if (properties & vk::MemoryPropertyFlagBits::eHostVisible) {
 		new_block.mapped = new_block.memory.mapMemory(0, new_block.size);
 	}
-
-	const vk::DeviceSize aligned_offset = (requirements.alignment - 1) & ~(requirements.alignment - 1);
+	
 	const vk::DeviceSize prefix_size = aligned_offset;
-	const vk::DeviceSize suffix_size = new_block.size - prefix_size - requirements.size;
+	const vk::DeviceSize suffix_size = new_block.size - required_space;
 
-	if (prefix_size) new_block.allocations.push_back({ 0, prefix_size, false });
+	if (prefix_size > 0) new_block.allocations.push_back({ 0, prefix_size, false });
 	new_block.allocations.push_back({ aligned_offset, requirements.size, true });
 	sub_allocation* owner_ptr = &new_block.allocations.back();
-	if (suffix_size) new_block.allocations.push_back({ aligned_offset + requirements.size, suffix_size, false });
+	if (suffix_size > 0) new_block.allocations.push_back({ aligned_offset + requirements.size, suffix_size, false });
 
-	return {
+	return allocation{
 		new_block.memory,
 		requirements.size,
 		aligned_offset,
@@ -169,18 +192,42 @@ auto gse::vulkan::persistent_allocator::allocate(const config::device_config& co
 	};
 }
 
-auto gse::vulkan::persistent_allocator::create_buffer(const config::device_config& config, const vk::BufferCreateInfo& buffer_info, const vk::MemoryPropertyFlags properties, const void* data) -> buffer_resource {
+auto gse::vulkan::persistent_allocator::create_buffer(const config::device_config& config, const vk::BufferCreateInfo& buffer_info, const void* data) -> buffer_resource {
 	auto buffer = config.device.createBuffer(buffer_info);
 	const vk::BufferMemoryRequirementsInfo2 buffer_requirements_info{
-		.buffer = buffer
+		.buffer = *buffer
 	};
 	const auto requirements = config.device.getBufferMemoryRequirements2(buffer_requirements_info).memoryRequirements;
 
-	auto alloc = allocate(config, requirements, properties);
+	allocation alloc{};
+	bool success = false;
+
+	if (data) {
+		constexpr vk::MemoryPropertyFlags required_flags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
+		if (auto expected_alloc = allocate(config, requirements, required_flags)) {
+			alloc = std::move(*expected_alloc);
+			success = true;
+		}
+	}
+	else {
+		for (const auto property_preferences = get_memory_flag_preferences(buffer_info.usage); const auto& props : property_preferences) {
+			if (auto expected_alloc = allocate(config, requirements, props)) {
+				alloc = std::move(*expected_alloc);
+				success = true;
+				break;
+			}
+		}
+	}
+
+	assert(success, "Failed to allocate memory for buffer after trying all preferences.");
+
 	buffer.bindMemory(alloc.memory(), alloc.offset());
 
 	if (data && alloc.mapped()) {
 		std::memcpy(alloc.mapped(), data, buffer_info.size);
+	}
+	else if (data && !alloc.mapped()) {
+		assert(false, "Buffer created with data, but the allocated memory is not mappable.");
 	}
 
 	return { std::move(buffer), std::move(alloc) };
@@ -191,7 +238,20 @@ auto gse::vulkan::persistent_allocator::create_image(const config::device_config
 	const auto requirement_info = vk::ImageMemoryRequirementsInfo2{ .image = image };
 	const auto requirements = config.device.getImageMemoryRequirements2(requirement_info).memoryRequirements;
 
-	allocation alloc = allocate(config, requirements, properties);
+	auto expected_alloc = allocate(config, requirements, properties);
+
+	if (!expected_alloc) {
+		assert(false,
+			std::format(
+				"Failed to allocate memory for image with size {} and usage {} after trying all preferences.",
+				requirements.size,
+				to_string(info.usage)
+			)
+		);
+	}
+
+	allocation alloc = std::move(*expected_alloc);
+
 	image.bindMemory(alloc.memory(), alloc.offset());
 
 	if (data && alloc.mapped()) {
@@ -201,7 +261,7 @@ auto gse::vulkan::persistent_allocator::create_image(const config::device_config
 	vk::raii::ImageView view = nullptr;
 
 	if (view_info != vk::ImageViewCreateInfo{}) {
-		assert(view_info.image == nullptr, std::format("Image view info must not have an image set yet!"));
+		assert(view_info.image == nullptr, "Image view info must not have an image set yet!");
 		vk::ImageViewCreateInfo actual_view_info = view_info;
 		actual_view_info.image = image;
 		view = config.device.createImageView(actual_view_info);
@@ -228,29 +288,33 @@ auto gse::vulkan::persistent_allocator::create_image(const config::device_config
 	return { std::move(image), std::move(view), info.format, info.initialLayout, std::move(alloc) };
 }
 
-auto gse::vulkan::persistent_allocator::free(allocation& alloc) -> void {
-	if (!alloc.owner()) return;
+auto gse::vulkan::persistent_allocator::free(const allocation& alloc) -> void {
+	std::lock_guard lock(get_pools_mutex());
+
+	if (!alloc.owner()) {
+		return;
+	}
 
 	auto* sub_to_free = alloc.owner();
-	sub_to_free->in_use = false;
-	alloc.m_owner = nullptr;
 
-	for (auto& [memory_type_index, blocks] : g_persistent_memory_pools | std::views::values) {
+	for (auto& [memory_type_index, blocks] : persistent_memory_pools() | std::views::values) {
 		for (auto& block : blocks) {
 			for (auto it = block.allocations.begin(); it != block.allocations.end(); ++it) {
 				if (&*it == sub_to_free) {
-					if (const auto next_it = std::next(it); next_it != block.allocations.end() && !next_it->in_use) {
+					it->in_use = false;
+
+					if (auto next_it = std::next(it); next_it != block.allocations.end() && !next_it->in_use) {
 						it->size += next_it->size;
 						block.allocations.erase(next_it);
 					}
 
 					if (it != block.allocations.begin()) {
-						if (const auto prev_it = std::prev(it); !prev_it->in_use) {
+						if (auto prev_it = std::prev(it); !prev_it->in_use) {
 							prev_it->size += it->size;
 							block.allocations.erase(it);
+							return;
 						}
 					}
-
 					return;
 				}
 			}
@@ -259,26 +323,25 @@ auto gse::vulkan::persistent_allocator::free(allocation& alloc) -> void {
 }
 
 auto gse::vulkan::persistent_allocator::clean_up() -> void {
-	for (auto& [memory_type_index, blocks] : g_persistent_memory_pools | std::views::values) {
+	std::lock_guard lock(get_pools_mutex());
+
+	for (auto& [memory_type_index, blocks] : persistent_memory_pools() | std::views::values) {
 		for (auto& block : blocks) {
 			if (block.mapped) {
 				block.memory.unmapMemory();
 				block.mapped = nullptr;
 			}
 		}
-		blocks.clear();
 	}
-	g_persistent_memory_pools.clear();
+	persistent_memory_pools().clear();
 }
 
 auto gse::vulkan::persistent_allocator::get_memory_flag_preferences(const vk::BufferUsageFlags usage) -> std::vector<vk::MemoryPropertyFlags> {
 	using mpf = vk::MemoryPropertyFlagBits;
 
-	if (usage & vk::BufferUsageFlagBits::eVertexBuffer) {
+	if (usage & vk::BufferUsageFlagBits::eVertexBuffer || usage & vk::BufferUsageFlagBits::eIndexBuffer) {
 		return {
-			mpf::eDeviceLocal | mpf::eHostVisible,
-			mpf::eDeviceLocal,
-			mpf::eHostVisible | mpf::eHostCoherent
+			mpf::eDeviceLocal
 		};
 	}
 
@@ -286,6 +349,13 @@ auto gse::vulkan::persistent_allocator::get_memory_flag_preferences(const vk::Bu
 		return {
 			mpf::eHostVisible | mpf::eHostCoherent,
 			mpf::eHostVisible
+		};
+	}
+
+	if (usage & vk::BufferUsageFlagBits::eStorageBuffer) {
+		return {
+			mpf::eDeviceLocal,
+			mpf::eHostVisible | mpf::eHostCoherent
 		};
 	}
 

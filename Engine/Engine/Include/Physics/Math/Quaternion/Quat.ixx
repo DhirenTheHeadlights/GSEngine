@@ -1,14 +1,15 @@
 export module gse.physics.math:quat;
 
 import std;
+
 import :unitless_vec;
 import :base_vec;
 import :vec_math;
 import :angle;
+import :quant;
 
 namespace gse {
-	template <typename T>
-		requires std::is_arithmetic_v<T>
+	template <internal::is_arithmetic T>
 	struct quaternion {
 		union {
 			vec::storage<T, 4> v;
@@ -28,31 +29,28 @@ namespace gse {
 		constexpr auto operator[](size_t index) const -> T;
 		constexpr auto imaginary_part() const -> unitless::vec_t<T, 3> { return { x, y, z }; }
 	};
+}
 
-	template <typename T>
-		requires std::is_arithmetic_v<T>
-	constexpr quaternion<T>::quaternion(const unitless::vec_t<T, 3>& axis, angle_t<T> angle) {
-		auto half_angle = angle.template as<units::radians>() / T(2);
-		auto sin_half_angle = std::sin(half_angle);
-		*this = quaternion(axis * sin_half_angle, std::cos(half_angle));
-	}
+template <gse::internal::is_arithmetic T>
+constexpr gse::quaternion<T>::quaternion(const unitless::vec_t<T, 3>& axis, angle_t<T> angle) {
+	auto half_angle = angle.template as<units::radians>() / T(2);
+	auto sin_half_angle = std::sin(half_angle);
+	*this = quaternion(axis * sin_half_angle, std::cos(half_angle));
+}
 
-	template <typename T>
-		requires std::is_arithmetic_v<T>
-	constexpr quaternion<T>::quaternion(angle_t<T> angle, const unitless::vec_t<T, 3>& axis)
-		: quaternion(axis, angle) {}
+template <gse::internal::is_arithmetic T>
+constexpr gse::quaternion<T>::quaternion(angle_t<T> angle, const unitless::vec_t<T, 3>& axis)
+	: quaternion(axis, angle) {
+}
 
-	template <typename T>
-		requires std::is_arithmetic_v<T>
-	constexpr auto quaternion<T>::operator[](size_t index) -> T& {
-		return v.data[index < 4 ? index : 0];
-	}
+template <gse::internal::is_arithmetic T>
+constexpr auto gse::quaternion<T>::operator[](size_t index) -> T& {
+	return v.data[index < 4 ? index : 0];
+}
 
-	template <typename T>
-		requires std::is_arithmetic_v<T>
-	constexpr auto quaternion<T>::operator[](size_t index) const -> T {
-		return v.data[index < 4 ? index : 0];
-	}
+template <gse::internal::is_arithmetic T>
+constexpr auto gse::quaternion<T>::operator[](size_t index) const -> T {
+	return v.data[index < 4 ? index : 0];
 }
 
 export namespace gse {
@@ -82,18 +80,12 @@ export namespace gse {
 
 template <typename T>
 constexpr auto gse::operator+(const quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T> {
-	quat_t<T> result;
-	for (int i = 0; i < 4; ++i)
-		result[i] = lhs[i] + rhs[i];
-	return result;
+	return quat_t<T>(lhs.v + rhs.v);
 }
 
 template <typename T>
 constexpr auto gse::operator-(const quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T> {
-	quat_t<T> result;
-	for (int i = 0; i < 4; ++i)
-		result[i] = lhs[i] - rhs[i];
-	return result;
+	return quat_t<T>(lhs.v - rhs.v);
 }
 
 template <typename T>
@@ -138,7 +130,7 @@ constexpr auto gse::operator/=(quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T
 
 template <typename T>
 constexpr auto gse::operator*(const quat_t<T>& lhs, const T& rhs) -> quat_t<T> {
-	return quat_t<T>(lhs.s * rhs, lhs.x * rhs, lhs.y * rhs, lhs.z * rhs);
+	return quat_t<T>(lhs.v * rhs);
 }
 
 template <typename T>
@@ -148,7 +140,7 @@ constexpr auto gse::operator*(const T& lhs, const quat_t<T>& rhs) -> quat_t<T> {
 
 template <typename T>
 constexpr auto gse::operator/(const quat_t<T>& lhs, const T& rhs) -> quat_t<T> {
-	return quat_t<T>(lhs.x / rhs, lhs.y / rhs, lhs.z / rhs, lhs.s / rhs);
+	return lhs * (T(1) / rhs);
 }
 
 template <typename T>
