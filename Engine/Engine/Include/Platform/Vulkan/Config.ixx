@@ -34,8 +34,9 @@ export namespace gse::vulkan {
         struct queue_config {
             vk::raii::Queue graphics;
             vk::raii::Queue present;
+            std::unique_ptr<std::mutex> mutex;
             queue_config(vk::raii::Queue&& graphics, vk::raii::Queue&& present)
-                : graphics(std::move(graphics)), present(std::move(present)) {
+				: graphics(std::move(graphics)), present(std::move(present)), mutex(std::make_unique<std::mutex>()) {
             }
             queue_config(queue_config&&) = default;
             auto operator=(queue_config&&) -> queue_config& = default;
@@ -44,8 +45,9 @@ export namespace gse::vulkan {
         struct command_config {
             vk::raii::CommandPool pool;
             std::vector<vk::raii::CommandBuffer> buffers;
+            std::unique_ptr<std::mutex> pool_mutex;
             command_config(vk::raii::CommandPool&& pool, std::vector<vk::raii::CommandBuffer>&& buffers)
-                : pool(std::move(pool)), buffers(std::move(buffers)) {
+				: pool(std::move(pool)), buffers(std::move(buffers)), pool_mutex(std::make_unique<std::mutex>()) {
             }
             command_config(command_config&&) = default;
             auto operator=(command_config&&) -> command_config& = default;

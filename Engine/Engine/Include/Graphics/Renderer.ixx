@@ -18,27 +18,27 @@ import gse.platform;
 
 namespace gse {
 	renderer::context rendering_context;
-	std::unordered_map<std::type_index, std::unique_ptr<base_renderer>> renderers;
+	std::vector<std::unique_ptr<base_renderer>> renderers;
 }
 
 export namespace gse {
 	template <typename Resource>
-	auto get(const id& id) -> typename Resource::handle {
-		return rendering_context.resource<Resource>(id);
+	auto get(const id& id) -> resource::handle<Resource> {
+		return rendering_context.get<Resource>(id);
 	}
 
 	template <typename Resource>
-	auto queue(const std::filesystem::path& path, const std::string& name) -> id {
-		return rendering_context.queue<Resource>(path, name);
+	auto get(const std::string& filename) -> resource::handle<Resource> {
+		return rendering_context.get<Resource>(filename);
 	}
 
 	template <typename Resource, typename... Args>
-	auto queue(const std::string& name, Args&&... args) -> gse::id {
+	auto queue(const std::string& name, Args&&... args) -> resource::handle<Resource> {
 		return rendering_context.queue<Resource>(name, std::forward<Args>(args)...);
 	}
 
 	template <typename Resource>
-	auto instantly_load(const id& id) -> typename Resource::handle {
+	auto instantly_load(const id& id) -> resource::handle<Resource> {
 		return rendering_context.instantly_load<Resource>(id);
 	}
 
@@ -48,7 +48,7 @@ export namespace gse {
 	}
 
 	template <typename Resource>
-	auto resource_state(const id& id) -> resource_loader_base::state {
+	auto resource_state(const id& id) -> resource::state {
 		return rendering_context.resource_state<Resource>(id);
 	}
 }
@@ -67,10 +67,11 @@ namespace gse::renderer {
 
 	template <typename T>
 	auto renderer() -> T& {
-		if (const auto it = renderers.find(std::type_index(typeid(T))); it != renderers.end()) {
-			return static_cast<T&>(*it->second);
+		for (const auto& renderer_ptr : renderers) {
+			if (auto* p = dynamic_cast<T*>(renderer_ptr.get())) {
+				return *p;
+			}
 		}
-
 		throw std::runtime_error("Renderer not found: " + std::string(typeid(T).name()));
 	}
 }
@@ -82,15 +83,18 @@ auto gse::renderer::initialize(const std::span<std::reference_wrapper<registry>>
 	rendering_context.add_loader<font>();
 	rendering_context.add_loader<material>();
 
-	renderers.emplace(std::type_index(typeid(geometry)), std::make_unique<geometry>(rendering_context, registries));
-	renderers.emplace(std::type_index(typeid(lighting)), std::make_unique<lighting>(rendering_context, registries));
-	renderers.emplace(std::type_index(typeid(sprite)), std::make_unique<sprite>(rendering_context, registries));
-	renderers.emplace(std::type_index(typeid(text)), std::make_unique<text>(rendering_context, registries));
+	rendering_context.compile();
 
-	for (const auto& renderer : renderers | std::views::values) {
+	renderers.push_back(std::make_unique<geometry>(rendering_context, registries));
+	renderers.push_back(std::make_unique<lighting>(rendering_context, registries));
+	renderers.push_back(std::make_unique<sprite>(rendering_context, registries));
+	renderers.push_back(std::make_unique<text>(rendering_context, registries));
+
+	for (const auto& renderer : renderers) {
 		renderer->initialize();
 	}
 
+	debug::initialize_imgui(rendering_context.config());
 	gui::initialize(rendering_context);
 }
 
@@ -109,11 +113,15 @@ auto gse::renderer::render(const std::function<void()>& in_frame) -> void {
 	gui::render(rendering_context, renderer<sprite>(), renderer<text>());
 	begin_frame();
 
-	for (const auto& renderer : renderers | std::views::values) {
-		renderer->render();
+	{
+		std::lock_guard lock(*rendering_context.config().command.pool_mutex);
+		std::lock_guard queue(*rendering_context.config().queue.mutex);
+		for (const auto& renderer : renderers) {
+			renderer->render();
+		}
+		in_frame();
 	}
 
-	in_frame();
 	end_frame();
 }
 
@@ -125,10 +133,9 @@ auto gse::renderer::end_frame() -> void {
 
 auto gse::renderer::shutdown() -> void {
 	rendering_context.config().device_data.device.waitIdle();
-
 	debug::shutdown_imgui();
 
-	for (auto& renderer : renderers | std::views::values) {
+	for (auto& renderer : renderers) {
 		renderer.reset();
 	}
 

@@ -19,7 +19,7 @@ export namespace gse::renderer {
 			vec2<length> position;
 			vec2<length> size;
 			unitless::vec4 color = { 1.0f, 1.0f, 1.0f, 1.0f };
-			texture::handle texture;
+			resource::handle<texture> texture;
 			unitless::vec4 uv_rect = { 0.0f, 0.0f, 1.0f, 1.0f };
 		};
 
@@ -35,14 +35,14 @@ export namespace gse::renderer {
 		vulkan::persistent_allocator::buffer_resource m_vertex_buffer;
 		vulkan::persistent_allocator::buffer_resource m_index_buffer;
 
+		resource::handle<shader> m_shader;
+
 		std::vector<command> m_draw_commands;
 	};
 }
 
 auto gse::renderer::sprite::initialize() -> void {
 	auto& config = m_context.config();
-
-	m_context.instantly_load<texture>(m_context.queue<texture>("blank", unitless::vec4(1, 1, 1, 1)));
 
 	constexpr vk::PipelineInputAssemblyStateCreateInfo input_assembly{
 		.topology = vk::PrimitiveTopology::eTriangleList
@@ -102,8 +102,10 @@ auto gse::renderer::sprite::initialize() -> void {
 		.stencilTestEnable = vk::False
 	};
 
-	const auto id = m_context.queue<shader>(config::shader_spirv_path / "ui_2d_shader");
-	const auto& element_shader = m_context.instantly_load<shader>(id).shader;
+	m_shader = m_context.get<shader>("ui_2d_shader");
+	m_context.instantly_load(m_shader);
+
+	const auto& element_shader = m_shader.resolve();
 	const auto& quad_dsl = element_shader->layouts();
 
 	const auto quad_pc_range = element_shader->push_constant_range("push_constants", vk::ShaderStageFlagBits::eVertex);
@@ -148,8 +150,17 @@ auto gse::renderer::sprite::initialize() -> void {
 	};
 	constexpr std::uint32_t indices[6] = { 0, 2, 1, 0, 3, 2 };
 
-	m_vertex_buffer = vulkan::persistent_allocator::create_buffer(config.device_data, { .size = sizeof(vertices), .usage = vk::BufferUsageFlagBits::eVertexBuffer }, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, vertices);
-	m_index_buffer = vulkan::persistent_allocator::create_buffer(config.device_data, { .size = sizeof(indices), .usage = vk::BufferUsageFlagBits::eIndexBuffer }, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, indices);
+	m_vertex_buffer = vulkan::persistent_allocator::create_buffer(
+		config.device_data, 
+		{ .size = sizeof(vertices), .usage = vk::BufferUsageFlagBits::eVertexBuffer },
+		vertices
+	);
+
+	m_index_buffer = vulkan::persistent_allocator::create_buffer(
+		config.device_data, 
+		{ .size = sizeof(indices), .usage = vk::BufferUsageFlagBits::eIndexBuffer }, 
+		indices
+	);
 }
 
 auto gse::renderer::sprite::render() -> void {
@@ -159,7 +170,7 @@ auto gse::renderer::sprite::render() -> void {
 
 	const auto& config = m_context.config();
 	const auto& command = config.frame_context.command_buffer;
-	const auto& shader = m_context.resource<gse::shader>(find("ui_2d_shader")).shader;
+	const auto shader = m_shader.resolve();
 	const auto [width, height] = config.swap_chain_data.extent;
 
 	const auto projection = orthographic(
@@ -193,6 +204,10 @@ auto gse::renderer::sprite::render() -> void {
 			command.bindIndexBuffer(*m_index_buffer.buffer, 0, vk::IndexType::eUint32);
 
 			for (auto& [position, size, color, texture, uv_rect] : m_draw_commands) {
+				if (texture.state() != resource::state::loaded) {
+					continue;
+				}
+
 				std::unordered_map<std::string, std::span<const std::byte>> push_constants = {
 					{ "projection", std::as_bytes(std::span(&projection, 1)) },
 					{ "position", std::as_bytes(std::span(&position, 1)) },
@@ -202,7 +217,7 @@ auto gse::renderer::sprite::render() -> void {
 				};
 
 				shader->push(command, m_pipeline_layout, "push_constants", push_constants, vk::ShaderStageFlagBits::eVertex);
-				shader->push(command, m_pipeline_layout, "ui_texture", texture.descriptor_info);
+				shader->push(command, m_pipeline_layout, "ui_texture", texture->descriptor_info());
 				command.drawIndexed(6, 1, 0, 0, 0);
 			}
 		}

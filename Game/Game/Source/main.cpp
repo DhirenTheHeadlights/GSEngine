@@ -1,8 +1,8 @@
 ﻿import std;
 
 import gse;
-import game;
+import gs;
 
-auto main() {
+auto main() -> int {
 	gse::start<gs::game>();
 }

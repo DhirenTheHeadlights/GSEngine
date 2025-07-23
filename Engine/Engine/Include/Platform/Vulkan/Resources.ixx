@@ -7,7 +7,7 @@ import gse.assert;
 
 export namespace gse::vulkan::persistent_allocator {
 	class allocation;
-	auto free(allocation& alloc) -> void;
+	auto free(const allocation& alloc) -> void;
 
 	struct sub_allocation {
 		vk::DeviceSize offset;
@@ -75,7 +75,7 @@ export namespace gse::vulkan::persistent_allocator {
 		[[nodiscard]] auto mapped() const -> void* { return m_mapped; }
 		[[nodiscard]] auto owner() const -> sub_allocation* { return m_owner; }
 	private:
-		friend auto free(allocation& alloc) -> void;
+		friend auto free(const allocation& alloc) -> void;
 
 		vk::DeviceMemory m_memory = nullptr;
 		vk::DeviceSize m_size = 0, m_offset = 0;

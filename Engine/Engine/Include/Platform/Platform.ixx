@@ -14,6 +14,7 @@ export namespace gse::platform {
 
 auto gse::platform::initialize() -> std::unique_ptr<vulkan::config> {
 	window::initialize();
+	input::set_up_key_maps();
 	return vulkan::initialize(window::get_window());
 }
 

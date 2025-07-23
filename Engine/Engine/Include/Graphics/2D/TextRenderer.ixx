@@ -17,7 +17,7 @@ export namespace gse::renderer {
 	class text final : public base_renderer {
 	public:
 		struct command {
-			gse::id font_id;
+			resource::handle<font> font;
 			std::string text;
 			vec2<length> position;
 			float scale = 1.0f;
@@ -37,6 +37,8 @@ export namespace gse::renderer {
 		vk::raii::PipelineLayout m_pipeline_layout = nullptr;
 		vulkan::persistent_allocator::buffer_resource m_vertex_buffer;
 		vulkan::persistent_allocator::buffer_resource m_index_buffer;
+
+		resource::handle<shader> m_shader;
 
 		std::vector<command> m_draw_commands;
 	};
@@ -104,10 +106,11 @@ auto gse::renderer::text::initialize() -> void {
 		.stencilTestEnable = vk::False
 	};
 
-	const auto id = m_context.queue<shader>(config::shader_spirv_path / "msdf_shader");
-	const auto& msdf_shader = m_context.resource<shader>(id).shader;
-	const auto& msdf_dsl = msdf_shader->layouts();
-	const auto msdf_pc_range = msdf_shader->push_constant_range("pc", vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
+	m_shader = m_context.get<shader>("msdf_shader");
+	m_context.instantly_load(m_shader);
+
+	const auto& msdf_dsl = m_shader->layouts();
+	const auto msdf_pc_range = m_shader->push_constant_range("pc", vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
 
 	const vk::PipelineLayoutCreateInfo msdf_pipeline_layout_info{
 		.setLayoutCount = static_cast<std::uint32_t>(msdf_dsl.size()),
@@ -117,7 +120,7 @@ auto gse::renderer::text::initialize() -> void {
 	};
 	m_pipeline_layout = config.device_data.device.createPipelineLayout(msdf_pipeline_layout_info);
 
-	const auto vertex_input_info = msdf_shader->vertex_input_state();
+	const auto vertex_input_info = m_shader->vertex_input_state();
 	const vk::Format color_format = config.swap_chain_data.surface_format.format;
 
 	const vk::PipelineRenderingCreateInfoKHR pipeline_rendering_info{
@@ -128,7 +131,7 @@ auto gse::renderer::text::initialize() -> void {
 	vk::GraphicsPipelineCreateInfo pipeline_info{
 		.pNext = &pipeline_rendering_info,
 		.stageCount = 2,
-		.pStages = msdf_shader->shader_stages().data(),
+		.pStages = m_shader->shader_stages().data(),
 		.pVertexInputState = &vertex_input_info,
 		.pInputAssemblyState = &input_assembly,
 		.pViewportState = &viewport_state,
@@ -149,8 +152,8 @@ auto gse::renderer::text::initialize() -> void {
 	};
 	constexpr std::uint32_t indices[6] = { 0, 2, 1, 0, 3, 2 };
 
-	m_vertex_buffer = vulkan::persistent_allocator::create_buffer(config.device_data, { .size = sizeof(vertices), .usage = vk::BufferUsageFlagBits::eVertexBuffer }, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, vertices);
-	m_index_buffer = vulkan::persistent_allocator::create_buffer(config.device_data, { .size = sizeof(indices), .usage = vk::BufferUsageFlagBits::eIndexBuffer }, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, indices);
+	m_vertex_buffer = vulkan::persistent_allocator::create_buffer(config.device_data, { .size = sizeof(vertices), .usage = vk::BufferUsageFlagBits::eVertexBuffer }, vertices);
+	m_index_buffer = vulkan::persistent_allocator::create_buffer(config.device_data, { .size = sizeof(indices), .usage = vk::BufferUsageFlagBits::eIndexBuffer }, indices);
 }
 
 auto gse::renderer::text::render() -> void {
@@ -160,7 +163,6 @@ auto gse::renderer::text::render() -> void {
 
 	const auto& config = m_context.config();
 	const auto& command = config.frame_context.command_buffer;
-	const auto& shader = m_context.resource<gse::shader>(find("msdf_shader")).shader;
 	const auto [width, height] = config.swap_chain_data.extent;
 
 	const auto projection = orthographic(
@@ -193,11 +195,10 @@ auto gse::renderer::text::render() -> void {
 			command.bindVertexBuffers(0, { *m_vertex_buffer.buffer }, { 0 });
 			command.bindIndexBuffer(*m_index_buffer.buffer, 0, vk::IndexType::eUint32);
 
-			for (const auto& [font_id, text, position, scale, color, max_width] : m_draw_commands) {
-				if (!font_id.exists() || text.empty()) continue;
+			for (const auto& [font, text, position, scale, color, max_width] : m_draw_commands) {
+				if (!font || text.empty()) continue;
 
-				const auto font = m_context.resource<gse::font>(font_id).font;
-				shader->push(command, m_pipeline_layout, "msdf_texture", font->texture()->descriptor_info());
+				m_shader->push(command, m_pipeline_layout, "msdf_texture", font->texture()->descriptor_info());
 				const auto glyphs = font->text_layout(text, position.as<units::meters>(), scale);
 
 				for (const auto& [glyph_position, size, uv] : glyphs) {
@@ -211,10 +212,13 @@ auto gse::renderer::text::render() -> void {
 						{ "uv_rect",    std::as_bytes(std::span(&uv, 1)) }
 					};
 
-					shader->push(command, m_pipeline_layout, "pc", push_constants, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
+					m_shader->push(command, m_pipeline_layout, "pc", push_constants, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
 					command.drawIndexed(6, 1, 0, 0, 0);
 				}
 			}
+
+			debug::update_imgui();
+			debug::render_imgui(command);
 		}
 	);
 
@@ -222,7 +226,7 @@ auto gse::renderer::text::render() -> void {
 }
 
 auto gse::renderer::text::draw_text(const command& cmd) -> void {
-	if (!cmd.font_id.exists() || cmd.text.empty()) {
+	if (!cmd.font || cmd.text.empty()) {
 		return;
 	}
 

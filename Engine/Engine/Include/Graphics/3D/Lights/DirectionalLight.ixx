@@ -1,38 +1,34 @@
 module;
 
 #include <imgui.h>
-#include <string>
 
 export module gse.graphics:directional_light;
 
-import :light;
 import :debug;
-import :cube_map;
 
 import gse.physics.math;
+import gse.utility;
 
 export namespace gse {
-	class directional_light final : public light {
-	public:
-		directional_light(const unitless::vec3& color, const float intensity, const unitless::vec3& direction, const float ambient_strength)
-			: light(color, intensity, light_type::directional), m_direction(direction), m_ambient_strength(ambient_strength) {
-		}
+	struct directional_light_data {
+		unitless::vec3 color = { 1.0f, 1.0f, 1.0f };
+		float intensity = 1.0f;
+		unitless::vec3 direction = { 0.0f, -1.0f, 0.0f };
+		float ambient_strength = 1.0f;
+	};
 
-		auto show_debug_menu(const std::string_view& name, std::uint32_t parent_id) -> void override {
+	struct directional_light_component : component<directional_light_data> {
+		directional_light_component(const id& owner_id, const directional_light_data& data = {}) : component(owner_id, data) {}
+
+		auto debug_menu(const std::string_view& name, std::uint32_t parent_id) -> void {
 			debug::add_imgui_callback([this, name, parent_id] {
-				ImGui::Begin(std::string("Directional Light " + std::string(name) + ": " + std::to_string(parent_id)).c_str());
-				debug::unit_slider("Intensity", m_intensity, 0.0f, 100.0f);
-				debug::unit_slider("Ambient Strength", m_ambient_strength, 0.0f, 10.0f);
-				ImGui::SliderFloat3("Direction", &m_direction.x, -1.0f, 1.0f);
+				ImGui::Begin(std::string("Directional Light Component " + std::string(name) + ": " + std::to_string(parent_id)).c_str());
+				ImGui::ColorEdit3("Color", &color.x);
+				debug::unit_slider("Intensity", intensity, 0.f, 100.0f);
+				debug::unit_slider("Ambient Strength", ambient_strength, 0.f, 10.0f);
+				ImGui::SliderFloat3("Direction", &direction.x, -1.0f, 1.0f);
 				ImGui::End();
-				});
+			});
 		}
-
-		auto render_queue_entry() const -> light_render_queue_entry override {
-			return { light_type::directional, m_color, m_intensity, vec3<length>(), m_direction, 0, 0, 0, angle(), angle(), m_ambient_strength, m_near_plane, m_far_plane, m_ignore_list_id };
-		}
-	private:
-		unitless::vec3 m_direction;
-		float m_ambient_strength;
 	};
 }

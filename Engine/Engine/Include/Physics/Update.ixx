@@ -49,17 +49,7 @@ auto gse::physics::update(const std::span<std::reference_wrapper<registry>> regi
 					collision = &*collision_it;
 				}
 
-				const render_component* render = nullptr;
-				if (const auto render_it = std::ranges::find_if(
-					registry.get().linked_objects<render_component>(),
-					[object](const auto& r) {
-						return r.owner_id() == object.owner_id();
-					}
-				); render_it != registry.get().linked_objects<render_component>().end()) {
-					render = &*render_it;
-				}
-
-				update_object(object, fixed_update_time, collision, render);
+				update_object(object, fixed_update_time, collision);
 			}
 		}
 

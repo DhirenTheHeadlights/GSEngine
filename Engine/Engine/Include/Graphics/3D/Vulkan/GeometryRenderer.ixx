@@ -7,27 +7,28 @@ import :camera;
 import :mesh;
 import :model;
 import :render_component;
-import :point_light;
-import :light_source_component;
 import :material;
 import :shader;
 
 import gse.physics.math;
 import gse.utility;
 import gse.platform;
+import gse.physics;
 
 gse::camera g_camera;
 
 export namespace gse::renderer {
 	class geometry final : public base_renderer {
 	public:
-		explicit geometry(context& context, std::span<std::reference_wrapper<registry>> registries) : base_renderer(context, registries) {}
+		explicit geometry(context& context, const std::span<std::reference_wrapper<registry>> registries) : base_renderer(context, registries) {}
 		auto initialize() -> void override;
 		auto render() -> void override;
 	private:
 		vk::raii::Pipeline m_pipeline = nullptr;
 		vk::raii::PipelineLayout m_pipeline_layout = nullptr;
 		vk::raii::DescriptorSet m_descriptor_set = nullptr;
+
+		resource::handle<shader> m_shader;
 
 		std::unordered_map<std::string, vulkan::persistent_allocator::buffer_resource> m_ubo_allocations;
 	};
@@ -57,18 +58,17 @@ auto gse::renderer::geometry::initialize() -> void {
 		}
 	);
 
-	const auto id = m_context.queue<shader>(config::shader_spirv_path / "geometry_pass.vert.spv");
+	m_shader = m_context.get<shader>("geometry_pass");
+	m_context.instantly_load(m_shader);
+	auto descriptor_set_layouts = m_shader->layouts();
 
-	const auto* geometry_shader = m_context.instantly_load<shader>(id).shader;
-	auto descriptor_set_layouts = geometry_shader->layouts();
-
-	m_descriptor_set = geometry_shader->descriptor_set(
+	m_descriptor_set = m_shader->descriptor_set(
 		config.device_data.device,
 		config.descriptor.pool,
 		shader::set::binding_type::persistent
 	);
 
-	const auto camera_ubo = geometry_shader->uniform_block("camera_ubo");
+	const auto camera_ubo = m_shader->uniform_block("camera_ubo");
 
 	vk::BufferCreateInfo camera_ubo_buffer_info{
 		.size = camera_ubo.size,
@@ -78,8 +78,7 @@ auto gse::renderer::geometry::initialize() -> void {
 
 	auto camera_ubo_buffer = vulkan::persistent_allocator::create_buffer(
 		config.device_data,
-		camera_ubo_buffer_info,
-		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+		camera_ubo_buffer_info
 	);
 
 	m_ubo_allocations["camera_ubo"] = std::move(camera_ubo_buffer);
@@ -98,12 +97,12 @@ auto gse::renderer::geometry::initialize() -> void {
 	std::unordered_map<std::string, vk::DescriptorImageInfo> image_infos = {};
 
 	config.device_data.device.updateDescriptorSets(
-		geometry_shader->descriptor_writes(m_descriptor_set, buffer_infos, image_infos),
+		m_shader->descriptor_writes(m_descriptor_set, buffer_infos, image_infos),
 		nullptr
 	);
 
 	std::vector ranges = {
-		geometry_shader->push_constant_range("pc", vk::ShaderStageFlagBits::eVertex)
+		m_shader->push_constant_range("pc", vk::ShaderStageFlagBits::eVertex)
 	};
 
 	const vk::PipelineLayoutCreateInfo pipeline_layout_info{
@@ -165,7 +164,7 @@ auto gse::renderer::geometry::initialize() -> void {
 		.pAttachments = color_blend_attachments.data()
 	};
 
-	auto shader_stages = geometry_shader->shader_stages();
+	auto shader_stages = m_shader->shader_stages();
 
 	constexpr vk::PipelineMultisampleStateCreateInfo multisampling{
 		.rasterizationSamples = vk::SampleCountFlagBits::e1,
@@ -176,7 +175,7 @@ auto gse::renderer::geometry::initialize() -> void {
 		.alphaToOneEnable = vk::False
 	};
 
-	auto vertex_input_info = geometry_shader->vertex_input_state();
+	auto vertex_input_info = m_shader->vertex_input_state();
 
 	const vk::PipelineRenderingCreateInfoKHR geometry_rendering_info = {
 		.colorAttachmentCount = static_cast<uint32_t>(g_buffer_color_formats.size()),
@@ -301,10 +300,8 @@ auto gse::renderer::geometry::render() -> void {
 				return;
 			}
 
-			const auto* geometry_shader = m_context.resource<shader>(find("geometry_pass")).shader;
-
-			geometry_shader->set_uniform("camera_ubo.view", g_camera.view(), m_ubo_allocations.at("camera_ubo").allocation);
-			geometry_shader->set_uniform("camera_ubo.proj", g_camera.projection(), m_ubo_allocations.at("camera_ubo").allocation);
+			m_shader->set_uniform("camera_ubo.view", g_camera.view(), m_ubo_allocations.at("camera_ubo").allocation);
+			m_shader->set_uniform("camera_ubo.proj", g_camera.projection(), m_ubo_allocations.at("camera_ubo").allocation);
 
 			command.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
 
@@ -320,13 +317,35 @@ auto gse::renderer::geometry::render() -> void {
 
 			std::unordered_map<std::string, std::span<const std::byte>> push_constants = {};
 
+			auto calculate_center_of_mass = [](const std::vector<model_instance>& models) -> vec3<length> {
+				vec3<length> sum;
+				int number_of_meshes = 0;
+
+				for (const auto& instance : models) {
+					for (const auto& mesh : instance.handle()->meshes()) {
+						sum += mesh.center_of_mass;
+					}
+					number_of_meshes += static_cast<int>(instance.handle()->meshes().size());
+				}
+
+				return number_of_meshes > 0 ? sum / static_cast<float>(number_of_meshes) : vec3<length>{0, 0, 0};
+			};
+
 			for (const auto& registry : m_registries) {
-				for (const auto& component : registry.get().linked_objects<render_component>()) {
-					for (const auto& model_handle : component.models) {
+				for (auto& component : registry.get().linked_objects<render_component>()) {
+					const auto pos = registry.get().linked_object<physics::motion_component>(component.owner_id()).current_position;
+
+					if (!component.has_calculated_com) {
+						component.center_of_mass = calculate_center_of_mass(component.models);
+					}
+
+					for (auto& model_handle : component.models) {
+						model_handle.set_position(pos);
+
 						for (const auto& entry : model_handle.render_queue_entries()) {
 							push_constants["model"] = std::as_bytes(std::span{ &entry.model_matrix, 1 });
 
-							geometry_shader->push(
+							m_shader->push(
 								command,
 								m_pipeline_layout,
 								"pc",
@@ -334,12 +353,12 @@ auto gse::renderer::geometry::render() -> void {
 								vk::ShaderStageFlagBits::eVertex
 							);
 
-							if (entry.mesh->material.exists()) {
-								geometry_shader->push(
+							if (entry.mesh->material) {
+								m_shader->push(
 									command,
 									m_pipeline_layout,
 									"diffuse_sampler",
-									m_context.resource<texture>(m_context.resource<material>(entry.mesh->material).data->diffuse_texture).descriptor_info
+									entry.mesh->material->diffuse_texture->descriptor_info()
 								);
 
 								entry.mesh->bind(command);

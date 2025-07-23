@@ -25,17 +25,14 @@ export namespace gse {
 	struct mesh_data {
 		std::vector<vertex> vertices;
 		std::vector<std::uint32_t> indices;
-		id material;
+        resource::handle<material> material;
 	};
 
-    struct mesh {
+    struct mesh final : non_copyable {
 	    explicit mesh(const mesh_data& data) : vertices(std::move(data.vertices)), indices(std::move(data.indices)), material(data.material) {}
-		mesh(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices, const id& material = {});
+		mesh(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices, const resource::handle<material>& material = {});
 
-        mesh(const mesh&) = delete;
-        auto operator=(const mesh&) -> mesh & = delete;
         mesh(mesh&& other) noexcept;
-		auto operator=(mesh&& other) noexcept -> mesh& = delete;
 
         auto initialize(const vulkan::config& config) -> void;
 
@@ -47,17 +44,16 @@ export namespace gse {
 
         std::vector<vertex> vertices;
         std::vector<std::uint32_t> indices;
-		id material;
+        resource::handle<material> material;
 
 		vec3<length> center_of_mass;
     };
 
     auto calculate_center_of_mass(const std::vector<std::uint32_t>& indices, const std::vector<vertex>& vertices) -> vec3<length>;
-	auto generate_bounding_box_mesh(vec3<length> upper, vec3<length> lower) -> mesh;
+	auto generate_bounding_box_mesh(vec3<length> upper, vec3<length> lower) -> mesh_data;
 }
 
-gse::mesh::mesh(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices, const id& material)
-	: vertices(vertices), indices(indices), material(material) {}
+gse::mesh::mesh(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices, const resource::handle<gse::material>& material) : vertices(vertices), indices(indices), material(material) {}
 
 gse::mesh::mesh(mesh&& other) noexcept
     : vertex_buffer(std::move(other.vertex_buffer)), index_buffer(std::move(other.index_buffer)),
@@ -78,7 +74,6 @@ auto gse::mesh::initialize(const vulkan::config& config) -> void {
     const auto [vertex_buffer, vertex_allocation] = vulkan::persistent_allocator::create_buffer(
         config.device_data,
         vertex_staging_info,
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
         vertices.data()
     );
 
@@ -88,8 +83,7 @@ auto gse::mesh::initialize(const vulkan::config& config) -> void {
     };
     this->vertex_buffer = vulkan::persistent_allocator::create_buffer(
         config.device_data,
-        vertex_final_info,
-        vk::MemoryPropertyFlagBits::eDeviceLocal
+        vertex_final_info
     );
 
     const vk::DeviceSize index_buffer_size = sizeof(std::uint32_t) * indices.size();
@@ -101,7 +95,6 @@ auto gse::mesh::initialize(const vulkan::config& config) -> void {
     const auto [index_buffer, index_allocation] = vulkan::persistent_allocator::create_buffer(
         config.device_data,
         index_staging_info,
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
         indices.data()
     );
 
@@ -111,8 +104,7 @@ auto gse::mesh::initialize(const vulkan::config& config) -> void {
     };
     this->index_buffer = vulkan::persistent_allocator::create_buffer(
         config.device_data,
-        index_final_info,
-        vk::MemoryPropertyFlagBits::eDeviceLocal
+        index_final_info
     );
 
     single_line_commands(
@@ -173,7 +165,7 @@ auto gse::calculate_center_of_mass(const std::vector<std::uint32_t>& indices, co
     return moment / static_cast<float>(total_volume);
 }
 
-auto gse::generate_bounding_box_mesh(const vec3<length> upper, const vec3<length> lower) -> mesh {
+auto gse::generate_bounding_box_mesh(const vec3<length> upper, const vec3<length> lower) -> mesh_data {
 	auto create_vertex = [](const vec3<length>& position) -> vertex {
 		return vertex{ position.as<units::meters>(), {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}};
 		};
@@ -198,5 +190,8 @@ auto gse::generate_bounding_box_mesh(const vec3<length> upper, const vec3<length
 		3, 2, 6, 6, 7, 3
 	};
 
-	return mesh(vertices, indices);
+    return mesh_data{
+    	.vertices = vertices,
+    	.indices = indices
+    };
 }

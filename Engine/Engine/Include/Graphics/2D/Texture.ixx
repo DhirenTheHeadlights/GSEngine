@@ -9,272 +9,401 @@ import gse.physics.math;
 import gse.platform;
 
 export namespace gse {
-    class texture : public identifiable {
-    public:
-        enum struct profile : std::uint8_t {
-            generic_repeat,
+	class texture : public identifiable {
+	public:
+		enum struct profile : std::uint8_t {
+			generic_repeat,
 			generic_clamp_to_edge,
-            msdf,
-            pixel_art
+			msdf,
+			pixel_art
 		};
 
-        struct handle {
-            vk::DescriptorImageInfo descriptor_info;
-			const image::data* image_data = nullptr;
+		texture(const std::filesystem::path& filepath) : identifiable(filepath), m_image_data{ .path = filepath } {}
+		texture(const std::string& name, renderer::context& context, const unitless::vec4& color, unitless::vec2u size = { 1, 1 });
+		texture(
+			const std::string& name,
+			const vulkan::config& config,
+			const std::vector<std::byte>& data,
+			unitless::vec2u size,
+			std::uint32_t channels,
+			profile texture_profile = profile::generic_repeat
+		);
 
-            handle(const texture& texture)
-        	: descriptor_info{
-                .sampler = texture.m_texture_sampler,
-                .imageView = texture.m_texture_image.view,
-                .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
-			},
-        	image_data{
-        		&texture.m_image_data
-        	} {}
-        };
+		static auto compile() -> std::set<std::filesystem::path>;
 
-        texture(const std::filesystem::path& filepath) : identifiable(filepath.stem().string()), m_image_data{ .path = filepath } {}
-        texture(const unitless::vec4& color, unitless::vec2u size = { 1, 1 });
-        texture(
-            const vulkan::config& config,
-            const std::vector<std::byte>& data,
-            unitless::vec2u size,
-            std::uint32_t channels,
-            profile texture_profile = profile::generic_repeat,
-            const std::string& name = std::string("Texture from Data")
-        );
-
-        auto load(const renderer::context& context) -> void;
+		auto load(renderer::context& context) -> void;
 		auto unload() -> void;
 
-        auto descriptor_info() const -> vk::DescriptorImageInfo {
-            return {
-                .sampler = m_texture_sampler,
-                .imageView = m_texture_image.view,
-                .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
-            };
+		auto descriptor_info() const -> vk::DescriptorImageInfo {
+			return {
+				.sampler = m_texture_sampler,
+				.imageView = m_texture_image.view,
+				.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+			};
 		}
-    private:
+		auto image_data() const -> const image::data& {
+			return m_image_data;
+		}
+	private:
+		auto create_vulkan_resources(renderer::context& context, profile texture_profile) -> void;
+
 		vulkan::persistent_allocator::image_resource m_texture_image;
 		vk::raii::Sampler m_texture_sampler = nullptr;
-        image::data m_image_data;
-    };
+		image::data m_image_data;
+	};
 }
 
-gse::texture::texture(const unitless::vec4& color, const unitless::vec2u size)
-    : identifiable(std::format("Solid Color ({}, {}, {}, {})", color.x, color.y, color.z, color.w)) {
-    std::array<std::byte, 4> pixel_data;
-    pixel_data[0] = static_cast<std::byte>(color.x * 255.0f);
-    pixel_data[1] = static_cast<std::byte>(color.y * 255.0f);
-    pixel_data[2] = static_cast<std::byte>(color.z * 255.0f);
-    pixel_data[3] = static_cast<std::byte>(color.w * 255.0f);
+gse::texture::texture(const std::string& name, renderer::context& context, const unitless::vec4& color, const unitless::vec2u size) : identifiable(std::format("{} - Solid Color ({}, {}, {}, {})", name, color.x, color.y, color.z, color.w)) {
+	std::array<std::byte, 4> pixel_data;
+	pixel_data[0] = static_cast<std::byte>(color.x * 255.0f);
+	pixel_data[1] = static_cast<std::byte>(color.y * 255.0f);
+	pixel_data[2] = static_cast<std::byte>(color.z * 255.0f);
+	pixel_data[3] = static_cast<std::byte>(color.w * 255.0f);
 
-    const std::size_t total_pixels = static_cast<std::size_t>(size.x) * size.y;
-    std::vector<std::byte> pixels(total_pixels * 4);
+	const std::size_t total_pixels = static_cast<std::size_t>(size.x) * size.y;
+	std::vector<std::byte> pixels(total_pixels * 4);
 
-    for (std::size_t i = 0; i < total_pixels; ++i) {
-        std::memcpy(pixels.data() + i * 4, pixel_data.data(), 4);
-    }
+	for (std::size_t i = 0; i < total_pixels; ++i) {
+		std::memcpy(pixels.data() + i * 4, pixel_data.data(), 4);
+	}
 
-    m_image_data = image::data{
-        .size = size,
-        .channels = 4,
-        .pixels = std::move(pixels)
-    };
+	m_image_data = image::data{
+		.size = size,
+		.channels = 4,
+		.pixels = std::move(pixels)
+	};
+
+	std::lock_guard queue(*context.config().queue.mutex);
+	std::lock_guard pool(*context.config().command.pool_mutex);
+	create_vulkan_resources(context, profile::generic_repeat);
 }
 
-gse::texture::texture(const vulkan::config& config, const std::vector<std::byte>& data, unitless::vec2u size, std::uint32_t channels, profile texture_profile, const std::string& name) 
-    : identifiable(name)
-    , m_image_data(image::data{ 
-        .path = name, 
-        .size = size, 
-        .channels = channels, 
-        .pixels = data 
-      }) {
-    const auto format = channels == 4 ? vk::Format::eR8G8B8A8Unorm : channels == 1 ? vk::Format::eR8Unorm : vk::Format::eR8G8B8Unorm;
-    const std::size_t image_size = static_cast<std::size_t>(size.x) * size.y * channels;
+gse::texture::texture(const std::string& name, const vulkan::config& config, const std::vector<std::byte>& data, unitless::vec2u size, std::uint32_t channels, profile texture_profile)
+	: identifiable(name)
+	, m_image_data(image::data{ .path = name, .size = size, .channels = channels, .pixels = data }) {
+	std::lock_guard cmd_lock(*config.command.pool_mutex);
+	std::lock_guard queue_lock(*config.queue.mutex);
 
-    m_texture_image = vulkan::persistent_allocator::create_image(
-        config.device_data,
-        vk::ImageCreateInfo{
-            .flags = {},
-            .imageType = vk::ImageType::e2D,
-            .format = format,
-            .extent = {
-                .width = size.x,
-                .height = size.y,
-                .depth = 1
-            },
-            .mipLevels = 1,
-            .arrayLayers = 1,
-            .samples = vk::SampleCountFlagBits::e1,
-            .tiling = vk::ImageTiling::eOptimal,
-            .usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
-            .sharingMode = vk::SharingMode::eExclusive,
-            .initialLayout = vk::ImageLayout::eUndefined
-        },
-        vk::MemoryPropertyFlagBits::eDeviceLocal,
-        vk::ImageViewCreateInfo{
-            .flags = {},
-            .image = nullptr,
-            .viewType = vk::ImageViewType::e2D,
-            .format = format,
-            .components = {},
-            .subresourceRange = {
-                .aspectMask = vk::ImageAspectFlagBits::eColor,
-                .baseMipLevel = 0,
-                .levelCount = 1,
-                .baseArrayLayer = 0,
-                .layerCount = 1
-            }
-        }
-    );
+	const auto format = channels == 4 ? vk::Format::eR8G8B8A8Unorm : channels == 1 ? vk::Format::eR8Unorm : vk::Format::eR8G8B8Unorm;
+	const std::size_t image_size = static_cast<std::size_t>(size.x) * size.y * channels;
 
-    vulkan::uploader::upload_image_2d(
-        config,
-        m_texture_image,
-        size.x,
-        size.y,
-        data.data(),
-        image_size,
-        vk::ImageLayout::eShaderReadOnlyOptimal
-    );
+	m_texture_image = vulkan::persistent_allocator::create_image(
+		config.device_data,
+		vk::ImageCreateInfo{
+			.flags = {},
+			.imageType = vk::ImageType::e2D,
+			.format = format,
+			.extent = {
+				.width = size.x,
+				.height = size.y,
+				.depth = 1
+			},
+			.mipLevels = 1,
+			.arrayLayers = 1,
+			.samples = vk::SampleCountFlagBits::e1,
+			.tiling = vk::ImageTiling::eOptimal,
+			.usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
+			.sharingMode = vk::SharingMode::eExclusive,
+			.initialLayout = vk::ImageLayout::eUndefined
+		},
+		vk::MemoryPropertyFlagBits::eDeviceLocal,
+		vk::ImageViewCreateInfo{
+			.flags = {},
+			.image = nullptr,
+			.viewType = vk::ImageViewType::e2D,
+			.format = format,
+			.components = {},
+			.subresourceRange = {
+				.aspectMask = vk::ImageAspectFlagBits::eColor,
+				.baseMipLevel = 0,
+				.levelCount = 1,
+				.baseArrayLayer = 0,
+				.layerCount = 1
+			}
+		}
+	);
 
-    vk::SamplerCreateInfo sampler_info{};
-    sampler_info.maxLod = 1.0f;
+	vulkan::uploader::upload_image_2d(
+		config,
+		m_texture_image,
+		size.x,
+		size.y,
+		data.data(),
+		image_size,
+		vk::ImageLayout::eShaderReadOnlyOptimal
+	);
 
-    switch (texture_profile) {
-    case profile::generic_repeat:
-        sampler_info.magFilter = vk::Filter::eLinear;
-        sampler_info.minFilter = vk::Filter::eLinear;
-        sampler_info.addressModeU = vk::SamplerAddressMode::eRepeat;
-        sampler_info.addressModeV = vk::SamplerAddressMode::eRepeat;
-        sampler_info.addressModeW = vk::SamplerAddressMode::eRepeat;
-        sampler_info.anisotropyEnable = vk::True;
-        sampler_info.maxAnisotropy = 16.0f;
-        break;
+	vk::SamplerCreateInfo sampler_info{};
+	sampler_info.maxLod = 1.0f;
 
-    case profile::generic_clamp_to_edge:
-        sampler_info.magFilter = vk::Filter::eLinear;
-        sampler_info.minFilter = vk::Filter::eLinear;
-        sampler_info.addressModeU = vk::SamplerAddressMode::eClampToEdge;
-        sampler_info.addressModeV = vk::SamplerAddressMode::eClampToEdge;
-        sampler_info.addressModeW = vk::SamplerAddressMode::eClampToEdge;
-        break;
+	switch (texture_profile) {
+	case profile::generic_repeat:
+		sampler_info.magFilter = vk::Filter::eLinear;
+		sampler_info.minFilter = vk::Filter::eLinear;
+		sampler_info.addressModeU = vk::SamplerAddressMode::eRepeat;
+		sampler_info.addressModeV = vk::SamplerAddressMode::eRepeat;
+		sampler_info.addressModeW = vk::SamplerAddressMode::eRepeat;
+		sampler_info.anisotropyEnable = vk::True;
+		sampler_info.maxAnisotropy = 16.0f;
+		break;
 
-    case profile::msdf:
-        sampler_info.magFilter = vk::Filter::eLinear;
-        sampler_info.minFilter = vk::Filter::eLinear;
-        sampler_info.addressModeU = vk::SamplerAddressMode::eClampToEdge;
-        sampler_info.addressModeV = vk::SamplerAddressMode::eClampToEdge;
-        sampler_info.addressModeW = vk::SamplerAddressMode::eClampToEdge;
-        break;
+	case profile::generic_clamp_to_edge:
+		sampler_info.magFilter = vk::Filter::eLinear;
+		sampler_info.minFilter = vk::Filter::eLinear;
+		sampler_info.addressModeU = vk::SamplerAddressMode::eClampToEdge;
+		sampler_info.addressModeV = vk::SamplerAddressMode::eClampToEdge;
+		sampler_info.addressModeW = vk::SamplerAddressMode::eClampToEdge;
+		break;
 
-    case profile::pixel_art:
-        sampler_info.magFilter = vk::Filter::eNearest;
-        sampler_info.minFilter = vk::Filter::eNearest;
-        sampler_info.addressModeU = vk::SamplerAddressMode::eClampToEdge;
-        sampler_info.addressModeV = vk::SamplerAddressMode::eClampToEdge;
-        sampler_info.addressModeW = vk::SamplerAddressMode::eClampToEdge;
-        break;
-    }
+	case profile::msdf:
+		sampler_info.magFilter = vk::Filter::eLinear;
+		sampler_info.minFilter = vk::Filter::eLinear;
+		sampler_info.addressModeU = vk::SamplerAddressMode::eClampToEdge;
+		sampler_info.addressModeV = vk::SamplerAddressMode::eClampToEdge;
+		sampler_info.addressModeW = vk::SamplerAddressMode::eClampToEdge;
+		break;
 
-    m_texture_sampler = config.device_data.device.createSampler(sampler_info);
+	case profile::pixel_art:
+		sampler_info.magFilter = vk::Filter::eNearest;
+		sampler_info.minFilter = vk::Filter::eNearest;
+		sampler_info.addressModeU = vk::SamplerAddressMode::eClampToEdge;
+		sampler_info.addressModeV = vk::SamplerAddressMode::eClampToEdge;
+		sampler_info.addressModeW = vk::SamplerAddressMode::eClampToEdge;
+		break;
+	}
+
+	m_texture_sampler = config.device_data.device.createSampler(sampler_info);
 }
 
-auto gse::texture::load(const renderer::context& context) -> void {
-    const auto& config = context.config();
+auto gse::texture::compile() -> std::set<std::filesystem::path> {
+	const auto source_root = config::resource_path;
+	const auto baked_root = config::baked_resource_path / "Textures";
 
-    if (!m_image_data.path.empty()) {
-        m_image_data = image::load(m_image_data.path);
-    }
+	if (!exists(source_root)) return {};
+	if (!exists(baked_root)) {
+		create_directories(baked_root);
+	}
 
-    const vk::BufferCreateInfo buffer_info{
-        .size = m_image_data.size_bytes(),
-        .usage = vk::BufferUsageFlagBits::eTransferSrc,
-        .sharingMode = vk::SharingMode::eExclusive
-    };
+	std::println("Compiling textures...");
 
-    auto [buffer, allocation] = vulkan::persistent_allocator::create_buffer(
-        config.device_data,
-        buffer_info,
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-        m_image_data.pixels.data()
-    );
+	const std::vector<std::string> supported_extensions = { ".png", ".jpg", ".jpeg", ".tga", ".bmp" };
 
-    const auto format = m_image_data.channels == 4 ? vk::Format::eR8G8B8A8Srgb : m_image_data.channels == 1 ? vk::Format::eR8Unorm : vk::Format::eR8G8B8Srgb;
+	std::set<std::filesystem::path> resources;
 
-    const vk::ImageCreateInfo image_info{
-        .flags = {},
-        .imageType = vk::ImageType::e2D,
-        .format = format,
-        .extent = {
-            .width = m_image_data.size.x,
-            .height = m_image_data.size.y,
-            .depth = 1
-        },
-        .mipLevels = 1,
-        .arrayLayers = 1,
-        .samples = vk::SampleCountFlagBits::e1,
-        .tiling = vk::ImageTiling::eOptimal,
-        .usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-        .sharingMode = vk::SharingMode::eExclusive,
-        .queueFamilyIndexCount = 0,
-        .pQueueFamilyIndices = nullptr,
-        .initialLayout = vk::ImageLayout::eUndefined
-    };
+	for (const auto& entry : std::filesystem::recursive_directory_iterator(source_root)) {
+		if (!entry.is_regular_file()) continue;
 
-    const vk::ImageViewCreateInfo view_info{
-        .flags = {},
-        .image = nullptr,
-        .viewType = vk::ImageViewType::e2D,
-        .format = format,
-        .components = {},
-        .subresourceRange = {
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1
-        }
-    };
+		if (const auto extension = entry.path().extension().string(); std::ranges::find(supported_extensions, extension) == supported_extensions.end()) {
+			continue;
+		}
 
-    m_texture_image = vulkan::persistent_allocator::create_image(config.device_data, image_info, vk::MemoryPropertyFlagBits::eDeviceLocal, view_info);
+		const auto source_path = entry.path();
+		auto relative_path = source_path.lexically_relative(source_root);
+		const auto baked_path = baked_root / relative_path.replace_extension(".gtx");
+		const auto meta_path = source_path.parent_path() / (source_path.stem().string() + ".meta");
+		resources.insert(baked_path);
 
-    vulkan::uploader::upload_image_2d(
-        config,
-        m_texture_image,
-        m_image_data.size.x,
-        m_image_data.size.y,
-        m_image_data.pixels.data(),
-        m_image_data.size_bytes(),
-        vk::ImageLayout::eShaderReadOnlyOptimal
-    );
+		bool needs_recompile = !exists(baked_path);
+		if (!needs_recompile) {
+			if (const auto dst_time = last_write_time(baked_path); last_write_time(source_path) > dst_time) {
+				needs_recompile = true;
+			}
+			else if (exists(meta_path) && last_write_time(meta_path) > dst_time) {
+				needs_recompile = true;
+			}
+		}
 
-    constexpr vk::SamplerCreateInfo sampler_info{
-        .flags = {},
-        .magFilter = vk::Filter::eLinear,
-        .minFilter = vk::Filter::eLinear,
-        .mipmapMode = vk::SamplerMipmapMode::eLinear,
-        .addressModeU = vk::SamplerAddressMode::eRepeat,
-        .addressModeV = vk::SamplerAddressMode::eRepeat,
-        .addressModeW = vk::SamplerAddressMode::eRepeat,
-        .mipLodBias = 0.0f,
-        .anisotropyEnable = vk::True,
-        .maxAnisotropy = 16.0f,
-        .compareEnable = vk::False,
-        .compareOp = vk::CompareOp::eAlways,
-        .minLod = 0.0f,
-        .maxLod = 0.0f,
-        .borderColor = vk::BorderColor::eIntOpaqueBlack,
-        .unnormalizedCoordinates = vk::False
-    };
+		if (!needs_recompile) continue;
 
-    m_texture_sampler = config.device_data.device.createSampler(sampler_info);
+		const auto image_data = image::load(source_path);
+		if (image_data.pixels.empty()) {
+			std::println("Warning: Failed to load texture '{}', skipping.", source_path.string());
+			continue;
+		}
+
+		auto texture_profile = profile::generic_repeat;
+		if (exists(meta_path)) {
+			std::ifstream meta_file(meta_path);
+			if (std::string line; std::getline(meta_file, line) && line.starts_with("profile:")) {
+				std::string profile_str = line.substr(8);
+				profile_str.erase(0, profile_str.find_first_not_of(" \t\r\n"));
+				profile_str.erase(profile_str.find_last_not_of(" \t\r\n") + 1);
+
+				if (profile_str == "msdf") texture_profile = profile::msdf;
+				else if (profile_str == "pixel_art") texture_profile = profile::pixel_art;
+				else if (profile_str == "clamp_to_edge") texture_profile = profile::generic_clamp_to_edge;
+			}
+		}
+
+		create_directories(baked_path.parent_path());
+		std::ofstream out_file(baked_path, std::ios::binary);
+		assert(out_file.is_open(), "Failed to open baked texture file for writing.");
+
+		constexpr std::uint32_t magic = 0x47544558; // 'GTEX'
+		constexpr std::uint32_t version = 1;
+		out_file.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
+		out_file.write(reinterpret_cast<const char*>(&version), sizeof(version));
+
+		const std::uint32_t width = image_data.size.x;
+		const std::uint32_t height = image_data.size.y;
+		const std::uint32_t channels = image_data.channels;
+
+		out_file.write(reinterpret_cast<const char*>(&width), sizeof(width));
+		out_file.write(reinterpret_cast<const char*>(&height), sizeof(height));
+		out_file.write(reinterpret_cast<const char*>(&channels), sizeof(channels));
+		out_file.write(reinterpret_cast<const char*>(&texture_profile), sizeof(texture_profile));
+
+		const std::uint64_t data_size = image_data.size_bytes();
+		out_file.write(reinterpret_cast<const char*>(&data_size), sizeof(data_size));
+		out_file.write(reinterpret_cast<const char*>(image_data.pixels.data()), data_size);
+
+		out_file.close();
+		std::print("Texture compiled: {}\n", baked_path.filename().string());
+	}
+
+	return resources;
+}
+
+auto gse::texture::load(renderer::context& context) -> void {
+	assert(
+		!m_image_data.path.empty(),
+		std::format(
+			"Texture '{}' has no path set. Ensure the texture is compiled before loading.",
+			id()
+		)
+	);
+
+	std::lock_guard lock(*context.config().queue.mutex);
+
+	std::ifstream in_file(m_image_data.path, std::ios::binary);
+	assert(in_file.is_open(), std::format(
+		"Failed to open baked texture file: {}",
+		m_image_data.path.string()
+	));
+
+	std::uint32_t magic, version;
+	in_file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+	in_file.read(reinterpret_cast<char*>(&version), sizeof(version));
+	assert(magic == 0x47544558 && version == 1, "Invalid baked texture file format or version.");
+
+	std::uint32_t width, height, channels;
+	profile texture_profile;
+	in_file.read(reinterpret_cast<char*>(&width), sizeof(width));
+	in_file.read(reinterpret_cast<char*>(&height), sizeof(height));
+	in_file.read(reinterpret_cast<char*>(&channels), sizeof(channels));
+	in_file.read(reinterpret_cast<char*>(&texture_profile), sizeof(texture_profile));
+
+	std::uint64_t data_size;
+	in_file.read(reinterpret_cast<char*>(&data_size), sizeof(data_size));
+	m_image_data.pixels.resize(data_size);
+	in_file.read(reinterpret_cast<char*>(m_image_data.pixels.data()), data_size);
+
+	m_image_data.size = { width, height };
+	m_image_data.channels = channels;
+
+	create_vulkan_resources(context, texture_profile);
 }
 
 auto gse::texture::unload() -> void {
-    m_image_data = {};
+	m_image_data = {};
 	m_texture_image = {};
 	m_texture_sampler = nullptr;
+}
+
+auto gse::texture::create_vulkan_resources(renderer::context& context, const profile texture_profile) -> void {
+	const auto& config = context.config();
+
+	const auto width = m_image_data.size.x;
+	const auto height = m_image_data.size.y;
+	const auto channels = m_image_data.channels;
+	const auto data_size = m_image_data.size_bytes();
+
+	assert(
+		data_size > 0 && !m_image_data.pixels.empty(), 
+		std::format(
+			"Texture '{}' has no pixel data. Ensure the texture is loaded correctly.",
+			id()
+		)
+	);
+
+	const auto format = channels == 4 ? vk::Format::eR8G8B8A8Srgb
+		: channels == 1 ? vk::Format::eR8Unorm
+		: vk::Format::eR8G8B8Srgb;
+
+	m_texture_image = vulkan::persistent_allocator::create_image(
+		config.device_data,
+		vk::ImageCreateInfo{
+			.imageType = vk::ImageType::e2D,
+			.format = format,
+			.extent = {width, height, 1},
+			.mipLevels = 1,
+			.arrayLayers = 1,
+			.samples = vk::SampleCountFlagBits::e1,
+			.tiling = vk::ImageTiling::eOptimal,
+			.usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
+			.sharingMode = vk::SharingMode::eExclusive,
+			.initialLayout = vk::ImageLayout::eUndefined
+		},
+		vk::MemoryPropertyFlagBits::eDeviceLocal,
+		vk::ImageViewCreateInfo{
+			.viewType = vk::ImageViewType::e2D,
+			.format = format,
+			.subresourceRange = {
+				.aspectMask = vk::ImageAspectFlagBits::eColor,
+				.baseMipLevel = 0,
+				.levelCount = 1,
+				.baseArrayLayer = 0,
+				.layerCount = 1
+			}
+		}
+	);
+
+	vulkan::uploader::upload_image_2d(
+		config,
+		m_texture_image,
+		width, height,
+		m_image_data.pixels.data(),
+		data_size,
+		vk::ImageLayout::eShaderReadOnlyOptimal
+	);
+
+	vk::SamplerCreateInfo sampler_info;
+	sampler_info.maxLod = 1.0f;
+
+	switch (texture_profile) {
+	case profile::generic_repeat:
+		sampler_info.magFilter = vk::Filter::eLinear;
+		sampler_info.minFilter = vk::Filter::eLinear;
+		sampler_info.addressModeU = vk::SamplerAddressMode::eRepeat;
+		sampler_info.addressModeV = vk::SamplerAddressMode::eRepeat;
+		sampler_info.addressModeW = vk::SamplerAddressMode::eRepeat;
+		sampler_info.anisotropyEnable = vk::True;
+		sampler_info.maxAnisotropy = 16.0f;
+		break;
+	case profile::generic_clamp_to_edge:
+		sampler_info.magFilter = vk::Filter::eLinear;
+		sampler_info.minFilter = vk::Filter::eLinear;
+		sampler_info.addressModeU = vk::SamplerAddressMode::eClampToEdge;
+		sampler_info.addressModeV = vk::SamplerAddressMode::eClampToEdge;
+		sampler_info.addressModeW = vk::SamplerAddressMode::eClampToEdge;
+		break;
+	case profile::msdf:
+		sampler_info.magFilter = vk::Filter::eLinear;
+		sampler_info.minFilter = vk::Filter::eLinear;
+		sampler_info.addressModeU = vk::SamplerAddressMode::eClampToEdge;
+		sampler_info.addressModeV = vk::SamplerAddressMode::eClampToEdge;
+		sampler_info.addressModeW = vk::SamplerAddressMode::eClampToEdge;
+		break;
+	case profile::pixel_art:
+		sampler_info.magFilter = vk::Filter::eNearest;
+		sampler_info.minFilter = vk::Filter::eNearest;
+		sampler_info.addressModeU = vk::SamplerAddressMode::eClampToEdge;
+		sampler_info.addressModeV = vk::SamplerAddressMode::eClampToEdge;
+		sampler_info.addressModeW = vk::SamplerAddressMode::eClampToEdge;
+		break;
+	}
+	m_texture_sampler = config.device_data.device.createSampler(sampler_info);
+
+	m_image_data.pixels.clear();
+	m_image_data.pixels.shrink_to_fit();
 }
