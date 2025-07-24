@@ -18,7 +18,7 @@ namespace gse {
 		};
 
 		constexpr quaternion() : v{ 1, 0, 0, 0 } {}
-		constexpr quaternion(const unitless::vec_t<T, 4>& vec) : v(vec) {}
+		constexpr quaternion(const unitless::vec_t<T, 4>& vec) : v(vec.data()) {}
 		constexpr quaternion(const unitless::vec_t<T, 3>& vec, const T scalar) : v{ scalar, vec.x, vec.y, vec.z } {}
 		constexpr quaternion(const T scalar, const unitless::vec_t<T, 3>& vec) : v{ scalar, vec.x, vec.y, vec.z } {}
 		constexpr quaternion(T s, T x, T y, T z) : v{ s, x, y, z } {}
@@ -143,7 +143,7 @@ constexpr auto gse::operator*(const quat_t<T>& lhs, const T& rhs) -> quat_t<T> {
 
 template <typename T>
 constexpr auto gse::operator*(const T& lhs, const quat_t<T>& rhs) -> quat_t<T> {
-	return quat_t<T>(rhs.v * lhs);
+	return rhs * lhs;
 }
 
 template <typename T>

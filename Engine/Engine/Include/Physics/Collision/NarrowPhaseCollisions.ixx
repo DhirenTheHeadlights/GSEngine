@@ -2,6 +2,7 @@ export module gse.physics.narrow_phase_collisions;
 
 import std;
 
+import gse.core.main_clock;
 import gse.graphics.debug_rendering;
 import gse.physics.motion_component;
 import gse.physics.bounding_box;
@@ -430,7 +431,7 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
         //console output "collision detected betweenb [name of object 1] [object 2]"
    /* std::cout << "collision detected" << std::endl;*/
 
-    //get_obb_overlap_vertices(object_collision_component.oriented_bounding_box, other_collision_component.oriented_bounding_box, contact_points);
+    get_obb_overlap_vertices(object_collision_component.oriented_bounding_box, other_collision_component.oriented_bounding_box, contact_points);
 	std::cout << "Contact points size: " << contact_points.size() << "\n";
     object_collision_component.collision_information.colliding = true;
     object_collision_component.collision_information.collision_normal = sat_res.normal;
@@ -566,32 +567,36 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
 	//	std::cout << "pre-collision velocity: " << object_motion_component->current_velocity.x.as_default_unit() << ", " << object_motion_component->current_velocity.y.as_default_unit() << ", " << object_motion_component->current_velocity.z.as_default_unit() << "\n";
 	//	std::cout << "pre-collision acceleration: " << object_motion_component->current_acceleration.x.as_default_unit() << ", " << object_motion_component->current_acceleration.y.as_default_unit() << ", " << object_motion_component->current_acceleration.z.as_default_unit() << "\n";
 	//	std::cout << "lever arm: " << r_a.x.as_default_unit() << ", " << r_a.y.as_default_unit() << ", " << r_a.z.as_default_unit() << "\n";
-	    if (relative_velocity_along_normal < 0.0f) {
-	        const float j = -(1.f + restitution) * relative_velocity_along_normal / denom;
-			//std::cout << "rotation term a: " << rot_term_a << "\n";
-			//std::cout << "rotation term b: " << rot_term_b << "\n";
-			//std::cout << "j: " << j << "\n";
-			//std::cout << "denom: " << denom << "\n";
-
-	        auto torque_impulse = gse::vec3<gse::torque>(cross(r_a.as<units::meters>(), collision_normal * j)) * 1500.f;
-	        //torque_impulse *= 3.f;
-	        //torque_impulse *= 1 / std::min(corrected_penetration, 0.0001f);
-	        //constexpr float epsilon_torque = 0.01f;
-	        //if (std::abs(torque_impulse.x.as_default_unit()) < epsilon_torque) {
-	        //    torque_impulse.x = epsilon_torque * std::copysign(1.0f, torque_impulse.x.as_default_unit());
-	        //}
-	        object_motion_component->current_torque += torque_impulse;
-	        //object_motion_component->current_velocity += vec3<velocity>(collision_normal * (j * inv_mass));
-		    gse::debug_renderer::add_debug_vector(object_collision_component.parent_id, contact_point, torque_impulse);
-			std::cout << "applied torque impulse: " << torque_impulse.x.as_default_unit() << ", " << torque_impulse.y.as_default_unit() << ", " << torque_impulse.z.as_default_unit() << "\n";
-
-	        //slightly adjust object angular acceleration in the direction of the torque impulse to prevent sticking
-			//object_motion_component->angular_acceleration += (torque_impulse / object_motion_component->moment_of_inertia);
-			
-	         
+        const gse::time dt = gse::main_clock::get_constant_update_time();
+    	if (relative_velocity_along_normal < 0.0f)
+        {
+            // ----- normal impulse -----
+            const float jn = -(1.f + restitution) * relative_velocity_along_normal / denom;
+            auto J = collision_normal * jn;                 // treat as "momentum-ish" vector
+            object_motion_component->current_velocity += gse::vec3<gse::velocity>(J * inv_mass);
 
 
-	    }
+            // angular impulse -> torque accumulator
+            const auto L = cross(r_a.as<units::meters>(), J);         // angular momentum
+            const auto torque_impulse = gse::vec3<gse::torque>(L / dt.as_default_unit());
+            //torque_impulse *= 3.f;
+            //torque_impulse *= 1 / std::min(corrected_penetration, 0.0001f);
+            //constexpr float epsilon_torque = 0.01f;
+            //if (std::abs(torque_impulse.x.as_default_unit()) < epsilon_torque) {
+            //    torque_impulse.x = epsilon_torque * std::copysign(1.0f, torque_impulse.x.as_default_unit());
+            //}
+            object_motion_component->current_torque += torque_impulse;
+            //object_motion_component->current_velocity += vec3<velocity>(collision_normal * (j * inv_mass));
+            gse::debug_renderer::add_debug_vector(object_collision_component.parent_id, contact_point, torque_impulse);
+            std::cout << "applied torque impulse: " << torque_impulse.x.as_default_unit() << ", " << torque_impulse.y.as_default_unit() << ", " << torque_impulse.z.as_default_unit() << "\n";
+
+            //slightly adjust object angular acceleration in the direction of the torque impulse to prevent sticking
+            //object_motion_component->angular_acceleration += (torque_impulse / object_motion_component->moment_of_inertia);
+
+
+
+
+        }
 
 	}
     object_collision_component.collision_information.collision_point = main_contact_point;

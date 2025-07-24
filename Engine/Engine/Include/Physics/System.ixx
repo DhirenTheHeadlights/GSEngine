@@ -139,9 +139,7 @@ auto update_position(gse::physics::motion_component& component) -> void {
 auto update_rotation(gse::physics::motion_component& component) -> void {
 	// 1) Grab a fixed dt
 	const gse::time dt = gse::main_clock::get_constant_update_time();
-	if (component.current_torque.x.as_default_unit() > 1.f) {
-		std::cout << "breakpoint";
-	}
+
 	// 2) Turn current_torque into an angular?acceleration increment
 	//    (for a uniform inertia scalar; for a full tensor use get_inverse_inertia_tensor_world())
 	component.angular_acceleration +=
@@ -174,9 +172,6 @@ auto update_obb(const gse::physics::motion_component& motion_component) {
 	if (auto* collision_component = gse::registry::get_component_ptr<gse::physics::collision_component>(motion_component.parent_id); collision_component) {
 		
 		auto& obb = collision_component->oriented_bounding_box;
-		if (obb.orientation != gse::quat(1, 0, 0, 0)) {
-			std::cerr << "breakpoint!!!!!!!";
-		}
 		obb.center = motion_component.current_position;
 		obb.orientation = motion_component.orientation;
 		obb.update_axes();
