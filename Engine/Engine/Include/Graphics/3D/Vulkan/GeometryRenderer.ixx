@@ -289,83 +289,87 @@ auto gse::renderer::geometry::render(const std::span<std::reference_wrapper<regi
 		.pDepthAttachment = &depth_attachment
 	};
 
-	vulkan::render(config, rendering_info,
-	               [&] {
-		               m_context.camera().update_camera_vectors();
-		               if (!window::is_mouse_visible()) m_context.camera().process_mouse_movement(window::get_mouse_delta_rel_top_left());
+	vulkan::render(
+		config, 
+		rendering_info,
+		[&] {
+			m_context.camera().update_camera_vectors();
+			if (!window::is_mouse_visible()) m_context.camera().process_mouse_movement(window::get_mouse_delta_rel_top_left());
 
-		               if (!registry::any_components<render_component>(registries)) {
-			               return;
-		               }
+			if (!registry::any_components<render_component>(registries)) {
+				return;
+			}
 
-		               m_shader->set_uniform("camera_ubo.view", m_context.camera().view(), m_ubo_allocations.at("camera_ubo").allocation);
-		               m_shader->set_uniform("camera_ubo.proj", m_context.camera().projection(), m_ubo_allocations.at("camera_ubo").allocation);
+			m_shader->set_uniform("camera_ubo.view", m_context.camera().view(), m_ubo_allocations.at("camera_ubo").allocation);
+			m_shader->set_uniform("camera_ubo.proj", m_context.camera().projection(), m_ubo_allocations.at("camera_ubo").allocation);
 
-		               command.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
+			command.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
 
-		               const vk::DescriptorSet descriptor_set[] = { m_descriptor_set };
+			const vk::DescriptorSet descriptor_set[] = { m_descriptor_set };
 
-		               command.bindDescriptorSets(
-			               vk::PipelineBindPoint::eGraphics,
-			               m_pipeline_layout,
-			               0,
-			               vk::ArrayProxy<const vk::DescriptorSet>(1, descriptor_set),
-			               {}
-		               );
+			command.bindDescriptorSets(
+				vk::PipelineBindPoint::eGraphics,
+				m_pipeline_layout,
+				0,
+				vk::ArrayProxy<const vk::DescriptorSet>(1, descriptor_set),
+				{}
+			);
 
-		               std::unordered_map<std::string, std::span<const std::byte>> push_constants = {};
+			std::unordered_map<std::string, std::span<const std::byte>> push_constants = {};
 
-		               auto calculate_center_of_mass = [](const std::vector<model_instance>& models) -> vec3<length> {
-			               vec3<length> sum;
-			               int number_of_meshes = 0;
+			auto calculate_center_of_mass = [](const std::vector<model_instance>& models) -> vec3<length> {
+				vec3<length> sum;
+				int number_of_meshes = 0;
 
-			               for (const auto& instance : models) {
-				               for (const auto& mesh : instance.handle()->meshes()) {
-					               sum += mesh.center_of_mass;
-				               }
-				               number_of_meshes += static_cast<int>(instance.handle()->meshes().size());
-			               }
+				for (const auto& instance : models) {
+					for (const auto& mesh : instance.handle()->meshes()) {
+						sum += mesh.center_of_mass;
+					}
+					number_of_meshes += static_cast<int>(instance.handle()->meshes().size());
+				}
 
-			               return number_of_meshes > 0 ? sum / static_cast<float>(number_of_meshes) : vec3<length>{0, 0, 0};
-		               };
+				return number_of_meshes > 0 ? sum / static_cast<float>(number_of_meshes) : vec3<length>{ 0, 0, 0 };
+				};
 
-		               for (const auto& registry : registries) {
-			               for (auto& component : registry.get().linked_objects<render_component>()) {
-				               const auto pos = registry.get().linked_object<physics::motion_component>(component.owner_id()).current_position;
+			for (const auto& registry : registries) {
+				for (auto& component : registry.get().linked_objects<render_component>()) {
+					const auto pos = registry.get().linked_object<physics::motion_component>(component.owner_id()).current_position;
 
-				               if (!component.has_calculated_com) {
-					               component.center_of_mass = calculate_center_of_mass(component.models);
-				               }
+					if (!component.has_calculated_com) {
+						component.center_of_mass = calculate_center_of_mass(component.models);
+					}
 
-				               for (auto& model_handle : component.models) {
-					               model_handle.set_position(pos);
+					for (auto& model_handle : component.models) {
+						if (!model_handle.handle().valid()) continue;
 
-					               for (const auto& entry : model_handle.render_queue_entries()) {
-						               push_constants["model"] = std::as_bytes(std::span{ &entry.model_matrix, 1 });
+						model_handle.set_position(pos);
 
-						               m_shader->push(
-							               command,
-							               m_pipeline_layout,
-							               "pc",
-							               push_constants,
-							               vk::ShaderStageFlagBits::eVertex
-						               );
+						for (const auto& entry : model_handle.render_queue_entries()) {
+							push_constants["model"] = std::as_bytes(std::span{ &entry.model_matrix, 1 });
 
-						               if (const auto& mesh = entry.model->meshes()[entry.index]; mesh.material.valid()) {
-							               m_shader->push(
-								               command,
-								               m_pipeline_layout,
-								               "diffuse_sampler",
-								               mesh.material->diffuse_texture->descriptor_info()
-							               );
+							m_shader->push(
+								command,
+								m_pipeline_layout,
+								"pc",
+								push_constants,
+								vk::ShaderStageFlagBits::eVertex
+							);
 
-							               mesh.bind(command);
-							               mesh.draw(command);
-						               }
-					               }
-				               }
-			               }
-		               }
-	               }
+							if (const auto& mesh = entry.model->meshes()[entry.index]; mesh.material.valid()) {
+								m_shader->push(
+									command,
+									m_pipeline_layout,
+									"diffuse_sampler",
+									mesh.material->diffuse_texture->descriptor_info()
+								);
+
+								mesh.bind(command);
+								mesh.draw(command);
+							}
+						}
+					}
+				}
+			}
+		}
 	);
 }

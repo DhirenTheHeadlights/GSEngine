@@ -655,11 +655,13 @@ auto gse::hook<gse::entity>::remove() const -> void {
 
 template <typename T>
 auto gse::hook<gse::entity>::component() -> T& {
+	assert(m_registry->active(owner_id()), std::format("Cannot access component of type {} for entity with id {}: it is not active.", typeid(T).name(), owner_id()));
 	return m_registry->linked_object<T>(owner_id());
 }
 
 template <typename T>
 auto gse::hook<gse::entity>::try_component() -> T* {
+	assert(m_registry->exists(owner_id()), std::format("Cannot access component of type {} for entity with id {}: it does not exist.", typeid(T).name(), owner_id()));
 	return m_registry->try_linked_object<T>(owner_id());
 }
 

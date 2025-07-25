@@ -156,7 +156,7 @@ auto gse::renderer::lighting::initialize() -> void {
 		.rasterizerDiscardEnable = vk::False,
 		.polygonMode = vk::PolygonMode::eFill,
 		.cullMode = vk::CullModeFlagBits::eNone,
-		.frontFace = vk::FrontFace::eClockwise,
+		.frontFace = vk::FrontFace::eCounterClockwise,
 		.depthBiasEnable = vk::False,
 		.depthBiasConstantFactor = 0.0f,
 		.depthBiasClamp = 0.0f,

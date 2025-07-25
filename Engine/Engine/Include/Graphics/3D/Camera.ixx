@@ -47,7 +47,6 @@ auto gse::camera::process_mouse_movement(const vec2<length>& offset) -> void {
 	m_yaw += degrees(transformed_offset.x.as_default_unit());
 	m_pitch += degrees(transformed_offset.y.as_default_unit());
 	m_pitch = std::clamp(m_pitch, degrees(-89.0f), degrees(89.0f));
-	update_camera_vectors();
 }
 
 auto gse::camera::update_camera_vectors() -> void {

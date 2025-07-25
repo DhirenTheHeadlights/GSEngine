@@ -13,6 +13,9 @@ export namespace gs {
 				.with<gse::box>({
 					.initial_position = gse::vec::meters(0.f, 0.f, 0.f),
 					.size = gse::vec::meters(10.f, 10.f, 10.f)
+				})
+				.with<positioned_object_hook>({
+					.position = gse::vec::meters(0.f, 0.f, 0.f)
 				});
 
 			build("Free Cam")
@@ -22,7 +25,11 @@ export namespace gs {
 		}
 	private:
 		struct positioned_object_hook final : hook<gse::entity> {
-			positioned_object_hook(const gse::id& owner_id, gse::registry* reg, const gse::vec3<gse::length> position) : hook(owner_id, reg), position(position) {}
+			struct params {
+				gse::vec3<gse::length> position;
+			};
+
+			positioned_object_hook(const gse::id& owner_id, gse::registry* reg, const params& p) : hook(owner_id, reg), position(p.position) {}
 
 			gse::vec3<gse::length> position;
 
