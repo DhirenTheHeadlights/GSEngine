@@ -6,60 +6,59 @@ import gse.assert;
 import gse.physics.math;
 
 export namespace gse {
-    class id;
+	class id;
 	using uuid = std::uint64_t;
 
-    auto generate_id(std::string_view tag) -> id;
+	auto generate_id(std::string_view tag) -> id;
 	auto find(uuid number) -> id;
 	auto find(std::string_view tag) -> id;
 	auto exists(uuid number) -> bool;
 	auto exists(std::string_view tag) -> bool;
 
-    class id {
-    public:
+	class id {
+	public:
 		id() = default;
-		auto operator==(const id& other) const -> bool;
+		auto operator==(const id& other) const -> bool {
+			assert(exists() && other.exists(), std::format("Cannot compare invalid gse::id"));
+			return m_number == other.m_number;
+		}
 
-		auto number() const -> uuid;
-		auto tag() const -> std::string;
-		auto exists() const -> bool { return m_number < std::numeric_limits<uuid>::max(); }
-    private:
-        explicit id(uuid id, const std::string& tag);
+		auto number() const -> uuid { return m_number; }
+		auto tag() const -> const std::string& { return m_tag; }
+		auto exists() const -> bool { return m_number != std::numeric_limits<uuid>::max(); }
+
+	private:
+		explicit id(const uuid id, std::string tag) : m_number(id), m_tag(std::move(tag)) {}
 
 		uuid m_number = std::numeric_limits<uuid>::max();
 		std::string m_tag;
 
 		friend auto generate_id(std::string_view tag) -> id;
-    };
+	};
 
-    class identifiable {
+	class identifiable {
 	public:
-	    explicit identifiable(const std::string& tag) : m_id(generate_id(tag)) {}
+		explicit identifiable(const std::string& tag) : m_id(generate_id(tag)) {}
 		explicit identifiable(const std::filesystem::path& path) : m_id(generate_id(filename(path))) {}
 
-		auto id() const -> id { return m_id; }
+		auto id() const -> const gse::id& { return m_id; }
 		auto operator==(const identifiable& other) const -> bool = default;
 	private:
 		gse::id m_id;
 
 		static auto filename(const std::filesystem::path& path) -> std::string {
 			std::string name = path.filename().string();
-			while (true) {
-				size_t dot_pos = name.find_last_of('.');
-				if (dot_pos == std::string::npos || dot_pos == 0) {
-					break;
-				}
-				name = name.substr(0, dot_pos);
+			if (const size_t dot_pos = name.find_first_of('.'); dot_pos != std::string::npos) {
+				return name.substr(0, dot_pos);
 			}
 			return name;
 		}
-    };
+	};
 
 	class identifiable_owned {
 	public:
-		explicit identifiable_owned(const id& tag) : m_owner_id(tag) {}
-
-		auto owner_id() const -> id { return m_owner_id; }
+		explicit identifiable_owned(const id& owner_id) : m_owner_id(owner_id) {}
+		auto owner_id() const -> const id& { return m_owner_id; }
 		auto operator==(const identifiable_owned& other) const -> bool = default;
 	private:
 		id m_owner_id;
@@ -69,13 +68,10 @@ export namespace gse {
 	public:
 		identifiable_owned_only_uuid() = default;
 		explicit identifiable_owned_only_uuid(const id& owner_id) : m_owner_id(owner_id.number()) {}
-
 		auto owner_id() const -> id { return find(m_owner_id); }
 		auto operator==(const identifiable_owned_only_uuid& other) const -> bool = default;
 	protected:
-		auto internal_set_owner_id(const id& owner_id) -> void {
-			m_owner_id = owner_id.number();
-		}
+		auto internal_set_owner_id(const id& owner_id) -> void { m_owner_id = owner_id.number(); }
 	private:
 		uuid m_owner_id;
 	};
@@ -84,15 +80,98 @@ export namespace gse {
 
 	template <typename T>
 	concept is_identifiable = std::derived_from<T, identifiable> || std::same_as<T, entity>;
+
+	template <typename T, typename PrimaryIdType>
+	class id_mapped_collection {
+	public:
+		auto add(const PrimaryIdType& id, T object) -> T* {
+			if (m_map.contains(id)) {
+				return nullptr;
+			}
+
+			const size_t new_index = m_items.size();
+			m_map[id] = new_index;
+			m_ids.push_back(id);
+			return &m_items.emplace_back(std::move(object));
+		}
+
+		auto remove(const PrimaryIdType& id) -> void {
+			const auto it = m_map.find(id);
+			if (it == m_map.end()) {
+				return;
+			}
+
+			const size_t index_to_remove = it->second;
+
+			if (const size_t last_index = m_items.size() - 1; index_to_remove != last_index) {
+				const PrimaryIdType& last_id = m_ids.back();
+				m_items[index_to_remove] = std::move(m_items.back());
+				m_ids[index_to_remove] = std::move(m_ids.back());
+				m_map[last_id] = index_to_remove; 
+			}
+
+			m_map.erase(id);
+			m_items.pop_back();
+			m_ids.pop_back();
+		}
+
+		auto pop(const PrimaryIdType& id) -> std::optional<T> {
+			const auto it = m_map.find(id);
+			if (it == m_map.end()) {
+				return std::nullopt;
+			}
+
+			const size_t index_to_pop = it->second;
+			T popped_object = std::move(m_items[index_to_pop]);
+
+			remove(id);
+
+			return popped_object;
+		}
+
+		auto try_get(const PrimaryIdType& id) -> T* {
+			if (const auto it = m_map.find(id); it != m_map.end()) {
+				return &m_items[it->second];
+			}
+			return nullptr;
+		}
+
+		auto try_get(const PrimaryIdType& id) const -> const T* {
+			if (const auto it = m_map.find(id); it != m_map.end()) {
+				return &m_items[it->second];
+			}
+			return nullptr;
+		}
+
+		auto items() -> std::span<T> {
+			return m_items;
+		}
+
+		auto contains(const PrimaryIdType& id) const -> bool {
+			return m_map.contains(id);
+		}
+
+		auto size() const -> size_t {
+			return m_items.size();
+		}
+
+		auto clear() noexcept -> void {
+			m_items.clear();
+			m_ids.clear();
+			m_map.clear();
+		}
+
+	private:
+		std::vector<T> m_items;
+		std::vector<PrimaryIdType> m_ids;
+		std::unordered_map<PrimaryIdType, size_t> m_map;
+	};
 }
 
 template <>
 struct std::formatter<gse::id> {
-	constexpr auto parse(std::format_parse_context& ctx) -> std::format_parse_context::iterator {
-		return ctx.begin();
-	}
-
-	auto format(const gse::id& value, std::format_context& ctx) const -> std::format_context::iterator {
+	constexpr auto parse(std::format_parse_context& ctx) { return ctx.begin(); }
+	auto format(const gse::id& value, std::format_context& ctx) const {
 		return std::format_to(ctx.out(), "[{}: {}]", value.number(), value.tag());
 	}
 };
@@ -104,111 +183,62 @@ struct std::hash<gse::id> {
 	}
 };
 
-struct transparent_hash {
-	using is_transparent = void; // Indicates support for heterogeneous lookup
-
-	auto operator()(const std::string& s) const noexcept -> std::size_t {
-		return std::hash<std::string_view>{}(s);
-	}
-
-	auto operator()(const std::string_view sv) const noexcept -> std::size_t {
-		return std::hash<std::string_view>{}(sv);
-	}
-};
-
-struct transparent_equal {
-	using is_transparent = void; // Indicates support for heterogeneous lookup
-
-	auto operator()(const std::string& lhs, const std::string& rhs) const noexcept -> bool {
-		return lhs == rhs;
-	}
-
-	auto operator()(const std::string_view lhs, const std::string_view rhs) const noexcept -> bool {
-		return lhs == rhs;
-	}
-
-	auto operator()(const std::string& lhs, const std::string_view rhs) const noexcept -> bool {
-		return lhs == rhs;
-	}
-
-	auto operator()(const std::string_view lhs, const std::string& rhs) const noexcept -> bool {
-		return lhs == rhs;
-	}
-};
-
 namespace gse {
-	auto ids() -> std::vector<id>& {
-		static std::vector<id> s_ids;
-		return s_ids;
-	}
+	struct transparent_hash {
+		using is_transparent = void;
+		auto operator()(std::string_view sv) const noexcept { return std::hash<std::string_view>{}(sv); }
+	};
+	struct transparent_equal {
+		using is_transparent = void;
+		auto operator()(std::string_view a, std::string_view b) const noexcept { return a == b; }
+	};
 
-	auto id_map() -> std::unordered_map<uuid, id>& {
-		static std::unordered_map<uuid, id> s_id_map;
-		return s_id_map;
-	}
+	struct id_registry {
+		id_mapped_collection<id, uuid> by_uuid;
+		std::unordered_map<std::string, uuid, transparent_hash, transparent_equal> tag_to_uuid;
+	};
 
-	auto tag_map() -> std::unordered_map<std::string, id, transparent_hash, transparent_equal>& {
-		static std::unordered_map<std::string, id, transparent_hash, transparent_equal> s_tag_map;
-		return s_tag_map;
-	}
-
-	auto register_object(const id& obj, const std::string& tag) -> void {
-		id_map().insert_or_assign(obj.number(), obj);
-		tag_map().insert_or_assign(tag, obj);
+	auto id_registry() -> id_registry& {
+		static class id_registry instance;
+		return instance;
 	}
 }
 
 auto gse::generate_id(const std::string_view tag) -> id {
-	const uuid new_id = ids().size();
+	auto& registry = id_registry();
+	const uuid new_uuid = registry.by_uuid.size();
 
 	std::string new_tag(tag);
-	const auto& map = tag_map();
-	if (tag_map().contains(new_tag)) {
-		new_tag += std::to_string(new_id);
+	if (registry.tag_to_uuid.contains(new_tag)) {
+		new_tag += std::to_string(new_uuid);
 	}
 
-	const id id(new_id, new_tag);
-	ids().push_back(id);
-	register_object(id, new_tag);
+	id new_id(new_uuid, std::move(new_tag));
 
-	return id;
+	registry.by_uuid.add(new_uuid, new_id);
+	registry.tag_to_uuid[new_id.tag()] = new_uuid;
+
+	return new_id;
 }
 
 auto gse::find(const uuid number) -> id {
-	const auto it = id_map().find(number);
-	assert(it != id_map().end(), std::format("ID {} not found", number));
-	return it->second;
+	auto& [by_uuid, tag_to_uuid] = id_registry();
+	id* found_id = by_uuid.try_get(number);
+	assert(found_id, std::format("ID {} not found", number));
+	return *found_id;
 }
 
 auto gse::find(const std::string_view tag) -> id {
-	const auto it = tag_map().find(tag);
-	assert(it != tag_map().end(), std::format("Tag '{}' not found", tag));
-	return it->second;
+	auto& [by_uuid, tag_to_uuid] = id_registry();
+	const auto it = tag_to_uuid.find(tag);
+	assert(it != tag_to_uuid.end(), std::format("Tag '{}' not found", tag));
+	return find(it->second);
 }
 
 auto gse::exists(const uuid number) -> bool {
-	return id_map().contains(number);
+	return id_registry().by_uuid.contains(number);
 }
 
 auto gse::exists(const std::string_view tag) -> bool {
-	return tag_map().contains(tag);
-}
-
-gse::id::id(const uuid id, const std::string& tag) : m_number(id), m_tag(tag) {}
-
-auto gse::id::operator==(const id& other) const -> bool {
-	assert(
-		exists() && other.exists(),
-		std::format("Cannot compare invalid gse::id: {} and {}", tag(), other.tag())
-	);
-
-	return m_number == other.m_number;
-}
-
-auto gse::id::number() const -> uuid {
-	return m_number;
-}
-
-auto gse::id::tag() const -> std::string {
-	return m_tag;
+	return id_registry().tag_to_uuid.contains(tag);
 }

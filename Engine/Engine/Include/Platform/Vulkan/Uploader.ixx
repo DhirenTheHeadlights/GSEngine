@@ -11,7 +11,7 @@ import gse.physics.math;
 
 export namespace gse::vulkan::uploader {
     auto upload_image_2d(
-        const config& config,
+        config& config,
         persistent_allocator::image_resource& resource,
         std::uint32_t width,
         std::uint32_t height,
@@ -21,7 +21,7 @@ export namespace gse::vulkan::uploader {
     ) -> void;
 
     auto upload_image_layers(
-        const config& config,
+        config& config,
         persistent_allocator::image_resource& resource,
         std::uint32_t width,
         std::uint32_t height,
@@ -31,7 +31,7 @@ export namespace gse::vulkan::uploader {
     ) -> void;
 
     auto upload_image_3d(
-        const config& config,
+        config& config,
         persistent_allocator::image_resource& resource,
         std::uint32_t width,
         std::uint32_t height,
@@ -48,7 +48,7 @@ export namespace gse::vulkan::uploader {
     };
 
     auto upload_mip_mapped_image(
-        const vulkan::config& config,
+        config& config,
         persistent_allocator::image_resource& resource,
         const std::span<mip_level_data>& mip_levels,
         vk::ImageLayout final_layout = vk::ImageLayout::eShaderReadOnlyOptimal
@@ -68,9 +68,9 @@ export namespace gse::vulkan::uploader {
     ) -> void;
 }
 
-auto gse::vulkan::uploader::upload_image_2d(const config& config, persistent_allocator::image_resource& resource, const std::uint32_t width, const std::uint32_t height, const void* pixel_data, const size_t data_size, const vk::ImageLayout final_layout) -> void {
+auto gse::vulkan::uploader::upload_image_2d(config& config, persistent_allocator::image_resource& resource, const std::uint32_t width, const std::uint32_t height, const void* pixel_data, const size_t data_size, const vk::ImageLayout final_layout) -> void {
     auto [buffer, allocation] = persistent_allocator::create_buffer(
-        config.device_data,
+        config.device_config(),
         vk::BufferCreateInfo{
             .size = data_size,
             .usage = vk::BufferUsageFlagBits::eTransferSrc
@@ -115,12 +115,12 @@ auto gse::vulkan::uploader::upload_image_2d(const config& config, persistent_all
     );
 }
 
-auto gse::vulkan::uploader::upload_image_layers(const config& config, persistent_allocator::image_resource& resource, const std::uint32_t width, const std::uint32_t height, const std::vector<const void*>& face_data, const size_t bytes_per_face, const vk::ImageLayout final_layout) -> void {
+auto gse::vulkan::uploader::upload_image_layers(config& config, persistent_allocator::image_resource& resource, const std::uint32_t width, const std::uint32_t height, const std::vector<const void*>& face_data, const size_t bytes_per_face, const vk::ImageLayout final_layout) -> void {
     const std::uint32_t layer_count = static_cast<std::uint32_t>(face_data.size());
     const size_t total_size = layer_count * bytes_per_face;
 
     auto [buffer, allocation] = persistent_allocator::create_buffer(
-        config.device_data,
+        config.device_config(),
         vk::BufferCreateInfo{
             .size = total_size,
             .usage = vk::BufferUsageFlagBits::eTransferSrc
@@ -172,9 +172,9 @@ auto gse::vulkan::uploader::upload_image_layers(const config& config, persistent
     );
 }
 
-auto gse::vulkan::uploader::upload_image_3d(const config& config, persistent_allocator::image_resource& resource, const std::uint32_t width, const std::uint32_t height, const std::uint32_t depth, const void* pixel_data, const size_t data_size, const vk::ImageLayout final_layout) -> void {
+auto gse::vulkan::uploader::upload_image_3d(config& config, persistent_allocator::image_resource& resource, const std::uint32_t width, const std::uint32_t height, const std::uint32_t depth, const void* pixel_data, const size_t data_size, const vk::ImageLayout final_layout) -> void {
     auto [buffer, allocation] = persistent_allocator::create_buffer(
-        config.device_data,
+        config.device_config(),
         vk::BufferCreateInfo{
             .size = data_size,
             .usage = vk::BufferUsageFlagBits::eTransferSrc
@@ -215,7 +215,7 @@ auto gse::vulkan::uploader::upload_image_3d(const config& config, persistent_all
     );
 }
 
-auto gse::vulkan::uploader::upload_mip_mapped_image(const config& config, persistent_allocator::image_resource& resource, const std::span<mip_level_data>& mip_levels, const vk::ImageLayout final_layout) -> void {
+auto gse::vulkan::uploader::upload_mip_mapped_image(config& config, persistent_allocator::image_resource& resource, const std::span<mip_level_data>& mip_levels, const vk::ImageLayout final_layout) -> void {
     single_line_commands(
         config,
         [&](const vk::raii::CommandBuffer& cmd) {
@@ -234,7 +234,7 @@ auto gse::vulkan::uploader::upload_mip_mapped_image(const config& config, persis
 
             for (const auto& [pixels, size, mip_level] : mip_levels) {
                 auto staging = persistent_allocator::create_buffer(
-                    config.device_data,
+                    config.device_config(),
                     vk::BufferCreateInfo{
                         .size = mip_level,
                         .usage = vk::BufferUsageFlagBits::eTransferSrc,

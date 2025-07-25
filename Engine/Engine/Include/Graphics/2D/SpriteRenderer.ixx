@@ -23,10 +23,10 @@ export namespace gse::renderer {
 			unitless::vec4 uv_rect = { 0.0f, 0.0f, 1.0f, 1.0f };
 		};
 
-		explicit sprite(context& context, const std::span<std::reference_wrapper<registry>> registries) : base_renderer(context, registries) {}
+		explicit sprite(context& context) : base_renderer(context) {}
 
 		auto initialize() -> void override;
-		auto render() -> void override;
+		auto render(std::span<std::reference_wrapper<registry>> registries) -> void override;
 
 		auto queue(const command& cmd) -> void;
 	private:
@@ -50,15 +50,15 @@ auto gse::renderer::sprite::initialize() -> void {
 
 	const vk::Viewport viewport{
 		.x = 0.0f,
-		.y = static_cast<float>(config.swap_chain_data.extent.height),
-		.width = static_cast<float>(config.swap_chain_data.extent.width),
-		.height = -static_cast<float>(config.swap_chain_data.extent.height),
+		.y = static_cast<float>(config.swap_chain_config().extent.height),
+		.width = static_cast<float>(config.swap_chain_config().extent.width),
+		.height = -static_cast<float>(config.swap_chain_config().extent.height),
 		.minDepth = 0.0f,
 		.maxDepth = 1.0f
 	};
 	const vk::Rect2D scissor{
 		{ 0, 0 },
-		{ config.swap_chain_data.extent.width, config.swap_chain_data.extent.height }
+		{ config.swap_chain_config().extent.width, config.swap_chain_config().extent.height }
 	};
 
 	const vk::PipelineViewportStateCreateInfo viewport_state{
@@ -116,10 +116,10 @@ auto gse::renderer::sprite::initialize() -> void {
 		.pushConstantRangeCount = 1,
 		.pPushConstantRanges = &quad_pc_range
 	};
-	m_pipeline_layout = config.device_data.device.createPipelineLayout(quad_pipeline_layout_info);
+	m_pipeline_layout = config.device_config().device.createPipelineLayout(quad_pipeline_layout_info);
 
 	const auto vertex_input_info = element_shader->vertex_input_state();
-	const vk::Format color_format = config.swap_chain_data.surface_format.format;
+	const vk::Format color_format = config.swap_chain_config().surface_format.format;
 
 	const vk::PipelineRenderingCreateInfoKHR pipeline_rendering_info{
 		.colorAttachmentCount = 1,
@@ -139,7 +139,7 @@ auto gse::renderer::sprite::initialize() -> void {
 		.pColorBlendState = &color_blending,
 		.layout = *m_pipeline_layout
 	};
-	m_pipeline = config.device_data.device.createGraphicsPipeline(nullptr, pipeline_info);
+	m_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
 
 	struct vertex { raw2f pos; raw2f uv; };
 	constexpr vertex vertices[4] = {
@@ -151,27 +151,27 @@ auto gse::renderer::sprite::initialize() -> void {
 	constexpr std::uint32_t indices[6] = { 0, 2, 1, 0, 3, 2 };
 
 	m_vertex_buffer = vulkan::persistent_allocator::create_buffer(
-		config.device_data, 
+		config.device_config(), 
 		{ .size = sizeof(vertices), .usage = vk::BufferUsageFlagBits::eVertexBuffer },
 		vertices
 	);
 
 	m_index_buffer = vulkan::persistent_allocator::create_buffer(
-		config.device_data, 
+		config.device_config(), 
 		{ .size = sizeof(indices), .usage = vk::BufferUsageFlagBits::eIndexBuffer }, 
 		indices
 	);
 }
 
-auto gse::renderer::sprite::render() -> void {
+auto gse::renderer::sprite::render(std::span<std::reference_wrapper<registry>> registries) -> void {
 	if (m_draw_commands.empty()) {
 		return;
 	}
 
-	const auto& config = m_context.config();
-	const auto& command = config.frame_context.command_buffer;
+	auto& config = m_context.config();
+	const auto& command = config.frame_context().command_buffer;
 	const auto shader = m_shader.resolve();
-	const auto [width, height] = config.swap_chain_data.extent;
+	const auto [width, height] = config.swap_chain_config().extent;
 
 	const auto projection = orthographic(
 		meters(0.0f), meters(static_cast<float>(width)),
@@ -180,7 +180,7 @@ auto gse::renderer::sprite::render() -> void {
 	);
 
 	vk::RenderingAttachmentInfo color_attachment{
-		.imageView = *config.swap_chain_data.image_views[config.frame_context.image_index],
+		.imageView = *config.swap_chain_config().image_views[config.frame_context().image_index],
 		.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
 		.loadOp = vk::AttachmentLoadOp::eLoad,
 		.storeOp = vk::AttachmentStoreOp::eStore,
@@ -188,12 +188,44 @@ auto gse::renderer::sprite::render() -> void {
 	};
 
 	const vk::RenderingInfo rendering_info{
-		.renderArea = {{0, 0}, config.swap_chain_data.extent},
+		.renderArea = {{0, 0}, config.swap_chain_config().extent},
 		.layerCount = 1,
 		.colorAttachmentCount = 1,
 		.pColorAttachments = &color_attachment,
 		.pDepthAttachment = nullptr
 	};
+
+	if (window::is_mouse_visible()) {
+		constexpr auto size = unitless::vec2(20.0f, 20.0f);
+		constexpr auto thickness = 2.0f;
+
+		const auto center_pos = window::get_mouse_position_rel_bottom_left();
+		const auto blank_texture = m_context.get<texture>(find("blank"));
+		constexpr auto color = unitless::vec4{ 1.0f, 1.0f, 1.0f, 1.0f };
+
+		const auto half_size = size / 2.0f;
+		constexpr auto half_thickness = thickness / 2.0f;
+		const vec2<length> horizontal_pos = { center_pos.x - half_size.x, center_pos.y + half_thickness };
+		constexpr vec2<length> horizontal_size = { size.x, thickness };
+
+		queue({
+			.position = horizontal_pos,
+			.size = horizontal_size,
+			.color = color,
+			.texture = blank_texture
+			});
+
+		const vec2<length> vertical_pos = { center_pos.x - half_thickness, center_pos.y + half_size.y };
+		constexpr vec2<length> vertical_size = { thickness, size.y };
+
+		queue({
+			.position = vertical_pos,
+			.size = vertical_size,
+			.color = color,
+			.texture = blank_texture
+			});
+
+	}
 
 	vulkan::render(
 		config, 
@@ -204,7 +236,7 @@ auto gse::renderer::sprite::render() -> void {
 			command.bindIndexBuffer(*m_index_buffer.buffer, 0, vk::IndexType::eUint32);
 
 			for (auto& [position, size, color, texture, uv_rect] : m_draw_commands) {
-				if (texture.state() != resource::state::loaded) {
+				if (!texture.valid()) {
 					continue;
 				}
 

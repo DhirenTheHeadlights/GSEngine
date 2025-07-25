@@ -47,7 +47,7 @@ export namespace gse::window {
 	auto get_mouse_position_rel_top_left() -> unitless::vec2;
 	auto get_mouse_position_rel_bottom_left() -> unitless::vec2;
 	auto get_window_size() -> unitless::vec2i;
-	auto get_viewport_size(const vulkan::config::swap_chain_config& config) -> unitless::vec2i;
+	auto get_viewport_size(const vulkan::swap_chain_config& config) -> unitless::vec2i;
 
 	auto set_fbo(GLuint fbo_in, const unitless::vec2i& size) -> void;
 	auto set_mouse_pos_relative_to_window(const unitless::vec2i& position) -> void;
@@ -333,7 +333,7 @@ auto gse::window::get_window_size() -> unitless::vec2i {
 	return { x, y };
 }
 
-auto gse::window::get_viewport_size(const vulkan::config::swap_chain_config& config) -> unitless::vec2i {
+auto gse::window::get_viewport_size(const vulkan::swap_chain_config& config) -> unitless::vec2i {
 	return { static_cast<int>(config.extent.width), static_cast<int>(config.extent.height) };
 }
 

@@ -44,7 +44,7 @@ export namespace gse {
 
 		static auto compile() -> std::set<std::filesystem::path>;
 
-        auto load(renderer::context& context) -> void;
+        auto load(const renderer::context& context) -> void;
 
         auto unload() -> void;
 
@@ -226,8 +226,10 @@ auto gse::material::compile() -> std::set<std::filesystem::path> {
 	return resources;
 }
 
-auto gse::material::load(renderer::context& context) -> void {
-	assert(!path.empty(), std::format("Material load called on '{}' without a valid path.", id()));
+auto gse::material::load(const renderer::context& context) -> void {
+	if (path.empty()) {
+		return;
+	}
 
 	std::ifstream in_file(path, std::ios::binary);
 	assert(in_file.is_open(), std::format("Failed to open baked material file for reading: {}", path.string()));

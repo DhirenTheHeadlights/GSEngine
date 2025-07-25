@@ -54,9 +54,9 @@ export namespace gse {
 }
 
 export namespace gse::renderer {
-	auto initialize(std::span<std::reference_wrapper<registry>> registries) -> void;
+	auto initialize() -> void;
 	auto update() -> void;
-	auto render(const std::function<void()>& in_frame = {}) -> void;
+	auto render(std::vector<std::reference_wrapper<registry>> registries, const std::function<void()>& in_frame = {}) -> void;
 	auto shutdown() -> void;
 	auto camera() -> camera&;
 }
@@ -76,7 +76,7 @@ namespace gse::renderer {
 	}
 }
 
-auto gse::renderer::initialize(const std::span<std::reference_wrapper<registry>> registries) -> void {
+auto gse::renderer::initialize() -> void {
 	rendering_context.add_loader<texture>();
 	rendering_context.add_loader<model>();
 	rendering_context.add_loader<shader>();
@@ -85,10 +85,10 @@ auto gse::renderer::initialize(const std::span<std::reference_wrapper<registry>>
 
 	rendering_context.compile();
 
-	renderers.push_back(std::make_unique<geometry>(rendering_context, registries));
-	renderers.push_back(std::make_unique<lighting>(rendering_context, registries));
-	renderers.push_back(std::make_unique<sprite>(rendering_context, registries));
-	renderers.push_back(std::make_unique<text>(rendering_context, registries));
+	renderers.push_back(std::make_unique<geometry>(rendering_context));
+	renderers.push_back(std::make_unique<lighting>(rendering_context));
+	renderers.push_back(std::make_unique<sprite>(rendering_context));
+	renderers.push_back(std::make_unique<text>(rendering_context));
 
 	for (const auto& renderer : renderers) {
 		renderer->initialize();
@@ -109,19 +109,14 @@ auto gse::renderer::update() -> void {
 	gui::update();
 }
 
-auto gse::renderer::render(const std::function<void()>& in_frame) -> void {
+auto gse::renderer::render(std::vector<std::reference_wrapper<registry>> registries, const std::function<void()>& in_frame) -> void {
 	gui::render(rendering_context, renderer<sprite>(), renderer<text>());
+
 	begin_frame();
-
-	{
-		std::lock_guard lock(*rendering_context.config().command.pool_mutex);
-		std::lock_guard queue(*rendering_context.config().queue.mutex);
-		for (const auto& renderer : renderers) {
-			renderer->render();
-		}
-		in_frame();
+	for (const auto& renderer : renderers) {
+		renderer->render(registries);
 	}
-
+	in_frame();
 	end_frame();
 }
 
@@ -132,16 +127,16 @@ auto gse::renderer::end_frame() -> void {
 }
 
 auto gse::renderer::shutdown() -> void {
-	rendering_context.config().device_data.device.waitIdle();
+	rendering_context.config().device_config().device.waitIdle();
 	debug::shutdown_imgui();
 
 	for (auto& renderer : renderers) {
 		renderer.reset();
 	}
 
-	rendering_context.config().swap_chain_data.albedo_image = {};
-	rendering_context.config().swap_chain_data.normal_image = {};
-	rendering_context.config().swap_chain_data.depth_image = {};
+	rendering_context.config().swap_chain_config().albedo_image = {};
+	rendering_context.config().swap_chain_config().normal_image = {};
+	rendering_context.config().swap_chain_config().depth_image = {};
 
 	platform::shutdown();
 }

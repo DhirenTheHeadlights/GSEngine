@@ -16,8 +16,13 @@ namespace gs::arena {
 				.size = m_size
 			});
 
-			component<gse::physics::collision_component>().resolve_collisions = false;
-			component<gse::physics::motion_component>().affected_by_gravity = false;
+			configure_when_present([](gse::physics::motion_component& mc) {
+				mc.affected_by_gravity = false;
+			});
+
+			configure_when_present([](gse::physics::collision_component& cc) {
+				cc.resolve_collisions = false;
+			});
 		}
 	private:
 		gse::vec3<gse::length> m_size;

@@ -7,10 +7,10 @@ import :base_renderer;
 export namespace gse::renderer {
 	class lighting final : public base_renderer {
 	public:
-		explicit lighting(context& context, const std::span<std::reference_wrapper<registry>> registries) : base_renderer(context, registries) {}
+		explicit lighting(context& context) : base_renderer(context) {}
 
 		auto initialize() -> void override;
-		auto render() -> void override;
+		auto render(std::span<std::reference_wrapper<registry>> registries) -> void override;
 	private:
 		vk::raii::Pipeline m_pipeline = nullptr;
 		vk::raii::PipelineLayout m_pipeline_layout = nullptr;
@@ -30,7 +30,7 @@ auto gse::renderer::lighting::initialize() -> void {
 
 	auto lighting_layouts = m_shader->layouts();
 
-	m_descriptor_set = m_shader->descriptor_set(config.device_data.device, config.descriptor.pool, shader::set::binding_type::persistent);
+	m_descriptor_set = m_shader->descriptor_set(config.device_config().device, config.descriptor_config().pool, shader::set::binding_type::persistent);
 
 	const auto cam_block = m_shader->uniform_block("cam");
 
@@ -41,7 +41,7 @@ auto gse::renderer::lighting::initialize() -> void {
 	};
 
 	auto buffer = vulkan::persistent_allocator::create_buffer(
-		config.device_data,
+		config.device_config(),
 		cam_buffer_info
 	);
 
@@ -73,14 +73,14 @@ auto gse::renderer::lighting::initialize() -> void {
 		.maxLod = 1.0f,
 		.borderColor = vk::BorderColor::eFloatOpaqueWhite
 	};
-	m_buffer_sampler = config.device_data.device.createSampler(sampler_create_info);
+	m_buffer_sampler = config.device_config().device.createSampler(sampler_create_info);
 
 	const std::unordered_map<std::string, vk::DescriptorImageInfo> lighting_image_infos = {
 		{
 			"g_albedo",
 			{
 				.sampler = m_buffer_sampler,
-				.imageView = *config.swap_chain_data.albedo_image.view,
+				.imageView = *config.swap_chain_config().albedo_image.view,
 				.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
 			}
 		},
@@ -88,7 +88,7 @@ auto gse::renderer::lighting::initialize() -> void {
 			"g_normal",
 			{
 				.sampler = m_buffer_sampler,
-				.imageView = *config.swap_chain_data.normal_image.view,
+				.imageView = *config.swap_chain_config().normal_image.view,
 				.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
 			}
 		},
@@ -96,7 +96,7 @@ auto gse::renderer::lighting::initialize() -> void {
 			"g_depth",
 			{
 				.sampler = m_buffer_sampler,
-				.imageView = *config.swap_chain_data.depth_image.view,
+				.imageView = *config.swap_chain_config().depth_image.view,
 				.imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal
 			}
 		}
@@ -108,13 +108,13 @@ auto gse::renderer::lighting::initialize() -> void {
 		lighting_image_infos
 	);
 
-	config.device_data.device.updateDescriptorSets(writes, nullptr);
+	config.device_config().device.updateDescriptorSets(writes, nullptr);
 
 	const vk::PipelineLayoutCreateInfo pipeline_layout_info{
 		.setLayoutCount = static_cast<std::uint32_t>(lighting_layouts.size()),
 		.pSetLayouts = lighting_layouts.data()
 	};
-	m_pipeline_layout = config.device_data.device.createPipelineLayout(pipeline_layout_info);
+	m_pipeline_layout = config.device_config().device.createPipelineLayout(pipeline_layout_info);
 
 	auto lighting_stages = m_shader->shader_stages();
 
@@ -133,15 +133,15 @@ auto gse::renderer::lighting::initialize() -> void {
 	const vk::Viewport viewport{
 		.x = 0.0f,
 		.y = 0.0f,
-		.width = static_cast<float>(config.swap_chain_data.extent.width),
-		.height = static_cast<float>(config.swap_chain_data.extent.height),
+		.width = static_cast<float>(config.swap_chain_config().extent.width),
+		.height = static_cast<float>(config.swap_chain_config().extent.height),
 		.minDepth = 0.0f,
 		.maxDepth = 1.0f
 	};
 
 	const vk::Rect2D scissor{
 		.offset = { 0, 0 },
-		.extent = config.swap_chain_data.extent
+		.extent = config.swap_chain_config().extent
 	};
 
 	const vk::PipelineViewportStateCreateInfo viewport_state{
@@ -192,7 +192,7 @@ auto gse::renderer::lighting::initialize() -> void {
 		.blendConstants = std::array{ 0.0f, 0.0f, 0.0f, 0.0f }
 	};
 
-	const auto color_format = config.swap_chain_data.surface_format.format;
+	const auto color_format = config.swap_chain_config().surface_format.format;
 	const vk::PipelineRenderingCreateInfoKHR lighting_rendering_info{
 		.colorAttachmentCount = 1,
 		.pColorAttachmentFormats = &color_format
@@ -215,15 +215,15 @@ auto gse::renderer::lighting::initialize() -> void {
 		.basePipelineHandle = nullptr,
 		.basePipelineIndex = -1
 	};
-	m_pipeline = config.device_data.device.createGraphicsPipeline(nullptr, lighting_pipeline_info);
+	m_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, lighting_pipeline_info);
 }
 
-auto gse::renderer::lighting::render() -> void {
+auto gse::renderer::lighting::render(std::span<std::reference_wrapper<registry>> registries) -> void {
 	auto& config = m_context.config();
-	const auto command = config.frame_context.command_buffer;
+	const auto command = config.frame_context().command_buffer;
 
 	vulkan::uploader::transition_image_layout(
-		command, config.swap_chain_data.albedo_image,
+		command, config.swap_chain_config().albedo_image,
 		vk::ImageLayout::eShaderReadOnlyOptimal,
 		vk::ImageAspectFlagBits::eColor,
 		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
@@ -233,7 +233,7 @@ auto gse::renderer::lighting::render() -> void {
 	);
 
 	vulkan::uploader::transition_image_layout(
-		command, config.swap_chain_data.normal_image,
+		command, config.swap_chain_config().normal_image,
 		vk::ImageLayout::eShaderReadOnlyOptimal,
 		vk::ImageAspectFlagBits::eColor,
 		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
@@ -243,7 +243,7 @@ auto gse::renderer::lighting::render() -> void {
 	);
 
 	vulkan::uploader::transition_image_layout(
-		command, config.swap_chain_data.depth_image,
+		command, config.swap_chain_config().depth_image,
 		vk::ImageLayout::eDepthReadOnlyOptimal,
 		vk::ImageAspectFlagBits::eDepth,
 		vk::PipelineStageFlagBits2::eLateFragmentTests,
@@ -253,7 +253,7 @@ auto gse::renderer::lighting::render() -> void {
 	);
 
 	vk::RenderingAttachmentInfo color_attachment{
-		.imageView = *config.swap_chain_data.image_views[config.frame_context.image_index],
+		.imageView = *config.swap_chain_config().image_views[config.frame_context().image_index],
 		.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
 		.loadOp = vk::AttachmentLoadOp::eClear,
 		.storeOp = vk::AttachmentStoreOp::eStore,
@@ -261,7 +261,7 @@ auto gse::renderer::lighting::render() -> void {
 	};
 
 	const vk::RenderingInfo lighting_rendering_info{
-		.renderArea = { { 0, 0 }, config.swap_chain_data.extent },
+		.renderArea = { { 0, 0 }, config.swap_chain_config().extent },
 		.layerCount = 1,
 		.colorAttachmentCount = 1,
 		.pColorAttachments = &color_attachment,

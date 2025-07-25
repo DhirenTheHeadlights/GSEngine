@@ -10,7 +10,7 @@ import :system;
 
 export namespace gse::physics {
 	auto update(
-		std::span<std::reference_wrapper<registry>> registries,
+		const std::vector<std::reference_wrapper<registry>>& registries,
 		time fixed_update_time, 
 		time frame_time
 	) -> void;
@@ -19,7 +19,7 @@ export namespace gse::physics {
 constexpr gse::time g_max_time_step = gse::seconds(0.25);
 gse::time g_accumulator;
 
-auto gse::physics::update(const std::span<std::reference_wrapper<registry>> registries, const time fixed_update_time, time frame_time) -> void {
+auto gse::physics::update(const std::vector<std::reference_wrapper<registry>>& registries, const time fixed_update_time, time frame_time) -> void {
 	if (frame_time > g_max_time_step) {
 		frame_time = g_max_time_step;
 	}

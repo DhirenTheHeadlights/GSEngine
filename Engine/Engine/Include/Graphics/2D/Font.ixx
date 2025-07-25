@@ -56,7 +56,7 @@ export namespace gse {
 
 		static auto compile() -> std::set<std::filesystem::path>;
 
-        auto load(renderer::context& context) -> void;
+        auto load(const renderer::context& context) -> void;
 		auto unload() -> void;
 
         auto texture() const -> const texture*;
@@ -256,25 +256,7 @@ auto gse::font::compile() -> std::set<std::filesystem::path> {
     return resources;
 }
 
-auto read_file_binary(const std::filesystem::path& path, std::vector<unsigned char>& out_data) -> bool {
-    std::ifstream file(path, std::ios::binary);
-    if (!file.is_open()) {
-        std::cerr << "Failed to open font file: " << path << '\n';
-        return false;
-    }
-
-    file.seekg(0, std::ios::end);
-    const std::streampos size = file.tellg();
-    file.seekg(0, std::ios::beg);
-
-    out_data.resize(size);
-    file.read(reinterpret_cast<char*>(out_data.data()), size);
-    file.close();
-
-    return true;
-}
-
-auto gse::font::load(renderer::context& context) -> void {
+auto gse::font::load(const renderer::context& context) -> void {
     std::ifstream in_file(m_baked_path, std::ios::binary);
     assert(in_file.is_open(), std::format( 
         "Failed to open baked font file: {}",
@@ -309,12 +291,13 @@ auto gse::font::load(renderer::context& context) -> void {
 
     m_texture = std::make_unique<gse::texture>(
         std::format("msdf_font_atlas_{}", m_baked_path.stem().string()),
-        context.config(),
         atlas_pixel_data,
         unitless::vec2u{ atlas_width, atlas_height },
         channels,
         texture::profile::msdf
     );
+
+	m_texture->load(context);
 
     uint64_t glyph_count;
     in_file.read(reinterpret_cast<char*>(&glyph_count), sizeof(glyph_count));

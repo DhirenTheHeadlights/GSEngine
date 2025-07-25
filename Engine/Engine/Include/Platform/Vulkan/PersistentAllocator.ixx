@@ -9,19 +9,19 @@ import gse.assert;
 
 export namespace gse::vulkan::persistent_allocator {
 	auto allocate(
-		const config::device_config& config,
+		const device_config& config,
 		const vk::MemoryRequirements& requirements,
 		vk::MemoryPropertyFlags properties = vk::MemoryPropertyFlagBits::eDeviceLocal
 	) -> std::expected<allocation, std::string>;
 
 	auto create_buffer(
-		const config::device_config& config,
+		const device_config& config,
 		const vk::BufferCreateInfo& buffer_info,
 		const void* data = nullptr
 	) -> buffer_resource;
 
 	auto create_image(
-		const config::device_config& config,
+		const device_config& config,
 		const vk::ImageCreateInfo& info,
 		vk::MemoryPropertyFlags properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
 		const vk::ImageViewCreateInfo& view_info = {},
@@ -86,10 +86,10 @@ namespace gse::vulkan::persistent_allocator {
 }
 
 
-auto gse::vulkan::persistent_allocator::allocate(const config::device_config& config, const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties) -> std::expected<allocation, std::string> {
+auto gse::vulkan::persistent_allocator::allocate(const device_config& config, const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties) -> std::expected<allocation, std::string> {
 	std::lock_guard lock(get_pools_mutex());
 
-	const auto mem_props = get_memory_properties(config.physical_device);
+	const auto mem_props = config.physical_device.getMemoryProperties();
 
 	std::uint32_t memory_type_index = std::numeric_limits<std::uint32_t>::max();
 	for (std::uint32_t i = 0; i < mem_props.memoryTypeCount; ++i) {
@@ -192,7 +192,7 @@ auto gse::vulkan::persistent_allocator::allocate(const config::device_config& co
 	};
 }
 
-auto gse::vulkan::persistent_allocator::create_buffer(const config::device_config& config, const vk::BufferCreateInfo& buffer_info, const void* data) -> buffer_resource {
+auto gse::vulkan::persistent_allocator::create_buffer(const device_config& config, const vk::BufferCreateInfo& buffer_info, const void* data) -> buffer_resource {
 	auto buffer = config.device.createBuffer(buffer_info);
 	const vk::BufferMemoryRequirementsInfo2 buffer_requirements_info{
 		.buffer = *buffer
@@ -233,7 +233,7 @@ auto gse::vulkan::persistent_allocator::create_buffer(const config::device_confi
 	return { std::move(buffer), std::move(alloc) };
 }
 
-auto gse::vulkan::persistent_allocator::create_image(const config::device_config& config, const vk::ImageCreateInfo& info, const vk::MemoryPropertyFlags properties, const vk::ImageViewCreateInfo& view_info, const void* data) -> image_resource {
+auto gse::vulkan::persistent_allocator::create_image(const device_config& config, const vk::ImageCreateInfo& info, const vk::MemoryPropertyFlags properties, const vk::ImageViewCreateInfo& view_info, const void* data) -> image_resource {
 	vk::raii::Image image = config.device.createImage(info);
 	const auto requirement_info = vk::ImageMemoryRequirementsInfo2{ .image = image };
 	const auto requirements = config.device.getImageMemoryRequirements2(requirement_info).memoryRequirements;
