@@ -16,9 +16,14 @@ export namespace gs {
 				.size = m_size
 			});
 
-			component<gse::physics::collision_component>().resolve_collisions = false;
-			component<gse::physics::collision_component>().bounding_box = {};
-			component<gse::physics::motion_component>().affected_by_gravity = false;
+			configure_when_present([](gse::physics::collision_component& cc) {
+				cc.resolve_collisions = false;
+				cc.bounding_box = {};
+			});
+
+			configure_when_present([](gse::physics::motion_component& mc) {
+				mc.affected_by_gravity = false;
+			});
 
 			add_component<gse::directional_light_component>({
 				.color = gse::unitless::vec3(1.f),

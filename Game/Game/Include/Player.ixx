@@ -10,8 +10,8 @@ import std;
 
 namespace gs {
 	const std::unordered_map<int, gse::unitless::vec3> g_wasd{
-		{ GLFW_KEY_W, { 0.f, 0.f, 1.f } },
-		{ GLFW_KEY_S, { 0.f, 0.f, -1.f } },
+		{ GLFW_KEY_W, { 0.f, 0.f, -1.f } },
+		{ GLFW_KEY_S, { 0.f, 0.f, 1.f } },
 		{ GLFW_KEY_A, { -1.f, 0.f, 0.f } },
 		{ GLFW_KEY_D, { 1.f, 0.f, 0.f } }
 	};

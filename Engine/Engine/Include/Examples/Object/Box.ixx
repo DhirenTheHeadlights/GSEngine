@@ -42,48 +42,47 @@ export namespace gse {
 
             const std::vector<std::vector<vertex>> face_vertices = {
                 {
-                    { { -half_width, -half_height, -half_depth }, {  0.0f,  0.0f, -1.0f }, { 0.0f,          0.0f } },
-                    { { -half_width,  half_height, -half_depth }, {  0.0f,  0.0f, -1.0f }, { 0.0f,  repeat_interval } },
-                    { {  half_width,  half_height, -half_depth }, {  0.0f,  0.0f, -1.0f }, { repeat_interval, repeat_interval } },
-                    { {  half_width, -half_height, -half_depth }, {  0.0f,  0.0f, -1.0f }, { repeat_interval, 0.0f } }
+                    { { -half_width, -half_height, -half_depth }, {  0.0f,  0.0f, -1.0f }, { 0.0f,              0.0f } },
+                    { {  half_width, -half_height, -half_depth }, {  0.0f,  0.0f, -1.0f }, { repeat_interval,   0.0f } },
+                    { {  half_width,  half_height, -half_depth }, {  0.0f,  0.0f, -1.0f }, { repeat_interval,   repeat_interval } },
+                    { { -half_width,  half_height, -half_depth }, {  0.0f,  0.0f, -1.0f }, { 0.0f,              repeat_interval } }
                 },
 
                 {
-                    { { -half_width, -half_height,  half_depth }, {  0.0f,  0.0f,  1.0f }, { 0.0f,          0.0f } },
-                    { {  half_width, -half_height,  half_depth }, {  0.0f,  0.0f,  1.0f }, { repeat_interval, 0.0f } },
-                    { {  half_width,  half_height,  half_depth }, {  0.0f,  0.0f,  1.0f }, { repeat_interval, repeat_interval } },
-                    { { -half_width,  half_height,  half_depth }, {  0.0f,  0.0f,  1.0f }, { 0.0f,  repeat_interval } }
+                    { { -half_width, -half_height,  half_depth }, {  0.0f,  0.0f,  1.0f }, { 0.0f,              0.0f } },
+                    { { -half_width,  half_height,  half_depth }, {  0.0f,  0.0f,  1.0f }, { 0.0f,              repeat_interval } },
+                    { {  half_width,  half_height,  half_depth }, {  0.0f,  0.0f,  1.0f }, { repeat_interval,   repeat_interval } },
+                    { {  half_width, -half_height,  half_depth }, {  0.0f,  0.0f,  1.0f }, { repeat_interval,   0.0f } }
                 },
 
                 {
-                    { { -half_width, -half_height,  half_depth }, { -1.0f,  0.0f,  0.0f }, { 0.0f,          0.0f } },
-                    { { -half_width,  half_height,  half_depth }, { -1.0f,  0.0f,  0.0f }, { 0.0f,  repeat_interval } },
-                    { { -half_width,  half_height, -half_depth }, { -1.0f,  0.0f,  0.0f }, { repeat_interval, repeat_interval } },
-                    { { -half_width, -half_height, -half_depth }, { -1.0f,  0.0f,  0.0f }, { repeat_interval, 0.0f } }
+                    { { -half_width, -half_height,  half_depth }, { -1.0f,  0.0f,  0.0f }, { 0.0f,              0.0f } },
+                    { { -half_width, -half_height, -half_depth }, { -1.0f,  0.0f,  0.0f }, { repeat_interval,   0.0f } },
+                    { { -half_width,  half_height, -half_depth }, { -1.0f,  0.0f,  0.0f }, { repeat_interval,   repeat_interval } },
+                    { { -half_width,  half_height,  half_depth }, { -1.0f,  0.0f,  0.0f }, { 0.0f,              repeat_interval } }
                 },
 
                 {
-                    { {  half_width, -half_height, -half_depth }, {  1.0f,  0.0f,  0.0f }, { 0.0f,          0.0f } },
-                    { {  half_width,  half_height, -half_depth }, {  1.0f,  0.0f,  0.0f }, { 0.0f,  repeat_interval } },
-                    { {  half_width,  half_height,  half_depth }, {  1.0f,  0.0f,  0.0f }, { repeat_interval, repeat_interval } },
-                    { {  half_width, -half_height,  half_depth }, {  1.0f,  0.0f,  0.0f }, { repeat_interval, 0.0f } }
+                    { {  half_width, -half_height, -half_depth }, {  1.0f,  0.0f,  0.0f }, { 0.0f,              0.0f } },
+                    { {  half_width, -half_height,  half_depth }, {  1.0f,  0.0f,  0.0f }, { repeat_interval,   0.0f } },
+                    { {  half_width,  half_height,  half_depth }, {  1.0f,  0.0f,  0.0f }, { repeat_interval,   repeat_interval } },
+                    { {  half_width,  half_height, -half_depth }, {  1.0f,  0.0f,  0.0f }, { 0.0f,              repeat_interval } }
                 },
 
                 {
-                    { { -half_width,  half_height, -half_depth }, {  0.0f,  1.0f,  0.0f }, { 0.0f,          0.0f } },
-                    { { -half_width,  half_height,  half_depth }, {  0.0f,  1.0f,  0.0f }, { 0.0f,  repeat_interval } },
-                    { {  half_width,  half_height,  half_depth }, {  0.0f,  1.0f,  0.0f }, { repeat_interval, repeat_interval } },
-                    { {  half_width,  half_height, -half_depth }, {  0.0f,  1.0f,  0.0f }, { repeat_interval, 0.0f } }
+                    { { -half_width,  half_height, -half_depth }, {  0.0f,  1.0f,  0.0f }, { 0.0f,              0.0f } },
+                    { { -half_width,  half_height,  half_depth }, {  0.0f,  1.0f,  0.0f }, { 0.0f,              repeat_interval } },
+                    { {  half_width,  half_height,  half_depth }, {  0.0f,  1.0f,  0.0f }, { repeat_interval,   repeat_interval } },
+                    { {  half_width,  half_height, -half_depth }, {  0.0f,  1.0f,  0.0f }, { repeat_interval,   0.0f } }
                 },
 
                 {
-                    { { -half_width, -half_height,  half_depth }, {  0.0f, -1.0f,  0.0f }, { 0.0f,          0.0f } },
-                    { { -half_width, -half_height, -half_depth }, {  0.0f, -1.0f,  0.0f }, { 0.0f,  repeat_interval } },
-                    { {  half_width, -half_height, -half_depth }, {  0.0f, -1.0f,  0.0f }, { repeat_interval, repeat_interval } },
-                    { {  half_width, -half_height,  half_depth }, {  0.0f, -1.0f,  0.0f }, { repeat_interval, 0.0f } }
+                    { { -half_width, -half_height,  half_depth }, {  0.0f, -1.0f,  0.0f }, { 0.0f,              0.0f } },
+                    { { -half_width, -half_height, -half_depth }, {  0.0f, -1.0f,  0.0f }, { 0.0f,              repeat_interval } },
+                    { {  half_width, -half_height, -half_depth }, {  0.0f, -1.0f,  0.0f }, { repeat_interval,   repeat_interval } },
+                    { {  half_width, -half_height,  half_depth }, {  0.0f, -1.0f,  0.0f }, { repeat_interval,   0.0f } }
                 }
             };
-
 
             std::vector<std::uint32_t> face_indices = { 0, 1, 2, 2, 3, 0 };
 
