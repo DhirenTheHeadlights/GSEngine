@@ -37,7 +37,9 @@ export namespace gs {
 				.ignore_list_ids = { owner_id() }
 			});
 
-			component<gse::physics::motion_component>().affected_by_gravity = false;
+			configure_when_present([](gse::physics::motion_component& mc) {
+				mc.affected_by_gravity = false;
+			});
 		}
 
 		auto render() -> void override {

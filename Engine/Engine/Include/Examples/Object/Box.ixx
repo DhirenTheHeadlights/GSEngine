@@ -95,7 +95,7 @@ export namespace gse {
                     face_indices,
                     gse::queue<material>(
                         "concrete_bricks_material",
-                        gse::get<texture>("concrete_bricks_1.jpg")
+                        gse::get<texture>("concrete_bricks_1")
                     )
                 );
             }

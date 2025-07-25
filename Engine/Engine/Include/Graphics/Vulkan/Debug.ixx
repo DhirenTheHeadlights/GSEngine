@@ -13,7 +13,7 @@ import gse.utility;
 import gse.platform;
 
 export namespace gse::debug {
-    auto initialize_imgui(const vulkan::config& config) -> void;
+    auto initialize_imgui(vulkan::config& config) -> void;
     auto update_imgui() -> void;
     auto render_imgui(const vk::CommandBuffer& command_buffer) -> void;
 	auto shutdown_imgui() -> void;
@@ -58,7 +58,7 @@ auto gse::debug::set_imgui_save_file_path(const std::filesystem::path& path) -> 
     g_imgui_save_file_path = path;
 }
 
-auto gse::debug::initialize_imgui(const vulkan::config& config) -> void {
+auto gse::debug::initialize_imgui(vulkan::config& config) -> void {
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
 
@@ -71,7 +71,7 @@ auto gse::debug::initialize_imgui(const vulkan::config& config) -> void {
 
     ImGui_ImplGlfw_InitForVulkan(window::get_window(), true);
 
-    const auto color_format = static_cast<VkFormat>(config.swap_chain_data.surface_format.format);
+    const auto color_format = static_cast<VkFormat>(config.swap_chain_config().surface_format.format);
 
     const VkPipelineRenderingCreateInfoKHR pipeline_rendering_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR,
@@ -80,15 +80,15 @@ auto gse::debug::initialize_imgui(const vulkan::config& config) -> void {
     };
 
     ImGui_ImplVulkan_InitInfo init_info = {};
-    init_info.Instance = *config.instance_data.instance;
-    init_info.PhysicalDevice = *config.device_data.physical_device;
-    init_info.Device = *config.device_data.device;
-    init_info.QueueFamily = vulkan::find_queue_families(config.device_data.physical_device, config.instance_data.surface).graphics_family.value();
-    init_info.Queue = *config.queue.graphics;
+    init_info.Instance = *config.instance_config().instance;
+    init_info.PhysicalDevice = *config.device_config().physical_device;
+    init_info.Device = *config.device_config().device;
+    init_info.QueueFamily = vulkan::find_queue_families(config.device_config().physical_device, config.instance_config().surface).graphics_family.value();
+    init_info.Queue = *config.queue_config().graphics;
     init_info.PipelineCache = VK_NULL_HANDLE;
-    init_info.DescriptorPool = *config.descriptor.pool;
+    init_info.DescriptorPool = *config.descriptor_config().pool;
     init_info.MinImageCount = 2;
-	init_info.ImageCount = config.swap_chain_data.images.size();
+	init_info.ImageCount = config.swap_chain_config().images.size();
     init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     init_info.UseDynamicRendering = true;
     init_info.PipelineRenderingCreateInfo = pipeline_rendering_create_info;

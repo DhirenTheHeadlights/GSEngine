@@ -78,7 +78,7 @@ namespace gse::gui {
 
 auto gse::gui::initialize(renderer::context& context) -> void {
 	font = context.get<gse::font>("MonaspaceNeon-Regular");
-	blank = context.queue<texture>("blank", context, unitless::vec4(1, 1, 1, 1));
+	blank = context.queue<texture>("blank", unitless::vec4(1, 1, 1, 1));
 
 	const auto window_size = window::get_window_size();
 	const auto top_left = unitless::vec2(0.f, window_size.y);

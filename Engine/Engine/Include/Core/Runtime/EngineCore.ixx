@@ -42,7 +42,7 @@ namespace gse {
 	};
 
 	engine engine("GSEngine");
-	static constinit bool should_shutdown = false;
+	bool should_shutdown = false;
 }
 
 export namespace gse {
@@ -52,7 +52,9 @@ export namespace gse {
 		(engine.add_hook(std::make_unique<Args>(&engine)), ...);
 
 		engine.initialize();
-		engine.loop_while([]{ return !should_shutdown; });
+		engine.loop_while([] {
+			return !should_shutdown;
+		});
 	}
 
 	auto shutdown() -> void {

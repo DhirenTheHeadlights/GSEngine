@@ -9,25 +9,25 @@ import gse.utility;
 
 export namespace gse::vulkan::transient_allocator {
 	auto allocate(
-		const config::device_config& config, 
+		const device_config& config, 
 		const vk::MemoryRequirements& requirements, 
 		vk::MemoryPropertyFlags properties = vk::MemoryPropertyFlagBits::eDeviceLocal
 	) -> allocation;
 
 	auto bind(
-		config::device_config config, 
+		device_config config, 
 		vk::Buffer buffer, 
 		const allocation& alloc
 	) -> void;
 
 	auto bind(
-		config::device_config config, 
+		device_config config, 
 		vk::Image image, 
 		const allocation& alloc
 	) -> void;
 
 	auto create_buffer(
-		const config::device_config& config,
+		const device_config& config,
 		const vk::BufferCreateInfo& buffer_info,
 		vk::MemoryPropertyFlags properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
 		const void* data = nullptr
@@ -58,8 +58,8 @@ auto align_up(const vk::DeviceSize offset, const vk::DeviceSize alignment) -> vk
 	return (offset + alignment - 1) & ~(alignment - 1);
 }
 
-auto gse::vulkan::transient_allocator::allocate(const config::device_config& config, const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties) -> allocation {
-	const auto mem_properties = get_memory_properties(*config.physical_device);
+auto gse::vulkan::transient_allocator::allocate(const device_config& config, const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties) -> allocation {
+	const auto mem_properties = config.physical_device.getMemoryProperties();
 	auto req_memory_type_index = std::numeric_limits<std::uint32_t>::max();
 
 	for (std::uint32_t i = 0; i < mem_properties.memoryTypeCount; i++) {
@@ -105,7 +105,7 @@ auto gse::vulkan::transient_allocator::allocate(const config::device_config& con
 	return { *new_block.memory, requirements.size, aligned_offset, new_block.mapped ? static_cast<std::byte*>(new_block.mapped) + aligned_offset : nullptr };
 }
 
-auto gse::vulkan::transient_allocator::create_buffer(const config::device_config& config, const vk::BufferCreateInfo& buffer_info, const vk::MemoryPropertyFlags properties, const void* data) -> persistent_allocator::buffer_resource {
+auto gse::vulkan::transient_allocator::create_buffer(const device_config& config, const vk::BufferCreateInfo& buffer_info, const vk::MemoryPropertyFlags properties, const void* data) -> persistent_allocator::buffer_resource {
 	vk::raii::Buffer buffer = config.device.createBuffer(buffer_info);
 
 	const vk::BufferMemoryRequirementsInfo2 info{
@@ -113,15 +113,15 @@ auto gse::vulkan::transient_allocator::create_buffer(const config::device_config
 	};
 	const auto requirements = config.device.getBufferMemoryRequirements2(info).memoryRequirements;
 
-	const auto alloc = allocate(config, requirements, properties);
+	const auto [memory, size, offset, mapped] = allocate(config, requirements, properties);
 
-	buffer.bindMemory(alloc.memory, alloc.offset);
+	buffer.bindMemory(memory, offset);
 
-	if (data && alloc.mapped) {
-		std::memcpy(alloc.mapped, data, buffer_info.size);
+	if (data && mapped) {
+		std::memcpy(mapped, data, buffer_info.size);
 	}
 
-	return { std::move(buffer), { alloc.memory, alloc.size, alloc.offset, alloc.mapped, nullptr } };
+	return { std::move(buffer), { memory, size, offset, mapped, nullptr } };
 }
 
 auto gse::vulkan::transient_allocator::end_frame() -> void {

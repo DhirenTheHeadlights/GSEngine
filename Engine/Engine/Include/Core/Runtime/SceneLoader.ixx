@@ -30,7 +30,7 @@ namespace gse::scene_loader {
 	std::unordered_map<id, std::unique_ptr<gse::scene>> scenes;
 	std::unordered_map<id, std::function<bool()>> scene_triggers;
 
-	auto registries() -> std::span<std::reference_wrapper<registry>>;
+	auto registries() -> std::vector<std::reference_wrapper<registry>>;
 }
 
 auto gse::scene_loader::add(std::unique_ptr<gse::scene>& new_scene) -> void {
@@ -46,6 +46,7 @@ auto gse::scene_loader::remove(const id& scene_id) -> void {
 auto gse::scene_loader::activate(const id& scene_id) -> void {
 	if (const auto scene = scenes.find(scene_id); scene != scenes.end()) {
 		if (!scene->second->active()) {
+			scene->second->add_hook(std::make_unique<default_scene>(scene->second.get()));
 			scene->second->initialize();
 			scene->second->set_active(true);
 		}
@@ -61,7 +62,7 @@ auto gse::scene_loader::deactivate(const id& scene_id) -> void {
 }
 
 auto gse::scene_loader::initialize() -> void {
-	renderer::initialize(registries());
+	renderer::initialize();
 }
 
 auto gse::scene_loader::update() -> void {
@@ -80,12 +81,13 @@ auto gse::scene_loader::update() -> void {
 	physics::update(
 		registries(),
 		main_clock::const_update_time,
-		main_clock::raw_dt()
+		main_clock::dt()
 	);
 }
 
 auto gse::scene_loader::render() -> void {
 	renderer::render(
+		registries(),
 		[] {
 			for (const auto& scene : scenes | std::views::values) {
 				if (scene->active()) {
@@ -119,14 +121,12 @@ auto gse::scene_loader::scene(const id& scene_id) -> gse::scene* {
 	return nullptr;
 }
 
-auto gse::scene_loader::registries() -> std::span<std::reference_wrapper<registry>> {
-	std::vector<std::reference_wrapper<registry>> registries;
+auto gse::scene_loader::registries() -> std::vector<std::reference_wrapper<registry>> {
+	std::vector<std::reference_wrapper<registry>> active_registries;
 	for (const auto& scene : scenes | std::views::values) {
-		if (!scene->active()) {
-			continue;
+		if (scene->active()) {
+			active_registries.push_back(std::ref(scene->registry()));
 		}
-
-		registries.push_back(std::ref(scene->registry()));
 	}
-	return registries;
+	return active_registries;
 }

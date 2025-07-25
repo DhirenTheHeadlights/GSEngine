@@ -25,12 +25,6 @@ export namespace gs {
 				.with<gse::box>({
 					.initial_position = gse::vec::meters(20.f, -400.f, 20.f),
 					.size = gse::vec::meters(20.f, 20.f, 20.f)
-				})
-				.with<gse::sphere>({
-					.initial_position = gse::vec::meters(20.f, -400.f, 20.f),
-					.radius = gse::meters(5.f),
-					.sectors = 18,
-					.stacks = 10
 				});
 
 			build("Bigger Box")
@@ -62,7 +56,7 @@ export namespace gs {
 					if (gse::scene_loader::scene(gse::find("Scene1"))->active()) {
 						ImGui::Begin("Game Data");
 
-						ImGui::Text("FPS: %d", gse::main_clock::frame_rate());
+						ImGui::Text("FPS: %d", gse::main_clock::fps());
 
 						ImGui::End();
 					}

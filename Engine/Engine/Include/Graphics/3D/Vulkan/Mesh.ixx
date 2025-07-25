@@ -14,14 +14,6 @@ export namespace gse {
         raw2f tex_coords;
     };
 
-    struct mesh;
-
-    struct render_queue_entry {
-		const mesh* mesh;
-        mat4 model_matrix;
-		unitless::vec3 color;
-    };
-
 	struct mesh_data {
 		std::vector<vertex> vertices;
 		std::vector<std::uint32_t> indices;
@@ -34,7 +26,7 @@ export namespace gse {
 
         mesh(mesh&& other) noexcept;
 
-        auto initialize(const vulkan::config& config) -> void;
+        auto initialize(vulkan::config& config) -> void;
 
         auto bind(vk::CommandBuffer command_buffer) const -> void;
         auto draw(vk::CommandBuffer command_buffer) const -> void;
@@ -63,7 +55,7 @@ gse::mesh::mesh(mesh&& other) noexcept
     other.index_buffer = {};
 }
 
-auto gse::mesh::initialize(const vulkan::config& config) -> void {
+auto gse::mesh::initialize(vulkan::config& config) -> void {
     const vk::DeviceSize vertex_buffer_size = sizeof(vertex) * vertices.size();
 
     const vk::BufferCreateInfo vertex_staging_info{
@@ -72,7 +64,7 @@ auto gse::mesh::initialize(const vulkan::config& config) -> void {
     };
 
     const auto [vertex_buffer, vertex_allocation] = vulkan::persistent_allocator::create_buffer(
-        config.device_data,
+        config.device_config(),
         vertex_staging_info,
         vertices.data()
     );
@@ -82,7 +74,7 @@ auto gse::mesh::initialize(const vulkan::config& config) -> void {
         .usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst
     };
     this->vertex_buffer = vulkan::persistent_allocator::create_buffer(
-        config.device_data,
+        config.device_config(),
         vertex_final_info
     );
 
@@ -93,7 +85,7 @@ auto gse::mesh::initialize(const vulkan::config& config) -> void {
         .usage = vk::BufferUsageFlagBits::eTransferSrc
     };
     const auto [index_buffer, index_allocation] = vulkan::persistent_allocator::create_buffer(
-        config.device_data,
+        config.device_config(),
         index_staging_info,
         indices.data()
     );
@@ -103,7 +95,7 @@ auto gse::mesh::initialize(const vulkan::config& config) -> void {
         .usage = vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst
     };
     this->index_buffer = vulkan::persistent_allocator::create_buffer(
-        config.device_data,
+        config.device_config(),
         index_final_info
     );
 

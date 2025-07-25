@@ -25,10 +25,10 @@ export namespace gse::renderer {
 			std::optional<length> max_width = std::nullopt;
 		};
 
-		explicit text(context& context, const std::span<std::reference_wrapper<registry>> registries) : base_renderer(context, registries) {}
+		explicit text(context& context) : base_renderer(context) {}
 
 		auto initialize() -> void override;
-		auto render() -> void override;
+		auto render(std::span<std::reference_wrapper<registry>> registries) -> void override;
 
 		auto draw_text(const command& cmd) -> void;
 
@@ -53,16 +53,16 @@ auto gse::renderer::text::initialize() -> void {
 
 	const vk::Viewport viewport{
 		.x = 0.0f,
-		.y = static_cast<float>(config.swap_chain_data.extent.height),
-		.width = static_cast<float>(config.swap_chain_data.extent.width),
-		.height = -static_cast<float>(config.swap_chain_data.extent.height),
+		.y = static_cast<float>(config.swap_chain_config().extent.height),
+		.width = static_cast<float>(config.swap_chain_config().extent.width),
+		.height = -static_cast<float>(config.swap_chain_config().extent.height),
 		.minDepth = 0.0f,
 		.maxDepth = 1.0f
 	};
 
 	const vk::Rect2D scissor{
 		{ 0, 0 },
-		{ config.swap_chain_data.extent.width, config.swap_chain_data.extent.height }
+		{ config.swap_chain_config().extent.width, config.swap_chain_config().extent.height }
 	};
 
 	const vk::PipelineViewportStateCreateInfo viewport_state{
@@ -118,10 +118,10 @@ auto gse::renderer::text::initialize() -> void {
 		.pushConstantRangeCount = 1,
 		.pPushConstantRanges = &msdf_pc_range
 	};
-	m_pipeline_layout = config.device_data.device.createPipelineLayout(msdf_pipeline_layout_info);
+	m_pipeline_layout = config.device_config().device.createPipelineLayout(msdf_pipeline_layout_info);
 
 	const auto vertex_input_info = m_shader->vertex_input_state();
-	const vk::Format color_format = config.swap_chain_data.surface_format.format;
+	const vk::Format color_format = config.swap_chain_config().surface_format.format;
 
 	const vk::PipelineRenderingCreateInfoKHR pipeline_rendering_info{
 		.colorAttachmentCount = 1,
@@ -141,7 +141,7 @@ auto gse::renderer::text::initialize() -> void {
 		.pColorBlendState = &color_blending,
 		.layout = *m_pipeline_layout
 	};
-	m_pipeline = config.device_data.device.createGraphicsPipeline(nullptr, pipeline_info);
+	m_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
 
 	struct vertex { raw2f pos; raw2f uv; };
 	constexpr vertex vertices[4] = {
@@ -152,18 +152,18 @@ auto gse::renderer::text::initialize() -> void {
 	};
 	constexpr std::uint32_t indices[6] = { 0, 2, 1, 0, 3, 2 };
 
-	m_vertex_buffer = vulkan::persistent_allocator::create_buffer(config.device_data, { .size = sizeof(vertices), .usage = vk::BufferUsageFlagBits::eVertexBuffer }, vertices);
-	m_index_buffer = vulkan::persistent_allocator::create_buffer(config.device_data, { .size = sizeof(indices), .usage = vk::BufferUsageFlagBits::eIndexBuffer }, indices);
+	m_vertex_buffer = vulkan::persistent_allocator::create_buffer(config.device_config(), { .size = sizeof(vertices), .usage = vk::BufferUsageFlagBits::eVertexBuffer }, vertices);
+	m_index_buffer = vulkan::persistent_allocator::create_buffer(config.device_config(), { .size = sizeof(indices), .usage = vk::BufferUsageFlagBits::eIndexBuffer }, indices);
 }
 
-auto gse::renderer::text::render() -> void {
+auto gse::renderer::text::render(std::span<std::reference_wrapper<registry>> registries) -> void {
 	if (m_draw_commands.empty()) {
 		return;
 	}
 
-	const auto& config = m_context.config();
-	const auto& command = config.frame_context.command_buffer;
-	const auto [width, height] = config.swap_chain_data.extent;
+	auto& config = m_context.config();
+	const auto& command = config.frame_context().command_buffer;
+	auto [width, height] = config.swap_chain_config().extent;
 
 	const auto projection = orthographic(
 		meters(0.0f), meters(static_cast<float>(width)),
@@ -172,7 +172,7 @@ auto gse::renderer::text::render() -> void {
 	);
 
 	vk::RenderingAttachmentInfo color_attachment{
-		.imageView = *config.swap_chain_data.image_views[config.frame_context.image_index],
+		.imageView = *config.swap_chain_config().image_views[config.frame_context().image_index],
 		.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
 		.loadOp = vk::AttachmentLoadOp::eLoad,
 		.storeOp = vk::AttachmentStoreOp::eStore,
@@ -180,7 +180,7 @@ auto gse::renderer::text::render() -> void {
 	};
 
 	const vk::RenderingInfo rendering_info{
-		.renderArea = {{0, 0}, config.swap_chain_data.extent},
+		.renderArea = {{0, 0}, config.swap_chain_config().extent},
 		.layerCount = 1,
 		.colorAttachmentCount = 1,
 		.pColorAttachments = &color_attachment,
@@ -196,7 +196,7 @@ auto gse::renderer::text::render() -> void {
 			command.bindIndexBuffer(*m_index_buffer.buffer, 0, vk::IndexType::eUint32);
 
 			for (const auto& [font, text, position, scale, color, max_width] : m_draw_commands) {
-				if (!font || text.empty()) continue;
+				if (!font.valid() || text.empty()) continue;
 
 				m_shader->push(command, m_pipeline_layout, "msdf_texture", font->texture()->descriptor_info());
 				const auto glyphs = font->text_layout(text, position.as<units::meters>(), scale);

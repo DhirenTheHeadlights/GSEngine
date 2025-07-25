@@ -9,172 +9,229 @@ export import vulkan_hpp;
 import :resources;
 
 export namespace gse::vulkan {
-    struct config {
-        struct instance_config {
-            vk::raii::Context context;
-            vk::raii::Instance instance;
-            vk::raii::SurfaceKHR surface;
-            instance_config(vk::raii::Context&& context, vk::raii::Instance&& instance, vk::raii::SurfaceKHR&& surface)
-                : context(std::move(context)), instance(std::move(instance)), surface(std::move(surface)) {
-            }
-            instance_config(instance_config&&) = default;
-            auto operator=(instance_config&&) -> instance_config& = default;
-        } instance_data;
+    struct instance_config {
+        vk::raii::Context context;
+        vk::raii::Instance instance;
+        vk::raii::SurfaceKHR surface;
+        instance_config(vk::raii::Context&& context, vk::raii::Instance&& instance, vk::raii::SurfaceKHR&& surface)
+            : context(std::move(context)), instance(std::move(instance)), surface(std::move(surface)) {
+        }
+        instance_config(instance_config&&) = default;
+        auto operator=(instance_config&&) -> instance_config & = default;
+    };
 
-        struct device_config {
-            vk::raii::PhysicalDevice physical_device;
-            vk::raii::Device device;
-            device_config(vk::raii::PhysicalDevice&& physical_device, vk::raii::Device&& device)
-                : physical_device(std::move(physical_device)), device(std::move(device)) {
-            }
-            device_config(device_config&&) = default;
-            auto operator=(device_config&&) -> device_config& = default;
-        } device_data;
+    struct device_config {
+        vk::raii::PhysicalDevice physical_device;
+        vk::raii::Device device;
+        device_config(vk::raii::PhysicalDevice&& physical_device, vk::raii::Device&& device)
+            : physical_device(std::move(physical_device)), device(std::move(device)) {
+        }
+        device_config(device_config&&) = default;
+        auto operator=(device_config&&) -> device_config & = default;
+    };
 
-        struct queue_config {
-            vk::raii::Queue graphics;
-            vk::raii::Queue present;
-            std::unique_ptr<std::mutex> mutex;
-            queue_config(vk::raii::Queue&& graphics, vk::raii::Queue&& present)
-				: graphics(std::move(graphics)), present(std::move(present)), mutex(std::make_unique<std::mutex>()) {
-            }
-            queue_config(queue_config&&) = default;
-            auto operator=(queue_config&&) -> queue_config& = default;
-        } queue;
+    struct queue_config {
+        vk::raii::Queue graphics;
+        vk::raii::Queue present;
+        std::unique_ptr<std::recursive_mutex> mutex;
+        queue_config(vk::raii::Queue&& graphics, vk::raii::Queue&& present)
+            : graphics(std::move(graphics)), present(std::move(present)), mutex(std::make_unique<std::recursive_mutex>()) {
+        }
+        queue_config(queue_config&&) = default;
+        auto operator=(queue_config&&) -> queue_config & = default;
+    };
 
-        struct command_config {
-            vk::raii::CommandPool pool;
-            std::vector<vk::raii::CommandBuffer> buffers;
-            std::unique_ptr<std::mutex> pool_mutex;
-            command_config(vk::raii::CommandPool&& pool, std::vector<vk::raii::CommandBuffer>&& buffers)
-				: pool(std::move(pool)), buffers(std::move(buffers)), pool_mutex(std::make_unique<std::mutex>()) {
-            }
-            command_config(command_config&&) = default;
-            auto operator=(command_config&&) -> command_config& = default;
-        } command;
+    struct command_config {
+        vk::raii::CommandPool pool;
+        std::vector<vk::raii::CommandBuffer> buffers;
+        std::unique_ptr<std::recursive_mutex> pool_mutex;
+        command_config(vk::raii::CommandPool&& pool, std::vector<vk::raii::CommandBuffer>&& buffers)
+            : pool(std::move(pool)), buffers(std::move(buffers)), pool_mutex(std::make_unique<std::recursive_mutex>()) {
+        }
+        command_config(command_config&&) = default;
+        auto operator=(command_config&&) -> command_config & = default;
+    };
 
-        struct descriptor_config {
-            vk::raii::DescriptorPool pool;
-            explicit descriptor_config(vk::raii::DescriptorPool&& pool)
-                : pool(std::move(pool)) {
-            }
-            descriptor_config(descriptor_config&&) = default;
-            auto operator=(descriptor_config&&) -> descriptor_config& = default;
-        } descriptor;
+    struct descriptor_config {
+        vk::raii::DescriptorPool pool;
+    	std::unique_ptr<std::recursive_mutex> mutex;
+        explicit descriptor_config(vk::raii::DescriptorPool&& pool)
+            : pool(std::move(pool)), mutex(std::make_unique<std::recursive_mutex>()) {
+        }
+        descriptor_config(descriptor_config&&) = default;
+        auto operator=(descriptor_config&&) -> descriptor_config & = default;
+    };
 
-        struct sync_config {
-            std::vector<vk::raii::Semaphore> image_available_semaphores;
-            std::vector<vk::raii::Semaphore> render_finished_semaphores;
-            std::vector<vk::raii::Fence> in_flight_fences;
-            std::vector<vk::Fence> images_in_flight;
-            sync_config(
-                std::vector<vk::raii::Semaphore>&& image_available_semaphores,
-                std::vector<vk::raii::Semaphore>&& render_finished_semaphores,
-                std::vector<vk::raii::Fence>&& in_flight_fences,
-                std::vector<vk::Fence>&& images_in_flight)
-                : image_available_semaphores(std::move(image_available_semaphores)),
-                render_finished_semaphores(std::move(render_finished_semaphores)),
-                in_flight_fences(std::move(in_flight_fences)),
-                images_in_flight(std::move(images_in_flight)) {
-            }
-            sync_config(sync_config&&) = default;
-            auto operator=(sync_config&&) -> sync_config& = default;
-        } sync;
+    struct sync_config {
+        std::vector<vk::raii::Semaphore> image_available_semaphores;
+        std::vector<vk::raii::Semaphore> render_finished_semaphores;
+        std::vector<vk::raii::Fence> in_flight_fences;
+        std::vector<vk::Fence> images_in_flight;
+        sync_config(
+            std::vector<vk::raii::Semaphore>&& image_available_semaphores,
+            std::vector<vk::raii::Semaphore>&& render_finished_semaphores,
+            std::vector<vk::raii::Fence>&& in_flight_fences,
+            std::vector<vk::Fence>&& images_in_flight)
+            : image_available_semaphores(std::move(image_available_semaphores)),
+            render_finished_semaphores(std::move(render_finished_semaphores)),
+            in_flight_fences(std::move(in_flight_fences)),
+            images_in_flight(std::move(images_in_flight)) {
+        }
+        sync_config(sync_config&&) = default;
+        auto operator=(sync_config&&) -> sync_config & = default;
+    };
 
-        struct swap_chain_details {
-            vk::SurfaceCapabilitiesKHR capabilities;
-            std::vector<vk::SurfaceFormatKHR> formats;
-            std::vector<vk::PresentModeKHR> present_modes;
-            swap_chain_details(
-                vk::SurfaceCapabilitiesKHR capabilities,
-                std::vector<vk::SurfaceFormatKHR>&& formats,
-                std::vector<vk::PresentModeKHR>&& present_modes
-            ) : capabilities(std::move(capabilities)),
-                formats(std::move(formats)),
-                present_modes(std::move(present_modes)) {}
-            swap_chain_details(swap_chain_details&&) = default;
-            auto operator=(swap_chain_details&&) -> swap_chain_details& = default;
-        };
+    struct swap_chain_details {
+        vk::SurfaceCapabilitiesKHR capabilities;
+        std::vector<vk::SurfaceFormatKHR> formats;
+        std::vector<vk::PresentModeKHR> present_modes;
+        swap_chain_details(
+            vk::SurfaceCapabilitiesKHR capabilities,
+            std::vector<vk::SurfaceFormatKHR>&& formats,
+            std::vector<vk::PresentModeKHR>&& present_modes
+        ) : capabilities(std::move(capabilities)),
+            formats(std::move(formats)),
+            present_modes(std::move(present_modes)) {
+        }
+        swap_chain_details(swap_chain_details&&) = default;
+        auto operator=(swap_chain_details&&) -> swap_chain_details & = default;
+    };
 
-        struct swap_chain_config {
-            vk::raii::SwapchainKHR swap_chain;
-            vk::SurfaceFormatKHR surface_format;
-            vk::PresentModeKHR present_mode;
-            vk::Extent2D extent;
-            std::vector<vk::Image> images;
-            std::vector<vk::raii::ImageView> image_views;
-            vk::Format format;
-            swap_chain_details details;
-            persistent_allocator::image_resource normal_image;
-            persistent_allocator::image_resource albedo_image;
-            persistent_allocator::image_resource depth_image;
+    struct swap_chain_config {
+        vk::raii::SwapchainKHR swap_chain;
+        vk::SurfaceFormatKHR surface_format;
+        vk::PresentModeKHR present_mode;
+        vk::Extent2D extent;
+        std::vector<vk::Image> images;
+        std::vector<vk::raii::ImageView> image_views;
+        vk::Format format;
+        swap_chain_details details;
+        persistent_allocator::image_resource normal_image;
+        persistent_allocator::image_resource albedo_image;
+        persistent_allocator::image_resource depth_image;
 
-            swap_chain_config(
-                vk::raii::SwapchainKHR&& swap_chain,
-                const vk::SurfaceFormatKHR surface_format,
-                const vk::PresentModeKHR present_mode,
-                const vk::Extent2D extent,
-                std::vector<vk::Image>&& images,
-                std::vector<vk::raii::ImageView>&& image_views,
-                const vk::Format format,
-                swap_chain_details&& details,
-                persistent_allocator::image_resource&& normal_image,
-                persistent_allocator::image_resource&& albedo_image,
-                persistent_allocator::image_resource&& depth_image
-            )
-                : swap_chain(std::move(swap_chain)),
-                surface_format(surface_format),
-                present_mode(present_mode),
-                extent(extent),
-                images(std::move(images)),
-                image_views(std::move(image_views)),
-                format(format),
-                details(std::move(details)),
-                normal_image(std::move(normal_image)),
-                albedo_image(std::move(albedo_image)),
-                depth_image(std::move(depth_image)) {
-            }
-            swap_chain_config(swap_chain_config&&) = default;
-            auto operator=(swap_chain_config&&) -> swap_chain_config & = default;
-        } swap_chain_data;
+        swap_chain_config(
+            vk::raii::SwapchainKHR&& swap_chain,
+            const vk::SurfaceFormatKHR surface_format,
+            const vk::PresentModeKHR present_mode,
+            const vk::Extent2D extent,
+            std::vector<vk::Image>&& images,
+            std::vector<vk::raii::ImageView>&& image_views,
+            const vk::Format format,
+            swap_chain_details&& details,
+            persistent_allocator::image_resource&& normal_image,
+            persistent_allocator::image_resource&& albedo_image,
+            persistent_allocator::image_resource&& depth_image
+        )
+            : swap_chain(std::move(swap_chain)),
+            surface_format(surface_format),
+            present_mode(present_mode),
+            extent(extent),
+            images(std::move(images)),
+            image_views(std::move(image_views)),
+            format(format),
+            details(std::move(details)),
+            normal_image(std::move(normal_image)),
+            albedo_image(std::move(albedo_image)),
+            depth_image(std::move(depth_image)) {
+        }
+        swap_chain_config(swap_chain_config&&) = default;
+        auto operator=(swap_chain_config&&) -> swap_chain_config & = default;
+    };
 
-        struct frame_context_config {
-            std::uint32_t image_index;
-            vk::CommandBuffer command_buffer;
-            frame_context_config(
-                const std::uint32_t image_index,
-                const vk::CommandBuffer command_buffer)
-                : image_index(image_index),
-                command_buffer(command_buffer) {
-            }
-            frame_context_config(frame_context_config&&) = default;
-            auto operator=(frame_context_config&&) -> frame_context_config& = default;
-        } frame_context;
+    struct frame_context_config {
+        std::uint32_t image_index;
+        vk::CommandBuffer command_buffer;
+        frame_context_config(
+            const std::uint32_t image_index,
+            const vk::CommandBuffer command_buffer)
+            : image_index(image_index),
+            command_buffer(command_buffer) {
+        }
+        frame_context_config(frame_context_config&&) = default;
+        auto operator=(frame_context_config&&) -> frame_context_config & = default;
+    };
 
+    class config {
+    public:
         config(
-            instance_config&& instance_data,
-            device_config&& device_data,
-            queue_config&& queue,
-            command_config&& command,
-            descriptor_config&& descriptor,
-            sync_config&& sync,
-            swap_chain_config&& swap_chain_data,
-            frame_context_config&& frame_context)
-            : instance_data(std::move(instance_data)),
-            device_data(std::move(device_data)),
-            queue(std::move(queue)),
-            command(std::move(command)),
-            descriptor(std::move(descriptor)),
-            sync(std::move(sync)),
-            swap_chain_data(std::move(swap_chain_data)),
-            frame_context(std::move(frame_context)) {}
-        config(config&&) = default;
-        auto operator=(config&&) -> config& = default;
+            instance_config&& instance_data, device_config&& device_data,
+            queue_config&& queue, command_config&& command,
+            descriptor_config&& descriptor, sync_config&& sync,
+            swap_chain_config&& swap_chain_data, frame_context_config&& frame_context
+        ) : m_instance_data(std::move(instance_data)),
+            m_device_data(std::move(device_data)),
+            m_queue(std::move(queue)),
+            m_command(std::move(command)),
+            m_descriptor(std::move(descriptor)),
+            m_sync(std::move(sync)),
+            m_swap_chain_data(std::move(swap_chain_data)),
+            m_frame_context(std::move(frame_context)) {}
+
         ~config() {
             std::println("Destroying Config");
         }
 
-        std::uint32_t current_frame = 0;
+        config(config&&) = default;
+        auto operator=(config&&) -> config & = default;
+
+        auto instance_config() -> instance_config& {
+            return m_instance_data;
+        }
+
+        auto instance_config() const -> const struct instance_config& {
+            return m_instance_data;
+		}
+
+        auto device_config() -> device_config& {
+            return m_device_data;
+		}
+
+        auto device_config() const -> const struct device_config& {
+            return m_device_data;
+		}
+
+        auto queue_config() -> queue_config& {
+            return m_queue;
+		}
+
+        auto command_config() -> command_config& {
+            return m_command;
+		}
+
+        auto descriptor_config() -> descriptor_config& {
+            return m_descriptor;
+        }
+
+        auto sync_config() -> sync_config& {
+            return m_sync;
+        }
+
+        auto swap_chain_config() -> swap_chain_config& {
+			return m_swap_chain_data;
+        }
+
+		auto swap_chain_config() const -> const struct swap_chain_config& {
+			return m_swap_chain_data;
+		}
+
+        auto frame_context() -> frame_context_config& {
+            return m_frame_context;
+		}
+
+        auto current_frame() -> std::uint32_t& {
+            return m_current_frame;
+		}
+    private:
+        struct instance_config m_instance_data;
+        struct device_config m_device_data;
+        struct queue_config m_queue;
+        struct command_config m_command;
+        struct descriptor_config m_descriptor;
+        struct sync_config m_sync;
+        struct swap_chain_config m_swap_chain_data;
+    	frame_context_config m_frame_context;
+        std::uint32_t m_current_frame = 0;
     };
 }
 
@@ -187,14 +244,8 @@ export namespace gse::vulkan {
             return graphics_family.has_value() && present_family.has_value();
         }
     };
-
-    auto get_memory_properties(vk::PhysicalDevice device) -> vk::PhysicalDeviceMemoryProperties;
 }
 
 #if defined(VULKAN_HPP_DISPATCH_LOADER_DYNAMIC) && (VULKAN_HPP_DISPATCH_LOADER_DYNAMIC == 1)
 export VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 #endif
-
-auto gse::vulkan::get_memory_properties(const vk::PhysicalDevice device) -> vk::PhysicalDeviceMemoryProperties {
-    return device.getMemoryProperties();
-}

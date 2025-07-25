@@ -88,7 +88,7 @@ namespace gse {
 		static auto compile() -> std::set<std::filesystem::path>;
 
 		auto load(
-			renderer::context& context
+			const renderer::context& context
 		) -> void;
 
 		auto unload() -> void;
@@ -313,11 +313,9 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 	return compiled_files;
 }
 
-auto gse::shader::load(renderer::context& context) -> void {
-	std::lock_guard lock(*context.config().command.pool_mutex);
-
+auto gse::shader::load(const renderer::context& context) -> void {
 	if (global_layouts.empty()) {
-		generate_global_layouts(context.config().device_data.device);
+		generate_global_layouts(context.config().device_config().device);
 	}
 
 	assert(
@@ -352,7 +350,7 @@ auto gse::shader::load(renderer::context& context) -> void {
 			.codeSize = code.size(),
 			.pCode = reinterpret_cast<const uint32_t*>(code.data())
 		};
-		return context.config().device_data.device.createShaderModule(ci);
+		return context.config().device_config().device.createShaderModule(ci);
 		};
 
 	m_vert_module = make_module(vert_code);
@@ -631,7 +629,7 @@ auto gse::shader::load(renderer::context& context) -> void {
 			for (auto& b : binds) raw.push_back(b.layout_binding);
 
 			vk::DescriptorSetLayoutCreateInfo ci{ .flags = {}, .bindingCount = static_cast<uint32_t>(raw.size()), .pBindings = raw.data() };
-			auto raii_layout = context.config().device_data.device.createDescriptorSetLayout(ci);
+			auto raii_layout = context.config().device_config().device.createDescriptorSetLayout(ci);
 
 			m_layout.sets.emplace(type, set{ .type = type, .layout = std::move(raii_layout), .bindings = std::move(binds) });
 		}

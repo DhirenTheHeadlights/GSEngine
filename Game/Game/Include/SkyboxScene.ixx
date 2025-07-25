@@ -38,7 +38,7 @@ export namespace gs {
 					if (gse::scene_loader::scene(gse::find("Scene2"))->active()) {
 						ImGui::Begin("Game Data");
 
-						ImGui::Text("FPS: %d", gse::main_clock::frame_rate());
+						ImGui::Text("FPS: %d", gse::main_clock::fps());
 
 						ImGui::End();
 					}

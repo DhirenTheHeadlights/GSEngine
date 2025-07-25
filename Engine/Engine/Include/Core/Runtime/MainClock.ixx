@@ -8,9 +8,9 @@ import gse.physics.math;
 export namespace gse::main_clock {
 	auto update() -> void;
 
-	auto raw_dt() -> time;
-	auto current_time() -> time;
-	auto frame_rate() -> std::uint32_t;
+	auto dt() -> time;
+	auto now() -> time;
+	auto fps() -> std::uint32_t;
 
 	constexpr time const_update_time = seconds(1.f / 100.f);
 }
@@ -18,35 +18,37 @@ export namespace gse::main_clock {
 namespace gse::main_clock {
 	clock main_clock;
 	clock dt_clock;
-	static constinit time dt;
+
+	static constinit time delta_time;
 	static constinit time frame_rate_update_time;
 
 	static constinit std::uint32_t frame_count = 0;
 	static constinit std::uint32_t frame_rate_count = 0;
-	constexpr std::uint32_t frame_rate_update_interval = 60; 
+
+	constexpr time fps_report_interval = seconds(1.0f);
 }
 
 auto gse::main_clock::update() -> void {
-	dt = std::min(dt, const_update_time);
+	delta_time = std::min(dt_clock.reset(), const_update_time);
 
-	++frame_count;
-	frame_rate_update_time += dt;
+	frame_count++;
+	frame_rate_update_time += delta_time;
 
-	if (frame_count >= frame_rate_update_interval) {
-		frame_rate_count = static_cast<int>(frame_count / frame_rate_update_time.as<units::seconds>());
-		frame_rate_update_time = {};
-		frame_count = 0.f;
+	if (frame_rate_update_time >= fps_report_interval) {
+		frame_rate_count = static_cast<std::uint32_t>(frame_count / frame_rate_update_time.as<units::seconds>());
+		frame_count = 0;
+		frame_rate_update_time -= fps_report_interval;
 	}
 }
 
-auto gse::main_clock::raw_dt() -> time {
-	return dt;
+auto gse::main_clock::dt() -> time {
+	return delta_time;
 }
 
-auto gse::main_clock::current_time() -> time {
+auto gse::main_clock::now() -> time {
 	return main_clock.elapsed();
 }
 
-auto gse::main_clock::frame_rate() -> std::uint32_t {
+auto gse::main_clock::fps() -> std::uint32_t {
 	return frame_rate_count;
 }

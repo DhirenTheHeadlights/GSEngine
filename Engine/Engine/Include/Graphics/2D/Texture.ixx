@@ -19,10 +19,9 @@ export namespace gse {
 		};
 
 		texture(const std::filesystem::path& filepath) : identifiable(filepath), m_image_data{ .path = filepath } {}
-		texture(const std::string& name, renderer::context& context, const unitless::vec4& color, unitless::vec2u size = { 1, 1 });
+		texture(const std::string& name, const unitless::vec4& color, unitless::vec2u size = { 1, 1 });
 		texture(
 			const std::string& name,
-			const vulkan::config& config,
 			const std::vector<std::byte>& data,
 			unitless::vec2u size,
 			std::uint32_t channels,
@@ -31,7 +30,7 @@ export namespace gse {
 
 		static auto compile() -> std::set<std::filesystem::path>;
 
-		auto load(renderer::context& context) -> void;
+		auto load(const renderer::context& context) -> void;
 		auto unload() -> void;
 
 		auto descriptor_info() const -> vk::DescriptorImageInfo {
@@ -50,10 +49,11 @@ export namespace gse {
 		vulkan::persistent_allocator::image_resource m_texture_image;
 		vk::raii::Sampler m_texture_sampler = nullptr;
 		image::data m_image_data;
+		profile m_profile = profile::generic_repeat;
 	};
 }
 
-gse::texture::texture(const std::string& name, renderer::context& context, const unitless::vec4& color, const unitless::vec2u size) : identifiable(std::format("{} - Solid Color ({}, {}, {}, {})", name, color.x, color.y, color.z, color.w)) {
+gse::texture::texture(const std::string& name, const unitless::vec4& color, const unitless::vec2u size) : identifiable(name) {
 	std::array<std::byte, 4> pixel_data;
 	pixel_data[0] = static_cast<std::byte>(color.x * 255.0f);
 	pixel_data[1] = static_cast<std::byte>(color.y * 255.0f);
@@ -72,107 +72,10 @@ gse::texture::texture(const std::string& name, renderer::context& context, const
 		.channels = 4,
 		.pixels = std::move(pixels)
 	};
-
-	std::lock_guard queue(*context.config().queue.mutex);
-	std::lock_guard pool(*context.config().command.pool_mutex);
-	create_vulkan_resources(context, profile::generic_repeat);
 }
 
-gse::texture::texture(const std::string& name, const vulkan::config& config, const std::vector<std::byte>& data, unitless::vec2u size, std::uint32_t channels, profile texture_profile)
-	: identifiable(name)
-	, m_image_data(image::data{ .path = name, .size = size, .channels = channels, .pixels = data }) {
-	std::lock_guard cmd_lock(*config.command.pool_mutex);
-	std::lock_guard queue_lock(*config.queue.mutex);
-
-	const auto format = channels == 4 ? vk::Format::eR8G8B8A8Unorm : channels == 1 ? vk::Format::eR8Unorm : vk::Format::eR8G8B8Unorm;
-	const std::size_t image_size = static_cast<std::size_t>(size.x) * size.y * channels;
-
-	m_texture_image = vulkan::persistent_allocator::create_image(
-		config.device_data,
-		vk::ImageCreateInfo{
-			.flags = {},
-			.imageType = vk::ImageType::e2D,
-			.format = format,
-			.extent = {
-				.width = size.x,
-				.height = size.y,
-				.depth = 1
-			},
-			.mipLevels = 1,
-			.arrayLayers = 1,
-			.samples = vk::SampleCountFlagBits::e1,
-			.tiling = vk::ImageTiling::eOptimal,
-			.usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
-			.sharingMode = vk::SharingMode::eExclusive,
-			.initialLayout = vk::ImageLayout::eUndefined
-		},
-		vk::MemoryPropertyFlagBits::eDeviceLocal,
-		vk::ImageViewCreateInfo{
-			.flags = {},
-			.image = nullptr,
-			.viewType = vk::ImageViewType::e2D,
-			.format = format,
-			.components = {},
-			.subresourceRange = {
-				.aspectMask = vk::ImageAspectFlagBits::eColor,
-				.baseMipLevel = 0,
-				.levelCount = 1,
-				.baseArrayLayer = 0,
-				.layerCount = 1
-			}
-		}
-	);
-
-	vulkan::uploader::upload_image_2d(
-		config,
-		m_texture_image,
-		size.x,
-		size.y,
-		data.data(),
-		image_size,
-		vk::ImageLayout::eShaderReadOnlyOptimal
-	);
-
-	vk::SamplerCreateInfo sampler_info{};
-	sampler_info.maxLod = 1.0f;
-
-	switch (texture_profile) {
-	case profile::generic_repeat:
-		sampler_info.magFilter = vk::Filter::eLinear;
-		sampler_info.minFilter = vk::Filter::eLinear;
-		sampler_info.addressModeU = vk::SamplerAddressMode::eRepeat;
-		sampler_info.addressModeV = vk::SamplerAddressMode::eRepeat;
-		sampler_info.addressModeW = vk::SamplerAddressMode::eRepeat;
-		sampler_info.anisotropyEnable = vk::True;
-		sampler_info.maxAnisotropy = 16.0f;
-		break;
-
-	case profile::generic_clamp_to_edge:
-		sampler_info.magFilter = vk::Filter::eLinear;
-		sampler_info.minFilter = vk::Filter::eLinear;
-		sampler_info.addressModeU = vk::SamplerAddressMode::eClampToEdge;
-		sampler_info.addressModeV = vk::SamplerAddressMode::eClampToEdge;
-		sampler_info.addressModeW = vk::SamplerAddressMode::eClampToEdge;
-		break;
-
-	case profile::msdf:
-		sampler_info.magFilter = vk::Filter::eLinear;
-		sampler_info.minFilter = vk::Filter::eLinear;
-		sampler_info.addressModeU = vk::SamplerAddressMode::eClampToEdge;
-		sampler_info.addressModeV = vk::SamplerAddressMode::eClampToEdge;
-		sampler_info.addressModeW = vk::SamplerAddressMode::eClampToEdge;
-		break;
-
-	case profile::pixel_art:
-		sampler_info.magFilter = vk::Filter::eNearest;
-		sampler_info.minFilter = vk::Filter::eNearest;
-		sampler_info.addressModeU = vk::SamplerAddressMode::eClampToEdge;
-		sampler_info.addressModeV = vk::SamplerAddressMode::eClampToEdge;
-		sampler_info.addressModeW = vk::SamplerAddressMode::eClampToEdge;
-		break;
-	}
-
-	m_texture_sampler = config.device_data.device.createSampler(sampler_info);
+gse::texture::texture(const std::string& name, const std::vector<std::byte>& data, const unitless::vec2u size, const std::uint32_t channels, const profile texture_profile)
+	: identifiable(name), m_image_data(image::data{ .path = {}, .size = size, .channels = channels, .pixels = data }), m_profile(texture_profile) {
 }
 
 auto gse::texture::compile() -> std::set<std::filesystem::path> {
@@ -264,44 +167,38 @@ auto gse::texture::compile() -> std::set<std::filesystem::path> {
 	return resources;
 }
 
-auto gse::texture::load(renderer::context& context) -> void {
-	assert(
-		!m_image_data.path.empty(),
-		std::format(
-			"Texture '{}' has no path set. Ensure the texture is compiled before loading.",
-			id()
-		)
-	);
+auto gse::texture::load(const renderer::context& context) -> void {
+	if (!m_image_data.path.empty()) {
+		std::ifstream in_file(m_image_data.path, std::ios::binary);
+		assert(in_file.is_open(), std::format(
+			"Failed to open baked texture file: {}",
+			m_image_data.path.string()
+		));
 
-	std::lock_guard lock(*context.config().queue.mutex);
+		std::uint32_t magic, version;
+		in_file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+		in_file.read(reinterpret_cast<char*>(&version), sizeof(version));
+		assert(magic == 0x47544558 && version == 1, "Invalid baked texture file format or version.");
 
-	std::ifstream in_file(m_image_data.path, std::ios::binary);
-	assert(in_file.is_open(), std::format(
-		"Failed to open baked texture file: {}",
-		m_image_data.path.string()
-	));
+		std::uint32_t width, height, channels;
+		profile texture_profile;
+		in_file.read(reinterpret_cast<char*>(&width), sizeof(width));
+		in_file.read(reinterpret_cast<char*>(&height), sizeof(height));
+		in_file.read(reinterpret_cast<char*>(&channels), sizeof(channels));
+		in_file.read(reinterpret_cast<char*>(&texture_profile), sizeof(texture_profile));
 
-	std::uint32_t magic, version;
-	in_file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
-	in_file.read(reinterpret_cast<char*>(&version), sizeof(version));
-	assert(magic == 0x47544558 && version == 1, "Invalid baked texture file format or version.");
+		std::uint64_t data_size;
+		in_file.read(reinterpret_cast<char*>(&data_size), sizeof(data_size));
+		m_image_data.pixels.resize(data_size);
+		in_file.read(reinterpret_cast<char*>(m_image_data.pixels.data()), data_size);
 
-	std::uint32_t width, height, channels;
-	profile texture_profile;
-	in_file.read(reinterpret_cast<char*>(&width), sizeof(width));
-	in_file.read(reinterpret_cast<char*>(&height), sizeof(height));
-	in_file.read(reinterpret_cast<char*>(&channels), sizeof(channels));
-	in_file.read(reinterpret_cast<char*>(&texture_profile), sizeof(texture_profile));
+		m_image_data.size = { width, height };
+		m_image_data.channels = channels;
+	}
 
-	std::uint64_t data_size;
-	in_file.read(reinterpret_cast<char*>(&data_size), sizeof(data_size));
-	m_image_data.pixels.resize(data_size);
-	in_file.read(reinterpret_cast<char*>(m_image_data.pixels.data()), data_size);
-
-	m_image_data.size = { width, height };
-	m_image_data.channels = channels;
-
-	create_vulkan_resources(context, texture_profile);
+	context.queue([this](renderer::context& ctx) {
+		create_vulkan_resources(ctx, m_profile);
+	});
 }
 
 auto gse::texture::unload() -> void {
@@ -311,7 +208,7 @@ auto gse::texture::unload() -> void {
 }
 
 auto gse::texture::create_vulkan_resources(renderer::context& context, const profile texture_profile) -> void {
-	const auto& config = context.config();
+	auto& config = context.config();
 
 	const auto width = m_image_data.size.x;
 	const auto height = m_image_data.size.y;
@@ -331,7 +228,7 @@ auto gse::texture::create_vulkan_resources(renderer::context& context, const pro
 		: vk::Format::eR8G8B8Srgb;
 
 	m_texture_image = vulkan::persistent_allocator::create_image(
-		config.device_data,
+		config.device_config(),
 		vk::ImageCreateInfo{
 			.imageType = vk::ImageType::e2D,
 			.format = format,
@@ -402,7 +299,7 @@ auto gse::texture::create_vulkan_resources(renderer::context& context, const pro
 		sampler_info.addressModeW = vk::SamplerAddressMode::eClampToEdge;
 		break;
 	}
-	m_texture_sampler = config.device_data.device.createSampler(sampler_info);
+	m_texture_sampler = config.device_config().device.createSampler(sampler_info);
 
 	m_image_data.pixels.clear();
 	m_image_data.pixels.shrink_to_fit();

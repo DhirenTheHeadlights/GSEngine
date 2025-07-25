@@ -14,17 +14,24 @@ import gse.assert;
 export namespace gse {
 	class model;
 
+	struct render_queue_entry {
+		const resource::handle<model> model;
+		std::size_t index;
+		mat4 model_matrix;
+		unitless::vec3 color;
+	};
+
 	class model_instance {
 	public:
-		model_instance(const resource::handle<model>& model_handle);
+		model_instance(const resource::handle<model>& model_handle) : m_model_handle(model_handle) {}
 
-		auto set_position(const vec3<length>& position) -> void;
-		auto set_rotation(const vec3<angle>& rotation) -> void;
+		auto set_position(const vec3<length>& position) const -> void;
+		auto set_rotation(const vec3<angle>& rotation) const -> void;
 
 		auto render_queue_entries() const -> std::span<const render_queue_entry>;
 		auto handle() const -> const resource::handle<model>&;
 	private:
-		std::vector<render_queue_entry> m_render_queue_entries;
+		mutable std::vector<render_queue_entry> m_render_queue_entries;
 		resource::handle<model> m_model_handle;
 	};
 
@@ -35,7 +42,7 @@ export namespace gse {
 
 		static auto compile() -> std::set<std::filesystem::path>;
 
-		auto load(renderer::context& context) -> void;
+		auto load(const renderer::context& context) -> void;
 		auto unload() -> void;
 
 		auto meshes() const -> std::span<const mesh>;
@@ -246,42 +253,44 @@ auto gse::model::compile() -> std::set<std::filesystem::path> {
 	return resources;
 }
 
-auto gse::model::load(renderer::context& context) -> void {
-	std::ifstream in_file(m_baked_model_path, std::ios::binary);
-	assert(in_file.is_open(), "Failed to open baked model file for reading.");
+auto gse::model::load(const renderer::context& context) -> void {
+	if (!m_baked_model_path.empty()) {
+		std::ifstream in_file(m_baked_model_path, std::ios::binary);
+		assert(in_file.is_open(), "Failed to open baked model file for reading.");
 
-	uint32_t magic, version;
-	in_file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
-	in_file.read(reinterpret_cast<char*>(&version), sizeof(version));
+		uint32_t magic, version;
+		in_file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+		in_file.read(reinterpret_cast<char*>(&version), sizeof(version));
 
-	uint64_t mesh_count;
-	in_file.read(reinterpret_cast<char*>(&mesh_count), sizeof(mesh_count));
-	m_meshes.reserve(mesh_count);
+		uint64_t mesh_count;
+		in_file.read(reinterpret_cast<char*>(&mesh_count), sizeof(mesh_count));
+		m_meshes.reserve(mesh_count);
 
-	for (uint64_t i = 0; i < mesh_count; ++i) {
-		uint64_t mat_name_len;
-		in_file.read(reinterpret_cast<char*>(&mat_name_len), sizeof(mat_name_len));
-		std::string material_name(mat_name_len, '\0');
-		in_file.read(&material_name[0], mat_name_len);
+		for (uint64_t i = 0; i < mesh_count; ++i) {
+			uint64_t mat_name_len;
+			in_file.read(reinterpret_cast<char*>(&mat_name_len), sizeof(mat_name_len));
+			std::string material_name(mat_name_len, '\0');
+			in_file.read(&material_name[0], mat_name_len);
 
-		resource::handle<material> material_handle = context.get<material>(material_name);
+			resource::handle<material> material_handle = context.get<material>(material_name);
 
-		uint64_t vertex_count;
-		in_file.read(reinterpret_cast<char*>(&vertex_count), sizeof(vertex_count));
-		std::vector<vertex> vertices(vertex_count);
-		in_file.read(reinterpret_cast<char*>(vertices.data()), vertex_count * sizeof(vertex));
+			uint64_t vertex_count;
+			in_file.read(reinterpret_cast<char*>(&vertex_count), sizeof(vertex_count));
+			std::vector<vertex> vertices(vertex_count);
+			in_file.read(reinterpret_cast<char*>(vertices.data()), vertex_count * sizeof(vertex));
 
-		std::vector<uint32_t> indices(vertex_count);
-		std::iota(indices.begin(), indices.end(), 0);
+			std::vector<uint32_t> indices(vertex_count);
+			std::iota(indices.begin(), indices.end(), 0);
 
-		m_meshes.emplace_back(vertices, indices, material_handle);
+			m_meshes.emplace_back(vertices, indices, material_handle);
+		}
 	}
 
-	std::lock_guard lock(*context.config().command.pool_mutex);
-
-	for (auto& mesh : m_meshes) {
-		mesh.initialize(context.config());
-	}
+	context.queue([this](renderer::context& ctx) {
+		for (auto& mesh : m_meshes) {
+			mesh.initialize(ctx.config());
+		}
+	});
 }
 
 auto gse::model::unload() -> void {
@@ -292,22 +301,13 @@ auto gse::model::meshes() const -> std::span<const mesh> {
 	return m_meshes;
 }
 
-gse::model_instance::model_instance(const resource::handle<model>& model_handle) : m_model_handle(model_handle) {
-	if (const auto* resolved_model = m_model_handle.resolve()) {
-		m_render_queue_entries.reserve(resolved_model->m_meshes.size());
-		for (const auto& mesh : resolved_model->m_meshes) {
-			m_render_queue_entries.emplace_back(&mesh, mat4(1.0f), unitless::vec3(1.0f));
-		}
-	}
-}
-
-auto gse::model_instance::set_position(const vec3<length>& position) -> void {
+auto gse::model_instance::set_position(const vec3<length>& position) const -> void {
 	for (auto& entry : m_render_queue_entries) {
 		entry.model_matrix = translate(mat4(1.0f), position);
 	}
 }
 
-auto gse::model_instance::set_rotation(const vec3<angle>& rotation) -> void {
+auto gse::model_instance::set_rotation(const vec3<angle>& rotation) const -> void {
 	for (auto& entry : m_render_queue_entries) {
 		entry.model_matrix = rotate(entry.model_matrix, axis::x, rotation.x);
 		entry.model_matrix = rotate(entry.model_matrix, axis::y, rotation.y);
@@ -316,6 +316,15 @@ auto gse::model_instance::set_rotation(const vec3<angle>& rotation) -> void {
 }
 
 auto gse::model_instance::render_queue_entries() const -> std::span<const render_queue_entry> {
+	if (m_render_queue_entries.empty() && m_model_handle.valid()) {
+		const auto* resolved_model = m_model_handle.resolve();
+
+		m_render_queue_entries.reserve(resolved_model->meshes().size());
+		for (std::size_t i = 0; i < resolved_model->meshes().size(); ++i) {
+			m_render_queue_entries.emplace_back(m_model_handle, i, mat4(1.0f), unitless::vec3(1.0f));
+		}
+	}
+
 	return m_render_queue_entries;
 }
 

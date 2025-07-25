@@ -8,7 +8,7 @@ import gse.platform;
 export namespace gse {
     class cube_map {
     public:
-        auto create(const vulkan::config& config, const std::array<std::filesystem::path, 6>& face_paths) -> void;
+        auto create(vulkan::config& config, const std::array<std::filesystem::path, 6>& face_paths) -> void;
         auto create(const vulkan::config& config, int resolution, bool depth_only = false) -> void;
 
         auto image_resource() const -> const vulkan::persistent_allocator::image_resource&;
@@ -22,7 +22,7 @@ export namespace gse {
     };
 }
 
-auto gse::cube_map::create(const vulkan::config& config, const std::array<std::filesystem::path, 6>& face_paths) -> void {
+auto gse::cube_map::create(vulkan::config& config, const std::array<std::filesystem::path, 6>& face_paths) -> void {
     const auto faces = image::load_cube_faces(face_paths);
 
     const vk::ImageCreateInfo image_info{
@@ -59,7 +59,7 @@ auto gse::cube_map::create(const vulkan::config& config, const std::array<std::f
     };
 
     m_image_resource = vulkan::persistent_allocator::create_image(
-        config.device_data, image_info, vk::MemoryPropertyFlagBits::eDeviceLocal, view_info
+        config.device_config(), image_info, vk::MemoryPropertyFlagBits::eDeviceLocal, view_info
     );
 
     vulkan::uploader::upload_image_layers(
@@ -91,7 +91,7 @@ auto gse::cube_map::create(const vulkan::config& config, const std::array<std::f
         .unnormalizedCoordinates = vk::False
     };
      
-    m_sampler = config.device_data.device.createSampler(sampler_info);
+    m_sampler = config.device_config().device.createSampler(sampler_info);
     m_initialized = true;
 }
 
@@ -140,7 +140,7 @@ auto gse::cube_map::create(const vulkan::config& config, const int resolution, c
     };
 
     m_image_resource = vulkan::persistent_allocator::create_image(
-        config.device_data, image_info, vk::MemoryPropertyFlagBits::eDeviceLocal, view_info
+        config.device_config(), image_info, vk::MemoryPropertyFlagBits::eDeviceLocal, view_info
     );
 
     constexpr vk::SamplerCreateInfo sampler_info{
@@ -162,7 +162,7 @@ auto gse::cube_map::create(const vulkan::config& config, const int resolution, c
         .unnormalizedCoordinates = vk::False
     };
 
-    m_sampler = config.device_data.device.createSampler(sampler_info);
+    m_sampler = config.device_config().device.createSampler(sampler_info);
     m_initialized = true;
 }
 
