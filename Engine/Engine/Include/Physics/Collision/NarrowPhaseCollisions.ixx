@@ -355,20 +355,23 @@ auto gse::narrow_phase_collision::resolve_dynamic_collision(physics::motion_comp
             const float jn = -(1.f + restitution) * relative_velocity_along_normal / denom;
             auto impulse = collision_normal * jn;
             object_motion_component->current_velocity += gse::vec3<gse::velocity>(impulse * inv_mass_a);
-            other_motion_component->current_velocity -= gse::vec3<gse::velocity>(impulse * inv_mass_b);
+            
 
             // angular impulse -> torque accumulator
-            const auto angular_momentum_a = cross(r_a.as<units::meters>(), impulse);        
-            const auto torque_impulse_a = gse::vec3<gse::torque>(angular_momentum_a / dt.as_default_unit());
-            object_motion_component->current_torque += torque_impulse_a;
+             // Apply angular impulse directly to angular velocity
+            const auto angular_impulse_a = cross(r_a.as<units::meters>(), impulse);
+            object_motion_component->angular_velocity += gse::vec3<gse::angular_velocity>(inv_i_a * angular_impulse_a);
 
-            gse::debug_renderer::add_debug_vector(object_collision_component.parent_id, contact_point, torque_impulse_a);
+            // Optional: Debug draw the impulse vector itself, not a derived torque
+            gse::debug_renderer::add_debug_vector(object_collision_component.parent_id, contact_point, impulse);
 
             if (!other_motion_component->position_locked) {
-                const auto angular_momentum_b = cross(r_b.as<units::meters>(), impulse);         
-                const auto torque_impulse_b = gse::vec3<gse::torque>(angular_momentum_b / dt.as_default_unit());
-                other_motion_component->current_torque -= torque_impulse_b;
-                gse::debug_renderer::add_debug_vector(other_collision_component.parent_id, contact_point, torque_impulse_b);
+                // For object B, the impulse is negative
+                const auto angular_impulse_b = cross(r_b.as<units::meters>(), -impulse);
+                other_motion_component->angular_velocity += gse::vec3<gse::angular_velocity>(inv_i_b * angular_impulse_b);
+				other_motion_component->current_velocity -= gse::vec3<gse::velocity>(impulse * inv_mass_b);
+                // Optional: Debug draw the impulse vector
+                gse::debug_renderer::add_debug_vector(other_collision_component.parent_id, contact_point, -impulse);
             }
 
 
@@ -523,12 +526,11 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
             object_motion_component->current_velocity += gse::vec3<gse::velocity>(impulse * inv_mass);
 
             // angular impulse -> torque accumulator
-            const auto angular_momentum = cross(r_a.as<units::meters>(), impulse);       
-            const auto torque_impulse = gse::vec3<gse::torque>(angular_momentum / dt.as_default_unit());
-            object_motion_component->current_torque += torque_impulse;
+            const auto angular_impulse = cross(r_a.as<units::meters>(), impulse);
+            object_motion_component->angular_velocity += gse::vec3<gse::angular_velocity>(inv_inertial_tensor * angular_impulse);
 
-            gse::debug_renderer::add_debug_vector(object_collision_component.parent_id, contact_point, torque_impulse);
-
+            // Optional: Debug draw the impulse vector itself, not a derived torque
+            gse::debug_renderer::add_debug_vector(object_collision_component.parent_id, contact_point, impulse);
         }
 
 	}
