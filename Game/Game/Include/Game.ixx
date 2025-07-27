@@ -59,6 +59,15 @@ export namespace gs {
 					gse::gui::vec("Test Vec2", gse::window::get_mouse_position_rel_bottom_left());
 				}
 			);
+
+			gse::gui::create_menu("Test2", { 300.f, 100.f }, { 200.f, 200.f }, [] {
+				gse::gui::vec("Test Vec2", gse::window::get_mouse_position_rel_bottom_left());
+				gse::gui::text("Hello, world!");
+				gse::gui::value("Test Value", 42);
+				gse::gui::value("Test Quantity", gse::meters(5.0f));
+				gse::gui::vec("Test Vec", gse::vec::meters(1.f, 2.f, 3.f));
+				gse::gui::vec("Test Vec2", gse::window::get_mouse_position_rel_bottom_left());
+			});
 		}
 	};
 }

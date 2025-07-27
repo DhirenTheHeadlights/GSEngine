@@ -381,7 +381,7 @@ auto gse::font::text_layout(const std::string_view text, const unitless::vec2 st
 
         positioned_glyphs.emplace_back(
             positioned_glyph{
-                .screen_rect = rect_t<unitless::vec2>({.top_left_position = quad_pos, .size = quad_size }),
+                .screen_rect = rect_t<unitless::vec2>::from_position_size(quad_pos, quad_size),
                 .uv_rect = corrected_uv
             }
         );

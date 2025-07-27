@@ -24,14 +24,9 @@ export namespace gse {
         };
 
         constexpr rect_t() = default;
-        constexpr rect_t(const min_max_params& p);
+        explicit constexpr rect_t(const min_max_params& p);
 
-        struct position_params {
-            T top_left_position;
-            T size;
-        };
-
-        constexpr rect_t(const position_params& p);
+        static constexpr auto from_position_size(const T& top_left, const T& size) -> rect_t ;
 
         constexpr auto left() const -> value_type;
         constexpr auto right() const -> value_type;
@@ -70,12 +65,10 @@ constexpr gse::rect_t<T>::rect_t(const min_max_params& p)
 }
 
 template <gse::is_vec2 T>
-constexpr gse::rect_t<T>::rect_t(const position_params& p)
-    : rect_t(min_max_params{
-        .min = p.top_left_position,
-        .max = {p.top_left_position.x + p.size.x, p.top_left_position.y - p.size.y}
-        }) {
-    assert(p.size.x >= 0 && p.size.y >= 0, "Rectangle size cannot be negative");
+constexpr auto gse::rect_t<T>::from_position_size(const T& top_left, const T& size) -> rect_t {
+	gse::assert(size.x >= 0 && size.y >= 0, "Rectangle size cannot be negative.");
+	const auto bottom_right = T{ top_left.x + size.x, top_left.y - size.y };
+	return gse::rect_t(min_max_params{ .min = top_left, .max = bottom_right });
 }
 
 template <gse::is_vec2 T>
