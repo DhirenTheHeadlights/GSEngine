@@ -41,6 +41,18 @@ export namespace gse::gui {
 namespace gse::gui {
 	using ui_rect = rect_t<unitless::vec2>;
 
+	enum class resize_handle {
+		none,
+		left,
+		right,
+		top,
+		bottom,
+		top_left,
+		top_right,
+		bottom_left,
+		bottom_right
+	};
+
 	struct menu {
 		ui_rect rect;
 		unitless::vec2 pre_docked_size;
@@ -49,6 +61,7 @@ namespace gse::gui {
 		unitless::vec2 offset;
 		timed_lock<bool> docked{ false, seconds(0.25) };
 		bool docked_waiting_for_release = false;
+		resize_handle resizing{ resize_handle::none };
 
 		std::function<void()> contents;
 		std::vector<std::string> items;
@@ -72,6 +85,8 @@ namespace gse::gui {
 
 	static constinit bool render_docking_preview = false;
 	constexpr float padding = 10.f;
+	constexpr float resize_border_thickness = 8.f;
+	constexpr unitless::vec2 min_menu_size = { 150.f, 100.f };
 }
 
 auto gse::gui::initialize(renderer::context& context) -> void {
@@ -114,10 +129,66 @@ auto gse::gui::initialize(renderer::context& context) -> void {
 auto gse::gui::update() -> void {
 	for (auto& m : menus) {
 		const auto mouse_position = window::get_mouse_position_rel_bottom_left();
+		const bool is_interacting_with_this_menu = m.grabbed.value() || m.resizing != resize_handle::none;
 
 		if (input::get_mouse().buttons[GLFW_MOUSE_BUTTON_LEFT].held) {
-			if (!m.grabbed.value() && !(m.docked.value() && m.docked_waiting_for_release)) {
-				if (m.rect.contains(mouse_position)) {
+			if (m.resizing != resize_handle::none) {
+				auto min_corner = m.rect.min();
+				auto max_corner = m.rect.max();
+
+				switch (m.resizing) {
+				case resize_handle::left:         min_corner.x = mouse_position.x; break;
+				case resize_handle::right:        max_corner.x = mouse_position.x; break;
+				case resize_handle::bottom:       min_corner.y = mouse_position.y; break;
+				case resize_handle::top:          max_corner.y = mouse_position.y; break;
+				case resize_handle::bottom_left:  min_corner = mouse_position; break;
+				case resize_handle::bottom_right: min_corner.y = mouse_position.y; max_corner.x = mouse_position.x; break;
+				case resize_handle::top_left:     min_corner.x = mouse_position.x; max_corner.y = mouse_position.y; break;
+				case resize_handle::top_right:    max_corner = mouse_position; break;
+				default:;
+				}
+
+				m.rect = ui_rect({ .min = min_corner, .max = max_corner });
+
+				if (m.rect.width() < min_menu_size.x) {
+					if (m.resizing == resize_handle::left || m.resizing == resize_handle::top_left || m.resizing == resize_handle::bottom_left) {
+						min_corner.x = max_corner.x - min_menu_size.x;
+					}
+					else {
+						max_corner.x = min_corner.x + min_menu_size.x;
+					}
+				}
+				if (m.rect.height() < min_menu_size.y) {
+					if (m.resizing == resize_handle::bottom || m.resizing == resize_handle::bottom_left || m.resizing == resize_handle::bottom_right) {
+						min_corner.y = max_corner.y - min_menu_size.y;
+					}
+					else {
+						max_corner.y = min_corner.y + min_menu_size.y;
+					}
+				}
+				m.rect = ui_rect({ .min = min_corner, .max = max_corner });
+
+			}
+			else if (m.grabbed.value()) {
+				auto new_top_left = mouse_position + m.offset;
+				new_top_left = clamp(new_top_left, { 0.f, m.rect.height() }, unitless::vec2(window::get_window_size()));
+				m.rect = ui_rect({ .top_left_position = new_top_left, .size = m.rect.size() });
+			}
+			else if (!is_interacting_with_this_menu) {
+				bool on_left = std::abs(mouse_position.x - m.rect.left()) < resize_border_thickness;
+				bool on_right = std::abs(mouse_position.x - m.rect.right()) < resize_border_thickness;
+				bool on_bottom = std::abs(mouse_position.y - m.rect.bottom()) < resize_border_thickness;
+				bool on_top = std::abs(mouse_position.y - m.rect.top()) < resize_border_thickness;
+
+				if (on_top && on_left) m.resizing = resize_handle::top_left;
+				else if (on_top && on_right) m.resizing = resize_handle::top_right;
+				else if (on_bottom && on_left) m.resizing = resize_handle::bottom_left;
+				else if (on_bottom && on_right) m.resizing = resize_handle::bottom_right;
+				else if (on_left) m.resizing = resize_handle::left;
+				else if (on_right) m.resizing = resize_handle::right;
+				else if (on_top) m.resizing = resize_handle::top;
+				else if (on_bottom) m.resizing = resize_handle::bottom;
+				else if (m.rect.contains(mouse_position)) {
 					m.grabbed = true;
 					m.offset = m.rect.top_left() - mouse_position;
 
@@ -129,37 +200,25 @@ auto gse::gui::update() -> void {
 					}
 				}
 			}
-
+		}
+		else {
 			if (m.grabbed.value()) {
-				auto new_top_left = mouse_position + m.offset;
-				new_top_left = clamp(new_top_left, { 0.f, m.rect.height() }, unitless::vec2(window::get_window_size()));
-				m.rect = ui_rect({ .top_left_position = new_top_left, .size = m.rect.size() });
-
-				for (auto& [rect, docked_position, docked_size] : docks) {
-					if (m.rect.intersects(rect) && !m.docked.value() && m.docked.value_mutable()) {
-						clock hover_clock;
-
-						while (hover_clock.elapsed() < seconds(0.25)) {
-							render_docking_preview = true;
-							if (!m.rect.intersects(rect)) {
-								render_docking_preview = false;
-								break;
-							}
-						}
-
+				for (const auto& [rect, docked_position, docked_size] : docks) {
+					if (rect.contains(mouse_position)) {
+						m.pre_docked_size = m.rect.size();
+						m.rect = ui_rect({
+							.top_left_position = docked_position,
+							.size = docked_size
+							});
 						m.docked = true;
-						m.grabbed = false;
-						m.rect = ui_rect({ .top_left_position = docked_position, .size = docked_size });
-						m.docked_waiting_for_release = true;
-
-						render_docking_preview = false;
+						break;
 					}
 				}
 			}
-		}
-		else {
+
 			m.grabbed = false;
 			m.docked_waiting_for_release = false;
+			m.resizing = resize_handle::none;
 		}
 	}
 }
@@ -171,10 +230,11 @@ auto gse::gui::render(renderer::context& context, renderer::sprite& sprite_rende
 
 	for (auto& m : menus) {
 		constexpr float font_size = 16.f;
+		constexpr unitless::vec2 padding_vec = { padding, padding };
 
-		const auto content_rect = m.rect.inset(unitless::vec2(padding, padding));
+		const auto content_rect = m.rect.inset(padding_vec);
 
-		sprite_renderer.queue({ .rect = m.rect, .color = { 1.f, 0.f, 0.f, 1.f }, .texture = blank });
+		sprite_renderer.queue({ .rect = m.rect, .color = { 0.1f, 0.1f, 0.1f, 0.85f }, .texture = blank });
 
 		current_menu = &m;
 		m.contents();
@@ -249,7 +309,7 @@ auto gse::gui::text(const std::string& text) -> void {
 template <gse::is_arithmetic T>
 auto gse::gui::value(const std::string& name, T value) -> void {
 	if (current_menu) {
-		current_menu->items.emplace_back(std::format("{}: {}", name, value));
+		current_menu->items.emplace_back(std::format("{} {}", value, name));
 	}
 }
 

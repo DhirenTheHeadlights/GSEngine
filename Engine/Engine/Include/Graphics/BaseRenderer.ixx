@@ -21,8 +21,14 @@ export namespace gse {
 
 		static auto to_vulkan_scissor(const rect_t<unitless::vec2>& rect, const unitless::vec2& window_size) -> vk::Rect2D {
 			return {
-				.offset = { static_cast<int32_t>(rect.top_left().x), static_cast<int32_t>(window_size.y - rect.bottom_right().y) },
-				.extent = { static_cast<uint32_t>(rect.size().x), static_cast<uint32_t>(rect.size().y) }
+				.offset = {
+					static_cast<int32_t>(rect.left()),
+					static_cast<int32_t>(window_size.y - rect.top())
+				},
+				.extent = {
+					static_cast<uint32_t>(rect.width()),
+					static_cast<uint32_t>(rect.height())
+				}
 			};
 		}
 	};
