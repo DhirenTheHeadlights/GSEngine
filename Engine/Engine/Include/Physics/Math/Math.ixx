@@ -16,6 +16,8 @@ export import :unitless_vec;
 export import :unit_vec;
 export import :vec_math;
 export import :unit_vec_math;
+export import :rectangle;
+export import :circle;
 
 import :base_vec;
 

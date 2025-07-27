@@ -39,6 +39,10 @@ namespace gse {
 
 			reset_timer("Engine::render");
 		}
+
+		auto shutdown() -> void override {
+			scene_loader::shutdown();
+		}
 	};
 
 	engine engine("GSEngine");
@@ -51,8 +55,7 @@ export namespace gse {
 		engine.add_hook(std::make_unique<base_engine_hook>(&engine));
 		(engine.add_hook(std::make_unique<Args>(&engine)), ...);
 
-		engine.initialize();
-		engine.loop_while([] {
+		engine.cycle([] {
 			return !should_shutdown;
 		});
 	}

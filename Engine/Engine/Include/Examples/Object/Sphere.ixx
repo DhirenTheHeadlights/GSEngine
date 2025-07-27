@@ -17,7 +17,7 @@ export namespace gse {
 			int stacks = 18;  // Number of stacks from top to bottom
 		};
 
-		sphere(const id& owner_id, registry* reg, const params& p) : hook(owner_id, reg), m_params(p) {}
+		sphere(const params& p) : m_params(p) {}
 
 		auto initialize() -> void override {
 			const auto [mc_id, mc] = add_component<physics::motion_component>({

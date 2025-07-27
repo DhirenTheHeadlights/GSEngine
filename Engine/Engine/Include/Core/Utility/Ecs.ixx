@@ -83,11 +83,13 @@ export namespace gse {
 			}
 		}
 
-		auto loop_while(const std::function<bool()>& condition) const -> void {
+		auto cycle(const std::function<bool()>& condition) const -> void {
+			initialize();
 			while (condition()) {
 				update();
 				render();
 			}
+			shutdown();
 		}
 	private:
 		std::vector<std::unique_ptr<hook<T>>> m_hooks;
@@ -186,6 +188,8 @@ export namespace gse {
 		using link_id_t = id;
 		using hook_ptr_type = std::unique_ptr<T>;
 
+		explicit hook_link(registry& reg) : m_registry(reg) {}
+
 		template <typename... Args>
 		auto add(const owner_id_t& owner_id, Args&&... args) -> std::pair<link_id_t, T*> {
 			assert(!try_get(owner_id), std::format( 
@@ -196,8 +200,9 @@ export namespace gse {
 			const link_id_t new_link_id = generate_id(std::string(typeid(T).name()) + std::to_string(m_next_link_id++));
 			m_link_to_owner_map[new_link_id] = owner_id;
 
-			auto new_hook = std::make_unique<T>(owner_id, std::forward<Args>(args)...);
+			auto new_hook = std::make_unique<T>(std::forward<Args>(args)...);
 			T* raw_ptr = new_hook.get();
+			raw_ptr->inject(owner_id, &m_registry);
 			m_queued_hooks.add(owner_id, std::move(new_hook));
 
 			return { new_link_id, raw_ptr };
@@ -260,6 +265,7 @@ export namespace gse {
 		id_mapped_collection<hook_ptr_type, owner_id_t> m_queued_hooks;
 		std::unordered_map<link_id_t, owner_id_t> m_link_to_owner_map;
 		std::uint32_t m_next_link_id = 0;
+		registry& m_registry;
 	};
 
 	class registry final : public non_copyable {
@@ -452,7 +458,7 @@ auto gse::registry::add_hook(const id& owner_id, Args&&... args) -> std::pair<id
 
 	const auto type_idx = std::type_index(typeid(U));
 	if (!m_hook_links.contains(type_idx)) {
-		m_hook_links[type_idx] = std::make_unique<hook_link<U>>();
+		m_hook_links[type_idx] = std::make_unique<hook_link<U>>(*this);
 	}
 
 	auto& lnk = static_cast<hook_link<U>&>(*m_hook_links.at(type_idx));
@@ -588,7 +594,6 @@ export template <>
 class gse::hook<gse::entity> : public identifiable_owned {
 public:
 	virtual ~hook() = default;
-	explicit hook(const id& owner_id, registry* reg);
 
 	virtual auto initialize() -> void {}
 	virtual auto update() -> void {}
@@ -622,11 +627,12 @@ public:
 	auto configure_when_present(Func&& config_func) -> void;
 private:
 	registry* m_registry = nullptr;
-};
 
-gse::hook<gse::entity>::hook(const id& owner_id, registry* reg) : identifiable_owned(owner_id), m_registry(reg) {
-	assert(m_registry != nullptr, std::format("Registry cannot be null for hook with owner id {}.", owner_id));
-}
+	template <is_entity_hook T>
+	friend class hook_link;
+
+	auto inject(const id& owner_id, registry* reg) -> void ;
+};
 
 template <gse::is_component T> requires gse::has_params<T>
 auto gse::hook<gse::entity>::add_component(typename T::params p) -> std::pair<id, T*> {
@@ -640,12 +646,12 @@ auto gse::hook<gse::entity>::add_component() -> std::pair<id, T*> {
 
 template <gse::is_entity_hook T> requires gse::has_params<T>
 auto gse::hook<gse::entity>::add_hook(typename T::params p) -> std::pair<id, T*> {
-	return m_registry->add_hook<T>(owner_id(), m_registry, std::move(p));
+	return m_registry->add_hook<T>(owner_id(), std::move(p));
 }
 
 template <gse::is_entity_hook T> requires (!gse::has_params<T>)
 auto gse::hook<gse::entity>::add_hook() -> std::pair<id, T*> {
-	return m_registry->add_hook<T>(owner_id(), m_registry);
+	return m_registry->add_hook<T>(owner_id());
 }
 
 template <typename T>
@@ -684,6 +690,12 @@ auto gse::hook<gse::entity>::configure_when_present(Func&& config_func) -> void 
 	configure_when_present<c>(std::forward<Func>(config_func));
 }
 
+auto gse::hook<gse::entity>::inject(const id& owner_id, registry* reg) -> void {
+	assert(reg != nullptr, std::format("Registry cannot be null for hook with owner id {}.", owner_id));
+	m_registry = reg;
+	set_owner_id(owner_id);
+}
+
 export namespace gse {
 	class scene final : public hookable<scene> {
 	public:
@@ -717,7 +729,7 @@ export namespace gse {
 				requires (is_entity_hook<T> || is_component<T>) && has_params<T>
 			auto with(const typename T::params& p) -> builder& {
 				if constexpr (is_entity_hook<T>) {
-					m_scene->registry().add_hook<T>(m_entity_id, &m_scene->registry(), p);
+					m_scene->registry().add_hook<T>(m_entity_id, p);
 				}
 				else {
 					m_scene->registry().add_component<T>(m_entity_id, p);
@@ -729,7 +741,7 @@ export namespace gse {
 				requires (is_entity_hook<T> || is_component<T>) && !has_params<T>
 			auto with() -> builder& {
 				if constexpr (is_entity_hook<T>) {
-					m_scene->registry().add_hook<T>(m_entity_id, &m_scene->registry());
+					m_scene->registry().add_hook<T>(m_entity_id);
 				}
 				else {
 					m_scene->registry().add_component<T>(m_entity_id);

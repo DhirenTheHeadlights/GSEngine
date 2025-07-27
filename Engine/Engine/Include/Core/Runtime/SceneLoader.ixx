@@ -19,6 +19,7 @@ export namespace gse::scene_loader {
 	auto initialize() -> void;
 	auto update() -> void;
 	auto render() -> void;
+	auto shutdown() -> void;
 
 	auto queue(const id& id, const std::function<bool()>& trigger) -> void;
 
@@ -96,6 +97,17 @@ auto gse::scene_loader::render() -> void {
 			}
 		}
 	);
+}
+
+auto gse::scene_loader::shutdown() -> void {
+	for (const auto& scene : scenes | std::views::values) {
+		scene->shutdown();
+	}
+
+	scenes.clear();
+	scene_triggers.clear();
+
+	renderer::shutdown();
 }
 
 auto gse::scene_loader::queue(const id& id, const std::function<bool()>& trigger) -> void {

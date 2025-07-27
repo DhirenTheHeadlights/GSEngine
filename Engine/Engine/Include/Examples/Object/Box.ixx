@@ -19,7 +19,7 @@ export namespace gse {
 			vec3<length> size = vec3<length>(1.f, 1.f, 1.f);
         };
 
-        box(const id& owner_id, registry* reg, const params& p) : hook(owner_id, reg), m_initial_position(p.initial_position), m_size(p.size) {}
+        box(const params& p) : m_initial_position(p.initial_position), m_size(p.size) {}
 
         auto initialize() -> void override {
             const auto [mc_id, mc] = add_component<physics::motion_component>({

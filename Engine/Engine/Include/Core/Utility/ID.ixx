@@ -57,11 +57,16 @@ export namespace gse {
 
 	class identifiable_owned {
 	public:
+		identifiable_owned() = default;
 		explicit identifiable_owned(const id& owner_id) : m_owner_id(owner_id) {}
 		auto owner_id() const -> const id& { return m_owner_id; }
 		auto operator==(const identifiable_owned& other) const -> bool = default;
 	private:
 		id m_owner_id;
+	protected:
+		auto set_owner_id(const id& owner_id) -> void {
+			m_owner_id = owner_id;
+		}
 	};
 
 	class identifiable_owned_only_uuid {

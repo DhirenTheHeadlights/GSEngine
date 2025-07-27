@@ -67,6 +67,7 @@ export namespace gse::internal {
     template <typename Derived, typename T, int N>
     struct vec_t_common : vec_from_lesser<Derived, T, N> {
         using vec_from_lesser<Derived, T, N>::vec_from_lesser;
+		using value_type = T;
 
         constexpr vec_t_common() = default;
 

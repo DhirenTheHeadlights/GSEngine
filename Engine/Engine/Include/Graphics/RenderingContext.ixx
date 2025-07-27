@@ -54,6 +54,8 @@ export namespace gse::renderer {
 		auto config() -> vulkan::config& ;
 
 		auto camera() -> camera&;
+
+		auto shutdown() -> void;
 	private:
 		auto loader(const std::type_index& type_index) const -> resource::loader_base*;
 
@@ -61,17 +63,13 @@ export namespace gse::renderer {
 		std::unordered_map<std::type_index, std::unique_ptr<resource::loader_base>> m_resource_loaders;
 		mutable std::vector<command> m_command_queue;
 		gse::camera m_camera;
-		std::mutex m_mutex;
+		mutable std::mutex m_mutex;
 	};
 }
 
 gse::renderer::context::context() : m_config(platform::initialize()) {}
 
 gse::renderer::context::~context() {
-	for (auto& loader : m_resource_loaders | std::views::values) {
-		loader.reset();
-	}
-
 	m_config.reset();
 }
 
@@ -106,6 +104,7 @@ auto gse::renderer::context::queue(const std::string& name, Args&&... args) -> r
 }
 
 auto gse::renderer::context::queue(command&& cmd) const -> void {
+	std::lock_guard lock(m_mutex);
 	m_command_queue.push_back(std::move(cmd));
 }
 
@@ -179,6 +178,22 @@ auto gse::renderer::context::config() -> vulkan::config& {
 
 auto gse::renderer::context::camera() -> gse::camera& {
 	return m_camera;
+}
+
+auto gse::renderer::context::shutdown() -> void {
+	if (!m_config) return;
+
+	m_config->device_config().device.waitIdle();
+
+	for (auto& loader : m_resource_loaders | std::views::values) {
+		loader.reset();
+	}
+
+	m_resource_loaders.clear();
+
+	m_config->swap_chain_config().albedo_image = {};
+	m_config->swap_chain_config().normal_image = {};
+	m_config->swap_chain_config().depth_image = {};
 }
 
 auto gse::renderer::context::loader(const std::type_index& type_index) const -> resource::loader_base* {

@@ -6,6 +6,7 @@ import :rendering_context;
 import :render_component;
 
 import gse.utility;
+import gse.physics.math;
 
 export namespace gse {
 	class base_renderer {
@@ -17,5 +18,12 @@ export namespace gse {
 		virtual auto render(std::span<std::reference_wrapper<registry>> registries) -> void = 0;
 	protected:
 		renderer::context& m_context;
+
+		static auto to_vulkan_scissor(const rect_t<unitless::vec2>& rect, const unitless::vec2& window_size) -> vk::Rect2D {
+			return {
+				.offset = { static_cast<int32_t>(rect.top_left().x), static_cast<int32_t>(window_size.y - rect.bottom_right().y) },
+				.extent = { static_cast<uint32_t>(rect.size().x), static_cast<uint32_t>(rect.size().y) }
+			};
+		}
 	};
 }

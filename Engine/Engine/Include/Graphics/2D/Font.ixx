@@ -1,42 +1,39 @@
-module;
-
-#include <algorithm>
-#include <fstream>
-#include <iostream>
-#include <unordered_map>
-#include <vector>
-
-#include <msdfgen.h>
-#define STB_TRUETYPE_IMPLEMENTATION
-#include <filesystem>
-#include <freetype/freetype.h>
-#include "ext/import-font.h"
-
 export module gse.graphics:font;
 
-import :texture;
+import <algorithm>;
+import <fstream>;
+import <iostream>;
+import <unordered_map>;
+import <vector>;
+import <filesystem>;
 
+import <msdfgen.h>;
+#define STB_TRUETYPE_IMPLEMENTATION
+import <freetype/freetype.h>;
+import "ext/import-font.h";
+
+import :texture;
 import gse.assert;
 import gse.physics.math;
 import gse.platform;
 
 export namespace gse {
     struct glyph {
-		float ft_glyph_index = 0; 
+        float ft_glyph_index = 0;
         float u0 = 0, v0 = 0;
         float u1 = 0, v1 = 0;
         float width = 0, height = 0;
         float x_offset = 0, y_offset = 0;
         float x_advance = 0;
-		float shape_w = 0, shape_h = 0; 
+        float shape_w = 0, shape_h = 0;
 
         auto uv() const -> unitless::vec4 {
             return { u0, v0, u1 - u0, v1 - v0 };
-		}
+        }
 
         auto size() const -> unitless::vec2 {
             return { width, height };
-		}
+        }
 
         auto bearing() const -> unitless::vec2 {
             return { x_offset, y_offset };
@@ -44,20 +41,19 @@ export namespace gse {
     };
 
     struct positioned_glyph {
-        unitless::vec2 position;
-        unitless::vec2 size;
-        unitless::vec4 uv;
+        rect_t<unitless::vec2> screen_rect;
+        unitless::vec4 uv_rect;
     };
 
-	class font : public identifiable {
+    class font : public identifiable {
     public:
         font(const std::filesystem::path& path);
         ~font();
 
-		static auto compile() -> std::set<std::filesystem::path>;
+        static auto compile() -> std::set<std::filesystem::path>;
 
         auto load(const renderer::context& context) -> void;
-		auto unload() -> void;
+        auto unload() -> void;
 
         auto texture() const -> const texture*;
         auto text_layout(std::string_view text, unitless::vec2 start, float scale = 1.0f) const -> std::vector<positioned_glyph>;
@@ -71,10 +67,10 @@ export namespace gse {
         float m_ascender = 0.0f;
         float m_descender = 0.0f;
 
-		FT_Face m_face = nullptr;
+        FT_Face m_face = nullptr;
         FT_Library m_ft = nullptr;
 
-		std::filesystem::path m_baked_path;
+        std::filesystem::path m_baked_path;
     };
 }
 
@@ -82,7 +78,7 @@ gse::font::font(const std::filesystem::path& path) : identifiable(path), m_baked
     assert(
         exists(path),
         std::format("Font file '{}' does not exist.", path.string())
-	);
+    );
 }
 
 gse::font::~font() {
@@ -119,7 +115,7 @@ auto gse::font::compile() -> std::set<std::filesystem::path> {
         resources.insert(baked_path);
 
         if (exists(baked_path) && last_write_time(source_path) <= last_write_time(baked_path)) {
-            continue; // Up-to-date
+            continue;
         }
 
         FT_Library ft_lib;
@@ -212,7 +208,7 @@ auto gse::font::compile() -> std::set<std::filesystem::path> {
         std::ofstream out_file(baked_path, std::ios::binary);
         assert(out_file.is_open(), "Failed to open baked font file for writing.");
 
-        constexpr uint32_t magic = 0x47464E54; // 'GFNT'
+        constexpr uint32_t magic = 0x47464E54;
         constexpr uint32_t version = 1;
         out_file.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
         out_file.write(reinterpret_cast<const char*>(&version), sizeof(version));
@@ -258,18 +254,18 @@ auto gse::font::compile() -> std::set<std::filesystem::path> {
 
 auto gse::font::load(const renderer::context& context) -> void {
     std::ifstream in_file(m_baked_path, std::ios::binary);
-    assert(in_file.is_open(), std::format( 
+    assert(in_file.is_open(), std::format(
         "Failed to open baked font file: {}",
         m_baked_path.string()
-	));
+    ));
 
     uint32_t magic, version;
     in_file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
     in_file.read(reinterpret_cast<char*>(&version), sizeof(version));
-    assert(magic == 0x47464E54 && version == 1, std::format( 
+    assert(magic == 0x47464E54 && version == 1, std::format(
         "Invalid baked font file format or version: {}",
-		m_baked_path.string()
-	));
+        m_baked_path.string()
+    ));
 
     uint64_t path_len;
     in_file.read(reinterpret_cast<char*>(&path_len), sizeof(path_len));
@@ -297,7 +293,7 @@ auto gse::font::load(const renderer::context& context) -> void {
         texture::profile::msdf
     );
 
-	m_texture->load(context);
+    m_texture->load(context);
 
     uint64_t glyph_count;
     in_file.read(reinterpret_cast<char*>(&glyph_count), sizeof(glyph_count));
@@ -316,7 +312,7 @@ auto gse::font::load(const renderer::context& context) -> void {
 }
 
 auto gse::font::unload() -> void {
-	m_baked_path = std::filesystem::path();
+    m_baked_path = std::filesystem::path();
     m_glyphs.clear();
     m_texture.reset();
     if (m_face) {
@@ -340,7 +336,7 @@ auto gse::font::text_layout(const std::string_view text, const unitless::vec2 st
     auto baseline = start;
     baseline.y -= m_ascender * scale;
 
-	auto cursor = baseline;
+    auto cursor = baseline;
     std::uint32_t previous_glyph_index = 0;
 
     for (const char c : text) {
@@ -358,7 +354,7 @@ auto gse::font::text_layout(const std::string_view text, const unitless::vec2 st
         }
 
         const auto quad_pos = unitless::vec2{
-		    cursor.x + current_glyph.bearing().x * scale,
+            cursor.x + current_glyph.bearing().x * scale,
             cursor.y + current_glyph.bearing().y * scale
         };
         const auto quad_size = current_glyph.size() * scale;
@@ -385,9 +381,8 @@ auto gse::font::text_layout(const std::string_view text, const unitless::vec2 st
 
         positioned_glyphs.emplace_back(
             positioned_glyph{
-	            .position = quad_pos,
-	            .size = quad_size,
-				.uv = corrected_uv
+                .screen_rect = rect_t<unitless::vec2>({.top_left_position = quad_pos, .size = quad_size }),
+                .uv_rect = corrected_uv
             }
         );
 
@@ -398,5 +393,5 @@ auto gse::font::text_layout(const std::string_view text, const unitless::vec2 st
 }
 
 auto gse::font::line_height(const float scale) const -> float {
-	return (m_ascender - m_descender) * scale;
+    return (m_ascender - m_descender) * scale;
 }
