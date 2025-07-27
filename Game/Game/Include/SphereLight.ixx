@@ -9,7 +9,7 @@ export namespace gs {
 	public:
 		using params = gse::sphere::params;
 
-		sphere_light(const gse::id& owner_id, gse::registry* reg, const params& p) : hook(owner_id, reg), m_position(p.initial_position), m_radius(p.radius), m_sectors(p.sectors), m_stacks(p.stacks) {
+		sphere_light(const params& p) : m_position(p.initial_position), m_radius(p.radius), m_sectors(p.sectors), m_stacks(p.stacks) {
 			m_count++;
 		}
 

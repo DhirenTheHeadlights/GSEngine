@@ -29,7 +29,7 @@ export namespace gs {
 				gse::vec3<gse::length> position;
 			};
 
-			positioned_object_hook(const gse::id& owner_id, gse::registry* reg, const params& p) : hook(owner_id, reg), position(p.position) {}
+			positioned_object_hook(const params& p) : position(p.position) {}
 
 			gse::vec3<gse::length> position;
 

@@ -8,7 +8,7 @@ export namespace gs {
 	public:
 		using params = gse::box::params;
 
-		skybox(const gse::id& owner_id, gse::registry* reg, const params& p) : hook(owner_id, reg), m_initial_position(p.initial_position), m_size(p.size) {}
+		skybox(const params& p) : m_initial_position(p.initial_position), m_size(p.size) {}
 
 		auto initialize() -> void override {
 			add_hook<gse::box>({

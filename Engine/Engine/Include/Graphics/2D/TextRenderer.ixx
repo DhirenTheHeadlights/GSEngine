@@ -1,6 +1,7 @@
 export module gse.graphics:text_renderer;
 
 import std;
+import vulkan_hpp;
 
 import :debug;
 import :font;
@@ -19,10 +20,10 @@ export namespace gse::renderer {
 		struct command {
 			resource::handle<font> font;
 			std::string text;
-			vec2<length> position;
+			unitless::vec2 position;
 			float scale = 1.0f;
 			unitless::vec4 color = { 1.0f, 1.0f, 1.0f, 1.0f };
-			std::optional<length> max_width = std::nullopt;
+			std::optional<rect_t<unitless::vec2>> clip_rect = std::nullopt;
 		};
 
 		explicit text(context& context) : base_renderer(context) {}
@@ -128,6 +129,15 @@ auto gse::renderer::text::initialize() -> void {
 		.pColorAttachmentFormats = &color_format
 	};
 
+	constexpr std::array dynamic_states = {
+		vk::DynamicState::eScissor
+	};
+
+	const vk::PipelineDynamicStateCreateInfo dynamic_state_info{
+		.dynamicStateCount = static_cast<uint32_t>(dynamic_states.size()),
+		.pDynamicStates = dynamic_states.data()
+	};
+
 	vk::GraphicsPipelineCreateInfo pipeline_info{
 		.pNext = &pipeline_rendering_info,
 		.stageCount = 2,
@@ -139,6 +149,7 @@ auto gse::renderer::text::initialize() -> void {
 		.pMultisampleState = &multisampling,
 		.pDepthStencilState = &transparent_depth_stencil_state,
 		.pColorBlendState = &color_blending,
+		.pDynamicState = &dynamic_state_info,
 		.layout = *m_pipeline_layout
 	};
 	m_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
@@ -164,6 +175,7 @@ auto gse::renderer::text::render(std::span<std::reference_wrapper<registry>> reg
 	auto& config = m_context.config();
 	const auto& command = config.frame_context().command_buffer;
 	auto [width, height] = config.swap_chain_config().extent;
+	const unitless::vec2 window_size = { static_cast<float>(width), static_cast<float>(height) };
 
 	const auto projection = orthographic(
 		meters(0.0f), meters(static_cast<float>(width)),
@@ -188,28 +200,42 @@ auto gse::renderer::text::render(std::span<std::reference_wrapper<registry>> reg
 	};
 
 	vulkan::render(
-		config, 
-		rendering_info, 
+		config,
+		rendering_info,
 		[&] {
 			command.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline);
 			command.bindVertexBuffers(0, { *m_vertex_buffer.buffer }, { 0 });
 			command.bindIndexBuffer(*m_index_buffer.buffer, 0, vk::IndexType::eUint32);
 
-			for (const auto& [font, text, position, scale, color, max_width] : m_draw_commands) {
+			const vk::Rect2D default_scissor{ {0, 0}, {width, height} };
+			command.setScissor(0, { default_scissor });
+			auto current_scissor = default_scissor;
+
+			for (const auto& [font, text, draw_pos, scale, color, clip_rect] : m_draw_commands) {
 				if (!font.valid() || text.empty()) continue;
 
-				m_shader->push(command, m_pipeline_layout, "msdf_texture", font->texture()->descriptor_info());
-				const auto glyphs = font->text_layout(text, position.as<units::meters>(), scale);
+				auto desired_scissor = default_scissor;
+				if (clip_rect.has_value()) {
+					desired_scissor = to_vulkan_scissor(clip_rect.value(), window_size);
+				}
 
-				for (const auto& [glyph_position, size, uv] : glyphs) {
-					if (max_width && glyph_position.x > *max_width) continue;
+				if (memcmp(&desired_scissor, &current_scissor, sizeof(vk::Rect2D)) != 0) {
+					command.setScissor(0, { desired_scissor });
+					current_scissor = desired_scissor;
+				}
+
+				m_shader->push(command, m_pipeline_layout, "msdf_texture", font->texture()->descriptor_info());
+
+				for (const auto glyphs = font->text_layout(text, draw_pos, scale); const auto& [screen_rect, uv_rect] : glyphs) {
+					auto rect_position = screen_rect.top_left();
+					auto size = screen_rect.size();
 
 					std::unordered_map<std::string, std::span<const std::byte>> push_constants = {
 						{ "projection", std::as_bytes(std::span(&projection, 1)) },
-						{ "position",   std::as_bytes(std::span(&glyph_position, 1)) },
+						{ "position",   std::as_bytes(std::span(&rect_position, 1)) },
 						{ "size",       std::as_bytes(std::span(&size, 1)) },
 						{ "color",      std::as_bytes(std::span(&color, 1)) },
-						{ "uv_rect",    std::as_bytes(std::span(&uv, 1)) }
+						{ "uv_rect",    std::as_bytes(std::span(&uv_rect, 1)) }
 					};
 
 					m_shader->push(command, m_pipeline_layout, "pc", push_constants, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
@@ -217,6 +243,9 @@ auto gse::renderer::text::render(std::span<std::reference_wrapper<registry>> reg
 				}
 			}
 
+			if (memcmp(&default_scissor, &current_scissor, sizeof(vk::Rect2D)) != 0) {
+				command.setScissor(0, { default_scissor });
+			}
 			debug::update_imgui();
 			debug::render_imgui(command);
 		}
@@ -229,6 +258,5 @@ auto gse::renderer::text::draw_text(const command& cmd) -> void {
 	if (!cmd.font || cmd.text.empty()) {
 		return;
 	}
-
 	m_draw_commands.push_back(cmd);
 }

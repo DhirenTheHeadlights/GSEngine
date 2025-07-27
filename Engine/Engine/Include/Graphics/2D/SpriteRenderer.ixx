@@ -1,6 +1,7 @@
 export module gse.graphics:sprite_renderer;
 
 import std;
+import vulkan_hpp;
 
 import :debug;
 import :texture;
@@ -16,11 +17,11 @@ export namespace gse::renderer {
 	class sprite final : public base_renderer {
 	public:
 		struct command {
-			vec2<length> position;
-			vec2<length> size;
+			rect_t<unitless::vec2> rect;
 			unitless::vec4 color = { 1.0f, 1.0f, 1.0f, 1.0f };
 			resource::handle<texture> texture;
 			unitless::vec4 uv_rect = { 0.0f, 0.0f, 1.0f, 1.0f };
+			std::optional<rect_t<unitless::vec2>> clip_rect = std::nullopt;
 		};
 
 		explicit sprite(context& context) : base_renderer(context) {}
@@ -126,6 +127,15 @@ auto gse::renderer::sprite::initialize() -> void {
 		.pColorAttachmentFormats = &color_format
 	};
 
+	constexpr std::array dynamic_states = {
+		vk::DynamicState::eScissor
+	};
+
+	const vk::PipelineDynamicStateCreateInfo dynamic_state_info{
+		.dynamicStateCount = static_cast<uint32_t>(dynamic_states.size()),
+		.pDynamicStates = dynamic_states.data()
+	};
+
 	vk::GraphicsPipelineCreateInfo pipeline_info{
 		.pNext = &pipeline_rendering_info,
 		.stageCount = 2,
@@ -137,6 +147,7 @@ auto gse::renderer::sprite::initialize() -> void {
 		.pMultisampleState = &multisampling,
 		.pDepthStencilState = &opaque_depth_stencil_state,
 		.pColorBlendState = &color_blending,
+		.pDynamicState = &dynamic_state_info,
 		.layout = *m_pipeline_layout
 	};
 	m_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
@@ -151,14 +162,14 @@ auto gse::renderer::sprite::initialize() -> void {
 	constexpr std::uint32_t indices[6] = { 0, 2, 1, 0, 3, 2 };
 
 	m_vertex_buffer = vulkan::persistent_allocator::create_buffer(
-		config.device_config(), 
+		config.device_config(),
 		{ .size = sizeof(vertices), .usage = vk::BufferUsageFlagBits::eVertexBuffer },
 		vertices
 	);
 
 	m_index_buffer = vulkan::persistent_allocator::create_buffer(
-		config.device_config(), 
-		{ .size = sizeof(indices), .usage = vk::BufferUsageFlagBits::eIndexBuffer }, 
+		config.device_config(),
+		{ .size = sizeof(indices), .usage = vk::BufferUsageFlagBits::eIndexBuffer },
 		indices
 	);
 }
@@ -172,6 +183,7 @@ auto gse::renderer::sprite::render(std::span<std::reference_wrapper<registry>> r
 	const auto& command = config.frame_context().command_buffer;
 	const auto shader = m_shader.resolve();
 	const auto [width, height] = config.swap_chain_config().extent;
+	const unitless::vec2 window_size = { static_cast<float>(width), static_cast<float>(height) };
 
 	const auto projection = orthographic(
 		meters(0.0f), meters(static_cast<float>(width)),
@@ -205,40 +217,55 @@ auto gse::renderer::sprite::render(std::span<std::reference_wrapper<registry>> r
 
 		const auto half_size = size / 2.0f;
 		constexpr auto half_thickness = thickness / 2.0f;
-		const vec2<length> horizontal_pos = { center_pos.x - half_size.x, center_pos.y + half_thickness };
-		constexpr vec2<length> horizontal_size = { size.x, thickness };
 
 		queue({
-			.position = horizontal_pos,
-			.size = horizontal_size,
+			.rect = rect_t<unitless::vec2>({
+				.top_left_position = { center_pos.x - half_size.x, center_pos.y + half_thickness },
+				.size = { size.x, thickness }
+			}),
 			.color = color,
 			.texture = blank_texture
 			});
 
-		const vec2<length> vertical_pos = { center_pos.x - half_thickness, center_pos.y + half_size.y };
-		constexpr vec2<length> vertical_size = { thickness, size.y };
-
 		queue({
-			.position = vertical_pos,
-			.size = vertical_size,
+			.rect = rect_t<unitless::vec2>({
+				.top_left_position = { center_pos.x - half_thickness, center_pos.y + half_size.y },
+				.size = { thickness, size.y }
+			}),
 			.color = color,
 			.texture = blank_texture
 			});
-
 	}
 
 	vulkan::render(
-		config, 
-		rendering_info, 
+		config,
+		rendering_info,
 		[&] {
 			command.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline);
 			command.bindVertexBuffers(0, { *m_vertex_buffer.buffer }, { 0 });
 			command.bindIndexBuffer(*m_index_buffer.buffer, 0, vk::IndexType::eUint32);
 
-			for (auto& [position, size, color, texture, uv_rect] : m_draw_commands) {
+			const vk::Rect2D default_scissor{ {0, 0}, {width, height} };
+			command.setScissor(0, { default_scissor });
+			auto current_scissor = default_scissor;
+
+			for (auto& [rect, color, texture, uv_rect, clip_rect] : m_draw_commands) {
 				if (!texture.valid()) {
 					continue;
 				}
+
+				auto desired_scissor = default_scissor;
+				if (clip_rect.has_value()) {
+					desired_scissor = to_vulkan_scissor(clip_rect.value(), window_size);
+				}
+
+				if (std::memcmp(&desired_scissor, &current_scissor, sizeof(vk::Rect2D)) != 0) {
+					command.setScissor(0, { desired_scissor });
+					current_scissor = desired_scissor;
+				}
+
+				auto position = rect.top_left();
+				auto size = rect.size();
 
 				std::unordered_map<std::string, std::span<const std::byte>> push_constants = {
 					{ "projection", std::as_bytes(std::span(&projection, 1)) },
@@ -254,7 +281,7 @@ auto gse::renderer::sprite::render(std::span<std::reference_wrapper<registry>> r
 			}
 		}
 	);
-	
+
 	m_draw_commands.clear();
 }
 

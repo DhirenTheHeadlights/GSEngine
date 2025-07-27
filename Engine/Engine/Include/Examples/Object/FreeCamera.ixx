@@ -19,7 +19,7 @@ export namespace gse {
 			vec3<length> initial_position = vec3<length>(0.f, 0.f, 5.f);
 		};
 
-		free_camera(const id& owner_id, registry* reg, const params& p) : hook(owner_id, reg), m_initial_position(p.initial_position) {}
+		free_camera(const params& p) : m_initial_position(p.initial_position) {}
 
 		auto initialize() -> void override {
 			renderer::camera().set_position(m_initial_position);

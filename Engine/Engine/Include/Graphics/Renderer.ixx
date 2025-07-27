@@ -134,11 +134,9 @@ auto gse::renderer::shutdown() -> void {
 		renderer.reset();
 	}
 
-	rendering_context.config().swap_chain_config().albedo_image = {};
-	rendering_context.config().swap_chain_config().normal_image = {};
-	rendering_context.config().swap_chain_config().depth_image = {};
-
 	platform::shutdown();
+
+	rendering_context.shutdown();
 }
 
 auto gse::renderer::camera() -> gse::camera& {

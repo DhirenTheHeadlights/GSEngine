@@ -8,7 +8,7 @@ namespace gs::arena {
 	public:
 		using params = gse::box::params;
 
-		wall(const gse::id& owner_id, gse::registry* reg, const params& p) : hook(owner_id, reg), m_size(p.size), m_initial_position(p.initial_position) {}
+		wall(const params& p) : m_size(p.size), m_initial_position(p.initial_position) {}
 
 		auto initialize() -> void override {
 			add_hook<gse::box>({
