@@ -219,19 +219,19 @@ auto gse::renderer::sprite::render(std::span<std::reference_wrapper<registry>> r
 		constexpr auto half_thickness = thickness / 2.0f;
 
 		queue({
-			.rect = rect_t<unitless::vec2>({
-				.top_left_position = { center_pos.x - half_size.x, center_pos.y + half_thickness },
-				.size = { size.x, thickness }
-			}),
+			.rect = rect_t<unitless::vec2>::from_position_size(
+				{ center_pos.x - half_size.x, center_pos.y + half_thickness },
+				{ size.x, thickness }
+			),
 			.color = color,
 			.texture = blank_texture
 			});
 
 		queue({
-			.rect = rect_t<unitless::vec2>({
-				.top_left_position = { center_pos.x - half_thickness, center_pos.y + half_size.y },
-				.size = { thickness, size.y }
-			}),
+			.rect = rect_t<unitless::vec2>::from_position_size(
+				{ center_pos.x - half_thickness, center_pos.y + half_size.y },
+				{ thickness, size.y }
+			),
 			.color = color,
 			.texture = blank_texture
 			});
