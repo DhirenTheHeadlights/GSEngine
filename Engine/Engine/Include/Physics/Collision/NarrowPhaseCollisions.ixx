@@ -9,7 +9,7 @@ import gse.physics.bounding_box;
 import gse.physics.collision_component;
 import gse.physics.math;
 
-bool dynamic_contact_point_resolution = true;
+constexpr bool dynamic_contact_point_resolution = true;
 //Whether to dynamically adjust the contact point based on the collision normal and the face of the OBB that was hit.
 
 
@@ -233,7 +233,7 @@ auto gse::narrow_phase_collision::resolve_dynamic_collision(physics::motion_comp
     const auto correction_a = -collision_normal * meters(corrected_penetration * percentage_a);
 	const auto correction_b = -collision_normal * meters(corrected_penetration * percentage_b);
     object_motion_component->current_position -= correction_a;
-    if (other_motion_component->position_locked) { other_motion_component->current_position += correction_b; }
+    if (!other_motion_component->position_locked) { other_motion_component->current_position += correction_b; }
 
     if (collision_normal.y > 0.f) { // Normal here is inverted because the collision normal points from the other object to this object
         object_motion_component->airborne = false;
@@ -426,27 +426,24 @@ auto gse::narrow_phase_collision::resolve_static_collision(physics::motion_compo
 	//SETTINGS DEPENDENT- PERFORMANT
     if (dynamic_contact_point_resolution) {
 	    /////////////////////////////////////
-	    int  face_axis;
+	    int  face_axis = sat_res.axis_index - 3;
 	    bool edge_edge_sim = false;
 	    bool box_a_face = false;
 	    auto* ref_obb = &object_collision_component.oriented_bounding_box;
+		auto* incident_obb = &other_collision_component.oriented_bounding_box;
 
-	    // decide which face we hit (or fall back to an edge–edge sim)
-	    if (sat_res.axis_index < 3) {
-	        face_axis = sat_res.axis_index;
-	        box_a_face = true;
-	        ref_obb = &object_collision_component.oriented_bounding_box;
-	    }
-	    else if (sat_res.axis_index < 6) {
-	        face_axis = sat_res.axis_index - 3;
-	        ref_obb = &other_collision_component.oriented_bounding_box;
-	    }
-	    else {
-	        // pure edge–edge: just pick any axis for fallback
-	        edge_edge_sim = true;
-	        face_axis = static_cast<int>(object_collision_component.collision_information.get_axis());
-	        ref_obb = &object_collision_component.oriented_bounding_box;
-	    }
+        if (sat_res.axis_index < 3) {
+            ref_obb = &object_collision_component.oriented_bounding_box;
+            incident_obb = &other_collision_component.oriented_bounding_box;
+            face_axis = sat_res.axis_index;
+        }
+        else {
+            // pure edge–edge: just pick any axis for fallback
+            edge_edge_sim = true;
+            face_axis = static_cast<int>(object_collision_component.collision_information.get_axis());
+        }
+
+		unitless::vec3 ref_face_normal = ref_obb->axes[face_axis];
 
 	    // get the geometric center of that face
 	    auto face_center = ref_obb->center;

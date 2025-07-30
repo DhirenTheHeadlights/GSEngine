@@ -44,7 +44,7 @@ auto gse::broad_phase_collision::check_collision(physics::collision_component& d
 
 	if (check_future_collision(box1, box1_motion_component, box2)) {
 		if (dynamic_object_collision_component.resolve_collisions) {
-			if (box1_motion_component->position_locked || box2_motion_component->position_locked) {
+			if (false/*box1_motion_component->position_locked || box2_motion_component->position_locked*/) {
 				narrow_phase_collision::resolve_static_collision(box1_motion_component, dynamic_object_collision_component, other_collision_component);
 			}
 			else {
