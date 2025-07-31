@@ -3,6 +3,9 @@ export module gse.graphics:lighting_renderer;
 import std;
 
 import :base_renderer;
+import :point_light;
+import :spot_light;
+import :directional_light;
 
 export namespace gse::renderer {
 	class lighting final : public base_renderer {
@@ -20,6 +23,7 @@ export namespace gse::renderer {
 		resource::handle<shader> m_shader;
 
 		std::unordered_map<std::string, vulkan::persistent_allocator::buffer_resource> m_ubo_allocations;
+		vulkan::persistent_allocator::buffer_resource m_light_buffer;
 	};
 }
 
@@ -40,12 +44,23 @@ auto gse::renderer::lighting::initialize() -> void {
 		.sharingMode = vk::SharingMode::eExclusive
 	};
 
-	auto buffer = vulkan::persistent_allocator::create_buffer(
+	m_ubo_allocations["cam"] = vulkan::persistent_allocator::create_buffer(
 		config.device_config(),
 		cam_buffer_info
 	);
 
-	m_ubo_allocations["cam"] = std::move(buffer);
+	const auto light_block = m_shader->uniform_block("lights_ssbo");
+
+	vk::BufferCreateInfo light_buffer_info{
+		.size = light_block.size,
+		.usage = vk::BufferUsageFlagBits::eStorageBuffer,
+		.sharingMode = vk::SharingMode::eExclusive
+	};
+
+	m_light_buffer = vulkan::persistent_allocator::create_buffer(
+		config.device_config(),
+		light_buffer_info
+	);
 
 	const std::unordered_map<std::string, vk::DescriptorBufferInfo> lighting_buffer_infos = {
 		{
@@ -54,6 +69,14 @@ auto gse::renderer::lighting::initialize() -> void {
 				.buffer = m_ubo_allocations["cam"].buffer,
 				.offset = 0,
 				.range = cam_block.size
+			}
+		},
+		{
+			"lights_ssbo",
+			{
+				.buffer = m_light_buffer.buffer,
+				.offset = 0,
+				.range = light_block.size
 			}
 		}
 	};
@@ -110,9 +133,13 @@ auto gse::renderer::lighting::initialize() -> void {
 
 	config.device_config().device.updateDescriptorSets(writes, nullptr);
 
+	const auto range = m_shader->push_constant_range("pc", vk::ShaderStageFlagBits::eFragment);
+
 	const vk::PipelineLayoutCreateInfo pipeline_layout_info{
 		.setLayoutCount = static_cast<std::uint32_t>(lighting_layouts.size()),
-		.pSetLayouts = lighting_layouts.data()
+		.pSetLayouts = lighting_layouts.data(),
+		.pushConstantRangeCount = 1,
+		.pPushConstantRanges = &range
 	};
 	m_pipeline_layout = config.device_config().device.createPipelineLayout(pipeline_layout_info);
 
@@ -222,6 +249,86 @@ auto gse::renderer::lighting::render(std::span<std::reference_wrapper<registry>>
 	auto& config = m_context.config();
 	const auto command = config.frame_context().command_buffer;
 
+	auto inv_pv = (m_context.camera().projection(m_context.window().viewport()) * m_context.camera().view()).inverse();
+	auto view_pos = m_context.camera().position().as<units::meters>().data();
+
+	const std::unordered_map<std::string, std::span<const std::byte>> cam_data_map = {
+		{ "inv_pv", std::as_bytes(std::span(&inv_pv, 1)) },
+		{ "view_pos", std::as_bytes(std::span(&view_pos, 1)) }
+	};
+
+	m_shader->set_uniform_block("cam", cam_data_map, m_ubo_allocations.at("cam").allocation);
+
+	const auto light_block = m_shader->uniform_block("lights_ssbo");
+	const auto light_struct = light_block.members.at("lights");
+
+	std::vector light_data(light_struct.size * light_struct.array_size, std::byte{ 0 });
+
+	std::uint32_t light_count = 0;
+	auto set_light_member = [&](const int index, const std::string& name, const void* data, const std::size_t size) {
+		if (const auto it = light_block.members.find(name); it != light_block.members.end()) {
+			const auto& member_info = it->second;
+			const std::size_t final_offset = static_cast<size_t>(index) * light_struct.size + member_info.offset;
+			std::memcpy(light_data.data() + final_offset, data, size);
+		}
+	};
+
+	for (auto& registry_ref : registries) {
+		if (light_count >= light_struct.array_size) break;
+
+		auto& registry = registry_ref.get();
+
+		for (const auto& comp : registry.linked_objects<directional_light_component>()) {
+			if (light_count >= light_struct.array_size) break;
+			int type = 0;
+			set_light_member(light_count, "light_type", &type, sizeof(type));
+			set_light_member(light_count, "direction", &comp.direction, sizeof(comp.direction));
+			set_light_member(light_count, "color", &comp.color, sizeof(comp.color));
+			set_light_member(light_count, "intensity", &comp.intensity, sizeof(comp.intensity));
+			set_light_member(light_count, "ambient_strength", &comp.ambient_strength, sizeof(comp.ambient_strength));
+			light_count++;
+		}
+
+		for (const auto& comp : registry.linked_objects<point_light_component>()) {
+			if (light_count >= light_struct.array_size) break;
+			int type = 1;
+			auto pos_meters = comp.position.as<units::meters>();
+			set_light_member(light_count, "light_type", &type, sizeof(type));
+			set_light_member(light_count, "position", &pos_meters, sizeof(pos_meters));
+			set_light_member(light_count, "color", &comp.color, sizeof(comp.color));
+			set_light_member(light_count, "intensity", &comp.intensity, sizeof(comp.intensity));
+			set_light_member(light_count, "constant", &comp.constant, sizeof(comp.constant));
+			set_light_member(light_count, "linear", &comp.linear, sizeof(comp.linear));
+			set_light_member(light_count, "quadratic", &comp.quadratic, sizeof(comp.quadratic));
+			set_light_member(light_count, "ambient_strength", &comp.ambient_strength, sizeof(comp.ambient_strength));
+			light_count++;
+		}
+
+		for (const auto& comp : registry.linked_objects<spot_light_component>()) {
+			if (light_count >= light_struct.array_size) break;
+			int type = 2;
+			auto pos_meters = comp.position.as<units::meters>();
+			float cut_off_cos = std::cos(comp.cut_off.as<units::radians>());
+			float outer_cut_off_cos = std::cos(comp.outer_cut_off.as<units::radians>());
+			set_light_member(light_count, "light_type", &type, sizeof(type));
+			set_light_member(light_count, "position", &pos_meters, sizeof(pos_meters));
+			set_light_member(light_count, "direction", &comp.direction, sizeof(comp.direction));
+			set_light_member(light_count, "color", &comp.color, sizeof(comp.color));
+			set_light_member(light_count, "intensity", &comp.intensity, sizeof(comp.intensity));
+			set_light_member(light_count, "constant", &comp.constant, sizeof(comp.constant));
+			set_light_member(light_count, "linear", &comp.linear, sizeof(comp.linear));
+			set_light_member(light_count, "quadratic", &comp.quadratic, sizeof(comp.quadratic));
+			set_light_member(light_count, "cut_off", &cut_off_cos, sizeof(cut_off_cos));
+			set_light_member(light_count, "outer_cut_off", &outer_cut_off_cos, sizeof(outer_cut_off_cos));
+			set_light_member(light_count, "ambient_strength", &comp.ambient_strength, sizeof(comp.ambient_strength));
+			light_count++;
+		}
+	}
+
+	if (light_count > 0) {
+		vulkan::uploader::upload_to_buffer(m_light_buffer, light_data.data(), light_count * light_struct.size);
+	}
+
 	vulkan::uploader::transition_image_layout(
 		command, config.swap_chain_config().albedo_image,
 		vk::ImageLayout::eShaderReadOnlyOptimal,
@@ -281,6 +388,16 @@ auto gse::renderer::lighting::render(std::span<std::reference_wrapper<registry>>
 				0,
 				nullptr
 			);
+
+			m_shader->push(
+				command,
+				m_pipeline_layout,
+				"pc",
+				&light_count,
+				0,
+				vk::ShaderStageFlagBits::eFragment
+			);
+
 			command.draw(3, 1, 0, 0);
 		}
 	);

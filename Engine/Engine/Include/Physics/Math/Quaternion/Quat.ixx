@@ -25,8 +25,10 @@ namespace gse {
 		constexpr quaternion(T s, T x, T y, T z) : v{ s, x, y, z } {}
 		constexpr quaternion(const unitless::vec_t<T, 3>& axis, angle_t<T> angle);
 		constexpr quaternion(angle_t<T> angle, const unitless::vec_t<T, 3>& axis);
+
 		constexpr auto operator[](size_t index) -> T&;
 		constexpr auto operator[](size_t index) const -> T;
+
 		constexpr auto imaginary_part() const -> unitless::vec_t<T, 3> { return { x, y, z }; }
 	};
 }
@@ -73,6 +75,8 @@ export namespace gse {
 	template <typename T> constexpr auto operator*(const T& lhs, const quat_t<T>& rhs) -> quat_t<T>;
 	template <typename T> constexpr auto operator/(const quat_t<T>& lhs, const T& rhs) -> quat_t<T>;
 	template <typename T> constexpr auto operator/(const T& lhs, const quat_t<T>& rhs) -> quat_t<T>;
+
+	template <typename T> constexpr auto operator*(const quaternion<T>& lhs, const unitless::vec3_t<T>& rhs) -> unitless::vec3_t<T>;
 
 	template <typename T> constexpr auto operator*=(quat_t<T>& lhs, const T& rhs) -> quat_t<T>&;
 	template <typename T> constexpr auto operator/=(quat_t<T>& lhs, const T& rhs) -> quat_t<T>&;
@@ -148,6 +152,14 @@ constexpr auto gse::operator/(const T& lhs, const quat_t<T>& rhs) -> quat_t<T> {
 	T norm_sq = rhs.x * rhs.x + rhs.y * rhs.y + rhs.z * rhs.z + rhs.s * rhs.s;
 	quat_t<T> rhs_conj(rhs.s, -rhs.x, -rhs.y, -rhs.z);
 	return lhs * (rhs_conj / norm_sq);
+}
+
+template <typename T>
+constexpr auto gse::operator*(const quaternion<T>& lhs, const unitless::vec3_t<T>& rhs) -> unitless::vec3_t<T> {
+	const unitless::vec3_t<T> u(lhs.x, lhs.y, lhs.z);
+	const T s = lhs.s;
+	const unitless::vec3_t<T> t = T(2) * cross(u, rhs);
+	return rhs + s * t + cross(u, t);
 }
 
 template <typename T>

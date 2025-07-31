@@ -14,15 +14,16 @@ export namespace gse {
         raw2f tex_coords;
     };
 
-	struct mesh_data {
-		std::vector<vertex> vertices;
-		std::vector<std::uint32_t> indices;
+    struct mesh_data {
+        std::vector<vertex> vertices;
+        std::vector<std::uint32_t> indices;
         resource::handle<material> material;
-	};
+    };
 
-    struct mesh final : non_copyable {
-	    explicit mesh(const mesh_data& data) : vertices(std::move(data.vertices)), indices(std::move(data.indices)), material(data.material) {}
-		mesh(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices, const resource::handle<material>& material = {});
+    class mesh final : non_copyable {
+    public:
+        explicit mesh(mesh_data&& data) : m_vertices(std::move(data.vertices)), m_indices(std::move(data.indices)), m_material(data.material) {}
+        mesh(std::vector<vertex> vertices, std::vector<std::uint32_t> indices, const resource::handle<material>& material = {}) : m_vertices(std::move(vertices)), m_indices(std::move(indices)), m_material(material) {}
 
         mesh(mesh&& other) noexcept;
 
@@ -31,115 +32,117 @@ export namespace gse {
         auto bind(vk::CommandBuffer command_buffer) const -> void;
         auto draw(vk::CommandBuffer command_buffer) const -> void;
 
-		vulkan::persistent_allocator::buffer_resource vertex_buffer;
-        vulkan::persistent_allocator::buffer_resource index_buffer;
+        auto center_of_mass() const -> vec3<length>;
+        auto material() const -> const resource::handle<material>&;
+    private:
+        vulkan::persistent_allocator::buffer_resource m_vertex_buffer;
+        vulkan::persistent_allocator::buffer_resource m_index_buffer;
 
-        std::vector<vertex> vertices;
-        std::vector<std::uint32_t> indices;
-        resource::handle<material> material;
-
-		vec3<length> center_of_mass;
+        std::vector<vertex> m_vertices;
+        std::vector<std::uint32_t> m_indices;
+        resource::handle<gse::material> m_material;
     };
 
-    auto calculate_center_of_mass(const std::vector<std::uint32_t>& indices, const std::vector<vertex>& vertices) -> vec3<length>;
-	auto generate_bounding_box_mesh(vec3<length> upper, vec3<length> lower) -> mesh_data;
+    auto generate_bounding_box_mesh(vec3<length> upper, vec3<length> lower) -> mesh_data;
 }
 
-gse::mesh::mesh(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices, const resource::handle<gse::material>& material) : vertices(vertices), indices(indices), material(material) {}
-
 gse::mesh::mesh(mesh&& other) noexcept
-    : vertex_buffer(std::move(other.vertex_buffer)), index_buffer(std::move(other.index_buffer)),
-    vertices(std::move(other.vertices)), indices(std::move(other.indices)), material(std::move(other.material)),
-    center_of_mass(other.center_of_mass) {
-    other.vertex_buffer = {};
-    other.index_buffer = {};
+    : m_vertex_buffer(std::move(other.m_vertex_buffer)),
+    m_index_buffer(std::move(other.m_index_buffer)),
+    m_vertices(std::move(other.m_vertices)),
+    m_indices(std::move(other.m_indices)),
+    m_material(std::move(other.m_material)) {
+    other.m_vertex_buffer = {};
+    other.m_index_buffer = {};
 }
 
 auto gse::mesh::initialize(vulkan::config& config) -> void {
-    const vk::DeviceSize vertex_buffer_size = sizeof(vertex) * vertices.size();
-
-    const vk::BufferCreateInfo vertex_staging_info{
-        .size = vertex_buffer_size,
-        .usage = vk::BufferUsageFlagBits::eTransferSrc
-    };
-
-    const auto [vertex_buffer, vertex_allocation] = vulkan::persistent_allocator::create_buffer(
-        config.device_config(),
-        vertex_staging_info,
-        vertices.data()
-    );
+    const vk::DeviceSize vertex_buffer_size = sizeof(vertex) * m_vertices.size();
+    const vk::DeviceSize index_buffer_size = sizeof(std::uint32_t) * m_indices.size();
 
     const vk::BufferCreateInfo vertex_final_info{
         .size = vertex_buffer_size,
         .usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst
     };
-    this->vertex_buffer = vulkan::persistent_allocator::create_buffer(
+    this->m_vertex_buffer = vulkan::persistent_allocator::create_buffer(
         config.device_config(),
         vertex_final_info
-    );
-
-    const vk::DeviceSize index_buffer_size = sizeof(std::uint32_t) * indices.size();
-
-    const vk::BufferCreateInfo index_staging_info{
-        .size = index_buffer_size,
-        .usage = vk::BufferUsageFlagBits::eTransferSrc
-    };
-    const auto [index_buffer, index_allocation] = vulkan::persistent_allocator::create_buffer(
-        config.device_config(),
-        index_staging_info,
-        indices.data()
     );
 
     const vk::BufferCreateInfo index_final_info{
         .size = index_buffer_size,
         .usage = vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst
     };
-    this->index_buffer = vulkan::persistent_allocator::create_buffer(
+    this->m_index_buffer = vulkan::persistent_allocator::create_buffer(
         config.device_config(),
         index_final_info
     );
 
-    single_line_commands(
-        config,
-        [&](const vk::raii::CommandBuffer& command_buffer) {
+    config.add_transient_work(
+        [&](const vk::raii::CommandBuffer& command_buffer) -> std::vector<vulkan::persistent_allocator::buffer_resource> {
+            auto vertex_staging = vulkan::persistent_allocator::create_buffer(
+                config.device_config(),
+                vk::BufferCreateInfo{
+                    .size = vertex_buffer_size,
+                    .usage = vk::BufferUsageFlagBits::eTransferSrc
+                },
+                m_vertices.data()
+            );
+
+            auto index_staging = vulkan::persistent_allocator::create_buffer(
+                config.device_config(),
+                vk::BufferCreateInfo{
+                    .size = index_buffer_size,
+                    .usage = vk::BufferUsageFlagBits::eTransferSrc
+                },
+                m_indices.data()
+            );
+
             const vk::BufferCopy vertex_copy_region(0, 0, vertex_buffer_size);
-            command_buffer.copyBuffer(vertex_buffer, this->vertex_buffer.buffer, vertex_copy_region);
+            command_buffer.copyBuffer(*vertex_staging.buffer, *this->m_vertex_buffer.buffer, vertex_copy_region);
 
             const vk::BufferCopy index_copy_region(0, 0, index_buffer_size);
-            command_buffer.copyBuffer(index_buffer, this->index_buffer.buffer, index_copy_region);
+            command_buffer.copyBuffer(*index_staging.buffer, *this->m_index_buffer.buffer, index_copy_region);
+
+            std::vector<vulkan::persistent_allocator::buffer_resource> transient_resources;
+            transient_resources.push_back(std::move(vertex_staging));
+            transient_resources.push_back(std::move(index_staging));
+            return transient_resources;
         }
     );
-
-    this->center_of_mass = calculate_center_of_mass(indices, vertices);
 }
 
 auto gse::mesh::bind(const vk::CommandBuffer command_buffer) const -> void {
-    command_buffer.bindVertexBuffers(0, { vertex_buffer.buffer }, { 0 });
-    command_buffer.bindIndexBuffer(index_buffer.buffer, 0, vk::IndexType::eUint32);
+    if (!*m_vertex_buffer.buffer || !*m_index_buffer.buffer) {
+        return;
+    }
+
+    command_buffer.bindVertexBuffers(0, { *m_vertex_buffer.buffer }, { 0 });
+    command_buffer.bindIndexBuffer(*m_index_buffer.buffer, 0, vk::IndexType::eUint32);
 }
 
 auto gse::mesh::draw(const vk::CommandBuffer command_buffer) const -> void {
-    command_buffer.drawIndexed(static_cast<std::uint32_t>(indices.size()), 1, 0, 0, 0);
+    command_buffer.drawIndexed(static_cast<std::uint32_t>(m_indices.size()), 1, 0, 0, 0);
 }
 
-auto gse::calculate_center_of_mass(const std::vector<std::uint32_t>& indices, const std::vector<vertex>& vertices) -> vec3<length> {
+auto gse::mesh::center_of_mass() const -> vec3<length> {
     constexpr unitless::vec3d reference_point(0.f);
 
     double total_volume = 0.f;
     unitless::vec3 moment(0.f);
 
-    assert(indices.size() % 3 == 0, "Indices count is not a multiple of 3. Ensure that each face is defined by exactly three indices.");
+    assert(m_indices.size() % 3 == 0, "m_indices count is not a multiple of 3. Ensure that each face is defined by exactly three m_indices.");
 
-    for (size_t i = 0; i < indices.size(); i += 3) {
-        const unsigned int idx0 = indices[i];
-        const unsigned int idx1 = indices[i + 1];
-        const unsigned int idx2 = indices[i + 2];
+    for (size_t i = 0; i < m_indices.size(); i += 3) {
+        const unsigned int idx0 = m_indices[i];
+        const unsigned int idx1 = m_indices[i + 1];
+        const unsigned int idx2 = m_indices[i + 2];
 
-        assert(idx0 <= vertices.size() || idx1 <= vertices.size() || idx2 <= vertices.size(), "Index out of range while accessing vertices.");
+        assert(idx0 < m_vertices.size() && idx1 < m_vertices.size() && idx2 < m_vertices.size(), "Index out of range while accessing m_vertices.");
 
-        const unitless::vec3d v0(vertices[idx0].position);
-        const unitless::vec3d v1(vertices[idx1].position);
-        const unitless::vec3d v2(vertices[idx2].position);
+        const unitless::vec3d v0(m_vertices[idx0].position);
+        const unitless::vec3d v1(m_vertices[idx1].position);
+        const unitless::vec3d v2(m_vertices[idx2].position);
 
         unitless::vec3d a = v0 - reference_point;
         unitless::vec3d b = v1 - reference_point;
@@ -157,33 +160,37 @@ auto gse::calculate_center_of_mass(const std::vector<std::uint32_t>& indices, co
     return moment / static_cast<float>(total_volume);
 }
 
+auto gse::mesh::material() const -> const resource::handle<gse::material>& {
+    return m_material;
+}
+
 auto gse::generate_bounding_box_mesh(const vec3<length> upper, const vec3<length> lower) -> mesh_data {
-	auto create_vertex = [](const vec3<length>& position) -> vertex {
-		return vertex{ position.as<units::meters>(), {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}};
-		};
+    auto create_vertex = [](const vec3<length>& position) -> vertex {
+        return vertex{ position.as<units::meters>(), {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f} };
+        };
 
-	const std::vector vertices = {
-		create_vertex({ lower.x, lower.y, lower.z }),
-		create_vertex({ upper.x, lower.y, lower.z }),
-		create_vertex({ upper.x, upper.y, lower.z }),
-		create_vertex({ lower.x, upper.y, lower.z }),
-		create_vertex({ lower.x, lower.y, upper.z }),
-		create_vertex({ upper.x, lower.y, upper.z }),
-		create_vertex({ upper.x, upper.y, upper.z }),
-		create_vertex({ lower.x, upper.y, upper.z })
-	};
+    const std::vector vertices = {
+        create_vertex({ lower.x, lower.y, lower.z }),
+        create_vertex({ upper.x, lower.y, lower.z }),
+        create_vertex({ upper.x, upper.y, lower.z }),
+        create_vertex({ lower.x, upper.y, lower.z }),
+        create_vertex({ lower.x, lower.y, upper.z }),
+        create_vertex({ upper.x, lower.y, upper.z }),
+        create_vertex({ upper.x, upper.y, upper.z }),
+        create_vertex({ lower.x, upper.y, upper.z })
+    };
 
-	const std::vector<std::uint32_t> indices = {
-		0, 1, 2, 2, 3, 0,
-		4, 5, 6, 6, 7, 4,
-		0, 4, 7, 7, 3, 0,
-		1, 5, 6, 6, 2, 1,
-		0, 1, 5, 5, 4, 0,
-		3, 2, 6, 6, 7, 3
-	};
+    const std::vector<std::uint32_t> indices = {
+        0, 1, 2, 2, 3, 0, // Front face
+        4, 5, 6, 6, 7, 4, // Back face
+        0, 4, 7, 7, 3, 0, // Left face
+        1, 5, 6, 6, 2, 1, // Right face
+        0, 1, 5, 5, 4, 0, // Bottom face
+        3, 2, 6, 6, 7, 3  // Top face
+    };
 
     return mesh_data{
-    	.vertices = vertices,
-    	.indices = indices
+        .vertices = vertices,
+        .indices = indices
     };
 }

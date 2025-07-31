@@ -18,7 +18,7 @@ export namespace gse::scene_loader {
 
 	auto initialize() -> void;
 	auto update() -> void;
-	auto render() -> void;
+	auto render(const std::function<void()>& in_frame) -> void;
 	auto shutdown() -> void;
 
 	auto queue(const id& id, const std::function<bool()>& trigger) -> void;
@@ -58,6 +58,7 @@ auto gse::scene_loader::deactivate(const id& scene_id) -> void {
 	if (const auto scene = scenes.find(scene_id); scene != scenes.end()) {
 		if (scene->second->active()) {
 			scene->second->set_active(false);
+			scene->second->shutdown();
 		}
 	}
 }
@@ -84,17 +85,20 @@ auto gse::scene_loader::update() -> void {
 		main_clock::const_update_time,
 		main_clock::dt()
 	);
+
+	renderer::update();
 }
 
-auto gse::scene_loader::render() -> void {
+auto gse::scene_loader::render(const std::function<void()>& in_frame) -> void {
 	renderer::render(
 		registries(),
-		[] {
+		[&] {
 			for (const auto& scene : scenes | std::views::values) {
 				if (scene->active()) {
 					scene->render();
 				}
 			}
+			in_frame();
 		}
 	);
 }

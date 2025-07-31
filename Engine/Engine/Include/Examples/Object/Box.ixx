@@ -1,7 +1,3 @@
-module;
-
-#include <imgui.h>
-
 export module gse.examples:box;
 
 import std;
@@ -70,18 +66,18 @@ export namespace gse {
                 },
 
                 {
-                    { { -half_width,  half_height, -half_depth }, {  0.0f,  1.0f,  0.0f }, { 0.0f,              0.0f } },
-                    { { -half_width,  half_height,  half_depth }, {  0.0f,  1.0f,  0.0f }, { 0.0f,              repeat_interval } },
-                    { {  half_width,  half_height,  half_depth }, {  0.0f,  1.0f,  0.0f }, { repeat_interval,   repeat_interval } },
-                    { {  half_width,  half_height, -half_depth }, {  0.0f,  1.0f,  0.0f }, { repeat_interval,   0.0f } }
-                },
+				    { { -half_width,  half_height, -half_depth }, {  0.0f,  1.0f,  0.0f }, { 0.0f,             0.0f } },
+				    { {  half_width,  half_height, -half_depth }, {  0.0f,  1.0f,  0.0f }, { repeat_interval,  0.0f } },
+				    { {  half_width,  half_height,  half_depth }, {  0.0f,  1.0f,  0.0f }, { repeat_interval,  repeat_interval } },
+				    { { -half_width,  half_height,  half_depth }, {  0.0f,  1.0f,  0.0f }, { 0.0f,             repeat_interval } }
+				},
 
-                {
-                    { { -half_width, -half_height,  half_depth }, {  0.0f, -1.0f,  0.0f }, { 0.0f,              0.0f } },
-                    { { -half_width, -half_height, -half_depth }, {  0.0f, -1.0f,  0.0f }, { 0.0f,              repeat_interval } },
-                    { {  half_width, -half_height, -half_depth }, {  0.0f, -1.0f,  0.0f }, { repeat_interval,   repeat_interval } },
-                    { {  half_width, -half_height,  half_depth }, {  0.0f, -1.0f,  0.0f }, { repeat_interval,   0.0f } }
-                }
+				{
+				    { { -half_width, -half_height,  half_depth }, {  0.0f, -1.0f,  0.0f }, { 0.0f,             0.0f } },
+				    { {  half_width, -half_height,  half_depth }, {  0.0f, -1.0f,  0.0f }, { repeat_interval,  0.0f } },
+				    { {  half_width, -half_height, -half_depth }, {  0.0f, -1.0f,  0.0f }, { repeat_interval,  repeat_interval } },
+				    { { -half_width, -half_height, -half_depth }, {  0.0f, -1.0f,  0.0f }, { 0.0f,             repeat_interval } }
+				}
             };
 
             std::vector<std::uint32_t> face_indices = { 0, 1, 2, 2, 3, 0 };
@@ -100,21 +96,8 @@ export namespace gse {
             }
 
             add_component<render_component>({
-                .models = { gse::queue<model>("Box", meshes) }
+                .models = { gse::queue<model>(std::format("Box {}", owner_id()), meshes)}
             });
-        }
-
-        auto render() -> void override {
-            debug::add_imgui_callback(
-                [this] {
-	                auto& render_component = component<gse::render_component>();
-	                ImGui::Begin(owner_id().tag().c_str());
-	                ImGui::SliderFloat3("Position", &component<physics::motion_component>().current_position.x.as_default_unit(), -1000.f, 1000.f);
-	                ImGui::Text("Colliding: %s", component<physics::collision_component>().collision_information.colliding ? "true" : "false");
-	                ImGui::Text("Center of Mass: %f, %f, %f", render_component.center_of_mass.x.as_default_unit(), render_component.center_of_mass.y.as_default_unit(), render_component.center_of_mass.z.as_default_unit());
-	                ImGui::End();
-                }
-            );
         }
     private:
         vec3<length> m_initial_position;

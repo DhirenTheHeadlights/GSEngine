@@ -1,19 +1,14 @@
-module;
-
-#include "GLFW/glfw3.h"
-#include "imgui.h"
-
 export module gs:player;
 
 import gse;
 import std;
 
 namespace gs {
-	const std::unordered_map<int, gse::unitless::vec3> g_wasd{
-		{ GLFW_KEY_W, { 0.f, 0.f, -1.f } },
-		{ GLFW_KEY_S, { 0.f, 0.f, 1.f } },
-		{ GLFW_KEY_A, { -1.f, 0.f, 0.f } },
-		{ GLFW_KEY_D, { 1.f, 0.f, 0.f } }
+	const std::unordered_map<gse::key, gse::unitless::vec3> wasd{
+		{ gse::key::w, {  0.f,  0.f,  1.f } },
+		{ gse::key::s, {  0.f,  0.f, -1.f } },
+		{ gse::key::a, { -1.f,  0.f,  0.f } },
+		{ gse::key::d, {  1.f,  0.f,  0.f } }
 	};
 
 	class jetpack_hook final : public gse::hook<gse::entity> {
@@ -21,13 +16,13 @@ namespace gs {
 		using hook::hook;
 
 		auto update() -> void override {
-			if (gse::input::get_keyboard().keys[GLFW_KEY_J].pressed) {
+			if (gse::keyboard::pressed(gse::key::j)) {
 				m_jetpack = !m_jetpack;
 			}
 
-			if (m_jetpack && gse::input::get_keyboard().keys[GLFW_KEY_SPACE].held) {
+			if (m_jetpack && gse::keyboard::held(gse::key::space)) {
 				gse::force boost_force;
-				if (gse::input::get_keyboard().keys[GLFW_KEY_LEFT_SHIFT].held && m_boost_fuel > 0) {
+				if (gse::keyboard::held(gse::key::left_shift) && m_boost_fuel > 0) {
 					boost_force = gse::newtons(2000.f);
 					m_boost_fuel -= 1;
 				}
@@ -40,8 +35,8 @@ namespace gs {
 
 				apply_force(motion_component, gse::vec3<gse::force>(0.f, m_jetpack_force + boost_force, 0.f));
 
-				for (auto& [key, direction] : g_wasd) {
-					if (gse::input::get_keyboard().keys[key].held) {
+				for (auto& [key, direction] : wasd) {
+					if (gse::keyboard::pressed(key)) {
 						apply_force(motion_component, gse::vec3<gse::force>(m_jetpack_side_force + boost_force, 0.f, m_jetpack_side_force + boost_force) * gse::renderer::camera().direction_relative_to_origin(direction));
 					}
 				}
@@ -49,12 +44,7 @@ namespace gs {
 		}
 
 		auto render() -> void override {
-			gse::debug::add_imgui_callback([this] {
-				ImGui::Begin("Jetpack");
-				gse::debug::print_boolean("Player Jetpack", m_jetpack);
-				gse::debug::print_value("Jetpack Fuel", static_cast<float>(m_boost_fuel), "");
-				ImGui::End();
-				});
+			
 		}
 	private:
 		gse::force m_jetpack_force = gse::newtons(1000.f);
@@ -93,15 +83,15 @@ namespace gs {
 		auto update() -> void override {
 			auto& motion_component = component<gse::physics::motion_component>();
 
-			for (auto& [key, direction] : g_wasd) {
-				if (gse::input::get_keyboard().keys[key].held && !motion_component.airborne) {
+			for (auto& [key, direction] : wasd) {
+				if (gse::keyboard::held(key) && !motion_component.airborne) {
 					apply_force(motion_component, m_move_force * gse::renderer::camera().direction_relative_to_origin(direction) * gse::unitless::vec3(1.f, 0.f, 1.f));
 				}
 			}
 
-			motion_component.max_speed = gse::input::get_keyboard().keys[GLFW_KEY_LEFT_SHIFT].held ? m_shift_max_speed : m_max_speed;
+			motion_component.max_speed = gse::keyboard::held(gse::key::left_shift) ? m_shift_max_speed : m_max_speed;
 
-			if (gse::input::get_keyboard().keys[GLFW_KEY_SPACE].pressed && !motion_component.airborne) {
+			if (gse::keyboard::pressed(gse::key::space) && !motion_component.airborne) {
 				apply_impulse(motion_component, gse::vec3<gse::force>(0.f, m_jump_force, 0.f), gse::seconds(0.5f));
 			}
 
@@ -109,30 +99,7 @@ namespace gs {
 		}
 
 		auto render() -> void override {
-			gse::debug::add_imgui_callback([this] {
-				ImGui::Begin("Player");
-
-				const auto motion_component = component<gse::physics::motion_component>();
-				const auto collision_component = component<gse::physics::collision_component>();
-
-				gse::debug::print_vector("Player Position", motion_component.current_position.as<gse::units::meters>(), gse::units::meters::unit_name);
-				gse::debug::print_vector("Player Bounding Box Position", collision_component.bounding_box.get_center().as<gse::units::meters>(), gse::units::meters::unit_name);
-				gse::debug::print_vector("Player Velocity", motion_component.current_velocity.as<gse::units::meters_per_second>(), gse::units::meters_per_second::unit_name);
-				gse::debug::print_vector("Player Acceleration", motion_component.current_acceleration.as<gse::units::meters_per_second_squared>(), gse::units::meters_per_second_squared::unit_name);
-
-				gse::debug::print_value("Player Speed", gse::magnitude(motion_component.current_velocity.as<gse::units::miles_per_hour>()), gse::units::miles_per_hour::unit_name);
-
-				ImGui::Text("Player Collision Information");
-
-				const auto [colliding, collision_normal, penetration, collision_point] = collision_component.collision_information;
-				gse::debug::print_boolean("Player Colliding", colliding);
-				gse::debug::print_vector("Collision Normal", collision_normal, "");
-				gse::debug::print_value("Penetration", penetration.as<gse::units::meters>(), gse::units::meters::unit_name);
-				gse::debug::print_vector("Collision Point", collision_point.as<gse::units::meters>(), gse::units::meters::unit_name);
-				gse::debug::print_boolean("Player Airborne", motion_component.airborne);
-				gse::debug::print_boolean("Player Moving", motion_component.moving);
-				ImGui::End();
-				});
+			
 		}
 	private:
 		gse::velocity m_max_speed = gse::miles_per_hour(20.f);

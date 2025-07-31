@@ -11,7 +11,7 @@ import gse.utility;
 export namespace gse::renderer {
 	class context final : public non_copyable {
 	public:
-		context();
+		context(const std::string& window_title);
 		~context() override;
 
 		using command = std::function<void(context&)>;
@@ -28,7 +28,10 @@ export namespace gse::renderer {
 		template <typename T, typename... Args>
 		auto queue(const std::string& name, Args&&... args) -> resource::handle<T>; 
 
-		auto queue(command&& cmd) const -> void;
+		template <typename Resource>
+		auto queue_gpu_command(Resource* resource, std::function<void(context&, Resource&)> work) const -> void;
+
+		[[nodiscard]] auto execute_and_detect_gpu_queue(const std::function<void(const context&)>& work) const -> bool;
 
 		template <typename T>
 		auto instantly_load(const resource::handle<T>& handle) -> void;
@@ -36,38 +39,48 @@ export namespace gse::renderer {
 		template <typename T>
 		auto add(T&& resource) -> resource::handle<T>;
 
-		auto flush_queues() -> void;
+		auto process_resource_queue() -> void;
+
+		auto process_gpu_queue() -> void;
 
 		auto compile() -> void;
 
 		template <typename T>
-		auto resource_state(const id& id) const -> resource::state;
+		[[nodiscard]] auto resource_state(const id& id) const -> resource::state;
 
 		template <typename T>
-		auto loader() -> resource::loader<T, context>*;
+		[[nodiscard]] auto loader() -> resource::loader<T, context>*;
 
 		template <typename T>
-		auto loader() const -> const resource::loader<T, context>* ;
+		[[nodiscard]] auto loader() const -> const resource::loader<T, context>*;
 
-		auto config() const -> const vulkan::config&;
+		[[nodiscard]] auto config() const -> const vulkan::config&;
 
-		auto config() -> vulkan::config& ;
+		[[nodiscard]] auto config() -> vulkan::config&;
 
-		auto camera() -> camera&;
+		[[nodiscard]] auto camera() -> camera&;
+
+		[[nodiscard]] auto window() -> window&;
+
+		[[nodiscard]] auto gpu_queue_size() const -> size_t ;
+
+		auto mark_pending_for_finalization(const std::type_index& resource_type, const id& resource_id) const -> void ;
 
 		auto shutdown() -> void;
 	private:
 		auto loader(const std::type_index& type_index) const -> resource::loader_base*;
 
+		gse::window m_window;
 		std::unique_ptr<vulkan::config> m_config;
 		std::unordered_map<std::type_index, std::unique_ptr<resource::loader_base>> m_resource_loaders;
 		mutable std::vector<command> m_command_queue;
+		mutable std::vector<std::pair<std::type_index, id>> m_pending_gpu_resources;
 		gse::camera m_camera;
-		mutable std::mutex m_mutex;
+		mutable std::recursive_mutex m_mutex;
 	};
 }
 
-gse::renderer::context::context() : m_config(platform::initialize()) {}
+gse::renderer::context::context(const std::string& window_title) : m_window(window_title), m_config(vulkan::initialize(m_window.raw_handle())) {}
 
 gse::renderer::context::~context() {
 	m_config.reset();
@@ -103,9 +116,14 @@ auto gse::renderer::context::queue(const std::string& name, Args&&... args) -> r
 	return specific_loader->queue(name, std::forward<Args>(args)...);
 }
 
-auto gse::renderer::context::queue(command&& cmd) const -> void {
+template <typename Resource>
+auto gse::renderer::context::queue_gpu_command(Resource* resource, std::function<void(context&, Resource&)> work) const -> void {
+	command final_command = [resource, work_lambda = std::move(work)](context& ctx) {
+		work_lambda(ctx, *resource);
+		};
+
 	std::lock_guard lock(m_mutex);
-	m_command_queue.push_back(std::move(cmd));
+	m_command_queue.push_back(std::move(final_command));
 }
 
 template <typename T>
@@ -120,22 +138,41 @@ auto gse::renderer::context::add(T&& resource) -> resource::handle<T> {
 	return specific_loader->add(std::forward<T>(resource));
 }
 
-auto gse::renderer::context::flush_queues() -> void {
+auto gse::renderer::context::execute_and_detect_gpu_queue(const std::function<void(const context&)>& work) const -> bool {
+	std::lock_guard lock(m_mutex);
+	const size_t queue_size_before = m_command_queue.size();
+
+	work(*this);
+
+	const size_t queue_size_after = m_command_queue.size();
+	return queue_size_after > queue_size_before;
+}
+
+auto gse::renderer::context::process_resource_queue() -> void {
 	for (const auto& loader : m_resource_loaders | std::views::values) {
 		loader->flush();
 	}
+}
 
+auto gse::renderer::context::process_gpu_queue() -> void {
 	std::vector<command> commands_to_run;
+	std::vector<std::pair<std::type_index, id>> resources_to_finalize;
 
 	{
 		std::lock_guard lock(m_mutex);
 		commands_to_run.swap(m_command_queue);
+		resources_to_finalize.swap(m_pending_gpu_resources);
 	}
 
 	for (auto& cmd : commands_to_run) {
 		if (cmd) {
 			cmd(*this);
 		}
+	}
+
+	for (const auto& [type, resource_id] : resources_to_finalize) {
+		resource::loader_base* specific_loader = this->loader(type);
+		specific_loader->update_state(resource_id, resource::state::loaded);
 	}
 }
 
@@ -180,8 +217,25 @@ auto gse::renderer::context::camera() -> gse::camera& {
 	return m_camera;
 }
 
+auto gse::renderer::context::window() -> gse::window& {
+	return m_window;
+}
+
+auto gse::renderer::context::gpu_queue_size() const -> size_t {
+	std::lock_guard lock(m_mutex);
+	return m_command_queue.size();
+}
+
+auto gse::renderer::context::mark_pending_for_finalization(const std::type_index& resource_type,
+	const id& resource_id) const -> void {
+	std::lock_guard lock(m_mutex);
+	m_pending_gpu_resources.emplace_back(resource_type, resource_id);
+}
+
 auto gse::renderer::context::shutdown() -> void {
 	if (!m_config) return;
+
+	m_window.shutdown();
 
 	m_config->device_config().device.waitIdle();
 

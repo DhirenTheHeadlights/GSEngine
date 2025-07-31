@@ -35,9 +35,8 @@ export namespace gse::renderer {
 auto gse::renderer::geometry::initialize() -> void {
 	auto& config = m_context.config();
 
-	single_line_commands(
-		config,
-		[&](const vk::raii::CommandBuffer& cmd) {
+	config.add_transient_work(
+		[&](const vk::raii::CommandBuffer& cmd) -> std::vector<vulkan::persistent_allocator::buffer_resource> {
 			vulkan::uploader::transition_image_layout(
 				cmd, config.swap_chain_config().albedo_image,
 				vk::ImageLayout::eColorAttachmentOptimal, vk::ImageAspectFlagBits::eColor,
@@ -53,6 +52,8 @@ auto gse::renderer::geometry::initialize() -> void {
 				{}, vk::PipelineStageFlagBits2::eEarlyFragmentTests,
 				vk::AccessFlagBits2::eDepthStencilAttachmentWrite
 			);
+
+			return {};
 		}
 	);
 
@@ -293,15 +294,12 @@ auto gse::renderer::geometry::render(const std::span<std::reference_wrapper<regi
 		config, 
 		rendering_info,
 		[&] {
-			m_context.camera().update_camera_vectors();
-			if (!window::is_mouse_visible()) m_context.camera().process_mouse_movement(window::get_mouse_delta_rel_top_left());
-
 			if (!registry::any_components<render_component>(registries)) {
 				return;
 			}
 
 			m_shader->set_uniform("camera_ubo.view", m_context.camera().view(), m_ubo_allocations.at("camera_ubo").allocation);
-			m_shader->set_uniform("camera_ubo.proj", m_context.camera().projection(), m_ubo_allocations.at("camera_ubo").allocation);
+			m_shader->set_uniform("camera_ubo.proj", m_context.camera().projection(m_context.window().viewport()), m_ubo_allocations.at("camera_ubo").allocation);
 
 			command.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
 
@@ -317,30 +315,43 @@ auto gse::renderer::geometry::render(const std::span<std::reference_wrapper<regi
 
 			std::unordered_map<std::string, std::span<const std::byte>> push_constants = {};
 
-			auto calculate_center_of_mass = [](const std::vector<model_instance>& models) -> vec3<length> {
-				vec3<length> sum;
-				int number_of_meshes = 0;
+			auto calculate_center_of_mass = [](
+				const std::vector<model_instance>& models
+				) -> vec3<length> {
+					vec3<length> sum;
+					int number_of_meshes = 0;
 
-				for (const auto& instance : models) {
-					for (const auto& mesh : instance.handle()->meshes()) {
-						sum += mesh.center_of_mass;
+					for (const auto& instance : models) {
+						for (const auto& mesh : instance.handle()->meshes()) {
+							sum += mesh.center_of_mass();
+						}
+						number_of_meshes += static_cast<int>(instance.handle()->meshes().size());
 					}
-					number_of_meshes += static_cast<int>(instance.handle()->meshes().size());
-				}
 
-				return number_of_meshes > 0 ? sum / static_cast<float>(number_of_meshes) : vec3<length>{ 0, 0, 0 };
+
+					return number_of_meshes > 0 ? sum / static_cast<float>(number_of_meshes) : vec3<length>{ 0, 0, 0 };
 				};
 
 			for (const auto& registry : registries) {
 				for (auto& component : registry.get().linked_objects<render_component>()) {
 					const auto pos = registry.get().linked_object<physics::motion_component>(component.owner_id()).current_position;
 
+					if (!std::ranges::any_of(
+						component.models,
+						[](const model_instance& model) { return model.handle().valid(); }
+					)) {
+						continue;
+					}
+
 					if (!component.has_calculated_com) {
 						component.center_of_mass = calculate_center_of_mass(component.models);
+						component.has_calculated_com = true;
 					}
 
 					for (auto& model_handle : component.models) {
-						if (!model_handle.handle().valid()) continue;
+						if (!model_handle.handle().valid()) {
+							continue;
+						}
 
 						model_handle.set_position(pos);
 
@@ -355,12 +366,12 @@ auto gse::renderer::geometry::render(const std::span<std::reference_wrapper<regi
 								vk::ShaderStageFlagBits::eVertex
 							);
 
-							if (const auto& mesh = entry.model->meshes()[entry.index]; mesh.material.valid()) {
+							if (const auto& mesh = entry.model->meshes()[entry.index]; mesh.material().valid()) {
 								m_shader->push(
 									command,
 									m_pipeline_layout,
 									"diffuse_sampler",
-									mesh.material->diffuse_texture->descriptor_info()
+									mesh.material()->diffuse_texture->descriptor_info()
 								);
 
 								mesh.bind(command);

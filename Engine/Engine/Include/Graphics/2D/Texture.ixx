@@ -53,26 +53,7 @@ export namespace gse {
 	};
 }
 
-gse::texture::texture(const std::string& name, const unitless::vec4& color, const unitless::vec2u size) : identifiable(name) {
-	std::array<std::byte, 4> pixel_data;
-	pixel_data[0] = static_cast<std::byte>(color.x * 255.0f);
-	pixel_data[1] = static_cast<std::byte>(color.y * 255.0f);
-	pixel_data[2] = static_cast<std::byte>(color.z * 255.0f);
-	pixel_data[3] = static_cast<std::byte>(color.w * 255.0f);
-
-	const std::size_t total_pixels = static_cast<std::size_t>(size.x) * size.y;
-	std::vector<std::byte> pixels(total_pixels * 4);
-
-	for (std::size_t i = 0; i < total_pixels; ++i) {
-		std::memcpy(pixels.data() + i * 4, pixel_data.data(), 4);
-	}
-
-	m_image_data = image::data{
-		.size = size,
-		.channels = 4,
-		.pixels = std::move(pixels)
-	};
-}
+gse::texture::texture(const std::string& name, const unitless::vec4& color, const unitless::vec2u size) : identifiable(name), m_image_data(image::load(color, size)) {}
 
 gse::texture::texture(const std::string& name, const std::vector<std::byte>& data, const unitless::vec2u size, const std::uint32_t channels, const profile texture_profile)
 	: identifiable(name), m_image_data(image::data{ .path = {}, .size = size, .channels = channels, .pixels = data }), m_profile(texture_profile) {
@@ -196,8 +177,8 @@ auto gse::texture::load(const renderer::context& context) -> void {
 		m_image_data.channels = channels;
 	}
 
-	context.queue([this](renderer::context& ctx) {
-		create_vulkan_resources(ctx, m_profile);
+	context.queue_gpu_command<texture>(this, [](renderer::context& ctx, texture& self) {
+		self.create_vulkan_resources(ctx, self.m_profile);
 	});
 }
 

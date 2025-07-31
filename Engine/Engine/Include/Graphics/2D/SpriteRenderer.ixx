@@ -3,7 +3,6 @@ export module gse.graphics:sprite_renderer;
 import std;
 import vulkan_hpp;
 
-import :debug;
 import :texture;
 import :camera;
 import :shader;
@@ -207,36 +206,6 @@ auto gse::renderer::sprite::render(std::span<std::reference_wrapper<registry>> r
 		.pDepthAttachment = nullptr
 	};
 
-	if (window::is_mouse_visible()) {
-		constexpr auto size = unitless::vec2(20.0f, 20.0f);
-		constexpr auto thickness = 2.0f;
-
-		const auto center_pos = window::get_mouse_position_rel_bottom_left();
-		const auto blank_texture = m_context.get<texture>(find("blank"));
-		constexpr auto color = unitless::vec4{ 1.0f, 1.0f, 1.0f, 1.0f };
-
-		const auto half_size = size / 2.0f;
-		constexpr auto half_thickness = thickness / 2.0f;
-
-		queue({
-			.rect = rect_t<unitless::vec2>::from_position_size(
-				{ center_pos.x - half_size.x, center_pos.y + half_thickness },
-				{ size.x, thickness }
-			),
-			.color = color,
-			.texture = blank_texture
-			});
-
-		queue({
-			.rect = rect_t<unitless::vec2>::from_position_size(
-				{ center_pos.x - half_thickness, center_pos.y + half_size.y },
-				{ thickness, size.y }
-			),
-			.color = color,
-			.texture = blank_texture
-			});
-	}
-
 	vulkan::render(
 		config,
 		rendering_info,
@@ -265,12 +234,12 @@ auto gse::renderer::sprite::render(std::span<std::reference_wrapper<registry>> r
 				}
 
 				auto position = rect.top_left();
-				auto size = rect.size();
+				auto rect_size = rect.size();
 
 				std::unordered_map<std::string, std::span<const std::byte>> push_constants = {
 					{ "projection", std::as_bytes(std::span(&projection, 1)) },
 					{ "position", std::as_bytes(std::span(&position, 1)) },
-					{ "size", std::as_bytes(std::span(&size, 1)) },
+					{ "size", std::as_bytes(std::span(&rect_size, 1)) },
 					{ "color", std::as_bytes(std::span(&color, 1)) },
 					{ "uv_rect", std::as_bytes(std::span(&uv_rect, 1)) }
 				};

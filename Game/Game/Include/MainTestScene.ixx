@@ -1,12 +1,11 @@
-module;
-
-#include "imgui.h"
-
 export module gs:main_test_scene;
 
 import :player;
 import :arena;
 import :sphere_light;
+import :backpack;
+import :ironman;
+import :black_knight;
 
 import gse;
 
@@ -51,17 +50,7 @@ export namespace gs {
 		}
 
 		auto render() -> void override {
-			gse::debug::add_imgui_callback(
-				[] {
-					if (gse::scene_loader::scene(gse::find("Scene1"))->active()) {
-						ImGui::Begin("Game Data");
-
-						ImGui::Text("FPS: %d", gse::main_clock::fps());
-
-						ImGui::End();
-					}
-				}
-			);
+			
 		}
 	};
 } 

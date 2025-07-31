@@ -44,7 +44,7 @@ namespace gse {
 			std::uint32_t binding = 0;
 			std::uint32_t set = 0;
 			std::uint32_t size = 0;
-			std::vector<uniform_member> members;
+			std::unordered_map<std::string, uniform_member> members;
 		};
 
 		struct binding {
@@ -116,7 +116,6 @@ namespace gse {
 			const vulkan::persistent_allocator::allocation& alloc
 		) const -> void;
 
-		template <typename T>
 		auto set_uniform_block(
 			std::string_view block_name,
 			const std::unordered_map<std::string, std::span<const std::byte>>& data,
@@ -468,40 +467,55 @@ auto gse::shader::load(const renderer::context& context) -> void {
 		all_reflected.push_back(val);
 	}
 
-	auto reflect_uniforms = [&](const std::vector<char>& spirv) {
-		std::vector<struct uniform_block> blocks;
-		SpvReflectShaderModule reflect_module;
-		const auto result = spvReflectCreateShaderModule(spirv.size(), spirv.data(), &reflect_module);
-		assert(result == SPV_REFLECT_RESULT_SUCCESS, "SPIR-V reflection failed");
+	auto reflect_uniforms = [&](
+		const std::vector<char>& spirv
+		) {
+			std::vector<struct uniform_block> blocks;
+			SpvReflectShaderModule reflect_module;
+			const auto result = spvReflectCreateShaderModule(spirv.size(), spirv.data(), &reflect_module);
+			assert(result == SPV_REFLECT_RESULT_SUCCESS, "SPIR-V reflection failed");
 
-		uint32_t count = 0;
-		spvReflectEnumerateDescriptorBindings(&reflect_module, &count, nullptr);
-		std::vector<SpvReflectDescriptorBinding*> reflected(count);
-		spvReflectEnumerateDescriptorBindings(&reflect_module, &count, reflected.data());
+			uint32_t count = 0;
+			spvReflectEnumerateDescriptorBindings(&reflect_module, &count, nullptr);
+			std::vector<SpvReflectDescriptorBinding*> reflected(count);
+			spvReflectEnumerateDescriptorBindings(&reflect_module, &count, reflected.data());
 
-		for (const auto* b : reflected) {
-			if (b->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
-				struct uniform_block ub {
-					.name = b->name,
+			for (const auto* b : reflected) {
+				if (b->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER ||
+					b->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_BUFFER) {
+					struct uniform_block ub {
+						.name = b->name,
 						.binding = b->binding,
 						.set = b->set,
-						.size = b->block.size
-				};
-				for (uint32_t i = 0; i < b->block.member_count; ++i) {
-					auto& mem = b->block.members[i];
-					ub.members.emplace_back(
-						mem.name,
-						mem.type_description->type_name ? mem.type_description->type_name : "",
-						mem.offset, mem.size,
-						mem.array.dims_count ? mem.array.dims[0] : 0
-					);
-				}
-				blocks.push_back(std::move(ub));
-			}
-		}
+						.size = 0
+					};
+					for (uint32_t i = 0; i < b->block.member_count; ++i) {
+						const auto& mem = b->block.members[i];
 
-		spvReflectDestroyShaderModule(&reflect_module);
-		return blocks;
+						const std::uint32_t arr_count = mem.array.dims_count > 0
+							? mem.array.dims[0]
+							: 1;
+
+						ub.members.emplace(
+							mem.name,
+							uniform_member{
+								.name = mem.name,
+								.type_name = mem.type_description->type_name ? mem.type_description->type_name : "",
+								.offset = mem.offset,
+								.size = mem.size,
+								.array_size = arr_count
+							}
+						);
+
+						const std::uint32_t member_bytes = mem.size * arr_count;
+						ub.size = std::max(ub.size, mem.offset + member_bytes);
+					}
+					blocks.push_back(std::move(ub));
+				}
+			}
+
+			spvReflectDestroyShaderModule(&reflect_module);
+			return blocks;
 		};
 
 	auto blocks = reflect_uniforms(vert_code);
@@ -531,11 +545,15 @@ auto gse::shader::load(const renderer::context& context) -> void {
 					};
 					for (uint32_t i = 0; i < block_var->member_count; ++i) {
 						const auto& mem = block_var->members[i];
-						pcb.members.emplace_back(
+						pcb.members.emplace(
 							mem.name,
-							mem.type_description->type_name ? mem.type_description->type_name : "",
-							mem.offset, mem.size,
-							mem.array.dims_count ? mem.array.dims[0] : 0
+							uniform_member{
+								.name = mem.name,
+								.type_name = mem.type_description->type_name ? mem.type_description->type_name : "",
+								.offset = mem.offset,
+								.size = mem.size,
+								.array_size = mem.array.dims_count ? mem.array.dims[0] : 0
+							}
 						);
 					}
 					pc_blocks.push_back(std::move(pcb));
@@ -562,7 +580,8 @@ auto gse::shader::load(const renderer::context& context) -> void {
 		auto type = static_cast<set::binding_type>(set_index);
 		std::optional<struct uniform_block> block_info;
 
-		if (layout_binding.descriptorType == vk::DescriptorType::eUniformBuffer) {
+		if (layout_binding.descriptorType == vk::DescriptorType::eUniformBuffer ||
+			layout_binding.descriptorType == vk::DescriptorType::eStorageBuffer) {
 			if (auto it = std::ranges::find_if(
 				blocks,
 				[&](auto& ub) {
@@ -606,7 +625,8 @@ auto gse::shader::load(const renderer::context& context) -> void {
 				);
 
 				std::optional<struct uniform_block> block_info;
-				if (layout_binding.descriptorType == vk::DescriptorType::eUniformBuffer) {
+				if (layout_binding.descriptorType == vk::DescriptorType::eUniformBuffer || 
+					layout_binding.descriptorType == vk::DescriptorType::eStorageBuffer) {
 					if (auto block_it = std::ranges::find_if(blocks, [&](const auto& ub) {
 						return ub.binding == layout_binding.binding && ub.set == set_index;
 						}); block_it != blocks.end()) {
@@ -628,10 +648,22 @@ auto gse::shader::load(const renderer::context& context) -> void {
 			raw.reserve(binds.size());
 			for (auto& b : binds) raw.push_back(b.layout_binding);
 
-			vk::DescriptorSetLayoutCreateInfo ci{ .flags = {}, .bindingCount = static_cast<uint32_t>(raw.size()), .pBindings = raw.data() };
+			vk::DescriptorSetLayoutCreateInfo ci{
+				.flags = {},
+				.bindingCount = static_cast<uint32_t>(raw.size()),
+				.pBindings = raw.data()
+			};
+
 			auto raii_layout = context.config().device_config().device.createDescriptorSetLayout(ci);
 
-			m_layout.sets.emplace(type, set{ .type = type, .layout = std::move(raii_layout), .bindings = std::move(binds) });
+			m_layout.sets.emplace(
+				type,
+				set{
+					.type = type,
+					.layout = std::move(raii_layout),
+					.bindings = std::move(binds)
+				}
+			);
 		}
 	}
 }
@@ -837,13 +869,7 @@ auto gse::shader::set_uniform(std::string_view full_name, const T& value, const 
 
 			const auto& ub = b.member.value();
 
-			auto mem_it = std::find_if(
-				ub.members.begin(),
-				ub.members.end(),
-				[&](auto& m) {
-					return m.name == member_name;
-				}
-			);
+			auto mem_it = ub.members.find(member_name);
 
 			assert(
 				mem_it != ub.members.end(),
@@ -854,7 +880,7 @@ auto gse::shader::set_uniform(std::string_view full_name, const T& value, const 
 				)
 			);
 
-			const auto& mem_info = *mem_it;
+			const auto& mem_info = mem_it->second;
 
 			assert(
 				sizeof(T) <= mem_info.size,
@@ -889,8 +915,7 @@ auto gse::shader::set_uniform(std::string_view full_name, const T& value, const 
 		std::format("Uniform block '{}' not found", block_name)
 	);
 }
-
-template <typename T>
+\
 auto gse::shader::set_uniform_block(const std::string_view block_name, const std::unordered_map<std::string, std::span<const std::byte>>& data, const vulkan::persistent_allocator::allocation& alloc) const -> void {
 	const struct binding* block_binding = nullptr;
 	for (const auto& set : m_layout.sets | std::views::values) {
@@ -908,42 +933,22 @@ auto gse::shader::set_uniform_block(const std::string_view block_name, const std
 	assert(alloc.mapped(), "Attempted to set uniform block but memory is not mapped");
 
 	for (const auto& [name, bytes] : data) {
-		const auto member_it = std::find_if(
-			block.members.begin(), block.members.end(),
-			[&](const auto& m) { return m.name == name; }
-		);
+		auto member_it = block.members.find(name);
 
 		assert(
 			member_it != block.members.end(),
-			std::format(
-				"Uniform member '{}' not found in block '{}'",
-				name,
-				block_name
-			)
+			std::format("Uniform member '{}' not found in block '{}'", name, block_name)
 		);
 
-		assert(
-			bytes.size() <= member_it->size,
-			std::format(
-				"Data size {} > member size {} for '{}.{}'",
-				bytes.size(),
-				member_it->size,
-				block_name,
-				name
-			)
-		);
+		const auto& member_info = member_it->second;
 
 		assert(
-			alloc.mapped(),
-			std::format(
-				"Memory not mapped for '{}.{}'",
-				block_name,
-				name
-			)
+			bytes.size() <= member_info.size,
+			std::format("Data size {} > member size {} for '{}.{}'", bytes.size(), member_info.size, block_name, name)
 		);
 
 		std::memcpy(
-			static_cast<std::byte*>(alloc.mapped()) + member_it->offset,
+			static_cast<std::byte*>(alloc.mapped()) + member_info.offset,
 			bytes.data(),
 			bytes.size()
 		);
@@ -1007,27 +1012,21 @@ auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout
 	std::vector buffer(block.size, std::byte{ 0 });
 
 	for (const auto& [name, data_span] : values) {
-		auto member_it = std::ranges::find_if(block.members, [&](const auto& m) {
-			return m.name == name;
-			});
+		auto member_it = block.members.find(name);
 
 		assert(
 			member_it != block.members.end(),
-			std::format(
-				"Member '{}' not found in push constant block '{}'",
-				name,
-				block_name
-			)
+			std::format("Member '{}' not found in push constant block '{}'", name, block_name)
 		);
 
+		const auto& member_info = member_it->second;
+
 		assert(
-			data_span.size() <= member_it->size,
-			std::format(
-				"Provided bytes for '{}' (size {}) exceed member size ({})",
-				member_it->name, data_span.size(), member_it->size
-			)
+			data_span.size() <= member_info.size,
+			std::format("Provided bytes for '{}' (size {}) exceed member size ({})", member_info.name, data_span.size(), member_info.size)
 		);
-		std::memcpy(buffer.data() + member_it->offset, data_span.data(), data_span.size());
+
+		std::memcpy(buffer.data() + member_info.offset, data_span.data(), data_span.size());
 	}
 
 	command.pushConstants(
@@ -1120,23 +1119,25 @@ auto gse::shader::generate_global_layouts(const vk::raii::Device& device) -> voi
 		{ 4, vk::DescriptorType::eCombinedImageSampler, 1, fs },
 		{ 5, vk::DescriptorType::eCombinedImageSampler, 1, fs },
 		{ 6, vk::DescriptorType::eCombinedImageSampler, 1, fs },
-		});
+	});
 
 	global_layouts.emplace(descriptor_layout::standard_3d, std::move(std_3d));
 
 	struct layout def_3d;
 
 	create_layout(def_3d, set::binding_type::persistent, {
-		{ 0, vk::DescriptorType::eCombinedImageSampler,      1, fs },	// g_albedo
-		{ 1, vk::DescriptorType::eCombinedImageSampler,      1, fs },	// g_normal
-		{ 2, vk::DescriptorType::eCombinedImageSampler,      1, fs },	// g_depth
-		{ 3, vk::DescriptorType::eCombinedImageSampler, max_lights, fs },
-		{ 4, vk::DescriptorType::eCombinedImageSampler, max_lights, fs },
-		{ 5, vk::DescriptorType::eUniformBuffer,        1, vs | fs },	// light_space_matrix
-		{ 6, vk::DescriptorType::eCombinedImageSampler, 1, fs },		// diffuse_texture
-		{ 7, vk::DescriptorType::eCombinedImageSampler, 1, fs },		// environment_map
-		{ 8, vk::DescriptorType::eStorageBuffer,        1, fs },		// light buffer
+		{ 0, vk::DescriptorType::eCombinedImageSampler, 1,			fs }, // Albedo
+		{ 1, vk::DescriptorType::eCombinedImageSampler, 1,			fs }, // Normal
+		{ 2, vk::DescriptorType::eCombinedImageSampler, 1,			fs }, // Depth
+		{ 3, vk::DescriptorType::eUniformBuffer,        1,			fs }, // Cam
+		{ 4, vk::DescriptorType::eStorageBuffer,		1,			fs },
+		{ 5, vk::DescriptorType::eCombinedImageSampler, 1,			fs },
+		{ 6, vk::DescriptorType::eCombinedImageSampler, 1,			fs },
 		});
+
+	create_layout(def_3d, set::binding_type::push, {
+		{ 0, vk::DescriptorType::eUniformBuffer,        1, vs },
+	});
 
 	global_layouts.emplace(descriptor_layout::deferred_3d, std::move(def_3d));
 
@@ -1145,14 +1146,14 @@ auto gse::shader::generate_global_layouts(const vk::raii::Device& device) -> voi
 	create_layout(for_3d, set::binding_type::persistent, {
 		{ 0, vk::DescriptorType::eUniformBuffer, 1, vs | fs },
 		{ 4, vk::DescriptorType::eStorageBuffer, 1, fs }
-		});
+	});
 
 	create_layout(for_3d, set::binding_type::push, {
 		{ 0, vk::DescriptorType::eUniformBuffer,        1, vs },
 		{ 1, vk::DescriptorType::eUniformBuffer,        1, vs },
 		{ 2, vk::DescriptorType::eCombinedImageSampler, 1, fs },
 		{ 3, vk::DescriptorType::eCombinedImageSampler, 1, fs },
-		});
+	});
 
 	global_layouts.emplace(descriptor_layout::forward_3d, std::move(for_3d));
 
@@ -1162,7 +1163,7 @@ auto gse::shader::generate_global_layouts(const vk::raii::Device& device) -> voi
 
 	create_layout(for_2d, set::binding_type::push, {
 		{ 0, vk::DescriptorType::eCombinedImageSampler, 1, fs },
-		});
+	});
 
 	global_layouts.emplace(descriptor_layout::forward_2d, std::move(for_2d));
 
@@ -1171,7 +1172,7 @@ auto gse::shader::generate_global_layouts(const vk::raii::Device& device) -> voi
 	create_layout(post_process, set::binding_type::persistent, {
 		{ 0, vk::DescriptorType::eCombinedImageSampler, 1, fs },
 		{ 1, vk::DescriptorType::eCombinedImageSampler, 1, fs },
-		});
+	});
 
 	global_layouts.emplace(descriptor_layout::post_process, std::move(post_process));
 }

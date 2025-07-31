@@ -5,7 +5,8 @@ import gse;
 
 import game.config;
 
-struct backpack final : gse::hook<gse::entity> {
+class backpack final : public gse::hook<gse::entity> {
+public:
 	using hook::hook;
 
 	auto initialize() -> void override {

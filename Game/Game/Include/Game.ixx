@@ -1,7 +1,3 @@
-module;
-
-#include "GLFW/glfw3.h"
-
 export module gs;
 
 export import game.config;
@@ -32,42 +28,55 @@ export namespace gs {
 			gse::scene_loader::add(scene2);
 			gse::scene_loader::add(scene3);
 
-			gse::scene_loader::queue(gse::find("Scene1"), [] { return gse::input::get_keyboard().keys[GLFW_KEY_F1].pressed; });
-			gse::scene_loader::queue(gse::find("Scene2"), [] { return gse::input::get_keyboard().keys[GLFW_KEY_F2].pressed; });
-			gse::scene_loader::queue(gse::find("Scene3"), [] { return gse::input::get_keyboard().keys[GLFW_KEY_F3].pressed; });
+			gse::scene_loader::queue(gse::find("Scene1"), [] { return gse::keyboard::pressed(gse::key::f1); });
+			gse::scene_loader::queue(gse::find("Scene2"), [] { return gse::keyboard::pressed(gse::key::f2); });
+			gse::scene_loader::queue(gse::find("Scene3"), [] { return gse::keyboard::pressed(gse::key::f3); });
 		}
 
 		auto update() -> void  override {
-			gse::window::set_mouse_visible(gse::input::get_mouse().buttons[GLFW_MOUSE_BUTTON_MIDDLE].toggled || gse::input::get_keyboard().keys[GLFW_KEY_N].toggled);
-
-			if (gse::input::get_keyboard().keys[GLFW_KEY_ENTER].pressed && gse::input::get_keyboard().keys[GLFW_KEY_LEFT_ALT].held) {
-				gse::window::set_full_screen(!gse::window::is_full_screen());
+			if (gse::keyboard::pressed(gse::key::escape)) {
+				gse::shutdown();
 			}
 
-			if (gse::input::get_keyboard().keys[GLFW_KEY_ESCAPE].pressed) {
-				gse::shutdown();
+			if (gse::keyboard::pressed(gse::key::n) || gse::mouse::pressed(gse::mouse_button::button_3)) {
+				m_show_cross_hair = !m_show_cross_hair;
+			}
+
+			if (m_show_cross_hair) {
+				gse::show_cross_hair();
 			}
 		}
 
 		auto render() -> void  override {
 			gse::gui::create_menu(
-				"Test", { 100.f, 100.f }, { 200.f, 200.f }, [] {
-					gse::gui::text("Hello, world!");
-					gse::gui::value("Test Value", 42);
-					gse::gui::value("Test Quantity", gse::meters(5.0f));
-					gse::gui::vec("Test Vec", gse::vec::meters(1.f, 2.f, 3.f));
-					gse::gui::vec("Test Vec2", gse::window::get_mouse_position_rel_bottom_left());
+				"Test", {
+					.top_left = { 1000.f, 1000.f },
+					.size = { 500.f, 200.f },
+					.contents = [] {
+						gse::gui::value("FPS: ", gse::main_clock::fps());
+						gse::gui::value("Test Value", 42);
+						gse::gui::value("Test Quantity", gse::meters(5.0f));
+						gse::gui::vec("Test Vec", gse::vec::meters(1.f, 2.f, 3.f));
+						gse::gui::vec("Test Vec2", gse::mouse::position());
+					}
 				}
 			);
 
-			gse::gui::create_menu("Test2", { 300.f, 100.f }, { 200.f, 200.f }, [] {
-				gse::gui::vec("Test Vec2", gse::window::get_mouse_position_rel_bottom_left());
-				gse::gui::text("Hello, world!");
-				gse::gui::value("Test Value", 42);
-				gse::gui::value("Test Quantity", gse::meters(5.0f));
-				gse::gui::vec("Test Vec", gse::vec::meters(1.f, 2.f, 3.f));
-				gse::gui::vec("Test Vec2", gse::window::get_mouse_position_rel_bottom_left());
-			});
+			/*gse::gui::create_menu(
+				"Test2", {
+					.top_left = { 300.f, 500.f },
+					.size = { 200.f, 200.f },
+					.contents = [] {
+						gse::gui::text("Hello, world!");
+						gse::gui::value("Test Value", 42);
+						gse::gui::value("Test Quantity", gse::meters(5.0f));
+						gse::gui::vec("Test Vec", gse::vec::meters(1.f, 2.f, 3.f));
+						gse::gui::vec("Test Vec2", gse::window::get_mouse_position_rel_bottom_left());
+					}
+				}
+			);*/
 		}
+	private:
+		bool m_show_cross_hair = false;
 	};
 }

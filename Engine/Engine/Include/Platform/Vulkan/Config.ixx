@@ -62,20 +62,26 @@ export namespace gse::vulkan {
         auto operator=(descriptor_config&&) -> descriptor_config & = default;
     };
 
+    struct transient_gpu_work {
+        vk::raii::CommandBuffer command_buffer = nullptr;
+        vk::raii::Fence fence = nullptr;
+        std::vector<persistent_allocator::buffer_resource> transient_buffers;
+    };
+
     struct sync_config {
         std::vector<vk::raii::Semaphore> image_available_semaphores;
-        std::vector<vk::raii::Semaphore> render_finished_semaphores;
+        vk::raii::Semaphore render_timeline;
         std::vector<vk::raii::Fence> in_flight_fences;
-        std::vector<vk::Fence> images_in_flight;
+        std::vector<std::vector<transient_gpu_work>> transient_work_graveyard;
+        std::uint32_t timeline_value = 0;
         sync_config(
             std::vector<vk::raii::Semaphore>&& image_available_semaphores,
-            std::vector<vk::raii::Semaphore>&& render_finished_semaphores,
-            std::vector<vk::raii::Fence>&& in_flight_fences,
-            std::vector<vk::Fence>&& images_in_flight)
+            vk::raii::Semaphore&& render_timeline,
+            std::vector<vk::raii::Fence>&& in_flight_fences)
             : image_available_semaphores(std::move(image_available_semaphores)),
-            render_finished_semaphores(std::move(render_finished_semaphores)),
-            in_flight_fences(std::move(in_flight_fences)),
-            images_in_flight(std::move(images_in_flight)) {
+            render_timeline(std::move(render_timeline)),
+            in_flight_fences(std::move(in_flight_fences)) {
+            transient_work_graveyard.resize(this->in_flight_fences.size());
         }
         sync_config(sync_config&&) = default;
         auto operator=(sync_config&&) -> sync_config & = default;
@@ -174,6 +180,53 @@ export namespace gse::vulkan {
 
         config(config&&) = default;
         auto operator=(config&&) -> config & = default;
+
+        auto add_transient_work(const std::function<std::vector<persistent_allocator::buffer_resource>(const vk::raii::CommandBuffer&)>& commands) -> void {
+            const vk::CommandBufferAllocateInfo alloc_info{
+                .commandPool = *m_command.pool,
+                .level = vk::CommandBufferLevel::ePrimary,
+                .commandBufferCount = 1
+            };
+
+            auto buffers = m_device_data.device.allocateCommandBuffers(alloc_info);
+            vk::raii::CommandBuffer command_buffer = std::move(buffers[0]);
+
+            constexpr vk::CommandBufferBeginInfo begin_info{
+                .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit
+            };
+
+            command_buffer.begin(begin_info);
+            auto transient_buffers = commands(command_buffer);
+            command_buffer.end();
+
+            vk::raii::Fence fence = m_device_data.device.createFence({});
+
+            const vk::SubmitInfo submit_info{
+                .commandBufferCount = 1,
+                .pCommandBuffers = &*command_buffer
+            };
+
+            m_queue.graphics.submit(submit_info, *fence);
+
+            m_sync.transient_work_graveyard[m_current_frame].push_back({
+                .command_buffer = std::move(command_buffer),
+                .fence = std::move(fence),
+                .transient_buffers = std::move(transient_buffers)
+            });
+        }
+
+        auto cleanup_finished_frame_resources() -> void {
+            for (auto& work : m_sync.transient_work_graveyard[m_current_frame]) {
+                if (*work.fence) {
+                    (void)m_device_data.device.waitForFences(
+                        *work.fence,
+                        vk::True,
+                        std::numeric_limits<std::uint64_t>::max()
+                    );
+                }
+            }
+            m_sync.transient_work_graveyard[m_current_frame].clear();
+        }
 
         auto instance_config() -> instance_config& {
             return m_instance_data;

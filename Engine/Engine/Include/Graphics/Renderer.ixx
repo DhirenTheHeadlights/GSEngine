@@ -2,7 +2,6 @@ export module gse.graphics:renderer;
 
 import std;
 
-import :debug;
 import :lighting_renderer;
 import :geometry_renderer;
 import :sprite_renderer;
@@ -17,7 +16,7 @@ import gse.utility;
 import gse.platform;
 
 namespace gse {
-	renderer::context rendering_context;
+	renderer::context rendering_context("GSEngine");
 	std::vector<std::unique_ptr<base_renderer>> renderers;
 }
 
@@ -62,17 +61,48 @@ export namespace gse::renderer {
 }
 
 namespace gse::renderer {
-	auto begin_frame() -> void;
 	auto end_frame() -> void;
 
 	template <typename T>
 	auto renderer() -> T& {
-		for (const auto& renderer_ptr : renderers) {
-			if (auto* p = dynamic_cast<T*>(renderer_ptr.get())) {
-				return *p;
+		for (const auto& r : renderers) {
+			if (auto* casted = dynamic_cast<T*>(r.get())) {
+				return *casted;
 			}
 		}
-		throw std::runtime_error("Renderer not found: " + std::string(typeid(T).name()));
+		throw std::runtime_error("Renderer not found");
+	}
+}
+
+export namespace gse {
+	auto show_cross_hair() -> void {
+		constexpr auto size = unitless::vec2(20.0f, 20.0f);
+		constexpr auto thickness = 2.0f;
+
+		const auto center_pos = mouse::delta();
+		const auto blank_texture = get<texture>(find("blank"));
+		constexpr auto color = unitless::vec4{ 1.0f, 1.0f, 1.0f, 1.0f };
+
+		const auto half_size = size / 2.0f;
+		constexpr auto half_thickness = thickness / 2.0f;
+
+		renderer::renderer<renderer::sprite>().queue({
+			.rect = rect_t<unitless::vec2>::from_position_size(
+				{ center_pos.x - half_size.x, center_pos.y + half_thickness },
+				{ size.x, thickness }
+			),
+			.color = color,
+			.texture = blank_texture
+		});
+
+		renderer::renderer<renderer::sprite>().queue({
+			.rect = rect_t<unitless::vec2>::from_position_size(
+				{ center_pos.x - half_thickness, center_pos.y + half_size.y },
+				{ thickness, size.y }
+			),
+			.color = color,
+			.texture = blank_texture
+		});
 	}
 }
 
@@ -94,49 +124,105 @@ auto gse::renderer::initialize() -> void {
 		renderer->initialize();
 	}
 
-	debug::initialize_imgui(rendering_context.config());
 	gui::initialize(rendering_context);
 }
 
-auto gse::renderer::begin_frame() -> void {
-	rendering_context.flush_queues();
-	window::begin_frame();
-	vulkan::begin_frame(window::get_window(), rendering_context.config());
-}
-
 auto gse::renderer::update() -> void {
-	window::update();
-	gui::update();
+	rendering_context.process_resource_queue();
+	gui::update(rendering_context.window());
+	rendering_context.window().update();
+	rendering_context.camera().update_orientation();
+	rendering_context.camera().process_mouse_movement(mouse::delta());
 }
 
 auto gse::renderer::render(std::vector<std::reference_wrapper<registry>> registries, const std::function<void()>& in_frame) -> void {
+	rendering_context.process_gpu_queue();
+
 	gui::render(rendering_context, renderer<sprite>(), renderer<text>());
 
-	begin_frame();
-	for (const auto& renderer : renderers) {
-		renderer->render(registries);
-	}
-	in_frame();
+	vulkan::frame({
+		.window = rendering_context.window().raw_handle(),
+		.frame_buffer_resized = rendering_context.window().frame_buffer_resized(),
+		.minimized = rendering_context.window().minimized(),
+		.config = rendering_context.config(),
+		.in_frame = [&registries, &in_frame] {
+			vk::ImageMemoryBarrier2 render_begin_barrier{
+				.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
+				.srcAccessMask = {},
+				.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+				.dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
+				.oldLayout = vk::ImageLayout::eUndefined,
+				.newLayout = vk::ImageLayout::eColorAttachmentOptimal,
+				.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+				.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+				.image = rendering_context.config().swap_chain_config().images[rendering_context.config().frame_context().image_index],
+				.subresourceRange = {
+					.aspectMask = vk::ImageAspectFlagBits::eColor,
+					.baseMipLevel = 0,
+					.levelCount = 1,
+					.baseArrayLayer = 0,
+					.layerCount = 1
+				}
+			};
+
+			const vk::DependencyInfo render_begin_dependency_info{
+				.imageMemoryBarrierCount = 1,
+				.pImageMemoryBarriers = &render_begin_barrier
+			};
+
+			rendering_context.config().frame_context().command_buffer.pipelineBarrier2(render_begin_dependency_info);
+
+			for (const auto& renderer : renderers) {
+				renderer->render(registries);
+			}
+
+			vk::ImageMemoryBarrier2 present_barrier{
+				.srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+				.srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
+				.dstStageMask = vk::PipelineStageFlagBits2::eBottomOfPipe,
+				.dstAccessMask = {},
+				.oldLayout = vk::ImageLayout::eColorAttachmentOptimal,
+				.newLayout = vk::ImageLayout::ePresentSrcKHR,
+				.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+				.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+				.image = rendering_context.config().swap_chain_config().images[rendering_context.config().frame_context().image_index],
+				.subresourceRange = {
+					.aspectMask = vk::ImageAspectFlagBits::eColor,
+					.baseMipLevel = 0,
+					.levelCount = 1,
+					.baseArrayLayer = 0,
+					.layerCount = 1
+				}
+			};
+
+			const vk::DependencyInfo dependency_info{
+				.imageMemoryBarrierCount = 1,
+				.pImageMemoryBarriers = &present_barrier
+			};
+
+			rendering_context.config().frame_context().command_buffer.pipelineBarrier2(dependency_info);
+
+			in_frame();
+		}
+	});
+
 	end_frame();
 }
 
 auto gse::renderer::end_frame() -> void {
-	vulkan::end_frame(window::get_window(), rendering_context.config());
-	window::end_frame();
 	vulkan::transient_allocator::end_frame();
 }
 
 auto gse::renderer::shutdown() -> void {
 	rendering_context.config().device_config().device.waitIdle();
-	debug::shutdown_imgui();
 
 	for (auto& renderer : renderers) {
 		renderer.reset();
 	}
 
-	platform::shutdown();
-
 	rendering_context.shutdown();
+
+	vulkan::persistent_allocator::clean_up();
 }
 
 auto gse::renderer::camera() -> gse::camera& {

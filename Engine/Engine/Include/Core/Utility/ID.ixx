@@ -59,8 +59,21 @@ export namespace gse {
 	public:
 		identifiable_owned() = default;
 		explicit identifiable_owned(const id& owner_id) : m_owner_id(owner_id) {}
+
 		auto owner_id() const -> const id& { return m_owner_id; }
 		auto operator==(const identifiable_owned& other) const -> bool = default;
+
+		auto swap(const id& new_parent_id) -> void {
+			assert(
+				new_parent_id.exists(),
+				std::format("Cannot reassign identifiable owned to invalid id {}: {}", new_parent_id.tag(), new_parent_id.number())
+			);
+			m_owner_id = new_parent_id;
+		}
+
+		auto swap(const identifiable& new_parent) -> void {
+			swap(new_parent.id());
+		}
 	private:
 		id m_owner_id;
 	protected:
@@ -86,7 +99,7 @@ export namespace gse {
 	template <typename T>
 	concept is_identifiable = std::derived_from<T, identifiable> || std::same_as<T, entity>;
 
-	template <typename T, typename PrimaryIdType>
+	template <typename T, typename PrimaryIdType = id>
 	class id_mapped_collection {
 	public:
 		auto add(const PrimaryIdType& id, T object) -> T* {
@@ -112,7 +125,7 @@ export namespace gse {
 				const PrimaryIdType& last_id = m_ids.back();
 				m_items[index_to_remove] = std::move(m_items.back());
 				m_ids[index_to_remove] = std::move(m_ids.back());
-				m_map[last_id] = index_to_remove; 
+				m_map[last_id] = index_to_remove;
 			}
 
 			m_map.erase(id);
@@ -198,19 +211,22 @@ namespace gse {
 		auto operator()(std::string_view a, std::string_view b) const noexcept { return a == b; }
 	};
 
-	struct id_registry {
+	struct id_registry_data {
 		id_mapped_collection<id, uuid> by_uuid;
 		std::unordered_map<std::string, uuid, transparent_hash, transparent_equal> tag_to_uuid;
 	};
 
-	auto id_registry() -> id_registry& {
-		static class id_registry instance;
-		return instance;
+	auto id_registry() -> std::pair<std::shared_mutex&, id_registry_data&> {
+		static std::shared_mutex m;
+		static id_registry_data instance;
+		return { m, instance };
 	}
 }
 
 auto gse::generate_id(const std::string_view tag) -> id {
-	auto& registry = id_registry();
+	const auto& [mutex, registry] = id_registry();
+	std::lock_guard lock(mutex);
+
 	const uuid new_uuid = registry.by_uuid.size();
 
 	std::string new_tag(tag);
@@ -227,23 +243,34 @@ auto gse::generate_id(const std::string_view tag) -> id {
 }
 
 auto gse::find(const uuid number) -> id {
-	auto& [by_uuid, tag_to_uuid] = id_registry();
-	id* found_id = by_uuid.try_get(number);
+	const auto& [mutex, registry] = id_registry();
+	std::shared_lock lock(mutex);
+
+	id* found_id = registry.by_uuid.try_get(number);
 	assert(found_id, std::format("ID {} not found", number));
 	return *found_id;
 }
 
 auto gse::find(const std::string_view tag) -> id {
-	auto& [by_uuid, tag_to_uuid] = id_registry();
-	const auto it = tag_to_uuid.find(tag);
-	assert(it != tag_to_uuid.end(), std::format("Tag '{}' not found", tag));
-	return find(it->second);
+	const auto& [mutex, registry] = id_registry();
+	std::shared_lock lock(mutex);
+
+	const auto it = registry.tag_to_uuid.find(tag);
+	assert(it != registry.tag_to_uuid.end(), std::format("Tag '{}' not found", tag));
+
+	id* found_id = registry.by_uuid.try_get(it->second);
+	assert(found_id, "Inconsistent registry state!");
+	return *found_id;
 }
 
 auto gse::exists(const uuid number) -> bool {
-	return id_registry().by_uuid.contains(number);
+	const auto& [mutex, registry] = id_registry();
+	std::shared_lock lock(mutex);
+	return registry.by_uuid.contains(number);
 }
 
 auto gse::exists(const std::string_view tag) -> bool {
-	return id_registry().tag_to_uuid.contains(tag);
+	const auto& [mutex, registry] = id_registry();
+	std::shared_lock lock(mutex);
+	return registry.tag_to_uuid.contains(tag);
 }
