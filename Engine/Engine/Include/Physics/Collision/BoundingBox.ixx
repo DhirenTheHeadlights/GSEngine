@@ -52,6 +52,8 @@ export namespace gse {
 		auto update_axes() -> void;
 		auto corners() const -> std::array<vec3<length>, 8>;
 		auto face_vertices(axis axis, bool positive) const -> std::array<vec3<length>, 4>;
+		auto get_half_extents() const -> vec3<length> {return size / 2.0f;}
+
 
 		auto contains(vec3<length> point) const -> bool;
 	};

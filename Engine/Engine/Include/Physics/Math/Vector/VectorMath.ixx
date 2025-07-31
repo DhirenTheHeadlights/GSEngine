@@ -32,7 +32,7 @@ export namespace gse {
     template <typename T, int N> 				constexpr auto random_vector(T min = T(0), T max = T(1)) -> unitless::vec_t<T, N>;
     template <typename T, int N> 				constexpr auto is_normalized(const unitless::vec_t<T, N>& v, T epsilon = std::numeric_limits<T>::epsilon()) -> bool;
     template <typename T, int N> 				constexpr auto perpendicular(const vec2<T>& v) -> vec2<T>;
-    template <typename T, int N> 				constexpr auto barycentric(const unitless::vec3_t<T>& p, const unitless::vec3_t<T>& a, const unitless::vec3_t<T>& b, const unitless::vec3_t<T>& c) -> std::tuple<T, T, T>;
+    template <typename T> 						constexpr auto barycentric(const unitless::vec3_t<T>& p, const unitless::vec3_t<T>& a, const unitless::vec3_t<T>& b, const unitless::vec3_t<T>& c) -> std::tuple<T, T, T>;
     template <typename T, int N> 				constexpr auto exp(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>;
     template <typename T, int N> 				constexpr auto log(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>;
     template <typename T, int N> 				constexpr auto min_norm_vector(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, N>& b) -> unitless::vec_t<T, N>;
@@ -246,9 +246,9 @@ constexpr auto gse::perpendicular(const vec2<T>& v) -> vec2<T> {
 	return { -v.y, v.x };
 }
 
-template <typename T, int N> 
+template <typename T> 
 constexpr auto gse::barycentric(const unitless::vec3_t<T>& p, const unitless::vec3_t<T>& a, const unitless::vec3_t<T>& b, const unitless::vec3_t<T>& c) -> std::tuple<T, T, T> {
-	vec_t<T, 3> v0 = b - a, v1 = c - a, v2 = p - a;
+	unitless::vec_t<T, 3> v0 = b - a, v1 = c - a, v2 = p - a;
 	T d00 = dot(v0, v0);
 	T d01 = dot(v0, v1);
 	T d11 = dot(v1, v1);

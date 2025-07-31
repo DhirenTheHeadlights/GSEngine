@@ -10,6 +10,7 @@ import gse.physics.collision_component;
 import gse.physics.math;
 
 constexpr bool dynamic_contact_point_resolution = true;
+constexpr int mpr_collision_refinement_iterations = 32;
 //Whether to dynamically adjust the contact point based on the collision normal and the face of the OBB that was hit.
 
 
@@ -18,6 +19,17 @@ export namespace gse::narrow_phase_collision {
     auto resolve_dynamic_collision(physics::motion_component* object_motion_component, physics::collision_component& object_collision_component, physics::motion_component* other_motion_component, physics::collision_component& other_collision_component) -> void;
     auto resolve_static_collision(physics::motion_component* object_motion_component, physics::collision_component& object_collision_component, physics::collision_component& other_collision_component) -> void;
 }
+
+
+
+
+//SAT (Separating Axis Theorem) collision and helpers
+struct sat_result {
+    bool collided;
+    gse::unitless::vec3 normal;
+    gse::length penetration;
+    int axis_index;    // 0–2 => obb1 face i, 3–5 => obb2 face (i?3), >=6 => edge?edge
+};
 
 auto overlaps_on_axis(const gse::oriented_bounding_box& box1, const gse::oriented_bounding_box& box2, const gse::vec3<gse::length>& axis, gse::length& penetration) -> bool {
     if (gse::is_zero(axis)) {
@@ -59,14 +71,6 @@ auto overlaps_on_axis(const gse::oriented_bounding_box& box1, const gse::oriente
     penetration = overlap;
     return true;
 }
-
-struct sat_result {
-    bool collided;
-    gse::unitless::vec3 normal;
-    gse::length penetration;
-    int axis_index;    // 0–2 => obb1 face i, 3–5 => obb2 face (i?3), >=6 => edge?edge
-};
-
 auto sat_collision(const gse::oriented_bounding_box& obb1, const gse::oriented_bounding_box& obb2, sat_result& out) -> bool
 {
 
@@ -134,7 +138,6 @@ auto sat_collision(const gse::oriented_bounding_box& obb1, const gse::oriented_b
 	//std::cout << "Collision detected! Normal: " << out.normal.x << ", " << out.normal.y << ", " << out.normal.z << " Penetration: " << out.penetration.as_default_unit() << " Axis index: " << out.axis_index << "\n";
     return true;
 }
-
 auto get_obb_overlap_vertices(const gse::oriented_bounding_box& obb1, const gse::oriented_bounding_box& obb2, std::vector<gse::vec3<gse::length>>& overlap_vertices) {
 	//find each vertex of obb1 that is inside obb2 and apnd it to overlap_vertices
     for (const auto& corner : obb1.corners()) {
@@ -143,6 +146,102 @@ auto get_obb_overlap_vertices(const gse::oriented_bounding_box& obb1, const gse:
         }
 	}
 }
+
+//MPR (Minkowski Portal Refinement) collision and helpers
+struct mpr_result {
+    bool collided = false;
+    gse::unitless::vec3 normal;
+    gse::length penetration;
+    gse::vec3<gse::length> contact_point1; // Contact point on object 1
+    gse::vec3<gse::length> contact_point2; // Contact point on object 2
+};
+auto support_obb(const gse::oriented_bounding_box& obb, const gse::unitless::vec3& dir) -> gse::vec3<gse::length> {
+    gse::vec3<gse::length> result = obb.center;
+    const auto half_extents = obb.get_half_extents();
+
+    for (int i = 0; i < 3; ++i) {
+        float sign = (gse::dot(dir, obb.axes[i]) > 0) ? 1.0f : -1.0f;
+        result += obb.axes[i] * half_extents[i] * sign;
+    }
+    return result;
+}
+auto minkowski_difference(const gse::oriented_bounding_box& obb1, const gse::oriented_bounding_box& obb2, const gse::unitless::vec3& dir) -> gse::vec3<gse::length> {
+    return support_obb(obb1, dir) - support_obb(obb2, -dir);
+}
+bool mpr_collision(const gse::oriented_bounding_box& obb1, const gse::oriented_bounding_box& obb2, mpr_result& out) {
+    // Phase 1: Portal Discovery
+    gse::vec3<gse::length> v0 = obb1.center - obb2.center;
+    if (gse::is_zero(v0)) {
+        v0 = gse::vec3<gse::length>{ 0.0001, 0, 0 };
+    }
+
+    gse::unitless::vec3 n = gse::normalize(-v0);
+    gse::vec3<gse::length> v1 = minkowski_difference(obb1, obb2, n);
+
+    if (gse::dot(v1.as<gse::units::meters>(), n) <= 0) return false;
+
+    n = gse::normalize(gse::cross(v1, v0));
+    if (gse::is_zero(n)) {
+        n = gse::normalize(gse::vec3<gse::length>{v1.y, -v1.x, 0});
+        if (gse::is_zero(n)) n = gse::unitless::vec3{ 1, 0, 0 };
+    }
+    gse::vec3<gse::length> v2 = minkowski_difference(obb1, obb2, n);
+
+    if (gse::dot(v2.as<gse::units::meters>(), n) <= 0) return false;
+
+    // Make sure normal points towards the origin from the portal plane
+    n = gse::normalize(gse::cross(v1 - v0, v2 - v0));
+    if (gse::dot(n, -v0.as<gse::units::meters>()) < 0) {
+        n = -n;
+    }
+
+    // Phase 2: Portal Refinement
+    for (int i = 0; i < mpr_collision_refinement_iterations; ++i) {
+        gse::vec3<gse::length> v3 = minkowski_difference(obb1, obb2, n);
+
+        const auto portal_dist = gse::dot(v1, gse::vec3<gse::length>(n));
+        const auto support_dist = gse::dot(v3, gse::vec3<gse::length>(n));
+
+        // Standard termination: the new point is not significantly further than the portal
+        if (support_dist.as_default_unit() <= portal_dist.as_default_unit() + 0.0001f) {
+            out.collided = true;
+            out.normal = n;
+            out.penetration = support_dist;
+            out.contact_point2 = support_obb(obb2, -out.normal);
+            out.contact_point1 = out.contact_point2 + out.normal * out.penetration;
+            return true;
+        }
+
+        // Refine the portal. Using dot products with v0 directly is more stable
+        // than using the full cross product with mixed unit types.
+        if (gse::dot(gse::cross(v1.as<gse::units::meters>(), v3.as<gse::units::meters>()), v0.as<gse::units::meters>()) < 0) {
+            v2 = v3;
+        }
+        else if (gse::dot(gse::cross(v3.as<gse::units::meters>(), v2.as<gse::units::meters>()), v0.as<gse::units::meters>()) < 0) {
+            v1 = v3;
+        }
+        else {
+            // *** THE FIX ***
+            // This block is hit when the origin is contained by the portal's sweep.
+            // This is a valid termination condition. We set the results and return.
+            out.collided = true;
+            out.normal = n;
+            out.penetration = support_dist;
+            out.contact_point2 = support_obb(obb2, -out.normal);
+            out.contact_point1 = out.contact_point2 + out.normal * out.penetration;
+            return true;
+        }
+
+        n = gse::normalize(gse::cross(v2 - v0, v1 - v0));
+        // Always ensure the new normal points towards the origin
+        if (gse::dot(n, -v0.as<gse::units::meters>()) < 0) {
+            n = -n;
+        }
+    }
+
+    return false; // Failed to converge
+}
+
 
 struct plane {
 	gse::unitless::vec3 normal;
@@ -196,19 +295,23 @@ auto compute_contact_point(const std::vector<gse::vec3<gse::length>>& clipped_po
 
 auto gse::narrow_phase_collision::resolve_dynamic_collision(physics::motion_component* object_motion_component, physics::collision_component& object_collision_component, physics::motion_component* other_motion_component, physics::collision_component& other_collision_component) -> void {
     sat_result sat_res;
+    mpr_result mpr_res;
     std::vector<gse::vec3<gse::length>> contact_points;
-    if (!sat_collision(object_collision_component.oriented_bounding_box, other_collision_component.oriented_bounding_box, sat_res)) {
+    /*if (!sat_collision(object_collision_component.oriented_bounding_box, other_collision_component.oriented_bounding_box, sat_res)) {
         return;
-    }
+    }*/
+    if (!mpr_collision(object_collision_component.oriented_bounding_box, other_collision_component.oriented_bounding_box, mpr_res)) {
+        return;
+	}
     if (object_motion_component->position_locked){
         return;
     }
 
-    get_obb_overlap_vertices(object_collision_component.oriented_bounding_box, other_collision_component.oriented_bounding_box, contact_points);
+    //get_obb_overlap_vertices(object_collision_component.oriented_bounding_box, other_collision_component.oriented_bounding_box, contact_points);
 
-    object_collision_component.collision_information.colliding = true;
-    object_collision_component.collision_information.collision_normal = sat_res.normal;
-    object_collision_component.collision_information.penetration = sat_res.penetration;
+    object_collision_component.collision_information.colliding = mpr_res.collided;
+    object_collision_component.collision_information.collision_normal = -mpr_res.normal;
+    object_collision_component.collision_information.penetration = mpr_res.penetration;
 
     const auto  collision_normal = object_collision_component.collision_information.collision_normal;
     const float penetration_depth = object_collision_component.collision_information.penetration.as_default_unit() * 0.1f;
@@ -241,76 +344,76 @@ auto gse::narrow_phase_collision::resolve_dynamic_collision(physics::motion_comp
     }
 
     // final contact point
-    gse::vec3<gse::length> main_contact_point;
+    gse::vec3<gse::length> main_contact_point = mpr_res.contact_point1;
 
     //SETTINGS DEPENDENT- PERFORMANT
-    if (dynamic_contact_point_resolution) {
-        /////////////////////////////////////
-        int  face_axis;
-        bool edge_edge_sim = false;
-        bool box_a_face = false;
-        auto* ref_obb = &object_collision_component.oriented_bounding_box;
+    //if (dynamic_contact_point_resolution) {
+    //    /////////////////////////////////////
+    //    int  face_axis;
+    //    bool edge_edge_sim = false;
+    //    bool box_a_face = false;
+    //    auto* ref_obb = &object_collision_component.oriented_bounding_box;
 
-        // decide which face we hit (or fall back to an edge–edge sim)
-        if (sat_res.axis_index < 3) {
-            face_axis = sat_res.axis_index;
-            box_a_face = true;
-            ref_obb = &object_collision_component.oriented_bounding_box;
-        }
+    //    // decide which face we hit (or fall back to an edge–edge sim)
+    //    if (sat_res.axis_index < 3) {
+    //        face_axis = sat_res.axis_index;
+    //        box_a_face = true;
+    //        ref_obb = &object_collision_component.oriented_bounding_box;
+    //    }
 
-        else if (sat_res.axis_index < 6) {
-            face_axis = sat_res.axis_index - 3;
-            ref_obb = &other_collision_component.oriented_bounding_box;
-        }
+    //    else if (sat_res.axis_index < 6) {
+    //        face_axis = sat_res.axis_index - 3;
+    //        ref_obb = &other_collision_component.oriented_bounding_box;
+    //    }
 
-        else {
-            // pure edge–edge: just pick any axis for fallback
-            edge_edge_sim = true;
-            face_axis = static_cast<int>(object_collision_component.collision_information.get_axis());
-            ref_obb = &object_collision_component.oriented_bounding_box;
-        }
+    //    else {
+    //        // pure edge–edge: just pick any axis for fallback
+    //        edge_edge_sim = true;
+    //        face_axis = static_cast<int>(object_collision_component.collision_information.get_axis());
+    //        ref_obb = &object_collision_component.oriented_bounding_box;
+    //    }
 
-        // get the geometric center of that face
-        auto face_center = ref_obb->center;
-        auto n = sat_res.normal;
-        float offset_val = gse::dot(n, face_center.as<gse::units::meters>());
-        plane clip_plane{ n, gse::meters(offset_val) };
+    //    // get the geometric center of that face
+    //    auto face_center = ref_obb->center;
+    //    auto n = sat_res.normal;
+    //    float offset_val = gse::dot(n, face_center.as<gse::units::meters>());
+    //    plane clip_plane{ n, gse::meters(offset_val) };
 
-        // build the face polygon for clipping
-        bool positive = (n[face_axis] >= 0.f);
-        auto face_verts = ref_obb->face_vertices(static_cast<gse::axis>(face_axis), positive);
+    //    // build the face polygon for clipping
+    //    bool positive = (n[face_axis] >= 0.f);
+    //    auto face_verts = ref_obb->face_vertices(static_cast<gse::axis>(face_axis), positive);
 
-        if (edge_edge_sim) {
-            // project the face center onto the plane
-            float d = gse::dot(n, face_center.as<gse::units::meters>())
-                - clip_plane.offset.as<gse::units::meters>();
-            main_contact_point = face_center - n * gse::meters(d);
-        }
+    //    if (edge_edge_sim) {
+    //        // project the face center onto the plane
+    //        float d = gse::dot(n, face_center.as<gse::units::meters>())
+    //            - clip_plane.offset.as<gse::units::meters>();
+    //        main_contact_point = face_center - n * gse::meters(d);
+    //    }
 
-        else {
+    //    else {
 
-            auto clipped = clip_polygon_against_plane(face_verts, clip_plane);
+    //        auto clipped = clip_polygon_against_plane(face_verts, clip_plane);
 
-            if (clipped.size() >= 3) {
-                // use the centroid of the clipped polygon
-                main_contact_point = compute_contact_point(clipped);
-            }
+    //        if (clipped.size() >= 3) {
+    //            // use the centroid of the clipped polygon
+    //            main_contact_point = compute_contact_point(clipped);
+    //        }
 
-            else {
-                // degenerate: fall back to projecting the face center
-                float d = gse::dot(n, face_center.as<gse::units::meters>())
-                    - clip_plane.offset.as<gse::units::meters>();
-                main_contact_point = face_center - n * gse::meters(d);
-            }
-        }
-    }
-    ////////////////////////////
-    else {
-        main_contact_point = compute_contact_point(clip_polygon_against_plane(
-            object_collision_component.oriented_bounding_box.face_vertices(object_collision_component.collision_information.get_axis(), true),
-            create_plane(object_motion_component->current_position, object_collision_component.collision_information.collision_normal)
-        ));
-    }
+    //        else {
+    //            // degenerate: fall back to projecting the face center
+    //            float d = gse::dot(n, face_center.as<gse::units::meters>())
+    //                - clip_plane.offset.as<gse::units::meters>();
+    //            main_contact_point = face_center - n * gse::meters(d);
+    //        }
+    //    }
+    //}
+    //////////////////////////////
+    //else {
+    //    main_contact_point = compute_contact_point(clip_polygon_against_plane(
+    //        object_collision_component.oriented_bounding_box.face_vertices(object_collision_component.collision_information.get_axis(), true),
+    //        create_plane(object_motion_component->current_position, object_collision_component.collision_information.collision_normal)
+    //    ));
+    //}
 
     contact_points.push_back(main_contact_point);
 
