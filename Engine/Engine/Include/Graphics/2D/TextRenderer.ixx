@@ -3,7 +3,6 @@ export module gse.graphics:text_renderer;
 import std;
 import vulkan_hpp;
 
-import :debug;
 import :font;
 import :texture;
 import :camera;
@@ -246,8 +245,6 @@ auto gse::renderer::text::render(std::span<std::reference_wrapper<registry>> reg
 			if (memcmp(&default_scissor, &current_scissor, sizeof(vk::Rect2D)) != 0) {
 				command.setScissor(0, { default_scissor });
 			}
-			debug::update_imgui();
-			debug::render_imgui(command);
 		}
 	);
 

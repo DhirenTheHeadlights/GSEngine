@@ -6,6 +6,7 @@ import :base_vec;
 import :unitless_vec;
 import :unit_vec;
 import :vec_math;
+import :quat;
 
 import gse.assert;
 
@@ -20,6 +21,7 @@ namespace gse {
 		constexpr mat(const T& value);
 		constexpr mat(const std::array<vec::storage<T, Rows>, Cols>& data) : data(data) {}
         constexpr mat(std::initializer_list<unitless::vec_t<T, Rows>> list);
+        constexpr mat(const quat_t<T>& q);
 
 		template <int O, int Q>
 		constexpr mat(const mat<T, O, Q>& other);
@@ -114,6 +116,45 @@ constexpr gse::mat<T, Cols, Rows>::mat(std::initializer_list<unitless::vec_t<T, 
 	for (int j = 0; j < Cols && it != list.end(); ++j, ++it) {
         data[j] = it->storage;
 	}
+}
+
+template <typename T, int Cols, int Rows>
+constexpr gse::mat<T, Cols, Rows>::mat(const quat_t<T>& q) {
+    static_assert((Cols == 3 && Rows == 3) || (Cols == 4 && Rows == 4),
+        "Quaternion to matrix constructor is only defined for mat3x3 and mat4x4.");
+
+    const T qx2 = q.x * q.x;
+    const T qy2 = q.y * q.y;
+    const T qz2 = q.z * q.z;
+    const T qxy = q.x * q.y;
+    const T qxz = q.x * q.z;
+    const T qyz = q.y * q.z;
+    const T qsx = q.s * q.x;
+    const T qsy = q.s * q.y;
+    const T qsz = q.s * q.z;
+
+    data[0][0] = T(1) - T(2) * (qy2 + qz2);
+    data[0][1] = T(2) * (qxy + qsz);
+    data[0][2] = T(2) * (qxz - qsy);
+
+    data[1][0] = T(2) * (qxy - qsz);
+    data[1][1] = T(1) - T(2) * (qx2 + qz2);
+    data[1][2] = T(2) * (qyz + qsx);
+
+    data[2][0] = T(2) * (qxz + qsy);
+    data[2][1] = T(2) * (qyz - qsx);
+    data[2][2] = T(1) - T(2) * (qx2 + qy2);
+
+    if constexpr (Cols == 4 && Rows == 4) {
+        data[0][3] = T(0);
+        data[1][3] = T(0);
+        data[2][3] = T(0);
+
+        data[3][0] = T(0);
+        data[3][1] = T(0);
+        data[3][2] = T(0);
+        data[3][3] = T(1);
+    }
 }
 
 template <typename T, int Cols, int Rows>
@@ -325,7 +366,7 @@ constexpr auto gse::mat<T, Cols, Rows>::inverse() const -> mat {
 
     vec::storage<T, 4> row_0 = { inverse_matrix[0][0], inverse_matrix[1][0], inverse_matrix[2][0], inverse_matrix[3][0] };
     vec::storage<T, 4> dot_0 = m[0] * row_0;
-    T dot_1 = (dot_0.x + dot_0.y) + (dot_0.z + dot_0.w);
+    T dot_1 = (dot_0[0] + dot_0[1]) + (dot_0[2] + dot_0[3]);
 
     assert(
         dot_1 != static_cast<T>(0), 

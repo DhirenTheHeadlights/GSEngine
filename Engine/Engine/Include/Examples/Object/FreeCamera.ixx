@@ -28,27 +28,27 @@ export namespace gse {
 		auto update() -> void override {
 			auto& camera = renderer::camera();
 			// Move Forward (-Z)
-			if (input::get_keyboard().keys[GLFW_KEY_W].held) {
+			if (keyboard::held(key::w)) {
 				camera.move(camera.direction_relative_to_origin({ 0.f, 0.f, -1.f }));
 			}
 			// Move Backward (+Z)
-			if (input::get_keyboard().keys[GLFW_KEY_S].held) {
+			if (keyboard::held(key::s)) {
 				camera.move(camera.direction_relative_to_origin({ 0.f, 0.f, 1.f }));
 			}
 			// Strafe Left (-X)
-			if (input::get_keyboard().keys[GLFW_KEY_A].held) {
+			if (keyboard::held(key::a)) {
 				camera.move(camera.direction_relative_to_origin({ -1.f, 0.f, 0.f }));
 			}
 			// Strafe Right (+X)
-			if (input::get_keyboard().keys[GLFW_KEY_D].held) {
+			if (keyboard::held(key::d)) {
 				camera.move(camera.direction_relative_to_origin({ 1.f, 0.f, 0.f }));
 			}
 			// Move Up (+Y)
-			if (input::get_keyboard().keys[GLFW_KEY_SPACE].held) {
+			if (keyboard::held(key::space)) {
 				camera.move(camera.direction_relative_to_origin({ 0.f, 1.f, 0.f }));
 			}
 			// Move Down (-Y)
-			if (input::get_keyboard().keys[GLFW_KEY_LEFT_CONTROL].held) {
+			if (keyboard::held(key::left_control)) {
 				camera.move(camera.direction_relative_to_origin({ 0.f, -1.f, 0.f }));
 			}
 		}

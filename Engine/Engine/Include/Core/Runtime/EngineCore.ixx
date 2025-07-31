@@ -14,36 +14,9 @@ namespace gse {
 		engine(const std::string& name) : hookable(name) {}
 	};
 
-	struct base_engine_hook final : hook<engine> {
-		using hook::hook;
-
-		auto initialize() -> void override {
-			scene_loader::initialize();
-		}
-
-		auto update() -> void override {
-			add_timer("Engine::update");
-
-			platform::update();
-			main_clock::update();
-			scene_loader::update();
-			gui::update();
-
-			reset_timer("Engine::update");
-		}
-
-		auto render() -> void override {
-			add_timer("Engine::render");
-
-			scene_loader::render();
-
-			reset_timer("Engine::render");
-		}
-
-		auto shutdown() -> void override {
-			scene_loader::shutdown();
-		}
-	};
+	auto initialize() -> void;
+	auto update() -> void;
+	auto render() -> void;
 
 	engine engine("GSEngine");
 	bool should_shutdown = false;
@@ -51,17 +24,59 @@ namespace gse {
 
 export namespace gse {
 	template <typename... Args>
-	auto start() -> void {
-		engine.add_hook(std::make_unique<base_engine_hook>(&engine));
-		(engine.add_hook(std::make_unique<Args>(&engine)), ...);
-
-		engine.cycle([] {
-			return !should_shutdown;
-		});
-	}
-
-	auto shutdown() -> void {
-		should_shutdown = true;
-	}
+	auto start() -> void;
+	auto shutdown() -> void;
 }
+
+template <typename... Args>
+auto gse::start() -> void {
+	(engine.add_hook(std::make_unique<Args>(&engine)), ...);
+
+	initialize();
+
+	while (!should_shutdown) {
+		update();
+		render();
+	}
+
+	scene_loader::shutdown();
+}
+
+auto gse::initialize() -> void {
+	scene_loader::initialize();
+	engine.initialize();
+}
+
+auto gse::update() -> void {
+	add_timer("Engine::update");
+
+	window::poll_events();
+
+	main_clock::update();
+
+	input::update([] {
+		scene_loader::update();
+		engine.update();
+	});
+
+	reset_timer("Engine::update");
+}
+
+auto gse::render() -> void {
+	add_timer("Engine::render");
+
+	scene_loader::render([] {
+		engine.render();
+	});
+
+	reset_timer("Engine::render");
+}
+
+auto gse::shutdown() -> void {
+	should_shutdown = true;
+}
+
+
+
+
 

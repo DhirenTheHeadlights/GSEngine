@@ -46,7 +46,7 @@ namespace gse::internal {
             return ((std::is_same_v<typename UnitType::quantity_tag,
                 typename T0::quantity_tag>) || ...);
         },
-            tuple_type{} // default-constructed std::tuple<Units...>
+            tuple_type{}
         );
     }
 }
@@ -263,7 +263,11 @@ struct std::formatter<Q, CharT> {
 
     template <typename FormatContext>
     auto format(const Q& q, FormatContext& ctx) const {
-        return std::format_to(ctx.out(), "{} {}", value_fmt.format(q.as_default_unit(), ctx), Q::default_unit::unit_name);
+        auto out = value_fmt.format(q.as_default_unit(), ctx);
+        if (std::string_view(Q::default_unit::unit_name) != gse::internal::no_default_unit_name) {
+            out = std::format_to(out, " {}", Q::default_unit::unit_name);
+        }
+        return out;
     }
 };
 

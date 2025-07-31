@@ -487,13 +487,21 @@ auto gse::registry::linked_objects() -> auto {
 
 	if constexpr (is_entity_hook<U>) {
 		const auto it = m_hook_links.find(type_idx);
-		assert(it != m_hook_links.end(), std::format("No hook link found for type {}.", type_idx.name()));
+
+		if (it == m_hook_links.end()) {
+			return std::span<U>{};
+		}
+
 		auto& lnk = static_cast<hook_link<U>&>(*it->second);
 		return lnk.objects();
 	}
 	else {
 		const auto it = m_component_links.find(type_idx);
-		assert(it != m_component_links.end(), std::format("No component link found for type {}.", type_idx.name()));
+
+		if (it == m_component_links.end()) {
+			return std::span<U>{};
+		}
+
 		auto& lnk = static_cast<component_link<U>&>(*it->second);
 		return lnk.objects();
 	}
@@ -598,6 +606,7 @@ public:
 	virtual auto initialize() -> void {}
 	virtual auto update() -> void {}
 	virtual auto render() -> void {}
+	virtual auto shutdown() -> void {}
 
 	template <is_component T> requires has_params<T>
 	auto add_component(typename T::params p) -> std::pair<id, T*>;
@@ -792,6 +801,14 @@ export namespace gse {
 		auto render() -> void override {
 			m_owner->registry().render();
 			bulk_invoke(m_owner->registry().all_hooks(), &hook<entity>::render);
+		}
+
+		auto shutdown() -> void override {
+			bulk_invoke(m_owner->registry().all_hooks(), &hook<entity>::shutdown);
+
+			for (const auto& id : m_owner->m_entities) {
+				m_owner->m_registry.remove(id);
+			}
 		}
 	};
 }

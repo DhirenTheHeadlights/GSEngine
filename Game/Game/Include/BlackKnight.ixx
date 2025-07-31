@@ -6,7 +6,8 @@ import gse;
 import game.config;
 
 export namespace gs {
-	struct black_knight_hook final : gse::hook<gse::entity> {
+	class black_knight final : public gse::hook<gse::entity> {
+	public:
 		using hook::hook;
 
 		auto initialize() -> void override {

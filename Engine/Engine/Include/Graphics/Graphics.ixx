@@ -4,7 +4,6 @@ export import :directional_light;
 export import :point_light;
 export import :spot_light;
 export import :camera;
-export import :debug;
 export import :font;
 export import :gui;
 export import :material;

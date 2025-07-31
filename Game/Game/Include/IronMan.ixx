@@ -6,7 +6,7 @@ import gse;
 import game.config;
 
 export namespace gs {
-	class iron_man final : gse::hook<gse::entity> {
+	class iron_man final : public gse::hook<gse::entity> {
 	public:
 		using hook::hook;
 
@@ -17,7 +17,7 @@ export namespace gs {
 			});
 
 			auto model = gse::get<gse::model>("IronMan");
-			auto [rc_id, rc] = add_component<gse::render_component>({
+			add_component<gse::render_component>({
 				.models = { std::move(model) }
 			});
 		}

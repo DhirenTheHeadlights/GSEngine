@@ -15,6 +15,7 @@ export namespace gse {
 	template <typename T> constexpr auto dot(const quat_t<T>& lhs, const quat_t<T>& rhs) -> T;
 	template <typename T> constexpr auto mat3_cast(const quat_t<T>& q) -> mat3_t<T>;
 	template <typename T> constexpr auto identity() -> quat_t<T>;
+	template <typename T> constexpr auto from_axis_angle(const unitless::vec3_t<T>& axis, angle_t<T> angle) -> quat_t<T>;
 }
 
 template <typename T>
@@ -78,4 +79,12 @@ constexpr auto gse::mat3_cast(const quat_t<T>& q) -> mat3_t<T> {
 template <typename T>
 constexpr auto gse::identity() -> gse::quat_t<T> {
 	return quat_t<T>{ 1, 0, 0, 0 };
+}
+
+template <typename T>
+constexpr auto gse::from_axis_angle(const unitless::vec3_t<T>& axis, angle_t<T> angle) -> quat_t<T> {
+	T half_angle = angle.template as<units::radians>() / 2;
+	T s = std::sin(half_angle);
+	T c = std::cos(half_angle);
+	return quat_t<T>{ c, axis.x * s, axis.y * s, axis.z * s };
 }

@@ -1,7 +1,3 @@
-module;
-
-#include "imgui.h"
-
 export module gs:skybox_scene;
 
 import :skybox;
@@ -33,17 +29,7 @@ export namespace gs {
 		}
 
 		auto render() -> void override {
-			gse::debug::add_imgui_callback(
-				[] {
-					if (gse::scene_loader::scene(gse::find("Scene2"))->active()) {
-						ImGui::Begin("Game Data");
-
-						ImGui::Text("FPS: %d", gse::main_clock::fps());
-
-						ImGui::End();
-					}
-				}
-			);
+			
 		}
 	private:
 		class floor_hook final : hook<gse::entity> {

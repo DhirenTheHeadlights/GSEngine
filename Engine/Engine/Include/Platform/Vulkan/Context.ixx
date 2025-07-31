@@ -1,5 +1,7 @@
 module;
 
+#define VULKAN_HPP_ENABLE_DYNAMIC_LOADER
+
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan_hpp_macros.hpp>
@@ -15,35 +17,32 @@ import :persistent_allocator;
 import gse.assert;
 
 vk::DebugUtilsMessengerEXT g_debug_utils_messenger;
-std::uint32_t g_max_frames_in_flight = 2;
+std::uint32_t max_frames_in_flight = 2;
 
 export namespace gse::vulkan {
     auto initialize(
         GLFWwindow* window
     ) -> std::unique_ptr<config>;
 
-    auto begin_frame(
-        GLFWwindow* window,
-        config& config
-    ) -> void;
+    struct frame_params {
+        GLFWwindow* window;
+        bool frame_buffer_resized;
+        bool minimized;
+		config& config;
+		std::function<void()> in_frame;
+    };
 
-    auto end_frame(
-        GLFWwindow* window,
-        config& config
-    ) -> void;
+    auto frame(
+		const frame_params& params
+	) -> void;
 
     auto find_queue_families(
         const vk::raii::PhysicalDevice& device,
         const vk::raii::SurfaceKHR& surface
     ) -> queue_family;
 
-    auto single_line_commands(
-	    config& config, 
-        const std::function<void(const vk::raii::CommandBuffer&)>& commands
-    ) -> void;
-
 	auto render(
-		vulkan::config& config, const vk::RenderingInfo& begin_info, const std::function<void()>& render
+		config& config, const vk::RenderingInfo& begin_info, const std::function<void()>& render
 	) -> void;
 }
 
@@ -57,9 +56,8 @@ namespace gse::vulkan {
     ) -> std::tuple<device_config, queue_config>;
 
     auto create_command_objects(
-        const device_config& device_data,
-        const instance_config& instance_data,
-        std::uint32_t image_count
+	    const device_config& device_data,
+	    const instance_config& instance_data
     ) -> command_config;
 
     auto create_descriptor_pool(
@@ -67,8 +65,7 @@ namespace gse::vulkan {
     ) -> descriptor_config;
 
     auto create_sync_objects(
-        const device_config& device_data,
-        std::uint32_t image_count
+	    const device_config& device_data
     ) -> sync_config;
 
     auto create_swap_chain_resources(
@@ -83,8 +80,8 @@ auto gse::vulkan::initialize(GLFWwindow* window) -> std::unique_ptr<config> {
     auto [device_data, queue] = create_device_and_queues(instance_data);
     auto descriptor = create_descriptor_pool(device_data);
     auto swap_chain_data = create_swap_chain_resources(window, instance_data, device_data);
-    auto command = create_command_objects(device_data, instance_data, swap_chain_data.images.size());
-    auto sync = create_sync_objects(device_data, swap_chain_data.images.size());
+    auto command = create_command_objects(device_data, instance_data);
+    auto sync = create_sync_objects(device_data);
 
     frame_context_config frame_context(
         0,
@@ -103,124 +100,95 @@ auto gse::vulkan::initialize(GLFWwindow* window) -> std::unique_ptr<config> {
     );
 }
 
-auto gse::vulkan::begin_frame(GLFWwindow* window, config& config) -> void {
-    const auto& device = config.device_config().device;
+auto gse::vulkan::frame(const frame_params& params) -> void {
+    const auto& device = params.config.device_config().device;
+
+    auto recreate_resources = [&] {
+	        device.waitIdle();
+	        params.config.swap_chain_config().swap_chain = nullptr;
+	        params.config.swap_chain_config() = create_swap_chain_resources(params.window, params.config.instance_config(), params.config.device_config());
+	        params.config.sync_config() = create_sync_objects(params.config.device_config());
+        };
+
+    if (params.minimized) {
+        return;
+    }
 
     assert(
         device.waitForFences(
-            *config.sync_config().in_flight_fences[config.current_frame()],
+            *params.config.sync_config().in_flight_fences[params.config.current_frame()],
             vk::True,
             std::numeric_limits<std::uint64_t>::max()
         ) == vk::Result::eSuccess,
         "Failed to wait for in-flight fence!"
     );
 
+    params.config.cleanup_finished_frame_resources();
+
+    if (params.frame_buffer_resized) {
+        recreate_resources();
+        return;
+    }
+
     vk::Result result;
     std::uint32_t image_index;
 
     try {
         const vk::AcquireNextImageInfoKHR acquire_info{
-            .swapchain = *config.swap_chain_config().swap_chain,
+            .swapchain = *params.config.swap_chain_config().swap_chain,
             .timeout = std::numeric_limits<std::uint64_t>::max(),
-            .semaphore = *config.sync_config().image_available_semaphores[config.current_frame()],
+            .semaphore = *params.config.sync_config().image_available_semaphores[params.config.current_frame()],
             .fence = nullptr,
             .deviceMask = 1
         };
         std::tie(result, image_index) = device.acquireNextImage2KHR(acquire_info);
     }
-    catch (const vk::OutOfDateKHRError& e) {
+    catch (const vk::OutOfDateKHRError&) {
         result = vk::Result::eErrorOutOfDateKHR;
     }
 
     if (result == vk::Result::eErrorOutOfDateKHR) {
-        config.device_config().device.waitIdle();
-        config.swap_chain_config() = create_swap_chain_resources(window, config.instance_config(), config.device_config());
-        config.sync_config() = create_sync_objects(config.device_config(), config.swap_chain_config().images.size());
+        recreate_resources();
         return;
     }
 
     assert(result == vk::Result::eSuccess || result == vk::Result::eSuboptimalKHR, "Failed to acquire swap chain image!");
 
-    if (config.sync_config().images_in_flight[image_index] != nullptr) {
-        assert(
-            device.waitForFences(
-                config.sync_config().images_in_flight[image_index],
-                vk::True,
-                std::numeric_limits<std::uint64_t>::max()
-            ) == vk::Result::eSuccess,
-            "Failed to wait for in-flight image fence!"
-        );
-    }
+    device.resetFences(*params.config.sync_config().in_flight_fences[params.config.current_frame()]);
 
-    config.sync_config().images_in_flight[image_index] = *config.sync_config().in_flight_fences[config.current_frame()];
-    device.resetFences(*config.sync_config().in_flight_fences[config.current_frame()]);
-
-    config.frame_context() = {
+    params.config.frame_context() = {
         image_index,
-        *config.command_config().buffers[config.current_frame()]
+        *params.config.command_config().buffers[params.config.current_frame()]
     };
 
-    config.frame_context().command_buffer.reset({});
+    params.config.frame_context().command_buffer.reset({});
 
     constexpr vk::CommandBufferBeginInfo begin_info{
-	    .flags = {},
-	    .pInheritanceInfo = nullptr
+        .flags = {},
+        .pInheritanceInfo = nullptr
     };
 
-    config.frame_context().command_buffer.begin(begin_info);
+    params.config.frame_context().command_buffer.begin(begin_info);
+    params.in_frame();
+    params.config.frame_context().command_buffer.end();
 
-    const vk::ImageMemoryBarrier2 swap_chain_pre_barrier{
-        .srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,  
-        .srcAccessMask = {},                                       
-        .dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-        .dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,      
-        .oldLayout = vk::ImageLayout::eUndefined,
-        .newLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .image = config.swap_chain_config().images[config.frame_context().image_index],
-        .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
-    };
-
-    config.frame_context().command_buffer.pipelineBarrier2({ .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &swap_chain_pre_barrier });
-}
-
-auto gse::vulkan::end_frame(GLFWwindow* window, config& config) -> void {
-    const vk::ImageMemoryBarrier2 present_barrier{
-        .srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-        .srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
-        .dstStageMask = vk::PipelineStageFlagBits2::eBottomOfPipe,
-        .dstAccessMask = {},
-        .oldLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .newLayout = vk::ImageLayout::ePresentSrcKHR,
-        .image = config.swap_chain_config().images[config.frame_context().image_index],
-        .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
-    };
-
-    config.frame_context().command_buffer.pipelineBarrier2(
-        {
-        	.imageMemoryBarrierCount = 1,
-        	.pImageMemoryBarriers = &present_barrier
-        }
-    );
-
-    config.frame_context().command_buffer.end();
-
-    const std::uint32_t image_index = config.frame_context().image_index;
+	std::uint64_t signal_value = ++params.config.sync_config().timeline_value;
 
     const vk::SemaphoreSubmitInfo wait_info{
-        .semaphore = *config.sync_config().image_available_semaphores[config.current_frame()],
+        .semaphore = *params.config.sync_config().image_available_semaphores[params.config.current_frame()],
         .value = 0,
-        .stageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
+        .stageMask = vk::PipelineStageFlagBits2::eNone,
         .deviceIndex = 0
     };
 
     const vk::CommandBufferSubmitInfo cmd_info{
-        .commandBuffer = config.frame_context().command_buffer,
-        .deviceMask = 0
+        .commandBuffer = params.config.frame_context().command_buffer,
+        .deviceMask = 1
     };
 
     const vk::SemaphoreSubmitInfo signal_info{
-        .semaphore = *config.sync_config().render_finished_semaphores[image_index],
-        .value = 0,
+        .semaphore = params.config.sync_config().render_timeline,
+        .value = signal_value,
         .stageMask = vk::PipelineStageFlagBits2::eBottomOfPipe,
         .deviceIndex = 0
     };
@@ -235,42 +203,32 @@ auto gse::vulkan::end_frame(GLFWwindow* window, config& config) -> void {
         .pSignalSemaphoreInfos = &signal_info
     };
 
-    config.queue_config().graphics.submit2(
+    params.config.queue_config().graphics.submit2(
         submit_info2,
-        *config.sync_config().in_flight_fences[config.current_frame()]
+        *params.config.sync_config().in_flight_fences[params.config.current_frame()]
     );
 
     const vk::PresentInfoKHR present_info{
         .waitSemaphoreCount = 1,
-        .pWaitSemaphores = &*config.sync_config().render_finished_semaphores[image_index],
+        .pWaitSemaphores = &*params.config.sync_config().render_timeline,
         .swapchainCount = 1,
-        .pSwapchains = &*config.swap_chain_config().swap_chain,
+        .pSwapchains = &*params.config.swap_chain_config().swap_chain,
         .pImageIndices = &image_index
     };
 
-    const vk::Result present_result = config.queue_config().present.presentKHR(present_info);
-
-    if (present_result == vk::Result::eErrorOutOfDateKHR ||
+    if (const vk::Result present_result = params.config.queue_config().present.presentKHR(present_info);
+        present_result == vk::Result::eErrorOutOfDateKHR ||
         present_result == vk::Result::eSuboptimalKHR) {
-        config.device_config().device.waitIdle();
-        config.swap_chain_config() = create_swap_chain_resources(
-            window,
-            config.instance_config(),
-            config.device_config()
+        recreate_resources();
+    }
+    else {
+        assert(
+            present_result == vk::Result::eSuccess,
+            "Failed to present swap chain image!"
         );
-        config.sync_config() = create_sync_objects(
-            config.device_config(),
-            config.swap_chain_config().images.size()
-        );
-        return;
     }
 
-    assert(
-        present_result == vk::Result::eSuccess,
-        "Failed to present swap chain image!"
-    );
-
-    config.current_frame() = (config.current_frame() + 1) % g_max_frames_in_flight;
+    params.config.current_frame() = (params.config.current_frame() + 1) % max_frames_in_flight;
 }
 
 auto gse::vulkan::render(config& config, const vk::RenderingInfo& begin_info, const std::function<void()>& render) -> void {
@@ -410,23 +368,36 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
         queue_create_infos.push_back(queue_create_info);
     }
 
-    vk::PhysicalDeviceVulkan13Features vulkan13_features{};
-    vulkan13_features.dynamicRendering = vk::True;
-    vk::PhysicalDeviceVulkan12Features vulkan12_features{};
-    vulkan12_features.pNext = &vulkan13_features;
-    vulkan12_features.timelineSemaphore = vk::True;
-    vulkan12_features.bufferDeviceAddress = vk::True;
-    vulkan13_features.synchronization2 = vk::True;
+    vk::PhysicalDeviceVulkan13Features vulkan13_features{
+        .synchronization2 = true,
+        .dynamicRendering = true
+    };
 
-    vk::PhysicalDeviceFeatures2 features2{};
-    features2.pNext = &vulkan12_features;
-    features2.features.samplerAnisotropy = vk::True;
+    vk::PhysicalDeviceVulkan12Features vulkan12_features{
+        .pNext = &vulkan13_features,
+        .timelineSemaphore = true,
+		.bufferDeviceAddress = true
+    };
+
+    vk::PhysicalDevicePresentWaitFeaturesKHR present_wait_features{
+        .pNext = &vulkan12_features,
+        .presentWait = true
+	};
+
+    vk::PhysicalDeviceFeatures2 features2{
+        .pNext = &present_wait_features,
+        .features = {
+			.samplerAnisotropy = true
+        }
+    };
 
     const std::vector device_extensions = {
         vk::KHRSwapchainExtensionName,
-        vk::KHRPushDescriptorExtensionName,
         vk::KHRSynchronization2ExtensionName,
-        vk::KHRDynamicRenderingExtensionName
+        vk::KHRDynamicRenderingExtensionName,
+        vk::KHRPushDescriptorExtensionName,
+        vk::KHRPresentWaitExtensionName,   
+		vk::KHRPresentIdExtensionName      
     };
 
     vk::DeviceCreateInfo create_info{
@@ -457,7 +428,7 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
     return std::make_tuple(std::move(device_conf), std::move(queue_conf));
 }
 
-auto gse::vulkan::create_command_objects(const device_config& device_data, const instance_config& instance_data, std::uint32_t image_count) -> command_config {
+auto gse::vulkan::create_command_objects(const device_config& device_data, const instance_config& instance_data) -> command_config {
     const auto [graphics_family, present_family] = find_queue_families(device_data.physical_device, instance_data.surface);
 
     const vk::CommandPoolCreateInfo pool_info{
@@ -480,7 +451,7 @@ auto gse::vulkan::create_command_objects(const device_config& device_data, const
     const vk::CommandBufferAllocateInfo alloc_info{
         .commandPool = *pool,
         .level = vk::CommandBufferLevel::ePrimary,
-        .commandBufferCount = image_count
+        .commandBufferCount = max_frames_in_flight
     };
 
     std::vector<vk::raii::CommandBuffer> buffers = device_data.device.allocateCommandBuffers(alloc_info);
@@ -524,40 +495,36 @@ auto gse::vulkan::create_descriptor_pool(const device_config& device_data) -> de
     return descriptor_config(std::move(pool));
 }
 
-auto gse::vulkan::create_sync_objects(const device_config& device_data, const std::uint32_t image_count) -> sync_config {
-    std::vector<vk::raii::Semaphore> image_available_semaphores;
-    std::vector<vk::raii::Semaphore> render_finished_semaphores;
+auto gse::vulkan::create_sync_objects(const device_config& device_data) -> sync_config {
+    std::vector<vk::raii::Semaphore> image_available;
     std::vector<vk::raii::Fence> in_flight_fences;
 
-    image_available_semaphores.reserve(g_max_frames_in_flight);
-    render_finished_semaphores.reserve(image_count);
-    in_flight_fences.reserve(g_max_frames_in_flight);
+    image_available.reserve(max_frames_in_flight);
+    in_flight_fences.reserve(max_frames_in_flight);
 
-    constexpr vk::SemaphoreCreateInfo semaphore_info{
-        .flags = {}
-    };
-    constexpr vk::FenceCreateInfo fence_info{
+    constexpr vk::SemaphoreCreateInfo bin_sem_ci{};
+    constexpr vk::FenceCreateInfo fence_ci{
         .flags = vk::FenceCreateFlagBits::eSignaled
     };
 
-    for (size_t i = 0; i < g_max_frames_in_flight; ++i) {
-        image_available_semaphores.emplace_back(device_data.device, semaphore_info);
-        in_flight_fences.emplace_back(device_data.device, fence_info);
+    for (std::size_t i = 0; i < max_frames_in_flight; ++i) {
+        image_available.emplace_back(device_data.device, bin_sem_ci);
+        in_flight_fences.emplace_back(device_data.device, fence_ci);
     }
 
-    for (size_t i = 0; i < image_count; ++i) {
-        render_finished_semaphores.emplace_back(device_data.device, semaphore_info);
-    }
-
-    std::vector<vk::Fence> images_in_flight(image_count, nullptr);
-
-    std::cout << "Sync Objects Created Successfully!\n";
+    vk::SemaphoreTypeCreateInfo timeline_tci{
+        .semaphoreType = vk::SemaphoreType::eTimeline,
+        .initialValue = 0
+    };
+    const vk::SemaphoreCreateInfo timeline_ci{
+    	.pNext = &timeline_tci
+    };
+    vk::raii::Semaphore render_timeline(device_data.device, timeline_ci);
 
     return sync_config(
-        std::move(image_available_semaphores),
-        std::move(render_finished_semaphores),
-        std::move(in_flight_fences),
-        std::move(images_in_flight)
+        std::move(image_available),
+        std::move(render_timeline),
+        std::move(in_flight_fences)
     );
 }
 
@@ -579,45 +546,6 @@ auto gse::vulkan::find_queue_families(const vk::raii::PhysicalDevice& device, co
     }
 
     return indices;
-}
-
-auto gse::vulkan::single_line_commands(config& config, const std::function<void(const vk::raii::CommandBuffer&)>& commands) -> void {
-    const vk::CommandBufferAllocateInfo alloc_info{
-        .commandPool = *config.command_config().pool,
-        .level = vk::CommandBufferLevel::ePrimary,
-        .commandBufferCount = 1
-    };
-
-    auto buffers = config.device_config().device.allocateCommandBuffers(alloc_info);
-    const vk::raii::CommandBuffer command_buffer = std::move(buffers[0]);
-
-    const std::string name = "Single-Time Command Buffer";
-    const vk::DebugUtilsObjectNameInfoEXT name_info{
-        .objectType = vk::ObjectType::eCommandBuffer,
-        .objectHandle = reinterpret_cast<uint64_t>(static_cast<VkCommandBuffer>(*command_buffer)),
-        .pObjectName = name.c_str()
-    };
-    config.device_config().device.setDebugUtilsObjectNameEXT(name_info);
-
-    constexpr vk::CommandBufferBeginInfo begin_info{
-        .flags = {},
-        .pInheritanceInfo = nullptr
-    };
-
-    command_buffer.begin(begin_info);
-
-    commands(command_buffer);
-
-    command_buffer.end();
-    const vk::SubmitInfo submit_info{
-        .waitSemaphoreCount = 0,
-        .commandBufferCount = 1,
-        .pCommandBuffers = &*command_buffer,
-        .signalSemaphoreCount = 0,
-    };
-
-    config.queue_config().graphics.submit(submit_info);
-    config.queue_config().graphics.waitIdle();
 }
 
 auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const instance_config& instance_data, const device_config& device_data) -> swap_chain_config {

@@ -354,8 +354,8 @@ auto gse::vulkan::persistent_allocator::get_memory_flag_preferences(const vk::Bu
 
 	if (usage & vk::BufferUsageFlagBits::eStorageBuffer) {
 		return {
-			mpf::eDeviceLocal,
-			mpf::eHostVisible | mpf::eHostCoherent
+			mpf::eHostVisible | mpf::eHostCoherent,
+			mpf::eDeviceLocal
 		};
 	}
 

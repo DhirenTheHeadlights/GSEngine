@@ -66,9 +66,12 @@ constexpr gse::rect_t<T>::rect_t(const min_max_params& p)
 
 template <gse::is_vec2 T>
 constexpr auto gse::rect_t<T>::from_position_size(const T& top_left, const T& size) -> rect_t {
-	gse::assert(size.x >= 0 && size.y >= 0, "Rectangle size cannot be negative.");
-	const auto bottom_right = T{ top_left.x + size.x, top_left.y - size.y };
-	return gse::rect_t(min_max_params{ .min = top_left, .max = bottom_right });
+    gse::assert(size.x >= 0 && size.y >= 0, "Rectangle size cannot be negative.");
+
+    const auto bottom_left  = T{ top_left.x, top_left.y - size.y };
+    const auto top_right    = T{ top_left.x + size.x, top_left.y };
+
+    return gse::rect_t(min_max_params{ .min = bottom_left, .max = top_right });
 }
 
 template <gse::is_vec2 T>
@@ -172,3 +175,13 @@ constexpr auto gse::rect_t<T>::intersection(const rect_t& other) const -> rect_t
     }
     return rect_t({ new_min, new_max });
 }
+
+template <gse::is_vec2 T>
+struct std::formatter<gse::rect_t<T>> {
+    constexpr auto parse(std::format_parse_context& ctx) { return ctx.begin(); }
+
+    template <typename FormatContext>
+    auto format(const gse::rect_t<T>& rect, FormatContext& ctx) const {
+        return std::format_to(ctx.out(), "Rect(L:{}, B:{}, W:{}, H:{})", rect.left(), rect.bottom(), rect.width(), rect.height());
+    }
+};

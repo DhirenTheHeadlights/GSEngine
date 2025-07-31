@@ -26,6 +26,7 @@ export namespace gse::image {
 	};
 
 	auto load(const std::filesystem::path& path) -> data;
+    auto load(unitless::vec4 color, unitless::vec2 size) -> data;
 	auto load_rgba(const std::filesystem::path& path) -> data;
 	auto load_cube_faces(const std::array<std::filesystem::path, 6>& paths) -> std::array<data, 6>;
 	auto load_raw(const std::filesystem::path& path, std::uint32_t channels) -> data;
@@ -50,6 +51,27 @@ auto gse::image::load(const std::filesystem::path& path) -> data {
     stbi_image_free(pixels);
 
     return img_data;
+}
+
+auto gse::image::load(const unitless::vec4 color, const unitless::vec2 size) -> data {
+    std::array<std::byte, 4> pixel_data;
+    pixel_data[0] = static_cast<std::byte>(color.x * 255.0f);
+    pixel_data[1] = static_cast<std::byte>(color.y * 255.0f);
+    pixel_data[2] = static_cast<std::byte>(color.z * 255.0f);
+    pixel_data[3] = static_cast<std::byte>(color.w * 255.0f);
+
+    const std::size_t total_pixels = static_cast<std::size_t>(size.x) * size.y;
+    std::vector<std::byte> pixels(total_pixels * 4);
+
+    for (std::size_t i = 0; i < total_pixels; ++i) {
+        std::memcpy(pixels.data() + i * 4, pixel_data.data(), 4);
+    }
+
+    return {
+        .size = size,
+        .channels = 4,
+        .pixels = std::move(pixels)
+    };
 }
 
 auto gse::image::load_cube_faces(const std::array<std::filesystem::path, 6>& paths) -> std::array<data, 6> {
