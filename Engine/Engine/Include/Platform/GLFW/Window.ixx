@@ -19,7 +19,7 @@ export namespace gse {
 		explicit window(const std::string& title);
 		~window() override;
 
-		auto update() -> void;
+		auto update(bool ui_focus) -> void;
 		static auto poll_events() -> void;
 		auto shutdown() -> void ;
 
@@ -35,14 +35,13 @@ export namespace gse {
 
 		auto raw_handle() const -> GLFWwindow* { return m_window; }
 	private:
-		auto get_best_monitor() const -> GLFWmonitor*;
-
 		GLFWwindow* m_window = nullptr;
 		bool m_fullscreen = true;
 		bool m_current_fullscreen = true;
 		bool m_mouse_visible = false;
 		bool m_focused = true;
 		bool m_frame_buffer_resized = false;
+		bool m_ui_focus = false;
 	};
 }
 
@@ -76,8 +75,25 @@ gse::window::window(const std::string& title) {
 
 	glfwSetCursorPosCallback(
 		m_window,
-		[](GLFWwindow*, const double xpos, const double ypos) {
-			input::mouse_pos_callback(xpos, ypos);
+		[](GLFWwindow* window, double xpos, double ypos) {
+			const auto* self = static_cast<gse::window*>(glfwGetWindowUserPointer(window));
+
+			if (!self) {
+				return;
+			}
+
+			if (self->m_ui_focus) {
+				const auto dims = self->viewport();
+
+				xpos = std::clamp(xpos, 0.0, static_cast<double>(dims.x));
+				ypos = std::clamp(ypos, 0.0, static_cast<double>(dims.y));
+
+				const double inverted_ypos = static_cast<double>(dims.y) - ypos;
+				input::mouse_pos_callback(xpos, inverted_ypos);
+			}
+			else {
+				input::mouse_pos_callback(xpos, ypos);
+			}
 		}
 	);
 
@@ -127,7 +143,9 @@ gse::window::~window() {
 	);
 }
 
-auto gse::window::update() -> void {
+auto gse::window::update(const bool ui_focus) -> void {
+	m_ui_focus = ui_focus;
+
 	if (m_focused && m_current_fullscreen != m_fullscreen) {
 		static int last_pos_x = 0, last_pos_y = 0;
 		static int last_w = 0, last_h = 0;
@@ -136,9 +154,42 @@ auto gse::window::update() -> void {
 			glfwGetWindowPos(m_window, &last_pos_x, &last_pos_y);
 			glfwGetWindowSize(m_window, &last_w, &last_h);
 
-			GLFWmonitor* monitor = get_best_monitor();
-			const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-			glfwSetWindowMonitor(m_window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+			int monitor_count = 0;
+			GLFWmonitor** monitors = glfwGetMonitors(&monitor_count);
+
+			assert(
+				monitor_count > 0,
+				"Failed to get monitors! At least one monitor is required for fullscreen mode."
+			);
+
+			int wx = 0, wy = 0;
+			glfwGetWindowPos(m_window, &wx, &wy);
+			int ww = 0, wh = 0;
+			glfwGetWindowSize(m_window, &ww, &wh);
+
+			GLFWmonitor* best_monitor = glfwGetPrimaryMonitor();
+			int best_overlap = 0;
+
+			for (int i = 0; i < monitor_count; ++i) {
+				GLFWmonitor* monitor = monitors[i];
+				const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+				int mx = 0, my = 0;
+				glfwGetMonitorPos(monitor, &mx, &my);
+				const int mw = mode->width;
+				const int mh = mode->height;
+
+				const int overlap =
+					std::max(0, std::min(wx + ww, mx + mw) - std::max(wx, mx)) *
+					std::max(0, std::min(wy + wh, my + mh) - std::max(wy, my));
+
+				if (overlap > best_overlap) {
+					best_overlap = overlap;
+					best_monitor = monitor;
+				}
+			}
+
+			const GLFWvidmode* mode = glfwGetVideoMode(best_monitor);
+			glfwSetWindowMonitor(m_window, best_monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
 		}
 		else {
 			glfwSetWindowMonitor(m_window, nullptr, last_pos_x, last_pos_y, last_w, last_h, 0);
@@ -201,39 +252,4 @@ auto gse::window::set_fullscreen(const bool fullscreen) -> void {
 
 auto gse::window::set_mouse_visible(const bool visible) -> void {
 	m_mouse_visible = visible;
-}
-
-auto gse::window::get_best_monitor() const -> GLFWmonitor* {
-	int monitor_count = 0;
-	GLFWmonitor** monitors = glfwGetMonitors(&monitor_count);
-	if (monitor_count == 0) {
-		return nullptr;
-	}
-
-	int wx = 0, wy = 0;
-	glfwGetWindowPos(m_window, &wx, &wy);
-	int ww = 0, wh = 0;
-	glfwGetWindowSize(m_window, &ww, &wh);
-
-	GLFWmonitor* best_monitor = glfwGetPrimaryMonitor();
-	int best_overlap = 0;
-
-	for (int i = 0; i < monitor_count; ++i) {
-		GLFWmonitor* monitor = monitors[i];
-		const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-		int mx = 0, my = 0;
-		glfwGetMonitorPos(monitor, &mx, &my);
-		const int mw = mode->width;
-		const int mh = mode->height;
-
-		const int overlap = 
-			std::max(0, std::min(wx + ww, mx + mw) - std::max(wx, mx)) *
-			std::max(0, std::min(wy + wh, my + mh) - std::max(wy, my));
-
-		if (overlap > best_overlap) {
-			best_overlap = overlap;
-			best_monitor = monitor;
-		}
-	}
-	return best_monitor;
 }

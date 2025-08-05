@@ -5,7 +5,7 @@ import std;
 import :simd;
 
 export namespace gse::vec {
-    template <typename T, int N>
+    template <typename T, std::size_t N>
     struct storage {
         std::array<T, N> data = {};
 
@@ -22,7 +22,7 @@ export namespace gse::vec {
 }
 
 export namespace gse::internal {
-    template <typename T, int N>
+    template <typename T, std::size_t N>
     constexpr auto from_value(const T& value) -> vec::storage<T, N> {
         const auto make_storage = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
             return vec::storage<T, N>{ { (void(Is), value)... } };
@@ -31,7 +31,7 @@ export namespace gse::internal {
         return make_storage(std::make_index_sequence<N>{});
     }
 
-    template <typename T, int N>
+    template <typename T, std::size_t N>
     constexpr auto from_pointer(const T* values) -> vec::storage<T, N> {
         const auto make_storage = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
             return vec::storage<T, N>{ { values[Is]... } };
@@ -40,10 +40,10 @@ export namespace gse::internal {
         return make_storage(std::make_index_sequence<N>{});
     }
 
-    template <typename Derived, typename T, int N>
+    template <typename Derived, typename T, std::size_t N>
     struct vec_t;
 
-    template <typename Derived, typename T, int N>
+    template <typename Derived, typename T, std::size_t N>
     struct vec_from_lesser {
         constexpr vec_from_lesser() = default;
 
@@ -64,7 +64,7 @@ export namespace gse::internal {
         }
     };
 
-    template <typename Derived, typename T, int N>
+    template <typename Derived, typename T, std::size_t N>
     struct vec_t_common : vec_from_lesser<Derived, T, N> {
         using vec_from_lesser<Derived, T, N>::vec_from_lesser;
 		using value_type = T;
@@ -110,7 +110,7 @@ export namespace gse::internal {
         }
     };
 
-    template <typename Derived, typename T, int N>
+    template <typename Derived, typename T, std::size_t N>
     struct vec_t : vec_t_common<Derived, T, N> {
         using vec_t_common<Derived, T, N>::vec_t_common;
 
@@ -120,9 +120,9 @@ export namespace gse::internal {
 
         constexpr vec_t() : storage{} {}
 
-        constexpr auto operator<=>(const vec_t& other) const {
-            return this->storage <=> other.storage;
-        }
+		constexpr auto operator<=>(const vec_t& other) const {
+			return this->storage <=> other.storage;
+		}
     };
 
     template <typename Derived, typename T>
@@ -136,6 +136,10 @@ export namespace gse::internal {
 
         constexpr vec_t() : storage{} {}
         constexpr vec_t(T x, T y) : x(x), y(y) {}
+
+		constexpr auto operator<=>(const vec_t& other) const {
+			return this->storage <=> other.storage;
+		}
     };
 
     template <typename Derived, typename T>
@@ -149,6 +153,10 @@ export namespace gse::internal {
 
         constexpr vec_t(T x, T y, T z) : x(x), y(y), z(z) {}
         constexpr vec_t() : storage{} {}
+
+		constexpr auto operator<=>(const vec_t& other) const {
+			return this->storage <=> other.storage;
+		}
     };
 
     template <typename Derived, typename T>
@@ -162,19 +170,14 @@ export namespace gse::internal {
 
         constexpr vec_t(T x, T y, T z, T w) : x(x), y(y), z(z), w(w) {}
         constexpr vec_t() : storage{} {}
+
+		constexpr auto operator<=>(const vec_t& other) const {
+			return this->storage <=> other.storage;
+		}
     };
 }
 
-export namespace gse {
-    template <typename T, int N> constexpr auto value_ptr(const vec::storage<T, N>& storage) -> const T*;
-}
-
-template <typename T, int N>
-constexpr auto gse::value_ptr(const vec::storage<T, N>& storage) -> const T* {
-    return &storage[0];
-}
-
-export template <typename T, int N, typename CharT>
+export template <typename T, std::size_t N, typename CharT>
 struct std::formatter<gse::vec::storage<T, N>, CharT> {
     std::formatter<T, CharT> element_formatter;
 
@@ -194,54 +197,211 @@ struct std::formatter<gse::vec::storage<T, N>, CharT> {
     }
 };
 
-template <typename T, int N>
+template <typename T, std::size_t N>
 concept ref_t = sizeof(T) * N > 16;
 
-template <typename T, int N>
+template <typename T, std::size_t N>
 concept val_t = !ref_t<T, N>;
 
 export namespace gse::vec {
-    template <typename T, int N> requires ref_t<T, N> constexpr auto operator+(const storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>;
-    template <typename T, int N> requires ref_t<T, N> constexpr auto operator-(const storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>;
-    template <typename T, int N> requires ref_t<T, N> constexpr auto operator*(const storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>;
-	template <typename T, int N> requires ref_t<T, N> constexpr auto operator/(const storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>;
+	template <typename T, std::size_t N>
+		requires ref_t<T, N>
+	constexpr auto operator+(
+		const storage<T, N>& lhs,
+		const storage<T, N>& rhs
+		) -> storage<T, N>;
 
-    template <typename T, int N> requires val_t<T, N> constexpr auto operator+(storage<T, N> lhs, storage<T, N> rhs) -> storage<T, N>;
-    template <typename T, int N> requires val_t<T, N> constexpr auto operator-(storage<T, N> lhs, storage<T, N> rhs) -> storage<T, N>;
-    template <typename T, int N> requires val_t<T, N> constexpr auto operator*(storage<T, N> lhs, storage<T, N> rhs) -> storage<T, N>;
-    template <typename T, int N> requires val_t<T, N> constexpr auto operator/(storage<T, N> lhs, storage<T, N> rhs) -> storage<T, N>;
+	template <typename T, std::size_t N>
+		requires ref_t<T, N>
+	constexpr auto operator-(
+		const storage<T, N>& lhs,
+		const storage<T, N>& rhs
+		) -> storage<T, N>;
 
-    template <typename T, int N> requires ref_t<T, N> constexpr auto operator+=(storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>&;
-    template <typename T, int N> requires ref_t<T, N> constexpr auto operator-=(storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>&;
-    template <typename T, int N> requires ref_t<T, N> constexpr auto operator*=(storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>&;
-    template <typename T, int N> requires ref_t<T, N> constexpr auto operator/=(storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>&;
+	template <typename T, std::size_t N>
+		requires ref_t<T, N>
+	constexpr auto operator*(
+		const storage<T, N>& lhs,
+		const storage<T, N>& rhs
+		) -> storage<T, N>;
 
-	template <typename T, int N> requires val_t<T, N> constexpr auto operator+=(storage<T, N>& lhs, storage<T, N> rhs) -> storage<T, N>&;
-	template <typename T, int N> requires val_t<T, N> constexpr auto operator-=(storage<T, N>& lhs, storage<T, N> rhs) -> storage<T, N>&;
-	template <typename T, int N> requires val_t<T, N> constexpr auto operator*=(storage<T, N>& lhs, storage<T, N> rhs) -> storage<T, N>&;
-	template <typename T, int N> requires val_t<T, N> constexpr auto operator/=(storage<T, N>& lhs, storage<T, N> rhs) -> storage<T, N>&;
+	template <typename T, std::size_t N>
+		requires ref_t<T, N>
+	constexpr auto operator/(
+		const storage<T, N>& lhs,
+		const storage<T, N>& rhs
+		) -> storage<T, N>;
 
-    template <typename T, int N> requires ref_t<T, N> constexpr auto operator*(const storage<T, N>& lhs, T rhs) -> storage<T, N>;
-    template <typename T, int N> requires ref_t<T, N> constexpr auto operator*(T lhs, const storage<T, N>& rhs) -> storage<T, N>;
-    template <typename T, int N> requires ref_t<T, N> constexpr auto operator/(const storage<T, N>& lhs, T rhs) -> storage<T, N>;
-    template <typename T, int N> requires ref_t<T, N> constexpr auto operator/(T lhs, const storage<T, N>& rhs) -> storage<T, N>;
+	template <typename T, std::size_t N>
+		requires val_t<T, N>
+	constexpr auto operator+(
+		storage<T, N> lhs,
+		storage<T, N> rhs
+		) -> storage<T, N>;
 
-	template <typename T, int N> requires val_t<T, N> constexpr auto operator*(storage<T, N> lhs, T rhs) -> storage<T, N>;
-	template <typename T, int N> requires val_t<T, N> constexpr auto operator*(T lhs, storage<T, N> rhs) -> storage<T, N>;
-	template <typename T, int N> requires val_t<T, N> constexpr auto operator/(storage<T, N> lhs, T rhs) -> storage<T, N>;
-	template <typename T, int N> requires val_t<T, N> constexpr auto operator/(T lhs, storage<T, N> rhs) -> storage<T, N>;
+	template <typename T, std::size_t N>
+		requires val_t<T, N>
+	constexpr auto operator-(
+		storage<T, N> lhs,
+		storage<T, N> rhs
+		) -> storage<T, N>;
 
-    template <typename T, int N> constexpr auto operator*=(storage<T, N>& lhs, T rhs) -> storage<T, N>&;
-    template <typename T, int N> constexpr auto operator/=(storage<T, N>& lhs, T rhs) -> storage<T, N>&;
+	template <typename T, std::size_t N>
+		requires val_t<T, N>
+	constexpr auto operator*(
+		storage<T, N> lhs,
+		storage<T, N> rhs
+		) -> storage<T, N>;
 
-    template <typename T, int N> constexpr auto operator+(const storage<T, N>& v) -> storage<T, N>;
-    template <typename T, int N> constexpr auto operator-(const storage<T, N>& v) -> storage<T, N>;
+	template <typename T, std::size_t N>
+		requires val_t<T, N>
+	constexpr auto operator/(
+		storage<T, N> lhs,
+		storage<T, N> rhs
+		) -> storage<T, N>;
 
-	template <typename T, int N> constexpr auto dot(const storage<T, N>& lhs, const storage<T, N>& rhs) -> T;
+	template <typename T, std::size_t N>
+		requires ref_t<T, N>
+	constexpr auto operator+=(
+		storage<T, N>& lhs,
+		const storage<T, N>& rhs
+		) -> storage<T, N>&;
 
+	template <typename T, std::size_t N>
+		requires ref_t<T, N>
+	constexpr auto operator-=(
+		storage<T, N>& lhs,
+		const storage<T, N>& rhs
+		) -> storage<T, N>&;
+
+	template <typename T, std::size_t N>
+		requires ref_t<T, N>
+	constexpr auto operator*=(
+		storage<T, N>& lhs,
+		const storage<T, N>& rhs
+		) -> storage<T, N>&;
+
+	template <typename T, std::size_t N>
+		requires ref_t<T, N>
+	constexpr auto operator/=(
+		storage<T, N>& lhs,
+		const storage<T, N>& rhs
+		) -> storage<T, N>&;
+
+	template <typename T, std::size_t N>
+		requires val_t<T, N>
+	constexpr auto operator+=(
+		storage<T, N>& lhs,
+		storage<T, N> rhs
+		) -> storage<T, N>&;
+
+	template <typename T, std::size_t N>
+		requires val_t<T, N>
+	constexpr auto operator-=(
+		storage<T, N>& lhs,
+		storage<T, N> rhs
+		) -> storage<T, N>&;
+
+	template <typename T, std::size_t N>
+		requires val_t<T, N>
+	constexpr auto operator*=(
+		storage<T, N>& lhs,
+		storage<T, N> rhs
+		) -> storage<T, N>&;
+
+	template <typename T, std::size_t N>
+		requires val_t<T, N>
+	constexpr auto operator/=(
+		storage<T, N>& lhs,
+		storage<T, N> rhs
+		) -> storage<T, N>&;
+
+	template <typename T, std::size_t N>
+		requires ref_t<T, N>
+	constexpr auto operator*(
+		const storage<T, N>& lhs,
+		T rhs
+		) -> storage<T, N>;
+
+	template <typename T, std::size_t N>
+		requires ref_t<T, N>
+	constexpr auto operator*(
+		T lhs,
+		const storage<T, N>& rhs
+		) -> storage<T, N>;
+
+	template <typename T, std::size_t N>
+		requires ref_t<T, N>
+	constexpr auto operator/(
+		const storage<T, N>& lhs,
+		T rhs
+		) -> storage<T, N>;
+
+	template <typename T, std::size_t N>
+		requires ref_t<T, N>
+	constexpr auto operator/(
+		T lhs,
+		const storage<T, N>& rhs
+		) -> storage<T, N>;
+
+	template <typename T, std::size_t N>
+		requires val_t<T, N>
+	constexpr auto operator*(
+		storage<T, N> lhs,
+		T rhs
+		) -> storage<T, N>;
+
+	template <typename T, std::size_t N>
+		requires val_t<T, N>
+	constexpr auto operator*(
+		T lhs,
+		storage<T, N> rhs
+		) -> storage<T, N>;
+
+	template <typename T, std::size_t N>
+		requires val_t<T, N>
+	constexpr auto operator/(
+		storage<T, N> lhs,
+		T rhs
+		) -> storage<T, N>;
+
+	template <typename T, std::size_t N>
+		requires val_t<T, N>
+	constexpr auto operator/(
+		T lhs,
+		storage<T, N> rhs
+		) -> storage<T, N>;
+
+	template <typename T, std::size_t N>
+	constexpr auto operator*=(
+		storage<T, N>& lhs,
+		T rhs
+		) -> storage<T, N>&;
+
+	template <typename T, std::size_t N>
+	constexpr auto operator/=(
+		storage<T, N>& lhs,
+		T rhs
+		) -> storage<T, N>&;
+
+	template <typename T, std::size_t N>
+	constexpr auto operator+(
+		const storage<T, N>& v
+		) -> storage<T, N>;
+
+	template <typename T, std::size_t N>
+	constexpr auto operator-(
+		const storage<T, N>& v
+		) -> storage<T, N>;
+
+	template <typename T, std::size_t N>
+	constexpr auto dot(
+		const storage<T, N>& lhs,
+		const storage<T, N>& rhs
+	) -> T;
 }
 
-template <typename T, int N>  requires ref_t<T, N>
+template <typename T, std::size_t N>  requires ref_t<T, N>
 constexpr auto gse::vec::operator+(const storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N> {
     storage<T, N> result{};
 
@@ -250,7 +410,7 @@ constexpr auto gse::vec::operator+(const storage<T, N>& lhs, const storage<T, N>
     return result;
 }
 
-template <typename T, int N> requires ref_t<T, N>
+template <typename T, std::size_t N> requires ref_t<T, N>
 constexpr auto gse::vec::operator-(const storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N> {
     storage<T, N> result{};
 
@@ -259,7 +419,7 @@ constexpr auto gse::vec::operator-(const storage<T, N>& lhs, const storage<T, N>
     return result;
 }
 
-template <typename T, int N> requires ref_t<T, N>
+template <typename T, std::size_t N> requires ref_t<T, N>
 constexpr auto gse::vec::operator*(const storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N> {
     storage<T, N> result{};
 
@@ -268,7 +428,7 @@ constexpr auto gse::vec::operator*(const storage<T, N>& lhs, const storage<T, N>
     return result;
 }
 
-template <typename T, int N> requires ref_t<T, N>
+template <typename T, std::size_t N> requires ref_t<T, N>
 constexpr auto gse::vec::operator/(const storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N> {
     storage<T, N> result{};
 
@@ -277,7 +437,7 @@ constexpr auto gse::vec::operator/(const storage<T, N>& lhs, const storage<T, N>
     return result;
 }
 
-template <typename T, int N> requires val_t<T, N>
+template <typename T, std::size_t N> requires val_t<T, N>
 constexpr auto gse::vec::operator+(storage<T, N> lhs, storage<T, N> rhs) -> storage<T, N> {
 	storage<T, N> result{};
 
@@ -286,7 +446,7 @@ constexpr auto gse::vec::operator+(storage<T, N> lhs, storage<T, N> rhs) -> stor
 	return result;
 }
 
-template <typename T, int N> requires val_t<T, N>
+template <typename T, std::size_t N> requires val_t<T, N>
 constexpr auto gse::vec::operator-(storage<T, N> lhs, storage<T, N> rhs) -> storage<T, N> {
 	storage<T, N> result{};
 
@@ -295,7 +455,7 @@ constexpr auto gse::vec::operator-(storage<T, N> lhs, storage<T, N> rhs) -> stor
 	return result;
 }
 
-template <typename T, int N> requires val_t<T, N>
+template <typename T, std::size_t N> requires val_t<T, N>
 constexpr auto gse::vec::operator*(storage<T, N> lhs, storage<T, N> rhs) -> storage<T, N> {
 	storage<T, N> result{};
 
@@ -304,152 +464,142 @@ constexpr auto gse::vec::operator*(storage<T, N> lhs, storage<T, N> rhs) -> stor
 	return result;
 }
 
-template <typename T, int N> requires val_t<T, N>
+template <typename T, std::size_t N> requires val_t<T, N>
 constexpr auto gse::vec::operator/(storage<T, N> lhs, storage<T, N> rhs) -> storage<T, N> {
 	storage<T, N> result{};
-
 	simd::div(std::span<const T, N>(lhs.data), std::span<const T, N>(rhs.data), std::span<T, N>(result.data));
-
 	return result;
 }
 
-template <typename T, int N> requires ref_t<T, N>
+template <typename T, std::size_t N> requires ref_t<T, N>
 constexpr auto gse::vec::operator+=(storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>& {
 	simd::add(std::span<T, N>(lhs.data), std::span<const T, N>(rhs.data), std::span<T, N>(lhs.data));
     return lhs;
 }
 
-template <typename T, int N> requires ref_t<T, N>
+template <typename T, std::size_t N> requires ref_t<T, N>
 constexpr auto gse::vec::operator-=(storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>& {
 	simd::sub(std::span<T, N>(lhs.data), std::span<const T, N>(rhs.data), std::span<T, N>(lhs.data));
     return lhs;
 }
 
-template <typename T, int N> requires ref_t<T, N>
+template <typename T, std::size_t N> requires ref_t<T, N>
 constexpr auto gse::vec::operator*=(storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>& {
 	simd::mul(std::span<T, N>(lhs.data), std::span<const T, N>(rhs.data), std::span<T, N>(lhs.data));
     return lhs;
 }
 
-template <typename T, int N> requires ref_t<T, N>
+template <typename T, std::size_t N> requires ref_t<T, N>
 constexpr auto gse::vec::operator/=(storage<T, N>& lhs, const storage<T, N>& rhs) -> storage<T, N>& {
 	simd::div(std::span<T, N>(lhs.data), std::span<const T, N>(rhs.data), std::span<T, N>(lhs.data));
     return lhs;
 }
 
-template <typename T, int N> requires val_t<T, N>
+template <typename T, std::size_t N> requires val_t<T, N>
 constexpr auto gse::vec::operator+=(storage<T, N>& lhs, storage<T, N> rhs) -> storage<T, N>& {
 	simd::add(std::span<T, N>(lhs.data), std::span<const T, N>(rhs.data), std::span<T, N>(lhs.data));
 	return lhs;
 }
 
-template <typename T, int N> requires val_t<T, N>
+template <typename T, std::size_t N> requires val_t<T, N>
 constexpr auto gse::vec::operator-=(storage<T, N>& lhs, storage<T, N> rhs) -> storage<T, N>& {
 	simd::sub(std::span<T, N>(lhs.data), std::span<const T, N>(rhs.data), std::span<T, N>(lhs.data));
 	return lhs;
 }
 
-template <typename T, int N> requires val_t<T, N>
+template <typename T, std::size_t N> requires val_t<T, N>
 constexpr auto gse::vec::operator*=(storage<T, N>& lhs, storage<T, N> rhs) -> storage<T, N>& {
 	simd::mul(std::span<T, N>(lhs.data), std::span<const T, N>(rhs.data), std::span<T, N>(lhs.data));
 	return lhs;
 }
 
-template <typename T, int N> requires val_t<T, N>
+template <typename T, std::size_t N> requires val_t<T, N>
 constexpr auto gse::vec::operator/=(storage<T, N>& lhs, storage<T, N> rhs) -> storage<T, N>& {
 	simd::div(std::span<T, N>(lhs.data), std::span<const T, N>(rhs.data), std::span<T, N>(lhs.data));
 	return lhs;
 }
 
-template <typename T, int N> requires ref_t<T, N>
+template <typename T, std::size_t N> requires ref_t<T, N>
 constexpr auto gse::vec::operator*(const storage<T, N>& lhs, T rhs) -> storage<T, N> {
     storage<T, N> result{};
-
 	simd::mul_s(std::span<const T, N>(lhs.data), rhs, std::span<T, N>(result.data));
-
     return result;
 }
 
-template <typename T, int N> requires ref_t<T, N>
+template <typename T, std::size_t N> requires ref_t<T, N>
 constexpr auto gse::vec::operator*(T lhs, const storage<T, N>& rhs) -> storage<T, N> {
     storage<T, N> result{};
-
 	simd::mul_s(std::span<const T, N>(rhs.data), lhs, std::span<T, N>(result.data));
-
     return result;
 }
 
-template <typename T, int N> requires ref_t<T, N>
+template <typename T, std::size_t N> requires ref_t<T, N>
 constexpr auto gse::vec::operator/(const storage<T, N>& lhs, T rhs) -> storage<T, N> {
     storage<T, N> result{};
-
 	simd::div_s(std::span<const T, N>(lhs.data), rhs, std::span<T, N>(result.data));
-
     return result;
 }
 
-template <typename T, int N> requires ref_t<T, N>
+template <typename T, std::size_t N> requires ref_t<T, N>
 constexpr auto gse::vec::operator/(T lhs, const storage<T, N>& rhs) -> storage<T, N> {
     storage<T, N> result{};
-
 	simd::div_s(std::span<const T, N>(rhs.data), lhs, std::span<T, N>(result.data));
-
     return result;
 }
 
-template <typename T, int N> requires val_t<T, N>
+template <typename T, std::size_t N> requires val_t<T, N>
 constexpr auto gse::vec::operator*(storage<T, N> lhs, T rhs) -> storage<T, N> {
     storage<T, N> result{};
     simd::mul_s(std::span<const T, N>(lhs.data), rhs, std::span<T, N>(result.data));
     return result;
 }
 
-template <typename T, int N> requires val_t<T, N>
+template <typename T, std::size_t N> requires val_t<T, N>
 constexpr auto gse::vec::operator*(T lhs, storage<T, N> rhs) -> storage<T, N> {
 	storage<T, N> result{};
 	simd::mul_s(std::span<const T, N>(rhs.data), lhs, std::span<T, N>(result.data));
 	return result;
 }
 
-template <typename T, int N> requires val_t<T, N>
+template <typename T, std::size_t N> requires val_t<T, N>
 constexpr auto gse::vec::operator/(storage<T, N> lhs, T rhs) -> storage<T, N> {
 	storage<T, N> result{};
 	simd::div_s(std::span<const T, N>(lhs.data), rhs, std::span<T, N>(result.data));
 	return result;
 }
 
-template <typename T, int N> requires val_t<T, N>
+template <typename T, std::size_t N> requires val_t<T, N>
 constexpr auto gse::vec::operator/(T lhs, storage<T, N> rhs) -> storage<T, N> {
     storage<T, N> result{};
     simd::div_s(std::span<const T, N>(rhs.data), lhs, std::span<T, N>(result.data));
     return result;
 }
 
-template <typename T, int N>
+template <typename T, std::size_t N>
 constexpr auto gse::vec::operator*=(storage<T, N>& lhs, T rhs) -> storage<T, N>& {
 	simd::mul_s(std::span<T, N>(lhs.data), rhs, std::span<T, N>(lhs.data));
     return lhs;
 }
 
-template <typename T, int N>
+template <typename T, std::size_t N>
 constexpr auto gse::vec::operator/=(storage<T, N>& lhs, T rhs) -> storage<T, N>& {
 	simd::div_s(std::span<T, N>(lhs.data), rhs, std::span<T, N>(lhs.data));
     return lhs;
 }
 
-template <typename T, int N>
+template <typename T, std::size_t N>
 constexpr auto gse::vec::operator+(const storage<T, N>& v) -> storage<T, N> {
     return v;
 }
 
-template <typename T, int N>
+template <typename T, std::size_t N>
 constexpr auto gse::vec::operator-(const storage<T, N>& v) -> storage<T, N> {
     storage<T, N> result{};
 	simd::mul_s(std::span<const T, N>(v.data), static_cast<T>(-1), std::span<T, N>(result.data));
     return result;
 }
 
-template <typename T, int N>
+template <typename T, std::size_t N>
 constexpr auto gse::vec::dot(const storage<T, N>& lhs, const storage<T, N>& rhs) -> T {
 	T result{};
 	simd::dot(std::span<const T, N>(lhs.data), std::span<const T, N>(rhs.data), result);

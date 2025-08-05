@@ -6,6 +6,7 @@ export import :spot_light;
 export import :camera;
 export import :font;
 export import :gui;
+export import :types;
 export import :material;
 export import :mesh;
 export import :model;

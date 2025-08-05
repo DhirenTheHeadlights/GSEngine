@@ -19,7 +19,7 @@ namespace gse {
 		};
 
 		constexpr quaternion() : v{ 1, 0, 0, 0 } {}
-		constexpr quaternion(const unitless::vec_t<T, 4>& vec) : v(vec) {}
+		constexpr quaternion(const unitless::vec_t<T, 4>& vec) : v(vec.data()) {}
 		constexpr quaternion(const unitless::vec_t<T, 3>& vec, const T scalar) : v{ scalar, vec.x, vec.y, vec.z } {}
 		constexpr quaternion(const T scalar, const unitless::vec_t<T, 3>& vec) : v{ scalar, vec.x, vec.y, vec.z } {}
 		constexpr quaternion(T s, T x, T y, T z) : v{ s, x, y, z } {}
@@ -31,6 +31,29 @@ namespace gse {
 
 		constexpr auto imaginary_part() const -> unitless::vec_t<T, 3> { return { x, y, z }; }
 	};
+}
+
+export template <gse::internal::is_arithmetic T, typename CharT>
+struct std::formatter<gse::quaternion<T>, CharT> {
+	std::formatter<gse::vec::storage<T, 4>, CharT> vec_formatter;
+
+	constexpr auto parse(std::format_parse_context& ctx) {
+		return vec_formatter.parse(ctx);
+	}
+
+	template <typename FormatContext>
+	auto format(const gse::quaternion<T>& q, FormatContext& ctx) const {
+		auto out = ctx.out();
+		out = std::format_to(out, "quat");
+		return vec_formatter.format(q.v, ctx);
+	}
+};
+
+export namespace gse {
+	template <typename T> using quat_t = quaternion<T>;
+	using quati = quaternion<int>;
+	using quat  = quaternion<float>;
+	using quatd = quaternion<double>;
 }
 
 template <gse::internal::is_arithmetic T>
@@ -53,123 +76,4 @@ constexpr auto gse::quaternion<T>::operator[](size_t index) -> T& {
 template <gse::internal::is_arithmetic T>
 constexpr auto gse::quaternion<T>::operator[](size_t index) const -> T {
 	return v.data[index < 4 ? index : 0];
-}
-
-export namespace gse {
-	template <typename T> using quat_t = quaternion<T>;
-	using quati = quaternion<int>;
-	using quat = quaternion<float>;
-	using quatd = quaternion<double>;
-
-	template <typename T> constexpr auto operator+(const quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T>;
-	template <typename T> constexpr auto operator-(const quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T>;
-	template <typename T> constexpr auto operator*(const quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T>;
-	template <typename T> constexpr auto operator/(const quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T>;
-
-	template <typename T> constexpr auto operator+=(quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T>&;
-	template <typename T> constexpr auto operator-=(quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T>&;
-	template <typename T> constexpr auto operator*=(quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T>&;
-	template <typename T> constexpr auto operator/=(quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T>&;
-
-	template <typename T> constexpr auto operator*(const quat_t<T>& lhs, const T& rhs) -> quat_t<T>;
-	template <typename T> constexpr auto operator*(const T& lhs, const quat_t<T>& rhs) -> quat_t<T>;
-	template <typename T> constexpr auto operator/(const quat_t<T>& lhs, const T& rhs) -> quat_t<T>;
-	template <typename T> constexpr auto operator/(const T& lhs, const quat_t<T>& rhs) -> quat_t<T>;
-
-	template <typename T> constexpr auto operator*(const quaternion<T>& lhs, const unitless::vec3_t<T>& rhs) -> unitless::vec3_t<T>;
-
-	template <typename T> constexpr auto operator*=(quat_t<T>& lhs, const T& rhs) -> quat_t<T>&;
-	template <typename T> constexpr auto operator/=(quat_t<T>& lhs, const T& rhs) -> quat_t<T>&;
-}
-
-template <typename T>
-constexpr auto gse::operator+(const quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T> {
-	return quat_t<T>(lhs.v + rhs.v);
-}
-
-template <typename T>
-constexpr auto gse::operator-(const quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T> {
-	return quat_t<T>(lhs.v - rhs.v);
-}
-
-template <typename T>
-constexpr auto gse::operator*(const quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T> {
-	auto v1 = unitless::vec_t<T, 3>{ lhs.x, lhs.y, lhs.z };
-	auto v2 = unitless::vec_t<T, 3>{ rhs.x, rhs.y, rhs.z };
-	auto vec_part = lhs.s * v2 + rhs.s * v1 + cross(v1, v2);
-	T scalar_part = lhs.s * rhs.s - dot(v1, v2);
-	return quat_t<T>(vec_part, scalar_part);
-}
-
-template <typename T>
-constexpr auto gse::operator/(const quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T> {
-	quat_t<T> rhs_conj(-rhs.x, -rhs.y, -rhs.z, rhs.s);
-	T norm_sq = rhs.x * rhs.x + rhs.y * rhs.y + rhs.z * rhs.z + rhs.s * rhs.s;
-	return lhs * rhs_conj / norm_sq;
-}
-
-template <typename T>
-constexpr auto gse::operator+=(quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T>& {
-	lhs = lhs + rhs;
-	return lhs;
-}
-
-template <typename T>
-constexpr auto gse::operator-=(quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T>& {
-	lhs = lhs - rhs;
-	return lhs;
-}
-
-template <typename T>
-constexpr auto gse::operator*=(quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T>& {
-	lhs = lhs * rhs;
-	return lhs;
-}
-
-template <typename T>
-constexpr auto gse::operator/=(quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T>& {
-	lhs = lhs / rhs;
-	return lhs;
-}
-
-template <typename T>
-constexpr auto gse::operator*(const quat_t<T>& lhs, const T& rhs) -> quat_t<T> {
-	return quat_t<T>(lhs.v * rhs);
-}
-
-template <typename T>
-constexpr auto gse::operator*(const T& lhs, const quat_t<T>& rhs) -> quat_t<T> {
-	return rhs * lhs;
-}
-
-template <typename T>
-constexpr auto gse::operator/(const quat_t<T>& lhs, const T& rhs) -> quat_t<T> {
-	return lhs * (T(1) / rhs);
-}
-
-template <typename T>
-constexpr auto gse::operator/(const T& lhs, const quat_t<T>& rhs) -> quat_t<T> {
-	T norm_sq = rhs.x * rhs.x + rhs.y * rhs.y + rhs.z * rhs.z + rhs.s * rhs.s;
-	quat_t<T> rhs_conj(rhs.s, -rhs.x, -rhs.y, -rhs.z);
-	return lhs * (rhs_conj / norm_sq);
-}
-
-template <typename T>
-constexpr auto gse::operator*(const quaternion<T>& lhs, const unitless::vec3_t<T>& rhs) -> unitless::vec3_t<T> {
-	const unitless::vec3_t<T> u(lhs.x, lhs.y, lhs.z);
-	const T s = lhs.s;
-	const unitless::vec3_t<T> t = T(2) * cross(u, rhs);
-	return rhs + s * t + cross(u, t);
-}
-
-template <typename T>
-constexpr auto gse::operator*=(quat_t<T>& lhs, const T& rhs) -> quat_t<T>& {
-	lhs = lhs * rhs;
-	return lhs;
-}
-
-template <typename T>
-constexpr auto gse::operator/=(quat_t<T>& lhs, const T& rhs) -> quat_t<T>& {
-	lhs = lhs / rhs;
-	return lhs;
 }

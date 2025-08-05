@@ -72,4 +72,24 @@ export namespace gse::gui {
 
 		std::uint32_t active_tab_index = 0;
 	};
+
+	namespace states {
+		struct idle {};
+
+		struct dragging {
+			id menu_id;
+			unitless::vec2 offset;
+		};
+
+		struct resizing {
+			id menu_id;
+			resize_handle handle;
+		};
+	}
+
+	using state = std::variant<
+		states::idle,
+		states::dragging,
+		states::resizing
+	>;
 }

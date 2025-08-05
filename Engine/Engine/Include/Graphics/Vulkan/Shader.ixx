@@ -92,6 +92,7 @@ namespace gse {
 		) -> void;
 
 		auto unload() -> void;
+		static auto destroy_global_layouts() -> void;
 
 		auto shader_stages() const -> std::array<vk::PipelineShaderStageCreateInfo, 2>;
 		auto required_bindings() const -> std::vector<std::string>;
@@ -675,6 +676,11 @@ auto gse::shader::unload() -> void {
 	m_vertex_input = {};
 	m_push_constants.clear();
 	m_info = {};
+}
+
+auto gse::shader::destroy_global_layouts() -> void {
+	global_layouts.clear();
+	shader_layout_types.clear();
 }
 
 auto gse::shader::shader_stages() const -> std::array<vk::PipelineShaderStageCreateInfo, 2> {

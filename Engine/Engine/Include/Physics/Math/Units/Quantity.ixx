@@ -173,6 +173,24 @@ export namespace gse::internal {
     template <is_quantity T> constexpr auto operator-(const T& value) -> T;
 }
 
+template <gse::internal::is_quantity Q, typename CharT>
+struct std::formatter<Q, CharT> {
+    std::formatter<typename Q::value_type, CharT> value_fmt;
+
+    constexpr auto parse(std::format_parse_context& ctx) {
+        return value_fmt.parse(ctx);
+    }
+
+    template <typename FormatContext>
+    auto format(const Q& q, FormatContext& ctx) const {
+        auto out = value_fmt.format(q.as_default_unit(), ctx);
+        if (std::string_view(Q::default_unit::unit_name) != gse::internal::no_default_unit_name) {
+            out = std::format_to(out, " {}", Q::default_unit::unit_name);
+        }
+        return out;
+    }
+};
+
 namespace gse::internal {
     template <is_quantity T>
     constexpr auto internal::operator+(const T& lhs, const T& rhs) -> T {
@@ -252,23 +270,5 @@ namespace gse::internal {
         return -value.as_default_unit();
     }
 }
-
-template <gse::internal::is_quantity Q, typename CharT>
-struct std::formatter<Q, CharT> {
-    std::formatter<typename Q::value_type, CharT> value_fmt;
-
-    constexpr auto parse(std::format_parse_context& ctx) {
-        return value_fmt.parse(ctx);
-    }
-
-    template <typename FormatContext>
-    auto format(const Q& q, FormatContext& ctx) const {
-        auto out = value_fmt.format(q.as_default_unit(), ctx);
-        if (std::string_view(Q::default_unit::unit_name) != gse::internal::no_default_unit_name) {
-            out = std::format_to(out, " {}", Q::default_unit::unit_name);
-        }
-        return out;
-    }
-};
 
 

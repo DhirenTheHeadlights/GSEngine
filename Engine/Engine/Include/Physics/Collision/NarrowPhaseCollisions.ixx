@@ -20,26 +20,26 @@ auto overlaps_on_axis(const gse::oriented_bounding_box& box1, const gse::oriente
     const auto normalized_axis = gse::normalize(axis);
     const auto corners1 = box1.get_corners();
 
-    auto project_point = [](const gse::vec3<gse::length>& point, const gse::vec3<gse::length>& projection_axis) -> gse::length {
+    auto project_point = [](const gse::vec3<gse::length>& point, const gse::unitless::vec3& projection_axis) {
         return gse::dot(point, projection_axis);
         };
 
-    gse::length min1 = project_point(corners1[0], normalized_axis);
-    gse::length max1 = min1;
+    auto min1 = project_point(corners1[0], normalized_axis);
+    auto max1 = min1;
 
     for (const auto& corner : corners1) {
-        gse::length projection = project_point(corner, normalized_axis);
+        auto projection = project_point(corner, normalized_axis);
         min1 = std::min(min1, projection);
         max1 = std::max(max1, projection);
     }
 
     const auto corners2 = box2.get_corners();
 
-    gse::length min2 = project_point(corners2[0], normalized_axis);
-    gse::length max2 = min2;
+    auto min2 = project_point(corners2[0], normalized_axis);
+    auto max2 = min2;
 
     for (const auto& corner : corners2) {
-        gse::length projection = project_point(corner, normalized_axis);
+        auto projection = project_point(corner, normalized_axis);
         min2 = std::min(min2, projection);
         max2 = std::max(max2, projection);
     }

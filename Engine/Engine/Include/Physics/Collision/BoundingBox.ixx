@@ -11,10 +11,10 @@ export namespace gse {
 		length penetration;
 		vec3<length> collision_point;
 
-		auto get_axis() const -> axis {
-			if (!epsilon_equal_index(collision_normal, unitless::vec3(), static_cast<int>(axis::x))) { return axis::x; }
-			if (!epsilon_equal_index(collision_normal, unitless::vec3(), static_cast<int>(axis::y))) { return axis::y; }
-			return axis::z; // Assume it is the z axis
+		auto get_axis() const -> unitless::axis {
+			if (!epsilon_equal_index(collision_normal, unitless::vec3(), static_cast<int>(unitless::axis::x))) { return unitless::axis::x; }
+			if (!epsilon_equal_index(collision_normal, unitless::vec3(), static_cast<int>(unitless::axis::y))) { return unitless::axis::y; }
+			return unitless::axis::z; // Assume it is the z axis
 		}
 	};
 
@@ -48,7 +48,7 @@ export namespace gse {
 
 		auto update_axes() -> void;
 		auto get_corners() const -> std::array<vec3<length>, 8>;
-		auto get_face_vertices(axis axis, bool positive) const -> std::array<vec3<length>, 4>;
+		auto get_face_vertices(unitless::axis axis, bool positive) const -> std::array<vec3<length>, 4>;
 	};
 }
 
@@ -127,7 +127,7 @@ auto gse::oriented_bounding_box::get_corners() const -> std::array<vec3<length>,
 	return corners;
 }
 
-auto gse::oriented_bounding_box::get_face_vertices(axis axis, const bool positive) const -> std::array<vec3<length>, 4> {
+auto gse::oriented_bounding_box::get_face_vertices(unitless::axis axis, const bool positive) const -> std::array<vec3<length>, 4> {
 	const auto half_size = size / 2.0f;
 
 	const int i = static_cast<int>(axis);

@@ -4,13 +4,7 @@ import std;
 
 import gse.assert;
 
-namespace gse {
-    template <typename T>
-    concept is_vec2 = requires(T t) {
-        { t.x } -> std::convertible_to<typename T::value_type>;
-        { t.y } -> std::convertible_to<typename T::value_type>;
-    };
-}
+import :primitive_math_shared;
 
 export namespace gse {
     template <is_vec2 T>
@@ -26,7 +20,8 @@ export namespace gse {
         constexpr rect_t() = default;
         explicit constexpr rect_t(const min_max_params& p);
 
-        static constexpr auto from_position_size(const T& top_left, const T& size) -> rect_t ;
+        static constexpr auto from_position_size(const T& top_left, const T& size) -> rect_t;
+        static constexpr auto bounding_box(const rect_t& a, const rect_t& b) -> rect_t ;
 
         constexpr auto left() const -> value_type;
         constexpr auto right() const -> value_type;
@@ -50,7 +45,6 @@ export namespace gse {
         constexpr auto intersects(const rect_t& other) const -> bool;
         constexpr auto inset(const T& padding) const -> rect_t;
         constexpr auto intersection(const rect_t& other) const -> rect_t;
-
     private:
         T m_min;
         T m_max;
@@ -72,6 +66,14 @@ constexpr auto gse::rect_t<T>::from_position_size(const T& top_left, const T& si
     const auto top_right    = T{ top_left.x + size.x, top_left.y };
 
     return gse::rect_t(min_max_params{ .min = bottom_left, .max = top_right });
+}
+
+template <gse::is_vec2 T>
+constexpr auto gse::rect_t<T>::bounding_box(const rect_t& a, const rect_t& b) -> rect_t {
+	return gse::rect_t(min_max_params{
+		.min = T{ std::min(a.m_min.x, b.m_min.x), std::min(a.m_min.y, b.m_min.y) },
+		.max = T{ std::max(a.m_max.x, b.m_max.x), std::max(a.m_max.y, b.m_max.y) }
+	});
 }
 
 template <gse::is_vec2 T>
