@@ -165,8 +165,10 @@ auto gse::mesh::material() const -> const resource::handle<gse::material>& {
 }
 
 auto gse::generate_bounding_box_mesh(const vec3<length> upper, const vec3<length> lower) -> mesh_data {
-    auto create_vertex = [](const vec3<length>& position) -> vertex {
-        return vertex{ position.as<units::meters>(), {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f} };
+    auto create_vertex = [](
+        const vec3<length>& position
+        ) -> vertex {
+			return vertex{ position.as<units::meters>().data(), {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}};
         };
 
     const std::vector vertices = {

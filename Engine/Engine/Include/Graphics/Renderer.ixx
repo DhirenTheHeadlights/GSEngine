@@ -58,6 +58,7 @@ export namespace gse::renderer {
 	auto render(std::vector<std::reference_wrapper<registry>> registries, const std::function<void()>& in_frame = {}) -> void;
 	auto shutdown() -> void;
 	auto camera() -> camera&;
+	auto set_ui_focus(bool focus) -> void;
 }
 
 namespace gse::renderer {
@@ -71,38 +72,6 @@ namespace gse::renderer {
 			}
 		}
 		throw std::runtime_error("Renderer not found");
-	}
-}
-
-export namespace gse {
-	auto show_cross_hair() -> void {
-		constexpr auto size = unitless::vec2(20.0f, 20.0f);
-		constexpr auto thickness = 2.0f;
-
-		const auto center_pos = mouse::delta();
-		const auto blank_texture = get<texture>(find("blank"));
-		constexpr auto color = unitless::vec4{ 1.0f, 1.0f, 1.0f, 1.0f };
-
-		const auto half_size = size / 2.0f;
-		constexpr auto half_thickness = thickness / 2.0f;
-
-		renderer::renderer<renderer::sprite>().queue({
-			.rect = rect_t<unitless::vec2>::from_position_size(
-				{ center_pos.x - half_size.x, center_pos.y + half_thickness },
-				{ size.x, thickness }
-			),
-			.color = color,
-			.texture = blank_texture
-		});
-
-		renderer::renderer<renderer::sprite>().queue({
-			.rect = rect_t<unitless::vec2>::from_position_size(
-				{ center_pos.x - half_thickness, center_pos.y + half_size.y },
-				{ thickness, size.y }
-			),
-			.color = color,
-			.texture = blank_texture
-		});
 	}
 }
 
@@ -130,9 +99,12 @@ auto gse::renderer::initialize() -> void {
 auto gse::renderer::update() -> void {
 	rendering_context.process_resource_queue();
 	gui::update(rendering_context.window());
-	rendering_context.window().update();
+	rendering_context.window().update(rendering_context.ui_focus());
 	rendering_context.camera().update_orientation();
-	rendering_context.camera().process_mouse_movement(mouse::delta());
+
+	if (!rendering_context.ui_focus()) {
+		rendering_context.camera().process_mouse_movement(mouse::delta());
+	}
 }
 
 auto gse::renderer::render(std::vector<std::reference_wrapper<registry>> registries, const std::function<void()>& in_frame) -> void {
@@ -223,8 +195,13 @@ auto gse::renderer::shutdown() -> void {
 	rendering_context.shutdown();
 
 	vulkan::persistent_allocator::clean_up();
+	shader::destroy_global_layouts();
 }
 
 auto gse::renderer::camera() -> gse::camera& {
 	return rendering_context.camera();
+}
+
+auto gse::renderer::set_ui_focus(const bool focus) -> void {
+	rendering_context.set_ui_focus(focus);
 }

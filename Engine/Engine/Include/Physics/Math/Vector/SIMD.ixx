@@ -6,10 +6,10 @@ export module gse.physics.math:simd;
 
 import std;
 
-template <typename T> concept is_int32 = std::same_as<std::int32_t, std::remove_cvref_t<T>>;
-template <typename T> concept is_float = std::same_as<float, std::remove_cvref_t<T>>;
+template <typename T> concept is_int32  = std::same_as<std::int32_t, std::remove_cvref_t<T>>;
+template <typename T> concept is_float  = std::same_as<float, std::remove_cvref_t<T>>;
 template <typename T> concept is_double = std::same_as<double, std::remove_cvref_t<T>>;
-template <typename T> concept simd_val = is_int32<T> || is_float<T> || is_double<T>;
+template <typename T> concept simd_val  = is_int32<T> || is_float<T> || is_double<T>;
 
 template <typename T>
 concept span = requires {

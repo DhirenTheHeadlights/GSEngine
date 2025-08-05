@@ -26,7 +26,7 @@
       "generator": "Visual Studio 17 2022",
       "binaryDir": "${sourceDir}/out/build/x64-Release",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/Engine/External/vcpkg/scripts/buildsystems/vcpkg.cmake",
         "VCPKG_TARGET_TRIPLET": "x64-windows"
       },

@@ -18,6 +18,7 @@ export import :vec_math;
 export import :unit_vec_math;
 export import :rectangle;
 export import :circle;
+export import :segment;
 
 import :base_vec;
 

@@ -35,8 +35,10 @@ auto gse::start() -> void {
 	initialize();
 
 	while (!should_shutdown) {
-		update();
-		render();
+		input::update([] {
+			update();
+			render();
+		});
 	}
 
 	scene_loader::shutdown();
@@ -54,10 +56,8 @@ auto gse::update() -> void {
 
 	main_clock::update();
 
-	input::update([] {
-		scene_loader::update();
-		engine.update();
-	});
+	scene_loader::update();
+	engine.update();
 
 	reset_timer("Engine::update");
 }

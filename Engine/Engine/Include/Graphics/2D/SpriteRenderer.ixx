@@ -21,6 +21,7 @@ export namespace gse::renderer {
 			resource::handle<texture> texture;
 			unitless::vec4 uv_rect = { 0.0f, 0.0f, 1.0f, 1.0f };
 			std::optional<rect_t<unitless::vec2>> clip_rect = std::nullopt;
+			angle rotation;
 		};
 
 		explicit sprite(context& context) : base_renderer(context) {}
@@ -195,7 +196,11 @@ auto gse::renderer::sprite::render(std::span<std::reference_wrapper<registry>> r
 		.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
 		.loadOp = vk::AttachmentLoadOp::eLoad,
 		.storeOp = vk::AttachmentStoreOp::eStore,
-		.clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = std::array{ 0.1f, 0.1f, 0.1f, 1.0f }}}
+		.clearValue = vk::ClearValue{
+			.color = vk::ClearColorValue{
+				.float32 = std::array{ 0.1f, 0.1f, 0.1f, 1.0f }
+			}
+		}
 	};
 
 	const vk::RenderingInfo rendering_info{
@@ -218,7 +223,7 @@ auto gse::renderer::sprite::render(std::span<std::reference_wrapper<registry>> r
 			command.setScissor(0, { default_scissor });
 			auto current_scissor = default_scissor;
 
-			for (auto& [rect, color, texture, uv_rect, clip_rect] : m_draw_commands) {
+			for (auto& [rect, color, texture, uv_rect, clip_rect, rotation] : m_draw_commands) {
 				if (!texture.valid()) {
 					continue;
 				}
@@ -235,13 +240,15 @@ auto gse::renderer::sprite::render(std::span<std::reference_wrapper<registry>> r
 
 				auto position = rect.top_left();
 				auto rect_size = rect.size();
+				auto angle_rad = rotation.as<units::radians>();
 
 				std::unordered_map<std::string, std::span<const std::byte>> push_constants = {
 					{ "projection", std::as_bytes(std::span(&projection, 1)) },
 					{ "position", std::as_bytes(std::span(&position, 1)) },
 					{ "size", std::as_bytes(std::span(&rect_size, 1)) },
 					{ "color", std::as_bytes(std::span(&color, 1)) },
-					{ "uv_rect", std::as_bytes(std::span(&uv_rect, 1)) }
+					{ "uv_rect", std::as_bytes(std::span(&uv_rect, 1)) },
+					{ "rotation", std::as_bytes(std::span(&angle_rad, 1)) }
 				};
 
 				shader->push(command, m_pipeline_layout, "push_constants", push_constants, vk::ShaderStageFlagBits::eVertex);

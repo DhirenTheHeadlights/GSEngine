@@ -14,175 +14,24 @@ export namespace gse {
 	auto find(std::string_view tag) -> id;
 	auto exists(uuid number) -> bool;
 	auto exists(std::string_view tag) -> bool;
+}
 
+export namespace gse {
 	class id {
 	public:
 		id() = default;
-		auto operator==(const id& other) const -> bool {
-			assert(exists() && other.exists(), std::format("Cannot compare invalid gse::id"));
-			return m_number == other.m_number;
-		}
+		auto operator==(const id& other) const -> bool;
 
-		auto number() const -> uuid { return m_number; }
-		auto tag() const -> const std::string& { return m_tag; }
-		auto exists() const -> bool { return m_number != std::numeric_limits<uuid>::max(); }
-
+		auto number() const -> uuid;
+		auto tag() const -> const std::string&;
+		auto exists() const -> bool;
 	private:
-		explicit id(const uuid id, std::string tag) : m_number(id), m_tag(std::move(tag)) {}
+		explicit id(const uuid id, std::string tag);
 
 		uuid m_number = std::numeric_limits<uuid>::max();
 		std::string m_tag;
 
 		friend auto generate_id(std::string_view tag) -> id;
-	};
-
-	class identifiable {
-	public:
-		explicit identifiable(const std::string& tag) : m_id(generate_id(tag)) {}
-		explicit identifiable(const std::filesystem::path& path) : m_id(generate_id(filename(path))) {}
-
-		auto id() const -> const gse::id& { return m_id; }
-		auto operator==(const identifiable& other) const -> bool = default;
-	private:
-		gse::id m_id;
-
-		static auto filename(const std::filesystem::path& path) -> std::string {
-			std::string name = path.filename().string();
-			if (const size_t dot_pos = name.find_first_of('.'); dot_pos != std::string::npos) {
-				return name.substr(0, dot_pos);
-			}
-			return name;
-		}
-	};
-
-	class identifiable_owned {
-	public:
-		identifiable_owned() = default;
-		explicit identifiable_owned(const id& owner_id) : m_owner_id(owner_id) {}
-
-		auto owner_id() const -> const id& { return m_owner_id; }
-		auto operator==(const identifiable_owned& other) const -> bool = default;
-
-		auto swap(const id& new_parent_id) -> void {
-			assert(
-				new_parent_id.exists(),
-				std::format("Cannot reassign identifiable owned to invalid id {}: {}", new_parent_id.tag(), new_parent_id.number())
-			);
-			m_owner_id = new_parent_id;
-		}
-
-		auto swap(const identifiable& new_parent) -> void {
-			swap(new_parent.id());
-		}
-	private:
-		id m_owner_id;
-	protected:
-		auto set_owner_id(const id& owner_id) -> void {
-			m_owner_id = owner_id;
-		}
-	};
-
-	class identifiable_owned_only_uuid {
-	public:
-		identifiable_owned_only_uuid() = default;
-		explicit identifiable_owned_only_uuid(const id& owner_id) : m_owner_id(owner_id.number()) {}
-		auto owner_id() const -> id { return find(m_owner_id); }
-		auto operator==(const identifiable_owned_only_uuid& other) const -> bool = default;
-	protected:
-		auto internal_set_owner_id(const id& owner_id) -> void { m_owner_id = owner_id.number(); }
-	private:
-		uuid m_owner_id;
-	};
-
-	struct entity;
-
-	template <typename T>
-	concept is_identifiable = std::derived_from<T, identifiable> || std::same_as<T, entity>;
-
-	template <typename T, typename PrimaryIdType = id>
-	class id_mapped_collection {
-	public:
-		auto add(const PrimaryIdType& id, T object) -> T* {
-			if (m_map.contains(id)) {
-				return nullptr;
-			}
-
-			const size_t new_index = m_items.size();
-			m_map[id] = new_index;
-			m_ids.push_back(id);
-			return &m_items.emplace_back(std::move(object));
-		}
-
-		auto remove(const PrimaryIdType& id) -> void {
-			const auto it = m_map.find(id);
-			if (it == m_map.end()) {
-				return;
-			}
-
-			const size_t index_to_remove = it->second;
-
-			if (const size_t last_index = m_items.size() - 1; index_to_remove != last_index) {
-				const PrimaryIdType& last_id = m_ids.back();
-				m_items[index_to_remove] = std::move(m_items.back());
-				m_ids[index_to_remove] = std::move(m_ids.back());
-				m_map[last_id] = index_to_remove;
-			}
-
-			m_map.erase(id);
-			m_items.pop_back();
-			m_ids.pop_back();
-		}
-
-		auto pop(const PrimaryIdType& id) -> std::optional<T> {
-			const auto it = m_map.find(id);
-			if (it == m_map.end()) {
-				return std::nullopt;
-			}
-
-			const size_t index_to_pop = it->second;
-			T popped_object = std::move(m_items[index_to_pop]);
-
-			remove(id);
-
-			return popped_object;
-		}
-
-		auto try_get(const PrimaryIdType& id) -> T* {
-			if (const auto it = m_map.find(id); it != m_map.end()) {
-				return &m_items[it->second];
-			}
-			return nullptr;
-		}
-
-		auto try_get(const PrimaryIdType& id) const -> const T* {
-			if (const auto it = m_map.find(id); it != m_map.end()) {
-				return &m_items[it->second];
-			}
-			return nullptr;
-		}
-
-		auto items() -> std::span<T> {
-			return m_items;
-		}
-
-		auto contains(const PrimaryIdType& id) const -> bool {
-			return m_map.contains(id);
-		}
-
-		auto size() const -> size_t {
-			return m_items.size();
-		}
-
-		auto clear() noexcept -> void {
-			m_items.clear();
-			m_ids.clear();
-			m_map.clear();
-		}
-
-	private:
-		std::vector<T> m_items;
-		std::vector<PrimaryIdType> m_ids;
-		std::unordered_map<PrimaryIdType, size_t> m_map;
 	};
 }
 
@@ -193,6 +42,241 @@ struct std::formatter<gse::id> {
 		return std::format_to(ctx.out(), "[{}: {}]", value.number(), value.tag());
 	}
 };
+
+auto gse::id::operator==(const id& other) const -> bool {
+	if (!exists() || !other.exists()) {
+		return false;
+	}
+	return m_number == other.m_number;
+}
+
+auto gse::id::number() const -> uuid {
+	return m_number;
+}
+
+auto gse::id::tag() const -> const std::string& {
+	return m_tag;
+}
+
+auto gse::id::exists() const -> bool {
+	return m_number != std::numeric_limits<uuid>::max();
+}
+
+gse::id::id(const uuid id, std::string tag): m_number(id), m_tag(std::move(tag)) {}
+
+export namespace gse {
+	class identifiable {
+	public:
+		explicit identifiable(const std::string& tag);
+		explicit identifiable(const std::filesystem::path& path);
+
+		auto id() const -> const id&;
+		auto operator==(const identifiable& other) const -> bool = default;
+	private:
+		gse::id m_id;
+
+		static auto filename(const std::filesystem::path& path) -> std::string ;
+	};
+}
+
+gse::identifiable::identifiable(const std::string& tag) : m_id(generate_id(tag)) {}
+
+gse::identifiable::identifiable(const std::filesystem::path& path): m_id(generate_id(filename(path))) {}
+
+auto gse::identifiable::id() const -> const gse::id& {
+	return m_id;
+}
+
+auto gse::identifiable::filename(const std::filesystem::path& path) -> std::string {
+	std::string name = path.filename().string();
+	if (const size_t dot_pos = name.find_first_of('.'); dot_pos != std::string::npos) {
+		return name.substr(0, dot_pos);
+	}
+	return name;
+}
+
+export namespace gse {
+	class identifiable_owned {
+	public:
+		identifiable_owned() = default;
+		explicit identifiable_owned(const id& owner_id);
+
+		auto owner_id() const -> const id&;
+		auto operator==(const identifiable_owned& other) const -> bool = default;
+
+		auto swap(const id& new_parent_id) -> void;
+		auto swap(const identifiable& new_parent) -> void;
+	private:
+		id m_owner_id;
+	};
+}
+
+gse::identifiable_owned::identifiable_owned(const id& owner_id) : m_owner_id(owner_id) {}
+
+auto gse::identifiable_owned::owner_id() const -> const id& {
+	return m_owner_id;
+}
+
+auto gse::identifiable_owned::swap(const id& new_parent_id) -> void {
+	m_owner_id = new_parent_id;
+}
+
+auto gse::identifiable_owned::swap(const identifiable& new_parent) -> void {
+	swap(new_parent.id());
+}
+
+export namespace gse {
+	class identifiable_owned_only_uuid {
+	public:
+		identifiable_owned_only_uuid() = default;
+		explicit identifiable_owned_only_uuid(const id& owner_id);
+
+		auto owner_id() const -> id;
+		auto operator==(const identifiable_owned_only_uuid& other) const -> bool = default;
+
+		auto swap(const id& new_parent_id) -> void;
+		auto swap(const identifiable& new_parent) -> void;
+	private:
+		uuid m_owner_id;
+	};
+}
+
+gse::identifiable_owned_only_uuid::identifiable_owned_only_uuid(const id& owner_id) : m_owner_id(owner_id.number()) {}
+
+auto gse::identifiable_owned_only_uuid::owner_id() const -> id {
+	return find(m_owner_id);
+}
+
+auto gse::identifiable_owned_only_uuid::swap(const id& new_parent_id) -> void {
+	assert(
+		new_parent_id.exists(),
+		std::format("Cannot reassign identifiable owned to invalid id {}: {}", new_parent_id.tag(), new_parent_id.number())
+	);
+	m_owner_id = new_parent_id.number();
+}
+
+auto gse::identifiable_owned_only_uuid::swap(const identifiable& new_parent) -> void {
+	swap(new_parent.id());
+}
+
+export namespace gse {
+	struct entity;
+
+	template <typename T>
+	concept is_identifiable = std::derived_from<T, identifiable> || std::same_as<T, entity>;
+
+	template <typename T, typename PrimaryIdType = id>
+	class id_mapped_collection {
+	public:
+		auto add(const PrimaryIdType& id, T object) -> T*;
+
+		auto remove(const PrimaryIdType& id) -> void;
+
+		auto pop(const PrimaryIdType& id) -> std::optional<T>;
+
+		auto try_get(const PrimaryIdType& id) -> T*;
+
+		auto try_get(const PrimaryIdType& id) const -> const T*;
+
+		auto items() -> std::span<T>;
+
+		auto contains(const PrimaryIdType& id) const -> bool;
+
+		auto size() const -> size_t;
+
+		auto clear() noexcept -> void;
+	private:
+		std::vector<T> m_items;
+		std::vector<PrimaryIdType> m_ids;
+		std::unordered_map<PrimaryIdType, size_t> m_map;
+	};
+}
+
+template <typename T, typename PrimaryIdType>
+auto gse::id_mapped_collection<T, PrimaryIdType>::add(const PrimaryIdType& id, T object) -> T* {
+	if (m_map.contains(id)) {
+		return nullptr;
+	}
+
+	const std::size_t new_index = m_items.size();
+	m_map[id] = new_index;
+	m_ids.push_back(id);
+	return &m_items.emplace_back(std::move(object));
+}
+
+template <typename T, typename PrimaryIdType>
+auto gse::id_mapped_collection<T, PrimaryIdType>::remove(const PrimaryIdType& id) -> void {
+	const auto it = m_map.find(id);
+	if (it == m_map.end()) {
+		return;
+	}
+
+	const size_t index_to_remove = it->second;
+
+	if (const size_t last_index = m_items.size() - 1; index_to_remove != last_index) {
+		const PrimaryIdType& last_id = m_ids.back();
+		m_items[index_to_remove] = std::move(m_items.back());
+		m_ids[index_to_remove] = std::move(m_ids.back());
+		m_map[last_id] = index_to_remove;
+	}
+
+	m_map.erase(id);
+	m_items.pop_back();
+	m_ids.pop_back();
+}
+
+template <typename T, typename PrimaryIdType>
+auto gse::id_mapped_collection<T, PrimaryIdType>::pop(const PrimaryIdType& id) -> std::optional<T> {
+	const auto it = m_map.find(id);
+	if (it == m_map.end()) {
+		return std::nullopt;
+	}
+
+	const size_t index_to_pop = it->second;
+	T popped_object = std::move(m_items[index_to_pop]);
+
+	remove(id);
+
+	return popped_object;
+}
+
+template <typename T, typename PrimaryIdType>
+auto gse::id_mapped_collection<T, PrimaryIdType>::try_get(const PrimaryIdType& id) -> T* {
+	if (const auto it = m_map.find(id); it != m_map.end()) {
+		return &m_items[it->second];
+	}
+	return nullptr;
+}
+
+template <typename T, typename PrimaryIdType>
+auto gse::id_mapped_collection<T, PrimaryIdType>::try_get(const PrimaryIdType& id) const -> const T* {
+	if (const auto it = m_map.find(id); it != m_map.end()) {
+		return &m_items[it->second];
+	}
+	return nullptr;
+}
+
+template <typename T, typename PrimaryIdType>
+auto gse::id_mapped_collection<T, PrimaryIdType>::items() -> std::span<T> {
+	return m_items;
+}
+
+template <typename T, typename PrimaryIdType>
+auto gse::id_mapped_collection<T, PrimaryIdType>::contains(const PrimaryIdType& id) const -> bool {
+	return m_map.contains(id);
+}
+
+template <typename T, typename PrimaryIdType>
+auto gse::id_mapped_collection<T, PrimaryIdType>::size() const -> size_t {
+	return m_items.size();
+}
+
+template <typename T, typename PrimaryIdType>
+auto gse::id_mapped_collection<T, PrimaryIdType>::clear() noexcept -> void {
+	m_items.clear();
+	m_ids.clear();
+	m_map.clear();
+}
 
 export template <>
 struct std::hash<gse::id> {

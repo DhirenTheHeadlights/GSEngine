@@ -4,7 +4,7 @@ import std;
 
 import gse.assert;
 
-import :rectangle;
+import :primitive_math_shared;
 
 export namespace gse {
     template <is_vec2 T>
@@ -27,15 +27,9 @@ export namespace gse {
         constexpr auto contains(const T& point) const -> bool;
         constexpr auto intersects(const circle_t& other) const -> bool;
     private:
-        T m_center{};
+        T m_center;
         value_type m_radius{};
     };
-
-	template <is_vec2 T>
-    constexpr auto intersects(const circle_t<T>& circle, const rect_t<T>& rect) -> bool;
-
-    template <is_vec2 T>
-    constexpr auto intersects(const rect_t<T>& rect, const circle_t<T>& circle) -> bool;
 }
 
 template <gse::is_vec2 T>
@@ -68,17 +62,4 @@ constexpr auto gse::circle_t<T>::intersects(const circle_t& other) const -> bool
     const value_type dist_sq = (offset.x * offset.x) + (offset.y * offset.y);
     const value_type combined_radii = m_radius + other.m_radius;
     return dist_sq <= (combined_radii * combined_radii);
-}
-
-template <gse::is_vec2 T>
-constexpr auto gse::intersects(const circle_t<T>& circle, const rect_t<T>& rect) -> bool {
-    const typename T::value_type closest_x = std::clamp(circle.center().x, rect.left(), rect.right());
-    const typename T::value_type closest_y = std::clamp(circle.center().y, rect.bottom(), rect.top());
-    const T closest_point = { closest_x, closest_y };
-    return contains(closest_point);
-}
-
-template <gse::is_vec2 T>
-constexpr auto gse::intersects(const rect_t<T>& rect, const circle_t<T>& circle) -> bool {
-    return intersects(circle, rect);
 }

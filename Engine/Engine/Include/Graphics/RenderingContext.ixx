@@ -62,9 +62,12 @@ export namespace gse::renderer {
 
 		[[nodiscard]] auto window() -> window&;
 
-		[[nodiscard]] auto gpu_queue_size() const -> size_t ;
+		[[nodiscard]] auto gpu_queue_size() const -> size_t;
 
-		auto mark_pending_for_finalization(const std::type_index& resource_type, const id& resource_id) const -> void ;
+		auto mark_pending_for_finalization(const std::type_index& resource_type, const id& resource_id) const -> void;
+
+		auto set_ui_focus(bool focus) -> void;
+		[[nodiscard]] auto ui_focus() const -> bool;
 
 		auto shutdown() -> void;
 	private:
@@ -73,10 +76,13 @@ export namespace gse::renderer {
 		gse::window m_window;
 		std::unique_ptr<vulkan::config> m_config;
 		std::unordered_map<std::type_index, std::unique_ptr<resource::loader_base>> m_resource_loaders;
+
 		mutable std::vector<command> m_command_queue;
 		mutable std::vector<std::pair<std::type_index, id>> m_pending_gpu_resources;
-		gse::camera m_camera;
 		mutable std::recursive_mutex m_mutex;
+
+		gse::camera m_camera;
+		bool m_ui_focus = false;
 	};
 }
 
@@ -230,6 +236,14 @@ auto gse::renderer::context::mark_pending_for_finalization(const std::type_index
 	const id& resource_id) const -> void {
 	std::lock_guard lock(m_mutex);
 	m_pending_gpu_resources.emplace_back(resource_type, resource_id);
+}
+
+auto gse::renderer::context::set_ui_focus(const bool focus) -> void {
+	m_ui_focus = focus;
+}
+
+auto gse::renderer::context::ui_focus() const -> bool {
+	return m_ui_focus;
 }
 
 auto gse::renderer::context::shutdown() -> void {

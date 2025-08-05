@@ -31,7 +31,6 @@ target_sources(Engine
 
 target_sources(Engine PRIVATE 
     "${CMAKE_CURRENT_BINARY_DIR}/Engine/Source/Core/Config.ixx"
-    "${CMAKE_CURRENT_SOURCE_DIR}/External/ImguiVulkan/imgui_impl_vulkan.cpp"
 )
 
 ####################################################################################################################
@@ -44,7 +43,6 @@ find_path(miniaudio_INCLUDE_DIR "miniaudio.h")
 find_package(Freetype CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
 find_package(Vulkan REQUIRED)
-find_package(imgui CONFIG REQUIRED)
 
 add_library(VulkanModule)
 
@@ -98,31 +96,10 @@ target_link_libraries(Engine PUBLIC
     SPIRV-Reflect
     "${VULKAN_SDK_PATH}/Lib/shaderc_combinedd.lib"
     "${VULKAN_SDK_PATH}/Lib/glslang-default-resource-limitsd.lib"
-    imgui::imgui
 )
 
 set(ENGINE_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
 set(BAKED_RESOURCES_PATH "${CMAKE_CURRENT_BINARY_DIR}/Resources/")
-
-foreach(shader ${SHADER_FILES})
-    get_filename_component(shader_name ${shader} NAME_WE)
-    get_filename_component(shader_ext ${shader} EXT)
-    set(shader_output "${SHADER_DIR}/${shader_name}${shader_ext}.spv")
-
-    list(FIND ADDED_SHADERS ${shader_output} shader_exists)
-    if(shader_exists EQUAL -1)
-        add_custom_command(
-            OUTPUT ${shader_output}
-            COMMAND ${GLSLC} ${shader} -o ${shader_output}
-            DEPENDS ${shader}
-        )
-        list(APPEND SPIRV ${shader_output})
-        list(APPEND ADDED_SHADERS ${shader_output})
-    endif()
-endforeach()
-
-add_custom_target(Shaders DEPENDS ${SPIRV})
-add_dependencies(Engine Shaders)
 
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/Core/Config.ixx.in

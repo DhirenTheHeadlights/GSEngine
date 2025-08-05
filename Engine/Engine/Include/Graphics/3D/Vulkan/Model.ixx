@@ -323,9 +323,9 @@ auto gse::model_instance::render_queue_entries() -> std::span<render_queue_entry
 
 	if (m_is_dirty) {
 		const mat4 scale_mat = scale(mat4(1.0f), m_scale);
-		mat4 rot_mat = rotate(mat4(1.0f), axis::x, m_rotation.x);
-		rot_mat = rotate(rot_mat, axis::y, m_rotation.y);
-		rot_mat = rotate(rot_mat, axis::z, m_rotation.z);
+		mat4 rot_mat = rotate(mat4(1.0f), unitless::axis::x, m_rotation.x);
+		rot_mat = rotate(rot_mat, unitless::axis::y, m_rotation.y);
+		rot_mat = rotate(rot_mat, unitless::axis::z, m_rotation.z);
 		const mat4 trans_mat = translate(mat4(1.0f), m_position);
 
 		const mat4 final_model_matrix = trans_mat * rot_mat * scale_mat;
