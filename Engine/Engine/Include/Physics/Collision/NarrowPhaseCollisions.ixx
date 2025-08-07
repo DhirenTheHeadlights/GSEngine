@@ -155,6 +155,17 @@ struct mpr_result {
     gse::vec3<gse::length> contact_point1; // Contact point on object 1
     gse::vec3<gse::length> contact_point2; // Contact point on object 2
 };
+struct minkowski_point {
+    gse::vec3<gse::length> point;     // The point on the Minkowski Difference (A - B)
+    gse::vec3<gse::length> support_a; // The support point on shape A
+    gse::vec3<gse::length> support_b; // The support point on shape B
+};
+constexpr auto operator-(const minkowski_point& lhs, const minkowski_point& rhs) -> gse::vec3<gse::length> {
+    return lhs.point - rhs.point;
+}
+constexpr auto operator+(const minkowski_point& lhs, const minkowski_point& rhs) -> gse::vec3<gse::length> {
+    return lhs.point + rhs.point;
+}
 auto support_obb(const gse::oriented_bounding_box& obb, const gse::unitless::vec3& dir) -> gse::vec3<gse::length> {
     gse::vec3<gse::length> result = obb.center;
     const auto half_extents = obb.get_half_extents();
@@ -164,77 +175,93 @@ auto support_obb(const gse::oriented_bounding_box& obb, const gse::unitless::vec
         result += obb.axes[i] * half_extents[i] * sign;
     }
     return result;
-}
-auto minkowski_difference(const gse::oriented_bounding_box& obb1, const gse::oriented_bounding_box& obb2, const gse::unitless::vec3& dir) -> gse::vec3<gse::length> {
-    return support_obb(obb1, dir) - support_obb(obb2, -dir);
+}auto minkowski_difference(const gse::oriented_bounding_box& obb1, const gse::oriented_bounding_box& obb2, const gse::unitless::vec3& dir) -> minkowski_point {
+    minkowski_point result;
+    result.support_a = support_obb(obb1, dir);
+    result.support_b = support_obb(obb2, -dir);
+    result.point = result.support_a - result.support_b;
+    return result;
 }
 bool mpr_collision(const gse::oriented_bounding_box& obb1, const gse::oriented_bounding_box& obb2, mpr_result& out) {
     // Phase 1: Portal Discovery
-    gse::vec3<gse::length> v0 = obb1.center - obb2.center;
-    if (gse::is_zero(v0)) {
-        v0 = gse::vec3<gse::length>{ 0.0001, 0, 0 };
+    minkowski_point v0;
+    v0.support_a = obb1.center;
+    v0.support_b = obb2.center;
+    v0.point = v0.support_a - v0.support_b;
+    if (gse::is_zero(v0.point)) {
+        v0.point = gse::vec3<gse::length>{ 0.0001, 0, 0 };
     }
 
-    gse::unitless::vec3 n = gse::normalize(-v0);
-    gse::vec3<gse::length> v1 = minkowski_difference(obb1, obb2, n);
+    gse::unitless::vec3 n = gse::normalize(-v0.point);
+    minkowski_point v1 = minkowski_difference(obb1, obb2, n);
 
-    if (gse::dot(v1.as<gse::units::meters>(), n) <= 0) return false;
+    if (gse::dot(v1.point.as<gse::units::meters>(), n) <= 0) return false;
 
-    n = gse::normalize(gse::cross(v1, v0));
+    n = gse::normalize(gse::cross(v1.point, v0.point));
     if (gse::is_zero(n)) {
-        n = gse::normalize(gse::vec3<gse::length>{v1.y, -v1.x, 0});
+        n = gse::normalize(gse::vec3<gse::length>{v1.point.y, -v1.point.x, 0});
         if (gse::is_zero(n)) n = gse::unitless::vec3{ 1, 0, 0 };
     }
-    gse::vec3<gse::length> v2 = minkowski_difference(obb1, obb2, n);
+    minkowski_point v2 = minkowski_difference(obb1, obb2, n);
 
-    if (gse::dot(v2.as<gse::units::meters>(), n) <= 0) return false;
+    if (gse::dot(v2.point.as<gse::units::meters>(), n) <= 0) return false;
 
-    // Make sure normal points towards the origin from the portal plane
-    n = gse::normalize(gse::cross(v1 - v0, v2 - v0));
-    if (gse::dot(n, -v0.as<gse::units::meters>()) < 0) {
-        n = -n;
+    n = gse::normalize(gse::cross(v1.point - v0.point, v2.point - v0.point));
+    if (gse::dot(n, v0.point.as<gse::units::meters>()) > 0) {
+        std::swap(v1, v2); // If it points away, flip the winding order of the portal
+        n = -n;           // and negate the normal.
     }
 
     // Phase 2: Portal Refinement
     for (int i = 0; i < mpr_collision_refinement_iterations; ++i) {
-        gse::vec3<gse::length> v3 = minkowski_difference(obb1, obb2, n);
+        minkowski_point v3 = minkowski_difference(obb1, obb2, n);
 
-        const auto portal_dist = gse::dot(v1, gse::vec3<gse::length>(n));
-        const auto support_dist = gse::dot(v3, gse::vec3<gse::length>(n));
+        const auto portal_dist = gse::dot(v1.point, gse::vec3<gse::length>(n));
+        const auto support_dist = gse::dot(v3.point, gse::vec3<gse::length>(n));
+
+        auto calculate_contacts = [&](const gse::length& penetration_depth) {
+            gse::vec3<gse::length> p = out.normal * penetration_depth;
+            auto bary = gse::barycentric(v1.point.as<gse::units::meters>(), v2.point.as<gse::units::meters>(), v3.point.as<gse::units::meters>(), p.as<gse::units::meters>());
+            out.contact_point1 = v1.support_a * std::get<0>(bary) + v2.support_a * std::get<1>(bary) + v3.support_a * std::get<2>(bary);
+            out.contact_point2 = v1.support_b * std::get<0>(bary) + v2.support_b * std::get<1>(bary) + v3.support_b * std::get<2>(bary);
+            };
 
         // Standard termination: the new point is not significantly further than the portal
         if (support_dist.as_default_unit() <= portal_dist.as_default_unit() + 0.0001f) {
             out.collided = true;
             out.normal = n;
             out.penetration = support_dist;
-            out.contact_point2 = support_obb(obb2, -out.normal);
-            out.contact_point1 = out.contact_point2 + out.normal * out.penetration;
+            calculate_contacts(out.penetration);
             return true;
         }
 
         // Refine the portal. Using dot products with v0 directly is more stable
         // than using the full cross product with mixed unit types.
-        if (gse::dot(gse::cross(v1.as<gse::units::meters>(), v3.as<gse::units::meters>()), v0.as<gse::units::meters>()) < 0) {
+        if (gse::dot(gse::cross(v1.point.as<gse::units::meters>(), v3.point.as<gse::units::meters>()), v0.point.as<gse::units::meters>()) < 0) {
             v2 = v3;
         }
-        else if (gse::dot(gse::cross(v3.as<gse::units::meters>(), v2.as<gse::units::meters>()), v0.as<gse::units::meters>()) < 0) {
+        else if (gse::dot(gse::cross(v3.point.as<gse::units::meters>(), v2.point.as<gse::units::meters>()), v0.point.as<gse::units::meters>()) < 0) {
             v1 = v3;
         }
         else {
+            n = gse::normalize(gse::cross(v2 - v0, v1 - v0));
+            // Always ensure the new normal points towards the origin
+            if (gse::dot(n, -v0.point.as<gse::units::meters>()) < 0) {
+                n = -n;
+            }
             // *** THE FIX ***
             // This block is hit when the origin is contained by the portal's sweep.
             // This is a valid termination condition. We set the results and return.
             out.collided = true;
             out.normal = n;
-            out.penetration = support_dist;
-            out.contact_point2 = support_obb(obb2, -out.normal);
-            out.contact_point1 = out.contact_point2 + out.normal * out.penetration;
+            out.penetration = portal_dist;
+            calculate_contacts(out.penetration);
             return true;
         }
 
         n = gse::normalize(gse::cross(v2 - v0, v1 - v0));
         // Always ensure the new normal points towards the origin
-        if (gse::dot(n, -v0.as<gse::units::meters>()) < 0) {
+        if (gse::dot(n, -v0.point.as<gse::units::meters>()) < 0) {
             n = -n;
         }
     }
@@ -310,7 +337,7 @@ auto gse::narrow_phase_collision::resolve_dynamic_collision(physics::motion_comp
     //get_obb_overlap_vertices(object_collision_component.oriented_bounding_box, other_collision_component.oriented_bounding_box, contact_points);
 
     object_collision_component.collision_information.colliding = mpr_res.collided;
-    object_collision_component.collision_information.collision_normal = -mpr_res.normal;
+    object_collision_component.collision_information.collision_normal = mpr_res.normal;
     object_collision_component.collision_information.penetration = mpr_res.penetration;
 
     const auto  collision_normal = object_collision_component.collision_information.collision_normal;
