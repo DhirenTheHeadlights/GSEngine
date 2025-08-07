@@ -324,7 +324,12 @@ auto gse::gui::handle_idle_state(const unitless::vec2 mouse_position, const bool
 					layout::undock(menus, m->id());
 				}
 			}
-			return hot_item->future_state;
+			return std::visit(
+				[](auto&& arg) -> state {
+					return arg;
+				}, 
+				hot_item->future_state
+			);
 		}
 	}
 

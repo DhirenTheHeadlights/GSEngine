@@ -6,7 +6,6 @@ import winreg
 import sys
 
 def run_command(command, cwd = None, capture_output = False):
-    """Run a shell command and stream its output live. If capture_output is True, return the output."""
     try:
         process = subprocess.Popen(
             command, shell = True, cwd = cwd,
@@ -16,7 +15,7 @@ def run_command(command, cwd = None, capture_output = False):
         output_lines = []
         for line in process.stdout:
             print(line, end = "")  # Print live output
-            output_lines.append(line.strip())  # Store output if needed
+            output_lines.append(line.strip())
 
         process.wait()
 
@@ -24,7 +23,7 @@ def run_command(command, cwd = None, capture_output = False):
             print(f"Error running command: {command}")
             print(f"Exit Code: {process.returncode}")
             for line in process.stderr:
-                print(line, end = "")  # Print error output
+                print(line, end = "") 
             hold_window()
             return None  # Return None to indicate failure
 
@@ -61,7 +60,6 @@ def get_downloads_folder():
         return None
         
 def upgrade_vcpkg_and_dependencies(vcpkg_path):
-    """Updates vcpkg and upgrades all outdated packages."""
     print("Resetting vcpkg repository to a clean state...")
     if run_command("git reset --hard HEAD", cwd=vcpkg_path) is None:
         print("Failed to reset vcpkg. Continuing with existing versions.")
@@ -146,8 +144,6 @@ def main():
         "glfw3:x64-windows",
         "stb:x64-windows",
         "miniaudio:x64-windows",
-        "nlohmann-json:x64-windows",
-        "imgui[core,glfw-binding,docking-experimental]:x64-windows",
     ]
 
     install_dependencies(vcpkg_path, dependencies)

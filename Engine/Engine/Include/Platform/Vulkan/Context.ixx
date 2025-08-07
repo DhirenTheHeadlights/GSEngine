@@ -358,7 +358,7 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
     };
 
     float queue_priority = 1.0f;
-    for (uint32_t queue_family_index : unique_queue_families) {
+    for (std::uint32_t queue_family_index : unique_queue_families) {
         vk::DeviceQueueCreateInfo queue_create_info{
             .flags = {},
             .queueFamilyIndex = queue_family_index,
@@ -381,7 +381,6 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
 
     vk::PhysicalDevicePresentWaitFeaturesKHR present_wait_features{
         .pNext = &vulkan12_features,
-        .presentWait = true
 	};
 
     vk::PhysicalDeviceFeatures2 features2{
@@ -396,18 +395,16 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
         vk::KHRSynchronization2ExtensionName,
         vk::KHRDynamicRenderingExtensionName,
         vk::KHRPushDescriptorExtensionName,
-        vk::KHRPresentWaitExtensionName,   
-		vk::KHRPresentIdExtensionName      
     };
 
     vk::DeviceCreateInfo create_info{
         .pNext = &features2,
         .flags = {},
-        .queueCreateInfoCount = static_cast<uint32_t>(queue_create_infos.size()),
+        .queueCreateInfoCount = static_cast<std::uint32_t>(queue_create_infos.size()),
         .pQueueCreateInfos = queue_create_infos.data(),
         .enabledLayerCount = 0,
         .ppEnabledLayerNames = nullptr,
-        .enabledExtensionCount = static_cast<uint32_t>(device_extensions.size()),
+        .enabledExtensionCount = static_cast<std::uint32_t>(device_extensions.size()),
         .ppEnabledExtensionNames = device_extensions.data()
     };
 
