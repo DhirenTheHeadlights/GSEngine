@@ -99,6 +99,11 @@ export namespace gse {
                 .models = { gse::queue<model>(std::format("Box {}", owner_id()), meshes)}
             });
         }
+
+        auto update() -> void override {
+			// set 45 degree rotation around the Y-axis
+			component<render_component>().models.front().set_rotation({ 0.f, degrees(45), 0.f });
+		}
     private:
         vec3<length> m_initial_position;
         vec3<length> m_size;

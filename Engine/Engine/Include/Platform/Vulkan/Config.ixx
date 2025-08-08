@@ -70,17 +70,17 @@ export namespace gse::vulkan {
 
     struct sync_config {
         std::vector<vk::raii::Semaphore> image_available_semaphores;
-        vk::raii::Semaphore render_timeline;
-        std::vector<vk::raii::Fence> in_flight_fences;
+		std::vector<vk::raii::Semaphore> render_finished_semaphores;
+        std::vector<vk::raii::Fence> in_flight_fences;  
         std::vector<std::vector<transient_gpu_work>> transient_work_graveyard;
         std::uint32_t timeline_value = 0;
         sync_config(
             std::vector<vk::raii::Semaphore>&& image_available_semaphores,
-            vk::raii::Semaphore&& render_timeline,
+			std::vector<vk::raii::Semaphore>&& render_finished_semaphores,
             std::vector<vk::raii::Fence>&& in_flight_fences)
             : image_available_semaphores(std::move(image_available_semaphores)),
-            render_timeline(std::move(render_timeline)),
-            in_flight_fences(std::move(in_flight_fences)) {
+            render_finished_semaphores(std::move(render_finished_semaphores)),
+    		in_flight_fences(std::move(in_flight_fences)) {
             transient_work_graveyard.resize(this->in_flight_fences.size());
         }
         sync_config(sync_config&&) = default;
