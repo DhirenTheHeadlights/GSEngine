@@ -1,9 +1,6 @@
 module;
 
-#include <glslang/Public/ResourceLimits.h>
-#include <glslang/Public/ShaderLang.h>
-#include <glslang/SPIRV/GlslangToSpv.h>
-#include <SPIRV-Reflect/spirv_reflect.h>
+#include <slang.h>
 
 export module gse.graphics:shader;
 
@@ -20,10 +17,7 @@ namespace gse {
 	public:
 		struct info {
 			std::string name;
-			std::filesystem::path raw_vert_path;
-			std::filesystem::path raw_frag_path;
-			std::filesystem::path spv_vert_path;
-			std::filesystem::path spv_frag_path;
+			std::filesystem::path path;
 		};
 
 		struct vertex_input {
@@ -69,11 +63,6 @@ namespace gse {
 			std::unordered_map<set::binding_type, set> sets;
 		};
 
-		struct handle {
-			handle(shader& sh) : shader(&sh) {}
-			shader* shader = nullptr;
-		};
-
 		enum class descriptor_layout : std::uint8_t {
 			standard_3d = 0,
 			deferred_3d = 1,
@@ -83,7 +72,7 @@ namespace gse {
 			custom = 99
 		};
 
-		shader(const std::filesystem::path& path);
+		explicit shader(const std::filesystem::path& path);
 
 		static auto compile() -> std::set<std::filesystem::path>;
 
@@ -187,485 +176,364 @@ namespace gse {
 }
 
 gse::shader::shader(const std::filesystem::path& path) : identifiable(path) {
-	const auto raw_dir = config::resource_path / "Shaders";
-	const auto spv_dir = config::baked_resource_path / "Shaders";
-
-	std::string base_name = path.filename().string();
-	while (base_name.find('.') != std::string::npos) {
-		base_name = base_name.substr(0, base_name.find('.'));
-	}
-
 	m_info = {
-		.name = base_name,
-		.raw_vert_path = raw_dir / (base_name + ".vert"),
-		.raw_frag_path = raw_dir / (base_name + ".frag"),
-		.spv_vert_path = spv_dir / (base_name + ".vert.spv"),
-		.spv_frag_path = spv_dir / (base_name + ".frag.spv")
+		.name = path.stem().string(),	
+		.path = path
 	};
 }
-
 
 auto gse::shader::compile() -> std::set<std::filesystem::path> {
 	const auto root_path = config::resource_path / "Shaders";
 	const auto destination_path = config::baked_resource_path / "Shaders";
 
-	glslang::InitializeProcess();
-
-	auto get_layout_type = [](
-		const std::filesystem::path& path
-		) -> descriptor_layout {
-			std::ifstream file(path);
-			std::string line;
-			const std::string token = "const int descriptor_layout_type =";
-			while (std::getline(file, line)) {
-				if (auto pos = line.find(token); pos != std::string::npos) {
-					pos += token.size();
-					const auto end = line.find(';', pos);
-					std::string value_str = line.substr(pos, end - pos);
-					value_str.erase(std::ranges::remove_if(value_str, isspace).begin(), value_str.end());
-					return static_cast<descriptor_layout>(std::stoi(value_str));
-				}
-			}
-			return descriptor_layout::custom;
+	auto write_string = [](
+		std::ofstream& stream,
+		const std::string& str
+		) {
+		const std::uint32_t size = static_cast<std::uint32_t>(str.size());
+			stream.write(reinterpret_cast<const char*>(&size), sizeof(size));
+			stream.write(str.c_str(), size);
 		};
 
-	shader_layout_types.clear();
+	auto write_data = [](
+		std::ofstream& stream, 
+		const auto& value
+		) {
+			stream.write(reinterpret_cast<const char*>(&value), sizeof(value));
+		};
 
-	std::set<std::filesystem::path> compiled_files;
+	slang::IGlobalSession* slang_session = nullptr;
+	createGlobalSession(&slang_session);
+	assert(slang_session, "Failed to create Slang global session");
+
+	std::set<std::filesystem::path> compiled_assets;
 
 	for (const auto& entry : std::filesystem::recursive_directory_iterator(root_path)) {
-		if (!entry.is_regular_file()) continue;
+		if (!entry.is_regular_file() || entry.path().extension() != ".slang") {
+			continue;
+		}
 
-		const auto ext = entry.path().extension().string();
-		if (ext != ".vert" && ext != ".frag" && ext != ".comp" && ext != ".geom" && ext != ".tesc" && ext != ".tese") continue;
+		const std::string filename = entry.path().filename().string();
+		if (filename.ends_with("_layout.slang") || filename == "common.slang") {
+			continue;
+		}
 
 		const auto source_path = entry.path();
-		const auto destination_file = destination_path / (source_path.filename().string() + ".spv");
+		const std::string base_name = source_path.stem().string();
+		const auto dest_asset_file = destination_path / (base_name + ".gshader");
 
-		if (ext == ".vert") {
-			// Loader needs only 1 file - shader load figures out the other one
-			compiled_files.insert(destination_file);
-			const auto base_name = source_path.stem().string();
-			shader_layout_types[base_name] = get_layout_type(source_path);
+		compiled_assets.insert(dest_asset_file);
+
+		if (exists(dest_asset_file) && last_write_time(source_path) <= last_write_time(dest_asset_file)) {
+			continue;
 		}
-
-		if (exists(destination_file)) {
-			auto src_time = last_write_time(source_path);
-			if (auto dst_time = last_write_time(destination_file); src_time <= dst_time) {
-				continue;
-			}
-		}
-
-		if (auto dst_dir = destination_file.parent_path(); !exists(dst_dir)) {
+		if (auto dst_dir = dest_asset_file.parent_path(); !exists(dst_dir)) {
 			create_directories(dst_dir);
 		}
 
-		EShLanguage stage;
-		if (ext == ".vert") stage = EShLangVertex;
-		else if (ext == ".frag") stage = EShLangFragment;
-		else if (ext == ".comp") stage = EShLangCompute;
-		else if (ext == ".geom") stage = EShLangGeometry;
-		else if (ext == ".tesc") stage = EShLangTessControl;
-		else if (ext == ".tese") stage = EShLangTessEvaluation;
-		else assert(false, std::format("Unknown shader extension: {}", ext));
+		slang::ICompileRequest* request = slang_session->createCompileRequest();
+		spSetCodeGenTarget(request, SLANG_SPIRV);
+		spAddSearchPath(request, root_path.string().c_str());
+		spSetMatrixLayoutMode(request, SLANG_MATRIX_LAYOUT_ROW_MAJOR);
 
-		std::ifstream in(source_path, std::ios::ate | std::ios::binary);
-		assert(in.is_open(), std::format("Failed to open shader file: {}", source_path.string().c_str()));
+		int translation_unit = spAddTranslationUnit(request, SLANG_SOURCE_LANGUAGE_SLANG, nullptr);
+		spAddTranslationUnitSourceFile(request, translation_unit, source_path.string().c_str());
 
-		size_t n = in.tellg();
-		std::string source(n, '\0');
-		in.seekg(0);
-		in.read(source.data(), n);
+		int vert_idx = spAddEntryPoint(request, translation_unit, "vs_main", SLANG_STAGE_VERTEX);
+		int frag_idx = spAddEntryPoint(request, translation_unit, "fs_main", SLANG_STAGE_FRAGMENT);
 
-		if (source.size() > 3 && source[0] == 0xEF && source[1] == 0xBB && source[2] == 0xBF) {
-			source.erase(0, 3);
+		if (SLANG_FAILED(spCompile(request))) {
+			assert(false, std::format("Slang compilation failed for {}:\n{}", filename, spGetDiagnosticOutput(request)));
 		}
 
-		const char* code = source.c_str();
-		glslang::TShader shader(stage);
+		slang::reflection::ShaderReflection* reflection = spGetReflection(request);
+		vertex_input reflected_vertex_input;
+		std::map<set::binding_type, set> reflected_sets;
+		std::vector<struct uniform_block> reflected_pcs;
 
-		shader.setStrings(&code, 1);
-		shader.setEnvInput(glslang::EShSourceGlsl, stage, glslang::EShClientVulkan, 100);
-		shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_2);
-		shader.setEnvTarget(glslang::EShTargetSpv, glslang::EShTargetSpv_1_5);
-
-		if (bool ok = shader.parse(GetDefaultResources(), 450, false, EShMsgDefault); !ok) {
-			auto msg = std::format("File ({}) GLSL parse error:\n{}\n{}", source_path.filename().string(), shader.getInfoLog(), shader.getInfoDebugLog());
-			assert(false, msg);
+		if (auto* vert_entry = reflection->getEntryPointByIndex(vert_idx)) {
+			for (std::uint32_t i = 0; i < vert_entry->getParameterCount(); ++i) {
+				if (auto* param = vert_entry->getParameterByIndex(i); param->getCategory() == slang::reflection::ParameterCategory::VaryingInput) {
+					reflected_vertex_input.attributes.push_back({
+						.location = param->getLocation(),
+						.binding = 0,
+						.format = static_cast<vk::Format>(param->getTypeLayout()->getFormat()),
+						.offset = 0
+					});
+				}
+			}
 		}
 
-		glslang::TProgram program;
-		program.addShader(&shader);
-		assert(program.link(EShMsgDefault), std::format("GLSL link error:\n{}", program.getInfoLog()));
+		for (std::uint32_t i = 0; i < reflection->getGlobalParamsCount(); ++i) {
+			auto* param = reflection->getGlobalParamByIndex(i);
+			auto* type_layout = param->getTypeLayout();
+			auto set_type = static_cast<set::binding_type>(param->getBindingSpace());
 
-		std::vector<uint32_t> spirv;
-		GlslangToSpv(*program.getIntermediate(stage), spirv);
+			auto& current_set = reflected_sets[set_type];
+			current_set.type = set_type;
 
-		std::ofstream out(destination_file, std::ios::binary);
-		assert(out.is_open(), std::format("Failed to write compiled SPIR-V: {}", destination_file.string().c_str()));
-		out.write(reinterpret_cast<const char*>(spirv.data()), spirv.size() * sizeof(uint32_t));
+			vk::DescriptorSetLayoutBinding layout_binding = {
+				.binding = param->getBindingIndex(),
+				.descriptorType = static_cast<vk::DescriptorType>(type_layout->getDescriptorType()),
+				.descriptorCount = (type_layout->getKind() == slang::reflection::TypeKind::Array) ? static_cast<std::uint32_t>(type_layout->getElementCount()) : 1u,
+				.stageFlags = vk::ShaderStageFlags{}
+			};
 
-		std::cout << "Compiled shader: " << destination_file.filename().string() << "\n";
+			for (std::uint32_t e_idx = 0; e_idx < reflection->getEntryPointCount(); ++e_idx) {
+				if (reflection->getEntryPointByIndex(e_idx)->isGlobalParamUsed(param)) {
+					layout_binding.stageFlags |= static_cast<vk::ShaderStageFlagBits>(reflection->getEntryPointByIndex(e_idx)->getStage());
+				}
+			}
+
+			bool found = false;
+			for (auto& existing : current_set.bindings) {
+				if (existing.layout_binding.binding == layout_binding.binding) {
+					existing.layout_binding.stageFlags |= layout_binding.stageFlags;
+					found = true;
+					break;
+				}
+			}
+
+			if (!found) {
+				std::optional<struct uniform_block> block_member;
+				if (type_layout->getKind() == slang::reflection::TypeKind::ParameterBlock) {
+					struct uniform_block b = {
+						.name = param->getName(),
+						.binding = layout_binding.binding,
+						.set = static_cast<std::uint32_t>(set_type),
+						.size = static_cast<std::uint32_t>(type_layout->getSize())
+					};
+					for (std::uint32_t m = 0; m < type_layout->getFieldCount(); ++m) {
+						auto* member = type_layout->getFieldByIndex(m);
+						b.members[member->getName()] = uniform_member{
+							.name = member->getName(),
+							.offset = static_cast<std::uint32_t>(member->getOffset()),
+							.size = static_cast<std::uint32_t>(member->getTypeLayout()->getSize())
+						};
+					}
+					block_member = b;
+				}
+				current_set.bindings.emplace_back(param->getName(), layout_binding, block_member);
+			}
+		}
+
+		if (auto* layout = reflection->getLayout()) {
+			if (layout->getPushConstantRangeCount() > 0) {
+				auto* pcr = layout->getPushConstantRangeByIndex(0);
+				auto* pcr_type = pcr->getTypeLayout();
+				struct uniform_block b = {
+					.name = pcr_type->getName() ? pcr_type->getName() : "push_constants",
+					.size = static_cast<std::uint32_t>(pcr_type->getSize())
+				};
+				for (std::uint32_t m = 0; m < pcr_type->getFieldCount(); ++m) {
+					auto* member = pcr_type->getFieldByIndex(m);
+					b.members[member->getName()] = uniform_member{
+						.name = member->getName(),
+						.offset = static_cast<std::uint32_t>(member->getOffset()),
+						.size = static_cast<std::uint32_t>(member->getTypeLayout()->getSize())
+					};
+				}
+				reflected_pcs.push_back(b);
+			}
+		}
+
+		std::ofstream out(dest_asset_file, std::ios::binary);
+		assert(out.is_open(), std::format("Failed to create gshader file: {}", dest_asset_file.string()));
+
+		write_data(out, static_cast<std::uint32_t>(reflected_vertex_input.attributes.size()));
+		for (const auto& attr : reflected_vertex_input.attributes) write_data(out, attr);
+
+		write_data(out, static_cast<std::uint32_t>(reflected_sets.size()));
+		for (const auto& [type, set_data] : reflected_sets) {
+			write_data(out, type);
+			write_data(out, static_cast<std::uint32_t>(set_data.bindings.size()));
+			for (const auto& [name, layout_binding, member] : set_data.bindings) {
+				write_string(out, name);
+				write_data(out, layout_binding);
+				write_data(out, member.has_value());
+				if (member) {
+					write_string(out, member->name);
+					write_data(out, member->binding);
+					write_data(out, member->set);
+					write_data(out, member->size);
+					write_data(out, static_cast<std::uint32_t>(member->members.size()));
+					for (const auto& [m_name, m_data] : member->members) {
+						write_string(out, m_name);
+						write_string(out, m_data.name);
+						write_data(out, m_data.offset);
+						write_data(out, m_data.size);
+					}
+				}
+			}
+		}
+
+		write_data(out, static_cast<std::uint32_t>(reflected_pcs.size()));
+		for (const auto& pc : reflected_pcs) {
+			write_string(out, pc.name);
+			write_data(out, pc.size);
+			write_data(out, static_cast<std::uint32_t>(pc.members.size()));
+			for (const auto& [m_name, m_data] : pc.members) {
+				write_string(out, m_name);
+				write_string(out, m_data.name);
+				write_data(out, m_data.offset);
+				write_data(out, m_data.size);
+			}
+		}
+
+		// Write SPIR-V bytecode
+		size_t vert_size = 0, frag_size = 0;
+		const void* vert_data = spGetEntryPointCode(request, vert_idx, &vert_size);
+		const void* frag_data = spGetEntryPointCode(request, frag_idx, &frag_size);
+		write_data(out, vert_size);
+		out.write(static_cast<const char*>(vert_data), vert_size);
+		write_data(out, frag_size);
+		out.write(static_cast<const char*>(frag_data), frag_size);
+
+		std::cout << "Baked shader asset: " << dest_asset_file.filename().string() << "\n";
+		spDestroyCompileRequest(request);
 	}
 
-	glslang::FinalizeProcess();
-
-	return compiled_files;
+	slang_session->release();
+	return compiled_assets;
 }
 
 auto gse::shader::load(const renderer::context& context) -> void {
-	if (global_layouts.empty()) {
-		generate_global_layouts(context.config().device_config().device);
+	std::ifstream in(m_info.path, std::ios::binary);
+	assert(in.is_open(), std::format("Failed to open gshader asset: {}", m_info.path.string()));
+
+	auto read_string = [](
+		std::ifstream& stream,
+		std::string& str
+		) {
+			std::uint32_t size;
+			stream.read(reinterpret_cast<char*>(&size), sizeof(size));
+			str.resize(size);
+			stream.read(str.data(), size);
+		};
+
+	auto read_data = [](
+		std::ifstream& stream,
+		auto& value
+		) {
+			stream.read(reinterpret_cast<char*>(&value), sizeof(value));
+		};
+
+	std::uint32_t attr_count;
+	read_data(in, attr_count);
+	m_vertex_input.attributes.resize(attr_count);
+	for (auto& attr : m_vertex_input.attributes) read_data(in, attr);
+
+	std::uint32_t num_sets;
+	read_data(in, num_sets);
+	for (std::uint32_t i = 0; i < num_sets; ++i) {
+		set::binding_type type;
+		read_data(in, type);
+		std::uint32_t num_bindings;
+		read_data(in, num_bindings);
+		std::vector<struct binding> bindings;
+		for (std::uint32_t j = 0; j < num_bindings; ++j) {
+			struct binding b;
+			read_string(in, b.name);
+			read_data(in, b.layout_binding);
+			bool has_member;
+			read_data(in, has_member);
+			if (has_member) {
+				struct uniform_block member;
+				read_string(in, member.name);
+				read_data(in, member.binding);
+				read_data(in, member.set);
+				read_data(in, member.size);
+				std::uint32_t num_ubo_members;
+				read_data(in, num_ubo_members);
+				for (std::uint32_t k = 0; k < num_ubo_members; ++k) {
+					std::string key_name;
+					uniform_member ubo_member;
+					read_string(in, key_name);
+					read_string(in, ubo_member.name);
+					read_data(in, ubo_member.offset);
+					read_data(in, ubo_member.size);
+					member.members[key_name] = ubo_member;
+				}
+				b.member = member;
+			}
+			bindings.push_back(std::move(b));
+		}
+		m_layout.sets[type] = { .type = type, .bindings = std::move(bindings) };
 	}
 
-	assert(
-		shader_layout_types.contains(m_info.name),
-		std::format(
-			"Shader layout type for '{}' not found. Ensure it was compiled.",
-			m_info.name
-		)
-	);
-
-	const auto layout_type = shader_layout_types.at(m_info.name);
-
-	auto read_file = [](
-		const std::filesystem::path& path
-		) -> std::vector<char> {
-			std::ifstream file(path, std::ios::ate | std::ios::binary);
-			assert(file.is_open(), "Failed to open file!");
-			const size_t file_size = file.tellg();
-			std::vector<char> buffer(file_size);
-			file.seekg(0);
-			file.read(buffer.data(), file_size);
-			file.close();
-			return buffer;
-		};
-
-	const auto vert_code = read_file(m_info.spv_vert_path);
-	const auto frag_code = read_file(m_info.spv_frag_path);
-
-	auto make_module = [&](const std::vector<char>& code) {
-		const vk::ShaderModuleCreateInfo ci{
-			.flags = {},
-			.codeSize = code.size(),
-			.pCode = reinterpret_cast<const uint32_t*>(code.data())
-		};
-		return context.config().device_config().device.createShaderModule(ci);
-		};
-
-	m_vert_module = make_module(vert_code);
-	m_frag_module = make_module(frag_code);
-
-	SpvReflectShaderModule vertex_input_reflect_module;
-	auto vertex_input_reflect_module_result = spvReflectCreateShaderModule(vert_code.size(), vert_code.data(), &vertex_input_reflect_module);
-	assert(vertex_input_reflect_module_result == SPV_REFLECT_RESULT_SUCCESS, "SPIR-V reflection for vertex inputs failed");
-
-	uint32_t vertex_input_count = 0;
-	spvReflectEnumerateInputVariables(&vertex_input_reflect_module, &vertex_input_count, nullptr);
-	std::vector<SpvReflectInterfaceVariable*> inputs(vertex_input_count);
-	spvReflectEnumerateInputVariables(&vertex_input_reflect_module, &vertex_input_count, inputs.data());
-
-	m_vertex_input.attributes.clear();
-	m_vertex_input.bindings.clear();
-
-	for (const auto* var : inputs) {
-		if (var->storage_class == SpvStorageClassInput && var->built_in == -1) {
-			m_vertex_input.attributes.push_back(
-				vk::VertexInputAttributeDescription{
-					.location = var->location,
-					.binding = 0,
-					.format = static_cast<vk::Format>(var->format),
-					.offset = 0
-				}
-			);
+	std::uint32_t pc_count;
+	read_data(in, pc_count);
+	m_push_constants.resize(pc_count);
+	for (auto& pc : m_push_constants) {
+		read_string(in, pc.name);
+		read_data(in, pc.size);
+		std::uint32_t member_count;
+		read_data(in, member_count);
+		for (std::uint32_t i = 0; i < member_count; ++i) {
+			std::string key, name;
+			std::uint32_t offset, size;
+			read_string(in, key);
+			read_string(in, name);
+			read_data(in, offset);
+			read_data(in, size);
+			pc.members[key] = { .name = name, .offset = offset, .size = size };
 		}
 	}
 
-	std::ranges::sort(m_vertex_input.attributes, {}, &vk::VertexInputAttributeDescription::location);
+	size_t vert_size, frag_size;
+	read_data(in, vert_size);
+	std::vector<char> vert_code(vert_size);
+	in.read(vert_code.data(), vert_size);
 
-	uint32_t current_offset = 0;
-	uint32_t stride = 0;
+	read_data(in, frag_size);
+	std::vector<char> frag_code(frag_size);
+	in.read(frag_code.data(), frag_size);
 
-	auto get_format_size = [](
-		const vk::Format format
-		) -> uint32_t {
-			switch (format) {
-			case vk::Format::eR32Sfloat: return 4;
-			case vk::Format::eR32G32Sfloat: return 8;
-			case vk::Format::eR32G32B32Sfloat: return 12;
-			case vk::Format::eR32G32B32A32Sfloat: return 16;
-			default:
-				assert(false, "Unsupported vertex format for size calculation");
-				return 0;
-			}
-		};
-
-	for (auto& attr : m_vertex_input.attributes) {
-		attr.offset = current_offset;
-		uint32_t format_size = get_format_size(attr.format);
-		current_offset += format_size;
-	}
-
-	stride = current_offset;
+	m_vert_module = context.config().device_config().device.createShaderModule({ 
+		.codeSize = vert_code.size(),
+		.pCode = reinterpret_cast<const std::uint32_t*>(vert_code.data())
+	});
+	m_frag_module = context.config().device_config().device.createShaderModule({ 
+		.codeSize = frag_code.size(),
+		.pCode = reinterpret_cast<const std::uint32_t*>(frag_code.data())
+	});
 
 	if (!m_vertex_input.attributes.empty()) {
-		m_vertex_input.bindings.push_back(
-			vk::VertexInputBindingDescription{
-				.binding = 0,
-				.stride = stride,
-				.inputRate = vk::VertexInputRate::eVertex
-			});
-	}
-
-	spvReflectDestroyShaderModule(&vertex_input_reflect_module);
-
-	struct reflected_binding {
-		std::string name;
-		vk::DescriptorSetLayoutBinding layout_binding;
-		std::uint32_t set_index;
-	};
-
-	std::map<std::pair<uint32_t, uint32_t>, reflected_binding> merged_bindings;
-
-	auto reflect_descriptors = [&](const std::vector<char>& spirv) {
-		SpvReflectShaderModule reflect_module;
-		const auto result = spvReflectCreateShaderModule(spirv.size(), spirv.data(), &reflect_module);
-		assert(result == SPV_REFLECT_RESULT_SUCCESS, "SPIR-V reflection failed");
-
-		uint32_t count = 0;
-		spvReflectEnumerateDescriptorBindings(&reflect_module, &count, nullptr);
-		std::vector<SpvReflectDescriptorBinding*> reflected(count);
-		spvReflectEnumerateDescriptorBindings(&reflect_module, &count, reflected.data());
-
-		for (auto* b : reflected) {
-			auto key = std::make_pair(b->set, b->binding);
-			if (auto it = merged_bindings.find(key); it != merged_bindings.end()) {
-				it->second.layout_binding.stageFlags |= static_cast<vk::ShaderStageFlagBits>(reflect_module.shader_stage);
-			}
-			else {
-				merged_bindings[key] = reflected_binding{
-					.name = b->name ? b->name : "",
-					.layout_binding = vk::DescriptorSetLayoutBinding{
-						.binding = b->binding,
-						.descriptorType = static_cast<vk::DescriptorType>(b->descriptor_type),
-						.descriptorCount = b->count,
-						.stageFlags = static_cast<vk::ShaderStageFlagBits>(reflect_module.shader_stage)
-					},
-					.set_index = b->set
-				};
-			}
-		}
-
-		spvReflectDestroyShaderModule(&reflect_module);
-		};
-
-	reflect_descriptors(vert_code);
-	reflect_descriptors(frag_code);
-
-	std::vector<reflected_binding> all_reflected;
-	all_reflected.reserve(merged_bindings.size());
-	for (const auto& val : merged_bindings | std::views::values) {
-		all_reflected.push_back(val);
-	}
-
-	auto reflect_uniforms = [&](
-		const std::vector<char>& spirv
-		) {
-			std::vector<struct uniform_block> blocks;
-			SpvReflectShaderModule reflect_module;
-			const auto result = spvReflectCreateShaderModule(spirv.size(), spirv.data(), &reflect_module);
-			assert(result == SPV_REFLECT_RESULT_SUCCESS, "SPIR-V reflection failed");
-
-			uint32_t count = 0;
-			spvReflectEnumerateDescriptorBindings(&reflect_module, &count, nullptr);
-			std::vector<SpvReflectDescriptorBinding*> reflected(count);
-			spvReflectEnumerateDescriptorBindings(&reflect_module, &count, reflected.data());
-
-			for (const auto* b : reflected) {
-				if (b->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER ||
-					b->descriptor_type == SPV_REFLECT_DESCRIPTOR_TYPE_STORAGE_BUFFER) {
-					struct uniform_block ub {
-						.name = b->name,
-						.binding = b->binding,
-						.set = b->set,
-						.size = 0
-					};
-					for (uint32_t i = 0; i < b->block.member_count; ++i) {
-						const auto& mem = b->block.members[i];
-
-						const std::uint32_t arr_count = mem.array.dims_count > 0
-							? mem.array.dims[0]
-							: 1;
-
-						ub.members.emplace(
-							mem.name,
-							uniform_member{
-								.name = mem.name,
-								.type_name = mem.type_description->type_name ? mem.type_description->type_name : "",
-								.offset = mem.offset,
-								.size = mem.size,
-								.array_size = arr_count
-							}
-						);
-
-						const std::uint32_t member_bytes = mem.size * arr_count;
-						ub.size = std::max(ub.size, mem.offset + member_bytes);
-					}
-					blocks.push_back(std::move(ub));
+		std::ranges::sort(m_vertex_input.attributes, {}, &vk::VertexInputAttributeDescription::location);
+		std::uint32_t stride = 0;
+		auto get_format_size = [](
+			const vk::Format format
+			) -> std::uint32_t {
+				switch (format) {
+					case vk::Format::eR32Sfloat: return 4;
+					case vk::Format::eR32G32Sfloat: return 8;
+					case vk::Format::eR32G32B32Sfloat: return 12;
+					case vk::Format::eR32G32B32A32Sfloat: return 16;
+					default: assert(false, "Unsupported vertex format"); return 0;
 				}
-			}
-
-			spvReflectDestroyShaderModule(&reflect_module);
-			return blocks;
-		};
-
-	auto blocks = reflect_uniforms(vert_code);
-	auto more_blocks = reflect_uniforms(frag_code);
-	blocks.insert(blocks.end(), more_blocks.begin(), more_blocks.end());
-
-	auto reflect_push_constants = [&](
-		const std::vector<char>& spirv
-		) {
-			std::vector<struct uniform_block> pc_blocks;
-			SpvReflectShaderModule reflect_module;
-			const auto result = spvReflectCreateShaderModule(spirv.size(), spirv.data(), &reflect_module);
-			assert(result == SPV_REFLECT_RESULT_SUCCESS, "SPIR-V reflection for push constants failed");
-
-			uint32_t count = 0;
-			spvReflectEnumeratePushConstantBlocks(&reflect_module, &count, nullptr);
-			if (count > 0) {
-				std::vector<SpvReflectBlockVariable*> reflected(count);
-				spvReflectEnumeratePushConstantBlocks(&reflect_module, &count, reflected.data());
-
-				for (const auto* block_var : reflected) {
-					struct uniform_block pcb {
-						.name = block_var->name ? block_var->name : "push_constants",
-							.binding = 0,
-							.set = 0,
-							.size = block_var->size
-					};
-					for (uint32_t i = 0; i < block_var->member_count; ++i) {
-						const auto& mem = block_var->members[i];
-						pcb.members.emplace(
-							mem.name,
-							uniform_member{
-								.name = mem.name,
-								.type_name = mem.type_description->type_name ? mem.type_description->type_name : "",
-								.offset = mem.offset,
-								.size = mem.size,
-								.array_size = mem.array.dims_count ? mem.array.dims[0] : 0
-							}
-						);
-					}
-					pc_blocks.push_back(std::move(pcb));
-				}
-			}
-			spvReflectDestroyShaderModule(&reflect_module);
-			return pc_blocks;
-		};
-
-	m_push_constants.clear();
-	auto vert_pcs = reflect_push_constants(vert_code);
-	auto frag_pcs = reflect_push_constants(frag_code);
-	m_push_constants.insert(m_push_constants.end(), std::make_move_iterator(vert_pcs.begin()), std::make_move_iterator(vert_pcs.end()));
-	m_push_constants.insert(m_push_constants.end(), std::make_move_iterator(frag_pcs.begin()), std::make_move_iterator(frag_pcs.end()));
-
-	if (!m_push_constants.empty()) {
-		std::ranges::sort(m_push_constants, {}, &uniform_block::name);
-		auto [new_end, _] = std::ranges::unique(m_push_constants, {}, &uniform_block::name);
-		m_push_constants.erase(new_end, m_push_constants.end());
-	}
-
-	std::unordered_map<set::binding_type, std::vector<struct binding>> grouped;
-	for (auto& [name, layout_binding, set_index] : all_reflected) {
-		auto type = static_cast<set::binding_type>(set_index);
-		std::optional<struct uniform_block> block_info;
-
-		if (layout_binding.descriptorType == vk::DescriptorType::eUniformBuffer ||
-			layout_binding.descriptorType == vk::DescriptorType::eStorageBuffer) {
-			if (auto it = std::ranges::find_if(
-				blocks,
-				[&](auto& ub) {
-					return ub.binding == layout_binding.binding && ub.set == set_index;
-				}
-			); it != blocks.end()) {
-				block_info = *it;
-			}
-		}
-
-		grouped[type].emplace_back(name, layout_binding, block_info);
-	}
-
-	if (!grouped.empty() && !grouped.contains(set::binding_type::persistent)) {
-		grouped.emplace(set::binding_type::persistent, std::vector<struct binding>{});
-	}
-
-	if (const auto it = global_layouts.find(layout_type); it != global_layouts.end()) {
-		for (const auto& [type, user_set] : it->second.sets) {
-			std::vector<struct binding> complete_bindings;
-
-			auto reflected_in_set = all_reflected | std::views::filter([&](const auto& r) { return static_cast<set::binding_type>(r.set_index) == type; });
-
-			for (const auto& [name, layout_binding, set_index] : reflected_in_set) {
-				auto it2 = std::ranges::find_if(user_set.bindings, [&](const auto& b) { return b.layout_binding.binding == layout_binding.binding; });
-
-				assert(
-					it2 != user_set.bindings.end(),
-					std::format(
-						"Reflected binding '{}' (at binding {}) not found in provided layout for set {}",
-						name, layout_binding.binding, static_cast<int>(type)
-					)
-				);
-
-				assert(
-					it2->layout_binding.descriptorType == layout_binding.descriptorType,
-					std::format(
-						"Descriptor type mismatch for '{}' in set {}",
-						name, static_cast<int>(type)
-					)
-				);
-
-				std::optional<struct uniform_block> block_info;
-				if (layout_binding.descriptorType == vk::DescriptorType::eUniformBuffer || 
-					layout_binding.descriptorType == vk::DescriptorType::eStorageBuffer) {
-					if (auto block_it = std::ranges::find_if(blocks, [&](const auto& ub) {
-						return ub.binding == layout_binding.binding && ub.set == set_index;
-						}); block_it != blocks.end()) {
-						block_info = *block_it;
-					}
-				}
-
-				complete_bindings.emplace_back(name, layout_binding, std::move(block_info));
-			}
-
-			vk::DescriptorSetLayout non_owning_handle = *std::get<vk::raii::DescriptorSetLayout>(user_set.layout);
-
-			m_layout.sets.emplace(type, set{ .type = type, .layout = non_owning_handle, .bindings = std::move(complete_bindings) });
-		}
-	}
-	else {
-		for (auto& [type, binds] : grouped) {
-			std::vector<vk::DescriptorSetLayoutBinding> raw;
-			raw.reserve(binds.size());
-			for (auto& b : binds) raw.push_back(b.layout_binding);
-
-			vk::DescriptorSetLayoutCreateInfo ci{
-				.flags = {},
-				.bindingCount = static_cast<uint32_t>(raw.size()),
-				.pBindings = raw.data()
 			};
-
-			auto raii_layout = context.config().device_config().device.createDescriptorSetLayout(ci);
-
-			m_layout.sets.emplace(
-				type,
-				set{
-					.type = type,
-					.layout = std::move(raii_layout),
-					.bindings = std::move(binds)
-				}
-			);
+		for (auto& attr : m_vertex_input.attributes) {
+			attr.offset = stride;
+			stride += get_format_size(attr.format);
 		}
+		m_vertex_input.bindings.push_back({ 
+			.binding = 0,
+			.stride = stride,
+			.inputRate = vk::VertexInputRate::eVertex
+		});
+	}
+
+	for (auto& [type, set_data] : m_layout.sets) {
+		std::vector<vk::DescriptorSetLayoutBinding> raw_bindings;
+		raw_bindings.reserve(set_data.bindings.size());
+		for (const auto& b : set_data.bindings) raw_bindings.push_back(b.layout_binding);
+
+		vk::DescriptorSetLayoutCreateInfo ci{
+			.flags = type == set::binding_type::push ? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR : vk::DescriptorSetLayoutCreateFlags(),
+			.bindingCount = static_cast<std::uint32_t>(raw_bindings.size()),
+			.pBindings = raw_bindings.data()
+		};
+		set_data.layout = context.config().device_config().device.createDescriptorSetLayout(ci);
 	}
 }
 
@@ -791,9 +659,9 @@ auto gse::shader::push_constant_range(const std::string_view& name, const vk::Sh
 auto gse::shader::vertex_input_state() const -> vk::PipelineVertexInputStateCreateInfo {
 	return {
 		.flags = {},
-		.vertexBindingDescriptionCount = static_cast<uint32_t>(m_vertex_input.bindings.size()),
+		.vertexBindingDescriptionCount = static_cast<std::uint32_t>(m_vertex_input.bindings.size()),
 		.pVertexBindingDescriptions = m_vertex_input.bindings.data(),
-		.vertexAttributeDescriptionCount = static_cast<uint32_t>(m_vertex_input.attributes.size()),
+		.vertexAttributeDescriptionCount = static_cast<std::uint32_t>(m_vertex_input.attributes.size()),
 		.pVertexAttributeDescriptions = m_vertex_input.attributes.data()
 	};
 }
@@ -989,8 +857,10 @@ auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout
 }
 
 auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout layout, std::string_view block_name, const void* data, const std::size_t offset, const vk::ShaderStageFlags stages) const -> void {
-	const auto it = std::ranges::find_if(m_push_constants, [&](const auto& block) {
-		return block.name == block_name;
+	const auto it = std::ranges::find_if(
+		m_push_constants, 
+		[&](const auto& block) {
+			return block.name == block_name;
 		});
 
 	assert(it != m_push_constants.end(), std::format("Push constant block '{}' not found in shader", block_name));
@@ -1001,15 +871,17 @@ auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout
 	command.pushConstants(
 		layout,
 		stages,
-		static_cast<uint32_t>(offset),
+		static_cast<std::uint32_t>(offset),
 		block.size,
 		data
 	);
 }
 
 auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout layout, std::string_view block_name, const std::unordered_map<std::string, std::span<const std::byte>>& values, const vk::ShaderStageFlags stages) const -> void {
-	const auto it = std::ranges::find_if(m_push_constants, [&](const auto& b) {
-		return b.name == block_name;
+	const auto it = std::ranges::find_if(
+		m_push_constants, 
+		[&](const auto& b) {
+			return b.name == block_name;
 		});
 
 	assert(it != m_push_constants.end(), std::format("Push constant block '{}' not found in shader", block_name));
@@ -1039,7 +911,7 @@ auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout
 		layout,
 		stages,
 		0,
-		static_cast<uint32_t>(buffer.size()),
+		static_cast<std::uint32_t>(buffer.size()),
 		buffer.data()
 	);
 }
@@ -1094,7 +966,7 @@ auto gse::shader::generate_global_layouts(const vk::raii::Device& device) -> voi
 			vk::raii::DescriptorSetLayout descriptor_set_layout = device.createDescriptorSetLayout(
 				vk::DescriptorSetLayoutCreateInfo{
 					.flags = type == set::binding_type::push ? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR : vk::DescriptorSetLayoutCreateFlags(),
-					.bindingCount = static_cast<uint32_t>(bindings.size()),
+					.bindingCount = static_cast<std::uint32_t>(bindings.size()),
 					.pBindings = bindings.data()
 				}
 			);

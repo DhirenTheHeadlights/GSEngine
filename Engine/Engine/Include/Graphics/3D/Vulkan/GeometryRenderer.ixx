@@ -319,17 +319,12 @@ auto gse::renderer::geometry::render(const std::span<std::reference_wrapper<regi
 				const std::vector<model_instance>& models
 				) -> vec3<length> {
 					vec3<length> sum;
-					int number_of_meshes = 0;
 
 					for (const auto& instance : models) {
-						for (const auto& mesh : instance.handle()->meshes()) {
-							sum += mesh.center_of_mass();
-						}
-						number_of_meshes += static_cast<int>(instance.handle()->meshes().size());
+						sum += instance.handle()->center_of_mass();
 					}
 
-
-					return number_of_meshes > 0 ? sum / static_cast<float>(number_of_meshes) : vec3<length>{ 0, 0, 0 };
+					return models.size() > 0 ? sum / static_cast<float>(models.size()) : vec3<length>{ 0, 0, 0 };
 				};
 
 			for (const auto& registry : registries) {
@@ -338,7 +333,9 @@ auto gse::renderer::geometry::render(const std::span<std::reference_wrapper<regi
 
 					if (!std::ranges::any_of(
 						component.models,
-						[](const model_instance& model) { return model.handle().valid(); }
+						[](const model_instance& model) {
+							return model.handle().valid();
+						}
 					)) {
 						continue;
 					}

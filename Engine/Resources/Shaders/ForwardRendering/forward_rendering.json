@@ -1,6 +1,0 @@
-{
-  "ForwardRendering": {
-    "vertex": "forward_rendering.vert",
-    "fragment": "forward_rendering.frag"
-  }
-}

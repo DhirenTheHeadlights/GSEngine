@@ -144,12 +144,11 @@ def main():
         "glfw3:x64-windows",
         "stb:x64-windows",
         "miniaudio:x64-windows",
+        "shader-slang:x64-windows",
     ]
 
     install_dependencies(vcpkg_path, dependencies)
     verify_dependencies(vcpkg_path, dependencies)
-
-    hold_window()
 
 if __name__ == "__main__":
     try:
