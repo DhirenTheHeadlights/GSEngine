@@ -18,7 +18,7 @@ target_sources(Engine
 target_sources(Engine
     PRIVATE
         FILE_SET gse_modules TYPE CXX_MODULES
-        BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Engine" 
+        BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Engine"
         FILES ${ENGINE_MODULES} ${ENGINE_SOURCES}
 )
 
@@ -29,13 +29,9 @@ target_sources(Engine
         FILES "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/Engine.ixx"
 )
 
-target_sources(Engine PRIVATE 
+target_sources(Engine PRIVATE
     "${CMAKE_CURRENT_BINARY_DIR}/Engine/Source/Core/Config.ixx"
 )
-
-####################################################################################################################
-# Grab dependencies from vcpkg
-####################################################################################################################
 
 find_package(glfw3 CONFIG REQUIRED)
 find_package(Stb REQUIRED)
@@ -44,25 +40,38 @@ find_package(Freetype CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
 find_package(Vulkan REQUIRED)
 
-add_library(VulkanModule)
+set(VULKAN_SDK_PATH $ENV{VULKAN_SDK})
+if(NOT VULKAN_SDK_PATH)
+    message(FATAL_ERROR "Vulkan SDK not found! Make sure the VULKAN_SDK environment variable is set.")
+endif()
 
+set(HAVE_SLANG_PACKAGE OFF)
+find_package(slang CONFIG QUIET)
+if(slang_FOUND)
+    set(HAVE_SLANG_PACKAGE ON)
+else()
+    find_path(SLANG_INCLUDE_DIR
+        NAMES slang.h
+        HINTS "${VULKAN_SDK_PATH}/Include" "${VULKAN_SDK_PATH}/include"
+    )
+    find_library(SLANG_LIBRARY
+        NAMES slang slang.dll libslang.so libslang.dylib
+        HINTS "${VULKAN_SDK_PATH}/Lib" "${VULKAN_SDK_PATH}/lib"
+    )
+    if(NOT SLANG_INCLUDE_DIR OR NOT SLANG_LIBRARY)
+        message(FATAL_ERROR "Slang not found (neither package nor SDK). Install via vcpkg (slang) or use Vulkan SDK >= 1.3.296.")
+    endif()
+endif()
+
+add_library(VulkanModule)
 target_compile_features(VulkanModule PUBLIC cxx_std_20)
 target_compile_definitions(VulkanModule PUBLIC VULKAN_HPP_DISPATCH_LOADER_DYNAMIC VULKAN_HPP_NO_CONSTRUCTORS)
 target_link_libraries(VulkanModule PUBLIC Vulkan::Vulkan)
-
 target_sources(VulkanModule PRIVATE
   FILE_SET CXX_MODULES
   BASE_DIRS ${Vulkan_INCLUDE_DIR}
   FILES ${Vulkan_INCLUDE_DIR}/vulkan/vulkan.cppm
 )
-
-set(VULKAN_SDK_PATH $ENV{VULKAN_SDK})
-
-if(NOT VULKAN_SDK_PATH)
-    message(FATAL_ERROR "Vulkan SDK not found! Make sure the VULKAN_SDK environment variable is set.")
-endif()
-
-# Add SPIRV-Reflect
 
 file(TO_CMAKE_PATH "${VULKAN_SDK_PATH}/Source/SPIRV-Reflect" SPIRV_REFLECT_DIR)
 
@@ -70,23 +79,20 @@ add_library(SPIRV-Reflect STATIC
     "${SPIRV_REFLECT_DIR}/spirv_reflect.c"
     "${SPIRV_REFLECT_DIR}/spirv_reflect.h"
 )
-
 target_include_directories(SPIRV-Reflect PUBLIC "${SPIRV_REFLECT_DIR}")
-
-####################################################################################################################
 
 target_include_directories(Engine
     PUBLIC
-        ${Stb_INCLUDE_DIR},
+        ${Stb_INCLUDE_DIR}
         ${miniaudio_INCLUDE_DIR}
-        "${VULKAN_SDK_PATH}/Include"
-        "${VULKAN_SDK_PATH}/Source"
-        "${CMAKE_CURRENT_SOURCE_DIR}/External/ImguiVulkan"
 )
 
-target_link_directories(Engine PUBLIC
-  "${VULKAN_SDK_PATH}/Lib"
-)
+if(HAVE_SLANG_PACKAGE)
+    target_link_libraries(Engine PUBLIC Slang::slang)
+else()
+    target_include_directories(Engine PRIVATE "${SLANG_INCLUDE_DIR}")
+    target_link_libraries(Engine PUBLIC "${SLANG_LIBRARY}")
+endif()
 
 target_link_libraries(Engine PUBLIC
     glfw
@@ -94,8 +100,6 @@ target_link_libraries(Engine PUBLIC
     msdfgen::msdfgen
     VulkanModule
     SPIRV-Reflect
-    "${VULKAN_SDK_PATH}/Lib/shaderc_combinedd.lib"
-    "${VULKAN_SDK_PATH}/Lib/glslang-default-resource-limitsd.lib"
 )
 
 set(ENGINE_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
@@ -108,19 +112,14 @@ configure_file(
 )
 
 if (MSVC)
-    # Configure the MSVC runtime library
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Release>:Release>")
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-    
-    # Add compiler options for SIMD optimizations and multi-core compilation
-    add_compile_options(/arch:AVX2) # SIMD optimizations
-    add_compile_options(/MP)        # Multi-core compilation
-    add_compile_options(/Zm500)     # Increase the maximum number of template instantiations; needed for Vulkan
 
-    # List of external targets to be grouped under "External"
+    add_compile_options(/arch:AVX2)
+    add_compile_options(/MP)
+    add_compile_options(/Zm500)
+
     set(EXTERNAL_TARGETS VulkanModule SPIRV-Reflect)
-
-    # Loop through each target and set its folder property
     foreach(target ${EXTERNAL_TARGETS})
         set_property(TARGET ${target} PROPERTY FOLDER "External")
     endforeach()

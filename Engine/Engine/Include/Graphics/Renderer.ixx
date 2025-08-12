@@ -120,7 +120,6 @@ auto gse::renderer::render(std::vector<std::reference_wrapper<registry>> registr
 		.in_frame = [&registries, &in_frame] {
 			vk::ImageMemoryBarrier2 render_begin_barrier{
 				.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
-				.srcAccessMask = {},
 				.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
 				.dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
 				.oldLayout = vk::ImageLayout::eUndefined,

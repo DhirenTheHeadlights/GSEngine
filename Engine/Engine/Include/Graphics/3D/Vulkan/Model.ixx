@@ -52,11 +52,13 @@ export namespace gse {
 		auto unload() -> void;
 
 		auto meshes() const -> std::span<const mesh>;
+		auto center_of_mass() const -> vec3<length>;
 	private:
 		friend class model_instance;
 
 		std::vector<mesh> m_meshes;
 		std::filesystem::path m_baked_model_path;
+		vec3<length> m_center_of_mass;
 	};
 }
 
@@ -282,11 +284,20 @@ auto gse::model::load(const renderer::context& context) -> void {
 		}
 	}
 
-	context.queue_gpu_command<model>(this, [](renderer::context& ctx, model& self) {
-		for (auto& mesh : self.m_meshes) {
-			mesh.initialize(ctx.config());
+	context.queue_gpu_command<model>(
+		this, 
+		[](renderer::context& ctx, model& self) {
+			for (auto& mesh : self.m_meshes) {
+				mesh.initialize(ctx.config());
+			}
 		}
-		});
+	);
+
+	vec3<length> sum;
+	for (const auto& mesh : m_meshes) {
+		sum += mesh.center_of_mass();
+	}
+	m_center_of_mass = m_meshes.empty() ? vec3<length>{ 0, 0, 0 } : sum / static_cast<float>(m_meshes.size());
 }
 
 auto gse::model::unload() -> void {
@@ -295,6 +306,10 @@ auto gse::model::unload() -> void {
 
 auto gse::model::meshes() const -> std::span<const mesh> {
 	return m_meshes;
+}
+
+auto gse::model::center_of_mass() const -> vec3<length> {
+	return m_center_of_mass;
 }
 
 auto gse::model_instance::set_position(const vec3<length>& position) -> void {
@@ -326,9 +341,11 @@ auto gse::model_instance::render_queue_entries() -> std::span<render_queue_entry
 		mat4 rot_mat = rotate(mat4(1.0f), unitless::axis::x, m_rotation.x);
 		rot_mat = rotate(rot_mat, unitless::axis::y, m_rotation.y);
 		rot_mat = rotate(rot_mat, unitless::axis::z, m_rotation.z);
-		const mat4 trans_mat = translate(mat4(1.0f), m_position);
 
-		const mat4 final_model_matrix = trans_mat * rot_mat * scale_mat;
+		const mat4 trans_mat = translate(mat4(1.0f), m_position);
+		const vec3 center_of_mass = m_model_handle.resolve()->center_of_mass(); 
+		const mat4 pivot_correction_mat = translate(mat4(1.0f), -center_of_mass);
+		const mat4 final_model_matrix = trans_mat * rot_mat * scale_mat * pivot_correction_mat;
 
 		for (auto& entry : m_render_queue_entries) {
 			entry.model_matrix = final_model_matrix;
