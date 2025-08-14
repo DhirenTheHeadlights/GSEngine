@@ -11,15 +11,14 @@ cbuffer ModelUBO {
     float4x4 model;
 };
 
+[Layout(LayoutKind::Deferred3D)]
 [shader("vertex")]
-float4 vs_main(float3 in_position : POSITION) : SV_Position
-{
+float4 vs_main(float3 in_position : POSITION) : SV_Position {
     float4 pos_world = mul(float4(in_position, 1.0), model);
     float4 pos_light_view = mul(pos_world, light_view);
     return mul(pos_light_view, light_projection);
 }
 
+[Layout(LayoutKind::Deferred3D)]
 [shader("fragment")]
-void fs_main()
-{
-}
+void fs_main() {}

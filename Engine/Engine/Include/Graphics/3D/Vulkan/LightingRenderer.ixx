@@ -36,7 +36,7 @@ auto gse::renderer::lighting::initialize() -> void {
 
 	m_descriptor_set = m_shader->descriptor_set(config.device_config().device, config.descriptor_config().pool, shader::set::binding_type::persistent);
 
-	const auto cam_block = m_shader->uniform_block("cam");
+	const auto cam_block = m_shader->uniform_block("CameraParams");
 
 	vk::BufferCreateInfo cam_buffer_info{
 		.size = cam_block.size,
@@ -44,7 +44,7 @@ auto gse::renderer::lighting::initialize() -> void {
 		.sharingMode = vk::SharingMode::eExclusive
 	};
 
-	m_ubo_allocations["cam"] = vulkan::persistent_allocator::create_buffer(
+	m_ubo_allocations["CameraParams"] = vulkan::persistent_allocator::create_buffer(
 		config.device_config(),
 		cam_buffer_info
 	);
@@ -64,9 +64,9 @@ auto gse::renderer::lighting::initialize() -> void {
 
 	const std::unordered_map<std::string, vk::DescriptorBufferInfo> lighting_buffer_infos = {
 		{
-			"cam",
+			"CameraParams",
 			{
-				.buffer = m_ubo_allocations["cam"].buffer,
+				.buffer = m_ubo_allocations["CameraParams"].buffer,
 				.offset = 0,
 				.range = cam_block.size
 			}
@@ -257,7 +257,7 @@ auto gse::renderer::lighting::render(std::span<std::reference_wrapper<registry>>
 		{ "view_pos", std::as_bytes(std::span(&view_pos, 1)) }
 	};
 
-	m_shader->set_uniform_block("cam", cam_data_map, m_ubo_allocations.at("cam").allocation);
+	m_shader->set_uniform_block("CameraParams", cam_data_map, m_ubo_allocations.at("CameraParams").allocation);
 
 	const auto light_block = m_shader->uniform_block("lights_ssbo");
 	const auto light_struct = light_block.members.at("lights");
