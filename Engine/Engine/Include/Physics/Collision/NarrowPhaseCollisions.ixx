@@ -139,7 +139,7 @@ auto sat_collision(const gse::oriented_bounding_box& obb1, const gse::oriented_b
     return true;
 }
 auto get_obb_overlap_vertices(const gse::oriented_bounding_box& obb1, const gse::oriented_bounding_box& obb2, std::vector<gse::vec3<gse::length>>& overlap_vertices) {
-	//find each vertex of obb1 that is inside obb2 and apnd it to overlap_vertices
+	//find each vertex of obb1 that is inside obb2 and it to overlap_vertices
     for (const auto& corner : obb1.corners()) {
         if (obb2.contains(corner)) {
             overlap_vertices.push_back(corner);
@@ -206,37 +206,35 @@ bool mpr_collision(const gse::oriented_bounding_box& obb1, const gse::oriented_b
 
     if (gse::dot(v2.point.as<gse::units::meters>(), n) <= 0) return false;
 
-    n = gse::normalize(gse::cross(v1.point - v0.point, v2.point - v0.point));
-    if (gse::dot(n, v0.point.as<gse::units::meters>()) > 0) {
-        std::swap(v1, v2); // If it points away, flip the winding order of the portal
-        n = -n;           // and negate the normal.
-    }
-
-    // Phase 2: Portal Refinement
     for (int i = 0; i < mpr_collision_refinement_iterations; ++i) {
+        // Calculate the normal of the current portal (v0-v1-v2)
+        n = gse::normalize(gse::cross(v1.point - v0.point, v2.point - v0.point));
+
+        // Orient the normal to point towards the origin from the portal plane
+        if (gse::dot(n, v0.point.as<gse::units::meters>()) > 0) {
+            std::swap(v1, v2);
+            n = -n;
+        }
+
+        // Find a new point in the direction of the portal normal
         minkowski_point v3 = minkowski_difference(obb1, obb2, n);
 
-        const auto portal_dist = gse::dot(v1.point, gse::vec3<gse::length>(n));
-        const auto support_dist = gse::dot(v3.point, gse::vec3<gse::length>(n));
-
-        auto calculate_contacts = [&](const gse::length& penetration_depth) {
-            gse::vec3<gse::length> p = out.normal * penetration_depth;
-            auto bary = gse::barycentric(v1.point.as<gse::units::meters>(), v2.point.as<gse::units::meters>(), v3.point.as<gse::units::meters>(), p.as<gse::units::meters>());
-            out.contact_point1 = v1.support_a * std::get<0>(bary) + v2.support_a * std::get<1>(bary) + v3.support_a * std::get<2>(bary);
-            out.contact_point2 = v1.support_b * std::get<0>(bary) + v2.support_b * std::get<1>(bary) + v3.support_b * std::get<2>(bary);
-            };
-
-        // Standard termination: the new point is not significantly further than the portal
-        if (support_dist.as_default_unit() <= portal_dist.as_default_unit() + 0.0001f) {
+        // Check if the new point has crossed the origin. If it hasn't, we've found the closest feature.
+        if (gse::dot(v3.point.as<gse::units::meters>(), n) <= 0) {
             out.collided = true;
             out.normal = n;
-            out.penetration = support_dist;
-            calculate_contacts(out.penetration);
+            out.penetration = gse::dot(v1.point.as<gse::units::meters>(), n); // Use the portal's distance
+
+            // Calculate contact points using the final valid portal (v0,v1,v2)
+            gse::vec3<gse::length> p = out.normal * out.penetration;
+            auto bary = gse::barycentric(v0.point.as<gse::units::meters>(), v1.point.as<gse::units::meters>(), v2.point.as<gse::units::meters>(), p.as<gse::units::meters>());
+            out.contact_point1 = v0.support_a * std::get<0>(bary) + v1.support_a * std::get<1>(bary) + v2.support_a * std::get<2>(bary);
+            out.contact_point2 = v0.support_b * std::get<0>(bary) + v1.support_b * std::get<1>(bary) + v2.support_b * std::get<2>(bary);
+
             return true;
         }
 
-        // Refine the portal. Using dot products with v0 directly is more stable
-        // than using the full cross product with mixed unit types.
+        // Refine the portal by discarding the vertex that is "behind" the new plane formed by v3
         if (gse::dot(gse::cross(v1.point.as<gse::units::meters>(), v3.point.as<gse::units::meters>()), v0.point.as<gse::units::meters>()) < 0) {
             v2 = v3;
         }
@@ -244,27 +242,73 @@ bool mpr_collision(const gse::oriented_bounding_box& obb1, const gse::oriented_b
             v1 = v3;
         }
         else {
-            n = gse::normalize(gse::cross(v2 - v0, v1 - v0));
-            // Always ensure the new normal points towards the origin
-            if (gse::dot(n, -v0.point.as<gse::units::meters>()) < 0) {
-                n = -n;
-            }
-            // *** THE FIX ***
-            // This block is hit when the origin is contained by the portal's sweep.
-            // This is a valid termination condition. We set the results and return.
-            out.collided = true;
+            v0 = v3;
+            // This case is a valid termination when the origin is perfectly cornered.
+            /*out.collided = true;
             out.normal = n;
-            out.penetration = portal_dist;
-            calculate_contacts(out.penetration);
-            return true;
-        }
+            out.penetration = gse::dot(v1.point.as<gse::units::meters>(), n);
 
-        n = gse::normalize(gse::cross(v2 - v0, v1 - v0));
-        // Always ensure the new normal points towards the origin
-        if (gse::dot(n, -v0.point.as<gse::units::meters>()) < 0) {
-            n = -n;
+            gse::vec3<gse::length> p = out.normal * out.penetration;
+            auto bary = gse::barycentric(v1.point.as<gse::units::meters>(), v2.point.as<gse::units::meters>(), v3.point.as<gse::units::meters>(), p.as<gse::units::meters>());
+            out.contact_point1 = v1.support_a * std::get<0>(bary) + v2.support_a * std::get<1>(bary) + v3.support_a * std::get<2>(bary);
+            out.contact_point2 = v1.support_b * std::get<0>(bary) + v2.support_b * std::get<1>(bary) + v3.support_b * std::get<2>(bary);
+
+            return true;*/
         }
     }
+    // Phase 2: Portal Refinement
+    //for (int i = 0; i < mpr_collision_refinement_iterations; ++i) {
+    //    minkowski_point v3 = minkowski_difference(obb1, obb2, n);
+
+    //    const auto portal_dist = gse::dot(v1.point, gse::vec3<gse::length>(n));
+    //    const auto support_dist = gse::dot(v3.point, gse::vec3<gse::length>(n));
+
+    //    auto calculate_contacts = [&](const gse::length& penetration_depth) {
+    //        gse::vec3<gse::length> p = out.normal * penetration_depth;
+    //        auto bary = gse::barycentric(v1.point.as<gse::units::meters>(), v2.point.as<gse::units::meters>(), v3.point.as<gse::units::meters>(), p.as<gse::units::meters>());
+    //        out.contact_point1 = v1.support_a * std::get<0>(bary) + v2.support_a * std::get<1>(bary) + v3.support_a * std::get<2>(bary);
+    //        out.contact_point2 = v1.support_b * std::get<0>(bary) + v2.support_b * std::get<1>(bary) + v3.support_b * std::get<2>(bary);
+    //        };
+
+    //    // Standard termination: the new point is not significantly further than the portal
+    //    if (support_dist.as_default_unit() <= portal_dist.as_default_unit() + 0.0001f) {
+    //        out.collided = true;
+    //        out.normal = n;
+    //        out.penetration = support_dist;
+    //        calculate_contacts(out.penetration);
+    //        return true;
+    //    }
+
+    //    // Refine the portal. Using dot products with v0 directly is more stable
+    //    // than using the full cross product with mixed unit types.
+    //    if (gse::dot(gse::cross(v1.point.as<gse::units::meters>(), v3.point.as<gse::units::meters>()), v0.point.as<gse::units::meters>()) < 0) {
+    //        v2 = v3;
+    //    }
+    //    else if (gse::dot(gse::cross(v3.point.as<gse::units::meters>(), v2.point.as<gse::units::meters>()), v0.point.as<gse::units::meters>()) < 0) {
+    //        v1 = v3;
+    //    }
+    //    else {
+    //        n = gse::normalize(gse::cross(v2 - v0, v1 - v0));
+    //        // Always ensure the new normal points towards the origin
+    //        if (gse::dot(n, -v0.point.as<gse::units::meters>()) < 0) {
+    //            n = -n;
+    //        }
+    //        // *** THE FIX ***
+    //        // This block is hit when the origin is contained by the portal's sweep.
+    //        // This is a valid termination condition. We set the results and return.
+    //        out.collided = true;
+    //        out.normal = n;
+    //        out.penetration = portal_dist;
+    //        calculate_contacts(out.penetration);
+    //        return true;
+    //    }
+
+    //    n = gse::normalize(gse::cross(v2 - v0, v1 - v0));
+    //    // Always ensure the new normal points towards the origin
+    //    if (gse::dot(n, -v0.point.as<gse::units::meters>()) < 0) {
+    //        n = -n;
+    //    }
+    //}
 
     return false; // Failed to converge
 }
