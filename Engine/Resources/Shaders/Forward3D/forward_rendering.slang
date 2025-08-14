@@ -1,9 +1,8 @@
 import common;
-import forward_3d_layout;
+import forward_3d;
 
 [[vk::push_constant]]
-cbuffer PushConstants
-{
+cbuffer PushConstants {
     float4x4 view;
     float4x4 projection;
     float4x4 model;
@@ -13,26 +12,20 @@ cbuffer PushConstants
     int num_lights; 
 };
 
-
-struct VS_OUTPUT
-{
+struct VS_OUTPUT {
     float4 clip_pos     : SV_Position;
     float3 world_pos    : WORLD_POS;
     float3 world_normal : NORMAL;
     float2 tex_coords   : TEXCOORD;
 };
 
-
+[Layout(LayoutKind::Forward3D)]
 [shader("vertex")]
-VS_OUTPUT vs_main(
-    float3 in_position   : POSITION,
-    float3 in_normal     : NORMAL,
-    float2 in_tex_coords : TEXCOORD)
-{
+VS_OUTPUT vs_main(float3 in_position: POSITION, float3 in_normal: NORMAL, float2 in_tex_coords: TEXCOORD) {
     VS_OUTPUT output;
 
-    output.world_pos = mul(float4(in_position, 1.0), model).xyz;
-    output.world_normal = normalize(mul(in_normal, (float3x3)transpose(inverse(model))));
+    float3x3 nrm3 = (float3x3)model;
+    output.world_normal = normalize(mul(in_normal, nrm3));
     output.tex_coords = in_tex_coords;
     
     float4x4 mvp = mul(mul(model, view), projection);
@@ -41,36 +34,30 @@ VS_OUTPUT vs_main(
     return output;
 }
 
-
+[Layout(LayoutKind::Forward3D)]
 [shader("fragment")]
-float4 fs_main(VS_OUTPUT input) : SV_Target0
-{
+float4 fs_main(VS_OUTPUT input) : SV_Target0 {
     float3 surface_albedo = use_texture ? diffuse_texture.Sample(g_sampler, input.tex_coords).rgb : color;
     float specular_strength = albedo_spec.Sample(g_sampler, input.tex_coords).a;
 
     float3 view_dir = normalize(view_pos - input.world_pos);
     float3 result_color = float3(0.0, 0.0, 0.0);
 
-    for (int i = 0; i < num_lights; ++i)
-    {
+    for (int i = 0; i < num_lights; ++i) {
         Light light = lights[i];
         float3 light_dir;
         float attenuation = 1.0;
         float spotlight_intensity = 1.0;
         
-        // --- Calculate Light Direction & Attenuation ---
-        if (light.light_type == 0) // Directional Light
-        {
+        if (light.light_type == LightType::Directional) {
             light_dir = normalize(-light.direction);
         }
-        else // Point or Spot Light
-        {
+        else {
             light_dir = normalize(light.position - input.world_pos);
             float distance = length(light.position - input.world_pos);
             attenuation = 1.0 / (light.constant + light.linear * distance + light.quadratic * (distance * distance));
             
-            if (light.light_type == 2) // Spot Light
-            {
+            if (light.light_type == LightType::Spot) {
                 float theta = dot(light_dir, normalize(-light.direction));
                 float epsilon = light.cut_off - light.outer_cut_off;
                 spotlight_intensity = clamp((theta - light.outer_cut_off) / epsilon, 0.0, 1.0);

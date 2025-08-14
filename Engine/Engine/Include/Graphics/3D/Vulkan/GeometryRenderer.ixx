@@ -67,28 +67,28 @@ auto gse::renderer::geometry::initialize() -> void {
 		shader::set::binding_type::persistent
 	);
 
-	const auto camera_ubo = m_shader->uniform_block("camera_ubo");
+	const auto CameraUBO = m_shader->uniform_block("CameraUBO");
 
-	vk::BufferCreateInfo camera_ubo_buffer_info{
-		.size = camera_ubo.size,
+	vk::BufferCreateInfo CameraUBO_buffer_info{
+		.size = CameraUBO.size,
 		.usage = vk::BufferUsageFlagBits::eUniformBuffer,
 		.sharingMode = vk::SharingMode::eExclusive
 	};
 
-	auto camera_ubo_buffer = vulkan::persistent_allocator::create_buffer(
+	auto CameraUBO_buffer = vulkan::persistent_allocator::create_buffer(
 		config.device_config(),
-		camera_ubo_buffer_info
+		CameraUBO_buffer_info
 	);
 
-	m_ubo_allocations["camera_ubo"] = std::move(camera_ubo_buffer);
+	m_ubo_allocations["CameraUBO"] = std::move(CameraUBO_buffer);
 
 	std::unordered_map<std::string, vk::DescriptorBufferInfo> buffer_infos{
 		{
-			"camera_ubo",
+			"CameraUBO",
 			{
-				.buffer = m_ubo_allocations["camera_ubo"].buffer,
+				.buffer = m_ubo_allocations["CameraUBO"].buffer,
 				.offset = 0,
-				.range = camera_ubo.size
+				.range = CameraUBO.size
 			}
 		}
 	};
@@ -101,7 +101,7 @@ auto gse::renderer::geometry::initialize() -> void {
 	);
 
 	std::vector ranges = {
-		m_shader->push_constant_range("pc", vk::ShaderStageFlagBits::eVertex)
+		m_shader->push_constant_range("push_constants", vk::ShaderStageFlagBits::eVertex)
 	};
 
 	const vk::PipelineLayoutCreateInfo pipeline_layout_info{
@@ -298,8 +298,8 @@ auto gse::renderer::geometry::render(const std::span<std::reference_wrapper<regi
 				return;
 			}
 
-			m_shader->set_uniform("camera_ubo.view", m_context.camera().view(), m_ubo_allocations.at("camera_ubo").allocation);
-			m_shader->set_uniform("camera_ubo.proj", m_context.camera().projection(m_context.window().viewport()), m_ubo_allocations.at("camera_ubo").allocation);
+			m_shader->set_uniform("CameraUBO.view", m_context.camera().view(), m_ubo_allocations.at("CameraUBO").allocation);
+			m_shader->set_uniform("CameraUBO.proj", m_context.camera().projection(m_context.window().viewport()), m_ubo_allocations.at("CameraUBO").allocation);
 
 			command.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
 
@@ -358,7 +358,7 @@ auto gse::renderer::geometry::render(const std::span<std::reference_wrapper<regi
 							m_shader->push(
 								command,
 								m_pipeline_layout,
-								"pc",
+								"ModelPC",
 								push_constants,
 								vk::ShaderStageFlagBits::eVertex
 							);

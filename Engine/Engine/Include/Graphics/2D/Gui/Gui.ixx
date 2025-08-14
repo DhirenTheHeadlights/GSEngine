@@ -366,15 +366,15 @@ auto gse::gui::handle_resizing_state(const states::resizing& state, const unitle
 	auto max_corner = group_rect.max();
 
 	switch (state.handle) {
-	case resize_handle::left:         min_corner.x = mouse_position.x; break;
-	case resize_handle::right:        max_corner.x = mouse_position.x; break;
-	case resize_handle::bottom:       min_corner.y = mouse_position.y; break;
-	case resize_handle::top:          max_corner.y = mouse_position.y; break;
-	case resize_handle::bottom_left:  min_corner = mouse_position; break;
-	case resize_handle::bottom_right: min_corner.y = mouse_position.y; max_corner.x = mouse_position.x; break;
-	case resize_handle::top_left:     min_corner.x = mouse_position.x; max_corner.y = mouse_position.y; break;
-	case resize_handle::top_right:    max_corner = mouse_position; break;
-	default: break;
+		case resize_handle::left:         min_corner.x = mouse_position.x; break;
+		case resize_handle::right:        max_corner.x = mouse_position.x; break;
+		case resize_handle::bottom:       min_corner.y = mouse_position.y; break;
+		case resize_handle::top:          max_corner.y = mouse_position.y; break;
+		case resize_handle::bottom_left:  min_corner = mouse_position; break;
+		case resize_handle::bottom_right: min_corner.y = mouse_position.y; max_corner.x = mouse_position.x; break;
+		case resize_handle::top_left:     min_corner.x = mouse_position.x; max_corner.y = mouse_position.y; break;
+		case resize_handle::top_right:    max_corner = mouse_position; break;
+		default: break;
 	}
 
 	if (max_corner.x - min_corner.x < min_menu_size.x) {

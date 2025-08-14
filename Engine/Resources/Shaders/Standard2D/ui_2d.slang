@@ -1,8 +1,8 @@
-import standard_2d_layout;
+import common;
+import standard_2d;
 
 [[vk::push_constant]]
-cbuffer PushConstants
-{
+cbuffer PushConstants {
     float4x4 projection;
     float2   position;
     float2   size;
@@ -11,18 +11,15 @@ cbuffer PushConstants
     float    rotation;
 };
 
-struct VS_OUTPUT
-{
+struct VS_OUTPUT {
     float4 clip_pos     : SV_Position;
     float2 tex_coord    : TEXCOORD0;
     float4 color        : COLOR0;
 };
 
+[Layout(LayoutKind::Standard2D)]
 [shader("vertex")]
-VS_OUTPUT vs_main(
-    float2 in_position   : POSITION, 
-    float2 in_tex_coord  : TEXCOORD0)
-{
+VS_OUTPUT vs_main(float2 in_position: POSITION, float2 in_tex_coord: TEXCOORD0) {
     VS_OUTPUT output;
 
     float2 unrotated_pos = in_position * size + position;
@@ -41,8 +38,8 @@ VS_OUTPUT vs_main(
     return output;
 }
 
+[Layout(LayoutKind::Standard2D)]
 [shader("fragment")]
-float4 fs_main(VS_OUTPUT input) : SV_Target0
-{
+float4 fs_main(VS_OUTPUT input) : SV_Target0 {
     return spriteTexture.Sample(input.tex_coord) * input.color;
 }
