@@ -106,11 +106,11 @@ auto gse::renderer::text::initialize() -> void {
 		.stencilTestEnable = vk::False
 	};
 
-	m_shader = m_context.get<shader>("msdf_shader");
+	m_shader = m_context.get<shader>("msdf");
 	m_context.instantly_load(m_shader);
 
 	const auto& msdf_dsl = m_shader->layouts();
-	const auto msdf_pc_range = m_shader->push_constant_range("pc", vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
+	const auto msdf_pc_range = m_shader->push_constant_range("push_constants");
 
 	const vk::PipelineLayoutCreateInfo msdf_pipeline_layout_info{
 		.setLayoutCount = static_cast<std::uint32_t>(msdf_dsl.size()),
@@ -223,7 +223,7 @@ auto gse::renderer::text::render(std::span<std::reference_wrapper<registry>> reg
 					current_scissor = desired_scissor;
 				}
 
-				m_shader->push(command, m_pipeline_layout, "msdf_texture", font->texture()->descriptor_info());
+				m_shader->push_descriptor(command, m_pipeline_layout, "spriteTexture", font->texture()->descriptor_info());
 
 				for (const auto glyphs = font->text_layout(text, draw_pos, scale); const auto& [screen_rect, uv_rect] : glyphs) {
 					auto rect_position = screen_rect.top_left();
@@ -237,7 +237,7 @@ auto gse::renderer::text::render(std::span<std::reference_wrapper<registry>> reg
 						{ "uv_rect",    std::as_bytes(std::span(&uv_rect, 1)) }
 					};
 
-					m_shader->push(command, m_pipeline_layout, "pc", push_constants, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
+					m_shader->push(command, m_pipeline_layout, "push_constants", push_constants);
 					command.drawIndexed(6, 1, 0, 0, 0);
 				}
 			}

@@ -67,20 +67,20 @@ auto gse::renderer::geometry::initialize() -> void {
 		shader::set::binding_type::persistent
 	);
 
-	const auto CameraUBO = m_shader->uniform_block("CameraUBO");
+	const auto camera_ubo = m_shader->uniform_block("CameraUBO");
 
-	vk::BufferCreateInfo CameraUBO_buffer_info{
-		.size = CameraUBO.size,
+	vk::BufferCreateInfo camera_ubo_buffer_info{
+		.size = camera_ubo.size,
 		.usage = vk::BufferUsageFlagBits::eUniformBuffer,
 		.sharingMode = vk::SharingMode::eExclusive
 	};
 
-	auto CameraUBO_buffer = vulkan::persistent_allocator::create_buffer(
+	auto camera_ubo_buffer = vulkan::persistent_allocator::create_buffer(
 		config.device_config(),
-		CameraUBO_buffer_info
+		camera_ubo_buffer_info
 	);
 
-	m_ubo_allocations["CameraUBO"] = std::move(CameraUBO_buffer);
+	m_ubo_allocations["CameraUBO"] = std::move(camera_ubo_buffer);
 
 	std::unordered_map<std::string, vk::DescriptorBufferInfo> buffer_infos{
 		{
@@ -88,7 +88,7 @@ auto gse::renderer::geometry::initialize() -> void {
 			{
 				.buffer = m_ubo_allocations["CameraUBO"].buffer,
 				.offset = 0,
-				.range = CameraUBO.size
+				.range = camera_ubo.size
 			}
 		}
 	};
@@ -101,7 +101,7 @@ auto gse::renderer::geometry::initialize() -> void {
 	);
 
 	std::vector ranges = {
-		m_shader->push_constant_range("push_constants", vk::ShaderStageFlagBits::eVertex)
+		m_shader->push_constant_range("push_constants"),
 	};
 
 	const vk::PipelineLayoutCreateInfo pipeline_layout_info{
@@ -358,16 +358,15 @@ auto gse::renderer::geometry::render(const std::span<std::reference_wrapper<regi
 							m_shader->push(
 								command,
 								m_pipeline_layout,
-								"ModelPC",
-								push_constants,
-								vk::ShaderStageFlagBits::eVertex
+								"push_constants",
+								push_constants
 							);
 
 							if (const auto& mesh = entry.model->meshes()[entry.index]; mesh.material().valid()) {
-								m_shader->push(
+								m_shader->push_descriptor(
 									command,
 									m_pipeline_layout,
-									"diffuse_sampler",
+									"diffuseSampler",
 									mesh.material()->diffuse_texture->descriptor_info()
 								);
 

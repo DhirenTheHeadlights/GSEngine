@@ -6,6 +6,7 @@ import :base_renderer;
 import :point_light;
 import :spot_light;
 import :directional_light;
+import :shader;
 
 export namespace gse::renderer {
 	class lighting final : public base_renderer {
@@ -133,7 +134,7 @@ auto gse::renderer::lighting::initialize() -> void {
 
 	config.device_config().device.updateDescriptorSets(writes, nullptr);
 
-	const auto range = m_shader->push_constant_range("pc", vk::ShaderStageFlagBits::eFragment);
+	const auto range = m_shader->push_constant_range("push_constants");
 
 	const vk::PipelineLayoutCreateInfo pipeline_layout_info{
 		.setLayoutCount = static_cast<std::uint32_t>(lighting_layouts.size()),
@@ -260,73 +261,107 @@ auto gse::renderer::lighting::render(std::span<std::reference_wrapper<registry>>
 	m_shader->set_uniform_block("CameraParams", cam_data_map, m_ubo_allocations.at("CameraParams").allocation);
 
 	const auto light_block = m_shader->uniform_block("lights_ssbo");
-	const auto light_struct = light_block.members.at("lights");
+	const auto stride = light_block.size;
 
-	std::vector light_data(light_struct.size * light_struct.array_size, std::byte{ 0 });
+	const auto& alloc = m_light_buffer.allocation;
 
-	std::uint32_t light_count = 0;
-	auto set_light_member = [&](const int index, const std::string& name, const void* data, const std::size_t size) {
-		if (const auto it = light_block.members.find(name); it != light_block.members.end()) {
-			const auto& member_info = it->second;
-			const std::size_t final_offset = static_cast<size_t>(index) * light_struct.size + member_info.offset;
-			std::memcpy(light_data.data() + final_offset, data, size);
+	std::vector zero_elem(stride, std::byte{ 0 });
+
+	auto zero_at = [&](
+		std::size_t index
+		) {
+			m_shader->set_ssbo_struct(
+				"lights_ssbo",
+				index,
+				std::span<const std::byte>(
+					zero_elem.data(), 
+					zero_elem.size()
+				),
+				alloc
+			);
+		};
+
+	auto set = [&](
+		const std::size_t index,
+		std::string_view member, 
+		auto const& v
+		) {
+			m_shader->set_ssbo_element(
+				"lights_ssbo",
+				index,
+				member,
+				std::as_bytes(std::span(&v, 1)),
+				alloc
+			);
+		};
+
+	std::size_t light_count = 0;
+
+	for (auto& reg_ref : registries) {
+		auto& reg = reg_ref.get();
+		if (light_count >= stride) {
+			break;
 		}
-	};
 
-	for (auto& registry_ref : registries) {
-		if (light_count >= light_struct.array_size) break;
+		for (const auto& comp : reg.linked_objects<directional_light_component>()) {
+			if (light_count >= stride) {
+				break;
+			}
+			zero_at(light_count);
 
-		auto& registry = registry_ref.get();
+			int type = 0; // LightType::Directional
+			set(light_count, "light_type", type);
+			set(light_count, "direction", comp.direction);
+			set(light_count, "color", comp.color);
+			set(light_count, "intensity", comp.intensity);
+			set(light_count, "ambient_strength", comp.ambient_strength);
 
-		for (const auto& comp : registry.linked_objects<directional_light_component>()) {
-			if (light_count >= light_struct.array_size) break;
-			int type = 0;
-			set_light_member(light_count, "light_type", &type, sizeof(type));
-			set_light_member(light_count, "direction", &comp.direction, sizeof(comp.direction));
-			set_light_member(light_count, "color", &comp.color, sizeof(comp.color));
-			set_light_member(light_count, "intensity", &comp.intensity, sizeof(comp.intensity));
-			set_light_member(light_count, "ambient_strength", &comp.ambient_strength, sizeof(comp.ambient_strength));
-			light_count++;
+			++light_count;
 		}
+		for (const auto& comp : reg.linked_objects<point_light_component>()) {
+			if (light_count >= stride) {
+				break;
+			}
+			zero_at(light_count);
 
-		for (const auto& comp : registry.linked_objects<point_light_component>()) {
-			if (light_count >= light_struct.array_size) break;
-			int type = 1;
+			int type = 1; // LightType::Point
 			auto pos_meters = comp.position.as<units::meters>();
-			set_light_member(light_count, "light_type", &type, sizeof(type));
-			set_light_member(light_count, "position", &pos_meters, sizeof(pos_meters));
-			set_light_member(light_count, "color", &comp.color, sizeof(comp.color));
-			set_light_member(light_count, "intensity", &comp.intensity, sizeof(comp.intensity));
-			set_light_member(light_count, "constant", &comp.constant, sizeof(comp.constant));
-			set_light_member(light_count, "linear", &comp.linear, sizeof(comp.linear));
-			set_light_member(light_count, "quadratic", &comp.quadratic, sizeof(comp.quadratic));
-			set_light_member(light_count, "ambient_strength", &comp.ambient_strength, sizeof(comp.ambient_strength));
-			light_count++;
-		}
+			set(light_count, "light_type", type);
+			set(light_count, "position", pos_meters);
+			set(light_count, "color", comp.color);
+			set(light_count, "intensity", comp.intensity);
+			set(light_count, "constant", comp.constant);
+			set(light_count, "linear", comp.linear);
+			set(light_count, "quadratic", comp.quadratic);
+			set(light_count, "ambient_strength", comp.ambient_strength);
 
-		for (const auto& comp : registry.linked_objects<spot_light_component>()) {
-			if (light_count >= light_struct.array_size) break;
-			int type = 2;
+			++light_count;
+		}
+		for (const auto& comp : reg.linked_objects<spot_light_component>()) {
+			if (light_count >= stride) {
+				break;
+			}
+			zero_at(light_count);
+
+			int type = 2; // LightType::Spot
 			auto pos_meters = comp.position.as<units::meters>();
 			float cut_off_cos = std::cos(comp.cut_off.as<units::radians>());
 			float outer_cut_off_cos = std::cos(comp.outer_cut_off.as<units::radians>());
-			set_light_member(light_count, "light_type", &type, sizeof(type));
-			set_light_member(light_count, "position", &pos_meters, sizeof(pos_meters));
-			set_light_member(light_count, "direction", &comp.direction, sizeof(comp.direction));
-			set_light_member(light_count, "color", &comp.color, sizeof(comp.color));
-			set_light_member(light_count, "intensity", &comp.intensity, sizeof(comp.intensity));
-			set_light_member(light_count, "constant", &comp.constant, sizeof(comp.constant));
-			set_light_member(light_count, "linear", &comp.linear, sizeof(comp.linear));
-			set_light_member(light_count, "quadratic", &comp.quadratic, sizeof(comp.quadratic));
-			set_light_member(light_count, "cut_off", &cut_off_cos, sizeof(cut_off_cos));
-			set_light_member(light_count, "outer_cut_off", &outer_cut_off_cos, sizeof(outer_cut_off_cos));
-			set_light_member(light_count, "ambient_strength", &comp.ambient_strength, sizeof(comp.ambient_strength));
-			light_count++;
-		}
-	}
 
-	if (light_count > 0) {
-		vulkan::uploader::upload_to_buffer(m_light_buffer, light_data.data(), light_count * light_struct.size);
+			set(light_count, "light_type", type);
+			set(light_count, "position", pos_meters);
+			set(light_count, "direction", comp.direction);
+			set(light_count, "color", comp.color);
+			set(light_count, "intensity", comp.intensity);
+			set(light_count, "constant", comp.constant);
+			set(light_count, "linear", comp.linear);
+			set(light_count, "quadratic", comp.quadratic);
+			set(light_count, "cut_off", cut_off_cos);
+			set(light_count, "outer_cut_off", outer_cut_off_cos);
+			set(light_count, "ambient_strength", comp.ambient_strength);
+
+			++light_count;
+		}
 	}
 
 	vulkan::uploader::transition_image_layout(
@@ -392,10 +427,9 @@ auto gse::renderer::lighting::render(std::span<std::reference_wrapper<registry>>
 			m_shader->push(
 				command,
 				m_pipeline_layout,
-				"pc",
+				"push_constants",
 				&light_count,
-				0,
-				vk::ShaderStageFlagBits::eFragment
+				0
 			);
 
 			command.draw(3, 1, 0, 0);

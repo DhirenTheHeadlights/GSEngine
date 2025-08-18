@@ -103,13 +103,13 @@ auto gse::renderer::sprite::initialize() -> void {
 		.stencilTestEnable = vk::False
 	};
 
-	m_shader = m_context.get<shader>("ui_2d_shader");
+	m_shader = m_context.get<shader>("ui_2d");
 	m_context.instantly_load(m_shader);
 
 	const auto& element_shader = m_shader.resolve();
 	const auto& quad_dsl = element_shader->layouts();
 
-	const auto quad_pc_range = element_shader->push_constant_range("push_constants", vk::ShaderStageFlagBits::eVertex);
+	const auto quad_pc_range = element_shader->push_constant_range("push_constants");
 
 	const vk::PipelineLayoutCreateInfo quad_pipeline_layout_info{
 		.setLayoutCount = static_cast<std::uint32_t>(quad_dsl.size()),
@@ -251,8 +251,8 @@ auto gse::renderer::sprite::render(std::span<std::reference_wrapper<registry>> r
 					{ "rotation", std::as_bytes(std::span(&angle_rad, 1)) }
 				};
 
-				shader->push(command, m_pipeline_layout, "push_constants", push_constants, vk::ShaderStageFlagBits::eVertex);
-				shader->push(command, m_pipeline_layout, "ui_texture", texture->descriptor_info());
+				shader->push(command, m_pipeline_layout, "push_constants", push_constants);
+				shader->push_descriptor(command, m_pipeline_layout, "spriteTexture", texture->descriptor_info());
 				command.drawIndexed(6, 1, 0, 0, 0);
 			}
 		}
