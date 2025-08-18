@@ -43,6 +43,7 @@ namespace gse {
 			std::uint32_t set = 0;
 			std::uint32_t size = 0;
 			std::unordered_map<std::string, uniform_member> members;
+			vk::ShaderStageFlags stage_flags;
 		};
 
 		struct binding {
@@ -94,7 +95,7 @@ namespace gse {
 		auto binding(const std::string& name) const -> std::optional<vk::DescriptorSetLayoutBinding>;
 		auto layout(set::binding_type type) const -> vk::DescriptorSetLayout;
 		auto layouts() const -> std::vector<vk::DescriptorSetLayout>;
-		auto push_constant_range(const std::string_view& name, vk::ShaderStageFlags stages) const -> vk::PushConstantRange;
+		auto push_constant_range(const std::string_view& name) const -> vk::PushConstantRange;
 		auto vertex_input_state() const -> vk::PipelineVertexInputStateCreateInfo;
 
 		auto descriptor_writes(
@@ -116,7 +117,22 @@ namespace gse {
 			const vulkan::persistent_allocator::allocation& alloc
 		) const -> void;
 
-		auto push(
+		auto set_ssbo_element(
+			std::string_view block_name,   
+			std::uint32_t index,        
+			std::string_view member_name, 
+			std::span<const std::byte> bytes,
+			const vulkan::persistent_allocator::allocation& alloc
+		) const -> void;
+
+		auto set_ssbo_struct(
+			std::string_view block_name,
+			std::uint32_t index,
+			std::span<const std::byte> element_bytes,
+			const vulkan::persistent_allocator::allocation& alloc
+		) const -> void;
+
+		auto push_descriptor(
 			vk::CommandBuffer command,
 			vk::PipelineLayout layout,
 			std::string_view name,
@@ -128,16 +144,14 @@ namespace gse {
 			vk::PipelineLayout layout,
 			std::string_view block_name,
 			const void* data,
-			std::size_t offset = 0,
-			vk::ShaderStageFlags stages = vk::ShaderStageFlagBits::eVertex
+			std::size_t offset = 0
 		) const -> void;
 
 		auto push(
 			vk::CommandBuffer command,
 			vk::PipelineLayout layout,
 			std::string_view block_name,
-			const std::unordered_map<std::string, std::span<const std::byte>>& values,
-			vk::ShaderStageFlags stages = vk::ShaderStageFlagBits::eVertex
+			const std::unordered_map<std::string, std::span<const std::byte>>& values
 		) const -> void;
 
 		auto descriptor_set(
@@ -235,27 +249,27 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 			switch (elem->getScalarType()) {
 				case slang::TypeReflection::Float32:
 					switch (count) {
-					case 1: return vk::Format::eR32Sfloat;
-					case 2: return vk::Format::eR32G32Sfloat;
-					case 3: return vk::Format::eR32G32B32Sfloat;
-					case 4: return vk::Format::eR32G32B32A32Sfloat;
-					default: return vk::Format::eUndefined;
+						case 1: return vk::Format::eR32Sfloat;
+						case 2: return vk::Format::eR32G32Sfloat;
+						case 3: return vk::Format::eR32G32B32Sfloat;
+						case 4: return vk::Format::eR32G32B32A32Sfloat;
+						default: return vk::Format::eUndefined;
 					}
 				case slang::TypeReflection::Int32:
 					switch (count) {
-					case 1: return vk::Format::eR32Sint;
-					case 2: return vk::Format::eR32G32Sint;
-					case 3: return vk::Format::eR32G32B32Sint;
-					case 4: return vk::Format::eR32G32B32A32Sint;
-					default: return vk::Format::eUndefined;
+						case 1: return vk::Format::eR32Sint;
+						case 2: return vk::Format::eR32G32Sint;
+						case 3: return vk::Format::eR32G32B32Sint;
+						case 4: return vk::Format::eR32G32B32A32Sint;
+						default: return vk::Format::eUndefined;
 					}
 				case slang::TypeReflection::UInt32:
 					switch (count) {
-					case 1: return vk::Format::eR32Uint;
-					case 2: return vk::Format::eR32G32Uint;
-					case 3: return vk::Format::eR32G32B32Uint;
-					case 4: return vk::Format::eR32G32B32A32Uint;
-					default: return vk::Format::eUndefined;
+						case 1: return vk::Format::eR32Uint;
+						case 2: return vk::Format::eR32G32Uint;
+						case 3: return vk::Format::eR32G32B32Uint;
+						case 4: return vk::Format::eR32G32B32A32Uint;
+						default: return vk::Format::eUndefined;
 					}
 				default: break;
 			}
@@ -265,58 +279,146 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 		};
 
 	auto to_vk_descriptor_type = [](
-		slang::TypeReflection* ty
+		slang::TypeLayoutReflection* tl,
+		const int range_index
 		) -> vk::DescriptorType {
-			using kind = slang::TypeReflection::Kind;
-			if (!ty) return vk::DescriptorType::eStorageBuffer;
-			switch (ty->getKind()) {
-				case kind::SamplerState: return vk::DescriptorType::eSampler;
-				case kind::Resource: {
-					if (const char* n = ty->getName()) {
-						if (std::strncmp(n, "Sampler", 7) == 0) return vk::DescriptorType::eCombinedImageSampler;
-					}
-					const auto shape = ty->getResourceShape();
-					const auto access = ty->getResourceAccess();
-					switch (shape & SLANG_RESOURCE_BASE_SHAPE_MASK) {
-					case SLANG_TEXTURE_1D:
-					case SLANG_TEXTURE_2D:
-					case SLANG_TEXTURE_3D:
-					case SLANG_TEXTURE_CUBE:		return access == SLANG_RESOURCE_ACCESS_READ ? vk::DescriptorType::eSampledImage : vk::DescriptorType::eStorageImage;
-					case SLANG_STRUCTURED_BUFFER:
-					case SLANG_BYTE_ADDRESS_BUFFER: return vk::DescriptorType::eStorageBuffer;
-					case SLANG_TEXTURE_BUFFER:		return vk::DescriptorType::eUniformTexelBuffer;
-					default: break;
-					}
-					break;
-				}
-				case kind::ConstantBuffer:
-				case kind::ParameterBlock:			return vk::DescriptorType::eUniformBuffer;
-				case kind::ShaderStorageBuffer:		return vk::DescriptorType::eStorageBuffer;
-				default: break;
+			if (tl == nullptr) {
+				return vk::DescriptorType::eStorageBuffer;
 			}
-			assert(false, "Unsupported Slang resource kind for Vulkan descriptor type");
-			return vk::DescriptorType::eStorageBuffer;
+
+			if (const int range_count = tl->getBindingRangeCount(); range_index < 0 || range_index >= range_count) {
+				return vk::DescriptorType::eStorageBuffer;
+			}
+
+			const slang::BindingType bt = tl->getBindingRangeType(range_index);
+			const SlangBindingTypeIntegral bt_bits = static_cast<SlangBindingTypeIntegral>(bt);
+
+			const auto base_bt = static_cast<SlangBindingType>(bt_bits & SLANG_BINDING_TYPE_BASE_MASK);
+			const bool is_mutable = (bt_bits & SLANG_BINDING_TYPE_MUTABLE_FLAG) != 0;
+
+			slang::TypeLayoutReflection* leaf_layout = tl->getBindingRangeLeafTypeLayout(range_index);
+			slang::TypeReflection* leaf_type = leaf_layout ? leaf_layout->getType() : nullptr;
+
+			const auto access = leaf_type ? leaf_type->getResourceAccess() : SLANG_RESOURCE_ACCESS_READ;
+			const auto shape = leaf_type ? static_cast<SlangResourceShape>(leaf_type->getResourceShape() & SLANG_RESOURCE_BASE_SHAPE_MASK) : static_cast<SlangResourceShape>(0);
+
+			switch (base_bt) {
+				case SLANG_BINDING_TYPE_COMBINED_TEXTURE_SAMPLER: {
+					return vk::DescriptorType::eCombinedImageSampler;
+				}
+
+				case SLANG_BINDING_TYPE_TEXTURE: {
+					if (shape == SLANG_TEXTURE_BUFFER) {
+						if (is_mutable || access != SLANG_RESOURCE_ACCESS_READ) {
+							return vk::DescriptorType::eStorageTexelBuffer;
+						}
+						return vk::DescriptorType::eUniformTexelBuffer;
+					}
+
+					if (is_mutable || access != SLANG_RESOURCE_ACCESS_READ) {
+						return vk::DescriptorType::eStorageImage;
+					}
+					return vk::DescriptorType::eSampledImage;
+				}
+
+				case SLANG_BINDING_TYPE_SAMPLER: {
+					return vk::DescriptorType::eSampler;
+				}
+
+				case SLANG_BINDING_TYPE_TYPED_BUFFER:
+				{
+					if (is_mutable || access != SLANG_RESOURCE_ACCESS_READ) {
+						return vk::DescriptorType::eStorageTexelBuffer;
+					}
+					return vk::DescriptorType::eUniformTexelBuffer;
+				}
+
+				case SLANG_BINDING_TYPE_RAW_BUFFER: {
+					return vk::DescriptorType::eStorageBuffer;
+				}
+
+				case SLANG_BINDING_TYPE_CONSTANT_BUFFER:
+				case SLANG_BINDING_TYPE_PARAMETER_BLOCK: {
+					return vk::DescriptorType::eUniformBuffer;
+				}
+
+				case SLANG_BINDING_TYPE_INPUT_RENDER_TARGET: {
+					return vk::DescriptorType::eSampledImage;
+				}
+
+				case SLANG_BINDING_TYPE_RAY_TRACING_ACCELERATION_STRUCTURE: {
+					return vk::DescriptorType::eAccelerationStructureKHR;
+				}
+
+				default: {
+					return vk::DescriptorType::eStorageBuffer;
+				}
+			}
 		};
 
-	auto reflect_uniform_block_members = [](
-		slang::TypeLayoutReflection* struct_layout
+	auto reflect_members = [](
+		slang::TypeLayoutReflection* struct_layout,
+		const std::optional<slang::ParameterCategory> preferred_cat = std::nullopt
 		) -> std::unordered_map<std::string, uniform_member> {
-			if (!struct_layout || struct_layout->getKind() != slang::TypeReflection::Kind::Struct) return {};
+			using kind = slang::TypeReflection::Kind;
 
 			std::unordered_map<std::string, uniform_member> members;
+			if (!struct_layout || struct_layout->getKind() != kind::Struct) {
+				return members;
+			}
+
+			const slang::ParameterCategory order[] = {
+				preferred_cat.value_or(slang::ParameterCategory::Uniform),
+				slang::ParameterCategory::ShaderResource,
+				slang::ParameterCategory::UnorderedAccess,
+				slang::ParameterCategory::Uniform
+			};
+
+			slang::ParameterCategory chosen = order[0];
+			bool ok = false;
+
+			for (const auto c : order) {
+				if (struct_layout->getSize(c) > 0) {
+					chosen = c; ok = true;
+					break;
+				}
+			}
+
+			if (!ok) {
+				chosen = slang::ParameterCategory::Uniform;
+			}
+
 			for (int i = 0; i < struct_layout->getFieldCount(); ++i) {
 				auto* m_var = struct_layout->getFieldByIndex(i);
-				auto* m_type = m_var->getTypeLayout();
+				auto* m_type = m_var ? m_var->getTypeLayout() : nullptr;
+				if (!m_type) {
+					continue;
+				}
 
-				if (const auto k = m_type->getKind(); k == slang::TypeReflection::Kind::Resource || k == slang::TypeReflection::Kind::SamplerState) continue;
-				const auto m_size = static_cast<std::uint32_t>(m_type->getSize(slang::ParameterCategory::Uniform));
-				if (m_size == 0) continue;
+				const auto k = m_type->getKind();
+				if (k == kind::Resource || k == kind::SamplerState) {
+					continue;
+				}
+
+				std::uint32_t sz = static_cast<std::uint32_t>(m_type->getSize(chosen));
+				if (sz == 0) {
+					sz = static_cast<std::uint32_t>(m_type->getSize(slang::ParameterCategory::Uniform));
+				}
+				if (sz == 0) {
+					continue;
+				}
+
+				std::uint32_t off = static_cast<std::uint32_t>(m_var->getOffset(chosen));
+				if (off == 0 && sz != 0) {
+					off = static_cast<std::uint32_t>(m_var->getOffset(slang::ParameterCategory::Uniform));
+				}
 
 				members[m_var->getName()] = {
 					.name = m_var->getName(),
-					.offset = static_cast<std::uint32_t>(m_var->getOffset(slang::ParameterCategory::Uniform)),
-					.size = m_size,
-					.array_size = m_type->getKind() == slang::TypeReflection::Kind::Array ? static_cast<std::uint32_t>(m_type->getElementCount()) : 0u
+					.type_name = m_type->getType() ? m_type->getType()->getName() : std::string{},
+					.offset = off,
+					.size = sz,
+					.array_size = (k == kind::Array) ? static_cast<std::uint32_t>(m_type->getElementCount()) : 0u
 				};
 			}
 			return members;
@@ -376,7 +478,9 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 				case slang::TypeReflection::Kind::ConstantBuffer:
 				case slang::TypeReflection::Kind::ParameterBlock:
 					container_vl = globals_tl->getContainerVarLayout();
-					if (auto* element_vl = globals_tl->getElementVarLayout()) element_tl = element_vl->getTypeLayout();
+					if (auto* element_vl = globals_tl->getElementVarLayout()) {
+						element_tl = element_vl->getTypeLayout();
+					}
 					break;
 				default: break;
 			}
@@ -391,64 +495,161 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 			for (int i = 0; i < field_count; ++i) {
 				auto* var = element_tl->getFieldByIndex(i);
 				auto* tl = var->getTypeLayout();
-				const auto binding = static_cast<std::uint32_t>(var->getOffset(slang::ParameterCategory::DescriptorTableSlot));
-				const auto set_idx = container_space + static_cast<std::uint32_t>(var->getBindingSpace(slang::ParameterCategory::DescriptorTableSlot));
 
-				auto set_type = static_cast<set::binding_type>(set_idx);
-				auto& current_set = result.sets[set_type];
-				current_set.type = set_type;
+				const auto binding_range_count = tl->getBindingRangeCount();
 
-				vk::DescriptorSetLayoutBinding layout_binding{
-					.binding = binding,
-					.descriptorType = to_vk_descriptor_type(tl->getType()),
-					.descriptorCount = tl->getKind() == slang::TypeReflection::Kind::Array ? static_cast<std::uint32_t>(tl->getElementCount()) : 1u,
-				};
+				for (int range_index = 0; range_index < binding_range_count; ++range_index) {
+					const auto binding = static_cast<std::uint32_t>(var->getOffset(slang::ParameterCategory::DescriptorTableSlot));
+					const auto set_idx = container_space + static_cast<std::uint32_t>(var->getBindingSpace(slang::ParameterCategory::DescriptorTableSlot));
 
-				std::optional<struct uniform_block> block_member;
-				if (tl->getKind() == slang::TypeReflection::Kind::ConstantBuffer || tl->getKind() == slang::TypeReflection::Kind::ParameterBlock) {
-					if (auto* struct_layout = extract_struct_layout(var)) {
-						struct uniform_block block = {
-							.name = var->getName(),
-							.binding = binding,
-							.set = set_idx,
-							.size = static_cast<std::uint32_t>(struct_layout->getSize(slang::ParameterCategory::Uniform)),
-							.members = reflect_uniform_block_members(struct_layout)
+					auto set_type = static_cast<set::binding_type>(set_idx);
+					auto& current_set = result.sets[set_type];
+					current_set.type = set_type;
+
+					vk::DescriptorSetLayoutBinding layout_binding{
+						.binding = binding,
+						.descriptorType = to_vk_descriptor_type(tl, range_index),
+						.descriptorCount = tl->getKind() == slang::TypeReflection::Kind::Array ? static_cast<std::uint32_t>(tl->getElementCount()) : 1u,
+					};
+
+					using kind = slang::TypeReflection::Kind;
+
+					auto try_structured_buffer_block = [&](
+						slang::VariableLayoutReflection* variable,
+						slang::TypeLayoutReflection* type_layout,
+						const std::uint32_t binding_t,
+						const std::uint32_t set_index
+						) -> std::optional<struct uniform_block> {
+							using kind = slang::TypeReflection::Kind;
+
+							const bool is_structured =
+								type_layout->getKind() == kind::ShaderStorageBuffer ||
+								(type_layout->getKind() == kind::Resource &&
+									(type_layout->getType()->getResourceShape() & SLANG_RESOURCE_BASE_SHAPE_MASK) == SLANG_STRUCTURED_BUFFER);
+
+							if (!is_structured) {
+								return std::nullopt;
+							}
+
+							slang::TypeLayoutReflection* elem_tl = nullptr;
+
+							if (type_layout->getKind() == kind::ShaderStorageBuffer) {
+								if (auto* evl = type_layout->getElementVarLayout())
+									elem_tl = evl->getTypeLayout();
+							}
+							else {
+								elem_tl = type_layout->getElementTypeLayout();
+							}
+
+							if (!elem_tl || elem_tl->getKind() != kind::Struct) {
+								return std::nullopt;
+							}
+
+							const auto cat = (type_layout->getKind() == kind::ShaderStorageBuffer) ? slang::ParameterCategory::UnorderedAccess : slang::ParameterCategory::ShaderResource;
+
+							std::uint32_t elem_stride = static_cast<std::uint32_t>(elem_tl->getStride(cat));
+							if (elem_stride == 0) {
+								const std::uint32_t sz = static_cast<std::uint32_t>(elem_tl->getSize(slang::ParameterCategory::Uniform));
+								std::uint32_t al = static_cast<std::uint32_t>(elem_tl->getAlignment(slang::ParameterCategory::Uniform));
+
+								if (al == 0) al = 16;
+								if (sz) elem_stride = (sz + (al - 1)) & ~(al - 1);
+							}
+
+							auto members = reflect_members(elem_tl, cat);
+
+							if (elem_stride == 0 && !members.empty()) {
+								uint32_t max_end = 0;
+								for (const auto& m : members | std::views::values) {
+									max_end = std::max(max_end, m.offset + m.size);
+								}
+								constexpr std::uint32_t align = 16;
+								elem_stride = (max_end + (align - 1)) & ~(align - 1);
+							}
+
+							if (elem_stride == 0 && members.empty()) return std::nullopt;
+
+							struct uniform_block block {
+								.name = variable->getName(),
+									.binding = binding_t,
+									.set = set_index,
+									.size = elem_stride,
+									.members = std::move(members),
+							};
+
+							return block;
 						};
 
-						if (block.size > 0 && !block.members.empty()) {
-							block_member = block;
+					std::optional<struct uniform_block> block_member;
+
+					if (tl->getKind() == kind::ConstantBuffer || tl->getKind() == kind::ParameterBlock) {
+						if (auto* struct_layout = extract_struct_layout(var)) {
+							struct uniform_block block = {
+								.name = var->getName(),
+								.binding = binding,
+								.set = set_idx,
+								.size = static_cast<std::uint32_t>(struct_layout->getSize(slang::ParameterCategory::Uniform)),
+								.members = reflect_members(struct_layout, slang::ParameterCategory::Uniform)
+							};
+							if (block.size > 0 && !block.members.empty()) block_member = block;
 						}
 					}
-				}
+					else {
+						block_member = try_structured_buffer_block(var, tl, binding, set_idx);
+					}
 
-				current_set.bindings.emplace_back(var->getName(), layout_binding, block_member);
+					current_set.bindings.emplace_back(var->getName(), layout_binding, block_member);
+				}
 			}
 			return result;
 		};
 
+	auto to_vk_stage_flags = [](
+		const SlangStage slang_stage
+		) -> vk::ShaderStageFlags {
+			switch (slang_stage) {
+				case SLANG_STAGE_VERTEX:    return vk::ShaderStageFlagBits::eVertex;
+				case SLANG_STAGE_FRAGMENT:  return vk::ShaderStageFlagBits::eFragment;
+				case SLANG_STAGE_GEOMETRY:  return vk::ShaderStageFlagBits::eGeometry;
+				case SLANG_STAGE_COMPUTE:   return vk::ShaderStageFlagBits::eCompute;
+				default:					return {};
+			}
+		};
+
 	auto process_push_constant_variable = [&](
 		slang::VariableLayoutReflection* var,
-		std::vector<struct uniform_block>& pcs
+		std::vector<struct uniform_block>& pcs,
+		const vk::ShaderStageFlags stage
 		) {
-			if (!var || var->getCategory() != slang::ParameterCategory::PushConstantBuffer) return;
+			if (!var || var->getCategory() != slang::ParameterCategory::PushConstantBuffer) {
+				return;
+			}
 
 			auto* struct_layout = extract_struct_layout(var);
-			if (!struct_layout) return;
+			if (!struct_layout) {
+				return;
+			}
 
-			struct uniform_block b {
-				.name = struct_layout->getName() && struct_layout->getName()[0] ? struct_layout->getName() : "push_constants",
-					.size = static_cast<std::uint32_t>(struct_layout->getSize(slang::ParameterCategory::Uniform)),
-					.members = reflect_uniform_block_members(struct_layout)
-			};
+			const std::string block_name = struct_layout->getName() && struct_layout->getName()[0]
+				? struct_layout->getName()
+				: "push_constants";
 
-			if (b.size == 0 || b.members.empty()) return;
-
-			if (!std::ranges::any_of(
+			const auto it = std::ranges::find_if(
 				pcs, 
-				[&](const auto& pc) {
-					return pc.name == b.name && pc.size == b.size;
-				}
-			)) {
+				[&](const auto& b) {
+					return b.name == block_name;
+				});
+
+			if (it != pcs.end()) {
+				it->stage_flags |= stage;
+			}
+			else {
+				struct uniform_block b {
+					.name = block_name,
+					.size = static_cast<std::uint32_t>(struct_layout->getSize(slang::ParameterCategory::Uniform)),
+					.members = reflect_members(struct_layout, slang::ParameterCategory::Uniform),
+					.stage_flags = stage 
+				};
 				pcs.push_back(std::move(b));
 			}
 		};
@@ -461,22 +662,31 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 
 	Slang::ComPtr<slang::ISession> session;
 	{
-		slang::TargetDesc target{};
-		target.format = SLANG_SPIRV;
-		target.profile = global_session->findProfile("sm_6_0");
+		slang::TargetDesc target{
+			.format = SLANG_SPIRV,
+			.profile = global_session->findProfile("sm_6_0")
+		};
+
 		std::vector<std::string> sp_storage;
-		std::vector<const char*> sp_cstrs;
+		std::vector<const char*> sp_c_strs;
+
 		sp_storage.push_back(root_path.string());
 		for (const auto& e : std::filesystem::recursive_directory_iterator(root_path)) {
 			if (e.is_directory()) sp_storage.push_back(e.path().string());
 		}
-		sp_cstrs.reserve(sp_storage.size());
-		for (auto& s : sp_storage) sp_cstrs.push_back(s.c_str());
-		slang::SessionDesc sdesc{};
-		sdesc.targets = &target;
-		sdesc.targetCount = 1;
-		sdesc.searchPaths = sp_cstrs.data();
-		sdesc.searchPathCount = static_cast<SlangInt>(sp_cstrs.size());
+
+		sp_c_strs.reserve(sp_storage.size());
+		for (auto& s : sp_storage) {
+			sp_c_strs.push_back(s.c_str());
+		}
+
+		slang::SessionDesc sdesc{
+			.targets = &target,
+			.targetCount = 1,
+			.searchPaths = sp_c_strs.data(),
+			.searchPathCount = static_cast<SlangInt>(sp_c_strs.size())
+		};
+
 		const auto rs = global_session->createSession(sdesc, session.writeRef());
 		assert(SLANG_SUCCEEDED(rs) && session, "Failed to create Slang session");
 	}
@@ -630,6 +840,7 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 					default: return std::nullopt;
 				}
 			};
+
 		auto layout_from_attr = [&](
 			slang::IEntryPoint* ep
 			) -> std::optional<descriptor_layout> {
@@ -639,17 +850,16 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 
 				auto* fn = ep->getFunctionReflection();
 
-				if (!fn) {
+				slang::UserAttribute* attr = fn->findUserAttributeByName(session->getGlobalSession(), "Layout");
+
+				if (!attr) {
 					return std::nullopt;
 				}
 
-				if (auto* attr = fn->findUserAttributeByName(session->getGlobalSession(), "Layout")) {
-					int v = 0;
-					if (SLANG_SUCCEEDED(attr->getArgumentValueInt(0, &v))) {
-						return map_layout_kind(v);
-					}
+				int v = 0;
+				if (SLANG_SUCCEEDED(attr->getArgumentValueInt(0, &v))) {
+					return map_layout_kind(v);
 				}
-
 				return std::nullopt;
 			};
 
@@ -657,7 +867,7 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 		auto f_kind = layout_from_attr(fs_ep.get());
 
 		if (v_kind && f_kind) {
-			assert(*v_kind == *f_kind, "Mismatched [Layout(...)] on vs_main/fs_main");
+			assert(*v_kind == *f_kind, std::format("Mismatched [Layout(...)] on vs_main/fs_main in shader: {}", filename));
 		}
 
 		auto shader_layout_type = v_kind.value_or(f_kind.value_or(descriptor_layout::custom));
@@ -673,35 +883,158 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 		std::unordered_map<set::binding_type, set> reflected_sets;
 		std::vector<struct uniform_block> reflected_pcs;
 
-		for (std::uint32_t epi = 0; epi < layout->getEntryPointCount(); ++epi) {
-			auto* ep = layout->getEntryPointByIndex(epi);
-			if (!ep || ep->getStage() != SLANG_STAGE_VERTEX) continue;
-			if (auto* scope = ep->getVarLayout()) {
-				if (auto* tl = scope->getTypeLayout(); tl && tl->getKind() == slang::TypeReflection::Kind::Struct) {
-					const int f_count = tl->getFieldCount();
-
-					for (int f = 0; f < f_count; ++f) {
-						auto* fld = tl->getFieldByIndex(f);
-
-						if (const char* sem = fld->getSemanticName()) {
-							if (!std::strncmp(sem, "SV_", 3) || !std::strncmp(sem, "builtin_", 8)) {
-								continue;
-							}
-						}
-
-						const uint32_t location = static_cast<uint32_t>(fld->getSemanticIndex());
-						auto* fty = fld->getTypeLayout()->getType();
-
-						reflected_vertex_input.attributes.push_back(vk::VertexInputAttributeDescription{
-							.location = location,
-							.binding = 0,
-							.format = to_vk_vertex_format(fty),
-							.offset = 0
-						});
+		auto unwrap_to_struct = [](
+			slang::TypeLayoutReflection* tl
+			) -> slang::TypeLayoutReflection* {
+				using k = slang::TypeReflection::Kind;
+				if (!tl) {
+					return nullptr;
+				}
+				if (tl->getKind() == k::Struct) {
+					return tl;
+				}
+				if (tl->getKind() == k::ConstantBuffer || tl->getKind() == k::ParameterBlock) {
+					if (auto* evl = tl->getElementVarLayout()) {
+						auto* etl = evl->getTypeLayout();
+						return (etl && etl->getKind() == k::Struct) ? etl : nullptr;
 					}
 				}
+				return nullptr;
+			};
+
+		auto explicit_location = [&](
+			slang::VariableLayoutReflection* vl,
+			slang::IGlobalSession* g
+			) -> std::optional<std::uint32_t> {
+				if (!vl) return {
+					std::nullopt
+				};
+
+				if (auto* var = vl->getVariable()) {
+					if (auto* a = var->findUserAttributeByName(g, "vk::location")) {
+						int v = 0;
+						if (SLANG_SUCCEEDED(a->getArgumentValueInt(0, &v)) && v >= 0) {
+							return static_cast<uint32_t>(v);
+						}
+					}
+					if (auto* a = var->findUserAttributeByName(g, "location")) {
+						int v = 0;
+						if (SLANG_SUCCEEDED(a->getArgumentValueInt(0, &v)) && v >= 0) {
+							return static_cast<uint32_t>(v);
+						}
+					}
+				}
+
+				if (const char* sem = vl->getSemanticName()) {
+					if (std::strncmp(sem, "SV_", 3) && std::strncmp(sem, "builtin_", 8)) {
+						const char* end = sem + std::strlen(sem);
+						const char* p = end;
+						while (p > sem && std::isdigit(static_cast<unsigned char>(p[-1]))) {
+							--p;
+						}
+
+						if (p < end) {
+							const int n = std::atoi(p);
+							return static_cast<std::uint32_t>(n);
+						}
+					}
+				}
+				return std::nullopt;
+			};
+
+		for (std::uint32_t epi = 0; epi < layout->getEntryPointCount(); ++epi) {
+			auto* ep = layout->getEntryPointByIndex(epi);
+			if (!ep || ep->getStage() != SLANG_STAGE_VERTEX) {
+				continue;
+			}
+
+			auto* scope_vl = ep->getVarLayout();                 
+			auto* scope_tl = scope_vl ? scope_vl->getTypeLayout() : nullptr;
+			auto* param_struct = unwrap_to_struct(scope_tl);
+			if (!param_struct) {
+				continue;
+			}
+
+			std::uint32_t next_loc = 0;
+			std::unordered_set<std::uint32_t> used_locations;
+
+			std::function<void(slang::VariableLayoutReflection*)> visit_input;
+			visit_input = [&](
+				slang::VariableLayoutReflection* vl
+				) {
+					if (!vl) {
+						return;
+					}
+					if (const char* sem = vl->getSemanticName()) {
+						if (!std::strncmp(sem, "SV_", 3) || !std::strncmp(sem, "builtin_", 8)) {
+							return;
+						}
+					}
+
+					using k = slang::TypeReflection::Kind;
+					auto* tl = vl->getTypeLayout();
+					if (!tl) {
+						return;
+					}
+
+					if (tl->getKind() == k::Struct) {
+						const int n = tl->getFieldCount();
+						for (int i = 0; i < n; ++i) {
+							visit_input(tl->getFieldByIndex(i));
+						}
+						return;
+					}
+					if (tl->getKind() == k::Array) {
+						if (auto* evl = tl->getElementVarLayout()) {
+							visit_input(evl);
+						}
+						return;
+					}
+					if (tl->getKind() == k::Resource || tl->getKind() == k::SamplerState ||
+						tl->getKind() == k::Matrix || tl->getKind() == k::ConstantBuffer ||
+						tl->getKind() == k::ParameterBlock) {
+						return;
+					}
+
+					auto* ty = tl->getType();
+					if (!ty) {
+						return;
+					}
+
+					const vk::Format fmt = to_vk_vertex_format(ty);
+					assert(fmt != vk::Format::eUndefined, "Unsupported vertex attribute type");
+
+					std::uint32_t loc;
+					if (const auto el = explicit_location(vl, session->getGlobalSession()); el && !used_locations.contains(*el)) {
+						loc = *el;
+					}
+					else {
+						while (used_locations.contains(next_loc)) {
+							++next_loc;
+						}
+						loc = next_loc++;
+					}
+					used_locations.insert(loc);
+
+					reflected_vertex_input.attributes.push_back(vk::VertexInputAttributeDescription{
+						.location = loc,
+						.binding = 0,
+						.format = fmt,
+						.offset = 0
+					});
+				};
+
+			const int field_count = param_struct->getFieldCount();
+			for (int i = 0; i < field_count; ++i) {
+				visit_input(param_struct->getFieldByIndex(i));
 			}
 		}
+
+		std::ranges::sort(
+			reflected_vertex_input.attributes, 
+			{}, 
+			&vk::VertexInputAttributeDescription::location
+		);
 
 		if (shader_layout_type == descriptor_layout::custom) {
 			auto [sets] = reflect_descriptor_sets(layout);
@@ -709,11 +1042,13 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 
 			for (std::uint32_t epi = 0; epi < layout->getEntryPointCount(); ++epi) {
 				auto* ep = layout->getEntryPointByIndex(epi);
-				if (!ep) continue;
+				if (!ep) {
+					continue;
+				}
 				switch (ep->getStage()) {
-				case SLANG_STAGE_VERTEX:   used_stages |= vk::ShaderStageFlagBits::eVertex;   break;
-				case SLANG_STAGE_FRAGMENT: used_stages |= vk::ShaderStageFlagBits::eFragment; break;
-				default: break;
+					case SLANG_STAGE_VERTEX:   used_stages |= vk::ShaderStageFlagBits::eVertex;   break;
+					case SLANG_STAGE_FRAGMENT: used_stages |= vk::ShaderStageFlagBits::eFragment; break;
+					default: break;
 				}
 			}
 
@@ -726,14 +1061,26 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 
 		for (std::uint32_t epi = 0; epi < layout->getEntryPointCount(); ++epi) {
 			if (auto* ep = layout->getEntryPointByIndex(epi)) {
-				process_push_constant_variable(ep->getVarLayout(), reflected_pcs);
+				vk::ShaderStageFlags stage_flag = to_vk_stage_flags(ep->getStage());
+				process_push_constant_variable(ep->getVarLayout(), reflected_pcs, stage_flag);
 			}
 		}
 
 		if (auto* globals_vl = layout->getGlobalParamsVarLayout()) {
+			vk::ShaderStageFlags all_entry_point_stages = {};
+			for (std::uint32_t epi = 0; epi < layout->getEntryPointCount(); ++epi) {
+				if (auto* ep = layout->getEntryPointByIndex(epi)) {
+					all_entry_point_stages |= to_vk_stage_flags(ep->getStage());
+				}
+			}
+
 			if (auto* struct_layout = extract_struct_layout(globals_vl)) {
 				for (int i = 0; i < struct_layout->getFieldCount(); ++i) {
-					process_push_constant_variable(struct_layout->getFieldByIndex(i), reflected_pcs);
+					process_push_constant_variable(
+						struct_layout->getFieldByIndex(i),
+						reflected_pcs,
+						all_entry_point_stages 
+					);
 				}
 			}
 		}
@@ -763,6 +1110,7 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 							write_string(out, m_data.name);
 							write_data(out, m_data.offset);
 							write_data(out, m_data.size);
+							write_data(out, m_data.array_size);
 						}
 					}
 				}
@@ -772,12 +1120,14 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 		for (const auto& pc : reflected_pcs) {
 			write_string(out, pc.name);
 			write_data(out, pc.size);
+			write_data(out, pc.stage_flags);
 			write_data(out, static_cast<std::uint32_t>(pc.members.size()));
 			for (const auto& [m_name, m_data] : pc.members) {
 				write_string(out, m_name);
 				write_string(out, m_data.name);
 				write_data(out, m_data.offset);
 				write_data(out, m_data.size);
+				write_data(out, m_data.array_size);
 			}
 		}
 		{
@@ -865,6 +1215,7 @@ auto gse::shader::load(const renderer::context& context) -> void {
 						read_string(in, ubo_member.name);
 						read_data(in, ubo_member.offset);
 						read_data(in, ubo_member.size);
+						read_data(in, ubo_member.array_size);
 						member.members[key_name] = ubo_member;
 					}
 					b.member = member;
@@ -885,20 +1236,28 @@ auto gse::shader::load(const renderer::context& context) -> void {
 	for (auto& pc : m_push_constants) {
 		read_string(in, pc.name);
 		read_data(in, pc.size);
+		read_data(in, pc.stage_flags);
 		std::uint32_t member_count = 0;
 		read_data(in, member_count);
 		for (std::uint32_t i = 0; i < member_count; ++i) {
 			std::string key, name;
-			std::uint32_t offset = 0, size = 0;
+			std::uint32_t offset = 0, size = 0, arr = 0;
 			read_string(in, key);
 			read_string(in, name);
 			read_data(in, offset);
 			read_data(in, size);
-			pc.members[key] = { .name = name, .offset = offset, .size = size };
+			read_data(in, arr);
+			pc.members[key] = {
+				.name = name,
+				.type_name = {},
+				.offset = offset,
+				.size = size,
+				.array_size = arr
+			};
 		}
 	}
 
-	size_t vert_size = 0, frag_size = 0;
+	std::size_t vert_size = 0, frag_size = 0;
 	read_data(in, vert_size);
 	std::vector<char> vert_code(vert_size);
 	in.read(vert_code.data(), vert_size);
@@ -919,21 +1278,33 @@ auto gse::shader::load(const renderer::context& context) -> void {
 	if (!m_vertex_input.attributes.empty()) {
 		std::ranges::sort(m_vertex_input.attributes, {}, &vk::VertexInputAttributeDescription::location);
 		std::uint32_t stride = 0;
-		auto get_format_size = [](
+		auto format_size = [](
 			const vk::Format format
 			) -> std::uint32_t {
 				switch (format) {
-					case vk::Format::eR32Sfloat: return 4;
-					case vk::Format::eR32G32Sfloat: return 8;
-					case vk::Format::eR32G32B32Sfloat: return 12;
-					case vk::Format::eR32G32B32A32Sfloat: return 16;
-					default: assert(false, "Unsupported vertex format"); return 0;
+					case vk::Format::eR32Sfloat:
+					case vk::Format::eR32Sint:
+					case vk::Format::eR32Uint:                 return 4;
+					case vk::Format::eR32G32Sfloat:
+					case vk::Format::eR32G32Sint:
+					case vk::Format::eR32G32Uint:              return 8;
+					case vk::Format::eR32G32B32Sfloat:
+					case vk::Format::eR32G32B32Sint:
+					case vk::Format::eR32G32B32Uint:           return 12;
+					case vk::Format::eR32G32B32A32Sfloat:
+					case vk::Format::eR32G32B32A32Sint:
+					case vk::Format::eR32G32B32A32Uint:        return 16;
+					default:
+						assert(false, "Unsupported vertex format in size calc");
+						return 0;
 				}
 			};
+
 		for (auto& attr : m_vertex_input.attributes) {
 			attr.offset = stride;
-			stride += get_format_size(attr.format);
+			stride += format_size(attr.format);
 		}
+
 		m_vertex_input.bindings.push_back({
 			.binding = 0,
 			.stride = stride,
@@ -944,16 +1315,40 @@ auto gse::shader::load(const renderer::context& context) -> void {
 	for (auto& [type, set_data] : m_layout.sets) {
 		std::vector<vk::DescriptorSetLayoutBinding> raw_bindings;
 		raw_bindings.reserve(set_data.bindings.size());
-		for (const auto& b : set_data.bindings) raw_bindings.push_back(b.layout_binding);
+
+		for (const auto& b : set_data.bindings) {
+			auto lb = b.layout_binding;
+			lb.pImmutableSamplers = nullptr;     
+			raw_bindings.push_back(lb);
+		}
 
 		vk::DescriptorSetLayoutCreateInfo ci{
-			.flags = type == set::binding_type::push ? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR : vk::DescriptorSetLayoutCreateFlags(),
-			.bindingCount = static_cast<std::uint32_t>(raw_bindings.size()),
+			.flags = (type == set::binding_type::push) ? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR : vk::DescriptorSetLayoutCreateFlags(),
+			.bindingCount = static_cast<uint32_t>(raw_bindings.size()),
 			.pBindings = raw_bindings.data()
 		};
-		set_data.layout = std::make_shared<vk::raii::DescriptorSetLayout>(
-			context.config().device_config().device, ci
-		);
+
+		set_data.layout = std::make_shared<vk::raii::DescriptorSetLayout>(context.config().device_config().device, ci);
+	}
+
+	std::uint32_t max_set_index = 0;
+	for (const auto& t : m_layout.sets | std::views::keys) {
+		max_set_index = std::max(max_set_index, static_cast<uint32_t>(t));
+	}
+
+	for (uint32_t i = 0; i <= max_set_index; ++i) {
+		if (auto t = static_cast<set::binding_type>(i); !m_layout.sets.contains(t)) {
+			vk::DescriptorSetLayoutCreateInfo ci{
+				.flags = t == set::binding_type::push ? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR : vk::DescriptorSetLayoutCreateFlags(),
+				.bindingCount = 0,
+				.pBindings = nullptr
+			};
+			set empty_set{
+				.type = t,
+				.layout = std::make_shared<vk::raii::DescriptorSetLayout>(context.config().device_config().device, ci)
+			};
+			m_layout.sets.emplace(t, std::move(empty_set));
+		}
 	}
 }
 
@@ -974,13 +1369,11 @@ auto gse::shader::destroy_global_layouts() -> void {
 auto gse::shader::shader_stages() const -> std::array<vk::PipelineShaderStageCreateInfo, 2> {
 	return {
 		vk::PipelineShaderStageCreateInfo{
-			.flags = {},
 			.stage = vk::ShaderStageFlagBits::eVertex,
 			.module = *m_vert_module,
 			.pName = "main"
 		},
 		vk::PipelineShaderStageCreateInfo{
-			.flags = {},
 			.stage = vk::ShaderStageFlagBits::eFragment,
 			.module = *m_frag_module,
 			.pName = "main"
@@ -1062,7 +1455,7 @@ auto gse::shader::layouts() const -> std::vector<vk::DescriptorSetLayout> {
 	return result;
 }
 
-auto gse::shader::push_constant_range(const std::string_view& name, const vk::ShaderStageFlags stages) const -> vk::PushConstantRange {
+auto gse::shader::push_constant_range(const std::string_view& name) const -> vk::PushConstantRange {
 	const auto it = std::ranges::find_if(
 		m_push_constants,
 		[&](const auto& block) {
@@ -1073,7 +1466,7 @@ auto gse::shader::push_constant_range(const std::string_view& name, const vk::Sh
 	assert(it != m_push_constants.end(), std::format("Push constant block '{}' not found in shader", name));
 
 	return vk::PushConstantRange{
-		stages,
+		it->stage_flags,
 		0,
 		it->size
 	};
@@ -1252,11 +1645,98 @@ auto gse::shader::set_uniform_block(const std::string_view block_name, const std
 	}
 }
 
-auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout layout, const std::string_view name, const vk::DescriptorImageInfo& image_info) const -> void {
+auto gse::shader::set_ssbo_element(std::string_view block_name, const std::uint32_t index, std::string_view member_name, const std::span<const std::byte> bytes, const vulkan::persistent_allocator::allocation& alloc) const -> void {
+	const struct binding* block_binding = nullptr;
+	for (const auto& set : m_layout.sets | std::views::values) {
+		for (const auto& b : set.bindings) {
+			if (b.name == block_name && b.member.has_value()) {
+				block_binding = &b;
+				break;
+			}
+		}
+		if (block_binding) break;
+	}
+	assert(block_binding, std::format("SSBO '{}' not found", block_name));
+
+	const auto& block = *block_binding->member;
+	const auto elem_stride = block.size;
+	assert(elem_stride > 0, std::format("SSBO '{}' has zero element stride", block_name));
+
+	assert(alloc.mapped(), "Attempted to set SSBO but memory is not mapped");
+
+	const auto mit = block.members.find(std::string(member_name));
+	assert(
+		mit != block.members.end(),
+		std::format("Member '{}' not found in SSBO '{}'", member_name, block_name)
+	);
+
+	const auto& m_info = mit->second;
+	assert(
+		bytes.size() <= m_info.size,
+		std::format(
+			"Bytes size {} > member '{}' size {} in SSBO '{}'",
+			bytes.size(), 
+			member_name,
+			m_info.size,
+			block_name
+		)
+	);
+
+	const auto base = static_cast<std::byte*>(alloc.mapped());
+	std::memcpy(
+		base + index * elem_stride + m_info.offset,
+		bytes.data(),
+		bytes.size()
+	);
+}
+
+auto gse::shader::set_ssbo_struct(std::string_view block_name, const std::uint32_t index, const std::span<const std::byte> element_bytes, const vulkan::persistent_allocator::allocation& alloc) const -> void {
+	const struct binding* block_binding = nullptr;
+	for (const auto& set : m_layout.sets | std::views::values) {
+		for (const auto& b : set.bindings) {
+			if (b.name == block_name && b.member.has_value()) {
+				block_binding = &b;
+				break;
+			}
+		}
+		if (block_binding) break;
+	}
+	assert(block_binding, std::format("SSBO '{}' not found", block_name));
+
+	const auto& block = *block_binding->member;
+	const auto elem_stride = block.size;
+
+	assert(elem_stride > 0, std::format("SSBO '{}' has zero element stride", block_name));
+	assert(alloc.mapped(), "Attempted to set SSBO but memory is not mapped");
+
+	assert(
+		element_bytes.size() == elem_stride,
+		std::format("Element bytes {} != stride {} for SSBO '{}'", element_bytes.size(), elem_stride, block_name)
+	);
+
+	const auto base = static_cast<std::byte*>(alloc.mapped());
+	std::memcpy(
+		base + index * elem_stride,
+		element_bytes.data(),
+		element_bytes.size()
+	);
+}
+
+auto gse::shader::push_descriptor(const vk::CommandBuffer command, const vk::PipelineLayout layout, const std::string_view name, const vk::DescriptorImageInfo& image_info) const -> void {
 	for (const auto& s : m_layout.sets | std::views::values) {
 		for (const auto& [member_name, layout_binding, member] : s.bindings) {
 			if (member_name == name) {
-				assert(layout_binding.descriptorType == vk::DescriptorType::eCombinedImageSampler, std::format("Binding '{}' is not a combined image sampler", name));
+				assert(
+					layout_binding.descriptorType == vk::DescriptorType::eCombinedImageSampler || layout_binding.descriptorType == vk::DescriptorType::eSampledImage,
+					std::format("Binding '{}' is not a combined image sampler", name)
+				);
+
+				auto info = image_info;
+
+				if (layout_binding.descriptorType == vk::DescriptorType::eSampledImage) {
+					info.sampler = nullptr;
+				}
+
 				command.pushDescriptorSetKHR(
 					vk::PipelineBindPoint::eGraphics,
 					layout,
@@ -1268,7 +1748,7 @@ auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout
 							.dstArrayElement = 0,
 							.descriptorCount = 1,
 							.descriptorType = layout_binding.descriptorType,
-							.pImageInfo = &image_info,
+							.pImageInfo = &info,
 						}
 					}
 				);
@@ -1279,7 +1759,7 @@ auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout
 	assert(false, std::format("Binding '{}' not found in shader", name));
 }
 
-auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout layout, std::string_view block_name, const void* data, const std::size_t offset, const vk::ShaderStageFlags stages) const -> void {
+auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout layout, std::string_view block_name, const void* data, const std::size_t offset) const -> void {
 	const auto it = std::ranges::find_if(
 		m_push_constants, 
 		[&](const auto& block) {
@@ -1293,19 +1773,20 @@ auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout
 
 	command.pushConstants(
 		layout,
-		stages,
+		it->stage_flags,
 		static_cast<std::uint32_t>(offset),
 		block.size,
 		data
 	);
 }
 
-auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout layout, std::string_view block_name, const std::unordered_map<std::string, std::span<const std::byte>>& values, const vk::ShaderStageFlags stages) const -> void {
+auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout layout, std::string_view block_name, const std::unordered_map<std::string, std::span<const std::byte>>& values) const -> void {
 	const auto it = std::ranges::find_if(
 		m_push_constants, 
 		[&](const auto& b) {
 			return b.name == block_name;
-		});
+		}
+	);
 
 	assert(it != m_push_constants.end(), std::format("Push constant block '{}' not found in shader", block_name));
 
@@ -1332,13 +1813,12 @@ auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout
 
 	command.pushConstants(
 		layout,
-		stages,
+		it->stage_flags,
 		0,
 		static_cast<std::uint32_t>(buffer.size()),
 		buffer.data()
 	);
 }
-
 
 auto gse::shader::descriptor_set(const vk::raii::Device& device, const vk::DescriptorPool pool, const set::binding_type type, const std::uint32_t count) const -> std::vector<vk::raii::DescriptorSet> {
 	assert(

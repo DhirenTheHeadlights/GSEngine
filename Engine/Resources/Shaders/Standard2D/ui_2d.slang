@@ -23,12 +23,12 @@ VS_OUTPUT vs_main(float2 in_position: POSITION, float2 in_tex_coord: TEXCOORD0) 
     VS_OUTPUT output;
 
     float2 unrotated_pos = in_position * size + position;
-    float2 pivot = position + float2(0.5, 0.5) * size;
+    float2 pivot = position + float2(0.5, -0.5) * size;
 
     float c = cos(rotation);
     float s = sin(rotation);
     float2x2 rotation_matrix = { c, -s, s, c };
-    
+
     float2 final_pos = mul(unrotated_pos - pivot, rotation_matrix) + pivot;
 
     output.clip_pos = mul(float4(final_pos, 0.0, 1.0), projection);

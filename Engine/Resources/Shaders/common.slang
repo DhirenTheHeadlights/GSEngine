@@ -20,8 +20,7 @@ public struct Light {
     public float  ambient_strength;
 };
 
-public enum class LayoutKind : int
-{
+public enum class LayoutKind : int {
     Deferred3D  = 0,
     Forward3D   = 1,
     PostProcess = 2,

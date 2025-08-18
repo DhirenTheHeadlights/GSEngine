@@ -45,8 +45,7 @@ float4 fs_main(VS_OUTPUT input) : SV_Target0 {
     float3 result_color = float3(0.0, 0.0, 0.0);
     float3 view_dir = normalize(view_pos - pos_w);
 
-    for (int i = 0; i < num_lights; ++i)
-    {
+    for (int i = 0; i < num_lights; ++i) {
         Light light = lights_ssbo[i];
         
         float3 ambient = light.ambient_strength * light.color * albedo;
@@ -62,8 +61,7 @@ float4 fs_main(VS_OUTPUT input) : SV_Target0 {
             float distance = length(light.position - pos_w);
             attenuation = 1.0 / (light.constant + light.linear * distance + light.quadratic * (distance * distance));
 
-            if (light.light_type == LightType::Spot)
-            {
+            if (light.light_type == LightType::Spot) {
                 float theta = dot(light_dir, normalize(-light.direction));
                 float epsilon = light.cut_off - light.outer_cut_off;
                 spotlight_effect = clamp((theta - light.outer_cut_off) / epsilon, 0.0, 1.0);
