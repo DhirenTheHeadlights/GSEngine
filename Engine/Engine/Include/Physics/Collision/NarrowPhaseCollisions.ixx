@@ -203,18 +203,19 @@ bool mpr_collision(const gse::oriented_bounding_box& obb1, const gse::oriented_b
     if (gse::dot(v1.point.as<gse::units::meters>(), n) <= 0) return false;
 
 
-    // Find the second portal vertex using a triple cross product to robustly handle collinear cases.
-    gse::vec3<gse::length> edge_v1_v0 = v0.point + (0.5f * v1.point);
+    gse::vec3<gse::length> edge_v1_v0 = v0.point - v1.point;
+    gse::vec3<gse::length> v0_neg = -v0.point;
+    n = gse::normalize(gse::cross(gse::cross(edge_v1_v0, v0_neg), edge_v1_v0));;
 
     // The triple cross product cross(cross(A, B), A) finds a vector perpendicular to A,
     // lying on the plane defined by A and B. This is exactly what we need to form the portal
     // and correctly handles the case where A and B are collinear.
-    n = gse::normalize(gse::cross(v1.point, v0.point));
+    //n = gse::normalize(gse::cross(v1.point, v0.point));
     minkowski_point v2 = minkowski_difference(obb1, obb2, n);
 
     if (gse::dot(v2.point.as<gse::units::meters>(), n) <= 0) return false;
 
-    const auto set_out_values= [&]() {
+const auto set_out_values= [&]() {
         out.normal = n;
         out.penetration = gse::dot(v1.point.as<gse::units::meters>(), n);
         gse::vec3<gse::length> p = out.normal * out.penetration;
@@ -244,16 +245,16 @@ bool mpr_collision(const gse::oriented_bounding_box& obb1, const gse::oriented_b
         //Convergence Test
        
         const auto support_dist = -gse::dot(v3.point.as<gse::units::meters>(), n);
-        //if (support_dist - portal_dist < 0.0001f) {
-        //    // If the new point is barely further than the portal, we've converged on the closest face.
-        //    out.collided = true;
-        //    set_out_values();
-        //    out.penetration = portal_dist;
-        //    return true;
-        //}
+        if (std::abs(support_dist - portal_dist) < 0.0001f) {
+            // If the new point is barely further than the portal, we've converged on the closest face.
+            out.collided = true;
+            set_out_values();
+            out.penetration = portal_dist;
+            return true;
+        }
 
         // Check if the new point has crossed the origin. If it hasn't, we've found the closest feature.
-        if (portal_dist <= 0 || gse::dot(v3.point.as<gse::units::meters>(), n) <= 0) {
+        if (/*portal_dist <= 0 || */gse::dot(v3.point.as<gse::units::meters>(), n) <= 0) {
             out.collided = true;
             set_out_values();
             return true;
