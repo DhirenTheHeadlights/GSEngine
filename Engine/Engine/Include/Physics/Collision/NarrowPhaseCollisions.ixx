@@ -215,11 +215,11 @@ bool mpr_collision(const gse::oriented_bounding_box& obb1, const gse::oriented_b
 
     if (gse::dot(v2.point.as<gse::units::meters>(), n) <= 0) return false;
 
-const auto set_out_values= [&]() {
+auto set_out_values= [&]() {
         out.normal = n;
         out.penetration = gse::dot(v1.point.as<gse::units::meters>(), n);
         gse::vec3<gse::length> p = out.normal * out.penetration;
-        auto bary = gse::barycentric(v0.point.as<gse::units::meters>(), v1.point.as<gse::units::meters>(), v2.point.as<gse::units::meters>(), p.as<gse::units::meters>());
+		auto bary = gse::barycentric(p.as<gse::units::meters>(), v0.point.as<gse::units::meters>(), v1.point.as<gse::units::meters>(), v2.point.as<gse::units::meters>());
         out.contact_point1 = v0.support_a * std::get<0>(bary) + v1.support_a * std::get<1>(bary) + v2.support_a * std::get<2>(bary);
         out.contact_point2 = v0.support_b * std::get<0>(bary) + v1.support_b * std::get<1>(bary) + v2.support_b * std::get<2>(bary);
 		};
@@ -245,7 +245,9 @@ const auto set_out_values= [&]() {
         //Convergence Test
        
         const auto support_dist = -gse::dot(v3.point.as<gse::units::meters>(), n);
-        if (std::abs(support_dist - portal_dist) < 0.0001f) {
+        const auto portal_distance_change = std::abs(portal_dist - support_dist);
+
+    	if (portal_distance_change < 0.0001f) {
             // If the new point is barely further than the portal, we've converged on the closest face.
             out.collided = true;
             set_out_values();
@@ -260,21 +262,33 @@ const auto set_out_values= [&]() {
             return true;
         }
 
-        // Refine the portal by discarding the vertex that is "behind" the new plane formed by v3
-        if (gse::dot(gse::cross((v1.point - v0.point).as<gse::units::meters>(), (v3.point - v0.point).as<gse::units::meters>()), -v0.point.as<gse::units::meters>()) < 0) {
-            v2 = v3;
+        if (gse::dot(gse::cross((v1.point - v2.point).as<gse::units::meters>(), (v3.point - v0.point).as<gse::units::meters>()), -v0.point.as<gse::units::meters>()) > 0) {
+            v2 = v3; // The new portal is v1-v2-v4
         }
-        else if (gse::dot(gse::cross((v3.point - v0.point).as<gse::units::meters>(), (v2.point - v0.point).as<gse::units::meters>()), -v0.point.as<gse::units::meters>()) < 0) {
-            v1 = v3;
+        // Is the origin "outside" the plane v1-v4-v3?
+        else if (gse::dot(gse::cross((v3.point - v0.point).as<gse::units::meters>(), (v2.point - v0.point).as<gse::units::meters>()), -v0.point.as<gse::units::meters>()) > 0) {
+            v1 = v3; // The new portal is v1-v4-v3
         }
+        // Otherwise, the origin must be "behind" the portal.
         else {
-            v0 = v3;
-            // This case is a valid termination when the origin is perfectly cornered.
-            out.collided = true;
-            set_out_values;
-
-            return true;
+            v0 = v3; // The new portal is v2-v3-v4
         }
+
+        // Refine the portal by discarding the vertex that is "behind" the new plane formed by v3
+        //if (gse::dot(gse::cross((v1.point - v0.point).as<gse::units::meters>(), (v3.point - v0.point).as<gse::units::meters>()), -v0.point.as<gse::units::meters>()) < 0) {
+        //    v2 = v3;
+        //}
+        //else if (gse::dot(gse::cross((v3.point - v0.point).as<gse::units::meters>(), (v2.point - v0.point).as<gse::units::meters>()), -v0.point.as<gse::units::meters>()) < 0) {
+        //    v1 = v3;
+        //}
+        //else {
+        //    v0 = v3;
+        //    // This case is a valid termination when the origin is perfectly cornered.
+        //    out.collided = true;
+        //    set_out_values;
+
+        //    return true;
+        //}
     }
     // Phase 2: Portal Refinement
     //for (int i = 0; i < mpr_collision_refinement_iterations; ++i) {
@@ -397,15 +411,19 @@ auto gse::narrow_phase_collision::resolve_dynamic_collision(physics::motion_comp
     if (object_motion_component->position_locked){
         return;
     }
+    //check if object is player
+    if (object_motion_component->parent_name == "Player") {
+        std::cout << "mmmmmfgh\n";
+    }
 
     //get_obb_overlap_vertices(object_collision_component.oriented_bounding_box, other_collision_component.oriented_bounding_box, contact_points);
 
     object_collision_component.collision_information.colliding = mpr_res.collided;
-    object_collision_component.collision_information.collision_normal = mpr_res.normal;
+    object_collision_component.collision_information.collision_normal = -mpr_res.normal;
     object_collision_component.collision_information.penetration = mpr_res.penetration;
 
     const auto  collision_normal = object_collision_component.collision_information.collision_normal;
-    const float penetration_depth = object_collision_component.collision_information.penetration.as_default_unit() * 0.1f;
+    const float penetration_depth = object_collision_component.collision_information.penetration.as_default_unit();// *0.1f;
 
     const float velocity_into_surface = dot(object_motion_component->current_velocity.as<units::meters_per_second>(), collision_normal);
     const float acceleration_into_surface = dot(object_motion_component->current_acceleration.as<units::meters_per_second_squared>(), collision_normal);
