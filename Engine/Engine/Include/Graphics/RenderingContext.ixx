@@ -86,7 +86,7 @@ export namespace gse::renderer {
 	};
 }
 
-gse::renderer::context::context(const std::string& window_title) : m_window(window_title), m_config(vulkan::initialize(m_window.raw_handle())) {}
+gse::renderer::context::context(const std::string& window_title) : m_window(window_title), m_config(vulkan::generate_config(m_window.raw_handle())) {}
 
 gse::renderer::context::~context() {
 	m_config.reset();

@@ -4,13 +4,14 @@ import standard_3d;
 [[vk::push_constant]]
 cbuffer ModelPC {
     float4x4 model;
-    float3x3 normal_matrix; 
+    float4x4 normal_matrix; 
 };
 
 struct VS_OUTPUT {
-    float4 clip_pos     : SV_Position;
-    float3 normal       : NORMAL;
-    float2 tex_coord    : TEXCOORD;
+    float4 clip_pos : SV_Position;
+    float3 normal : NORMAL;
+    float2 tex_coord : TEXCOORD;
+    float3 dbg_world_pos : TEXCOORD1; // DEBUG: Output for world position
 };
 
 [Layout(LayoutKind::Standard3D)]
@@ -18,9 +19,10 @@ struct VS_OUTPUT {
 VS_OUTPUT vs_main(float3 in_position: POSITION, float3 in_normal: NORMAL, float2 in_tex_coord: TEXCOORD) {
     VS_OUTPUT output;
 
-    float4x4 mvp = mul(mul(model, view), proj);
-    output.clip_pos = mul(float4(in_position, 1.0), mvp);
-    output.normal = in_normal;
+    float4x4 mvp = mul(proj, mul(view, model));
+
+    output.clip_pos = mul(mvp, float4(in_position, 1.0));
+    output.normal = normalize(mul((float3x3)normal_matrix, in_normal));
     output.tex_coord = in_tex_coord;
 
     return output;
@@ -45,7 +47,7 @@ FS_OUTPUT fs_main(VS_OUTPUT input) {
     FS_OUTPUT output;
 
     output.out_albedo = diffuseSampler.Sample(input.tex_coord).rgb;
-    float3 normal_view = normalize(mul(input.normal, normal_matrix));
+    float3 normal_view = normalize(input.normal);
     output.out_normal = encode_octahedron(normal_view);
     
     return output;

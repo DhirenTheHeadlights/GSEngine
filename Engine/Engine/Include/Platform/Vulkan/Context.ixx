@@ -17,7 +17,7 @@ import :persistent_allocator;
 import gse.assert;
 
 export namespace gse::vulkan {
-    auto initialize(
+    auto generate_config(
         GLFWwindow* window
     ) -> std::unique_ptr<config>;
 
@@ -77,7 +77,7 @@ namespace gse::vulkan {
     constexpr std::uint32_t max_frames_in_flight = 2;
 }
 
-auto gse::vulkan::initialize(GLFWwindow* window) -> std::unique_ptr<config> {
+auto gse::vulkan::generate_config(GLFWwindow* window) -> std::unique_ptr<config> {
     auto instance_data = create_instance_and_surface(window);
     auto [device_data, queue] = create_device_and_queues(instance_data);
     auto descriptor = create_descriptor_pool(device_data);
@@ -251,21 +251,34 @@ auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_co
         .apiVersion = highest_supported_version
     };
 
-    uint32_t glfw_extension_count = 0;
+    std::uint32_t glfw_extension_count = 0;
     const char** glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extension_count);
 
     std::vector extensions(glfw_extensions, glfw_extensions + glfw_extension_count);
     extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 
     auto debug_callback = [](
-        vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity, 
-        vk::DebugUtilsMessageTypeFlagsEXT message_type, 
+        const vk::DebugUtilsMessageSeverityFlagBitsEXT message_severity,
+        vk::DebugUtilsMessageTypeFlagsEXT message_type,
         const vk::DebugUtilsMessengerCallbackDataEXT* callback_data,
         void* user_data
         ) -> vk::Bool32 {
-            std::print("Validation layer: {}\n", callback_data->pMessage);
+            if (message_severity == vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose) return VK_FALSE;
+
+            if (std::string_view(callback_data->pMessage).find("VK_EXT_debug_utils") != std::string_view::npos) {
+                return vk::False;
+            }
+
+            std::println(
+                "[{}] {}\n",
+                message_severity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eError ? "ERROR" :
+                message_severity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning ? "WARN" :
+                message_severity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo ? "INFO" : "VERB",
+                callback_data->pMessage
+            );
+
             return vk::False;
-		};
+        };
 
     const vk::DebugUtilsMessengerCreateInfoEXT debug_create_info{
         .flags = {},

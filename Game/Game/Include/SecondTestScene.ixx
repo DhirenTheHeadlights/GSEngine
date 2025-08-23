@@ -12,7 +12,7 @@ export namespace gs {
 			build("Box")
 				.with<gse::box>({
 					.initial_position = gse::vec::meters(0.f, 0.f, 0.f),
-					.size = gse::vec::meters(10.f, 10.f, 10.f)
+					.size = gse::vec::meters(1.f, 1.f, 1.f)
 				})
 				.with<positioned_object_hook>({
 					.position = gse::vec::meters(0.f, 0.f, 0.f)
@@ -20,7 +20,7 @@ export namespace gs {
 
 			build("Free Cam")
 				.with<gse::free_camera>({
-					.initial_position = gse::vec::meters(0.f, 0.f, 5.f)
+					.initial_position = gse::vec::meters(30.f, 0.f, 0.f)
 				});
 		}
 	private:
@@ -32,6 +32,16 @@ export namespace gs {
 			positioned_object_hook(const params& p) : position(p.position) {}
 
 			gse::vec3<gse::length> position;
+
+			auto initialize() -> void override {
+				configure_when_present([](gse::physics::motion_component& mc) {
+					mc.affected_by_gravity = false;
+				});
+
+				configure_when_present([](gse::physics::collision_component& cc) {
+					cc.resolve_collisions = false;
+				});
+			}
 
 			auto update() -> void override {
 				component<gse::physics::motion_component>().current_position = position;

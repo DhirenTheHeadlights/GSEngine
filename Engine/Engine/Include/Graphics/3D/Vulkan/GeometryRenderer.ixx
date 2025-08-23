@@ -123,7 +123,7 @@ auto gse::renderer::geometry::initialize() -> void {
 		.rasterizerDiscardEnable = vk::False,
 		.polygonMode = vk::PolygonMode::eFill,
 		.cullMode = vk::CullModeFlagBits::eBack,
-		.frontFace = vk::FrontFace::eCounterClockwise,
+		.frontFace = vk::FrontFace::eClockwise,
 		.depthBiasEnable = vk::False,
 		.depthBiasConstantFactor = 2.0f,
 		.depthBiasClamp = 0.0f,
@@ -354,6 +354,9 @@ auto gse::renderer::geometry::render(const std::span<std::reference_wrapper<regi
 
 						for (const auto& entry : model_handle.render_queue_entries()) {
 							push_constants["model"] = std::as_bytes(std::span{ &entry.model_matrix, 1 });
+							push_constants["normal_matrix"] = std::as_bytes(std::span{ &entry.normal_matrix, 1 });
+
+							std::println("model: {}, normal: {}", entry.model_matrix, entry.normal_matrix);
 
 							m_shader->push(
 								command,

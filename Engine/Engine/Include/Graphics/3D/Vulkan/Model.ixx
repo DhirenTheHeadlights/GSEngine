@@ -18,6 +18,7 @@ export namespace gse {
 		const resource::handle<model> model;
 		std::size_t index;
 		mat4 model_matrix;
+		mat4 normal_matrix;
 		unitless::vec3 color;
 	};
 
@@ -28,6 +29,9 @@ export namespace gse {
 		auto set_position(const vec3<length>& position) -> void;
 		auto set_rotation(const vec3<angle>& rotation) -> void;
 		auto set_scale(const unitless::vec3& scale) -> void;
+
+		auto move(const vec3<length>& offset) -> void;
+		auto rotate(const vec3<angle>& offset) -> void;
 
 		auto render_queue_entries() -> std::span<render_queue_entry>;
 		auto handle() const -> const resource::handle<model>&;
@@ -297,7 +301,7 @@ auto gse::model::load(const renderer::context& context) -> void {
 	for (const auto& mesh : m_meshes) {
 		sum += mesh.center_of_mass();
 	}
-	m_center_of_mass = m_meshes.empty() ? vec3<length>{ 0, 0, 0 } : sum / static_cast<float>(m_meshes.size());
+	m_center_of_mass = m_meshes.empty() ? vec3<length>{} : sum / static_cast<float>(m_meshes.size());
 }
 
 auto gse::model::unload() -> void {
@@ -327,28 +331,40 @@ auto gse::model_instance::set_scale(const unitless::vec3& scale) -> void {
 	m_is_dirty = true;
 }
 
+auto gse::model_instance::move(const vec3<length>& offset) -> void {
+	m_position += offset;
+	m_is_dirty = true;
+}
+
+auto gse::model_instance::rotate(const vec3<angle>& offset) -> void {
+	m_rotation += offset;
+	m_is_dirty = true;
+}
+
 auto gse::model_instance::render_queue_entries() -> std::span<render_queue_entry> {
 	if (m_render_queue_entries.empty() && m_model_handle.valid()) {
 		const auto* resolved_model = m_model_handle.resolve();
 		m_render_queue_entries.reserve(resolved_model->meshes().size());
 		for (std::size_t i = 0; i < resolved_model->meshes().size(); ++i) {
-			m_render_queue_entries.emplace_back(m_model_handle, i, mat4(1.0f), unitless::vec3(1.0f));
+			m_render_queue_entries.emplace_back(m_model_handle, i, mat4(1.0f), mat4(1.0f), unitless::vec3(1.0f));
 		}
 	}
 
 	if (m_is_dirty) {
 		const mat4 scale_mat = scale(mat4(1.0f), m_scale);
-		mat4 rot_mat = rotate(mat4(1.0f), unitless::axis::x, m_rotation.x);
-		rot_mat = rotate(rot_mat, unitless::axis::y, m_rotation.y);
-		rot_mat = rotate(rot_mat, unitless::axis::z, m_rotation.z);
+		mat4 rot_mat = gse::rotate(mat4(1.0f), unitless::axis::x, m_rotation.x);
+		rot_mat = gse::rotate(rot_mat, unitless::axis::y, m_rotation.y);
+		rot_mat = gse::rotate(rot_mat, unitless::axis::z, m_rotation.z);
 
 		const mat4 trans_mat = translate(mat4(1.0f), m_position);
 		const vec3 center_of_mass = m_model_handle.resolve()->center_of_mass(); 
 		const mat4 pivot_correction_mat = translate(mat4(1.0f), -center_of_mass);
 		const mat4 final_model_matrix = trans_mat * rot_mat * scale_mat * pivot_correction_mat;
+		const mat4 normal_matrix = final_model_matrix.inverse().transpose();
 
 		for (auto& entry : m_render_queue_entries) {
 			entry.model_matrix = final_model_matrix;
+			entry.normal_matrix = normal_matrix;
 		}
 
 		m_is_dirty = false;

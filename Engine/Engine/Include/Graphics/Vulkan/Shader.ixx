@@ -664,7 +664,7 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 	{
 		slang::TargetDesc target{
 			.format = SLANG_SPIRV,
-			.profile = global_session->findProfile("sm_6_0")
+			.profile = global_session->findProfile("spirv_1_5")
 		};
 
 		std::vector<std::string> sp_storage;
@@ -683,8 +683,9 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 		slang::SessionDesc sdesc{
 			.targets = &target,
 			.targetCount = 1,
+			.defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR,
 			.searchPaths = sp_c_strs.data(),
-			.searchPathCount = static_cast<SlangInt>(sp_c_strs.size())
+			.searchPathCount = static_cast<SlangInt>(sp_c_strs.size()),
 		};
 
 		const auto rs = global_session->createSession(sdesc, session.writeRef());
@@ -1605,7 +1606,7 @@ auto gse::shader::set_uniform(std::string_view full_name, const T& value, const 
 		std::format("Uniform block '{}' not found", block_name)
 	);
 }
-\
+
 auto gse::shader::set_uniform_block(const std::string_view block_name, const std::unordered_map<std::string, std::span<const std::byte>>& data, const vulkan::persistent_allocator::allocation& alloc) const -> void {
 	const struct binding* block_binding = nullptr;
 	for (const auto& set : m_layout.sets | std::views::values) {
@@ -1615,7 +1616,9 @@ auto gse::shader::set_uniform_block(const std::string_view block_name, const std
 				break;
 			}
 		}
-		if (block_binding) break;
+		if (block_binding) {
+			break;
+		}
 	}
 	assert(block_binding, std::format("Uniform block '{}' not found", block_name));
 
