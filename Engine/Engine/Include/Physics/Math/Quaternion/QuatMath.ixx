@@ -130,6 +130,11 @@ export namespace gse {
 	) -> mat3_t<T>;
 
 	template <typename T>
+	constexpr auto from_mat4(
+		const mat4_t<T>& m
+	) ->quat_t<T>;
+
+	template <typename T>
 	constexpr auto identity(
 	) -> quat_t<T>;
 
@@ -288,6 +293,44 @@ constexpr auto gse::mat3_cast(const quat_t<T>& q) -> mat3_t<T> {
 		unitless::vec3_t<T>{xy - wz, 1 - (xx + zz), yz + wx},
 		unitless::vec3_t<T>{xz + wy, yz - wx, 1 - (xx + yy)}
 	};
+}
+
+template <typename T>
+constexpr auto gse::from_mat4(const mat4_t<T>& m) -> quat_t<T> {
+	T trace = m[0][0] + m[1][1] + m[2][2];
+
+	quat_t<T> q;
+
+	if (trace > 0) {
+		T s = std::sqrt(trace + T(1.0)) * T(2.0);
+		q.s = T(0.25) * s;
+		q.x = (m[1][2] - m[2][1]) / s;
+		q.y = (m[2][0] - m[0][2]) / s;
+		q.z = (m[0][1] - m[1][0]) / s;
+	}
+	else if ((m[0][0] > m[1][1]) && (m[0][0] > m[2][2])) {
+		T s = std::sqrt(T(1.0) + m[0][0] - m[1][1] - m[2][2]) * T(2.0); 
+		q.s = (m[1][2] - m[2][1]) / s;
+		q.x = T(0.25) * s;
+		q.y = (m[1][0] + m[0][1]) / s;
+		q.z = (m[2][0] + m[0][2]) / s;
+	}
+	else if (m[1][1] > m[2][2]) {
+		T s = std::sqrt(T(1.0) + m[1][1] - m[0][0] - m[2][2]) * T(2.0); 
+		q.s = (m[2][0] - m[0][2]) / s;
+		q.x = (m[1][0] + m[0][1]) / s;
+		q.y = T(0.25) * s;
+		q.z = (m[2][1] + m[1][2]) / s;
+	}
+	else {
+		T s = std::sqrt(T(1.0) + m[2][2] - m[0][0] - m[1][1]) * T(2.0); 
+		q.s = (m[0][1] - m[1][0]) / s;
+		q.x = (m[2][0] + m[0][2]) / s;
+		q.y = (m[2][1] + m[1][2]) / s;
+		q.z = T(0.25) * s;
+	}
+
+	return q;
 }
 
 template <typename T>

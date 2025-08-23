@@ -29,27 +29,27 @@ export namespace gse {
 			auto& camera = renderer::camera();
 			// Move Forward (-Z)
 			if (keyboard::held(key::w)) {
-				camera.move(camera.direction_relative_to_origin({ 0.f, 0.f, -1.f }));
+				camera.move(camera.direction_relative_to_origin({ 0.f, 0.f, -100.f }), main_clock::dt());
 			}
 			// Move Backward (+Z)
 			if (keyboard::held(key::s)) {
-				camera.move(camera.direction_relative_to_origin({ 0.f, 0.f, 1.f }));
+				camera.move(camera.direction_relative_to_origin({ 0.f, 0.f, 100.f }), main_clock::dt());
 			}
 			// Strafe Left (-X)
 			if (keyboard::held(key::a)) {
-				camera.move(camera.direction_relative_to_origin({ -1.f, 0.f, 0.f }));
+				camera.move(camera.direction_relative_to_origin({ -100.f, 0.f, 0.f }), main_clock::dt());
 			}
 			// Strafe Right (+X)
 			if (keyboard::held(key::d)) {
-				camera.move(camera.direction_relative_to_origin({ 1.f, 0.f, 0.f }));
+				camera.move(camera.direction_relative_to_origin({ 100.f, 0.f, 0.f }), main_clock::dt());
 			}
 			// Move Up (+Y)
 			if (keyboard::held(key::space)) {
-				camera.move(camera.direction_relative_to_origin({ 0.f, 1.f, 0.f }));
+				camera.move(camera.direction_relative_to_origin({ 0.f, 100.f, 0.f }), main_clock::dt());
 			}
 			// Move Down (-Y)
 			if (keyboard::held(key::left_control)) {
-				camera.move(camera.direction_relative_to_origin({ 0.f, -1.f, 0.f }));
+				camera.move(camera.direction_relative_to_origin({ 0.f, -100.f, 0.f }), main_clock::dt());
 			}
 		}
 	private:

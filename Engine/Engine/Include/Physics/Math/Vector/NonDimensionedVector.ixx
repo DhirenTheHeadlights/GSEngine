@@ -53,7 +53,7 @@ export namespace gse::unitless {
 	using vec4d = vec4_t<double>;
 
 	enum struct axis {
-		x, y, z, w
+		x, y, z
 	};
 
 	template <typename T>
@@ -62,7 +62,6 @@ export namespace gse::unitless {
 			case axis::x: return vec3_t<T>(1, 0, 0);
 			case axis::y: return vec3_t<T>(0, 1, 0);
 			case axis::z: return vec3_t<T>(0, 0, 1);
-			case axis::w: return vec3_t<T>(0, 0, 0);
 		}
 		return {};
 	}

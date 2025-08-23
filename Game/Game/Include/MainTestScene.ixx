@@ -10,7 +10,7 @@ import :black_knight;
 import gse;
 
 export namespace gs {
-	class main_test_scene final : public gse::hook<gse::scene> {
+	class main_test_scene final : public gse::hook<gse::scene> {	
 	public:
 		using hook::hook;
 
@@ -18,7 +18,9 @@ export namespace gs {
 			arena::create(this);
 
 			build("Player")
-				.with<player>();
+				.with<gse::free_camera>({
+					.initial_position = {}
+				});
 
 			build("Smaller Box")
 				.with<gse::box>({

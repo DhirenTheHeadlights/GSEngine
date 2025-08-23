@@ -384,7 +384,7 @@ auto gse::registry::activate(const id& id) -> void {
 					return true;
 				}
 
-				assert(false, std::format("Deferred action for entity {} did not complete successfully.", id));
+				std::println("WARNING: Deferred action for entity {} did not complete.", id);
 				return false;
 			}
 		);

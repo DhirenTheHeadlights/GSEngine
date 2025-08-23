@@ -100,8 +100,10 @@ constexpr gse::mat<T, Cols, Rows>::mat(std::initializer_list<unitless::vec_t<T, 
 
 template <typename T, std::size_t Cols, std::size_t Rows>
 constexpr gse::mat<T, Cols, Rows>::mat(const quat_t<T>& q) {
-	static_assert((Cols == 3 && Rows == 3) || (Cols == 4 && Rows == 4),
-		"Quaternion to matrix constructor is only defined for mat3x3 and mat4x4.");
+	static_assert(
+		(Cols == 3 && Rows == 3) || (Cols == 4 && Rows == 4),
+		"Quaternion to matrix constructor is only defined for mat3x3 and mat4x4."
+	);
 
 	const T qx2 = q.x * q.x;
 	const T qy2 = q.y * q.y;
@@ -180,33 +182,33 @@ constexpr auto gse::mat<T, Cols, Rows>::inverse() const -> mat {
 
 	if constexpr (Cols == 2) {
 		const T det = m.determinant();
-		assert(det != static_cast<T>(0) && "Matrix is not invertible.");
+		assert(det != static_cast<T>(0), "Matrix is not invertible.");
 		const T inv_det = static_cast<T>(1) / det;
 		return mat<T, 2, 2>({
 			unitless::vec_t<T, 2>{ m[1][1] * inv_det, -m[1][0] * inv_det },
 			unitless::vec_t<T, 2>{ -m[0][1] * inv_det, m[0][0] * inv_det }
-			});
+		});
 	}
 	else if constexpr (Cols == 3) {
 		const T det = m.determinant();
-		assert(det != static_cast<T>(0) && "Matrix is not invertible.");
+		assert(det != static_cast<T>(0), "Matrix is not invertible.");
 		const T inv_det = static_cast<T>(1) / det;
 		return mat<T, 3, 3>({
-			unitless::vec_t<T, 3>{
-				(m[1][1] * m[2][2] - m[2][1] * m[1][2])* inv_det,
-				(m[2][1] * m[0][2] - m[0][1] * m[2][2])* inv_det,
-				(m[0][1] * m[1][2] - m[1][1] * m[0][2])* inv_det
-			},
-			unitless::vec_t<T, 3>{
-				(m[1][2] * m[2][0] - m[1][0] * m[2][2])* inv_det,
-				(m[0][0] * m[2][2] - m[2][0] * m[0][2])* inv_det,
-				(m[1][0] * m[0][2] - m[0][0] * m[1][2])* inv_det
-			},
-			unitless::vec_t<T, 3>{
-				(m[1][0] * m[2][1] - m[2][0] * m[1][1])* inv_det,
-				(m[2][0] * m[0][1] - m[0][0] * m[2][1])* inv_det,
-				(m[0][0] * m[1][1] - m[1][0] * m[0][1])* inv_det
-			}
+				unitless::vec_t<T, 3>{
+					(m[1][1] * m[2][2] - m[2][1] * m[1][2])* inv_det,
+					(m[2][1] * m[0][2] - m[0][1] * m[2][2])* inv_det,
+					(m[0][1] * m[1][2] - m[1][1] * m[0][2])* inv_det
+				},
+				unitless::vec_t<T, 3>{
+					(m[1][2] * m[2][0] - m[1][0] * m[2][2])* inv_det,
+					(m[0][0] * m[2][2] - m[2][0] * m[0][2])* inv_det,
+					(m[1][0] * m[0][2] - m[0][0] * m[1][2])* inv_det
+				},
+				unitless::vec_t<T, 3>{
+					(m[1][0] * m[2][1] - m[2][0] * m[1][1])* inv_det,
+					(m[2][0] * m[0][1] - m[0][0] * m[2][1])* inv_det,
+					(m[0][0] * m[1][1] - m[1][0] * m[0][1])* inv_det
+				}
 			});
 	}
 	else if constexpr (Cols == 4) {
@@ -234,7 +236,7 @@ constexpr auto gse::mat<T, Cols, Rows>::inverse() const -> mat {
 		vec::storage<T, 4> fac2{ m[1][0] * c03 - m[1][1] * c09 + m[1][3] * c15, -(m[0][0] * c03 - m[0][1] * c09 + m[0][3] * c15), m[0][0] * c04 - m[0][1] * c10 + m[0][3] * c16, -(m[0][0] * c05 - m[0][1] * c11 + m[0][3] * c17) };
 		vec::storage<T, 4> fac3{ -(m[1][0] * c06 - m[1][1] * c12 + m[1][2] * c15), m[0][0] * c06 - m[0][1] * c12 + m[0][2] * c15, -(m[0][0] * c07 - m[0][1] * c13 + m[0][2] * c16), m[0][0] * c08 - m[0][1] * c14 + m[0][2] * c17 };
 
-		const T det = m[0][0] * fac0[0] + m[0][1] * fac1[0] + m[2][0] * fac2[0] + m[3][0] * fac3[0];
+		const T det = m[0][0] * fac0[0] + m[0][1] * fac1[0] + m[0][2] * fac2[0] + m[0][3] * fac3[0];
 		assert(det != static_cast<T>(0), "Matrix is not invertible.");
 
 		const T inv_det = static_cast<T>(1) / det;
@@ -243,7 +245,7 @@ constexpr auto gse::mat<T, Cols, Rows>::inverse() const -> mat {
 			unitless::vec_t<T, 4>{ fac1* inv_det },
 			unitless::vec_t<T, 4>{ fac2* inv_det },
 			unitless::vec_t<T, 4>{ fac3* inv_det }
-			});
+		});
 	}
 	else {
 		static_assert(Cols < 2 || Cols > 4, "Inverse is only implemented for 2x2, 3x3, and 4x4 matrices.");

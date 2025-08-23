@@ -30,7 +30,7 @@ export namespace gse::physics {
 	};
 
 	struct motion_component : component<motion_component_data> {
-		using component<motion_component_data>::component;
+		using component::component;
 
 		auto transformation_matrix() const -> mat4;
 		auto inv_inertial_tensor() const -> mat3;

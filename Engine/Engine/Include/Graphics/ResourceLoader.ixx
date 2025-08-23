@@ -181,36 +181,50 @@ gse::resource::loader<R, C>::~loader() {
 
 template <typename R, typename C> requires gse::is_resource<R, C>
 auto gse::resource::loader<R, C>::flush() -> void {
-	std::vector<slot*> slots_to_load;
+	std::vector<id> ids_to_load;
 
 	{
 		std::lock_guard lock(m_mutex);
 		for (auto& slot : m_resources.items()) {
 			if (slot.current_state.load(std::memory_order_acquire) == state::queued) {
-				slots_to_load.push_back(&slot);
+				slot.current_state.store(state::loading, std::memory_order_release);
+				ids_to_load.push_back(slot.resource ? slot.resource->id() : m_path_to_id[slot.path]);
 			}
 		}
 	}
 
-	for (auto* slot_ptr : slots_to_load) {
-		slot_ptr->current_state.store(state::loading, std::memory_order_release);
-
+	for (id rid : ids_to_load) {
 		m_loading_futures.push_back(
 			std::async(
-				std::launch::async,
-				[this, slot_ptr] {
-					gpu_work_token token(this, slot_ptr->resource->id(), m_context.gpu_queue_size());
+				std::launch::async, 
+				[this, rid] {
+					gpu_work_token token(this, rid, m_context.gpu_queue_size());
 
-					if (!slot_ptr->resource) {
-						slot_ptr->resource = std::make_unique<R>(slot_ptr->path);
+					R* resource_ptr;
+					{
+						std::lock_guard lock(m_mutex);
+						if (auto* slot = m_resources.try_get(rid)) {
+							if (!slot->resource) {
+								slot->resource = std::make_unique<R>(slot->path);
+							}
+							resource_ptr = slot->resource.get(); 
+						}
+						else {
+							return; 
+						}
 					}
-					slot_ptr->resource->load(m_context);
+
+					resource_ptr->load(m_context);
 				}
 			)
 		);
 	}
 
-	std::erase_if(m_loading_futures, [](const auto& f) { return f.wait_for(std::chrono::seconds(0)) == std::future_status::ready; });
+	std::erase_if(
+		m_loading_futures, 
+		[](const auto& f) {
+			return f.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+		});
 }
 
 template <typename R, typename C> requires gse::is_resource<R, C>

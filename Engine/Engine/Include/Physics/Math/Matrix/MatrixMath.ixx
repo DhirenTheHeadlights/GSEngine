@@ -130,31 +130,31 @@ export namespace gse {
 
 	template <typename T>
 	constexpr auto translate(
-		const mat4_t<T>& mat_trix,
+		const mat4_t<T>& matrix,
 		const vec3<length_t<T>>& translation
 	) -> mat4_t<T>;
 
 	template <typename T>
 	constexpr auto rotate(
-		const mat4_t<T>& mat_trix,
+		const mat4_t<T>& matrix,
 		unitless::axis axis, 
 		angle_t<T> angle
 	) -> mat4_t<T>;
 
 	template <typename T>
 	constexpr auto scale(
-		const mat4_t<T>& mat_trix,
+		const mat4_t<T>& matrix,
 		const unitless::vec3& scale
 	) -> mat4_t<T>;
 
 	template <typename T, int N, int M>
 	constexpr auto value_ptr(
-		mat_t<T, N, M>& mat_trix
+		mat_t<T, N, M>& matrix
 	) -> T*;
 
 	template <typename T, int N, int M>
 	constexpr auto value_ptr(
-		const mat_t<T, N, M>& mat_trix
+		const mat_t<T, N, M>& matrix
 	) -> const T*;
 
 	template <typename T, int N, int M>
@@ -312,8 +312,8 @@ constexpr auto gse::perspective(const angle_t<T> fov, const T aspect, length_t<T
 	result[0][0] = T(1) / (aspect * tan_half_fov_y);
 	result[1][1] = T(1) / (tan_half_fov_y);
 
-	result[2][2] = far_m / (far_m - near_m);
-	result[2][3] = T(1);
+	result[2][2] = far_m / (near_m - far_m);
+	result[2][3] = T(-1);
 	result[3][2] = -(far_m * near_m) / (far_m - near_m);
 
 	result[1][1] *= -1;
@@ -332,8 +332,8 @@ constexpr auto gse::orthographic(length_t<T> left, length_t<T> right, length_t<T
 }
 
 template <typename T>
-constexpr auto gse::translate(const mat4_t<T>& mat_trix, const vec3<length_t<T>>& translation) -> mat4_t<T> {
-	return mat_trix * mat4_t<T>{
+constexpr auto gse::translate(const mat4_t<T>& matrix, const vec3<length_t<T>>& translation) -> mat4_t<T> {
+	return matrix * mat4_t<T>{
 		{ 1, 0, 0, 0 },
 		{ 0, 1, 0, 0 },
 		{ 0, 0, 1, 0 },
@@ -342,7 +342,7 @@ constexpr auto gse::translate(const mat4_t<T>& mat_trix, const vec3<length_t<T>>
 }
 
 template <typename T>
-constexpr auto gse::rotate(const mat4_t<T>& mat_trix, const enum unitless::axis axis, angle_t<T> angle) -> mat4_t<T> {
+constexpr auto gse::rotate(const mat4_t<T>& matrix, const unitless::axis axis, angle_t<T> angle) -> mat4_t<T> {
 	auto a = normalize(unitless::axis_v<T>(axis));
 
 	T half_angle = angle.template as<units::radians>() / 2;
@@ -350,18 +350,18 @@ constexpr auto gse::rotate(const mat4_t<T>& mat_trix, const enum unitless::axis 
 	T c = std::cos(half_angle);
 
 	auto q = normalize(quat_t<T>(c, a.x * s, a.y * s, a.z * s));
-	mat4_t <T> rotation_mat_trix = mat4_t<T>{
-		{ 1 - 2 * q.y * q.y - 2 * q.z * q.z, 2 * q.x * q.y - 2 * q.z * q.s,		2 * q.x * q.z + 2 * q.y * q.s,		0},
-		{ 2 * q.x * q.y + 2 * q.z * q.s,	 1 - 2 * q.x * q.x - 2 * q.z * q.z, 2 * q.y * q.z - 2 * q.x * q.s,		0},
-		{ 2 * q.x * q.z - 2 * q.y * q.s,	 2 * q.y * q.z + 2 * q.x * q.s,		1 - 2 * q.x * q.x - 2 * q.y * q.y,	0},
-		{ 0,								 0,									0,									1}
+	mat4_t <T> rotation_matrix = mat4_t<T>{
+		{ 1 - 2 * q.y * q.y - 2 * q.z * q.z, 2 * q.x * q.y - 2 * q.z * q.s, 2 * q.x * q.z + 2 * q.y * q.s, 0 },
+		{ 2 * q.x * q.y + 2 * q.z * q.s, 1 - 2 * q.x * q.x - 2 * q.z * q.z, 2 * q.y * q.z - 2 * q.x * q.s, 0 },
+		{ 2 * q.x * q.z - 2 * q.y * q.s, 2 * q.y * q.z + 2 * q.x * q.s, 1 - 2 * q.x * q.x - 2 * q.y * q.y, 0 },
+		{ 0, 0, 0, 1 }
 	};
-	return mat_trix * rotation_mat_trix;
+	return matrix * rotation_matrix;
 }
 
 template <typename T>
-constexpr auto gse::scale(const mat4_t<T>& mat_trix, const unitless::vec3& scale) -> mat4_t<T> {
-	return mat_trix * mat4_t<T>{
+constexpr auto gse::scale(const mat4_t<T>& matrix, const unitless::vec3& scale) -> mat4_t<T> {
+	return matrix * mat4_t<T>{
 		{ scale.x,	0,			0,			0 },
 		{ 0,		scale.y,	0,			0 },
 		{ 0,		0,			scale.z,	0 },
@@ -370,13 +370,13 @@ constexpr auto gse::scale(const mat4_t<T>& mat_trix, const unitless::vec3& scale
 }
 
 template <typename T, int Cols, int Rows>
-constexpr auto gse::value_ptr(mat_t<T, Cols, Rows>& mat_trix) -> T* {
-	return &mat_trix[0][0];
+constexpr auto gse::value_ptr(mat_t<T, Cols, Rows>& matrix) -> T* {
+	return &matrix[0][0];
 }
 
 template <typename T, int Cols, int Rows>
-constexpr auto gse::value_ptr(const mat_t<T, Cols, Rows>& mat_trix) -> const T* {
-	return &mat_trix[0][0];
+constexpr auto gse::value_ptr(const mat_t<T, Cols, Rows>& matrix) -> const T* {
+	return &matrix[0][0];
 }
 
 template <typename T, int N, int M>

@@ -5,6 +5,7 @@ import std;
 import gse.physics.math;
 import gse.platform;
 
+
 export namespace gse {
 	class camera {
 	public:
@@ -13,8 +14,9 @@ export namespace gse {
 		auto process_mouse_movement(const vec2<length>& offset) -> void;
 		auto update_orientation() -> void;
 
-		auto set_position(const vec3<length>& position) -> void ;
-		auto move(const vec3<length>& offset) -> void ;
+		auto set_position(const vec3<length>& position) -> void;
+		auto move(const vec3<length>& offset, time dt) -> void;
+		auto look_at(const vec3<length>& target) -> void ;
 
 		auto view() const -> mat4;
 		auto projection(unitless::vec2 viewport) const -> mat4;
@@ -42,8 +44,8 @@ gse::camera::camera(const vec3<length>& initial_position): m_position(initial_po
 
 auto gse::camera::process_mouse_movement(const vec2<length>& offset) -> void {
 	const vec2 transformed_offset = offset * m_mouse_sensitivity;
-	m_yaw += degrees(transformed_offset.x.as_default_unit());
-	m_pitch += degrees(transformed_offset.y.as_default_unit());
+	m_yaw -= degrees(transformed_offset.x.as_default_unit());
+	m_pitch -= degrees(transformed_offset.y.as_default_unit());
 	m_pitch = std::clamp(m_pitch, degrees(-89.0f), degrees(89.0f));
 }
 
@@ -53,10 +55,17 @@ auto gse::camera::update_orientation() -> void {
 	m_orientation = normalize(yaw_rotation * pitch_rotation);
 }
 
-auto gse::camera::set_position(const vec3<length>& position) -> void { this->m_position = position; }
+auto gse::camera::set_position(const vec3<length>& position) -> void {
+	this->m_position = position;
+}
 
-auto gse::camera::move(const vec3<length>& offset) -> void {
-	m_position += offset;
+auto gse::camera::move(const vec3<length>& offset, const time dt) -> void {
+	m_position += offset * dt.as_default_unit();
+}
+
+auto gse::camera::look_at(const vec3<length>& target) -> void {
+	const mat4 look_at_matrix = gse::look_at(m_position, target, { 0.f, 1.f, 0.f });
+	m_orientation = normalize(conjugate(from_mat4(look_at_matrix)));
 }
 
 auto gse::camera::view() const -> mat4 {
