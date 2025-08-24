@@ -32,25 +32,54 @@ namespace gse::unit {
 }
 
 namespace gse::unit {
-    template <internal::is_quantity Q, int N>
+	template <typename Q>
+	concept quantity_simd_safe =
+		std::is_trivially_copyable_v<Q> &&
+		std::is_standard_layout_v<Q> &&
+		sizeof(Q) == sizeof(typename Q::value_type) &&
+		alignof(Q) == alignof(typename Q::value_type);
+
+    template <quantity_simd_safe Q, int N>
 	struct vec_t : internal::vec_t<vec_t<Q, N>, Q, N> {
 		using internal::vec_t<vec_t, Q, N>::vec_t;
         using value_type = typename Q::value_type;
 
-        template <typename... Args> requires ((std::is_convertible_v<Args, typename Q::value_type> || internal::is_quantity<Args>) && ...)
+        template <typename... Args> requires ((std::is_convertible_v<Args, typename Q::value_type> || quantity_simd_safe<Args>) && ...)
         constexpr vec_t(Args... args);
 
 		template <typename U>
 		constexpr vec_t(const unitless::vec_t<U, N>& other);
 
 		template <internal::is_arithmetic U> 
-		constexpr vec_t(const vec::storage<U, N> other);
+		constexpr vec_t(const vec::storage<U, N>& other);
 
         template <internal::is_unit U> requires has_same_tag<Q, U>
         [[nodiscard]] constexpr auto as() const -> unitless::vec_t<value_type, N>;
 
 		constexpr auto operator<=>(const vec_t& other) const = default;
     };
+
+	template <quantity_simd_safe Q, std::size_t N>
+	constexpr auto value_span(vec_t<Q, N>& a) -> std::span<typename Q::value_type, N> {
+		using v = typename Q::value_type;
+		using aq = std::array<Q, N>;
+		using av = std::array<v, N>;
+
+		aq& arr_q = a.storage.data;
+		auto* arr_v = std::launder(reinterpret_cast<av*>(&arr_q));
+		return std::span<v, N>(*arr_v);
+	}
+
+	template <quantity_simd_safe Q, std::size_t N>
+	constexpr auto value_span(const vec_t<Q, N>& a) -> std::span<const typename Q::value_type, N> {
+		using v = typename Q::value_type;
+		using aq = const std::array<Q, N>;
+		using av = const std::array<v, N>;
+
+		const aq& arr_q = a.storage.data;
+		auto* arr_v = std::launder(reinterpret_cast<const av*>(&arr_q));
+		return std::span<const v, N>(*arr_v);
+	}
 }
 
 export namespace gse {
@@ -72,11 +101,11 @@ export namespace gse {
 	template <typename T> using vec4i = vec_t<T, 4>;
 }
 
-template <gse::internal::is_quantity Q, int N>
-template <typename ... Args> requires ((std::is_convertible_v<Args, typename Q::value_type> || gse::internal::is_quantity<Args>) && ...)
+template <gse::unit::quantity_simd_safe Q, int N>
+template <typename ... Args> requires ((std::is_convertible_v<Args, typename Q::value_type> || gse::unit::quantity_simd_safe<Args>) && ...)
 constexpr gse::unit::vec_t<Q, N>::vec_t(Args... args) : internal::vec_t<vec_t, Q, N>(unit::value<value_type>(args)...) {}
 
-template <gse::internal::is_quantity Q, int N>
+template <gse::unit::quantity_simd_safe Q, int N>
 template <typename U>
 constexpr gse::unit::vec_t<Q, N>::vec_t(const unitless::vec_t<U, N>& other): internal::vec_t<vec_t, Q, N>() {
 	for (std::size_t i = 0; i < N; ++i) {
@@ -84,21 +113,19 @@ constexpr gse::unit::vec_t<Q, N>::vec_t(const unitless::vec_t<U, N>& other): int
 	}
 }
 
-template <gse::internal::is_quantity Q, int N>
+template <gse::unit::quantity_simd_safe Q, int N>
 template <gse::internal::is_arithmetic U>
-constexpr gse::unit::vec_t<Q, N>::vec_t(const vec::storage<U, N> other): internal::vec_t<vec_t, Q, N>() {
+constexpr gse::unit::vec_t<Q, N>::vec_t(const vec::storage<U, N>& other): internal::vec_t<vec_t, Q, N>() {
 	for (std::size_t i = 0; i < N; ++i) {
 		this->storage[i] = Q(static_cast<value_type>(other[i]));
 	}
 }
 
-template <gse::internal::is_quantity Q, int N>
+template <gse::unit::quantity_simd_safe Q, int N>
 template <gse::internal::is_unit U> requires gse::unit::has_same_tag<Q, U>
 constexpr auto gse::unit::vec_t<Q, N>::as() const -> unitless::vec_t<value_type, N> {
-	unitless::vec_t<value_type, N> result;
-	for (int i = 0; i < N; ++i) {
-		result[i] = this->storage[i].as_default_unit() * U::conversion_factor;
-	}
+	vec::storage<value_type, N> result;
+	simd::mul_s(value_span(*this), U::conversion_factor, std::span(result.data));
 	return result;
 }
 

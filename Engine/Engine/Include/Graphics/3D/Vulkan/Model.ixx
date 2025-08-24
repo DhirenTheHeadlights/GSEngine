@@ -362,6 +362,8 @@ auto gse::model_instance::render_queue_entries() -> std::span<render_queue_entry
 		const mat4 final_model_matrix = trans_mat * rot_mat * scale_mat * pivot_correction_mat;
 		const mat4 normal_matrix = final_model_matrix.inverse().transpose();
 
+		std::println("model mat: {}", final_model_matrix);
+
 		for (auto& entry : m_render_queue_entries) {
 			entry.model_matrix = final_model_matrix;
 			entry.normal_matrix = normal_matrix;

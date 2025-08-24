@@ -22,6 +22,9 @@ export namespace gs {
 					.initial_position = {}
 				});
 
+			build("Backpack")
+				.with<backpack>();
+
 			build("Smaller Box")
 				.with<gse::box>({
 					.initial_position = gse::vec::meters(20.f, -400.f, 20.f),
@@ -49,10 +52,6 @@ export namespace gs {
 					.sectors = 18,
 					.stacks = 10
 				});
-		}
-
-		auto render() -> void override {
-			
 		}
 	};
 } 

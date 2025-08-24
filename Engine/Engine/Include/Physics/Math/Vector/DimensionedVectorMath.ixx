@@ -12,192 +12,192 @@ export namespace gse::unit {
 	constexpr auto operator+(
 		const vec_t<T, N>& lhs,
 		const vec_t<T, N>& rhs
-		) -> vec_t<T, N>;
+	) -> vec_t<T, N>;
 
 	template <internal::is_quantity T, int N>
 	constexpr auto operator-(
 		const vec_t<T, N>& lhs,
 		const vec_t<T, N>& rhs
-		) -> vec_t<T, N>;
+	) -> vec_t<T, N>;
 
 	template <internal::is_quantity T, internal::is_arithmetic U, int N>
 	constexpr auto operator*(
 		const vec_t<T, N>& lhs,
 		const U& rhs
-		) -> vec_t<T, N>;
+	) -> vec_t<T, N>;
 
 	template <internal::is_arithmetic U, internal::is_quantity T, int N>
 	constexpr auto operator*(
 		const U& lhs,
 		const vec_t<T, N>& rhs
-		) -> vec_t<T, N>;
+	) -> vec_t<T, N>;
 
 	template <internal::is_quantity T, internal::is_arithmetic U, int N>
 	constexpr auto operator/(
 		const vec_t<T, N>& lhs,
 		const U& rhs
-		) -> vec_t<T, N>;
+	) -> vec_t<T, N>;
 
 	template <internal::is_arithmetic U, internal::is_quantity T, int N>
 	constexpr auto operator/(
 		const U& lhs,
 		const vec_t<T, N>& rhs
-		) -> vec_t<T, N>;
+	) -> vec_t<T, N>;
 
 	template <internal::is_quantity T, internal::is_quantity U, int N>
 	constexpr auto operator*(
 		const vec_t<T, N>& lhs,
 		const vec_t<U, N>& rhs
-		);
+	);
 
 	template <internal::is_quantity T, internal::is_quantity U, int N>
 	constexpr auto operator/(
 		const vec_t<T, N>& lhs,
 		const vec_t<U, N>& rhs
-		);
+	);
 
 	template <internal::is_quantity T, int N>
 	constexpr auto operator/(
 		const vec_t<T, N>& lhs,
 		const vec_t<T, N>& rhs
-		) -> unitless::vec_t<typename T::value_type, N>;
+	) -> unitless::vec_t<typename T::value_type, N>;
 
 	template <internal::is_quantity T, internal::is_quantity U, int N>
 	constexpr auto operator*(
 		const vec_t<T, N>& lhs,
 		const U& rhs
-		);
+	);
 
 	template <internal::is_quantity T, internal::is_quantity U, int N>
 	constexpr auto operator/(
 		const vec_t<T, N>& lhs,
 		const U& rhs
-		);
+	);
 
 	template <internal::is_quantity T, internal::is_quantity U, int N>
 	constexpr auto operator*(
 		const U& lhs,
 		const vec_t<T, N>& rhs
-		);
+	);
 
 	template <internal::is_quantity T, internal::is_quantity U, int N>
 	constexpr auto operator/(
 		const U& lhs,
 		const vec_t<T, N>& rhs
-		);
+	);
 
 	template <internal::is_quantity T, int N>
 	constexpr auto operator/(
 		const vec_t<T, N>& lhs,
 		const T& rhs
-		) -> unitless::vec_t<typename T::value_type, N>;
+	) -> unitless::vec_t<typename T::value_type, N>;
 
 	template <internal::is_quantity T, int N>
 	constexpr auto operator/(
 		const T& lhs,
 		const vec_t<T, N>& rhs
-		) -> unitless::vec_t<typename T::value_type, N>;
+	) -> unitless::vec_t<typename T::value_type, N>;
 
 	template <internal::is_quantity T, int N>
 	constexpr auto operator+=(
 		vec_t<T, N>& lhs,
 		const vec_t<T, N>& rhs
-		) -> vec_t<T, N>&;
+	) -> vec_t<T, N>&;
 
 	template <internal::is_quantity T, int N>
 	constexpr auto operator-=(
 		vec_t<T, N>& lhs,
 		const vec_t<T, N>& rhs
-		) -> vec_t<T, N>&;
+	) -> vec_t<T, N>&;
 
 	template <internal::is_quantity T, internal::is_arithmetic U, int N>
 	constexpr auto operator*=(
 		vec_t<T, N>& lhs,
 		const U& rhs
-		) -> vec_t<T, N>&;
+	) -> vec_t<T, N>&;
 
 	template <internal::is_quantity T, internal::is_arithmetic U, int N>
 	constexpr auto operator/=(
 		vec_t<T, N>& lhs,
 		const U& rhs
-		) -> vec_t<T, N>&;
+	) -> vec_t<T, N>&;
 
 	template <internal::is_quantity T, internal::is_arithmetic U, int N>
 	constexpr auto operator+(
 		const vec_t<T, N>& lhs,
 		const unitless::vec_t<U, N>& rhs
-		) -> vec_t<T, N>;
+	) -> vec_t<T, N>;
 
 	template <internal::is_arithmetic T, internal::is_quantity U, int N>
 	constexpr auto operator+(
 		const unitless::vec_t<T, N>& lhs,
 		const vec_t<U, N>& rhs
-		) -> vec_t<T, N>;
+	) -> vec_t<T, N>;
 
 	template <internal::is_quantity T, internal::is_arithmetic U, int N>
 	constexpr auto operator-(
 		const vec_t<T, N>& lhs,
 		const unitless::vec_t<U, N>& rhs
-		) -> vec_t<T, N>;
+	) -> vec_t<T, N>;
 
 	template <internal::is_arithmetic T, internal::is_quantity U, int N>
 	constexpr auto operator-(
 		const unitless::vec_t<T, N>& lhs,
 		const vec_t<U, N>& rhs
-		) -> vec_t<T, N>;
+	) -> vec_t<T, N>;
 
 	template <internal::is_quantity T, internal::is_arithmetic U, int N>
 	constexpr auto operator*(
 		const vec_t<T, N>& lhs,
 		const unitless::vec_t<U, N>& rhs
-		) -> vec_t<T, N>;
+	) -> vec_t<T, N>;
 
 	template <internal::is_arithmetic T, internal::is_quantity U, int N>
 	constexpr auto operator*(
 		const unitless::vec_t<T, N>& lhs,
 		const vec_t<U, N>& rhs
-		) -> vec_t<T, N>;
+	) -> vec_t<T, N>;
 
 	template <internal::is_quantity T, internal::is_arithmetic U, int N>
 	constexpr auto operator/(
 		const vec_t<T, N>& lhs,
 		const unitless::vec_t<U, N>& rhs
-		) -> vec_t<T, N>;
+	) -> vec_t<T, N>;
 
 	template <internal::is_arithmetic T, internal::is_quantity U, int N>
 	constexpr auto operator/(
 		const unitless::vec_t<T, N>& lhs,
 		const vec_t<U, N>& rhs
-		) -> vec_t<T, N>;
+	) -> vec_t<T, N>;
 
 	template <internal::is_arithmetic T, int N, internal::is_quantity U>
 	constexpr auto operator*(
 		const vec_t<T, N>& lhs,
 		const U& rhs
-		) -> vec_t<U, N>;
+	) -> vec_t<U, N>;
 
 	template <internal::is_arithmetic T, int N, internal::is_quantity U>
 	constexpr auto operator*(
 		const U& lhs,
 		const vec_t<T, N>& rhs
-		) -> vec_t<U, N>;
+	) -> vec_t<U, N>;
 
 	template <internal::is_arithmetic T, int N, internal::is_quantity U>
 	constexpr auto operator/(
 		const vec_t<T, N>& lhs,
 		const U& rhs
-		) -> vec_t<U, N>;
+	) -> vec_t<U, N>;
 
 	template <internal::is_arithmetic T, int N, internal::is_quantity U>
 	constexpr auto operator/(
 		const U& lhs,
 		const vec_t<T, N>& rhs
-		) -> vec_t<U, N>;
+	) -> vec_t<U, N>;
 
 	template <internal::is_quantity T, int N>
 	constexpr auto operator-(
 		const vec_t<T, N>& value
-		) -> vec_t<T, N>;
+	) -> vec_t<T, N>;
 }
 
 export namespace gse {
