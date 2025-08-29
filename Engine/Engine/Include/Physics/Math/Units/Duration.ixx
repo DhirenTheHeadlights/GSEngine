@@ -4,7 +4,7 @@ import std;
 
 import :dimension;
 import :quant;
-import :unit_vec;
+import :vector;
 
 namespace gse::units {
 	struct time_tag {};

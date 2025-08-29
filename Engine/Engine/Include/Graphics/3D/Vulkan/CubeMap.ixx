@@ -30,8 +30,8 @@ auto gse::cube_map::create(vulkan::config& config, const std::array<std::filesys
         .imageType = vk::ImageType::e2D,
         .format = vk::Format::eR8G8B8A8Srgb,
         .extent = {
-            .width = faces[0].size.x,
-            .height = faces[0].size.y,
+            .width = faces[0].size.x(),
+            .height = faces[0].size.y(),
             .depth = 1
         },
         .mipLevels = 1,
@@ -65,8 +65,8 @@ auto gse::cube_map::create(vulkan::config& config, const std::array<std::filesys
     vulkan::uploader::upload_image_layers(
         config,
         m_image_resource,
-        faces[0].size.x,
-        faces[0].size.y,
+        faces[0].size.x(),
+        faces[0].size.y(),
         reinterpret_cast<const std::vector<const void*>&>(faces),
         faces[0].size_bytes(),
         vk::ImageLayout::eShaderReadOnlyOptimal

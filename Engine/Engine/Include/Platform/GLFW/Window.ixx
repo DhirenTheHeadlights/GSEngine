@@ -85,10 +85,10 @@ gse::window::window(const std::string& title) {
 			if (self->m_ui_focus) {
 				const auto dims = self->viewport();
 
-				xpos = std::clamp(xpos, 0.0, static_cast<double>(dims.x));
-				ypos = std::clamp(ypos, 0.0, static_cast<double>(dims.y));
+				xpos = std::clamp(xpos, 0.0, static_cast<double>(dims.x()));
+				ypos = std::clamp(ypos, 0.0, static_cast<double>(dims.y()));
 
-				const double inverted_ypos = static_cast<double>(dims.y) - ypos;
+				const double inverted_ypos = static_cast<double>(dims.y()) - ypos;
 				input::mouse_pos_callback(xpos, inverted_ypos);
 			}
 			else {

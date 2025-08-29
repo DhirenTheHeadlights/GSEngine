@@ -33,16 +33,8 @@ export namespace gse {
 		auto load(const renderer::context& context) -> void;
 		auto unload() -> void;
 
-		auto descriptor_info() const -> vk::DescriptorImageInfo {
-			return {
-				.sampler = m_texture_sampler,
-				.imageView = m_texture_image.view,
-				.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
-			};
-		}
-		auto image_data() const -> const image::data& {
-			return m_image_data;
-		}
+		auto descriptor_info() const -> vk::DescriptorImageInfo;
+		auto image_data() const -> const image::data&;
 	private:
 		auto create_vulkan_resources(renderer::context& context, profile texture_profile) -> void;
 
@@ -128,8 +120,8 @@ auto gse::texture::compile() -> std::set<std::filesystem::path> {
 		out_file.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
 		out_file.write(reinterpret_cast<const char*>(&version), sizeof(version));
 
-		const std::uint32_t width = image_data.size.x;
-		const std::uint32_t height = image_data.size.y;
+		const std::uint32_t width = image_data.size.x();
+		const std::uint32_t height = image_data.size.y();
 		const std::uint32_t channels = image_data.channels;
 
 		out_file.write(reinterpret_cast<const char*>(&width), sizeof(width));
@@ -188,11 +180,23 @@ auto gse::texture::unload() -> void {
 	m_texture_sampler = nullptr;
 }
 
+auto gse::texture::descriptor_info() const -> vk::DescriptorImageInfo {
+	return {
+		.sampler = m_texture_sampler,
+		.imageView = m_texture_image.view,
+		.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+	};
+}
+
+auto gse::texture::image_data() const -> const image::data& {
+	return m_image_data;
+}
+
 auto gse::texture::create_vulkan_resources(renderer::context& context, const profile texture_profile) -> void {
 	auto& config = context.config();
 
-	const auto width = m_image_data.size.x;
-	const auto height = m_image_data.size.y;
+	const auto width = m_image_data.size.x();
+	const auto height = m_image_data.size.y();
 	const auto channels = m_image_data.channels;
 	const auto data_size = m_image_data.size_bytes();
 

@@ -251,7 +251,7 @@ auto gse::renderer::lighting::render(std::span<std::reference_wrapper<registry>>
 	const auto command = config.frame_context().command_buffer;
 
 	auto inv_pv = (m_context.camera().projection(m_context.window().viewport()) * m_context.camera().view()).inverse();
-	auto view_pos = m_context.camera().position().as<units::meters>().data();
+	auto view_pos = m_context.camera().position().as<units::meters>().data;
 
 	const std::unordered_map<std::string, std::span<const std::byte>> cam_data_map = {
 		{ "inv_pv", std::as_bytes(std::span(&inv_pv, 1)) },

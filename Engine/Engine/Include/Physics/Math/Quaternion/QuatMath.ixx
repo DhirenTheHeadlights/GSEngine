@@ -3,26 +3,27 @@ export module gse.physics.math:quat_math;
 import std;
 
 import :angle;
-import :unitless_vec;
+import :vector;
+import :vector_math;
 import :quat;
 import :matrix;
 
 export namespace gse {
 	template <typename T>
 	constexpr auto operator+(
-		const quat_t<T>& lhs, 
+		const quat_t<T>& lhs,
 		const quat_t<T>& rhs
 	) -> quat_t<T>;
 
 	template <typename T>
 	constexpr auto operator-(
-		const quat_t<T>& lhs, 
+		const quat_t<T>& lhs,
 		const quat_t<T>& rhs
 	) -> quat_t<T>;
 
 	template <typename T>
 	constexpr auto operator*(
-		const quat_t<T>& lhs, 
+		const quat_t<T>& lhs,
 		const quat_t<T>& rhs
 	) -> quat_t<T>;
 
@@ -46,7 +47,7 @@ export namespace gse {
 
 	template <typename T>
 	constexpr auto operator*=(
-		quat_t<T>& lhs, 
+		quat_t<T>& lhs,
 		const quat_t<T>& rhs
 	) -> quat_t<T>&;
 
@@ -64,19 +65,19 @@ export namespace gse {
 
 	template <typename T>
 	constexpr auto operator*(
-		const T& lhs, 
+		const T& lhs,
 		const quat_t<T>& rhs
 	) -> quat_t<T>;
 
 	template <typename T>
 	constexpr auto operator/(
-		const quat_t<T>& lhs, 
+		const quat_t<T>& lhs,
 		const T& rhs
 	) -> quat_t<T>;
 
 	template <typename T>
 	constexpr auto operator/(
-		const T& lhs, 
+		const T& lhs,
 		const quat_t<T>& rhs
 	) -> quat_t<T>;
 
@@ -88,13 +89,13 @@ export namespace gse {
 
 	template <typename T>
 	constexpr auto operator*=(
-		quat_t<T>& lhs, 
+		quat_t<T>& lhs,
 		const T& rhs
 	) -> quat_t<T>&;
 
 	template <typename T>
 	constexpr auto operator/=(
-		quat_t<T>& lhs, 
+		quat_t<T>& lhs,
 		const T& rhs
 	) -> quat_t<T>&;
 
@@ -132,7 +133,7 @@ export namespace gse {
 	template <typename T>
 	constexpr auto from_mat4(
 		const mat4_t<T>& m
-	) ->quat_t<T>;
+	) -> quat_t<T>;
 
 	template <typename T>
 	constexpr auto identity(
@@ -147,28 +148,28 @@ export namespace gse {
 
 template <typename T>
 constexpr auto gse::operator+(const quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T> {
-	return quat_t<T>(lhs.v + rhs.v);
+	return quat_t<T>(lhs.v4() + rhs.v4());
 }
 
 template <typename T>
 constexpr auto gse::operator-(const quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T> {
-	return quat_t<T>(lhs.v - rhs.v);
+	return quat_t<T>(lhs.v4() - rhs.v4());
 }
 
 template <typename T>
 constexpr auto gse::operator*(const quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T> {
-	auto v1 = unitless::vec_t<T, 3>{ lhs.x, lhs.y, lhs.z };
-	auto v2 = unitless::vec_t<T, 3>{ rhs.x, rhs.y, rhs.z };
-	auto vec_part = lhs.s * v2 + rhs.s * v1 + cross(v1, v2);
-	T scalar_part = lhs.s * rhs.s - dot(v1, v2);
+	const T s1 = lhs[0];
+	const T s2 = rhs[0];
+	const unitless::vec3_t<T> v1{ lhs[1], lhs[2], lhs[3] };
+	const unitless::vec3_t<T> v2{ rhs[1], rhs[2], rhs[3] };
+	const unitless::vec3_t<T> vec_part = s1 * v2 + s2 * v1 + cross(v1, v2);
+	const T scalar_part = s1 * s2 - dot(v1, v2);
 	return quat_t<T>(vec_part, scalar_part);
 }
 
 template <typename T>
 constexpr auto gse::operator/(const quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T> {
-	quat_t<T> rhs_conj(-rhs.x, -rhs.y, -rhs.z, rhs.s);
-	T norm_sq = rhs.x * rhs.x + rhs.y * rhs.y + rhs.z * rhs.z + rhs.s * rhs.s;
-	return lhs * rhs_conj / norm_sq;
+	return lhs * inverse(rhs);
 }
 
 template <typename T>
@@ -197,7 +198,7 @@ constexpr auto gse::operator/=(quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T
 
 template <typename T>
 constexpr auto gse::operator*(const quat_t<T>& lhs, const T& rhs) -> quat_t<T> {
-	return quat_t<T>(lhs.v * rhs);
+	return quat_t<T>(lhs.v4() * rhs);
 }
 
 template <typename T>
@@ -207,20 +208,19 @@ constexpr auto gse::operator*(const T& lhs, const quat_t<T>& rhs) -> quat_t<T> {
 
 template <typename T>
 constexpr auto gse::operator/(const quat_t<T>& lhs, const T& rhs) -> quat_t<T> {
-	return lhs * (T(1) / rhs);
+	return quat_t<T>(lhs.v4() / rhs);
 }
 
 template <typename T>
 constexpr auto gse::operator/(const T& lhs, const quat_t<T>& rhs) -> quat_t<T> {
-	T norm_sq = rhs.x * rhs.x + rhs.y * rhs.y + rhs.z * rhs.z + rhs.s * rhs.s;
-	quat_t<T> rhs_conj(rhs.s, -rhs.x, -rhs.y, -rhs.z);
-	return lhs * (rhs_conj / norm_sq);
+	const quat_t<T> s_quat{ lhs, T(0), T(0), T(0) };
+	return s_quat / rhs;
 }
 
 template <typename T>
 constexpr auto gse::operator*(const quaternion<T>& lhs, const unitless::vec3_t<T>& rhs) -> unitless::vec3_t<T> {
-	const unitless::vec3_t<T> u(lhs.x, lhs.y, lhs.z);
-	const T s = lhs.s;
+	const unitless::vec3_t<T> u{ lhs[1], lhs[2], lhs[3] };
+	const T s = lhs[0];
 	const unitless::vec3_t<T> t = T(2) * cross(u, rhs);
 	return rhs + s * t + cross(u, t);
 }
@@ -239,21 +239,23 @@ constexpr auto gse::operator/=(quat_t<T>& lhs, const T& rhs) -> quat_t<T>& {
 
 template <typename T>
 constexpr auto gse::normalize(const quat_t<T>& q) -> quat_t<T> {
-	auto mag = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.s * q.s);
-	if (mag == 0) {
+	const T n2 = dot(q.v4(), q.v4());
+	if (n2 == T(0)) {
 		return quat_t<T>{};
 	}
-	return { q.s / mag, q.x / mag, q.y / mag, q.z / mag };
+	const T inv_n = T(1) / std::sqrt(n2);
+	return quat_t<T>(q.v4() * inv_n);
 }
 
 template <typename T>
 constexpr auto gse::conjugate(const quat_t<T>& q) -> quat_t<T> {
-	return { q.s, -q.x, -q.y, -q.z };
+	const unitless::vec4_t<T> mask{ T(1), T(-1), T(-1), T(-1) };
+	return quat_t<T>(q.v4() * mask);
 }
 
 template <typename T>
 constexpr auto gse::norm_squared(const quat_t<T>& q) -> T {
-	return dot(q, q);
+	return dot(q.v4(), q.v4());
 }
 
 template <typename T>
@@ -263,85 +265,78 @@ constexpr auto gse::inverse(const quat_t<T>& q) -> quat_t<T> {
 
 template <typename T>
 constexpr auto gse::dot(const quat_t<T>& lhs, const quat_t<T>& rhs) -> T {
-	T result = 0;
-	for (int i = 0; i < 4; ++i) {
-		result += lhs[i] * rhs[i];
-	}
-	return result;
+	return dot(lhs.v4(), rhs.v4());
 }
 
 template <typename T>
 constexpr auto gse::mat3_cast(const quat_t<T>& q) -> mat3_t<T> {
-	auto x = q.x;
-	auto y = q.y;
-	auto z = q.z;
-	auto w = q.s;
-	auto x2 = x + x;
-	auto y2 = y + y;
-	auto z2 = z + z;
-	auto xx = x * x2;
-	auto xy = x * y2;
-	auto xz = x * z2;
-	auto yy = y * y2;
-	auto yz = y * z2;
-	auto zz = z * z2;
-	auto wx = w * x2;
-	auto wy = w * y2;
-	auto wz = w * z2;
+	const T x = q[1];
+	const T y = q[2];
+	const T z = q[3];
+	const T w = q[0];
+	const T x2 = x + x;
+	const T y2 = y + y;
+	const T z2 = z + z;
+	const T xx = x * x2;
+	const T xy = x * y2;
+	const T xz = x * z2;
+	const T yy = y * y2;
+	const T yz = y * z2;
+	const T zz = z * z2;
+	const T wx = w * x2;
+	const T wy = w * y2;
+	const T wz = w * z2;
 	return mat3_t<T>{
-		unitless::vec3_t<T>{1 - (yy + zz), xy + wz, xz - wy},
-		unitless::vec3_t<T>{xy - wz, 1 - (xx + zz), yz + wx},
-		unitless::vec3_t<T>{xz + wy, yz - wx, 1 - (xx + yy)}
+		unitless::vec3_t<T>{ T(1) - (yy + zz), xy + wz, xz - wy },
+		unitless::vec3_t<T>{ xy - wz, T(1) - (xx + zz), yz + wx },
+		unitless::vec3_t<T>{ xz + wy, yz - wx, T(1) - (xx + yy) }
 	};
 }
 
 template <typename T>
 constexpr auto gse::from_mat4(const mat4_t<T>& m) -> quat_t<T> {
-	T trace = m[0][0] + m[1][1] + m[2][2];
-
-	quat_t<T> q;
-
-	if (trace > 0) {
-		T s = std::sqrt(trace + T(1.0)) * T(2.0);
-		q.s = T(0.25) * s;
-		q.x = (m[1][2] - m[2][1]) / s;
-		q.y = (m[2][0] - m[0][2]) / s;
-		q.z = (m[0][1] - m[1][0]) / s;
+	const T trace = m[0][0] + m[1][1] + m[2][2];
+	quat_t<T> q{};
+	if (trace > T(0)) {
+		const T s = std::sqrt(trace + T(1)) * T(2);
+		q[0] = T(0.25) * s;
+		q[1] = (m[1][2] - m[2][1]) / s;
+		q[2] = (m[2][0] - m[0][2]) / s;
+		q[3] = (m[0][1] - m[1][0]) / s;
 	}
 	else if ((m[0][0] > m[1][1]) && (m[0][0] > m[2][2])) {
-		T s = std::sqrt(T(1.0) + m[0][0] - m[1][1] - m[2][2]) * T(2.0); 
-		q.s = (m[1][2] - m[2][1]) / s;
-		q.x = T(0.25) * s;
-		q.y = (m[1][0] + m[0][1]) / s;
-		q.z = (m[2][0] + m[0][2]) / s;
+		const T s = std::sqrt(T(1) + m[0][0] - m[1][1] - m[2][2]) * T(2);
+		q[0] = (m[1][2] - m[2][1]) / s;
+		q[1] = T(0.25) * s;
+		q[2] = (m[1][0] + m[0][1]) / s;
+		q[3] = (m[2][0] + m[0][2]) / s;
 	}
 	else if (m[1][1] > m[2][2]) {
-		T s = std::sqrt(T(1.0) + m[1][1] - m[0][0] - m[2][2]) * T(2.0); 
-		q.s = (m[2][0] - m[0][2]) / s;
-		q.x = (m[1][0] + m[0][1]) / s;
-		q.y = T(0.25) * s;
-		q.z = (m[2][1] + m[1][2]) / s;
+		const T s = std::sqrt(T(1) + m[1][1] - m[0][0] - m[2][2]) * T(2);
+		q[0] = (m[2][0] - m[0][2]) / s;
+		q[1] = (m[1][0] + m[0][1]) / s;
+		q[2] = T(0.25) * s;
+		q[3] = (m[2][1] + m[1][2]) / s;
 	}
 	else {
-		T s = std::sqrt(T(1.0) + m[2][2] - m[0][0] - m[1][1]) * T(2.0); 
-		q.s = (m[0][1] - m[1][0]) / s;
-		q.x = (m[2][0] + m[0][2]) / s;
-		q.y = (m[2][1] + m[1][2]) / s;
-		q.z = T(0.25) * s;
+		const T s = std::sqrt(T(1) + m[2][2] - m[0][0] - m[1][1]) * T(2);
+		q[0] = (m[0][1] - m[1][0]) / s;
+		q[1] = (m[2][0] + m[0][2]) / s;
+		q[2] = (m[2][1] + m[1][2]) / s;
+		q[3] = T(0.25) * s;
 	}
-
 	return q;
 }
 
 template <typename T>
 constexpr auto gse::identity() -> quat_t<T> {
-	return quat_t<T>{ 1, 0, 0, 0 };
+	return quat_t<T>{ T(1), T(0), T(0), T(0) };
 }
 
 template <typename T>
 constexpr auto gse::from_axis_angle(const unitless::vec3_t<T>& axis, angle_t<T> angle) -> quat_t<T> {
-	T half_angle = angle.template as<units::radians>() / 2;
-	T s = std::sin(half_angle);
-	T c = std::cos(half_angle);
-	return quat_t<T>{ c, axis.x * s, axis.y * s, axis.z * s };
+	const T half_angle = angle.template as<units::radians>() / T(2);
+	const T s = std::sin(half_angle);
+	const T c = std::cos(half_angle);
+	return quat_t<T>{ c, axis[0] * s, axis[1] * s, axis[2] * s };
 }

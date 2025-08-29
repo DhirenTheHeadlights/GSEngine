@@ -168,18 +168,18 @@ auto gse::generate_bounding_box_mesh(const vec3<length> upper, const vec3<length
     auto create_vertex = [](
         const vec3<length>& position
         ) -> vertex {
-			return vertex{ position.as<units::meters>().data(), {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}};
+			return vertex{ position.as<units::meters>().data, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}};
         };
 
     const std::vector vertices = {
-        create_vertex({ lower.x, lower.y, lower.z }),
-        create_vertex({ upper.x, lower.y, lower.z }),
-        create_vertex({ upper.x, upper.y, lower.z }),
-        create_vertex({ lower.x, upper.y, lower.z }),
-        create_vertex({ lower.x, lower.y, upper.z }),
-        create_vertex({ upper.x, lower.y, upper.z }),
-        create_vertex({ upper.x, upper.y, upper.z }),
-        create_vertex({ lower.x, upper.y, upper.z })
+        create_vertex({ lower.x(), lower.y(), lower.z() }),
+        create_vertex({ upper.x(), lower.y(), lower.z() }),
+        create_vertex({ upper.x(), upper.y(), lower.z() }),
+        create_vertex({ lower.x(), upper.y(), lower.z() }),
+        create_vertex({ lower.x(), lower.y(), upper.z() }),
+        create_vertex({ upper.x(), lower.y(), upper.z() }),
+        create_vertex({ upper.x(), upper.y(), upper.z() }),
+        create_vertex({ lower.x(), upper.y(), upper.z() })
     };
 
     const std::vector<std::uint32_t> indices = {

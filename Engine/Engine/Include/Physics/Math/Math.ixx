@@ -12,15 +12,11 @@ export import :matrix;
 export import :matrix_math;
 export import :quat;
 export import :quat_math;
-export import :unitless_vec;
-export import :unit_vec;
-export import :vec_math;
-export import :unit_vec_math;
 export import :rectangle;
 export import :circle;
 export import :segment;
-
-import :base_vec;
+export import :vector;
+export import :vector_math;
 
 std::random_device g_rd;
 std::mt19937 g_gen(g_rd());
@@ -83,23 +79,18 @@ export namespace gse {
 		return pointers;
 	}
 
+	template <typename T1, typename T2>
+	constexpr auto max(const T1& a, const T2& b) -> std::common_type_t<T1, T2> {
+		using common_type = std::common_type_t<T1, T2>;
 
-	template <typename T> requires internal::is_quantity<T> auto abs(const T& value) -> T;
-	template <typename T> requires internal::is_quantity<T> auto min(const T& a, const T& b) -> T;
-	template <typename T> requires internal::is_quantity<T> auto max(const T& a, const T& b) -> T;
-}
+		if (static_cast<common_type>(a) < static_cast<common_type>(b)) {
+			return static_cast<common_type>(b);
+		}
+		return static_cast<common_type>(a);
+	}
 
-template <typename T> requires gse::internal::is_quantity<T>
-auto gse::abs(const T& value) -> T {
-	return value >= T() ? value : -value;
-}
-
-template <typename T> requires gse::internal::is_quantity<T>
-auto gse::min(const T& a, const T& b) -> T {
-	return a < b ? a : b;
-}
-
-template <typename T> requires gse::internal::is_quantity<T>
-auto gse::max(const T& a, const T& b) -> T {
-	return a > b ? a : b;
+	template <is_quantity Q>
+	constexpr auto abs(const Q& value) -> Q {
+		return std::abs(value.as_default_unit());
+	}
 }
