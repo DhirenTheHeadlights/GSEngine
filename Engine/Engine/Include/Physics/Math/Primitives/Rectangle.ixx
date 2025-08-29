@@ -53,17 +53,17 @@ export namespace gse {
 
 template <gse::is_vec2 T>
 constexpr gse::rect_t<T>::rect_t(const min_max_params& p)
-    : m_min(std::min(p.min.x, p.max.x), std::min(p.min.y, p.max.y)),
-    m_max(std::max(p.min.x, p.max.x), std::max(p.min.y, p.max.y)) {
-    assert(m_min.x <= m_max.x && m_min.y <= m_max.y, "Rectangle invariant failed after construction");
+    : m_min(std::min(p.min.x(), p.max.x()), std::min(p.min.y(), p.max.y())),
+    m_max(std::max(p.min.x(), p.max.x()), std::max(p.min.y(), p.max.y())) {
+    assert(m_min.x() <= m_max.x() && m_min.y() <= m_max.y(), "Rectangle invariant failed after construction");
 }
 
 template <gse::is_vec2 T>
 constexpr auto gse::rect_t<T>::from_position_size(const T& top_left, const T& size) -> rect_t {
-    gse::assert(size.x >= 0 && size.y >= 0, "Rectangle size cannot be negative.");
+    gse::assert(size.x() >= 0 && size.y() >= 0, "Rectangle size cannot be negative.");
 
-    const auto bottom_left  = T{ top_left.x, top_left.y - size.y };
-    const auto top_right    = T{ top_left.x + size.x, top_left.y };
+    const auto bottom_left  = T{ top_left.x(), top_left.y() - size.y() };
+    const auto top_right    = T{ top_left.x() + size.x(), top_left.y() };
 
     return gse::rect_t(min_max_params{ .min = bottom_left, .max = top_right });
 }
@@ -71,39 +71,39 @@ constexpr auto gse::rect_t<T>::from_position_size(const T& top_left, const T& si
 template <gse::is_vec2 T>
 constexpr auto gse::rect_t<T>::bounding_box(const rect_t& a, const rect_t& b) -> rect_t {
 	return gse::rect_t(min_max_params{
-		.min = T{ std::min(a.m_min.x, b.m_min.x), std::min(a.m_min.y, b.m_min.y) },
-		.max = T{ std::max(a.m_max.x, b.m_max.x), std::max(a.m_max.y, b.m_max.y) }
+		.min = T{ std::min(a.m_min.x(), b.m_min.x()), std::min(a.m_min.y(), b.m_min.y()) },
+		.max = T{ std::max(a.m_max.x(), b.m_max.x()), std::max(a.m_max.y(), b.m_max.y()) }
 	});
 }
 
 template <gse::is_vec2 T>
 constexpr auto gse::rect_t<T>::left() const -> value_type {
-    return m_min.x;
+    return m_min.x();
 }
 
 template <gse::is_vec2 T>
 constexpr auto gse::rect_t<T>::right() const -> value_type {
-    return m_max.x;
+    return m_max.x();
 }
 
 template <gse::is_vec2 T>
 constexpr auto gse::rect_t<T>::bottom() const -> value_type {
-    return m_min.y;
+    return m_min.y();
 }
 
 template <gse::is_vec2 T>
 constexpr auto gse::rect_t<T>::top() const -> value_type {
-    return m_max.y;
+    return m_max.y();
 }
 
 template <gse::is_vec2 T>
 constexpr auto gse::rect_t<T>::width() const -> value_type {
-    return m_max.x - m_min.x;
+    return m_max.x() - m_min.x();
 }
 
 template <gse::is_vec2 T>
 constexpr auto gse::rect_t<T>::height() const -> value_type {
-    return m_max.y - m_min.y;
+    return m_max.y() - m_min.y();
 }
 
 template <gse::is_vec2 T>
@@ -118,7 +118,7 @@ constexpr auto gse::rect_t<T>::center() const -> T {
 
 template <gse::is_vec2 T>
 constexpr auto gse::rect_t<T>::top_left() const -> T {
-    return { m_min.x, m_max.y };
+    return { m_min.x(), m_max.y() };
 }
 
 template <gse::is_vec2 T>
@@ -133,7 +133,7 @@ constexpr auto gse::rect_t<T>::top_right() const -> T {
 
 template <gse::is_vec2 T>
 constexpr auto gse::rect_t<T>::bottom_right() const -> T {
-    return { m_max.x, m_min.y };
+    return { m_max.x(), m_min.y() };
 }
 
 template <gse::is_vec2 T>
@@ -148,15 +148,15 @@ constexpr auto gse::rect_t<T>::max() const -> const T& {
 
 template <gse::is_vec2 T>
 constexpr auto gse::rect_t<T>::contains(const T& point) const -> bool {
-    return (point.x >= m_min.x && point.x <= m_max.x) &&
-        (point.y >= m_min.y && point.y <= m_max.y);
+    return (point.x() >= m_min.x() && point.x() <= m_max.x()) &&
+        (point.y() >= m_min.y() && point.y() <= m_max.y());
 }
 
 template <gse::is_vec2 T>
 constexpr auto gse::rect_t<T>::intersects(const rect_t& other) const -> bool {
     return
-		(m_min.x < other.m_max.x && m_max.x > other.m_min.x) &&
-        (m_min.y < other.m_max.y && m_max.y > other.m_min.y);
+		(m_min.x() < other.m_max.x() && m_max.x() > other.m_min.x()) &&
+        (m_min.y() < other.m_max.y() && m_max.y() > other.m_min.y());
 }
 
 template <gse::is_vec2 T>
@@ -169,10 +169,10 @@ constexpr auto gse::rect_t<T>::inset(const T& padding) const -> rect_t {
 
 template <gse::is_vec2 T>
 constexpr auto gse::rect_t<T>::intersection(const rect_t& other) const -> rect_t {
-    const T new_min = { std::max(m_min.x, other.m_min.x), std::max(m_min.y, other.m_min.y) };
-    const T new_max = { std::min(m_max.x, other.m_max.x), std::min(m_max.y, other.m_max.y) };
+    const T new_min = { std::max(m_min.x(), other.m_min.x()), std::max(m_min.y(), other.m_min.y()) };
+    const T new_max = { std::min(m_max.x(), other.m_max.x()), std::min(m_max.y(), other.m_max.y()) };
 
-    if (new_min.x > new_max.x || new_min.y > new_max.y) {
+    if (new_min.x() > new_max.x() || new_min.y() > new_max.y()) {
         return rect_t();
     }
     return rect_t({ new_min, new_max });

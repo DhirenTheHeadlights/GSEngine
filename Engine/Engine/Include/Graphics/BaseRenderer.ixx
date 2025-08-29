@@ -23,7 +23,7 @@ export namespace gse {
 			return {
 				.offset = {
 					static_cast<int32_t>(rect.left()),
-					static_cast<int32_t>(window_size.y - rect.top())
+					static_cast<int32_t>(window_size.y() - rect.top())
 				},
 				.extent = {
 					static_cast<uint32_t>(rect.width()),

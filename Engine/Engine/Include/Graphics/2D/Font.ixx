@@ -150,7 +150,7 @@ auto gse::font::compile() -> std::set<std::filesystem::path> {
         const int atlas_width = atlas_cols * static_cast<int>(glyph_cell_size);
         const int atlas_height = atlas_rows * static_cast<int>(glyph_cell_size);
 
-        std::vector<unsigned char> atlas_data(static_cast<size_t>(atlas_width) * atlas_height * 3, 0);
+        std::vector<unsigned char> atlas_data(static_cast<std::size_t>(atlas_width) * atlas_height * 3, 0);
         std::unordered_map<char, glyph> glyphs;
         const msdfgen::Range pixel_range(4.0);
         int glyph_index = 0;
@@ -334,7 +334,7 @@ auto gse::font::text_layout(const std::string_view text, const unitless::vec2 st
     if (text.empty() || !m_face) return positioned_glyphs;
 
     auto baseline = start;
-    baseline.y -= m_ascender * scale;
+    baseline.y() -= m_ascender * scale;
 
     auto cursor = baseline;
     std::uint32_t previous_glyph_index = 0;
@@ -350,12 +350,12 @@ auto gse::font::text_layout(const std::string_view text, const unitless::vec2 st
         if (previous_glyph_index != 0) {
             FT_Vector kerning_vector;
             FT_Get_Kerning(m_face, previous_glyph_index, static_cast<std::uint32_t>(current_glyph.ft_glyph_index), FT_KERNING_DEFAULT, &kerning_vector);
-            cursor.x += static_cast<float>(kerning_vector.x) / 64.0f * scale;
+            cursor.x() += static_cast<float>(kerning_vector.x) / 64.0f * scale;
         }
 
         const auto quad_pos = unitless::vec2{
-            cursor.x + current_glyph.bearing().x * scale,
-            cursor.y + current_glyph.bearing().y * scale
+            cursor.x() + current_glyph.bearing().x() * scale,
+            cursor.y() + current_glyph.bearing().y() * scale
         };
         const auto quad_size = current_glyph.size() * scale;
 
@@ -373,10 +373,10 @@ auto gse::font::text_layout(const std::string_view text, const unitless::vec2 st
         const double margin_y = (m_glyph_cell_size - glyph_pixel_height) / 2.0;
 
         const unitless::vec4 corrected_uv{
-            full_cell_uv.x + static_cast<float>(margin_x) / m_glyph_cell_size * full_cell_uv.z,
-            full_cell_uv.y + static_cast<float>(margin_y) / m_glyph_cell_size * full_cell_uv.w,
-            static_cast<float>(glyph_pixel_width) / m_glyph_cell_size * full_cell_uv.z,
-            static_cast<float>(glyph_pixel_height) / m_glyph_cell_size * full_cell_uv.w
+            full_cell_uv.x() + static_cast<float>(margin_x) / m_glyph_cell_size * full_cell_uv.z(),
+            full_cell_uv.y() + static_cast<float>(margin_y) / m_glyph_cell_size * full_cell_uv.w(),
+            static_cast<float>(glyph_pixel_width) / m_glyph_cell_size * full_cell_uv.z(),
+            static_cast<float>(glyph_pixel_height) / m_glyph_cell_size * full_cell_uv.w()
         };
 
         positioned_glyphs.emplace_back(
@@ -386,7 +386,7 @@ auto gse::font::text_layout(const std::string_view text, const unitless::vec2 st
             }
         );
 
-        cursor.x += current_glyph.x_advance * scale;
+        cursor.x() += current_glyph.x_advance * scale;
         previous_glyph_index = static_cast<std::uint32_t>(current_glyph.ft_glyph_index);
     }
     return positioned_glyphs;

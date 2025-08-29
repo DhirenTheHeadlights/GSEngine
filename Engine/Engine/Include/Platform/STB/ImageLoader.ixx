@@ -19,14 +19,14 @@ export namespace gse::image {
 		std::vector<std::byte> pixels;
 
 		auto size_bytes() const -> std::size_t {
-			const auto combined = size.x * size.y * channels;
+			const auto combined = size.x() * size.y() * channels;
 			assert(combined <= std::numeric_limits<std::size_t>::max(), "Image size exceeds maximum size_t value.");
 			return combined;
 		}
 	};
 
 	auto load(const std::filesystem::path& path) -> data;
-    auto load(unitless::vec4 color, unitless::vec2 size) -> data;
+    auto load(unitless::vec4 color, unitless::vec2u size) -> data;
 	auto load_rgba(const std::filesystem::path& path) -> data;
 	auto load_cube_faces(const std::array<std::filesystem::path, 6>& paths) -> std::array<data, 6>;
 	auto load_raw(const std::filesystem::path& path, std::uint32_t channels) -> data;
@@ -40,7 +40,7 @@ auto gse::image::load(const std::filesystem::path& path) -> data {
 
     int w, h, c;
     auto* pixels = stbi_load(path.string().c_str(), &w, &h, &c, STBI_rgb_alpha);
-    img_data.size = { static_cast<uint32_t>(w), static_cast<uint32_t>(h) };
+    img_data.size = { static_cast<std::uint32_t>(w), static_cast<std::uint32_t>(h) };
     img_data.channels = 4;
 
     assert(pixels, std::format("Failed to load image: {}", path.string()));
@@ -53,14 +53,14 @@ auto gse::image::load(const std::filesystem::path& path) -> data {
     return img_data;
 }
 
-auto gse::image::load(const unitless::vec4 color, const unitless::vec2 size) -> data {
+auto gse::image::load(const unitless::vec4 color, const unitless::vec2u size) -> data {
     std::array<std::byte, 4> pixel_data;
-    pixel_data[0] = static_cast<std::byte>(color.x * 255.0f);
-    pixel_data[1] = static_cast<std::byte>(color.y * 255.0f);
-    pixel_data[2] = static_cast<std::byte>(color.z * 255.0f);
-    pixel_data[3] = static_cast<std::byte>(color.w * 255.0f);
+    pixel_data[0] = static_cast<std::byte>(color.x() * 255.0f);
+    pixel_data[1] = static_cast<std::byte>(color.y() * 255.0f);
+    pixel_data[2] = static_cast<std::byte>(color.z() * 255.0f);
+    pixel_data[3] = static_cast<std::byte>(color.w() * 255.0f);
 
-    const std::size_t total_pixels = static_cast<std::size_t>(size.x) * size.y;
+    const std::size_t total_pixels = static_cast<std::size_t>(size.x()) * size.y();
     std::vector<std::byte> pixels(total_pixels * 4);
 
     for (std::size_t i = 0; i < total_pixels; ++i) {
@@ -68,7 +68,7 @@ auto gse::image::load(const unitless::vec4 color, const unitless::vec2 size) -> 
     }
 
     return {
-        .size = size,
+        .size = unitless::vec2u(size),
         .channels = 4,
         .pixels = std::move(pixels)
     };
@@ -79,11 +79,11 @@ auto gse::image::load_cube_faces(const std::array<std::filesystem::path, 6>& pat
 
     faces[0] = load(paths[0]);
     auto required = faces[0].size;
-    assert(required.x == required.y, std::format("Cube face must be square: {}", paths[0].string()));
+    assert(required.x() == required.y(), std::format("Cube face must be square: {}", paths[0].string()));
 
     for (size_t i = 1; i < paths.size(); ++i) {
         faces[i] = load(paths[i]);
-        assert(faces[i].size == required, std::format("All cube faces must match size {}×{}: {}", required.x, required.y, paths[i].string()));
+        assert(faces[i].size == required, std::format("All cube faces must match size {}×{}: {}", required.x(), required.y(), paths[i].string()));
     }
 
     return faces;
@@ -96,8 +96,8 @@ auto gse::image::load_raw(const std::filesystem::path& path, const std::uint32_t
 
     int w, h, c;
     auto* pixels = stbi_load(path.string().c_str(), &w, &h, &c, 0);
-    img_data.size = { static_cast<uint32_t>(w), static_cast<uint32_t>(h) };
-    img_data.channels = static_cast<uint32_t>(c);
+    img_data.size = { static_cast<std::uint32_t>(w), static_cast<std::uint32_t>(h) };
+    img_data.channels = static_cast<std::uint32_t>(c);
 
     assert(pixels, std::format("Failed to load image: {}", path.string()));
 
@@ -112,5 +112,7 @@ auto gse::image::dimensions(const std::filesystem::path& path) -> unitless::vec2
     int w, h, c;
     auto* pixels = stbi_load(path.string().c_str(), &w, &h, &c, 0);
     stbi_image_free(pixels);
-    return { static_cast<uint32_t>(w), static_cast<uint32_t>(h) };
+    return {
+    	static_cast<std::uint32_t>(w), static_cast<std::uint32_t>(h)
+    };
 }

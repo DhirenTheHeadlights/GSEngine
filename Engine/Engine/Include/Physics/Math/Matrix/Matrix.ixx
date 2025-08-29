@@ -2,32 +2,29 @@ export module gse.physics.math:matrix;
 
 import std;
 
-import :base_vec;
-import :unitless_vec;
-import :unit_vec;
-import :vec_math;
+import :vector;
 import :quat;
 
 import gse.assert;
 
 namespace gse {
-	template <typename T, std::size_t Cols, std::size_t Rows>
+	template <internal::is_arithmetic T, std::size_t Cols, std::size_t Rows>
 	struct mat {
 		using value_type = T;
 
-		std::array<vec::storage<T, Rows>, Cols> data;
+		std::array<unitless::vec_t<T, Rows>, Cols> data;
 
 		constexpr mat() = default;
 		constexpr mat(const T& value);
-		constexpr mat(const std::array<vec::storage<T, Rows>, Cols>& data) : data(data) {}
+		constexpr mat(const std::array<unitless::vec_t<T, Rows>, Cols>& data) : data(data) {}
 		constexpr mat(std::initializer_list<unitless::vec_t<T, Rows>> list);
 		constexpr mat(const quat_t<T>& q);
 
 		template <std::size_t OtherCols, std::size_t OtherRows>
 		constexpr mat(const mat<T, OtherCols, OtherRows>& other);
 
-		constexpr auto operator[](std::size_t index)->vec::storage<T, Rows>&;
-		constexpr auto operator[](std::size_t index) const -> const vec::storage<T, Rows>&;
+		constexpr auto operator[](std::size_t index) -> unitless::vec_t<T, Rows>&;
+		constexpr auto operator[](std::size_t index) const -> const unitless::vec_t<T, Rows>&;
 
 		constexpr auto transpose() const -> mat<T, Rows, Cols>;
 		constexpr auto inverse() const -> mat;
@@ -83,37 +80,37 @@ export namespace gse {
 	using mat4d = mat<double, 4, 4>;
 }
 
-template <typename T, std::size_t Cols, std::size_t Rows>
+template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows>
 constexpr gse::mat<T, Cols, Rows>::mat(const T& value) : data{} {
 	for (std::size_t i = 0; i < std::min(Cols, Rows); ++i) {
 		data[i][i] = value;
 	}
 }
 
-template <typename T, std::size_t Cols, std::size_t Rows>
+template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows>
 constexpr gse::mat<T, Cols, Rows>::mat(std::initializer_list<unitless::vec_t<T, Rows>> list) {
 	auto it = list.begin();
 	for (std::size_t j = 0; j < Cols && it != list.end(); ++j, ++it) {
-		data[j] = it->storage;
+		data[j] = *it;
 	}
 }
 
-template <typename T, std::size_t Cols, std::size_t Rows>
+template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows>
 constexpr gse::mat<T, Cols, Rows>::mat(const quat_t<T>& q) {
 	static_assert(
 		(Cols == 3 && Rows == 3) || (Cols == 4 && Rows == 4),
 		"Quaternion to matrix constructor is only defined for mat3x3 and mat4x4."
 	);
 
-	const T qx2 = q.x * q.x;
-	const T qy2 = q.y * q.y;
-	const T qz2 = q.z * q.z;
-	const T qxy = q.x * q.y;
-	const T qxz = q.x * q.z;
-	const T qyz = q.y * q.z;
-	const T qsx = q.s * q.x;
-	const T qsy = q.s * q.y;
-	const T qsz = q.s * q.z;
+	const T qx2 = q.x() * q.x();
+	const T qy2 = q.y() * q.y();
+	const T qz2 = q.z() * q.z();
+	const T qxy = q.x() * q.y();
+	const T qxz = q.x() * q.z();
+	const T qyz = q.y() * q.z();
+	const T qsx = q.s() * q.x();
+	const T qsy = q.s() * q.y();
+	const T qsz = q.s() * q.z();
 
 	data[0][0] = T(1) - T(2) * (qy2 + qz2);
 	data[0][1] = T(2) * (qxy + qsz);
@@ -138,7 +135,7 @@ constexpr gse::mat<T, Cols, Rows>::mat(const quat_t<T>& q) {
 	}
 }
 
-template <typename T, std::size_t Cols, std::size_t Rows>
+template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows>
 template <std::size_t OtherCols, std::size_t OtherRows>
 constexpr gse::mat<T, Cols, Rows>::mat(const mat<T, OtherCols, OtherRows>& other) : data{} {
 	for (std::size_t i = 0; i < std::min(Cols, Rows); ++i) {
@@ -154,17 +151,17 @@ constexpr gse::mat<T, Cols, Rows>::mat(const mat<T, OtherCols, OtherRows>& other
 	}
 }
 
-template <typename T, std::size_t Cols, std::size_t Rows>
-constexpr auto gse::mat<T, Cols, Rows>::operator[](std::size_t index) -> vec::storage<T, Rows>& {
+template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows>
+constexpr auto gse::mat<T, Cols, Rows>::operator[](std::size_t index) -> unitless::vec_t<T, Rows>& {
 	return data[index];
 }
 
-template <typename T, std::size_t Cols, std::size_t Rows>
-constexpr auto gse::mat<T, Cols, Rows>::operator[](std::size_t index) const -> const vec::storage<T, Rows>& {
+template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows>
+constexpr auto gse::mat<T, Cols, Rows>::operator[](std::size_t index) const -> const unitless::vec_t<T, Rows>& {
 	return data[index];
 }
 
-template <typename T, std::size_t Cols, std::size_t Rows>
+template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows>
 constexpr auto gse::mat<T, Cols, Rows>::transpose() const -> mat<T, Rows, Cols> {
 	mat<T, Rows, Cols> result;
 	for (std::size_t j = 0; j < Cols; ++j) {
@@ -175,7 +172,7 @@ constexpr auto gse::mat<T, Cols, Rows>::transpose() const -> mat<T, Rows, Cols> 
 	return result;
 }
 
-template <typename T, std::size_t Cols, std::size_t Rows>
+template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows>
 constexpr auto gse::mat<T, Cols, Rows>::inverse() const -> mat {
 	static_assert(Cols == Rows, "Inverse is only defined for square matrices.");
 	const auto& m = *this;
@@ -231,10 +228,10 @@ constexpr auto gse::mat<T, Cols, Rows>::inverse() const -> mat {
 		const T c16 = m[1][0] * m[3][1] - m[3][0] * m[1][1];
 		const T c17 = m[1][0] * m[2][1] - m[2][0] * m[1][1];
 
-		vec::storage<T, 4> fac0{ m[1][1] * c00 - m[1][2] * c03 + m[1][3] * c06, -(m[0][1] * c00 - m[0][2] * c03 + m[0][3] * c06), m[0][1] * c01 - m[0][2] * c04 + m[0][3] * c07, -(m[0][1] * c02 - m[0][2] * c05 + m[0][3] * c08) };
-		vec::storage<T, 4> fac1{ -(m[1][0] * c00 - m[1][2] * c09 + m[1][3] * c12), m[0][0] * c00 - m[0][2] * c09 + m[0][3] * c12, -(m[0][0] * c01 - m[0][2] * c10 + m[0][3] * c13), m[0][0] * c02 - m[0][2] * c11 + m[0][3] * c14 };
-		vec::storage<T, 4> fac2{ m[1][0] * c03 - m[1][1] * c09 + m[1][3] * c15, -(m[0][0] * c03 - m[0][1] * c09 + m[0][3] * c15), m[0][0] * c04 - m[0][1] * c10 + m[0][3] * c16, -(m[0][0] * c05 - m[0][1] * c11 + m[0][3] * c17) };
-		vec::storage<T, 4> fac3{ -(m[1][0] * c06 - m[1][1] * c12 + m[1][2] * c15), m[0][0] * c06 - m[0][1] * c12 + m[0][2] * c15, -(m[0][0] * c07 - m[0][1] * c13 + m[0][2] * c16), m[0][0] * c08 - m[0][1] * c14 + m[0][2] * c17 };
+		unitless::vec_t<T, 4> fac0{ m[1][1] * c00 - m[1][2] * c03 + m[1][3] * c06, -(m[0][1] * c00 - m[0][2] * c03 + m[0][3] * c06), m[0][1] * c01 - m[0][2] * c04 + m[0][3] * c07, -(m[0][1] * c02 - m[0][2] * c05 + m[0][3] * c08) };
+		unitless::vec_t<T, 4> fac1{ -(m[1][0] * c00 - m[1][2] * c09 + m[1][3] * c12), m[0][0] * c00 - m[0][2] * c09 + m[0][3] * c12, -(m[0][0] * c01 - m[0][2] * c10 + m[0][3] * c13), m[0][0] * c02 - m[0][2] * c11 + m[0][3] * c14 };
+		unitless::vec_t<T, 4> fac2{ m[1][0] * c03 - m[1][1] * c09 + m[1][3] * c15, -(m[0][0] * c03 - m[0][1] * c09 + m[0][3] * c15), m[0][0] * c04 - m[0][1] * c10 + m[0][3] * c16, -(m[0][0] * c05 - m[0][1] * c11 + m[0][3] * c17) };
+		unitless::vec_t<T, 4> fac3{ -(m[1][0] * c06 - m[1][1] * c12 + m[1][2] * c15), m[0][0] * c06 - m[0][1] * c12 + m[0][2] * c15, -(m[0][0] * c07 - m[0][1] * c13 + m[0][2] * c16), m[0][0] * c08 - m[0][1] * c14 + m[0][2] * c17 };
 
 		const T det = m[0][0] * fac0[0] + m[0][1] * fac1[0] + m[0][2] * fac2[0] + m[0][3] * fac3[0];
 		assert(det != static_cast<T>(0), "Matrix is not invertible.");
@@ -253,7 +250,7 @@ constexpr auto gse::mat<T, Cols, Rows>::inverse() const -> mat {
 	}
 }
 
-template <typename T, std::size_t Cols, std::size_t Rows>
+template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows>
 constexpr auto gse::mat<T, Cols, Rows>::determinant() const -> T {
 	static_assert(Rows == Cols, "Determinant is only defined for square matrices.");
 	const auto& m = *this;
@@ -307,7 +304,7 @@ constexpr auto gse::mat<T, Cols, Rows>::determinant() const -> T {
 	}
 }
 
-template <typename T, std::size_t Cols, std::size_t Rows>
+template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows>
 constexpr auto gse::mat<T, Cols, Rows>::trace() const -> T {
 	static_assert(Rows == Cols, "Trace is only defined for square matrices.");
 	T trace_val = 0;

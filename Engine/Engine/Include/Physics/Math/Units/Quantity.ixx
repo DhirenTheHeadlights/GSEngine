@@ -84,16 +84,12 @@ namespace gse::internal {
         }
 
 		template <is_unit UnitType> requires valid_unit_for_quantity<UnitType, ValidUnits>
-		constexpr auto as() const->ArithmeticType {
+		constexpr auto as() const -> ArithmeticType {
 			return m_val / UnitType::conversion_factor;
 		}
 
-		constexpr auto as_default_unit() const -> ArithmeticType {
-			return m_val;
-		}
-
-		constexpr auto as_default_unit() -> ArithmeticType& {
-			return m_val;
+		constexpr auto as_default_unit(this auto&& self) -> ArithmeticType {
+			return self.m_val;
 		}
 
 		template <is_unit UnitType> requires valid_unit_for_quantity<UnitType, ValidUnits>

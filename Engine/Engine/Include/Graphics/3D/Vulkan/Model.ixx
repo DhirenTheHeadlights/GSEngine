@@ -352,17 +352,15 @@ auto gse::model_instance::render_queue_entries() -> std::span<render_queue_entry
 
 	if (m_is_dirty) {
 		const mat4 scale_mat = scale(mat4(1.0f), m_scale);
-		mat4 rot_mat = gse::rotate(mat4(1.0f), unitless::axis::x, m_rotation.x);
-		rot_mat = gse::rotate(rot_mat, unitless::axis::y, m_rotation.y);
-		rot_mat = gse::rotate(rot_mat, unitless::axis::z, m_rotation.z);
+		mat4 rot_mat = gse::rotate(mat4(1.0f), unitless::axis::x, m_rotation.x());
+		rot_mat = gse::rotate(rot_mat, unitless::axis::y, m_rotation.y());
+		rot_mat = gse::rotate(rot_mat, unitless::axis::z, m_rotation.z());
 
 		const mat4 trans_mat = translate(mat4(1.0f), m_position);
 		const vec3 center_of_mass = m_model_handle.resolve()->center_of_mass(); 
 		const mat4 pivot_correction_mat = translate(mat4(1.0f), -center_of_mass);
 		const mat4 final_model_matrix = trans_mat * rot_mat * scale_mat * pivot_correction_mat;
 		const mat4 normal_matrix = final_model_matrix.inverse().transpose();
-
-		std::println("model mat: {}", final_model_matrix);
 
 		for (auto& entry : m_render_queue_entries) {
 			entry.model_matrix = final_model_matrix;

@@ -44,16 +44,16 @@ auto update_friction(gse::physics::motion_component& component, const gse::surfa
 		return;
 	}
 
-	const gse::force normal = component.mass * gse::magnitude(gravity);
+	const gse::force normal = component.mass * magnitude(gravity);
 	gse::force friction = normal * surface.friction_coefficient;
 
 	if (component.self_controlled) {
 		friction *= 5.f;
 	}
 
-	const gse::vec3 friction_force(-friction * gse::normalize(component.current_velocity));
+	//const gse::vec3 friction_force(-friction * gse::normalize(component.current_velocity));
 
-	apply_force(component, friction_force, component.current_position);
+	//apply_force(component, friction_force, component.current_position);
 }
 
 auto update_gravity(gse::physics::motion_component& component) -> void {
@@ -66,7 +66,7 @@ auto update_gravity(gse::physics::motion_component& component) -> void {
 		apply_force(component, gravity_force, component.current_position);
 	}
 	else {
-		component.current_acceleration.y = gse::max({ 0.f }, component.current_acceleration.y);
+		component.current_acceleration.y() = gse::max(0.f, component.current_acceleration.y());
 		update_friction(component, get_surface_properties(gse::surfaces::surface_type::concrete));
 	}
 }
@@ -101,11 +101,11 @@ auto update_velocity(gse::physics::motion_component& component, const gse::time 
 	// Update current_velocity using the kinematic equation: v = v0 + at
 	component.current_velocity += component.current_acceleration * delta_time;
 
-	if (gse::magnitude(component.current_velocity) > component.max_speed && !component.airborne) {
-		component.current_velocity = gse::normalize(component.current_velocity) * component.max_speed;
+	if (magnitude(component.current_velocity) > component.max_speed && !component.airborne) {
+		component.current_velocity = normalize(component.current_velocity) * component.max_speed;
 	}
 
-	if (gse::is_zero(component.current_velocity)) {
+	if (is_zero(component.current_velocity)) {
 		component.current_velocity = { 0.f, 0.f, 0.f };
 	}
 
@@ -125,7 +125,7 @@ auto update_rotation(gse::physics::motion_component& component, const gse::time 
 	component.current_torque = {};
 
 	const gse::unitless::vec3 angular_velocity = component.angular_velocity.as<gse::units::radians_per_second>();
-	const gse::quat omega_quaternion = { 0.f, angular_velocity.x, angular_velocity.y, angular_velocity.z };
+	const gse::quat omega_quaternion = { 0.f, angular_velocity.x(), angular_velocity.y(), angular_velocity.z() };
 
 	// dQ = 0.5 * omega_quaternion * orientation
 	const gse::quat delta_quaternion = 0.5f * omega_quaternion * component.orientation;

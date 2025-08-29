@@ -18,7 +18,7 @@ auto overlaps_on_axis(const gse::oriented_bounding_box& box1, const gse::oriente
     }
 
     const auto normalized_axis = gse::normalize(axis);
-    const auto corners1 = box1.get_corners();
+    const auto corners1 = box1.corners();
 
     auto project_point = [](const gse::vec3<gse::length>& point, const gse::unitless::vec3& projection_axis) {
         return gse::dot(point, projection_axis);
@@ -33,7 +33,7 @@ auto overlaps_on_axis(const gse::oriented_bounding_box& box1, const gse::oriente
         max1 = std::max(max1, projection);
     }
 
-    const auto corners2 = box2.get_corners();
+    const auto corners2 = box2.corners();
 
     auto min2 = project_point(corners2[0], normalized_axis);
     auto max2 = min2;
@@ -67,7 +67,7 @@ auto sat_collision(const gse::oriented_bounding_box& obb1, const gse::oriented_b
 
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {
-            if (gse::vec3<gse::length> cross = gse::cross(obb1.axes[i], obb2.axes[j]); !gse::is_zero(cross)) { // Avoid near-zero vectors
+            if (gse::vec3<gse::length> cross = gse::cross(obb1.axes[i], obb2.axes[j]); !is_zero(cross)) { // Avoid near-zero vectors
                 axes[axis_count++] = cross;
             }
         }
@@ -157,8 +157,8 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
     const float velocity_into_surface = dot(object_motion_component->current_velocity.as<units::meters_per_second>(), collision_normal);
     const float acceleration_into_surface = dot(object_motion_component->current_acceleration.as<units::meters_per_second_squared>(), collision_normal);
 
-    velocity& vel = object_motion_component->current_velocity[object_collision_component.collision_information.get_axis()];
-    acceleration& acc = object_motion_component->current_acceleration[object_collision_component.collision_information.get_axis()];
+    auto vel = object_motion_component->current_velocity[object_collision_component.collision_information.axis()];
+    auto acc = object_motion_component->current_acceleration[object_collision_component.collision_information.axis()];
 
     if (velocity_into_surface < 0.0f) {
         vel = 0.0f;
@@ -173,13 +173,13 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
     const auto correction = collision_normal * meters(corrected_penetration);
     object_motion_component->current_position -= correction;
 
-    if (collision_normal.y < 0.f) { // Normal here is inverted because the collision normal points from the other object to this object
+    if (collision_normal.y() < 0.f) { // Normal here is inverted because the collision normal points from the other object to this object
         object_motion_component->airborne = false;
-        object_motion_component->most_recent_y_collision = object_motion_component->current_position.y;
+        object_motion_component->most_recent_y_collision = object_motion_component->current_position.y();
     }
 
 	const auto contact_point = compute_contact_point(clip_polygon_against_plane(
-        object_collision_component.oriented_bounding_box.get_face_vertices(object_collision_component.collision_information.get_axis(), true), 
+        object_collision_component.oriented_bounding_box.face_vertices(object_collision_component.collision_information.axis(), true), 
         create_plane(object_motion_component->current_position, object_collision_component.collision_information.collision_normal)
     ));
 

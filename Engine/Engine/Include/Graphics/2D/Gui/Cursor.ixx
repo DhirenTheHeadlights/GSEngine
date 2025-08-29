@@ -72,8 +72,8 @@ auto gse::cursor::render(const renderer::context& context, renderer::sprite& spr
 	    case style::arrow: {
 	        draw_line(sprite_renderer, {
 	            .line = {
-	                { mouse_pos.x - half_len, mouse_pos.y },
-	                { mouse_pos.x + half_len, mouse_pos.y }
+	                { mouse_pos.x() - half_len, mouse_pos.y()},
+	                { mouse_pos.x() + half_len, mouse_pos.y()}
 	            },
 	            .thickness = thickness,
 	            .color = color,
@@ -81,8 +81,8 @@ auto gse::cursor::render(const renderer::context& context, renderer::sprite& spr
 	            });
 	        draw_line(sprite_renderer, {
 	            .line = {
-	                { mouse_pos.x, mouse_pos.y - half_len },
-	                { mouse_pos.x, mouse_pos.y + half_len }
+	                { mouse_pos.x(), mouse_pos.y() - half_len},
+	                { mouse_pos.x(), mouse_pos.y() + half_len}
 	            },
 	            .thickness = thickness,
 	            .color = color,

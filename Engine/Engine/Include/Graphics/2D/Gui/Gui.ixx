@@ -119,7 +119,7 @@ auto gse::gui::render(const renderer::context& context, renderer::sprite& sprite
 				.text = menu.id().tag(),
 				.position = {
 					title_bar_rect.left() + padding,
-					title_bar_rect.center().y + font_size / 2.f
+					title_bar_rect.center().y() + font_size / 2.f
 				},
 				.scale = font_size,
 				.clip_rect = title_bar_rect
@@ -135,8 +135,8 @@ auto gse::gui::render(const renderer::context& context, renderer::sprite& sprite
 
 			for (std::size_t i = 0; i < menu.items.size(); ++i) {
 				const unitless::vec2 item_pos = {
-					text_start_pos.x,
-					text_start_pos.y - i * line_height
+					text_start_pos.x(),
+					text_start_pos.y() - i * line_height
 				};
 				text_renderer.draw_text({
 					.font = font,
@@ -227,35 +227,35 @@ auto gse::gui::handle_idle_state(const unitless::vec2 mouse_position, const bool
 	static const std::array<resize_rule, 8> resize_rules = { {
 		{ [](auto r, auto p) {
 			constexpr float t = resize_border_thickness;
-			return std::abs(p.y - r.top()) < t && std::abs(p.x - r.left()) < t;
+			return std::abs(p.y() - r.top()) < t && std::abs(p.x() - r.left()) < t;
 		}, resize_handle::top_left, cursor::style::resize_nw },
 		{ [](auto r, auto p) {
 			constexpr float t = resize_border_thickness;
-			return std::abs(p.y - r.top()) < t && std::abs(p.x - r.right()) < t;
+			return std::abs(p.y() - r.top()) < t && std::abs(p.x() - r.right()) < t;
 		}, resize_handle::top_right, cursor::style::resize_ne },
 		{ [](auto r, auto p) {
 			constexpr float t = resize_border_thickness;
-			return std::abs(p.y - r.bottom()) < t && std::abs(p.x - r.left()) < t;
+			return std::abs(p.y() - r.bottom()) < t && std::abs(p.x() - r.left()) < t;
 		}, resize_handle::bottom_left, cursor::style::resize_sw },
 		{ [](auto r, auto p) {
 			constexpr float t = resize_border_thickness;
-			return std::abs(p.y - r.bottom()) < t && std::abs(p.x - r.right()) < t;
+			return std::abs(p.y() - r.bottom()) < t && std::abs(p.x() - r.right()) < t;
 		}, resize_handle::bottom_right, cursor::style::resize_se },
 		{ [](auto r, auto p) {
 			constexpr float t = resize_border_thickness;
-			return std::abs(p.x - r.left()) < t;
+			return std::abs(p.x() - r.left()) < t;
 		}, resize_handle::left, cursor::style::resize_w },
 		{ [](auto r, auto p) {
 			constexpr float t = resize_border_thickness;
-			return std::abs(p.x - r.right()) < t;
+			return std::abs(p.x() - r.right()) < t;
 		}, resize_handle::right, cursor::style::resize_e },
 		{ [](auto r, auto p) {
 			constexpr float t = resize_border_thickness;
-			return std::abs(p.y - r.top()) < t;
+			return std::abs(p.y() - r.top()) < t;
 		}, resize_handle::top, cursor::style::resize_n },
 		{ [](auto r, auto p) {
 			constexpr float t = resize_border_thickness;
-			return std::abs(p.y - r.bottom()) < t;
+			return std::abs(p.y() - r.bottom()) < t;
 		}, resize_handle::bottom, cursor::style::resize_s },
 	} };
 
@@ -366,31 +366,31 @@ auto gse::gui::handle_resizing_state(const states::resizing& state, const unitle
 	auto max_corner = group_rect.max();
 
 	switch (state.handle) {
-		case resize_handle::left:         min_corner.x = mouse_position.x; break;
-		case resize_handle::right:        max_corner.x = mouse_position.x; break;
-		case resize_handle::bottom:       min_corner.y = mouse_position.y; break;
-		case resize_handle::top:          max_corner.y = mouse_position.y; break;
+		case resize_handle::left:         min_corner.x() = mouse_position.x(); break;
+		case resize_handle::right:        max_corner.x() = mouse_position.x(); break;
+		case resize_handle::bottom:       min_corner.y() = mouse_position.y(); break;
+		case resize_handle::top:          max_corner.y() = mouse_position.y(); break;
 		case resize_handle::bottom_left:  min_corner = mouse_position; break;
-		case resize_handle::bottom_right: min_corner.y = mouse_position.y; max_corner.x = mouse_position.x; break;
-		case resize_handle::top_left:     min_corner.x = mouse_position.x; max_corner.y = mouse_position.y; break;
+		case resize_handle::bottom_right: min_corner.y() = mouse_position.y(); max_corner.x() = mouse_position.x(); break;
+		case resize_handle::top_left:     min_corner.x() = mouse_position.x(); max_corner.y() = mouse_position.y(); break;
 		case resize_handle::top_right:    max_corner = mouse_position; break;
 		default: break;
 	}
 
-	if (max_corner.x - min_corner.x < min_menu_size.x) {
+	if (max_corner.x() - min_corner.x() < min_menu_size.x()) {
 		if (state.handle == resize_handle::left || state.handle == resize_handle::top_left || state.handle == resize_handle::bottom_left) {
-			min_corner.x = max_corner.x - min_menu_size.x;
+			min_corner.x() = max_corner.x() - min_menu_size.x();
 		}
 		else {
-			max_corner.x = min_corner.x + min_menu_size.x;
+			max_corner.x() = min_corner.x() + min_menu_size.x();
 		}
 	}
-	if (max_corner.y - min_corner.y < min_menu_size.y) {
+	if (max_corner.y() - min_corner.y() < min_menu_size.y()) {
 		if (state.handle == resize_handle::bottom || state.handle == resize_handle::bottom_left || state.handle == resize_handle::bottom_right) {
-			min_corner.y = max_corner.y - min_menu_size.y;
+			min_corner.y() = max_corner.y() - min_menu_size.y();
 		}
 		else {
-			max_corner.y = min_corner.y + min_menu_size.y;
+			max_corner.y() = min_corner.y() + min_menu_size.y();
 		}
 	}
 
@@ -438,7 +438,7 @@ auto gse::gui::handle_dragging_state(const states::dragging& current, const wind
 								m->pre_docked_size = m->rect.size();
 							}
 							const auto viewport_size = unitless::vec2(window.viewport());
-							const auto screen_rect = ui_rect::from_position_size({ 0.f, viewport_size.y }, viewport_size);
+							const auto screen_rect = ui_rect::from_position_size({ 0.f, viewport_size.y() }, viewport_size);
 							m->rect = layout::dock_target_rect(screen_rect, area.dock_location);
 							m->docked_to = area.dock_location;
 							m->swap(id());
@@ -455,10 +455,10 @@ auto gse::gui::handle_dragging_state(const states::dragging& current, const wind
 	const auto old_top_left = m->rect.top_left();
 	auto new_top_left = mouse_position + current.offset;
 	const auto window_size = unitless::vec2(window.viewport());
-	new_top_left.x = std::clamp(new_top_left.x, 0.f, window_size.x - m->rect.width());
-	new_top_left.y = std::clamp(new_top_left.y, m->rect.height(), window_size.y);
+	new_top_left.x() = std::clamp(new_top_left.x(), 0.f, window_size.x() - m->rect.width());
+	new_top_left.y() = std::clamp(new_top_left.y(), m->rect.height(), window_size.y());
 
-	if (const auto delta = new_top_left - old_top_left; delta.x != 0 || delta.y != 0) {
+	if (const auto delta = new_top_left - old_top_left; delta.x() != 0 || delta.y() != 0) {
 		std::function<void(const id&)> move_group = [&](const id& current_id) {
 			if (menu* item = menus.try_get(current_id)) {
 				item->rect = ui_rect::from_position_size(item->rect.top_left() + delta, item->rect.size());
@@ -483,7 +483,7 @@ auto gse::gui::handle_dragging_state(const states::dragging& current, const wind
 		}
 	}
 	if (!found_parent_menu) {
-		const auto screen_rect = ui_rect::from_position_size({ 0.f, window_size.y }, window_size);
+		const auto screen_rect = ui_rect::from_position_size({ 0.f, window_size.y() }, window_size);
 		active_dock_space = layout::dock_space(screen_rect);
 	}
 

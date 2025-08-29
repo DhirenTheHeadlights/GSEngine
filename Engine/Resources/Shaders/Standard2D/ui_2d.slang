@@ -27,11 +27,12 @@ VS_OUTPUT vs_main(float2 in_position: POSITION, float2 in_tex_coord: TEXCOORD0) 
 
     float c = cos(rotation);
     float s = sin(rotation);
-    float2x2 rotation_matrix = { c, -s, s, c };
 
-    float2 final_pos = mul(unrotated_pos - pivot, rotation_matrix) + pivot;
+    float2x2 rotation_matrix = { c, s, -s, c };
 
-    output.clip_pos = mul(float4(final_pos, 0.0, 1.0), projection);
+    float2 final_pos = mul(rotation_matrix, unrotated_pos - pivot) + pivot;
+
+    output.clip_pos = mul(projection, float4(final_pos, 0.0, 1.0));
     output.tex_coord = uv_rect.xy + in_tex_coord * uv_rect.zw;
     output.color = color;
 

@@ -43,9 +43,9 @@ gse::camera::camera(const vec3<length>& initial_position): m_position(initial_po
 }
 
 auto gse::camera::process_mouse_movement(const vec2<length>& offset) -> void {
-	const vec2 transformed_offset = offset * m_mouse_sensitivity;
-	m_yaw -= degrees(transformed_offset.x.as_default_unit());
-	m_pitch -= degrees(transformed_offset.y.as_default_unit());
+	const auto transformed_offset = offset * m_mouse_sensitivity;
+	m_yaw -= degrees(transformed_offset.x().as_default_unit());
+	m_pitch -= degrees(transformed_offset.y().as_default_unit());
 	m_pitch = std::clamp(m_pitch, degrees(-89.0f), degrees(89.0f));
 }
 
@@ -75,7 +75,7 @@ auto gse::camera::view() const -> mat4 {
 }
 
 auto gse::camera::projection(const unitless::vec2 viewport) const -> mat4 {
-	const float aspect_ratio = viewport.x / viewport.y;
+	const float aspect_ratio = viewport.x() / viewport.y();
 	return perspective(degrees(45.0f), aspect_ratio, m_near_plane, m_far_plane);
 }
 
@@ -90,5 +90,5 @@ auto gse::camera::orientation() const -> quat {
 auto gse::camera::direction_relative_to_origin(const unitless::vec3& direction) const -> unitless::vec3 {
 	const auto u = m_orientation.imaginary_part();
 	const auto t = 2.f * cross(u, direction);
-	return direction + m_orientation.s * t + cross(u, t);
+	return direction + m_orientation.s() * t + cross(u, t);
 }

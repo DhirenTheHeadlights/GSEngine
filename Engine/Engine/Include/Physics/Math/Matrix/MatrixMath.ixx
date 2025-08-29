@@ -2,10 +2,8 @@ export module gse.physics.math:matrix_math;
 
 import std;
 
-import :unit_vec;
-import :unit_vec_math;
-import :unitless_vec;
-import :vec_math;
+import :vector;
+import :vector_math;
 import :length;
 import :angle;
 import :matrix;
@@ -138,7 +136,7 @@ export namespace gse {
 	constexpr auto rotate(
 		const mat4_t<T>& matrix,
 		unitless::axis axis, 
-		angle_t<T> angle
+		std::type_identity_t<angle_t<T>> angle
 	) -> mat4_t<T>;
 
 	template <typename T>
@@ -208,7 +206,7 @@ constexpr auto gse::operator*(const mat_t<T, Cols, Rows>& lhs, const mat_t<T, Ot
 
 template <typename T, std::size_t Cols, std::size_t Rows>
 constexpr auto gse::operator*(const mat_t<T, Cols, Rows>& lhs, const unitless::vec_t<T, Cols>& rhs) -> unitless::vec_t<T, Rows> {
-	vec::storage<T, Rows> result{};
+	unitless::vec_t<T, Rows> result{};
 	for (std::size_t j = 0; j < Cols; ++j) {
 		result += lhs[j] * rhs[j];
 	}
@@ -294,9 +292,9 @@ constexpr auto gse::look_at(const vec3<length_t<T>>& position, const vec3<length
 	const auto pos = position.template as<typename length_t<T>::default_unit>();
 
 	return mat4_t<T>{
-		{ right_axis.x,				up_axis.x,			direction_axis.x,			0 },
-		{ right_axis.y,				up_axis.y,			direction_axis.y,			0 },
-		{ right_axis.z,				up_axis.z,			direction_axis.z,			0 },
+		{ right_axis.x(),			up_axis.x(),		direction_axis.x(),			0 },
+		{ right_axis.y(),			up_axis.y(),		direction_axis.y(),			0 },
+		{ right_axis.z(),			up_axis.z(),		direction_axis.z(),			0 },
 		{ -dot(right_axis, pos),	-dot(up_axis, pos), -dot(direction_axis, pos),	1 }
 	};
 }
@@ -337,24 +335,24 @@ constexpr auto gse::translate(const mat4_t<T>& matrix, const vec3<length_t<T>>& 
 		{ 1, 0, 0, 0 },
 		{ 0, 1, 0, 0 },
 		{ 0, 0, 1, 0 },
-		{ translation.x.as_default_unit(), translation.y.as_default_unit(), translation.z.as_default_unit(), 1 }
+		{ translation.x().as_default_unit(), translation.y().as_default_unit(), translation.z().as_default_unit(), 1}
 	};
 }
 
 template <typename T>
-constexpr auto gse::rotate(const mat4_t<T>& matrix, const unitless::axis axis, angle_t<T> angle) -> mat4_t<T> {
-	auto a = normalize(unitless::axis_v<T>(axis));
+constexpr auto gse::rotate(const mat4_t<T>& matrix, const unitless::axis axis, std::type_identity_t<angle_t<T>> angle) -> mat4_t<T> {
+	auto a = normalize(unitless::to_axis_v<T>(axis));
 
 	T half_angle = angle.template as<units::radians>() / 2;
 	T s = std::sin(half_angle);
 	T c = std::cos(half_angle);
 
-	auto q = normalize(quat_t<T>(c, a.x * s, a.y * s, a.z * s));
+	auto q = normalize(quat_t<T>(c, a.x() * s, a.y() * s, a.z() * s));
 	mat4_t<T> rotation_matrix = {
-		{ 1 - 2 * q.y * q.y - 2 * q.z * q.z, 2 * q.x * q.y + 2 * q.z * q.s,		2 * q.x * q.z - 2 * q.y * q.s,		0 },
-		{ 2 * q.x * q.y - 2 * q.z * q.s,     1 - 2 * q.x * q.x - 2 * q.z * q.z, 2 * q.y * q.z + 2 * q.x * q.s,		0 },
-		{ 2 * q.x * q.z + 2 * q.y * q.s,     2 * q.y * q.z - 2 * q.x * q.s,     1 - 2 * q.x * q.x - 2 * q.y * q.y,	0 },
-		{ 0,                                 0,                                 0,									1 }
+		{ 1 - 2 * q.y() * q.y() - 2 * q.z() * q.z(),	2 * q.x() * q.y() + 2 * q.z() * q.s(),		2 * q.x() * q.z() - 2 * q.y() * q.s(),		0 },
+		{ 2 * q.x() * q.y() - 2 * q.z() * q.s(),		1 - 2 * q.x() * q.x() - 2 * q.z() * q.z(),	2 * q.y() * q.z() + 2 * q.x() * q.s(),		0 },
+		{ 2 * q.x() * q.z() + 2 * q.y() * q.s(),		2 * q.y() * q.z() - 2 * q.x() * q.s(),		1 - 2 * q.x() * q.x() - 2 * q.y() * q.y(),	0 },
+		{ 0,											0,											0,											1 }
 	};
 	return matrix * rotation_matrix;
 }
@@ -362,9 +360,9 @@ constexpr auto gse::rotate(const mat4_t<T>& matrix, const unitless::axis axis, a
 template <typename T>
 constexpr auto gse::scale(const mat4_t<T>& matrix, const unitless::vec3& scale) -> mat4_t<T> {
 	return matrix * mat4_t<T>{
-		{ scale.x,	0,			0,			0 },
-		{ 0,		scale.y,	0,			0 },
-		{ 0,		0,			scale.z,	0 },
+		{ scale.x(), 0,			0,			0 },
+		{ 0,		scale.y(),	0,			0 },
+		{ 0,		0,			scale.z(),	0 },
 		{ 0,		0,			0,			1 }
 	};
 }

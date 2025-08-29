@@ -52,11 +52,11 @@ export namespace gse {
 
 					// Calculate texture coordinates
 					const unitless::vec2 tex_coords = {
-						static_cast<float>(sector) / static_cast<float>(m_params.sectors),
+						static_cast<float>(sector) / static_cast<float>(m_params.sectors), 
 						static_cast<float>(stack) / static_cast<float>(m_params.stacks)
 					};
 
-					vertices.push_back({ .position = position.as<units::meters>().storage, .normal = normal.storage, .tex_coords = tex_coords.storage });
+					vertices.push_back({ .position = position.as<units::meters>().data, .normal = normal.data, .tex_coords = tex_coords.data });
 				}
 			}
 

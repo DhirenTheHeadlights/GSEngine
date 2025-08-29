@@ -263,7 +263,7 @@ auto gse::vulkan::uploader::upload_mip_mapped_image(config& config, persistent_a
                         .baseArrayLayer = 0,
                         .layerCount = 1
                     },
-                    .imageExtent = { size.x, size.y, 1 }
+                    .imageExtent = { size.x(), size.y(), 1}
                 };
 
                 cmd.copyBufferToImage(*staging.buffer, *resource.image, vk::ImageLayout::eTransferDstOptimal, region);
