@@ -27,6 +27,7 @@ export namespace gse::physics {
 		bool moving = false;
 		bool airborne = true;
 		bool self_controlled = false;
+		bool position_locked = false;
 	};
 
 	struct motion_component : component<motion_component_data> {

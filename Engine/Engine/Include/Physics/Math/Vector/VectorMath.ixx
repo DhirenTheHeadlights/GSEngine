@@ -165,6 +165,14 @@ export namespace gse {
 		std::size_t i = 0,
 		std::size_t j = 1
 	) -> unitless::vec_t<T, N>;
+
+	template <typename T>
+	constexpr auto barycentric(
+		const unitless::vec3_t<T>& p,
+		const unitless::vec3_t<T>& a,
+		const unitless::vec3_t<T>& b,
+		const unitless::vec3_t<T>& c
+	) -> unitless::vec3_t<T>;
 }
 
 template <typename D1, typename D2, typename T1, typename T2, std::size_t N>
@@ -482,4 +490,25 @@ constexpr auto gse::rotate(const unitless::vec_t<T, N>& v, angle_t<T> angle, std
 	result[j] = vi * sin_theta + vj * cos_theta;
 
 	return result;
+}
+
+template <typename T>
+constexpr auto gse::barycentric(const unitless::vec3_t<T>& p, const unitless::vec3_t<T>& a, const unitless::vec3_t<T>& b, const unitless::vec3_t<T>& c) -> unitless::vec3_t<T> {
+	unitless::vec_t<T, 3> v0 = b - a, v1 = c - a, v2 = p - a;
+	T d00 = dot(v0, v0);
+	T d01 = dot(v0, v1);
+	T d11 = dot(v1, v1);
+	T d20 = dot(v2, v0);
+	T d21 = dot(v2, v1);
+	T denom = d00 * d11 - d01 * d01;
+
+	if (denom == T(0)) {
+		return { T(0), T(0), T(0) };
+	}
+
+	T v = (d11 * d20 - d01 * d21) / denom;
+	T w = (d00 * d21 - d01 * d20) / denom;
+	T u = T(1) - v - w;
+
+	return { u, v, w };
 }

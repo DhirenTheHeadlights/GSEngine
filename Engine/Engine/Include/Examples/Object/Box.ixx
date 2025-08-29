@@ -47,7 +47,7 @@ export namespace gse {
 
         auto update() -> void override {
             if (keyboard::pressed(key::r) && component<physics::motion_component>().affected_by_gravity) {
-				component<render_component>().models.front().rotate({ degrees(0), degrees(0), degrees(15) });
+				component<render_component>().models.front().rotate({ degrees(0), degrees(45), degrees(0) });
             }
         }
     private:
