@@ -27,6 +27,7 @@ export namespace gse {
 		vec3<length> lower_bound;
 
 		auto set_position(const vec3<length>& center) -> void;
+		auto scale(std::uint32_t scale) -> void ;
 
 		auto center() const -> vec3<length>;
 		auto size() const -> vec3<length>;
@@ -44,6 +45,7 @@ export namespace gse {
 		auto update_axes() -> void;
 		auto corners() const -> std::array<vec3<length>, 8>;
 		auto face_vertices(unitless::axis axis, bool positive) const -> std::array<vec3<length>, 4>;
+		auto half_extents() const -> vec3<length> ;
 	};
 }
 
@@ -61,6 +63,13 @@ auto gse::axis_aligned_bounding_box::set_position(const vec3<length>& center) ->
 	const vec3<length> half_size = (upper_bound - lower_bound) / 2.0f;
 	upper_bound = center + half_size;
 	lower_bound = center - half_size;
+}
+
+auto gse::axis_aligned_bounding_box::scale(const std::uint32_t scale) -> void {
+	const auto c = center();
+	const auto s = size() * scale;
+	upper_bound = c + s / 2.0f;
+	lower_bound = c - s / 2.0f;
 }
 
 auto gse::axis_aligned_bounding_box::center() const -> vec3<length> {
@@ -92,7 +101,7 @@ auto gse::oriented_bounding_box::corners() const -> std::array<vec3<length>, 8> 
 		const auto y = i & 2 ? half_size.y() : -half_size.y();
 		const auto z = i & 4 ? half_size.z() : -half_size.z();
 
-		corners[i] = center + vec3<length>(axes[0] * x.as_default_unit() + axes[1] * y.as_default_unit() + axes[2] * z.as_default_unit());
+		corners[i] = center + (axes[0] * x + axes[1] * y + axes[2] * z);
 	}
 
 	return corners;
@@ -118,5 +127,9 @@ auto gse::oriented_bounding_box::face_vertices(unitless::axis axis, const bool p
 		face_center - axes[j] * extent_j - axes[k] * extent_k,
 		face_center - axes[j] * extent_j + axes[k] * extent_k
 	};
+}
+
+auto gse::oriented_bounding_box::half_extents() const -> vec3<length> {
+	return size / 2.0f;
 }
 

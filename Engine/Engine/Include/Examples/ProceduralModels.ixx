@@ -39,12 +39,12 @@ auto gse::procedural_model::box(const resource::handle<material>& mat) -> resour
             v.push_back(vertex{ d, n, {0.0f, 1.0f} });
         };
 
-    push_face({ -h,-h,-h }, { h,-h,-h }, { h, h,-h }, { -h, h,-h }, { 0, 0,-1 });
-    push_face({ -h,-h, h }, { -h, h, h }, { h, h, h }, { h,-h, h }, { 0, 0, 1 });
-    push_face({ -h,-h, h }, { -h,-h,-h }, { -h, h,-h }, { -h, h, h }, { -1, 0, 0 });
-    push_face({ h,-h,-h }, { h,-h, h }, { h, h, h }, { h, h,-h }, { 1, 0, 0 });
-    push_face({ -h, h,-h }, { h, h,-h }, { h, h, h }, { -h, h, h }, { 0, 1, 0 });
-    push_face({ -h,-h, h }, { h,-h, h }, { h,-h,-h }, { -h,-h,-h }, { 0,-1, 0 });
+    push_face({  h, -h, -h }, { -h, -h, -h }, { -h,  h, -h }, {  h,  h, -h }, {  0,  0, -1 });
+    push_face({ -h, -h,  h }, {  h, -h,  h }, {  h,  h,  h }, { -h,  h,  h }, {  0,  0,  1 });
+    push_face({ -h, -h, -h }, { -h, -h,  h }, { -h,  h,  h }, { -h,  h, -h }, { -1,  0,  0 });
+    push_face({  h, -h,  h }, {  h, -h, -h }, {  h,  h, -h }, {  h,  h,  h }, {  1,  0,  0 });
+    push_face({ -h,  h,  h }, {  h,  h,  h }, {  h,  h, -h }, { -h,  h, -h }, {  0,  1,  0 });
+    push_face({ -h, -h, -h }, {  h, -h, -h }, {  h, -h,  h }, { -h, -h,  h }, {  0, -1,  0 });
 
     std::vector<std::uint32_t> idx;
     idx.reserve(36);

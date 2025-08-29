@@ -35,7 +35,7 @@ namespace gse {
 
 export template <typename T, std::size_t Cols, std::size_t Rows, typename CharT>
 struct std::formatter<gse::mat<T, Cols, Rows>, CharT> {
-	std::formatter<gse::vec::storage<T, Cols>, CharT> vec_formatter;
+	std::formatter<gse::unitless::vec_t<T, Cols>, CharT> vec_formatter;
 
 	constexpr auto parse(std::format_parse_context& ctx) {
 		return vec_formatter.parse(ctx);
@@ -44,18 +44,23 @@ struct std::formatter<gse::mat<T, Cols, Rows>, CharT> {
 	template <typename FormatContext>
 	auto format(const gse::mat<T, Cols, Rows>& m, FormatContext& ctx) const {
 		auto out = ctx.out();
+
 		out = std::format_to(out, "mat{}x{}[\n", Cols, Rows);
+
 		for (std::size_t row = 0; row < Rows; ++row) {
-			gse::vec::storage<T, Cols> row_vec;
+			gse::unitless::vec_t<T, Cols> row_vec;
 			for (std::size_t col = 0; col < Cols; ++col) {
-				row_vec[col] = m.data[col][row];
+				row_vec[col] = m[col][row];
 			}
+
 			out = std::format_to(out, "  ");
 			out = vec_formatter.format(row_vec, ctx);
+
 			if (row < Rows - 1) {
 				out = std::format_to(out, ",\n");
 			}
 		}
+
 		out = std::format_to(out, "\n]");
 		return out;
 	}
