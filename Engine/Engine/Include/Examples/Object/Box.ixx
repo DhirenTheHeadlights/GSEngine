@@ -27,9 +27,8 @@ export namespace gse {
             });
 
             const auto [cc_id, cc] = add_component<physics::collision_component>({
-                .bounding_box = { m_initial_position, m_size }
+                .aabb = { m_initial_position, m_size }
             });
-            cc->oriented_bounding_box = { cc->bounding_box };
 
             const auto mat = gse::queue<material>(
                 "concrete_bricks_material",

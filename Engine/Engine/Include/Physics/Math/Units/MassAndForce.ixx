@@ -54,6 +54,8 @@ export namespace gse {
 	constexpr auto milligrams(float value) -> mass;
 	constexpr auto pounds(float value) -> mass;
 	constexpr auto ounces(float value) -> mass;
+
+	using inverse_mass = internal::quantity<float, internal::dim<0, 0, -1>>;
 }
 
 export namespace gse::vec {
@@ -315,6 +317,7 @@ export namespace gse {
 	using inertia_t = internal::quantity<T, internal::dim<2, 0, 1>>;
 
 	using inertia = inertia_t<>;
+	using inverse_inertia_dimension = internal::dim<-2, 0, -1>;
 
 	template <typename T> constexpr auto kilograms_meters_squared_t(T value) -> inertia_t<T>;
 	template <typename T> constexpr auto pounds_feet_squared_t(T value) -> inertia_t<T>;

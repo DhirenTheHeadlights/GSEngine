@@ -30,11 +30,13 @@ export namespace gse::physics {
 		bool position_locked = false;
 	};
 
+	using inv_inertia_mat = mat3_t<float, inverse_inertia_dimension>;
+
 	struct motion_component : component<motion_component_data> {
 		using component::component;
 
 		auto transformation_matrix() const -> mat4;
-		auto inv_inertial_tensor() const -> mat3;
+		auto inv_inertial_tensor() const -> inv_inertia_mat;
 	};
 }
 
@@ -45,9 +47,9 @@ auto gse::physics::motion_component::transformation_matrix() const -> mat4 {
 	return transformation;
 }
 
-auto gse::physics::motion_component::inv_inertial_tensor() const -> mat3 {
+auto gse::physics::motion_component::inv_inertial_tensor() const -> inv_inertia_mat {
 	const float i_body = moment_of_inertia.as_default_unit();
-	const mat3 inv_i_body = gse::identity<float, 3, 3>() * (1.f / i_body);
+	const inv_inertia_mat inv_i_body = gse::identity<float, 3, 3>() * (1.f / i_body);
 	const auto rotation = mat3_cast(orientation);
 	return rotation * inv_i_body * rotation.transpose();
 }

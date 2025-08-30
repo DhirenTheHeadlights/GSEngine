@@ -76,11 +76,11 @@ namespace gse::internal {
         constexpr quantity_t(ArithmeticType value) : m_val(value) {}
 
         template <is_unit UnitType>
-        constexpr quantity_t(ArithmeticType value) : m_val(this->get_converted_value<UnitType>(value)) {}
+        constexpr quantity_t(ArithmeticType value) : m_val(this->converted_value<UnitType>(value)) {}
 
 		template <is_unit UnitType> requires valid_unit_for_quantity<UnitType, ValidUnits>
         constexpr auto set(ArithmeticType value) -> void {
-			m_val = this->get_converted_value<UnitType>(value);
+			m_val = this->converted_value<UnitType>(value);
         }
 
 		template <is_unit UnitType> requires valid_unit_for_quantity<UnitType, ValidUnits>
@@ -96,14 +96,14 @@ namespace gse::internal {
 		constexpr static auto from(ArithmeticType value) -> Derived {
 			static_assert(internal::is_valid_unit_for_quantity<UnitType, ValidUnits>(), "Invalid unit type for conversion");
 			Derived result;
-			result.m_val = result.template get_converted_value<UnitType>(value);
+			result.m_val = result.template converted_value<UnitType>(value);
 			return result;
 		}
 
         constexpr auto operator<=>(const quantity_t&) const = default;
     protected:
         template <is_unit UnitType>
-		constexpr auto get_converted_value(ArithmeticType value) const -> ArithmeticType {
+		constexpr auto converted_value(ArithmeticType value) const -> ArithmeticType {
 			return value * UnitType::conversion_factor;
 		}
 
@@ -146,27 +146,13 @@ export namespace gse::internal {
         std::remove_cvref_t<Q>
 	>;
 
-    template <is_quantity T> constexpr auto operator+(const T& lhs, const T& rhs) -> T;
-    template <is_quantity T> constexpr auto operator-(const T& lhs, const T& rhs) -> T;
-
-    template <is_quantity T, is_arithmetic U> constexpr auto operator*(const T& lhs, const U& rhs) -> T;
-    template <is_quantity T, is_arithmetic U> constexpr auto operator*(const U& lhs, const T& rhs) -> T;
-
-    template <is_quantity T, is_arithmetic U> constexpr auto operator/(const T& lhs, const U& rhs) -> T;
-    template <is_quantity T, is_arithmetic U> constexpr auto operator/(const U& lhs, const T& rhs) -> T;
-
-    template <is_quantity T, is_quantity U> constexpr auto operator*(const T& lhs, const U& rhs);
-    template <is_quantity T, is_quantity U> constexpr auto operator/(const T& lhs, const U& rhs);
-
-	// Division of the same quantity type returns the value type (unitless)
-	template <is_quantity T> constexpr auto operator/(const T& lhs, const T& rhs) -> typename T::value_type;
-
-    template <is_quantity T> constexpr auto operator+=(T& lhs, const T& rhs) -> T&;
-    template <is_quantity T> constexpr auto operator-=(T& lhs, const T& rhs) -> T&;
-    template <is_quantity T, is_arithmetic U> constexpr auto operator*=(T& lhs, const U& rhs) -> T&;
-    template <is_quantity T, is_arithmetic U> constexpr auto operator/=(T& lhs, const U& rhs) -> T&;
-
-    template <is_quantity T> constexpr auto operator-(const T& value) -> T;
+    template <typename Q1, typename Q2>
+	concept has_same_dimension_as = 
+        is_quantity<Q1> && is_quantity<Q2> &&
+        has_same_dimensions<
+	        typename std::remove_cvref_t<Q1>::dimension,
+			typename std::remove_cvref_t<Q2>::dimension
+		>;
 }
 
 template <gse::internal::is_quantity Q, typename CharT>
@@ -187,84 +173,177 @@ struct std::formatter<Q, CharT> {
     }
 };
 
-namespace gse::internal {
-    template <is_quantity T>
-    constexpr auto internal::operator+(const T& lhs, const T& rhs) -> T {
-        return lhs.as_default_unit() + rhs.as_default_unit();
-    }
+export namespace gse::internal {
+	template <is_quantity Q1, is_quantity Q2>
+		requires has_same_dimension_as<Q1, Q2>
+	constexpr auto operator+(
+		const Q1& lhs,
+		const Q2& rhs
+	) -> Q1;
 
-    template <is_quantity T>
-    constexpr auto internal::operator-(const T& lhs, const T& rhs) -> T {
-        return lhs.as_default_unit() - rhs.as_default_unit();
-    }
+	template <is_quantity Q1, is_quantity Q2>
+		requires has_same_dimension_as<Q1, Q2>
+	constexpr auto operator-(
+		const Q1& lhs,
+		const Q2& rhs
+	) -> Q1;
 
-    template <is_quantity T, is_arithmetic U>
-    constexpr auto internal::operator*(const T& lhs, const U& rhs) -> T {
-        return lhs.as_default_unit() * rhs;
-    }
+	template <is_quantity Q1, is_quantity Q2>
+	constexpr auto operator*(
+		const Q1& lhs,
+		const Q2& rhs
+	);
 
-    template <is_quantity T, is_arithmetic U>
-    constexpr auto internal::operator*(const U& lhs, const T& rhs) -> T {
-        return lhs * rhs.as_default_unit();
-    }
+	template <is_quantity Q, is_arithmetic S>
+	constexpr auto operator*(
+		const Q& lhs,
+		const S& rhs
+	) -> Q;
 
-    template <is_quantity T, is_quantity U>
-    constexpr auto internal::operator*(const T& lhs, const U& rhs) {
-        using result_v = std::common_type_t<typename T::value_type, typename U::value_type>;
-        using result_d = decltype(typename T::dimension() * typename U::dimension());
-        return quantity<result_v, result_d>(lhs.as_default_unit() * rhs.as_default_unit());
-    }
+	template <is_arithmetic S, is_quantity Q>
+	constexpr auto operator*(
+		const S& lhs,
+		const Q& rhs
+	) -> Q;
 
-    template <is_quantity T, is_quantity U>
-    constexpr auto internal::operator/(const T& lhs, const U& rhs) {
-        using result_v = std::common_type_t<typename T::value_type, typename U::value_type>;
-        using result_d = decltype(typename T::dimension() / typename U::dimension());
-        return quantity<result_v, result_d>(lhs.as_default_unit() / rhs.as_default_unit());
-    }
+	template <is_quantity Q1, is_quantity Q2>
+		requires has_same_dimension_as<Q1, Q2>
+	constexpr auto operator/(
+		const Q1& lhs,
+		const Q2& rhs
+	) -> typename Q1::value_type;
 
-    template <is_quantity T>
-	constexpr auto internal::operator/(const T& lhs, const T& rhs) -> typename T::value_type {
-		return lhs.as_default_unit() / rhs.as_default_unit();
-	}
+	template <is_quantity Q1, is_quantity Q2>
+	constexpr auto operator/(
+		const Q1& lhs,
+		const Q2& rhs
+	);
 
-    template <is_quantity T, is_arithmetic U>
-    constexpr auto internal::operator/(const T& lhs, const U& rhs) -> T {
-        return lhs.as_default_unit() / rhs;
-    }
+	template <is_quantity Q, is_arithmetic S>
+	constexpr auto operator/(
+		const Q& lhs,
+		const S& rhs
+	) -> Q;
 
-    template <is_quantity T, is_arithmetic U>
-    constexpr auto internal::operator/(const U& lhs, const T& rhs) -> T {
-        return lhs / rhs.as_default_unit();
-    }
+	template <is_arithmetic S, is_quantity Q>
+	constexpr auto operator/(
+		const S& lhs,
+		const Q& rhs
+	);
 
-    template <is_quantity T>
-    constexpr auto internal::operator+=(T& lhs, const T& rhs) -> T& {
-        lhs.set<T::default_unit>(lhs.as_default_unit() + rhs.as_default_unit());
-        return lhs;
-    }
+	template <is_quantity Q1, is_quantity Q2>
+		requires has_same_dimension_as<Q1, Q2>
+	constexpr auto operator+=(
+		Q1& lhs,
+		const Q2& rhs
+	) -> Q1&;
 
-    template <is_quantity T>
-    constexpr auto internal::operator-=(T& lhs, const T& rhs) -> T& {
-        lhs.set<T::default_unit>(lhs.as_default_unit() - rhs.as_default_unit());
-        return lhs;
-    }
+	template <is_quantity Q1, is_quantity Q2>
+		requires has_same_dimension_as<Q1, Q2>
+	constexpr auto operator-=(
+		Q1& lhs,
+		const Q2& rhs
+	) -> Q1&;
 
-    template <is_quantity T, is_arithmetic U>
-    constexpr auto internal::operator*=(T& lhs, const U& rhs) -> T& {
-        lhs.set<T::default_unit>(lhs.as_default_unit() * rhs);
-        return lhs;
-    }
+	template <is_quantity Q, is_arithmetic S>
+	constexpr auto operator*=(
+		Q& lhs,
+		const S& rhs
+	) -> Q&;
 
-    template <is_quantity T, is_arithmetic U>
-    constexpr auto internal::operator/=(T& lhs, const U& rhs) -> T& {
-        lhs.set<T::default_unit>(lhs.as_default_unit() / rhs);
-        return lhs;
-    }
+	template <is_quantity Q, is_arithmetic S>
+	constexpr auto operator/=(
+		Q& lhs,
+		const S& rhs
+	) -> Q&;
 
-    template <is_quantity T>
-    constexpr auto internal::operator-(const T& value) -> T {
-        return -value.as_default_unit();
-    }
+	template <is_quantity Q>
+	constexpr auto operator-(
+		const Q& v
+	) -> Q;
 }
 
+template <gse::internal::is_quantity Q1, gse::internal::is_quantity Q2>
+	requires gse::internal::has_same_dimension_as<Q1, Q2>
+constexpr auto gse::internal::operator+(const Q1& lhs, const Q2& rhs) -> Q1 {
+	return Q1(lhs.as_default_unit() + rhs.as_default_unit());
+}
 
+template <gse::internal::is_quantity Q1, gse::internal::is_quantity Q2>
+	requires gse::internal::has_same_dimension_as<Q1, Q2>
+constexpr auto gse::internal::operator-(const Q1& lhs, const Q2& rhs) -> Q1 {
+	return Q1(lhs.as_default_unit() - rhs.as_default_unit());
+}
+
+template <gse::internal::is_quantity Q1, gse::internal::is_quantity Q2>
+constexpr auto gse::internal::operator*(const Q1& lhs, const Q2& rhs) {
+	using result_v = std::common_type_t<typename Q1::value_type, typename Q2::value_type>;
+	using result_d = decltype(typename Q1::dimension()* typename Q2::dimension());
+	return quantity<result_v, result_d>(lhs.as_default_unit() * rhs.as_default_unit());
+}
+
+template <gse::internal::is_quantity Q, gse::internal::is_arithmetic S>
+constexpr auto gse::internal::operator*(const Q& lhs, const S& rhs) -> Q {
+	return Q(lhs.as_default_unit() * static_cast<typename Q::value_type>(rhs));
+}
+
+template <gse::internal::is_arithmetic S, gse::internal::is_quantity Q>
+constexpr auto gse::internal::operator*(const S& lhs, const Q& rhs) -> Q {
+	return Q(static_cast<typename Q::value_type>(lhs) * rhs.as_default_unit());
+}
+
+template <gse::internal::is_quantity Q1, gse::internal::is_quantity Q2>
+	requires gse::internal::has_same_dimension_as<Q1, Q2>
+constexpr auto gse::internal::operator/(const Q1& lhs, const Q2& rhs) -> typename Q1::value_type {
+	return lhs.as_default_unit() / rhs.as_default_unit();
+}
+
+template <gse::internal::is_quantity Q1, gse::internal::is_quantity Q2>
+constexpr auto gse::internal::operator/(const Q1& lhs, const Q2& rhs) {
+	using result_v = std::common_type_t<typename Q1::value_type, typename Q2::value_type>;
+	using result_d = decltype(typename Q1::dimension() / typename Q2::dimension());
+	return quantity<result_v, result_d>(lhs.as_default_unit() / rhs.as_default_unit());
+}
+
+template <gse::internal::is_quantity Q, gse::internal::is_arithmetic S>
+constexpr auto gse::internal::operator/(const Q& lhs, const S& rhs) -> Q {
+	return Q(lhs.as_default_unit() / static_cast<typename Q::value_type>(rhs));
+}
+
+template <gse::internal::is_arithmetic S, gse::internal::is_quantity Q>
+constexpr auto gse::internal::operator/(const S& lhs, const Q& rhs) {
+	using result_v = typename Q::value_type;
+	using result_d = decltype(dim<0, 0, 0>() / typename Q::dimension());
+	return quantity<result_v, result_d>(static_cast<result_v>(lhs) / rhs.as_default_unit());
+}
+
+template <gse::internal::is_quantity Q1, gse::internal::is_quantity Q2>
+	requires gse::internal::has_same_dimension_as<Q1, Q2>
+constexpr auto gse::internal::operator+=(Q1& lhs, const Q2& rhs) -> Q1& {
+	lhs.set<typename Q1::default_unit>(lhs.as_default_unit() + rhs.as_default_unit());
+	return lhs;
+}
+
+template <gse::internal::is_quantity Q1, gse::internal::is_quantity Q2>
+	requires gse::internal::has_same_dimension_as<Q1, Q2>
+constexpr auto gse::internal::operator-=(Q1& lhs, const Q2& rhs) -> Q1& {
+	lhs.set<typename Q1::default_unit>(lhs.as_default_unit() - rhs.as_default_unit());
+	return lhs;
+}
+
+template <gse::internal::is_quantity Q, gse::internal::is_arithmetic S>
+constexpr auto gse::internal::operator*=(Q& lhs, const S& rhs) -> Q& {
+	lhs.set<typename Q::default_unit>(lhs.as_default_unit() * rhs);
+	return lhs;
+}
+
+template <gse::internal::is_quantity Q, gse::internal::is_arithmetic S>
+constexpr auto gse::internal::operator/=(Q& lhs, const S& rhs) -> Q& {
+	lhs.set<typename Q::default_unit>(lhs.as_default_unit() / rhs);
+	return lhs;
+}
+
+template <gse::internal::is_quantity Q>
+constexpr auto gse::internal::operator-(const Q& v) -> Q {
+	return Q(-v.as_default_unit());
+}

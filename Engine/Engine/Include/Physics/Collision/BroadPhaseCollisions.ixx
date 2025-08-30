@@ -59,8 +59,8 @@ auto gse::broad_phase_collision::check_future_collision(const axis_aligned_bound
 }
 
 auto gse::broad_phase_collision::check_collision(physics::collision_component& dynamic_object_collision_component, physics::motion_component* dynamic_object_motion_component, physics::collision_component& other_collision_component, physics::motion_component* other_motion_component, const time dt) -> void {
-	const auto& box1 = dynamic_object_collision_component.bounding_box;
-	const auto& box2 = other_collision_component.bounding_box;
+	const auto& box1 = dynamic_object_collision_component.aabb;
+	const auto& box2 = other_collision_component.aabb;
 
 	if (check_future_collision(box1, dynamic_object_motion_component, box2, dt)) {
 		if (dynamic_object_collision_component.resolve_collisions) {
@@ -101,7 +101,7 @@ auto gse::broad_phase_collision::update(const std::span<physics::collision_compo
 
 		if (it != motion_components.end()) {
 			motion = &*it;
-			collision_component.bounding_box.set_position(
+			collision_component.aabb.set_position(
 				motion->current_position
 			);
 		}
@@ -122,7 +122,7 @@ auto gse::broad_phase_collision::update(const std::span<physics::collision_compo
 
 			if (it != motion_components.end()) {
 				other_motion = &*it;
-				collision_component.bounding_box.set_position(
+				collision_component.aabb.set_position(
 					motion->current_position
 				);
 			}
