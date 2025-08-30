@@ -8,11 +8,13 @@ import gse.utility;
 
 export namespace gse::physics {
 	struct collision_component_data {
-		axis_aligned_bounding_box bounding_box;
-		oriented_bounding_box oriented_bounding_box;
+		axis_aligned_bounding_box aabb;
 		collision_information collision_information;
 		bool resolve_collisions = true;
 	};
 
-	using collision_component = component<collision_component_data>;
+	struct collision_component : component<collision_component_data> {
+		collision_component(const id& owner_id, const collision_component_data& data) : component(owner_id, data), obb(data.aabb) {}
+		oriented_bounding_box obb;
+	};
 }

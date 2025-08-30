@@ -8,9 +8,10 @@ import :quat;
 import gse.assert;
 
 namespace gse {
-	template <internal::is_arithmetic T, std::size_t Cols, std::size_t Rows>
+	template <internal::is_arithmetic T, std::size_t Cols, std::size_t Rows, internal::is_dimension Dim = internal::dim<0, 0, 0>>
 	struct mat {
 		using value_type = T;
+		using dim = Dim;
 
 		std::array<unitless::vec_t<T, Rows>, Cols> data;
 
@@ -23,10 +24,9 @@ namespace gse {
 		template <std::size_t OtherCols, std::size_t OtherRows>
 		constexpr mat(const mat<T, OtherCols, OtherRows>& other);
 
-		constexpr auto operator[](std::size_t index) -> unitless::vec_t<T, Rows>&;
-		constexpr auto operator[](std::size_t index) const -> const unitless::vec_t<T, Rows>&;
+		constexpr auto operator[](this auto& self, std::size_t index) -> decltype(auto);
 
-		constexpr auto transpose() const -> mat<T, Rows, Cols>;
+		constexpr auto transpose() const -> mat<T, Rows, Cols, Dim>;
 		constexpr auto inverse() const -> mat;
 		constexpr auto determinant() const -> T;
 		constexpr auto trace() const -> T;
@@ -67,10 +67,17 @@ struct std::formatter<gse::mat<T, Cols, Rows>, CharT> {
 };
 
 export namespace gse {
-	template <typename T, std::size_t Cols, std::size_t Rows> using mat_t = mat<T, Cols, Rows>;
-	template <typename T> using mat2_t = mat<T, 2, 2>;
-	template <typename T> using mat3_t = mat<T, 3, 3>;
-	template <typename T> using mat4_t = mat<T, 4, 4>;
+	template <typename T, std::size_t Cols, std::size_t Rows, typename Dim = internal::dim<0, 0, 0>>
+	using mat_t = mat<T, Cols, Rows, Dim>;
+
+	template <typename T, typename Dim = internal::dim<0, 0, 0>>
+	using mat2_t = mat<T, 2, 2, Dim>;
+
+	template <typename T, typename Dim = internal::dim<0, 0, 0>>
+	using mat3_t = mat<T, 3, 3, Dim>;
+
+	template <typename T, typename Dim = internal::dim<0, 0, 0>>
+	using mat4_t = mat<T, 4, 4, Dim>;
 
 	using mat2i = mat<int, 2, 2>;
 	using mat3i = mat<int, 3, 3>;
@@ -85,23 +92,23 @@ export namespace gse {
 	using mat4d = mat<double, 4, 4>;
 }
 
-template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows>
-constexpr gse::mat<T, Cols, Rows>::mat(const T& value) : data{} {
+template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows, gse::internal::is_dimension Dim = gse::internal::dim<0, 0, 0>>
+constexpr gse::mat<T, Cols, Rows, Dim>::mat(const T& value) : data{} {
 	for (std::size_t i = 0; i < std::min(Cols, Rows); ++i) {
 		data[i][i] = value;
 	}
 }
 
-template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows>
-constexpr gse::mat<T, Cols, Rows>::mat(std::initializer_list<unitless::vec_t<T, Rows>> list) {
+template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows, gse::internal::is_dimension Dim>
+constexpr gse::mat<T, Cols, Rows, Dim>::mat(std::initializer_list<unitless::vec_t<T, Rows>> list) {
 	auto it = list.begin();
 	for (std::size_t j = 0; j < Cols && it != list.end(); ++j, ++it) {
 		data[j] = *it;
 	}
 }
 
-template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows>
-constexpr gse::mat<T, Cols, Rows>::mat(const quat_t<T>& q) {
+template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows, gse::internal::is_dimension Dim>
+constexpr gse::mat<T, Cols, Rows, Dim>::mat(const quat_t<T>& q) {
 	static_assert(
 		(Cols == 3 && Rows == 3) || (Cols == 4 && Rows == 4),
 		"Quaternion to matrix constructor is only defined for mat3x3 and mat4x4."
@@ -140,9 +147,9 @@ constexpr gse::mat<T, Cols, Rows>::mat(const quat_t<T>& q) {
 	}
 }
 
-template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows>
+template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows, gse::internal::is_dimension Dim>
 template <std::size_t OtherCols, std::size_t OtherRows>
-constexpr gse::mat<T, Cols, Rows>::mat(const mat<T, OtherCols, OtherRows>& other) : data{} {
+constexpr gse::mat<T, Cols, Rows, Dim>::mat(const mat<T, OtherCols, OtherRows>& other) : data{} {
 	for (std::size_t i = 0; i < std::min(Cols, Rows); ++i) {
 		data[i][i] = static_cast<T>(1);
 	}
@@ -156,19 +163,14 @@ constexpr gse::mat<T, Cols, Rows>::mat(const mat<T, OtherCols, OtherRows>& other
 	}
 }
 
-template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows>
-constexpr auto gse::mat<T, Cols, Rows>::operator[](std::size_t index) -> unitless::vec_t<T, Rows>& {
-	return data[index];
+template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows, gse::internal::is_dimension Dim>
+constexpr auto gse::mat<T, Cols, Rows, Dim>::operator[](this auto& self, std::size_t index) -> decltype(auto) {
+	return self.data[index];
 }
 
-template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows>
-constexpr auto gse::mat<T, Cols, Rows>::operator[](std::size_t index) const -> const unitless::vec_t<T, Rows>& {
-	return data[index];
-}
-
-template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows>
-constexpr auto gse::mat<T, Cols, Rows>::transpose() const -> mat<T, Rows, Cols> {
-	mat<T, Rows, Cols> result;
+template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows, gse::internal::is_dimension Dim>
+constexpr auto gse::mat<T, Cols, Rows, Dim>::transpose() const -> mat<T, Rows, Cols, Dim> {
+	mat<T, Rows, Cols, Dim> result;
 	for (std::size_t j = 0; j < Cols; ++j) {
 		for (std::size_t i = 0; i < Rows; ++i) {
 			result[i][j] = data[j][i];
@@ -177,8 +179,8 @@ constexpr auto gse::mat<T, Cols, Rows>::transpose() const -> mat<T, Rows, Cols> 
 	return result;
 }
 
-template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows>
-constexpr auto gse::mat<T, Cols, Rows>::inverse() const -> mat {
+template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows, gse::internal::is_dimension Dim>
+constexpr auto gse::mat<T, Cols, Rows, Dim>::inverse() const -> mat {
 	static_assert(Cols == Rows, "Inverse is only defined for square matrices.");
 	const auto& m = *this;
 
@@ -255,8 +257,8 @@ constexpr auto gse::mat<T, Cols, Rows>::inverse() const -> mat {
 	}
 }
 
-template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows>
-constexpr auto gse::mat<T, Cols, Rows>::determinant() const -> T {
+template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows, gse::internal::is_dimension Dim>
+constexpr auto gse::mat<T, Cols, Rows, Dim>::determinant() const -> T {
 	static_assert(Rows == Cols, "Determinant is only defined for square matrices.");
 	const auto& m = *this;
 
@@ -309,8 +311,8 @@ constexpr auto gse::mat<T, Cols, Rows>::determinant() const -> T {
 	}
 }
 
-template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows>
-constexpr auto gse::mat<T, Cols, Rows>::trace() const -> T {
+template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows, gse::internal::is_dimension Dim>
+constexpr auto gse::mat<T, Cols, Rows, Dim>::trace() const -> T {
 	static_assert(Rows == Cols, "Trace is only defined for square matrices.");
 	T trace_val = 0;
 	for (std::size_t i = 0; i < Cols; ++i) {

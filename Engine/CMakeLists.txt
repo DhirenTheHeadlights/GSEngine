@@ -88,7 +88,7 @@ target_include_directories(Engine
 )
 
 if(HAVE_SLANG_PACKAGE)
-    target_link_libraries(Engine PUBLIC Slang::slang)
+    target_link_libraries(Engine PUBLIC slang::slang)
 else()
     target_include_directories(Engine PRIVATE "${SLANG_INCLUDE_DIR}")
     target_link_libraries(Engine PUBLIC "${SLANG_LIBRARY}")

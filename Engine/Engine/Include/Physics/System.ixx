@@ -25,7 +25,9 @@ auto gse::physics::apply_force(motion_component& component, const vec3<force>& f
 
 	const auto acceleration = force / std::max(component.mass, kilograms(0.0001f));
 
-	component.current_torque += cross(world_force_position - component.center_of_mass, force);
+	const auto com = component.center_of_mass + component.current_position;
+
+	component.current_torque += cross(world_force_position - com, force);
 	component.current_acceleration += acceleration;
 }
 
@@ -51,9 +53,9 @@ auto update_friction(gse::physics::motion_component& component, const gse::surfa
 		friction *= 5.f;
 	}
 
-	//const gse::vec3 friction_force(-friction * gse::normalize(component.current_velocity));
+	const gse::vec3 friction_force(-friction * normalize(component.current_velocity));
 
-	//apply_force(component, friction_force, component.current_position);
+	apply_force(component, friction_force, component.current_position);
 }
 
 auto update_gravity(gse::physics::motion_component& component) -> void {
@@ -134,7 +136,7 @@ auto update_rotation(gse::physics::motion_component& component, const gse::time 
 }
 
 auto update_obb(const gse::physics::motion_component& motion_component, gse::physics::collision_component& collision_component) {
-	auto& obb = collision_component.oriented_bounding_box;
+	auto& obb = collision_component.obb;
 	obb.center = motion_component.current_position;
 	obb.orientation = motion_component.orientation;
 	obb.update_axes();

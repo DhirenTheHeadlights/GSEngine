@@ -18,7 +18,7 @@ export namespace gs {
 
 			configure_when_present([](gse::physics::collision_component& cc) {
 				cc.resolve_collisions = false;
-				cc.bounding_box = {};
+				cc.aabb = {};
 			});
 
 			configure_when_present([](gse::physics::motion_component& mc) {
