@@ -151,6 +151,12 @@ export namespace gse {
 		T exponent
 	) -> unitless::vec_t<T, N>;
 
+	template <typename T, std::size_t N, typename S>
+	constexpr auto pow(
+		const vec_t<T, N>& v,
+		S exponent
+	) -> vec_t<decltype(T{} * T{}), N > ;
+
 	template <typename D1, typename D2, typename T1, typename T2, std::size_t N>
 	constexpr auto epsilon_equal_index(
 		const vec::base<D1, T1, N>& a,
@@ -173,6 +179,14 @@ export namespace gse {
 		const unitless::vec3_t<T>& b,
 		const unitless::vec3_t<T>& c
 	) -> unitless::vec3_t<T>;
+
+	template <typename T>
+	constexpr auto barycentric(
+		const vec3<T>& p,
+		const vec3<T>& a,
+		const vec3<T>& b,
+		const vec3<T>& c
+	) -> vec3<T>;
 }
 
 template <typename D1, typename D2, typename T1, typename T2, std::size_t N>
@@ -456,6 +470,11 @@ constexpr auto gse::pow(const unitless::vec_t<T, N>& v, T exponent) -> unitless:
 	return out;
 }
 
+template <typename T, std::size_t N, typename S>
+constexpr auto gse::pow(const vec_t<T, N>& v, S exponent) -> vec_t<decltype(T{} * T{}), N> {
+	return pow(v.template as<typename T::default_unit>(), static_cast<T>(exponent));
+}
+
 template <typename D1, typename D2, typename T1, typename T2, std::size_t N>
 constexpr auto gse::epsilon_equal_index(const vec::base<D1, T1, N>& a, const vec::base<D2, T2, N>& b, std::size_t index) -> bool {
 	if (index >= N) {
@@ -511,4 +530,14 @@ constexpr auto gse::barycentric(const unitless::vec3_t<T>& p, const unitless::ve
 	T u = T(1) - v - w;
 
 	return { u, v, w };
+}
+
+template <typename T>
+constexpr auto gse::barycentric(const vec3<T>& p, const vec3<T>& a, const vec3<T>& b, const vec3<T>& c) -> vec3<T> {
+	return barycentric(
+		p.template as<typename T::default_unit>(),
+		a.template as<typename T::default_unit>(),
+		b.template as<typename T::default_unit>(),
+		c.template as<typename T::default_unit>()
+	);
 }

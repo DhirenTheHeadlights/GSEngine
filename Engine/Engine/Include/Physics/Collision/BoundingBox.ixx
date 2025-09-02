@@ -82,7 +82,9 @@ auto gse::axis_aligned_bounding_box::size() const -> vec3<length> {
 
 /// OBB
 
-gse::oriented_bounding_box::oriented_bounding_box(const axis_aligned_bounding_box& aabb, const quat& orientation) : center(aabb.center()), size(aabb.size()), orientation(orientation) {}
+gse::oriented_bounding_box::oriented_bounding_box(const axis_aligned_bounding_box& aabb, const quat& orientation) : center(aabb.center()), size(aabb.size()), orientation(orientation) {
+	update_axes();
+}
 
 auto gse::oriented_bounding_box::update_axes() -> void {
 	const auto rotation_matrix = mat3_cast(orientation);

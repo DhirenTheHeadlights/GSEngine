@@ -12,6 +12,7 @@ export import :matrix;
 export import :matrix_math;
 export import :quat;
 export import :quat_math;
+export import :quant;
 export import :rectangle;
 export import :circle;
 export import :segment;
