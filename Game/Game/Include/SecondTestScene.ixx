@@ -12,15 +12,16 @@ export namespace gs {
 			build("Box")
 				.with<gse::box>({
 					.initial_position = gse::vec::meters(0.f, 0.f, 0.f),
-					.size = gse::vec::meters(10.f, 10.f, 10.f)
+					.size = gse::vec::meters(100.f, 100.f, 100.f)
 				});
 
 			build("Floor")
 				.with<gse::box>({
-					.size = gse::vec::meters(100.f, 1.f, 100.f)
+					.initial_position = gse::vec::meters(0.f, -200.f, 0.f),
+					.size = gse::vec::meters(1000.f, 1.f, 1000.f)
 				})
 				.with<positioned_object_hook>({
-					.position = gse::vec::meters(0.f, -10.f, 0.f)
+					.position = gse::vec::meters(0.f, -200.f, 0.f)
 				});
 
 			build("Free Cam")
@@ -41,10 +42,7 @@ export namespace gs {
 			auto initialize() -> void override {
 				configure_when_present([](gse::physics::motion_component& mc) {
 					mc.affected_by_gravity = false;
-				});
-
-				configure_when_present([](gse::physics::collision_component& cc) {
-					cc.resolve_collisions = false;
+					mc.position_locked = true;
 				});
 			}
 

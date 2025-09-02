@@ -12,14 +12,14 @@ import gse.physics.math;
 
 export namespace gse::broad_phase_collision {
 	auto check_collision(
-		const axis_aligned_bounding_box& box1,
-		const axis_aligned_bounding_box& box2
+		const bounding_box& box1,
+		const bounding_box& box2
 	) -> bool;
 
 	auto check_future_collision(
-		const axis_aligned_bounding_box& dynamic_box,
+		const bounding_box& dynamic_box,
 		const physics::motion_component* dynamic_motion_component,
-		const axis_aligned_bounding_box& other_box,
+		const bounding_box& other_box,
 		time dt
 	) -> bool;
 
@@ -32,8 +32,8 @@ export namespace gse::broad_phase_collision {
 	) -> void;
 
 	auto calculate_collision_information(
-		const axis_aligned_bounding_box& box1,
-		const axis_aligned_bounding_box& box2
+		const bounding_box& box1,
+		const bounding_box& box2
 	) -> collision_information;
 
 	auto update(
@@ -43,24 +43,24 @@ export namespace gse::broad_phase_collision {
 	) -> void;
 }
 
-auto gse::broad_phase_collision::check_collision(const axis_aligned_bounding_box& box1, const axis_aligned_bounding_box& box2) -> bool {
-	return box1.upper_bound.x() > box2.lower_bound.x() && box1.lower_bound.x() < box2.upper_bound.x() &&
-		box1.upper_bound.y() > box2.lower_bound.y() && box1.lower_bound.y() < box2.upper_bound.y() &&
-		box1.upper_bound.z() > box2.lower_bound.z() && box1.lower_bound.z() < box2.upper_bound.z();
+auto gse::broad_phase_collision::check_collision(const bounding_box& box1, const bounding_box& box2) -> bool {
+	return {
+		box1.aabb().max.x() > box2.aabb().min.x() && box1.aabb().min.x() < box2.aabb().max.x() &&
+		box1.aabb().max.y() > box2.aabb().min.y() && box1.aabb().min.y() < box2.aabb().max.y() &&
+		box1.aabb().max.z() > box2.aabb().min.z() && box1.aabb().min.z() < box2.aabb().max.z()
+	};
 }
 
-auto gse::broad_phase_collision::check_future_collision(const axis_aligned_bounding_box& dynamic_box, const physics::motion_component* dynamic_motion_component, const axis_aligned_bounding_box& other_box, const time dt) -> bool {
-	axis_aligned_bounding_box expanded_box = dynamic_box;							// Create a copy
+auto gse::broad_phase_collision::check_future_collision(const bounding_box& dynamic_box, const physics::motion_component* dynamic_motion_component, const bounding_box& other_box, const time dt) -> bool {
+	const bounding_box expanded_box = dynamic_box;							
 	physics::motion_component temp_component = *dynamic_motion_component;
-	update_object(temp_component, dt, nullptr);										// Update the entity's position in the direction of its current_velocity
-	expanded_box.set_position(temp_component.current_position);						// Set the expanded box's position to the updated position
-	expanded_box.scale(std::sqrt(3));
-	return check_collision(expanded_box, other_box);								// Check for collision with the new expanded box
+	update_object(temp_component, dt, nullptr);										
+	return check_collision(expanded_box, other_box);								
 }
 
 auto gse::broad_phase_collision::check_collision(physics::collision_component& dynamic_object_collision_component, physics::motion_component* dynamic_object_motion_component, physics::collision_component& other_collision_component, physics::motion_component* other_motion_component, const time dt) -> void {
-	const auto& box1 = dynamic_object_collision_component.aabb;
-	const auto& box2 = other_collision_component.aabb;
+	const auto& box1 = dynamic_object_collision_component.bounding_box;
+	const auto& box2 = other_collision_component.bounding_box;
 
 	if (check_future_collision(box1, dynamic_object_motion_component, box2, dt)) {
 		if (dynamic_object_collision_component.resolve_collisions) {
@@ -84,8 +84,12 @@ auto gse::broad_phase_collision::update(const std::span<physics::collision_compo
 		};
 
 	for (auto& collision_component : collision_components) {
+		if (!collision_component.resolve_collisions) {
+			continue;
+		}
+
 		collision_component.collision_information = {
-			.colliding = collision_component.collision_information.colliding, // Keep the colliding state
+			.colliding = collision_component.collision_information.colliding,
 			.collision_normal = {},
 			.penetration = {},
 		};
@@ -101,13 +105,14 @@ auto gse::broad_phase_collision::update(const std::span<physics::collision_compo
 
 		if (it != motion_components.end()) {
 			motion = &*it;
-			collision_component.aabb.set_position(
-				motion->current_position
-			);
 		}
 
 		for (auto& other_collision_component : collision_components) {
 			if (collision_component.owner_id() == other_collision_component.owner_id()) {
+				continue;
+			}
+
+			if (!other_collision_component.resolve_collisions) {
 				continue;
 			}
 
@@ -121,10 +126,7 @@ auto gse::broad_phase_collision::update(const std::span<physics::collision_compo
 			physics::motion_component* other_motion = nullptr;
 
 			if (it != motion_components.end()) {
-				other_motion = &*it;
-				collision_component.aabb.set_position(
-					motion->current_position
-				);
+				other_motion = &*it2;
 			}
 
 			check_collision(collision_component, motion, other_collision_component, other_motion, dt);

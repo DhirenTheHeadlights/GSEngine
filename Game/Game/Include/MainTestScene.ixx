@@ -25,11 +25,11 @@ export namespace gs {
 			build("Backpack")
 				.with<backpack>();
 
-			build("Smaller Box")
+			/*build("Smaller Box")
 				.with<gse::box>({
 					.initial_position = gse::vec::meters(20.f, -400.f, 20.f),
 					.size = gse::vec::meters(20.f, 20.f, 20.f)
-				});
+				});*/
 
 			build("Bigger Box")
 				.with<gse::box>({

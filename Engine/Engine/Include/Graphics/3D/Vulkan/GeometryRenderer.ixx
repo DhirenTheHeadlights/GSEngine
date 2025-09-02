@@ -329,8 +329,6 @@ auto gse::renderer::geometry::render(const std::span<std::reference_wrapper<regi
 
 			for (const auto& registry : registries) {
 				for (auto& component : registry.get().linked_objects<render_component>()) {
-					const auto pos = registry.get().linked_object<physics::motion_component>(component.owner_id()).current_position;
-
 					if (!std::ranges::any_of(
 						component.models,
 						[](const model_instance& model) {
@@ -345,12 +343,17 @@ auto gse::renderer::geometry::render(const std::span<std::reference_wrapper<regi
 						component.has_calculated_com = true;
 					}
 
+					const auto mc = registry.get().try_linked_object<physics::motion_component>(component.owner_id());
+					const auto cc = registry.get().try_linked_object<physics::collision_component>(component.owner_id());
+
 					for (auto& model_handle : component.models) {
 						if (!model_handle.handle().valid()) {
 							continue;
 						}
 
-						model_handle.set_position(pos);
+						if (mc && cc) {
+							model_handle.update(*mc, *cc);
+						}
 
 						for (const auto& entry : model_handle.render_queue_entries()) {
 							push_constants["model"] = std::as_bytes(std::span{ &entry.model_matrix, 1 });

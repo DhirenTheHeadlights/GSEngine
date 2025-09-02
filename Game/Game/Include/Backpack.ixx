@@ -24,7 +24,6 @@ public:
 
 	auto update() -> void override {
 		if (gse::keyboard::pressed(gse::key::r)) {
-			component<gse::render_component>().models.front().rotate({ gse::degrees(0), gse::degrees(0), gse::degrees(15) });
 		}
 	}
 };

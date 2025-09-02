@@ -4,6 +4,7 @@ import std;
 
 import :vector;
 import :angle;
+import :length;
 
 export namespace gse {
 	template <typename D1, typename D2, typename T1, typename T2, std::size_t N>
@@ -182,11 +183,11 @@ export namespace gse {
 
 	template <typename T>
 	constexpr auto barycentric(
-		const vec3<T>& p,
-		const vec3<T>& a,
-		const vec3<T>& b,
-		const vec3<T>& c
-	) -> vec3<T>;
+		const vec3<length_t<T>>& p,
+		const vec3<length_t<T>>& a,
+		const vec3<length_t<T>>& b,
+		const vec3<length_t<T>>& c
+	) -> unitless::vec3_t<T>;
 }
 
 template <typename D1, typename D2, typename T1, typename T2, std::size_t N>
@@ -533,11 +534,11 @@ constexpr auto gse::barycentric(const unitless::vec3_t<T>& p, const unitless::ve
 }
 
 template <typename T>
-constexpr auto gse::barycentric(const vec3<T>& p, const vec3<T>& a, const vec3<T>& b, const vec3<T>& c) -> vec3<T> {
+constexpr auto gse::barycentric(const vec3<length_t<T>>& p, const vec3<length_t<T>>& a, const vec3<length_t<T>>& b, const vec3<length_t<T>>& c) -> unitless::vec3_t<T> {
 	return barycentric(
-		p.template as<typename T::default_unit>(),
-		a.template as<typename T::default_unit>(),
-		b.template as<typename T::default_unit>(),
-		c.template as<typename T::default_unit>()
+		p.template as<typename length_t<T>::default_unit>(),
+		a.template as<typename length_t<T>::default_unit>(),
+		b.template as<typename length_t<T>::default_unit>(),
+		c.template as<typename length_t<T>::default_unit>()
 	);
 }

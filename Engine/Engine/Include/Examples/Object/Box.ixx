@@ -27,7 +27,7 @@ export namespace gse {
             });
 
             const auto [cc_id, cc] = add_component<physics::collision_component>({
-                .aabb = { m_initial_position, m_size }
+                .bounding_box = { m_initial_position, m_size }
             });
 
             const auto mat = gse::queue<material>(
@@ -38,15 +38,11 @@ export namespace gse {
             add_component<render_component>({
                 .models = { procedural_model::box(mat) }
             });
-
-            auto& inst = component<render_component>().models.front();
-            inst.set_position(m_initial_position);
-            inst.set_scale(m_size.as<units::meters>());
         }
 
         auto update() -> void override {
             if (keyboard::pressed(key::r) && component<physics::motion_component>().affected_by_gravity) {
-				component<render_component>().models.front().rotate({ degrees(0), degrees(45), degrees(0) });
+				component<physics::motion_component>().orientation += quat(unitless::axis_z, degrees(25));
             }
         }
     private:
