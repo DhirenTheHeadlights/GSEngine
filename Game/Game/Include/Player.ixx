@@ -71,12 +71,12 @@ namespace gs {
 			gse::length width = gse::feet(3.0f);
 
 			const auto [cc_id, cc] = add_component<gse::physics::collision_component>({
-				.aabb = { gse::vec::meters(-10.f, -10.f, -10.f), height, width, width }
+				.bounding_box = { gse::vec::meters(-10.f, -10.f, -10.f), { width, height, width } }
 			});
 
 			const auto [rc_id, rc] = add_component<gse::render_component>({
 				.bounding_box_meshes = {
-					generate_bounding_box_mesh(cc->aabb.upper_bound, cc->aabb.lower_bound)
+					generate_bounding_box_mesh(cc->bounding_box.aabb().max, cc->bounding_box.aabb().min)
 				}
 			});
 		}

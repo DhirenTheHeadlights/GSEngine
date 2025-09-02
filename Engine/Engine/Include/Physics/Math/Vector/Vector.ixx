@@ -788,6 +788,10 @@ export namespace gse::unitless {
 
 	template <typename T>
 	auto to_axis_v(axis a) -> vec3_t<T>;
+
+	auto axis_x = to_axis_v<float>(axis::x);
+	auto axis_y = to_axis_v<float>(axis::y);
+	auto axis_z = to_axis_v<float>(axis::z);
 }
 
 template <typename T>

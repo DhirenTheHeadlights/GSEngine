@@ -110,13 +110,10 @@ auto update_velocity(gse::physics::motion_component& component, const gse::time 
 	if (is_zero(component.current_velocity)) {
 		component.current_velocity = { 0.f, 0.f, 0.f };
 	}
-
-	component.current_acceleration = { 0.f, 0.f, 0.f };
 }
 
 auto update_position(gse::physics::motion_component& component, const gse::time delta_time) -> void {
-	// Update position using the kinematic equation: x = x0 + v0t + 0.5at^2
-	component.current_position += component.current_velocity * delta_time + 0.5f * component.current_acceleration * delta_time * delta_time;
+	component.current_position += component.current_velocity * delta_time;
 }
 
 auto update_rotation(gse::physics::motion_component& component, const gse::time delta_time) -> void {
@@ -135,11 +132,8 @@ auto update_rotation(gse::physics::motion_component& component, const gse::time 
 	component.orientation = normalize(component.orientation);
 }
 
-auto update_obb(const gse::physics::motion_component& motion_component, gse::physics::collision_component& collision_component) {
-	auto& obb = collision_component.obb;
-	obb.center = motion_component.current_position;
-	obb.orientation = motion_component.orientation;
-	obb.update_axes();
+auto update_bb(const gse::physics::motion_component& motion_component, gse::physics::collision_component& collision_component) {
+	collision_component.bounding_box.update(motion_component.current_position, motion_component.orientation);
 }
 
 auto gse::physics::update_object(motion_component& component, const time delta_time, collision_component* collision_component) -> void {
@@ -150,14 +144,19 @@ auto gse::physics::update_object(motion_component& component, const time delta_t
 		component.moving = true;
 	}
 
+	if (component.position_locked) {
+		return;
+	}
+
 	update_gravity(component);
 	update_air_resistance(component);
 	update_velocity(component, delta_time);
-
 	update_position(component, delta_time);
 	update_rotation(component, delta_time);
 
 	if (collision_component) {
-		update_obb(component, *collision_component);
+		update_bb(component, *collision_component);
 	}
+
+	component.current_acceleration = { 0.f, 0.f, 0.f };
 }

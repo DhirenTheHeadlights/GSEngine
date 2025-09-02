@@ -8,6 +8,7 @@ import :material;
 
 import gse.utility;
 import gse.platform;
+import gse.physics;
 import gse.physics.math;
 import gse.assert;
 
@@ -26,12 +27,7 @@ export namespace gse {
 	public:
 		model_instance(const resource::handle<model>& model_handle) : m_model_handle(model_handle) {}
 
-		auto set_position(const vec3<length>& position) -> void;
-		auto set_rotation(const vec3<angle>& rotation) -> void;
-		auto set_scale(const unitless::vec3& scale) -> void;
-
-		auto move(const vec3<length>& offset) -> void;
-		auto rotate(const vec3<angle>& offset) -> void;
+		auto update(const physics::motion_component& mc, const physics::collision_component& cc) -> void;
 
 		auto render_queue_entries() -> std::span<render_queue_entry>;
 		auto handle() const -> const resource::handle<model>&;
@@ -40,7 +36,7 @@ export namespace gse {
 		resource::handle<model> m_model_handle;
 
 		vec3<length> m_position;
-		vec3<angle> m_rotation;
+		quat m_rotation;
 		unitless::vec3 m_scale = { 1.f, 1.f, 1.f };
 		bool m_is_dirty = true;
 	};
@@ -316,28 +312,10 @@ auto gse::model::center_of_mass() const -> vec3<length> {
 	return m_center_of_mass;
 }
 
-auto gse::model_instance::set_position(const vec3<length>& position) -> void {
-	m_position = position;
-	m_is_dirty = true;
-}
-
-auto gse::model_instance::set_rotation(const vec3<angle>& rotation) -> void {
-	m_rotation = rotation;
-	m_is_dirty = true;
-}
-
-auto gse::model_instance::set_scale(const unitless::vec3& scale) -> void {
-	m_scale = scale;
-	m_is_dirty = true;
-}
-
-auto gse::model_instance::move(const vec3<length>& offset) -> void {
-	m_position += offset;
-	m_is_dirty = true;
-}
-
-auto gse::model_instance::rotate(const vec3<angle>& offset) -> void {
-	m_rotation += offset;
+auto gse::model_instance::update(const physics::motion_component& mc, const physics::collision_component& cc) -> void {
+	m_position = mc.current_position;
+	m_rotation = cc.bounding_box.obb().orientation;
+	m_scale = cc.bounding_box.size().as<units::meters>();
 	m_is_dirty = true;
 }
 
@@ -352,10 +330,7 @@ auto gse::model_instance::render_queue_entries() -> std::span<render_queue_entry
 
 	if (m_is_dirty) {
 		const mat4 scale_mat = scale(mat4(1.0f), m_scale);
-		mat4 rot_mat = gse::rotate(mat4(1.0f), unitless::axis::x, m_rotation.x());
-		rot_mat = gse::rotate(rot_mat, unitless::axis::y, m_rotation.y());
-		rot_mat = gse::rotate(rot_mat, unitless::axis::z, m_rotation.z());
-
+		const mat4 rot_mat = m_rotation;
 		const mat4 trans_mat = translate(mat4(1.0f), m_position);
 		const vec3 center_of_mass = m_model_handle.resolve()->center_of_mass(); 
 		const mat4 pivot_correction_mat = translate(mat4(1.0f), -center_of_mass);

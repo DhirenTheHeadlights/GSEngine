@@ -18,11 +18,12 @@ namespace gs::arena {
 
 			configure_when_present([](gse::physics::motion_component& mc) {
 				mc.affected_by_gravity = false;
+				mc.position_locked = true;
 			});
+		}
 
-			configure_when_present([](gse::physics::collision_component& cc) {
-				cc.resolve_collisions = false;
-			});
+		auto update() -> void override {
+			component<gse::physics::motion_component>().current_position = m_initial_position;
 		}
 	private:
 		gse::vec3<gse::length> m_size;

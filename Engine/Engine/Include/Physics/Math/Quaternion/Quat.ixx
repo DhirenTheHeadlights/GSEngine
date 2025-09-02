@@ -29,6 +29,7 @@ namespace gse {
 
 		constexpr auto imaginary_part() const -> unitless::vec_t<T, 3>;
 		constexpr auto v4(this auto&& self) -> unitless::vec_t<T, 4>;
+		constexpr auto to_euler_angles() const -> vec3<angle_t<T>>;
 	private:
 		using base_type::base_type;
 
@@ -124,4 +125,25 @@ constexpr auto gse::quaternion<T>::imaginary_part() const -> unitless::vec_t<T, 
 template <gse::internal::is_arithmetic T>
 constexpr auto gse::quaternion<T>::v4(this auto&& self) -> unitless::vec_t<T, 4> {
 	return static_cast<unitless::vec_t<T, 4>>(self);
+}
+
+template <gse::internal::is_arithmetic T>
+constexpr auto gse::quaternion<T>::to_euler_angles() const -> vec3<angle_t<T>> {
+	angle_t<T> angle_x;
+	angle_t<T> angle_y;
+	angle_t<T> angle_z;
+
+	const T sinp = T(2) * (s() * y() - z() * x());
+	if (std::abs(sinp) >= 1) {
+		angle_y = radians(std::copysign(std::numbers::pi_v<T> / T(2), sinp)); 
+		angle_x = radians(T(2) * std::atan2(x(), s()));               
+		angle_z = radians(T(0));                                     
+	}
+	else {
+		angle_y = radians(std::asin(sinp));
+		angle_x = radians(std::atan2(T(2) * (s() * x() + y() * z()), T(1) - T(2) * (x() * x() + y() * y())));
+		angle_z = radians(std::atan2(T(2) * (s() * z() + x() * y()), T(1) - T(2) * (y() * y() + z() * z())));
+	}
+
+	return { angle_x, angle_y, angle_z };
 }
