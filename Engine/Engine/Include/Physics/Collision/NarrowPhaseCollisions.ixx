@@ -102,7 +102,7 @@ namespace gse::narrow_phase_collision {
 }
 
 auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* object_a, physics::collision_component& coll_a, physics::motion_component* object_b, physics::collision_component& coll_b) -> void {
-    run_mpr_self_test();
+    //run_mpr_self_test();
 
 	if (!object_a || !object_b) {
         return;
@@ -212,9 +212,9 @@ auto gse::narrow_phase_collision::minkowski_difference(const oriented_bounding_b
 }
 
 auto gse::narrow_phase_collision::mpr_collision(const oriented_bounding_box& obb1, const oriented_bounding_box& obb2) -> std::optional<mpr_result> {
-    static constexpr bool debug = true;
-    const float eps_squared = 1e-8f;
+    static constexpr bool debug = false;
     const length eps = meters(1e-4f);
+    const auto eps2 = eps * eps;
 
     if constexpr (debug) {
         std::println("[MPR] ---- begin ----");
@@ -223,139 +223,206 @@ auto gse::narrow_phase_collision::mpr_collision(const oriented_bounding_box& obb
         std::println("[MPR] half extents B: {}, axes B[0..2]: {}, {}, {}", obb2.half_extents(), obb2.axes[0], obb2.axes[1], obb2.axes[2]);
     }
 
-    auto dir = obb1.center - obb2.center;
-	if (dir < vec3<length>{ eps_squared }) {
+    unitless::vec3 dir = normalize(obb1.center - obb2.center);
+    if (is_zero(dir)) {
         dir = { 1.0f, 0.0f, 0.0f };
     }
-    dir = normalize(dir);
+    minkowski_point v0 = minkowski_difference(obb1, obb2, dir);
 
-    if constexpr (debug) {
-        std::println("[MPR] init dir: {}", dir);
-    }
-
-    minkowski_point v0 = minkowski_difference(obb1, obb2, unitless::vec3(dir));
-    if constexpr (debug) {
-        std::println("[MPR] v0.point: {}  (sa: {}, sb: {})", v0.point, v0.support_a, v0.support_b);
-    }
-
-    dir = -v0.point;
-    if (dir < vec3<length>{ eps_squared }) {
-        dir = { 1.0f, 0.0f, 0.0f };
-    }
-    dir = normalize(dir);
-
+    dir = normalize(-v0.point);
     minkowski_point v1 = minkowski_difference(obb1, obb2, dir);
-
-    if constexpr (debug) {
-        const auto proj = dot(v1.point, dir);
-        std::println("[MPR] v1.point: {}  dir: {}  v1·dir: {}", v1.point, dir, proj);
-    }
-
-    if (dot(v1.point, dir) <= 0) {
+    if (dot(v1.point, dir) <= 0.0f) {
         if constexpr (debug) {
-            std::println("[MPR][exit] origin is outside after v1 check (no overlap).");
-            std::println("[MPR] ---- end (no collision) ----");
+            std::println("[MPR] ---- end (no collision: phase 1) ----");
         }
         return std::nullopt;
     }
 
-    dir = normalize(cross(v1.point - v0.point, -v0.point));
+    dir = normalize(cross(v0.point - v1.point, -v0.point));
+    if (is_zero(dir)) {
+        dir = normalize(cross(v0.point - v1.point, vec3<decltype(length{} *length{}) > { 0, 1, 0 }));
+        if (is_zero(dir)) {
+            dir = normalize(cross(v0.point - v1.point, vec3<decltype(length{} *length{}) > { 1, 0, 0 }));
+        }
+    }
     minkowski_point v2 = minkowski_difference(obb1, obb2, dir);
-
-    if constexpr (debug) {
-        const auto proj2 = dot(v2.point, dir);
-        std::println("[MPR] v2.point: {}  dir: {}  v2·dir: {}", v2.point, dir, proj2);
+    if (dot(v2.point, dir) <= 0.0f) {
+        if constexpr (debug) {
+            std::println("[MPR] ---- end (no collision: phase 2) ----");
+        }
+        return std::nullopt;
     }
 
-    if (dot(v2.point, dir) <= 0) {
+    dir = normalize(cross(v1.point - v0.point, v2.point - v0.point));
+    if (dot(dir, v0.point) > 0.0f) {
+        dir = -dir;
+    }
+    minkowski_point v3 = minkowski_difference(obb1, obb2, dir);
+    if (dot(v3.point, dir) <= 0.0f) {
         if constexpr (debug) {
-            std::println("[MPR][exit] origin is outside after v2 check (no overlap).");
-            std::println("[MPR] ---- end (no collision) ----");
+            std::println("[MPR] ---- end (no collision: phase 3) ----");
         }
         return std::nullopt;
     }
 
     for (int i = 0; i < mpr_collision_refinement_iterations; ++i) {
-        unitless::vec3 v0v1 = (v1.point - v0.point).as<units::meters>();
-        unitless::vec3 v0v2 = (v2.point - v0.point).as<units::meters>();
-        unitless::vec3 n = normalize(cross(v0v1, v0v2));
+        if constexpr (debug) {
+            std::println("\n[MPR][iter {}] v0:{}, v1:{}, v2:{}, v3:{}", i, v0.point, v1.point, v2.point, v3.point);
+        }
+
+        unitless::vec3 nA = normalize(cross(v1.point - v0.point, v2.point - v0.point));
+        unitless::vec3 nB = normalize(cross(v2.point - v0.point, v3.point - v0.point));
+        unitless::vec3 nC = normalize(cross(v3.point - v0.point, v1.point - v0.point));
+        unitless::vec3 nD = normalize(cross(v2.point - v1.point, v3.point - v1.point));
+
+        length dA = is_zero(nA) ? meters(std::numeric_limits<float>::infinity()) : dot(nA, v0.point);
+        if (dA < length{ 0 }) {
+            nA = -nA; dA = -dA;
+        }
+        length dB = is_zero(nB) ? meters(std::numeric_limits<float>::infinity()) : dot(nB, v0.point);
+        if (dB < length{ 0 }) {
+            nB = -nB; dB = -dB;
+        }
+        length dC = is_zero(nC) ? meters(std::numeric_limits<float>::infinity()) : dot(nC, v0.point);
+        if (dC < length{ 0 }) {
+            nC = -nC; dC = -dC;
+        }
+        length dD = is_zero(nD) ? meters(std::numeric_limits<float>::infinity()) : dot(nD, v1.point);
+        if (dD < length{ 0 }) {
+            nD = -nD; dD = -dD;
+        }
 
         if constexpr (debug) {
-            std::println("\n[MPR][iter {}] v0: {}, v1: {}, v2: {}", i, v0.point, v1.point, v2.point);
-            std::println("[MPR][iter {}] portal n: {}", i, n);
+            std::println("[MPR][iter {}] d1:{}, d2:{}, d3:{}, d4:{}", i, dA, dB, dC, dD);
         }
 
-        if (dot(n, v0.point.as<units::meters>()) > 0.0f) {
-            std::swap(v1, v2);
-            n = -n;
-            if constexpr (debug) {
-                std::println("[MPR][iter {}] flipped portal.", i);
+        struct Face {
+            int id; unitless::vec3 n; length d;
+        };
+        Face faces[4] = {
+            { 0, nA, dA },
+            { 1, nB, dB },
+            { 2, nC, dC },
+            { 3, nD, dD }
+        };
+
+        auto pick = [&](bool require_positive) -> Face {
+            length best = meters(std::numeric_limits<float>::infinity());
+            int idx = -1;
+            for (int k = 0; k < 4; ++k) {
+                if (is_zero(faces[k].n)) {
+                    continue;
+                }
+                if (require_positive) {
+                    if (!(faces[k].d > eps)) {
+                        continue;
+                    }
+                }
+                if (faces[k].d < best) {
+                    best = faces[k].d;
+                    idx = k;
+                }
             }
-        }
-
-        minkowski_point v3 = minkowski_difference(obb1, obb2, n);
-        const length plane_dist = -dot(n, v0.point.as<units::meters>());
-        const length support_dist = dot(n, v3.point.as<units::meters>());
-        const length gap = support_dist - plane_dist;
-
-        if constexpr (debug) {
-            std::println("[MPR][iter {}] v3: {}", i, v3.point);
-            std::println("[MPR][iter {}] plane: {}, support: {}, gap: {} (eps: {})", i, -plane_dist, support_dist, gap, eps);
-        }
-
-        if (gap <= eps) {
-            const length penetration = support_dist;
-            if constexpr (debug) {
-                std::println("[MPR][iter {}] CONVERGED by gap: penetration {}", i, penetration);
+            if (idx < 0) {
+                best = length{ -1 };
+                for (int k = 0; k < 4; ++k) {
+                    if (is_zero(faces[k].n)) {
+                        continue;
+                    }
+                    if (faces[k].d > best) {
+                        best = faces[k].d;
+                        idx = k;
+                    }
+                }
             }
-            mpr_result out{
-                .collided = true,
-                .normal = n,
-                .penetration = penetration
+            return faces[idx];
             };
-            const auto q = (n * penetration).as<units::meters>();
-            auto bary = barycentric(q, v0.point.as<units::meters>(), v1.point.as<units::meters>(), v2.point.as<units::meters>());
-            out.contact_point = v0.support_a * bary[0] + v1.support_a * bary[1] + v2.support_a * bary[2];
-            if constexpr (debug) {
-                std::println("[MPR] contact bary: {}, {}, {}", bary[0], bary[1], bary[2]);
-                std::println("[MPR] contact point: {}", out.contact_point);
-                std::println("[MPR] ---- end (collision) ----");
-            }
-            return out;
-        }
 
-        unitless::vec3 ao = (-v0.point).as<units::meters>();
-        unitless::vec3 ab_portal = (v1.point - v0.point).as<units::meters>();
-        unitless::vec3 n_ab_plane = cross(ab_portal, n);
-
-        if (dot(n_ab_plane, ao) > 0.0f) {
-            if constexpr (debug) {
-                std::println("[MPR][iter {}] refining portal (v0,v1 edge) -> replace v2 with v3.", i);
-            }
-            v2 = v3;
-            continue;
-        }
-
-        unitless::vec3 ac_portal = (v2.point - v0.point).as<units::meters>();
-        unitless::vec3 n_ac_plane = cross(n, ac_portal);
-
-        if (dot(n_ac_plane, ao) > 0.0f) {
-            if constexpr (debug) {
-                std::println("[MPR][iter {}] refining portal (v2,v0 edge) -> replace v1 with v3.", i);
-            }
-            v1 = v3;
-            continue;
+        Face choice = pick(true);
+        if (choice.d == meters(std::numeric_limits<float>::infinity())) {
+            choice = pick(false);
         }
 
         if constexpr (debug) {
-            std::println("[MPR][iter {}] refining portal (center region) -> replace v0 with v3.", i);
+            std::println("[MPR][iter {}] best_n: {}", i, choice.n);
         }
-        v0 = v3;
+
+        auto replace_vertex = [&](int face_id, const minkowski_point& p) {
+            switch (face_id) {
+                case 0: v3 = p; break;
+                case 1: v1 = p; break;
+                case 2: v2 = p; break;
+                case 3: v0 = p; break;
+                default: v3 = p; break;
+            }
+            };
+
+        auto get_vertex_point = [&](int face_id) -> const vec3<length>& {
+            switch (face_id) {
+                case 0: return v3.point;
+                case 1: return v1.point;
+                case 2: return v2.point;
+                case 3: return v0.point;
+                default: return v3.point;
+            }
+            };
+
+        bool progressed = false;
+        for (int attempt = 0; attempt < 4 && !progressed; ++attempt) {
+            minkowski_point p = minkowski_difference(obb1, obb2, choice.n);
+            const length support = dot(p.point, choice.n);
+            const length gap = support - choice.d;
+
+            if (choice.d > eps && gap <= eps) {
+                if constexpr (debug) {
+                    std::println("[MPR][iter {}] CONVERGED. penetration: {}", i, choice.d);
+                    std::println("[MPR] ---- end (collision) ----");
+                }
+                mpr_result out{
+                    .collided = true,
+                    .normal = -choice.n,
+                    .penetration = choice.d
+                };
+                out.contact_point = (p.support_a + p.support_b) * 0.5f;
+                return out;
+            }
+
+            const vec3<length>& opp = get_vertex_point(choice.id);
+            const auto delta = p.point - opp;
+            const auto delta2 = dot(delta, delta);
+
+            if (delta2 > eps2) {
+                replace_vertex(choice.id, p);
+                progressed = true;
+            }
+            else {
+                if (choice.id == 0) {
+                    faces[0].d = meters(std::numeric_limits<float>::infinity());
+                }
+                if (choice.id == 1) {
+                    faces[1].d = meters(std::numeric_limits<float>::infinity());
+                }
+                if (choice.id == 2) {
+                    faces[2].d = meters(std::numeric_limits<float>::infinity());
+                }
+                if (choice.id == 3) {
+                    faces[3].d = meters(std::numeric_limits<float>::infinity());
+                }
+                choice = pick(true);
+                if (choice.d == meters(std::numeric_limits<float>::infinity())) {
+                    choice = pick(false);
+                }
+                if constexpr (debug) {
+                    std::println("[MPR][iter {}] retry face with best_n: {}", i, choice.n);
+                }
+            }
+        }
     }
 
     if constexpr (debug) {
         std::println("[MPR][fail] no convergence after {} iters (eps: {}).", mpr_collision_refinement_iterations, eps);
         std::println("[MPR] ---- end (no collision) ----");
     }
+
     return std::nullopt;
 }
