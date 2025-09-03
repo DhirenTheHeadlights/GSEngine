@@ -51,6 +51,8 @@ namespace gse {
 		auto size() const -> vec3<length>;
 		auto half_extents() const -> vec3<length>;
 		auto scale() const -> float;
+		auto face_normals() const -> std::array<unitless::vec3, 6>;
+		auto face_vertices(std::uint32_t face_index) const -> std::array<vec3<length>, 4>;
 	private:
 		auto recalculate_aabb() const -> void;
 
@@ -110,6 +112,43 @@ auto gse::bounding_box::half_extents() const -> vec3<length> {
 
 auto gse::bounding_box::scale() const -> float {
 	return m_scale;
+}
+
+auto gse::bounding_box::face_normals() const -> std::array<unitless::vec3, 6> {
+	const auto obb_data = obb();
+	return {
+		 obb_data.axes[0],
+		 obb_data.axes[1],
+		 obb_data.axes[2],
+		-obb_data.axes[0],
+		-obb_data.axes[1],
+		-obb_data.axes[2]
+	};
+}
+
+auto gse::bounding_box::face_vertices(const std::uint32_t face_index) const -> std::array<vec3<length>, 4> {
+	const auto half_ext = half_extents();
+
+	const int axis_idx = face_index / 2; 
+	const float sign = (face_index % 2 == 0) ? 1.0f : -1.0f;
+
+	const auto box_obb = obb();
+
+	const auto& primary_axis = box_obb.axes[axis_idx];
+	const auto& u_axis = box_obb.axes[(axis_idx + 1) % 3]; 
+	const auto& v_axis = box_obb.axes[(axis_idx + 2) % 3]; 
+
+	const auto h_u = half_ext[(axis_idx + 1) % 3];
+	const auto h_v = half_ext[(axis_idx + 2) % 3];
+
+	const vec3<length> face_center = box_obb.center + primary_axis * (half_ext[axis_idx] * sign);
+
+	return {
+		face_center + u_axis * h_u + v_axis * h_v,
+		face_center - u_axis * h_u + v_axis * h_v,
+		face_center - u_axis * h_u - v_axis * h_v,
+		face_center + u_axis * h_u - v_axis * h_v
+	};
 }
 
 auto gse::bounding_box::recalculate_aabb() const -> void {
