@@ -33,6 +33,12 @@ namespace gse::narrow_phase_collision {
         vec3<length> support_b;
     };
 
+    struct epa_result {
+        bool collided;
+        unitless::vec3 normal;
+        length penetration;
+    };
+
     auto support_obb(
         const bounding_box& bounding_box,
         const unitless::vec3& dir
@@ -48,6 +54,19 @@ namespace gse::narrow_phase_collision {
         const bounding_box& bb1,
         const bounding_box& bb2
     ) -> std::optional<mpr_result>;
+
+    auto epa_penetration(
+        const bounding_box& bb1,
+        const bounding_box& bb2,
+        std::array<minkowski_point, 4> simplex
+    ) -> epa_result;
+
+    auto generate_contact_points(
+        const bounding_box& bb1,
+        const bounding_box& bb2,
+		const unitless::vec3& collision_normal,
+        length penetration_depth
+	) -> std::vector<vec3<length>>;
 }
 
 auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* object_a, physics::collision_component& coll_a, physics::motion_component* object_b, const physics::collision_component& coll_b) -> void {
@@ -56,9 +75,11 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
     }
 
     auto res = mpr_collision(coll_a.bounding_box, coll_b.bounding_box);
-    if (!res) {
+	if (!res) {
         return;
     }
+
+	res->penetration = std::clamp(res->penetration, meters(0.001f), meters(1.0f));
 
     if (dot(object_a->current_position - object_b->current_position, res->normal) < 0) {
         res->normal *= -1.0f;
@@ -127,6 +148,7 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
     const auto jn = -(1.0f + restitution) * vel_along_normal / denom;
 
     const auto impulse_vec = res->normal * jn;
+	std::println("Impulse: {}, Normal: {}, Penetration: {}", impulse_vec, res->normal, res->penetration);
 
     if (!object_a->position_locked) {
         object_a->current_velocity += impulse_vec * inv_mass_a;
@@ -162,7 +184,7 @@ auto gse::narrow_phase_collision::minkowski_difference(const bounding_box& bb1, 
 }
 
 auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const bounding_box& bb2) -> std::optional<mpr_result> {
-    static constexpr bool debug = false;
+    static constexpr bool debug = true;
     const length eps = meters(1e-4f);
     const auto eps2 = eps * eps;
 
@@ -339,56 +361,41 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
         bool progressed = false;
         for (int attempt = 0; attempt < 4 && !progressed; ++attempt) {
             minkowski_point p = minkowski_difference(bb1, bb2, choice.n);
-            const length support = dot(p.point, choice.n);
 
-            if (const length gap = support - choice.d; choice.d > eps && gap <= eps) {
+            if (const length projection_dist = dot(p.point, choice.n); projection_dist - choice.d < meters(1e-4f)) {
                 if constexpr (debug) {
                     std::println("[MPR][iter {}] CONVERGED. penetration: {}", i, choice.d);
                     std::println("[MPR] ---- end (collision) ----");
                 }
 
-                const unitless::vec3 collision_normal = -choice.n;
-                const length penetration_depth = choice.d;
-                const vec3<length> p_on_minkowski = collision_normal * penetration_depth;
+				std::array simplex = { v0, v1, v2, v3 };
+                epa_result epa_res = epa_penetration(bb1, bb2, simplex);
 
-                minkowski_point p0, p1, p2;
-                switch (choice.id) {
-                    case 0: p0 = v0; p1 = v1; p2 = v2; break; 
-                    case 1: p0 = v0; p1 = v2; p2 = v3; break; 
-                    case 2: p0 = v0; p1 = v3; p2 = v1; break; 
-                    case 3: p0 = v1; p1 = v2; p2 = v3; break; 
-                    default:
-                        return mpr_result{
-                            .collided = true,
-                            .normal = collision_normal,
-                            .penetration = penetration_depth,
-                            .contact_point = bb1.center() 
-                        };
-                }
-
-                const auto weights = barycentric(
-                    p_on_minkowski, 
-                    p0.point, 
-                    p1.point,
-                    p2.point
+                std::vector<vec3<length>> contact_points = generate_contact_points(
+                    bb1,
+                    bb2,
+                    epa_res.normal,
+                    epa_res.penetration
                 );
 
-                const vec3<length> contact_on_a =
-                    p0.support_a * weights.x() +
-                    p1.support_a * weights.y() +
-                    p2.support_a * weights.z();
+                vec3<length> final_contact_point = bb1.center();
+                if (!contact_points.empty()) {
+                    vec3<length> total_point;
+                    for (const auto& point : contact_points) {
+                        total_point += point;
+                    }
+                    final_contact_point = total_point / static_cast<float>(contact_points.size());
+                }
 
-                const vec3<length> contact_on_b =
-                    p0.support_b * weights.x() +
-                    p1.support_b * weights.y() +
-                    p2.support_b * weights.z();
-
-                const vec3<length> final_contact_point = contact_on_b + collision_normal * penetration_depth * 0.5f;
+                if constexpr (debug) {
+                    std::println("[MPR] EPA/Contacts complete. Normal: {}, Penetration: {}", epa_res.normal, epa_res.penetration);
+                    std::println("[MPR] ---- end (collision) ----");
+                }
 
                 return mpr_result{
                     .collided = true,
-                    .normal = collision_normal,
-                    .penetration = penetration_depth,
+                    .normal = epa_res.normal,
+                    .penetration = epa_res.penetration,
                     .contact_point = final_contact_point
                 };
             }
@@ -430,4 +437,241 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
     }
 
     return std::nullopt;
+}
+
+auto gse::narrow_phase_collision::epa_penetration(const bounding_box& bb1, const bounding_box& bb2, std::array<minkowski_point, 4> simplex) -> epa_result {
+    static constexpr int max_iterations = 64;
+    static constexpr float epsilon = 1e-4f;
+
+    struct epa_edge {
+        int a;
+        int b;
+
+        auto operator==(const epa_edge& other) const -> bool {
+            return (a == other.a && b == other.b) || (a == other.b && b == other.a);
+        }
+	};
+
+    struct epa_hash {
+        auto operator()(const epa_edge& edge) const -> std::size_t {
+            return std::hash<int>()(edge.a) ^ std::hash<int>()(edge.b);
+        }
+	};
+
+    struct epa_face {
+        std::array<int, 3> indices;
+        unitless::vec3 normal;
+        length distance;
+
+        auto operator>(const epa_face& other) const -> bool {
+            return distance > other.distance;
+        }
+    };
+
+    std::vector polytope_vertices(simplex.begin(), simplex.end());
+    std::vector<epa_face> faces;
+
+    auto add_face = [&](
+        const int a,
+        const int b,
+        const int c
+        ) {
+	        const auto& v_a = polytope_vertices[a].point;
+	        const auto& v_b = polytope_vertices[b].point;
+	        const auto& v_c = polytope_vertices[c].point;
+
+	        unitless::vec3 normal = normalize(cross(v_b - v_a, v_c - v_a));
+	        length dist = dot(normal, v_a);
+
+	        if (dist < meters(0)) {
+	            normal = -normal;
+	            dist = -dist;
+	        }
+	        faces.push_back({ { a, b, c }, normal, dist });
+        };
+
+    add_face(0, 1, 2);
+    add_face(0, 3, 1);
+    add_face(0, 2, 3);
+    add_face(1, 3, 2);
+
+    for (int i = 0; i < max_iterations; ++i) {
+        auto min_it = std::ranges::min_element(
+            faces,
+            [](const epa_face& a, const epa_face& b) {
+            	return a.distance < b.distance;
+			}
+        );
+
+        const epa_face& closest_face = *min_it;
+        minkowski_point p = minkowski_difference(bb1, bb2, closest_face.normal);
+
+        if (dot(p.point, closest_face.normal) - closest_face.distance < epsilon) {
+            return epa_result{
+                .collided = true,
+                .normal = -closest_face.normal,
+                .penetration = dot(p.point, closest_face.normal)
+            };
+        }
+
+        const int new_point_idx = static_cast<int>(polytope_vertices.size());
+        polytope_vertices.push_back(p);
+
+        std::vector<epa_edge> horizon_edges;
+        std::vector<epa_face> new_faces;
+
+        for (const auto& face : faces) {
+            if (dot(face.normal, p.point - polytope_vertices[face.indices[0]].point) > meters(0)) {
+                horizon_edges.push_back({ face.indices[0], face.indices[1] });
+                horizon_edges.push_back({ face.indices[1], face.indices[2] });
+                horizon_edges.push_back({ face.indices[2], face.indices[0] });
+            }
+            else {
+                new_faces.push_back(face);
+            }
+        }
+
+        std::ranges::sort(
+            horizon_edges, 
+            [](const epa_edge& a, const epa_edge& b) {
+	            if (a.a != b.a) return a.a < b.a;
+	            return a.b < b.b;
+            }
+        );
+
+        for (std::size_t j = 0; j < horizon_edges.size(); ++j) {
+            if (j + 1 < horizon_edges.size() && horizon_edges[j] == horizon_edges[j + 1]) {
+                j++; 
+            }
+            else {
+                add_face(horizon_edges[j].a, horizon_edges[j].b, new_point_idx);
+            }
+        }
+
+        faces = new_faces;
+    }
+
+    const auto min_it = std::ranges::min_element(
+        faces,
+        [](const epa_face& a, const epa_face& b) {
+	        return a.distance < b.distance;
+        }
+    );
+
+    return {
+    	.collided = true,
+    	.normal = -min_it->normal,
+    	.penetration = min_it->distance
+    };
+}
+
+auto gse::narrow_phase_collision::generate_contact_points(const bounding_box& bb1, const bounding_box& bb2, const unitless::vec3& collision_normal, length penetration_depth) -> std::vector<vec3<length>> {
+    auto find_best_face = [](
+        const bounding_box& bb,
+        const unitless::vec3& dir
+        ) -> std::array<vec3<length>, 4> {
+            float max_dot = -std::numeric_limits<float>::max();
+            int best_face_idx = -1;
+
+            for (int i = 0; i < 6; ++i) {
+	            if (const float dot_product = dot(bb.face_normals()[i], dir); dot_product > max_dot) {
+                    max_dot = dot_product;
+                    best_face_idx = i;
+                }
+            }
+
+            return bb.face_vertices(best_face_idx);
+        };
+
+    const auto face1 = find_best_face(bb1, -collision_normal);
+    const auto face2 = find_best_face(bb2, collision_normal);
+
+    std::array<vec3<length>, 4> ref_face;
+    std::array<vec3<length>, 4> inc_face;
+    unitless::vec3 ref_normal;
+
+    const unitless::vec3 n1 = normalize(cross(face1[1] - face1[0], face1[2] - face1[0]));
+    const unitless::vec3 n2 = normalize(cross(face2[1] - face2[0], face2[2] - face2[0]));
+
+    if (dot(n1, -collision_normal) > dot(n2, collision_normal)) {
+        ref_face = face1;
+        inc_face = face2;
+        ref_normal = n1;
+    }
+    else {
+        ref_face = face2;
+        inc_face = face1;
+        ref_normal = n2;
+    }
+
+    struct plane {
+        unitless::vec3 normal;
+        length distance;
+    };
+
+    auto clip = [](
+        const std::vector<vec3<length>>& subject_polygon,
+        const plane& clip_plane
+        ) -> std::vector<vec3<length>> {
+            std::vector<vec3<length>> output_polygon;
+            if (subject_polygon.empty()) {
+                return output_polygon;
+            }
+
+            const vec3<length>* prev_v = &subject_polygon.back();
+            length prev_dist = dot(clip_plane.normal, *prev_v) - clip_plane.distance;
+
+            for (const auto& current_v : subject_polygon) {
+                const length current_dist = dot(clip_plane.normal, current_v) - clip_plane.distance;
+
+                if (prev_dist * current_dist < 0) {
+                    const float t = prev_dist / (prev_dist - current_dist);
+                    const vec3<length> intersection = *prev_v + (*prev_v - current_v) * -t;
+                    output_polygon.push_back(intersection);
+                }
+
+                if (current_dist >= meters(0)) {
+                    output_polygon.push_back(current_v);
+                }
+
+                prev_v = &current_v;
+                prev_dist = current_dist;
+            }
+
+            return output_polygon;
+		};
+
+	std::vector clipped_polygon(inc_face.begin(), inc_face.end());
+    for (size_t i = 0; i < ref_face.size(); ++i) {
+        if (clipped_polygon.empty()) {
+	        break;
+        }
+
+        const vec3<length>& v1 = ref_face[i];
+        const vec3<length>& v2 = ref_face[(i + 1) % ref_face.size()];
+
+        const unitless::vec3 edge_vec = normalize(v2 - v1);
+        const unitless::vec3 plane_normal = cross(edge_vec, ref_normal);
+
+        plane p = {
+        	.normal = plane_normal,
+        	.distance = dot(plane_normal, v1)
+        };
+        clipped_polygon = clip(clipped_polygon, p);
+    }
+
+    if (clipped_polygon.empty()) {
+	    return {};
+    }
+
+    std::vector<vec3<length>> contact_points;
+    const plane ref_plane = { ref_normal, dot(ref_normal, ref_face[0]) };
+
+    for (const auto& v : clipped_polygon) {
+	    if (const length dist = dot(ref_normal, v) - ref_plane.distance; dist <= meters(0.01f) && dist >= -penetration_depth) {
+            contact_points.push_back(v - ref_normal * dist);
+        }
+    }
+
+    return contact_points;
 }
