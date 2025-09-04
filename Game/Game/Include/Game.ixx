@@ -44,7 +44,7 @@ export namespace gs {
 		}
 
 		auto render() -> void  override {
-			gse::gui::create_menu(
+			/*gse::gui::create_menu(
 				"Test", {
 					.top_left = { 1000.f, 1000.f },
 					.size = { 500.f, 200.f },
@@ -70,7 +70,7 @@ export namespace gs {
 						gse::gui::vec("Test Vec2", gse::mouse::position());
 					}
 				}
-			);
+			);*/
 
 			gse::renderer::set_ui_focus(m_show_cross_hair);
 		}

@@ -1,7 +1,3 @@
-module;
-
-#include <GLFW/glfw3.h>
-
 export module gse.graphics:gui;
 
 import std;
@@ -14,29 +10,59 @@ import :sprite_renderer;
 import :texture;
 import :text_renderer;
 import :cursor;
+import :save;
 
 import gse.platform;
 import gse.utility;
 import gse.physics.math;
 
 export namespace gse::gui {
-	auto initialize(renderer::context& context) -> void;
-	auto update(const window& window) -> void;
-	auto render(const renderer::context& context, renderer::sprite& sprite_renderer, renderer::text& text_renderer) -> void;
-	auto create_menu(const std::string& name, const menu_data& data) -> void;
-	auto text(const std::string& text) -> void;
+	auto initialize(
+		renderer::context& context
+	) -> void;
+
+	auto update(
+		const window& window
+	) -> void;
+
+	auto render(
+		const renderer::context& context,
+		renderer::sprite& sprite_renderer,
+		renderer::text& text_renderer
+	) -> void;
+
+	auto start(
+		const std::string& name,
+		const menu_data& data
+	) -> void;
+
+	auto text(
+		const std::string& text
+	) -> void;
 
 	template <is_arithmetic T>
-	auto value(const std::string& name, T value) -> void;
+	auto value(
+		const std::string& name, 
+		T value
+	) -> void; 
 
 	template <is_quantity T, typename Unit = typename T::default_unit>
-	auto value(const std::string& name, T value) -> void;
+	auto value(
+		const std::string& name,
+		T value
+	) -> void;
 
 	template <typename T, int N>
-	auto vec(const std::string& name, unitless::vec_t<T, N> vec) -> void;
+	auto vec(
+		const std::string& name,
+		unitless::vec_t<T, N> vec
+	) -> void;
 
 	template <typename T, int N, typename Unit = typename T::default_unit>
-	auto vec(const std::string& name, vec_t<T, N> vec) -> void;
+	auto vec(
+		const std::string& name,
+		vec_t<T, N> vec
+	) -> void;
 }
 
 namespace gse::gui {
@@ -57,9 +83,13 @@ namespace gse::gui {
 	constexpr unitless::vec4 dock_preview_color = { 0.2f, 0.2f, 0.8f, 0.4f };
 	constexpr unitless::vec4 dock_widget_color = { 0.8f, 0.8f, 0.8f, 0.5f };
 
+	auto begin(const std::string& name) -> bool;
+	auto end() -> void;
+
 	auto handle_idle_state(unitless::vec2 mouse_position, bool mouse_held) -> state;
 	auto handle_dragging_state(const states::dragging& current, const window& window, unitless::vec2 mouse_position, bool mouse_held) -> state;
-	auto handle_resizing_state(const states::resizing& current, unitless::vec2 mouse_pos, bool mouse_held) -> state;
+	auto handle_resizing_state(const states::resizing& current, unitless::vec2 mouse_position, bool mouse_held) -> state;
+	auto handle_resizing_divider_state(const states::resizing_divider& current, unitless::vec2 mouse_position, bool mouse_held) -> state;
 }
 
 auto gse::gui::initialize(renderer::context& context) -> void {
@@ -71,24 +101,29 @@ auto gse::gui::update(const window& window) -> void {
 	const auto mouse_position = mouse::position();
 	const bool mouse_held = mouse::held(mouse_button::button_1);
 
-	current_state = std::visit([&]<typename T0>(T0&& state) -> gui::state {
-		using T = std::decay_t<T0>;
+	current_state = std::visit([&]<typename T0>(
+		T0&& state
+	) -> gui::state {
+			using t = std::decay_t<T0>;
 
-		if constexpr (std::is_same_v<T, states::idle>) {
-			return handle_idle_state(mouse_position, mouse_held);
-		}
-		else if constexpr (std::is_same_v<T, states::dragging>) {
-			return handle_dragging_state(state, window, mouse_position, mouse_held);
-		}
-		else if constexpr (std::is_same_v<T, states::resizing>) {
-			return handle_resizing_state(state, mouse_position, mouse_held);
-		}
+			if constexpr (std::is_same_v<t, states::idle>) {
+				return handle_idle_state(mouse_position, mouse_held);
+			}
+			else if constexpr (std::is_same_v<t, states::dragging>) {
+				return handle_dragging_state(state, window, mouse_position, mouse_held);
+			}
+			else if constexpr (std::is_same_v<t, states::resizing>) {
+				return handle_resizing_state(state, mouse_position, mouse_held);
+			}
+			else if constexpr (std::is_same_v<t, states::resizing_divider>) {
+				return handle_resizing_divider_state(state, mouse_position, mouse_held);
+			}
 
-		return states::idle{}; // Should be unreachable
+			return states::idle{};
 		}, current_state);
 }
 
-auto gse::gui::create_menu(const std::string& name, const menu_data& data) -> void {
+auto gse::gui::start(const std::string& name, const menu_data& data) -> void {
 	if (exists(name) && menus.contains(find(name))) {
 		return;
 	}
@@ -127,7 +162,7 @@ auto gse::gui::render(const renderer::context& context, renderer::sprite& sprite
 
 			current_menu = &menu;
 			if (!menu.tab_contents.empty()) {
-				menu.tab_contents[menu.active_tab_index].second();
+				menu.tab_contents[menu.active_tab_index];
 			}
 
 			const float line_height = font->line_height(font_size);
@@ -212,9 +247,31 @@ auto gse::gui::vec(const std::string& name, vec_t<T, N> vec) -> void {
 	}
 }
 
+auto gse::gui::begin(const std::string& name) -> bool {
+	if (auto* menu = menus.try_get(find(name))) {
+		current_menu = menu;
+
+		const auto title_bar_rect = ui_rect::from_position_size(
+			menu->rect.top_left(),
+			{ menu->rect.width(), title_bar_height }
+		);
+
+		const auto body_rect = ui_rect::from_position_size(
+			{ menu->rect.left(), menu->rect.top() - title_bar_height },
+			{ menu->rect.width(), menu->rect.height() - title_bar_height }
+		);
+
+
+
+		return true;
+	}
+
+	return false;
+}
+
 auto gse::gui::handle_idle_state(const unitless::vec2 mouse_position, const bool mouse_held) -> state {
 	struct interaction_candidate {
-		std::variant<states::resizing, states::dragging> future_state;
+		std::variant<states::resizing, states::dragging, states::resizing_divider> future_state;
 		cursor::style cursor;
 	};
 
@@ -279,20 +336,79 @@ auto gse::gui::handle_idle_state(const unitless::vec2 mouse_position, const bool
 
 	set_style(cursor::style::arrow);
 
-	std::optional<interaction_candidate> hot_item = [&]() -> std::optional<interaction_candidate> {
+	auto hot_item = [&](
+		) -> std::optional<interaction_candidate> {
 			for (auto& menu : std::views::reverse(menus.items())) {
-				if (!menu.owner_id().exists() && menu.docked_to == dock::location::none) {
-					const ui_rect group_rect = calculate_group_bounds(menu.id());
-					for (const auto& [condition, handle, cursor] : resize_rules) {
-						if (condition(group_rect, mouse_position)) {
+				if (!menu.owner_id().exists()) { 
+					if (menu.docked_to == dock::location::none) { 
+						const ui_rect group_rect = calculate_group_bounds(menu.id());
+						for (const auto& [condition, handle, cursor] : resize_rules) {
+							if (condition(group_rect, mouse_position)) {
+								return interaction_candidate{
+									.future_state = { states::resizing{.menu_id = menu.id(), .handle = handle } },
+									.cursor = cursor
+								};
+							}
+						}
+					}
+					else { 
+						const ui_rect& rect = menu.rect;
+						switch (menu.docked_to) {
+							case dock::location::left:
+								if (std::abs(mouse_position.x() - rect.right()) < resize_border_thickness)
+									return interaction_candidate{ states::resizing{ menu.id(), resize_handle::right }, cursor::style::resize_e };
+								break;
+							case dock::location::right:
+								if (std::abs(mouse_position.x() - rect.left()) < resize_border_thickness)
+									return interaction_candidate{ states::resizing{ menu.id(), resize_handle::left }, cursor::style::resize_w };
+								break;
+							case dock::location::top:
+								if (std::abs(mouse_position.y() - rect.bottom()) < resize_border_thickness)
+									return interaction_candidate{ states::resizing{ menu.id(), resize_handle::bottom }, cursor::style::resize_s };
+								break;
+							case dock::location::bottom:
+								if (std::abs(mouse_position.y() - rect.top()) < resize_border_thickness)
+									return interaction_candidate{ states::resizing{ menu.id(), resize_handle::top }, cursor::style::resize_n };
+								break;
+							default: break;
+						}
+					}
+				}
+				else { 
+					if (const auto* parent = menus.try_get(menu.owner_id())) {
+						bool hovering = false;
+						auto new_cursor = cursor::style::arrow;
+						const auto& r = menu.rect;
+
+						switch (menu.docked_to) {
+							case dock::location::left:
+								if (std::abs(mouse_position.x() - r.right()) < resize_border_thickness && mouse_position.y() < r.top() && mouse_position.y() > r.bottom()) {
+									hovering = true; new_cursor = cursor::style::resize_e;
+								} break;
+							case dock::location::right:
+								if (std::abs(mouse_position.x() - r.left()) < resize_border_thickness && mouse_position.y() < r.top() && mouse_position.y() > r.bottom()) {
+									hovering = true; new_cursor = cursor::style::resize_w;
+								} break;
+							case dock::location::top:
+								if (std::abs(mouse_position.y() - r.bottom()) < resize_border_thickness && mouse_position.x() > r.left() && mouse_position.x() < r.right()) {
+									hovering = true; new_cursor = cursor::style::resize_s;
+								} break;
+							case dock::location::bottom:
+								if (std::abs(mouse_position.y() - r.top()) < resize_border_thickness && mouse_position.x() > r.left() && mouse_position.x() < r.right()) {
+									hovering = true; new_cursor = cursor::style::resize_n;
+								} break;
+							default: break;
+						}
+
+						if (hovering) {
 							return interaction_candidate{
 								.future_state = {
-									states::resizing{
-										.menu_id = menu.id(),
-										.handle = handle
+									states::resizing_divider{
+										.parent_id = parent->id(),
+										.child_id = menu.id()
 									}
 								},
-								.cursor = cursor
+								.cursor = new_cursor
 							};
 						}
 					}
@@ -333,16 +449,16 @@ auto gse::gui::handle_idle_state(const unitless::vec2 mouse_position, const bool
 		}
 	}
 
-	return states::idle{}; // Remain idle
+	return states::idle{};
 }
 
-auto gse::gui::handle_resizing_state(const states::resizing& state, const unitless::vec2 mouse_position, const bool mouse_held) -> gui::state {
+auto gse::gui::handle_resizing_state(const states::resizing& current, const unitless::vec2 mouse_position, const bool mouse_held) -> gui::state {
 	if (!mouse_held) {
 		active_dock_space.reset();
 		return states::idle{};
 	}
 
-	menu* m = menus.try_get(state.menu_id);
+	menu* m = menus.try_get(current.menu_id);
 	if (!m) return states::idle{};
 
 	auto calculate_group_bounds = [](const id& root_id) -> ui_rect {
@@ -365,7 +481,7 @@ auto gse::gui::handle_resizing_state(const states::resizing& state, const unitle
 	auto min_corner = group_rect.min();
 	auto max_corner = group_rect.max();
 
-	switch (state.handle) {
+	switch (current.handle) {
 		case resize_handle::left:         min_corner.x() = mouse_position.x(); break;
 		case resize_handle::right:        max_corner.x() = mouse_position.x(); break;
 		case resize_handle::bottom:       min_corner.y() = mouse_position.y(); break;
@@ -378,7 +494,7 @@ auto gse::gui::handle_resizing_state(const states::resizing& state, const unitle
 	}
 
 	if (max_corner.x() - min_corner.x() < min_menu_size.x()) {
-		if (state.handle == resize_handle::left || state.handle == resize_handle::top_left || state.handle == resize_handle::bottom_left) {
+		if (current.handle == resize_handle::left || current.handle == resize_handle::top_left || current.handle == resize_handle::bottom_left) {
 			min_corner.x() = max_corner.x() - min_menu_size.x();
 		}
 		else {
@@ -386,7 +502,7 @@ auto gse::gui::handle_resizing_state(const states::resizing& state, const unitle
 		}
 	}
 	if (max_corner.y() - min_corner.y() < min_menu_size.y()) {
-		if (state.handle == resize_handle::bottom || state.handle == resize_handle::bottom_left || state.handle == resize_handle::bottom_right) {
+		if (current.handle == resize_handle::bottom || current.handle == resize_handle::bottom_left || current.handle == resize_handle::bottom_right) {
 			min_corner.y() = max_corner.y() - min_menu_size.y();
 		}
 		else {
@@ -397,7 +513,7 @@ auto gse::gui::handle_resizing_state(const states::resizing& state, const unitle
 	m->rect = ui_rect({ .min = min_corner, .max = max_corner });
 	layout::update(menus, m->id());
 
-	return state;
+	return current;
 }
 
 auto gse::gui::handle_dragging_state(const states::dragging& current, const window& window, const unitless::vec2 mouse_position, const bool mouse_held) -> state {
@@ -430,18 +546,17 @@ auto gse::gui::handle_dragging_state(const states::dragging& current, const wind
 						}
 						else {
 							layout::dock(menus, current.menu_id, potential_dock_parent_id, area.dock_location);
+							layout::update(menus, m->id());
 						}
 					}
 					else {
 						if (area.dock_location != dock::location::center) {
-							if (m->docked_to == dock::location::none) {
-								m->pre_docked_size = m->rect.size();
-							}
 							const auto viewport_size = unitless::vec2(window.viewport());
 							const auto screen_rect = ui_rect::from_position_size({ 0.f, viewport_size.y() }, viewport_size);
-							m->rect = layout::dock_target_rect(screen_rect, area.dock_location);
+							m->rect = layout::dock_target_rect(screen_rect, area.dock_location, 0.5f);
 							m->docked_to = area.dock_location;
 							m->swap(id());
+							layout::update(menus, m->id());
 						}
 					}
 					break;
@@ -486,6 +601,105 @@ auto gse::gui::handle_dragging_state(const states::dragging& current, const wind
 		const auto screen_rect = ui_rect::from_position_size({ 0.f, window_size.y() }, window_size);
 		active_dock_space = layout::dock_space(screen_rect);
 	}
+
+	return current;
+}
+
+auto gse::gui::handle_resizing_divider_state(const states::resizing_divider& current, const unitless::vec2 mouse_position, const bool mouse_held) -> state {
+	if (!mouse_held) {
+		return states::idle{};
+	}
+
+	menu* parent = menus.try_get(current.parent_id);
+	menu* child = menus.try_get(current.child_id);
+
+	if (!parent || !child) {
+		return states::idle{};
+	}
+
+	const auto location = child->docked_to;
+	const ui_rect combined_rect = ui_rect::bounding_box(parent->rect, child->rect);
+
+	switch (location) {
+		case dock::location::left:
+		case dock::location::right: {
+			if (combined_rect.width() < min_menu_size.x() * 2.f) {
+				return current;
+			}
+
+			const float min_clamp = combined_rect.left() + min_menu_size.x();
+			const float max_clamp = combined_rect.right() - min_menu_size.x();
+			const float divider_x = std::clamp(mouse_position.x(), min_clamp, max_clamp);
+
+			if (location == dock::location::left) {
+				child->rect = ui_rect({
+					.min = { combined_rect.left(), combined_rect.bottom() },
+					.max = { divider_x, combined_rect.top() }
+				});
+				parent->rect = ui_rect({
+					.min = { divider_x, combined_rect.bottom() },
+					.max = { combined_rect.right(), combined_rect.top() }
+				});
+			}
+			else {
+				parent->rect = ui_rect({
+					.min = { combined_rect.left(), combined_rect.bottom() },
+					.max = { divider_x, combined_rect.top() }
+				});
+				child->rect = ui_rect({
+					.min = { divider_x, combined_rect.bottom() },
+					.max = { combined_rect.right(), combined_rect.top() }
+				});
+			}
+
+			if (combined_rect.width() > 0.f) {
+				const float child_width = (location == dock::location::left) ? (divider_x - combined_rect.left()) : (combined_rect.right() - divider_x);
+				parent->dock_split_ratio = child_width / combined_rect.width();
+			}
+			break;
+		}
+		case dock::location::top:
+		case dock::location::bottom: {
+			if (combined_rect.height() < min_menu_size.y() * 2.f) {
+				return current;
+			}
+
+			const float min_clamp = combined_rect.bottom() + min_menu_size.y();
+			const float max_clamp = combined_rect.top() - min_menu_size.y();
+			const float divider_y = std::clamp(mouse_position.y(), min_clamp, max_clamp);
+
+			if (location == dock::location::top) {
+				child->rect = ui_rect({
+					.min = { combined_rect.left(), divider_y },
+					.max = { combined_rect.right(), combined_rect.top() }
+				});
+				parent->rect = ui_rect({
+					.min = { combined_rect.left(), combined_rect.bottom() },
+					.max = { combined_rect.right(), divider_y }
+				});
+			}
+			else {
+				parent->rect = ui_rect({
+					.min = { combined_rect.left(), divider_y },
+					.max = { combined_rect.right(), combined_rect.top() }
+				});
+				child->rect = ui_rect({
+					.min = { combined_rect.left(), combined_rect.bottom() },
+					.max = { combined_rect.right(), divider_y }
+				});
+			}
+
+			if (combined_rect.height() > 0.f) {
+				const float child_height = (location == dock::location::top) ? (combined_rect.top() - divider_y) : (divider_y - combined_rect.bottom());
+				parent->dock_split_ratio = child_height / combined_rect.height();
+			}
+			break;
+		}
+		default:
+			break;
+	}
+
+	layout::update(menus, child->id());
 
 	return current;
 }
