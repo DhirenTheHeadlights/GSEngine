@@ -33,7 +33,7 @@ namespace gs::arena {
 	export auto create(const gse::hook<gse::scene>* scene) -> void {
 		constexpr auto arena_position = gse::vec3<gse::length>(0.f, 0.f, 0.f);
 
-		constexpr gse::length arena_size = gse::meters(1000.f);
+		constexpr gse::length arena_size = gse::meters(100.f);
 		constexpr gse::length wall_thickness = gse::meters(1.f);
 
 		scene->build("Front Wall")
