@@ -1,4 +1,4 @@
-﻿export module gse.physics:narrow_phase_collisions;
+export module gse.physics:narrow_phase_collisions;
 
 import std;
 
