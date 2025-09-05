@@ -16,7 +16,7 @@ export namespace gse::physics {
 	) -> void;
 }
 
-constexpr gse::time g_max_time_step = gse::seconds(0.25);
+constexpr gse::time g_max_time_step = gse::seconds(0.25f);
 gse::time g_accumulator;
 
 auto gse::physics::update(const std::vector<std::reference_wrapper<registry>>& registries, const time fixed_update_time, time frame_time) -> void {

@@ -43,8 +43,7 @@ namespace gse::gui::dock {
 
 namespace gse::gui {
 	struct menu_data {
-		unitless::vec2 top_left;
-		unitless::vec2 size;
+		ui_rect rect;
 		id parent_id;
 	};
 
@@ -54,7 +53,7 @@ namespace gse::gui {
 			const menu_data& data
 		) : identifiable(tag),
 			identifiable_owned(data.parent_id),
-			rect(ui_rect::from_position_size(data.top_left, data.size)) {
+			rect(data.rect) {
 			tab_contents.emplace_back(tag);
 		}
 
@@ -73,6 +72,7 @@ namespace gse::gui {
 		std::vector<std::string> items;
 
 		std::uint32_t active_tab_index = 0;
+		bool was_begun_this_frame = false;
 	};
 }
 

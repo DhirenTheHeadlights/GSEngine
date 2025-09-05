@@ -498,7 +498,7 @@ constexpr auto gse::rotate(const unitless::vec_t<T, N>& v, angle_t<T> angle, std
 	}
 
 	unitless::vec_t<T, N> result = v;
-	const T rad = angle.template as<units::radians>();
+	const T rad = angle.template as<radians>();
 
 	const T cos_theta = std::cos(rad);
 	const T sin_theta = std::sin(rad);

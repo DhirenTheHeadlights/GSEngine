@@ -32,8 +32,7 @@ export namespace gse::gui {
 	) -> void;
 
 	auto start(
-		const std::string& name,
-		const menu_data& data
+		const std::string& name, const std::function<void()>& contents
 	) -> void;
 
 	auto text(
@@ -46,7 +45,7 @@ export namespace gse::gui {
 		T value
 	) -> void; 
 
-	template <is_quantity T, typename Unit = typename T::default_unit>
+	template <is_quantity T, auto Unit = typename T::default_unit{}>
 	auto value(
 		const std::string& name,
 		T value
@@ -58,7 +57,7 @@ export namespace gse::gui {
 		unitless::vec_t<T, N> vec
 	) -> void;
 
-	template <typename T, int N, typename Unit = typename T::default_unit>
+	template <typename T, int N, auto Unit = typename T::default_unit{}>
 	auto vec(
 		const std::string& name,
 		vec_t<T, N> vec
@@ -123,14 +122,11 @@ auto gse::gui::update(const window& window) -> void {
 		}, current_state);
 }
 
-auto gse::gui::start(const std::string& name, const menu_data& data) -> void {
-	if (exists(name) && menus.contains(find(name))) {
-		return;
+auto gse::gui::start(const std::string& name, const std::function<void()>& contents) -> void {
+	if (begin(name)) {
+		contents();
 	}
-
-	menu new_menu(name, data);
-
-	menus.add(new_menu.id(), std::move(new_menu));
+	end();
 }
 
 auto gse::gui::render(const renderer::context& context, renderer::sprite& sprite_renderer, renderer::text& text_renderer) -> void {
@@ -144,14 +140,22 @@ auto gse::gui::render(const renderer::context& context, renderer::sprite& sprite
 				{ menu.rect.left(), menu.rect.top() - title_bar_height },
 				{ menu.rect.width(), menu.rect.height() - title_bar_height }
 			);
-			const auto content_rect = body_rect.inset({ padding, padding });
 
-			sprite_renderer.queue({ .rect = body_rect, .color = menu_body_color, .texture = blank_texture });
-			sprite_renderer.queue({ .rect = title_bar_rect, .color = title_bar_color, .texture = blank_texture });
+			sprite_renderer.queue({ 
+				.rect = body_rect,
+				.color = menu_body_color,
+				.texture = blank_texture
+			});
+
+			sprite_renderer.queue({ 
+				.rect = title_bar_rect,
+				.color = title_bar_color,
+				.texture = blank_texture
+			});
 
 			text_renderer.draw_text({
 				.font = font,
-				.text = menu.id().tag(),
+				.text = menu.tab_contents[menu.active_tab_index],
 				.position = {
 					title_bar_rect.left() + padding,
 					title_bar_rect.center().y() + font_size / 2.f
@@ -160,31 +164,28 @@ auto gse::gui::render(const renderer::context& context, renderer::sprite& sprite
 				.clip_rect = title_bar_rect
 			});
 
-			current_menu = &menu;
-			if (!menu.tab_contents.empty()) {
-				menu.tab_contents[menu.active_tab_index];
-			}
+			if (menu.was_begun_this_frame) {
+				const auto content_rect = body_rect.inset({ padding, padding });
+				const float line_height = font->line_height(font_size);
+				const auto text_start_pos = content_rect.top_left();
 
-			const float line_height = font->line_height(font_size);
-			const auto text_start_pos = content_rect.top_left();
-
-			for (std::size_t i = 0; i < menu.items.size(); ++i) {
-				const unitless::vec2 item_pos = {
-					text_start_pos.x(),
-					text_start_pos.y() - i * line_height
-				};
-				text_renderer.draw_text({
-					.font = font,
-					.text = menu.items[i],
-					.position = item_pos,
-					.scale = font_size,
-					.clip_rect = content_rect
-				});
+				for (std::size_t i = 0; i < menu.items.size(); ++i) {
+					const unitless::vec2 item_pos = {
+						text_start_pos.x(),
+						text_start_pos.y() - i * line_height
+					};
+					text_renderer.draw_text({
+						.font = font,
+						.text = menu.items[i],
+						.position = item_pos,
+						.scale = font_size,
+						.clip_rect = content_rect
+					});
+				}
+				
+				menu.was_begun_this_frame = false;
 			}
-			menu.items.clear();
 		}
-
-		current_menu = nullptr;
 	}
 
 	if (active_dock_space) {
@@ -226,10 +227,10 @@ auto gse::gui::value(const std::string& name, T value) -> void {
 	}
 }
 
-template <gse::is_quantity T, typename Unit>
+template <gse::is_quantity T, auto Unit>
 auto gse::gui::value(const std::string& name, T value) -> void {
 	if (current_menu) {
-		current_menu->items.emplace_back(std::format("{} {} {}", value.template as<Unit>(), Unit::unit_name, name));
+		current_menu->items.emplace_back(std::format("{} {} {}", value.template as<Unit>(), Unit.unit_name, name));
 	}
 }
 
@@ -240,33 +241,46 @@ auto gse::gui::vec(const std::string& name, unitless::vec_t<T, N> vec) -> void {
 	}
 }
 
-template <typename T, int N, typename Unit>
+template <typename T, int N, auto Unit>
 auto gse::gui::vec(const std::string& name, vec_t<T, N> vec) -> void {
 	if (current_menu) {
-		current_menu->items.emplace_back(std::format("{} {} {}", vec.template as<Unit>(), Unit::unit_name, name));
+		current_menu->items.emplace_back(std::format("{} {} {}", vec.template as<Unit>(), Unit.unit_name, name));
 	}
 }
 
 auto gse::gui::begin(const std::string& name) -> bool {
-	if (auto* menu = menus.try_get(find(name))) {
-		current_menu = menu;
+	menu* menu_ptr;
 
-		const auto title_bar_rect = ui_rect::from_position_size(
-			menu->rect.top_left(),
-			{ menu->rect.width(), title_bar_height }
+	if (!exists(name)) {
+		menu new_menu(
+			name,
+			menu_data{
+				.rect = ui_rect({
+					.min = { 100.f, 100.f },
+					.max = { 400.f, 300.f }
+				})
+			}
 		);
 
-		const auto body_rect = ui_rect::from_position_size(
-			{ menu->rect.left(), menu->rect.top() - title_bar_height },
-			{ menu->rect.width(), menu->rect.height() - title_bar_height }
-		);
-
-
-
-		return true;
+		menus.add(new_menu.id(), std::move(new_menu));
+		menu_ptr = menus.try_get(find(name));
+	}
+	else {
+		menu_ptr = menus.try_get(find(name));
 	}
 
+	if (menu_ptr) {
+		current_menu = menu_ptr;
+		current_menu->was_begun_this_frame = true;
+		current_menu->items.clear();
+		return true;
+	}
+    
 	return false;
+}
+
+auto gse::gui::end() -> void {
+	current_menu = nullptr;
 }
 
 auto gse::gui::handle_idle_state(const unitless::vec2 mouse_position, const bool mouse_held) -> state {

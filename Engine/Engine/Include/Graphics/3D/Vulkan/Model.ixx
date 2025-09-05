@@ -135,9 +135,9 @@ auto gse::model::compile() -> std::set<std::filesystem::path> {
 		std::vector<mesh_build_data> built_meshes;
 		std::string current_material_name;
 
-		std::vector<raw3f> temp_positions;
-		std::vector<raw2f> temp_tex_coords;
-		std::vector<raw3f> temp_normals;
+		std::vector<vec3<length>> temp_positions;
+		std::vector<unitless::vec3> temp_normals;
+		std::vector<unitless::vec2> temp_tex_coords;
 
 		std::string line;
 		while (std::getline(model_file, line)) {
@@ -315,7 +315,7 @@ auto gse::model::center_of_mass() const -> vec3<length> {
 auto gse::model_instance::update(const physics::motion_component& mc, const physics::collision_component& cc) -> void {
 	m_position = mc.current_position;
 	m_rotation = cc.bounding_box.obb().orientation;
-	m_scale = cc.bounding_box.size().as<units::meters>();
+	m_scale = cc.bounding_box.size().as<meters>();
 	m_is_dirty = true;
 }
 

@@ -317,7 +317,7 @@ constexpr auto gse::look_at(const vec3<length_t<T>>& position, const vec3<length
 	const auto right_axis = normalize(cross(up, direction_axis));
 	const auto up_axis = cross(direction_axis, right_axis);
 
-	const auto pos = position.template as<typename length_t<T>::default_unit>();
+	const auto pos = position.as<typename length_t<T>::default_unit{}>();
 
 	return mat4_t<T>{
 		{ right_axis.x(), up_axis.x(), direction_axis.x(), 0 },
@@ -329,9 +329,9 @@ constexpr auto gse::look_at(const vec3<length_t<T>>& position, const vec3<length
 
 template <typename T>
 constexpr auto gse::perspective(const angle_t<T> fov, const T aspect, length_t<T> near, length_t<T> far) -> mat4_t<T> {
-	const auto tan_half_fov_y = std::tan(fov.template as<units::radians>() / T(2));
-	auto near_m = near.template as<length_t<T>::default_unit>();
-	auto far_m = far.template as<length_t<T>::default_unit>();
+	const auto tan_half_fov_y = std::tan(fov.template as<radians>() / T(2));
+	auto near_m = near.as<typename length_t<T>::default_unit{}>();
+	auto far_m = far.as<typename length_t<T>::default_unit{}>();
 
 	mat4_t<T> result;
 
@@ -368,7 +368,7 @@ constexpr auto gse::translate(const mat4_t<T, Dim>& matrix, const vec3<length_t<
 template <typename T, typename Dim>
 constexpr auto gse::rotate(const mat_t<T, 4, 4, Dim>& matrix, const unitless::axis axis, std::type_identity_t<angle_t<T>> angle) -> mat_t<T, 4, 4, Dim> {
 	auto a = normalize(unitless::to_axis_v<T>(axis));
-	T half_angle = angle.template as<units::radians>() / 2;
+	T half_angle = angle.template as<radians>() / 2;
 	T s = std::sin(half_angle);
 	T c = std::cos(half_angle);
 	auto q = normalize(quat_t<T>(c, a.x() * s, a.y() * s, a.z() * s));

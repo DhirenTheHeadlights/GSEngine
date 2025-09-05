@@ -239,22 +239,22 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
         unitless::vec3 n_d = normalize(cross(v2.point - v1.point, v3.point - v1.point));
 
         length d_a = is_zero(n_a) ? meters(std::numeric_limits<float>::infinity()) : dot(n_a, v0.point);
-        if (d_a < meters(0)) {
+        if (d_a < meters(0.f)) {
             n_a = -n_a;
             d_a = -d_a;
         }
         length d_b = is_zero(n_b) ? meters(std::numeric_limits<float>::infinity()) : dot(n_b, v0.point);
-        if (d_b < meters(0)) {
+        if (d_b < meters(0.f)) {
             n_b = -n_b;
             d_b = -d_b;
         }
         length d_c = is_zero(n_c) ? meters(std::numeric_limits<float>::infinity()) : dot(n_c, v0.point);
-        if (d_c < meters(0)) {
+        if (d_c < meters(0.f)) {
             n_c = -n_c;
             d_c = -d_c;
         }
         length d_d = is_zero(n_d) ? meters(std::numeric_limits<float>::infinity()) : dot(n_d, v1.point);
-        if (d_d < meters(0)) {
+        if (d_d < meters(0.f)) {
             n_d = -n_d;
             d_d = -d_d;
         }
@@ -483,7 +483,7 @@ auto gse::narrow_phase_collision::generate_contact_points(const bounding_box& bb
                 output_polygon.push_back(intersection);
             }
 
-            if (current_dist >= meters(0)) {
+            if (current_dist >= meters(0.f)) {
                 output_polygon.push_back(current_v);
             }
 

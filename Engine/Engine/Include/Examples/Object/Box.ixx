@@ -42,7 +42,7 @@ export namespace gse {
 
         auto update() -> void override {
             if (keyboard::pressed(key::r) && component<physics::motion_component>().affected_by_gravity) {
-				component<physics::motion_component>().orientation = quat(unitless::axis_z, degrees(45));
+				component<physics::motion_component>().orientation = quat(unitless::axis_z, degrees(45.f));
             }
         }
     private:

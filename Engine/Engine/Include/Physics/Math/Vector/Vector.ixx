@@ -108,7 +108,7 @@ export namespace gse {
 	public:
 		using vec::base<quantity_vec, Q, N>::base;
 
-		template <internal::is_derivable_unit TargetUnit>
+		template <auto TargetUnit> requires internal::is_derivable_unit<decltype(TargetUnit)>
 		constexpr auto as() const -> unitless::vec_t<typename Q::value_type, N>;
 	};
 }
@@ -313,12 +313,12 @@ auto gse::vec::base<Derived, T, N>::as_storage_span(this auto&& self) {
 }
 
 template <gse::internal::is_arithmetic_wrapper Q, std::size_t N>
-template <gse::internal::is_derivable_unit TargetUnit>
+template <auto TargetUnit> requires gse::internal::is_derivable_unit<decltype(TargetUnit)>
 constexpr auto gse::quantity_vec<Q, N>::as() const -> unitless::vec_t<typename Q::value_type, N> {
 	using storage_type = typename vec::base<quantity_vec, Q, N>::storage_type;
 	unitless::vec_t<typename Q::value_type, N> result{};
 
-	simd::mul_s(this->as_storage_span(), static_cast<storage_type>(TargetUnit::conversion_factor), result.as_storage_span());
+	simd::mul_s(this->as_storage_span(), static_cast<storage_type>(TargetUnit.conversion_factor), result.as_storage_span());
 
 	return result;
 }

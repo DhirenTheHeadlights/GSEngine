@@ -9,9 +9,9 @@ import gse.physics.math;
 
 export namespace gse {
     struct vertex {
-        raw3f position;
-        raw3f normal;
-        raw2f tex_coords;
+        vec3<length> position;
+        unitless::vec3 normal;
+        unitless::vec2 tex_coords;
     };
 
     struct mesh_data {
@@ -140,9 +140,9 @@ auto gse::mesh::center_of_mass() const -> vec3<length> {
 
         assert(idx0 < m_vertices.size() && idx1 < m_vertices.size() && idx2 < m_vertices.size(), "Index out of range while accessing m_vertices.");
 
-        const unitless::vec3d v0(m_vertices[idx0].position);
-        const unitless::vec3d v1(m_vertices[idx1].position);
-        const unitless::vec3d v2(m_vertices[idx2].position);
+        const unitless::vec3d v0(m_vertices[idx0].position.as<meters>());
+        const unitless::vec3d v1(m_vertices[idx1].position.as<meters>());
+        const unitless::vec3d v2(m_vertices[idx2].position.as<meters>());
 
         unitless::vec3d a = v0 - reference_point;
         unitless::vec3d b = v1 - reference_point;
@@ -168,7 +168,11 @@ auto gse::generate_bounding_box_mesh(const vec3<length> upper, const vec3<length
     auto create_vertex = [](
         const vec3<length>& position
         ) -> vertex {
-			return vertex{ position.as<units::meters>().data, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f}};
+			return {
+				.position = position,
+				.normal = { 0.0f, 0.0f, 0.0f },
+				.tex_coords = { 0.0f, 0.0f }
+			};
         };
 
     const std::vector vertices = {

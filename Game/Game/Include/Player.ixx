@@ -71,7 +71,7 @@ namespace gs {
 			gse::length width = gse::feet(3.0f);
 
 			const auto [cc_id, cc] = add_component<gse::physics::collision_component>({
-				.bounding_box = { gse::vec::meters(-10.f, -10.f, -10.f), { width, height, width } }
+				.bounding_box = { gse::vec3<gse::length>(-10.f, -10.f, -10.f), { width, height, width } }
 			});
 
 			const auto [rc_id, rc] = add_component<gse::render_component>({
@@ -96,7 +96,7 @@ namespace gs {
 				apply_impulse(motion_component, gse::vec3<gse::force>(0.f, m_jump_force, 0.f), gse::seconds(0.5f));
 			}
 
-			gse::renderer::camera().set_position(motion_component.current_position + gse::vec::feet(0.f, 6.f, 0.f));
+			gse::renderer::camera().set_position(motion_component.current_position + gse::vec3<gse::length>(0.f, gse::feet(6.f), gse::feet(0.f)));
 		}
 
 		auto render() -> void override {

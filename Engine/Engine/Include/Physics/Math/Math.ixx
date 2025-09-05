@@ -4,6 +4,7 @@ import std;
 
 export import :angle;
 export import :duration;
+export import :dimension;
 export import :energy_and_power;
 export import :length;
 export import :mass_and_force;
@@ -23,18 +24,6 @@ std::random_device g_rd;
 std::mt19937 g_gen(g_rd());
 
 export namespace gse {
-	using raw2i = vec::storage<int, 2>;
-	using raw3i = vec::storage<int, 3>;
-	using raw4i = vec::storage<int, 4>;
-
-	using raw2f = vec::storage<float, 2>;
-	using raw3f = vec::storage<float, 3>;
-	using raw4f = vec::storage<float, 4>;
-
-	using raw2d = vec::storage<double, 2>;
-	using raw3d = vec::storage<double, 3>;
-	using raw4d = vec::storage<double, 4>;
-
 	template <typename T>
 	concept is_arithmetic = internal::is_arithmetic<T>;
 

@@ -335,7 +335,7 @@ constexpr auto gse::identity() -> quat_t<T> {
 
 template <typename T>
 constexpr auto gse::from_axis_angle(const unitless::vec3_t<T>& axis, angle_t<T> angle) -> quat_t<T> {
-	const T half_angle = angle.template as<units::radians>() / T(2);
+	const T half_angle = angle.template as<radians>() / T(2);
 	const T s = std::sin(half_angle);
 	const T c = std::cos(half_angle);
 	return quat_t<T>{ c, axis[0] * s, axis[1] * s, axis[2] * s };
