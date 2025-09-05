@@ -67,6 +67,8 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
         return;
     }
 
+	res->penetration = std::clamp(res->penetration, meters(0.001f), meters(0.3f));
+
     if (dot(object_a->current_position - object_b->current_position, res->normal) < 0) {
         res->normal *= -1.0f;
     }
@@ -133,7 +135,7 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
     const inverse_mass denom = total_inv_mass + dot(rcross_a_part, res->normal) + dot(rcross_b_part, res->normal);
     const auto jn = -(1.0f + restitution) * vel_along_normal / denom;
 
-    const auto impulse_vec = res->normal * jn;
+    const auto impulse_vec = res->normal * jn * 15;
     std::println("Impulse: {}, Normal: {}, Penetration: {}", impulse_vec, res->normal, res->penetration);
 
     if (!object_a->position_locked) {
@@ -170,7 +172,7 @@ auto gse::narrow_phase_collision::minkowski_difference(const bounding_box& bb1, 
 }
 
 auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const bounding_box& bb2) -> std::optional<mpr_result> {
-    static constexpr bool debug = false;
+    static constexpr bool debug = true;
     const length eps = meters(1e-4f);
     const auto eps2 = eps * eps;
 
@@ -349,13 +351,32 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
             minkowski_point p = minkowski_difference(bb1, bb2, choice.n);
 
             if (const length projection_dist = dot(p.point, choice.n); projection_dist - choice.d < meters(1e-4f)) {
-                if constexpr (debug) {
-                    std::println("[MPR][iter {}] CONVERGED. penetration: {}", i, choice.d);
-                }
+                    if constexpr (debug) {
+                        std::println("[MPR][iter {}] CONVERGED. penetration: {}", i, choice.d);
+                    }
 
-                const unitless::vec3 collision_normal = -choice.n;
-                const length penetration_depth = choice.d;
-
+                    const unitless::vec3 collision_normal = -choice.n;
+                    const length penetration_depth = choice.d;
+                    if constexpr (debug){
+	                    if (penetration_depth >= meters(10.f)) {
+	                        std::vector<vec3<length>> face_vertices_obb_1;
+	                        std::array<vec3<length>, 4> point_cache;
+	                        for (size_t i = 0; i < 3; i++) {
+							    point_cache = bb1.face_vertices(i);
+	                            for (size_t pt = 0; pt < 4; pt++) {
+	                                face_vertices_obb_1.emplace_back(point_cache[pt]);
+	                            }
+	                        }
+	                        std::vector<vec3<length>> face_vertices_obb_2;
+	                        for (size_t i = 0; i < 3; i++) {
+	                            point_cache = bb2.face_vertices(i);
+	                            for (size_t pt = 0; pt < 4; pt++) {
+	                                face_vertices_obb_2.emplace_back(point_cache[pt]);
+	                            }
+	                        }
+	                        std::cout << "breakpoint";
+                    }
+				}
                 std::vector<vec3<length>> contact_points = generate_contact_points(
                     bb1,
                     bb2,
