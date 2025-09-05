@@ -18,26 +18,28 @@ export namespace gs {
 			arena::create(this);
 
 			build("Player")
-				.with<player>();
+				.with<gse::free_camera>({
+					.initial_position = {}
+				});
 
 			build("Backpack")
 				.with<backpack>();
 
 			build("Smaller Box")
 				.with<gse::box>({
-					.initial_position = gse::vec::meters(2.f, -40.f, 2.f),
-					.size = gse::vec::meters(2.f, 2.f, 2.f)
+					.initial_position = gse::vec3<gse::length>(2.f, -40.f, 2.f),
+					.size = gse::vec3<gse::length>(2.f, 2.f, 2.f)
 				});
 
 			build("Bigger Box")
 				.with<gse::box>({
-					.initial_position = gse::vec::meters(-2.f, -40.f, 2.f),
-					.size = gse::vec::meters(4.f, 4.f, 4.f)
+					.initial_position = gse::vec3<gse::length>(-2.f, -40.f, 2.f),
+					.size = gse::vec3<gse::length>(4.f, 4.f, 4.f)
 				});
 
 			build("Center Sphere Light")
 				.with<sphere_light>({
-					.initial_position = gse::vec::meters(0.f, -30.f, 0.f),
+					.initial_position = gse::vec3<gse::length>(0.f, -30.f, 0.f),
 					.radius = gse::meters(1.f),
 					.sectors = 18,
 					.stacks = 10
@@ -45,7 +47,7 @@ export namespace gs {
 
 			build("Second Sphere")
 				.with<gse::sphere>({
-					.initial_position = gse::vec::meters(0.f, 0.f, 20.f),
+					.initial_position = gse::vec3<gse::length>(0.f, 0.f, 20.f),
 					.radius = gse::meters(1.f),
 					.sectors = 18,
 					.stacks = 10

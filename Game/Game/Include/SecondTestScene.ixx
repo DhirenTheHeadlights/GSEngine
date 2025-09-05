@@ -11,22 +11,22 @@ export namespace gs {
 		auto initialize() -> void override {
 			build("Box")
 				.with<gse::box>({
-					.initial_position = gse::vec::meters(0.f, 0.f, 0.f),
-					.size = gse::vec::meters(10.f, 10.f, 10.f)
+					.initial_position = gse::vec3<gse::length>(0.f, 0.f, 0.f),
+					.size = gse::vec3<gse::length>(10.f, 10.f, 10.f)
 				});
 
 			build("Floor")
 				.with<gse::box>({
-					.initial_position = gse::vec::meters(0.f, -20.f, 0.f),
-					.size = gse::vec::meters(100.f, 1.f, 100.f)
+					.initial_position = gse::vec3<gse::length>(0.f, -20.f, 0.f),
+					.size = gse::vec3<gse::length>(100.f, 1.f, 100.f)
 				})
 				.with<positioned_object_hook>({
-					.position = gse::vec::meters(0.f, -20.f, 0.f)
+					.position = gse::vec3<gse::length>(0.f, -20.f, 0.f)
 				});
 
 			build("Free Cam")
 				.with<gse::free_camera>({
-					.initial_position = gse::vec::meters(30.f, 0.f, 0.f)
+					.initial_position = gse::vec3<gse::length>(30.f, 0.f, 0.f)
 				});
 		}
 	private:

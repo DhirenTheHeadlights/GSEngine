@@ -41,7 +41,7 @@ auto gse::main_clock::update() -> void {
 	frame_rate_update_time += delta_time;
 
 	if (frame_rate_update_time >= fps_report_interval) {
-		frame_rate_count = static_cast<std::uint32_t>(frame_count / frame_rate_update_time.as<units::seconds>());
+		frame_rate_count = static_cast<std::uint32_t>(frame_count / frame_rate_update_time.as<seconds>());
 		frame_count = 0;
 		frame_rate_update_time -= fps_report_interval;
 	}

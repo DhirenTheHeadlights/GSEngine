@@ -32,5 +32,5 @@ constexpr auto gse::segment_t<T>::midpoint() const -> T {
 template <gse::is_vec2 T>
 constexpr auto gse::segment_t<T>::angle() const -> angle_t<typename T::value_type> {
 	const T diff = end - start;
-	return radians_t<typename T::value_type>(std::atan2(diff.y(), diff.x()));
+	return radians(std::atan2(diff.y(), diff.x()));
 }

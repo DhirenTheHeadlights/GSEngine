@@ -82,7 +82,7 @@ auto update_air_resistance(gse::physics::motion_component& component) -> void {
 			constexpr float cross_sectional_area = 1.0f;											// Example area in m^2, adjust according to the object
 
 			const float drag_force_magnitude = (0.5f * drag_coefficient * air_density * cross_sectional_area * velocity * velocity).as_default_unit();
-			const float direction = velocity > gse::meters_per_second(0) ? -1.0f : 1.0f;
+			const float direction = velocity > gse::meters_per_second(0.f) ? -1.0f : 1.0f;
 			auto drag_force = gse::vec3<gse::force>(
 				i == 0 ? drag_force_magnitude * direction : 0.0f,
 				i == 1 ? drag_force_magnitude * direction : 0.0f,
@@ -123,7 +123,7 @@ auto update_rotation(gse::physics::motion_component& component, const gse::time 
 
 	component.current_torque = {};
 
-	const gse::unitless::vec3 angular_velocity = component.angular_velocity.as<gse::units::radians_per_second>();
+	const gse::unitless::vec3 angular_velocity = component.angular_velocity.as<gse::radians_per_second>();
 	const gse::quat omega_quaternion = { 0.f, angular_velocity.x(), angular_velocity.y(), angular_velocity.z() };
 
 	// dQ = 0.5 * omega_quaternion * orientation

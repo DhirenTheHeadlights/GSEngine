@@ -30,6 +30,7 @@ export namespace gse::physics {
 		bool position_locked = false;
 	};
 
+	using inverse_inertia_dimension = internal::dim<-2, 0, -1>;
 	using inv_inertia_mat = mat3_t<float, inverse_inertia_dimension>;
 
 	struct motion_component : component<motion_component_data> {

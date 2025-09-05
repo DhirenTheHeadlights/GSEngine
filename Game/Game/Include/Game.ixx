@@ -44,33 +44,27 @@ export namespace gs {
 		}
 
 		auto render() -> void  override {
-			/*gse::gui::create_menu(
-				"Test", {
-					.top_left = { 1000.f, 1000.f },
-					.size = { 500.f, 200.f },
-					.contents = [] {
-						gse::gui::value("FPS", gse::main_clock::fps());
-						gse::gui::value("Test Value", 42);
-						gse::gui::value("Test Quantity", gse::meters(5.0f));
-						gse::gui::vec("Test Vec", gse::vec::meters(1.f, 2.f, 3.f));
-						gse::gui::vec("Test Vec2", gse::mouse::position());
-					}
+			gse::gui::start(
+				"Test",
+				[] {
+					gse::gui::value("FPS", gse::main_clock::fps());
+					gse::gui::value("Test Value", 42);
+					gse::gui::value("Test Quantity", gse::meters(5.0f));
+					gse::gui::vec("Test Vec", gse::vec3<gse::length>(1.f, 2.f, 3.f));
+					gse::gui::vec("Test Vec2", gse::mouse::position());
 				}
 			);
 
-			gse::gui::create_menu(
-				"Test2", {
-					.top_left = { 300.f, 500.f },
-					.size = { 200.f, 200.f },
-					.contents = [] {
-						gse::gui::text("Hello, world!");
-						gse::gui::value("Test Value", 42);
-						gse::gui::value("Test Quantity", gse::meters(5.0f));
-						gse::gui::vec("Test Vec", gse::vec::meters(1.f, 2.f, 3.f));
-						gse::gui::vec("Test Vec2", gse::mouse::position());
-					}
+			gse::gui::start(
+				"Test2",
+				[] {
+					gse::gui::text("Hello, world!");
+					gse::gui::value("Test Value", 42);
+					gse::gui::value("Test Quantity", gse::meters(5.0f));
+					gse::gui::vec("Test Vec", gse::vec3<gse::length>(1.f, 2.f, 3.f));
+					gse::gui::vec("Test Vec2", gse::mouse::position());
 				}
-			);*/
+			);
 
 			gse::renderer::set_ui_focus(m_show_cross_hair);
 		}

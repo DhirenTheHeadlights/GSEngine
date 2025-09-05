@@ -152,13 +152,18 @@ auto gse::renderer::sprite::initialize() -> void {
 	};
 	m_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
 
-	struct vertex { raw2f pos; raw2f uv; };
+	struct vertex {
+		vec2<length> pos;
+		unitless::vec2 uv;
+	};
+
 	constexpr vertex vertices[4] = {
 		{{0.0f,  0.0f}, {0.0f, 0.0f}},
 		{{1.0f,  0.0f}, {1.0f, 0.0f}},
 		{{1.0f, -1.0f}, {1.0f, 1.0f}},
 		{{0.0f, -1.0f}, {0.0f, 1.0f}}
 	};
+
 	constexpr std::uint32_t indices[6] = { 0, 2, 1, 0, 3, 2 };
 
 	m_vertex_buffer = vulkan::persistent_allocator::create_buffer(
@@ -240,7 +245,7 @@ auto gse::renderer::sprite::render(std::span<std::reference_wrapper<registry>> r
 
 				auto position = rect.top_left();
 				auto rect_size = rect.size();
-				auto angle_rad = rotation.as<units::radians>();
+				auto angle_rad = rotation.as<radians>();
 
 				std::unordered_map<std::string, std::span<const std::byte>> push_constants = {
 					{ "projection", std::as_bytes(std::span(&projection, 1)) },

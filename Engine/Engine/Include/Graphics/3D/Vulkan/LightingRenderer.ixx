@@ -251,7 +251,7 @@ auto gse::renderer::lighting::render(std::span<std::reference_wrapper<registry>>
 	const auto command = config.frame_context().command_buffer;
 
 	auto inv_pv = (m_context.camera().projection(m_context.window().viewport()) * m_context.camera().view()).inverse();
-	auto view_pos = m_context.camera().position().as<units::meters>().data;
+	auto view_pos = m_context.camera().position().as<meters>().data;
 
 	const std::unordered_map<std::string, std::span<const std::byte>> cam_data_map = {
 		{ "inv_pv", std::as_bytes(std::span(&inv_pv, 1)) },
@@ -325,7 +325,7 @@ auto gse::renderer::lighting::render(std::span<std::reference_wrapper<registry>>
 			zero_at(light_count);
 
 			int type = 1; // LightType::Point
-			auto pos_meters = comp.position.as<units::meters>();
+			auto pos_meters = comp.position.as<meters>();
 			set(light_count, "light_type", type);
 			set(light_count, "position", pos_meters);
 			set(light_count, "color", comp.color);
@@ -344,9 +344,9 @@ auto gse::renderer::lighting::render(std::span<std::reference_wrapper<registry>>
 			zero_at(light_count);
 
 			int type = 2; // LightType::Spot
-			auto pos_meters = comp.position.as<units::meters>();
-			float cut_off_cos = std::cos(comp.cut_off.as<units::radians>());
-			float outer_cut_off_cos = std::cos(comp.outer_cut_off.as<units::radians>());
+			auto pos_meters = comp.position.as<meters>();
+			float cut_off_cos = std::cos(comp.cut_off.as<radians>());
+			float outer_cut_off_cos = std::cos(comp.outer_cut_off.as<radians>());
 
 			set(light_count, "light_type", type);
 			set(light_count, "position", pos_meters);
