@@ -31,8 +31,8 @@ namespace gse::internal {
 	template <typename T>
 	using vec_storage_type_t = typename vec_storage_type<T>::type;
 
-	template <typename T>
-	concept is_derivable_unit = requires { T::conversion_factor; };
+	template <auto T>
+	concept is_derivable_unit = requires { typename decltype(T)::conversion_ratio; };
 }
 
 export namespace gse::vec {
@@ -108,7 +108,7 @@ export namespace gse {
 	public:
 		using vec::base<quantity_vec, Q, N>::base;
 
-		template <auto TargetUnit> requires internal::is_derivable_unit<decltype(TargetUnit)>
+		template <auto TargetUnit> requires internal::is_derivable_unit<TargetUnit>
 		constexpr auto as() const -> unitless::vec_t<typename Q::value_type, N>;
 	};
 }
@@ -313,14 +313,17 @@ auto gse::vec::base<Derived, T, N>::as_storage_span(this auto&& self) {
 }
 
 template <gse::internal::is_arithmetic_wrapper Q, std::size_t N>
-template <auto TargetUnit> requires gse::internal::is_derivable_unit<decltype(TargetUnit)>
+template <auto TargetUnit> requires gse::internal::is_derivable_unit<TargetUnit>
 constexpr auto gse::quantity_vec<Q, N>::as() const -> unitless::vec_t<typename Q::value_type, N> {
 	using storage_type = typename vec::base<quantity_vec, Q, N>::storage_type;
-	unitless::vec_t<typename Q::value_type, N> result{};
+    unitless::vec_t<typename Q::value_type, N> result{};
 
-	simd::mul_s(this->as_storage_span(), static_cast<storage_type>(TargetUnit.conversion_factor), result.as_storage_span());
+    using ratio = typename decltype(TargetUnit)::conversion_ratio;
+    const storage_type scalar_multiplier = static_cast<storage_type>(ratio::den) / static_cast<storage_type>(ratio::num);
 
-	return result;
+    simd::mul_s(this->as_storage_span(), scalar_multiplier, result.as_storage_span());
+
+    return result;
 }
 
 template <typename T, std::size_t N>
@@ -337,7 +340,7 @@ export namespace gse::vec {
 	using sub_exposed_t = decltype(std::declval<U>() - std::declval<V>());
 
 	template <typename U, typename V>
-	using mul_exposed_t = decltype(std::declval<U>()* std::declval<V>());
+	using mul_exposed_t = decltype(std::declval<U>() * std::declval<V>());
 
 	template <typename U, typename V>
 	using div_exposed_t = decltype(std::declval<U>() / std::declval<V>());

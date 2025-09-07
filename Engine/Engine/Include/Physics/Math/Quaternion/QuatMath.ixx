@@ -2,7 +2,7 @@ export module gse.physics.math:quat_math;
 
 import std;
 
-import :angle;
+import :units;
 import :vector;
 import :vector_math;
 import :quat;

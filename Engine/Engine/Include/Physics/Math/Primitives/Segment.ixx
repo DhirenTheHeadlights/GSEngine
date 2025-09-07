@@ -3,7 +3,7 @@ export module gse.physics.math:segment;
 import std;
 
 import :primitive_math_shared;
-import :angle;
+import :units;
 import :vector;
 import :vector_math;
 
