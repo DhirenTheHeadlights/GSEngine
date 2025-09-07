@@ -4,8 +4,7 @@ import std;
 
 import :vector;
 import :vector_math;
-import :length;
-import :angle;
+import :units;
 import :matrix;
 import :quat;
 import :dimension;

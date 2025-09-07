@@ -3,8 +3,7 @@ export module gse.physics.math:vector_math;
 import std;
 
 import :vector;
-import :angle;
-import :length;
+import :units;
 
 export namespace gse {
 	template <typename D1, typename D2, typename T1, typename T2, std::size_t N>

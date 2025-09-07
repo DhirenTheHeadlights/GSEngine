@@ -2,13 +2,7 @@ export module gse.physics.math;
 
 import std;
 
-export import :angle;
-export import :duration;
 export import :dimension;
-export import :energy_and_power;
-export import :length;
-export import :mass_and_force;
-export import :movement;
 export import :matrix;
 export import :matrix_math;
 export import :quat;
@@ -17,6 +11,7 @@ export import :quant;
 export import :rectangle;
 export import :circle;
 export import :segment;
+export import :units;
 export import :vector;
 export import :vector_math;
 

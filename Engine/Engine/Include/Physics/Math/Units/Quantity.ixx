@@ -5,26 +5,29 @@ import std;
 import :dimension;
 
 namespace gse::internal {
-	export template<typename... Units>
-		struct unit_list {
-		using type = std::tuple<Units...>;
-	};
+    export template<typename... Units>
+    struct unit_list {
+        using type = std::tuple<Units...>;
+    };
 
-	template <typename Tag>
-	struct quantity_traits;
+    template <typename Tag>
+    struct quantity_traits;
 
-	template <size_t N>
-	struct fixed_string {
-		char data[N]{};
+    template <size_t N>
+    struct fixed_string {
+        char data[N]{};
 
-		constexpr fixed_string(const char(&str)[N]) {
-			std::copy_n(str, N, data);
-		}
+        constexpr fixed_string(const char(&str)[N]) {
+            std::copy_n(str, N, data);
+        }
 
-		constexpr operator std::string_view() const {
-			return { data, N - 1 };
-		}
-	};
+        constexpr operator std::string_view() const {
+            return { data, N - 1 };
+        }
+    };
+
+    export template <typename T>
+    concept is_arithmetic = std::integral<T> || std::floating_point<T>;
 }
 
 template <size_t N, typename CharT>
@@ -36,47 +39,51 @@ struct std::formatter<gse::internal::fixed_string<N>, CharT> : std::formatter<st
 };
 
 namespace gse::internal {
-	export template <typename QuantityTagType, float ConversionFactorType, fixed_string UnitName>
-	struct unit {
-		using quantity_tag = QuantityTagType;
-		static constexpr float conversion_factor = ConversionFactorType;
-		static constexpr auto unit_name = UnitName;
+    export template <typename T>
+    concept is_ratio = requires {
+        { T::num } -> std::convertible_to<std::intmax_t>;
+        { T::den } -> std::convertible_to<std::intmax_t>;
+    };
 
-		template <typename T>
-		constexpr auto operator()(T value) const noexcept;
-	};
+    export template <typename QuantityTagType, is_ratio ConversionRatio, fixed_string UnitName>
+    struct unit {
+        using quantity_tag = QuantityTagType;
+        using conversion_ratio = ConversionRatio;
+        static constexpr auto unit_name = UnitName;
+
+        template <typename T>
+        constexpr auto operator()(T value) const noexcept;
+    };
 }
 
-template <typename QuantityTagType, float ConversionFactorType, gse::internal::fixed_string UnitName>
+template <typename QuantityTagType, gse::internal::is_ratio ConversionRatio, gse::internal::fixed_string UnitName>
 template <typename T>
-constexpr auto gse::internal::unit<QuantityTagType, ConversionFactorType, UnitName>::operator()(T value) const noexcept {
-	using quantity_template = quantity_traits<QuantityTagType>;
-	return typename quantity_template::template type<T>::template from<unit>(value);
+constexpr auto gse::internal::unit<QuantityTagType, ConversionRatio, UnitName>::operator()(T value) const noexcept {
+    using quantity_template = quantity_traits<QuantityTagType>;
+    return typename quantity_template::template type<T>::template from<unit>(value);
 }
 
 namespace gse::internal {
     export template <typename T>
-	concept is_unit = requires {
+    concept is_unit = requires {
         typename std::remove_cvref_t<T>::quantity_tag;
         { std::remove_cvref_t<T>::unit_name } -> std::convertible_to<std::string_view>;
-        { std::remove_cvref_t<T>::conversion_factor } -> std::convertible_to<float>;
+        typename std::remove_cvref_t<T>::conversion_ratio;
+        requires is_ratio<typename std::remove_cvref_t<T>::conversion_ratio>;
     };
 
     struct generic_quantity_tag {};
-	using no_default_unit = unit<generic_quantity_tag, 1.0f, "no_default_unit">;
+    using no_default_unit = unit<generic_quantity_tag, std::ratio<1>, "no_default_unit">;
 
     export template <is_dimension>
     struct dimension_traits {
         using tag = generic_quantity_tag;
-		using default_unit = no_default_unit;
+        using default_unit = no_default_unit;
     };
-
-    export template <typename T>
-	concept is_arithmetic = std::integral<T> || std::floating_point<T>;
 }
 
 namespace gse::internal {
-	template <typename UnitType, typename QuantityType>
+    template <typename UnitType, typename QuantityType>
     concept valid_unit_for_quantity =
         std::is_same_v<
             typename UnitType::quantity_tag,
@@ -85,11 +92,11 @@ namespace gse::internal {
 
     template <
         typename Derived,
-		is_arithmetic ArithmeticType,
-		is_dimension Dimensions,
-		typename QuantityTagType,
-		typename DefaultUnitType
-	>
+        is_arithmetic ArithmeticType,
+        is_dimension Dimensions,
+        typename QuantityTagType,
+        typename DefaultUnitType
+    >
     class quantity_t {
     public:
         using derived = Derived;
@@ -101,37 +108,36 @@ namespace gse::internal {
         constexpr quantity_t() = default;
         constexpr quantity_t(ArithmeticType value) : m_val(value) {}
 
-        template <is_unit UnitType>
-        constexpr quantity_t(ArithmeticType value) : m_val(this->converted_value<UnitType>(value)) {}
-
-		template <is_unit UnitType> requires valid_unit_for_quantity<UnitType, Derived>
+        template <is_unit UnitType> requires valid_unit_for_quantity<UnitType, Derived>
         constexpr auto set(ArithmeticType value) -> void {
-			m_val = this->converted_value<UnitType>(value);
+            m_val = this->converted_value<UnitType>(value);
         }
 
-		template <auto UnitObject> requires is_unit<decltype(UnitObject)> && valid_unit_for_quantity<decltype(UnitObject), Derived>
-		constexpr auto as() const -> ArithmeticType {
-		    return m_val / UnitObject.conversion_factor;
-		}
+        template <auto UnitObject> requires is_unit<decltype(UnitObject)> && valid_unit_for_quantity<decltype(UnitObject), Derived>
+        constexpr auto as() const -> ArithmeticType {
+            using ratio = typename decltype(UnitObject)::conversion_ratio;
+            return m_val * static_cast<ArithmeticType>(ratio::den) / static_cast<ArithmeticType>(ratio::num);
+        }
 
-		constexpr auto as_default_unit(this auto&& self) -> ArithmeticType {
-			return self.m_val;
-		}
+        constexpr auto as_default_unit(this auto&& self) -> ArithmeticType {
+            return self.m_val;
+        }
 
-		template <is_unit UnitType> requires valid_unit_for_quantity<UnitType, Derived>
-		constexpr static auto from(ArithmeticType value) -> Derived {
-			static_assert(valid_unit_for_quantity<UnitType, Derived>, "Invalid unit type for conversion");
-			Derived result;
-			result.m_val = result.template converted_value<UnitType>(value);
-			return result;
-		}
+        template <is_unit UnitType> requires valid_unit_for_quantity<UnitType, Derived>
+        constexpr static auto from(ArithmeticType value) -> Derived {
+            static_assert(valid_unit_for_quantity<UnitType, Derived>, "Invalid unit type for conversion");
+            Derived result;
+            result.m_val = result.template converted_value<UnitType>(value);
+            return result;
+        }
 
-		constexpr auto operator<=>(const quantity_t&) const = default;
+        constexpr auto operator<=>(const quantity_t&) const = default;
     protected:
         template <is_unit UnitType>
-		constexpr auto converted_value(ArithmeticType value) const -> ArithmeticType {
-			return value * UnitType::conversion_factor;
-		}
+        constexpr auto converted_value(ArithmeticType value) const -> ArithmeticType {
+            using ratio = typename UnitType::conversion_ratio;
+            return value * static_cast<ArithmeticType>(ratio::num) / static_cast<ArithmeticType>(ratio::den);
+        }
 
         ArithmeticType m_val = static_cast<ArithmeticType>(0);
     };
