@@ -2,6 +2,7 @@ export module gse.graphics:save;
 
 import std;
 
+import gse.assert;
 import gse.utility;
 
 import :types;
@@ -19,7 +20,7 @@ export namespace gse::gui {
 
 	auto save(
 		id_mapped_collection<menu>& menus,
-		std::filesystem::path& file_path
+		const std::filesystem::path& file_path
 	) -> void;
 
 	auto load(
@@ -27,11 +28,16 @@ export namespace gse::gui {
 	) -> id_mapped_collection<menu>;
 }
 
-auto gse::gui::save(id_mapped_collection<menu>& menus, std::filesystem::path& file_path) -> void {
-	std::ofstream file(file_path);
-	if (!file.is_open()) {
-		return;
+auto gse::gui::save(id_mapped_collection<menu>& menus, const std::filesystem::path& file_path) -> void {
+	if (const auto parent_dir = file_path.parent_path(); !parent_dir.empty() && !std::filesystem::exists(parent_dir)) {
+		create_directories(parent_dir);
 	}
+
+	std::ofstream file(file_path);
+	assert(
+		file.is_open(),
+		std::format("Failed to open GUI layout file for writing: {}", file_path.string())
+	);
 
 	auto to_string = [](const dock::location location) -> std::string {
 		switch (location) {
@@ -65,6 +71,14 @@ auto gse::gui::save(id_mapped_collection<menu>& menus, std::filesystem::path& fi
 }
 
 auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection<menu>& default_menus) -> id_mapped_collection<menu> {
+	if (!std::filesystem::exists(file_path)) {
+		id_mapped_collection<menu> menus_to_save = default_menus;
+		std::filesystem::path path_to_save = file_path;
+		save(menus_to_save, path_to_save);
+
+		return default_menus;
+	}
+	
 	std::ifstream file(file_path);
 	if (!file.is_open()) {
 		return default_menus;
@@ -126,48 +140,37 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
 		return default_menus;
 	}
 
-	id_mapped_collection<menu> new_layout = default_menus;
-
+	id_mapped_collection<menu> new_layout;
 	std::map<std::string, loaded_menu_data> loaded_map;
-	for(const auto& data : loaded_data_vec) {
+	for (const auto& data : loaded_data_vec) {
 		loaded_map[data.tag] = data;
 	}
 
-	std::map<std::string, std::pair<std::string, std::function<void()>>> original_tabs;
-	for (const auto& menu : default_menus.items()) {
-		if (!menu.tab_contents.empty()) {
-			//original_tabs[menu.tab_contents[0]] = menu.tab_contents[0];
-		}
-	}
-	
-	for (auto& menu : new_layout.items()) {
-		if (auto it = loaded_map.find(menu.id().tag()); it != loaded_map.end()) {
-			const auto& data = it->second;
-			menu.rect = data.rect;
-			menu.docked_to = data.docked_to;
-			menu.dock_split_ratio = data.dock_split_ratio;
-			menu.active_tab_index = std::min(static_cast<std::uint32_t>(data.tab_tags.size() - 1), data.active_tab_index);
-			menu.swap(data.owner_tag.empty() ? id() : find(data.owner_tag));
-		}
-	}
-
-	std::set<std::string> merged_menu_tags;
 	for (const auto& [tag, data] : loaded_map) {
-		if (auto* target_menu = new_layout.try_get(find(tag))) {
-			target_menu->tab_contents.clear();
-			for (const auto& tab_tag : data.tab_tags) {
-				if (original_tabs.contains(tab_tag)) {
-					//target_menu->tab_contents.push_back(original_tabs.at(tab_tag));
-					if (tab_tag != tag) {
-						merged_menu_tags.insert(tab_tag);
-					}
-				}
-			}
+		menu_data md = { .rect = data.rect, .parent_id = id() };
+		menu new_menu(tag, md);
+
+		new_menu.docked_to = data.docked_to;
+		new_menu.dock_split_ratio = data.dock_split_ratio;
+		new_menu.tab_contents = data.tab_tags;
+		
+		if (!new_menu.tab_contents.empty()) {
+			new_menu.active_tab_index = std::min(
+				static_cast<std::uint32_t>(new_menu.tab_contents.size() - 1),
+				data.active_tab_index
+			);
+		} else {
+			new_menu.active_tab_index = 0;
 		}
+
+		new_layout.add(new_menu.id(), std::move(new_menu));
 	}
 
-	for (const auto& tag_to_remove : merged_menu_tags) {
-		new_layout.remove(find(tag_to_remove));
+	for (auto& menu_item : new_layout.items()) {
+		const auto& data = loaded_map.at(menu_item.id().tag());
+		if (!data.owner_tag.empty()) {
+			menu_item.swap(find(data.owner_tag));
+		}
 	}
 
 	return new_layout;
