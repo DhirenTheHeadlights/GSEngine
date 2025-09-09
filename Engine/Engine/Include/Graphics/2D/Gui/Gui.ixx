@@ -71,6 +71,8 @@ namespace gse::gui {
 	resource::handle<texture> blank_texture;
 	std::optional<dock::space> active_dock_space;
 	state current_state;
+	std::filesystem::path file_path = "Misc/gui_layout.ggui";
+	clock save_clock;
 
 	constexpr float padding = 10.f;
 	constexpr float title_bar_height = 30.f;
@@ -81,6 +83,7 @@ namespace gse::gui {
 	constexpr unitless::vec2 min_menu_size = { 150.f, 100.f };
 	constexpr unitless::vec4 dock_preview_color = { 0.2f, 0.2f, 0.8f, 0.4f };
 	constexpr unitless::vec4 dock_widget_color = { 0.8f, 0.8f, 0.8f, 0.5f };
+	constexpr time update_interval = seconds(30.f);
 
 	auto begin(const std::string& name) -> bool;
 	auto end() -> void;
@@ -94,6 +97,7 @@ namespace gse::gui {
 auto gse::gui::initialize(renderer::context& context) -> void {
 	font = context.get<gse::font>("MonaspaceNeon-Regular");
 	blank_texture = context.queue<texture>("blank", unitless::vec4(1, 1, 1, 1));
+	menus = load(config::resource_path / file_path, menus);
 }
 
 auto gse::gui::update(const window& window) -> void {
@@ -101,8 +105,8 @@ auto gse::gui::update(const window& window) -> void {
 	const bool mouse_held = mouse::held(mouse_button::button_1);
 
 	current_state = std::visit([&]<typename T0>(
-		T0&& state
-	) -> gui::state {
+			T0&& state
+		) -> gui::state {
 			using t = std::decay_t<T0>;
 
 			if constexpr (std::is_same_v<t, states::idle>) {
@@ -120,6 +124,11 @@ auto gse::gui::update(const window& window) -> void {
 
 			return states::idle{};
 		}, current_state);
+
+	if (save_clock.elapsed() > update_interval) {
+		save(menus, file_path);
+		save_clock.reset();
+	}
 }
 
 auto gse::gui::start(const std::string& name, const std::function<void()>& contents) -> void {
