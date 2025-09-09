@@ -2,13 +2,28 @@ export module gse.platform.vulkan:persistent_allocator;
 
 import std;
 
-import :config;
 import :resources;
+import :persistent_allocation;
 
 import gse.assert;
 
-export namespace gse::vulkan::persistent_allocator {
-	auto allocate(
+export namespace gse::vulkan {
+	class persistent_allocator {
+	public:
+		struct image_resource {
+			vk::raii::Image image = nullptr;
+			vk::raii::ImageView view = nullptr;
+			vk::Format format = vk::Format::eUndefined;
+			vk::ImageLayout current_layout = vk::ImageLayout::eUndefined;
+			persistent_allocation allocation;
+		};
+
+		struct buffer_resource {
+			vk::raii::Buffer buffer = nullptr;
+			persistent_allocation allocation;
+		};
+
+		auto allocate(
 		const device_config& config,
 		const vk::MemoryRequirements& requirements,
 		vk::MemoryPropertyFlags properties = vk::MemoryPropertyFlagBits::eDeviceLocal
@@ -27,8 +42,7 @@ export namespace gse::vulkan::persistent_allocator {
 		const vk::ImageViewCreateInfo& view_info = {},
 		const void* data = nullptr
 	) -> image_resource;
-
-	auto clean_up() -> void;
+	};
 }
 
 namespace gse::vulkan::persistent_allocator {
