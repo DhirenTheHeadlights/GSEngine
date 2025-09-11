@@ -1,0 +1,1 @@
+export module gse.graphics:text_widget;

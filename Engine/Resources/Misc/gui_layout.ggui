@@ -1,0 +1,20 @@
+[Menu]
+Tag: Test
+Owner: 
+Rect: 0 1080 465 540
+DockedTo: left
+DockSplitRatio: 0.5
+ActiveTab: 0
+Tabs: Test
+[EndMenu]
+
+[Menu]
+Tag: Test2
+Owner: Test
+Rect: 0 540 465 540
+DockedTo: bottom
+DockSplitRatio: 0.5
+ActiveTab: 0
+Tabs: Test2
+[EndMenu]
+

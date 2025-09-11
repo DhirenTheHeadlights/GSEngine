@@ -1,0 +1,1 @@
+export module gse.graphics:input_widget;

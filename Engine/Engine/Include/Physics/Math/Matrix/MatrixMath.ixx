@@ -211,7 +211,7 @@ constexpr auto gse::operator*(const mat_t<T, Cols, Rows, Dim1>& lhs, const mat_t
 
 template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
 constexpr auto gse::operator*(const mat_t<T, Cols, Rows, Dim>& lhs, const unitless::vec_t<T, Cols>& rhs) {
-	using result_quantity = internal::quantity<T, Dim>;
+	using result_quantity = internal::generic_quantity<T, Dim>;
 	vec_t<result_quantity, Rows> result{};
 	for (std::size_t j = 0; j < Cols; ++j) {
 		result += lhs[j] * rhs[j];
@@ -223,14 +223,14 @@ template <typename T, std::size_t Cols, std::size_t Rows, typename Dim, typename
 constexpr auto gse::operator*(const mat_t<T, Cols, Rows, Dim>& lhs, const vec_t<Q, Cols>& rhs) {
 	using result_dimension = decltype(Dim{} *typename Q::dimension{});
 	using result_value_type = std::common_type_t<T, typename Q::value_type>;
-	using result_quantity = internal::quantity<result_value_type, result_dimension>;
+	using result_quantity = internal::generic_quantity<result_value_type, result_dimension>;
 
 	vec_t<result_quantity, Rows> result{};
 
 	for (std::size_t i = 0; i < Rows; ++i) {
 		result_quantity sum{};
 		for (std::size_t j = 0; j < Cols; ++j) {
-			auto mat_element_as_quantity = internal::quantity<T, Dim>(lhs[j][i]);
+			auto mat_element_as_quantity = internal::generic_quantity<T, Dim>(lhs[j][i]);
 			sum += mat_element_as_quantity * rhs[j];
 		}
 		result[i] = sum;

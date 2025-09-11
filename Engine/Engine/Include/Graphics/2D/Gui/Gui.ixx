@@ -2,6 +2,10 @@ export module gse.graphics:gui;
 
 import std;
 
+import gse.platform;
+import gse.utility;
+import gse.physics.math;
+
 import :types;
 import :layout;
 import :font;
@@ -11,10 +15,7 @@ import :texture;
 import :text_renderer;
 import :cursor;
 import :save;
-
-import gse.platform;
-import gse.utility;
-import gse.physics.math;
+import :value_widget;
 
 export namespace gse::gui {
 	auto initialize(
@@ -22,14 +23,18 @@ export namespace gse::gui {
 	) -> void;
 
 	auto update(
-		const window& window
+		const window& window, 
+		const style& style = {}
 	) -> void;
 
 	auto render(
 		const renderer::context& context,
 		renderer::sprite& sprite_renderer,
-		renderer::text& text_renderer
+		renderer::text& text_renderer,
+		const style& style = {}
 	) -> void;
+
+	auto save() -> void;
 
 	auto start(
 		const std::string& name, const std::function<void()>& contents
@@ -74,24 +79,15 @@ namespace gse::gui {
 	std::filesystem::path file_path = "Misc/gui_layout.ggui";
 	clock save_clock;
 
-	constexpr float padding = 10.f;
-	constexpr float title_bar_height = 30.f;
-	constexpr float font_size = 16.f;
-	constexpr unitless::vec4 title_bar_color = { 0.15f, 0.15f, 0.15f, 0.9f };
-	constexpr unitless::vec4 menu_body_color = { 0.1f, 0.1f, 0.1f, 0.85f };
-	constexpr float resize_border_thickness = 8.f;
-	constexpr unitless::vec2 min_menu_size = { 150.f, 100.f };
-	constexpr unitless::vec4 dock_preview_color = { 0.2f, 0.2f, 0.8f, 0.4f };
-	constexpr unitless::vec4 dock_widget_color = { 0.8f, 0.8f, 0.8f, 0.5f };
 	constexpr time update_interval = seconds(30.f);
 
 	auto begin(const std::string& name) -> bool;
 	auto end() -> void;
 
-	auto handle_idle_state(unitless::vec2 mouse_position, bool mouse_held) -> state;
+	auto handle_idle_state(unitless::vec2 mouse_position, bool mouse_held, const style& style) -> state;
 	auto handle_dragging_state(const states::dragging& current, const window& window, unitless::vec2 mouse_position, bool mouse_held) -> state;
-	auto handle_resizing_state(const states::resizing& current, unitless::vec2 mouse_position, bool mouse_held) -> state;
-	auto handle_resizing_divider_state(const states::resizing_divider& current, unitless::vec2 mouse_position, bool mouse_held) -> state;
+	auto handle_resizing_state(const states::resizing& current, unitless::vec2 mouse_position, bool mouse_held, const style& style) -> state;
+	auto handle_resizing_divider_state(const states::resizing_divider& current, unitless::vec2 mouse_position, bool mouse_held, const style& style) -> state;
 }
 
 auto gse::gui::initialize(renderer::context& context) -> void {
@@ -100,7 +96,7 @@ auto gse::gui::initialize(renderer::context& context) -> void {
 	menus = load(config::resource_path / file_path, menus);
 }
 
-auto gse::gui::update(const window& window) -> void {
+auto gse::gui::update(const window& window, const style& style) -> void {
 	const auto mouse_position = mouse::position();
 	const bool mouse_held = mouse::held(mouse_button::button_1);
 
@@ -110,16 +106,16 @@ auto gse::gui::update(const window& window) -> void {
 			using t = std::decay_t<T0>;
 
 			if constexpr (std::is_same_v<t, states::idle>) {
-				return handle_idle_state(mouse_position, mouse_held);
+				return handle_idle_state(mouse_position, mouse_held, style);
 			}
 			else if constexpr (std::is_same_v<t, states::dragging>) {
 				return handle_dragging_state(state, window, mouse_position, mouse_held);
 			}
 			else if constexpr (std::is_same_v<t, states::resizing>) {
-				return handle_resizing_state(state, mouse_position, mouse_held);
+				return handle_resizing_state(state, mouse_position, mouse_held, style);
 			}
 			else if constexpr (std::is_same_v<t, states::resizing_divider>) {
-				return handle_resizing_divider_state(state, mouse_position, mouse_held);
+				return handle_resizing_divider_state(state, mouse_position, mouse_held, style);
 			}
 
 			return states::idle{};
@@ -138,27 +134,27 @@ auto gse::gui::start(const std::string& name, const std::function<void()>& conte
 	end();
 }
 
-auto gse::gui::render(const renderer::context& context, renderer::sprite& sprite_renderer, renderer::text& text_renderer) -> void {
+auto gse::gui::render(const renderer::context& context, renderer::sprite& sprite_renderer, renderer::text& text_renderer, const style& style) -> void {
 	if (font.valid()) {
 		for (auto& menu : menus.items()) {
 			const auto title_bar_rect = ui_rect::from_position_size(
 				menu.rect.top_left(),
-				{ menu.rect.width(), title_bar_height }
+				{ menu.rect.width(), style.title_bar_height }
 			);
 			const auto body_rect = ui_rect::from_position_size(
-				{ menu.rect.left(), menu.rect.top() - title_bar_height },
-				{ menu.rect.width(), menu.rect.height() - title_bar_height }
+				{ menu.rect.left(), menu.rect.top() - style.title_bar_height },
+				{ menu.rect.width(), menu.rect.height() - style.title_bar_height }
 			);
 
 			sprite_renderer.queue({ 
 				.rect = body_rect,
-				.color = menu_body_color,
+				.color = style.color_menu_body,
 				.texture = blank_texture
 			});
 
 			sprite_renderer.queue({ 
 				.rect = title_bar_rect,
-				.color = title_bar_color,
+				.color = style.color_title_bar,
 				.texture = blank_texture
 			});
 
@@ -166,33 +162,33 @@ auto gse::gui::render(const renderer::context& context, renderer::sprite& sprite
 				.font = font,
 				.text = menu.tab_contents[menu.active_tab_index],
 				.position = {
-					title_bar_rect.left() + padding,
-					title_bar_rect.center().y() + font_size / 2.f
+					title_bar_rect.left() + style.padding,
+					title_bar_rect.center().y() + style.font_size / 2.f
 				},
-				.scale = font_size,
+				.scale = style.font_size,
 				.clip_rect = title_bar_rect
 			});
 
 			if (menu.was_begun_this_frame) {
-				const auto content_rect = body_rect.inset({ padding, padding });
-				const float line_height = font->line_height(font_size);
-				const auto text_start_pos = content_rect.top_left();
+				const auto content_rect = body_rect.inset({ style.padding, style.padding });
+            
+	            unitless::vec2 layout_cursor = content_rect.top_left();
 
-				for (std::size_t i = 0; i < menu.items.size(); ++i) {
-					const unitless::vec2 item_pos = {
-						text_start_pos.x(),
-						text_start_pos.y() - i * line_height
-					};
-					text_renderer.draw_text({
-						.font = font,
-						.text = menu.items[i],
-						.position = item_pos,
-						.scale = font_size,
-						.clip_rect = content_rect
-					});
-				}
-				
-				menu.was_begun_this_frame = false;
+	            widget_context widget_context = {
+	                .current_menu = &menu,
+	                .style = style,
+	                .sprite_renderer = sprite_renderer,
+	                .text_renderer = text_renderer,
+	                .font = font,
+	                .blank_texture = blank_texture,
+	                .layout_cursor = layout_cursor
+	            };
+
+	            for (const auto& command : menu.commands) {
+	                command(widget_context);
+	            }
+	            
+	            menu.was_begun_this_frame = false;
 			}
 		}
 	}
@@ -203,7 +199,7 @@ auto gse::gui::render(const renderer::context& context, renderer::sprite& sprite
 			if (area.rect.contains(mouse_pos)) {
 				sprite_renderer.queue({ 
 					.rect = area.target,
-					.color = dock_preview_color,
+					.color = style.color_dock_preview,
 					.texture = blank_texture
 				});
 				break;
@@ -212,7 +208,7 @@ auto gse::gui::render(const renderer::context& context, renderer::sprite& sprite
 		for (const auto& area : active_dock_space->areas) {
 			sprite_renderer.queue({
 				.rect = area.rect,
-				.color = dock_widget_color,
+				.color = style.color_dock_widget,
 				.texture = blank_texture
 			});
 		}
@@ -223,38 +219,50 @@ auto gse::gui::render(const renderer::context& context, renderer::sprite& sprite
 	}
 }
 
+auto gse::gui::save() -> void {
+	save(menus, config::resource_path / file_path);
+}
+
 auto gse::gui::text(const std::string& text) -> void {
 	if (current_menu) {
-		current_menu->items.emplace_back(text);
+		//current_menu->items.emplace_back(text);
 	}
 }
 
 template <gse::is_arithmetic T>
 auto gse::gui::value(const std::string& name, T value) -> void {
-	if (current_menu) {
-		current_menu->items.emplace_back(std::format("{} {}", value, name));
-	}
+    if (current_menu) {
+        current_menu->commands.emplace_back([=](widget_context& ctx) {
+            draw::value(ctx, name, value);
+        });
+    }
 }
 
 template <gse::is_quantity T, auto Unit>
 auto gse::gui::value(const std::string& name, T value) -> void {
-	if (current_menu) {
-		current_menu->items.emplace_back(std::format("{} {} {}", value.template as<Unit>(), Unit.unit_name, name));
-	}
+    if (current_menu) {
+        current_menu->commands.emplace_back([=](widget_context& ctx) {
+            draw::value<T, Unit>(ctx, name, value);
+        });
+    }
 }
 
 template <typename T, int N>
 auto gse::gui::vec(const std::string& name, unitless::vec_t<T, N> vec) -> void {
-	if (current_menu) {
-		current_menu->items.emplace_back(std::format("{} {}", vec, name));
-	}
+    if (current_menu) {
+        current_menu->commands.emplace_back([=](widget_context& ctx) {
+            draw::vec(ctx, name, vec);
+        });
+    }
 }
 
 template <typename T, int N, auto Unit>
 auto gse::gui::vec(const std::string& name, vec_t<T, N> vec) -> void {
-	if (current_menu) {
-		current_menu->items.emplace_back(std::format("{} {} {}", vec.template as<Unit>(), Unit.unit_name, name));
-	}
+    if (current_menu) {
+        current_menu->commands.emplace_back([=](widget_context& ctx) {
+            draw::vec<T, N, Unit>(ctx, name, vec);
+        });
+    }
 }
 
 auto gse::gui::begin(const std::string& name) -> bool {
@@ -281,7 +289,7 @@ auto gse::gui::begin(const std::string& name) -> bool {
 	if (menu_ptr) {
 		current_menu = menu_ptr;
 		current_menu->was_begun_this_frame = true;
-		current_menu->items.clear();
+		current_menu->commands.clear();
 		return true;
 	}
     
@@ -292,7 +300,7 @@ auto gse::gui::end() -> void {
 	current_menu = nullptr;
 }
 
-auto gse::gui::handle_idle_state(const unitless::vec2 mouse_position, const bool mouse_held) -> state {
+auto gse::gui::handle_idle_state(const unitless::vec2 mouse_position, const bool mouse_held, const style& style) -> state {
 	struct interaction_candidate {
 		std::variant<states::resizing, states::dragging, states::resizing_divider> future_state;
 		cursor::style cursor;
@@ -305,36 +313,36 @@ auto gse::gui::handle_idle_state(const unitless::vec2 mouse_position, const bool
 	};
 
 	static const std::array<resize_rule, 8> resize_rules = { {
-		{ [](auto r, auto p) {
-			constexpr float t = resize_border_thickness;
+		{ [style](auto r, auto p) {
+			const float t = style.resize_border_thickness;
 			return std::abs(p.y() - r.top()) < t && std::abs(p.x() - r.left()) < t;
 		}, resize_handle::top_left, cursor::style::resize_nw },
-		{ [](auto r, auto p) {
-			constexpr float t = resize_border_thickness;
+		{ [style](auto r, auto p) {
+			const float t = style.resize_border_thickness;
 			return std::abs(p.y() - r.top()) < t && std::abs(p.x() - r.right()) < t;
 		}, resize_handle::top_right, cursor::style::resize_ne },
-		{ [](auto r, auto p) {
-			constexpr float t = resize_border_thickness;
+		{ [style](auto r, auto p) {
+			const float t = style.resize_border_thickness;
 			return std::abs(p.y() - r.bottom()) < t && std::abs(p.x() - r.left()) < t;
 		}, resize_handle::bottom_left, cursor::style::resize_sw },
-		{ [](auto r, auto p) {
-			constexpr float t = resize_border_thickness;
+		{ [style](auto r, auto p) {
+			const float t = style.resize_border_thickness;
 			return std::abs(p.y() - r.bottom()) < t && std::abs(p.x() - r.right()) < t;
 		}, resize_handle::bottom_right, cursor::style::resize_se },
-		{ [](auto r, auto p) {
-			constexpr float t = resize_border_thickness;
+		{ [style](auto r, auto p) {
+			const float t = style.resize_border_thickness;
 			return std::abs(p.x() - r.left()) < t;
 		}, resize_handle::left, cursor::style::resize_w },
-		{ [](auto r, auto p) {
-			constexpr float t = resize_border_thickness;
+		{ [style](auto r, auto p) {
+			const float t = style.resize_border_thickness;
 			return std::abs(p.x() - r.right()) < t;
 		}, resize_handle::right, cursor::style::resize_e },
-		{ [](auto r, auto p) {
-			constexpr float t = resize_border_thickness;
+		{ [style](auto r, auto p) {
+			const float t = style.resize_border_thickness;
 			return std::abs(p.y() - r.top()) < t;
 		}, resize_handle::top, cursor::style::resize_n },
-		{ [](auto r, auto p) {
-			constexpr float t = resize_border_thickness;
+		{ [style](auto r, auto p) {
+			const float t = style.resize_border_thickness;
 			return std::abs(p.y() - r.bottom()) < t;
 		}, resize_handle::bottom, cursor::style::resize_s },
 	} };
@@ -378,19 +386,19 @@ auto gse::gui::handle_idle_state(const unitless::vec2 mouse_position, const bool
 						const ui_rect& rect = menu.rect;
 						switch (menu.docked_to) {
 							case dock::location::left:
-								if (std::abs(mouse_position.x() - rect.right()) < resize_border_thickness)
+								if (std::abs(mouse_position.x() - rect.right()) < style.resize_border_thickness)
 									return interaction_candidate{ states::resizing{ menu.id(), resize_handle::right }, cursor::style::resize_e };
 								break;
 							case dock::location::right:
-								if (std::abs(mouse_position.x() - rect.left()) < resize_border_thickness)
+								if (std::abs(mouse_position.x() - rect.left()) < style.resize_border_thickness)
 									return interaction_candidate{ states::resizing{ menu.id(), resize_handle::left }, cursor::style::resize_w };
 								break;
 							case dock::location::top:
-								if (std::abs(mouse_position.y() - rect.bottom()) < resize_border_thickness)
+								if (std::abs(mouse_position.y() - rect.bottom()) < style.resize_border_thickness)
 									return interaction_candidate{ states::resizing{ menu.id(), resize_handle::bottom }, cursor::style::resize_s };
 								break;
 							case dock::location::bottom:
-								if (std::abs(mouse_position.y() - rect.top()) < resize_border_thickness)
+								if (std::abs(mouse_position.y() - rect.top()) < style.resize_border_thickness)
 									return interaction_candidate{ states::resizing{ menu.id(), resize_handle::top }, cursor::style::resize_n };
 								break;
 							default: break;
@@ -405,19 +413,19 @@ auto gse::gui::handle_idle_state(const unitless::vec2 mouse_position, const bool
 
 						switch (menu.docked_to) {
 							case dock::location::left:
-								if (std::abs(mouse_position.x() - r.right()) < resize_border_thickness && mouse_position.y() < r.top() && mouse_position.y() > r.bottom()) {
+								if (std::abs(mouse_position.x() - r.right()) < style.resize_border_thickness && mouse_position.y() < r.top() && mouse_position.y() > r.bottom()) {
 									hovering = true; new_cursor = cursor::style::resize_e;
 								} break;
 							case dock::location::right:
-								if (std::abs(mouse_position.x() - r.left()) < resize_border_thickness && mouse_position.y() < r.top() && mouse_position.y() > r.bottom()) {
+								if (std::abs(mouse_position.x() - r.left()) < style.resize_border_thickness && mouse_position.y() < r.top() && mouse_position.y() > r.bottom()) {
 									hovering = true; new_cursor = cursor::style::resize_w;
 								} break;
 							case dock::location::top:
-								if (std::abs(mouse_position.y() - r.bottom()) < resize_border_thickness && mouse_position.x() > r.left() && mouse_position.x() < r.right()) {
+								if (std::abs(mouse_position.y() - r.bottom()) < style.resize_border_thickness && mouse_position.x() > r.left() && mouse_position.x() < r.right()) {
 									hovering = true; new_cursor = cursor::style::resize_s;
 								} break;
 							case dock::location::bottom:
-								if (std::abs(mouse_position.y() - r.top()) < resize_border_thickness && mouse_position.x() > r.left() && mouse_position.x() < r.right()) {
+								if (std::abs(mouse_position.y() - r.top()) < style.resize_border_thickness && mouse_position.x() > r.left() && mouse_position.x() < r.right()) {
 									hovering = true; new_cursor = cursor::style::resize_n;
 								} break;
 							default: break;
@@ -438,7 +446,7 @@ auto gse::gui::handle_idle_state(const unitless::vec2 mouse_position, const bool
 				}
 
 				if (const auto title_bar_rect = ui_rect::from_position_size(
-					{ menu.rect.left(), menu.rect.top() }, { menu.rect.width(), title_bar_height }
+					{ menu.rect.left(), menu.rect.top() }, { menu.rect.width(), style.title_bar_height }
 				); title_bar_rect.contains(mouse_position)) {
 					return interaction_candidate{
 						.future_state = {
@@ -475,7 +483,7 @@ auto gse::gui::handle_idle_state(const unitless::vec2 mouse_position, const bool
 	return states::idle{};
 }
 
-auto gse::gui::handle_resizing_state(const states::resizing& current, const unitless::vec2 mouse_position, const bool mouse_held) -> gui::state {
+auto gse::gui::handle_resizing_state(const states::resizing& current, const unitless::vec2 mouse_position, const bool mouse_held, const style& style) -> state {
 	if (!mouse_held) {
 		active_dock_space.reset();
 		return states::idle{};
@@ -516,20 +524,20 @@ auto gse::gui::handle_resizing_state(const states::resizing& current, const unit
 		default: break;
 	}
 
-	if (max_corner.x() - min_corner.x() < min_menu_size.x()) {
+	if (max_corner.x() - min_corner.x() < style.min_menu_size.x()) {
 		if (current.handle == resize_handle::left || current.handle == resize_handle::top_left || current.handle == resize_handle::bottom_left) {
-			min_corner.x() = max_corner.x() - min_menu_size.x();
+			min_corner.x() = max_corner.x() - style.min_menu_size.x();
 		}
 		else {
-			max_corner.x() = min_corner.x() + min_menu_size.x();
+			max_corner.x() = min_corner.x() + style.min_menu_size.x();
 		}
 	}
-	if (max_corner.y() - min_corner.y() < min_menu_size.y()) {
+	if (max_corner.y() - min_corner.y() < style.min_menu_size.y()) {
 		if (current.handle == resize_handle::bottom || current.handle == resize_handle::bottom_left || current.handle == resize_handle::bottom_right) {
-			min_corner.y() = max_corner.y() - min_menu_size.y();
+			min_corner.y() = max_corner.y() - style.min_menu_size.y();
 		}
 		else {
-			max_corner.y() = min_corner.y() + min_menu_size.y();
+			max_corner.y() = min_corner.y() + style.min_menu_size.y();
 		}
 	}
 
@@ -606,7 +614,7 @@ auto gse::gui::handle_dragging_state(const states::dragging& current, const wind
 					}
 				}
 			}
-			};
+		};
 		move_group(current.menu_id);
 	}
 
@@ -628,7 +636,7 @@ auto gse::gui::handle_dragging_state(const states::dragging& current, const wind
 	return current;
 }
 
-auto gse::gui::handle_resizing_divider_state(const states::resizing_divider& current, const unitless::vec2 mouse_position, const bool mouse_held) -> state {
+auto gse::gui::handle_resizing_divider_state(const states::resizing_divider& current, const unitless::vec2 mouse_position, const bool mouse_held, const style& style) -> state {
 	if (!mouse_held) {
 		return states::idle{};
 	}
@@ -646,12 +654,12 @@ auto gse::gui::handle_resizing_divider_state(const states::resizing_divider& cur
 	switch (location) {
 		case dock::location::left:
 		case dock::location::right: {
-			if (combined_rect.width() < min_menu_size.x() * 2.f) {
+			if (combined_rect.width() < style.min_menu_size.x() * 2.f) {
 				return current;
 			}
 
-			const float min_clamp = combined_rect.left() + min_menu_size.x();
-			const float max_clamp = combined_rect.right() - min_menu_size.x();
+			const float min_clamp = combined_rect.left() + style.min_menu_size.x();
+			const float max_clamp = combined_rect.right() - style.min_menu_size.x();
 			const float divider_x = std::clamp(mouse_position.x(), min_clamp, max_clamp);
 
 			if (location == dock::location::left) {
@@ -683,12 +691,12 @@ auto gse::gui::handle_resizing_divider_state(const states::resizing_divider& cur
 		}
 		case dock::location::top:
 		case dock::location::bottom: {
-			if (combined_rect.height() < min_menu_size.y() * 2.f) {
+			if (combined_rect.height() < style.min_menu_size.y() * 2.f) {
 				return current;
 			}
 
-			const float min_clamp = combined_rect.bottom() + min_menu_size.y();
-			const float max_clamp = combined_rect.top() - min_menu_size.y();
+			const float min_clamp = combined_rect.bottom() + style.min_menu_size.y();
+			const float max_clamp = combined_rect.top() - style.min_menu_size.y();
 			const float divider_y = std::clamp(mouse_position.y(), min_clamp, max_clamp);
 
 			if (location == dock::location::top) {

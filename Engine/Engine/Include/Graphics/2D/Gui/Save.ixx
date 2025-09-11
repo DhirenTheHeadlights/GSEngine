@@ -24,7 +24,8 @@ export namespace gse::gui {
 	) -> void;
 
 	auto load(
-		const std::filesystem::path& file_path, id_mapped_collection<menu>& default_menus
+		const std::filesystem::path& file_path, 
+		id_mapped_collection<menu>& default_menus
 	) -> id_mapped_collection<menu>;
 }
 
