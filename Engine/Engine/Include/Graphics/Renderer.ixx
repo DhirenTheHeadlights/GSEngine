@@ -55,7 +55,10 @@ export namespace gse {
 export namespace gse::renderer {
 	auto initialize() -> void;
 	auto update() -> void;
-	auto render(std::vector<std::reference_wrapper<registry>> registries, const std::function<void()>& in_frame = {}) -> void;
+	auto render(
+		std::vector<std::reference_wrapper<registry>> registries, 
+		const std::function<void()>& in_frame = {}
+	) -> void;
 	auto shutdown() -> void;
 	auto camera() -> camera&;
 	auto set_ui_focus(bool focus) -> void;
@@ -185,6 +188,8 @@ auto gse::renderer::end_frame() -> void {
 }
 
 auto gse::renderer::shutdown() -> void {
+	gui::save();
+
 	rendering_context.config().device_config().device.waitIdle();
 
 	for (auto& renderer : renderers) {

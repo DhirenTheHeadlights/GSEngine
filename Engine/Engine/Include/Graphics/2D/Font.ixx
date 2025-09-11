@@ -27,19 +27,25 @@ export namespace gse {
         float x_advance = 0;
         float shape_w = 0, shape_h = 0;
 
-        auto uv() const -> unitless::vec4 {
-            return { u0, v0, u1 - u0, v1 - v0 };
-        }
-
-        auto size() const -> unitless::vec2 {
-            return { width, height };
-        }
-
-        auto bearing() const -> unitless::vec2 {
-            return { x_offset, y_offset };
-        }
+        auto uv() const -> unitless::vec4;
+        auto size() const -> unitless::vec2;
+        auto bearing() const -> unitless::vec2;
     };
+}
 
+auto gse::glyph::uv() const -> unitless::vec4 {
+	return { u0, v0, u1 - u0, v1 - v0 };
+}
+
+auto gse::glyph::size() const -> unitless::vec2 {
+	return { width, height };
+}
+
+auto gse::glyph::bearing() const -> unitless::vec2 {
+	return { x_offset, y_offset };
+}
+
+export namespace gse {
     struct positioned_glyph {
         rect_t<unitless::vec2> screen_rect;
         unitless::vec4 uv_rect;
@@ -58,6 +64,7 @@ export namespace gse {
         auto texture() const -> const texture*;
         auto text_layout(std::string_view text, unitless::vec2 start, float scale = 1.0f) const -> std::vector<positioned_glyph>;
         auto line_height(float scale = 1.0f) const -> float;
+		auto width(std::string_view text, float scale = 1.0f) const -> float;
     private:
         std::unique_ptr<gse::texture> m_texture;
         std::unordered_map<char, glyph> m_glyphs;
@@ -394,4 +401,36 @@ auto gse::font::text_layout(const std::string_view text, const unitless::vec2 st
 
 auto gse::font::line_height(const float scale) const -> float {
     return (m_ascender - m_descender) * scale;
+}
+
+auto gse::font::width(const std::string_view text, const float scale) const -> float {
+    if (text.empty() || !m_face) {
+        return 0.0f;
+    }
+
+    float total_width = 0.0f;
+    std::uint32_t previous_glyph_index = 0;
+
+    for (const char c : text) {
+        auto it = m_glyphs.find(c);
+        if (it == m_glyphs.end()) {
+            continue;
+        }
+
+        const glyph& current_glyph = it->second;
+        if (current_glyph.ft_glyph_index == 0) {
+            continue;
+        }
+
+        if (previous_glyph_index != 0) {
+            FT_Vector kerning_vector;
+            FT_Get_Kerning(m_face, previous_glyph_index, static_cast<std::uint32_t>(current_glyph.ft_glyph_index), FT_KERNING_DEFAULT, &kerning_vector);
+            total_width += (static_cast<float>(kerning_vector.x) / 64.0f) * scale;
+        }
+
+        total_width += current_glyph.x_advance * scale;
+        previous_glyph_index = static_cast<std::uint32_t>(current_glyph.ft_glyph_index);
+    }
+
+    return total_width;
 }

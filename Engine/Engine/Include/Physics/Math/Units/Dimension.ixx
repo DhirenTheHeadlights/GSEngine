@@ -41,22 +41,4 @@ export namespace gse::internal {
 		&& D1::length == D2::length
 		&& D1::time == D2::time
 		&& D1::mass == D2::mass;
-
-	template <typename D1, typename D2> requires has_same_dimensions<D1, D2>
-	constexpr auto operator+(D1, D2) -> auto {
-		return dim <
-			D1::length,
-			D1::time,
-			D1::mass
-		>{};
-	}
-
-	template <typename D1, typename D2> requires has_same_dimensions<D1, D2>
-	constexpr auto operator-(D1, D2) -> auto {
-		return dim <
-			D1::length,
-			D1::time,
-			D1::mass
-		>{};
-	}
 }

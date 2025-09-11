@@ -13,14 +13,10 @@ export namespace gse {
     constexpr internal::unit<angle_tag, std::ratio<1>, "rad"> radians;
     constexpr internal::unit<angle_tag, std::ratio_divide<pi_approx, std::ratio<180>>, "deg"> degrees;
 
-    template <>
-    struct internal::dimension_traits<internal::dim<0, 0, 0>> {
-        using tag = angle_tag;
-        using default_unit = decltype(radians);
-    };
-
     template <typename T = float>
-    using angle_t = internal::quantity<T, internal::dim<0, 0, 0>>;
+    struct angle_t : internal::quantity<angle_t<T>, T, internal::dim<0, 0, 0>, angle_tag, decltype(radians)> {
+        using internal::quantity<angle_t<T>, T, internal::dim<0, 0, 0>, angle_tag, decltype(radians)>::quantity;
+    };
     using angle = angle_t<>;
 
     template <>
@@ -41,14 +37,10 @@ export namespace gse {
     constexpr internal::unit<length_tag, std::ratio<381, 1250>, "ft"> feet;
     constexpr internal::unit<length_tag, std::ratio<127, 5000>, "in"> inches;
 
-    template <>
-    struct internal::dimension_traits<internal::dim<1, 0, 0>> {
-        using tag = length_tag;
-        using default_unit = decltype(meters);
-    };
-
     template <typename T = float>
-    using length_t = internal::quantity<T, internal::dim<1, 0, 0>>;
+    struct length_t : internal::quantity<length_t<T>, T, internal::dim<1, 0, 0>, length_tag, decltype(meters)> {
+        using internal::quantity<length_t<T>, T, internal::dim<1, 0, 0>, length_tag, decltype(meters)>::quantity;
+    };
     using length = length_t<>;
 
     template <>
@@ -68,14 +60,10 @@ export namespace gse {
     constexpr internal::unit<time_tag, std::micro, "us"> microseconds;
     constexpr internal::unit<time_tag, std::nano, "ns"> nanoseconds;
 
-    template <>
-    struct internal::dimension_traits<internal::dim<0, 1, 0>> {
-        using tag = time_tag;
-        using default_unit = decltype(seconds);
-    };
-
     template <typename T = float>
-    using time_t = internal::quantity<T, internal::dim<0, 1, 0>>;
+    struct time_t : internal::quantity<time_t<T>, T, internal::dim<0, 1, 0>, time_tag, decltype(seconds)> {
+        using internal::quantity<time_t<T>, T, internal::dim<0, 1, 0>, time_tag, decltype(seconds)>::quantity;
+    };
     using time = time_t<>;
 
     template <>
@@ -94,14 +82,10 @@ export namespace gse {
     constexpr internal::unit<mass_tag, std::ratio<45359237, 100000000>, "lb"> pounds;
     constexpr internal::unit<mass_tag, std::ratio<45359237, 1600000000>, "oz"> ounces;
 
-    template <>
-    struct internal::dimension_traits<internal::dim<0, 0, 1>> {
-        using tag = mass_tag;
-        using default_unit = decltype(kilograms);
-    };
-
     template <typename T = float>
-    using mass_t = internal::quantity<T, internal::dim<0, 0, 1>>;
+    struct mass_t : internal::quantity<mass_t<T>, T, internal::dim<0, 0, 1>, mass_tag, decltype(kilograms)> {
+        using internal::quantity<mass_t<T>, T, internal::dim<0, 0, 1>, mass_tag, decltype(kilograms)>::quantity;
+    };
     using mass = mass_t<>;
 
     template <>
@@ -112,25 +96,21 @@ export namespace gse {
 }
 
 export namespace gse {
-	struct inverse_mass_tag {};
+    struct inverse_mass_tag {};
 
-	constexpr internal::unit<inverse_mass_tag, std::ratio<1>, "1/kg"> per_kilograms;
-
-    template <>
-    struct internal::dimension_traits<internal::dim<0, 0, -1>> {
-        using tag = inverse_mass_tag;
-        using default_unit = decltype(per_kilograms);
-	};
+    constexpr internal::unit<inverse_mass_tag, std::ratio<1>, "1/kg"> per_kilograms;
 
     template <typename T = float>
-	using inverse_mass_t = internal::quantity<T, internal::dim<0, 0, -1>>;
-	using inverse_mass = inverse_mass_t<>;
+    struct inverse_mass_t : internal::quantity<inverse_mass_t<T>, T, internal::dim<0, 0, -1>, inverse_mass_tag, decltype(per_kilograms)> {
+        using internal::quantity<inverse_mass_t<T>, T, internal::dim<0, 0, -1>, inverse_mass_tag, decltype(per_kilograms)>::quantity;
+    };
+    using inverse_mass = inverse_mass_t<>;
 
     template <>
     struct internal::quantity_traits<inverse_mass_tag> {
         template <typename T>
         using type = inverse_mass_t<T>;
-	};
+    };
 }
 
 export namespace gse {
@@ -139,14 +119,10 @@ export namespace gse {
     constexpr internal::unit<force_tag, std::ratio<1>, "N"> newtons;
     constexpr internal::unit<force_tag, std::ratio<222411, 50000>, "lbf"> pounds_force;
 
-    template <>
-    struct internal::dimension_traits<internal::dim<1, -2, 1>> {
-        using tag = force_tag;
-        using default_unit = decltype(newtons);
-    };
-
     template <typename T = float>
-    using force_t = internal::quantity<T, internal::dim<1, -2, 1>>;
+    struct force_t : internal::quantity<force_t<T>, T, internal::dim<1, -2, 1>, force_tag, decltype(newtons)> {
+        using internal::quantity<force_t<T>, T, internal::dim<1, -2, 1>, force_tag, decltype(newtons)>::quantity;
+    };
     using force = force_t<>;
 
     template <>
@@ -166,14 +142,10 @@ export namespace gse {
     constexpr internal::unit<energy_tag, std::ratio<4184>, "kcal"> kilocalories;
     constexpr internal::unit<energy_tag, std::ratio<523, 125>, "cal"> calories;
 
-    template <>
-    struct internal::dimension_traits<internal::dim<2, -2, 1>> {
-        using tag = energy_tag;
-        using default_unit = decltype(joules);
-    };
-
     template <typename T = float>
-    using energy_t = internal::quantity<T, internal::dim<2, -2, 1>>;
+    struct energy_t : internal::quantity<energy_t<T>, T, internal::dim<2, -2, 1>, energy_tag, decltype(joules)> {
+        using internal::quantity<energy_t<T>, T, internal::dim<2, -2, 1>, energy_tag, decltype(joules)>::quantity;
+    };
     using energy = energy_t<>;
 
     template <>
@@ -190,7 +162,9 @@ export namespace gse {
     constexpr internal::unit<torque_tag, std::ratio<67791, 50000>, "lbf-ft"> pound_feet;
 
     template <typename T = float>
-    using torque_t = internal::quantity<T, internal::dim<2, -2, 1>>;
+    struct torque_t : internal::quantity<torque_t<T>, T, internal::dim<2, -2, 1>, torque_tag, decltype(newton_meters)> {
+        using internal::quantity<torque_t<T>, T, internal::dim<2, -2, 1>, torque_tag, decltype(newton_meters)>::quantity;
+    };
     using torque = torque_t<>;
 
     template <>
@@ -209,14 +183,10 @@ export namespace gse {
     constexpr internal::unit<power_tag, std::ratio<1>, "W"> watts;
     constexpr internal::unit<power_tag, std::ratio<7457, 10>, "hp"> horsepower;
 
-    template <>
-    struct internal::dimension_traits<internal::dim<2, -3, 1>> {
-        using tag = power_tag;
-        using default_unit = decltype(watts);
-    };
-
     template <typename T = float>
-    using power_t = internal::quantity<T, internal::dim<2, -3, 1>>;
+    struct power_t : internal::quantity<power_t<T>, T, internal::dim<2, -3, 1>, power_tag, decltype(watts)> {
+        using internal::quantity<power_t<T>, T, internal::dim<2, -3, 1>, power_tag, decltype(watts)>::quantity;
+    };
     using power = power_t<>;
 
     template <>
@@ -232,14 +202,10 @@ export namespace gse {
     constexpr internal::unit<inertia_tag, std::ratio<1>, "kg-m^2"> kilograms_meters_squared;
     constexpr internal::unit<inertia_tag, std::ratio<4214011, 100000000>, "lb-ft^2"> pounds_feet_squared;
 
-    template <>
-    struct internal::dimension_traits<internal::dim<2, 0, 1>> {
-        using tag = inertia_tag;
-        using default_unit = decltype(kilograms_meters_squared);
-    };
-
     template <typename T = float>
-    using inertia_t = internal::quantity<T, internal::dim<2, 0, 1>>;
+    struct inertia_t : internal::quantity<inertia_t<T>, T, internal::dim<2, 0, 1>, inertia_tag, decltype(kilograms_meters_squared)> {
+        using internal::quantity<inertia_t<T>, T, internal::dim<2, 0, 1>, inertia_tag, decltype(kilograms_meters_squared)>::quantity;
+    };
     using inertia = inertia_t<>;
 
     template <>
@@ -256,14 +222,10 @@ export namespace gse {
     constexpr internal::unit<velocity_tag, std::ratio<5, 18>, "km/h"> kilometers_per_hour;
     constexpr internal::unit<velocity_tag, std::ratio<1397, 3125>, "mph"> miles_per_hour;
 
-    template <>
-    struct internal::dimension_traits<internal::dim<1, -1, 0>> {
-        using tag = velocity_tag;
-        using default_unit = decltype(meters_per_second);
-    };
-
     template <typename T = float>
-    using velocity_t = internal::quantity<T, internal::dim<1, -1, 0>>;
+    struct velocity_t : internal::quantity<velocity_t<T>, T, internal::dim<1, -1, 0>, velocity_tag, decltype(meters_per_second)> {
+        using internal::quantity<velocity_t<T>, T, internal::dim<1, -1, 0>, velocity_tag, decltype(meters_per_second)>::quantity;
+    };
     using velocity = velocity_t<>;
 
     template <>
@@ -278,14 +240,10 @@ export namespace gse {
 
     constexpr internal::unit<acceleration_tag, std::ratio<1>, "m/s^2"> meters_per_second_squared;
 
-    template <>
-    struct internal::dimension_traits<internal::dim<1, -2, 0>> {
-        using tag = acceleration_tag;
-        using default_unit = decltype(meters_per_second_squared);
-    };
-
     template <typename T = float>
-    using acceleration_t = internal::quantity<T, internal::dim<1, -2, 0>>;
+    struct acceleration_t : internal::quantity<acceleration_t<T>, T, internal::dim<1, -2, 0>, acceleration_tag, decltype(meters_per_second_squared)> {
+        using internal::quantity<acceleration_t<T>, T, internal::dim<1, -2, 0>, acceleration_tag, decltype(meters_per_second_squared)>::quantity;
+    };
     using acceleration = acceleration_t<>;
 
     template <>
@@ -301,14 +259,10 @@ export namespace gse {
     constexpr internal::unit<angular_velocity_tag, std::ratio<1>, "rad/s"> radians_per_second;
     constexpr internal::unit<angular_velocity_tag, std::ratio_divide<pi_approx, std::ratio<180>>, "deg/s"> degrees_per_second;
 
-    template <>
-    struct internal::dimension_traits<internal::dim<0, -1, 0>> {
-        using tag = angular_velocity_tag;
-        using default_unit = decltype(radians_per_second);
-    };
-
     template <typename T = float>
-    using angular_velocity_t = internal::quantity<T, internal::dim<0, -1, 0>>;
+    struct angular_velocity_t : internal::quantity<angular_velocity_t<T>, T, internal::dim<0, -1, 0>, angular_velocity_tag, decltype(radians_per_second)> {
+        using internal::quantity<angular_velocity_t<T>, T, internal::dim<0, -1, 0>, angular_velocity_tag, decltype(radians_per_second)>::quantity;
+    };
     using angular_velocity = angular_velocity_t<>;
 
     template <>
@@ -324,14 +278,10 @@ export namespace gse {
     constexpr internal::unit<angular_acceleration_tag, std::ratio<1>, "rad/s^2"> radians_per_second_squared;
     constexpr internal::unit<angular_acceleration_tag, std::ratio_divide<pi_approx, std::ratio<180>>, "deg/s^2"> degrees_per_second_squared;
 
-    template <>
-    struct internal::dimension_traits<internal::dim<0, -2, 0>> {
-        using tag = angular_acceleration_tag;
-        using default_unit = decltype(radians_per_second_squared);
-    };
-
     template <typename T = float>
-    using angular_acceleration_t = internal::quantity<T, internal::dim<0, -2, 0>>;
+    struct angular_acceleration_t : internal::quantity<angular_acceleration_t<T>, T, internal::dim<0, -2, 0>, angular_acceleration_tag, decltype(radians_per_second_squared)> {
+        using internal::quantity<angular_acceleration_t<T>, T, internal::dim<0, -2, 0>, angular_acceleration_tag, decltype(radians_per_second_squared)>::quantity;
+    };
     using angular_acceleration = angular_acceleration_t<>;
 
     template <>
