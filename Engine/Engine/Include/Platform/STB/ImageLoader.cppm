@@ -25,12 +25,31 @@ export namespace gse::image {
 		}
 	};
 
-	auto load(const std::filesystem::path& path) -> data;
-    auto load(unitless::vec4 color, unitless::vec2u size) -> data;
-	auto load_rgba(const std::filesystem::path& path) -> data;
-	auto load_cube_faces(const std::array<std::filesystem::path, 6>& paths) -> std::array<data, 6>;
-	auto load_raw(const std::filesystem::path& path, std::uint32_t channels) -> data;
-	auto dimensions(const std::filesystem::path& path) -> unitless::vec2u;
+	auto load(
+        const std::filesystem::path& path
+    ) -> data;
+
+    auto load(
+        unitless::vec4 color, 
+        unitless::vec2u size
+    ) -> data;
+
+	auto load_rgba(
+        const std::filesystem::path& path
+    ) -> data;
+
+	auto load_cube_faces(
+        const std::array<std::filesystem::path, 6>& paths
+    ) -> std::array<data, 6>;
+
+	auto load_raw(
+        const std::filesystem::path& path, 
+        std::uint32_t channels
+    ) -> data;
+
+	auto dimensions(
+        const std::filesystem::path& path
+    ) -> unitless::vec2u;
 }
 
 auto gse::image::load(const std::filesystem::path& path) -> data {

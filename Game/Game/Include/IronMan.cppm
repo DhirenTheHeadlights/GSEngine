@@ -3,8 +3,6 @@ export module gs:ironman;
 import std;
 import gse;
 
-import game.config;
-
 export namespace gs {
 	class iron_man final : public gse::hook<gse::entity> {
 	public:

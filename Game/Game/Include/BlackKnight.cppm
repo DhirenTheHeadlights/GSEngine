@@ -3,8 +3,6 @@ export module gs:black_knight;
 import std;
 import gse;
 
-import game.config;
-
 export namespace gs {
 	class black_knight final : public gse::hook<gse::entity> {
 	public:

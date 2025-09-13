@@ -3,8 +3,6 @@ export module gs:backpack;
 import std;
 import gse;
 
-import game.config;
-
 class backpack final : public gse::hook<gse::entity> {
 public:
 	using hook::hook;

@@ -114,8 +114,5 @@ auto gse::gui::ids::hash_combine_string(const std::uint64_t h, const std::string
 
 auto gse::gui::ids::make(const std::string_view s) -> id {
 	const auto hash = hash_combine_string(current_seed(), s);
-	if (!exists(hash)) {
-		return generate_id(hash);
-	}
-	return find(hash);
+	return generate_temp_id(hash, std::string(s));
 }
