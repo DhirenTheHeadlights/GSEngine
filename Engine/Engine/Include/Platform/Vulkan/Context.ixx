@@ -6,10 +6,9 @@ module;
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan_hpp_macros.hpp>
 
-#include <compare>
-#include <functional>
-
 export module gse.platform.vulkan:context;
+
+import std;
 
 import :config;
 import :persistent_allocator;

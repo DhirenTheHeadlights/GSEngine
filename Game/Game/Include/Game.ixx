@@ -46,12 +46,13 @@ export namespace gs {
 		auto render() -> void  override {
 			gse::gui::start(
 				"Test",
-				[] {
+				[&] {
 					gse::gui::value("FPS", gse::main_clock::fps());
 					gse::gui::value("Test Value", 42);
 					gse::gui::value("Test Quantity", gse::meters(5.0f));
 					gse::gui::vec("Test Vec", gse::vec3<gse::length>(1.f, 2.f, 3.f));
 					gse::gui::vec("Test Vec2", gse::mouse::position());
+					gse::gui::input("Input Test", m_buff);
 				}
 			);
 
@@ -70,5 +71,6 @@ export namespace gs {
 		}
 	private:
 		bool m_show_cross_hair = false;
+		std::string m_buff;
 	};
 }

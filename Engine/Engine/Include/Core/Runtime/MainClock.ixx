@@ -12,12 +12,6 @@ export namespace gse::main_clock {
 	auto now() -> time;
 	auto fps() -> std::uint32_t;
 
-	template <typename T, typename U, int N>
-	auto per(vec_t<T, N> value) -> vec_t<T, N>;
-
-	template <typename T, typename U>
-	auto per(T value) -> T;
-
 	constexpr time const_update_time = seconds(1.f / 100.f);
 }
 
@@ -57,14 +51,4 @@ auto gse::main_clock::now() -> time {
 
 auto gse::main_clock::fps() -> std::uint32_t {
 	return frame_rate_count;
-}
-
-template <typename T, typename U, int N>
-auto gse::main_clock::per(vec_t<T, N> value) -> vec_t<T, N> {
-	return value * dt().as<U>();
-}
-
-template <typename T, typename U>
-auto gse::main_clock::per(T value) -> T {
-	return value * dt().as<U>();
 }
