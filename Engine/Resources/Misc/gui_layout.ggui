@@ -1,9 +1,9 @@
 [Menu]
 Tag: Test
 Owner: 
-Rect: 0 1080 465 540
+Rect: 0 1080 590 453
 DockedTo: left
-DockSplitRatio: 0.5
+DockSplitRatio: 0.580556
 ActiveTab: 0
 Tabs: Test
 [EndMenu]
@@ -11,7 +11,7 @@ Tabs: Test
 [Menu]
 Tag: Test2
 Owner: Test
-Rect: 0 540 465 540
+Rect: 0 627 590 627
 DockedTo: bottom
 DockSplitRatio: 0.5
 ActiveTab: 0

@@ -50,26 +50,22 @@ auto gse::initialize() -> void {
 }
 
 auto gse::update() -> void {
-	add_timer("Engine::update");
+	add_timer("Engine::update", [] {
+		window::poll_events();
 
-	window::poll_events();
+		main_clock::update();
+		scene_loader::update();
 
-	main_clock::update();
-
-	scene_loader::update();
-	engine.update();
-
-	reset_timer("Engine::update");
+		engine.update();
+	});
 }
 
 auto gse::render() -> void {
-	add_timer("Engine::render");
-
-	scene_loader::render([] {
-		engine.render();
+	add_timer("Engine::render", [] {
+		scene_loader::render([] {
+			engine.render();
+		});
 	});
-
-	reset_timer("Engine::render");
 }
 
 auto gse::shutdown() -> void {

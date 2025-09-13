@@ -21,9 +21,11 @@ export namespace gse {
 		bool m_completed = true;
 	};
 
-	auto add_timer(const std::string& name) -> void;
-	auto reset_timer(const std::string& name) -> void;
-	auto remove_timer(const std::string& name) -> void;
+	auto add_timer(
+		const std::string& name, 
+		const std::function<void()>& to_time
+	) -> void;
+
 	auto timers() -> std::map<std::string, scoped_timer>&;
 }
 
@@ -40,21 +42,15 @@ gse::scoped_timer::~scoped_timer() {
 }
 
 
-auto gse::add_timer(const std::string& name) -> void {
+auto gse::add_timer(const std::string& name, const std::function<void()>& to_time) -> void {
 	if (!global_timers.contains(name)) {
 		global_timers.emplace(name, scoped_timer{ name, false });
 	}
-}
 
-auto gse::reset_timer(const std::string& name) -> void {
+	to_time();
+
 	if (global_timers.contains(name)) {
 		global_timers.at(name).reset();
-	}
-}
-
-auto gse::remove_timer(const std::string& name) -> void {
-	if (global_timers.contains(name)) {
-		global_timers.erase(name);
 	}
 }
 

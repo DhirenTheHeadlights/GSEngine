@@ -16,6 +16,9 @@ import :text_renderer;
 import :cursor;
 import :save;
 import :value_widget;
+import :text_widget;
+import :input_widget;
+import :ids;
 
 export namespace gse::gui {
 	auto initialize(
@@ -42,6 +45,11 @@ export namespace gse::gui {
 
 	auto text(
 		const std::string& text
+	) -> void;
+
+	auto input(
+		const std::string& name,
+		std::string& buffer
 	) -> void;
 
 	template <is_arithmetic T>
@@ -78,6 +86,11 @@ namespace gse::gui {
 	state current_state;
 	std::filesystem::path file_path = "Misc/gui_layout.ggui";
 	clock save_clock;
+
+	id hot_widget_id;
+	id active_widget_id;
+
+	std::unique_ptr<ids::scope> current_scope;
 
 	constexpr time update_interval = seconds(30.f);
 
@@ -119,7 +132,9 @@ auto gse::gui::update(const window& window, const style& style) -> void {
 			}
 
 			return states::idle{};
-		}, current_state);
+		}, 
+		current_state
+	);
 
 	if (save_clock.elapsed() > update_interval) {
 		save(menus, file_path);
@@ -135,6 +150,8 @@ auto gse::gui::start(const std::string& name, const std::function<void()>& conte
 }
 
 auto gse::gui::render(const renderer::context& context, renderer::sprite& sprite_renderer, renderer::text& text_renderer, const style& style) -> void {
+	hot_widget_id = {};
+	
 	if (font.valid()) {
 		for (auto& menu : menus.items()) {
 			const auto title_bar_rect = ui_rect::from_position_size(
@@ -171,26 +188,30 @@ auto gse::gui::render(const renderer::context& context, renderer::sprite& sprite
 
 			if (menu.was_begun_this_frame) {
 				const auto content_rect = body_rect.inset({ style.padding, style.padding });
-            
-	            unitless::vec2 layout_cursor = content_rect.top_left();
+			
+				unitless::vec2 layout_cursor = content_rect.top_left();
 
-	            widget_context widget_context = {
-	                .current_menu = &menu,
-	                .style = style,
-	                .sprite_renderer = sprite_renderer,
-	                .text_renderer = text_renderer,
-	                .font = font,
-	                .blank_texture = blank_texture,
-	                .layout_cursor = layout_cursor
-	            };
+				widget_context widget_context = {
+					.current_menu = &menu,
+					.style = style,
+					.sprite_renderer = sprite_renderer,
+					.text_renderer = text_renderer,
+					.font = font,
+					.blank_texture = blank_texture,
+					.layout_cursor = layout_cursor
+				};
 
-	            for (const auto& command : menu.commands) {
-	                command(widget_context);
-	            }
-	            
-	            menu.was_begun_this_frame = false;
+				for (const auto& command : menu.commands) {
+					command(widget_context);
+				}
+
+				menu.was_begun_this_frame = false;
 			}
 		}
+	}
+
+	if (mouse::pressed(mouse_button::button_1)) {
+		active_widget_id = hot_widget_id;
 	}
 
 	if (active_dock_space) {
@@ -225,44 +246,54 @@ auto gse::gui::save() -> void {
 
 auto gse::gui::text(const std::string& text) -> void {
 	if (current_menu) {
-		//current_menu->items.emplace_back(text);
+		current_menu->commands.emplace_back([=](const widget_context& ctx) {
+			draw::text(ctx, "", text);
+		});
+	}
+}
+
+auto gse::gui::input(const std::string& name, std::string& buffer) -> void {
+	if (current_menu) {
+		current_menu->commands.emplace_back([&, name](const widget_context& ctx) {
+			draw::input(ctx, name, buffer, hot_widget_id, active_widget_id);
+		});
 	}
 }
 
 template <gse::is_arithmetic T>
 auto gse::gui::value(const std::string& name, T value) -> void {
-    if (current_menu) {
-        current_menu->commands.emplace_back([=](widget_context& ctx) {
-            draw::value(ctx, name, value);
-        });
-    }
+	if (current_menu) {
+		current_menu->commands.emplace_back([=](widget_context& ctx) {
+			draw::value(ctx, name, value);
+		});
+	}
 }
 
 template <gse::is_quantity T, auto Unit>
 auto gse::gui::value(const std::string& name, T value) -> void {
-    if (current_menu) {
-        current_menu->commands.emplace_back([=](widget_context& ctx) {
-            draw::value<T, Unit>(ctx, name, value);
-        });
-    }
+	if (current_menu) {
+		current_menu->commands.emplace_back([=](widget_context& ctx) {
+			draw::value<T, Unit>(ctx, name, value);
+		});
+	}
 }
 
 template <typename T, int N>
 auto gse::gui::vec(const std::string& name, unitless::vec_t<T, N> vec) -> void {
-    if (current_menu) {
-        current_menu->commands.emplace_back([=](widget_context& ctx) {
-            draw::vec(ctx, name, vec);
-        });
-    }
+	if (current_menu) {
+		current_menu->commands.emplace_back([=](widget_context& ctx) {
+			draw::vec(ctx, name, vec);
+		});
+	}
 }
 
 template <typename T, int N, auto Unit>
 auto gse::gui::vec(const std::string& name, vec_t<T, N> vec) -> void {
-    if (current_menu) {
-        current_menu->commands.emplace_back([=](widget_context& ctx) {
-            draw::vec<T, N, Unit>(ctx, name, vec);
-        });
-    }
+	if (current_menu) {
+		current_menu->commands.emplace_back([=](widget_context& ctx) {
+			draw::vec<T, N, Unit>(ctx, name, vec);
+		});
+	}
 }
 
 auto gse::gui::begin(const std::string& name) -> bool {
@@ -290,13 +321,15 @@ auto gse::gui::begin(const std::string& name) -> bool {
 		current_menu = menu_ptr;
 		current_menu->was_begun_this_frame = true;
 		current_menu->commands.clear();
+		current_scope = std::make_unique<ids::scope>(current_menu->id().number());
 		return true;
 	}
-    
+	
 	return false;
 }
 
 auto gse::gui::end() -> void {
+	current_scope.reset();
 	current_menu = nullptr;
 }
 

@@ -10,6 +10,7 @@ export namespace gse {
 	using uuid = std::uint64_t;
 
 	auto generate_id(std::string_view tag) -> id;
+	auto generate_id(std::uint64_t number) -> id;
 	auto find(uuid number) -> id;
 	auto find(std::string_view tag) -> id;
 	auto exists(uuid number) -> bool;
@@ -26,19 +27,20 @@ export namespace gse {
 		auto tag() const -> const std::string&;
 		auto exists() const -> bool;
 	private:
-		explicit id(const uuid id, std::string tag);
+		explicit id(uuid id, std::string tag);
 
 		uuid m_number = std::numeric_limits<uuid>::max();
 		std::string m_tag;
 
 		friend auto generate_id(std::string_view tag) -> id;
+		friend auto generate_id(std::uint64_t number) -> id;
 	};
 }
 
 template <>
 struct std::formatter<gse::id> {
-	constexpr auto parse(std::format_parse_context& ctx) { return ctx.begin(); }
-	auto format(const gse::id& value, std::format_context& ctx) const {
+	static constexpr auto parse(std::format_parse_context& ctx) { return ctx.begin(); }
+	static auto format(const gse::id& value, std::format_context& ctx) {
 		return std::format_to(ctx.out(), "[{}: {}]", value.number(), value.tag());
 	}
 };
@@ -322,6 +324,20 @@ auto gse::generate_id(const std::string_view tag) -> id {
 
 	registry.by_uuid.add(new_uuid, new_id);
 	registry.tag_to_uuid[new_id.tag()] = new_uuid;
+
+	return new_id;
+}
+
+auto gse::generate_id(const std::uint64_t number) -> id {
+	const auto& [mutex, registry] = id_registry();
+	std::lock_guard lock(mutex);
+
+	assert(!registry.by_uuid.contains(number), std::format("ID number {} already exists", number));
+
+	id new_id(number, std::to_string(number));
+
+	registry.by_uuid.add(number, new_id);
+	registry.tag_to_uuid[new_id.tag()] = number;
 
 	return new_id;
 }

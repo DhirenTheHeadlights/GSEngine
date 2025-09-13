@@ -92,7 +92,6 @@ namespace gse::input {
 		auto text_entered() const -> const std::string& {
 			return m_text_entered_this_frame;
 		}
-
 	private:
 		friend auto update(const std::function<void()>& in_frame) -> void;
 
@@ -144,19 +143,19 @@ namespace gse::input {
 			s += static_cast<char>(c);
 		}
 		else if (c < 0x800) {
-			s += static_cast<char>(0xC0 | (c >> 6));
-			s += static_cast<char>(0x80 | (c & 0x3F));
+			s += static_cast<char>(0xC0 | c >> 6);
+			s += static_cast<char>(0x80 | c & 0x3F);
 		}
 		else if (c < 0x10000) {
-			s += static_cast<char>(0xE0 | (c >> 12));
-			s += static_cast<char>(0x80 | ((c >> 6) & 0x3F));
-			s += static_cast<char>(0x80 | (c & 0x3F));
+			s += static_cast<char>(0xE0 | c >> 12);
+			s += static_cast<char>(0x80 | c >> 6 & 0x3F);
+			s += static_cast<char>(0x80 | c & 0x3F);
 		}
 		else {
-			s += static_cast<char>(0xF0 | (c >> 18));
-			s += static_cast<char>(0x80 | ((c >> 12) & 0x3F));
-			s += static_cast<char>(0x80 | ((c >> 6) & 0x3F));
-			s += static_cast<char>(0x80 | (c & 0x3F));
+			s += static_cast<char>(0xF0 | c >> 18);
+			s += static_cast<char>(0x80 | c >> 12 & 0x3F);
+			s += static_cast<char>(0x80 | c >> 6 & 0x3F);
+			s += static_cast<char>(0x80 | c & 0x3F);
 		}
 	}
 }
@@ -274,6 +273,10 @@ export namespace gse::mouse {
 	auto delta() -> unitless::vec2;
 }
 
+export namespace gse::text {
+	auto entered() -> const std::string&;
+}
+
 auto gse::keyboard::pressed(const key key) -> bool {
 	return input::global_input_state && input::global_input_state->key_pressed(key);
 }
@@ -310,4 +313,12 @@ auto gse::mouse::delta() -> unitless::vec2 {
 		return input::global_input_state->mouse_delta();
 	}
 	return {};
+}
+
+auto gse::text::entered() -> const std::string& {
+	if (input::global_input_state) {
+		return input::global_input_state->text_entered();
+	}
+	static const std::string empty_string;
+	return empty_string;
 }
