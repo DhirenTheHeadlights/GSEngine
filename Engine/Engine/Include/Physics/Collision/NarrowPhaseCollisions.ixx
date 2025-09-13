@@ -172,6 +172,9 @@ auto gse::narrow_phase_collision::minkowski_difference(const bounding_box& bb1, 
 }
 
 auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const bounding_box& bb2) -> std::optional<mpr_result> {
+    if (bb1.obb().orientation != gse::quat(1.00, 0, 0, 0)) {
+        std::cout << "rotated";
+    }
     static constexpr bool debug = true;
     const length eps = meters(1e-4f);
     const auto eps2 = eps * eps;
@@ -311,11 +314,30 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
                 }
                 return faces[idx];
             };
+        //auto pick = [&](bool require_positive) -> std::optional<int> {
+        //    length best = meters(std::numeric_limits<float>::infinity());
+        //    int idx = -1;
+
+        //    for (int k = 0; k < 4; ++k) {
+        //        if (is_zero(faces[k].n)) continue;
+        //        if (require_positive && faces[k].d <= length{ 0 }) continue;
+
+        //        if (faces[k].d < best) {
+        //            best = faces[k].d;
+        //            idx = k;
+        //        }
+        //    }
+
+        //    if (idx < 0) {
+        //        return std::nullopt; // signal failure, don’t silently pick wrong face
+        //    }
+        //	return idx;
+        //};
 
         face choice = pick(true);
         if (choice.d == meters(std::numeric_limits<float>::infinity())) {
-            choice = pick(false);
-        }
+                choice = pick(false);
+            }
 
         if constexpr (debug) {
             std::println("[MPR][iter {}] best_n: {}", i, choice.n);
@@ -374,6 +396,8 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
 	                                face_vertices_obb_2.emplace_back(point_cache[pt]);
 	                            }
 	                        }
+                            obb obb_test1 = bb1.obb();
+							obb obb_test2 = bb2.obb();
 	                        std::cout << "breakpoint";
                     }
 				}
@@ -406,13 +430,53 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
                 };
             }
 
+            // before: const vec3<length>& opp = vertex_point(choice.id);
+            //        if (const auto delta2 = dot(delta, delta); delta2 > eps2) { replace_vertex(...); }
+
             const vec3<length>& opp = vertex_point(choice.id);
+            const auto delta2 = dot(p.point - opp, p.point - opp);
+
+            if (delta2 > eps2) {
+                // additional safety: ensure p is not equal to any *other* simplex vertex
+                bool equals_other = false;
+                auto equals_within_eps2 = [&](const vec3<length>& q) {
+                    return dot(p.point - q, p.point - q) <= eps2;
+                    };
+
+                if (equals_within_eps2(v0.point) || equals_within_eps2(v1.point) ||
+                    equals_within_eps2(v2.point) || equals_within_eps2(v3.point)) {
+                    equals_other = true;
+                }
+
+                if (!equals_other) {
+                    replace_vertex(choice.id, p);
+                    progressed = true;
+                }
+                else {
+                    // mark this face unusable and retry picking another face
+                    faces[choice.id].d = meters(std::numeric_limits<float>::infinity());
+                    if constexpr (debug) std::println("[MPR] p equals existing vertex -> skipping face {}", choice.id);
+                    // pick a new face below in the loop (your existing code will do that)
+                }
+            }
+
             const auto delta = p.point - opp;
 
-            if (const auto delta2 = dot(delta, delta); delta2 > eps2) {
+
+            if (/*const auto delta2 = dot(delta, delta);*/ delta2 > eps2) {
                 replace_vertex(choice.id, p);
                 progressed = true;
             }
+        	if (v1.point == v2.point || v1.point == v3.point || v1.point == v0.point ||
+                v2.point == v3.point || v2.point == v0.point ||
+                v3.point == v0.point) {
+                // something went wrong, the simplex is degenerate
+                if constexpr (debug) {
+                    std::println("[MPR][iter {}] degenerate simplex -> retrying face {}", i, choice.id);
+                }
+                //faces[choice.id].d = meters(std::numeric_limits<float>::infinity());
+                continue;
+			}
             else {
                 if (choice.id == 0) {
                     faces[0].d = meters(std::numeric_limits<float>::infinity());
