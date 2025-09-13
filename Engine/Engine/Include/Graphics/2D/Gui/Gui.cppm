@@ -18,6 +18,7 @@ import :save;
 import :value_widget;
 import :text_widget;
 import :input_widget;
+import :slider_widget;
 import :ids;
 
 export namespace gse::gui {
@@ -50,6 +51,38 @@ export namespace gse::gui {
 	auto input(
 		const std::string& name,
 		std::string& buffer
+	) -> void;
+
+	template <is_arithmetic T>
+	auto slider(
+		const std::string& name,
+		float& value,
+		float min,
+		float max
+	) -> void;
+
+	template <is_quantity T, auto Unit = typename T::default_unit{} >
+	auto slider(
+		const std::string& name, 
+		T& value,
+		T min, 
+		T max
+	) -> void;
+
+	template <typename T, int N>
+	auto slider(
+		const std::string& name,
+		unitless::vec_t<T, N>& vec, 
+		unitless::vec_t<T, N> min, 
+		unitless::vec_t<T, N> max
+	) -> void;
+
+	template <typename T, int N, auto Unit = typename T::default_unit{}>
+	auto slider(
+		const std::string& name,
+		vec_t<T, N>& vec, 
+		vec_t<T, N> min, 
+		vec_t<T, N> max
 	) -> void;
 
 	template <is_arithmetic T>
@@ -256,6 +289,42 @@ auto gse::gui::input(const std::string& name, std::string& buffer) -> void {
 	if (current_menu) {
 		current_menu->commands.emplace_back([&, name](const widget_context& ctx) {
 			draw::input(ctx, name, buffer, hot_widget_id, active_widget_id);
+		});
+	}
+}
+
+template <gse::is_arithmetic T>
+auto gse::gui::slider(const std::string& name, float& value, const float min, const float max) -> void {
+	if (current_menu) {
+		current_menu->commands.emplace_back([=, &value](widget_context& ctx) {
+			draw::slider(ctx, name, value, min, max, hot_widget_id, active_widget_id);
+		});
+	}
+}
+
+template <gse::is_quantity T, auto Unit>
+auto gse::gui::slider(const std::string& name, T& value, T min, T max) -> void {
+	if (current_menu) {
+		current_menu->commands.emplace_back([=, &value](widget_context& ctx) {
+			draw::slider<T, Unit>(ctx, name, value, min, max, hot_widget_id, active_widget_id);
+		});
+	}
+}
+
+template <typename T, int N>
+auto gse::gui::slider(const std::string& name, unitless::vec_t<T, N>& vec, unitless::vec_t<T, N> min, unitless::vec_t<T, N> max) -> void {
+	if (current_menu) {
+		current_menu->commands.emplace_back([=, &vec](widget_context& ctx) {
+			draw::slider<T, N>(ctx, name, vec, min, max, hot_widget_id, active_widget_id);
+		});
+	}
+}
+
+template <typename T, int N, auto Unit>
+auto gse::gui::slider(const std::string& name, vec_t<T, N>& vec, vec_t<T, N> min, vec_t<T, N> max) -> void {
+	if (current_menu) {
+		current_menu->commands.emplace_back([=, &vec](widget_context& ctx) {
+			draw::slider<T, N, Unit>(ctx, name, vec, min, max, hot_widget_id, active_widget_id);
 		});
 	}
 }

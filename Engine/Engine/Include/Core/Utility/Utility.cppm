@@ -5,7 +5,6 @@ export import :component;
 export import :config;
 export import :ecs;
 export import :id;
-export import :json;
 export import :misc;
 export import :non_copyable;
 export import :timed_lock;

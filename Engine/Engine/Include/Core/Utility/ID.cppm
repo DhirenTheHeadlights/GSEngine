@@ -11,6 +11,7 @@ export namespace gse {
 
 	auto generate_id(std::string_view tag) -> id;
 	auto generate_id(std::uint64_t number) -> id;
+	auto generate_temp_id(uuid number, std::string_view tag) -> id;
 	auto find(uuid number) -> id;
 	auto find(std::string_view tag) -> id;
 	auto exists(uuid number) -> bool;
@@ -34,6 +35,7 @@ export namespace gse {
 
 		friend auto generate_id(std::string_view tag) -> id;
 		friend auto generate_id(std::uint64_t number) -> id;
+		friend auto generate_temp_id(uuid number, std::string_view tag) -> id;
 	};
 }
 
@@ -290,11 +292,11 @@ struct std::hash<gse::id> {
 namespace gse {
 	struct transparent_hash {
 		using is_transparent = void;
-		auto operator()(std::string_view sv) const noexcept { return std::hash<std::string_view>{}(sv); }
+		auto operator()(const std::string_view sv) const noexcept { return std::hash<std::string_view>{}(sv); }
 	};
 	struct transparent_equal {
 		using is_transparent = void;
-		auto operator()(std::string_view a, std::string_view b) const noexcept { return a == b; }
+		auto operator()(const std::string_view a, const std::string_view b) const noexcept { return a == b; }
 	};
 
 	struct id_registry_data {
@@ -340,6 +342,10 @@ auto gse::generate_id(const std::uint64_t number) -> id {
 	registry.tag_to_uuid[new_id.tag()] = number;
 
 	return new_id;
+}
+
+auto gse::generate_temp_id(const uuid number, const std::string_view tag) -> id {
+	return id(number, std::string(tag));
 }
 
 auto gse::find(const uuid number) -> id {

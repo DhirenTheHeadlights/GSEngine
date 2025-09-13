@@ -38,8 +38,8 @@ export namespace gse {
         constexpr auto top_right() const -> T;
         constexpr auto bottom_right() const -> T;
 
-        constexpr auto min() const -> const T&;
-        constexpr auto max() const -> const T&;
+        constexpr auto min(this auto&& self) -> decltype(auto);
+		constexpr auto max(this auto&& self) -> decltype(auto);
 
         constexpr auto contains(const T& point) const -> bool;
         constexpr auto intersects(const rect_t& other) const -> bool;
@@ -137,13 +137,13 @@ constexpr auto gse::rect_t<T>::bottom_right() const -> T {
 }
 
 template <gse::is_vec2 T>
-constexpr auto gse::rect_t<T>::min() const -> const T& {
-    return m_min;
+constexpr auto gse::rect_t<T>::min(this auto&& self) -> decltype(auto) {
+    return self.m_min;
 }
 
 template <gse::is_vec2 T>
-constexpr auto gse::rect_t<T>::max() const -> const T& {
-    return m_max;
+constexpr auto gse::rect_t<T>::max(this auto&& self) -> decltype(auto) {
+    return self.m_max;
 }
 
 template <gse::is_vec2 T>

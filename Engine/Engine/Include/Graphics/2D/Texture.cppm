@@ -18,8 +18,16 @@ export namespace gse {
 			pixel_art
 		};
 
-		texture(const std::filesystem::path& filepath) : identifiable(filepath), m_image_data{ .path = filepath } {}
-		texture(const std::string& name, const unitless::vec4& color, unitless::vec2u size = { 1, 1 });
+		texture(
+			const std::filesystem::path& filepath
+		);
+
+		texture(
+			const std::string& name, 
+			const unitless::vec4& color, 
+			unitless::vec2u size = { 1, 1 }
+		);
+
 		texture(
 			const std::string& name,
 			const std::vector<std::byte>& data,
@@ -28,15 +36,26 @@ export namespace gse {
 			profile texture_profile = profile::generic_repeat
 		);
 
-		static auto compile() -> std::set<std::filesystem::path>;
+		static auto compile(
+		) -> std::set<std::filesystem::path>;
 
-		auto load(const renderer::context& context) -> void;
-		auto unload() -> void;
+		auto load(
+			const renderer::context& context
+		) -> void;
 
-		auto descriptor_info() const -> vk::DescriptorImageInfo;
-		auto image_data() const -> const image::data&;
+		auto unload(
+		) -> void;
+
+		auto descriptor_info(
+		) const -> vk::DescriptorImageInfo;
+
+		auto image_data(
+		) const -> const image::data&;
 	private:
-		auto create_vulkan_resources(renderer::context& context, profile texture_profile) -> void;
+		auto create_vulkan_resources(
+			renderer::context& context,
+			profile texture_profile
+		) -> void;
 
 		vulkan::persistent_allocator::image_resource m_texture_image;
 		vk::raii::Sampler m_texture_sampler = nullptr;
@@ -44,6 +63,8 @@ export namespace gse {
 		profile m_profile = profile::generic_repeat;
 	};
 }
+
+gse::texture::texture(const std::filesystem::path& filepath) : identifiable(filepath), m_image_data{ .path = filepath } {}
 
 gse::texture::texture(const std::string& name, const unitless::vec4& color, const unitless::vec2u size) : identifiable(name), m_image_data(image::load(color, size)) {}
 

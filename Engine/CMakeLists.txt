@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 project(Engine)
 
 file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/*.cpp")
-file(GLOB_RECURSE ENGINE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/*.ixx")
+file(GLOB_RECURSE ENGINE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/*.cppm")
 
 add_library(Engine)
 
@@ -26,11 +26,11 @@ target_sources(Engine
     PUBLIC
         FILE_SET gse_modules_public TYPE CXX_MODULES
         BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include"
-        FILES "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/Engine.ixx"
+        FILES "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/Engine.cppm"
 )
 
 target_sources(Engine PRIVATE
-    "${CMAKE_CURRENT_BINARY_DIR}/Engine/Source/Core/Config.ixx"
+    "${CMAKE_CURRENT_BINARY_DIR}/Engine/Source/Core/Config.cppm"
 )
 
 find_package(glfw3 CONFIG REQUIRED)
@@ -73,14 +73,6 @@ target_sources(VulkanModule PRIVATE
   FILES ${Vulkan_INCLUDE_DIR}/vulkan/vulkan.cppm
 )
 
-file(TO_CMAKE_PATH "${VULKAN_SDK_PATH}/Source/SPIRV-Reflect" SPIRV_REFLECT_DIR)
-
-add_library(SPIRV-Reflect STATIC
-    "${SPIRV_REFLECT_DIR}/spirv_reflect.c"
-    "${SPIRV_REFLECT_DIR}/spirv_reflect.h"
-)
-target_include_directories(SPIRV-Reflect PUBLIC "${SPIRV_REFLECT_DIR}")
-
 target_include_directories(Engine
     PUBLIC
         ${Stb_INCLUDE_DIR}
@@ -99,15 +91,14 @@ target_link_libraries(Engine PUBLIC
     Freetype::Freetype
     msdfgen::msdfgen
     VulkanModule
-    SPIRV-Reflect
 )
 
 set(ENGINE_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
 set(BAKED_RESOURCES_PATH "${CMAKE_CURRENT_BINARY_DIR}/Resources/")
 
 configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/Core/Config.ixx.in
-    ${CMAKE_CURRENT_BINARY_DIR}/Engine/Source/Core/Config.ixx
+    ${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/Core/Config.cppm.in
+    ${CMAKE_CURRENT_BINARY_DIR}/Engine/Source/Core/Config.cppm
     @ONLY
 )
 
@@ -119,7 +110,7 @@ if (MSVC)
     add_compile_options(/MP)
     add_compile_options(/Zm500)
 
-    set(EXTERNAL_TARGETS VulkanModule SPIRV-Reflect)
+    set(EXTERNAL_TARGETS VulkanModule)
     foreach(target ${EXTERNAL_TARGETS})
         set_property(TARGET ${target} PROPERTY FOLDER "External")
     endforeach()
