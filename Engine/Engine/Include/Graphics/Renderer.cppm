@@ -113,8 +113,6 @@ auto gse::renderer::update() -> void {
 auto gse::renderer::render(std::vector<std::reference_wrapper<registry>> registries, const std::function<void()>& in_frame) -> void {
 	rendering_context.process_gpu_queue();
 
-	gui::render(rendering_context, renderer<sprite>(), renderer<text>());
-
 	vulkan::frame({
 		.window = rendering_context.window().raw_handle(),
 		.frame_buffer_resized = rendering_context.window().frame_buffer_resized(),
@@ -176,7 +174,14 @@ auto gse::renderer::render(std::vector<std::reference_wrapper<registry>> registr
 
 			rendering_context.config().frame_context().command_buffer.pipelineBarrier2(dependency_info);
 
-			in_frame();
+			gui::frame(
+				rendering_context,
+				renderer<sprite>(),
+				renderer<text>(),
+				[&] {
+					in_frame();
+				}
+			);
 		}
 	});
 

@@ -18,7 +18,7 @@ export namespace gse::gui {
         unitless::vec4 color_dock_preview = { 0.2f, 0.2f, 0.8f, 0.4f };
         unitless::vec4 color_dock_widget = { 0.8f, 0.8f, 0.8f, 0.5f };
 		unitless::vec4 color_widget_background = { 0.2f, 0.2f, 0.2f, 0.5f };
-		unitless::vec4 color_slider_fill = { 0.2f, 0.6f, 0.2f, 0.8f };
+		unitless::vec4 color_widget_fill = { 0.2f, 0.6f, 0.2f, 0.8f };
 
         float padding = 10.f;
         float title_bar_height = 30.f;

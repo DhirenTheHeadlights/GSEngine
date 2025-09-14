@@ -44,16 +44,16 @@ auto gs::client::render() -> void {
 			if (!m_client) return;
 
 			switch (m_client->current_state()) {
-			case gse::network::client::state::disconnected:
-				gse::gui::text("Status: Disconnected");
-				break;
-			case gse::network::client::state::connecting:
-				gse::gui::text("Status: Connecting...");
-				break;
-			case gse::network::client::state::connected:
-				gse::gui::text("Status: Connected");
-				break;
-			default: break;
+				case gse::network::client::state::disconnected:
+					gse::gui::text("Status: Disconnected");
+					break;
+				case gse::network::client::state::connecting:
+					gse::gui::text("Status: Connecting...");
+					break;
+				case gse::network::client::state::connected:
+					gse::gui::text("Status: Connected");
+					break;
+				default: break;
 			}
 
 			if (gse::gui::button("Send Ping")) {

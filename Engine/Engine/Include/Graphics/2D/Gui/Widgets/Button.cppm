@@ -1,4 +1,3 @@
-// export module gse.graphics:button_widget;
 export module gse.graphics:button_widget;
 
 import std;
@@ -40,7 +39,7 @@ auto gse::gui::draw::button(const widget_context& context, const std::string& na
 	unitless::vec4 bg_color = context.style.color_widget_background;
 
 	if (active_widget_id == widget_id) {
-		bg_color = context.style.color_slider_fill;
+		bg_color = context.style.color_widget_fill;
 	}
 	else if (hot_widget_id == widget_id) {
 		bg_color = context.style.color_dock_widget;

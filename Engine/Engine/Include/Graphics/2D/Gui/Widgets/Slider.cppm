@@ -173,7 +173,7 @@ auto gse::gui::draw::slider_box(const widget_context& context, const ui_rect& re
 
 	context.sprite_renderer.queue({
 		.rect = fill_rect,
-		.color = context.style.color_slider_fill,
+		.color = context.style.color_widget_fill,
 		.texture = context.blank_texture
 	});
 

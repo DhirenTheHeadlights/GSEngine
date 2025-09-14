@@ -26,7 +26,9 @@ auto gse::gui::draw::text(const widget_context& context, const std::string& name
 }
 
 auto gse::gui::draw::text_row(const widget_context& context, const std::string& name, const std::string& text) -> void {
-	if (!context.current_menu) return;
+	if (!context.current_menu) {
+		return;
+	}
 
 	const float widget_height = context.font->line_height(context.style.font_size) + context.style.padding * 0.5f;
 	const auto content_rect = context.current_menu->rect.inset({ context.style.padding, context.style.padding });
@@ -36,11 +38,11 @@ auto gse::gui::draw::text_row(const widget_context& context, const std::string& 
 		{ content_rect.width(), widget_height }
 	);
 
-	const float label_width = content_rect.width() * 0.4f;
 	const unitless::vec2 label_pos = {
 		row_rect.left(),
 		row_rect.center().y() + context.style.font_size / 2.f
 	};
+
 	context.text_renderer.draw_text({
 		.font = context.font,
 		.text = name,
@@ -50,9 +52,10 @@ auto gse::gui::draw::text_row(const widget_context& context, const std::string& 
 	});
 
 	const unitless::vec2 value_pos = {
-		row_rect.left() + label_width,
+		row_rect.left(),
 		row_rect.center().y() + context.style.font_size / 2.f
 	};
+
 	context.text_renderer.draw_text({
 		.font = context.font,
 		.text = text,

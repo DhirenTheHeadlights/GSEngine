@@ -12,7 +12,7 @@ export namespace gse::gui::draw {
 		const std::string& name,
 		std::string& buffer,
 		id& hot_widget_id,
-		id& active_widget_id
+		id& focus_widget_id 
 	) -> void;
 }
 
@@ -30,7 +30,7 @@ namespace gse::gui::draw {
 	std::unordered_map<uint64_t, input_state> global_input_state;
 }
 
-auto gse::gui::draw::input(const widget_context& context, const std::string& name, std::string& buffer, id& hot_widget_id, id& active_widget_id) -> void {
+auto gse::gui::draw::input(const widget_context& context, const std::string& name, std::string& buffer, id& hot_widget_id, id& focus_widget_id) -> void {
 	if (!context.current_menu) return;
 
 	const std::string id_label = name + "##Input";
@@ -41,7 +41,7 @@ auto gse::gui::draw::input(const widget_context& context, const std::string& nam
 	};
 
 	auto& state = global_input_state[widget_id.number()];
-	state.caret = clamp(state.caret, 0, static_cast<int>(buffer.size()));
+	state.caret  = clamp(state.caret,  0, static_cast<int>(buffer.size()));
 	state.anchor = clamp(state.anchor, 0, static_cast<int>(buffer.size()));
 
 	const float widget_height = context.font->line_height(context.style.font_size) + context.style.padding * 0.5f;
@@ -63,7 +63,7 @@ auto gse::gui::draw::input(const widget_context& context, const std::string& nam
 		hot_widget_id = widget_id;
 	}
 
-	const bool focused = active_widget_id == widget_id;
+	const bool focused = (focus_widget_id == widget_id);
 
 	auto pick_index_from_x = [&](const float x_local) -> int {
 		const int n = static_cast<int>(buffer.size());
@@ -124,7 +124,7 @@ auto gse::gui::draw::input(const widget_context& context, const std::string& nam
 		}
 
 		const bool shift = keyboard::pressed(key::left_shift) || keyboard::pressed(key::right_shift);
-		const bool ctrl = keyboard::pressed(key::left_control) || keyboard::pressed(key::right_control);
+		const bool ctrl  = keyboard::pressed(key::left_control) || keyboard::pressed(key::right_control);
 
 		auto move_caret = [&](int new_i) {
 			new_i = clamp(new_i, 0, static_cast<int>(buffer.size()));
@@ -153,7 +153,7 @@ auto gse::gui::draw::input(const widget_context& context, const std::string& nam
 			move_caret(static_cast<int>(buffer.size()));
 		}
 		if (keyboard::pressed(key::left)) {
-			move_caret(ctrl ? word_left(buffer, state.caret) : state.caret - 1);
+			move_caret(ctrl ? word_left(buffer,  state.caret) : state.caret - 1);
 		}
 		if (keyboard::pressed(key::right)) {
 			move_caret(ctrl ? word_right(buffer, state.caret) : state.caret + 1);
@@ -185,17 +185,24 @@ auto gse::gui::draw::input(const widget_context& context, const std::string& nam
 		};
 
 		if (keyboard::pressed(key::backspace)) {
-			do_backspace(); state.rpt_active = true; state.rpt_next_ms = now_ms() + 400;
+			do_backspace();
+			state.rpt_active = true;
+			state.rpt_next_ms = now_ms() + 400;
 		}
-
 		if (keyboard::pressed(key::del)) {
-			do_delete();   state.rpt_active = true; state.rpt_next_ms = now_ms() + 400;
+			do_delete();
+			state.rpt_active = true;
+			state.rpt_next_ms = now_ms() + 400;
 		}
 
 		if (state.rpt_active && (keyboard::held(key::backspace) || keyboard::held(key::del))) {
 			if (double t = now_ms(); t >= state.rpt_next_ms) {
-				if (keyboard::held(key::backspace)) do_backspace();
-				if (keyboard::held(key::del))   do_delete();
+				if (keyboard::held(key::backspace)) {
+					do_backspace();
+				}
+				if (keyboard::held(key::del)) {
+					do_delete();
+				}
 				state.rpt_next_ms = t + 33;
 			}
 		}
@@ -213,9 +220,11 @@ auto gse::gui::draw::input(const widget_context& context, const std::string& nam
 		if (const float inner_r = box_rect.width() - 5.f; caret_x - state.scroll_x > inner_r) {
 			state.scroll_x = caret_x - inner_r;
 		}
+
 		if (constexpr float inner_l = 5.f; caret_x - state.scroll_x < inner_l) {
 			state.scroll_x = caret_x - inner_l;
 		}
+
 		if (state.scroll_x < 0.f) {
 			state.scroll_x = 0.f;
 		}
@@ -225,7 +234,7 @@ auto gse::gui::draw::input(const widget_context& context, const std::string& nam
 		}
 
 		if (keyboard::pressed(key::enter) || keyboard::pressed(key::escape)) {
-			active_widget_id = {};
+			focus_widget_id = {};
 		}
 	}
 
@@ -248,21 +257,20 @@ auto gse::gui::draw::input(const widget_context& context, const std::string& nam
 		.texture = context.blank_texture
 	});
 
-	static constexpr float text_padding = 5.f;
+	constexpr float text_padding = 5.f;
 	const ui_rect clip_rect = box_rect.inset({ text_padding, 0.f });
 	const unitless::vec2 text_pos = {
 		box_rect.left() + text_padding,
 		box_rect.center().y() + context.style.font_size / 2.f
 	};
 
-	if (focused && has_sel(state)) {
+	if (focused && (state.caret != state.anchor)) {
 		auto [a, b] = sel_range(state);
-
 		float ax = context.font->width(buffer.substr(0, a), context.style.font_size) - state.scroll_x;
 		float bx = context.font->width(buffer.substr(0, b), context.style.font_size) - state.scroll_x;
 
 		ui_rect sel_rect = ui_rect::from_position_size(
-			{ text_pos.x() + ax, box_rect.top() + (box_rect.height() - context.style.font_size) / 2.f },
+			{ text_pos.x() + ax, box_rect.top() - (box_rect.height() - context.style.font_size) / 2.f },
 			{ std::max(1.f, bx - ax), context.style.font_size }
 		);
 
@@ -283,12 +291,10 @@ auto gse::gui::draw::input(const widget_context& context, const std::string& nam
 
 	if (focused && state.blink_on) {
 		float cx = context.font->width(buffer.substr(0, state.caret), context.style.font_size) - state.scroll_x;
-
 		const ui_rect cursor_rect = ui_rect::from_position_size(
-			{ text_pos.x() + cx, box_rect.top() - (box_rect.height() - context.style.font_size) / 2.f },
+			{ text_pos.x() + cx, box_rect.top() - (box_rect.height() - context.style.font_size) / 2.f }, 
 			{ 2.f, context.style.font_size }
 		);
-
 		context.sprite_renderer.queue({
 			.rect = cursor_rect,
 			.color = context.style.color_text,
