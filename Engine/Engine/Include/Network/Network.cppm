@@ -10,6 +10,13 @@ export module gse.network;
 
 import gse.utility;
 
+export import :client;
+export import :remote_peer;
+export import :socket;
+export import :bitstream;
+export import :packet_header;
+export import :message;
+
 export namespace gse::network {
 	auto initialize() -> void;
 	auto shutdown() -> void;

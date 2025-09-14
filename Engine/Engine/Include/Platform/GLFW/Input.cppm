@@ -7,8 +7,10 @@ export module gse.platform:input;
 import std;
 
 import gse.physics.math;
+import gse.utility;
 
 import :keys;
+import :input_state;
 
 namespace gse::input {
 	struct key_pressed {
@@ -55,67 +57,38 @@ namespace gse::input {
 		text_entered
 	>;
 
-	class input_state {
-	public:
-		auto key_pressed(const key key) const -> bool {
-			return m_keys_pressed_this_frame.contains(key);
-		}
+	export auto update(
+		const std::function<void()>& in_frame
+	) -> void;
 
-		auto key_held(const key key) const -> bool {
-			return m_keys_held.contains(key);
-		}
+	auto key_callback(
+		int key,
+		int action
+	) -> void;
 
-		auto key_released(const key key) const -> bool {
-			return m_keys_released_this_frame.contains(key);
-		}
+	auto mouse_button_callback(
+		int button,
+		int action,
+		double x_pos,
+		double y_pos
+	) -> void;
 
-		auto mouse_button_pressed(const mouse_button button) const -> bool {
-			return m_mouse_buttons_pressed_this_frame.contains(button);
-		}
+	auto mouse_pos_callback(
+		double x_pos,
+		double y_pos
+	) -> void;
 
-		auto mouse_button_held(const mouse_button button) const -> bool {
-			return m_mouse_buttons_held.contains(button);
-		}
+	auto mouse_scroll_callback(
+		double x_offset,
+		double y_offset
+	) -> void;
 
-		auto mouse_button_released(const mouse_button button) const -> bool {
-			return m_mouse_buttons_released_this_frame.contains(button);
-		}
+	auto text_callback(
+		unsigned int codepoint
+	) -> void;
 
-		auto mouse_position() const -> unitless::vec2 {
-			return m_mouse_position;
-		}
-
-		auto mouse_delta() const -> unitless::vec2 {
-			return m_mouse_delta;
-		}
-
-		auto text_entered() const -> const std::string& {
-			return m_text_entered_this_frame;
-		}
-	private:
-		friend auto update(const std::function<void()>& in_frame) -> void;
-
-		std::unordered_set<key> m_keys_held;
-		std::unordered_set<key> m_keys_pressed_this_frame;
-		std::unordered_set<key> m_keys_released_this_frame;
-
-		std::unordered_set<mouse_button> m_mouse_buttons_held;
-		std::unordered_set<mouse_button> m_mouse_buttons_pressed_this_frame;
-		std::unordered_set<mouse_button> m_mouse_buttons_released_this_frame;
-
-		unitless::vec2 m_mouse_position;
-		unitless::vec2 m_mouse_delta;
-		std::string m_text_entered_this_frame;
-	};
-
-	export auto update(const std::function<void()>& in_frame) -> void;
-
-	auto key_callback(int key, int action) -> void;
-	auto mouse_button_callback(int button, int action, double x_pos, double y_pos) -> void;
-	auto mouse_pos_callback(double x_pos, double y_pos) -> void;
-	auto mouse_scroll_callback(double x_offset, double y_offset) -> void;
-	auto text_callback(unsigned int codepoint) -> void;
-	auto clear_events() -> void;
+	auto clear_events(
+	) -> void;
 
 	thread_local const input_state* global_input_state = nullptr;
 }
@@ -124,40 +97,69 @@ namespace gse::input {
 	std::vector<event> queue;
 	std::mutex mutex;
 
-	auto to_key(int glfw_key) -> std::optional<key> {
-		if (glfw_key >= GLFW_KEY_SPACE && glfw_key <= GLFW_KEY_LAST) {
-			return static_cast<key>(glfw_key);
-		}
-		return std::nullopt;
+	auto to_key(
+		int glfw_key
+	) -> std::optional<key>;
+
+	auto to_mouse_button(
+		int glfw_button
+	) -> std::optional<mouse_button>;
+}
+
+namespace gse::detail {
+	struct input_state_token {
+		input_state_token() = default;
+	};
+
+	auto token(
+	) -> const input_state_token& {
+		static constexpr input_state_token t{};
+		return t;
+	}
+}
+
+auto gse::input::update(const std::function<void()>& in_frame) -> void {
+	static input_state persistent_state;
+
+	std::vector<event> events_to_process;
+	scope([&] {
+		std::scoped_lock lock(mutex);
+		events_to_process.swap(queue);
+	});
+
+	const auto& tok = detail::token();
+	persistent_state.begin_frame(tok);
+
+	for (const auto& evt : events_to_process) {
+		match(evt)
+			.if_is<key_pressed>([&](const auto& arg) {
+				persistent_state.on_key_pressed(arg.key_code, tok);
+			})
+			.else_if_is<key_released>([&](const auto& arg) {
+				persistent_state.on_key_released(arg.key_code, tok);
+			})
+			.else_if_is<mouse_button_pressed>([&](const auto& arg) {
+				persistent_state.on_mouse_button_pressed(arg.button, tok);
+			})
+			.else_if_is<mouse_button_released>([&](const auto& arg) {
+				persistent_state.on_mouse_button_released(arg.button, tok);
+			})
+			.else_if_is<mouse_moved>([&](const auto& arg) {
+				persistent_state.on_mouse_moved(static_cast<float>(arg.x_pos), static_cast<float>(arg.y_pos), tok);
+			})
+			.else_if_is<mouse_scrolled>([&](const auto&) {
+				// no state tracked for scroll yet
+			})
+			.else_if_is<text_entered>([&](const auto& arg) {
+				persistent_state.append_codepoint(arg.codepoint, tok);
+			});
 	}
 
-	auto to_mouse_button(int glfw_button) -> std::optional<mouse_button> {
-		if (glfw_button >= GLFW_MOUSE_BUTTON_1 && glfw_button <= GLFW_MOUSE_BUTTON_LAST) {
-			return static_cast<mouse_button>(glfw_button);
-		}
-		return std::nullopt;
-	}
+	persistent_state.end_frame(tok);
 
-	auto codepoint_to_utf8(std::string& s, const std::uint32_t c) -> void {
-		if (c < 0x80) {
-			s += static_cast<char>(c);
-		}
-		else if (c < 0x800) {
-			s += static_cast<char>(0xC0 | c >> 6);
-			s += static_cast<char>(0x80 | c & 0x3F);
-		}
-		else if (c < 0x10000) {
-			s += static_cast<char>(0xE0 | c >> 12);
-			s += static_cast<char>(0x80 | c >> 6 & 0x3F);
-			s += static_cast<char>(0x80 | c & 0x3F);
-		}
-		else {
-			s += static_cast<char>(0xF0 | c >> 18);
-			s += static_cast<char>(0x80 | c >> 12 & 0x3F);
-			s += static_cast<char>(0x80 | c >> 6 & 0x3F);
-			s += static_cast<char>(0x80 | c & 0x3F);
-		}
-	}
+	global_input_state = &persistent_state;
+	in_frame();
+	global_input_state = nullptr;
 }
 
 auto gse::input::key_callback(const int key, const int action) -> void {
@@ -204,77 +206,43 @@ auto gse::input::clear_events() -> void {
 	queue.clear();
 }
 
-auto gse::input::update(const std::function<void()>& in_frame) -> void {
-	static input_state persistent_state;
-
-	std::vector<event> events_to_process;
-	{
-		std::scoped_lock lock(mutex);
-		events_to_process.swap(queue);
-	}
-
-	persistent_state.m_keys_pressed_this_frame.clear();
-	persistent_state.m_keys_released_this_frame.clear();
-	persistent_state.m_mouse_buttons_pressed_this_frame.clear();
-	persistent_state.m_mouse_buttons_released_this_frame.clear();
-	persistent_state.m_text_entered_this_frame.clear();
-
-	const unitless::vec2 last_mouse_pos = persistent_state.m_mouse_position;
-
-	for (const auto& evt : events_to_process) {
-		std::visit(
-			[&]<typename T0>(T0 && arg) {
-			using t = std::decay_t<T0>;
-			if constexpr (std::is_same_v<t, key_pressed>) {
-				persistent_state.m_keys_pressed_this_frame.insert(arg.key_code);
-				persistent_state.m_keys_held.insert(arg.key_code);
-			}
-			else if constexpr (std::is_same_v<t, key_released>) {
-				persistent_state.m_keys_released_this_frame.insert(arg.key_code);
-				persistent_state.m_keys_held.erase(arg.key_code);
-			}
-			else if constexpr (std::is_same_v<t, mouse_button_pressed>) {
-				persistent_state.m_mouse_buttons_pressed_this_frame.insert(arg.button);
-				persistent_state.m_mouse_buttons_held.insert(arg.button);
-			}
-			else if constexpr (std::is_same_v<t, mouse_button_released>) {
-				persistent_state.m_mouse_buttons_released_this_frame.insert(arg.button);
-				persistent_state.m_mouse_buttons_held.erase(arg.button);
-			}
-			else if constexpr (std::is_same_v<t, mouse_moved>) {
-				persistent_state.m_mouse_position = { static_cast<float>(arg.x_pos), static_cast<float>(arg.y_pos) };
-			}
-			else if constexpr (std::is_same_v<t, text_entered>) {
-				codepoint_to_utf8(persistent_state.m_text_entered_this_frame, arg.codepoint);
-			}
-		},
-			evt
-		);
-	}
-
-	persistent_state.m_mouse_delta = persistent_state.m_mouse_position - last_mouse_pos;
-
-	global_input_state = &persistent_state;
-	in_frame();
-	global_input_state = nullptr;
-}
-
 export namespace gse::keyboard {
-	auto pressed(key key) -> bool;
-	auto released(key key) -> bool;
-	auto held(key key) -> bool;
+	auto pressed(
+		key key
+	) -> bool;
+
+	auto released(
+		key key
+	) -> bool;
+
+	auto held(
+		key key
+	) -> bool;
 }
 
 export namespace gse::mouse {
-	auto pressed(mouse_button button) -> bool;
-	auto released(mouse_button button) -> bool;
-	auto held(mouse_button button) -> bool;
-	auto position() -> unitless::vec2;
-	auto delta() -> unitless::vec2;
+	auto pressed(
+		mouse_button button
+	) -> bool;
+
+	auto released(
+		mouse_button button
+	) -> bool;
+
+	auto held(
+		mouse_button button
+	) -> bool;
+
+	auto position(
+	) -> unitless::vec2;
+
+	auto delta(
+	) -> unitless::vec2;
 }
 
 export namespace gse::text {
-	auto entered() -> const std::string&;
+	auto entered(
+	) -> const std::string&;
 }
 
 auto gse::keyboard::pressed(const key key) -> bool {
@@ -321,4 +289,18 @@ auto gse::text::entered() -> const std::string& {
 	}
 	static const std::string empty_string;
 	return empty_string;
+}
+
+auto gse::input::to_key(const int glfw_key) -> std::optional<key> {
+	if (glfw_key >= GLFW_KEY_SPACE && glfw_key <= GLFW_KEY_LAST) {
+		return static_cast<key>(glfw_key);
+	}
+	return std::nullopt;
+}
+
+auto gse::input::to_mouse_button(const int glfw_button) -> std::optional<mouse_button> {
+	if (glfw_button >= GLFW_MOUSE_BUTTON_1 && glfw_button <= GLFW_MOUSE_BUTTON_LAST) {
+		return static_cast<mouse_button>(glfw_button);
+	}
+	return std::nullopt;
 }

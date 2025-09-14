@@ -2,8 +2,6 @@ export module gse.runtime:scene_loader;
 
 import std;
 
-import :main_clock;
-
 import gse.assert;
 import gse.utility;
 import gse.physics;
@@ -81,9 +79,7 @@ auto gse::scene_loader::update() -> void {
 	}
 
 	physics::update(
-		registries(),
-		main_clock::const_update_time,
-		main_clock::dt()
+		registries()
 	);
 
 	renderer::update();
