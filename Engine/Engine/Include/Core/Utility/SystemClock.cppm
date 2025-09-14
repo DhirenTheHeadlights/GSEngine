@@ -1,21 +1,28 @@
-export module gse.runtime:main_clock;
+export module gse.utility:system_clock;
 
 import std;
 
-import gse.utility;
 import gse.physics.math;
 
-export namespace gse::main_clock {
-	auto update() -> void;
+import :clock;
 
-	auto dt() -> time;
-	auto now() -> time;
-	auto fps() -> std::uint32_t;
+export namespace gse::system_clock {
+	auto update(
+	) -> void;
+
+	auto dt(
+	) -> time;
+
+	auto now(
+	) -> time;
+
+	auto fps(
+	) -> std::uint32_t;
 
 	constexpr time const_update_time = seconds(1.f / 100.f);
 }
 
-namespace gse::main_clock {
+namespace gse::system_clock {
 	clock main_clock;
 	clock dt_clock;
 
@@ -28,7 +35,7 @@ namespace gse::main_clock {
 	constexpr time fps_report_interval = seconds(1.0f);
 }
 
-auto gse::main_clock::update() -> void {
+auto gse::system_clock::update() -> void {
 	delta_time = std::min(dt_clock.reset(), const_update_time);
 
 	frame_count++;
@@ -41,14 +48,14 @@ auto gse::main_clock::update() -> void {
 	}
 }
 
-auto gse::main_clock::dt() -> time {
+auto gse::system_clock::dt() -> time {
 	return delta_time;
 }
 
-auto gse::main_clock::now() -> time {
+auto gse::system_clock::now() -> time {
 	return main_clock.elapsed();
 }
 
-auto gse::main_clock::fps() -> std::uint32_t {
+auto gse::system_clock::fps() -> std::uint32_t {
 	return frame_rate_count;
 }

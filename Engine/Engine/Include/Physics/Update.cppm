@@ -10,29 +10,29 @@ import :system;
 
 export namespace gse::physics {
 	auto update(
-		const std::vector<std::reference_wrapper<registry>>& registries,
-		time fixed_update_time, 
-		time frame_time
+		const std::vector<std::reference_wrapper<registry>>& registries
 	) -> void;
 }
 
 constexpr gse::time g_max_time_step = gse::seconds(0.25f);
 gse::time g_accumulator;
 
-auto gse::physics::update(const std::vector<std::reference_wrapper<registry>>& registries, const time fixed_update_time, time frame_time) -> void {
+auto gse::physics::update(const std::vector<std::reference_wrapper<registry>>& registries) -> void {
+	time frame_time = system_clock::dt();
+
 	if (frame_time > g_max_time_step) {
 		frame_time = g_max_time_step;
 	}
 
 	g_accumulator += frame_time;
 
-	while (g_accumulator >= fixed_update_time) {
+	while (g_accumulator >= system_clock::const_update_time) {
 		for (int i = 0; i < 5; i++) {
 			for (auto& registry : registries) {
 				broad_phase_collision::update(
 					registry.get().linked_objects<collision_component>(), 
 					registry.get().linked_objects<motion_component>(), 
-					fixed_update_time
+					system_clock::const_update_time
 				);
 			}
 		}
@@ -49,11 +49,11 @@ auto gse::physics::update(const std::vector<std::reference_wrapper<registry>>& r
 					collision = &*collision_it;
 				}
 
-				update_object(object, fixed_update_time, collision);
+				update_object(object, system_clock::const_update_time, collision);
 			}
 		}
 
-		g_accumulator -= fixed_update_time;
+		g_accumulator -= system_clock::const_update_time;
 	}
 }
 

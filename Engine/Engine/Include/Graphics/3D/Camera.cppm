@@ -4,7 +4,7 @@ import std;
 
 import gse.physics.math;
 import gse.platform;
-
+import gse.utility;
 
 export namespace gse {
 	class camera {
@@ -15,7 +15,7 @@ export namespace gse {
 		auto update_orientation() -> void;
 
 		auto set_position(const vec3<length>& position) -> void;
-		auto move(const vec3<length>& offset, time dt) -> void;
+		auto move(const vec3<length>& offset) -> void;
 		auto look_at(const vec3<length>& target) -> void ;
 
 		auto view() const -> mat4;
@@ -59,8 +59,8 @@ auto gse::camera::set_position(const vec3<length>& position) -> void {
 	this->m_position = position;
 }
 
-auto gse::camera::move(const vec3<length>& offset, const time dt) -> void {
-	m_position += offset * dt.as_default_unit();
+auto gse::camera::move(const vec3<length>& offset) -> void {
+	m_position += offset * system_clock::dt().as_default_unit();
 }
 
 auto gse::camera::look_at(const vec3<length>& target) -> void {

@@ -20,6 +20,7 @@ import :text_widget;
 import :input_widget;
 import :slider_widget;
 import :ids;
+import :button_widget;
 
 export namespace gse::gui {
 	auto initialize(
@@ -47,6 +48,10 @@ export namespace gse::gui {
 	auto text(
 		const std::string& text
 	) -> void;
+
+	auto button(
+		const std::string& text
+	) -> bool;
 
 	auto input(
 		const std::string& name,
@@ -122,6 +127,7 @@ namespace gse::gui {
 
 	id hot_widget_id;
 	id active_widget_id;
+	id last_clicked_widget_id;
 
 	std::unique_ptr<ids::scope> current_scope;
 
@@ -143,31 +149,27 @@ auto gse::gui::initialize(renderer::context& context) -> void {
 }
 
 auto gse::gui::update(const window& window, const style& style) -> void {
+	last_clicked_widget_id = {};
+
 	const auto mouse_position = mouse::position();
 	const bool mouse_held = mouse::held(mouse_button::button_1);
 
-	current_state = std::visit([&]<typename T0>(
-			T0&& state
-		) -> gui::state {
-			using t = std::decay_t<T0>;
-
-			if constexpr (std::is_same_v<t, states::idle>) {
-				return handle_idle_state(mouse_position, mouse_held, style);
-			}
-			else if constexpr (std::is_same_v<t, states::dragging>) {
-				return handle_dragging_state(state, window, mouse_position, mouse_held);
-			}
-			else if constexpr (std::is_same_v<t, states::resizing>) {
-				return handle_resizing_state(state, mouse_position, mouse_held, style);
-			}
-			else if constexpr (std::is_same_v<t, states::resizing_divider>) {
-				return handle_resizing_divider_state(state, mouse_position, mouse_held, style);
-			}
-
-			return states::idle{};
-		}, 
-		current_state
-	);
+	match(current_state)
+		.if_is<states::idle>([&](const auto&) {
+			current_state = handle_idle_state(mouse_position, mouse_held, style);
+		})
+		.else_if_is<states::dragging>([&](const auto& state) {
+			current_state = handle_dragging_state(state, window, mouse_position, mouse_held);
+		})
+		.else_if_is<states::resizing>([&](const auto& state) {
+			current_state = handle_resizing_state(state, mouse_position, mouse_held, style);
+		})
+		.else_if_is<states::resizing_divider>([&](const auto& state) {
+			current_state = handle_resizing_divider_state(state, mouse_position, mouse_held, style);
+		})
+		.otherwise([&] {
+			current_state = states::idle{};
+		});
 
 	if (save_clock.elapsed() > update_interval) {
 		save(menus, file_path);
@@ -247,6 +249,13 @@ auto gse::gui::render(const renderer::context& context, renderer::sprite& sprite
 		active_widget_id = hot_widget_id;
 	}
 
+	if (mouse::released(mouse_button::button_1)) {
+		if (active_widget_id == hot_widget_id && active_widget_id.exists()) {
+			last_clicked_widget_id = active_widget_id;
+		}
+		active_widget_id = {};
+	}
+
 	if (active_dock_space) {
 		const auto mouse_pos = mouse::position();
 		for (const auto& area : active_dock_space->areas) {
@@ -283,6 +292,16 @@ auto gse::gui::text(const std::string& text) -> void {
 			draw::text(ctx, "", text);
 		});
 	}
+}
+
+auto gse::gui::button(const std::string& text) -> bool {
+	if (current_menu) {
+		current_menu->commands.emplace_back([=](const widget_context& ctx) {
+			draw::button(ctx, text, hot_widget_id, active_widget_id);
+			});
+	}
+
+	return ids::make(text) == last_clicked_widget_id;
 }
 
 auto gse::gui::input(const std::string& name, std::string& buffer) -> void {

@@ -1,6 +1,8 @@
 import gse;
+import gse.server;
 
-int main() {
-	gse::initialize();
-	gse::run();
+import gs;
+
+auto main() -> int {
+	gse::start<gse::server_app, gs::scene_loader>();
 }
