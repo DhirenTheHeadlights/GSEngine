@@ -28,14 +28,15 @@ export namespace gse::gui {
 	) -> void;
 
 	auto update(
-		const window& window, 
+		const window& window,
 		const style& style = {}
 	) -> void;
 
-	auto render(
+	auto frame(
 		const renderer::context& context,
 		renderer::sprite& sprite_renderer,
 		renderer::text& text_renderer,
+		const std::function<void()>& in_frame = {},
 		const style& style = {}
 	) -> void;
 
@@ -68,33 +69,33 @@ export namespace gse::gui {
 
 	template <is_quantity T, auto Unit = typename T::default_unit{} >
 	auto slider(
-		const std::string& name, 
+		const std::string& name,
 		T& value,
-		T min, 
+		T min,
 		T max
 	) -> void;
 
 	template <typename T, int N>
 	auto slider(
 		const std::string& name,
-		unitless::vec_t<T, N>& vec, 
-		unitless::vec_t<T, N> min, 
+		unitless::vec_t<T, N>& vec,
+		unitless::vec_t<T, N> min,
 		unitless::vec_t<T, N> max
 	) -> void;
 
 	template <typename T, int N, auto Unit = typename T::default_unit{}>
 	auto slider(
 		const std::string& name,
-		vec_t<T, N>& vec, 
-		vec_t<T, N> min, 
+		vec_t<T, N>& vec,
+		vec_t<T, N> min,
 		vec_t<T, N> max
 	) -> void;
 
 	template <is_arithmetic T>
 	auto value(
-		const std::string& name, 
+		const std::string& name,
 		T value
-	) -> void; 
+	) -> void;
 
 	template <is_quantity T, auto Unit = typename T::default_unit{}>
 	auto value(
@@ -127,11 +128,22 @@ namespace gse::gui {
 
 	id hot_widget_id;
 	id active_widget_id;
-	id last_clicked_widget_id;
+	id focus_widget_id;
 
 	std::unique_ptr<ids::scope> current_scope;
 
 	constexpr time update_interval = seconds(30.f);
+
+	struct frame_bindings {
+		const renderer::context* rctx = nullptr;
+		renderer::sprite* sprite = nullptr;
+		renderer::text* text = nullptr;
+		style sty{};
+		bool bound = false;
+	};
+
+	frame_bindings frame_bindings{};
+	widget_context* context = nullptr;
 
 	auto begin(const std::string& name) -> bool;
 	auto end() -> void;
@@ -149,8 +161,6 @@ auto gse::gui::initialize(renderer::context& context) -> void {
 }
 
 auto gse::gui::update(const window& window, const style& style) -> void {
-	last_clicked_widget_id = {};
-
 	const auto mouse_position = mouse::position();
 	const bool mouse_held = mouse::held(mouse_button::button_1);
 
@@ -177,211 +187,258 @@ auto gse::gui::update(const window& window, const style& style) -> void {
 	}
 }
 
-auto gse::gui::start(const std::string& name, const std::function<void()>& contents) -> void {
-	if (begin(name)) {
-		contents();
-	}
-	end();
-}
+auto gse::gui::frame(const renderer::context& context, renderer::sprite& sprite_renderer, renderer::text& text_renderer, const std::function<void()>& in_frame, const gui::style& style) -> void {
+	if (!font.valid()) return;
 
-auto gse::gui::render(const renderer::context& context, renderer::sprite& sprite_renderer, renderer::text& text_renderer, const style& style) -> void {
+	frame_bindings = { &context, &sprite_renderer, &text_renderer, style, true };
 	hot_widget_id = {};
-	
-	if (font.valid()) {
-		for (auto& menu : menus.items()) {
-			const auto title_bar_rect = ui_rect::from_position_size(
-				menu.rect.top_left(),
-				{ menu.rect.width(), style.title_bar_height }
-			);
-			const auto body_rect = ui_rect::from_position_size(
-				{ menu.rect.left(), menu.rect.top() - style.title_bar_height },
-				{ menu.rect.width(), menu.rect.height() - style.title_bar_height }
-			);
-
-			sprite_renderer.queue({ 
-				.rect = body_rect,
-				.color = style.color_menu_body,
-				.texture = blank_texture
-			});
-
-			sprite_renderer.queue({ 
-				.rect = title_bar_rect,
-				.color = style.color_title_bar,
-				.texture = blank_texture
-			});
-
-			text_renderer.draw_text({
-				.font = font,
-				.text = menu.tab_contents[menu.active_tab_index],
-				.position = {
-					title_bar_rect.left() + style.padding,
-					title_bar_rect.center().y() + style.font_size / 2.f
-				},
-				.scale = style.font_size,
-				.clip_rect = title_bar_rect
-			});
-
-			if (menu.was_begun_this_frame) {
-				const auto content_rect = body_rect.inset({ style.padding, style.padding });
-			
-				unitless::vec2 layout_cursor = content_rect.top_left();
-
-				widget_context widget_context = {
-					.current_menu = &menu,
-					.style = style,
-					.sprite_renderer = sprite_renderer,
-					.text_renderer = text_renderer,
-					.font = font,
-					.blank_texture = blank_texture,
-					.layout_cursor = layout_cursor
-				};
-
-				for (const auto& command : menu.commands) {
-					command(widget_context);
-				}
-
-				menu.was_begun_this_frame = false;
-			}
-		}
+	for (auto& m : menus.items()) {
+		m.was_begun_this_frame = false;
 	}
 
-	if (mouse::pressed(mouse_button::button_1)) {
-		active_widget_id = hot_widget_id;
-	}
+	in_frame();
 
-	if (mouse::released(mouse_button::button_1)) {
-		if (active_widget_id == hot_widget_id && active_widget_id.exists()) {
-			last_clicked_widget_id = active_widget_id;
-		}
-		active_widget_id = {};
+	if (!frame_bindings.bound) {
+		frame_bindings = { &context, &sprite_renderer, &text_renderer, style, true };
+		return;
 	}
 
 	if (active_dock_space) {
 		const auto mouse_pos = mouse::position();
 		for (const auto& area : active_dock_space->areas) {
 			if (area.rect.contains(mouse_pos)) {
-				sprite_renderer.queue({ 
+				frame_bindings.sprite->queue({
 					.rect = area.target,
-					.color = style.color_dock_preview,
+					.color = frame_bindings.sty.color_dock_preview,
 					.texture = blank_texture
 				});
 				break;
 			}
 		}
 		for (const auto& area : active_dock_space->areas) {
-			sprite_renderer.queue({
+			frame_bindings.sprite->queue({
 				.rect = area.rect,
-				.color = style.color_dock_widget,
+				.color = frame_bindings.sty.color_dock_widget,
 				.texture = blank_texture
 			});
 		}
 	}
 
-	if (context.ui_focus()) {
-		cursor::render(context, sprite_renderer);
+	if (frame_bindings.rctx && frame_bindings.sprite && frame_bindings.rctx->ui_focus()) {
+		cursor::render(*frame_bindings.rctx, *frame_bindings.sprite);
 	}
+
+	if (mouse::released(mouse_button::button_1)) {
+		active_widget_id = {};
+	}
+
+	frame_bindings = {};
 }
 
 auto gse::gui::save() -> void {
 	save(menus, config::resource_path / file_path);
 }
 
-auto gse::gui::text(const std::string& text) -> void {
-	if (current_menu) {
-		current_menu->commands.emplace_back([=](const widget_context& ctx) {
-			draw::text(ctx, "", text);
+auto gse::gui::start(const std::string& name, const std::function<void()>& contents) -> void {
+	if (!frame_bindings.bound) return;
+	if (!begin(name)) return;
+
+	auto& menu = *current_menu;
+	const auto& sty = frame_bindings.sty;
+
+	const auto title_bar_rect = ui_rect::from_position_size(
+		menu.rect.top_left(),
+		{ menu.rect.width(), sty.title_bar_height }
+	);
+
+	const auto body_rect = ui_rect::from_position_size(
+		{ menu.rect.left(), menu.rect.top() - sty.title_bar_height },
+		{ menu.rect.width(), menu.rect.height() - sty.title_bar_height }
+	);
+
+	frame_bindings.sprite->queue({
+		.rect = body_rect,
+		.color = sty.color_menu_body,
+		.texture = blank_texture
+	});
+
+	frame_bindings.sprite->queue({
+		.rect = title_bar_rect,
+		.color = sty.color_title_bar,
+		.texture = blank_texture
+	});
+
+	if (font.valid()) {
+		frame_bindings.text->draw_text({
+			.font = font,
+			.text = menu.tab_contents[menu.active_tab_index],
+			.position = {
+				title_bar_rect.left() + sty.padding,
+				title_bar_rect.center().y() + sty.font_size / 2.f
+			},
+			.scale = sty.font_size,
+			.clip_rect = title_bar_rect
 		});
 	}
+
+	const auto content_rect = body_rect.inset({ sty.padding, sty.padding });
+	unitless::vec2 layout_cursor = content_rect.top_left();
+
+	ids::scope menu_scope(menu.id().number());
+
+	widget_context ctx{
+		.current_menu = &menu,
+		.style = sty,
+		.sprite_renderer = *frame_bindings.sprite,
+		.text_renderer = *frame_bindings.text,
+		.font = font,
+		.blank_texture = blank_texture,
+		.layout_cursor = layout_cursor
+	};
+
+	hot_widget_id = {};
+	context = &ctx;
+	contents();
+	context = nullptr;
+
+	end();
+}
+
+auto gse::gui::text(const std::string& text) -> void {
+	if (!context) return;
+	draw::text(*context, "", text);
 }
 
 auto gse::gui::button(const std::string& text) -> bool {
-	if (current_menu) {
-		current_menu->commands.emplace_back([=](const widget_context& ctx) {
-			draw::button(ctx, text, hot_widget_id, active_widget_id);
-			});
+	if (!context) return false;
+	const auto& ctx = *context;
+
+	const auto widget_id = ids::make(text);
+
+	const float widget_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
+	const auto content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
+	const ui_rect button_rect = ui_rect::from_position_size(
+		{ content_rect.left(), ctx.layout_cursor.y() },
+		{ content_rect.width(), widget_height }
+	);
+
+	const bool hovered = button_rect.contains(mouse::position());
+
+	if (hovered && mouse::pressed(mouse_button::button_1)) {
+		active_widget_id = widget_id;
+		if (focus_widget_id.exists()) focus_widget_id = {};
 	}
 
-	return ids::make(text) == last_clicked_widget_id;
+	draw::button(ctx, text, hot_widget_id, active_widget_id);
+
+	bool clicked = false;
+	if (mouse::released(mouse_button::button_1) && active_widget_id == widget_id) {
+		clicked = hovered;
+		active_widget_id = {};
+	}
+
+	return clicked;
 }
 
 auto gse::gui::input(const std::string& name, std::string& buffer) -> void {
-	if (current_menu) {
-		current_menu->commands.emplace_back([&, name](const widget_context& ctx) {
-			draw::input(ctx, name, buffer, hot_widget_id, active_widget_id);
-		});
+	if (!context) return;
+	const auto& ctx = *context;
+
+	const std::string id_label = name + "##Input";
+	const auto widget_id = ids::make(id_label);
+
+	const float widget_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
+	const auto content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
+	const ui_rect row_rect = ui_rect::from_position_size(
+		{ content_rect.left(), ctx.layout_cursor.y() },
+		{ content_rect.width(), widget_height }
+	);
+
+	const float label_width = content_rect.width() * 0.4f;
+	const ui_rect box_rect = ui_rect::from_position_size(
+		{ row_rect.left() + label_width, row_rect.top() },
+		{ content_rect.width() - label_width, widget_height }
+	);
+
+	const bool hovered = box_rect.contains(mouse::position());
+
+	if (mouse::pressed(mouse_button::button_1)) {
+		if (hovered) {
+			focus_widget_id = widget_id;
+		} else if (focus_widget_id == widget_id) {
+			focus_widget_id = {};
+		}
 	}
+
+	draw::input(ctx, name, buffer, hot_widget_id, focus_widget_id);
 }
 
 template <gse::is_arithmetic T>
 auto gse::gui::slider(const std::string& name, float& value, const float min, const float max) -> void {
-	if (current_menu) {
-		current_menu->commands.emplace_back([=, &value](widget_context& ctx) {
-			draw::slider(ctx, name, value, min, max, hot_widget_id, active_widget_id);
-		});
+	if (!context) return;
+
+	draw::slider(*context, name, value, min, max, hot_widget_id, active_widget_id);
+
+	if (mouse::pressed(mouse_button::button_1) && !active_widget_id.exists()) {
+		active_widget_id = hot_widget_id;
 	}
 }
 
 template <gse::is_quantity T, auto Unit>
 auto gse::gui::slider(const std::string& name, T& value, T min, T max) -> void {
-	if (current_menu) {
-		current_menu->commands.emplace_back([=, &value](widget_context& ctx) {
-			draw::slider<T, Unit>(ctx, name, value, min, max, hot_widget_id, active_widget_id);
-		});
+	if (!context) return;
+
+	draw::slider<T, Unit>(*context, name, value, min, max, hot_widget_id, active_widget_id);
+
+	if (mouse::pressed(mouse_button::button_1) && !active_widget_id.exists()) {
+		active_widget_id = hot_widget_id;
 	}
 }
 
 template <typename T, int N>
 auto gse::gui::slider(const std::string& name, unitless::vec_t<T, N>& vec, unitless::vec_t<T, N> min, unitless::vec_t<T, N> max) -> void {
-	if (current_menu) {
-		current_menu->commands.emplace_back([=, &vec](widget_context& ctx) {
-			draw::slider<T, N>(ctx, name, vec, min, max, hot_widget_id, active_widget_id);
-		});
+	if (!context) return;
+
+	draw::slider<T, N>(*context, name, vec, min, max, hot_widget_id, active_widget_id);
+
+	if (mouse::pressed(mouse_button::button_1) && !active_widget_id.exists()) {
+		active_widget_id = hot_widget_id;
 	}
 }
 
 template <typename T, int N, auto Unit>
 auto gse::gui::slider(const std::string& name, vec_t<T, N>& vec, vec_t<T, N> min, vec_t<T, N> max) -> void {
-	if (current_menu) {
-		current_menu->commands.emplace_back([=, &vec](widget_context& ctx) {
-			draw::slider<T, N, Unit>(ctx, name, vec, min, max, hot_widget_id, active_widget_id);
-		});
+	if (!context) return;
+
+	draw::slider<T, N, Unit>(*context, name, vec, min, max, hot_widget_id, active_widget_id);
+
+	if (mouse::pressed(mouse_button::button_1) && !active_widget_id.exists()) {
+		active_widget_id = hot_widget_id;
 	}
 }
 
 template <gse::is_arithmetic T>
 auto gse::gui::value(const std::string& name, T value) -> void {
-	if (current_menu) {
-		current_menu->commands.emplace_back([=](widget_context& ctx) {
-			draw::value(ctx, name, value);
-		});
-	}
+	if (!context) return;
+	draw::value(*context, name, value);
 }
 
 template <gse::is_quantity T, auto Unit>
 auto gse::gui::value(const std::string& name, T value) -> void {
-	if (current_menu) {
-		current_menu->commands.emplace_back([=](widget_context& ctx) {
-			draw::value<T, Unit>(ctx, name, value);
-		});
-	}
+	if (!context) return;
+	draw::value<T, Unit>(*context, name, value);
 }
 
 template <typename T, int N>
 auto gse::gui::vec(const std::string& name, unitless::vec_t<T, N> vec) -> void {
-	if (current_menu) {
-		current_menu->commands.emplace_back([=](widget_context& ctx) {
-			draw::vec(ctx, name, vec);
-		});
-	}
+	if (!context) return;
+	draw::vec(*context, name, vec);
 }
 
 template <typename T, int N, auto Unit>
 auto gse::gui::vec(const std::string& name, vec_t<T, N> vec) -> void {
-	if (current_menu) {
-		current_menu->commands.emplace_back([=](widget_context& ctx) {
-			draw::vec<T, N, Unit>(ctx, name, vec);
-		});
-	}
+	if (!context) return;
+	draw::vec<T, N, Unit>(*context, name, vec);
 }
 
 auto gse::gui::begin(const std::string& name) -> bool {
@@ -408,11 +465,10 @@ auto gse::gui::begin(const std::string& name) -> bool {
 	if (menu_ptr) {
 		current_menu = menu_ptr;
 		current_menu->was_begun_this_frame = true;
-		current_menu->commands.clear();
 		current_scope = std::make_unique<ids::scope>(current_menu->id().number());
 		return true;
 	}
-	
+
 	return false;
 }
 
@@ -481,7 +537,7 @@ auto gse::gui::handle_idle_state(const unitless::vec2 mouse_position, const bool
 						expand(item.id());
 					}
 				}
-				};
+			};
 			expand(root_id);
 			return bounds;
 		};
@@ -490,9 +546,9 @@ auto gse::gui::handle_idle_state(const unitless::vec2 mouse_position, const bool
 
 	auto hot_item = [&](
 		) -> std::optional<interaction_candidate> {
-			for (auto& menu : std::views::reverse(menus.items())) {
-				if (!menu.owner_id().exists()) { 
-					if (menu.docked_to == dock::location::none) { 
+			for (auto& menu : std::views::reverse(menus.items()) | std::views::filter([](const gui::menu& m) { return m.was_begun_this_frame; })) {
+				if (!menu.owner_id().exists()) {
+					if (menu.docked_to == dock::location::none) {
 						const ui_rect group_rect = calculate_group_bounds(menu.id());
 						for (const auto& [condition, handle, cursor] : resize_rules) {
 							if (condition(group_rect, mouse_position)) {
@@ -503,7 +559,7 @@ auto gse::gui::handle_idle_state(const unitless::vec2 mouse_position, const bool
 							}
 						}
 					}
-					else { 
+					else {
 						const ui_rect& rect = menu.rect;
 						switch (menu.docked_to) {
 							case dock::location::left:
@@ -526,7 +582,7 @@ auto gse::gui::handle_idle_state(const unitless::vec2 mouse_position, const bool
 						}
 					}
 				}
-				else { 
+				else {
 					if (const auto* parent = menus.try_get(menu.owner_id())) {
 						bool hovering = false;
 						auto new_cursor = cursor::style::arrow;
@@ -595,7 +651,7 @@ auto gse::gui::handle_idle_state(const unitless::vec2 mouse_position, const bool
 			return std::visit(
 				[](auto&& arg) -> state {
 					return arg;
-				}, 
+				},
 				hot_item->future_state
 			);
 		}
@@ -611,9 +667,11 @@ auto gse::gui::handle_resizing_state(const states::resizing& current, const unit
 	}
 
 	menu* m = menus.try_get(current.menu_id);
-	if (!m) return states::idle{};
+	if (!m || !m->was_begun_this_frame) {
+		return states::idle{};
+	}
 
-	auto calculate_group_bounds = [](const id& root_id) -> ui_rect {
+	auto calculate_group_bounds = [&](const id& root_id) -> ui_rect {
 		const menu* root = menus.try_get(root_id);
 		if (!root) return {};
 		ui_rect bounds = root->rect;
@@ -624,10 +682,10 @@ auto gse::gui::handle_resizing_state(const states::resizing& current, const unit
 					expand(item.id());
 				}
 			}
-			};
+		};
 		expand(root_id);
 		return bounds;
-		};
+	};
 
 	const ui_rect group_rect = calculate_group_bounds(m->id());
 	auto min_corner = group_rect.min();
@@ -670,17 +728,24 @@ auto gse::gui::handle_resizing_state(const states::resizing& current, const unit
 
 auto gse::gui::handle_dragging_state(const states::dragging& current, const window& window, const unitless::vec2 mouse_position, const bool mouse_held) -> state {
 	menu* m = menus.try_get(current.menu_id);
-	if (!m) return states::idle{};
+	if (!m || !m->was_begun_this_frame) {
+		return states::idle{};
+	}
+
+	auto visible_menus = menus.items() | std::views::filter([](const menu& menu) {
+		return menu.was_begun_this_frame;
+	});
 
 	if (!mouse_held) {
 		if (active_dock_space) {
 			id potential_dock_parent_id;
-			for (const auto& other_menu : menus.items()) {
-				if (other_menu.rect.contains(mouse_position) && other_menu.id() != current.menu_id) {
+			for (const auto& other_menu : std::views::reverse(visible_menus)) {
+				if (other_menu.id() != current.menu_id && other_menu.rect.contains(mouse_position)) {
 					potential_dock_parent_id = other_menu.id();
 					break;
 				}
 			}
+
 			for (const auto& area : active_dock_space->areas) {
 				if (area.rect.contains(mouse_position)) {
 					if (potential_dock_parent_id.exists()) {
@@ -692,7 +757,7 @@ auto gse::gui::handle_dragging_state(const states::dragging& current, const wind
 									std::make_move_iterator(m->tab_contents.end())
 								);
 								m->tab_contents.clear();
-								parent->active_tab_index = parent->tab_contents.size() - 1;
+								parent->active_tab_index = static_cast<uint32_t>(parent->tab_contents.size() - 1);
 								menus.remove(current.menu_id);
 							}
 						}
@@ -702,15 +767,23 @@ auto gse::gui::handle_dragging_state(const states::dragging& current, const wind
 						}
 					}
 					else {
-						if (area.dock_location != dock::location::center) {
-							const auto viewport_size = unitless::vec2(window.viewport());
-							const auto screen_rect = ui_rect::from_position_size({ 0.f, viewport_size.y() }, viewport_size);
+						const auto viewport_size = unitless::vec2(window.viewport());
+						const auto screen_rect = ui_rect::from_position_size({ 0.f, viewport_size.y() }, viewport_size);
+
+						if (area.dock_location == dock::location::center) {
+							m->rect = screen_rect;
+							m->docked_to = dock::location::center;
+							m->swap(id());
+							layout::update(menus, m->id());
+						}
+						else {
 							m->rect = layout::dock_target_rect(screen_rect, area.dock_location, 0.5f);
 							m->docked_to = area.dock_location;
 							m->swap(id());
 							layout::update(menus, m->id());
 						}
 					}
+
 					break;
 				}
 			}
@@ -741,7 +814,7 @@ auto gse::gui::handle_dragging_state(const states::dragging& current, const wind
 
 	active_dock_space.reset();
 	bool found_parent_menu = false;
-	for (auto& other_menu : std::views::reverse(menus.items())) {
+	for (auto& other_menu : std::views::reverse(visible_menus)) {
 		if (other_menu.id() == current.menu_id) continue;
 		if (other_menu.rect.contains(mouse_position)) {
 			active_dock_space = layout::dock_space(other_menu.rect);
@@ -749,6 +822,7 @@ auto gse::gui::handle_dragging_state(const states::dragging& current, const wind
 			break;
 		}
 	}
+
 	if (!found_parent_menu) {
 		const auto screen_rect = ui_rect::from_position_size({ 0.f, window_size.y() }, window_size);
 		active_dock_space = layout::dock_space(screen_rect);

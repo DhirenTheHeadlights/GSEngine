@@ -38,7 +38,6 @@ export namespace gs {
 				[] {
 					gse::gui::text("Hello, world!");
 					gse::gui::value("Test Value", 42);
-					// ... etc
 				}
 			);
 

@@ -14,9 +14,12 @@ export namespace gse {
 		explicit hook_base(
 			T* owner
 		);
-		virtual ~hook_base() = default;
 
-		auto owner_id() const -> const id&;
+		virtual ~hook_base(
+		) = default;
+
+		auto owner_id(
+		) const -> const id&;
 	protected:
 		T* m_owner;
 	};
@@ -34,17 +37,21 @@ export namespace gse {
 	template <typename T>
 	class hook : public hook_base<T> {
 	public:
-		explicit hook(T* owner) : hook_base<T>(owner) {
-		}
+		explicit hook(
+			T* owner
+		) : hook_base<T>(owner) {}
 
-		virtual auto initialize() -> void {
-		}
-		virtual auto update() -> void {
-		}
-		virtual auto render() -> void {
-		}
-		virtual auto shutdown() -> void {
-		}
+		virtual auto initialize(
+		) -> void {}
+
+		virtual auto update(
+		) -> void {}
+
+		virtual auto render(
+		) -> void {}
+
+		virtual auto shutdown(
+		) -> void {}
 	};
 
 	struct entity {
@@ -74,10 +81,17 @@ export namespace gse {
 			std::unique_ptr<hook<T>> hook
 		) -> void;
 
-		auto initialize() const -> void;
-		auto update() const -> void;
-		auto render() const -> void;
-		auto shutdown() const -> void;
+		auto initialize(
+		) const -> void;
+
+		auto update(
+		) const -> void;
+
+		auto render(
+		) const -> void;
+
+		auto shutdown(
+		) const -> void;
 
 		auto cycle(
 			const std::function<bool()>& condition

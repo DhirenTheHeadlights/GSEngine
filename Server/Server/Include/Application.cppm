@@ -15,6 +15,9 @@ export namespace gse {
 
 		auto update(
 		) -> void override;
+
+		auto render(
+		) -> void override;
 	private:
 		std::unique_ptr<server> m_server;
 		std::uint32_t tick_count = 0;
@@ -25,6 +28,7 @@ export namespace gse {
 
 auto gse::server_app::initialize() -> void {
 	m_server = std::make_unique<server>(9000);
+	renderer::set_ui_focus(true);
 }
 
 auto gse::server_app::update() -> void {
@@ -39,4 +43,20 @@ auto gse::server_app::update() -> void {
 	if (m_timer.tick()) {
 		std::println("Server Tick: {}", ++tick_count);
 	}
+
+	if (keyboard::pressed(key::escape)) {
+		gse::shutdown();
+	}
+}
+
+auto gse::server_app::render() -> void {
+	gui::start(
+		"Server Control",
+		[&] {
+			gui::text("This is a simple server application.");
+			for (const auto& [ip, port] : m_server->peers() | std::views::keys) {
+				gui::text(std::format("Client: {}:{}", ip, port));
+			}
+		}
+	);
 }

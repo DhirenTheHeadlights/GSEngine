@@ -9,7 +9,7 @@ enum class sound_id {
 };
 
 export namespace gse {
-	void play_sound(sound_id id) {
+	auto play_sound(sound_id id) -> void {
 		
 	}
 }

@@ -31,6 +31,10 @@ export namespace gse {
 			const T& msg,
 			const network::address& to
 		) -> void;
+
+		auto peers(
+		) const -> const std::unordered_map<network::address, network::remote_peer>&;
+
 	private:
 		static auto process_header(
 			network::bitstream& stream,
@@ -132,6 +136,10 @@ auto gse::server::update(const std::function<void(const network::address&, netwo
 			on_receive(received->from, msg);
 		}
 	}
+}
+
+auto gse::server::peers() const -> const std::unordered_map<network::address, network::remote_peer>& {
+	return m_peers;
 }
 
 auto gse::server::process_header(network::bitstream& stream, network::remote_peer& peer) -> packet_header {
