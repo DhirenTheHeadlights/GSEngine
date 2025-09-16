@@ -261,7 +261,7 @@ auto gse::vulkan::persistent_allocator::create_image(const device_config& config
 	vk::raii::ImageView view = nullptr;
 
 	if (view_info != vk::ImageViewCreateInfo{}) {
-		assert(view_info.image == nullptr, "Image view info must not have an image set yet!");
+		assert(view_info.image, "Image view info must not have an image set yet!");
 		vk::ImageViewCreateInfo actual_view_info = view_info;
 		actual_view_info.image = image;
 		view = config.device.createImageView(actual_view_info);
