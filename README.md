@@ -7,7 +7,7 @@ GSEngine is a modular game engine written in modern C++20. It aims to provide a 
 - **C++20 modules** for a clean and scalable codebase
 - **Minimal dependencies** managed through vcpkg
 - **Custom math library** with strongly typed vectors, matrices and quaternions
-- **Complete Dimensional Analysis** gives complete dimensional analysis and stongly typed quantities
+- **Complete dimensional analysis** gives complete dimensional analysis and stongly typed quantities
 - **Physics engine** with broad and narrow phase collision detection for AABBs and OBBs
 - **Hook‑based ECS** for queuing entities and components in a simple API
 - **Rendering pipeline** targeting modern 1.4 Vulkan integration & shader-slang for modern, high performance shaders
