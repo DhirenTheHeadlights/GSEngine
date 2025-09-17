@@ -11,8 +11,8 @@ Tabs: Network
 [Menu]
 Tag: Server
 Owner: 
-Rect: 100 300 300 200
-DockedTo: none
+Rect: 0 1080 1920 1080
+DockedTo: center
 DockSplitRatio: 0.5
 ActiveTab: 0
 Tabs: Server Control

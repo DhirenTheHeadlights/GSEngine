@@ -20,7 +20,6 @@ export import :message;
 export namespace gse::network {
 	auto initialize() -> void;
 	auto shutdown() -> void;
-	auto bind_socket() -> void;
 }
 
 auto gse::network::initialize() -> void {

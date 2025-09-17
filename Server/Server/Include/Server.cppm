@@ -108,6 +108,7 @@ auto gse::server::update(const std::function<void(const network::address&, netwo
 				m_peers.emplace(received->from, network::remote_peer(received->from));
 				send(network::connection_accepted_message{}, received->from);
 			}
+
 			continue;
 		}
 

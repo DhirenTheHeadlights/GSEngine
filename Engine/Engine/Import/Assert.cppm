@@ -20,15 +20,16 @@ export namespace gse {
 }
 
 namespace gse {
-    auto assert_func_production(std::string_view message) noexcept -> void;
-    auto assert_func_internal(std::string_view message) noexcept -> void;
+    auto assert_func_production(
+        std::string_view message
+    ) noexcept -> void;
+
+    auto assert_func_internal(
+        std::string_view message
+    ) noexcept -> void;
 }
 
-auto gse::assert(
-    const bool condition,
-    std::string_view formatted_string,
-    const std::source_location& loc
-) -> void {
+auto gse::assert(const bool condition, std::string_view formatted_string, const std::source_location& loc) -> void {
     if (!condition) {
         const std::string message = std::format(
             "[Assertion Failure]\n"
@@ -77,7 +78,7 @@ auto gse::assert_func_internal(std::string_view message) noexcept -> void {
         break;
     }
 #else
-    std::cerr << message << '\n';
+	std::println("Internal Assert: {}", message);
     std::terminate();
 #endif
 }

@@ -20,7 +20,7 @@ export namespace gse {
 		) -> void override;
 	private:
 		std::unique_ptr<server> m_server;
-		std::uint32_t tick_count = 0;
+		std::uint32_t m_tick_count = 0;
 
 		interval_timer m_timer{ seconds(5.f) };
 	};
@@ -36,12 +36,17 @@ auto gse::server_app::update() -> void {
 		match(msg)
 			.if_is<network::ping_message>([&](const network::ping_message& ping) {
 				std::println("Server Received: Ping {} from {}:{}", ping.sequence, from.ip, from.port);
-				m_server->send(network::pong_message{ ping.sequence }, from);
+				m_server->send(
+					network::pong_message{
+						.sequence = ping.sequence
+					}, 
+					from
+				);
 			});
-		});
+	});
 
 	if (m_timer.tick()) {
-		std::println("Server Tick: {}", ++tick_count);
+		m_tick_count++;
 	}
 
 	if (keyboard::pressed(key::escape)) {
@@ -57,6 +62,7 @@ auto gse::server_app::render() -> void {
 			for (const auto& [ip, port] : m_server->peers() | std::views::keys) {
 				gui::text(std::format("Client: {}:{}", ip, port));
 			}
+			gui::value("Ticks", m_tick_count);
 		}
 	);
 }
