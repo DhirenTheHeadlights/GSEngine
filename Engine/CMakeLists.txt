@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 project(Engine)
 
-file(GLOB_RECURSE ENGINE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cppm")
+file(GLOB_RECURSE ENGINE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cppm" "${CMAKE_CURRENT_BINARY_DIR}/Engine/*.cppm")
 
 add_library(Engine)
 
@@ -18,7 +18,7 @@ target_sources(Engine
     PRIVATE
         FILE_SET gse_modules TYPE CXX_MODULES
         BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Engine" "${CMAKE_CURRENT_BINARY_DIR}/Engine"
-        FILES ${ENGINE_MODULES} ${ENGINE_SOURCES}
+        FILES ${ENGINE_MODULES}
 )
 
 target_sources(Engine

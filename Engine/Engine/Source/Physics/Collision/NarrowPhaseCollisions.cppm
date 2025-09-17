@@ -89,7 +89,7 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
     constexpr length slop = meters(0.01f);
     constexpr float percent = 0.8f;
 
-    const length corrected_penetration = max(res->penetration - slop, length{ 0 });
+    const length corrected_penetration = std::max(res->penetration - slop, length{ 0 });
     const vec3<length> correction = res->normal * corrected_penetration * percent;
 
     const float ratio_a = inv_mass_a / total_inv_mass;
