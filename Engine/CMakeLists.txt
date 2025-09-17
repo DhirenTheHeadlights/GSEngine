@@ -5,32 +5,27 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 project(Engine)
 
-file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/*.cpp")
-file(GLOB_RECURSE ENGINE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/*.cppm")
+file(GLOB_RECURSE ENGINE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cppm")
 
 add_library(Engine)
 
 target_sources(Engine
     PRIVATE
-        ${ENGINE_SOURCES}
+        ${ENGINE_MODULES}
 )
 
 target_sources(Engine
     PRIVATE
         FILE_SET gse_modules TYPE CXX_MODULES
-        BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Engine"
+        BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Engine" "${CMAKE_CURRENT_BINARY_DIR}/Engine"
         FILES ${ENGINE_MODULES} ${ENGINE_SOURCES}
 )
 
 target_sources(Engine
     PUBLIC
         FILE_SET gse_modules_public TYPE CXX_MODULES
-        BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include"
-        FILES "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Include/Engine.cppm"
-)
-
-target_sources(Engine PRIVATE
-    "${CMAKE_CURRENT_BINARY_DIR}/Engine/Source/Core/Config.cppm"
+        BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Import"
+        FILES "${CMAKE_CURRENT_SOURCE_DIR}/Engine/Import/Engine.cppm"
 )
 
 find_package(glfw3 CONFIG REQUIRED)
@@ -39,6 +34,7 @@ find_path(miniaudio_INCLUDE_DIR "miniaudio.h")
 find_package(Freetype CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
 find_package(Vulkan REQUIRED)
+find_package(tomlplusplus CONFIG REQUIRED)
 
 set(VULKAN_SDK_PATH $ENV{VULKAN_SDK})
 if(NOT VULKAN_SDK_PATH)
@@ -90,6 +86,7 @@ target_link_libraries(Engine PUBLIC
     glfw
     Freetype::Freetype
     msdfgen::msdfgen
+    tomlplusplus::tomlplusplus
     VulkanModule
 )
 
@@ -97,8 +94,8 @@ set(ENGINE_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
 set(BAKED_RESOURCES_PATH "${CMAKE_CURRENT_BINARY_DIR}/Resources/")
 
 configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/Core/Config.cppm.in
-    ${CMAKE_CURRENT_BINARY_DIR}/Engine/Source/Core/Config.cppm
+    ${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/Core/Utility/Config.cppm.in
+    ${CMAKE_CURRENT_BINARY_DIR}/Engine/Source/Core/Utility/Config.cppm
     @ONLY
 )
 
