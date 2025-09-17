@@ -68,7 +68,7 @@ auto update_gravity(gse::physics::motion_component& component) -> void {
 		apply_force(component, gravity_force, component.current_position);
 	}
 	else {
-		component.current_acceleration.y() = gse::max(0.f, component.current_acceleration.y());
+		component.current_acceleration.y() = std::max(gse::meters_per_second_squared(0.f), component.current_acceleration.y());
 		update_friction(component, get_surface_properties(gse::surfaces::surface_type::concrete));
 	}
 }

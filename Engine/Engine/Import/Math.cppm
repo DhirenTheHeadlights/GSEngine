@@ -35,6 +35,11 @@ export namespace gse {
 	auto random_value(
 		const NumberType& max
 	) -> NumberType;
+
+	template <is_quantity Q>
+	auto abs(
+		const Q& value
+	) -> Q;
 }
 
 namespace gse {
@@ -64,4 +69,9 @@ auto gse::random_value(const NumberType& max) -> NumberType {
 		std::uniform_int_distribution<NumberType> dis(0, max);
 		return dis(generator);
 	}
+}
+
+template <gse::is_quantity Q>
+auto gse::abs(const Q& value) -> Q {
+	return value < Q(0) ? -value : value;
 }
