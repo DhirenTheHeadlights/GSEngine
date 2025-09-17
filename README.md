@@ -7,13 +7,14 @@ GSEngine is a modular game engine written in modern C++20. It aims to provide a 
 - **C++20 modules** for a clean and scalable codebase
 - **Minimal dependencies** managed through vcpkg
 - **Custom math library** with strongly typed vectors, matrices and quaternions
+- **Complete Dimensional Analysis** gives complete dimensional analysis and stongly typed quantities
 - **Physics engine** with broad and narrow phase collision detection for AABBs and OBBs
 - **Hook‑based ECS** for queuing entities and components in a simple API
-- **Rendering pipeline** targeting modern 1.4 Vulkan integration and support for custom shaders
-- **2D and 3D rendering** including sprite, text and model helpers
+- **Rendering pipeline** targeting modern 1.4 Vulkan integration & shader-slang for modern, high performance shaders
+- **2D and 3D rendering** supporting 2d sprites, text, and 3d objects in the same scene
 - **Editor** built on custom immediate mode gui library
-- **Model and asset loading** from OBJ/MTL with automatic caching
-- **Networking and audio** modules for multiplayer and sound effects
+- **Async resource management** allowing compile time cached resources & async resource loads for blazing fast incremental builds
+- **Server module** for client server interaction; minimal headless gui server-side
 - **Example game scenes** demonstrating how to build on top of the engine
 
 ## Prerequisites
@@ -30,7 +31,7 @@ The `setup.py` script can bootstrap third‑party packages through vcpkg on Wind
 ## Quick Start
 
 1. Clone this repository.
-2. Run `build.bat` or configure with CMake to generate a `build` folder.
+2. Configure with CMake to generate build files.
 3. Build the solution in your IDE or via the generated build scripts.
 4. Launch the editor to explore the sample scenes or integrate your own modules.
 
