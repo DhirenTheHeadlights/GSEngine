@@ -62,9 +62,9 @@ export namespace gse::gui {
 	template <is_arithmetic T>
 	auto slider(
 		const std::string& name,
-		float& value,
-		float min,
-		float max
+		T& value,
+		T min,
+		T max
 	) -> void;
 
 	template <is_quantity T, auto Unit = typename T::default_unit{} >
@@ -374,7 +374,7 @@ auto gse::gui::input(const std::string& name, std::string& buffer) -> void {
 }
 
 template <gse::is_arithmetic T>
-auto gse::gui::slider(const std::string& name, float& value, const float min, const float max) -> void {
+auto gse::gui::slider(const std::string& name, T& value, const T min, const T max) -> void {
 	if (!context) return;
 
 	draw::slider(*context, name, value, min, max, hot_widget_id, active_widget_id);

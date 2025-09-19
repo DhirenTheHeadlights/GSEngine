@@ -44,7 +44,7 @@ export namespace gse {
 	class model : public identifiable {
 	public:
 		explicit model(const std::filesystem::path& path) : identifiable(path), m_baked_model_path(path) {}
-		explicit model(const std::string& name, std::vector<mesh_data> meshes);
+		explicit model(std::string_view name, std::vector<mesh_data> meshes);
 
 		static auto compile() -> std::set<std::filesystem::path>;
 
@@ -62,7 +62,7 @@ export namespace gse {
 	};
 }
 
-gse::model::model(const std::string& name, std::vector<mesh_data> meshes) : identifiable(name) {
+gse::model::model(const std::string_view name, std::vector<mesh_data> meshes) : identifiable(name) {
 	m_meshes.reserve(meshes.size());
 	for (auto& mesh_data : meshes) {
 		m_meshes.emplace_back(std::move(mesh_data));

@@ -424,7 +424,7 @@ auto gse::renderer::lighting::render(std::span<std::reference_wrapper<registry>>
 				nullptr
 			);
 
-			m_shader->push(
+			m_shader->push_bytes(
 				command,
 				m_pipeline_layout,
 				"push_constants",

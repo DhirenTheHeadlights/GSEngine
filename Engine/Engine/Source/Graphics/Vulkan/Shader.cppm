@@ -85,18 +85,46 @@ namespace gse {
 			const renderer::context& context
 		) -> void;
 
-		auto unload() -> void;
-		static auto destroy_global_layouts() -> void;
+		auto unload(
+		) -> void;
 
-		auto shader_stages() const -> std::array<vk::PipelineShaderStageCreateInfo, 2>;
-		auto required_bindings() const -> std::vector<std::string>;
-		auto uniform_block(const std::string& name) const -> uniform_block;
-		auto uniform_blocks() const -> std::vector<class uniform_block>;
-		auto binding(const std::string& name) const -> std::optional<vk::DescriptorSetLayoutBinding>;
-		auto layout(set::binding_type type) const -> vk::DescriptorSetLayout;
-		auto layouts() const -> std::vector<vk::DescriptorSetLayout>;
-		auto push_constant_range(const std::string_view& name) const -> vk::PushConstantRange;
-		auto vertex_input_state() const -> vk::PipelineVertexInputStateCreateInfo;
+		static auto destroy_global_layouts(
+		) -> void;
+
+		auto shader_stages(
+		) const -> std::array<vk::PipelineShaderStageCreateInfo, 2>;
+
+		auto required_bindings(
+		) const -> std::vector<std::string>;
+
+		auto push_block(
+			const std::string& name
+		) const -> uniform_block;
+
+		auto uniform_block(
+			const std::string& name
+		) const -> uniform_block;
+
+		auto uniform_blocks(
+		) const -> std::vector<class uniform_block>;
+
+		auto binding(
+			const std::string& name
+		) const -> std::optional<vk::DescriptorSetLayoutBinding>;
+
+		auto layout(
+			set::binding_type type
+		) const -> vk::DescriptorSetLayout;
+
+		auto layouts(
+		) const -> std::vector<vk::DescriptorSetLayout>;
+
+		auto push_constant_range(
+			const std::string_view& name
+		) const -> vk::PushConstantRange;
+
+		auto vertex_input_state(
+		) const -> vk::PipelineVertexInputStateCreateInfo;
 
 		auto descriptor_writes(
 			vk::DescriptorSet set,
@@ -139,7 +167,7 @@ namespace gse {
 			const vk::DescriptorImageInfo& image_info
 		) const -> void;
 
-		auto push(
+		auto push_bytes(
 			vk::CommandBuffer command,
 			vk::PipelineLayout layout,
 			std::string_view block_name,
@@ -147,11 +175,12 @@ namespace gse {
 			std::size_t offset = 0
 		) const -> void;
 
+		template <typename... NameValue>
 		auto push(
 			vk::CommandBuffer command,
 			vk::PipelineLayout layout,
 			std::string_view block_name,
-			const std::unordered_map<std::string, std::span<const std::byte>>& values
+			NameValue&&... name_value_pairs
 		) const -> void;
 
 		auto descriptor_set(
@@ -175,7 +204,9 @@ namespace gse {
 		std::vector<struct uniform_block> m_push_constants;
 		info m_info;
 
-		static auto layout(const set& set) -> vk::DescriptorSetLayout {
+		static auto layout(
+			const set& set
+		) -> vk::DescriptorSetLayout {
 			if (std::holds_alternative<std::shared_ptr<vk::raii::DescriptorSetLayout>>(set.layout)) {
 				return **std::get<std::shared_ptr<vk::raii::DescriptorSetLayout>>(set.layout);
 			}
@@ -1394,6 +1425,12 @@ auto gse::shader::required_bindings() const -> std::vector<std::string> {
 	return required_bindings;
 }
 
+auto gse::shader::push_block(const std::string& name) const -> struct uniform_block {
+	const auto it = std::ranges::find_if(m_push_constants, [&](auto& b){ return b.name == name; });
+    assert(it != m_push_constants.end(), std::format("Push constant block '{}' not found", name));
+    return *it;
+}
+
 auto gse::shader::uniform_block(const std::string& name) const -> class uniform_block {
 	for (const auto& s : m_layout.sets | std::views::values) {
 		for (const auto& b : s.bindings) {
@@ -1762,12 +1799,13 @@ auto gse::shader::push_descriptor(const vk::CommandBuffer command, const vk::Pip
 	assert(false, std::format("Binding '{}' not found in shader", name));
 }
 
-auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout layout, std::string_view block_name, const void* data, const std::size_t offset) const -> void {
+auto gse::shader::push_bytes(const vk::CommandBuffer command, const vk::PipelineLayout layout, std::string_view block_name, const void* data, const std::size_t offset) const -> void {
 	const auto it = std::ranges::find_if(
 		m_push_constants, 
 		[&](const auto& block) {
 			return block.name == block_name;
-		});
+		}
+	);
 
 	assert(it != m_push_constants.end(), std::format("Push constant block '{}' not found in shader", block_name));
 
@@ -1783,44 +1821,85 @@ auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout
 	);
 }
 
-auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout layout, std::string_view block_name, const std::unordered_map<std::string, std::span<const std::byte>>& values) const -> void {
-	const auto it = std::ranges::find_if(
-		m_push_constants, 
-		[&](const auto& b) {
-			return b.name == block_name;
+template <typename ... NameValue>
+auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout layout, std::string_view block_name, NameValue&&... name_value_pairs) const -> void {
+	static_assert(
+		sizeof...(name_value_pairs) % 2 == 0,
+		"push(...) expects (name, value) pairs"
+	);
+
+    const auto it = std::ranges::find_if(
+        m_push_constants,
+        [&](const auto& b) {
+	        return b.name == block_name;
+        }
+    );
+
+    assert_lazy(
+		it != m_push_constants.end(),
+		[block_name] {
+			return std::format("Push constant block '{}' not found in shader", block_name);
 		}
 	);
 
-	assert(it != m_push_constants.end(), std::format("Push constant block '{}' not found in shader", block_name));
+    const auto& block = *it;
+    std::vector<std::byte> buffer(block.size, std::byte{0});
 
-	const auto& block = *it;
-	std::vector buffer(block.size, std::byte{ 0 });
+    auto write_one = [&](auto&& name_like, auto&& value_like) {
+        const std::string_view name_sv = name_like;
 
-	for (const auto& [name, data_span] : values) {
-		auto member_it = block.members.find(name);
-
-		assert(
-			member_it != block.members.end(),
-			std::format("Member '{}' not found in push constant block '{}'", name, block_name)
+        const auto mit = block.members.find(std::string(name_sv));
+        assert_lazy(
+			mit != block.members.end(),
+            [name_sv, block_name] {
+				return std::format("Member '{}' not found in push constant block '{}'", name_sv, block_name);
+			}
 		);
 
-		const auto& member_info = member_it->second;
+        const auto& mi = mit->second;
 
-		assert(
-			data_span.size() <= member_info.size,
-			std::format("Provided bytes for '{}' (size {}) exceed member size ({})", member_info.name, data_span.size(), member_info.size)
+        auto ptr_and_size = [&]<typename T0>(const T0& v) -> std::pair<const void*, std::size_t> {
+            using val = std::remove_cvref_t<T0>;
+            if constexpr (std::is_same_v<val, std::span<const std::byte>>)
+            {
+                return { v.data(), v.size() };
+            }
+            else
+            {
+                static_assert(
+					std::is_trivially_copyable_v<val>,
+                    "push(): value must be trivially copyable or std::span<const std::byte>"
+				);
+
+                return { &v, sizeof(val) };
+            }
+        };
+
+        const auto [src_ptr, n] = ptr_and_size(value_like);
+
+		assert_lazy(
+			n <= mi.size,
+			[mi, n] {
+				return std::format("Provided bytes for '{}' (size {}) exceed member size ({})", mi.name, n, mi.size);
+			}
 		);
 
-		std::memcpy(buffer.data() + member_info.offset, data_span.data(), data_span.size());
-	}
+        std::memcpy(buffer.data() + mi.offset, src_ptr, n);
+    };
 
-	command.pushConstants(
-		layout,
-		it->stage_flags,
-		0,
-		static_cast<std::uint32_t>(buffer.size()),
-		buffer.data()
-	);
+    auto args = std::forward_as_tuple(std::forward<NameValue>(name_value_pairs)...);
+    [&]<std::size_t... I>(std::index_sequence<I...>)
+    {
+        (write_one(std::get<2*I>(args), std::get<2*I + 1>(args)), ...);
+    }(std::make_index_sequence<sizeof...(name_value_pairs) / 2>{});
+
+    command.pushConstants(
+        layout,
+        block.stage_flags,
+        0,
+        static_cast<std::uint32_t>(buffer.size()),
+        buffer.data()
+    );
 }
 
 auto gse::shader::descriptor_set(const vk::raii::Device& device, const vk::DescriptorPool pool, const set::binding_type type, const std::uint32_t count) const -> std::vector<vk::raii::DescriptorSet> {

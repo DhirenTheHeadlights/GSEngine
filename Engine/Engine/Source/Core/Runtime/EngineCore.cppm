@@ -15,6 +15,8 @@ export namespace gse {
 		engine(const std::string& name) : hookable(name) {}
 	};
 
+	using world = hook<engine>;
+
 	struct engine_config {
 		std::string title = "GSEngine Application";
 		std::optional<unitless::vec2> size = std::nullopt;
