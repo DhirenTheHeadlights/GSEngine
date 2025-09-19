@@ -5,129 +5,103 @@ import std;
 import gse.assert;
 import gse.physics.math;
 
-export namespace gse {
-	class id;
-	using uuid = std::uint64_t;
-
-	auto generate_id(std::string_view tag) -> id;
-	auto generate_id(std::uint64_t number) -> id;
-	auto generate_temp_id(uuid number, std::string_view tag) -> id;
-	auto find(uuid number) -> id;
-	auto find(std::string_view tag) -> id;
-	auto exists(uuid number) -> bool;
-	auto exists(std::string_view tag) -> bool;
-}
+import :non_copyable;
 
 export namespace gse {
-	class id {
+	template <typename T> requires std::is_integral_v<T>
+	class id_t : non_copyable {
 	public:
-		id() = default;
-		auto operator==(const id& other) const -> bool;
+		id_t() = default;
+		auto operator==(const id_t& other) const -> bool;
 
-		auto number() const -> uuid;
-		auto tag() const -> const std::string&;
+		static auto generate(
+			T number,
+			const std::string_view tag
+		) -> id_t ;
+
+		auto number() const -> T;
+		auto tag() const -> std::string_view;
 		auto exists() const -> bool;
 	private:
-		explicit id(uuid id, std::string tag);
-
-		uuid m_number = std::numeric_limits<uuid>::max();
+		explicit id_t(T id, std::string tag);
+		T m_number = std::numeric_limits<T>::max();
 		std::string m_tag;
-
-		friend auto generate_id(std::string_view tag) -> id;
-		friend auto generate_id(std::uint64_t number) -> id;
-		friend auto generate_temp_id(uuid number, std::string_view tag) -> id;
 	};
 }
 
-template <>
-struct std::formatter<gse::id> {
+template <typename T>
+struct std::formatter<gse::id_t<T>> {
 	static constexpr auto parse(std::format_parse_context& ctx) { return ctx.begin(); }
-	static auto format(const gse::id& value, std::format_context& ctx) {
+	static auto format(const gse::id<T>& value, std::format_context& ctx) {
 		return std::format_to(ctx.out(), "[{}: {}]", value.number(), value.tag());
 	}
 };
 
-auto gse::id::operator==(const id& other) const -> bool {
+template <typename T> requires std::is_integral_v<T>
+auto gse::id_t<T>::operator==(const id_t& other) const -> bool {
 	if (!exists() || !other.exists()) {
 		return false;
 	}
 	return m_number == other.m_number;
 }
 
-auto gse::id::number() const -> uuid {
+template <typename T> requires std::is_integral_v<T>
+auto gse::id_t<T>::generate(T number, const std::string_view tag) -> id_t {
+	return id_t(number, std::string(tag));
+}
+
+template <typename T> requires std::is_integral_v<T>
+auto gse::id_t<T>::number() const -> T {
 	return m_number;
 }
 
-auto gse::id::tag() const -> const std::string& {
+template <typename T> requires std::is_integral_v<T>
+auto gse::id_t<T>::tag() const -> std::string_view {
 	return m_tag;
 }
 
-auto gse::id::exists() const -> bool {
-	return m_number != std::numeric_limits<uuid>::max();
+template <typename T> requires std::is_integral_v<T>
+auto gse::id_t<T>::exists() const -> bool {
+	return m_number != std::numeric_limits<T>::max();
 }
 
-gse::id::id(const uuid id, std::string tag): m_number(id), m_tag(std::move(tag)) {}
+template <typename T> requires std::is_integral_v<T>
+gse::id_t<T>::id_t(const T id, std::string tag): m_number(id), m_tag(std::move(tag)) {}
 
 export namespace gse {
-	class identifiable {
-	public:
-		explicit identifiable(const std::string& tag);
-		explicit identifiable(const std::filesystem::path& path);
+	using uuid = std::uint64_t;
 
-		auto id() const -> const id&;
-		auto operator==(const identifiable& other) const -> bool = default;
-	private:
-		gse::id m_id;
+	auto generate_id(
+		std::string_view tag
+	) -> id;
 
-		static auto filename(const std::filesystem::path& path) -> std::string ;
-	};
+	auto generate_id(
+		std::uint64_t number
+	) -> id;
+
+	auto generate_temp_id(
+		uuid number, std::string_view tag
+	) -> id;
+
+	auto find(
+		uuid number
+	) -> id;
+
+	auto find(
+		std::string_view tag
+	) -> id;
+
+	auto exists(
+		uuid number
+	) -> bool;
+
+	auto exists(
+		std::string_view tag
+	) -> bool;
 }
 
-gse::identifiable::identifiable(const std::string& tag) : m_id(generate_id(tag)) {}
 
-gse::identifiable::identifiable(const std::filesystem::path& path): m_id(generate_id(filename(path))) {}
 
-auto gse::identifiable::id() const -> const gse::id& {
-	return m_id;
-}
-
-auto gse::identifiable::filename(const std::filesystem::path& path) -> std::string {
-	std::string name = path.filename().string();
-	if (const size_t dot_pos = name.find_first_of('.'); dot_pos != std::string::npos) {
-		return name.substr(0, dot_pos);
-	}
-	return name;
-}
-
-export namespace gse {
-	class identifiable_owned {
-	public:
-		identifiable_owned() = default;
-		explicit identifiable_owned(const id& owner_id);
-
-		auto owner_id() const -> const id&;
-		auto operator==(const identifiable_owned& other) const -> bool = default;
-
-		auto swap(const id& new_parent_id) -> void;
-		auto swap(const identifiable& new_parent) -> void;
-	private:
-		id m_owner_id;
-	};
-}
-
-gse::identifiable_owned::identifiable_owned(const id& owner_id) : m_owner_id(owner_id) {}
-
-auto gse::identifiable_owned::owner_id() const -> const id& {
-	return m_owner_id;
-}
-
-auto gse::identifiable_owned::swap(const id& new_parent_id) -> void {
-	m_owner_id = new_parent_id;
-}
-
-auto gse::identifiable_owned::swap(const identifiable& new_parent) -> void {
-	swap(new_parent.id());
-}
 
 export namespace gse {
 	class identifiable_owned_only_uuid {
@@ -353,7 +327,7 @@ auto gse::find(const uuid number) -> id {
 	std::shared_lock lock(mutex);
 
 	id* found_id = registry.by_uuid.try_get(number);
-	assert(found_id, std::format("ID {} not found", number));
+	assert_lazy(found_id, [&] { return std::format("ID {} not found", number);  });
 	return *found_id;
 }
 
@@ -362,7 +336,7 @@ auto gse::find(const std::string_view tag) -> id {
 	std::shared_lock lock(mutex);
 
 	const auto it = registry.tag_to_uuid.find(tag);
-	assert(it != registry.tag_to_uuid.end(), std::format("Tag '{}' not found", tag));
+	assert_lazy(it != registry.tag_to_uuid.end(), [&] { return std::format("Tag '{}' not found", tag); });
 
 	id* found_id = registry.by_uuid.try_get(it->second);
 	assert(found_id, "Inconsistent registry state!");

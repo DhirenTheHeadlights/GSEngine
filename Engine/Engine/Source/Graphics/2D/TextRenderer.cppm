@@ -31,7 +31,6 @@ export namespace gse::renderer {
 		auto render(std::span<std::reference_wrapper<registry>> registries) -> void override;
 
 		auto draw_text(const command& cmd) -> void;
-
 	private:
 		vk::raii::Pipeline m_pipeline = nullptr;
 		vk::raii::PipelineLayout m_pipeline_layout = nullptr;
@@ -39,6 +38,8 @@ export namespace gse::renderer {
 		vulkan::persistent_allocator::buffer_resource m_index_buffer;
 
 		resource::handle<shader> m_shader;
+		std::vector<std::byte> m_pc_buffer;
+		struct shader::uniform_block m_pc_layout; 
 
 		std::vector<command> m_draw_commands;
 	};
@@ -133,7 +134,7 @@ auto gse::renderer::text::initialize() -> void {
 	};
 
 	const vk::PipelineDynamicStateCreateInfo dynamic_state_info{
-		.dynamicStateCount = static_cast<uint32_t>(dynamic_states.size()),
+		.dynamicStateCount = static_cast<std::uint32_t>(dynamic_states.size()),
 		.pDynamicStates = dynamic_states.data()
 	};
 
@@ -203,6 +204,8 @@ auto gse::renderer::text::render(std::span<std::reference_wrapper<registry>> reg
 		.pDepthAttachment = nullptr
 	};
 
+	static auto push_block = m_shader->push_block("push_constants");
+
 	vulkan::render(
 		config,
 		rendering_info,
@@ -234,15 +237,17 @@ auto gse::renderer::text::render(std::span<std::reference_wrapper<registry>> reg
 					auto rect_position = screen_rect.top_left();
 					auto size = screen_rect.size();
 
-					std::unordered_map<std::string, std::span<const std::byte>> push_constants = {
-						{ "projection", std::as_bytes(std::span(&projection, 1)) },
-						{ "position",   std::as_bytes(std::span(&rect_position, 1)) },
-						{ "size",       std::as_bytes(std::span(&size, 1)) },
-						{ "color",      std::as_bytes(std::span(&color, 1)) },
-						{ "uv_rect",    std::as_bytes(std::span(&uv_rect, 1)) }
-					};
+					m_shader->push(
+	                    command, 
+						*m_pipeline_layout, 
+						"push_constants",
+	                    "projection", projection,
+	                    "position",   rect_position,
+	                    "size",       size,
+	                    "color",      color,
+	                    "uv_rect",    uv_rect
+	                );
 
-					m_shader->push(command, m_pipeline_layout, "push_constants", push_constants);
 					command.drawIndexed(6, 1, 0, 0, 0);
 				}
 			}

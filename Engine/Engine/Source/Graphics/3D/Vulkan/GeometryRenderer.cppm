@@ -313,8 +313,6 @@ auto gse::renderer::geometry::render(const std::span<std::reference_wrapper<regi
 				{}
 			);
 
-			std::unordered_map<std::string, std::span<const std::byte>> push_constants = {};
-
 			auto calculate_center_of_mass = [](
 				const std::vector<model_instance>& models
 				) -> vec3<length> {
@@ -356,14 +354,12 @@ auto gse::renderer::geometry::render(const std::span<std::reference_wrapper<regi
 						}
 
 						for (const auto& entry : model_handle.render_queue_entries()) {
-							push_constants["model"] = std::as_bytes(std::span{ &entry.model_matrix, 1 });
-							push_constants["normal_matrix"] = std::as_bytes(std::span{ &entry.normal_matrix, 1 });
-
 							m_shader->push(
 								command,
 								m_pipeline_layout,
 								"push_constants",
-								push_constants
+								"model", entry.model_matrix,
+								"normal_matrix", entry.normal_matrix
 							);
 
 							if (const auto& mesh = entry.model->meshes()[entry.index]; mesh.material().valid()) {

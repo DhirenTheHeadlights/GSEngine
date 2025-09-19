@@ -75,7 +75,7 @@ export namespace gse {
 	template <typename T>
 	class hookable : public identifiable {
 	public:
-		hookable(const std::string& name, std::initializer_list<std::unique_ptr<hook<T>>> hooks = {});
+		hookable(std::string_view name, std::initializer_list<std::unique_ptr<hook<T>>> hooks = {});
 
 		auto add_hook(
 			std::unique_ptr<hook<T>> hook
@@ -103,7 +103,7 @@ export namespace gse {
 }
 
 template <typename T>
-gse::hookable<T>::hookable(const std::string& name, std::initializer_list<std::unique_ptr<hook<T>>> hooks) : identifiable(name) {
+gse::hookable<T>::hookable(const std::string_view name, std::initializer_list<std::unique_ptr<hook<T>>> hooks) : identifiable(name) {
 	for (auto&& h : hooks) m_hooks.push_back(std::move(const_cast<std::unique_ptr<hook<T>>&>(h)));
 }
 
@@ -771,10 +771,17 @@ class gse::hook<gse::entity> : public identifiable_owned {
 public:
 	virtual ~hook() = default;
 
-	virtual auto initialize() -> void {}
-	virtual auto update() -> void {}
-	virtual auto render() -> void {}
-	virtual auto shutdown() -> void {}
+	virtual auto initialize(
+	) -> void {}
+
+	virtual auto update(
+	) -> void {}
+
+	virtual auto render(
+	) -> void {}
+
+	virtual auto shutdown(
+	) -> void {}
 
 	template <is_component T> requires has_params<T>
 	auto add_component(
@@ -872,7 +879,7 @@ auto gse::hook<gse::entity>::configure_when_present(std::function<void(T&)> conf
 			return true;
 		}
 		return false;
-		};
+	};
 
 	m_registry->add_deferred_action(owner_id(), std::move(action));
 }
@@ -893,7 +900,7 @@ export namespace gse {
 	class scene final : public hookable<scene> {
 	public:
 		explicit scene(
-			const std::string& name = "Unnamed Scene"
+			std::string_view name = "Unnamed Scene"
 		);
 
 		auto add_entity(
@@ -927,8 +934,7 @@ export namespace gse {
 	};
 }
 
-gse::scene::scene(const std::string& name) : hookable(name) {
-}
+gse::scene::scene(const std::string_view name) : hookable(name) {}
 
 auto gse::scene::add_entity(const std::string& name) -> gse::id {
 	const auto id = m_registry.create(name);
@@ -966,44 +972,42 @@ auto gse::scene::registry() -> gse::registry& {
 	return m_registry;
 }
 
-export namespace gse {
-	template <>
-	class hook<scene> : public identifiable_owned {
+export template <>
+class gse::hook<gse::scene> : public identifiable_owned {
+public:
+	class builder {
 	public:
-		class builder {
-		public:
-			builder(const id& entity_id, scene* scene);
+		builder(const id& entity_id, scene* scene);
 
-			template <typename T>
-				requires (is_entity_hook<T> || is_component<T>) && has_params<T>
-			auto with(
-				const T::params& p
-			) -> builder&;
+		template <typename T>
+			requires (is_entity_hook<T> || is_component<T>) && has_params<T>
+		auto with(
+			const T::params& p
+		) -> builder&;
 
-			template <typename T>
-				requires (is_entity_hook<T> || is_component<T>) && !has_params<T>
-			auto with(
-			) -> builder&;
-		private:
-			id m_entity_id;
-			scene* m_scene;
-		};
-
-		hook(scene* owner);
-		virtual ~hook() = default;
-
-		virtual auto initialize() -> void {}
-		virtual auto update() -> void {}
-		virtual auto render() -> void {}
-		virtual auto shutdown() -> void {}
-
-		auto build(
-			const std::string& name
-		) const -> builder;
-	protected:
-		scene* m_owner = nullptr;
+		template <typename T>
+			requires (is_entity_hook<T> || is_component<T>) && !has_params<T>
+		auto with(
+		) -> builder&;
+	private:
+		id m_entity_id;
+		scene* m_scene;
 	};
-}
+
+	hook(scene* owner);
+	virtual ~hook() = default;
+
+	virtual auto initialize() -> void {}
+	virtual auto update() -> void {}
+	virtual auto render() -> void {}
+	virtual auto shutdown() -> void {}
+
+	auto build(
+		const std::string& name
+	) const -> builder;
+protected:
+	scene* m_owner = nullptr;
+};
 
 gse::hook<gse::scene>::builder::builder(const id& entity_id, scene* scene) : m_entity_id(entity_id), m_scene(scene) {}
 
