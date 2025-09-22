@@ -37,8 +37,8 @@ export namespace gs {
 			using hook::hook;
 
 			auto initialize() -> void override {
-				component<gse::physics::collision_component>().resolve_collisions = false;
-				component<gse::physics::motion_component>().affected_by_gravity = false;
+				component_write<gse::physics::collision_component>().resolve_collisions = false;
+				component_write<gse::physics::motion_component>().affected_by_gravity = false;
 			}
 		};
 	};

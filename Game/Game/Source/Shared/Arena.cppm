@@ -8,7 +8,7 @@ namespace gs::arena {
 	public:
 		using params = gse::box::params;
 
-		wall(const params& p) : m_size(p.size), m_initial_position(p.initial_position) {}
+		explicit wall(const params& p) : m_size(p.size), m_initial_position(p.initial_position) {}
 
 		auto initialize() -> void override {
 			add_hook<gse::box>({
@@ -23,7 +23,7 @@ namespace gs::arena {
 		}
 
 		auto update() -> void override {
-			component<gse::physics::motion_component>().current_position = m_initial_position;
+			component_write<gse::physics::motion_component>().current_position = m_initial_position;
 		}
 	private:
 		gse::vec3<gse::length> m_size;

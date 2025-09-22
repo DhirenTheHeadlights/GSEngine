@@ -19,10 +19,10 @@ export namespace gse {
 			int stacks = 18;
 		};
 
-		sphere(const params& p) : m_params(p) {}
+		explicit sphere(const params& p) : m_params(p) {}
 
 		auto initialize() -> void override {
-			const auto [mc_id, mc] = add_component<physics::motion_component>({
+			add_component<physics::motion_component>({
 				.current_position = m_params.initial_position
 			});
 

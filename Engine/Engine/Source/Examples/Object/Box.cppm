@@ -26,7 +26,7 @@ export namespace gse {
                 .mass = kilograms(100.f)
             });
 
-            const auto [cc_id, cc] = add_component<physics::collision_component>({
+            add_component<physics::collision_component>({
                 .bounding_box = { m_initial_position, m_size }
             });
 
@@ -41,8 +41,8 @@ export namespace gse {
         }
 
         auto update() -> void override {
-            if (keyboard::pressed(key::r) && component<physics::motion_component>().affected_by_gravity) {
-				component<physics::motion_component>().orientation = quat(unitless::axis_z, degrees(45.f));
+            if (keyboard::pressed(key::r) && component_read<physics::motion_component>().affected_by_gravity) {
+				component_write<physics::motion_component>().orientation = quat(unitless::axis_z, degrees(45.f));
             }
         }
     private:

@@ -12,7 +12,7 @@ import gse.network;
 
 export namespace gse {
 	struct engine : hookable<engine> {
-		engine(const std::string& name) : hookable(name) {}
+		explicit engine(const std::string& name) : hookable(name) {}
 	};
 
 	using world = hook<engine>;
