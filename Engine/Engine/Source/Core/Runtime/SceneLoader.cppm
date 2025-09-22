@@ -16,6 +16,7 @@ export namespace gse::scene_loader {
 
 	auto initialize() -> void;
 	auto update() -> void;
+	auto flip_registry_buffers() -> void;
 	auto render(const std::function<void()>& in_frame) -> void;
 	auto shutdown() -> void;
 
@@ -83,6 +84,12 @@ auto gse::scene_loader::update() -> void {
 	);
 
 	renderer::update();
+}
+
+auto gse::scene_loader::flip_registry_buffers() -> void {
+	for (const auto& scene : scenes | std::views::values) {
+		scene->registry().flip_buffers();
+	}
 }
 
 auto gse::scene_loader::render(const std::function<void()>& in_frame) -> void {

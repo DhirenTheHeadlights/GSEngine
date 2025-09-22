@@ -12,6 +12,6 @@ export namespace gse {
         using params = Data;
 
         component() = default;
-        component(const id& owner_id, const params& p = {}) : identifiable_owned_only_uuid(owner_id), Data(p) {}
+        explicit component(const id& owner_id, const params& p = {}) : identifiable_owned_only_uuid(owner_id), Data(p) {}
     };
 }

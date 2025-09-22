@@ -158,6 +158,11 @@ export namespace gse {
 		virtual ~component_link_base() = default;
 		virtual auto activate(const id& id) -> bool = 0;
 		virtual auto remove(const id& id) -> void = 0;
+
+		virtual auto bind(
+			std::size_t read_index,
+			std::size_t write_index
+		) -> void = 0;
 	};
 
 	template <is_component T>
@@ -171,7 +176,7 @@ export namespace gse {
 		auto add(
 			const owner_id_t& owner_id,
 			Args&&... args
-		) -> std::pair<link_id_t, T*>;
+		) -> T*;
 
 		auto activate(
 			const owner_id_t& owner_id
@@ -181,18 +186,37 @@ export namespace gse {
 			const owner_id_t& owner_id
 		) -> void override;
 
-		auto objects() -> std::span<component_type>;
+		auto objects_read(
+		) -> std::span<const component_type>;
 
-		auto try_get(
+		auto objects_write(
+		) -> std::span<component_type>;
+
+		auto try_get_read(
+			const owner_id_t& owner_id
+		) -> const component_type*;
+
+		auto try_get_write(
 			const owner_id_t& owner_id
 		) -> component_type*;
 
-		auto try_get_by_link_id(
+		auto try_get_by_link_id_read(
 			const link_id_t& link_id
-		) -> component_type*;
+		) -> const T*;
+
+		auto try_get_by_link_id_write(
+			const link_id_t& link_id
+		) -> T*;
+
+		auto bind(
+			std::size_t read_index,
+			std::size_t write_index
+		) -> void override;
 	private:
-		id_mapped_collection<component_type> m_active_components;
-		id_mapped_collection<component_type> m_queued_components;
+		double_buffered_id_mapped_queue<component_type, owner_id_t> m_dbq;
+		double_buffered_id_mapped_queue<component_type, owner_id_t>::reader m_reader{ &m_dbq, 0 };
+		double_buffered_id_mapped_queue<component_type, owner_id_t>::writer m_writer{ &m_dbq, 1 };
+
 		std::unordered_map<link_id_t, owner_id_t> m_link_to_owner_map;
 		std::uint32_t m_next_link_id = 0;
 	};
@@ -200,32 +224,27 @@ export namespace gse {
 
 template <gse::is_component T>
 template <typename ... Args>
-auto gse::component_link<T>::add(const owner_id_t& owner_id, Args&&... args) -> std::pair<link_id_t, T*> {
-	gse::assert(!try_get(owner_id), std::format(
+auto gse::component_link<T>::add(const owner_id_t& owner_id, Args&&... args) -> T* {
+	gse::assert(!try_get_write(owner_id), std::format(
 		"Attempting to add a component of type {} to owner {} that already has one.",
 		typeid(T).name(), owner_id
 	));
 
-	const link_id_t new_link_id = gse::generate_id(std::string(typeid(T).name()) + std::to_string(m_next_link_id++));
+	const link_id_t new_link_id = generate_id(std::string(typeid(T).name()) + std::to_string(m_next_link_id++));
 	m_link_to_owner_map[new_link_id] = owner_id;
 
-	T* new_comp = m_queued_components.add(owner_id, T(owner_id, std::forward<Args>(args)...));
-	return { new_link_id, new_comp };
+	T* new_comp = m_writer.emplace_queued(owner_id, std::forward<Args>(args)...);
+	return new_comp;
 }
 
 template <gse::is_component T>
 auto gse::component_link<T>::activate(const owner_id_t& owner_id) -> bool {
-	if (auto component = m_queued_components.pop(owner_id)) {
-		m_active_components.add(owner_id, std::move(*component));
-		return true;
-	}
-	return false;
+	return m_writer.activate(owner_id);
 }
 
 template <gse::is_component T>
 auto gse::component_link<T>::remove(const owner_id_t& owner_id) -> void {
-	m_active_components.remove(owner_id);
-	m_queued_components.remove(owner_id);
+	m_writer.remove(owner_id);
 
 	std::erase_if(
 		m_link_to_owner_map,
@@ -236,24 +255,44 @@ auto gse::component_link<T>::remove(const owner_id_t& owner_id) -> void {
 }
 
 template <gse::is_component T>
-auto gse::component_link<T>::objects() -> std::span<component_type> {
-	return m_active_components.items();
+auto gse::component_link<T>::objects_read() -> std::span<const component_type> {
+	return m_reader.objects();
 }
 
 template <gse::is_component T>
-auto gse::component_link<T>::try_get(const owner_id_t& owner_id) -> component_type* {
-	if (auto* component = m_active_components.try_get(owner_id)) {
-		return component;
-	}
-	return m_queued_components.try_get(owner_id);
+auto gse::component_link<T>::objects_write() -> std::span<component_type> {
+	return m_writer.objects();
 }
 
 template <gse::is_component T>
-auto gse::component_link<T>::try_get_by_link_id(const link_id_t& link_id) -> component_type* {
+auto gse::component_link<T>::try_get_read(const owner_id_t& owner_id) -> const component_type* {
+	return m_reader.try_get(owner_id);
+}
+
+template <gse::is_component T>
+auto gse::component_link<T>::try_get_write(const owner_id_t& owner_id) -> component_type* {
+	return m_writer.try_get(owner_id);
+}
+
+template <gse::is_component T>
+auto gse::component_link<T>::try_get_by_link_id_read(const link_id_t& link_id) -> const component_type* {
 	if (const auto it = m_link_to_owner_map.find(link_id); it != m_link_to_owner_map.end()) {
-		return try_get(it->second);
+		return m_reader.try_get(it->second);
 	}
 	return nullptr;
+}
+
+template <gse::is_component T>
+auto gse::component_link<T>::try_get_by_link_id_write(const link_id_t& link_id) -> component_type* {
+	if (const auto it = m_link_to_owner_map.find(link_id); it != m_link_to_owner_map.end()) {
+		return m_writer.try_get(it->second);
+	}
+	return nullptr;
+}
+
+template <gse::is_component T>
+auto gse::component_link<T>::bind(const std::size_t read_index, const std::size_t write_index) -> void {
+	std::tie(m_reader, m_writer) = m_dbq.bind(read_index, write_index);
 }
 
 export namespace gse {
@@ -279,9 +318,9 @@ export namespace gse {
 
 		template <typename... Args>
 		auto add(
-			const owner_id_t& owner_id, 
+			const owner_id_t& owner_id,
 			Args&&... args
-		) -> std::pair<link_id_t, T*>;
+		) -> T*;
 
 		auto activate(
 			const owner_id_t& owner_id
@@ -319,13 +358,13 @@ gse::hook_link<T>::hook_link(registry& reg) : m_registry(reg) {}
 
 template <gse::is_entity_hook T>
 template <typename ... Args>
-auto gse::hook_link<T>::add(const owner_id_t& owner_id, Args&&... args) -> std::pair<link_id_t, T*> {
+auto gse::hook_link<T>::add(const owner_id_t& owner_id, Args&&... args) -> T* {
 	gse::assert(
-		!try_get(owner_id), 
+		!try_get(owner_id),
 		std::format(
-	        "Attempting to add a hook of type {} to owner {} that already has one.",
-	        typeid(T).name(), owner_id
-	    )
+			"Attempting to add a hook of type {} to owner {} that already has one.",
+			typeid(T).name(), owner_id
+		)
 	);
 
 	const link_id_t new_link_id = gse::generate_id(std::string(typeid(T).name()) + std::to_string(m_next_link_id++));
@@ -418,8 +457,11 @@ export namespace gse {
 			const id& id
 		) -> void;
 
-		auto update() -> void;
-		auto render() -> void;
+		auto update(
+		) -> void;
+
+		auto render(
+		) -> void;
 
 		auto add_deferred_action(
 			const id& owner_id,
@@ -430,13 +472,13 @@ export namespace gse {
 		auto add_component(
 			const id& owner_id,
 			Args&&... args
-		) -> std::pair<id, U*>;
+		) -> U*;
 
 		template <is_entity_hook U, typename... Args>
 		auto add_hook(
 			const id& owner_id,
 			Args&&... args
-		) -> std::pair<id, U*>;
+		) -> U*;
 
 		template <typename U>
 		auto remove_link(
@@ -444,31 +486,55 @@ export namespace gse {
 		) -> void;
 
 		template <typename U>
-		auto linked_objects(
-		) -> auto;
+		auto linked_objects_read(
+		) -> std::span<const U>;
+
+		template <typename U>
+		auto linked_objects_write(
+		) -> std::span<U>;
 
 		auto all_hooks(
 		) -> std::vector<hook<entity>*>;
 
 		template <typename U>
-		auto linked_object(
+		auto linked_object_read(
+			const id& id
+		) -> const U&;
+
+		template <typename U>
+		auto linked_object_write(
 			const id& id
 		) -> U&;
 
 		template <typename U>
-		auto try_linked_object(
+		auto try_linked_object_read(
+			const id& id
+		) -> const U*;
+
+		template <typename U>
+		auto try_linked_object_write(
 			const id& id
 		) -> U*;
 
 		template <typename U>
-		auto linked_object_by_link_id(
+		auto try_linked_object_by_link_id_read(
 			const id& link_id
-		) -> U&;
+		) -> const U*;
 
 		template <typename U>
-		auto try_linked_object_by_link_id(
+		auto try_linked_object_by_link_id_write(
 			const id& link_id
 		) -> U*;
+
+		template <typename U>
+		auto linked_object_by_link_id_read(
+			const id& link_id
+		) -> const U&;
+
+		template <typename U>
+		auto linked_object_by_link_id_write(
+			const id& link_id
+		) -> U&;
 
 		auto exists(
 			const id& id
@@ -482,6 +548,9 @@ export namespace gse {
 		static auto any_components(
 			std::span<std::reference_wrapper<registry>> registries
 		) -> bool;
+
+		auto flip_buffers(
+		) -> void;
 	private:
 		id_mapped_collection<entity> m_active_entities;
 		std::unordered_set<id> m_inactive_ids;
@@ -491,6 +560,9 @@ export namespace gse {
 		std::unordered_map<std::type_index, std::unique_ptr<hook_link_base>> m_hook_links;
 
 		std::unordered_map<id, std::vector<deferred_action>> m_deferred_actions;
+
+		std::size_t m_read_index = 0;
+		std::size_t m_write_index = 1;
 	};
 }
 
@@ -546,7 +618,7 @@ auto gse::registry::activate(const id& id) -> void {
 		auto& actions = it->second;
 
 		std::erase_if(
-			actions, 
+			actions,
 			[&](auto& action) {
 				if (action(*this)) {
 					return true;
@@ -585,7 +657,7 @@ auto gse::registry::remove(const id& id) -> void {
 auto gse::registry::update() -> void {
 	for (auto& actions : m_deferred_actions | std::views::values) {
 		std::erase_if(
-			actions, 
+			actions,
 			[this](auto& action) {
 				return action(*this);
 			}
@@ -593,7 +665,7 @@ auto gse::registry::update() -> void {
 	}
 
 	std::erase_if(
-		m_deferred_actions, 
+		m_deferred_actions,
 		[](const auto& pair) {
 			return pair.second.empty();
 		}
@@ -608,12 +680,14 @@ auto gse::registry::add_deferred_action(const id& owner_id, deferred_action acti
 }
 
 template <gse::is_component U, typename... Args>
-auto gse::registry::add_component(const id& owner_id, Args&&... args) -> std::pair<id, U*> {
+auto gse::registry::add_component(const id& owner_id, Args&&... args) -> U* {
 	assert(exists(owner_id), std::format("Cannot add component to entity with id {}: it does not exist.", owner_id));
 
 	const auto type_idx = std::type_index(typeid(U));
 	if (!m_component_links.contains(type_idx)) {
-		m_component_links[type_idx] = std::make_unique<component_link<U>>();
+		auto link = std::make_unique<component_link<U>>();
+		link->bind(m_read_index, m_write_index);
+		m_component_links[type_idx] = std::move(link);
 	}
 
 	auto& lnk = static_cast<component_link<U>&>(*m_component_links.at(type_idx));
@@ -621,7 +695,7 @@ auto gse::registry::add_component(const id& owner_id, Args&&... args) -> std::pa
 }
 
 template <gse::is_entity_hook U, typename... Args>
-auto gse::registry::add_hook(const id& owner_id, Args&&... args) -> std::pair<id, U*> {
+auto gse::registry::add_hook(const id& owner_id, Args&&... args) -> U* {
 	assert(exists(owner_id), std::format("Cannot add hook to entity with id {}: it does not exist.", owner_id));
 
 	const auto type_idx = std::type_index(typeid(U));
@@ -650,7 +724,35 @@ auto gse::registry::remove_link(const id& id) -> void {
 }
 
 template <typename U>
-auto gse::registry::linked_objects() -> auto {
+auto gse::registry::linked_objects_read() -> std::span<const U> {
+	const auto type_idx = std::type_index(typeid(U));
+
+	if constexpr (is_entity_hook<U>) {
+		const auto it = m_hook_links.find(type_idx);
+
+		if (it == m_hook_links.end()) {
+			return std::span<const U>{};
+		}
+
+		auto& lnk = static_cast<hook_link<U>&>(*it->second);
+		// hooks are single-buffered; expose active as const
+		auto span_mut = lnk.objects();
+		return std::span<const U>(span_mut.data(), span_mut.size());
+	}
+	else {
+		const auto it = m_component_links.find(type_idx);
+
+		if (it == m_component_links.end()) {
+			return std::span<const U>{};
+		}
+
+		auto& lnk = static_cast<component_link<U>&>(*it->second);
+		return lnk.objects_read();
+	}
+}
+
+template <typename U>
+auto gse::registry::linked_objects_write() -> std::span<U> {
 	const auto type_idx = std::type_index(typeid(U));
 
 	if constexpr (is_entity_hook<U>) {
@@ -671,7 +773,7 @@ auto gse::registry::linked_objects() -> auto {
 		}
 
 		auto& lnk = static_cast<component_link<U>&>(*it->second);
-		return lnk.objects();
+		return lnk.objects_write();
 	}
 }
 
@@ -687,57 +789,104 @@ auto gse::registry::all_hooks() -> std::vector<hook<entity>*> {
 }
 
 template <typename U>
-auto gse::registry::linked_object(const id& id) -> U& {
-	U* ptr = try_linked_object<U>(id);
-	assert(ptr, std::format(
-		"Linked object of type {} with id {} not found. If you expect a component/hook and its not there, you may want to try gse::hook<gse::entity>::configure_when_present to modify an component that is added through another hook", 
-		typeid(U).name(), id)
-	);
+auto gse::registry::linked_object_read(const id& id) -> const U& {
+	const U* ptr = try_linked_object_read<U>(id);
+	assert(ptr, std::format("Linked object (read) of type {} with id {} not found.", typeid(U).name(), id));
 	return *ptr;
 }
 
 template <typename U>
-auto gse::registry::try_linked_object(const id& id) -> U* {
+auto gse::registry::linked_object_write(const id& id) -> U& {
+	U* ptr = try_linked_object_write<U>(id);
+	assert(ptr, std::format("Linked object (write) of type {} with id {} not found.", typeid(U).name(), id));
+	return *ptr;
+}
+
+template <typename U>
+auto gse::registry::try_linked_object_read(const id& id) -> const U* {
 	const auto type_idx = std::type_index(typeid(U));
 
 	if constexpr (is_entity_hook<U>) {
 		const auto it = m_hook_links.find(type_idx);
-		if (it == m_hook_links.end()) return nullptr;
+		if (it == m_hook_links.end()) {
+			return nullptr;
+		}
 		auto& lnk = static_cast<hook_link<U>&>(*it->second);
 		return lnk.try_get(id);
 	}
 	else {
 		const auto it = m_component_links.find(type_idx);
-		if (it == m_component_links.end()) return nullptr;
+		if (it == m_component_links.end()) {
+			return nullptr;
+		}
 		auto& lnk = static_cast<component_link<U>&>(*it->second);
-		return lnk.try_get(id);
+		return lnk.try_get_read(id);
 	}
 }
 
 template <typename U>
-auto gse::registry::linked_object_by_link_id(const id& link_id) -> U& {
-	U* ptr = try_linked_object_by_link_id<U>(link_id);
+auto gse::registry::try_linked_object_write(const id& id) -> U* {
+	const auto type_idx = std::type_index(typeid(U));
+
+	if constexpr (is_entity_hook<U>) {
+		const auto it = m_hook_links.find(type_idx);
+		if (it == m_hook_links.end()) {
+			return nullptr;
+		}
+		auto& lnk = static_cast<hook_link<U>&>(*it->second);
+		return lnk.try_get(id);
+	}
+	else {
+		const auto it = m_component_links.find(type_idx);
+		if (it == m_component_links.end()) {
+			return nullptr;
+		}
+		auto& lnk = static_cast<component_link<U>&>(*it->second);
+		return lnk.try_get_write(id);
+	}
+}
+
+template <typename U>
+auto gse::registry::try_linked_object_by_link_id_read(const id& link_id) -> const U* {
+	const auto type_idx = std::type_index(typeid(U));
+	const auto it = m_component_links.find(type_idx);
+
+	if (it == m_component_links.end()) {
+		return nullptr;
+	}
+
+	auto& lnk = static_cast<component_link<U>&>(*it->second);
+	return lnk.try_get_by_link_id_read(link_id);
+}
+
+template <typename U>
+auto gse::registry::try_linked_object_by_link_id_write(const id& link_id) -> U* {
+	const auto type_idx = std::type_index(typeid(U));
+	const auto it = m_component_links.find(type_idx);
+
+	if (it == m_component_links.end()) {
+		return nullptr;
+	}
+
+	auto& lnk = static_cast<component_link<U>&>(*it->second);
+	return lnk.try_get_by_link_id_write(link_id);
+}
+
+
+template <typename U>
+auto gse::registry::linked_object_by_link_id_read(const id& link_id) -> const U& {
+	const U* ptr = try_linked_object_by_link_id_read<U>(link_id);
 	assert(ptr);
 	return *ptr;
 }
 
 template <typename U>
-auto gse::registry::try_linked_object_by_link_id(const id& link_id) -> U* {
-	const auto type_idx = std::type_index(typeid(U));
-
-	if constexpr (is_entity_hook<U>) {
-		const auto it = m_hook_links.find(type_idx);
-		if (it == m_hook_links.end()) return nullptr;
-		auto& lnk = static_cast<hook_link<U>&>(*it->second);
-		return lnk.try_get_by_link_id(link_id);
-	}
-	else {
-		const auto it = m_component_links.find(type_idx);
-		if (it == m_component_links.end()) return nullptr;
-		auto& lnk = static_cast<component_link<U>&>(*it->second);
-		return lnk.try_get_by_link_id(link_id);
-	}
+auto gse::registry::linked_object_by_link_id_write(const id& link_id) -> U& {
+	U* ptr = try_linked_object_by_link_id_write<U>(link_id);
+	assert(ptr);
+	return *ptr;
 }
+
 
 auto gse::registry::exists(const id& id) const -> bool {
 	return m_active_entities.contains(id) || m_inactive_ids.contains(id);
@@ -751,9 +900,17 @@ template <typename U>
 auto gse::registry::any_components(const std::span<std::reference_wrapper<registry>> registries) -> bool {
 	return std::ranges::any_of(
 		registries, [](const auto& reg) {
-			return !reg.get().template linked_objects<U>().empty();
+			return !reg.get().template linked_objects_read<U>().empty();
 		}
 	);
+}
+
+auto gse::registry::flip_buffers() -> void {
+	std::swap(m_read_index, m_write_index);
+
+	for (const auto& link : m_component_links | std::views::values) {
+		link->bind(m_read_index, m_write_index);
+	}
 }
 
 namespace gse {
@@ -786,36 +943,44 @@ public:
 	template <is_component T> requires has_params<T>
 	auto add_component(
 		T::params p
-	) -> std::pair<id, T*>;
+	) -> T*;
 
 	template <is_component T> requires (!has_params<T>)
 	auto add_component(
-	) -> std::pair<id, T*>;
+	) -> T*;
 
 	template <is_entity_hook T> requires has_params<T>
 	auto add_hook(
 		T::params p
-	) -> std::pair<id, T*>;
+	) -> T*;
 
 	template <is_entity_hook T> requires (!has_params<T>)
 	auto add_hook(
-	) -> std::pair<id, T*>;
+	) -> T*;
 
 	template <typename T>
 	auto remove(
 	) const -> void;
 
 	template <typename T>
-	auto component(
+	auto component_read(
+	) -> const T&;
+
+	template <typename T>
+	auto component_write(
 	) -> T&;
 
 	template <typename T>
-	auto try_component(
+	auto try_component_read(
+	) -> const T*;
+
+	template <typename T>
+	auto try_component_write(
 	) -> T*;
 
 	template <is_component T>
 	auto configure_when_present(
-		std::function<void(T&)> config_func
+		const std::function<void(T&)>& config_func
 	) -> void;
 
 	template <typename Func>
@@ -829,28 +994,28 @@ private:
 	friend class hook_link;
 
 	auto inject(
-		const id& owner_id, 
+		const id& owner_id,
 		registry* reg
 	) -> void;
 };
 
 template <gse::is_component T> requires gse::has_params<T>
-auto gse::hook<gse::entity>::add_component(typename T::params p) -> std::pair<id, T*> {
+auto gse::hook<gse::entity>::add_component(typename T::params p) -> T* {
 	return m_registry->add_component<T>(owner_id(), std::move(p));
 }
 
 template <gse::is_component T> requires (!gse::has_params<T>)
-auto gse::hook<gse::entity>::add_component() -> std::pair<id, T*> {
+auto gse::hook<gse::entity>::add_component() -> T* {
 	return m_registry->add_component<T>(owner_id());
 }
 
 template <gse::is_entity_hook T> requires gse::has_params<T>
-auto gse::hook<gse::entity>::add_hook(typename T::params p) -> std::pair<id, T*> {
+auto gse::hook<gse::entity>::add_hook(typename T::params p) -> T* {
 	return m_registry->add_hook<T>(owner_id(), std::move(p));
 }
 
 template <gse::is_entity_hook T> requires (!gse::has_params<T>)
-auto gse::hook<gse::entity>::add_hook() -> std::pair<id, T*> {
+auto gse::hook<gse::entity>::add_hook() -> T* {
 	return m_registry->add_hook<T>(owner_id());
 }
 
@@ -860,21 +1025,33 @@ auto gse::hook<gse::entity>::remove() const -> void {
 }
 
 template <typename T>
-auto gse::hook<gse::entity>::component() -> T& {
+auto gse::hook<gse::entity>::component_read() -> const T& {
 	assert(m_registry->active(owner_id()), std::format("Cannot access component of type {} for entity with id {}: it is not active.", typeid(T).name(), owner_id()));
-	return m_registry->linked_object<T>(owner_id());
+	return m_registry->linked_object_read<T>(owner_id());
 }
 
 template <typename T>
-auto gse::hook<gse::entity>::try_component() -> T* {
-	assert(m_registry->exists(owner_id()), std::format("Cannot access component of type {} for entity with id {}: it does not exist.", typeid(T).name(), owner_id()));
-	return m_registry->try_linked_object<T>(owner_id());
+auto gse::hook<gse::entity>::component_write() -> T& {
+	assert(m_registry->active(owner_id()), std::format("Cannot access component of type {} for entity with id {}: it is not active.", typeid(T).name(), owner_id()));
+	return m_registry->linked_object_write<T>(owner_id());
+}
+
+template <typename T>
+auto gse::hook<gse::entity>::try_component_read() -> const T* {
+	assert(m_registry->active(owner_id()), std::format("Cannot access component of type {} for entity with id {}: it is not active.", typeid(T).name(), owner_id()));
+	return m_registry->try_linked_object_read<T>(owner_id());
+}
+
+template <typename T>
+auto gse::hook<gse::entity>::try_component_write() -> T* {
+	assert(m_registry->active(owner_id()), std::format("Cannot access component of type {} for entity with id {}: it is not active.", typeid(T).name(), owner_id()));
+	return m_registry->try_linked_object_write<T>(owner_id());
 }
 
 template <gse::is_component T>
-auto gse::hook<gse::entity>::configure_when_present(std::function<void(T&)> config_func) -> void {
+auto gse::hook<gse::entity>::configure_when_present(const std::function<void(T&)>& config_func) -> void {
 	registry::deferred_action action = [owner_id = this->owner_id(), config_func = std::move(config_func)](registry& reg) -> bool {
-		if (auto* component = reg.try_linked_object<T>(owner_id)) {
+		if (auto* component = reg.try_linked_object_write<T>(owner_id)) {
 			config_func(*component);
 			return true;
 		}
