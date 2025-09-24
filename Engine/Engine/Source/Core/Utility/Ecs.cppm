@@ -175,6 +175,7 @@ export namespace gse {
 		template <typename... Args>
 		auto add(
 			const owner_id_t& owner_id,
+			registry* reg,
 			Args&&... args
 		) -> T*;
 
@@ -224,7 +225,7 @@ export namespace gse {
 
 template <gse::is_component T>
 template <typename ... Args>
-auto gse::component_link<T>::add(const owner_id_t& owner_id, Args&&... args) -> T* {
+auto gse::component_link<T>::add(const owner_id_t& owner_id, registry* reg, Args&&... args) -> T* {
 	gse::assert(!try_get_write(owner_id), std::format(
 		"Attempting to add a component of type {} to owner {} that already has one.",
 		typeid(T).name(), owner_id
@@ -234,6 +235,7 @@ auto gse::component_link<T>::add(const owner_id_t& owner_id, Args&&... args) -> 
 	m_link_to_owner_map[new_link_id] = owner_id;
 
 	T* new_comp = m_writer.emplace_queued(owner_id, std::forward<Args>(args)...);
+	new_comp->on_registry(reg);
 	return new_comp;
 }
 
@@ -367,7 +369,7 @@ auto gse::hook_link<T>::add(const owner_id_t& owner_id, Args&&... args) -> T* {
 		)
 	);
 
-	const link_id_t new_link_id = gse::generate_id(std::string(typeid(T).name()) + std::to_string(m_next_link_id++));
+	const link_id_t new_link_id = generate_id(std::string(typeid(T).name()) + std::to_string(m_next_link_id++));
 	m_link_to_owner_map[new_link_id] = owner_id;
 
 	auto new_hook = std::make_unique<T>(std::forward<Args>(args)...);
@@ -375,7 +377,7 @@ auto gse::hook_link<T>::add(const owner_id_t& owner_id, Args&&... args) -> T* {
 	raw_ptr->inject(owner_id, &m_registry);
 	m_queued_hooks.add(owner_id, std::move(new_hook));
 
-	return { new_link_id, raw_ptr };
+	return raw_ptr;
 }
 
 template <gse::is_entity_hook T>
@@ -465,7 +467,7 @@ export namespace gse {
 
 		auto add_deferred_action(
 			const id& owner_id,
-			deferred_action action
+			deferred_action&& action
 		) -> void;
 
 		template <is_component U, typename... Args>
@@ -487,7 +489,7 @@ export namespace gse {
 
 		template <typename U>
 		auto linked_objects_read(
-		) -> std::span<const U>;
+		) const -> std::span<const U>;
 
 		template <typename U>
 		auto linked_objects_write(
@@ -546,7 +548,7 @@ export namespace gse {
 
 		template <typename U>
 		static auto any_components(
-			std::span<std::reference_wrapper<registry>> registries
+			std::span<const std::reference_wrapper<registry>> registries
 		) -> bool;
 
 		auto flip_buffers(
@@ -675,7 +677,7 @@ auto gse::registry::update() -> void {
 auto gse::registry::render() -> void {
 }
 
-auto gse::registry::add_deferred_action(const id& owner_id, deferred_action action) -> void {
+auto gse::registry::add_deferred_action(const id& owner_id, deferred_action&& action) -> void {
 	m_deferred_actions[owner_id].push_back(std::move(action));
 }
 
@@ -691,7 +693,7 @@ auto gse::registry::add_component(const id& owner_id, Args&&... args) -> U* {
 	}
 
 	auto& lnk = static_cast<component_link<U>&>(*m_component_links.at(type_idx));
-	return lnk.add(owner_id, std::forward<Args>(args)...);
+	return lnk.add(owner_id, this, std::forward<Args>(args)...);
 }
 
 template <gse::is_entity_hook U, typename... Args>
@@ -724,7 +726,7 @@ auto gse::registry::remove_link(const id& id) -> void {
 }
 
 template <typename U>
-auto gse::registry::linked_objects_read() -> std::span<const U> {
+auto gse::registry::linked_objects_read() const -> std::span<const U> {
 	const auto type_idx = std::type_index(typeid(U));
 
 	if constexpr (is_entity_hook<U>) {
@@ -897,7 +899,7 @@ auto gse::registry::active(const id& id) const -> bool {
 }
 
 template <typename U>
-auto gse::registry::any_components(const std::span<std::reference_wrapper<registry>> registries) -> bool {
+auto gse::registry::any_components(const std::span<const std::reference_wrapper<registry>> registries) -> bool {
 	return std::ranges::any_of(
 		registries, [](const auto& reg) {
 			return !reg.get().template linked_objects_read<U>().empty();
@@ -1174,10 +1176,17 @@ public:
 	hook(scene* owner);
 	virtual ~hook() = default;
 
-	virtual auto initialize() -> void {}
-	virtual auto update() -> void {}
-	virtual auto render() -> void {}
-	virtual auto shutdown() -> void {}
+	virtual auto initialize(
+	) -> void {}
+
+	virtual auto update(
+	) -> void {}
+
+	virtual auto render(
+	) -> void {}
+
+	virtual auto shutdown(
+	) -> void {}
 
 	auto build(
 		const std::string& name

@@ -14,7 +14,7 @@ export namespace gse::renderer {
 		explicit lighting(context& context) : base_renderer(context) {}
 
 		auto initialize() -> void override;
-		auto render(std::span<std::reference_wrapper<registry>> registries) -> void override;
+		auto render(std::span<const std::reference_wrapper<registry>> registries) -> void override;
 	private:
 		vk::raii::Pipeline m_pipeline = nullptr;
 		vk::raii::PipelineLayout m_pipeline_layout = nullptr;
@@ -246,7 +246,7 @@ auto gse::renderer::lighting::initialize() -> void {
 	m_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, lighting_pipeline_info);
 }
 
-auto gse::renderer::lighting::render(std::span<std::reference_wrapper<registry>> registries) -> void {
+auto gse::renderer::lighting::render(std::span<const std::reference_wrapper<registry>> registries) -> void {
 	auto& config = m_context.config();
 	const auto command = config.frame_context().command_buffer;
 
@@ -303,7 +303,7 @@ auto gse::renderer::lighting::render(std::span<std::reference_wrapper<registry>>
 			break;
 		}
 
-		for (const auto& comp : reg.linked_objects<directional_light_component>()) {
+		for (const auto& comp : reg.linked_objects_read<directional_light_component>()) {
 			if (light_count >= stride) {
 				break;
 			}
@@ -318,7 +318,7 @@ auto gse::renderer::lighting::render(std::span<std::reference_wrapper<registry>>
 
 			++light_count;
 		}
-		for (const auto& comp : reg.linked_objects<point_light_component>()) {
+		for (const auto& comp : reg.linked_objects_read<point_light_component>()) {
 			if (light_count >= stride) {
 				break;
 			}
@@ -337,7 +337,7 @@ auto gse::renderer::lighting::render(std::span<std::reference_wrapper<registry>>
 
 			++light_count;
 		}
-		for (const auto& comp : reg.linked_objects<spot_light_component>()) {
+		for (const auto& comp : reg.linked_objects_read<spot_light_component>()) {
 			if (light_count >= stride) {
 				break;
 			}

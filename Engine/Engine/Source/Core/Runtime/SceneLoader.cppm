@@ -83,7 +83,9 @@ auto gse::scene_loader::update() -> void {
 		registries()
 	);
 
-	renderer::update();
+	renderer::update(
+		registries()
+	);
 }
 
 auto gse::scene_loader::flip_registry_buffers() -> void {

@@ -27,7 +27,7 @@ export namespace gse::renderer {
 		explicit sprite(context& context) : base_renderer(context) {}
 
 		auto initialize() -> void override;
-		auto render(std::span<std::reference_wrapper<registry>> registries) -> void override;
+		auto render(std::span<const std::reference_wrapper<registry>> registries) -> void override;
 
 		auto queue(const command& cmd) -> void;
 	private:
@@ -179,7 +179,7 @@ auto gse::renderer::sprite::initialize() -> void {
 	);
 }
 
-auto gse::renderer::sprite::render(std::span<std::reference_wrapper<registry>> registries) -> void {
+auto gse::renderer::sprite::render(std::span<const std::reference_wrapper<registry>> registries) -> void {
 	if (m_draw_commands.empty()) {
 		return;
 	}

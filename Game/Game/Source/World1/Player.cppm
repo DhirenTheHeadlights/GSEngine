@@ -60,7 +60,7 @@ namespace gs {
 
 		auto initialize() -> void override {
 			
-			const auto [mc_id, mc] = add_component<gse::physics::motion_component>({
+			add_component<gse::physics::motion_component>({
 				.current_position = gse::vec3<gse::length>(0.f, 0.f, 0.f),
 				.max_speed = m_max_speed,
 				.mass = gse::pounds(180.f),
