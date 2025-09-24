@@ -163,6 +163,11 @@ export namespace gse {
 			std::size_t read_index,
 			std::size_t write_index
 		) -> void = 0;
+
+		virtual auto flip(
+			std::size_t read,
+			std::size_t write
+		) -> void;
 	};
 
 	template <is_component T>
@@ -212,6 +217,11 @@ export namespace gse {
 		auto bind(
 			std::size_t read_index,
 			std::size_t write_index
+		) -> void override;
+
+		auto flip(
+			std::size_t read, 
+			std::size_t write
 		) -> void override;
 	private:
 		double_buffered_id_mapped_queue<component_type, owner_id_t> m_dbq;
@@ -295,6 +305,12 @@ auto gse::component_link<T>::try_get_by_link_id_write(const link_id_t& link_id) 
 template <gse::is_component T>
 auto gse::component_link<T>::bind(const std::size_t read_index, const std::size_t write_index) -> void {
 	std::tie(m_reader, m_writer) = m_dbq.bind(read_index, write_index);
+}
+
+template <gse::is_component T>
+auto gse::component_link<T>::flip(std::size_t read, std::size_t write) -> void {
+	m_dbq.flip(read, write);
+	std::tie(m_reader, m_writer) = m_dbq.bind(read, write);
 }
 
 export namespace gse {
@@ -911,7 +927,7 @@ auto gse::registry::flip_buffers() -> void {
 	std::swap(m_read_index, m_write_index);
 
 	for (const auto& link : m_component_links | std::views::values) {
-		link->bind(m_read_index, m_write_index);
+		link->flip(m_read_index, m_write_index);
 	}
 }
 
