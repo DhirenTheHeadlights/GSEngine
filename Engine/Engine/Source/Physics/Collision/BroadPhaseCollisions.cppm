@@ -81,7 +81,7 @@ auto gse::broad_phase_collision::update(registry& registry, const time dt) -> vo
 			}
 		};
 
-	for (auto collision_components = registry.linked_objects<physics::collision_component>(); auto& collision_component : collision_components) {
+	for (auto collision_components = registry.linked_objects_write<physics::collision_component>(); auto& collision_component : collision_components) {
 		if (!collision_component.resolve_collisions) {
 			continue;
 		}
@@ -92,7 +92,7 @@ auto gse::broad_phase_collision::update(registry& registry, const time dt) -> vo
 			.penetration = {},
 		};
 
-		auto* motion = registry.try_linked_object<physics::motion_component>(collision_component.owner_id());
+		auto* motion = registry.try_linked_object_write<physics::motion_component>(collision_component.owner_id());
 
 		for (auto& other_collision_component : collision_components) {
 			if (collision_component.owner_id() == other_collision_component.owner_id()) {
@@ -103,7 +103,7 @@ auto gse::broad_phase_collision::update(registry& registry, const time dt) -> vo
 				continue;
 			}
 
-			auto* other_motion = registry.try_linked_object<physics::motion_component>(other_collision_component.owner_id());
+			auto* other_motion = registry.try_linked_object_write<physics::motion_component>(other_collision_component.owner_id());
 
 			check_collision(collision_component, motion, other_collision_component, other_motion, dt);
 		}

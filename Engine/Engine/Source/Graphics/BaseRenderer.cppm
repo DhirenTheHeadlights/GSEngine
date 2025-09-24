@@ -15,19 +15,20 @@ export namespace gse {
 		virtual ~base_renderer() = default;
 
 		virtual auto initialize() -> void = 0;
-		virtual auto render(std::span<std::reference_wrapper<registry>> registries) -> void = 0;
+		virtual auto update(std::span<const std::reference_wrapper<registry>> registries) -> void {}
+		virtual auto render(std::span<const std::reference_wrapper<registry>> registries) -> void = 0;
 	protected:
 		renderer::context& m_context;
 
 		static auto to_vulkan_scissor(const rect_t<unitless::vec2>& rect, const unitless::vec2& window_size) -> vk::Rect2D {
 			return {
 				.offset = {
-					static_cast<int32_t>(rect.left()),
-					static_cast<int32_t>(window_size.y() - rect.top())
+					static_cast<std::int32_t>(rect.left()),
+					static_cast<std::int32_t>(window_size.y() - rect.top())
 				},
 				.extent = {
-					static_cast<uint32_t>(rect.width()),
-					static_cast<uint32_t>(rect.height())
+					static_cast<std::uint32_t>(rect.width()),
+					static_cast<std::uint32_t>(rect.height())
 				}
 			};
 		}

@@ -37,8 +37,8 @@ auto gse::physics::update(const std::vector<std::reference_wrapper<registry>>& r
 		}
 
 		for (auto& registry : registries) {
-			for (auto& object : registry.get().linked_objects<motion_component>()) {
-				update_object(object, system_clock::const_update_time, registry.get().try_linked_object<collision_component>(object.owner_id()));
+			for (auto& object : registry.get().linked_objects_write<motion_component>()) {
+				update_object(object, system_clock::const_update_time, registry.get().try_linked_object_write<collision_component>(object.owner_id()));
 			}
 		}
 

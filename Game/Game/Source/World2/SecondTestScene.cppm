@@ -47,7 +47,7 @@ export namespace gs {
 			}
 
 			auto update() -> void override {
-				component<gse::physics::motion_component>().current_position = position;
+				component_write<gse::physics::motion_component>().current_position = position;
 			}
 		};
 	};

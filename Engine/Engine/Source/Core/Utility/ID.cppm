@@ -525,21 +525,18 @@ auto gse::double_buffered_id_mapped_queue<T, IdType>::reader::objects() -> std::
 
 template <typename T, typename IdType>
 auto gse::double_buffered_id_mapped_queue<T, IdType>::reader::try_get(const id_type& id) const -> const T* {
-	if (auto* p = parent->m_slots[read_index].active.try_get(id)) {
-		return p;
-	}
-	return parent->m_slots[read_index].queued.try_get(id);
+	return parent->m_slots[read_index].active.try_get(id);
 }
 
 template <typename T, typename IdType>
 template <typename... Args>
 auto gse::double_buffered_id_mapped_queue<T, IdType>::writer::emplace_queued(const id_type& id, Args&&... args) -> T* {
-	return parent->m_slots[write_index].queued.add(id, T(std::forward<Args>(args)...));
+	return parent->m_slots[write_index].queued.add(id, T(id, std::forward<Args>(args)...));
 }
 
 template <typename T, typename IdType>
 auto gse::double_buffered_id_mapped_queue<T, IdType>::writer::activate(const id_type& owner) -> bool {
-	if (auto* obj = parent->m_slots[1].queued.pop(owner)) {
+	if (auto obj = parent->m_slots[write_index].queued.pop(owner)) {
 		parent->m_slots[write_index].active.add(owner, std::move(*obj));
 		return true;
 	}

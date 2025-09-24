@@ -28,7 +28,7 @@ export namespace gse::renderer {
 		explicit text(context& context) : base_renderer(context) {}
 
 		auto initialize() -> void override;
-		auto render(std::span<std::reference_wrapper<registry>> registries) -> void override;
+		auto render(std::span<const std::reference_wrapper<registry>> registries) -> void override;
 
 		auto draw_text(const command& cmd) -> void;
 	private:
@@ -172,7 +172,7 @@ auto gse::renderer::text::initialize() -> void {
 	m_index_buffer = vulkan::persistent_allocator::create_buffer(config.device_config(), { .size = sizeof(indices), .usage = vk::BufferUsageFlagBits::eIndexBuffer }, indices);
 }
 
-auto gse::renderer::text::render(std::span<std::reference_wrapper<registry>> registries) -> void {
+auto gse::renderer::text::render(std::span<const std::reference_wrapper<registry>> registries) -> void {
 	if (m_draw_commands.empty()) {
 		return;
 	}
