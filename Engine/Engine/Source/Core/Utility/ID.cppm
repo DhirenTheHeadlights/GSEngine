@@ -506,6 +506,11 @@ export namespace gse {
 			std::size_t write
 		) -> std::pair<reader, writer>;
 
+		auto flip(
+			std::size_t new_read,
+			std::size_t new_write
+		) -> void;
+
 		auto clear(
 		) noexcept -> void;
 	private:
@@ -577,6 +582,12 @@ auto gse::double_buffered_id_mapped_queue<T, IdType>::bind(const std::size_t rea
 		{ this, read },
 		{ this, write }
 	};
+}
+
+template <typename T, typename IdType>
+auto gse::double_buffered_id_mapped_queue<T, IdType>::flip(std::size_t new_read, std::size_t new_write) -> void {
+	m_slots[new_write].active = m_slots[new_read].active;
+	m_slots[new_write].queued.clear();
 }
 
 template <typename T, typename IdType>
