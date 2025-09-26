@@ -70,15 +70,11 @@ namespace gs {
 			gse::length height = gse::feet(6.0f);
 			gse::length width = gse::feet(3.0f);
 
-			const auto cc = add_component<gse::physics::collision_component>({
+			add_component<gse::physics::collision_component>({
 				.bounding_box = { gse::vec3<gse::length>(-10.f, -10.f, -10.f), { width, height, width } }
 			});
 
-			add_component<gse::render_component>({
-				.bounding_box_meshes = {
-					generate_bounding_box_mesh(cc->bounding_box.aabb().max, cc->bounding_box.aabb().min)
-				}
-			});
+			add_component<gse::render_component>({});
 		}
 
 		auto update() -> void override {

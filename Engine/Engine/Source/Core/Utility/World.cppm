@@ -71,7 +71,7 @@ gse::world::world(const std::string_view name): hookable(name) {
 		            }
 
 		            if (auto* new_scene = m_owner->scene(scene_id)) {
-		                new_scene->add_hook(std::make_unique<default_scene>(new_scene));
+						new_scene->add_hook<default_scene>();
 		                new_scene->initialize();
 		                new_scene->set_active(true);
 		                m_owner->m_active_scene = new_scene->id();

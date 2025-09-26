@@ -317,9 +317,9 @@ auto gse::renderer::geometry::render(const std::span<const std::reference_wrappe
 		config, 
 		rendering_info,
 		[&] {
-			if (!registry::any_components<render_component>(registries)) {
+			/*if (!registry::any_components<render_component>(registries)) {
 				return;
-			}
+			}*/
 
 			m_shader->set_uniform("CameraUBO.view", m_context.camera().view(), m_ubo_allocations.at("CameraUBO").allocation);
 			m_shader->set_uniform("CameraUBO.proj", m_context.camera().projection(m_context.window().viewport()), m_ubo_allocations.at("CameraUBO").allocation);

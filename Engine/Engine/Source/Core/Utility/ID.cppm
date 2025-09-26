@@ -260,6 +260,10 @@ export namespace gse {
 
 		auto clear(
 		) noexcept -> void;
+
+		auto transfer_from(
+			id_mapped_collection& other
+		) -> void;
 	private:
 		std::vector<T> m_items;
 		std::vector<PrimaryIdType> m_ids;
@@ -351,6 +355,13 @@ auto gse::id_mapped_collection<T, PrimaryIdType>::clear() noexcept -> void {
 	m_items.clear();
 	m_ids.clear();
 	m_map.clear();
+}
+
+template <typename T, typename PrimaryIdType>
+auto gse::id_mapped_collection<T, PrimaryIdType>::transfer_from(id_mapped_collection& other) -> void {
+	m_items = std::move(other.m_items);
+    m_ids   = std::move(other.m_ids);
+    m_map   = std::move(other.m_map);
 }
 
 export template <>
@@ -587,7 +598,7 @@ auto gse::double_buffered_id_mapped_queue<T, IdType>::bind(const std::size_t rea
 template <typename T, typename IdType>
 auto gse::double_buffered_id_mapped_queue<T, IdType>::flip(std::size_t new_read, std::size_t new_write) -> void {
 	m_slots[new_write].active = m_slots[new_read].active;
-	m_slots[new_write].queued.clear();
+    m_slots[new_write].queued.clear();
 }
 
 template <typename T, typename IdType>
