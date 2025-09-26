@@ -27,7 +27,5 @@ export namespace gse {
 		auto debug_menu(const std::string_view& name, std::uint32_t parent_id) -> void {
 
 		}
-
-		cube_map map;
 	};
 }

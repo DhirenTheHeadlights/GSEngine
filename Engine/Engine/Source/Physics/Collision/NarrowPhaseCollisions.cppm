@@ -171,8 +171,8 @@ auto gse::narrow_phase_collision::minkowski_difference(const bounding_box& bb1, 
 
 auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const bounding_box& bb2) -> std::optional<mpr_result> {
     static constexpr bool debug = false;
-    const length eps = meters(1e-4f);
-    const auto eps2 = eps * eps;
+    constexpr length eps = meters(1e-4f);
+    constexpr auto eps2 = eps * eps;
 
     const auto obb1 = bb1.obb();
     const auto obb2 = bb2.obb();

@@ -11,67 +11,108 @@ import gse.utility;
 export namespace gse::renderer {
 	class context final : public non_copyable {
 	public:
-		context(const std::string& window_title);
+		context(
+			const std::string& window_title
+		);
 		~context() override;
 
 		using command = std::function<void(context&)>;
 
 		template <typename T>
-		auto add_loader() -> resource::loader<T, context>*;
+		auto add_loader(
+		) -> resource::loader<T, context>*;
 
 		template <typename T>
-		auto get(const id& id) const -> resource::handle<T>;
+		auto get(
+			const id& id
+		) const -> resource::handle<T>;
 
 		template <typename T>
-		auto get(const std::string& filename) const -> resource::handle<T>;
+		auto get(
+			const std::string& filename
+		) const -> resource::handle<T>;
 
 		template <typename T, typename... Args>
-		auto queue(const std::string& name, Args&&... args) -> resource::handle<T>; 
+		auto queue(
+			const std::string& name, 
+			Args&&... args
+		) -> resource::handle<T>; 
 
 		template <typename Resource>
-		auto queue_gpu_command(Resource* resource, std::function<void(context&, Resource&)> work) const -> void;
+		auto queue_gpu_command(
+			Resource* resource, 
+			std::function<void(context&, Resource&)> work
+		) const -> void;
 
-		[[nodiscard]] auto execute_and_detect_gpu_queue(const std::function<void(const context&)>& work) const -> bool;
-
-		template <typename T>
-		auto instantly_load(const resource::handle<T>& handle) -> void;
-
-		template <typename T>
-		auto add(T&& resource) -> resource::handle<T>;
-
-		auto process_resource_queue() -> void;
-
-		auto process_gpu_queue() -> void;
-
-		auto compile() -> void;
+		[[nodiscard]] auto execute_and_detect_gpu_queue(
+			const std::function<void(const context&)>& work
+		) const -> bool;
 
 		template <typename T>
-		[[nodiscard]] auto resource_state(const id& id) const -> resource::state;
+		auto instantly_load(
+			const resource::handle<T>& handle
+		) -> void;
 
 		template <typename T>
-		[[nodiscard]] auto loader() -> resource::loader<T, context>*;
+		auto add(
+			T&& resource
+		) -> resource::handle<T>;
+
+		auto process_resource_queue(
+		) -> void;
+
+		auto process_gpu_queue(
+		) -> void;
+
+		auto compile(
+		) -> void;
 
 		template <typename T>
-		[[nodiscard]] auto loader() const -> const resource::loader<T, context>*;
+		[[nodiscard]] auto resource_state(
+			const id& id
+		) const -> resource::state;
 
-		[[nodiscard]] auto config() const -> const vulkan::config&;
+		template <typename T>
+		[[nodiscard]] auto loader(
+		) -> resource::loader<T, context>*;
 
-		[[nodiscard]] auto config() -> vulkan::config&;
+		template <typename T>
+		[[nodiscard]] auto loader(
+		) const -> const resource::loader<T, context>*;
 
-		[[nodiscard]] auto camera() -> camera&;
+		[[nodiscard]] auto config(
+		) const -> const vulkan::config&;
 
-		[[nodiscard]] auto window() -> window&;
+		[[nodiscard]] auto config(
+		) -> vulkan::config&;
 
-		[[nodiscard]] auto gpu_queue_size() const -> size_t;
+		[[nodiscard]] auto camera(
+		) -> camera&;
 
-		auto mark_pending_for_finalization(const std::type_index& resource_type, const id& resource_id) const -> void;
+		[[nodiscard]] auto window(
+		) -> window&;
 
-		auto set_ui_focus(bool focus) -> void;
-		[[nodiscard]] auto ui_focus() const -> bool;
+		[[nodiscard]] auto gpu_queue_size(
+		) const -> size_t;
 
-		auto shutdown() -> void;
+		auto mark_pending_for_finalization(
+			const std::type_index& resource_type, 
+			const id& resource_id
+		) const -> void;
+
+		auto set_ui_focus(
+			bool focus
+		) -> void;
+
+		[[nodiscard]] auto ui_focus(
+		) const -> bool;
+
+		auto shutdown(
+		) -> void;
 	private:
-		auto loader(const std::type_index& type_index) const -> resource::loader_base*;
+		auto loader(
+			const std::type_index& type_index
+		) const -> resource::loader_base*;
 
 		gse::window m_window;
 		std::unique_ptr<vulkan::config> m_config;

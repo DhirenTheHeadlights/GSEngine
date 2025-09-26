@@ -54,9 +54,9 @@ export namespace gse {
 
 export namespace gse::renderer {
 	auto initialize() -> void;
-	auto update() -> void;
+	auto update(const std::vector<std::reference_wrapper<registry>>& registries) -> void;
 	auto render(
-		std::vector<std::reference_wrapper<registry>> registries, 
+		const std::vector<std::reference_wrapper<registry>>& registries,
 		const std::function<void()>& in_frame = {}
 	) -> void;
 	auto shutdown() -> void;
@@ -99,7 +99,7 @@ auto gse::renderer::initialize() -> void {
 	gui::initialize(rendering_context);
 }
 
-auto gse::renderer::update() -> void {
+auto gse::renderer::update(const std::vector<std::reference_wrapper<registry>>& registries) -> void {
 	rendering_context.process_resource_queue();
 	gui::update(rendering_context.window());
 	rendering_context.window().update(rendering_context.ui_focus());
@@ -108,9 +108,13 @@ auto gse::renderer::update() -> void {
 	if (!rendering_context.ui_focus()) {
 		rendering_context.camera().process_mouse_movement(mouse::delta());
 	}
+
+	for (const auto& renderer : renderers) {
+		renderer->update(registries);
+	}
 }
 
-auto gse::renderer::render(std::vector<std::reference_wrapper<registry>> registries, const std::function<void()>& in_frame) -> void {
+auto gse::renderer::render(const std::vector<std::reference_wrapper<registry>>& registries, const std::function<void()>& in_frame) -> void {
 	rendering_context.process_gpu_queue();
 
 	vulkan::frame({

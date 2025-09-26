@@ -12,8 +12,10 @@ import gse.network;
 
 export namespace gse {
 	struct engine : hookable<engine> {
-		engine(const std::string& name) : hookable(name) {}
+		explicit engine(const std::string& name) : hookable(name) {}
 	};
+
+	using world = hook<engine>;
 
 	struct engine_config {
 		std::string title = "GSEngine Application";
@@ -57,6 +59,12 @@ namespace gse {
 
 	engine engine("GSEngine");
 	bool should_shutdown = false;
+
+	auto phase = []() noexcept { scene_loader::flip_registry_buffers(); };
+	std::barrier barrier(2, phase);
+
+	std::jthread render_thread;
+	std::atomic_bool running = false;
 }
 
 export namespace gse {
@@ -105,15 +113,33 @@ auto gse::render(const flags engine_flags, const engine_config& config) -> void 
 
 template <typename... Args>
 auto gse::start(const flags engine_flags, const engine_config& config) -> void {
-	(engine.add_hook(std::make_unique<Args>(&engine)), ...);
+	(engine.add_hook<Args>(), ...);
 
 	initialize(engine_flags, config);
+
+	running.store(true, std::memory_order_release);
+	render_thread = std::jthread([&] {
+		while (running.load(std::memory_order_acquire) && !should_shutdown) {
+			barrier.arrive_and_wait();
+			render(engine_flags, config);
+		}
+	});
 
 	while (!should_shutdown) {
 		input::update([&] {
 			update(engine_flags, config);
-			render(engine_flags, config);
+			if (!should_shutdown && running.load(std::memory_order_acquire)) {
+				barrier.arrive_and_wait();
+			} else {
+				barrier.arrive_and_drop();
+			}
 		});
+	}
+
+	running.store(false, std::memory_order_release);
+
+	if (render_thread.joinable()) {
+		render_thread.join();
 	}
 
 	scene_loader::shutdown();
@@ -122,8 +148,3 @@ auto gse::start(const flags engine_flags, const engine_config& config) -> void {
 auto gse::shutdown() -> void {
 	should_shutdown = true;
 }
-
-
-
-
-

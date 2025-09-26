@@ -23,13 +23,13 @@ export namespace gse {
 		);
 
 		texture(
-			const std::string& name, 
+			std::string_view name, 
 			const unitless::vec4& color, 
 			unitless::vec2u size = { 1, 1 }
 		);
 
 		texture(
-			const std::string& name,
+			std::string_view name,
 			const std::vector<std::byte>& data,
 			unitless::vec2u size,
 			std::uint32_t channels,
@@ -66,11 +66,10 @@ export namespace gse {
 
 gse::texture::texture(const std::filesystem::path& filepath) : identifiable(filepath), m_image_data{ .path = filepath } {}
 
-gse::texture::texture(const std::string& name, const unitless::vec4& color, const unitless::vec2u size) : identifiable(name), m_image_data(image::load(color, size)) {}
+gse::texture::texture(const std::string_view name, const unitless::vec4& color, const unitless::vec2u size) : identifiable(name), m_image_data(image::load(color, size)) {}
 
-gse::texture::texture(const std::string& name, const std::vector<std::byte>& data, const unitless::vec2u size, const std::uint32_t channels, const profile texture_profile)
-	: identifiable(name), m_image_data(image::data{ .path = {}, .size = size, .channels = channels, .pixels = data }), m_profile(texture_profile) {
-}
+gse::texture::texture(const std::string_view name, const std::vector<std::byte>& data, const unitless::vec2u size, const std::uint32_t channels, const profile texture_profile)
+	: identifiable(name), m_image_data(image::data{ .path = {}, .size = size, .channels = channels, .pixels = data }), m_profile(texture_profile) {}
 
 auto gse::texture::compile() -> std::set<std::filesystem::path> {
 	const auto source_root = config::resource_path;

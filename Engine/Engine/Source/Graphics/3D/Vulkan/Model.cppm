@@ -16,7 +16,7 @@ export namespace gse {
 	class model;
 
 	struct render_queue_entry {
-		const resource::handle<model> model;
+		resource::handle<model> model;
 		std::size_t index;
 		mat4 model_matrix;
 		mat4 normal_matrix;
@@ -29,7 +29,7 @@ export namespace gse {
 
 		auto update(const physics::motion_component& mc, const physics::collision_component& cc) -> void;
 
-		auto render_queue_entries() -> std::span<render_queue_entry>;
+		auto render_queue_entries() const -> std::span<const render_queue_entry>;
 		auto handle() const -> const resource::handle<model>&;
 	private:
 		std::vector<render_queue_entry> m_render_queue_entries;
@@ -39,12 +39,13 @@ export namespace gse {
 		quat m_rotation;
 		unitless::vec3 m_scale = { 1.f, 1.f, 1.f };
 		bool m_is_dirty = true;
+		std::size_t m_cached_mesh_count = 0;
 	};
 
 	class model : public identifiable {
 	public:
 		explicit model(const std::filesystem::path& path) : identifiable(path), m_baked_model_path(path) {}
-		explicit model(const std::string& name, std::vector<mesh_data> meshes);
+		explicit model(std::string_view name, std::vector<mesh_data> meshes);
 
 		static auto compile() -> std::set<std::filesystem::path>;
 
@@ -62,7 +63,7 @@ export namespace gse {
 	};
 }
 
-gse::model::model(const std::string& name, std::vector<mesh_data> meshes) : identifiable(name) {
+gse::model::model(const std::string_view name, std::vector<mesh_data> meshes) : identifiable(name) {
 	m_meshes.reserve(meshes.size());
 	for (auto& mesh_data : meshes) {
 		m_meshes.emplace_back(std::move(mesh_data));
@@ -230,15 +231,15 @@ auto gse::model::compile() -> std::set<std::filesystem::path> {
 		out_file.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
 		out_file.write(reinterpret_cast<const char*>(&version), sizeof(version));
 
-		uint64_t mesh_count = built_meshes.size();
+		std::uint64_t mesh_count = built_meshes.size();
 		out_file.write(reinterpret_cast<const char*>(&mesh_count), sizeof(mesh_count));
 
 		for (const auto& [material_name, vertices] : built_meshes) {
-			uint64_t mat_name_len = material_name.length();
+			std::uint64_t mat_name_len = material_name.length();
 			out_file.write(reinterpret_cast<const char*>(&mat_name_len), sizeof(mat_name_len));
 			out_file.write(material_name.c_str(), mat_name_len);
 
-			uint64_t vertex_count = vertices.size();
+			std::uint64_t vertex_count = vertices.size();
 			out_file.write(reinterpret_cast<const char*>(&vertex_count), sizeof(vertex_count));
 			out_file.write(reinterpret_cast<const char*>(vertices.data()), vertex_count * sizeof(vertex));
 		}
@@ -317,34 +318,65 @@ auto gse::model_instance::update(const physics::motion_component& mc, const phys
 	m_rotation = cc.bounding_box.obb().orientation;
 	m_scale = cc.bounding_box.size().as<meters>();
 	m_is_dirty = true;
+
+	if (!m_model_handle.valid()) {
+		m_render_queue_entries.clear();
+		m_cached_mesh_count = 0;
+	}
+	else {
+		const auto* resolved = m_model_handle.resolve();
+		const std::size_t mesh_count = resolved ? resolved->meshes().size() : 0;
+
+		if (mesh_count == 0) {
+			m_render_queue_entries.clear();
+			m_cached_mesh_count = 0;
+		}
+		else {
+			if (m_render_queue_entries.size() != mesh_count || m_cached_mesh_count != mesh_count) {
+				m_render_queue_entries.clear();
+				m_render_queue_entries.reserve(mesh_count);
+
+				for (std::size_t i = 0; i < mesh_count; ++i) {
+					m_render_queue_entries.emplace_back(
+						render_queue_entry{
+							.model = m_model_handle,
+							.index = i,
+							.model_matrix = mat4(1.0f),
+							.normal_matrix = mat4(1.0f),
+							.color = unitless::vec3(1.0f)
+						}
+					);
+				}
+
+				m_cached_mesh_count = mesh_count;
+				m_is_dirty = true;
+			}
+		}
+	}
+
+	if (!m_is_dirty || m_render_queue_entries.empty() || !m_model_handle.valid()) {
+		return;
+	}
+
+	const auto* mdl = m_model_handle.resolve();
+	const vec3 center_of_mass = mdl->center_of_mass();
+
+	const mat4 scale_mat             = scale(mat4(1.0f), m_scale);
+	const mat4 rot_mat               = m_rotation;
+	const mat4 trans_mat             = translate(mat4(1.0f), m_position);
+	const mat4 pivot_correction_mat  = translate(mat4(1.0f), -center_of_mass);
+	const mat4 final_model_matrix    = trans_mat * rot_mat * scale_mat * pivot_correction_mat;
+	const mat4 normal_matrix         = final_model_matrix.inverse().transpose();
+
+	for (auto& entry : m_render_queue_entries) {
+		entry.model_matrix  = final_model_matrix;
+		entry.normal_matrix = normal_matrix;
+	}
+
+	m_is_dirty = false;
 }
 
-auto gse::model_instance::render_queue_entries() -> std::span<render_queue_entry> {
-	if (m_render_queue_entries.empty() && m_model_handle.valid()) {
-		const auto* resolved_model = m_model_handle.resolve();
-		m_render_queue_entries.reserve(resolved_model->meshes().size());
-		for (std::size_t i = 0; i < resolved_model->meshes().size(); ++i) {
-			m_render_queue_entries.emplace_back(m_model_handle, i, mat4(1.0f), mat4(1.0f), unitless::vec3(1.0f));
-		}
-	}
-
-	if (m_is_dirty) {
-		const mat4 scale_mat = scale(mat4(1.0f), m_scale);
-		const mat4 rot_mat = m_rotation;
-		const mat4 trans_mat = translate(mat4(1.0f), m_position);
-		const vec3 center_of_mass = m_model_handle.resolve()->center_of_mass(); 
-		const mat4 pivot_correction_mat = translate(mat4(1.0f), -center_of_mass);
-		const mat4 final_model_matrix = trans_mat * rot_mat * scale_mat * pivot_correction_mat;
-		const mat4 normal_matrix = final_model_matrix.inverse().transpose();
-
-		for (auto& entry : m_render_queue_entries) {
-			entry.model_matrix = final_model_matrix;
-			entry.normal_matrix = normal_matrix;
-		}
-
-		m_is_dirty = false;
-	}
-
+auto gse::model_instance::render_queue_entries() const -> std::span<const render_queue_entry> {
 	return m_render_queue_entries;
 }
 

@@ -17,6 +17,13 @@ export namespace gse {
         std::string_view formatted_string,
         const std::source_location& loc = std::source_location::current()
     ) -> void;
+
+    template <std::invocable<> F>
+    auto assert_lazy(
+        bool condition,
+        F&& make_message,
+        const std::source_location& loc = std::source_location::current()
+    ) -> void;
 }
 
 namespace gse {
@@ -45,6 +52,26 @@ auto gse::assert(const bool condition, std::string_view formatted_string, const 
 
         assert_func_internal(message);
     }
+}
+
+template <std::invocable<> F>
+auto gse::assert_lazy(bool condition, F&& make_message, const std::source_location& loc) -> void {
+	if (condition) return;
+
+    const std::string comment = std::invoke(std::forward<F>(make_message));
+    const std::string message = std::format(
+        "[Assertion Failure]\n"
+        "File: {}\n"
+        "Line: {}\n"
+        "Function: {}\n"
+        "Comment: {}\n",
+        loc.file_name(),
+        loc.line(),
+        loc.function_name(),
+        comment
+    );
+
+    assert_func_internal(message);
 }
 
 auto gse::assert_func_production(const std::string_view message) noexcept -> void {

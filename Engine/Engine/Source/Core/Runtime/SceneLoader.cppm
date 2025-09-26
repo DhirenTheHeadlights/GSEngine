@@ -16,6 +16,7 @@ export namespace gse::scene_loader {
 
 	auto initialize() -> void;
 	auto update() -> void;
+	auto flip_registry_buffers() -> void;
 	auto render(const std::function<void()>& in_frame) -> void;
 	auto shutdown() -> void;
 
@@ -45,7 +46,7 @@ auto gse::scene_loader::remove(const id& scene_id) -> void {
 auto gse::scene_loader::activate(const id& scene_id) -> void {
 	if (const auto scene = scenes.find(scene_id); scene != scenes.end()) {
 		if (!scene->second->active()) {
-			scene->second->add_hook(std::make_unique<default_scene>(scene->second.get()));
+			scene->second->add_hook<default_scene>();
 			scene->second->initialize();
 			scene->second->set_active(true);
 		}
@@ -82,7 +83,15 @@ auto gse::scene_loader::update() -> void {
 		registries()
 	);
 
-	renderer::update();
+	renderer::update(
+		registries()
+	);
+}
+
+auto gse::scene_loader::flip_registry_buffers() -> void {
+	for (const auto& scene : scenes | std::views::values) {
+		scene->registry().flip_buffers();
+	}
 }
 
 auto gse::scene_loader::render(const std::function<void()>& in_frame) -> void {

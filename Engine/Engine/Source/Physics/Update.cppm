@@ -30,26 +30,15 @@ auto gse::physics::update(const std::vector<std::reference_wrapper<registry>>& r
 		for (int i = 0; i < 5; i++) {
 			for (auto& registry : registries) {
 				broad_phase_collision::update(
-					registry.get().linked_objects<collision_component>(), 
-					registry.get().linked_objects<motion_component>(), 
+					registry,
 					system_clock::const_update_time
 				);
 			}
 		}
 
 		for (auto& registry : registries) {
-			for (auto& object : registry.get().linked_objects<motion_component>()) {
-				collision_component* collision = nullptr;
-				if (const auto collision_it = std::ranges::find_if(
-					registry.get().linked_objects<collision_component>(),
-					[object](const auto& c) {
-						return c.owner_id() == object.owner_id();
-					}
-				); collision_it != registry.get().linked_objects<collision_component>().end()) {
-					collision = &*collision_it;
-				}
-
-				update_object(object, system_clock::const_update_time, collision);
+			for (auto& object : registry.get().linked_objects_write<motion_component>()) {
+				update_object(object, system_clock::const_update_time, registry.get().try_linked_object_write<collision_component>(object.owner_id()));
 			}
 		}
 

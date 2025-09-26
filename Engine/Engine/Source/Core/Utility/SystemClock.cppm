@@ -36,7 +36,7 @@ namespace gse::system_clock {
 }
 
 auto gse::system_clock::update() -> void {
-	delta_time = std::min(dt_clock.reset(), const_update_time);
+	delta_time = dt_clock.reset();
 
 	frame_count++;
 	frame_rate_update_time += delta_time;
@@ -49,7 +49,7 @@ auto gse::system_clock::update() -> void {
 }
 
 auto gse::system_clock::dt() -> time {
-	return delta_time;
+	return delta_time > const_update_time ? delta_time : const_update_time;
 }
 
 auto gse::system_clock::now() -> time {
