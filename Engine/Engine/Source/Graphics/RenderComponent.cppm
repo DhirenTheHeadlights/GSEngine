@@ -11,36 +11,18 @@ import gse.physics.math;
 export namespace gse {
     struct render_component_data {
         std::vector<model_instance> models;
-        std::vector<mesh_data> bounding_box_meshes;
         vec3<length> center_of_mass;
         bool render = true;
         bool render_bounding_boxes = true;
         bool has_calculated_com = false;
 	};
 
-    struct render_component final : component<render_component_data>, non_copyable {
-        render_component(const id& owner_id, render_component_data data = {})
-    		: component(owner_id),
-    	      models(std::move(data.models)),
-    	      center_of_mass(data.center_of_mass),
-    	      render(data.render),
-    	      render_bounding_boxes(data.render_bounding_boxes),
-    	      has_calculated_com(data.has_calculated_com) {
-	        for (auto& mesh : data.bounding_box_meshes) {
-                bounding_box_meshes.emplace_back(std::move(mesh));
-			}
-        }
+    struct render_component final : component<render_component_data> {
+		render_component(const id& owner_id, const params& p) : component(owner_id, p) {}
 
-        auto on_registry(registry* reg) -> void override;
-
-        std::vector<model_instance> models;
-        std::vector<mesh> bounding_box_meshes;
-
-        vec3<length> center_of_mass;
-
-        bool render = true;
-        bool render_bounding_boxes = true;
-        bool has_calculated_com = false;
+        auto on_registry(
+			registry* reg
+		) -> void override;
     };
 }
 

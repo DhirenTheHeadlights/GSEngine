@@ -60,19 +60,9 @@ namespace gse {
 	engine engine("GSEngine");
 	bool should_shutdown = false;
 
-	class frame_barrier {
-	public:
-		auto rendezvous(
-			const std::function<void()>& flip_once
-		) -> void;
-	private:
-		std::mutex m_mutex;
-		std::condition_variable m_cv;
-		std::int32_t m_arrived = 0;
-		bool m_flip_pending = false;
-	};
+	auto phase = []() noexcept { scene_loader::flip_registry_buffers(); };
+	std::barrier barrier(2, phase);
 
-	frame_barrier frame_barrier;
 	std::jthread render_thread;
 	std::atomic_bool running = false;
 }
@@ -121,41 +111,33 @@ auto gse::render(const flags engine_flags, const engine_config& config) -> void 
 	});
 }
 
-auto gse::frame_barrier::rendezvous(const std::function<void()>& flip_once) -> void {
-	std::unique_lock lock(m_mutex);
-	if (++m_arrived < 2) {
-		m_cv.wait(lock, [&] { return m_arrived == 2 && !m_flip_pending; });
-	}
-	else {
-		m_flip_pending = true;
-		flip_once();
-		m_arrived = 2;
-		m_flip_pending = false;
-		m_cv.notify_one();
-		m_arrived = 0;
-	}
-}
-
 template <typename... Args>
 auto gse::start(const flags engine_flags, const engine_config& config) -> void {
-	(engine.add_hook(std::make_unique<Args>(&engine)), ...);
+	(engine.add_hook<Args>(), ...);
 
 	initialize(engine_flags, config);
 
 	running.store(true, std::memory_order_release);
 	render_thread = std::jthread([&] {
-		render(engine_flags, config);
+		while (running.load(std::memory_order_acquire) && !should_shutdown) {
+			barrier.arrive_and_wait();
+			render(engine_flags, config);
+		}
 	});
 
 	while (!should_shutdown) {
 		input::update([&] {
 			update(engine_flags, config);
-
-			scene_loader::flip_registry_buffers();
+			if (!should_shutdown && running.load(std::memory_order_acquire)) {
+				barrier.arrive_and_wait();
+			} else {
+				barrier.arrive_and_drop();
+			}
 		});
 	}
 
 	running.store(false, std::memory_order_release);
+
 	if (render_thread.joinable()) {
 		render_thread.join();
 	}
@@ -166,8 +148,3 @@ auto gse::start(const flags engine_flags, const engine_config& config) -> void {
 auto gse::shutdown() -> void {
 	should_shutdown = true;
 }
-
-
-
-
-

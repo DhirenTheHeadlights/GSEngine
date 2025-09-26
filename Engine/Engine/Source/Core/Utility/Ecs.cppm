@@ -72,13 +72,18 @@ export namespace gse {
 }
 
 export namespace gse {
+	template <typename Hook, typename T>
+	concept is_hook = std::derived_from<Hook, hook<T>>;
+
 	template <typename T>
 	class hookable : public identifiable {
 	public:
 		hookable(std::string_view name, std::initializer_list<std::unique_ptr<hook<T>>> hooks = {});
 
+		template <typename Hook, typename... Args>
+			requires is_hook<Hook, T>
 		auto add_hook(
-			std::unique_ptr<hook<T>> hook
+			Args&&... args
 		) -> void;
 
 		auto initialize(
@@ -108,8 +113,10 @@ gse::hookable<T>::hookable(const std::string_view name, std::initializer_list<st
 }
 
 template <typename T>
-auto gse::hookable<T>::add_hook(std::unique_ptr<hook<T>> hook) -> void {
-	m_hooks.push_back(std::move(hook));
+template <typename Hook, typename... Args>
+	requires gse::is_hook<Hook, T>
+auto gse::hookable<T>::add_hook(Args&&... args) -> void {
+	m_hooks.push_back(std::make_unique<Hook>(static_cast<T*>(this), std::forward<Args>(args)...));
 }
 
 template <typename T>
@@ -167,7 +174,7 @@ export namespace gse {
 		virtual auto flip(
 			std::size_t read,
 			std::size_t write
-		) -> void;
+		) -> void = 0;
 	};
 
 	template <is_component T>
@@ -1247,7 +1254,7 @@ auto gse::hook<gse::scene>::build(const std::string& name) const -> builder {
 export namespace gse {
 	class default_scene final : public hook<scene> {
 	public:
-		explicit default_scene(scene* owner);
+		using hook::hook;
 
 		auto initialize() -> void override;
 		auto update() -> void override;
@@ -1255,8 +1262,6 @@ export namespace gse {
 		auto shutdown() -> void override;
 	};
 }
-
-gse::default_scene::default_scene(scene* owner) : hook(owner) {}
 
 auto gse::default_scene::initialize() -> void {
 	for (const auto& object_id : m_owner->m_queue) {

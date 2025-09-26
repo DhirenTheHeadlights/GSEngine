@@ -46,7 +46,7 @@ auto gse::scene_loader::remove(const id& scene_id) -> void {
 auto gse::scene_loader::activate(const id& scene_id) -> void {
 	if (const auto scene = scenes.find(scene_id); scene != scenes.end()) {
 		if (!scene->second->active()) {
-			scene->second->add_hook(std::make_unique<default_scene>(scene->second.get()));
+			scene->second->add_hook<default_scene>();
 			scene->second->initialize();
 			scene->second->set_active(true);
 		}
