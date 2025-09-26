@@ -13,13 +13,13 @@ export namespace gs {
 
 		auto initialize() -> void override {
 			auto scene1 = std::make_unique<gse::scene>("Scene1");
-			scene1->add_hook(std::make_unique<main_test_scene>(scene1.get()));
+			scene1->add_hook<main_test_scene>();
 
 			auto scene2 = std::make_unique<gse::scene>("Scene2");
-			scene2->add_hook(std::make_unique<skybox_scene>(scene2.get()));
+			scene2->add_hook<skybox_scene>();
 
 			auto scene3 = std::make_unique<gse::scene>("Scene3");
-			scene3->add_hook(std::make_unique<second_test_scene>(scene3.get()));
+			scene3->add_hook<second_test_scene>();
 
 			gse::scene_loader::add(scene1);
 			gse::scene_loader::add(scene2);

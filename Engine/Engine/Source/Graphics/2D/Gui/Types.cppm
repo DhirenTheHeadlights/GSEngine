@@ -74,7 +74,7 @@ export namespace gse::gui {
 
 	struct menu : identifiable, identifiable_owned {
 		explicit menu(
-			const std::string& tag,
+			std::string_view tag,
 			const menu_data& data
 		) : identifiable(tag),
 			identifiable_owned(data.parent_id),

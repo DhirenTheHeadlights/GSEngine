@@ -14,7 +14,7 @@ export namespace gse {
 	struct material : identifiable {
 		material(const std::filesystem::path& path) : identifiable(path), path(path) {}
         material(
-            const std::string& name,
+            const std::string_view name,
             const unitless::vec3 ambient,
             const unitless::vec3 diffuse,
             const unitless::vec3 specular,
@@ -33,7 +33,7 @@ export namespace gse {
 			transparency(transparency),
 			illumination_model(illumination_model) {}
         material(
-			const std::string& name,
+			const std::string_view name,
             const resource::handle<texture>& diffuse_texture,
             const resource::handle<texture>& normal_texture = {},
             const resource::handle<texture>& specular_texture = {}

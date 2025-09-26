@@ -19,8 +19,10 @@ export namespace gse::renderer {
 	class geometry final : public base_renderer {
 	public:
 		explicit geometry(context& context) : base_renderer(context) {}
+
 		auto initialize() -> void override;
-		auto render(std::span<std::reference_wrapper<registry>> registries) -> void override;
+		auto update(std::span<const std::reference_wrapper<registry>> registries) -> void override;
+		auto render(std::span<const std::reference_wrapper<registry>> registries) -> void override;
 	private:
 		vk::raii::Pipeline m_pipeline = nullptr;
 		vk::raii::PipelineLayout m_pipeline_layout = nullptr;
@@ -223,7 +225,28 @@ auto gse::renderer::geometry::initialize() -> void {
 	m_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
 }
 
-auto gse::renderer::geometry::render(const std::span<std::reference_wrapper<registry>> registries) -> void {
+auto gse::renderer::geometry::update(std::span<const std::reference_wrapper<registry>> registries) -> void {
+	for (auto& registry : registries) {
+		for (auto& component : registry.get().linked_objects_write<render_component>()) {
+			if (!component.render) {
+				continue;
+			}
+
+			const auto mc = registry.get().try_linked_object_read<physics::motion_component>(component.owner_id());
+			const auto cc = registry.get().try_linked_object_read<physics::collision_component>(component.owner_id());
+
+			for (auto& model_handle : component.models) {
+				if (!model_handle.handle().valid() || !mc || !cc) {
+					continue;
+				}
+
+				model_handle.update(*mc, *cc);
+			}
+		}
+	}
+}
+
+auto gse::renderer::geometry::render(const std::span<const std::reference_wrapper<registry>> registries) -> void {
 	auto& config = m_context.config();
 	const auto command = config.frame_context().command_buffer;
 
@@ -294,9 +317,9 @@ auto gse::renderer::geometry::render(const std::span<std::reference_wrapper<regi
 		config, 
 		rendering_info,
 		[&] {
-			if (!registry::any_components<render_component>(registries)) {
+			/*if (!registry::any_components<render_component>(registries)) {
 				return;
-			}
+			}*/
 
 			m_shader->set_uniform("CameraUBO.view", m_context.camera().view(), m_ubo_allocations.at("CameraUBO").allocation);
 			m_shader->set_uniform("CameraUBO.proj", m_context.camera().projection(m_context.window().viewport()), m_ubo_allocations.at("CameraUBO").allocation);
@@ -313,22 +336,8 @@ auto gse::renderer::geometry::render(const std::span<std::reference_wrapper<regi
 				{}
 			);
 
-			std::unordered_map<std::string, std::span<const std::byte>> push_constants = {};
-
-			auto calculate_center_of_mass = [](
-				const std::vector<model_instance>& models
-				) -> vec3<length> {
-					vec3<length> sum;
-
-					for (const auto& instance : models) {
-						sum += instance.handle()->center_of_mass();
-					}
-
-					return models.size() > 0 ? sum / static_cast<float>(models.size()) : vec3<length>{ 0, 0, 0 };
-				};
-
 			for (const auto& registry : registries) {
-				for (auto& component : registry.get().linked_objects<render_component>()) {
+				for (const auto& component : registry.get().linked_objects_read<render_component>()) {
 					if (!std::ranges::any_of(
 						component.models,
 						[](const model_instance& model) {
@@ -338,32 +347,18 @@ auto gse::renderer::geometry::render(const std::span<std::reference_wrapper<regi
 						continue;
 					}
 
-					if (!component.has_calculated_com) {
-						component.center_of_mass = calculate_center_of_mass(component.models);
-						component.has_calculated_com = true;
-					}
-
-					const auto mc = registry.get().try_linked_object<physics::motion_component>(component.owner_id());
-					const auto cc = registry.get().try_linked_object<physics::collision_component>(component.owner_id());
-
-					for (auto& model_handle : component.models) {
+					for (const auto& model_handle : component.models) {
 						if (!model_handle.handle().valid()) {
 							continue;
 						}
 
-						if (mc && cc) {
-							model_handle.update(*mc, *cc);
-						}
-
 						for (const auto& entry : model_handle.render_queue_entries()) {
-							push_constants["model"] = std::as_bytes(std::span{ &entry.model_matrix, 1 });
-							push_constants["normal_matrix"] = std::as_bytes(std::span{ &entry.normal_matrix, 1 });
-
 							m_shader->push(
 								command,
 								m_pipeline_layout,
 								"push_constants",
-								push_constants
+								"model", entry.model_matrix,
+								"normal_matrix", entry.normal_matrix
 							);
 
 							if (const auto& mesh = entry.model->meshes()[entry.index]; mesh.material().valid()) {

@@ -37,9 +37,7 @@ export namespace gse::broad_phase_collision {
 	) -> collision_information;
 
 	auto update(
-		std::span<physics::collision_component> collision_components,
-		std::span<physics::motion_component> motion_components,
-		time dt
+		gse::registry& registry, time dt
 	) -> void;
 }
 
@@ -69,7 +67,7 @@ auto gse::broad_phase_collision::check_collision(physics::collision_component& d
 	}
 }
 
-auto gse::broad_phase_collision::update(const std::span<physics::collision_component> collision_components, const std::span<physics::motion_component> motion_components, const time dt) -> void {
+auto gse::broad_phase_collision::update(registry& registry, const time dt) -> void {
 	const auto airborne_check = [](
 		physics::motion_component* motion_component,
 		const physics::collision_component& collision_component
@@ -83,7 +81,7 @@ auto gse::broad_phase_collision::update(const std::span<physics::collision_compo
 			}
 		};
 
-	for (auto& collision_component : collision_components) {
+	for (auto collision_components = registry.linked_objects_write<physics::collision_component>(); auto& collision_component : collision_components) {
 		if (!collision_component.resolve_collisions) {
 			continue;
 		}
@@ -94,18 +92,7 @@ auto gse::broad_phase_collision::update(const std::span<physics::collision_compo
 			.penetration = {},
 		};
 
-		physics::motion_component* motion = nullptr;
-
-		const auto it = std::ranges::find_if(
-			motion_components,
-			[&](const physics::motion_component& motion_component) {
-				return motion_component.owner_id() == collision_component.owner_id();
-			}
-		);
-
-		if (it != motion_components.end()) {
-			motion = &*it;
-		}
+		auto* motion = registry.try_linked_object_write<physics::motion_component>(collision_component.owner_id());
 
 		for (auto& other_collision_component : collision_components) {
 			if (collision_component.owner_id() == other_collision_component.owner_id()) {
@@ -116,18 +103,7 @@ auto gse::broad_phase_collision::update(const std::span<physics::collision_compo
 				continue;
 			}
 
-			const auto it2 = std::ranges::find_if(
-				motion_components,
-				[&](const physics::motion_component& motion_component) {
-					return motion_component.owner_id() == other_collision_component.owner_id();
-				}
-			);
-
-			physics::motion_component* other_motion = nullptr;
-
-			if (it != motion_components.end()) {
-				other_motion = &*it2;
-			}
+			auto* other_motion = registry.try_linked_object_write<physics::motion_component>(other_collision_component.owner_id());
 
 			check_collision(collision_component, motion, other_collision_component, other_motion, dt);
 		}

@@ -27,7 +27,7 @@ export namespace gse::renderer {
 		explicit sprite(context& context) : base_renderer(context) {}
 
 		auto initialize() -> void override;
-		auto render(std::span<std::reference_wrapper<registry>> registries) -> void override;
+		auto render(std::span<const std::reference_wrapper<registry>> registries) -> void override;
 
 		auto queue(const command& cmd) -> void;
 	private:
@@ -179,7 +179,7 @@ auto gse::renderer::sprite::initialize() -> void {
 	);
 }
 
-auto gse::renderer::sprite::render(std::span<std::reference_wrapper<registry>> registries) -> void {
+auto gse::renderer::sprite::render(std::span<const std::reference_wrapper<registry>> registries) -> void {
 	if (m_draw_commands.empty()) {
 		return;
 	}
@@ -247,16 +247,18 @@ auto gse::renderer::sprite::render(std::span<std::reference_wrapper<registry>> r
 				auto rect_size = rect.size();
 				auto angle_rad = rotation.as<radians>();
 
-				std::unordered_map<std::string, std::span<const std::byte>> push_constants = {
-					{ "projection", std::as_bytes(std::span(&projection, 1)) },
-					{ "position", std::as_bytes(std::span(&position, 1)) },
-					{ "size", std::as_bytes(std::span(&rect_size, 1)) },
-					{ "color", std::as_bytes(std::span(&color, 1)) },
-					{ "uv_rect", std::as_bytes(std::span(&uv_rect, 1)) },
-					{ "rotation", std::as_bytes(std::span(&angle_rad, 1)) }
-				};
+				shader->push(
+					command,
+					m_pipeline_layout,
+					"push_constants",
+					"projection", projection,
+					"position", position,
+					"size", rect_size,
+					"color", color,
+					"uv_rect", uv_rect,
+					"rotation", angle_rad
+				);
 
-				shader->push(command, m_pipeline_layout, "push_constants", push_constants);
 				shader->push_descriptor(command, m_pipeline_layout, "spriteTexture", texture->descriptor_info());
 				command.drawIndexed(6, 1, 0, 0, 0);
 			}

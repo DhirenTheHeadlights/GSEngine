@@ -9,26 +9,57 @@ export namespace gse {
 	class id;
 	using uuid = std::uint64_t;
 
-	auto generate_id(std::string_view tag) -> id;
-	auto generate_id(std::uint64_t number) -> id;
-	auto generate_temp_id(uuid number, std::string_view tag) -> id;
-	auto find(uuid number) -> id;
-	auto find(std::string_view tag) -> id;
-	auto exists(uuid number) -> bool;
-	auto exists(std::string_view tag) -> bool;
+	auto generate_id(
+		std::string_view tag
+	) -> id;
+
+	auto generate_id(
+		std::uint64_t number
+	) -> id;
+
+	auto generate_temp_id(
+		uuid number, 
+		std::string_view tag
+	) -> id;
+
+	auto find(
+		uuid number
+	) -> id;
+
+	auto find(
+		std::string_view tag
+	) -> id;
+
+	auto exists(
+		uuid number
+	) -> bool;
+
+	auto exists(
+		std::string_view tag
+	) -> bool;
 }
 
 export namespace gse {
 	class id {
 	public:
 		id() = default;
-		auto operator==(const id& other) const -> bool;
+		auto operator==(
+			const id& other
+		) const -> bool;
 
-		auto number() const -> uuid;
-		auto tag() const -> const std::string&;
-		auto exists() const -> bool;
+		auto number(
+		) const -> uuid;
+
+		auto tag(
+		) const -> const std::string&;
+
+		auto exists(
+		) const -> bool;
 	private:
-		explicit id(uuid id, std::string tag);
+		explicit id(
+			uuid id,
+			std::string tag
+		);
 
 		uuid m_number = std::numeric_limits<uuid>::max();
 		std::string m_tag;
@@ -66,26 +97,37 @@ auto gse::id::exists() const -> bool {
 	return m_number != std::numeric_limits<uuid>::max();
 }
 
-gse::id::id(const uuid id, std::string tag): m_number(id), m_tag(std::move(tag)) {}
+gse::id::id(const uuid id, std::string tag) : m_number(id), m_tag(std::move(tag)) {}
 
 export namespace gse {
 	class identifiable {
 	public:
-		explicit identifiable(const std::string& tag);
-		explicit identifiable(const std::filesystem::path& path);
+		explicit identifiable(
+			const std::string& tag
+		);
 
-		auto id() const -> const id&;
-		auto operator==(const identifiable& other) const -> bool = default;
+		explicit identifiable(
+			const std::filesystem::path& path
+		);
+
+		auto id(
+		) const -> const id&;
+
+		auto operator==(
+			const identifiable& other
+		) const -> bool = default;
 	private:
 		gse::id m_id;
 
-		static auto filename(const std::filesystem::path& path) -> std::string ;
+		static auto filename(
+			const std::filesystem::path& path
+		) -> std::string;
 	};
 }
 
 gse::identifiable::identifiable(const std::string& tag) : m_id(generate_id(tag)) {}
 
-gse::identifiable::identifiable(const std::filesystem::path& path): m_id(generate_id(filename(path))) {}
+gse::identifiable::identifiable(const std::filesystem::path& path) : m_id(generate_id(filename(path))) {}
 
 auto gse::identifiable::id() const -> const gse::id& {
 	return m_id;
@@ -132,14 +174,27 @@ auto gse::identifiable_owned::swap(const identifiable& new_parent) -> void {
 export namespace gse {
 	class identifiable_owned_only_uuid {
 	public:
-		identifiable_owned_only_uuid() = default;
-		explicit identifiable_owned_only_uuid(const id& owner_id);
+		identifiable_owned_only_uuid(
+		) = default;
 
-		auto owner_id() const -> id;
-		auto operator==(const identifiable_owned_only_uuid& other) const -> bool = default;
+		explicit identifiable_owned_only_uuid(
+			const id& owner_id
+		);
 
-		auto swap(const id& new_parent_id) -> void;
-		auto swap(const identifiable& new_parent) -> void;
+		auto owner_id(
+		) const -> id;
+
+		auto operator==(
+			const identifiable_owned_only_uuid& other
+		) const -> bool = default;
+
+		auto swap(
+			const id& new_parent_id
+		) -> void;
+
+		auto swap(
+			const identifiable& new_parent
+		) -> void;
 	private:
 		uuid m_owner_id;
 	};
@@ -172,23 +227,43 @@ export namespace gse {
 	template <typename T, typename PrimaryIdType = id>
 	class id_mapped_collection {
 	public:
-		auto add(const PrimaryIdType& id, T object) -> T*;
+		auto add(
+			const PrimaryIdType& id,
+			T object
+		) -> T*;
 
-		auto remove(const PrimaryIdType& id) -> void;
+		auto remove(
+			const PrimaryIdType& id
+		) -> void;
 
-		auto pop(const PrimaryIdType& id) -> std::optional<T>;
+		auto pop(
+			const PrimaryIdType& id
+		) -> std::optional<T>;
 
-		auto try_get(const PrimaryIdType& id) -> T*;
+		auto try_get(
+			const PrimaryIdType& id
+		) -> T*;
 
-		auto try_get(const PrimaryIdType& id) const -> const T*;
+		auto try_get(
+			const PrimaryIdType& id
+		) const -> const T*;
 
-		auto items() -> std::span<T>;
+		auto items(
+		) -> std::span<T>;
 
-		auto contains(const PrimaryIdType& id) const -> bool;
+		auto contains(
+			const PrimaryIdType& id
+		) const -> bool;
 
-		auto size() const -> size_t;
+		auto size(
+		) const -> size_t;
 
-		auto clear() noexcept -> void;
+		auto clear(
+		) noexcept -> void;
+
+		auto transfer_from(
+			id_mapped_collection& other
+		) -> void;
 	private:
 		std::vector<T> m_items;
 		std::vector<PrimaryIdType> m_ids;
@@ -280,6 +355,13 @@ auto gse::id_mapped_collection<T, PrimaryIdType>::clear() noexcept -> void {
 	m_items.clear();
 	m_ids.clear();
 	m_map.clear();
+}
+
+template <typename T, typename PrimaryIdType>
+auto gse::id_mapped_collection<T, PrimaryIdType>::transfer_from(id_mapped_collection& other) -> void {
+	m_items = std::move(other.m_items);
+    m_ids   = std::move(other.m_ids);
+    m_map   = std::move(other.m_map);
 }
 
 export template <>
@@ -379,4 +461,150 @@ auto gse::exists(const std::string_view tag) -> bool {
 	const auto& [mutex, registry] = id_registry();
 	std::shared_lock lock(mutex);
 	return registry.tag_to_uuid.contains(tag);
+}
+
+export namespace gse {
+	template <typename T, typename IdType>
+	class double_buffered_id_mapped_queue {
+	public:
+		using id_type = IdType;
+		using value_type = T;
+
+		struct reader {
+			double_buffered_id_mapped_queue* parent;
+			std::size_t read_index = 0;
+
+			auto objects(
+			) -> std::span<const T>;
+
+			auto try_get(
+				const id_type& id
+			) const -> const T*;
+		};
+
+		struct writer {
+			double_buffered_id_mapped_queue* parent;
+			std::size_t write_index = 1;
+
+			template <typename... Args>
+			auto emplace_queued(
+				const id_type& id,
+				Args&&... args
+			) -> T*;
+
+			auto activate(
+				const id_type& owner
+			) -> bool;
+
+			auto remove(
+				const id_type& id
+			) -> void;
+
+			auto objects(
+			) -> std::span<T>;
+
+			auto try_get(
+				const id_type& id
+			) -> T*;
+
+			auto reader(
+				std::size_t read_index
+			) -> reader;
+		};
+
+		auto bind(
+			std::size_t read,
+			std::size_t write
+		) -> std::pair<reader, writer>;
+
+		auto flip(
+			std::size_t new_read,
+			std::size_t new_write
+		) -> void;
+
+		auto clear(
+		) noexcept -> void;
+	private:
+		struct slot {
+			id_mapped_collection<T, IdType> active;
+			id_mapped_collection<T, IdType> queued;
+		};
+
+		std::array<slot, 2> m_slots;
+	};
+}
+
+template <typename T, typename IdType>
+auto gse::double_buffered_id_mapped_queue<T, IdType>::reader::objects() -> std::span<const T> {
+	return parent->m_slots[read_index].active.items();
+}
+
+template <typename T, typename IdType>
+auto gse::double_buffered_id_mapped_queue<T, IdType>::reader::try_get(const id_type& id) const -> const T* {
+	return parent->m_slots[read_index].active.try_get(id);
+}
+
+template <typename T, typename IdType>
+template <typename... Args>
+auto gse::double_buffered_id_mapped_queue<T, IdType>::writer::emplace_queued(const id_type& id, Args&&... args) -> T* {
+	return parent->m_slots[write_index].queued.add(id, T(id, std::forward<Args>(args)...));
+}
+
+template <typename T, typename IdType>
+auto gse::double_buffered_id_mapped_queue<T, IdType>::writer::activate(const id_type& owner) -> bool {
+	if (auto obj = parent->m_slots[write_index].queued.pop(owner)) {
+		parent->m_slots[write_index].active.add(owner, std::move(*obj));
+		return true;
+	}
+	return false;
+}
+
+template <typename T, typename IdType>
+auto gse::double_buffered_id_mapped_queue<T, IdType>::writer::remove(const id_type& id) -> void {
+	for (auto& slot : parent->m_slots) {
+		slot.active.remove(id);
+		slot.queued.remove(id);
+	}
+}
+
+template <typename T, typename IdType>
+auto gse::double_buffered_id_mapped_queue<T, IdType>::writer::objects() -> std::span<T> {
+	return parent->m_slots[write_index].active.items();
+}
+
+template <typename T, typename IdType>
+auto gse::double_buffered_id_mapped_queue<T, IdType>::writer::try_get(const id_type& id) -> T* {
+	if (auto* p = parent->m_slots[write_index].active.try_get(id)) {
+		return p;
+	}
+	return parent->m_slots[write_index].queued.try_get(id);
+}
+
+template <typename T, typename IdType>
+auto gse::double_buffered_id_mapped_queue<T, IdType>::writer::reader(const std::size_t read_index) -> double_buffered_id_mapped_queue::reader {
+	return { parent, read_index };
+}
+
+template <typename T, typename IdType>
+auto gse::double_buffered_id_mapped_queue<T, IdType>::bind(const std::size_t read, const std::size_t write) -> std::pair<reader, writer> {
+	assert(read < 2 && write < 2 && read != write, "Read and write indices must be 0 or 1 and different");
+
+	return {
+		{ this, read },
+		{ this, write }
+	};
+}
+
+template <typename T, typename IdType>
+auto gse::double_buffered_id_mapped_queue<T, IdType>::flip(std::size_t new_read, std::size_t new_write) -> void {
+	m_slots[new_write].active = m_slots[new_read].active;
+    m_slots[new_write].queued.clear();
+}
+
+template <typename T, typename IdType>
+auto gse::double_buffered_id_mapped_queue<T, IdType>::clear() noexcept -> void {
+	for (auto& slot : m_slots) {
+		slot.active.clear();
+		slot.queued.clear();
+	}
 }

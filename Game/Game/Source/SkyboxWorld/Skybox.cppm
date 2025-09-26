@@ -8,7 +8,7 @@ export namespace gs {
 	public:
 		using params = gse::box::params;
 
-		skybox(const params& p) : m_initial_position(p.initial_position), m_size(p.size) {}
+		explicit skybox(const params& p) : m_initial_position(p.initial_position), m_size(p.size) {}
 
 		auto initialize() -> void override {
 			add_hook<gse::box>({
@@ -33,7 +33,7 @@ export namespace gs {
 		}
 
 		auto render() -> void override {
-			component<gse::directional_light_component>().debug_menu("Skybox Light", owner_id().number());
+			component_write<gse::directional_light_component>().debug_menu("Skybox Light", owner_id().number());
 		}
 	private:
 		gse::vec3<gse::length> m_initial_position;

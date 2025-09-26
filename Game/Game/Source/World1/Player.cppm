@@ -31,7 +31,7 @@ namespace gs {
 					m_boost_fuel = std::min(m_boost_fuel, 1000);
 				}
 
-				auto motion_component = component<gse::physics::motion_component>();
+				auto motion_component = component_write<gse::physics::motion_component>();
 
 				apply_force(motion_component, gse::vec3<gse::force>(0.f, m_jetpack_force + boost_force, 0.f));
 
@@ -60,7 +60,7 @@ namespace gs {
 
 		auto initialize() -> void override {
 			
-			const auto [mc_id, mc] = add_component<gse::physics::motion_component>({
+			add_component<gse::physics::motion_component>({
 				.current_position = gse::vec3<gse::length>(0.f, 0.f, 0.f),
 				.max_speed = m_max_speed,
 				.mass = gse::pounds(180.f),
@@ -70,19 +70,15 @@ namespace gs {
 			gse::length height = gse::feet(6.0f);
 			gse::length width = gse::feet(3.0f);
 
-			const auto [cc_id, cc] = add_component<gse::physics::collision_component>({
+			add_component<gse::physics::collision_component>({
 				.bounding_box = { gse::vec3<gse::length>(-10.f, -10.f, -10.f), { width, height, width } }
 			});
 
-			const auto [rc_id, rc] = add_component<gse::render_component>({
-				.bounding_box_meshes = {
-					generate_bounding_box_mesh(cc->bounding_box.aabb().max, cc->bounding_box.aabb().min)
-				}
-			});
+			add_component<gse::render_component>({});
 		}
 
 		auto update() -> void override {
-			auto& motion_component = component<gse::physics::motion_component>();
+			auto& motion_component = component_write<gse::physics::motion_component>();
 
 			for (auto& [key, direction] : wasd) {
 				if (gse::keyboard::held(key) && !motion_component.airborne) {

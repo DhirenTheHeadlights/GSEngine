@@ -13,7 +13,7 @@ public:
 			.affected_by_gravity = false
 		});
 
-		auto [rc_id, rc] = add_component<gse::render_component>({
+		add_component<gse::render_component>({
 			.models = {
 				gse::get<gse::model>("Backpack")
 			}
