@@ -2,20 +2,20 @@ export module gse.runtime:engine;
 
 import std;
 
-import :scene_loader;
-
 import gse.utility;
 import gse.graphics;
 import gse.platform;
 import gse.assert;
 import gse.network;
 
+import :world;
+
 export namespace gse {
 	struct engine : hookable<engine> {
 		explicit engine(const std::string& name) : hookable(name) {}
-	};
 
-	using world = hook<engine>;
+		std::optional<world> world;
+	};
 
 	struct engine_config {
 		std::string title = "GSEngine Application";
@@ -60,7 +60,7 @@ namespace gse {
 	engine engine("GSEngine");
 	bool should_shutdown = false;
 
-	auto phase = []() noexcept { scene_loader::flip_registry_buffers(); };
+	auto phase = [&]() noexcept { engine.world->flip_registry_buffers(); };
 	std::barrier barrier(2, phase);
 
 	std::jthread render_thread;
@@ -88,7 +88,7 @@ constexpr auto gse::has_flag(flags haystack, flags needle) -> bool {
 
 auto gse::initialize(const flags engine_flags, const engine_config& config) -> void {
 	network::initialize();
-	scene_loader::initialize();
+	renderer::initialize();
 	engine.initialize();
 }
 
@@ -97,7 +97,14 @@ auto gse::update(const flags engine_flags, const engine_config& config) -> void 
 		window::poll_events();
 
 		system_clock::update();
-		scene_loader::update();
+
+		physics::update(
+			engine.world->registries()
+		);
+
+		renderer::update(
+			engine.world->registries()
+		);
 
 		engine.update();
 	});
@@ -105,9 +112,13 @@ auto gse::update(const flags engine_flags, const engine_config& config) -> void 
 
 auto gse::render(const flags engine_flags, const engine_config& config) -> void {
 	add_timer("Engine::render", [] {
-		scene_loader::render([] {
-			engine.render();
-		});
+		renderer::render(
+			engine.world->registries(),
+			[&] {
+				engine.world->render();
+				engine.render();
+			}
+		);
 	});
 }
 
@@ -142,7 +153,8 @@ auto gse::start(const flags engine_flags, const engine_config& config) -> void {
 		render_thread.join();
 	}
 
-	scene_loader::shutdown();
+	engine.world->shutdown();
+	renderer::shutdown();
 }
 
 auto gse::shutdown() -> void {

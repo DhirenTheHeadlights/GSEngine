@@ -6,11 +6,11 @@ import :keys;
 
 import gse.physics.math;
 
-export namespace gse {
-	namespace detail {
-		struct input_state_token;
-	}
+namespace gse::detail {
+	struct input_state_token;
+}
 
+export namespace gse {
 	class input_state {
 	public:
 		auto key_pressed(

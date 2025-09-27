@@ -5,6 +5,8 @@ import std;
 import gse.assert;
 import gse.network;
 import gse.utility;
+import gse.platform;
+import gse.runtime;
 
 template <>
 struct std::hash<gse::network::address> {
@@ -16,6 +18,11 @@ struct std::hash<gse::network::address> {
 };
 
 export namespace gse {
+	struct client_data {
+		id entity_id;
+		input_state latest_input;
+	};
+
 	class server {
 	public:
 		explicit server(
@@ -23,6 +30,7 @@ export namespace gse {
 		);
 
 		auto update(
+			world& world,
 			const std::function<void(const network::address&, network::message&)>& on_receive
 		) -> void;
 
@@ -35,6 +43,9 @@ export namespace gse {
 		auto peers(
 		) const -> const std::unordered_map<network::address, network::remote_peer>&;
 
+		auto clients(
+		) const -> const std::unordered_map<network::address, client_data>& ;
+
 	private:
 		static auto process_header(
 			network::bitstream& stream,
@@ -43,6 +54,7 @@ export namespace gse {
 
 		network::udp_socket m_socket;
 		std::unordered_map<network::address, network::remote_peer> m_peers;
+		std::unordered_map<network::address, client_data> m_clients;
 	};
 }
 
@@ -87,7 +99,7 @@ auto gse::server::send(const T& msg, const network::address& to) -> void {
 	);
 }
 
-auto gse::server::update(const std::function<void(const network::address&, network::message&)>& on_receive) -> void {
+auto gse::server::update(world& world, const std::function<void(const network::address&, network::message&)>& on_receive) -> void {
 	std::array<std::byte, max_packet_size> buffer;
 
 	while (auto received = m_socket.receive_data(buffer)) {
@@ -107,6 +119,14 @@ auto gse::server::update(const std::function<void(const network::address&, netwo
 				std::println("Server: Received ConnectionRequest from {}:{}", received->from.ip, received->from.port);
 				m_peers.emplace(received->from, network::remote_peer(received->from));
 				send(network::connection_accepted_message{}, received->from);
+
+				if (auto* scene = world.current_scene()) {
+					auto entity_id = scene->registry().create("Player");
+					scene->registry().activate(entity_id);
+					
+					m_clients[received->from] = client_data{ .entity_id = entity_id };
+					std::println("Server: Created entity {} for new client at {}", entity_id, received->from);
+				}
 			}
 
 			continue;
@@ -141,6 +161,10 @@ auto gse::server::update(const std::function<void(const network::address&, netwo
 
 auto gse::server::peers() const -> const std::unordered_map<network::address, network::remote_peer>& {
 	return m_peers;
+}
+
+auto gse::server::clients() const -> const std::unordered_map<network::address, client_data>& {
+	return m_clients;
 }
 
 auto gse::server::process_header(network::bitstream& stream, network::remote_peer& peer) -> packet_header {
