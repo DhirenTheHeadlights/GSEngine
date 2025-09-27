@@ -21,6 +21,10 @@ export namespace gse::network {
 		std::uint32_t sequence;
 	};
 
+	struct notify_scene_change_message {
+		std::array<char, 64> scene_name; 
+	};
+
 	using message = std::variant<
 		connection_request_message,
 		connection_accepted_message,

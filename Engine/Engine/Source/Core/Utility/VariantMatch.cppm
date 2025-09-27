@@ -3,6 +3,19 @@ export module gse.utility:variant_match;
 import std;
 
 export namespace gse {
+    template<typename F>
+    struct lambda_traits : lambda_traits<decltype(&F::operator())> {};
+
+    template<typename ClassType, typename ReturnType, typename Arg>
+    struct lambda_traits<ReturnType(ClassType::*)(Arg) const> {
+        using arg_type = std::remove_cvref_t<Arg>;
+    };
+
+    template<typename ClassType, typename ReturnType, typename Arg>
+    struct lambda_traits<ReturnType(ClassType::*)(Arg)> {
+        using arg_type = std::remove_cvref_t<Arg>;
+    };
+
     template <class Variant>
     class variant {
     public:
@@ -15,32 +28,53 @@ export namespace gse {
         template <class T, class F>
         auto if_is(
             F&& f
-        ) & ->variant&;
+        ) & -> variant&;
 
         template <class T, class F>
         auto else_if_is(
             F&& f
-        ) & ->variant&;
+        ) & -> variant&;
 
         template <class F>
         auto otherwise(
             F&& f
         ) & -> void;
-
+        
         template <class T, class F>
         auto if_is(
             F&& f
-        ) && ->variant&&;
+        ) && -> variant&&;
 
         template <class T, class F>
         auto else_if_is(
             F&& f
-        ) && ->variant&&;
+        ) && -> variant&&;
 
         template <class F>
         auto otherwise(
             F&& f
         ) && -> void;
+
+        template <class F>
+        auto if_is(
+            F&& f
+        ) & -> variant&;
+
+        template <class F>
+        auto else_if_is(
+            F&& f
+        ) & -> variant&;
+
+        template <class F>
+        auto if_is(
+            F&& f
+        ) && -> variant&&;
+
+        template <class F>
+        auto else_if_is(
+            F&& f
+        ) && -> variant&&;
+
     private:
         var_t* m_ptr;
         bool m_handled = false;
@@ -77,7 +111,7 @@ auto gse::variant<Variant>::if_is(F&& f) & -> variant& {
 template <class Variant>
 template <class T, class F>
 auto gse::variant<Variant>::else_if_is(F&& f) & -> variant& {
-    return this->template if_is<T>(std::forward<F>(f));
+    return this->if_is<T>(std::forward<F>(f));
 }
 
 template <class Variant>
@@ -96,14 +130,14 @@ auto gse::variant<Variant>::otherwise(F&& f) & -> void {
 template <class Variant>
 template <class T, class F>
 auto gse::variant<Variant>::if_is(F&& f) && -> variant&& {
-    static_cast<variant&>(*this).template if_is<T>(std::forward<F>(f));
+    static_cast<variant&>(*this).if_is<T>(std::forward<F>(f));
     return std::move(*this);
 }
 
 template <class Variant>
 template <class T, class F>
 auto gse::variant<Variant>::else_if_is(F&& f) && -> variant&& {
-    static_cast<variant&>(*this).template else_if_is<T>(std::forward<F>(f));
+    static_cast<variant&>(*this).else_if_is<T>(std::forward<F>(f));
     return std::move(*this);
 }
 
@@ -112,6 +146,35 @@ template <class F>
 auto gse::variant<Variant>::otherwise(F&& f) && -> void {
     static_cast<variant&>(*this).otherwise(std::forward<F>(f));
 }
+
+template <class Variant>
+template <class F>
+auto gse::variant<Variant>::if_is(F&& f) & -> variant& {
+    using t = lambda_traits<F>::arg_type;
+    return this->if_is<t>(std::forward<F>(f));
+}
+
+template <class Variant>
+template <class F>
+auto gse::variant<Variant>::else_if_is(F&& f) & -> variant& {
+    using t = lambda_traits<F>::arg_type;
+    return this->else_if_is<t>(std::forward<F>(f));
+}
+
+template <class Variant>
+template <class F>
+auto gse::variant<Variant>::if_is(F&& f) && -> variant&& {
+    static_cast<variant&>(*this).if_is(std::forward<F>(f));
+    return std::move(*this);
+}
+
+template <class Variant>
+template <class F>
+auto gse::variant<Variant>::else_if_is(F&& f) && -> variant&& {
+    static_cast<variant&>(*this).else_if_is(std::forward<F>(f));
+    return std::move(*this);
+}
+
 
 template <typename ... Ts>
 auto gse::match(std::variant<Ts...>& v) -> variant<std::variant<Ts...>&> {

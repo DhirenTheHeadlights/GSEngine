@@ -31,8 +31,13 @@ auto gs::client::initialize() -> void {
 auto gs::client::update() -> void {
 	m_client->update([](gse::network::message& msg) {
 		gse::match(msg)
-			.if_is<gse::network::pong_message>([&](const gse::network::pong_message& pong) {
+			.if_is([&](const gse::network::pong_message& pong) {
 				std::println("Client Received: Pong {}", pong.sequence);
+			})
+			.if_is([this](const gse::network::notify_scene_change_message& message) {
+				m_owner->world->activate(
+					gse::find(std::string_view(message.scene_name.data()))
+				);
 			});
 		});
 }

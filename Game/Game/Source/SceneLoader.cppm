@@ -7,27 +7,32 @@ import :skybox_scene;
 import :second_test_scene;
 
 export namespace gs {
-	class scene_loader final : public gse::hook<gse::engine> {
+	class scene_loader final : public gse::hook<gse::world> {
 	public:
 		using hook::hook;
 
 		auto initialize() -> void override {
-			auto scene1 = std::make_unique<gse::scene>("Scene1");
-			scene1->add_hook<main_test_scene>();
+			m_owner->set_networked(true);
 
-			auto scene2 = std::make_unique<gse::scene>("Scene2");
-			scene2->add_hook<skybox_scene>();
-
-			auto scene3 = std::make_unique<gse::scene>("Scene3");
-			scene3->add_hook<second_test_scene>();
-
-			gse::scene_loader::add(scene1);
-			gse::scene_loader::add(scene2);
-			gse::scene_loader::add(scene3);
-
-			gse::scene_loader::queue(gse::find("Scene1"), [] { return gse::keyboard::pressed(gse::key::f1); });
-			gse::scene_loader::queue(gse::find("Scene2"), [] { return gse::keyboard::pressed(gse::key::f2); });
-			gse::scene_loader::queue(gse::find("Scene3"), [] { return gse::keyboard::pressed(gse::key::f3); });
+			m_owner->direct()
+				.when({
+					.scene_id = m_owner->add<main_test_scene>("Default Scene")->id(),
+					.condition = [](const gse::evaluation_context& ctx) {
+						return ctx.input.key_pressed(gse::key::f1);
+					}
+				})
+				.when({
+					.scene_id = m_owner->add<skybox_scene>("Skybox Scene")->id(),
+					.condition = [](const gse::evaluation_context& ctx) {
+						return ctx.input.key_pressed(gse::key::f2);
+					}
+				})
+				.when({
+					.scene_id = m_owner->add<second_test_scene>("Second Test Scene")->id(),
+					.condition = [](const gse::evaluation_context& ctx) {
+						return ctx.input.key_pressed(gse::key::f3);
+					}
+				});
 		}
 	};
 }
