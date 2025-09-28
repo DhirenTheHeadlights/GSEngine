@@ -8,9 +8,9 @@ import gse.platform;
 
 export namespace gse {
 	struct evaluation_context {
-		id client_id;
-		const input_state& input;
-		const registry& registry;
+		std::optional<id> client_id = std::nullopt;
+		const input::state* input;
+		const registry* registry;
 	};
 
 	struct trigger {
@@ -52,6 +52,10 @@ export namespace gse {
 			const gse::id& scene_id
 		) -> void;
 
+		auto deactivate(
+			const gse::id& scene_id
+		) -> void;
+
 		auto scene(
 			const gse::id& scene_id
 		) -> scene*;
@@ -73,8 +77,9 @@ export namespace gse {
 
 		std::unordered_map<gse::id, std::unique_ptr<gse::scene>> m_scenes;
 		std::vector<trigger> m_triggers;
-		std::optional<gse::id> m_active_scene;
+		std::optional<gse::id> m_active_scene = std::nullopt;
 		bool m_networked = false;
+		std::optional<gse::id> m_client_id = std::nullopt;
 	};
 }
 
@@ -91,7 +96,17 @@ gse::world::world(const std::string_view name): hookable(name) {
 
 		auto update() -> void override {
 			for (const auto& [scene_id, condition] : m_owner->m_triggers) {
-		        if (!m_owner->m_networked && condition() && scene_id != m_owner->m_active_scene) {
+				if (m_owner->m_networked) {
+					continue;
+				}
+
+				const evaluation_context ctx{
+					.client_id = m_owner->m_client_id,
+					.input= input::current_state(),
+					.registry = m_owner->m_active_scene.has_value() ? &m_owner->scene(m_owner->m_active_scene.value())->registry() : nullptr
+				};
+
+		        if (condition(ctx) && scene_id != m_owner->m_active_scene) {
 					if (m_owner->m_active_scene.has_value()) {
 		                if (auto* old_scene = m_owner->scene(m_owner->m_active_scene.value())) {
 		                    old_scene->set_active(false);
@@ -135,6 +150,8 @@ gse::world::world(const std::string_view name): hookable(name) {
 			m_owner->m_active_scene.reset();
 		}
 	};
+
+	add_hook<default_world_hook>();
 }
 
 auto gse::world::flip_registry_buffers() -> void {
@@ -146,6 +163,10 @@ auto gse::world::flip_registry_buffers() -> void {
 }
 
 auto gse::world::direct() -> director {
+	m_triggers.clear();
+	m_active_scene.reset();
+	m_scenes.clear();
+
 	return director(this);
 }
 
@@ -162,7 +183,7 @@ auto gse::world::add(const std::string_view name) -> gse::scene* {
 auto gse::world::activate(const gse::id& scene_id) -> void {
 	assert(
 		m_networked,
-		"Cannot force a scene to activate scene in a non-networked world."
+		"Cannot force activate scene in a non-networked world."
 	);
 
 	if (m_active_scene.has_value()) {
@@ -178,6 +199,19 @@ auto gse::world::activate(const gse::id& scene_id) -> void {
 	    new_scene->set_active(true);
 	    m_active_scene = new_scene->id();
 	}
+}
+
+auto gse::world::deactivate(const gse::id& scene_id) -> void {
+	assert(
+		m_networked,
+		"Cannot force deactivate a scene in a non-networked world"
+	);
+
+	if (m_active_scene.has_value()) {
+		scene(m_active_scene.value())->shutdown();
+	}
+
+	m_active_scene = std::nullopt;
 }
 
 auto gse::world::scene(const gse::id& scene_id) -> gse::scene* {

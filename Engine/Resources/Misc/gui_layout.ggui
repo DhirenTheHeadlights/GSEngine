@@ -11,8 +11,8 @@ Tabs: Network
 [Menu]
 Tag: Server
 Owner: 
-Rect: 0 1080 1920 1080
-DockedTo: center
+Rect: 100 300 300 200
+DockedTo: none
 DockSplitRatio: 0.5
 ActiveTab: 0
 Tabs: Server Control
@@ -46,15 +46,5 @@ DockedTo: left
 DockSplitRatio: 0.5
 ActiveTab: 0
 Tabs: Test2
-[EndMenu]
-
-[Menu]
-Tag: Spot light Sphere Light
-Owner: 
-Rect: 100 300 300 200
-DockedTo: none
-DockSplitRatio: 0.5
-ActiveTab: 0
-Tabs: Spot light Sphere Light
 [EndMenu]
 

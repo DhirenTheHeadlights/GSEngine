@@ -5,6 +5,7 @@ import std;
 import gse.utility;
 import gse.graphics;
 import gse.platform;
+import gse.physics;
 import gse.assert;
 import gse.network;
 
@@ -14,7 +15,7 @@ export namespace gse {
 	struct engine : hookable<engine> {
 		explicit engine(const std::string& name) : hookable(name) {}
 
-		std::optional<world> world;
+		world world;
 	};
 
 	struct engine_config {
@@ -60,7 +61,7 @@ namespace gse {
 	engine engine("GSEngine");
 	bool should_shutdown = false;
 
-	auto phase = [&]() noexcept { engine.world->flip_registry_buffers(); };
+	auto phase = [&]() noexcept { engine.world.flip_registry_buffers(); };
 	std::barrier barrier(2, phase);
 
 	std::jthread render_thread;
@@ -90,6 +91,7 @@ auto gse::initialize(const flags engine_flags, const engine_config& config) -> v
 	network::initialize();
 	renderer::initialize();
 	engine.initialize();
+	engine.world.initialize();
 }
 
 auto gse::update(const flags engine_flags, const engine_config& config) -> void {
@@ -98,12 +100,14 @@ auto gse::update(const flags engine_flags, const engine_config& config) -> void 
 
 		system_clock::update();
 
+		engine.world.update();
+
 		physics::update(
-			engine.world->registries()
+			engine.world.registries()
 		);
 
 		renderer::update(
-			engine.world->registries()
+			engine.world.registries()
 		);
 
 		engine.update();
@@ -113,9 +117,9 @@ auto gse::update(const flags engine_flags, const engine_config& config) -> void 
 auto gse::render(const flags engine_flags, const engine_config& config) -> void {
 	add_timer("Engine::render", [] {
 		renderer::render(
-			engine.world->registries(),
+			engine.world.registries(),
 			[&] {
-				engine.world->render();
+				engine.world.render();
 				engine.render();
 			}
 		);
@@ -153,7 +157,7 @@ auto gse::start(const flags engine_flags, const engine_config& config) -> void {
 		render_thread.join();
 	}
 
-	engine.world->shutdown();
+	engine.world.shutdown();
 	renderer::shutdown();
 }
 

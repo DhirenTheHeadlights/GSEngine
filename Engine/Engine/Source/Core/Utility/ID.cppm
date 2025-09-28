@@ -5,6 +5,8 @@ import std;
 import gse.assert;
 import gse.physics.math;
 
+import :double_buffer;
+
 export namespace gse {
 	class id;
 	using uuid = std::uint64_t;
@@ -472,7 +474,6 @@ export namespace gse {
 
 		struct reader {
 			double_buffered_id_mapped_queue* parent;
-			std::size_t read_index = 0;
 
 			auto objects(
 			) -> std::span<const T>;
@@ -484,7 +485,6 @@ export namespace gse {
 
 		struct writer {
 			double_buffered_id_mapped_queue* parent;
-			std::size_t write_index = 1;
 
 			template <typename... Args>
 			auto emplace_queued(
@@ -530,30 +530,30 @@ export namespace gse {
 			id_mapped_collection<T, IdType> queued;
 		};
 
-		std::array<slot, 2> m_slots;
+		double_buffer<slot> m_slots;
 	};
 }
 
 template <typename T, typename IdType>
 auto gse::double_buffered_id_mapped_queue<T, IdType>::reader::objects() -> std::span<const T> {
-	return parent->m_slots[read_index].active.items();
+	return parent->m_slots.read().active.items();
 }
 
 template <typename T, typename IdType>
 auto gse::double_buffered_id_mapped_queue<T, IdType>::reader::try_get(const id_type& id) const -> const T* {
-	return parent->m_slots[read_index].active.try_get(id);
+	return parent->m_slots.read().active.try_get(id);
 }
 
 template <typename T, typename IdType>
 template <typename... Args>
 auto gse::double_buffered_id_mapped_queue<T, IdType>::writer::emplace_queued(const id_type& id, Args&&... args) -> T* {
-	return parent->m_slots[write_index].queued.add(id, T(id, std::forward<Args>(args)...));
+	return parent->m_slots.write().queued.add(id, T(id, std::forward<Args>(args)...));
 }
 
 template <typename T, typename IdType>
 auto gse::double_buffered_id_mapped_queue<T, IdType>::writer::activate(const id_type& owner) -> bool {
-	if (auto obj = parent->m_slots[write_index].queued.pop(owner)) {
-		parent->m_slots[write_index].active.add(owner, std::move(*obj));
+	if (auto obj = parent->m_slots.write().queued.pop(owner)) {
+		parent->m_slots.write().active.add(owner, std::move(*obj));
 		return true;
 	}
 	return false;
@@ -561,7 +561,7 @@ auto gse::double_buffered_id_mapped_queue<T, IdType>::writer::activate(const id_
 
 template <typename T, typename IdType>
 auto gse::double_buffered_id_mapped_queue<T, IdType>::writer::remove(const id_type& id) -> void {
-	for (auto& slot : parent->m_slots) {
+	for (auto& slot : parent->m_slots.buffer()) {
 		slot.active.remove(id);
 		slot.queued.remove(id);
 	}
@@ -569,15 +569,15 @@ auto gse::double_buffered_id_mapped_queue<T, IdType>::writer::remove(const id_ty
 
 template <typename T, typename IdType>
 auto gse::double_buffered_id_mapped_queue<T, IdType>::writer::objects() -> std::span<T> {
-	return parent->m_slots[write_index].active.items();
+	return parent->m_slots.write().active.items();
 }
 
 template <typename T, typename IdType>
 auto gse::double_buffered_id_mapped_queue<T, IdType>::writer::try_get(const id_type& id) -> T* {
-	if (auto* p = parent->m_slots[write_index].active.try_get(id)) {
+	if (auto* p = parent->m_slots.write().active.try_get(id)) {
 		return p;
 	}
-	return parent->m_slots[write_index].queued.try_get(id);
+	return parent->m_slots.write().queued.try_get(id);
 }
 
 template <typename T, typename IdType>
@@ -590,20 +590,25 @@ auto gse::double_buffered_id_mapped_queue<T, IdType>::bind(const std::size_t rea
 	assert(read < 2 && write < 2 && read != write, "Read and write indices must be 0 or 1 and different");
 
 	return {
-		{ this, read },
-		{ this, write }
+		{ this },
+		{ this }
 	};
 }
 
 template <typename T, typename IdType>
 auto gse::double_buffered_id_mapped_queue<T, IdType>::flip(std::size_t new_read, std::size_t new_write) -> void {
-	m_slots[new_write].active = m_slots[new_read].active;
-    m_slots[new_write].queued.clear();
+	m_slots.flip();
+
+	auto& read = m_slots.read();
+	auto& write = m_slots.write();
+
+	read.active = write.active;
+	write.queued.clear();
 }
 
 template <typename T, typename IdType>
 auto gse::double_buffered_id_mapped_queue<T, IdType>::clear() noexcept -> void {
-	for (auto& slot : m_slots) {
+	for (auto& slot : m_slots.buffer()) {
 		slot.active.clear();
 		slot.queued.clear();
 	}
