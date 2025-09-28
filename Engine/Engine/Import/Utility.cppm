@@ -3,6 +3,7 @@ export module gse.utility;
 export import :clock;
 export import :component;
 export import :config;
+export import :double_buffer;
 export import :ecs;
 export import :id;
 export import :misc;

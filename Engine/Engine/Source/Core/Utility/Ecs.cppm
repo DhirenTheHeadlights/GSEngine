@@ -80,6 +80,11 @@ export namespace gse {
 	public:
 		hookable(std::string_view name, std::initializer_list<std::unique_ptr<hook<T>>> hooks = {});
 
+		template <typename Hook>
+			requires is_hook<Hook, T>
+		auto add_hook(
+		) -> void;
+
 		template <typename Hook, typename... Args>
 			requires is_hook<Hook, T>
 		auto add_hook(
@@ -110,6 +115,12 @@ export namespace gse {
 template <typename T>
 gse::hookable<T>::hookable(const std::string_view name, std::initializer_list<std::unique_ptr<hook<T>>> hooks) : identifiable(name) {
 	for (auto&& h : hooks) m_hooks.push_back(std::move(const_cast<std::unique_ptr<hook<T>>&>(h)));
+}
+
+template <typename T>
+template <typename Hook> requires gse::is_hook<Hook, T>
+auto gse::hookable<T>::add_hook() -> void {
+	m_hooks.push_back(std::make_unique<Hook>(static_cast<T*>(this)));
 }
 
 template <typename T>

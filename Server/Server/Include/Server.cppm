@@ -20,7 +20,7 @@ struct std::hash<gse::network::address> {
 export namespace gse {
 	struct client_data {
 		id entity_id;
-		input_state latest_input;
+		state latest_input;
 	};
 
 	class server {
@@ -125,7 +125,7 @@ auto gse::server::update(world& world, const std::function<void(const network::a
 					scene->registry().activate(entity_id);
 					
 					m_clients[received->from] = client_data{ .entity_id = entity_id };
-					std::println("Server: Created entity {} for new client at {}", entity_id, received->from);
+					std::println("Server: Created entity {} for new client at ip: {}, port: {}", entity_id, received->from.ip, received->from.port);
 				}
 			}
 

@@ -33,7 +33,7 @@ auto gse::server_app::initialize() -> void {
 
 auto gse::server_app::update() -> void {
 	m_server->update(
-		m_owner->world.value(),
+		m_owner->world,
 		[this](const network::address& from, network::message& msg) {
 		match(msg)
 			.if_is([&](const network::ping_message& ping) {
@@ -49,12 +49,12 @@ auto gse::server_app::update() -> void {
 
 	std::optional<id> scene_requested_id;
 
-	for (const auto& [scene_id, condition] : m_owner->world->triggers()) {
+	for (const auto& [scene_id, condition] : m_owner->world.triggers()) {
 		for (const auto& [entity_id, latest_input] : m_server->clients() | std::views::values) {
 			evaluation_context ctx{
 				.client_id = entity_id,
-				.input = latest_input,
-				.registry = m_owner->world->current_scene()->registry()
+				.input = &latest_input,
+				.registry = &m_owner->world.current_scene()->registry()
 			};
 
 			if (condition(ctx)) {
@@ -64,14 +64,14 @@ auto gse::server_app::update() -> void {
 	}
 
 	if (scene_requested_id.has_value()) {
-		m_owner->world->activate(scene_requested_id.value());
+		m_owner->world.activate(scene_requested_id.value());
 	}
 
 	for (const auto& addr : m_server->clients() | std::views::keys) {
-		if (m_owner->world->current_scene() && m_owner->world->current_scene()->id() == scene_requested_id) {
+		if (m_owner->world.current_scene() && m_owner->world.current_scene()->id() == scene_requested_id) {
 			m_server->send(
 				network::notify_scene_change_message{
-					.scene_name = *m_owner->world->current_scene()->id().tag().data()
+					.scene_name = *m_owner->world.current_scene()->id().tag().data()
 				},
 				addr
 			);

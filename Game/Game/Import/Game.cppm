@@ -9,4 +9,4 @@ import :second_test_scene;
 
 export import :client;
 export import :client_ui;
-export import :scene_loader;
+export import :world_loader;
