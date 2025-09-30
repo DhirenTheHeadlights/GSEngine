@@ -251,7 +251,8 @@ export namespace gse {
 		) const -> const T*;
 
 		auto items(
-		) -> std::span<T>;
+			this auto&& self
+		) -> decltype(auto);
 
 		auto contains(
 			const PrimaryIdType& id
@@ -338,8 +339,8 @@ auto gse::id_mapped_collection<T, PrimaryIdType>::try_get(const PrimaryIdType& i
 }
 
 template <typename T, typename PrimaryIdType>
-auto gse::id_mapped_collection<T, PrimaryIdType>::items() -> std::span<T> {
-	return m_items;
+auto gse::id_mapped_collection<T, PrimaryIdType>::items(this auto&& self) -> decltype(auto) {
+	return std::span{ self.m_items };
 }
 
 template <typename T, typename PrimaryIdType>
@@ -528,6 +529,10 @@ export namespace gse {
 		struct slot {
 			id_mapped_collection<T, IdType> active;
 			id_mapped_collection<T, IdType> queued;
+
+			auto clone_from(
+				const slot& other
+			) -> void;
 		};
 
 		double_buffer<slot> m_slots;
@@ -598,12 +603,7 @@ auto gse::double_buffered_id_mapped_queue<T, IdType>::bind(const std::size_t rea
 template <typename T, typename IdType>
 auto gse::double_buffered_id_mapped_queue<T, IdType>::flip(std::size_t new_read, std::size_t new_write) -> void {
 	m_slots.flip();
-
-	auto& read = m_slots.read();
-	auto& write = m_slots.write();
-
-	read.active = write.active;
-	write.queued.clear();
+	m_slots.write().clone_from(m_slots.read());
 }
 
 template <typename T, typename IdType>
@@ -612,4 +612,10 @@ auto gse::double_buffered_id_mapped_queue<T, IdType>::clear() noexcept -> void {
 		slot.active.clear();
 		slot.queued.clear();
 	}
+}
+
+template <typename T, typename IdType>
+auto gse::double_buffered_id_mapped_queue<T, IdType>::slot::clone_from(const slot& other) -> void {
+	active = other.active;
+	queued.clear();
 }
