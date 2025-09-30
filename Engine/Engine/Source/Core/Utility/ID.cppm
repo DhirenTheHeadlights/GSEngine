@@ -438,7 +438,7 @@ auto gse::find(const uuid number) -> id {
 	std::shared_lock lock(mutex);
 
 	id* found_id = registry.by_uuid.try_get(number);
-	assert(found_id, std::format("ID {} not found", number));
+	assert_lazy(found_id, [number] { return std::format("ID {} not found", number); });
 	return *found_id;
 }
 
@@ -447,7 +447,7 @@ auto gse::find(const std::string_view tag) -> id {
 	std::shared_lock lock(mutex);
 
 	const auto it = registry.tag_to_uuid.find(tag);
-	assert(it != registry.tag_to_uuid.end(), std::format("Tag '{}' not found", tag));
+	assert_lazy(it != registry.tag_to_uuid.end(), [tag] { return std::format("Tag '{}' not found", tag); });
 
 	id* found_id = registry.by_uuid.try_get(it->second);
 	assert(found_id, "Inconsistent registry state!");

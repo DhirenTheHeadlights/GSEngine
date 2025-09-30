@@ -243,8 +243,8 @@ export namespace gse {
 		) -> void override;
 	private:
 		double_buffered_id_mapped_queue<component_type, owner_id_t> m_dbq;
-		double_buffered_id_mapped_queue<component_type, owner_id_t>::reader m_reader{ &m_dbq, 0 };
-		double_buffered_id_mapped_queue<component_type, owner_id_t>::writer m_writer{ &m_dbq, 1 };
+		double_buffered_id_mapped_queue<component_type, owner_id_t>::reader m_reader{ &m_dbq };
+		double_buffered_id_mapped_queue<component_type, owner_id_t>::writer m_writer{ &m_dbq };
 
 		std::unordered_map<link_id_t, owner_id_t> m_link_to_owner_map;
 		std::uint32_t m_next_link_id = 0;
