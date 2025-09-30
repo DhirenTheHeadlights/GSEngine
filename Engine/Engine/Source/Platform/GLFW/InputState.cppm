@@ -84,7 +84,6 @@ export namespace gse::input {
 		auto end_frame(
 			const detail::input_state_token& token
 		) -> void;
-
 	private:
 		std::unordered_set<key> m_keys_held;
 		std::unordered_set<key> m_keys_pressed_this_frame;
