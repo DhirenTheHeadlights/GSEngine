@@ -59,13 +59,7 @@ namespace gse {
 	) -> void;
 
 	engine engine("GSEngine");
-	bool should_shutdown = false;
-
-	auto phase = [&]() noexcept { engine.world.flip_registry_buffers(); };
-	std::barrier barrier(2, phase);
-
-	std::jthread render_thread;
-	std::atomic_bool running = false;
+	std::atomic should_shutdown = false;
 }
 
 export namespace gse {
@@ -96,8 +90,6 @@ auto gse::initialize(const flags engine_flags, const engine_config& config) -> v
 
 auto gse::update(const flags engine_flags, const engine_config& config) -> void {
 	add_timer("Engine::update", [] {
-		window::poll_events();
-
 		system_clock::update();
 
 		engine.world.update();
@@ -130,35 +122,48 @@ template <typename... Args>
 auto gse::start(const flags engine_flags, const engine_config& config) -> void {
 	(engine.add_hook<Args>(), ...);
 
-	initialize(engine_flags, config);
+    initialize(engine_flags, config);
 
-	running.store(true, std::memory_order_release);
-	render_thread = std::jthread([&] {
-		while (running.load(std::memory_order_acquire) && !should_shutdown) {
-			barrier.arrive_and_wait();
-			render(engine_flags, config);
-		}
-	});
+    task::start([&] {
+        while (!should_shutdown.load(std::memory_order_acquire)) {
+			window::poll_events();
 
-	while (!should_shutdown) {
-		input::update([&] {
-			update(engine_flags, config);
-			if (!should_shutdown && running.load(std::memory_order_acquire)) {
-				barrier.arrive_and_wait();
-			} else {
-				barrier.arrive_and_drop();
-			}
-		});
-	}
+            const bool do_render = has_flag(
+				engine_flags, 
+				flags::render
+			);
 
-	running.store(false, std::memory_order_release);
+            const std::size_t participants = 1 + (do_render ? 1 : 0);
+            std::latch frame_done(participants);
 
-	if (render_thread.joinable()) {
-		render_thread.join();
-	}
+			task::post(
+				[&, engine_flags, config] {
+					input::update([&] {
+						update(engine_flags, config);
+						frame_done.count_down();
+					});
+				}
+			);
 
-	engine.world.shutdown();
-	renderer::shutdown();
+            if (do_render) {
+                task::post(
+					[&, engine_flags, config] {
+						render(engine_flags, config);
+						frame_done.count_down();
+					}
+				);
+            }
+
+            frame_done.wait();
+
+            engine.world.flip_registry_buffers();
+        }
+
+        task::wait_idle();
+    });
+
+    engine.world.shutdown();
+    renderer::shutdown();
 }
 
 auto gse::shutdown() -> void {
