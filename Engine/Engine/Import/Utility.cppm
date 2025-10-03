@@ -5,6 +5,7 @@ export import :component;
 export import :config;
 export import :double_buffer;
 export import :ecs;
+export import :frame_sync;
 export import :id;
 export import :misc;
 export import :non_copyable;
@@ -23,8 +24,21 @@ export namespace gse {
 	auto scope(
 		const std::function<void()>& in_scope
 	) -> void;
+
+	template <is_trivially_copyable... Src>
+	auto memcpy(
+		std::byte* dest, 
+		const Src*... src
+	) -> void;
 }
 
 auto gse::scope(const std::function<void()>& in_scope) -> void {
 	in_scope();
 }
+
+template <gse::is_trivially_copyable ... Src>
+auto gse::memcpy(std::byte* dest, const Src*... src) -> void {
+	std::byte* out = dest;
+	((std::memcpy(out, src, sizeof(Src)), out += sizeof(Src)), ...);
+}
+

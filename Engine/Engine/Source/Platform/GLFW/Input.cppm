@@ -58,10 +58,6 @@ export namespace gse::input {
 	>;
 
 	auto update(
-		const std::function<void()>& in_frame
-	) -> void;
-
-	auto flip_buffers(
 	) -> void;
 
 	auto key_callback(
@@ -123,7 +119,7 @@ namespace gse::detail {
 	}
 }
 
-auto gse::input::update(const std::function<void()>& in_frame) -> void {
+auto gse::input::update() -> void {
 	std::vector<event> events_to_process;
 	scope([&] {
 		std::scoped_lock lock(mutex);
@@ -132,6 +128,7 @@ auto gse::input::update(const std::function<void()>& in_frame) -> void {
 
 	const auto& tok = detail::token();
 	auto& persistent_state = states.write();
+	persistent_state.copy_persistent_from(states.read());
 	persistent_state.begin_frame(tok);
 
 	for (const auto& evt : events_to_process) {
@@ -160,15 +157,11 @@ auto gse::input::update(const std::function<void()>& in_frame) -> void {
 	}
 
 	persistent_state.end_frame(tok);
-
-	in_frame();
-}
-
-auto gse::input::flip_buffers() -> void {
 	states.flip();
 }
 
 auto gse::input::key_callback(const int key, const int action) -> void {
+	std::println("[GLFW] key={} action={}", key, action);
 	if (const auto gse_key = to_key(key)) {
 		std::scoped_lock lock(mutex);
 		if (action == GLFW_PRESS) {
