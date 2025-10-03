@@ -37,9 +37,6 @@ export namespace gse {
 	public:
 		world(std::string_view name = "Unnamed World");
 
-		auto flip_registry_buffers(
-		) -> void;
-
 		auto direct(
 		) -> director;
 
@@ -102,7 +99,7 @@ gse::world::world(const std::string_view name): hookable(name) {
 
 				const evaluation_context ctx{
 					.client_id = m_owner->m_client_id,
-					.input= input::current_state(),
+					.input = input::current_state(),
 					.registry = m_owner->m_active_scene.has_value() ? &m_owner->scene(m_owner->m_active_scene.value())->registry() : nullptr
 				};
 
@@ -152,14 +149,6 @@ gse::world::world(const std::string_view name): hookable(name) {
 	};
 
 	add_hook<default_world_hook>();
-}
-
-auto gse::world::flip_registry_buffers() -> void {
-	for (const auto& scene : m_scenes | std::views::values) {
-		if (scene->active()) {
-			scene->registry().flip_buffers();
-		}
-	}
 }
 
 auto gse::world::direct() -> director {

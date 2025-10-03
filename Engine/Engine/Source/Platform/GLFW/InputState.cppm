@@ -84,6 +84,11 @@ export namespace gse::input {
 		auto end_frame(
 			const detail::input_state_token& token
 		) -> void;
+
+		auto copy_persistent_from(
+			const state& other
+		) -> void;
+
 	private:
 		std::unordered_set<key> m_keys_held;
 		std::unordered_set<key> m_keys_pressed_this_frame;
@@ -192,4 +197,12 @@ auto gse::input::state::append_codepoint(const std::uint32_t codepoint, const de
 
 auto gse::input::state::end_frame(const detail::input_state_token&) -> void {
 	m_mouse_delta = m_mouse_position - m_mouse_prev_position;
+}
+
+auto gse::input::state::copy_persistent_from(const state& other) -> void {
+	m_keys_held = other.m_keys_held;
+	m_mouse_buttons_held = other.m_mouse_buttons_held;
+	m_mouse_position = other.m_mouse_position;
+	m_mouse_prev_position = other.m_mouse_prev_position;
+	m_mouse_delta = other.m_mouse_delta;
 }

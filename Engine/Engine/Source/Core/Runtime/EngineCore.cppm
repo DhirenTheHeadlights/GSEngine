@@ -124,9 +124,19 @@ auto gse::start(const flags engine_flags, const engine_config& config) -> void {
 
     initialize(engine_flags, config);
 
+	auto exit = make_scope_exit([] {
+		engine.world.shutdown();
+		renderer::shutdown();
+		network::shutdown();
+	});
+
     task::start([&] {
         while (!should_shutdown.load(std::memory_order_acquire)) {
 			window::poll_events();
+
+        	frame_sync::begin();
+
+        	input::update();
 
             const bool do_render = has_flag(
 				engine_flags, 
@@ -138,10 +148,8 @@ auto gse::start(const flags engine_flags, const engine_config& config) -> void {
 
 			task::post(
 				[&, engine_flags, config] {
-					input::update([&] {
-						update(engine_flags, config);
-						frame_done.count_down();
-					});
+					update(engine_flags, config);
+					frame_done.count_down();
 				}
 			);
 
@@ -156,14 +164,11 @@ auto gse::start(const flags engine_flags, const engine_config& config) -> void {
 
             frame_done.wait();
 
-            engine.world.flip_registry_buffers();
+			frame_sync::end();
         }
 
         task::wait_idle();
     });
-
-    engine.world.shutdown();
-    renderer::shutdown();
 }
 
 auto gse::shutdown() -> void {

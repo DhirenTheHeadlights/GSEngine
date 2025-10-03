@@ -6,6 +6,7 @@ import :id;
 import :component;
 import :non_copyable;
 import :misc;
+import :frame_sync;
 
 export namespace gse {
 	template <is_identifiable T>
@@ -479,7 +480,7 @@ export namespace gse {
 		using uuid = std::uint32_t;
 		using deferred_action = std::function<bool(registry&)>;
 
-		registry() = default;
+		registry();
 
 		auto create(
 			const std::string& name
@@ -584,9 +585,6 @@ export namespace gse {
 		static auto any_components(
 			std::span<const std::reference_wrapper<registry>> registries
 		) -> bool;
-
-		auto flip_buffers(
-		) -> void;
 	private:
 		id_mapped_collection<entity> m_active_entities;
 		std::unordered_set<id> m_inactive_ids;
@@ -600,6 +598,16 @@ export namespace gse {
 		std::size_t m_read_index = 0;
 		std::size_t m_write_index = 1;
 	};
+}
+
+gse::registry::registry() {
+	frame_sync::on_end([this] {
+		std::swap(m_read_index, m_write_index);
+
+		for (const auto& link : m_component_links | std::views::values) {
+			link->flip(m_read_index, m_write_index);
+		}
+	});
 }
 
 auto gse::registry::create(const std::string& name) -> id {
@@ -939,14 +947,6 @@ auto gse::registry::any_components(const std::span<const std::reference_wrapper<
 			return !reg.get().template linked_objects_read<U>().empty();
 		}
 	);
-}
-
-auto gse::registry::flip_buffers() -> void {
-	std::swap(m_read_index, m_write_index);
-
-	for (const auto& link : m_component_links | std::views::values) {
-		link->flip(m_read_index, m_write_index);
-	}
 }
 
 namespace gse {
