@@ -1,6 +1,6 @@
 module;
 
-#include <tbb/concurrent_queue.h>
+#include <oneapi/tbb.h>
 
 export module gse.utility:task;
 
@@ -20,41 +20,36 @@ export namespace gse::task {
 	) -> std::invoke_result_t<F&>;
 
 	auto post(
-		job j,
-		std::optional<std::size_t> worker_hint = std::nullopt
+		job j
 	) -> void;
 
 	template <std::input_iterator It>
 	auto post_range(
 		It first,
-		It last,
-		std::optional<std::size_t> worker_hint = std::nullopt
+		It last
 	) -> void;
 
 	template <typename Index, typename F>
 	auto parallel_for(
 		Index first,
 		Index last,
-		F&& func,
-		std::optional<std::size_t> worker_hint = std::nullopt
-	) -> void;
-
-	auto wait_idle(
+		F&& func
 	) -> void;
 
 	auto thread_count(
 	) -> size_t;
+
+	auto current_worker(
+	) noexcept -> std::optional<std::size_t>;
+
+	auto wait_idle(
+	) -> void;
 }
 
 namespace gse::task {
-	using queue = tbb::concurrent_queue<job>;
+	std::unique_ptr<tbb::task_arena> arena;
+	std::unique_ptr<tbb::global_control> control;
 
-	std::vector<std::unique_ptr<queue>> local_queues;
-	queue global_queue;
-
-	std::counting_semaphore<std::numeric_limits<std::int32_t>::max()> ready_semaphore{ 0 };
-
-	std::vector<std::jthread> workers;
 	std::atomic started = false;
 	std::atomic stopping = false;
 
@@ -73,22 +68,12 @@ namespace gse::task {
 
 	auto likely_idle(
 	) noexcept -> bool;
-
-	auto try_take(
-		std::size_t self_id,
-		job& out_job
-	) -> bool;
-
-	auto complete_one(
-	) -> void;
-
-	auto worker_loop(
-		std::size_t self_id
-	) -> void;
 }
 
 template <typename F>
 auto gse::task::start(F&& fn, std::size_t worker_count) -> std::invoke_result_t<F&> {
+	if (worker_count < 2) worker_count = 2;
+
 	if (started.load(std::memory_order_acquire)) {
 		if constexpr (std::is_void_v<std::invoke_result_t<F&>>) {
 			fn();
@@ -104,132 +89,145 @@ auto gse::task::start(F&& fn, std::size_t worker_count) -> std::invoke_result_t<
 		return;
 	}
 
-	if (worker_count == 0) {
-		worker_count = 1;
-	}
+	arena.reset();
+	control.reset();
 
-	local_queues.resize(worker_count);
-	for (auto& q_ptr : local_queues) {
-		q_ptr = std::make_unique<queue>();
-	}
+	arena = std::make_unique<tbb::task_arena>(static_cast<int>(worker_count));
 
-	workers.reserve(worker_count);
-	for (std::size_t i = 0; i < worker_count; ++i) {
-		workers.emplace_back([i] {
-			worker_loop(i);
-		});
-	}
+	control = std::make_unique<tbb::global_control>(
+		tbb::global_control::max_allowed_parallelism,
+		static_cast<int>(worker_count)
+	);
 
 	auto guard = make_scope_exit([] {
-		if (!started.load()) {
-			return;
-		}
+		if (!started.load()) return;
+		if (stopping.exchange(true)) return;
 
-		if (stopping.exchange(true)) {
-			return;
-		}
+		wait_idle();
 
-		ready_semaphore.release(static_cast<std::ptrdiff_t>(workers.size()));
+		control.reset(); 
+		arena.reset();
 
-		for (auto& t : workers) {
-			if (t.joinable()) t.join();
-		}
-
-		workers.clear();
-
-		stopping.store(false, std::memory_order_release); 
+		stopping.store(false, std::memory_order_release);
 		started.store(false, std::memory_order_release);
 	});
 
 	if constexpr (std::is_void_v<std::invoke_result_t<F&>>) {
-        fn();
-    } else {
-        return fn();
-    }
-
-	return;
+	    fn();
+	    return;
+	} else {
+	    using r = std::invoke_result_t<F&>;
+	    r ret = fn();
+	    return ret;
+	}
 }
 
-auto gse::task::post(job j, const std::optional<std::size_t> worker_hint) -> void {
+auto gse::task::post(job j) -> void {
 	in_flight.fetch_add(1, std::memory_order_relaxed);
 
-	if (const auto id = current_worker_id(); id.has_value()) {
-		local_queues[*id]->push(std::move(j));
-	} else if (worker_hint && *worker_hint < local_queues.size()) {
-		local_queues[*worker_hint]->push(std::move(j));
-	} else {
-		global_queue.push(std::move(j));
-	}
-
-	ready_semaphore.release();
+	auto p = std::make_shared<job>(std::move(j));
+	arena->enqueue([p] {
+		auto done = make_scope_exit([] {
+			if (in_flight.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+				std::scoped_lock lk(idle);
+				idle_cv.notify_all();
+			}
+		});
+		try {
+			(*p)();
+		}
+		catch (const std::exception& e) {
+			std::println("Exception in task: {}", e.what());
+		}
+		catch (...) {
+			std::println("Exception in task");
+		}
+	});
 }
 
 template <std::input_iterator It>
-auto gse::task::post_range(It first, It last, const std::optional<std::size_t> worker_hint) -> void {
+auto gse::task::post_range(It first, It last) -> void {
 	const std::size_t n = static_cast<std::size_t>(std::distance(first, last));
-
 	if (n == 0) {
 		return;
 	}
+
 	in_flight.fetch_add(n, std::memory_order_relaxed);
 
-	if (const auto id = current_worker_id(); id.has_value()) {
-		auto* q = local_queues[*id].get();
-		for (; first != last; ++first) {
-			q->push(job(*first));
-		}
-	} else if (worker_hint && *worker_hint < local_queues.size()) {
-		auto* q = local_queues[*worker_hint].get();
-		for (; first != last; ++first) {
-			q->push(job(*first));
-		}
-	} else {
-		for (; first != last; ++first) {
-			global_queue.push(job(*first));
-		}
+	for (; first != last; ++first) {
+		auto p = std::make_shared<job>(job(*first));
+		arena->enqueue([p] {
+			auto done = make_scope_exit([] {
+				if (in_flight.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+					std::scoped_lock lk(idle);
+					idle_cv.notify_all();
+				}
+			});
+			try {
+				(*p)();
+			}
+			catch (const std::exception& e) {
+				std::println("Exception in task: {}", e.what());
+			}
+			catch (...) {
+				std::println("Exception in task");
+			}
+		});
 	}
-
-	ready_semaphore.release(static_cast<std::ptrdiff_t>(n));
 }
 
 template <typename Index, typename F>
-auto gse::task::parallel_for(Index first, Index last, F&& func, std::optional<std::size_t> worker_hint) -> void {
+auto gse::task::parallel_for(Index first, Index last, F&& func) -> void {
 	if (last <= first) {
 		return;
 	}
 
 	const Index n = last - first;
-	if (n <= static_cast<Index>(coalesce_threshold)) {
-		post(
-			[=, fn = std::forward<F>(func)]() mutable {
-				for (Index i = first; i < last; ++i) {
-					fn(i);
-				}
-			}, 
-			worker_hint
-		);
 
+	if (n <= static_cast<Index>(coalesce_threshold)) {
+		for (Index i = first; i < last; ++i) {
+			func(i);
+		}
 		return;
 	}
 
-	const Index c = static_cast<Index>(chunk_size);
-
-	for (Index s = first; s < last; s += c) {
-		const Index e = std::min(s + c, last);
-		post(
-			[s, e, fn = std::forward<F>(func)]() mutable {
-				for (Index i = s; i < e; ++i) {
-					fn(i);
+	arena->execute([&] {
+		tbb::parallel_for(
+			tbb::blocked_range<Index>(first, last, static_cast<Index>(chunk_size)),
+			[&](const tbb::blocked_range<Index>& r) {
+				for (Index i = r.begin(); i != r.end(); ++i) {
+					func(i);
 				}
-			}, 
-			worker_hint
+			}
 		);
+	});
+}
+
+auto gse::task::thread_count() -> size_t {
+	if (arena) {
+		return static_cast<size_t>(arena->max_concurrency());
 	}
+
+	return std::max<std::size_t>(2, std::thread::hardware_concurrency());
+}
+
+auto gse::task::current_worker() noexcept -> std::optional<std::size_t> {
+	const auto n = thread_count();
+	if (n == 0) return 0;
+
+	if (const auto id = current_worker_id(); id.has_value()) {
+		return *id % n;
+	}
+
+	const auto h = std::hash<std::thread::id>{}(std::this_thread::get_id());
+	return h % n;
 }
 
 auto gse::task::wait_idle() -> void {
 	for (int i = 0; i < 1024; ++i) {
-		if (likely_idle()) return;
+		if (likely_idle()) {
+			return;
+		}
 		std::this_thread::yield();
 	}
 
@@ -239,76 +237,10 @@ auto gse::task::wait_idle() -> void {
 	});
 }
 
-auto gse::task::thread_count() -> size_t {
-	return local_queues.size();
-}
-
 auto gse::task::current_worker_id() noexcept -> std::optional<std::size_t> {
 	return local_worker_id;
 }
 
 auto gse::task::likely_idle() noexcept -> bool {
 	return in_flight.load(std::memory_order_acquire) == 0;
-}
-
-auto gse::task::try_take(const std::size_t self_id, job& out_job) -> bool {
-	if (local_queues[self_id]->try_pop(out_job)) {
-		return true;
-	}
-
-	if (global_queue.try_pop(out_job)) {
-		return true;
-	}
-
-	const std::size_t n = local_queues.size();
-
-	for (std::size_t k = 1; k < n; ++k) {
-		if (const std::size_t victim = (self_id + k) % n; local_queues[victim]->try_pop(out_job)) {
-			return true;
-		}
-	}
-
-	return false;
-}
-
-auto gse::task::complete_one() -> void {
-	if (in_flight.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-		std::scoped_lock lk(idle);
-		idle_cv.notify_all();
-	}
-}
-
-auto gse::task::worker_loop(std::size_t self_id) -> void {
-	local_worker_id = self_id;
-
-	while (!stopping.load(std::memory_order_relaxed)) {
-		ready_semaphore.acquire();
-		job j;
-		int spins = 0;
-
-		while (try_take(self_id, j)) {
-			j();
-			complete_one();
-
-			if (++spins < 256) {
-				continue;
-			}
-
-			spins = 0;
-			std::this_thread::yield();
-		}
-	}
-
-	job j;
-	while (global_queue.try_pop(j)) {
-		j(); complete_one();
-	}
-
-	for (const auto& q : local_queues) {
-		while (q->try_pop(j)) {
-			j(); complete_one();
-		}
-	}
-
-	local_worker_id.reset();
 }
