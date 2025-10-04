@@ -9,3 +9,4 @@ Makefile
 /Folder.DotSettings.user
 *.ini
 /vc140.pdb
+/Engine/External/vcpkg

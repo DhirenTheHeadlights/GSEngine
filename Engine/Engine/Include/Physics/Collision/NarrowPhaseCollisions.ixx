@@ -289,6 +289,8 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
         return std::nullopt;
     }
 
+
+
     for (int i = 0; i < mpr_collision_refinement_iterations; ++i) {
         if constexpr (debug) {
             std::println("\n[MPR][iter {}] v0:{}, v1:{}, v2:{}, v3:{}", i, v0.point, v1.point, v2.point, v3.point);
@@ -300,22 +302,22 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
         unitless::vec3 n_d = normalize(cross(v2.point - v1.point, v3.point - v1.point));
 
         length d_a = is_zero(n_a) ? meters(std::numeric_limits<float>::infinity()) : dot(n_a, v0.point);
-        if (d_a.as<meters>() < meters(0)) {
+        if (d_a < meters(0)) {
             n_a = -n_a;
             d_a = -d_a;
         }
         length d_b = is_zero(n_b) ? meters(std::numeric_limits<float>::infinity()) : dot(n_b, v0.point);
-        if (d_b.as<meters>() < meters(0)) {
+        if (d_b < meters(0)) {
             n_b = -n_b;
             d_b = -d_b;
         }
         length d_c = is_zero(n_c) ? meters(std::numeric_limits<float>::infinity()) : dot(n_c, v0.point);
-        if (d_c.as<meters>() < meters(0)) {
+        if (d_c < meters(0)) {
             n_c = -n_c;
             d_c = -d_c;
         }
         length d_d = is_zero(n_d) ? meters(std::numeric_limits<float>::infinity()) : dot(n_d, v1.point);
-        if (d_d.as<meters>() < meters(0)) {
+        if (d_d < meters(0)) {
             n_d = -n_d;
             d_d = -d_d;
         }
@@ -410,9 +412,9 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
             minkowski_point p = minkowski_difference(bb1, bb2, choice.n);
             // Inside your loop, after calculating the 4 vertices
             std::println("PORTAL VERTICES ITERATION {}: {}, {}, {}, {}",
-				i, v0.point.as<meters>(), v1.point.as<meters>(), v2.point.as<meters>(), v3.point.as<meters>()
+				i, v0.point, v1.point, v2.point, v3.point
             );
-            if (const length projection_dist = dot(p.point, choice.n); projection_dist - choice.d < meters(1e-4f)) {
+            if (const length projection_dist = dot(p.point, choice.n); projection_dist - choice.d < meters(1e-4f) && i == mpr_collision_refinement_iterations - 1) {
                 if constexpr (debug) {
                     std::println("[MPR][iter {}] CONVERGED. penetration: {}", i, choice.d);
                 }
