@@ -18,6 +18,14 @@ export namespace gse::gui::ids {
 
 	auto pop(
 	) -> void;
+
+	auto scoped_key(
+		std::string_view s
+	) -> std::uint64_t;
+
+	auto scoped_key(
+		std::uint64_t v
+	) -> std::uint64_t;
 }
 
 namespace gse::gui::ids {
@@ -61,15 +69,23 @@ auto gse::gui::ids::pop() -> void {
 	}
 }
 
+auto gse::gui::ids::scoped_key(const std::string_view s) -> std::uint64_t {
+	return hash_combine_string(current_seed(), s);
+}
+
+auto gse::gui::ids::scoped_key(const std::uint64_t v) -> std::uint64_t {
+	return hash_combine_u64(current_seed(), v);
+}
+
 export namespace gse::gui::ids {
 	struct scope : non_copyable {
 		bool active = false;
 
-		scope(
+		explicit scope(
 			std::uint64_t v
 		);
 
-		scope(
+		explicit scope(
 			std::string_view s
 		);
 

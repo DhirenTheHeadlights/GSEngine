@@ -82,6 +82,10 @@ constexpr auto gse::has_flag(flags haystack, flags needle) -> bool {
 }
 
 auto gse::initialize(const flags engine_flags, const engine_config& config) -> void {
+	trace::start({
+		.per_thread_event_cap = static_cast<std::size_t>(1e6)
+	});
+
 	network::initialize();
 	renderer::initialize();
 	engine.initialize();
@@ -143,28 +147,31 @@ auto gse::start(const flags engine_flags, const engine_config& config) -> void {
 				flags::render
 			);
 
-            const std::size_t participants = 1 + (do_render ? 1 : 0);
-            std::latch frame_done(participants);
+			trace::scope(generate_id("Root"), [&] {
+				const std::size_t participants = 1 + (do_render ? 1 : 0);
+				std::latch frame_done(participants);
 
-			task::post(
-				[&, engine_flags, config] {
-					update(engine_flags, config);
-					frame_done.count_down();
-				}
-			);
-
-            if (do_render) {
-                task::post(
+				task::post(
 					[&, engine_flags, config] {
-						render(engine_flags, config);
+						update(engine_flags, config);
 						frame_done.count_down();
 					}
 				);
-            }
 
-            frame_done.wait();
+				if (do_render) {
+					task::post(
+						[&, engine_flags, config] {
+							render(engine_flags, config);
+							frame_done.count_down();
+						}
+					);
+				}
+
+				frame_done.wait();
+			});
 
 			frame_sync::end();
+			trace::finalize_frame();
         }
 
         task::wait_idle();

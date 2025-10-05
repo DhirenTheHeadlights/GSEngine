@@ -64,7 +64,7 @@ export namespace gse::renderer {
             resource::handle<font> font;
             unitless::vec4 color;
             rect_t<unitless::vec2> screen_rect;
-            rect_t<unitless::vec2> uv_rect;
+            unitless::vec4 uv_rect;
             std::optional<rect_t<unitless::vec2>> clip_rect;
         };
 
@@ -245,7 +245,7 @@ auto gse::renderer::text::update(std::span<const std::reference_wrapper<registry
     const auto n = task::thread_count();
 	std::vector<std::vector<draw_item>> buckets(n);
 
-	task::parallel_for<std::size_t>(0, local.size(), [&](const std::size_t i) {
+	task::parallel_for(0, local.size(), [&](const std::size_t i) {
 	    const auto& [font, text, position, scale, color, clip_rect] = local[i];
 
 	    if (!font || text.empty()) {

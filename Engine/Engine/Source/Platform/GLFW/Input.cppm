@@ -161,7 +161,6 @@ auto gse::input::update() -> void {
 }
 
 auto gse::input::key_callback(const int key, const int action) -> void {
-	std::println("[GLFW] key={} action={}", key, action);
 	if (const auto gse_key = to_key(key)) {
 		std::scoped_lock lock(mutex);
 		if (action == GLFW_PRESS) {
