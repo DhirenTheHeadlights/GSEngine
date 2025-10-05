@@ -7,6 +7,7 @@ export import :double_buffer;
 export import :ecs;
 export import :frame_sync;
 export import :id;
+export import :lambda_traits;
 export import :misc;
 export import :non_copyable;
 export import :scope_exit;
@@ -14,6 +15,7 @@ export import :system_clock;
 export import :task;
 export import :timed_lock;
 export import :timer;
+export import :trace;
 export import :variant_match;
 export import :interval_timer;
 

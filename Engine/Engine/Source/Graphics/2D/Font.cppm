@@ -48,26 +48,48 @@ auto gse::glyph::bearing() const -> unitless::vec2 {
 export namespace gse {
     struct positioned_glyph {
         rect_t<unitless::vec2> screen_rect;
-        rect_t<unitless::vec2> uv_rect;
+        unitless::vec4 uv_rect;
     };
 
     class font : public identifiable {
     public:
-        font(const std::filesystem::path& path);
+	    explicit font(
+            const std::filesystem::path& path
+        );
+
         ~font();
 
-        static auto compile() -> std::set<std::filesystem::path>;
+        static auto compile(
+        ) -> std::set<std::filesystem::path>;
 
-        auto load(const renderer::context& context) -> void;
-        auto unload() -> void;
+        auto load(
+            const renderer::context& context
+        ) -> void;
 
-        auto texture() const -> const texture*;
-        auto text_layout(std::string_view text, unitless::vec2 start, float scale = 1.0f) const -> std::vector<positioned_glyph>;
-        auto line_height(float scale = 1.0f) const -> float;
-		auto width(std::string_view text, float scale = 1.0f) const -> float;
+        auto unload(
+        ) -> void;
+
+        auto texture(
+        ) const -> const texture*;
+
+        auto text_layout(
+            std::string_view text, 
+            unitless::vec2 start, 
+            float scale = 1.0f
+        ) const -> std::vector<positioned_glyph>;
+
+        auto line_height(
+            float scale = 1.0f
+        ) const -> float;
+
+		auto width(
+            std::string_view text, 
+            float scale = 1.0f
+        ) const -> float;
     private:
         std::unique_ptr<gse::texture> m_texture;
         std::unordered_map<char, glyph> m_glyphs;
+        std::unordered_map<std::uint64_t, float> m_kerning;
 
         float m_glyph_cell_size = 64.f;
         float m_padding = 8.f;
@@ -215,13 +237,13 @@ auto gse::font::compile() -> std::set<std::filesystem::path> {
         std::ofstream out_file(baked_path, std::ios::binary);
         assert(out_file.is_open(), "Failed to open baked font file for writing.");
 
-        constexpr uint32_t magic = 0x47464E54;
-        constexpr uint32_t version = 1;
+        constexpr std::uint32_t magic = 0x47464E54;
+        constexpr std::uint32_t version = 1;
         out_file.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
         out_file.write(reinterpret_cast<const char*>(&version), sizeof(version));
 
         const std::string relative_src_str = source_path.lexically_relative(config::resource_path).string();
-        uint64_t path_len = relative_src_str.length();
+        std::uint64_t path_len = relative_src_str.length();
         out_file.write(reinterpret_cast<const char*>(&path_len), sizeof(path_len));
         out_file.write(relative_src_str.c_str(), path_len);
 
@@ -237,15 +259,15 @@ auto gse::font::compile() -> std::set<std::filesystem::path> {
             rgba_data[static_cast<size_t>(i) * 4 + 3] = static_cast<std::byte>(255);
         }
 
-        const uint32_t u_atlas_width = atlas_width, u_atlas_height = atlas_height;
+        const std::uint32_t u_atlas_width = atlas_width, u_atlas_height = atlas_height;
         out_file.write(reinterpret_cast<const char*>(&u_atlas_width), sizeof(u_atlas_width));
         out_file.write(reinterpret_cast<const char*>(&u_atlas_height), sizeof(u_atlas_height));
         out_file.write(reinterpret_cast<const char*>(&channels), sizeof(channels));
-        uint64_t data_size = rgba_data.size();
+        std::uint64_t data_size = rgba_data.size();
         out_file.write(reinterpret_cast<const char*>(&data_size), sizeof(data_size));
         out_file.write(reinterpret_cast<const char*>(rgba_data.data()), data_size);
 
-        uint64_t glyph_map_size = glyphs.size();
+        std::uint64_t glyph_map_size = glyphs.size();
         out_file.write(reinterpret_cast<const char*>(&glyph_map_size), sizeof(glyph_map_size));
         for (const auto& [ch, glyph_data] : glyphs) {
             out_file.write(&ch, sizeof(ch));
@@ -266,7 +288,7 @@ auto gse::font::load(const renderer::context& context) -> void {
         m_baked_path.string()
     ));
 
-    uint32_t magic, version;
+    std::uint32_t magic, version;
     in_file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
     in_file.read(reinterpret_cast<char*>(&version), sizeof(version));
     assert(magic == 0x47464E54 && version == 1, std::format(
@@ -274,7 +296,7 @@ auto gse::font::load(const renderer::context& context) -> void {
         m_baked_path.string()
     ));
 
-    uint64_t path_len;
+    std::uint64_t path_len;
     in_file.read(reinterpret_cast<char*>(&path_len), sizeof(path_len));
     std::string relative_src_str(path_len, '\0');
     in_file.read(&relative_src_str[0], path_len);
@@ -283,8 +305,8 @@ auto gse::font::load(const renderer::context& context) -> void {
     in_file.read(reinterpret_cast<char*>(&m_ascender), sizeof(m_ascender));
     in_file.read(reinterpret_cast<char*>(&m_descender), sizeof(m_descender));
 
-    uint32_t atlas_width, atlas_height, channels;
-    uint64_t data_size;
+    std::uint32_t atlas_width, atlas_height, channels;
+    std::uint64_t data_size;
     in_file.read(reinterpret_cast<char*>(&atlas_width), sizeof(atlas_width));
     in_file.read(reinterpret_cast<char*>(&atlas_height), sizeof(atlas_height));
     in_file.read(reinterpret_cast<char*>(&channels), sizeof(channels));
@@ -302,10 +324,10 @@ auto gse::font::load(const renderer::context& context) -> void {
 
     m_texture->load(context);
 
-    uint64_t glyph_count;
+    std::uint64_t glyph_count;
     in_file.read(reinterpret_cast<char*>(&glyph_count), sizeof(glyph_count));
     m_glyphs.reserve(glyph_count);
-    for (uint64_t i = 0; i < glyph_count; ++i) {
+    for (std::uint64_t i = 0; i < glyph_count; ++i) {
         char ch;
         glyph glyph_data;
         in_file.read(&ch, sizeof(ch));
@@ -316,6 +338,24 @@ auto gse::font::load(const renderer::context& context) -> void {
     assert(FT_Init_FreeType(&m_ft) == 0, "Failed to initialize FreeType.");
     assert(FT_New_Face(m_ft, source_font_path.string().c_str(), 0, &m_face) == 0, "Failed to load source font face for kerning.");
     assert(FT_Set_Pixel_Sizes(m_face, 0, 64) == 0, "Failed to set font pixel size for kerning.");
+
+    m_kerning.clear();
+    for (const auto& ga : m_glyphs | std::views::values) {
+        if (ga.ft_glyph_index == 0) continue;
+        const auto prev = static_cast<std::uint32_t>(ga.ft_glyph_index);
+        for (const auto& gb : m_glyphs | std::views::values) {
+            if (gb.ft_glyph_index == 0) continue;
+            const auto next = static_cast<std::uint32_t>(gb.ft_glyph_index);
+
+            FT_Vector kv{};
+            FT_Get_Kerning(m_face, prev, next, FT_KERNING_DEFAULT, &kv);
+            const float k = static_cast<float>(kv.x) / 64.0f;
+            if (k != 0.0f) {
+                const std::uint64_t key = (static_cast<std::uint64_t>(prev) << 32) | next;
+                m_kerning.emplace(key, k);
+            }
+        }
+    }
 }
 
 auto gse::font::unload() -> void {
@@ -338,8 +378,8 @@ auto gse::font::texture() const -> const gse::texture* {
 
 auto gse::font::text_layout(const std::string_view text, const unitless::vec2 start, const float scale) const -> std::vector<positioned_glyph> {
     std::vector<positioned_glyph> positioned_glyphs;
-    if (text.empty() || !m_face) {
-	    return positioned_glyphs;
+    if (text.empty() || m_glyphs.empty()) {
+	    return {};
     }
 
     auto baseline = start;
@@ -380,9 +420,10 @@ auto gse::font::text_layout(const std::string_view text, const unitless::vec2 st
         }
 
         if (previous_glyph_index != 0) {
-            FT_Vector kern{};
-            if (FT_Get_Kerning(m_face, previous_glyph_index, static_cast<std::uint32_t>(g.ft_glyph_index), FT_KERNING_DEFAULT, &kern) == 0) {
-                cursor.x() += static_cast<float>(kern.x) / 64.0f * scale;
+            const auto next = static_cast<std::uint32_t>(g.ft_glyph_index);
+            const std::uint64_t key = (static_cast<std::uint64_t>(previous_glyph_index) << 32) | next;
+            if (auto kerning_it = m_kerning.find(key); kerning_it != m_kerning.end()) {
+                cursor.x() += kerning_it->second * scale;
             }
         }
 
@@ -456,16 +497,7 @@ auto gse::font::text_layout(const std::string_view text, const unitless::vec2 st
         if (emit_rect) {
             positioned_glyphs.emplace_back(positioned_glyph{
                 .screen_rect = rect_t<unitless::vec2>::from_position_size(quad_pos, quad_size),
-                .uv_rect = rect_t<unitless::vec2>::from_position_size(
-                    {
-                    	corrected_uv.x(),
-                    	corrected_uv.y()
-                    },
-                    {
-                    	std::clamp(corrected_uv.z(), 0.0f, full_cell_uv.z()),
-						std::clamp(corrected_uv.w(), 0.0f, full_cell_uv.w())
-                    }
-                )
+				.uv_rect = corrected_uv
             });
         }
 

@@ -2,20 +2,9 @@ export module gse.utility:variant_match;
 
 import std;
 
+import :lambda_traits;
+
 export namespace gse {
-    template<typename F>
-    struct lambda_traits : lambda_traits<decltype(&F::operator())> {};
-
-    template<typename ClassType, typename ReturnType, typename Arg>
-    struct lambda_traits<ReturnType(ClassType::*)(Arg) const> {
-        using arg_type = std::remove_cvref_t<Arg>;
-    };
-
-    template<typename ClassType, typename ReturnType, typename Arg>
-    struct lambda_traits<ReturnType(ClassType::*)(Arg)> {
-        using arg_type = std::remove_cvref_t<Arg>;
-    };
-
     template <class Variant>
     class variant {
     public:
@@ -150,14 +139,14 @@ auto gse::variant<Variant>::otherwise(F&& f) && -> void {
 template <class Variant>
 template <class F>
 auto gse::variant<Variant>::if_is(F&& f) & -> variant& {
-    using t = lambda_traits<F>::arg_type;
+    using t = first_arg_t<F>;
     return this->if_is<t>(std::forward<F>(f));
 }
 
 template <class Variant>
 template <class F>
 auto gse::variant<Variant>::else_if_is(F&& f) & -> variant& {
-    using t = lambda_traits<F>::arg_type;
+    using t = first_arg_t<F>;
     return this->else_if_is<t>(std::forward<F>(f));
 }
 

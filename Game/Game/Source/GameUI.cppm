@@ -34,10 +34,9 @@ export namespace gs {
 			);
 
 			gse::gui::start(
-				"Test2",
+				"Profiler",
 				[] {
-					gse::gui::text("Hello, world!");
-					gse::gui::value("Test Value", 42);
+					
 				}
 			);
 

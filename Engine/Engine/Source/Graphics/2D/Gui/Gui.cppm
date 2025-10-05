@@ -21,6 +21,7 @@ import :input_widget;
 import :slider_widget;
 import :ids;
 import :button_widget;
+import :tree_widget;
 
 export namespace gse::gui {
 	auto initialize(
@@ -114,6 +115,18 @@ export namespace gse::gui {
 		const std::string& name,
 		vec_t<T, N> vec
 	) -> void;
+
+	template <typename T>
+	auto tree(
+		std::span<const T> roots,
+		const draw::tree_ops<T>& fns,
+		draw::tree_options opt = {},
+		draw::tree_selection* sel = nullptr
+	) -> void;
+
+	template <typename T>
+	auto profiler(
+	) -> void;
 }
 
 namespace gse::gui {
@@ -187,7 +200,7 @@ auto gse::gui::update(const window& window, const style& style) -> void {
 	}
 }
 
-auto gse::gui::frame(const renderer::context& context, renderer::sprite& sprite_renderer, renderer::text& text_renderer, const std::function<void()>& in_frame, const gui::style& style) -> void {
+auto gse::gui::frame(const renderer::context& context, renderer::sprite& sprite_renderer, renderer::text& text_renderer, const std::function<void()>& in_frame, const style& style) -> void {
 	if (!font.valid()) return;
 
 	frame_bindings = { &context, &sprite_renderer, &text_renderer, style, true };
@@ -439,6 +452,65 @@ template <typename T, int N, auto Unit>
 auto gse::gui::vec(const std::string& name, vec_t<T, N> vec) -> void {
 	if (!context) return;
 	draw::vec<T, N, Unit>(*context, name, vec);
+}
+
+template <typename T>
+auto gse::gui::tree(std::span<const T> roots, const draw::tree_ops<T>& fns, draw::tree_options opt, draw::tree_selection* sel) -> void {
+	if (!context) return;
+	draw::tree(*context, roots, fns, opt, sel);
+}
+
+template <typename T>
+auto gse::gui::profiler() -> void {
+	if (trace::view().roots.empty()) {
+		text("No trace data");
+		return;
+	}
+
+	auto roots = trace::view().roots;
+
+	static draw::tree_selection selection;
+	static draw::tree_options options{
+		.indent_per_level = 15.f,
+		.toggle_on_row_click = true,
+		.multi_select = false
+	};
+
+	draw::tree_ops<T> ops{
+		.children = [](const T& n) -> std::span<const T> {
+			return std::span{ n.children_first, n.children_count };
+		},
+		.label = [](const T& n) -> std::string_view {
+			return find(n.id).tag();
+		},
+		.key = [](const T& n) -> std::uint64_t {
+			const auto t0 = n.start.template as<microseconds>();
+			return (n.id ^ (t0 * 0x9E3779B97F4A7C15ull)) ^ (static_cast<std::uint64_t>(n.trace_id) << 1);
+		},
+		.is_leaf = [](const T& n) -> bool {
+			return n.children_count == 0;
+		},
+		.custom_draw = [](const T& n, const widget_context& ctx, const ui_rect& row, bool /*hovered*/, bool /*selected*/, int /*level*/) {
+			const auto dur_ms = static_cast<double>((n.end - n.start).template as<milliseconds>());
+			const auto self_ms = static_cast<double>(n.self.template as<milliseconds>());
+
+			const std::string txt = std::format("{:.3f} ms  (self {:.3f})", dur_ms, self_ms);
+			const float w = ctx.font->width(txt, ctx.style.font_size);
+
+			ctx.text_renderer.draw_text({
+				.font = ctx.font,
+				.text = txt,
+				.position = {
+					row.right() - w - ctx.style.padding,
+					row.center().y() + ctx.style.font_size / 2.f
+				},
+				.scale = ctx.style.font_size,
+				.clip_rect = row
+			});
+		}
+	};
+
+	gui::tree(roots, ops, options, &selection);
 }
 
 auto gse::gui::begin(const std::string& name) -> bool {

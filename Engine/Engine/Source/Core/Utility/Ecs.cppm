@@ -7,6 +7,7 @@ import :component;
 import :non_copyable;
 import :misc;
 import :frame_sync;
+import :lambda_traits;
 
 export namespace gse {
 	template <is_identifiable T>
@@ -79,7 +80,7 @@ export namespace gse {
 	template <typename T>
 	class hookable : public identifiable {
 	public:
-		hookable(std::string_view name, std::initializer_list<std::unique_ptr<hook<T>>> hooks = {});
+		explicit hookable(std::string_view name, std::initializer_list<std::unique_ptr<hook<T>>> hooks = {});
 
 		template <typename Hook>
 			requires is_hook<Hook, T>
@@ -253,7 +254,7 @@ export namespace gse {
 }
 
 template <gse::is_component T>
-template <typename ... Args>
+template <typename... Args>
 auto gse::component_link<T>::add(const owner_id_t& owner_id, registry* reg, Args&&... args) -> T* {
 	gse::assert(!try_get_write(owner_id), std::format(
 		"Attempting to add a component of type {} to owner {} that already has one.",
@@ -949,16 +950,6 @@ auto gse::registry::any_components(const std::span<const std::reference_wrapper<
 	);
 }
 
-namespace gse {
-	template<typename F>
-	struct lambda_traits : lambda_traits<decltype(&F::operator())> {};
-
-	template<typename ClassType, typename ReturnType, typename Arg>
-	struct lambda_traits<ReturnType(ClassType::*)(Arg) const> {
-		using component_type = std::remove_cvref_t<Arg>;
-	};
-}
-
 export template <>
 class gse::hook<gse::entity> : public identifiable_owned {
 public:
@@ -1099,7 +1090,7 @@ auto gse::hook<gse::entity>::configure_when_present(const std::function<void(T&)
 
 template <typename Func>
 auto gse::hook<gse::entity>::configure_when_present(Func&& config_func) -> void {
-	using c = lambda_traits<Func>::component_type;
+	using c = first_arg_t<Func>;
 	configure_when_present<c>(std::forward<Func>(config_func));
 }
 
