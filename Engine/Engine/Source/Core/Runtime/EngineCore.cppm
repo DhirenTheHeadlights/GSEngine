@@ -147,7 +147,7 @@ auto gse::start(const flags engine_flags, const engine_config& config) -> void {
 				flags::render
 			);
 
-			trace::scope(generate_id("Root"), [&] {
+			trace::scope(engine.id(), [&] {
 				const std::size_t participants = 1 + (do_render ? 1 : 0);
 				std::latch frame_done(participants);
 
