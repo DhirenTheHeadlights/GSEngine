@@ -124,7 +124,6 @@ export namespace gse::gui {
 		draw::tree_selection* sel = nullptr
 	) -> void;
 
-	template <typename T>
 	auto profiler(
 	) -> void;
 }
@@ -195,7 +194,7 @@ auto gse::gui::update(const window& window, const style& style) -> void {
 		});
 
 	if (save_clock.elapsed() > update_interval) {
-		save(menus, file_path);
+		save(menus, config::resource_path / file_path);
 		save_clock.reset();
 	}
 }
@@ -239,10 +238,6 @@ auto gse::gui::frame(const renderer::context& context, renderer::sprite& sprite_
 
 	if (frame_bindings.rctx && frame_bindings.sprite && frame_bindings.rctx->ui_focus()) {
 		cursor::render(*frame_bindings.rctx, *frame_bindings.sprite);
-	}
-
-	if (mouse::released(mouse_button::button_1)) {
-		active_widget_id = {};
 	}
 
 	frame_bindings = {};
@@ -457,17 +452,17 @@ auto gse::gui::vec(const std::string& name, vec_t<T, N> vec) -> void {
 template <typename T>
 auto gse::gui::tree(std::span<const T> roots, const draw::tree_ops<T>& fns, draw::tree_options opt, draw::tree_selection* sel) -> void {
 	if (!context) return;
-	draw::tree(*context, roots, fns, opt, sel);
+	draw::tree(*context, roots, fns, opt, sel, active_widget_id);
 }
 
-template <typename T>
 auto gse::gui::profiler() -> void {
-	if (trace::view().roots.empty()) {
+	trace::thread_pause pause;
+
+	const auto roots = trace::view().roots;
+	if (roots.empty()) {
 		text("No trace data");
 		return;
 	}
-
-	auto roots = trace::view().roots;
 
 	static draw::tree_selection selection;
 	static draw::tree_options options{
@@ -476,41 +471,156 @@ auto gse::gui::profiler() -> void {
 		.multi_select = false
 	};
 
-	draw::tree_ops<T> ops{
-		.children = [](const T& n) -> std::span<const T> {
+	ids::per_frame_key_cache cache;
+
+	cache.begin(ids::stable_key("gui.tree.profiler"));
+
+	static constexpr std::uint64_t profiler_salt = 0xD1B54A32D192ED03ull;
+
+	const draw::tree_ops<trace::node> ops{
+		.children = [](const trace::node& n) -> std::span<const trace::node> {
 			return std::span{ n.children_first, n.children_count };
 		},
-		.label = [](const T& n) -> std::string_view {
-			return find(n.id).tag();
+		.label = [](const trace::node& n) -> std::string_view {
+			const auto& t = find(n.id).tag();
+		    static constexpr std::string_view unnamed{"<unnamed>"};
+		    return t.empty() ? unnamed : t;
 		},
-		.key = [](const T& n) -> std::uint64_t {
-			const auto t0 = n.start.template as<microseconds>();
-			return (n.id ^ (t0 * 0x9E3779B97F4A7C15ull)) ^ (static_cast<std::uint64_t>(n.trace_id) << 1);
+		.key = [&cache](const trace::node& n) -> std::uint64_t {
+			return cache.key(&n);
 		},
-		.is_leaf = [](const T& n) -> bool {
+		.is_leaf = [](const trace::node& n) -> bool {
 			return n.children_count == 0;
 		},
-		.custom_draw = [](const T& n, const widget_context& ctx, const ui_rect& row, bool /*hovered*/, bool /*selected*/, int /*level*/) {
-			const auto dur_ms = static_cast<double>((n.end - n.start).template as<milliseconds>());
-			const auto self_ms = static_cast<double>(n.self.template as<milliseconds>());
+		.custom_draw = [](const trace::node& n, const widget_context& ctx, const ui_rect& row, bool /*hovered*/, bool /*selected*/, int /*level*/) {
+			struct cand {
+		        double v;
+		        std::string_view name;
+		    };
 
-			const std::string txt = std::format("{:.3f} ms  (self {:.3f})", dur_ms, self_ms);
-			const float w = ctx.font->width(txt, ctx.style.font_size);
+		    const auto span = (n.stop - n.start);
+		    const auto self = n.self;
 
-			ctx.text_renderer.draw_text({
-				.font = ctx.font,
-				.text = txt,
-				.position = {
-					row.right() - w - ctx.style.padding,
-					row.center().y() + ctx.style.font_size / 2.f
-				},
-				.scale = ctx.style.font_size,
-				.clip_rect = row
-			});
+		    const cand dur_cands[] = {
+		        { static_cast<double>(span.as<seconds>()),      decltype(seconds)::unit_name      },
+		        { static_cast<double>(span.as<milliseconds>()), decltype(milliseconds)::unit_name },
+		        { static_cast<double>(span.as<microseconds>()), decltype(microseconds)::unit_name },
+		        { static_cast<double>(span.as<nanoseconds>()),  decltype(nanoseconds)::unit_name  },
+		    };
+		    const cand self_cands[] = {
+		        { static_cast<double>(self.as<seconds>()),      decltype(seconds)::unit_name      },
+		        { static_cast<double>(self.as<milliseconds>()), decltype(milliseconds)::unit_name },
+		        { static_cast<double>(self.as<microseconds>()), decltype(microseconds)::unit_name },
+		        { static_cast<double>(self.as<nanoseconds>()),  decltype(nanoseconds)::unit_name  },
+		    };
+
+		    auto choose = [](const cand* c) -> cand {
+		        for (int i = 0; i < 3; ++i) if (c[i].v >= 1.0) return c[i];
+		        return c[3];
+		    };
+
+		    const cand d = choose(dur_cands);
+		    const cand s = choose(self_cands);
+		    const double pct = (d.v > 0.0) ? (s.v / d.v) * 100.0 : 0.0;
+
+		    auto to_fixed = [](const double v, char* buf, const std::size_t num, const int precision) -> std::string_view {
+		        auto [p, ec] = std::to_chars(buf, buf + num, v, std::chars_format::fixed, precision);
+		        if (ec != std::errc{}) return {};
+		        return { buf, static_cast<size_t>(p - buf) };
+		    };
+
+		    char dur_buf[32], self_buf[32], pct_buf[32];
+		    const std::string_view dur_num  = to_fixed(d.v,  dur_buf,  sizeof(dur_buf), 3);
+		    const std::string_view self_num = to_fixed(s.v,  self_buf, sizeof(self_buf), 3);
+		    const std::string_view pct_num  = to_fixed(pct,  pct_buf,  sizeof(pct_buf),  1);
+
+		    const std::string_view dur_unit  = d.name;
+		    const std::string_view self_unit = s.name;
+
+		    static constexpr std::string_view cap_dur  = "Dur";
+		    static constexpr std::string_view cap_self = "Self";
+		    static constexpr std::string_view cap_pct  = "%";
+
+		    auto width_sv = [&](const std::string_view str, const float scale) -> float {
+		        return ctx.font->width(str, scale);
+		    };
+
+		    const float pad = ctx.style.padding;
+		    const float widget_h = row.height();
+		    const float cap_scale = ctx.style.font_size * 0.85f;
+		    const float num_scale = ctx.style.font_size;
+
+		    constexpr int num_boxes = 3;
+		    const float all_spacing = pad * static_cast<float>(num_boxes - 1);
+		    const float max_total_w = std::min(row.width() * 0.55f, 300.0f);
+		    const float box_w = (max_total_w - all_spacing) / static_cast<float>(num_boxes);
+
+		    unitless::vec2 pos = { row.right() - max_total_w, row.top() };
+
+		    auto draw_box = [&](const std::string_view caption, const std::string_view num, const std::string_view unit) {
+		        const ui_rect box = ui_rect::from_position_size(pos, { box_w, widget_h });
+
+		        ctx.sprite_renderer.queue({
+		            .rect = box,
+		            .color = ctx.style.color_widget_background,
+		            .texture = ctx.blank_texture
+		        });
+
+		        ctx.text_renderer.draw_text({
+		            .font = ctx.font,
+		            .text = std::string(caption),
+		            .position = {
+		                box.left() + pad * 0.5f,
+		                box.center().y() + cap_scale / 2.f
+		            },
+		            .scale = cap_scale,
+		            .clip_rect = box
+		        });
+
+		        const float num_w  = width_sv(num,  num_scale);
+		        const float unit_w = width_sv(unit, num_scale);
+		        float x = box.right() - pad * 0.5f - (num_w + unit_w);
+
+		        ctx.text_renderer.draw_text({
+		            .font = ctx.font,
+		            .text = std::string(num),
+		            .position = {
+		                x,
+		                box.center().y() + num_scale / 2.f
+		            },
+		            .scale = num_scale,
+		            .clip_rect = box
+		        });
+
+		        x += num_w;
+
+		        ctx.text_renderer.draw_text({
+		            .font = ctx.font,
+		            .text = std::string(unit),
+		            .position = {
+		                x,
+		                box.center().y() + num_scale / 2.f
+		            },
+		            .scale = num_scale,
+		            .clip_rect = box
+		        });
+
+		        pos.x() += box_w + pad;
+		    };
+
+		    draw_box(cap_dur,  dur_num,  dur_unit);
+		    draw_box(cap_self, self_num, self_unit);
+		    draw_box(cap_pct,  pct_num,  "%");
 		}
 	};
+	gse::gui::draw::reset_tree_debug_stats();
 
+	ids::scope tree_scope("gui.tree.profiler");
 	gui::tree(roots, ops, options, &selection);
+
+	const auto st = gse::gui::draw::last_tree_debug_stats();
+std::cout << (std::format("Rows drawn: {}  |  Nodes visited: {}  |  Pruned subtrees: {}",
+                      st.rows_drawn, st.nodes_visited, st.pruned_subtrees)) << "\n";
 }
 
 auto gse::gui::begin(const std::string& name) -> bool {

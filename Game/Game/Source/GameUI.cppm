@@ -36,7 +36,7 @@ export namespace gs {
 			gse::gui::start(
 				"Profiler",
 				[] {
-					
+					gse::gui::profiler();
 				}
 			);
 

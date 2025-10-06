@@ -242,8 +242,7 @@ auto gse::renderer::text::update(std::span<const std::reference_wrapper<registry
 
     out.reserve(out.size() + rough);
 
-    const auto n = task::thread_count();
-	std::vector<std::vector<draw_item>> buckets(n);
+    tbb::enumerable_thread_specific<std::vector<draw_item>> tls_bins;
 
 	task::parallel_for(0, local.size(), [&](const std::size_t i) {
 	    const auto& [font, text, position, scale, color, clip_rect] = local[i];
@@ -252,9 +251,8 @@ auto gse::renderer::text::update(std::span<const std::reference_wrapper<registry
 		    return;
 	    }
 
-	    const auto wid = task::current_worker().value_or(0) % n;
-	    auto& items = buckets[wid];
-	    items.reserve(items.size() + std::min(text.size(), static_cast<std::size_t>(1024)));
+	    auto& items = tls_bins.local();
+	    items.reserve(items.size() + std::min(text.size(), std::size_t{ 1024 }));
 
 	    for (const auto glyphs = font->text_layout(text, position, scale); const auto& [screen_rect, uv_rect] : glyphs) {
 	        items.push_back({ 
@@ -268,13 +266,13 @@ auto gse::renderer::text::update(std::span<const std::reference_wrapper<registry
 	});
 
 	std::size_t total = out.size();
-
-	for (auto& v : buckets) {
-		total += v.size();
+	for (auto it = tls_bins.begin(); it != tls_bins.end(); ++it) {
+		total += it->size();
 	}
 	out.reserve(total);
 
-	for (auto& v : buckets) {
+	for (auto it = tls_bins.begin(); it != tls_bins.end(); ++it) {
+	    auto& v = *it;
 	    out.insert(out.end(), v.begin(), v.end());
 	    v.clear();
 	}
@@ -311,8 +309,6 @@ auto gse::renderer::text::render(std::span<const std::reference_wrapper<registry
 		.pColorAttachments = &color_attachment,
 		.pDepthAttachment = nullptr
 	};
-
-	static auto push_block = m_shader->push_block("push_constants");
 
 	vulkan::render(config, rendering_info, [&] {
 		const auto& draw_items = m_command_queue.read();
