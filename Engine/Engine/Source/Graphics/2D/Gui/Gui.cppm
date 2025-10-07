@@ -539,7 +539,7 @@ auto gse::gui::profiler() -> void {
 
 		    static constexpr std::string_view cap_dur  = "Dur";
 		    static constexpr std::string_view cap_self = "Self";
-		    static constexpr std::string_view cap_pct  = "%";
+		    static constexpr std::string_view cap_pct  = "Percent";
 
 		    auto width_sv = [&](const std::string_view str, const float scale) -> float {
 		        return ctx.font->width(str, scale);
@@ -547,80 +547,72 @@ auto gse::gui::profiler() -> void {
 
 		    const float pad = ctx.style.padding;
 		    const float widget_h = row.height();
-		    const float cap_scale = ctx.style.font_size * 0.85f;
+		    const float cap_scale = ctx.style.font_size * 1.f;
 		    const float num_scale = ctx.style.font_size;
 
 		    constexpr int num_boxes = 3;
 		    const float all_spacing = pad * static_cast<float>(num_boxes - 1);
-		    const float max_total_w = std::min(row.width() * 0.55f, 300.0f);
+		    const float max_total_w = std::min(row.width() * 0.55f, 1000.0f);
 		    const float box_w = (max_total_w - all_spacing) / static_cast<float>(num_boxes);
 
 		    unitless::vec2 pos = { row.right() - max_total_w, row.top() };
 
 		    auto draw_box = [&](const std::string_view caption, const std::string_view num, const std::string_view unit) {
-		        const ui_rect box = ui_rect::from_position_size(pos, { box_w, widget_h });
+		         const ui_rect box = ui_rect::from_position_size(pos, { box_w, widget_h });
 
-		        ctx.sprite_renderer.queue({
-		            .rect = box,
-		            .color = ctx.style.color_widget_background,
-		            .texture = ctx.blank_texture
-		        });
+			    ctx.sprite_renderer.queue({
+			        .rect = box,
+			        .color = ctx.style.color_widget_background,
+			        .texture = ctx.blank_texture
+			    });
 
-		        ctx.text_renderer.draw_text({
-		            .font = ctx.font,
-		            .text = std::string(caption),
-		            .position = {
-		                box.left() + pad * 0.5f,
-		                box.center().y() + cap_scale / 2.f
-		            },
-		            .scale = cap_scale,
-		            .clip_rect = box
-		        });
+			    const float num_w   = width_sv(num,  num_scale);
+			    const float unit_w  = width_sv(unit, num_scale);
+			    const float cap_w   = width_sv(caption, cap_scale);
+			    const float gap_nu  = std::max(2.0f, pad * 0.15f); 
+			    const float gap_uc  = std::max(2.0f, pad * 0.25f);  
 
-		        const float num_w  = width_sv(num,  num_scale);
-		        const float unit_w = width_sv(unit, num_scale);
-		        float x = box.right() - pad * 0.5f - (num_w + unit_w);
+			    float x = box.right() - pad * 0.5f - (num_w + gap_nu + unit_w + gap_uc + cap_w);
 
-		        ctx.text_renderer.draw_text({
-		            .font = ctx.font,
-		            .text = std::string(num),
-		            .position = {
-		                x,
-		                box.center().y() + num_scale / 2.f
-		            },
-		            .scale = num_scale,
-		            .clip_rect = box
-		        });
+			    ctx.text_renderer.draw_text({
+			        .font = ctx.font,
+			        .text = std::string(num),
+			        .position = { x, box.center().y() + num_scale / 2.f },
+			        .scale = num_scale,
+			        .clip_rect = box
+			    });
 
-		        x += num_w;
+			    x += num_w + gap_nu;
 
-		        ctx.text_renderer.draw_text({
-		            .font = ctx.font,
-		            .text = std::string(unit),
-		            .position = {
-		                x,
-		                box.center().y() + num_scale / 2.f
-		            },
-		            .scale = num_scale,
-		            .clip_rect = box
-		        });
+			    ctx.text_renderer.draw_text({
+			        .font = ctx.font,
+			        .text = std::string(unit),
+			        .position = { x, box.center().y() + num_scale / 2.f },
+			        .scale = num_scale,
+			        .clip_rect = box
+			    });
 
-		        pos.x() += box_w + pad;
+			    x += unit_w + gap_uc;
+
+			    ctx.text_renderer.draw_text({
+			        .font = ctx.font,
+			        .text = std::string(caption),
+			        .position = { x, box.center().y() + cap_scale / 2.f },
+			        .scale = cap_scale,
+			        .clip_rect = box
+			    });
+
+			    pos.x() += box_w + pad;
 		    };
 
 		    draw_box(cap_dur,  dur_num,  dur_unit);
 		    draw_box(cap_self, self_num, self_unit);
-		    draw_box(cap_pct,  pct_num,  "%");
+		    draw_box(cap_pct,  pct_num,  "");
 		}
 	};
-	gse::gui::draw::reset_tree_debug_stats();
 
 	ids::scope tree_scope("gui.tree.profiler");
 	gui::tree(roots, ops, options, &selection);
-
-	const auto st = gse::gui::draw::last_tree_debug_stats();
-std::cout << (std::format("Rows drawn: {}  |  Nodes visited: {}  |  Pruned subtrees: {}",
-                      st.rows_drawn, st.nodes_visited, st.pruned_subtrees)) << "\n";
 }
 
 auto gse::gui::begin(const std::string& name) -> bool {
