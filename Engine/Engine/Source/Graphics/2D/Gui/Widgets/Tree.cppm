@@ -1,4 +1,4 @@
-export module gse.graphics:tree_widget;
+﻿export module gse.graphics:tree_widget;
 
 import std;
 
@@ -93,17 +93,6 @@ namespace gse::gui::draw {
 		int level,
 		id& active_widget_id
 	) -> void;
-	struct tree_debug_stats {
-    std::size_t rows_drawn = 0;        // rows we actually emitted
-    std::size_t nodes_visited = 0;     // times node() ran (i.e., candidates)
-    std::size_t pruned_subtrees = 0;   // times we cut recursion because branch was closed
-};
-
-inline thread_local tree_debug_stats g_tree_stats;
-
-inline void reset_tree_debug_stats() { g_tree_stats = {}; }
-inline tree_debug_stats last_tree_debug_stats() { return g_tree_stats; }
-
 }
 
 template <typename T>
@@ -141,8 +130,6 @@ auto gse::gui::draw::is_leaf(const T& t, const tree_ops<T>& ops) -> bool {
 
 template <typename T>
 auto gse::gui::draw::node(widget_context& ctx, const T& t, const tree_ops<T>& ops, const tree_options& opt, tree_selection* sel, std::uint64_t tree_scope, int level, id& active_widget_id) -> void {
-	g_tree_stats.nodes_visited++;
-
 	const auto row_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
 	const auto gap = row_height * opt.row_gap;
 
@@ -185,7 +172,6 @@ auto gse::gui::draw::node(widget_context& ctx, const T& t, const tree_ops<T>& op
 		.color = background,
 		.texture = ctx.blank_texture
 	});
-	g_tree_stats.rows_drawn++;
 
 	const float arrow_w = ctx.style.font_size;
 	const ui_rect arrow_rect = ui_rect::from_position_size(
@@ -257,7 +243,6 @@ auto gse::gui::draw::node(widget_context& ctx, const T& t, const tree_ops<T>& op
 
 	if (!is_open || leaf || !ops.children) {
 		if (!leaf && ops.children && !is_open) {
-        g_tree_stats.pruned_subtrees++;
     }
 		return;
 	}
