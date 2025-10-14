@@ -11,10 +11,16 @@ import :shader;
 export namespace gse::renderer {
 	class lighting final : public base_renderer {
 	public:
-		explicit lighting(context& context) : base_renderer(context) {}
+		explicit lighting(
+			context& context
+		);
 
-		auto initialize() -> void override;
-		auto render(std::span<const std::reference_wrapper<registry>> registries) -> void override;
+		auto initialize(
+		) -> void override;
+
+		auto render(
+			std::span<const std::reference_wrapper<registry>> registries
+		) -> void override;
 	private:
 		vk::raii::Pipeline m_pipeline = nullptr;
 		vk::raii::PipelineLayout m_pipeline_layout = nullptr;
@@ -27,6 +33,8 @@ export namespace gse::renderer {
 		vulkan::persistent_allocator::buffer_resource m_light_buffer;
 	};
 }
+
+gse::renderer::lighting::lighting(context& context): base_renderer(context) {}
 
 auto gse::renderer::lighting::initialize() -> void {
 	auto& config = m_context.config();

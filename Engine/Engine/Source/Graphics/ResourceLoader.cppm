@@ -48,6 +48,14 @@ export namespace gse::resource {
 			return *resource;
 		}
 
+		[[nodiscard]] auto operator==(const handle& other) const -> bool {
+			return m_id == other.m_id && m_loader == other.m_loader;
+		}
+
+		[[nodiscard]] auto operator!=(const handle& other) const -> bool {
+			return !(*this == other);
+		}
+
 		explicit operator bool() const { return valid(); }
 	private:
 		gse::id m_id;

@@ -18,11 +18,20 @@ import gse.physics;
 export namespace gse::renderer {
 	class geometry final : public base_renderer {
 	public:
-		explicit geometry(context& context) : base_renderer(context) {}
+		explicit geometry(
+			context& context
+		);
 
-		auto initialize() -> void override;
-		auto update(std::span<const std::reference_wrapper<registry>> registries) -> void override;
-		auto render(std::span<const std::reference_wrapper<registry>> registries) -> void override;
+		auto initialize(
+		) -> void override;
+
+		auto update(
+			std::span<const std::reference_wrapper<registry>> registries
+		) -> void override;
+
+		auto render(
+			std::span<const std::reference_wrapper<registry>> registries
+		) -> void override;
 	private:
 		vk::raii::Pipeline m_pipeline = nullptr;
 		vk::raii::PipelineLayout m_pipeline_layout = nullptr;
@@ -31,8 +40,12 @@ export namespace gse::renderer {
 		resource::handle<shader> m_shader;
 
 		std::unordered_map<std::string, vulkan::persistent_allocator::buffer_resource> m_ubo_allocations;
+
+		double_buffer<std::vector<render_queue_entry>> m_render_queue;
 	};
 }
+
+gse::renderer::geometry::geometry(context& context): base_renderer(context) {}
 
 auto gse::renderer::geometry::initialize() -> void {
 	auto& config = m_context.config();
@@ -151,12 +164,10 @@ auto gse::renderer::geometry::initialize() -> void {
 	};
 
 	std::array<vk::PipelineColorBlendAttachmentState, g_buffer_color_formats.size()> color_blend_attachments;
-	for (auto& attachment : color_blend_attachments) {
-		attachment = {
-			.blendEnable = vk::False,
-			.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
-		};
-	}
+	color_blend_attachments.fill({
+		.blendEnable = vk::False,
+		.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
+	});
 
 	const vk::PipelineColorBlendStateCreateInfo color_blending{
 		.logicOpEnable = vk::False,
@@ -223,9 +234,21 @@ auto gse::renderer::geometry::initialize() -> void {
 		.basePipelineIndex = 0
 	};
 	m_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
+
+	frame_sync::on_end([this] {
+        m_render_queue.flip();
+	});
 }
 
-auto gse::renderer::geometry::update(std::span<const std::reference_wrapper<registry>> registries) -> void {
+auto gse::renderer::geometry::update(const std::span<const std::reference_wrapper<registry>> registries) -> void {
+	const auto cam = m_shader->uniform_block("CameraUBO");
+
+	m_shader->set_uniform("CameraUBO.view", m_context.camera().view(), m_ubo_allocations.at("CameraUBO").allocation);
+	m_shader->set_uniform("CameraUBO.proj", m_context.camera().projection(m_context.window().viewport()), m_ubo_allocations.at("CameraUBO").allocation);
+
+	auto& out = m_render_queue.write();
+	out.clear();
+
 	for (auto& registry : registries) {
 		for (auto& component : registry.get().linked_objects_write<render_component>()) {
 			if (!component.render) {
@@ -241,9 +264,22 @@ auto gse::renderer::geometry::update(std::span<const std::reference_wrapper<regi
 				}
 
 				model_handle.update(*mc, *cc);
+
+				out.append_range(model_handle.render_queue_entries());
 			}
 		}
 	}
+
+	std::ranges::sort(out, [](const render_queue_entry& a, const render_queue_entry& b){
+		const auto* ma = a.model.resolve();
+        const auto* mb = b.model.resolve();
+
+        if (ma != mb) {
+			return ma < mb;
+        };
+
+        return a.index < b.index;
+    });
 }
 
 auto gse::renderer::geometry::render(const std::span<const std::reference_wrapper<registry>> registries) -> void {
@@ -313,69 +349,51 @@ auto gse::renderer::geometry::render(const std::span<const std::reference_wrappe
 		.pDepthAttachment = &depth_attachment
 	};
 
-	vulkan::render(
-		config, 
-		rendering_info,
-		[&] {
-			/*if (!registry::any_components<render_component>(registries)) {
-				return;
-			}*/
+	vulkan::render(config, rendering_info, [&] {
+        const auto& draw_list = m_render_queue.read();
 
-			m_shader->set_uniform("CameraUBO.view", m_context.camera().view(), m_ubo_allocations.at("CameraUBO").allocation);
-			m_shader->set_uniform("CameraUBO.proj", m_context.camera().projection(m_context.window().viewport()), m_ubo_allocations.at("CameraUBO").allocation);
+        if (draw_list.empty()) {
+	        return;
+        }
 
-			command.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
+        command.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
 
-			const vk::DescriptorSet descriptor_set[] = { m_descriptor_set };
+        const vk::DescriptorSet sets[] = {
+	        m_descriptor_set
+        };
 
-			command.bindDescriptorSets(
-				vk::PipelineBindPoint::eGraphics,
-				m_pipeline_layout,
-				0,
-				vk::ArrayProxy<const vk::DescriptorSet>(1, descriptor_set),
-				{}
+        command.bindDescriptorSets(
+			vk::PipelineBindPoint::eGraphics, 
+			m_pipeline_layout, 
+			0,
+			vk::ArrayProxy<const vk::DescriptorSet>(1, sets),
+			{}
+		);
+
+        for (const auto& e : draw_list) {
+            m_shader->push(
+				command, 
+				m_pipeline_layout, 
+				"push_constants",
+				"model", e.model_matrix,
+				"normal_matrix", e.normal_matrix
 			);
 
-			for (const auto& registry : registries) {
-				for (const auto& component : registry.get().linked_objects_read<render_component>()) {
-					if (!std::ranges::any_of(
-						component.models,
-						[](const model_instance& model) {
-							return model.handle().valid();
-						}
-					)) {
-						continue;
-					}
+            const auto& mesh = e.model->meshes()[e.index];
 
-					for (const auto& model_handle : component.models) {
-						if (!model_handle.handle().valid()) {
-							continue;
-						}
+            if (!mesh.material().valid()) {
+	            continue;
+            }
 
-						for (const auto& entry : model_handle.render_queue_entries()) {
-							m_shader->push(
-								command,
-								m_pipeline_layout,
-								"push_constants",
-								"model", entry.model_matrix,
-								"normal_matrix", entry.normal_matrix
-							);
+            m_shader->push_descriptor(
+				command, 
+				m_pipeline_layout, 
+				"diffuseSampler",
+				mesh.material()->diffuse_texture->descriptor_info()
+			);
 
-							if (const auto& mesh = entry.model->meshes()[entry.index]; mesh.material().valid()) {
-								m_shader->push_descriptor(
-									command,
-									m_pipeline_layout,
-									"diffuseSampler",
-									mesh.material()->diffuse_texture->descriptor_info()
-								);
-
-								mesh.bind(command);
-								mesh.draw(command);
-							}
-						}
-					}
-				}
-			}
-		}
-	);
+            mesh.bind(command);
+            mesh.draw(command);
+        }
+    });
 }
