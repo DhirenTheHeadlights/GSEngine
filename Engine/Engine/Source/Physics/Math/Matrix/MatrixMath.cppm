@@ -316,7 +316,7 @@ constexpr auto gse::look_at(const vec3<length_t<T>>& position, const vec3<length
 	const auto right_axis = normalize(cross(up, direction_axis));
 	const auto up_axis = cross(direction_axis, right_axis);
 
-	const auto pos = position.as<typename length_t<T>::default_unit{}>();
+	const auto pos = position.as<typename length_t<T>::default_unit>();
 
 	return mat4_t<T>{
 		{ right_axis.x(), up_axis.x(), direction_axis.x(), 0 },
@@ -329,8 +329,8 @@ constexpr auto gse::look_at(const vec3<length_t<T>>& position, const vec3<length
 template <typename T>
 constexpr auto gse::perspective(const angle_t<T> fov, const T aspect, length_t<T> near, length_t<T> far) -> mat4_t<T> {
 	const auto tan_half_fov_y = std::tan(fov.template as<radians>() / T(2));
-	auto near_m = near.as<typename length_t<T>::default_unit{}>();
-	auto far_m = far.as<typename length_t<T>::default_unit{}>();
+	auto near_m = near.as<typename length_t<T>::default_unit>();
+	auto far_m = far.as<typename length_t<T>::default_unit>();
 
 	mat4_t<T> result;
 
@@ -347,10 +347,10 @@ constexpr auto gse::perspective(const angle_t<T> fov, const T aspect, length_t<T
 template <typename T>
 constexpr auto gse::orthographic(length_t<T> left, length_t<T> right, length_t<T> bottom, length_t<T> top, length_t<T> near, length_t<T> far) -> mat4_t<T> {
 	return mat4_t<T>{
-		{ 2 / (right - left).as_default_unit(), 0, 0, 0 },
-		{ 0,									2 / (top - bottom).as_default_unit(),	0,									 0 },
-		{ 0,									0,										-2 / (far - near).as_default_unit(), 0 },
-		{ -(right + left) / (right - left),		-(top + bottom) / (top - bottom),		-(far + near) / (far - near),		 1 }
+		{ 2 / (right - left).template as<length::default_unit>(), 0, 0, 0 },
+		{ 0,									2 / (top - bottom).template as<length::default_unit>(),	0,														0 },
+		{ 0,									0,														-2 / (far - near).template as<length::default_unit>(),	0 },
+		{ -(right + left) / (right - left),		-(top + bottom) / (top - bottom),						-(far + near) / (far - near),							1 }
 	};
 }
 
@@ -360,7 +360,7 @@ constexpr auto gse::translate(const mat4_t<T, Dim>& matrix, const vec3<length_t<
 		{ 1, 0, 0, 0 },
 		{ 0, 1, 0, 0 },
 		{ 0, 0, 1, 0 },
-		{ translation.x().as_default_unit(), translation.y().as_default_unit(), translation.z().as_default_unit(), 1 }
+		{ translation.x().template as<length::default_unit>(), translation.y().template as<length::default_unit>(), translation.z().template as<length::default_unit>(), 1 }
 	};
 }
 

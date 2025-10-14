@@ -44,8 +44,8 @@ gse::camera::camera(const vec3<length>& initial_position): m_position(initial_po
 
 auto gse::camera::process_mouse_movement(const vec2<length>& offset) -> void {
 	const auto transformed_offset = offset * m_mouse_sensitivity;
-	m_yaw -= degrees(transformed_offset.x().as_default_unit());
-	m_pitch -= degrees(transformed_offset.y().as_default_unit());
+	m_yaw -= degrees(transformed_offset.x().as<meters>());
+	m_pitch -= degrees(transformed_offset.y().as<meters>());
 	m_pitch = std::clamp(m_pitch, degrees(-89.0f), degrees(89.0f));
 }
 
@@ -60,7 +60,7 @@ auto gse::camera::set_position(const vec3<length>& position) -> void {
 }
 
 auto gse::camera::move(const vec3<length>& offset) -> void {
-	m_position += offset * system_clock::dt().as_default_unit();
+	m_position += offset * system_clock::dt().as<seconds>();
 }
 
 auto gse::camera::look_at(const vec3<length>& target) -> void {
