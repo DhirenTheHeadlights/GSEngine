@@ -6,12 +6,12 @@ import :keys;
 
 import gse.physics.math;
 
-export namespace gse {
-	namespace detail {
-		struct input_state_token;
-	}
+namespace gse::detail {
+	struct input_state_token;
+}
 
-	class input_state {
+export namespace gse::input {
+	class state {
 	public:
 		auto key_pressed(
 			key key
@@ -85,6 +85,10 @@ export namespace gse {
 			const detail::input_state_token& token
 		) -> void;
 
+		auto copy_persistent_from(
+			const state& other
+		) -> void;
+
 	private:
 		std::unordered_set<key> m_keys_held;
 		std::unordered_set<key> m_keys_pressed_this_frame;
@@ -101,43 +105,43 @@ export namespace gse {
 	};
 }
 
-auto gse::input_state::key_pressed(const key key) const -> bool {
+auto gse::input::state::key_pressed(const key key) const -> bool {
 	return m_keys_pressed_this_frame.contains(key);
 }
 
-auto gse::input_state::key_held(const key key) const -> bool {
+auto gse::input::state::key_held(const key key) const -> bool {
 	return m_keys_held.contains(key);
 }
 
-auto gse::input_state::key_released(const key key) const -> bool {
+auto gse::input::state::key_released(const key key) const -> bool {
 	return m_keys_released_this_frame.contains(key);
 }
 
-auto gse::input_state::mouse_button_pressed(const mouse_button button) const -> bool {
+auto gse::input::state::mouse_button_pressed(const mouse_button button) const -> bool {
 	return m_mouse_buttons_pressed_this_frame.contains(button);
 }
 
-auto gse::input_state::mouse_button_held(const mouse_button button) const -> bool {
+auto gse::input::state::mouse_button_held(const mouse_button button) const -> bool {
 	return m_mouse_buttons_held.contains(button);
 }
 
-auto gse::input_state::mouse_button_released(const mouse_button button) const -> bool {
+auto gse::input::state::mouse_button_released(const mouse_button button) const -> bool {
 	return m_mouse_buttons_released_this_frame.contains(button);
 }
 
-auto gse::input_state::mouse_position() const -> unitless::vec2 {
+auto gse::input::state::mouse_position() const -> unitless::vec2 {
 	return m_mouse_position;
 }
 
-auto gse::input_state::mouse_delta() const -> unitless::vec2 {
+auto gse::input::state::mouse_delta() const -> unitless::vec2 {
 	return m_mouse_delta;
 }
 
-auto gse::input_state::text_entered() const -> const std::string& {
+auto gse::input::state::text_entered() const -> const std::string& {
 	return m_text_entered_this_frame;
 }
 
-auto gse::input_state::begin_frame(const detail::input_state_token&) -> void {
+auto gse::input::state::begin_frame(const detail::input_state_token&) -> void {
 	m_keys_pressed_this_frame.clear();
 	m_keys_released_this_frame.clear();
 	m_mouse_buttons_pressed_this_frame.clear();
@@ -146,31 +150,31 @@ auto gse::input_state::begin_frame(const detail::input_state_token&) -> void {
 	m_mouse_prev_position = m_mouse_position;
 }
 
-auto gse::input_state::on_key_pressed(const key key, const detail::input_state_token&) -> void {
+auto gse::input::state::on_key_pressed(const key key, const detail::input_state_token&) -> void {
 	m_keys_pressed_this_frame.insert(key);
 	m_keys_held.insert(key);
 }
 
-auto gse::input_state::on_key_released(const key key, const detail::input_state_token&) -> void {
+auto gse::input::state::on_key_released(const key key, const detail::input_state_token&) -> void {
 	m_keys_released_this_frame.insert(key);
 	m_keys_held.erase(key);
 }
 
-auto gse::input_state::on_mouse_button_pressed(const mouse_button button, const detail::input_state_token&) -> void {
+auto gse::input::state::on_mouse_button_pressed(const mouse_button button, const detail::input_state_token&) -> void {
 	m_mouse_buttons_pressed_this_frame.insert(button);
 	m_mouse_buttons_held.insert(button);
 }
 
-auto gse::input_state::on_mouse_button_released(const mouse_button button, const detail::input_state_token&) -> void {
+auto gse::input::state::on_mouse_button_released(const mouse_button button, const detail::input_state_token&) -> void {
 	m_mouse_buttons_released_this_frame.insert(button);
 	m_mouse_buttons_held.erase(button);
 }
 
-auto gse::input_state::on_mouse_moved(const float x, const float y, const detail::input_state_token&) -> void {
+auto gse::input::state::on_mouse_moved(const float x, const float y, const detail::input_state_token&) -> void {
 	m_mouse_position = { x, y };
 }
 
-auto gse::input_state::append_codepoint(const std::uint32_t codepoint, const detail::input_state_token&) -> void {
+auto gse::input::state::append_codepoint(const std::uint32_t codepoint, const detail::input_state_token&) -> void {
 	if (codepoint < 0x80) {
 		m_text_entered_this_frame += static_cast<char>(codepoint);
 	}
@@ -191,6 +195,14 @@ auto gse::input_state::append_codepoint(const std::uint32_t codepoint, const det
 	}
 }
 
-auto gse::input_state::end_frame(const detail::input_state_token&) -> void {
+auto gse::input::state::end_frame(const detail::input_state_token&) -> void {
 	m_mouse_delta = m_mouse_position - m_mouse_prev_position;
+}
+
+auto gse::input::state::copy_persistent_from(const state& other) -> void {
+	m_keys_held = other.m_keys_held;
+	m_mouse_buttons_held = other.m_mouse_buttons_held;
+	m_mouse_position = other.m_mouse_position;
+	m_mouse_prev_position = other.m_mouse_prev_position;
+	m_mouse_delta = other.m_mouse_delta;
 }

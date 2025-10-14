@@ -35,6 +35,7 @@ find_package(Freetype CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
 find_package(Vulkan REQUIRED)
 find_package(tomlplusplus CONFIG REQUIRED)
+find_package(TBB CONFIG REQUIRED)
 
 set(VULKAN_SDK_PATH $ENV{VULKAN_SDK})
 if(NOT VULKAN_SDK_PATH)
@@ -88,6 +89,7 @@ target_link_libraries(Engine PUBLIC
     msdfgen::msdfgen
     tomlplusplus::tomlplusplus
     VulkanModule
+    TBB::tbb
 )
 
 set(ENGINE_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")

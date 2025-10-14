@@ -82,7 +82,7 @@ namespace gse::gui::draw {
 }
 
 template <gse::is_arithmetic T>
-auto gse::gui::draw::slider(gse::gui::widget_context& context, const std::string& name, T& value, const T& min, const T& max, gse::id& hot_widget_id, gse::id& active_widget_id) -> void {
+auto gse::gui::draw::slider(widget_context& context, const std::string& name, T& value, const T& min, const T& max, id& hot_widget_id, id& active_widget_id) -> void {
 	std::array value_ptrs = { &value };
 	const std::array min_values = { min };
 	const std::array max_values = { max };

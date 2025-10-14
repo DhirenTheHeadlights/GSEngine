@@ -6,6 +6,8 @@ import :id;
 import :component;
 import :non_copyable;
 import :misc;
+import :frame_sync;
+import :lambda_traits;
 
 export namespace gse {
 	template <is_identifiable T>
@@ -78,7 +80,12 @@ export namespace gse {
 	template <typename T>
 	class hookable : public identifiable {
 	public:
-		hookable(std::string_view name, std::initializer_list<std::unique_ptr<hook<T>>> hooks = {});
+		explicit hookable(std::string_view name, std::initializer_list<std::unique_ptr<hook<T>>> hooks = {});
+
+		template <typename Hook>
+			requires is_hook<Hook, T>
+		auto add_hook(
+		) -> void;
 
 		template <typename Hook, typename... Args>
 			requires is_hook<Hook, T>
@@ -110,6 +117,12 @@ export namespace gse {
 template <typename T>
 gse::hookable<T>::hookable(const std::string_view name, std::initializer_list<std::unique_ptr<hook<T>>> hooks) : identifiable(name) {
 	for (auto&& h : hooks) m_hooks.push_back(std::move(const_cast<std::unique_ptr<hook<T>>&>(h)));
+}
+
+template <typename T>
+template <typename Hook> requires gse::is_hook<Hook, T>
+auto gse::hookable<T>::add_hook() -> void {
+	m_hooks.push_back(std::make_unique<Hook>(static_cast<T*>(this)));
 }
 
 template <typename T>
@@ -232,8 +245,8 @@ export namespace gse {
 		) -> void override;
 	private:
 		double_buffered_id_mapped_queue<component_type, owner_id_t> m_dbq;
-		double_buffered_id_mapped_queue<component_type, owner_id_t>::reader m_reader{ &m_dbq, 0 };
-		double_buffered_id_mapped_queue<component_type, owner_id_t>::writer m_writer{ &m_dbq, 1 };
+		double_buffered_id_mapped_queue<component_type, owner_id_t>::reader m_reader{ &m_dbq };
+		double_buffered_id_mapped_queue<component_type, owner_id_t>::writer m_writer{ &m_dbq };
 
 		std::unordered_map<link_id_t, owner_id_t> m_link_to_owner_map;
 		std::uint32_t m_next_link_id = 0;
@@ -241,7 +254,7 @@ export namespace gse {
 }
 
 template <gse::is_component T>
-template <typename ... Args>
+template <typename... Args>
 auto gse::component_link<T>::add(const owner_id_t& owner_id, registry* reg, Args&&... args) -> T* {
 	gse::assert(!try_get_write(owner_id), std::format(
 		"Attempting to add a component of type {} to owner {} that already has one.",
@@ -468,7 +481,7 @@ export namespace gse {
 		using uuid = std::uint32_t;
 		using deferred_action = std::function<bool(registry&)>;
 
-		registry() = default;
+		registry();
 
 		auto create(
 			const std::string& name
@@ -573,9 +586,6 @@ export namespace gse {
 		static auto any_components(
 			std::span<const std::reference_wrapper<registry>> registries
 		) -> bool;
-
-		auto flip_buffers(
-		) -> void;
 	private:
 		id_mapped_collection<entity> m_active_entities;
 		std::unordered_set<id> m_inactive_ids;
@@ -589,6 +599,16 @@ export namespace gse {
 		std::size_t m_read_index = 0;
 		std::size_t m_write_index = 1;
 	};
+}
+
+gse::registry::registry() {
+	frame_sync::on_end([this] {
+		std::swap(m_read_index, m_write_index);
+
+		for (const auto& link : m_component_links | std::views::values) {
+			link->flip(m_read_index, m_write_index);
+		}
+	});
 }
 
 auto gse::registry::create(const std::string& name) -> id {
@@ -930,24 +950,6 @@ auto gse::registry::any_components(const std::span<const std::reference_wrapper<
 	);
 }
 
-auto gse::registry::flip_buffers() -> void {
-	std::swap(m_read_index, m_write_index);
-
-	for (const auto& link : m_component_links | std::views::values) {
-		link->flip(m_read_index, m_write_index);
-	}
-}
-
-namespace gse {
-	template<typename F>
-	struct lambda_traits : lambda_traits<decltype(&F::operator())> {};
-
-	template<typename ClassType, typename ReturnType, typename Arg>
-	struct lambda_traits<ReturnType(ClassType::*)(Arg) const> {
-		using component_type = std::remove_cvref_t<Arg>;
-	};
-}
-
 export template <>
 class gse::hook<gse::entity> : public identifiable_owned {
 public:
@@ -1088,7 +1090,7 @@ auto gse::hook<gse::entity>::configure_when_present(const std::function<void(T&)
 
 template <typename Func>
 auto gse::hook<gse::entity>::configure_when_present(Func&& config_func) -> void {
-	using c = lambda_traits<Func>::component_type;
+	using c = first_arg_t<Func>;
 	configure_when_present<c>(std::forward<Func>(config_func));
 }
 

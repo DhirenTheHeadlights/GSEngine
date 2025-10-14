@@ -8,6 +8,7 @@ export namespace gse::network {
 		connection_accepted,
 		ping,
 		pong,
+		notify_scene_change
 	};
 
 	struct connection_request_message {};
@@ -21,11 +22,16 @@ export namespace gse::network {
 		std::uint32_t sequence;
 	};
 
+	struct notify_scene_change_message {
+		std::array<char, 64> scene_name; 
+	};
+
 	using message = std::variant<
 		connection_request_message,
 		connection_accepted_message,
 		ping_message,
-		pong_message
+		pong_message,
+		notify_scene_change_message
 	>;
 
 	template <class T>
@@ -47,6 +53,10 @@ export namespace gse::network {
 
 	template <> struct message_tag<pong_message> {
 		static constexpr auto value = message_type::pong;
+	};
+
+	template <> struct message_tag<notify_scene_change_message> {
+		static constexpr auto value = message_type::notify_scene_change;
 	};
 
 	template <typename T>

@@ -9,3 +9,5 @@ Makefile
 /Folder.DotSettings.user
 *.ini
 /vc140.pdb
+/Engine/External/vcpkg
+/Engine/Resources/Misc/gui_layout.ggui
