@@ -54,7 +54,6 @@ gse::network::client::client(const address& listen, const address& server) : m_s
 
 auto gse::network::client::connect() -> void {
 	if (m_state == state::disconnected) {
-		std::println("Client sending connection request...");
 		send(connection_request_message{});
 		m_state = state::connecting;
 		m_last_request_time = system_clock::now();
@@ -94,7 +93,6 @@ auto gse::network::client::send(const T& msg) -> void {
 auto gse::network::client::update(const std::function<void(message&)>& on_receive) -> void {
 	if (m_state == state::connecting) {
 		if (system_clock::now() - m_last_request_time > seconds(1.f)) {
-			std::println("Client re-sending connection request...");
 			send(connection_request_message{});
 			m_last_request_time = system_clock::now();
 		}
@@ -130,7 +128,6 @@ auto gse::network::client::update(const std::function<void(message&)>& on_receiv
 		}
 
 		if (m_state == state::connecting && type == message_type::connection_accepted) {
-			std::println("Client received Connection Accepted!");
 			m_state = state::connected;
 		}
 

@@ -113,8 +113,6 @@ auto gse::network::udp_socket::receive_data(std::span<std::byte> buffer) const -
 			return std::nullopt;
 		}
 
-		std::println("recvfrom failed with error: {}", WSAGetLastError());
-
 		return std::nullopt;
 	}
 

@@ -21,6 +21,7 @@ import :input_widget;
 import :slider_widget;
 import :ids;
 import :button_widget;
+import :tree_widget;
 
 export namespace gse::gui {
 	auto initialize(
@@ -114,6 +115,17 @@ export namespace gse::gui {
 		const std::string& name,
 		vec_t<T, N> vec
 	) -> void;
+
+	template <typename T>
+	auto tree(
+		std::span<const T> roots,
+		const draw::tree_ops<T>& fns,
+		draw::tree_options opt = {},
+		draw::tree_selection* sel = nullptr
+	) -> void;
+
+	auto profiler(
+	) -> void;
 }
 
 namespace gse::gui {
@@ -182,12 +194,12 @@ auto gse::gui::update(const window& window, const style& style) -> void {
 		});
 
 	if (save_clock.elapsed() > update_interval) {
-		save(menus, file_path);
+		save(menus, config::resource_path / file_path);
 		save_clock.reset();
 	}
 }
 
-auto gse::gui::frame(const renderer::context& context, renderer::sprite& sprite_renderer, renderer::text& text_renderer, const std::function<void()>& in_frame, const gui::style& style) -> void {
+auto gse::gui::frame(const renderer::context& context, renderer::sprite& sprite_renderer, renderer::text& text_renderer, const std::function<void()>& in_frame, const style& style) -> void {
 	if (!font.valid()) return;
 
 	frame_bindings = { &context, &sprite_renderer, &text_renderer, style, true };
@@ -226,10 +238,6 @@ auto gse::gui::frame(const renderer::context& context, renderer::sprite& sprite_
 
 	if (frame_bindings.rctx && frame_bindings.sprite && frame_bindings.rctx->ui_focus()) {
 		cursor::render(*frame_bindings.rctx, *frame_bindings.sprite);
-	}
-
-	if (mouse::released(mouse_button::button_1)) {
-		active_widget_id = {};
 	}
 
 	frame_bindings = {};
@@ -439,6 +447,172 @@ template <typename T, int N, auto Unit>
 auto gse::gui::vec(const std::string& name, vec_t<T, N> vec) -> void {
 	if (!context) return;
 	draw::vec<T, N, Unit>(*context, name, vec);
+}
+
+template <typename T>
+auto gse::gui::tree(std::span<const T> roots, const draw::tree_ops<T>& fns, draw::tree_options opt, draw::tree_selection* sel) -> void {
+	if (!context) return;
+	draw::tree(*context, roots, fns, opt, sel, active_widget_id);
+}
+
+auto gse::gui::profiler() -> void {
+	trace::thread_pause pause;
+
+	const auto roots = trace::view().roots;
+	if (roots.empty()) {
+		text("No trace data");
+		return;
+	}
+
+	static draw::tree_selection selection;
+	static draw::tree_options options{
+		.indent_per_level = 15.f,
+		.toggle_on_row_click = true,
+		.multi_select = false
+	};
+
+	ids::per_frame_key_cache cache;
+
+	cache.begin(ids::stable_key("gui.tree.profiler"));
+
+	static constexpr std::uint64_t profiler_salt = 0xD1B54A32D192ED03ull;
+
+	const draw::tree_ops<trace::node> ops{
+		.children = [](const trace::node& n) -> std::span<const trace::node> {
+			return std::span{ n.children_first, n.children_count };
+		},
+		.label = [](const trace::node& n) -> std::string_view {
+			const auto& t = find(n.id).tag();
+		    static constexpr std::string_view unnamed{"<unnamed>"};
+		    return t.empty() ? unnamed : t;
+		},
+		.key = [&cache](const trace::node& n) -> std::uint64_t {
+			return cache.key(&n);
+		},
+		.is_leaf = [](const trace::node& n) -> bool {
+			return n.children_count == 0;
+		},
+		.custom_draw = [](const trace::node& n, const widget_context& ctx, const ui_rect& row, bool /*hovered*/, bool /*selected*/, int /*level*/) {
+			struct cand {
+		        double v;
+		        std::string_view name;
+		    };
+
+		    const auto span = (n.stop - n.start);
+		    const auto self = n.self;
+
+		    const cand dur_cands[] = {
+		        { static_cast<double>(span.as<seconds>()),      decltype(seconds)::unit_name      },
+		        { static_cast<double>(span.as<milliseconds>()), decltype(milliseconds)::unit_name },
+		        { static_cast<double>(span.as<microseconds>()), decltype(microseconds)::unit_name },
+		        { static_cast<double>(span.as<nanoseconds>()),  decltype(nanoseconds)::unit_name  },
+		    };
+		    const cand self_cands[] = {
+		        { static_cast<double>(self.as<seconds>()),      decltype(seconds)::unit_name      },
+		        { static_cast<double>(self.as<milliseconds>()), decltype(milliseconds)::unit_name },
+		        { static_cast<double>(self.as<microseconds>()), decltype(microseconds)::unit_name },
+		        { static_cast<double>(self.as<nanoseconds>()),  decltype(nanoseconds)::unit_name  },
+		    };
+
+		    auto choose = [](const cand* c) -> cand {
+		        for (int i = 0; i < 3; ++i) if (c[i].v >= 1.0) return c[i];
+		        return c[3];
+		    };
+
+		    const cand d = choose(dur_cands);
+		    const cand s = choose(self_cands);
+		    const double pct = (d.v > 0.0) ? (s.v / d.v) * 100.0 : 0.0;
+
+		    auto to_fixed = [](const double v, char* buf, const std::size_t num, const int precision) -> std::string_view {
+		        auto [p, ec] = std::to_chars(buf, buf + num, v, std::chars_format::fixed, precision);
+		        if (ec != std::errc{}) return {};
+		        return { buf, static_cast<size_t>(p - buf) };
+		    };
+
+		    char dur_buf[32], self_buf[32], pct_buf[32];
+		    const std::string_view dur_num  = to_fixed(d.v,  dur_buf,  sizeof(dur_buf), 3);
+		    const std::string_view self_num = to_fixed(s.v,  self_buf, sizeof(self_buf), 3);
+		    const std::string_view pct_num  = to_fixed(pct,  pct_buf,  sizeof(pct_buf),  1);
+
+		    const std::string_view dur_unit  = d.name;
+		    const std::string_view self_unit = s.name;
+
+		    static constexpr std::string_view cap_dur  = "Dur";
+		    static constexpr std::string_view cap_self = "Self";
+		    static constexpr std::string_view cap_pct  = "Percent";
+
+		    auto width_sv = [&](const std::string_view str, const float scale) -> float {
+		        return ctx.font->width(str, scale);
+		    };
+
+		    const float pad = ctx.style.padding;
+		    const float widget_h = row.height();
+		    const float cap_scale = ctx.style.font_size * 1.f;
+		    const float num_scale = ctx.style.font_size;
+
+		    constexpr int num_boxes = 3;
+		    const float all_spacing = pad * static_cast<float>(num_boxes - 1);
+		    const float max_total_w = std::min(row.width() * 0.55f, 1000.0f);
+		    const float box_w = (max_total_w - all_spacing) / static_cast<float>(num_boxes);
+
+		    unitless::vec2 pos = { row.right() - max_total_w, row.top() };
+
+		    auto draw_box = [&](const std::string_view caption, const std::string_view num, const std::string_view unit) {
+		         const ui_rect box = ui_rect::from_position_size(pos, { box_w, widget_h });
+
+			    ctx.sprite_renderer.queue({
+			        .rect = box,
+			        .color = ctx.style.color_widget_background,
+			        .texture = ctx.blank_texture
+			    });
+
+			    const float num_w   = width_sv(num,  num_scale);
+			    const float unit_w  = width_sv(unit, num_scale);
+			    const float cap_w   = width_sv(caption, cap_scale);
+			    const float gap_nu  = std::max(2.0f, pad * 0.15f); 
+			    const float gap_uc  = std::max(2.0f, pad * 0.25f);  
+
+			    float x = box.right() - pad * 0.5f - (num_w + gap_nu + unit_w + gap_uc + cap_w);
+
+			    ctx.text_renderer.draw_text({
+			        .font = ctx.font,
+			        .text = std::string(num),
+			        .position = { x, box.center().y() + num_scale / 2.f },
+			        .scale = num_scale,
+			        .clip_rect = box
+			    });
+
+			    x += num_w + gap_nu;
+
+			    ctx.text_renderer.draw_text({
+			        .font = ctx.font,
+			        .text = std::string(unit),
+			        .position = { x, box.center().y() + num_scale / 2.f },
+			        .scale = num_scale,
+			        .clip_rect = box
+			    });
+
+			    x += unit_w + gap_uc;
+
+			    ctx.text_renderer.draw_text({
+			        .font = ctx.font,
+			        .text = std::string(caption),
+			        .position = { x, box.center().y() + cap_scale / 2.f },
+			        .scale = cap_scale,
+			        .clip_rect = box
+			    });
+
+			    pos.x() += box_w + pad;
+		    };
+
+		    draw_box(cap_dur,  dur_num,  dur_unit);
+		    draw_box(cap_self, self_num, self_unit);
+		    draw_box(cap_pct,  pct_num,  "");
+		}
+	};
+
+	ids::scope tree_scope("gui.tree.profiler");
+	gui::tree(roots, ops, options, &selection);
 }
 
 auto gse::gui::begin(const std::string& name) -> bool {

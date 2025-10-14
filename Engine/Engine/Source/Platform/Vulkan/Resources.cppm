@@ -72,7 +72,7 @@ export namespace gse::vulkan::persistent_allocator {
 		[[nodiscard]] auto memory() const -> vk::DeviceMemory { return m_memory; }
 		[[nodiscard]] auto size() const -> vk::DeviceSize { return m_size; }
 		[[nodiscard]] auto offset() const -> vk::DeviceSize { return m_offset; }
-		[[nodiscard]] auto mapped() const -> void* { return m_mapped; }
+		[[nodiscard]] auto mapped() const -> std::byte* { return static_cast<std::byte*>(m_mapped); }
 		[[nodiscard]] auto owner() const -> sub_allocation* { return m_owner; }
 	private:
 		friend auto free(const allocation& alloc) -> void;
@@ -94,31 +94,6 @@ export namespace gse::vulkan::persistent_allocator {
 	struct buffer_resource {
 		vk::raii::Buffer buffer = nullptr;
 		allocation allocation;
-	};
-
-	template <typename T>
-	struct mapped_buffer_view {
-		void* base = nullptr;
-		vk::DeviceSize stride = sizeof(T);
-
-		auto operator[](const size_t index) -> T& {
-			assert(base != nullptr, "mapped_buffer_view base is null");
-			return *reinterpret_cast<T*>(static_cast<std::byte*>(base) + index * stride);
-		}
-
-		auto get_offset(const size_t index) const -> vk::DeviceSize {
-			return index * stride;
-		}
-
-		auto get_span(const size_t index) const -> std::span<const std::byte> {
-			const auto ptr = static_cast<const std::byte*>(base) + index * stride;
-			return std::span{ ptr, stride };
-		}
-
-		auto get_span(const size_t index) -> std::span<std::byte> {
-			const auto ptr = static_cast<std::byte*>(base) + index * stride;
-			return std::span{ ptr, stride };
-		}
 	};
 }
 

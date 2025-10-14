@@ -18,11 +18,68 @@ export namespace gse::gui::ids {
 
 	auto pop(
 	) -> void;
+
+	auto scoped_key(
+		std::string_view s
+	) -> std::uint64_t;
+
+	auto scoped_key(
+		std::uint64_t v
+	) -> std::uint64_t;
+
+	auto stable_key(
+		std::string_view s
+	) -> std::uint64_t;
+
+	auto stable_key(
+		std::uint64_t v
+	) -> std::uint64_t;
+
+	class key_builder {
+	public:
+		key_builder(
+			std::uint64_t seed
+		);
+
+		auto with(
+			std::string_view s
+		) const -> std::uint64_t;
+
+		auto with(
+			std::uint64_t v
+		) const -> std::uint64_t;
+
+		auto seed(
+		) const -> std::uint64_t ;
+
+	private:
+		std::uint64_t m_seed = 0;
+	};
+
+	auto make_key_builder(
+		std::string_view scope_label
+	) -> key_builder;
+
+	class per_frame_key_cache {
+	public:
+		auto begin(
+			std::uint64_t seed,
+			std::uint64_t frame_seq = 0
+		) -> void;
+
+		auto key(
+			const void* p
+		) -> std::uint64_t;
+	private:
+		std::unordered_map<const void*, std::uint64_t> m_map;
+		std::uint64_t m_salt = 0;
+		std::uint64_t m_epoch = 0;
+	};
 }
 
 namespace gse::gui::ids {
 	thread_local std::vector<std::uint64_t> id_stack;
-	constexpr auto k_root_seed = 0xD00DCAFE12345678ull;
+	constexpr auto root_seed = 0xD00DCAFE12345678ull;
 
 	auto mix_64(
 		std::uint64_t x
@@ -44,7 +101,7 @@ namespace gse::gui::ids {
 }
 
 auto gse::gui::ids::current_seed() -> std::uint64_t {
-	return id_stack.empty() ? k_root_seed : id_stack.back();
+	return id_stack.empty() ? root_seed : id_stack.back();
 }
 
 auto gse::gui::ids::push(const std::uint64_t v) -> void {
@@ -61,15 +118,72 @@ auto gse::gui::ids::pop() -> void {
 	}
 }
 
+auto gse::gui::ids::scoped_key(const std::string_view s) -> std::uint64_t {
+	return hash_combine_string(current_seed(), s);
+}
+
+auto gse::gui::ids::scoped_key(const std::uint64_t v) -> std::uint64_t {
+	return hash_combine_u64(current_seed(), v);
+}
+
+auto gse::gui::ids::stable_key(const std::string_view s) -> std::uint64_t {
+	return hash_combine_string(root_seed, s);
+}
+
+auto gse::gui::ids::stable_key(const std::uint64_t v) -> std::uint64_t {
+	return hash_combine_u64(root_seed, v);
+}
+
+gse::gui::ids::key_builder::key_builder(const std::uint64_t seed) : m_seed(seed) {}
+
+auto gse::gui::ids::key_builder::with(const std::string_view s) const -> std::uint64_t {
+	return hash_combine_string(m_seed, s);
+}
+
+auto gse::gui::ids::key_builder::with(const std::uint64_t v) const -> std::uint64_t {
+	return hash_combine_u64(m_seed, v);
+}
+
+auto gse::gui::ids::key_builder::seed() const -> std::uint64_t {
+	return m_seed;
+}
+
+auto gse::gui::ids::make_key_builder(const std::string_view scope_label) -> key_builder {
+	return hash_combine_string(root_seed, scope_label);
+}
+
+auto gse::gui::ids::per_frame_key_cache::begin(const std::uint64_t seed, const std::uint64_t frame_seq) -> void {
+	m_map.clear();
+	m_salt = seed;
+	m_epoch = frame_seq;
+}
+
+auto gse::gui::ids::per_frame_key_cache::key(const void* p) -> std::uint64_t {
+	if (const auto it = m_map.find(p); it != m_map.end()) {
+		return it->second;
+	}
+
+	std::uint64_t h = m_salt;
+
+	if (m_epoch) {
+		h = hash_combine_u64(h, m_epoch);
+	}
+
+	h = hash_combine_u64(h, reinterpret_cast<std::uintptr_t>(p));
+	h = mix_64(h);
+
+	return m_map.emplace(p, h).first->second;
+}
+
 export namespace gse::gui::ids {
 	struct scope : non_copyable {
 		bool active = false;
 
-		scope(
+		explicit scope(
 			std::uint64_t v
 		);
 
-		scope(
+		explicit scope(
 			std::string_view s
 		);
 

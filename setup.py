@@ -146,6 +146,7 @@ def main():
         "miniaudio:x64-windows",
         "shader-slang:x64-windows",
         "tomlplusplus:x64-windows",
+        "tbb:x64-windows",
     ]
 
     install_dependencies(vcpkg_path, dependencies)
