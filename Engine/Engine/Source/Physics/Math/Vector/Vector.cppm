@@ -25,14 +25,14 @@ namespace gse::internal {
 
 	template <is_arithmetic_wrapper W>
 	struct vec_storage_type<W> {
-		using type = typename W::value_type;
+		using type = W::value_type;
 	};
 
 	template <typename T>
-	using vec_storage_type_t = typename vec_storage_type<T>::type;
+	using vec_storage_type_t = vec_storage_type<T>::type;
 
-	template <auto T>
-	concept is_derivable_unit = requires { typename decltype(T)::conversion_ratio; };
+	template <typename T>
+	concept is_derivable_unit = requires { typename T::conversion_ratio; };
 }
 
 export namespace gse::vec {
@@ -108,7 +108,10 @@ export namespace gse {
 	public:
 		using vec::base<quantity_vec, Q, N>::base;
 
-		template <auto TargetUnit> requires internal::is_derivable_unit<TargetUnit>
+		template <typename Unit> requires internal::is_derivable_unit<Unit>
+		constexpr auto as() const -> unitless::vec_t<typename Q::value_type, N>;
+
+		template <auto TargetUnit> requires internal::is_derivable_unit<decltype(TargetUnit)>
 		constexpr auto as() const -> unitless::vec_t<typename Q::value_type, N>;
 	};
 }
@@ -128,7 +131,7 @@ export namespace gse {
 	};
 
 	template <typename T, std::size_t N>
-	using vector_type_for_element_t = typename vector_type_for_element<T, N>::type;
+	using vector_type_for_element_t = vector_type_for_element<T, N>::type;
 }
 
 export template <typename A, std::size_t N, typename CharT>
@@ -136,12 +139,12 @@ struct std::formatter<gse::unitless::vec_t<A, N>, CharT> {
 	std::formatter<A, CharT> elem_;
 
 	template <class ParseContext>
-	constexpr auto parse(ParseContext& ctx) -> typename ParseContext::iterator {
+	constexpr auto parse(ParseContext& ctx) -> ParseContext::iterator {
 		return elem_.parse(ctx);
 	}
 
 	template <class FormatContext>
-	auto format(const gse::unitless::vec_t<A, N>& v, FormatContext& ctx) const -> typename FormatContext::iterator {
+	auto format(const gse::unitless::vec_t<A, N>& v, FormatContext& ctx) const -> FormatContext::iterator {
 		auto out = ctx.out();
 		out = std::format_to(out, "(");
 		for (std::size_t i = 0; i < N; ++i) {
@@ -159,12 +162,12 @@ struct std::formatter<gse::quantity_vec<Q, N>, CharT> {
 	std::formatter<Q, CharT> elem_;
 
 	template <class ParseContext>
-	constexpr auto parse(ParseContext& ctx) -> typename ParseContext::iterator {
+	constexpr auto parse(ParseContext& ctx) -> ParseContext::iterator {
 		return elem_.parse(ctx);
 	}
 
 	template <class FormatContext>
-	auto format(const gse::quantity_vec<Q, N>& v, FormatContext& ctx) const -> typename FormatContext::iterator {
+	auto format(const gse::quantity_vec<Q, N>& v, FormatContext& ctx) const -> FormatContext::iterator {
 		auto out = ctx.out();
 		out = std::format_to(out, "(");
 		for (std::size_t i = 0; i < N; ++i) {
@@ -312,18 +315,24 @@ auto gse::vec::base<Derived, T, N>::as_storage_span(this auto&& self) {
 	}
 }
 
-template <gse::internal::is_arithmetic_wrapper Q, std::size_t N>
-template <auto TargetUnit> requires gse::internal::is_derivable_unit<TargetUnit>
+template <gse::internal::is_arithmetic_wrapper Q, std::size_t N >
+template <typename Unit> requires gse::internal::is_derivable_unit<Unit>
 constexpr auto gse::quantity_vec<Q, N>::as() const -> unitless::vec_t<typename Q::value_type, N> {
-	using storage_type = typename vec::base<quantity_vec, Q, N>::storage_type;
-    unitless::vec_t<typename Q::value_type, N> result{};
+	using storage_type = vec::base<quantity_vec, Q, N>::storage_type;
+	unitless::vec_t<typename Q::value_type, N> result{};
 
-    using ratio = typename decltype(TargetUnit)::conversion_ratio;
-    const storage_type scalar_multiplier = static_cast<storage_type>(ratio::den) / static_cast<storage_type>(ratio::num);
+	using ratio = Unit::conversion_ratio;
+	const storage_type scalar_multiplier = static_cast<storage_type>(ratio::den) / static_cast<storage_type>(ratio::num);
 
-    simd::mul_s(this->as_storage_span(), scalar_multiplier, result.as_storage_span());
+	simd::mul_s(this->as_storage_span(), scalar_multiplier, result.as_storage_span());
 
-    return result;
+	return result;
+}
+
+template <gse::internal::is_arithmetic_wrapper Q, std::size_t N>
+template <auto TargetUnit> requires gse::internal::is_derivable_unit<decltype(TargetUnit)>
+constexpr auto gse::quantity_vec<Q, N>::as() const -> unitless::vec_t<typename Q::value_type, N> {
+	return this->as<decltype(TargetUnit)>();
 }
 
 template <typename T, std::size_t N>
@@ -637,7 +646,7 @@ constexpr auto gse::vec::operator*(const base<D, T, N>& lhs, const S& rhs) {
 			return rhs;
 		}
 	}();
-	simd::mul_s(lhs.as_storage_span(), static_cast<typename base<D, T, N>::storage_type>(scalar_primitive), out.as_storage_span());
+	simd::mul_s(lhs.as_storage_span(), static_cast<base<D, T, N>::storage_type>(scalar_primitive), out.as_storage_span());
 	return out;
 }
 
@@ -663,7 +672,7 @@ constexpr auto gse::vec::operator/(const base<D, T, N>& lhs, const S& rhs) {
 			return rhs;
 		}
 	}();
-	simd::div_s(lhs.as_storage_span(), static_cast<typename base<D, T, N>::storage_type>(scalar_primitive), out.as_storage_span());
+	simd::div_s(lhs.as_storage_span(), static_cast<base<D, T, N>::storage_type>(scalar_primitive), out.as_storage_span());
 	return out;
 }
 
@@ -683,7 +692,7 @@ constexpr auto gse::vec::operator*(base<D, T, N> lhs, const S& rhs) {
 			return rhs;
 		}
 	}();
-	simd::mul_s(lhs.as_storage_span(), static_cast<typename base<D, T, N>::storage_type>(scalar_primitive), out.as_storage_span());
+	simd::mul_s(lhs.as_storage_span(), static_cast<base<D, T, N>::storage_type>(scalar_primitive), out.as_storage_span());
 	return out;
 }
 
@@ -709,7 +718,7 @@ constexpr auto gse::vec::operator/(base<D, T, N> lhs, const S& rhs) {
 			return rhs;
 		}
 	}();
-	simd::div_s(lhs.as_storage_span(), static_cast<typename base<D, T, N>::storage_type>(scalar_primitive), out.as_storage_span());
+	simd::div_s(lhs.as_storage_span(), static_cast<base<D, T, N>::storage_type>(scalar_primitive), out.as_storage_span());
 	return out;
 }
 
@@ -724,7 +733,7 @@ constexpr auto gse::vec::operator*=(base<D, T, N>& lhs, const S& rhs) -> base<D,
 			return rhs;
 		}
 	}();
-	simd::mul_s(lhs.as_storage_span(), static_cast<typename base<D, T, N>::storage_type>(scalar_primitive), lhs.as_storage_span());
+	simd::mul_s(lhs.as_storage_span(), static_cast<base<D, T, N>::storage_type>(scalar_primitive), lhs.as_storage_span());
 	return lhs;
 }
 
@@ -739,7 +748,7 @@ constexpr auto gse::vec::operator/=(base<D, T, N>& lhs, const S& rhs) -> base<D,
 			return rhs;
 		}
 	}();
-	simd::div_s(lhs.as_storage_span(), static_cast<typename base<D, T, N>::storage_type>(scalar_primitive), lhs.as_storage_span());
+	simd::div_s(lhs.as_storage_span(), static_cast<base<D, T, N>::storage_type>(scalar_primitive), lhs.as_storage_span());
 	return lhs;
 }
 
@@ -751,7 +760,7 @@ constexpr auto gse::vec::operator+(const base<D, T, N>& v) {
 template <typename D, gse::internal::is_vec_element T, std::size_t N>
 constexpr auto gse::vec::operator-(const base<D, T, N>& v) {
 	D out{};
-	simd::mul_s(v.as_storage_span(), static_cast<typename base<D, T, N>::storage_type>(-1), out.as_storage_span());
+	simd::mul_s(v.as_storage_span(), static_cast<base<D, T, N>::storage_type>(-1), out.as_storage_span());
 	return out;
 }
 

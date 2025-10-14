@@ -77,11 +77,11 @@ auto update_air_resistance(gse::physics::motion_component& component) -> void {
 	// Calculate drag force magnitude: F_d = 0.5 * C_d * rho * A * v^2, Units are in Newtons
 	for (int i = 0; i < 3; ++i) {
 		if (const gse::velocity velocity = component.current_velocity[i]; velocity != gse::meters_per_second(0.0f)) {
-			constexpr float air_density = 1.225f;													// kg/m^3 (air density at sea level)
-			const float drag_coefficient = component.airborne ? 0.47f : 1.05f;						// Approx for a sphere vs a box
-			constexpr float cross_sectional_area = 1.0f;											// Example area in m^2, adjust according to the object
+			constexpr gse::density air_density = gse::kilograms_per_cubic_meter(1.225f);
+			const float drag_coefficient = component.airborne ? 0.47f : 1.05f;						
+			constexpr gse::area cross_sectional_area = gse::square_meters(1.0f);											
 
-			const float drag_force_magnitude = (0.5f * drag_coefficient * air_density * cross_sectional_area * velocity * velocity).as_default_unit();
+			const gse::force drag_force_magnitude = 0.5f * drag_coefficient * air_density * cross_sectional_area * velocity * velocity;
 			const float direction = velocity > gse::meters_per_second(0.f) ? -1.0f : 1.0f;
 			auto drag_force = gse::vec3<gse::force>(
 				i == 0 ? drag_force_magnitude * direction : 0.0f,
@@ -97,7 +97,7 @@ auto update_air_resistance(gse::physics::motion_component& component) -> void {
 auto update_velocity(gse::physics::motion_component& component, const gse::time delta_time) -> void {
 	if (component.self_controlled && !component.airborne) {
 		constexpr float damping_factor = 5.0f;
-		component.current_velocity *= std::max(0.f, 1.0f - damping_factor * delta_time.as_default_unit());
+		component.current_velocity *= std::max(0.f, 1.0f - damping_factor * delta_time.as<gse::seconds>());
 	}
 
 	// Update current_velocity using the kinematic equation: v = v0 + at
@@ -128,7 +128,7 @@ auto update_rotation(gse::physics::motion_component& component, const gse::time 
 
 	// dQ = 0.5 * omega_quaternion * orientation
 	const gse::quat delta_quaternion = 0.5f * omega_quaternion * component.orientation;
-	component.orientation += delta_quaternion * delta_time.as_default_unit();
+	component.orientation += delta_quaternion * delta_time.as<gse::seconds>();
 	component.orientation = normalize(component.orientation);
 }
 

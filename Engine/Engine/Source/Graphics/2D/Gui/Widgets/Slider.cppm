@@ -156,7 +156,7 @@ auto gse::gui::draw::slider_box(const widget_context& context, const ui_rect& re
 
 	bool range_is_zero = false;
 	if constexpr (internal::is_quantity<decltype(range)>) {
-		if (range.as_default_unit() == typename decltype(range)::value_type{ 0 }) range_is_zero = true;
+		if (range.template as<decltype(range)::default_unit>() == typename decltype(range)::value_type{ 0 }) range_is_zero = true;
 	}
 	else {
 		if (range == T{ 0 }) range_is_zero = true;
