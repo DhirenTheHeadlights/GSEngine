@@ -29,10 +29,19 @@ auto gs::client::initialize() -> void {
 }
 
 auto gs::client::update() -> void {
-	m_client->update([](gse::network::message& msg) {
+	m_client->update([this](gse::network::message& msg) {
 		gse::match(msg)
-			.if_is<gse::network::pong_message>([&](const gse::network::pong_message& pong) {
-				std::println("Client Received: Pong {}", pong.sequence);
+			.if_is([this](const gse::network::connection_accepted_message&) {
+				m_owner->world.set_networked(true);
+
+				if (const auto* scene = m_owner->world.current_scene()) {
+					m_owner->world.deactivate(scene->id());
+				}
+			})
+			.if_is([this](const gse::network::notify_scene_change_message& message) {
+				m_owner->world.activate(
+					gse::find(std::string_view(message.scene_name.data()))
+				);
 			});
 		});
 }

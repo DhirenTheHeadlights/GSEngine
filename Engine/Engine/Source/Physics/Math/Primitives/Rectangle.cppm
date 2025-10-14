@@ -10,7 +10,7 @@ export namespace gse {
     template <is_vec2 T>
     class rect_t {
     public:
-        using value_type = typename T::value_type;
+        using value_type = T::value_type;
 
         struct min_max_params {
             T min;

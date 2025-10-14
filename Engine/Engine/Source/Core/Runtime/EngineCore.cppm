@@ -2,20 +2,21 @@ export module gse.runtime:engine;
 
 import std;
 
-import :scene_loader;
-
 import gse.utility;
 import gse.graphics;
 import gse.platform;
+import gse.physics;
 import gse.assert;
 import gse.network;
+
+import :world;
 
 export namespace gse {
 	struct engine : hookable<engine> {
 		explicit engine(const std::string& name) : hookable(name) {}
-	};
 
-	using world = hook<engine>;
+		world world;
+	};
 
 	struct engine_config {
 		std::string title = "GSEngine Application";
@@ -58,13 +59,7 @@ namespace gse {
 	) -> void;
 
 	engine engine("GSEngine");
-	bool should_shutdown = false;
-
-	auto phase = []() noexcept { scene_loader::flip_registry_buffers(); };
-	std::barrier barrier(2, phase);
-
-	std::jthread render_thread;
-	std::atomic_bool running = false;
+	std::atomic should_shutdown = false;
 }
 
 export namespace gse {
@@ -87,17 +82,29 @@ constexpr auto gse::has_flag(flags haystack, flags needle) -> bool {
 }
 
 auto gse::initialize(const flags engine_flags, const engine_config& config) -> void {
+	trace::start({
+		.per_thread_event_cap = static_cast<std::size_t>(1e6)
+	});
+
 	network::initialize();
-	scene_loader::initialize();
+	renderer::initialize();
 	engine.initialize();
+	engine.world.initialize();
 }
 
 auto gse::update(const flags engine_flags, const engine_config& config) -> void {
 	add_timer("Engine::update", [] {
-		window::poll_events();
-
 		system_clock::update();
-		scene_loader::update();
+
+		engine.world.update();
+
+		physics::update(
+			engine.world.registries()
+		);
+
+		renderer::update(
+			engine.world.registries()
+		);
 
 		engine.update();
 	});
@@ -105,9 +112,13 @@ auto gse::update(const flags engine_flags, const engine_config& config) -> void 
 
 auto gse::render(const flags engine_flags, const engine_config& config) -> void {
 	add_timer("Engine::render", [] {
-		scene_loader::render([] {
-			engine.render();
-		});
+		renderer::render(
+			engine.world.registries(),
+			[&] {
+				engine.world.render();
+				engine.render();
+			}
+		);
 	});
 }
 
@@ -115,34 +126,56 @@ template <typename... Args>
 auto gse::start(const flags engine_flags, const engine_config& config) -> void {
 	(engine.add_hook<Args>(), ...);
 
-	initialize(engine_flags, config);
+    initialize(engine_flags, config);
 
-	running.store(true, std::memory_order_release);
-	render_thread = std::jthread([&] {
-		while (running.load(std::memory_order_acquire) && !should_shutdown) {
-			barrier.arrive_and_wait();
-			render(engine_flags, config);
-		}
+	auto exit = make_scope_exit([] {
+		engine.world.shutdown();
+		renderer::shutdown();
+		network::shutdown();
 	});
 
-	while (!should_shutdown) {
-		input::update([&] {
-			update(engine_flags, config);
-			if (!should_shutdown && running.load(std::memory_order_acquire)) {
-				barrier.arrive_and_wait();
-			} else {
-				barrier.arrive_and_drop();
-			}
-		});
-	}
+    task::start([&] {
+        while (!should_shutdown.load(std::memory_order_acquire)) {
+			window::poll_events();
 
-	running.store(false, std::memory_order_release);
+        	frame_sync::begin();
 
-	if (render_thread.joinable()) {
-		render_thread.join();
-	}
+        	input::update();
 
-	scene_loader::shutdown();
+            const bool do_render = has_flag(
+				engine_flags, 
+				flags::render
+			);
+
+			trace::scope(engine.id(), [&] {
+				const std::size_t participants = 1 + (do_render ? 1 : 0);
+				std::latch frame_done(participants);
+
+				task::post(
+					[&, engine_flags, config] {
+						update(engine_flags, config);
+						frame_done.count_down();
+					}
+				);
+
+				if (do_render) {
+					task::post(
+						[&, engine_flags, config] {
+							render(engine_flags, config);
+							frame_done.count_down();
+						}
+					);
+				}
+
+				frame_done.wait();
+			});
+
+			frame_sync::end();
+			trace::finalize_frame();
+        }
+
+        task::wait_idle();
+    });
 }
 
 auto gse::shutdown() -> void {

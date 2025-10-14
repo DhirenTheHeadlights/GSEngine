@@ -12,7 +12,7 @@ import gse.utility;
 import :keys;
 import :input_state;
 
-namespace gse::input {
+export namespace gse::input {
 	struct key_pressed {
 		key key_code;
 	};
@@ -57,8 +57,7 @@ namespace gse::input {
 		text_entered
 	>;
 
-	export auto update(
-		const std::function<void()>& in_frame
+	auto update(
 	) -> void;
 
 	auto key_callback(
@@ -90,12 +89,14 @@ namespace gse::input {
 	auto clear_events(
 	) -> void;
 
-	thread_local const input_state* global_input_state = nullptr;
+	auto current_state(
+	) -> const state*;
 }
 
 namespace gse::input {
 	std::vector<event> queue;
 	std::mutex mutex;
+	double_buffer<state> states;
 
 	auto to_key(
 		int glfw_key
@@ -118,9 +119,7 @@ namespace gse::detail {
 	}
 }
 
-auto gse::input::update(const std::function<void()>& in_frame) -> void {
-	static input_state persistent_state;
-
+auto gse::input::update() -> void {
 	std::vector<event> events_to_process;
 	scope([&] {
 		std::scoped_lock lock(mutex);
@@ -128,38 +127,37 @@ auto gse::input::update(const std::function<void()>& in_frame) -> void {
 	});
 
 	const auto& tok = detail::token();
+	auto& persistent_state = states.write();
+	persistent_state.copy_persistent_from(states.read());
 	persistent_state.begin_frame(tok);
 
 	for (const auto& evt : events_to_process) {
 		match(evt)
-			.if_is<key_pressed>([&](const auto& arg) {
+			.if_is([&](const key_pressed& arg) {
 				persistent_state.on_key_pressed(arg.key_code, tok);
 			})
-			.else_if_is<key_released>([&](const auto& arg) {
+			.else_if_is([&](const key_released& arg) {
 				persistent_state.on_key_released(arg.key_code, tok);
 			})
-			.else_if_is<mouse_button_pressed>([&](const auto& arg) {
+			.else_if_is([&](const mouse_button_pressed& arg) {
 				persistent_state.on_mouse_button_pressed(arg.button, tok);
 			})
-			.else_if_is<mouse_button_released>([&](const auto& arg) {
+			.else_if_is([&](const mouse_button_released& arg) {
 				persistent_state.on_mouse_button_released(arg.button, tok);
 			})
-			.else_if_is<mouse_moved>([&](const auto& arg) {
+			.else_if_is([&](const mouse_moved& arg) {
 				persistent_state.on_mouse_moved(static_cast<float>(arg.x_pos), static_cast<float>(arg.y_pos), tok);
 			})
-			.else_if_is<mouse_scrolled>([&](const auto&) {
+			.else_if_is([&](const mouse_scrolled& arg) {
 				// no state tracked for scroll yet
 			})
-			.else_if_is<text_entered>([&](const auto& arg) {
+			.else_if_is([&](const text_entered& arg) {
 				persistent_state.append_codepoint(arg.codepoint, tok);
 			});
 	}
 
 	persistent_state.end_frame(tok);
-
-	global_input_state = &persistent_state;
-	in_frame();
-	global_input_state = nullptr;
+	states.flip();
 }
 
 auto gse::input::key_callback(const int key, const int action) -> void {
@@ -206,6 +204,10 @@ auto gse::input::clear_events() -> void {
 	queue.clear();
 }
 
+auto gse::input::current_state() -> const state* {
+	return &states.read();
+}
+
 export namespace gse::keyboard {
 	auto pressed(
 		key key
@@ -246,49 +248,39 @@ export namespace gse::text {
 }
 
 auto gse::keyboard::pressed(const key key) -> bool {
-	return input::global_input_state && input::global_input_state->key_pressed(key);
+	return input::states.read().key_pressed(key);
 }
 
 auto gse::keyboard::released(const key key) -> bool {
-	return input::global_input_state && input::global_input_state->key_released(key);
+	return input::states.read().key_released(key);
 }
 
 auto gse::keyboard::held(const key key) -> bool {
-	return input::global_input_state && input::global_input_state->key_held(key);
+	return input::states.read().key_held(key);
 }
 
 auto gse::mouse::pressed(const mouse_button button) -> bool {
-	return input::global_input_state && input::global_input_state->mouse_button_pressed(button);
+	return input::states.read().mouse_button_pressed(button);
 }
 
 auto gse::mouse::released(const mouse_button button) -> bool {
-	return input::global_input_state && input::global_input_state->mouse_button_released(button);
+	return input::states.read().mouse_button_released(button);
 }
 
 auto gse::mouse::held(const mouse_button button) -> bool {
-	return input::global_input_state && input::global_input_state->mouse_button_held(button);
+	return input::states.read().mouse_button_held(button);
 }
 
 auto gse::mouse::position() -> unitless::vec2 {
-	if (input::global_input_state) {
-		return input::global_input_state->mouse_position();
-	}
-	return {};
+	return input::states.read().mouse_position();
 }
 
 auto gse::mouse::delta() -> unitless::vec2 {
-	if (input::global_input_state) {
-		return input::global_input_state->mouse_delta();
-	}
-	return {};
+	return input::states.read().mouse_delta();
 }
 
 auto gse::text::entered() -> const std::string& {
-	if (input::global_input_state) {
-		return input::global_input_state->text_entered();
-	}
-	static const std::string empty_string;
-	return empty_string;
+	return input::states.read().text_entered();
 }
 
 auto gse::input::to_key(const int glfw_key) -> std::optional<key> {
