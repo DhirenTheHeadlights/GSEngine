@@ -256,10 +256,10 @@ export namespace gse {
 template <gse::is_component T>
 template <typename... Args>
 auto gse::component_link<T>::add(const owner_id_t& owner_id, registry* reg, Args&&... args) -> T* {
-	gse::assert(!try_get_write(owner_id), std::format(
+	gse::assert(!try_get_write(owner_id), std::source_location::current(),
 		"Attempting to add a component of type {} to owner {} that already has one.",
 		typeid(T).name(), owner_id
-	));
+	);
 
 	const link_id_t new_link_id = generate_id(std::string(typeid(T).name()) + std::to_string(m_next_link_id++));
 	m_link_to_owner_map[new_link_id] = owner_id;
@@ -399,10 +399,9 @@ template <typename ... Args>
 auto gse::hook_link<T>::add(const owner_id_t& owner_id, Args&&... args) -> T* {
 	gse::assert(
 		!try_get(owner_id),
-		std::format(
-			"Attempting to add a hook of type {} to owner {} that already has one.",
-			typeid(T).name(), owner_id
-		)
+		std::source_location::current(),
+		"Attempting to add a hook of type {} to owner {} that already has one.",
+		typeid(T).name(), owner_id
 	);
 
 	const link_id_t new_link_id = generate_id(std::string(typeid(T).name()) + std::to_string(m_next_link_id++));
@@ -618,7 +617,13 @@ auto gse::registry::create(const std::string& name) -> id {
 }
 
 auto gse::registry::activate(const id& id) -> void {
-	assert(m_inactive_ids.contains(id), std::format("Cannot activate entity with id {}: it is not inactive.", id));
+	assert(
+		m_inactive_ids.contains(id), 
+		std::source_location::current(), 
+		"Cannot activate entity with id {}: it is not inactive.", 
+		id
+	);
+
 	m_inactive_ids.erase(id);
 
 	entity object;
@@ -726,7 +731,7 @@ auto gse::registry::add_deferred_action(const id& owner_id, deferred_action&& ac
 
 template <gse::is_component U, typename... Args>
 auto gse::registry::add_component(const id& owner_id, Args&&... args) -> U* {
-	assert(exists(owner_id), std::format("Cannot add component to entity with id {}: it does not exist.", owner_id));
+	assert(exists(owner_id), std::source_location::current(), "Cannot add component to entity with id {}: it does not exist.", owner_id);
 
 	const auto type_idx = std::type_index(typeid(U));
 	if (!m_component_links.contains(type_idx)) {
@@ -741,7 +746,7 @@ auto gse::registry::add_component(const id& owner_id, Args&&... args) -> U* {
 
 template <gse::is_entity_hook U, typename... Args>
 auto gse::registry::add_hook(const id& owner_id, Args&&... args) -> U* {
-	assert(exists(owner_id), std::format("Cannot add hook to entity with id {}: it does not exist.", owner_id));
+	assert(exists(owner_id), std::source_location::current(), "Cannot add hook to entity with id {}: it does not exist.", owner_id);
 
 	const auto type_idx = std::type_index(typeid(U));
 	if (!m_hook_links.contains(type_idx)) {
@@ -836,14 +841,14 @@ auto gse::registry::all_hooks() -> std::vector<hook<entity>*> {
 template <typename U>
 auto gse::registry::linked_object_read(const id& id) -> const U& {
 	const U* ptr = try_linked_object_read<U>(id);
-	assert(ptr, std::format("Linked object (read) of type {} with id {} not found.", typeid(U).name(), id));
+	assert(ptr, std::source_location::current(), "Linked object (read) of type {} with id {} not found.", typeid(U).name(), id);
 	return *ptr;
 }
 
 template <typename U>
 auto gse::registry::linked_object_write(const id& id) -> U& {
 	U* ptr = try_linked_object_write<U>(id);
-	assert(ptr, std::format("Linked object (write) of type {} with id {} not found.", typeid(U).name(), id));
+	assert(ptr, std::source_location::current(), "Linked object (write) of type {} with id {} not found.", typeid(U).name(), id);
 	return *ptr;
 }
 
@@ -1053,25 +1058,25 @@ auto gse::hook<gse::entity>::remove() const -> void {
 
 template <typename T>
 auto gse::hook<gse::entity>::component_read() -> const T& {
-	assert(m_registry->active(owner_id()), std::format("Cannot access component of type {} for entity with id {}: it is not active.", typeid(T).name(), owner_id()));
+	assert(m_registry->active(owner_id()), std::source_location::current(), "Cannot access component of type {} for entity with id {}: it is not active.", typeid(T).name(), owner_id());
 	return m_registry->linked_object_read<T>(owner_id());
 }
 
 template <typename T>
 auto gse::hook<gse::entity>::component_write() -> T& {
-	assert(m_registry->active(owner_id()), std::format("Cannot access component of type {} for entity with id {}: it is not active.", typeid(T).name(), owner_id()));
+	assert(m_registry->active(owner_id()), std::source_location::current(), "Cannot access component of type {} for entity with id {}: it is not active.", typeid(T).name(), owner_id());
 	return m_registry->linked_object_write<T>(owner_id());
 }
 
 template <typename T>
 auto gse::hook<gse::entity>::try_component_read() -> const T* {
-	assert(m_registry->active(owner_id()), std::format("Cannot access component of type {} for entity with id {}: it is not active.", typeid(T).name(), owner_id()));
+	assert(m_registry->active(owner_id()), std::source_location::current(), "Cannot access component of type {} for entity with id {}: it is not active.", typeid(T).name(), owner_id());
 	return m_registry->try_linked_object_read<T>(owner_id());
 }
 
 template <typename T>
 auto gse::hook<gse::entity>::try_component_write() -> T* {
-	assert(m_registry->active(owner_id()), std::format("Cannot access component of type {} for entity with id {}: it is not active.", typeid(T).name(), owner_id()));
+	assert(m_registry->active(owner_id()), std::source_location::current(), "Cannot access component of type {} for entity with id {}: it is not active.", typeid(T).name(), owner_id());
 	return m_registry->try_linked_object_write<T>(owner_id());
 }
 
@@ -1095,7 +1100,7 @@ auto gse::hook<gse::entity>::configure_when_present(Func&& config_func) -> void 
 }
 
 auto gse::hook<gse::entity>::inject(const id& owner_id, registry* reg) -> void {
-	assert(reg != nullptr, std::format("Registry cannot be null for hook with owner id {}.", owner_id));
+	assert(reg != nullptr, std::source_location::current(), "Registry cannot be null for hook with owner id {}.", owner_id);
 	m_registry = reg;
 	swap(owner_id);
 }
@@ -1155,7 +1160,7 @@ auto gse::scene::add_entity(const std::string& name) -> gse::id {
 }
 
 auto gse::scene::remove_entity(const gse::id& id) -> void {
-	assert(m_registry.exists(id), std::format("Cannot remove entity with id {}: it does not exist.", id));
+	assert(m_registry.exists(id), std::source_location::current(), "Cannot remove entity with id {}: it does not exist.", id);
 	m_registry.remove(id);
 	std::erase(m_entities, id);
 }
@@ -1245,7 +1250,7 @@ auto gse::hook<gse::scene>::builder::with() -> builder& {
 }
 
 gse::hook<gse::scene>::hook(scene* owner) : identifiable_owned(owner->id()), m_owner(owner) {
-	assert(m_owner != nullptr, std::format("Scene owner cannot be null for hook with owner id {}.", owner->id()));
+	assert(m_owner != nullptr, std::source_location::current(), "Scene owner cannot be null for hook with owner id {}.", owner->id());
 }
 
 auto gse::hook<gse::scene>::build(const std::string& name) const -> builder {

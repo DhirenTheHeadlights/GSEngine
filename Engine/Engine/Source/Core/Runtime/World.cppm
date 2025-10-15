@@ -172,6 +172,7 @@ auto gse::world::add(const std::string_view name) -> gse::scene* {
 auto gse::world::activate(const gse::id& scene_id) -> void {
 	assert(
 		m_networked,
+		std::source_location::current(),
 		"Cannot force activate scene in a non-networked world."
 	);
 
@@ -192,7 +193,14 @@ auto gse::world::activate(const gse::id& scene_id) -> void {
 
 auto gse::world::deactivate(const gse::id& scene_id) -> void {
 	assert(
+		scene_id == m_active_scene,
+		std::source_location::current(),
+		"Can only force deactivate the currently active scene."
+	);
+
+	assert(
 		m_networked,
+		std::source_location::current(),
 		"Cannot force deactivate a scene in a non-networked world"
 	);
 

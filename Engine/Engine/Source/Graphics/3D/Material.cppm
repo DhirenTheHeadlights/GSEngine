@@ -109,7 +109,7 @@ auto gse::material::compile() -> std::set<std::filesystem::path> {
 			}
 
 			std::ofstream out_file(baked_path, std::ios::binary);
-			assert(out_file.is_open(), std::format("Failed to open baked material file for writing: {}", baked_path.string()));
+			assert(out_file.is_open(), std::source_location::current(), "Failed to open baked material file for writing: {}", baked_path.string());
 
 			constexpr uint32_t magic = 0x474D4154;
 			constexpr uint32_t version = 1;
@@ -140,7 +140,7 @@ auto gse::material::compile() -> std::set<std::filesystem::path> {
 
 		const auto source_mtl_path = entry.path();
 		std::ifstream mtl_file(source_mtl_path);
-		assert(mtl_file.is_open(), std::format("Failed to open source material file: {}", source_mtl_path.string()));
+		assert(mtl_file.is_open(), std::source_location::current(), "Failed to open source material file: {}", source_mtl_path.string());
 
 		std::string current_material_name;
 		material_parse_data current_material_data;
@@ -232,7 +232,7 @@ auto gse::material::load(const renderer::context& context) -> void {
 	}
 
 	std::ifstream in_file(path, std::ios::binary);
-	assert(in_file.is_open(), std::format("Failed to open baked material file for reading: {}", path.string()));
+	assert(in_file.is_open(), std::source_location::current(), "Failed to open baked material file for reading: {}", path.string());
 
 	auto read_string = [](
 		std::ifstream& stream

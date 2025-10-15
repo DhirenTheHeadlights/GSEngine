@@ -313,8 +313,8 @@ auto gse::vulkan::uploader::transition_image_layout(const vk::CommandBuffer cmd,
 }
 
 auto gse::vulkan::uploader::upload_to_buffer(const persistent_allocator::buffer_resource& destination_buffer, const void* data, const std::size_t size) -> void {
-    assert(destination_buffer.allocation.mapped(), "Buffer for uploading must be persistently mapped");
-    assert(size <= destination_buffer.allocation.size(), "Upload size exceeds buffer allocation size");
+    assert(destination_buffer.allocation.mapped(), std::source_location::current(), "Buffer for uploading must be persistently mapped");
+    assert(size <= destination_buffer.allocation.size(), std::source_location::current(), "Upload size exceeds buffer allocation size");
 
     std::memcpy(destination_buffer.allocation.mapped(), data, size);
 }

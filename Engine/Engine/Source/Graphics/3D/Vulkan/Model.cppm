@@ -110,7 +110,7 @@ auto gse::model::compile() -> std::set<std::filesystem::path> {
 		}
 
 		std::ifstream model_file(source_obj_path);
-		assert(model_file.is_open(), "Failed to open model file.");
+		assert(model_file.is_open(),std::source_location::current(), "Failed to open model file.");
 
 		auto split = [](
 			const std::string& str,
@@ -224,7 +224,7 @@ auto gse::model::compile() -> std::set<std::filesystem::path> {
 		}
 
 		std::ofstream out_file(baked_model_path, std::ios::binary);
-		assert(out_file.is_open(), "Failed to open baked model file for writing.");
+		assert(out_file.is_open(), std::source_location::current(), "Failed to open baked model file for writing.");
 
 		constexpr uint32_t magic = 0x474D444C;
 		constexpr uint32_t version = 1;
@@ -255,7 +255,7 @@ auto gse::model::load(const renderer::context& context) -> void {
 		m_meshes.clear();
 
 		std::ifstream in_file(m_baked_model_path, std::ios::binary);
-		assert(in_file.is_open(), "Failed to open baked model file for reading.");
+		assert(in_file.is_open(), std::source_location::current(), "Failed to open baked model file for reading.");
 
 		std::uint32_t magic, version;
 		in_file.read(reinterpret_cast<char*>(&magic), sizeof(magic));

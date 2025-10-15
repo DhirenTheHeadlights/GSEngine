@@ -37,7 +37,8 @@ auto gse::gui::save(id_mapped_collection<menu>& menus, const std::filesystem::pa
 	std::ofstream file(file_path);
 	assert(
 		file.is_open(),
-		std::format("Failed to open GUI layout file for writing: {}", file_path.string())
+		std::source_location::current(),
+		"Failed to open GUI layout file for writing: {}", file_path.string()
 	);
 
 	auto to_string = [](const dock::location location) -> std::string {

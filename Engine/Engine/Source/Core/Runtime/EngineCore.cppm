@@ -6,7 +6,6 @@ import gse.utility;
 import gse.graphics;
 import gse.platform;
 import gse.physics;
-import gse.assert;
 import gse.network;
 
 import :world;

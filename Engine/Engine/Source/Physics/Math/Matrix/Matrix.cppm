@@ -186,7 +186,7 @@ constexpr auto gse::mat<T, Cols, Rows, Dim>::inverse() const -> mat {
 
 	if constexpr (Cols == 2) {
 		const T det = m.determinant();
-		assert(det != static_cast<T>(0), "Matrix is not invertible.");
+		assert(det != static_cast<T>(0), std::source_location::current(), "Matrix is not invertible.");
 		const T inv_det = static_cast<T>(1) / det;
 		return mat<T, 2, 2>({
 			unitless::vec_t<T, 2>{ m[1][1] * inv_det, -m[1][0] * inv_det },
@@ -195,7 +195,7 @@ constexpr auto gse::mat<T, Cols, Rows, Dim>::inverse() const -> mat {
 	}
 	else if constexpr (Cols == 3) {
 		const T det = m.determinant();
-		assert(det != static_cast<T>(0), "Matrix is not invertible.");
+		assert(det != static_cast<T>(0), std::source_location::current(), "Matrix is not invertible.");
 		const T inv_det = static_cast<T>(1) / det;
 		return mat<T, 3, 3>({
 				unitless::vec_t<T, 3>{
@@ -241,7 +241,7 @@ constexpr auto gse::mat<T, Cols, Rows, Dim>::inverse() const -> mat {
 		unitless::vec_t<T, 4> fac3{ -(m[1][0] * c06 - m[1][1] * c12 + m[1][2] * c15), m[0][0] * c06 - m[0][1] * c12 + m[0][2] * c15, -(m[0][0] * c07 - m[0][1] * c13 + m[0][2] * c16), m[0][0] * c08 - m[0][1] * c14 + m[0][2] * c17 };
 
 		const T det = m[0][0] * fac0[0] + m[0][1] * fac1[0] + m[0][2] * fac2[0] + m[0][3] * fac3[0];
-		assert(det != static_cast<T>(0), "Matrix is not invertible.");
+		assert(det != static_cast<T>(0), std::source_location::current(), "Matrix is not invertible.");
 
 		const T inv_det = static_cast<T>(1) / det;
 		return mat<T, 4, 4>({

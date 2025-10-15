@@ -121,6 +121,7 @@ auto gse::vulkan::frame(const frame_params& params) -> void {
             vk::True,
             std::numeric_limits<std::uint64_t>::max()
         ) == vk::Result::eSuccess,
+        std::source_location::current(),
         "Failed to wait for in-flight fence!"
     );
 
@@ -153,7 +154,7 @@ auto gse::vulkan::frame(const frame_params& params) -> void {
         return;
     }
 
-    assert(result == vk::Result::eSuccess || result == vk::Result::eSuboptimalKHR, "Failed to acquire swap chain image!");
+    assert(result == vk::Result::eSuccess || result == vk::Result::eSuboptimalKHR, std::source_location::current(), "Failed to acquire swap chain image!");
 
     device.resetFences(*params.config.sync_config().in_flight_fences[params.config.current_frame()]);
 
@@ -225,6 +226,7 @@ auto gse::vulkan::frame(const frame_params& params) -> void {
     else {
         assert(
             present_result == vk::Result::eSuccess,
+            std::source_location::current(),
             "Failed to present swap chain image!"
         );
     }
@@ -336,7 +338,7 @@ auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_co
     }
 
     VkSurfaceKHR temp_surface;
-    assert(glfwCreateWindowSurface(*instance, window, nullptr, &temp_surface) == VK_SUCCESS, "Error creating window surface");
+    assert(glfwCreateWindowSurface(*instance, window, nullptr, &temp_surface) == VK_SUCCESS, std::source_location::current(), "Error creating window surface");
 
     vk::raii::SurfaceKHR surface(instance, temp_surface);
 
@@ -345,7 +347,7 @@ auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_co
 
 auto gse::vulkan::create_device_and_queues(const instance_config& instance_data) -> std::tuple<device_config, queue_config> {
     const auto devices = instance_data.instance.enumeratePhysicalDevices();
-    assert(!devices.empty(), "No Vulkan-compatible GPUs found!");
+    assert(!devices.empty(), std::source_location::current(), "No Vulkan-compatible GPUs found!");
 
     vk::raii::PhysicalDevice physical_device = nullptr;
 

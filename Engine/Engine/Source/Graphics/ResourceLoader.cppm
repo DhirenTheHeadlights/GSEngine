@@ -352,7 +352,7 @@ auto gse::resource::loader<R, C>::instantly_load(const id& resource_id) -> void 
 	{
 		std::lock_guard lock(m_mutex);
 		slot_ptr = m_resources.try_get(resource_id);
-		assert(slot_ptr, "invalid id");
+		assert(slot_ptr, std::source_location::current(), "invalid id");
 		if (slot_ptr->current_state == state::loaded ||
 			slot_ptr->current_state == state::loading)
 			return;
@@ -396,7 +396,7 @@ template <typename R, typename C> requires gse::is_resource<R, C>
 auto gse::resource::loader<R, C>::add(R&& resource) -> handle<R> {
 	std::lock_guard lock(m_mutex);
 	const auto id = resource.id();
-	assert(!m_resources.contains(id), std::format("Resource with ID {} already exists.", id));
+	assert(!m_resources.contains(id), std::source_location::current(), "Resource with ID {} already exists.", id);
 
 	auto resource_ptr = std::make_unique<R>(std::move(resource));
 	m_resources.add(id, slot(std::move(resource_ptr), state::loaded, ""));
@@ -406,6 +406,6 @@ auto gse::resource::loader<R, C>::add(R&& resource) -> handle<R> {
 
 template <typename Resource, typename RenderingContext> requires gse::is_resource<Resource, RenderingContext>
 auto gse::resource::loader<Resource, RenderingContext>::get_unlocked(const id& id) const -> handle<Resource> {
-	assert(m_resources.contains(id), std::format("Resource with ID {} not found in this loader.", id));
+	assert(m_resources.contains(id), std::source_location::current(), "Resource with ID {} not found in this loader.", id);
 	return handle<Resource>(id, const_cast<loader*>(this));
 }

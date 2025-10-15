@@ -50,7 +50,7 @@ export namespace gse::network {
 
 gse::network::udp_socket::udp_socket() : socket_id(INVALID_SOCKET) {
 	socket_id = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	assert(socket_id != INVALID_SOCKET, "Failed to create socket.");
+	assert(socket_id != INVALID_SOCKET, std::source_location::current(), "Failed to create socket.");
 }
 
 gse::network::udp_socket::~udp_socket() {
@@ -69,13 +69,13 @@ auto gse::network::udp_socket::bind(const address& address) const -> void {
 	inet_pton(AF_INET, address.ip.c_str(), &addr.sin_addr);
 
 	if (::bind(socket_id, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
-		assert(false, "Failed to bind socket.");
+		assert(false, std::source_location::current(), "Failed to bind socket.");
 		closesocket(socket_id);
 	}
 
 	u_long mode = 1;
 	if (ioctlsocket(socket_id, FIONBIO, &mode) == SOCKET_ERROR) {
-		assert(false, "Failed to set non-blocking mode.");
+		assert(false, std::source_location::current(), "Failed to set non-blocking mode.");
 	}
 }
 

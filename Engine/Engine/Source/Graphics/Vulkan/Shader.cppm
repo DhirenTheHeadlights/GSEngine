@@ -213,7 +213,7 @@ namespace gse {
 			if (std::holds_alternative<vk::DescriptorSetLayout>(set.layout)) {
 				return std::get<vk::DescriptorSetLayout>(set.layout);
 			}
-			assert(false, "Shader set layout is not initialized");
+			assert(false, std::source_location::current(), "Shader set layout is not initialized");
 			return {};
 		}
 	};
@@ -305,7 +305,7 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 				default: break;
 			}
 
-			assert(false, "Unsupported vertex attribute type/size for Vulkan format");
+			assert(false, std::source_location::current(), "Unsupported vertex attribute type/size for Vulkan format");
 			return vk::Format::eUndefined;
 		};
 
@@ -688,7 +688,7 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 	Slang::ComPtr<slang::IGlobalSession> global_session;
 	{
 		const auto r = createGlobalSession(global_session.writeRef());
-		assert(SLANG_SUCCEEDED(r) && global_session, "Failed to create Slang global session");
+		assert(SLANG_SUCCEEDED(r) && global_session, std::source_location::current(), "Failed to create Slang global session");
 	}
 
 	Slang::ComPtr<slang::ISession> session;
@@ -720,7 +720,7 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 		};
 
 		const auto rs = global_session->createSession(sdesc, session.writeRef());
-		assert(SLANG_SUCCEEDED(rs) && session, "Failed to create Slang session");
+		assert(SLANG_SUCCEEDED(rs) && session, std::source_location::current(), "Failed to create Slang session");
 	}
 
 	global_layouts.clear();
@@ -739,7 +739,7 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 			const std::string layout_name = path.stem().string();
 
 			auto it = string_to_layout_enum.find(layout_name);
-			assert(it != string_to_layout_enum.end(), "Layout file '" + filename + "' has no matching descriptor_layout enum.");
+			assert(it != string_to_layout_enum.end(), std::source_location::current(), "Layout file '{}' has no matching descriptor_layout enum.", filename);
 
 			const descriptor_layout type = it->second;
 			shader_layout_types[layout_name] = type;
@@ -749,7 +749,7 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 			if (diags && diags->getBufferSize()) {
 				std::fprintf(stderr, "%s", static_cast<const char*>(diags->getBufferPointer()));
 			}
-			assert(mod, std::format("Failed to load layout module '{}'", filename));
+			assert(mod, std::source_location::current(), "Failed to load layout module '{}'", filename);
 
 			Slang::ComPtr<slang::IComponentType> program;
 			{
@@ -757,7 +757,7 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 				if (diags && diags->getBufferSize()) {
 					std::fprintf(stderr, "%s", static_cast<const char*>(diags->getBufferPointer()));
 				}
-				assert(SLANG_SUCCEEDED(lr) && program, "Failed to link layout program");
+				assert(SLANG_SUCCEEDED(lr) && program, std::source_location::current(), "Failed to link layout program");
 			}
 
 			slang::ProgramLayout* layout = program->getLayout(0, diags.writeRef());
@@ -765,7 +765,7 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 			if (diags && diags->getBufferSize()) {
 				std::fprintf(stderr, "%s", static_cast<const char*>(diags->getBufferPointer()));
 			}
-			assert(layout, "Failed to get ProgramLayout for layout");
+			assert(layout, std::source_location::current(), "Failed to get ProgramLayout for layout");
 
 			struct layout reflected_layout = reflect_descriptor_sets(layout);
 
@@ -823,7 +823,7 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 		if (diags && diags->getBufferSize()) {
 			std::fprintf(stderr, "%s", static_cast<const char*>(diags->getBufferPointer()));
 		}
-		assert(mod, std::format("Failed to load module '{}'", filename));
+		assert(mod, std::source_location::current(), "Failed to load module '{}'", filename);
 
 		Slang::ComPtr<slang::IEntryPoint> vs_ep, fs_ep;
 		{
@@ -839,7 +839,7 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 				}
 			}
 		}
-		assert(vs_ep && fs_ep, std::format("Shader '{}' must define vs_main and fs_main", filename));
+		assert(vs_ep && fs_ep, std::source_location::current(), "Shader '{}' must define vs_main and fs_main", filename);
 
 		Slang::ComPtr<slang::IComponentType> composed;
 		{
@@ -848,7 +848,7 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 			if (diags && diags->getBufferSize()) {
 				std::fprintf(stderr, "%s", static_cast<const char*>(diags->getBufferPointer()));
 			}
-			assert(SLANG_SUCCEEDED(cr) && composed, "Failed to compose shader program");
+			assert(SLANG_SUCCEEDED(cr) && composed, std::source_location::current(), "Failed to compose shader program");
 		}
 
 		Slang::ComPtr<slang::IComponentType> program;
@@ -857,7 +857,7 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 			if (diags && diags->getBufferSize()) {
 				std::fprintf(stderr, "%s", static_cast<const char*>(diags->getBufferPointer()));
 			}
-			assert(SLANG_SUCCEEDED(lr) && program, "Failed to link shader program");
+			assert(SLANG_SUCCEEDED(lr) && program, std::source_location::current(), "Failed to link shader program");
 		}
 
 		auto map_layout_kind = [](
@@ -899,7 +899,7 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 		auto f_kind = layout_from_attr(fs_ep.get());
 
 		if (v_kind && f_kind) {
-			assert(*v_kind == *f_kind, std::format("Mismatched [Layout(...)] on vs_main/fs_main in shader: {}", filename));
+			assert(*v_kind == *f_kind, std::source_location::current(), "Mismatched [Layout(...)] on vs_main/fs_main in shader: {}", filename);
 		}
 
 		auto shader_layout_type = v_kind.value_or(f_kind.value_or(descriptor_layout::custom));
@@ -909,7 +909,7 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 		if (diags && diags->getBufferSize()) {
 			std::fprintf(stderr, "%s", static_cast<const char*>(diags->getBufferPointer()));
 		}
-		assert(layout, "Failed to get ProgramLayout");
+		assert(layout, std::source_location::current(), "Failed to get ProgramLayout");
 
 		vertex_input reflected_vertex_input;
 		std::unordered_map<set::binding_type, set> reflected_sets;
@@ -1034,7 +1034,7 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 					}
 
 					const vk::Format fmt = to_vk_vertex_format(ty);
-					assert(fmt != vk::Format::eUndefined, "Unsupported vertex attribute type");
+					assert(fmt != vk::Format::eUndefined, std::source_location::current(), "Unsupported vertex attribute type");
 
 					std::uint32_t loc;
 					if (const auto el = explicit_location(vl, session->getGlobalSession()); el && !used_locations.contains(*el)) {
@@ -1118,7 +1118,7 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 		}
 
 		std::ofstream out(dest_asset_file, std::ios::binary);
-		assert(out.is_open(), std::format("Failed to create gshader file: {}", dest_asset_file.string()));
+		assert(out.is_open(), std::source_location::current(), "Failed to create gshader file: {}", dest_asset_file.string());
 		write_data(out, shader_layout_type);
 		write_data(out, static_cast<std::uint32_t>(reflected_vertex_input.attributes.size()));
 		for (const auto& attr : reflected_vertex_input.attributes) write_data(out, attr);
@@ -1169,8 +1169,8 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 			if (gen_diags && gen_diags->getBufferSize()) {
 				std::fprintf(stderr, "%s", static_cast<const char*>(gen_diags->getBufferPointer()));
 			}
-			assert(SLANG_SUCCEEDED(rv) && vert_blob, "Failed to get vertex SPIR-V");
-			assert(SLANG_SUCCEEDED(rf) && frag_blob, "Failed to get fragment SPIR-V");
+			assert(SLANG_SUCCEEDED(rv) && vert_blob, std::source_location::current(), "Failed to get vertex SPIR-V");
+			assert(SLANG_SUCCEEDED(rf) && frag_blob, std::source_location::current(), "Failed to get fragment SPIR-V");
 			const std::size_t vert_size = vert_blob->getBufferSize();
 			const std::size_t frag_size = frag_blob->getBufferSize();
 			write_data(out, vert_size);
@@ -1190,7 +1190,7 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 
 auto gse::shader::load(const renderer::context& context) -> void {
 	std::ifstream in(m_info.path, std::ios::binary);
-	assert(in.is_open(), std::format("Failed to open gshader asset: {}", m_info.path.string()));
+	assert(in.is_open(), std::source_location::current(), "Failed to open gshader asset: {}", m_info.path.string());
 
 	auto read_string = [](
 		std::ifstream& stream,
@@ -1258,7 +1258,7 @@ auto gse::shader::load(const renderer::context& context) -> void {
 		}
 	}
 	else {
-		assert(global_layouts.contains(shader_layout_type), "Global shader layout not found");
+		assert(global_layouts.contains(shader_layout_type), std::source_location::current(), "Global shader layout not found");
 		m_layout = global_layouts.at(shader_layout_type);
 	}
 
@@ -1327,7 +1327,7 @@ auto gse::shader::load(const renderer::context& context) -> void {
 					case vk::Format::eR32G32B32A32Sint:
 					case vk::Format::eR32G32B32A32Uint:        return 16;
 					default:
-						assert(false, "Unsupported vertex format in size calc");
+						assert(false, std::source_location::current(), "Unsupported vertex format in size calc");
 						return 0;
 				}
 			};
@@ -1427,7 +1427,7 @@ auto gse::shader::required_bindings() const -> std::vector<std::string> {
 
 auto gse::shader::push_block(const std::string& name) const -> struct uniform_block {
 	const auto it = std::ranges::find_if(m_push_constants, [&](auto& b){ return b.name == name; });
-    assert(it != m_push_constants.end(), std::format("Push constant block '{}' not found", name));
+    assert(it != m_push_constants.end(), std::source_location::current(), "Push constant block '{}' not found", name);
     return *it;
 }
 
@@ -1441,7 +1441,9 @@ auto gse::shader::uniform_block(const std::string& name) const -> class uniform_
 	}
 	assert(
 		false,
-		std::format("Uniform block '{}' not found in shader", name)
+		std::source_location::current(),
+		"Uniform block '{}' not found in shader",
+		name
 	);
 	return {};
 }
@@ -1472,10 +1474,9 @@ auto gse::shader::binding(const std::string& name) const -> std::optional<vk::De
 auto gse::shader::layout(const set::binding_type type) const -> vk::DescriptorSetLayout {
 	assert(
 		m_layout.sets.contains(type),
-		std::format(
-			"Shader does not have set of type {}",
-			static_cast<int>(type)
-		)
+		std::source_location::current(),
+		"Shader does not have set of type {}",
+		static_cast<int>(type)
 	);
 	return layout(m_layout.sets.at(type));
 }
@@ -1501,7 +1502,7 @@ auto gse::shader::push_constant_range(const std::string_view& name) const -> vk:
 		}
 	);
 
-	assert(it != m_push_constants.end(), std::format("Push constant block '{}' not found in shader", name));
+	assert(it != m_push_constants.end(), std::source_location::current(), "Push constant block '{}' not found in shader", name);
 
 	return vk::PushConstantRange{
 		it->stage_flags,
@@ -1560,6 +1561,7 @@ auto gse::shader::descriptor_writes(const vk::DescriptorSet set, const std::unor
 	const auto total_inputs = buffer_infos.size() + image_infos.size();
 	assert(
 		used_keys.size() == total_inputs,
+		std::source_location::current(),
 		"Some descriptor inputs were not used. Possibly extra or misnamed keys?"
 	);
 	return writes;
@@ -1572,10 +1574,9 @@ auto gse::shader::set_uniform(std::string_view full_name, const T& value, const 
 
 	assert(
 		dot_pos != std::string_view::npos,
-		std::format(
-			"Uniform name '{}' must be in the format 'Block.member'",
-			full_name
-		)
+		std::source_location::current(),
+		"Uniform name '{}' must be in the format 'Block.member'",
+		full_name
 	);
 
 	const auto block_name = std::string(full_name.substr(0, dot_pos));
@@ -1589,10 +1590,9 @@ auto gse::shader::set_uniform(std::string_view full_name, const T& value, const 
 
 			assert(
 				b.member.has_value(),
-				std::format(
-					"No uniform block data for '{}'",
-					block_name
-				)
+				std::source_location::current(),
+				"No uniform block data for '{}'",
+				block_name
 			);
 
 			const auto& ub = b.member.value();
@@ -1601,32 +1601,29 @@ auto gse::shader::set_uniform(std::string_view full_name, const T& value, const 
 
 			assert(
 				mem_it != ub.members.end(),
-				std::format(
-					"Member '{}' not found in block '{}'",
-					member_name,
-					block_name
-				)
+				std::source_location::current(),
+				"Member '{}' not found in block '{}'",
+				member_name,
+				block_name
 			);
 
 			const auto& mem_info = mem_it->second;
 
 			assert(
 				sizeof(T) <= mem_info.size,
-				std::format(
-					"Value size {} exceeds member '{}' size {}",
-					sizeof(T),
-					member_name,
-					mem_info.size
-				)
+				std::source_location::current(),
+				"Value size {} exceeds member '{}' size {}",
+				sizeof(T),
+				member_name,
+				mem_info.size
 			);
 
 			assert(
 				alloc.mapped(),
-				std::format(
-					"Attempted to set uniform '{}.{}' but memory is not mapped",
-					block_name,
-					member_name
-				)
+				std::source_location::current(),
+				"Attempted to set uniform '{}.{}' but memory is not mapped",
+				block_name,
+				member_name
 			);
 
 			std::memcpy(
@@ -1640,7 +1637,9 @@ auto gse::shader::set_uniform(std::string_view full_name, const T& value, const 
 
 	assert(
 		false,
-		std::format("Uniform block '{}' not found", block_name)
+		std::source_location::current(),
+		"Uniform block '{}' not found",
+		block_name
 	);
 }
 
@@ -1657,28 +1656,36 @@ auto gse::shader::set_uniform_block(const std::string_view block_name, const std
 			break;
 		}
 	}
-	assert(block_binding, std::format("Uniform block '{}' not found", block_name));
+	assert(block_binding, std::source_location::current(), "Uniform block '{}' not found", block_name);
 
 	const auto& block = *block_binding->member;
-	assert(alloc.mapped(), "Attempted to set uniform block but memory is not mapped");
+	assert(alloc.mapped(), std::source_location::current(), "Attempted to set uniform block but memory is not mapped");
 
 	for (const auto& [name, bytes] : data) {
 		auto member_it = block.members.find(name);
 
 		assert(
 			member_it != block.members.end(),
-			std::format("Uniform member '{}' not found in block '{}'", name, block_name)
+			std::source_location::current(),
+			"Uniform member '{}' not found in block '{}'",
+			name,
+			block_name
 		);
 
 		const auto& member_info = member_it->second;
 
 		assert(
 			bytes.size() <= member_info.size,
-			std::format("Data size {} > member size {} for '{}.{}'", bytes.size(), member_info.size, block_name, name)
+			std::source_location::current(),
+			"Data size {} > member size {} for '{}.{}'",
+			bytes.size(),
+			member_info.size,
+			block_name,
+			name
 		);
 
 		std::memcpy(
-			static_cast<std::byte*>(alloc.mapped()) + member_info.offset,
+			alloc.mapped() + member_info.offset,
 			bytes.data(),
 			bytes.size()
 		);
@@ -1696,30 +1703,32 @@ auto gse::shader::set_ssbo_element(std::string_view block_name, const std::uint3
 		}
 		if (block_binding) break;
 	}
-	assert(block_binding, std::format("SSBO '{}' not found", block_name));
+	assert(block_binding, std::source_location::current(), "SSBO '{}' not found", block_name);
 
 	const auto& block = *block_binding->member;
 	const auto elem_stride = block.size;
-	assert(elem_stride > 0, std::format("SSBO '{}' has zero element stride", block_name));
+	assert(elem_stride > 0, std::source_location::current(), "SSBO '{}' has zero element stride", block_name);
 
-	assert(alloc.mapped(), "Attempted to set SSBO but memory is not mapped");
+	assert(alloc.mapped(), std::source_location::current(), "Attempted to set SSBO but memory is not mapped");
 
 	const auto mit = block.members.find(std::string(member_name));
 	assert(
 		mit != block.members.end(),
-		std::format("Member '{}' not found in SSBO '{}'", member_name, block_name)
+		std::source_location::current(),
+		"Member '{}' not found in SSBO '{}'",
+		member_name,
+		block_name
 	);
 
 	const auto& m_info = mit->second;
 	assert(
 		bytes.size() <= m_info.size,
-		std::format(
-			"Bytes size {} > member '{}' size {} in SSBO '{}'",
-			bytes.size(), 
-			member_name,
-			m_info.size,
-			block_name
-		)
+		std::source_location::current(),
+		"Bytes size {} > member '{}' size {} in SSBO '{}'",
+		bytes.size(),
+		member_name,
+		m_info.size,
+		block_name
 	);
 
 	const auto base = static_cast<std::byte*>(alloc.mapped());
@@ -1741,17 +1750,21 @@ auto gse::shader::set_ssbo_struct(std::string_view block_name, const std::uint32
 		}
 		if (block_binding) break;
 	}
-	assert(block_binding, std::format("SSBO '{}' not found", block_name));
+	assert(block_binding, std::source_location::current(), "SSBO '{}' not found", block_name);
 
 	const auto& block = *block_binding->member;
 	const auto elem_stride = block.size;
 
-	assert(elem_stride > 0, std::format("SSBO '{}' has zero element stride", block_name));
-	assert(alloc.mapped(), "Attempted to set SSBO but memory is not mapped");
+	assert(elem_stride > 0, std::source_location::current(), "SSBO '{}' has zero element stride", block_name);
+	assert(alloc.mapped(), std::source_location::current(), "Attempted to set SSBO but memory is not mapped");
 
 	assert(
 		element_bytes.size() == elem_stride,
-		std::format("Element bytes {} != stride {} for SSBO '{}'", element_bytes.size(), elem_stride, block_name)
+		std::source_location::current(),
+		"Element bytes {} != stride {} for SSBO '{}'",
+		element_bytes.size(),
+		elem_stride,
+		block_name
 	);
 
 	const auto base = static_cast<std::byte*>(alloc.mapped());
@@ -1768,7 +1781,9 @@ auto gse::shader::push_descriptor(const vk::CommandBuffer command, const vk::Pip
 			if (member_name == name) {
 				assert(
 					layout_binding.descriptorType == vk::DescriptorType::eCombinedImageSampler || layout_binding.descriptorType == vk::DescriptorType::eSampledImage,
-					std::format("Binding '{}' is not a combined image sampler", name)
+					std::source_location::current(),
+					"Binding '{}' is not a combined image sampler",
+					name
 				);
 
 				auto info = image_info;
@@ -1796,7 +1811,7 @@ auto gse::shader::push_descriptor(const vk::CommandBuffer command, const vk::Pip
 			}
 		}
 	}
-	assert(false, std::format("Binding '{}' not found in shader", name));
+	assert(false, std::source_location::current(), "Binding '{}' not found in shader", name);
 }
 
 auto gse::shader::push_bytes(const vk::CommandBuffer command, const vk::PipelineLayout layout, std::string_view block_name, const void* data, const std::size_t offset) const -> void {
@@ -1807,10 +1822,10 @@ auto gse::shader::push_bytes(const vk::CommandBuffer command, const vk::Pipeline
 		}
 	);
 
-	assert(it != m_push_constants.end(), std::format("Push constant block '{}' not found in shader", block_name));
+	assert(it != m_push_constants.end(), std::source_location::current(), "Push constant block '{}' not found in shader", block_name);
 
 	const auto& block = *it;
-	assert(offset + block.size <= 128, "Push constant default limit is 128 bytes");
+	assert(offset + block.size <= 128, std::source_location::current(), "Push constant default limit is 128 bytes");
 
 	command.pushConstants(
 		layout,
@@ -1835,11 +1850,11 @@ auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout
         }
     );
 
-    assert_lazy(
+    assert(
 		it != m_push_constants.end(),
-		[block_name] {
-			return std::format("Push constant block '{}' not found in shader", block_name);
-		}
+		std::source_location::current(),
+		"Push constant block '{}' not found in shader",
+		block_name
 	);
 
     const auto& block = *it;
@@ -1849,11 +1864,10 @@ auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout
         const std::string_view name_sv = name_like;
 
         const auto mit = block.members.find(std::string(name_sv));
-        assert_lazy(
+        assert(
 			mit != block.members.end(),
-            [name_sv, block_name] {
-				return std::format("Member '{}' not found in push constant block '{}'", name_sv, block_name);
-			}
+			std::source_location::current(),
+            "Member '{}' not found in push constant block '{}'", name_sv, block_name
 		);
 
         const auto& mi = mit->second;
@@ -1877,11 +1891,10 @@ auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout
 
         const auto [src_ptr, n] = ptr_and_size(value_like);
 
-		assert_lazy(
+		assert(
 			n <= mi.size,
-			[mi, n] {
-				return std::format("Provided bytes for '{}' (size {}) exceed member size ({})", mi.name, n, mi.size);
-			}
+			std::source_location::current(),
+			"Provided bytes for '{}' (size {}) exceed member size ({})", mi.name, n, mi.size
 		);
 
         std::memcpy(buffer.data() + mi.offset, src_ptr, n);
@@ -1905,15 +1918,15 @@ auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout
 auto gse::shader::descriptor_set(const vk::raii::Device& device, const vk::DescriptorPool pool, const set::binding_type type, const std::uint32_t count) const -> std::vector<vk::raii::DescriptorSet> {
 	assert(
 		m_layout.sets.contains(type),
-		std::format(
-			"Shader does not have set of type {}",
-			static_cast<int>(type)
-		)
+		std::source_location::current(),
+		"Shader does not have set of type {}",
+		static_cast<int>(type)
 	);
 
 	const auto& set_info = layout(m_layout.sets.at(type));
 	assert(
 		set_info,
+		std::source_location::current(),
 		"Descriptor set layout is not initialized"
 	);
 
@@ -1928,6 +1941,6 @@ auto gse::shader::descriptor_set(const vk::raii::Device& device, const vk::Descr
 
 auto gse::shader::descriptor_set(const vk::raii::Device& device, const vk::DescriptorPool pool, const set::binding_type type) const -> vk::raii::DescriptorSet {
 	auto sets = descriptor_set(device, pool, type, 1);
-	assert(!sets.empty(), "Failed to allocate descriptor set for shader layout");
+	assert(!sets.empty(), std::source_location::current(), "Failed to allocate descriptor set for shader layout");
 	return std::move(sets.front());
 }

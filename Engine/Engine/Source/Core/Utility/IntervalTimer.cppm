@@ -30,14 +30,16 @@ export namespace gse {
 gse::interval_timer::interval_timer(const time interval) : m_interval(interval) {
 	assert(
 		m_interval >= time(0),
-		std::format("Interval must be non-negative, got {}", m_interval)
+		std::source_location::current(),
+		"Interval must be non-negative, got {}", m_interval
 	);
 }
 
 auto gse::interval_timer::tick(const time dt) -> bool {
 	assert(
 		dt >= time(0),
-		std::format("Delta time must be non-negative, got {}", dt)
+		std::source_location::current(),
+		"Delta time must be non-negative, got {}", dt
 	);
 
 	m_accumulated += dt;

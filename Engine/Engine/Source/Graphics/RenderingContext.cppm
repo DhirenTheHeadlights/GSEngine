@@ -136,7 +136,12 @@ gse::renderer::context::~context() {
 template <typename T>
 auto gse::renderer::context::add_loader() -> resource::loader<T, context>* {
 	const auto type_index = std::type_index(typeid(T));
-	assert(!m_resource_loaders.contains(type_index), std::format("Resource loader for type {} already exists.", type_index.name()));
+	assert(
+		!m_resource_loaders.contains(type_index),
+		std::source_location::current(), 
+		"Resource loader for type {} already exists.",
+		type_index.name()
+	);
 
 	auto new_loader = std::make_unique<resource::loader<T, context>>(*this);
 	auto* loader_ptr = new_loader.get();
@@ -251,12 +256,12 @@ auto gse::renderer::context::loader() const -> const resource::loader<T, context
 }
 
 auto gse::renderer::context::config() const -> const vulkan::config& {
-	assert(m_config.get(), "Vulkan config is not initialized.");
+	assert(m_config.get(), std::source_location::current(), "Vulkan config is not initialized.");
 	return *m_config;
 }
 
 auto gse::renderer::context::config() -> vulkan::config& {
-	assert(m_config.get(), "Vulkan config is not initialized.");
+	assert(m_config.get(), std::source_location::current(), "Vulkan config is not initialized.");
 	return *m_config;
 }
 
@@ -306,6 +311,6 @@ auto gse::renderer::context::shutdown() -> void {
 }
 
 auto gse::renderer::context::loader(const std::type_index& type_index) const -> resource::loader_base* {
-	assert(m_resource_loaders.contains(type_index), std::format("Resource loader for type {} does not exist.", type_index.name()));
+	assert(m_resource_loaders.contains(type_index), std::source_location::current(), "Resource loader for type {} does not exist.", type_index.name());
 	return m_resource_loaders.at(type_index).get();
 }
