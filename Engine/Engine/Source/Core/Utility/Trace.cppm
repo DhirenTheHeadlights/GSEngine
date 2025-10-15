@@ -282,42 +282,39 @@ auto gse::trace::scope(const id& id, F&& f, const std::uint64_t parent) -> void 
 	ensure_tls_registered();
 
 	const auto tid = make_tid();
-	const bool reparent = parent != 0 && tls.stack.empty();
+	const bool need_push_parent = parent != 0 && (tls.stack.empty() || tls.stack.back() != parent);
 
-	if (reparent) {
-		tls.stack.push_back(parent);
+	if (need_push_parent) {
+	    tls.stack.push_back(parent);
 	}
 
 	const auto eid = next_eid.fetch_add(1, std::memory_order::relaxed);
-
 	emit({
-		.type = event_type::begin,
-		.id = id.number(),
-		.eid = eid,
-		.parent_eid = parent,
-		.tid = tid,
-		.ts = system_clock::now<std::uint64_t>()
+	    .type = event_type::begin,
+	    .id = id.number(),
+	    .eid = eid,
+	    .parent_eid = parent,
+	    .tid = tid,
+	    .ts = system_clock::now<std::uint64_t>()
 	});
 
 	tls.stack.push_back(eid);
 
-	auto guard = make_scope_exit([eid, parent, tid, uid = id.number(), reparent] {
-		if (!tls.stack.empty() && tls.stack.back() == eid) {
-			emit({
-				.type = event_type::end,
-				.id = uid,
-				.eid = eid,
-				.parent_eid = parent,
-				.tid = tid,
-				.ts = system_clock::now<std::uint64_t>()
-			});
-
-			tls.stack.pop_back();
-
-			if (reparent && !tls.stack.empty() && tls.stack.back() == parent) {
-                tls.stack.pop_back();
-			}
-		}
+	auto guard = make_scope_exit([eid, parent, tid, uid = id.number(), need_push_parent] {
+	    if (!tls.stack.empty() && tls.stack.back() == eid) {
+	        emit({
+	            .type = event_type::end,
+	            .id = uid,
+	            .eid = eid,
+	            .parent_eid = parent,
+	            .tid = tid,
+	            .ts = system_clock::now<std::uint64_t>()
+	        });
+	        tls.stack.pop_back();
+	        if (need_push_parent && !tls.stack.empty() && tls.stack.back() == parent) {
+	            tls.stack.pop_back();
+	        }
+	    }
 	});
 
 	std::forward<F>(f)();
