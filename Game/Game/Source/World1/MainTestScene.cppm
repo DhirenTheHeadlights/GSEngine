@@ -18,9 +18,7 @@ export namespace gs {
 			arena::create(this);
 
 			build("Player")
-				.with<gse::free_camera>({
-					.initial_position = {}
-				});
+				.with<player>();
 
 			build("Backpack")
 				.with<backpack>();

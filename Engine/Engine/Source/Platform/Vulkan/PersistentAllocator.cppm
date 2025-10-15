@@ -241,7 +241,8 @@ auto gse::vulkan::persistent_allocator::create_image(const device_config& config
 	auto expected_alloc = allocate(config, requirements, properties);
 
 	if (!expected_alloc) {
-		assert(false,
+		assert(
+			false,
 			std::source_location::current(),
 			"Failed to allocate memory for image with size {} and usage {} after trying all preferences.",
 			requirements.size,
