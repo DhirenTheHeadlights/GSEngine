@@ -59,7 +59,7 @@ export namespace gse::gui::draw {
 		tree_options opt,
 		tree_selection* sel,
 		id& active_widget_id
-	) -> void;
+	) -> bool;
 }
 
 namespace gse::gui::draw {
@@ -92,18 +92,23 @@ namespace gse::gui::draw {
 		std::uint64_t tree_scope,
 		int level,
 		id& active_widget_id
-	) -> void;
+	) -> bool;
 }
 
 template <typename T>
-auto gse::gui::draw::tree(widget_context& ctx, std::span<const T> roots, const tree_ops<T>& fns, tree_options opt, tree_selection* sel, id& active_widget_id) -> void {
-	if (!ctx.current_menu || !ctx.font.valid()) return;
+auto gse::gui::draw::tree(widget_context& ctx, std::span<const T> roots, const tree_ops<T>& fns, tree_options opt, tree_selection* sel, id& active_widget_id) -> bool {
+	if (!ctx.current_menu || !ctx.font.valid()) {
+		return false;
+	}
 
 	const auto tree_scope = ids::current_seed();
+	bool is_active = false;
 
 	for (const auto& r : roots) {
-		node(ctx, r, fns, opt, sel, tree_scope, 0, active_widget_id);
+		is_active |= node(ctx, r, fns, opt, sel, tree_scope, 0, active_widget_id);
 	}
+
+	return is_active;
 }
 
 template <typename T>
@@ -129,7 +134,7 @@ auto gse::gui::draw::is_leaf(const T& t, const tree_ops<T>& ops) -> bool {
 }
 
 template <typename T>
-auto gse::gui::draw::node(widget_context& ctx, const T& t, const tree_ops<T>& ops, const tree_options& opt, tree_selection* sel, std::uint64_t tree_scope, int level, id& active_widget_id) -> void {
+auto gse::gui::draw::node(widget_context& ctx, const T& t, const tree_ops<T>& ops, const tree_options& opt, tree_selection* sel, std::uint64_t tree_scope, int level, id& active_widget_id) -> bool {
 	const auto row_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
 	const auto gap = row_height * opt.row_gap;
 
@@ -150,6 +155,8 @@ auto gse::gui::draw::node(widget_context& ctx, const T& t, const tree_ops<T>& op
 	const bool hovered = row_rect.contains(mouse::position());
 	const id row_widget_id = ids::make(std::format("tree_row##{}", key));
 
+	bool self_is_active = hovered;
+
 	bool selected = false;
 	if (sel && sel->keys.contains(key)) {
 		selected = true;
@@ -167,6 +174,10 @@ auto gse::gui::draw::node(widget_context& ctx, const T& t, const tree_ops<T>& op
 		}
 	}
 
+	if (active_widget_id == row_widget_id) {
+		self_is_active = true;
+	}
+
 	ctx.sprite_renderer.queue({
 		.rect = row_rect,
 		.color = background,
@@ -182,7 +193,7 @@ auto gse::gui::draw::node(widget_context& ctx, const T& t, const tree_ops<T>& op
 	if (!leaf) {
 		ctx.text_renderer.draw_text({
 			.font = ctx.font,
-			.text = leaf ? "" : is_open ? "?" : ">",
+			.text = leaf ? "" : is_open ? "v" : ">",
 			.position = {
 				arrow_rect.center().x() - ctx.font->width("v", ctx.style.font_size) * 0.5f,
 				arrow_rect.center().y() + ctx.style.font_size / 2.f
@@ -214,42 +225,43 @@ auto gse::gui::draw::node(widget_context& ctx, const T& t, const tree_ops<T>& op
 	}
 
 	if (mouse::released(mouse_button::button_1) && active_widget_id == row_widget_id) {
-		if (const bool clicked_arrow = arrow_rect.contains(mouse::position()); !leaf && (opt.toggle_on_row_click || clicked_arrow)) {
-	        if (is_open) {
-		        open_set.erase(key);
-	        }
-	        else {
-		        open_set.insert(key);
-	        }
-	        is_open = !is_open;
-	    }
+		if (hovered) {
+			if (const bool clicked_arrow = arrow_rect.contains(mouse::position()); !leaf && (opt.toggle_on_row_click || clicked_arrow)) {
+				if (is_open) {
+					open_set.erase(key);
+				}
+				else {
+					open_set.insert(key);
+				}
+				is_open = !is_open;
+			}
 
-	    if (sel) {
-		    if (const bool ctrl = keyboard::pressed(key::left_control) || keyboard::pressed(key::right_control); opt.multi_select || ctrl) {
-	            if (const auto it = sel->keys.find(key); it != sel->keys.end()) {
-		            sel->keys.erase(it);
-	            }
-	            else {
-		            sel->keys.insert(key);
-	            }
-	        } else {
-	            sel->keys.clear();
-	            sel->keys.insert(key);
-	        }
-	    }
+			if (sel) {
+				if (const bool ctrl = keyboard::pressed(key::left_control) || keyboard::pressed(key::right_control); opt.multi_select || ctrl) {
+					if (const auto it = sel->keys.find(key); it != sel->keys.end()) {
+						sel->keys.erase(it);
+					}
+					else {
+						sel->keys.insert(key);
+					}
+				} else {
+					sel->keys.clear();
+					sel->keys.insert(key);
+				}
+			}
+		}
 	}
 
 	ctx.layout_cursor.y() -= (row_height + gap);
 
-	if (!is_open || leaf || !ops.children) {
-		if (!leaf && ops.children && !is_open) {
-    }
-		return;
+	bool children_are_active = false;
+	if (is_open && !leaf && ops.children) {
+		for (const auto kids = ops.children(t); const auto& ch : kids) {
+			children_are_active |= node(ctx, ch, ops, opt, sel, tree_scope, level + 1, active_widget_id);
+		}
 	}
 
-	for (const auto kids = ops.children(t); const auto& ch : kids) {
-		node(ctx, ch, ops, opt, sel, tree_scope, level + 1, active_widget_id);
-	}
+	return self_is_active || children_are_active;
 }
 
 

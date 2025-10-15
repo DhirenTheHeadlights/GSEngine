@@ -122,7 +122,7 @@ export namespace gse::gui {
 		const draw::tree_ops<T>& fns,
 		draw::tree_options opt = {},
 		draw::tree_selection* sel = nullptr
-	) -> void;
+	) -> bool;
 
 	auto profiler(
 	) -> void;
@@ -450,9 +450,9 @@ auto gse::gui::vec(const std::string& name, vec_t<T, N> vec) -> void {
 }
 
 template <typename T>
-auto gse::gui::tree(std::span<const T> roots, const draw::tree_ops<T>& fns, draw::tree_options opt, draw::tree_selection* sel) -> void {
-	if (!context) return;
-	draw::tree(*context, roots, fns, opt, sel, active_widget_id);
+auto gse::gui::tree(std::span<const T> roots, const draw::tree_ops<T>& fns, draw::tree_options opt, draw::tree_selection* sel) -> bool {
+	if (!context) return false;
+	return draw::tree(*context, roots, fns, opt, sel, active_widget_id);
 }
 
 auto gse::gui::profiler() -> void {
@@ -515,9 +515,13 @@ auto gse::gui::profiler() -> void {
 		        return c[3];
 		    };
 
+			const double dur_ns  = static_cast<double>((n.stop - n.start).as<nanoseconds>());
+			const double self_ns = static_cast<double>(n.self.as<nanoseconds>());
+
+			const double pct = dur_ns > 0.0 ? (self_ns / dur_ns) * 100.0 : 0.0;
+
 		    const cand d = choose(dur_cands);
 		    const cand s = choose(self_cands);
-		    const double pct = (d.v > 0.0) ? (s.v / d.v) * 100.0 : 0.0;
 
 		    auto to_fixed = [](const double v, char* buf, const std::size_t num, const int precision) -> std::string_view {
 		        auto [p, ec] = std::to_chars(buf, buf + num, v, std::chars_format::fixed, precision);
@@ -608,7 +612,7 @@ auto gse::gui::profiler() -> void {
 	};
 
 	ids::scope tree_scope("gui.tree.profiler");
-	gui::tree(roots, ops, options, &selection);
+	trace::set_finalize_paused(gui::tree(roots, ops, options, &selection));
 }
 
 auto gse::gui::begin(const std::string& name) -> bool {

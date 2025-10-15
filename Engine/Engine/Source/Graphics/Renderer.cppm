@@ -109,10 +109,12 @@ auto gse::renderer::update(const std::vector<std::reference_wrapper<registry>>& 
 		rendering_context.camera().process_mouse_movement(mouse::delta());
 	}
 
+	task::group update_tasks;
+
 	for (const auto& renderer : renderers) {
-		task::post([registries, ptr = renderer.get()] {
+		update_tasks.post([registries, ptr = renderer.get()] {
 			ptr->update(registries);
-		});
+			}, find_or_generate_id(typeid(*renderer).name()));
 	}
 }
 
