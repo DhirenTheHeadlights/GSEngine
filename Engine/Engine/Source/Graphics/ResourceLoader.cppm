@@ -198,14 +198,14 @@ auto gse::resource::handle<Resource>::id() const -> const gse::id& {
 template <typename Resource>
 auto gse::resource::handle<Resource>::operator->() const -> Resource* {
 	Resource* resource = resolve();
-	assert(resource, std::format("Attempting to access an unloaded or invalid resource with ID: {}", m_id));
+	assert(resource, std::source_location::current(), "Attempting to access an unloaded or invalid resource with ID: {}", m_id);
 	return resource;
 }
 
 template <typename Resource>
 auto gse::resource::handle<Resource>::operator*() const -> Resource& {
 	Resource* resource = resolve();
-	assert(resource, std::format("Attempting to dereference an unloaded or invalid resource with ID: {}", m_id));
+	assert(resource, std::source_location::current(), "Attempting to dereference an unloaded or invalid resource with ID: {}", m_id);
 	return *resource;
 }
 

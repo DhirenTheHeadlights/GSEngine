@@ -503,7 +503,7 @@ auto gse::tag(uuid number) -> std::string_view {
 	const auto& [mutex, registry] = id_registry();
 	std::shared_lock lock(mutex);
 	const id* found_id = registry.by_uuid.try_get(number);
-	assert_lazy(found_id, [number] { return std::format("ID {} not found", number); });
+	assert(found_id, std::source_location::current(), "ID {} not found", number);
 	return found_id->tag();
 }
 
@@ -511,7 +511,7 @@ auto gse::number(const std::string_view tag) -> uuid {
 	const auto& [mutex, registry] = id_registry();
 	std::shared_lock lock(mutex);
 	const auto it = registry.tag_to_uuid.find(tag);
-	assert_lazy(it != registry.tag_to_uuid.end(), [tag] { return std::format("Tag '{}' not found", tag); });
+	assert(it != registry.tag_to_uuid.end(), std::source_location::current(), "Tag '{}' not found", tag);
 	return it->second;
 }
 

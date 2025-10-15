@@ -12,18 +12,12 @@ import <Windows.h>;
 import std;
 
 export namespace gse {
+	template <typename... Args>
     auto assert(
 	    bool condition,
         std::source_location loc = std::source_location::current(),
 		std::format_string<Args...> fmt = "{}",
 	    Args&&... args
-    ) -> void;
-
-    template <std::invocable<> F>
-    auto assert_lazy(
-        bool condition,
-        F&& make_message,
-        const std::source_location& loc = std::source_location::current()
     ) -> void;
 }
 
@@ -41,7 +35,7 @@ template <class... Args>
 auto gse::assert(const bool condition, const std::source_location loc, std::format_string<Args...> fmt, Args&&... args) -> void {
     if (condition) return;
 
-    const std::string comment = std::invoke(std::forward<F>(make_message));
+	const std::string comment = std::format(fmt, std::forward<Args>(args)...);
     const std::string message = std::format(
         "[Assertion Failure]\n"
         "File: {}\n"
@@ -77,7 +71,6 @@ auto gse::assert_func_internal(std::string_view message) noexcept -> void {
     switch (action) {
     case IDABORT:
         std::terminate();
-        break;
     case IDRETRY:
         __debugbreak();
         break;
@@ -85,7 +78,6 @@ auto gse::assert_func_internal(std::string_view message) noexcept -> void {
         break;
     default:
         std::terminate();
-        break;
     }
 #else
 	std::println("Internal Assert: {}", message);
