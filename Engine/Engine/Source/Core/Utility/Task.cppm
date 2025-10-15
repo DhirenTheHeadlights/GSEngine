@@ -23,7 +23,8 @@ export namespace gse::task {
 	) -> std::invoke_result_t<F&>;
 
 	auto post(
-		job j
+		job j,
+		const std::source_location& loc = std::source_location::current()
 	) -> void;
 
 	template <std::input_iterator It>
@@ -142,13 +143,13 @@ auto gse::task::start(F&& fn, std::size_t worker_count) -> std::invoke_result_t<
 	}
 }
 
-auto gse::task::post(job j) -> void {
+auto gse::task::post(job j, const std::source_location& loc) -> void {
 	in_flight.fetch_add(1, std::memory_order_relaxed);
 
 	auto p = std::make_shared<job>(std::move(j));
 
 	const auto key = async_key(p.get());
-	const auto id = trace::make_loc_id();
+	const auto id = trace::make_loc_id(loc);
 
 	trace::begin_async(id, key);
 

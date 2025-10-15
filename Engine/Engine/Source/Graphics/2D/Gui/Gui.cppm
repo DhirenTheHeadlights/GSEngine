@@ -475,16 +475,12 @@ auto gse::gui::profiler() -> void {
 
 	cache.begin(ids::stable_key("gui.tree.profiler"));
 
-	static constexpr std::uint64_t profiler_salt = 0xD1B54A32D192ED03ull;
-
 	const draw::tree_ops<trace::node> ops{
 		.children = [](const trace::node& n) -> std::span<const trace::node> {
 			return std::span{ n.children_first, n.children_count };
 		},
 		.label = [](const trace::node& n) -> std::string_view {
-			const auto& t = find(n.id).tag();
-		    static constexpr std::string_view unnamed{"<unnamed>"};
-		    return t.empty() ? unnamed : t;
+			return tag(n.id);
 		},
 		.key = [&cache](const trace::node& n) -> std::uint64_t {
 			return cache.key(&n);

@@ -19,13 +19,12 @@ gse::time accumulator;
 
 auto gse::physics::update(const std::vector<std::reference_wrapper<registry>>& registries) -> void {
 	time frame_time = system_clock::dt();
-	std::println("dt: {}", frame_time);
 
 	frame_time = std::min(frame_time, max_time_step);
 
 	accumulator += frame_time;
 
-	const auto const_update_time = system_clock::const_update_time;
+	const auto const_update_time = system_clock::constant_update_time();
 
 	while (accumulator >= const_update_time) {
 		for (int i = 0; i < 5; i++) {

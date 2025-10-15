@@ -32,6 +32,14 @@ export namespace gse {
 		std::string_view tag
 	) -> id;
 
+	auto find_or_generate(
+		std::string_view tag
+	) -> id;
+
+	auto find_or_generate(
+		uuid number
+	) -> id;
+
 	auto exists(
 		uuid number
 	) -> bool;
@@ -39,6 +47,14 @@ export namespace gse {
 	auto exists(
 		std::string_view tag
 	) -> bool;
+
+	auto tag(
+		uuid number
+	) -> std::string_view;
+
+	auto number(
+		std::string_view tag
+	) -> uuid;
 }
 
 export namespace gse {
@@ -454,6 +470,20 @@ auto gse::find(const std::string_view tag) -> id {
 	return *found_id;
 }
 
+auto gse::find_or_generate(std::string_view tag) -> id {
+	if (exists(tag)) {
+		return find(tag);
+	}
+	return generate_id(tag);
+}
+
+auto gse::find_or_generate(const uuid number) -> id {
+	if (exists(number)) {
+		return find(number);
+	}
+	return generate_id(number);
+}
+
 auto gse::exists(const uuid number) -> bool {
 	const auto& [mutex, registry] = id_registry();
 	std::shared_lock lock(mutex);
@@ -464,6 +494,22 @@ auto gse::exists(const std::string_view tag) -> bool {
 	const auto& [mutex, registry] = id_registry();
 	std::shared_lock lock(mutex);
 	return registry.tag_to_uuid.contains(tag);
+}
+
+auto gse::tag(uuid number) -> std::string_view {
+	const auto& [mutex, registry] = id_registry();
+	std::shared_lock lock(mutex);
+	const id* found_id = registry.by_uuid.try_get(number);
+	assert_lazy(found_id, [number] { return std::format("ID {} not found", number); });
+	return found_id->tag();
+}
+
+auto gse::number(const std::string_view tag) -> uuid {
+	const auto& [mutex, registry] = id_registry();
+	std::shared_lock lock(mutex);
+	const auto it = registry.tag_to_uuid.find(tag);
+	assert_lazy(it != registry.tag_to_uuid.end(), [tag] { return std::format("Tag '{}' not found", tag); });
+	return it->second;
 }
 
 export namespace gse {

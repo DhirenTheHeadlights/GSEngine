@@ -29,39 +29,46 @@ export namespace gse::resource {
 	class handle {
 	public:
 		handle() = default;
-		handle(const id& resource_id, loader_base* loader) : m_id(resource_id), m_loader(loader) {}
+		handle(
+			const id& resource_id,
+			loader_base* loader
+		);
 
-		[[nodiscard]] auto resolve() const -> Resource*;
-		[[nodiscard]] auto state() const -> state;
-		[[nodiscard]] auto valid() const -> bool;
-		[[nodiscard]] auto id() const -> const id& { return m_id; }
+		[[nodiscard]] auto resolve(
+		) const -> Resource*;
 
-		[[nodiscard]] auto operator->() const -> Resource* {
-			Resource* resource = resolve();
-			assert(resource, std::format("Attempting to access an unloaded or invalid resource with ID: {}", m_id));
-			return resource;
-		}
+		[[nodiscard]] auto state(
+		) const -> state;
 
-		[[nodiscard]] auto operator*() const -> Resource& {
-			Resource* resource = resolve();
-			assert(resource, std::format("Attempting to dereference an unloaded or invalid resource with ID: {}", m_id));
-			return *resource;
-		}
+		[[nodiscard]] auto valid(
+		) const -> bool;
 
-		[[nodiscard]] auto operator==(const handle& other) const -> bool {
-			return m_id == other.m_id && m_loader == other.m_loader;
-		}
+		[[nodiscard]] auto id(
+		) const -> const id& ;
 
-		[[nodiscard]] auto operator!=(const handle& other) const -> bool {
-			return !(*this == other);
-		}
+		[[nodiscard]] auto operator->(
+		) const -> Resource*;
 
-		explicit operator bool() const { return valid(); }
+		[[nodiscard]] auto operator*(
+		) const -> Resource&;
+
+		[[nodiscard]] auto operator==(
+			const handle& other
+		) const -> bool;
+
+		[[nodiscard]] auto operator!=(
+			const handle& other
+		) const -> bool;
+
+		explicit operator bool(
+		) const;
 	private:
 		gse::id m_id;
 		loader_base* m_loader = nullptr;
 	};
+}
 
+export namespace gse::resource {
 	class loader_base {
 	public:
 		virtual ~loader_base() = default;
@@ -164,6 +171,9 @@ export namespace gse::resource {
 }
 
 template <typename Resource>
+gse::resource::handle<Resource>::handle(const gse::id& resource_id, loader_base* loader): m_id(resource_id), m_loader(loader) {}
+
+template <typename Resource>
 auto gse::resource::handle<Resource>::resolve() const -> Resource* {
 	if (!m_loader) return nullptr;
 	return static_cast<Resource*>(m_loader->resource(m_id));
@@ -178,6 +188,40 @@ auto gse::resource::handle<Resource>::state() const -> resource::state {
 template <typename Resource>
 auto gse::resource::handle<Resource>::valid() const -> bool {
 	return m_loader && state() == state::loaded;
+}
+
+template <typename Resource>
+auto gse::resource::handle<Resource>::id() const -> const gse::id& {
+	return m_id;
+}
+
+template <typename Resource>
+auto gse::resource::handle<Resource>::operator->() const -> Resource* {
+	Resource* resource = resolve();
+	assert(resource, std::format("Attempting to access an unloaded or invalid resource with ID: {}", m_id));
+	return resource;
+}
+
+template <typename Resource>
+auto gse::resource::handle<Resource>::operator*() const -> Resource& {
+	Resource* resource = resolve();
+	assert(resource, std::format("Attempting to dereference an unloaded or invalid resource with ID: {}", m_id));
+	return *resource;
+}
+
+template <typename Resource>
+auto gse::resource::handle<Resource>::operator==(const handle& other) const -> bool {
+	return m_id == other.m_id && m_loader == other.m_loader;
+}
+
+template <typename Resource>
+auto gse::resource::handle<Resource>::operator!=(const handle& other) const -> bool {
+	return !(*this == other);
+}
+
+template <typename Resource>
+gse::resource::handle<Resource>::operator bool() const {
+	return valid();
 }
 
 template <typename R, typename C> requires gse::is_resource<R, C>
