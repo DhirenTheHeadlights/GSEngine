@@ -6,6 +6,7 @@ import :id;
 import :double_buffer;
 import :scope_exit;
 import :system_clock;
+import :interval_timer;
 
 export namespace gse::trace {
 	struct config {
@@ -15,6 +16,17 @@ export namespace gse::trace {
 
 	auto start(
 		const config& cfg = {}
+	) -> void;
+
+	auto begin_block(
+		const id& id,
+		std::uint64_t parent
+	) -> std::uint64_t;
+
+	auto end_block(
+		const id& id,
+		std::uint64_t eid,
+		std::uint64_t parent
 	) -> void;
 
 	template <typename F>
@@ -94,6 +106,13 @@ export namespace gse::trace {
 
 	auto enabled(
 	) -> bool;
+
+	auto set_finalize_paused(
+		bool pause
+	) -> void;
+
+	auto finalize_paused(
+	) -> bool;
 }
 
 namespace gse::trace {
@@ -154,9 +173,10 @@ namespace gse::trace {
 	thread_local int tls_pause_depth = 0;
 
 	std::atomic trace_enabled = true;
+	std::atomic finalize_paused_flag = false;
 
-	std::atomic<std::uint64_t> next_eid;
-	std::atomic<std::uint32_t> next_tid;
+	std::atomic<std::uint64_t> next_eid{ 1 };
+    std::atomic<std::uint32_t> next_tid{ 0 };
 
 	config global_config;
 
@@ -218,6 +238,35 @@ auto gse::trace::start(const config& cfg) -> void {
 	frames = frame_storage{};
 }
 
+auto gse::trace::begin_block(const id& id, std::uint64_t parent) -> std::uint64_t {
+	if (paused()) return 0;
+    ensure_tls_registered();
+    const auto tid = make_tid();
+    const auto eid = next_eid.fetch_add(1, std::memory_order_relaxed);
+    emit({
+        .type = event_type::begin,
+        .id = id.number(),
+        .eid = eid,
+        .parent_eid = parent,
+        .tid = tid,
+        .ts = system_clock::now<std::uint64_t>()
+    });
+    return eid;
+}
+
+auto gse::trace::end_block(const id& id, std::uint64_t eid, std::uint64_t parent) -> void {
+	if (paused() || eid == 0) return;
+    ensure_tls_registered();
+    emit({
+        .type = event_type::end,
+        .id = id.number(),
+        .eid = eid,
+        .parent_eid = parent,
+        .tid = make_tid(),
+        .ts = system_clock::now<std::uint64_t>()
+    });
+}
+
 template <typename F>
 auto gse::trace::scope(const id& id, F&& f) -> void {
 	scope(id, std::forward<F>(f), current_parent_eid());
@@ -233,6 +282,12 @@ auto gse::trace::scope(const id& id, F&& f, const std::uint64_t parent) -> void 
 	ensure_tls_registered();
 
 	const auto tid = make_tid();
+	const bool reparent = parent != 0 && tls.stack.empty();
+
+	if (reparent) {
+		tls.stack.push_back(parent);
+	}
+
 	const auto eid = next_eid.fetch_add(1, std::memory_order::relaxed);
 
 	emit({
@@ -246,16 +301,23 @@ auto gse::trace::scope(const id& id, F&& f, const std::uint64_t parent) -> void 
 
 	tls.stack.push_back(eid);
 
-	auto guard = make_scope_exit([eid, parent, tid, uid = id.number()] {
-		emit({
-			.type = event_type::end,
-			.id = uid,
-			.eid = eid,
-			.parent_eid = parent,
-			.tid = tid,
-			.ts = system_clock::now<std::uint64_t>()
-		});
-		tls.stack.pop_back();
+	auto guard = make_scope_exit([eid, parent, tid, uid = id.number(), reparent] {
+		if (!tls.stack.empty() && tls.stack.back() == eid) {
+			emit({
+				.type = event_type::end,
+				.id = uid,
+				.eid = eid,
+				.parent_eid = parent,
+				.tid = tid,
+				.ts = system_clock::now<std::uint64_t>()
+			});
+
+			tls.stack.pop_back();
+
+			if (reparent && !tls.stack.empty() && tls.stack.back() == parent) {
+                tls.stack.pop_back();
+			}
+		}
 	});
 
 	std::forward<F>(f)();
@@ -342,9 +404,13 @@ auto gse::trace::current_eid() -> std::uint64_t {
 }
 
 auto gse::trace::finalize_frame() -> void {
-	frames.flip();
-	auto& fs = frames.write();
-	build_tree(fs);
+	static interval_timer timer(milliseconds(100.f));
+
+	build_tree(frames.write());
+
+	if (timer.tick() && !finalize_paused()) {
+		frames.flip();
+	}
 }
 
 auto gse::trace::dump_browser(const std::filesystem::path& path, const frame_view& view) -> void {
@@ -419,6 +485,14 @@ auto gse::trace::enabled() -> bool {
 	return trace_enabled.load(std::memory_order_relaxed);
 }
 
+auto gse::trace::set_finalize_paused(bool pause) -> void {
+	finalize_paused_flag.store(pause, std::memory_order_relaxed);
+}
+
+auto gse::trace::finalize_paused() -> bool {
+	return finalize_paused_flag.load(std::memory_order_relaxed);
+}
+
 auto gse::trace::scsp_events::push(const event& e) noexcept -> void {
 	const std::uint32_t w = m_w.load(std::memory_order_acquire);
 	const std::uint32_t next = (w + 1) & capacity_mask;
@@ -490,7 +564,8 @@ auto gse::trace::emit(const event& e) -> void {
 }
 
 auto gse::trace::current_parent_eid() -> std::uint64_t {
-	return tls.stack.empty() ? 0 : tls.stack.back();
+	const auto parent_eid = tls.stack.empty() ? 0 : tls.stack.back();
+	return parent_eid;
 }
 
 auto gse::trace::build_tree(frame_storage& fs) -> void {
@@ -700,5 +775,5 @@ auto gse::trace::make_loc_id(const std::source_location& loc) -> id {
         tag = (last_sp == std::string_view::npos) ? fn : fn.substr(last_sp + 1);
     }
 
-	return find_or_generate(tag);
+	return find_or_generate_id(tag);
 }

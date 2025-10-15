@@ -32,11 +32,11 @@ export namespace gse {
 		std::string_view tag
 	) -> id;
 
-	auto find_or_generate(
+	auto find_or_generate_id(
 		std::string_view tag
 	) -> id;
 
-	auto find_or_generate(
+	auto find_or_generate_id(
 		uuid number
 	) -> id;
 
@@ -473,14 +473,14 @@ auto gse::find(const std::string_view tag) -> id {
 	return *found_id;
 }
 
-auto gse::find_or_generate(std::string_view tag) -> id {
+auto gse::find_or_generate_id(std::string_view tag) -> id {
 	if (exists(tag)) {
 		return find(tag);
 	}
 	return generate_id(tag);
 }
 
-auto gse::find_or_generate(const uuid number) -> id {
+auto gse::find_or_generate_id(const uuid number) -> id {
 	if (exists(number)) {
 		return find(number);
 	}

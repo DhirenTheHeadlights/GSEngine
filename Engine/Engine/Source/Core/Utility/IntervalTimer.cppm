@@ -9,35 +9,38 @@ import :clock;
 import :system_clock;
 
 export namespace gse {
+	template <typename T = float>
 	class interval_timer {
 	public:
 		explicit interval_timer(
-			time interval
+			time_t<T> interval
 		);
 
 		auto tick(
-			time dt = system_clock::dt()
+			time_t<T> dt = system_clock::dt<T>()
 		) -> bool;
 
 		auto reset(
 		) -> void;
 	private:
-		time m_interval;
-		time m_accumulated = time(0);
+		time_t<T> m_interval;
+		time_t<T> m_accumulated = time_t<T>(0);
 	};
 }
 
-gse::interval_timer::interval_timer(const time interval) : m_interval(interval) {
+template <typename T>
+gse::interval_timer<T>::interval_timer(const time_t<T> interval) : m_interval(interval) {
 	assert(
-		m_interval >= time(0),
+		m_interval >= time_t<T>(0),
 		std::source_location::current(),
 		"Interval must be non-negative, got {}", m_interval
 	);
 }
 
-auto gse::interval_timer::tick(const time dt) -> bool {
+template <typename T>
+auto gse::interval_timer<T>::tick(const time_t<T> dt) -> bool {
 	assert(
-		dt >= time(0),
+		dt >= time_t<T>(0),
 		std::source_location::current(),
 		"Delta time must be non-negative, got {}", dt
 	);
@@ -50,6 +53,7 @@ auto gse::interval_timer::tick(const time dt) -> bool {
 	return false;
 }
 
-auto gse::interval_timer::reset() -> void {
+template <typename T>
+auto gse::interval_timer<T>::reset() -> void {
 	m_accumulated = {};
 }

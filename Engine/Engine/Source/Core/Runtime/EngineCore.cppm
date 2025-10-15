@@ -92,33 +92,29 @@ auto gse::initialize(const flags engine_flags, const engine_config& config) -> v
 }
 
 auto gse::update(const flags engine_flags, const engine_config& config) -> void {
-	add_timer("Engine::update", [] {
-		system_clock::update();
+	system_clock::update();
 
-		engine.world.update();
+	engine.world.update();
 
-		physics::update(
-			engine.world.registries()
-		);
+	physics::update(
+		engine.world.registries()
+	);
 
-		renderer::update(
-			engine.world.registries()
-		);
+	renderer::update(
+		engine.world.registries()
+	);
 
-		engine.update();
-	});
+	engine.update();
 }
 
 auto gse::render(const flags engine_flags, const engine_config& config) -> void {
-	add_timer("Engine::render", [] {
-		renderer::render(
-			engine.world.registries(),
-			[&] {
-				engine.world.render();
-				engine.render();
-			}
-		);
-	});
+	renderer::render(
+		engine.world.registries(),
+		[&] {
+			engine.world.render();
+			engine.render();
+		}
+	);
 }
 
 template <typename... Args>
@@ -147,26 +143,21 @@ auto gse::start(const flags engine_flags, const engine_config& config) -> void {
 			);
 
 			trace::scope(engine.id(), [&] {
-				const std::size_t participants = 1 + (do_render ? 1 : 0);
-				std::latch frame_done(participants);
+				task::group frame_tasks;
 
-				task::post(
-					[&, engine_flags, config] {
+				frame_tasks.post(
+					[&] {
 						update(engine_flags, config);
-						frame_done.count_down();
-					}
+					}, find_or_generate_id("Engine::Update")
 				);
 
 				if (do_render) {
-					task::post(
-						[&, engine_flags, config] {
+					frame_tasks.post(
+						[&] {
 							render(engine_flags, config);
-							frame_done.count_down();
-						}
+						}, find_or_generate_id("Engine::Render")
 					);
 				}
-
-				frame_done.wait();
 			});
 
 			frame_sync::end();
