@@ -15,7 +15,7 @@ export namespace gse {
 
     template <typename T = float>
     struct angle_t : internal::quantity<angle_t<T>, T, internal::dim<0, 0, 0>, angle_tag, decltype(radians)> {
-        using internal::quantity<angle_t<T>, T, internal::dim<0, 0, 0>, angle_tag, decltype(radians)>::quantity;
+        using internal::quantity<angle_t, T, internal::dim<0, 0, 0>, angle_tag, decltype(radians)>::quantity;
     };
     using angle = angle_t<>;
 
@@ -39,7 +39,7 @@ export namespace gse {
 
     template <typename T = float>
     struct length_t : internal::quantity<length_t<T>, T, internal::dim<1, 0, 0>, length_tag, decltype(meters)> {
-        using internal::quantity<length_t<T>, T, internal::dim<1, 0, 0>, length_tag, decltype(meters)>::quantity;
+        using internal::quantity<length_t, T, internal::dim<1, 0, 0>, length_tag, decltype(meters)>::quantity;
     };
     using length = length_t<>;
 
@@ -53,16 +53,16 @@ export namespace gse {
 export namespace gse {
     struct time_tag {};
 
-    constexpr internal::unit<time_tag, std::ratio<3600>, "hr"> hours;
-    constexpr internal::unit<time_tag, std::ratio<60>, "min"> minutes;
-    constexpr internal::unit<time_tag, std::ratio<1>, "s"> seconds;
-    constexpr internal::unit<time_tag, std::milli, "ms"> milliseconds;
-    constexpr internal::unit<time_tag, std::micro, "us"> microseconds;
-    constexpr internal::unit<time_tag, std::nano, "ns"> nanoseconds;
+    constexpr internal::unit<time_tag, std::ratio<1>, "ns"> nanoseconds;
+    constexpr internal::unit<time_tag, std::kilo, "us"> microseconds;
+    constexpr internal::unit<time_tag, std::mega, "ms"> milliseconds;
+    constexpr internal::unit<time_tag, std::giga, "s"> seconds;
+    constexpr internal::unit<time_tag, std::ratio<60'000'000'000>, "min"> minutes;
+    constexpr internal::unit<time_tag, std::ratio<3'600'000'000'000>, "hr"> hours;
 
     template <typename T = float>
-    struct time_t : internal::quantity<time_t<T>, T, internal::dim<0, 1, 0>, time_tag, decltype(seconds)> {
-        using internal::quantity<time_t<T>, T, internal::dim<0, 1, 0>, time_tag, decltype(seconds)>::quantity;
+    struct time_t : internal::quantity<time_t<T>, T, internal::dim<0, 1, 0>, time_tag, decltype(nanoseconds)> {
+        using internal::quantity<time_t, T, internal::dim<0, 1, 0>, time_tag, decltype(nanoseconds)>::quantity;
     };
     using time = time_t<>;
 

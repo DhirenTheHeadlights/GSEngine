@@ -110,8 +110,8 @@ auto gse::renderer::update(const std::vector<std::reference_wrapper<registry>>& 
 	}
 
 	for (const auto& renderer : renderers) {
-		task::start([&] {
-			renderer->update(registries);
+		task::post([registries, ptr = renderer.get()] {
+			ptr->update(registries);
 		});
 	}
 }

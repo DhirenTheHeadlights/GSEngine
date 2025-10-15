@@ -220,62 +220,86 @@ auto gse::renderer::text::initialize() -> void {
 	});
 }
 
-auto gse::renderer::text::update(std::span<const std::reference_wrapper<registry>> registries) -> void {
+auto gse::renderer::text::update(std::span<const std::reference_wrapper<registry>>) -> void {
     std::vector<command> local;
-
-    scope([this, &local] {
+    {
         std::scoped_lock lk(m_command_mutex);
         local.swap(m_pending_commands);
-    });
+    }
 
     auto& out = m_command_queue.write();
     out.clear();
-
     if (local.empty()) {
 	    return;
     }
 
-    std::size_t rough = 0;
+    struct group {
+	    resource::handle<font> f;
+		std::vector<const command*> commands;
+    };
+
+    struct font_handle_hash {
+	    auto operator()(const resource::handle<font>& h) const noexcept -> size_t {
+	        return std::hash<id>{}(h.id());
+	    }
+	};
+
+	struct font_handle_eq {
+	    auto operator()(const resource::handle<font>& a, const resource::handle<font>& b) const noexcept -> bool {
+	        return a.id() == b.id();
+	    }
+	};
+
+	std::unordered_map<resource::handle<font>, std::size_t, font_handle_hash, font_handle_eq> idx;
+    std::vector<group> groups;
+    groups.reserve(local.size());
+
     for (const auto& c : local) {
-	    rough += std::min(c.text.size(), static_cast<std::size_t>(1024));
+        if (!c.font || c.text.empty()) continue;
+        auto it = idx.find(c.font);
+        if (it == idx.end()) {
+            idx.emplace(c.font, groups.size());
+            groups.push_back(group{ c.font, {} });
+            groups.back().commands.reserve(16);
+            it = std::prev(idx.end());
+        }
+        groups[it->second].commands.push_back(&c);
     }
 
-    out.reserve(out.size() + rough);
+    if (groups.empty()) {
+	    return;
+    }
 
     tbb::enumerable_thread_specific<std::vector<draw_item>> tls_bins;
 
-	task::parallel_for(0, local.size(), [&](const std::size_t i) {
-	    const auto& [font, text, position, scale, color, clip_rect] = local[i];
+    tbb::parallel_for(std::size_t{0}, groups.size(), [&](const std::size_t gi){
+        const auto& [f, commands] = groups[gi];
+        auto& items = tls_bins.local();
 
-	    if (!font || text.empty()) {
-		    return;
-	    }
+        for (const command* pc : commands) {
+            const auto& c = *pc;
 
-	    auto& items = tls_bins.local();
-	    items.reserve(items.size() + std::min(text.size(), std::size_t{ 1024 }));
+            for (const auto glyphs = f->text_layout(c.text, c.position, c.scale); const auto& [screen_rect, uv_rect] : glyphs) {
+                items.push_back(draw_item{
+                    .font = f,
+                    .color = c.color,
+                    .screen_rect = screen_rect,
+                    .uv_rect = uv_rect,
+                    .clip_rect = c.clip_rect
+                });
+            }
+        }
+    });
 
-	    for (const auto glyphs = font->text_layout(text, position, scale); const auto& [screen_rect, uv_rect] : glyphs) {
-	        items.push_back({ 
-				.font = font,
-	        	.color = color,
-	        	.screen_rect = screen_rect,
-	        	.uv_rect = uv_rect,
-	        	.clip_rect = clip_rect
-	        });
-	    }
-	});
+    std::size_t total = out.size();
+    for (auto it = tls_bins.begin(); it != tls_bins.end(); ++it) total += it->size();
+    out.reserve(total);
 
-	std::size_t total = out.size();
-	for (auto it = tls_bins.begin(); it != tls_bins.end(); ++it) {
-		total += it->size();
-	}
-	out.reserve(total);
-
-	for (auto it = tls_bins.begin(); it != tls_bins.end(); ++it) {
-	    auto& v = *it;
-	    out.insert(out.end(), v.begin(), v.end());
-	    v.clear();
-	}
+    for (auto it = tls_bins.begin(); it != tls_bins.end(); ++it) {
+        auto& v = *it;
+        out.insert(out.end(), v.begin(), v.end());
+        v.clear();
+    }
 
     std::ranges::stable_sort(out, [](const draw_item& a, const draw_item& b) {
         return a.font.resolve() < b.font.resolve();
