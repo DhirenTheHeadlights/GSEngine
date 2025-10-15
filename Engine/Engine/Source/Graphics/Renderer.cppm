@@ -65,7 +65,6 @@ export namespace gse::renderer {
 }
 
 namespace gse::renderer {
-	auto end_frame() -> void;
 
 	template <typename T>
 	auto renderer() -> T& {
@@ -109,12 +108,15 @@ auto gse::renderer::update(const std::vector<std::reference_wrapper<registry>>& 
 		rendering_context.camera().process_mouse_movement(mouse::delta());
 	}
 
-	task::group update_tasks;
+	task::group update_tasks(find_or_generate_id("Renderer::Update"));
 
 	for (const auto& renderer : renderers) {
-		update_tasks.post([registries, ptr = renderer.get()] {
-			ptr->update(registries);
-			}, find_or_generate_id(typeid(*renderer).name()));
+		update_tasks.post(
+			[registries, ptr = renderer.get()] {
+				ptr->update(registries);
+			}, 
+			find_or_generate_id(typeid(*renderer).name())
+		);
 	}
 }
 
@@ -193,10 +195,6 @@ auto gse::renderer::render(const std::vector<std::reference_wrapper<registry>>& 
 		}
 	});
 
-	end_frame();
-}
-
-auto gse::renderer::end_frame() -> void {
 	vulkan::transient_allocator::end_frame();
 }
 
