@@ -352,6 +352,7 @@ auto gse::trace::dump_browser(const std::filesystem::path& path, const frame_vie
 
 	assert(
 		out.is_open(),
+		std::source_location::current(),
 		"Failed to open trace output file"
 	);
 

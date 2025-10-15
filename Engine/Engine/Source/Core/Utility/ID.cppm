@@ -227,7 +227,10 @@ auto gse::identifiable_owned_only_uuid::owner_id() const -> id {
 auto gse::identifiable_owned_only_uuid::swap(const id& new_parent_id) -> void {
 	assert(
 		new_parent_id.exists(),
-		std::format("Cannot reassign identifiable owned to invalid id {}: {}", new_parent_id.tag(), new_parent_id.number())
+		std::source_location::current(),
+		"Cannot reassign identifiable owned to invalid id {}: {}", 
+		new_parent_id.tag(), 
+		new_parent_id.number()
 	);
 	m_owner_id = new_parent_id.number();
 }
@@ -435,7 +438,7 @@ auto gse::generate_id(const std::uint64_t number) -> id {
 	const auto& [mutex, registry] = id_registry();
 	std::lock_guard lock(mutex);
 
-	assert(!registry.by_uuid.contains(number), std::format("ID number {} already exists", number));
+	assert(!registry.by_uuid.contains(number), std::source_location::current(), "ID number {} already exists", number);
 
 	id new_id(number, std::to_string(number));
 
@@ -454,7 +457,7 @@ auto gse::find(const uuid number) -> id {
 	std::shared_lock lock(mutex);
 
 	id* found_id = registry.by_uuid.try_get(number);
-	assert_lazy(found_id, [number] { return std::format("ID {} not found", number); });
+	assert(found_id, std::source_location::current(), "ID {} not found", number);
 	return *found_id;
 }
 
@@ -463,10 +466,10 @@ auto gse::find(const std::string_view tag) -> id {
 	std::shared_lock lock(mutex);
 
 	const auto it = registry.tag_to_uuid.find(tag);
-	assert_lazy(it != registry.tag_to_uuid.end(), [tag] { return std::format("Tag '{}' not found", tag); });
+	assert(it != registry.tag_to_uuid.end(), std::source_location::current(), "Tag '{}' not found", tag);
 
 	id* found_id = registry.by_uuid.try_get(it->second);
-	assert(found_id, "Inconsistent registry state!");
+	assert(found_id, std::source_location::current(), "Inconsistent registry state!");
 	return *found_id;
 }
 
@@ -638,7 +641,7 @@ auto gse::double_buffered_id_mapped_queue<T, IdType>::writer::reader(const std::
 
 template <typename T, typename IdType>
 auto gse::double_buffered_id_mapped_queue<T, IdType>::bind(const std::size_t read, const std::size_t write) -> std::pair<reader, writer> {
-	assert(read < 2 && write < 2 && read != write, "Read and write indices must be 0 or 1 and different");
+	assert(read < 2 && write < 2 && read != write, std::source_location::current(), "Read and write indices must be 0 or 1 and different");
 
 	return {
 		{ this },

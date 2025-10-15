@@ -13,9 +13,10 @@ import std;
 
 export namespace gse {
     auto assert(
-        bool condition,
-        std::string_view formatted_string,
-        const std::source_location& loc = std::source_location::current()
+	    bool condition,
+        std::source_location loc = std::source_location::current(),
+		std::format_string<Args...> fmt = "{}",
+	    Args&&... args
     ) -> void;
 
     template <std::invocable<> F>
@@ -36,27 +37,9 @@ namespace gse {
     ) noexcept -> void;
 }
 
-auto gse::assert(const bool condition, std::string_view formatted_string, const std::source_location& loc) -> void {
-    if (!condition) {
-        const std::string message = std::format(
-            "[Assertion Failure]\n"
-            "File: {}\n"
-            "Line: {}\n"
-            "Function: {}\n"
-            "Comment: {}\n",
-            loc.file_name(),
-            loc.line(),
-            loc.function_name(),
-            formatted_string
-        );
-
-        assert_func_internal(message);
-    }
-}
-
-template <std::invocable<> F>
-auto gse::assert_lazy(bool condition, F&& make_message, const std::source_location& loc) -> void {
-	if (condition) return;
+template <class... Args>
+auto gse::assert(const bool condition, const std::source_location loc, std::format_string<Args...> fmt, Args&&... args) -> void {
+    if (condition) return;
 
     const std::string comment = std::invoke(std::forward<F>(make_message));
     const std::string message = std::format(

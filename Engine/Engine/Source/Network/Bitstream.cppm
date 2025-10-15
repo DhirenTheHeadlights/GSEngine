@@ -47,6 +47,7 @@ auto gse::network::bitstream::write(const T& data) -> void {
 auto gse::network::bitstream::write(const std::span<const std::byte> data) -> void {
 	assert(
 		m_head_bits + data.size_bytes() * 8 <= m_buffer.size_bytes() * 8,
+		std::source_location::current(),
 		"Bitstream overflow"
 	);
 
@@ -78,6 +79,7 @@ auto gse::network::bitstream::read() -> T {
 auto gse::network::bitstream::read(std::span<std::byte> data) -> void {
 	assert(
 		m_head_bits + data.size_bytes() * 8 <= m_buffer.size_bytes() * 8,
+		std::source_location::current(),
 		"Bitstream underflow"
 	);
 

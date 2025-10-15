@@ -133,7 +133,7 @@ auto gse::texture::compile() -> std::set<std::filesystem::path> {
 
 		create_directories(baked_path.parent_path());
 		std::ofstream out_file(baked_path, std::ios::binary);
-		assert(out_file.is_open(), "Failed to open baked texture file for writing.");
+		assert(out_file.is_open(), std::source_location::current(), "Failed to open baked texture file for writing.");
 
 		constexpr std::uint32_t magic = 0x47544558; // 'GTEX'
 		constexpr std::uint32_t version = 1;
@@ -163,15 +163,17 @@ auto gse::texture::compile() -> std::set<std::filesystem::path> {
 auto gse::texture::load(const renderer::context& context) -> void {
 	if (!m_image_data.path.empty()) {
 		std::ifstream in_file(m_image_data.path, std::ios::binary);
-		assert(in_file.is_open(), std::format(
+		assert(
+			in_file.is_open(), 
+			std::source_location::current(),
 			"Failed to open baked texture file: {}",
 			m_image_data.path.string()
-		));
+		);
 
 		std::uint32_t magic, version;
 		in_file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
 		in_file.read(reinterpret_cast<char*>(&version), sizeof(version));
-		assert(magic == 0x47544558 && version == 1, "Invalid baked texture file format or version.");
+		assert(magic == 0x47544558 && version == 1, std::source_location::current(), "Invalid baked texture file format or version.");
 
 		std::uint32_t width, height, channels;
 		profile texture_profile;
@@ -221,11 +223,10 @@ auto gse::texture::create_vulkan_resources(renderer::context& context, const pro
 	const auto data_size = m_image_data.size_bytes();
 
 	assert(
-		data_size > 0 && !m_image_data.pixels.empty(), 
-		std::format(
-			"Texture '{}' has no pixel data. Ensure the texture is loaded correctly.",
-			id()
-		)
+		data_size > 0 && !m_image_data.pixels.empty(),
+		std::source_location::current(),
+		"Texture '{}' has no pixel data. Ensure the texture is loaded correctly.",
+		id()
 	);
 
 	const auto format = channels == 4 ? vk::Format::eR8G8B8A8Srgb

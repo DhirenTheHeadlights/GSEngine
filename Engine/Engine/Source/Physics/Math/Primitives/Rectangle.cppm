@@ -55,12 +55,12 @@ template <gse::is_vec2 T>
 constexpr gse::rect_t<T>::rect_t(const min_max_params& p)
     : m_min(std::min(p.min.x(), p.max.x()), std::min(p.min.y(), p.max.y())),
     m_max(std::max(p.min.x(), p.max.x()), std::max(p.min.y(), p.max.y())) {
-    assert(m_min.x() <= m_max.x() && m_min.y() <= m_max.y(), "Rectangle invariant failed after construction");
+    assert(m_min.x() <= m_max.x() && m_min.y() <= m_max.y(), std::source_location::current(), "Rectangle invariant failed after construction");
 }
 
 template <gse::is_vec2 T>
 constexpr auto gse::rect_t<T>::from_position_size(const T& top_left, const T& size) -> rect_t {
-    gse::assert(size.x() >= 0 && size.y() >= 0, "Rectangle size cannot be negative.");
+    assert(size.x() >= 0 && size.y() >= 0, std::source_location::current(), "Rectangle size cannot be negative.");
 
     const auto bottom_left  = T{ top_left.x(), top_left.y() - size.y() };
     const auto top_right    = T{ top_left.x() + size.x(), top_left.y() };

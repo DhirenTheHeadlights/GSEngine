@@ -46,14 +46,14 @@ export namespace gse {
 }
 
 gse::window::window(const std::string& title) {
-	assert(glfwInit(), "Error initializing GLFW");
-	assert(glfwVulkanSupported(), "Vulkan not supported");
+	assert(glfwInit(), std::source_location::current(), "Error initializing GLFW");
+	assert(glfwVulkanSupported(), std::source_location::current(), "Vulkan not supported");
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
 	m_window = glfwCreateWindow(1920, 1080, title.c_str(), nullptr, nullptr);
-	assert(m_window, "Failed to create GLFW window!");
+	assert(m_window, std::source_location::current(), "Failed to create GLFW window!");
 
 	glfwSetWindowUserPointer(m_window, this);
 
@@ -139,6 +139,7 @@ gse::window::window(const std::string& title) {
 gse::window::~window() {
 	assert(
 		!m_window,
+		std::source_location::current(),
 		"Shutdown not called before destructing window!"
 	);
 }
@@ -159,6 +160,7 @@ auto gse::window::update(const bool ui_focus) -> void {
 
 			assert(
 				monitor_count > 0,
+				std::source_location::current(),
 				"Failed to get monitors! At least one monitor is required for fullscreen mode."
 			);
 
@@ -206,7 +208,7 @@ auto gse::window::poll_events() -> void {
 }
 
 auto gse::window::shutdown() -> void {
-	assert(m_window, "Window already shutdown!");
+	assert(m_window, std::source_location::current(), "Window already shutdown!");
 	glfwDestroyWindow(m_window);
 	m_window = nullptr;
 }
@@ -242,7 +244,7 @@ auto gse::window::frame_buffer_resized() -> bool {
 auto gse::window::create_vulkan_surface(const VkInstance instance) const -> VkSurfaceKHR {
 	VkSurfaceKHR surface = nullptr;
 	const VkResult result = glfwCreateWindowSurface(instance, m_window, nullptr, &surface);
-	assert(result == VK_SUCCESS, "Failed to create window surface for Vulkan!");
+	assert(result == VK_SUCCESS, std::source_location::current(), "Failed to create window surface for Vulkan!");
 	return surface;
 }
 

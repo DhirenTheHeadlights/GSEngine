@@ -20,7 +20,11 @@ export namespace gse::image {
 
 		auto size_bytes() const -> std::size_t {
 			const auto combined = size.x() * size.y() * channels;
-			assert(combined <= std::numeric_limits<std::size_t>::max(), "Image size exceeds maximum size_t value.");
+			assert(
+                combined <= std::numeric_limits<std::size_t>::max(), 
+                std::source_location::current(),
+                "Image size exceeds maximum size_t value."
+            );
 			return combined;
 		}
 	};
@@ -62,7 +66,7 @@ auto gse::image::load(const std::filesystem::path& path) -> data {
     img_data.size = { static_cast<std::uint32_t>(w), static_cast<std::uint32_t>(h) };
     img_data.channels = 4;
 
-    assert(pixels, std::format("Failed to load image: {}", path.string()));
+    assert(pixels, std::source_location::current(), "Failed to load image: {}", path.string());
 
     img_data.pixels.resize(img_data.size_bytes());
     std::memcpy(img_data.pixels.data(), pixels, img_data.size_bytes());
@@ -98,11 +102,11 @@ auto gse::image::load_cube_faces(const std::array<std::filesystem::path, 6>& pat
 
     faces[0] = load(paths[0]);
     auto required = faces[0].size;
-    assert(required.x() == required.y(), std::format("Cube face must be square: {}", paths[0].string()));
+    assert(required.x() == required.y(), std::source_location::current(), "Cube face must be square: {}", paths[0].string());
 
     for (size_t i = 1; i < paths.size(); ++i) {
         faces[i] = load(paths[i]);
-        assert(faces[i].size == required, std::format("All cube faces must match size {}×{}: {}", required.x(), required.y(), paths[i].string()));
+        assert(faces[i].size == required, std::source_location::current(), "All cube faces must match size {}×{}: {}", required.x(), required.y(), paths[i].string());
     }
 
     return faces;
@@ -118,7 +122,7 @@ auto gse::image::load_raw(const std::filesystem::path& path, const std::uint32_t
     img_data.size = { static_cast<std::uint32_t>(w), static_cast<std::uint32_t>(h) };
     img_data.channels = static_cast<std::uint32_t>(c);
 
-    assert(pixels, std::format("Failed to load image: {}", path.string()));
+    assert(pixels, std::source_location::current(), "Failed to load image: {}", path.string());
 
     img_data.pixels.resize(img_data.size_bytes());
     std::memcpy(img_data.pixels.data(), pixels, img_data.size_bytes());

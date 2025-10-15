@@ -86,6 +86,7 @@ auto gse::network::client::send(const T& msg) -> void {
 
 	assert(
 		m_socket.send_data(pkt, m_server.addr()) != socket_state::error,
+		std::source_location::current(),
 		"Failed to send packet from client."
 	);
 }
