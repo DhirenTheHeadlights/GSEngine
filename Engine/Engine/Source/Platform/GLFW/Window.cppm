@@ -30,7 +30,6 @@ export namespace gse {
 		auto frame_buffer_resized() -> bool;
 		auto create_vulkan_surface(VkInstance instance) const -> VkSurfaceKHR;
 
-		auto set_fullscreen(bool fullscreen) -> void;
 		auto set_mouse_visible(bool visible) -> void;
 
 		auto raw_handle() const -> GLFWwindow* { return m_window; }
@@ -41,6 +40,7 @@ export namespace gse {
 		bool m_mouse_visible = false;
 		bool m_focused = true;
 		bool m_frame_buffer_resized = false;
+		auto set_fullscreen(bool fullscreen) -> void;
 		bool m_ui_focus = false;
 	};
 }

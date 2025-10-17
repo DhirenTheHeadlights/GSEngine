@@ -10,7 +10,7 @@ import :interval_timer;
 
 export namespace gse::trace {
 	struct config {
-		std::size_t per_thread_event_cap = 1024;
+		std::size_t per_thread_event_cap = 262144;
 		bool enable_browser_dump = false;
 	};
 
@@ -113,6 +113,8 @@ export namespace gse::trace {
 
 	auto finalize_paused(
 	) -> bool;
+
+	std::atomic<std::uint64_t> frame_seq{0};
 }
 
 namespace gse::trace {
@@ -153,7 +155,7 @@ namespace gse::trace {
 		auto size(
 		) const noexcept -> std::size_t;
 	private:
-		static constexpr std::uint32_t capacity_pow_2 = 1u << 15;
+		static constexpr std::uint32_t capacity_pow_2 = 1u << 18;
 		static constexpr std::uint32_t capacity = capacity_pow_2;
 		static constexpr std::uint32_t capacity_mask = capacity_pow_2 - 1;
 
@@ -175,8 +177,8 @@ namespace gse::trace {
 	std::atomic trace_enabled = true;
 	std::atomic finalize_paused_flag = false;
 
-	std::atomic<std::uint64_t> next_eid{ 1 };
-    std::atomic<std::uint32_t> next_tid{ 0 };
+	std::atomic<std::uint64_t> next_eid{ 1024 };
+	std::atomic<std::uint32_t> next_tid{ 0 };
 
 	config global_config;
 
@@ -203,9 +205,22 @@ namespace gse::trace {
 		std::vector<flat_node> flat;
 		std::vector<node> node_pool;
 		std::vector<node> roots;
+
+		struct span {
+			uuid id;
+			std::uint32_t tid;
+			time_t<std::uint64_t> t0;
+			time_t<std::uint64_t> t1;
+			std::uint64_t parent;
+		};
+
+		std::unordered_map<std::uint64_t, span> open_spans;
 	};
 
 	double_buffer<frame_storage> frames;
+
+	std::unordered_set<std::uint64_t> open_parents;
+	std::mutex open_m;
 
 	auto ensure_tls_registered(
 	) -> void;
@@ -227,6 +242,9 @@ namespace gse::trace {
 	auto make_loc_id(
 		const std::source_location& loc
 	) -> id;
+
+	auto allocate_span_eid(
+	) -> std::uint64_t;
 }
 
 auto gse::trace::start(const config& cfg) -> void {
@@ -240,40 +258,63 @@ auto gse::trace::start(const config& cfg) -> void {
 
 auto gse::trace::begin_block(const id& id, std::uint64_t parent) -> std::uint64_t {
 	if (paused()) return 0;
-    ensure_tls_registered();
-    const auto tid = make_tid();
-    const auto eid = next_eid.fetch_add(1, std::memory_order_relaxed);
-    emit({
-        .type = event_type::begin,
-        .id = id.number(),
-        .eid = eid,
-        .parent_eid = parent,
-        .tid = tid,
-        .ts = system_clock::now<std::uint64_t>()
-    });
-    return eid;
+
+	ensure_tls_registered();
+
+	if (parent != 0 && parent < 1024) {
+		parent = 0;
+	}
+
+	const auto tid = make_tid();
+	const auto eid = allocate_span_eid();
+
+	{
+		std::scoped_lock lk(open_m);
+		open_parents.erase(eid);
+	}
+
+	emit({
+		.type = event_type::begin,
+		.id = id.number(),
+		.eid = eid,
+		.parent_eid = parent,
+		.tid = tid,
+		.ts = system_clock::now<std::uint64_t>()
+	});
+
+	return eid;
 }
 
-auto gse::trace::end_block(const id& id, std::uint64_t eid, std::uint64_t parent) -> void {
-	if (paused() || eid == 0) return;
-    ensure_tls_registered();
-    emit({
-        .type = event_type::end,
-        .id = id.number(),
-        .eid = eid,
-        .parent_eid = parent,
-        .tid = make_tid(),
-        .ts = system_clock::now<std::uint64_t>()
-    });
+auto gse::trace::end_block(const id& id, const std::uint64_t eid, const std::uint64_t parent) -> void {
+	if (paused() || eid == 0) {
+		return;
+	}
+
+	ensure_tls_registered();
+
+	{
+		std::scoped_lock lk(open_m);
+		open_parents.erase(eid);
+	}
+
+	emit({
+		.type = event_type::end,
+		.id = id.number(),
+		.eid = eid,
+		.parent_eid = parent,
+		.tid = make_tid(),
+		.ts = system_clock::now<std::uint64_t>()
+	});
 }
 
 template <typename F>
 auto gse::trace::scope(const id& id, F&& f) -> void {
-	scope(id, std::forward<F>(f), current_parent_eid());
+	const auto parent = current_parent_eid();
+	scope(id, std::forward<F>(f), parent);
 }
 
 template <typename F>
-auto gse::trace::scope(const id& id, F&& f, const std::uint64_t parent) -> void {
+auto gse::trace::scope(const id& id, F&& f, std::uint64_t parent) -> void {
 	if (paused()) {
 		std::forward<F>(f)();
 		return;
@@ -281,40 +322,55 @@ auto gse::trace::scope(const id& id, F&& f, const std::uint64_t parent) -> void 
 
 	ensure_tls_registered();
 
+	if (parent != 0 && parent < 1024) {
+		parent = 0;
+	}
+
 	const auto tid = make_tid();
 	const bool need_push_parent = parent != 0 && (tls.stack.empty() || tls.stack.back() != parent);
 
 	if (need_push_parent) {
-	    tls.stack.push_back(parent);
+		tls.stack.push_back(parent);
 	}
 
-	const auto eid = next_eid.fetch_add(1, std::memory_order::relaxed);
+	const auto eid = allocate_span_eid();
+
+	{
+		std::scoped_lock lk(open_m);
+		open_parents.insert(eid);
+	}
+
 	emit({
-	    .type = event_type::begin,
-	    .id = id.number(),
-	    .eid = eid,
-	    .parent_eid = parent,
-	    .tid = tid,
-	    .ts = system_clock::now<std::uint64_t>()
+		.type = event_type::begin,
+		.id = id.number(),
+		.eid = eid,
+		.parent_eid = parent,
+		.tid = tid,
+		.ts = system_clock::now<std::uint64_t>()
 	});
 
 	tls.stack.push_back(eid);
 
 	auto guard = make_scope_exit([eid, parent, tid, uid = id.number(), need_push_parent] {
-	    if (!tls.stack.empty() && tls.stack.back() == eid) {
-	        emit({
-	            .type = event_type::end,
-	            .id = uid,
-	            .eid = eid,
-	            .parent_eid = parent,
-	            .tid = tid,
-	            .ts = system_clock::now<std::uint64_t>()
-	        });
-	        tls.stack.pop_back();
-	        if (need_push_parent && !tls.stack.empty() && tls.stack.back() == parent) {
-	            tls.stack.pop_back();
-	        }
-	    }
+		{
+			std::scoped_lock lk(open_m);
+			open_parents.erase(eid);
+		}
+
+		if (!tls.stack.empty() && tls.stack.back() == eid) {
+			emit({
+				.type = event_type::end,
+				.id = uid,
+				.eid = eid,
+				.parent_eid = parent,
+				.tid = tid,
+				.ts = system_clock::now<std::uint64_t>()
+			});
+			tls.stack.pop_back();
+			if (need_push_parent && !tls.stack.empty() && tls.stack.back() == parent) {
+				tls.stack.pop_back();
+			}
+		}
 	});
 
 	std::forward<F>(f)();
@@ -330,7 +386,7 @@ auto gse::trace::begin_async(const id& id, const std::uint64_t key) -> void {
 	emit({
 		.type = event_type::async_begin,
 		.id = id.number(),
-		.eid = next_eid.fetch_add(1, std::memory_order::relaxed),
+		.eid = 0,
 		.parent_eid = current_parent_eid(),
 		.tid = make_tid(),
 		.ts = system_clock::now<std::uint64_t>(),
@@ -349,7 +405,7 @@ auto gse::trace::end_async(const id& id, const std::uint64_t key) -> void {
 	emit({
 		.type = event_type::async_end,
 		.id = id.number(),
-		.eid = next_eid.fetch_add(1, std::memory_order::relaxed),
+		.eid = 0,
 		.parent_eid = 0,
 		.tid = make_tid(),
 		.ts = system_clock::now<std::uint64_t>(),
@@ -368,7 +424,7 @@ auto gse::trace::mark(const id& id) -> void {
 	emit({
 		.type = event_type::instant,
 		.id = id.number(),
-		.eid = next_eid.fetch_add(1, std::memory_order::relaxed),
+		.eid = 0,
 		.parent_eid = current_parent_eid(),
 		.tid = make_tid(),
 		.ts = system_clock::now<std::uint64_t>(),
@@ -387,7 +443,7 @@ auto gse::trace::counter(const id& id, const double value) -> void {
 	emit({
 		.type = event_type::counter,
 		.id = id.number(),
-		.eid = next_eid.fetch_add(1, std::memory_order::relaxed),
+		.eid = 0,
 		.parent_eid = 0,
 		.tid = make_tid(),
 		.ts = system_clock::now<std::uint64_t>(),
@@ -455,7 +511,7 @@ auto gse::trace::dump_browser(const std::filesystem::path& path, const frame_vie
 }
 
 auto gse::trace::view() -> frame_view {
-	const auto& fs = frames.read(); 
+	const auto& fs = frames.read();
 	return {
 		.roots = std::span(fs.roots),
 		.storage = reinterpret_cast<const std::byte*>(fs.flat.data()),
@@ -505,10 +561,10 @@ auto gse::trace::scsp_events::push(const event& e) noexcept -> void {
 template <typename Out>
 auto gse::trace::scsp_events::drain_to(Out& out) noexcept -> void {
 	const std::uint32_t w_snapshot = m_w.load(std::memory_order_acquire);
-    while (m_r != w_snapshot) {
-        out.push_back(std::move(m_events[m_r]));
-		m_r = (m_r + 1) & capacity_mask;
-    }
+	while (m_r != w_snapshot) {
+		out.push_back(std::move(m_events[m_r]));
+		m_r = m_r + 1 & capacity_mask;
+	}
 }
 
 auto gse::trace::scsp_events::clear() noexcept -> void {
@@ -561,8 +617,22 @@ auto gse::trace::emit(const event& e) -> void {
 }
 
 auto gse::trace::current_parent_eid() -> std::uint64_t {
-	const auto parent_eid = tls.stack.empty() ? 0 : tls.stack.back();
-	return parent_eid;
+	while (!tls.stack.empty()) {
+		const auto top = tls.stack.back();
+
+		if (top == 0) {
+			return 0;
+		}
+
+		std::scoped_lock lk(open_m);
+		if (open_parents.contains(top)) {
+			return top;
+		}
+		tls.stack.pop_back();
+
+	}
+
+	return 0;
 }
 
 auto gse::trace::build_tree(frame_storage& fs) -> void {
@@ -571,58 +641,39 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 	{
 		std::lock_guard lk(tls_registry_mutex);
 		for (auto* tb : tls_registry) {
-			if (!tb) {
-				continue;
-			}
+			if (!tb) continue;
 			tb->events.drain_to(fs.merged);
 		}
 	}
 
-	if (fs.merged.empty()) {
-		fs.flat.clear();
-		fs.node_pool.clear();
-		fs.roots.clear();
-		return;
-	}
-
 	std::ranges::sort(fs.merged, [](const event& a, const event& b) {
-		if (a.ts != b.ts) {
-			return a.ts < b.ts;
-		}
+		if (a.ts != b.ts) return a.ts < b.ts;
 		return static_cast<int>(a.type) < static_cast<int>(b.type);
 	});
 
-	struct span {
-		uuid id;
-		std::uint32_t tid;
-		time_t<std::uint64_t> t0;
-		time_t<std::uint64_t> t1;
-		std::uint64_t parent{};
-	};
-
-	std::unordered_map<std::uint64_t, span> spans;
-	spans.reserve(fs.merged.size() / 2 + 8);
+	std::unordered_map<std::uint64_t, frame_storage::span> spans = fs.open_spans;
 
 	for (const auto& e : fs.merged) {
 		switch (e.type) {
 			case event_type::begin:
 				spans.emplace(
-					e.eid, 
-					span{
-						.id = e.id,
-						.tid = static_cast<std::uint32_t>(e.tid),
-						.t0 = e.ts,
-						.t1 = 0,
+					e.eid,
+					frame_storage::span{
+						.id	 = e.id,
+						.tid	= static_cast<std::uint32_t>(e.tid),
+						.t0	 = e.ts,
+						.t1	 = {},
 						.parent = e.parent_eid
 					}
 				);
 				break;
-			case event_type::end: {
+			case event_type::end:
 				if (auto it = spans.find(e.eid); it != spans.end()) {
 					it->second.t1 = e.ts;
 				}
-			} break;
-			default: break; 
+				break;
+			default:
+				break;
 		}
 	}
 
@@ -638,29 +689,33 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 		}
 
 		const std::size_t i = fs.flat.size();
-
-		fs.flat.push_back({ 
+		fs.flat.push_back(frame_storage::flat_node{
 			.id = sp.id,
 			.tid = sp.tid,
 			.start = sp.t0,
 			.end = sp.t1,
-			.self = 0
+			.self = {},
+			.children_idx = {}
 		});
 
 		index_of.emplace(eid, i);
 	}
 
+	std::vector has_parent(fs.flat.size(), false);
+	for (const auto& [eid, sp] : spans) {
+		const auto child_i = index_of[eid];
+		if (sp.parent != 0 && index_of.contains(sp.parent)) {
+			const auto parent_i = index_of[sp.parent];
+			fs.flat[parent_i].children_idx.push_back(child_i);
+			has_parent[child_i] = true;
+		}
+	}
+
 	std::vector<std::size_t> roots_idx;
 	roots_idx.reserve(fs.flat.size());
 
-	for (const auto& [eid, sp] : spans) {
-		const auto self_i = index_of[eid];
-		if (sp.parent == 0 || !index_of.contains(sp.parent)) {
-			roots_idx.push_back(self_i);
-		}
-		else {
-			fs.flat[index_of[sp.parent]].children_idx.push_back(self_i);
-		}
+	for (std::size_t i = 0; i < fs.flat.size(); ++i) {
+		if (!has_parent[i]) roots_idx.push_back(i);
 	}
 
 	auto total_ns = [&](const std::size_t i) -> time_t<std::uint64_t> {
@@ -669,15 +724,15 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 
 	std::function<void(std::size_t)> compute_self = [&](const std::size_t i) {
 		auto& n = fs.flat[i];
-		time_t<std::uint64_t> sum_children = 0;
+		time_t<std::uint64_t> sum_children = {};
 
 		for (const auto c : n.children_idx) {
 			compute_self(c);
 			sum_children += total_ns(c);
 		}
 
-		const time_t<std::uint64_t> tot = total_ns(i);
-		n.self = tot > sum_children ? (tot - sum_children) : 0;
+		const auto tot = total_ns(i);
+		n.self = (tot > sum_children) ? (tot - sum_children) : time_t<std::uint64_t>{};
 	};
 
 	for (const auto r : roots_idx) {
@@ -686,46 +741,60 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 
 	fs.node_pool.clear();
 	fs.roots.clear();
-
-	std::function<node(std::size_t)> make_node = [&](const std::size_t i) -> node {
-		auto& [id, tid, start, end, self, children_idx] = fs.flat[i];
-		if (children_idx.empty()) {
-			return node{
-				.id = id,
-				.trace_id = tid,
-				.start = start,
-				.stop = end,
-				.self = self,
-				.children_first = nullptr,
-				.children_count = 0
-			};
-		}
-
-		const auto start_idx = fs.node_pool.size();
-
-		for (const auto c : children_idx) {
-			fs.node_pool.push_back(make_node(c));
-		}
-
-		const node* first = fs.node_pool.data() + start_idx;
-		const std::size_t cnt = fs.node_pool.size() - start_idx;
-
-		return node{
-			.id = id,
-			.trace_id = tid,
-			.start = start,
-			.stop = end,
-			.self = self,
-			.children_first = first,
-			.children_count = cnt
-		};
-	};
-
-	fs.node_pool.reserve(fs.node_pool.size() + fs.flat.size());
+	fs.node_pool.reserve(fs.flat.size());
 	fs.roots.reserve(roots_idx.size());
 
-	for (const auto r : roots_idx) {
-		fs.roots.push_back(make_node(r));
+	auto emplace_shallow = [&](std::size_t flat_i) -> std::size_t {
+		const auto& fn = fs.flat[flat_i];
+		fs.node_pool.push_back(gse::trace::node{
+			.id = fn.id,
+			.trace_id = fn.tid,
+			.start = fn.start,
+			.stop  = fn.end,
+			.self  = fn.self,
+			.children_first = nullptr,
+			.children_count = 0
+		});
+		return fs.node_pool.size() - 1;
+	};
+
+	std::function<void(std::size_t, std::size_t)> build_subtree = [&](std::size_t node_idx, std::size_t flat_i) {
+		auto& n  = fs.node_pool[node_idx];
+		const auto& fn = fs.flat[flat_i];
+
+		if (fn.children_idx.empty()) {
+			n.children_first = nullptr;
+			n.children_count = 0;
+			return;
+		}
+
+		const std::size_t start = fs.node_pool.size();
+
+		for (std::size_t ci : fn.children_idx) {
+			emplace_shallow(ci);
+		}
+
+		n.children_first = fs.node_pool.data() + start;
+		n.children_count = fn.children_idx.size();
+
+		for (std::size_t k = 0; k < fn.children_idx.size(); ++k) {
+			const std::size_t ci = fn.children_idx[k];
+			const std::size_t child_node_idx = start + k;
+			build_subtree(child_node_idx, ci);
+		}
+	};
+
+	for (auto r : roots_idx) {
+		const std::size_t root_idx = emplace_shallow(r);
+		build_subtree(root_idx, r);
+		fs.roots.push_back(fs.node_pool[root_idx]);
+	}
+
+	fs.open_spans.clear();
+	for (auto& [eid, sp] : spans) {
+		if (sp.t1 == time_t<std::uint64_t>{}) {
+			fs.open_spans.emplace(eid, sp);
+		}
 	}
 }
 
@@ -736,41 +805,45 @@ auto gse::trace::make_loc_id(const std::source_location& loc) -> id {
 		fn = fn.substr(0, lp);
 	}
 
-    while (!fn.empty() && std::isspace(static_cast<unsigned char>(fn.back()))) {
-	    fn.remove_suffix(1);
-    }
+	while (!fn.empty() && std::isspace(static_cast<unsigned char>(fn.back()))) {
+		fn.remove_suffix(1);
+	}
 
-    const auto last_col_col = fn.rfind("::");
-    std::string_view tag;
+	const auto last_col_col = fn.rfind("::");
+	std::string_view tag;
 
-    if (last_col_col != std::string_view::npos) {
-        std::size_t start = fn.rfind(' ', last_col_col);
+	if (last_col_col != std::string_view::npos) {
+		std::size_t start = fn.rfind(' ', last_col_col);
 
-        if (start == std::string_view::npos) {
-	        start = 0;
-        } else {
-	        start += 1;
-        }
+		if (start == std::string_view::npos) {
+			start = 0;
+		} else {
+			start += 1;
+		}
 
-        tag = fn.substr(start);
+		tag = fn.substr(start);
 
-        static constexpr std::string_view candidates[] = {
-            "__cdecl", "__stdcall", "__thiscall", "__vectorcall", "cdecl", "stdcall", "thiscall", "vectorcall"
-        };
+		static constexpr std::string_view candidates[] = {
+			"__cdecl", "__stdcall", "__thiscall", "__vectorcall", "cdecl", "stdcall", "thiscall", "vectorcall"
+		};
 
-        for (auto cc : candidates) {
-            if (tag.size() > cc.size() && tag.substr(0, cc.size()) == cc) {
-                tag.remove_prefix(cc.size());
-                while (!tag.empty() && std::isspace(static_cast<unsigned char>(tag.front()))) {
-	                tag.remove_prefix(1);
-                }
-                break;
-            }
-        }
-    } else {
-        const auto last_sp = fn.rfind(' ');
-        tag = (last_sp == std::string_view::npos) ? fn : fn.substr(last_sp + 1);
-    }
+		for (auto cc : candidates) {
+			if (tag.size() > cc.size() && tag.substr(0, cc.size()) == cc) {
+				tag.remove_prefix(cc.size());
+				while (!tag.empty() && std::isspace(static_cast<unsigned char>(tag.front()))) {
+					tag.remove_prefix(1);
+				}
+				break;
+			}
+		}
+	} else {
+		const auto last_sp = fn.rfind(' ');
+		tag = (last_sp == std::string_view::npos) ? fn : fn.substr(last_sp + 1);
+	}
 
 	return find_or_generate_id(tag);
+}
+
+auto gse::trace::allocate_span_eid() -> std::uint64_t {
+	return next_eid.fetch_add(1, std::memory_order_relaxed);
 }

@@ -95,6 +95,7 @@ auto update_air_resistance(gse::physics::motion_component& component) -> void {
 }
 
 auto update_velocity(gse::physics::motion_component& component, const gse::time delta_time) -> void {
+	std::println("dt:{}", delta_time.as<gse::seconds>());
 	if (component.self_controlled && !component.airborne) {
 		constexpr float damping_factor = 5.0f;
 		component.current_velocity *= std::max(0.f, 1.0f - damping_factor * delta_time.as<gse::seconds>());

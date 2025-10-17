@@ -73,6 +73,9 @@ export namespace gse {
 
 		auto exists(
 		) const -> bool;
+
+		auto reset(
+		) -> void;
 	private:
 		explicit id(
 			uuid id,
@@ -113,6 +116,11 @@ auto gse::id::tag() const -> const std::string& {
 
 auto gse::id::exists() const -> bool {
 	return m_number != std::numeric_limits<uuid>::max();
+}
+
+auto gse::id::reset() -> void {
+	this->m_number = std::numeric_limits<uuid>::max();
+	this->m_tag.clear();
 }
 
 gse::id::id(const uuid id, std::string tag) : m_number(id), m_tag(std::move(tag)) {}

@@ -158,10 +158,13 @@ auto gse::start(const flags engine_flags, const engine_config& config) -> void {
 						}, find_or_generate_id("Engine::Render")
 					);
 				}
-			});
+
+				frame_tasks.wait();
+			}, 0);
 
 			frame_sync::end();
 			trace::finalize_frame();
+			trace::frame_seq.fetch_add(1, std::memory_order_relaxed);
         }
 
         task::wait_idle();
