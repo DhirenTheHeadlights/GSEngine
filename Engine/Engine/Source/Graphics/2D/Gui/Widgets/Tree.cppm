@@ -169,7 +169,7 @@ auto gse::gui::draw::node(widget_context& ctx, const T& t, const tree_ops<T>& op
 	}
 	else if (hovered) {
 		background = ctx.style.color_dock_widget;
-		if (mouse::pressed(mouse_button::button_1) && !active_widget_id.exists()) {
+		if (mouse::pressed(mouse_button::button_1)) {
 			active_widget_id = row_widget_id;
 		}
 	}
@@ -224,7 +224,7 @@ auto gse::gui::draw::node(widget_context& ctx, const T& t, const tree_ops<T>& op
 		ops.custom_draw(t, ctx, row_rect, hovered, selected, level);
 	}
 
-	if (mouse::released(mouse_button::button_1) && active_widget_id == row_widget_id) {
+	if (mouse::released(mouse_button::button_1)) {
 		if (hovered) {
 			if (const bool clicked_arrow = arrow_rect.contains(mouse::position()); !leaf && (opt.toggle_on_row_click || clicked_arrow)) {
 				if (is_open) {
@@ -250,6 +250,8 @@ auto gse::gui::draw::node(widget_context& ctx, const T& t, const tree_ops<T>& op
 				}
 			}
 		}
+
+		active_widget_id.reset();
 	}
 
 	ctx.layout_cursor.y() -= (row_height + gap);

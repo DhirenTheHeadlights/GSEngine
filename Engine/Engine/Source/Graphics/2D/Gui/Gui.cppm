@@ -466,149 +466,170 @@ auto gse::gui::profiler() -> void {
 
 	static draw::tree_selection selection;
 	static draw::tree_options options{
-		.indent_per_level = 15.f,
-		.toggle_on_row_click = true,
-		.multi_select = false
+	    .indent_per_level = 15.f,
+	    .toggle_on_row_click = true,
+	    .multi_select = false
 	};
 
 	ids::per_frame_key_cache cache;
-
 	cache.begin(ids::stable_key("gui.tree.profiler"));
 
+	std::unordered_map<const trace::node*, const trace::node*> parent_of;
+	std::unordered_map<const trace::node*, const trace::node*> root_of;
+
+	auto dur_ns = [](const trace::node& n) -> double {
+	    return static_cast<double>((n.stop - n.start).as<nanoseconds>());
+	};
+
+	std::function<void(const trace::node&, const trace::node*, const trace::node*)> walk =
+	[&](const trace::node& n, const trace::node* root, const trace::node* parent) {
+	    if (parent) parent_of[&n] = parent;
+	    if (root)   root_of[&n]   = root;
+	    const std::size_t count = n.children_count;
+	    for (std::size_t i = 0; i < count; ++i) {
+	        const trace::node& c = n.children_first[i];
+	        walk(c, root ? root : &n, &n);
+	    }
+	};
+
+	for (const auto& r : roots) {
+	    walk(r, &r, nullptr);
+	}
+
 	const draw::tree_ops<trace::node> ops{
-		.children = [](const trace::node& n) -> std::span<const trace::node> {
-			return std::span{ n.children_first, n.children_count };
-		},
-		.label = [](const trace::node& n) -> std::string_view {
-			return tag(n.id);
-		},
-		.key = [&cache](const trace::node& n) -> std::uint64_t {
-			return cache.key(&n);
-		},
-		.is_leaf = [](const trace::node& n) -> bool {
-			return n.children_count == 0;
-		},
-		.custom_draw = [](const trace::node& n, const widget_context& ctx, const ui_rect& row, bool /*hovered*/, bool /*selected*/, int /*level*/) {
-			struct cand {
-		        double v;
-		        std::string_view name;
-		    };
+	    .children = [](const trace::node& n) -> std::span<const trace::node> {
+	        return std::span{ n.children_first, n.children_count };
+	    },
+	    .label = [](const trace::node& n) -> std::string_view {
+	        return tag(n.id);
+	    },
+	    .key = [&cache](const trace::node& n) -> std::uint64_t {
+	        return cache.key(&n);
+	    },
+	    .is_leaf = [](const trace::node& n) -> bool {
+	        return n.children_count == 0;
+	    },
+	    .custom_draw = [&parent_of, &root_of, &dur_ns](const trace::node& n, const widget_context& ctx, const ui_rect& row, bool /*hovered*/, bool /*selected*/, int  /*level*/) {
+	        struct cand { double v; std::string_view name; };
+	        const auto span = (n.stop - n.start);
+	        const auto self = n.self;
 
-		    const auto span = (n.stop - n.start);
-		    const auto self = n.self;
+	        const cand dur_cands[] = {
+	            { static_cast<double>(span.as<seconds>()),      decltype(seconds)::unit_name      },
+	            { static_cast<double>(span.as<milliseconds>()), decltype(milliseconds)::unit_name },
+	            { static_cast<double>(span.as<microseconds>()), decltype(microseconds)::unit_name },
+	            { static_cast<double>(span.as<nanoseconds>()),  decltype(nanoseconds)::unit_name  },
+	        };
+	        const cand self_cands[] = {
+	            { static_cast<double>(self.as<seconds>()),      decltype(seconds)::unit_name      },
+	            { static_cast<double>(self.as<milliseconds>()), decltype(milliseconds)::unit_name },
+	            { static_cast<double>(self.as<microseconds>()), decltype(microseconds)::unit_name },
+	            { static_cast<double>(self.as<nanoseconds>()),  decltype(nanoseconds)::unit_name  },
+	        };
 
-		    const cand dur_cands[] = {
-		        { static_cast<double>(span.as<seconds>()),      decltype(seconds)::unit_name      },
-		        { static_cast<double>(span.as<milliseconds>()), decltype(milliseconds)::unit_name },
-		        { static_cast<double>(span.as<microseconds>()), decltype(microseconds)::unit_name },
-		        { static_cast<double>(span.as<nanoseconds>()),  decltype(nanoseconds)::unit_name  },
-		    };
-		    const cand self_cands[] = {
-		        { static_cast<double>(self.as<seconds>()),      decltype(seconds)::unit_name      },
-		        { static_cast<double>(self.as<milliseconds>()), decltype(milliseconds)::unit_name },
-		        { static_cast<double>(self.as<microseconds>()), decltype(microseconds)::unit_name },
-		        { static_cast<double>(self.as<nanoseconds>()),  decltype(nanoseconds)::unit_name  },
-		    };
+	        auto choose = [](const cand* c) -> cand {
+	            for (int i = 0; i < 3; ++i) if (c[i].v >= 1.0) return c[i];
+	            return c[3];
+	        };
 
-		    auto choose = [](const cand* c) -> cand {
-		        for (int i = 0; i < 3; ++i) if (c[i].v >= 1.0) return c[i];
-		        return c[3];
-		    };
+	        const double self_ns = static_cast<double>(n.self.as<nanoseconds>());
 
-			const double dur_ns  = static_cast<double>((n.stop - n.start).as<nanoseconds>());
-			const double self_ns = static_cast<double>(n.self.as<nanoseconds>());
+	        const trace::node* parent = nullptr;
+	        if (const auto it = parent_of.find(&n); it != parent_of.end()) {
+		        parent = it->second;
+	        }
 
-			const double pct = dur_ns > 0.0 ? (self_ns / dur_ns) * 100.0 : 0.0;
+	        const double parent_ns = parent ? dur_ns(*parent) : dur_ns(n);
+	        const double pct_parent = parent_ns > 0.0 ? (self_ns / parent_ns) * 100.0 : 0.0;
 
-		    const cand d = choose(dur_cands);
-		    const cand s = choose(self_cands);
+	        const cand d = choose(dur_cands);
+	        const cand s = choose(self_cands);
 
-		    auto to_fixed = [](const double v, char* buf, const std::size_t num, const int precision) -> std::string_view {
-		        auto [p, ec] = std::to_chars(buf, buf + num, v, std::chars_format::fixed, precision);
-		        if (ec != std::errc{}) return {};
-		        return { buf, static_cast<size_t>(p - buf) };
-		    };
+	        auto to_fixed = [](const double v, char* buf, const std::size_t num, const int precision) -> std::string_view {
+	            auto [p, ec] = std::to_chars(buf, buf + num, v, std::chars_format::fixed, precision);
+	            if (ec != std::errc{}) {
+		            return {};
+	            }
+	            return { buf, static_cast<size_t>(p - buf) };
+	        };
 
-		    char dur_buf[32], self_buf[32], pct_buf[32];
-		    const std::string_view dur_num  = to_fixed(d.v,  dur_buf,  sizeof(dur_buf), 3);
-		    const std::string_view self_num = to_fixed(s.v,  self_buf, sizeof(self_buf), 3);
-		    const std::string_view pct_num  = to_fixed(pct,  pct_buf,  sizeof(pct_buf),  1);
+	        char dur_buf[32], self_buf[32], pct_buf[32];
+	        const std::string_view dur_num  = to_fixed(d.v,  dur_buf,  sizeof(dur_buf), 3);
+	        const std::string_view self_num = to_fixed(s.v,  self_buf, sizeof(self_buf), 3);
+	        const std::string_view pct_num  = to_fixed(pct_parent,  pct_buf,  sizeof(pct_buf),  1);
 
-		    const std::string_view dur_unit  = d.name;
-		    const std::string_view self_unit = s.name;
+	        static constexpr std::string_view cap_dur  = "Dur";
+	        static constexpr std::string_view cap_self = "Self";
+	        static constexpr std::string_view cap_pct  = "Parent%";
 
-		    static constexpr std::string_view cap_dur  = "Dur";
-		    static constexpr std::string_view cap_self = "Self";
-		    static constexpr std::string_view cap_pct  = "Percent";
+	        auto width_sv = [&](const std::string_view str, const float scale) -> float {
+	            return ctx.font->width(str, scale);
+	        };
 
-		    auto width_sv = [&](const std::string_view str, const float scale) -> float {
-		        return ctx.font->width(str, scale);
-		    };
+	        const float pad = ctx.style.padding;
+	        const float widget_h = row.height();
+	        const float cap_scale = ctx.style.font_size * 1.f;
+	        const float num_scale = ctx.style.font_size;
 
-		    const float pad = ctx.style.padding;
-		    const float widget_h = row.height();
-		    const float cap_scale = ctx.style.font_size * 1.f;
-		    const float num_scale = ctx.style.font_size;
+	        constexpr int num_boxes = 3;
+	        const float all_spacing = pad * static_cast<float>(num_boxes - 1);
+	        const float max_total_w = std::min(row.width() * 0.55f, 1000.0f);
+	        const float box_w = (max_total_w - all_spacing) / static_cast<float>(num_boxes);
 
-		    constexpr int num_boxes = 3;
-		    const float all_spacing = pad * static_cast<float>(num_boxes - 1);
-		    const float max_total_w = std::min(row.width() * 0.55f, 1000.0f);
-		    const float box_w = (max_total_w - all_spacing) / static_cast<float>(num_boxes);
+	        unitless::vec2 pos = { row.right() - max_total_w, row.top() };
 
-		    unitless::vec2 pos = { row.right() - max_total_w, row.top() };
+	        auto draw_box = [&](const std::string_view caption, const std::string_view num, const std::string_view unit) {
+	            const ui_rect box = ui_rect::from_position_size(pos, { box_w, widget_h });
 
-		    auto draw_box = [&](const std::string_view caption, const std::string_view num, const std::string_view unit) {
-		         const ui_rect box = ui_rect::from_position_size(pos, { box_w, widget_h });
+	            ctx.sprite_renderer.queue({
+	                .rect = box,
+	                .color = ctx.style.color_widget_background,
+	                .texture = ctx.blank_texture
+	            });
 
-			    ctx.sprite_renderer.queue({
-			        .rect = box,
-			        .color = ctx.style.color_widget_background,
-			        .texture = ctx.blank_texture
-			    });
+	            const float num_w   = width_sv(num,  num_scale);
+	            const float unit_w  = width_sv(unit, num_scale);
+	            const float cap_w   = width_sv(caption, cap_scale);
+	            const float gap_nu  = std::max(2.0f, pad * 0.15f);
+	            const float gap_uc  = std::max(2.0f, pad * 0.25f);
 
-			    const float num_w   = width_sv(num,  num_scale);
-			    const float unit_w  = width_sv(unit, num_scale);
-			    const float cap_w   = width_sv(caption, cap_scale);
-			    const float gap_nu  = std::max(2.0f, pad * 0.15f); 
-			    const float gap_uc  = std::max(2.0f, pad * 0.25f);  
+	            float x = box.right() - pad * 0.5f - (num_w + gap_nu + unit_w + gap_uc + cap_w);
 
-			    float x = box.right() - pad * 0.5f - (num_w + gap_nu + unit_w + gap_uc + cap_w);
+	            ctx.text_renderer.draw_text({
+	                .font = ctx.font,
+	                .text = std::string(num),
+	                .position = { x, box.center().y() + num_scale / 2.f },
+	                .scale = num_scale,
+	                .clip_rect = box
+	            });
 
-			    ctx.text_renderer.draw_text({
-			        .font = ctx.font,
-			        .text = std::string(num),
-			        .position = { x, box.center().y() + num_scale / 2.f },
-			        .scale = num_scale,
-			        .clip_rect = box
-			    });
+	            x += num_w + gap_nu;
 
-			    x += num_w + gap_nu;
+	            ctx.text_renderer.draw_text({
+	                .font = ctx.font,
+	                .text = std::string(unit),
+	                .position = { x, box.center().y() + num_scale / 2.f },
+	                .scale = num_scale,
+	                .clip_rect = box
+	            });
 
-			    ctx.text_renderer.draw_text({
-			        .font = ctx.font,
-			        .text = std::string(unit),
-			        .position = { x, box.center().y() + num_scale / 2.f },
-			        .scale = num_scale,
-			        .clip_rect = box
-			    });
+	            x += unit_w + gap_uc;
 
-			    x += unit_w + gap_uc;
+	            ctx.text_renderer.draw_text({
+	                .font = ctx.font,
+	                .text = std::string(caption),
+	                .position = { x, box.center().y() + cap_scale / 2.f },
+	                .scale = cap_scale,
+	                .clip_rect = box
+	            });
 
-			    ctx.text_renderer.draw_text({
-			        .font = ctx.font,
-			        .text = std::string(caption),
-			        .position = { x, box.center().y() + cap_scale / 2.f },
-			        .scale = cap_scale,
-			        .clip_rect = box
-			    });
+	            pos.x() += box_w + pad;
+	        };
 
-			    pos.x() += box_w + pad;
-		    };
-
-		    draw_box(cap_dur,  dur_num,  dur_unit);
-		    draw_box(cap_self, self_num, self_unit);
-		    draw_box(cap_pct,  pct_num,  "");
-		}
+	        draw_box(cap_dur,  dur_num,  d.name);
+	        draw_box(cap_self, self_num, s.name);
+	        draw_box(cap_pct,  pct_num,  "");
+	    }
 	};
 
 	ids::scope tree_scope("gui.tree.profiler");

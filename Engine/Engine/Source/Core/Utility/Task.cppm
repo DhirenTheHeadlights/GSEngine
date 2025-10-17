@@ -16,7 +16,7 @@ export namespace gse {
 }
 
 export namespace gse::task {
-	class group; // Forward declaration
+	class group; 
 
 	template <typename F>
 	auto start(
@@ -93,7 +93,6 @@ namespace gse::task {
 	std::size_t coalesce_threshold = 64;
 
 	thread_local std::optional<std::size_t> local_worker_id = std::nullopt;
-	thread_local std::vector<std::uint64_t> tls_group_stack;
 
 	auto current_worker_id(
 	) noexcept -> std::optional<std::size_t>;
@@ -107,26 +106,24 @@ namespace gse::task {
 }
 
 gse::task::group::group(const id& label) : m_label(label) {
-	m_outer_parent = tls_group_stack.empty() ? trace::current_eid() : tls_group_stack.back();
-	m_parent_eid   = trace::begin_block(m_label, m_outer_parent);
-	tls_group_stack.push_back(m_parent_eid);
+	m_outer_parent = trace::current_eid();
+	m_parent_eid = trace::begin_block(m_label, m_outer_parent);
 }
 
 gse::task::group::~group() {
 	if (!m_waited) wait();
     trace::end_block(m_label, m_parent_eid, m_outer_parent);
-    tls_group_stack.pop_back();
 }
 
 auto gse::task::group::post(job j, const id& id) -> void {
 	 in_flight.fetch_add(1, std::memory_order_relaxed);
-        m_task_count.fetch_add(1, std::memory_order_relaxed);
+    m_task_count.fetch_add(1, std::memory_order_relaxed);
 
-        auto p = std::make_shared<job>(std::move(j));
-        const auto key = async_key(p.get());
+    auto p = std::make_shared<job>(std::move(j));
+    const auto key = async_key(p.get());
 
-        trace::begin_async(id, key);
-        arena->enqueue([this, p, id, key] {
+    trace::begin_async(id, key);
+	arena->enqueue([this, p, id, key] {
         trace::end_async(id, key);
 
         auto group_done = make_scope_exit([this]{
@@ -229,7 +226,7 @@ auto gse::task::post(job j, const id& id) -> void {
     auto p = std::make_shared<job>(std::move(j));
     const auto key = async_key(p.get());
 
-    const auto parent = tls_group_stack.empty() ? trace::current_eid() : tls_group_stack.back();
+    const auto parent = trace::current_eid();
 
     trace::begin_async(id, key);
 
@@ -261,7 +258,7 @@ auto gse::task::post_range(It first, It last, const id& id) -> void {
 	}
 
 	in_flight.fetch_add(n, std::memory_order_relaxed);
-	const auto parent = tls_group_stack.empty() ? trace::current_eid() : tls_group_stack.back();
+	const auto parent = trace::current_eid();
 
 	for (; first != last; ++first) {
 		auto p = std::make_shared<job>(job(*first));
@@ -298,17 +295,18 @@ template <typename F>
 auto gse::task::parallel_for(first_arg_t<F> first, first_arg_t<F> last, F&& func, const id& id) -> void {
 	using index = first_arg_t<F>;
 
-	if (last <= first) return;
+	if (last <= first) {
+		return;
+	}
 
 	const index n = last - first;
-	const auto parent_eid = trace::current_eid();
 
 	trace::scope(id, [&] {
 		if (n <= static_cast<index>(coalesce_threshold)) {
 			for (index i = first; i < last; ++i) {
 				trace::scope(id, [&]{
 					func(i);
-				}, parent_eid);
+				});
 			}
 			return;
 		}
@@ -323,11 +321,11 @@ auto gse::task::parallel_for(first_arg_t<F> first, first_arg_t<F> last, F&& func
 								func(i);
 							});
 						}
-					}, parent_eid);
+					});
 				}
 			);
 		});
-	}, parent_eid);
+	});
 }
 
 auto gse::task::thread_count() -> size_t {
