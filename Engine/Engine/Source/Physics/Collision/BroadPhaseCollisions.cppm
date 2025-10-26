@@ -19,16 +19,14 @@ export namespace gse::broad_phase_collision {
 	auto check_future_collision(
 		const bounding_box& dynamic_box,
 		const physics::motion_component* dynamic_motion_component,
-		const bounding_box& other_box,
-		time dt
+		const bounding_box& other_box
 	) -> bool;
 
 	auto check_collision(
 		physics::collision_component& dynamic_object_collision_component,
 		physics::motion_component* dynamic_object_motion_component,
-		physics::collision_component& other_collision_component,
-		physics::motion_component* other_motion_component,
-		time dt
+		const physics::collision_component& other_collision_component,
+		physics::motion_component* other_motion_component
 	) -> void;
 
 	auto calculate_collision_information(
@@ -37,7 +35,7 @@ export namespace gse::broad_phase_collision {
 	) -> collision_information;
 
 	auto update(
-		gse::registry& registry, time dt
+		registry& registry
 	) -> void;
 }
 
@@ -49,25 +47,25 @@ auto gse::broad_phase_collision::check_collision(const bounding_box& box1, const
 	};
 }
 
-auto gse::broad_phase_collision::check_future_collision(const bounding_box& dynamic_box, const physics::motion_component* dynamic_motion_component, const bounding_box& other_box, const time dt) -> bool {
+auto gse::broad_phase_collision::check_future_collision(const bounding_box& dynamic_box, const physics::motion_component* dynamic_motion_component, const bounding_box& other_box) -> bool {
 	const bounding_box expanded_box = dynamic_box;							
 	physics::motion_component temp_component = *dynamic_motion_component;
-	update_object(temp_component, dt, nullptr);										
+	update_object(temp_component, nullptr);										
 	return check_collision(expanded_box, other_box);								
 }
 
-auto gse::broad_phase_collision::check_collision(physics::collision_component& dynamic_object_collision_component, physics::motion_component* dynamic_object_motion_component, physics::collision_component& other_collision_component, physics::motion_component* other_motion_component, const time dt) -> void {
+auto gse::broad_phase_collision::check_collision(physics::collision_component& dynamic_object_collision_component, physics::motion_component* dynamic_object_motion_component, const physics::collision_component& other_collision_component, physics::motion_component* other_motion_component) -> void {
 	const auto& box1 = dynamic_object_collision_component.bounding_box;
 	const auto& box2 = other_collision_component.bounding_box;
 
-	if (check_future_collision(box1, dynamic_object_motion_component, box2, dt)) {
+	if (check_future_collision(box1, dynamic_object_motion_component, box2)) {
 		if (dynamic_object_collision_component.resolve_collisions) {
 			narrow_phase_collision::resolve_collision(dynamic_object_motion_component, dynamic_object_collision_component, other_motion_component, other_collision_component);
 		}
 	}
 }
 
-auto gse::broad_phase_collision::update(registry& registry, const time dt) -> void {
+auto gse::broad_phase_collision::update(registry& registry) -> void {
 	const auto airborne_check = [](
 		physics::motion_component* motion_component,
 		const physics::collision_component& collision_component
@@ -105,7 +103,7 @@ auto gse::broad_phase_collision::update(registry& registry, const time dt) -> vo
 
 			auto* other_motion = registry.try_linked_object_write<physics::motion_component>(other_collision_component.owner_id());
 
-			check_collision(collision_component, motion, other_collision_component, other_motion, dt);
+			check_collision(collision_component, motion, other_collision_component, other_motion);
 		}
 
 		if (motion) {

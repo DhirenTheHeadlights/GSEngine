@@ -1,29 +1,31 @@
 export module gse.utility:system_clock;
 
 import std;
-
 import gse.physics.math;
-
 import :clock;
 
 export namespace gse::system_clock {
-	auto update(
-	) -> void;
+	auto update() -> void;
 
 	template <typename T = float>
-	auto dt(
-	) -> time_t<T>;
+	auto dt() -> time_t<T>;
+
+	template <auto U, typename T = float>
+	auto dt() -> time_t<T, U>;
 
 	template <typename T = float>
-	auto now(
-	) -> time_t<T>;
+	auto now() -> time_t<T>;
 
-	auto fps(
-	) -> std::uint32_t;
+	template <auto U, typename T = float>
+	auto now() -> time_t<T, U>;
+
+	auto fps() -> std::uint32_t;
 
 	template <typename T = float>
-	auto constant_update_time(
-	) -> time_t<T>;
+	auto constant_update_time() -> time_t<T>;
+
+	template <auto U, typename T = float>
+	auto constant_update_time() -> time_t<T, U>;
 }
 
 namespace gse::system_clock {
@@ -31,7 +33,7 @@ namespace gse::system_clock {
 	clock dt_clock;
 
 	time_t<double> delta_time;
-    time_t<double> frame_rate_update_time;
+	time_t<double> frame_rate_update_time;
 
 	std::uint32_t frame_count = 0;
 	std::uint32_t frame_rate_count = 0;
@@ -58,14 +60,32 @@ auto gse::system_clock::dt() -> time_t<T> {
 	return quantity_cast<time_t<T>>(std::min(delta_time, const_update_time));
 }
 
+template <auto U, typename T>
+auto gse::system_clock::dt() -> time_t<T, U> {
+	auto v = quantity_cast<time_t<T>>(std::min(delta_time, const_update_time));
+	return time_t<T, U>(v.template as<U>());
+}
+
 template <typename T>
 auto gse::system_clock::now() -> time_t<T> {
 	return main_clock.elapsed<T>();
 }
 
+template <auto U, typename T>
+auto gse::system_clock::now() -> time_t<T, U> {
+	auto v = main_clock.elapsed<T>();
+	return time_t<T, U>(v.template as<U>());
+}
+
 template <typename T>
 auto gse::system_clock::constant_update_time() -> time_t<T> {
 	return quantity_cast<time_t<T>>(const_update_time);
+}
+
+template <auto U, typename T>
+auto gse::system_clock::constant_update_time() -> time_t<T, U> {
+	auto v = quantity_cast<time_t<T>>(const_update_time);
+	return time_t<T, U>(v.template as<U>());
 }
 
 auto gse::system_clock::fps() -> std::uint32_t {

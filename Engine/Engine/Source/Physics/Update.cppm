@@ -30,15 +30,14 @@ auto gse::physics::update(const std::vector<std::reference_wrapper<registry>>& r
 		for (int i = 0; i < 5; i++) {
 			for (auto& registry : registries) {
 				broad_phase_collision::update(
-					registry,
-					const_update_time
+					registry
 				);
 			}
 		}
 
 		for (auto& registry : registries) {
 			for (auto& object : registry.get().linked_objects_write<motion_component>()) {
-				update_object(object, const_update_time, registry.get().try_linked_object_write<collision_component>(object.owner_id()));
+				update_object(object, registry.get().try_linked_object_write<collision_component>(object.owner_id()));
 			}
 		}
 
