@@ -113,8 +113,6 @@ export namespace gse::trace {
 
 	auto finalize_paused(
 	) -> bool;
-
-	std::atomic<std::uint64_t> frame_seq{0};
 }
 
 namespace gse::trace {
@@ -270,7 +268,7 @@ auto gse::trace::begin_block(const id& id, std::uint64_t parent) -> std::uint64_
 
 	{
 		std::scoped_lock lk(open_m);
-		open_parents.erase(eid);
+		open_parents.insert(eid);
 	}
 
 	emit({
@@ -563,7 +561,7 @@ auto gse::trace::scsp_events::drain_to(Out& out) noexcept -> void {
 	const std::uint32_t w_snapshot = m_w.load(std::memory_order_acquire);
 	while (m_r != w_snapshot) {
 		out.push_back(std::move(m_events[m_r]));
-		m_r = m_r + 1 & capacity_mask;
+		m_r = (m_r + 1) & capacity_mask;
 	}
 }
 
@@ -629,7 +627,6 @@ auto gse::trace::current_parent_eid() -> std::uint64_t {
 			return top;
 		}
 		tls.stack.pop_back();
-
 	}
 
 	return 0;
@@ -659,10 +656,10 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 				spans.emplace(
 					e.eid,
 					frame_storage::span{
-						.id	 = e.id,
-						.tid	= static_cast<std::uint32_t>(e.tid),
-						.t0	 = e.ts,
-						.t1	 = {},
+						.id  = e.id,
+						.tid = static_cast<std::uint32_t>(e.tid),
+						.t0  = e.ts,
+						.t1  = {},
 						.parent = e.parent_eid
 					}
 				);
@@ -718,21 +715,67 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 		if (!has_parent[i]) roots_idx.push_back(i);
 	}
 
-	auto total_ns = [&](const std::size_t i) -> time_t<std::uint64_t> {
-		return fs.flat[i].end - fs.flat[i].start;
-	};
-
 	std::function<void(std::size_t)> compute_self = [&](const std::size_t i) {
 		auto& n = fs.flat[i];
-		time_t<std::uint64_t> sum_children = {};
 
 		for (const auto c : n.children_idx) {
 			compute_self(c);
-			sum_children += total_ns(c);
 		}
 
-		const auto tot = total_ns(i);
-		n.self = (tot > sum_children) ? (tot - sum_children) : time_t<std::uint64_t>{};
+		const auto parent_begin = n.start;
+		const auto parent_end = n.end;
+		const auto parent_tot = parent_end - parent_begin;
+
+		if (n.children_idx.empty() || parent_tot <= 0) {
+			n.self = parent_tot;
+			return;
+		}
+
+		struct seg {
+			time_t<std::uint64_t> a;
+			time_t<std::uint64_t> b;
+		};
+
+		std::vector<seg> segs;
+		segs.reserve(n.children_idx.size());
+
+		for (const auto c : n.children_idx) {
+			const auto& ch = fs.flat[c];
+
+			auto a = std::max(ch.start, parent_begin);
+			auto b = std::min(ch.end, parent_end);
+
+			if (b > a) {
+				segs.push_back({a, b});
+			}
+		}
+
+		if (segs.empty()) {
+			n.self = parent_tot;
+			return;
+		}
+
+		std::ranges::sort(segs, [](const seg& x, const seg& y) {
+			return x.a < y.a;
+		});
+
+		time_t<std::uint64_t> covered{};
+
+		seg cur = segs[0];
+
+		for (std::size_t k = 1; k < segs.size(); ++k) {
+			if (segs[k].a <= cur.b) {
+				if (segs[k].b > cur.b) {
+					cur.b = segs[k].b;
+				}
+			} else {
+				covered += (cur.b - cur.a);
+				cur = segs[k];
+			}
+		}
+		covered += (cur.b - cur.a);
+
+		n.self = (covered < parent_tot) ? (parent_tot - covered) : time_t<std::uint64_t>{};
 	};
 
 	for (const auto r : roots_idx) {
@@ -744,7 +787,7 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 	fs.node_pool.reserve(fs.flat.size());
 	fs.roots.reserve(roots_idx.size());
 
-	auto emplace_shallow = [&](std::size_t flat_i) -> std::size_t {
+	auto emplace_shallow = [&](const std::size_t flat_i) -> std::size_t {
 		const auto& fn = fs.flat[flat_i];
 		fs.node_pool.push_back(gse::trace::node{
 			.id = fn.id,
@@ -758,8 +801,8 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 		return fs.node_pool.size() - 1;
 	};
 
-	std::function<void(std::size_t, std::size_t)> build_subtree = [&](std::size_t node_idx, std::size_t flat_i) {
-		auto& n  = fs.node_pool[node_idx];
+	std::function<void(std::size_t, std::size_t)> build_subtree = [&](const std::size_t node_idx, const std::size_t flat_i) {
+		auto& n = fs.node_pool[node_idx];
 		const auto& fn = fs.flat[flat_i];
 
 		if (fn.children_idx.empty()) {
@@ -784,7 +827,7 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 		}
 	};
 
-	for (auto r : roots_idx) {
+	for (const auto r : roots_idx) {
 		const std::size_t root_idx = emplace_shallow(r);
 		build_subtree(root_idx, r);
 		fs.roots.push_back(fs.node_pool[root_idx]);
@@ -838,7 +881,7 @@ auto gse::trace::make_loc_id(const std::source_location& loc) -> id {
 		}
 	} else {
 		const auto last_sp = fn.rfind(' ');
-		tag = (last_sp == std::string_view::npos) ? fn : fn.substr(last_sp + 1);
+		tag = last_sp == std::string_view::npos ? fn : fn.substr(last_sp + 1);
 	}
 
 	return find_or_generate_id(tag);

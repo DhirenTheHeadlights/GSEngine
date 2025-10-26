@@ -4,7 +4,7 @@ import std;
 
 import :simd;
 
-namespace gse::internal {
+export namespace gse::internal {
 	template <typename T>
 		concept is_arithmetic_wrapper =
 		!std::is_arithmetic_v<T> &&
@@ -47,8 +47,10 @@ export namespace gse::vec {
 	template <typename Derived, internal::is_vec_element T, std::size_t N>
 	class base : public storage<T, N> {
 	public:
+		using tag = void;
 		using value_type = T;
 		using storage_type = internal::vec_storage_type_t<T>;
+		static constexpr std::size_t extent = N;
 
 		constexpr base() = default;
 		constexpr base(const T& value);
@@ -132,6 +134,14 @@ export namespace gse {
 
 	template <typename T, std::size_t N>
 	using vector_type_for_element_t = vector_type_for_element<T, N>::type;
+
+	template <typename V>
+	concept is_vec = 
+		requires(const V& v) {
+        typename V::tag;   
+        typename V::value_type; 
+        { v.as_storage_span() }; 
+    };
 }
 
 export template <typename A, std::size_t N, typename CharT>

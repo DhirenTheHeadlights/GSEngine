@@ -6,68 +6,68 @@ import :vector;
 import :units;
 
 export namespace gse {
-	template <typename D1, typename D2, typename T1, typename T2, std::size_t N>
+	template <is_vec V1, is_vec V2> requires (V1::extent == V2::extent)
 	constexpr auto dot(
-		const vec::base<D1, T1, N>& lhs,
-		const vec::base<D2, T2, N>& rhs
+		const V1& lhs,
+		const V2& rhs
 	);
 
-	template <typename D, typename T, std::size_t N>
+	template <is_vec V>
 	constexpr auto magnitude(
-		const vec::base<D, T, N>& v
+		const V& v
 	);
 
-	template <typename D, typename T, std::size_t N>
+	template <is_vec V>
 	constexpr auto normalize(
-		const vec::base<D, T, N>& v
+		const V& v
 	);
 
-	template <typename D1, typename D2, typename T1, typename T2, std::size_t N>
+	template <is_vec V1, is_vec V2> requires (V1::extent == V2::extent)
 	constexpr auto distance(
-		const vec::base<D1, T1, N>& a,
-		const vec::base<D2, T2, N>& b
+		const V1& a,
+		const V2& b
 	);
 
-	template <typename D1, typename D2, typename T1, typename T2>
+	template <is_vec V1, is_vec V2> requires (V1::extent == 3 && V2::extent == 3)
 	constexpr auto cross(
-		const vec::base<D1, T1, 3>& lhs,
-		const vec::base<D2, T2, 3>& rhs
+		const V1& lhs,
+		const V2& rhs
 	);
 
-	template <typename D1, typename D2, typename T1, typename T2, std::size_t N>
+	template <is_vec V1, is_vec V2> requires (V1::extent == V2::extent)
 	constexpr auto project(
-		const vec::base<D1, T1, N>& a,
-		const vec::base<D2, T2, N>& b
+		const V1& a,
+		const V2& b
 	);
 
-	template <typename D1, typename D2, typename T1, typename T2, std::size_t N>
+	template <is_vec V1, is_vec V2> requires (V1::extent == V2::extent)
 	constexpr auto reflect(
-		const vec::base<D1, T1, N>& v,
-		const vec::base<D2, T2, N>& n
+		const V1& v,
+		const V2& n
 	);
 
-	template <typename D1, typename D2, typename T1, typename T2, std::size_t N>
+	template <is_vec V1, is_vec V2> requires (V1::extent == V2::extent)
 	constexpr auto angle_between(
-		const vec::base<D1, T1, N>& a,
-		const vec::base<D2, T2, N>& b
-	) -> vec::base<D1, T1, N>::storage_type;
+		const V1& a,
+		const V2& b
+	) -> V1::storage_type;
 
-	template <typename D1, typename D2, typename T1, typename T2, std::size_t N>
+	template <is_vec V1, is_vec V2> requires (V1::extent == V2::extent)
 	constexpr auto lerp(
-		const vec::base<D1, T1, N>& a,
-		const vec::base<D2, T2, N>& b,
-		typename vec::base<D1, T1, N>::storage_type t
+		const V1& a,
+		const V2& b,
+		typename V1::storage_type t
 	);
 
-	template <typename D, typename T, std::size_t N>
+	template <is_vec V>
 	constexpr auto is_zero(
-		const vec::base<D, T, N>& v
+		const V& v
 	) -> bool;
 
-	template <typename D, typename T, std::size_t N>
+	template <is_vec V>
 	constexpr auto is_zero(
-		const vec::base<D, T, N>& v,
-		typename vec::base<D, T, N>::storage_type epsilon
+		const V& v,
+		typename V::storage_type epsilon
 	) -> bool;
 
 	template <typename T, std::size_t N>
@@ -75,17 +75,17 @@ export namespace gse {
 		const unitless::vec_t<T, N>& v
 	) -> unitless::vec_t<T, N>;
 
-	template <typename D, typename T, std::size_t N>
+	template <is_vec V1, is_vec V2> requires (V1::extent == V2::extent)
 	constexpr auto min(
-		const vec::base<D, T, N>& a,
-		const vec::base<D, T, N>& b
-	) -> vec::base<D, T, N>;
+		const V1& a,
+		const V2& b
+	);
 
-	template <typename D, typename T, std::size_t N>
+	template <is_vec V1, is_vec V2> requires (V1::extent == V2::extent)
 	constexpr auto max(
-		const vec::base<D, T, N>& a,
-		const vec::base<D, T, N>& b
-	) -> vec::base<D, T, N>;
+		const V1& a,
+		const V2& b
+	);
 
 	template <typename T, std::size_t N>
 	constexpr auto clamp(
@@ -157,10 +157,10 @@ export namespace gse {
 		S exponent
 	) -> vec_t<decltype(T{} * T{}), N > ;
 
-	template <typename D1, typename D2, typename T1, typename T2, std::size_t N>
+	template <is_vec V1, is_vec V2> requires (V1::extent == V2::extent)
 	constexpr auto epsilon_equal_index(
-		const vec::base<D1, T1, N>& a,
-		const vec::base<D2, T2, N>& b,
+		const V1& a,
+		const V2& b,
 		std::size_t index
 	) -> bool;
 
@@ -189,9 +189,11 @@ export namespace gse {
 	) -> unitless::vec3_t<T>;
 }
 
-template <typename D1, typename D2, typename T1, typename T2, std::size_t N>
-constexpr auto gse::dot(const vec::base<D1, T1, N>& lhs, const vec::base<D2, T2, N>& rhs) {
-	using result_type = decltype(std::declval<T1>()* std::declval<T2>());
+template <gse::is_vec V1, gse::is_vec V2> requires (V1::extent == V2::extent)
+constexpr auto gse::dot(const V1& lhs, const V2& rhs) {
+	using t1 = V1::value_type;
+	using t2 = V2::value_type;
+	using result_type = decltype(std::declval<t1>() * std::declval<t2>());
 	using storage_type = internal::vec_storage_type_t<result_type>;
 
 	storage_type sum{};
@@ -199,65 +201,63 @@ constexpr auto gse::dot(const vec::base<D1, T1, N>& lhs, const vec::base<D2, T2,
 
 	if constexpr (gse::internal::is_arithmetic_wrapper<result_type>) {
 		return result_type(sum);
-	}
-	else {
+	} else {
 		return sum;
 	}
 }
 
-template <typename D, typename T, std::size_t N>
-constexpr auto gse::magnitude(const vec::base<D, T, N>& v) {
-	using storage_type = vec::base<D, T, N>::storage_type;
+template <gse::is_vec V>
+constexpr auto gse::magnitude(const V& v) {
+	using storage_type = V::storage_type;
 	auto d = dot(v, v);
 
 	const auto d_val = [&] {
 		if constexpr (internal::is_arithmetic_wrapper<decltype(d)>) {
 			using dot_storage_t = internal::vec_storage_type_t<decltype(d)>;
 			return *reinterpret_cast<const dot_storage_t*>(&d);
-		}
-		else {
+		} else {
 			return d;
 		}
 	}();
 
 	storage_type m = std::sqrt(d_val);
 
-	if constexpr (gse::internal::is_arithmetic_wrapper<T>) {
-		return T(m);
-	}
-	else {
+	if constexpr (gse::internal::is_arithmetic_wrapper<typename V::value_type>) {
+		return typename V::value_type(m);
+	} else {
 		return m;
 	}
 }
 
-template <typename D, typename T, std::size_t N>
-constexpr auto gse::normalize(const vec::base<D, T, N>& v) {
-	using storage_type = vec::base<D, T, N>::storage_type;
+template <gse::is_vec V>
+constexpr auto gse::normalize(const V& v) {
+	using storage_type = V::storage_type;
 	auto mag = magnitude(v);
 
 	const auto m = [&] {
 		if constexpr (gse::internal::is_arithmetic_wrapper<decltype(mag)>) {
 			return *reinterpret_cast<const storage_type*>(&mag);
-		}
-		else {
+		} else {
 			return mag;
 		}
 	}();
 
-	unitless::vec_t<storage_type, N> out{};
+	unitless::vec_t<storage_type, V::extent> out{};
 	if (m == storage_type(0)) return out;
 	simd::div_s(v.as_storage_span(), m, out.as_storage_span());
 	return out;
 }
 
-template <typename D1, typename D2, typename T1, typename T2, std::size_t N>
-constexpr auto gse::distance(const vec::base<D1, T1, N>& a, const vec::base<D2, T2, N>& b) {
+template <gse::is_vec V1, gse::is_vec V2> requires (V1::extent == V2::extent)
+constexpr auto gse::distance(const V1& a, const V2& b) {
 	return magnitude(a - b);
 }
 
-template <typename D1, typename D2, typename T1, typename T2>
-constexpr auto gse::cross(const vec::base<D1, T1, 3>& lhs, const vec::base<D2, T2, 3>& rhs) {
-	using result_type = decltype(std::declval<T1>()* std::declval<T2>());
+template <gse::is_vec V1, gse::is_vec V2> requires (V1::extent == 3 && V2::extent == 3)
+constexpr auto gse::cross(const V1& lhs, const V2& rhs) {
+	using T1 = V1::value_type;
+	using T2 = V2::value_type;
+	using result_type = decltype(std::declval<T1>() * std::declval<T2>());
 	using result_vec = vector_type_for_element_t<result_type, 3>;
 
 	result_vec out{};
@@ -272,26 +272,24 @@ constexpr auto gse::cross(const vec::base<D1, T1, 3>& lhs, const vec::base<D2, T
 	return out;
 }
 
-template <typename D1, typename D2, typename T1, typename T2, std::size_t N>
-constexpr auto gse::project(const vec::base<D1, T1, N>& a, const vec::base<D2, T2, N>& b) {
+template <gse::is_vec V1, gse::is_vec V2> requires (V1::extent == V2::extent)
+constexpr auto gse::project(const V1& a, const V2& b) {
 	auto bb = dot(b, b);
 	const auto bb_val = [&] {
 		if constexpr (internal::is_arithmetic_wrapper<decltype(bb)>) {
 			return *reinterpret_cast<const decltype(bb)::value_type*>(&bb);
-		}
-		else {
+		} else {
 			return bb;
 		}
 	}();
 
-	if (bb_val == 0) return D2{};
+	if (bb_val == 0) return V2{};
 
 	auto ab = dot(a, b);
 	const auto ab_val = [&] {
 		if constexpr (internal::is_arithmetic_wrapper<decltype(ab)>) {
 			return *reinterpret_cast<const decltype(ab)::value_type*>(&ab);
-		}
-		else {
+		} else {
 			return ab;
 		}
 	}();
@@ -299,14 +297,13 @@ constexpr auto gse::project(const vec::base<D1, T1, N>& a, const vec::base<D2, T
 	return b * (ab_val / bb_val);
 }
 
-template <typename D1, typename D2, typename T1, typename T2, std::size_t N>
-constexpr auto gse::reflect(const vec::base<D1, T1, N>& v, const vec::base<D2, T2, N>& n) {
+template <gse::is_vec V1, gse::is_vec V2> requires (V1::extent == V2::extent)
+constexpr auto gse::reflect(const V1& v, const V2& n) {
 	auto d = dot(v, n);
 	const auto d_val = [&] {
 		if constexpr (internal::is_arithmetic_wrapper<decltype(d)>) {
 			return *reinterpret_cast<const decltype(d)::value_type*>(&d);
-		}
-		else {
+		} else {
 			return d;
 		}
 	}();
@@ -314,17 +311,16 @@ constexpr auto gse::reflect(const vec::base<D1, T1, N>& v, const vec::base<D2, T
 	return v - n * (2 * d_val);
 }
 
-template <typename D1, typename D2, typename T1, typename T2, std::size_t N>
-constexpr auto gse::angle_between(const vec::base<D1, T1, N>& a, const vec::base<D2, T2, N>& b) -> vec::base<D1, T1, N>::storage_type {
-	using storage_type = vec::base<D1, T1, N>::storage_type;
+template <gse::is_vec V1, gse::is_vec V2> requires (V1::extent == V2::extent)
+constexpr auto gse::angle_between(const V1& a, const V2& b) -> V1::storage_type {
+	using storage_type = V1::storage_type;
 	auto ma = magnitude(a);
 	auto mb = magnitude(b);
 
 	const auto ma_val = [&] {
 		if constexpr (internal::is_arithmetic_wrapper<decltype(ma)>) {
 			return *reinterpret_cast<const storage_type*>(&ma);
-		}
-		else {
+		} else {
 			return ma;
 		}
 	}();
@@ -332,11 +328,10 @@ constexpr auto gse::angle_between(const vec::base<D1, T1, N>& a, const vec::base
 	const auto mb_val = [&] {
 		if constexpr (internal::is_arithmetic_wrapper<decltype(mb)>) {
 			return *reinterpret_cast<const storage_type*>(&mb);
-		}
-		else {
+		} else {
 			return mb;
 		}
-		}();
+	}();
 
 	if (ma_val == 0 || mb_val == 0) return 0;
 
@@ -344,8 +339,7 @@ constexpr auto gse::angle_between(const vec::base<D1, T1, N>& a, const vec::base
 	const auto d_val = [&] {
 		if constexpr (internal::is_arithmetic_wrapper<decltype(d)>) {
 			return *reinterpret_cast<const decltype(d)::value_type*>(&d);
-		}
-		else {
+		} else {
 			return d;
 		}
 	}();
@@ -354,21 +348,21 @@ constexpr auto gse::angle_between(const vec::base<D1, T1, N>& a, const vec::base
 	return std::acos(cosine);
 }
 
-template <typename D1, typename D2, typename T1, typename T2, std::size_t N>
-constexpr auto gse::lerp(const vec::base<D1, T1, N>& a, const vec::base<D2, T2, N>& b, typename vec::base<D1, T1, N>::storage_type t) {
+template <gse::is_vec V1, gse::is_vec V2> requires (V1::extent == V2::extent)
+constexpr auto gse::lerp(const V1& a, const V2& b, typename V1::storage_type t) {
 	return a + (b - a) * t;
 }
 
-template <typename D, typename T, std::size_t N>
-constexpr auto gse::is_zero(const vec::base<D, T, N>& v) -> bool {
+template <gse::is_vec V>
+constexpr auto gse::is_zero(const V& v) -> bool {
 	for (const auto& elem : v.as_storage_span()) {
 		if (elem != 0) return false;
 	}
 	return true;
 }
 
-template <typename D, typename T, std::size_t N>
-constexpr auto gse::is_zero(const vec::base<D, T, N>& v, typename vec::base<D, T, N>::storage_type epsilon) -> bool {
+template <gse::is_vec V>
+constexpr auto gse::is_zero(const V& v, typename V::storage_type epsilon) -> bool {
 	for (const auto& elem : v.as_storage_span()) {
 		if (std::abs(elem) > epsilon) return false;
 	}
@@ -382,17 +376,27 @@ constexpr auto gse::abs(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>
 	return out;
 }
 
-template <typename D, typename T, std::size_t N>
-constexpr auto gse::min(const vec::base<D, T, N>& a, const vec::base<D, T, N>& b) -> vec::base<D, T, N> {
-	vec::base<D, T, N> out{};
-	simd::min(a.as_storage_span(), b.as_storage_span(), out.as_storage_span());
+template <gse::is_vec V1, gse::is_vec V2> requires (V1::extent == V2::extent)
+constexpr auto gse::min(const V1& a, const V2& b) {
+	using common_elem = std::common_type_t<typename V1::value_type, typename V2::value_type>;
+	using Out = vector_type_for_element_t<common_elem, V1::extent>;
+
+	Out aa{ a };
+	Out bb{ b };
+	Out out{};
+	simd::min(aa.as_storage_span(), bb.as_storage_span(), out.as_storage_span());
 	return out;
 }
 
-template <typename D, typename T, std::size_t N>
-constexpr auto gse::max(const vec::base<D, T, N>& a, const vec::base<D, T, N>& b) -> vec::base<D, T, N> {
-	vec::base<D, T, N> out{};
-	simd::max(a.as_storage_span(), b.as_storage_span(), out.as_storage_span());
+template <gse::is_vec V1, gse::is_vec V2> requires (V1::extent == V2::extent)
+constexpr auto gse::max(const V1& a, const V2& b) {
+	using common_elem = std::common_type_t<typename V1::value_type, typename V2::value_type>;
+	using Out = vector_type_for_element_t<common_elem, V1::extent>;
+
+	Out aa{ a };
+	Out bb{ b };
+	Out out{};
+	simd::max(aa.as_storage_span(), bb.as_storage_span(), out.as_storage_span());
 	return out;
 }
 
@@ -475,13 +479,13 @@ constexpr auto gse::pow(const vec_t<T, N>& v, S exponent) -> vec_t<decltype(T{} 
 	return pow(v.template as<typename T::default_unit>(), static_cast<T>(exponent));
 }
 
-template <typename D1, typename D2, typename T1, typename T2, std::size_t N>
-constexpr auto gse::epsilon_equal_index(const vec::base<D1, T1, N>& a, const vec::base<D2, T2, N>& b, std::size_t index) -> bool {
-	if (index >= N) {
+template <gse::is_vec V1, gse::is_vec V2> requires (V1::extent == V2::extent)
+constexpr auto gse::epsilon_equal_index(const V1& a, const V2& b, std::size_t index) -> bool {
+	if (index >= V1::extent) {
 		throw std::out_of_range("Index out of range in epsilon_equal_index");
 	}
 
-	using storage_type = vec::base<D1, T1, N>::storage_type;
+	using storage_type = V1::storage_type;
 
 	const storage_type val_a = a.as_storage_span()[index];
 	const storage_type val_b = b.as_storage_span()[index];
@@ -492,7 +496,7 @@ constexpr auto gse::epsilon_equal_index(const vec::base<D1, T1, N>& a, const vec
 
 template <typename T, int N>
 constexpr auto gse::rotate(const unitless::vec_t<T, N>& v, angle_t<T> angle, std::size_t i, std::size_t j) -> unitless::vec_t<T, N> {
-	if (i >= N || j >= N || i == j) {
+	if (i >= static_cast<std::size_t>(N) || j >= static_cast<std::size_t>(N) || i == j) {
 		return v;
 	}
 

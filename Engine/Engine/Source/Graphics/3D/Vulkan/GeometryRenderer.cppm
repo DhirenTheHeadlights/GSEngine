@@ -241,6 +241,10 @@ auto gse::renderer::geometry::initialize() -> void {
 }
 
 auto gse::renderer::geometry::update(const std::span<const std::reference_wrapper<registry>> registries) -> void {
+	if (registries.empty()) {
+		return;
+	}
+
 	const auto cam = m_shader->uniform_block("CameraUBO");
 
 	m_shader->set_uniform("CameraUBO.view", m_context.camera().view(), m_ubo_allocations.at("CameraUBO").allocation);

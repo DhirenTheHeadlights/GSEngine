@@ -510,7 +510,11 @@ auto gse::gui::profiler() -> void {
 	        return n.children_count == 0;
 	    },
 	    .custom_draw = [&parent_of, &root_of, &dur_ns](const trace::node& n, const widget_context& ctx, const ui_rect& row, bool /*hovered*/, bool /*selected*/, int  /*level*/) {
-	        struct cand { double v; std::string_view name; };
+	        struct cand {
+		        double v;
+	        	std::string_view name;
+	        };
+
 	        const auto span = (n.stop - n.start);
 	        const auto self = n.self;
 
@@ -528,8 +532,8 @@ auto gse::gui::profiler() -> void {
 	        };
 
 	        auto choose = [](const cand* c) -> cand {
-	            for (int i = 0; i < 3; ++i) if (c[i].v >= 1.0) return c[i];
-	            return c[3];
+	            //for (int i = 0; i < 3; ++i) if (c[i].v >= 1.0) return c[i];
+	            return c[2];
 	        };
 
 	        const double self_ns = static_cast<double>(n.self.as<nanoseconds>());
