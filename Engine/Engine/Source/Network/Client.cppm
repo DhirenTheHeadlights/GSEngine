@@ -26,6 +26,8 @@ export namespace gse::network {
 			const address& server
 		);
 
+		~client();
+
 		auto connect(
 		) -> void;
 
@@ -37,7 +39,7 @@ export namespace gse::network {
 			const T& msg
 		) -> void;
 
-		auto update(
+		auto drain(
 			const std::function<void(message&)>& on_receive
 		) -> void;
 	private:
@@ -45,11 +47,35 @@ export namespace gse::network {
 		remote_peer m_server;
 		state m_state = state::disconnected;
 		time m_last_request_time;
+
+		auto tick(
+		) -> void;
+
+		std::mutex m_inbox_mutex;
+		std::vector<message> m_inbox;
+
+		std::atomic<bool> m_running{ false };
+		task::group m_net_group;
 	};
 }
 
-gse::network::client::client(const address& listen, const address& server) : m_server(server) {
+gse::network::client::client(const address& listen, const address& server) : m_server(server), m_net_group(generate_id("Network::Client")) {
 	m_socket.bind(listen);
+
+	m_running.store(true, std::memory_order_release);
+	//m_net_group.post(
+	//	[this] {
+	//		//while (m_running.load(std::memory_order_acquire)) {
+	//		//  this->tick();
+	//		//  // TODO: add more events to wait on
+	//		//}
+	//	},
+	//	generate_id("network.client.worker")
+	//);
+}
+
+gse::network::client::~client() {
+	m_running.store(false, std::memory_order_release);
 }
 
 auto gse::network::client::connect() -> void {
@@ -91,7 +117,19 @@ auto gse::network::client::send(const T& msg) -> void {
 	);
 }
 
-auto gse::network::client::update(const std::function<void(message&)>& on_receive) -> void {
+auto gse::network::client::drain(const std::function<void(message&)>& on_receive) -> void {
+	std::vector<message> batch;
+	{
+		std::lock_guard lk(m_inbox_mutex);
+		if (m_inbox.empty()) return;
+		batch.swap(m_inbox);
+	}
+	for (auto& m : batch) {
+		on_receive(m);
+	}
+}
+
+auto gse::network::client::tick() -> void {
 	if (m_state == state::connecting) {
 		if (system_clock::now() - m_last_request_time > seconds(1.f)) {
 			send(connection_request_message{});
@@ -102,7 +140,7 @@ auto gse::network::client::update(const std::function<void(message&)>& on_receiv
 	std::array<std::byte, max_packet_size> buffer;
 	while (const auto received = m_socket.receive_data(buffer)) {
 		if (received->from.ip != m_server.addr().ip || received->from.port != m_server.addr().port) {
-			continue; 
+			continue;
 		}
 
 		const std::span received_data(buffer.data(), received->bytes_read);
@@ -121,7 +159,6 @@ auto gse::network::client::update(const std::function<void(message&)>& on_receiv
 			}
 			m_server.remote_ack_sequence() = header.sequence;
 		}
-
 		else if (header.sequence < m_server.remote_ack_sequence()) {
 			if (const std::uint32_t diff = m_server.remote_ack_sequence() - header.sequence; diff < 32) {
 				m_server.remote_ack_bitfield() |= (1 << (diff - 1));
@@ -133,17 +170,22 @@ auto gse::network::client::update(const std::function<void(message&)>& on_receiv
 		}
 
 		message msg;
+		bool ok = true;
 		switch (type) {
-		case message_type::ping:
-			msg = stream.read<ping_message>();
-			break;
-		case message_type::pong:
-			msg = stream.read<pong_message>();
-			break;
-		default: ;
+			case message_type::ping:                msg = stream.read<ping_message>();                break;
+			case message_type::pong:                msg = stream.read<pong_message>();                break;
+			case message_type::notify_scene_change: msg = stream.read<notify_scene_change_message>(); break;
+			default: ok = false; break;
 		}
 
-		on_receive(msg);
+		if (!ok) {
+			continue;
+		}
+
+		{
+			std::lock_guard lk(m_inbox_mutex);
+			m_inbox.push_back(std::move(msg));
+		}
 	}
 }
 

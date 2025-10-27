@@ -1,11 +1,11 @@
 export module gse.graphics:font;
 
 import <algorithm>;
+import <filesystem>;
 import <fstream>;
 import <iostream>;
 import <unordered_map>;
 import <vector>;
-import <filesystem>;
 
 import <msdfgen.h>;
 #define STB_TRUETYPE_IMPLEMENTATION
@@ -13,6 +13,7 @@ import <freetype/freetype.h>;
 import "ext/import-font.h";
 
 import :texture;
+
 import gse.assert;
 import gse.physics.math;
 import gse.platform;

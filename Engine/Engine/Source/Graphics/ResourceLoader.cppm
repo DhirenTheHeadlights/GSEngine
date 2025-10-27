@@ -138,7 +138,7 @@ export namespace gse::resource {
 		};
 
 		explicit loader(RenderingContext& context) : m_context(context) {}
-		~loader() override;
+		~loader() override = default;
 
 		auto flush() -> void override;
 		auto compile() -> void override;
@@ -161,9 +161,9 @@ export namespace gse::resource {
 		auto add(Resource&& resource) -> handle<Resource>;
 	private:
 		RenderingContext& m_context;
-		id_mapped_collection<slot, id> m_resources;
+		id_mapped_collection<slot> m_resources;
 		std::unordered_map<std::filesystem::path, id> m_path_to_id;
-		std::vector<std::future<void>> m_loading_futures;
+		task::group m_load_group{ generate_id("resource.loader.load") };
 		mutable std::mutex m_mutex;
 
 		auto get_unlocked(const id& id) const -> handle<Resource> ;
@@ -225,71 +225,64 @@ gse::resource::handle<Resource>::operator bool() const {
 }
 
 template <typename R, typename C> requires gse::is_resource<R, C>
-gse::resource::loader<R, C>::~loader() {
-	for (auto& future : m_loading_futures) {
-		if (future.valid()) future.wait();
-	}
-}
-
-template <typename R, typename C> requires gse::is_resource<R, C>
 auto gse::resource::loader<R, C>::flush() -> void {
-	std::vector<id> ids_to_load;
+    std::vector<id> ids_to_load;
 
-	{
-		std::lock_guard lock(m_mutex);
-		for (auto& slot : m_resources.items()) {
-			if (slot.current_state.load(std::memory_order_acquire) == state::queued) {
-				slot.current_state.store(state::loading, std::memory_order_release);
-				ids_to_load.push_back(slot.resource ? slot.resource->id() : m_path_to_id[slot.path]);
-			}
-		}
-	}
+    {
+        std::lock_guard lock(m_mutex);
+        for (auto& slot : m_resources.items()) {
+            if (slot.current_state.load(std::memory_order_acquire) == state::queued) {
+                slot.current_state.store(state::loading, std::memory_order_release);
 
-	for (id rid : ids_to_load) {
-		m_loading_futures.push_back(
-			std::async(
-				std::launch::async, 
-				[this, rid] {
-					gpu_work_token token(this, rid, m_context.gpu_queue_size());
+                const id rid = slot.resource
+                    ? slot.resource->id()
+                    : m_path_to_id[slot.path];
 
-					R* resource_ptr;
-					{
-						std::lock_guard lock(m_mutex);
-						if (auto* slot = m_resources.try_get(rid)) {
-							if (!slot->resource) {
-								slot->resource = std::make_unique<R>(slot->path);
-							}
-							resource_ptr = slot->resource.get(); 
-						}
-						else {
-							return; 
-						}
-					}
+                ids_to_load.push_back(rid);
+            }
+        }
+    }
 
-					resource_ptr->load(m_context);
-				}
-			)
-		);
-	}
+    std::vector<std::function<void()>> jobs;
+    jobs.reserve(ids_to_load.size());
 
-	std::erase_if(
-		m_loading_futures, 
-		[](const auto& f) {
-			return f.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
-		});
+    for (const id rid : ids_to_load) {
+        jobs.emplace_back([this, rid] {
+            gpu_work_token token(this, rid, m_context.gpu_queue_size());
+
+            R* resource_ptr = nullptr;
+            {
+                std::lock_guard lock(m_mutex);
+                if (auto* slot = m_resources.try_get(rid)) {
+                    if (!slot->resource) {
+                        slot->resource = std::make_unique<R>(slot->path);
+                    }
+                    resource_ptr = slot->resource.get();
+                } else {
+                    update_state(rid, state::failed);
+                    return;
+                }
+            }
+
+            resource_ptr->load(m_context);
+        });
+    }
+
+    m_load_group.post_range(jobs.begin(), jobs.end(), generate_id("resource.load"));
 }
 
 template <typename R, typename C> requires gse::is_resource<R, C>
 auto gse::resource::loader<R, C>::compile() -> void {
-	std::lock_guard lock(m_mutex);
-	for (const auto& path : R::compile()) {
-		auto temp_resource = std::make_unique<R>(path);
-		const auto resource_id = temp_resource->id();
+    const auto paths = R::compile();
 
-		if (m_resources.add(resource_id, slot(std::move(temp_resource), state::queued, path))) {
-			m_path_to_id[path] = resource_id;
-		}
-	}
+    std::lock_guard lock(m_mutex);
+    for (const auto& path : paths) {
+        auto temp_resource = std::make_unique<R>(path);
+        const auto resource_id = temp_resource->id();
+        if (m_resources.add(resource_id, slot(std::move(temp_resource), state::queued, path))) {
+            m_path_to_id[path] = resource_id;
+        }
+    }
 }
 
 template <typename R, typename C> requires gse::is_resource<R, C>

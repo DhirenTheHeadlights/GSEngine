@@ -65,6 +65,13 @@ export namespace gse::task {
 			job j,
 			const id& id = trace::make_loc_id(std::source_location::current())
 		) -> void;
+
+		template <std::input_iterator It>
+		auto post_range(
+		    It first,
+		    It last,
+		    const id& id = trace::make_loc_id(std::source_location::current())
+		) -> void;
 	private:
 		id m_label;
 	    std::uint64_t m_outer_parent = 0;
@@ -264,6 +271,13 @@ auto gse::task::parallel_for(first_arg_t<F> first, first_arg_t<F> last, F&& func
 			);
 		});
 	});
+}
+
+template <std::input_iterator It>
+auto gse::task::group::post_range(It first, It last, const id& id) -> void {
+	 for (; first != last; ++first) {
+        this->post(job(*first), id);
+    }
 }
 
 auto gse::task::thread_count() -> size_t {

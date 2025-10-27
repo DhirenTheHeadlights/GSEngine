@@ -35,14 +35,23 @@ export namespace gse::network {
 		udp_socket();
 		~udp_socket();
 
-		auto bind(const address& address) const -> void;
-		auto send_data(const packet& packet, const address& address) const -> socket_state;
+		auto bind(
+			const address& address
+		) const -> void;
+
+		auto send_data(
+			const packet& packet, 
+			const address& address
+		) const -> socket_state;
 
 		struct receive_result {
 			std::size_t bytes_read = 0;
 			address from;
 		};
-		auto receive_data(std::span<std::byte> buffer) const -> std::optional<receive_result>;
+
+		auto receive_data(
+			std::span<std::byte> buffer
+		) const -> std::optional<receive_result>;
 
 		std::uint64_t socket_id;
 	};
