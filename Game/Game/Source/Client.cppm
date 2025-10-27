@@ -29,7 +29,7 @@ auto gs::client::initialize() -> void {
 }
 
 auto gs::client::update() -> void {
-	m_client->update([this](gse::network::message& msg) {
+	m_client->drain([this](gse::network::message& msg) {
 		gse::match(msg)
 			.if_is([this](const gse::network::connection_accepted_message&) {
 				m_owner->world.set_networked(true);
