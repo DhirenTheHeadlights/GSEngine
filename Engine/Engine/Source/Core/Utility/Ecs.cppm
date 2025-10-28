@@ -196,6 +196,7 @@ export namespace gse {
 		using owner_id_t = id;
 		using link_id_t = id;
 		using component_type = T;
+		using dbq = double_buffered_id_mapped_queue<component_type, owner_id_t>;
 
 		template <typename... Args>
 		auto add(
