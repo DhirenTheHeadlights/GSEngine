@@ -27,8 +27,8 @@ auto gse::physics::apply_force(motion_component& component, const vec3<force>& f
 
 	const auto com = component.center_of_mass + component.current_position;
 
-	component.current_torque += cross(world_force_position - com, force);
-	component.current_acceleration += acceleration;
+	component.accumulators.current_torque += cross(world_force_position - com, force);
+	component.accumulators.current_acceleration += acceleration;
 }
 
 auto gse::physics::apply_impulse(motion_component& component, const vec3<force>& force, const time& duration) -> void {
@@ -68,7 +68,7 @@ auto update_gravity(gse::physics::motion_component& component) -> void {
 		apply_force(component, gravity_force, component.current_position);
 	}
 	else {
-		component.current_acceleration.y() = std::max(gse::meters_per_second_squared(0.f), component.current_acceleration.y());
+		component.accumulators.current_acceleration.y() = std::max(gse::meters_per_second_squared(0.f), component.accumulators.current_acceleration.y());
 		update_friction(component, get_surface_properties(gse::surfaces::surface_type::concrete));
 	}
 }
@@ -103,7 +103,7 @@ auto update_velocity(gse::physics::motion_component& component) -> void {
 	}
 
 	// Update current_velocity using the kinematic equation: v = v0 + at
-	component.current_velocity += component.current_acceleration * delta_time;
+	component.current_velocity += component.accumulators.current_acceleration * delta_time;
 
 	if (magnitude(component.current_velocity) > component.max_speed && !component.airborne) {
 		component.current_velocity = normalize(component.current_velocity) * component.max_speed;
@@ -115,16 +115,16 @@ auto update_velocity(gse::physics::motion_component& component) -> void {
 }
 
 auto update_position(gse::physics::motion_component& component) -> void {
-	component.current_position += component.current_velocity * gse::system_clock::constant_update_time<gse::seconds>();
+	component.current_position += (component.current_velocity * gse::system_clock::constant_update_time<gse::seconds>()) + component.accumulators.position_correction;
 }
 
 auto update_rotation(gse::physics::motion_component& component) -> void {
-	const auto alpha = component.current_torque / component.moment_of_inertia;
+	const auto alpha = component.accumulators.current_torque / component.moment_of_inertia;
 
 	const auto delta_time = gse::system_clock::constant_update_time<gse::seconds>();
 
 	component.angular_velocity += alpha * delta_time;
-	component.current_torque = {};
+	component.accumulators.current_torque = {};
 
 	const gse::unitless::vec3 angular_velocity = component.angular_velocity.as<gse::radians_per_second>();
 	const gse::quat omega_quaternion = { 0.f, angular_velocity.x(), angular_velocity.y(), angular_velocity.z() };
@@ -140,7 +140,7 @@ auto update_bb(const gse::physics::motion_component& motion_component, gse::phys
 }
 
 auto gse::physics::update_object(motion_component& component, collision_component* collision_component) -> void {
-	if (is_zero(component.current_velocity) && is_zero(component.current_acceleration)) {
+	if (is_zero(component.current_velocity) && is_zero(component.accumulators.current_acceleration)) {
 		component.moving = false;
 	}
 	else {
@@ -161,5 +161,5 @@ auto gse::physics::update_object(motion_component& component, collision_componen
 		update_bb(component, *collision_component);
 	}
 
-	component.current_acceleration = { 0.f, 0.f, 0.f };
+	component.accumulators = {};
 }
