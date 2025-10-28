@@ -11,6 +11,7 @@ import gse.utility;
 
 import :keys;
 import :input_state;
+import :actions;
 
 export namespace gse::input {
 	struct key_pressed {
@@ -56,6 +57,9 @@ export namespace gse::input {
 		mouse_scrolled,
 		text_entered
 	>;
+
+	auto initialize(
+	) -> void;
 
 	auto update(
 	) -> void;
@@ -119,6 +123,10 @@ namespace gse::detail {
 	}
 }
 
+auto gse::input::initialize() -> void {
+	actions::finalize_bindings();
+}
+
 auto gse::input::update() -> void {
 	std::vector<event> events_to_process;
 	scope([&] {
@@ -158,6 +166,8 @@ auto gse::input::update() -> void {
 
 	persistent_state.end_frame(tok);
 	states.flip();
+
+	actions::map_to_actions(states.read());
 }
 
 auto gse::input::key_callback(const int key, const int action) -> void {
