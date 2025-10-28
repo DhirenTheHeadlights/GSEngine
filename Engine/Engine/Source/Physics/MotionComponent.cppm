@@ -6,11 +6,12 @@ import gse.utility;
 import gse.physics.math;
 
 export namespace gse::physics {
+	
+
 	struct motion_component_data {
+
 		vec3<length> current_position;
 		vec3<velocity> current_velocity;
-		vec3<acceleration> current_acceleration;
-		vec3<torque> current_torque;
 
 		velocity max_speed = meters_per_second(1.f);
 		mass mass = kilograms(1.f);
@@ -28,6 +29,12 @@ export namespace gse::physics {
 		bool airborne = true;
 		bool self_controlled = false;
 		bool position_locked = false;
+
+		struct accumulators{
+			vec3<acceleration> current_acceleration;
+			vec3<torque> current_torque;
+			vec3<length> position_correction;
+		} accumulators;
 	};
 
 	using inverse_inertia_dimension = internal::dim<-2, 0, -1>;

@@ -7,6 +7,9 @@ import :bounding_box;
 import :collision_component;
 
 import gse.physics.math;
+import gse.utility;
+
+static constexpr bool debug = false;
 
 export namespace gse::narrow_phase_collision {
     auto resolve_collision(
@@ -96,16 +99,15 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
     constexpr float percent = 0.8f;
 
     const length corrected_penetration = std::max(res->penetration - slop, length{ 0 });
-    const vec3<length> correction = res->normal * corrected_penetration * percent;
-
+    const vec3<length> correction = 0.01f * res->normal * corrected_penetration * percent;
     const float ratio_a = inv_mass_a / total_inv_mass;
     const float ratio_b = inv_mass_b / total_inv_mass;
 
     if (!object_a->position_locked) {
-        object_a->current_position += correction * ratio_a;
+        object_a->accumulators.position_correction += correction * ratio_a;
     }
     if (!object_b->position_locked) {
-        object_b->current_position -= correction * ratio_b;
+        object_b->accumulators.position_correction -= correction * ratio_b;
     }
 
     if (res->normal.y() > 0.7f) {
@@ -150,6 +152,7 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
         object_b->current_velocity -= impulse_vec * inv_mass_b;
         object_b->angular_velocity -= inv_i_b * cross(r_b, impulse_vec);
     }
+
 }
 
 auto gse::narrow_phase_collision::support_obb(const bounding_box& bounding_box, const unitless::vec3& dir) -> vec3<length> {
@@ -175,55 +178,11 @@ auto gse::narrow_phase_collision::minkowski_difference(const bounding_box& bb1, 
     return result;
 }
 
-auto gse::narrow_phase_collision::verify_portal_origin_containment(
-    const minkowski_point& v0,
-    const minkowski_point& v1,
-    const minkowski_point& v2,
-    const minkowski_point& v3)-> bool
-{
-    // For each face, we'll get its normal, point it away from the origin,
-    // and then check that the opposing vertex is on the far side of the plane.
-
-    // --- Face (v0, v1, v2) vs. vertex v3 ---
-    auto n3 = cross(v1.point - v0.point, v2.point - v0.point);
-    // Point normal away from the origin
-    if (dot(n3, -v0.point) > 0.0f) { n3 = -n3; }
-    // Check if v3 is on the other side of the plane from the origin.
-    if (dot(n3, v3.point - v0.point) < 0.0f) { return false; }
-
-
-    // --- Face (v0, v2, v3) vs. vertex v1 ---
-    auto n1 = cross(v2.point - v0.point, v3.point - v0.point);
-    // Point normal away from the origin
-    if (dot(n1, -v0.point) > 0.0f) { n1 = -n1; }
-    // Check if v1 is on the other side of the plane from the origin.
-    if (dot(n1, v1.point - v0.point) < 0.0f) { return false; }
-
-
-    // --- Face (v0, v3, v1) vs. vertex v2 ---
-    auto n2 = cross(v3.point - v0.point, v1.point - v0.point);
-    // Point normal away from the origin
-    if (dot(n2, -v0.point) > 0.0f) { n2 = -n2; }
-    // Check if v2 is on the other side of the plane from the origin.
-    if (dot(n2, v2.point - v0.point) < 0.0f) { return false; }
-
-
-    // --- Face (v1, v2, v3) vs. vertex v0 ---
-    auto n0 = cross(v2.point - v1.point, v3.point - v1.point);
-    // Point normal away from the origin
-    if (dot(n0, -v1.point) > 0.0f) { n0 = -n0; }
-    // Check if v0 is on the other side of the plane from the origin.
-    if (dot(n0, v0.point - v1.point) < 0.0f) { return false; }
-
-    // If all checks pass, the origin is inside.
-    return true;
-}
-
 auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const bounding_box& bb2) -> std::optional<mpr_result> {
     if (bb1.obb().orientation != gse::quat(1.00, 0, 0, 0)) {
         std::cout << "rotated";
     }
-    static constexpr bool debug = true;
+
     const length eps = meters(1e-4f);
     const auto eps2 = eps * eps;
 
@@ -415,12 +374,14 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
                 i, v0.point, v1.point, v2.point, v3.point
             );
             if (const length projection_dist = dot(p.point, choice.n); projection_dist - choice.d < meters(1e-4f) && i == mpr_collision_refinement_iterations - 1) {
-                if constexpr (debug) {
-                    std::println("[MPR][iter {}] CONVERGED. penetration: {}", i, choice.d);
+                
+                const unitless::vec3 collision_normal = -choice.n;
+                const length penetration_depth = choice.d * 0.01f;
+
+            	if constexpr (debug) {
+                    std::println("[MPR][iter {}] CONVERGED. penetration: {}", i, penetration_depth);
                 }
 
-                const unitless::vec3 collision_normal = -choice.n;
-                const length penetration_depth = choice.d;
                 if constexpr (debug) {
                     if (penetration_depth >= meters(10.f)) {
                         std::vector<vec3<length>> face_vertices_obb_1;
