@@ -89,6 +89,7 @@ auto gse::initialize(const flags engine_flags, const engine_config& config) -> v
 	renderer::initialize();
 	engine.initialize();
 	engine.world.initialize();
+	input::initialize();
 }
 
 auto gse::update(const flags engine_flags, const engine_config& config) -> void {

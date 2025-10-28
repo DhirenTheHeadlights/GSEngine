@@ -8,9 +8,15 @@ import :keys;
 import :input_state;
 
 export namespace gse::actions {
-	using index = std::uint16_t;
+	struct index {
+		std::uint16_t value{};
 
-	constexpr auto invalid = std::numeric_limits<index>::max();
+		constexpr operator std::uint16_t() const {
+			return value;
+		}
+	};
+
+	constexpr index invalid{ std::numeric_limits<std::uint16_t>::max() };
 
 	class description : public identifiable {
 	public:
@@ -30,6 +36,12 @@ export namespace gse::actions {
 		std::string_view tag,
 		key default_key
 	) -> index;
+
+	auto load_rebinds(
+	) -> void;
+
+	auto finalize_bindings(
+	) -> void;          
 
 	auto get(
 		const id& action_id
@@ -342,96 +354,53 @@ namespace gse::actions {
 		std::vector<mouse_axis2> axes2_from_mouse;
 	};
 
-	struct bindings_spec {
-		std::vector<std::pair<key, std::string>> key_to_action_tag;
-		std::vector<std::pair<mouse_button, std::string>> mouse_to_action_tag;
-		std::vector<std::tuple<key, key, std::uint16_t, float>> axes1_from_keys;
-		std::vector<std::tuple<std::uint16_t, float, float>> axes2_from_mouse;
-	};
-
-	auto resolve(
-		const bindings_spec& spec
-	) -> bindings;
-
 	auto map_to_actions(
-		const input::state& in,
-		state& out,
-		const bindings& b
+		const input::state& in
 	) -> void;
 
 	struct pending_key_binding {
-		std::string_view name;
+		std::string name;
 		key def;
 		index index;
 	};
 
 	std::vector<pending_key_binding> pending_key_bindings;
-	std::unordered_map<std::string_view, key> rebinds;
+	std::unordered_map<std::string, key> rebinds;
 	bindings resolved;
 }
 
-auto gse::actions::resolve(const bindings_spec& spec) -> bindings {
-	bindings r;
-	for (auto& [k, tag] : spec.key_to_action_tag) {
-		auto& d = add(tag);
-		r.key_to_action.emplace_back(k, d.index());
-	}
-	for (auto& [b, tag] : spec.mouse_to_action_tag) {
-		auto& d = add(tag);
-		r.mouse_to_action.emplace_back(b, d.index());
-	}
-	for (auto& t : spec.axes1_from_keys) {
-		auto [neg, pos, ax, scale] = t;
-		r.axes1_from_keys.push_back({
-			.neg = neg,
-			.pos = pos,
-			.axis = ax,
-			.scale = scale
-		});
-	}
-	for (auto& t : spec.axes2_from_mouse) {
-		auto [ax, sx, sy] = t;
-		r.axes2_from_mouse.push_back({
-			.axis = ax,
-			.px_to_x = sx,
-			.px_to_y = sy
-		});
-	}
-	return r;
-}
+auto gse::actions::map_to_actions(const input::state& in) -> void {
+	global_state.begin_frame();
+	global_state.ensure_capacity();
 
-auto gse::actions::map_to_actions(const input::state& in, state& out, const bindings& b) -> void {
-	out.begin_frame();
-	out.ensure_capacity();
-
-	for (auto& [k, a] : b.key_to_action) {
+	for (auto& [k, a] : resolved.key_to_action) {
 		if (in.key_pressed(k)) {
-			out.set_pressed(a);
+			global_state.set_pressed(a);
 		}
 		if (in.key_released(k)) {
-			out.set_released(a);
+			global_state.set_released(a);
 		}
-		out.set_held(a, in.key_held(k));
+		global_state.set_held(a, in.key_held(k));
 	}
 
-	for (auto& [mb, a] : b.mouse_to_action) {
+	for (auto& [mb, a] : resolved.mouse_to_action) {
 		if (in.mouse_button_pressed(mb)) {
-			out.set_pressed(a);
+			global_state.set_pressed(a);
 		}
 		if (in.mouse_button_released(mb)) {
-			out.set_released(a);
+			global_state.set_released(a);
 		}
-		out.set_held(a, in.mouse_button_held(mb));
+		global_state.set_held(a, in.mouse_button_held(mb));
 	}
 
-	for (const auto& [neg, pos, axis, scale] : b.axes1_from_keys) {
+	for (const auto& [neg, pos, axis, scale] : resolved.axes1_from_keys) {
 		const int v = (in.key_held(pos) ? 1 : 0) - (in.key_held(neg) ? 1 : 0);
-		out.set_axis1(axis, static_cast<float>(v) * scale);
+		global_state.set_axis1(axis, static_cast<float>(v) * scale);
 	}
 
 	const auto md = in.mouse_delta();
-	for (const auto& [axis, px_to_x, px_to_y] : b.axes2_from_mouse) {
-		out.set_axis2(axis, { md.x() * px_to_x, md.y() * px_to_y });
+	for (const auto& [axis, px_to_x, px_to_y] : resolved.axes2_from_mouse) {
+		global_state.set_axis2(axis, { md.x() * px_to_x, md.y() * px_to_y });
 	}
 }
 
@@ -439,12 +408,24 @@ auto gse::actions::add(const std::string_view tag, key default_key) -> index {
 	const auto index = add(tag).index();
 
 	pending_key_bindings.emplace_back(
-	  tag,
+	  std::string(tag),
 	  default_key,
 	  index	
 	);
 
 	return index;
+}
+
+auto gse::actions::load_rebinds() -> void {
+	// TODO: Load from file or user settings
+}
+
+auto gse::actions::finalize_bindings() -> void {
+	resolved = {};
+	for (const auto& [name, def, index] : pending_key_bindings) {
+		const key k = (rebinds.contains(name) ? rebinds[name] : def);
+		resolved.key_to_action.emplace_back(k, index);
+	}
 }
 
 auto gse::actions::get(const id& action_id) -> description* {
