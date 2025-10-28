@@ -5,7 +5,7 @@ import std;
 import :collision_component;
 import :motion_component;
 import :bounding_box;
-import :narrow_phase_collisions;
+import :narrow_phase_collision;
 import :system;
 
 import gse.physics.math;
