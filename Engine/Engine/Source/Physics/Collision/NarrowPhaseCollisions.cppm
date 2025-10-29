@@ -46,11 +46,13 @@ namespace gse::narrow_phase_collision {
         const bounding_box& bb2,
         const unitless::vec3& dir
     ) -> minkowski_point;
+
     auto verify_portal_origin_containment(
         const minkowski_point& v0,
         const minkowski_point& v1,
         const minkowski_point& v2,
-        const minkowski_point& v3) -> bool;
+        const minkowski_point& v3
+    ) -> bool;
 
     auto mpr_collision(
         const bounding_box& bb1,
@@ -63,7 +65,6 @@ namespace gse::narrow_phase_collision {
         const unitless::vec3& collision_normal,
         length penetration_depth
     ) -> std::vector<vec3<length>>;
-
 }
 
 auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* object_a, physics::collision_component& coll_a, physics::motion_component* object_b, const physics::collision_component& coll_b) -> void {
@@ -369,10 +370,6 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
         bool progressed = false;
         for (int attempt = 0; attempt < 4 && !progressed; ++attempt) {
             minkowski_point p = minkowski_difference(bb1, bb2, choice.n);
-            // Inside your loop, after calculating the 4 vertices
-            std::println("PORTAL VERTICES ITERATION {}: {}, {}, {}, {}",
-                i, v0.point, v1.point, v2.point, v3.point
-            );
             if (const length projection_dist = dot(p.point, choice.n); projection_dist - choice.d < meters(1e-4f) && i == mpr_collision_refinement_iterations - 1) {
                 
                 const unitless::vec3 collision_normal = -choice.n;
@@ -401,7 +398,6 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
                         }
                         obb obb_test1 = bb1.obb();
                         obb obb_test2 = bb2.obb();
-                        std::cout << "breakpoint";
                     }
                 }
                 std::vector<vec3<length>> contact_points = generate_contact_points(

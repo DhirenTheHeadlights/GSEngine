@@ -7,6 +7,27 @@ import gse.utility;
 import :keys;
 import :input_state;
 
+namespace gse::actions {
+	template <std::size_t N>
+	struct fixed_string {
+		char v[N];
+
+		constexpr fixed_string(const char(&s)[N]) {
+			for (std::size_t i = 0; i < N; ++i) {
+				v[i] = s[i];
+			}
+		}
+
+		constexpr auto view(
+		) const -> std::string_view {
+			return { v, N - 1 };
+		}
+	};
+
+	template <std::size_t N>
+	fixed_string(const char(&)[N]) -> fixed_string<N>;
+}
+
 export namespace gse::actions {
 	struct index {
 		std::uint16_t value{};
@@ -23,7 +44,8 @@ export namespace gse::actions {
 		explicit description(
 			const std::string_view name,
 			const index index = invalid
-		) : identifiable(name), m_index(index) {}
+		) : identifiable(name), m_index(index) {
+		}
 
 		auto index() const -> index {
 			return m_index;
@@ -32,8 +54,8 @@ export namespace gse::actions {
 		actions::index m_index;
 	};
 
+	template <fixed_string Tag>
 	auto add(
-		std::string_view tag,
 		key default_key
 	) -> index;
 
@@ -41,7 +63,7 @@ export namespace gse::actions {
 	) -> void;
 
 	auto finalize_bindings(
-	) -> void;          
+	) -> void;
 
 	auto get(
 		const id& action_id
@@ -181,7 +203,7 @@ namespace gse::actions {
 		) -> void;
 
 		auto set_axis2(
-			std::uint16_t id, 
+			std::uint16_t id,
 			axis v
 		) -> void;
 
@@ -238,7 +260,8 @@ auto gse::actions::state::set_held(const index a, const bool on) -> void {
 	ensure_capacity();
 	if (on) {
 		m_held.set(a);
-	} else {
+	}
+	else {
 		m_held.clear(a);
 	}
 }
@@ -348,7 +371,7 @@ namespace gse::actions {
 		struct mouse_axis2 {
 			std::uint16_t axis;
 			float px_to_x = 0.1f,
-			px_to_y = 0.1f;
+				px_to_y = 0.1f;
 		};
 
 		std::vector<mouse_axis2> axes2_from_mouse;
@@ -367,6 +390,37 @@ namespace gse::actions {
 	std::vector<pending_key_binding> pending_key_bindings;
 	std::unordered_map<std::string, key> rebinds;
 	bindings resolved;
+
+	struct pending_axis2 {
+		index left;
+		index right;
+		index back;
+		index fwd;
+		std::uint16_t axis = 0;
+		float scale = 1.f;
+	};
+
+	struct pending_axis2_info {
+		key left_default;
+		key right_default;
+		key back_default;
+		key fwd_default;
+		std::uint16_t axis = 0;
+		float scale = 1.f;
+	};
+
+	export template <fixed_string Tag>
+	auto add_axis2_actions(
+		const pending_axis2_info& pa
+	) -> void;
+
+	export auto bound_key_for(
+		index a
+	) -> void;
+
+	std::vector<pending_axis2> pending_axis2_actions;
+	std::vector<std::string> axis2_index_to_action_name;
+	std::unordered_map<std::string, key> defaults;
 }
 
 auto gse::actions::map_to_actions(const input::state& in) -> void {
@@ -404,13 +458,21 @@ auto gse::actions::map_to_actions(const input::state& in) -> void {
 	}
 }
 
-auto gse::actions::add(const std::string_view tag, key default_key) -> index {
-	const auto index = add(tag).index();
+template <gse::actions::fixed_string Tag>
+auto gse::actions::add(key default_key) -> index {
+	const auto index = add(Tag.view()).index();
+
+	if (axis2_index_to_action_name.size() <= index.value) {
+		axis2_index_to_action_name.resize(static_cast<std::size_t>(index.value) + 1);
+	}
+
+	axis2_index_to_action_name[index.value] = Tag.view();
+	defaults[Tag.view()] = default_key;
 
 	pending_key_bindings.emplace_back(
-	  std::string(tag),
-	  default_key,
-	  index	
+		std::string(Tag.view()),
+		default_key,
+		index
 	);
 
 	return index;
@@ -445,4 +507,32 @@ auto gse::actions::count() -> std::size_t {
 
 auto gse::actions::all() -> std::span<const description> {
 	return descriptions.items();
+}
+
+template <gse::actions::fixed_string Tag>
+auto gse::actions::add_axis2_actions(const pending_axis2_info& pa) -> void {
+	const auto left = add<std::format("{}_Left", Tag.view())>(
+		pa.left_default
+	);
+
+	const auto right = add<std::format("{}_Right", Tag.view())>(
+		pa.right_default
+	);
+
+	const auto back = add<std::format("{}_Back", Tag.view())>(
+		pa.back_default
+	);
+
+	const auto fwd = add<std::format("{}_Forward", Tag.view())>(
+		pa.fwd_default
+	);
+
+	pending_axis2_actions.emplace_back( 
+		left, 
+		right,
+		back,
+		fwd,
+		pa.axis,
+		pa.scale
+	);
 }

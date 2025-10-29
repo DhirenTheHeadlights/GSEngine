@@ -15,14 +15,27 @@ namespace gs {
 	public:
 		using hook::hook;
 
+		auto initialize() -> void override {
+			m_toggle_jetpack = gse::actions::add<"Toggle_Jetpack">(gse::key::j);
+			m_thrust = gse::actions::add<"Jetpack_Thrust">(gse::key::space);
+			m_boost = gse::actions::add<"Jetpack_Boost">(gse::key::left_shift);
+
+			m_w = gse::actions::add<"Jetpack_Move_Forward">(gse::key::w);
+			m_a = gse::actions::add<"Jetpack_Move_Left">(gse::key::a);
+			m_s = gse::actions::add<"Jetpack_Move_Backward">(gse::key::s);
+			m_d = gse::actions::add<"Jetpack_Move_Right">(gse::key::d);
+
+			gse::actions::ad
+		}
+
 		auto update() -> void override {
-			if (gse::keyboard::pressed(gse::key::j)) {
+			if (gse::actions::pressed(m_toggle_jetpack)) {
 				m_jetpack = !m_jetpack;
 			}
 
-			if (m_jetpack && gse::keyboard::held(gse::key::space)) {
+			if (m_jetpack && gse::actions::held(m_thrust)) {
 				gse::force boost_force;
-				if (gse::keyboard::held(gse::key::left_shift) && m_boost_fuel > 0) {
+				if (gse::actions::held(m_boost) && m_boost_fuel > 0) {
 					boost_force = gse::newtons(2000.f);
 					m_boost_fuel -= 1;
 				}
@@ -52,6 +65,8 @@ namespace gs {
 
 		int m_boost_fuel = 1000;
 		bool m_jetpack = false;
+
+		gse::actions::index m_toggle_jetpack, m_thrust, m_boost, m_w, m_a, m_s, m_d;
 	};
 
 	class player_hook final : public gse::hook<gse::entity> {
