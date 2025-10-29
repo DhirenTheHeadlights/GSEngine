@@ -116,6 +116,8 @@ gse::world::world(const std::string_view name): hookable(name) {
 		                new_scene->initialize();
 		                new_scene->set_active(true);
 		                m_owner->m_active_scene = new_scene->id();
+
+						actions::finalize_bindings();
 		                
 		                break; 
 		            }
