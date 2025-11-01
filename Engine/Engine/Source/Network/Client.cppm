@@ -29,7 +29,9 @@ export namespace gse::network {
 		~client();
 
 		auto connect(
-		) -> void;
+			time_t<std::uint32_t> timeout = seconds(static_cast<std::uint32_t>(5)),
+			time_t<std::uint32_t> retry = seconds(static_cast<std::uint32_t>(1))
+		) -> bool;
 
 		auto current_state(
 		) const -> state;
@@ -46,7 +48,10 @@ export namespace gse::network {
 		udp_socket m_socket;
 		remote_peer m_server;
 		state m_state = state::disconnected;
-		time m_last_request_time;
+
+		time_t<std::uint32_t> m_last_request;
+		time_t<std::uint32_t> m_timeout;
+		time_t<std::uint32_t> m_retry;
 
 		auto tick(
 		) -> void;
@@ -63,6 +68,7 @@ gse::network::client::client(const address& listen, const address& server) : m_s
 	m_socket.bind(listen);
 
 	m_running.store(true, std::memory_order_release);
+
 	//m_net_group.post(
 	//	[this] {
 	//		//while (m_running.load(std::memory_order_acquire)) {
@@ -78,12 +84,16 @@ gse::network::client::~client() {
 	m_running.store(false, std::memory_order_release);
 }
 
-auto gse::network::client::connect() -> void {
-	if (m_state == state::disconnected) {
-		send(connection_request_message{});
-		m_state = state::connecting;
-		m_last_request_time = system_clock::now();
+auto gse::network::client::connect(time_t<std::uint32_t> timeout, time_t<std::uint32_t> retry) -> bool {
+	if (m_state != state::disconnected) {
+		return false;
 	}
+
+	send(connection_request_message{});
+	m_state = state::connecting;
+	m_last_request = system_clock::now<nanoseconds, std::uint32_t>();
+
+	return true;
 }
 
 auto gse::network::client::current_state() const -> state {
@@ -131,9 +141,9 @@ auto gse::network::client::drain(const std::function<void(message&)>& on_receive
 
 auto gse::network::client::tick() -> void {
 	if (m_state == state::connecting) {
-		if (system_clock::now() - m_last_request_time > seconds(1.f)) {
+		if (system_clock::now() - m_last_request > seconds(1.f)) {
 			send(connection_request_message{});
-			m_last_request_time = system_clock::now();
+			m_last_request = system_clock::now<nanoseconds, std::uint32_t>();
 		}
 	}
 

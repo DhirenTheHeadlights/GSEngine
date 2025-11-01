@@ -120,6 +120,12 @@ export namespace gse::actions {
 
 		auto reset(
 		) -> void;
+
+		auto word_count(
+		) const -> std::size_t;
+
+		auto words(
+		) -> std::span<const word>;
 	private:
 		std::vector<word> m_words;
 	};
@@ -161,6 +167,14 @@ auto gse::actions::mask::test(const index a) const -> bool {
 
 auto gse::actions::mask::reset() -> void {
 	std::ranges::fill(m_words, 0);
+}
+
+auto gse::actions::mask::word_count() const -> std::size_t {
+	return m_words.size();
+}
+
+auto gse::actions::mask::words() -> std::span<const word> {
+	return m_words;
 }
 
 namespace gse::actions {
@@ -326,11 +340,11 @@ export namespace gse::actions {
 	) -> bool;
 
 	auto axis1(
-		std::uint16_t id
+		const id& id
 	) -> float;
 
 	auto axis2_v(
-		std::uint16_t id
+		const id& id
 	) -> axis;
 }
 
@@ -346,12 +360,12 @@ auto gse::actions::released(const index a) -> bool {
 	return global_state.released(a);
 }
 
-auto gse::actions::axis1(const std::uint16_t id) -> float {
-	return global_state.axis1(id);
+auto gse::actions::axis1(const id& id) -> float {
+	return global_state.axis1(id.number());
 }
 
-auto gse::actions::axis2_v(const std::uint16_t id) -> axis {
-	return global_state.axis2_v(id);
+auto gse::actions::axis2_v(const id& id) -> axis {
+	return global_state.axis2_v(id.number());
 }
 
 namespace gse::actions {
@@ -396,31 +410,33 @@ namespace gse::actions {
 		index right;
 		index back;
 		index fwd;
-		std::uint16_t axis = 0;
+		float scale = 1.f;
+		id id;
+	};
+
+	export struct pending_axis2_info {
+		index left;
+		index right;
+		index back;
+		index fwd;
 		float scale = 1.f;
 	};
 
-	struct pending_axis2_info {
-		key left_default;
-		key right_default;
-		key back_default;
-		key fwd_default;
-		std::uint16_t axis = 0;
+	struct resolved_axis2_keys {
+		id id;
+		key left;
+		key right;
+		key back;
+		key fwd;
 		float scale = 1.f;
 	};
 
-	export template <fixed_string Tag>
-	auto add_axis2_actions(
-		const pending_axis2_info& pa
-	) -> void;
+	export auto add_axis2_actions(
+		const pending_axis2& pa
+	) -> id;
 
-	export auto bound_key_for(
-		index a
-	) -> void;
-
-	std::vector<pending_axis2> pending_axis2_actions;
-	std::vector<std::string> axis2_index_to_action_name;
-	std::unordered_map<std::string, key> defaults;
+	std::vector<pending_axis2> pending_axis2_key_bindings;
+	id_mapped_collection<resolved_axis2_keys, gse::id> axis2_by_id;
 }
 
 auto gse::actions::map_to_actions(const input::state& in) -> void {
@@ -452,22 +468,16 @@ auto gse::actions::map_to_actions(const input::state& in) -> void {
 		global_state.set_axis1(axis, static_cast<float>(v) * scale);
 	}
 
-	const auto md = in.mouse_delta();
-	for (const auto& [axis, px_to_x, px_to_y] : resolved.axes2_from_mouse) {
-		global_state.set_axis2(axis, { md.x() * px_to_x, md.y() * px_to_y });
+	for (const auto& [id, left, right, back, fwd, scale] : axis2_by_id.items()) {
+		const int x = (in.key_held(right) ? 1 : 0) - (in.key_held(left) ? 1 : 0);
+		const int y = (in.key_held(back) ? 1 : 0) - (in.key_held(fwd) ? 1 : 0);
+		global_state.set_axis2(static_cast<std::uint16_t>(id.number()), { static_cast<float>(x) * scale, static_cast<float>(y) * scale });
 	}
 }
 
 template <gse::actions::fixed_string Tag>
 auto gse::actions::add(key default_key) -> index {
 	const auto index = add(Tag.view()).index();
-
-	if (axis2_index_to_action_name.size() <= index.value) {
-		axis2_index_to_action_name.resize(static_cast<std::size_t>(index.value) + 1);
-	}
-
-	axis2_index_to_action_name[index.value] = Tag.view();
-	defaults[Tag.view()] = default_key;
 
 	pending_key_bindings.emplace_back(
 		std::string(Tag.view()),
@@ -479,7 +489,6 @@ auto gse::actions::add(key default_key) -> index {
 }
 
 auto gse::actions::load_rebinds() -> void {
-	// TODO: Load from file or user settings
 }
 
 auto gse::actions::finalize_bindings() -> void {
@@ -487,6 +496,29 @@ auto gse::actions::finalize_bindings() -> void {
 	for (const auto& [name, def, index] : pending_key_bindings) {
 		const key k = (rebinds.contains(name) ? rebinds[name] : def);
 		resolved.key_to_action.emplace_back(k, index);
+	}
+
+	axis2_by_id.clear();
+
+	auto key_for_action = [&](index a) -> key {
+		for (const auto& [k, idx] : resolved.key_to_action) {
+			if (idx.value == a.value) {
+				return k;
+			}
+		}
+		return key{};
+		};
+
+	for (const auto& [left, right, back, fwd, scale, id] : pending_axis2_key_bindings) {
+		resolved_axis2_keys r{
+			.id = id,
+			.left = key_for_action(left),
+			.right = key_for_action(right),
+			.back = key_for_action(back),
+			.fwd = key_for_action(fwd),
+			.scale = scale
+		};
+		axis2_by_id.add(r.id, std::move(r));
 	}
 }
 
@@ -509,30 +541,7 @@ auto gse::actions::all() -> std::span<const description> {
 	return descriptions.items();
 }
 
-template <gse::actions::fixed_string Tag>
-auto gse::actions::add_axis2_actions(const pending_axis2_info& pa) -> void {
-	const auto left = add<std::format("{}_Left", Tag.view())>(
-		pa.left_default
-	);
-
-	const auto right = add<std::format("{}_Right", Tag.view())>(
-		pa.right_default
-	);
-
-	const auto back = add<std::format("{}_Back", Tag.view())>(
-		pa.back_default
-	);
-
-	const auto fwd = add<std::format("{}_Forward", Tag.view())>(
-		pa.fwd_default
-	);
-
-	pending_axis2_actions.emplace_back( 
-		left, 
-		right,
-		back,
-		fwd,
-		pa.axis,
-		pa.scale
-	);
+auto gse::actions::add_axis2_actions(const pending_axis2& pa) -> id {
+	pending_axis2_key_bindings.emplace_back(pa);
+	return pa.id;
 }

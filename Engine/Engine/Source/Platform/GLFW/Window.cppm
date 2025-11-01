@@ -40,8 +40,9 @@ export namespace gse {
 		bool m_mouse_visible = false;
 		bool m_focused = true;
 		bool m_frame_buffer_resized = false;
-		auto set_fullscreen(bool fullscreen) -> void;
 		bool m_ui_focus = false;
+
+		auto set_fullscreen(bool fullscreen) -> void;
 	};
 }
 
