@@ -8,7 +8,16 @@ export namespace gse::network {
 		connection_accepted,
 		ping,
 		pong,
-		notify_scene_change
+		notify_scene_change,
+		input_frame
+	};
+
+	struct input_frame_header {
+		std::uint32_t input_sequence;
+		std::uint32_t client_time_ms;
+		std::uint16_t action_word_count;
+		std::uint16_t axes1_count;
+		std::uint16_t axes2_count;
 	};
 
 	struct connection_request_message {};
@@ -57,6 +66,10 @@ export namespace gse::network {
 
 	template <> struct message_tag<notify_scene_change_message> {
 		static constexpr auto value = message_type::notify_scene_change;
+	};
+
+	template <> struct message_tag<input_frame_header> {
+		static constexpr auto value = message_type::input_frame;
 	};
 
 	template <typename T>
