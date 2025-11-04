@@ -108,9 +108,9 @@ namespace gse::internal {
             const generic_quantity<T, Dim>& other
         );
 
-        template <typename D2, is_arithmetic T2, is_dimension Dim2, typename Tag2, typename Unit2> requires has_same_dimensions<Dimensions, Dim2>
+        template <typename D2, is_arithmetic T2, is_dimension Dim2, typename Tag2, typename Unit2> requires has_same_dimensions<Dimensions, Dim2> && std::same_as<QuantityTagType, Tag2>
 		constexpr quantity(
-			const quantity<quantity<D2, T2, Dim2, Tag2, Unit2>, T2, Dim2, Tag2, Unit2>& other
+			const quantity<D2, T2, Dim2, Tag2, Unit2>& other
 		);
 
         template <is_unit UnitType> requires valid_unit_for_quantity<UnitType, Derived>
@@ -152,8 +152,8 @@ template <gse::internal::is_arithmetic T, gse::internal::is_dimension Dim> requi
 constexpr gse::internal::quantity<Derived, ArithmeticType, Dimensions, QuantityTagType, DefaultUnitType>::quantity(const generic_quantity<T, Dim>& other): m_val(other.template as<default_unit>()) {}
 
 template <typename Derived, gse::internal::is_arithmetic ArithmeticType, gse::internal::is_dimension Dimensions, typename QuantityTagType, typename DefaultUnitType>
-template <typename D2, gse::internal::is_arithmetic T2, gse::internal::is_dimension Dim2, typename Tag2, typename Unit2> requires gse::internal::has_same_dimensions<Dimensions, Dim2>
-constexpr gse::internal::quantity<Derived, ArithmeticType, Dimensions, QuantityTagType, DefaultUnitType>::quantity(const quantity<quantity<D2, T2, Dim2, Tag2, Unit2>, T2, Dim2, Tag2, Unit2>& other): m_val(static_cast<ArithmeticType>(other.template as<DefaultUnitType>())) {}
+template <typename D2, gse::internal::is_arithmetic T2, gse::internal::is_dimension Dim2, typename Tag2, typename Unit2> requires gse::internal::has_same_dimensions<Dimensions, Dim2>&& std::same_as<QuantityTagType, Tag2>
+constexpr gse::internal::quantity<Derived, ArithmeticType, Dimensions, QuantityTagType, DefaultUnitType>::quantity(const quantity<D2, T2, Dim2, Tag2, Unit2>& other): m_val(static_cast<ArithmeticType>(other.template as<DefaultUnitType>())) {}
 
 template <typename Derived, gse::internal::is_arithmetic ArithmeticType, gse::internal::is_dimension Dimensions, typename QuantityTagType, typename DefaultUnitType>
 template <gse::internal::is_unit UnitType> requires gse::internal::valid_unit_for_quantity<UnitType, Derived>
@@ -254,6 +254,18 @@ struct std::formatter<Q, CharT> {
         return it;
     }
 };
+
+namespace std {
+    template <typename D, gse::internal::is_arithmetic A, gse::internal::is_dimension Dim, typename Tag, typename Unit, gse::internal::is_arithmetic T2, gse::internal::is_dimension Dim2>
+    struct common_type<gse::internal::quantity<D, A, Dim, Tag, Unit>, gse::internal::generic_quantity<T2, Dim2>> {
+        using type = gse::internal::quantity<D, A, Dim, Tag, Unit>;
+    };
+
+    template <gse::internal::is_arithmetic T1, gse::internal::is_dimension Dim1, typename D2, gse::internal::is_arithmetic A2, gse::internal::is_dimension Dim2, typename Tag2, typename Unit2>
+    struct common_type<gse::internal::generic_quantity<T1, Dim1>, gse::internal::quantity<D2, A2, Dim2, Tag2, Unit2>> {
+        using type = gse::internal::quantity<D2, A2, Dim2, Tag2, Unit2>;
+    };
+}
 
 export namespace gse::internal {
 	template <is_quantity Q1, is_quantity Q2>
