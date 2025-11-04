@@ -12,7 +12,8 @@ export namespace gse::network {
 	struct connection_options {
 		address addr;
 		std::optional<address> local_bind;
-		time_t<std::uint32_t> timeout{ seconds(static_cast<std::uint32_t>(5)) };
+		time_t<std::uint32_t> timeout{ seconds(5) };
+		time_t<std::uint32_t> retry{ seconds(1) };
 		bool allow_handoff = false;
 	};
 
@@ -48,4 +49,23 @@ auto gse::network::connect(const connection_options& options) -> bool {
 		}
 	}
 	return networked_client->connect(options.timeout);
+}
+
+auto gse::network::disconnect() -> void {
+	if (networked_client) {
+		networked_client.reset();
+	}
+}
+
+auto gse::network::drain(const std::function<void(message&)>& on_receive) -> void {
+	if (networked_client) {
+		networked_client->drain(on_receive);
+	}
+}
+
+auto gse::network::state() -> client::state {
+	if (networked_client) {
+		return networked_client->current_state();
+	}
+	return client::state::disconnected;
 }

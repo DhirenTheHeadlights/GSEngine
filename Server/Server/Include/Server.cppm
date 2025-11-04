@@ -20,7 +20,7 @@ struct std::hash<gse::network::address> {
 export namespace gse {
 	struct client_data {
 		id entity_id;
-		state latest_input;
+		input::state latest_input;
 	};
 
 	class server {
@@ -85,8 +85,7 @@ auto gse::server::send(const T& msg, const network::address& to) -> void {
 
 	network::bitstream stream(buffer);
 	stream.write(header);
-	stream.write(gse::network::message_type_v<T>);
-	stream.write(msg);
+	network::write(stream, msg);
 
 	const network::packet packet_to_send{
 		.data = reinterpret_cast<std::uint8_t*>(buffer.data()),
@@ -94,7 +93,8 @@ auto gse::server::send(const T& msg, const network::address& to) -> void {
 	};
 
 	assert(
-		m_socket.send_data(packet_to_send, to) != network::socket_state::error, 
+		m_socket.send_data(packet_to_send, to) != network::socket_state::error,
+		std::source_location::current(),
 		"Failed to send packet from server."
 	);
 }

@@ -49,9 +49,10 @@ export namespace gse::network {
 		remote_peer m_server;
 		state m_state = state::disconnected;
 
-		time_t<std::uint32_t> m_last_request;
 		time_t<std::uint32_t> m_timeout;
 		time_t<std::uint32_t> m_retry;
+
+		clock m_connection_clock;
 
 		auto tick(
 		) -> void;
@@ -84,14 +85,18 @@ gse::network::client::~client() {
 	m_running.store(false, std::memory_order_release);
 }
 
-auto gse::network::client::connect(time_t<std::uint32_t> timeout, time_t<std::uint32_t> retry) -> bool {
+auto gse::network::client::connect(const time_t<std::uint32_t> timeout, const time_t<std::uint32_t> retry) -> bool {
 	if (m_state != state::disconnected) {
 		return false;
 	}
 
 	send(connection_request_message{});
+
 	m_state = state::connecting;
-	m_last_request = system_clock::now<nanoseconds, std::uint32_t>();
+	m_timeout = timeout;
+	m_retry = retry;
+
+	m_connection_clock.reset();
 
 	return true;
 }
@@ -141,9 +146,12 @@ auto gse::network::client::drain(const std::function<void(message&)>& on_receive
 
 auto gse::network::client::tick() -> void {
 	if (m_state == state::connecting) {
-		if (system_clock::now() - m_last_request > seconds(1.f)) {
+		if (m_connection_clock.elapsed<std::uint32_t>() > m_retry) {
 			send(connection_request_message{});
-			m_last_request = system_clock::now<nanoseconds, std::uint32_t>();
+			m_connection_clock.reset();
+		}
+		if (m_connection_clock.elapsed<std::uint32_t>() > m_timeout) {
+			m_state = state::disconnected;
 		}
 	}
 

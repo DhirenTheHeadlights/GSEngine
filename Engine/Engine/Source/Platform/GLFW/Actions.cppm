@@ -125,7 +125,12 @@ export namespace gse::actions {
 		) const -> std::size_t;
 
 		auto words(
-		) -> std::span<const word>;
+		) const -> std::span<const word>;
+
+		auto assign(
+			std::span<const word> w
+		) -> void ;
+
 	private:
 		std::vector<word> m_words;
 	};
@@ -173,8 +178,12 @@ auto gse::actions::mask::word_count() const -> std::size_t {
 	return m_words.size();
 }
 
-auto gse::actions::mask::words() -> std::span<const word> {
+auto gse::actions::mask::words() const -> std::span<const word> {
 	return m_words;
+}
+
+auto gse::actions::mask::assign(const std::span<const word> w) -> void {
+	m_words.assign(w.begin(), w.end());
 }
 
 namespace gse::actions {
@@ -237,6 +246,11 @@ namespace gse::actions {
 
 		auto released_mask(
 		) const -> const mask&;
+
+		auto load_transients(
+			std::span<const word> pressed,
+			std::span<const word> released
+		) -> void;
 	private:
 		mask m_held, m_pressed, m_released;
 		std::unordered_map<std::uint16_t, float> m_axes1;
@@ -244,6 +258,20 @@ namespace gse::actions {
 	};
 
 	state global_state;
+
+	export auto pressed_mask(
+	) -> const mask&;
+
+	export auto released_mask(
+	) -> const mask&;
+
+	export auto axis1(
+		std::uint16_t id
+	) -> float;
+
+	export auto axis2(
+		std::uint16_t id
+	) -> axis;
 }
 
 auto gse::actions::state::begin_frame() -> void {
@@ -324,6 +352,46 @@ auto gse::actions::state::pressed_mask() const -> const mask& {
 
 auto gse::actions::state::released_mask() const -> const mask& {
 	return m_released;
+}
+
+auto gse::actions::state::load_transients(std::span<const word> pressed, std::span<const word> released) -> void {
+	ensure_capacity();
+
+	m_pressed.assign(pressed);
+	m_released.assign(released);
+
+	const std::size_t wc = std::max(pressed.size(), released.size());
+
+	m_held.ensure_for(wc * 64);
+
+	std::vector held(m_held.words().begin(), m_held.words().end());
+	held.resize(wc, 0);
+
+	const auto pw = m_pressed.words();
+	const auto rw = m_released.words();
+
+	for (std::size_t i = 0; i < wc; ++i) {
+		const word p = (i < pw.size() ? pw[i] : 0);
+		const word r = (i < rw.size() ? rw[i] : 0);
+		held[i] = (held[i] | p) & ~r;
+	}
+	m_held.assign(held);
+}
+
+auto gse::actions::pressed_mask() -> const mask& {
+	return global_state.pressed_mask();
+}
+
+auto gse::actions::released_mask() -> const mask& {
+	return global_state.released_mask();
+}
+
+auto gse::actions::axis1(const std::uint16_t id) -> float {
+	return global_state.axis1(id);
+}
+
+auto gse::actions::axis2(const std::uint16_t id) -> axis {
+	return global_state.axis2_v(id);
 }
 
 export namespace gse::actions {
