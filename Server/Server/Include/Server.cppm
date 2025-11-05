@@ -20,7 +20,9 @@ struct std::hash<gse::network::address> {
 export namespace gse {
 	struct client_data {
 		id entity_id;
-		input::state latest_input;
+		actions::state latest_input;
+		std::uint32_t last_input_sequence = 0;
+		bool have_seq = false;
 	};
 
 	class server {
@@ -30,8 +32,7 @@ export namespace gse {
 		);
 
 		auto update(
-			world& world,
-			const std::function<void(const network::address&, network::message&)>& on_receive
+			world& world
 		) -> void;
 
 		template <typename T>
@@ -99,63 +100,96 @@ auto gse::server::send(const T& msg, const network::address& to) -> void {
 	);
 }
 
-auto gse::server::update(world& world, const std::function<void(const network::address&, network::message&)>& on_receive) -> void {
+auto gse::server::update(world& world) -> void {
 	std::array<std::byte, max_packet_size> buffer;
 
 	while (auto received = m_socket.receive_data(buffer)) {
-		if (received->bytes_read < sizeof(packet_header) + sizeof(network::message_type)) {
-			continue; 
-		}
+		const std::span data(buffer.data(), received->bytes_read);
+		network::bitstream stream(data);
 
-		const std::span received_data(buffer.data(), received->bytes_read);
-		network::bitstream stream(received_data);
+		const auto header = stream.read<packet_header>();
 
-		auto it = m_peers.find(received->from);
-
+		const auto it = m_peers.find(received->from);
 		if (it == m_peers.end()) {
-			stream.read<packet_header>();
+			const auto message_id = network::message_id(stream);
 
-			if (const auto type = stream.read<network::message_type>(); type == network::message_type::connection_request) {
-				std::println("Server: Received ConnectionRequest from {}:{}", received->from.ip, received->from.port);
-				m_peers.emplace(received->from, network::remote_peer(received->from));
-				send(network::connection_accepted_message{}, received->from);
+			bool handled = false;
+			handled |= network::try_decode<network::connection_request>(stream, message_id, [&](const auto&) {
+			    std::println("Server: ConnectionRequest from {}:{}", received->from.ip, received->from.port);
 
-				if (auto* scene = world.current_scene()) {
-					auto entity_id = scene->registry().create("Player");
-					scene->registry().activate(entity_id);
-					
-					m_clients[received->from] = client_data{ .entity_id = entity_id };
-					std::println("Server: Created entity {} for new client at ip: {}, port: {}", entity_id, received->from.ip, received->from.port);
-				}
+			    auto [ins_it, _] = m_peers.emplace(received->from, network::remote_peer(received->from));
+
+			    if (auto* scene = world.current_scene()) {
+			        auto entity_id = scene->registry().create("Player");
+			        scene->registry().activate(entity_id);
+			        m_clients[received->from] = client_data{ .entity_id = entity_id };
+			        std::println("Server: Created entity {} for {}:{}", entity_id, received->from.ip, received->from.port);
+			    }
+
+			    send(network::connection_accepted{}, received->from);
+			});
+
+			if (!handled) {
+			    std::println("Server: dropped pre-handshake msg {} from {}:{}", message_id, received->from.ip, received->from.port);
 			}
 
 			continue;
 		}
 
 		auto& peer = it->second;
-		process_header(stream, peer); 
+		process_header(stream, peer);
 
-		const auto type = stream.read<network::message_type>();
-		network::message msg;
-		bool message_read = true;
+		const auto id = network::message_id(stream);
 
-		switch (type) {
-		case network::message_type::ping:
-			msg = stream.read<network::ping_message>();
-			break;
-		case network::message_type::pong:
-			msg = stream.read<network::pong_message>();
-			break;
-		case network::message_type::connection_request:
-		case network::message_type::connection_accepted:
-		default:
-			message_read = false;
-			break;
-		}
+		network::match_message(stream, id)
+			.if_is([&](const network::ping& m) {
+			    send(network::pong{ .sequence = m.sequence }, received->from);
+			})
+			.else_if_is([&](const network::pong&) {
+				std::println("Server: Received Pong from {}:{}", received->from.ip, received->from.port);
+			})
+			.else_if_is([&](const network::input_frame_header& fh) {
+			    const std::size_t wc = fh.action_word_count;
 
-		if (message_read) {
-			on_receive(received->from, msg);
-		}
+			    std::vector<std::uint64_t> pressed(wc), released(wc);
+
+			    for (std::size_t i = 0; i < wc; ++i) {
+				    pressed[i]  = stream.read<std::uint64_t>();
+			    }
+
+			    for (std::size_t i = 0; i < wc; ++i) {
+				    released[i] = stream.read<std::uint64_t>();
+			    }
+
+			    std::vector<network::axes1_pair> a1(fh.axes1_count);
+			    for (auto& p : a1) {
+				    p = stream.read<network::axes1_pair>();
+			    }
+
+			    std::vector<network::axes2_pair> a2(fh.axes2_count);
+			    for (auto& p : a2) {
+				    p = stream.read<network::axes2_pair>();
+			    }
+
+			    auto& cd = m_clients[received->from];
+			    if (fh.input_sequence <= cd.last_input_sequence) {
+				    return;
+			    }
+
+			    cd.last_input_sequence = fh.input_sequence;
+
+			    cd.latest_input.begin_frame();
+			    cd.latest_input.ensure_capacity();
+			    cd.latest_input.load_transients(pressed, released);
+
+			    for (auto& [id, value] : a1) {
+				    cd.latest_input.set_axis1(id, value);
+			    }
+
+			    for (auto& [id, x, y] : a2) {
+				    cd.latest_input.set_axis2(id, actions::axis{ x, y });
+			    }
+			});
 	}
 }
 

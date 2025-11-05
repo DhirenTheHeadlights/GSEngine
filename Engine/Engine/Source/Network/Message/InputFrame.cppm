@@ -18,16 +18,24 @@ export namespace gse::network {
     ) -> std::uint16_t;
 
     auto encode(
-        const input_frame_header& header,
-		bitstream& stream
+        bitstream& s,
+        const input_frame_header& header
 	) -> void;
 
     auto decode(
-        bitstream& stream,
-        input_frame_header& out
-	) -> void;
+        bitstream& s,
+        std::type_identity<input_frame_header>
+	) -> input_frame_header;
 }
 
 constexpr auto gse::network::message_id(std::type_identity<input_frame_header>) -> std::uint16_t {
     return 0x0006;
+}
+
+auto gse::network::encode(bitstream& s, const input_frame_header& header) -> void {
+	s.write(header);
+}
+
+auto gse::network::decode(bitstream& s, std::type_identity<input_frame_header>) -> input_frame_header {
+	return s.read<input_frame_header>();
 }
