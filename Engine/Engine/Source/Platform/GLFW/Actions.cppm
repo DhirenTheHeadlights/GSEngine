@@ -186,7 +186,7 @@ auto gse::actions::mask::assign(const std::span<const word> w) -> void {
 	m_words.assign(w.begin(), w.end());
 }
 
-namespace gse::actions {
+export namespace gse::actions {
 	class state {
 	public:
 		auto begin_frame(
@@ -257,21 +257,23 @@ namespace gse::actions {
 		std::unordered_map<std::uint16_t, axis> m_axes2;
 	};
 
-	state global_state;
-
-	export auto pressed_mask(
+	auto pressed_mask(
 	) -> const mask&;
 
-	export auto released_mask(
+	auto released_mask(
 	) -> const mask&;
 
-	export auto axis1(
+	auto axis1(
 		std::uint16_t id
 	) -> float;
 
-	export auto axis2(
+	auto axis2(
 		std::uint16_t id
 	) -> axis;
+}
+
+namespace gse::actions {
+	state global_state;
 }
 
 auto gse::actions::state::begin_frame() -> void {
