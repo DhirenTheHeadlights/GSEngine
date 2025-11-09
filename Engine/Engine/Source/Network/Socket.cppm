@@ -9,6 +9,7 @@ export module gse.network:socket;
 import std;
 
 import gse.assert;
+import gse.physics.math;
 
 export namespace gse::network {
 	struct packet {
@@ -29,6 +30,12 @@ export namespace gse::network {
 		receiving,
 		error,
 		empty
+	};
+
+	enum struct wait_result : std::uint8_t {
+		ready,
+		timeout,
+		error
 	};
 
 	struct udp_socket {
@@ -52,6 +59,10 @@ export namespace gse::network {
 		auto receive_data(
 			std::span<std::byte> buffer
 		) const -> std::optional<receive_result>;
+
+		auto wait_readable(
+			time_t<std::uint32_t> timeout
+		) const -> wait_result;
 
 		std::uint64_t socket_id;
 	};
@@ -133,4 +144,29 @@ auto gse::network::udp_socket::receive_data(std::span<std::byte> buffer) const -
 		}
 	};
 }
+
+auto gse::network::udp_socket::wait_readable(const time_t<std::uint32_t> timeout) const -> wait_result {
+	WSAPOLLFD pfd{
+		.fd = static_cast<SOCKET>(socket_id),
+		.events = POLLRDNORM | POLLERR | POLLHUP
+	};
+
+	const int rv = WSAPoll(&pfd, 1, static_cast<int>(timeout.as<milliseconds>()));
+	if (rv == 0) {
+		return wait_result::timeout;
+	}
+	if (rv < 0) {
+		return wait_result::error;
+	}
+
+	if (pfd.revents & (POLLERR | POLLHUP)) {
+		return wait_result::error;
+	}
+	if (pfd.revents & (POLLRDNORM | POLLPRI | POLLIN)) {
+		return wait_result::ready;
+	}
+
+	return wait_result::timeout;
+}
+
 

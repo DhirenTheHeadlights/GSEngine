@@ -22,6 +22,7 @@ import :slider_widget;
 import :ids;
 import :button_widget;
 import :tree_widget;
+import :selectable_widget;
 
 export namespace gse::gui {
 	auto initialize(
@@ -122,6 +123,11 @@ export namespace gse::gui {
 		const draw::tree_ops<T>& fns,
 		draw::tree_options opt = {},
 		draw::tree_selection* sel = nullptr
+	) -> bool;
+
+	auto selectable(
+		const std::string& text, 
+		bool selected = false
 	) -> bool;
 
 	auto profiler(
@@ -453,6 +459,36 @@ template <typename T>
 auto gse::gui::tree(std::span<const T> roots, const draw::tree_ops<T>& fns, draw::tree_options opt, draw::tree_selection* sel) -> bool {
 	if (!context) return false;
 	return draw::tree(*context, roots, fns, opt, sel, active_widget_id);
+}
+
+auto gse::gui::selectable(const std::string& text, bool selected) -> bool {
+	if (!context) return false;
+	const auto& ctx = *context;
+
+	const auto widget_id = ids::make(text);
+
+	const float widget_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
+	const auto content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
+	const ui_rect row_rect = ui_rect::from_position_size(
+		{ content_rect.left(), ctx.layout_cursor.y() },
+		{ content_rect.width(), widget_height }
+	);
+
+	const bool hovered = row_rect.contains(mouse::position());
+	if (hovered && mouse::pressed(mouse_button::button_1)) {
+		active_widget_id = widget_id;
+		if (focus_widget_id.exists()) focus_widget_id = {};
+	}
+
+	draw::selectable(ctx, text, selected, hot_widget_id, active_widget_id);
+
+	bool clicked = false;
+	if (mouse::released(mouse_button::button_1) && active_widget_id == widget_id) {
+		clicked = hovered;
+		active_widget_id = {};
+	}
+
+	return clicked;
 }
 
 auto gse::gui::profiler() -> void {

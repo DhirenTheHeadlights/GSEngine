@@ -21,8 +21,8 @@ export namespace gse::network {
 
 	auto decode(
 		bitstream& stream,
-		ping& msg
-	) -> void;
+		std::type_identity<ping>
+	) -> ping;
 
 	struct pong {
 		std::uint32_t sequence{};
@@ -39,8 +39,8 @@ export namespace gse::network {
 
 	auto decode(
 		bitstream& stream,
-		pong& msg
-	) -> void;
+		std::type_identity<pong>
+	) -> pong;
 }
 
 constexpr auto gse::network::message_id(std::type_identity<ping>) -> std::uint16_t {
@@ -51,8 +51,10 @@ auto gse::network::encode(const ping& msg, bitstream& stream) -> void {
 	stream.write(msg.sequence);
 }
 
-auto gse::network::decode(bitstream& stream, ping& msg) -> void {
-	msg.sequence = stream.read<std::uint32_t>();
+auto gse::network::decode(bitstream& stream, std::type_identity<ping>) -> ping {
+	return {
+		.sequence = stream.read<std::uint32_t>()
+	};
 }
 
 constexpr auto gse::network::message_id(std::type_identity<pong>) -> std::uint16_t {
@@ -63,6 +65,8 @@ auto gse::network::encode(const pong& msg, bitstream& stream) -> void {
 	stream.write(msg.sequence);
 }
 
-auto gse::network::decode(bitstream& stream, pong& msg) -> void {
-	msg.sequence = stream.read<std::uint32_t>();
+auto gse::network::decode(bitstream& stream, std::type_identity<pong>) -> pong {
+	return {
+		.sequence = stream.read<std::uint32_t>()
+	};
 }

@@ -9,7 +9,7 @@ import gse.platform;
 export namespace gse {
 	struct evaluation_context {
 		std::optional<id> client_id = std::nullopt;
-		const input::state* input;
+		const actions::state* input;
 		const registry* registry;
 	};
 
@@ -99,7 +99,7 @@ gse::world::world(const std::string_view name): hookable(name) {
 
 				const evaluation_context ctx{
 					.client_id = m_owner->m_client_id,
-					.input = input::current_state(),
+					.input = &actions::current_state(),
 					.registry = m_owner->m_active_scene.has_value() ? &m_owner->scene(m_owner->m_active_scene.value())->registry() : nullptr
 				};
 
