@@ -16,8 +16,8 @@ export namespace gse::network {
 
 	auto decode(
 		bitstream& stream,
-		connection_request&
-	) -> void;
+		std::type_identity<connection_request>
+	) -> connection_request;
 
 	struct connection_accepted {};
 
@@ -32,8 +32,8 @@ export namespace gse::network {
 
 	auto decode(
 		bitstream& stream,
-		connection_accepted&
-	) -> void;
+		std::type_identity<connection_accepted>
+	) -> connection_accepted;
 }
 
 constexpr auto gse::network::message_id(std::type_identity<connection_accepted>) -> std::uint16_t {
@@ -44,8 +44,8 @@ auto gse::network::encode(bitstream& stream, const connection_accepted&) -> void
 	// No data to encode
 }
 
-auto gse::network::decode(bitstream& stream, connection_accepted&) -> void {
-	// No data to decode
+auto gse::network::decode(bitstream& stream, std::type_identity<connection_accepted>) -> connection_accepted {
+	return {};
 }
 
 constexpr auto gse::network::message_id(std::type_identity<connection_request>) -> std::uint16_t {
@@ -56,6 +56,6 @@ auto gse::network::encode(bitstream& stream, const connection_request&) -> void 
 	// No data to encode
 }
 
-auto gse::network::decode(bitstream& stream, connection_request&) -> void {
-	// No data to decode
+auto gse::network::decode(bitstream& stream, std::type_identity<connection_request>) -> connection_request {
+	return {};
 }

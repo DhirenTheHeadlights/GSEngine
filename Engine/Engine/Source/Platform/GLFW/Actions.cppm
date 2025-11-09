@@ -270,6 +270,9 @@ export namespace gse::actions {
 	auto axis2(
 		std::uint16_t id
 	) -> axis;
+
+	auto current_state(
+	) -> const state&;
 }
 
 namespace gse::actions {
@@ -394,6 +397,10 @@ auto gse::actions::axis1(const std::uint16_t id) -> float {
 
 auto gse::actions::axis2(const std::uint16_t id) -> axis {
 	return global_state.axis2_v(id);
+}
+
+auto gse::actions::current_state() -> const state& {
+	return global_state;
 }
 
 export namespace gse::actions {

@@ -107,8 +107,6 @@ auto gse::server::update(world& world) -> void {
 		const std::span data(buffer.data(), received->bytes_read);
 		network::bitstream stream(data);
 
-		const auto header = stream.read<packet_header>();
-
 		const auto it = m_peers.find(received->from);
 		if (it == m_peers.end()) {
 			const auto message_id = network::message_id(stream);
@@ -189,6 +187,39 @@ auto gse::server::update(world& world) -> void {
 			    for (auto& [id, x, y] : a2) {
 				    cd.latest_input.set_axis2(id, actions::axis{ x, y });
 			    }
+
+				auto log_pressed_released = [&](const actions::state& st) {
+					auto dump = [&](const std::span<const actions::word> words, std::string_view kind) {
+						for (std::size_t wi = 0; wi < words.size(); ++wi) {
+							auto w = words[wi];
+							while (w) {
+								const unsigned long b = std::countr_zero(w);
+								const std::size_t idx = wi * 64 + b;
+								std::println("Server: {} action {} from {}:{}",
+									kind, idx, received->from.ip, received->from.port);
+								w &= (w - 1); // clear lowest set bit
+							}
+						}
+					};
+
+					dump(st.pressed_mask().words(), "pressed");
+					dump(st.released_mask().words(), "released");
+			    };
+
+				log_pressed_released(cd.latest_input);
+
+				for (const auto& [axis_id, v] : a1) {
+					if (std::abs(v) > 1e-4f) {
+						std::println("Server: axis1 {} = {:.3f} from {}:{}",
+							axis_id, v, received->from.ip, received->from.port);
+					}
+				}
+				for (const auto& [axis_id, x, y] : a2) {
+					if (std::abs(x) > 1e-4f || std::abs(y) > 1e-4f) {
+						std::println("Server: axis2 {} = ({:.3f}, {:.3f}) from {}:{}",
+							axis_id, x, y, received->from.ip, received->from.port);
+					}
+				}
 			});
 	}
 }

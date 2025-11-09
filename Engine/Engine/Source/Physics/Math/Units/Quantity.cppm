@@ -27,6 +27,10 @@ namespace gse::internal {
 
     export template <typename T>
     concept is_arithmetic = std::integral<T> || std::floating_point<T>;
+
+    constexpr auto cexpr_llround(long double x) -> long long {
+        return x >= 0 ? static_cast<long long>(x + 0.5L) : static_cast<long long>(x - 0.5L);
+    }
 }
 
 template <size_t N, typename CharT>
@@ -170,7 +174,7 @@ constexpr auto gse::internal::quantity<Derived, ArithmeticType, Dimensions, Quan
     long double out = v * static_cast<long double>(r::den) / static_cast<long double>(r::num);
 
     if constexpr (std::is_integral_v<ArithmeticType>) {
-        return static_cast<ArithmeticType>(std::llround(out));
+        return static_cast<ArithmeticType>(cexpr_llround(out));
     } else {
         return static_cast<ArithmeticType>(out);
     }
@@ -200,7 +204,7 @@ constexpr auto gse::internal::quantity<Derived, A, D, Tag,DefUnit>::converted_va
     long double out = v * static_cast<long double>(r::num) / static_cast<long double>(r::den);
 
     if constexpr (std::is_integral_v<A>) {
-        return static_cast<A>(std::llround(out));
+        return static_cast<A>(cexpr_llround(out));
     } else {
         return static_cast<A>(out);
     }
@@ -462,7 +466,7 @@ constexpr auto gse::quantity_cast(const FromQuantity& q) -> ToQuantity {
     long double y = base * (static_cast<long double>(to_r::den) / static_cast<long double>(to_r::num));
 
     if constexpr (std::is_integral_v<to_val>) {
-        return ToQuantity(static_cast<to_val>(std::llround(y)));
+        return ToQuantity(static_cast<to_val>(internal::cexpr_llround(y)));
     } else {
         return ToQuantity(static_cast<to_val>(y));
     }

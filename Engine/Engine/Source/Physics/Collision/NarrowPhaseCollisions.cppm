@@ -143,7 +143,6 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
     const auto jn = -(1.0f + restitution) * vel_along_normal / denom;
 
     const auto impulse_vec = res->normal * jn;
-    std::println("Impulse: {}, Normal: {}, Penetration: {}", impulse_vec, res->normal, res->penetration);
 
     if (!object_a->position_locked) {
         object_a->current_velocity += impulse_vec * inv_mass_a;

@@ -11,7 +11,6 @@ export module gse.network;
 import gse.utility;
 
 export import :actions;
-export import :client;
 export import :remote_peer;
 export import :socket;
 export import :bitstream;
@@ -20,6 +19,10 @@ export import :message;
 export import :connection;
 export import :ping_pong;
 export import :input_frame;
+export import :notify_scene_change;
+export import :api;
+export import :client;
+export import :discovery;
 
 export namespace gse::network {
 	auto initialize() -> void;
