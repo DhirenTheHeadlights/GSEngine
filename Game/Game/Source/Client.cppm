@@ -14,6 +14,8 @@ export namespace gs {
         std::uint32_t m_ping_seq = 0;
         int m_selected = -1;
         gse::clock m_refresh_clock;
+        gse::uuid m_pending_scene;
+        bool m_has_pending = false;
     };
 }
 
@@ -21,17 +23,14 @@ auto gs::client::initialize() -> void {
     using namespace gse::network;
     clear_discovery_providers();
     std::vector seed{
-		discovery_result{
-			.addr = address{
-			    .ip = "127.0.0.1",
-			    .port = 9000
-			},
-			.name = "Local Server",
-			.map = "dev_map",
-			.players = 0,
-			.max_players = 8,
-			.build = 1
-		}
+        discovery_result{
+            .addr = address{ .ip = "127.0.0.1", .port = 9000 },
+            .name = "Local Server",
+            .map = "dev_map",
+            .players = 0,
+            .max_players = 8,
+            .build = 1
+        }
     };
     add_discovery_provider(std::make_unique<wan_directory_provider>(std::move(seed)));
     refresh_servers(gse::milliseconds(200));
@@ -41,16 +40,25 @@ auto gs::client::update() -> void {
     gse::network::drain([this](gse::network::inbox_message& m) {
         gse::match(m)
             .if_is([&](const gse::network::connection_accepted&) {
-	            m_owner->world.set_networked(true);
-	            if (const auto* scene = m_owner->world.current_scene()) {
-	                m_owner->world.deactivate(scene->id());
-	            }
-			})
+                m_owner->world.set_networked(true);
+                if (const auto* scene = m_owner->world.current_scene()) {
+                    m_owner->world.deactivate(scene->id());
+                }
+            })
             .else_if_is([&](const gse::network::notify_scene_change& msg) {
-				m_owner->world.activate(gse::find(std::string_view(msg.scene_name.data())));
-                std::println("Switched to scene: {}", msg.scene_name.data());
-			});
+                m_owner->world.activate(msg.scene_id);
+                m_has_pending = false;
+                std::println("Switched to scene: {}", m_pending_scene);
+            });
     });
+
+    if (m_has_pending) {
+        if (const auto id = gse::try_find(m_pending_scene); id.has_value()) {
+            m_owner->world.activate(id.value());
+            m_has_pending = false;
+            std::println("Switched to scene: {}", m_pending_scene);
+        }
+    }
 
     if (m_refresh_clock.elapsed<std::uint32_t>() > 1000u) {
         gse::network::refresh_servers(gse::milliseconds(150));
@@ -61,6 +69,7 @@ auto gs::client::update() -> void {
 auto gs::client::render() -> void {
     gse::gui::start("Network", [&] {
         using gse::network::client;
+
         switch (gse::network::state()) {
             case client::state::disconnected: gse::gui::text("Status: Disconnected"); break;
             case client::state::connecting:   gse::gui::text("Status: Connecting..."); break;
@@ -77,7 +86,7 @@ auto gs::client::render() -> void {
 
         int idx = 0;
         for (const auto& s : list) {
-	        if (const bool picked = (m_selected == idx); gse::gui::selectable(std::format("{}  {}:{}  {}/{}  v{}", s.name, s.addr.ip, s.addr.port, s.players, s.max_players, s.build), picked)) {
+            if (const bool picked = (m_selected == idx); gse::gui::selectable(std::format("{}  {}:{}  {}/{}  v{}", s.name, s.addr.ip, s.addr.port, s.players, s.max_players, s.build), picked)) {
                 m_selected = idx;
             }
             ++idx;

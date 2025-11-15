@@ -32,6 +32,14 @@ export namespace gse {
 		std::string_view tag
 	) -> id;
 
+	auto try_find(
+		std::string_view tag
+	) -> std::optional<id>;
+
+	auto try_find(
+		uuid number
+	) -> std::optional<id>;
+
 	auto find_or_generate_id(
 		std::string_view tag
 	) -> id;
@@ -461,27 +469,32 @@ auto gse::generate_temp_id(const uuid number, const std::string_view tag) -> id 
 }
 
 auto gse::find(const uuid number) -> id {
-	const auto& [mutex, registry] = id_registry();
-	std::shared_lock lock(mutex);
-
-	id* found_id = registry.by_uuid.try_get(number);
-	assert(found_id, std::source_location::current(), "ID {} not found", number);
+	const auto found_id = try_find(number);
+	assert(found_id.has_value(), std::source_location::current(), "ID {} not found", number);
 	return *found_id;
 }
 
 auto gse::find(const std::string_view tag) -> id {
+	const auto found_id = try_find(tag);
+	assert(found_id.has_value(), std::source_location::current(), "Inconsistent registry state!");
+	return *found_id;
+}
+
+auto gse::try_find(const std::string_view tag) -> std::optional<id> {
 	const auto& [mutex, registry] = id_registry();
 	std::shared_lock lock(mutex);
 
 	const auto it = registry.tag_to_uuid.find(tag);
 	assert(it != registry.tag_to_uuid.end(), std::source_location::current(), "Tag '{}' not found", tag);
 
-	id* found_id = registry.by_uuid.try_get(it->second);
-	assert(found_id, std::source_location::current(), "Inconsistent registry state!");
-	return *found_id;
+	if (id* found_id = registry.by_uuid.try_get(it->second)) {
+		return *found_id;
+	}
+
+	return std::nullopt;
 }
 
-auto gse::find_or_generate_id(std::string_view tag) -> id {
+auto gse::find_or_generate_id(const std::string_view tag) -> id {
 	if (exists(tag)) {
 		return find(tag);
 	}
