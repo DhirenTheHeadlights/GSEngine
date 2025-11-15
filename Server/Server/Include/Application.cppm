@@ -53,9 +53,9 @@ auto gse::server_app::update() -> void {
 			const auto tag_sv = std::string_view(active->id().tag());
 
 			network::notify_scene_change msg{};
-			std::ranges::fill(msg.scene_name, '\0');
-			const auto n = std::min(tag_sv.size(), msg.scene_name.size() - 1);
-			std::ranges::copy_n(tag_sv.data(), n, msg.scene_name.begin());
+			std::ranges::fill(msg.scene_id, '\0');
+			const auto n = std::min(tag_sv.size(), msg.scene_id.size() - 1);
+			std::ranges::copy_n(tag_sv.data(), n, msg.scene_id.begin());
 
 			for (const auto& addr : m_server->clients() | std::views::keys) {
 				m_server->send(msg, addr);

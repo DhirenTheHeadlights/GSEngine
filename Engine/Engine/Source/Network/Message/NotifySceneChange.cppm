@@ -4,9 +4,11 @@ import std;
 
 import :message;
 
+import gse.utility;
+
 export namespace gse::network {
 	struct notify_scene_change {
-		std::array<char, 64> scene_name{};
+		id scene_id{};
 	};
 
 	constexpr auto message_id(
@@ -29,11 +31,11 @@ constexpr auto gse::network::message_id(std::type_identity<notify_scene_change>)
 }
 
 auto gse::network::encode(bitstream& s, const notify_scene_change& m) -> void {
-	s.write(std::as_bytes(std::span{ m.scene_name }));
+	s.write(m.scene_id.number());
 }
 
 auto gse::network::decode(bitstream& s, std::type_identity<notify_scene_change>) -> notify_scene_change {
-	notify_scene_change m{};
-	s.read(std::as_writable_bytes(std::span{ m.scene_name }));
-	return m;
+	return {
+		.scene_id = find(s.read<uuid>())
+	};
 }
