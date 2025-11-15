@@ -44,9 +44,7 @@ export namespace gse {
 			const auto v = actions::axis2_v(m_move_axis);
 			const float lift = (actions::held(m_space) ? 1.f : 0.f) - (actions::held(m_ctrl) ? 1.f : 0.f);
 
-			if (const unitless::vec3 move_local(v.x(), lift, v.y()); move_local.x() != 0.f || move_local.y() != 0.f || move_local.z() != 0.f) {
-				camera.move(camera.direction_relative_to_origin(move_local) * 100.f);
-			}
+			camera.move(camera.direction_relative_to_origin({v.x(), lift, v.y()}) * 100.f);
 		}
 	private:
 		vec3<length> m_initial_position;

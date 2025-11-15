@@ -17,7 +17,7 @@ export namespace gse {
 		);
 
 		auto tick(
-			time_t<T> dt = system_clock::dt<T>()
+			time_t<T> dt = system_clock::dt<time_t<T>>()
 		) -> bool;
 
 		auto reset(

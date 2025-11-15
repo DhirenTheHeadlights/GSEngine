@@ -179,10 +179,6 @@ auto gse::narrow_phase_collision::minkowski_difference(const bounding_box& bb1, 
 }
 
 auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const bounding_box& bb2) -> std::optional<mpr_result> {
-    if (bb1.obb().orientation != gse::quat(1.00, 0, 0, 0)) {
-        std::cout << "rotated";
-    }
-
     const length eps = meters(1e-4f);
     const auto eps2 = eps * eps;
 

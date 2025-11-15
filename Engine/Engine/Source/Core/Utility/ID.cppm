@@ -485,12 +485,24 @@ auto gse::try_find(const std::string_view tag) -> std::optional<id> {
 	std::shared_lock lock(mutex);
 
 	const auto it = registry.tag_to_uuid.find(tag);
-	assert(it != registry.tag_to_uuid.end(), std::source_location::current(), "Tag '{}' not found", tag);
+	if (it == registry.tag_to_uuid.end()) {
+		return std::nullopt;
+	}
 
 	if (id* found_id = registry.by_uuid.try_get(it->second)) {
 		return *found_id;
 	}
 
+	return std::nullopt;
+}
+
+auto gse::try_find(const uuid number) -> std::optional<id> {
+	const auto& [mutex, registry] = id_registry();
+	std::shared_lock lock(mutex);
+
+	if (id* found_id = registry.by_uuid.try_get(number)) {
+		return *found_id;
+	}
 	return std::nullopt;
 }
 

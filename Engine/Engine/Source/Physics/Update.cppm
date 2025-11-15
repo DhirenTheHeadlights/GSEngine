@@ -19,8 +19,10 @@ export namespace gse::physics {
 	) -> void;
 }
 
-constexpr gse::time max_time_step = gse::seconds(0.25f);
-gse::time accumulator;
+namespace gse::physics {
+	constexpr time max_time_step = seconds(0.25f);
+	time_t<float, seconds> accumulator;
+}
 
 auto gse::physics::update(const std::vector<std::reference_wrapper<registry>>& registries) -> void {
 	if (registries.empty()) {
@@ -32,7 +34,7 @@ auto gse::physics::update(const std::vector<std::reference_wrapper<registry>>& r
 
 	accumulator += frame_time;
 
-	const auto const_update_time = system_clock::constant_update_time();
+	const auto const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
 
 	while (accumulator >= const_update_time) {
 		for (int i = 0; i < 5; i++) {
@@ -45,14 +47,14 @@ auto gse::physics::update(const std::vector<std::reference_wrapper<registry>>& r
 
 		std::vector<std::tuple<
 			std::reference_wrapper<motion_component>,
-			std::reference_wrapper<collision_component>
+			collision_component*
 		>> update_tasks;
 
 		for (auto& reg_ref : registries) {
 			for (auto& registry = reg_ref.get(); auto& object : registry.linked_objects_write<motion_component>()) {
 				update_tasks.emplace_back(
 					object,
-					registry.linked_object_write<collision_component>(object.owner_id())
+					registry.try_linked_object_write<collision_component>(object.owner_id())
 				);
 			}
 		}
@@ -61,7 +63,7 @@ auto gse::physics::update(const std::vector<std::reference_wrapper<registry>>& r
 			const auto& task_data = update_tasks[i];
 			const auto& [object_ref, coll_comp_opt] = task_data;
 
-			update_object(object_ref.get(), &coll_comp_opt.get());
+			update_object(object_ref.get(), coll_comp_opt);
 		});
 
 		accumulator -= const_update_time;

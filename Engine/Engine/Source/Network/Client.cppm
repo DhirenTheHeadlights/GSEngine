@@ -1,112 +1,224 @@
-export module gs:client;
+export module gse.network:client;
 
 import std;
-import gse;
 
-export namespace gs {
-    class client final : public gse::hook<gse::engine> {
-    public:
-        using hook::hook;
-        auto initialize() -> void override;
-        auto update() -> void override;
-        auto render() -> void override;
-    private:
-        std::uint32_t m_ping_seq = 0;
-        int m_selected = -1;
-        gse::clock m_refresh_clock;
-        std::array<char, 64> m_pending_scene{};
-        bool m_has_pending = false;
-    };
+import gse.assert;
+import gse.utility;
+import gse.physics.math;
+
+import :socket;
+import :remote_peer;
+import :message;
+import :packet_header;
+import :bitstream;
+import :connection;
+import :ping_pong;
+import :notify_scene_change;
+
+export namespace gse::network {
+	using inbox_message = std::variant<
+		connection_accepted,
+		ping,
+		pong,
+		notify_scene_change
+	>;
+
+	class client {
+	public:
+		enum struct state : std::uint8_t {
+			disconnected,
+			connecting,
+			connected
+		};
+
+		client(
+			const address& listen,
+			const address& server
+		);
+
+		~client();
+
+		auto connect(
+			time_t<std::uint32_t> timeout = seconds(static_cast<std::uint32_t>(5)),
+			time_t<std::uint32_t> retry = seconds(static_cast<std::uint32_t>(1))
+		) -> bool;
+
+		auto tick(
+		) -> void;
+
+		auto current_state(
+		) const -> state;
+
+		template <typename T>
+		auto send(
+			const T& msg
+		) -> void;
+
+		auto drain(
+			const std::function<void(inbox_message&)>& on_receive
+		) -> void;
+	private:
+		udp_socket m_socket;
+		remote_peer m_server;
+		state m_state = state::disconnected;
+
+		time_t<std::uint32_t> m_timeout;
+		time_t<std::uint32_t> m_retry;
+
+		clock m_connection_clock;
+
+		std::mutex m_inbox_mutex;
+		std::vector<inbox_message> m_inbox;
+
+		std::jthread m_thread;
+		std::atomic<bool> m_running{ false };
+	};
 }
 
-auto gs::client::initialize() -> void {
-    using namespace gse::network;
-    clear_discovery_providers();
-    std::vector seed{
-        discovery_result{
-            .addr = address{.ip = "127.0.0.1", .port = 9000 },
-            .name = "Local Server",
-            .map = "dev_map",
-            .players = 0,
-            .max_players = 8,
-            .build = 1
-        }
-    };
-    add_discovery_provider(std::make_unique<wan_directory_provider>(std::move(seed)));
-    refresh_servers(gse::milliseconds(200));
+gse::network::client::client(const address& listen, const address& server) : m_server(server) {
+	m_socket.bind(listen);
+
+	m_running.store(true, std::memory_order_release);
+
+	m_thread = std::jthread([this](const std::stop_token& st) {
+		constexpr time_t<std::uint32_t> max_sleep = milliseconds(8);
+
+		while (m_running.load(std::memory_order_acquire) && !st.stop_requested()) {
+
+			auto wait = max_sleep;
+			if (m_state == state::connecting) {
+				const auto elapsed = m_connection_clock.elapsed<std::uint32_t>();
+				const auto ms_to_retry = (elapsed >= m_retry) ? 0u : (m_retry - elapsed);
+				const auto ms_to_timeout = (elapsed >= m_timeout) ? 0u : (m_timeout - elapsed);
+				const auto ms = std::min(ms_to_retry, ms_to_timeout);
+				wait = std::min(wait, ms == 0 ? 1 : ms);
+			}
+
+			(void)m_socket.wait_readable(wait);
+			this->tick();
+		}
+	});
 }
 
-auto gs::client::update() -> void {
-    gse::network::drain([this](gse::network::inbox_message& m) {
-        gse::match(m)
-            .if_is([&](const gse::network::connection_accepted&) {
-            m_owner->world.set_networked(true);
-            if (const auto* scene = m_owner->world.current_scene()) {
-                m_owner->world.deactivate(scene->id());
-            }
-                })
-            .else_if_is([&](const gse::network::notify_scene_change& msg) {
-            std::ranges::fill(m_pending_scene, '\0');
-            const auto* src = msg.scene_name.data();
-            const auto src_len = std::char_traits<char>::length(src);
-            const auto n = std::min(src_len, m_pending_scene.size() - 1);
-            std::ranges::copy_n(src, n, m_pending_scene.begin());
-            m_has_pending = true;
-
-            if (const auto id = gse::find(std::string_view(m_pending_scene.data())); id.exists()) {
-                m_owner->world.activate(id);
-                m_has_pending = false;
-                std::println("Switched to scene: {}", m_pending_scene.data());
-            }
-                });
-        });
-
-    if (m_has_pending) {
-        if (const auto id = gse::find(std::string_view(m_pending_scene.data())); id.exists()) {
-            m_owner->world.activate(id);
-            m_has_pending = false;
-            std::println("Switched to scene: {}", m_pending_scene.data());
-        }
-    }
-
-    if (m_refresh_clock.elapsed<std::uint32_t>() > 1000u) {
-        gse::network::refresh_servers(gse::milliseconds(150));
-        m_refresh_clock.reset();
-    }
+gse::network::client::~client() {
+	m_running.store(false, std::memory_order_release);
 }
 
-auto gs::client::render() -> void {
-    gse::gui::start("Network", [&] {
-        using gse::network::client;
-        switch (gse::network::state()) {
-        case client::state::disconnected: gse::gui::text("Status: Disconnected"); break;
-        case client::state::connecting:   gse::gui::text("Status: Connecting..."); break;
-        case client::state::connected:    gse::gui::text("Status: Connected"); break;
-        default: break;
-        }
+auto gse::network::client::connect(const time_t<std::uint32_t> timeout, const time_t<std::uint32_t> retry) -> bool {
+	if (m_state != state::disconnected) {
+		return false;
+	}
 
-        if (gse::gui::button("Refresh")) {
-            gse::network::refresh_servers(gse::milliseconds(150));
-        }
+	send(connection_request{});
 
-        const auto list = gse::network::servers();
-        gse::gui::text(std::format("Found: {}", list.size()));
+	m_state = state::connecting;
+	m_timeout = timeout;
+	m_retry = retry;
 
-        int idx = 0;
-        for (const auto& s : list) {
-            if (const bool picked = (m_selected == idx); gse::gui::selectable(std::format("{}  {}:{}  {}/{}  v{}", s.name, s.addr.ip, s.addr.port, s.players, s.max_players, s.build), picked)) {
-                m_selected = idx;
-            }
-            ++idx;
-        }
+	m_connection_clock.reset();
 
-        if (gse::gui::button("Connect") && m_selected >= 0 && m_selected < static_cast<int>(list.size())) {
-            const auto& pick = list[static_cast<std::size_t>(m_selected)];
-            gse::network::connect(pick, gse::network::address{ "0.0.0.0", 0 }, gse::seconds(5), gse::seconds(1));
-        }
+	return true;
+}
 
-        if (gse::gui::button("Send Ping") && gse::network::state() == client::state::connected) {
-            gse::network::send(gse::network::ping{ ++m_ping_seq });
-        }
-        });
+auto gse::network::client::tick() -> void {
+	if (m_state == state::connecting) {
+		if (m_connection_clock.elapsed<std::uint32_t>() > m_retry) {
+			send(connection_request{});
+			m_connection_clock.reset();
+		}
+		if (m_connection_clock.elapsed<std::uint32_t>() > m_timeout) {
+			m_state = state::disconnected;
+		}
+	}
+
+	std::array<std::byte, max_packet_size> buffer;
+	while (const auto received = m_socket.receive_data(buffer)) {
+		if (received->from.ip != m_server.addr().ip ||
+			received->from.port != m_server.addr().port) {
+			continue;
+		}
+
+		const std::span received_data(buffer.data(), received->bytes_read);
+		bitstream stream(received_data);
+
+		if (const auto header = stream.read<packet_header>(); header.sequence > m_server.remote_ack_sequence()) {
+			if (const std::uint32_t diff = header.sequence - m_server.remote_ack_sequence(); diff < 32) {
+				m_server.remote_ack_bitfield() <<= diff;
+				m_server.remote_ack_bitfield() |= (1 << (diff - 1));
+			}
+			else {
+				m_server.remote_ack_bitfield() = 0;
+			}
+			m_server.remote_ack_sequence() = header.sequence;
+		}
+		else if (header.sequence < m_server.remote_ack_sequence()) {
+			if (const std::uint32_t diff = m_server.remote_ack_sequence() - header.sequence; diff < 32) {
+				m_server.remote_ack_bitfield() |= (1 << (diff - 1));
+			}
+		}
+
+		const auto id = message_id(stream);
+
+		match_message(stream, id)
+			.if_is<connection_accepted>([&](const connection_accepted&) {
+				m_state = state::connected;
+				std::lock_guard lk(m_inbox_mutex);
+				m_inbox.emplace_back(connection_accepted{});
+			})
+			.else_if_is<ping>([&](const ping& m) {
+				send(pong{ .sequence = m.sequence });
+				std::lock_guard lk(m_inbox_mutex);
+				m_inbox.emplace_back(m);
+			})
+			.else_if_is<pong>([&](const pong& m) {
+				std::lock_guard lk(m_inbox_mutex);
+				m_inbox.emplace_back(m);
+			})
+			.else_if_is<notify_scene_change>([&](const notify_scene_change& m) {
+				std::lock_guard lk(m_inbox_mutex);
+				m_inbox.emplace_back(m);
+			});
+	}
+}
+
+auto gse::network::client::current_state() const -> state {
+	return m_state;
+}
+
+template <typename T>
+auto gse::network::client::send(const T& msg) -> void {
+	std::array<std::byte, max_packet_size> buffer;
+
+	const packet_header header{
+		.sequence = ++m_server.sequence(),
+		.ack = m_server.remote_ack_sequence(),
+		.ack_bits = m_server.remote_ack_bitfield()
+	};
+
+	bitstream stream(buffer);
+	stream.write(header);
+	write(stream, msg);
+	
+	const packet pkt{
+		.data = reinterpret_cast<std::uint8_t*>(buffer.data()),
+		.size = stream.bytes_written()
+	};
+
+	assert(
+		m_socket.send_data(pkt, m_server.addr()) != socket_state::error,
+		std::source_location::current(),
+		"Failed to send packet from client."
+	);
+}
+
+auto gse::network::client::drain(const std::function<void(inbox_message&)>& on_receive) -> void {
+	std::vector<inbox_message> batch;
+	{
+		std::lock_guard lk(m_inbox_mutex);
+		if (m_inbox.empty()) return;
+		batch.swap(m_inbox);
+	}
+	for (auto& m : batch) {
+		on_receive(m);
+	}
 }

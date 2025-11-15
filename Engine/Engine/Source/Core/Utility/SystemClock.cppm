@@ -2,47 +2,43 @@ export module gse.utility:system_clock;
 
 import std;
 import gse.physics.math;
+
 import :clock;
 
 export namespace gse::system_clock {
+	using internal_time = time_t<>;
+	using default_time = time_t<float, seconds>;
+
 	auto update() -> void;
 
-	template <typename T = float>
-	auto dt() -> time_t<T>;
+	template <is_quantity Q = default_time>
+	auto dt() -> Q;
 
-	template <auto U, typename T = float>
-	auto dt() -> time_t<T, U>;
+	template <is_quantity Q = default_time>
+	auto now() -> Q;
 
-	template <typename T = float>
-	auto now() -> time_t<T>;
-
-	template <auto U, typename T = float>
-	auto now() -> time_t<T, U>;
+	template <is_quantity Q = default_time>
+	auto constant_update_time() -> Q;
 
 	auto fps() -> std::uint32_t;
-
-	template <typename T = float>
-	auto constant_update_time() -> time_t<T>;
-
-	//auto constant_update_time() -> time_t<double>;
 }
 
 namespace gse::system_clock {
 	clock main_clock;
 	clock dt_clock;
 
-	time_t<double> delta_time;
-	time_t<double> frame_rate_update_time;
+	internal_time delta_time{};
+	internal_time frame_rate_update_time{};
+
+	constexpr internal_time fps_report_interval = seconds(1.0);
+	constexpr internal_time const_update_time = milliseconds(10.0);
 
 	std::uint32_t frame_count = 0;
 	std::uint32_t frame_rate_count = 0;
-
-	constexpr time_t<double> fps_report_interval = seconds(1.0);
-	constexpr time_t<double> const_update_time = milliseconds(10.0);
 }
 
 auto gse::system_clock::update() -> void {
-	delta_time = dt_clock.reset<double>();
+	delta_time = gse::quantity_cast<internal_time>(dt_clock.reset<double>());
 
 	frame_count++;
 	frame_rate_update_time += delta_time;
@@ -54,39 +50,20 @@ auto gse::system_clock::update() -> void {
 	}
 }
 
-template <typename T>
-auto gse::system_clock::dt() -> time_t<T> {
-	return quantity_cast<time_t<T>>(std::min(delta_time, const_update_time));
+template <gse::is_quantity Q>
+auto gse::system_clock::dt() -> Q {
+	return gse::quantity_cast<Q>(std::min(delta_time, const_update_time));
 }
 
-template <auto U, typename T>
-auto gse::system_clock::dt() -> time_t<T, U> {
-	auto v = quantity_cast<time_t<T>>(std::min(delta_time, const_update_time));
-	return time_t<T, U>(v.template as<U>());
+template <gse::is_quantity Q>
+auto gse::system_clock::now() -> Q {
+	return gse::quantity_cast<Q>(main_clock.elapsed<double>());
 }
 
-template <typename T>
-auto gse::system_clock::now() -> time_t<T> {
-	return main_clock.elapsed<T>();
+template <gse::is_quantity Q>
+auto gse::system_clock::constant_update_time() -> Q {
+	return gse::quantity_cast<Q>(const_update_time);
 }
-
-template <auto U, typename T>
-auto gse::system_clock::now() -> time_t<T, U> {
-	auto v = main_clock.elapsed<T>();
-	return time_t<T, U>(v.template as<U>());
-}
-
-template <typename T>
-auto gse::system_clock::constant_update_time() -> time_t<T> {
-	return quantity_cast<time_t<T>>(const_update_time);
-}
-
-//template <auto U>
-//auto gse::system_clock::constant_update_time() -> time_t<U> {
-//	//auto v = quantity_cast<time_t<T>>(const_update_time);
-//	//return time_t<T, U>(v.template as<U>());
-//	return const_update_time.as<U>();
-//}
 
 auto gse::system_clock::fps() -> std::uint32_t {
 	return frame_rate_count;

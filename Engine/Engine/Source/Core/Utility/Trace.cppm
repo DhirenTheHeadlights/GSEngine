@@ -116,6 +116,8 @@ export namespace gse::trace {
 }
 
 namespace gse::trace {
+	using tick_step = time_t<std::uint64_t>;
+
 	enum struct event_type : std::uint8_t {
 		begin,
 		end,
@@ -277,7 +279,7 @@ auto gse::trace::begin_block(const id& id, std::uint64_t parent) -> std::uint64_
 		.eid = eid,
 		.parent_eid = parent,
 		.tid = tid,
-		.ts = system_clock::now<std::uint64_t>()
+		.ts = system_clock::now<tick_step>()
 	});
 
 	return eid;
@@ -301,7 +303,7 @@ auto gse::trace::end_block(const id& id, const std::uint64_t eid, const std::uin
 		.eid = eid,
 		.parent_eid = parent,
 		.tid = make_tid(),
-		.ts = system_clock::now<std::uint64_t>()
+		.ts = system_clock::now<tick_step>()
 	});
 }
 
@@ -344,7 +346,7 @@ auto gse::trace::scope(const id& id, F&& f, std::uint64_t parent) -> void {
 		.eid = eid,
 		.parent_eid = parent,
 		.tid = tid,
-		.ts = system_clock::now<std::uint64_t>()
+		.ts = system_clock::now<tick_step>()
 	});
 
 	tls.stack.push_back(eid);
@@ -362,7 +364,7 @@ auto gse::trace::scope(const id& id, F&& f, std::uint64_t parent) -> void {
 				.eid = eid,
 				.parent_eid = parent,
 				.tid = tid,
-				.ts = system_clock::now<std::uint64_t>()
+				.ts = system_clock::now<tick_step>()
 			});
 			tls.stack.pop_back();
 			if (need_push_parent && !tls.stack.empty() && tls.stack.back() == parent) {
@@ -387,7 +389,7 @@ auto gse::trace::begin_async(const id& id, const std::uint64_t key) -> void {
 		.eid = 0,
 		.parent_eid = current_parent_eid(),
 		.tid = make_tid(),
-		.ts = system_clock::now<std::uint64_t>(),
+		.ts = system_clock::now<tick_step>(),
 		.value = 0.0,
 		.key = key
 	});
@@ -406,7 +408,7 @@ auto gse::trace::end_async(const id& id, const std::uint64_t key) -> void {
 		.eid = 0,
 		.parent_eid = 0,
 		.tid = make_tid(),
-		.ts = system_clock::now<std::uint64_t>(),
+		.ts = system_clock::now<tick_step>(),
 		.value = 0.0,
 		.key = key
 	});
@@ -425,7 +427,7 @@ auto gse::trace::mark(const id& id) -> void {
 		.eid = 0,
 		.parent_eid = current_parent_eid(),
 		.tid = make_tid(),
-		.ts = system_clock::now<std::uint64_t>(),
+		.ts = system_clock::now<tick_step>(),
 		.value = 0.0,
 		.key = 0
 	});
@@ -444,7 +446,7 @@ auto gse::trace::counter(const id& id, const double value) -> void {
 		.eid = 0,
 		.parent_eid = 0,
 		.tid = make_tid(),
-		.ts = system_clock::now<std::uint64_t>(),
+		.ts = system_clock::now<tick_step>(),
 		.value = value,
 		.key = 0,
 	});
