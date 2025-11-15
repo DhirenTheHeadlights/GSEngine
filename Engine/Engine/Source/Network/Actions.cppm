@@ -64,7 +64,7 @@ auto gse::network::send_input_frame(udp_socket& socket, remote_peer& peer, std::
 
 	const input_frame_header hdr{
 		.input_sequence = input_sequence,
-		.client_time_ms = system_clock::now<nanoseconds, std::uint32_t>().as<nanoseconds>(),
+		.client_time_ms = system_clock::now<time_t<std::uint32_t>>().as<milliseconds>(),
 		.action_word_count = static_cast<std::uint16_t>(wc),
 		.axes1_count = static_cast<std::uint16_t>(a1.size()),
 		.axes2_count = static_cast<std::uint16_t>(a2.size())
