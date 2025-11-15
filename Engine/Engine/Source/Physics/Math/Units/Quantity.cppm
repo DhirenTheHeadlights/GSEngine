@@ -172,7 +172,6 @@ constexpr auto gse::internal::quantity<Derived, ArithmeticType, Dimensions, Quan
 
     const long double v = static_cast<long double>(m_val);
     long double out = v * static_cast<long double>(r::den) / static_cast<long double>(r::num);
-
     if constexpr (std::is_integral_v<ArithmeticType>) {
         return static_cast<ArithmeticType>(cexpr_llround(out));
     } else {

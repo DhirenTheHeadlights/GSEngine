@@ -95,11 +95,11 @@ auto update_air_resistance(gse::physics::motion_component& component) -> void {
 }
 
 auto update_velocity(gse::physics::motion_component& component) -> void {
-	const auto delta_time = gse::system_clock::constant_update_time<gse::seconds>();
+	const auto delta_time = gse::system_clock::constant_update_time<float>();
 
 	if (component.self_controlled && !component.airborne) {
 		constexpr float damping_factor = 5.0f;
-		component.current_velocity *= std::max(0.f, 1.0f - damping_factor * delta_time.as<gse::seconds>());
+		component.current_velocity *= std::max(0.f, 1.f - damping_factor * delta_time.as<gse::seconds>());
 	}
 
 	// Update current_velocity using the kinematic equation: v = v0 + at
@@ -115,13 +115,13 @@ auto update_velocity(gse::physics::motion_component& component) -> void {
 }
 
 auto update_position(gse::physics::motion_component& component) -> void {
-	component.current_position += (component.current_velocity * gse::system_clock::constant_update_time<gse::seconds>()) + component.accumulators.position_correction;
+	component.current_position += (component.current_velocity * gse::system_clock::constant_update_time<float>()) + component.accumulators.position_correction;
 }
 
 auto update_rotation(gse::physics::motion_component& component) -> void {
 	const auto alpha = component.accumulators.current_torque / component.moment_of_inertia;
 
-	const auto delta_time = gse::system_clock::constant_update_time<gse::seconds>();
+	const auto delta_time = gse::system_clock::constant_update_time<float>();
 
 	component.angular_velocity += alpha * delta_time;
 	component.accumulators.current_torque = {};
