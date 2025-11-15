@@ -24,8 +24,7 @@ export namespace gse::system_clock {
 	template <typename T = float>
 	auto constant_update_time() -> time_t<T>;
 
-	template <auto U, typename T = float>
-	auto constant_update_time() -> time_t<T, U>;
+	//auto constant_update_time() -> time_t<double>;
 }
 
 namespace gse::system_clock {
@@ -82,11 +81,12 @@ auto gse::system_clock::constant_update_time() -> time_t<T> {
 	return quantity_cast<time_t<T>>(const_update_time);
 }
 
-template <auto U, typename T>
-auto gse::system_clock::constant_update_time() -> time_t<T, U> {
-	auto v = quantity_cast<time_t<T>>(const_update_time);
-	return time_t<T, U>(v.template as<U>());
-}
+//template <auto U>
+//auto gse::system_clock::constant_update_time() -> time_t<U> {
+//	//auto v = quantity_cast<time_t<T>>(const_update_time);
+//	//return time_t<T, U>(v.template as<U>());
+//	return const_update_time.as<U>();
+//}
 
 auto gse::system_clock::fps() -> std::uint32_t {
 	return frame_rate_count;
