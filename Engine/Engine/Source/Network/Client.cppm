@@ -5,6 +5,7 @@ import std;
 import gse.assert;
 import gse.utility;
 import gse.physics.math;
+import gse.platform;
 
 import :socket;
 import :remote_peer;
@@ -14,6 +15,7 @@ import :bitstream;
 import :connection;
 import :ping_pong;
 import :notify_scene_change;
+import :input_frame;
 
 export namespace gse::network {
 	using inbox_message = std::variant<
@@ -58,6 +60,9 @@ export namespace gse::network {
 			const std::function<void(inbox_message&)>& on_receive
 		) -> void;
 	private:
+		auto send_input_frame(
+		) -> void;
+
 		udp_socket m_socket;
 		remote_peer m_server;
 		state m_state = state::disconnected;
@@ -72,6 +77,9 @@ export namespace gse::network {
 
 		std::jthread m_thread;
 		std::atomic<bool> m_running{ false };
+
+		std::uint32_t m_input_sequence = 0;
+		clock m_input_clock;
 	};
 }
 
@@ -179,6 +187,13 @@ auto gse::network::client::tick() -> void {
 				m_inbox.emplace_back(m);
 			});
 	}
+
+	if (m_state == state::connected) {
+		if (m_input_clock.elapsed<std::uint32_t>() > 16u) {
+			send_input_frame();
+			m_input_clock.reset();
+		}
+	}
 }
 
 auto gse::network::client::current_state() const -> state {
@@ -221,4 +236,51 @@ auto gse::network::client::drain(const std::function<void(inbox_message&)>& on_r
 	for (auto& m : batch) {
 		on_receive(m);
 	}
+}
+
+auto gse::network::client::send_input_frame() -> void {
+	const auto& st = actions::current_state();
+
+	const auto pw = st.pressed_mask().words();
+	const auto rw = st.released_mask().words();
+	const std::uint16_t wc = static_cast<std::uint16_t>(std::max(pw.size(), rw.size()));
+
+	const input_frame_header fh{
+		.input_sequence = ++m_input_sequence,
+		.action_word_count = wc,
+		.axes1_count = 0u,
+		.axes2_count = 0u
+	};
+
+	std::array<std::byte, max_packet_size> buffer;
+
+	const packet_header header{
+		.sequence = ++m_server.sequence(),
+		.ack = m_server.remote_ack_sequence(),
+		.ack_bits = m_server.remote_ack_bitfield()
+	};
+
+	bitstream stream(buffer);
+	stream.write(header);
+	write(stream, fh);
+
+	for (std::size_t i = 0; i < wc; ++i) {
+		const std::uint64_t w = (i < pw.size()) ? pw[i] : 0ull;
+		stream.write(w);
+	}
+	for (std::size_t i = 0; i < wc; ++i) {
+		const std::uint64_t w = (i < rw.size()) ? rw[i] : 0ull;
+		stream.write(w);
+	}
+
+	const packet pkt{
+		.data = reinterpret_cast<std::uint8_t*>(buffer.data()),
+		.size = stream.bytes_written()
+	};
+
+	assert(
+		m_socket.send_data(pkt, m_server.addr()) != socket_state::error,
+		std::source_location::current(),
+		"Failed to send input frame from client."
+	);
 }

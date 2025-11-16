@@ -50,12 +50,9 @@ auto gse::server_app::update() -> void {
 		m_owner->world.activate(*scene_requested_id);
 
 		if (const auto* active = m_owner->world.current_scene()) {
-			const auto tag_sv = std::string_view(active->id().tag());
-
-			network::notify_scene_change msg{};
-			std::ranges::fill(msg.scene_id, '\0');
-			const auto n = std::min(tag_sv.size(), msg.scene_id.size() - 1);
-			std::ranges::copy_n(tag_sv.data(), n, msg.scene_id.begin());
+			const network::notify_scene_change msg{
+				.scene_id = active->id()
+			};
 
 			for (const auto& addr : m_server->clients() | std::views::keys) {
 				m_server->send(msg, addr);
@@ -75,8 +72,15 @@ auto gse::server_app::update() -> void {
 auto gse::server_app::render() -> void {
 	gui::start("Server Control", [&] {
 		gui::text("This is a simple server application.");
+		gui::value("Peers", static_cast<std::uint32_t>(m_server->peers().size()));
+		gui::value("Clients", static_cast<std::uint32_t>(m_server->clients().size()));
+		if (const auto h = m_server->host_entity()) {
+			gui::text(std::format("Host entity: {}", *h));
+		} else {
+			gui::text("Host entity: <none>");
+		}
 		for (const auto& [ip, port] : m_server->peers() | std::views::keys) {
-			gui::text(std::format("Client: {}:{}", ip, port));
+			gui::text(std::format("Peer: {}:{}", ip, port));
 		}
 		gui::value("Ticks", m_tick_count);
 	});

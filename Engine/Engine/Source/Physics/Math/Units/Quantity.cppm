@@ -28,12 +28,12 @@ namespace gse::internal {
     export template <typename T>
     concept is_arithmetic = std::integral<T> || std::floating_point<T>;
 
-    constexpr auto cexpr_llround(long double x) -> long long {
+    constexpr auto cexpr_llround(const long double x) -> long long {
         return x >= 0 ? static_cast<long long>(x + 0.5L) : static_cast<long long>(x - 0.5L);
     }
 }
 
-template <size_t N, typename CharT>
+template <std::size_t N, typename CharT>
 struct std::formatter<gse::internal::fixed_string<N>, CharT> : std::formatter<std::string_view, CharT> {
     constexpr auto parse(std::basic_format_parse_context<CharT>& ctx) {
         return std::formatter<std::string_view, CharT>::parse(ctx);
