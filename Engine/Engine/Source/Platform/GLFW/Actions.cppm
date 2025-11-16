@@ -19,8 +19,7 @@ namespace gse::actions {
 			}
 		}
 
-		constexpr auto view(
-		) const -> std::string_view {
+		constexpr auto view() const -> std::string_view {
 			return { v, N - 1 };
 		}
 	};
@@ -130,7 +129,7 @@ export namespace gse::actions {
 
 		auto assign(
 			std::span<const word> w
-		) -> void ;
+		) -> void;
 
 	private:
 		std::vector<word> m_words;
@@ -165,11 +164,9 @@ auto gse::actions::mask::clear(const index a) -> void {
 
 auto gse::actions::mask::test(const index a) const -> bool {
 	auto [word_index, bit] = wb(a);
-
 	if (word_index >= m_words.size()) {
 		return false;
 	}
-
 	return (m_words[word_index] & bit) != 0;
 }
 
@@ -192,11 +189,9 @@ auto gse::actions::mask::assign(const std::span<const word> w) -> void {
 export namespace gse::actions {
 	class state {
 	public:
-		auto begin_frame(
-		) -> void;
+		auto begin_frame() -> void;
 
-		auto ensure_capacity(
-		) -> void;
+		auto ensure_capacity() -> void;
 
 		auto set_pressed(
 			index a
@@ -279,7 +274,9 @@ export namespace gse::actions {
 }
 
 namespace gse::actions {
-	state global_state;
+	double_buffer<state> states_db;
+	std::vector<std::uint16_t> axis1_ids_cache;
+	std::vector<std::uint16_t> axis2_ids_cache;
 }
 
 auto gse::actions::state::begin_frame() -> void {
@@ -387,23 +384,23 @@ auto gse::actions::state::load_transients(std::span<const word> pressed, std::sp
 }
 
 auto gse::actions::pressed_mask() -> const mask& {
-	return global_state.pressed_mask();
+	return states_db.read().pressed_mask();
 }
 
 auto gse::actions::released_mask() -> const mask& {
-	return global_state.released_mask();
+	return states_db.read().released_mask();
 }
 
 auto gse::actions::axis1(const std::uint16_t id) -> float {
-	return global_state.axis1(id);
+	return states_db.read().axis1(id);
 }
 
 auto gse::actions::axis2(const std::uint16_t id) -> axis {
-	return global_state.axis2_v(id);
+	return states_db.read().axis2_v(id);
 }
 
 auto gse::actions::current_state() -> const state& {
-	return global_state;
+	return states_db.read();
 }
 
 export namespace gse::actions {
@@ -426,26 +423,32 @@ export namespace gse::actions {
 	auto axis2_v(
 		const id& id
 	) -> axis;
+
+	auto axis1_ids(
+	) -> std::span<const std::uint16_t>;
+
+	auto axis2_ids(
+	) -> std::span<const std::uint16_t>;
 }
 
 auto gse::actions::held(const index a) -> bool {
-	return global_state.held(a);
+	return states_db.read().held(a);
 }
 
 auto gse::actions::pressed(const index a) -> bool {
-	return global_state.pressed(a);
+	return states_db.read().pressed(a);
 }
 
 auto gse::actions::released(const index a) -> bool {
-	return global_state.released(a);
+	return states_db.read().released(a);
 }
 
 auto gse::actions::axis1(const id& id) -> float {
-	return global_state.axis1(id.number());
+	return states_db.read().axis1(id.number());
 }
 
 auto gse::actions::axis2_v(const id& id) -> axis {
-	return global_state.axis2_v(id.number());
+	return states_db.read().axis2_v(id.number());
 }
 
 namespace gse::actions {
@@ -464,8 +467,8 @@ namespace gse::actions {
 
 		struct mouse_axis2 {
 			std::uint16_t axis;
-			float px_to_x = 0.1f,
-				px_to_y = 0.1f;
+			float px_to_x = 0.1f;
+			float px_to_y = 0.1f;
 		};
 
 		std::vector<mouse_axis2> axes2_from_mouse;
@@ -516,43 +519,54 @@ namespace gse::actions {
 	) -> id;
 
 	std::vector<pending_axis2> pending_axis2_key_bindings;
-	id_mapped_collection<resolved_axis2_keys, gse::id> axis2_by_id;
+	id_mapped_collection<resolved_axis2_keys> axis2_by_id;
+}
+
+auto gse::actions::axis1_ids() -> std::span<const std::uint16_t> {
+	return axis1_ids_cache;
+}
+
+auto gse::actions::axis2_ids() -> std::span<const std::uint16_t> {
+	return axis2_ids_cache;
 }
 
 auto gse::actions::map_to_actions(const input::state& in) -> void {
-	global_state.begin_frame();
-	global_state.ensure_capacity();
+	auto& s = states_db.write();
+	s.begin_frame();
+	s.ensure_capacity();
 
 	for (auto& [k, a] : resolved.key_to_action) {
 		if (in.key_pressed(k)) {
-			global_state.set_pressed(a);
+			s.set_pressed(a);
 		}
 		if (in.key_released(k)) {
-			global_state.set_released(a);
+			s.set_released(a);
 		}
-		global_state.set_held(a, in.key_held(k));
+		s.set_held(a, in.key_held(k));
 	}
 
 	for (auto& [mb, a] : resolved.mouse_to_action) {
 		if (in.mouse_button_pressed(mb)) {
-			global_state.set_pressed(a);
+			s.set_pressed(a);
 		}
 		if (in.mouse_button_released(mb)) {
-			global_state.set_released(a);
+			s.set_released(a);
 		}
-		global_state.set_held(a, in.mouse_button_held(mb));
+		s.set_held(a, in.mouse_button_held(mb));
 	}
 
 	for (const auto& [neg, pos, axis, scale] : resolved.axes1_from_keys) {
 		const int v = (in.key_held(pos) ? 1 : 0) - (in.key_held(neg) ? 1 : 0);
-		global_state.set_axis1(axis, static_cast<float>(v) * scale);
+		s.set_axis1(axis, static_cast<float>(v) * scale);
 	}
 
 	for (const auto& [id, left, right, back, fwd, scale] : axis2_by_id.items()) {
 		const int x = (in.key_held(right) ? 1 : 0) - (in.key_held(left) ? 1 : 0);
 		const int y = (in.key_held(back) ? 1 : 0) - (in.key_held(fwd) ? 1 : 0);
-		global_state.set_axis2(static_cast<std::uint16_t>(id.number()), { static_cast<float>(x) * scale, static_cast<float>(y) * scale });
+		s.set_axis2(static_cast<std::uint16_t>(id.number()), { static_cast<float>(x) * scale, static_cast<float>(y) * scale });
 	}
+
+	states_db.flip();
 }
 
 template <gse::actions::fixed_string Tag>
@@ -600,6 +614,26 @@ auto gse::actions::finalize_bindings() -> void {
 		};
 		axis2_by_id.add(r.id, std::move(r));
 	}
+
+	axis1_ids_cache.clear();
+	axis1_ids_cache.reserve(resolved.axes1_from_keys.size());
+
+	for (const auto& k : resolved.axes1_from_keys) {
+		axis1_ids_cache.push_back(k.axis);
+	}
+
+	std::ranges::sort(axis1_ids_cache);
+	axis1_ids_cache.erase(std::ranges::unique(axis1_ids_cache).begin(), axis1_ids_cache.end());
+
+	axis2_ids_cache.clear();
+	axis2_ids_cache.reserve(axis2_by_id.size());
+
+	for (const auto& [id, left, right, back, fwd, scale] : axis2_by_id.items()) {
+		axis2_ids_cache.push_back(static_cast<std::uint16_t>(id.number()));
+	}
+
+	std::ranges::sort(axis2_ids_cache);
+	axis2_ids_cache.erase(std::ranges::unique(axis2_ids_cache).begin(), axis2_ids_cache.end());
 }
 
 auto gse::actions::get(const id& action_id) -> description* {
