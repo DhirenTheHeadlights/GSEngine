@@ -166,13 +166,9 @@ auto gse::actions::mask::clear(const index a) -> void {
 auto gse::actions::mask::test(const index a) const -> bool {
 	auto [word_index, bit] = wb(a);
 
-	assert(
-		word_index < m_words.size(),
-		std::source_location::current(),
-		"Action index {} out of bounds for mask with {} words",
-		static_cast<std::size_t>(a),
-		m_words.size()
-	);
+	if (word_index >= m_words.size()) {
+		return false;
+	}
 
 	return (m_words[word_index] & bit) != 0;
 }

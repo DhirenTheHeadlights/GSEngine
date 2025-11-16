@@ -70,7 +70,7 @@ gse::server::server(const std::uint16_t port) {
 	m_socket.bind(network::address{
 		.ip = "0.0.0.0",
 		.port = port
-		});
+	});
 
 	std::println("Server started on port {}", port);
 }
@@ -115,11 +115,14 @@ auto gse::server::update(world& world) -> void {
 		network::bitstream stream(data);
 
 		const auto it = m_peers.find(received->from);
+
+		const auto header = stream.read<packet_header>();
+
 		if (it == m_peers.end()) {
-			const auto message_id = network::message_id(stream);
+			const auto mid = network::message_id(stream);
 
 			bool handled = false;
-			handled |= network::try_decode<network::connection_request>(stream, message_id, [&](const auto&) {
+			handled |= network::try_decode<network::connection_request>(stream, mid, [&](const auto&) {
 				std::println("Server: ConnectionRequest from {}:{}", received->from.ip, received->from.port);
 
 				auto [ins_it, _] = m_peers.emplace(received->from, network::remote_peer(received->from));
@@ -139,24 +142,37 @@ auto gse::server::update(world& world) -> void {
 				send(network::connection_accepted{}, received->from);
 
 				if (const auto* active = world.current_scene()) {
-					const auto tag_sv = std::string_view(active->id().tag());
-					network::notify_scene_change msg{};
-					std::ranges::fill(msg.scene_id, '\0');
-					const auto n = std::min(tag_sv.size(), msg.scene_id.size() - 1);
-					std::ranges::copy_n(tag_sv.data(), n, msg.scene_id.begin());
+					const network::notify_scene_change msg{
+						.scene_id = active->id()
+					};
 					send(msg, received->from);
 				}
-				});
+			});
 
 			if (!handled) {
-				std::println("Server: dropped pre-handshake msg {} from {}:{}", message_id, received->from.ip, received->from.port);
+				std::println("Server: dropped pre-handshake msg {} from {}:{}", mid, received->from.ip, received->from.port);
 			}
 
 			continue;
 		}
 
 		auto& peer = it->second;
-		process_header(stream, peer);
+
+		if (header.sequence > peer.remote_ack_sequence()) {
+			if (const std::uint32_t diff = header.sequence - peer.remote_ack_sequence(); diff < 32) {
+				peer.remote_ack_bitfield() <<= diff;
+				peer.remote_ack_bitfield() |= (1 << (diff - 1));
+			}
+			else {
+				peer.remote_ack_bitfield() = 1;
+			}
+			peer.remote_ack_sequence() = header.sequence;
+		}
+		else if (header.sequence < peer.remote_ack_sequence()) {
+			if (const std::uint32_t diff = peer.remote_ack_sequence() - header.sequence; diff < 32) {
+				peer.remote_ack_bitfield() |= (1 << (diff - 1));
+			}
+		}
 
 		const auto id = network::message_id(stream);
 
@@ -218,11 +234,10 @@ auto gse::server::update(world& world) -> void {
 								const std::size_t idx = wi * 64 + b;
 								std::println("Server: {} action {} from {}:{}",
 									kind, idx, received->from.ip, received->from.port);
-								w &= (w - 1); // clear lowest set bit
+								w &= (w - 1);
 							}
 						}
-						};
-
+					};
 					dump(st.pressed_mask().words(), "pressed");
 					dump(st.released_mask().words(), "released");
 				};
@@ -245,6 +260,7 @@ auto gse::server::update(world& world) -> void {
 			});
 	}
 }
+
 
 auto gse::server::peers() const -> const std::unordered_map<network::address, network::remote_peer>& {
 	return m_peers;
