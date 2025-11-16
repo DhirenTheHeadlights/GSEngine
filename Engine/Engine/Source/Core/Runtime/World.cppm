@@ -190,6 +190,7 @@ auto gse::world::activate(const gse::id& scene_id) -> void {
 	    new_scene->initialize();
 	    new_scene->set_active(true);
 	    m_active_scene = new_scene->id();
+		actions::finalize_bindings();
 	}
 }
 

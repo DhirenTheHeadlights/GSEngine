@@ -156,9 +156,7 @@ auto gse::server::update(world& world) -> void {
 			continue;
 		}
 
-		auto& peer = it->second;
-
-		if (header.sequence > peer.remote_ack_sequence()) {
+		if (auto& peer = it->second; header.sequence > peer.remote_ack_sequence()) {
 			if (const std::uint32_t diff = header.sequence - peer.remote_ack_sequence(); diff < 32) {
 				peer.remote_ack_bitfield() <<= diff;
 				peer.remote_ack_bitfield() |= (1 << (diff - 1));
@@ -223,39 +221,6 @@ auto gse::server::update(world& world) -> void {
 
 				for (auto& [id, x, y] : a2) {
 					cd.latest_input.set_axis2(id, actions::axis{ x, y });
-				}
-
-				auto log_pressed_released = [&](const actions::state& st) {
-					auto dump = [&](const std::span<const actions::word> words, std::string_view kind) {
-						for (std::size_t wi = 0; wi < words.size(); ++wi) {
-							auto w = words[wi];
-							while (w) {
-								const unsigned long b = std::countr_zero(w);
-								const std::size_t idx = wi * 64 + b;
-								std::println("Server: {} action {} from {}:{}",
-									kind, idx, received->from.ip, received->from.port);
-								w &= (w - 1);
-							}
-						}
-					};
-					dump(st.pressed_mask().words(), "pressed");
-					dump(st.released_mask().words(), "released");
-				};
-
-				log_pressed_released(cd.latest_input);
-
-				for (const auto& [axis_id, v] : a1) {
-					if (std::abs(v) > 1e-4f) {
-						std::println("Server: axis1 {} = {:.3f} from {}:{}",
-							axis_id, v, received->from.ip, received->from.port);
-					}
-				}
-
-				for (const auto& [axis_id, x, y] : a2) {
-					if (std::abs(x) > 1e-4f || std::abs(y) > 1e-4f) {
-						std::println("Server: axis2 {} = ({:.3f}, {:.3f}) from {}:{}",
-							axis_id, x, y, received->from.ip, received->from.port);
-					}
 				}
 			});
 	}
