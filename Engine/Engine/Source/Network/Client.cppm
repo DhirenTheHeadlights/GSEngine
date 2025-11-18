@@ -42,8 +42,8 @@ export namespace gse::network {
 		~client();
 
 		auto connect(
-			time_t<std::uint32_t> timeout = seconds(static_cast<std::uint32_t>(5)),
-			time_t<std::uint32_t> retry = seconds(static_cast<std::uint32_t>(1))
+			time_t<std::uint32_t> timeout = seconds(5),
+			time_t<std::uint32_t> retry = seconds(1)
 		) -> bool;
 
 		auto tick(
