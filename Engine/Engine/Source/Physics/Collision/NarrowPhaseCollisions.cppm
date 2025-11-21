@@ -5,11 +5,10 @@ import std;
 import :motion_component;
 import :bounding_box;
 import :collision_component;
-
 import gse.physics.math;
 import gse.utility;
 
-static constexpr bool debug = false;
+static constexpr bool debug = true;
 
 export namespace gse::narrow_phase_collision {
     auto resolve_collision(
@@ -365,10 +364,10 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
         bool progressed = false;
         for (int attempt = 0; attempt < 4 && !progressed; ++attempt) {
             minkowski_point p = minkowski_difference(bb1, bb2, choice.n);
-            if (const length projection_dist = dot(p.point, choice.n); projection_dist - choice.d < meters(1e-4f) && i == mpr_collision_refinement_iterations - 1) {
+            if (const length projection_dist = dot(p.point, choice.n); projection_dist - choice.d < meters(1e-4f)) {
                 
                 const unitless::vec3 collision_normal = -choice.n;
-                const length penetration_depth = choice.d * 0.01f;
+                const length penetration_depth = choice.d;
 
             	if constexpr (debug) {
                     std::println("[MPR][iter {}] CONVERGED. penetration: {}", i, penetration_depth);
@@ -502,108 +501,213 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
 
     return std::nullopt;
 }
-
 auto gse::narrow_phase_collision::generate_contact_points(const bounding_box& bb1, const bounding_box& bb2, const unitless::vec3& collision_normal, length penetration_depth) -> std::vector<vec3<length>> {
-    auto find_best_face = [](const bounding_box& bb, const unitless::vec3& dir) -> std::array<vec3<length>, 4> {
+
+    struct face_info {
+        std::array<vec3<length>, 4> vertices;
+        unitless::vec3 normal;
+    };
+
+    auto find_best_face = [](const bounding_box& bb, const unitless::vec3& dir) -> face_info {
         float max_dot = -std::numeric_limits<float>::max();
         int best_face_idx = -1;
 
+        const auto& normals = bb.face_normals();
         for (std::size_t i = 0; i < 6; ++i) {
-            if (const float dot_product = dot(bb.face_normals()[i], dir); dot_product > max_dot) {
+            if (const float dot_product = dot(normals[i], dir); dot_product > max_dot) {
                 max_dot = dot_product;
                 best_face_idx = i;
             }
         }
-
-        return bb.face_vertices(best_face_idx);
+        return { bb.face_vertices(best_face_idx), normals[best_face_idx] };
         };
 
-    const auto face1 = find_best_face(bb1, -collision_normal);
-    const auto face2 = find_best_face(bb2, collision_normal);
+    // 1. Identify Reference and Incident Faces
+    const auto info1 = find_best_face(bb1, -collision_normal);
+    const auto info2 = find_best_face(bb2, collision_normal);
 
+    std::vector<vec3<length>> inc_face_poly;
     std::array<vec3<length>, 4> ref_face;
-    std::array<vec3<length>, 4> inc_face;
     unitless::vec3 ref_normal;
 
-    const unitless::vec3 n1 = normalize(cross(face1[1] - face1[0], face1[2] - face1[0]));
-    const unitless::vec3 n2 = normalize(cross(face2[1] - face2[0], face2[2] - face2[0]));
-
-    if (dot(n1, -collision_normal) > dot(n2, collision_normal)) {
-        ref_face = face1;
-        inc_face = face2;
-        ref_normal = n1;
+    // Determine which is reference (most perpendicular to normal)
+    if (dot(info1.normal, -collision_normal) > dot(info2.normal, collision_normal)) {
+        ref_face = info1.vertices;
+        inc_face_poly.assign(info2.vertices.begin(), info2.vertices.end());
+        ref_normal = info1.normal;
     }
     else {
-        ref_face = face2;
-        inc_face = face1;
-        ref_normal = n2;
+        ref_face = info2.vertices;
+        inc_face_poly.assign(info1.vertices.begin(), info1.vertices.end());
+        ref_normal = info2.normal;
     }
 
+    // 2. Sutherland-Hodgman Clipping
     struct plane {
         unitless::vec3 normal;
         length distance;
     };
 
-    auto clip = [](const std::vector<vec3<length>>& subject_polygon, const plane& clip_plane) -> std::vector<vec3<length>> {
-        std::vector<vec3<length>> output_polygon;
-        if (subject_polygon.empty()) {
-            return output_polygon;
-        }
+    auto clip = [](const std::vector<vec3<length>>& subject, const plane& p) -> std::vector<vec3<length>> {
+        std::vector<vec3<length>> out;
+        if (subject.empty()) return out;
 
-        const auto* prev_v = &subject_polygon.back();
-        length prev_dist = dot(clip_plane.normal, *prev_v) - clip_plane.distance;
+        const auto* prev = &subject.back();
+        length prev_dist = dot(p.normal, *prev) - p.distance;
 
-        for (const auto& current_v : subject_polygon) {
-            const length current_dist = dot(clip_plane.normal, current_v) - clip_plane.distance;
+        for (const auto& curr : subject) {
+            length curr_dist = dot(p.normal, curr) - p.distance;
 
-            if (prev_dist * current_dist < 0) {
-                const float t = prev_dist / (prev_dist - current_dist);
-                const vec3<length> intersection = *prev_v + (*prev_v - current_v) * -t;
-                output_polygon.push_back(intersection);
+            // If crossing the plane
+            if (prev_dist * curr_dist < 0) {
+                float t = prev_dist / (prev_dist - curr_dist);
+                out.push_back(*prev + (*prev - curr) * -t);
             }
 
-            if (current_dist >= meters(0.f)) {
-                output_polygon.push_back(current_v);
+            // If inside (positive distance)
+            if (curr_dist >= 0) {
+                out.push_back(curr);
             }
 
-            prev_v = &current_v;
-            prev_dist = current_dist;
+            prev = &curr;
+            prev_dist = curr_dist;
         }
-
-        return output_polygon;
+        return out;
         };
 
-    std::vector clipped_polygon(inc_face.begin(), inc_face.end());
-    for (size_t i = 0; i < ref_face.size(); ++i) {
-        if (clipped_polygon.empty()) {
-            break;
-        }
+    // Clip incident face against the side planes of the reference face
+    for (size_t i = 0; i < 4; ++i) {
+        if (inc_face_poly.empty()) break;
 
         const vec3<length>& v1 = ref_face[i];
-        const vec3<length>& v2 = ref_face[(i + 1) % ref_face.size()];
+        const vec3<length>& v2 = ref_face[(i + 1) % 4]; // Ensure wrapping
 
-        const unitless::vec3 edge_vec = normalize(v2 - v1);
-        const unitless::vec3 plane_normal = cross(edge_vec, ref_normal);
+        const unitless::vec3 edge = normalize(v2 - v1);
 
-        plane p = {
-            .normal = plane_normal,
-            .distance = dot(plane_normal, v1)
-        };
-        clipped_polygon = clip(clipped_polygon, p);
+        // FIX: Cross product order changed to generate INWARD facing normal
+        const unitless::vec3 plane_normal = cross(ref_normal, edge);
+
+        plane p{ plane_normal, dot(plane_normal, v1) };
+        inc_face_poly = clip(inc_face_poly, p);
     }
 
-    if (clipped_polygon.empty()) {
-        return {};
-    }
+    // 3. Filter Keep points below the reference surface
+    std::vector<vec3<length>> contacts;
+    plane ref_plane{ ref_normal, dot(ref_normal, ref_face[0]) };
 
-    std::vector<vec3<length>> contact_points;
-    const plane ref_plane = { ref_normal, dot(ref_normal, ref_face[0]) };
+    for (const auto& v : inc_face_poly) {
+        length dist = dot(ref_normal, v) - ref_plane.distance;
 
-    for (const auto& v : clipped_polygon) {
-        if (const length dist = dot(ref_normal, v) - ref_plane.distance; dist <= meters(0.01f) && dist >= -penetration_depth) {
-            contact_points.push_back(v - ref_normal * dist);
+        // Allow slightly positive for floating point errors, but mostly look for negative (penetration)
+        if (dist <= meters(1e-3f)) {
+            // Project point onto reference plane (optional, usually desired for stability)
+            contacts.push_back(v - ref_normal * dist);
         }
     }
 
-    return contact_points;
+    return contacts;
 }
+//auto gse::narrow_phase_collision::generate_contact_points(const bounding_box& bb1, const bounding_box& bb2, const unitless::vec3& collision_normal, length penetration_depth) -> std::vector<vec3<length>> {
+//    auto find_best_face = [](const bounding_box& bb, const unitless::vec3& dir) -> std::array<vec3<length>, 4> {
+//        float max_dot = -std::numeric_limits<float>::max();
+//        int best_face_idx = -1;
+//
+//        for (std::size_t i = 0; i < 6; ++i) {
+//            if (const float dot_product = dot(bb.face_normals()[i], dir); dot_product > max_dot) {
+//                max_dot = dot_product;
+//                best_face_idx = i;
+//            }
+//        }
+//
+//        return bb.face_vertices(best_face_idx);
+//        };
+//
+//    const auto face1 = find_best_face(bb1, -collision_normal);
+//    const auto face2 = find_best_face(bb2, collision_normal);
+//
+//    std::array<vec3<length>, 4> ref_face;
+//    std::array<vec3<length>, 4> inc_face;
+//    unitless::vec3 ref_normal;
+//
+//    const unitless::vec3 n1 = normalize(cross(face1[1] - face1[0], face1[2] - face1[0]));
+//    const unitless::vec3 n2 = normalize(cross(face2[1] - face2[0], face2[2] - face2[0]));
+//
+//    if (dot(n1, -collision_normal) > dot(n2, collision_normal)) {
+//        ref_face = face1;
+//        inc_face = face2;
+//        ref_normal = n1;
+//    }
+//    else {
+//        ref_face = face2;
+//        inc_face = face1;
+//        ref_normal = n2;
+//    }
+//
+//    struct plane {
+//        unitless::vec3 normal;
+//        length distance;
+//    };
+//
+//    auto clip = [](const std::vector<vec3<length>>& subject_polygon, const plane& clip_plane) -> std::vector<vec3<length>> {
+//        std::vector<vec3<length>> output_polygon;
+//        if (subject_polygon.empty()) {
+//            return output_polygon;
+//        }
+//
+//        const auto* prev_v = &subject_polygon.back();
+//        length prev_dist = dot(clip_plane.normal, *prev_v) - clip_plane.distance;
+//
+//        for (const auto& current_v : subject_polygon) {
+//            const length current_dist = dot(clip_plane.normal, current_v) - clip_plane.distance;
+//
+//            if (prev_dist * current_dist < 0) {
+//                const float t = prev_dist / (prev_dist - current_dist);
+//                const vec3<length> intersection = *prev_v + (*prev_v - current_v) * -t;
+//                output_polygon.push_back(intersection);
+//            }
+//
+//            if (current_dist >= meters(0.f)) {
+//                output_polygon.push_back(current_v);
+//            }
+//
+//            prev_v = &current_v;
+//            prev_dist = current_dist;
+//        }
+//
+//        return output_polygon;
+//        };
+//
+//    std::vector clipped_polygon(inc_face.begin(), inc_face.end());
+//    for (size_t i = 0; i < ref_face.size(); ++i) {
+//        if (clipped_polygon.empty()) {
+//            break;
+//        }
+//
+//        const vec3<length>& v1 = ref_face[i];
+//        const vec3<length>& v2 = ref_face[(i + 1) % ref_face.size()];
+//
+//        const unitless::vec3 edge_vec = normalize(v2 - v1);
+//        const unitless::vec3 plane_normal = cross(edge_vec, ref_normal);
+//
+//        plane p = {
+//            .normal = plane_normal,
+//            .distance = dot(plane_normal, v1)
+//        };
+//        clipped_polygon = clip(clipped_polygon, p);
+//    }
+//
+//    if (clipped_polygon.empty()) {
+//        return {};
+//    }
+//
+//    std::vector<vec3<length>> contact_points;
+//    const plane ref_plane = { ref_normal, dot(ref_normal, ref_face[0]) };
+//
+//    for (const auto& v : clipped_polygon) {
+//        if (const length dist = dot(ref_normal, v) - ref_plane.distance; dist <= meters(0.01f)) {
+//            contact_points.push_back(v - ref_normal * dist);
+//        } 
+//    }
+//
+//    return contact_points;
+//}
