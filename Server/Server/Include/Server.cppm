@@ -4,6 +4,7 @@ import std;
 
 import gse.assert;
 import gse.network;
+import gse.physics;
 import gse.utility;
 import gse.platform;
 import gse.runtime;
@@ -174,6 +175,15 @@ auto gse::server::update(world& world) -> void {
 
 		const auto id = network::message_id(stream);
 
+		if (auto* sc = world.current_scene()) {
+			constexpr auto types = network::type_list<
+				physics::motion_component
+			>{};
+			if (network::match_and_apply_components(sc->registry(), stream, id, types)) {
+				continue;
+			}
+		}
+
 		network::match_message(stream, id)
 			.if_is([&](const network::ping& m) {
 				send(network::pong{ .sequence = m.sequence }, received->from);
@@ -215,17 +225,24 @@ auto gse::server::update(world& world) -> void {
 				cd.latest_input.ensure_capacity();
 				cd.latest_input.load_transients(pressed, released);
 
-				for (auto& [id, value] : a1) {
-					cd.latest_input.set_axis1(id, value);
+				for (auto& [idv, value] : a1) {
+					cd.latest_input.set_axis1(idv, value);
 				}
 
-				for (auto& [id, x, y] : a2) {
-					cd.latest_input.set_axis2(id, actions::axis{ x, y });
+				for (auto& [idv, x, y] : a2) {
+					cd.latest_input.set_axis2(idv, actions::axis{ x, y });
 				}
 			});
 	}
-}
 
+	if (auto* sc = world.current_scene()) {
+		auto send_all = [this](const auto& msg, const network::address& to) {
+			this->send(msg, to);
+		};
+
+		network::replicate<decltype(types)>::run(send_all, sc->registry(), m_peers);
+	}
+}
 
 auto gse::server::peers() const -> const std::unordered_map<network::address, network::remote_peer>& {
 	return m_peers;

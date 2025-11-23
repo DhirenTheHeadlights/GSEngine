@@ -97,6 +97,12 @@ auto gse::update(const flags engine_flags, const engine_config& config) -> void 
 
 	engine.world.update();
 
+	if (auto* scene = engine.world.current_scene()) {
+		network::update(
+			scene->registry()
+		);
+	}
+
 	physics::update(
 		engine.world.registries()
 	);

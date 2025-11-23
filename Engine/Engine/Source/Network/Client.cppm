@@ -17,6 +17,7 @@ import :connection;
 import :ping_pong;
 import :notify_scene_change;
 import :input_frame;
+import :registry_sync;
 
 export namespace gse::network {
 	using inbox_message = std::variant<
@@ -60,6 +61,10 @@ export namespace gse::network {
 		auto drain(
 			const std::function<void(inbox_message&)>& on_receive
 		) -> void;
+
+		auto set_registry(
+			registry& reg
+		) -> void;
 	private:
 		udp_socket m_socket;
 		remote_peer m_server;
@@ -78,6 +83,8 @@ export namespace gse::network {
 
 		std::uint32_t m_input_sequence = 0;
 		clock m_input_clock;
+
+		std::optional<std::reference_wrapper<registry>> m_registry;
 	};
 }
 
@@ -165,25 +172,32 @@ auto gse::network::client::tick() -> void {
 
 		const auto id = message_id(stream);
 
-		match_message(stream, id)
-			.if_is<connection_accepted>([&](const connection_accepted&) {
-				m_state = state::connected;
-				std::lock_guard lk(m_inbox_mutex);
-				m_inbox.emplace_back(connection_accepted{});
-			})
-			.else_if_is<ping>([&](const ping& m) {
-				send(pong{ .sequence = m.sequence });
-				std::lock_guard lk(m_inbox_mutex);
-				m_inbox.emplace_back(m);
-			})
-			.else_if_is<pong>([&](const pong& m) {
-				std::lock_guard lk(m_inbox_mutex);
-				m_inbox.emplace_back(m);
-			})
-			.else_if_is<notify_scene_change>([&](const notify_scene_change& m) {
-				std::lock_guard lk(m_inbox_mutex);
-				m_inbox.emplace_back(m);
-			});
+		bool handled = false;
+		if (m_registry.has_value()) {
+			handled = match_and_apply_components(m_registry->get(), stream, id);
+		}
+
+		if (!handled) {
+			match_message(stream, id)
+				.if_is<connection_accepted>([&](const connection_accepted&) {
+					m_state = state::connected;
+					std::lock_guard lk(m_inbox_mutex);
+					m_inbox.emplace_back(connection_accepted{});
+				})
+				.else_if_is<ping>([&](const ping& m) {
+					send(pong{ .sequence = m.sequence });
+					std::lock_guard lk(m_inbox_mutex);
+					m_inbox.emplace_back(m);
+				})
+				.else_if_is<pong>([&](const pong& m) {
+					std::lock_guard lk(m_inbox_mutex);
+					m_inbox.emplace_back(m);
+				})
+				.else_if_is<notify_scene_change>([&](const notify_scene_change& m) {
+					std::lock_guard lk(m_inbox_mutex);
+					m_inbox.emplace_back(m);
+				});
+		}
 	}
 
 	if (m_state == state::connected) {
@@ -243,3 +257,6 @@ auto gse::network::client::drain(const std::function<void(inbox_message&)>& on_r
 	}
 }
 
+auto gse::network::client::set_registry(registry& reg) -> void {
+	m_registry = reg;
+}

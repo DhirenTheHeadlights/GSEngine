@@ -2,6 +2,8 @@ export module gse.network:api;
 
 import std;
 
+import gse.utility;
+
 import :client;
 import :message;
 import :discovery;
@@ -39,6 +41,10 @@ export namespace gse::network {
         time_t<std::uint32_t> timeout = seconds(5),
         time_t<std::uint32_t> retry = seconds(1)
     ) -> bool;
+
+    auto update_registry(
+		registry& reg
+	) -> void;
 
     auto disconnect(
     ) -> void;
@@ -93,6 +99,12 @@ auto gse::network::connect(const discovery_result& pick, const std::optional<add
         .retry = retry
     };
     return connect(co);
+}
+
+auto gse::network::update_registry(registry& reg) -> void {
+	if (networked_client) {
+        networked_client->set_registry(reg);
+    }
 }
 
 auto gse::network::disconnect() -> void {
@@ -157,4 +169,3 @@ template <typename T>
 auto gse::network::send(const T& m) -> void {
     if (networked_client) networked_client->send(m);
 }
-

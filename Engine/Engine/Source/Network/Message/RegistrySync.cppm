@@ -10,13 +10,40 @@ import gse.graphics;
 import gse.utility;
 
 export namespace gse::network {
+	consteval auto stable_code(
+		std::string_view s
+	) -> std::uint16_t;
+
 	template <typename T>
-	struct message_tag;
+	consteval auto component_name(
+	) -> std::string_view;
+
+	template <>
+	consteval auto component_name<physics::motion_component>(
+	) -> std::string_view;
+
+	template <>
+	consteval auto component_name<render_component>(
+	) -> std::string_view;
+
+	template <typename T>
+	consteval auto component_code_upsert(
+	) -> std::uint16_t;
+
+	template <typename T>
+	consteval auto component_code_remove(
+	) -> std::uint16_t;
+
+	template <typename T>
+	struct message_tag {
+		static constexpr std::uint16_t upsert_id = component_code_upsert<T>();
+		static constexpr std::uint16_t remove_id = component_code_remove<T>();
+	};
 
 	template <typename T>
 	struct component_upsert {
 		uuid owner_id;
-		T data;
+		T::params data;
 	};
 
 	template <typename T>
@@ -38,7 +65,7 @@ export namespace gse::network {
 
 	template <typename T>
 	struct component_remove {
-		uuid& owner_id;
+		uuid owner_id;
 	};
 
 	template <typename T>
@@ -67,13 +94,67 @@ export namespace gse::network {
 	template <typename Component, typename T>
 	auto apply_remove(
 		registry& reg,
-		const component_upsert<T>& msg
+		const component_remove<T>& msg
 	) -> void;
+
+	auto match_and_apply_components(
+		registry& reg,
+		bitstream& s,
+		std::uint16_t id
+	) -> bool;
+
+	constexpr auto types = std::tuple<
+		std::type_identity<physics::motion_component>,
+		std::type_identity<render_component>
+	>{};
+
+	template <typename F>
+	auto for_each_networked_component(
+		F&& f
+	) -> void;
+}
+
+consteval auto gse::network::stable_code(std::string_view s) -> std::uint16_t {
+	std::uint32_t h = 0x811C9DC5u;
+	for (const unsigned char c : s) {
+		h ^= c; h *= 16777619u;
+	}
+	return static_cast<std::uint16_t>((h ^ (h >> 16)) & 0xFFFF);
+}
+
+template <>
+consteval auto gse::network::component_name<gse::physics::motion_component>() -> std::string_view {
+	return "gse.physics.motion_component";
+}
+
+template <>
+consteval auto gse::network::component_name<gse::render_component>() -> std::string_view {
+	return "gse.render_component";
+}
+
+namespace gse::network {
+	template <typename T> struct always_false : std::false_type {};
+}
+
+template <typename C>
+consteval auto gse::network::component_name() -> std::string_view {
+	static_assert(always_false<C>::value, "component_name<C> not specialized for this component type");
+	return {};
+}
+
+template <typename T>
+consteval auto gse::network::component_code_upsert() -> std::uint16_t {
+	return stable_code(component_name<T>());
+}
+
+template <typename T>
+consteval auto gse::network::component_code_remove() -> std::uint16_t {
+	return static_cast<std::uint16_t>(stable_code(component_name<T>()) ^ 0x5A5Au);
 }
 
 template <typename T>
 constexpr auto gse::network::message_id(std::type_identity<component_upsert<T>>) -> std::uint16_t {
-	static_assert(std::is_trivially_copyable_v<T>, "Component must be trivially copyable to participate in network serialization");
+	static_assert(std::is_trivially_copyable_v<typename T::params>);
 	return message_tag<T>::upsert_id;
 }
 
@@ -87,7 +168,7 @@ template <typename T>
 auto gse::network::decode(bitstream& s, std::type_identity<component_upsert<T>>) -> component_upsert<T> {
 	return {
 		.owner_id = s.read<uuid>(),
-		.data = s.read<T>()
+		.data = s.read<typename T::params>()
 	};
 }
 
@@ -110,28 +191,51 @@ auto gse::network::decode(bitstream& s, std::type_identity<component_remove<T>>)
 
 template <typename Component, typename T>
 auto gse::network::apply_upsert(registry& reg, const component_upsert<T>& msg) -> void {
-	static_assert(std::is_same_v<typename Component::params, T>, "Component::params must be T");
-    const id local = find_or_generate_id(msg.owner_id);
-    reg.ensure_active(local);
+	const id local = find_or_generate_id(msg.owner_id);
+	reg.ensure_active(local);
 
-    if (auto* c = reg.try_linked_object_write<Component>(local)) {
-        static_cast<T&>(*c) = msg.data;
-    } else {
-        reg.add_component<Component>(local, msg.data);
-    }
+	if (auto* c = reg.try_linked_object_write<Component>(local)) {
+		*c = Component(local, msg.data);
+	}
+	else {
+		reg.add_component<Component>(local, msg.data);
+	}
 }
 
 template <typename Component, typename T>
-auto gse::network::apply_remove(registry& reg, const component_upsert<T>& msg) -> void {
+auto gse::network::apply_remove(registry& reg, const component_remove<T>& msg) -> void {
 	if (auto maybe = try_find(msg.owner_id)) {
 		reg.remove_link<Component>(*maybe);
 	}
 }
 
+template <typename F>
+auto gse::network::for_each_networked_component(F&& f) -> void {
+	std::apply(
+		[&]<typename... T0>(T0... ti) {
+			(f.template operator() < typename T0::type > (), ...);
+		}, 
+		types
+	);
+}
 
+auto gse::network::match_and_apply_components(registry& reg, bitstream& s, std::uint16_t id) -> bool {
+	bool handled = false;
 
+	auto handle = [&]<class Ti>(Ti) {
+		using c = Ti::type;
+		using p = c::params;
+		static_assert(std::is_trivially_copyable_v<p>);
+		if (!handled) handled |= try_decode<component_upsert<c>>(s, id, [&](auto m) { apply_upsert<c>(reg, m); });
+		if (!handled) handled |= try_decode<component_remove<c>>(s, id, [&](auto m) { apply_remove<c>(reg, m); });
+	};
 
+	std::apply(
+		[&](auto... ti) {
+			(handle(ti), ...);
+		}, 
+		types
+	);
 
-
-
-
+	return handled;
+}

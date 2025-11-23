@@ -26,7 +26,7 @@ export namespace gse::resource {
 	};
 
 	template <typename Resource>
-	class handle {
+	class handle : identifiable_owned_only_uuid {
 	public:
 		handle() = default;
 		handle(
@@ -44,7 +44,7 @@ export namespace gse::resource {
 		) const -> bool;
 
 		[[nodiscard]] auto id(
-		) const -> const id& ;
+		) const -> id;
 
 		[[nodiscard]] auto operator->(
 		) const -> Resource*;
@@ -63,7 +63,6 @@ export namespace gse::resource {
 		explicit operator bool(
 		) const;
 	private:
-		gse::id m_id;
 		loader_base* m_loader = nullptr;
 	};
 }
@@ -171,18 +170,18 @@ export namespace gse::resource {
 }
 
 template <typename Resource>
-gse::resource::handle<Resource>::handle(const gse::id& resource_id, loader_base* loader): m_id(resource_id), m_loader(loader) {}
+gse::resource::handle<Resource>::handle(const gse::id& resource_id, loader_base* loader): identifiable_owned_only_uuid(resource_id), m_loader(loader) {}
 
 template <typename Resource>
 auto gse::resource::handle<Resource>::resolve() const -> Resource* {
 	if (!m_loader) return nullptr;
-	return static_cast<Resource*>(m_loader->resource(m_id));
+	return static_cast<Resource*>(m_loader->resource(owner_id()));
 }
 
 template <typename Resource>
 auto gse::resource::handle<Resource>::state() const -> resource::state {
 	if (!m_loader) return state::unloaded;
-	return m_loader->resource_state(m_id);
+	return m_loader->resource_state(owner_id());
 }
 
 template <typename Resource>
@@ -191,27 +190,31 @@ auto gse::resource::handle<Resource>::valid() const -> bool {
 }
 
 template <typename Resource>
-auto gse::resource::handle<Resource>::id() const -> const gse::id& {
-	return m_id;
+auto gse::resource::handle<Resource>::id() const -> gse::id {
+	return owner_id();
 }
 
 template <typename Resource>
 auto gse::resource::handle<Resource>::operator->() const -> Resource* {
 	Resource* resource = resolve();
-	assert(resource, std::source_location::current(), "Attempting to access an unloaded or invalid resource with ID: {}", m_id);
+	assert(resource, std::source_location::current(), "Attempting to access an unloaded or invalid resource with ID: {}", owner_id());
 	return resource;
 }
 
 template <typename Resource>
 auto gse::resource::handle<Resource>::operator*() const -> Resource& {
 	Resource* resource = resolve();
-	assert(resource, std::source_location::current(), "Attempting to dereference an unloaded or invalid resource with ID: {}", m_id);
+	assert(resource, std::source_location::current(), "Attempting to dereference an unloaded or invalid resource with ID: {}", owner_id());
 	return *resource;
 }
 
 template <typename Resource>
 auto gse::resource::handle<Resource>::operator==(const handle& other) const -> bool {
-	return m_id == other.m_id && m_loader == other.m_loader;
+	if (!valid() || !other.valid()) {
+		return false;
+	}
+
+	return owner_id() == other.owner_id() && m_loader == other.m_loader;
 }
 
 template <typename Resource>

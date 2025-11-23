@@ -8,8 +8,6 @@ import :collision_component;
 import gse.physics.math;
 import gse.utility;
 
-static constexpr bool debug = true;
-
 export namespace gse::narrow_phase_collision {
     auto resolve_collision(
         physics::motion_component* object_a,
@@ -20,6 +18,7 @@ export namespace gse::narrow_phase_collision {
 }
 
 namespace gse::narrow_phase_collision {
+    static constexpr bool debug = false;
     constexpr int mpr_collision_refinement_iterations = 32;
 
     struct mpr_result {

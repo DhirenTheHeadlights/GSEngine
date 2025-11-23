@@ -18,7 +18,24 @@ export namespace gse {
 	};
 
     struct render_component final : component<render_component_data> {
-		render_component(const id& owner_id, const params& p) : component(owner_id, p) {}
+		struct params {
+			static constexpr std::size_t max_models = 128;
+			std::array<resource::handle<model>, max_models> models;
+			vec3<length> center_of_mass;
+			bool render = true;
+			bool render_bounding_boxes = true;
+			bool has_calculated_com = false;
+		};
+
+		render_component(const id& owner_id, const params& p) : component(owner_id) {
+			for (const auto& mh : p.models) {
+				this->models.emplace_back(mh);
+			}
+			center_of_mass = p.center_of_mass;
+			render = p.render;
+			render_bounding_boxes = p.render_bounding_boxes;
+			has_calculated_com = p.has_calculated_com;
+		}
 
         auto on_registry(
 			registry* reg
