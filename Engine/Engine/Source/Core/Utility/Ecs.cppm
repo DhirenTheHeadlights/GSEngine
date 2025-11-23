@@ -244,6 +244,20 @@ export namespace gse {
 			std::size_t read, 
 			std::size_t write
 		) -> void override;
+
+		auto mark_updated(
+			const owner_id_t& owner_id
+		) -> void;
+
+		auto drain_adds(
+		) -> std::vector<owner_id_t>;
+
+		auto drain_updates(
+		) -> std::vector<owner_id_t>;
+
+		auto drain_removes(
+		) -> std::vector<owner_id_t>;
+
 	private:
 		double_buffered_id_mapped_queue<component_type, owner_id_t> m_dbq;
 		double_buffered_id_mapped_queue<component_type, owner_id_t>::reader m_reader{ &m_dbq };
@@ -251,6 +265,10 @@ export namespace gse {
 
 		std::unordered_map<link_id_t, owner_id_t> m_link_to_owner_map;
 		std::uint32_t m_next_link_id = 0;
+
+		std::vector<owner_id_t> m_added;
+		std::vector<owner_id_t> m_updated;
+		std::vector<owner_id_t> m_removed;
 	};
 }
 
@@ -272,12 +290,17 @@ auto gse::component_link<T>::add(const owner_id_t& owner_id, registry* reg, Args
 
 template <gse::is_component T>
 auto gse::component_link<T>::activate(const owner_id_t& owner_id) -> bool {
-	return m_writer.activate(owner_id);
+	if (m_writer.activate(owner_id)) {
+		m_added.push_back(owner_id);
+		return true;
+	}
+	return false;
 }
 
 template <gse::is_component T>
 auto gse::component_link<T>::remove(const owner_id_t& owner_id) -> void {
 	m_writer.remove(owner_id);
+	m_removed.push_back(owner_id);
 
 	std::erase_if(
 		m_link_to_owner_map,
@@ -304,7 +327,11 @@ auto gse::component_link<T>::try_get_read(const owner_id_t& owner_id) -> const c
 
 template <gse::is_component T>
 auto gse::component_link<T>::try_get_write(const owner_id_t& owner_id) -> component_type* {
-	return m_writer.try_get(owner_id);
+	if (auto* p = m_writer.try_get(owner_id)) {
+		m_updated.push_back(owner_id);
+		return p;
+	}
+	return nullptr;
 }
 
 template <gse::is_component T>
@@ -332,6 +359,36 @@ template <gse::is_component T>
 auto gse::component_link<T>::flip(std::size_t read, std::size_t write) -> void {
 	m_dbq.flip(read, write);
 	std::tie(m_reader, m_writer) = m_dbq.bind(read, write);
+}
+
+template <gse::is_component T>
+auto gse::component_link<T>::mark_updated(const owner_id_t& owner_id) -> void {
+	m_updated.push_back(owner_id);
+}
+
+template <gse::is_component T>
+auto gse::component_link<T>::drain_adds() -> std::vector<owner_id_t> {
+	auto out = std::move(m_added);
+	m_added.clear();
+	return out;
+}
+
+template <gse::is_component T>
+auto gse::component_link<T>::drain_updates() -> std::vector<owner_id_t> {
+	std::erase_if(m_updated, [&](const auto& id) {
+		return std::ranges::find(m_added, id) != m_added.end();
+	});
+
+	auto out = std::move(m_updated);
+	m_updated.clear();
+	return out;
+}
+
+template <gse::is_component T>
+auto gse::component_link<T>::drain_removes() -> std::vector<owner_id_t> {
+	auto out = std::move(m_removed);
+	m_removed.clear();
+	return out;
 }
 
 export namespace gse {
@@ -589,6 +646,18 @@ export namespace gse {
 		auto ensure_active(
 			const id& id
 		) -> void;
+
+		template <typename U>
+		auto drain_component_adds(
+		) -> std::vector<id>;
+
+		template <typename U>
+		auto drain_component_updates(
+		) -> std::vector<id>;
+
+		template <typename U>
+		auto drain_component_removes(
+		) -> std::vector<id>;
 
 		template <typename U>
 		static auto any_components(
@@ -856,9 +925,24 @@ auto gse::registry::linked_object_read(const id& id) -> const U& {
 
 template <typename U>
 auto gse::registry::linked_object_write(const id& id) -> U& {
-	U* ptr = try_linked_object_write<U>(id);
-	assert(ptr, std::source_location::current(), "Linked object (write) of type {} with id {} not found.", typeid(U).name(), id);
-	return *ptr;
+	const auto type_idx = std::type_index(typeid(U));
+
+	const auto it = m_component_links.find(type_idx);
+
+	assert(
+		it != m_component_links.end(), 
+		std::source_location::current(),
+		"Linked object (write) of type {} with id {} not found.", 
+		typeid(U).name(), id
+	);
+
+	auto& lnk = static_cast<component_link<U>&>(*it->second);
+	if (auto* p = lnk.try_get_write(id)) {
+		return *p;
+	}
+
+	assert(false, std::source_location::current(), "Linked object (write) of type {} with id {} not found.", typeid(U).name(), id);
+	std::unreachable();
 }
 
 template <typename U>
@@ -969,6 +1053,33 @@ auto gse::registry::ensure_active(const id& id) -> void {
 	if (!active(id)) {
         activate(id);
     }
+}
+
+template <typename U>
+auto gse::registry::drain_component_adds() -> std::vector<id> {
+	const auto type_idx = std::type_index(typeid(U));
+	const auto it = m_component_links.find(type_idx);
+	if (it == m_component_links.end()) return {};
+	auto& lnk = static_cast<component_link<U>&>(*it->second);
+	return lnk.drain_adds();
+}
+
+template <typename U>
+auto gse::registry::drain_component_updates() -> std::vector<id> {
+	const auto type_idx = std::type_index(typeid(U));
+	const auto it = m_component_links.find(type_idx);
+	if (it == m_component_links.end()) return {};
+	auto& lnk = static_cast<component_link<U>&>(*it->second);
+	return lnk.drain_updates();
+}
+
+template <typename U>
+auto gse::registry::drain_component_removes() -> std::vector<id> {
+	const auto type_idx = std::type_index(typeid(U));
+	const auto it = m_component_links.find(type_idx);
+	if (it == m_component_links.end()) return {};
+	auto& lnk = static_cast<component_link<U>&>(*it->second);
+	return lnk.drain_removes();
 }
 
 template <typename U>

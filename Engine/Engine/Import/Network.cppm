@@ -23,9 +23,12 @@ export import :notify_scene_change;
 export import :api;
 export import :client;
 export import :discovery;
+export import :registry_sync;
+export import :replication;
 
 export namespace gse::network {
 	auto initialize() -> void;
+	auto update(registry& reg) -> void;
 	auto shutdown() -> void;
 }
 
@@ -34,6 +37,10 @@ auto gse::network::initialize() -> void {
 	if (const auto result = WSAStartup(MAKEWORD(2, 2), &wsa_data); result != 0) {
 		std::println("WSAStartup failed: {}", result);
 	}
+}
+
+auto gse::network::update(registry& reg) -> void {
+	update_registry(reg);
 }
 
 auto gse::network::shutdown() -> void {
