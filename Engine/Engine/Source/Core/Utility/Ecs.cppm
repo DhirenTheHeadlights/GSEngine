@@ -582,6 +582,14 @@ export namespace gse {
 			const id& id
 		) const -> bool;
 
+		auto ensure_exists(
+			const id& id
+		) -> void;
+
+		auto ensure_active(
+			const id& id
+		) -> void;
+
 		template <typename U>
 		static auto any_components(
 			std::span<const std::reference_wrapper<registry>> registries
@@ -945,6 +953,22 @@ auto gse::registry::exists(const id& id) const -> bool {
 
 auto gse::registry::active(const id& id) const -> bool {
 	return m_active_entities.contains(id);
+}
+
+auto gse::registry::ensure_exists(const id& id) -> void {
+	if (exists(id)) {
+		return;
+	}
+	m_inactive_ids.insert(id);
+}
+
+auto gse::registry::ensure_active(const id& id) -> void {
+	if (!exists(id)) {
+		m_inactive_ids.insert(id);
+	}
+	if (!active(id)) {
+        activate(id);
+    }
 }
 
 template <typename U>
