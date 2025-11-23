@@ -250,7 +250,7 @@ auto gse::resource::loader<R, C>::flush() -> void {
         jobs.emplace_back([this, rid] {
             gpu_work_token token(this, rid, m_context.gpu_queue_size());
 
-            R* resource_ptr = nullptr;
+            R* resource_ptr;
             {
                 std::lock_guard lock(m_mutex);
                 if (auto* slot = m_resources.try_get(rid)) {
