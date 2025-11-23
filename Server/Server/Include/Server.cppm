@@ -176,10 +176,7 @@ auto gse::server::update(world& world) -> void {
 		const auto id = network::message_id(stream);
 
 		if (auto* sc = world.current_scene()) {
-			constexpr auto types = network::type_list<
-				physics::motion_component
-			>{};
-			if (network::match_and_apply_components(sc->registry(), stream, id, types)) {
+			if (network::match_and_apply_components(sc->registry(), stream, id)) {
 				continue;
 			}
 		}
@@ -240,7 +237,7 @@ auto gse::server::update(world& world) -> void {
 			this->send(msg, to);
 		};
 
-		network::replicate<decltype(types)>::run(send_all, sc->registry(), m_peers);
+		network::replicate_all(send_all, sc->registry(), m_peers);
 	}
 }
 
