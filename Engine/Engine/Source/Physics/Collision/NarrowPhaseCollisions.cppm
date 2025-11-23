@@ -508,6 +508,7 @@ auto gse::narrow_phase_collision::generate_contact_points(const bounding_box& bb
         unitless::vec3 normal;
     };
 
+    // Reverting to your original logic since normals are confirmed correct in World Space
     auto find_best_face = [](const bounding_box& bb, const unitless::vec3& dir) -> face_info {
         float max_dot = -std::numeric_limits<float>::max();
         int best_face_idx = -1;
@@ -530,7 +531,7 @@ auto gse::narrow_phase_collision::generate_contact_points(const bounding_box& bb
     std::array<vec3<length>, 4> ref_face;
     unitless::vec3 ref_normal;
 
-    // Determine which is reference (most perpendicular to normal)
+    // Determine which is reference
     if (dot(info1.normal, -collision_normal) > dot(info2.normal, collision_normal)) {
         ref_face = info1.vertices;
         inc_face_poly.assign(info2.vertices.begin(), info2.vertices.end());
@@ -559,13 +560,14 @@ auto gse::narrow_phase_collision::generate_contact_points(const bounding_box& bb
             length curr_dist = dot(p.normal, curr) - p.distance;
 
             // If crossing the plane
-            if (prev_dist * curr_dist < 0) {
+            if (prev_dist * curr_dist < 0.0f) {
                 float t = prev_dist / (prev_dist - curr_dist);
-                out.push_back(*prev + (*prev - curr) * -t);
+                out.push_back(*prev + (curr - *prev) * t);
             }
 
             // If inside (positive distance)
-            if (curr_dist >= 0) {
+            // Robustness: Use -epsilon to keep points that are effectively ON the line
+            if (curr_dist >= -meters(1e-5f)) {
                 out.push_back(curr);
             }
 
@@ -575,32 +577,53 @@ auto gse::narrow_phase_collision::generate_contact_points(const bounding_box& bb
         return out;
         };
 
+    // --- THE FIX IS HERE ---
+    // Calculate the geometric center of the reference face.
+    // We use this to force the side clipping planes to point INWARD.
+    vec3<length> ref_center = { 0, 0, 0 };
+    for (const auto& v : ref_face) ref_center += v;
+    ref_center /= 4.0f;
+
     // Clip incident face against the side planes of the reference face
     for (size_t i = 0; i < 4; ++i) {
         if (inc_face_poly.empty()) break;
 
         const vec3<length>& v1 = ref_face[i];
-        const vec3<length>& v2 = ref_face[(i + 1) % 4]; // Ensure wrapping
+        const vec3<length>& v2 = ref_face[(i + 1) % 4];
 
         const unitless::vec3 edge = normalize(v2 - v1);
 
-        // FIX: Cross product order changed to generate INWARD facing normal
-        const unitless::vec3 plane_normal = cross(ref_normal, edge);
+        // Calculate normal. We don't know if this points In or Out yet
+        // because we don't know the exact winding order of the source vertices.
+        unitless::vec3 plane_normal = cross(ref_normal, edge);
+
+        // ROBUSTNESS CHECK:
+        // A valid side-plane for clipping MUST point towards the center of the polygon.
+        vec3<length> to_center = ref_center - v1;
+
+        // If the normal points away from the center (dot < 0), flip it.
+        // This solves the "Returns Nothing" bug caused by winding order mismatches.
+        if (dot(plane_normal, to_center) < 0.0f) {
+            plane_normal = -plane_normal;
+        }
 
         plane p{ plane_normal, dot(plane_normal, v1) };
         inc_face_poly = clip(inc_face_poly, p);
     }
 
-    // 3. Filter Keep points below the reference surface
+    // 3. Filter and Project
     std::vector<vec3<length>> contacts;
     plane ref_plane{ ref_normal, dot(ref_normal, ref_face[0]) };
 
     for (const auto& v : inc_face_poly) {
         length dist = dot(ref_normal, v) - ref_plane.distance;
 
-        // Allow slightly positive for floating point errors, but mostly look for negative (penetration)
+        // Keep points that are BEHIND the reference face (penetrating)
+        // Note: dist is negative if the point is "behind" the normal.
+        // We accept a small positive tolerance for floating point errors.
         if (dist <= meters(1e-3f)) {
-            // Project point onto reference plane (optional, usually desired for stability)
+            // Optional: Project point onto reference plane 
+            // This flattens the manifold, which is usually better for physics stability.
             contacts.push_back(v - ref_normal * dist);
         }
     }
