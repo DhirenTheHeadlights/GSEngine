@@ -760,12 +760,12 @@ auto gse::gui::handle_idle_state(const unitless::vec2 mouse_position, const bool
 	} };
 
 	auto calculate_group_bounds = [](
-		const id& root_id
+		id root_id
 		) -> ui_rect {
 			const menu* root = menus.try_get(root_id);
 			if (!root) return {};
 			ui_rect bounds = root->rect;
-			std::function<void(const id&)> expand = [&](const id& parent_id) {
+			std::function<void(id)> expand = [&](id parent_id) {
 				for (const auto& item : menus.items()) {
 					if (item.owner_id() == parent_id) {
 						bounds = ui_rect::bounding_box(bounds, item.rect);
@@ -906,11 +906,11 @@ auto gse::gui::handle_resizing_state(const states::resizing& current, const unit
 		return states::idle{};
 	}
 
-	auto calculate_group_bounds = [&](const id& root_id) -> ui_rect {
+	auto calculate_group_bounds = [&](id root_id) -> ui_rect {
 		const menu* root = menus.try_get(root_id);
 		if (!root) return {};
 		ui_rect bounds = root->rect;
-		std::function<void(const id&)> expand = [&](const id& parent_id) {
+		std::function<void(id)> expand = [&](id parent_id) {
 			for (const auto& item : menus.items()) {
 				if (item.owner_id() == parent_id) {
 					bounds = ui_rect::bounding_box(bounds, item.rect);
@@ -1034,7 +1034,7 @@ auto gse::gui::handle_dragging_state(const states::dragging& current, const wind
 	new_top_left.y() = std::clamp(new_top_left.y(), m->rect.height(), window_size.y());
 
 	if (const auto delta = new_top_left - old_top_left; delta.x() != 0 || delta.y() != 0) {
-		std::function<void(const id&)> move_group = [&](const id& current_id) {
+		std::function<void(id)> move_group = [&](id current_id) {
 			if (menu* item = menus.try_get(current_id)) {
 				item->rect = ui_rect::from_position_size(item->rect.top_left() + delta, item->rect.size());
 				for (auto& potential_child : menus.items()) {

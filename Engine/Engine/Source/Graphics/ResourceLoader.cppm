@@ -26,11 +26,11 @@ export namespace gse::resource {
 	};
 
 	template <typename Resource>
-	class handle : identifiable_owned_only_uuid {
+	class handle : identifiable_owned {
 	public:
 		handle() = default;
 		handle(
-			const id& resource_id,
+			id resource_id,
 			loader_base* loader
 		);
 
@@ -73,16 +73,16 @@ export namespace gse::resource {
 		virtual ~loader_base() = default;
 		virtual auto flush() -> void = 0;
 		virtual auto compile() -> void = 0;
-		[[nodiscard]] virtual auto resource(const id& resource_id) -> void* = 0;
-		[[nodiscard]] virtual auto resource_state(const id& resource_id) const -> state = 0;
-		virtual auto update_state(const id& resource_id, state new_state) -> void = 0;
-		virtual auto mark_for_gpu_finalization(const id& resource_id) -> void = 0;
-		virtual auto finalize_state(const id& resource_id, size_t queue_size_before) -> void = 0;
+		[[nodiscard]] virtual auto resource(id resource_id) -> void* = 0;
+		[[nodiscard]] virtual auto resource_state(id resource_id) const -> state = 0;
+		virtual auto update_state(id resource_id, state new_state) -> void = 0;
+		virtual auto mark_for_gpu_finalization(id resource_id) -> void = 0;
+		virtual auto finalize_state(id resource_id, size_t queue_size_before) -> void = 0;
 	};
 
 	class gpu_work_token final : public non_copyable {
 	public:
-		gpu_work_token(loader_base* loader, const id& resource_id, const std::size_t queue_size_before)
+		gpu_work_token(loader_base* loader, const id resource_id, const std::size_t queue_size_before)
 			: m_loader(loader), m_id(resource_id), m_queue_size_before(queue_size_before) {
 			m_loader->update_state(m_id, state::loading);
 		}
@@ -142,16 +142,16 @@ export namespace gse::resource {
 		auto flush() -> void override;
 		auto compile() -> void override;
 
-		[[nodiscard]] auto resource(const id& resource_id) -> void* override;
-		[[nodiscard]] auto resource_state(const id& resource_id) const -> state override;
+		[[nodiscard]] auto resource(id resource_id) -> void* override;
+		[[nodiscard]] auto resource_state(id resource_id) const -> state override;
 
-		auto update_state(const id& resource_id, state new_state) -> void override;
-		auto mark_for_gpu_finalization(const id& resource_id) -> void override;
-		auto finalize_state(const id& resource_id, size_t queue_size_before) -> void override;
+		auto update_state(id resource_id, state new_state) -> void override;
+		auto mark_for_gpu_finalization(id resource_id) -> void override;
+		auto finalize_state(id resource_id, size_t queue_size_before) -> void override;
 
-		auto get(const id& id) const -> handle<Resource>;
+		auto get(id id) const -> handle<Resource>;
 		auto get(const std::string& filename_no_ext) const -> handle<Resource>;
-		auto instantly_load(const id& resource_id) -> void;
+		auto instantly_load(id resource_id) -> void;
 
 		template <typename... Args>
 			requires std::constructible_from<Resource, std::string, Args...>
@@ -165,12 +165,12 @@ export namespace gse::resource {
 		task::group m_load_group{ generate_id("resource.loader.load") };
 		mutable std::mutex m_mutex;
 
-		auto get_unlocked(const id& id) const -> handle<Resource> ;
+		auto get_unlocked(id id) const -> handle<Resource> ;
 	};
 }
 
 template <typename Resource>
-gse::resource::handle<Resource>::handle(const gse::id& resource_id, loader_base* loader): identifiable_owned_only_uuid(resource_id), m_loader(loader) {}
+gse::resource::handle<Resource>::handle(const gse::id resource_id, loader_base* loader): identifiable_owned(resource_id), m_loader(loader) {}
 
 template <typename Resource>
 auto gse::resource::handle<Resource>::resolve() const -> Resource* {
@@ -289,7 +289,7 @@ auto gse::resource::loader<R, C>::compile() -> void {
 }
 
 template <typename R, typename C> requires gse::is_resource<R, C>
-auto gse::resource::loader<R, C>::resource(const id& resource_id) -> void* {
+auto gse::resource::loader<R, C>::resource(id resource_id) -> void* {
 	std::lock_guard lock(m_mutex);
 	slot* slot_ptr = m_resources.try_get(resource_id);
 	if (slot_ptr && slot_ptr->current_state.load(std::memory_order_acquire) == state::loaded) {
@@ -299,7 +299,7 @@ auto gse::resource::loader<R, C>::resource(const id& resource_id) -> void* {
 }
 
 template <typename R, typename C> requires gse::is_resource<R, C>
-auto gse::resource::loader<R, C>::resource_state(const id& resource_id) const -> state {
+auto gse::resource::loader<R, C>::resource_state(id resource_id) const -> state {
 	std::lock_guard lock(m_mutex);
 	if (const slot* slot_ptr = m_resources.try_get(resource_id); slot_ptr) {
 		return slot_ptr->current_state.load(std::memory_order_acquire);
@@ -308,7 +308,7 @@ auto gse::resource::loader<R, C>::resource_state(const id& resource_id) const ->
 }
 
 template <typename Resource, typename RenderingContext> requires gse::is_resource<Resource, RenderingContext>
-auto gse::resource::loader<Resource, RenderingContext>::update_state(const id& resource_id, state new_state) -> void {
+auto gse::resource::loader<Resource, RenderingContext>::update_state(id resource_id, state new_state) -> void {
 	std::lock_guard lock(m_mutex);
 	if (slot* slot_ptr = m_resources.try_get(resource_id)) {
 		slot_ptr->current_state.store(new_state, std::memory_order_release);
@@ -316,12 +316,12 @@ auto gse::resource::loader<Resource, RenderingContext>::update_state(const id& r
 }
 
 template <typename Resource, typename RenderingContext> requires gse::is_resource<Resource, RenderingContext>
-auto gse::resource::loader<Resource, RenderingContext>::mark_for_gpu_finalization(const id& resource_id) -> void {
+auto gse::resource::loader<Resource, RenderingContext>::mark_for_gpu_finalization(id resource_id) -> void {
 	m_context.mark_pending_for_finalization(typeid(Resource), resource_id);
 }
 
 template <typename Resource, typename RenderingContext> requires gse::is_resource<Resource, RenderingContext>
-auto gse::resource::loader<Resource, RenderingContext>::finalize_state(const id& resource_id, size_t queue_size_before) -> void {
+auto gse::resource::loader<Resource, RenderingContext>::finalize_state(id resource_id, size_t queue_size_before) -> void {
 	if (m_context.gpu_queue_size() > queue_size_before) {
 		m_context.mark_pending_for_finalization(typeid(Resource), resource_id);
 	}
@@ -331,7 +331,7 @@ auto gse::resource::loader<Resource, RenderingContext>::finalize_state(const id&
 }
 
 template <typename R, typename C> requires gse::is_resource<R, C>
-auto gse::resource::loader<R, C>::get(const id& id) const -> handle<R> {
+auto gse::resource::loader<R, C>::get(id id) const -> handle<R> {
 	std::lock_guard lock(m_mutex);
 	return get_unlocked(id);
 }
@@ -343,7 +343,7 @@ auto gse::resource::loader<R, C>::get(const std::string& filename_no_ext) const 
 }
 
 template <typename R, typename C> requires gse::is_resource<R, C>
-auto gse::resource::loader<R, C>::instantly_load(const id& resource_id) -> void {
+auto gse::resource::loader<R, C>::instantly_load(id resource_id) -> void {
 	slot* slot_ptr;
 	{
 		std::lock_guard lock(m_mutex);
@@ -401,7 +401,7 @@ auto gse::resource::loader<R, C>::add(R&& resource) -> handle<R> {
 }
 
 template <typename Resource, typename RenderingContext> requires gse::is_resource<Resource, RenderingContext>
-auto gse::resource::loader<Resource, RenderingContext>::get_unlocked(const id& id) const -> handle<Resource> {
+auto gse::resource::loader<Resource, RenderingContext>::get_unlocked(id id) const -> handle<Resource> {
 	assert(m_resources.contains(id), std::source_location::current(), "Resource with ID {} not found in this loader.", id);
 	return handle<Resource>(id, const_cast<loader*>(this));
 }

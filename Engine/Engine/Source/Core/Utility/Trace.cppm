@@ -19,45 +19,45 @@ export namespace gse::trace {
 	) -> void;
 
 	auto begin_block(
-		const id& id,
+		id id,
 		std::uint64_t parent
 	) -> std::uint64_t;
 
 	auto end_block(
-		const id& id,
+		id id,
 		std::uint64_t eid,
 		std::uint64_t parent
 	) -> void;
 
 	template <typename F>
 	auto scope(
-		const id& id,
+		id id,
 		F&& f
 	) -> void;
 
 	template <typename F>
 	auto scope(
-		const id& id,
+		id id,
 		F&& f,
 		std::uint64_t parent
 	) -> void;
 
 	auto begin_async(
-		const id& id,
+		id id,
 		std::uint64_t key
 	) -> void;
 
 	auto end_async(
-		const id& id,
+		id id,
 		std::uint64_t key
 	) -> void;
 
 	auto mark(
-		const id& id
+		id id
 	) -> void;
 
 	auto counter(
-		const id& id,
+		id id,
 		double value
 	) -> void;
 
@@ -256,7 +256,7 @@ auto gse::trace::start(const config& cfg) -> void {
 	frames = frame_storage{};
 }
 
-auto gse::trace::begin_block(const id& id, std::uint64_t parent) -> std::uint64_t {
+auto gse::trace::begin_block(id id, std::uint64_t parent) -> std::uint64_t {
 	if (paused()) return 0;
 
 	ensure_tls_registered();
@@ -285,7 +285,7 @@ auto gse::trace::begin_block(const id& id, std::uint64_t parent) -> std::uint64_
 	return eid;
 }
 
-auto gse::trace::end_block(const id& id, const std::uint64_t eid, const std::uint64_t parent) -> void {
+auto gse::trace::end_block(id id, const std::uint64_t eid, const std::uint64_t parent) -> void {
 	if (paused() || eid == 0) {
 		return;
 	}
@@ -308,13 +308,13 @@ auto gse::trace::end_block(const id& id, const std::uint64_t eid, const std::uin
 }
 
 template <typename F>
-auto gse::trace::scope(const id& id, F&& f) -> void {
+auto gse::trace::scope(id id, F&& f) -> void {
 	const auto parent = current_parent_eid();
 	scope(id, std::forward<F>(f), parent);
 }
 
 template <typename F>
-auto gse::trace::scope(const id& id, F&& f, std::uint64_t parent) -> void {
+auto gse::trace::scope(id id, F&& f, std::uint64_t parent) -> void {
 	if (paused()) {
 		std::forward<F>(f)();
 		return;
@@ -376,7 +376,7 @@ auto gse::trace::scope(const id& id, F&& f, std::uint64_t parent) -> void {
 	std::forward<F>(f)();
 }
 
-auto gse::trace::begin_async(const id& id, const std::uint64_t key) -> void {
+auto gse::trace::begin_async(id id, const std::uint64_t key) -> void {
 	if (paused()) {
 		return;
 	}
@@ -395,7 +395,7 @@ auto gse::trace::begin_async(const id& id, const std::uint64_t key) -> void {
 	});
 }
 
-auto gse::trace::end_async(const id& id, const std::uint64_t key) -> void {
+auto gse::trace::end_async(id id, const std::uint64_t key) -> void {
 	if (paused()) {
 		return;
 	}
@@ -414,7 +414,7 @@ auto gse::trace::end_async(const id& id, const std::uint64_t key) -> void {
 	});
 }
 
-auto gse::trace::mark(const id& id) -> void {
+auto gse::trace::mark(id id) -> void {
 	if (paused()) {
 		return;
 	}
@@ -433,7 +433,7 @@ auto gse::trace::mark(const id& id) -> void {
 	});
 }
 
-auto gse::trace::counter(const id& id, const double value) -> void {
+auto gse::trace::counter(id id, const double value) -> void {
 	if (paused()) {
 		return;
 	}

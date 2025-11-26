@@ -24,7 +24,7 @@ export namespace gse::renderer {
 
 		template <typename T>
 		auto get(
-			const id& id
+			id id
 		) const -> resource::handle<T>;
 
 		template <typename T>
@@ -69,7 +69,7 @@ export namespace gse::renderer {
 
 		template <typename T>
 		[[nodiscard]] auto resource_state(
-			const id& id
+			id id
 		) const -> resource::state;
 
 		template <typename T>
@@ -97,7 +97,7 @@ export namespace gse::renderer {
 
 		auto mark_pending_for_finalization(
 			const std::type_index& resource_type, 
-			const id& resource_id
+			id resource_id
 		) const -> void;
 
 		auto set_ui_focus(
@@ -151,7 +151,7 @@ auto gse::renderer::context::add_loader() -> resource::loader<T, context>* {
 }
 
 template <typename T>
-auto gse::renderer::context::get(const id& id) const -> resource::handle<T> {
+auto gse::renderer::context::get(id id) const -> resource::handle<T> {
 	auto* specific_loader = loader<T>();
 	return specific_loader->get(id);
 }
@@ -235,7 +235,7 @@ auto gse::renderer::context::compile() -> void {
 }
 
 template <typename T>
-auto gse::renderer::context::resource_state(const id& id) const -> resource::state {
+auto gse::renderer::context::resource_state(id id) const -> resource::state {
 	const auto type_index = std::type_index(typeid(T));
 	const auto* loader = this->loader(type_index);
 	return loader->resource_state(id);
@@ -279,7 +279,7 @@ auto gse::renderer::context::gpu_queue_size() const -> size_t {
 }
 
 auto gse::renderer::context::mark_pending_for_finalization(const std::type_index& resource_type,
-	const id& resource_id) const -> void {
+	id resource_id) const -> void {
 	std::lock_guard lock(m_mutex);
 	m_pending_gpu_resources.emplace_back(resource_type, resource_id);
 }

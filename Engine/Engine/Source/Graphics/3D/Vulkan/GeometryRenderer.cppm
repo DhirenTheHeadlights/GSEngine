@@ -262,7 +262,7 @@ auto gse::renderer::geometry::update(const std::span<const std::reference_wrappe
 			const auto mc = registry.get().try_linked_object_read<physics::motion_component>(component.owner_id());
 			const auto cc = registry.get().try_linked_object_read<physics::collision_component>(component.owner_id());
 
-			for (auto& model_handle : component.models) {
+			for (auto& model_handle : component.model_instances) {
 				if (!model_handle.handle().valid() || !mc || !cc) {
 					continue;
 				}

@@ -22,7 +22,7 @@ namespace gse {
 
 export namespace gse {
 	template <typename Resource>
-	auto get(const id& id) -> resource::handle<Resource> {
+	auto get(id id) -> resource::handle<Resource> {
 		return rendering_context.get<Resource>(id);
 	}
 
@@ -37,7 +37,7 @@ export namespace gse {
 	}
 
 	template <typename Resource>
-	auto instantly_load(const id& id) -> resource::handle<Resource> {
+	auto instantly_load(id id) -> resource::handle<Resource> {
 		return rendering_context.instantly_load<Resource>(id);
 	}
 
@@ -47,7 +47,7 @@ export namespace gse {
 	}
 
 	template <typename Resource>
-	auto resource_state(const id& id) -> resource::state {
+	auto resource_state(id id) -> resource::state {
 		return rendering_context.resource_state<Resource>(id);
 	}
 }
