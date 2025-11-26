@@ -54,9 +54,11 @@ auto gse::gui::save(id_mapped_collection<menu>& menus, const std::filesystem::pa
 	};
 
 	for (const auto& menu : menus.items()) {
+		const auto owner_id = menu.owner_id().exists() ? menu.owner_id().tag() : "";
+
 		file << "[Menu]\n";
 		file << "Tag: " << menu.id().tag() << "\n";
-		file << "Owner: " << menu.owner_id().tag() << "\n";
+		file << "Owner: " << owner_id << "\n";
 		file << "Rect: " << menu.rect.left() << " " << menu.rect.top() << " " << menu.rect.width() << " " << menu.rect.height() << "\n";
 		file << "DockedTo: " << to_string(menu.docked_to) << "\n";
 		file << "DockSplitRatio: " << menu.dock_split_ratio << "\n";
@@ -169,7 +171,7 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
 	}
 
 	for (auto& menu_item : new_layout.items()) {
-		const auto& data = loaded_map.at(menu_item.id().tag());
+		const auto& data = loaded_map.at(std::string(menu_item.id().tag()));
 		if (!data.owner_tag.empty()) {
 			menu_item.swap(find(data.owner_tag));
 		}

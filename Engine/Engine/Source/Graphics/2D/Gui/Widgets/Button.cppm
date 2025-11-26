@@ -13,11 +13,11 @@ export namespace gse::gui::draw {
 		const widget_context& context,
 		const std::string& name,
 		id& hot_widget_id,
-		const id& active_widget_id
+		id active_widget_id
 	) -> void;
 }
 
-auto gse::gui::draw::button(const widget_context& context, const std::string& name, id& hot_widget_id, const id& active_widget_id) -> void {
+auto gse::gui::draw::button(const widget_context& context, const std::string& name, id& hot_widget_id, id active_widget_id) -> void {
 	if (!context.current_menu) {
 		return;
 	}

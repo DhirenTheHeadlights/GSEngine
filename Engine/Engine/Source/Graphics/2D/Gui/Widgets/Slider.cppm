@@ -59,12 +59,12 @@ namespace gse::gui::draw {
 	auto slider_box(
 		const widget_context& context,
 		const ui_rect& rect,
-		const id& widget_id,
+		id widget_id,
 		T& value,
 		const T& min,
 		const T& max,
 		id& hot_widget_id,
-		const id& active_widget_id
+		id active_widget_id
 	) -> void;
 
 	template <typename T, std::size_t N>
@@ -130,7 +130,7 @@ auto gse::gui::draw::slider(widget_context& context, const std::string& name, ve
 }
 
 template <typename T>
-auto gse::gui::draw::slider_box(const widget_context& context, const ui_rect& rect, const id& widget_id, T& value, const T& min, const T& max, id& hot_widget_id, const id& active_widget_id) -> void {
+auto gse::gui::draw::slider_box(const widget_context& context, const ui_rect& rect, id widget_id, T& value, const T& min, const T& max, id& hot_widget_id, id active_widget_id) -> void {
 	if (rect.contains(mouse::position())) {
 		hot_widget_id = widget_id;
 	}

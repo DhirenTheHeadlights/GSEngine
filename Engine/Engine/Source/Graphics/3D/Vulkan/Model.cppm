@@ -25,7 +25,7 @@ export namespace gse {
 
 	class model_instance {
 	public:
-		model_instance(const resource::handle<model>& model_handle) : m_model_handle(model_handle) {}
+		explicit model_instance(const resource::handle<model>& model_handle) : m_model_handle(model_handle) {}
 
 		auto update(const physics::motion_component& mc, const physics::collision_component& cc) -> void;
 

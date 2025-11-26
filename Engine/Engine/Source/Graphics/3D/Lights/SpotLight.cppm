@@ -25,7 +25,7 @@ export namespace gse {
 	};
 
 	struct spot_light_component : component<spot_light_data> {
-		spot_light_component(const id& owner_id, const spot_light_data& data = {}) : component(owner_id, data) {}
+		explicit spot_light_component(const id owner_id, const spot_light_data& data = {}) : component(owner_id, data) {}
 
 		auto debug_menu(const std::string_view& name, std::uint32_t parent_id) -> void {
 			gui::start(

@@ -14,11 +14,11 @@ export namespace gse::gui::draw {
         const std::string& name,
         bool selected,
         id& hot_widget_id,
-        const id& active_widget_id
+        id active_widget_id
     ) -> void;
 }
 
-auto gse::gui::draw::selectable(const widget_context& context, const std::string& name, const bool selected, id& hot_widget_id, const id& active_widget_id) -> void {
+auto gse::gui::draw::selectable(const widget_context& context, const std::string& name, const bool selected, id& hot_widget_id, id active_widget_id) -> void {
     if (!context.current_menu) return;
 
     const auto widget_id = ids::make(name);

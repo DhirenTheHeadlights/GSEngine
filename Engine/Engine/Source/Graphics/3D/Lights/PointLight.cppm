@@ -22,7 +22,7 @@ export namespace gse {
 	};
 
 	struct point_light_component : component<point_light_data> {
-		point_light_component(const id& owner_id, const point_light_data& data = {}) : component(owner_id, data) {}
+		point_light_component(id owner_id, const point_light_data& data = {}) : component(owner_id, data) {}
 
 		auto debug_menu(const std::string_view& name, std::uint32_t parent_id) -> void {
 

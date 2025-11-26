@@ -8,7 +8,7 @@ import gse.utility;
 
 export namespace gse::network {
 	class bitstream {
-	public:
+		public:
 		explicit bitstream(
 			std::span<std::byte> buffer
 		);
@@ -52,7 +52,14 @@ export namespace gse::network {
 		auto reset(
 			std::span<std::byte> buffer
 		) -> void;
-	private:
+
+		auto set_current_message_id(
+			std::uint16_t id
+		) -> void;
+
+		auto current_message_id(
+		) const -> std::uint16_t;
+		private:
 		auto can_advance(
 			std::size_t bits
 		) const -> bool;
@@ -60,6 +67,7 @@ export namespace gse::network {
 		std::span<std::byte> m_buffer;
 		std::size_t m_head_bits = 0;
 		bool m_error = false;
+		std::uint16_t m_cur_msg_id = 0;
 	};
 }
 
@@ -72,13 +80,14 @@ auto gse::network::bitstream::write(const T& data) -> void {
 
 auto gse::network::bitstream::write(const std::span<const std::byte> data) -> void {
 	const std::size_t bits = data.size_bytes() * 8;
-
 	const bool ok = can_advance(bits);
+
 	assert(
 		ok,
 		std::source_location::current(),
-		"Bitstream overflow"
+		"Bitstream overflow id=0x{:04X} need={} have={} head_bits={}", m_cur_msg_id, bits, remaining_bits(), m_head_bits
 	);
+
 	if (!ok) {
 		m_error = true;
 		return;
@@ -97,7 +106,6 @@ auto gse::network::bitstream::write(const std::span<const std::byte> data) -> vo
 			const auto byte_index = m_head_bits / 8;
 			const auto bit_index = m_head_bits % 8;
 			const std::byte mask = (std::byte{ 1 } << bit_index);
-
 			if ((val_in & (1u << i)) != 0) {
 				m_buffer[byte_index] |= mask;
 			}
@@ -118,15 +126,12 @@ auto gse::network::bitstream::read() -> T {
 
 auto gse::network::bitstream::read(std::span<std::byte> data) -> void {
 	const std::size_t bits = data.size_bytes() * 8;
-
 	const bool ok = can_advance(bits);
-
 	assert(
 		ok,
 		std::source_location::current(),
-		"Bitstream underflow"
+		"Bitstream underflow id=0x{:04X} need={} have={} head_bits={}", m_cur_msg_id, bits, remaining_bits(), m_head_bits
 	);
-
 	if (!ok) {
 		m_error = true;
 		std::ranges::fill(data, std::byte{ 0 });
@@ -144,7 +149,6 @@ auto gse::network::bitstream::read(std::span<std::byte> data) -> void {
 	for (auto& byte_out : data) {
 		for (int i = 0; i < 8; ++i) {
 			const auto byte_index = m_head_bits / 8;
-
 			if (const auto bit_index = m_head_bits % 8; (m_buffer[byte_index] & (std::byte{ 1 } << bit_index)) != std::byte{ 0 }) {
 				byte_out |= (std::byte{ 1 } << i);
 			}
@@ -192,6 +196,15 @@ auto gse::network::bitstream::reset(const std::span<std::byte> buffer) -> void {
 	m_buffer = buffer;
 	m_head_bits = 0;
 	m_error = false;
+	m_cur_msg_id = 0;
+}
+
+auto gse::network::bitstream::set_current_message_id(std::uint16_t id) -> void {
+	m_cur_msg_id = id;
+}
+
+auto gse::network::bitstream::current_message_id() const -> std::uint16_t {
+	return m_cur_msg_id;
 }
 
 auto gse::network::bitstream::can_advance(const std::size_t bits) const -> bool {

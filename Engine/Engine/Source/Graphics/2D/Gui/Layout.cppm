@@ -9,19 +9,19 @@ import :types;
 export namespace gse::gui::layout {
 	auto dock(
 		id_mapped_collection<menu>& menus,
-		const id& child_id,
-		const id& parent_id,
+		id child_id,
+		id parent_id,
 		dock::location location
 	) -> void;
 
 	auto undock(
 		id_mapped_collection<menu>& menus,
-		const id& child_id
+		id child_id
 	) -> void;
 
 	auto update(
 		id_mapped_collection<menu>& menus,
-		const id& root_id
+		id root_id
 	) -> void;
 
 	auto dock_space(
@@ -43,7 +43,7 @@ namespace gse::gui::layout {
 	) -> ui_rect;
 }
 
-auto gse::gui::layout::dock(id_mapped_collection<menu>& menus, const id& child_id, const id& parent_id, const dock::location location) -> void {
+auto gse::gui::layout::dock(id_mapped_collection<menu>& menus, id child_id, id parent_id, const dock::location location) -> void {
 	menu* parent = menus.try_get(parent_id);
 	menu* child = menus.try_get(child_id);
 
@@ -60,7 +60,7 @@ auto gse::gui::layout::dock(id_mapped_collection<menu>& menus, const id& child_i
 	child->docked_to = location;
 }
 
-auto gse::gui::layout::undock(id_mapped_collection<menu>& menus, const id& child_id) -> void {
+auto gse::gui::layout::undock(id_mapped_collection<menu>& menus, id child_id) -> void {
 	menu* child = menus.try_get(child_id);
 
 	if (!child || child->docked_to == dock::location::none) {
@@ -87,7 +87,7 @@ auto gse::gui::layout::undock(id_mapped_collection<menu>& menus, const id& child
 
 	auto calculate_group_bounds = [](
 		id_mapped_collection<menu>& input_menus,
-		const id& root_id
+		id root_id
 		) -> ui_rect {
 			const menu* root = input_menus.try_get(root_id);
 
@@ -96,8 +96,8 @@ auto gse::gui::layout::undock(id_mapped_collection<menu>& menus, const id& child
 			}
 			ui_rect bounds = root->rect;
 
-			std::function<void(const id&)> expand = [&](
-				const id& parent
+			std::function<void(id)> expand = [&](
+				id parent
 				) {
 					for (const auto& item : input_menus.items()) {
 						if (item.owner_id() == parent) {
@@ -122,7 +122,7 @@ auto gse::gui::layout::undock(id_mapped_collection<menu>& menus, const id& child
 	const float scale_x = target_size.x() / group_bounds.width();
 	const float scale_y = target_size.y() / group_bounds.height();
 
-	std::function<void(const id&)> scale_group = [&](const id& current_id) {
+	std::function<void(id)> scale_group = [&](id current_id) {
 		if (menu* item = menus.try_get(current_id)) {
 			unitless::vec2 offset = item->rect.top_left() - group_bounds.top_left();
 			offset.x() *= scale_x;
@@ -145,7 +145,7 @@ auto gse::gui::layout::undock(id_mapped_collection<menu>& menus, const id& child
 	scale_group(child_id);
 }
 
-auto gse::gui::layout::update(id_mapped_collection<menu>& menus, const id& root_id) -> void {
+auto gse::gui::layout::update(id_mapped_collection<menu>& menus, id root_id) -> void {
 	const menu* root = menus.try_get(root_id);
 
 	if (!root) {

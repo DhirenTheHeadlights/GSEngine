@@ -14,8 +14,6 @@ export namespace gs {
         std::uint32_t m_ping_seq = 0;
         int m_selected = -1;
         gse::clock m_refresh_clock;
-        gse::uuid m_pending_scene;
-        bool m_has_pending = false;
     };
 }
 
@@ -47,18 +45,9 @@ auto gs::client::update() -> void {
             })
             .else_if_is([&](const gse::network::notify_scene_change& msg) {
                 m_owner->world.activate(msg.scene_id);
-                m_has_pending = false;
-                std::println("Switched to scene: {}", m_pending_scene);
+                std::println("Switched to scene: {}", msg.scene_id);
             });
     });
-
-    if (m_has_pending) {
-        if (const auto id = gse::try_find(m_pending_scene); id.has_value()) {
-            m_owner->world.activate(id.value());
-            m_has_pending = false;
-            std::println("Switched to scene: {}", m_pending_scene);
-        }
-    }
 
     if (m_refresh_clock.elapsed<std::uint32_t>() > 1000u) {
         gse::network::refresh_servers(gse::milliseconds(150));
