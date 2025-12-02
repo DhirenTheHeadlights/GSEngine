@@ -18,11 +18,10 @@ export namespace gs {
 }
 
 auto gs::client::initialize() -> void {
-    using namespace gse::network;
-    clear_discovery_providers();
+	gse::network::clear_discovery_providers();
     std::vector seed{
-        discovery_result{
-            .addr = address{ .ip = "127.0.0.1", .port = 9000 },
+	    gse::network::discovery_result{
+            .addr = gse::network::address{ .ip = "127.0.0.1", .port = 9000 },
             .name = "Local Server",
             .map = "dev_map",
             .players = 0,
@@ -30,8 +29,8 @@ auto gs::client::initialize() -> void {
             .build = 1
         }
     };
-    add_discovery_provider(std::make_unique<wan_directory_provider>(std::move(seed)));
-    refresh_servers(gse::milliseconds(200));
+	gse::network::add_discovery_provider(std::make_unique<gse::network::wan_directory_provider>(std::move(seed)));
+	gse::network::refresh_servers(gse::milliseconds(200));
 }
 
 auto gs::client::update() -> void {
@@ -57,7 +56,6 @@ auto gs::client::update() -> void {
 
 auto gs::client::render() -> void {
     gse::gui::start("Network", [&] {
-
         switch (gse::network::state()) {
             case gse::network::client::state::disconnected: gse::gui::text("Status: Disconnected"); break;
             case gse::network::client::state::connecting:   gse::gui::text("Status: Connecting..."); break;

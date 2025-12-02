@@ -589,7 +589,7 @@ export namespace gse {
 		) -> std::span<U>;
 
 		auto all_hooks(
-		) -> std::vector<hook<entity>*>;
+		) const -> std::vector<hook<entity>*>;
 
 		template <typename U>
 		auto linked_object_read(
@@ -904,7 +904,7 @@ auto gse::registry::linked_objects_write() -> std::span<U> {
 	}
 }
 
-auto gse::registry::all_hooks() -> std::vector<hook<entity>*> {
+auto gse::registry::all_hooks() const -> std::vector<hook<entity>*> {
 	std::vector<hook<entity>*> collected_hooks;
 
 	for (const auto& link_ptr : m_hook_links | std::views::values) {

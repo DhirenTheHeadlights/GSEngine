@@ -39,6 +39,6 @@ export namespace gs {
 				});
 		}
 	private:
-		gse::actions::index m_default_scene_key, m_skybox_scene_key, m_second_test_scene_key;
+		gse::id m_default_scene_key, m_skybox_scene_key, m_second_test_scene_key;
 	};
 }
