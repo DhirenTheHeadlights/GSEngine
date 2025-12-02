@@ -1,6 +1,7 @@
 export module gse.server;
 
 import :server;
+import :input_source;
 
 import std;
 import gse;
@@ -24,6 +25,14 @@ export namespace gse {
 auto gse::server_app::initialize() -> void {
 	m_server = std::make_unique<server>(9000);
 	renderer::set_ui_focus(true);
+
+	m_owner->world.set_networked(true);
+
+	m_owner->world.add_hook<networked_world<server_input_source>>(
+		server_input_source{
+			&m_server->clients()
+		}
+	);
 }
 
 auto gse::server_app::update() -> void {

@@ -202,11 +202,13 @@ auto gse::network::client::tick() -> void {
 
 	if (m_state == state::connected) {
 		if (m_input_clock.elapsed<std::uint32_t>() > 16u) {
+			const auto& s = actions::current_state();
 			send_input_frame(
 				m_socket,
 				m_server,
 				buffer,
 				++m_input_sequence,
+				s,
 				actions::axis1_ids(),
 				actions::axis2_ids()
 			);
