@@ -12,7 +12,8 @@ export namespace gs {
 			build("Box")
 				.with<gse::box>({
 					.initial_position = gse::vec3<gse::length>(0.f, 0.f, 0.f),
-					.size = gse::vec3<gse::length>(10.f, 10.f, 10.f)
+					.size = gse::vec3<gse::length>(10.f, 10.f, 10.f),
+					.initial_orientation = gse::quat(gse::unitless::axis_z, gse::degrees(26.f))
 				});
 
 			build("Floor")
