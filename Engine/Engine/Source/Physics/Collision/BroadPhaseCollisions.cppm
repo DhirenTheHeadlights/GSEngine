@@ -48,10 +48,30 @@ auto gse::broad_phase_collision::check_collision(const bounding_box& box1, const
 }
 
 auto gse::broad_phase_collision::check_future_collision(const bounding_box& dynamic_box, const physics::motion_component* dynamic_motion_component, const bounding_box& other_box) -> bool {
-	const bounding_box expanded_box = dynamic_box;							
-	physics::motion_component temp_component = *dynamic_motion_component;
-	update_object(temp_component, nullptr);										
-	return check_collision(expanded_box, other_box);								
+	const auto dt = gse::system_clock::constant_update_time<time_t<float, seconds>>();
+	const auto p_pred = dynamic_motion_component->current_position + dynamic_motion_component->current_velocity * dt;
+
+	const auto w = dynamic_motion_component->angular_velocity.as<radians_per_second>();
+	const quat omega{ 0.f, w.x(), w.y(), w.z() };
+	const auto dq = 0.5f * omega * dynamic_motion_component->orientation;
+	const auto q_pred = normalize(dynamic_motion_component->orientation + dq * dt.as<seconds>());
+
+	bounding_box pred_bb(dynamic_box.center(), dynamic_box.size(), 1);
+	pred_bb.set_scale(dynamic_box.scale());
+	pred_bb.update(p_pred, q_pred);
+
+	const auto now_aabb = dynamic_box.aabb();
+	const auto next_aabb = pred_bb.aabb();
+
+	const auto swept_min = min(now_aabb.min, next_aabb.min);
+	const auto swept_max = max(now_aabb.max, next_aabb.max);
+
+	const auto other = other_box.aabb();
+
+	return
+		swept_max.x() > other.min.x() && swept_min.x() < other.max.x() &&
+		swept_max.y() > other.min.y() && swept_min.y() < other.max.y() &&
+		swept_max.z() > other.min.z() && swept_min.z() < other.max.z();
 }
 
 auto gse::broad_phase_collision::check_collision(physics::collision_component& dynamic_object_collision_component, physics::motion_component* dynamic_object_motion_component, const physics::collision_component& other_collision_component, physics::motion_component* other_motion_component) -> void {
