@@ -523,15 +523,15 @@ auto gse::narrow_phase_collision::generate_contact_points(const bounding_box& bb
         };
 
     // 1. Identify Reference and Incident Faces
-    const auto info1 = find_best_face(bb1, -collision_normal);
-    const auto info2 = find_best_face(bb2, collision_normal);
+    const auto info1 = find_best_face(bb1, collision_normal);
+    const auto info2 = find_best_face(bb2, -collision_normal);
 
     std::vector<vec3<length>> inc_face_poly;
     std::array<vec3<length>, 4> ref_face;
     unitless::vec3 ref_normal;
 
     // Determine which is reference
-    if (dot(info1.normal, -collision_normal) > dot(info2.normal, collision_normal)) {
+    if (dot(info1.normal, collision_normal) > dot(info2.normal, -collision_normal)) {
         ref_face = info1.vertices;
         inc_face_poly.assign(info2.vertices.begin(), info2.vertices.end());
         ref_normal = info1.normal;

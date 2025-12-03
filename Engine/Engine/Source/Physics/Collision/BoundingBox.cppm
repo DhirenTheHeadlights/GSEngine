@@ -118,10 +118,10 @@ auto gse::bounding_box::face_normals() const -> std::array<unitless::vec3, 6> {
 	const auto obb_data = obb();
 	return {
 		 obb_data.axes[0],
-		 obb_data.axes[1],
-		 obb_data.axes[2],
 		-obb_data.axes[0],
+		 obb_data.axes[1],
 		-obb_data.axes[1],
+		 obb_data.axes[2],
 		-obb_data.axes[2]
 	};
 }

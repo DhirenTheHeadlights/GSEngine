@@ -16,15 +16,17 @@ export namespace gse {
 		struct params {
 			vec3<length> initial_position = vec3<length>(0.f, 0.f, 0.f);
 			vec3<length> size = vec3<length>(1.f, 1.f, 1.f);
+			quat initial_orientation;
 		};
 
-		explicit box(const params& p) : m_initial_position(p.initial_position), m_size(p.size) {
+		explicit box(const params& p) : m_initial_position(p.initial_position), m_size(p.size), m_initial_orientation(p.initial_orientation) {
 		}
 
 		auto initialize() -> void override {
 			add_component<physics::motion_component>({
 				.current_position = m_initial_position,
-				.mass = kilograms(100.f)
+				.mass = kilograms(100.f),
+				.orientation = m_initial_orientation
 			});
 
 			add_component<physics::collision_component>({
@@ -59,6 +61,7 @@ export namespace gse {
 	private:
 		vec3<length> m_initial_position;
 		vec3<length> m_size;
+		quat m_initial_orientation;
 
 		actions::button_channel m_rotate_channel;
 	};
