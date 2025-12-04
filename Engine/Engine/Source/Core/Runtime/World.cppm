@@ -174,6 +174,8 @@ gse::world::world(const std::string_view name) : hookable(name) {
 				return;
 			}
 
+			actions::sample_all_channels(actions::current_state());
+
 			for (const auto& [scene_id, condition] : m_owner->m_triggers) {
 				const evaluation_context ctx{
 					.client_id = m_owner->m_client_id,
