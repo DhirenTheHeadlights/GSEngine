@@ -461,6 +461,10 @@ export namespace gse::actions {
 		axis2_channel& channel,
 		id axis_id
 	) -> void;
+
+	auto sample_all_channels(
+		const state& s
+	) -> void;
 }
 
 namespace gse::actions {
@@ -581,12 +585,7 @@ namespace gse::actions {
 	id_mapped_collection<resolved_axis2_keys> axis2_by_id;
 }
 
-auto gse::actions::bind_axis2_channel(
-	const id owner_id,
-	const pending_axis2_info& info,
-	axis2_channel& channel,
-	const id axis_id
-) -> void {
+auto gse::actions::bind_axis2_channel(const id owner_id, const pending_axis2_info& info, axis2_channel& channel, const id axis_id) -> void {
 	const pending_axis2 pa{
 		.left = info.left,
 		.right = info.right,
@@ -598,6 +597,12 @@ auto gse::actions::bind_axis2_channel(
 
 	channel.axis_id = add_axis2_actions(pa);
 	register_channel(owner_id, channel);
+}
+
+auto gse::actions::sample_all_channels(const state& s) -> void {
+	for (auto& [_, sampler] : channel_bindings) {
+		sampler(s);
+	}
 }
 
 export namespace gse::actions {
