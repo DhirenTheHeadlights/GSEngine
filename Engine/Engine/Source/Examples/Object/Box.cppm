@@ -16,7 +16,7 @@ export namespace gse {
 		struct params {
 			vec3<length> initial_position = vec3<length>(0.f, 0.f, 0.f);
 			vec3<length> size = vec3<length>(1.f, 1.f, 1.f);
-			quat initial_orientation;
+			quat initial_orientation = quat(1.f, 0.f, 0.f, 0.f);
 		};
 
 		explicit box(const params& p) : m_initial_position(p.initial_position), m_size(p.size), m_initial_orientation(p.initial_orientation) {

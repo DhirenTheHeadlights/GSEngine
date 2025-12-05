@@ -566,7 +566,7 @@ auto gse::narrow_phase_collision::generate_contact_points(const bounding_box& bb
 
             // If inside (positive distance)
             // Robustness: Use -epsilon to keep points that are effectively ON the line
-            if (curr_dist >= -meters(1e-5f)) {
+            if (curr_dist >= -meters(0.01f)) {
                 out.push_back(curr);
             }
 
