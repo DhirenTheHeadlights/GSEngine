@@ -9,9 +9,7 @@ export namespace gs {
 	public:
 		using params = gse::sphere::params;
 
-		explicit sphere_light(const params& p) : m_position(p.initial_position), m_radius(p.radius), m_sectors(p.sectors), m_stacks(p.stacks) {
-			m_count++;
-		}
+		explicit sphere_light(const params& p) : m_position(p.initial_position), m_radius(p.radius), m_sectors(p.sectors), m_stacks(p.stacks) {}
 
 		auto initialize() -> void override {
 			add_hook<gse::sphere>({
@@ -39,6 +37,7 @@ export namespace gs {
 
 			configure_when_present([](gse::physics::motion_component& mc) {
 				mc.affected_by_gravity = false;
+				mc.position_locked = true;
 			});
 		}
 
@@ -53,6 +52,4 @@ export namespace gs {
 		int m_sectors;
 		int m_stacks;
 	};
-
-	std::size_t sphere_light::m_count = 0;
 }

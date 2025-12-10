@@ -19,14 +19,26 @@ export namespace gse {
 			int stacks = 18;
 		};
 
-		explicit sphere(const params& p) : m_params(p) {}
+		explicit sphere(const params& p) : m_params(p) {
+		}
 
 		auto initialize() -> void override {
 			add_component<physics::motion_component>({
-				.current_position = m_params.initial_position
+				.current_position = m_params.initial_position,
+				.mass = kilograms(100.f)
 			});
 
-			add_component<render_component>({ 
+			const vec3<length> size(
+				m_params.radius * 2.f,
+				m_params.radius * 2.f,
+				m_params.radius * 2.f
+			);
+
+			add_component<physics::collision_component>({
+				.bounding_box = { m_params.initial_position, size }
+			});
+
+			add_component<render_component>({
 				.models = {
 					procedural_model::sphere(
 						gse::queue<material>(
