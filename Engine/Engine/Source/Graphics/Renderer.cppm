@@ -6,6 +6,7 @@ import :lighting_renderer;
 import :geometry_renderer;
 import :sprite_renderer;
 import :text_renderer;
+import :physics_debug_renderer;
 import :gui;
 import :render_component;
 import :resource_loader;
@@ -22,7 +23,7 @@ namespace gse {
 
 export namespace gse {
 	template <typename Resource>
-	auto get(id id) -> resource::handle<Resource> {
+	auto get(const id id) -> resource::handle<Resource> {
 		return rendering_context.get<Resource>(id);
 	}
 
@@ -47,7 +48,7 @@ export namespace gse {
 	}
 
 	template <typename Resource>
-	auto resource_state(id id) -> resource::state {
+	auto resource_state(const id id) -> resource::state {
 		return rendering_context.resource_state<Resource>(id);
 	}
 }
@@ -89,6 +90,7 @@ auto gse::renderer::initialize() -> void {
 	renderers.push_back(std::make_unique<lighting>(rendering_context));
 	renderers.push_back(std::make_unique<sprite>(rendering_context));
 	renderers.push_back(std::make_unique<text>(rendering_context));
+	renderers.push_back(std::make_unique<physics_debug>(rendering_context));
 
 	for (const auto& renderer : renderers) {
 		renderer->initialize();
