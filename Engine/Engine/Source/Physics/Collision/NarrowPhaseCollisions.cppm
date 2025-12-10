@@ -18,7 +18,7 @@ export namespace gse::narrow_phase_collision {
 }
 
 namespace gse::narrow_phase_collision {
-    static constexpr bool debug = true;
+    static constexpr bool debug = false;
     constexpr int mpr_collision_refinement_iterations = 32;
 
     struct mpr_result {
@@ -65,12 +65,7 @@ namespace gse::narrow_phase_collision {
     ) -> std::vector<vec3<length>>;
 }
 
-auto gse::narrow_phase_collision::resolve_collision(
-    physics::motion_component* object_a,
-    physics::collision_component& coll_a,
-    physics::motion_component* object_b,
-    const physics::collision_component& coll_b
-) -> void {
+auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* object_a, physics::collision_component& coll_a, physics::motion_component* object_b, const physics::collision_component& coll_b) -> void {
     if (!object_a || !object_b) {
         return;
     }
@@ -190,10 +185,7 @@ auto gse::narrow_phase_collision::resolve_collision(
     }
 }
 
-auto gse::narrow_phase_collision::support_obb(
-    const bounding_box& bounding_box,
-    const unitless::vec3& dir
-) -> vec3<length> {
+auto gse::narrow_phase_collision::support_obb(const bounding_box& bounding_box, const unitless::vec3& dir) -> vec3<length> {
     vec3<length> result = bounding_box.center();
     const auto half_extents = bounding_box.half_extents();
 
@@ -207,11 +199,7 @@ auto gse::narrow_phase_collision::support_obb(
     return result;
 }
 
-auto gse::narrow_phase_collision::minkowski_difference(
-    const bounding_box& bb1,
-    const bounding_box& bb2,
-    const unitless::vec3& dir
-) -> minkowski_point {
+auto gse::narrow_phase_collision::minkowski_difference(const bounding_box& bb1, const bounding_box& bb2, const unitless::vec3& dir) -> minkowski_point {
     minkowski_point result{
         .support_a = support_obb(bb1, dir),
         .support_b = support_obb(bb2, -dir),
@@ -220,10 +208,7 @@ auto gse::narrow_phase_collision::minkowski_difference(
     return result;
 }
 
-auto gse::narrow_phase_collision::mpr_collision(
-    const bounding_box& bb1,
-    const bounding_box& bb2
-) -> std::optional<mpr_result> {
+auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const bounding_box& bb2) -> std::optional<mpr_result> {
     const length eps = meters(1e-4f);
     const auto eps2 = eps * eps;
 
@@ -409,8 +394,12 @@ auto gse::narrow_phase_collision::mpr_collision(
         for (int attempt = 0; attempt < 4 && !progressed; ++attempt) {
             minkowski_point p = minkowski_difference(bb1, bb2, choice.n);
             if (const length projection_dist = dot(p.point, choice.n); projection_dist - choice.d < eps) {
-                const unitless::vec3 collision_normal = -choice.n;
+                auto collision_normal = -choice.n;
                 const length penetration_depth = choice.d;
+
+                if (const unitless::vec3 center_dir = normalize(bb2.center() - bb1.center()); !is_zero(center_dir) && dot(collision_normal, center_dir) < 0.0f) {
+                    collision_normal = -collision_normal;
+                }
 
                 if constexpr (debug) {
                     std::println("[MPR][iter {}] CONVERGED. penetration: {}", i, penetration_depth);
@@ -456,6 +445,9 @@ auto gse::narrow_phase_collision::mpr_collision(
                         total_point += point;
                     }
                     final_contact_point = total_point / static_cast<float>(contact_points.size());
+                }
+                else {
+                    final_contact_point = bb1.center() + collision_normal * (penetration_depth * 0.5f);
                 }
 
                 if constexpr (debug) {
