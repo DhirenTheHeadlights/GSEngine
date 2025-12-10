@@ -26,18 +26,12 @@ auto gse::procedural_model::box(const resource::handle<material>& mat) -> resour
 
     constexpr float h = 0.5f;
 
-    auto push_face = [&](
-        const vec3<length>& a,
-        const vec3<length>& b,
-        const vec3<length>& c,
-        const vec3<length>& d,
-        const unitless::vec3 n
-        ) {
-            v.push_back(vertex{ a, n, {0.0f, 0.0f} });
-            v.push_back(vertex{ b, n, {1.0f, 0.0f} });
-            v.push_back(vertex{ c, n, {1.0f, 1.0f} });
-            v.push_back(vertex{ d, n, {0.0f, 1.0f} });
-        };
+    auto push_face = [&](const vec3<length>& a, const vec3<length>& b, const vec3<length>& c, const vec3<length>& d, const unitless::vec3 n) {
+        v.push_back(vertex{ a, n, { 0.0f, 0.0f } });
+        v.push_back(vertex{ b, n, { 1.0f, 0.0f } });
+        v.push_back(vertex{ c, n, { 1.0f, 1.0f } });
+        v.push_back(vertex{ d, n, { 0.0f, 1.0f } });
+    };
 
     push_face({  h, -h, -h }, { -h, -h, -h }, { -h,  h, -h }, {  h,  h, -h }, {  0,  0, -1 });
     push_face({ -h, -h,  h }, {  h, -h,  h }, {  h,  h,  h }, { -h,  h,  h }, {  0,  0,  1 });
@@ -94,15 +88,30 @@ auto gse::procedural_model::sphere(const resource::handle<material>& mat, std::u
         for (std::uint32_t j = 0; j <= sectors; ++j) {
             constexpr float r = 0.5f;
             const float u = static_cast<float>(j) / static_cast<float>(sectors);
-            const float theta = 2.f * std::numbers::pi_v<float> *u;
+            const float theta = 2.f * std::numbers::pi_v<float> * u;
             const float st = std::sin(theta);
             const float ct = std::cos(theta);
 
-            const vec3<length> p{ r * sp * ct, r * cp, r * sp * st };
-            const unitless::vec3 n{ sp * ct, cp, sp * st };
-            const unitless::vec2 t{ u, v };
+            const vec3<length> p{
+            	r * sp * ct,
+                r * cp,
+            	r * sp * st
+            };
 
-            vertices.push_back(vertex{ p, n, t });
+            const unitless::vec3 n{
+            	sp * ct,
+            	cp,
+            	sp * st
+            };
+
+            const unitless::vec2 t{
+            	u,
+            	v
+            };
+
+            vertices.push_back(vertex{ 
+                p, n, t
+            });
         }
     }
 
@@ -124,7 +133,13 @@ auto gse::procedural_model::sphere(const resource::handle<material>& mat, std::u
         }
     }
 
-    std::vector data{ mesh_data{ std::move(vertices), std::move(indices), mat } };
+    std::vector data{
+    	mesh_data{
+    		std::move(vertices),
+    		std::move(indices),
+    		mat
+    	}
+    };
 
     resource::handle<model> handle;
     {
