@@ -76,10 +76,17 @@ namespace gse::actions {
 }
 
 auto gse::actions::add_description(const std::string_view tag) -> description& {
+	if (const auto existing_id = try_find(tag); existing_id.has_value()) {
+		return *descriptions.try_get(existing_id.value());
+	}
+
 	const auto bit_index = static_cast<std::uint16_t>(descriptions.size());
-	description desc(tag, bit_index);
-	return *descriptions.add(desc.id(), std::move(desc));
+	description desc(std::string(tag), bit_index);
+	auto* desc_ptr = descriptions.add(desc.id(), std::move(desc));
+
+	return *desc_ptr;
 }
+
 
 export namespace gse::actions {
 	using word = std::uint64_t;

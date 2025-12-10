@@ -663,6 +663,11 @@ export namespace gse {
 		static auto any_components(
 			std::span<const std::reference_wrapper<registry>> registries
 		) -> bool;
+
+		template <typename U, typename Fn>
+		auto for_each(
+			Fn&& fn
+		) -> void;
 	private:
 		id_mapped_collection<entity> m_active_entities;
 		std::unordered_set<id> m_inactive_ids;
@@ -1088,6 +1093,13 @@ auto gse::registry::any_components(const std::span<const std::reference_wrapper<
 			return !reg.get().template linked_objects_read<U>().empty();
 		}
 	);
+}
+
+template <typename U, typename Fn>
+auto gse::registry::for_each(Fn&& fn) -> void {
+	for (auto& obj : linked_objects_write<U>()) {
+		fn(obj);
+	}
 }
 
 export template <>

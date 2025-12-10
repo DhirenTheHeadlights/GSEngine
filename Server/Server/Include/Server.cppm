@@ -5,6 +5,7 @@ import std;
 import gse.assert;
 import gse.network;
 import gse.physics;
+import gse.graphics;
 import gse.utility;
 import gse.platform;
 import gse.runtime;
@@ -26,11 +27,25 @@ export namespace gse {
 		bool have_seq = false;
 	};
 
+	struct incoming_packet {
+		network::address from;
+		std::size_t size = 0;
+		std::array<std::byte, max_packet_size> buffer{};
+	};
+
+	struct outgoing_packet {
+		network::address to;
+		std::size_t size = 0;
+		std::array<std::byte, max_packet_size> buffer{};
+	};
+
 	class server {
 	public:
 		explicit server(
 			std::uint16_t port
 		);
+
+		~server();
 
 		auto update(
 			world& world
@@ -62,8 +77,12 @@ export namespace gse {
 		network::udp_socket m_socket;
 		std::unordered_map<network::address, network::remote_peer> m_peers;
 		std::unordered_map<network::address, client_data> m_clients;
+		std::unordered_set<network::address> m_pending_snapshots;
 		std::optional<id> m_host_entity;
 		std::optional<network::address> m_host_addr;
+		spsc_ring_buffer<incoming_packet, 1024> m_incoming;
+		mpsc_ring_buffer<outgoing_packet, 1024> m_outgoing;
+		std::atomic<bool> m_should_shutdown{ false };
 	};
 }
 
@@ -73,7 +92,45 @@ gse::server::server(const std::uint16_t port) {
 		.port = port
 	});
 
+	task::post(
+		[this] {
+			std::array<std::byte, max_packet_size> buffer;
+			constexpr time_t<std::uint32_t> max_sleep = milliseconds(8);
+
+			while (!m_should_shutdown.load(std::memory_order_acquire)) {
+				(void)m_socket.wait_readable(max_sleep);
+
+				if (auto received = m_socket.receive_data(buffer)) {
+					incoming_packet pkt;
+					pkt.from = received->from;
+					pkt.size = received->bytes_read;
+					std::memcpy(pkt.buffer.data(), buffer.data(), received->bytes_read);
+					if (!m_incoming.push(pkt)) {
+						std::println("Server: incoming queue full, dropping packet from {}:{}", pkt.from.ip, pkt.from.port);
+					}
+				}
+
+				outgoing_packet out_pkt;
+				while (m_outgoing.pop(out_pkt)) {
+					const network::packet out{
+						.data = reinterpret_cast<std::uint8_t*>(out_pkt.buffer.data()),
+						.size = out_pkt.size
+					};
+
+					if (m_socket.send_data(out, out_pkt.to) == network::socket_state::error) {
+						std::println("Server: failed to send packet to {}:{}", out_pkt.to.ip, out_pkt.to.port);
+					}
+				}
+			}
+		},
+		find_or_generate_id("Server::NetworkLoop")
+	);
+
 	std::println("Server started on port {}", port);
+}
+
+gse::server::~server() {
+	m_should_shutdown.store(true, std::memory_order_release);
 }
 
 template <typename T>
@@ -96,27 +153,29 @@ auto gse::server::send(const T& msg, const network::address& to) -> void {
 	stream.write(header);
 	network::write(stream, msg);
 
-	const network::packet packet_to_send{
-		.data = reinterpret_cast<std::uint8_t*>(buffer.data()),
-		.size = stream.bytes_written()
-	};
+	outgoing_packet pkt;
+	pkt.to = to;
+	pkt.size = stream.bytes_written();
+	std::memcpy(pkt.buffer.data(), buffer.data(), pkt.size);
 
-	assert(
-		m_socket.send_data(packet_to_send, to) != network::socket_state::error,
-		std::source_location::current(),
-		"Failed to send packet from server."
-	);
+	if (!m_outgoing.push(pkt)) {
+		std::println("Server: outgoing queue full, dropping packet to {}:{}", to.ip, to.port);
+	}
 }
 
 auto gse::server::update(world& world) -> void {
-	std::array<std::byte, max_packet_size> buffer;
+	constexpr std::size_t max_packets_per_update = 256;
+	std::size_t processed_packets = 0;
 
-	while (auto received = m_socket.receive_data(buffer)) {
-		const std::span data(buffer.data(), received->bytes_read);
+	incoming_packet pkt;
+
+	while (processed_packets < max_packets_per_update && m_incoming.pop(pkt)) {
+		++processed_packets;
+
+		const std::span data(pkt.buffer.data(), pkt.size);
 		network::bitstream stream(data);
 
-		const auto it = m_peers.find(received->from);
-
+		const auto it = m_peers.find(pkt.from);
 		const auto header = stream.read<packet_header>();
 
 		if (it == m_peers.end()) {
@@ -124,34 +183,40 @@ auto gse::server::update(world& world) -> void {
 
 			bool handled = false;
 			handled |= network::try_decode<network::connection_request>(stream, mid, [&](const auto&) {
-				std::println("Server: ConnectionRequest from {}:{}", received->from.ip, received->from.port);
+				std::println("Server: ConnectionRequest from {}:{}", pkt.from.ip, pkt.from.port);
 
-				auto [ins_it, _] = m_peers.emplace(received->from, network::remote_peer(received->from));
+				auto [peer_it, inserted_peer] = m_peers.emplace(pkt.from, network::remote_peer(pkt.from));
+				std::println("[net] peers size={} inserted_peer={} for {}:{}", m_peers.size(), inserted_peer, pkt.from.ip, pkt.from.port);
 
 				if (auto* scene = world.current_scene()) {
 					auto entity_id = scene->registry().create("Player");
 					scene->registry().activate(entity_id);
-					m_clients[received->from] = client_data{ .entity_id = entity_id };
+					auto [client_it, inserted_client] = m_clients.emplace(pkt.from, client_data{ .entity_id = entity_id });
+					std::println("[net] clients size={} inserted_client={} for {}:{}", m_clients.size(), inserted_client, pkt.from.ip, pkt.from.port);
+
 					if (!m_host_entity.has_value()) {
 						m_host_entity = entity_id;
-						m_host_addr = received->from;
-						std::println("Server: Host set to {}:{} (entity {})", received->from.ip, received->from.port, entity_id);
+						m_host_addr = pkt.from;
+						std::println("Server: Host set to {}:{} (entity {})", pkt.from.ip, pkt.from.port, entity_id);
 					}
-					std::println("Server: Created entity {} for {}:{}", entity_id, received->from.ip, received->from.port);
+
+					std::println("Server: Created entity {} for {}:{}", entity_id, pkt.from.ip, pkt.from.port);
 				}
 
-				send(network::connection_accepted{}, received->from);
+				send(network::connection_accepted{}, pkt.from);
 
 				if (const auto* active = world.current_scene()) {
 					const network::notify_scene_change msg{
 						.scene_id = active->id()
 					};
-					send(msg, received->from);
+					send(msg, pkt.from);
 				}
+
+				m_pending_snapshots.insert(pkt.from);
 			});
 
 			if (!handled) {
-				std::println("Server: dropped pre-handshake msg {} from {}:{}", mid, received->from.ip, received->from.port);
+				std::println("Server: dropped pre-handshake msg {} from {}:{}", mid, pkt.from.ip, pkt.from.port);
 			}
 
 			continue;
@@ -183,10 +248,10 @@ auto gse::server::update(world& world) -> void {
 
 		network::match_message(stream, id)
 			.if_is([&](const network::ping& m) {
-				send(network::pong{ .sequence = m.sequence }, received->from);
+				send(network::pong{ .sequence = m.sequence }, pkt.from);
 			})
 			.else_if_is([&](const network::pong&) {
-				std::println("Server: Received Pong from {}:{}", received->from.ip, received->from.port);
+				std::println("Server: Received Pong from {}:{}", pkt.from.ip, pkt.from.port);
 			})
 			.else_if_is([&](const network::input_frame_header& fh) {
 				const std::size_t wc = fh.action_word_count;
@@ -211,7 +276,7 @@ auto gse::server::update(world& world) -> void {
 					p = stream.read<network::axes2_pair>();
 				}
 
-				auto& cd = m_clients[received->from];
+				auto& cd = m_clients[pkt.from];
 				if (fh.input_sequence <= cd.last_input_sequence) {
 					return;
 				}
@@ -237,7 +302,14 @@ auto gse::server::update(world& world) -> void {
 			this->send(msg, to);
 		};
 
-		network::replicate_all(send_all, sc->registry(), m_peers);
+		if (!m_pending_snapshots.empty()) {
+			for (const auto& addr : m_pending_snapshots) {
+				network::replicate_snapshot_to(send_all, sc->registry(), addr);
+			}
+			m_pending_snapshots.clear();
+		}
+
+		network::replicate_deltas(send_all, sc->registry(), m_peers);
 	}
 }
 

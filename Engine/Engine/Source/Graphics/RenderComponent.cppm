@@ -10,7 +10,7 @@ import gse.physics.math;
 
 export namespace gse {
     struct render_component_net {
-        static constexpr std::size_t max_models = 128;
+        static constexpr std::size_t max_models = 16;
         std::array<resource::handle<model>, max_models> models{};
         std::uint32_t model_count = 0;
         bool render = true;
@@ -40,27 +40,7 @@ export namespace gse {
         render_component(
             const id owner_id,
             const params& p
-        ) : component(owner_id) {
-            const auto n = static_cast<std::size_t>(std::min<std::size_t>(p.models.size(), render_component_net::max_models));
-
-            // write network prefix
-            for (std::size_t i = 0; i < n; ++i) {
-                networked_data().models[i] = p.models[i];
-            }
-            networked_data().model_count = static_cast<std::uint32_t>(n);
-            networked_data().render = p.render;
-            networked_data().render_bounding_boxes = p.render_bounding_boxes;
-
-            // build runtime instances from handles
-            model_instances.clear();
-            model_instances.reserve(n);
-            for (std::size_t i = 0; i < n; ++i) {
-                model_instances.emplace_back(networked_data().models[i]);
-            }
-
-            center_of_mass = p.center_of_mass;
-            has_calculated_com = p.has_calculated_com;
-        }
+        );
 
         render_component(
             const id owner_id,
@@ -79,6 +59,26 @@ export namespace gse {
             registry* reg
         ) -> void override;
     };
+}
+
+gse::render_component::render_component(const id owner_id, const params& p) : component(owner_id) {
+    const auto n = static_cast<std::size_t>(std::min<std::size_t>(p.models.size(), render_component_net::max_models));
+
+    for (std::size_t i = 0; i < n; ++i) {
+        networked_data().models[i] = p.models[i];
+    }
+    networked_data().model_count = static_cast<std::uint32_t>(n);
+    networked_data().render = p.render;
+    networked_data().render_bounding_boxes = p.render_bounding_boxes;
+
+    model_instances.clear();
+    model_instances.reserve(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        model_instances.emplace_back(networked_data().models[i]);
+    }
+
+    center_of_mass = p.center_of_mass;
+    has_calculated_com = p.has_calculated_com;
 }
 
 auto gse::render_component::on_registry(registry* reg) -> void {
