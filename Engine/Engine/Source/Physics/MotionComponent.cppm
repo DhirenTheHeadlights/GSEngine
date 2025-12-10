@@ -48,6 +48,10 @@ export namespace gse::physics {
         bool airborne = true;
         bool self_controlled = false;
         bool position_locked = false;
+        bool can_sleep = true;
+        bool sleeping = false;
+
+        time sleep_time;
 
         struct accumulators {
             vec3<acceleration> current_acceleration;

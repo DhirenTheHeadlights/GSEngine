@@ -18,7 +18,9 @@ export namespace gs {
 			arena::create(this);
 
 			build("Player")
-				.with<player>();
+				.with<player>({
+					.initial_position = gse::vec3<gse::length>(0.f, 0.f, 0.f)
+				});
 
 			build("Backpack")
 				.with<backpack>();

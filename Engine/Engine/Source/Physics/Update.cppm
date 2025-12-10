@@ -37,12 +37,10 @@ auto gse::physics::update(const std::vector<std::reference_wrapper<registry>>& r
 	const auto const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
 
 	while (accumulator >= const_update_time) {
-		for (int i = 0; i < 5; i++) {
-			for (auto& registry : registries) {
-				broad_phase_collision::update(
-					registry
-				);
-			}
+		for (auto& registry : registries) {
+			broad_phase_collision::update(
+				registry
+			);
 		}
 
 		std::vector<std::tuple<
