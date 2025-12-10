@@ -206,11 +206,17 @@ namespace gs {
 
 	class player final : public gse::hook<gse::entity> {
 	public:
-		using hook::hook;
+		struct params {
+			gse::vec3<gse::length> initial_position;
+		};
+
+		explicit player(const params& p) : m_initial_position(p.initial_position) {}
 
 		auto initialize() -> void override {
 			add_hook<jetpack_hook>();
 			add_hook<player_hook>();
 		}
+	private:
+		gse::vec3<gse::length> m_initial_position;
 	};
 }

@@ -3,6 +3,8 @@ export module gs:second_test_scene;
 import std;
 import gse;
 
+import :player;
+
 export namespace gs {
 	class second_test_scene final : public gse::hook<gse::scene> {
 	public:
@@ -24,7 +26,7 @@ export namespace gs {
 					.position = gse::vec3<gse::length>(0.f, -20.f, 0.f)
 				});
 
-			build("Free Cam")
+			build("Player")
 				.with<gse::free_camera>({
 					.initial_position = gse::vec3<gse::length>(30.f, 0.f, 0.f)
 				});

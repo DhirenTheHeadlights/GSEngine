@@ -86,18 +86,9 @@ auto gse::broad_phase_collision::check_collision(physics::collision_component& d
 }
 
 auto gse::broad_phase_collision::update(registry& registry) -> void {
-	const auto airborne_check = [](
-		physics::motion_component* motion_component,
-		const physics::collision_component& collision_component
-		) {
-			if (abs(motion_component->current_position.y() - motion_component->most_recent_y_collision) < meters(0.1f) && collision_component.collision_information.colliding) {
-				motion_component->airborne = false;
-			}
-			else {
-				motion_component->airborne = true;
-				motion_component->most_recent_y_collision = meters(std::numeric_limits<float>::max());
-			}
-		};
+	for (auto motions = registry.linked_objects_write<physics::motion_component>(); auto& motion : motions) {
+		motion.airborne = true;
+	}
 
 	for (auto collision_components = registry.linked_objects_write<physics::collision_component>(); auto& collision_component : collision_components) {
 		if (!collision_component.resolve_collisions) {
@@ -105,9 +96,10 @@ auto gse::broad_phase_collision::update(registry& registry) -> void {
 		}
 
 		collision_component.collision_information = {
-			.colliding = collision_component.collision_information.colliding,
+			.colliding = false,
 			.collision_normal = {},
 			.penetration = {},
+			.collision_point = {}
 		};
 
 		auto* motion = registry.try_linked_object_write<physics::motion_component>(collision_component.owner_id());
@@ -124,10 +116,6 @@ auto gse::broad_phase_collision::update(registry& registry) -> void {
 			auto* other_motion = registry.try_linked_object_write<physics::motion_component>(other_collision_component.owner_id());
 
 			check_collision(collision_component, motion, other_collision_component, other_motion);
-		}
-
-		if (motion) {
-			airborne_check(motion, collision_component);
 		}
 	}
 }

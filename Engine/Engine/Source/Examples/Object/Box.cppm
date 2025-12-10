@@ -19,8 +19,7 @@ export namespace gse {
 			quat initial_orientation = quat(1.f, 0.f, 0.f, 0.f);
 		};
 
-		explicit box(const params& p) : m_initial_position(p.initial_position), m_size(p.size), m_initial_orientation(p.initial_orientation) {
-		}
+		explicit box(const params& p) : m_initial_position(p.initial_position), m_size(p.size), m_initial_orientation(p.initial_orientation) {}
 
 		auto initialize() -> void override {
 			add_component<physics::motion_component>({
