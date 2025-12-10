@@ -31,6 +31,8 @@ auto gs::client::initialize() -> void {
     };
 	gse::network::add_discovery_provider(std::make_unique<gse::network::wan_directory_provider>(std::move(seed)));
 	gse::network::refresh_servers(gse::milliseconds(200));
+
+    m_owner->world.add_hook<gse::networked_world<gse::local_input_source>>();
 }
 
 auto gs::client::update() -> void {

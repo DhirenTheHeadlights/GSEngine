@@ -8,7 +8,7 @@ import gse.utility;
 
 export namespace gse::network {
 	class bitstream {
-		public:
+	public:
 		explicit bitstream(
 			std::span<std::byte> buffer
 		);
@@ -59,7 +59,7 @@ export namespace gse::network {
 
 		auto current_message_id(
 		) const -> std::uint16_t;
-		private:
+	private:
 		auto can_advance(
 			std::size_t bits
 		) const -> bool;
@@ -127,11 +127,13 @@ auto gse::network::bitstream::read() -> T {
 auto gse::network::bitstream::read(std::span<std::byte> data) -> void {
 	const std::size_t bits = data.size_bytes() * 8;
 	const bool ok = can_advance(bits);
+
 	assert(
 		ok,
 		std::source_location::current(),
 		"Bitstream underflow id=0x{:04X} need={} have={} head_bits={}", m_cur_msg_id, bits, remaining_bits(), m_head_bits
 	);
+
 	if (!ok) {
 		m_error = true;
 		std::ranges::fill(data, std::byte{ 0 });
@@ -199,7 +201,7 @@ auto gse::network::bitstream::reset(const std::span<std::byte> buffer) -> void {
 	m_cur_msg_id = 0;
 }
 
-auto gse::network::bitstream::set_current_message_id(std::uint16_t id) -> void {
+auto gse::network::bitstream::set_current_message_id(const std::uint16_t id) -> void {
 	m_cur_msg_id = id;
 }
 

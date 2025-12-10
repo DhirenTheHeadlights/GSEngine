@@ -5,6 +5,8 @@ import std;
 import gse.assert;
 import gse.utility;
 import gse.platform;
+import gse.physics;
+import gse.graphics;
 
 export namespace gse {
 	struct evaluation_context {
@@ -108,10 +110,8 @@ export namespace gse {
 						return;
 					}
 
-					actions::sample_for_entity(
-						*ctx.input,
-						*ctx.client_id
-					);
+					actions::sample_all_channels(*ctx.input);
+
 				}
 			);
 
@@ -260,7 +260,7 @@ auto gse::world::activate(const gse::id& scene_id) -> void {
 		"Cannot force activate scene in a non-networked world."
 	);
 
-	if (m_active_scene.has_value()) {
+	if (m_active_scene.has_value() && m_active_scene.value() == scene_id) {
 		if (auto* old_scene = scene(m_active_scene.value())) {
 			old_scene->set_active(false);
 			old_scene->shutdown();

@@ -46,13 +46,20 @@ export namespace gse {
 		}
 
 		auto update() -> void override {
-			if (!m_rotate_channel.pressed) {
-				return;
-			}
-
 			auto& motion = component_write<physics::motion_component>();
 
 			if (!motion.affected_by_gravity) {
+				return;
+			}
+
+			gui::start(
+				"Box",
+				[&motion] {
+					gui::vec("Position", motion.current_position);
+				}
+			);
+
+			if (!m_rotate_channel.pressed) {
 				return;
 			}
 

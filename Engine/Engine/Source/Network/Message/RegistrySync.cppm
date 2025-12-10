@@ -20,11 +20,11 @@ export namespace gse::network {
 
     template <>
     consteval auto component_name<physics::motion_component>(
-    )->std::string_view;
+    ) -> std::string_view;
 
     template <>
     consteval auto component_name<render_component>(
-    )->std::string_view;
+    ) -> std::string_view;
 
     template <typename T>
     consteval auto component_code_upsert(
@@ -193,17 +193,19 @@ auto gse::network::decode(bitstream& s, std::type_identity<component_remove<T>>)
 template <typename Component, typename T>
 auto gse::network::apply_upsert(registry& reg, const component_upsert<T>& msg) -> void {
     reg.ensure_exists(msg.owner_id);
-    reg.add_deferred_action(msg.owner_id, [msg](registry& reg) -> bool {
-        if (!reg.active(msg.owner_id)) {
-            reg.ensure_active(msg.owner_id);
+    reg.add_deferred_action(msg.owner_id, [msg](registry& r) -> bool {
+        if (!r.active(msg.owner_id)) {
+            r.ensure_active(msg.owner_id);
             return false;
         }
-        if (auto* c = reg.try_linked_object_write<Component>(msg.owner_id)) {
+
+        if (auto* c = r.try_linked_object_write<Component>(msg.owner_id)) {
             c->networked_data() = msg.data;
             return true;
         }
-        reg.add_component<Component>(msg.owner_id, msg.data);
-        return reg.try_linked_object_write<Component>(msg.owner_id) != nullptr;
+
+        r.add_component<Component>(msg.owner_id, msg.data);
+        return r.try_linked_object_write<Component>(msg.owner_id) != nullptr;
     });
 }
 

@@ -53,6 +53,8 @@ auto gse::server_app::update() -> void {
 				}
 			}
 		}
+	} else {
+		m_owner->world.activate(find("Default Scene"));
 	}
 
 	if (scene_requested_id) {

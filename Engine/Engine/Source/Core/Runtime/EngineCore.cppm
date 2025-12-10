@@ -128,8 +128,6 @@ template <typename... Args>
 auto gse::start(const flags engine_flags, const engine_config& config) -> void {
 	(engine.add_hook<Args>(), ...);
 
-    initialize(engine_flags, config);
-
 	auto exit = make_scope_exit([] {
 		engine.world.shutdown();
 		renderer::shutdown();
@@ -137,6 +135,8 @@ auto gse::start(const flags engine_flags, const engine_config& config) -> void {
 	});
 
     task::start([&] {
+		initialize(engine_flags, config);
+
         while (!should_shutdown.load(std::memory_order_acquire)) {
 			window::poll_events();
 

@@ -120,7 +120,7 @@ namespace gse::task {
 	) -> std::uint64_t;
 }
 
-gse::task::group::group(id label) : m_label(label) {
+gse::task::group::group(const id label) : m_label(label) {
 	m_outer_parent = trace::current_eid();
 	m_parent_eid = trace::begin_block(m_label, m_outer_parent);
 }
@@ -133,7 +133,7 @@ gse::task::group::~group() {
     trace::end_block(m_label, m_parent_eid, m_outer_parent);
 }
 
-auto gse::task::group::post(job j, id id) -> void {
+auto gse::task::group::post(job j, const id id) -> void {
 	m_task_count.fetch_add(1, std::memory_order_relaxed);
 
 	auto p = std::make_shared<job>(std::move(j));
@@ -208,7 +208,7 @@ auto gse::task::start(F&& fn, std::size_t worker_count) -> std::invoke_result_t<
 	}
 }
 
-auto gse::task::post(job j, id id) -> void {
+auto gse::task::post(job j, const id id) -> void {
 	auto p = std::make_shared<job>(std::move(j));
 
 	const parent parent{
@@ -224,7 +224,7 @@ auto gse::task::post(job j, id id) -> void {
 }
 
 template <std::input_iterator It>
-auto gse::task::post_range(It first, It last, id id) -> void {
+auto gse::task::post_range(It first, It last, const id id) -> void {
 	for (; first != last; ++first) {
 		auto p = std::make_shared<job>(job(*first));
 
@@ -274,7 +274,7 @@ auto gse::task::parallel_for(first_arg_t<F> first, first_arg_t<F> last, F&& func
 }
 
 template <std::input_iterator It>
-auto gse::task::group::post_range(It first, It last, id id) -> void {
+auto gse::task::group::post_range(It first, It last, const id id) -> void {
 	 for (; first != last; ++first) {
         this->post(job(*first), id);
     }

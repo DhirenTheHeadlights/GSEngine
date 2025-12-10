@@ -38,7 +38,8 @@ export namespace gse::network {
 		error
 	};
 
-	struct udp_socket {
+	class udp_socket {
+	public:
 		udp_socket();
 		~udp_socket();
 
@@ -64,18 +65,21 @@ export namespace gse::network {
 			time_t<std::uint32_t> timeout
 		) const -> wait_result;
 
-		std::uint64_t socket_id;
+		auto id(
+		) const -> std::uint64_t;
+	private:
+		std::uint64_t m_socket_id;
 	};
 }
 
-gse::network::udp_socket::udp_socket() : socket_id(INVALID_SOCKET) {
-	socket_id = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	assert(socket_id != INVALID_SOCKET, std::source_location::current(), "Failed to create socket.");
+gse::network::udp_socket::udp_socket() : m_socket_id(INVALID_SOCKET) {
+	m_socket_id = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	assert(m_socket_id != INVALID_SOCKET, std::source_location::current(), "Failed to create socket.");
 }
 
 gse::network::udp_socket::~udp_socket() {
-	if (socket_id != INVALID_SOCKET) {
-		closesocket(socket_id);
+	if (m_socket_id != INVALID_SOCKET) {
+		closesocket(m_socket_id);
 	}
 }
 
@@ -88,13 +92,13 @@ auto gse::network::udp_socket::bind(const address& address) const -> void {
 
 	inet_pton(AF_INET, address.ip.c_str(), &addr.sin_addr);
 
-	if (::bind(socket_id, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
+	if (::bind(m_socket_id, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
 		assert(false, std::source_location::current(), "Failed to bind socket.");
-		closesocket(socket_id);
+		closesocket(m_socket_id);
 	}
 
 	u_long mode = 1;
-	if (ioctlsocket(socket_id, FIONBIO, &mode) == SOCKET_ERROR) {
+	if (ioctlsocket(m_socket_id, FIONBIO, &mode) == SOCKET_ERROR) {
 		assert(false, std::source_location::current(), "Failed to set non-blocking mode.");
 	}
 }
@@ -108,7 +112,7 @@ auto gse::network::udp_socket::send_data(const packet& packet, const address& ad
 
 	inet_pton(AF_INET, address.ip.c_str(), &addr.sin_addr);
 
-	if (const auto result = sendto(socket_id, reinterpret_cast<const char*>(packet.data), packet.size, 0, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)); result == SOCKET_ERROR) {
+	if (const auto result = sendto(m_socket_id, reinterpret_cast<const char*>(packet.data), packet.size, 0, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)); result == SOCKET_ERROR) {
 		return socket_state::error;
 	}
 
@@ -120,7 +124,7 @@ auto gse::network::udp_socket::receive_data(std::span<std::byte> buffer) const -
 	int addr_len = sizeof(addr);
 
 	const int result = ::recvfrom(
-		socket_id,
+		m_socket_id,
 		reinterpret_cast<char*>(buffer.data()),
 		static_cast<int>(buffer.size()),
 		0,
@@ -147,7 +151,7 @@ auto gse::network::udp_socket::receive_data(std::span<std::byte> buffer) const -
 
 auto gse::network::udp_socket::wait_readable(const time_t<std::uint32_t> timeout) const -> wait_result {
 	WSAPOLLFD pfd{
-		.fd = static_cast<SOCKET>(socket_id),
+		.fd = static_cast<SOCKET>(m_socket_id),
 		.events = POLLRDNORM | POLLERR | POLLHUP
 	};
 
@@ -167,6 +171,10 @@ auto gse::network::udp_socket::wait_readable(const time_t<std::uint32_t> timeout
 	}
 
 	return wait_result::timeout;
+}
+
+auto gse::network::udp_socket::id() const -> std::uint64_t {
+	return m_socket_id;
 }
 
 

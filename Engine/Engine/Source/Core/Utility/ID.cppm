@@ -400,19 +400,32 @@ auto gse::generate_id(const std::string_view tag) -> id {
 	const auto& [mutex, registry] = id_registry();
 	std::lock_guard lock(mutex);
 
-	const uuid new_uuid = registry.by_uuid.size();
-
-	std::string new_tag(tag);
-	if (registry.tag_to_uuid.contains(new_tag)) {
-		new_tag += std::to_string(new_uuid);
+	uuid stable_id = 0xcbf29ce484222325ull;
+	for (unsigned char c : tag) {
+		stable_id ^= c;
+		stable_id *= 1099511628211ull;
 	}
 
-	const id new_id(new_uuid);
+	if (registry.by_uuid.contains(stable_id)) {
+		if (const auto it = registry.uuid_to_tag.find(stable_id); it != registry.uuid_to_tag.end()) {
+			assert(
+				it->second == tag,
+				std::source_location::current(),
+				"ID collision for tag {} vs existing tag {}",
+				tag,
+				it->second
+			);
 
-	registry.by_uuid.add(new_uuid, new_id);
-	registry.tag_to_uuid[new_tag] = new_uuid;
-	registry.uuid_to_tag[new_uuid] = std::string(new_tag);
+			if (auto* existing = registry.by_uuid.try_get(stable_id)) {
+				return *existing;
+			}
+		}
+	}
 
+	const id new_id(stable_id);
+	registry.by_uuid.add(stable_id, new_id);
+	registry.tag_to_uuid[std::string(tag)] = stable_id;
+	registry.uuid_to_tag[stable_id] = std::string(tag);
 	return new_id;
 }
 
