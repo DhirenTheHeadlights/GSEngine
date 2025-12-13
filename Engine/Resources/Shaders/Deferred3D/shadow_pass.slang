@@ -1,13 +1,8 @@
 import common;
 
-[[vk::binding(0, 0)]]
-cbuffer LightUBO {
-    float4x4 light_view;
-    float4x4 light_projection;
-};
-
-[[vk::binding(1, 0)]]
-cbuffer ModelUBO {
+[[vk::push_constant]]
+cbuffer PushConstants {
+    float4x4 light_view_proj;
     float4x4 model;
 };
 
@@ -15,8 +10,7 @@ cbuffer ModelUBO {
 [shader("vertex")]
 float4 vs_main(float3 in_position : POSITION) : SV_Position {
     float4 pos_world = mul(float4(in_position, 1.0), model);
-    float4 pos_light_view = mul(pos_world, light_view);
-    return mul(pos_light_view, light_projection);
+    return mul(pos_world, light_view_proj);
 }
 
 [Layout(LayoutKind::Deferred3D)]

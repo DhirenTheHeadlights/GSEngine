@@ -113,6 +113,7 @@ auto gse::id::operator==(const id other) const -> bool {
 	if (!exists() || !other.exists()) {
 		return false;
 	}
+
 	return m_number == other.m_number;
 }
 
@@ -545,6 +546,10 @@ export namespace gse {
 			auto try_get(
 				const id_type& id
 			) const -> const T*;
+
+			auto emplace_from_writer(
+				const id_type& id
+			) -> const T*;
 		};
 
 		struct writer {
@@ -607,6 +612,22 @@ auto gse::double_buffered_id_mapped_queue<T, IdType>::reader::objects() -> std::
 template <typename T, typename IdType>
 auto gse::double_buffered_id_mapped_queue<T, IdType>::reader::try_get(const id_type& id) const -> const T* {
 	return parent->m_slots.read().active.try_get(id);
+}
+
+template <typename T, typename IdType>
+auto gse::double_buffered_id_mapped_queue<T, IdType>::reader::emplace_from_writer(const id_type& id) -> const T* {
+	auto& read_slot = const_cast<slot&>(parent->m_slots.read());
+	auto& write_slot = parent->m_slots.write();
+
+	if (auto* existing = read_slot.active.try_get(id)) {
+		return existing;
+	}
+
+	if (const auto* src = write_slot.active.try_get(id)) {
+		return read_slot.active.add(id, T(*src));
+	}
+
+	return nullptr;
 }
 
 template <typename T, typename IdType>

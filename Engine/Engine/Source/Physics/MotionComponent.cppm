@@ -50,6 +50,7 @@ export namespace gse::physics {
         bool position_locked = false;
         bool can_sleep = true;
         bool sleeping = false;
+		bool update_orientation = true;
 
         time sleep_time;
 

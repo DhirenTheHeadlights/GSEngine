@@ -7,6 +7,7 @@ import :point_light;
 import :spot_light;
 import :directional_light;
 import :shader;
+import :shadow_renderer;
 
 export namespace gse::renderer {
 	class lighting final : public base_renderer {
@@ -255,192 +256,201 @@ auto gse::renderer::lighting::initialize() -> void {
 }
 
 auto gse::renderer::lighting::render(std::span<const std::reference_wrapper<registry>> registries) -> void {
-	auto& config = m_context.config();
-	const auto command = config.frame_context().command_buffer;
+    auto& config = m_context.config();
+    const auto command = config.frame_context().command_buffer;
 
-	auto inv_pv = (m_context.camera().projection(m_context.window().viewport()) * m_context.camera().view()).inverse();
-	auto view_pos = m_context.camera().position().as<meters>().data;
+	auto proj = m_context.camera().projection(m_context.window().viewport());
+	auto view = m_context.camera().view();
 
-	const std::unordered_map<std::string, std::span<const std::byte>> cam_data_map = {
-		{ "inv_pv", std::as_bytes(std::span(&inv_pv, 1)) },
-		{ "view_pos", std::as_bytes(std::span(&view_pos, 1)) }
-	};
+	auto inv_proj = proj.inverse();
+	auto inv_view = view.inverse();
+	auto view_pos = m_context.camera().position();
 
-	m_shader->set_uniform_block("CameraParams", cam_data_map, m_ubo_allocations.at("CameraParams").allocation);
+	const auto& alloc = m_ubo_allocations.at("CameraParams").allocation;
 
-	const auto light_block = m_shader->uniform_block("lights_ssbo");
-	const auto stride = light_block.size;
-
-	const auto& alloc = m_light_buffer.allocation;
-
-	std::vector zero_elem(stride, std::byte{ 0 });
-
-	auto zero_at = [&](
-		std::size_t index
-		) {
-			m_shader->set_ssbo_struct(
-				"lights_ssbo",
-				index,
-				std::span<const std::byte>(
-					zero_elem.data(), 
-					zero_elem.size()
-				),
-				alloc
-			);
-		};
-
-	auto set = [&](
-		const std::size_t index,
-		std::string_view member, 
-		auto const& v
-		) {
-			m_shader->set_ssbo_element(
-				"lights_ssbo",
-				index,
-				member,
-				std::as_bytes(std::span(&v, 1)),
-				alloc
-			);
-		};
-
-	std::size_t light_count = 0;
-
-	for (auto& reg_ref : registries) {
-		auto& reg = reg_ref.get();
-		if (light_count >= stride) {
-			break;
-		}
-
-		for (const auto& comp : reg.linked_objects_read<directional_light_component>()) {
-			if (light_count >= stride) {
-				break;
-			}
-			zero_at(light_count);
-
-			int type = 0; // LightType::Directional
-			set(light_count, "light_type", type);
-			set(light_count, "direction", comp.direction);
-			set(light_count, "color", comp.color);
-			set(light_count, "intensity", comp.intensity);
-			set(light_count, "ambient_strength", comp.ambient_strength);
-
-			++light_count;
-		}
-		for (const auto& comp : reg.linked_objects_read<point_light_component>()) {
-			if (light_count >= stride) {
-				break;
-			}
-			zero_at(light_count);
-
-			int type = 1; // LightType::Point
-			auto pos_meters = comp.position.as<meters>();
-			set(light_count, "light_type", type);
-			set(light_count, "position", pos_meters);
-			set(light_count, "color", comp.color);
-			set(light_count, "intensity", comp.intensity);
-			set(light_count, "constant", comp.constant);
-			set(light_count, "linear", comp.linear);
-			set(light_count, "quadratic", comp.quadratic);
-			set(light_count, "ambient_strength", comp.ambient_strength);
-
-			++light_count;
-		}
-		for (const auto& comp : reg.linked_objects_read<spot_light_component>()) {
-			if (light_count >= stride) {
-				break;
-			}
-			zero_at(light_count);
-
-			int type = 2; // LightType::Spot
-			auto pos_meters = comp.position.as<meters>();
-			float cut_off_cos = std::cos(comp.cut_off.as<radians>());
-			float outer_cut_off_cos = std::cos(comp.outer_cut_off.as<radians>());
-
-			set(light_count, "light_type", type);
-			set(light_count, "position", pos_meters);
-			set(light_count, "direction", comp.direction);
-			set(light_count, "color", comp.color);
-			set(light_count, "intensity", comp.intensity);
-			set(light_count, "constant", comp.constant);
-			set(light_count, "linear", comp.linear);
-			set(light_count, "quadratic", comp.quadratic);
-			set(light_count, "cut_off", cut_off_cos);
-			set(light_count, "outer_cut_off", outer_cut_off_cos);
-			set(light_count, "ambient_strength", comp.ambient_strength);
-
-			++light_count;
-		}
-	}
-
-	vulkan::uploader::transition_image_layout(
-		command, config.swap_chain_config().albedo_image,
-		vk::ImageLayout::eShaderReadOnlyOptimal,
-		vk::ImageAspectFlagBits::eColor,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::AccessFlagBits2::eColorAttachmentWrite,
-		vk::PipelineStageFlagBits2::eFragmentShader,
-		vk::AccessFlagBits2::eShaderSampledRead
+	m_shader->set_uniform(
+		"CameraParams.inv_proj",
+		inv_proj,
+		alloc
 	);
 
-	vulkan::uploader::transition_image_layout(
-		command, config.swap_chain_config().normal_image,
-		vk::ImageLayout::eShaderReadOnlyOptimal,
-		vk::ImageAspectFlagBits::eColor,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::AccessFlagBits2::eColorAttachmentWrite,
-		vk::PipelineStageFlagBits2::eFragmentShader,
-		vk::AccessFlagBits2::eShaderSampledRead
+	m_shader->set_uniform(
+		"CameraParams.inv_view",
+		inv_view,
+		alloc
 	);
 
-	vulkan::uploader::transition_image_layout(
-		command, config.swap_chain_config().depth_image,
-		vk::ImageLayout::eDepthReadOnlyOptimal,
-		vk::ImageAspectFlagBits::eDepth,
-		vk::PipelineStageFlagBits2::eLateFragmentTests,
-		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-		vk::PipelineStageFlagBits2::eFragmentShader,
-		vk::AccessFlagBits2::eShaderSampledRead
+	m_shader->set_uniform(
+		"CameraParams.view_pos",
+		view_pos,
+		alloc
 	);
 
-	vk::RenderingAttachmentInfo color_attachment{
-		.imageView = *config.swap_chain_config().image_views[config.frame_context().image_index],
-		.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-		.loadOp = vk::AttachmentLoadOp::eClear,
-		.storeOp = vk::AttachmentStoreOp::eStore,
-		.clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = std::array{ 0.1f, 0.1f, 0.1f, 1.0f }}}
-	};
+    const auto light_block = m_shader->uniform_block("lights_ssbo");
+    const auto stride = light_block.size;
 
-	const vk::RenderingInfo lighting_rendering_info{
-		.renderArea = { { 0, 0 }, config.swap_chain_config().extent },
-		.layerCount = 1,
-		.colorAttachmentCount = 1,
-		.pColorAttachments = &color_attachment,
-		.pDepthAttachment = nullptr
-	};
+    std::vector zero_elem(stride, std::byte{ 0 });
 
-	vulkan::render(
-		config, 
-		lighting_rendering_info, [&] {
-			command.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
-			command.bindDescriptorSets(
-				vk::PipelineBindPoint::eGraphics,
-				m_pipeline_layout,
-				0,
-				1,
-				&*m_descriptor_set,
-				0,
-				nullptr
-			);
+    auto zero_at = [&](const std::size_t index) {
+        m_shader->set_ssbo_struct(
+            "lights_ssbo",
+            index,
+            std::span<const std::byte>(
+                zero_elem.data(),
+                zero_elem.size()
+            ),
+            alloc
+        );
+    };
 
-			m_shader->push_bytes(
-				command,
-				m_pipeline_layout,
-				"push_constants",
-				&light_count,
-				0
-			);
+    auto set = [&](const std::size_t index, const std::string_view member, auto const& v) {
+        m_shader->set_ssbo_element(
+            "lights_ssbo",
+            index,
+            member,
+            std::as_bytes(std::span(&v, 1)),
+            alloc
+        );
+    };
 
-			command.draw(3, 1, 0, 0);
-		}
-	);
+    std::size_t light_count = 0;
+
+    for (auto& reg_ref : registries) {
+        auto& reg = reg_ref.get();
+        if (light_count >= max_shadow_lights) {
+            break;
+        }
+
+        for (const auto& comp : reg.linked_objects_read<directional_light_component>()) {
+            if (light_count >= max_shadow_lights) {
+                break;
+            }
+            zero_at(light_count);
+
+            int type = 0;
+            set(light_count, "light_type", type);
+            set(light_count, "direction", comp.direction);
+            set(light_count, "color", comp.color);
+            set(light_count, "intensity", comp.intensity);
+            set(light_count, "ambient_strength", comp.ambient_strength);
+
+            ++light_count;
+        }
+        for (const auto& comp : reg.linked_objects_read<point_light_component>()) {
+            if (light_count >= max_shadow_lights) {
+                break;
+            }
+            zero_at(light_count);
+
+            int type = 1;
+            auto pos_meters = comp.position.as<meters>();
+            set(light_count, "light_type", type);
+            set(light_count, "position", pos_meters);
+            set(light_count, "color", comp.color);
+            set(light_count, "intensity", comp.intensity);
+            set(light_count, "constant", comp.constant);
+            set(light_count, "linear", comp.linear);
+            set(light_count, "quadratic", comp.quadratic);
+            set(light_count, "ambient_strength", comp.ambient_strength);
+
+            ++light_count;
+        }
+        for (const auto& comp : reg.linked_objects_read<spot_light_component>()) {
+            if (light_count >= max_shadow_lights) {
+                break;
+            }
+            zero_at(light_count);
+
+            int type = 2;
+            auto pos_meters = comp.position.as<meters>();
+            float cut_off_cos = std::cos(comp.cut_off.as<radians>());
+            float outer_cut_off_cos = std::cos(comp.outer_cut_off.as<radians>());
+
+            set(light_count, "light_type", type);
+            set(light_count, "position", pos_meters);
+            set(light_count, "direction", comp.direction);
+            set(light_count, "color", comp.color);
+            set(light_count, "intensity", comp.intensity);
+            set(light_count, "constant", comp.constant);
+            set(light_count, "linear", comp.linear);
+            set(light_count, "quadratic", comp.quadratic);
+            set(light_count, "cut_off", cut_off_cos);
+            set(light_count, "outer_cut_off", outer_cut_off_cos);
+            set(light_count, "ambient_strength", comp.ambient_strength);
+
+            ++light_count;
+        }
+    }
+
+    vulkan::uploader::transition_image_layout(
+        command, config.swap_chain_config().albedo_image,
+        vk::ImageLayout::eShaderReadOnlyOptimal,
+        vk::ImageAspectFlagBits::eColor,
+        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        vk::AccessFlagBits2::eColorAttachmentWrite,
+        vk::PipelineStageFlagBits2::eFragmentShader,
+        vk::AccessFlagBits2::eShaderSampledRead
+    );
+
+    vulkan::uploader::transition_image_layout(
+        command, config.swap_chain_config().normal_image,
+        vk::ImageLayout::eShaderReadOnlyOptimal,
+        vk::ImageAspectFlagBits::eColor,
+        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        vk::AccessFlagBits2::eColorAttachmentWrite,
+        vk::PipelineStageFlagBits2::eFragmentShader,
+        vk::AccessFlagBits2::eShaderSampledRead
+    );
+
+    vulkan::uploader::transition_image_layout(
+        command, config.swap_chain_config().depth_image,
+        vk::ImageLayout::eDepthReadOnlyOptimal,
+        vk::ImageAspectFlagBits::eDepth,
+        vk::PipelineStageFlagBits2::eLateFragmentTests,
+        vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+        vk::PipelineStageFlagBits2::eFragmentShader,
+        vk::AccessFlagBits2::eShaderSampledRead
+    );
+
+    vk::RenderingAttachmentInfo color_attachment{
+        .imageView = *config.swap_chain_config().image_views[config.frame_context().image_index],
+        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+        .loadOp = vk::AttachmentLoadOp::eClear,
+        .storeOp = vk::AttachmentStoreOp::eStore,
+        .clearValue = vk::ClearValue{ .color = vk::ClearColorValue{ .float32 = std::array{ 0.1f, 0.1f, 0.1f, 1.0f } } }
+    };
+
+    const vk::RenderingInfo lighting_rendering_info{
+        .renderArea = { { 0, 0 }, config.swap_chain_config().extent },
+        .layerCount = 1,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &color_attachment,
+        .pDepthAttachment = nullptr
+    };
+
+    vulkan::render(
+        config,
+        lighting_rendering_info, [&] {
+            command.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
+            command.bindDescriptorSets(
+                vk::PipelineBindPoint::eGraphics,
+                m_pipeline_layout,
+                0,
+                1,
+                &*m_descriptor_set,
+                0,
+                nullptr
+            );
+
+            m_shader->push_bytes(
+                command,
+                m_pipeline_layout,
+                "push_constants",
+                &light_count,
+                0
+            );
+
+            command.draw(3, 1, 0, 0);
+        }
+    );
 }

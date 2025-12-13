@@ -71,7 +71,6 @@ namespace gse::vulkan {
         const device_config& device_data
     ) -> swap_chain_config;
 
-
     vk::DebugUtilsMessengerEXT debug_utils_messenger;
     constexpr std::uint32_t max_frames_in_flight = 2;
 }

@@ -6,6 +6,7 @@ import :lighting_renderer;
 import :geometry_renderer;
 import :sprite_renderer;
 import :text_renderer;
+import :shadow_renderer;
 import :physics_debug_renderer;
 import :gui;
 import :render_component;
@@ -86,6 +87,7 @@ auto gse::renderer::initialize() -> void {
 
 	rendering_context.compile();
 
+	//renderers.push_back(std::make_unique<shadow>(rendering_context));
 	renderers.push_back(std::make_unique<geometry>(rendering_context));
 	renderers.push_back(std::make_unique<lighting>(rendering_context));
 	renderers.push_back(std::make_unique<sprite>(rendering_context));

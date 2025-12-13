@@ -285,6 +285,7 @@ auto gse::component_link<T>::add(const owner_id_t owner_id, registry* reg, Args&
 
 	T* new_comp = m_writer.emplace_queued(owner_id, std::forward<Args>(args)...);
 	new_comp->on_registry(reg);
+
 	return new_comp;
 }
 
@@ -292,6 +293,7 @@ template <gse::is_component T>
 auto gse::component_link<T>::activate(const owner_id_t owner_id) -> bool {
 	if (m_writer.activate(owner_id)) {
 		m_added.push_back(owner_id);
+		m_reader.emplace_from_writer(owner_id);
 		return true;
 	}
 	return false;
