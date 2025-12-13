@@ -187,6 +187,10 @@ auto gse::physics::update_position(motion_component& component) -> void {
 }
 
 auto gse::physics::update_rotation(motion_component& component) -> void {
+    if (!component.update_orientation) {
+        return;
+	}
+
     const auto alpha = component.accumulators.current_torque / component.moment_of_inertia;
 
     const auto delta_time = system_clock::constant_update_time<time_step>();
