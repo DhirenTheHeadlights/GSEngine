@@ -109,38 +109,30 @@ auto gse::renderer::lighting::initialize() -> void {
 	m_buffer_sampler = config.device_config().device.createSampler(sampler_create_info);
 
 	const std::unordered_map<std::string, vk::DescriptorImageInfo> lighting_image_infos = {
-	{
-		"g_albedo",
 		{
-			.sampler = m_buffer_sampler,
-			.imageView = *config.swap_chain_config().albedo_image.view,
-			.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
-		}
-	},
-	{
-		"g_normal",
+			"g_albedo",
+			{
+				.sampler = m_buffer_sampler,
+				.imageView = *config.swap_chain_config().albedo_image.view,
+				.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+			}
+		},
 		{
-			.sampler = m_buffer_sampler,
-			.imageView = *config.swap_chain_config().normal_image.view,
-			.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
-		}
-	},
-	{
-		"g_depth",
+			"g_normal",
+			{
+				.sampler = m_buffer_sampler,
+				.imageView = *config.swap_chain_config().normal_image.view,
+				.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+			}
+		},
 		{
-			.sampler = m_buffer_sampler,
-			.imageView = *config.swap_chain_config().depth_image.view,
-			.imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal
+			"g_depth",
+			{
+				.sampler = m_buffer_sampler,
+				.imageView = *config.swap_chain_config().depth_image.view,
+				.imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal
+			}
 		}
-	},
-	{
-		"g_position",
-		{
-			.sampler = m_buffer_sampler,
-			.imageView = *config.swap_chain_config().position_image.view,
-			.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
-		}
-	}
 	};
 
 
@@ -269,16 +261,12 @@ auto gse::renderer::lighting::render(std::span<const std::reference_wrapper<regi
     const auto command = config.frame_context().command_buffer;
 
 	auto proj = m_context.camera().projection(m_context.window().viewport());
-	auto view = m_context.camera().view();
-
 	auto inv_proj = proj.inverse();
-	auto inv_view = view.inverse();
 
 	const auto& cam_alloc = m_ubo_allocations.at("CameraParams").allocation;
 	const auto& light_alloc = m_light_buffer.allocation;
 
 	m_shader->set_uniform("CameraParams.inv_proj", inv_proj, cam_alloc);
-	m_shader->set_uniform("CameraParams.inv_view", inv_view, cam_alloc);
 
 	const auto light_block = m_shader->uniform_block("lights_ssbo");
 	const auto stride = light_block.size;
@@ -290,9 +278,9 @@ auto gse::renderer::lighting::render(std::span<const std::reference_wrapper<regi
 			"lights_ssbo",
 			index,
 			std::span<const std::byte>(
-			zero_elem.data(),
-			zero_elem.size()
-		),
+				zero_elem.data(),
+				zero_elem.size()
+			),
 			light_alloc
 		);
 	};
@@ -305,6 +293,20 @@ auto gse::renderer::lighting::render(std::span<const std::reference_wrapper<regi
 			std::as_bytes(std::span(&v, 1)),
 			light_alloc
 		);
+	};
+
+	auto view = m_context.camera().view();
+
+	auto to_view_pos = [&](const vec3<length>& world_pos) {
+		const auto p = vec4<length>(world_pos, meters(1.0f));
+		auto vp = view * p;
+		return vec3<length>(vp.x(), vp.y(), vp.z());
+	};
+
+	auto to_view_dir = [&](const unitless::vec3& world_dir) {
+		const auto d4 = unitless::vec4(world_dir, 0.0f);
+		const auto vd = view * d4;
+		return unitless::vec3(vd.x(), vd.y(), vd.z());
 	};
 
     std::size_t light_count = 0;
@@ -323,7 +325,7 @@ auto gse::renderer::lighting::render(std::span<const std::reference_wrapper<regi
 
             int type = 0;
             set(light_count, "light_type", type);
-            set(light_count, "direction", comp.direction);
+            set(light_count, "direction", to_view_dir(comp.direction));
             set(light_count, "color", comp.color);
             set(light_count, "intensity", comp.intensity);
             set(light_count, "ambient_strength", comp.ambient_strength);
@@ -339,7 +341,7 @@ auto gse::renderer::lighting::render(std::span<const std::reference_wrapper<regi
             int type = 1;
             auto pos_meters = comp.position.as<meters>();
             set(light_count, "light_type", type);
-            set(light_count, "position", pos_meters);
+            set(light_count, "position", to_view_pos(pos_meters));
             set(light_count, "color", comp.color);
             set(light_count, "intensity", comp.intensity);
             set(light_count, "constant", comp.constant);
@@ -361,8 +363,8 @@ auto gse::renderer::lighting::render(std::span<const std::reference_wrapper<regi
             float outer_cut_off_cos = std::cos(comp.outer_cut_off.as<radians>());
 
             set(light_count, "light_type", type);
-            set(light_count, "position", pos_meters);
-            set(light_count, "direction", comp.direction);
+            set(light_count, "position", to_view_pos(pos_meters));
+            set(light_count, "direction", to_view_dir(comp.direction));
             set(light_count, "color", comp.color);
             set(light_count, "intensity", comp.intensity);
             set(light_count, "constant", comp.constant);
@@ -405,18 +407,6 @@ auto gse::renderer::lighting::render(std::span<const std::reference_wrapper<regi
         vk::PipelineStageFlagBits2::eFragmentShader,
         vk::AccessFlagBits2::eShaderSampledRead
     );
-
-	vulkan::uploader::transition_image_layout(
-		command,
-		config.swap_chain_config().position_image,
-		vk::ImageLayout::eShaderReadOnlyOptimal,
-		vk::ImageAspectFlagBits::eColor,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::AccessFlagBits2::eColorAttachmentWrite,
-		vk::PipelineStageFlagBits2::eFragmentShader,
-		vk::AccessFlagBits2::eShaderSampledRead
-	);
-
 
     vk::RenderingAttachmentInfo color_attachment{
         .imageView = *config.swap_chain_config().image_views[config.frame_context().image_index],

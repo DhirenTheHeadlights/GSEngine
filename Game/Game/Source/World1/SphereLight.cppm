@@ -23,7 +23,7 @@ export namespace gs {
 				.color = gse::unitless::vec3(1.f),
 				.intensity = 25.f,
 				.position = m_position,
-				.direction = gse::unitless::vec3(0.0f, 1.0f, 0.0f),
+				.direction = gse::unitless::vec3(0.0f, -1.0f, 0.0f),
 				.constant = 1.0f,
 				.linear = 0.09f,
 				.quadratic = 0.032f,

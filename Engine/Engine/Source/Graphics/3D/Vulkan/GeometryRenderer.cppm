@@ -160,8 +160,7 @@ auto gse::renderer::geometry::initialize() -> void {
 
 	const std::array g_buffer_color_formats = {
 		config.swap_chain_config().albedo_image.format,
-		config.swap_chain_config().normal_image.format,
-		config.swap_chain_config().position_image.format
+		config.swap_chain_config().normal_image.format
 	};
 
 	std::array<vk::PipelineColorBlendAttachmentState, g_buffer_color_formats.size()> color_blend_attachments;
@@ -321,17 +320,6 @@ auto gse::renderer::geometry::render(const std::span<const std::reference_wrappe
 		vk::AccessFlagBits2::eDepthStencilAttachmentWrite
 	);
 
-	vulkan::uploader::transition_image_layout(
-		command,
-		config.swap_chain_config().position_image,
-		vk::ImageLayout::eColorAttachmentOptimal,
-		vk::ImageAspectFlagBits::eColor,
-		vk::PipelineStageFlagBits2::eFragmentShader,
-		vk::AccessFlagBits2::eShaderSampledRead,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::AccessFlagBits2::eColorAttachmentWrite
-	);
-
 	std::array color_attachments{
 		vk::RenderingAttachmentInfo{
 			.imageView = config.swap_chain_config().albedo_image.view,
@@ -343,13 +331,6 @@ auto gse::renderer::geometry::render(const std::span<const std::reference_wrappe
 		vk::RenderingAttachmentInfo{
 			.imageView = config.swap_chain_config().normal_image.view,
 			.imageLayout = config.swap_chain_config().normal_image.current_layout,
-			.loadOp = vk::AttachmentLoadOp::eClear,
-			.storeOp = vk::AttachmentStoreOp::eStore,
-			.clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = std::array{ 0.0f, 0.0f, 0.0f, 1.0f } } }
-		},
-		vk::RenderingAttachmentInfo{
-			.imageView = config.swap_chain_config().position_image.view,
-			.imageLayout = config.swap_chain_config().position_image.current_layout,
 			.loadOp = vk::AttachmentLoadOp::eClear,
 			.storeOp = vk::AttachmentStoreOp::eStore,
 			.clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = std::array{ 0.0f, 0.0f, 0.0f, 1.0f } } }

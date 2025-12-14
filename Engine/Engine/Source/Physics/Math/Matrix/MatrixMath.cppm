@@ -211,10 +211,13 @@ constexpr auto gse::operator*(const mat_t<T, Cols, Rows, Dim1>& lhs, const mat_t
 
 template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
 constexpr auto gse::operator*(const mat_t<T, Cols, Rows, Dim>& lhs, const unitless::vec_t<T, Cols>& rhs) {
-	using result_quantity = internal::generic_quantity<T, Dim>;
-	vec_t<result_quantity, Rows> result{};
-	for (std::size_t j = 0; j < Cols; ++j) {
-		result += lhs[j] * rhs[j];
+	unitless::vec_t<T, Rows> result{};
+	for (std::size_t i = 0; i < Rows; ++i) {
+		T sum{};
+		for (std::size_t j = 0; j < Cols; ++j) {
+			sum += lhs[j][i] * rhs[j];
+		}
+		result[i] = sum;
 	}
 	return result;
 }

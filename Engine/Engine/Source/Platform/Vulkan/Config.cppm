@@ -114,7 +114,6 @@ export namespace gse::vulkan {
         swap_chain_details details;
         persistent_allocator::image_resource normal_image;
         persistent_allocator::image_resource albedo_image;
-        persistent_allocator::image_resource position_image;
         persistent_allocator::image_resource depth_image;
 
         swap_chain_config(
@@ -128,7 +127,6 @@ export namespace gse::vulkan {
             swap_chain_details&& details,
             persistent_allocator::image_resource&& normal_image,
             persistent_allocator::image_resource&& albedo_image,
-            persistent_allocator::image_resource&& position_image,
             persistent_allocator::image_resource&& depth_image
         )
             : swap_chain(std::move(swap_chain)),
@@ -141,7 +139,6 @@ export namespace gse::vulkan {
             details(std::move(details)),
             normal_image(std::move(normal_image)),
             albedo_image(std::move(albedo_image)),
-            position_image(std::move(position_image)),
             depth_image(std::move(depth_image)) {
         }
 
