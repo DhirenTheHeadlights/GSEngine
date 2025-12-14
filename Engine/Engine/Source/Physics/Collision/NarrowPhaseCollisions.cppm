@@ -25,7 +25,7 @@ namespace gse::narrow_phase_collision {
         bool collided = false;
         unitless::vec3 normal;
         length penetration;
-        vec3<length> contact_point;
+        std::vector<vec3<length>> contact_points;
     };
 
     struct minkowski_point {
@@ -83,107 +83,136 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
         .colliding = true,
         .collision_normal = res->normal,
         .penetration = res->penetration,
-        .collision_point = res->contact_point
+        .collision_point = res->contact_points[0]
     };
 
-    const inverse_mass inv_mass_a = object_a->position_locked ? inverse_mass{ 0 } : 1.0f / object_a->mass;
-    const inverse_mass inv_mass_b = object_b->position_locked ? inverse_mass{ 0 } : 1.0f / object_b->mass;
-    const inverse_mass total_inv_mass = inv_mass_a + inv_mass_b;
+    for (auto& contact_point : res->contact_points) {
 
-    if (total_inv_mass <= inverse_mass{ 0 }) {
-        return;
-    }
+        const inverse_mass inv_mass_a = object_a->position_locked ? inverse_mass{ 0 } : 1.0f / object_a->mass;
+        const inverse_mass inv_mass_b = object_b->position_locked ? inverse_mass{ 0 } : 1.0f / object_b->mass;
+        const inverse_mass total_inv_mass = inv_mass_a + inv_mass_b;
 
-    constexpr length slop = meters(0.01f);
-    constexpr float percent = 0.8f;
-
-    const length corrected_penetration = std::max(res->penetration - slop, length{ 0 });
-    const vec3<length> correction = 0.01f * res->normal * corrected_penetration * percent;
-    const float ratio_a = inv_mass_a / total_inv_mass;
-    const float ratio_b = inv_mass_b / total_inv_mass;
-
-    if (!object_a->position_locked) {
-        object_a->accumulators.position_correction += correction * ratio_a;
-    }
-    if (!object_b->position_locked) {
-        object_b->accumulators.position_correction -= correction * ratio_b;
-    }
-
-    if (res->normal.y() > 0.7f) {
-        object_a->airborne = false;
-    }
-    if (res->normal.y() < -0.7f) {
-        object_b->airborne = false;
-    }
-
-    const auto r_a = res->contact_point - object_a->current_position;
-    const auto r_b = res->contact_point - object_b->current_position;
-
-    const auto vel_a = object_a->current_velocity + cross(object_a->angular_velocity, r_a);
-    const auto vel_b = object_b->current_velocity + cross(object_b->angular_velocity, r_b);
-    const auto relative_velocity = vel_a - vel_b;
-
-    const velocity vel_along_normal = dot(relative_velocity, res->normal);
-
-    const auto tangent_velocity = relative_velocity - vel_along_normal * res->normal;
-    const auto tangent_speed = magnitude(tangent_velocity).as<meters_per_second>();
-    const auto normal_speed = abs(vel_along_normal).as<meters_per_second>();
-
-    constexpr float wake_threshold = 0.2f;
-    const bool should_wake = normal_speed > wake_threshold || tangent_speed > wake_threshold;
-
-    if (should_wake) {
-        object_a->sleeping = false;
-        object_a->sleep_time = 0.f;
-        object_b->sleeping = false;
-        object_b->sleep_time = 0.f;
-    }
-
-    if (vel_along_normal > velocity{ 0 }) {
-        return;
-    }
-
-    float restitution = 0.5f;
-    if (normal_speed < 0.1f) {
-        restitution = 0.0f;
-    }
-
-    const physics::inv_inertia_mat inv_i_a = object_a->position_locked ? physics::inv_inertia_mat(0.0f) : object_a->inv_inertial_tensor();
-    const physics::inv_inertia_mat inv_i_b = object_b->position_locked ? physics::inv_inertia_mat(0.0f) : object_b->inv_inertial_tensor();
-
-    const auto rcross_a_part = cross(inv_i_a * cross(r_a, res->normal), r_a);
-    const auto rcross_b_part = cross(inv_i_b * cross(r_b, res->normal), r_b);
-
-    const inverse_mass denom = total_inv_mass + dot(rcross_a_part, res->normal) + dot(rcross_b_part, res->normal);
-    const auto jn = -(1.0f + restitution) * vel_along_normal / denom;
-
-    const auto impulse_vec = res->normal * jn;
-
-    if (!object_a->position_locked) {
-        object_a->current_velocity += impulse_vec * inv_mass_a;
-        object_a->angular_velocity += inv_i_a * cross(r_a, impulse_vec);
-    }
-    if (!object_b->position_locked) {
-        object_b->current_velocity -= impulse_vec * inv_mass_b;
-        object_b->angular_velocity -= inv_i_b * cross(r_b, impulse_vec);
-    }
-
-    if (!object_a->position_locked && !object_a->airborne) {
-        const auto v = object_a->current_velocity;
-        const auto normal_component = dot(v, res->normal) * res->normal;
-        if (const auto tangential = v - normal_component; magnitude(tangential) < meters_per_second(0.05f)) {
-            object_a->current_velocity -= tangential;
+        if (total_inv_mass <= inverse_mass{ 0 }) {
+            return;
         }
-    }
 
-    if (!object_b->position_locked && !object_b->airborne) {
-        const auto v = object_b->current_velocity;
-        const auto normal_component = dot(v, res->normal) * res->normal;
-        if (const auto tangential = v - normal_component; magnitude(tangential) < meters_per_second(0.05f)) {
-            object_b->current_velocity -= tangential;
+        constexpr length slop = meters(0.01f);
+        constexpr float percent = 0.8f;
+
+        const length corrected_penetration = 0.01f * std::max(res->penetration - slop, length{ 0 });
+        const vec3<length> correction = res->normal * corrected_penetration * percent;
+        const float ratio_a = inv_mass_a / total_inv_mass;
+        const float ratio_b = inv_mass_b / total_inv_mass;
+
+        if (!object_a->position_locked) {
+            object_a->accumulators.position_correction += correction * ratio_a;
+        }
+        if (!object_b->position_locked) {
+            object_b->accumulators.position_correction -= correction * ratio_b;
+        }
+
+        if (res->normal.y() > 0.7f) {
+            object_a->airborne = false;
+        }
+        if (res->normal.y() < -0.7f) {
+            object_b->airborne = false;
+        }
+
+        const auto r_a = contact_point - object_a->current_position;
+        const auto r_b = contact_point - object_b->current_position;
+
+        const auto vel_a = object_a->current_velocity + cross(object_a->angular_velocity, r_a);
+        const auto vel_b = object_b->current_velocity + cross(object_b->angular_velocity, r_b);
+        const auto relative_velocity = vel_a - vel_b;
+
+        const velocity vel_along_normal = dot(relative_velocity, res->normal);
+
+        const auto tangent_velocity = relative_velocity - vel_along_normal * res->normal;
+        const auto tangent_speed = magnitude(tangent_velocity).as<meters_per_second>();
+        const auto normal_speed = abs(vel_along_normal).as<meters_per_second>();
+
+        constexpr float wake_threshold = 0.2f;
+        const bool should_wake = normal_speed > wake_threshold || tangent_speed > wake_threshold;
+
+        //if (should_wake) {
+        //    object_a->sleeping = false;
+        //    object_a->sleep_time = 0.f;
+        //    object_b->sleeping = false;
+        //    object_b->sleep_time = 0.f;
+        //}
+
+        if (vel_along_normal > velocity{ 0 }) {
+            return;
+        }
+
+        float restitution = 0.5f;
+        if (normal_speed < 0.1f) {
+            restitution = 0.0f;
+        }
+
+        const physics::inv_inertia_mat inv_i_a = object_a->position_locked ? physics::inv_inertia_mat(0.0f) : object_a->inv_inertial_tensor();
+        const physics::inv_inertia_mat inv_i_b = object_b->position_locked ? physics::inv_inertia_mat(0.0f) : object_b->inv_inertial_tensor();
+
+        const auto rcross_a_part = cross(inv_i_a * cross(r_a, res->normal), r_a);
+        const auto rcross_b_part = cross(inv_i_b * cross(r_b, res->normal), r_b);
+
+        const inverse_mass denom = total_inv_mass + dot(rcross_a_part, res->normal) + dot(rcross_b_part, res->normal);
+        const auto jn = -(1.0f + restitution) * vel_along_normal / denom;
+
+        const auto impulse_vec = res->normal * jn;
+
+        if (magnitude(tangent_velocity) > meters_per_second(1e-4f)) {
+            const auto t = normalize(tangent_velocity);
+
+            const auto rcross_a_t = cross(inv_i_a * cross(r_a, t), r_a);
+            const auto rcross_b_t = cross(inv_i_b * cross(r_b, t), r_b);
+
+            const inverse_mass denom_t =
+                total_inv_mass
+                + dot(rcross_a_t, t)
+                + dot(rcross_b_t, t);
+
+            auto jt = -dot(relative_velocity, t) / denom_t;
+
+            constexpr float mu = 0.6f; // friction coefficient
+            jt = std::clamp(jt, -jn * mu, jn * mu);
+            const auto friction_impulse = t * jt;
+
+            object_a->current_velocity += friction_impulse * inv_mass_a;
+            object_a->angular_velocity += inv_i_a * cross(r_a, friction_impulse);
+
+            object_b->current_velocity -= friction_impulse * inv_mass_b;
+            object_b->angular_velocity -= inv_i_b * cross(r_b, friction_impulse);
+        }
+
+
+        if (!object_a->position_locked) {
+            object_a->current_velocity += impulse_vec * inv_mass_a;
+            object_a->angular_velocity += inv_i_a * cross(r_a, impulse_vec);
+        }
+        if (!object_b->position_locked) {
+            object_b->current_velocity -= impulse_vec * inv_mass_b;
+            object_b->angular_velocity -= inv_i_b * cross(r_b, impulse_vec);
+        }
+
+        if (!object_a->position_locked && !object_a->airborne) {
+            const auto v = object_a->current_velocity;
+            const auto normal_component = dot(v, res->normal) * res->normal;
+            if (const auto tangential = v - normal_component; magnitude(tangential) < meters_per_second(0.05f)) {
+                //object_a->current_velocity -= tangential;
+            }
+        }
+
+        if (!object_b->position_locked && !object_b->airborne) {
+            const auto v = object_b->current_velocity;
+            const auto normal_component = dot(v, res->normal) * res->normal;
+            if (const auto tangential = v - normal_component; magnitude(tangential) < meters_per_second(0.05f)) {
+                //object_b->current_velocity -= tangential;
+            }
         }
     }
 }
+
 
 auto gse::narrow_phase_collision::support_obb(const bounding_box& bounding_box, const unitless::vec3& dir) -> vec3<length> {
     vec3<length> result = bounding_box.center();
@@ -439,15 +468,19 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
                 );
 
                 vec3<length> final_contact_point = bb1.center();
-                if (!contact_points.empty()) {
-                    vec3<length> total_point;
-                    for (const auto& point : contact_points) {
-                        total_point += point;
-                    }
-                    final_contact_point = total_point / static_cast<float>(contact_points.size());
-                }
-                else {
-                    final_contact_point = bb1.center() + collision_normal * (penetration_depth * 0.5f);
+                //if (!contact_points.empty()) {
+                //    vec3<length> total_point;
+                //    for (const auto& point : contact_points) {
+                //        total_point += point;
+                //    }
+                //    final_contact_point = total_point / static_cast<float>(contact_points.size());
+                //}
+                //else {
+                //    final_contact_point = bb1.center() + collision_normal * (penetration_depth * 0.5f);
+                //}
+
+                if (contact_points.empty()) {
+                    contact_points.push_back(bb1.center() + collision_normal * (penetration_depth * 0.5f));
                 }
 
                 if constexpr (debug) {
@@ -459,7 +492,7 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
                     .collided = true,
                     .normal = collision_normal,
                     .penetration = penetration_depth,
-                    .contact_point = final_contact_point
+                    .contact_points = contact_points
                 };
             }
 
@@ -568,37 +601,44 @@ auto gse::narrow_phase_collision::generate_contact_points(
         ref_normal = info2.normal;
     }
 
+    ref_normal = normalize(ref_normal);
+
     struct plane {
         unitless::vec3 normal;
         length distance;
     };
 
-    auto clip = [](const std::vector<vec3<length>>& subject, const plane& p) -> std::vector<vec3<length>> {
+    auto clip = [](const std::vector<vec3<length>>& subject, const plane& p) {
         std::vector<vec3<length>> out;
-        if (subject.empty()) {
-            return out;
-        }
+        if (subject.empty()) return out;
 
-        const auto* prev = &subject.back();
-        length prev_dist = dot(p.normal, *prev) - p.distance;
+        auto prev = subject.back();
+        length prev_dist = dot(p.normal, prev) - p.distance;
+        bool prev_inside = prev_dist >= -meters(1e-4f);
 
         for (const auto& curr : subject) {
             length curr_dist = dot(p.normal, curr) - p.distance;
+            bool curr_inside = curr_dist >= -meters(1e-4f);
 
-            if (prev_dist * curr_dist < 0.0f) {
-                float t = prev_dist / (prev_dist - curr_dist);
-                out.push_back(*prev + (curr - *prev) * t);
+            if (prev_inside != curr_inside) {
+                length denom = prev_dist - curr_dist;
+                if (abs(denom) > meters(1e-6f)) {
+                    float t = prev_dist / denom;
+                    out.push_back(prev + (curr - prev) * t);
+                }
             }
 
-            if (curr_dist >= -meters(0.01f)) {
+            if (curr_inside) {
                 out.push_back(curr);
             }
 
-            prev = &curr;
+            prev = curr;
             prev_dist = curr_dist;
+            prev_inside = curr_inside;
         }
+
         return out;
-    };
+        };
 
     vec3<length> ref_center = { length{ 0 }, length{ 0 }, length{ 0 } };
     for (const auto& v : ref_face) {
@@ -614,8 +654,17 @@ auto gse::narrow_phase_collision::generate_contact_points(
         const vec3<length>& v1 = ref_face[i];
         const vec3<length>& v2 = ref_face[(i + 1) % 4];
 
-        const unitless::vec3 edge = normalize(v2 - v1);
+        const auto edge_vec = v2 - v1;
+        if (magnitude(edge_vec) < meters(1e-6f)) {
+            continue; // skip this clipping plane entirely
+        }
+        const unitless::vec3 edge = normalize(edge_vec);
         unitless::vec3 plane_normal = cross(ref_normal, edge);
+        const float len = magnitude(plane_normal);
+        if (len < 1e-6f) {
+            continue;
+        }
+        plane_normal /= len;
 
         vec3<length> to_center = ref_center - v1;
 
