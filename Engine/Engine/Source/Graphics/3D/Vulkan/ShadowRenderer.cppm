@@ -9,6 +9,7 @@ import :model;
 import :shader;
 import :spot_light;
 import :directional_light;
+import :point_light;
 
 import gse.physics;
 import gse.physics.math;
@@ -43,6 +44,10 @@ export namespace gse::renderer {
         auto render(
             std::span<const std::reference_wrapper<registry>> registries
         ) -> void override;
+
+        auto shadow_map_view(
+            std::size_t index
+        ) const -> vk::ImageView;
     private:
         vk::raii::Pipeline m_pipeline = nullptr;
         vk::raii::PipelineLayout m_pipeline_layout = nullptr;
@@ -50,7 +55,7 @@ export namespace gse::renderer {
         resource::handle<shader> m_shader;
 
         double_buffer<std::vector<shadow_draw_entry>> m_render_queue;
-        std::vector<shadow_light_entry> m_shadow_lights;
+        double_buffer<std::vector<shadow_light_entry>> m_shadow_lights;
 
         unitless::vec2u m_shadow_extent = { 1024, 1024 };
 
@@ -234,6 +239,7 @@ auto gse::renderer::shadow::initialize() -> void {
 
     frame_sync::on_end([this] {
         m_render_queue.flip();
+		m_shadow_lights.flip();
     });
 }
 
@@ -242,7 +248,8 @@ auto gse::renderer::shadow::update(const std::span<const std::reference_wrapper<
         return;
     }
 
-    m_shadow_lights.clear();
+    auto& lights_out = m_shadow_lights.write();
+    lights_out.clear();
     std::size_t next_shadow_index = 0;
 
     for (auto& reg_ref : registries) {
@@ -278,7 +285,7 @@ auto gse::renderer::shadow::update(const std::span<const std::reference_wrapper<
 
             entry.ignore_list_ids = comp.ignore_list_ids;
 
-            m_shadow_lights.push_back(std::move(entry));
+            lights_out.push_back(std::move(entry));
             ++next_shadow_index;
         }
 
@@ -311,7 +318,7 @@ auto gse::renderer::shadow::update(const std::span<const std::reference_wrapper<
 
             entry.ignore_list_ids = comp.ignore_list_ids;
 
-            m_shadow_lights.push_back(std::move(entry));
+            lights_out.push_back(std::move(entry));
             ++next_shadow_index;
         }
     }
@@ -320,7 +327,7 @@ auto gse::renderer::shadow::update(const std::span<const std::reference_wrapper<
     out.clear();
 
     for (auto& reg_ref : registries) {
-	    for (auto& reg = reg_ref.get(); auto& component : reg.linked_objects_write<render_component>()) {
+        for (auto& reg = reg_ref.get(); auto& component : reg.linked_objects_write<render_component>()) {
             if (!component.render) {
                 continue;
             }
@@ -343,25 +350,105 @@ auto gse::renderer::shadow::update(const std::span<const std::reference_wrapper<
 
 auto gse::renderer::shadow::render(std::span<const std::reference_wrapper<registry>> registries) -> void {
     auto& config = m_context.config();
-    const auto command = config.frame_context().command_buffer;
+    auto command = config.frame_context().command_buffer;
 
-    const auto& draw_list = m_render_queue.read();
+    std::array<mat4, max_shadow_lights> shadow_view_proj{};
+    std::size_t shadow_light_count = 0;
 
-    if (draw_list.empty() || m_shadow_lights.empty()) {
-        return;
-    }
-
-    for (const auto& [view, proj, ignore_list_ids, shadow_index] : m_shadow_lights) {
-        if (shadow_index < 0) {
-            continue;
+    for (auto& reg_ref : registries) {
+        auto& reg = reg_ref.get();
+        if (shadow_light_count >= max_shadow_lights) {
+            break;
         }
 
-        auto& shadow_map = m_shadow_maps[static_cast<std::size_t>(shadow_index)];
+        for (const auto& comp : reg.linked_objects_read<directional_light_component>()) {
+            if (shadow_light_count >= max_shadow_lights) {
+                break;
+            }
+
+            auto dir = comp.direction;
+            vec3<length> light_pos = -dir * 10.0f;
+            auto up = ensure_non_collinear_up(dir, { 0.0f, 1.0f, 0.0f });
+
+            auto light_proj = orthographic(
+                meters(-10000.0f),
+                meters(10000.0f),
+                meters(-10000.0f),
+                meters(1000.0f),
+                comp.near_plane,
+                comp.far_plane
+            );
+
+            auto light_view = look_at(
+                light_pos,
+                light_pos + vec3<length>(dir),
+                up
+            );
+
+            shadow_view_proj[shadow_light_count] = light_proj * light_view;
+            ++shadow_light_count;
+        }
+
+        for (const auto& comp : reg.linked_objects_read<point_light_component>()) {
+            if (shadow_light_count >= max_shadow_lights) {
+                break;
+            }
+
+            auto pos = comp.position;
+            auto dir = unitless::vec3(0.0f, -1.0f, 0.0f);
+            auto up = unitless::vec3(0.0f, 0.0f, 1.0f);
+
+            auto light_proj = perspective(
+                radians(90.0f),
+                1.0f,
+                comp.near_plane,
+                comp.far_plane
+            );
+
+            auto light_view = look_at(
+                pos,
+                pos + vec3<length>(dir),
+                up
+            );
+
+            shadow_view_proj[shadow_light_count] = light_proj * light_view;
+            ++shadow_light_count;
+        }
+
+        for (const auto& comp : reg.linked_objects_read<spot_light_component>()) {
+            if (shadow_light_count >= max_shadow_lights) {
+                break;
+            }
+
+            auto pos = comp.position;
+            auto dir = comp.direction;
+            auto up = ensure_non_collinear_up(dir, { 0.0f, 1.0f, 0.0f });
+
+            auto light_proj = perspective(
+                comp.cut_off,
+                1.0f,
+                comp.near_plane,
+                comp.far_plane
+            );
+
+            auto light_view = look_at(
+                pos,
+                pos + vec3<length>(dir),
+                up
+            );
+
+            shadow_view_proj[shadow_light_count] = light_proj * light_view;
+            ++shadow_light_count;
+        }
+    }
+
+    for (std::size_t i = 0; i < shadow_light_count; ++i) {
+        auto& depth_image = m_shadow_maps[i];
 
         vulkan::uploader::transition_image_layout(
             command,
-            shadow_map,
-            vk::ImageLayout::eDepthStencilAttachmentOptimal,
+            depth_image,
+            vk::ImageLayout::eDepthAttachmentOptimal,
             vk::ImageAspectFlagBits::eDepth,
             vk::PipelineStageFlagBits2::eFragmentShader,
             vk::AccessFlagBits2::eShaderSampledRead,
@@ -370,55 +457,49 @@ auto gse::renderer::shadow::render(std::span<const std::reference_wrapper<regist
         );
 
         vk::RenderingAttachmentInfo depth_attachment{
-            .imageView = shadow_map.view,
-            .imageLayout = shadow_map.current_layout,
+            .imageView = *depth_image.view,
+            .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
             .loadOp = vk::AttachmentLoadOp::eClear,
             .storeOp = vk::AttachmentStoreOp::eStore,
-            .clearValue = vk::ClearValue{ .depthStencil = vk::ClearDepthStencilValue{ .depth = 1.0f } }
+            .clearValue = vk::ClearValue{.depthStencil = { 1.0f, 0 } }
         };
 
         const vk::RenderingInfo rendering_info{
-            .renderArea = { { 0, 0 }, { m_shadow_extent.x(), m_shadow_extent.y() } },
-            .layerCount = 1u,
-            .viewMask = 0u,
-            .colorAttachmentCount = 0u,
+            .renderArea = { { 0, 0 }, m_shadow_extent.x(), m_shadow_extent.y() },
+            .layerCount = 1,
+            .colorAttachmentCount = 0,
             .pColorAttachments = nullptr,
-            .pDepthAttachment = &depth_attachment,
-            .pStencilAttachment = nullptr
+            .pDepthAttachment = &depth_attachment
         };
 
-        vulkan::render(
-            config,
-            rendering_info,
-            [&] {
-                command.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
+        vulkan::render(config, rendering_info, [&] {
+            command.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
 
-                mat4 light_view_proj = proj * view;
+            for (auto& reg_ref : registries) {
+	            for (auto& reg = reg_ref.get(); auto& render : reg.linked_objects_read<render_component>()) {
+                    mat4 model = transform.matrix();
 
-                for (const auto& [owner_id, entry] : draw_list) {
-                    if (std::ranges::find(ignore_list_ids, owner_id) != ignore_list_ids.end()) {
-                        continue;
-                    }
+                    struct {
+                        mat4 light_view_proj;
+                        mat4 model;
+                    } pc{ light_view_proj, model };
 
-                    m_shader->push(
-                        command,
-                        m_pipeline_layout,
-                        "push_constants",
-                        "light_view_proj", light_view_proj,
-                        "model", entry.model_matrix
+                    command.pushConstants(
+                        *m_pipeline_layout,
+                        vk::ShaderStageFlagBits::eVertex,
+                        0,
+                        sizeof(pc),
+                        &pc
                     );
 
-                    const auto& mesh = entry.model->meshes()[entry.index];
-
-                    mesh.bind(command);
                     mesh.draw(command);
                 }
             }
-        );
+        });
 
         vulkan::uploader::transition_image_layout(
             command,
-            shadow_map,
+            depth_image,
             vk::ImageLayout::eDepthReadOnlyOptimal,
             vk::ImageAspectFlagBits::eDepth,
             vk::PipelineStageFlagBits2::eEarlyFragmentTests,
@@ -427,6 +508,10 @@ auto gse::renderer::shadow::render(std::span<const std::reference_wrapper<regist
             vk::AccessFlagBits2::eShaderSampledRead
         );
     }
+}
+
+auto gse::renderer::shadow::shadow_map_view(const std::size_t index) const -> vk::ImageView {
+    return m_shadow_maps[index].view;
 }
 
 auto gse::renderer::ensure_non_collinear_up(const unitless::vec3& direction, const unitless::vec3& up) -> unitless::vec3 {

@@ -13,13 +13,13 @@ import :render_component;
 import :resource_loader;
 import :material;
 import :rendering_context;
+import :rendering_stack;
 
 import gse.utility;
 import gse.platform;
 
 namespace gse {
 	renderer::context rendering_context("GSEngine");
-	std::vector<std::unique_ptr<base_renderer>> renderers;
 }
 
 export namespace gse {
@@ -66,18 +66,6 @@ export namespace gse::renderer {
 	auto set_ui_focus(bool focus) -> void;
 }
 
-namespace gse::renderer {
-	template <typename T>
-	auto renderer() -> T& {
-		for (const auto& r : renderers) {
-			if (auto* casted = dynamic_cast<T*>(r.get())) {
-				return *casted;
-			}
-		}
-		throw std::runtime_error("Renderer not found");
-	}
-}
-
 auto gse::renderer::initialize() -> void {
 	rendering_context.add_loader<texture>();
 	rendering_context.add_loader<model>();
@@ -87,14 +75,14 @@ auto gse::renderer::initialize() -> void {
 
 	rendering_context.compile();
 
-	//renderers.push_back(std::make_unique<shadow>(rendering_context));
-	renderers.push_back(std::make_unique<geometry>(rendering_context));
-	renderers.push_back(std::make_unique<lighting>(rendering_context));
-	renderers.push_back(std::make_unique<sprite>(rendering_context));
-	renderers.push_back(std::make_unique<text>(rendering_context));
-	renderers.push_back(std::make_unique<physics_debug>(rendering_context));
+	add_renderer<geometry>(rendering_context);
+	add_renderer<shadow>(rendering_context);
+	add_renderer<lighting>(rendering_context);
+	add_renderer<sprite>(rendering_context);
+	add_renderer<text>(rendering_context);
+	add_renderer<physics_debug>(rendering_context);
 
-	for (const auto& renderer : renderers) {
+	for (const auto& renderer : renderers()) {
 		renderer->initialize();
 	}
 
@@ -111,7 +99,7 @@ auto gse::renderer::update(const std::vector<std::reference_wrapper<registry>>& 
 		rendering_context.camera().process_mouse_movement(mouse::delta());
 	}
 
-	for (const auto& renderer : renderers) {
+	for (const auto& renderer : renderers()) {
 		task::post(
 			[registries, ptr = renderer.get()] {
 				ptr->update(registries);
@@ -130,15 +118,20 @@ auto gse::renderer::render(const std::vector<std::reference_wrapper<registry>>& 
 		.minimized = rendering_context.window().minimized(),
 		.config = rendering_context.config(),
 		.in_frame = [&registries, &in_frame] {
-			vk::ImageMemoryBarrier2 render_begin_barrier{
+			auto& cfg = rendering_context.config();
+			auto& frame_ctx = cfg.frame_context();
+			auto& swap = cfg.swap_chain_config();
+
+			vk::ImageMemoryBarrier2 color_barrier{
 				.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
+				.srcAccessMask = {},
 				.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
 				.dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
 				.oldLayout = vk::ImageLayout::eUndefined,
 				.newLayout = vk::ImageLayout::eColorAttachmentOptimal,
 				.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
 				.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-				.image = rendering_context.config().swap_chain_config().images[rendering_context.config().frame_context().image_index],
+				.image = swap.images[frame_ctx.image_index],
 				.subresourceRange = {
 					.aspectMask = vk::ImageAspectFlagBits::eColor,
 					.baseMipLevel = 0,
@@ -148,14 +141,38 @@ auto gse::renderer::render(const std::vector<std::reference_wrapper<registry>>& 
 				}
 			};
 
-			const vk::DependencyInfo render_begin_dependency_info{
-				.imageMemoryBarrierCount = 1,
-				.pImageMemoryBarriers = &render_begin_barrier
+			vk::ImageMemoryBarrier2 depth_barrier{
+				.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
+				.srcAccessMask = {},
+				.dstStageMask = vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+				.dstAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+				.oldLayout = vk::ImageLayout::eUndefined,
+				.newLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
+				.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+				.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+				.image = swap.depth_image.image,
+				.subresourceRange = {
+					.aspectMask = vk::ImageAspectFlagBits::eDepth,
+					.baseMipLevel = 0,
+					.levelCount = 1,
+					.baseArrayLayer = 0,
+					.layerCount = 1
+				}
 			};
 
-			rendering_context.config().frame_context().command_buffer.pipelineBarrier2(render_begin_dependency_info);
+			std::array barriers{
+				color_barrier,
+				depth_barrier
+			};
 
-			for (const auto& renderer : renderers) {
+			const vk::DependencyInfo begin_dep{
+				.imageMemoryBarrierCount = static_cast<std::uint32_t>(barriers.size()),
+				.pImageMemoryBarriers = barriers.data()
+			};
+
+			frame_ctx.command_buffer.pipelineBarrier2(begin_dep);
+
+			for (const auto& renderer : renderers()) {
 				renderer->render(registries);
 			}
 
@@ -204,7 +221,7 @@ auto gse::renderer::shutdown() -> void {
 
 	rendering_context.config().device_config().device.waitIdle();
 
-	for (auto& renderer : renderers) {
+	for (auto& renderer : renderers()) {
 		renderer.reset();
 	}
 

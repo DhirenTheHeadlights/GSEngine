@@ -283,7 +283,7 @@ auto gse::vulkan::uploader::upload_mip_mapped_image(config& config, persistent_a
     );
 }
 
-auto gse::vulkan::uploader::transition_image_layout(const vk::CommandBuffer cmd, persistent_allocator::image_resource& image_resource, const vk::ImageLayout new_layout, vk::ImageAspectFlags aspect_mask, vk::PipelineStageFlags2 src_stage, vk::AccessFlags2 src_access, vk::PipelineStageFlagBits2 dst_stage, vk::AccessFlags2 dst_access, const std::uint32_t mip_levels, const std::uint32_t layer_count) -> void {
+auto gse::vulkan::uploader::transition_image_layout(const vk::CommandBuffer cmd, persistent_allocator::image_resource& image_resource, const vk::ImageLayout new_layout, const vk::ImageAspectFlags aspect_mask, const vk::PipelineStageFlags2 src_stage, const vk::AccessFlags2 src_access, const vk::PipelineStageFlagBits2 dst_stage, const vk::AccessFlags2 dst_access, const std::uint32_t mip_levels, const std::uint32_t layer_count) -> void {
     if (image_resource.current_layout == new_layout) {
         return;
     }

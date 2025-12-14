@@ -132,6 +132,13 @@ namespace gse {
 			const std::unordered_map<std::string, vk::DescriptorImageInfo>& image_infos
 		) const -> std::vector<vk::WriteDescriptorSet>;
 
+		auto descriptor_writes(
+			vk::DescriptorSet set,
+			const std::unordered_map<std::string, vk::DescriptorBufferInfo>& buffer_infos,
+			const std::unordered_map<std::string, vk::DescriptorImageInfo>& image_infos,
+			const std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>>& image_array_infos
+		) const -> std::vector<vk::WriteDescriptorSet>;
+
 		template <typename T>
 		auto set_uniform(
 			std::string_view full_name,
@@ -1522,6 +1529,11 @@ auto gse::shader::vertex_input_state() const -> vk::PipelineVertexInputStateCrea
 }
 
 auto gse::shader::descriptor_writes(const vk::DescriptorSet set, const std::unordered_map<std::string, vk::DescriptorBufferInfo>& buffer_infos, const std::unordered_map<std::string, vk::DescriptorImageInfo>& image_infos) const -> std::vector<vk::WriteDescriptorSet> {
+	const std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>> empty_arrays;
+	return descriptor_writes(set, buffer_infos, image_infos, empty_arrays);
+}
+
+auto gse::shader::descriptor_writes(vk::DescriptorSet set, const std::unordered_map<std::string, vk::DescriptorBufferInfo>& buffer_infos, const std::unordered_map<std::string, vk::DescriptorImageInfo>& image_infos, const std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>>& image_array_infos) const -> std::vector<vk::WriteDescriptorSet> {
 	std::vector<vk::WriteDescriptorSet> writes;
 	std::unordered_set<std::string> used_keys;
 
@@ -1538,10 +1550,40 @@ auto gse::shader::descriptor_writes(const vk::DescriptorSet set, const std::unor
 					.pImageInfo = nullptr,
 					.pBufferInfo = &it->second,
 					.pTexelBufferView = nullptr
-				});
+					});
 				used_keys.insert(binding_name);
+				continue;
 			}
-			else if (auto it2 = image_infos.find(binding_name); it2 != image_infos.end()) {
+
+			if (auto it_arr = image_array_infos.find(binding_name); it_arr != image_array_infos.end()) {
+				const auto& vec = it_arr->second;
+				assert(
+					!vec.empty(),
+					std::source_location::current(),
+					"Image array '{}' has zero elements",
+					binding_name
+				);
+
+				const auto count = static_cast<std::uint32_t>(
+					std::min<std::size_t>(layout_binding.descriptorCount, vec.size())
+					);
+
+				writes.emplace_back(vk::WriteDescriptorSet{
+					.pNext = nullptr,
+					.dstSet = set,
+					.dstBinding = layout_binding.binding,
+					.dstArrayElement = 0,
+					.descriptorCount = count,
+					.descriptorType = layout_binding.descriptorType,
+					.pImageInfo = vec.data(),
+					.pBufferInfo = nullptr,
+					.pTexelBufferView = nullptr
+					});
+				used_keys.insert(binding_name);
+				continue;
+			}
+
+			if (auto it2 = image_infos.find(binding_name); it2 != image_infos.end()) {
 				writes.emplace_back(vk::WriteDescriptorSet{
 					.pNext = nullptr,
 					.dstSet = set,
@@ -1552,21 +1594,26 @@ auto gse::shader::descriptor_writes(const vk::DescriptorSet set, const std::unor
 					.pImageInfo = &it2->second,
 					.pBufferInfo = nullptr,
 					.pTexelBufferView = nullptr
-				});
+					});
 				used_keys.insert(binding_name);
+				continue;
 			}
-
 		}
 	}
-	const auto total_inputs = buffer_infos.size() + image_infos.size();
+
+	const auto total_inputs =
+		buffer_infos.size() +
+		image_infos.size() +
+		image_array_infos.size();
+
 	assert(
 		used_keys.size() == total_inputs,
 		std::source_location::current(),
 		"Some descriptor inputs were not used. Possibly extra or misnamed keys?"
 	);
+
 	return writes;
 }
-
 
 template <typename T>
 auto gse::shader::set_uniform(std::string_view full_name, const T& value, const vulkan::persistent_allocator::allocation& alloc) const -> void {
