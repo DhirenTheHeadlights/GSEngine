@@ -187,10 +187,10 @@ namespace gs {
 
 			gse::renderer::camera().set_position(
 				motion_component.current_position + gse::vec3<gse::length>(
-				gse::feet(0.f),
-				gse::feet(6.f),
-				gse::feet(0.f)
-			)
+					gse::feet(0.f),
+					gse::feet(6.f),
+					gse::feet(0.f)
+				)
 			);
 		}
 	private:

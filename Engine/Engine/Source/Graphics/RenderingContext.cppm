@@ -11,7 +11,7 @@ import gse.utility;
 export namespace gse::renderer {
 	class context final : public non_copyable {
 	public:
-		context(
+		explicit context(
 			const std::string& window_title
 		);
 		~context() override;
@@ -235,7 +235,7 @@ auto gse::renderer::context::compile() -> void {
 }
 
 template <typename T>
-auto gse::renderer::context::resource_state(id id) const -> resource::state {
+auto gse::renderer::context::resource_state(const id id) const -> resource::state {
 	const auto type_index = std::type_index(typeid(T));
 	const auto* loader = this->loader(type_index);
 	return loader->resource_state(id);
