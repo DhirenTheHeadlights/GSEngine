@@ -29,12 +29,29 @@ cbuffer PushConstants {
     int num_lights;
 };
 
-float3 decode_octahedron(float2 e) {
-    float3 n = float3(e.x, e.y, 1.0 - abs(e.x) - abs(e.y));
-    float t = saturate(-n.z);
-    n.x += n.x >= 0.0 ? -t : t;
-    n.y += n.y >= 0.0 ? -t : t;
-    return normalize(n);
+float3 reconstruct_view_position(float2 uv, float depth) {
+    float2 ndc_xy = uv * 2.0 - 1.0;
+    float ndc_z = depth;
+
+    float4 clip = float4(ndc_xy.x, ndc_xy.y, ndc_z, 1.0);
+
+    float4 view_pos_h = mul(inv_proj, clip);
+    view_pos_h /= view_pos_h.w;
+    return view_pos_h.xyz;
+}
+
+float attenuation_point_vs(float3 light_pos_vs, float3 pos_vs, float constant, float linear_k, float quadratic) {
+    float d = length(light_pos_vs - pos_vs);
+    return 1.0 / (constant + linear_k * d + quadratic * d * d);
+}
+
+float spot_factor_vs(float3 Lvec_vs, float3 dir_vs, float cut_off, float outer_cut_off) {
+    float3 L = normalize(Lvec_vs);
+    float3 D = normalize(dir_vs);
+    float cos_theta = dot(-L, D);
+    float eps = cut_off - outer_cut_off;
+    float t = saturate((cos_theta - outer_cut_off) / max(eps, 1e-4));
+    return t;
 }
 
 [Layout(LayoutKind::Deferred3D)]
@@ -45,42 +62,42 @@ float4 fs_main(VS_OUTPUT input) : SV_Target0 {
         return float4(0.0, 0.0, 0.0, 1.0);
     }
 
+    float3 pos_vs = reconstruct_view_position(input.uv, depth);
     float3 albedo = g_albedo.SampleLevel(input.uv, 0).rgb;
-    float2 enc_n = g_normal.SampleLevel(input.uv, 0).rg;
-    float3 n = decode_octahedron(enc_n);
-    float3 pos_w = g_position.SampleLevel(input.uv, 0).rgb;
+    float2 enc_n  = g_normal.SampleLevel(input.uv, 0).rg;
+    float3 normal_vs = normalize(decode_octahedron(enc_n));
 
-    float3 result = 0.0.xxx;
+    float3 V = normalize(-pos_vs);
+    float3 result = float3(0.0, 0.0, 0.0);
 
     for (int i = 0; i < num_lights; ++i) {
-        Light L = lights_ssbo[i];
-        if (L.light_type == 0) {
-            float3 Ldir = normalize(-L.direction);
-            float ndotl = saturate(dot(n, Ldir));
-            float3 diffuse = ndotl * L.color * L.intensity;
-            float3 ambient = L.ambient_strength * L.color;
-            result += (ambient + diffuse) * albedo;
-        } else if (L.light_type == 1) {
-            float3 Lvec = L.position - pos_w;
-            float dist = length(Lvec);
-            float3 Ldir = Lvec / max(dist, 1e-4);
-            float ndotl = saturate(dot(n, Ldir));
-            float atten = 1.0 / (L.constant + L.linear * dist + L.quadratic * dist * dist);
-            float3 diffuse = ndotl * L.color * L.intensity * atten;
-            float3 ambient = L.ambient_strength * L.color;
-            result += (ambient + diffuse) * albedo;
-        } else if (L.light_type == 2) {
-            float3 Lvec = L.position - pos_w;
-            float dist = length(Lvec);
-            float3 Ldir = Lvec / max(dist, 1e-4);
-            float theta = dot(Ldir, -normalize(L.direction));
-            float epsilon = max(L.cut_off - L.outer_cut_off, 1e-4);
-            float spot = saturate((theta - L.outer_cut_off) / epsilon);
-            float ndotl = saturate(dot(n, Ldir));
-            float atten = 1.0 / (L.constant + L.linear * dist + L.quadratic * dist * dist);
-            float3 diffuse = ndotl * L.color * L.intensity * atten * spot;
-            float3 ambient = L.ambient_strength * L.color;
-            result += (ambient + diffuse) * albedo;
+        Light light = lights_ssbo[i];
+
+        if (light.light_type == 0) {
+            float3 L = normalize(-light.direction);
+            float NdotL = max(dot(normal_vs, L), 0.0);
+            float3 diffuse = albedo * light.color * light.intensity * NdotL;
+            float3 ambient = albedo * light.color * light.ambient_strength;
+            result += diffuse + ambient;
+        }
+        else if (light.light_type == 1) {
+            float3 Lvec = light.position - pos_vs;
+            float3 L = normalize(Lvec);
+            float NdotL = max(dot(normal_vs, L), 0.0);
+            float att = attenuation_point_vs(light.position, pos_vs, light.constant, light.linear, light.quadratic);
+            float3 diffuse = albedo * light.color * light.intensity * NdotL * att;
+            float3 ambient = albedo * light.color * light.ambient_strength;
+            result += diffuse + ambient;
+        }
+        else if (light.light_type == 2) {
+            float3 Lvec = light.position - pos_vs;
+            float3 L = normalize(Lvec);
+            float NdotL = max(dot(normal_vs, L), 0.0);
+            float att = attenuation_point_vs(light.position, pos_vs, light.constant, light.linear, light.quadratic);
+            float sf = spot_factor_vs(Lvec, light.direction, light.cut_off, light.outer_cut_off);
+            float3 diffuse = albedo * light.color * light.intensity * NdotL * att * sf;
+            float3 ambient = albedo * light.color * light.ambient_strength;
+            result += diffuse + ambient;
         }
     }
 

@@ -6,10 +6,10 @@ import :simd;
 
 export namespace gse::internal {
 	template <typename T>
-		concept is_arithmetic_wrapper =
+	concept is_arithmetic_wrapper =
 		!std::is_arithmetic_v<T> &&
-		requires { typename T::value_type; } &&
-		std::is_arithmetic_v<typename T::value_type> &&
+		requires { typename T::value_type; }&&
+	std::is_arithmetic_v<typename T::value_type>&&
 		std::is_trivially_copyable_v<T> &&
 		sizeof(T) == sizeof(typename T::value_type) &&
 		std::is_standard_layout_v<T> &&
@@ -33,6 +33,44 @@ export namespace gse::internal {
 
 	template <typename T>
 	concept is_derivable_unit = requires { typename T::conversion_ratio; };
+
+	template <typename V>
+	concept is_vec_like =
+		requires(const V & v) {
+		typename V::tag;
+		typename V::value_type;
+		{
+			v.as_storage_span()
+		};
+	};
+
+	template <typename T, std::size_t N, typename Arg, bool IsVecLike>
+	struct vec_arg_traits_impl;
+
+	template <typename T, std::size_t N, typename Arg>
+	struct vec_arg_traits_impl<T, N, Arg, false> {
+		using a = std::remove_reference_t<Arg>;
+		static constexpr bool valid = std::is_convertible_v<Arg, T>;
+		static constexpr std::size_t count = 1;
+	};
+
+	template <typename T, std::size_t N, typename Arg>
+	struct vec_arg_traits_impl<T, N, Arg, true> {
+		using a = std::remove_reference_t<Arg>;
+		static constexpr bool valid =
+			std::is_same_v<typename a::value_type, T> &&
+			(a::extent <= N);
+		static constexpr std::size_t count = a::extent;
+	};
+
+	template <typename T, std::size_t N, typename Arg>
+	using vec_arg_traits = vec_arg_traits_impl<T, N, Arg, is_vec_like<std::remove_reference_t<Arg>>>;
+
+	template <typename T, std::size_t N, typename... Args>
+	concept vec_ctor_compatible =
+		(sizeof...(Args) > 0) &&
+		(vec_arg_traits<T, N, Args>::valid && ...) &&
+		((vec_arg_traits<T, N, Args>::count + ...) == N);
 }
 
 export namespace gse::vec {
@@ -65,7 +103,7 @@ export namespace gse::vec {
 		constexpr base(const std::array<V, N>& data);
 
 		template <typename... Args>
-		constexpr base(Args&&... args) requires (sizeof...(args) > 1 && (std::is_convertible_v<Args, T> && ...));
+		constexpr base(Args&&... args) requires gse::internal::vec_ctor_compatible<T, N, Args...>;
 
 		template <typename D, std::size_t M>
 		constexpr base(const base<D, T, M>& other) requires (M <= N);
@@ -224,7 +262,24 @@ template <typename V> requires (sizeof(V) < sizeof(T))
 
 template <typename Derived, gse::internal::is_vec_element T, std::size_t N>
 template <typename... Args>
-constexpr gse::vec::base<Derived, T, N>::base(Args&&... args) requires (sizeof...(args) > 1 && (std::is_convertible_v<Args, T> && ...)) : storage<T, N>{ T(std::forward<Args>(args))... } {}
+constexpr gse::vec::base<Derived, T, N>::base(Args&&... args)
+	requires gse::internal::vec_ctor_compatible<T, N, Args...> {
+	std::size_t idx = 0;
+
+	auto append = [this, &idx]<typename T0>(T0&& arg) {
+		using a = std::remove_reference_t<T0>;
+		if constexpr (gse::is_vec<a>) {
+			for (std::size_t i = 0; i < a::extent; ++i) {
+				this->data[idx++] = static_cast<T>(arg[i]);
+			}
+		}
+		else {
+			this->data[idx++] = static_cast<T>(std::forward<T0>(arg));
+		}
+	};
+
+	(append(std::forward<Args>(args)), ...);
+}
 
 template <typename Derived, gse::internal::is_vec_element T, std::size_t N>
 template <typename D, std::size_t M>
