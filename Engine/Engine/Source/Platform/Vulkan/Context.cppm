@@ -644,7 +644,7 @@ auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const instance
     auto format = surface_format.format;
 
     auto normal_image = persistent_allocator::create_image(
-        device_data, 
+        device_data,
         {
             .flags = {},
             .imageType = vk::ImageType::e2D,
@@ -655,26 +655,26 @@ auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const instance
             .samples = vk::SampleCountFlagBits::e1,
             .tiling = vk::ImageTiling::eOptimal,
             .usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled
-        }, 
+        },
         vk::MemoryPropertyFlagBits::eDeviceLocal,
-		{
+        {
             .flags = {},
-	        .image = nullptr,
-	        .viewType = vk::ImageViewType::e2D,
-	        .format = vk::Format::eR8G8Snorm,
-	        .components = {},
-	        .subresourceRange = {
-	            .aspectMask = vk::ImageAspectFlagBits::eColor,
-	            .baseMipLevel = 0,
-	            .levelCount = 1,
-	            .baseArrayLayer = 0,
-	            .layerCount = 1
-	        }
-		}
+            .image = nullptr,
+            .viewType = vk::ImageViewType::e2D,
+            .format = vk::Format::eR8G8Snorm,
+            .components = {},
+            .subresourceRange = {
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1
+            }
+        }
     );
 
     auto albedo_image = persistent_allocator::create_image(
-        device_data, 
+        device_data,
         {
             .flags = {},
             .imageType = vk::ImageType::e2D,
@@ -685,26 +685,56 @@ auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const instance
             .samples = vk::SampleCountFlagBits::e1,
             .tiling = vk::ImageTiling::eOptimal,
             .usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled
-        }, 
+        },
         vk::MemoryPropertyFlagBits::eDeviceLocal,
-		{
+        {
             .flags = {},
-	        .image = nullptr,
-	        .viewType = vk::ImageViewType::e2D,
-	        .format = vk::Format::eB10G11R11UfloatPack32,
-	        .components = {},
-	        .subresourceRange = {
-	            .aspectMask = vk::ImageAspectFlagBits::eColor,
-	            .baseMipLevel = 0,
-	            .levelCount = 1,
-	            .baseArrayLayer = 0,
-	            .layerCount = 1
-	        }
-		}
+            .image = nullptr,
+            .viewType = vk::ImageViewType::e2D,
+            .format = vk::Format::eB10G11R11UfloatPack32,
+            .components = {},
+            .subresourceRange = {
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1
+            }
+        }
+    );
+
+    auto position_image = persistent_allocator::create_image(
+        device_data,
+        {
+            .flags = {},
+            .imageType = vk::ImageType::e2D,
+            .format = vk::Format::eR16G16B16A16Sfloat,
+            .extent = { extent.width, extent.height, 1 },
+            .mipLevels = 1,
+            .arrayLayers = 1,
+            .samples = vk::SampleCountFlagBits::e1,
+            .tiling = vk::ImageTiling::eOptimal,
+            .usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled
+        },
+        vk::MemoryPropertyFlagBits::eDeviceLocal,
+        {
+            .flags = {},
+            .image = nullptr,
+            .viewType = vk::ImageViewType::e2D,
+            .format = vk::Format::eR16G16B16A16Sfloat,
+            .components = {},
+            .subresourceRange = {
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1
+            }
+        }
     );
 
     auto depth_image = persistent_allocator::create_image(
-        device_data, 
+        device_data,
         {
             .flags = {},
             .imageType = vk::ImageType::e2D,
@@ -714,23 +744,23 @@ auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const instance
             .arrayLayers = 1,
             .samples = vk::SampleCountFlagBits::e1,
             .tiling = vk::ImageTiling::eOptimal,
-			.usage = vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled
-        }, 
+            .usage = vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled
+        },
         vk::MemoryPropertyFlagBits::eDeviceLocal,
-		{
+        {
             .flags = {},
-	        .image = nullptr,
-	        .viewType = vk::ImageViewType::e2D,
-	        .format = vk::Format::eD32Sfloat,
-	        .components = {},
-	        .subresourceRange = {
-	            .aspectMask = vk::ImageAspectFlagBits::eDepth,
-	            .baseMipLevel = 0,
-	            .levelCount = 1,
-	            .baseArrayLayer = 0,
-	            .layerCount = 1
-	        }
-		}
+            .image = nullptr,
+            .viewType = vk::ImageViewType::e2D,
+            .format = vk::Format::eD32Sfloat,
+            .components = {},
+            .subresourceRange = {
+                .aspectMask = vk::ImageAspectFlagBits::eDepth,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1
+            }
+        }
     );
 
     std::vector<vk::raii::ImageView> image_views;
@@ -756,6 +786,6 @@ auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const instance
     return swap_chain_config(
         std::move(swap_chain), surface_format, present_mode, extent,
         std::move(images), std::move(image_views), format, std::move(details),
-        std::move(normal_image), std::move(albedo_image), std::move(depth_image)
+        std::move(normal_image), std::move(albedo_image), std::move(position_image), std::move(depth_image)
     );
 }

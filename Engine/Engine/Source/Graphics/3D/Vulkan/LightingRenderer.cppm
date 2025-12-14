@@ -109,31 +109,40 @@ auto gse::renderer::lighting::initialize() -> void {
 	m_buffer_sampler = config.device_config().device.createSampler(sampler_create_info);
 
 	const std::unordered_map<std::string, vk::DescriptorImageInfo> lighting_image_infos = {
+	{
+		"g_albedo",
 		{
-			"g_albedo",
-			{
-				.sampler = m_buffer_sampler,
-				.imageView = *config.swap_chain_config().albedo_image.view,
-				.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
-			}
-		},
-		{
-			"g_normal",
-			{
-				.sampler = m_buffer_sampler,
-				.imageView = *config.swap_chain_config().normal_image.view,
-				.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
-			}
-		},
-		{
-			"g_depth",
-			{
-				.sampler = m_buffer_sampler,
-				.imageView = *config.swap_chain_config().depth_image.view,
-				.imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal
-			}
+			.sampler = m_buffer_sampler,
+			.imageView = *config.swap_chain_config().albedo_image.view,
+			.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
 		}
+	},
+	{
+		"g_normal",
+		{
+			.sampler = m_buffer_sampler,
+			.imageView = *config.swap_chain_config().normal_image.view,
+			.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+		}
+	},
+	{
+		"g_depth",
+		{
+			.sampler = m_buffer_sampler,
+			.imageView = *config.swap_chain_config().depth_image.view,
+			.imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal
+		}
+	},
+	{
+		"g_position",
+		{
+			.sampler = m_buffer_sampler,
+			.imageView = *config.swap_chain_config().position_image.view,
+			.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+		}
+	}
 	};
+
 
 	auto writes = m_shader->descriptor_writes(
 		m_descriptor_set,
@@ -264,54 +273,39 @@ auto gse::renderer::lighting::render(std::span<const std::reference_wrapper<regi
 
 	auto inv_proj = proj.inverse();
 	auto inv_view = view.inverse();
-	auto view_pos = m_context.camera().position();
 
-	const auto& alloc = m_ubo_allocations.at("CameraParams").allocation;
+	const auto& cam_alloc = m_ubo_allocations.at("CameraParams").allocation;
+	const auto& light_alloc = m_light_buffer.allocation;
 
-	m_shader->set_uniform(
-		"CameraParams.inv_proj",
-		inv_proj,
-		alloc
-	);
+	m_shader->set_uniform("CameraParams.inv_proj", inv_proj, cam_alloc);
+	m_shader->set_uniform("CameraParams.inv_view", inv_view, cam_alloc);
 
-	m_shader->set_uniform(
-		"CameraParams.inv_view",
-		inv_view,
-		alloc
-	);
+	const auto light_block = m_shader->uniform_block("lights_ssbo");
+	const auto stride = light_block.size;
 
-	m_shader->set_uniform(
-		"CameraParams.view_pos",
-		view_pos,
-		alloc
-	);
+	std::vector zero_elem(stride, std::byte{ 0 });
 
-    const auto light_block = m_shader->uniform_block("lights_ssbo");
-    const auto stride = light_block.size;
+	auto zero_at = [&](const std::size_t index) {
+		m_shader->set_ssbo_struct(
+			"lights_ssbo",
+			index,
+			std::span<const std::byte>(
+			zero_elem.data(),
+			zero_elem.size()
+		),
+			light_alloc
+		);
+	};
 
-    std::vector zero_elem(stride, std::byte{ 0 });
-
-    auto zero_at = [&](const std::size_t index) {
-        m_shader->set_ssbo_struct(
-            "lights_ssbo",
-            index,
-            std::span<const std::byte>(
-                zero_elem.data(),
-                zero_elem.size()
-            ),
-            alloc
-        );
-    };
-
-    auto set = [&](const std::size_t index, const std::string_view member, auto const& v) {
-        m_shader->set_ssbo_element(
-            "lights_ssbo",
-            index,
-            member,
-            std::as_bytes(std::span(&v, 1)),
-            alloc
-        );
-    };
+	auto set = [&](const std::size_t index, const std::string_view member, auto const& v) {
+		m_shader->set_ssbo_element(
+			"lights_ssbo",
+			index,
+			member,
+			std::as_bytes(std::span(&v, 1)),
+			light_alloc
+		);
+	};
 
     std::size_t light_count = 0;
 
@@ -411,6 +405,18 @@ auto gse::renderer::lighting::render(std::span<const std::reference_wrapper<regi
         vk::PipelineStageFlagBits2::eFragmentShader,
         vk::AccessFlagBits2::eShaderSampledRead
     );
+
+	vulkan::uploader::transition_image_layout(
+		command,
+		config.swap_chain_config().position_image,
+		vk::ImageLayout::eShaderReadOnlyOptimal,
+		vk::ImageAspectFlagBits::eColor,
+		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+		vk::AccessFlagBits2::eColorAttachmentWrite,
+		vk::PipelineStageFlagBits2::eFragmentShader,
+		vk::AccessFlagBits2::eShaderSampledRead
+	);
+
 
     vk::RenderingAttachmentInfo color_attachment{
         .imageView = *config.swap_chain_config().image_views[config.frame_context().image_index],
