@@ -83,9 +83,9 @@ auto gse::renderer::text::initialize() -> void {
 
 	const vk::Viewport viewport{
 		.x = 0.0f,
-		.y = static_cast<float>(config.swap_chain_config().extent.height),
+		.y = 0.0f, 
 		.width = static_cast<float>(config.swap_chain_config().extent.width),
-		.height = -static_cast<float>(config.swap_chain_config().extent.height),
+		.height = static_cast<float>(config.swap_chain_config().extent.height),
 		.minDepth = 0.0f,
 		.maxDepth = 1.0f
 	};
@@ -105,7 +105,7 @@ auto gse::renderer::text::initialize() -> void {
 	constexpr vk::PipelineRasterizationStateCreateInfo rasterizer{
 		.polygonMode = vk::PolygonMode::eFill,
 		.cullMode = vk::CullModeFlagBits::eNone,
-		.frontFace = vk::FrontFace::eClockwise,
+		.frontFace = vk::FrontFace::eCounterClockwise, 
 		.lineWidth = 1.0f
 	};
 
@@ -188,6 +188,7 @@ auto gse::renderer::text::initialize() -> void {
 		unitless::vec2 uv;
 	};
 
+    // NOTE: Y goes 0 to -1. This means the sprite "hangs" down from the anchor position.
 	constexpr vertex vertices[4] = {
 		{{0.0f,  0.0f}, {0.0f, 0.0f}},
 		{{1.0f,  0.0f}, {1.0f, 0.0f}},
@@ -230,27 +231,27 @@ auto gse::renderer::text::update(std::span<const std::reference_wrapper<registry
     auto& out = m_command_queue.write();
     out.clear();
     if (local.empty()) {
-	    return;
+        return;
     }
 
     struct group {
-	    resource::handle<font> f;
-		std::vector<const command*> commands;
+        resource::handle<font> f;
+        std::vector<const command*> commands;
     };
 
     struct font_handle_hash {
-	    auto operator()(const resource::handle<font>& h) const noexcept -> size_t {
-	        return std::hash<id>{}(h.id());
-	    }
-	};
+        auto operator()(const resource::handle<font>& h) const noexcept -> size_t {
+            return std::hash<id>{}(h.id());
+        }
+    };
 
-	struct font_handle_eq {
-	    auto operator()(const resource::handle<font>& a, const resource::handle<font>& b) const noexcept -> bool {
-	        return a.id() == b.id();
-	    }
-	};
+    struct font_handle_eq {
+        auto operator()(const resource::handle<font>& a, const resource::handle<font>& b) const noexcept -> bool {
+            return a.id() == b.id();
+        }
+    };
 
-	std::unordered_map<resource::handle<font>, std::size_t, font_handle_hash, font_handle_eq> idx;
+    std::unordered_map<resource::handle<font>, std::size_t, font_handle_hash, font_handle_eq> idx;
     std::vector<group> groups;
     groups.reserve(local.size());
 
@@ -267,7 +268,7 @@ auto gse::renderer::text::update(std::span<const std::reference_wrapper<registry
     }
 
     if (groups.empty()) {
-	    return;
+        return;
     }
 
     tbb::enumerable_thread_specific<std::vector<draw_item>> tls_bins;
@@ -313,9 +314,12 @@ auto gse::renderer::text::render(std::span<const std::reference_wrapper<registry
 	const unitless::vec2 window_size = { static_cast<float>(width), static_cast<float>(height) };
 
 	const auto projection = orthographic(
-		meters(0.0f), meters(static_cast<float>(width)),
-		meters(0.0f), meters(static_cast<float>(height)),
-		meters(-1.0f), meters(1.0f)
+		meters(0.0f), 
+		meters(static_cast<float>(width)),
+		meters(0.0f), // Bottom
+		meters(static_cast<float>(height)),
+		meters(-1.0f), 
+		meters(1.0f)
 	);
 
 	vk::RenderingAttachmentInfo color_attachment{
@@ -336,9 +340,9 @@ auto gse::renderer::text::render(std::span<const std::reference_wrapper<registry
 
 	vulkan::render(config, rendering_info, [&] {
 		const auto& draw_items = m_command_queue.read();
-	    if (draw_items.empty()) {
-	        return;
-	    }
+        if (draw_items.empty()) {
+            return;
+        }
 
         command.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline);
         command.bindVertexBuffers(0, { *m_vertex_buffer.buffer }, { 0 });
@@ -352,7 +356,7 @@ auto gse::renderer::text::render(std::span<const std::reference_wrapper<registry
 
         for (const auto& [font, color, screen_rect, uv_rect, clip_rect] : draw_items) {
             if (!font.valid()) {
-	            continue;
+                continue;
             }
 
             if (font != bound_font) {

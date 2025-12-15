@@ -17,6 +17,7 @@ cbuffer ShadowParams {
     public int shadow_light_count;
     public int shadow_light_indices[MAX_LIGHTS];
     public float4x4 shadow_view_proj[MAX_LIGHTS];
+    public float2 shadow_texel_size;
 };
 
 public[[vk::binding(6, 0)]] Sampler2D shadow_maps[MAX_LIGHTS];

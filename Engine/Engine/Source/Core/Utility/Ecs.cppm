@@ -756,12 +756,7 @@ auto gse::registry::activate(id id) -> void {
 		std::erase_if(
 			actions,
 			[&](auto& action) {
-				if (action(*this)) {
-					return true;
-				}
-
-				std::println("WARNING: Deferred action for entity {} did not complete.", id);
-				return false;
+				return action(*this);
 			}
 		);
 

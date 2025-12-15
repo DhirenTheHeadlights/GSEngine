@@ -383,24 +383,30 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
     }
 
     vk::PhysicalDeviceVulkan13Features vulkan13_features{
-        .synchronization2 = true,
-        .dynamicRendering = true
+        .synchronization2 = vk::True,
+        .dynamicRendering = vk::True
     };
 
     vk::PhysicalDeviceVulkan12Features vulkan12_features{
         .pNext = &vulkan13_features,
-        .timelineSemaphore = true,
-		.bufferDeviceAddress = true
+        .timelineSemaphore = vk::True,
+        .bufferDeviceAddress = vk::True
+    };
+
+    vk::PhysicalDeviceVulkan11Features vulkan11_features{
+        .pNext = &vulkan12_features,
+        .shaderDrawParameters = vk::True
     };
 
     vk::PhysicalDevicePresentWaitFeaturesKHR present_wait_features{
-        .pNext = &vulkan12_features,
-	};
+        .pNext = &vulkan11_features
+    };
 
     vk::PhysicalDeviceFeatures2 features2{
         .pNext = &present_wait_features,
         .features = {
-			.samplerAnisotropy = true
+            .fillModeNonSolid = vk::True,
+            .samplerAnisotropy = vk::True
         }
     };
 
@@ -408,7 +414,7 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
         vk::KHRSwapchainExtensionName,
         vk::KHRSynchronization2ExtensionName,
         vk::KHRDynamicRenderingExtensionName,
-        vk::KHRPushDescriptorExtensionName,
+        vk::KHRPushDescriptorExtensionName
     };
 
     vk::DeviceCreateInfo create_info{

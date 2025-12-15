@@ -28,6 +28,7 @@ export namespace gse::renderer {
 		vk::raii::PipelineLayout m_pipeline_layout = nullptr;
 		vk::raii::DescriptorSet m_descriptor_set = nullptr;
 		vk::raii::Sampler m_buffer_sampler = nullptr;
+        vk::raii::Sampler m_shadow_sampler = nullptr;
 
 		resource::handle<shader> m_shader;
 
@@ -130,6 +131,24 @@ auto gse::renderer::lighting::initialize() -> void {
     };
     m_buffer_sampler = config.device_config().device.createSampler(sampler_create_info);
 
+    constexpr vk::SamplerCreateInfo shadow_sampler_create_info{
+	    .magFilter = vk::Filter::eLinear,
+	    .minFilter = vk::Filter::eLinear,
+	    .mipmapMode = vk::SamplerMipmapMode::eNearest,
+	    .addressModeU = vk::SamplerAddressMode::eClampToEdge,
+	    .addressModeV = vk::SamplerAddressMode::eClampToEdge,
+	    .addressModeW = vk::SamplerAddressMode::eClampToEdge,
+	    .mipLodBias = 0.0f,
+	    .anisotropyEnable = vk::False,
+	    .maxAnisotropy = 1.0f,
+	    .compareEnable = vk::False,
+	    .minLod = 0.0f,
+	    .maxLod = 1.0f,
+	    .borderColor = vk::BorderColor::eFloatOpaqueWhite
+    };
+
+    m_shadow_sampler = config.device_config().device.createSampler(shadow_sampler_create_info);
+
     const std::unordered_map<std::string, vk::DescriptorImageInfo> gbuffer_image_infos = {
 	    {
 	        "g_albedo",
@@ -165,10 +184,10 @@ auto gse::renderer::lighting::initialize() -> void {
 
     for (std::size_t i = 0; i < max_shadow_lights; ++i) {
         shadow_infos.push_back({
-            .sampler = m_buffer_sampler,
-            .imageView = shadow_renderer.shadow_map_view(i),
-            .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal
-        });
+		    .sampler = m_shadow_sampler,
+		    .imageView = shadow_renderer.shadow_map_view(i),
+		    .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal
+		});
     }
 
     array_image_infos.emplace("shadow_maps", std::move(shadow_infos));
@@ -379,10 +398,10 @@ auto gse::renderer::lighting::render(std::span<const std::reference_wrapper<regi
             auto up = ensure_non_collinear_up(dir, { 0.0f, 1.0f, 0.0f });
 
             auto light_proj = orthographic(
-                meters(-10000.0f),
-                meters(10000.0f),
-                meters(-10000.0f),
-                meters(1000.0f),
+                meters(-100.0f),
+                meters(100.0f),
+                meters(-100.0f),
+                meters(100.0f),
                 comp.near_plane,
                 comp.far_plane
             );
@@ -493,34 +512,42 @@ auto gse::renderer::lighting::render(std::span<const std::reference_wrapper<regi
 
     m_shader->set_uniform_block("ShadowParams", shadow_data, shadow_alloc);
 
-    vulkan::uploader::transition_image_layout(
-        command, config.swap_chain_config().albedo_image,
-        vk::ImageLayout::eShaderReadOnlyOptimal,
-        vk::ImageAspectFlagBits::eColor,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-        vk::AccessFlagBits2::eColorAttachmentWrite,
-        vk::PipelineStageFlagBits2::eFragmentShader,
-        vk::AccessFlagBits2::eShaderSampledRead
+    auto& shadow_renderer = renderer<shadow>();
+    const auto texel_size = shadow_renderer.shadow_texel_size();
+
+    shadow_data.emplace(
+        "shadow_texel_size",
+        std::as_bytes(std::span(&texel_size, 1))
     );
 
     vulkan::uploader::transition_image_layout(
-        command, config.swap_chain_config().normal_image,
-        vk::ImageLayout::eShaderReadOnlyOptimal,
-        vk::ImageAspectFlagBits::eColor,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-        vk::AccessFlagBits2::eColorAttachmentWrite,
-        vk::PipelineStageFlagBits2::eFragmentShader,
-        vk::AccessFlagBits2::eShaderSampledRead
+	    command, config.swap_chain_config().albedo_image,
+	    vk::ImageLayout::eShaderReadOnlyOptimal,
+	    vk::ImageAspectFlagBits::eColor,
+	    vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+	    vk::AccessFlagBits2::eColorAttachmentWrite,
+	    vk::PipelineStageFlagBits2::eFragmentShader,
+	    vk::AccessFlagBits2::eShaderSampledRead
     );
 
     vulkan::uploader::transition_image_layout(
-        command, config.swap_chain_config().depth_image,
-        vk::ImageLayout::eDepthReadOnlyOptimal,
-        vk::ImageAspectFlagBits::eDepth,
-        vk::PipelineStageFlagBits2::eLateFragmentTests,
-        vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-        vk::PipelineStageFlagBits2::eFragmentShader,
-        vk::AccessFlagBits2::eShaderSampledRead
+	    command, config.swap_chain_config().normal_image,
+	    vk::ImageLayout::eShaderReadOnlyOptimal,
+	    vk::ImageAspectFlagBits::eColor,
+	    vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+	    vk::AccessFlagBits2::eColorAttachmentWrite,
+	    vk::PipelineStageFlagBits2::eFragmentShader,
+	    vk::AccessFlagBits2::eShaderSampledRead
+    );
+
+    vulkan::uploader::transition_image_layout(
+	    command, config.swap_chain_config().depth_image,
+	    vk::ImageLayout::eDepthReadOnlyOptimal,
+	    vk::ImageAspectFlagBits::eDepth,
+	    vk::PipelineStageFlagBits2::eLateFragmentTests,
+	    vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+	    vk::PipelineStageFlagBits2::eFragmentShader,
+	    vk::AccessFlagBits2::eShaderSampledRead
     );
 
     vk::RenderingAttachmentInfo color_attachment{

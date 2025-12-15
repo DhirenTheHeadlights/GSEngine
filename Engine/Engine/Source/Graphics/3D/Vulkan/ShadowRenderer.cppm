@@ -10,6 +10,8 @@ import :shader;
 import :spot_light;
 import :directional_light;
 import :point_light;
+import :geometry_renderer;
+import :rendering_stack;
 
 import gse.physics;
 import gse.physics.math;
@@ -21,11 +23,6 @@ export namespace gse::renderer {
         mat4 proj;
         std::vector<id> ignore_list_ids;
         int shadow_index = -1;
-    };
-
-    struct shadow_draw_entry {
-        id owner_id;
-        render_queue_entry entry;
     };
 
     class shadow final : public base_renderer {
@@ -48,13 +45,15 @@ export namespace gse::renderer {
         auto shadow_map_view(
             std::size_t index
         ) const -> vk::ImageView;
+
+        auto shadow_texel_size(
+        ) const -> unitless::vec2;
     private:
         vk::raii::Pipeline m_pipeline = nullptr;
         vk::raii::PipelineLayout m_pipeline_layout = nullptr;
 
         resource::handle<shader> m_shader;
 
-        double_buffer<std::vector<shadow_draw_entry>> m_render_queue;
         double_buffer<std::vector<shadow_light_entry>> m_shadow_lights;
 
         unitless::vec2u m_shadow_extent = { 1024, 1024 };
@@ -107,7 +106,7 @@ auto gse::renderer::shadow::initialize() -> void {
         .depthClampEnable = vk::False,
         .rasterizerDiscardEnable = vk::False,
         .polygonMode = vk::PolygonMode::eFill,
-        .cullMode = vk::CullModeFlagBits::eBack,
+        .cullMode = vk::CullModeFlagBits::eFront,
         .frontFace = vk::FrontFace::eCounterClockwise,
         .depthBiasEnable = vk::True,
         .depthBiasConstantFactor = 1.25f,
@@ -213,7 +212,7 @@ auto gse::renderer::shadow::initialize() -> void {
         .initialLayout = vk::ImageLayout::eUndefined
     };
 
-    const vk::ImageViewCreateInfo view_info{
+    constexpr vk::ImageViewCreateInfo view_info{
         .flags = {},
         .image = nullptr,
         .viewType = vk::ImageViewType::e2D,
@@ -237,8 +236,56 @@ auto gse::renderer::shadow::initialize() -> void {
         );
     }
 
+    config.add_transient_work(
+        [this](const vk::raii::CommandBuffer& cmd) -> std::vector<vulkan::persistent_allocator::buffer_resource> {
+	        for (auto& img : m_shadow_maps) {
+	            vulkan::uploader::transition_image_layout(
+	                cmd,
+	                img,
+	                vk::ImageLayout::eDepthAttachmentOptimal,
+	                vk::ImageAspectFlagBits::eDepth,
+	                vk::PipelineStageFlagBits2::eTopOfPipe,
+	                {},
+	                vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+	                vk::AccessFlagBits2::eDepthStencilAttachmentWrite
+	            );
+
+	            vk::RenderingAttachmentInfo depth_attachment{
+	                .imageView = *img.view,
+	                .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+	                .loadOp = vk::AttachmentLoadOp::eClear,
+	                .storeOp = vk::AttachmentStoreOp::eStore,
+	                .clearValue = vk::ClearValue{.depthStencil = vk::ClearDepthStencilValue{ 1.0f, 0 } }
+	            };
+
+	            const vk::RenderingInfo rendering_info{
+	                .renderArea = { { 0, 0 }, { m_shadow_extent.x(), m_shadow_extent.y() } },
+	                .layerCount = 1,
+	                .colorAttachmentCount = 0,
+	                .pColorAttachments = nullptr,
+	                .pDepthAttachment = &depth_attachment
+	            };
+
+	            cmd.beginRendering(rendering_info);
+	            cmd.endRendering();
+
+	            vulkan::uploader::transition_image_layout(
+	                cmd,
+	                img,
+	                vk::ImageLayout::eDepthReadOnlyOptimal,
+	                vk::ImageAspectFlagBits::eDepth,
+	                vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+	                vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+	                vk::PipelineStageFlagBits2::eFragmentShader,
+	                vk::AccessFlagBits2::eShaderSampledRead
+	            );
+	        }
+
+	        return {};
+	    }
+    );
+
     frame_sync::on_end([this] {
-        m_render_queue.flip();
 		m_shadow_lights.flip();
     });
 }
@@ -267,10 +314,10 @@ auto gse::renderer::shadow::update(const std::span<const std::reference_wrapper<
             vec3<length> light_pos = -dir * 10.0f;
 
             entry.proj = orthographic(
-                meters(-10000.0f),
-                meters(10000.0f),
-                meters(-10000.0f),
-                meters(1000.0f),
+                meters(-100.0f),
+                meters(100.0f),
+                meters(-100.0f),
+                meters(100.0f),
                 comp.near_plane,
                 comp.far_plane
             );
@@ -322,128 +369,30 @@ auto gse::renderer::shadow::update(const std::span<const std::reference_wrapper<
             ++next_shadow_index;
         }
     }
-
-    auto& out = m_render_queue.write();
-    out.clear();
-
-    for (auto& reg_ref : registries) {
-        for (auto& reg = reg_ref.get(); auto& component : reg.linked_objects_write<render_component>()) {
-            if (!component.render) {
-                continue;
-            }
-
-            for (auto& model_handle : component.model_instances) {
-                if (!model_handle.handle().valid()) {
-                    continue;
-                }
-
-                for (const auto& rq : model_handle.render_queue_entries()) {
-                    out.push_back(shadow_draw_entry{
-                        component.owner_id(),
-                        rq
-                    });
-                }
-            }
-        }
-    }
 }
 
 auto gse::renderer::shadow::render(std::span<const std::reference_wrapper<registry>> registries) -> void {
     auto& config = m_context.config();
     auto command = config.frame_context().command_buffer;
 
-    std::array<mat4, max_shadow_lights> shadow_view_proj{};
-    std::size_t shadow_light_count = 0;
+    auto& geom = renderer<geometry>();
+    const auto draw_list = geom.render_queue();
 
-    for (auto& reg_ref : registries) {
-        auto& reg = reg_ref.get();
-        if (shadow_light_count >= max_shadow_lights) {
-            break;
-        }
-
-        for (const auto& comp : reg.linked_objects_read<directional_light_component>()) {
-            if (shadow_light_count >= max_shadow_lights) {
-                break;
-            }
-
-            auto dir = comp.direction;
-            vec3<length> light_pos = -dir * 10.0f;
-            auto up = ensure_non_collinear_up(dir, { 0.0f, 1.0f, 0.0f });
-
-            auto light_proj = orthographic(
-                meters(-10000.0f),
-                meters(10000.0f),
-                meters(-10000.0f),
-                meters(1000.0f),
-                comp.near_plane,
-                comp.far_plane
-            );
-
-            auto light_view = look_at(
-                light_pos,
-                light_pos + vec3<length>(dir),
-                up
-            );
-
-            shadow_view_proj[shadow_light_count] = light_proj * light_view;
-            ++shadow_light_count;
-        }
-
-        for (const auto& comp : reg.linked_objects_read<point_light_component>()) {
-            if (shadow_light_count >= max_shadow_lights) {
-                break;
-            }
-
-            auto pos = comp.position;
-            auto dir = unitless::vec3(0.0f, -1.0f, 0.0f);
-            auto up = unitless::vec3(0.0f, 0.0f, 1.0f);
-
-            auto light_proj = perspective(
-                radians(90.0f),
-                1.0f,
-                comp.near_plane,
-                comp.far_plane
-            );
-
-            auto light_view = look_at(
-                pos,
-                pos + vec3<length>(dir),
-                up
-            );
-
-            shadow_view_proj[shadow_light_count] = light_proj * light_view;
-            ++shadow_light_count;
-        }
-
-        for (const auto& comp : reg.linked_objects_read<spot_light_component>()) {
-            if (shadow_light_count >= max_shadow_lights) {
-                break;
-            }
-
-            auto pos = comp.position;
-            auto dir = comp.direction;
-            auto up = ensure_non_collinear_up(dir, { 0.0f, 1.0f, 0.0f });
-
-            auto light_proj = perspective(
-                comp.cut_off,
-                1.0f,
-                comp.near_plane,
-                comp.far_plane
-            );
-
-            auto light_view = look_at(
-                pos,
-                pos + vec3<length>(dir),
-                up
-            );
-
-            shadow_view_proj[shadow_light_count] = light_proj * light_view;
-            ++shadow_light_count;
-        }
+    if (draw_list.empty()) {
+        return;
     }
 
-    for (std::size_t i = 0; i < shadow_light_count; ++i) {
-        auto& depth_image = m_shadow_maps[i];
+    const auto& lights = m_shadow_lights.read();
+    if (lights.empty()) {
+        return;
+    }
+
+    for (const auto& light : lights) {
+        if (light.shadow_index < 0 || static_cast<std::size_t>(light.shadow_index) >= m_shadow_maps.size()) {
+            continue;
+        }
+
+        auto& depth_image = m_shadow_maps[static_cast<std::size_t>(light.shadow_index)];
 
         vulkan::uploader::transition_image_layout(
             command,
@@ -452,7 +401,7 @@ auto gse::renderer::shadow::render(std::span<const std::reference_wrapper<regist
             vk::ImageAspectFlagBits::eDepth,
             vk::PipelineStageFlagBits2::eFragmentShader,
             vk::AccessFlagBits2::eShaderSampledRead,
-            vk::PipelineStageFlagBits2::eEarlyFragmentTests,
+            vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
             vk::AccessFlagBits2::eDepthStencilAttachmentWrite
         );
 
@@ -465,7 +414,7 @@ auto gse::renderer::shadow::render(std::span<const std::reference_wrapper<regist
         };
 
         const vk::RenderingInfo rendering_info{
-            .renderArea = { { 0, 0 }, m_shadow_extent.x(), m_shadow_extent.y() },
+            .renderArea = { { 0, 0 }, { m_shadow_extent.x(), m_shadow_extent.y() } },
             .layerCount = 1,
             .colorAttachmentCount = 0,
             .pColorAttachments = nullptr,
@@ -475,43 +424,45 @@ auto gse::renderer::shadow::render(std::span<const std::reference_wrapper<regist
         vulkan::render(config, rendering_info, [&] {
             command.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
 
-            for (auto& reg_ref : registries) {
-	            for (auto& reg = reg_ref.get(); auto& render : reg.linked_objects_read<render_component>()) {
-                    mat4 model = transform.matrix();
+            const mat4 light_view_proj = light.proj * light.view;
 
-                    struct {
-                        mat4 light_view_proj;
-                        mat4 model;
-                    } pc{ light_view_proj, model };
+            for (const auto& e : draw_list) {
+                m_shader->push(
+                    command,
+                    m_pipeline_layout,
+                    "push_constants",
+                    "light_view_proj", light_view_proj,
+                    "model", e.model_matrix
+                );
 
-                    command.pushConstants(
-                        *m_pipeline_layout,
-                        vk::ShaderStageFlagBits::eVertex,
-                        0,
-                        sizeof(pc),
-                        &pc
-                    );
-
-                    mesh.draw(command);
-                }
+                const auto& mesh = e.model->meshes()[e.index];
+                mesh.bind(command);
+                mesh.draw(command);
             }
         });
 
         vulkan::uploader::transition_image_layout(
-            command,
-            depth_image,
-            vk::ImageLayout::eDepthReadOnlyOptimal,
-            vk::ImageAspectFlagBits::eDepth,
-            vk::PipelineStageFlagBits2::eEarlyFragmentTests,
-            vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-            vk::PipelineStageFlagBits2::eFragmentShader,
-            vk::AccessFlagBits2::eShaderSampledRead
+	        command,
+	        depth_image,
+	        vk::ImageLayout::eDepthReadOnlyOptimal,
+	        vk::ImageAspectFlagBits::eDepth,
+	        vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+	        vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+	        vk::PipelineStageFlagBits2::eFragmentShader,
+	        vk::AccessFlagBits2::eShaderSampledRead
         );
     }
 }
 
 auto gse::renderer::shadow::shadow_map_view(const std::size_t index) const -> vk::ImageView {
     return m_shadow_maps[index].view;
+}
+
+auto gse::renderer::shadow::shadow_texel_size() const -> unitless::vec2 {
+	return unitless::vec2(
+		1.0f / static_cast<float>(m_shadow_extent.x()),
+		1.0f / static_cast<float>(m_shadow_extent.y())
+	);
 }
 
 auto gse::renderer::ensure_non_collinear_up(const unitless::vec3& direction, const unitless::vec3& up) -> unitless::vec3 {

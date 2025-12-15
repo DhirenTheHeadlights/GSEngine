@@ -119,10 +119,10 @@ auto gse::renderer::render(const std::vector<std::reference_wrapper<registry>>& 
 		.config = rendering_context.config(),
 		.in_frame = [&registries, &in_frame] {
 			auto& cfg = rendering_context.config();
-			auto& frame_ctx = cfg.frame_context();
-			auto& swap = cfg.swap_chain_config();
+			const auto& frame_ctx = cfg.frame_context();
+			const auto& swap = cfg.swap_chain_config();
 
-			vk::ImageMemoryBarrier2 color_barrier{
+			const vk::ImageMemoryBarrier2 color_barrier{
 				.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
 				.srcAccessMask = {},
 				.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
@@ -141,28 +141,8 @@ auto gse::renderer::render(const std::vector<std::reference_wrapper<registry>>& 
 				}
 			};
 
-			vk::ImageMemoryBarrier2 depth_barrier{
-				.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
-				.srcAccessMask = {},
-				.dstStageMask = vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-				.dstAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-				.oldLayout = vk::ImageLayout::eUndefined,
-				.newLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,
-				.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-				.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-				.image = swap.depth_image.image,
-				.subresourceRange = {
-					.aspectMask = vk::ImageAspectFlagBits::eDepth,
-					.baseMipLevel = 0,
-					.levelCount = 1,
-					.baseArrayLayer = 0,
-					.layerCount = 1
-				}
-			};
-
 			std::array barriers{
-				color_barrier,
-				depth_barrier
+				color_barrier
 			};
 
 			const vk::DependencyInfo begin_dep{
@@ -175,6 +155,15 @@ auto gse::renderer::render(const std::vector<std::reference_wrapper<registry>>& 
 			for (const auto& renderer : renderers()) {
 				renderer->render(registries);
 			}
+
+			gui::frame(
+				rendering_context,
+				renderer<sprite>(),
+				renderer<text>(),
+				[&] {
+					in_frame();
+				}
+			);
 
 			vk::ImageMemoryBarrier2 present_barrier{
 				.srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
@@ -201,15 +190,6 @@ auto gse::renderer::render(const std::vector<std::reference_wrapper<registry>>& 
 			};
 
 			rendering_context.config().frame_context().command_buffer.pipelineBarrier2(dependency_info);
-
-			gui::frame(
-				rendering_context,
-				renderer<sprite>(),
-				renderer<text>(),
-				[&] {
-					in_frame();
-				}
-			);
 		}
 	});
 
