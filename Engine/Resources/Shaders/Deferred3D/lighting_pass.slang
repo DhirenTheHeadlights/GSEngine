@@ -66,6 +66,18 @@ float3 decode_octahedron(float2 e) {
     return normalize(n);
 }
 
+float pcf_shadow(int s, float2 uv, float depth, float bias) {
+    float sum = 0.0;
+    for (int y = -1; y <= 1; ++y) {
+        for (int x = -1; x <= 1; ++x) {
+            float2 duv = float2((float)x, (float)y) * shadow_texel_size;
+            float closest = shadow_maps[s].SampleLevel(uv + duv, 0).r;
+            sum += (depth - bias > closest) ? 0.0 : 1.0;
+        }
+    }
+    return sum / 9.0;
+}
+
 float compute_shadow_for_light(int light_index, float3 pos_world) {
     for (int s = 0; s < shadow_light_count; ++s) {
         if (shadow_light_indices[s] != light_index) {
@@ -74,16 +86,20 @@ float compute_shadow_for_light(int light_index, float3 pos_world) {
 
         float4 light_clip = mul(shadow_view_proj[s], float4(pos_world, 1.0));
         float3 light_ndc = light_clip.xyz / light_clip.w;
+
         float2 shadow_uv = light_ndc.xy * 0.5 + 0.5;
-        float depth = light_ndc.z * 0.5 + 0.5;
+
+        float depth = light_ndc.z;
 
         if (shadow_uv.x < 0.0 || shadow_uv.x > 1.0 || shadow_uv.y < 0.0 || shadow_uv.y > 1.0) {
             return 1.0;
         }
+        if (depth < 0.0 || depth > 1.0) {
+            return 1.0;
+        }
 
-        float closest = shadow_maps[s].SampleLevel(shadow_uv, 0).r;
-        float bias = 0.002;
-        return depth - bias > closest ? 0.0 : 1.0;
+        float bias = 0.0015;
+        return pcf_shadow(s, shadow_uv, depth, bias);
     }
 
     return 1.0;
@@ -136,5 +152,21 @@ float4 fs_main(VS_OUTPUT input) : SV_Target0 {
         }
     }
 
-    return float4(result, 1.0);
+    // --- DEBUGGING START ---
+    // Pick the first shadow casting light to debug
+    int debug_idx = shadow_light_indices[0];
+
+    // Calculate coordinates exactly as you do in compute_shadow_for_light
+    float4 light_clip = mul(shadow_view_proj[0], float4(pos_world, 1.0));
+    float3 light_ndc = light_clip.xyz / light_clip.w;
+    float2 debug_uv = light_ndc.xy * 0.5 + 0.5;
+
+    // Visual 1: Project the Shadow Map onto the object (Projector style)
+    // If the shadow map image looks correct (not upside down/mirrored) on the object, the generation is fine.
+    float shadow_map_val = shadow_maps[0].SampleLevel(debug_uv, 0).r;
+    return float4(shadow_map_val, shadow_map_val, shadow_map_val, 1.0);
+
+    // Visual 2 (Alternative): Visualize the UV gradients
+    // return float4(debug_uv.x, debug_uv.y, 0.0, 1.0);
+    // --- DEBUGGING END ---
 }

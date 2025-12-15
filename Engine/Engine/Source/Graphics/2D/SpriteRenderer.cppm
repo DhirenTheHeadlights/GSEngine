@@ -51,9 +51,9 @@ auto gse::renderer::sprite::initialize() -> void {
 
 	const vk::Viewport viewport{
 		.x = 0.0f,
-		.y = static_cast<float>(config.swap_chain_config().extent.height),
+		.y = 0.0f,
 		.width = static_cast<float>(config.swap_chain_config().extent.width),
-		.height = -static_cast<float>(config.swap_chain_config().extent.height),
+		.height = static_cast<float>(config.swap_chain_config().extent.height),
 		.minDepth = 0.0f,
 		.maxDepth = 1.0f
 	};
@@ -72,7 +72,7 @@ auto gse::renderer::sprite::initialize() -> void {
 	constexpr vk::PipelineRasterizationStateCreateInfo rasterizer{
 		.polygonMode = vk::PolygonMode::eFill,
 		.cullMode = vk::CullModeFlagBits::eNone,
-		.frontFace = vk::FrontFace::eClockwise,
+		.frontFace = vk::FrontFace::eCounterClockwise,
 		.lineWidth = 1.0f
 	};
 

@@ -224,7 +224,7 @@ constexpr auto gse::operator*(const mat_t<T, Cols, Rows, Dim>& lhs, const unitle
 
 template <typename T, std::size_t Cols, std::size_t Rows, typename Dim, typename Q>
 constexpr auto gse::operator*(const mat_t<T, Cols, Rows, Dim>& lhs, const vec_t<Q, Cols>& rhs) {
-	using result_dimension = decltype(Dim{} *typename Q::dimension{});
+	using result_dimension = decltype(Dim{} * typename Q::dimension{});
 	using result_value_type = std::common_type_t<T, typename Q::value_type>;
 	using result_quantity = internal::generic_quantity<result_value_type, result_dimension>;
 
@@ -351,9 +351,14 @@ template <typename T>
 constexpr auto gse::orthographic(length_t<T> left, length_t<T> right, length_t<T> bottom, length_t<T> top, length_t<T> near, length_t<T> far) -> mat4_t<T> {
 	return mat4_t<T>{
 		{ 2 / (right - left).template as<length::default_unit>(), 0, 0, 0 },
-		{ 0,									2 / (top - bottom).template as<length::default_unit>(),	0,														0 },
-		{ 0,									0,														-2 / (far - near).template as<length::default_unit>(),	0 },
-		{ -(right + left) / (right - left),		-(top + bottom) / (top - bottom),						-(far + near) / (far - near),							1 }
+		{ 0, 2 / (bottom - top).template as<length::default_unit>(), 0, 0 },
+		{ 0, 0, 1 / (near - far).template as<length::default_unit>(), 0 },
+		{
+			-(right + left) / (right - left),
+			-(bottom + top) / (bottom - top),
+			near / (near - far),
+			1
+		}
 	};
 }
 

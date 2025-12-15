@@ -28,9 +28,9 @@ VSOut vs_main(float2 in_position: POSITION, float2 in_tex_coord: TEXCOORD) {
     float2 scaled_pos = in_position * size + position;
 
     o.clip_pos = mul(projection, float4(scaled_pos, 0.0, 1.0));
+    float2 flipped_tex = float2(in_tex_coord.x, 1.0 - in_tex_coord.y);
+    o.tex_coord = uv_rect.xy + flipped_tex * uv_rect.zw;
 
-    float2 flipped_uv = float2(in_tex_coord.x, 1.0 - in_tex_coord.y);
-    o.tex_coord = uv_rect.xy + flipped_uv * uv_rect.zw;
     o.color = color;
     return o;
 }

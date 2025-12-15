@@ -32,6 +32,9 @@ export namespace gse::renderer {
 		auto render(
 			std::span<const std::reference_wrapper<registry>> registries
 		) -> void override;
+
+		auto render_queue(
+		) -> std::span<const render_queue_entry>;
 	private:
 		vk::raii::Pipeline m_pipeline = nullptr;
 		vk::raii::PipelineLayout m_pipeline_layout = nullptr;
@@ -400,4 +403,8 @@ auto gse::renderer::geometry::render(const std::span<const std::reference_wrappe
             mesh.draw(command);
         }
     });
+}
+
+auto gse::renderer::geometry::render_queue() -> std::span<const render_queue_entry> {
+	return m_render_queue.read();
 }

@@ -9,8 +9,8 @@ cbuffer PushConstants {
 [Layout(LayoutKind::Deferred3D)]
 [shader("vertex")]
 float4 vs_main(float3 in_position : POSITION) : SV_Position {
-    float4 pos_world = mul(float4(in_position, 1.0), model);
-    return mul(pos_world, light_view_proj);
+    float4 pos_world = mul(model, float4(in_position, 1.0));
+    return mul(light_view_proj, pos_world);
 }
 
 [Layout(LayoutKind::Deferred3D)]
