@@ -155,28 +155,12 @@ float4 fs_main(VS_OUTPUT input) : SV_Target0 {
         }
     }
 
-    // --- DEBUGGING START ---
-    int debug_idx = shadow_light_indices[0];
-
     float4 light_clip = mul(shadow_view_proj[0], float4(pos_world, 1.0));
+    float3 ndc = light_clip.xyz / light_clip.w;
 
-    // Apply the same fix here for consistency
-    if (light_clip.w <= 0.0) return float4(0.0, 1.0, 0.0, 1.0); // Return Green for "Behind Light"
+    float z = ndc.z;
+    if (z < -1.0) return float4(1, 0, 1, 1);
+    if (z > 1.0) return float4(0, 1, 1, 1);
 
-    float3 light_ndc = light_clip.xyz / light_clip.w;
-    float2 debug_uv = light_ndc.xy * 0.5 + 0.5;
-
-    // Boundary check for debug (make out-of-bounds Red)
-    if (debug_uv.x < 0.0 || debug_uv.x > 1.0 || debug_uv.y < 0.0 || debug_uv.y > 1.0) {
-        return float4(1.0, 0.0, 0.0, 1.0);
-    }
-
-    float shadow_map_val = shadow_maps[0].SampleLevel(debug_uv, 0).r;
-
-    // --- FIX 2: Enhance Contrast ---
-    // Raise to a high power to visualize the depth variance
-    float visual_depth = pow(shadow_map_val, 128.0);
-
-    return float4(visual_depth, visual_depth, visual_depth, 1.0);
-    // --- DEBUGGING END ---
+    return float4(saturate(z * 0.5 + 0.5), 0, 0, 1);
 }

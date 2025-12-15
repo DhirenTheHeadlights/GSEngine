@@ -135,9 +135,9 @@ auto gse::renderer::lighting::initialize() -> void {
 	    .magFilter = vk::Filter::eLinear,
 	    .minFilter = vk::Filter::eLinear,
 	    .mipmapMode = vk::SamplerMipmapMode::eNearest,
-	    .addressModeU = vk::SamplerAddressMode::eClampToEdge,
-	    .addressModeV = vk::SamplerAddressMode::eClampToEdge,
-	    .addressModeW = vk::SamplerAddressMode::eClampToEdge,
+	    .addressModeU = vk::SamplerAddressMode::eClampToBorder,
+	    .addressModeV = vk::SamplerAddressMode::eClampToBorder,
+	    .addressModeW = vk::SamplerAddressMode::eClampToBorder,
 	    .mipLodBias = 0.0f,
 	    .anisotropyEnable = vk::False,
 	    .maxAnisotropy = 1.0f,
@@ -247,16 +247,16 @@ auto gse::renderer::lighting::initialize() -> void {
     };
 
     constexpr vk::PipelineRasterizationStateCreateInfo rasterizer{
-        .depthClampEnable = vk::False,
-        .rasterizerDiscardEnable = vk::False,
-        .polygonMode = vk::PolygonMode::eFill,
-        .cullMode = vk::CullModeFlagBits::eNone,
-        .frontFace = vk::FrontFace::eCounterClockwise,
-        .depthBiasEnable = vk::False,
-        .depthBiasConstantFactor = 0.0f,
-        .depthBiasClamp = 0.0f,
-        .depthBiasSlopeFactor = 0.0f,
-        .lineWidth = 1.0f
+	    .depthClampEnable = vk::False,
+	    .rasterizerDiscardEnable = vk::False,
+	    .polygonMode = vk::PolygonMode::eFill,
+	    .cullMode = vk::CullModeFlagBits::eFront,
+	    .frontFace = vk::FrontFace::eCounterClockwise,
+	    .depthBiasEnable = vk::True,
+	    .depthBiasConstantFactor = 1.25f,
+	    .depthBiasClamp = 0.0f,
+	    .depthBiasSlopeFactor = 1.75f,
+	    .lineWidth = 1.0f
     };
 
     constexpr vk::PipelineMultisampleStateCreateInfo multi_sample_state{
@@ -494,26 +494,18 @@ auto gse::renderer::lighting::render(std::span<const std::reference_wrapper<regi
         }
     }
 
+    auto& shadow_renderer = renderer<shadow>();
+    const auto texel_size = shadow_renderer.shadow_texel_size();
+
     int shadow_count_i = static_cast<int>(shadow_light_count);
 
     std::unordered_map<std::string, std::span<const std::byte>> shadow_data;
-    shadow_data.emplace(
-        "shadow_light_count",
-        std::as_bytes(std::span(&shadow_count_i, 1))
-    );
-    shadow_data.emplace(
-        "shadow_light_indices",
-        std::as_bytes(std::span(shadow_indices.data(), shadow_indices.size()))
-    );
-    shadow_data.emplace(
-        "shadow_view_proj",
-        std::as_bytes(std::span(shadow_view_proj.data(), shadow_view_proj.size()))
-    );
+    shadow_data.emplace("shadow_light_count", std::as_bytes(std::span(&shadow_count_i, 1)));
+    shadow_data.emplace("shadow_light_indices", std::as_bytes(std::span(shadow_indices.data(), shadow_indices.size())));
+    shadow_data.emplace("shadow_view_proj", std::as_bytes(std::span(shadow_view_proj.data(), shadow_view_proj.size())));
+    shadow_data.emplace("shadow_texel_size", std::as_bytes(std::span(&texel_size, 1)));
 
     m_shader->set_uniform_block("ShadowParams", shadow_data, shadow_alloc);
-
-    auto& shadow_renderer = renderer<shadow>();
-    const auto texel_size = shadow_renderer.shadow_texel_size();
 
     shadow_data.emplace(
         "shadow_texel_size",

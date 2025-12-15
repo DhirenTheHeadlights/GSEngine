@@ -106,14 +106,14 @@ auto gse::renderer::shadow::initialize() -> void {
 	    .depthClampEnable = vk::False,
 	    .rasterizerDiscardEnable = vk::False,
 	    .polygonMode = vk::PolygonMode::eFill,
-	    .cullMode = vk::CullModeFlagBits::eFront, 
+	    .cullMode = vk::CullModeFlagBits::eNone,
 	    .frontFace = vk::FrontFace::eCounterClockwise,
 	    .depthBiasEnable = vk::True,
-	    .depthBiasConstantFactor = 0.0f,
+	    .depthBiasConstantFactor = 1.25f,
 	    .depthBiasClamp = 0.0f,
-	    .depthBiasSlopeFactor = 0.0f,
+	    .depthBiasSlopeFactor = 1.75f,
 	    .lineWidth = 1.0f
-	};
+    };
 
     constexpr vk::PipelineDepthStencilStateCreateInfo depth_stencil{
         .depthTestEnable = vk::True,
