@@ -313,7 +313,7 @@ auto gse::renderer::lighting::initialize() -> void {
     m_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, lighting_pipeline_info);
 }
 
-auto gse::renderer::lighting::render(std::span<const std::reference_wrapper<registry>> registries) -> void {
+auto gse::renderer::lighting::render(const std::span<const std::reference_wrapper<registry>> registries) -> void {
     auto& config = m_context.config();
     const auto command = config.frame_context().command_buffer;
 
@@ -338,10 +338,7 @@ auto gse::renderer::lighting::render(std::span<const std::reference_wrapper<regi
         m_shader->set_ssbo_struct(
             "lights_ssbo",
             index,
-            std::span<const std::byte>(
-                zero_elem.data(),
-                zero_elem.size()
-            ),
+            std::span<const std::byte>(zero_elem.data(), zero_elem.size()),
             light_alloc
         );
     };
@@ -369,9 +366,6 @@ auto gse::renderer::lighting::render(std::span<const std::reference_wrapper<regi
     };
 
     std::size_t light_count = 0;
-    std::array<int, max_shadow_lights> shadow_indices{};
-    std::array<mat4, max_shadow_lights> shadow_view_proj{};
-    std::size_t shadow_light_count = 0;
 
     for (auto& reg_ref : registries) {
         auto& reg = reg_ref.get();
@@ -391,52 +385,6 @@ auto gse::renderer::lighting::render(std::span<const std::reference_wrapper<regi
             set(light_count, "direction", to_view_dir(comp.direction));
             set(light_count, "color", comp.color);
             set(light_count, "intensity", comp.intensity);
-            set(light_count, "ambient_strength", comp.ambient_strength);
-
-            auto dir = comp.direction;
-            vec3<length> light_pos = -dir * 10.0f;
-            auto up = ensure_non_collinear_up(dir, { 0.0f, 1.0f, 0.0f });
-
-            auto light_proj = orthographic(
-                meters(-100.0f),
-                meters(100.0f),
-                meters(-100.0f),
-                meters(100.0f),
-                comp.near_plane,
-                comp.far_plane
-            );
-
-            auto light_view = look_at(
-                light_pos,
-                light_pos + vec3<length>(dir),
-                up
-            );
-
-            if (shadow_light_count < max_shadow_lights) {
-                shadow_indices[shadow_light_count] = static_cast<int>(light_count);
-                shadow_view_proj[shadow_light_count] = light_proj * light_view;
-                ++shadow_light_count;
-            }
-
-            ++light_count;
-        }
-
-        for (const auto& comp : reg.linked_objects_read<point_light_component>()) {
-            if (light_count >= max_shadow_lights) {
-                break;
-            }
-
-            zero_at(light_count);
-
-            int type = 1;
-            auto pos_meters = comp.position.as<meters>();
-            set(light_count, "light_type", type);
-            set(light_count, "position", to_view_pos(pos_meters));
-            set(light_count, "color", comp.color);
-            set(light_count, "intensity", comp.intensity);
-            set(light_count, "constant", comp.constant);
-            set(light_count, "linear", comp.linear);
-            set(light_count, "quadratic", comp.quadratic);
             set(light_count, "ambient_strength", comp.ambient_strength);
 
             ++light_count;
@@ -466,29 +414,26 @@ auto gse::renderer::lighting::render(std::span<const std::reference_wrapper<regi
             set(light_count, "outer_cut_off", outer_cut_off_cos);
             set(light_count, "ambient_strength", comp.ambient_strength);
 
-            auto pos = comp.position;
-            auto dir = comp.direction;
-            auto cutoff = comp.cut_off;
-            auto up = ensure_non_collinear_up(dir, { 0.0f, 1.0f, 0.0f });
+            ++light_count;
+        }
 
-            auto light_proj = perspective(
-                cutoff,
-                1.0f,
-                comp.near_plane,
-                comp.far_plane
-            );
-
-            auto light_view = look_at(
-                pos,
-                pos + vec3<length>(dir),
-                up
-            );
-
-            if (shadow_light_count < max_shadow_lights) {
-                shadow_indices[shadow_light_count] = static_cast<int>(light_count);
-                shadow_view_proj[shadow_light_count] = light_proj * light_view;
-                ++shadow_light_count;
+        for (const auto& comp : reg.linked_objects_read<point_light_component>()) {
+            if (light_count >= max_shadow_lights) {
+                break;
             }
+
+            zero_at(light_count);
+
+            int type = 1;
+            auto pos_meters = comp.position.as<meters>();
+            set(light_count, "light_type", type);
+            set(light_count, "position", to_view_pos(pos_meters));
+            set(light_count, "color", comp.color);
+            set(light_count, "intensity", comp.intensity);
+            set(light_count, "constant", comp.constant);
+            set(light_count, "linear", comp.linear);
+            set(light_count, "quadratic", comp.quadratic);
+            set(light_count, "ambient_strength", comp.ambient_strength);
 
             ++light_count;
         }
@@ -496,6 +441,16 @@ auto gse::renderer::lighting::render(std::span<const std::reference_wrapper<regi
 
     auto& shadow_renderer = renderer<shadow>();
     const auto texel_size = shadow_renderer.shadow_texel_size();
+    const auto shadow_entries = shadow_renderer.shadow_lights();
+
+    std::array<int, max_shadow_lights> shadow_indices{};
+    std::array<mat4, max_shadow_lights> shadow_view_proj{};
+    const std::size_t shadow_light_count = std::min<std::size_t>(shadow_entries.size(), max_shadow_lights);
+
+    for (std::size_t s = 0; s < shadow_light_count; ++s) {
+        shadow_indices[s] = static_cast<int>(s);
+        shadow_view_proj[s] = shadow_entries[s].proj * shadow_entries[s].view;
+    }
 
     int shadow_count_i = static_cast<int>(shadow_light_count);
 
@@ -507,39 +462,34 @@ auto gse::renderer::lighting::render(std::span<const std::reference_wrapper<regi
 
     m_shader->set_uniform_block("ShadowParams", shadow_data, shadow_alloc);
 
-    shadow_data.emplace(
-        "shadow_texel_size",
-        std::as_bytes(std::span(&texel_size, 1))
+    vulkan::uploader::transition_image_layout(
+        command, config.swap_chain_config().albedo_image,
+        vk::ImageLayout::eShaderReadOnlyOptimal,
+        vk::ImageAspectFlagBits::eColor,
+        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        vk::AccessFlagBits2::eColorAttachmentWrite,
+        vk::PipelineStageFlagBits2::eFragmentShader,
+        vk::AccessFlagBits2::eShaderSampledRead
     );
 
     vulkan::uploader::transition_image_layout(
-	    command, config.swap_chain_config().albedo_image,
-	    vk::ImageLayout::eShaderReadOnlyOptimal,
-	    vk::ImageAspectFlagBits::eColor,
-	    vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-	    vk::AccessFlagBits2::eColorAttachmentWrite,
-	    vk::PipelineStageFlagBits2::eFragmentShader,
-	    vk::AccessFlagBits2::eShaderSampledRead
+        command, config.swap_chain_config().normal_image,
+        vk::ImageLayout::eShaderReadOnlyOptimal,
+        vk::ImageAspectFlagBits::eColor,
+        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        vk::AccessFlagBits2::eColorAttachmentWrite,
+        vk::PipelineStageFlagBits2::eFragmentShader,
+        vk::AccessFlagBits2::eShaderSampledRead
     );
 
     vulkan::uploader::transition_image_layout(
-	    command, config.swap_chain_config().normal_image,
-	    vk::ImageLayout::eShaderReadOnlyOptimal,
-	    vk::ImageAspectFlagBits::eColor,
-	    vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-	    vk::AccessFlagBits2::eColorAttachmentWrite,
-	    vk::PipelineStageFlagBits2::eFragmentShader,
-	    vk::AccessFlagBits2::eShaderSampledRead
-    );
-
-    vulkan::uploader::transition_image_layout(
-	    command, config.swap_chain_config().depth_image,
-	    vk::ImageLayout::eDepthReadOnlyOptimal,
-	    vk::ImageAspectFlagBits::eDepth,
-	    vk::PipelineStageFlagBits2::eLateFragmentTests,
-	    vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-	    vk::PipelineStageFlagBits2::eFragmentShader,
-	    vk::AccessFlagBits2::eShaderSampledRead
+        command, config.swap_chain_config().depth_image,
+        vk::ImageLayout::eDepthReadOnlyOptimal,
+        vk::ImageAspectFlagBits::eDepth,
+        vk::PipelineStageFlagBits2::eLateFragmentTests,
+        vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+        vk::PipelineStageFlagBits2::eFragmentShader,
+        vk::AccessFlagBits2::eShaderSampledRead
     );
 
     vk::RenderingAttachmentInfo color_attachment{
@@ -558,31 +508,29 @@ auto gse::renderer::lighting::render(std::span<const std::reference_wrapper<regi
         .pDepthAttachment = nullptr
     };
 
-    vulkan::render(
-        config,
-        lighting_rendering_info, [&] {
-            command.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
-            command.bindDescriptorSets(
-                vk::PipelineBindPoint::eGraphics,
-                m_pipeline_layout,
-                0,
-                1,
-                &*m_descriptor_set,
-                0,
-                nullptr
-            );
+    vulkan::render(config, lighting_rendering_info, [&] {
+        command.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
+        command.bindDescriptorSets(
+            vk::PipelineBindPoint::eGraphics,
+            m_pipeline_layout,
+            0,
+            1,
+            &*m_descriptor_set,
+            0,
+            nullptr
+        );
 
-            m_shader->push_bytes(
-                command,
-                m_pipeline_layout,
-                "push_constants",
-                &light_count,
-                0
-            );
+        m_shader->push_bytes(
+            command,
+            m_pipeline_layout,
+            "push_constants",
+            &light_count,
+            0
+        );
 
-            command.draw(3, 1, 0, 0);
-        }
-    );
+        command.draw(3, 1, 0, 0);
+    });
 }
+
 
 

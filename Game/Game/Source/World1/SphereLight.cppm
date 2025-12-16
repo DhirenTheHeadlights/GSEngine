@@ -29,7 +29,7 @@ export namespace gs {
 				.quadratic = 0.032f,
 				.cut_off = gse::degrees(35.f),
 				.outer_cut_off = gse::degrees(65.f),
-				.ambient_strength = 0.00025f,
+				.ambient_strength = 0.025f,
 				.near_plane = gse::meters(0.1f),
 				.far_plane = gse::meters(10000.f),
 				.ignore_list_ids = { owner_id() }

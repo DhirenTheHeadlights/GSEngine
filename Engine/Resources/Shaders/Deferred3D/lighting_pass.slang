@@ -19,7 +19,7 @@ VS_OUTPUT vs_main(uint vidx: SV_VertexID) {
 
     float2 clip = verts[vidx];
     o.position = float4(clip, 0.0, 1.0);
-    o.uv = clip * 0.5 + 0.5;
+    o.uv = float2(clip.x * 0.5 + 0.5, 0.5 - clip.y * 0.5);
 
     return o;
 }
@@ -31,8 +31,7 @@ cbuffer PushConstants {
 
 float3 reconstruct_view_position(float2 uv, float depth) {
     float2 ndc_xy = uv * 2.0 - 1.0;
-    float ndc_z = depth;
-    float4 clip = float4(ndc_xy.x, ndc_xy.y, ndc_z, 1.0);
+    float4 clip = float4(ndc_xy.x, ndc_xy.y, depth, 1.0);
     float4 view_pos_h = mul(inv_proj, clip);
     view_pos_h /= view_pos_h.w;
     return view_pos_h.xyz;
@@ -88,9 +87,11 @@ float compute_shadow_for_light(int light_index, float3 pos_world) {
         if (light_clip.w <= 0.0) {
             return 1.0;
         }
+
         float3 light_ndc = light_clip.xyz / light_clip.w;
 
         float2 shadow_uv = light_ndc.xy * 0.5 + 0.5;
+        shadow_uv.y = 1.0 - shadow_uv.y;
 
         float depth = light_ndc.z;
 
@@ -111,18 +112,20 @@ float compute_shadow_for_light(int light_index, float3 pos_world) {
 [Layout(LayoutKind::Deferred3D)]
 [shader("fragment")]
 float4 fs_main(VS_OUTPUT input) : SV_Target0 {
-    float depth = g_depth.SampleLevel(input.uv, 0).r;
+    float2 uv = input.uv;
+    uv.y = 1.0 - uv.y;
+
+    float depth = g_depth.SampleLevel(uv, 0).r;
     if (depth >= 1.0 - 1e-5) {
         return float4(0.0, 0.0, 0.0, 1.0);
     }
 
-    float3 pos_vs = reconstruct_view_position(input.uv, depth);
+    float3 pos_vs = reconstruct_view_position(uv, depth);
     float3 pos_world = reconstruct_world_position(pos_vs);
-    float3 albedo = g_albedo.SampleLevel(input.uv, 0).rgb;
-    float2 enc_n = g_normal.SampleLevel(input.uv, 0).rg;
+    float3 albedo = g_albedo.SampleLevel(uv, 0).rgb;
+    float2 enc_n = g_normal.SampleLevel(uv, 0).rg;
     float3 normal_vs = normalize(decode_octahedron(enc_n));
 
-    float3 V = normalize(-pos_vs);
     float3 result = float3(0.0, 0.0, 0.0);
 
     for (int i = 0; i < num_lights; ++i) {
@@ -132,35 +135,23 @@ float4 fs_main(VS_OUTPUT input) : SV_Target0 {
         if (light.light_type == 0) {
             float3 L = normalize(-light.direction);
             float NdotL = max(dot(normal_vs, L), 0.0);
-            float3 diffuse = albedo * light.color * light.intensity * NdotL * shadow;
-            float3 ambient = albedo * light.color * light.ambient_strength;
-            result += diffuse + ambient;
+            result += albedo * light.color * light.intensity * NdotL * shadow;
+            result += albedo * light.color * light.ambient_strength;
         } else if (light.light_type == 1) {
             float3 Lvec = light.position - pos_vs;
-            float3 L = normalize(Lvec);
-            float NdotL = max(dot(normal_vs, L), 0.0);
+            float NdotL = max(dot(normal_vs, normalize(Lvec)), 0.0);
             float att = attenuation_point_vs(light.position, pos_vs, light.constant, light.linear, light.quadratic);
-            float3 diffuse = albedo * light.color * light.intensity * NdotL * att * shadow;
-            float3 ambient = albedo * light.color * light.ambient_strength;
-            result += diffuse + ambient;
+            result += albedo * light.color * light.intensity * NdotL * att * shadow;
+            result += albedo * light.color * light.ambient_strength;
         } else if (light.light_type == 2) {
             float3 Lvec = light.position - pos_vs;
-            float3 L = normalize(Lvec);
-            float NdotL = max(dot(normal_vs, L), 0.0);
+            float NdotL = max(dot(normal_vs, normalize(Lvec)), 0.0);
             float att = attenuation_point_vs(light.position, pos_vs, light.constant, light.linear, light.quadratic);
             float sf = spot_factor_vs(Lvec, light.direction, light.cut_off, light.outer_cut_off);
-            float3 diffuse = albedo * light.color * light.intensity * NdotL * att * sf * shadow;
-            float3 ambient = albedo * light.color * light.ambient_strength;
-            result += diffuse + ambient;
+            result += albedo * light.color * light.intensity * NdotL * att * sf * shadow;
+            result += albedo * light.color * light.ambient_strength;
         }
     }
 
-    float4 light_clip = mul(shadow_view_proj[0], float4(pos_world, 1.0));
-    float3 ndc = light_clip.xyz / light_clip.w;
-
-    float z = ndc.z;
-    if (z < -1.0) return float4(1, 0, 1, 1);
-    if (z > 1.0) return float4(0, 1, 1, 1);
-
-    return float4(saturate(z * 0.5 + 0.5), 0, 0, 1);
+    return float4(result, 1.0);
 }
