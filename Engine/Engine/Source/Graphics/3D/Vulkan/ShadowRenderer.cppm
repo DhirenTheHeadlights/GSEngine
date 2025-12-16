@@ -48,6 +48,9 @@ export namespace gse::renderer {
 
         auto shadow_texel_size(
         ) const -> unitless::vec2;
+
+        auto shadow_lights(
+        ) const -> std::span<const shadow_light_entry>;
     private:
         vk::raii::Pipeline m_pipeline = nullptr;
         vk::raii::PipelineLayout m_pipeline_layout = nullptr;
@@ -106,7 +109,7 @@ auto gse::renderer::shadow::initialize() -> void {
 	    .depthClampEnable = vk::False,
 	    .rasterizerDiscardEnable = vk::False,
 	    .polygonMode = vk::PolygonMode::eFill,
-	    .cullMode = vk::CullModeFlagBits::eNone,
+	    .cullMode = vk::CullModeFlagBits::eBack,
 	    .frontFace = vk::FrontFace::eCounterClockwise,
 	    .depthBiasEnable = vk::True,
 	    .depthBiasConstantFactor = 1.25f,
@@ -463,6 +466,10 @@ auto gse::renderer::shadow::shadow_texel_size() const -> unitless::vec2 {
 		1.0f / static_cast<float>(m_shadow_extent.x()),
 		1.0f / static_cast<float>(m_shadow_extent.y())
 	);
+}
+
+auto gse::renderer::shadow::shadow_lights() const -> std::span<const shadow_light_entry> {
+	return m_shadow_lights.read();
 }
 
 auto gse::renderer::ensure_non_collinear_up(const unitless::vec3& direction, const unitless::vec3& up) -> unitless::vec3 {
