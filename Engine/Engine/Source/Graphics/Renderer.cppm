@@ -14,6 +14,7 @@ import :resource_loader;
 import :material;
 import :rendering_context;
 import :rendering_stack;
+import :animation_runtime;
 
 import gse.utility;
 import gse.platform;
