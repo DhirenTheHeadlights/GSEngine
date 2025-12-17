@@ -1246,7 +1246,7 @@ auto gse::hook<gse::entity>::configure_when_present(Func&& config_func) -> void 
 auto gse::hook<gse::entity>::inject(id owner_id, registry* reg) -> void {
 	assert(reg != nullptr, std::source_location::current(), "Registry cannot be null for hook with owner id {}.", owner_id);
 	m_registry = reg;
-	swap(owner_id);
+	swap_parent(owner_id);
 }
 
 export namespace gse {

@@ -51,18 +51,20 @@ export namespace gse {
 				return;
 			}
 
-			gui::start(
-				"Box",
-				[&motion] {
-					gui::vec("Position", motion.current_position);
-				}
-			);
-
 			if (!m_rotate_channel.pressed) {
 				return;
 			}
 
 			motion.orientation += quat(unitless::axis_z, degrees(26.f));
+		}
+
+		auto render() -> void override {
+			gui::start(
+				std::format("Box {}", owner_id()),
+				[&motion = component_write<physics::motion_component>()] {
+					gui::slider("Position", motion.current_position, vec3<length>(-100.f), vec3<length>(100.f));
+				}
+			);
 		}
 	private:
 		vec3<length> m_initial_position;

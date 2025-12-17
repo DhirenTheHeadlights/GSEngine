@@ -3,6 +3,7 @@ export module gse.graphics:clip_component;
 import std;
 
 import gse.utility;
+import gse.physics.math;
 
 export namespace gse {
 	struct clip_component_data {

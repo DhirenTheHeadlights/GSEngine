@@ -68,6 +68,8 @@ export namespace gse::gui {
 	struct menu_data {
 		ui_rect rect;
 		id parent_id;
+		dock::location docked_to = dock::location::none;
+		float dock_split_ratio = 0.5f;
 	};
 
 	struct widget_context;
@@ -78,7 +80,9 @@ export namespace gse::gui {
 			const menu_data& data
 		) : identifiable(tag),
 			identifiable_owned(data.parent_id),
-			rect(data.rect) {
+			rect(data.rect),
+			dock_split_ratio(data.dock_split_ratio),
+			docked_to(data.docked_to) {
 			tab_contents.emplace_back(tag);
 		}
 

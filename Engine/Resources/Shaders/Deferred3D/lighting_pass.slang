@@ -89,9 +89,7 @@ float compute_shadow_for_light(int light_index, float3 pos_world) {
         }
 
         float3 light_ndc = light_clip.xyz / light_clip.w;
-
         float2 shadow_uv = light_ndc.xy * 0.5 + 0.5;
-        shadow_uv.y = 1.0 - shadow_uv.y;
 
         float depth = light_ndc.z;
 
