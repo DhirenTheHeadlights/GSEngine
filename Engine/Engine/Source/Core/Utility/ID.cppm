@@ -194,11 +194,11 @@ export namespace gse {
 			const identifiable_owned& other
 		) const -> bool = default;
 
-		auto swap(
+		auto swap_parent(
 			id new_parent_id
 		) -> void;
 
-		auto swap(
+		auto swap_parent(
 			const identifiable& new_parent
 		) -> void;
 	private:
@@ -212,12 +212,12 @@ auto gse::identifiable_owned::owner_id() const -> id {
 	return m_owner_id;
 }
 
-auto gse::identifiable_owned::swap(const id new_parent_id) -> void {
+auto gse::identifiable_owned::swap_parent(const id new_parent_id) -> void {
 	m_owner_id = new_parent_id;
 }
 
-auto gse::identifiable_owned::swap(const identifiable& new_parent) -> void {
-	swap(new_parent.id());
+auto gse::identifiable_owned::swap_parent(const identifiable& new_parent) -> void {
+	swap_parent(new_parent.id());
 }
 
 export namespace gse {

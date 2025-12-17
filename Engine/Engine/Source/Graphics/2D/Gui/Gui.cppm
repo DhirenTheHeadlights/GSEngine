@@ -176,6 +176,12 @@ auto gse::gui::initialize(renderer::context& context) -> void {
 	font = context.get<gse::font>("MonaspaceNeon-Regular");
 	blank_texture = context.queue<texture>("blank", unitless::vec4(1, 1, 1, 1));
 	menus = load(config::resource_path / file_path, menus);
+
+	for (auto& m : menus.items()) {
+		if (!m.owner_id().exists()) {
+			layout::update(menus, m.id());
+		}
+	}
 }
 
 auto gse::gui::update(const window& window, const style& style) -> void {
@@ -677,24 +683,32 @@ auto gse::gui::profiler() -> void {
 }
 
 auto gse::gui::begin(const std::string& name) -> bool {
-	menu* menu_ptr;
+	auto try_get_by_tag = [&](std::string_view tag) -> menu* {
+		for (auto& m : menus.items()) {
+			if (m.id().tag() == tag) {
+				return &m;
+			}
+		}
+		return nullptr;
+	};
 
-	if (!exists(name)) {
+	menu* menu_ptr = try_get_by_tag(name);
+
+	if (!menu_ptr) {
 		menu new_menu(
 			name,
 			menu_data{
 				.rect = ui_rect({
 					.min = { 100.f, 100.f },
 					.max = { 400.f, 300.f }
-				})
+				}),
+				.parent_id = id()
 			}
 		);
 
-		menus.add(new_menu.id(), std::move(new_menu));
-		menu_ptr = menus.try_get(find(name));
-	}
-	else {
-		menu_ptr = menus.try_get(find(name));
+		const id new_id = new_menu.id();
+		menus.add(new_id, std::move(new_menu));
+		menu_ptr = menus.try_get(new_id);
 	}
 
 	if (menu_ptr) {
@@ -1008,13 +1022,13 @@ auto gse::gui::handle_dragging_state(const states::dragging& current, const wind
 						if (area.dock_location == dock::location::center) {
 							m->rect = screen_rect;
 							m->docked_to = dock::location::center;
-							m->swap(id());
+							m->swap_parent(id());
 							layout::update(menus, m->id());
 						}
 						else {
 							m->rect = layout::dock_target_rect(screen_rect, area.dock_location, 0.5f);
 							m->docked_to = area.dock_location;
-							m->swap(id());
+							m->swap_parent(id());
 							layout::update(menus, m->id());
 						}
 					}

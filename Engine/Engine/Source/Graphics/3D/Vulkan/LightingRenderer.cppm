@@ -416,6 +416,13 @@ auto gse::renderer::lighting::render(const std::span<const std::reference_wrappe
 
             ++light_count;
         }
+    }
+
+    for (auto& reg_ref : registries) {
+        auto& reg = reg_ref.get();
+        if (light_count >= max_shadow_lights) {
+            break;
+        }
 
         for (const auto& comp : reg.linked_objects_read<point_light_component>()) {
             if (light_count >= max_shadow_lights) {
@@ -426,6 +433,7 @@ auto gse::renderer::lighting::render(const std::span<const std::reference_wrappe
 
             int type = 1;
             auto pos_meters = comp.position.as<meters>();
+
             set(light_count, "light_type", type);
             set(light_count, "position", to_view_pos(pos_meters));
             set(light_count, "color", comp.color);

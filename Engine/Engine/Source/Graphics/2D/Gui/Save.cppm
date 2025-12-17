@@ -54,24 +54,26 @@ auto gse::gui::save(id_mapped_collection<menu>& menus, const std::filesystem::pa
 	};
 
 	for (const auto& menu : menus.items()) {
-		const auto owner_id = menu.owner_id().exists() ? menu.owner_id().tag() : "";
+		const std::string owner_tag = menu.owner_id().exists() ? std::string(menu.owner_id().tag()) : "";
 
 		file << "[Menu]\n";
-		file << "Tag: " << menu.id().tag() << "\n";
-		file << "Owner: " << owner_id << "\n";
+		file << "Tag: " << std::quoted(std::string(menu.id().tag())) << "\n";
+		file << "Owner: " << std::quoted(owner_tag) << "\n";
 		file << "Rect: " << menu.rect.left() << " " << menu.rect.top() << " " << menu.rect.width() << " " << menu.rect.height() << "\n";
 		file << "DockedTo: " << to_string(menu.docked_to) << "\n";
 		file << "DockSplitRatio: " << menu.dock_split_ratio << "\n";
 		file << "ActiveTab: " << menu.active_tab_index << "\n";
-		
+
 		file << "Tabs:";
-		for (const auto& tag : menu.tab_contents) {
-			file << " " << tag;
+		for (const auto& t : menu.tab_contents) {
+			file << " " << std::quoted(t);
 		}
 		file << "\n";
-		
+
 		file << "[EndMenu]\n\n";
 	}
+
+	std::println("[gui.save] wrote {} menus to {}", menus.items().size(), file_path.string());
 }
 
 auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection<menu>& default_menus) -> id_mapped_collection<menu> {
@@ -79,18 +81,18 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
 		id_mapped_collection<menu> menus_to_save = default_menus;
 		std::filesystem::path path_to_save = file_path;
 		save(menus_to_save, path_to_save);
-
 		return default_menus;
 	}
-	
+
 	std::ifstream file(file_path);
 	if (!file.is_open()) {
 		return default_menus;
 	}
 
-	std::vector<loaded_menu_data> loaded_data_vec;
-	std::string line;
-	std::optional<loaded_menu_data> current_data;
+	auto trim_in_place = [](std::string& s) -> void {
+		while (!s.empty() && (s.front() == ' ' || s.front() == '\t' || s.front() == '\r')) s.erase(s.begin());
+		while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r')) s.pop_back();
+	};
 
 	auto location_from_string = [](const std::string& str) -> dock::location {
 		if (str == "left")   return dock::location::left;
@@ -100,6 +102,10 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
 		if (str == "center") return dock::location::center;
 		return dock::location::none;
 	};
+
+	std::vector<loaded_menu_data> loaded_data_vec;
+	std::string line;
+	std::optional<loaded_menu_data> current_data;
 
 	while (std::getline(file, line)) {
 		if (line == "[Menu]") {
@@ -119,23 +125,72 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
 		std::string key;
 		ss >> key;
 
-		if (key == "Tag:") ss >> current_data->tag;
-		else if (key == "Owner:") ss >> current_data->owner_tag;
+		if (key == "Tag:") {
+			std::string tag_q;
+			if (ss >> std::quoted(tag_q)) {
+				current_data->tag = tag_q;
+			}
+			else {
+				std::string rest;
+				std::getline(ss, rest);
+				trim_in_place(rest);
+				current_data->tag = rest;
+			}
+			std::println("[gui.load] tag='{}'", current_data->tag);
+		}
+		else if (key == "Owner:") {
+			std::string owner_q;
+			if (ss >> std::quoted(owner_q)) {
+				current_data->owner_tag = owner_q;
+			}
+			else {
+				std::string rest;
+				std::getline(ss, rest);
+				trim_in_place(rest);
+				current_data->owner_tag = rest;
+			}
+		}
 		else if (key == "DockedTo:") {
-			std::string val; ss >> val;
+			std::string val;
+			ss >> val;
 			current_data->docked_to = location_from_string(val);
 		}
-		else if (key == "DockSplitRatio:") ss >> current_data->dock_split_ratio;
-		else if (key == "ActiveTab:") ss >> current_data->active_tab_index;
+		else if (key == "DockSplitRatio:") {
+			ss >> current_data->dock_split_ratio;
+		}
+		else if (key == "ActiveTab:") {
+			ss >> current_data->active_tab_index;
+		}
 		else if (key == "Rect:") {
 			unitless::vec2 pos, size;
 			ss >> pos.x() >> pos.y() >> size.x() >> size.y();
 			current_data->rect = ui_rect::from_position_size(pos, size);
 		}
 		else if (key == "Tabs:") {
-			std::string tab_tag;
-			while (ss >> tab_tag) {
-				current_data->tab_tags.push_back(tab_tag);
+			current_data->tab_tags.clear();
+
+			std::string one;
+			if (ss >> std::quoted(one)) {
+				current_data->tab_tags.push_back(one);
+				std::string t;
+				while (ss >> std::quoted(t)) {
+					current_data->tab_tags.push_back(t);
+				}
+			}
+			else {
+				std::string rest;
+				std::getline(ss, rest);
+				trim_in_place(rest);
+				if (!rest.empty()) {
+					current_data->tab_tags.push_back(rest);
+				}
+			}
+
+			if (!current_data->tab_tags.empty()) {
+				std::println("[gui.load] tabs_count={} first='{}'", current_data->tab_tags.size(), current_data->tab_tags[0]);
+			}
+			else {
+				std::println("[gui.load] tabs_count=0");
 			}
 		}
 	}
@@ -144,11 +199,14 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
 		return default_menus;
 	}
 
-	id_mapped_collection<menu> new_layout;
 	std::map<std::string, loaded_menu_data> loaded_map;
 	for (const auto& data : loaded_data_vec) {
 		loaded_map[data.tag] = data;
 	}
+
+	id_mapped_collection<menu> new_layout;
+	std::unordered_map<std::string, id> id_by_tag;
+	id_by_tag.reserve(loaded_map.size());
 
 	for (const auto& [tag, data] : loaded_map) {
 		menu_data md = { .rect = data.rect, .parent_id = id() };
@@ -157,25 +215,32 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
 		new_menu.docked_to = data.docked_to;
 		new_menu.dock_split_ratio = data.dock_split_ratio;
 		new_menu.tab_contents = data.tab_tags;
-		
+
 		if (!new_menu.tab_contents.empty()) {
 			new_menu.active_tab_index = std::min(
 				static_cast<std::uint32_t>(new_menu.tab_contents.size() - 1),
 				data.active_tab_index
 			);
-		} else {
+		}
+		else {
 			new_menu.active_tab_index = 0;
 		}
 
-		new_layout.add(new_menu.id(), std::move(new_menu));
+		const id created_id = new_menu.id();
+		id_by_tag.emplace(tag, created_id);
+		new_layout.add(created_id, std::move(new_menu));
 	}
 
 	for (auto& menu_item : new_layout.items()) {
-		const auto& data = loaded_map.at(std::string(menu_item.id().tag()));
-		if (!data.owner_tag.empty()) {
-			menu_item.swap(find(data.owner_tag));
+		const auto tag = std::string(menu_item.id().tag());
+
+		if (const auto& data = loaded_map.at(tag); !data.owner_tag.empty()) {
+			if (const auto it = id_by_tag.find(data.owner_tag); it != id_by_tag.end()) {
+				menu_item.swap_parent(it->second);
+			}
 		}
 	}
 
+	std::println("[gui.load] built {} menus from {}", new_layout.items().size(), file_path.string());
 	return new_layout;
 }
