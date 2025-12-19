@@ -1,67 +1,75 @@
-module;
-
-#include <oneapi/tbb.h>
-
-export module gse.physics:update;
+export module gse.physics:simulation_system;
 
 import std;
 
-import gse.physics.math;
 import gse.utility;
+import gse.physics.math;
 
 import :broad_phase_collision;
 import :motion_component;
-import :system;
 
 export namespace gse::physics {
-	auto update(
-		const std::vector<std::reference_wrapper<registry>>& registries
-	) -> void;
+	struct simulation_system : system<
+		read_set<motion_component, collision_component>,
+		write_set<motion_component, collision_component>
+	> {
+		using base = system;
+		using system::system;
+
+		using schedule = system_schedule<
+			system_stage<
+				system_stage_kind::update,
+				gse::read_set<motion_component, collision_component>,
+				gse::write_set<motion_component, collision_component>
+			>
+		>;
+
+		auto update(
+		) -> void;
+	};
 }
 
-namespace gse::physics {
-	constexpr time max_time_step = seconds(0.25f);
-	time_t<float, seconds> accumulator;
-}
+using namespace gse;
+using namespace gse::physics;
 
-auto gse::physics::update(const std::vector<std::reference_wrapper<registry>>& registries) -> void {
-	if (registries.empty()) {
-		return;
-	}
-	time frame_time = system_clock::dt();
+auto simulation_system::update() -> void {
+	time frame_time = system_clock::dt<time_t<float, seconds>>();
+	constexpr time_t<float, seconds> max_time_step = seconds(0.25f);
+	frame_time = min(frame_time, max_time_step);
 
-	frame_time = std::min(frame_time, max_time_step);
-
+	static time_t<float, seconds> accumulator{};
 	accumulator += frame_time;
 
 	const auto const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
 
 	while (accumulator >= const_update_time) {
-		for (auto& registry : registries) {
-			broad_phase_collision::update(
-				registry
-			);
+		for (auto& reg_ref : registries()) {
+			auto& reg = reg_ref.get();
+			broad_phase_collision::update(reg);
 		}
 
-		std::vector<std::tuple<
-			std::reference_wrapper<motion_component>,
-			collision_component*
-		>> update_tasks;
+		auto [motion_chunks, collision_chunks] = write<motion_component, collision_component>();
 
-		for (auto& reg_ref : registries) {
-			for (auto& registry = reg_ref.get(); auto& object : registry.linked_objects_write<motion_component>()) {
-				update_tasks.emplace_back(
-					object,
-					registry.try_linked_object_write<collision_component>(object.owner_id())
-				);
+		struct task_entry {
+			motion_component* motion;
+			collision_component* collision;
+		};
+
+		std::vector<task_entry> tasks;
+
+		for (auto& chunk : motion_chunks) {
+			for (auto& mc : chunk.span) {
+				auto* cc = chunk.other_write_from<collision_component>(mc);
+				tasks.push_back(task_entry{
+					.motion = std::addressof(mc),
+					.collision = cc
+				});
 			}
 		}
 
-		task::parallel_for(std::size_t{ 0 }, update_tasks.size(), [&](const std::size_t i) {
-			const auto& task_data = update_tasks[i];
-			const auto& [object_ref, coll_comp_opt] = task_data;
-
-			update_object(object_ref.get(), coll_comp_opt);
+		task::parallel_for(std::size_t{ 0 }, tasks.size(), [&](std::size_t i) {
+			auto& [motion, collision] = tasks[i];
+			update_object(*motion, collision);
 		});
 
 		accumulator -= const_update_time;
