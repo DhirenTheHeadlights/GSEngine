@@ -6,8 +6,6 @@ import :collision_component;
 import :motion_component;
 import :bounding_box;
 import :narrow_phase_collision;
-import :system;
-
 import gse.physics.math;
 
 export namespace gse::broad_phase_collision {
@@ -29,13 +27,13 @@ export namespace gse::broad_phase_collision {
 		physics::motion_component* other_motion_component
 	) -> void;
 
-	auto calculate_collision_information(
-		const bounding_box& box1,
-		const bounding_box& box2
-	) -> collision_information;
+	struct broad_phase_entry {
+		physics::collision_component* collision;
+		physics::motion_component* motion;
+	};
 
 	auto update(
-		registry& registry
+		std::span<broad_phase_entry> objects
 	) -> void;
 }
 
@@ -85,37 +83,22 @@ auto gse::broad_phase_collision::check_collision(physics::collision_component& d
 	}
 }
 
-auto gse::broad_phase_collision::update(registry& registry) -> void {
-	for (auto motions = registry.linked_objects_write<physics::motion_component>(); auto& motion : motions) {
-		motion.airborne = true;
-	}
-
-	for (auto collision_components = registry.linked_objects_write<physics::collision_component>(); auto& collision_component : collision_components) {
-		if (!collision_component.resolve_collisions) {
+auto gse::broad_phase_collision::update(const std::span<broad_phase_entry> objects) -> void {
+	const auto n = objects.size();
+	for (std::size_t i = 0; i < n; ++i) {
+		auto& [collision_a, motion_a] = objects[i];
+		if (!collision_a || !collision_a->resolve_collisions) {
 			continue;
 		}
-
-		collision_component.collision_information = {
-			.colliding = false,
-			.collision_normal = {},
-			.penetration = {},
-			.collision_point = {}
-		};
-
-		auto* motion = registry.try_linked_object_write<physics::motion_component>(collision_component.owner_id());
-
-		for (auto& other_collision_component : collision_components) {
-			if (collision_component.owner_id() == other_collision_component.owner_id()) {
+		for (std::size_t j = 0; j < n; ++j) {
+			if (i == j) {
 				continue;
 			}
-
-			if (!other_collision_component.resolve_collisions) {
+			auto& [collision_b, motion_b] = objects[j];
+			if (!collision_b || !collision_b->resolve_collisions) {
 				continue;
 			}
-
-			auto* other_motion = registry.try_linked_object_write<physics::motion_component>(other_collision_component.owner_id());
-
-			check_collision(collision_component, motion, other_collision_component, other_motion);
+			check_collision(*collision_a, motion_a, *collision_b, motion_b);
 		}
 	}
 }
