@@ -7,6 +7,8 @@ import :registry;
 import :id;
 
 export namespace gse {
+	class system_provider;
+
 	template <is_component... Ts>
 	struct read_set {
 	};
@@ -22,7 +24,11 @@ export namespace gse {
 		shutdown
 	};
 
-	template <system_stage_kind Stage, typename ReadSet, typename WriteSet>
+	template <
+		system_stage_kind Stage,
+		typename ReadSet,
+		typename WriteSet
+	>
 	struct system_stage {
 		static constexpr system_stage_kind stage = Stage;
 		using read_set = ReadSet;
@@ -52,7 +58,38 @@ export namespace gse {
 	template <typename WriteSet, typename... Ts>
 	concept writable_components = (set_contains<WriteSet, Ts>::value && ...);
 
-	template <typename T>
+	class system_access {
+	public:
+		template <scheduled_system S>
+		auto system_of(
+		) -> S&;
+
+		template <scheduled_system S>
+		auto system_of(
+		) const -> const S&;
+	protected:
+		static auto set_system_provider(
+			system_provider* p
+		) -> void;
+	private:
+		inline static system_provider* s_provider = nullptr;
+	};
+
+	class system_provider {
+	public:
+		virtual ~system_provider(
+		) = default;
+
+		virtual auto system(
+			std::type_index idx
+		) -> void* = 0;
+
+		virtual auto system(
+			std::type_index idx
+		) const -> const void* = 0;
+	};
+
+	template <typename T, typename ReadSet, typename WriteSet>
 	struct component_chunk {
 		registry* reg = nullptr;
 		std::span<T> span{};
@@ -74,66 +111,131 @@ export namespace gse {
 		}
 
 		template <is_component U>
+			requires (set_contains<ReadSet, U>::value || set_contains<WriteSet, U>::value)
 		auto other_read(const id owner_id) const -> const U* {
 			return reg->try_linked_object_read<U>(owner_id);
 		}
 
 		template <is_component U>
+			requires (!std::is_const_v<T> && set_contains<WriteSet, U>::value)
 		auto other_write(const id owner_id) const -> U* {
 			return reg->try_linked_object_write<U>(owner_id);
 		}
 
 		template <is_component U>
+			requires (set_contains<ReadSet, U>::value || set_contains<WriteSet, U>::value)
 		auto other_read_from(const T& component) const -> const U* {
 			return other_read<U>(component.owner_id());
 		}
 
 		template <is_component U>
+			requires (!std::is_const_v<T> && set_contains<WriteSet, U>::value)
 		auto other_write_from(T& component) const -> U* {
 			return other_write<U>(component.owner_id());
 		}
 	};
 
+	class basic_system : public system_access {
+	public:
+		using schedule = system_schedule<
+			system_stage<
+				system_stage_kind::initialize,
+				read_set<>,
+				write_set<>
+			>,
+			system_stage<
+				system_stage_kind::update,
+				read_set<>,
+				write_set<>
+			>,
+			system_stage<
+				system_stage_kind::render,
+				read_set<>,
+				write_set<>
+			>,
+			system_stage<
+				system_stage_kind::shutdown,
+				read_set<>,
+				write_set<>
+			>
+		>;
+
+		virtual ~basic_system(
+		) = default;
+
+		virtual auto initialize(
+		) -> void {}
+
+		virtual auto update(
+		) -> void {}
+
+		virtual auto render(
+		) -> void {}
+
+		virtual auto shutdown(
+		) -> void {}
+	};
+
 	template <typename ReadSet, typename WriteSet>
-	class system {
+	class ecs_system : public basic_system {
 	public:
 		using read_set = ReadSet;
 		using write_set = WriteSet;
 
-		system() = default;
+		ecs_system() = default;
 
-		explicit system(
+		explicit ecs_system(
 			std::vector<std::reference_wrapper<registry>> registries
 		) : m_registries(std::move(registries)) {
 		}
 
-		auto registries(
-		) const -> std::span<const std::reference_wrapper<registry>> {
-			return m_registries;
-		}
-
 		template <typename... Ts>
 			requires readable_components<ReadSet, Ts...>
-		auto read();
+		auto read(
+		);
 
 		template <typename... Ts>
 			requires writable_components<WriteSet, Ts...>
-		auto write();
-	protected:
-		auto registries_mut(
-		) -> std::vector<std::reference_wrapper<registry>>& {
-			return m_registries;
-		}
+		auto write(
+		);
+
+		template <typename T, typename F>
+			requires readable_components<ReadSet, T>
+		auto for_each_read_chunk(
+			F&& f
+		);
+
+		template <typename T, typename F>
+			requires writable_components<WriteSet, T>
+		auto for_each_write_chunk(
+			F&& f
+		);
 	private:
 		std::vector<std::reference_wrapper<registry>> m_registries;
 	};
 }
 
+auto gse::system_access::set_system_provider(system_provider* p) -> void {
+	s_provider = p;
+}
+
+template <gse::scheduled_system S>
+auto gse::system_access::system_of() -> S& {
+	auto* p = static_cast<S*>(s_provider->system(std::type_index(typeid(S))));
+	return *p;
+}
+
+template <gse::scheduled_system S>
+auto gse::system_access::system_of() const -> const S& {
+	auto* p = static_cast<const S*>(s_provider->system(std::type_index(typeid(S))));
+	return *p;
+}
+
 template <typename ReadSet, typename WriteSet>
 template <typename... Ts>
 	requires gse::readable_components<ReadSet, Ts...>
-auto gse::system<ReadSet, WriteSet>::read() {
-	std::tuple<std::vector<component_chunk<const Ts>>...> out;
+auto gse::ecs_system<ReadSet, WriteSet>::read() {
+	std::tuple<std::vector<component_chunk<const Ts, ReadSet, WriteSet>>...> out;
 
 	auto self = this;
 
@@ -141,13 +243,14 @@ auto gse::system<ReadSet, WriteSet>::read() {
 		(
 			[&] {
 				using c = std::tuple_element_t<I, std::tuple<Ts...>>;
+				using chunk_type = component_chunk<const c, ReadSet, WriteSet>;
 				auto& vec = std::get<I>(out);
 				vec.clear();
 				vec.reserve(self->m_registries.size());
 				for (auto& reg_ref : self->m_registries) {
 					auto& reg = reg_ref.get();
 					std::span<const c> s = reg.template linked_objects_read<c>();
-					vec.push_back(component_chunk<const c>{ &reg, s });
+					vec.push_back(chunk_type{ std::addressof(reg), std::span<const c>(s) });
 				}
 			}(),
 			...
@@ -160,8 +263,8 @@ auto gse::system<ReadSet, WriteSet>::read() {
 template <typename ReadSet, typename WriteSet>
 template <typename... Ts>
 	requires gse::writable_components<WriteSet, Ts...>
-auto gse::system<ReadSet, WriteSet>::write() {
-	std::tuple<std::vector<component_chunk<Ts>>...> out;
+auto gse::ecs_system<ReadSet, WriteSet>::write() {
+	std::tuple<std::vector<component_chunk<Ts, ReadSet, WriteSet>>...> out;
 
 	auto self = this;
 
@@ -169,13 +272,14 @@ auto gse::system<ReadSet, WriteSet>::write() {
 		(
 			[&] {
 				using c = std::tuple_element_t<I, std::tuple<Ts...>>;
+				using chunk_type = component_chunk<c, ReadSet, WriteSet>;
 				auto& vec = std::get<I>(out);
 				vec.clear();
 				vec.reserve(self->m_registries.size());
 				for (auto& reg_ref : self->m_registries) {
 					auto& reg = reg_ref.get();
 					std::span<c> s = reg.template linked_objects_write<c>();
-					vec.push_back(component_chunk<c>{ &reg, s });
+					vec.push_back(chunk_type{ std::addressof(reg), std::span<c>(s) });
 				}
 			}(),
 			...
@@ -183,4 +287,22 @@ auto gse::system<ReadSet, WriteSet>::write() {
 	}(std::index_sequence_for<Ts...>{});
 
 	return out;
+}
+
+template <typename ReadSet, typename WriteSet>
+template <typename T, typename F>
+	requires gse::readable_components<ReadSet, T>
+auto gse::ecs_system<ReadSet, WriteSet>::for_each_read_chunk(F&& f) {
+	for (auto [chunks] = this->read<T>(); auto& chunk : chunks) {
+		f(chunk);
+	}
+}
+
+template <typename ReadSet, typename WriteSet>
+template <typename T, typename F>
+	requires gse::writable_components<WriteSet, T>
+auto gse::ecs_system<ReadSet, WriteSet>::for_each_write_chunk(F&& f) {
+	for (auto [chunks] = this->write<T>(); auto& chunk : chunks) {
+		f(chunk);
+	}
 }

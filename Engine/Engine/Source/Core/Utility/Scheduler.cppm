@@ -4,14 +4,29 @@ import std;
 
 import :system;
 import :task;
+import gse.assert;
 
 export namespace gse {
-	class scheduler {
+	class scheduler : public system_provider {
 	public:
+		scheduler();
+
 		template <scheduled_system S, typename... Args>
 		auto emplace_system(
 			Args&&... args
 		) -> S&;
+
+		template <scheduled_system S>
+		auto has_system(
+		) const -> bool;
+
+		template <scheduled_system S>
+		auto system(
+		) -> S& override;
+
+		template <scheduled_system S>
+		auto system(
+		) const -> const S& override;
 
 		auto build(
 		) -> void;
@@ -53,7 +68,7 @@ export namespace gse {
 			node_base* owner = nullptr;
 			void (*run)(
 				node_base&
-				) = nullptr;
+			) = nullptr;
 			std::vector<std::type_index> reads;
 			std::vector<std::type_index> writes;
 		};
@@ -88,6 +103,7 @@ export namespace gse {
 		std::vector<std::unique_ptr<node_base>> m_nodes;
 		std::array<std::vector<stage_node>, stage_count> m_stage_nodes;
 		std::array<std::vector<std::vector<stage_node*>>, stage_count> m_phase_nodes;
+		std::unordered_map<std::type_index, node_base*> m_system_index;
 
 		template <scheduled_system S>
 		auto register_system_stages(
@@ -127,6 +143,11 @@ export namespace gse {
 		auto run_stage(
 			system_stage_kind k
 		) const -> void;
+
+		template <system_stage_kind Kind, typename S>
+		static auto call_stage(
+			S& s
+		) -> void;
 	};
 }
 
@@ -134,42 +155,35 @@ template <gse::scheduled_system S, typename... Args>
 auto gse::scheduler::emplace_system(Args&&... args) -> S& {
 	auto ptr = std::make_unique<node<S>>(std::forward<Args>(args)...);
 	auto* raw = ptr.get();
+	m_system_index.emplace(std::type_index(typeid(S)), raw);
 	m_nodes.push_back(std::move(ptr));
 	register_system_stages(*raw);
 	return raw->system;
 }
 
-auto gse::scheduler::build() -> void {
-	for (std::size_t i = 0; i < stage_count; ++i) {
-		const auto span = std::span(m_stage_nodes[i].data(), m_stage_nodes[i].size());
-		m_phase_nodes[i] = build_phases(span);
-	}
+template <gse::scheduled_system S>
+auto gse::scheduler::has_system() const -> bool {
+	return m_system_index.contains(std::type_index(typeid(S)));
 }
 
-auto gse::scheduler::run_initialize() const -> void {
-	run_stage(system_stage_kind::initialize);
+template <gse::scheduled_system S>
+auto gse::scheduler::system() -> S& {
+	const auto it = m_system_index.find(std::type_index(typeid(S)));
+	assert(it != m_system_index.end(), std::source_location::current(), "System not found");
+	auto* base = it->second;
+	auto* typed = dynamic_cast<node<S>*>(base);
+	assert(typed, std::source_location::current(), "System type mismatch");
+	return typed->system;
 }
 
-auto gse::scheduler::run_update() const -> void {
-	run_stage(system_stage_kind::update);
-}
-
-auto gse::scheduler::run_render() const -> void {
-	run_stage(system_stage_kind::render);
-}
-
-auto gse::scheduler::run_shutdown() const -> void {
-	run_stage(system_stage_kind::shutdown);
-}
-
-auto gse::scheduler::clear() -> void {
-	m_nodes.clear();
-	for (auto& v : m_stage_nodes) {
-		v.clear();
-	}
-	for (auto& v : m_phase_nodes) {
-		v.clear();
-	}
+template <gse::scheduled_system S>
+auto gse::scheduler::system() const -> const S& {
+	const auto it = m_system_index.find(std::type_index(typeid(S)));
+	assert(it != m_system_index.end(), std::source_location::current(), "System not found");
+	auto* base = it->second;
+	auto* typed = dynamic_cast<const node<S>*>(base);
+	assert(typed, std::source_location::current(), "System type mismatch");
+	return typed->system;
 }
 
 template <gse::scheduled_system S>
@@ -195,7 +209,7 @@ auto gse::scheduler::register_single_stage(node<S>& n) -> void {
 
 	sn.run = [](node_base& base) {
 		auto& typed = static_cast<node<S>&>(base);
-		(typed.system.*StageDesc::method)();
+		call_stage<StageDesc::stage>(typed.system);
 	};
 
 	sn.reads = type_indices<typename StageDesc::read_set>::make();
@@ -204,90 +218,15 @@ auto gse::scheduler::register_single_stage(node<S>& n) -> void {
 	m_stage_nodes[idx].push_back(std::move(sn));
 }
 
-auto gse::scheduler::to_index(system_stage_kind k) -> std::size_t {
-	return static_cast<std::size_t>(k);
-}
-
-auto gse::scheduler::conflicts(const stage_node& a, const stage_node& b) -> bool {
-	for (const auto& wt : a.writes) {
-		for (const auto& wt_b : b.writes) {
-			if (wt == wt_b) {
-				return true;
-			}
-		}
-		for (const auto& rd_b : b.reads) {
-			if (wt == rd_b) {
-				return true;
-			}
-		}
+template <gse::system_stage_kind Kind, typename S>
+auto gse::scheduler::call_stage(S& s) -> void {
+	if constexpr (Kind == system_stage_kind::initialize) {
+		s.initialize();
+	} else if constexpr (Kind == system_stage_kind::update) {
+		s.update();
+	} else if constexpr (Kind == system_stage_kind::render) {
+		s.render();
+	} else if constexpr (Kind == system_stage_kind::shutdown) {
+		s.shutdown();
 	}
-	return false;
-}
-
-auto gse::scheduler::build_phases(std::span<stage_node> nodes) -> std::vector<std::vector<stage_node*>> {
-	std::vector<std::vector<stage_node*>> phases;
-
-	for (auto& n : nodes) {
-		std::size_t phase_index = 0;
-
-		for (;;) {
-			if (phase_index == phases.size()) {
-				phases.emplace_back();
-			}
-
-			auto& phase = phases[phase_index];
-			bool conflict = false;
-
-			for (const auto* other : phase) {
-				if (conflicts(n, *other) || conflicts(*other, n)) {
-					conflict = true;
-					break;
-				}
-			}
-
-			if (!conflict) {
-				phase.push_back(&n);
-				break;
-			}
-
-			++phase_index;
-		}
-	}
-
-	return phases;
-}
-
-template <typename Runner>
-auto gse::scheduler::run_phase_set(const std::vector<std::vector<stage_node*>>& phases, Runner&& runner) -> void {
-	for (const auto& phase : phases) {
-		if (phase.empty()) {
-			continue;
-		}
-
-		if (phase.size() == 1) {
-			runner(*phase.front());
-			continue;
-		}
-
-		task::group group;
-		for (auto* n : phase) {
-			group.post([n, fn = runner]() mutable {
-				fn(*n);
-			});
-		}
-	}
-}
-
-auto gse::scheduler::run_stage(const system_stage_kind k) const -> void {
-	const auto idx = to_index(k);
-	if (idx >= stage_count) {
-		return;
-	}
-
-	run_phase_set(
-		m_phase_nodes[idx],
-		[](const stage_node& n) {
-			n.run(*n.owner);
-		}
-	);
 }

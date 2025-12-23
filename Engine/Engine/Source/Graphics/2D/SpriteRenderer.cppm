@@ -6,14 +6,14 @@ import vulkan_hpp;
 import :texture;
 import :camera;
 import :shader;
-import :base_renderer;
+import :rendering_context;
 
 import gse.platform;
 import gse.utility;
 import gse.physics.math;
 
 export namespace gse::renderer {
-	class sprite final : public base_renderer {
+	class sprite final : public ecs_system<read_set<>, write_set<>> {
 	public:
 		struct command {
 			rect_t<unitless::vec2> rect;
@@ -24,13 +24,39 @@ export namespace gse::renderer {
 			angle rotation;
 		};
 
-		explicit sprite(context& context) : base_renderer(context) {}
+		using schedule = system_schedule<
+			system_stage<
+				system_stage_kind::render,
+				gse::read_set<>,
+				gse::write_set<>
+			>
+		>;
+
+		explicit sprite(context& context) : m_context(context) {}
 
 		auto initialize() -> void override;
-		auto render(std::span<const std::reference_wrapper<registry>> registries) -> void override;
+		auto render() -> void override;
 
 		auto queue(const command& cmd) -> void;
 	private:
+		static auto to_vulkan_scissor(
+			const rect_t<unitless::vec2>& rect,
+			const unitless::vec2& window_size
+		) -> vk::Rect2D {
+			return {
+				.offset = {
+					static_cast<std::int32_t>(rect.left()),
+					static_cast<std::int32_t>(window_size.y() - rect.top())
+				},
+				.extent = {
+					static_cast<std::uint32_t>(rect.width()),
+					static_cast<std::uint32_t>(rect.height())
+				}
+			};
+		}
+
+		context& m_context;
+
 		vk::raii::Pipeline m_pipeline = nullptr;
 		vk::raii::PipelineLayout m_pipeline_layout = nullptr;
 		vulkan::persistent_allocator::buffer_resource m_vertex_buffer;
@@ -179,7 +205,7 @@ auto gse::renderer::sprite::initialize() -> void {
 	);
 }
 
-auto gse::renderer::sprite::render(std::span<const std::reference_wrapper<registry>> registries) -> void {
+auto gse::renderer::sprite::render() -> void {
 	if (m_draw_commands.empty()) {
 		return;
 	}

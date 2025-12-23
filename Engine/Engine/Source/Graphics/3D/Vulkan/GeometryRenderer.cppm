@@ -2,7 +2,6 @@
 
 import std;
 
-import :base_renderer;
 import :camera;
 import :mesh;
 import :model;
@@ -16,7 +15,7 @@ import gse.platform;
 import gse.physics;
 
 export namespace gse::renderer {
-	class geometry final : public base_renderer, public system<
+	class geometry final : public ecs_system<
 		read_set<
 			physics::motion_component,
 			physics::collision_component
@@ -28,8 +27,6 @@ export namespace gse::renderer {
 		>
 	> {
 	public:
-		using system_base = system;
-
 		using schedule = system_schedule<
 			system_stage<
 				system_stage_kind::update,
@@ -64,8 +61,9 @@ export namespace gse::renderer {
 		) -> void override;
 
 		auto render_queue(
-		) -> std::span<const render_queue_entry>;
+		) const -> std::span<const render_queue_entry>;
 	private:
+		context& m_context;
 		vk::raii::Pipeline m_pipeline = nullptr;
 		vk::raii::PipelineLayout m_pipeline_layout = nullptr;
 		vk::raii::DescriptorSet m_descriptor_set = nullptr;
@@ -78,7 +76,7 @@ export namespace gse::renderer {
 	};
 }
 
-gse::renderer::geometry::geometry(context& context): base_renderer(context) {}
+gse::renderer::geometry::geometry(context& context): m_context(context) {}
 
 auto gse::renderer::geometry::initialize() -> void {
 	auto& config = m_context.config();
@@ -274,11 +272,11 @@ auto gse::renderer::geometry::initialize() -> void {
 }
 
 auto gse::renderer::geometry::update() -> void {
-	if (registries().empty()) {
+	auto [render_chunks] = this->write<render_component>();
+
+	if (render_chunks.empty()) {
 		return;
 	}
-
-	const auto cam = m_shader->uniform_block("CameraUBO");
 
 	m_shader->set_uniform(
 		"CameraUBO.view",
@@ -295,17 +293,17 @@ auto gse::renderer::geometry::update() -> void {
 	auto& out = m_render_queue.write();
 	out.clear();
 
-	for (auto& reg_ref : registries()) {
-		for (auto& reg = reg_ref.get(); auto& component : reg.linked_objects_write<render_component>()) {
+	for (auto& chunk : render_chunks) {
+		for (auto& component : chunk) {
 			if (!component.render) {
 				continue;
 			}
 
-			const auto* mc = reg.try_linked_object_read<gse::physics::motion_component>(component.owner_id());
-			const auto* cc = reg.try_linked_object_read<gse::physics::collision_component>(component.owner_id());
+			const auto* mc = chunk.other_read_from<physics::motion_component>(component);
+			const auto* cc = chunk.other_read_from<physics::collision_component>(component);
 
 			for (auto& model_handle : component.model_instances) {
-				if (!model_handle.handle().valid() || !mc || !cc) {
+				if (!model_handle.handle().valid() || mc == nullptr || cc == nullptr) {
 					continue;
 				}
 
@@ -470,6 +468,6 @@ auto gse::renderer::geometry::render() -> void {
 	);
 }
 
-auto gse::renderer::geometry::render_queue() -> std::span<const render_queue_entry> {
+auto gse::renderer::geometry::render_queue() const -> std::span<const render_queue_entry> {
 	return m_render_queue.read();
 }

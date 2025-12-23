@@ -2,7 +2,6 @@ export module gse.graphics:shadow_renderer;
 
 import std;
 
-import :base_renderer;
 import :render_component;
 import :mesh;
 import :model;
@@ -11,7 +10,6 @@ import :spot_light;
 import :directional_light;
 import :point_light;
 import :geometry_renderer;
-import :rendering_stack;
 
 import gse.physics;
 import gse.physics.math;
@@ -25,21 +23,38 @@ export namespace gse::renderer {
         int shadow_index = -1;
     };
 
-    class shadow final : public base_renderer {
-    public:
-        explicit shadow(
-            context& context
-        );
+    constexpr std::size_t max_shadow_lights = 10;
+
+    auto ensure_non_collinear_up(
+        const unitless::vec3& direction,
+        const unitless::vec3& up
+    ) -> unitless::vec3;
+
+    struct shadow final : ecs_system<
+        read_set<directional_light_component, spot_light_component>,
+        write_set<>
+    > {
+        using schedule = system_schedule<
+            system_stage<
+                system_stage_kind::update,
+                gse::read_set<directional_light_component, spot_light_component>,
+                gse::write_set<>
+            >
+        >;
+
+        shadow(
+            context& context,
+            std::vector<std::reference_wrapper<registry>> registries
+        ) : ecs_system(std::move(registries)), m_context(context) {
+        }
 
         auto initialize(
         ) -> void override;
 
         auto update(
-            std::span<const std::reference_wrapper<registry>> registries
         ) -> void override;
 
         auto render(
-            std::span<const std::reference_wrapper<registry>> registries
         ) -> void override;
 
         auto shadow_map_view(
@@ -52,6 +67,8 @@ export namespace gse::renderer {
         auto shadow_lights(
         ) const -> std::span<const shadow_light_entry>;
     private:
+        context& m_context;
+
         vk::raii::Pipeline m_pipeline = nullptr;
         vk::raii::PipelineLayout m_pipeline_layout = nullptr;
 
@@ -61,21 +78,8 @@ export namespace gse::renderer {
 
         unitless::vec2u m_shadow_extent = { 1024, 1024 };
 
-        std::array<vulkan::persistent_allocator::image_resource, 10> m_shadow_maps;
+        std::array<vulkan::persistent_allocator::image_resource, max_shadow_lights> m_shadow_maps;
     };
-}
-
-namespace gse::renderer {
-    constexpr std::size_t max_shadow_lights = 10;
-
-    auto ensure_non_collinear_up(
-        const unitless::vec3& direction,
-        const unitless::vec3& up
-    ) -> unitless::vec3;
-}
-
-gse::renderer::shadow::shadow(context& context)
-    : base_renderer(context) {
 }
 
 auto gse::renderer::shadow::initialize() -> void {
@@ -106,16 +110,16 @@ auto gse::renderer::shadow::initialize() -> void {
     };
 
     constexpr vk::PipelineRasterizationStateCreateInfo rasterizer{
-	    .depthClampEnable = vk::False,
-	    .rasterizerDiscardEnable = vk::False,
-	    .polygonMode = vk::PolygonMode::eFill,
-	    .cullMode = vk::CullModeFlagBits::eBack,
-	    .frontFace = vk::FrontFace::eCounterClockwise,
-	    .depthBiasEnable = vk::True,
-	    .depthBiasConstantFactor = 1.25f,
-	    .depthBiasClamp = 0.0f,
-	    .depthBiasSlopeFactor = 1.75f,
-	    .lineWidth = 1.0f
+        .depthClampEnable = vk::False,
+        .rasterizerDiscardEnable = vk::False,
+        .polygonMode = vk::PolygonMode::eFill,
+        .cullMode = vk::CullModeFlagBits::eBack,
+        .frontFace = vk::FrontFace::eCounterClockwise,
+        .depthBiasEnable = vk::True,
+        .depthBiasConstantFactor = 1.25f,
+        .depthBiasClamp = 0.0f,
+        .depthBiasSlopeFactor = 1.75f,
+        .lineWidth = 1.0f
     };
 
     constexpr vk::PipelineDepthStencilStateCreateInfo depth_stencil{
@@ -241,71 +245,68 @@ auto gse::renderer::shadow::initialize() -> void {
 
     config.add_transient_work(
         [this](const vk::raii::CommandBuffer& cmd) -> std::vector<vulkan::persistent_allocator::buffer_resource> {
-	        for (auto& img : m_shadow_maps) {
-	            vulkan::uploader::transition_image_layout(
-	                cmd,
-	                img,
-	                vk::ImageLayout::eDepthAttachmentOptimal,
-	                vk::ImageAspectFlagBits::eDepth,
-	                vk::PipelineStageFlagBits2::eTopOfPipe,
-	                {},
-	                vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-	                vk::AccessFlagBits2::eDepthStencilAttachmentWrite
-	            );
+            for (auto& img : m_shadow_maps) {
+                vulkan::uploader::transition_image_layout(
+                    cmd,
+                    img,
+                    vk::ImageLayout::eDepthAttachmentOptimal,
+                    vk::ImageAspectFlagBits::eDepth,
+                    vk::PipelineStageFlagBits2::eTopOfPipe,
+                    {},
+                    vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+                    vk::AccessFlagBits2::eDepthStencilAttachmentWrite
+                );
 
-	            vk::RenderingAttachmentInfo depth_attachment{
-	                .imageView = *img.view,
-	                .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
-	                .loadOp = vk::AttachmentLoadOp::eClear,
-	                .storeOp = vk::AttachmentStoreOp::eStore,
-	                .clearValue = vk::ClearValue{.depthStencil = vk::ClearDepthStencilValue{ 1.0f, 0 } }
-	            };
+                vk::RenderingAttachmentInfo depth_attachment{
+                    .imageView = *img.view,
+                    .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+                    .loadOp = vk::AttachmentLoadOp::eClear,
+                    .storeOp = vk::AttachmentStoreOp::eStore,
+                    .clearValue = vk::ClearValue{ .depthStencil = vk::ClearDepthStencilValue{ 1.0f, 0 } }
+                };
 
-	            const vk::RenderingInfo rendering_info{
-	                .renderArea = { { 0, 0 }, { m_shadow_extent.x(), m_shadow_extent.y() } },
-	                .layerCount = 1,
-	                .colorAttachmentCount = 0,
-	                .pColorAttachments = nullptr,
-	                .pDepthAttachment = &depth_attachment
-	            };
+                const vk::RenderingInfo rendering_info{
+                    .renderArea = { { 0, 0 }, { m_shadow_extent.x(), m_shadow_extent.y() } },
+                    .layerCount = 1,
+                    .colorAttachmentCount = 0,
+                    .pColorAttachments = nullptr,
+                    .pDepthAttachment = &depth_attachment
+                };
 
-	            cmd.beginRendering(rendering_info);
-	            cmd.endRendering();
+                cmd.beginRendering(rendering_info);
+                cmd.endRendering();
 
-	            vulkan::uploader::transition_image_layout(
-	                cmd,
-	                img,
-	                vk::ImageLayout::eDepthReadOnlyOptimal,
-	                vk::ImageAspectFlagBits::eDepth,
-	                vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-	                vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-	                vk::PipelineStageFlagBits2::eFragmentShader,
-	                vk::AccessFlagBits2::eShaderSampledRead
-	            );
-	        }
+                vulkan::uploader::transition_image_layout(
+                    cmd,
+                    img,
+                    vk::ImageLayout::eDepthReadOnlyOptimal,
+                    vk::ImageAspectFlagBits::eDepth,
+                    vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+                    vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+                    vk::PipelineStageFlagBits2::eFragmentShader,
+                    vk::AccessFlagBits2::eShaderSampledRead
+                );
+            }
 
-	        return {};
-	    }
+            return {};
+        }
     );
 
     frame_sync::on_end([this] {
-		m_shadow_lights.flip();
+        m_shadow_lights.flip();
     });
 }
 
-auto gse::renderer::shadow::update(const std::span<const std::reference_wrapper<registry>> registries) -> void {
-    if (registries.empty()) {
-        return;
-    }
-
+auto gse::renderer::shadow::update() -> void {
     auto& lights_out = m_shadow_lights.write();
     lights_out.clear();
+
     std::size_t next_shadow_index = 0;
 
-    for (auto& reg_ref : registries) {
-        auto& reg = reg_ref.get();
+    auto [dir_chunks, spot_chunks] = this->read<directional_light_component, spot_light_component>();
 
-        for (const auto& comp : reg.linked_objects_read<directional_light_component>()) {
+    for (const auto& chunk : dir_chunks) {
+        for (const auto& comp : chunk) {
             if (next_shadow_index >= max_shadow_lights) {
                 break;
             }
@@ -339,7 +340,13 @@ auto gse::renderer::shadow::update(const std::span<const std::reference_wrapper<
             ++next_shadow_index;
         }
 
-        for (const auto& comp : reg.linked_objects_read<spot_light_component>()) {
+        if (next_shadow_index >= max_shadow_lights) {
+            break;
+        }
+    }
+
+    for (const auto& chunk : spot_chunks) {
+        for (const auto& comp : chunk) {
             if (next_shadow_index >= max_shadow_lights) {
                 break;
             }
@@ -371,12 +378,16 @@ auto gse::renderer::shadow::update(const std::span<const std::reference_wrapper<
             lights_out.push_back(std::move(entry));
             ++next_shadow_index;
         }
+
+        if (next_shadow_index >= max_shadow_lights) {
+            break;
+        }
     }
 }
 
-auto gse::renderer::shadow::render(std::span<const std::reference_wrapper<registry>> registries) -> void {
+auto gse::renderer::shadow::render() -> void {
     auto& config = m_context.config();
-    auto command = config.frame_context().command_buffer;
+    const auto command = config.frame_context().command_buffer;
 
     auto& geom = renderer<geometry>();
     const auto draw_list = geom.render_queue();
@@ -413,7 +424,7 @@ auto gse::renderer::shadow::render(std::span<const std::reference_wrapper<regist
             .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
             .loadOp = vk::AttachmentLoadOp::eClear,
             .storeOp = vk::AttachmentStoreOp::eStore,
-            .clearValue = vk::ClearValue{.depthStencil = { 1.0f, 0 } }
+            .clearValue = vk::ClearValue{ .depthStencil = { 1.0f, 0 } }
         };
 
         const vk::RenderingInfo rendering_info{
@@ -445,14 +456,14 @@ auto gse::renderer::shadow::render(std::span<const std::reference_wrapper<regist
         });
 
         vulkan::uploader::transition_image_layout(
-	        command,
-	        depth_image,
-	        vk::ImageLayout::eDepthReadOnlyOptimal,
-	        vk::ImageAspectFlagBits::eDepth,
-	        vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-	        vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-	        vk::PipelineStageFlagBits2::eFragmentShader,
-	        vk::AccessFlagBits2::eShaderSampledRead
+            command,
+            depth_image,
+            vk::ImageLayout::eDepthReadOnlyOptimal,
+            vk::ImageAspectFlagBits::eDepth,
+            vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+            vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+            vk::PipelineStageFlagBits2::eFragmentShader,
+            vk::AccessFlagBits2::eShaderSampledRead
         );
     }
 }
@@ -462,14 +473,14 @@ auto gse::renderer::shadow::shadow_map_view(const std::size_t index) const -> vk
 }
 
 auto gse::renderer::shadow::shadow_texel_size() const -> unitless::vec2 {
-	return unitless::vec2(
-		1.0f / static_cast<float>(m_shadow_extent.x()),
-		1.0f / static_cast<float>(m_shadow_extent.y())
-	);
+    return unitless::vec2(
+        1.0f / static_cast<float>(m_shadow_extent.x()),
+        1.0f / static_cast<float>(m_shadow_extent.y())
+    );
 }
 
 auto gse::renderer::shadow::shadow_lights() const -> std::span<const shadow_light_entry> {
-	return m_shadow_lights.read();
+    return m_shadow_lights.read();
 }
 
 auto gse::renderer::ensure_non_collinear_up(const unitless::vec3& direction, const unitless::vec3& up) -> unitless::vec3 {

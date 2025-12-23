@@ -2,18 +2,11 @@ export module gse.graphics:renderer;
 
 import std;
 
-import :lighting_renderer;
-import :geometry_renderer;
-import :sprite_renderer;
-import :text_renderer;
-import :shadow_renderer;
-import :physics_debug_renderer;
 import :gui;
 import :render_component;
 import :resource_loader;
 import :material;
 import :rendering_context;
-import :rendering_stack;
 
 import gse.utility;
 import gse.platform;
@@ -75,17 +68,6 @@ auto gse::renderer::initialize() -> void {
 
 	rendering_context.compile();
 
-	add_renderer<geometry>(rendering_context);
-	add_renderer<shadow>(rendering_context);
-	add_renderer<lighting>(rendering_context);
-	add_renderer<sprite>(rendering_context);
-	add_renderer<text>(rendering_context);
-	add_renderer<physics_debug>(rendering_context);
-
-	for (const auto& renderer : renderers()) {
-		renderer->initialize();
-	}
-
 	gui::initialize(rendering_context);
 }
 
@@ -97,15 +79,6 @@ auto gse::renderer::update(const std::vector<std::reference_wrapper<registry>>& 
 
 	if (!rendering_context.ui_focus()) {
 		rendering_context.camera().process_mouse_movement(mouse::delta());
-	}
-
-	for (const auto& renderer : renderers()) {
-		task::post(
-			[registries, ptr = renderer.get()] {
-				ptr->update(registries);
-			}, 
-			find_or_generate_id(typeid(*renderer).name())
-		);
 	}
 }
 
