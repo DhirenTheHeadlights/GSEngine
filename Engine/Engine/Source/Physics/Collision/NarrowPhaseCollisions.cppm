@@ -188,13 +188,13 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
 
         if (!object_a->position_locked) {
             object_a->current_velocity += impulse_vec * inv_mass_a;
-            object_a->angular_velocity += inv_i_a * cross(r_a, impulse_vec);
+            object_a->angular_velocity += 0.4f * inv_i_a * cross(r_a, impulse_vec);
         }
         if (!object_b->position_locked) {
             object_b->current_velocity -= impulse_vec * inv_mass_b;
-            object_b->angular_velocity -= inv_i_b * cross(r_b, impulse_vec);
+            object_b->angular_velocity -= 0.4f * inv_i_b * cross(r_b, impulse_vec);
         }
-
+        
         if (!object_a->position_locked && !object_a->airborne) {
             const auto v = object_a->current_velocity;
             const auto normal_component = dot(v, res->normal) * res->normal;
@@ -468,20 +468,6 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
                 );
 
                 vec3<length> final_contact_point = bb1.center();
-                //if (!contact_points.empty()) {
-                //    vec3<length> total_point;
-                //    for (const auto& point : contact_points) {
-                //        total_point += point;
-                //    }
-                //    final_contact_point = total_point / static_cast<float>(contact_points.size());
-                //}
-                //else {
-                //    final_contact_point = bb1.center() + collision_normal * (penetration_depth * 0.5f);
-                //}
-
-                if (contact_points.empty()) {
-                    contact_points.push_back(bb1.center() + collision_normal * (penetration_depth * 0.5f));
-                }
 
                 if constexpr (debug) {
                     std::println("[MPR] Contacts complete. Normal: {}, Penetration: {}", collision_normal, penetration_depth);
@@ -685,6 +671,18 @@ auto gse::narrow_phase_collision::generate_contact_points(
         if (dist <= meters(1e-3f)) {
             contacts.push_back(v - ref_normal * dist);
         }
+    }
+
+    if (contacts.empty()) {
+        int index = -1;
+		float max_dot_product = -std::numeric_limits<float>::max();
+        for (size_t i = 0; i < inc_face_poly.size(); i++) {
+            if (const float dot_prod = dot(inc_face_poly[i].as<gse::meters>(), collision_normal); dot_prod > max_dot_product) {
+                max_dot_product = dot_prod;
+                index = static_cast<int>(i);
+			}
+		}
+		if (index != -1) contacts.push_back(inc_face_poly[index]);
     }
 
     return contacts;
