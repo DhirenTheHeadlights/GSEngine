@@ -313,43 +313,45 @@ auto gse::renderer::physics_debug::build_obb_lines_for_collider(const physics::c
 }
 
 auto gse::renderer::physics_debug::build_contact_debug_for_collider(const physics::collision_component& coll, const physics::motion_component& mc, std::vector<debug_vertex>& out_vertices) -> void {
-	const auto& [colliding, collision_normal, penetration, collision_point] = coll.collision_information;
+	const auto& [colliding, collision_normal, penetration, collision_points] = coll.collision_information;
 	if (!colliding || mc.position_locked) {
 		return;
 	}
 
-	const auto p = collision_point;
-	const auto n = collision_normal;
+	for (auto& collision_point : collision_points) {
+		const auto p = collision_point;
+		const auto n = collision_normal;
 
-	constexpr length cross_size = meters(0.1f);
+		constexpr length cross_size = meters(0.1f);
 
-	constexpr unitless::vec3 cross_color{ 1.0f, 1.0f, 1.0f };
-	constexpr unitless::vec3 normal_color{ 1.0f, 0.0f, 0.0f };
-	constexpr unitless::vec3 penetration_color{ 1.0f, 1.0f, 0.0f };
-	constexpr unitless::vec3 center_link_color{ 0.0f, 1.0f, 1.0f };
+		constexpr unitless::vec3 cross_color{ 1.0f, 1.0f, 1.0f };
+		constexpr unitless::vec3 normal_color{ 1.0f, 0.0f, 0.0f };
+		constexpr unitless::vec3 penetration_color{ 1.0f, 1.0f, 0.0f };
+		constexpr unitless::vec3 center_link_color{ 0.0f, 1.0f, 1.0f };
 
-	const vec3<length> px1 = p + vec3<length>{ cross_size, 0.0f, 0.0f };
-	const vec3<length> px2 = p - vec3<length>{ cross_size, 0.0f, 0.0f };
+		const vec3<length> px1 = p + vec3<length>{ cross_size, 0.0f, 0.0f };
+		const vec3<length> px2 = p - vec3<length>{ cross_size, 0.0f, 0.0f };
 
-	const vec3<length> py1 = p + vec3<length>{ 0.0f, cross_size, 0.0f };
-	const vec3<length> py2 = p - vec3<length>{ 0.0f, cross_size, 0.0f };
+		const vec3<length> py1 = p + vec3<length>{ 0.0f, cross_size, 0.0f };
+		const vec3<length> py2 = p - vec3<length>{ 0.0f, cross_size, 0.0f };
 
-	const vec3<length> pz1 = p + vec3<length>{ 0.0f, 0.0f, cross_size };
-	const vec3<length> pz2 = p - vec3<length>{ 0.0f, 0.0f, cross_size };
+		const vec3<length> pz1 = p + vec3<length>{ 0.0f, 0.0f, cross_size };
+		const vec3<length> pz2 = p - vec3<length>{ 0.0f, 0.0f, cross_size };
 
-	add_line(px1, px2, cross_color, out_vertices);
-	add_line(py1, py2, cross_color, out_vertices);
-	add_line(pz1, pz2, cross_color, out_vertices);
+		add_line(px1, px2, cross_color, out_vertices);
+		add_line(py1, py2, cross_color, out_vertices);
+		add_line(pz1, pz2, cross_color, out_vertices);
 
-	const length normal_len = std::min(penetration, meters(0.5f));
-	const vec3<length> normal_end = p + n * normal_len;
-	add_line(p, normal_end, normal_color, out_vertices);
+		const length normal_len = std::min(penetration, meters(0.5f));
+		const vec3<length> normal_end = p + n * normal_len;
+		add_line(p, normal_end, normal_color, out_vertices);
 
-	const vec3<length> projected = p - n * penetration;
-	add_line(p, projected, penetration_color, out_vertices);
+		const vec3<length> projected = p - n * penetration;
+		add_line(p, projected, penetration_color, out_vertices);
 
-	const auto center = coll.bounding_box.center();
-	add_line(center, p, center_link_color, out_vertices);
+		const auto center = coll.bounding_box.center();
+		add_line(center, p, center_link_color, out_vertices);
+	}
 }
 
 auto gse::renderer::physics_debug::update(const std::span<const std::reference_wrapper<registry>> registries) -> void {
