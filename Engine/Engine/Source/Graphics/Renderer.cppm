@@ -2,192 +2,134 @@ export module gse.graphics:renderer;
 
 import std;
 
-import :gui;
 import :render_component;
 import :resource_loader;
 import :material;
 import :rendering_context;
+import :font;
+import :model;
+import :shader;
+import :texture;
 
 import gse.utility;
 import gse.platform;
 
-namespace gse {
-	renderer::context rendering_context("GSEngine");
-}
-
-export namespace gse {
-	template <typename Resource>
-	auto get(const id id) -> resource::handle<Resource> {
-		return rendering_context.get<Resource>(id);
-	}
-
-	template <typename Resource>
-	auto get(const std::string& filename) -> resource::handle<Resource> {
-		return rendering_context.get<Resource>(filename);
-	}
-
-	template <typename Resource, typename... Args>
-	auto queue(const std::string& name, Args&&... args) -> resource::handle<Resource> {
-		return rendering_context.queue<Resource>(name, std::forward<Args>(args)...);
-	}
-
-	template <typename Resource>
-	auto instantly_load(id id) -> resource::handle<Resource> {
-		return rendering_context.instantly_load<Resource>(id);
-	}
-
-	template <typename Resource>
-	auto add(Resource&& resource) -> void {
-		rendering_context.add<Resource>(std::forward<Resource>(resource));
-	}
-
-	template <typename Resource>
-	auto resource_state(const id id) -> resource::state {
-		return rendering_context.resource_state<Resource>(id);
-	}
-}
-
 export namespace gse::renderer {
-	auto initialize() -> void;
-	auto update(const std::vector<std::reference_wrapper<registry>>& registries) -> void;
-	auto render(
-		const std::vector<std::reference_wrapper<registry>>& registries,
-		const std::function<void()>& in_frame = {}
-	) -> void;
-	auto shutdown() -> void;
-	auto camera() -> camera&;
-	auto set_ui_focus(bool focus) -> void;
+	class system final : public basic_system {
+	public:
+		explicit system(
+			context& context
+		);
+
+		auto initialize(
+		) const -> void;
+
+		auto update(
+		) const -> void;
+
+		auto begin_frame(
+		) -> bool override;
+
+		auto end_frame(
+		) -> void override;
+
+		auto shutdown(
+		) -> void override;
+
+		auto camera(
+		) const -> camera&;
+
+		auto set_ui_focus(
+			bool focus
+		) const -> void;
+
+		auto frame_begun(
+		) const -> bool;
+	private:
+		context* m_context = nullptr;
+		bool m_frame_begun = false;
+	};
 }
 
-auto gse::renderer::initialize() -> void {
-	rendering_context.add_loader<texture>();
-	rendering_context.add_loader<model>();
-	rendering_context.add_loader<shader>();
-	rendering_context.add_loader<font>();
-	rendering_context.add_loader<material>();
-
-	rendering_context.compile();
-
-	gui::initialize(rendering_context);
+gse::renderer::system::system(renderer::context& context) : m_context(std::addressof(context)) {
 }
 
-auto gse::renderer::update(const std::vector<std::reference_wrapper<registry>>& registries) -> void {
-	rendering_context.process_resource_queue();
-	gui::update(rendering_context.window());
-	rendering_context.window().update(rendering_context.ui_focus());
-	rendering_context.camera().update_orientation();
+auto gse::renderer::system::initialize() const -> void {
+	auto& ctx = *m_context;
 
-	if (!rendering_context.ui_focus()) {
-		rendering_context.camera().process_mouse_movement(mouse::delta());
+	ctx.add_loader<texture>();
+	ctx.add_loader<model>();
+	ctx.add_loader<shader>();
+	ctx.add_loader<font>();
+	ctx.add_loader<material>();
+
+	ctx.compile();
+}
+
+auto gse::renderer::system::update() const -> void {
+	auto& ctx = *m_context;
+
+	ctx.process_resource_queue();
+	ctx.window().update(ctx.ui_focus());
+	ctx.camera().update_orientation();
+
+	if (!ctx.ui_focus()) {
+		ctx.camera().process_mouse_movement(mouse::delta());
 	}
 }
 
-auto gse::renderer::render(const std::vector<std::reference_wrapper<registry>>& registries, const std::function<void()>& in_frame) -> void {
-	rendering_context.process_gpu_queue();
+auto gse::renderer::system::begin_frame() -> bool {
+	auto& ctx = *m_context;
 
-	vulkan::frame({
-		.window = rendering_context.window().raw_handle(),
-		.frame_buffer_resized = rendering_context.window().frame_buffer_resized(),
-		.minimized = rendering_context.window().minimized(),
-		.config = rendering_context.config(),
-		.in_frame = [&registries, &in_frame] {
-			auto& cfg = rendering_context.config();
-			const auto& frame_ctx = cfg.frame_context();
-			const auto& swap = cfg.swap_chain_config();
+	ctx.process_gpu_queue();
 
-			const vk::ImageMemoryBarrier2 color_barrier{
-				.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
-				.srcAccessMask = {},
-				.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-				.dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
-				.oldLayout = vk::ImageLayout::eUndefined,
-				.newLayout = vk::ImageLayout::eColorAttachmentOptimal,
-				.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-				.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-				.image = swap.images[frame_ctx.image_index],
-				.subresourceRange = {
-					.aspectMask = vk::ImageAspectFlagBits::eColor,
-					.baseMipLevel = 0,
-					.levelCount = 1,
-					.baseArrayLayer = 0,
-					.layerCount = 1
-				}
-			};
+	m_frame_begun = vulkan::begin_frame({
+		.window = ctx.window().raw_handle(),
+		.frame_buffer_resized = ctx.window().frame_buffer_resized(),
+		.minimized = ctx.window().minimized(),
+		.config = ctx.config()
+	});
 
-			std::array barriers{
-				color_barrier
-			};
+	return m_frame_begun;
+}
 
-			const vk::DependencyInfo begin_dep{
-				.imageMemoryBarrierCount = static_cast<std::uint32_t>(barriers.size()),
-				.pImageMemoryBarriers = barriers.data()
-			};
+auto gse::renderer::system::end_frame() -> void {
+	if (!m_frame_begun) {
+		return;
+	}
 
-			frame_ctx.command_buffer.pipelineBarrier2(begin_dep);
+	auto& ctx = *m_context;
 
-			for (const auto& renderer : renderers()) {
-				renderer->render(registries);
-			}
-
-			gui::frame(
-				rendering_context,
-				renderer<sprite>(),
-				renderer<text>(),
-				[&] {
-					in_frame();
-				}
-			);
-
-			vk::ImageMemoryBarrier2 present_barrier{
-				.srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-				.srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
-				.dstStageMask = vk::PipelineStageFlagBits2::eBottomOfPipe,
-				.dstAccessMask = {},
-				.oldLayout = vk::ImageLayout::eColorAttachmentOptimal,
-				.newLayout = vk::ImageLayout::ePresentSrcKHR,
-				.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-				.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-				.image = rendering_context.config().swap_chain_config().images[rendering_context.config().frame_context().image_index],
-				.subresourceRange = {
-					.aspectMask = vk::ImageAspectFlagBits::eColor,
-					.baseMipLevel = 0,
-					.levelCount = 1,
-					.baseArrayLayer = 0,
-					.layerCount = 1
-				}
-			};
-
-			const vk::DependencyInfo dependency_info{
-				.imageMemoryBarrierCount = 1,
-				.pImageMemoryBarriers = &present_barrier
-			};
-
-			rendering_context.config().frame_context().command_buffer.pipelineBarrier2(dependency_info);
-		}
+	vulkan::end_frame({
+		.window = ctx.window().raw_handle(),
+		.frame_buffer_resized = ctx.window().frame_buffer_resized(),
+		.minimized = ctx.window().minimized(),
+		.config = ctx.config()
 	});
 
 	vulkan::transient_allocator::end_frame();
+
+	m_frame_begun = false;
 }
 
-auto gse::renderer::shutdown() -> void {
-	gui::save();
+auto gse::renderer::system::shutdown() -> void {
+	auto& ctx = *m_context;
 
-	rendering_context.config().device_config().device.waitIdle();
-
-	for (auto& renderer : renderers()) {
-		renderer.reset();
-	}
-
-	rendering_context.shutdown();
+	ctx.config().device_config().device.waitIdle();
+	ctx.shutdown();
 
 	vulkan::persistent_allocator::clean_up();
 	shader::destroy_global_layouts();
 }
 
-auto gse::renderer::camera() -> gse::camera& {
-	return rendering_context.camera();
+auto gse::renderer::system::camera() const -> gse::camera& {
+	return m_context->camera();
 }
 
-auto gse::renderer::set_ui_focus(const bool focus) -> void {
-	rendering_context.set_ui_focus(focus);
+auto gse::renderer::system::set_ui_focus(const bool focus) const -> void {
+	m_context->set_ui_focus(focus);
+}
+
+auto gse::renderer::system::frame_begun() const -> bool {
+	return m_frame_begun;
 }

@@ -42,9 +42,9 @@ export namespace gse {
 		auto direct(
 		) -> director;
 
-		template <typename... Hooks>
+		template <typename... Hooks, typename... Args>
 		auto add(
-			std::string_view name = "Unnamed Scene"
+			Args&&... args
 		) -> scene*;
 
 		auto activate(
@@ -62,9 +62,6 @@ export namespace gse {
 		auto current_scene(
 		) -> gse::scene*;
 
-		auto registries(
-		) -> std::vector<std::reference_wrapper<registry>>;
-
 		auto set_networked(
 			bool is_networked
 		) -> void;
@@ -76,10 +73,13 @@ export namespace gse {
 		) const -> bool;
 	private:
 		friend class director;
+		friend struct local_input_source;
+
 		auto add_trigger(
 			const trigger& new_trigger
 		) -> void;
 
+		gse::registry m_registry;
 		std::unordered_map<gse::id, std::unique_ptr<gse::scene>> m_scenes;
 		std::vector<trigger> m_triggers;
 		std::optional<gse::id> m_active_scene = std::nullopt;
@@ -111,7 +111,6 @@ export namespace gse {
 					}
 
 					actions::sample_all_channels(*ctx.input);
-
 				}
 			);
 
@@ -142,15 +141,10 @@ export namespace gse {
 			world& w,
 			Fn&& fn
 		) const -> void {
-			auto* sc = w.current_scene();
-			if (!sc) {
-				return;
-			}
-
 			evaluation_context ctx{
 				.client_id = owner_id,
 				.input = &actions::current_state(),
-				.registry = &sc->registry()
+				.registry = &w.m_registry
 			};
 
 			fn(ctx);
@@ -180,9 +174,7 @@ gse::world::world(const std::string_view name) : hookable(name) {
 				const evaluation_context ctx{
 					.client_id = m_owner->m_client_id,
 					.input = &actions::current_state(),
-					.registry = m_owner->m_active_scene.has_value()
-						? &m_owner->scene(m_owner->m_active_scene.value())->registry()
-						: nullptr
+					.registry = &m_owner->m_registry
 				};
 
 				if (condition(ctx) && scene_id != m_owner->m_active_scene) {
@@ -243,9 +235,9 @@ auto gse::world::direct() -> director {
 	return director(this);
 }
 
-template <typename... Hooks>
-auto gse::world::add(const std::string_view name) -> gse::scene* {
-	auto new_scene = std::make_unique<gse::scene>(name);
+template <typename... Hooks, typename... Args>
+auto gse::world::add(Args&&... args) -> gse::scene* {
+	auto new_scene = std::make_unique<gse::scene>(m_registry, std::forward<Args>(args)...);
 	(new_scene->add_hook<Hooks>(), ...);
 
 	auto* scene_ptr = new_scene.get();
@@ -308,19 +300,6 @@ auto gse::world::current_scene() -> gse::scene* {
 		return this->scene(scene.value());
 	}
 	return nullptr;
-}
-
-auto gse::world::registries() -> std::vector<std::reference_wrapper<registry>> {
-	std::vector<std::reference_wrapper<registry>> active_registries;
-	active_registries.reserve(m_scenes.size());
-
-	for (const auto& scene : m_scenes | std::views::values) {
-		if (scene->active()) {
-			active_registries.push_back(std::ref(scene->registry()));
-		}
-	}
-
-	return active_registries;
 }
 
 auto gse::world::set_networked(const bool is_networked) -> void {

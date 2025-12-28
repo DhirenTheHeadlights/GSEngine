@@ -13,6 +13,7 @@ export namespace gse {
 	class scene final : public hookable<scene> {
 	public:
 		explicit scene(
+			registry& registry,
 			std::string_view name = "Unnamed Scene"
 		);
 
@@ -34,10 +35,8 @@ export namespace gse {
 		auto entities(
 		) const -> std::span<const gse::id>;
 
-		auto registry(
-		) -> registry&;
 	private:
-		gse::registry m_registry;
+		registry& m_registry;
 		std::vector<gse::id> m_entities;
 		std::vector<gse::id> m_queue;
 
@@ -47,7 +46,9 @@ export namespace gse {
 	};
 }
 
-gse::scene::scene(const std::string_view name) : hookable(name) {
+gse::scene::scene(registry& registry, const std::string_view name) 
+	: hookable(name)
+	, m_registry(registry) {
 }
 
 auto gse::scene::add_entity(const std::string& name) -> gse::id {
@@ -66,6 +67,7 @@ auto gse::scene::add_entity(const std::string& name) -> gse::id {
 
 auto gse::scene::remove_entity(const gse::id& id) -> void {
 	assert(m_registry.exists(id), std::source_location::current(), "Cannot remove entity with id {}: it does not exist.", id);
+	
 	m_registry.remove(id);
 	std::erase(m_entities, id);
 }
@@ -80,8 +82,4 @@ auto gse::scene::active() const -> bool {
 
 auto gse::scene::entities() const -> std::span<const gse::id> {
 	return m_entities;
-}
-
-auto gse::scene::registry() -> gse::registry& {
-	return m_registry;
 }

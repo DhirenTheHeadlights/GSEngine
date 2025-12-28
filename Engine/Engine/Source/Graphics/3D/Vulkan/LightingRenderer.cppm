@@ -57,281 +57,281 @@ export namespace gse::renderer {
 gse::renderer::lighting::lighting(context& context): m_context(context) {}
 
 auto gse::renderer::lighting::initialize() -> void {
-    auto& config = m_context.config();
-    m_shader = m_context.get<shader>("lighting_pass");
-    m_context.instantly_load(m_shader);
+	auto& config = m_context.config();
+	m_shader = m_context.get<shader>("lighting_pass");
+	m_context.instantly_load(m_shader);
 
-    auto lighting_layouts = m_shader->layouts();
+	auto lighting_layouts = m_shader->layouts();
 
-    m_descriptor_set = m_shader->descriptor_set(config.device_config().device, config.descriptor_config().pool, shader::set::binding_type::persistent);
+	m_descriptor_set = m_shader->descriptor_set(config.device_config().device, config.descriptor_config().pool, shader::set::binding_type::persistent);
 
-    const auto cam_block = m_shader->uniform_block("CameraParams");
+	const auto cam_block = m_shader->uniform_block("CameraParams");
 
-    vk::BufferCreateInfo cam_buffer_info{
-        .size = cam_block.size,
-        .usage = vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eStorageBuffer,
-        .sharingMode = vk::SharingMode::eExclusive
-    };
+	vk::BufferCreateInfo cam_buffer_info{
+		.size = cam_block.size,
+		.usage = vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eStorageBuffer,
+		.sharingMode = vk::SharingMode::eExclusive
+	};
 
-    m_ubo_allocations["CameraParams"] = vulkan::persistent_allocator::create_buffer(
-        config.device_config(),
-        cam_buffer_info
-    );
+	m_ubo_allocations["CameraParams"] = vulkan::persistent_allocator::create_buffer(
+		config.device_config(),
+		cam_buffer_info
+	);
 
-    const auto light_block = m_shader->uniform_block("lights_ssbo");
+	const auto light_block = m_shader->uniform_block("lights_ssbo");
 
-    vk::BufferCreateInfo light_buffer_info{
-        .size = light_block.size,
-        .usage = vk::BufferUsageFlagBits::eStorageBuffer,
-        .sharingMode = vk::SharingMode::eExclusive
-    };
+	vk::BufferCreateInfo light_buffer_info{
+		.size = light_block.size,
+		.usage = vk::BufferUsageFlagBits::eStorageBuffer,
+		.sharingMode = vk::SharingMode::eExclusive
+	};
 
-    m_light_buffer = vulkan::persistent_allocator::create_buffer(
-        config.device_config(),
-        light_buffer_info
-    );
+	m_light_buffer = vulkan::persistent_allocator::create_buffer(
+		config.device_config(),
+		light_buffer_info
+	);
 
-    const auto shadow_block = m_shader->uniform_block("ShadowParams");
+	const auto shadow_block = m_shader->uniform_block("ShadowParams");
 
-    vk::BufferCreateInfo shadow_buffer_info{
-        .size = shadow_block.size,
-        .usage = vk::BufferUsageFlagBits::eUniformBuffer,
-        .sharingMode = vk::SharingMode::eExclusive
-    };
+	vk::BufferCreateInfo shadow_buffer_info{
+		.size = shadow_block.size,
+		.usage = vk::BufferUsageFlagBits::eUniformBuffer,
+		.sharingMode = vk::SharingMode::eExclusive
+	};
 
-    m_ubo_allocations["ShadowParams"] = vulkan::persistent_allocator::create_buffer(
-        config.device_config(),
-        shadow_buffer_info
-    );
+	m_ubo_allocations["ShadowParams"] = vulkan::persistent_allocator::create_buffer(
+		config.device_config(),
+		shadow_buffer_info
+	);
 
-    const std::unordered_map<std::string, vk::DescriptorBufferInfo> lighting_buffer_infos = {
-        {
-            "CameraParams",
-            {
-                .buffer = m_ubo_allocations["CameraParams"].buffer,
-                .offset = 0,
-                .range = cam_block.size
-            }
-        },
-        {
-            "lights_ssbo",
-            {
-                .buffer = m_light_buffer.buffer,
-                .offset = 0,
-                .range = light_block.size
-            }
-        },
-        {
-            "ShadowParams",
-            {
-                .buffer = m_ubo_allocations["ShadowParams"].buffer,
-                .offset = 0,
-                .range = shadow_block.size
-            }
-        }
-    };
+	const std::unordered_map<std::string, vk::DescriptorBufferInfo> lighting_buffer_infos = {
+		{
+			"CameraParams",
+			{
+				.buffer = m_ubo_allocations["CameraParams"].buffer,
+				.offset = 0,
+				.range = cam_block.size
+			}
+		},
+		{
+			"lights_ssbo",
+			{
+				.buffer = m_light_buffer.buffer,
+				.offset = 0,
+				.range = light_block.size
+			}
+		},
+		{
+			"ShadowParams",
+			{
+				.buffer = m_ubo_allocations["ShadowParams"].buffer,
+				.offset = 0,
+				.range = shadow_block.size
+			}
+		}
+	};
 
-    constexpr vk::SamplerCreateInfo sampler_create_info{
-        .magFilter = vk::Filter::eNearest,
-        .minFilter = vk::Filter::eNearest,
-        .mipmapMode = vk::SamplerMipmapMode::eNearest,
-        .addressModeU = vk::SamplerAddressMode::eClampToEdge,
-        .addressModeV = vk::SamplerAddressMode::eClampToEdge,
-        .addressModeW = vk::SamplerAddressMode::eClampToEdge,
-        .mipLodBias = 0.0f,
-        .anisotropyEnable = vk::False,
-        .maxAnisotropy = 1.0f,
-        .compareEnable = vk::False,
-        .minLod = 0.0f,
-        .maxLod = 1.0f,
-        .borderColor = vk::BorderColor::eFloatOpaqueWhite
-    };
-    m_buffer_sampler = config.device_config().device.createSampler(sampler_create_info);
+	constexpr vk::SamplerCreateInfo sampler_create_info{
+		.magFilter = vk::Filter::eNearest,
+		.minFilter = vk::Filter::eNearest,
+		.mipmapMode = vk::SamplerMipmapMode::eNearest,
+		.addressModeU = vk::SamplerAddressMode::eClampToEdge,
+		.addressModeV = vk::SamplerAddressMode::eClampToEdge,
+		.addressModeW = vk::SamplerAddressMode::eClampToEdge,
+		.mipLodBias = 0.0f,
+		.anisotropyEnable = vk::False,
+		.maxAnisotropy = 1.0f,
+		.compareEnable = vk::False,
+		.minLod = 0.0f,
+		.maxLod = 1.0f,
+		.borderColor = vk::BorderColor::eFloatOpaqueWhite
+	};
+	m_buffer_sampler = config.device_config().device.createSampler(sampler_create_info);
 
-    constexpr vk::SamplerCreateInfo shadow_sampler_create_info{
-	    .magFilter = vk::Filter::eLinear,
-	    .minFilter = vk::Filter::eLinear,
-	    .mipmapMode = vk::SamplerMipmapMode::eNearest,
-	    .addressModeU = vk::SamplerAddressMode::eClampToBorder,
-	    .addressModeV = vk::SamplerAddressMode::eClampToBorder,
-	    .addressModeW = vk::SamplerAddressMode::eClampToBorder,
-	    .mipLodBias = 0.0f,
-	    .anisotropyEnable = vk::False,
-	    .maxAnisotropy = 1.0f,
-	    .compareEnable = vk::False,
-	    .minLod = 0.0f,
-	    .maxLod = 1.0f,
-	    .borderColor = vk::BorderColor::eFloatOpaqueWhite
-    };
+	constexpr vk::SamplerCreateInfo shadow_sampler_create_info{
+		.magFilter = vk::Filter::eLinear,
+		.minFilter = vk::Filter::eLinear,
+		.mipmapMode = vk::SamplerMipmapMode::eNearest,
+		.addressModeU = vk::SamplerAddressMode::eClampToBorder,
+		.addressModeV = vk::SamplerAddressMode::eClampToBorder,
+		.addressModeW = vk::SamplerAddressMode::eClampToBorder,
+		.mipLodBias = 0.0f,
+		.anisotropyEnable = vk::False,
+		.maxAnisotropy = 1.0f,
+		.compareEnable = vk::False,
+		.minLod = 0.0f,
+		.maxLod = 1.0f,
+		.borderColor = vk::BorderColor::eFloatOpaqueWhite
+	};
 
-    m_shadow_sampler = config.device_config().device.createSampler(shadow_sampler_create_info);
+	m_shadow_sampler = config.device_config().device.createSampler(shadow_sampler_create_info);
 
-    const std::unordered_map<std::string, vk::DescriptorImageInfo> gbuffer_image_infos = {
-	    {
-	        "g_albedo",
-	        {
-	            .sampler = m_buffer_sampler,
-	            .imageView = *config.swap_chain_config().albedo_image.view,
-	            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
-	        }
-	    },
-	    {
-	        "g_normal",
-	        {
-	            .sampler = m_buffer_sampler,
-	            .imageView = *config.swap_chain_config().normal_image.view,
-	            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
-	        }
-	    },
-	    {
-	        "g_depth",
-	        {
-	            .sampler = m_buffer_sampler,
-	            .imageView = *config.swap_chain_config().depth_image.view,
-	            .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal
-	        }
-	    }
-    };
+	const std::unordered_map<std::string, vk::DescriptorImageInfo> gbuffer_image_infos = {
+		{
+			"g_albedo",
+			{
+				.sampler = m_buffer_sampler,
+				.imageView = *config.swap_chain_config().albedo_image.view,
+				.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+			}
+		},
+		{
+			"g_normal",
+			{
+				.sampler = m_buffer_sampler,
+				.imageView = *config.swap_chain_config().normal_image.view,
+				.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
+			}
+		},
+		{
+			"g_depth",
+			{
+				.sampler = m_buffer_sampler,
+				.imageView = *config.swap_chain_config().depth_image.view,
+				.imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal
+			}
+		}
+	};
 
-    auto& shadow_renderer = renderer<shadow>();
+	auto& shadow_renderer = renderer<shadow>();
 
-    std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>> array_image_infos;
-    std::vector<vk::DescriptorImageInfo> shadow_infos;
-    shadow_infos.reserve(max_shadow_lights);
+	std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>> array_image_infos;
+	std::vector<vk::DescriptorImageInfo> shadow_infos;
+	shadow_infos.reserve(max_shadow_lights);
 
-    for (std::size_t i = 0; i < max_shadow_lights; ++i) {
-        shadow_infos.push_back({
-		    .sampler = m_shadow_sampler,
-		    .imageView = shadow_renderer.shadow_map_view(i),
-		    .imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal
+	for (std::size_t i = 0; i < max_shadow_lights; ++i) {
+		shadow_infos.push_back({
+			.sampler = m_shadow_sampler,
+			.imageView = shadow_renderer.shadow_map_view(i),
+			.imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal
 		});
-    }
+	}
 
-    array_image_infos.emplace("shadow_maps", std::move(shadow_infos));
+	array_image_infos.emplace("shadow_maps", std::move(shadow_infos));
 
-    auto writes = m_shader->descriptor_writes(
-        *m_descriptor_set,
-        lighting_buffer_infos,
-        gbuffer_image_infos,
-        array_image_infos
-    );
+	auto writes = m_shader->descriptor_writes(
+		*m_descriptor_set,
+		lighting_buffer_infos,
+		gbuffer_image_infos,
+		array_image_infos
+	);
 
-    config.device_config().device.updateDescriptorSets(writes, nullptr);
+	config.device_config().device.updateDescriptorSets(writes, nullptr);
 
-    const auto range = m_shader->push_constant_range("push_constants");
+	const auto range = m_shader->push_constant_range("push_constants");
 
-    const vk::PipelineLayoutCreateInfo pipeline_layout_info{
-        .setLayoutCount = static_cast<std::uint32_t>(lighting_layouts.size()),
-        .pSetLayouts = lighting_layouts.data(),
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges = &range
-    };
-    m_pipeline_layout = config.device_config().device.createPipelineLayout(pipeline_layout_info);
+	const vk::PipelineLayoutCreateInfo pipeline_layout_info{
+		.setLayoutCount = static_cast<std::uint32_t>(lighting_layouts.size()),
+		.pSetLayouts = lighting_layouts.data(),
+		.pushConstantRangeCount = 1,
+		.pPushConstantRanges = &range
+	};
+	m_pipeline_layout = config.device_config().device.createPipelineLayout(pipeline_layout_info);
 
-    auto lighting_stages = m_shader->shader_stages();
+	auto lighting_stages = m_shader->shader_stages();
 
-    constexpr vk::PipelineVertexInputStateCreateInfo empty_vertex_input{
-        .vertexBindingDescriptionCount = 0,
-        .pVertexBindingDescriptions = nullptr,
-        .vertexAttributeDescriptionCount = 0,
-        .pVertexAttributeDescriptions = nullptr
-    };
+	constexpr vk::PipelineVertexInputStateCreateInfo empty_vertex_input{
+		.vertexBindingDescriptionCount = 0,
+		.pVertexBindingDescriptions = nullptr,
+		.vertexAttributeDescriptionCount = 0,
+		.pVertexAttributeDescriptions = nullptr
+	};
 
-    constexpr vk::PipelineInputAssemblyStateCreateInfo input_assembly{
-        .topology = vk::PrimitiveTopology::eTriangleList,
-        .primitiveRestartEnable = vk::False
-    };
+	constexpr vk::PipelineInputAssemblyStateCreateInfo input_assembly{
+		.topology = vk::PrimitiveTopology::eTriangleList,
+		.primitiveRestartEnable = vk::False
+	};
 
-    const vk::Viewport viewport{
-        .x = 0.0f,
-        .y = 0.0f,
-        .width = static_cast<float>(config.swap_chain_config().extent.width),
-        .height = static_cast<float>(config.swap_chain_config().extent.height),
-        .minDepth = 0.0f,
-        .maxDepth = 1.0f
-    };
+	const vk::Viewport viewport{
+		.x = 0.0f,
+		.y = 0.0f,
+		.width = static_cast<float>(config.swap_chain_config().extent.width),
+		.height = static_cast<float>(config.swap_chain_config().extent.height),
+		.minDepth = 0.0f,
+		.maxDepth = 1.0f
+	};
 
-    const vk::Rect2D scissor{
-        .offset = { 0, 0 },
-        .extent = config.swap_chain_config().extent
-    };
+	const vk::Rect2D scissor{
+		.offset = { 0, 0 },
+		.extent = config.swap_chain_config().extent
+	};
 
-    const vk::PipelineViewportStateCreateInfo viewport_state{
-        .viewportCount = 1,
-        .pViewports = &viewport,
-        .scissorCount = 1,
-        .pScissors = &scissor
-    };
+	const vk::PipelineViewportStateCreateInfo viewport_state{
+		.viewportCount = 1,
+		.pViewports = &viewport,
+		.scissorCount = 1,
+		.pScissors = &scissor
+	};
 
-    constexpr vk::PipelineRasterizationStateCreateInfo rasterizer{
-	    .depthClampEnable = vk::False,
-	    .rasterizerDiscardEnable = vk::False,
-	    .polygonMode = vk::PolygonMode::eFill,
-	    .cullMode = vk::CullModeFlagBits::eFront,
-	    .frontFace = vk::FrontFace::eCounterClockwise,
-	    .depthBiasEnable = vk::True,
-	    .depthBiasConstantFactor = 1.25f,
-	    .depthBiasClamp = 0.0f,
-	    .depthBiasSlopeFactor = 1.75f,
-	    .lineWidth = 1.0f
-    };
+	constexpr vk::PipelineRasterizationStateCreateInfo rasterizer{
+		.depthClampEnable = vk::False,
+		.rasterizerDiscardEnable = vk::False,
+		.polygonMode = vk::PolygonMode::eFill,
+		.cullMode = vk::CullModeFlagBits::eFront,
+		.frontFace = vk::FrontFace::eCounterClockwise,
+		.depthBiasEnable = vk::True,
+		.depthBiasConstantFactor = 1.25f,
+		.depthBiasClamp = 0.0f,
+		.depthBiasSlopeFactor = 1.75f,
+		.lineWidth = 1.0f
+	};
 
-    constexpr vk::PipelineMultisampleStateCreateInfo multi_sample_state{
-        .rasterizationSamples = vk::SampleCountFlagBits::e1,
-        .sampleShadingEnable = vk::False,
-        .minSampleShading = 1.0f,
-        .pSampleMask = nullptr,
-        .alphaToCoverageEnable = vk::False,
-        .alphaToOneEnable = vk::False
-    };
+	constexpr vk::PipelineMultisampleStateCreateInfo multi_sample_state{
+		.rasterizationSamples = vk::SampleCountFlagBits::e1,
+		.sampleShadingEnable = vk::False,
+		.minSampleShading = 1.0f,
+		.pSampleMask = nullptr,
+		.alphaToCoverageEnable = vk::False,
+		.alphaToOneEnable = vk::False
+	};
 
-    constexpr vk::PipelineColorBlendAttachmentState color_blend_attachment{
-        .blendEnable = vk::False,
-        .srcColorBlendFactor = vk::BlendFactor::eOne,
-        .dstColorBlendFactor = vk::BlendFactor::eZero,
-        .colorBlendOp = vk::BlendOp::eAdd,
-        .srcAlphaBlendFactor = vk::BlendFactor::eOne,
-        .dstAlphaBlendFactor = vk::BlendFactor::eZero,
-        .alphaBlendOp = vk::BlendOp::eAdd,
-        .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
-    };
+	constexpr vk::PipelineColorBlendAttachmentState color_blend_attachment{
+		.blendEnable = vk::False,
+		.srcColorBlendFactor = vk::BlendFactor::eOne,
+		.dstColorBlendFactor = vk::BlendFactor::eZero,
+		.colorBlendOp = vk::BlendOp::eAdd,
+		.srcAlphaBlendFactor = vk::BlendFactor::eOne,
+		.dstAlphaBlendFactor = vk::BlendFactor::eZero,
+		.alphaBlendOp = vk::BlendOp::eAdd,
+		.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
+	};
 
-    const vk::PipelineColorBlendStateCreateInfo color_blend_state{
-        .logicOpEnable = vk::False,
-        .logicOp = vk::LogicOp::eCopy,
-        .attachmentCount = 1,
-        .pAttachments = &color_blend_attachment,
-        .blendConstants = std::array{ 0.0f, 0.0f, 0.0f, 0.0f }
-    };
+	const vk::PipelineColorBlendStateCreateInfo color_blend_state{
+		.logicOpEnable = vk::False,
+		.logicOp = vk::LogicOp::eCopy,
+		.attachmentCount = 1,
+		.pAttachments = &color_blend_attachment,
+		.blendConstants = std::array{ 0.0f, 0.0f, 0.0f, 0.0f }
+	};
 
-    const auto color_format = config.swap_chain_config().surface_format.format;
-    const vk::PipelineRenderingCreateInfoKHR lighting_rendering_info{
-        .colorAttachmentCount = 1,
-        .pColorAttachmentFormats = &color_format
-    };
+	const auto color_format = config.swap_chain_config().surface_format.format;
+	const vk::PipelineRenderingCreateInfoKHR lighting_rendering_info{
+		.colorAttachmentCount = 1,
+		.pColorAttachmentFormats = &color_format
+	};
 
-    const vk::GraphicsPipelineCreateInfo lighting_pipeline_info{
-        .pNext = &lighting_rendering_info,
-        .stageCount = static_cast<std::uint32_t>(lighting_stages.size()),
-        .pStages = lighting_stages.data(),
-        .pVertexInputState = &empty_vertex_input,
-        .pInputAssemblyState = &input_assembly,
-        .pTessellationState = nullptr,
-        .pViewportState = &viewport_state,
-        .pRasterizationState = &rasterizer,
-        .pMultisampleState = &multi_sample_state,
-        .pDepthStencilState = nullptr,
-        .pColorBlendState = &color_blend_state,
-        .pDynamicState = nullptr,
-        .layout = m_pipeline_layout,
-        .basePipelineHandle = nullptr,
-        .basePipelineIndex = -1
-    };
-    m_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, lighting_pipeline_info);
+	const vk::GraphicsPipelineCreateInfo lighting_pipeline_info{
+		.pNext = &lighting_rendering_info,
+		.stageCount = static_cast<std::uint32_t>(lighting_stages.size()),
+		.pStages = lighting_stages.data(),
+		.pVertexInputState = &empty_vertex_input,
+		.pInputAssemblyState = &input_assembly,
+		.pTessellationState = nullptr,
+		.pViewportState = &viewport_state,
+		.pRasterizationState = &rasterizer,
+		.pMultisampleState = &multi_sample_state,
+		.pDepthStencilState = nullptr,
+		.pColorBlendState = &color_blend_state,
+		.pDynamicState = nullptr,
+		.layout = m_pipeline_layout,
+		.basePipelineHandle = nullptr,
+		.basePipelineIndex = -1
+	};
+	m_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, lighting_pipeline_info);
 }
 
 auto gse::renderer::lighting::render() -> void {
-	auto [dir_chunks, spot_chunks, point_chunks] = this->read<directional_light_component, spot_light_component, point_light_component>();
+	auto [dir_chunk, spot_chunk, point_chunk] = this->read<directional_light_component, spot_light_component, point_light_component>();
 
 	auto& config = m_context.config();
 	const auto command = config.frame_context().command_buffer;
@@ -386,88 +386,71 @@ auto gse::renderer::lighting::render() -> void {
 
 	std::size_t light_count = 0;
 
-	for (const auto& chunk : dir_chunks) {
-		for (const auto& comp : chunk) {
-			if (light_count >= max_shadow_lights) {
-				break;
-			}
-
-			zero_at(light_count);
-
-			int type = 0;
-			set(light_count, "light_type", type);
-			set(light_count, "direction", to_view_dir(comp.direction));
-			set(light_count, "color", comp.color);
-			set(light_count, "intensity", comp.intensity);
-			set(light_count, "ambient_strength", comp.ambient_strength);
-
-			++light_count;
-		}
-
+	for (const auto& comp : dir_chunk) {
 		if (light_count >= max_shadow_lights) {
 			break;
 		}
+
+		zero_at(light_count);
+
+		int type = 0;
+		set(light_count, "light_type", type);
+		set(light_count, "direction", to_view_dir(comp.direction));
+		set(light_count, "color", comp.color);
+		set(light_count, "intensity", comp.intensity);
+		set(light_count, "ambient_strength", comp.ambient_strength);
+
+		++light_count;
 	}
 
-	for (const auto& chunk : spot_chunks) {
-		for (const auto& comp : chunk) {
-			if (light_count >= max_shadow_lights) {
-				break;
-			}
-
-			zero_at(light_count);
-
-			int type = 2;
-			auto pos_meters = comp.position.as<meters>();
-			float cut_off_cos = std::cos(comp.cut_off.as<radians>());
-			float outer_cut_off_cos = std::cos(comp.outer_cut_off.as<radians>());
-
-			set(light_count, "light_type", type);
-			set(light_count, "position", to_view_pos(pos_meters));
-			set(light_count, "direction", to_view_dir(comp.direction));
-			set(light_count, "color", comp.color);
-			set(light_count, "intensity", comp.intensity);
-			set(light_count, "constant", comp.constant);
-			set(light_count, "linear", comp.linear);
-			set(light_count, "quadratic", comp.quadratic);
-			set(light_count, "cut_off", cut_off_cos);
-			set(light_count, "outer_cut_off", outer_cut_off_cos);
-			set(light_count, "ambient_strength", comp.ambient_strength);
-
-			++light_count;
-		}
-
+	for (const auto& comp : spot_chunk) {
 		if (light_count >= max_shadow_lights) {
 			break;
 		}
+
+		zero_at(light_count);
+
+		int type = 2;
+		auto pos_meters = comp.position.as<meters>();
+		float cut_off_cos = std::cos(comp.cut_off.as<radians>());
+		float outer_cut_off_cos = std::cos(comp.outer_cut_off.as<radians>());
+
+		set(light_count, "light_type", type);
+		set(light_count, "position", to_view_pos(pos_meters));
+		set(light_count, "direction", to_view_dir(comp.direction));
+		set(light_count, "color", comp.color);
+		set(light_count, "intensity", comp.intensity);
+		set(light_count, "constant", comp.constant);
+		set(light_count, "linear", comp.linear);
+		set(light_count, "quadratic", comp.quadratic);
+		set(light_count, "cut_off", cut_off_cos);
+		set(light_count, "outer_cut_off", outer_cut_off_cos);
+		set(light_count, "ambient_strength", comp.ambient_strength);
+
+		++light_count;
 	}
 
-	for (const auto& chunk : point_chunks) {
-		for (const auto& comp : chunk) {
-			if (light_count >= max_shadow_lights) {
-				break;
-			}
-
-			zero_at(light_count);
-
-			int type = 1;
-			auto pos_meters = comp.position.as<meters>();
-
-			set(light_count, "light_type", type);
-			set(light_count, "position", to_view_pos(pos_meters));
-			set(light_count, "color", comp.color);
-			set(light_count, "intensity", comp.intensity);
-			set(light_count, "constant", comp.constant);
-			set(light_count, "linear", comp.linear);
-			set(light_count, "quadratic", comp.quadratic);
-			set(light_count, "ambient_strength", comp.ambient_strength);
-
-			++light_count;
-		}
-
+	// Loop directly over point light chunk
+	for (const auto& comp : point_chunk) {
 		if (light_count >= max_shadow_lights) {
 			break;
 		}
+
+		zero_at(light_count);
+
+		int type = 1;
+		auto pos_meters = comp.position.as<meters>();
+
+		set(light_count, "light_type", type);
+		set(light_count, "position", to_view_pos(pos_meters));
+		set(light_count, "color", comp.color);
+		set(light_count, "intensity", comp.intensity);
+		set(light_count, "constant", comp.constant);
+		set(light_count, "linear", comp.linear);
+		set(light_count, "quadratic", comp.quadratic);
+		set(light_count, "ambient_strength", comp.ambient_strength);
+
+		++light_count;
 	}
 
 	auto& shadow_r = system_of<shadow>();
@@ -578,7 +561,3 @@ auto gse::renderer::lighting::render() -> void {
 		}
 	);
 }
-
-
-
-
