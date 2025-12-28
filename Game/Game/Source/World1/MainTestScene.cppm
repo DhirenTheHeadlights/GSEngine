@@ -18,7 +18,7 @@ export namespace gs {
 			arena::create(this);
 
 			build("Player")
-				.with<gse::free_camera>({
+				.with<gs::player>({
 					.initial_position = gse::vec3<gse::length>(0.f, 0.f, 0.f)
 				});
 

@@ -9,7 +9,7 @@ export namespace gse {
 		bool colliding = false;
 		unitless::vec3 collision_normal;
 		length penetration;
-		vec3<length> collision_point;
+		std::vector<vec3<length>> collision_points;
 
 		auto axis() const -> unitless::axis {
 			if (!epsilon_equal_index(collision_normal, unitless::vec3(), static_cast<int>(unitless::axis::x))) {

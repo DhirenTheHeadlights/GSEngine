@@ -99,7 +99,7 @@ auto gse::broad_phase_collision::update(registry& registry) -> void {
 			.colliding = false,
 			.collision_normal = {},
 			.penetration = {},
-			.collision_point = {}
+			.collision_points = {}
 		};
 
 		auto* motion = registry.try_linked_object_write<physics::motion_component>(collision_component.owner_id());
