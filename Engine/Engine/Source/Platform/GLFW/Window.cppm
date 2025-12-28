@@ -16,25 +16,52 @@ import gse.utility;
 export namespace gse {
 	class window final : non_copyable {
 	public:
-		explicit window(const std::string& title);
+		explicit window(
+			const std::string& title,
+			input::system& input_system
+		);
+		
 		~window() override;
 
-		auto update(bool ui_focus) -> void;
-		static auto poll_events() -> void;
-		auto shutdown() -> void ;
+		auto update(
+			bool ui_focus
+		) -> void;
 
-		auto is_open() const -> bool;
-		auto minimized() const -> bool;
-		auto mouse_visible() const -> bool;
-		auto viewport() const -> unitless::vec2i;
-		auto frame_buffer_resized() -> bool;
-		auto create_vulkan_surface(VkInstance instance) const -> VkSurfaceKHR;
+		static auto poll_events(
+		) -> void;
 
-		auto set_mouse_visible(bool visible) -> void;
+		auto shutdown(
+		) -> void;
 
-		auto raw_handle() const -> GLFWwindow* { return m_window; }
+		auto is_open(
+		) const -> bool;
+
+		auto minimized(
+		) const -> bool;
+
+		auto mouse_visible(
+		) const -> bool;
+
+		auto viewport(
+		) const -> unitless::vec2i;
+
+		auto frame_buffer_resized(
+		) -> bool;
+
+		auto create_vulkan_surface(
+			VkInstance instance
+		) const -> VkSurfaceKHR;
+
+		auto set_mouse_visible(
+			bool visible
+		) -> void;
+
+		auto raw_handle(
+		) const -> GLFWwindow* { return m_window; }
 	private:
 		GLFWwindow* m_window = nullptr;
+		input::system& m_input;
+		
 		bool m_fullscreen = true;
 		bool m_current_fullscreen = true;
 		bool m_mouse_visible = false;
@@ -42,11 +69,13 @@ export namespace gse {
 		bool m_frame_buffer_resized = false;
 		bool m_ui_focus = false;
 
-		auto set_fullscreen(bool fullscreen) -> void;
+		auto set_fullscreen(
+			bool fullscreen
+		) -> void;
 	};
 }
 
-gse::window::window(const std::string& title) {
+gse::window::window(const std::string& title, input::system& input_system) : m_input(input_system) {
 	assert(glfwInit(), std::source_location::current(), "Error initializing GLFW");
 	assert(glfwVulkanSupported(), std::source_location::current(), "Vulkan not supported");
 
@@ -60,79 +89,86 @@ gse::window::window(const std::string& title) {
 
 	glfwSetKeyCallback(
 		m_window,
-		[](GLFWwindow*, const int key, int, const int action, int) {
-			input::key_callback(key, action);
+		[](GLFWwindow* w, const int key, int, const int action, int) {
+			if (const auto* self = static_cast<window*>(glfwGetWindowUserPointer(w))) {
+				self->m_input.key_callback(key, action);
+			}
 		}
 	);
 
 	glfwSetMouseButtonCallback(
 		m_window,
-		[](GLFWwindow* window, const int button, const int action, int) {
-			double x, y;
-			glfwGetCursorPos(window, &x, &y);
-			input::mouse_button_callback(button, action, x, y);
+		[](GLFWwindow* w, const int button, const int action, int) {
+			if (const auto* self = static_cast<window*>(glfwGetWindowUserPointer(w))) {
+				double x, y;
+				glfwGetCursorPos(w, &x, &y);
+				self->m_input.mouse_button_callback(button, action, x, y);
+			}
 		}
 	);
 
 	glfwSetCursorPosCallback(
 		m_window,
-		[](GLFWwindow* window, double xpos, double ypos) {
-			const auto* self = static_cast<gse::window*>(glfwGetWindowUserPointer(window));
-
-			if (!self) {
-				return;
-			}
+		[](GLFWwindow* w, double xpos, double ypos) {
+			const auto* self = static_cast<window*>(glfwGetWindowUserPointer(w));
+			if (!self) return;
 
 			if (self->m_ui_focus) {
 				const auto dims = self->viewport();
-
 				xpos = std::clamp(xpos, 0.0, static_cast<double>(dims.x()));
 				ypos = std::clamp(ypos, 0.0, static_cast<double>(dims.y()));
 
-				const double inverted_ypos = static_cast<double>(dims.y()) - ypos;
-				input::mouse_pos_callback(xpos, inverted_ypos);
+				const double inverted_y = static_cast<double>(dims.y()) - ypos;
+				self->m_input.mouse_pos_callback(xpos, inverted_y);
 			}
 			else {
-				input::mouse_pos_callback(xpos, ypos);
+				self->m_input.mouse_pos_callback(xpos, ypos);
 			}
 		}
 	);
 
 	glfwSetScrollCallback(
 		m_window,
-		[](GLFWwindow*, const double xoffset, const double yoffset) {
-			input::mouse_scroll_callback(xoffset, yoffset);
+		[](GLFWwindow* w, const double xoffset, const double yoffset) {
+			if (const auto* self = static_cast<window*>(glfwGetWindowUserPointer(w))) {
+				self->m_input.mouse_scroll_callback(xoffset, yoffset);
+			}
 		}
 	);
 
 	glfwSetCharCallback(
 		m_window,
-		[](GLFWwindow*, const unsigned int codepoint) {
-			input::text_callback(codepoint);
+		[](GLFWwindow* w, const unsigned int codepoint) {
+			if (const auto* self = static_cast<window*>(glfwGetWindowUserPointer(w))) {
+				self->m_input.text_callback(codepoint);
+			}
 		}
 	);
 
 	glfwSetWindowFocusCallback(
 		m_window,
-		[](GLFWwindow* window, const int focused) {
-			auto* self = static_cast<gse::window*>(glfwGetWindowUserPointer(window));
+		[](GLFWwindow* w, const int focused) {
+			auto* self = static_cast<window*>(glfwGetWindowUserPointer(w));
+			if (!self) return;
+
 			self->m_focused = (focused == GLFW_TRUE);
 			if (self->m_focused) {
 				const int cursor_mode = self->mouse_visible() ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED;
-				glfwSetInputMode(window, GLFW_CURSOR, cursor_mode);
+				glfwSetInputMode(w, GLFW_CURSOR, cursor_mode);
 			}
 			else {
-				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-				input::clear_events();
+				glfwSetInputMode(w, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+				self->m_input.clear_events();
 			}
 		}
 	);
 
 	glfwSetFramebufferSizeCallback(
 		m_window,
-		[](GLFWwindow* window, const int width, const int height) {
-			auto* self = static_cast<gse::window*>(glfwGetWindowUserPointer(window));
-			self->m_frame_buffer_resized = true;
+		[](GLFWwindow* w, const int, const int) {
+			if (auto* self = static_cast<window*>(glfwGetWindowUserPointer(w))) {
+				self->m_frame_buffer_resized = true;
+			}
 		}
 	);
 }

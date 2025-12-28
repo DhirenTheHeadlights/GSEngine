@@ -17,14 +17,20 @@ import :connection;
 import :ping_pong;
 import :notify_scene_change;
 import :input_frame;
-import :registry_sync;
 
 export namespace gse::network {
+	struct replication_message {
+		std::uint16_t id;
+		std::vector<std::byte> payload;
+		std::uint32_t sequence;
+	};
+
 	using inbox_message = std::variant<
 		connection_accepted,
 		ping,
 		pong,
-		notify_scene_change
+		notify_scene_change,
+		replication_message 
 	>;
 
 	class client {
@@ -59,16 +65,12 @@ export namespace gse::network {
 		) -> void;
 
 		auto drain(
-			const std::function<void(inbox_message&)>& on_receive
-		) -> void;
-
-		auto set_registry(
-			registry& reg
+			const std::function<void(const inbox_message&)>& on_receive
 		) -> void;
 	private:
 		udp_socket m_socket;
 		remote_peer m_server;
-		state m_state = state::disconnected;
+		std::atomic<state> m_state = state::disconnected;
 
 		time_t<std::uint32_t> m_timeout;
 		time_t<std::uint32_t> m_retry;
@@ -83,8 +85,6 @@ export namespace gse::network {
 
 		std::uint32_t m_input_sequence = 0;
 		clock m_input_clock;
-
-		std::optional<std::reference_wrapper<registry>> m_registry;
 	};
 }
 
@@ -99,7 +99,7 @@ gse::network::client::client(const address& listen, const address& server) : m_s
 		while (m_running.load(std::memory_order_acquire) && !st.stop_requested()) {
 
 			auto wait = max_sleep;
-			if (m_state == state::connecting) {
+			if (m_state.load(std::memory_order_relaxed) == state::connecting) {
 				const auto elapsed = m_connection_clock.elapsed<std::uint32_t>();
 				const auto ms_to_retry = (elapsed >= m_retry) ? 0u : (m_retry - elapsed);
 				const auto ms_to_timeout = (elapsed >= m_timeout) ? 0u : (m_timeout - elapsed);
@@ -134,7 +134,9 @@ auto gse::network::client::connect(const time_t<std::uint32_t> timeout, const ti
 }
 
 auto gse::network::client::tick() -> void {
-	if (m_state == state::connecting) {
+	const auto current = m_state.load(std::memory_order_relaxed);
+
+	if (current == state::connecting) {
 		if (m_connection_clock.elapsed<std::uint32_t>() > m_retry) {
 			send(connection_request{});
 			m_connection_clock.reset();
@@ -171,36 +173,51 @@ auto gse::network::client::tick() -> void {
 		}
 
 		const auto id = message_id(stream);
+		bool handled_internally = false;
 
-		bool handled = false;
-		if (m_registry.has_value()) {
-			handled = match_and_apply_components(m_registry->get(), stream, id);
-		}
+		match_message(stream, id)
+			.if_is<connection_accepted>([&](const connection_accepted&) {
+				m_state = state::connected;
+				std::lock_guard lk(m_inbox_mutex);
+				m_inbox.emplace_back(connection_accepted{});
+				handled_internally = true;
+			})
+			.else_if_is<ping>([&](const ping& m) {
+				send(pong{ .sequence = m.sequence });
+				std::lock_guard lk(m_inbox_mutex);
+				m_inbox.emplace_back(m);
+				handled_internally = true;
+			})
+			.else_if_is<pong>([&](const pong& m) {
+				std::lock_guard lk(m_inbox_mutex);
+				m_inbox.emplace_back(m);
+				handled_internally = true;
+			})
+			.else_if_is<notify_scene_change>([&](const notify_scene_change& m) {
+				std::lock_guard lk(m_inbox_mutex);
+				m_inbox.emplace_back(m);
+				handled_internally = true;
+			});
 
-		if (!handled) {
-			match_message(stream, id)
-				.if_is<connection_accepted>([&](const connection_accepted&) {
-					m_state = state::connected;
-					std::lock_guard lk(m_inbox_mutex);
-					m_inbox.emplace_back(connection_accepted{});
-				})
-				.else_if_is<ping>([&](const ping& m) {
-					send(pong{ .sequence = m.sequence });
-					std::lock_guard lk(m_inbox_mutex);
-					m_inbox.emplace_back(m);
-				})
-				.else_if_is<pong>([&](const pong& m) {
-					std::lock_guard lk(m_inbox_mutex);
-					m_inbox.emplace_back(m);
-				})
-				.else_if_is<notify_scene_change>([&](const notify_scene_change& m) {
-					std::lock_guard lk(m_inbox_mutex);
-					m_inbox.emplace_back(m);
+		if (!handled_internally) {
+			std::vector<std::byte> payload;
+			const auto remaining = stream.remaining_bytes();
+			
+			if (remaining > 0) {
+				payload.resize(remaining);
+				stream.read_bytes(payload.data(), remaining);
+				
+				std::lock_guard lk(m_inbox_mutex);
+				m_inbox.emplace_back(replication_message{
+					.id = id,
+					.payload = std::move(payload),
+					.sequence = m_server.remote_ack_sequence()
 				});
+			}
 		}
 	}
 
-	if (m_state == state::connected) {
+	if (current == state::connected) {
 		if (m_input_clock.elapsed<std::uint32_t>() > 16u) {
 			const auto& s = actions::current_state();
 
@@ -219,7 +236,7 @@ auto gse::network::client::tick() -> void {
 }
 
 auto gse::network::client::current_state() const -> state {
-	return m_state;
+	return m_state.load(std::memory_order_relaxed);
 }
 
 template <typename T>
@@ -241,25 +258,17 @@ auto gse::network::client::send(const T& msg) -> void {
 		.size = stream.bytes_written()
 	};
 
-	assert(
-		m_socket.send_data(pkt, m_server.addr()) != socket_state::error,
-		std::source_location::current(),
-		"Failed to send packet from client."
-	);
+	(void)m_socket.send_data(pkt, m_server.addr());
 }
 
-auto gse::network::client::drain(const std::function<void(inbox_message&)>& on_receive) -> void {
+auto gse::network::client::drain(const std::function<void(const inbox_message&)>& on_receive) -> void {
 	std::vector<inbox_message> batch;
 	{
 		std::lock_guard lk(m_inbox_mutex);
 		if (m_inbox.empty()) return;
 		batch.swap(m_inbox);
 	}
-	for (auto& m : batch) {
+	for (const auto& m : batch) {
 		on_receive(m);
 	}
-}
-
-auto gse::network::client::set_registry(registry& reg) -> void {
-	m_registry = reg;
 }

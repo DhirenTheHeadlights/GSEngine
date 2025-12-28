@@ -7,6 +7,7 @@ import :registry;
 import :id;
 
 export namespace gse {
+	class scheduler;
 	class system_provider;
 
 	template <is_component... Ts>
@@ -68,6 +69,8 @@ export namespace gse {
 		auto system_of(
 		) const -> const S&;
 	protected:
+		friend class scheduler;
+
 		static auto set_system_provider(
 			system_provider* p
 		) -> void;
@@ -90,36 +93,39 @@ export namespace gse {
 	};
 
 	template <typename T, typename ReadSet, typename WriteSet>
-	struct component_chunk {
-		registry* reg = nullptr;
-		std::span<T> span{};
+	class component_chunk {
+	public:
+		component_chunk(
+			registry* reg,
+			std::span<T> span
+		) : m_reg(reg), m_span(span) {}
 
 		auto begin() const {
-			return span.begin();
+			return m_span.begin();
 		}
 
 		auto end() const {
-			return span.end();
+			return m_span.end();
 		}
 
 		auto size() const -> std::size_t {
-			return span.size();
+			return m_span.size();
 		}
 
 		auto operator[](std::size_t i) const -> T& {
-			return span[i];
+			return m_span[i];
 		}
 
 		template <is_component U>
 			requires (set_contains<ReadSet, U>::value || set_contains<WriteSet, U>::value)
 		auto other_read(const id owner_id) const -> const U* {
-			return reg->try_linked_object_read<U>(owner_id);
+			return m_reg->try_linked_object_read<U>(owner_id);
 		}
 
 		template <is_component U>
 			requires (!std::is_const_v<T> && set_contains<WriteSet, U>::value)
 		auto other_write(const id owner_id) const -> U* {
-			return reg->try_linked_object_write<U>(owner_id);
+			return m_reg->try_linked_object_write<U>(owner_id);
 		}
 
 		template <is_component U>
@@ -133,6 +139,9 @@ export namespace gse {
 		auto other_write_from(T& component) const -> U* {
 			return other_write<U>(component.owner_id());
 		}
+	private:
+		registry* m_reg = nullptr;
+		std::span<T> m_span{};
 	};
 
 	class basic_system : public system_access {
@@ -169,7 +178,15 @@ export namespace gse {
 		virtual auto update(
 		) -> void {}
 
+		virtual auto begin_frame(
+		) -> bool {
+			return true;
+		}
+
 		virtual auto render(
+		) -> void {}
+
+		virtual auto end_frame(
 		) -> void {}
 
 		virtual auto shutdown(
@@ -185,8 +202,8 @@ export namespace gse {
 		ecs_system() = default;
 
 		explicit ecs_system(
-			std::vector<std::reference_wrapper<registry>> registries
-		) : m_registries(std::move(registries)) {
+			registry& registry
+		) : m_registry(&registry) {
 		}
 
 		template <typename... Ts>
@@ -210,8 +227,21 @@ export namespace gse {
 		auto for_each_write_chunk(
 			F&& f
 		);
+
+		template <typename T>
+			requires writable_components<WriteSet, T>
+		auto upsert_component(
+			id entity,
+			const T::network_data_t& data
+		) -> void;
+
+		template <typename T>
+			requires writable_components<WriteSet, T>
+		auto remove_component(
+			id entity
+		) -> void;
 	private:
-		std::vector<std::reference_wrapper<registry>> m_registries;
+		registry* m_registry = nullptr;
 	};
 }
 
@@ -235,74 +265,70 @@ template <typename ReadSet, typename WriteSet>
 template <typename... Ts>
 	requires gse::readable_components<ReadSet, Ts...>
 auto gse::ecs_system<ReadSet, WriteSet>::read() {
-	std::tuple<std::vector<component_chunk<const Ts, ReadSet, WriteSet>>...> out;
-
-	auto self = this;
-
-	[&]<std::size_t... I>(std::index_sequence<I...>) {
-		(
-			[&] {
-				using c = std::tuple_element_t<I, std::tuple<Ts...>>;
-				using chunk_type = component_chunk<const c, ReadSet, WriteSet>;
-				auto& vec = std::get<I>(out);
-				vec.clear();
-				vec.reserve(self->m_registries.size());
-				for (auto& reg_ref : self->m_registries) {
-					auto& reg = reg_ref.get();
-					std::span<const c> s = reg.template linked_objects_read<c>();
-					vec.push_back(chunk_type{ std::addressof(reg), std::span<const c>(s) });
-				}
-			}(),
-			...
-		);
-	}(std::index_sequence_for<Ts...>{});
-
-	return out;
+	return std::tuple<component_chunk<const Ts, ReadSet, WriteSet>...>(
+		component_chunk<const Ts, ReadSet, WriteSet>{
+			m_registry,
+			m_registry->linked_objects_read<Ts>()
+		}...
+	);
 }
 
 template <typename ReadSet, typename WriteSet>
 template <typename... Ts>
 	requires gse::writable_components<WriteSet, Ts...>
 auto gse::ecs_system<ReadSet, WriteSet>::write() {
-	std::tuple<std::vector<component_chunk<Ts, ReadSet, WriteSet>>...> out;
-
-	auto self = this;
-
-	[&]<std::size_t... I>(std::index_sequence<I...>) {
-		(
-			[&] {
-				using c = std::tuple_element_t<I, std::tuple<Ts...>>;
-				using chunk_type = component_chunk<c, ReadSet, WriteSet>;
-				auto& vec = std::get<I>(out);
-				vec.clear();
-				vec.reserve(self->m_registries.size());
-				for (auto& reg_ref : self->m_registries) {
-					auto& reg = reg_ref.get();
-					std::span<c> s = reg.template linked_objects_write<c>();
-					vec.push_back(chunk_type{ std::addressof(reg), std::span<c>(s) });
-				}
-			}(),
-			...
-		);
-	}(std::index_sequence_for<Ts...>{});
-
-	return out;
+	return std::tuple<component_chunk<Ts, ReadSet, WriteSet>...>(
+		component_chunk<Ts, ReadSet, WriteSet>{
+			m_registry,
+			m_registry->linked_objects_write<Ts>()
+		}...
+	);
 }
 
 template <typename ReadSet, typename WriteSet>
 template <typename T, typename F>
 	requires gse::readable_components<ReadSet, T>
 auto gse::ecs_system<ReadSet, WriteSet>::for_each_read_chunk(F&& f) {
-	for (auto [chunks] = this->read<T>(); auto& chunk : chunks) {
-		f(chunk);
-	}
+	auto tuple = this->read<T>();
+	f(std::get<0>(tuple));
 }
 
 template <typename ReadSet, typename WriteSet>
 template <typename T, typename F>
 	requires gse::writable_components<WriteSet, T>
 auto gse::ecs_system<ReadSet, WriteSet>::for_each_write_chunk(F&& f) {
-	for (auto [chunks] = this->write<T>(); auto& chunk : chunks) {
-		f(chunk);
-	}
+	auto tuple = this->write<T>();
+	f(std::get<0>(tuple));
+}
+
+template <typename ReadSet, typename WriteSet>
+template <typename T> requires gse::writable_components<WriteSet, T>
+auto gse::ecs_system<ReadSet, WriteSet>::upsert_component(const id entity, const typename T::network_data_t& data) -> void {
+	m_registry->ensure_exists(entity);
+
+	m_registry->add_deferred_action(entity, [entity, data](registry& r) -> bool {
+		if (!r.active(entity)) {
+			r.ensure_active(entity);
+			return false; 
+		}
+
+		if (auto* c = r.try_linked_object_write<T>(entity)) {
+			c->networked_data() = data;
+			return true;
+		}
+
+		r.add_component<T>(entity, data);
+		return true;
+	});
+}
+
+template <typename ReadSet, typename WriteSet>
+template <typename T> requires gse::writable_components<WriteSet, T>
+auto gse::ecs_system<ReadSet, WriteSet>::remove_component(const id entity) -> void {
+	if (!entity.exists()) return;
+
+	m_registry->add_deferred_action(entity, [entity](registry& r) -> bool {
+		r.remove_link<T>(entity);
+		return true;
+	});
 }

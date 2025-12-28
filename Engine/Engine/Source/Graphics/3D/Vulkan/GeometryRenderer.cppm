@@ -267,14 +267,14 @@ auto gse::renderer::geometry::initialize() -> void {
 	m_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
 
 	frame_sync::on_end([this] {
-        m_render_queue.flip();
+		m_render_queue.flip();
 	});
 }
 
 auto gse::renderer::geometry::update() -> void {
-	auto [render_chunks] = this->write<render_component>();
+	auto [render_chunk] = this->write<render_component>();
 
-	if (render_chunks.empty()) {
+	if (render_chunk.size() == 0) {
 		return;
 	}
 
@@ -293,23 +293,21 @@ auto gse::renderer::geometry::update() -> void {
 	auto& out = m_render_queue.write();
 	out.clear();
 
-	for (auto& chunk : render_chunks) {
-		for (auto& component : chunk) {
-			if (!component.render) {
+	for (auto& component : render_chunk) {
+		if (!component.render) {
+			continue;
+		}
+
+		const auto* mc = render_chunk.other_read_from<physics::motion_component>(component);
+		const auto* cc = render_chunk.other_read_from<physics::collision_component>(component);
+
+		for (auto& model_handle : component.model_instances) {
+			if (!model_handle.handle().valid() || mc == nullptr || cc == nullptr) {
 				continue;
 			}
 
-			const auto* mc = chunk.other_read_from<physics::motion_component>(component);
-			const auto* cc = chunk.other_read_from<physics::collision_component>(component);
-
-			for (auto& model_handle : component.model_instances) {
-				if (!model_handle.handle().valid() || mc == nullptr || cc == nullptr) {
-					continue;
-				}
-
-				model_handle.update(*mc, *cc);
-				out.append_range(model_handle.render_queue_entries());
-			}
+			model_handle.update(*mc, *cc);
+			out.append_range(model_handle.render_queue_entries());
 		}
 	}
 

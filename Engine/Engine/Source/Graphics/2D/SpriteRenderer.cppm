@@ -13,7 +13,7 @@ import gse.utility;
 import gse.physics.math;
 
 export namespace gse::renderer {
-	class sprite final : public ecs_system<read_set<>, write_set<>> {
+	class sprite final : public basic_system {
 	public:
 		struct command {
 			rect_t<unitless::vec2> rect;

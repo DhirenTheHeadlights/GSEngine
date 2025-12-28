@@ -10,22 +10,22 @@ import :motion_component;
 import :system;
 
 export namespace gse::physics {
-    struct simulation_system : ecs_system<
-        read_set<motion_component, collision_component>,
-        write_set<motion_component, collision_component>
-    > {
-        using ecs_system::ecs_system;
+	struct simulation_system : ecs_system<
+		read_set<motion_component, collision_component>,
+		write_set<motion_component, collision_component>
+	> {
+		using ecs_system::ecs_system;
 
-        using schedule = system_schedule<
-            system_stage<
-                system_stage_kind::update,
-                gse::read_set<motion_component, collision_component>,
-                gse::write_set<motion_component, collision_component>
-            >
-        >;
+		using schedule = system_schedule<
+			system_stage<
+				system_stage_kind::update,
+				gse::read_set<motion_component, collision_component>,
+				gse::write_set<motion_component, collision_component>
+			>
+		>;
 
-        auto update() -> void override;
-    };
+		auto update() -> void override;
+	};
 }
 
 auto gse::physics::simulation_system::update() -> void {
@@ -39,41 +39,38 @@ auto gse::physics::simulation_system::update() -> void {
 	const auto const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
 
 	while (accumulator >= const_update_time) {
-		auto [motion_chunks, collision_chunks] = write<motion_component, collision_component>();
+		auto [motion_chunk, collision_chunk] = write<motion_component, collision_component>();
 
-		for (auto& [reg, span] : motion_chunks) {
-			for (auto& motion : span) {
-				motion.airborne = true;
-			}
+		for (auto& motion : motion_chunk) {
+			motion.airborne = true;
 		}
 
-		for (auto& [reg, span] : collision_chunks) {
-			for (auto& collision : span) {
-				if (!collision.resolve_collisions) {
-					continue;
-				}
-				collision.collision_information = {
-					.colliding = false,
-					.collision_normal = {},
-					.penetration = {},
-					.collision_point = {}
-				};
+		for (auto& collision : collision_chunk) {
+			if (!collision.resolve_collisions) {
+				continue;
 			}
+			collision.collision_information = {
+				.colliding = false,
+				.collision_normal = {},
+				.penetration = {},
+				.collision_point = {}
+			};
 		}
 
 		std::vector<broad_phase_collision::broad_phase_entry> objects;
+		objects.reserve(collision_chunk.size());
 
-		for (auto& chunk : collision_chunks) {
-			for (auto& collision : chunk.span) {
-				if (!collision.resolve_collisions) {
-					continue;
-				}
-				auto* motion = chunk.other_write_from<motion_component>(collision);
-				objects.push_back({
-					.collision = std::addressof(collision),
-					.motion = motion
-				});
+		for (auto& collision : collision_chunk) {
+			if (!collision.resolve_collisions) {
+				continue;
 			}
+			
+			auto* motion = collision_chunk.other_write_from<motion_component>(collision);
+			
+			objects.push_back({
+				.collision = std::addressof(collision),
+				.motion = motion
+			});
 		}
 
 		broad_phase_collision::update(objects);
@@ -84,15 +81,14 @@ auto gse::physics::simulation_system::update() -> void {
 		};
 
 		std::vector<task_entry> tasks;
+		tasks.reserve(motion_chunk.size());
 
-		for (auto& chunk : motion_chunks) {
-			for (auto& mc : chunk.span) {
-				auto* cc = chunk.other_write_from<collision_component>(mc);
-				tasks.push_back(task_entry{
-					.motion = std::addressof(mc),
-					.collision = cc
-					});
-			}
+		for (auto& mc : motion_chunk) {
+			auto* cc = motion_chunk.other_write_from<collision_component>(mc);
+			tasks.push_back(task_entry{
+				.motion = std::addressof(mc),
+				.collision = cc
+			});
 		}
 
 		task::parallel_for(std::size_t{ 0 }, tasks.size(), [&](const std::size_t i) {

@@ -18,7 +18,7 @@ import gse.utility;
 import gse.physics.math;
 
 export namespace gse::renderer {
-	class text final : public ecs_system<read_set<>, write_set<>> {
+	class text final : public basic_system {
 	public:
 		struct command {
 			resource::handle<font> font;
