@@ -35,7 +35,7 @@ export namespace gse {
 		world* m_world = nullptr;
 	};
 
-	class world final : public hookable<world> {
+	class world final : public hookable<world>, system_access {
 	public:
 		explicit world(std::string_view name = "Unnamed World");
 
@@ -71,6 +71,9 @@ export namespace gse {
 
 		auto networked(
 		) const -> bool;
+
+		auto registry(
+		) -> registry&;
 	private:
 		friend class director;
 		friend struct local_input_source;
@@ -88,7 +91,7 @@ export namespace gse {
 	};
 
 	template <typename InputSource>
-	class networked_world final : public hook<world> {
+	class networked_world final : public hook<world>, public system_access {
 	public:
 		using hook::hook;
 
@@ -103,6 +106,8 @@ export namespace gse {
 				return;
 			}
 
+			const auto& a = system_of<actions::system>();
+
 			m_source.for_each_context(
 				*m_owner,
 				[&](const evaluation_context& ctx) {
@@ -110,11 +115,11 @@ export namespace gse {
 						return;
 					}
 
-					actions::sample_all_channels(*ctx.input);
+					a.sample_all_channels(*ctx.input);
 				}
 			);
 
-			if (const auto* active = m_owner->current_scene()) {
+			if (auto* active = m_owner->current_scene()) {
 				active->update();
 			}
 		}
@@ -125,7 +130,7 @@ export namespace gse {
 				return;
 			}
 
-			if (const auto* active = m_owner->current_scene()) {
+			if (auto* active = m_owner->current_scene()) {
 				active->render();
 			}
 		}
@@ -133,7 +138,7 @@ export namespace gse {
 		InputSource m_source;
 	};
 
-	struct local_input_source {
+	struct local_input_source : system_access {
 		id owner_id{};
 
 		template <typename Fn>
@@ -141,9 +146,11 @@ export namespace gse {
 			world& w,
 			Fn&& fn
 		) const -> void {
+			const auto& a = system_of<actions::system>();
+
 			evaluation_context ctx{
 				.client_id = owner_id,
-				.input = &actions::current_state(),
+				.input = std::addressof(a.current_state()),
 				.registry = &w.m_registry
 			};
 
@@ -160,7 +167,7 @@ auto gse::director::when(const trigger& trigger) -> director& {
 }
 
 gse::world::world(const std::string_view name) : hookable(name) {
-	struct default_world : hook<world> {
+	struct default_world : hook<world>, system_access {
 		using hook::hook;
 
 		auto update() -> void override {
@@ -168,12 +175,15 @@ gse::world::world(const std::string_view name) : hookable(name) {
 				return;
 			}
 
-			actions::sample_all_channels(actions::current_state());
+			auto& a = system_of<actions::system>();
+			const auto& s = a.current_state();
+
+			a.sample_all_channels(s);
 
 			for (const auto& [scene_id, condition] : m_owner->m_triggers) {
 				const evaluation_context ctx{
 					.client_id = m_owner->m_client_id,
-					.input = &actions::current_state(),
+					.input = std::addressof(s),
 					.registry = &m_owner->m_registry
 				};
 
@@ -191,7 +201,7 @@ gse::world::world(const std::string_view name) : hookable(name) {
 						new_scene->set_active(true);
 						m_owner->m_active_scene = new_scene->id();
 
-						actions::finalize_bindings();
+						a.finalize_bindings();
 
 						break;
 					}
@@ -199,7 +209,7 @@ gse::world::world(const std::string_view name) : hookable(name) {
 			}
 
 			if (m_owner->m_active_scene.has_value()) {
-				if (const auto* active_scene = m_owner->scene(m_owner->m_active_scene.value())) {
+				if (auto* active_scene = m_owner->scene(m_owner->m_active_scene.value())) {
 					active_scene->update();
 				}
 			}
@@ -238,7 +248,7 @@ auto gse::world::direct() -> director {
 template <typename... Hooks, typename... Args>
 auto gse::world::add(Args&&... args) -> gse::scene* {
 	auto new_scene = std::make_unique<gse::scene>(m_registry, std::forward<Args>(args)...);
-	(new_scene->add_hook<Hooks>(), ...);
+	(new_scene->template add_hook<Hooks>(), ...);
 
 	auto* scene_ptr = new_scene.get();
 	m_scenes[scene_ptr->id()] = std::move(new_scene);
@@ -260,11 +270,14 @@ auto gse::world::activate(const gse::id& scene_id) -> void {
 	}
 
 	if (auto* new_scene = scene(scene_id)) {
+		auto& a = system_of<actions::system>();
+
 		new_scene->add_hook<default_scene>();
 		new_scene->initialize();
 		new_scene->set_active(true);
 		m_active_scene = new_scene->id();
-		actions::finalize_bindings();
+
+		a.finalize_bindings();
 	}
 }
 
@@ -312,6 +325,10 @@ auto gse::world::triggers() -> const std::vector<trigger>& {
 
 auto gse::world::networked() const -> bool {
 	return m_networked;
+}
+
+auto gse::world::registry() -> gse::registry& {
+	return m_registry;
 }
 
 auto gse::world::add_trigger(const trigger& new_trigger) -> void {

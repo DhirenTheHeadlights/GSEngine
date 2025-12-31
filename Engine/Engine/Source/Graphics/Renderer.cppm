@@ -45,13 +45,44 @@ export namespace gse::renderer {
 
 		auto frame_begun(
 		) const -> bool;
+
+		template <typename Resource>
+		auto get(
+			const id& id
+		) -> resource::handle<Resource>;
+
+		template <typename Resource>
+		auto get(
+			const std::string& filename
+		) -> resource::handle<Resource>;
+
+		template <typename Resource, typename... Args>
+		auto queue(
+			const std::string& name,
+			Args&&... args
+		) -> resource::handle<Resource>;
+
+		template <typename Resource>
+		auto instantly_load(
+			const id& id
+		) -> resource::handle<Resource>;
+
+		template <typename Resource>
+		auto add(
+			Resource&& resource
+		) -> void;
+
+		template <typename Resource>
+		auto resource_state(
+			const id& id
+		) const -> resource::state;
 	private:
 		context* m_context = nullptr;
 		bool m_frame_begun = false;
 	};
 }
 
-gse::renderer::system::system(renderer::context& context) : m_context(std::addressof(context)) {
+gse::renderer::system::system(context& context) : m_context(std::addressof(context)) {
 }
 
 auto gse::renderer::system::initialize() const -> void {
@@ -74,7 +105,7 @@ auto gse::renderer::system::update() const -> void {
 	ctx.camera().update_orientation();
 
 	if (!ctx.ui_focus()) {
-		ctx.camera().process_mouse_movement(mouse::delta());
+		ctx.camera().process_mouse_movement(system_of<input::system>().current_state().mouse_delta());
 	}
 }
 
@@ -132,4 +163,34 @@ auto gse::renderer::system::set_ui_focus(const bool focus) const -> void {
 
 auto gse::renderer::system::frame_begun() const -> bool {
 	return m_frame_begun;
+}
+
+template <typename Resource>
+auto gse::renderer::system::get(const id& id) -> resource::handle<Resource> {
+	return m_context->get<Resource>(id);
+}
+
+template <typename Resource>
+auto gse::renderer::system::get(const std::string& filename) -> resource::handle<Resource> {
+	return m_context->get<Resource>(filename);
+}
+
+template <typename Resource, typename ... Args>
+auto gse::renderer::system::queue(const std::string& name, Args&&... args) -> resource::handle<Resource> {
+	return m_context->queue<Resource>(name, std::forward<Args>(args)...);
+}
+
+template <typename Resource>
+auto gse::renderer::system::instantly_load(const id& id) -> resource::handle<Resource> {
+	return m_context->instantly_load<Resource>(id);
+}
+
+template <typename Resource>
+auto gse::renderer::system::add(Resource&& resource) -> void {
+	m_context->add<Resource>(std::forward<Resource>(resource));
+}
+
+template <typename Resource>
+auto gse::renderer::system::resource_state(const id& id) const -> resource::state {
+	return m_context->resource_state<Resource>(id);
 }

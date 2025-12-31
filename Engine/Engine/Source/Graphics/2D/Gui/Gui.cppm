@@ -22,34 +22,37 @@ import :input_widget;
 import :slider_widget;
 import :ids;
 import :button_widget;
-import :tree_widget;
+export import :tree_widget;
 import :selectable_widget;
 
 export namespace gse::gui {
-	class system final : public gse::basic_system {
+	class system final : public basic_system {
 	public:
-		using schedule = system_schedule <
+		using schedule = system_schedule<
 			system_stage<
-			system_stage_kind::initialize,
-			read_set<>,
-			write_set<>
+				system_stage_kind::initialize,
+				read_set<>,
+				write_set<>
 			>,
 			system_stage<
-			system_stage_kind::update,
-			read_set<>,
-			write_set<>
+				system_stage_kind::update,
+				read_set<>,
+				write_set<>,
+				system_read_set<input::system>
 			>,
 			system_stage<
-			system_stage_kind::render,
-			read_set<>,
-			write_set<>
+				system_stage_kind::render,
+				read_set<>,
+				write_set<>,
+				system_read_set<>,
+				system_write_set<renderer::sprite, renderer::text>
 			>,
 			system_stage<
-			system_stage_kind::shutdown,
-			read_set<>,
-			write_set<>
+				system_stage_kind::shutdown,
+				read_set<>,
+				write_set<>
 			>
-		> ;
+		>;
 
 		explicit system(
 			renderer::context& context
@@ -62,7 +65,7 @@ export namespace gse::gui {
 		) -> void override;
 
 		auto begin_frame(
-		) -> void override;
+		) -> bool override;
 
 		auto render(
 		) -> void override;
@@ -83,7 +86,7 @@ export namespace gse::gui {
 
 		auto text(
 			const std::string& text
-		) -> void;
+		) const -> void;
 
 		auto button(
 			const std::string& text
@@ -253,6 +256,9 @@ auto gse::gui::system::initialize() -> void {
 auto gse::gui::system::update() -> void {
 	const style sty{};
 
+	auto access = this->stage_access<system_stage_kind::update>();
+	const auto& input = access.system_of<input::system>();
+
 	const auto mouse_position = mouse::position();
 	const bool mouse_held = mouse::held(mouse_button::button_1);
 
@@ -279,11 +285,11 @@ auto gse::gui::system::update() -> void {
 	}
 }
 
-auto gse::gui::system::begin_frame() -> void {
+auto gse::gui::system::begin_frame() -> bool {
 	m_frame_bindings = {};
 
 	if (!m_font.valid()) {
-		return;
+		return false;
 	}
 
 	auto& sprite_renderer = system_of<renderer::sprite>();
@@ -304,6 +310,8 @@ auto gse::gui::system::begin_frame() -> void {
 	for (auto& m : m_menus.items()) {
 		m.was_begun_this_frame = false;
 	}
+
+	return true;
 }
 
 auto gse::gui::system::render() -> void {
@@ -345,10 +353,6 @@ auto gse::gui::system::end_frame() -> void {
 
 auto gse::gui::system::shutdown() -> void {
 	gui::save(m_menus, config::resource_path / m_file_path);
-}
-
-auto gse::gui::system::bind_frame(renderer::sprite& sprite_renderer, renderer::text& text_renderer, const style& style) -> void {
-	m_frame_bindings = { std::addressof(m_rctx), std::addressof(sprite_renderer), std::addressof(text_renderer), style, true };
 }
 
 auto gse::gui::system::save() -> void {
@@ -420,7 +424,7 @@ auto gse::gui::system::start(const std::string& name, const std::function<void()
 	end();
 }
 
-auto gse::gui::system::text(const std::string& text) -> void {
+auto gse::gui::system::text(const std::string& text) const -> void {
 	if (!m_context) return;
 	draw::text(*m_context, "", text);
 }
