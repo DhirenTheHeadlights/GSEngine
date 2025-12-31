@@ -234,14 +234,14 @@ export namespace gse::actions {
 			id owner_id
 		) const -> void;
 
-		auto get_description(
+		auto description(
 			id action_id
 		) -> description*;
 
 	private:
 		auto add_description(
 			std::string_view tag
-		) -> description&;
+		) -> actions::description&;
 
 		double_buffer<state> m_states;
 
@@ -251,7 +251,7 @@ export namespace gse::actions {
 		};
 		std::vector<channel_binding> m_channel_bindings;
 
-		id_mapped_collection<description> m_descriptions;
+		id_mapped_collection<actions::description> m_descriptions;
 
 		struct pending_key_binding {
 			std::string name;
@@ -602,17 +602,17 @@ auto gse::actions::system::sample_for_entity(const state& s, const id owner_id) 
 	}
 }
 
-auto gse::actions::system::get_description(const id action_id) -> description* {
+auto gse::actions::system::description(const id action_id) -> actions::description* {
 	return m_descriptions.try_get(action_id);
 }
 
-auto gse::actions::system::add_description(const std::string_view tag) -> description& {
+auto gse::actions::system::add_description(const std::string_view tag) -> actions::description& {
 	if (const auto existing_id = try_find(tag); existing_id.has_value()) {
 		return *m_descriptions.try_get(existing_id.value());
 	}
 
 	const auto bit_index = static_cast<std::uint16_t>(m_descriptions.size());
-	description desc(std::string(tag), bit_index);
+	actions::description desc(std::string(tag), bit_index);
 	auto* desc_ptr = m_descriptions.add(desc.id(), std::move(desc));
 
 	return *desc_ptr;

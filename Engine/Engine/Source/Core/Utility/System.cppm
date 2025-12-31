@@ -5,330 +5,565 @@ import std;
 import :concepts;
 import :registry;
 import :id;
+import :task;
+import :double_buffer;
 
 export namespace gse {
 	class scheduler;
-	class system_provider;
 
-	template <is_component... Ts>
-	struct read_set {
-	};
-
-	template <is_component... Ts>
-	struct write_set {
-	};
-
-	enum struct system_stage_kind {
-		initialize,
-		update,
-		render,
-		shutdown
-	};
-
-	template <
-		system_stage_kind Stage,
-		typename ReadSet,
-		typename WriteSet
-	>
-	struct system_stage {
-		static constexpr system_stage_kind stage = Stage;
-		using read_set = ReadSet;
-		using write_set = WriteSet;
-	};
-
-	template <typename... Stages>
-	struct system_schedule {
-		using stages = std::tuple<Stages...>;
-	};
-
-	template <typename S>
-	concept scheduled_system = requires {
-		typename S::schedule::stages;
-	};
-
-	template <typename Set, typename T>
-	struct set_contains;
-
-	template <template <typename...> typename Set, typename... Cs, typename T>
-	struct set_contains<Set<Cs...>, T> : std::bool_constant<(std::same_as<Cs, T> || ...)> {
-	};
-
-	template <typename ReadSet, typename... Ts>
-	concept readable_components = (set_contains<ReadSet, Ts>::value && ...);
-
-	template <typename WriteSet, typename... Ts>
-	concept writable_components = (set_contains<WriteSet, Ts>::value && ...);
-
-	class system_access {
+	template <is_component T>
+	class component_view {
 	public:
-		template <scheduled_system S>
-		auto system_of(
-		) -> S&;
+		component_view(
+			registry* reg,
+			std::span<const T> span
+		);
 
-		template <scheduled_system S>
-		auto system_of(
-		) const -> const S&;
-	protected:
-		friend class scheduler;
+		auto begin(
+		) const -> std::span<const T>::iterator;
 
-		static auto set_system_provider(
-			system_provider* p
-		) -> void;
+		auto end(
+		) const -> std::span<const T>::iterator;
+
+		auto size(
+		) const -> std::size_t;
+
+		auto empty(
+		) const -> bool;
+
+		auto operator[](
+			std::size_t i
+		) const -> const T&;
+
+		template <is_component U>
+		auto get(
+			id owner
+		) const -> const U*;
+
+		template <is_component U>
+		auto get_from(
+			const T& component
+		) const -> const U*;
+
 	private:
-		inline static system_provider* s_provider = nullptr;
+		registry* m_reg;
+		std::span<const T> m_span;
 	};
 
-	class system_provider {
-	public:
-		virtual ~system_provider(
-		) = default;
-
-		virtual auto system(
-			std::type_index idx
-		) -> void* = 0;
-
-		virtual auto system(
-			std::type_index idx
-		) const -> const void* = 0;
-	};
-
-	template <typename T, typename ReadSet, typename WriteSet>
+	template <is_component T>
 	class component_chunk {
 	public:
 		component_chunk(
 			registry* reg,
 			std::span<T> span
-		) : m_reg(reg), m_span(span) {}
+		);
 
-		auto begin() const {
-			return m_span.begin();
-		}
+		auto begin(
+		) const -> std::span<T>::iterator;
 
-		auto end() const {
-			return m_span.end();
-		}
+		auto end(
+		) const -> std::span<T>::iterator;
 
-		auto size() const -> std::size_t {
-			return m_span.size();
-		}
+		auto size(
+		) const -> std::size_t;
 
-		auto operator[](std::size_t i) const -> T& {
-			return m_span[i];
-		}
+		auto empty(
+		) const -> bool;
 
-		template <is_component U>
-			requires (set_contains<ReadSet, U>::value || set_contains<WriteSet, U>::value)
-		auto other_read(const id owner_id) const -> const U* {
-			return m_reg->try_linked_object_read<U>(owner_id);
-		}
+		auto data(
+		) const -> T*;
+
+		auto operator[](
+			std::size_t i
+		) const -> T&;
 
 		template <is_component U>
-			requires (!std::is_const_v<T> && set_contains<WriteSet, U>::value)
-		auto other_write(const id owner_id) const -> U* {
-			return m_reg->try_linked_object_write<U>(owner_id);
-		}
+		auto read(
+			id owner
+		) const -> const U*;
 
 		template <is_component U>
-			requires (set_contains<ReadSet, U>::value || set_contains<WriteSet, U>::value)
-		auto other_read_from(const T& component) const -> const U* {
-			return other_read<U>(component.owner_id());
-		}
+		auto read_from(
+			const T& component
+		) const -> const U*;
 
 		template <is_component U>
-			requires (!std::is_const_v<T> && set_contains<WriteSet, U>::value)
-		auto other_write_from(T& component) const -> U* {
-			return other_write<U>(component.owner_id());
-		}
+		auto write(
+			id owner
+		) const -> U*;
+
+		template <is_component U>
+		auto write_from(
+			T& component
+		) const -> U*;
+
+		template <typename F>
+		auto parallel_for_each(
+			F&& f
+		) const -> void;
+
 	private:
-		registry* m_reg = nullptr;
-		std::span<T> m_span{};
+		registry* m_reg;
+		std::span<T> m_span;
 	};
 
-	class basic_system : public system_access {
+	template <typename T>
+	class channel {
 	public:
-		using schedule = system_schedule<
-			system_stage<
-				system_stage_kind::initialize,
-				read_set<>,
-				write_set<>
-			>,
-			system_stage<
-				system_stage_kind::update,
-				read_set<>,
-				write_set<>
-			>,
-			system_stage<
-				system_stage_kind::render,
-				read_set<>,
-				write_set<>
-			>,
-			system_stage<
-				system_stage_kind::shutdown,
-				read_set<>,
-				write_set<>
-			>
-		>;
+		class reader {
+		public:
+			explicit reader(
+				const std::vector<T>* data
+			);
 
-		virtual ~basic_system(
+			auto begin(
+			) const -> std::vector<T>::const_iterator;
+
+			auto end(
+			) const -> std::vector<T>::const_iterator;
+
+			auto size(
+			) const -> std::size_t;
+
+			auto empty(
+			) const -> bool;
+
+			auto operator[](
+				std::size_t i
+			) const -> const T&;
+
+		private:
+			const std::vector<T>* m_data;
+		};
+
+		auto read(
+		) const -> reader;
+
+		auto push(
+			T item
+		) -> void;
+
+		template <typename... Args>
+		auto emplace(
+			Args&&... args
+		) -> T&;
+
+		auto flip(
+		) -> void;
+
+	private:
+		double_buffer<std::vector<T>> m_buffer;
+	};
+
+	struct pending_work {
+		std::vector<std::type_index> component_writes;
+		std::type_index channel_write = typeid(void);
+		std::move_only_function<void()> execute;
+	};
+
+	template <typename T>
+	struct extract_component;
+
+	template <is_component T>
+	struct extract_component<component_chunk<T>> {
+		using type = T;
+	};
+
+	template <is_component T>
+	struct extract_component<component_chunk<T>&> {
+		using type = T;
+	};
+
+	template <is_component T>
+	struct extract_component<const component_chunk<T>&> {
+		using type = T;
+	};
+
+	template <typename F>
+	struct callable_traits;
+
+	template <typename R, typename C, typename... Args>
+	struct callable_traits<R(C::*)(Args...) const> {
+		using component_types = std::tuple<typename extract_component<std::decay_t<Args>>::type...>;
+	};
+
+	template <typename R, typename C, typename... Args>
+	struct callable_traits<R(C::*)(Args...)> {
+		using component_types = std::tuple<typename extract_component<std::decay_t<Args>>::type...>;
+	};
+
+	template <typename F>
+		requires requires { &F::operator(); }
+	struct callable_traits<F> : callable_traits<decltype(&F::operator())> {};
+
+	class system {
+	public:
+		virtual ~system(
 		) = default;
 
 		virtual auto initialize(
-		) -> void {}
+		) -> void;
 
 		virtual auto update(
-		) -> void {}
-
-		virtual auto begin_frame(
-		) -> bool {
-			return true;
-		}
+		) -> void;
 
 		virtual auto render(
-		) -> void {}
-
-		virtual auto end_frame(
-		) -> void {}
+		) -> void;
 
 		virtual auto shutdown(
-		) -> void {}
-	};
-
-	template <typename ReadSet, typename WriteSet>
-	class ecs_system : public basic_system {
-	public:
-		using read_set = ReadSet;
-		using write_set = WriteSet;
-
-		ecs_system() = default;
-
-		explicit ecs_system(
-			registry& registry
-		) : m_registry(&registry) {
-		}
-
-		template <typename... Ts>
-			requires readable_components<ReadSet, Ts...>
-		auto read(
-		);
-
-		template <typename... Ts>
-			requires writable_components<WriteSet, Ts...>
-		auto write(
-		);
-
-		template <typename T, typename F>
-			requires readable_components<ReadSet, T>
-		auto for_each_read_chunk(
-			F&& f
-		);
-
-		template <typename T, typename F>
-			requires writable_components<WriteSet, T>
-		auto for_each_write_chunk(
-			F&& f
-		);
-
-		template <typename T>
-			requires writable_components<WriteSet, T>
-		auto upsert_component(
-			id entity,
-			const T::network_data_t& data
 		) -> void;
 
+		virtual auto begin_frame(
+		) -> bool;
+
+		virtual auto end_frame(
+		) -> void;
+
+	protected:
+		friend class scheduler;
+
+		template <is_component T>
+		auto read(
+		) const -> component_view<T>;
+
+		template <is_component... Ts>
+			requires (sizeof...(Ts) > 1)
+		auto read(
+		) const -> std::tuple<component_view<Ts>...>;
+
+		template <std::derived_from<system> S>
+		auto system_of(
+		) const -> const S&;
+
 		template <typename T>
-			requires writable_components<WriteSet, T>
-		auto remove_component(
+		auto channel_of(
+		) const -> channel<T>::reader;
+
+		template <typename F>
+		auto write(
+			F&& f
+		) -> void;
+
+		template <typename T, typename F>
+		auto publish(
+			F&& f
+		) -> void;
+
+		template <is_component T>
+		auto defer_add(
+			id entity,
+			T::network_data_t data
+		) -> void;
+
+		template <is_component T>
+		auto defer_remove(
 			id entity
 		) -> void;
+
 	private:
 		registry* m_registry = nullptr;
+		scheduler* m_scheduler = nullptr;
+		std::vector<pending_work> m_pending;
+		std::vector<std::move_only_function<void(registry&)>> m_deferred;
+
+		template <typename F, is_component... Ts>
+		auto write_impl(
+			F&& f,
+			std::tuple<Ts...>
+		) -> void;
+
+		auto take_pending(
+		) -> std::vector<pending_work>;
+
+		auto flush_deferred(
+		) -> void;
 	};
 }
 
-auto gse::system_access::set_system_provider(system_provider* p) -> void {
-	s_provider = p;
+template <gse::is_component T>
+gse::component_view<T>::component_view(registry* reg, std::span<const T> span)
+	: m_reg(reg), m_span(span) {}
+
+template <gse::is_component T>
+auto gse::component_view<T>::begin() const -> std::span<const T>::iterator {
+	return m_span.begin();
 }
 
-template <gse::scheduled_system S>
-auto gse::system_access::system_of() -> S& {
-	auto* p = static_cast<S*>(s_provider->system(std::type_index(typeid(S))));
-	return *p;
+template <gse::is_component T>
+auto gse::component_view<T>::end() const -> std::span<const T>::iterator {
+	return m_span.end();
 }
 
-template <gse::scheduled_system S>
-auto gse::system_access::system_of() const -> const S& {
-	auto* p = static_cast<const S*>(s_provider->system(std::type_index(typeid(S))));
-	return *p;
+template <gse::is_component T>
+auto gse::component_view<T>::size() const -> std::size_t {
+	return m_span.size();
 }
 
-template <typename ReadSet, typename WriteSet>
-template <typename... Ts>
-	requires gse::readable_components<ReadSet, Ts...>
-auto gse::ecs_system<ReadSet, WriteSet>::read() {
-	return std::tuple<component_chunk<const Ts, ReadSet, WriteSet>...>(
-		component_chunk<const Ts, ReadSet, WriteSet>{
-			m_registry,
-			m_registry->linked_objects_read<Ts>()
-		}...
-	);
+template <gse::is_component T>
+auto gse::component_view<T>::empty() const -> bool {
+	return m_span.empty();
 }
 
-template <typename ReadSet, typename WriteSet>
-template <typename... Ts>
-	requires gse::writable_components<WriteSet, Ts...>
-auto gse::ecs_system<ReadSet, WriteSet>::write() {
-	return std::tuple<component_chunk<Ts, ReadSet, WriteSet>...>(
-		component_chunk<Ts, ReadSet, WriteSet>{
-			m_registry,
-			m_registry->linked_objects_write<Ts>()
-		}...
-	);
+template <gse::is_component T>
+auto gse::component_view<T>::operator[](std::size_t i) const -> const T& {
+	return m_span[i];
 }
 
-template <typename ReadSet, typename WriteSet>
-template <typename T, typename F>
-	requires gse::readable_components<ReadSet, T>
-auto gse::ecs_system<ReadSet, WriteSet>::for_each_read_chunk(F&& f) {
-	auto tuple = this->read<T>();
-	f(std::get<0>(tuple));
+template <gse::is_component T>
+template <gse::is_component U>
+auto gse::component_view<T>::get(id owner) const -> const U* {
+	return m_reg->try_linked_object_read<U>(owner);
 }
 
-template <typename ReadSet, typename WriteSet>
-template <typename T, typename F>
-	requires gse::writable_components<WriteSet, T>
-auto gse::ecs_system<ReadSet, WriteSet>::for_each_write_chunk(F&& f) {
-	auto tuple = this->write<T>();
-	f(std::get<0>(tuple));
+template <gse::is_component T>
+template <gse::is_component U>
+auto gse::component_view<T>::get_from(const T& component) const -> const U* {
+	return get<U>(component.owner_id());
 }
 
-template <typename ReadSet, typename WriteSet>
-template <typename T> requires gse::writable_components<WriteSet, T>
-auto gse::ecs_system<ReadSet, WriteSet>::upsert_component(const id entity, const typename T::network_data_t& data) -> void {
-	m_registry->ensure_exists(entity);
+template <gse::is_component T>
+gse::component_chunk<T>::component_chunk(registry* reg, std::span<T> span)
+	: m_reg(reg), m_span(span) {}
 
-	m_registry->add_deferred_action(entity, [entity, data](registry& r) -> bool {
-		if (!r.active(entity)) {
-			r.ensure_active(entity);
-			return false; 
+template <gse::is_component T>
+auto gse::component_chunk<T>::begin() const -> std::span<T>::iterator {
+	return m_span.begin();
+}
+
+template <gse::is_component T>
+auto gse::component_chunk<T>::end() const -> std::span<T>::iterator {
+	return m_span.end();
+}
+
+template <gse::is_component T>
+auto gse::component_chunk<T>::size() const -> std::size_t {
+	return m_span.size();
+}
+
+template <gse::is_component T>
+auto gse::component_chunk<T>::empty() const -> bool {
+	return m_span.empty();
+}
+
+template <gse::is_component T>
+auto gse::component_chunk<T>::data() const -> T* {
+	return m_span.data();
+}
+
+template <gse::is_component T>
+auto gse::component_chunk<T>::operator[](std::size_t i) const -> T& {
+	return m_span[i];
+}
+
+template <gse::is_component T>
+template <gse::is_component U>
+auto gse::component_chunk<T>::read(id owner) const -> const U* {
+	return m_reg->try_linked_object_read<U>(owner);
+}
+
+template <gse::is_component T>
+template <gse::is_component U>
+auto gse::component_chunk<T>::read_from(const T& component) const -> const U* {
+	return read<U>(component.owner_id());
+}
+
+template <gse::is_component T>
+template <gse::is_component U>
+auto gse::component_chunk<T>::write(id owner) const -> U* {
+	return m_reg->try_linked_object_write<U>(owner);
+}
+
+template <gse::is_component T>
+template <gse::is_component U>
+auto gse::component_chunk<T>::write_from(T& component) const -> U* {
+	return write<U>(component.owner_id());
+}
+
+template <gse::is_component T>
+template <typename F>
+auto gse::component_chunk<T>::parallel_for_each(F&& f) const -> void {
+	if (m_span.empty()) {
+		return;
+	}
+
+	task::parallel_for(0uz, m_span.size(), [&](std::size_t i) {
+		f(m_span[i]);
+	});
+}
+
+template <typename T>
+gse::channel<T>::reader::reader(const std::vector<T>* data)
+	: m_data(data) {}
+
+template <typename T>
+auto gse::channel<T>::reader::begin() const -> std::vector<T>::const_iterator {
+	return m_data->begin();
+}
+
+template <typename T>
+auto gse::channel<T>::reader::end() const -> std::vector<T>::const_iterator {
+	return m_data->end();
+}
+
+template <typename T>
+auto gse::channel<T>::reader::size() const -> std::size_t {
+	return m_data->size();
+}
+
+template <typename T>
+auto gse::channel<T>::reader::empty() const -> bool {
+	return m_data->empty();
+}
+
+template <typename T>
+auto gse::channel<T>::reader::operator[](std::size_t i) const -> const T& {
+	return (*m_data)[i];
+}
+
+template <typename T>
+auto gse::channel<T>::read() const -> reader {
+	return reader(&m_buffer.read());
+}
+
+template <typename T>
+auto gse::channel<T>::push(T item) -> void {
+	m_buffer.write().push_back(std::move(item));
+}
+
+template <typename T>
+template <typename... Args>
+auto gse::channel<T>::emplace(Args&&... args) -> T& {
+	return m_buffer.write().emplace_back(std::forward<Args>(args)...);
+}
+
+template <typename T>
+auto gse::channel<T>::flip() -> void {
+	m_buffer.write().clear();
+	m_buffer.flip();
+}
+
+auto gse::system::initialize() -> void {}
+
+auto gse::system::update() -> void {}
+
+auto gse::system::render() -> void {}
+
+auto gse::system::shutdown() -> void {}
+
+auto gse::system::begin_frame() -> bool {
+	return true;
+}
+
+auto gse::system::end_frame() -> void {}
+
+template <gse::is_component T>
+auto gse::system::read() const -> component_view<T> {
+	return component_view<T>{m_registry, m_registry->linked_objects_read<T>()};
+}
+
+template <gse::is_component... Ts>
+	requires (sizeof...(Ts) > 1)
+auto gse::system::read() const -> std::tuple<component_view<Ts>...> {
+	return { read<Ts>()... };
+}
+
+template <std::derived_from<gse::system> S>
+auto gse::system::system_of() const -> const S& {
+	return *static_cast<const S*>(m_scheduler->system_ptr(std::type_index(typeid(S))));
+}
+
+template <typename T>
+auto gse::system::channel_of() const -> channel<T>::reader {
+	return const_cast<scheduler*>(m_scheduler)->get_channel<T>().read();
+}
+
+template <typename F>
+auto gse::system::write(F&& f) -> void {
+	using traits = callable_traits<std::decay_t<F>>;
+	using components = typename traits::component_types;
+
+	write_impl(std::forward<F>(f), components{});
+}
+
+template <typename F, gse::is_component... Ts>
+auto gse::system::write_impl(F&& f, std::tuple<Ts...>) -> void {
+	m_pending.push_back({
+		.component_writes = { std::type_index(typeid(Ts))... },
+		.channel_write = typeid(void),
+		.execute = [this, func = std::forward<F>(f)]() mutable {
+			if constexpr (sizeof...(Ts) == 0) {
+				func();
+			} else if constexpr (sizeof...(Ts) == 1) {
+				using t = std::tuple_element_t<0, std::tuple<Ts...>>;
+				component_chunk<t> chunk{
+					m_registry,
+					m_registry->linked_objects_write<t>()
+				};
+				func(chunk);
+			} else {
+				auto chunks = std::tuple{
+					component_chunk<Ts>{
+						m_registry,
+						m_registry->linked_objects_write<Ts>()
+					}...
+				};
+				std::apply(func, chunks);
+			}
 		}
+	});
+}
 
-		if (auto* c = r.try_linked_object_write<T>(entity)) {
-			c->networked_data() = data;
+template <typename T, typename F>
+auto gse::system::publish(F&& f) -> void {
+	m_pending.push_back({
+		.component_writes = {},
+		.channel_write = std::type_index(typeid(T)),
+		.execute = [this, func = std::forward<F>(f)]() mutable {
+			func(m_scheduler->get_channel<T>());
+		}
+	});
+}
+
+template <gse::is_component T>
+auto gse::system::defer_add(id entity, typename T::network_data_t data) -> void {
+	m_deferred.push_back([entity, data = std::move(data)](registry& r) {
+		r.ensure_exists(entity);
+		r.add_deferred_action(entity, [entity, data](registry& reg) -> bool {
+			if (!reg.active(entity)) {
+				reg.ensure_active(entity);
+				return false;
+			}
+			if (auto* c = reg.try_linked_object_write<T>(entity)) {
+				c->networked_data() = data;
+				return true;
+			}
+			reg.add_component<T>(entity, data);
 			return true;
-		}
-
-		r.add_component<T>(entity, data);
-		return true;
+		});
 	});
 }
 
-template <typename ReadSet, typename WriteSet>
-template <typename T> requires gse::writable_components<WriteSet, T>
-auto gse::ecs_system<ReadSet, WriteSet>::remove_component(const id entity) -> void {
-	if (!entity.exists()) return;
+template <gse::is_component T>
+auto gse::system::defer_remove(id entity) -> void {
+	if (!entity.exists()) {
+		return;
+	}
 
-	m_registry->add_deferred_action(entity, [entity](registry& r) -> bool {
-		r.remove_link<T>(entity);
-		return true;
+	m_deferred.push_back([entity](registry& r) {
+		r.add_deferred_action(entity, [entity](registry& reg) -> bool {
+			reg.remove_link<T>(entity);
+			return true;
+		});
 	});
+}
+
+auto gse::system::take_pending() -> std::vector<pending_work> {
+	return std::exchange(m_pending, {});
+}
+
+auto gse::system::flush_deferred() -> void {
+	for (auto& d : m_deferred) {
+		d(*m_registry);
+	}
+	m_deferred.clear();
 }

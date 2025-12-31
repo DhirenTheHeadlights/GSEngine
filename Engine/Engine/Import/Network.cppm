@@ -50,14 +50,12 @@ export namespace gse::network {
 			>,
 			system_stage<
 				system_stage_kind::shutdown,
-				read_set<>,
-				write_set<>
+				gse::read_set<>,
+				gse::write_set<>
 			>
 		>;
 
-		explicit system(
-			registry& registry
-		);
+		using ecs_system::ecs_system;
 
 		~system(
 		) override = default;
@@ -123,9 +121,6 @@ export namespace gse::network {
 			}
 		};
 	};
-}
-
-gse::network::system::system(registry& registry) : ecs_system(registry) {
 }
 
 auto gse::network::system::initialize() -> void {
