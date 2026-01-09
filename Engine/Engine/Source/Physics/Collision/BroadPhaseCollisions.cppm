@@ -90,18 +90,8 @@ auto gse::broad_phase_collision::update(const std::span<broad_phase_entry> objec
 		if (!collision_a || !collision_a->resolve_collisions) {
 			continue;
 		}
-
-		collision_component.collision_information = {
-			.colliding = false,
-			.collision_normal = {},
-			.penetration = {},
-			.collision_points = {}
-		};
-
-		auto* motion = registry.try_linked_object_write<physics::motion_component>(collision_component.owner_id());
-
-		for (auto& other_collision_component : collision_components) {
-			if (collision_component.owner_id() == other_collision_component.owner_id()) {
+		for (std::size_t j = 0; j < n; ++j) {
+			if (i == j) {
 				continue;
 			}
 			auto& [collision_b, motion_b] = objects[j];

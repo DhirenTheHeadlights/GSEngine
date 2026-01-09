@@ -62,6 +62,9 @@ namespace gse::narrow_phase_collision {
 	    const bounding_box& bb2,
 	    const unitless::vec3& collision_normal
     ) -> std::vector<vec3<length>>;
+    auto sat_penetration(const gse::bounding_box& bb1,
+        const gse::bounding_box& bb2
+    ) -> std::pair<gse::unitless::vec3, gse::length>;
 }
 
 auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* object_a, physics::collision_component& coll_a, physics::motion_component* object_b, const physics::collision_component& coll_b) -> void {
@@ -99,11 +102,14 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
             return;
         }
 
-        constexpr length slop = meters(0.01f);
+        constexpr length slop = meters(0.001f);
         constexpr float percent = 1.f;
 
-        const length corrected_penetration = 0.01f * std::max(res->penetration - slop, length{ 0 });
-        const vec3<length> correction = res->normal * corrected_penetration * percent;
+        const length corrected_penetration = std::max(res->penetration - slop, length{ 0 });
+        const vec3<length> correction = res->normal * corrected_penetration;
+        if (dot(res->normal, gse::unitless::axis_y) < 0.0f && corrected_penetration > length{ 0 }) {
+            std::cout << "breakpoint!";
+        }
         const float ratio_a = inv_mass_a / total_inv_mass;
         const float ratio_b = inv_mass_b / total_inv_mass;
 
@@ -231,6 +237,25 @@ auto gse::narrow_phase_collision::support_obb(const bounding_box& bounding_box, 
     return result;
 }
 
+//auto support_obb(const gse::bounding_box& bb, const gse::unitless::vec3& dir) -> gse::vec3<gse::length> {
+//    gse::vec3<gse::length> result = bb.center();
+//    const auto he = bb.half_extents();
+//    const auto obb = bb.obb();
+//
+//    constexpr float tol = 1e-6f; // try 1e-6 to 1e-4 depending on your unit scale
+//
+//    for (int i = 0; i < 3; ++i) {
+//        const float d = gse::dot(dir, obb.axes[i]);
+//        float s = 0.0f;
+//        if (d > tol) s = 1.0f;
+//        if (d < -tol) s = -1.0f;
+//
+//        // s==0 => don't move along this axis (face center for that extreme)
+//        result += obb.axes[i] * he[i] * s;
+//    }
+//    return result;
+//}
+
 auto gse::narrow_phase_collision::minkowski_difference(const bounding_box& bb1, const bounding_box& bb2, const unitless::vec3& dir) -> minkowski_point {
     minkowski_point result{
         .support_a = support_obb(bb1, dir),
@@ -340,32 +365,6 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
         length d_c = is_zero(n_c) ? inf : dot(n_c, v0.point);
         length d_d = is_zero(n_d) ? inf : dot(n_d, v1.point);
 
-        //unitless::vec3 n_a =  normalize(cross(v1.point - v0.point, v2.point - v0.point));
-        //unitless::vec3 n_b = normalize(cross(v2.point - v0.point, v3.point - v0.point));
-        //unitless::vec3 n_c = normalize(cross(v3.point - v0.point, v1.point - v0.point));
-        //unitless::vec3 n_d = normalize(cross(v2.point - v1.point, v3.point - v1.point));
-
-        //length d_a = is_zero(n_a) ? meters(std::numeric_limits<float>::infinity()) : dot(n_a, v0.point);
-        //if (d_a < 0) {
-        //    n_a = -n_a;
-        //    d_a = -d_a;
-        //}
-        //length d_b = is_zero(n_b) ? meters(std::numeric_limits<float>::infinity()) : dot(n_b, v0.point);
-        //if (d_b < 0) {
-        //    n_b = -n_b;
-        //    d_b = -d_b;
-        //}
-        //length d_c = is_zero(n_c) ? meters(std::numeric_limits<float>::infinity()) : dot(n_c, v0.point);
-        //if (d_c < 0) {
-        //    n_c = -n_c;
-        //    d_c = -d_c;
-        //}
-        //length d_d = is_zero(n_d) ? meters(std::numeric_limits<float>::infinity()) : dot(n_d, v1.point);
-        //if (d_d < 0) {
-        //    n_d = -n_d;
-        //    d_d = -d_d;
-        //}
-
         if constexpr (debug) {
             std::println("[MPR][iter {}] d1:{}, d2:{}, d3:{}, d4:{}", i, d_a, d_b, d_c, d_d);
         }
@@ -456,7 +455,10 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
             minkowski_point p = minkowski_difference(bb1, bb2, choice.n);
             if (const length projection_dist = dot(p.point, choice.n); projection_dist - choice.d < eps) {
                 auto collision_normal = -choice.n;
-                const length penetration_depth = choice.d;
+                length penetration_depth = choice.d;
+                //LEAVING THE ORIGINAL ASSIGNMENT FOR LATER ANALYSIS OF ALGORITHM APPROPRIATENESS- SAT WORKS BETTER THAN MPR FOR CURRENT TEST CASES
+                penetration_depth = sat_penetration(bb1, bb2).second;
+
 
                 if (const unitless::vec3 center_dir = normalize(bb2.center() - bb1.center()); !is_zero(center_dir) && dot(collision_normal, center_dir) < 0.0f) {
                     collision_normal = -collision_normal;
@@ -695,5 +697,64 @@ auto gse::narrow_phase_collision::generate_contact_points(const bounding_box& bb
         }
     }
 
+    //if (contacts.empty()) {
+    //    int index = -1;
+    //    float max_dot_product = -std::numeric_limits<float>::max();
+    //    for (size_t i = 0; i < inc_face_poly.size(); i++) {
+    //        if (const float dot_prod = dot(inc_face_poly[i].as<gse::meters>(), collision_normal); dot_prod > max_dot_product) {
+    //            max_dot_product = dot_prod;
+    //            index = static_cast<int>(i);
+    //        }
+    //    }
+    //    if (index != -1) contacts.push_back(inc_face_poly[index]);
+    //}
+
     return contacts;
+}
+
+auto gse::narrow_phase_collision::sat_penetration(const gse::bounding_box& bb1, const gse::bounding_box& bb2)
+-> std::pair<gse::unitless::vec3, gse::length>
+{
+    gse::length min_pen = gse::meters(std::numeric_limits<float>::max());
+    gse::unitless::vec3 best_axis;
+
+    // Test 15 axes: 3 from each OBB + 9 cross products
+    auto test_axis = [&](gse::unitless::vec3 axis) {
+        if (gse::is_zero(axis)) return;
+        axis = gse::normalize(axis);
+
+        // Project both OBBs onto axis
+        auto project = [&](const gse::bounding_box& bb) {
+            gse::length r = 0;
+			const auto he = bb.half_extents();
+            for (int i = 0; i < 3; ++i) {
+                r += gse::abs(gse::dot(axis, bb.obb().axes[i]) * he[i]);
+            }
+            return r;
+            };
+
+        gse::length r1 = project(bb1);
+        gse::length r2 = project(bb2);
+        gse::length dist = abs(dot(axis, bb1.center() - bb2.center()));
+        gse::length overlap = r1 + r2 - dist;
+
+        if (overlap > 0 && overlap < min_pen) {
+            min_pen = overlap;
+            best_axis = axis;
+        }
+        };
+
+    // Test face normals
+    for (int i = 0; i < 3; ++i) {
+        test_axis(bb1.obb().axes[i]);
+        test_axis(bb2.obb().axes[i]);
+    }
+    // Test edge cross products
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            test_axis(gse::cross(bb1.obb().axes[i], bb2.obb().axes[j]));
+        }
+    }
+
+    return { best_axis, min_pen };
 }
