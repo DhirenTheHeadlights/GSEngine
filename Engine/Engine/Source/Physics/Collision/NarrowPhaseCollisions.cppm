@@ -18,7 +18,7 @@ export namespace gse::narrow_phase_collision {
 }
 
 namespace gse::narrow_phase_collision {
-    static constexpr bool debug = false;
+    static constexpr bool debug = true;
     constexpr int mpr_collision_refinement_iterations = 32;
 
     struct mpr_result {
@@ -86,7 +86,7 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
         .colliding = true,
         .collision_normal = res->normal,
         .penetration = res->penetration,
-        .collision_point = res->contact_points[0]
+        .collision_points = res->contact_points
     };
 
     for (auto& contact_point : res->contact_points) {
@@ -100,7 +100,7 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
         }
 
         constexpr length slop = meters(0.01f);
-        constexpr float percent = 0.8f;
+        constexpr float percent = 1.f;
 
         const length corrected_penetration = 0.01f * std::max(res->penetration - slop, length{ 0 });
         const vec3<length> correction = res->normal * corrected_penetration * percent;
@@ -306,36 +306,65 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
         return std::nullopt;
     }
 
+    auto face_normal_outward = [](const vec3<length>& a,
+        const vec3<length>& b,
+        const vec3<length>& c,
+        const vec3<length>& opp) -> unitless::vec3
+        {
+            unitless::vec3 n = normalize(cross(b - a, c - a));     // must be unit
+            if (is_zero(n)) return n;
+
+            // If normal points toward the opposite vertex, flip it.
+            // outward means it points AWAY from opp
+            if (dot(n, opp - a) > 0) { // dot returns length here; compare to 0 length
+                n = -n;
+            }
+            return n;
+        };
+
     for (int i = 0; i < mpr_collision_refinement_iterations; ++i) {
         if constexpr (debug) {
             std::println("\n[MPR][iter {}] v0:{}, v1:{}, v2:{}, v3:{}", i, v0.point, v1.point, v2.point, v3.point);
         }
+        // Outward-facing normals for the 4 tetra faces (each uses the vertex opposite that face)
+        unitless::vec3 n_a = face_normal_outward(v0.point, v1.point, v2.point, v3.point); // face (v0,v1,v2), opp v3
+        unitless::vec3 n_b = face_normal_outward(v0.point, v2.point, v3.point, v1.point); // face (v0,v2,v3), opp v1
+        unitless::vec3 n_c = face_normal_outward(v0.point, v3.point, v1.point, v2.point); // face (v0,v3,v1), opp v2
+        unitless::vec3 n_d = face_normal_outward(v1.point, v2.point, v3.point, v0.point); // face (v1,v2,v3), opp v0
 
-        unitless::vec3 n_a = normalize(cross(v1.point - v0.point, v2.point - v0.point));
-        unitless::vec3 n_b = normalize(cross(v2.point - v0.point, v3.point - v0.point));
-        unitless::vec3 n_c = normalize(cross(v3.point - v0.point, v1.point - v0.point));
-        unitless::vec3 n_d = normalize(cross(v2.point - v1.point, v3.point - v1.point));
+        // Signed distances to each face plane along its (unit) outward normal.
+        // NOTE: No abs/flip here — orientation is already enforced by face_normal_outward.
+        const length inf = meters(std::numeric_limits<float>::infinity());
+        length d_a = is_zero(n_a) ? inf : dot(n_a, v0.point);
+        length d_b = is_zero(n_b) ? inf : dot(n_b, v0.point);
+        length d_c = is_zero(n_c) ? inf : dot(n_c, v0.point);
+        length d_d = is_zero(n_d) ? inf : dot(n_d, v1.point);
 
-        length d_a = is_zero(n_a) ? meters(std::numeric_limits<float>::infinity()) : dot(n_a, v0.point);
-        if (d_a < 0) {
-            n_a = -n_a;
-            d_a = -d_a;
-        }
-        length d_b = is_zero(n_b) ? meters(std::numeric_limits<float>::infinity()) : dot(n_b, v0.point);
-        if (d_b < 0) {
-            n_b = -n_b;
-            d_b = -d_b;
-        }
-        length d_c = is_zero(n_c) ? meters(std::numeric_limits<float>::infinity()) : dot(n_c, v0.point);
-        if (d_c < 0) {
-            n_c = -n_c;
-            d_c = -d_c;
-        }
-        length d_d = is_zero(n_d) ? meters(std::numeric_limits<float>::infinity()) : dot(n_d, v1.point);
-        if (d_d < 0) {
-            n_d = -n_d;
-            d_d = -d_d;
-        }
+        //unitless::vec3 n_a =  normalize(cross(v1.point - v0.point, v2.point - v0.point));
+        //unitless::vec3 n_b = normalize(cross(v2.point - v0.point, v3.point - v0.point));
+        //unitless::vec3 n_c = normalize(cross(v3.point - v0.point, v1.point - v0.point));
+        //unitless::vec3 n_d = normalize(cross(v2.point - v1.point, v3.point - v1.point));
+
+        //length d_a = is_zero(n_a) ? meters(std::numeric_limits<float>::infinity()) : dot(n_a, v0.point);
+        //if (d_a < 0) {
+        //    n_a = -n_a;
+        //    d_a = -d_a;
+        //}
+        //length d_b = is_zero(n_b) ? meters(std::numeric_limits<float>::infinity()) : dot(n_b, v0.point);
+        //if (d_b < 0) {
+        //    n_b = -n_b;
+        //    d_b = -d_b;
+        //}
+        //length d_c = is_zero(n_c) ? meters(std::numeric_limits<float>::infinity()) : dot(n_c, v0.point);
+        //if (d_c < 0) {
+        //    n_c = -n_c;
+        //    d_c = -d_c;
+        //}
+        //length d_d = is_zero(n_d) ? meters(std::numeric_limits<float>::infinity()) : dot(n_d, v1.point);
+        //if (d_d < 0) {
+        //    n_d = -n_d;
+        //    d_d = -d_d;
+        //}
 
         if constexpr (debug) {
             std::println("[MPR][iter {}] d1:{}, d2:{}, d3:{}, d4:{}", i, d_a, d_b, d_c, d_d);
@@ -357,36 +386,36 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
         auto pick = [&](
             const bool require_positive
             ) -> face {
-            length best = meters(std::numeric_limits<float>::infinity());
-            int idx = -1;
-            for (int k = 0; k < 4; ++k) {
-                if (is_zero(faces[k].n)) {
-                    continue;
-                }
-                if (require_positive) {
-                    if (faces[k].d <= eps) {
-                        continue;
-                    }
-                }
-                if (faces[k].d < best) {
-                    best = faces[k].d;
-                    idx = k;
-                }
-            }
-            if (idx < 0) {
-                best = length{ -1 };
+                length best = meters(std::numeric_limits<float>::infinity());
+                int idx = -1;
                 for (int k = 0; k < 4; ++k) {
                     if (is_zero(faces[k].n)) {
                         continue;
                     }
-                    if (faces[k].d > best) {
+                    if (require_positive) {
+                        if (faces[k].d <= eps) {
+                            continue;
+                        }
+                    }
+                    if (faces[k].d < best) {
                         best = faces[k].d;
                         idx = k;
                     }
                 }
-            }
-            return faces[idx];
-        };
+                if (idx < 0) {
+                    best = length{ -1 };
+                    for (int k = 0; k < 4; ++k) {
+                        if (is_zero(faces[k].n)) {
+                            continue;
+                        }
+                        if (faces[k].d > best) {
+                            best = faces[k].d;
+                            idx = k;
+                        }
+                    }
+                }
+                return faces[idx];
+            };
 
         face choice = pick(true);
         if (choice.d == meters(std::numeric_limits<float>::infinity())) {
@@ -401,26 +430,26 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
             const int face_id,
             const minkowski_point& p
             ) {
-            switch (face_id) {
+                switch (face_id) {
                 case 0:  v3 = p; break;
                 case 1:  v1 = p; break;
                 case 2:  v2 = p; break;
                 case 3:  v0 = p; break;
                 default: v3 = p; break;
-            }
-        };
+                }
+            };
 
         auto vertex_point = [&](
             const int face_id
-            ) -> const vec3<length>& {
-            switch (face_id) {
+            ) -> const vec3<length>&{
+                switch (face_id) {
                 case 0:  return v3.point;
                 case 1:  return v1.point;
                 case 2:  return v2.point;
                 case 3:  return v0.point;
                 default: return v3.point;
-            }
-        };
+                }
+            };
 
         bool progressed = false;
         for (int attempt = 0; attempt < 4 && !progressed; ++attempt) {
@@ -469,8 +498,6 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
 	                collision_normal
                 );
 
-                vec3<length> final_contact_point = bb1.center();
-
                 if constexpr (debug) {
                     std::println("[MPR] Contacts complete. Normal: {}, Penetration: {}", collision_normal, penetration_depth);
                     std::println("[MPR] ---- end (collision) ----");
@@ -498,7 +525,7 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
             else {
                 auto equals_within_eps2 = [&](const vec3<length>& q) {
                     return dot(p.point - q, p.point - q) <= eps2;
-                };
+                    };
 
                 if (equals_within_eps2(v0.point) || equals_within_eps2(v1.point) ||
                     equals_within_eps2(v2.point) || equals_within_eps2(v3.point)) {
@@ -562,7 +589,7 @@ auto gse::narrow_phase_collision::generate_contact_points(const bounding_box& bb
             }
         }
         return face_info{ bb.face_vertices(best_face_idx), normals[best_face_idx] };
-    };
+        };
 
     const auto info1 = find_best_face(bb1, collision_normal);
     const auto info2 = find_best_face(bb2, -collision_normal);
@@ -666,10 +693,6 @@ auto gse::narrow_phase_collision::generate_contact_points(const bounding_box& bb
         if (dist <= meters(1e-3f)) {
             contacts.push_back(v - ref_normal * dist);
         }
-    }
-
-    if (contacts.empty()) {
-        contacts.push_back((bb1.center() + bb2.center()) * 0.5f);
     }
 
     return contacts;
