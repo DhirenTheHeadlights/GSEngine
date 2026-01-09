@@ -12,7 +12,8 @@ export namespace gse::renderer {
 	class context final : public non_copyable {
 	public:
 		explicit context(
-			const std::string& window_title
+			const std::string& window_title,
+			input::system& input
 		);
 		~context() override;
 
@@ -127,7 +128,7 @@ export namespace gse::renderer {
 	};
 }
 
-gse::renderer::context::context(const std::string& window_title) : m_window(window_title), m_config(vulkan::generate_config(m_window.raw_handle())) {}
+gse::renderer::context::context(const std::string& window_title, input::system& input) : m_window(window_title, input), m_config(vulkan::generate_config(m_window.raw_handle())) {}
 
 gse::renderer::context::~context() {
 	m_config.reset();

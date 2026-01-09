@@ -65,7 +65,13 @@ export namespace gse::network {
 		) -> void;
 
 		auto drain(
-			const std::function<void(const inbox_message&)>& on_receive
+			const std::function<void(inbox_message&)>& on_receive
+		) -> void;
+
+		auto push_input(
+			const actions::state& s,
+			std::span<const std::uint16_t> axis1_ids,
+			std::span<const std::uint16_t> axis2_ids
 		) -> void;
 	private:
 		udp_socket m_socket;
@@ -85,6 +91,17 @@ export namespace gse::network {
 
 		std::uint32_t m_input_sequence = 0;
 		clock m_input_clock;
+
+		struct input_snapshot {
+			actions::state state;
+			std::vector<std::uint16_t> axis1_ids;
+			std::vector<std::uint16_t> axis2_ids;
+		};
+
+		std::mutex m_input_mutex;
+		std::optional<input_snapshot> m_next_input;
+		input_snapshot m_last_input;
+		bool m_has_last_input = false;
 	};
 }
 
@@ -201,9 +218,8 @@ auto gse::network::client::tick() -> void {
 
 		if (!handled_internally) {
 			std::vector<std::byte> payload;
-			const auto remaining = stream.remaining_bytes();
-			
-			if (remaining > 0) {
+
+			if (const auto remaining = stream.remaining_bytes(); remaining > 0) {
 				payload.resize(remaining);
 				stream.read_bytes(payload.data(), remaining);
 				
@@ -217,20 +233,35 @@ auto gse::network::client::tick() -> void {
 		}
 	}
 
-	if (current == state::connected) {
+		if (current == state::connected) {
 		if (m_input_clock.elapsed<std::uint32_t>() > 16u) {
-			const auto& s = actions::current_state();
+			std::optional<input_snapshot> next;
 
-			send_input_frame(
-				m_socket,
-				m_server,
-				buffer,
-				++m_input_sequence,
-				s,
-				actions::axis1_ids(),
-				actions::axis2_ids()
-			);
-			m_input_clock.reset();
+			{
+				std::lock_guard lk(m_input_mutex);
+				if (m_next_input) {
+					next.emplace(std::move(*m_next_input));
+					m_next_input.reset();
+				}
+			}
+
+			if (next) {
+				m_last_input = std::move(*next);
+				m_has_last_input = true;
+			}
+
+			if (m_has_last_input) {
+				send_input_frame(
+					m_socket,
+					m_server,
+					buffer,
+					++m_input_sequence,
+					m_last_input.state,
+					m_last_input.axis1_ids,
+					m_last_input.axis2_ids
+				);
+				m_input_clock.reset();
+			}
 		}
 	}
 }
@@ -261,14 +292,24 @@ auto gse::network::client::send(const T& msg) -> void {
 	(void)m_socket.send_data(pkt, m_server.addr());
 }
 
-auto gse::network::client::drain(const std::function<void(const inbox_message&)>& on_receive) -> void {
+auto gse::network::client::drain(const std::function<void(inbox_message&)>& on_receive) -> void {
 	std::vector<inbox_message> batch;
 	{
 		std::lock_guard lk(m_inbox_mutex);
 		if (m_inbox.empty()) return;
 		batch.swap(m_inbox);
 	}
-	for (const auto& m : batch) {
+	for (auto& m : batch) {
 		on_receive(m);
 	}
+}
+
+auto gse::network::client::push_input(const actions::state& s, std::span<const std::uint16_t> axis1_ids, std::span<const std::uint16_t> axis2_ids) -> void {
+	input_snapshot snap;
+	snap.state = s;
+	snap.axis1_ids.assign(axis1_ids.begin(), axis1_ids.end());
+	snap.axis2_ids.assign(axis2_ids.begin(), axis2_ids.end());
+
+	std::lock_guard lk(m_input_mutex);
+	m_next_input.emplace(std::move(snap));
 }

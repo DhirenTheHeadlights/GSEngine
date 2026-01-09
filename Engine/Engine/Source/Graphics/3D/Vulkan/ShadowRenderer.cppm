@@ -30,23 +30,11 @@ export namespace gse::renderer {
 		const unitless::vec3& up
 	) -> unitless::vec3;
 
-	struct shadow final : ecs_system<
-		read_set<directional_light_component, spot_light_component>,
-		write_set<>
-	> {
-		using schedule = system_schedule<
-			system_stage<
-				system_stage_kind::update,
-				gse::read_set<directional_light_component, spot_light_component>,
-				gse::write_set<>
-			>
-		>;
-
+	class shadow final : public gse::system {
+	public:
 		shadow(
-			context& context,
-			registry& registry
-		) : ecs_system(registry), m_context(context) {
-		}
+			context& context
+		);
 
 		auto initialize(
 		) -> void override;
@@ -66,6 +54,7 @@ export namespace gse::renderer {
 
 		auto shadow_lights(
 		) const -> std::span<const shadow_light_entry>;
+
 	private:
 		context& m_context;
 
@@ -82,6 +71,8 @@ export namespace gse::renderer {
 	};
 }
 
+gse::renderer::shadow::shadow(context& context) : m_context(context) {}
+
 auto gse::renderer::shadow::initialize() -> void {
 	auto& config = m_context.config();
 
@@ -89,7 +80,6 @@ auto gse::renderer::shadow::initialize() -> void {
 	m_context.instantly_load(m_shader);
 
 	auto layouts = m_shader->layouts();
-
 	auto range = m_shader->push_constant_range("push_constants");
 
 	const vk::PipelineLayoutCreateInfo pipeline_layout_info{
@@ -151,12 +141,10 @@ auto gse::renderer::shadow::initialize() -> void {
 		.blendConstants = std::array{ 0.0f, 0.0f, 0.0f, 0.0f }
 	};
 
-	constexpr auto depth_format = vk::Format::eD32Sfloat;
-
 	const vk::PipelineRenderingCreateInfoKHR rendering_info{
 		.colorAttachmentCount = 0u,
 		.pColorAttachmentFormats = nullptr,
-		.depthAttachmentFormat = depth_format,
+		.depthAttachmentFormat = vk::Format::eD32Sfloat,
 		.stencilAttachmentFormat = vk::Format::eUndefined
 	};
 
@@ -265,7 +253,7 @@ auto gse::renderer::shadow::initialize() -> void {
 					.clearValue = vk::ClearValue{ .depthStencil = vk::ClearDepthStencilValue{ 1.0f, 0 } }
 				};
 
-				const vk::RenderingInfo rendering_info{
+				const vk::RenderingInfo info{
 					.renderArea = { { 0, 0 }, { m_shadow_extent.x(), m_shadow_extent.y() } },
 					.layerCount = 1,
 					.colorAttachmentCount = 0,
@@ -273,7 +261,7 @@ auto gse::renderer::shadow::initialize() -> void {
 					.pDepthAttachment = &depth_attachment
 				};
 
-				cmd.beginRendering(rendering_info);
+				cmd.beginRendering(info);
 				cmd.endRendering();
 
 				vulkan::uploader::transition_image_layout(
@@ -303,9 +291,9 @@ auto gse::renderer::shadow::update() -> void {
 
 	std::size_t next_shadow_index = 0;
 
-	auto [dir_chunk, spot_chunk] = this->read<directional_light_component, spot_light_component>();
+	auto [dir_view, spot_view] = this->read<directional_light_component, spot_light_component>();
 
-	for (const auto& comp : dir_chunk) {
+	for (const auto& comp : dir_view) {
 		if (next_shadow_index >= max_shadow_lights) {
 			break;
 		}
@@ -339,7 +327,7 @@ auto gse::renderer::shadow::update() -> void {
 		++next_shadow_index;
 	}
 
-	for (const auto& comp : spot_chunk) {
+	for (const auto& comp : spot_view) {
 		if (next_shadow_index >= max_shadow_lights) {
 			break;
 		}
@@ -377,7 +365,7 @@ auto gse::renderer::shadow::render() -> void {
 	auto& config = m_context.config();
 	const auto command = config.frame_context().command_buffer;
 
-	auto& geom = renderer<geometry>();
+	auto& geom = system_of<geometry>();
 	const auto draw_list = geom.render_queue();
 
 	if (draw_list.empty()) {

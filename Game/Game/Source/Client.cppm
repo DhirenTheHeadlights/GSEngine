@@ -32,20 +32,20 @@ auto gs::client::initialize() -> void {
 	gse::network::add_discovery_provider(std::make_unique<gse::network::wan_directory_provider>(std::move(seed)));
 	gse::network::refresh_servers(gse::milliseconds(200));
 
-    m_owner->world.add_hook<gse::networked_world<gse::local_input_source>>();
+    m_owner->hook_world<gse::networked_world<gse::local_input_source>>();
 }
 
 auto gs::client::update() -> void {
     gse::network::drain([this](gse::network::inbox_message& m) {
         gse::match(m)
             .if_is([&](const gse::network::connection_accepted&) {
-                m_owner->world.set_networked(true);
-                if (const auto* scene = m_owner->world.current_scene()) {
-                    m_owner->world.deactivate(scene->id());
+                m_owner->set_networked(true);
+                if (const auto* scene = m_owner->current_scene()) {
+                    m_owner->deactivate_scene(scene->id());
                 }
             })
             .else_if_is([&](const gse::network::notify_scene_change& msg) {
-                m_owner->world.activate(msg.scene_id);
+                m_owner->activate_scene(msg.scene_id);
                 std::println("Switched to scene: {}", msg.scene_id);
             });
     });

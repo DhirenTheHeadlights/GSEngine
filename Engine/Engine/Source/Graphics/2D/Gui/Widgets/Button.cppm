@@ -3,67 +3,79 @@ export module gse.graphics:button_widget;
 import std;
 
 import gse.platform;
+import gse.utility;
 
 import :types;
 import :ids;
-import :text_renderer;
 
 export namespace gse::gui::draw {
 	auto button(
-		const widget_context& context,
+		const draw_context& ctx,
 		const std::string& name,
 		id& hot_widget_id,
-		id active_widget_id
-	) -> void;
+		id& active_widget_id
+	) -> bool;
 }
 
-auto gse::gui::draw::button(const widget_context& context, const std::string& name, id& hot_widget_id, id active_widget_id) -> void {
-	if (!context.current_menu) {
-		return;
+auto gse::gui::draw::button(const draw_context& ctx, const std::string& name, id& hot_widget_id, id& active_widget_id) -> bool {
+	if (!ctx.current_menu) {
+		return false;
 	}
 
-	const auto widget_id = ids::make(name);
+	const id widget_id = ids::make(name);
 
-	const float widget_height = context.font->line_height(context.style.font_size) + context.style.padding * 0.5f;
-	const auto content_rect = context.current_menu->rect.inset({ context.style.padding, context.style.padding });
-
+	const float widget_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
+	const ui_rect content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
 	const ui_rect button_rect = ui_rect::from_position_size(
-		{ content_rect.left(), context.layout_cursor.y() },
+		{ content_rect.left(), ctx.layout_cursor.y() },
 		{ content_rect.width(), widget_height }
 	);
 
-	if (button_rect.contains(mouse::position())) {
+	const bool hovered = button_rect.contains(ctx.input.mouse_position());
+
+	if (hovered) {
 		hot_widget_id = widget_id;
 	}
 
-	unitless::vec4 bg_color = context.style.color_widget_background;
+	if (hovered && ctx.input.mouse_button_pressed(mouse_button::button_1)) {
+		active_widget_id = widget_id;
+	}
 
+	unitless::vec4 bg_color = ctx.style.color_widget_background;
 	if (active_widget_id == widget_id) {
-		bg_color = context.style.color_widget_fill;
+		bg_color = ctx.style.color_widget_fill;
 	}
 	else if (hot_widget_id == widget_id) {
-		bg_color = context.style.color_dock_widget;
+		bg_color = ctx.style.color_dock_widget;
 	}
 
-	context.sprite_renderer.queue({
+	ctx.queue_sprite({
 		.rect = button_rect,
 		.color = bg_color,
-		.texture = context.blank_texture
+		.texture = ctx.blank_texture
 	});
 
-	const float text_width = context.font->width(name, context.style.font_size);
+	const float text_width = ctx.font->width(name, ctx.style.font_size);
 	const unitless::vec2 text_pos = {
 		button_rect.center().x() - text_width / 2.f,
-		button_rect.center().y() + context.style.font_size / 2.f
+		button_rect.center().y() + ctx.style.font_size / 2.f
 	};
 
-	context.text_renderer.draw_text({
-		.font = context.font,
+	ctx.queue_text({
+		.font = ctx.font,
 		.text = name,
 		.position = text_pos,
-		.scale = context.style.font_size,
+		.scale = ctx.style.font_size,
 		.clip_rect = button_rect
 	});
 
-	context.layout_cursor.y() -= widget_height + context.style.padding;
+	ctx.layout_cursor.y() -= widget_height + ctx.style.padding;
+
+	bool clicked = false;
+	if (ctx.input.mouse_button_released(mouse_button::button_1) && active_widget_id == widget_id) {
+		clicked = hovered;
+		active_widget_id = {};
+	}
+
+	return clicked;
 }

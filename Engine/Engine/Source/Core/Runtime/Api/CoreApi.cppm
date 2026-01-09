@@ -1,4 +1,4 @@
-export module gse.runtime:engine;
+export module gse.runtime:core_api;
 
 import std;
 
@@ -8,167 +8,111 @@ import gse.platform;
 import gse.physics;
 import gse.network;
 
+import :engine;
 import :world;
 
 export namespace gse {
-	struct engine : hookable<engine> {
-		explicit engine(const std::string& name) : hookable(name) {}
+    struct engine_config {
+        std::string title = "GSEngine Application";
+        std::optional<unitless::vec2> size = std::nullopt;
+        bool resizable = true;
+        bool fullscreen = false;
+    };
 
-		world world;
-	};
+    enum struct flags : std::uint8_t {
+        none = 0,
+        create_window = 1 << 0,
+        render = 1 << 1,
+    };
 
-	struct engine_config {
-		std::string title = "GSEngine Application";
-		std::optional<unitless::vec2> size = std::nullopt;
-		bool resizable = true;
-		bool fullscreen = false;
-	};
+    constexpr auto operator|(flags lhs, flags rhs) -> flags;
+    constexpr auto has_flag(flags haystack, flags needle) -> bool;
 
-	enum struct flags : std::uint8_t {
-		none = 0,
-		create_window = 1 << 0,
-		render = 1 << 1,
-	};
+    template <typename S>
+    auto system_of() -> S&;
 
-	constexpr auto operator|(
-		flags lhs,
-		flags rhs
-	) -> flags;
-
-	constexpr auto has_flag(
-		flags haystack,
-		flags needle
-	) -> bool;
+    template <typename T>
+    auto channel_add(
+        T&& request
+    ) -> void;
 }
 
 namespace gse {
-	auto initialize(
-		flags engine_flags, 
-		const engine_config& config
-	) -> void;
-
-	auto update(
-		flags engine_flags, 
-		const engine_config& config
-	) -> void;
-
-	auto render(
-		flags engine_flags, 
-		const engine_config& config
-	) -> void;
-
-	engine engine("GSEngine");
-	std::atomic should_shutdown = false;
+	std::unique_ptr<engine> engine_instance = nullptr;
+    std::atomic should_shutdown = false;
 }
 
 export namespace gse {
-	template <typename... Args>
-	auto start(
-		flags engine_flags = flags::create_window | flags::render,
-		const engine_config& config = {}
-	) -> void;
+    template <typename... Hooks>
+    auto start(
+        flags engine_flags = flags::create_window | flags::render,
+        const engine_config& config = {}
+    ) -> void;
 
-	auto shutdown(
-	) -> void;
+    auto shutdown() -> void;
 }
 
 constexpr auto gse::operator|(flags lhs, flags rhs) -> flags {
-	return static_cast<flags>(static_cast<std::uint32_t>(lhs) | static_cast<std::uint32_t>(rhs));
+    return static_cast<flags>(static_cast<std::uint32_t>(lhs) | static_cast<std::uint32_t>(rhs));
 }
 
 constexpr auto gse::has_flag(flags haystack, flags needle) -> bool {
-	return (static_cast<std::uint32_t>(haystack) & static_cast<std::uint32_t>(needle)) == static_cast<std::uint32_t>(needle);
+    return (static_cast<std::uint32_t>(haystack) & static_cast<std::uint32_t>(needle)) == static_cast<std::uint32_t>(needle);
 }
 
-auto gse::initialize(const flags engine_flags, const engine_config& config) -> void {
-	trace::start({
-		.per_thread_event_cap = static_cast<std::size_t>(1e6)
-	});
-
-	network::initialize();
-	renderer::initialize();
-	engine.initialize();
-	engine.world.initialize();
-	input::initialize();
+template <typename S>
+auto gse::system_of() -> S& {
+    return engine_instance->system_of<S>();
 }
 
-auto gse::update(const flags engine_flags, const engine_config& config) -> void {
-	system_clock::update();
-
-	engine.world.update();
-
-	if (auto* scene = engine.world.current_scene()) {
-		network::update(
-			scene->registry()
-		);
-	}
-
-	physics::update(
-		engine.world.registries()
-	);
-
-	renderer::update(
-		engine.world.registries()
-	);
-
-	engine.update();
+template <typename T>
+auto gse::channel_add(T&& request) -> void {
+    engine_instance->channel<std::decay_t<T>>().push(std::forward<T>(request));
 }
 
-auto gse::render(const flags engine_flags, const engine_config& config) -> void {
-	renderer::render(
-		engine.world.registries(),
-		[&] {
-			engine.world.render();
-			engine.render();
-		}
-	);
-}
-
-template <typename... Args>
+template <typename... Hooks>
 auto gse::start(const flags engine_flags, const engine_config& config) -> void {
-	(engine.add_hook<Args>(), ...);
+    engine_instance = std::make_unique<engine>(config.title);
 
-	auto exit = make_scope_exit([] {
-		engine.world.shutdown();
-		renderer::shutdown();
-		network::shutdown();
-	});
+    (engine_instance->add_hook<Hooks>(), ...);
+
+    auto cleanup = make_scope_exit([] {
+        if (engine_instance) {
+            engine_instance->shutdown();
+            engine_instance.reset();
+        }
+    });
+
+    engine_instance->initialize();
 
     task::start([&] {
-		initialize(engine_flags, config);
-
         while (!should_shutdown.load(std::memory_order_acquire)) {
-			window::poll_events();
+            window::poll_events();
 
-        	frame_sync::begin();
+            frame_sync::begin();
 
-        	input::update();
+            trace::scope(engine_instance->id(), [&] {
+                task::group frame_tasks;
 
-            const bool do_render = has_flag(
-				engine_flags, 
-				flags::render
-			);
+                frame_tasks.post(
+                    [&] {
+	                    engine_instance->update();
+	                },
+                    find_or_generate_id("Engine::Update")
+                );
 
-			trace::scope(engine.id(), [&] {
-				task::group frame_tasks;
+                if (has_flag(engine_flags, flags::render)) {
+                    frame_tasks.post(
+                        [&] {
+                            engine_instance->render();
+                        },
+                        find_or_generate_id("Engine::Render")
+                    );
+                }
+            });
 
-				frame_tasks.post(
-					[&] {
-						update(engine_flags, config);
-					}, find_or_generate_id("Engine::Update")
-				);
-
-				if (do_render) {
-					frame_tasks.post(
-						[&] {
-							render(engine_flags, config);
-						}, find_or_generate_id("Engine::Render")
-					);
-				}
-			});
-
-			frame_sync::end();
-			trace::finalize_frame();
+            frame_sync::end();
+            trace::finalize_frame();
         }
 
         task::wait_idle();
@@ -176,5 +120,5 @@ auto gse::start(const flags engine_flags, const engine_config& config) -> void {
 }
 
 auto gse::shutdown() -> void {
-	should_shutdown = true;
+    should_shutdown.store(true, std::memory_order_release);
 }

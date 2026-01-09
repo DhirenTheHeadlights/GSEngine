@@ -13,47 +13,32 @@ import gse.utility;
 import gse.physics.math;
 
 export namespace gse::renderer {
-	class sprite final : public basic_system {
+	struct sprite_command {
+		rect_t<unitless::vec2> rect;
+		unitless::vec4 color = { 1.0f, 1.0f, 1.0f, 1.0f };
+		resource::handle<texture> texture;
+		unitless::vec4 uv_rect = { 0.0f, 0.0f, 1.0f, 1.0f };
+		std::optional<rect_t<unitless::vec2>> clip_rect = std::nullopt;
+		angle rotation;
+	};
+
+	class sprite final : public system {
 	public:
-		struct command {
-			rect_t<unitless::vec2> rect;
-			unitless::vec4 color = { 1.0f, 1.0f, 1.0f, 1.0f };
-			resource::handle<texture> texture;
-			unitless::vec4 uv_rect = { 0.0f, 0.0f, 1.0f, 1.0f };
-			std::optional<rect_t<unitless::vec2>> clip_rect = std::nullopt;
-			angle rotation;
-		};
+		explicit sprite(
+			context& context
+		);
 
-		using schedule = system_schedule<
-			system_stage<
-				system_stage_kind::render,
-				gse::read_set<>,
-				gse::write_set<>
-			>
-		>;
+		auto initialize(
+		) -> void override;
 
-		explicit sprite(context& context) : m_context(context) {}
+		auto render(
+		) -> void override;
 
-		auto initialize() -> void override;
-		auto render() -> void override;
-
-		auto queue(const command& cmd) -> void;
 	private:
 		static auto to_vulkan_scissor(
 			const rect_t<unitless::vec2>& rect,
 			const unitless::vec2& window_size
-		) -> vk::Rect2D {
-			return {
-				.offset = {
-					static_cast<std::int32_t>(rect.left()),
-					static_cast<std::int32_t>(window_size.y() - rect.top())
-				},
-				.extent = {
-					static_cast<std::uint32_t>(rect.width()),
-					static_cast<std::uint32_t>(rect.height())
-				}
-			};
-		}
+		) -> vk::Rect2D;
 
 		context& m_context;
 
@@ -63,8 +48,25 @@ export namespace gse::renderer {
 		vulkan::persistent_allocator::buffer_resource m_index_buffer;
 
 		resource::handle<shader> m_shader;
+	};
+}
 
-		std::vector<command> m_draw_commands;
+gse::renderer::sprite::sprite(context& context)
+	: m_context(context) {}
+
+auto gse::renderer::sprite::to_vulkan_scissor(
+	const rect_t<unitless::vec2>& rect,
+	const unitless::vec2& window_size
+) -> vk::Rect2D {
+	return {
+		.offset = {
+			static_cast<std::int32_t>(rect.left()),
+			static_cast<std::int32_t>(window_size.y() - rect.top())
+		},
+		.extent = {
+			static_cast<std::uint32_t>(rect.width()),
+			static_cast<std::uint32_t>(rect.height())
+		}
 	};
 }
 
@@ -83,6 +85,7 @@ auto gse::renderer::sprite::initialize() -> void {
 		.minDepth = 0.0f,
 		.maxDepth = 1.0f
 	};
+
 	const vk::Rect2D scissor{
 		{ 0, 0 },
 		{ config.swap_chain_config().extent.width, config.swap_chain_config().extent.height }
@@ -114,7 +117,10 @@ auto gse::renderer::sprite::initialize() -> void {
 		.srcAlphaBlendFactor = vk::BlendFactor::eOne,
 		.dstAlphaBlendFactor = vk::BlendFactor::eZero,
 		.alphaBlendOp = vk::BlendOp::eAdd,
-		.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
+		.colorWriteMask = vk::ColorComponentFlagBits::eR |
+		                  vk::ColorComponentFlagBits::eG |
+		                  vk::ColorComponentFlagBits::eB |
+		                  vk::ColorComponentFlagBits::eA
 	};
 
 	const vk::PipelineColorBlendStateCreateInfo color_blending{
@@ -134,7 +140,6 @@ auto gse::renderer::sprite::initialize() -> void {
 
 	const auto& element_shader = m_shader.resolve();
 	const auto& quad_dsl = element_shader->layouts();
-
 	const auto quad_pc_range = element_shader->push_constant_range("push_constants");
 
 	const vk::PipelineLayoutCreateInfo quad_pipeline_layout_info{
@@ -143,6 +148,7 @@ auto gse::renderer::sprite::initialize() -> void {
 		.pushConstantRangeCount = 1,
 		.pPushConstantRanges = &quad_pc_range
 	};
+
 	m_pipeline_layout = config.device_config().device.createPipelineLayout(quad_pipeline_layout_info);
 
 	const auto vertex_input_info = element_shader->vertex_input_state();
@@ -176,6 +182,7 @@ auto gse::renderer::sprite::initialize() -> void {
 		.pDynamicState = &dynamic_state_info,
 		.layout = *m_pipeline_layout
 	};
+
 	m_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
 
 	struct vertex {
@@ -184,10 +191,10 @@ auto gse::renderer::sprite::initialize() -> void {
 	};
 
 	constexpr vertex vertices[4] = {
-		{{0.0f,  0.0f}, {0.0f, 0.0f}},
-		{{1.0f,  0.0f}, {1.0f, 0.0f}},
-		{{1.0f, -1.0f}, {1.0f, 1.0f}},
-		{{0.0f, -1.0f}, {0.0f, 1.0f}}
+		{{ 0.0f,  0.0f }, { 0.0f, 0.0f }},
+		{{ 1.0f,  0.0f }, { 1.0f, 0.0f }},
+		{{ 1.0f, -1.0f }, { 1.0f, 1.0f }},
+		{{ 0.0f, -1.0f }, { 0.0f, 1.0f }}
 	};
 
 	constexpr std::uint32_t indices[6] = { 0, 2, 1, 0, 3, 2 };
@@ -206,7 +213,9 @@ auto gse::renderer::sprite::initialize() -> void {
 }
 
 auto gse::renderer::sprite::render() -> void {
-	if (m_draw_commands.empty()) {
+	const auto commands = channel_of<sprite_command>();
+
+	if (commands.empty()) {
 		return;
 	}
 
@@ -235,65 +244,55 @@ auto gse::renderer::sprite::render() -> void {
 	};
 
 	const vk::RenderingInfo rendering_info{
-		.renderArea = {{0, 0}, config.swap_chain_config().extent},
+		.renderArea = {{ 0, 0 }, config.swap_chain_config().extent },
 		.layerCount = 1,
 		.colorAttachmentCount = 1,
 		.pColorAttachments = &color_attachment,
 		.pDepthAttachment = nullptr
 	};
 
-	vulkan::render(
-		config,
-		rendering_info,
-		[&] {
-			command.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline);
-			command.bindVertexBuffers(0, { *m_vertex_buffer.buffer }, { 0 });
-			command.bindIndexBuffer(*m_index_buffer.buffer, 0, vk::IndexType::eUint32);
+	vulkan::render(config, rendering_info, [&] {
+		command.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline);
+		command.bindVertexBuffers(0, { *m_vertex_buffer.buffer }, { 0 });
+		command.bindIndexBuffer(*m_index_buffer.buffer, 0, vk::IndexType::eUint32);
 
-			const vk::Rect2D default_scissor{ {0, 0}, {width, height} };
-			command.setScissor(0, { default_scissor });
-			auto current_scissor = default_scissor;
+		const vk::Rect2D default_scissor{ { 0, 0 }, { width, height } };
+		command.setScissor(0, { default_scissor });
+		auto current_scissor = default_scissor;
 
-			for (auto& [rect, color, texture, uv_rect, clip_rect, rotation] : m_draw_commands) {
-				if (!texture.valid()) {
-					continue;
-				}
-
-				auto desired_scissor = default_scissor;
-				if (clip_rect.has_value()) {
-					desired_scissor = to_vulkan_scissor(clip_rect.value(), window_size);
-				}
-
-				if (std::memcmp(&desired_scissor, &current_scissor, sizeof(vk::Rect2D)) != 0) {
-					command.setScissor(0, { desired_scissor });
-					current_scissor = desired_scissor;
-				}
-
-				auto position = rect.top_left();
-				auto rect_size = rect.size();
-				auto angle_rad = rotation.as<radians>();
-
-				shader->push(
-					command,
-					m_pipeline_layout,
-					"push_constants",
-					"projection", projection,
-					"position", position,
-					"size", rect_size,
-					"color", color,
-					"uv_rect", uv_rect,
-					"rotation", angle_rad
-				);
-
-				shader->push_descriptor(command, m_pipeline_layout, "spriteTexture", texture->descriptor_info());
-				command.drawIndexed(6, 1, 0, 0, 0);
+		for (const auto& [rect, color, texture, uv_rect, clip_rect, rotation] : commands) {
+			if (!texture.valid()) {
+				continue;
 			}
+
+			auto desired_scissor = default_scissor;
+			if (clip_rect.has_value()) {
+				desired_scissor = to_vulkan_scissor(clip_rect.value(), window_size);
+			}
+
+			if (std::memcmp(&desired_scissor, &current_scissor, sizeof(vk::Rect2D)) != 0) {
+				command.setScissor(0, { desired_scissor });
+				current_scissor = desired_scissor;
+			}
+
+			auto position = rect.top_left();
+			auto rect_size = rect.size();
+			auto angle_rad = rotation.as<radians>();
+
+			shader->push(
+				command,
+				m_pipeline_layout,
+				"push_constants",
+				"projection", projection,
+				"position", position,
+				"size", rect_size,
+				"color", color,
+				"uv_rect", uv_rect,
+				"rotation", angle_rad
+			);
+
+			shader->push_descriptor(command, m_pipeline_layout, "spriteTexture", texture->descriptor_info());
+			command.drawIndexed(6, 1, 0, 0, 0);
 		}
-	);
-
-	m_draw_commands.clear();
-}
-
-auto gse::renderer::sprite::queue(const command& cmd) -> void {
-	m_draw_commands.push_back(cmd);
+	});
 }

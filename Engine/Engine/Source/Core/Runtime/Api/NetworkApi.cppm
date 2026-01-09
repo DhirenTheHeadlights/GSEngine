@@ -36,6 +36,13 @@ export namespace gse::network {
 		return system_of<system>().connect(options);
 	}
 
+	auto drain(
+		const std::function<void(inbox_message&)>& handler,
+		const time_t<std::uint32_t> timeout = seconds(5)
+	) -> void {
+		system_of<system>().drain(handler, timeout);
+	}
+
 	auto connect(
 		const discovery_result& pick,
 		const std::optional<address>& local = std::nullopt,

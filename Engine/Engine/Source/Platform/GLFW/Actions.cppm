@@ -9,12 +9,12 @@ import :input;
 import :keys;
 import :input_state;
 
-namespace gse::actions {
+export namespace gse::actions {
 	template <std::size_t N>
 	struct fixed_string {
 		char v[N];
 
-		explicit constexpr fixed_string(const char(&s)[N]) {
+		constexpr fixed_string(const char(&s)[N]) {
 			for (std::size_t i = 0; i < N; ++i) {
 				v[i] = s[i];
 			}
@@ -30,6 +30,54 @@ namespace gse::actions {
 }
 
 export namespace gse::actions {
+	class system;
+	class state;
+
+	class handle {
+	public:
+		explicit handle(id action_id = {}) : m_action_id(action_id) {}
+
+		auto id() const -> gse::id {
+			return m_action_id;
+		}
+
+		auto held(
+			const state& s, 
+			system& sys
+		) const -> bool;
+
+		auto pressed(
+			const state& s, 
+			system& sys
+		) const -> bool;
+
+		auto released(
+			const state& s,
+			system& sys
+		) const -> bool;
+	private:
+		gse::id m_action_id;
+	};
+
+	struct add_action_request {
+		std::string name;
+		key default_key;
+		id action_id;
+	};
+
+	struct pending_axis2_info {
+		handle left;
+		handle right;
+		handle back;
+		handle fwd;
+		float scale = 1.f;
+	};
+
+	struct bind_axis2_request {
+		pending_axis2_info info;
+		id axis_id;
+	};
+
 	class description : public identifiable {
 	public:
 		explicit description(
@@ -96,6 +144,11 @@ export namespace gse::actions {
 			std::size_t count
 		) -> void;
 
+		auto reset_axes(
+			std::span<const std::uint16_t> axes1,
+			std::span<const std::uint16_t> axes2
+		) -> void;
+
 		auto set_pressed(
 			std::uint16_t bit_index,
 			std::size_t count
@@ -156,11 +209,20 @@ export namespace gse::actions {
 			std::span<const word> released
 		) -> void;
 	private:
+		auto ensure_axis1_capacity(
+			std::uint16_t id
+		) -> void;
+
+		auto ensure_axis2_capacity(
+			std::uint16_t id
+		) -> void;
+
 		mask m_held;
 		mask m_pressed;
 		mask m_released;
-		std::unordered_map<std::uint16_t, float> m_axes1;
-		std::unordered_map<std::uint16_t, axis> m_axes2;
+
+		std::vector<float> m_axes1;
+		std::vector<axis> m_axes2;
 	};
 
 	struct button_channel {
@@ -168,6 +230,10 @@ export namespace gse::actions {
 		bool held = false;
 		bool pressed = false;
 		bool released = false;
+
+		auto handle() const -> handle {
+			return actions::handle(action_id);
+		}
 	};
 
 	struct axis1_channel {
@@ -180,15 +246,7 @@ export namespace gse::actions {
 		axis value{};
 	};
 
-	struct pending_axis2_info {
-		id left;
-		id right;
-		id back;
-		id fwd;
-		float scale = 1.f;
-	};
-
-	class system final : public basic_system {
+	class system final : public gse::system {
 	public:
 		system() = default;
 		~system() override = default;
@@ -199,13 +257,8 @@ export namespace gse::actions {
 		auto update(
 		) -> void override;
 
-		template <fixed_string Tag>
-		auto add(
-			key default_key
-		) -> id;
-
-		auto finalize_bindings(
-		) -> void;
+		auto end_frame(
+		) -> void override;
 
 		auto current_state(
 		) const -> const state&;
@@ -216,40 +269,44 @@ export namespace gse::actions {
 		auto axis2_ids(
 		) const -> std::span<const std::uint16_t>;
 
-		auto bind_axis2(
-			const pending_axis2_info& info
-		) -> id;
+		auto description(
+			id action_id
+		) -> description*;
 
-		auto register_channel_binding(
-			id owner,
-			std::function<void(const state&)> sampler
+		auto register_channel(
+			id owner_id,
+			button_channel& channel
 		) -> void;
 
-		auto sample_all_channels(
-			const state& s
-		) const -> void;
+		auto register_channel(
+			id owner_id,
+			axis1_channel& channel
+		) -> void;
+
+		auto register_channel(
+			id owner_id,
+			axis2_channel& channel
+		) -> void;
 
 		auto sample_for_entity(
 			const state& s,
 			id owner_id
 		) const -> void;
 
-		auto description(
-			id action_id
-		) -> description*;
+		auto sample_all_channels(
+			const state& s
+		) const -> void;
 
 	private:
+		auto finalize_bindings(
+		) -> void;
+
 		auto add_description(
-			std::string_view tag
+			std::string_view tag,
+			id action_id
 		) -> actions::description&;
 
 		double_buffer<state> m_states;
-
-		struct channel_binding {
-			id owner;
-			std::function<void(const state&)> sampler;
-		};
-		std::vector<channel_binding> m_channel_bindings;
 
 		id_mapped_collection<actions::description> m_descriptions;
 
@@ -262,12 +319,8 @@ export namespace gse::actions {
 		std::unordered_map<std::string, key> m_rebinds;
 
 		struct pending_axis2_req {
-			id left;
-			id right;
-			id back;
-			id fwd;
-			float scale = 1.f;
-			id id;
+			pending_axis2_info info;
+			id axis_id;
 		};
 		std::vector<pending_axis2_req> m_pending_axis2_reqs;
 
@@ -303,7 +356,34 @@ export namespace gse::actions {
 			float scale = 1.f;
 		};
 		id_mapped_collection<resolved_axis2_keys> m_axis2_by_id;
+
+		struct channel_binding {
+			id owner;
+			std::function<void(const state&)> sampler;
+		};
+		std::vector<channel_binding> m_channel_bindings;
 	};
+}
+
+auto gse::actions::handle::held(const state& s, system& sys) const -> bool {
+	if (const auto* desc = sys.description(m_action_id)) {
+		return s.held(desc->bit_index());
+	}
+	return false;
+}
+
+auto gse::actions::handle::pressed(const state& s, system& sys) const -> bool {
+	if (const auto* desc = sys.description(m_action_id)) {
+		return s.pressed(desc->bit_index());
+	}
+	return false;
+}
+
+auto gse::actions::handle::released(const state& s, system& sys) const -> bool {
+	if (const auto* desc = sys.description(m_action_id)) {
+		return s.released(desc->bit_index());
+	}
+	return false;
 }
 
 auto gse::actions::mask::ensure_for(const std::size_t action_count) -> void {
@@ -365,6 +445,20 @@ auto gse::actions::state::ensure_capacity(const std::size_t count) -> void {
 	m_released.ensure_for(count);
 }
 
+auto gse::actions::state::reset_axes(const std::span<const std::uint16_t> axes1, const std::span<const std::uint16_t> axes2) -> void {
+	for (const auto id : axes1) {
+		if (id < m_axes1.size()) {
+			m_axes1[id] = 0.f;
+		}
+	}
+
+	for (const auto id : axes2) {
+		if (id < m_axes2.size()) {
+			m_axes2[id] = {};
+		}
+	}
+}
+
 auto gse::actions::state::set_pressed(const std::uint16_t bit_index, const std::size_t count) -> void {
 	ensure_capacity(count);
 	m_pressed.set(bit_index);
@@ -399,24 +493,38 @@ auto gse::actions::state::released(const std::uint16_t bit_index) const -> bool 
 	return m_released.test(bit_index);
 }
 
+auto gse::actions::state::ensure_axis1_capacity(const std::uint16_t id) -> void {
+	if (id >= m_axes1.size()) {
+		m_axes1.resize(static_cast<std::size_t>(id) + 1, 0.f);
+	}
+}
+
+auto gse::actions::state::ensure_axis2_capacity(const std::uint16_t id) -> void {
+	if (id >= m_axes2.size()) {
+		m_axes2.resize(static_cast<std::size_t>(id) + 1, {});
+	}
+}
+
 auto gse::actions::state::set_axis1(const std::uint16_t id, const float v) -> void {
+	ensure_axis1_capacity(id);
 	m_axes1[id] = v;
 }
 
 auto gse::actions::state::set_axis2(const std::uint16_t id, const axis v) -> void {
+	ensure_axis2_capacity(id);
 	m_axes2[id] = v;
 }
 
 auto gse::actions::state::axis1(const std::uint16_t id) const -> float {
-	if (const auto it = m_axes1.find(id); it != m_axes1.end()) {
-		return it->second;
+	if (id < m_axes1.size()) {
+		return m_axes1[id];
 	}
 	return 0.f;
 }
 
 auto gse::actions::state::axis2_v(const std::uint16_t id) const -> axis {
-	if (const auto it = m_axes2.find(id); it != m_axes2.end()) {
-		return it->second;
+	if (id < m_axes2.size()) {
+		return m_axes2[id];
 	}
 	return {};
 }
@@ -460,14 +568,35 @@ auto gse::actions::system::initialize() -> void {
 }
 
 auto gse::actions::system::update() -> void {
+	bool config_changed = false;
+
+	for (const auto add_requests = channel_of<add_action_request>(); const auto& [name, default_key, action_id] : add_requests) {
+		add_description(name, action_id);
+		m_pending_key_bindings.emplace_back(name, default_key, action_id);
+		config_changed = true;
+	}
+
+	for (const auto& [info, axis_id] : channel_of<bind_axis2_request>()) {
+		m_pending_axis2_reqs.push_back({
+			info,
+			axis_id
+		});
+		config_changed = true;
+	}
+
+	if (config_changed) {
+		finalize_bindings();
+	}
+
 	const auto& inputs = system_of<input::system>();
 	const auto& in = inputs.current_state();
 
 	auto& s = m_states.write();
 	s.begin_frame();
-	
+
 	const auto count = m_descriptions.size();
 	s.ensure_capacity(count);
+	s.reset_axes(m_axis1_ids_cache, m_axis2_ids_cache);
 
 	for (auto& [k, bit_index] : m_resolved.key_to_action) {
 		if (in.key_pressed(k)) {
@@ -500,16 +629,101 @@ auto gse::actions::system::update() -> void {
 		s.set_axis2(static_cast<std::uint16_t>(id.number()), { static_cast<float>(x) * scale, static_cast<float>(y) * scale });
 	}
 
-	m_states.flip();
+	publish([&s, this](channel<button_channel>& chan) {
+		for (const auto& desc : m_descriptions.items()) {
+			if (const auto idx = desc.bit_index(); s.pressed(idx) || s.released(idx) || s.held(idx)) {
+				chan.emplace(desc.id(), s.held(idx), s.pressed(idx), s.released(idx));
+			}
+		}
+	});
 
-	sample_all_channels(m_states.read());
+	publish([&s, this](channel<axis1_channel>& chan) {
+		for (const auto axis_id : m_axis1_ids_cache) {
+			if (const float val = s.axis1(axis_id); std::abs(val) > 0.001f) {
+				chan.emplace(axis_id, val);
+			}
+		}
+	});
+
+	publish([&s, this](channel<axis2_channel>& chan) {
+		for (const auto& [id, left, right, back, fwd, scale] : m_axis2_by_id.items()) {
+			const auto axis_id = static_cast<std::uint16_t>(id.number());
+			if (const auto val = s.axis2_v(axis_id); val.x() > 0.001f || val.y() > 0.001f) {
+				chan.emplace(id, val);
+			}
+		}
+	});
 }
 
-template <gse::actions::fixed_string Tag>
-auto gse::actions::system::add(key default_key) -> id {
-	auto& desc = add_description(Tag.view());
-	m_pending_key_bindings.emplace_back(std::string(Tag.view()), default_key, desc.id());
-	return desc.id();
+auto gse::actions::system::end_frame() -> void {
+	m_states.flip();
+}
+
+auto gse::actions::system::current_state() const -> const state& {
+	return m_states.read();
+}
+
+auto gse::actions::system::axis1_ids() const -> std::span<const std::uint16_t> {
+	return m_axis1_ids_cache;
+}
+
+auto gse::actions::system::axis2_ids() const -> std::span<const std::uint16_t> {
+	return m_axis2_ids_cache;
+}
+
+auto gse::actions::system::description(const id action_id) -> actions::description* {
+	return m_descriptions.try_get(action_id);
+}
+
+auto gse::actions::system::register_channel(const id owner_id, button_channel& channel) -> void {
+	m_channel_bindings.push_back(channel_binding{
+		.owner = owner_id,
+		.sampler = [this, &channel](const state& s) {
+			if (const auto* desc = description(channel.action_id)) {
+				const auto idx = desc->bit_index();
+				channel.held = s.held(idx);
+				channel.pressed = s.pressed(idx);
+				channel.released = s.released(idx);
+			}
+			else {
+				channel.held = false;
+				channel.pressed = false;
+				channel.released = false;
+			}
+		}
+	});
+}
+
+auto gse::actions::system::register_channel(const id owner_id, axis1_channel& channel) -> void {
+	m_channel_bindings.push_back(channel_binding{
+		.owner = owner_id,
+		.sampler = [&channel](const state& s) {
+			channel.value = s.axis1(channel.axis_id);
+		}
+	});
+}
+
+auto gse::actions::system::register_channel(const id owner_id, axis2_channel& channel) -> void {
+	m_channel_bindings.push_back(channel_binding{
+		.owner = owner_id,
+		.sampler = [&channel](const state& s) {
+			channel.value = s.axis2_v(static_cast<std::uint16_t>(channel.axis_id.number()));
+		}
+	});
+}
+
+auto gse::actions::system::sample_for_entity(const state& s, const id owner_id) const -> void {
+	for (const auto& [owner, sampler] : m_channel_bindings) {
+		if (owner == owner_id) {
+			sampler(s);
+		}
+	}
+}
+
+auto gse::actions::system::sample_all_channels(const state& s) const -> void {
+	for (const auto& [owner, sampler] : m_channel_bindings) {
+		sampler(s);
+	}
 }
 
 auto gse::actions::system::finalize_bindings() -> void {
@@ -539,14 +753,14 @@ auto gse::actions::system::finalize_bindings() -> void {
 		return key{};
 	};
 
-	for (const auto& [left, right, back, fwd, scale, id] : m_pending_axis2_reqs) {
+	for (const auto& [info, id] : m_pending_axis2_reqs) {
 		resolved_axis2_keys r{
 			.id = id,
-			.left = key_for_action(left),
-			.right = key_for_action(right),
-			.back = key_for_action(back),
-			.fwd = key_for_action(fwd),
-			.scale = scale
+			.left = key_for_action(info.left.id()),
+			.right = key_for_action(info.right.id()),
+			.back = key_for_action(info.back.id()),
+			.fwd = key_for_action(info.fwd.id()),
+			.scale = info.scale
 		};
 		m_axis2_by_id.add(r.id, std::move(r));
 	}
@@ -566,54 +780,14 @@ auto gse::actions::system::finalize_bindings() -> void {
 	m_axis2_ids_cache.erase(std::ranges::unique(m_axis2_ids_cache).begin(), m_axis2_ids_cache.end());
 }
 
-auto gse::actions::system::current_state() const -> const state& {
-	return m_states.read();
-}
-
-auto gse::actions::system::axis1_ids() const -> std::span<const std::uint16_t> {
-	return m_axis1_ids_cache;
-}
-
-auto gse::actions::system::axis2_ids() const -> std::span<const std::uint16_t> {
-	return m_axis2_ids_cache;
-}
-
-auto gse::actions::system::bind_axis2(const pending_axis2_info& info) -> id {
-	const id new_id;
-	m_pending_axis2_reqs.push_back({ info.left, info.right, info.back, info.fwd, info.scale, new_id });
-	return new_id;
-}
-
-auto gse::actions::system::register_channel_binding(const id owner, std::function<void(const state&)> sampler) -> void {
-	m_channel_bindings.emplace_back(owner, std::move(sampler));
-}
-
-auto gse::actions::system::sample_all_channels(const state& s) const -> void {
-	for (const auto& [owner, sampler] : m_channel_bindings) {
-		sampler(s);
-	}
-}
-
-auto gse::actions::system::sample_for_entity(const state& s, const id owner_id) const -> void {
-	for (const auto& [owner, sampler] : m_channel_bindings) {
-		if (owner == owner_id) {
-			sampler(s);
-		}
-	}
-}
-
-auto gse::actions::system::description(const id action_id) -> actions::description* {
-	return m_descriptions.try_get(action_id);
-}
-
-auto gse::actions::system::add_description(const std::string_view tag) -> actions::description& {
-	if (const auto existing_id = try_find(tag); existing_id.has_value()) {
-		return *m_descriptions.try_get(existing_id.value());
+auto gse::actions::system::add_description(const std::string_view tag, const id action_id) -> actions::description& {
+	if (const auto existing = m_descriptions.try_get(action_id)) {
+		return *existing;
 	}
 
 	const auto bit_index = static_cast<std::uint16_t>(m_descriptions.size());
 	actions::description desc(std::string(tag), bit_index);
-	auto* desc_ptr = m_descriptions.add(desc.id(), std::move(desc));
+	auto* desc_ptr = m_descriptions.add(action_id, std::move(desc));
 
 	return *desc_ptr;
 }

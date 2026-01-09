@@ -40,7 +40,7 @@ export namespace gs {
 				}
 			);
 
-			gse::renderer::set_ui_focus(m_show_cross_hair);
+			gse::set_ui_focus(m_show_cross_hair);
 		}
 
 	private:

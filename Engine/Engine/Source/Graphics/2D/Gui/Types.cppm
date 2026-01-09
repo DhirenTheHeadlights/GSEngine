@@ -7,25 +7,23 @@ import gse.utility;
 
 import :font;
 import :texture;
-import :text_renderer;
 import :sprite_renderer;
+import :text_renderer;
 
 export namespace gse::gui {
 	struct style {
 		unitless::vec4 color_title_bar = { 0.15f, 0.15f, 0.15f, 0.9f };
-        unitless::vec4 color_menu_body = { 0.1f, 0.1f, 0.1f, 0.01f };
-        unitless::vec4 color_text = { 0.9f, 0.9f, 0.9f, 1.0f };
-        unitless::vec4 color_dock_preview = { 0.2f, 0.2f, 0.8f, 0.4f };
-        unitless::vec4 color_dock_widget = { 0.8f, 0.8f, 0.8f, 0.5f };
+		unitless::vec4 color_menu_body = { 0.1f, 0.1f, 0.1f, 0.01f };
+		unitless::vec4 color_text = { 0.9f, 0.9f, 0.9f, 1.0f };
+		unitless::vec4 color_dock_preview = { 0.2f, 0.2f, 0.8f, 0.4f };
+		unitless::vec4 color_dock_widget = { 0.8f, 0.8f, 0.8f, 0.5f };
 		unitless::vec4 color_widget_background = { 0.2f, 0.2f, 0.2f, 0.5f };
 		unitless::vec4 color_widget_fill = { 0.2f, 0.6f, 0.2f, 0.8f };
-
-        float padding = 10.f;
-        float title_bar_height = 30.f;
-        float resize_border_thickness = 8.f;
-        unitless::vec2 min_menu_size = { 150.f, 100.f };
-
-        float font_size = 16.f;
+		float padding = 10.f;
+		float title_bar_height = 30.f;
+		float resize_border_thickness = 8.f;
+		unitless::vec2 min_menu_size = { 150.f, 100.f };
+		float font_size = 16.f;
 		std::filesystem::path font;
 	};
 
@@ -43,6 +41,7 @@ export namespace gse::gui {
 		bottom_right,
 	};
 }
+
 namespace gse::gui::dock {
 	enum class location {
 		none,
@@ -72,46 +71,43 @@ export namespace gse::gui {
 		float dock_split_ratio = 0.5f;
 	};
 
-	struct widget_context;
+	struct draw_context;
 
 	struct menu : identifiable, identifiable_owned {
 		explicit menu(
 			std::string_view tag,
 			const menu_data& data
-		) : identifiable(tag),
-			identifiable_owned(data.parent_id),
-			rect(data.rect),
-			dock_split_ratio(data.dock_split_ratio),
-			docked_to(data.docked_to) {
-			tab_contents.emplace_back(tag);
-		}
+		);
 
 		ui_rect rect;
-
 		unitless::vec2 grab_offset;
 		std::optional<unitless::vec2> pre_docked_size;
-
 		bool grabbed = false;
 		float dock_split_ratio = 0.5f;
-
 		resize_handle active_resize_handle = resize_handle::none;
 		dock::location docked_to = dock::location::none;
-
 		std::vector<std::string> tab_contents;
-		std::vector<std::function<void(widget_context&)>> commands;
-
 		std::uint32_t active_tab_index = 0;
 		bool was_begun_this_frame = false;
 	};
 
-	struct widget_context {
+	struct draw_context {
 		menu* current_menu;
-        const style& style;
-        renderer::sprite& sprite_renderer;
-        renderer::text& text_renderer;
-        resource::handle<font> font;
-        resource::handle<texture> blank_texture;
-        unitless::vec2& layout_cursor;
+		const style& style;
+		const input::state& input;
+		resource::handle<font> font;
+		resource::handle<texture> blank_texture;
+		unitless::vec2& layout_cursor;
+		std::vector<renderer::sprite_command>& sprites;
+		std::vector<renderer::text_command>& texts;
+
+		auto queue_sprite(
+			const renderer::sprite_command& cmd
+		) const -> void;
+
+		auto queue_text(
+			const renderer::text_command& cmd
+		) const -> void;
 	};
 }
 
@@ -141,4 +137,21 @@ namespace gse::gui {
 		states::resizing,
 		states::resizing_divider
 	>;
+}
+
+gse::gui::menu::menu(std::string_view tag, const menu_data& data)
+	: identifiable(tag)
+	, identifiable_owned(data.parent_id)
+	, rect(data.rect)
+	, dock_split_ratio(data.dock_split_ratio)
+	, docked_to(data.docked_to) {
+	tab_contents.emplace_back(tag);
+}
+
+auto gse::gui::draw_context::queue_sprite(const renderer::sprite_command& cmd) const -> void {
+	sprites.push_back(cmd);
+}
+
+auto gse::gui::draw_context::queue_text(const renderer::text_command& cmd) const -> void {
+	texts.push_back(cmd);
 }

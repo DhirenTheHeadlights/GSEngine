@@ -37,25 +37,9 @@ export namespace gse::network {
 		bool allow_handoff = false;
 	};
 
-	using net_read_set = read_set<physics::motion_component, render_component>;
-	using net_write_set = write_set<physics::motion_component, render_component>;
-
-	class system final : public ecs_system<net_read_set, net_write_set> {
+	class system final : public gse::system {
 	public:
-		using schedule = system_schedule<
-			system_stage<
-				system_stage_kind::update,
-				net_read_set,
-				net_write_set
-			>,
-			system_stage<
-				system_stage_kind::shutdown,
-				gse::read_set<>,
-				gse::write_set<>
-			>
-		>;
-
-		using ecs_system::ecs_system;
+		system() = default;
 
 		~system(
 		) override = default;
@@ -104,10 +88,18 @@ export namespace gse::network {
 		auto send(
 			const T& m
 		) -> void;
+
+		auto drain(
+			const std::function<void(inbox_message&)>& handler,
+			time_t<std::uint32_t> timeout = milliseconds(0)
+		) -> void;
 	private:
 		std::unique_ptr<client> m_client;
 		std::vector<std::unique_ptr<discovery_provider>> m_providers;
 		std::vector<discovery_result> m_available_servers;
+
+		std::mutex m_user_inbox_mutex;
+		std::vector<inbox_message> m_user_inbox;
 
 		struct key_hash {
 			auto operator()(const address& a) const noexcept -> size_t {
@@ -142,27 +134,35 @@ auto gse::network::system::update() -> void {
 		return;
 	}
 
-	m_client->drain([&, this](const inbox_message& msg) {
-		match(msg)
-			.if_is<connection_accepted>([](const connection_accepted&) {
-				std::println("Connected to server.");
-			})
-			.else_if_is<replication_message>([&](replication_message& rep) {
-				const std::span data(rep.payload);
-				bitstream stream(data);
+	m_client->drain([this](inbox_message& msg) {
+		if (auto* rep = std::get_if<replication_message>(&msg)) {
+			const std::span data(rep->payload);
+			bitstream stream(data);
 
-				match_and_apply_components(
-					stream, 
-					rep.id,
-					[&]<typename T>(const component_upsert<T>& m) {
-						this->upsert_component<T>(m.owner_id, m.data);
-					},
-					[&]<typename T>(const component_remove<T>& m) {
-						this->remove_component<T>(m.owner_id);
-					}
-				);
-			});
+			match_and_apply_components(
+				stream,
+				rep->id,
+				[&]<typename T>(const component_upsert<T>& m) {
+					this->defer_add<T>(m.owner_id, m.data);
+				},
+				[&]<typename T>(const component_remove<T>& m) {
+					this->defer_remove<T>(m.owner_id);
+				}
+			);
+
+			return;
+		}
+
+		{
+			std::lock_guard lk(m_user_inbox_mutex);
+			m_user_inbox.emplace_back(msg);
+		}
 	});
+
+	if (m_client->current_state() == client::state::connected) {
+		const auto& a = system_of<actions::system>();
+		m_client->push_input(a.current_state(), a.axis1_ids(), a.axis2_ids());
+	}
 }
 
 auto gse::network::system::add_discovery_provider(std::unique_ptr<discovery_provider> p) -> void {
@@ -234,6 +234,22 @@ auto gse::network::system::state() const -> client::state {
 		return m_client->current_state();
 	}
 	return client::state::disconnected;
+}
+
+auto gse::network::system::drain(const std::function<void(inbox_message&)>& handler, time_t<std::uint32_t> timeout) -> void {
+	std::vector<inbox_message> batch;
+
+	{
+		std::lock_guard lk(m_user_inbox_mutex);
+		if (m_user_inbox.empty()) {
+			return;
+		}
+		batch.swap(m_user_inbox);
+	}
+
+	for (auto& m : batch) {
+		handler(m);
+	}
 }
 
 template <typename T>

@@ -21,7 +21,6 @@ public:
 	}
 
 	auto update() -> void override {
-		if (gse::keyboard::pressed(gse::key::r)) {
-		}
+		
 	}
 };

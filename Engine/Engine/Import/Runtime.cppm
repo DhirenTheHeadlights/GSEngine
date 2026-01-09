@@ -8,3 +8,4 @@ export import :actions_api;
 export import :gui_api;
 export import :network_api;
 export import :renderer_api;
+export import :input_api;

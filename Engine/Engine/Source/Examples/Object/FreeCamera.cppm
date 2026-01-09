@@ -18,7 +18,7 @@ export namespace gse {
 		explicit free_camera(const params& p) : m_initial_position(p.initial_position) {}
 
 		auto initialize() -> void override {
-			renderer::camera().set_position(m_initial_position);
+			camera().set_position(m_initial_position);
 
 			actions::bind_button_channel<"FreeCamera_Move_Forward">(owner_id(), key::w, m_forward);
 			actions::bind_button_channel<"FreeCamera_Move_Left">(owner_id(), key::a, m_left);
@@ -30,10 +30,10 @@ export namespace gse {
 			actions::bind_axis2_channel(
 				owner_id(),
 				actions::pending_axis2_info{
-					.left = m_left.action_id,
-					.right = m_right.action_id,
-					.back = m_back.action_id,
-					.fwd = m_forward.action_id,
+					.left = m_left.handle(),
+					.right = m_right.handle(),
+					.back = m_back.handle(),
+					.fwd = m_forward.handle(),
 					.scale = 1.f
 				},
 				m_move_axis_channel,
@@ -42,7 +42,7 @@ export namespace gse {
 		}
 
 		auto update() -> void override {
-			auto& camera = renderer::camera();
+			auto& camera = gse::camera();
 
 			const auto v = m_move_axis_channel.value;
 			const float lift = (m_up.held ? 1.f : 0.f) - (m_down.held ? 1.f : 0.f);
