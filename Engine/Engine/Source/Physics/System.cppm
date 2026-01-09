@@ -1,4 +1,4 @@
-export module gse.physics:simulation_system;
+export module gse.physics:system;
 
 import std;
 
@@ -11,7 +11,7 @@ import :collision_component;
 import :integrators;
 
 export namespace gse::physics {
-	class simulation_system final : public system {
+	class system final : public gse::system {
 	public:
 		auto update(
 		) -> void override;
@@ -20,19 +20,27 @@ export namespace gse::physics {
 	};
 }
 
-auto gse::physics::simulation_system::update() -> void {
-	time frame_time = system_clock::dt<time_t<float, seconds>>();
+auto gse::physics::system::update() -> void {
+	auto frame_time = system_clock::dt<time_t<float, seconds>>();
 	constexpr time_t<float, seconds> max_time_step = seconds(0.25f);
-	frame_time = min(frame_time, max_time_step);
+	frame_time = std::min(frame_time, max_time_step);
 	m_accumulator += frame_time;
 
 	const time_t<float, seconds> const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
 
-	write([&](
+	int steps = 0;
+	while (m_accumulator >= const_update_time) {
+		m_accumulator -= const_update_time;
+		steps++;
+	}
+
+	if (steps == 0) return;
+
+	write([steps, const_update_time](
 		const component_chunk<motion_component>& motion_chunk,
 		const component_chunk<collision_component>& collision_chunk
 	) {
-		while (m_accumulator >= const_update_time) {
+		for (int step = 0; step < steps; ++step) {
 			for (motion_component& motion : motion_chunk) {
 				motion.airborne = true;
 			}
@@ -89,8 +97,6 @@ auto gse::physics::simulation_system::update() -> void {
 				auto& [motion, collision] = tasks[i];
 				update_object(*motion, collision);
 			});
-
-			m_accumulator -= const_update_time;
 		}
 	});
 }

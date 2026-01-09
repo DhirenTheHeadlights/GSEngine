@@ -15,17 +15,17 @@ import gse.utility;
 import gse.platform;
 
 export namespace gse::renderer {
-	class system final : public basic_system {
+	class system final : public gse::system {
 	public:
 		explicit system(
 			context& context
 		);
 
 		auto initialize(
-		) const -> void;
+		) -> void override;
 
 		auto update(
-		) const -> void;
+		) -> void override;
 
 		auto begin_frame(
 		) -> bool override;
@@ -41,7 +41,7 @@ export namespace gse::renderer {
 
 		auto set_ui_focus(
 			bool focus
-		) const -> void;
+		) -> void;
 
 		auto frame_begun(
 		) const -> bool;
@@ -76,16 +76,16 @@ export namespace gse::renderer {
 		auto resource_state(
 			const id& id
 		) const -> resource::state;
+
 	private:
 		context* m_context = nullptr;
 		bool m_frame_begun = false;
 	};
 }
 
-gse::renderer::system::system(context& context) : m_context(std::addressof(context)) {
-}
+gse::renderer::system::system(context& context) : m_context(std::addressof(context)) {}
 
-auto gse::renderer::system::initialize() const -> void {
+auto gse::renderer::system::initialize() -> void {
 	auto& ctx = *m_context;
 
 	ctx.add_loader<texture>();
@@ -97,7 +97,7 @@ auto gse::renderer::system::initialize() const -> void {
 	ctx.compile();
 }
 
-auto gse::renderer::system::update() const -> void {
+auto gse::renderer::system::update() -> void {
 	auto& ctx = *m_context;
 
 	ctx.process_resource_queue();
@@ -105,7 +105,8 @@ auto gse::renderer::system::update() const -> void {
 	ctx.camera().update_orientation();
 
 	if (!ctx.ui_focus()) {
-		ctx.camera().process_mouse_movement(system_of<input::system>().current_state().mouse_delta());
+		const auto delta = system_of<input::system>().current_state().mouse_delta();
+		ctx.camera().process_mouse_movement(delta);
 	}
 }
 
@@ -157,7 +158,7 @@ auto gse::renderer::system::camera() const -> gse::camera& {
 	return m_context->camera();
 }
 
-auto gse::renderer::system::set_ui_focus(const bool focus) const -> void {
+auto gse::renderer::system::set_ui_focus(const bool focus) -> void {
 	m_context->set_ui_focus(focus);
 }
 

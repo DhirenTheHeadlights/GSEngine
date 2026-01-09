@@ -9,27 +9,8 @@ import :shader;
 import :shadow_renderer;
 
 export namespace gse::renderer {
-	class lighting final : public ecs_system<
-		read_set<
-			directional_light_component,
-			spot_light_component,
-			point_light_component
-		>,
-		write_set<>
-	> {
+	class lighting final : public gse::system {
 	public:
-		using schedule = system_schedule<
-			system_stage<
-				system_stage_kind::render,
-				gse::read_set<
-					directional_light_component,
-					spot_light_component,
-					point_light_component
-				>,
-				gse::write_set<>
-			>
-		>;
-
 		explicit lighting(
 			context& context
 		);
@@ -39,6 +20,7 @@ export namespace gse::renderer {
 
 		auto render(
 		) -> void override;
+
 	private:
 		context& m_context;
 		vk::raii::Pipeline m_pipeline = nullptr;
@@ -54,7 +36,7 @@ export namespace gse::renderer {
 	};
 }
 
-gse::renderer::lighting::lighting(context& context): m_context(context) {}
+gse::renderer::lighting::lighting(context& context) : m_context(context) {}
 
 auto gse::renderer::lighting::initialize() -> void {
 	auto& config = m_context.config();
@@ -193,7 +175,7 @@ auto gse::renderer::lighting::initialize() -> void {
 		}
 	};
 
-	auto& shadow_renderer = renderer<shadow>();
+	auto& shadow_r = system_of<shadow>();
 
 	std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>> array_image_infos;
 	std::vector<vk::DescriptorImageInfo> shadow_infos;
@@ -202,7 +184,7 @@ auto gse::renderer::lighting::initialize() -> void {
 	for (std::size_t i = 0; i < max_shadow_lights; ++i) {
 		shadow_infos.push_back({
 			.sampler = m_shadow_sampler,
-			.imageView = shadow_renderer.shadow_map_view(i),
+			.imageView = shadow_r.shadow_map_view(i),
 			.imageLayout = vk::ImageLayout::eDepthReadOnlyOptimal
 		});
 	}
@@ -430,7 +412,6 @@ auto gse::renderer::lighting::render() -> void {
 		++light_count;
 	}
 
-	// Loop directly over point light chunk
 	for (const auto& comp : point_chunk) {
 		if (light_count >= max_shadow_lights) {
 			break;

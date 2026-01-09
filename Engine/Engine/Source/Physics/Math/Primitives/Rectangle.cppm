@@ -45,6 +45,8 @@ export namespace gse {
         constexpr auto intersects(const rect_t& other) const -> bool;
         constexpr auto inset(const T& padding) const -> rect_t;
         constexpr auto intersection(const rect_t& other) const -> rect_t;
+
+        constexpr auto operator==(const rect_t& other) const -> bool = default;
     private:
         T m_min;
         T m_max;

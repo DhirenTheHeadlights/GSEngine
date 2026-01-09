@@ -15,38 +15,8 @@ import gse.platform;
 import gse.physics;
 
 export namespace gse::renderer {
-	class geometry final : public ecs_system<
-		read_set<
-			physics::motion_component,
-			physics::collision_component
-		>,
-		write_set<
-			physics::motion_component,
-			physics::collision_component,
-			render_component
-		>
-	> {
+	class geometry final : public gse::system {
 	public:
-		using schedule = system_schedule<
-			system_stage<
-				system_stage_kind::update,
-				gse::read_set<
-					physics::motion_component,
-					physics::collision_component
-				>,
-				gse::write_set<
-					physics::motion_component,
-					physics::collision_component,
-					render_component
-				>
-			>,
-			system_stage<
-				system_stage_kind::render,
-				gse::read_set<>,
-				gse::write_set<>
-			>
-		>;
-
 		explicit geometry(
 			context& context
 		);
@@ -62,6 +32,7 @@ export namespace gse::renderer {
 
 		auto render_queue(
 		) const -> std::span<const render_queue_entry>;
+
 	private:
 		context& m_context;
 		vk::raii::Pipeline m_pipeline = nullptr;
@@ -76,7 +47,7 @@ export namespace gse::renderer {
 	};
 }
 
-gse::renderer::geometry::geometry(context& context): m_context(context) {}
+gse::renderer::geometry::geometry(context& context) : m_context(context) {}
 
 auto gse::renderer::geometry::initialize() -> void {
 	auto& config = m_context.config();
@@ -272,58 +243,58 @@ auto gse::renderer::geometry::initialize() -> void {
 }
 
 auto gse::renderer::geometry::update() -> void {
-	auto [render_chunk] = this->write<render_component>();
-
-	if (render_chunk.size() == 0) {
-		return;
-	}
-
-	m_shader->set_uniform(
-		"CameraUBO.view",
-		m_context.camera().view(),
-		m_ubo_allocations.at("CameraUBO").allocation
-	);
-
-	m_shader->set_uniform(
-		"CameraUBO.proj",
-		m_context.camera().projection(m_context.window().viewport()),
-		m_ubo_allocations.at("CameraUBO").allocation
-	);
-
-	auto& out = m_render_queue.write();
-	out.clear();
-
-	for (auto& component : render_chunk) {
-		if (!component.render) {
-			continue;
+	this->write([this](const component_chunk<render_component>& render_chunk) {
+		if (render_chunk.empty()) {
+			return;
 		}
 
-		const auto* mc = render_chunk.other_read_from<physics::motion_component>(component);
-		const auto* cc = render_chunk.other_read_from<physics::collision_component>(component);
+		m_shader->set_uniform(
+			"CameraUBO.view",
+			m_context.camera().view(),
+			m_ubo_allocations.at("CameraUBO").allocation
+		);
 
-		for (auto& model_handle : component.model_instances) {
-			if (!model_handle.handle().valid() || mc == nullptr || cc == nullptr) {
+		m_shader->set_uniform(
+			"CameraUBO.proj",
+			m_context.camera().projection(m_context.window().viewport()),
+			m_ubo_allocations.at("CameraUBO").allocation
+		);
+
+		auto& out = m_render_queue.write();
+		out.clear();
+
+		for (auto& component : render_chunk) {
+			if (!component.render) {
 				continue;
 			}
 
-			model_handle.update(*mc, *cc);
-			out.append_range(model_handle.render_queue_entries());
-		}
-	}
+			const auto* mc = render_chunk.read_from<physics::motion_component>(component);
+			const auto* cc = render_chunk.read_from<physics::collision_component>(component);
 
-	std::ranges::sort(
-		out,
-		[](const render_queue_entry& a, const render_queue_entry& b) {
-			const auto* ma = a.model.resolve();
-			const auto* mb = b.model.resolve();
+			for (auto& model_handle : component.model_instances) {
+				if (!model_handle.handle().valid() || mc == nullptr || cc == nullptr) {
+					continue;
+				}
 
-			if (ma != mb) {
-				return ma < mb;
+				model_handle.update(*mc, *cc);
+				out.append_range(model_handle.render_queue_entries());
 			}
-
-			return a.index < b.index;
 		}
-	);
+
+		std::ranges::sort(
+			out,
+			[](const render_queue_entry& a, const render_queue_entry& b) {
+				const auto* ma = a.model.resolve();
+				const auto* mb = b.model.resolve();
+
+				if (ma != mb) {
+					return ma < mb;
+				}
+
+				return a.index < b.index;
+			}
+		);
+	});
 }
 
 auto gse::renderer::geometry::render() -> void {

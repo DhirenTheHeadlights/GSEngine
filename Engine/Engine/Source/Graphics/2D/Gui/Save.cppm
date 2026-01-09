@@ -72,8 +72,6 @@ auto gse::gui::save(id_mapped_collection<menu>& menus, const std::filesystem::pa
 
 		file << "[EndMenu]\n\n";
 	}
-
-	std::println("[gui.save] wrote {} menus to {}", menus.items().size(), file_path.string());
 }
 
 auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection<menu>& default_menus) -> id_mapped_collection<menu> {
@@ -126,8 +124,7 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
 		ss >> key;
 
 		if (key == "Tag:") {
-			std::string tag_q;
-			if (ss >> std::quoted(tag_q)) {
+			if (std::string tag_q; ss >> std::quoted(tag_q)) {
 				current_data->tag = tag_q;
 			}
 			else {
@@ -136,11 +133,9 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
 				trim_in_place(rest);
 				current_data->tag = rest;
 			}
-			std::println("[gui.load] tag='{}'", current_data->tag);
 		}
 		else if (key == "Owner:") {
-			std::string owner_q;
-			if (ss >> std::quoted(owner_q)) {
+			if (std::string owner_q; ss >> std::quoted(owner_q)) {
 				current_data->owner_tag = owner_q;
 			}
 			else {
@@ -184,13 +179,6 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
 				if (!rest.empty()) {
 					current_data->tab_tags.push_back(rest);
 				}
-			}
-
-			if (!current_data->tab_tags.empty()) {
-				std::println("[gui.load] tabs_count={} first='{}'", current_data->tab_tags.size(), current_data->tab_tags[0]);
-			}
-			else {
-				std::println("[gui.load] tabs_count=0");
 			}
 		}
 	}
@@ -241,6 +229,5 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
 		}
 	}
 
-	std::println("[gui.load] built {} menus from {}", new_layout.items().size(), file_path.string());
 	return new_layout;
 }

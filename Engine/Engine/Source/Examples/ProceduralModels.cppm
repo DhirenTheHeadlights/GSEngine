@@ -4,6 +4,7 @@ import std;
 
 import gse.graphics;
 import gse.physics;
+import gse.runtime;
 
 export namespace gse::procedural_model {
     auto box(

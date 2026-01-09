@@ -35,9 +35,12 @@ export namespace gse {
 		world* m_world = nullptr;
 	};
 
-	class world final : public hookable<world>, system_access {
+	class world final : public hookable<world> {
 	public:
-		explicit world(std::string_view name = "Unnamed World");
+		explicit world(
+			system_provider& provider,
+			std::string_view name = "Unnamed World"
+		);
 
 		auto direct(
 		) -> director;
@@ -74,6 +77,10 @@ export namespace gse {
 
 		auto registry(
 		) -> registry&;
+
+		template <typename S>
+		auto system_of(
+		) -> S&;
 	private:
 		friend class director;
 		friend struct local_input_source;
@@ -81,6 +88,8 @@ export namespace gse {
 		auto add_trigger(
 			const trigger& new_trigger
 		) -> void;
+
+		system_provider* m_provider = nullptr;
 
 		gse::registry m_registry;
 		std::unordered_map<gse::id, std::unique_ptr<gse::scene>> m_scenes;
@@ -91,7 +100,7 @@ export namespace gse {
 	};
 
 	template <typename InputSource>
-	class networked_world final : public hook<world>, public system_access {
+	class networked_world final : public hook<world> {
 	public:
 		using hook::hook;
 
@@ -106,7 +115,7 @@ export namespace gse {
 				return;
 			}
 
-			const auto& a = system_of<actions::system>();
+			auto& a = m_owner->system_of<actions::system>();
 
 			m_source.for_each_context(
 				*m_owner,
@@ -115,7 +124,7 @@ export namespace gse {
 						return;
 					}
 
-					a.sample_all_channels(*ctx.input);
+					a.sample_for_entity(*ctx.input, *ctx.client_id);
 				}
 			);
 
@@ -138,7 +147,7 @@ export namespace gse {
 		InputSource m_source;
 	};
 
-	struct local_input_source : system_access {
+	struct local_input_source {
 		id owner_id{};
 
 		template <typename Fn>
@@ -146,7 +155,7 @@ export namespace gse {
 			world& w,
 			Fn&& fn
 		) const -> void {
-			const auto& a = system_of<actions::system>();
+			const auto& a = w.system_of<actions::system>();
 
 			evaluation_context ctx{
 				.client_id = owner_id,
@@ -166,8 +175,10 @@ auto gse::director::when(const trigger& trigger) -> director& {
 	return *this;
 }
 
-gse::world::world(const std::string_view name) : hookable(name) {
-	struct default_world : hook<world>, system_access {
+gse::world::world(system_provider& provider, const std::string_view name)
+	: hookable(name),
+	  m_provider(std::addressof(provider)) {
+	struct default_world : hook<world> {
 		using hook::hook;
 
 		auto update() -> void override {
@@ -175,7 +186,7 @@ gse::world::world(const std::string_view name) : hookable(name) {
 				return;
 			}
 
-			auto& a = system_of<actions::system>();
+			const auto& a = m_owner->system_of<actions::system>();
 			const auto& s = a.current_state();
 
 			a.sample_all_channels(s);
@@ -200,9 +211,6 @@ gse::world::world(const std::string_view name) : hookable(name) {
 						new_scene->initialize();
 						new_scene->set_active(true);
 						m_owner->m_active_scene = new_scene->id();
-
-						a.finalize_bindings();
-
 						break;
 					}
 				}
@@ -235,6 +243,24 @@ gse::world::world(const std::string_view name) : hookable(name) {
 	};
 
 	add_hook<default_world>();
+}
+
+template <typename S>
+auto gse::world::system_of() -> S& {
+	assert(
+		m_provider != nullptr,
+		std::source_location::current(),
+		"world has no system_provider bound."
+	);
+
+	auto* p = m_provider->system_ptr(std::type_index(typeid(S)));
+	assert(
+		p != nullptr,
+		std::source_location::current(),
+		"requested system is not registered."
+	);
+
+	return *static_cast<S*>(p);
 }
 
 auto gse::world::direct() -> director {
@@ -276,8 +302,6 @@ auto gse::world::activate(const gse::id& scene_id) -> void {
 		new_scene->initialize();
 		new_scene->set_active(true);
 		m_active_scene = new_scene->id();
-
-		a.finalize_bindings();
 	}
 }
 

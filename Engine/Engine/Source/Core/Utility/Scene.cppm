@@ -35,8 +35,10 @@ export namespace gse {
 		auto entities(
 		) const -> std::span<const gse::id>;
 
+		auto registry(
+		) const -> registry&;
 	private:
-		registry& m_registry;
+		gse::registry& m_registry;
 		std::vector<gse::id> m_entities;
 		std::vector<gse::id> m_queue;
 
@@ -46,7 +48,7 @@ export namespace gse {
 	};
 }
 
-gse::scene::scene(registry& registry, const std::string_view name) 
+gse::scene::scene(gse::registry& registry, const std::string_view name) 
 	: hookable(name)
 	, m_registry(registry) {
 }
@@ -82,4 +84,8 @@ auto gse::scene::active() const -> bool {
 
 auto gse::scene::entities() const -> std::span<const gse::id> {
 	return m_entities;
+}
+
+auto gse::scene::registry() const -> gse::registry& {
+	return m_registry;
 }

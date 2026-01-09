@@ -11,23 +11,11 @@ import :camera;
 import :shader;
 
 export namespace gse::renderer {
-	struct physics_debug final : ecs_system<
-		read_set<physics::collision_component, physics::motion_component>,
-		write_set<>
-	> {
-		using schedule = system_schedule<
-			system_stage<
-				system_stage_kind::update,
-				gse::read_set<physics::collision_component, physics::motion_component>,
-				gse::write_set<>
-			>
-		>;
-
+	class physics_debug final : public gse::system {
+	public:
 		explicit physics_debug(
-			context& context,
-			registry& registry
-		) : ecs_system(registry), m_context(context) {
-		}
+			context& context
+		);
 
 		auto initialize(
 		) -> void override;
@@ -48,6 +36,7 @@ export namespace gse::renderer {
 		) const -> bool {
 			return m_enabled;
 		}
+
 	private:
 		struct debug_vertex {
 			unitless::vec3 position;
@@ -92,6 +81,8 @@ export namespace gse::renderer {
 		) -> void;
 	};
 }
+
+gse::renderer::physics_debug::physics_debug(context& context) : m_context(context) {}
 
 auto gse::renderer::physics_debug::ensure_vertex_capacity(const std::size_t required_vertex_count) -> void {
 	if (required_vertex_count <= m_max_vertices && *m_vertex_buffer.buffer) {
@@ -375,24 +366,17 @@ auto gse::renderer::physics_debug::update() -> void {
 	auto& vertices = m_vertices.write();
 	vertices.clear();
 
-	this->for_each_read_chunk<physics::collision_component>(
-		[&](const auto& chunk) {
-			for (const physics::collision_component& coll : chunk) {
-				if (!coll.resolve_collisions) {
-					continue;
-				}
-
-				build_obb_lines_for_collider(coll, vertices);
-
-				const physics::motion_component* mc = chunk.template other_read_from<physics::motion_component>(coll);
-				if (!mc) {
-					continue;
-				}
-
-				build_contact_debug_for_collider(coll, *mc, vertices);
-			}
+	for (const auto coll_view = this->read<physics::collision_component>(); const auto& coll : coll_view) {
+		if (!coll.resolve_collisions) {
+			continue;
 		}
-	);
+
+		build_obb_lines_for_collider(coll, vertices);
+
+		if (const auto* mc = coll_view.associated<physics::motion_component>(coll)) {
+			build_contact_debug_for_collider(coll, *mc, vertices);
+		}
+	}
 
 	if (!vertices.empty()) {
 		ensure_vertex_capacity(vertices.size());
@@ -412,12 +396,11 @@ auto gse::renderer::physics_debug::render() -> void {
 	auto& config = m_context.config();
 	const auto command = config.frame_context().command_buffer;
 
-	const auto cam_block = m_shader->uniform_block("CameraUBO");
-
 	m_shader->set_uniform("CameraUBO.view", m_context.camera().view(), m_ubo_allocations.at("CameraUBO").allocation);
 	m_shader->set_uniform("CameraUBO.proj", m_context.camera().projection(m_context.window().viewport()), m_ubo_allocations.at("CameraUBO").allocation);
 
-	if (m_vertices.read().empty()) {
+	const auto& verts = m_vertices.read();
+	if (verts.empty()) {
 		return;
 	}
 
@@ -437,11 +420,6 @@ auto gse::renderer::physics_debug::render() -> void {
 	};
 
 	vulkan::render(config, rendering_info, [&] {
-		const auto& verts = m_vertices.read();
-		if (verts.empty()) {
-			return;
-		}
-
 		command.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
 
 		const vk::DescriptorSet sets[] = {
@@ -460,7 +438,6 @@ auto gse::renderer::physics_debug::render() -> void {
 		constexpr vk::DeviceSize offsets[] = { 0 };
 
 		command.bindVertexBuffers(0, 1, &vb, offsets);
-
 		command.draw(static_cast<std::uint32_t>(verts.size()), 1, 0, 0);
 	});
 }

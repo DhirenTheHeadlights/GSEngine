@@ -3,68 +3,79 @@ export module gse.graphics:selectable_widget;
 import std;
 
 import gse.platform;
+import gse.utility;
 
 import :types;
 import :ids;
-import :text_renderer;
 
 export namespace gse::gui::draw {
-    auto selectable(
-        const widget_context& context,
-        const std::string& name,
-        bool selected,
-        id& hot_widget_id,
-        id active_widget_id
-    ) -> void;
+	auto selectable(
+		const draw_context& ctx,
+		const std::string& name,
+		bool selected,
+		id& hot_widget_id,
+		id& active_widget_id
+	) -> bool;
 }
 
-auto gse::gui::draw::selectable(const widget_context& context, const std::string& name, const bool selected, id& hot_widget_id, id active_widget_id) -> void {
-    if (!context.current_menu) return;
+auto gse::gui::draw::selectable(const draw_context& ctx, const std::string& name, const bool selected, id& hot_widget_id, id& active_widget_id) -> bool {
+	if (!ctx.current_menu) {
+		return false;
+	}
 
-    const auto widget_id = ids::make(name);
+	const id widget_id = ids::make(name);
 
-    const float widget_height = context.font->line_height(context.style.font_size) + context.style.padding * 0.5f;
-    const auto content_rect = context.current_menu->rect.inset({ context.style.padding, context.style.padding });
+	const float widget_height = ctx.font->line_height(ctx.style.font_size) + ctx.style.padding * 0.5f;
+	const ui_rect content_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
+	const ui_rect row_rect = ui_rect::from_position_size(
+		{ content_rect.left(), ctx.layout_cursor.y() },
+		{ content_rect.width(), widget_height }
+	);
 
-    const ui_rect row_rect = ui_rect::from_position_size(
-        { content_rect.left(), context.layout_cursor.y() },
-        { content_rect.width(), widget_height }
-    );
+	const bool hovered = row_rect.contains(ctx.input.mouse_position());
 
-    if (row_rect.contains(mouse::position())) {
-        hot_widget_id = widget_id;
-    }
+	if (hovered) {
+		hot_widget_id = widget_id;
+	}
 
-    unitless::vec4 bg = context.style.color_widget_background;
-    if (selected) {
-        bg = context.style.color_widget_fill;
-    }
-    else if (hot_widget_id == widget_id) {
-        bg = context.style.color_dock_widget;
-    }
-    if (active_widget_id == widget_id) {
-        bg = context.style.color_widget_fill;
-    }
+	if (hovered && ctx.input.mouse_button_pressed(mouse_button::button_1)) {
+		active_widget_id = widget_id;
+	}
 
-    context.sprite_renderer.queue({
+	unitless::vec4 bg = ctx.style.color_widget_background;
+	if (selected || active_widget_id == widget_id) {
+		bg = ctx.style.color_widget_fill;
+	} else if (hot_widget_id == widget_id) {
+		bg = ctx.style.color_dock_widget;
+	}
+
+	ctx.queue_sprite({
 		.rect = row_rect,
 		.color = bg,
-		.texture = context.blank_texture
-    });
+		.texture = ctx.blank_texture
+	});
 
-    const float text_w = context.font->width(name, context.style.font_size);
-    const unitless::vec2 text_pos = {
+	const float text_w = ctx.font->width(name, ctx.style.font_size);
+	const unitless::vec2 text_pos = {
 		row_rect.center().x() - text_w / 2.f,
-		row_rect.center().y() + context.style.font_size / 2.f
-    };
+		row_rect.center().y() + ctx.style.font_size / 2.f
+	};
 
-    context.text_renderer.draw_text({
-		.font = context.font,
+	ctx.queue_text({
+		.font = ctx.font,
 		.text = name,
 		.position = text_pos,
-		.scale = context.style.font_size,
+		.scale = ctx.style.font_size,
 		.clip_rect = row_rect
-    });
+	});
 
-    context.layout_cursor.y() -= widget_height + context.style.padding;
+	ctx.layout_cursor.y() -= widget_height + ctx.style.padding;
+
+	bool clicked = false;
+	if (ctx.input.mouse_button_released(mouse_button::button_1) && active_widget_id == widget_id) {
+		clicked = hovered;
+		active_widget_id = {};
+	}
+
+	return clicked;
 }

@@ -7,6 +7,8 @@ import :registry;
 import :id;
 import :task;
 import :double_buffer;
+import :lambda_traits;
+import :frame_sync;
 
 export namespace gse {
 	class scheduler;
@@ -41,7 +43,7 @@ export namespace gse {
 		) const -> const U*;
 
 		template <is_component U>
-		auto get_from(
+		auto associated(
 			const T& component
 		) const -> const U*;
 
@@ -136,6 +138,10 @@ export namespace gse {
 			const std::vector<T>* m_data;
 		};
 
+		using value_type = T;
+
+		channel();
+
 		auto read(
 		) const -> reader;
 
@@ -154,6 +160,58 @@ export namespace gse {
 	private:
 		double_buffer<std::vector<T>> m_buffer;
 	};
+
+	struct channel_base {
+		virtual ~channel_base(
+		) = default;
+	};
+
+	template <typename T>
+	struct typed_channel final : channel_base {
+		channel<T> data;
+	};
+
+	using channel_factory_fn = std::unique_ptr<channel_base>(*)();
+
+	class system_provider {
+	public:
+		virtual ~system_provider(
+		) = default;
+
+		virtual auto system_ptr(
+			std::type_index idx
+		) -> void* = 0;
+
+		virtual auto system_ptr(
+			std::type_index idx
+		) const -> const void* = 0;
+
+		virtual auto ensure_channel(
+			std::type_index idx,
+			channel_factory_fn factory
+		) -> channel_base& = 0;
+	};
+
+	template <typename T>
+	struct extract_channel_type;
+
+	template <typename T>
+	struct extract_channel_type<channel<T>> {
+		using type = T;
+	};
+
+	template <typename T>
+	struct extract_channel_type<channel<T>&> {
+		using type = T;
+	};
+
+	template <typename T>
+	struct extract_channel_type<const channel<T>&> {
+		using type = T;
+	};
+
+	template <typename T>
+	using extract_channel_type_t = typename extract_channel_type<T>::type;
 
 	struct pending_work {
 		std::vector<std::type_index> component_writes;
@@ -184,12 +242,12 @@ export namespace gse {
 
 	template <typename R, typename C, typename... Args>
 	struct callable_traits<R(C::*)(Args...) const> {
-		using component_types = std::tuple<typename extract_component<std::decay_t<Args>>::type...>;
+		using component_types = std::tuple<std::type_identity<typename extract_component<std::decay_t<Args>>::type>...>;
 	};
 
 	template <typename R, typename C, typename... Args>
 	struct callable_traits<R(C::*)(Args...)> {
-		using component_types = std::tuple<typename extract_component<std::decay_t<Args>>::type...>;
+		using component_types = std::tuple<std::type_identity<typename extract_component<std::decay_t<Args>>::type>...>;
 	};
 
 	template <typename F>
@@ -231,20 +289,20 @@ export namespace gse {
 		auto read(
 		) const -> std::tuple<component_view<Ts>...>;
 
-		template <std::derived_from<system> S>
+		template <std::derived_from<gse::system> S>
 		auto system_of(
 		) const -> const S&;
 
 		template <typename T>
 		auto channel_of(
-		) const -> channel<T>::reader;
+		) const -> typename channel<T>::reader;
 
 		template <typename F>
 		auto write(
 			F&& f
 		) -> void;
 
-		template <typename T, typename F>
+		template <typename F>
 		auto publish(
 			F&& f
 		) -> void;
@@ -252,7 +310,7 @@ export namespace gse {
 		template <is_component T>
 		auto defer_add(
 			id entity,
-			T::network_data_t data
+			typename T::network_data_t data
 		) -> void;
 
 		template <is_component T>
@@ -262,14 +320,14 @@ export namespace gse {
 
 	private:
 		registry* m_registry = nullptr;
-		scheduler* m_scheduler = nullptr;
+		system_provider* m_scheduler = nullptr;
 		std::vector<pending_work> m_pending;
 		std::vector<std::move_only_function<void(registry&)>> m_deferred;
 
 		template <typename F, is_component... Ts>
 		auto write_impl(
 			F&& f,
-			std::tuple<Ts...>
+			std::tuple<std::type_identity<Ts>...>
 		) -> void;
 
 		auto take_pending(
@@ -311,13 +369,13 @@ auto gse::component_view<T>::operator[](std::size_t i) const -> const T& {
 
 template <gse::is_component T>
 template <gse::is_component U>
-auto gse::component_view<T>::get(id owner) const -> const U* {
+auto gse::component_view<T>::get(const id owner) const -> const U* {
 	return m_reg->try_linked_object_read<U>(owner);
 }
 
 template <gse::is_component T>
 template <gse::is_component U>
-auto gse::component_view<T>::get_from(const T& component) const -> const U* {
+auto gse::component_view<T>::associated(const T& component) const -> const U* {
 	return get<U>(component.owner_id());
 }
 
@@ -357,7 +415,7 @@ auto gse::component_chunk<T>::operator[](std::size_t i) const -> T& {
 
 template <gse::is_component T>
 template <gse::is_component U>
-auto gse::component_chunk<T>::read(id owner) const -> const U* {
+auto gse::component_chunk<T>::read(const id owner) const -> const U* {
 	return m_reg->try_linked_object_read<U>(owner);
 }
 
@@ -369,7 +427,7 @@ auto gse::component_chunk<T>::read_from(const T& component) const -> const U* {
 
 template <gse::is_component T>
 template <gse::is_component U>
-auto gse::component_chunk<T>::write(id owner) const -> U* {
+auto gse::component_chunk<T>::write(const id owner) const -> U* {
 	return m_reg->try_linked_object_write<U>(owner);
 }
 
@@ -421,6 +479,13 @@ auto gse::channel<T>::reader::operator[](std::size_t i) const -> const T& {
 }
 
 template <typename T>
+gse::channel<T>::channel() {
+	frame_sync::on_end([this] {
+		flip();
+	});
+}
+
+template <typename T>
 auto gse::channel<T>::read() const -> reader {
 	return reader(&m_buffer.read());
 }
@@ -438,8 +503,8 @@ auto gse::channel<T>::emplace(Args&&... args) -> T& {
 
 template <typename T>
 auto gse::channel<T>::flip() -> void {
-	m_buffer.write().clear();
 	m_buffer.flip();
+	m_buffer.write().clear();
 }
 
 auto gse::system::initialize() -> void {}
@@ -458,7 +523,7 @@ auto gse::system::end_frame() -> void {}
 
 template <gse::is_component T>
 auto gse::system::read() const -> component_view<T> {
-	return component_view<T>{m_registry, m_registry->linked_objects_read<T>()};
+	return component_view<T>{ m_registry, m_registry->linked_objects_read<T>() };
 }
 
 template <gse::is_component... Ts>
@@ -469,12 +534,17 @@ auto gse::system::read() const -> std::tuple<component_view<Ts>...> {
 
 template <std::derived_from<gse::system> S>
 auto gse::system::system_of() const -> const S& {
-	return *static_cast<const S*>(m_scheduler->system_ptr(std::type_index(typeid(S))));
+	const auto* p = static_cast<const system_provider*>(m_scheduler)->system_ptr(std::type_index(typeid(S)));
+	return *static_cast<const S*>(p);
 }
 
 template <typename T>
-auto gse::system::channel_of() const -> channel<T>::reader {
-	return const_cast<scheduler*>(m_scheduler)->get_channel<T>().read();
+auto gse::system::channel_of() const -> typename channel<T>::reader {
+	auto& base = m_scheduler->ensure_channel(std::type_index(typeid(T)), +[]() -> std::unique_ptr<channel_base> {
+		return std::make_unique<typed_channel<T>>();
+	});
+
+	return static_cast<typed_channel<T>&>(base).data.read();
 }
 
 template <typename F>
@@ -486,8 +556,8 @@ auto gse::system::write(F&& f) -> void {
 }
 
 template <typename F, gse::is_component... Ts>
-auto gse::system::write_impl(F&& f, std::tuple<Ts...>) -> void {
-	m_pending.push_back({
+auto gse::system::write_impl(F&& f, std::tuple<std::type_identity<Ts>...>) -> void {
+	m_pending.push_back(pending_work{
 		.component_writes = { std::type_index(typeid(Ts))... },
 		.channel_write = typeid(void),
 		.execute = [this, func = std::forward<F>(f)]() mutable {
@@ -513,13 +583,20 @@ auto gse::system::write_impl(F&& f, std::tuple<Ts...>) -> void {
 	});
 }
 
-template <typename T, typename F>
+template <typename F>
 auto gse::system::publish(F&& f) -> void {
-	m_pending.push_back({
+	using channel_type = std::remove_cvref_t<first_arg_t<F>>;
+	using t = extract_channel_type_t<channel_type>;
+
+	m_pending.push_back(pending_work{
 		.component_writes = {},
-		.channel_write = std::type_index(typeid(T)),
+		.channel_write = std::type_index(typeid(t)),
 		.execute = [this, func = std::forward<F>(f)]() mutable {
-			func(m_scheduler->get_channel<T>());
+			auto& base = m_scheduler->ensure_channel(std::type_index(typeid(t)), +[]() -> std::unique_ptr<channel_base> {
+				return std::make_unique<typed_channel<t>>();
+			});
+
+			func(static_cast<typed_channel<t>&>(base).data);
 		}
 	});
 }

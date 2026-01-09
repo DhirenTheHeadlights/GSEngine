@@ -5,38 +5,51 @@ import std;
 import :system;
 import :registry;
 import :task;
+
 import gse.assert;
 
 export namespace gse {
-	class scheduler {
+	template <typename T>
+	concept is_system = std::derived_from<T, system>;
+
+	class scheduler : public system_provider {
 	public:
 		scheduler(
 		) = default;
 
-		template <std::derived_from<system> S, typename... Args>
+		template <is_system S, typename... Args>
 		auto emplace(
 			registry& reg,
 			Args&&... args
 		) -> S&;
 
-		template <std::derived_from<system> S>
+		template <is_system S>
 		auto get(
 		) -> S&;
 
-		template <std::derived_from<system> S>
+		template <is_system S>
 		auto get(
 		) const -> const S&;
 
-		template <std::derived_from<system> S>
+		template <is_system S>
 		auto has(
 		) const -> bool;
 
 		auto system_ptr(
 			std::type_index idx
-		) const -> const void*;
+		) -> void* override;
+
+		auto system_ptr(
+			std::type_index idx
+		) const -> const void* override;
+
+		auto ensure_channel(
+			std::type_index idx,
+			channel_factory_fn factory
+		) -> channel_base& override;
 
 		template <typename T>
-		auto get_channel(
+		auto channel(
 		) -> channel<T>&;
 
 		auto initialize(
@@ -46,12 +59,10 @@ export namespace gse {
 		) -> void;
 
 		auto render(
+			const std::function<void()>& in_frame = {}
 		) -> void;
 
 		auto shutdown(
-		) -> void;
-
-		auto flip_channels(
 		) -> void;
 
 		auto flush_deferred(
@@ -59,7 +70,6 @@ export namespace gse {
 
 		auto clear(
 		) -> void;
-
 	private:
 		struct node_base {
 			virtual ~node_base(
@@ -96,7 +106,7 @@ export namespace gse {
 			) -> void = 0;
 		};
 
-		template <std::derived_from<system> S>
+		template <is_system S>
 		struct node final : node_base {
 			S sys;
 
@@ -136,22 +146,6 @@ export namespace gse {
 			) -> void override;
 		};
 
-		struct channel_base {
-			virtual ~channel_base(
-			) = default;
-
-			virtual auto flip(
-			) -> void = 0;
-		};
-
-		template <typename T>
-		struct typed_channel final : channel_base {
-			channel<T> data;
-
-			auto flip(
-			) -> void override;
-		};
-
 		std::vector<std::unique_ptr<node_base>> m_nodes;
 		std::unordered_map<std::type_index, node_base*> m_index;
 		std::unordered_map<std::type_index, std::unique_ptr<channel_base>> m_channels;
@@ -175,7 +169,7 @@ export namespace gse {
 	};
 }
 
-template <std::derived_from<gse::system> S, typename... Args>
+template <gse::is_system S, typename... Args>
 auto gse::scheduler::emplace(registry& reg, Args&&... args) -> S& {
 	auto ptr = std::make_unique<node<S>>(std::forward<Args>(args)...);
 	auto* raw = ptr.get();
@@ -189,26 +183,26 @@ auto gse::scheduler::emplace(registry& reg, Args&&... args) -> S& {
 	return raw->sys;
 }
 
-template <std::derived_from<gse::system> S>
+template <gse::is_system S>
 auto gse::scheduler::get() -> S& {
 	const auto it = m_index.find(std::type_index(typeid(S)));
 	assert(it != m_index.end(), std::source_location::current(), "system not found");
 	return static_cast<node<S>*>(it->second)->sys;
 }
 
-template <std::derived_from<gse::system> S>
+template <gse::is_system S>
 auto gse::scheduler::get() const -> const S& {
 	const auto it = m_index.find(std::type_index(typeid(S)));
 	assert(it != m_index.end(), std::source_location::current(), "system not found");
 	return static_cast<const node<S>*>(it->second)->sys;
 }
 
-template <std::derived_from<gse::system> S>
+template <gse::is_system S>
 auto gse::scheduler::has() const -> bool {
 	return m_index.contains(std::type_index(typeid(S)));
 }
 
-auto gse::scheduler::system_ptr(std::type_index idx) const -> const void* {
+auto gse::scheduler::system_ptr(const std::type_index idx) -> void* {
 	const auto it = m_index.find(idx);
 	if (it == m_index.end()) {
 		return nullptr;
@@ -216,16 +210,31 @@ auto gse::scheduler::system_ptr(std::type_index idx) const -> const void* {
 	return it->second->ptr();
 }
 
-template <typename T>
-auto gse::scheduler::get_channel() -> channel<T>& {
-	auto idx = std::type_index(typeid(T));
+auto gse::scheduler::system_ptr(const std::type_index idx) const -> const void* {
+	const auto it = m_index.find(idx);
+	if (it == m_index.end()) {
+		return nullptr;
+	}
+	return it->second->ptr();
+}
+
+auto gse::scheduler::ensure_channel(const std::type_index idx, const channel_factory_fn factory) -> channel_base& {
 	auto it = m_channels.find(idx);
 
 	if (it == m_channels.end()) {
-		it = m_channels.emplace(idx, std::make_unique<typed_channel<T>>()).first;
+		it = m_channels.emplace(idx, factory()).first;
 	}
 
-	return static_cast<typed_channel<T>*>(it->second.get())->data;
+	return *it->second;
+}
+
+template <typename T>
+auto gse::scheduler::channel() -> gse::channel<T>& {
+	auto& base = ensure_channel(std::type_index(typeid(T)), +[]() -> std::unique_ptr<channel_base> {
+		return std::make_unique<typed_channel<T>>();
+	});
+
+	return static_cast<typed_channel<T>&>(base).data;
 }
 
 auto gse::scheduler::initialize() const -> void {
@@ -238,39 +247,50 @@ auto gse::scheduler::update() -> void {
 	run_stage(&node_base::update);
 }
 
-auto gse::scheduler::render() -> void {
-	std::vector started(m_nodes.size(), false);
+auto gse::scheduler::render(const std::function<void()>& in_frame) -> void {
+    std::vector started(m_nodes.size(), false);
 
-	if (!m_nodes.empty()) {
-		started[0] = m_nodes[0]->begin_frame();
+    if (!m_nodes.empty()) {
+        started[0] = m_nodes[0]->begin_frame();
+        if (!started[0]) return;
 
-		if (!started[0]) {
-			return;
-		}
+        for (std::size_t i = 1; i < m_nodes.size(); ++i) {
+            started[i] = m_nodes[i]->begin_frame();
+        }
+    }
 
-		for (std::size_t i = 1; i < m_nodes.size(); ++i) {
-			started[i] = m_nodes[i]->begin_frame();
+    run_stage(&node_base::render);
+
+    if (in_frame) {
+        in_frame();
+    }
+
+    for (std::size_t i = m_nodes.size(); i-- > 0;) {
+        if (started[i]) {
+            m_nodes[i]->end_frame();
+        }
+    }
+
+	std::vector<pending_work> all_work;
+
+	for (const auto& n : m_nodes) {
+		for (auto work = n->take_pending(); auto& w : work) {
+			all_work.push_back(std::move(w));
 		}
 	}
 
-	run_stage(&node_base::render);
+	if (all_work.empty()) {
+		return;
+	}
 
-	for (std::size_t i = m_nodes.size(); i-- > 0;) {
-		if (started[i]) {
-			m_nodes[i]->end_frame();
-		}
+	for (const auto phases = build_phases(all_work); auto& phase : phases) {
+		execute_phase(phase);
 	}
 }
 
 auto gse::scheduler::shutdown() -> void {
 	for (auto it = m_nodes.rbegin(); it != m_nodes.rend(); ++it) {
 		(*it)->shutdown();
-	}
-}
-
-auto gse::scheduler::flip_channels() -> void {
-	for (auto& ch : m_channels | std::views::values) {
-		ch->flip();
 	}
 }
 
@@ -286,64 +306,58 @@ auto gse::scheduler::clear() -> void {
 	m_channels.clear();
 }
 
-template <std::derived_from<gse::system> S>
+template <gse::is_system S>
 template <typename... Args>
-gse::scheduler::node<S>::node(Args&&... args)
-	: sys(std::forward<Args>(args)...) {}
+gse::scheduler::node<S>::node(Args&&... args) : sys(std::forward<Args>(args)...) {}
 
-template <std::derived_from<gse::system> S>
+template <gse::is_system S>
 auto gse::scheduler::node<S>::ptr() -> void* {
 	return &sys;
 }
 
-template <std::derived_from<gse::system> S>
+template <gse::is_system S>
 auto gse::scheduler::node<S>::ptr() const -> const void* {
 	return &sys;
 }
 
-template <std::derived_from<gse::system> S>
+template <gse::is_system S>
 auto gse::scheduler::node<S>::initialize() -> void {
 	sys.initialize();
 }
 
-template <std::derived_from<gse::system> S>
+template <gse::is_system S>
 auto gse::scheduler::node<S>::update() -> void {
 	sys.update();
 }
 
-template <std::derived_from<gse::system> S>
+template <gse::is_system S>
 auto gse::scheduler::node<S>::render() -> void {
 	sys.render();
 }
 
-template <std::derived_from<gse::system> S>
+template <gse::is_system S>
 auto gse::scheduler::node<S>::shutdown() -> void {
 	sys.shutdown();
 }
 
-template <std::derived_from<gse::system> S>
+template <gse::is_system S>
 auto gse::scheduler::node<S>::begin_frame() -> bool {
 	return sys.begin_frame();
 }
 
-template <std::derived_from<gse::system> S>
+template <gse::is_system S>
 auto gse::scheduler::node<S>::end_frame() -> void {
 	sys.end_frame();
 }
 
-template <std::derived_from<gse::system> S>
+template <gse::is_system S>
 auto gse::scheduler::node<S>::take_pending() -> std::vector<pending_work> {
 	return sys.take_pending();
 }
 
-template <std::derived_from<gse::system> S>
+template <gse::is_system S>
 auto gse::scheduler::node<S>::flush_deferred() -> void {
 	sys.flush_deferred();
-}
-
-template <typename T>
-auto gse::scheduler::typed_channel<T>::flip() -> void {
-	data.flip();
 }
 
 auto gse::scheduler::run_stage(void (node_base::*stage_fn)()) const -> void {
@@ -393,7 +407,7 @@ auto gse::scheduler::build_phases(std::vector<pending_work>& work) -> std::vecto
 		for (auto& phase : phases) {
 			bool ok = true;
 
-			for (auto* existing : phase) {
+			for (const auto* existing : phase) {
 				if (conflicts(*existing, w)) {
 					ok = false;
 					break;

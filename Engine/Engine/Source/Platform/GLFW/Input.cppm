@@ -57,12 +57,15 @@ export namespace gse::input {
 		text_entered
 	>;
 
-	class system final : public basic_system {
+	class system final : public gse::system {
 	public:
 		system() = default;
 		~system() override = default;
 
 		auto update(
+		) -> void override;
+
+		auto end_frame(
 		) -> void override;
 
 		auto key_callback(
@@ -144,30 +147,36 @@ auto gse::input::system::update() -> void {
 
 	for (const auto& evt : events_to_process) {
 		match(evt)
-			.if_is<key_pressed>([&](const auto& arg) {
+			.if_is([&](const key_pressed& arg) {
 				persistent_state.on_key_pressed(arg.key_code, tok);
 			})
-			.else_if_is<key_released>([&](const auto& arg) {
+			.else_if_is([&](const key_released& arg) {
 				persistent_state.on_key_released(arg.key_code, tok);
 			})
-			.else_if_is<mouse_button_pressed>([&](const auto& arg) {
+			.else_if_is([&](const mouse_button_pressed& arg) {
 				persistent_state.on_mouse_button_pressed(arg.button, tok);
 			})
-			.else_if_is<mouse_button_released>([&](const auto& arg) {
+			.else_if_is([&](const mouse_button_released& arg) {
 				persistent_state.on_mouse_button_released(arg.button, tok);
 			})
-			.else_if_is<mouse_moved>([&](const auto& arg) {
+			.else_if_is([&](const mouse_moved& arg) {
 				persistent_state.on_mouse_moved(static_cast<float>(arg.x_pos), static_cast<float>(arg.y_pos), tok);
 			})
-			.else_if_is<mouse_scrolled>([&](const auto& arg) {
-				// Potential scroll logic
-			})
-			.else_if_is<text_entered>([&](const auto& arg) {
+			.else_if_is([&](const text_entered& arg) {
 				persistent_state.append_codepoint(arg.codepoint, tok);
 			});
 	}
 
 	persistent_state.end_frame(tok);
+
+	publish([events = std::move(events_to_process)](channel<event>& chan) mutable {
+		for (auto& e : events) {
+			chan.push(std::move(e));
+		}
+	});
+}
+
+auto gse::input::system::end_frame() -> void {
 	m_states.flip();
 }
 

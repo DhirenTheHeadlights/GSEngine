@@ -79,7 +79,7 @@ namespace gs {
 				return;
 			}
 
-			const auto dir = gse::renderer::camera().direction_relative_to_origin(
+			const auto dir = gse::camera().direction_relative_to_origin(
 				gse::unitless::vec3(v.x(), 0.f, v.y())
 			);
 
@@ -165,7 +165,7 @@ namespace gs {
 			const auto v = m_move_axis_channel.value;
 
 			if (!motion_component.airborne && (v.x() != 0.f || v.y() != 0.f)) {
-				const auto dir = gse::renderer::camera().direction_relative_to_origin(
+				const auto dir = gse::camera().direction_relative_to_origin(
 					gse::unitless::vec3(v.x(), 0.f, v.y())
 				);
 
@@ -185,7 +185,7 @@ namespace gs {
 				);
 			}
 
-			gse::renderer::camera().set_position(
+			gse::camera().set_position(
 				motion_component.current_position + gse::vec3<gse::length>(
 					gse::feet(0.f),
 					gse::feet(6.f),

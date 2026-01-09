@@ -13,6 +13,10 @@ export namespace gse::network {
 			std::span<std::byte> buffer
 		);
 
+		static auto reader(
+			std::span<const std::byte> buffer
+		) -> bitstream;
+
 		template <is_trivially_copyable T>
 		auto write(
 			const T& data
@@ -20,6 +24,11 @@ export namespace gse::network {
 
 		auto write(
 			std::span<const std::byte> data
+		) -> void;
+
+		auto write_bytes(
+			const std::byte* data,
+			std::size_t bytes
 		) -> void;
 
 		template <is_trivially_copyable T>
@@ -30,6 +39,11 @@ export namespace gse::network {
 			std::span<std::byte> data
 		) -> void;
 
+		auto read_bytes(
+			std::byte* data,
+			std::size_t bytes
+		) -> void;
+
 		auto bytes_written(
 		) const -> std::size_t;
 
@@ -37,6 +51,9 @@ export namespace gse::network {
 		) const -> std::size_t;
 
 		auto remaining_bits(
+		) const -> std::size_t;
+
+		auto remaining_bytes(
 		) const -> std::size_t;
 
 		auto good(
@@ -72,6 +89,10 @@ export namespace gse::network {
 }
 
 gse::network::bitstream::bitstream(const std::span<std::byte> buffer) : m_buffer(buffer) {}
+
+auto gse::network::bitstream::reader(const std::span<const std::byte> buffer) -> bitstream {
+	return bitstream(std::span<std::byte>(const_cast<std::byte*>(buffer.data()), buffer.size_bytes()));
+}
 
 template <gse::is_trivially_copyable T>
 auto gse::network::bitstream::write(const T& data) -> void {
@@ -117,6 +138,10 @@ auto gse::network::bitstream::write(const std::span<const std::byte> data) -> vo
 	}
 }
 
+auto gse::network::bitstream::write_bytes(const std::byte* data, const std::size_t bytes) -> void {
+	write(std::span(data, bytes));
+}
+
 template <gse::is_trivially_copyable T>
 auto gse::network::bitstream::read() -> T {
 	T data{};
@@ -159,6 +184,10 @@ auto gse::network::bitstream::read(std::span<std::byte> data) -> void {
 	}
 }
 
+auto gse::network::bitstream::read_bytes(std::byte* data, const std::size_t bytes) -> void {
+	read(std::span(data, bytes));
+}
+
 auto gse::network::bitstream::bytes_written() const -> std::size_t {
 	return (m_head_bits + 7) / 8;
 }
@@ -170,6 +199,10 @@ auto gse::network::bitstream::capacity_bits() const -> std::size_t {
 auto gse::network::bitstream::remaining_bits() const -> std::size_t {
 	const std::size_t cap = capacity_bits();
 	return (m_head_bits >= cap) ? 0 : (cap - m_head_bits);
+}
+
+auto gse::network::bitstream::remaining_bytes() const -> std::size_t {
+	return remaining_bits() / 8;
 }
 
 auto gse::network::bitstream::good() const -> bool {

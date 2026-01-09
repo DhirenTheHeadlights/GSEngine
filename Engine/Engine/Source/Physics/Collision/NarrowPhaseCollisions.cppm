@@ -58,10 +58,9 @@ namespace gse::narrow_phase_collision {
     ) -> std::optional<mpr_result>;
 
     auto generate_contact_points(
-        const bounding_box& bb1,
-        const bounding_box& bb2,
-        const unitless::vec3& collision_normal,
-        length penetration_depth
+	    const bounding_box& bb1,
+	    const bounding_box& bb2,
+	    const unitless::vec3& collision_normal
     ) -> std::vector<vec3<length>>;
 }
 
@@ -77,6 +76,10 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
 
     if (dot(object_a->current_position - object_b->current_position, res->normal) < 0) {
         res->normal *= -1.0f;
+    }
+
+    if (res->contact_points.empty()) {
+        return;
     }
 
     coll_a.collision_information = {
@@ -461,10 +464,9 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
                 }
 
                 std::vector<vec3<length>> contact_points = generate_contact_points(
-                    bb1,
-                    bb2,
-                    collision_normal,
-                    penetration_depth
+	                bb1,
+	                bb2,
+	                collision_normal
                 );
 
                 vec3<length> final_contact_point = bb1.center();
@@ -542,14 +544,7 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
     return std::nullopt;
 }
 
-auto gse::narrow_phase_collision::generate_contact_points(
-    const bounding_box& bb1,
-    const bounding_box& bb2,
-    const unitless::vec3& collision_normal,
-    length penetration_depth
-) -> std::vector<vec3<length>> {
-    (void)penetration_depth;
-
+auto gse::narrow_phase_collision::generate_contact_points(const bounding_box& bb1, const bounding_box& bb2, const unitless::vec3& collision_normal) -> std::vector<vec3<length>> {
     struct face_info {
         std::array<vec3<length>, 4> vertices;
         unitless::vec3 normal;
@@ -674,15 +669,7 @@ auto gse::narrow_phase_collision::generate_contact_points(
     }
 
     if (contacts.empty()) {
-        int index = -1;
-		float max_dot_product = -std::numeric_limits<float>::max();
-        for (size_t i = 0; i < inc_face_poly.size(); i++) {
-            if (const float dot_prod = dot(inc_face_poly[i].as<gse::meters>(), collision_normal); dot_prod > max_dot_product) {
-                max_dot_product = dot_prod;
-                index = static_cast<int>(i);
-			}
-		}
-		if (index != -1) contacts.push_back(inc_face_poly[index]);
+        contacts.push_back((bb1.center() + bb2.center()) * 0.5f);
     }
 
     return contacts;
