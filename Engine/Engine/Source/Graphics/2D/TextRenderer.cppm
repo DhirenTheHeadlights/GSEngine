@@ -51,7 +51,6 @@ export namespace gse::renderer {
 
 		struct draw_batch {
 			resource::handle<font> font;
-			std::uint32_t vertex_offset;
 			std::uint32_t index_offset;
 			std::uint32_t index_count;
 			std::optional<rect_t<unitless::vec2>> clip_rect;
@@ -98,9 +97,9 @@ gse::renderer::text::text(context& context) : m_context(context) {}
 
 auto gse::renderer::text::to_vulkan_scissor(const rect_t<unitless::vec2>& rect, const unitless::vec2& window_size) -> vk::Rect2D {
 	const float left = std::max(0.0f, rect.left());
-	const float top = std::max(0.0f, rect.top());
 	const float right = std::min(window_size.x(), rect.right());
-	const float bottom = std::min(window_size.y(), rect.bottom());
+	const float bottom = std::max(0.0f, rect.bottom());
+	const float top = std::min(window_size.y(), rect.top());
 
 	const float width = std::max(0.0f, right - left);
 	const float height = std::max(0.0f, top - bottom);
@@ -198,20 +197,6 @@ auto gse::renderer::text::initialize() -> void {
 	m_pipeline_layout = config.device_config().device.createPipelineLayout(msdf_pipeline_layout_info);
 
 	const auto vertex_input_info = m_shader->vertex_input_state();
-	std::println("[text] Vertex bindings: {}", vertex_input_info.vertexBindingDescriptionCount);
-	for (std::uint32_t i = 0; i < vertex_input_info.vertexBindingDescriptionCount; ++i) {
-		const auto& b = vertex_input_info.pVertexBindingDescriptions[i];
-		std::println("  binding[{}]: stride={}", i, b.stride);
-	}
-
-	std::println("[text] Vertex attributes: {}", vertex_input_info.vertexAttributeDescriptionCount);
-	for (std::uint32_t i = 0; i < vertex_input_info.vertexAttributeDescriptionCount; ++i) {
-		const auto& a = vertex_input_info.pVertexAttributeDescriptions[i];
-		std::println("  attr[{}]: location={}, offset={}, format={}",
-			i, a.location, a.offset, vk::to_string(a.format));
-	}
-
-	std::println("[text] Expected vertex size: {} bytes", sizeof(vertex));
 	const vk::Format color_format = config.swap_chain_config().surface_format.format;
 
 	const vk::PipelineRenderingCreateInfoKHR pipeline_rendering_info{
@@ -297,53 +282,56 @@ auto gse::renderer::text::update() -> void {
 	}
 
 	std::ranges::stable_sort(sorted_commands, [](const text_command& a, const text_command& b) {
-		return a.font.id().number() < b.font.id().number();
+		if (a.font.id() != b.font.id()) {
+			return a.font.id().number() < b.font.id().number();
+		}
+
+		const bool a_has_clip = a.clip_rect.has_value();
+		const bool b_has_clip = b.clip_rect.has_value();
+
+		if (a_has_clip != b_has_clip) {
+			return !a_has_clip;
+		}
+
+		if (a_has_clip && b_has_clip) {
+			const auto& ar = *a.clip_rect;
+			const auto& br = *b.clip_rect;
+
+			if (ar.left() != br.left()) return ar.left() < br.left();
+			if (ar.top() != br.top()) return ar.top() < br.top();
+			if (ar.right() != br.right()) return ar.right() < br.right();
+			return ar.bottom() < br.bottom();
+		}
+
+		return false;
 	});
 
 	resource::handle<font> current_font;
 	std::optional<rect_t<unitless::vec2>> current_clip;
-	std::uint32_t batch_vertex_start = 0;
 	std::uint32_t batch_index_start = 0;
-	std::size_t flush_count = 0;
 
-	auto flush_batch = [&](const char* reason) {
+	auto flush_batch = [&] {
 		if (indices.size() > batch_index_start) {
-			std::println("[flush #{}] reason={}, vertices={}, indices={}",
-				flush_count++, reason,
-				vertices.size() - batch_vertex_start,
-				indices.size() - batch_index_start);
-
 			batches.push_back({
 				.font = current_font,
-				.vertex_offset = batch_vertex_start,
 				.index_offset = batch_index_start,
 				.index_count = static_cast<std::uint32_t>(indices.size() - batch_index_start),
 				.clip_rect = current_clip
-				});
+			});
 		}
-		batch_vertex_start = static_cast<std::uint32_t>(vertices.size());
 		batch_index_start = static_cast<std::uint32_t>(indices.size());
 	};
 
-	for (std::size_t i = 0; i < sorted_commands.size(); ++i) {
-		const auto& cmd = sorted_commands[i];
+	for (const auto& [font, text, position, scale, color, clip_rect] : sorted_commands) {
+		const bool font_changed = font.id() != current_font.id();
 
-		const bool font_changed = cmd.font.id() != current_font.id();
-		const bool clip_changed = cmd.clip_rect != current_clip;
-
-		std::println("[cmd {}] text='{}', font_changed={}, clip_changed={}, has_clip={}",
-			i, cmd.text, font_changed, clip_changed, cmd.clip_rect.has_value());
-
-		if (font_changed || clip_changed) {
-			flush_batch(font_changed ? "font" : "clip");
-			current_font = cmd.font;
-			current_clip = cmd.clip_rect;
+		if (const bool clip_changed = clip_rect != current_clip; font_changed || clip_changed) {
+			flush_batch();
+			current_font = font;
+			current_clip = clip_rect;
 		}
 
-		const auto glyphs = cmd.font->text_layout(cmd.text, cmd.position, cmd.scale);
-		std::println("  -> {} glyphs, vertices before={}", glyphs.size(), vertices.size());
-
-		for (const auto& [screen_rect, uv_rect] : glyphs) {
+		for (const auto& [screen_rect, uv_rect] : font->text_layout(text, position, scale)) {
 			if (vertices.size() + 4 > max_vertices || indices.size() + 6 > max_indices) {
 				break;
 			}
@@ -363,10 +351,10 @@ auto gse::renderer::text::update() -> void {
 			const float u1 = uv_rect.x() + uv_rect.z();
 			const float v1 = uv_rect.y() + uv_rect.w();
 
-			vertices.push_back({ p0, { u0, v1 }, cmd.color });
-			vertices.push_back({ p1, { u1, v1 }, cmd.color });
-			vertices.push_back({ p2, { u1, v0 }, cmd.color });
-			vertices.push_back({ p3, { u0, v0 }, cmd.color });
+			vertices.push_back({ p0, { u0, v1 }, color });
+			vertices.push_back({ p1, { u1, v1 }, color });
+			vertices.push_back({ p2, { u1, v0 }, color });
+			vertices.push_back({ p3, { u0, v0 }, color });
 
 			indices.push_back(base_index + 0);
 			indices.push_back(base_index + 2);
@@ -375,14 +363,9 @@ auto gse::renderer::text::update() -> void {
 			indices.push_back(base_index + 3);
 			indices.push_back(base_index + 2);
 		}
-
-		std::println("  -> vertices after={}", vertices.size());
 	}
 
-	flush_batch("end");
-
-	std::println("[update done] total: {} vertices, {} indices, {} batches",
-		vertices.size(), indices.size(), batches.size());
+	flush_batch();
 }
 
 auto gse::renderer::text::render() -> void {
@@ -426,11 +409,6 @@ auto gse::renderer::text::render() -> void {
 		.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
 		.loadOp = vk::AttachmentLoadOp::eLoad,
 		.storeOp = vk::AttachmentStoreOp::eStore,
-		.clearValue = vk::ClearValue{
-			.color = vk::ClearColorValue{
-				.float32 = std::array{ 0.1f, 0.1f, 0.1f, 1.0f }
-			}
-		}
 	};
 
 	const vk::RenderingInfo rendering_info{
@@ -438,7 +416,6 @@ auto gse::renderer::text::render() -> void {
 		.layerCount = 1,
 		.colorAttachmentCount = 1,
 		.pColorAttachments = &color_attachment,
-		.pDepthAttachment = nullptr
 	};
 
 	vulkan::render(config, rendering_info, [&] {
@@ -448,7 +425,6 @@ auto gse::renderer::text::render() -> void {
 
 		const vk::Rect2D default_scissor{ { 0, 0 }, { width, height } };
 		command.setScissor(0, { default_scissor });
-		vk::Rect2D current_scissor = default_scissor;
 
 		resource::handle<font> bound_font;
 
@@ -457,7 +433,7 @@ auto gse::renderer::text::render() -> void {
 			"projection", projection
 		);
 
-		for (const auto& [font, vertex_offset, index_offset, index_count, clip_rect] : batches) {
+		for (const auto& [font, index_offset, index_count, clip_rect] : batches) {
 			if (!font.valid() || index_count == 0) {
 				continue;
 			}
@@ -471,21 +447,17 @@ auto gse::renderer::text::render() -> void {
 				bound_font = font;
 			}
 
-			/*vk::Rect2D desired_scissor = default_scissor;
 			if (clip_rect) {
-				desired_scissor = to_vulkan_scissor(*clip_rect, window_size);
+				command.setScissor(0, { to_vulkan_scissor(*clip_rect, window_size) });
+			} else {
+				command.setScissor(0, { default_scissor });
 			}
-
-			if (std::memcmp(&desired_scissor, &current_scissor, sizeof(vk::Rect2D)) != 0) {
-				command.setScissor(0, { desired_scissor });
-				current_scissor = desired_scissor;
-			}*/
 
 			command.drawIndexed(
 				index_count,
 				1,
 				index_offset,
-				static_cast<std::int32_t>(vertex_offset),
+				0,
 				0
 			);
 		}

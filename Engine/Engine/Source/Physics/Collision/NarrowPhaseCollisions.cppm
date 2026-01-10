@@ -18,7 +18,7 @@ export namespace gse::narrow_phase_collision {
 }
 
 namespace gse::narrow_phase_collision {
-    static constexpr bool debug = true;
+    static constexpr bool debug = false;
     constexpr int mpr_collision_refinement_iterations = 32;
 
     struct mpr_result {
@@ -62,9 +62,10 @@ namespace gse::narrow_phase_collision {
 	    const bounding_box& bb2,
 	    const unitless::vec3& collision_normal
     ) -> std::vector<vec3<length>>;
-    auto sat_penetration(const gse::bounding_box& bb1,
-        const gse::bounding_box& bb2
-    ) -> std::pair<gse::unitless::vec3, gse::length>;
+
+    auto sat_penetration(const bounding_box& bb1,
+        const bounding_box& bb2
+    ) -> std::pair<unitless::vec3, length>;
 }
 
 auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* object_a, physics::collision_component& coll_a, physics::motion_component* object_b, const physics::collision_component& coll_b) -> void {
@@ -107,7 +108,7 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
 
         const length corrected_penetration = std::max(res->penetration - slop, length{ 0 });
         const vec3<length> correction = res->normal * corrected_penetration;
-        if (dot(res->normal, gse::unitless::axis_y) < 0.0f && corrected_penetration > length{ 0 }) {
+        if (dot(res->normal, unitless::axis_y) < 0.0f && corrected_penetration > length{ 0 }) {
             std::cout << "breakpoint!";
         }
         const float ratio_a = inv_mass_a / total_inv_mass;
@@ -712,31 +713,31 @@ auto gse::narrow_phase_collision::generate_contact_points(const bounding_box& bb
     return contacts;
 }
 
-auto gse::narrow_phase_collision::sat_penetration(const gse::bounding_box& bb1, const gse::bounding_box& bb2)
--> std::pair<gse::unitless::vec3, gse::length>
+auto gse::narrow_phase_collision::sat_penetration(const bounding_box& bb1, const bounding_box& bb2)
+-> std::pair<unitless::vec3, length>
 {
-    gse::length min_pen = gse::meters(std::numeric_limits<float>::max());
-    gse::unitless::vec3 best_axis;
+    length min_pen = meters(std::numeric_limits<float>::max());
+    unitless::vec3 best_axis;
 
     // Test 15 axes: 3 from each OBB + 9 cross products
-    auto test_axis = [&](gse::unitless::vec3 axis) {
-        if (gse::is_zero(axis)) return;
-        axis = gse::normalize(axis);
+    auto test_axis = [&](unitless::vec3 axis) {
+        if (is_zero(axis)) return;
+        axis = normalize(axis);
 
         // Project both OBBs onto axis
-        auto project = [&](const gse::bounding_box& bb) {
-            gse::length r = 0;
+        auto project = [&](const bounding_box& bb) {
+            length r = 0;
 			const auto he = bb.half_extents();
             for (int i = 0; i < 3; ++i) {
-                r += gse::abs(gse::dot(axis, bb.obb().axes[i]) * he[i]);
+                r += abs(dot(axis, bb.obb().axes[i]) * he[i]);
             }
             return r;
             };
 
-        gse::length r1 = project(bb1);
-        gse::length r2 = project(bb2);
-        gse::length dist = abs(dot(axis, bb1.center() - bb2.center()));
-        gse::length overlap = r1 + r2 - dist;
+        length r1 = project(bb1);
+        length r2 = project(bb2);
+        length dist = abs(dot(axis, bb1.center() - bb2.center()));
+        length overlap = r1 + r2 - dist;
 
         if (overlap > 0 && overlap < min_pen) {
             min_pen = overlap;
@@ -752,7 +753,7 @@ auto gse::narrow_phase_collision::sat_penetration(const gse::bounding_box& bb1, 
     // Test edge cross products
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {
-            test_axis(gse::cross(bb1.obb().axes[i], bb2.obb().axes[j]));
+            test_axis(cross(bb1.obb().axes[i], bb2.obb().axes[j]));
         }
     }
 
