@@ -113,7 +113,7 @@ namespace gs {
 				.max_speed = m_max_speed,
 				.mass = gse::pounds(180.f),
 				.self_controlled = true,
-				.update_orientation = false
+				.update_orientation = true
 			});
 
 			gse::length height = gse::feet(6.0f);
