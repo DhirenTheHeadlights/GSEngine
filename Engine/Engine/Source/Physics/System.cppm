@@ -54,7 +54,7 @@ auto gse::physics::system::update() -> void {
 					.colliding = false,
 					.collision_normal = {},
 					.penetration = {},
-					.collision_point = {}
+					.collision_points = {}
 				};
 			}
 
