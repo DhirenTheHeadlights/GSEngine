@@ -287,83 +287,64 @@ auto gse::renderer::text::update() -> void {
 		return;
 	}
 
-	struct command_entry {
-		const text_command* cmd;
-		resource::handle<font> font;
-	};
-
-	std::vector<command_entry> sorted_commands;
+	std::vector<text_command> sorted_commands;
 	sorted_commands.reserve(commands.size());
 
 	for (const auto& cmd : commands) {
 		if (cmd.font.valid() && !cmd.text.empty()) {
-			sorted_commands.push_back({ &cmd, cmd.font });
+			sorted_commands.push_back(cmd);
 		}
 	}
 
-	std::ranges::stable_sort(sorted_commands, [](const command_entry& a, const command_entry& b) {
-		if (a.font.id() != b.font.id()) {
-			return a.font.id().number() < b.font.id().number();
-		}
-
-		const bool a_has_clip = a.cmd->clip_rect.has_value();
-		const bool b_has_clip = b.cmd->clip_rect.has_value();
-
-		if (a_has_clip != b_has_clip) {
-			return !a_has_clip;
-		}
-
-		if (a_has_clip && b_has_clip) {
-			const auto& ar = *a.cmd->clip_rect;
-			const auto& br = *b.cmd->clip_rect;
-
-			if (ar.left() != br.left()) {
-				return ar.left() < br.left();
-			}
-			if (ar.top() != br.top()) {
-				return ar.top() < br.top();
-			}
-			if (ar.right() != br.right()) {
-				return ar.right() < br.right();
-			}
-			return ar.bottom() < br.bottom();
-		}
-
-		return false;
+	std::ranges::stable_sort(sorted_commands, [](const text_command& a, const text_command& b) {
+		return a.font.id().number() < b.font.id().number();
 	});
 
 	resource::handle<font> current_font;
 	std::optional<rect_t<unitless::vec2>> current_clip;
 	std::uint32_t batch_vertex_start = 0;
 	std::uint32_t batch_index_start = 0;
+	std::size_t flush_count = 0;
 
-	auto flush_batch = [&] {
+	auto flush_batch = [&](const char* reason) {
 		if (indices.size() > batch_index_start) {
+			std::println("[flush #{}] reason={}, vertices={}, indices={}",
+				flush_count++, reason,
+				vertices.size() - batch_vertex_start,
+				indices.size() - batch_index_start);
+
 			batches.push_back({
 				.font = current_font,
 				.vertex_offset = batch_vertex_start,
 				.index_offset = batch_index_start,
 				.index_count = static_cast<std::uint32_t>(indices.size() - batch_index_start),
 				.clip_rect = current_clip
-			});
+				});
 		}
-
 		batch_vertex_start = static_cast<std::uint32_t>(vertices.size());
 		batch_index_start = static_cast<std::uint32_t>(indices.size());
 	};
 
-	for (const auto& [cmd, font] : sorted_commands) {
-		const bool font_changed = font.id() != current_font.id();
+	for (std::size_t i = 0; i < sorted_commands.size(); ++i) {
+		const auto& cmd = sorted_commands[i];
 
-		if (const bool clip_changed = cmd->clip_rect != current_clip; font_changed || clip_changed) {
-			flush_batch();
-			current_font = font;
-			current_clip = cmd->clip_rect;
+		const bool font_changed = cmd.font.id() != current_font.id();
+		const bool clip_changed = cmd.clip_rect != current_clip;
+
+		std::println("[cmd {}] text='{}', font_changed={}, clip_changed={}, has_clip={}",
+			i, cmd.text, font_changed, clip_changed, cmd.clip_rect.has_value());
+
+		if (font_changed || clip_changed) {
+			flush_batch(font_changed ? "font" : "clip");
+			current_font = cmd.font;
+			current_clip = cmd.clip_rect;
 		}
 
-		for (const auto& [screen_rect, uv_rect] : font->text_layout(cmd->text, cmd->position, cmd->scale)) {
+		const auto glyphs = cmd.font->text_layout(cmd.text, cmd.position, cmd.scale);
+		std::println("  -> {} glyphs, vertices before={}", glyphs.size(), vertices.size());
+
+		for (const auto& [screen_rect, uv_rect] : glyphs) {
 			if (vertices.size() + 4 > max_vertices || indices.size() + 6 > max_indices) {
-				flush_batch();
 				break;
 			}
 
@@ -382,10 +363,10 @@ auto gse::renderer::text::update() -> void {
 			const float u1 = uv_rect.x() + uv_rect.z();
 			const float v1 = uv_rect.y() + uv_rect.w();
 
-			vertices.push_back({ p0, { u0, v1 }, cmd->color });
-			vertices.push_back({ p1, { u1, v1 }, cmd->color });
-			vertices.push_back({ p2, { u1, v0 }, cmd->color });
-			vertices.push_back({ p3, { u0, v0 }, cmd->color });
+			vertices.push_back({ p0, { u0, v1 }, cmd.color });
+			vertices.push_back({ p1, { u1, v1 }, cmd.color });
+			vertices.push_back({ p2, { u1, v0 }, cmd.color });
+			vertices.push_back({ p3, { u0, v0 }, cmd.color });
 
 			indices.push_back(base_index + 0);
 			indices.push_back(base_index + 2);
@@ -394,24 +375,18 @@ auto gse::renderer::text::update() -> void {
 			indices.push_back(base_index + 3);
 			indices.push_back(base_index + 2);
 		}
+
+		std::println("  -> vertices after={}", vertices.size());
 	}
 
-	flush_batch();
+	flush_batch("end");
+
+	std::println("[update done] total: {} vertices, {} indices, {} batches",
+		vertices.size(), indices.size(), batches.size());
 }
 
 auto gse::renderer::text::render() -> void {
 	const auto& [vertices, indices, batches] = m_frame_data.read();
-
-	std::println("[text::render] START - {} batches, {} vertices, {} indices",
-		batches.size(), vertices.size(), indices.size());
-
-	for (std::size_t i = 0; i < std::min(vertices.size(), 8uz); ++i) {
-		const auto& v = vertices[i];
-		std::println("  v[{}]: pos=({}, {}), uv=({}, {}), color=({}, {}, {}, {})",
-			i, v.position.x(), v.position.y(),
-			v.uv.x(), v.uv.y(),
-			v.color.x(), v.color.y(), v.color.z(), v.color.w());
-	}
 
 	if (batches.empty()) {
 		m_current_frame = (m_current_frame + 1) % frames_in_flight;
@@ -496,7 +471,7 @@ auto gse::renderer::text::render() -> void {
 				bound_font = font;
 			}
 
-			vk::Rect2D desired_scissor = default_scissor;
+			/*vk::Rect2D desired_scissor = default_scissor;
 			if (clip_rect) {
 				desired_scissor = to_vulkan_scissor(*clip_rect, window_size);
 			}
@@ -504,7 +479,7 @@ auto gse::renderer::text::render() -> void {
 			if (std::memcmp(&desired_scissor, &current_scissor, sizeof(vk::Rect2D)) != 0) {
 				command.setScissor(0, { desired_scissor });
 				current_scissor = desired_scissor;
-			}
+			}*/
 
 			command.drawIndexed(
 				index_count,
