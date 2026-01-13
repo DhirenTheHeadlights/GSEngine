@@ -17,7 +17,7 @@ export namespace gse {
         std::vector<joint_keyframe> keys;
     };
 
-    class clip_asset : identifiable {
+    class clip_asset : public identifiable {
     public:
         struct params {
             std::string name;

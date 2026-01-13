@@ -70,6 +70,7 @@ export namespace gse {
 
 		auto clear(
 		) -> void;
+
 	private:
 		struct node_base {
 			virtual ~node_base(
@@ -100,7 +101,12 @@ export namespace gse {
 			) -> void = 0;
 
 			virtual auto take_pending(
+				active_stage stage
 			) -> std::vector<pending_work> = 0;
+
+			virtual auto set_active_stage(
+				active_stage stage
+			) -> void = 0;
 
 			virtual auto flush_deferred(
 			) -> void = 0;
@@ -140,7 +146,12 @@ export namespace gse {
 			) -> void override;
 
 			auto take_pending(
+				active_stage stage
 			) -> std::vector<pending_work> override;
+
+			auto set_active_stage(
+				active_stage stage
+			) -> void override;
 
 			auto flush_deferred(
 			) -> void override;
@@ -149,9 +160,11 @@ export namespace gse {
 		std::vector<std::unique_ptr<node_base>> m_nodes;
 		std::unordered_map<std::type_index, node_base*> m_index;
 		std::unordered_map<std::type_index, std::unique_ptr<channel_base>> m_channels;
+		mutable std::mutex m_channels_mutex;
 
 		auto run_stage(
-			void (node_base::*stage_fn)()
+			void (node_base::*stage_fn)(),
+			active_stage stage
 		) const -> void;
 
 		static auto conflicts(
@@ -219,6 +232,7 @@ auto gse::scheduler::system_ptr(const std::type_index idx) const -> const void* 
 }
 
 auto gse::scheduler::ensure_channel(const std::type_index idx, const channel_factory_fn factory) -> channel_base& {
+	std::lock_guard lock(m_channels_mutex);
 	auto it = m_channels.find(idx);
 
 	if (it == m_channels.end()) {
@@ -244,22 +258,33 @@ auto gse::scheduler::initialize() const -> void {
 }
 
 auto gse::scheduler::update() -> void {
-	run_stage(&node_base::update);
+	run_stage(&node_base::update, active_stage::update);
 }
 
 auto gse::scheduler::render(const std::function<void()>& in_frame) -> void {
     std::vector started(m_nodes.size(), false);
 
+    for (auto& n : m_nodes) {
+        n->set_active_stage(active_stage::render);
+    }
+
     if (!m_nodes.empty()) {
         started[0] = m_nodes[0]->begin_frame();
-        if (!started[0]) return;
+        if (!started[0]) {
+            for (auto& n : m_nodes) {
+                n->set_active_stage(active_stage::none);
+            }
+            return;
+        }
 
         for (std::size_t i = 1; i < m_nodes.size(); ++i) {
             started[i] = m_nodes[i]->begin_frame();
         }
     }
 
-    run_stage(&node_base::render);
+    for (auto& n : m_nodes) {
+        n->render();
+    }
 
     if (in_frame) {
         in_frame();
@@ -271,10 +296,14 @@ auto gse::scheduler::render(const std::function<void()>& in_frame) -> void {
         }
     }
 
+    for (auto& n : m_nodes) {
+        n->set_active_stage(active_stage::none);
+    }
+
 	std::vector<pending_work> all_work;
 
 	for (const auto& n : m_nodes) {
-		for (auto work = n->take_pending(); auto& w : work) {
+		for (auto work = n->take_pending(active_stage::render); auto& w : work) {
 			all_work.push_back(std::move(w));
 		}
 	}
@@ -351,8 +380,13 @@ auto gse::scheduler::node<S>::end_frame() -> void {
 }
 
 template <gse::is_system S>
-auto gse::scheduler::node<S>::take_pending() -> std::vector<pending_work> {
-	return sys.take_pending();
+auto gse::scheduler::node<S>::take_pending(active_stage stage) -> std::vector<pending_work> {
+	return sys.take_pending(stage);
+}
+
+template <gse::is_system S>
+auto gse::scheduler::node<S>::set_active_stage(active_stage stage) -> void {
+	sys.set_active_stage(stage);
 }
 
 template <gse::is_system S>
@@ -360,15 +394,23 @@ auto gse::scheduler::node<S>::flush_deferred() -> void {
 	sys.flush_deferred();
 }
 
-auto gse::scheduler::run_stage(void (node_base::*stage_fn)()) const -> void {
+auto gse::scheduler::run_stage(void (node_base::*stage_fn)(), active_stage stage) const -> void {
+	for (auto& n : m_nodes) {
+		n->set_active_stage(stage);
+	}
+
 	for (auto& n : m_nodes) {
 		(n.get()->*stage_fn)();
+	}
+
+	for (auto& n : m_nodes) {
+		n->set_active_stage(active_stage::none);
 	}
 
 	std::vector<pending_work> all_work;
 
 	for (const auto& n : m_nodes) {
-		for (auto work = n->take_pending(); auto& w : work) {
+		for (auto work = n->take_pending(stage); auto& w : work) {
 			all_work.push_back(std::move(w));
 		}
 	}
@@ -430,20 +472,25 @@ auto gse::scheduler::build_phases(std::vector<pending_work>& work) -> std::vecto
 }
 
 auto gse::scheduler::execute_phase(const std::vector<pending_work*>& phase) -> void {
-	if (phase.empty()) {
-		return;
-	}
+    if (phase.empty()) {
+        return;
+    }
 
-	if (phase.size() == 1) {
-		phase[0]->execute();
-		return;
-	}
+    if (phase.size() == 1) {
+        trace::scope(phase[0]->name, [&] {
+            phase[0]->execute();
+        });
+        return;
+    }
 
-	task::group group;
+    task::group group;
 
-	for (auto* w : phase) {
-		group.post([w] {
-			w->execute();
-		});
-	}
+    for (auto* w : phase) {
+        group.post(
+			[w] {
+				w->execute();
+			}, 
+			w->name
+		);
+    }
 }

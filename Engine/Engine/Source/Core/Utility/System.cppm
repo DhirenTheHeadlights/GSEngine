@@ -13,6 +13,8 @@ import :frame_sync;
 export namespace gse {
 	class scheduler;
 
+	enum class active_stage { none, update, render };
+
 	template <is_component T>
 	class component_view {
 	public:
@@ -78,6 +80,22 @@ export namespace gse {
 		auto operator[](
 			std::size_t i
 		) const -> T&;
+
+		auto read(
+			id owner
+		) const -> const T*;
+
+		auto read_from(
+			const T& component
+		) const -> const T*;
+
+		auto write(
+			id owner
+		) const -> T*;
+
+		auto write_from(
+			T& component
+		) const -> T*;
 
 		template <is_component U>
 		auto read(
@@ -159,6 +177,7 @@ export namespace gse {
 
 	private:
 		double_buffer<std::vector<T>> m_buffer;
+		mutable std::mutex m_write_mutex;
 	};
 
 	struct channel_base {
@@ -211,9 +230,10 @@ export namespace gse {
 	};
 
 	template <typename T>
-	using extract_channel_type_t = typename extract_channel_type<T>::type;
+	using extract_channel_type_t = extract_channel_type<T>::type;
 
 	struct pending_work {
+		id name;
 		std::vector<std::type_index> component_writes;
 		std::type_index channel_write = typeid(void);
 		std::move_only_function<void()> execute;
@@ -295,22 +315,24 @@ export namespace gse {
 
 		template <typename T>
 		auto channel_of(
-		) const -> typename channel<T>::reader;
+		) const -> channel<T>::reader;
 
 		template <typename F>
 		auto write(
-			F&& f
+			F&& f,
+			std::source_location loc = std::source_location::current()
 		) -> void;
 
 		template <typename F>
 		auto publish(
-			F&& f
+			F&& f,
+			std::source_location loc = std::source_location::current()
 		) -> void;
 
 		template <is_component T>
 		auto defer_add(
 			id entity,
-			typename T::network_data_t data
+			T::network_data_t data
 		) -> void;
 
 		template <is_component T>
@@ -321,17 +343,31 @@ export namespace gse {
 	private:
 		registry* m_registry = nullptr;
 		system_provider* m_scheduler = nullptr;
-		std::vector<pending_work> m_pending;
+		std::vector<pending_work> m_pending_update;
+		std::vector<pending_work> m_pending_render;
+		std::atomic<active_stage> m_active_stage = active_stage::none;
+		mutable std::mutex m_pending_update_mutex;
+		mutable std::mutex m_pending_render_mutex;
 		std::vector<std::move_only_function<void(registry&)>> m_deferred;
+
+		auto push_pending(
+			pending_work work
+		) -> void;
 
 		template <typename F, is_component... Ts>
 		auto write_impl(
 			F&& f,
-			std::tuple<std::type_identity<Ts>...>
+			std::tuple<std::type_identity<Ts>...>,
+			std::source_location loc = std::source_location::current()
 		) -> void;
 
 		auto take_pending(
+			active_stage stage
 		) -> std::vector<pending_work>;
+
+		auto set_active_stage(
+			active_stage stage
+		) -> void;
 
 		auto flush_deferred(
 		) -> void;
@@ -414,6 +450,26 @@ auto gse::component_chunk<T>::operator[](std::size_t i) const -> T& {
 }
 
 template <gse::is_component T>
+auto gse::component_chunk<T>::read(const id owner) const -> const T* {
+	return m_reg->try_linked_object_read<T>(owner);
+}
+
+template <gse::is_component T>
+auto gse::component_chunk<T>::read_from(const T& component) const -> const T* {
+	return read(component.owner_id());
+}
+
+template <gse::is_component T>
+auto gse::component_chunk<T>::write(const id owner) const -> T* {
+	return m_reg->try_linked_object_write<T>(owner);
+}
+
+template <gse::is_component T>
+auto gse::component_chunk<T>::write_from(T& component) const -> T* {
+	return write(component.owner_id());
+}
+
+template <gse::is_component T>
 template <gse::is_component U>
 auto gse::component_chunk<T>::read(const id owner) const -> const U* {
 	return m_reg->try_linked_object_read<U>(owner);
@@ -492,17 +548,20 @@ auto gse::channel<T>::read() const -> reader {
 
 template <typename T>
 auto gse::channel<T>::push(T item) -> void {
+	std::lock_guard lock(m_write_mutex);
 	m_buffer.write().push_back(std::move(item));
 }
 
 template <typename T>
 template <typename... Args>
 auto gse::channel<T>::emplace(Args&&... args) -> T& {
+	std::lock_guard lock(m_write_mutex);
 	return m_buffer.write().emplace_back(std::forward<Args>(args)...);
 }
 
 template <typename T>
 auto gse::channel<T>::flip() -> void {
+	std::lock_guard lock(m_write_mutex);
 	m_buffer.flip();
 	m_buffer.write().clear();
 }
@@ -520,6 +579,45 @@ auto gse::system::begin_frame() -> bool {
 }
 
 auto gse::system::end_frame() -> void {}
+
+auto gse::system::push_pending(pending_work work) -> void {
+	switch (m_active_stage.load(std::memory_order_acquire)) {
+		case active_stage::update: {
+			std::lock_guard lock(m_pending_update_mutex);
+			m_pending_update.push_back(std::move(work));
+			break;
+		}
+		case active_stage::render: {
+			std::lock_guard lock(m_pending_render_mutex);
+			m_pending_render.push_back(std::move(work));
+			break;
+		}
+		default: {
+			std::lock_guard lock(m_pending_update_mutex);
+			m_pending_update.push_back(std::move(work));
+			break;
+		}
+	}
+}
+
+auto gse::system::take_pending(active_stage stage) -> std::vector<pending_work> {
+	switch (stage) {
+		case active_stage::update: {
+			std::lock_guard lock(m_pending_update_mutex);
+			return std::exchange(m_pending_update, {});
+		}
+		case active_stage::render: {
+			std::lock_guard lock(m_pending_render_mutex);
+			return std::exchange(m_pending_render, {});
+		}
+		default:
+			return {};
+	}
+}
+
+auto gse::system::set_active_stage(active_stage stage) -> void {
+	m_active_stage.store(stage, std::memory_order_release);
+}
 
 template <gse::is_component T>
 auto gse::system::read() const -> component_view<T> {
@@ -539,7 +637,7 @@ auto gse::system::system_of() const -> const S& {
 }
 
 template <typename T>
-auto gse::system::channel_of() const -> typename channel<T>::reader {
+auto gse::system::channel_of() const -> channel<T>::reader {
 	auto& base = m_scheduler->ensure_channel(std::type_index(typeid(T)), +[]() -> std::unique_ptr<channel_base> {
 		return std::make_unique<typed_channel<T>>();
 	});
@@ -548,57 +646,88 @@ auto gse::system::channel_of() const -> typename channel<T>::reader {
 }
 
 template <typename F>
-auto gse::system::write(F&& f) -> void {
+auto gse::system::write(F&& f, std::source_location loc) -> void {
 	using traits = callable_traits<std::decay_t<F>>;
 	using components = typename traits::component_types;
 
-	write_impl(std::forward<F>(f), components{});
+	write_impl(std::forward<F>(f), components{}, loc);
 }
 
 template <typename F, gse::is_component... Ts>
-auto gse::system::write_impl(F&& f, std::tuple<std::type_identity<Ts>...>) -> void {
-	m_pending.push_back(pending_work{
-		.component_writes = { std::type_index(typeid(Ts))... },
-		.channel_write = typeid(void),
-		.execute = [this, func = std::forward<F>(f)]() mutable {
-			if constexpr (sizeof...(Ts) == 0) {
-				func();
-			} else if constexpr (sizeof...(Ts) == 1) {
-				using t = std::tuple_element_t<0, std::tuple<Ts...>>;
-				component_chunk<t> chunk{
-					m_registry,
-					m_registry->linked_objects_write<t>()
-				};
-				func(chunk);
-			} else {
-				auto chunks = std::tuple{
-					component_chunk<Ts>{
-						m_registry,
-						m_registry->linked_objects_write<Ts>()
-					}...
-				};
-				std::apply(func, chunks);
-			}
-		}
-	});
+auto gse::system::write_impl(F&& f, std::tuple<std::type_identity<Ts>...>, std::source_location loc) -> void {
+    auto name = std::string(loc.function_name());
+    if (const auto paren = name.find('('); paren != std::string::npos) {
+        name = name.substr(0, paren);
+    }
+    if (const auto space = name.rfind(' '); space != std::string::npos) {
+        name = name.substr(space + 1);
+    }
+    
+    if constexpr (sizeof...(Ts) > 0) {
+        name += "::write<";
+        bool first = true;
+        ((name += (first ? (first = false, "") : ", "), name += typeid(Ts).name()), ...);
+        name += ">";
+    } else {
+        name += "::write";
+    }
+
+    push_pending(pending_work{
+        .name = find_or_generate_id(name),
+        .component_writes = { std::type_index(typeid(Ts))... },
+        .channel_write = typeid(void),
+        .execute = [this, func = std::forward<F>(f)]() mutable {
+            if constexpr (sizeof...(Ts) == 0) {
+                func();
+            } else if constexpr (sizeof...(Ts) == 1) {
+                using t = std::tuple_element_t<0, std::tuple<Ts...>>;
+                component_chunk<t> chunk{
+                    m_registry,
+                    m_registry->linked_objects_write<t>()
+                };
+                func(chunk);
+            } else {
+                auto chunks = std::tuple{
+                    component_chunk<Ts>{
+                        m_registry,
+                        m_registry->linked_objects_write<Ts>()
+                    }...
+                };
+                std::apply(func, chunks);
+            }
+        }
+    });
 }
 
 template <typename F>
-auto gse::system::publish(F&& f) -> void {
-	using channel_type = std::remove_cvref_t<first_arg_t<F>>;
-	using t = extract_channel_type_t<channel_type>;
+auto gse::system::publish(F&& f, const std::source_location loc) -> void {
+    using channel_type = std::remove_cvref_t<first_arg_t<F>>;
+    using t = extract_channel_type_t<channel_type>;
 
-	m_pending.push_back(pending_work{
-		.component_writes = {},
-		.channel_write = std::type_index(typeid(t)),
-		.execute = [this, func = std::forward<F>(f)]() mutable {
-			auto& base = m_scheduler->ensure_channel(std::type_index(typeid(t)), +[]() -> std::unique_ptr<channel_base> {
-				return std::make_unique<typed_channel<t>>();
-			});
+    auto name = std::string(loc.function_name());
+    if (const auto paren = name.find('('); paren != std::string::npos) {
+        name = name.substr(0, paren);
+    }
+    if (const auto space = name.rfind(' '); space != std::string::npos) {
+        name = name.substr(space + 1);
+    }
 
-			func(static_cast<typed_channel<t>&>(base).data);
-		}
-	});
+    name += "::publish<";
+    name += typeid(t).name();
+    name += ">";
+
+    push_pending(pending_work{
+        .name = find_or_generate_id(name),
+        .component_writes = {},
+        .channel_write = std::type_index(typeid(t)),
+        .execute = [this, func = std::forward<F>(f)]() mutable {
+            auto& base = m_scheduler->ensure_channel(std::type_index(typeid(t)), +[]() -> std::unique_ptr<channel_base> {
+                return std::make_unique<typed_channel<t>>();
+            });
+
+            func(static_cast<typed_channel<t>&>(base).data);
+        }
+    });
 }
 
 template <gse::is_component T>
@@ -632,10 +761,6 @@ auto gse::system::defer_remove(id entity) -> void {
 			return true;
 		});
 	});
-}
-
-auto gse::system::take_pending() -> std::vector<pending_work> {
-	return std::exchange(m_pending, {});
 }
 
 auto gse::system::flush_deferred() -> void {

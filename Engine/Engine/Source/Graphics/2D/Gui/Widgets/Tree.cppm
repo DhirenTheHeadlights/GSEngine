@@ -13,6 +13,7 @@ export namespace gse::gui::draw {
 	struct tree_options {
 		float row_gap = 0.15f;
 		float indent_per_level = 15.f;
+		float extra_right_padding = 0.0f;
 		bool toggle_on_row_click = true;
 		bool multi_select = false;
 	};
@@ -199,9 +200,12 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 	}
 
 	const std::string_view lbl = ops.label ? ops.label(t) : std::string_view{};
+	
+	const float label_available_width = std::max(0.0f, row_rect.width() - arrow_w - ctx.style.padding * 0.5f - opt.extra_right_padding);
+	
 	const ui_rect label_rect = ui_rect::from_position_size(
 		{ row_rect.left() + arrow_w + ctx.style.padding * 0.5f, row_rect.top() },
-		{ row_rect.width() - arrow_w - ctx.style.padding * 0.5f, row_height }
+		{ label_available_width, row_height }
 	);
 
 	ctx.queue_text({
@@ -212,7 +216,7 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
 			label_rect.center().y() + ctx.style.font_size / 2.f
 		},
 		.scale = ctx.style.font_size,
-		.clip_rect = row_rect
+		.clip_rect = label_rect
 	});
 
 	if (ops.custom_draw) {
