@@ -20,7 +20,7 @@ export namespace gse {
         ) -> value_type&;
 
         auto read(
-        ) -> const value_type&;
+        ) const -> const value_type&;
 
         auto flip(
         ) noexcept -> void;
@@ -54,7 +54,7 @@ auto gse::double_buffer<T>::write() -> value_type& {
 }
 
 template <typename T>
-auto gse::double_buffer<T>::read() -> const value_type& {
+auto gse::double_buffer<T>::read() const -> const value_type& {
     return m_buffer[m_read.load(std::memory_order_acquire)];
 }
 

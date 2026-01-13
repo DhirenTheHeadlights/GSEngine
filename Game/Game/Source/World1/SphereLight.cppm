@@ -9,9 +9,7 @@ export namespace gs {
 	public:
 		using params = gse::sphere::params;
 
-		explicit sphere_light(const params& p) : m_position(p.initial_position), m_radius(p.radius), m_sectors(p.sectors), m_stacks(p.stacks) {
-			m_count++;
-		}
+		explicit sphere_light(const params& p) : m_position(p.initial_position), m_radius(p.radius), m_sectors(p.sectors), m_stacks(p.stacks) {}
 
 		auto initialize() -> void override {
 			add_hook<gse::sphere>({
@@ -23,7 +21,7 @@ export namespace gs {
 
 			add_component<gse::spot_light_component>({
 				.color = gse::unitless::vec3(1.f),
-				.intensity = 250.f,
+				.intensity = 25.f,
 				.position = m_position,
 				.direction = gse::unitless::vec3(0.0f, -1.0f, 0.0f),
 				.constant = 1.0f,
@@ -39,11 +37,13 @@ export namespace gs {
 
 			configure_when_present([](gse::physics::motion_component& mc) {
 				mc.affected_by_gravity = false;
+				mc.position_locked = true;
 			});
 		}
 
 		auto render() -> void override {
 			component_write<gse::spot_light_component>().debug_menu("Sphere Light", owner_id().number());
+			component_write<gse::spot_light_component>().position = component_read<gse::physics::motion_component>().current_position;
 		}
 	private:
 		static std::size_t m_count;
@@ -53,6 +53,4 @@ export namespace gs {
 		int m_sectors;
 		int m_stacks;
 	};
-
-	std::size_t sphere_light::m_count = 0;
 }

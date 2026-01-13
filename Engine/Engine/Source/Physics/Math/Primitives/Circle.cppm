@@ -36,7 +36,7 @@ template <gse::is_vec2 T>
 constexpr gse::circle_t<T>::circle_t(const circle_params& p)
     : m_center(p.center), m_radius(p.radius)
 {
-    assert(radius >= 0, "Circle radius cannot be negative");
+    assert(radius >= 0, std::source_location::current(), "Circle radius cannot be negative");
 }
 
 template <gse::is_vec2 T>

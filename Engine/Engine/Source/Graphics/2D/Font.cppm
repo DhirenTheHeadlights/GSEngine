@@ -1,11 +1,11 @@
 export module gse.graphics:font;
 
 import <algorithm>;
+import <filesystem>;
 import <fstream>;
 import <iostream>;
 import <unordered_map>;
 import <vector>;
-import <filesystem>;
 
 import <msdfgen.h>;
 #define STB_TRUETYPE_IMPLEMENTATION
@@ -13,6 +13,7 @@ import <freetype/freetype.h>;
 import "ext/import-font.h";
 
 import :texture;
+
 import gse.assert;
 import gse.physics.math;
 import gse.platform;
@@ -106,7 +107,8 @@ export namespace gse {
 gse::font::font(const std::filesystem::path& path) : identifiable(path), m_baked_path(path) {
     assert(
         exists(path),
-        std::format("Font file '{}' does not exist.", path.string())
+        std::source_location::current(),
+        "Font file '{}' does not exist.", path.string()
     );
 }
 
@@ -168,7 +170,7 @@ auto gse::font::compile() -> std::set<std::filesystem::path> {
 
         msdfgen::FreetypeHandle* ft_handle = msdfgen::initializeFreetype();
         msdfgen::FontHandle* font_handle = loadFont(ft_handle, source_path.string().c_str());
-        assert(font_handle, "Failed to load font into msdfgen.");
+        assert(font_handle, std::source_location::current(), "Failed to load font into msdfgen.");
 
         constexpr int first_char = 32, last_char = 126;
         constexpr int glyph_count = last_char - first_char + 1;
@@ -235,7 +237,7 @@ auto gse::font::compile() -> std::set<std::filesystem::path> {
         FT_Done_FreeType(ft_lib);
 
         std::ofstream out_file(baked_path, std::ios::binary);
-        assert(out_file.is_open(), "Failed to open baked font file for writing.");
+        assert(out_file.is_open(), std::source_location::current(), "Failed to open baked font file for writing.");
 
         constexpr std::uint32_t magic = 0x47464E54;
         constexpr std::uint32_t version = 1;
@@ -283,18 +285,20 @@ auto gse::font::compile() -> std::set<std::filesystem::path> {
 
 auto gse::font::load(const renderer::context& context) -> void {
     std::ifstream in_file(m_baked_path, std::ios::binary);
-    assert(in_file.is_open(), std::format(
+    assert(
+        in_file.is_open(), std::source_location::current(), 
         "Failed to open baked font file: {}",
         m_baked_path.string()
-    ));
+    );
 
     std::uint32_t magic, version;
     in_file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
     in_file.read(reinterpret_cast<char*>(&version), sizeof(version));
-    assert(magic == 0x47464E54 && version == 1, std::format(
-        "Invalid baked font file format or version: {}",
-        m_baked_path.string()
-    ));
+
+    assert(
+        magic == 0x47464E54 && version == 1, 
+        std::source_location::current(), "Invalid baked font file format or version: {}", m_baked_path.string()
+    );
 
     std::uint64_t path_len;
     in_file.read(reinterpret_cast<char*>(&path_len), sizeof(path_len));
@@ -335,9 +339,28 @@ auto gse::font::load(const renderer::context& context) -> void {
         m_glyphs[ch] = glyph_data;
     }
 
-    assert(FT_Init_FreeType(&m_ft) == 0, "Failed to initialize FreeType.");
-    assert(FT_New_Face(m_ft, source_font_path.string().c_str(), 0, &m_face) == 0, "Failed to load source font face for kerning.");
-    assert(FT_Set_Pixel_Sizes(m_face, 0, 64) == 0, "Failed to set font pixel size for kerning.");
+    assert(
+        FT_Init_FreeType(&m_ft) == 0, 
+        std::source_location::current(),
+        "Failed to initialize FreeType."
+    );
+
+    assert(
+        FT_New_Face(
+			m_ft, 
+			source_font_path.string().c_str(), 
+			0, 
+			&m_face
+		) == 0, 
+        std::source_location::current(), 
+        "Failed to load source font face for kerning."
+    );
+
+    assert(
+        FT_Set_Pixel_Sizes(m_face, 0, 64) == 0, 
+        std::source_location::current(),
+        "Failed to set font pixel size for kerning."
+    );
 
     m_kerning.clear();
     for (const auto& ga : m_glyphs | std::views::values) {

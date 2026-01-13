@@ -15,7 +15,20 @@ export namespace gse {
 	using job = std::move_only_function<void()>;
 }
 
+namespace gse::task {
+	using parallel_for_fn = std::move_only_function<void(std::size_t)>;
+
+	auto parallel_for_impl(
+		std::size_t first,
+		std::size_t last,
+		parallel_for_fn func,
+		id id
+	) -> void;
+}
+
 export namespace gse::task {
+	class group;
+
 	template <typename F>
 	auto start(
 		F&& fn = [] {},
@@ -23,20 +36,23 @@ export namespace gse::task {
 	) -> std::invoke_result_t<F&>;
 
 	auto post(
-		job j
+		job j,
+		id id = trace::make_loc_id(std::source_location::current())
 	) -> void;
 
 	template <std::input_iterator It>
 	auto post_range(
 		It first,
-		It last
+		It last,
+		id id = trace::make_loc_id(std::source_location::current())
 	) -> void;
 
 	template <typename F>
 	auto parallel_for(
 		first_arg_t<F> first,
 		first_arg_t<F> last,
-		F&& func
+		F&& func,
+		id id = trace::make_loc_id(std::source_location::current())
 	) -> void;
 
 	auto thread_count(
@@ -47,6 +63,38 @@ export namespace gse::task {
 
 	auto wait_idle(
 	) -> void;
+
+	class group : non_copyable, non_movable {
+	public:
+		explicit group(
+			id label = trace::make_loc_id(std::source_location::current())
+		);
+
+		~group() override;
+
+		auto post(
+			job j,
+			id id = trace::make_loc_id(std::source_location::current())
+		) -> void;
+
+		template <std::input_iterator It>
+		auto post_range(
+			It first,
+			It last,
+			id id = trace::make_loc_id(std::source_location::current())
+		) -> void;
+
+		auto notify_complete(
+		) -> void;
+
+	private:
+		id m_label;
+		std::uint64_t m_outer_parent = 0;
+		std::uint64_t m_parent_eid = 0;
+		std::atomic<std::size_t> m_task_count{ 0 };
+		std::mutex m_mutex;
+		std::condition_variable m_cv;
+	};
 }
 
 namespace gse::task {
@@ -64,13 +112,18 @@ namespace gse::task {
 	std::size_t chunk_size = 256;
 	std::size_t coalesce_threshold = 64;
 
-	id post_id = generate_id("task.post");
-	id post_item_id = generate_id("task.post_item");
-	id post_range_id = generate_id("task.post_range");
-	id parallel_for_id = generate_id("task.parallel_for");
-	id parallel_for_block_id = generate_id("task.parallel_for_block");
-
 	thread_local std::optional<std::size_t> local_worker_id = std::nullopt;
+
+	struct parent {
+		std::uint64_t forced_eid = 0;
+	};
+
+	auto enqueue(
+		std::shared_ptr<job> p,
+		id id,
+		parent parent,
+		group* task_group
+	) -> void;
 
 	auto current_worker_id(
 	) noexcept -> std::optional<std::size_t>;
@@ -83,6 +136,38 @@ namespace gse::task {
 	) -> std::uint64_t;
 }
 
+gse::task::group::group(const id label) : m_label(label) {
+	m_outer_parent = trace::current_eid();
+	m_parent_eid = trace::begin_block(m_label, m_outer_parent);
+}
+
+gse::task::group::~group() {
+	std::unique_lock lk(m_mutex);
+	m_cv.wait(lk, [this] {
+		return m_task_count.load(std::memory_order_acquire) == 0;
+	});
+
+	trace::end_block(m_label, m_parent_eid, m_outer_parent);
+}
+
+auto gse::task::group::notify_complete() -> void {
+	if (m_task_count.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+		std::scoped_lock lk(m_mutex);
+		m_cv.notify_one();
+	}
+}
+
+auto gse::task::group::post(job j, const id id) -> void {
+	m_task_count.fetch_add(1, std::memory_order_relaxed);
+
+	auto p = std::make_shared<job>(std::move(j));
+	const parent parent{
+		.forced_eid = m_parent_eid
+	};
+
+	enqueue(std::move(p), id, parent, this);
+}
+
 template <typename F>
 auto gse::task::start(F&& fn, std::size_t worker_count) -> std::invoke_result_t<F&> {
 	if (worker_count < 2) {
@@ -93,8 +178,7 @@ auto gse::task::start(F&& fn, std::size_t worker_count) -> std::invoke_result_t<
 		trace::scope(generate_id("task.start.reentrant"), [&] {
 			if constexpr (std::is_void_v<std::invoke_result_t<F&>>) {
 				fn();
-			}
-			else {
+			} else {
 				auto r = fn();
 				return r;
 			}
@@ -102,7 +186,11 @@ auto gse::task::start(F&& fn, std::size_t worker_count) -> std::invoke_result_t<
 	}
 
 	if (started.exchange(true)) {
-		return;
+		if constexpr (std::is_void_v<std::invoke_result_t<F&>>) {
+			return;
+		} else {
+			return {};
+		}
 	}
 
 	arena.reset();
@@ -131,8 +219,7 @@ auto gse::task::start(F&& fn, std::size_t worker_count) -> std::invoke_result_t<
 			fn();
 		});
 		return;
-	}
-	else {
+	} else {
 		using r = std::invoke_result_t<F&>;
 		r ret{};
 		trace::scope(generate_id("task.start.body"), [&] {
@@ -142,116 +229,96 @@ auto gse::task::start(F&& fn, std::size_t worker_count) -> std::invoke_result_t<
 	}
 }
 
-auto gse::task::post(job j) -> void {
-	in_flight.fetch_add(1, std::memory_order_relaxed);
-
+auto gse::task::post(job j, const id id) -> void {
 	auto p = std::make_shared<job>(std::move(j));
 
-	const auto key = async_key(p.get());
-	const auto id = trace::make_loc_id();
+	const parent parent{
+		.forced_eid = trace::current_eid()
+	};
 
-	trace::begin_async(id, key);
-
-	const auto parent = trace::current_eid();
-
-	arena->enqueue([p, id, key, parent] {
-		trace::end_async(id, key);
-
-		auto done = make_scope_exit([] {
-			if (in_flight.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-				std::scoped_lock lk(idle);
-				idle_cv.notify_all();
-			}
-		});
-		try {
-			trace::scope(id, [&] {
-				(*p)();
-			}, parent);
-		}
-		catch (const std::exception& e) {
-			std::println("Exception in task: {}", e.what());
-		}
-		catch (...) {
-			std::println("Exception in task");
-		}
-	});
+	enqueue(
+		std::move(p),
+		id,
+		parent,
+		nullptr
+	);
 }
 
 template <std::input_iterator It>
-auto gse::task::post_range(It first, It last) -> void {
-	const std::size_t n = static_cast<std::size_t>(std::distance(first, last));
-	if (n == 0) {
-		return;
-	}
-
-	in_flight.fetch_add(n, std::memory_order_relaxed);
-
+auto gse::task::post_range(It first, It last, const id id) -> void {
 	for (; first != last; ++first) {
 		auto p = std::make_shared<job>(job(*first));
 
-		const auto key = async_key(p.get());
-		const auto id = trace::make_loc_id();
+		parent parent{
+			.forced_eid = trace::current_eid()
+		};
 
-		trace::begin_async(id, key);
-
-		const auto parent = trace::current_eid();
-
-		arena->enqueue([p, id, key, parent] {
-			trace::end_async(id, key);
-
-			auto done = make_scope_exit([] {
-				if (in_flight.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-					std::scoped_lock lk(idle);
-					idle_cv.notify_all();
-				}
-			});
-			try {
-				trace::scope(id, [&] {
-					(*p)();
-				}, parent);
-			}
-			catch (const std::exception& e) {
-				std::println("Exception in task: {}", e.what());
-			}
-			catch (...) {
-				std::println("Exception in task");
-			}
-		});
+		enqueue(std::move(p), id, std::move(parent), nullptr);
 	}
 }
 
-template <typename F>
-auto gse::task::parallel_for(first_arg_t<F> first, first_arg_t<F> last, F&& func) -> void {
-	using index = first_arg_t<F>;
+auto gse::task::parallel_for_impl(
+	std::size_t first,
+	std::size_t last,
+	parallel_for_fn func,
+	id id
+) -> void {
+	if (last <= first) {
+		return;
+	}
 
-	if (last <= first) return;
-
-	const index n = last - first;
-	const id id = trace::make_loc_id();
+	const std::size_t n = last - first;
 
 	trace::scope(id, [&] {
-		if (n <= static_cast<index>(coalesce_threshold)) {
-			for (index i = first; i < last; ++i) func(i);
+		if (n <= coalesce_threshold) {
+			for (std::size_t i = first; i < last; ++i) {
+				trace::scope(id, [&] {
+					func(i);
+				});
+			}
 			return;
 		}
 
-		const auto parent = trace::current_eid();
-
 		arena->execute([&] {
 			tbb::parallel_for(
-				tbb::blocked_range<index>(first, last, static_cast<index>(chunk_size)),
-				[&](const tbb::blocked_range<index>& r) {
+				tbb::blocked_range<std::size_t>(first, last, chunk_size),
+				[&](const tbb::blocked_range<std::size_t>& r) {
 					trace::scope(id, [&] {
-						for (index i = r.begin(); i != r.end(); ++i) {
+						for (std::size_t i = r.begin(); i != r.end(); ++i) {
 							trace::scope(id, [&] {
 								func(i);
-							}, parent);
+							});
 						}
 					});
 				}
 			);
 		});
 	});
+}
+
+template <typename F>
+auto gse::task::parallel_for(first_arg_t<F> first, first_arg_t<F> last, F&& func, id id) -> void {
+	using index = first_arg_t<F>;
+
+	if (last <= first) {
+		return;
+	}
+
+	parallel_for_impl(
+		static_cast<std::size_t>(first),
+		static_cast<std::size_t>(last),
+		parallel_for_fn([f = std::forward<F>(func)](std::size_t i) mutable {
+			f(static_cast<index>(i));
+		}),
+		id
+	);
+}
+
+template <std::input_iterator It>
+auto gse::task::group::post_range(It first, It last, const id id) -> void {
+	for (; first != last; ++first) {
+		this->post(job(*first), id);
+	}
 }
 
 auto gse::task::thread_count() -> size_t {
@@ -285,6 +352,42 @@ auto gse::task::wait_idle() -> void {
 	std::unique_lock lk(idle);
 	idle_cv.wait(lk, [] {
 		return likely_idle();
+	});
+}
+
+auto gse::task::enqueue(std::shared_ptr<job> p, id id, parent parent, group* task_group) -> void {
+	in_flight.fetch_add(1, std::memory_order_relaxed);
+
+	const auto key = async_key(p.get());
+	trace::begin_async(id, key);
+
+	arena->enqueue([p, id, key, parent = std::move(parent), task_group] {
+		trace::end_async(id, key);
+
+		auto group_done = make_scope_exit([&] {
+			if (task_group) {
+				task_group->notify_complete();
+			}
+		});
+
+		auto flight_done = make_scope_exit([] {
+			if (in_flight.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+				std::scoped_lock lk(idle);
+				idle_cv.notify_all();
+			}
+		});
+
+		const std::uint64_t parent_eid = parent.forced_eid;
+
+		try {
+			trace::scope(id, [&] {
+				(*p)();
+			}, parent_eid);
+		} catch (const std::exception& e) {
+			std::println("Exception in task: {}", e.what());
+		} catch (...) {
+			std::println("Exception in task");
+		}
 	});
 }
 

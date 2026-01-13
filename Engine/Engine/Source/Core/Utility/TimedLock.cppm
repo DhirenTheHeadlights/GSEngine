@@ -24,20 +24,16 @@ export namespace gse {
             Args&&... args
         );
 
-        // If the cooldown has expired, assign the value and reset the internal clock.
         virtual auto operator=(
             const T& value
         ) -> timed_lock&;
 
-        // If the cooldown has expired, reset the internal clock and return a mutable pointer.
         virtual auto try_get_mutable_value(
         ) -> T*;
 
-        // Always returns the value (read-only).
         auto value(
         ) const -> const T& ;
 
-        // Returns true if the cooldown period has expired.
         auto value_mutable(
         ) const -> bool;
     protected:
@@ -87,14 +83,10 @@ export namespace gse {
     class quota_timed_lock final : public timed_lock<T> {
         using timed_lock<T>::timed_lock;
     public:
-        // Uses quota or, if quota is exhausted but the cooldown has expired,
-        // resets the quota and then updates the value.
         auto operator=(
             const T& value
         ) -> quota_timed_lock& override;
 
-        // Returns a mutable pointer if quota is available or, if quota is exhausted,
-        // the cooldown has expired (in which case the quota resets).
         auto try_get_mutable_value(
         ) -> T* override;
     private:
@@ -110,7 +102,7 @@ auto gse::quota_timed_lock<T, N>::operator=(const T& value) -> gse::quota_timed_
         this->m_clock.reset();
     }
     else if (this->m_clock.elapsed() >= this->m_duration) {
-        m_quota = N - 1;  // reset quota (using one use for the current assignment)
+        m_quota = N - 1; 
         this->m_value = value;
         this->m_clock.reset();
     }

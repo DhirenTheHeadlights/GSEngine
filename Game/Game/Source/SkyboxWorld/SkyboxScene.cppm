@@ -25,7 +25,9 @@ export namespace gs {
 				});
 
 			build("Player")
-				.with<player>();
+				.with<player>({
+					.initial_position = gse::vec3<gse::length>(0.f, 0.f, 0.f)
+				});
 		}
 
 		auto render() -> void override {
