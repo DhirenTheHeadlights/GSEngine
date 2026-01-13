@@ -1,7 +1,3 @@
-module;
-
-#include <oneapi/tbb.h>
-
 export module gse.graphics:text_renderer;
 
 import std;
@@ -25,6 +21,8 @@ export namespace gse::renderer {
 		float scale = 1.0f;
 		unitless::vec4 color = { 1.0f, 1.0f, 1.0f, 1.0f };
 		std::optional<rect_t<unitless::vec2>> clip_rect = std::nullopt;
+		render_layer layer = render_layer::content;
+		std::uint32_t z_order = 0;
 	};
 
 	class text final : public system {
@@ -282,6 +280,14 @@ auto gse::renderer::text::update() -> void {
 	}
 
 	std::ranges::stable_sort(sorted_commands, [](const text_command& a, const text_command& b) {
+		if (a.layer != b.layer) {
+			return static_cast<std::uint8_t>(a.layer) < static_cast<std::uint8_t>(b.layer);
+		}
+		
+		if (a.z_order != b.z_order) {
+			return a.z_order < b.z_order;
+		}
+		
 		if (a.font.id() != b.font.id()) {
 			return a.font.id().number() < b.font.id().number();
 		}
@@ -322,7 +328,7 @@ auto gse::renderer::text::update() -> void {
 		batch_index_start = static_cast<std::uint32_t>(indices.size());
 	};
 
-	for (const auto& [font, text, position, scale, color, clip_rect] : sorted_commands) {
+	for (const auto& [font, text, position, scale, color, clip_rect, layer, z_order] : sorted_commands) {
 		const bool font_changed = font.id() != current_font.id();
 
 		if (const bool clip_changed = clip_rect != current_clip; font_changed || clip_changed) {

@@ -36,7 +36,7 @@ auto gse::physics::system::update() -> void {
 
 	if (steps == 0) return;
 
-	write([steps, const_update_time](
+	write([steps](
 		const component_chunk<motion_component>& motion_chunk,
 		const component_chunk<collision_component>& collision_chunk
 	) {

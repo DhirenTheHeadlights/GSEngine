@@ -13,6 +13,7 @@ import :text_renderer;
 export namespace gse::gui {
 	struct style {
 		unitless::vec4 color_title_bar = { 0.15f, 0.15f, 0.15f, 0.9f };
+		unitless::vec4 color_title_bar_inactive = { 0.12f, 0.12f, 0.12f, 1.0f };
 		unitless::vec4 color_menu_body = { 0.1f, 0.1f, 0.1f, 0.01f };
 		unitless::vec4 color_text = { 0.9f, 0.9f, 0.9f, 1.0f };
 		unitless::vec4 color_dock_preview = { 0.2f, 0.2f, 0.8f, 0.4f };
@@ -83,6 +84,7 @@ export namespace gse::gui {
 		unitless::vec2 grab_offset;
 		std::optional<unitless::vec2> pre_docked_size;
 		bool grabbed = false;
+		bool chrome_drawn_this_frame = false;
 		float dock_split_ratio = 0.5f;
 		resize_handle active_resize_handle = resize_handle::none;
 		dock::location docked_to = dock::location::none;
@@ -101,12 +103,15 @@ export namespace gse::gui {
 		std::vector<renderer::sprite_command>& sprites;
 		std::vector<renderer::text_command>& texts;
 
+		render_layer current_layer = render_layer::content;
+		std::uint32_t current_z_order = 0;
+
 		auto queue_sprite(
-			const renderer::sprite_command& cmd
+			renderer::sprite_command cmd
 		) const -> void;
 
 		auto queue_text(
-			const renderer::text_command& cmd
+			renderer::text_command cmd
 		) const -> void;
 	};
 }
@@ -128,6 +133,13 @@ namespace gse::gui::states {
 		id parent_id;
 		id child_id;
 	};
+
+	struct pending_drag {
+		id menu_id;
+		unitless::vec2 start_position;
+		unitless::vec2 offset;
+		std::optional<std::uint32_t> tab_index;
+	};
 }
 
 namespace gse::gui {
@@ -135,7 +147,8 @@ namespace gse::gui {
 		states::idle,
 		states::dragging,
 		states::resizing,
-		states::resizing_divider
+		states::resizing_divider,
+		states::pending_drag
 	>;
 }
 
@@ -148,10 +161,14 @@ gse::gui::menu::menu(std::string_view tag, const menu_data& data)
 	tab_contents.emplace_back(tag);
 }
 
-auto gse::gui::draw_context::queue_sprite(const renderer::sprite_command& cmd) const -> void {
-	sprites.push_back(cmd);
+auto gse::gui::draw_context::queue_sprite(renderer::sprite_command cmd) const -> void {
+	cmd.layer = current_layer;
+	cmd.z_order = current_z_order;
+	sprites.push_back(std::move(cmd));
 }
 
-auto gse::gui::draw_context::queue_text(const renderer::text_command& cmd) const -> void {
-	texts.push_back(cmd);
+auto gse::gui::draw_context::queue_text(renderer::text_command cmd) const -> void {
+	cmd.layer = current_layer;
+	cmd.z_order = current_z_order;
+	texts.push_back(std::move(cmd));
 }

@@ -9,7 +9,7 @@ import :joint;
 import :rendering_context;
 
 export namespace gse {
-    class skeleton : identifiable {
+    class skeleton : public identifiable {
     public:
         struct params {
             std::string name;

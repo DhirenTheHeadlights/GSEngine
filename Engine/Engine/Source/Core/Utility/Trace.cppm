@@ -682,6 +682,13 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 	std::unordered_map<std::uint64_t, std::size_t> index_of;
 	index_of.reserve(spans.size());
 
+	std::unordered_set<std::uint64_t> still_open;
+	for (const auto& [eid, sp] : spans) {
+		if (sp.t1 == 0) {
+			still_open.insert(eid);
+		}
+	}
+
 	for (auto& [eid, sp] : spans) {
 		if (sp.t1 < sp.t0) {
 			sp.t1 = sp.t0;
@@ -744,11 +751,15 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 		for (const auto c : n.children_idx) {
 			const auto& ch = fs.flat[c];
 
+			if (ch.tid != n.tid) {
+				continue;
+			}
+
 			auto a = std::max(ch.start, parent_begin);
 			auto b = std::min(ch.end, parent_end);
 
 			if (b > a) {
-				segs.push_back({a, b});
+				segs.push_back({ a, b });
 			}
 		}
 
@@ -761,7 +772,7 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 			return x.a < y.a;
 		});
 
-		time_t<std::uint64_t> covered{};
+		time_t<std::uint64_t> covered;
 
 		seg cur = segs[0];
 
@@ -777,7 +788,7 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 		}
 		covered += (cur.b - cur.a);
 
-		n.self = (covered < parent_tot) ? (parent_tot - covered) : time_t<std::uint64_t>{};
+		n.self = (covered < parent_tot) ? (parent_tot - covered) : 0;
 	};
 
 	for (const auto r : roots_idx) {
@@ -804,28 +815,25 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 	};
 
 	std::function<void(std::size_t, std::size_t)> build_subtree = [&](const std::size_t node_idx, const std::size_t flat_i) {
-		auto& n = fs.node_pool[node_idx];
 		const auto& fn = fs.flat[flat_i];
 
 		if (fn.children_idx.empty()) {
-			n.children_first = nullptr;
-			n.children_count = 0;
+			fs.node_pool[node_idx].children_first = nullptr;
+			fs.node_pool[node_idx].children_count = 0;
 			return;
 		}
 
 		const std::size_t start = fs.node_pool.size();
 
-		for (std::size_t ci : fn.children_idx) {
+		for (const std::size_t ci : fn.children_idx) {
 			emplace_shallow(ci);
 		}
 
-		n.children_first = fs.node_pool.data() + start;
-		n.children_count = fn.children_idx.size();
+		fs.node_pool[node_idx].children_first = fs.node_pool.data() + start;
+		fs.node_pool[node_idx].children_count = fn.children_idx.size();
 
 		for (std::size_t k = 0; k < fn.children_idx.size(); ++k) {
-			const std::size_t ci = fn.children_idx[k];
-			const std::size_t child_node_idx = start + k;
-			build_subtree(child_node_idx, ci);
+			build_subtree(start + k, fn.children_idx[k]);
 		}
 	};
 
@@ -836,9 +844,9 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 	}
 
 	fs.open_spans.clear();
-	for (auto& [eid, sp] : spans) {
-		if (sp.t1 == time_t<std::uint64_t>{}) {
-			fs.open_spans.emplace(eid, sp);
+	for (const auto eid : still_open) {
+		if (auto it = spans.find(eid); it != spans.end()) {
+			fs.open_spans.emplace(eid, it->second);
 		}
 	}
 }

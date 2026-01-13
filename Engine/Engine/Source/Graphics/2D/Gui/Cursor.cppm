@@ -21,6 +21,7 @@ export namespace gse::cursor {
 		resize_sw,
 		resize_w,
 		resize_nw,
+		resize_ew,
 		omni_move
 	};
 
@@ -71,14 +72,14 @@ auto gse::cursor::render_to(const renderer::context& context, std::vector<render
 	case style::arrow: {
 		constexpr float thickness = 2.f;
 		draw_line(commands, {
-			          .line = {
-				          { mouse_pos.x() - half_len, mouse_pos.y() },
-				          { mouse_pos.x() + half_len, mouse_pos.y() }
-			          },
-			          .thickness = thickness,
-			          .color = color,
-			          .texture = blank_texture
-		          });
+			.line = {
+				{ mouse_pos.x() - half_len, mouse_pos.y() },
+				{ mouse_pos.x() + half_len, mouse_pos.y() }
+			},
+			.thickness = thickness,
+			.color = color,
+			.texture = blank_texture
+		});
 		draw_line(commands, {
 			.line = {
 				{ mouse_pos.x(), mouse_pos.y() - half_len },
@@ -91,89 +92,19 @@ auto gse::cursor::render_to(const renderer::context& context, std::vector<render
 		break;
 	}
 	case style::resize_e: {
-		draw_arrow_head({
-			.commands = commands,
-			.tip_position = mouse_pos,
-			.direction = { 1.f, 0.f },
-			.texture = blank_texture
-		});
+		draw_arrow_head({ .commands = commands, .tip_position = mouse_pos, .direction = { 1.f, 0.f }, .texture = blank_texture });
 		break;
 	}
 	case style::resize_w: {
+		draw_arrow_head({ .commands = commands, .tip_position = mouse_pos, .direction = { -1.f, 0.f }, .texture = blank_texture });
+		break;
+	}
+	case style::resize_ew: { 
+		constexpr float offset = 4.f;
 		draw_arrow_head({
 			.commands = commands,
-			.tip_position = mouse_pos,
+			.tip_position = mouse_pos + unitless::vec2{ -offset, 0.f },
 			.direction = { -1.f, 0.f },
-			.texture = blank_texture
-		});
-		break;
-	}
-	case style::resize_n: {
-		draw_arrow_head({
-			.commands = commands,
-			.tip_position = mouse_pos,
-			.direction = { 0.f, 1.f },
-			.texture = blank_texture
-		});
-		break;
-	}
-	case style::resize_s: {
-		draw_arrow_head({
-			.commands = commands,
-			.tip_position = mouse_pos,
-			.direction = { 0.f, -1.f },
-			.texture = blank_texture
-		});
-		break;
-	}
-	case style::resize_ne: {
-		draw_arrow_head({
-			.commands = commands,
-			.tip_position = mouse_pos,
-			.direction = -normalize(unitless::vec2{ 1.f, 1.f }),
-			.texture = blank_texture
-		});
-		break;
-	}
-	case style::resize_sw: {
-		draw_arrow_head({
-			.commands = commands,
-			.tip_position = mouse_pos,
-			.direction = -normalize(unitless::vec2{ -1.f, -1.f }),
-			.texture = blank_texture
-		});
-		break;
-	}
-	case style::resize_nw: {
-		draw_arrow_head({
-			.commands = commands,
-			.tip_position = mouse_pos,
-			.direction = -normalize(unitless::vec2{ -1.f, 1.f }),
-			.texture = blank_texture
-		});
-		break;
-	}
-	case style::resize_se: {
-		draw_arrow_head({
-			.commands = commands,
-			.tip_position = mouse_pos,
-			.direction = -normalize(unitless::vec2{ 1.f, -1.f }),
-			.texture = blank_texture
-		});
-		break;
-	}
-	case style::omni_move: {
-		constexpr float offset = 10.f;
-		draw_arrow_head({
-			.commands = commands,
-			.tip_position = mouse_pos + unitless::vec2{ 0.f, offset },
-			.direction = { 0.f, 1.f },
-			.texture = blank_texture
-		});
-		draw_arrow_head({
-			.commands = commands,
-			.tip_position = mouse_pos + unitless::vec2{ 0.f, -offset },
-			.direction = { 0.f, -1.f },
 			.texture = blank_texture
 		});
 		draw_arrow_head({
@@ -182,12 +113,14 @@ auto gse::cursor::render_to(const renderer::context& context, std::vector<render
 			.direction = { 1.f, 0.f },
 			.texture = blank_texture
 		});
-		draw_arrow_head({
-			.commands = commands,
-			.tip_position = mouse_pos + unitless::vec2{ -offset, 0.f },
-			.direction = { -1.f, 0.f },
-			.texture = blank_texture
-		});
+		break;
+	}
+	case style::omni_move: {
+		constexpr float offset = 10.f;
+		draw_arrow_head({ .commands = commands, .tip_position = mouse_pos + unitless::vec2{ 0.f, offset }, .direction = { 0.f, 1.f }, .texture = blank_texture });
+		draw_arrow_head({ .commands = commands, .tip_position = mouse_pos + unitless::vec2{ 0.f, -offset }, .direction = { 0.f, -1.f }, .texture = blank_texture });
+		draw_arrow_head({ .commands = commands, .tip_position = mouse_pos + unitless::vec2{ offset, 0.f }, .direction = { 1.f, 0.f }, .texture = blank_texture });
+		draw_arrow_head({ .commands = commands, .tip_position = mouse_pos + unitless::vec2{ -offset, 0.f }, .direction = { -1.f, 0.f }, .texture = blank_texture });
 		break;
 	}
 	default:

@@ -94,7 +94,6 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
     };
 
     for (auto& contact_point : res->contact_points) {
-
         const inverse_mass inv_mass_a = object_a->position_locked ? inverse_mass{ 0 } : 1.0f / object_a->mass;
         const inverse_mass inv_mass_b = object_b->position_locked ? inverse_mass{ 0 } : 1.0f / object_b->mass;
         const inverse_mass total_inv_mass = inv_mass_a + inv_mass_b;
@@ -108,9 +107,7 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
 
         const length corrected_penetration = std::max(res->penetration - slop, length{ 0 });
         const vec3<length> correction = res->normal * corrected_penetration;
-        if (dot(res->normal, unitless::axis_y) < 0.0f && corrected_penetration > length{ 0 }) {
-            std::cout << "breakpoint!";
-        }
+
         const float ratio_a = inv_mass_a / total_inv_mass;
         const float ratio_b = inv_mass_b / total_inv_mass;
 

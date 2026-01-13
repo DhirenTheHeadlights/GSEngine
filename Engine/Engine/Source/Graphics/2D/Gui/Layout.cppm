@@ -58,6 +58,7 @@ auto gse::gui::layout::dock(id_mapped_collection<menu>& menus, const id child_id
 
 	child->swap_parent(*parent);
 	child->docked_to = location;
+	child->dock_split_ratio = 0.5f;
 }
 
 auto gse::gui::layout::undock(id_mapped_collection<menu>& menus, const id child_id) -> void {
@@ -85,31 +86,28 @@ auto gse::gui::layout::undock(id_mapped_collection<menu>& menus, const id child_
 		}
 	}
 
-	auto calculate_group_bounds = [](
-		id_mapped_collection<menu>& input_menus,
-		const id root_id
-		) -> ui_rect {
-			const menu* root = input_menus.try_get(root_id);
+	auto calculate_group_bounds = [](id_mapped_collection<menu>& input_menus, const id root_id) -> ui_rect {
+		const menu* root = input_menus.try_get(root_id);
 
-			if (!root) {
-				return {};
-			}
-			ui_rect bounds = root->rect;
+		if (!root) {
+			return {};
+		}
+		ui_rect bounds = root->rect;
 
-			std::function<void(id)> expand = [&](
-				const id parent
-				) {
-					for (const auto& item : input_menus.items()) {
-						if (item.owner_id() == parent) {
-							bounds = ui_rect::bounding_box(bounds, item.rect);
-							expand(item.id());
-						}
+		std::function<void(id)> expand = [&](
+			const id parent
+			) {
+				for (const auto& item : input_menus.items()) {
+					if (item.owner_id() == parent) {
+						bounds = ui_rect::bounding_box(bounds, item.rect);
+						expand(item.id());
 					}
-				};
+				}
+			};
 
-			expand(root_id);
-			return bounds;
-		};
+		expand(root_id);
+		return bounds;
+	};
 
 	const ui_rect group_bounds = calculate_group_bounds(menus, child_id);
 	if (group_bounds.width() <= 0.f || group_bounds.height() <= 0.f) {
@@ -165,8 +163,8 @@ auto gse::gui::layout::update(id_mapped_collection<menu>& menus, const id root_i
 		return;
 	}
 
-	const float ratio = std::clamp(root->dock_split_ratio, 0.05f, 0.95f);
-	const ui_rect total_area = ui_rect::bounding_box(root->rect, child->rect);
+	const float ratio = std::clamp(child->dock_split_ratio, 0.05f, 0.95f);
+	const ui_rect total_area = root->rect;
 
 	child->rect = dock_target_rect(total_area, child->docked_to, ratio);
 	root->rect = remaining_rect_for_parent(total_area, child->docked_to, ratio);
