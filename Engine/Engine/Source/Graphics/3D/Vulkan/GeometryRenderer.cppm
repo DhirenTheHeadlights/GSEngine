@@ -2,7 +2,6 @@
 
 import std;
 
-import :base_renderer;
 import :camera;
 import :mesh;
 import :model;
@@ -16,7 +15,7 @@ import gse.platform;
 import gse.physics;
 
 export namespace gse::renderer {
-	class geometry final : public base_renderer {
+	class geometry final : public gse::system {
 	public:
 		explicit geometry(
 			context& context
@@ -26,13 +25,16 @@ export namespace gse::renderer {
 		) -> void override;
 
 		auto update(
-			std::span<const std::reference_wrapper<registry>> registries
 		) -> void override;
 
 		auto render(
-			std::span<const std::reference_wrapper<registry>> registries
 		) -> void override;
+
+		auto render_queue(
+		) const -> std::span<const render_queue_entry>;
+
 	private:
+		context& m_context;
 		vk::raii::Pipeline m_pipeline = nullptr;
 		vk::raii::PipelineLayout m_pipeline_layout = nullptr;
 		vk::raii::DescriptorSet m_descriptor_set = nullptr;
@@ -45,7 +47,7 @@ export namespace gse::renderer {
 	};
 }
 
-gse::renderer::geometry::geometry(context& context): base_renderer(context) {}
+gse::renderer::geometry::geometry(context& context) : m_context(context) {}
 
 auto gse::renderer::geometry::initialize() -> void {
 	auto& config = m_context.config();
@@ -160,7 +162,7 @@ auto gse::renderer::geometry::initialize() -> void {
 
 	const std::array g_buffer_color_formats = {
 		config.swap_chain_config().albedo_image.format,
-		config.swap_chain_config().normal_image.format,
+		config.swap_chain_config().normal_image.format
 	};
 
 	std::array<vk::PipelineColorBlendAttachmentState, g_buffer_color_formats.size()> color_blend_attachments;
@@ -236,58 +238,72 @@ auto gse::renderer::geometry::initialize() -> void {
 	m_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
 
 	frame_sync::on_end([this] {
-        m_render_queue.flip();
+		m_render_queue.flip();
 	});
 }
 
-auto gse::renderer::geometry::update(const std::span<const std::reference_wrapper<registry>> registries) -> void {
-	const auto cam = m_shader->uniform_block("CameraUBO");
+auto gse::renderer::geometry::update() -> void {
+	this->write([this](const component_chunk<render_component>& render_chunk) {
+		if (render_chunk.empty()) {
+			return;
+		}
 
-	m_shader->set_uniform("CameraUBO.view", m_context.camera().view(), m_ubo_allocations.at("CameraUBO").allocation);
-	m_shader->set_uniform("CameraUBO.proj", m_context.camera().projection(m_context.window().viewport()), m_ubo_allocations.at("CameraUBO").allocation);
+		m_shader->set_uniform(
+			"CameraUBO.view",
+			m_context.camera().view(),
+			m_ubo_allocations.at("CameraUBO").allocation
+		);
 
-	auto& out = m_render_queue.write();
-	out.clear();
+		m_shader->set_uniform(
+			"CameraUBO.proj",
+			m_context.camera().projection(m_context.window().viewport()),
+			m_ubo_allocations.at("CameraUBO").allocation
+		);
 
-	for (auto& registry : registries) {
-		for (auto& component : registry.get().linked_objects_write<render_component>()) {
+		auto& out = m_render_queue.write();
+		out.clear();
+
+		for (auto& component : render_chunk) {
 			if (!component.render) {
 				continue;
 			}
 
-			const auto mc = registry.get().try_linked_object_read<physics::motion_component>(component.owner_id());
-			const auto cc = registry.get().try_linked_object_read<physics::collision_component>(component.owner_id());
+			const auto* mc = render_chunk.read_from<physics::motion_component>(component);
+			const auto* cc = render_chunk.read_from<physics::collision_component>(component);
 
-			for (auto& model_handle : component.models) {
-				if (!model_handle.handle().valid() || !mc || !cc) {
+			for (auto& model_handle : component.model_instances) {
+				if (!model_handle.handle().valid() || mc == nullptr || cc == nullptr) {
 					continue;
 				}
 
 				model_handle.update(*mc, *cc);
-
 				out.append_range(model_handle.render_queue_entries());
 			}
 		}
-	}
 
-	std::ranges::sort(out, [](const render_queue_entry& a, const render_queue_entry& b){
-		const auto* ma = a.model.resolve();
-        const auto* mb = b.model.resolve();
+		std::ranges::sort(
+			out,
+			[](const render_queue_entry& a, const render_queue_entry& b) {
+				const auto* ma = a.model.resolve();
+				const auto* mb = b.model.resolve();
 
-        if (ma != mb) {
-			return ma < mb;
-        };
+				if (ma != mb) {
+					return ma < mb;
+				}
 
-        return a.index < b.index;
-    });
+				return a.index < b.index;
+			}
+		);
+	});
 }
 
-auto gse::renderer::geometry::render(const std::span<const std::reference_wrapper<registry>> registries) -> void {
+auto gse::renderer::geometry::render() -> void {
 	auto& config = m_context.config();
 	const auto command = config.frame_context().command_buffer;
 
 	vulkan::uploader::transition_image_layout(
-		command, config.swap_chain_config().albedo_image,
+		command,
+		config.swap_chain_config().albedo_image,
 		vk::ImageLayout::eColorAttachmentOptimal,
 		vk::ImageAspectFlagBits::eColor,
 		vk::PipelineStageFlagBits2::eFragmentShader,
@@ -297,7 +313,8 @@ auto gse::renderer::geometry::render(const std::span<const std::reference_wrappe
 	);
 
 	vulkan::uploader::transition_image_layout(
-		command, config.swap_chain_config().normal_image,
+		command,
+		config.swap_chain_config().normal_image,
 		vk::ImageLayout::eColorAttachmentOptimal,
 		vk::ImageAspectFlagBits::eColor,
 		vk::PipelineStageFlagBits2::eFragmentShader,
@@ -307,7 +324,8 @@ auto gse::renderer::geometry::render(const std::span<const std::reference_wrappe
 	);
 
 	vulkan::uploader::transition_image_layout(
-		command, config.swap_chain_config().depth_image,
+		command,
+		config.swap_chain_config().depth_image,
 		vk::ImageLayout::eDepthStencilAttachmentOptimal,
 		vk::ImageAspectFlagBits::eDepth,
 		vk::PipelineStageFlagBits2::eFragmentShader,
@@ -322,14 +340,22 @@ auto gse::renderer::geometry::render(const std::span<const std::reference_wrappe
 			.imageLayout = config.swap_chain_config().albedo_image.current_layout,
 			.loadOp = vk::AttachmentLoadOp::eClear,
 			.storeOp = vk::AttachmentStoreOp::eStore,
-			.clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = std::array{ 0.0f, 0.0f, 0.0f, 1.0f } } }
+			.clearValue = vk::ClearValue{
+				.color = vk::ClearColorValue{
+					.float32 = std::array{ 0.0f, 0.0f, 0.0f, 1.0f }
+				}
+			}
 		},
 		vk::RenderingAttachmentInfo{
 			.imageView = config.swap_chain_config().normal_image.view,
 			.imageLayout = config.swap_chain_config().normal_image.current_layout,
 			.loadOp = vk::AttachmentLoadOp::eClear,
 			.storeOp = vk::AttachmentStoreOp::eStore,
-			.clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = std::array{ 0.0f, 0.0f, 0.0f, 1.0f } } }
+			.clearValue = vk::ClearValue{
+				.color = vk::ClearColorValue{
+					.float32 = std::array{ 0.0f, 0.0f, 0.0f, 1.0f }
+				}
+			}
 		}
 	};
 
@@ -338,62 +364,79 @@ auto gse::renderer::geometry::render(const std::span<const std::reference_wrappe
 		.imageLayout = config.swap_chain_config().depth_image.current_layout,
 		.loadOp = vk::AttachmentLoadOp::eClear,
 		.storeOp = vk::AttachmentStoreOp::eStore,
-		.clearValue = vk::ClearValue{.depthStencil = vk::ClearDepthStencilValue{.depth = 1.0f } }
+		.clearValue = vk::ClearValue{
+			.depthStencil = vk::ClearDepthStencilValue{
+				.depth = 1.0f
+			}
+		}
 	};
 
 	const vk::RenderingInfo rendering_info{
 		.renderArea = { { 0, 0 }, config.swap_chain_config().extent },
 		.layerCount = 1,
-		.colorAttachmentCount = static_cast<uint32_t>(color_attachments.size()),
+		.colorAttachmentCount = static_cast<std::uint32_t>(color_attachments.size()),
 		.pColorAttachments = color_attachments.data(),
 		.pDepthAttachment = &depth_attachment
 	};
 
-	vulkan::render(config, rendering_info, [&] {
-        const auto& draw_list = m_render_queue.read();
+	vulkan::render(
+		config,
+		rendering_info,
+		[&] {
+			const auto& draw_list = m_render_queue.read();
 
-        if (draw_list.empty()) {
-	        return;
-        }
+			if (draw_list.empty()) {
+				return;
+			}
 
-        command.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
-
-        const vk::DescriptorSet sets[] = {
-	        m_descriptor_set
-        };
-
-        command.bindDescriptorSets(
-			vk::PipelineBindPoint::eGraphics, 
-			m_pipeline_layout, 
-			0,
-			vk::ArrayProxy<const vk::DescriptorSet>(1, sets),
-			{}
-		);
-
-        for (const auto& e : draw_list) {
-            m_shader->push(
-				command, 
-				m_pipeline_layout, 
-				"push_constants",
-				"model", e.model_matrix,
-				"normal_matrix", e.normal_matrix
+			command.bindPipeline(
+				vk::PipelineBindPoint::eGraphics,
+				m_pipeline
 			);
 
-            const auto& mesh = e.model->meshes()[e.index];
+			const vk::DescriptorSet sets[]{
+				m_descriptor_set
+			};
 
-            if (!mesh.material().valid()) {
-	            continue;
-            }
-
-            m_shader->push_descriptor(
-				command, 
-				m_pipeline_layout, 
-				"diffuseSampler",
-				mesh.material()->diffuse_texture->descriptor_info()
+			command.bindDescriptorSets(
+				vk::PipelineBindPoint::eGraphics,
+				m_pipeline_layout,
+				0,
+				vk::ArrayProxy<const vk::DescriptorSet>(1, sets),
+				{}
 			);
 
-            mesh.bind(command);
-            mesh.draw(command);
-        }
-    });
+			for (const auto& e : draw_list) {
+				m_shader->push(
+					command,
+					m_pipeline_layout,
+					"push_constants",
+					"model",
+					e.model_matrix,
+					"normal_matrix",
+					e.normal_matrix
+				);
+
+				const auto& mesh = e.model->meshes()[e.index];
+
+				if (!mesh.material().valid()) {
+					continue;
+				}
+
+				m_shader->push_descriptor(
+					command,
+					m_pipeline_layout,
+					"diffuseSampler",
+					mesh.material()->diffuse_texture->descriptor_info()
+				);
+
+				mesh.bind(command);
+				mesh.draw(command);
+			}
+		}
+	);
+}
+
+auto gse::renderer::geometry::render_queue() const -> std::span<const render_queue_entry> {
+	return m_render_queue.read();
 }

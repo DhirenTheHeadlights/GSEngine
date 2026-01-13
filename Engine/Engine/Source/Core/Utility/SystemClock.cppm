@@ -1,42 +1,44 @@
 export module gse.utility:system_clock;
 
 import std;
-
 import gse.physics.math;
 
 import :clock;
 
 export namespace gse::system_clock {
-	auto update(
-	) -> void;
+	using internal_time = time_t<>;
+	using default_time = time_t<float, seconds>;
 
-	auto dt(
-	) -> time;
+	auto update() -> void;
 
-	auto now(
-	) -> time;
+	template <is_quantity Q = default_time>
+	auto dt() -> Q;
 
-	auto fps(
-	) -> std::uint32_t;
+	template <is_quantity Q = default_time>
+	auto now() -> Q;
 
-	constexpr time const_update_time = seconds(1.f / 100.f);
+	template <is_quantity Q = default_time>
+	auto constant_update_time() -> Q;
+
+	auto fps() -> std::uint32_t;
 }
 
 namespace gse::system_clock {
 	clock main_clock;
 	clock dt_clock;
 
-	static constinit time delta_time;
-	static constinit time frame_rate_update_time;
+	internal_time delta_time{};
+	internal_time frame_rate_update_time{};
 
-	static constinit std::uint32_t frame_count = 0;
-	static constinit std::uint32_t frame_rate_count = 0;
+	constexpr internal_time fps_report_interval = seconds(1.0);
+	constexpr internal_time const_update_time = milliseconds(10.0);
 
-	constexpr time fps_report_interval = seconds(1.0f);
+	std::uint32_t frame_count = 0;
+	std::uint32_t frame_rate_count = 0;
 }
 
 auto gse::system_clock::update() -> void {
-	delta_time = dt_clock.reset();
+	delta_time = gse::quantity_cast<internal_time>(dt_clock.reset<double>());
 
 	frame_count++;
 	frame_rate_update_time += delta_time;
@@ -48,12 +50,19 @@ auto gse::system_clock::update() -> void {
 	}
 }
 
-auto gse::system_clock::dt() -> time {
-	return delta_time > const_update_time ? delta_time : const_update_time;
+template <gse::is_quantity Q>
+auto gse::system_clock::dt() -> Q {
+	return gse::quantity_cast<Q>(std::min(delta_time, const_update_time));
 }
 
-auto gse::system_clock::now() -> time {
-	return main_clock.elapsed();
+template <gse::is_quantity Q>
+auto gse::system_clock::now() -> Q {
+	return gse::quantity_cast<Q>(main_clock.elapsed<double>());
+}
+
+template <gse::is_quantity Q>
+auto gse::system_clock::constant_update_time() -> Q {
+	return gse::quantity_cast<Q>(const_update_time);
 }
 
 auto gse::system_clock::fps() -> std::uint32_t {

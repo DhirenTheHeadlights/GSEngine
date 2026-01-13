@@ -17,7 +17,8 @@ public struct Light {
     public float  quadratic;
     public float  cut_off;
     public float  outer_cut_off;
-    public float  ambient_strength;
+    public float ambient_strength;
+    public int shadow_index;
 };
 
 public enum class LayoutKind : int {

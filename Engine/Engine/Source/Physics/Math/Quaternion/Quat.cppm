@@ -14,8 +14,8 @@ namespace gse {
 
 		constexpr quaternion();
 		constexpr quaternion(const unitless::vec_t<T, 4>& v4);
-		constexpr quaternion(const unitless::vec_t<T, 3>& v3, const T scalar);
-		constexpr quaternion(const T scalar, const unitless::vec_t<T, 3>& v3);
+		constexpr quaternion(const unitless::vec_t<T, 3>& v3, T scalar);
+		constexpr quaternion(T scalar, const unitless::vec_t<T, 3>& v3);
 		constexpr quaternion(T s, T x, T y, T z);
 		constexpr quaternion(const unitless::vec_t<T, 3>& axis, angle_t<T> angle);
 		constexpr quaternion(angle_t<T> angle, const unitless::vec_t<T, 3>& axis);
@@ -29,7 +29,7 @@ namespace gse {
 
 		constexpr auto imaginary_part() const -> unitless::vec_t<T, 3>;
 		constexpr auto v4(this auto&& self) -> unitless::vec_t<T, 4>;
-		constexpr auto to_euler_angles() const -> vec3<angle_t<T>>;
+		constexpr auto euler_angles() const -> vec3<angle_t<T>>;
 	private:
 		using base_type::base_type;
 
@@ -48,24 +48,21 @@ namespace gse {
 
 export template <gse::internal::is_arithmetic T, typename CharT>
 struct std::formatter<gse::quaternion<T>, CharT> {
-	std::formatter<gse::vec::storage<T, 4>, CharT> vec_formatter;
+    std::formatter<gse::unitless::vec_t<T, 4>, CharT> vec_formatter;
 
-	constexpr auto parse(std::format_parse_context& ctx) {
-		return vec_formatter.parse(ctx);
-	}
+    constexpr auto parse(std::format_parse_context& ctx) {
+        return vec_formatter.parse(ctx);
+    }
 
-	template <typename FormatContext>
-	auto format(const gse::quaternion<T>& q, FormatContext& ctx) const {
-		auto out = ctx.out();
-		out = std::format_to(out, "quat");
-		gse::vec::storage<T, 4> tmp{};
-		tmp.data[0] = q[0];
-		tmp.data[1] = q[1];
-		tmp.data[2] = q[2];
-		tmp.data[3] = q[3];
-		return vec_formatter.format(tmp, ctx);
-	}
+    template <typename FormatContext>
+    auto format(const gse::quaternion<T>& q, FormatContext& ctx) const {
+        auto out = ctx.out();
+        out = std::format_to(out, "quat");
+        const auto& v4 = static_cast<const gse::unitless::vec_t<T,4>&>(q);
+        return vec_formatter.format(v4, ctx);
+    }
 };
+
 
 template <gse::internal::is_arithmetic T>
 constexpr gse::quaternion<T>::quaternion() : unitless::vec_t<T, 4>{ T(1), T(0), T(0), T(0) } {}
@@ -128,7 +125,7 @@ constexpr auto gse::quaternion<T>::v4(this auto&& self) -> unitless::vec_t<T, 4>
 }
 
 template <gse::internal::is_arithmetic T>
-constexpr auto gse::quaternion<T>::to_euler_angles() const -> vec3<angle_t<T>> {
+constexpr auto gse::quaternion<T>::euler_angles() const -> vec3<angle_t<T>> {
 	angle_t<T> angle_x;
 	angle_t<T> angle_y;
 	angle_t<T> angle_z;

@@ -7,9 +7,12 @@ import gse.physics.math;
 
 import :double_buffer;
 
+namespace gse {
+	using uuid = std::uint64_t;
+}
+
 export namespace gse {
 	class id;
-	using uuid = std::uint64_t;
 
 	auto generate_id(
 		std::string_view tag
@@ -32,6 +35,22 @@ export namespace gse {
 		std::string_view tag
 	) -> id;
 
+	auto try_find(
+		std::string_view tag
+	) -> std::optional<id>;
+
+	auto try_find(
+		uuid number
+	) -> std::optional<id>;
+
+	auto find_or_generate_id(
+		std::string_view tag
+	) -> id;
+
+	auto find_or_generate_id(
+		uuid number
+	) -> id;
+
 	auto exists(
 		uuid number
 	) -> bool;
@@ -39,32 +58,42 @@ export namespace gse {
 	auto exists(
 		std::string_view tag
 	) -> bool;
+
+	auto tag(
+		uuid number
+	) -> std::string_view;
+
+	auto number(
+		std::string_view tag
+	) -> uuid;
 }
 
 export namespace gse {
 	class id {
 	public:
 		id() = default;
+
 		auto operator==(
-			const id& other
+			id other
 		) const -> bool;
 
 		auto number(
 		) const -> uuid;
 
 		auto tag(
-		) const -> const std::string&;
+		) const -> std::string_view;
 
 		auto exists(
 		) const -> bool;
+
+		auto reset(
+		) -> void;
 	private:
 		explicit id(
-			uuid id,
-			std::string tag
+			uuid id
 		);
 
 		uuid m_number = std::numeric_limits<uuid>::max();
-		std::string m_tag;
 
 		friend auto generate_id(std::string_view tag) -> id;
 		friend auto generate_id(std::uint64_t number) -> id;
@@ -75,15 +104,16 @@ export namespace gse {
 template <>
 struct std::formatter<gse::id> {
 	static constexpr auto parse(std::format_parse_context& ctx) { return ctx.begin(); }
-	static auto format(const gse::id& value, std::format_context& ctx) {
+	static auto format(gse::id value, std::format_context& ctx) {
 		return std::format_to(ctx.out(), "[{}: {}]", value.number(), value.tag());
 	}
 };
 
-auto gse::id::operator==(const id& other) const -> bool {
+auto gse::id::operator==(const id other) const -> bool {
 	if (!exists() || !other.exists()) {
 		return false;
 	}
+
 	return m_number == other.m_number;
 }
 
@@ -91,15 +121,19 @@ auto gse::id::number() const -> uuid {
 	return m_number;
 }
 
-auto gse::id::tag() const -> const std::string& {
-	return m_tag;
+auto gse::id::tag() const -> std::string_view {
+	return gse::tag(m_number);
 }
 
 auto gse::id::exists() const -> bool {
 	return m_number != std::numeric_limits<uuid>::max();
 }
 
-gse::id::id(const uuid id, std::string tag) : m_number(id), m_tag(std::move(tag)) {}
+auto gse::id::reset() -> void {
+	this->m_number = std::numeric_limits<uuid>::max();
+}
+
+gse::id::id(const uuid id) : m_number(id) {}
 
 export namespace gse {
 	class identifiable {
@@ -113,7 +147,7 @@ export namespace gse {
 		);
 
 		auto id(
-		) const -> const id&;
+		) const -> id;
 
 		auto operator==(
 			const identifiable& other
@@ -131,7 +165,7 @@ gse::identifiable::identifiable(const std::string& tag) : m_id(generate_id(tag))
 
 gse::identifiable::identifiable(const std::filesystem::path& path) : m_id(generate_id(filename(path))) {}
 
-auto gse::identifiable::id() const -> const gse::id& {
+auto gse::identifiable::id() const -> gse::id {
 	return m_id;
 }
 
@@ -146,78 +180,44 @@ auto gse::identifiable::filename(const std::filesystem::path& path) -> std::stri
 export namespace gse {
 	class identifiable_owned {
 	public:
-		identifiable_owned() = default;
-		explicit identifiable_owned(const id& owner_id);
-
-		auto owner_id() const -> const id&;
-		auto operator==(const identifiable_owned& other) const -> bool = default;
-
-		auto swap(const id& new_parent_id) -> void;
-		auto swap(const identifiable& new_parent) -> void;
-	private:
-		id m_owner_id;
-	};
-}
-
-gse::identifiable_owned::identifiable_owned(const id& owner_id) : m_owner_id(owner_id) {}
-
-auto gse::identifiable_owned::owner_id() const -> const id& {
-	return m_owner_id;
-}
-
-auto gse::identifiable_owned::swap(const id& new_parent_id) -> void {
-	m_owner_id = new_parent_id;
-}
-
-auto gse::identifiable_owned::swap(const identifiable& new_parent) -> void {
-	swap(new_parent.id());
-}
-
-export namespace gse {
-	class identifiable_owned_only_uuid {
-	public:
-		identifiable_owned_only_uuid(
+		identifiable_owned(
 		) = default;
 
-		explicit identifiable_owned_only_uuid(
-			const id& owner_id
+		explicit identifiable_owned(
+			id owner_id
 		);
 
 		auto owner_id(
 		) const -> id;
 
 		auto operator==(
-			const identifiable_owned_only_uuid& other
+			const identifiable_owned& other
 		) const -> bool = default;
 
-		auto swap(
-			const id& new_parent_id
+		auto swap_parent(
+			id new_parent_id
 		) -> void;
 
-		auto swap(
+		auto swap_parent(
 			const identifiable& new_parent
 		) -> void;
 	private:
-		uuid m_owner_id;
+		id m_owner_id;
 	};
 }
 
-gse::identifiable_owned_only_uuid::identifiable_owned_only_uuid(const id& owner_id) : m_owner_id(owner_id.number()) {}
+gse::identifiable_owned::identifiable_owned(const id owner_id) : m_owner_id(owner_id) {}
 
-auto gse::identifiable_owned_only_uuid::owner_id() const -> id {
-	return find(m_owner_id);
+auto gse::identifiable_owned::owner_id() const -> id {
+	return m_owner_id;
 }
 
-auto gse::identifiable_owned_only_uuid::swap(const id& new_parent_id) -> void {
-	assert(
-		new_parent_id.exists(),
-		std::format("Cannot reassign identifiable owned to invalid id {}: {}", new_parent_id.tag(), new_parent_id.number())
-	);
-	m_owner_id = new_parent_id.number();
+auto gse::identifiable_owned::swap_parent(const id new_parent_id) -> void {
+	m_owner_id = new_parent_id;
 }
 
-auto gse::identifiable_owned_only_uuid::swap(const identifiable& new_parent) -> void {
-	swap(new_parent.id());
+auto gse::identifiable_owned::swap_parent(const identifiable& new_parent) -> void {
+	swap_parent(new_parent.id());
 }
 
 export namespace gse {
@@ -387,6 +387,7 @@ namespace gse {
 	struct id_registry_data {
 		id_mapped_collection<id, uuid> by_uuid;
 		std::unordered_map<std::string, uuid, transparent_hash, transparent_equal> tag_to_uuid;
+		std::unordered_map<uuid, std::string> uuid_to_tag;
 	};
 
 	auto id_registry() -> std::pair<std::shared_mutex&, id_registry_data&> {
@@ -400,18 +401,32 @@ auto gse::generate_id(const std::string_view tag) -> id {
 	const auto& [mutex, registry] = id_registry();
 	std::lock_guard lock(mutex);
 
-	const uuid new_uuid = registry.by_uuid.size();
-
-	std::string new_tag(tag);
-	if (registry.tag_to_uuid.contains(new_tag)) {
-		new_tag += std::to_string(new_uuid);
+	uuid stable_id = 0xcbf29ce484222325ull;
+	for (unsigned char c : tag) {
+		stable_id ^= c;
+		stable_id *= 1099511628211ull;
 	}
 
-	id new_id(new_uuid, std::move(new_tag));
+	if (registry.by_uuid.contains(stable_id)) {
+		if (const auto it = registry.uuid_to_tag.find(stable_id); it != registry.uuid_to_tag.end()) {
+			assert(
+				it->second == tag,
+				std::source_location::current(),
+				"ID collision for tag {} vs existing tag {}",
+				tag,
+				it->second
+			);
 
-	registry.by_uuid.add(new_uuid, new_id);
-	registry.tag_to_uuid[new_id.tag()] = new_uuid;
+			if (auto* existing = registry.by_uuid.try_get(stable_id)) {
+				return *existing;
+			}
+		}
+	}
 
+	const id new_id(stable_id);
+	registry.by_uuid.add(stable_id, new_id);
+	registry.tag_to_uuid[std::string(tag)] = stable_id;
+	registry.uuid_to_tag[stable_id] = std::string(tag);
 	return new_id;
 }
 
@@ -419,39 +434,72 @@ auto gse::generate_id(const std::uint64_t number) -> id {
 	const auto& [mutex, registry] = id_registry();
 	std::lock_guard lock(mutex);
 
-	assert(!registry.by_uuid.contains(number), std::format("ID number {} already exists", number));
+	assert(!registry.by_uuid.contains(number), std::source_location::current(), "ID number {} already exists", number);
 
-	id new_id(number, std::to_string(number));
+	const id new_id(number);
+	auto tag = std::to_string(number);
 
 	registry.by_uuid.add(number, new_id);
-	registry.tag_to_uuid[new_id.tag()] = number;
+	registry.tag_to_uuid[tag] = number;
+	registry.uuid_to_tag[number] = std::move(tag);
 
 	return new_id;
 }
 
 auto gse::generate_temp_id(const uuid number, const std::string_view tag) -> id {
-	return id(number, std::string(tag));
+	return id(number);
 }
 
 auto gse::find(const uuid number) -> id {
-	const auto& [mutex, registry] = id_registry();
-	std::shared_lock lock(mutex);
-
-	id* found_id = registry.by_uuid.try_get(number);
-	assert_lazy(found_id, [number] { return std::format("ID {} not found", number); });
+	const auto found_id = try_find(number);
+	assert(found_id.has_value(), std::source_location::current(), "ID {} not found", number);
 	return *found_id;
 }
 
 auto gse::find(const std::string_view tag) -> id {
+	const auto found_id = try_find(tag);
+	assert(found_id.has_value(), std::source_location::current(), "Inconsistent registry state!");
+	return *found_id;
+}
+
+auto gse::try_find(const std::string_view tag) -> std::optional<id> {
 	const auto& [mutex, registry] = id_registry();
 	std::shared_lock lock(mutex);
 
 	const auto it = registry.tag_to_uuid.find(tag);
-	assert_lazy(it != registry.tag_to_uuid.end(), [tag] { return std::format("Tag '{}' not found", tag); });
+	if (it == registry.tag_to_uuid.end()) {
+		return std::nullopt;
+	}
 
-	id* found_id = registry.by_uuid.try_get(it->second);
-	assert(found_id, "Inconsistent registry state!");
-	return *found_id;
+	if (id* found_id = registry.by_uuid.try_get(it->second)) {
+		return *found_id;
+	}
+
+	return std::nullopt;
+}
+
+auto gse::try_find(const uuid number) -> std::optional<id> {
+	const auto& [mutex, registry] = id_registry();
+	std::shared_lock lock(mutex);
+
+	if (id* found_id = registry.by_uuid.try_get(number)) {
+		return *found_id;
+	}
+	return std::nullopt;
+}
+
+auto gse::find_or_generate_id(const std::string_view tag) -> id {
+	if (exists(tag)) {
+		return find(tag);
+	}
+	return generate_id(tag);
+}
+
+auto gse::find_or_generate_id(const uuid number) -> id {
+	if (exists(number)) {
+		return find(number);
+	}
+	return generate_id(number);
 }
 
 auto gse::exists(const uuid number) -> bool {
@@ -464,6 +512,22 @@ auto gse::exists(const std::string_view tag) -> bool {
 	const auto& [mutex, registry] = id_registry();
 	std::shared_lock lock(mutex);
 	return registry.tag_to_uuid.contains(tag);
+}
+
+auto gse::tag(uuid number) -> std::string_view {
+	const auto& [mutex, registry] = id_registry();
+	std::shared_lock lock(mutex);
+	const auto it = registry.uuid_to_tag.find(number);
+	assert(it != registry.uuid_to_tag.end(), std::source_location::current(), "Tag for id {} not found", number);
+	return it->second;
+}
+
+auto gse::number(const std::string_view tag) -> uuid {
+	const auto& [mutex, registry] = id_registry();
+	std::shared_lock lock(mutex);
+	const auto it = registry.tag_to_uuid.find(tag);
+	assert(it != registry.tag_to_uuid.end(), std::source_location::current(), "Tag '{}' not found", tag);
+	return it->second;
 }
 
 export namespace gse {
@@ -482,6 +546,10 @@ export namespace gse {
 			auto try_get(
 				const id_type& id
 			) const -> const T*;
+
+			auto emplace_from_writer(
+				const id_type& id
+			) -> const T*;
 		};
 
 		struct writer {
@@ -509,7 +577,6 @@ export namespace gse {
 			) -> T*;
 
 			auto reader(
-				std::size_t read_index
 			) -> reader;
 		};
 
@@ -519,8 +586,6 @@ export namespace gse {
 		) -> std::pair<reader, writer>;
 
 		auto flip(
-			std::size_t new_read,
-			std::size_t new_write
 		) -> void;
 
 		auto clear(
@@ -547,6 +612,22 @@ auto gse::double_buffered_id_mapped_queue<T, IdType>::reader::objects() -> std::
 template <typename T, typename IdType>
 auto gse::double_buffered_id_mapped_queue<T, IdType>::reader::try_get(const id_type& id) const -> const T* {
 	return parent->m_slots.read().active.try_get(id);
+}
+
+template <typename T, typename IdType>
+auto gse::double_buffered_id_mapped_queue<T, IdType>::reader::emplace_from_writer(const id_type& id) -> const T* {
+	auto& read_slot = const_cast<slot&>(parent->m_slots.read());
+	auto& write_slot = parent->m_slots.write();
+
+	if (auto* existing = read_slot.active.try_get(id)) {
+		return existing;
+	}
+
+	if (const auto* src = write_slot.active.try_get(id)) {
+		return read_slot.active.add(id, T(*src));
+	}
+
+	return nullptr;
 }
 
 template <typename T, typename IdType>
@@ -586,13 +667,13 @@ auto gse::double_buffered_id_mapped_queue<T, IdType>::writer::try_get(const id_t
 }
 
 template <typename T, typename IdType>
-auto gse::double_buffered_id_mapped_queue<T, IdType>::writer::reader(const std::size_t read_index) -> double_buffered_id_mapped_queue::reader {
-	return { parent, read_index };
+auto gse::double_buffered_id_mapped_queue<T, IdType>::writer::reader() -> double_buffered_id_mapped_queue::reader {
+	return { parent };
 }
 
 template <typename T, typename IdType>
 auto gse::double_buffered_id_mapped_queue<T, IdType>::bind(const std::size_t read, const std::size_t write) -> std::pair<reader, writer> {
-	assert(read < 2 && write < 2 && read != write, "Read and write indices must be 0 or 1 and different");
+	assert(read < 2 && write < 2 && read != write, std::source_location::current(), "Read and write indices must be 0 or 1 and different");
 
 	return {
 		{ this },
@@ -601,7 +682,7 @@ auto gse::double_buffered_id_mapped_queue<T, IdType>::bind(const std::size_t rea
 }
 
 template <typename T, typename IdType>
-auto gse::double_buffered_id_mapped_queue<T, IdType>::flip(std::size_t new_read, std::size_t new_write) -> void {
+auto gse::double_buffered_id_mapped_queue<T, IdType>::flip() -> void {
 	m_slots.flip();
 	m_slots.write().clone_from(m_slots.read());
 }

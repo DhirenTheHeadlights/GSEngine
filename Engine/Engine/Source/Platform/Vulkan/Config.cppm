@@ -141,6 +141,7 @@ export namespace gse::vulkan {
             albedo_image(std::move(albedo_image)),
             depth_image(std::move(depth_image)) {
         }
+
         swap_chain_config(swap_chain_config&&) = default;
         auto operator=(swap_chain_config&&) -> swap_chain_config & = default;
     };

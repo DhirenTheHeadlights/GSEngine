@@ -8,11 +8,23 @@ import :camera;
 import gse.platform;
 import gse.utility;
 
+export namespace gse {
+	enum class render_layer : std::uint8_t {
+		background = 0,
+		content = 1,
+		overlay = 2,
+		popup = 3,
+		modal = 4,
+		cursor = 5
+	};
+}
+
 export namespace gse::renderer {
 	class context final : public non_copyable {
 	public:
-		context(
-			const std::string& window_title
+		explicit context(
+			const std::string& window_title,
+			input::system& input
 		);
 		~context() override;
 
@@ -24,7 +36,7 @@ export namespace gse::renderer {
 
 		template <typename T>
 		auto get(
-			const id& id
+			id id
 		) const -> resource::handle<T>;
 
 		template <typename T>
@@ -69,7 +81,7 @@ export namespace gse::renderer {
 
 		template <typename T>
 		[[nodiscard]] auto resource_state(
-			const id& id
+			id id
 		) const -> resource::state;
 
 		template <typename T>
@@ -97,7 +109,7 @@ export namespace gse::renderer {
 
 		auto mark_pending_for_finalization(
 			const std::type_index& resource_type, 
-			const id& resource_id
+			id resource_id
 		) const -> void;
 
 		auto set_ui_focus(
@@ -127,7 +139,7 @@ export namespace gse::renderer {
 	};
 }
 
-gse::renderer::context::context(const std::string& window_title) : m_window(window_title), m_config(vulkan::generate_config(m_window.raw_handle())) {}
+gse::renderer::context::context(const std::string& window_title, input::system& input) : m_window(window_title, input), m_config(vulkan::generate_config(m_window.raw_handle())) {}
 
 gse::renderer::context::~context() {
 	m_config.reset();
@@ -136,7 +148,12 @@ gse::renderer::context::~context() {
 template <typename T>
 auto gse::renderer::context::add_loader() -> resource::loader<T, context>* {
 	const auto type_index = std::type_index(typeid(T));
-	assert(!m_resource_loaders.contains(type_index), std::format("Resource loader for type {} already exists.", type_index.name()));
+	assert(
+		!m_resource_loaders.contains(type_index),
+		std::source_location::current(), 
+		"Resource loader for type {} already exists.",
+		type_index.name()
+	);
 
 	auto new_loader = std::make_unique<resource::loader<T, context>>(*this);
 	auto* loader_ptr = new_loader.get();
@@ -146,7 +163,7 @@ auto gse::renderer::context::add_loader() -> resource::loader<T, context>* {
 }
 
 template <typename T>
-auto gse::renderer::context::get(const id& id) const -> resource::handle<T> {
+auto gse::renderer::context::get(id id) const -> resource::handle<T> {
 	auto* specific_loader = loader<T>();
 	return specific_loader->get(id);
 }
@@ -230,7 +247,7 @@ auto gse::renderer::context::compile() -> void {
 }
 
 template <typename T>
-auto gse::renderer::context::resource_state(const id& id) const -> resource::state {
+auto gse::renderer::context::resource_state(const id id) const -> resource::state {
 	const auto type_index = std::type_index(typeid(T));
 	const auto* loader = this->loader(type_index);
 	return loader->resource_state(id);
@@ -251,12 +268,12 @@ auto gse::renderer::context::loader() const -> const resource::loader<T, context
 }
 
 auto gse::renderer::context::config() const -> const vulkan::config& {
-	assert(m_config.get(), "Vulkan config is not initialized.");
+	assert(m_config.get(), std::source_location::current(), "Vulkan config is not initialized.");
 	return *m_config;
 }
 
 auto gse::renderer::context::config() -> vulkan::config& {
-	assert(m_config.get(), "Vulkan config is not initialized.");
+	assert(m_config.get(), std::source_location::current(), "Vulkan config is not initialized.");
 	return *m_config;
 }
 
@@ -274,7 +291,7 @@ auto gse::renderer::context::gpu_queue_size() const -> size_t {
 }
 
 auto gse::renderer::context::mark_pending_for_finalization(const std::type_index& resource_type,
-	const id& resource_id) const -> void {
+	id resource_id) const -> void {
 	std::lock_guard lock(m_mutex);
 	m_pending_gpu_resources.emplace_back(resource_type, resource_id);
 }
@@ -306,6 +323,6 @@ auto gse::renderer::context::shutdown() -> void {
 }
 
 auto gse::renderer::context::loader(const std::type_index& type_index) const -> resource::loader_base* {
-	assert(m_resource_loaders.contains(type_index), std::format("Resource loader for type {} does not exist.", type_index.name()));
+	assert(m_resource_loaders.contains(type_index), std::source_location::current(), "Resource loader for type {} does not exist.", type_index.name());
 	return m_resource_loaders.at(type_index).get();
 }

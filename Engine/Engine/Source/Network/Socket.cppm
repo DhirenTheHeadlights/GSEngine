@@ -9,6 +9,7 @@ export module gse.network:socket;
 import std;
 
 import gse.assert;
+import gse.physics.math;
 
 export namespace gse::network {
 	struct packet {
@@ -31,31 +32,54 @@ export namespace gse::network {
 		empty
 	};
 
-	struct udp_socket {
+	enum struct wait_result : std::uint8_t {
+		ready,
+		timeout,
+		error
+	};
+
+	class udp_socket {
+	public:
 		udp_socket();
 		~udp_socket();
 
-		auto bind(const address& address) const -> void;
-		auto send_data(const packet& packet, const address& address) const -> socket_state;
+		auto bind(
+			const address& address
+		) const -> void;
+
+		auto send_data(
+			const packet& packet, 
+			const address& address
+		) const -> socket_state;
 
 		struct receive_result {
 			std::size_t bytes_read = 0;
 			address from;
 		};
-		auto receive_data(std::span<std::byte> buffer) const -> std::optional<receive_result>;
 
-		std::uint64_t socket_id;
+		auto receive_data(
+			std::span<std::byte> buffer
+		) const -> std::optional<receive_result>;
+
+		auto wait_readable(
+			time_t<std::uint32_t> timeout
+		) const -> wait_result;
+
+		auto id(
+		) const -> std::uint64_t;
+	private:
+		std::uint64_t m_socket_id;
 	};
 }
 
-gse::network::udp_socket::udp_socket() : socket_id(INVALID_SOCKET) {
-	socket_id = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	assert(socket_id != INVALID_SOCKET, "Failed to create socket.");
+gse::network::udp_socket::udp_socket() : m_socket_id(INVALID_SOCKET) {
+	m_socket_id = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	assert(m_socket_id != INVALID_SOCKET, std::source_location::current(), "Failed to create socket.");
 }
 
 gse::network::udp_socket::~udp_socket() {
-	if (socket_id != INVALID_SOCKET) {
-		closesocket(socket_id);
+	if (m_socket_id != INVALID_SOCKET) {
+		closesocket(m_socket_id);
 	}
 }
 
@@ -68,14 +92,14 @@ auto gse::network::udp_socket::bind(const address& address) const -> void {
 
 	inet_pton(AF_INET, address.ip.c_str(), &addr.sin_addr);
 
-	if (::bind(socket_id, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
-		assert(false, "Failed to bind socket.");
-		closesocket(socket_id);
+	if (::bind(m_socket_id, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
+		assert(false, std::source_location::current(), "Failed to bind socket.");
+		closesocket(m_socket_id);
 	}
 
 	u_long mode = 1;
-	if (ioctlsocket(socket_id, FIONBIO, &mode) == SOCKET_ERROR) {
-		assert(false, "Failed to set non-blocking mode.");
+	if (ioctlsocket(m_socket_id, FIONBIO, &mode) == SOCKET_ERROR) {
+		assert(false, std::source_location::current(), "Failed to set non-blocking mode.");
 	}
 }
 
@@ -88,7 +112,7 @@ auto gse::network::udp_socket::send_data(const packet& packet, const address& ad
 
 	inet_pton(AF_INET, address.ip.c_str(), &addr.sin_addr);
 
-	if (const auto result = sendto(socket_id, reinterpret_cast<const char*>(packet.data), packet.size, 0, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)); result == SOCKET_ERROR) {
+	if (const auto result = sendto(m_socket_id, reinterpret_cast<const char*>(packet.data), packet.size, 0, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)); result == SOCKET_ERROR) {
 		return socket_state::error;
 	}
 
@@ -100,7 +124,7 @@ auto gse::network::udp_socket::receive_data(std::span<std::byte> buffer) const -
 	int addr_len = sizeof(addr);
 
 	const int result = ::recvfrom(
-		socket_id,
+		m_socket_id,
 		reinterpret_cast<char*>(buffer.data()),
 		static_cast<int>(buffer.size()),
 		0,
@@ -124,4 +148,33 @@ auto gse::network::udp_socket::receive_data(std::span<std::byte> buffer) const -
 		}
 	};
 }
+
+auto gse::network::udp_socket::wait_readable(const time_t<std::uint32_t> timeout) const -> wait_result {
+	WSAPOLLFD pfd{
+		.fd = static_cast<SOCKET>(m_socket_id),
+		.events = POLLRDNORM | POLLERR | POLLHUP
+	};
+
+	const int rv = WSAPoll(&pfd, 1, static_cast<int>(timeout.as<milliseconds>()));
+	if (rv == 0) {
+		return wait_result::timeout;
+	}
+	if (rv < 0) {
+		return wait_result::error;
+	}
+
+	if (pfd.revents & (POLLERR | POLLHUP)) {
+		return wait_result::error;
+	}
+	if (pfd.revents & (POLLRDNORM | POLLPRI | POLLIN)) {
+		return wait_result::ready;
+	}
+
+	return wait_result::timeout;
+}
+
+auto gse::network::udp_socket::id() const -> std::uint64_t {
+	return m_socket_id;
+}
+
 

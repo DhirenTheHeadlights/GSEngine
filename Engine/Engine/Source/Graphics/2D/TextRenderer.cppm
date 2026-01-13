@@ -1,7 +1,3 @@
-module;
-
-#include <oneapi/tbb.h>
-
 export module gse.graphics:text_renderer;
 
 import std;
@@ -11,24 +7,26 @@ import :font;
 import :texture;
 import :camera;
 import :shader;
-import :base_renderer;
+import :rendering_context;
 
 import gse.platform;
 import gse.utility;
 import gse.physics.math;
 
 export namespace gse::renderer {
-	class text final : public base_renderer {
-	public:
-		struct command {
-			resource::handle<font> font;
-			std::string text;
-			unitless::vec2 position;
-			float scale = 1.0f;
-			unitless::vec4 color = { 1.0f, 1.0f, 1.0f, 1.0f };
-			std::optional<rect_t<unitless::vec2>> clip_rect = std::nullopt;
-		};
+	struct text_command {
+		resource::handle<font> font;
+		std::string text;
+		unitless::vec2 position;
+		float scale = 1.0f;
+		unitless::vec4 color = { 1.0f, 1.0f, 1.0f, 1.0f };
+		std::optional<rect_t<unitless::vec2>> clip_rect = std::nullopt;
+		render_layer layer = render_layer::content;
+		std::uint32_t z_order = 0;
+	};
 
+	class text final : public system {
+	public:
 		explicit text(
 			context& context
 		);
@@ -37,42 +35,84 @@ export namespace gse::renderer {
 		) -> void override;
 
 		auto update(
-			std::span<const std::reference_wrapper<registry>> registries
 		) -> void override;
 
 		auto render(
-			std::span<const std::reference_wrapper<registry>> registries
 		) -> void override;
 
-		auto draw_text(
-			const command& cmd
-		) -> void;
 	private:
+		struct vertex {
+			unitless::vec2 position;
+			unitless::vec2 uv;
+			unitless::vec4 color;
+		};
+
+		struct draw_batch {
+			resource::handle<font> font;
+			std::uint32_t index_offset;
+			std::uint32_t index_count;
+			std::optional<rect_t<unitless::vec2>> clip_rect;
+		};
+
+		struct frame_data {
+			std::vector<vertex> vertices;
+			std::vector<std::uint32_t> indices;
+			std::vector<draw_batch> batches;
+		};
+
+		static constexpr std::size_t max_glyphs_per_frame = 16384;
+		static constexpr std::size_t vertices_per_glyph = 4;
+		static constexpr std::size_t indices_per_glyph = 6;
+		static constexpr std::size_t max_vertices = max_glyphs_per_frame * vertices_per_glyph;
+		static constexpr std::size_t max_indices = max_glyphs_per_frame * indices_per_glyph;
+		static constexpr std::size_t frames_in_flight = 2;
+
+		static auto to_vulkan_scissor(
+			const rect_t<unitless::vec2>& rect,
+			const unitless::vec2& window_size
+		) -> vk::Rect2D;
+
+		context& m_context;
+
 		vk::raii::Pipeline m_pipeline = nullptr;
 		vk::raii::PipelineLayout m_pipeline_layout = nullptr;
-		vulkan::persistent_allocator::buffer_resource m_vertex_buffer;
-		vulkan::persistent_allocator::buffer_resource m_index_buffer;
 
 		resource::handle<shader> m_shader;
-		std::vector<std::byte> m_pc_buffer;
-		struct shader::uniform_block m_pc_layout; 
 
-		std::mutex m_command_mutex;
-		std::vector<command> m_pending_commands;
+		struct frame_resources {
+			vulkan::persistent_allocator::buffer_resource vertex_buffer;
+			vulkan::persistent_allocator::buffer_resource index_buffer;
+		};
 
-		struct draw_item {
-            resource::handle<font> font;
-            unitless::vec4 color;
-            rect_t<unitless::vec2> screen_rect;
-            unitless::vec4 uv_rect;
-            std::optional<rect_t<unitless::vec2>> clip_rect;
-        };
+		std::array<frame_resources, frames_in_flight> m_frame_resources;
+		std::uint32_t m_current_frame = 0;
 
-		double_buffer<std::vector<draw_item>> m_command_queue;
+		double_buffer<frame_data> m_frame_data;
 	};
 }
 
-gse::renderer::text::text(context& context): base_renderer(context) {}
+gse::renderer::text::text(context& context) : m_context(context) {}
+
+auto gse::renderer::text::to_vulkan_scissor(const rect_t<unitless::vec2>& rect, const unitless::vec2& window_size) -> vk::Rect2D {
+	const float left = std::max(0.0f, rect.left());
+	const float right = std::min(window_size.x(), rect.right());
+	const float bottom = std::max(0.0f, rect.bottom());
+	const float top = std::min(window_size.y(), rect.top());
+
+	const float width = std::max(0.0f, right - left);
+	const float height = std::max(0.0f, top - bottom);
+
+	return {
+		.offset = {
+			static_cast<std::int32_t>(left),
+			static_cast<std::int32_t>(window_size.y() - top)
+		},
+		.extent = {
+			static_cast<std::uint32_t>(width),
+			static_cast<std::uint32_t>(height)
+		}
+	};
+}
 
 auto gse::renderer::text::initialize() -> void {
 	auto& config = m_context.config();
@@ -83,9 +123,9 @@ auto gse::renderer::text::initialize() -> void {
 
 	const vk::Viewport viewport{
 		.x = 0.0f,
-		.y = static_cast<float>(config.swap_chain_config().extent.height),
+		.y = 0.0f,
 		.width = static_cast<float>(config.swap_chain_config().extent.width),
-		.height = -static_cast<float>(config.swap_chain_config().extent.height),
+		.height = static_cast<float>(config.swap_chain_config().extent.height),
 		.minDepth = 0.0f,
 		.maxDepth = 1.0f
 	};
@@ -105,7 +145,7 @@ auto gse::renderer::text::initialize() -> void {
 	constexpr vk::PipelineRasterizationStateCreateInfo rasterizer{
 		.polygonMode = vk::PolygonMode::eFill,
 		.cullMode = vk::CullModeFlagBits::eNone,
-		.frontFace = vk::FrontFace::eClockwise,
+		.frontFace = vk::FrontFace::eCounterClockwise,
 		.lineWidth = 1.0f
 	};
 
@@ -121,7 +161,10 @@ auto gse::renderer::text::initialize() -> void {
 		.srcAlphaBlendFactor = vk::BlendFactor::eOne,
 		.dstAlphaBlendFactor = vk::BlendFactor::eZero,
 		.alphaBlendOp = vk::BlendOp::eAdd,
-		.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
+		.colorWriteMask = vk::ColorComponentFlagBits::eR |
+		                  vk::ColorComponentFlagBits::eG |
+		                  vk::ColorComponentFlagBits::eB |
+		                  vk::ColorComponentFlagBits::eA
 	};
 
 	const vk::PipelineColorBlendStateCreateInfo color_blending{
@@ -148,6 +191,7 @@ auto gse::renderer::text::initialize() -> void {
 		.pushConstantRangeCount = 1,
 		.pPushConstantRanges = &msdf_pc_range
 	};
+
 	m_pipeline_layout = config.device_config().device.createPipelineLayout(msdf_pipeline_layout_info);
 
 	const auto vertex_input_info = m_shader->vertex_input_state();
@@ -181,117 +225,189 @@ auto gse::renderer::text::initialize() -> void {
 		.pDynamicState = &dynamic_state_info,
 		.layout = *m_pipeline_layout
 	};
+
 	m_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
 
-	struct vertex {
-		vec2<length> pos;
-		unitless::vec2 uv;
-	};
+	constexpr std::size_t vertex_buffer_size = max_vertices * sizeof(vertex);
+	constexpr std::size_t index_buffer_size = max_indices * sizeof(std::uint32_t);
 
-	constexpr vertex vertices[4] = {
-		{{0.0f,  0.0f}, {0.0f, 0.0f}},
-		{{1.0f,  0.0f}, {1.0f, 0.0f}},
-		{{1.0f, -1.0f}, {1.0f, 1.0f}},
-		{{0.0f, -1.0f}, {0.0f, 1.0f}}
-	};
+	for (auto& [vertex_buffer, index_buffer] : m_frame_resources) {
+		vertex_buffer = vulkan::persistent_allocator::create_buffer(
+			config.device_config(),
+			{
+				.size = vertex_buffer_size,
+				.usage = vk::BufferUsageFlagBits::eVertexBuffer
+			}
+		);
 
-	constexpr std::uint32_t indices[6] = { 0, 2, 1, 0, 3, 2 };
+		index_buffer = vulkan::persistent_allocator::create_buffer(
+			config.device_config(),
+			{
+				.size = index_buffer_size,
+				.usage = vk::BufferUsageFlagBits::eIndexBuffer
+			}
+		);
+	}
 
-	m_vertex_buffer = vulkan::persistent_allocator::create_buffer(
-		config.device_config(), 
-		{ 
-			.size = sizeof(vertices),
-			.usage = vk::BufferUsageFlagBits::eVertexBuffer
-		},
-		vertices
-	);
-
-	m_index_buffer = vulkan::persistent_allocator::create_buffer(
-		config.device_config(), 
-		{
-			.size = sizeof(indices),
-			.usage = vk::BufferUsageFlagBits::eIndexBuffer
-		}, 
-		indices
-	);
+	m_frame_data.write().vertices.reserve(max_vertices);
+	m_frame_data.write().indices.reserve(max_indices);
+	m_frame_data.write().batches.reserve(256);
 
 	frame_sync::on_end([this] {
-		m_command_queue.flip();
+		m_frame_data.flip();
 	});
 }
 
-auto gse::renderer::text::update(std::span<const std::reference_wrapper<registry>> registries) -> void {
-    std::vector<command> local;
+auto gse::renderer::text::update() -> void {
+	const auto commands = channel_of<text_command>();
 
-    scope([this, &local] {
-        std::scoped_lock lk(m_command_mutex);
-        local.swap(m_pending_commands);
-    });
+	auto& [vertices, indices, batches] = m_frame_data.write();
+	vertices.clear();
+	indices.clear();
+	batches.clear();
 
-    auto& out = m_command_queue.write();
-    out.clear();
+	if (commands.empty()) {
+		return;
+	}
 
-    if (local.empty()) {
-	    return;
-    }
+	std::vector<text_command> sorted_commands;
+	sorted_commands.reserve(commands.size());
 
-    std::size_t rough = 0;
-    for (const auto& c : local) {
-	    rough += std::min(c.text.size(), static_cast<std::size_t>(1024));
-    }
+	for (const auto& cmd : commands) {
+		if (cmd.font.valid() && !cmd.text.empty()) {
+			sorted_commands.push_back(cmd);
+		}
+	}
 
-    out.reserve(out.size() + rough);
+	std::ranges::stable_sort(sorted_commands, [](const text_command& a, const text_command& b) {
+		if (a.layer != b.layer) {
+			return static_cast<std::uint8_t>(a.layer) < static_cast<std::uint8_t>(b.layer);
+		}
+		
+		if (a.z_order != b.z_order) {
+			return a.z_order < b.z_order;
+		}
+		
+		if (a.font.id() != b.font.id()) {
+			return a.font.id().number() < b.font.id().number();
+		}
 
-    tbb::enumerable_thread_specific<std::vector<draw_item>> tls_bins;
+		const bool a_has_clip = a.clip_rect.has_value();
+		const bool b_has_clip = b.clip_rect.has_value();
 
-	task::parallel_for(0, local.size(), [&](const std::size_t i) {
-	    const auto& [font, text, position, scale, color, clip_rect] = local[i];
+		if (a_has_clip != b_has_clip) {
+			return !a_has_clip;
+		}
 
-	    if (!font || text.empty()) {
-		    return;
-	    }
+		if (a_has_clip && b_has_clip) {
+			const auto& ar = *a.clip_rect;
+			const auto& br = *b.clip_rect;
 
-	    auto& items = tls_bins.local();
-	    items.reserve(items.size() + std::min(text.size(), std::size_t{ 1024 }));
+			if (ar.left() != br.left()) return ar.left() < br.left();
+			if (ar.top() != br.top()) return ar.top() < br.top();
+			if (ar.right() != br.right()) return ar.right() < br.right();
+			return ar.bottom() < br.bottom();
+		}
 
-	    for (const auto glyphs = font->text_layout(text, position, scale); const auto& [screen_rect, uv_rect] : glyphs) {
-	        items.push_back({ 
-				.font = font,
-	        	.color = color,
-	        	.screen_rect = screen_rect,
-	        	.uv_rect = uv_rect,
-	        	.clip_rect = clip_rect
-	        });
-	    }
+		return false;
 	});
 
-	std::size_t total = out.size();
-	for (auto it = tls_bins.begin(); it != tls_bins.end(); ++it) {
-		total += it->size();
-	}
-	out.reserve(total);
+	resource::handle<font> current_font;
+	std::optional<rect_t<unitless::vec2>> current_clip;
+	std::uint32_t batch_index_start = 0;
 
-	for (auto it = tls_bins.begin(); it != tls_bins.end(); ++it) {
-	    auto& v = *it;
-	    out.insert(out.end(), v.begin(), v.end());
-	    v.clear();
+	auto flush_batch = [&] {
+		if (indices.size() > batch_index_start) {
+			batches.push_back({
+				.font = current_font,
+				.index_offset = batch_index_start,
+				.index_count = static_cast<std::uint32_t>(indices.size() - batch_index_start),
+				.clip_rect = current_clip
+			});
+		}
+		batch_index_start = static_cast<std::uint32_t>(indices.size());
+	};
+
+	for (const auto& [font, text, position, scale, color, clip_rect, layer, z_order] : sorted_commands) {
+		const bool font_changed = font.id() != current_font.id();
+
+		if (const bool clip_changed = clip_rect != current_clip; font_changed || clip_changed) {
+			flush_batch();
+			current_font = font;
+			current_clip = clip_rect;
+		}
+
+		for (const auto& [screen_rect, uv_rect] : font->text_layout(text, position, scale)) {
+			if (vertices.size() + 4 > max_vertices || indices.size() + 6 > max_indices) {
+				break;
+			}
+
+			const auto base_index = static_cast<std::uint32_t>(vertices.size());
+
+			const unitless::vec2 top_left = screen_rect.top_left();
+			const unitless::vec2 sz = screen_rect.size();
+
+			const unitless::vec2 p0 = top_left;
+			const unitless::vec2 p1 = { top_left.x() + sz.x(), top_left.y() };
+			const unitless::vec2 p2 = { top_left.x() + sz.x(), top_left.y() - sz.y() };
+			const unitless::vec2 p3 = { top_left.x(), top_left.y() - sz.y() };
+
+			const float u0 = uv_rect.x();
+			const float v0 = uv_rect.y();
+			const float u1 = uv_rect.x() + uv_rect.z();
+			const float v1 = uv_rect.y() + uv_rect.w();
+
+			vertices.push_back({ p0, { u0, v1 }, color });
+			vertices.push_back({ p1, { u1, v1 }, color });
+			vertices.push_back({ p2, { u1, v0 }, color });
+			vertices.push_back({ p3, { u0, v0 }, color });
+
+			indices.push_back(base_index + 0);
+			indices.push_back(base_index + 2);
+			indices.push_back(base_index + 1);
+			indices.push_back(base_index + 0);
+			indices.push_back(base_index + 3);
+			indices.push_back(base_index + 2);
+		}
 	}
 
-    std::ranges::stable_sort(out, [](const draw_item& a, const draw_item& b) {
-        return a.font.resolve() < b.font.resolve();
-    });
+	flush_batch();
 }
 
-auto gse::renderer::text::render(std::span<const std::reference_wrapper<registry>> registries) -> void {
+auto gse::renderer::text::render() -> void {
+	const auto& [vertices, indices, batches] = m_frame_data.read();
+
+	if (batches.empty()) {
+		m_current_frame = (m_current_frame + 1) % frames_in_flight;
+		return;
+	}
+
+	auto& [vertex_buffer, index_buffer] = m_frame_resources[m_current_frame];
+
+	std::memcpy(
+		vertex_buffer.allocation.mapped(),
+		vertices.data(),
+		vertices.size() * sizeof(vertex)
+	);
+
+	std::memcpy(
+		index_buffer.allocation.mapped(),
+		indices.data(),
+		indices.size() * sizeof(std::uint32_t)
+	);
+
 	auto& config = m_context.config();
 	const auto& command = config.frame_context().command_buffer;
-	auto [width, height] = config.swap_chain_config().extent;
+	const auto [width, height] = config.swap_chain_config().extent;
 	const unitless::vec2 window_size = { static_cast<float>(width), static_cast<float>(height) };
 
 	const auto projection = orthographic(
-		meters(0.0f), meters(static_cast<float>(width)),
-		meters(0.0f), meters(static_cast<float>(height)),
-		meters(-1.0f), meters(1.0f)
+		meters(0.0f),
+		meters(static_cast<float>(width)),
+		meters(0.0f),
+		meters(static_cast<float>(height)),
+		meters(-1.0f),
+		meters(1.0f)
 	);
 
 	vk::RenderingAttachmentInfo color_attachment{
@@ -299,81 +415,59 @@ auto gse::renderer::text::render(std::span<const std::reference_wrapper<registry
 		.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
 		.loadOp = vk::AttachmentLoadOp::eLoad,
 		.storeOp = vk::AttachmentStoreOp::eStore,
-		.clearValue = vk::ClearValue{.color = vk::ClearColorValue{.float32 = std::array{ 0.1f, 0.1f, 0.1f, 1.0f }}}
 	};
 
 	const vk::RenderingInfo rendering_info{
-		.renderArea = {{0, 0}, config.swap_chain_config().extent},
+		.renderArea = {{ 0, 0 }, config.swap_chain_config().extent },
 		.layerCount = 1,
 		.colorAttachmentCount = 1,
 		.pColorAttachments = &color_attachment,
-		.pDepthAttachment = nullptr
 	};
 
 	vulkan::render(config, rendering_info, [&] {
-		const auto& draw_items = m_command_queue.read();
-	    if (draw_items.empty()) {
-	        return;
-	    }
+		command.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline);
+		command.bindVertexBuffers(0, { *vertex_buffer.buffer }, { vk::DeviceSize{ 0 } });
+		command.bindIndexBuffer(*index_buffer.buffer, 0, vk::IndexType::eUint32);
 
-        command.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline);
-        command.bindVertexBuffers(0, { *m_vertex_buffer.buffer }, { 0 });
-        command.bindIndexBuffer(*m_index_buffer.buffer, 0, vk::IndexType::eUint32);
+		const vk::Rect2D default_scissor{ { 0, 0 }, { width, height } };
+		command.setScissor(0, { default_scissor });
 
-        const vk::Rect2D default_scissor{{0,0}, {width, height}};
-        command.setScissor(0, { default_scissor });
-        auto current_scissor = default_scissor;
+		resource::handle<font> bound_font;
 
-        resource::handle<font> bound_font;
+		m_shader->push(
+			command, *m_pipeline_layout, "push_constants",
+			"projection", projection
+		);
 
-        for (const auto& [font, color, screen_rect, uv_rect, clip_rect] : draw_items) {
-            if (!font.valid()) {
-	            continue;
-            }
+		for (const auto& [font, index_offset, index_count, clip_rect] : batches) {
+			if (!font.valid() || index_count == 0) {
+				continue;
+			}
 
-            if (font != bound_font) {
-                m_shader->push_descriptor(
-                    command, m_pipeline_layout,
-                    "spriteTexture",
-                    font->texture()->descriptor_info()
-                );
-                bound_font = font;
-            }
+			if (font.id() != bound_font.id()) {
+				m_shader->push_descriptor(
+					command, m_pipeline_layout,
+					"spriteTexture",
+					font->texture()->descriptor_info()
+				);
+				bound_font = font;
+			}
 
-            vk::Rect2D desired_scissor = default_scissor;
-            if (clip_rect) {
-                desired_scissor = to_vulkan_scissor(*clip_rect, window_size);
-            }
-            if (std::memcmp(&desired_scissor, &current_scissor, sizeof(vk::Rect2D)) != 0) {
-                command.setScissor(0, { desired_scissor });
-                current_scissor = desired_scissor;
-            }
+			if (clip_rect) {
+				command.setScissor(0, { to_vulkan_scissor(*clip_rect, window_size) });
+			} else {
+				command.setScissor(0, { default_scissor });
+			}
 
-            const auto rect_position = screen_rect.top_left();
-            const auto size = screen_rect.size();
+			command.drawIndexed(
+				index_count,
+				1,
+				index_offset,
+				0,
+				0
+			);
+		}
+	});
 
-            m_shader->push(
-                command, *m_pipeline_layout, "push_constants",
-                "projection", projection,
-                "position", rect_position,
-                "size", size,
-                "color", color,
-                "uv_rect", uv_rect
-            );
-
-            command.drawIndexed(6, 1, 0, 0, 0);
-        }
-
-        if (std::memcmp(&default_scissor, &current_scissor, sizeof(vk::Rect2D)) != 0) {
-            command.setScissor(0, { default_scissor });
-        }
-    });
-}
-
-auto gse::renderer::text::draw_text(const command& cmd) -> void {
-	if (!cmd.font || cmd.text.empty()) {
-		return;
-	}
-    std::scoped_lock lk(m_command_mutex);
-    m_pending_commands.push_back(cmd);
+	m_current_frame = (m_current_frame + 1) % frames_in_flight;
 }

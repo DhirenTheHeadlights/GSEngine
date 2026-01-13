@@ -6,10 +6,11 @@ import :id;
 import :double_buffer;
 import :scope_exit;
 import :system_clock;
+import :interval_timer;
 
 export namespace gse::trace {
 	struct config {
-		std::size_t per_thread_event_cap = 1024;
+		std::size_t per_thread_event_cap = 262144;
 		bool enable_browser_dump = false;
 	};
 
@@ -17,35 +18,46 @@ export namespace gse::trace {
 		const config& cfg = {}
 	) -> void;
 
+	auto begin_block(
+		id id,
+		std::uint64_t parent
+	) -> std::uint64_t;
+
+	auto end_block(
+		id id,
+		std::uint64_t eid,
+		std::uint64_t parent
+	) -> void;
+
 	template <typename F>
 	auto scope(
-		const id& id,
+		id id,
 		F&& f
 	) -> void;
 
 	template <typename F>
 	auto scope(
-		const id& id,
+		id id,
 		F&& f,
 		std::uint64_t parent
 	) -> void;
 
 	auto begin_async(
-		const id& id,
+		id id,
 		std::uint64_t key
 	) -> void;
 
 	auto end_async(
-		const id& id,
+		id id,
 		std::uint64_t key
 	) -> void;
 
 	auto mark(
-		const id& id
+		id id
 	) -> void;
 
 	auto counter(
-		const id& id,
+		id id,
 		double value
 	) -> void;
 
@@ -94,10 +106,17 @@ export namespace gse::trace {
 
 	auto enabled(
 	) -> bool;
+
+	auto set_finalize_paused(
+		bool pause
+	) -> void;
+
+	auto finalize_paused(
+	) -> bool;
 }
 
 namespace gse::trace {
-	using ticks = std::uint64_t;
+	using tick_step = time_t<std::uint64_t>;
 
 	enum struct event_type : std::uint8_t {
 		begin,
@@ -114,7 +133,7 @@ namespace gse::trace {
 		std::uint64_t eid = 0;
 		std::uint64_t parent_eid = 0;
 		std::uint64_t tid = 0;
-		ticks ts;
+		time_t<std::uint64_t> ts;
 		double value;
 		std::uint64_t key;
 	};
@@ -136,7 +155,7 @@ namespace gse::trace {
 		auto size(
 		) const noexcept -> std::size_t;
 	private:
-		static constexpr std::uint32_t capacity_pow_2 = 1u << 15;
+		static constexpr std::uint32_t capacity_pow_2 = 1u << 18;
 		static constexpr std::uint32_t capacity = capacity_pow_2;
 		static constexpr std::uint32_t capacity_mask = capacity_pow_2 - 1;
 
@@ -156,9 +175,10 @@ namespace gse::trace {
 	thread_local int tls_pause_depth = 0;
 
 	std::atomic trace_enabled = true;
+	std::atomic finalize_paused_flag = false;
 
-	std::atomic<std::uint64_t> next_eid;
-	std::atomic<std::uint32_t> next_tid;
+	std::atomic<std::uint64_t> next_eid{ 1024 };
+	std::atomic<std::uint32_t> next_tid{ 0 };
 
 	config global_config;
 
@@ -176,18 +196,31 @@ namespace gse::trace {
 		struct flat_node {
 			uuid id;
 			std::uint32_t tid;
-			ticks start = {};
-			ticks end = {};
-			ticks self = {};
+			time_t<std::uint64_t> start = {};
+			time_t<std::uint64_t> end = {};
+			time_t<std::uint64_t> self = {};
 			std::vector<std::size_t> children_idx;
 		};
 
 		std::vector<flat_node> flat;
 		std::vector<node> node_pool;
 		std::vector<node> roots;
+
+		struct span {
+			uuid id;
+			std::uint32_t tid;
+			time_t<std::uint64_t> t0;
+			time_t<std::uint64_t> t1;
+			std::uint64_t parent;
+		};
+
+		std::unordered_map<std::uint64_t, span> open_spans;
 	};
 
 	double_buffer<frame_storage> frames;
+
+	std::unordered_set<std::uint64_t> open_parents;
+	std::mutex open_m;
 
 	auto ensure_tls_registered(
 	) -> void;
@@ -207,8 +240,11 @@ namespace gse::trace {
 	) -> void;
 
 	auto make_loc_id(
-		const std::source_location& loc = std::source_location::current()
+		const std::source_location& loc
 	) -> id;
+
+	auto allocate_span_eid(
+	) -> std::uint64_t;
 }
 
 auto gse::trace::start(const config& cfg) -> void {
@@ -220,23 +256,22 @@ auto gse::trace::start(const config& cfg) -> void {
 	frames = frame_storage{};
 }
 
-template <typename F>
-auto gse::trace::scope(const id& id, F&& f) -> void {
-	scope(id, std::forward<F>(f), current_parent_eid());
-}
-
-template <typename F>
-auto gse::trace::scope(const id& id, F&& f, const std::uint64_t parent) -> void {
-	if (paused()) {
-		std::forward<F>(f)();
-		return;
-	}
+auto gse::trace::begin_block(id id, std::uint64_t parent) -> std::uint64_t {
+	if (paused()) return 0;
 
 	ensure_tls_registered();
 
+	if (parent != 0 && parent < 1024) {
+		parent = 0;
+	}
+
 	const auto tid = make_tid();
-	const auto ts = system_clock::now();
-	const auto eid = next_eid.fetch_add(1, std::memory_order::relaxed);
+	const auto eid = allocate_span_eid();
+
+	{
+		std::scoped_lock lk(open_m);
+		open_parents.insert(eid);
+	}
 
 	emit({
 		.type = event_type::begin,
@@ -244,28 +279,104 @@ auto gse::trace::scope(const id& id, F&& f, const std::uint64_t parent) -> void 
 		.eid = eid,
 		.parent_eid = parent,
 		.tid = tid,
-		.ts = static_cast<std::uint64_t>(ts.as<nanoseconds>())
+		.ts = system_clock::now<tick_step>()
+	});
+
+	return eid;
+}
+
+auto gse::trace::end_block(id id, const std::uint64_t eid, const std::uint64_t parent) -> void {
+	if (paused() || eid == 0) {
+		return;
+	}
+
+	ensure_tls_registered();
+
+	{
+		std::scoped_lock lk(open_m);
+		open_parents.erase(eid);
+	}
+
+	emit({
+		.type = event_type::end,
+		.id = id.number(),
+		.eid = eid,
+		.parent_eid = parent,
+		.tid = make_tid(),
+		.ts = system_clock::now<tick_step>()
+	});
+}
+
+template <typename F>
+auto gse::trace::scope(id id, F&& f) -> void {
+	const auto parent = current_parent_eid();
+	scope(id, std::forward<F>(f), parent);
+}
+
+template <typename F>
+auto gse::trace::scope(id id, F&& f, std::uint64_t parent) -> void {
+	if (paused()) {
+		std::forward<F>(f)();
+		return;
+	}
+
+	ensure_tls_registered();
+
+	if (parent != 0 && parent < 1024) {
+		parent = 0;
+	}
+
+	const auto tid = make_tid();
+	const bool need_push_parent = parent != 0 && (tls.stack.empty() || tls.stack.back() != parent);
+
+	if (need_push_parent) {
+		tls.stack.push_back(parent);
+	}
+
+	const auto eid = allocate_span_eid();
+
+	{
+		std::scoped_lock lk(open_m);
+		open_parents.insert(eid);
+	}
+
+	emit({
+		.type = event_type::begin,
+		.id = id.number(),
+		.eid = eid,
+		.parent_eid = parent,
+		.tid = tid,
+		.ts = system_clock::now<tick_step>()
 	});
 
 	tls.stack.push_back(eid);
 
-	auto guard = make_scope_exit([eid, parent, tid, uid = id.number()] {
-		const auto te = system_clock::now();
-		emit({
-			.type = event_type::end,
-			.id = uid,
-			.eid = eid,
-			.parent_eid = parent,
-			.tid = tid,
-			.ts = static_cast<std::uint64_t>(te.as<nanoseconds>())
-		});
-		tls.stack.pop_back();
+	auto guard = make_scope_exit([eid, parent, tid, uid = id.number(), need_push_parent] {
+		{
+			std::scoped_lock lk(open_m);
+			open_parents.erase(eid);
+		}
+
+		if (!tls.stack.empty() && tls.stack.back() == eid) {
+			emit({
+				.type = event_type::end,
+				.id = uid,
+				.eid = eid,
+				.parent_eid = parent,
+				.tid = tid,
+				.ts = system_clock::now<tick_step>()
+			});
+			tls.stack.pop_back();
+			if (need_push_parent && !tls.stack.empty() && tls.stack.back() == parent) {
+				tls.stack.pop_back();
+			}
+		}
 	});
 
 	std::forward<F>(f)();
 }
 
-auto gse::trace::begin_async(const id& id, const std::uint64_t key) -> void {
+auto gse::trace::begin_async(id id, const std::uint64_t key) -> void {
 	if (paused()) {
 		return;
 	}
@@ -275,16 +386,16 @@ auto gse::trace::begin_async(const id& id, const std::uint64_t key) -> void {
 	emit({
 		.type = event_type::async_begin,
 		.id = id.number(),
-		.eid = next_eid.fetch_add(1, std::memory_order::relaxed),
+		.eid = 0,
 		.parent_eid = current_parent_eid(),
 		.tid = make_tid(),
-		.ts = static_cast<std::uint64_t>(system_clock::now().as<nanoseconds>()),
+		.ts = system_clock::now<tick_step>(),
 		.value = 0.0,
 		.key = key
 	});
 }
 
-auto gse::trace::end_async(const id& id, const std::uint64_t key) -> void {
+auto gse::trace::end_async(id id, const std::uint64_t key) -> void {
 	if (paused()) {
 		return;
 	}
@@ -294,16 +405,16 @@ auto gse::trace::end_async(const id& id, const std::uint64_t key) -> void {
 	emit({
 		.type = event_type::async_end,
 		.id = id.number(),
-		.eid = next_eid.fetch_add(1, std::memory_order::relaxed),
+		.eid = 0,
 		.parent_eid = 0,
 		.tid = make_tid(),
-		.ts = static_cast<std::uint64_t>(system_clock::now().as<nanoseconds>()),
+		.ts = system_clock::now<tick_step>(),
 		.value = 0.0,
 		.key = key
 	});
 }
 
-auto gse::trace::mark(const id& id) -> void {
+auto gse::trace::mark(id id) -> void {
 	if (paused()) {
 		return;
 	}
@@ -313,16 +424,16 @@ auto gse::trace::mark(const id& id) -> void {
 	emit({
 		.type = event_type::instant,
 		.id = id.number(),
-		.eid = next_eid.fetch_add(1, std::memory_order::relaxed),
+		.eid = 0,
 		.parent_eid = current_parent_eid(),
 		.tid = make_tid(),
-		.ts = static_cast<std::uint64_t>(system_clock::now().as<nanoseconds>()),
+		.ts = system_clock::now<tick_step>(),
 		.value = 0.0,
 		.key = 0
 	});
 }
 
-auto gse::trace::counter(const id& id, const double value) -> void {
+auto gse::trace::counter(id id, const double value) -> void {
 	if (paused()) {
 		return;
 	}
@@ -332,10 +443,10 @@ auto gse::trace::counter(const id& id, const double value) -> void {
 	emit({
 		.type = event_type::counter,
 		.id = id.number(),
-		.eid = next_eid.fetch_add(1, std::memory_order::relaxed),
+		.eid = 0,
 		.parent_eid = 0,
 		.tid = make_tid(),
-		.ts = static_cast<std::uint64_t>(system_clock::now().as<nanoseconds>()),
+		.ts = system_clock::now<tick_step>(),
 		.value = value,
 		.key = 0,
 	});
@@ -346,9 +457,13 @@ auto gse::trace::current_eid() -> std::uint64_t {
 }
 
 auto gse::trace::finalize_frame() -> void {
-	frames.flip();
-	auto& fs = frames.write();
-	build_tree(fs);
+	static interval_timer timer(milliseconds(100.f));
+
+	build_tree(frames.write());
+
+	if (timer.tick() && !finalize_paused()) {
+		frames.flip();
+	}
 }
 
 auto gse::trace::dump_browser(const std::filesystem::path& path, const frame_view& view) -> void {
@@ -356,6 +471,7 @@ auto gse::trace::dump_browser(const std::filesystem::path& path, const frame_vie
 
 	assert(
 		out.is_open(),
+		std::source_location::current(),
 		"Failed to open trace output file"
 	);
 
@@ -395,7 +511,7 @@ auto gse::trace::dump_browser(const std::filesystem::path& path, const frame_vie
 }
 
 auto gse::trace::view() -> frame_view {
-	const auto& fs = frames.read(); 
+	const auto& fs = frames.read();
 	return {
 		.roots = std::span(fs.roots),
 		.storage = reinterpret_cast<const std::byte*>(fs.flat.data()),
@@ -422,6 +538,14 @@ auto gse::trace::enabled() -> bool {
 	return trace_enabled.load(std::memory_order_relaxed);
 }
 
+auto gse::trace::set_finalize_paused(bool pause) -> void {
+	finalize_paused_flag.store(pause, std::memory_order_relaxed);
+}
+
+auto gse::trace::finalize_paused() -> bool {
+	return finalize_paused_flag.load(std::memory_order_relaxed);
+}
+
 auto gse::trace::scsp_events::push(const event& e) noexcept -> void {
 	const std::uint32_t w = m_w.load(std::memory_order_acquire);
 	const std::uint32_t next = (w + 1) & capacity_mask;
@@ -437,10 +561,10 @@ auto gse::trace::scsp_events::push(const event& e) noexcept -> void {
 template <typename Out>
 auto gse::trace::scsp_events::drain_to(Out& out) noexcept -> void {
 	const std::uint32_t w_snapshot = m_w.load(std::memory_order_acquire);
-    while (m_r != w_snapshot) {
-        out.push_back(std::move(m_events[m_r]));
+	while (m_r != w_snapshot) {
+		out.push_back(std::move(m_events[m_r]));
 		m_r = (m_r + 1) & capacity_mask;
-    }
+	}
 }
 
 auto gse::trace::scsp_events::clear() noexcept -> void {
@@ -493,7 +617,21 @@ auto gse::trace::emit(const event& e) -> void {
 }
 
 auto gse::trace::current_parent_eid() -> std::uint64_t {
-	return tls.stack.empty() ? 0 : tls.stack.back();
+	while (!tls.stack.empty()) {
+		const auto top = tls.stack.back();
+
+		if (top == 0) {
+			return 0;
+		}
+
+		std::scoped_lock lk(open_m);
+		if (open_parents.contains(top)) {
+			return top;
+		}
+		tls.stack.pop_back();
+	}
+
+	return 0;
 }
 
 auto gse::trace::build_tree(frame_storage& fs) -> void {
@@ -502,57 +640,39 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 	{
 		std::lock_guard lk(tls_registry_mutex);
 		for (auto* tb : tls_registry) {
-			if (!tb) {
-				continue;
-			}
+			if (!tb) continue;
 			tb->events.drain_to(fs.merged);
 		}
 	}
 
-	if (fs.merged.empty()) {
-		fs.flat.clear();
-		fs.node_pool.clear();
-		fs.roots.clear();
-		return;
-	}
-
 	std::ranges::sort(fs.merged, [](const event& a, const event& b) {
-		if (a.ts != b.ts) {
-			return a.ts < b.ts;
-		}
+		if (a.ts != b.ts) return a.ts < b.ts;
 		return static_cast<int>(a.type) < static_cast<int>(b.type);
 	});
 
-	struct span {
-		uuid id;
-		std::uint32_t tid;
-		ticks t0{}, t1{};
-		std::uint64_t parent{};
-	};
-
-	std::unordered_map<std::uint64_t, span> spans;
-	spans.reserve(fs.merged.size() / 2 + 8);
+	std::unordered_map<std::uint64_t, frame_storage::span> spans = fs.open_spans;
 
 	for (const auto& e : fs.merged) {
 		switch (e.type) {
 			case event_type::begin:
 				spans.emplace(
-					e.eid, 
-					span{
-						.id = e.id,
+					e.eid,
+					frame_storage::span{
+						.id  = e.id,
 						.tid = static_cast<std::uint32_t>(e.tid),
-						.t0 = e.ts,
-						.t1 = 0,
+						.t0  = e.ts,
+						.t1  = {},
 						.parent = e.parent_eid
 					}
 				);
 				break;
-			case event_type::end: {
+			case event_type::end:
 				if (auto it = spans.find(e.eid); it != spans.end()) {
 					it->second.t1 = e.ts;
 				}
-			} break;
-			default: break; 
+				break;
+			default:
+				break;
 		}
 	}
 
@@ -562,52 +682,113 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 	std::unordered_map<std::uint64_t, std::size_t> index_of;
 	index_of.reserve(spans.size());
 
+	std::unordered_set<std::uint64_t> still_open;
+	for (const auto& [eid, sp] : spans) {
+		if (sp.t1 == 0) {
+			still_open.insert(eid);
+		}
+	}
+
 	for (auto& [eid, sp] : spans) {
 		if (sp.t1 < sp.t0) {
 			sp.t1 = sp.t0;
 		}
 
 		const std::size_t i = fs.flat.size();
-
-		fs.flat.push_back({ 
+		fs.flat.push_back(frame_storage::flat_node{
 			.id = sp.id,
 			.tid = sp.tid,
 			.start = sp.t0,
 			.end = sp.t1,
-			.self = 0
+			.self = {},
+			.children_idx = {}
 		});
 
 		index_of.emplace(eid, i);
 	}
 
-	std::vector<std::size_t> roots_idx;
-	roots_idx.reserve(fs.flat.size());
-
+	std::vector has_parent(fs.flat.size(), false);
 	for (const auto& [eid, sp] : spans) {
-		const auto self_i = index_of[eid];
-		if (sp.parent == 0 || !index_of.contains(sp.parent)) {
-			roots_idx.push_back(self_i);
-		}
-		else {
-			fs.flat[index_of[sp.parent]].children_idx.push_back(self_i);
+		const auto child_i = index_of[eid];
+		if (sp.parent != 0 && index_of.contains(sp.parent)) {
+			const auto parent_i = index_of[sp.parent];
+			fs.flat[parent_i].children_idx.push_back(child_i);
+			has_parent[child_i] = true;
 		}
 	}
 
-	auto total_ns = [&](const std::size_t i) -> ticks {
-		return fs.flat[i].end - fs.flat[i].start;
-	};
+	std::vector<std::size_t> roots_idx;
+	roots_idx.reserve(fs.flat.size());
+
+	for (std::size_t i = 0; i < fs.flat.size(); ++i) {
+		if (!has_parent[i]) roots_idx.push_back(i);
+	}
 
 	std::function<void(std::size_t)> compute_self = [&](const std::size_t i) {
 		auto& n = fs.flat[i];
-		ticks sum_children = 0;
 
 		for (const auto c : n.children_idx) {
 			compute_self(c);
-			sum_children += total_ns(c);
 		}
 
-		const ticks tot = total_ns(i);
-		n.self = tot > sum_children ? (tot - sum_children) : 0;
+		const auto parent_begin = n.start;
+		const auto parent_end = n.end;
+		const auto parent_tot = parent_end - parent_begin;
+
+		if (n.children_idx.empty() || parent_tot <= 0) {
+			n.self = parent_tot;
+			return;
+		}
+
+		struct seg {
+			time_t<std::uint64_t> a;
+			time_t<std::uint64_t> b;
+		};
+
+		std::vector<seg> segs;
+		segs.reserve(n.children_idx.size());
+
+		for (const auto c : n.children_idx) {
+			const auto& ch = fs.flat[c];
+
+			if (ch.tid != n.tid) {
+				continue;
+			}
+
+			auto a = std::max(ch.start, parent_begin);
+			auto b = std::min(ch.end, parent_end);
+
+			if (b > a) {
+				segs.push_back({ a, b });
+			}
+		}
+
+		if (segs.empty()) {
+			n.self = parent_tot;
+			return;
+		}
+
+		std::ranges::sort(segs, [](const seg& x, const seg& y) {
+			return x.a < y.a;
+		});
+
+		time_t<std::uint64_t> covered;
+
+		seg cur = segs[0];
+
+		for (std::size_t k = 1; k < segs.size(); ++k) {
+			if (segs[k].a <= cur.b) {
+				if (segs[k].b > cur.b) {
+					cur.b = segs[k].b;
+				}
+			} else {
+				covered += (cur.b - cur.a);
+				cur = segs[k];
+			}
+		}
+		covered += (cur.b - cur.a);
+
+		n.self = (covered < parent_tot) ? (parent_tot - covered) : 0;
 	};
 
 	for (const auto r : roots_idx) {
@@ -616,70 +797,106 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 
 	fs.node_pool.clear();
 	fs.roots.clear();
-
-	std::function<node(std::size_t)> make_node = [&](const std::size_t i) -> node {
-		auto& [id, tid, start, end, self, children_idx] = fs.flat[i];
-		if (children_idx.empty()) {
-			return node{
-				.id = id,
-				.trace_id = tid,
-				.start = start,
-				.stop = end,
-				.self = self,
-				.children_first = nullptr,
-				.children_count = 0
-			};
-		}
-
-		const auto start_idx = fs.node_pool.size();
-
-		for (const auto c : children_idx) {
-			fs.node_pool.push_back(make_node(c));
-		}
-
-		node* first = fs.node_pool.data() + start_idx;
-		const std::size_t cnt = fs.node_pool.size() - start_idx;
-
-		return node{
-			.id = id,
-			.trace_id = tid,
-			.start = start,
-			.stop = end,
-			.self = self,
-			.children_first = first,
-			.children_count = cnt
-		};
-	};
-
-	fs.node_pool.reserve(fs.node_pool.size() + fs.flat.size());
+	fs.node_pool.reserve(fs.flat.size());
 	fs.roots.reserve(roots_idx.size());
 
+	auto emplace_shallow = [&](const std::size_t flat_i) -> std::size_t {
+		const auto& fn = fs.flat[flat_i];
+		fs.node_pool.push_back(gse::trace::node{
+			.id = fn.id,
+			.trace_id = fn.tid,
+			.start = fn.start,
+			.stop  = fn.end,
+			.self  = fn.self,
+			.children_first = nullptr,
+			.children_count = 0
+		});
+		return fs.node_pool.size() - 1;
+	};
+
+	std::function<void(std::size_t, std::size_t)> build_subtree = [&](const std::size_t node_idx, const std::size_t flat_i) {
+		const auto& fn = fs.flat[flat_i];
+
+		if (fn.children_idx.empty()) {
+			fs.node_pool[node_idx].children_first = nullptr;
+			fs.node_pool[node_idx].children_count = 0;
+			return;
+		}
+
+		const std::size_t start = fs.node_pool.size();
+
+		for (const std::size_t ci : fn.children_idx) {
+			emplace_shallow(ci);
+		}
+
+		fs.node_pool[node_idx].children_first = fs.node_pool.data() + start;
+		fs.node_pool[node_idx].children_count = fn.children_idx.size();
+
+		for (std::size_t k = 0; k < fn.children_idx.size(); ++k) {
+			build_subtree(start + k, fn.children_idx[k]);
+		}
+	};
+
 	for (const auto r : roots_idx) {
-		fs.roots.push_back(make_node(r));
+		const std::size_t root_idx = emplace_shallow(r);
+		build_subtree(root_idx, r);
+		fs.roots.push_back(fs.node_pool[root_idx]);
+	}
+
+	fs.open_spans.clear();
+	for (const auto eid : still_open) {
+		if (auto it = spans.find(eid); it != spans.end()) {
+			fs.open_spans.emplace(eid, it->second);
+		}
 	}
 }
 
 auto gse::trace::make_loc_id(const std::source_location& loc) -> id {
-	const char* file = loc.file_name();
-	const char* slash1 = std::strrchr(file, '/');
-	const char* slash2 = std::strrchr(file, '\\');
-	const char* base = file;
+	std::string_view fn = loc.function_name();
 
-	if (slash1) base = slash1 + 1;
-	if (slash2 && (!slash1 || slash2 > slash1)) base = slash2 + 1;
+	if (const auto lp = fn.find('('); lp != std::string_view::npos) {
+		fn = fn.substr(0, lp);
+	}
 
-	std::string tag;
-	tag.reserve(96);
-	tag.append(base ? base : file);
-	tag.push_back(':');
-	tag.append(std::to_string(loc.line()));
-	tag.push_back(' ');
-	tag.append(loc.function_name());
+	while (!fn.empty() && std::isspace(static_cast<unsigned char>(fn.back()))) {
+		fn.remove_suffix(1);
+	}
 
-	return exists(tag) ? find(tag) : generate_id(tag);
+	const auto last_col_col = fn.rfind("::");
+	std::string_view tag;
+
+	if (last_col_col != std::string_view::npos) {
+		std::size_t start = fn.rfind(' ', last_col_col);
+
+		if (start == std::string_view::npos) {
+			start = 0;
+		} else {
+			start += 1;
+		}
+
+		tag = fn.substr(start);
+
+		static constexpr std::string_view candidates[] = {
+			"__cdecl", "__stdcall", "__thiscall", "__vectorcall", "cdecl", "stdcall", "thiscall", "vectorcall"
+		};
+
+		for (auto cc : candidates) {
+			if (tag.size() > cc.size() && tag.substr(0, cc.size()) == cc) {
+				tag.remove_prefix(cc.size());
+				while (!tag.empty() && std::isspace(static_cast<unsigned char>(tag.front()))) {
+					tag.remove_prefix(1);
+				}
+				break;
+			}
+		}
+	} else {
+		const auto last_sp = fn.rfind(' ');
+		tag = last_sp == std::string_view::npos ? fn : fn.substr(last_sp + 1);
+	}
+
+	return find_or_generate_id(tag);
 }
 
-
-
-
-
+auto gse::trace::allocate_span_eid() -> std::uint64_t {
+	return next_eid.fetch_add(1, std::memory_order_relaxed);
+}

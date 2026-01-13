@@ -69,7 +69,7 @@ auto gse::vulkan::transient_allocator::allocate(const device_config& config, con
 		}
 	}
 
-	assert(req_memory_type_index != std::numeric_limits<std::uint32_t>::max(), "Failed to find suitable memory type!");
+	assert(req_memory_type_index != std::numeric_limits<std::uint32_t>::max(), std::source_location::current(), "Failed to find suitable memory type!");
 
 	auto& pool = g_transient_memory_pools[req_memory_type_index];
 	if (pool.blocks.empty()) {
@@ -99,7 +99,7 @@ auto gse::vulkan::transient_allocator::allocate(const device_config& config, con
 	}
 
 	const vk::DeviceSize aligned_offset = align_up(0, requirements.alignment);
-	assert(aligned_offset + requirements.size <= new_block.size, "New block is too small!");
+	assert(aligned_offset + requirements.size <= new_block.size, std::source_location::current(), "New block is too small!");
 	new_block.cursor = aligned_offset + requirements.size;
 
 	return { *new_block.memory, requirements.size, aligned_offset, new_block.mapped ? static_cast<std::byte*>(new_block.mapped) + aligned_offset : nullptr };

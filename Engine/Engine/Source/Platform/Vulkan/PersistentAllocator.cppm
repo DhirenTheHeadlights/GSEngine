@@ -219,7 +219,7 @@ auto gse::vulkan::persistent_allocator::create_buffer(const device_config& confi
 		}
 	}
 
-	assert(success, "Failed to allocate memory for buffer after trying all preferences.");
+	assert(success, std::source_location::current(), "Failed to allocate memory for buffer after trying all preferences.");
 
 	buffer.bindMemory(alloc.memory(), alloc.offset());
 
@@ -227,7 +227,7 @@ auto gse::vulkan::persistent_allocator::create_buffer(const device_config& confi
 		std::memcpy(alloc.mapped(), data, buffer_info.size);
 	}
 	else if (data && !alloc.mapped()) {
-		assert(false, "Buffer created with data, but the allocated memory is not mappable.");
+		assert(false, std::source_location::current(), "Buffer created with data, but the allocated memory is not mappable.");
 	}
 
 	return { std::move(buffer), std::move(alloc) };
@@ -241,12 +241,12 @@ auto gse::vulkan::persistent_allocator::create_image(const device_config& config
 	auto expected_alloc = allocate(config, requirements, properties);
 
 	if (!expected_alloc) {
-		assert(false,
-			std::format(
-				"Failed to allocate memory for image with size {} and usage {} after trying all preferences.",
-				requirements.size,
-				to_string(info.usage)
-			)
+		assert(
+			false,
+			std::source_location::current(),
+			"Failed to allocate memory for image with size {} and usage {} after trying all preferences.",
+			requirements.size,
+			to_string(info.usage)
 		);
 	}
 
@@ -261,7 +261,7 @@ auto gse::vulkan::persistent_allocator::create_image(const device_config& config
 	vk::raii::ImageView view = nullptr;
 
 	if (view_info != vk::ImageViewCreateInfo{}) {
-		assert(!view_info.image, "Image view info must not have an image set yet!");
+		assert(!view_info.image, std::source_location::current(), "Image view info must not have an image set yet!");
 		vk::ImageViewCreateInfo actual_view_info = view_info;
 		actual_view_info.image = image;
 		view = config.device.createImageView(actual_view_info);
@@ -303,13 +303,13 @@ auto gse::vulkan::persistent_allocator::free(const allocation& alloc) -> void {
 				if (&*it == sub_to_free) {
 					it->in_use = false;
 
-					if (auto next_it = std::next(it); next_it != block.allocations.end() && !next_it->in_use) {
+					if (const auto next_it = std::next(it); next_it != block.allocations.end() && !next_it->in_use) {
 						it->size += next_it->size;
 						block.allocations.erase(next_it);
 					}
 
 					if (it != block.allocations.begin()) {
-						if (auto prev_it = std::prev(it); !prev_it->in_use) {
+						if (const auto prev_it = std::prev(it); !prev_it->in_use) {
 							prev_it->size += it->size;
 							block.allocations.erase(it);
 							return;
@@ -341,6 +341,8 @@ auto gse::vulkan::persistent_allocator::get_memory_flag_preferences(const vk::Bu
 
 	if (usage & vk::BufferUsageFlagBits::eVertexBuffer || usage & vk::BufferUsageFlagBits::eIndexBuffer) {
 		return {
+			mpf::eHostVisible | mpf::eHostCoherent | mpf::eDeviceLocal,
+			mpf::eHostVisible | mpf::eHostCoherent,
 			mpf::eDeviceLocal
 		};
 	}

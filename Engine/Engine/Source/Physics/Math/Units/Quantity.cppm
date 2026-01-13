@@ -27,11 +27,14 @@ namespace gse::internal {
 
     export template <typename T>
     concept is_arithmetic = std::integral<T> || std::floating_point<T>;
+
+    constexpr auto cexpr_llround(const long double x) -> long long {
+        return x >= 0 ? static_cast<long long>(x + 0.5L) : static_cast<long long>(x - 0.5L);
+    }
 }
 
-template <size_t N, typename CharT>
+template <std::size_t N, typename CharT>
 struct std::formatter<gse::internal::fixed_string<N>, CharT> : std::formatter<std::string_view, CharT> {
-
     constexpr auto parse(std::basic_format_parse_context<CharT>& ctx) {
         return std::formatter<std::string_view, CharT>::parse(ctx);
     }
@@ -108,9 +111,9 @@ namespace gse::internal {
             const generic_quantity<T, Dim>& other
         );
 
-        template <typename D2, is_arithmetic T2, is_dimension Dim2, typename Tag2, typename Unit2> requires has_same_dimensions<Dimensions, Dim2>
+        template <typename D2, is_arithmetic T2, is_dimension Dim2, typename Tag2, typename Unit2> requires has_same_dimensions<Dimensions, Dim2> && std::same_as<QuantityTagType, Tag2>
 		constexpr quantity(
-			const quantity<quantity<D2, T2, Dim2, Tag2, Unit2>, T2, Dim2, Tag2, Unit2>& other
+			const quantity<D2, T2, Dim2, Tag2, Unit2>& other
 		);
 
         template <is_unit UnitType> requires valid_unit_for_quantity<UnitType, Derived>
@@ -152,8 +155,8 @@ template <gse::internal::is_arithmetic T, gse::internal::is_dimension Dim> requi
 constexpr gse::internal::quantity<Derived, ArithmeticType, Dimensions, QuantityTagType, DefaultUnitType>::quantity(const generic_quantity<T, Dim>& other): m_val(other.template as<default_unit>()) {}
 
 template <typename Derived, gse::internal::is_arithmetic ArithmeticType, gse::internal::is_dimension Dimensions, typename QuantityTagType, typename DefaultUnitType>
-template <typename D2, gse::internal::is_arithmetic T2, gse::internal::is_dimension Dim2, typename Tag2, typename Unit2> requires gse::internal::has_same_dimensions<Dimensions, Dim2>
-constexpr gse::internal::quantity<Derived, ArithmeticType, Dimensions, QuantityTagType, DefaultUnitType>::quantity(const quantity<quantity<D2, T2, Dim2, Tag2, Unit2>, T2, Dim2, Tag2, Unit2>& other): m_val(static_cast<ArithmeticType>(other.template as<DefaultUnitType>())) {}
+template <typename D2, gse::internal::is_arithmetic T2, gse::internal::is_dimension Dim2, typename Tag2, typename Unit2> requires gse::internal::has_same_dimensions<Dimensions, Dim2>&& std::same_as<QuantityTagType, Tag2>
+constexpr gse::internal::quantity<Derived, ArithmeticType, Dimensions, QuantityTagType, DefaultUnitType>::quantity(const quantity<D2, T2, Dim2, Tag2, Unit2>& other): m_val(static_cast<ArithmeticType>(other.template as<DefaultUnitType>())) {}
 
 template <typename Derived, gse::internal::is_arithmetic ArithmeticType, gse::internal::is_dimension Dimensions, typename QuantityTagType, typename DefaultUnitType>
 template <gse::internal::is_unit UnitType> requires gse::internal::valid_unit_for_quantity<UnitType, Derived>
@@ -164,14 +167,23 @@ constexpr auto gse::internal::quantity<Derived, ArithmeticType, Dimensions, Quan
 template <typename Derived, gse::internal::is_arithmetic ArithmeticType, gse::internal::is_dimension Dimensions, typename QuantityTagType, typename DefaultUnitType>
 template <gse::internal::is_unit UnitType> requires gse::internal::valid_unit_for_quantity<UnitType, Derived>
 constexpr auto gse::internal::quantity<Derived, ArithmeticType, Dimensions, QuantityTagType, DefaultUnitType>::as() const -> ArithmeticType {
-	using r = UnitType::conversion_ratio;
+    using u = UnitType;
+    using d = DefaultUnitType;
+
+    using r_u = u::conversion_ratio;
+    using r_d = d::conversion_ratio;
 
     const long double v = static_cast<long double>(m_val);
-    long double out = v * static_cast<long double>(r::den) / static_cast<long double>(r::num);
+
+    const long double num = static_cast<long double>(r_d::num) * static_cast<long double>(r_u::den);
+    const long double den = static_cast<long double>(r_d::den) * static_cast<long double>(r_u::num);
+
+    long double out = v * num / den;
 
     if constexpr (std::is_integral_v<ArithmeticType>) {
-        return static_cast<ArithmeticType>(std::llround(out));
-    } else {
+        return static_cast<ArithmeticType>(cexpr_llround(out));
+    }
+    else {
         return static_cast<ArithmeticType>(out);
     }
 }
@@ -194,14 +206,23 @@ constexpr auto gse::internal::quantity<Derived, ArithmeticType, Dimensions, Quan
 template <typename Derived, gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
 template <gse::internal::is_unit UnitType>
 constexpr auto gse::internal::quantity<Derived, A, D, Tag,DefUnit>::converted_value(A value) const -> A {
-    using r = UnitType::conversion_ratio;
+    using u = UnitType;
+    using def = DefUnit;
+
+    using r_u = u::conversion_ratio;
+    using r_d = def::conversion_ratio;
 
     const long double v = static_cast<long double>(value);
-    long double out = v * static_cast<long double>(r::num) / static_cast<long double>(r::den);
+
+    const long double num = static_cast<long double>(r_u::num) * static_cast<long double>(r_d::den);
+    const long double den = static_cast<long double>(r_u::den) * static_cast<long double>(r_d::num);
+
+    long double out = v * num / den;
 
     if constexpr (std::is_integral_v<A>) {
-        return static_cast<A>(std::llround(out));
-    } else {
+        return static_cast<A>(cexpr_llround(out));
+    }
+    else {
         return static_cast<A>(out);
     }
 }
@@ -254,6 +275,18 @@ struct std::formatter<Q, CharT> {
         return it;
     }
 };
+
+namespace std {
+    template <typename D, gse::internal::is_arithmetic A, gse::internal::is_dimension Dim, typename Tag, typename Unit, gse::internal::is_arithmetic T2, gse::internal::is_dimension Dim2>
+    struct common_type<gse::internal::quantity<D, A, Dim, Tag, Unit>, gse::internal::generic_quantity<T2, Dim2>> {
+        using type = gse::internal::quantity<D, A, Dim, Tag, Unit>;
+    };
+
+    template <gse::internal::is_arithmetic T1, gse::internal::is_dimension Dim1, typename D2, gse::internal::is_arithmetic A2, gse::internal::is_dimension Dim2, typename Tag2, typename Unit2>
+    struct common_type<gse::internal::generic_quantity<T1, Dim1>, gse::internal::quantity<D2, A2, Dim2, Tag2, Unit2>> {
+        using type = gse::internal::quantity<D2, A2, Dim2, Tag2, Unit2>;
+    };
+}
 
 export namespace gse::internal {
 	template <is_quantity Q1, is_quantity Q2>
@@ -431,27 +464,25 @@ constexpr auto gse::internal::operator-(const Q& v) -> Q {
 }
 
 export namespace gse {
-    template <typename ToQuantity, typename FromQuantity>
+    template <typename ToQuantity, typename FromQuantity> requires gse::internal::has_same_dimension_as<ToQuantity, FromQuantity>
     constexpr auto quantity_cast(const FromQuantity& q) -> ToQuantity;
 }
 
-template <typename ToQuantity, typename FromQuantity>
+template <typename ToQuantity, typename FromQuantity> requires gse::internal::has_same_dimension_as<ToQuantity, FromQuantity>
 constexpr auto gse::quantity_cast(const FromQuantity& q) -> ToQuantity {
-	using to_unit = ToQuantity::default_unit;
-    using fr_unit = FromQuantity::default_unit;
-    using to_val  = ToQuantity::value_type;
+    using to_unit = ToQuantity::default_unit;
+    using to_val = ToQuantity::value_type;
 
-    const long double x = static_cast<long double>(q.template as<typename FromQuantity::default_unit>());
-
-    using fr_r = fr_unit::conversion_ratio;
-    const long double base = x * (static_cast<long double>(fr_r::num) / static_cast<long double>(fr_r::den));
-
-    using to_r = to_unit::conversion_ratio;
-    long double y = base * (static_cast<long double>(to_r::den) / static_cast<long double>(to_r::num));
+    const long double value_in_to_unit = static_cast<long double>(q.template as<to_unit>());
 
     if constexpr (std::is_integral_v<to_val>) {
-        return ToQuantity(static_cast<to_val>(std::llround(y)));
-    } else {
-        return ToQuantity(static_cast<to_val>(y));
+        return ToQuantity::template from<to_unit>(
+            static_cast<to_val>(internal::cexpr_llround(value_in_to_unit))
+        );
+    }
+    else {
+        return ToQuantity::template from<to_unit>(
+            static_cast<to_val>(value_in_to_unit)
+        );
     }
 }

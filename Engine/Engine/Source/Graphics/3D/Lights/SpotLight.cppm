@@ -25,97 +25,10 @@ export namespace gse {
 	};
 
 	struct spot_light_component : component<spot_light_data> {
-		spot_light_component(const id& owner_id, const spot_light_data& data = {}) : component(owner_id, data) {}
+		explicit spot_light_component(const id owner_id, const spot_light_data& data = {}) : component(owner_id, data) {}
 
 		auto debug_menu(const std::string_view& name, std::uint32_t parent_id) -> void {
-			gui::start(
-				std::format("Spot light {}", name),
-				[this] {
-					gui::slider(
-						"Intensity",
-						intensity,
-						0.f,
-						1000.f
-					);
-
-					gui::slider(
-						"Ambient Strength",
-						ambient_strength,
-						0.f,
-						1.f
-					);
-
-					gui::slider(
-						"Linear",
-						linear,
-						0.f,
-						1.f
-					);
-
-					gui::slider(
-						"Quadratic",
-						quadratic,
-						0.f,
-						1.f
-					);
-
-					gui::slider(
-						"Cut Off",
-						cut_off,
-						degrees(0.f),
-						degrees(90.f)
-					);
-
-					gui::slider(
-						"Outer Cut Off",
-						outer_cut_off,
-						degrees(0.f),
-						degrees(90.f)
-					);
-
-					gui::slider(
-						"Ambient",
-						ambient_strength,
-						0.f,
-						1.f
-					);
-
-					gui::slider(
-						"Direction",
-						direction,
-						{ -1.f, -1.f, -1.f },
-						{ 1.f, 1.f, 1.f }
-					);
-
-					gui::slider(
-						"Position",
-						position,
-						{ -500.f, -500.f, -500.f },
-						{ 500.f, 500.f, 500.f }
-					);
-
-					gui::slider(
-						"Color",
-						color,
-						{ 0.f, 0.f, 0.f },
-						{ 1.f, 1.f, 1.f }
-					);
-
-					gui::slider(
-						"Near Plane",
-						near_plane,
-						meters(0.1f),
-						meters(100.f)
-					);
-
-					gui::slider(
-						"Far Plane",
-						far_plane,
-						meters(100.f),
-						meters(10000.f)
-					);
-				}
-			);
+			
 		}
 	};
 }
