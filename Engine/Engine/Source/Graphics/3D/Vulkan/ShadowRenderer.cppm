@@ -232,53 +232,43 @@ auto gse::renderer::shadow::initialize() -> void {
 	}
 
 	config.add_transient_work(
-		[this](const vk::raii::CommandBuffer& cmd) -> std::vector<vulkan::persistent_allocator::buffer_resource> {
-			for (auto& img : m_shadow_maps) {
-				vulkan::uploader::transition_image_layout(
-					cmd,
-					img,
-					vk::ImageLayout::eDepthAttachmentOptimal,
-					vk::ImageAspectFlagBits::eDepth,
-					vk::PipelineStageFlagBits2::eTopOfPipe,
-					{},
-					vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-					vk::AccessFlagBits2::eDepthStencilAttachmentWrite
-				);
+        [this](const vk::raii::CommandBuffer& cmd) -> std::vector<vulkan::persistent_allocator::buffer_resource> {
+            std::vector<vk::ImageMemoryBarrier2> barriers;
+            barriers.reserve(m_shadow_maps.size());
 
-				vk::RenderingAttachmentInfo depth_attachment{
-					.imageView = *img.view,
-					.imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
-					.loadOp = vk::AttachmentLoadOp::eClear,
-					.storeOp = vk::AttachmentStoreOp::eStore,
-					.clearValue = vk::ClearValue{ .depthStencil = vk::ClearDepthStencilValue{ 1.0f, 0 } }
-				};
+            for (auto& img : m_shadow_maps) {
+                barriers.push_back({
+                    .srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
+                    .srcAccessMask = {},
+                    .dstStageMask = vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+                    .dstAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentWrite | vk::AccessFlagBits2::eDepthStencilAttachmentRead,
+                    .oldLayout = vk::ImageLayout::eUndefined,
+                    .newLayout = vk::ImageLayout::eGeneral,
+                    .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+                    .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+                    .image = *img.image,
+                    .subresourceRange = {
+                        .aspectMask = vk::ImageAspectFlagBits::eDepth,
+                        .baseMipLevel = 0,
+                        .levelCount = 1,
+                        .baseArrayLayer = 0,
+                        .layerCount = 1
+                    }
+                });
 
-				const vk::RenderingInfo info{
-					.renderArea = { { 0, 0 }, { m_shadow_extent.x(), m_shadow_extent.y() } },
-					.layerCount = 1,
-					.colorAttachmentCount = 0,
-					.pColorAttachments = nullptr,
-					.pDepthAttachment = &depth_attachment
-				};
+                img.current_layout = vk::ImageLayout::eGeneral;
+            }
 
-				cmd.beginRendering(info);
-				cmd.endRendering();
+            const vk::DependencyInfo dep{
+                .imageMemoryBarrierCount = static_cast<std::uint32_t>(barriers.size()),
+                .pImageMemoryBarriers = barriers.data()
+            };
 
-				vulkan::uploader::transition_image_layout(
-					cmd,
-					img,
-					vk::ImageLayout::eDepthReadOnlyOptimal,
-					vk::ImageAspectFlagBits::eDepth,
-					vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-					vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-					vk::PipelineStageFlagBits2::eFragmentShader,
-					vk::AccessFlagBits2::eShaderSampledRead
-				);
-			}
+            cmd.pipelineBarrier2(dep);
 
-			return {};
-		}
-	);
+            return {};
+        }
+    );
 
 	frame_sync::on_end([this] {
 		m_shadow_lights.flip();
@@ -362,86 +352,96 @@ auto gse::renderer::shadow::update() -> void {
 }
 
 auto gse::renderer::shadow::render() -> void {
-	auto& config = m_context.config();
-	const auto command = config.frame_context().command_buffer;
+    auto& config = m_context.config();
+    const auto command = config.frame_context().command_buffer;
 
-	auto& geom = system_of<geometry>();
-	const auto draw_list = geom.render_queue();
+    auto& geom = system_of<geometry>();
+    const auto draw_list = geom.render_queue();
 
-	if (draw_list.empty()) {
-		return;
-	}
+    if (draw_list.empty()) {
+        return;
+    }
 
-	const auto& lights = m_shadow_lights.read();
-	if (lights.empty()) {
-		return;
-	}
+    const auto& lights = m_shadow_lights.read();
 
-	for (const auto& light : lights) {
-		if (light.shadow_index < 0 || static_cast<std::size_t>(light.shadow_index) >= m_shadow_maps.size()) {
-			continue;
-		}
+    if (lights.empty()) {
+        return;
+    }
 
-		auto& depth_image = m_shadow_maps[static_cast<std::size_t>(light.shadow_index)];
+    for (const auto& light : lights) {
+        if (light.shadow_index < 0 ||
+            static_cast<std::size_t>(light.shadow_index) >= m_shadow_maps.size()) {
+            continue;
+        }
 
-		vulkan::uploader::transition_image_layout(
-			command,
-			depth_image,
-			vk::ImageLayout::eDepthAttachmentOptimal,
-			vk::ImageAspectFlagBits::eDepth,
-			vk::PipelineStageFlagBits2::eFragmentShader,
-			vk::AccessFlagBits2::eShaderSampledRead,
-			vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-			vk::AccessFlagBits2::eDepthStencilAttachmentWrite
-		);
+        auto& depth_image = m_shadow_maps[static_cast<std::size_t>(light.shadow_index)];
 
-		vk::RenderingAttachmentInfo depth_attachment{
-			.imageView = *depth_image.view,
-			.imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
-			.loadOp = vk::AttachmentLoadOp::eClear,
-			.storeOp = vk::AttachmentStoreOp::eStore,
-			.clearValue = vk::ClearValue{ .depthStencil = { 1.0f, 0 } }
-		};
+        constexpr vk::MemoryBarrier2 pre_barrier{
+            .srcStageMask = vk::PipelineStageFlagBits2::eFragmentShader,
+            .srcAccessMask = vk::AccessFlagBits2::eShaderSampledRead,
+            .dstStageMask = vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+            .dstAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentWrite
+        };
 
-		const vk::RenderingInfo rendering_info{
-			.renderArea = { { 0, 0 }, { m_shadow_extent.x(), m_shadow_extent.y() } },
-			.layerCount = 1,
-			.colorAttachmentCount = 0,
-			.pColorAttachments = nullptr,
-			.pDepthAttachment = &depth_attachment
-		};
+        const vk::DependencyInfo pre_dep{
+            .memoryBarrierCount = 1,
+            .pMemoryBarriers = &pre_barrier
+        };
 
-		vulkan::render(config, rendering_info, [&] {
-			command.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
+        command.pipelineBarrier2(pre_dep);
 
-			const mat4 light_view_proj = light.proj * light.view;
+        vk::RenderingAttachmentInfo depth_attachment{
+            .imageView = *depth_image.view,
+            .imageLayout = vk::ImageLayout::eGeneral,
+            .loadOp = vk::AttachmentLoadOp::eClear,
+            .storeOp = vk::AttachmentStoreOp::eStore,
+            .clearValue = vk::ClearValue{
+                .depthStencil = { 1.0f, 0 }
+            }
+        };
 
-			for (const auto& e : draw_list) {
-				m_shader->push(
-					command,
-					m_pipeline_layout,
-					"push_constants",
-					"light_view_proj", light_view_proj,
-					"model", e.model_matrix
-				);
+        const vk::RenderingInfo rendering_info{
+            .renderArea = { { 0, 0 }, { m_shadow_extent.x(), m_shadow_extent.y() } },
+            .layerCount = 1,
+            .colorAttachmentCount = 0,
+            .pColorAttachments = nullptr,
+            .pDepthAttachment = &depth_attachment
+        };
 
-				const auto& mesh = e.model->meshes()[e.index];
-				mesh.bind(command);
-				mesh.draw(command);
-			}
-		});
+        vulkan::render(config, rendering_info, [&] {
+            command.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
 
-		vulkan::uploader::transition_image_layout(
-			command,
-			depth_image,
-			vk::ImageLayout::eDepthReadOnlyOptimal,
-			vk::ImageAspectFlagBits::eDepth,
-			vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-			vk::PipelineStageFlagBits2::eFragmentShader,
-			vk::AccessFlagBits2::eShaderSampledRead
-		);
-	}
+            const mat4 light_view_proj = light.proj * light.view;
+
+            for (const auto& e : draw_list) {
+                m_shader->push(
+                    command,
+                    m_pipeline_layout,
+                    "push_constants",
+                    "light_view_proj", light_view_proj,
+                    "model", e.model_matrix
+                );
+
+                const auto& mesh = e.model->meshes()[e.index];
+                mesh.bind(command);
+                mesh.draw(command);
+            }
+        });
+
+        constexpr vk::MemoryBarrier2 post_barrier{
+            .srcStageMask = vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+            .srcAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader,
+            .dstAccessMask = vk::AccessFlagBits2::eShaderSampledRead
+        };
+
+        const vk::DependencyInfo post_dep{
+            .memoryBarrierCount = 1,
+            .pMemoryBarriers = &post_barrier
+        };
+
+        command.pipelineBarrier2(post_dep);
+    }
 }
 
 auto gse::renderer::shadow::shadow_map_view(const std::size_t index) const -> vk::ImageView {

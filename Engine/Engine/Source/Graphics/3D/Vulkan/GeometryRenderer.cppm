@@ -52,27 +52,65 @@ gse::renderer::geometry::geometry(context& context) : m_context(context) {}
 auto gse::renderer::geometry::initialize() -> void {
 	auto& config = m_context.config();
 
-	config.add_transient_work(
-		[&](const vk::raii::CommandBuffer& cmd) -> std::vector<vulkan::persistent_allocator::buffer_resource> {
-			vulkan::uploader::transition_image_layout(
-				cmd, config.swap_chain_config().albedo_image,
-				vk::ImageLayout::eColorAttachmentOptimal, vk::ImageAspectFlagBits::eColor,
-				vk::PipelineStageFlagBits2::eTopOfPipe,
-				{}, vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-				vk::AccessFlagBits2::eColorAttachmentWrite
-			);
+	config.add_transient_work([&](const vk::raii::CommandBuffer& cmd) -> std::vector<vulkan::persistent_allocator::buffer_resource> {
+            auto transition_to_general = [&cmd](
+                vulkan::persistent_allocator::image_resource& img,
+                const vk::ImageAspectFlags aspect,
+                const vk::PipelineStageFlags2 dst_stage,
+                const vk::AccessFlags2 dst_access
+            ) {
+                const vk::ImageMemoryBarrier2 barrier{
+                    .srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
+                    .srcAccessMask = {},
+                    .dstStageMask = dst_stage,
+                    .dstAccessMask = dst_access,
+                    .oldLayout = vk::ImageLayout::eUndefined,
+                    .newLayout = vk::ImageLayout::eGeneral,
+                    .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+                    .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+                    .image = *img.image,
+                    .subresourceRange = {
+                        .aspectMask = aspect,
+                        .baseMipLevel = 0,
+                        .levelCount = 1,
+                        .baseArrayLayer = 0,
+                        .layerCount = 1
+                    }
+                };
 
-			vulkan::uploader::transition_image_layout(
-				cmd, config.swap_chain_config().depth_image,
-				vk::ImageLayout::eDepthStencilAttachmentOptimal, vk::ImageAspectFlagBits::eDepth,
-				vk::PipelineStageFlagBits2::eTopOfPipe,
-				{}, vk::PipelineStageFlagBits2::eEarlyFragmentTests,
-				vk::AccessFlagBits2::eDepthStencilAttachmentWrite
-			);
+                const vk::DependencyInfo dep{
+                    .imageMemoryBarrierCount = 1,
+                    .pImageMemoryBarriers = &barrier
+                };
 
-			return {};
-		}
-	);
+                cmd.pipelineBarrier2(dep);
+                img.current_layout = vk::ImageLayout::eGeneral;
+            };
+
+            transition_to_general(
+                config.swap_chain_config().albedo_image,
+                vk::ImageAspectFlagBits::eColor,
+                vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead
+            );
+
+            transition_to_general(
+                config.swap_chain_config().normal_image,
+                vk::ImageAspectFlagBits::eColor,
+                vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead
+            );
+
+            transition_to_general(
+                config.swap_chain_config().depth_image,
+                vk::ImageAspectFlagBits::eDepth,
+                vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+                vk::AccessFlagBits2::eDepthStencilAttachmentWrite | vk::AccessFlagBits2::eDepthStencilAttachmentRead
+            );
+
+            return {};
+        }
+    );
 
 	m_shader = m_context.get<shader>("geometry_pass");
 	m_context.instantly_load(m_shader);
@@ -298,143 +336,134 @@ auto gse::renderer::geometry::update() -> void {
 }
 
 auto gse::renderer::geometry::render() -> void {
-	auto& config = m_context.config();
-	const auto command = config.frame_context().command_buffer;
+    auto& config = m_context.config();
+    const auto command = config.frame_context().command_buffer;
 
-	vulkan::uploader::transition_image_layout(
-		command,
-		config.swap_chain_config().albedo_image,
-		vk::ImageLayout::eColorAttachmentOptimal,
-		vk::ImageAspectFlagBits::eColor,
-		vk::PipelineStageFlagBits2::eFragmentShader,
-		vk::AccessFlagBits2::eShaderSampledRead,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::AccessFlagBits2::eColorAttachmentWrite
-	);
+    constexpr vk::MemoryBarrier2 pre_render_barrier{
+        .srcStageMask = vk::PipelineStageFlagBits2::eFragmentShader,
+        .srcAccessMask = vk::AccessFlagBits2::eShaderSampledRead,
+        .dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput | vk::PipelineStageFlagBits2::eEarlyFragmentTests,
+        .dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eDepthStencilAttachmentWrite
+    };
 
-	vulkan::uploader::transition_image_layout(
-		command,
-		config.swap_chain_config().normal_image,
-		vk::ImageLayout::eColorAttachmentOptimal,
-		vk::ImageAspectFlagBits::eColor,
-		vk::PipelineStageFlagBits2::eFragmentShader,
-		vk::AccessFlagBits2::eShaderSampledRead,
-		vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-		vk::AccessFlagBits2::eColorAttachmentWrite
-	);
+    const vk::DependencyInfo pre_dep{
+        .memoryBarrierCount = 1,
+        .pMemoryBarriers = &pre_render_barrier
+    };
 
-	vulkan::uploader::transition_image_layout(
-		command,
-		config.swap_chain_config().depth_image,
-		vk::ImageLayout::eDepthStencilAttachmentOptimal,
-		vk::ImageAspectFlagBits::eDepth,
-		vk::PipelineStageFlagBits2::eFragmentShader,
-		vk::AccessFlagBits2::eShaderSampledRead,
-		vk::PipelineStageFlagBits2::eEarlyFragmentTests,
-		vk::AccessFlagBits2::eDepthStencilAttachmentWrite
-	);
+    command.pipelineBarrier2(pre_dep);
 
-	std::array color_attachments{
-		vk::RenderingAttachmentInfo{
-			.imageView = config.swap_chain_config().albedo_image.view,
-			.imageLayout = config.swap_chain_config().albedo_image.current_layout,
-			.loadOp = vk::AttachmentLoadOp::eClear,
-			.storeOp = vk::AttachmentStoreOp::eStore,
-			.clearValue = vk::ClearValue{
-				.color = vk::ClearColorValue{
-					.float32 = std::array{ 0.0f, 0.0f, 0.0f, 1.0f }
-				}
-			}
-		},
-		vk::RenderingAttachmentInfo{
-			.imageView = config.swap_chain_config().normal_image.view,
-			.imageLayout = config.swap_chain_config().normal_image.current_layout,
-			.loadOp = vk::AttachmentLoadOp::eClear,
-			.storeOp = vk::AttachmentStoreOp::eStore,
-			.clearValue = vk::ClearValue{
-				.color = vk::ClearColorValue{
-					.float32 = std::array{ 0.0f, 0.0f, 0.0f, 1.0f }
-				}
-			}
-		}
-	};
+    std::array color_attachments{
+        vk::RenderingAttachmentInfo{
+            .imageView = config.swap_chain_config().albedo_image.view,
+            .imageLayout = vk::ImageLayout::eGeneral,
+            .loadOp = vk::AttachmentLoadOp::eClear,
+            .storeOp = vk::AttachmentStoreOp::eStore,
+            .clearValue = vk::ClearValue{
+                .color = vk::ClearColorValue{
+                    .float32 = std::array{ 0.0f, 0.0f, 0.0f, 1.0f }
+                }
+            }
+        },
+        vk::RenderingAttachmentInfo{
+            .imageView = config.swap_chain_config().normal_image.view,
+            .imageLayout = vk::ImageLayout::eGeneral,
+            .loadOp = vk::AttachmentLoadOp::eClear,
+            .storeOp = vk::AttachmentStoreOp::eStore,
+            .clearValue = vk::ClearValue{
+                .color = vk::ClearColorValue{
+                    .float32 = std::array{ 0.0f, 0.0f, 0.0f, 1.0f }
+                }
+            }
+        }
+    };
 
-	vk::RenderingAttachmentInfo depth_attachment{
-		.imageView = config.swap_chain_config().depth_image.view,
-		.imageLayout = config.swap_chain_config().depth_image.current_layout,
-		.loadOp = vk::AttachmentLoadOp::eClear,
-		.storeOp = vk::AttachmentStoreOp::eStore,
-		.clearValue = vk::ClearValue{
-			.depthStencil = vk::ClearDepthStencilValue{
-				.depth = 1.0f
-			}
-		}
-	};
+    vk::RenderingAttachmentInfo depth_attachment{
+        .imageView = config.swap_chain_config().depth_image.view,
+        .imageLayout = vk::ImageLayout::eGeneral,
+        .loadOp = vk::AttachmentLoadOp::eClear,
+        .storeOp = vk::AttachmentStoreOp::eStore,
+        .clearValue = vk::ClearValue{
+            .depthStencil = vk::ClearDepthStencilValue{
+                .depth = 1.0f
+            }
+        }
+    };
 
-	const vk::RenderingInfo rendering_info{
-		.renderArea = { { 0, 0 }, config.swap_chain_config().extent },
-		.layerCount = 1,
-		.colorAttachmentCount = static_cast<std::uint32_t>(color_attachments.size()),
-		.pColorAttachments = color_attachments.data(),
-		.pDepthAttachment = &depth_attachment
-	};
+    const vk::RenderingInfo rendering_info{
+        .renderArea = { { 0, 0 }, config.swap_chain_config().extent },
+        .layerCount = 1,
+        .colorAttachmentCount = static_cast<std::uint32_t>(color_attachments.size()),
+        .pColorAttachments = color_attachments.data(),
+        .pDepthAttachment = &depth_attachment
+    };
 
-	vulkan::render(
-		config,
-		rendering_info,
-		[&] {
-			const auto& draw_list = m_render_queue.read();
+    vulkan::render(
+        config,
+        rendering_info,
+        [&] {
+            const auto& draw_list = m_render_queue.read();
 
-			if (draw_list.empty()) {
-				return;
-			}
+            if (draw_list.empty()) {
+                return;
+            }
 
-			command.bindPipeline(
-				vk::PipelineBindPoint::eGraphics,
-				m_pipeline
-			);
+            command.bindPipeline(
+                vk::PipelineBindPoint::eGraphics,
+                m_pipeline
+            );
 
-			const vk::DescriptorSet sets[]{
-				m_descriptor_set
-			};
+            const vk::DescriptorSet sets[]{ m_descriptor_set };
 
-			command.bindDescriptorSets(
-				vk::PipelineBindPoint::eGraphics,
-				m_pipeline_layout,
-				0,
-				vk::ArrayProxy<const vk::DescriptorSet>(1, sets),
-				{}
-			);
+            command.bindDescriptorSets(
+                vk::PipelineBindPoint::eGraphics,
+                m_pipeline_layout,
+                0,
+                vk::ArrayProxy<const vk::DescriptorSet>(1, sets),
+                {}
+            );
 
-			for (const auto& e : draw_list) {
-				m_shader->push(
-					command,
-					m_pipeline_layout,
-					"push_constants",
-					"model",
-					e.model_matrix,
-					"normal_matrix",
-					e.normal_matrix
-				);
+            for (const auto& e : draw_list) {
+                m_shader->push(
+                    command,
+                    m_pipeline_layout,
+                    "push_constants",
+                    "model", e.model_matrix,
+                    "normal_matrix", e.normal_matrix
+                );
 
-				const auto& mesh = e.model->meshes()[e.index];
+                const auto& mesh = e.model->meshes()[e.index];
 
-				if (!mesh.material().valid()) {
-					continue;
-				}
+                if (!mesh.material().valid()) {
+                    continue;
+                }
 
-				m_shader->push_descriptor(
-					command,
-					m_pipeline_layout,
-					"diffuseSampler",
-					mesh.material()->diffuse_texture->descriptor_info()
-				);
+                m_shader->push_descriptor(
+                    command,
+                    m_pipeline_layout,
+                    "diffuseSampler",
+                    mesh.material()->diffuse_texture->descriptor_info()
+                );
 
-				mesh.bind(command);
-				mesh.draw(command);
-			}
-		}
-	);
+                mesh.bind(command);
+                mesh.draw(command);
+            }
+        }
+    );
+
+    constexpr vk::MemoryBarrier2 post_render_barrier{
+        .srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput | vk::PipelineStageFlagBits2::eLateFragmentTests,
+        .srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader,
+        .dstAccessMask = vk::AccessFlagBits2::eShaderSampledRead
+    };
+
+    const vk::DependencyInfo post_dep{
+        .memoryBarrierCount = 1,
+        .pMemoryBarriers = &post_render_barrier
+    };
+
+    command.pipelineBarrier2(post_dep);
 }
 
 auto gse::renderer::geometry::render_queue() const -> std::span<const render_queue_entry> {
