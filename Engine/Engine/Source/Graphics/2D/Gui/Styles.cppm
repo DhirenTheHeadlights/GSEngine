@@ -30,7 +30,7 @@ export namespace gse::gui {
 		unitless::vec4 color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f };
 
 		// Interactive widget states (buttons, selectables, tree rows)
-		unitless::vec4 color_widget_background = { 0.22f, 0.22f, 0.24f, 0.1f };
+		unitless::vec4 color_widget_background = { 0.22f, 0.22f, 0.24f, 1.0f };
 		unitless::vec4 color_widget_hovered = { 0.30f, 0.30f, 0.34f, 1.0f };
 		unitless::vec4 color_widget_active = { 0.24f, 0.52f, 0.88f, 1.0f };
 		unitless::vec4 color_widget_selected = { 0.24f, 0.52f, 0.88f, 0.85f };
@@ -78,7 +78,7 @@ constexpr auto gse::gui::style::dark() -> style {
         // Window chrome
         .color_title_bar = { 0.18f, 0.18f, 0.20f, 0.95f },
         .color_title_bar_inactive = { 0.12f, 0.12f, 0.14f, 0.95f },
-        .color_menu_body = { 0.10f, 0.10f, 0.12f, 0.98f },
+        .color_menu_body = { 0.10f, 0.10f, 0.12f, 0.01f },
         .color_menu_bar = { 0.08f, 0.08f, 0.10f, 1.0f },
         .color_border = { 0.06f, 0.06f, 0.08f, 1.0f },
 

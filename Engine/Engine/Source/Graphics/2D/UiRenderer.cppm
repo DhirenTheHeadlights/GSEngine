@@ -136,7 +136,6 @@ export namespace gse::renderer {
 		};
 
 		std::array<frame_resources, frames_in_flight> m_frame_resources;
-
 		triple_buffer<frame_data> m_frame_data;
 	};
 }
