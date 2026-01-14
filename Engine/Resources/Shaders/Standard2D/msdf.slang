@@ -4,6 +4,7 @@ import standard_2d;
 [[vk::push_constant]]
 cbuffer PushConstants {
     float4x4 projection;
+    float depth;
 };
 
 struct VSOut {
@@ -16,7 +17,7 @@ struct VSOut {
 [shader("vertex")]
 VSOut vs_main(float2 in_position: POSITION, float2 in_tex_coord: TEXCOORD, float4 in_color: COLOR) {
     VSOut o;
-    o.clip_pos = mul(projection, float4(in_position, 0.0, 1.0));
+    o.clip_pos = mul(projection, float4(in_position, depth, 1.0));
     o.tex_coord = in_tex_coord;
     o.color = in_color;
     return o;

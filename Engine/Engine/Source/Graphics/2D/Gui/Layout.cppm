@@ -5,6 +5,7 @@ import std;
 import gse.utility;
 
 import :types;
+import :styles;
 
 export namespace gse::gui::layout {
 	auto dock(

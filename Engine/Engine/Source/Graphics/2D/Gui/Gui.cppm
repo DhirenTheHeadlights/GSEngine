@@ -10,9 +10,8 @@ import :types;
 import :layout;
 import :font;
 import :rendering_context;
-import :sprite_renderer;
+import :ui_renderer;
 import :texture;
-import :text_renderer;
 import :cursor;
 import :save;
 import :value_widget;
@@ -25,6 +24,7 @@ export import :tree_widget;
 import :selectable_widget;
 import :menu_bar;
 import :settings_panel;
+import :styles;
 
 export namespace gse::gui {
 	class system final : public gse::system {
@@ -304,7 +304,7 @@ auto gse::gui::system::initialize() -> void {
 }
 
 auto gse::gui::system::update() -> void {
-	const style sty{};
+	const style sty = style::from_theme(m_settings_panel_state.current.ui_theme);
 	const input::state& input_state = system_of<input::system>().current_state();
 
 	const unitless::vec2 mouse_position = input_state.mouse_position();
@@ -335,12 +335,13 @@ auto gse::gui::system::update() -> void {
 		m_save_clock.reset();
 	}
 }
+
 auto gse::gui::system::begin_frame() -> bool {
 	m_frame_state = {};
 	m_sprite_commands.clear();
 	m_text_commands.clear();
 
-	const style sty{};
+	const style sty = style::from_theme(m_settings_panel_state.current.ui_theme);
 
 	m_frame_state = {
 		.rctx = std::addressof(m_rctx),
@@ -386,7 +387,7 @@ auto gse::gui::system::end_frame() -> void {
         for (const dock::area& area : m_active_dock_space->areas) {
             m_sprite_commands.push_back({
                 .rect = area.rect,
-                .color = m_frame_state.sty.color_dock_widget,
+                .color = m_frame_state.sty.color_dock_preview,
                 .texture = m_blank_texture
             });
         }
@@ -395,16 +396,18 @@ auto gse::gui::system::end_frame() -> void {
     const menu_bar::context mb_ctx{
         .font = m_font,
         .blank_texture = m_blank_texture,
+		.style = m_frame_state.sty,
         .sprites = m_sprite_commands,
         .texts = m_text_commands
     };
     menu_bar::update(m_menu_bar_state, mb_ctx, input_state, viewport_size);
 
-    const ui_rect settings_rect = settings_panel::default_panel_rect(viewport_size, menu_bar::height());
+    const ui_rect settings_rect = settings_panel::default_panel_rect(m_frame_state.sty, viewport_size);
 
 	const settings_panel::context sp_ctx{
 		.font = m_font,
 		.blank_texture = m_blank_texture,
+		.style = m_frame_state.sty,
 		.sprites = m_sprite_commands,
 		.texts = m_text_commands,
 		.input = input_state
@@ -414,7 +417,7 @@ auto gse::gui::system::end_frame() -> void {
     if (m_menu_bar_state.settings_open && input_state.mouse_button_pressed(mouse_button::button_1)) {
         const unitless::vec2 mouse_pos = input_state.mouse_position();
 
-        if (const ui_rect bar_rect = menu_bar::bar_rect(viewport_size); !settings_rect.contains(mouse_pos) && !bar_rect.contains(mouse_pos)) {
+        if (const ui_rect bar_rect = menu_bar::bar_rect(m_frame_state.sty, viewport_size); !settings_rect.contains(mouse_pos) && !bar_rect.contains(mouse_pos)) {
             m_menu_bar_state.settings_open = false;
         }
     }
@@ -1619,7 +1622,7 @@ auto gse::gui::system::handle_pending_drag_state(const states::pending_drag& cur
 
 				constexpr unitless::vec2 default_size = { 300.f, 200.f };
 
-				const style sty{};
+				const style sty = style::from_theme(m_settings_panel_state.current.ui_theme);
 				const unitless::vec2 new_top_left = {
 					mouse_position.x() - default_size.x() * 0.5f,
 					mouse_position.y() + sty.title_bar_height * 0.5f
@@ -1828,7 +1831,7 @@ auto gse::gui::system::draw_tab_bar(menu& current_menu, const ui_rect& title_bar
 
 auto gse::gui::system::usable_screen_rect() const -> ui_rect {
 	const auto viewport_size = unitless::vec2(m_rctx.window().viewport());
-	const float usable_height = viewport_size.y() - menu_bar::height();
+	const float usable_height = viewport_size.y() - menu_bar::height(m_frame_state.sty);
 	return ui_rect::from_position_size(
 		{ 0.f, usable_height },
 		{ viewport_size.x(), usable_height }

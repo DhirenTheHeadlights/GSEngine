@@ -5,7 +5,7 @@ import std;
 import gse.assert;
 import gse.physics.math;
 
-import :double_buffer;
+import :n_buffer;
 
 namespace gse {
 	using uuid = std::uint64_t;

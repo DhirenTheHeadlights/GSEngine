@@ -15,7 +15,8 @@ export namespace gse {
 		overlay = 2,
 		popup = 3,
 		modal = 4,
-		cursor = 5
+		cursor = 5,
+		debug = 6
 	};
 }
 

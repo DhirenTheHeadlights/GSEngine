@@ -9,10 +9,10 @@ import gse.physics.math;
 import :types;
 import :font;
 import :texture;
-import :sprite_renderer;
-import :text_renderer;
+import :ui_renderer;
 import :menu_bar;
 import :ids;
+import :styles;
 
 export namespace gse::settings_panel {
     struct settings {
@@ -22,6 +22,7 @@ export namespace gse::settings_panel {
         bool show_profiler = false;
         float render_scale = 1.0f;
         int shadow_quality = 2;
+        gui::theme ui_theme = gui::theme::dark;
     };
 
     struct state {
@@ -33,6 +34,7 @@ export namespace gse::settings_panel {
     struct context {
         resource::handle<font> font;
         resource::handle<texture> blank_texture;
+        const gui::style& style;
         std::vector<renderer::sprite_command>& sprites;
         std::vector<renderer::text_command>& texts;
         const input::state& input;
@@ -47,8 +49,8 @@ export namespace gse::settings_panel {
     ) -> void;
 
     auto default_panel_rect(
-        unitless::vec2 viewport_size,
-        float menu_bar_height
+        const gui::style& style,
+        unitless::vec2 viewport_size
     ) -> gui::ui_rect;
 }
 
@@ -88,13 +90,12 @@ namespace gse::settings_panel {
     ) -> void;
 }
 
-auto gse::settings_panel::default_panel_rect(const unitless::vec2 viewport_size, const float menu_bar_height) -> gui::ui_rect {
+auto gse::settings_panel::default_panel_rect(const gui::style& style, const unitless::vec2 viewport_size) -> gui::ui_rect {
     constexpr float panel_width = 300.f;
     constexpr float panel_height = 360.f;
-    constexpr float padding = 10.f;
 
-    const float panel_right = viewport_size.x() - padding;
-    const float panel_top = viewport_size.y() - menu_bar_height - padding;
+    const float panel_right = viewport_size.x() - style.padding;
+    const float panel_top = viewport_size.y() - style.menu_bar_height - style.padding;
 
     return gui::ui_rect::from_position_size(
         { panel_right - panel_width, panel_top },
@@ -108,59 +109,53 @@ auto gse::settings_panel::update(state& state, const context& ctx, const gui::ui
     }
 
     gui::ids::scope settings_scope("settings_panel");
-    const gui::style sty{};
+    const auto& sty = ctx.style;
 
     auto body_color = sty.color_menu_body;
-    body_color.a() = 1;
+    body_color.a() = 1.f;
 
     constexpr float border_thickness = 1.f;
-    const unitless::vec4 border_color = { 0.1f, 0.1f, 0.1f, 1.0f };
 
-    // Border - top
     ctx.sprites.push_back({
         .rect = gui::ui_rect::from_position_size(
             { rect.left(), rect.top() },
             { rect.width(), border_thickness }
         ),
-        .color = border_color,
+        .color = sty.color_border,
         .texture = ctx.blank_texture,
         .layer = ctx.layer
     });
 
-    // Border - bottom
     ctx.sprites.push_back({
         .rect = gui::ui_rect::from_position_size(
             { rect.left(), rect.bottom() + border_thickness },
             { rect.width(), border_thickness }
         ),
-        .color = border_color,
+        .color = sty.color_border,
         .texture = ctx.blank_texture,
         .layer = ctx.layer
     });
 
-    // Border - left
     ctx.sprites.push_back({
         .rect = gui::ui_rect::from_position_size(
             { rect.left() - border_thickness, rect.top() },
             { border_thickness, rect.height() }
         ),
-        .color = border_color,
+        .color = sty.color_border,
         .texture = ctx.blank_texture,
         .layer = ctx.layer
     });
 
-    // Border - right
     ctx.sprites.push_back({
         .rect = gui::ui_rect::from_position_size(
             { rect.right(), rect.top() },
             { border_thickness, rect.height() }
         ),
-        .color = border_color,
+        .color = sty.color_border,
         .texture = ctx.blank_texture,
         .layer = ctx.layer
     });
     
-    // Panel background
     ctx.sprites.push_back({
         .rect = rect,
         .color = body_color,
@@ -168,7 +163,6 @@ auto gse::settings_panel::update(state& state, const context& ctx, const gui::ui
         .layer = ctx.layer
     });
     
-    // Title bar
     const gui::ui_rect title_rect = gui::ui_rect::from_position_size(
         rect.top_left(),
         { rect.width(), sty.title_bar_height }
@@ -190,6 +184,7 @@ auto gse::settings_panel::update(state& state, const context& ctx, const gui::ui
                 title_rect.center().y() + sty.font_size * 0.35f
             },
             .scale = sty.font_size,
+            .color = sty.color_text,
             .clip_rect = title_rect,
             .layer = ctx.layer
         });
@@ -214,23 +209,18 @@ auto gse::settings_panel::update(state& state, const context& ctx, const gui::ui
     draw_toggle(layout, "VSync", state.current.vsync);
     draw_toggle(layout, "Fullscreen", state.current.fullscreen);
     draw_slider(layout, "Render Scale", state.current.render_scale, 0.5f, 2.0f);
-    
-    layout.cursor.y() -= sty.padding;
-    
-    draw_section_header(layout, "Graphics");
-    static constexpr std::array shadow_options = {
-        std::string_view("Off"),
-        std::string_view("Low"),
-        std::string_view("Medium"),
-        std::string_view("High")
+
+    static constexpr std::array theme_options = {
+        std::string_view("Dark"),
+        std::string_view("Darker"),
+        std::string_view("Light"),
+        std::string_view("High Contrast")
     };
-    draw_choice(layout, "Shadows", state.current.shadow_quality, shadow_options);
-    
+    int theme_index = static_cast<int>(state.current.ui_theme);
+    draw_choice(layout, "Theme", theme_index, theme_options);
+    state.current.ui_theme = static_cast<gui::theme>(theme_index);
+
     layout.cursor.y() -= sty.padding;
-    
-    draw_section_header(layout, "Debug");
-    draw_toggle(layout, "Show FPS", state.current.show_fps);
-    draw_toggle(layout, "Show Profiler", state.current.show_profiler);
     
     if (ctx.input.mouse_button_released(mouse_button::button_1)) {
         state.active_id.reset();
@@ -238,7 +228,7 @@ auto gse::settings_panel::update(state& state, const context& ctx, const gui::ui
 }
 
 auto gse::settings_panel::draw_section_header(layout_state& layout, const std::string& text) -> void {
-    const gui::style sty{};
+    const auto& sty = layout.ctx->style;
 
     const gui::ui_rect row_rect = gui::ui_rect::from_position_size(
         layout.cursor,
@@ -254,7 +244,7 @@ auto gse::settings_panel::draw_section_header(layout_state& layout, const std::s
                 row_rect.center().y() + sty.font_size * 0.35f
             },
             .scale = sty.font_size,
-            .color = { 0.5f, 0.5f, 0.5f, 1.0f },
+            .color = sty.color_text_secondary,
             .clip_rect = layout.content_rect,
             .layer = layout.ctx->layer
         });
@@ -264,9 +254,9 @@ auto gse::settings_panel::draw_section_header(layout_state& layout, const std::s
 }
 
 auto gse::settings_panel::draw_toggle(layout_state& layout, const std::string& label, bool& value) -> void {
-    const gui::style sty{};
+    const auto& sty = layout.ctx->style;
     const auto& ctx = *layout.ctx;
-    const auto& [font, blank_texture, sprites, texts, input, layer] = ctx;
+    const auto& [font, blank_texture, style, sprites, texts, input, layer] = ctx;
     
     constexpr float toggle_width = 40.f;
     constexpr float toggle_height = 20.f;
@@ -294,9 +284,7 @@ auto gse::settings_panel::draw_toggle(layout_state& layout, const std::string& l
         value = !value;
     }
     
-    const unitless::vec4 track_color = value 
-        ? unitless::vec4{ 0.2f, 0.6f, 0.3f, 1.0f }
-        : unitless::vec4{ 0.3f, 0.3f, 0.3f, 1.0f };
+    const unitless::vec4 track_color = value ? sty.color_toggle_on : sty.color_toggle_off;
     
     sprites.push_back({
         .rect = toggle_rect,
@@ -315,10 +303,7 @@ auto gse::settings_panel::draw_toggle(layout_state& layout, const std::string& l
         { knob_size, knob_size }
     );
     
-    unitless::vec4 knob_color = { 0.9f, 0.9f, 0.9f, 1.0f };
-    if (hovered) {
-        knob_color = { 1.0f, 1.0f, 1.0f, 1.0f };
-    }
+    const unitless::vec4 knob_color = hovered ? sty.color_handle_hovered : sty.color_handle;
     
     sprites.push_back({
         .rect = knob_rect,
@@ -336,6 +321,7 @@ auto gse::settings_panel::draw_toggle(layout_state& layout, const std::string& l
                 row_rect.center().y() + sty.font_size * 0.35f 
             },
             .scale = sty.font_size,
+            .color = sty.color_text,
             .clip_rect = layout.content_rect,
             .layer = layer
         });
@@ -345,9 +331,9 @@ auto gse::settings_panel::draw_toggle(layout_state& layout, const std::string& l
 }
 
 auto gse::settings_panel::draw_slider(layout_state& layout, const std::string& label, float& value, const float min, const float max) -> void {
-    const gui::style sty{};
+    const auto& sty = layout.ctx->style;
     const auto& ctx = *layout.ctx;
-    const auto& [font, blank_texture, sprites, texts, input, layer] = ctx;
+    const auto& [font, blank_texture, style, sprites, texts, input, layer] = ctx;
     
     constexpr float slider_width = 100.f;
     constexpr float slider_height = 6.f;
@@ -384,7 +370,7 @@ auto gse::settings_panel::draw_slider(layout_state& layout, const std::string& l
     
     sprites.push_back({
         .rect = track_rect,
-        .color = { 0.3f, 0.3f, 0.3f, 1.0f },
+        .color = sty.color_widget_background,
         .texture = blank_texture,
         .layer = layer
     });
@@ -397,7 +383,7 @@ auto gse::settings_panel::draw_slider(layout_state& layout, const std::string& l
     
     sprites.push_back({
         .rect = fill_rect,
-        .color = { 0.3f, 0.5f, 0.8f, 1.0f },
+        .color = sty.color_slider_fill,
         .texture = blank_texture,
         .layer = layer
     });
@@ -408,10 +394,8 @@ auto gse::settings_panel::draw_slider(layout_state& layout, const std::string& l
         { knob_size, knob_size }
     );
     
-    unitless::vec4 knob_color = { 0.9f, 0.9f, 0.9f, 1.0f };
-    if (hovered || layout.panel_state->active_id == slider_id) {
-        knob_color = { 1.0f, 1.0f, 1.0f, 1.0f };
-    }
+    const bool is_active = layout.panel_state->active_id == slider_id;
+    const unitless::vec4 knob_color = (hovered || is_active) ? sty.color_handle_hovered : sty.color_handle;
     
     sprites.push_back({
         .rect = knob_rect,
@@ -429,6 +413,7 @@ auto gse::settings_panel::draw_slider(layout_state& layout, const std::string& l
                 row_rect.center().y() + sty.font_size * 0.35f 
             },
             .scale = sty.font_size,
+            .color = sty.color_text,
             .clip_rect = layout.content_rect,
             .layer = layer
         });
@@ -445,7 +430,7 @@ auto gse::settings_panel::draw_slider(layout_state& layout, const std::string& l
                 row_rect.center().y() + sty.font_size * 0.35f 
             },
             .scale = sty.font_size,
-            .color = { 0.7f, 0.7f, 0.7f, 1.0f },
+            .color = sty.color_text_secondary,
             .clip_rect = layout.content_rect,
             .layer = layer
         });
@@ -455,9 +440,9 @@ auto gse::settings_panel::draw_slider(layout_state& layout, const std::string& l
 }
 
 auto gse::settings_panel::draw_choice(layout_state& layout, const std::string& label, int& value, const std::span<const std::string_view> options) -> void {
-    const gui::style sty{};
+    const auto& sty = layout.ctx->style;
     const auto& ctx = *layout.ctx;
-    const auto& [font, blank_texture, sprites, texts, input, layer] = ctx;
+    const auto& [font, blank_texture, style, sprites, texts, input, layer] = ctx;
     
     const gui::ui_rect row_rect = gui::ui_rect::from_position_size(
         layout.cursor,
@@ -488,10 +473,7 @@ auto gse::settings_panel::draw_choice(layout_state& layout, const std::string& l
         value = (value + 1) % static_cast<int>(options.size());
     }
     
-    unitless::vec4 bg_color = { 0.25f, 0.25f, 0.25f, 1.0f };
-    if (hovered) {
-        bg_color = { 0.35f, 0.35f, 0.35f, 1.0f };
-    }
+    const unitless::vec4 bg_color = hovered ? sty.color_widget_hovered : sty.color_widget_background;
     
     sprites.push_back({
         .rect = choice_rect,
@@ -512,6 +494,7 @@ auto gse::settings_panel::draw_choice(layout_state& layout, const std::string& l
                 choice_rect.center().y() + sty.font_size * 0.35f 
             },
             .scale = sty.font_size,
+            .color = sty.color_text,
             .clip_rect = choice_rect,
             .layer = layer
         });
@@ -526,6 +509,7 @@ auto gse::settings_panel::draw_choice(layout_state& layout, const std::string& l
                 row_rect.center().y() + sty.font_size * 0.35f 
             },
             .scale = sty.font_size,
+            .color = sty.color_text,
             .clip_rect = layout.content_rect,
             .layer = layer
         });

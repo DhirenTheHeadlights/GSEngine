@@ -6,7 +6,7 @@ import gse.platform;
 import gse.physics.math;
 
 import :rendering_context;
-import :sprite_renderer;
+import :ui_renderer;
 import :texture;
 
 export namespace gse::cursor {
@@ -142,6 +142,7 @@ auto gse::cursor::draw_line(std::vector<renderer::sprite_command>& commands, con
 		.color = params.color,
 		.texture = params.texture,
 		.rotation = params.line.angle(),
+		.layer = render_layer::cursor
 	});
 }
 
