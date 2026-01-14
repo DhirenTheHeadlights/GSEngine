@@ -246,7 +246,7 @@ gse::gui::system::system(renderer::context& context) : m_rctx(context) {}
 auto gse::gui::system::initialize() -> void {
     m_font = m_rctx.get<font>("MonaspaceNeon-Regular");
     m_blank_texture = m_rctx.queue<texture>("blank", unitless::vec4(1, 1, 1, 1));
-    m_menus = load(config::resource_path / m_file_path, m_menus);
+	m_menus = load(config::resource_path / m_file_path, m_menus, m_settings_panel_state.current);
 
     auto calculate_group_bounds = [this](const id root_id) -> ui_rect {
         const menu* root = m_menus.try_get(root_id);
@@ -331,7 +331,7 @@ auto gse::gui::system::update() -> void {
 		});
 
 	if (m_save_clock.elapsed() > m_update_interval) {
-		gui::save(m_menus, config::resource_path / m_file_path);
+		gui::save(m_menus, m_settings_panel_state.current, config::resource_path / m_file_path);
 		m_save_clock.reset();
 	}
 }
@@ -484,11 +484,11 @@ auto gse::gui::system::end_frame() -> void {
 }
 
 auto gse::gui::system::shutdown() -> void {
-	gui::save(m_menus, config::resource_path / m_file_path);
+	gui::save(m_menus, m_settings_panel_state.current, config::resource_path / m_file_path);
 }
 
 auto gse::gui::system::save() -> void {
-	gui::save(m_menus, config::resource_path / m_file_path);
+	gui::save(m_menus, m_settings_panel_state.current, config::resource_path / m_file_path);
 }
 
 auto gse::gui::system::start(const std::string& name, const std::function<void()>& contents) -> void {
