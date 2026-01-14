@@ -24,7 +24,7 @@ export namespace gse {
 		auto initialize() -> void override {
 			add_component<physics::motion_component>({
 				.current_position = m_initial_position,
-				.mass = kilograms(100.f),
+				.mass = kilograms(1000.f),
 				.orientation = m_initial_orientation
 			});
 
