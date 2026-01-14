@@ -220,39 +220,27 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
     }
 }
 
+auto gse::narrow_phase_collision::support_obb(const bounding_box& bb, const unitless::vec3& dir) -> vec3<length>
+{
+    vec3<length> result = bb.center();
+    const auto he = bb.half_extents();
+    const auto obb = bb.obb();
 
-auto gse::narrow_phase_collision::support_obb(const bounding_box& bounding_box, const unitless::vec3& dir) -> vec3<length> {
-    vec3<length> result = bounding_box.center();
-    const auto half_extents = bounding_box.half_extents();
-
-    const auto obb = bounding_box.obb();
+    constexpr float tol = 1e-6f; // tune to your scale (see below)
 
     for (int i = 0; i < 3; ++i) {
-        float sign = dot(dir, obb.axes[i]) > 0 ? 1.0f : -1.0f;
-        result += obb.axes[i] * half_extents[i] * sign;
+        const float d = dot(dir, obb.axes[i]);
+
+        float s = 0.0f;
+        if (d > tol) s = 1.0f;
+        if (d < -tol) s = -1.0f;
+
+        result += obb.axes[i] * he[i] * s;
     }
 
     return result;
 }
 
-//auto support_obb(const gse::bounding_box& bb, const gse::unitless::vec3& dir) -> gse::vec3<gse::length> {
-//    gse::vec3<gse::length> result = bb.center();
-//    const auto he = bb.half_extents();
-//    const auto obb = bb.obb();
-//
-//    constexpr float tol = 1e-6f; // try 1e-6 to 1e-4 depending on your unit scale
-//
-//    for (int i = 0; i < 3; ++i) {
-//        const float d = gse::dot(dir, obb.axes[i]);
-//        float s = 0.0f;
-//        if (d > tol) s = 1.0f;
-//        if (d < -tol) s = -1.0f;
-//
-//        // s==0 => don't move along this axis (face center for that extreme)
-//        result += obb.axes[i] * he[i] * s;
-//    }
-//    return result;
-//}
 
 auto gse::narrow_phase_collision::minkowski_difference(const bounding_box& bb1, const bounding_box& bb2, const unitless::vec3& dir) -> minkowski_point {
     minkowski_point result{
@@ -457,6 +445,17 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
                 //LEAVING THE ORIGINAL ASSIGNMENT FOR LATER ANALYSIS OF ALGORITHM APPROPRIATENESS- SAT WORKS BETTER THAN MPR FOR CURRENT TEST CASES
                 penetration_depth = sat_penetration(bb1, bb2).second;
 
+                const unitless::vec3 n = normalize(collision_normal);
+
+                auto half_extent_on = [&](const bounding_box& bb) -> length {
+                    const length maxp = dot(support_obb(bb, n), n);
+                    const length minp = dot(support_obb(bb, -n), n);
+                    return (maxp - minp) * 0.5f;
+                    };
+
+                const length max_depth = half_extent_on(bb1) + half_extent_on(bb2);
+                penetration_depth = std::min(penetration_depth, max_depth);
+
 
                 if (const unitless::vec3 center_dir = normalize(bb2.center() - bb1.center()); !is_zero(center_dir) && dot(collision_normal, center_dir) < 0.0f) {
                     collision_normal = -collision_normal;
@@ -575,6 +574,7 @@ auto gse::narrow_phase_collision::generate_contact_points(const bounding_box& bb
     struct face_info {
         std::array<vec3<length>, 4> vertices;
         unitless::vec3 normal;
+        float max_dot;
     };
 
     auto find_best_face = [](const bounding_box& bb, const unitless::vec3& dir) -> face_info {
@@ -588,17 +588,35 @@ auto gse::narrow_phase_collision::generate_contact_points(const bounding_box& bb
                 best_face_idx = static_cast<int>(i);
             }
         }
-        return face_info{ bb.face_vertices(best_face_idx), normals[best_face_idx] };
+        return face_info{ bb.face_vertices(best_face_idx), normals[best_face_idx], max_dot };
         };
 
-    const auto info1 = find_best_face(bb1, collision_normal);
-    const auto info2 = find_best_face(bb2, -collision_normal);
+    std::vector<vec3<length>> contacts;
+
+    unitless::vec3 n = normalize(collision_normal);
+    if (dot(n, (bb2.center() - bb1.center())) < 0.0f) n = -n;
+
+    const auto info1 = find_best_face(bb1, n);
+    const auto info2 = find_best_face(bb2, -n);
+
+	constexpr float face_similarity_threshold = 0.95f;
+	//If the faces are nearly parallel, we can treat this as a face-face contact
+
+    if (!((info1.max_dot >= face_similarity_threshold) ||
+        (info2.max_dot >= face_similarity_threshold))) {
+        const auto mk = minkowski_difference(bb1, bb2, n);
+
+        const vec3<length> c = (mk.support_a + mk.support_b) * 0.5f;
+        contacts.push_back(c);
+        // SKIP FACE CLIPPING, RETURN THE VERTEX-FACE CONTACT
+        return contacts;
+    }
 
     std::vector<vec3<length>> inc_face_poly;
     std::array<vec3<length>, 4> ref_face;
     unitless::vec3 ref_normal;
 
-    if (dot(info1.normal, collision_normal) > dot(info2.normal, -collision_normal)) {
+    if (info1.max_dot > info2.max_dot) {
         ref_face = info1.vertices;
         inc_face_poly.assign(info2.vertices.begin(), info2.vertices.end());
         ref_normal = info1.normal;
@@ -684,7 +702,6 @@ auto gse::narrow_phase_collision::generate_contact_points(const bounding_box& bb
         inc_face_poly = clip(inc_face_poly, p);
     }
 
-    std::vector<vec3<length>> contacts;
     plane ref_plane{ ref_normal, dot(ref_normal, ref_face[0]) };
 
     for (const auto& v : inc_face_poly) {
