@@ -86,8 +86,7 @@ auto gse::engine::initialize() -> void {
 	m_scheduler.emplace<renderer::geometry>(reg, ctx);
 	m_scheduler.emplace<renderer::lighting>(reg, ctx);
 	m_scheduler.emplace<renderer::physics_debug>(reg, ctx);
-	m_scheduler.emplace<renderer::sprite>(reg, ctx);
-	m_scheduler.emplace<renderer::text>(reg, ctx);
+	m_scheduler.emplace<renderer::ui>(reg, ctx);
 	m_scheduler.emplace<gui::system>(reg, ctx);
 
 	m_scheduler.initialize();

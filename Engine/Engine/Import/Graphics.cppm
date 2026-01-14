@@ -17,8 +17,7 @@ export import :rendering_context;
 export import :resource_loader;
 export import :renderer;
 export import :texture;
-export import :text_renderer;
-export import :sprite_renderer;
+export import :ui_renderer;
 export import :shader;
 export import :shadow_renderer;
 

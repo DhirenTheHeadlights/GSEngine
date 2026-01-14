@@ -8,13 +8,13 @@ import gse.physics.math;
 import :types;
 import :font;
 import :texture;
-import :sprite_renderer;
-import :text_renderer;
+import :ui_renderer;
 
 export namespace gse::menu_bar {
     struct context {
         resource::handle<font> font;
         resource::handle<texture> blank_texture;
+        const gui::style& style;
         std::vector<renderer::sprite_command>& sprites;
         std::vector<renderer::text_command>& texts;
     };
@@ -32,9 +32,11 @@ export namespace gse::menu_bar {
     ) -> void;
 
     auto height(
+        const gui::style& style
     ) -> float;
 
     auto bar_rect(
+        const gui::style& style,
         unitless::vec2 viewport_size
     ) -> gui::ui_rect;
 }
@@ -49,55 +51,46 @@ namespace gse::menu_bar {
     ) -> void;
 }
 
-auto gse::menu_bar::height() -> float {
-    return 32.f;
+auto gse::menu_bar::height(const gui::style& style) -> float {
+    return style.menu_bar_height;
 }
 
-auto gse::menu_bar::bar_rect(const unitless::vec2 viewport_size) -> gui::ui_rect {
+auto gse::menu_bar::bar_rect(const gui::style& style, const unitless::vec2 viewport_size) -> gui::ui_rect {
     return gui::ui_rect::from_position_size(
         { 0.f, viewport_size.y() },
-        { viewport_size.x(), height() }
+        { viewport_size.x(), height(style) }
     );
 }
 
 auto gse::menu_bar::update(state& state, const context& ctx, const input::state& input, const unitless::vec2 viewport_size) -> void {
-    constexpr float bar_height = 32.f;
-    constexpr float padding = 10.f;
+    const auto& sty = ctx.style;
     constexpr float button_size = 24.f;
     
-    const unitless::vec4 bar_color = { 0.08f, 0.08f, 0.08f, 1.0f };
-    const unitless::vec4 text_color = { 0.9f, 0.9f, 0.9f, 1.0f };
-    const unitless::vec4 icon_color = { 0.7f, 0.7f, 0.7f, 1.0f };
-    const unitless::vec4 icon_hover_color = { 1.0f, 1.0f, 1.0f, 1.0f };
-    
-    const gui::ui_rect bar_rect = gui::ui_rect::from_position_size(
-        { 0.f, viewport_size.y() },
-        { viewport_size.x(), bar_height }
-    );
+    const gui::ui_rect bar = bar_rect(sty, viewport_size);
     
     ctx.sprites.push_back({
-        .rect = bar_rect,
-        .color = bar_color,
+        .rect = bar,
+        .color = sty.color_menu_bar,
         .texture = ctx.blank_texture
     });
     
     if (ctx.font.valid()) {
-	    constexpr float font_size = 16.f;
-	    ctx.texts.push_back({
+        ctx.texts.push_back({
             .font = ctx.font,
             .text = "GSEngine",
             .position = {
-                bar_rect.left() + padding,
-                bar_rect.center().y() + font_size * 0.35f
+                bar.left() + sty.padding,
+                bar.center().y() + sty.font_size * 0.35f
             },
-            .scale = font_size,
-            .clip_rect = bar_rect
+            .scale = sty.font_size,
+            .color = sty.color_text,
+            .clip_rect = bar
         });
     }
     
     const unitless::vec2 settings_center = {
-        bar_rect.right() - padding - button_size * 0.5f,
-        bar_rect.center().y()
+        bar.right() - sty.padding - button_size * 0.5f,
+        bar.center().y()
     };
     
     const gui::ui_rect settings_hit_rect = gui::ui_rect::from_position_size(
@@ -112,7 +105,7 @@ auto gse::menu_bar::update(state& state, const context& ctx, const input::state&
         state.settings_open = !state.settings_open;
     }
     
-    const unitless::vec4 gear_color = state.settings_hovered ? icon_hover_color : icon_color;
+    const unitless::vec4 gear_color = state.settings_hovered ? sty.color_icon_hovered : sty.color_icon;
     draw_gear_icon(ctx.sprites, settings_center, button_size * 0.4f, gear_color, ctx.blank_texture);
 }
 

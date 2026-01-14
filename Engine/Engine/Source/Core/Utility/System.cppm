@@ -6,7 +6,7 @@ import :concepts;
 import :registry;
 import :id;
 import :task;
-import :double_buffer;
+import :n_buffer;
 import :lambda_traits;
 import :frame_sync;
 
@@ -14,6 +14,7 @@ export namespace gse {
 	class scheduler;
 
 	enum class active_stage { none, update, render };
+	thread_local auto t_current_stage = active_stage::none;
 
 	template <is_component T>
 	class component_view {
@@ -345,7 +346,6 @@ export namespace gse {
 		system_provider* m_scheduler = nullptr;
 		std::vector<pending_work> m_pending_update;
 		std::vector<pending_work> m_pending_render;
-		std::atomic<active_stage> m_active_stage = active_stage::none;
 		mutable std::mutex m_pending_update_mutex;
 		mutable std::mutex m_pending_render_mutex;
 		std::vector<std::move_only_function<void(registry&)>> m_deferred;
@@ -364,10 +364,6 @@ export namespace gse {
 		auto take_pending(
 			active_stage stage
 		) -> std::vector<pending_work>;
-
-		auto set_active_stage(
-			active_stage stage
-		) -> void;
 
 		auto flush_deferred(
 		) -> void;
@@ -581,26 +577,26 @@ auto gse::system::begin_frame() -> bool {
 auto gse::system::end_frame() -> void {}
 
 auto gse::system::push_pending(pending_work work) -> void {
-	switch (m_active_stage.load(std::memory_order_acquire)) {
-		case active_stage::update: {
-			std::lock_guard lock(m_pending_update_mutex);
-			m_pending_update.push_back(std::move(work));
-			break;
-		}
-		case active_stage::render: {
-			std::lock_guard lock(m_pending_render_mutex);
-			m_pending_render.push_back(std::move(work));
-			break;
-		}
-		default: {
-			std::lock_guard lock(m_pending_update_mutex);
-			m_pending_update.push_back(std::move(work));
-			break;
-		}
-	}
+    switch (t_current_stage) {
+        case active_stage::update: {
+            std::lock_guard lock(m_pending_update_mutex);
+            m_pending_update.push_back(std::move(work));
+            break;
+        }
+        case active_stage::render: {
+            std::lock_guard lock(m_pending_render_mutex);
+            m_pending_render.push_back(std::move(work));
+            break;
+        }
+        default: {
+            std::lock_guard lock(m_pending_update_mutex);
+            m_pending_update.push_back(std::move(work));
+            break;
+        }
+    }
 }
 
-auto gse::system::take_pending(active_stage stage) -> std::vector<pending_work> {
+auto gse::system::take_pending(const active_stage stage) -> std::vector<pending_work> {
 	switch (stage) {
 		case active_stage::update: {
 			std::lock_guard lock(m_pending_update_mutex);
@@ -613,10 +609,6 @@ auto gse::system::take_pending(active_stage stage) -> std::vector<pending_work> 
 		default:
 			return {};
 	}
-}
-
-auto gse::system::set_active_stage(active_stage stage) -> void {
-	m_active_stage.store(stage, std::memory_order_release);
 }
 
 template <gse::is_component T>

@@ -60,7 +60,7 @@ export namespace gse {
 
 		auto render(
 			const std::function<void()>& in_frame = {}
-		) -> void;
+		) const -> void;
 
 		auto shutdown(
 		) -> void;
@@ -104,10 +104,6 @@ export namespace gse {
 				active_stage stage
 			) -> std::vector<pending_work> = 0;
 
-			virtual auto set_active_stage(
-				active_stage stage
-			) -> void = 0;
-
 			virtual auto flush_deferred(
 			) -> void = 0;
 		};
@@ -149,10 +145,6 @@ export namespace gse {
 				active_stage stage
 			) -> std::vector<pending_work> override;
 
-			auto set_active_stage(
-				active_stage stage
-			) -> void override;
-
 			auto flush_deferred(
 			) -> void override;
 		};
@@ -177,7 +169,8 @@ export namespace gse {
 		) -> std::vector<std::vector<pending_work*>>;
 
 		static auto execute_phase(
-			const std::vector<pending_work*>& phase
+			const std::vector<pending_work*>& phase,
+			active_stage stage
 		) -> void;
 	};
 }
@@ -261,19 +254,15 @@ auto gse::scheduler::update() -> void {
 	run_stage(&node_base::update, active_stage::update);
 }
 
-auto gse::scheduler::render(const std::function<void()>& in_frame) -> void {
-    std::vector started(m_nodes.size(), false);
+auto gse::scheduler::render(const std::function<void()>& in_frame) const -> void {
+    t_current_stage = active_stage::render;
 
-    for (auto& n : m_nodes) {
-        n->set_active_stage(active_stage::render);
-    }
+    std::vector started(m_nodes.size(), false);
 
     if (!m_nodes.empty()) {
         started[0] = m_nodes[0]->begin_frame();
         if (!started[0]) {
-            for (auto& n : m_nodes) {
-                n->set_active_stage(active_stage::none);
-            }
+            t_current_stage = active_stage::none;
             return;
         }
 
@@ -296,25 +285,21 @@ auto gse::scheduler::render(const std::function<void()>& in_frame) -> void {
         }
     }
 
-    for (auto& n : m_nodes) {
-        n->set_active_stage(active_stage::none);
+    std::vector<pending_work> all_work;
+
+    for (const auto& n : m_nodes) {
+        for (auto work = n->take_pending(active_stage::render); auto& w : work) {
+            all_work.push_back(std::move(w));
+        }
     }
 
-	std::vector<pending_work> all_work;
+    if (!all_work.empty()) {
+        for (const auto phases = build_phases(all_work); auto& phase : phases) {
+            execute_phase(phase, active_stage::render);
+        }
+    }
 
-	for (const auto& n : m_nodes) {
-		for (auto work = n->take_pending(active_stage::render); auto& w : work) {
-			all_work.push_back(std::move(w));
-		}
-	}
-
-	if (all_work.empty()) {
-		return;
-	}
-
-	for (const auto phases = build_phases(all_work); auto& phase : phases) {
-		execute_phase(phase);
-	}
+    t_current_stage = active_stage::none;
 }
 
 auto gse::scheduler::shutdown() -> void {
@@ -385,26 +370,15 @@ auto gse::scheduler::node<S>::take_pending(active_stage stage) -> std::vector<pe
 }
 
 template <gse::is_system S>
-auto gse::scheduler::node<S>::set_active_stage(active_stage stage) -> void {
-	sys.set_active_stage(stage);
-}
-
-template <gse::is_system S>
 auto gse::scheduler::node<S>::flush_deferred() -> void {
 	sys.flush_deferred();
 }
 
-auto gse::scheduler::run_stage(void (node_base::*stage_fn)(), active_stage stage) const -> void {
-	for (auto& n : m_nodes) {
-		n->set_active_stage(stage);
-	}
+auto gse::scheduler::run_stage(void (node_base::* stage_fn)(), active_stage stage) const -> void {
+	t_current_stage = stage;
 
 	for (auto& n : m_nodes) {
 		(n.get()->*stage_fn)();
-	}
-
-	for (auto& n : m_nodes) {
-		n->set_active_stage(active_stage::none);
 	}
 
 	std::vector<pending_work> all_work;
@@ -415,29 +389,29 @@ auto gse::scheduler::run_stage(void (node_base::*stage_fn)(), active_stage stage
 		}
 	}
 
-	if (all_work.empty()) {
-		return;
-	}
-
-	for (const auto phases = build_phases(all_work); auto& phase : phases) {
-		execute_phase(phase);
-	}
-}
-
-auto gse::scheduler::conflicts(const pending_work& a, const pending_work& b) -> bool {
-	for (const auto& wa : a.component_writes) {
-		for (const auto& wb : b.component_writes) {
-			if (wa == wb) {
-				return true;
-			}
+	if (!all_work.empty()) {
+		for (const auto phases = build_phases(all_work); auto& phase : phases) {
+			execute_phase(phase, stage);
 		}
 	}
 
-	if (a.channel_write != typeid(void) && a.channel_write == b.channel_write) {
-		return true;
-	}
+	t_current_stage = active_stage::none;
+}
 
-	return false;
+auto gse::scheduler::conflicts(const pending_work& a, const pending_work& b) -> bool {
+    for (const auto& wa : a.component_writes) {
+        for (const auto& wb : b.component_writes) {
+            if (wa == wb) {
+                return true;
+            }
+        }
+    }
+
+    if (a.channel_write != typeid(void) && a.channel_write == b.channel_write) {
+        return true;
+    }
+
+    return false;
 }
 
 auto gse::scheduler::build_phases(std::vector<pending_work>& work) -> std::vector<std::vector<pending_work*>> {
@@ -471,26 +445,27 @@ auto gse::scheduler::build_phases(std::vector<pending_work>& work) -> std::vecto
 	return phases;
 }
 
-auto gse::scheduler::execute_phase(const std::vector<pending_work*>& phase) -> void {
-    if (phase.empty()) {
-        return;
-    }
+auto gse::scheduler::execute_phase(const std::vector<pending_work*>& phase, active_stage stage) -> void {
+	if (phase.empty()) {
+		return;
+	}
 
-    if (phase.size() == 1) {
-        trace::scope(phase[0]->name, [&] {
-            phase[0]->execute();
-        });
-        return;
-    }
+	if (phase.size() == 1) {
+		trace::scope(phase[0]->name, [&] {
+			phase[0]->execute();
+		});
+		return;
+	}
 
-    task::group group;
+	task::group group;
 
-    for (auto* w : phase) {
-        group.post(
-			[w] {
-				w->execute();
-			}, 
+	for (auto* w : phase) {
+		group.post(
+			[w, stage] {
+			t_current_stage = stage;
+			w->execute();
+		},
 			w->name
 		);
-    }
+	}
 }

@@ -3,7 +3,7 @@ export module gse.utility:trace;
 import std;
 
 import :id;
-import :double_buffer;
+import :n_buffer;
 import :scope_exit;
 import :system_clock;
 import :interval_timer;

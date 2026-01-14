@@ -5,7 +5,7 @@ export import :component;
 export import :concepts;
 export import :config;
 export import :default_scene_hook;
-export import :double_buffer;
+export import :n_buffer;
 export import :entity;
 export import :entity_hook;
 export import :frame_sync;

@@ -7,27 +7,10 @@ import gse.utility;
 
 import :font;
 import :texture;
-import :sprite_renderer;
-import :text_renderer;
+import :ui_renderer;
+import :styles;
 
 export namespace gse::gui {
-	struct style {
-		unitless::vec4 color_title_bar = { 0.15f, 0.15f, 0.15f, 0.9f };
-		unitless::vec4 color_title_bar_inactive = { 0.12f, 0.12f, 0.12f, 1.0f };
-		unitless::vec4 color_menu_body = { 0.1f, 0.1f, 0.1f, 0.01f };
-		unitless::vec4 color_text = { 0.9f, 0.9f, 0.9f, 1.0f };
-		unitless::vec4 color_dock_preview = { 0.2f, 0.2f, 0.8f, 0.4f };
-		unitless::vec4 color_dock_widget = { 0.8f, 0.8f, 0.8f, 0.5f };
-		unitless::vec4 color_widget_background = { 0.2f, 0.2f, 0.2f, 0.5f };
-		unitless::vec4 color_widget_fill = { 0.2f, 0.6f, 0.2f, 0.8f };
-		float padding = 10.f;
-		float title_bar_height = 30.f;
-		float resize_border_thickness = 8.f;
-		unitless::vec2 min_menu_size = { 150.f, 100.f };
-		float font_size = 16.f;
-		std::filesystem::path font;
-	};
-
 	using ui_rect = rect_t<unitless::vec2>;
 
 	enum class resize_handle {

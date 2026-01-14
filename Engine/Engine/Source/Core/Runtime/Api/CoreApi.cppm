@@ -84,7 +84,6 @@ auto gse::start(const flags engine_flags, const engine_config& config) -> void {
     });
 
     engine_instance->initialize();
-
     task::start([&] {
         while (!should_shutdown.load(std::memory_order_acquire)) {
             window::poll_events();
