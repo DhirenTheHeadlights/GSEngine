@@ -18,7 +18,8 @@ export namespace gse {
 	public:
 		explicit window(
 			const std::string& title,
-			input::system& input_system
+			input::system& input_system,
+			save::system& save_system
 		);
 		
 		~window() override;
@@ -75,7 +76,7 @@ export namespace gse {
 	};
 }
 
-gse::window::window(const std::string& title, input::system& input_system) : m_input(input_system) {
+gse::window::window(const std::string& title, input::system& input_system, save::system& save_system) : m_input(input_system) {
 	assert(glfwInit(), std::source_location::current(), "Error initializing GLFW");
 	assert(glfwVulkanSupported(), std::source_location::current(), "Vulkan not supported");
 
@@ -171,6 +172,8 @@ gse::window::window(const std::string& title, input::system& input_system) : m_i
 			}
 		}
 	);
+
+	glfwFocusWindow(m_window);
 }
 
 gse::window::~window() {
