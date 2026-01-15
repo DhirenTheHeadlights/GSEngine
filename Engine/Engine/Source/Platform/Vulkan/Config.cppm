@@ -100,7 +100,7 @@ export namespace gse::vulkan {
             present_modes(std::move(present_modes)) {
         }
         swap_chain_details(swap_chain_details&&) = default;
-        auto operator=(swap_chain_details&&) -> swap_chain_details & = default;
+        auto operator=(swap_chain_details&&) -> swap_chain_details& = default;
     };
 
     struct swap_chain_config {
@@ -174,6 +174,23 @@ export namespace gse::vulkan {
             m_sync(std::move(sync)),
             m_swap_chain_data(std::move(swap_chain_data)),
             m_frame_context(std::move(frame_context)) {}
+
+        using swap_chain_recreate_callback = std::function<void(config&)>;
+
+        auto on_swap_chain_recreate(swap_chain_recreate_callback callback) -> void {
+            m_swap_chain_recreate_callbacks.push_back(std::move(callback));
+        }
+
+        auto notify_swap_chain_recreated() -> void {
+            ++m_swap_chain_generation;
+            for (const auto& callback : m_swap_chain_recreate_callbacks) {
+                callback(*this);
+            }
+        }
+
+        auto swap_chain_generation() const -> std::uint64_t {
+            return m_swap_chain_generation;
+        }
 
         ~config() {
             std::println("Destroying Config");
@@ -276,6 +293,14 @@ export namespace gse::vulkan {
         auto current_frame() -> std::uint32_t& {
             return m_current_frame;
 		}
+
+        auto set_frame_in_progress(const bool in_progress) -> void {
+            m_frame_in_progress = in_progress;
+        }
+
+        [[nodiscard]] auto frame_in_progress() const -> bool {
+            return m_frame_in_progress;
+        }
     private:
         struct instance_config m_instance_data;
         struct device_config m_device_data;
@@ -286,6 +311,9 @@ export namespace gse::vulkan {
         struct swap_chain_config m_swap_chain_data;
     	frame_context_config m_frame_context;
         std::uint32_t m_current_frame = 0;
+        std::uint64_t m_swap_chain_generation = 0;
+        bool m_frame_in_progress = false;
+        std::vector<swap_chain_recreate_callback> m_swap_chain_recreate_callbacks;
     };
 }
 

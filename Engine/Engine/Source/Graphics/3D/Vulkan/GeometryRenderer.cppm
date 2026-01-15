@@ -32,7 +32,6 @@ export namespace gse::renderer {
 
 		auto render_queue(
 		) const -> std::span<const render_queue_entry>;
-
 	private:
 		context& m_context;
 		vk::raii::Pipeline m_pipeline = nullptr;
@@ -52,65 +51,69 @@ gse::renderer::geometry::geometry(context& context) : m_context(context) {}
 auto gse::renderer::geometry::initialize() -> void {
 	auto& config = m_context.config();
 
-	config.add_transient_work([&](const vk::raii::CommandBuffer& cmd) -> std::vector<vulkan::persistent_allocator::buffer_resource> {
-            auto transition_to_general = [&cmd](
-                vulkan::persistent_allocator::image_resource& img,
-                const vk::ImageAspectFlags aspect,
-                const vk::PipelineStageFlags2 dst_stage,
-                const vk::AccessFlags2 dst_access
-            ) {
-                const vk::ImageMemoryBarrier2 barrier{
-                    .srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
-                    .srcAccessMask = {},
-                    .dstStageMask = dst_stage,
-                    .dstAccessMask = dst_access,
-                    .oldLayout = vk::ImageLayout::eUndefined,
-                    .newLayout = vk::ImageLayout::eGeneral,
-                    .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-                    .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-                    .image = *img.image,
-                    .subresourceRange = {
-                        .aspectMask = aspect,
-                        .baseMipLevel = 0,
-                        .levelCount = 1,
-                        .baseArrayLayer = 0,
-                        .layerCount = 1
-                    }
-                };
+	auto transition_gbuffer_images = [](vulkan::config& cfg) {
+		cfg.add_transient_work([&cfg](const vk::raii::CommandBuffer& cmd) -> std::vector<vulkan::persistent_allocator::buffer_resource> {
+			auto transition_to_general = [&cmd](
+				vulkan::persistent_allocator::image_resource& img,
+				const vk::ImageAspectFlags aspect,
+				const vk::PipelineStageFlags2 dst_stage,
+				const vk::AccessFlags2 dst_access
+			) {
+				const vk::ImageMemoryBarrier2 barrier{
+					.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
+					.srcAccessMask = {},
+					.dstStageMask = dst_stage,
+					.dstAccessMask = dst_access,
+					.oldLayout = vk::ImageLayout::eUndefined,
+					.newLayout = vk::ImageLayout::eGeneral,
+					.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+					.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+					.image = *img.image,
+					.subresourceRange = {
+						.aspectMask = aspect,
+						.baseMipLevel = 0,
+						.levelCount = 1,
+						.baseArrayLayer = 0,
+						.layerCount = 1
+					}
+				};
 
-                const vk::DependencyInfo dep{
-                    .imageMemoryBarrierCount = 1,
-                    .pImageMemoryBarriers = &barrier
-                };
+				const vk::DependencyInfo dep{
+					.imageMemoryBarrierCount = 1,
+					.pImageMemoryBarriers = &barrier
+				};
 
-                cmd.pipelineBarrier2(dep);
-                img.current_layout = vk::ImageLayout::eGeneral;
-            };
+				cmd.pipelineBarrier2(dep);
+				img.current_layout = vk::ImageLayout::eGeneral;
+			};
 
-            transition_to_general(
-                config.swap_chain_config().albedo_image,
-                vk::ImageAspectFlagBits::eColor,
-                vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-                vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead
-            );
+			transition_to_general(
+				cfg.swap_chain_config().albedo_image,
+				vk::ImageAspectFlagBits::eColor,
+				vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+				vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead
+			);
 
-            transition_to_general(
-                config.swap_chain_config().normal_image,
-                vk::ImageAspectFlagBits::eColor,
-                vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-                vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead
-            );
+			transition_to_general(
+				cfg.swap_chain_config().normal_image,
+				vk::ImageAspectFlagBits::eColor,
+				vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+				vk::AccessFlagBits2::eColorAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentRead
+			);
 
-            transition_to_general(
-                config.swap_chain_config().depth_image,
-                vk::ImageAspectFlagBits::eDepth,
-                vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-                vk::AccessFlagBits2::eDepthStencilAttachmentWrite | vk::AccessFlagBits2::eDepthStencilAttachmentRead
-            );
+			transition_to_general(
+				cfg.swap_chain_config().depth_image,
+				vk::ImageAspectFlagBits::eDepth,
+				vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+				vk::AccessFlagBits2::eDepthStencilAttachmentWrite | vk::AccessFlagBits2::eDepthStencilAttachmentRead
+			);
 
-            return {};
-        }
-    );
+			return {};
+		});
+	};
+
+	transition_gbuffer_images(config);
+	config.on_swap_chain_recreate(transition_gbuffer_images);
 
 	m_shader = m_context.get<shader>("geometry_pass");
 	m_context.instantly_load(m_shader);
@@ -235,25 +238,21 @@ auto gse::renderer::geometry::initialize() -> void {
 		.depthAttachmentFormat = vk::Format::eD32Sfloat
 	};
 
-	const vk::Viewport viewport{
-		.x = 0.0f,
-		.y = 0.0f,
-		.width = static_cast<float>(config.swap_chain_config().extent.width),
-		.height = static_cast<float>(config.swap_chain_config().extent.height),
-		.minDepth = 0.0f,
-		.maxDepth = 1.0f
+	constexpr std::array dynamic_states = {
+		vk::DynamicState::eViewport,
+		vk::DynamicState::eScissor
 	};
 
-	const vk::Rect2D scissor{
-		.offset = { 0, 0 },
-		.extent = config.swap_chain_config().extent
+	const vk::PipelineDynamicStateCreateInfo dynamic_state{
+		.dynamicStateCount = static_cast<std::uint32_t>(dynamic_states.size()),
+		.pDynamicStates = dynamic_states.data()
 	};
 
 	const vk::PipelineViewportStateCreateInfo viewport_state{
 		.viewportCount = 1,
-		.pViewports = &viewport,
+		.pViewports = nullptr,
 		.scissorCount = 1,
-		.pScissors = &scissor
+		.pScissors = nullptr
 	};
 
 	const vk::GraphicsPipelineCreateInfo pipeline_info{
@@ -268,7 +267,7 @@ auto gse::renderer::geometry::initialize() -> void {
 		.pMultisampleState = &multisampling,
 		.pDepthStencilState = &depth_stencil,
 		.pColorBlendState = &color_blending,
-		.pDynamicState = nullptr,
+		.pDynamicState = &dynamic_state,
 		.layout = m_pipeline_layout,
 		.basePipelineHandle = nullptr,
 		.basePipelineIndex = 0
@@ -337,6 +336,11 @@ auto gse::renderer::geometry::update() -> void {
 
 auto gse::renderer::geometry::render() -> void {
     auto& config = m_context.config();
+
+    if (!config.frame_in_progress()) {
+        return;
+    }
+
     const auto command = config.frame_context().command_buffer;
 
     constexpr vk::MemoryBarrier2 pre_render_barrier{
@@ -412,6 +416,22 @@ auto gse::renderer::geometry::render() -> void {
                 vk::PipelineBindPoint::eGraphics,
                 m_pipeline
             );
+
+            const vk::Viewport viewport{
+                .x = 0.0f,
+                .y = 0.0f,
+                .width = static_cast<float>(config.swap_chain_config().extent.width),
+                .height = static_cast<float>(config.swap_chain_config().extent.height),
+                .minDepth = 0.0f,
+                .maxDepth = 1.0f
+            };
+            command.setViewport(0, viewport);
+
+            const vk::Rect2D scissor{
+                .offset = { 0, 0 },
+                .extent = config.swap_chain_config().extent
+            };
+            command.setScissor(0, scissor);
 
             const vk::DescriptorSet sets[]{ m_descriptor_set };
 

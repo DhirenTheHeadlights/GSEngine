@@ -107,11 +107,15 @@ auto gse::vulkan::begin_frame(const frame_params& params) -> bool {
     auto& cfg = params.config;
     const auto& device = cfg.device_config().device;
 
+    cfg.set_frame_in_progress(false);
+
     auto recreate_resources = [&] {
         device.waitIdle();
         cfg.swap_chain_config().swap_chain = nullptr;
         cfg.swap_chain_config() = create_swap_chain_resources(params.window, cfg.instance_config(), cfg.device_config());
         cfg.sync_config() = create_sync_objects(cfg.device_config(), cfg.swap_chain_config());
+        cfg.notify_swap_chain_recreated();
+        device.waitIdle();
     };
 
     if (params.minimized) {
@@ -201,6 +205,7 @@ auto gse::vulkan::begin_frame(const frame_params& params) -> bool {
 
     frame_ctx.command_buffer.pipelineBarrier2(begin_dep);
 
+    cfg.set_frame_in_progress(true);
     return true;
 }
 
@@ -213,6 +218,8 @@ auto gse::vulkan::end_frame(const frame_params& params) -> void {
         cfg.swap_chain_config().swap_chain = nullptr;
         cfg.swap_chain_config() = create_swap_chain_resources(params.window, cfg.instance_config(), cfg.device_config());
         cfg.sync_config() = create_sync_objects(cfg.device_config(), cfg.swap_chain_config());
+        cfg.notify_swap_chain_recreated();
+        device.waitIdle();
     };
 
     if (params.minimized) {
@@ -304,6 +311,7 @@ auto gse::vulkan::end_frame(const frame_params& params) -> void {
     }
 
     cfg.current_frame() = (cfg.current_frame() + 1) % max_frames_in_flight;
+    cfg.set_frame_in_progress(false);
 }
 
 
