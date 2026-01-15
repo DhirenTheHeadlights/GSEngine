@@ -22,6 +22,9 @@ export namespace gse::renderer {
 		) -> void override;
 
 	private:
+		auto update_gbuffer_descriptors(
+		) -> void;
+
 		context& m_context;
 		vk::raii::Pipeline m_pipeline = nullptr;
 		vk::raii::PipelineLayout m_pipeline_layout = nullptr;
@@ -148,32 +151,10 @@ auto gse::renderer::lighting::initialize() -> void {
 
 	m_shadow_sampler = config.device_config().device.createSampler(shadow_sampler_create_info);
 
-	const std::unordered_map<std::string, vk::DescriptorImageInfo> gbuffer_image_infos = {
-		{
-			"g_albedo",
-			{
-				.sampler = m_buffer_sampler,
-				.imageView = *config.swap_chain_config().albedo_image.view,
-				.imageLayout = vk::ImageLayout::eGeneral
-			}
-		},
-		{
-			"g_normal",
-			{
-				.sampler = m_buffer_sampler,
-				.imageView = *config.swap_chain_config().normal_image.view,
-				.imageLayout = vk::ImageLayout::eGeneral
-			}
-		},
-		{
-			"g_depth",
-			{
-				.sampler = m_buffer_sampler,
-				.imageView = *config.swap_chain_config().depth_image.view,
-				.imageLayout = vk::ImageLayout::eGeneral
-			}
-		}
-	};
+	update_gbuffer_descriptors();
+	config.on_swap_chain_recreate([this](vulkan::config&) {
+		update_gbuffer_descriptors();
+	});
 
 	auto& shadow_r = system_of<shadow>();
 
@@ -191,14 +172,14 @@ auto gse::renderer::lighting::initialize() -> void {
 
 	array_image_infos.emplace("shadow_maps", std::move(shadow_infos));
 
-	auto writes = m_shader->descriptor_writes(
+	auto buffer_and_shadow_writes = m_shader->descriptor_writes(
 		*m_descriptor_set,
 		lighting_buffer_infos,
-		gbuffer_image_infos,
+		{},
 		array_image_infos
 	);
 
-	config.device_config().device.updateDescriptorSets(writes, nullptr);
+	config.device_config().device.updateDescriptorSets(buffer_and_shadow_writes, nullptr);
 
 	const auto range = m_shader->push_constant_range("push_constants");
 
@@ -224,25 +205,21 @@ auto gse::renderer::lighting::initialize() -> void {
 		.primitiveRestartEnable = vk::False
 	};
 
-	const vk::Viewport viewport{
-		.x = 0.0f,
-		.y = 0.0f,
-		.width = static_cast<float>(config.swap_chain_config().extent.width),
-		.height = static_cast<float>(config.swap_chain_config().extent.height),
-		.minDepth = 0.0f,
-		.maxDepth = 1.0f
+	constexpr std::array dynamic_states = {
+		vk::DynamicState::eViewport,
+		vk::DynamicState::eScissor
 	};
 
-	const vk::Rect2D scissor{
-		.offset = { 0, 0 },
-		.extent = config.swap_chain_config().extent
+	const vk::PipelineDynamicStateCreateInfo dynamic_state{
+		.dynamicStateCount = static_cast<std::uint32_t>(dynamic_states.size()),
+		.pDynamicStates = dynamic_states.data()
 	};
 
 	const vk::PipelineViewportStateCreateInfo viewport_state{
 		.viewportCount = 1,
-		.pViewports = &viewport,
+		.pViewports = nullptr,
 		.scissorCount = 1,
-		.pScissors = &scissor
+		.pScissors = nullptr
 	};
 
 	constexpr vk::PipelineRasterizationStateCreateInfo rasterizer{
@@ -304,7 +281,7 @@ auto gse::renderer::lighting::initialize() -> void {
 		.pMultisampleState = &multi_sample_state,
 		.pDepthStencilState = nullptr,
 		.pColorBlendState = &color_blend_state,
-		.pDynamicState = nullptr,
+		.pDynamicState = &dynamic_state,
 		.layout = m_pipeline_layout,
 		.basePipelineHandle = nullptr,
 		.basePipelineIndex = -1
@@ -313,9 +290,14 @@ auto gse::renderer::lighting::initialize() -> void {
 }
 
 auto gse::renderer::lighting::render() -> void {
+	auto& config = m_context.config();
+
+	if (!config.frame_in_progress()) {
+		return;
+	}
+
 	auto [dir_chunk, spot_chunk, point_chunk] = this->read<directional_light_component, spot_light_component, point_light_component>();
 
-	auto& config = m_context.config();
 	const auto command = config.frame_context().command_buffer;
 
 	auto proj = m_context.camera().projection(m_context.window().viewport());
@@ -487,6 +469,22 @@ auto gse::renderer::lighting::render() -> void {
 				m_pipeline
 			);
 
+			const vk::Viewport viewport{
+				.x = 0.0f,
+				.y = 0.0f,
+				.width = static_cast<float>(config.swap_chain_config().extent.width),
+				.height = static_cast<float>(config.swap_chain_config().extent.height),
+				.minDepth = 0.0f,
+				.maxDepth = 1.0f
+			};
+			command.setViewport(0, viewport);
+
+			const vk::Rect2D scissor{
+				.offset = { 0, 0 },
+				.extent = config.swap_chain_config().extent
+			};
+			command.setScissor(0, scissor);
+
 			command.bindDescriptorSets(
 				vk::PipelineBindPoint::eGraphics,
 				m_pipeline_layout,
@@ -508,4 +506,44 @@ auto gse::renderer::lighting::render() -> void {
 			command.draw(3, 1, 0, 0);
 		}
 	);
+}
+
+auto gse::renderer::lighting::update_gbuffer_descriptors() -> void {
+	auto& config = m_context.config();
+
+	const std::unordered_map<std::string, vk::DescriptorImageInfo> gbuffer_image_infos = {
+		{
+			"g_albedo",
+			{
+				.sampler = m_buffer_sampler,
+				.imageView = *config.swap_chain_config().albedo_image.view,
+				.imageLayout = vk::ImageLayout::eGeneral
+			}
+		},
+		{
+			"g_normal",
+			{
+				.sampler = m_buffer_sampler,
+				.imageView = *config.swap_chain_config().normal_image.view,
+				.imageLayout = vk::ImageLayout::eGeneral
+			}
+		},
+		{
+			"g_depth",
+			{
+				.sampler = m_buffer_sampler,
+				.imageView = *config.swap_chain_config().depth_image.view,
+				.imageLayout = vk::ImageLayout::eGeneral
+			}
+		}
+	};
+
+	const auto writes = m_shader->descriptor_writes(
+		*m_descriptor_set,
+		{},
+		gbuffer_image_infos,
+		{}
+	);
+
+	config.device_config().device.updateDescriptorSets(writes, nullptr);
 }

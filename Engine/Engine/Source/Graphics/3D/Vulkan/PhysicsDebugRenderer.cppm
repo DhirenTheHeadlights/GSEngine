@@ -36,7 +36,6 @@ export namespace gse::renderer {
 		) const -> bool {
 			return m_enabled;
 		}
-
 	private:
 		struct debug_vertex {
 			unitless::vec3 position;
@@ -233,27 +232,21 @@ auto gse::renderer::physics_debug::initialize() -> void {
 		.pColorAttachmentFormats = &color_format
 	};
 
-	const auto extent = config.swap_chain_config().extent;
-
-	const vk::Viewport viewport{
-		.x = 0.0f,
-		.y = 0.0f,
-		.width = static_cast<float>(extent.width),
-		.height = static_cast<float>(extent.height),
-		.minDepth = 0.0f,
-		.maxDepth = 1.0f
+	constexpr std::array dynamic_states = {
+		vk::DynamicState::eViewport,
+		vk::DynamicState::eScissor
 	};
 
-	const vk::Rect2D scissor{
-		.offset = { 0, 0 },
-		.extent = extent
+	const vk::PipelineDynamicStateCreateInfo dynamic_state{
+		.dynamicStateCount = static_cast<std::uint32_t>(dynamic_states.size()),
+		.pDynamicStates = dynamic_states.data()
 	};
 
 	const vk::PipelineViewportStateCreateInfo viewport_state{
 		.viewportCount = 1,
-		.pViewports = &viewport,
+		.pViewports = nullptr,
 		.scissorCount = 1,
-		.pScissors = &scissor
+		.pScissors = nullptr
 	};
 
 	const vk::GraphicsPipelineCreateInfo pipeline_info{
@@ -268,7 +261,7 @@ auto gse::renderer::physics_debug::initialize() -> void {
 		.pMultisampleState = &multisampling,
 		.pDepthStencilState = &depth_stencil,
 		.pColorBlendState = &color_blending,
-		.pDynamicState = nullptr,
+		.pDynamicState = &dynamic_state,
 		.layout = m_pipeline_layout,
 		.basePipelineHandle = nullptr,
 		.basePipelineIndex = 0
@@ -396,6 +389,11 @@ auto gse::renderer::physics_debug::render() -> void {
 	}
 
 	auto& config = m_context.config();
+
+	if (!config.frame_in_progress()) {
+		return;
+	}
+
 	const auto command = config.frame_context().command_buffer;
 
 	m_shader->set_uniform("CameraUBO.view", m_context.camera().view(), m_ubo_allocations.at("CameraUBO").allocation);
@@ -423,6 +421,22 @@ auto gse::renderer::physics_debug::render() -> void {
 
 	vulkan::render(config, rendering_info, [&] {
 		command.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
+
+		const vk::Viewport viewport{
+			.x = 0.0f,
+			.y = 0.0f,
+			.width = static_cast<float>(config.swap_chain_config().extent.width),
+			.height = static_cast<float>(config.swap_chain_config().extent.height),
+			.minDepth = 0.0f,
+			.maxDepth = 1.0f
+		};
+		command.setViewport(0, viewport);
+
+		const vk::Rect2D scissor{
+			.offset = { 0, 0 },
+			.extent = config.swap_chain_config().extent
+		};
+		command.setScissor(0, scissor);
 
 		const vk::DescriptorSet sets[] = {
 			m_descriptor_set

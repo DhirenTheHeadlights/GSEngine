@@ -253,25 +253,12 @@ auto gse::renderer::ui::initialize() -> void {
 		.topology = vk::PrimitiveTopology::eTriangleList
 	};
 
-	const vk::Viewport viewport{
-		.x = 0.0f,
-		.y = 0.0f,
-		.width = static_cast<float>(config.swap_chain_config().extent.width),
-		.height = static_cast<float>(config.swap_chain_config().extent.height),
-		.minDepth = 0.0f,
-		.maxDepth = 1.0f
-	};
-
-	const vk::Rect2D scissor{
-		{ 0, 0 },
-		{ config.swap_chain_config().extent.width, config.swap_chain_config().extent.height }
-	};
-
+	// Use dynamic viewport and scissor for resize handling
 	const vk::PipelineViewportStateCreateInfo viewport_state{
 		.viewportCount = 1,
-		.pViewports = &viewport,
+		.pViewports = nullptr,
 		.scissorCount = 1,
-		.pScissors = &scissor
+		.pScissors = nullptr
 	};
 
 	constexpr vk::PipelineRasterizationStateCreateInfo rasterizer{
@@ -312,6 +299,7 @@ auto gse::renderer::ui::initialize() -> void {
 	};
 
 	constexpr std::array dynamic_states = {
+		vk::DynamicState::eViewport,
 		vk::DynamicState::eScissor
 	};
 
@@ -559,17 +547,17 @@ auto gse::renderer::ui::update() -> void {
 }
 
 auto gse::renderer::ui::render() -> void {
+	auto& config = m_context.config();
+
+	if (!config.frame_in_progress()) {
+		return;
+	}
+
 	const auto& [vertices, indices, batches] = m_frame_data.read();
 
 	if (batches.empty()) {
 		return;
 	}
-
-	if (batches.empty()) {
-		return;
-	}
-
-	auto& config = m_context.config();
 	const auto frame_index = config.current_frame();
 	auto& [vertex_buffer, index_buffer] = m_frame_resources[frame_index];
 
@@ -615,6 +603,17 @@ auto gse::renderer::ui::render() -> void {
 	vulkan::render(config, rendering_info, [&] {
 		command.bindVertexBuffers(0, { *vertex_buffer.buffer }, { vk::DeviceSize{ 0 } });
 		command.bindIndexBuffer(*index_buffer.buffer, 0, vk::IndexType::eUint32);
+
+		// Set dynamic viewport
+		const vk::Viewport viewport{
+			.x = 0.0f,
+			.y = 0.0f,
+			.width = static_cast<float>(width),
+			.height = static_cast<float>(height),
+			.minDepth = 0.0f,
+			.maxDepth = 1.0f
+		};
+		command.setViewport(0, viewport);
 
 		const vk::Rect2D default_scissor{ { 0, 0 }, { width, height } };
 		command.setScissor(0, { default_scissor });

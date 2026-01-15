@@ -181,6 +181,7 @@ export namespace gse::gui {
 		std::vector<renderer::text_command> m_text_commands;
 
 		std::vector<id> m_visible_menu_ids_last_frame;
+		unitless::vec2 m_previous_viewport_size;
 
 		static constexpr time m_update_interval = seconds(30.f);
 
@@ -318,6 +319,8 @@ auto gse::gui::system::initialize() -> void {
     for (menu& m : m_menus.items()) {
         m_visible_menu_ids_last_frame.push_back(m.id());
     }
+
+    m_previous_viewport_size = unitless::vec2(m_rctx.window().viewport());
 }
 
 auto gse::gui::system::update() -> void {
@@ -354,6 +357,61 @@ auto gse::gui::system::update() -> void {
 }
 
 auto gse::gui::system::begin_frame() -> bool {
+	const auto current_viewport_size = unitless::vec2(m_rctx.window().viewport());
+
+	if (m_previous_viewport_size.x() > 0.f && m_previous_viewport_size.y() > 0.f) {
+		if (current_viewport_size.x() <= 0.f || current_viewport_size.y() <= 0.f) {
+			return true;
+		}
+
+		if (current_viewport_size.x() != m_previous_viewport_size.x() ||
+		    current_viewport_size.y() != m_previous_viewport_size.y()) {
+
+			const style sty = style::from_theme(m_theme);
+			const float menu_bar_h = menu_bar::height(sty);
+
+			const float old_usable_height = m_previous_viewport_size.y() - menu_bar_h;
+			const float new_usable_height = current_viewport_size.y() - menu_bar_h;
+
+			const ui_rect new_screen_rect = ui_rect::from_position_size(
+				{ 0.f, new_usable_height },
+				{ current_viewport_size.x(), new_usable_height }
+			);
+
+			for (menu& m : m_menus.items()) {
+				if (!m.owner_id().exists()) {
+					if (m.docked_to != dock::location::none) {
+						if (m.docked_to == dock::location::center) {
+							m.rect = new_screen_rect;
+						} else {
+							m.rect = layout::dock_target_rect(new_screen_rect, m.docked_to, m.dock_split_ratio);
+						}
+					} else {
+						const float ratio_x = m.rect.left() / m_previous_viewport_size.x();
+						const float ratio_y = (m_previous_viewport_size.y() - m.rect.top()) / old_usable_height;
+
+						const float new_left = ratio_x * current_viewport_size.x();
+						const float new_top = current_viewport_size.y() - (ratio_y * new_usable_height);
+
+						const float clamped_left = std::clamp(new_left, 0.f, std::max(0.f, current_viewport_size.x() - m.rect.width()));
+						const float clamped_top = std::clamp(new_top, m.rect.height(), new_usable_height);
+
+						m.rect = ui_rect::from_position_size(
+							{ clamped_left, clamped_top },
+							m.rect.size()
+						);
+					}
+
+					layout::update(m_menus, m.id());
+				}
+			}
+
+			m_previous_viewport_size = current_viewport_size;
+		}
+	} else {
+		m_previous_viewport_size = current_viewport_size;
+	}
+
 	m_frame_state = {};
 	m_sprite_commands.clear();
 	m_text_commands.clear();

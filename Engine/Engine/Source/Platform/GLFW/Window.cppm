@@ -64,11 +64,29 @@ export namespace gse {
 		input::system& m_input;
 		
 		bool m_fullscreen = true;
-		bool m_current_fullscreen = true;
+		bool m_current_fullscreen = false;
 		bool m_mouse_visible = false;
 		bool m_focused = true;
 		bool m_frame_buffer_resized = false;
 		bool m_ui_focus = false;
+
+		struct pending_state {
+			std::optional<bool> fullscreen_request;
+			std::optional<int> cursor_mode_request;
+			int windowed_pos_x = 100, windowed_pos_y = 100;
+			int windowed_w = 1920, windowed_h = 1080;
+		} m_pending;
+		std::mutex m_pending_mutex;
+
+		auto request_fullscreen(
+			bool fullscreen
+		) -> void;
+
+		auto process_pending_operations(
+		) -> void;
+
+		static inline std::vector<window*> s_windows;
+		static inline std::mutex s_windows_mutex;
 
 		auto set_fullscreen(
 			bool fullscreen
@@ -82,6 +100,7 @@ gse::window::window(const std::string& title, input::system& input_system, save:
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+	glfwWindowHint(GLFW_FOCUS_ON_SHOW, GLFW_TRUE);
 
 	m_window = glfwCreateWindow(1920, 1080, title.c_str(), nullptr, nullptr);
 	assert(m_window, std::source_location::current(), "Failed to create GLFW window!");
@@ -111,16 +130,20 @@ gse::window::window(const std::string& title, input::system& input_system, save:
 	glfwSetCursorPosCallback(
 		m_window,
 		[](GLFWwindow* w, double xpos, double ypos) {
-			const auto* self = static_cast<window*>(glfwGetWindowUserPointer(w));
+			auto* self = static_cast<window*>(glfwGetWindowUserPointer(w));
 			if (!self) return;
 
 			if (self->m_ui_focus) {
 				const auto dims = self->viewport();
-				xpos = std::clamp(xpos, 0.0, static_cast<double>(dims.x()));
-				ypos = std::clamp(ypos, 0.0, static_cast<double>(dims.y()));
+				const double clamped_x = std::clamp(xpos, 0.0, static_cast<double>(dims.x()));
+				const double clamped_y = std::clamp(ypos, 0.0, static_cast<double>(dims.y()));
 
-				const double inverted_y = static_cast<double>(dims.y()) - ypos;
-				self->m_input.mouse_pos_callback(xpos, inverted_y);
+				if (clamped_x != xpos || clamped_y != ypos) {
+					glfwSetCursorPos(w, clamped_x, clamped_y);
+				}
+
+				const double inverted_y = static_cast<double>(dims.y()) - clamped_y;
+				self->m_input.mouse_pos_callback(clamped_x, inverted_y);
 			}
 			else {
 				self->m_input.mouse_pos_callback(xpos, ypos);
@@ -173,10 +196,33 @@ gse::window::window(const std::string& title, input::system& input_system, save:
 		}
 	);
 
+	const int cursor_mode = m_mouse_visible ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED;
+	glfwSetInputMode(m_window, GLFW_CURSOR, cursor_mode);
+
+	save_system.bind("window", "Fullscreen", m_fullscreen)
+		.description("Run in fullscreen mode")
+		.default_value(true)
+		.commit();
+
+	save_system.bind("window", "Mouse Visible", m_mouse_visible)
+		.description("Show mouse cursor")
+		.default_value(false)
+		.commit();
+
 	glfwFocusWindow(m_window);
+
+	{
+		std::lock_guard lock(s_windows_mutex);
+		s_windows.push_back(this);
+	}
 }
 
 gse::window::~window() {
+	{
+		std::lock_guard lock(s_windows_mutex);
+		std::erase(s_windows, this);
+	}
+
 	assert(
 		!m_window,
 		std::source_location::current(),
@@ -185,65 +231,33 @@ gse::window::~window() {
 }
 
 auto gse::window::update(const bool ui_focus) -> void {
+	const bool was_ui_focus = m_ui_focus;
 	m_ui_focus = ui_focus;
 
-	if (m_focused && m_current_fullscreen != m_fullscreen) {
-		static int last_pos_x = 0, last_pos_y = 0;
-		static int last_w = 0, last_h = 0;
-
-		if (m_fullscreen) {
-			glfwGetWindowPos(m_window, &last_pos_x, &last_pos_y);
-			glfwGetWindowSize(m_window, &last_w, &last_h);
-
-			int monitor_count = 0;
-			GLFWmonitor** monitors = glfwGetMonitors(&monitor_count);
-
-			assert(
-				monitor_count > 0,
-				std::source_location::current(),
-				"Failed to get monitors! At least one monitor is required for fullscreen mode."
-			);
-
-			int wx = 0, wy = 0;
-			glfwGetWindowPos(m_window, &wx, &wy);
-			int ww = 0, wh = 0;
-			glfwGetWindowSize(m_window, &ww, &wh);
-
-			GLFWmonitor* best_monitor = glfwGetPrimaryMonitor();
-			int best_overlap = 0;
-
-			for (int i = 0; i < monitor_count; ++i) {
-				GLFWmonitor* monitor = monitors[i];
-				const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-				int mx = 0, my = 0;
-				glfwGetMonitorPos(monitor, &mx, &my);
-				const int mw = mode->width;
-				const int mh = mode->height;
-
-				const int overlap =
-					std::max(0, std::min(wx + ww, mx + mw) - std::max(wx, mx)) *
-					std::max(0, std::min(wy + wh, my + mh) - std::max(wy, my));
-
-				if (overlap > best_overlap) {
-					best_overlap = overlap;
-					best_monitor = monitor;
-				}
-			}
-
-			const GLFWvidmode* mode = glfwGetVideoMode(best_monitor);
-			glfwSetWindowMonitor(m_window, best_monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
-		}
-		else {
-			glfwSetWindowMonitor(m_window, nullptr, last_pos_x, last_pos_y, last_w, last_h, 0);
-		}
-		m_current_fullscreen = m_fullscreen;
+	if (!was_ui_focus && ui_focus) {
+		const auto dims = viewport();
+		glfwSetCursorPos(m_window, dims.x() / 2.0, dims.y() / 2.0);
 	}
 
-	const int cursor_mode = m_mouse_visible ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED;
-	glfwSetInputMode(m_window, GLFW_CURSOR, cursor_mode);
+	if (m_current_fullscreen != m_fullscreen) {
+		request_fullscreen(m_fullscreen);
+	}
+
+	{
+		const int cursor_mode = m_mouse_visible ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED;
+		std::lock_guard lock(m_pending_mutex);
+		m_pending.cursor_mode_request = cursor_mode;
+	}
 }
 
-auto gse::window::poll_events() -> void {
+auto gse::window::poll_events() -> void {\
+	{
+		std::lock_guard lock(s_windows_mutex);
+		for (auto* w : s_windows) {
+			w->process_pending_operations();
+		}
+	}
+
 	glfwPollEvents();
 }
 
@@ -286,6 +300,97 @@ auto gse::window::create_vulkan_surface(const VkInstance instance) const -> VkSu
 	const VkResult result = glfwCreateWindowSurface(instance, m_window, nullptr, &surface);
 	assert(result == VK_SUCCESS, std::source_location::current(), "Failed to create window surface for Vulkan!");
 	return surface;
+}
+
+auto gse::window::request_fullscreen(const bool fullscreen) -> void {
+	std::lock_guard lock(m_pending_mutex);
+	
+	if (fullscreen && !m_current_fullscreen) {
+		glfwGetWindowPos(m_window, &m_pending.windowed_pos_x, &m_pending.windowed_pos_y);
+		glfwGetWindowSize(m_window, &m_pending.windowed_w, &m_pending.windowed_h);
+	}
+
+	m_pending.fullscreen_request = fullscreen;
+}
+
+auto gse::window::process_pending_operations() -> void {
+	std::optional<bool> fullscreen_req;
+	std::optional<int> cursor_mode_req;
+	int pos_x, pos_y, w, h;
+
+	{
+		std::lock_guard lock(m_pending_mutex);
+		fullscreen_req = std::exchange(m_pending.fullscreen_request, std::nullopt);
+		cursor_mode_req = std::exchange(m_pending.cursor_mode_request, std::nullopt);
+		pos_x = m_pending.windowed_pos_x;
+		pos_y = m_pending.windowed_pos_y;
+		w = m_pending.windowed_w;
+		h = m_pending.windowed_h;
+	}
+
+	if (cursor_mode_req.has_value()) {
+		const int current_mode = glfwGetInputMode(m_window, GLFW_CURSOR);
+		const int new_mode = *cursor_mode_req;
+
+		if (current_mode == GLFW_CURSOR_DISABLED && new_mode == GLFW_CURSOR_NORMAL) {
+			const auto dims = viewport();
+			glfwSetCursorPos(m_window, dims.x() / 2.0, dims.y() / 2.0);
+		}
+
+		glfwSetInputMode(m_window, GLFW_CURSOR, new_mode);
+	}
+
+	if (!fullscreen_req.has_value() || !m_focused) {
+		return;
+	}
+
+	const bool fullscreen = *fullscreen_req;
+	if (m_current_fullscreen == fullscreen) {
+		return;
+	}
+
+	m_current_fullscreen = fullscreen;
+
+	if (fullscreen) {
+		int monitor_count = 0;
+		GLFWmonitor** monitors = glfwGetMonitors(&monitor_count);
+
+		assert(
+			monitor_count > 0,
+			std::source_location::current(),
+			"Failed to get monitors!"
+		);
+
+		int wx = 0, wy = 0, ww = 0, wh = 0;
+		glfwGetWindowPos(m_window, &wx, &wy);
+		glfwGetWindowSize(m_window, &ww, &wh);
+
+		GLFWmonitor* best_monitor = glfwGetPrimaryMonitor();
+		int best_overlap = 0;
+
+		for (int i = 0; i < monitor_count; ++i) {
+			GLFWmonitor* monitor = monitors[i];
+			const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+			int mx = 0, my = 0;
+			glfwGetMonitorPos(monitor, &mx, &my);
+
+			const int overlap =
+				std::max(0, std::min(wx + ww, mx + mode->width) - std::max(wx, mx)) *
+				std::max(0, std::min(wy + wh, my + mode->height) - std::max(wy, my));
+
+			if (overlap > best_overlap) {
+				best_overlap = overlap;
+				best_monitor = monitor;
+			}
+		}
+
+		const GLFWvidmode* mode = glfwGetVideoMode(best_monitor);
+		glfwSetWindowMonitor(m_window, best_monitor, 0, 0,
+			mode->width, mode->height, mode->refreshRate);
+	}
+	else {
+		glfwSetWindowMonitor(m_window, nullptr, pos_x, pos_y, w, h, 0);
+	}
 }
 
 auto gse::window::set_fullscreen(const bool fullscreen) -> void {

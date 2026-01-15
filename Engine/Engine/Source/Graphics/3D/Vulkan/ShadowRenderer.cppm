@@ -353,6 +353,11 @@ auto gse::renderer::shadow::update() -> void {
 
 auto gse::renderer::shadow::render() -> void {
     auto& config = m_context.config();
+
+    if (!config.frame_in_progress()) {
+        return;
+    }
+
     const auto command = config.frame_context().command_buffer;
 
     auto& geom = system_of<geometry>();
