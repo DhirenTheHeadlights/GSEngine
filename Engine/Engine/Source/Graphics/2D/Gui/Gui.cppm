@@ -175,6 +175,7 @@ export namespace gse::gui {
 
 		menu_bar::state m_menu_bar_state;
 		settings_panel::state m_settings_panel_state;
+		theme m_theme = theme::dark;
 
 		std::vector<renderer::sprite_command> m_sprite_commands;
 		std::vector<renderer::text_command> m_text_commands;
@@ -246,7 +247,23 @@ gse::gui::system::system(renderer::context& context) : m_rctx(context) {}
 auto gse::gui::system::initialize() -> void {
     m_font = m_rctx.get<font>("MonaspaceNeon-Regular");
     m_blank_texture = m_rctx.queue<texture>("blank", unitless::vec4(1, 1, 1, 1));
-	m_menus = load(config::resource_path / m_file_path, m_menus, m_settings_panel_state.current);
+	m_menus = load(config::resource_path / m_file_path, m_menus);
+
+	publish([this](channel<save::register_property>& ch) {
+		ch.push({
+			.category = "UI",
+			.name = "Theme",
+			.description = "UI color theme",
+			.ref = reinterpret_cast<void*>(reinterpret_cast<int*>(&m_theme)),
+			.type = typeid(int),
+			.enum_options = {
+				{ "Dark", static_cast<int>(theme::dark) },
+				{ "Darker", static_cast<int>(theme::darker) },
+				{ "Light", static_cast<int>(theme::light) },
+				{ "High Contrast", static_cast<int>(theme::high_contrast) }
+			}
+		});
+	});
 
     auto calculate_group_bounds = [this](const id root_id) -> ui_rect {
         const menu* root = m_menus.try_get(root_id);
@@ -304,7 +321,7 @@ auto gse::gui::system::initialize() -> void {
 }
 
 auto gse::gui::system::update() -> void {
-	const style sty = style::from_theme(m_settings_panel_state.current.ui_theme);
+	const style sty = style::from_theme(m_theme);
 	const input::state& input_state = system_of<input::system>().current_state();
 
 	const unitless::vec2 mouse_position = input_state.mouse_position();
@@ -331,7 +348,7 @@ auto gse::gui::system::update() -> void {
 		});
 
 	if (m_save_clock.elapsed() > m_update_interval) {
-		gui::save(m_menus, m_settings_panel_state.current, config::resource_path / m_file_path);
+		gui::save(m_menus, config::resource_path / m_file_path);
 		m_save_clock.reset();
 	}
 }
@@ -341,7 +358,7 @@ auto gse::gui::system::begin_frame() -> bool {
 	m_sprite_commands.clear();
 	m_text_commands.clear();
 
-	const style sty = style::from_theme(m_settings_panel_state.current.ui_theme);
+	const style sty = style::from_theme(m_theme);
 
 	m_frame_state = {
 		.rctx = std::addressof(m_rctx),
@@ -405,14 +422,19 @@ auto gse::gui::system::end_frame() -> void {
     const ui_rect settings_rect = settings_panel::default_panel_rect(m_frame_state.sty, viewport_size);
 
 	const settings_panel::context sp_ctx{
-		.font = m_font,
-		.blank_texture = m_blank_texture,
-		.style = m_frame_state.sty,
-		.sprites = m_sprite_commands,
-		.texts = m_text_commands,
-		.input = input_state
+	    .font = m_font,
+	    .blank_texture = m_blank_texture,
+	    .style = m_frame_state.sty,
+	    .sprites = m_sprite_commands,
+	    .texts = m_text_commands,
+	    .input = input_state,
+	    .publish_update = [this](save::update_request req) {
+	        publish([r = std::move(req)](channel<save::update_request>& ch) {
+	            ch.push(std::move(r));
+	        });
+	    }
 	};
-	settings_panel::update(m_settings_panel_state, sp_ctx, settings_rect, m_menu_bar_state.settings_open);
+	settings_panel::update(m_settings_panel_state, sp_ctx, settings_rect, m_menu_bar_state.settings_open, system_of<save::system>());
 
     if (m_menu_bar_state.settings_open && input_state.mouse_button_pressed(mouse_button::button_1)) {
         const unitless::vec2 mouse_pos = input_state.mouse_position();
@@ -484,11 +506,11 @@ auto gse::gui::system::end_frame() -> void {
 }
 
 auto gse::gui::system::shutdown() -> void {
-	gui::save(m_menus, m_settings_panel_state.current, config::resource_path / m_file_path);
+	gui::save(m_menus, config::resource_path / m_file_path);
 }
 
 auto gse::gui::system::save() -> void {
-	gui::save(m_menus, m_settings_panel_state.current, config::resource_path / m_file_path);
+	gui::save(m_menus, config::resource_path / m_file_path);
 }
 
 auto gse::gui::system::start(const std::string& name, const std::function<void()>& contents) -> void {
@@ -1622,7 +1644,7 @@ auto gse::gui::system::handle_pending_drag_state(const states::pending_drag& cur
 
 				constexpr unitless::vec2 default_size = { 300.f, 200.f };
 
-				const style sty = style::from_theme(m_settings_panel_state.current.ui_theme);
+				const style sty = m_frame_state.sty;
 				const unitless::vec2 new_top_left = {
 					mouse_position.x() - default_size.x() * 0.5f,
 					mouse_position.y() + sty.title_bar_height * 0.5f

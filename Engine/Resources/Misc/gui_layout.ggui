@@ -1,13 +1,3 @@
-[Settings]
-VSync: true
-Fullscreen: false
-ShowFPS: false
-ShowProfiler: false
-RenderScale: 0.65
-ShadowQuality: 2
-Theme: dark
-[EndSettings]
-
 [Menu]
 Tag: "Box [12895617658403883662: Smaller Box]"
 Owner: ""
@@ -50,9 +40,9 @@ Tabs: "Network"
 
 [Menu]
 Tag: "Profiler"
-Owner: ""
-Rect: 100 300 300 200
-DockedTo: none
+Owner: "Test"
+Rect: 0 524 960 524
+DockedTo: bottom
 DockSplitRatio: 0.5
 ActiveTab: 0
 Tabs: "Profiler"
@@ -81,7 +71,7 @@ Tabs: "Spot" "light" "Sphere" "Light"
 [Menu]
 Tag: "Test"
 Owner: ""
-Rect: 0 1048 960 1048
+Rect: 0 1048 960 524
 DockedTo: left
 DockSplitRatio: 0.5
 ActiveTab: 0

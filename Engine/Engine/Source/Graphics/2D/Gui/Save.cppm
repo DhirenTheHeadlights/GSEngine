@@ -6,7 +6,6 @@ import gse.assert;
 import gse.utility;
 
 import :types;
-import :settings_panel;
 import :styles;
 
 export namespace gse::gui {
@@ -22,27 +21,26 @@ export namespace gse::gui {
 
     auto save(
         id_mapped_collection<menu>& menus,
-        const settings_panel::settings& settings,
         const std::filesystem::path& file_path
     ) -> void;
 
     auto load(
-        const std::filesystem::path& file_path, 
-        id_mapped_collection<menu>& default_menus,
-        settings_panel::settings& out_settings
+        const std::filesystem::path& file_path,
+        id_mapped_collection<menu>& default_menus
     ) -> id_mapped_collection<menu>;
 }
 
-auto gse::gui::save(id_mapped_collection<menu>& menus, const settings_panel::settings& settings, const std::filesystem::path& file_path) -> void {
+auto gse::gui::save(id_mapped_collection<menu>& menus, const std::filesystem::path& file_path) -> void {
     if (const auto parent_dir = file_path.parent_path(); !parent_dir.empty() && !std::filesystem::exists(parent_dir)) {
-        create_directories(parent_dir);
+        std::filesystem::create_directories(parent_dir);
     }
 
     std::ofstream file(file_path);
     assert(
         file.is_open(),
         std::source_location::current(),
-        "Failed to open GUI layout file for writing: {}", file_path.string()
+        "Failed to open GUI layout file for writing: {}",
+        file_path.string()
     );
 
     auto dock_to_string = [](const dock::location location) -> std::string {
@@ -57,33 +55,16 @@ auto gse::gui::save(id_mapped_collection<menu>& menus, const settings_panel::set
         }
     };
 
-    auto theme_to_string = [](const theme t) -> std::string {
-        switch (t) {
-            case theme::dark:          return "dark";
-            case theme::darker:        return "darker";
-            case theme::light:         return "light";
-            case theme::high_contrast: return "high_contrast";
-            default:                   return "dark";
-        }
-    };
-
-    file << "[Settings]\n";
-    file << "VSync: " << (settings.vsync ? "true" : "false") << "\n";
-    file << "Fullscreen: " << (settings.fullscreen ? "true" : "false") << "\n";
-    file << "ShowFPS: " << (settings.show_fps ? "true" : "false") << "\n";
-    file << "ShowProfiler: " << (settings.show_profiler ? "true" : "false") << "\n";
-    file << "RenderScale: " << settings.render_scale << "\n";
-    file << "ShadowQuality: " << settings.shadow_quality << "\n";
-    file << "Theme: " << theme_to_string(settings.ui_theme) << "\n";
-    file << "[EndSettings]\n\n";
-
     for (const auto& menu : menus.items()) {
-        const std::string owner_tag = menu.owner_id().exists() ? std::string(menu.owner_id().tag()) : "";
+        const std::string owner_tag = menu.owner_id().exists()
+            ? std::string(menu.owner_id().tag())
+            : "";
 
         file << "[Menu]\n";
         file << "Tag: " << std::quoted(std::string(menu.id().tag())) << "\n";
         file << "Owner: " << std::quoted(owner_tag) << "\n";
-        file << "Rect: " << menu.rect.left() << " " << menu.rect.top() << " " << menu.rect.width() << " " << menu.rect.height() << "\n";
+        file << "Rect: " << menu.rect.left() << " " << menu.rect.top() << " "
+             << menu.rect.width() << " " << menu.rect.height() << "\n";
         file << "DockedTo: " << dock_to_string(menu.docked_to) << "\n";
         file << "DockSplitRatio: " << menu.dock_split_ratio << "\n";
         file << "ActiveTab: " << menu.active_tab_index << "\n";
@@ -98,13 +79,10 @@ auto gse::gui::save(id_mapped_collection<menu>& menus, const settings_panel::set
     }
 }
 
-auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection<menu>& default_menus, settings_panel::settings& out_settings) -> id_mapped_collection<menu> {
-    out_settings = settings_panel::settings{};
-
+auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection<menu>& default_menus) -> id_mapped_collection<menu> {
     if (!std::filesystem::exists(file_path)) {
         id_mapped_collection<menu> menus_to_save = default_menus;
-        std::filesystem::path path_to_save = file_path;
-        save(menus_to_save, out_settings, path_to_save);
+        save(menus_to_save, file_path);
         return default_menus;
     }
 
@@ -114,8 +92,12 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
     }
 
     auto trim_in_place = [](std::string& s) -> void {
-        while (!s.empty() && (s.front() == ' ' || s.front() == '\t' || s.front() == '\r')) s.erase(s.begin());
-        while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r')) s.pop_back();
+        while (!s.empty() && (s.front() == ' ' || s.front() == '\t' || s.front() == '\r')) {
+            s.erase(s.begin());
+        }
+        while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r')) {
+            s.pop_back();
+        }
     };
 
     auto location_from_string = [](const std::string& str) -> dock::location {
@@ -127,72 +109,11 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
         return dock::location::none;
     };
 
-    auto theme_from_string = [](const std::string& str) -> theme {
-        if (str == "dark")          return theme::dark;
-        if (str == "darker")        return theme::darker;
-        if (str == "light")         return theme::light;
-        if (str == "high_contrast") return theme::high_contrast;
-        return theme::dark;
-    };
-
-    auto bool_from_string = [](const std::string& str) -> bool {
-        return str == "true" || str == "1";
-    };
-
     std::vector<loaded_menu_data> loaded_data_vec;
     std::string line;
     std::optional<loaded_menu_data> current_data;
-    bool in_settings = false;
 
     while (std::getline(file, line)) {
-        if (line == "[Settings]") {
-            in_settings = true;
-            continue;
-        }
-        if (line == "[EndSettings]") {
-            in_settings = false;
-            continue;
-        }
-
-        if (in_settings) {
-            std::stringstream ss(line);
-            std::string key;
-            ss >> key;
-
-            if (key == "VSync:") {
-                std::string val;
-                ss >> val;
-                out_settings.vsync = bool_from_string(val);
-            }
-            else if (key == "Fullscreen:") {
-                std::string val;
-                ss >> val;
-                out_settings.fullscreen = bool_from_string(val);
-            }
-            else if (key == "ShowFPS:") {
-                std::string val;
-                ss >> val;
-                out_settings.show_fps = bool_from_string(val);
-            }
-            else if (key == "ShowProfiler:") {
-                std::string val;
-                ss >> val;
-                out_settings.show_profiler = bool_from_string(val);
-            }
-            else if (key == "RenderScale:") {
-                ss >> out_settings.render_scale;
-            }
-            else if (key == "ShadowQuality:") {
-                ss >> out_settings.shadow_quality;
-            }
-            else if (key == "Theme:") {
-                std::string val;
-                ss >> val;
-                out_settings.ui_theme = theme_from_string(val);
-            }
-            continue;
-        }
-        
         if (line == "[Menu]") {
             current_data.emplace();
             continue;
@@ -204,7 +125,9 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
             }
             continue;
         }
-        if (!current_data) continue;
+        if (!current_data) {
+            continue;
+        }
 
         std::stringstream ss(line);
         std::string key;

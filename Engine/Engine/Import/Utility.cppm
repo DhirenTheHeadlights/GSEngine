@@ -23,6 +23,7 @@ export import :scene;
 export import :scheduler;
 export import :scope_exit;
 export import :spsc_ring_buffer;
+export import :save_system;
 export import :system;
 export import :system_clock;
 export import :task;

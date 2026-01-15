@@ -68,6 +68,7 @@ auto gse::engine::initialize() -> void {
 	});
 
 	auto& reg = m_world.registry();
+	auto& save = m_scheduler.emplace<save::system>(reg);
 
 	auto& input = m_scheduler.emplace<input::system>(reg);
 	m_scheduler.emplace<actions::system>(reg);
@@ -76,7 +77,8 @@ auto gse::engine::initialize() -> void {
 
 	m_render_ctx = std::make_unique<renderer::context>(
 		std::string(id().tag()),
-		input
+		input,
+		save
 	);
 
 	auto& ctx = *m_render_ctx.get();
