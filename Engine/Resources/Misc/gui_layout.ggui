@@ -1,27 +1,7 @@
 [Menu]
-Tag: "Test"
-Owner: ""
-Rect: 0 1768 1440 884
-DockedTo: left
-DockSplitRatio: 0.5
-ActiveTab: 0
-Tabs: "Test"
-[EndMenu]
-
-[Menu]
-Tag: "Test2"
-Owner: ""
-Rect: 0 1768 1440 1768
-DockedTo: left
-DockSplitRatio: 0.5
-ActiveTab: 0
-Tabs: "Test2"
-[EndMenu]
-
-[Menu]
 Tag: "Box [3808468672160884840: Bigger Box]"
 Owner: "Network"
-Rect: 1951 884 929 884
+Rect: 1951 884 928.999 884
 DockedTo: bottom
 DockSplitRatio: 0.5
 ActiveTab: 2
@@ -31,7 +11,7 @@ Tabs: "Box [3808468672160884840: Bigger Box]" "Box [3723830265917511246: Bottom 
 [Menu]
 Tag: "Network"
 Owner: ""
-Rect: 1951 1768 929 884
+Rect: 1951 1768 928.999 884
 DockedTo: right
 DockSplitRatio: 0.322569
 ActiveTab: 0
@@ -61,10 +41,30 @@ Tabs: "Server" "Control"
 [Menu]
 Tag: "Spot"
 Owner: ""
-Rect: 1708.59 1746.02 300 200
+Rect: 2580 1746.02 300 200
 DockedTo: none
 DockSplitRatio: 0.5
 ActiveTab: 0
 Tabs: "Spot" "light" "Sphere" "Light"
+[EndMenu]
+
+[Menu]
+Tag: "Test"
+Owner: ""
+Rect: 0 1768 1440 884
+DockedTo: left
+DockSplitRatio: 0.5
+ActiveTab: 0
+Tabs: "Test"
+[EndMenu]
+
+[Menu]
+Tag: "Test2"
+Owner: ""
+Rect: 0 1768 1440 1768
+DockedTo: left
+DockSplitRatio: 0.5
+ActiveTab: 0
+Tabs: "Test2"
 [EndMenu]
 

@@ -176,12 +176,16 @@ export namespace gse::gui {
 		menu_bar::state m_menu_bar_state;
 		settings_panel::state m_settings_panel_state;
 		theme m_theme = theme::dark;
+		float m_ui_scale = 1.0f;
 
 		std::vector<renderer::sprite_command> m_sprite_commands;
 		std::vector<renderer::text_command> m_text_commands;
 
 		std::vector<id> m_visible_menu_ids_last_frame;
 		unitless::vec2 m_previous_viewport_size;
+
+		tooltip_state m_tooltip;
+		render_layer m_input_layer = render_layer::content;
 
 		static constexpr time m_update_interval = seconds(30.f);
 
@@ -240,6 +244,10 @@ export namespace gse::gui {
 		auto calculate_display_rect(
 			const menu& m
 		) const -> ui_rect;
+
+		auto apply_scale(
+			style sty
+		) const -> style;
 	};
 }
 
@@ -263,6 +271,17 @@ auto gse::gui::system::initialize() -> void {
 				{ "Light", static_cast<int>(theme::light) },
 				{ "High Contrast", static_cast<int>(theme::high_contrast) }
 			}
+		});
+
+		ch.push({
+			.category = "UI",
+			.name = "Scale",
+			.description = "UI scale multiplier",
+			.ref = reinterpret_cast<void*>(&m_ui_scale),
+			.type = typeid(float),
+			.range_min = 0.5f,
+			.range_max = 3.0f,
+			.range_step = 0.1f
 		});
 	});
 
@@ -324,7 +343,7 @@ auto gse::gui::system::initialize() -> void {
 }
 
 auto gse::gui::system::update() -> void {
-	const style sty = style::from_theme(m_theme);
+	const style sty = apply_scale(style::from_theme(m_theme));
 	const input::state& input_state = system_of<input::system>().current_state();
 
 	const unitless::vec2 mouse_position = input_state.mouse_position();
@@ -367,7 +386,7 @@ auto gse::gui::system::begin_frame() -> bool {
 		if (current_viewport_size.x() != m_previous_viewport_size.x() ||
 		    current_viewport_size.y() != m_previous_viewport_size.y()) {
 
-			const style sty = style::from_theme(m_theme);
+			const style sty = apply_scale(style::from_theme(m_theme));
 			const float menu_bar_h = menu_bar::height(sty);
 
 			const float old_usable_height = m_previous_viewport_size.y() - menu_bar_h;
@@ -416,7 +435,7 @@ auto gse::gui::system::begin_frame() -> bool {
 	m_sprite_commands.clear();
 	m_text_commands.clear();
 
-	const style sty = style::from_theme(m_theme);
+	const style sty = apply_scale(style::from_theme(m_theme));
 
 	m_frame_state = {
 		.rctx = std::addressof(m_rctx),
@@ -425,6 +444,10 @@ auto gse::gui::system::begin_frame() -> bool {
 	};
 
 	m_hot_widget_id = {};
+
+	m_input_layer = m_menu_bar_state.settings_open
+		? render_layer::popup
+		: render_layer::content;
 
 	for (menu& m : m_menus.items()) {
 		m.was_begun_this_frame = false;
@@ -490,9 +513,13 @@ auto gse::gui::system::end_frame() -> void {
 	        publish([r = std::move(req)](channel<save::update_request>& ch) {
 	            ch.push(std::move(r));
 	        });
-	    }
+	    },
+	    .tooltip = &m_tooltip
 	};
-	settings_panel::update(m_settings_panel_state, sp_ctx, settings_rect, m_menu_bar_state.settings_open, system_of<save::system>());
+
+	if (settings_panel::update(m_settings_panel_state, sp_ctx, settings_rect, m_menu_bar_state.settings_open, system_of<save::system>())) {
+		m_menu_bar_state.settings_open = false;
+    }
 
     if (m_menu_bar_state.settings_open && input_state.mouse_button_pressed(mouse_button::button_1)) {
         const unitless::vec2 mouse_pos = input_state.mouse_position();
@@ -501,6 +528,66 @@ auto gse::gui::system::end_frame() -> void {
             m_menu_bar_state.settings_open = false;
         }
     }
+
+    if (m_tooltip.widget_id.exists()) {
+        m_tooltip.hover_time += system_clock::dt<time>();
+
+        if (m_tooltip.hover_time >= tooltip_state::show_delay && !m_tooltip.text.empty() && m_font.valid()) {
+            const float padding = m_frame_state.sty.padding;
+            const float font_size = m_frame_state.sty.font_size;
+            const float text_width = m_font->width(m_tooltip.text, font_size);
+            const float text_height = m_font->line_height(font_size);
+
+            const float tooltip_width = text_width + padding * 2.f;
+            const float tooltip_height = text_height + padding;
+
+            unitless::vec2 tooltip_pos = m_tooltip.position + unitless::vec2(15.f, -15.f);
+
+            if (tooltip_pos.x() + tooltip_width > viewport_size.x()) {
+                tooltip_pos.x() = viewport_size.x() - tooltip_width;
+            }
+            if (tooltip_pos.y() - tooltip_height < 0.f) {
+                tooltip_pos.y() = tooltip_height;
+            }
+
+            const ui_rect tooltip_rect = ui_rect::from_position_size(
+                tooltip_pos,
+                { tooltip_width, tooltip_height }
+            );
+
+            m_sprite_commands.push_back({
+                .rect = tooltip_rect,
+                .color = m_frame_state.sty.color_menu_body,
+                .texture = m_blank_texture,
+                .layer = render_layer::overlay,
+                .z_order = 100
+            });
+
+            m_sprite_commands.push_back({
+                .rect = tooltip_rect.inset({ -1.f, -1.f }),
+                .color = m_frame_state.sty.color_border,
+                .texture = m_blank_texture,
+                .layer = render_layer::overlay,
+                .z_order = 99
+            });
+
+            m_text_commands.push_back({
+                .font = m_font,
+                .text = m_tooltip.text,
+                .position = {
+                    tooltip_rect.left() + padding,
+                    tooltip_rect.center().y() + font_size * 0.35f
+                },
+                .scale = font_size,
+                .color = m_frame_state.sty.color_text,
+                .clip_rect = tooltip_rect,
+                .layer = render_layer::overlay,
+                .z_order = 100
+            });
+        }
+    }
+
+    m_tooltip.widget_id.reset();
 
     if (m_frame_state.rctx && m_frame_state.rctx->ui_focus()) {
         cursor::render_to(*m_frame_state.rctx, m_sprite_commands, input_state.mouse_position());
@@ -623,7 +710,9 @@ auto gse::gui::system::start(const std::string& name, const std::function<void()
         .blank_texture = m_blank_texture,
         .layout_cursor = layout_cursor,
         .sprites = m_sprite_commands,
-        .texts = m_text_commands
+        .texts = m_text_commands,
+        .input_layer = m_input_layer,
+        .tooltip = &m_tooltip
     };
 
     m_hot_widget_id = {};
@@ -1928,6 +2017,17 @@ auto gse::gui::system::calculate_display_rect(const menu& m) const -> ui_rect {
 	}
 
 	return display_rect;
+}
+
+auto gse::gui::system::apply_scale(style sty) const -> style {
+	sty.padding *= m_ui_scale;
+	sty.title_bar_height *= m_ui_scale;
+	sty.resize_border_thickness *= m_ui_scale;
+	sty.min_menu_size.x() *= m_ui_scale;
+	sty.min_menu_size.y() *= m_ui_scale;
+	sty.font_size *= m_ui_scale;
+	sty.menu_bar_height *= m_ui_scale;
+	return sty;
 }
 
 

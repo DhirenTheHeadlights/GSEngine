@@ -33,7 +33,7 @@ auto gse::gui::draw::button(const draw_context& ctx, const std::string& name, id
         { content_rect.width(), widget_height }
     );
 
-    const bool hovered = button_rect.contains(ctx.input.mouse_position());
+    const bool hovered = button_rect.contains(ctx.input.mouse_position()) && ctx.input_available();
 
     if (hovered) {
         hot_widget_id = widget_id;

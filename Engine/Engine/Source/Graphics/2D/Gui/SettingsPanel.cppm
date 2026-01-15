@@ -29,6 +29,7 @@ export namespace gse::settings_panel {
         const input::state& input;
         render_layer layer = render_layer::popup;
         std::function<void(save::update_request)> publish_update;
+        gui::tooltip_state* tooltip = nullptr;
     };
 
     auto update(
@@ -37,7 +38,7 @@ export namespace gse::settings_panel {
         const gui::ui_rect& rect,
         bool is_open,
         const save::system& save_sys
-    ) -> void;
+    ) -> bool;
 
     auto default_panel_rect(
         const gui::style& style,
@@ -54,8 +55,14 @@ namespace gse::settings_panel {
         state* panel_state;
     };
 
+    auto set_tooltip(
+        const context& ctx,
+        const id& widget_id,
+        const std::string& text
+    ) -> void;
+
     auto draw_section_header(
-        layout_state& layout, 
+        layout_state& layout,
         const std::string& text
     ) -> void;
 
@@ -81,25 +88,39 @@ namespace gse::settings_panel {
 }
 
 auto gse::settings_panel::default_panel_rect(const gui::style& style, const unitless::vec2 viewport_size) -> gui::ui_rect {
-    constexpr float panel_width = 300.f;
-    constexpr float panel_height = 360.f;
+    const float usable_height = viewport_size.y() - style.menu_bar_height;
 
-    const float panel_right = viewport_size.x() - style.padding;
-    const float panel_top = viewport_size.y() - style.menu_bar_height - style.padding;
+    constexpr float screen_fill_ratio = 0.8f;
+    const float panel_width = viewport_size.x() * screen_fill_ratio;
+    const float panel_height = usable_height * screen_fill_ratio;
+
+    const float center_x = viewport_size.x() * 0.5f;
+    const float center_y = usable_height * 0.5f;
 
     return gui::ui_rect::from_position_size(
-        { panel_right - panel_width, panel_top },
+        { center_x - panel_width * 0.5f, center_y + panel_height * 0.5f },
         { panel_width, panel_height }
     );
 }
 
-auto gse::settings_panel::update(state& state, const context& ctx, const gui::ui_rect& rect, const bool is_open, const save::system& save_sys) -> void {
-    if (!is_open) {
+auto gse::settings_panel::set_tooltip(const context& ctx, const id& widget_id, const std::string& text) -> void {
+    if (!ctx.tooltip || text.empty()) {
         return;
+    }
+
+    ctx.tooltip->pending_widget_id = widget_id;
+    ctx.tooltip->text = text;
+    ctx.tooltip->position = ctx.input.mouse_position();
+}
+
+auto gse::settings_panel::update(state& state, const context& ctx, const gui::ui_rect& rect, const bool is_open, const save::system& save_sys) -> bool {
+    if (!is_open) {
+        return false;
     }
 
     gui::ids::scope settings_scope("settings_panel");
     const auto& sty = ctx.style;
+    bool should_close = false;
 
     auto body_color = sty.color_menu_body;
     body_color.w() = 1.f;
@@ -180,6 +201,45 @@ auto gse::settings_panel::update(state& state, const context& ctx, const gui::ui
         });
     }
 
+    const float close_button_size = sty.title_bar_height * 0.6f;
+    const gui::ui_rect close_button_rect = gui::ui_rect::from_position_size(
+        { title_rect.right() - close_button_size - sty.padding, title_rect.center().y() + close_button_size * 0.5f },
+        { close_button_size, close_button_size }
+    );
+
+    const unitless::vec2 mouse_pos = ctx.input.mouse_position();
+    const bool close_hovered = close_button_rect.contains(mouse_pos);
+
+    const unitless::vec4 close_bg_color = close_hovered
+        ? unitless::vec4(0.8f, 0.2f, 0.2f, 1.0f)
+        : sty.color_widget_background;
+
+    ctx.sprites.push_back({
+        .rect = close_button_rect,
+        .color = close_bg_color,
+        .texture = ctx.blank_texture,
+        .layer = ctx.layer
+    });
+
+    if (ctx.font.valid()) {
+        ctx.texts.push_back({
+            .font = ctx.font,
+            .text = "X",
+            .position = {
+                close_button_rect.center().x() - ctx.font->width("X", sty.font_size) * 0.5f,
+                close_button_rect.center().y() + sty.font_size * 0.35f
+            },
+            .scale = sty.font_size,
+            .color = sty.color_text,
+            .clip_rect = close_button_rect,
+            .layer = ctx.layer
+        });
+    }
+
+    if (close_hovered && ctx.input.mouse_button_pressed(mouse_button::button_1)) {
+        should_close = true;
+    }
+
     const gui::ui_rect content_rect = gui::ui_rect::from_position_size(
         { rect.left() + sty.padding, rect.top() - sty.title_bar_height - sty.padding },
         { rect.width() - sty.padding * 2.f, rect.height() - sty.title_bar_height - sty.padding * 2.f }
@@ -210,6 +270,8 @@ auto gse::settings_panel::update(state& state, const context& ctx, const gui::ui
     if (ctx.input.mouse_button_released(mouse_button::button_1)) {
         state.active_id.reset();
     }
+
+    return should_close;
 }
 
 auto gse::settings_panel::draw_section_header(layout_state& layout, const std::string& text) -> void {
@@ -272,16 +334,21 @@ auto gse::settings_panel::draw_toggle(layout_state& layout, const save::property
     );
 
     const unitless::vec2 mouse_pos = ctx.input.mouse_position();
-    const bool hovered = toggle_rect.contains(mouse_pos);
+    const bool hovered = row_rect.contains(mouse_pos);
     const id toggle_id = gui::ids::make(std::string(prop.name()));
 
     const bool value = prop.as_bool();
 
-    if (hovered && ctx.input.mouse_button_pressed(mouse_button::button_1)) {
+    if (hovered) {
+        set_tooltip(ctx, toggle_id, std::string(prop.description()));
+    }
+
+    const bool toggle_hovered = toggle_rect.contains(mouse_pos);
+    if (toggle_hovered && ctx.input.mouse_button_pressed(mouse_button::button_1)) {
         layout.panel_state->active_id = toggle_id;
     }
 
-    if (hovered && layout.panel_state->active_id == toggle_id &&
+    if (toggle_hovered && layout.panel_state->active_id == toggle_id &&
         ctx.input.mouse_button_released(mouse_button::button_1)) {
         ctx.publish_update({
             .category = std::string(prop.category()),
@@ -311,7 +378,7 @@ auto gse::settings_panel::draw_toggle(layout_state& layout, const save::property
         { knob_size, knob_size }
     );
 
-    const unitless::vec4 knob_color = hovered ? sty.color_handle_hovered : sty.color_handle;
+    const unitless::vec4 knob_color = toggle_hovered ? sty.color_handle_hovered : sty.color_handle;
 
     ctx.sprites.push_back({
         .rect = knob_rect,
@@ -358,6 +425,12 @@ auto gse::settings_panel::draw_slider(layout_state& layout, const save::property
 
     const unitless::vec2 mouse_pos = ctx.input.mouse_position();
     const id slider_id = gui::ids::make(std::string(prop.name()) + "_slider");
+
+    const bool row_hovered = row_rect.contains(mouse_pos);
+
+    if (row_hovered) {
+        set_tooltip(ctx, slider_id, std::string(prop.description()));
+    }
 
     const gui::ui_rect hit_rect = gui::ui_rect::from_position_size(
         { track_rect.left() - knob_size * 0.5f, track_rect.center().y() + knob_size * 0.5f },
@@ -491,9 +564,14 @@ auto gse::settings_panel::draw_choice(layout_state& layout, const save::property
     );
 
     const unitless::vec2 mouse_pos = ctx.input.mouse_position();
-    const bool hovered = choice_rect.contains(mouse_pos);
     const id choice_id = gui::ids::make(std::string(prop.name()) + "_choice");
 
+    const bool row_hovered = row_rect.contains(mouse_pos);
+    if (row_hovered) {
+        set_tooltip(ctx, choice_id, std::string(prop.description()));
+    }
+
+    const bool hovered = choice_rect.contains(mouse_pos);
     if (hovered && ctx.input.mouse_button_pressed(mouse_button::button_1)) {
         layout.panel_state->active_id = choice_id;
     }

@@ -150,7 +150,7 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
     std::unordered_set<std::uint64_t>& open_set = global_expand_state.open[tree_scope];
     const bool leaf = tree_node_is_leaf(t, ops);
     bool is_open = open_set.contains(key);
-    const bool hovered = row_rect.contains(ctx.input.mouse_position());
+    const bool hovered = row_rect.contains(ctx.input.mouse_position()) && ctx.input_available();
     const id row_widget_id = ids::make(std::format("tree_row##{}", key));
 
     bool self_is_active = hovered;

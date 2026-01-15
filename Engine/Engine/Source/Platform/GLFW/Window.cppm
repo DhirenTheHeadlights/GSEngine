@@ -199,12 +199,12 @@ gse::window::window(const std::string& title, input::system& input_system, save:
 	const int cursor_mode = m_mouse_visible ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED;
 	glfwSetInputMode(m_window, GLFW_CURSOR, cursor_mode);
 
-	save_system.bind("window", "Fullscreen", m_fullscreen)
+	save_system.bind("Window", "Fullscreen", m_fullscreen)
 		.description("Run in fullscreen mode")
 		.default_value(true)
 		.commit();
 
-	save_system.bind("window", "Mouse Visible", m_mouse_visible)
+	save_system.bind("Window", "Mouse Visible", m_mouse_visible)
 		.description("Show mouse cursor")
 		.default_value(false)
 		.commit();
