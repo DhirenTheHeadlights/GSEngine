@@ -1,0 +1,100 @@
+[Settings]
+VSync: true
+Fullscreen: false
+ShowFPS: false
+ShowProfiler: false
+RenderScale: 0.65
+ShadowQuality: 2
+Theme: dark
+[EndSettings]
+
+[Menu]
+Tag: "Box [12895617658403883662: Smaller Box]"
+Owner: ""
+Rect: 100 300 300 200
+DockedTo: none
+DockSplitRatio: 0.5
+ActiveTab: 0
+Tabs: "Box [12895617658403883662: Smaller Box]"
+[EndMenu]
+
+[Menu]
+Tag: "Box [3723830265917511246: Bottom Wall]"
+Owner: ""
+Rect: 100 300 300 200
+DockedTo: none
+DockSplitRatio: 0.5
+ActiveTab: 0
+Tabs: "Box [3723830265917511246: Bottom Wall]"
+[EndMenu]
+
+[Menu]
+Tag: "Box [3808468672160884840: Bigger Box]"
+Owner: ""
+Rect: 100 300 300 200
+DockedTo: none
+DockSplitRatio: 0.5
+ActiveTab: 0
+Tabs: "Box [3808468672160884840: Bigger Box]"
+[EndMenu]
+
+[Menu]
+Tag: "Network"
+Owner: ""
+Rect: 1483.64 1048 436.364 1048
+DockedTo: right
+DockSplitRatio: 0.227273
+ActiveTab: 0
+Tabs: "Network"
+[EndMenu]
+
+[Menu]
+Tag: "Profiler"
+Owner: ""
+Rect: 100 300 300 200
+DockedTo: none
+DockSplitRatio: 0.5
+ActiveTab: 0
+Tabs: "Profiler"
+[EndMenu]
+
+[Menu]
+Tag: "Server"
+Owner: ""
+Rect: 0 1048 1920 1048
+DockedTo: center
+DockSplitRatio: 0.5
+ActiveTab: 0
+Tabs: "Server" "Control"
+[EndMenu]
+
+[Menu]
+Tag: "Spot"
+Owner: ""
+Rect: 100 300 300 200
+DockedTo: none
+DockSplitRatio: 0.5
+ActiveTab: 0
+Tabs: "Spot" "light" "Sphere" "Light"
+[EndMenu]
+
+[Menu]
+Tag: "Test"
+Owner: ""
+Rect: 0 1048 960 1048
+DockedTo: left
+DockSplitRatio: 0.5
+ActiveTab: 0
+Tabs: "Test"
+[EndMenu]
+
+[Menu]
+Tag: "Test2"
+Owner: ""
+Rect: 0 1048 960 1048
+DockedTo: left
+DockSplitRatio: 0.5
+ActiveTab: 0
+Tabs: "Test2"
+[EndMenu]
+
