@@ -530,6 +530,7 @@ auto gse::gui::system::end_frame() -> void {
     }
 
     if (m_tooltip.widget_id.exists()) {
+		std::println("Tool tip");
         m_tooltip.hover_time += system_clock::dt<time>();
 
         if (m_tooltip.hover_time >= tooltip_state::show_delay && !m_tooltip.text.empty() && m_font.valid()) {

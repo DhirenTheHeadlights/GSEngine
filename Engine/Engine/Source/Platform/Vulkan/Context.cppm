@@ -299,10 +299,18 @@ auto gse::vulkan::end_frame(const frame_params& params) -> void {
         .pImageIndices = &frame_ctx.image_index
     };
 
-    if (const vk::Result present_result = cfg.queue_config().present.presentKHR(present_info);
-        present_result == vk::Result::eErrorOutOfDateKHR || present_result == vk::Result::eSuboptimalKHR) {
+    vk::Result present_result;
+    try {
+        present_result = cfg.queue_config().present.presentKHR(present_info);
+    }
+    catch (const vk::OutOfDateKHRError&) {
+        present_result = vk::Result::eErrorOutOfDateKHR;
+    }
+
+    if (present_result == vk::Result::eErrorOutOfDateKHR || present_result == vk::Result::eSuboptimalKHR) {
         recreate_resources();
-    } else {
+    }
+    else {
         assert(
             present_result == vk::Result::eSuccess,
             std::source_location::current(),
@@ -313,7 +321,6 @@ auto gse::vulkan::end_frame(const frame_params& params) -> void {
     cfg.current_frame() = (cfg.current_frame() + 1) % max_frames_in_flight;
     cfg.set_frame_in_progress(false);
 }
-
 
 auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_config {
 	const std::vector validation_layers = {
