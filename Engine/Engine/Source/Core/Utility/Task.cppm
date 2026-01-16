@@ -12,7 +12,7 @@ import :id;
 import :trace;
 
 export namespace gse {
-	using job = std::move_only_function<void()>;
+	using job = std::function<void()>;
 }
 
 namespace gse::task {
@@ -70,7 +70,7 @@ export namespace gse::task {
 			id label = trace::make_loc_id(std::source_location::current())
 		);
 
-		~group() override;
+		~group() noexcept override;
 
 		auto post(
 			job j,
@@ -84,16 +84,14 @@ export namespace gse::task {
 			id id = trace::make_loc_id(std::source_location::current())
 		) -> void;
 
-		auto notify_complete(
+		auto wait(
 		) -> void;
 
 	private:
 		id m_label;
 		std::uint64_t m_outer_parent = 0;
 		std::uint64_t m_parent_eid = 0;
-		std::atomic<std::size_t> m_task_count{ 0 };
-		std::mutex m_mutex;
-		std::condition_variable m_cv;
+		tbb::task_group m_tbb_group;
 	};
 }
 
@@ -119,10 +117,9 @@ namespace gse::task {
 	};
 
 	auto enqueue(
-		std::shared_ptr<job> p,
+		job j,
 		id id,
-		parent parent,
-		group* task_group
+		parent parent
 	) -> void;
 
 	auto current_worker_id(
@@ -141,31 +138,31 @@ gse::task::group::group(const id label) : m_label(label) {
 	m_parent_eid = trace::begin_block(m_label, m_outer_parent);
 }
 
-gse::task::group::~group() {
-	std::unique_lock lk(m_mutex);
-	m_cv.wait(lk, [this] {
-		return m_task_count.load(std::memory_order_acquire) == 0;
-	});
-
+gse::task::group::~group() noexcept {
+	wait();
 	trace::end_block(m_label, m_parent_eid, m_outer_parent);
 }
 
-auto gse::task::group::notify_complete() -> void {
-	if (m_task_count.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-		std::scoped_lock lk(m_mutex);
-		m_cv.notify_one();
-	}
+auto gse::task::group::wait() -> void {
+	m_tbb_group.wait();
 }
 
 auto gse::task::group::post(job j, const id id) -> void {
-	m_task_count.fetch_add(1, std::memory_order_relaxed);
+	const std::uint64_t parent_eid = m_parent_eid;
 
-	auto p = std::make_shared<job>(std::move(j));
-	const parent parent{
-		.forced_eid = m_parent_eid
-	};
-
-	enqueue(std::move(p), id, parent, this);
+	m_tbb_group.run([j = std::move(j), id, parent_eid] {
+		try {
+			trace::scope(id, [&] {
+				j();
+			}, parent_eid);
+		}
+		catch (const std::exception& e) {
+			std::println("Exception in task: {}", e.what());
+		}
+		catch (...) {
+			std::println("Exception in task");
+		}
+	});
 }
 
 template <typename F>
@@ -230,39 +227,25 @@ auto gse::task::start(F&& fn, std::size_t worker_count) -> std::invoke_result_t<
 }
 
 auto gse::task::post(job j, const id id) -> void {
-	auto p = std::make_shared<job>(std::move(j));
-
 	const parent parent{
 		.forced_eid = trace::current_eid()
 	};
 
-	enqueue(
-		std::move(p),
-		id,
-		parent,
-		nullptr
-	);
+	enqueue(std::move(j), id, parent);
 }
 
 template <std::input_iterator It>
 auto gse::task::post_range(It first, It last, const id id) -> void {
 	for (; first != last; ++first) {
-		auto p = std::make_shared<job>(job(*first));
-
 		parent parent{
 			.forced_eid = trace::current_eid()
 		};
 
-		enqueue(std::move(p), id, std::move(parent), nullptr);
+		enqueue(job(*first), id, std::move(parent));
 	}
 }
 
-auto gse::task::parallel_for_impl(
-	std::size_t first,
-	std::size_t last,
-	parallel_for_fn func,
-	id id
-) -> void {
+auto gse::task::parallel_for_impl(const std::size_t first, const std::size_t last, parallel_for_fn func, const id id) -> void {
 	if (last <= first) {
 		return;
 	}
@@ -281,7 +264,7 @@ auto gse::task::parallel_for_impl(
 
 		arena->execute([&] {
 			tbb::parallel_for(
-				tbb::blocked_range<std::size_t>(first, last, chunk_size),
+				tbb::blocked_range(first, last, chunk_size),
 				[&](const tbb::blocked_range<std::size_t>& r) {
 					trace::scope(id, [&] {
 						for (std::size_t i = r.begin(); i != r.end(); ++i) {
@@ -297,7 +280,7 @@ auto gse::task::parallel_for_impl(
 }
 
 template <typename F>
-auto gse::task::parallel_for(first_arg_t<F> first, first_arg_t<F> last, F&& func, id id) -> void {
+auto gse::task::parallel_for(first_arg_t<F> first, first_arg_t<F> last, F&& func, const id id) -> void {
 	using index = first_arg_t<F>;
 
 	if (last <= first) {
@@ -355,20 +338,14 @@ auto gse::task::wait_idle() -> void {
 	});
 }
 
-auto gse::task::enqueue(std::shared_ptr<job> p, id id, parent parent, group* task_group) -> void {
+auto gse::task::enqueue(job j, id id, parent parent) -> void {
 	in_flight.fetch_add(1, std::memory_order_relaxed);
 
-	const auto key = async_key(p.get());
+	const auto key = async_key(&j);
 	trace::begin_async(id, key);
 
-	arena->enqueue([p, id, key, parent = std::move(parent), task_group] {
+	arena->enqueue([j = std::move(j), id, key, parent = std::move(parent)] {
 		trace::end_async(id, key);
-
-		auto group_done = make_scope_exit([&] {
-			if (task_group) {
-				task_group->notify_complete();
-			}
-		});
 
 		auto flight_done = make_scope_exit([] {
 			if (in_flight.fetch_sub(1, std::memory_order_acq_rel) == 1) {
@@ -381,7 +358,7 @@ auto gse::task::enqueue(std::shared_ptr<job> p, id id, parent parent, group* tas
 
 		try {
 			trace::scope(id, [&] {
-				(*p)();
+				j();
 			}, parent_eid);
 		} catch (const std::exception& e) {
 			std::println("Exception in task: {}", e.what());
