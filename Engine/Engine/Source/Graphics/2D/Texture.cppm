@@ -57,7 +57,7 @@ export namespace gse {
 			profile texture_profile
 		) -> void;
 
-		vulkan::persistent_allocator::image_resource m_texture_image;
+		vulkan::image_resource m_texture_image;
 		vk::raii::Sampler m_texture_sampler = nullptr;
 		image::data m_image_data;
 		profile m_profile = profile::generic_repeat;
@@ -68,8 +68,7 @@ gse::texture::texture(const std::filesystem::path& filepath) : identifiable(file
 
 gse::texture::texture(const std::string_view name, const unitless::vec4& color, const unitless::vec2u size) : identifiable(name), m_image_data(image::load(color, size)) {}
 
-gse::texture::texture(const std::string_view name, const std::vector<std::byte>& data, const unitless::vec2u size, const std::uint32_t channels, const profile texture_profile)
-	: identifiable(name), m_image_data(image::data{ .path = {}, .size = size, .channels = channels, .pixels = data }), m_profile(texture_profile) {}
+gse::texture::texture(const std::string_view name, const std::vector<std::byte>& data, const unitless::vec2u size, const std::uint32_t channels, const profile texture_profile) : identifiable(name), m_image_data(image::data{ .path = {}, .size = size, .channels = channels, .pixels = data }), m_profile(texture_profile) {}
 
 auto gse::texture::compile() -> std::set<std::filesystem::path> {
 	const auto source_root = config::resource_path;
@@ -233,8 +232,7 @@ auto gse::texture::create_vulkan_resources(renderer::context& context, const pro
 		: channels == 1 ? vk::Format::eR8Unorm
 		: vk::Format::eR8G8B8Srgb;
 
-	m_texture_image = vulkan::persistent_allocator::create_image(
-		config.device_config(),
+	m_texture_image = config.allocator().create_image(
 		vk::ImageCreateInfo{
 			.imageType = vk::ImageType::e2D,
 			.format = format,

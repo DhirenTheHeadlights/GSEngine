@@ -28,14 +28,14 @@ export namespace gse::renderer {
 		context& m_context;
 		vk::raii::Pipeline m_pipeline = nullptr;
 		vk::raii::PipelineLayout m_pipeline_layout = nullptr;
-		vk::raii::DescriptorSet m_descriptor_set = nullptr;
+		per_frame_resource<vk::raii::DescriptorSet> m_descriptor_sets;
 		vk::raii::Sampler m_buffer_sampler = nullptr;
 		vk::raii::Sampler m_shadow_sampler = nullptr;
 
 		resource::handle<shader> m_shader;
 
-		std::unordered_map<std::string, vulkan::persistent_allocator::buffer_resource> m_ubo_allocations;
-		vulkan::persistent_allocator::buffer_resource m_light_buffer;
+		std::unordered_map<std::string, per_frame_resource<vulkan::buffer_resource>> m_ubo_allocations;
+		per_frame_resource<vulkan::buffer_resource> m_light_buffers;
 	};
 }
 
@@ -48,9 +48,17 @@ auto gse::renderer::lighting::initialize() -> void {
 
 	auto lighting_layouts = m_shader->layouts();
 
-	m_descriptor_set = m_shader->descriptor_set(config.device_config().device, config.descriptor_config().pool, shader::set::binding_type::persistent);
+	for (std::size_t i = 0; i < per_frame_resource<vk::raii::DescriptorSet>::frames_in_flight; ++i) {
+		m_descriptor_sets[i] = m_shader->descriptor_set(
+			config.device_config().device,
+			config.descriptor_config().pool,
+			shader::set::binding_type::persistent
+		);
+	}
 
 	const auto cam_block = m_shader->uniform_block("CameraParams");
+	const auto light_block = m_shader->uniform_block("lights_ssbo");
+	const auto shadow_block = m_shader->uniform_block("ShadowParams");
 
 	vk::BufferCreateInfo cam_buffer_info{
 		.size = cam_block.size,
@@ -58,25 +66,11 @@ auto gse::renderer::lighting::initialize() -> void {
 		.sharingMode = vk::SharingMode::eExclusive
 	};
 
-	m_ubo_allocations["CameraParams"] = vulkan::persistent_allocator::create_buffer(
-		config.device_config(),
-		cam_buffer_info
-	);
-
-	const auto light_block = m_shader->uniform_block("lights_ssbo");
-
 	vk::BufferCreateInfo light_buffer_info{
 		.size = light_block.size,
 		.usage = vk::BufferUsageFlagBits::eStorageBuffer,
 		.sharingMode = vk::SharingMode::eExclusive
 	};
-
-	m_light_buffer = vulkan::persistent_allocator::create_buffer(
-		config.device_config(),
-		light_buffer_info
-	);
-
-	const auto shadow_block = m_shader->uniform_block("ShadowParams");
 
 	vk::BufferCreateInfo shadow_buffer_info{
 		.size = shadow_block.size,
@@ -84,37 +78,11 @@ auto gse::renderer::lighting::initialize() -> void {
 		.sharingMode = vk::SharingMode::eExclusive
 	};
 
-	m_ubo_allocations["ShadowParams"] = vulkan::persistent_allocator::create_buffer(
-		config.device_config(),
-		shadow_buffer_info
-	);
-
-	const std::unordered_map<std::string, vk::DescriptorBufferInfo> lighting_buffer_infos = {
-		{
-			"CameraParams",
-			{
-				.buffer = m_ubo_allocations["CameraParams"].buffer,
-				.offset = 0,
-				.range = cam_block.size
-			}
-		},
-		{
-			"lights_ssbo",
-			{
-				.buffer = m_light_buffer.buffer,
-				.offset = 0,
-				.range = light_block.size
-			}
-		},
-		{
-			"ShadowParams",
-			{
-				.buffer = m_ubo_allocations["ShadowParams"].buffer,
-				.offset = 0,
-				.range = shadow_block.size
-			}
-		}
-	};
+	for (std::size_t i = 0; i < per_frame_resource<vulkan::buffer_resource>::frames_in_flight; ++i) {
+		m_ubo_allocations["CameraParams"][i] = config.allocator().create_buffer(cam_buffer_info);
+		m_ubo_allocations["ShadowParams"][i] = config.allocator().create_buffer(shadow_buffer_info);
+		m_light_buffers[i] = config.allocator().create_buffer(light_buffer_info);
+	}
 
 	constexpr vk::SamplerCreateInfo sampler_create_info{
 		.magFilter = vk::Filter::eNearest,
@@ -172,14 +140,43 @@ auto gse::renderer::lighting::initialize() -> void {
 
 	array_image_infos.emplace("shadow_maps", std::move(shadow_infos));
 
-	auto buffer_and_shadow_writes = m_shader->descriptor_writes(
-		*m_descriptor_set,
-		lighting_buffer_infos,
-		{},
-		array_image_infos
-	);
+	for (std::size_t i = 0; i < per_frame_resource<vk::raii::DescriptorSet>::frames_in_flight; ++i) {
+		const std::unordered_map<std::string, vk::DescriptorBufferInfo> lighting_buffer_infos = {
+			{
+				"CameraParams",
+				{
+					.buffer = m_ubo_allocations["CameraParams"][i]->buffer,
+					.offset = 0,
+					.range = cam_block.size
+				}
+			},
+			{
+				"lights_ssbo",
+				{
+					.buffer = m_light_buffers[i]->buffer,
+					.offset = 0,
+					.range = light_block.size
+				}
+			},
+			{
+				"ShadowParams",
+				{
+					.buffer = m_ubo_allocations["ShadowParams"][i]->buffer,
+					.offset = 0,
+					.range = shadow_block.size
+				}
+			}
+		};
 
-	config.device_config().device.updateDescriptorSets(buffer_and_shadow_writes, nullptr);
+		auto buffer_and_shadow_writes = m_shader->descriptor_writes(
+			**m_descriptor_sets[i],
+			lighting_buffer_infos,
+			{},
+			array_image_infos
+		);
+
+		config.device_config().device.updateDescriptorSets(buffer_and_shadow_writes, nullptr);
+	}
 
 	const auto range = m_shader->push_constant_range("push_constants");
 
@@ -300,14 +297,16 @@ auto gse::renderer::lighting::render() -> void {
 
 	const auto command = config.frame_context().command_buffer;
 
+	const auto frame_index = config.current_frame();
+
 	auto proj = m_context.camera().projection(m_context.window().viewport());
 	auto inv_proj = proj.inverse();
 	auto view = m_context.camera().view();
 	auto inv_view = view.inverse();
 
-	const auto& cam_alloc = m_ubo_allocations.at("CameraParams").allocation;
-	const auto& light_alloc = m_light_buffer.allocation;
-	const auto& shadow_alloc = m_ubo_allocations.at("ShadowParams").allocation;
+	const auto& cam_alloc = m_ubo_allocations.at("CameraParams")[frame_index]->allocation;
+	const auto& light_alloc = m_light_buffers[frame_index]->allocation;
+	const auto& shadow_alloc = m_ubo_allocations.at("ShadowParams")[frame_index]->allocation;
 
 	m_shader->set_uniform("CameraParams.inv_proj", inv_proj, cam_alloc);
 	m_shader->set_uniform("CameraParams.inv_view", inv_view, cam_alloc);
@@ -490,7 +489,7 @@ auto gse::renderer::lighting::render() -> void {
 				m_pipeline_layout,
 				0,
 				1,
-				&*m_descriptor_set,
+				&**m_descriptor_sets[config.current_frame()],
 				0,
 				nullptr
 			);
@@ -516,7 +515,7 @@ auto gse::renderer::lighting::update_gbuffer_descriptors() -> void {
 			"g_albedo",
 			{
 				.sampler = m_buffer_sampler,
-				.imageView = *config.swap_chain_config().albedo_image.view,
+				.imageView = config.swap_chain_config().albedo_image.view,
 				.imageLayout = vk::ImageLayout::eGeneral
 			}
 		},
@@ -524,7 +523,7 @@ auto gse::renderer::lighting::update_gbuffer_descriptors() -> void {
 			"g_normal",
 			{
 				.sampler = m_buffer_sampler,
-				.imageView = *config.swap_chain_config().normal_image.view,
+				.imageView = config.swap_chain_config().normal_image.view,
 				.imageLayout = vk::ImageLayout::eGeneral
 			}
 		},
@@ -532,18 +531,20 @@ auto gse::renderer::lighting::update_gbuffer_descriptors() -> void {
 			"g_depth",
 			{
 				.sampler = m_buffer_sampler,
-				.imageView = *config.swap_chain_config().depth_image.view,
+				.imageView = config.swap_chain_config().depth_image.view,
 				.imageLayout = vk::ImageLayout::eGeneral
 			}
 		}
 	};
 
-	const auto writes = m_shader->descriptor_writes(
-		*m_descriptor_set,
-		{},
-		gbuffer_image_infos,
-		{}
-	);
+	for (std::size_t i = 0; i < per_frame_resource<vk::raii::DescriptorSet>::frames_in_flight; ++i) {
+		const auto writes = m_shader->descriptor_writes(
+			*m_descriptor_sets[i],
+			{},
+			gbuffer_image_infos,
+			{}
+		);
 
-	config.device_config().device.updateDescriptorSets(writes, nullptr);
+		config.device_config().device.updateDescriptorSets(writes, nullptr);
+	}
 }

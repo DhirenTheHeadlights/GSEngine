@@ -46,12 +46,12 @@ export namespace gse::renderer {
 
 		vk::raii::Pipeline m_pipeline = nullptr;
 		vk::raii::PipelineLayout m_pipeline_layout = nullptr;
-		vk::raii::DescriptorSet m_descriptor_set = nullptr;
+		per_frame_resource<vk::raii::DescriptorSet> m_descriptor_sets;
 
 		resource::handle<shader> m_shader;
 
-		std::unordered_map<std::string, vulkan::persistent_allocator::buffer_resource> m_ubo_allocations;
-		vulkan::persistent_allocator::buffer_resource m_vertex_buffer;
+		std::unordered_map<std::string, per_frame_resource<vulkan::buffer_resource>> m_ubo_allocations;
+		vulkan::buffer_resource m_vertex_buffer;
 
 		double_buffer<std::vector<debug_vertex>> m_vertices;
 		std::size_t m_max_vertices = 0;
@@ -84,13 +84,12 @@ export namespace gse::renderer {
 gse::renderer::physics_debug::physics_debug(context& context) : m_context(context) {}
 
 auto gse::renderer::physics_debug::ensure_vertex_capacity(const std::size_t required_vertex_count) -> void {
-	if (required_vertex_count <= m_max_vertices && *m_vertex_buffer.buffer) {
+	if (required_vertex_count <= m_max_vertices && m_vertex_buffer.buffer) {
 		return;
 	}
 
 	auto& config = m_context.config();
-	if (*m_vertex_buffer.buffer) {
-		vulkan::persistent_allocator::free(m_vertex_buffer.allocation);
+	if (m_vertex_buffer.buffer) {
 		m_vertex_buffer = {};
 	}
 
@@ -103,8 +102,7 @@ auto gse::renderer::physics_debug::ensure_vertex_capacity(const std::size_t requ
 	};
 
 	const std::vector<std::byte> zeros(buffer_info.size);
-	m_vertex_buffer = vulkan::persistent_allocator::create_buffer(
-		config.device_config(),
+	m_vertex_buffer = config.allocator().create_buffer(
 		buffer_info,
 		zeros.data()
 	);
@@ -117,12 +115,6 @@ auto gse::renderer::physics_debug::initialize() -> void {
 	m_context.instantly_load(m_shader);
 	auto descriptor_set_layouts = m_shader->layouts();
 
-	m_descriptor_set = m_shader->descriptor_set(
-		config.device_config().device,
-		config.descriptor_config().pool,
-		shader::set::binding_type::persistent
-	);
-
 	const auto camera_ubo = m_shader->uniform_block("CameraUBO");
 
 	vk::BufferCreateInfo camera_ubo_buffer_info{
@@ -130,31 +122,34 @@ auto gse::renderer::physics_debug::initialize() -> void {
 		.usage = vk::BufferUsageFlagBits::eUniformBuffer,
 		.sharingMode = vk::SharingMode::eExclusive
 	};
+	
+	for (std::size_t i = 0; i < per_frame_resource<vk::raii::DescriptorSet>::frames_in_flight; ++i) {
+		m_ubo_allocations["CameraUBO"][i] = config.allocator().create_buffer(camera_ubo_buffer_info);
 
-	auto camera_ubo_buffer = vulkan::persistent_allocator::create_buffer(
-		config.device_config(),
-		camera_ubo_buffer_info
-	);
+		m_descriptor_sets[i] = m_shader->descriptor_set(
+			config.device_config().device,
+			config.descriptor_config().pool,
+			shader::set::binding_type::persistent
+		);
 
-	m_ubo_allocations["CameraUBO"] = std::move(camera_ubo_buffer);
-
-	std::unordered_map<std::string, vk::DescriptorBufferInfo> buffer_infos{
-		{
-			"CameraUBO",
+		std::unordered_map<std::string, vk::DescriptorBufferInfo> buffer_infos{
 			{
-				.buffer = m_ubo_allocations["CameraUBO"].buffer,
-				.offset = 0,
-				.range = camera_ubo.size
+				"CameraUBO",
+				{
+					.buffer = m_ubo_allocations["CameraUBO"][i]->buffer,
+					.offset = 0,
+					.range = camera_ubo.size
+				}
 			}
-		}
-	};
+		};
 
-	std::unordered_map<std::string, vk::DescriptorImageInfo> image_infos = {};
+		std::unordered_map<std::string, vk::DescriptorImageInfo> image_infos = {};
 
-	config.device_config().device.updateDescriptorSets(
-		m_shader->descriptor_writes(m_descriptor_set, buffer_infos, image_infos),
-		nullptr
-	);
+		config.device_config().device.updateDescriptorSets(
+			m_shader->descriptor_writes(*m_descriptor_sets[i], buffer_infos, image_infos),
+			nullptr
+		);
+	}
 
 	const vk::PipelineLayoutCreateInfo pipeline_layout_info{
 		.setLayoutCount = static_cast<std::uint32_t>(descriptor_set_layouts.size()),
@@ -395,9 +390,10 @@ auto gse::renderer::physics_debug::render() -> void {
 	}
 
 	const auto command = config.frame_context().command_buffer;
+	const auto frame_index = config.current_frame();
 
-	m_shader->set_uniform("CameraUBO.view", m_context.camera().view(), m_ubo_allocations.at("CameraUBO").allocation);
-	m_shader->set_uniform("CameraUBO.proj", m_context.camera().projection(m_context.window().viewport()), m_ubo_allocations.at("CameraUBO").allocation);
+	m_shader->set_uniform("CameraUBO.view", m_context.camera().view(), m_ubo_allocations.at("CameraUBO")[frame_index]->allocation);
+	m_shader->set_uniform("CameraUBO.proj", m_context.camera().projection(m_context.window().viewport()), m_ubo_allocations.at("CameraUBO")[frame_index]->allocation);
 
 	const auto& verts = m_vertices.read();
 	if (verts.empty()) {
@@ -439,7 +435,7 @@ auto gse::renderer::physics_debug::render() -> void {
 		command.setScissor(0, scissor);
 
 		const vk::DescriptorSet sets[] = {
-			m_descriptor_set
+			**m_descriptor_sets[frame_index]
 		};
 
 		command.bindDescriptorSets(

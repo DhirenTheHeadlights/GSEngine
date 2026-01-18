@@ -71,7 +71,8 @@ namespace gse::vulkan {
 	auto create_swap_chain_resources(
 		GLFWwindow* window,
 		const instance_config& instance_data,
-		const device_config& device_data
+		const device_config& device_data,
+		allocator& alloc
 	) -> swap_chain_config;
 
 	vk::DebugUtilsMessengerEXT debug_utils_messenger;
@@ -81,8 +82,9 @@ namespace gse::vulkan {
 auto gse::vulkan::generate_config(GLFWwindow* window) -> std::unique_ptr<config> {
 	auto instance_data = create_instance_and_surface(window);
 	auto [device_data, queue] = create_device_and_queues(instance_data);
+	auto alloc = std::make_unique<allocator>(device_data.device, device_data.physical_device);
 	auto descriptor = create_descriptor_pool(device_data);
-	auto swap_chain_data = create_swap_chain_resources(window, instance_data, device_data);
+	auto swap_chain_data = create_swap_chain_resources(window, instance_data, device_data, *alloc);
 	auto command = create_command_objects(device_data, instance_data);
 	auto sync = create_sync_objects(device_data, swap_chain_data);
 
@@ -99,7 +101,8 @@ auto gse::vulkan::generate_config(GLFWwindow* window) -> std::unique_ptr<config>
 		std::move(descriptor),
 		std::move(sync),
 		std::move(swap_chain_data),
-		std::move(frame_context)
+		std::move(frame_context),
+		std::move(alloc)
 	);
 }
 
@@ -112,7 +115,7 @@ auto gse::vulkan::begin_frame(const frame_params& params) -> bool {
     auto recreate_resources = [&] {
         device.waitIdle();
         cfg.swap_chain_config().swap_chain = nullptr;
-        cfg.swap_chain_config() = create_swap_chain_resources(params.window, cfg.instance_config(), cfg.device_config());
+        cfg.swap_chain_config() = create_swap_chain_resources(params.window, cfg.instance_config(), cfg.device_config(), cfg.allocator());
         cfg.sync_config() = create_sync_objects(cfg.device_config(), cfg.swap_chain_config());
         cfg.notify_swap_chain_recreated();
         device.waitIdle();
@@ -216,7 +219,7 @@ auto gse::vulkan::end_frame(const frame_params& params) -> void {
     auto recreate_resources = [&] {
         device.waitIdle();
         cfg.swap_chain_config().swap_chain = nullptr;
-        cfg.swap_chain_config() = create_swap_chain_resources(params.window, cfg.instance_config(), cfg.device_config());
+        cfg.swap_chain_config() = create_swap_chain_resources(params.window, cfg.instance_config(), cfg.device_config(), cfg.allocator());
         cfg.sync_config() = create_sync_objects(cfg.device_config(), cfg.swap_chain_config());
         cfg.notify_swap_chain_recreated();
         device.waitIdle();
@@ -657,7 +660,7 @@ auto gse::vulkan::render(config& config, const vk::RenderingInfo& begin_info, co
 	config.frame_context().command_buffer.endRendering();
 }
 
-auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const instance_config& instance_data, const device_config& device_data) -> swap_chain_config {
+auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const instance_config& instance_data, const device_config& device_data, allocator& alloc) -> swap_chain_config {
     swap_chain_details details = {
         device_data.physical_device.getSurfaceCapabilitiesKHR(*instance_data.surface),
         device_data.physical_device.getSurfaceFormatsKHR(*instance_data.surface),
@@ -738,8 +741,7 @@ auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const instance
     auto images = swap_chain.getImages();
     auto format = surface_format.format;
 
-    auto normal_image = persistent_allocator::create_image(
-        device_data,
+    auto normal_image = alloc.create_image(
         {
             .flags = {},
             .imageType = vk::ImageType::e2D,
@@ -768,8 +770,7 @@ auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const instance
         }
     );
 
-    auto albedo_image = persistent_allocator::create_image(
-        device_data,
+    auto albedo_image = alloc.create_image(
         {
             .flags = {},
             .imageType = vk::ImageType::e2D,
@@ -798,8 +799,7 @@ auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const instance
         }
     );
 
-    auto depth_image = persistent_allocator::create_image(
-        device_data,
+    auto depth_image = alloc.create_image(
         {
             .flags = {},
             .imageType = vk::ImageType::e2D,

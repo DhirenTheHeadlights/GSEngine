@@ -67,7 +67,7 @@ export namespace gse::renderer {
 
 		unitless::vec2u m_shadow_extent = { 1024, 1024 };
 
-		std::array<vulkan::persistent_allocator::image_resource, max_shadow_lights> m_shadow_maps;
+		std::array<vulkan::image_resource, max_shadow_lights> m_shadow_maps;
 	};
 }
 
@@ -223,8 +223,7 @@ auto gse::renderer::shadow::initialize() -> void {
 	};
 
 	for (auto& img : m_shadow_maps) {
-		img = vulkan::persistent_allocator::create_image(
-			config.device_config(),
+		img = config.allocator().create_image(
 			image_info,
 			vk::MemoryPropertyFlagBits::eDeviceLocal,
 			view_info
@@ -232,7 +231,7 @@ auto gse::renderer::shadow::initialize() -> void {
 	}
 
 	config.add_transient_work(
-        [this](const vk::raii::CommandBuffer& cmd) -> std::vector<vulkan::persistent_allocator::buffer_resource> {
+        [this](const vk::raii::CommandBuffer& cmd) -> std::vector<vulkan::buffer_resource> {
             std::vector<vk::ImageMemoryBarrier2> barriers;
             barriers.reserve(m_shadow_maps.size());
 
@@ -246,7 +245,7 @@ auto gse::renderer::shadow::initialize() -> void {
                     .newLayout = vk::ImageLayout::eGeneral,
                     .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
                     .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-                    .image = *img.image,
+                    .image = img.image,
                     .subresourceRange = {
                         .aspectMask = vk::ImageAspectFlagBits::eDepth,
                         .baseMipLevel = 0,
@@ -396,7 +395,7 @@ auto gse::renderer::shadow::render() -> void {
         command.pipelineBarrier2(pre_dep);
 
         vk::RenderingAttachmentInfo depth_attachment{
-            .imageView = *depth_image.view,
+            .imageView = depth_image.view,
             .imageLayout = vk::ImageLayout::eGeneral,
             .loadOp = vk::AttachmentLoadOp::eClear,
             .storeOp = vk::AttachmentStoreOp::eStore,

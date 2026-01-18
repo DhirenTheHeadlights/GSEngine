@@ -275,6 +275,65 @@ export namespace gse {
 		requires requires { &F::operator(); }
 	struct callable_traits<F> : callable_traits<decltype(&F::operator())> {};
 
+	/**
+	 * Base class for all engine systems.
+	 *
+	 * IMPORTANT: Per-Frame Resource Double-Buffering
+	 * ================================================
+	 *
+	 * Systems with separate update() and render() threads must double-buffer
+	 * resources that are modified in update() and read in render().
+	 *
+	 * The engine runs with 2 frames in flight:
+	 *   - Frame N rendering on GPU
+	 *   - Frame N+1 updating on CPU
+	 *
+	 * Without per-frame resources, update() for frame N+1 would overwrite
+	 * buffers/descriptors while the GPU is still reading them for frame N,
+	 * causing race conditions and visual corruption.
+	 *
+	 * Use gse::per_frame_resource<T> for type-safe per-frame resource management:
+	 *
+	 * Example (Renderer System):
+	 *
+	 *   class my_renderer : public system {
+	 *   private:
+	 *       // ✅ CORRECT: Per-frame resources
+	 *       per_frame_resource<vulkan::buffer_resource> m_camera_ubo;
+	 *       per_frame_resource<vk::raii::DescriptorSet> m_descriptor_sets;
+	 *
+	 *       // ❌ WRONG: Shared resource (will cause race conditions!)
+	 *       vulkan::buffer_resource m_shared_ubo;
+	 *
+	 *       auto update() -> void override {
+	 *           const auto frame = m_context.config().current_frame();
+	 *
+	 *           // Update the correct frame's buffer
+	 *           m_shader->set_uniform("view", ..., m_camera_ubo[frame].allocation);
+	 *
+	 *           // m_camera_ubo.allocation; // ❌ Compile error - must index by frame!
+	 *       }
+	 *
+	 *       auto render() -> void override {
+	 *           const auto frame = m_context.config().current_frame();
+	 *
+	 *           // Bind the correct frame's descriptor set
+	 *           command.bindDescriptorSets(..., m_descriptor_sets[frame], ...);
+	 *       }
+	 *   };
+	 *
+	 * Resources that DO NOT need per-frame duplication:
+	 *   - Push constants (written directly to command buffer)
+	 *   - Read-only resources (textures, shaders, models)
+	 *   - Single-use resources (immediate mode rendering)
+	 *
+	 * Resources that DO need per-frame duplication:
+	 *   - UBO/SSBO buffers updated every frame
+	 *   - Persistent descriptor sets
+	 *   - Dynamic vertex/index buffers
+	 *
+	 * See gse::per_frame_resource for implementation details.
+	 */
 	class system {
 	public:
 		virtual ~system(

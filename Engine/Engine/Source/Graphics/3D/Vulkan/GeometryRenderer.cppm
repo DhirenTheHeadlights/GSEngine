@@ -36,11 +36,11 @@ export namespace gse::renderer {
 		context& m_context;
 		vk::raii::Pipeline m_pipeline = nullptr;
 		vk::raii::PipelineLayout m_pipeline_layout = nullptr;
-		vk::raii::DescriptorSet m_descriptor_set = nullptr;
+		per_frame_resource<vk::raii::DescriptorSet> m_descriptor_sets;
 
 		resource::handle<shader> m_shader;
 
-		std::unordered_map<std::string, vulkan::persistent_allocator::buffer_resource> m_ubo_allocations;
+		std::unordered_map<std::string, per_frame_resource<vulkan::buffer_resource>> m_ubo_allocations;
 
 		double_buffer<std::vector<render_queue_entry>> m_render_queue;
 	};
@@ -52,9 +52,9 @@ auto gse::renderer::geometry::initialize() -> void {
 	auto& config = m_context.config();
 
 	auto transition_gbuffer_images = [](vulkan::config& cfg) {
-		cfg.add_transient_work([&cfg](const vk::raii::CommandBuffer& cmd) -> std::vector<vulkan::persistent_allocator::buffer_resource> {
+		cfg.add_transient_work([&cfg](const vk::raii::CommandBuffer& cmd) -> std::vector<vulkan::buffer_resource> {
 			auto transition_to_general = [&cmd](
-				vulkan::persistent_allocator::image_resource& img,
+				vulkan::image_resource& img,
 				const vk::ImageAspectFlags aspect,
 				const vk::PipelineStageFlags2 dst_stage,
 				const vk::AccessFlags2 dst_access
@@ -68,7 +68,7 @@ auto gse::renderer::geometry::initialize() -> void {
 					.newLayout = vk::ImageLayout::eGeneral,
 					.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
 					.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-					.image = *img.image,
+					.image = img.image,
 					.subresourceRange = {
 						.aspectMask = aspect,
 						.baseMipLevel = 0,
@@ -119,12 +119,6 @@ auto gse::renderer::geometry::initialize() -> void {
 	m_context.instantly_load(m_shader);
 	auto descriptor_set_layouts = m_shader->layouts();
 
-	m_descriptor_set = m_shader->descriptor_set(
-		config.device_config().device,
-		config.descriptor_config().pool,
-		shader::set::binding_type::persistent
-	);
-
 	const auto camera_ubo = m_shader->uniform_block("CameraUBO");
 
 	vk::BufferCreateInfo camera_ubo_buffer_info{
@@ -132,31 +126,34 @@ auto gse::renderer::geometry::initialize() -> void {
 		.usage = vk::BufferUsageFlagBits::eUniformBuffer,
 		.sharingMode = vk::SharingMode::eExclusive
 	};
+	
+	for (std::size_t i = 0; i < per_frame_resource<vk::raii::DescriptorSet>::frames_in_flight; ++i) {
+		m_ubo_allocations["CameraUBO"][i] = config.allocator().create_buffer(camera_ubo_buffer_info);
 
-	auto camera_ubo_buffer = vulkan::persistent_allocator::create_buffer(
-		config.device_config(),
-		camera_ubo_buffer_info
-	);
+		m_descriptor_sets[i] = m_shader->descriptor_set(
+			config.device_config().device,
+			config.descriptor_config().pool,
+			shader::set::binding_type::persistent
+		);
 
-	m_ubo_allocations["CameraUBO"] = std::move(camera_ubo_buffer);
-
-	std::unordered_map<std::string, vk::DescriptorBufferInfo> buffer_infos{
-		{
-			"CameraUBO",
+		std::unordered_map<std::string, vk::DescriptorBufferInfo> buffer_infos{
 			{
-				.buffer = m_ubo_allocations["CameraUBO"].buffer,
-				.offset = 0,
-				.range = camera_ubo.size
+				"CameraUBO",
+				{
+					.buffer = m_ubo_allocations["CameraUBO"][i]->buffer,
+					.offset = 0,
+					.range = camera_ubo.size
+				}
 			}
-		}
-	};
+		};
 
-	std::unordered_map<std::string, vk::DescriptorImageInfo> image_infos = {};
+		std::unordered_map<std::string, vk::DescriptorImageInfo> image_infos = {};
 
-	config.device_config().device.updateDescriptorSets(
-		m_shader->descriptor_writes(m_descriptor_set, buffer_infos, image_infos),
-		nullptr
-	);
+		config.device_config().device.updateDescriptorSets(
+			m_shader->descriptor_writes(*m_descriptor_sets[i], buffer_infos, image_infos),
+			nullptr
+		);
+	}
 
 	std::vector ranges = {
 		m_shader->push_constant_range("push_constants"),
@@ -285,16 +282,18 @@ auto gse::renderer::geometry::update() -> void {
 			return;
 		}
 
+		const auto frame_index = m_context.config().current_frame();
+
 		m_shader->set_uniform(
 			"CameraUBO.view",
 			m_context.camera().view(),
-			m_ubo_allocations.at("CameraUBO").allocation
+			m_ubo_allocations.at("CameraUBO")[frame_index]->allocation
 		);
 
 		m_shader->set_uniform(
 			"CameraUBO.proj",
 			m_context.camera().projection(m_context.window().viewport()),
-			m_ubo_allocations.at("CameraUBO").allocation
+			m_ubo_allocations.at("CameraUBO")[frame_index]->allocation
 		);
 
 		auto& out = m_render_queue.write();
@@ -433,7 +432,8 @@ auto gse::renderer::geometry::render() -> void {
             };
             command.setScissor(0, scissor);
 
-            const vk::DescriptorSet sets[]{ m_descriptor_set };
+            const auto frame_index = config.current_frame();
+            const vk::DescriptorSet sets[]{ **m_descriptor_sets[frame_index] };
 
             command.bindDescriptorSets(
                 vk::PipelineBindPoint::eGraphics,

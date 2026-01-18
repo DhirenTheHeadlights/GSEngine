@@ -131,8 +131,8 @@ export namespace gse::renderer {
 		resource::handle<shader> m_text_shader;
 
 		struct frame_resources {
-			vulkan::persistent_allocator::buffer_resource vertex_buffer;
-			vulkan::persistent_allocator::buffer_resource index_buffer;
+			vulkan::buffer_resource vertex_buffer;
+			vulkan::buffer_resource index_buffer;
 		};
 
 		std::array<frame_resources, frames_in_flight> m_frame_resources;
@@ -391,16 +391,14 @@ auto gse::renderer::ui::initialize() -> void {
 	constexpr std::size_t index_buffer_size = max_indices * sizeof(std::uint32_t);
 
 	for (auto& [vertex_buffer, index_buffer] : m_frame_resources) {
-		vertex_buffer = vulkan::persistent_allocator::create_buffer(
-			config.device_config(),
+		vertex_buffer = config.allocator().create_buffer(
 			{
 				.size = vertex_buffer_size,
 				.usage = vk::BufferUsageFlagBits::eVertexBuffer
 			}
 		);
 
-		index_buffer = vulkan::persistent_allocator::create_buffer(
-			config.device_config(),
+		index_buffer = config.allocator().create_buffer(
 			{
 				.size = index_buffer_size,
 				.usage = vk::BufferUsageFlagBits::eIndexBuffer
@@ -601,8 +599,8 @@ auto gse::renderer::ui::render() -> void {
 	};
 
 	vulkan::render(config, rendering_info, [&] {
-		command.bindVertexBuffers(0, { *vertex_buffer.buffer }, { vk::DeviceSize{ 0 } });
-		command.bindIndexBuffer(*index_buffer.buffer, 0, vk::IndexType::eUint32);
+		command.bindVertexBuffers(0, { vertex_buffer.buffer }, { vk::DeviceSize{ 0 } });
+		command.bindIndexBuffer(index_buffer.buffer, 0, vk::IndexType::eUint32);
 
 		// Set dynamic viewport
 		const vk::Viewport viewport{
