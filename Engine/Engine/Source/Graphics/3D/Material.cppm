@@ -93,45 +93,38 @@ auto gse::material::compile() -> std::set<std::filesystem::path> {
 		const uint64_t len = str.length();
 		stream.write(reinterpret_cast<const char*>(&len), sizeof(len));
 		stream.write(str.c_str(), len);
-		};
+	};
 
-	auto write_material_file = [&](
-		const std::string& name,
-		const material_parse_data& mat_data,
-		const std::string& diffuse_path,
-		const std::string& normal_path,
-		const std::string& specular_path,
-		const std::filesystem::path& source_mtl_path
-		) {
-			const auto baked_path = baked_material_root / (name + ".gmat");
-			if (exists(baked_path) && last_write_time(source_mtl_path) <= last_write_time(baked_path)) {
-				return;
-			}
+	auto write_material_file = [&](const std::string& name, const material_parse_data& mat_data, const std::string& diffuse_path, const std::string& normal_path, const std::string& specular_path,  const std::filesystem::path& source_mtl_path) {
+		const auto baked_path = baked_material_root / (name + ".gmat");
+		if (exists(baked_path) && last_write_time(source_mtl_path) <= last_write_time(baked_path)) {
+			return;
+		}
 
-			std::ofstream out_file(baked_path, std::ios::binary);
-			assert(out_file.is_open(), std::source_location::current(), "Failed to open baked material file for writing: {}", baked_path.string());
+		std::ofstream out_file(baked_path, std::ios::binary);
+		assert(out_file.is_open(), std::source_location::current(), "Failed to open baked material file for writing: {}", baked_path.string());
 
-			constexpr uint32_t magic = 0x474D4154;
-			constexpr uint32_t version = 1;
-			out_file.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
-			out_file.write(reinterpret_cast<const char*>(&version), sizeof(version));
+		constexpr uint32_t magic = 0x474D4154;
+		constexpr uint32_t version = 1;
+		out_file.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
+		out_file.write(reinterpret_cast<const char*>(&version), sizeof(version));
 
-			out_file.write(reinterpret_cast<const char*>(&mat_data.ambient), sizeof(mat_data.ambient));
-			out_file.write(reinterpret_cast<const char*>(&mat_data.diffuse), sizeof(mat_data.diffuse));
-			out_file.write(reinterpret_cast<const char*>(&mat_data.specular), sizeof(mat_data.specular));
-			out_file.write(reinterpret_cast<const char*>(&mat_data.emission), sizeof(mat_data.emission));
-			out_file.write(reinterpret_cast<const char*>(&mat_data.shininess), sizeof(mat_data.shininess));
-			out_file.write(reinterpret_cast<const char*>(&mat_data.optical_density), sizeof(mat_data.optical_density));
-			out_file.write(reinterpret_cast<const char*>(&mat_data.transparency), sizeof(mat_data.transparency));
-			out_file.write(reinterpret_cast<const char*>(&mat_data.illumination_model), sizeof(mat_data.illumination_model));
+		out_file.write(reinterpret_cast<const char*>(&mat_data.ambient), sizeof(mat_data.ambient));
+		out_file.write(reinterpret_cast<const char*>(&mat_data.diffuse), sizeof(mat_data.diffuse));
+		out_file.write(reinterpret_cast<const char*>(&mat_data.specular), sizeof(mat_data.specular));
+		out_file.write(reinterpret_cast<const char*>(&mat_data.emission), sizeof(mat_data.emission));
+		out_file.write(reinterpret_cast<const char*>(&mat_data.shininess), sizeof(mat_data.shininess));
+		out_file.write(reinterpret_cast<const char*>(&mat_data.optical_density), sizeof(mat_data.optical_density));
+		out_file.write(reinterpret_cast<const char*>(&mat_data.transparency), sizeof(mat_data.transparency));
+		out_file.write(reinterpret_cast<const char*>(&mat_data.illumination_model), sizeof(mat_data.illumination_model));
 
-			write_string(out_file, diffuse_path);
-			write_string(out_file, normal_path);
-			write_string(out_file, specular_path);
+		write_string(out_file, diffuse_path);
+		write_string(out_file, normal_path);
+		write_string(out_file, specular_path);
 
-			out_file.close();
-			std::print("Material compiled: {}\n", baked_path.filename().string());
-		};
+		out_file.close();
+		std::print("Material compiled: {}\n", baked_path.filename().string());
+	};
 
 	std::set<std::filesystem::path> resources;
 
@@ -146,8 +139,7 @@ auto gse::material::compile() -> std::set<std::filesystem::path> {
 		material_parse_data current_material_data;
 		std::string diffuse_tex_path, normal_tex_path, specular_tex_path;
 
-		auto process_and_write_previous =
-			[&] {
+		auto process_and_write_previous = [&] {
 			if (!current_material_name.empty()) {
 				const auto baked_path = baked_material_root / (current_material_name + ".gmat");
 				resources.insert(baked_path);
@@ -161,39 +153,35 @@ auto gse::material::compile() -> std::set<std::filesystem::path> {
 				normal_tex_path.clear();
 				specular_tex_path.clear();
 			}
-			};
+		};
 
-		auto split = [](
-			const std::string& str
-			) -> std::vector<std::string> {
-				std::vector<std::string> tokens;
-				const size_t length = str.length();
-				size_t i = 0;
-				while (i < length) {
-					while (i < length && str[i] == ' ') { ++i; }
-					const size_t start = i;
-					while (i < length && str[i] != ' ') { ++i; }
-					if (start < i) { tokens.emplace_back(str.substr(start, i - start)); }
-				}
-				return tokens;
-			};
+		auto split = [](const std::string& str) -> std::vector<std::string> {
+			std::vector<std::string> tokens;
+			const size_t length = str.length();
+			size_t i = 0;
+			while (i < length) {
+				while (i < length && str[i] == ' ') { ++i; }
+				const size_t start = i;
+				while (i < length && str[i] != ' ') { ++i; }
+				if (start < i) { tokens.emplace_back(str.substr(start, i - start)); }
+			}
+			return tokens;
+		};
 
-		auto get_baked_texture_path = [&](
-			const std::string& texture_path_in_mtl
-			) -> std::string {
-				const auto source_texture_path = weakly_canonical(source_mtl_path.parent_path() / texture_path_in_mtl);
+		auto get_baked_texture_path = [&](const std::string& texture_path_in_mtl) -> std::string {
+			const auto source_texture_path = weakly_canonical(source_mtl_path.parent_path() / texture_path_in_mtl);
 
-				if (!std::filesystem::exists(source_texture_path)) {
-					std::println(
-						"Warning: Texture '{}' referenced in '{}' was not found. Skipping.",
-						texture_path_in_mtl,
-						source_mtl_path.string()
-					);
-					return "";
-				}
+			if (!std::filesystem::exists(source_texture_path)) {
+				std::println(
+					"Warning: Texture '{}' referenced in '{}' was not found. Skipping.",
+					texture_path_in_mtl,
+					source_mtl_path.string()
+				);
+				return "";
+			}
 
-				return source_texture_path.filename().replace_extension(".gtx").string();
-			};
+			return source_texture_path.filename().replace_extension(".gtx").string();
+		};
 
 		std::string line;
 		while (std::getline(mtl_file, line)) {
@@ -234,18 +222,16 @@ auto gse::material::load(const renderer::context& context) -> void {
 	std::ifstream in_file(path, std::ios::binary);
 	assert(in_file.is_open(), std::source_location::current(), "Failed to open baked material file for reading: {}", path.string());
 
-	auto read_string = [](
-		std::ifstream& stream
-		) -> std::string {
-			uint64_t len = 0;
-			stream.read(reinterpret_cast<char*>(&len), sizeof(len));
-			if (len > 0) {
-				std::string str(len, '\0');
-				stream.read(&str[0], len);
-				return str;
-			}
-			return "";
-		};
+	auto read_string = [](std::ifstream& stream) -> std::string {
+		uint64_t len = 0;
+		stream.read(reinterpret_cast<char*>(&len), sizeof(len));
+		if (len > 0) {
+			std::string str(len, '\0');
+			stream.read(&str[0], len);
+			return str;
+		}
+		return "";
+	};
 
 	uint32_t magic, version;
 	in_file.read(reinterpret_cast<char*>(&magic), sizeof(magic));

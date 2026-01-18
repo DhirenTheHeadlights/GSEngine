@@ -113,7 +113,7 @@ export namespace gse {
 		std::uint32_t m_next_link_id = 0;
 
 		std::vector<owner_id_t> m_added;
-		std::vector<owner_id_t> m_updated;
+		std::unordered_set<owner_id_t> m_updated;
 		std::vector<owner_id_t> m_removed;
 	};
 }
@@ -176,7 +176,7 @@ auto gse::component_link<T>::try_get_read(const owner_id_t owner_id) -> const co
 template <gse::is_component T>
 auto gse::component_link<T>::try_get_write(const owner_id_t owner_id) -> component_type* {
 	if (auto* p = m_writer.try_get(owner_id)) {
-		m_updated.push_back(owner_id);
+		m_updated.insert(owner_id);
 		return p;
 	}
 	return nullptr;
@@ -211,7 +211,7 @@ auto gse::component_link<T>::flip(std::size_t read, std::size_t write) -> void {
 
 template <gse::is_component T>
 auto gse::component_link<T>::mark_updated(const owner_id_t owner_id) -> void {
-	m_updated.push_back(owner_id);
+	m_updated.insert(owner_id);
 }
 
 template <gse::is_component T>
@@ -223,11 +223,18 @@ auto gse::component_link<T>::drain_adds() -> std::vector<owner_id_t> {
 
 template <gse::is_component T>
 auto gse::component_link<T>::drain_updates() -> std::vector<owner_id_t> {
-	std::erase_if(m_updated, [&](const auto& id) {
-		return std::ranges::find(m_added, id) != m_added.end();
-	});
+	// Convert m_added to unordered_set for O(1) lookup
+	std::unordered_set<owner_id_t> added_set(m_added.begin(), m_added.end());
 
-	auto out = std::move(m_updated);
+	// Filter out IDs that are in m_added and convert to vector
+	std::vector<owner_id_t> out;
+	out.reserve(m_updated.size());
+	for (const auto& id : m_updated) {
+		if (!added_set.contains(id)) {
+			out.push_back(id);
+		}
+	}
+
 	m_updated.clear();
 	return out;
 }

@@ -143,13 +143,13 @@ namespace gse {
 		auto set_uniform(
 			std::string_view full_name,
 			const T& value,
-			const vulkan::persistent_allocator::allocation& alloc
+			const vulkan::allocation& alloc
 		) const -> void;
 
 		auto set_uniform_block(
 			std::string_view block_name,
 			const std::unordered_map<std::string, std::span<const std::byte>>& data,
-			const vulkan::persistent_allocator::allocation& alloc
+			const vulkan::allocation& alloc
 		) const -> void;
 
 		auto set_ssbo_element(
@@ -157,14 +157,14 @@ namespace gse {
 			std::uint32_t index,        
 			std::string_view member_name, 
 			std::span<const std::byte> bytes,
-			const vulkan::persistent_allocator::allocation& alloc
+			const vulkan::allocation& alloc
 		) const -> void;
 
 		auto set_ssbo_struct(
 			std::string_view block_name,
 			std::uint32_t index,
 			std::span<const std::byte> element_bytes,
-			const vulkan::persistent_allocator::allocation& alloc
+			const vulkan::allocation& alloc
 		) const -> void;
 
 		auto push_descriptor(
@@ -1616,7 +1616,7 @@ auto gse::shader::descriptor_writes(vk::DescriptorSet set, const std::unordered_
 }
 
 template <typename T>
-auto gse::shader::set_uniform(std::string_view full_name, const T& value, const vulkan::persistent_allocator::allocation& alloc) const -> void {
+auto gse::shader::set_uniform(std::string_view full_name, const T& value, const vulkan::allocation& alloc) const -> void {
 	const auto dot_pos = full_name.find('.');
 
 	assert(
@@ -1690,7 +1690,7 @@ auto gse::shader::set_uniform(std::string_view full_name, const T& value, const 
 	);
 }
 
-auto gse::shader::set_uniform_block(const std::string_view block_name, const std::unordered_map<std::string, std::span<const std::byte>>& data, const vulkan::persistent_allocator::allocation& alloc) const -> void {
+auto gse::shader::set_uniform_block(const std::string_view block_name, const std::unordered_map<std::string, std::span<const std::byte>>& data, const vulkan::allocation& alloc) const -> void {
 	const struct binding* block_binding = nullptr;
 	for (const auto& set : m_layout.sets | std::views::values) {
 		for (const auto& b : set.bindings) {
@@ -1739,7 +1739,7 @@ auto gse::shader::set_uniform_block(const std::string_view block_name, const std
 	}
 }
 
-auto gse::shader::set_ssbo_element(std::string_view block_name, const std::uint32_t index, std::string_view member_name, const std::span<const std::byte> bytes, const vulkan::persistent_allocator::allocation& alloc) const -> void {
+auto gse::shader::set_ssbo_element(std::string_view block_name, const std::uint32_t index, std::string_view member_name, const std::span<const std::byte> bytes, const vulkan::allocation& alloc) const -> void {
 	const struct binding* block_binding = nullptr;
 	for (const auto& set : m_layout.sets | std::views::values) {
 		for (const auto& b : set.bindings) {
@@ -1786,7 +1786,7 @@ auto gse::shader::set_ssbo_element(std::string_view block_name, const std::uint3
 	);
 }
 
-auto gse::shader::set_ssbo_struct(std::string_view block_name, const std::uint32_t index, const std::span<const std::byte> element_bytes, const vulkan::persistent_allocator::allocation& alloc) const -> void {
+auto gse::shader::set_ssbo_struct(std::string_view block_name, const std::uint32_t index, const std::span<const std::byte> element_bytes, const vulkan::allocation& alloc) const -> void {
 	const struct binding* block_binding = nullptr;
 	for (const auto& set : m_layout.sets | std::views::values) {
 		for (const auto& b : set.bindings) {

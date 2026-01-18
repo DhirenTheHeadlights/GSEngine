@@ -139,8 +139,6 @@ auto gse::renderer::system::end_frame() -> void {
 		.config = ctx.config()
 	});
 
-	vulkan::transient_allocator::end_frame();
-
 	m_frame_begun = false;
 }
 
@@ -150,7 +148,6 @@ auto gse::renderer::system::shutdown() -> void {
 	ctx.config().device_config().device.waitIdle();
 	ctx.shutdown();
 
-	vulkan::persistent_allocator::clean_up();
 	shader::destroy_global_layouts();
 }
 

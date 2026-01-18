@@ -6,6 +6,7 @@ export import :concepts;
 export import :config;
 export import :default_scene_hook;
 export import :n_buffer;
+export import :per_frame_resource;
 export import :entity;
 export import :entity_hook;
 export import :frame_sync;

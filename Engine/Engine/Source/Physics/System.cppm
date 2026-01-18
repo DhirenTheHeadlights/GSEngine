@@ -13,14 +13,34 @@ import :integrators;
 export namespace gse::physics {
 	class system final : public gse::system {
 	public:
+		auto initialize(
+		) -> void override;
+
 		auto update(
 		) -> void override;
 	private:
 		time_t<float, seconds> m_accumulator{};
+		bool m_update_phys = true;
 	};
 }
 
+auto gse::physics::system::initialize() -> void {
+	publish([this](channel<save::register_property>& ch) {
+		ch.push({
+			.category = "Physics",
+			.name = "Update Physics",
+			.description = "Enable or disable the physics system update loop",
+			.ref = reinterpret_cast<void*>(&m_update_phys),
+			.type = typeid(bool)
+		});
+	});
+}
+
 auto gse::physics::system::update() -> void {
+	if (!m_update_phys) {
+		return;
+	}
+
 	auto frame_time = system_clock::dt<time_t<float, seconds>>();
 	constexpr time_t<float, seconds> max_time_step = seconds(0.25f);
 	frame_time = std::min(frame_time, max_time_step);

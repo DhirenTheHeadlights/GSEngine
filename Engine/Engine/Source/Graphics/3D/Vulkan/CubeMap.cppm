@@ -9,11 +9,11 @@ export namespace gse {
     class cube_map {
     public:
         auto create(vulkan::config& config, const std::array<std::filesystem::path, 6>& face_paths) -> void;
-        auto create(const vulkan::config& config, int resolution, bool depth_only = false) -> void;
+        auto create(vulkan::config& config, int resolution, bool depth_only = false) -> void;
 
-        auto image_resource() const -> const vulkan::persistent_allocator::image_resource&;
+        auto image_resource() const -> const vulkan::image_resource&;
     private:
-        vulkan::persistent_allocator::image_resource m_image_resource;
+        vulkan::image_resource m_image_resource;
         vk::raii::Sampler m_sampler = nullptr;
 
         int m_resolution = 0;
@@ -58,8 +58,8 @@ auto gse::cube_map::create(vulkan::config& config, const std::array<std::filesys
         }
     };
 
-    m_image_resource = vulkan::persistent_allocator::create_image(
-        config.device_config(), image_info, vk::MemoryPropertyFlagBits::eDeviceLocal, view_info
+    m_image_resource = config.allocator().create_image(
+        image_info, vk::MemoryPropertyFlagBits::eDeviceLocal, view_info
     );
 
     vulkan::uploader::upload_image_layers(
@@ -95,7 +95,7 @@ auto gse::cube_map::create(vulkan::config& config, const std::array<std::filesys
     m_initialized = true;
 }
 
-auto gse::cube_map::create(const vulkan::config& config, const int resolution, const bool depth_only) -> void {
+auto gse::cube_map::create(vulkan::config& config, const int resolution, const bool depth_only) -> void {
     m_resolution = resolution;
     m_depth_only = depth_only;
 
@@ -139,8 +139,8 @@ auto gse::cube_map::create(const vulkan::config& config, const int resolution, c
         }
     };
 
-    m_image_resource = vulkan::persistent_allocator::create_image(
-        config.device_config(), image_info, vk::MemoryPropertyFlagBits::eDeviceLocal, view_info
+    m_image_resource = config.allocator().create_image(
+        image_info, vk::MemoryPropertyFlagBits::eDeviceLocal, view_info
     );
 
     constexpr vk::SamplerCreateInfo sampler_info{
@@ -166,6 +166,6 @@ auto gse::cube_map::create(const vulkan::config& config, const int resolution, c
     m_initialized = true;
 }
 
-auto gse::cube_map::image_resource() const -> const vulkan::persistent_allocator::image_resource& {
+auto gse::cube_map::image_resource() const -> const vulkan::image_resource& {
     return m_image_resource;
 }
