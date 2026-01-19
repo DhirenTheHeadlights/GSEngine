@@ -91,6 +91,7 @@ auto gse::engine::initialize() -> void {
 	m_scheduler.emplace<renderer::physics_debug>(reg, ctx);
 	m_scheduler.emplace<renderer::ui>(reg, ctx);
 	m_scheduler.emplace<gui::system>(reg, ctx);
+	m_scheduler.emplace<animation::system>(reg);
 
 	m_scheduler.initialize();
 

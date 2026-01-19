@@ -10,7 +10,7 @@ import :black_knight;
 import gse;
 
 export namespace gs {
-	class main_test_scene final : public gse::hook<gse::scene> {	
+	class main_test_scene final : public gse::hook<gse::scene> {
 	public:
 		using hook::hook;
 
@@ -18,7 +18,7 @@ export namespace gs {
 			arena::create(this);
 
 			build("Player")
-				.with<gs::player>({
+				.with<gse::free_camera>({
 					.initial_position = gse::vec3<gse::length>(0.f, 0.f, 0.f)
 				});
 
@@ -51,6 +51,12 @@ export namespace gs {
 					.radius = gse::meters(1.f),
 					.sectors = 18,
 					.stacks = 10
+				});
+
+			build("Animated Box")
+				.with<gse::animated_box>({
+					.initial_position = gse::vec3<gse::length>(5.f, -35.f, 0.f),
+					.size = gse::vec3<gse::length>(2.f, 2.f, 2.f)
 				});
 		}
 	};

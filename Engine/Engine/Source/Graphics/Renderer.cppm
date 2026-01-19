@@ -2,6 +2,7 @@ export module gse.graphics:renderer;
 
 import std;
 
+import :clip;
 import :render_component;
 import :resource_loader;
 import :material;
@@ -9,6 +10,7 @@ import :rendering_context;
 import :font;
 import :model;
 import :shader;
+import :skeleton;
 import :texture;
 
 import gse.utility;
@@ -93,6 +95,8 @@ auto gse::renderer::system::initialize() -> void {
 	ctx.add_loader<shader>();
 	ctx.add_loader<font>();
 	ctx.add_loader<material>();
+	ctx.add_loader<skeleton>();
+	ctx.add_loader<clip_asset>();
 
 	ctx.compile();
 }

@@ -29,8 +29,8 @@ export namespace gse {
         ) const -> mat4;
     private:
         std::uint16_t m_parent_index = std::numeric_limits<std::uint16_t>::max();
-        mat4 m_local_bind{};
-        mat4 m_inverse_bind{};
+        mat4 m_local_bind;
+        mat4 m_inverse_bind;
     };
 }
 
