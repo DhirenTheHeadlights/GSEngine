@@ -12,53 +12,14 @@ import :skeleton;
 import :renderer;
 
 export namespace gse::animation {
-	struct set_skeleton_request {
-		id owner_id;
-		id skeleton_id;
-	};
-
-	struct set_clip_request {
-		id owner_id;
-		id clip_id;
-		float scale = 1.f;
-		bool loop = true;
-		bool play = true;
-		bool reset_time = true;
-	};
-
-	struct play_request {
-		id owner_id;
-		bool playing = true;
-	};
-
-	struct stop_request {
-		id owner_id;
-	};
-
-	struct seek_request {
-		id owner_id;
-		time t = 0.f;
-		bool normalized = false;
-	};
-
 	class system final : public gse::system {
 	public:
-		system();
-
 		auto initialize(
 		) -> void override;
 
 		auto update(
 		) -> void override;
 	private:
-		struct frame_requests {
-			std::vector<set_skeleton_request> set_skeleton;
-			std::vector<set_clip_request> set_clip;
-			std::vector<play_request> play;
-			std::vector<stop_request> stop;
-			std::vector<seek_request> seek;
-		};
-
 		struct anim_job {
 			animation_component* anim = nullptr;
 			clip_component* clip = nullptr;
@@ -69,15 +30,6 @@ export namespace gse::animation {
 		};
 
 		time m_last_tick{};
-
-		auto gather_requests(
-		) const -> frame_requests;
-
-		auto apply_requests(
-			const component_chunk<animation_component>& anims,
-			const component_chunk<clip_component>& clips,
-			const frame_requests& requirements
-		) -> void;
 
 		auto tick_animations(
 			const component_chunk<animation_component>& animations,
@@ -120,156 +72,19 @@ export namespace gse::animation {
 	};
 }
 
-gse::animation::system::system() = default;
-
 auto gse::animation::system::initialize() -> void {
 	m_last_tick = system_clock::now();
 }
 
-auto gse::animation::system::gather_requests() const -> frame_requests {
-	frame_requests out;
-
-	for (const auto& r : channel_of<set_skeleton_request>()) {
-		out.set_skeleton.push_back(r);
-	}
-
-	for (const auto& r : channel_of<set_clip_request>()) {
-		out.set_clip.push_back(r);
-	}
-
-	for (const auto& r : channel_of<play_request>()) {
-		out.play.push_back(r);
-	}
-
-	for (const auto& r : channel_of<stop_request>()) {
-		out.stop.push_back(r);
-	}
-
-	for (const auto& r : channel_of<seek_request>()) {
-		out.seek.push_back(r);
-	}
-
-	return out;
-}
-
 auto gse::animation::system::update() -> void {
 	const time dt = system_clock::dt();
-	frame_requests requirements = gather_requests();
 
-	write([this, dt, requirements = std::move(requirements)](
+	write([this, dt](
 		const component_chunk<animation_component>& anims,
 		const component_chunk<clip_component>& clips
 	) {
-		apply_requests(anims, clips, requirements);
 		tick_animations(anims, clips, dt);
 	});
-}
-
-auto gse::animation::system::apply_requests(const component_chunk<animation_component>& anims, const component_chunk<clip_component>& clips, const frame_requests& requirements) -> void {
-	for (const auto& [owner_id, req_skeleton_id] : requirements.set_skeleton) {
-		if (!owner_id.exists()) {
-			continue;
-		}
-
-		auto* anim = anims.write(owner_id);
-		if (anim == nullptr) {
-			defer_add<animation_component>(owner_id, animation_component_data{
-				.skeleton_id = req_skeleton_id
-			});
-			continue;
-		}
-
-		if (auto& [skeleton_id] = anim->networked_data(); skeleton_id != req_skeleton_id) {
-			skeleton_id = req_skeleton_id;
-			anim->skeleton = {};
-			anim->local_pose.clear();
-			anim->global_pose.clear();
-			anim->skins.clear();
-		}
-	}
-
-	for (const auto& [owner_id, clip_id, scale, loop, play, reset_time] : requirements.set_clip) {
-		if (!owner_id.exists()) {
-			continue;
-		}
-
-		auto* clip_c = clips.write(owner_id);
-		if (clip_c == nullptr) {
-			defer_add<clip_component>(owner_id, clip_component_data{
-				.clip_id = clip_id,
-				.scale = scale,
-				.loop = loop
-			});
-			continue;
-		}
-
-		auto& [net_clip_id, net_scale, net_loop] = clip_c->networked_data();
-
-		if (net_clip_id != clip_id) {
-			net_clip_id = clip_id;
-			clip_c->clip = {};
-		}
-
-		net_scale = scale;
-		net_loop = loop;
-
-		if (reset_time) {
-			clip_c->t = 0.f;
-		}
-
-		clip_c->playing = play;
-	}
-
-	for (const auto& [owner_id, playing] : requirements.play) {
-		if (!owner_id.exists()) {
-			continue;
-		}
-
-		if (auto* clip_c = clips.write(owner_id)) {
-			clip_c->playing = playing;
-		}
-	}
-
-	for (const auto& [owner_id] : requirements.stop) {
-		if (!owner_id.exists()) {
-			continue;
-		}
-
-		if (auto* clip_c = clips.write(owner_id)) {
-			clip_c->t = 0.f;
-			clip_c->playing = false;
-		}
-	}
-
-	for (const auto& [owner_id, t, normalized] : requirements.seek) {
-		if (!owner_id.exists()) {
-			continue;
-		}
-
-		auto* clip_c = clips.write(owner_id);
-		if (clip_c == nullptr) {
-			continue;
-		}
-
-		time dst = t;
-
-		if (normalized) {
-			if (const auto& data = clip_c->networked_data(); data.clip_id.exists()) {
-				if (!clip_c->clip) {
-					auto& renderer = const_cast<renderer::system&>(system_of<renderer::system>());
-					clip_c->clip = renderer.get<clip_asset>(data.clip_id);
-				}
-
-				if (clip_c->clip) {
-					if (const auto len = clip_c->clip->length(); len > 0) {
-						dst = seconds(t.as<seconds>() * len.as<seconds>());
-					}
-				}
-			}
-		}
-
-		clip_c->t = dst;
-	}
 }
 
 auto gse::animation::system::tick_animations(const component_chunk<animation_component>& animations, const component_chunk<clip_component>& clips, const time dt) const -> void {

@@ -138,10 +138,25 @@ export namespace gse::renderer {
 
 		gse::camera m_camera;
 		bool m_ui_focus = false;
+		bool m_validation_layers_enabled = false;
 	};
 }
 
-gse::renderer::context::context(const std::string& window_title, input::system& input, save::system& save) : m_window(window_title, input, save), m_config(vulkan::generate_config(m_window.raw_handle())) {}
+gse::renderer::context::context(const std::string& window_title, input::system& input, save::system& save)
+	: m_window(window_title, input, save)
+	, m_config(vulkan::generate_config(m_window.raw_handle()))
+	, m_validation_layers_enabled(save::read_bool_setting_early(
+		config::resource_path / "Misc/settings.cfg",
+		"Graphics",
+		"Validation Layers",
+		false
+	))
+{
+	save.bind("Graphics", "Validation Layers", m_validation_layers_enabled)
+		.description("Enable Vulkan validation layers for debugging (impacts performance significantly)")
+		.restart_required()
+		.commit();
+}
 
 gse::renderer::context::~context() {
 	m_config.reset();

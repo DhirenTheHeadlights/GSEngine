@@ -15,9 +15,36 @@ import :ids;
 import :styles;
 
 export namespace gse::settings_panel {
+    using pending_value = std::variant<bool, float, std::size_t>;
+
+    struct pending_change {
+        std::string category;
+        std::string name;
+        std::function<void(save::property_base&)> apply;
+        pending_value value;
+        bool requires_restart = false;
+    };
+
+    enum class popup_type {
+        none,
+        restart_required
+    };
+
     struct state {
         id hot_id;
         id active_id;
+        std::vector<pending_change> pending_changes;
+        popup_type active_popup = popup_type::none;
+        bool has_pending_restart = false;
+
+        [[nodiscard]] auto find_pending(const std::string_view category, const std::string_view name) const -> const pending_change* {
+            for (const auto& change : pending_changes) {
+                if (change.category == category && change.name == name) {
+                    return &change;
+                }
+            }
+            return nullptr;
+        }
     };
 
     struct context {
@@ -29,6 +56,7 @@ export namespace gse::settings_panel {
         const input::state& input;
         render_layer layer = render_layer::popup;
         std::function<void(save::update_request)> publish_update;
+        std::function<void()> request_save;
         gui::tooltip_state* tooltip = nullptr;
     };
 
@@ -82,8 +110,26 @@ namespace gse::settings_panel {
     ) -> void;
 
     auto draw_choice(
-        layout_state& layout, 
+        layout_state& layout,
         const save::property_base& prop
+    ) -> void;
+
+    auto draw_apply_button(
+        layout_state& layout,
+        state& panel_state
+    ) -> bool;
+
+    auto draw_restart_popup(
+        state& panel_state,
+        const context& ctx,
+        const gui::ui_rect& panel_rect
+    ) -> void;
+
+    auto queue_change(
+        state& panel_state,
+        const save::property_base& prop,
+        pending_value value,
+        std::function<void(save::property_base&)> apply
     ) -> void;
 }
 
@@ -267,6 +313,37 @@ auto gse::settings_panel::update(state& state, const context& ctx, const gui::ui
         layout.cursor.y() -= sty.padding;
     }
 
+    layout.cursor.y() -= sty.padding * 2.f;
+
+    if (draw_apply_button(layout, state)) {
+        bool needs_restart = false;
+        for (const auto& change : state.pending_changes) {
+            if (change.requires_restart) {
+                needs_restart = true;
+                break;
+            }
+        }
+
+        for (const auto& change : state.pending_changes) {
+            ctx.publish_update({
+                .category = change.category,
+                .name = change.name,
+                .apply = change.apply
+            });
+        }
+
+        state.pending_changes.clear();
+
+        if (needs_restart) {
+            state.active_popup = popup_type::restart_required;
+            state.has_pending_restart = true;
+        }
+    }
+
+    if (state.active_popup == popup_type::restart_required) {
+        draw_restart_popup(state, ctx, rect);
+    }
+
     if (ctx.input.mouse_button_released(mouse_button::button_1)) {
         state.active_id.reset();
     }
@@ -337,7 +414,8 @@ auto gse::settings_panel::draw_toggle(layout_state& layout, const save::property
     const bool hovered = row_rect.contains(mouse_pos);
     const id toggle_id = gui::ids::make(std::string(prop.name()));
 
-    const bool value = prop.as_bool();
+    const auto* pending = layout.panel_state->find_pending(prop.category(), prop.name());
+    const bool value = pending ? std::get<bool>(pending->value) : prop.as_bool();
 
     if (hovered) {
         set_tooltip(ctx, toggle_id, std::string(prop.description()));
@@ -350,12 +428,9 @@ auto gse::settings_panel::draw_toggle(layout_state& layout, const save::property
 
     if (toggle_hovered && layout.panel_state->active_id == toggle_id &&
         ctx.input.mouse_button_released(mouse_button::button_1)) {
-        ctx.publish_update({
-            .category = std::string(prop.category()),
-            .name = std::string(prop.name()),
-            .apply = [new_value = !value](save::property_base& p) {
-                p.set_bool(new_value);
-            }
+        const bool new_value = !value;
+        queue_change(*layout.panel_state, prop, new_value, [new_value](save::property_base& p) {
+            p.set_bool(new_value);
         });
     }
 
@@ -388,15 +463,20 @@ auto gse::settings_panel::draw_toggle(layout_state& layout, const save::property
     });
 
     if (ctx.font.valid()) {
+        auto label = std::string(prop.name());
+        if (prop.requires_restart()) {
+            label += " *";
+        }
+
         ctx.texts.push_back({
             .font = ctx.font,
-            .text = std::string(prop.name()),
+            .text = label,
             .position = {
                 layout.cursor.x() + sty.padding,
                 row_rect.center().y() + sty.font_size * 0.35f
             },
             .scale = sty.font_size,
-            .color = sty.color_text,
+            .color = prop.requires_restart() ? sty.color_text_secondary : sty.color_text,
             .clip_rect = layout.content_rect,
             .layer = ctx.layer
         });
@@ -426,9 +506,7 @@ auto gse::settings_panel::draw_slider(layout_state& layout, const save::property
     const unitless::vec2 mouse_pos = ctx.input.mouse_position();
     const id slider_id = gui::ids::make(std::string(prop.name()) + "_slider");
 
-    const bool row_hovered = row_rect.contains(mouse_pos);
-
-    if (row_hovered) {
+    if (row_rect.contains(mouse_pos)) {
         set_tooltip(ctx, slider_id, std::string(prop.description()));
     }
 
@@ -445,7 +523,9 @@ auto gse::settings_panel::draw_slider(layout_state& layout, const save::property
 
     const float min_val = prop.range_min();
     const float max_val = prop.range_max();
-    float current_val = prop.as_float();
+
+    const auto* pending = layout.panel_state->find_pending(prop.category(), prop.name());
+    float current_val = pending ? std::get<float>(pending->value) : prop.as_float();
 
     if (layout.panel_state->active_id == slider_id) {
         const float t = std::clamp(
@@ -454,12 +534,8 @@ auto gse::settings_panel::draw_slider(layout_state& layout, const save::property
         );
         const float new_val = min_val + t * (max_val - min_val);
 
-        ctx.publish_update({
-            .category = std::string(prop.category()),
-            .name = std::string(prop.name()),
-            .apply = [new_val](save::property_base& p) {
-                p.set_float(new_val);
-            }
+        queue_change(*layout.panel_state, prop, new_val, [new_val](save::property_base& p) {
+            p.set_float(new_val);
         });
 
         current_val = new_val;
@@ -504,15 +580,20 @@ auto gse::settings_panel::draw_slider(layout_state& layout, const save::property
     });
 
     if (ctx.font.valid()) {
+        auto label = std::string(prop.name());
+        if (prop.requires_restart()) {
+            label += " *";
+        }
+
         ctx.texts.push_back({
             .font = ctx.font,
-            .text = std::string(prop.name()),
+            .text = label,
             .position = {
                 layout.cursor.x() + sty.padding,
                 row_rect.center().y() + sty.font_size * 0.35f
             },
             .scale = sty.font_size,
-            .color = sty.color_text,
+            .color = prop.requires_restart() ? sty.color_text_secondary : sty.color_text,
             .clip_rect = layout.content_rect,
             .layer = ctx.layer
         });
@@ -566,10 +647,12 @@ auto gse::settings_panel::draw_choice(layout_state& layout, const save::property
     const unitless::vec2 mouse_pos = ctx.input.mouse_position();
     const id choice_id = gui::ids::make(std::string(prop.name()) + "_choice");
 
-    const bool row_hovered = row_rect.contains(mouse_pos);
-    if (row_hovered) {
+    if (row_rect.contains(mouse_pos)) {
         set_tooltip(ctx, choice_id, std::string(prop.description()));
     }
+
+    const auto* pending = layout.panel_state->find_pending(prop.category(), prop.name());
+    const std::size_t current_index = pending ? std::get<std::size_t>(pending->value) : prop.enum_index();
 
     const bool hovered = choice_rect.contains(mouse_pos);
     if (hovered && ctx.input.mouse_button_pressed(mouse_button::button_1)) {
@@ -578,15 +661,10 @@ auto gse::settings_panel::draw_choice(layout_state& layout, const save::property
 
     if (hovered && layout.panel_state->active_id == choice_id &&
         ctx.input.mouse_button_released(mouse_button::button_1)) {
-        const std::size_t current = prop.enum_index();
-        const std::size_t next = (current + 1) % prop.enum_count();
+        const std::size_t next = (current_index + 1) % prop.enum_count();
 
-        ctx.publish_update({
-            .category = std::string(prop.category()),
-            .name = std::string(prop.name()),
-            .apply = [next](save::property_base& p) {
-                p.set_enum_index(next);
-            }
+        queue_change(*layout.panel_state, prop, next, [next](save::property_base& p) {
+            p.set_enum_index(next);
         });
     }
 
@@ -602,7 +680,7 @@ auto gse::settings_panel::draw_choice(layout_state& layout, const save::property
     });
 
     if (ctx.font.valid()) {
-        const auto current_label = prop.enum_label(prop.enum_index());
+        const auto current_label = prop.enum_label(current_index);
         const std::string opt_text(current_label);
         const float text_width = ctx.font->width(opt_text, sty.font_size);
 
@@ -619,19 +697,287 @@ auto gse::settings_panel::draw_choice(layout_state& layout, const save::property
             .layer = ctx.layer
         });
 
+        auto label = std::string(prop.name());
+        if (prop.requires_restart()) {
+            label += " *";
+        }
+
         ctx.texts.push_back({
             .font = ctx.font,
-            .text = std::string(prop.name()),
+            .text = label,
             .position = {
                 layout.cursor.x() + sty.padding,
                 row_rect.center().y() + sty.font_size * 0.35f
             },
             .scale = sty.font_size,
-            .color = sty.color_text,
+            .color = prop.requires_restart() ? sty.color_text_secondary : sty.color_text,
             .clip_rect = layout.content_rect,
             .layer = ctx.layer
         });
     }
 
     layout.cursor.y() -= layout.row_height;
+}
+
+auto gse::settings_panel::queue_change(state& panel_state, const save::property_base& prop, const pending_value value, std::function<void(save::property_base&)> apply) -> void {
+    const auto cat = std::string(prop.category());
+    const auto name = std::string(prop.name());
+
+    bool matches_original = false;
+    match(value)
+        .if_is([&](const bool val) {
+	        matches_original = (val == prop.as_bool());
+        })
+        .else_if_is([&](const float val) {
+	        matches_original = (std::abs(val - prop.as_float()) < 0.0001f);
+        })
+        .else_if_is([&](const std::size_t val) {
+	        matches_original = (val == prop.enum_index());
+        });
+
+    for (auto it = panel_state.pending_changes.begin(); it != panel_state.pending_changes.end(); ++it) {
+        if (it->category == cat && it->name == name) {
+            if (matches_original) {
+                panel_state.pending_changes.erase(it);
+            } else {
+                it->value = value;
+                it->apply = std::move(apply);
+            }
+            return;
+        }
+    }
+
+    if (!matches_original) {
+        panel_state.pending_changes.push_back({
+            .category = cat,
+            .name = name,
+            .apply = std::move(apply),
+            .value = value,
+            .requires_restart = prop.requires_restart()
+        });
+    }
+}
+
+auto gse::settings_panel::draw_apply_button(layout_state& layout, state& panel_state) -> bool {
+    const auto& sty = layout.ctx->style;
+    const auto& ctx = *layout.ctx;
+
+    constexpr float button_width = 120.f;
+    const float button_height = layout.row_height;
+
+    const gui::ui_rect button_rect = gui::ui_rect::from_position_size(
+        { layout.content_rect.center().x() - button_width * 0.5f, layout.cursor.y() },
+        { button_width, button_height }
+    );
+
+    const unitless::vec2 mouse_pos = ctx.input.mouse_position();
+    const bool hovered = button_rect.contains(mouse_pos);
+    const id button_id = gui::ids::make("apply_settings");
+
+    const bool has_changes = !panel_state.pending_changes.empty();
+
+    if (hovered && ctx.input.mouse_button_pressed(mouse_button::button_1) && has_changes) {
+        panel_state.active_id = button_id;
+    }
+
+    unitless::vec4 bg_color = sty.color_widget_background;
+    if (!has_changes) {
+        bg_color = sty.color_widget_background * 0.5f;
+        bg_color.w() = 1.f;
+    } else if (panel_state.active_id == button_id) {
+        bg_color = sty.color_widget_active;
+    } else if (hovered) {
+        bg_color = sty.color_widget_hovered;
+    }
+
+    ctx.sprites.push_back({
+        .rect = button_rect,
+        .color = bg_color,
+        .texture = ctx.blank_texture,
+        .layer = ctx.layer
+    });
+
+    if (ctx.font.valid()) {
+        const std::string text = has_changes
+            ? "Apply (" + std::to_string(panel_state.pending_changes.size()) + ")"
+            : "Apply";
+
+        const float text_width = ctx.font->width(text, sty.font_size);
+        const unitless::vec2 text_pos = {
+            button_rect.center().x() - text_width * 0.5f,
+            button_rect.center().y() + sty.font_size * 0.35f
+        };
+
+        ctx.texts.push_back({
+            .font = ctx.font,
+            .text = text,
+            .position = text_pos,
+            .scale = sty.font_size,
+            .color = has_changes ? sty.color_text : sty.color_text_secondary,
+            .clip_rect = button_rect,
+            .layer = ctx.layer
+        });
+    }
+
+    layout.cursor.y() -= button_height + sty.padding;
+
+    bool clicked = false;
+    if (ctx.input.mouse_button_released(mouse_button::button_1) &&
+        panel_state.active_id == button_id && hovered && has_changes) {
+        clicked = true;
+    }
+
+    return clicked;
+}
+
+auto gse::settings_panel::draw_restart_popup(state& panel_state, const context& ctx, const gui::ui_rect& panel_rect) -> void {
+    const auto& sty = ctx.style;
+
+    constexpr float popup_width = 350.f;
+    constexpr float popup_height = 160.f;
+    constexpr float btn_width = 120.f;
+    constexpr float btn_height = 32.f;
+    constexpr float btn_gap = 24.f;
+
+    const gui::ui_rect popup_rect = gui::ui_rect::from_position_size(
+        { panel_rect.center().x() - popup_width * 0.5f, panel_rect.center().y() + popup_height * 0.5f },
+        { popup_width, popup_height }
+    );
+
+    // Darken background
+    ctx.sprites.push_back({
+        .rect = panel_rect,
+        .color = unitless::vec4(0.f, 0.f, 0.f, 0.5f),
+        .texture = ctx.blank_texture,
+        .layer = render_layer::modal
+    });
+
+    // Border first (behind popup)
+    constexpr float border = 2.f;
+    ctx.sprites.push_back({
+        .rect = popup_rect.inset({ -border, -border }),
+        .color = sty.color_border,
+        .texture = ctx.blank_texture,
+        .layer = render_layer::modal
+    });
+
+    // Popup background
+    ctx.sprites.push_back({
+        .rect = popup_rect,
+        .color = sty.color_menu_body,
+        .texture = ctx.blank_texture,
+        .layer = render_layer::modal
+    });
+
+    const float title_font_size = sty.font_size * 1.2f;
+    const float content_top = popup_rect.top() - sty.padding;
+
+    if (ctx.font.valid()) {
+        // Title - near top of popup
+        const std::string title = "Restart Required";
+        const float title_width = ctx.font->width(title, title_font_size);
+        ctx.texts.push_back({
+            .font = ctx.font,
+            .text = title,
+            .position = {
+                popup_rect.center().x() - title_width * 0.5f,
+                content_top - title_font_size * 0.3f
+            },
+            .scale = title_font_size,
+            .color = sty.color_text,
+            .layer = render_layer::modal
+        });
+
+        // Message - center of popup
+        const std::string msg = "Some settings require a restart.";
+        const float msg_width = ctx.font->width(msg, sty.font_size);
+        ctx.texts.push_back({
+            .font = ctx.font,
+            .text = msg,
+            .position = {
+                popup_rect.center().x() - msg_width * 0.5f,
+                popup_rect.center().y() + sty.font_size * 0.3f
+            },
+            .scale = sty.font_size,
+            .color = sty.color_text_secondary,
+            .layer = render_layer::modal
+        });
+    }
+
+    // Buttons - near bottom of popup
+    const float total_btns_width = btn_width * 2.f + btn_gap;
+    const float btn_start_x = popup_rect.center().x() - total_btns_width * 0.5f;
+    const float btn_y = popup_rect.bottom() + sty.padding + btn_height;
+
+    const gui::ui_rect later_rect = gui::ui_rect::from_position_size(
+        { btn_start_x, btn_y },
+        { btn_width, btn_height }
+    );
+
+    const gui::ui_rect restart_rect = gui::ui_rect::from_position_size(
+        { btn_start_x + btn_width + btn_gap, btn_y },
+        { btn_width, btn_height }
+    );
+
+    const unitless::vec2 mouse_pos = ctx.input.mouse_position();
+
+    const bool later_hovered = later_rect.contains(mouse_pos);
+    ctx.sprites.push_back({
+        .rect = later_rect,
+        .color = later_hovered ? sty.color_widget_hovered : sty.color_widget_background,
+        .texture = ctx.blank_texture,
+        .layer = render_layer::modal
+    });
+
+    if (ctx.font.valid()) {
+        const std::string later_text = "Later";
+        const float later_width = ctx.font->width(later_text, sty.font_size);
+        ctx.texts.push_back({
+            .font = ctx.font,
+            .text = later_text,
+            .position = {
+                later_rect.center().x() - later_width * 0.5f,
+                later_rect.center().y() + sty.font_size * 0.35f
+            },
+            .scale = sty.font_size,
+            .color = sty.color_text,
+            .layer = render_layer::modal
+        });
+    }
+
+    const bool restart_hovered = restart_rect.contains(mouse_pos);
+    ctx.sprites.push_back({
+        .rect = restart_rect,
+        .color = restart_hovered ? unitless::vec4(0.3f, 0.6f, 0.3f, 1.f) : unitless::vec4(0.2f, 0.5f, 0.2f, 1.f),
+        .texture = ctx.blank_texture,
+        .layer = render_layer::modal
+    });
+
+    if (ctx.font.valid()) {
+        const std::string restart_text = "Restart Now";
+        const float restart_width = ctx.font->width(restart_text, sty.font_size);
+        ctx.texts.push_back({
+            .font = ctx.font,
+            .text = restart_text,
+            .position = {
+                restart_rect.center().x() - restart_width * 0.5f,
+                restart_rect.center().y() + sty.font_size * 0.35f
+            },
+            .scale = sty.font_size,
+            .color = sty.color_text,
+            .layer = render_layer::modal
+        });
+    }
+
+    if (ctx.input.mouse_button_pressed(mouse_button::button_1)) {
+        if (later_hovered) {
+            panel_state.active_popup = popup_type::none;
+        } else if (restart_hovered) {
+            panel_state.active_popup = popup_type::none;
+            if (ctx.request_save) {
+                ctx.request_save();
+            }
+            app::restart();
+        }
+    }
 }

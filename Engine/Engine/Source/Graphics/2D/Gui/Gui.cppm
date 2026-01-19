@@ -514,6 +514,9 @@ auto gse::gui::system::end_frame() -> void {
 	            ch.push(std::move(r));
 	        });
 	    },
+	    .request_save = [this] {
+	        (void)system_of<save::system>().save();
+	    },
 	    .tooltip = &m_tooltip
 	};
 
@@ -528,67 +531,74 @@ auto gse::gui::system::end_frame() -> void {
             m_menu_bar_state.settings_open = false;
         }
     }
-
-    if (m_tooltip.widget_id.exists()) {
-		std::println("Tool tip");
-        m_tooltip.hover_time += system_clock::dt<time>();
-
-        if (m_tooltip.hover_time >= tooltip_state::show_delay && !m_tooltip.text.empty() && m_font.valid()) {
-            const float padding = m_frame_state.sty.padding;
-            const float font_size = m_frame_state.sty.font_size;
-            const float text_width = m_font->width(m_tooltip.text, font_size);
-            const float text_height = m_font->line_height(font_size);
-
-            const float tooltip_width = text_width + padding * 2.f;
-            const float tooltip_height = text_height + padding;
-
-            unitless::vec2 tooltip_pos = m_tooltip.position + unitless::vec2(15.f, -15.f);
-
-            if (tooltip_pos.x() + tooltip_width > viewport_size.x()) {
-                tooltip_pos.x() = viewport_size.x() - tooltip_width;
-            }
-            if (tooltip_pos.y() - tooltip_height < 0.f) {
-                tooltip_pos.y() = tooltip_height;
-            }
-
-            const ui_rect tooltip_rect = ui_rect::from_position_size(
-                tooltip_pos,
-                { tooltip_width, tooltip_height }
-            );
-
-            m_sprite_commands.push_back({
-                .rect = tooltip_rect,
-                .color = m_frame_state.sty.color_menu_body,
-                .texture = m_blank_texture,
-                .layer = render_layer::overlay,
-                .z_order = 100
-            });
-
-            m_sprite_commands.push_back({
-                .rect = tooltip_rect.inset({ -1.f, -1.f }),
-                .color = m_frame_state.sty.color_border,
-                .texture = m_blank_texture,
-                .layer = render_layer::overlay,
-                .z_order = 99
-            });
-
-            m_text_commands.push_back({
-                .font = m_font,
-                .text = m_tooltip.text,
-                .position = {
-                    tooltip_rect.left() + padding,
-                    tooltip_rect.center().y() + font_size * 0.35f
-                },
-                .scale = font_size,
-                .color = m_frame_state.sty.color_text,
-                .clip_rect = tooltip_rect,
-                .layer = render_layer::overlay,
-                .z_order = 100
-            });
+	
+    if (m_tooltip.pending_widget_id.exists()) {
+        if (m_tooltip.pending_widget_id == m_tooltip.widget_id) {
+            m_tooltip.hover_time += system_clock::dt<time>();
+        } else {
+            m_tooltip.widget_id = m_tooltip.pending_widget_id;
+            m_tooltip.hover_time = time{};
         }
+    } else {
+        m_tooltip.widget_id.reset();
+        m_tooltip.hover_time = time{};
+        m_tooltip.text.clear();
     }
 
-    m_tooltip.widget_id.reset();
+    if (m_tooltip.widget_id.exists() && m_tooltip.hover_time >= tooltip_state::show_delay && !m_tooltip.text.empty() && m_font.valid()) {
+        const float padding = m_frame_state.sty.padding;
+        const float font_size = m_frame_state.sty.font_size;
+        const float text_width = m_font->width(m_tooltip.text, font_size);
+        const float text_height = m_font->line_height(font_size);
+
+        const float tooltip_width = text_width + padding * 2.f;
+        const float tooltip_height = text_height + padding;
+
+        unitless::vec2 tooltip_pos = m_tooltip.position + unitless::vec2(15.f, -15.f);
+
+        if (tooltip_pos.x() + tooltip_width > viewport_size.x()) {
+            tooltip_pos.x() = viewport_size.x() - tooltip_width;
+        }
+        if (tooltip_pos.y() - tooltip_height < 0.f) {
+            tooltip_pos.y() = tooltip_height;
+        }
+
+        const ui_rect tooltip_rect = ui_rect::from_position_size(
+            tooltip_pos,
+            { tooltip_width, tooltip_height }
+        );
+
+        m_sprite_commands.push_back({
+            .rect = tooltip_rect,
+            .color = m_frame_state.sty.color_menu_body,
+            .texture = m_blank_texture,
+            .layer = render_layer::modal,
+            .z_order = 100
+        });
+
+        m_sprite_commands.push_back({
+            .rect = tooltip_rect.inset({ -1.f, -1.f }),
+            .color = m_frame_state.sty.color_border,
+            .texture = m_blank_texture,
+            .layer = render_layer::modal,
+            .z_order = 99
+        });
+
+        m_text_commands.push_back({
+            .font = m_font,
+            .text = m_tooltip.text,
+            .position = {
+                tooltip_rect.left() + padding,
+                tooltip_rect.center().y() + font_size * 0.35f
+            },
+            .scale = font_size,
+            .color = m_frame_state.sty.color_text,
+            .layer = render_layer::modal,
+            .z_order = 100
+        });
+    }
+
+    m_tooltip.pending_widget_id.reset();
 
     if (m_frame_state.rctx && m_frame_state.rctx->ui_focus()) {
         cursor::render_to(*m_frame_state.rctx, m_sprite_commands, input_state.mouse_position());

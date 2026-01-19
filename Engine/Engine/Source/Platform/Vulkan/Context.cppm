@@ -14,6 +14,7 @@ import :config;
 import :persistent_allocator;
 
 import gse.assert;
+import gse.utility;
 
 export namespace gse::vulkan {
 	auto generate_config(
@@ -326,9 +327,17 @@ auto gse::vulkan::end_frame(const frame_params& params) -> void {
 }
 
 auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_config {
-	const std::vector validation_layers = {
-		"VK_LAYER_KHRONOS_validation"
-	};
+	const bool enable_validation = save::read_bool_setting_early(
+		gse::config::resource_path / "Misc/settings.cfg",
+		"Graphics",
+		"Validation Layers",
+		false
+	);
+
+	std::vector<const char*> validation_layers;
+	if (enable_validation) {
+		validation_layers.push_back("VK_LAYER_KHRONOS_validation");
+	}
 
 #if VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
 	VULKAN_HPP_DEFAULT_DISPATCHER.init();
@@ -395,11 +404,11 @@ auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_co
 	};
 
 	const vk::InstanceCreateInfo create_info{
-		.pNext = &features,
+		.pNext = enable_validation ? static_cast<const void*>(&features) : nullptr,
 		.flags = {},
 		.pApplicationInfo = &app_info,
 		.enabledLayerCount = static_cast<uint32_t>(validation_layers.size()),
-		.ppEnabledLayerNames = validation_layers.data(),
+		.ppEnabledLayerNames = validation_layers.empty() ? nullptr : validation_layers.data(),
 		.enabledExtensionCount = static_cast<uint32_t>(extensions.size()),
 		.ppEnabledExtensionNames = extensions.data()
 	};
@@ -409,7 +418,7 @@ auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_co
 
 	try {
 		instance = vk::raii::Instance(context, create_info);
-		std::cout << "Vulkan Instance Created Successfully!\n";
+		std::cout << "Vulkan Instance Created" << (enable_validation ? " with validation layers" : "") << "!\n";
 	} catch (vk::SystemError& err) {
 		std::cerr << "Failed to create Vulkan instance: " << err.what() << "\n";
 		throw;
@@ -419,11 +428,13 @@ auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_co
 	VULKAN_HPP_DEFAULT_DISPATCHER.init(*instance);
 #endif
 
-	try {
-		debug_utils_messenger = instance.createDebugUtilsMessengerEXT(debug_create_info);
-		std::cout << "Debug Messenger Created Successfully!\n";
-	} catch (vk::SystemError& err) {
-		std::cerr << "Failed to create Debug Messenger: " << err.what() << "\n";
+	if (enable_validation) {
+		try {
+			debug_utils_messenger = instance.createDebugUtilsMessengerEXT(debug_create_info);
+			std::cout << "Debug Messenger Created Successfully!\n";
+		} catch (vk::SystemError& err) {
+			std::cerr << "Failed to create Debug Messenger: " << err.what() << "\n";
+		}
 	}
 
 	VkSurfaceKHR temp_surface;

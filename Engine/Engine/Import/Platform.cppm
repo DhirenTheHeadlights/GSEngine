@@ -6,5 +6,6 @@ export import :input;
 export import :input_state;
 export import :image_loader;
 export import :actions;
+export import :app;
 
 export import gse.platform.vulkan;

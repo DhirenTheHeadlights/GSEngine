@@ -36,12 +36,13 @@ export namespace gse::save {
         std::string description;
         void* ref = nullptr;
         std::type_index type = typeid(void);
-        
+
         float range_min = 0.f;
         float range_max = 1.f;
         float range_step = 0.1f;
-        
+
         std::vector<std::pair<std::string, int>> enum_options;
+        bool requires_restart = false;
     };
 
     enum class constraint_type {
@@ -142,6 +143,9 @@ export namespace gse::save {
         virtual auto set_string(
             std::string_view value
         ) -> void;
+
+        [[nodiscard]] virtual auto requires_restart(
+        ) const -> bool = 0;
     };
 
     template <typename T, typename Constraint = no_constraint>
@@ -154,7 +158,8 @@ export namespace gse::save {
             std::string_view description,
             T& ref,
             T default_value,
-            Constraint constraint = {}
+            Constraint constraint = {},
+            bool requires_restart = false
         );
 
         [[nodiscard]] auto name() const -> std::string_view override;
@@ -237,6 +242,9 @@ export namespace gse::save {
             std::string_view value
         ) -> void override;
 
+        [[nodiscard]] auto requires_restart(
+        ) const -> bool override;
+
         [[nodiscard]] auto value(
         ) const -> const T&;
 
@@ -258,6 +266,7 @@ export namespace gse::save {
         T m_default;
         Constraint m_constraint;
         bool m_dirty = false;
+        bool m_requires_restart = false;
     };
 
     template <typename T>
@@ -293,6 +302,9 @@ export namespace gse::save {
             std::initializer_list<std::pair<std::string, T>> opts
         ) -> property_builder&;
 
+        auto restart_required(
+        ) -> property_builder&;
+
         auto commit(
         ) -> property_base*;
     private:
@@ -303,6 +315,7 @@ export namespace gse::save {
         T& m_ref;
         T m_default;
         std::any m_constraint;
+        bool m_requires_restart = false;
     };
 
     class category_view {
@@ -373,15 +386,24 @@ export namespace gse::save {
         ) const -> bool;
 
         auto set_auto_save(
-            bool enabled, 
+            bool enabled,
             std::filesystem::path path = {}
         ) -> void;
+
+        auto save(
+        ) const -> bool;
 
         [[nodiscard]] auto has_unsaved_changes(
         ) const -> bool;
 
+        [[nodiscard]] auto has_pending_restart_changes(
+        ) const -> bool;
+
         auto mark_all_clean(
         ) const -> void;
+
+        auto clear_restart_pending(
+        ) -> void;
 
         using change_callback = std::function<void(property_base&)>;
         auto on_change(
@@ -398,11 +420,25 @@ export namespace gse::save {
 
         std::filesystem::path m_auto_save_path;
         bool m_auto_save = false;
+        bool m_restart_pending = false;
 
         auto process_registration(
             const save::register_property& reg
         ) -> void;
     };
+
+    [[nodiscard]] auto read_setting_early(
+        const std::filesystem::path& path,
+        std::string_view category,
+        std::string_view name
+    ) -> std::optional<std::string>;
+
+    [[nodiscard]] auto read_bool_setting_early(
+        const std::filesystem::path& path,
+        std::string_view category,
+        std::string_view name,
+        bool default_value = false
+    ) -> bool;
 
     struct property_changed {
         std::string_view category;
@@ -478,14 +514,16 @@ gse::save::property<T, Constraint>::property(
     const std::string_view description,
     T& ref,
     T default_value,
-    Constraint constraint
+    Constraint constraint,
+    const bool requires_restart
 ) : m_system(sys)
   , m_category(category)
   , m_name(name)
   , m_description(description)
   , m_ref(ref)
   , m_default(std::move(default_value))
-  , m_constraint(std::move(constraint)) {}
+  , m_constraint(std::move(constraint))
+  , m_requires_restart(requires_restart) {}
 
 template <typename T, typename Constraint>
 auto gse::save::property<T, Constraint>::name() const -> std::string_view {
@@ -717,6 +755,11 @@ auto gse::save::property<T, Constraint>::set_string(const std::string_view value
 }
 
 template <typename T, typename Constraint>
+auto gse::save::property<T, Constraint>::requires_restart() const -> bool {
+    return m_requires_restart;
+}
+
+template <typename T, typename Constraint>
 auto gse::save::property<T, Constraint>::value() const -> const T& { return m_ref; }
 
 template <typename T, typename Constraint>
@@ -786,25 +829,31 @@ auto gse::save::property_builder<T>::options(std::initializer_list<std::pair<std
 }
 
 template <typename T>
+auto gse::save::property_builder<T>::restart_required() -> property_builder& {
+    m_requires_restart = true;
+    return *this;
+}
+
+template <typename T>
 auto gse::save::property_builder<T>::commit() -> property_base* {
     std::unique_ptr<property_base> prop;
 
     if (m_constraint.has_value()) {
         if (auto* range_c = std::any_cast<range_constraint<T>>(&m_constraint)) {
             prop = std::make_unique<property<T, range_constraint<T>>>(
-                &m_system, m_category, m_name, m_description, m_ref, m_default, *range_c
+                &m_system, m_category, m_name, m_description, m_ref, m_default, *range_c, m_requires_restart
             );
         }
         else if (auto* enum_c = std::any_cast<enum_constraint<T>>(&m_constraint)) {
             prop = std::make_unique<property<T, enum_constraint<T>>>(
-                &m_system, m_category, m_name, m_description, m_ref, m_default, *enum_c
+                &m_system, m_category, m_name, m_description, m_ref, m_default, *enum_c, m_requires_restart
             );
         }
     }
 
     if (!prop) {
         prop = std::make_unique<property<T>>(
-            &m_system, m_category, m_name, m_description, m_ref, m_default
+            &m_system, m_category, m_name, m_description, m_ref, m_default, no_constraint{}, m_requires_restart
         );
     }
 
@@ -868,7 +917,7 @@ auto gse::save::system::process_registration(const save::register_property& reg)
     if (reg.type == typeid(bool)) {
         auto* ref = static_cast<bool*>(reg.ref);
         prop = std::make_unique<property<bool>>(
-            this, reg.category, reg.name, reg.description, *ref, *ref
+            this, reg.category, reg.name, reg.description, *ref, *ref, no_constraint{}, reg.requires_restart
         );
     }
     else if (!reg.enum_options.empty()) {
@@ -876,14 +925,14 @@ auto gse::save::system::process_registration(const save::register_property& reg)
         enum_constraint<int> constraint;
         constraint.options = reg.enum_options;
         prop = std::make_unique<property<int, enum_constraint<int>>>(
-            this, reg.category, reg.name, reg.description, *ref, *ref, constraint
+            this, reg.category, reg.name, reg.description, *ref, *ref, constraint, reg.requires_restart
         );
     }
     else if (reg.type == typeid(float)) {
         auto* ref = static_cast<float*>(reg.ref);
         range_constraint<float> constraint{ reg.range_min, reg.range_max, reg.range_step };
         prop = std::make_unique<property<float, range_constraint<float>>>(
-            this, reg.category, reg.name, reg.description, *ref, *ref, constraint
+            this, reg.category, reg.name, reg.description, *ref, *ref, constraint, reg.requires_restart
         );
     }
     else if (reg.type == typeid(int)) {
@@ -894,7 +943,7 @@ auto gse::save::system::process_registration(const save::register_property& reg)
             static_cast<int>(reg.range_step)
         };
         prop = std::make_unique<property<int, range_constraint<int>>>(
-            this, reg.category, reg.name, reg.description, *ref, *ref, constraint
+            this, reg.category, reg.name, reg.description, *ref, *ref, constraint, reg.requires_restart
         );
     }
 
@@ -1010,10 +1059,25 @@ auto gse::save::system::set_auto_save(const bool enabled, std::filesystem::path 
     }
 }
 
+auto gse::save::system::save() const -> bool {
+    if (m_auto_save_path.empty()) {
+        return false;
+    }
+    return save_to_file(m_auto_save_path);
+}
+
 auto gse::save::system::has_unsaved_changes() const -> bool {
     return std::ranges::any_of(m_properties, [](const std::unique_ptr<property_base>& p) {
         return p->dirty();
     });
+}
+
+auto gse::save::system::has_pending_restart_changes() const -> bool {
+    return m_restart_pending;
+}
+
+auto gse::save::system::clear_restart_pending() -> void {
+    m_restart_pending = false;
 }
 
 auto gse::save::system::mark_all_clean() const -> void {
@@ -1027,6 +1091,10 @@ auto gse::save::system::on_change(change_callback cb) -> void {
 }
 
 auto gse::save::system::notify_change(property_base& prop) -> void {
+    if (prop.requires_restart()) {
+        m_restart_pending = true;
+    }
+
     for (const auto& cb : m_callbacks) {
         cb(prop);
     }
@@ -1034,4 +1102,36 @@ auto gse::save::system::notify_change(property_base& prop) -> void {
     publish([&prop](channel<property_changed>& chan) {
         chan.emplace(prop.category(), prop.name(), prop.type());
     });
+}
+
+auto gse::save::read_setting_early(const std::filesystem::path& path, const std::string_view category, const std::string_view name) -> std::optional<std::string> {
+    if (!std::filesystem::exists(path)) {
+        return std::nullopt;
+    }
+
+    std::ifstream file(path);
+    if (!file) {
+        return std::nullopt;
+    }
+
+    const std::string target_key = std::string(category) + "." + std::string(name);
+
+    std::string line;
+    while (std::getline(file, line)) {
+        if (const auto eq = line.find(" = "); eq != std::string::npos) {
+	        if (auto key = line.substr(0, eq); key == target_key) {
+                return line.substr(eq + 3);
+            }
+        }
+    }
+
+    return std::nullopt;
+}
+
+auto gse::save::read_bool_setting_early(const std::filesystem::path& path, const std::string_view category, const std::string_view name, const bool default_value) -> bool {
+    const auto value = read_setting_early(path, category, name);
+    if (!value) {
+        return default_value;
+    }
+    return *value == "true" || *value == "1";
 }

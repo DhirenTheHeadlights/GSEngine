@@ -1,5 +1,6 @@
 export module gse.graphics;
 
+export import :animation;
 export import :directional_light;
 export import :point_light;
 export import :spot_light;
@@ -20,4 +21,9 @@ export import :texture;
 export import :ui_renderer;
 export import :shader;
 export import :shadow_renderer;
+export import :skeleton;
+export import :animation_component;
+export import :joint;
+export import :clip;
+export import :clip_component;
 
