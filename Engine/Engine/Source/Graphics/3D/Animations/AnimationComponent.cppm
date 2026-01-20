@@ -20,5 +20,6 @@ export namespace gse {
 		std::vector<mat4> local_pose;
 		std::vector<mat4> global_pose;
 		std::vector<mat4> skins;
+		std::uint32_t skin_buffer_offset = 0;
 	};
 }

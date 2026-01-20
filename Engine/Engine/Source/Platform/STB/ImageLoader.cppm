@@ -47,9 +47,8 @@ export namespace gse::image {
     ) -> std::array<data, 6>;
 
 	auto load_raw(
-        const std::filesystem::path& path, 
-        std::uint32_t channels
-    ) -> data;
+		const std::filesystem::path& path
+	) -> data;
 
 	auto dimensions(
         const std::filesystem::path& path
@@ -106,13 +105,13 @@ auto gse::image::load_cube_faces(const std::array<std::filesystem::path, 6>& pat
 
     for (size_t i = 1; i < paths.size(); ++i) {
         faces[i] = load(paths[i]);
-        assert(faces[i].size == required, std::source_location::current(), "All cube faces must match size {}×{}: {}", required.x(), required.y(), paths[i].string());
+        assert(faces[i].size == required, std::source_location::current(), "All cube faces must match size {}: {}", required, paths[i].string());
     }
 
     return faces;
 }
 
-auto gse::image::load_raw(const std::filesystem::path& path, const std::uint32_t channels) -> data {
+auto gse::image::load_raw(const std::filesystem::path& path) -> data {
     data img_data{
         .path = path
     };

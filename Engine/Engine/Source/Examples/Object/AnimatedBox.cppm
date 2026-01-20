@@ -57,8 +57,7 @@ export namespace gse {
 		}
 
 		auto update() -> void override {
-			auto* clip = try_component_write<clip_component>();
-			if (m_toggle_channel.pressed && clip) {
+			if (auto* clip = try_component_write<clip_component>(); m_toggle_channel.pressed && clip) {
 				clip->playing = !clip->playing;
 			}
 

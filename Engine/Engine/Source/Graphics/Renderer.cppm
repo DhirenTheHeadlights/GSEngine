@@ -9,6 +9,7 @@ import :material;
 import :rendering_context;
 import :font;
 import :model;
+import :skinned_model;
 import :shader;
 import :skeleton;
 import :texture;
@@ -92,6 +93,7 @@ auto gse::renderer::system::initialize() -> void {
 
 	ctx.add_loader<texture>();
 	ctx.add_loader<model>();
+	ctx.add_loader<skinned_model>();
 	ctx.add_loader<shader>();
 	ctx.add_loader<font>();
 	ctx.add_loader<material>();

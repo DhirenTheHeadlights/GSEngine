@@ -1,13 +1,17 @@
-﻿export module gse.graphics:geometry_renderer;
+export module gse.graphics:geometry_renderer;
 
 import std;
 
 import :camera;
 import :mesh;
+import :skinned_mesh;
 import :model;
+import :skinned_model;
 import :render_component;
+import :animation_component;
 import :material;
 import :shader;
+import :texture;
 
 import gse.physics.math;
 import gse.utility;
@@ -32,17 +36,35 @@ export namespace gse::renderer {
 
 		auto render_queue(
 		) const -> std::span<const render_queue_entry>;
+
+		auto skinned_render_queue(
+		) const -> std::span<const skinned_render_queue_entry>;
+
+		auto skin_buffer(
+		) const -> const vulkan::buffer_resource&;
 	private:
 		context& m_context;
+
 		vk::raii::Pipeline m_pipeline = nullptr;
 		vk::raii::PipelineLayout m_pipeline_layout = nullptr;
 		per_frame_resource<vk::raii::DescriptorSet> m_descriptor_sets;
-
 		resource::handle<shader> m_shader;
+
+		vk::raii::Pipeline m_skinned_pipeline = nullptr;
+		vk::raii::PipelineLayout m_skinned_pipeline_layout = nullptr;
+		per_frame_resource<vk::raii::DescriptorSet> m_skinned_descriptor_sets;
+		resource::handle<shader> m_skinned_shader;
 
 		std::unordered_map<std::string, per_frame_resource<vulkan::buffer_resource>> m_ubo_allocations;
 
+		static constexpr std::size_t max_skin_matrices = 256 * 128;
+		per_frame_resource<vulkan::buffer_resource> m_skin_buffer;
+		per_frame_resource<std::vector<mat4>> m_skin_staging;
+
 		double_buffer<std::vector<render_queue_entry>> m_render_queue;
+		double_buffer<std::vector<skinned_render_queue_entry>> m_skinned_render_queue;
+
+		resource::handle<texture> m_blank_texture;
 	};
 }
 
@@ -140,7 +162,7 @@ auto gse::renderer::geometry::initialize() -> void {
 			{
 				"CameraUBO",
 				{
-					.buffer = m_ubo_allocations["CameraUBO"][i]->buffer,
+					.buffer = m_ubo_allocations["CameraUBO"][i].buffer,
 					.offset = 0,
 					.range = camera_ubo.size
 				}
@@ -271,13 +293,93 @@ auto gse::renderer::geometry::initialize() -> void {
 	};
 	m_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
 
+	m_skinned_shader = m_context.get<shader>("skinned_geometry_pass");
+	m_context.instantly_load(m_skinned_shader);
+	auto skinned_descriptor_set_layouts = m_skinned_shader->layouts();
+
+	constexpr vk::DeviceSize skin_buffer_size = max_skin_matrices * sizeof(mat4);
+	for (std::size_t i = 0; i < per_frame_resource<vulkan::buffer_resource>::frames_in_flight; ++i) {
+		m_skin_buffer[i] = config.allocator().create_buffer(
+			vk::BufferCreateInfo{
+				.size = skin_buffer_size,
+				.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
+			}
+		);
+		m_skin_staging[i].reserve(max_skin_matrices);
+
+		m_skinned_descriptor_sets[i] = m_skinned_shader->descriptor_set(
+			config.device_config().device,
+			config.descriptor_config().pool,
+			shader::set::binding_type::persistent
+		);
+
+		std::unordered_map<std::string, vk::DescriptorBufferInfo> skinned_buffer_infos{
+			{
+				"CameraUBO",
+				{
+					.buffer = m_ubo_allocations["CameraUBO"][i].buffer,
+					.offset = 0,
+					.range = camera_ubo.size
+				}
+			}
+		};
+
+		std::unordered_map<std::string, vk::DescriptorImageInfo> skinned_image_infos = {};
+
+		config.device_config().device.updateDescriptorSets(
+			m_skinned_shader->descriptor_writes(*m_skinned_descriptor_sets[i], skinned_buffer_infos, skinned_image_infos),
+			nullptr
+		);
+	}
+
+	std::vector skinned_ranges = {
+		m_skinned_shader->push_constant_range("push_constants"),
+	};
+
+	const vk::PipelineLayoutCreateInfo skinned_pipeline_layout_info{
+		.setLayoutCount = static_cast<std::uint32_t>(skinned_descriptor_set_layouts.size()),
+		.pSetLayouts = skinned_descriptor_set_layouts.data(),
+		.pushConstantRangeCount = static_cast<std::uint32_t>(skinned_ranges.size()),
+		.pPushConstantRanges = skinned_ranges.data()
+	};
+
+	m_skinned_pipeline_layout = config.device_config().device.createPipelineLayout(skinned_pipeline_layout_info);
+
+	auto skinned_shader_stages = m_skinned_shader->shader_stages();
+	auto skinned_vertex_input_info = m_skinned_shader->vertex_input_state();
+
+	const vk::GraphicsPipelineCreateInfo skinned_pipeline_info{
+		.pNext = &geometry_rendering_info,
+		.stageCount = static_cast<std::uint32_t>(skinned_shader_stages.size()),
+		.pStages = skinned_shader_stages.data(),
+		.pVertexInputState = &skinned_vertex_input_info,
+		.pInputAssemblyState = &input_assembly,
+		.pTessellationState = nullptr,
+		.pViewportState = &viewport_state,
+		.pRasterizationState = &rasterizer,
+		.pMultisampleState = &multisampling,
+		.pDepthStencilState = &depth_stencil,
+		.pColorBlendState = &color_blending,
+		.pDynamicState = &dynamic_state,
+		.layout = m_skinned_pipeline_layout,
+		.basePipelineHandle = nullptr,
+		.basePipelineIndex = 0
+	};
+	m_skinned_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, skinned_pipeline_info);
+
+	m_blank_texture = m_context.queue<texture>("blank", unitless::vec4(1, 1, 1, 1));
+
 	frame_sync::on_end([this] {
 		m_render_queue.flip();
+		m_skinned_render_queue.flip();
 	});
 }
 
 auto gse::renderer::geometry::update() -> void {
-	this->write([this](const component_chunk<render_component>& render_chunk) {
+	this->write([this](
+		const component_chunk<render_component>& render_chunk,
+		const component_chunk<animation_component>& anim_chunk
+	) {
 		if (render_chunk.empty()) {
 			return;
 		}
@@ -287,17 +389,23 @@ auto gse::renderer::geometry::update() -> void {
 		m_shader->set_uniform(
 			"CameraUBO.view",
 			m_context.camera().view(),
-			m_ubo_allocations.at("CameraUBO")[frame_index]->allocation
+			m_ubo_allocations.at("CameraUBO")[frame_index].allocation
 		);
 
 		m_shader->set_uniform(
 			"CameraUBO.proj",
 			m_context.camera().projection(m_context.window().viewport()),
-			m_ubo_allocations.at("CameraUBO")[frame_index]->allocation
+			m_ubo_allocations.at("CameraUBO")[frame_index].allocation
 		);
 
 		auto& out = m_render_queue.write();
 		out.clear();
+
+		auto& skinned_out = m_skinned_render_queue.write();
+		skinned_out.clear();
+
+		auto& skin_staging = m_skin_staging[frame_index];
+		skin_staging.clear();
 
 		for (auto& component : render_chunk) {
 			if (!component.render) {
@@ -315,11 +423,42 @@ auto gse::renderer::geometry::update() -> void {
 				model_handle.update(*mc, *cc);
 				out.append_range(model_handle.render_queue_entries());
 			}
+
+			const auto* anim = anim_chunk.read(component.owner_id());
+
+			for (auto& skinned_model_handle : component.skinned_model_instances) {
+				if (!skinned_model_handle.handle().valid() || mc == nullptr || cc == nullptr) {
+					continue;
+				}
+
+				std::uint32_t skin_offset = 0;
+				if (anim != nullptr && !anim->skins.empty()) {
+					skin_offset = static_cast<std::uint32_t>(skin_staging.size());
+					skin_staging.insert(skin_staging.end(), anim->skins.begin(), anim->skins.end());
+				}
+
+				skinned_model_handle.update(*mc, *cc, skin_offset);
+				skinned_out.append_range(skinned_model_handle.render_queue_entries());
+			}
 		}
 
 		std::ranges::sort(
 			out,
 			[](const render_queue_entry& a, const render_queue_entry& b) {
+				const auto* ma = a.model.resolve();
+				const auto* mb = b.model.resolve();
+
+				if (ma != mb) {
+					return ma < mb;
+				}
+
+				return a.index < b.index;
+			}
+		);
+
+		std::ranges::sort(
+			skinned_out,
+			[](const skinned_render_queue_entry& a, const skinned_render_queue_entry& b) {
 				const auto* ma = a.model.resolve();
 				const auto* mb = b.model.resolve();
 
@@ -401,21 +540,18 @@ auto gse::renderer::geometry::render() -> void {
         .pDepthAttachment = &depth_attachment
     };
 
+    const auto frame_index = config.current_frame();
+    const auto& skin_staging = m_skin_staging[frame_index];
+
+    if (!skin_staging.empty()) {
+        const vk::DeviceSize copy_size = skin_staging.size() * sizeof(mat4);
+        std::memcpy(m_skin_buffer[frame_index].allocation.mapped(), skin_staging.data(), copy_size);
+    }
+
     vulkan::render(
         config,
         rendering_info,
         [&] {
-            const auto& draw_list = m_render_queue.read();
-
-            if (draw_list.empty()) {
-                return;
-            }
-
-            command.bindPipeline(
-                vk::PipelineBindPoint::eGraphics,
-                m_pipeline
-            );
-
             const vk::Viewport viewport{
                 .x = 0.0f,
                 .y = 0.0f,
@@ -432,41 +568,106 @@ auto gse::renderer::geometry::render() -> void {
             };
             command.setScissor(0, scissor);
 
-            const auto frame_index = config.current_frame();
-            const vk::DescriptorSet sets[]{ **m_descriptor_sets[frame_index] };
-
-            command.bindDescriptorSets(
-                vk::PipelineBindPoint::eGraphics,
-                m_pipeline_layout,
-                0,
-                vk::ArrayProxy<const vk::DescriptorSet>(1, sets),
-                {}
-            );
-
-            for (const auto& e : draw_list) {
-                m_shader->push(
-                    command,
-                    m_pipeline_layout,
-                    "push_constants",
-                    "model", e.model_matrix,
-                    "normal_matrix", e.normal_matrix
+            if (const auto& draw_list = m_render_queue.read(); !draw_list.empty()) {
+                command.bindPipeline(
+                    vk::PipelineBindPoint::eGraphics,
+                    m_pipeline
                 );
 
-                const auto& mesh = e.model->meshes()[e.index];
+                const vk::DescriptorSet sets[]{ **m_descriptor_sets[frame_index] };
 
-                if (!mesh.material().valid()) {
-                    continue;
+                command.bindDescriptorSets(
+                    vk::PipelineBindPoint::eGraphics,
+                    m_pipeline_layout,
+                    0,
+                    vk::ArrayProxy<const vk::DescriptorSet>(1, sets),
+                    {}
+                );
+
+                for (const auto& e : draw_list) {
+                    m_shader->push(
+                        command,
+                        m_pipeline_layout,
+                        "push_constants",
+                        "model", e.model_matrix,
+                        "normal_matrix", e.normal_matrix
+                    );
+
+                    const auto& mesh = e.model->meshes()[e.index];
+
+                    const bool has_texture = mesh.material().valid() && mesh.material()->diffuse_texture.valid();
+                    const auto& tex_info = has_texture
+                        ? mesh.material()->diffuse_texture->descriptor_info()
+                        : m_blank_texture->descriptor_info();
+
+                    m_shader->push_descriptor(
+                        command,
+                        m_pipeline_layout,
+                        "diffuseSampler",
+                        tex_info
+                    );
+
+                    mesh.bind(command);
+                    mesh.draw(command);
                 }
+            }
 
-                m_shader->push_descriptor(
-                    command,
-                    m_pipeline_layout,
-                    "diffuseSampler",
-                    mesh.material()->diffuse_texture->descriptor_info()
+            if (const auto& skinned_draw_list = m_skinned_render_queue.read(); !skinned_draw_list.empty()) {
+                command.bindPipeline(
+                    vk::PipelineBindPoint::eGraphics,
+                    m_skinned_pipeline
                 );
 
-                mesh.bind(command);
-                mesh.draw(command);
+                const vk::DescriptorSet skinned_sets[]{ **m_skinned_descriptor_sets[frame_index] };
+
+                command.bindDescriptorSets(
+                    vk::PipelineBindPoint::eGraphics,
+                    m_skinned_pipeline_layout,
+                    0,
+                    vk::ArrayProxy<const vk::DescriptorSet>(1, skinned_sets),
+                    {}
+                );
+
+                const vk::DescriptorBufferInfo skin_buffer_info{
+                    .buffer = m_skin_buffer[frame_index].buffer,
+                    .offset = 0,
+                    .range = vk::WholeSize
+                };
+
+                m_skinned_shader->push_descriptor(
+                    command,
+                    m_skinned_pipeline_layout,
+                    "skinMatrices",
+                    skin_buffer_info
+                );
+
+                for (const auto& e : skinned_draw_list) {
+                    m_skinned_shader->push(
+                        command,
+                        m_skinned_pipeline_layout,
+                        "push_constants",
+                        "model", e.model_matrix,
+                        "normal_matrix", e.normal_matrix,
+                        "skin_offset", e.skin_offset
+                    );
+
+                    const auto& mesh = e.model->meshes()[e.index];
+
+                    const bool has_texture = mesh.material().valid() && mesh.material()->diffuse_texture.valid();
+                    const auto& tex_info = has_texture
+                        ? mesh.material()->diffuse_texture->descriptor_info()
+                        : m_blank_texture->descriptor_info();
+
+                    m_skinned_shader->push_descriptor(
+                        command,
+                        m_skinned_pipeline_layout,
+                        "diffuseSampler",
+                        tex_info
+                    );
+
+                    mesh.bind(command);
+                    mesh.draw(command);
+                }
             }
         }
     );
@@ -488,4 +689,12 @@ auto gse::renderer::geometry::render() -> void {
 
 auto gse::renderer::geometry::render_queue() const -> std::span<const render_queue_entry> {
 	return m_render_queue.read();
+}
+
+auto gse::renderer::geometry::skinned_render_queue() const -> std::span<const skinned_render_queue_entry> {
+	return m_skinned_render_queue.read();
+}
+
+auto gse::renderer::geometry::skin_buffer() const -> const vulkan::buffer_resource& {
+	return m_skin_buffer[m_context.config().current_frame()];
 }

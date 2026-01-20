@@ -25,17 +25,6 @@ export namespace gse::renderer {
 
 		auto render(
 		) -> void override;
-
-		auto set_enabled(
-			const bool enabled
-		) -> void {
-			m_enabled = enabled;
-		}
-
-		auto enabled(
-		) const -> bool {
-			return m_enabled;
-		}
 	private:
 		struct debug_vertex {
 			unitless::vec3 position;
@@ -109,6 +98,15 @@ auto gse::renderer::physics_debug::ensure_vertex_capacity(const std::size_t requ
 }
 
 auto gse::renderer::physics_debug::initialize() -> void {
+	publish([this](channel<save::register_property>& ch) {
+		save::bind(ch, "Graphics", "Physics Debug Renderer Enabled", m_enabled)
+			.description("Enable or disable outlines on collision boxes & visible impulse vectors")
+			.default_value(false)
+			.commit();
+	});
+
+	m_enabled = system_of<save::system>().read("Graphics", "Physics Debug Renderer Enabled", true);
+
 	auto& config = m_context.config();
 
 	m_shader = m_context.get<shader>("physics_debug");
@@ -136,7 +134,7 @@ auto gse::renderer::physics_debug::initialize() -> void {
 			{
 				"CameraUBO",
 				{
-					.buffer = m_ubo_allocations["CameraUBO"][i]->buffer,
+					.buffer = m_ubo_allocations["CameraUBO"][i].buffer,
 					.offset = 0,
 					.range = camera_ubo.size
 				}
@@ -392,8 +390,8 @@ auto gse::renderer::physics_debug::render() -> void {
 	const auto command = config.frame_context().command_buffer;
 	const auto frame_index = config.current_frame();
 
-	m_shader->set_uniform("CameraUBO.view", m_context.camera().view(), m_ubo_allocations.at("CameraUBO")[frame_index]->allocation);
-	m_shader->set_uniform("CameraUBO.proj", m_context.camera().projection(m_context.window().viewport()), m_ubo_allocations.at("CameraUBO")[frame_index]->allocation);
+	m_shader->set_uniform("CameraUBO.view", m_context.camera().view(), m_ubo_allocations.at("CameraUBO")[frame_index].allocation);
+	m_shader->set_uniform("CameraUBO.proj", m_context.camera().projection(m_context.window().viewport()), m_ubo_allocations.at("CameraUBO")[frame_index].allocation);
 
 	const auto& verts = m_vertices.read();
 	if (verts.empty()) {

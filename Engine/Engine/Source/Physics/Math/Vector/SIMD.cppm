@@ -28,6 +28,8 @@ export namespace gse::simd {
 	auto min(const span auto& lhs, const span auto& rhs, span auto result) -> void;
 	auto max(const span auto& lhs, const span auto& rhs, span auto result) -> void;
 	auto clamp(const span auto& v, const span auto& min_v, const span auto& max_v, span auto result) -> void;
+
+	auto mul_mat4(const float* lhs, const float* rhs, float* result) -> void;
 }
 
 export namespace gse::simd {
@@ -981,5 +983,36 @@ auto gse::simd::max_d(const double* lhs, const double* rhs, double* result, cons
 	}
 	else if (support::sse2 && size == 2) {
 		_mm_storeu_pd(result, _mm_max_pd(_mm_loadu_pd(lhs), _mm_loadu_pd(rhs)));
+	}
+}
+
+auto gse::simd::mul_mat4(const float* lhs, const float* rhs, float* result) -> void {
+	if (support::sse) {
+		const __m128 a0 = _mm_loadu_ps(lhs);
+		const __m128 a1 = _mm_loadu_ps(lhs + 4);
+		const __m128 a2 = _mm_loadu_ps(lhs + 8);
+		const __m128 a3 = _mm_loadu_ps(lhs + 12);
+
+		for (int col = 0; col < 4; ++col) {
+			const float* b_col = rhs + col * 4;
+
+			__m128 result_col = _mm_mul_ps(a0, _mm_set1_ps(b_col[0]));
+			result_col = _mm_add_ps(result_col, _mm_mul_ps(a1, _mm_set1_ps(b_col[1])));
+			result_col = _mm_add_ps(result_col, _mm_mul_ps(a2, _mm_set1_ps(b_col[2])));
+			result_col = _mm_add_ps(result_col, _mm_mul_ps(a3, _mm_set1_ps(b_col[3])));
+
+			_mm_storeu_ps(result + col * 4, result_col);
+		}
+	}
+	else {
+		for (int col = 0; col < 4; ++col) {
+			for (int row = 0; row < 4; ++row) {
+				float sum = 0.0f;
+				for (int k = 0; k < 4; ++k) {
+					sum += lhs[k * 4 + row] * rhs[col * 4 + k];
+				}
+				result[col * 4 + row] = sum;
+			}
+		}
 	}
 }

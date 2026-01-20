@@ -26,14 +26,13 @@ export namespace gse::physics {
 
 auto gse::physics::system::initialize() -> void {
 	publish([this](channel<save::register_property>& ch) {
-		ch.push({
-			.category = "Physics",
-			.name = "Update Physics",
-			.description = "Enable or disable the physics system update loop",
-			.ref = reinterpret_cast<void*>(&m_update_phys),
-			.type = typeid(bool)
-		});
+		save::bind(ch, "Physics", "Update Physics", m_update_phys)
+			.description("Enable or disable the physics system update loop")
+			.default_value(true)
+			.commit();
 	});
+
+	m_update_phys = system_of<save::system>().read("Physics", "Update Physics", true);
 }
 
 auto gse::physics::system::update() -> void {

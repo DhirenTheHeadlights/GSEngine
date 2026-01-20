@@ -174,6 +174,13 @@ namespace gse {
 			const vk::DescriptorImageInfo& image_info
 		) const -> void;
 
+		auto push_descriptor(
+			vk::CommandBuffer command,
+			vk::PipelineLayout layout,
+			std::string_view name,
+			const vk::DescriptorBufferInfo& buffer_info
+		) const -> void;
+
 		auto push_bytes(
 			vk::CommandBuffer command,
 			vk::PipelineLayout layout,
@@ -1851,6 +1858,39 @@ auto gse::shader::push_descriptor(const vk::CommandBuffer command, const vk::Pip
 							.descriptorCount = 1,
 							.descriptorType = layout_binding.descriptorType,
 							.pImageInfo = &info,
+						}
+					}
+				);
+				return;
+			}
+		}
+	}
+	assert(false, std::source_location::current(), "Binding '{}' not found in shader", name);
+}
+
+auto gse::shader::push_descriptor(const vk::CommandBuffer command, const vk::PipelineLayout layout, const std::string_view name, const vk::DescriptorBufferInfo& buffer_info) const -> void {
+	for (const auto& s : m_layout.sets | std::views::values) {
+		for (const auto& [member_name, layout_binding, member] : s.bindings) {
+			if (member_name == name) {
+				assert(
+					layout_binding.descriptorType == vk::DescriptorType::eStorageBuffer || layout_binding.descriptorType == vk::DescriptorType::eUniformBuffer,
+					std::source_location::current(),
+					"Binding '{}' is not a storage or uniform buffer",
+					name
+				);
+
+				command.pushDescriptorSetKHR(
+					vk::PipelineBindPoint::eGraphics,
+					layout,
+					static_cast<std::uint32_t>(s.type),
+					{
+						vk::WriteDescriptorSet{
+							.pNext = {},
+							.dstBinding = layout_binding.binding,
+							.dstArrayElement = 0,
+							.descriptorCount = 1,
+							.descriptorType = layout_binding.descriptorType,
+							.pBufferInfo = &buffer_info,
 						}
 					}
 				);

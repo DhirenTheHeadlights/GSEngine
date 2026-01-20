@@ -267,7 +267,7 @@ auto gse::resource::loader<R, C>::flush() -> void {
                 }
             }
 
-            resource_ptr->load(m_context);
+             resource_ptr->load(m_context);
         });
     }
 

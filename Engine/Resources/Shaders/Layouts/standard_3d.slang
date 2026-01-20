@@ -5,3 +5,6 @@ public cbuffer CameraUBO {
 };
 
 public [[vk::binding(2, 1)]] Sampler2D diffuseSampler;
+
+[[vk::binding(3, 1)]]
+public StructuredBuffer<float4x4> skinMatrices;

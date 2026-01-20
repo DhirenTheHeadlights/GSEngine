@@ -9,6 +9,7 @@ import :concepts;
 export namespace gse::save {
     class property_base;
     class system;
+    template <typename T> class registration_builder;
 
     struct no_constraint {};
 
@@ -413,6 +414,13 @@ export namespace gse::save {
         auto notify_change(
             property_base& prop
         ) -> void;
+
+        template <typename T>
+        [[nodiscard]] auto read(
+            std::string_view category,
+            std::string_view name,
+            T default_value = T{}
+        ) const -> T;
     private:
         std::vector<std::unique_ptr<property_base>> m_properties;
         mutable std::unordered_map<std::string, std::vector<property_base*>> m_by_category;
@@ -445,6 +453,61 @@ export namespace gse::save {
         std::string_view name;
         std::type_index type;
     };
+
+    template <typename T>
+    class registration_builder {
+    public:
+        registration_builder(
+            channel<register_property>& ch,
+            std::string_view category,
+            std::string_view name,
+            T& ref
+        );
+
+        auto description(
+            std::string_view desc
+        ) -> registration_builder&;
+
+        auto default_value(
+            T value
+        ) -> registration_builder&;
+
+        auto range(
+            T min,
+            T max,
+            T step = T{ 1 }
+        ) -> registration_builder& requires std::is_arithmetic_v<T>;
+
+        auto options(
+            std::initializer_list<std::pair<std::string, T>> opts
+        ) -> registration_builder&;
+
+        auto restart_required(
+        ) -> registration_builder&;
+
+        auto commit(
+        ) const -> void;
+
+    private:
+        channel<register_property>& m_channel;
+        std::string m_category;
+        std::string m_name;
+        std::string m_description;
+        T& m_ref;
+        float m_range_min = 0.f;
+        float m_range_max = 1.f;
+        float m_range_step = 0.1f;
+        std::vector<std::pair<std::string, int>> m_enum_options;
+        bool m_requires_restart = false;
+    };
+
+    template <typename T>
+    auto bind(
+        channel<register_property>& ch,
+        std::string_view category,
+        std::string_view name,
+        T& ref
+    ) -> registration_builder<T>;
 }
 
 auto gse::save::property_base::as_bool() const -> bool {
@@ -1134,4 +1197,109 @@ auto gse::save::read_bool_setting_early(const std::filesystem::path& path, const
         return default_value;
     }
     return *value == "true" || *value == "1";
+}
+
+template <typename T>
+auto gse::save::system::read(const std::string_view category, const std::string_view name, T default_value) const -> T {
+    if (m_auto_save_path.empty()) {
+        return default_value;
+    }
+
+    const auto value_str = read_setting_early(m_auto_save_path, category, name);
+    if (!value_str) {
+        return default_value;
+    }
+
+    if constexpr (std::is_same_v<T, bool>) {
+        return *value_str == "true" || *value_str == "1";
+    }
+    else if constexpr (std::is_same_v<T, std::string>) {
+        if (value_str->size() >= 2 && value_str->front() == '"' && value_str->back() == '"') {
+            return value_str->substr(1, value_str->size() - 2);
+        }
+        return *value_str;
+    }
+    else if constexpr (std::is_enum_v<T>) {
+        std::istringstream iss(*value_str);
+        std::underlying_type_t<T> int_val{};
+        if (iss >> int_val) {
+            return static_cast<T>(int_val);
+        }
+        return default_value;
+    }
+    else {
+        std::istringstream iss(*value_str);
+        T result{};
+        if (iss >> result) {
+            return result;
+        }
+        return default_value;
+    }
+}
+
+template <typename T>
+gse::save::registration_builder<T>::registration_builder(
+    channel<register_property>& ch,
+    const std::string_view category,
+    const std::string_view name,
+    T& ref
+) : m_channel(ch)
+  , m_category(category)
+  , m_name(name)
+  , m_ref(ref) {}
+
+template <typename T>
+auto gse::save::registration_builder<T>::description(const std::string_view desc) -> registration_builder& {
+    m_description = desc;
+    return *this;
+}
+
+template <typename T>
+auto gse::save::registration_builder<T>::default_value(T) -> registration_builder& {
+    return *this;
+}
+
+template <typename T>
+auto gse::save::registration_builder<T>::range(T min, T max, T step) -> registration_builder& requires std::is_arithmetic_v<T> {
+    m_range_min = static_cast<float>(min);
+    m_range_max = static_cast<float>(max);
+    m_range_step = static_cast<float>(step);
+    return *this;
+}
+
+template <typename T>
+auto gse::save::registration_builder<T>::options(std::initializer_list<std::pair<std::string, T>> opts) -> registration_builder& {
+    if constexpr (std::is_convertible_v<T, int>) {
+        for (const auto& [label, value] : opts) {
+            m_enum_options.emplace_back(label, static_cast<int>(value));
+        }
+    }
+    return *this;
+}
+
+template <typename T>
+auto gse::save::registration_builder<T>::restart_required() -> registration_builder& {
+    m_requires_restart = true;
+    return *this;
+}
+
+template <typename T>
+auto gse::save::registration_builder<T>::commit() const -> void {
+    m_channel.push({
+        .category = m_category,
+        .name = m_name,
+        .description = m_description,
+        .ref = reinterpret_cast<void*>(&m_ref),
+        .type = typeid(T),
+        .range_min = m_range_min,
+        .range_max = m_range_max,
+        .range_step = m_range_step,
+        .enum_options = m_enum_options,
+        .requires_restart = m_requires_restart
+    });
+}
+
+template <typename T>
+auto gse::save::bind(channel<register_property>& ch, const std::string_view category, const std::string_view name, T& ref) -> registration_builder<T> {
+    return registration_builder<T>(ch, category, name, ref);
 }

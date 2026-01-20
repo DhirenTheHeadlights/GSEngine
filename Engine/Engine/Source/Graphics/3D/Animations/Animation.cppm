@@ -27,9 +27,28 @@ export namespace gse::animation {
 			const clip_asset* clip_asset = nullptr;
 			float scale = 1.f;
 			bool loop = true;
+			time sample_t{};
+		};
+
+		struct pose_cache_key {
+			const clip_asset* clip = nullptr;
+			const skeleton* skel = nullptr;
+			std::int64_t time_bucket = 0;
+
+			auto operator==(const pose_cache_key&) const -> bool = default;
+		};
+
+		struct pose_cache_key_hash {
+			auto operator()(const pose_cache_key& k) const -> std::size_t {
+				return std::hash<const void*>{}(k.clip) ^
+				       (std::hash<const void*>{}(k.skel) << 1) ^
+				       (std::hash<std::int64_t>{}(k.time_bucket) << 2);
+			}
 		};
 
 		time m_last_tick{};
+		mutable std::vector<anim_job> m_jobs;
+		mutable std::unordered_map<pose_cache_key, std::size_t, pose_cache_key_hash> m_pose_cache;
 
 		auto tick_animations(
 			const component_chunk<animation_component>& animations,
@@ -50,8 +69,9 @@ export namespace gse::animation {
 
 		static auto sample_track(
 			const joint_track& track,
-			time t
-		) -> std::optional<mat4>;
+			time t,
+			mat4& out
+		) -> bool;
 
 		static auto ensure_pose_buffers(
 			animation_component& anim,
@@ -90,9 +110,10 @@ auto gse::animation::system::update() -> void {
 auto gse::animation::system::tick_animations(const component_chunk<animation_component>& animations, const component_chunk<clip_component>& clips, const time dt) const -> void {
 	auto& renderer = const_cast<renderer::system&>(system_of<renderer::system>());
 
-	std::vector<anim_job> jobs;
-	jobs.reserve(animations.size());
+	m_jobs.clear();
+	m_pose_cache.clear();
 
+	// First pass: gather all jobs and update times
 	for (std::size_t i = 0; i < animations.size(); ++i) {
 		auto& anim = animations[i];
 
@@ -118,64 +139,93 @@ auto gse::animation::system::tick_animations(const component_chunk<animation_com
 			continue;
 		}
 
-		const auto& skeleton = *anim.skeleton;
+		const auto& skel = *anim.skeleton;
 		const auto& clip = *clip_c->clip;
 
-		const auto joint_count = static_cast<std::size_t>(skeleton.joint_count());
+		const auto joint_count = static_cast<std::size_t>(skel.joint_count());
 		ensure_pose_buffers(anim, joint_count);
 
-		jobs.push_back({
-			.anim = std::addressof(anim),
-			.clip = clip_c,
-			.skel = std::addressof(skeleton),
-			.clip_asset = std::addressof(clip),
-			.scale = scale,
-			.loop = loop && clip.loop()
-		});
-	}
-
-	if (jobs.empty()) {
-		return;
-	}
-
-	task::parallel_for(0uz, jobs.size(), [&](const std::size_t i) {
-		auto& [anim, clip_c, skeleton, clip_asset, scale, loop] = jobs[i];
-
+		// Update time
 		if (clip_c->playing) {
 			clip_c->t += dt * scale;
 		}
 
-		const time length = clip_asset->length();
+		const time length = clip.length();
 		time sample_t = clip_c->t;
+		const bool should_loop = (loop && clip.loop());
 
-		if (loop) {
+		if (should_loop) {
 			sample_t = wrap_time(sample_t, length);
 			clip_c->t = sample_t;
-		} else if (length > time{} && sample_t >= length) {
+		} else if (length > 0 && sample_t >= length) {
 			sample_t = length;
 			clip_c->t = length;
 			clip_c->playing = false;
 		}
 
-		build_local_pose(*anim, *skeleton, *clip_asset, sample_t);
-		build_global_and_skins(*anim, *skeleton);
+		m_jobs.push_back({
+			.anim = std::addressof(anim),
+			.clip = clip_c,
+			.skel = std::addressof(skel),
+			.clip_asset = std::addressof(clip),
+			.scale = scale,
+			.loop = should_loop,
+			.sample_t = sample_t
+		});
+	}
+
+	if (m_jobs.empty()) {
+		return;
+	}
+
+	constexpr float time_bucket_size = 16'666'666.f;
+
+	std::vector<std::size_t> job_cache_index(m_jobs.size());
+	std::vector<std::size_t> unique_job_indices;
+
+	for (std::size_t i = 0; i < m_jobs.size(); ++i) {
+		const auto& job = m_jobs[i];
+		const auto time_bucket = static_cast<std::int64_t>(job.sample_t / time{time_bucket_size});
+
+		const pose_cache_key key{
+			.clip = job.clip_asset,
+			.skel = job.skel,
+			.time_bucket = time_bucket
+		};
+
+		const auto [it, inserted] = m_pose_cache.try_emplace(key, i);
+		job_cache_index[i] = it->second;
+
+		if (inserted) {
+			unique_job_indices.push_back(i);
+		}
+	}
+
+	task::parallel_for(0uz, unique_job_indices.size(), [&](const std::size_t i) {
+		const auto job_idx = unique_job_indices[i];
+		auto& job = m_jobs[job_idx];
+		build_local_pose(*job.anim, *job.skel, *job.clip_asset, job.sample_t);
+		build_global_and_skins(*job.anim, *job.skel);
+	});
+
+	task::parallel_for(0uz, m_jobs.size(), [&](const std::size_t i) {
+		const auto source_idx = job_cache_index[i];
+		if (source_idx != i) {
+			const auto& source_skins = m_jobs[source_idx].anim->skins;
+			auto& dest_skins = m_jobs[i].anim->skins;
+			std::copy(source_skins.begin(), source_skins.end(), dest_skins.begin());
+		}
 	});
 }
 
-auto gse::animation::system::wrap_time(time t, const time length) -> time {
+auto gse::animation::system::wrap_time(const time t, const time length) -> time {
 	if (length <= time{}) {
-		return time{};
+		return 0;
 	}
 
-	while (t >= length) {
-		t -= length;
-	}
-
-	while (t < time{}) {
-		t += length;
-	}
-
-	return t;
+	const float ratio = t / length;
+	const float wrapped = ratio - std::floor(ratio);
+	return length * wrapped;
 }
 
 auto gse::animation::system::lerp_mat4(const mat4& a, const mat4& b, const float t) -> mat4 {
@@ -187,47 +237,51 @@ auto gse::animation::system::lerp_mat4(const mat4& a, const mat4& b, const float
 	}
 }
 
-auto gse::animation::system::sample_track(const joint_track& track, const time t) -> std::optional<mat4> {
-	if (track.keys.empty()) {
-		return std::nullopt;
+auto gse::animation::system::sample_track(const joint_track& track, const time t, mat4& out) -> bool {
+	const auto key_count = track.keys.size();
+	if (key_count == 0) {
+		return false;
 	}
 
-	if (t <= track.keys.front().time) {
-		return track.keys.front().local_transform;
+	if (key_count == 1 || t <= track.keys.front().time) {
+		out = track.keys.front().local_transform;
+		return true;
 	}
 
 	if (t >= track.keys.back().time) {
-		return track.keys.back().local_transform;
+		out = track.keys.back().local_transform;
+		return true;
 	}
 
-	const auto it = std::lower_bound(
-		track.keys.begin(),
-		track.keys.end(),
-		t,
-		[](const joint_keyframe& k, const time v) {
-		return k.time < v;
-	}
-	);
-
-	if (it == track.keys.begin()) {
-		return it->local_transform;
+	std::size_t lo = 0;
+	std::size_t hi = key_count - 1;
+	while (lo + 1 < hi) {
+		if (const std::size_t mid = (lo + hi) / 2; track.keys[mid].time <= t) {
+			lo = mid;
+		} else {
+			hi = mid;
+		}
 	}
 
-	const auto& [time, local_transform] = *it;
-	const auto& [prev_time, prev_local_transform] = *(it - 1);
+	const auto& prev = track.keys[lo];
+	const auto& next = track.keys[hi];
 
-	const auto denominator = time - prev_time;
-	if (denominator <= 0) {
-		return local_transform;
+	const auto denom = next.time - prev.time;
+	if (denom <= 0.f) {
+		out = next.local_transform;
+		return true;
 	}
 
-	const float alpha = std::clamp(
-		(t - prev_time) / denominator,
-		0.f,
-		1.f
-	);
+	const float alpha = (t - prev.time) / denom;
+	const auto& a = prev.local_transform;
+	const auto& b = next.local_transform;
 
-	return lerp_mat4(prev_local_transform, local_transform, alpha);
+	for (int col = 0; col < 4; ++col) {
+		for (int row = 0; row < 4; ++row) {
+			out[col][row] = a[col][row] + (b[col][row] - a[col][row]) * alpha;
+		}
+	}
+	return true;
 }
 
 auto gse::animation::system::ensure_pose_buffers(animation_component& anim, const std::size_t joint_count) -> void {
@@ -240,38 +294,36 @@ auto gse::animation::system::ensure_pose_buffers(animation_component& anim, cons
 
 auto gse::animation::system::build_local_pose(animation_component& anim, const skeleton& skeleton, const clip_asset& clip, const time t) -> void {
 	const auto joint_count = static_cast<std::size_t>(skeleton.joint_count());
+	const auto joints = skeleton.joints();
 
 	for (std::size_t i = 0; i < joint_count; ++i) {
-		anim.local_pose[i] = skeleton.joint(static_cast<std::uint16_t>(i)).local_bind();
+		anim.local_pose[i] = joints[i].local_bind();
 	}
 
+	mat4 sampled;
 	for (const auto& track : clip.tracks()) {
-		const auto idx = static_cast<std::size_t>(track.joint_index);
-		if (idx >= joint_count) {
-			continue;
-		}
-
-		if (const auto sampled = sample_track(track, t)) {
-			anim.local_pose[idx] = *sampled;
+		if (const auto idx = static_cast<std::size_t>(track.joint_index); idx < joint_count && sample_track(track, t, sampled)) {
+			anim.local_pose[idx] = sampled;
 		}
 	}
 }
 
 auto gse::animation::system::build_global_and_skins(animation_component& anim, const skeleton& skeleton) -> void {
 	const auto joint_count = static_cast<std::size_t>(skeleton.joint_count());
+	const auto joints = skeleton.joints();
 	constexpr auto invalid = std::numeric_limits<std::uint16_t>::max();
 
 	for (std::size_t i = 0; i < joint_count; ++i) {
-		const auto joint_index = static_cast<std::uint16_t>(i);
+		const auto& jnt = joints[i];
 
-		if (const auto parent = skeleton.joint(joint_index).parent_index(); parent == invalid) {
+		if (const auto parent = jnt.parent_index(); parent == invalid) {
 			anim.global_pose[i] = anim.local_pose[i];
 		}
 		else {
 			anim.global_pose[i] = anim.global_pose[static_cast<std::size_t>(parent)] * anim.local_pose[i];
 		}
 
-		anim.skins[i] = anim.global_pose[i] * skeleton.joint(joint_index).inverse_bind();
+		anim.skins[i] = anim.global_pose[i] * jnt.inverse_bind();
 	}
 }
 
