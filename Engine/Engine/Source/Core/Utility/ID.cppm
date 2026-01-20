@@ -23,8 +23,7 @@ export namespace gse {
 	) -> id;
 
 	auto generate_temp_id(
-		uuid number, 
-		std::string_view tag
+		uuid number
 	) -> id;
 
 	auto find(
@@ -97,14 +96,20 @@ export namespace gse {
 
 		friend auto generate_id(std::string_view tag) -> id;
 		friend auto generate_id(std::uint64_t number) -> id;
-		friend auto generate_temp_id(uuid number, std::string_view tag) -> id;
+		friend auto generate_temp_id(uuid number) -> id;
 	};
 }
 
 template <>
 struct std::formatter<gse::id> {
-	static constexpr auto parse(std::format_parse_context& ctx) { return ctx.begin(); }
-	static auto format(gse::id value, std::format_context& ctx) {
+	static constexpr auto parse(std::format_parse_context& ctx) {
+		return ctx.begin();
+	}
+
+	static auto format(const gse::id value, std::format_context& ctx) {
+		if (!value.exists()) {
+			return std::format_to(ctx.out(), "[invalid]");
+		}
 		return std::format_to(ctx.out(), "[{}: {}]", value.number(), value.tag());
 	}
 };
@@ -446,7 +451,7 @@ auto gse::generate_id(const std::uint64_t number) -> id {
 	return new_id;
 }
 
-auto gse::generate_temp_id(const uuid number, const std::string_view tag) -> id {
+auto gse::generate_temp_id(const uuid number) -> id {
 	return id(number);
 }
 

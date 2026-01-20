@@ -145,7 +145,7 @@ auto gse::renderer::lighting::initialize() -> void {
 			{
 				"CameraParams",
 				{
-					.buffer = m_ubo_allocations["CameraParams"][i]->buffer,
+					.buffer = m_ubo_allocations["CameraParams"][i].buffer,
 					.offset = 0,
 					.range = cam_block.size
 				}
@@ -153,7 +153,7 @@ auto gse::renderer::lighting::initialize() -> void {
 			{
 				"lights_ssbo",
 				{
-					.buffer = m_light_buffers[i]->buffer,
+					.buffer = m_light_buffers[i].buffer,
 					.offset = 0,
 					.range = light_block.size
 				}
@@ -161,7 +161,7 @@ auto gse::renderer::lighting::initialize() -> void {
 			{
 				"ShadowParams",
 				{
-					.buffer = m_ubo_allocations["ShadowParams"][i]->buffer,
+					.buffer = m_ubo_allocations["ShadowParams"][i].buffer,
 					.offset = 0,
 					.range = shadow_block.size
 				}
@@ -304,9 +304,9 @@ auto gse::renderer::lighting::render() -> void {
 	auto view = m_context.camera().view();
 	auto inv_view = view.inverse();
 
-	const auto& cam_alloc = m_ubo_allocations.at("CameraParams")[frame_index]->allocation;
-	const auto& light_alloc = m_light_buffers[frame_index]->allocation;
-	const auto& shadow_alloc = m_ubo_allocations.at("ShadowParams")[frame_index]->allocation;
+	const auto& cam_alloc = m_ubo_allocations.at("CameraParams")[frame_index].allocation;
+	const auto& light_alloc = m_light_buffers[frame_index].allocation;
+	const auto& shadow_alloc = m_ubo_allocations.at("ShadowParams")[frame_index].allocation;
 
 	m_shader->set_uniform("CameraParams.inv_proj", inv_proj, cam_alloc);
 	m_shader->set_uniform("CameraParams.inv_view", inv_view, cam_alloc);

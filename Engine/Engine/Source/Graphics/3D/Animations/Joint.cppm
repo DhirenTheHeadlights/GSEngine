@@ -6,7 +6,7 @@ import gse.utility;
 import gse.physics.math;
 
 export namespace gse {
-    class joint : identifiable {
+    class joint : public identifiable {
     public:
         struct params {
             std::string name;

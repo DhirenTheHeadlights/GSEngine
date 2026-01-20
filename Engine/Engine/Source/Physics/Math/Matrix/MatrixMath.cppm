@@ -9,6 +9,7 @@ import :matrix;
 import :quat;
 import :dimension;
 import :quat_math;
+import :simd;
 
 export namespace gse {
 	template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
@@ -201,6 +202,14 @@ template <typename T, std::size_t Cols, std::size_t Rows, std::size_t OtherCols,
 constexpr auto gse::operator*(const mat_t<T, Cols, Rows, Dim1>& lhs, const mat_t<T, OtherCols, Cols, Dim2>& rhs)  -> mat_t<T, OtherCols, Rows, decltype(Dim1{} *Dim2{})> {
 	using result_dim = decltype(Dim1{} * Dim2{});
 	mat_t<T, OtherCols, Rows, result_dim> result;
+
+	if constexpr (std::is_same_v<T, float> && Cols == 4 && Rows == 4 && OtherCols == 4) {
+		if (!std::is_constant_evaluated()) {
+			simd::mul_mat4(&lhs[0][0], &rhs[0][0], &result[0][0]);
+			return result;
+		}
+	}
+
 	for (std::size_t j = 0; j < OtherCols; ++j) {
 		for (std::size_t k = 0; k < Cols; ++k) {
 			result[j] += lhs[k] * rhs[j][k];

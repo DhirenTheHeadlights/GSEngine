@@ -24,13 +24,13 @@ export namespace gse::vulkan {
 		allocation() = default;
 
 		allocation(
-			const vk::DeviceMemory memory,
-			const vk::DeviceSize size,
-			const vk::DeviceSize offset,
+			vk::DeviceMemory memory,
+			vk::DeviceSize size,
+			vk::DeviceSize offset,
 			void* mapped,
 			sub_allocation* owner,
 			allocator* alloc,
-			const vk::Device device
+			vk::Device device
 		);
 
 		~allocation();
@@ -59,7 +59,6 @@ export namespace gse::vulkan {
 		[[nodiscard]] auto mapped() const -> std::byte* { return static_cast<std::byte*>(m_mapped); }
 		[[nodiscard]] auto owner() const -> sub_allocation* { return m_owner; }
 		[[nodiscard]] auto device() const -> vk::Device { return m_device; }
-
 	private:
 		vk::DeviceMemory m_memory = nullptr;
 		vk::DeviceSize m_size = 0, m_offset = 0;

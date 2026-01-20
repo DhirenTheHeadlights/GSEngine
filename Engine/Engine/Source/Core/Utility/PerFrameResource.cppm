@@ -14,6 +14,13 @@ export namespace gse {
 
 		using value_type = T;
 		static constexpr std::size_t frames_in_flight = N;
+		static constexpr bool is_direct_storage = std::is_default_constructible_v<T>;
+
+		using storage_type = std::conditional_t<
+			is_direct_storage,
+			std::array<T, N>,
+			std::array<std::optional<T>, N>
+		>;
 
 		per_frame_resource() = default;
 
@@ -41,14 +48,20 @@ export namespace gse {
 		explicit operator value_type&() = delete;
 		explicit operator const value_type&() const = delete;
 	private:
-		std::array<std::optional<value_type>, N> m_resources{};
+		storage_type m_resources{};
 	};
 }
 
 template <typename T, std::size_t N>
 gse::per_frame_resource<T, N>::per_frame_resource(const value_type& initial_value) {
-	for (auto& resource : m_resources) {
-		resource.emplace(initial_value);
+	if constexpr (is_direct_storage) {
+		for (auto& resource : m_resources) {
+			resource = initial_value;
+		}
+	} else {
+		for (auto& resource : m_resources) {
+			resource.emplace(initial_value);
+		}
 	}
 }
 
@@ -62,7 +75,11 @@ auto gse::per_frame_resource<T, N>::operator[](this auto&& self, const std::size
 		frames_in_flight - 1
 	);
 
-	return self.m_resources[frame_index];
+	if constexpr (is_direct_storage) {
+		return self.m_resources[frame_index];
+	} else {
+		return self.m_resources[frame_index];
+	}
 }
 
 template <typename T, std::size_t N>

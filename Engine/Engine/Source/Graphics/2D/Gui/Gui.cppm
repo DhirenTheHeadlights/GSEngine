@@ -175,7 +175,7 @@ export namespace gse::gui {
 
 		menu_bar::state m_menu_bar_state;
 		settings_panel::state m_settings_panel_state;
-		theme m_theme = theme::dark;
+		theme m_theme = theme::dark;	
 		float m_ui_scale = 1.0f;
 
 		std::vector<renderer::sprite_command> m_sprite_commands;
@@ -254,35 +254,28 @@ export namespace gse::gui {
 gse::gui::system::system(renderer::context& context) : m_rctx(context) {}
 
 auto gse::gui::system::initialize() -> void {
+	m_theme = static_cast<theme>(system_of<save::system>().read("UI", "Theme", static_cast<int>(theme::dark)));
+	m_ui_scale = system_of<save::system>().read("UI", "Scale", 1.0f);
+
     m_font = m_rctx.get<font>("MonaspaceNeon-Regular");
     m_blank_texture = m_rctx.queue<texture>("blank", unitless::vec4(1, 1, 1, 1));
 	m_menus = load(config::resource_path / m_file_path, m_menus);
 
 	publish([this](channel<save::register_property>& ch) {
-		ch.push({
-			.category = "UI",
-			.name = "Theme",
-			.description = "UI color theme",
-			.ref = reinterpret_cast<void*>(reinterpret_cast<int*>(&m_theme)),
-			.type = typeid(int),
-			.enum_options = {
+		save::bind(ch, "UI", "Theme", *reinterpret_cast<int*>(&m_theme))
+			.description("UI color theme")
+			.options({
 				{ "Dark", static_cast<int>(theme::dark) },
 				{ "Darker", static_cast<int>(theme::darker) },
 				{ "Light", static_cast<int>(theme::light) },
 				{ "High Contrast", static_cast<int>(theme::high_contrast) }
-			}
-		});
+			})
+			.commit();
 
-		ch.push({
-			.category = "UI",
-			.name = "Scale",
-			.description = "UI scale multiplier",
-			.ref = reinterpret_cast<void*>(&m_ui_scale),
-			.type = typeid(float),
-			.range_min = 0.5f,
-			.range_max = 3.0f,
-			.range_step = 0.1f
-		});
+		save::bind(ch, "UI", "Scale", m_ui_scale)
+			.description("UI scale multiplier")
+			.range(0.5f, 3.0f, 0.1f)
+			.commit();
 	});
 
     auto calculate_group_bounds = [this](const id root_id) -> ui_rect {
