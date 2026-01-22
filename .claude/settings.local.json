@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(find:*)",
-      "Bash(dir \"C:\\\\Users\\\\Dhiren\\\\source\\\\repos\\\\DhirenTheHeadlights\\\\GoonSquad\\\\out\\\\build\\\\x64-Debug\\\\Engine\\\\Resources\\\\SkinnedModels\" /b)"
-    ]
-  }
-}
