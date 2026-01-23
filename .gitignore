@@ -12,5 +12,4 @@ Makefile
 /Engine/External/vcpkg
 /Engine/Resources/Misc/gui_layout.ggui
 /Engine/Resources/Misc/settings.cfg
-/.claude
 /.claude/settings.local.json

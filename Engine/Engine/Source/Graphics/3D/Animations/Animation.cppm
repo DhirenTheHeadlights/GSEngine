@@ -211,9 +211,13 @@ auto gse::animation::system::tick_animations(const component_chunk<animation_com
 	task::parallel_for(0uz, m_jobs.size(), [&](const std::size_t i) {
 		const auto source_idx = job_cache_index[i];
 		if (source_idx != i) {
-			const auto& source_skins = m_jobs[source_idx].anim->skins;
-			auto& dest_skins = m_jobs[i].anim->skins;
-			std::copy(source_skins.begin(), source_skins.end(), dest_skins.begin());
+			const auto& source_anim = *m_jobs[source_idx].anim;
+			auto& dest_anim = *m_jobs[i].anim;
+
+			// Copy all pose data (needed for GPU skinning which uses local_pose)
+			std::copy(source_anim.local_pose.begin(), source_anim.local_pose.end(), dest_anim.local_pose.begin());
+			std::copy(source_anim.global_pose.begin(), source_anim.global_pose.end(), dest_anim.global_pose.begin());
+			std::copy(source_anim.skins.begin(), source_anim.skins.end(), dest_anim.skins.begin());
 		}
 	});
 }

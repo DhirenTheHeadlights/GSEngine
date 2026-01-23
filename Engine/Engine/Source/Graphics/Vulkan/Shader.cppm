@@ -91,8 +91,14 @@ namespace gse {
 		static auto destroy_global_layouts(
 		) -> void;
 
+		auto is_compute(
+		) const -> bool;
+
 		auto shader_stages(
 		) const -> std::array<vk::PipelineShaderStageCreateInfo, 2>;
+
+		auto compute_stage(
+		) const -> vk::PipelineShaderStageCreateInfo;
 
 		auto required_bindings(
 		) const -> std::vector<std::string>;
@@ -212,6 +218,8 @@ namespace gse {
 	private:
 		vk::raii::ShaderModule m_vert_module = nullptr;
 		vk::raii::ShaderModule m_frag_module = nullptr;
+		vk::raii::ShaderModule m_compute_module = nullptr;
+		bool m_is_compute = false;
 
 		struct layout m_layout;
 		vertex_input m_vertex_input;
@@ -643,7 +651,14 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 						block_member = try_structured_buffer_block(var, tl, binding, set_idx);
 					}
 
-					current_set.bindings.emplace_back(var->getName(), layout_binding, block_member);
+					// Skip if a binding with the same number already exists (prevents duplicates from multiple binding ranges)
+					const bool binding_exists = std::ranges::any_of(current_set.bindings, [&](const auto& b) {
+						return b.layout_binding.binding == binding;
+					});
+
+					if (!binding_exists) {
+						current_set.bindings.emplace_back(var->getName(), layout_binding, block_member);
+					}
 				}
 			}
 			return result;
@@ -839,7 +854,7 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 		}
 		assert(mod, std::source_location::current(), "Failed to load module '{}'", filename);
 
-		Slang::ComPtr<slang::IEntryPoint> vs_ep, fs_ep;
+		Slang::ComPtr<slang::IEntryPoint> vs_ep, fs_ep, cs_ep;
 		{
 			const int ep_count = mod->getDefinedEntryPointCount();
 			for (int i = 0; i < ep_count; ++i) {
@@ -851,18 +866,33 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 				else if (!std::strcmp(n, "fs_main")) {
 					fs_ep = ep;
 				}
+				else if (!std::strcmp(n, "cs_main")) {
+					cs_ep = ep;
+				}
 			}
 		}
-		assert(vs_ep && fs_ep, std::source_location::current(), "Shader '{}' must define vs_main and fs_main", filename);
+
+		const bool is_compute = cs_ep && !vs_ep && !fs_ep;
+		const bool is_graphics = vs_ep && fs_ep && !cs_ep;
+		assert(is_compute || is_graphics, std::source_location::current(), "Shader '{}' must define either (vs_main and fs_main) or cs_main", filename);
 
 		Slang::ComPtr<slang::IComponentType> composed;
 		{
-			slang::IComponentType* parts[] = { vs_ep.get(), fs_ep.get() };
-			const auto cr = session->createCompositeComponentType(parts, 2, composed.writeRef(), diags.writeRef());
-			if (diags && diags->getBufferSize()) {
-				std::fprintf(stderr, "%s", static_cast<const char*>(diags->getBufferPointer()));
+			if (is_compute) {
+				slang::IComponentType* parts[] = { cs_ep.get() };
+				const auto cr = session->createCompositeComponentType(parts, 1, composed.writeRef(), diags.writeRef());
+				if (diags && diags->getBufferSize()) {
+					std::fprintf(stderr, "%s", static_cast<const char*>(diags->getBufferPointer()));
+				}
+				assert(SLANG_SUCCEEDED(cr) && composed, std::source_location::current(), "Failed to compose compute shader program");
+			} else {
+				slang::IComponentType* parts[] = { vs_ep.get(), fs_ep.get() };
+				const auto cr = session->createCompositeComponentType(parts, 2, composed.writeRef(), diags.writeRef());
+				if (diags && diags->getBufferSize()) {
+					std::fprintf(stderr, "%s", static_cast<const char*>(diags->getBufferPointer()));
+				}
+				assert(SLANG_SUCCEEDED(cr) && composed, std::source_location::current(), "Failed to compose shader program");
 			}
-			assert(SLANG_SUCCEEDED(cr) && composed, std::source_location::current(), "Failed to compose shader program");
 		}
 
 		Slang::ComPtr<slang::IComponentType> program;
@@ -909,14 +939,17 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 				return std::nullopt;
 			};
 
-		auto v_kind = layout_from_attr(vs_ep.get());
-		auto f_kind = layout_from_attr(fs_ep.get());
+		descriptor_layout shader_layout_type = descriptor_layout::custom;
+		if (!is_compute) {
+			auto v_kind = layout_from_attr(vs_ep.get());
+			auto f_kind = layout_from_attr(fs_ep.get());
 
-		if (v_kind && f_kind) {
-			assert(*v_kind == *f_kind, std::source_location::current(), "Mismatched [Layout(...)] on vs_main/fs_main in shader: {}", filename);
+			if (v_kind && f_kind) {
+				assert(*v_kind == *f_kind, std::source_location::current(), "Mismatched [Layout(...)] on vs_main/fs_main in shader: {}", filename);
+			}
+
+			shader_layout_type = v_kind.value_or(f_kind.value_or(descriptor_layout::custom));
 		}
-
-		auto shader_layout_type = v_kind.value_or(f_kind.value_or(descriptor_layout::custom));
 
 		slang::ProgramLayout* layout = program->getLayout(0, diags.writeRef());
 
@@ -1094,6 +1127,7 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 				switch (ep->getStage()) {
 					case SLANG_STAGE_VERTEX:   used_stages |= vk::ShaderStageFlagBits::eVertex;   break;
 					case SLANG_STAGE_FRAGMENT: used_stages |= vk::ShaderStageFlagBits::eFragment; break;
+					case SLANG_STAGE_COMPUTE:  used_stages |= vk::ShaderStageFlagBits::eCompute;  break;
 					default: break;
 				}
 			}
@@ -1133,6 +1167,7 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 
 		std::ofstream out(dest_asset_file, std::ios::binary);
 		assert(out.is_open(), std::source_location::current(), "Failed to create gshader file: {}", dest_asset_file.string());
+		write_data(out, is_compute);
 		write_data(out, shader_layout_type);
 		write_data(out, static_cast<std::uint32_t>(reflected_vertex_input.attributes.size()));
 		for (const auto& attr : reflected_vertex_input.attributes) write_data(out, attr);
@@ -1176,25 +1211,49 @@ auto gse::shader::compile() -> std::set<std::filesystem::path> {
 				write_data(out, m_data.array_size);
 			}
 		}
-		{
-			Slang::ComPtr<ISlangBlob> vert_blob, frag_blob, gen_diags;
-			const auto rv = program->getEntryPointCode(0, 0, vert_blob.writeRef(), gen_diags.writeRef());
-			const auto rf = program->getEntryPointCode(1, 0, frag_blob.writeRef(), gen_diags.writeRef());
+		if (is_compute) {
+			std::println("[Shader Baking] Generating SPIR-V for compute shader: {}", filename);
+			Slang::ComPtr<ISlangBlob> compute_blob, gen_diags;
+			const auto rc = program->getEntryPointCode(0, 0, compute_blob.writeRef(), gen_diags.writeRef());
+
+			std::println("[Shader Baking] getEntryPointCode result: rc={}, has_blob={}",
+				SLANG_SUCCEEDED(rc), static_cast<bool>(compute_blob));
+
 			if (gen_diags && gen_diags->getBufferSize()) {
 				std::fprintf(stderr, "%s", static_cast<const char*>(gen_diags->getBufferPointer()));
 			}
+
+			assert(SLANG_SUCCEEDED(rc) && compute_blob, std::source_location::current(), "Failed to get compute SPIR-V");
+			const auto compute_size = compute_blob->getBufferSize();
+			std::println("[Shader Baking] SPIR-V blob size: {} bytes", compute_size);
+			write_data(out, compute_size);
+			out.write(static_cast<const char*>(compute_blob->getBufferPointer()), compute_size);
+
+			}
+		else {
+			Slang::ComPtr<ISlangBlob> vert_blob, frag_blob, gen_diags;
+			const auto rv = program->getEntryPointCode(0, 0, vert_blob.writeRef(), gen_diags.writeRef());
+			const auto rf = program->getEntryPointCode(1, 0, frag_blob.writeRef(), gen_diags.writeRef());
+
+			if (gen_diags && gen_diags->getBufferSize()) {
+				std::fprintf(stderr, "%s", static_cast<const char*>(gen_diags->getBufferPointer()));
+			}
+
 			assert(SLANG_SUCCEEDED(rv) && vert_blob, std::source_location::current(), "Failed to get vertex SPIR-V");
 			assert(SLANG_SUCCEEDED(rf) && frag_blob, std::source_location::current(), "Failed to get fragment SPIR-V");
-			const std::size_t vert_size = vert_blob->getBufferSize();
-			const std::size_t frag_size = frag_blob->getBufferSize();
+
+			const auto vert_size = vert_blob->getBufferSize();
+			const auto frag_size = frag_blob->getBufferSize();
+
 			write_data(out, vert_size);
 			out.write(static_cast<const char*>(vert_blob->getBufferPointer()), vert_size);
 			write_data(out, frag_size);
 			out.write(static_cast<const char*>(frag_blob->getBufferPointer()), frag_size);
 		}
 
-		std::println("Baking shader asset: {} (Layout: {})",
+		std::println("Baking shader asset: {} (Type: {}, Layout: {})",
 			dest_asset_file.filename().string(),
+			is_compute ? "Compute" : "Graphics",
 			shader_layout_type == descriptor_layout::custom ? "Custom" : "Global"
 		);
 	}
@@ -1222,6 +1281,8 @@ auto gse::shader::load(const renderer::context& context) -> void {
 		) {
 			stream.read(reinterpret_cast<char*>(&value), sizeof(value));
 		};
+
+	read_data(in, m_is_compute);
 
 	descriptor_layout shader_layout_type{};
 	read_data(in, shader_layout_type);
@@ -1303,7 +1364,18 @@ auto gse::shader::load(const renderer::context& context) -> void {
 		}
 	}
 
-	std::size_t vert_size = 0, frag_size = 0;
+	if (m_is_compute) {
+	std::uint64_t compute_size = 0;
+	read_data(in, compute_size);
+	std::vector<char> compute_code(compute_size);
+	in.read(compute_code.data(), compute_size);
+
+		m_compute_module = context.config().device_config().device.createShaderModule({
+			.codeSize = compute_code.size(),
+			.pCode = reinterpret_cast<const std::uint32_t*>(compute_code.data())
+		});
+	} else {
+	std::uint64_t vert_size = 0, frag_size = 0;
 	read_data(in, vert_size);
 	std::vector<char> vert_code(vert_size);
 	in.read(vert_code.data(), vert_size);
@@ -1311,15 +1383,15 @@ auto gse::shader::load(const renderer::context& context) -> void {
 	read_data(in, frag_size);
 	std::vector<char> frag_code(frag_size);
 	in.read(frag_code.data(), frag_size);
-
-	m_vert_module = context.config().device_config().device.createShaderModule({
-		.codeSize = vert_code.size(),
-		.pCode = reinterpret_cast<const std::uint32_t*>(vert_code.data())
-	});
-	m_frag_module = context.config().device_config().device.createShaderModule({
-		.codeSize = frag_code.size(),
-		.pCode = reinterpret_cast<const std::uint32_t*>(frag_code.data())
-	});
+		m_vert_module = context.config().device_config().device.createShaderModule({
+			.codeSize = vert_code.size(),
+			.pCode = reinterpret_cast<const std::uint32_t*>(vert_code.data())
+		});
+		m_frag_module = context.config().device_config().device.createShaderModule({
+			.codeSize = frag_code.size(),
+			.pCode = reinterpret_cast<const std::uint32_t*>(frag_code.data())
+		});
+	}
 
 	if (!m_vertex_input.attributes.empty()) {
 		std::ranges::sort(m_vertex_input.attributes, {}, &vk::VertexInputAttributeDescription::location);
@@ -1412,7 +1484,12 @@ auto gse::shader::destroy_global_layouts() -> void {
 	shader_layout_types.clear();
 }
 
+auto gse::shader::is_compute() const -> bool {
+	return m_is_compute;
+}
+
 auto gse::shader::shader_stages() const -> std::array<vk::PipelineShaderStageCreateInfo, 2> {
+	assert(!m_is_compute, std::source_location::current(), "Cannot get graphics shader stages from a compute shader");
 	return {
 		vk::PipelineShaderStageCreateInfo{
 			.stage = vk::ShaderStageFlagBits::eVertex,
@@ -1424,6 +1501,15 @@ auto gse::shader::shader_stages() const -> std::array<vk::PipelineShaderStageCre
 			.module = *m_frag_module,
 			.pName = "main"
 		}
+	};
+}
+
+auto gse::shader::compute_stage() const -> vk::PipelineShaderStageCreateInfo {
+	assert(m_is_compute, std::source_location::current(), "Cannot get compute shader stage from a graphics shader");
+	return {
+		.stage = vk::ShaderStageFlagBits::eCompute,
+		.module = *m_compute_module,
+		.pName = "main"
 	};
 }
 
@@ -1557,7 +1643,7 @@ auto gse::shader::descriptor_writes(vk::DescriptorSet set, const std::unordered_
 					.pImageInfo = nullptr,
 					.pBufferInfo = &it->second,
 					.pTexelBufferView = nullptr
-					});
+				});
 				used_keys.insert(binding_name);
 				continue;
 			}
@@ -1681,7 +1767,7 @@ auto gse::shader::set_uniform(std::string_view full_name, const T& value, const 
 			);
 
 			std::memcpy(
-				static_cast<std::byte*>(alloc.mapped()) + mem_info.offset,
+				alloc.mapped() + mem_info.offset,
 				&value,
 				sizeof(T)
 			);
@@ -1785,7 +1871,7 @@ auto gse::shader::set_ssbo_element(std::string_view block_name, const std::uint3
 		block_name
 	);
 
-	const auto base = static_cast<std::byte*>(alloc.mapped());
+	const auto base = alloc.mapped();
 	std::memcpy(
 		base + index * elem_stride + m_info.offset,
 		bytes.data(),
@@ -1821,7 +1907,7 @@ auto gse::shader::set_ssbo_struct(std::string_view block_name, const std::uint32
 		block_name
 	);
 
-	const auto base = static_cast<std::byte*>(alloc.mapped());
+	const auto base = alloc.mapped();
 	std::memcpy(
 		base + index * elem_stride,
 		element_bytes.data(),
