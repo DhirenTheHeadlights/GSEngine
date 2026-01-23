@@ -44,7 +44,7 @@ export namespace gse::renderer {
 
 		auto set_ui_focus(
 			bool focus
-		) -> void;
+		) const -> void;
 
 		auto frame_begun(
 		) const -> bool;
@@ -52,12 +52,22 @@ export namespace gse::renderer {
 		template <typename Resource>
 		auto get(
 			const id& id
-		) -> resource::handle<Resource>;
+		) const -> resource::handle<Resource>;
 
 		template <typename Resource>
 		auto get(
 			const std::string& filename
-		) -> resource::handle<Resource>;
+		) const -> resource::handle<Resource>;
+
+		template <typename Resource>
+		auto try_get(
+			const id& id
+		) const -> resource::handle<Resource>;
+
+		template <typename Resource>
+		auto try_get(
+			const std::string& filename
+		) const -> resource::handle<Resource>;
 
 		template <typename Resource, typename... Args>
 		auto queue(
@@ -160,7 +170,7 @@ auto gse::renderer::system::camera() const -> gse::camera& {
 	return m_context->camera();
 }
 
-auto gse::renderer::system::set_ui_focus(const bool focus) -> void {
+auto gse::renderer::system::set_ui_focus(const bool focus) const -> void {
 	m_context->set_ui_focus(focus);
 }
 
@@ -169,13 +179,23 @@ auto gse::renderer::system::frame_begun() const -> bool {
 }
 
 template <typename Resource>
-auto gse::renderer::system::get(const id& id) -> resource::handle<Resource> {
+auto gse::renderer::system::get(const id& id) const -> resource::handle<Resource> {
 	return m_context->get<Resource>(id);
 }
 
 template <typename Resource>
-auto gse::renderer::system::get(const std::string& filename) -> resource::handle<Resource> {
+auto gse::renderer::system::get(const std::string& filename) const -> resource::handle<Resource> {
 	return m_context->get<Resource>(filename);
+}
+
+template <typename Resource>
+auto gse::renderer::system::try_get(const id& id) const -> resource::handle<Resource> {
+	return m_context->try_get<Resource>(id);
+}
+
+template <typename Resource>
+auto gse::renderer::system::try_get(const std::string& filename) const -> resource::handle<Resource> {
+	return m_context->try_get<Resource>(filename);
 }
 
 template <typename Resource, typename ... Args>

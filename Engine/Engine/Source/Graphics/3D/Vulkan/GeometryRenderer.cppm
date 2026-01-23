@@ -485,6 +485,7 @@ auto gse::renderer::geometry::initialize() -> void {
 	}
 
 	m_blank_texture = m_context.queue<texture>("blank", unitless::vec4(1, 1, 1, 1));
+	m_context.instantly_load(m_blank_texture);
 
 	frame_sync::on_end([this] {
 		m_render_queue.flip();

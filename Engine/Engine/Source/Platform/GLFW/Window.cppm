@@ -63,7 +63,7 @@ export namespace gse {
 		GLFWwindow* m_window = nullptr;
 		input::system& m_input;
 		
-		bool m_fullscreen = true;
+		bool m_fullscreen = false;
 		bool m_current_fullscreen = false;
 		bool m_mouse_visible = false;
 		bool m_focused = true;

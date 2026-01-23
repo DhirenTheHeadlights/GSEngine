@@ -16,19 +16,18 @@ export namespace gse {
 		auto render() -> void override;
 
 	private:
-		std::unique_ptr<server> m_server;
+		server* m_server = nullptr;
 		std::uint32_t m_tick_count = 0;
 		interval_timer<> m_timer{ seconds(5.f) };
 	};
 }
 
 auto gse::server_app::initialize() -> void {
-	m_server = std::make_unique<server>(9000);
-	renderer::set_ui_focus(true);
+	set_ui_focus(true);
+	m_owner->set_networked(true);
 
-	m_owner->world.set_networked(true);
-
-	m_owner->world.add_hook<networked_world<server_input_source>>(
+	m_server = &m_owner->hook_world<server>(9000);
+	m_owner->hook_world<networked_world<server_input_source>>(
 		server_input_source{
 			&m_server->clients()
 		}
@@ -36,41 +35,6 @@ auto gse::server_app::initialize() -> void {
 }
 
 auto gse::server_app::update() -> void {
-	m_server->update(m_owner->world);
-
-	std::optional<id> scene_requested_id;
-
-	if (auto* cur = m_owner->world.current_scene()) {
-		for (const auto& [scene_id, condition] : m_owner->world.triggers()) {
-			for (const auto& cd : m_server->clients() | std::views::values) {
-				evaluation_context ctx{
-					.client_id = cd.entity_id,
-					.input = &cd.latest_input,
-					.registry = &cur->registry()
-				};
-				if (condition(ctx)) {
-					scene_requested_id = scene_id;
-				}
-			}
-		}
-	} else {
-		m_owner->world.activate(find("Default Scene"));
-	}
-
-	if (scene_requested_id) {
-		m_owner->world.activate(*scene_requested_id);
-
-		if (const auto* active = m_owner->world.current_scene()) {
-			const network::notify_scene_change msg{
-				.scene_id = active->id()
-			};
-
-			for (const auto& addr : m_server->clients() | std::views::keys) {
-				m_server->send(msg, addr);
-			}
-		}
-	}
-
 	if (m_timer.tick()) {
 		++m_tick_count;
 	}
