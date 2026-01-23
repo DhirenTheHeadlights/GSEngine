@@ -234,8 +234,8 @@ auto gse::registry::activate(id id) -> void {
 		std::erase_if(
 			actions,
 			[&](auto& action) {
-			return action(*this);
-		}
+				return action(*this);
+			}
 		);
 
 		if (actions.empty()) {

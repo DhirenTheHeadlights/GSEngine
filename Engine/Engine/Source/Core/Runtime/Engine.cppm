@@ -29,7 +29,7 @@ export namespace gse {
 		template <typename T, class ... Args>
 		auto hook_world(
 			Args&&... args
-		) -> void;
+		) -> T&;
 
 		auto set_networked(
 			bool networked
@@ -53,6 +53,11 @@ export namespace gse {
 
 		auto direct(
 		) -> director;
+
+		template <typename F>
+		auto defer(
+			F&& action
+		) -> void;
 	private:
 		scheduler m_scheduler;
 		world m_world;
@@ -167,11 +172,24 @@ auto gse::engine::channel() -> gse::channel<T>& {
 }
 
 template <typename T, typename... Args>
-auto gse::engine::hook_world(Args&&... args) -> void {
-	m_world.add_hook<T>(std::forward<Args>(args)...);
+auto gse::engine::hook_world(Args&&... args) -> T& {
+	return m_world.add_hook<T>(std::forward<Args>(args)...);
 }
 
 template <typename T, typename ... Args>
 auto gse::engine::add_scene(Args... args) -> scene* {
 	return m_world.add<T>(std::forward<Args>(args)...);
+}
+
+template <typename F>
+auto gse::engine::defer(F&& action) -> void {
+	if (const auto* scene = current_scene()) {
+		scene->registry().add_deferred_action(
+			{},
+			[action = std::forward<F>(action)](registry& reg) {
+				action(reg);
+				return true;
+			}
+		);
+	}
 }
