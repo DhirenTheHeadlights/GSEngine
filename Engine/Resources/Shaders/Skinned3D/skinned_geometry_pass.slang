@@ -6,6 +6,7 @@ cbuffer SkinnedPC {
     float4x4 model;
     float4x4 normal_matrix;
     uint skin_offset;
+    uint joint_count;
 };
 
 struct VS_OUTPUT {
@@ -22,15 +23,19 @@ VS_OUTPUT vs_main(
     float3 in_normal     : NORMAL,
     float2 in_tex_coord  : TEXCOORD,
     uint4 in_bone_indices : BLENDINDICES,
-    float4 in_bone_weights : BLENDWEIGHT
+    float4 in_bone_weights : BLENDWEIGHT,
+    uint instance_id : SV_InstanceID
 ) {
     VS_OUTPUT o;
 
+    // Calculate per-instance offset: base offset + (instance_id * joint_count)
+    uint instance_skin_offset = skin_offset + (instance_id * joint_count);
+
     float4x4 skin_matrix =
-        skinMatrices[skin_offset + in_bone_indices.x] * in_bone_weights.x +
-        skinMatrices[skin_offset + in_bone_indices.y] * in_bone_weights.y +
-        skinMatrices[skin_offset + in_bone_indices.z] * in_bone_weights.z +
-        skinMatrices[skin_offset + in_bone_indices.w] * in_bone_weights.w;
+        skinMatrices[instance_skin_offset + in_bone_indices.x] * in_bone_weights.x +
+        skinMatrices[instance_skin_offset + in_bone_indices.y] * in_bone_weights.y +
+        skinMatrices[instance_skin_offset + in_bone_indices.z] * in_bone_weights.z +
+        skinMatrices[instance_skin_offset + in_bone_indices.w] * in_bone_weights.w;
 
     float4 skinned_pos = mul(skin_matrix, float4(in_position, 1.0));
     float3 skinned_normal = normalize(mul((float3x3)skin_matrix, in_normal));

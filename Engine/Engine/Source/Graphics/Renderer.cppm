@@ -79,7 +79,6 @@ export namespace gse::renderer {
 		auto resource_state(
 			const id& id
 		) const -> resource::state;
-
 	private:
 		context* m_context = nullptr;
 		bool m_frame_begun = false;

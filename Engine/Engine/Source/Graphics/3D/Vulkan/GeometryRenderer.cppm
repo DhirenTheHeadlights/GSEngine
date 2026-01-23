@@ -11,6 +11,7 @@ import :render_component;
 import :animation_component;
 import :material;
 import :shader;
+import :skeleton;
 import :texture;
 
 import gse.physics.math;
@@ -58,13 +59,35 @@ export namespace gse::renderer {
 		std::unordered_map<std::string, per_frame_resource<vulkan::buffer_resource>> m_ubo_allocations;
 
 		static constexpr std::size_t max_skin_matrices = 256 * 128;
+		static constexpr std::size_t max_joints = 256;
 		per_frame_resource<vulkan::buffer_resource> m_skin_buffer;
 		per_frame_resource<std::vector<mat4>> m_skin_staging;
+
+		resource::handle<shader> m_skin_compute;
+		vk::raii::Pipeline m_skin_compute_pipeline = nullptr;
+		vk::raii::PipelineLayout m_skin_compute_pipeline_layout = nullptr;
+		per_frame_resource<vk::raii::DescriptorSet> m_skin_compute_sets;
+		vulkan::buffer_resource m_skeleton_buffer;
+		per_frame_resource<vulkan::buffer_resource> m_local_pose_buffer;
+		per_frame_resource<std::vector<mat4>> m_local_pose_staging;
+		const skeleton* m_current_skeleton = nullptr;
+		std::uint32_t m_current_joint_count = 0;
+		bool m_gpu_skinning_enabled = true;
+		per_frame_resource<std::uint32_t> m_pending_compute_instance_count;
 
 		double_buffer<std::vector<render_queue_entry>> m_render_queue;
 		double_buffer<std::vector<skinned_render_queue_entry>> m_skinned_render_queue;
 
 		resource::handle<texture> m_blank_texture;
+
+		auto dispatch_skin_compute(
+			vk::CommandBuffer command, 
+			std::uint32_t instance_count
+		) -> void;
+
+		auto upload_skeleton_data(
+			const skeleton& skel
+		) const -> void;
 	};
 }
 
@@ -367,6 +390,100 @@ auto gse::renderer::geometry::initialize() -> void {
 	};
 	m_skinned_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, skinned_pipeline_info);
 
+	m_skin_compute = m_context.get<shader>("skin_compute");
+	m_context.instantly_load(m_skin_compute);
+
+	assert(m_skin_compute->is_compute(), std::source_location::current(), "Skin compute shader is not loaded as a compute shader");
+
+	auto compute_stage_info = m_skin_compute->compute_stage();
+
+	struct joint_data {
+		mat4 inverse_bind;
+		std::uint32_t parent_index;
+		std::uint32_t _pad0;
+		std::uint32_t _pad1;
+		std::uint32_t _pad2;
+	};
+
+	m_skeleton_buffer = config.allocator().create_buffer({
+		.size = max_joints * sizeof(joint_data),
+		.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
+	});
+
+	constexpr vk::DeviceSize local_pose_size = max_skin_matrices * sizeof(mat4);
+	for (std::size_t i = 0; i < per_frame_resource<vulkan::buffer_resource>::frames_in_flight; ++i) {
+		m_local_pose_buffer[i] = config.allocator().create_buffer({
+			.size = local_pose_size,
+			.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
+		});
+		m_local_pose_staging[i].reserve(max_skin_matrices);
+
+		m_skin_compute_sets[i] = m_skin_compute->descriptor_set(
+			config.device_config().device,
+			config.descriptor_config().pool,
+			shader::set::binding_type::persistent
+		);
+
+		const vk::DescriptorBufferInfo skeleton_info{
+			.buffer = m_skeleton_buffer.buffer,
+			.offset = 0,
+			.range = max_joints * sizeof(joint_data)
+		};
+
+		const vk::DescriptorBufferInfo local_pose_info{
+			.buffer = m_local_pose_buffer[i].buffer,
+			.offset = 0,
+			.range = local_pose_size
+		};
+
+		const vk::DescriptorBufferInfo skin_info{
+			.buffer = m_skin_buffer[i].buffer,
+			.offset = 0,
+			.range = skin_buffer_size
+		};
+
+		std::array writes{
+			vk::WriteDescriptorSet{
+				.dstSet = *m_skin_compute_sets[i],
+				.dstBinding = 0,
+				.descriptorCount = 1,
+				.descriptorType = vk::DescriptorType::eStorageBuffer,
+				.pBufferInfo = &skeleton_info
+			},
+			vk::WriteDescriptorSet{
+				.dstSet = *m_skin_compute_sets[i],
+				.dstBinding = 1,
+				.descriptorCount = 1,
+				.descriptorType = vk::DescriptorType::eStorageBuffer,
+				.pBufferInfo = &local_pose_info
+			},
+			vk::WriteDescriptorSet{
+				.dstSet = *m_skin_compute_sets[i],
+				.dstBinding = 2,
+				.descriptorCount = 1,
+				.descriptorType = vk::DescriptorType::eStorageBuffer,
+				.pBufferInfo = &skin_info
+			}
+		};
+
+		config.device_config().device.updateDescriptorSets(writes, nullptr);
+
+		auto compute_layouts = m_skin_compute->layouts();
+		std::vector compute_ranges = { m_skin_compute->push_constant_range("push_constants") };
+
+		m_skin_compute_pipeline_layout = config.device_config().device.createPipelineLayout({
+			.setLayoutCount = static_cast<std::uint32_t>(compute_layouts.size()),
+			.pSetLayouts = compute_layouts.data(),
+			.pushConstantRangeCount = static_cast<std::uint32_t>(compute_ranges.size()),
+			.pPushConstantRanges = compute_ranges.data()
+		});
+
+		m_skin_compute_pipeline = config.device_config().device.createComputePipeline(nullptr, {
+			.stage = m_skin_compute->compute_stage(),
+			.layout = *m_skin_compute_pipeline_layout
+		});
+	}
+
 	m_blank_texture = m_context.queue<texture>("blank", unitless::vec4(1, 1, 1, 1));
 
 	frame_sync::on_end([this] {
@@ -407,6 +524,11 @@ auto gse::renderer::geometry::update() -> void {
 		auto& skin_staging = m_skin_staging[frame_index];
 		skin_staging.clear();
 
+		auto& local_pose_staging = m_local_pose_staging[frame_index];
+		local_pose_staging.clear();
+
+		std::uint32_t skinned_instance_count = 0;
+
 		for (auto& component : render_chunk) {
 			if (!component.render) {
 				continue;
@@ -431,44 +553,72 @@ auto gse::renderer::geometry::update() -> void {
 					continue;
 				}
 
-				std::uint32_t skin_offset = 0;
-				if (anim != nullptr && !anim->skins.empty()) {
-					skin_offset = static_cast<std::uint32_t>(skin_staging.size());
-					skin_staging.insert(skin_staging.end(), anim->skins.begin(), anim->skins.end());
-				}
+				if (anim != nullptr && !anim->local_pose.empty()) {
+					std::uint32_t skin_offset = 0;
+					skin_offset = static_cast<std::uint32_t>(local_pose_staging.size());
 
-				skinned_model_handle.update(*mc, *cc, skin_offset);
-				skinned_out.append_range(skinned_model_handle.render_queue_entries());
+					if (m_gpu_skinning_enabled && m_skin_compute.valid()) {
+						local_pose_staging.insert(local_pose_staging.end(), anim->local_pose.begin(), anim->local_pose.end());
+
+						if (anim->skeleton && (m_current_skeleton == nullptr || m_current_skeleton->id() != anim->skeleton.id())) {
+							m_current_skeleton = anim->skeleton.resolve();
+							m_current_joint_count = static_cast<std::uint32_t>(anim->skeleton->joint_count());
+							upload_skeleton_data(*anim->skeleton);
+						}
+
+						++skinned_instance_count;
+					}
+					else if (!anim->skins.empty()) {
+						skin_staging.insert(skin_staging.end(), anim->skins.begin(), anim->skins.end());
+					}
+
+					skinned_model_handle.update(*mc, *cc, skin_offset, m_current_joint_count);
+					const auto entries = skinned_model_handle.render_queue_entries();
+					skinned_out.append_range(entries);
+				}
 			}
+
+			std::ranges::sort(
+				out,
+				[](const render_queue_entry& a, const render_queue_entry& b) {
+					const auto* ma = a.model.resolve();
+					const auto* mb = b.model.resolve();
+
+					if (ma != mb) {
+						return ma < mb;
+					}
+
+					return a.index < b.index;
+				}
+			);
+
+			std::ranges::sort(
+				skinned_out,
+					[](const skinned_render_queue_entry& a, const skinned_render_queue_entry& b) {
+					const auto* ma = a.model.resolve();
+					const auto* mb = b.model.resolve();
+
+					if (ma != mb) {
+						return ma < mb;
+					}
+
+					return a.index < b.index;
+				}
+			);
 		}
 
-		std::ranges::sort(
-			out,
-			[](const render_queue_entry& a, const render_queue_entry& b) {
-				const auto* ma = a.model.resolve();
-				const auto* mb = b.model.resolve();
+		if (m_gpu_skinning_enabled && m_skin_compute.valid() && !local_pose_staging.empty() && m_current_joint_count > 0) {
+			const vk::DeviceSize copy_size = local_pose_staging.size() * sizeof(mat4);
+			std::memcpy(m_local_pose_buffer[frame_index].allocation.mapped(), local_pose_staging.data(), copy_size);
 
-				if (ma != mb) {
-					return ma < mb;
-				}
-
-				return a.index < b.index;
-			}
-		);
-
-		std::ranges::sort(
-			skinned_out,
-			[](const skinned_render_queue_entry& a, const skinned_render_queue_entry& b) {
-				const auto* ma = a.model.resolve();
-				const auto* mb = b.model.resolve();
-
-				if (ma != mb) {
-					return ma < mb;
-				}
-
-				return a.index < b.index;
-			}
-		);
+			m_pending_compute_instance_count[frame_index] = skinned_instance_count;
+		} else if (!skin_staging.empty()) {
+			const vk::DeviceSize copy_size = skin_staging.size() * sizeof(mat4);
+			std::memcpy(m_skin_buffer[frame_index].allocation.mapped(), skin_staging.data(), copy_size);
+			m_pending_compute_instance_count[frame_index] = 0;
+		} else {
+			m_pending_compute_instance_count[frame_index] = 0;
+		}
 	});
 }
 
@@ -541,11 +691,9 @@ auto gse::renderer::geometry::render() -> void {
     };
 
     const auto frame_index = config.current_frame();
-    const auto& skin_staging = m_skin_staging[frame_index];
 
-    if (!skin_staging.empty()) {
-        const vk::DeviceSize copy_size = skin_staging.size() * sizeof(mat4);
-        std::memcpy(m_skin_buffer[frame_index].allocation.mapped(), skin_staging.data(), copy_size);
+    if (m_pending_compute_instance_count[frame_index] > 0) {
+        dispatch_skin_compute(command, m_pending_compute_instance_count[frame_index]);
     }
 
     vulkan::render(
@@ -648,7 +796,8 @@ auto gse::renderer::geometry::render() -> void {
                         "push_constants",
                         "model", e.model_matrix,
                         "normal_matrix", e.normal_matrix,
-                        "skin_offset", e.skin_offset
+                        "skin_offset", e.skin_offset,
+                        "joint_count", e.joint_count
                     );
 
                     const auto& mesh = e.model->meshes()[e.index];
@@ -697,4 +846,85 @@ auto gse::renderer::geometry::skinned_render_queue() const -> std::span<const sk
 
 auto gse::renderer::geometry::skin_buffer() const -> const vulkan::buffer_resource& {
 	return m_skin_buffer[m_context.config().current_frame()];
+}
+
+auto gse::renderer::geometry::dispatch_skin_compute(const vk::CommandBuffer command, const std::uint32_t instance_count) -> void {
+	if (instance_count == 0 || !m_skin_compute.valid()) {
+		return;
+	}
+
+	const auto frame_index = m_context.config().current_frame();
+
+	constexpr vk::MemoryBarrier2 host_to_device_barrier{
+		.srcStageMask = vk::PipelineStageFlagBits2::eHost,
+		.srcAccessMask = vk::AccessFlagBits2::eHostWrite,
+		.dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+		.dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead
+	};
+
+	const vk::DependencyInfo host_dep{
+		.memoryBarrierCount = 1,
+		.pMemoryBarriers = &host_to_device_barrier
+	};
+
+	command.pipelineBarrier2(host_dep);
+
+	command.bindPipeline(vk::PipelineBindPoint::eCompute, *m_skin_compute_pipeline);
+
+	const vk::DescriptorSet sets[]{ *m_skin_compute_sets[frame_index] };
+	command.bindDescriptorSets(
+		vk::PipelineBindPoint::eCompute,
+		*m_skin_compute_pipeline_layout,
+		0,
+		vk::ArrayProxy<const vk::DescriptorSet>(1, sets),
+		{}
+	);
+
+	m_skin_compute->push(
+		command,
+		*m_skin_compute_pipeline_layout,
+		"push_constants",
+		"joint_count", m_current_joint_count,
+		"instance_count", instance_count,
+		"local_pose_stride", m_current_joint_count,
+		"skin_stride", m_current_joint_count
+	);
+
+	command.dispatch(instance_count, 1, 1);
+
+	constexpr vk::MemoryBarrier2 compute_barrier{
+		.srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+		.srcAccessMask = vk::AccessFlagBits2::eShaderStorageWrite,
+		.dstStageMask = vk::PipelineStageFlagBits2::eVertexShader,
+		.dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead
+	};
+
+	const vk::DependencyInfo compute_dep{
+		.memoryBarrierCount = 1,
+		.pMemoryBarriers = &compute_barrier
+	};
+
+	command.pipelineBarrier2(compute_dep);
+}
+
+auto gse::renderer::geometry::upload_skeleton_data(const skeleton& skel) const -> void {
+	struct joint_data {
+		mat4 inverse_bind;
+		std::uint32_t parent_index;
+		std::uint32_t _pad0;
+		std::uint32_t _pad1;
+		std::uint32_t _pad2;
+	};
+
+	const auto joint_count = static_cast<std::size_t>(skel.joint_count());
+	const auto joints = skel.joints();
+
+	std::vector<joint_data> data(joint_count);
+	for (std::size_t i = 0; i < joint_count; ++i) {
+		data[i].inverse_bind = joints[i].inverse_bind();
+		data[i].parent_index = joints[i].parent_index();
+	}
+
+	const vk::DeviceSize copy_size = joint_count * sizeof(joint_data);
+	std::memcpy(m_skeleton_buffer.allocation.mapped(), data.data(), copy_size);
 }

@@ -22,13 +22,14 @@ export namespace gse {
 		mat4 normal_matrix;
 		unitless::vec3 color;
 		std::uint32_t skin_offset;
+		std::uint32_t joint_count;
 	};
 
 	class skinned_model_instance {
 	public:
 		explicit skinned_model_instance(const resource::handle<skinned_model>& model_handle) : m_model_handle(model_handle) {}
 
-		auto update(const physics::motion_component& mc, const physics::collision_component& cc, std::uint32_t skin_offset) -> void;
+		auto update(const physics::motion_component& mc, const physics::collision_component& cc, std::uint32_t skin_offset, std::uint32_t joint_count) -> void;
 
 		auto render_queue_entries() const -> std::span<const skinned_render_queue_entry>;
 		auto handle() const -> const resource::handle<skinned_model>&;
@@ -203,7 +204,7 @@ auto gse::skinned_model::center_of_mass() const -> vec3<length> {
 	return m_center_of_mass;
 }
 
-auto gse::skinned_model_instance::update(const physics::motion_component& mc, const physics::collision_component& cc, const std::uint32_t skin_offset) -> void {
+auto gse::skinned_model_instance::update(const physics::motion_component& mc, const physics::collision_component& cc, const std::uint32_t skin_offset, const std::uint32_t joint_count) -> void {
 	m_position = mc.current_position;
 	m_rotation = mc.orientation;
 	m_scale = cc.bounding_box.size().as<meters>();
@@ -234,7 +235,8 @@ auto gse::skinned_model_instance::update(const physics::motion_component& mc, co
 							.model_matrix = mat4(1.0f),
 							.normal_matrix = mat4(1.0f),
 							.color = unitless::vec3(1.0f),
-							.skin_offset = skin_offset
+							.skin_offset = skin_offset,
+							.joint_count = joint_count
 						}
 					);
 				}
@@ -261,6 +263,7 @@ auto gse::skinned_model_instance::update(const physics::motion_component& mc, co
 		entry.model_matrix  = final_model_matrix;
 		entry.normal_matrix = normal_matrix;
 		entry.skin_offset   = skin_offset;
+		entry.joint_count   = joint_count;
 	}
 
 	m_is_dirty = false;
