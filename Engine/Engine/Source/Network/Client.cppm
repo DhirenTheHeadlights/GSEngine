@@ -216,22 +216,22 @@ auto gse::network::client::tick() -> void {
 				handled_internally = true;
 			});
 
-		if (!handled_internally) {
-			std::vector<std::byte> payload;
+			if (!handled_internally) {
+				std::vector<std::byte> payload;
 
-			if (const auto remaining = stream.remaining_bytes(); remaining > 0) {
-				payload.resize(remaining);
-				stream.read_bytes(payload.data(), remaining);
-				
-				std::lock_guard lk(m_inbox_mutex);
-				m_inbox.emplace_back(replication_message{
-					.id = id,
-					.payload = std::move(payload),
-					.sequence = m_server.remote_ack_sequence()
-				});
+				if (const auto remaining = stream.remaining_bytes(); remaining > 0) {
+					payload.resize(remaining);
+					stream.read_bytes(payload.data(), remaining);
+					
+					std::lock_guard lk(m_inbox_mutex);
+					m_inbox.emplace_back(replication_message{
+						.id = id,
+						.payload = std::move(payload),
+						.sequence = m_server.remote_ack_sequence()
+					});
+				}
 			}
 		}
-	}
 
 		if (current == state::connected) {
 		if (m_input_clock.elapsed<std::uint32_t>() > 16u) {

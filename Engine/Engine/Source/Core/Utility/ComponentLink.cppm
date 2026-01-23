@@ -114,6 +114,7 @@ export namespace gse {
 
 		std::vector<owner_id_t> m_added;
 		std::unordered_set<owner_id_t> m_updated;
+		mutable std::mutex m_updated_mutex;
 		std::vector<owner_id_t> m_removed;
 	};
 }
@@ -176,6 +177,7 @@ auto gse::component_link<T>::try_get_read(const owner_id_t owner_id) -> const co
 template <gse::is_component T>
 auto gse::component_link<T>::try_get_write(const owner_id_t owner_id) -> component_type* {
 	if (auto* p = m_writer.try_get(owner_id)) {
+		std::lock_guard lock(m_updated_mutex);
 		m_updated.insert(owner_id);
 		return p;
 	}
@@ -211,6 +213,7 @@ auto gse::component_link<T>::flip(std::size_t read, std::size_t write) -> void {
 
 template <gse::is_component T>
 auto gse::component_link<T>::mark_updated(const owner_id_t owner_id) -> void {
+	std::lock_guard lock(m_updated_mutex);
 	m_updated.insert(owner_id);
 }
 
@@ -223,19 +226,23 @@ auto gse::component_link<T>::drain_adds() -> std::vector<owner_id_t> {
 
 template <gse::is_component T>
 auto gse::component_link<T>::drain_updates() -> std::vector<owner_id_t> {
-	// Convert m_added to unordered_set for O(1) lookup
-	std::unordered_set<owner_id_t> added_set(m_added.begin(), m_added.end());
+	const std::unordered_set added_set(m_added.begin(), m_added.end());
 
-	// Filter out IDs that are in m_added and convert to vector
+	std::unordered_set<owner_id_t> snapshot;
+	{
+		std::lock_guard lock(m_updated_mutex);
+		snapshot = std::move(m_updated);
+		m_updated.clear();
+	}
+
 	std::vector<owner_id_t> out;
-	out.reserve(m_updated.size());
-	for (const auto& id : m_updated) {
+	out.reserve(snapshot.size());
+	for (const auto& id : snapshot) {
 		if (!added_set.contains(id)) {
 			out.push_back(id);
 		}
 	}
 
-	m_updated.clear();
 	return out;
 }
 

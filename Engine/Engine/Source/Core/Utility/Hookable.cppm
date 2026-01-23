@@ -21,13 +21,13 @@ export namespace gse {
 		template <typename Hook>
 			requires is_hook<Hook, T>
 		auto add_hook(
-		) -> void;
+		) -> Hook&;
 
 		template <typename Hook, typename... Args>
 			requires is_hook<Hook, T>
 		auto add_hook(
 			Args&&... args
-		) -> void;
+		) -> Hook&;
 
 		virtual auto initialize(
 		) -> void;
@@ -57,15 +57,17 @@ gse::hookable<T>::hookable(const std::string_view name, std::initializer_list<st
 
 template <typename T>
 template <typename Hook> requires gse::is_hook<Hook, T>
-auto gse::hookable<T>::add_hook() -> void {
-	m_hooks.push_back(std::make_unique<Hook>(static_cast<T*>(this)));
+auto gse::hookable<T>::add_hook() -> Hook& {
+	auto& ptr = m_hooks.emplace_back(std::make_unique<Hook>(static_cast<T*>(this)));
+	return static_cast<Hook&>(*ptr);
 }
 
 template <typename T>
 template <typename Hook, typename... Args>
 	requires gse::is_hook<Hook, T>
-auto gse::hookable<T>::add_hook(Args&&... args) -> void {
-	m_hooks.push_back(std::make_unique<Hook>(static_cast<T*>(this), std::forward<Args>(args)...));
+auto gse::hookable<T>::add_hook(Args&&... args) -> Hook& {
+	auto& ptr = m_hooks.emplace_back(std::make_unique<Hook>(static_cast<T*>(this), std::forward<Args>(args)...));
+	return static_cast<Hook&>(*ptr);
 }
 
 template <typename T>
