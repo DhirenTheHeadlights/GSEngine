@@ -46,6 +46,16 @@ export namespace gse::renderer {
 			const std::string& filename
 		) const -> resource::handle<T>;
 
+		template <typename T>
+		auto try_get(
+			id id
+		) const -> resource::handle<T>;
+
+		template <typename T>
+		auto try_get(
+			const std::string& filename
+		) const -> resource::handle<T>;
+
 		template <typename T, typename... Args>
 		auto queue(
 			const std::string& name, 
@@ -189,6 +199,18 @@ template <typename T>
 auto gse::renderer::context::get(const std::string& filename) const -> resource::handle<T> {
 	auto* specific_loader = loader<T>();
 	return specific_loader->get(filename);
+}
+
+template <typename T>
+auto gse::renderer::context::try_get(id id) const -> resource::handle<T> {
+	auto* specific_loader = loader<T>();
+	return specific_loader->try_get(id);
+}
+
+template <typename T>
+auto gse::renderer::context::try_get(const std::string& filename) const -> resource::handle<T> {
+	auto* specific_loader = loader<T>();
+	return specific_loader->try_get(filename);
 }
 
 template <typename T, typename... Args>

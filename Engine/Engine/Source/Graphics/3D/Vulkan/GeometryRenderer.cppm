@@ -368,6 +368,7 @@ auto gse::renderer::geometry::initialize() -> void {
 	m_skinned_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, skinned_pipeline_info);
 
 	m_blank_texture = m_context.queue<texture>("blank", unitless::vec4(1, 1, 1, 1));
+	m_context.instantly_load(m_blank_texture);
 
 	frame_sync::on_end([this] {
 		m_render_queue.flip();
