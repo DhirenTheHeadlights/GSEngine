@@ -1,12 +1,6 @@
 import common;
 import standard_3d;
 
-[[vk::push_constant]]
-cbuffer ModelPC {
-    float4x4 model;
-    float4x4 normal_matrix;
-};
-
 struct VS_OUTPUT {
     float4 clip_pos    : SV_Position;
     float3 view_pos    : TEXCOORD0;
@@ -16,14 +10,16 @@ struct VS_OUTPUT {
 
 [Layout(LayoutKind::Standard3D)]
 [shader("vertex")]
-VS_OUTPUT vs_main(float3 in_position: POSITION, float3 in_normal: NORMAL, float2 in_tex_coord: TEXCOORD) {
+VS_OUTPUT vs_main(float3 in_position: POSITION, float3 in_normal: NORMAL, float2 in_tex_coord: TEXCOORD, uint instance_id : SV_InstanceID, uint base_instance : SV_StartInstanceLocation) {
     VS_OUTPUT o;
 
-    float4 world_pos_h = mul(model, float4(in_position, 1.0));
+    InstanceData inst = instanceData[base_instance + instance_id];
+
+    float4 world_pos_h = mul(inst.model_matrix, float4(in_position, 1.0));
     float4 view_pos_h  = mul(view, world_pos_h);
     float4 clip_pos_h  = mul(proj, view_pos_h);
 
-    float3 world_n = normalize(mul((float3x3)normal_matrix, in_normal));
+    float3 world_n = normalize(mul((float3x3)inst.normal_matrix, in_normal));
     float3 view_n  = normalize(mul((float3x3)view, world_n));
 
     o.clip_pos    = clip_pos_h;

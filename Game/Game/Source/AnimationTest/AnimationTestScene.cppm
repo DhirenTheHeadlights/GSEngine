@@ -11,7 +11,7 @@ export namespace gs {
 		auto initialize() -> void override {
 			build("Player")
 				.with<gse::free_camera>({
-					.initial_position = gse::vec3<gse::length>(0.f, 10.f, 40.f)
+					.initial_position = gse::vec3<gse::length>(0.f, 0.f, 0.f)
 				});
 
 			build("Sun")
@@ -122,7 +122,6 @@ export namespace gs {
 					.position_locked = true
 				});
 
-				// Use uniform scale (1:1:1) for proper skinning - non-uniform scale distorts bones
 				add_component<gse::physics::collision_component>({
 					.bounding_box = {
 						gse::vec3<gse::length>(-0.5f, -0.5f, -0.5f),

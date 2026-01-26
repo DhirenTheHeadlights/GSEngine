@@ -506,6 +506,7 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
 	vk::PhysicalDeviceFeatures2 features2{
 		.pNext = &present_wait_features,
 		.features = {
+			.drawIndirectFirstInstance = vk::True,
 			.fillModeNonSolid = vk::True,
 			.samplerAnisotropy = vk::True
 		}
@@ -624,12 +625,12 @@ auto gse::vulkan::create_sync_objects(const device_config& device_data, const sw
 
 	in_flight_fences.reserve(max_frames_in_flight);
 
-	constexpr vk::SemaphoreCreateInfo bin_sem_ci{};
 	constexpr vk::FenceCreateInfo fence_ci{
 		.flags = vk::FenceCreateFlagBits::eSignaled
 	};
 
 	for (std::size_t i = 0; i < swap_chain_image_count; ++i) {
+		constexpr vk::SemaphoreCreateInfo bin_sem_ci{};
 		image_available.emplace_back(device_data.device, bin_sem_ci);
 		render_finished.emplace_back(device_data.device, bin_sem_ci);
 	}

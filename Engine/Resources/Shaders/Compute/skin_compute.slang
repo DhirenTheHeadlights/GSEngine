@@ -36,8 +36,6 @@ void cs_main(uint3 group_id : SV_GroupID, uint3 local_thread_id : SV_GroupThread
     uint local_pose_base = instance_id * pc.local_pose_stride;
     uint skin_base = instance_id * pc.skin_stride;
 
-    // Phase 1: Compute global poses from local poses (hierarchical multiplication)
-    // This MUST be serial due to parent-child dependencies, so only thread 0 does this
     if (local_thread_id.x == 0) {
         for (uint i = 0; i < pc.joint_count; ++i) {
             float4x4 local_pose = localPoses[local_pose_base + i];
