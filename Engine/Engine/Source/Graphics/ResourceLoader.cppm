@@ -281,14 +281,10 @@ template <typename R, typename C> requires gse::is_resource<R, C>
 auto gse::resource::loader<R, C>::compile() -> void {
     const auto paths = R::compile();
 
-    std::println("[loader-debug] Compiling {} resources of type {}", paths.size(), typeid(R).name());
-
     std::lock_guard lock(m_mutex);
     for (const auto& path : paths) {
         auto temp_resource = std::make_unique<R>(path);
         const id resource_id = temp_resource->id();
-        std::println("[loader-debug]   id={} tag={} path={}",
-            resource_id.number(), std::string(resource_id.tag()), path.string());
         if (m_resources.add(resource_id, slot(std::move(temp_resource), state::queued, path))) {
             m_path_to_id[path] = resource_id;
         }
@@ -425,14 +421,6 @@ auto gse::resource::loader<R, C>::add(R&& resource) -> handle<R> {
 
 template <typename Resource, typename RenderingContext> requires gse::is_resource<Resource, RenderingContext>
 auto gse::resource::loader<Resource, RenderingContext>::get_unlocked(id id) const -> handle<Resource> {
-	if (!m_resources.contains(id)) {
-		std::println("[loader-debug] FAILED lookup for id={} tag={} in loader type={}",
-			id.number(), id.exists() ? std::string(id.tag()) : "UNKNOWN", typeid(Resource).name());
-		std::println("[loader-debug] Available resources in this loader:");
-		for (const auto& res : m_resources.items()) {
-			std::println("[loader-debug]   id={}", res.resource ? res.resource->id().number() : 0);
-		}
-	}
 	assert(m_resources.contains(id), std::source_location::current(), "Resource with ID {} not found in this loader.", id);
 	return handle<Resource>(id, const_cast<loader*>(this));
 }

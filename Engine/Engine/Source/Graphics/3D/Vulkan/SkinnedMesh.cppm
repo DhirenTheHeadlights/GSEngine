@@ -33,9 +33,12 @@ export namespace gse {
 
         auto bind(vk::CommandBuffer command_buffer) const -> void;
         auto draw(vk::CommandBuffer command_buffer) const -> void;
+        auto draw_instanced(vk::CommandBuffer command_buffer, std::uint32_t instance_count, std::uint32_t first_instance = 0) const -> void;
 
         auto center_of_mass() const -> vec3<length>;
         auto material() const -> const resource::handle<gse::material>&;
+        auto indices() const -> const std::vector<std::uint32_t>&;
+        auto aabb() const -> std::pair<vec3<length>, vec3<length>>;
     private:
         vulkan::buffer_resource m_vertex_buffer;
         vulkan::buffer_resource m_index_buffer;
@@ -125,6 +128,10 @@ auto gse::skinned_mesh::draw(const vk::CommandBuffer command_buffer) const -> vo
     command_buffer.drawIndexed(static_cast<std::uint32_t>(m_indices.size()), 1, 0, 0, 0);
 }
 
+auto gse::skinned_mesh::draw_instanced(const vk::CommandBuffer command_buffer, const std::uint32_t instance_count, const std::uint32_t first_instance) const -> void {
+    command_buffer.drawIndexed(static_cast<std::uint32_t>(m_indices.size()), instance_count, 0, 0, first_instance);
+}
+
 auto gse::skinned_mesh::center_of_mass() const -> vec3<length> {
     constexpr unitless::vec3d reference_point(0.f);
 
@@ -162,4 +169,29 @@ auto gse::skinned_mesh::center_of_mass() const -> vec3<length> {
 
 auto gse::skinned_mesh::material() const -> const resource::handle<gse::material>& {
     return m_material;
+}
+
+auto gse::skinned_mesh::indices() const -> const std::vector<std::uint32_t>& {
+    return m_indices;
+}
+
+auto gse::skinned_mesh::aabb() const -> std::pair<vec3<length>, vec3<length>> {
+    if (m_vertices.empty()) {
+        return {};
+    }
+
+    vec3<length> min_point = m_vertices[0].position;
+    vec3<length> max_point = m_vertices[0].position;
+
+    for (const auto& vertex : m_vertices) {
+        min_point.x() = std::min(min_point.x(), vertex.position.x());
+        min_point.y() = std::min(min_point.y(), vertex.position.y());
+        min_point.z() = std::min(min_point.z(), vertex.position.z());
+
+        max_point.x() = std::max(max_point.x(), vertex.position.x());
+        max_point.y() = std::max(max_point.y(), vertex.position.y());
+        max_point.z() = std::max(max_point.z(), vertex.position.z());
+    }
+
+    return { min_point, max_point };
 }

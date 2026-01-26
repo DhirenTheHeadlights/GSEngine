@@ -1,14 +1,6 @@
 import common;
 import standard_3d;
 
-[[vk::push_constant]]
-cbuffer SkinnedPC {
-    float4x4 model;
-    float4x4 normal_matrix;
-    uint skin_offset;
-    uint joint_count;
-};
-
 struct VS_OUTPUT {
     float4 clip_pos    : SV_Position;
     float3 view_pos    : TEXCOORD0;
@@ -24,12 +16,14 @@ VS_OUTPUT vs_main(
     float2 in_tex_coord  : TEXCOORD,
     uint4 in_bone_indices : BLENDINDICES,
     float4 in_bone_weights : BLENDWEIGHT,
-    uint instance_id : SV_InstanceID
+    uint instance_id : SV_InstanceID,
+    uint base_instance : SV_StartInstanceLocation
 ) {
     VS_OUTPUT o;
 
-    // Calculate per-instance offset: base offset + (instance_id * joint_count)
-    uint instance_skin_offset = skin_offset + (instance_id * joint_count);
+    InstanceData inst = instanceData[base_instance + instance_id];
+
+    uint instance_skin_offset = inst.skin_offset;
 
     float4x4 skin_matrix =
         skinMatrices[instance_skin_offset + in_bone_indices.x] * in_bone_weights.x +
@@ -40,11 +34,11 @@ VS_OUTPUT vs_main(
     float4 skinned_pos = mul(skin_matrix, float4(in_position, 1.0));
     float3 skinned_normal = normalize(mul((float3x3)skin_matrix, in_normal));
 
-    float4 world_pos_h = mul(model, skinned_pos);
+    float4 world_pos_h = mul(inst.model_matrix, skinned_pos);
     float4 view_pos_h  = mul(view, world_pos_h);
     float4 clip_pos_h  = mul(proj, view_pos_h);
 
-    float3 world_n = normalize(mul((float3x3)normal_matrix, skinned_normal));
+    float3 world_n = normalize(mul((float3x3)inst.normal_matrix, skinned_normal));
     float3 view_n  = normalize(mul((float3x3)view, world_n));
 
     o.clip_pos    = clip_pos_h;
