@@ -30,8 +30,8 @@ export namespace gs {
 				.cut_off = gse::degrees(35.f),
 				.outer_cut_off = gse::degrees(65.f),
 				.ambient_strength = 0.025f,
-				.near_plane = gse::meters(0.1f),
-				.far_plane = gse::meters(10000.f),
+				.near_plane = gse::meters(1.f),
+				.far_plane = gse::meters(100.f),
 				.ignore_list_ids = { owner_id() }
 			});
 
