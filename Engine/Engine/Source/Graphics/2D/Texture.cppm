@@ -36,9 +36,6 @@ export namespace gse {
 			profile texture_profile = profile::generic_repeat
 		);
 
-		static auto compile(
-		) -> std::set<std::filesystem::path>;
-
 		auto load(
 			const renderer::context& context
 		) -> void;
@@ -69,95 +66,6 @@ gse::texture::texture(const std::filesystem::path& filepath) : identifiable(file
 gse::texture::texture(const std::string_view name, const unitless::vec4& color, const unitless::vec2u size) : identifiable(name), m_image_data(image::load(color, size)) {}
 
 gse::texture::texture(const std::string_view name, const std::vector<std::byte>& data, const unitless::vec2u size, const std::uint32_t channels, const profile texture_profile) : identifiable(name), m_image_data(image::data{ .path = {}, .size = size, .channels = channels, .pixels = data }), m_profile(texture_profile) {}
-
-auto gse::texture::compile() -> std::set<std::filesystem::path> {
-	const auto source_root = config::resource_path;
-	const auto baked_root = config::baked_resource_path / "Textures";
-
-	if (!exists(source_root)) return {};
-	if (!exists(baked_root)) {
-		create_directories(baked_root);
-	}
-
-	std::println("Compiling textures...");
-
-	const std::vector<std::string> supported_extensions = { ".png", ".jpg", ".jpeg", ".tga", ".bmp" };
-
-	std::set<std::filesystem::path> resources;
-
-	for (const auto& entry : std::filesystem::recursive_directory_iterator(source_root)) {
-		if (!entry.is_regular_file()) continue;
-
-		if (const auto extension = entry.path().extension().string(); std::ranges::find(supported_extensions, extension) == supported_extensions.end()) {
-			continue;
-		}
-
-		const auto source_path = entry.path();
-		auto relative_path = source_path.lexically_relative(source_root);
-		const auto baked_path = baked_root / relative_path.replace_extension(".gtx");
-		const auto meta_path = source_path.parent_path() / (source_path.stem().string() + ".meta");
-		resources.insert(baked_path);
-
-		bool needs_recompile = !exists(baked_path);
-		if (!needs_recompile) {
-			if (const auto dst_time = last_write_time(baked_path); last_write_time(source_path) > dst_time) {
-				needs_recompile = true;
-			}
-			else if (exists(meta_path) && last_write_time(meta_path) > dst_time) {
-				needs_recompile = true;
-			}
-		}
-
-		if (!needs_recompile) continue;
-
-		const auto image_data = image::load(source_path);
-		if (image_data.pixels.empty()) {
-			std::println("Warning: Failed to load texture '{}', skipping.", source_path.string());
-			continue;
-		}
-
-		auto texture_profile = profile::generic_repeat;
-		if (exists(meta_path)) {
-			std::ifstream meta_file(meta_path);
-			if (std::string line; std::getline(meta_file, line) && line.starts_with("profile:")) {
-				std::string profile_str = line.substr(8);
-				profile_str.erase(0, profile_str.find_first_not_of(" \t\r\n"));
-				profile_str.erase(profile_str.find_last_not_of(" \t\r\n") + 1);
-
-				if (profile_str == "msdf") texture_profile = profile::msdf;
-				else if (profile_str == "pixel_art") texture_profile = profile::pixel_art;
-				else if (profile_str == "clamp_to_edge") texture_profile = profile::generic_clamp_to_edge;
-			}
-		}
-
-		create_directories(baked_path.parent_path());
-		std::ofstream out_file(baked_path, std::ios::binary);
-		assert(out_file.is_open(), std::source_location::current(), "Failed to open baked texture file for writing.");
-
-		constexpr std::uint32_t magic = 0x47544558; // 'GTEX'
-		constexpr std::uint32_t version = 1;
-		out_file.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
-		out_file.write(reinterpret_cast<const char*>(&version), sizeof(version));
-
-		const std::uint32_t width = image_data.size.x();
-		const std::uint32_t height = image_data.size.y();
-		const std::uint32_t channels = image_data.channels;
-
-		out_file.write(reinterpret_cast<const char*>(&width), sizeof(width));
-		out_file.write(reinterpret_cast<const char*>(&height), sizeof(height));
-		out_file.write(reinterpret_cast<const char*>(&channels), sizeof(channels));
-		out_file.write(reinterpret_cast<const char*>(&texture_profile), sizeof(texture_profile));
-
-		const std::uint64_t data_size = image_data.size_bytes();
-		out_file.write(reinterpret_cast<const char*>(&data_size), sizeof(data_size));
-		out_file.write(reinterpret_cast<const char*>(image_data.pixels.data()), data_size);
-
-		out_file.close();
-		std::print("Texture compiled: {}\n", baked_path.filename().string());
-	}
-
-	return resources;
-}
 
 auto gse::texture::load(const renderer::context& context) -> void {
 	if (!m_image_data.path.empty()) {

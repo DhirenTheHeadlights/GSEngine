@@ -61,13 +61,13 @@ else()
 endif()
 
 add_library(VulkanModule)
-target_compile_features(VulkanModule PUBLIC cxx_std_20)
+target_compile_features(VulkanModule PUBLIC cxx_std_23)
 target_compile_definitions(VulkanModule PUBLIC VULKAN_HPP_DISPATCH_LOADER_DYNAMIC VULKAN_HPP_NO_CONSTRUCTORS)
 target_link_libraries(VulkanModule PUBLIC Vulkan::Vulkan)
 target_sources(VulkanModule PRIVATE
   FILE_SET CXX_MODULES
   BASE_DIRS ${Vulkan_INCLUDE_DIR}
-  FILES ${Vulkan_INCLUDE_DIR}/vulkan/vulkan.cppm
+  FILES ${Vulkan_INCLUDE_DIR}/vulkan/vulkan.cppm ${Vulkan_INCLUDE_DIR}/vulkan/vulkan_video.cppm
 )
 
 target_include_directories(Engine

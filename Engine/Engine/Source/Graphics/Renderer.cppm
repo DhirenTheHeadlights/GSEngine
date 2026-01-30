@@ -14,6 +14,15 @@ import :shader;
 import :skeleton;
 import :texture;
 
+import :shader_compiler;
+import :shader_layout_compiler;
+import :texture_compiler;
+import :model_compiler;
+import :material_compiler;
+import :skeleton_compiler;
+import :clip_compiler;
+import :skinned_model_compiler;
+
 import gse.utility;
 import gse.platform;
 
@@ -92,6 +101,7 @@ export namespace gse::renderer {
 	private:
 		context* m_context = nullptr;
 		bool m_frame_begun = false;
+		bool m_hot_reload_enabled = false;
 	};
 }
 
@@ -110,11 +120,28 @@ auto gse::renderer::system::initialize() -> void {
 	ctx.add_loader<clip_asset>();
 
 	ctx.compile();
+
+	m_hot_reload_enabled = system_of<save::system>().read("Graphics", "Hot Reload", false);
+
+	publish([this](channel<save::register_property>& ch) {
+		save::bind(ch, "Graphics", "Hot Reload", m_hot_reload_enabled)
+			.description("Automatically reload assets when source files change")
+			.commit();
+	});
 }
 
 auto gse::renderer::system::update() -> void {
 	auto& ctx = *m_context;
 
+	if (m_hot_reload_enabled != ctx.hot_reload_enabled()) {
+		if (m_hot_reload_enabled) {
+			ctx.enable_hot_reload();
+		} else {
+			ctx.disable_hot_reload();
+		}
+	}
+
+	ctx.poll_assets();
 	ctx.process_resource_queue();
 	ctx.window().update(ctx.ui_focus());
 	ctx.camera().update_orientation();
@@ -154,6 +181,8 @@ auto gse::renderer::system::end_frame() -> void {
 		.config = ctx.config()
 	});
 
+	ctx.finalize_reloads();
+
 	m_frame_begun = false;
 }
 
@@ -162,8 +191,6 @@ auto gse::renderer::system::shutdown() -> void {
 
 	ctx.config().device_config().device.waitIdle();
 	ctx.shutdown();
-
-	shader::destroy_global_layouts();
 }
 
 auto gse::renderer::system::camera() const -> gse::camera& {

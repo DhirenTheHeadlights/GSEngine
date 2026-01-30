@@ -24,9 +24,6 @@ export namespace gse {
             const params& p
         );
 
-        static auto compile(
-        ) -> std::set<std::filesystem::path>;
-
         auto load(
             const renderer::context& ctx
         ) -> void;
@@ -55,34 +52,6 @@ gse::skeleton::skeleton(const std::filesystem::path& path)
 
 gse::skeleton::skeleton(const params& p)
     : identifiable(p.name), m_joints(p.joints) {
-}
-
-auto gse::skeleton::compile() -> std::set<std::filesystem::path> {
-    const auto source_root = config::resource_path / "Skeletons";
-    const auto baked_root = config::baked_resource_path / "Skeletons";
-
-    if (!exists(source_root)) {
-        return {};
-    }
-
-    if (!exists(baked_root)) {
-        create_directories(baked_root);
-    }
-
-    std::set<std::filesystem::path> resources;
-
-    for (const auto& entry : std::filesystem::directory_iterator(source_root)) {
-        if (entry.path().extension() == ".gskel") {
-            const auto baked_path = baked_root / entry.path().filename();
-            resources.insert(baked_path);
-
-            if (!exists(baked_path) || last_write_time(entry.path()) > last_write_time(baked_path)) {
-                copy_file(entry.path(), baked_path, std::filesystem::copy_options::overwrite_existing);
-            }
-        }
-    }
-
-    return resources;
 }
 
 auto gse::skeleton::load(const renderer::context& ctx) -> void {

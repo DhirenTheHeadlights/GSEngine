@@ -34,9 +34,6 @@ export namespace gse {
             params p
         );
 
-        static auto compile(
-        ) -> std::set<std::filesystem::path>;
-
         auto load(
             const renderer::context& ctx
         ) -> void;
@@ -69,34 +66,6 @@ gse::clip_asset::clip_asset(params p)
       m_length(p.length),
       m_loop(p.loop),
       m_tracks(std::move(p.tracks)) {
-}
-
-auto gse::clip_asset::compile() -> std::set<std::filesystem::path> {
-    const auto source_root = config::resource_path / "Clips";
-    const auto baked_root = config::baked_resource_path / "Clips";
-
-    if (!exists(source_root)) {
-        return {};
-    }
-
-    if (!exists(baked_root)) {
-        create_directories(baked_root);
-    }
-
-    std::set<std::filesystem::path> resources;
-
-    for (const auto& entry : std::filesystem::directory_iterator(source_root)) {
-        if (entry.path().extension() == ".gclip") {
-            const auto baked_path = baked_root / entry.path().filename();
-            resources.insert(baked_path);
-
-            if (!exists(baked_path) || last_write_time(entry.path()) > last_write_time(baked_path)) {
-                copy_file(entry.path(), baked_path, std::filesystem::copy_options::overwrite_existing);
-            }
-        }
-    }
-
-    return resources;
 }
 
 auto gse::clip_asset::load(const renderer::context& ctx) -> void {
