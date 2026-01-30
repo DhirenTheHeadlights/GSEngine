@@ -360,11 +360,6 @@ auto gse::renderer::shadow::render() -> void {
     const auto command = config.frame_context().command_buffer;
 
     auto& geom = system_of<geometry>();
-    const auto draw_list = geom.render_queue();
-
-    if (draw_list.empty()) {
-        return;
-    }
 
     const auto& lights = m_shadow_lights.read();
 
@@ -373,6 +368,11 @@ auto gse::renderer::shadow::render() -> void {
     }
 
     for (const auto& light : lights) {
+        const auto draw_list = geom.render_queue_excluding(light.ignore_list_ids);
+
+        if (draw_list.empty()) {
+            continue;
+        }
         if (light.shadow_index < 0 ||
             static_cast<std::size_t>(light.shadow_index) >= m_shadow_maps.size()) {
             continue;

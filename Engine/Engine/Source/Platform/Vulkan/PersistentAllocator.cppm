@@ -19,7 +19,13 @@ export namespace gse::vulkan {
 		bool in_use = false;
 	};
 
-	class allocation {
+	struct allocation_debug_info {
+		std::source_location creation_location;
+		std::string tag;
+		std::uint64_t allocation_id = 0;
+	};
+
+	class allocation : non_copyable {
 	public:
 		allocation() = default;
 
@@ -30,35 +36,41 @@ export namespace gse::vulkan {
 			void* mapped,
 			sub_allocation* owner,
 			allocator* alloc,
-			vk::Device device
+			vk::Device device,
+			allocation_debug_info debug_info = {}
 		);
 
-		~allocation();
+		~allocation(
+		) override;
 
-		allocation(const allocation&) = delete;
-		auto operator=(const allocation&) -> allocation& = delete;
+		allocation(
+			allocation&& other
+		) noexcept;
 
-		allocation(allocation&& other) noexcept :
-			m_memory(other.m_memory),
-			m_size(other.m_size),
-			m_offset(other.m_offset),
-			m_mapped(other.m_mapped),
-			m_owner(other.m_owner),
-			m_allocator(other.m_allocator),
-			m_device(other.m_device) {
-			other.m_owner = nullptr;
-			other.m_allocator = nullptr;
-			other.m_device = nullptr;
-		}
+		auto operator=(
+			allocation&& other
+		) noexcept -> allocation&;
 
-		auto operator=(allocation&& other) noexcept -> allocation&;
+		[[nodiscard]] auto memory(
+		) const -> vk::DeviceMemory;
 
-		[[nodiscard]] auto memory() const -> vk::DeviceMemory { return m_memory; }
-		[[nodiscard]] auto size() const -> vk::DeviceSize { return m_size; }
-		[[nodiscard]] auto offset() const -> vk::DeviceSize { return m_offset; }
-		[[nodiscard]] auto mapped() const -> std::byte* { return static_cast<std::byte*>(m_mapped); }
-		[[nodiscard]] auto owner() const -> sub_allocation* { return m_owner; }
-		[[nodiscard]] auto device() const -> vk::Device { return m_device; }
+		[[nodiscard]] auto size(
+		) const -> vk::DeviceSize;
+
+		[[nodiscard]] auto offset(
+		) const -> vk::DeviceSize;
+
+		[[nodiscard]] auto mapped(
+		) const -> std::byte*;
+
+		[[nodiscard]] auto owner(
+		) const -> sub_allocation*;
+
+		[[nodiscard]] auto device(
+		) const -> vk::Device;
+
+		[[nodiscard]] auto debug_info(
+		) const -> const allocation_debug_info&;
 	private:
 		vk::DeviceMemory m_memory = nullptr;
 		vk::DeviceSize m_size = 0, m_offset = 0;
@@ -66,6 +78,7 @@ export namespace gse::vulkan {
 		sub_allocation* m_owner = nullptr;
 		allocator* m_allocator = nullptr;
 		vk::Device m_device = nullptr;
+		allocation_debug_info m_debug_info;
 	};
 
 	struct image_resource_info {
@@ -119,7 +132,8 @@ export namespace gse::vulkan {
 	public:
 		allocator(
 			const vk::raii::Device& device,
-			const vk::raii::PhysicalDevice& physical_device
+			const vk::raii::PhysicalDevice& physical_device,
+			save::system& save_system
 		);
 
 		~allocator() override;
@@ -129,22 +143,31 @@ export namespace gse::vulkan {
 
 		auto allocate(
 			const vk::MemoryRequirements& requirements,
-			vk::MemoryPropertyFlags properties = vk::MemoryPropertyFlagBits::eDeviceLocal
+			vk::MemoryPropertyFlags properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
+			std::string_view tag = "",
+			std::source_location loc = std::source_location::current()
 		) -> std::expected<allocation, std::string>;
 
 		auto create_buffer(
 			const vk::BufferCreateInfo& buffer_info,
-			const void* data = nullptr
+			const void* data = nullptr,
+			std::string_view tag = "",
+			std::source_location loc = std::source_location::current()
 		) -> buffer_resource;
 
 		auto create_image(
 			const vk::ImageCreateInfo& info,
 			vk::MemoryPropertyFlags properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
 			const vk::ImageViewCreateInfo& view_info = {},
-			const void* data = nullptr
+			const void* data = nullptr,
+			std::string_view tag = "",
+			std::source_location loc = std::source_location::current()
 		) -> image_resource;
 
 		auto clean_up() -> void;
+
+		[[nodiscard]] auto live_allocation_count() const -> std::uint32_t { return m_live_allocation_count.load(); }
+		[[nodiscard]] auto tracking_enabled() const -> bool { return m_tracking_enabled; }
 	private:
 		friend class allocation;
 		auto free(
@@ -189,22 +212,43 @@ export namespace gse::vulkan {
 		vk::PhysicalDevice m_physical_device;
 		std::unordered_map<pool_key, pool, pool_key_hash> m_pools;
 		std::mutex m_mutex;
+
+		std::atomic<std::uint32_t> m_live_allocation_count = 0;
+		std::atomic<std::uint64_t> m_next_allocation_id = 1;
+		bool m_cleaned_up = false;
+		bool m_tracking_enabled = false;
+		std::unordered_map<std::uint64_t, allocation_debug_info> m_live_allocations;
 	};
 }
 
-gse::vulkan::allocation::allocation(const vk::DeviceMemory memory, const vk::DeviceSize size, const vk::DeviceSize offset, void* mapped, sub_allocation* owner, allocator* alloc, const vk::Device device):
+gse::vulkan::allocation::allocation(const vk::DeviceMemory memory, const vk::DeviceSize size, const vk::DeviceSize offset, void* mapped, sub_allocation* owner, allocator* alloc, const vk::Device device, allocation_debug_info debug_info):
 	m_memory(memory),
 	m_size(size),
 	m_offset(offset),
 	m_mapped(mapped),
 	m_owner(owner),
 	m_allocator(alloc),
-	m_device(device) {}
+	m_device(device),
+	m_debug_info(std::move(debug_info)) {}
 
 gse::vulkan::allocation::~allocation() {
 	if (m_owner && m_allocator) {
 		m_allocator->free(*this);
 	}
+}
+
+gse::vulkan::allocation::allocation(allocation&& other) noexcept:
+	m_memory(other.m_memory),
+	m_size(other.m_size),
+	m_offset(other.m_offset),
+	m_mapped(other.m_mapped),
+	m_owner(other.m_owner),
+	m_allocator(other.m_allocator),
+	m_device(other.m_device),
+	m_debug_info(std::move(other.m_debug_info)) {
+	other.m_owner = nullptr;
+	other.m_allocator = nullptr;
+	other.m_device = nullptr;
 }
 
 auto gse::vulkan::allocation::operator=(allocation&& other) noexcept -> allocation& {
@@ -220,12 +264,41 @@ auto gse::vulkan::allocation::operator=(allocation&& other) noexcept -> allocati
 		m_owner = other.m_owner;
 		m_allocator = other.m_allocator;
 		m_device = other.m_device;
+		m_debug_info = std::move(other.m_debug_info);
 
 		other.m_owner = nullptr;
 		other.m_allocator = nullptr;
 		other.m_device = nullptr;
 	}
 	return *this;
+}
+
+auto gse::vulkan::allocation::memory() const -> vk::DeviceMemory {
+	return m_memory;
+}
+
+auto gse::vulkan::allocation::size() const -> vk::DeviceSize {
+	return m_size;
+}
+
+auto gse::vulkan::allocation::offset() const -> vk::DeviceSize {
+	return m_offset;
+}
+
+auto gse::vulkan::allocation::mapped() const -> std::byte* {
+	return static_cast<std::byte*>(m_mapped);
+}
+
+auto gse::vulkan::allocation::owner() const -> sub_allocation* {
+	return m_owner;
+}
+
+auto gse::vulkan::allocation::device() const -> vk::Device {
+	return m_device;
+}
+
+auto gse::vulkan::allocation::debug_info() const -> const allocation_debug_info& {
+	return m_debug_info;
 }
 
 gse::vulkan::image_resource::~image_resource() {
@@ -252,6 +325,15 @@ gse::vulkan::image_resource::image_resource(image_resource&& other) noexcept {
 
 auto gse::vulkan::image_resource::operator=(image_resource&& other) noexcept -> image_resource& {
 	if (this != &other) {
+		if (allocation.device()) {
+			if (view) {
+				allocation.device().destroyImageView(view, nullptr);
+			}
+			if (image) {
+				allocation.device().destroyImage(image, nullptr);
+			}
+		}
+
 		image = other.image;
 		view = other.view;
 		format = other.format;
@@ -277,6 +359,10 @@ gse::vulkan::buffer_resource::buffer_resource(buffer_resource&& other) noexcept 
 
 auto gse::vulkan::buffer_resource::operator=(buffer_resource&& other) noexcept -> buffer_resource& {
 	if (this != &other) {
+		if (allocation.device() && buffer) {
+			allocation.device().destroyBuffer(buffer, nullptr);
+		}
+
 		buffer = other.buffer;
 		allocation = std::move(other.allocation);
 		other.buffer = nullptr;
@@ -284,7 +370,19 @@ auto gse::vulkan::buffer_resource::operator=(buffer_resource&& other) noexcept -
 	return *this;
 }
 
-gse::vulkan::allocator::allocator(const vk::raii::Device& device, const vk::raii::PhysicalDevice& physical_device) : m_device(*device), m_physical_device(*physical_device) {}
+gse::vulkan::allocator::allocator(const vk::raii::Device& device, const vk::raii::PhysicalDevice& physical_device, save::system& save_system) : m_device(*device), m_physical_device(*physical_device) {
+	m_tracking_enabled = save::read_bool_setting_early(
+		config::resource_path / "Misc/settings.toml",
+		"Vulkan",
+		"Track Allocations",
+		false
+	);
+
+	save_system.bind("Vulkan", "Track Allocations", m_tracking_enabled)
+		.description("Track Vulkan memory allocations for debugging destruction order issues")
+		.default_value(false)
+		.commit();
+}
 
 gse::vulkan::allocator::allocator(allocator&& other) noexcept : m_device(other.m_device), m_physical_device(other.m_physical_device), m_pools(std::move(other.m_pools)) {
 	other.m_device = nullptr;
@@ -307,8 +405,16 @@ gse::vulkan::allocator::~allocator() {
 	clean_up();
 }
 
-auto gse::vulkan::allocator::allocate(const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties) -> std::expected<allocation, std::string> {
+auto gse::vulkan::allocator::allocate(const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties, const std::string_view tag, const std::source_location loc) -> std::expected<allocation, std::string> {
 	std::lock_guard lock(m_mutex);
+
+	if (m_tracking_enabled) {
+		assert(
+			!m_cleaned_up, 
+			std::source_location::current(),
+			"Attempted to allocate after allocator cleanup! This indicates a resource lifetime issue."
+		);
+	}
 
 	const auto mem_props = m_physical_device.getMemoryProperties();
 
@@ -361,9 +467,22 @@ auto gse::vulkan::allocator::allocate(const vk::MemoryRequirements& requirements
 		const vk::DeviceSize suffix_size = sub.size - prefix_size - requirements.size;
 
 		const auto next_it = list.erase(best_sub_it);
-		if (prefix_size) list.insert(next_it, { sub.offset, prefix_size, false });
+		if (prefix_size) {
+			list.insert(next_it, { sub.offset, prefix_size, false });
+		}
 		const auto owner_it = list.insert(next_it, { best_aligned_offset, requirements.size, true });
-		if (suffix_size) list.insert(next_it, { best_aligned_offset + requirements.size, suffix_size, false });
+		if (suffix_size) {
+			list.insert(next_it, { best_aligned_offset + requirements.size, suffix_size, false });
+		}
+
+		allocation_debug_info debug_info;
+		if (m_tracking_enabled) {
+			debug_info.creation_location = loc;
+			debug_info.tag = tag;
+			debug_info.allocation_id = m_next_allocation_id++;
+			m_live_allocations[debug_info.allocation_id] = debug_info;
+			++m_live_allocation_count;
+		}
 
 		return allocation{
 			best_block->memory,
@@ -372,7 +491,8 @@ auto gse::vulkan::allocator::allocate(const vk::MemoryRequirements& requirements
 			best_block->mapped ? static_cast<char*>(best_block->mapped) + best_aligned_offset : nullptr,
 			&*owner_it,
 			this,
-			m_device
+			m_device,
+			std::move(debug_info)
 		};
 	}
 
@@ -406,6 +526,15 @@ auto gse::vulkan::allocator::allocate(const vk::MemoryRequirements& requirements
 	sub_allocation* owner_ptr = &new_block.allocations.back();
 	if (suffix_size > 0) new_block.allocations.push_back({ aligned_offset + requirements.size, suffix_size, false });
 
+	allocation_debug_info debug_info;
+	if (m_tracking_enabled) {
+		debug_info.creation_location = loc;
+		debug_info.tag = tag;
+		debug_info.allocation_id = m_next_allocation_id++;
+		m_live_allocations[debug_info.allocation_id] = debug_info;
+		++m_live_allocation_count;
+	}
+
 	return allocation{
 		new_block.memory,
 		requirements.size,
@@ -413,11 +542,12 @@ auto gse::vulkan::allocator::allocate(const vk::MemoryRequirements& requirements
 		new_block.mapped ? static_cast<char*>(new_block.mapped) + aligned_offset : nullptr,
 		owner_ptr,
 		this,
-		m_device
+		m_device,
+		std::move(debug_info)
 	};
 }
 
-auto gse::vulkan::allocator::create_buffer(const vk::BufferCreateInfo& buffer_info, const void* data) -> buffer_resource {
+auto gse::vulkan::allocator::create_buffer(const vk::BufferCreateInfo& buffer_info, const void* data, const std::string_view tag, const std::source_location loc) -> buffer_resource {
 	auto buffer = m_device.createBuffer(buffer_info, nullptr);
 	const auto requirements = m_device.getBufferMemoryRequirements(buffer);
 
@@ -426,14 +556,14 @@ auto gse::vulkan::allocator::create_buffer(const vk::BufferCreateInfo& buffer_in
 
 	if (data) {
 		constexpr vk::MemoryPropertyFlags required_flags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
-		if (auto expected_alloc = allocate(requirements, required_flags)) {
+		if (auto expected_alloc = allocate(requirements, required_flags, tag, loc)) {
 			alloc = std::move(*expected_alloc);
 			success = true;
 		}
 	}
 	else {
 		for (const auto property_preferences = memory_flag_preferences(buffer_info.usage); const auto& props : property_preferences) {
-			if (auto expected_alloc = allocate(requirements, props)) {
+			if (auto expected_alloc = allocate(requirements, props, tag, loc)) {
 				alloc = std::move(*expected_alloc);
 				success = true;
 				break;
@@ -455,11 +585,11 @@ auto gse::vulkan::allocator::create_buffer(const vk::BufferCreateInfo& buffer_in
 	return { buffer, std::move(alloc) };
 }
 
-auto gse::vulkan::allocator::create_image(const vk::ImageCreateInfo& info, const vk::MemoryPropertyFlags properties, const vk::ImageViewCreateInfo& view_info, const void* data) -> image_resource {
+auto gse::vulkan::allocator::create_image(const vk::ImageCreateInfo& info, const vk::MemoryPropertyFlags properties, const vk::ImageViewCreateInfo& view_info, const void* data, const std::string_view tag, const std::source_location loc) -> image_resource {
 	auto image = m_device.createImage(info, nullptr);
 	const auto requirements = m_device.getImageMemoryRequirements(image);
 
-	auto expected_alloc = allocate(requirements, properties);
+	auto expected_alloc = allocate(requirements, properties, tag, loc);
 
 	if (!expected_alloc) {
 		assert(
@@ -489,11 +619,9 @@ auto gse::vulkan::allocator::create_image(const vk::ImageCreateInfo& info, const
 	}
 	else {
 		view = m_device.createImageView({
-			.flags = {},
 			.image = image,
 			.viewType = vk::ImageViewType::e2D,
 			.format = info.format,
-			.components = {},
 			.subresourceRange = {
 				.aspectMask = info.usage & vk::ImageUsageFlagBits::eDepthStencilAttachment ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor,
 				.baseMipLevel = 0,
@@ -512,6 +640,21 @@ auto gse::vulkan::allocator::free(const allocation& alloc) -> void {
 
 	if (!alloc.owner()) {
 		return;
+	}
+
+	if (m_tracking_enabled) {
+		const auto& [creation_location, tag, allocation_id] = alloc.debug_info();
+		assert(!m_cleaned_up, std::source_location::current(),
+			"Allocation freed after allocator cleanup! Tag: '{}', Created at: {}:{}:{}",
+			tag,
+			creation_location.file_name(),
+			creation_location.line(),
+			creation_location.function_name());
+
+		if (allocation_id != 0) {
+			m_live_allocations.erase(allocation_id);
+			--m_live_allocation_count;
+		}
 	}
 
 	const auto* sub_to_free = alloc.owner();
@@ -544,7 +687,52 @@ auto gse::vulkan::allocator::free(const allocation& alloc) -> void {
 auto gse::vulkan::allocator::clean_up() -> void {
 	std::lock_guard lock(m_mutex);
 
-	if (!m_device) return;
+	if (!m_device) {
+		return;
+	}
+
+	std::uint32_t leaked_sub_allocations = 0;
+	for (const auto& [memory_type_index, blocks] : m_pools | std::views::values) {
+		for (const auto& block : blocks) {
+			for (const auto& sub : block.allocations) {
+				if (sub.in_use) {
+					++leaked_sub_allocations;
+				}
+			}
+		}
+	}
+
+	if (leaked_sub_allocations > 0) {
+		std::println(stderr, "ERROR: {} sub-allocations still in use at allocator cleanup!", leaked_sub_allocations);
+		std::println(stderr, "This means resources (images/buffers) will be destroyed AFTER their memory is freed!");
+		std::println(stderr, "Check destruction order - all vulkan::image_resource and vulkan::buffer_resource");
+		std::println(stderr, "must be destroyed BEFORE the allocator.");
+
+		if (m_tracking_enabled && !m_live_allocations.empty()) {
+			std::println(stderr, "\nTracked allocations still alive:");
+			for (const auto& [id, debug] : m_live_allocations) {
+				std::println(
+					stderr, "  - [{}] '{}' created at {}:{}:{}",
+					id,
+					debug.tag.empty() ? "(no tag)" : debug.tag,
+					debug.creation_location.file_name(),
+					debug.creation_location.line(),
+					debug.creation_location.function_name()
+				);
+			}
+		} else if (!m_tracking_enabled) {
+			std::println(stderr, "\nEnable 'Vulkan.Track Allocations' setting for detailed allocation info.");
+		}
+
+		assert(
+			false, 
+			std::source_location::current(),
+			"Allocator cleanup called with {} leaked sub-allocations - destroy resources before the allocator!",
+			leaked_sub_allocations
+		);
+	}
+
+	m_cleaned_up = true;
 
 	for (auto& [memory_type_index, blocks] : m_pools | std::views::values) {
 		for (auto& block : blocks) {

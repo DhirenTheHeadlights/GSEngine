@@ -1,3 +1,7 @@
+module;
+
+#include <toml++/toml.hpp>
+
 export module gse.utility:save_system;
 
 import std;
@@ -421,10 +425,22 @@ export namespace gse::save {
             std::string_view name,
             T default_value = T{}
         ) const -> T;
+
+        auto bind_int_map(
+            std::string_view category,
+            std::map<std::string, int>& map
+        ) -> void;
+
+        [[nodiscard]] auto int_map(
+            std::string_view category
+        ) const -> const std::map<std::string, int>*;
+
     private:
         std::vector<std::unique_ptr<property_base>> m_properties;
         mutable std::unordered_map<std::string, std::vector<property_base*>> m_by_category;
         std::vector<change_callback> m_callbacks;
+
+        std::unordered_map<std::string, std::map<std::string, int>*> m_int_maps;
 
         std::filesystem::path m_auto_save_path;
         bool m_auto_save = false;
@@ -1071,42 +1087,104 @@ auto gse::save::system::find(const std::string_view category, const std::string_
 }
 
 auto gse::save::system::save_to_file(const std::filesystem::path& path) const -> bool {
+    toml::table root;
+
+    for (const auto& prop : m_properties) {
+        std::string category(prop->category());
+        std::string name(prop->name());
+
+        if (!root.contains(category)) {
+            root.insert(category, toml::table{});
+        }
+
+        auto& cat_table = *root[category].as_table();
+
+        if (prop->type() == typeid(bool)) {
+            cat_table.insert(name, prop->as_bool());
+        } else if (prop->type() == typeid(float)) {
+            cat_table.insert(name, static_cast<double>(prop->as_float()));
+        } else if (prop->type() == typeid(int)) {
+            cat_table.insert(name, static_cast<std::int64_t>(prop->as_int()));
+        } else if (prop->type() == typeid(std::string)) {
+            cat_table.insert(name, std::string(prop->as_string()));
+        } else if (prop->constraint_kind() == constraint_type::enumeration) {
+            cat_table.insert(name, static_cast<std::int64_t>(prop->as_int()));
+        } else {
+            std::ostringstream oss;
+            prop->serialize(oss);
+            cat_table.insert(name, oss.str());
+        }
+    }
+
+    for (const auto& [category, map_ptr] : m_int_maps) {
+        if (!map_ptr || map_ptr->empty()) continue;
+
+        toml::table map_table;
+        for (const auto& [key, value] : *map_ptr) {
+            map_table.insert(key, static_cast<std::int64_t>(value));
+        }
+        root.insert(category, std::move(map_table));
+    }
+
     std::ofstream file(path);
     if (!file) {
         return false;
     }
 
-    for (const auto& prop : m_properties) {
-        file << prop->category() << "." << prop->name() << " = ";
-        prop->serialize(file);
-        file << "\n";
-    }
-
+    file << root;
     mark_all_clean();
     return true;
 }
 
 auto gse::save::system::load_from_file(const std::filesystem::path& path) const -> bool {
-    std::ifstream file(path);
-    if (!file) {
+    if (!std::filesystem::exists(path)) {
         return false;
     }
 
-    std::unordered_map<std::string, property_base*> lookup;
-    for (const auto& prop : m_properties) {
-        auto key = std::string(prop->category()) + "." + std::string(prop->name());
-        lookup[key] = prop.get();
+    toml::table root;
+    try {
+        root = toml::parse_file(path.string());
+    } catch (const toml::parse_error&) {
+        return false;
     }
 
-    std::string line;
-    while (std::getline(file, line)) {
-        if (const auto eq = line.find(" = "); eq != std::string::npos) {
-            auto key = line.substr(0, eq);
-            auto value = line.substr(eq + 3);
+    for (const auto& [category, cat_node] : root) {
+        const auto* cat_table = cat_node.as_table();
+        if (!cat_table) continue;
 
-            if (const auto it = lookup.find(key); it != lookup.end()) {
-                std::istringstream iss(value);
-                it->second->deserialize(iss);
+        std::string cat_str(category.str());
+
+        if (auto it = m_int_maps.find(cat_str); it != m_int_maps.end() && it->second) {
+            it->second->clear();
+            for (const auto& [name, value_node] : *cat_table) {
+                if (value_node.is_integer()) {
+                    (*it->second)[std::string(name.str())] = static_cast<int>(value_node.value_or<std::int64_t>(0));
+                }
+            }
+            continue;
+        }
+
+        for (const auto& [name, value_node] : *cat_table) {
+            std::string key = cat_str + "." + std::string(name.str());
+
+            property_base* prop = nullptr;
+            for (const auto& p : m_properties) {
+                if (std::string(p->category()) + "." + std::string(p->name()) == key) {
+                    prop = p.get();
+                    break;
+                }
+            }
+
+            if (!prop) continue;
+
+            if (value_node.is_boolean()) {
+                prop->set_bool(value_node.value_or(false));
+            } else if (value_node.is_integer()) {
+                prop->set_int(static_cast<int>(value_node.value_or<std::int64_t>(0)));
+            } else if (value_node.is_floating_point()) {
+                prop->set_float(static_cast<float>(value_node.value_or(0.0)));
+            } else if (value_node.is_string()) {
+                prop->set_string(value_node.value_or<std::string>(""));
             }
         }
     }
@@ -1127,6 +1205,17 @@ auto gse::save::system::save() const -> bool {
         return false;
     }
     return save_to_file(m_auto_save_path);
+}
+
+auto gse::save::system::bind_int_map(const std::string_view category, std::map<std::string, int>& map) -> void {
+    m_int_maps[std::string(category)] = &map;
+}
+
+auto gse::save::system::int_map(const std::string_view category) const -> const std::map<std::string, int>* {
+    if (const auto it = m_int_maps.find(std::string(category)); it != m_int_maps.end()) {
+        return it->second;
+    }
+    return nullptr;
 }
 
 auto gse::save::system::has_unsaved_changes() const -> bool {
@@ -1172,31 +1261,59 @@ auto gse::save::read_setting_early(const std::filesystem::path& path, const std:
         return std::nullopt;
     }
 
-    std::ifstream file(path);
-    if (!file) {
+    toml::table root;
+    try {
+        root = toml::parse_file(path.string());
+    } catch (const toml::parse_error&) {
         return std::nullopt;
     }
 
-    const std::string target_key = std::string(category) + "." + std::string(name);
+    const auto* cat_table = root[category].as_table();
+    if (!cat_table) {
+        return std::nullopt;
+    }
 
-    std::string line;
-    while (std::getline(file, line)) {
-        if (const auto eq = line.find(" = "); eq != std::string::npos) {
-	        if (auto key = line.substr(0, eq); key == target_key) {
-                return line.substr(eq + 3);
-            }
-        }
+    const auto* value_node = cat_table->get(name);
+    if (!value_node) {
+        return std::nullopt;
+    }
+
+    if (value_node->is_boolean()) {
+        return value_node->value_or(false) ? "true" : "false";
+    } else if (value_node->is_integer()) {
+        return std::to_string(value_node->value_or<std::int64_t>(0));
+    } else if (value_node->is_floating_point()) {
+        return std::to_string(value_node->value_or(0.0));
+    } else if (value_node->is_string()) {
+        return value_node->value_or<std::string>("");
     }
 
     return std::nullopt;
 }
 
 auto gse::save::read_bool_setting_early(const std::filesystem::path& path, const std::string_view category, const std::string_view name, const bool default_value) -> bool {
-    const auto value = read_setting_early(path, category, name);
-    if (!value) {
+    if (!std::filesystem::exists(path)) {
         return default_value;
     }
-    return *value == "true" || *value == "1";
+
+    toml::table root;
+    try {
+        root = toml::parse_file(path.string());
+    } catch (const toml::parse_error&) {
+        return default_value;
+    }
+
+    const auto* cat_table = root[category].as_table();
+    if (!cat_table) {
+        return default_value;
+    }
+
+    const auto* value_node = cat_table->get(name);
+    if (!value_node) {
+        return default_value;
+    }
+
+    return value_node->value_or(default_value);
 }
 
 template <typename T>

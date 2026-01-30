@@ -74,7 +74,7 @@ auto gse::engine::initialize() -> void {
 
 	auto& reg = m_world.registry();
 	auto& save = m_scheduler.emplace<save::system>(reg);
-	save.set_auto_save(true, config::resource_path / "Misc/settings.cfg");
+	save.set_auto_save(true, config::resource_path / "Misc/settings.toml");
 
 	auto& input = m_scheduler.emplace<input::system>(reg);
 	m_scheduler.emplace<actions::system>(reg);

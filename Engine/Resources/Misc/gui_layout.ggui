@@ -1,0 +1,70 @@
+[Menu]
+Tag: "Box [14547239639409211570: Shadow Test Box]"
+Owner: "Network"
+Rect: 1266 518 654 518
+DockedTo: bottom
+DockSplitRatio: 0.494275
+ActiveTab: 0
+Tabs: "Box [14547239639409211570: Shadow Test Box]" "Box [13150330638402972445: Floor]"
+[EndMenu]
+
+[Menu]
+Tag: "Box [16774762635780129129: Skybox Floor]"
+Owner: ""
+Rect: 100 300 300 200
+DockedTo: none
+DockSplitRatio: 0.5
+ActiveTab: 0
+Tabs: "Box [16774762635780129129: Skybox Floor]"
+[EndMenu]
+
+[Menu]
+Tag: "Box [3808468672160884840: Bigger Box]"
+Owner: "Network"
+Rect: 1082 524 838 524
+DockedTo: bottom
+DockSplitRatio: 0.5
+ActiveTab: 2
+Tabs: "Box [3808468672160884840: Bigger Box]" "Box [12895617658403883662: Smaller Box]" "Box [3723830265917511246: Bottom Wall]"
+[EndMenu]
+
+[Menu]
+Tag: "Box [5698395257944443107: Skybox]"
+Owner: ""
+Rect: 100 300 300 200
+DockedTo: none
+DockSplitRatio: 0.5
+ActiveTab: 0
+Tabs: "Box [5698395257944443107: Skybox]"
+[EndMenu]
+
+[Menu]
+Tag: "Network"
+Owner: ""
+Rect: 1082 1048 837.999 1048
+DockedTo: right
+DockSplitRatio: 0.436458
+ActiveTab: 0
+Tabs: "Network"
+[EndMenu]
+
+[Menu]
+Tag: "Profiler"
+Owner: "Test"
+Rect: 0 524 769 524
+DockedTo: bottom
+DockSplitRatio: 0.5
+ActiveTab: 0
+Tabs: "Profiler"
+[EndMenu]
+
+[Menu]
+Tag: "Test"
+Owner: ""
+Rect: 0 1048 769 1048
+DockedTo: left
+DockSplitRatio: 0.400521
+ActiveTab: 0
+Tabs: "Test"
+[EndMenu]
+
