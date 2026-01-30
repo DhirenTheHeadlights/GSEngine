@@ -4,7 +4,7 @@ bl_info = {
     "version": (1, 0, 0),
     "blender": (4, 0, 0),
     "location": "File > Export > GSE Export",
-    "description": "Export skinned meshes, skeletons, and animations for GoonSquad Engine",
+    "description": "Export skinned meshes, skeletons, and animations for GSEngine",
     "category": "Import-Export",
 }
 

@@ -424,6 +424,9 @@ auto gse::renderer::lighting::render() -> void {
 	const std::size_t shadow_light_count =
 		std::min<std::size_t>(shadow_entries.size(), max_shadow_lights);
 
+	// Shadow entries are in order: directional lights, then spot lights
+	// Light indices match this order (directional first, then spot, then point)
+	// So shadow index s corresponds to light index s (since point lights come after and have no shadows)
 	for (std::size_t s = 0; s < shadow_light_count; ++s) {
 		shadow_indices[s] = static_cast<int>(s);
 		shadow_view_proj[s] = shadow_entries[s].proj * shadow_entries[s].view;
