@@ -152,7 +152,7 @@ auto gse::gui::layout::update(id_mapped_collection<menu>& menus, const id root_i
 
 	menu* child = nullptr;
 	for (auto& potential_child : menus.items()) {
-		if (potential_child.owner_id() == root_id) {
+		if (potential_child.owner_id() == root_id && potential_child.was_visible_last_frame) {
 			if (potential_child.docked_to != dock::location::none && potential_child.docked_to != dock::location::center) {
 				child = &potential_child;
 				break;

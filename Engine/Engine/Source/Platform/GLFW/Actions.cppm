@@ -9,6 +9,10 @@ import :input;
 import :keys;
 import :input_state;
 
+export namespace gse {
+	auto key_to_string(key k) -> std::string_view;
+}
+
 export namespace gse::actions {
 	template <std::size_t N>
 	struct fixed_string {
@@ -297,6 +301,23 @@ export namespace gse::actions {
 			const state& s
 		) const -> void;
 
+		auto rebinds_map(
+		) -> std::map<std::string, int>&;
+
+		struct action_binding_info {
+			std::string name;
+			key current_key;
+			key default_key;
+		};
+
+		[[nodiscard]] auto all_bindings(
+		) const -> std::vector<action_binding_info>;
+
+		auto rebind(
+			std::string_view action_name,
+			key new_key
+		) -> void;
+
 	private:
 		auto finalize_bindings(
 		) -> void;
@@ -316,7 +337,7 @@ export namespace gse::actions {
 			id action_id;
 		};
 		std::vector<pending_key_binding> m_pending_key_bindings;
-		std::unordered_map<std::string, key> m_rebinds;
+		std::map<std::string, int> m_rebinds;
 
 		struct pending_axis2_req {
 			pending_axis2_info info;
@@ -730,7 +751,7 @@ auto gse::actions::system::finalize_bindings() -> void {
 	m_resolved = {};
 
 	for (const auto& [name, def, action_id] : m_pending_key_bindings) {
-		const key k = (m_rebinds.contains(name) ? m_rebinds[name] : def);
+		const key k = (m_rebinds.contains(name) ? static_cast<key>(m_rebinds.at(name)) : def);
 		const auto* desc = m_descriptions.try_get(action_id);
 		if (!desc) {
 			continue;
@@ -790,4 +811,138 @@ auto gse::actions::system::add_description(const std::string_view tag, const id 
 	auto* desc_ptr = m_descriptions.add(action_id, std::move(desc));
 
 	return *desc_ptr;
+}
+
+auto gse::actions::system::rebinds_map() -> std::map<std::string, int>& {
+	return m_rebinds;
+}
+
+auto gse::actions::system::all_bindings() const -> std::vector<action_binding_info> {
+	std::vector<action_binding_info> result;
+	result.reserve(m_pending_key_bindings.size());
+
+	for (const auto& [name, def, action_id] : m_pending_key_bindings) {
+		key current = def;
+		if (const auto it = m_rebinds.find(name); it != m_rebinds.end()) {
+			current = static_cast<key>(it->second);
+		}
+		result.push_back({ name, current, def });
+	}
+
+	return result;
+}
+
+auto gse::actions::system::rebind(const std::string_view action_name, const key new_key) -> void {
+	m_rebinds[std::string(action_name)] = static_cast<int>(new_key);
+	finalize_bindings();
+}
+
+auto gse::key_to_string(const key k) -> std::string_view {
+	switch (k) {
+		case key::space: return "Space";
+		case key::apostrophe: return "'";
+		case key::comma: return ",";
+		case key::minus: return "-";
+		case key::period: return ".";
+		case key::slash: return "/";
+		case key::num_0: return "0";
+		case key::num_1: return "1";
+		case key::num_2: return "2";
+		case key::num_3: return "3";
+		case key::num_4: return "4";
+		case key::num_5: return "5";
+		case key::num_6: return "6";
+		case key::num_7: return "7";
+		case key::num_8: return "8";
+		case key::num_9: return "9";
+		case key::semicolon: return ";";
+		case key::equal: return "=";
+		case key::a: return "A";
+		case key::b: return "B";
+		case key::c: return "C";
+		case key::d: return "D";
+		case key::e: return "E";
+		case key::f: return "F";
+		case key::g: return "G";
+		case key::h: return "H";
+		case key::i: return "I";
+		case key::j: return "J";
+		case key::k: return "K";
+		case key::l: return "L";
+		case key::m: return "M";
+		case key::n: return "N";
+		case key::o: return "O";
+		case key::p: return "P";
+		case key::q: return "Q";
+		case key::r: return "R";
+		case key::s: return "S";
+		case key::t: return "T";
+		case key::u: return "U";
+		case key::v: return "V";
+		case key::w: return "W";
+		case key::x: return "X";
+		case key::y: return "Y";
+		case key::z: return "Z";
+		case key::left_bracket: return "[";
+		case key::backslash: return "\\";
+		case key::right_bracket: return "]";
+		case key::grave_accent: return "`";
+		case key::escape: return "Escape";
+		case key::enter: return "Enter";
+		case key::tab: return "Tab";
+		case key::backspace: return "Backspace";
+		case key::insert: return "Insert";
+		case key::del: return "Delete";
+		case key::right: return "Right";
+		case key::left: return "Left";
+		case key::down: return "Down";
+		case key::up: return "Up";
+		case key::page_up: return "Page Up";
+		case key::page_down: return "Page Down";
+		case key::home: return "Home";
+		case key::end: return "End";
+		case key::caps_lock: return "Caps Lock";
+		case key::scroll_lock: return "Scroll Lock";
+		case key::num_lock: return "Num Lock";
+		case key::print_screen: return "Print Screen";
+		case key::pause: return "Pause";
+		case key::f1: return "F1";
+		case key::f2: return "F2";
+		case key::f3: return "F3";
+		case key::f4: return "F4";
+		case key::f5: return "F5";
+		case key::f6: return "F6";
+		case key::f7: return "F7";
+		case key::f8: return "F8";
+		case key::f9: return "F9";
+		case key::f10: return "F10";
+		case key::f11: return "F11";
+		case key::f12: return "F12";
+		case key::kp_0: return "Numpad 0";
+		case key::kp_1: return "Numpad 1";
+		case key::kp_2: return "Numpad 2";
+		case key::kp_3: return "Numpad 3";
+		case key::kp_4: return "Numpad 4";
+		case key::kp_5: return "Numpad 5";
+		case key::kp_6: return "Numpad 6";
+		case key::kp_7: return "Numpad 7";
+		case key::kp_8: return "Numpad 8";
+		case key::kp_9: return "Numpad 9";
+		case key::kp_decimal: return "Numpad .";
+		case key::kp_divide: return "Numpad /";
+		case key::kp_multiply: return "Numpad *";
+		case key::kp_subtract: return "Numpad -";
+		case key::kp_add: return "Numpad +";
+		case key::kp_enter: return "Numpad Enter";
+		case key::left_shift: return "Left Shift";
+		case key::left_control: return "Left Ctrl";
+		case key::left_alt: return "Left Alt";
+		case key::left_super: return "Left Super";
+		case key::right_shift: return "Right Shift";
+		case key::right_control: return "Right Ctrl";
+		case key::right_alt: return "Right Alt";
+		case key::right_super: return "Right Super";
+		case key::menu: return "Menu";
+		default: return "Unknown";
+	}
 }

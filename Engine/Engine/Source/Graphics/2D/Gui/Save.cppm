@@ -1,3 +1,7 @@
+module;
+
+#include <toml++/toml.hpp>
+
 export module gse.graphics:save;
 
 import std;
@@ -30,53 +34,65 @@ export namespace gse::gui {
     ) -> id_mapped_collection<menu>;
 }
 
+namespace {
+    auto dock_to_string(gse::gui::dock::location location) -> std::string_view {
+        switch (location) {
+            case gse::gui::dock::location::none:   return "none";
+            case gse::gui::dock::location::center: return "center";
+            case gse::gui::dock::location::left:   return "left";
+            case gse::gui::dock::location::right:  return "right";
+            case gse::gui::dock::location::top:    return "top";
+            case gse::gui::dock::location::bottom: return "bottom";
+            default:                               return "none";
+        }
+    }
+
+    auto location_from_string(std::string_view str) -> gse::gui::dock::location {
+        if (str == "left")   return gse::gui::dock::location::left;
+        if (str == "right")  return gse::gui::dock::location::right;
+        if (str == "top")    return gse::gui::dock::location::top;
+        if (str == "bottom") return gse::gui::dock::location::bottom;
+        if (str == "center") return gse::gui::dock::location::center;
+        return gse::gui::dock::location::none;
+    }
+}
+
 auto gse::gui::save(id_mapped_collection<menu>& menus, const std::filesystem::path& file_path) -> void {
     if (const auto parent_dir = file_path.parent_path(); !parent_dir.empty() && !std::filesystem::exists(parent_dir)) {
         std::filesystem::create_directories(parent_dir);
     }
 
-    std::ofstream file(file_path);
-    assert(
-        file.is_open(),
-        std::source_location::current(),
-        "Failed to open GUI layout file for writing: {}",
-        file_path.string()
-    );
-
-    auto dock_to_string = [](const dock::location location) -> std::string {
-        switch (location) {
-            case dock::location::none:   return "none";
-            case dock::location::center: return "center";
-            case dock::location::left:   return "left";
-            case dock::location::right:  return "right";
-            case dock::location::top:    return "top";
-            case dock::location::bottom: return "bottom";
-            default:                     return "unknown";
-        }
-    };
+    toml::array menu_array;
 
     for (const auto& menu : menus.items()) {
-        const std::string owner_tag = menu.owner_id().exists()
-            ? std::string(menu.owner_id().tag())
-            : "";
+        toml::table menu_table;
 
-        file << "[Menu]\n";
-        file << "Tag: " << std::quoted(std::string(menu.id().tag())) << "\n";
-        file << "Owner: " << std::quoted(owner_tag) << "\n";
-        file << "Rect: " << menu.rect.left() << " " << menu.rect.top() << " "
-             << menu.rect.width() << " " << menu.rect.height() << "\n";
-        file << "DockedTo: " << dock_to_string(menu.docked_to) << "\n";
-        file << "DockSplitRatio: " << menu.dock_split_ratio << "\n";
-        file << "ActiveTab: " << menu.active_tab_index << "\n";
+        menu_table.insert("tag", std::string(menu.id().tag()));
+        menu_table.insert("owner", menu.owner_id().exists() ? std::string(menu.owner_id().tag()) : "");
+        menu_table.insert("rect", toml::array{
+            static_cast<double>(menu.rect.left()),
+            static_cast<double>(menu.rect.top()),
+            static_cast<double>(menu.rect.width()),
+            static_cast<double>(menu.rect.height())
+        });
+        menu_table.insert("docked_to", dock_to_string(menu.docked_to));
+        menu_table.insert("dock_split_ratio", static_cast<double>(menu.dock_split_ratio));
+        menu_table.insert("active_tab", static_cast<std::int64_t>(menu.active_tab_index));
 
-        file << "Tabs:";
-        for (const auto& t : menu.tab_contents) {
-            file << " " << std::quoted(t);
+        toml::array tabs;
+        for (const auto& tab : menu.tab_contents) {
+            tabs.push_back(tab);
         }
-        file << "\n";
+        menu_table.insert("tabs", std::move(tabs));
 
-        file << "[EndMenu]\n\n";
+        menu_array.push_back(std::move(menu_table));
     }
+
+    toml::table root;
+    root.insert("menu", std::move(menu_array));
+
+    std::ofstream file(file_path);
+    file << root;
 }
 
 auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection<menu>& default_menus) -> id_mapped_collection<menu> {
@@ -86,110 +102,70 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
         return default_menus;
     }
 
-    std::ifstream file(file_path);
-    if (!file.is_open()) {
+    toml::table root;
+    try {
+        root = toml::parse_file(file_path.string());
+    } catch (const toml::parse_error&) {
         return default_menus;
     }
 
-    auto trim_in_place = [](std::string& s) -> void {
-        while (!s.empty() && (s.front() == ' ' || s.front() == '\t' || s.front() == '\r')) {
-            s.erase(s.begin());
-        }
-        while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r')) {
-            s.pop_back();
-        }
-    };
-
-    auto location_from_string = [](const std::string& str) -> dock::location {
-        if (str == "left")   return dock::location::left;
-        if (str == "right")  return dock::location::right;
-        if (str == "top")    return dock::location::top;
-        if (str == "bottom") return dock::location::bottom;
-        if (str == "center") return dock::location::center;
-        return dock::location::none;
-    };
+    const auto* menu_array = root["menu"].as_array();
+    if (!menu_array) {
+        return default_menus;
+    }
 
     std::vector<loaded_menu_data> loaded_data_vec;
-    std::string line;
-    std::optional<loaded_menu_data> current_data;
 
-    while (std::getline(file, line)) {
-        if (line == "[Menu]") {
-            current_data.emplace();
-            continue;
-        }
-        if (line == "[EndMenu]") {
-            if (current_data) {
-                loaded_data_vec.push_back(*current_data);
-                current_data.reset();
-            }
-            continue;
-        }
-        if (!current_data) {
-            continue;
+    for (const auto& item : *menu_array) {
+        const auto* tbl = item.as_table();
+        if (!tbl) continue;
+
+        loaded_menu_data data;
+
+        if (const auto* tag_node = tbl->get("tag")) {
+            data.tag = tag_node->value_or<std::string>("");
         }
 
-        std::stringstream ss(line);
-        std::string key;
-        ss >> key;
+        if (const auto* owner_node = tbl->get("owner")) {
+            data.owner_tag = owner_node->value_or<std::string>("");
+        }
 
-        if (key == "Tag:") {
-            if (std::string tag_q; ss >> std::quoted(tag_q)) {
-                current_data->tag = tag_q;
-            }
-            else {
-                std::string rest;
-                std::getline(ss, rest);
-                trim_in_place(rest);
-                current_data->tag = rest;
-            }
+        if (const auto* docked_node = tbl->get("docked_to")) {
+            data.docked_to = location_from_string(docked_node->value_or<std::string>("none"));
         }
-        else if (key == "Owner:") {
-            if (std::string owner_q; ss >> std::quoted(owner_q)) {
-                current_data->owner_tag = owner_q;
-            }
-            else {
-                std::string rest;
-                std::getline(ss, rest);
-                trim_in_place(rest);
-                current_data->owner_tag = rest;
-            }
-        }
-        else if (key == "DockedTo:") {
-            std::string val;
-            ss >> val;
-            current_data->docked_to = location_from_string(val);
-        }
-        else if (key == "DockSplitRatio:") {
-            ss >> current_data->dock_split_ratio;
-        }
-        else if (key == "ActiveTab:") {
-            ss >> current_data->active_tab_index;
-        }
-        else if (key == "Rect:") {
-            unitless::vec2 pos, size;
-            ss >> pos.x() >> pos.y() >> size.x() >> size.y();
-            current_data->rect = ui_rect::from_position_size(pos, size);
-        }
-        else if (key == "Tabs:") {
-            current_data->tab_tags.clear();
 
-            if (std::string one; ss >> std::quoted(one)) {
-                current_data->tab_tags.push_back(one);
-                std::string t;
-                while (ss >> std::quoted(t)) {
-                    current_data->tab_tags.push_back(t);
-                }
+        if (const auto* ratio_node = tbl->get("dock_split_ratio")) {
+            data.dock_split_ratio = static_cast<float>(ratio_node->value_or(0.5));
+        }
+
+        if (const auto* tab_node = tbl->get("active_tab")) {
+            data.active_tab_index = static_cast<std::uint32_t>(tab_node->value_or<std::int64_t>(0));
+        }
+
+        if (const auto* rect_arr = tbl->get("rect"); rect_arr && rect_arr->is_array()) {
+            const auto& arr = *rect_arr->as_array();
+            if (arr.size() == 4) {
+                unitless::vec2 pos{
+                    static_cast<float>(arr[0].value_or(0.0)),
+                    static_cast<float>(arr[1].value_or(0.0))
+                };
+                unitless::vec2 size{
+                    static_cast<float>(arr[2].value_or(0.0)),
+                    static_cast<float>(arr[3].value_or(0.0))
+                };
+                data.rect = ui_rect::from_position_size(pos, size);
             }
-            else {
-                std::string rest;
-                std::getline(ss, rest);
-                trim_in_place(rest);
-                if (!rest.empty()) {
-                    current_data->tab_tags.push_back(rest);
+        }
+
+        if (const auto* tabs_node = tbl->get("tabs"); tabs_node && tabs_node->is_array()) {
+            for (const auto& tab : *tabs_node->as_array()) {
+                if (auto val = tab.value<std::string>()) {
+                    data.tab_tags.push_back(*val);
                 }
             }
         }
+
+        loaded_data_vec.push_back(std::move(data));
     }
 
     if (loaded_data_vec.empty()) {

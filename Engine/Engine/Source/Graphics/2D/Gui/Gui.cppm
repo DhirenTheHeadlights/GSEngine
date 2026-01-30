@@ -161,7 +161,7 @@ export namespace gse::gui {
 		std::optional<dock::space> m_active_dock_space;
 		state m_current_state;
 
-		std::filesystem::path m_file_path = "Misc/gui_layout.ggui";
+		std::filesystem::path m_file_path = "Misc/gui_layout.toml";
 		clock m_save_clock;
 
 		id m_hot_widget_id;
@@ -600,6 +600,7 @@ auto gse::gui::system::end_frame() -> void {
 	m_visible_menu_ids_last_frame.clear();
 	m_visible_menu_ids_last_frame.reserve(m_menus.items().size());
 	for (menu& m : m_menus.items()) {
+		m.was_visible_last_frame = m.was_begun_this_frame;
 		if (m.was_begun_this_frame) {
 			m_visible_menu_ids_last_frame.push_back(m.id());
 		}
@@ -1113,7 +1114,7 @@ auto gse::gui::system::handle_idle_state(unitless::vec2 mouse_position, const bo
 
 		std::function<void(id)> expand = [&](const id parent_id) {
 			for (const menu& item : m_menus.items()) {
-				if (item.owner_id() == parent_id) {
+				if (item.owner_id() == parent_id && item.was_visible_last_frame) {
 					bounds = ui_rect::bounding_box(bounds, item.rect);
 					expand(item.id());
 				}
@@ -1473,7 +1474,7 @@ auto gse::gui::system::handle_resizing_state(const states::resizing& current, co
 
         std::function<void(id)> expand = [&](const id parent_id) {
             for (const menu& item : m_menus.items()) {
-                if (item.owner_id() == parent_id) {
+                if (item.owner_id() == parent_id && item.was_visible_last_frame) {
                     bounds = ui_rect::bounding_box(bounds, item.rect);
                     expand(item.id());
                 }
@@ -1489,7 +1490,7 @@ auto gse::gui::system::handle_resizing_state(const states::resizing& current, co
             unitless::vec2 req = style.min_menu_size;
 
             for (const menu& child : m_menus.items()) {
-                if (child.owner_id() != node_id) {
+                if (child.owner_id() != node_id || !child.was_visible_last_frame) {
                     continue;
                 }
 
@@ -1537,6 +1538,7 @@ auto gse::gui::system::handle_resizing_state(const states::resizing& current, co
             if (other.id() == m->id()) continue;
             if (other.owner_id() != m->owner_id()) continue;
             if (other.docked_to == dock::location::none) continue;
+            if (!other.was_visible_last_frame) continue;
 
             const ui_rect other_bounds = calculate_group_bounds(other.id());
 
@@ -2015,7 +2017,7 @@ auto gse::gui::system::calculate_display_rect(const menu& m) const -> ui_rect {
 	ui_rect display_rect = m.rect;
 
 	for (const menu& child : m_menus.items()) {
-		if (child.owner_id() == m.id() && !child.was_begun_this_frame) {
+		if (child.owner_id() == m.id() && !child.was_begun_this_frame && child.was_visible_last_frame) {
 			display_rect = ui_rect::bounding_box(display_rect, calculate_display_rect(child));
 		}
 	}

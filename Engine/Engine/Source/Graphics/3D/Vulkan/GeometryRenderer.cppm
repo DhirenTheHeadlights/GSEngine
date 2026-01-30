@@ -183,6 +183,10 @@ export namespace gse::renderer {
 		auto render_queue(
 		) const -> std::span<const render_queue_entry>;
 
+		auto render_queue_excluding(
+			std::span<const id> exclude_ids
+		) const -> std::vector<render_queue_entry>;
+
 		auto skinned_render_queue(
 		) const -> std::span<const skinned_render_queue_entry>;
 
@@ -247,6 +251,7 @@ export namespace gse::renderer {
 		bool m_gpu_culling_enabled = true;
 
 		double_buffer<std::vector<render_queue_entry>> m_render_queue;
+		double_buffer<std::vector<id>> m_render_queue_owners;
 		double_buffer<std::vector<skinned_render_queue_entry>> m_skinned_render_queue;
 
 		resource::handle<texture> m_blank_texture;
@@ -830,6 +835,7 @@ auto gse::renderer::geometry::initialize() -> void {
 
 	frame_sync::on_end([this] {
 		m_render_queue.flip();
+		m_render_queue_owners.flip();
 		m_skinned_render_queue.flip();
 	});
 }
@@ -860,6 +866,9 @@ auto gse::renderer::geometry::update() -> void {
 		auto& out = m_render_queue.write();
 		out.clear();
 
+		auto& owners_out = m_render_queue_owners.write();
+		owners_out.clear();
+
 		auto& skinned_out = m_skinned_render_queue.write();
 		skinned_out.clear();
 
@@ -885,7 +894,9 @@ auto gse::renderer::geometry::update() -> void {
 				}
 
 				model_handle.update(*mc, *cc);
-				out.append_range(model_handle.render_queue_entries());
+				const auto entries = model_handle.render_queue_entries();
+				out.append_range(entries);
+				owners_out.resize(owners_out.size() + entries.size(), component.owner_id());
 			}
 
 			const auto* anim = anim_chunk.read(component.owner_id());
@@ -1511,6 +1522,23 @@ auto gse::renderer::geometry::render() -> void {
 
 auto gse::renderer::geometry::render_queue() const -> std::span<const render_queue_entry> {
 	return m_render_queue.read();
+}
+
+auto gse::renderer::geometry::render_queue_excluding(const std::span<const id> exclude_ids) const -> std::vector<render_queue_entry> {
+	const auto& entries = m_render_queue.read();
+	const auto& owners = m_render_queue_owners.read();
+
+	std::vector<render_queue_entry> result;
+	result.reserve(entries.size());
+
+	for (std::size_t i = 0; i < entries.size(); ++i) {
+		bool excluded = std::ranges::any_of(exclude_ids, [&](const id& ex) { return ex == owners[i]; });
+		if (!excluded) {
+			result.push_back(entries[i]);
+		}
+	}
+
+	return result;
 }
 
 auto gse::renderer::geometry::skinned_render_queue() const -> std::span<const skinned_render_queue_entry> {

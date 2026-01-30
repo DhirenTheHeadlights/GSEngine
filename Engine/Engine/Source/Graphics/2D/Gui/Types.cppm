@@ -85,6 +85,7 @@ export namespace gse::gui {
 		std::vector<std::string> tab_contents;
 		std::uint32_t active_tab_index = 0;
 		bool was_begun_this_frame = false;
+		bool was_visible_last_frame = false;
 	};
 
 	struct draw_context {
