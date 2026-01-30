@@ -107,17 +107,16 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
 
         const length corrected_penetration = std::max(res->penetration - slop, length{ 0 });
         const vec3<length> correction = res->normal * corrected_penetration;
-
         const float ratio_a = inv_mass_a / total_inv_mass;
         const float ratio_b = inv_mass_b / total_inv_mass;
 
+
         if (!object_a->position_locked) {
-            object_a->accumulators.position_correction += correction * ratio_a;
+			object_a->accumulators.position_correction += .1f * (gse::magnitude(correction) > gse::magnitude(coll_a.bounding_box.size()) ? correction : normalize(correction) * coll_a.bounding_box.size() * 0.1f) * ratio_a;
         }
         if (!object_b->position_locked) {
-            object_b->accumulators.position_correction -= correction * ratio_b;
+            object_b->accumulators.position_correction -= .1f * (gse::magnitude(correction) > gse::magnitude(coll_b.bounding_box.size())? correction : normalize(correction) * coll_b.bounding_box.size() * 0.1f) * ratio_b;
         }
-
         if (res->normal.y() > 0.7f) {
             object_a->airborne = false;
         }
@@ -141,12 +140,12 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
         constexpr float wake_threshold = 0.2f;
         const bool should_wake = normal_speed > wake_threshold || tangent_speed > wake_threshold;
 
-        //if (should_wake) {
-        //    object_a->sleeping = false;
-        //    object_a->sleep_time = 0.f;
-        //    object_b->sleeping = false;
-        //    object_b->sleep_time = 0.f;
-        //}
+        if (should_wake) {
+            object_a->sleeping = false;
+            object_a->sleep_time = 0.f;
+            object_b->sleeping = false;
+            object_b->sleep_time = 0.f;
+        }
 
         if (vel_along_normal > velocity{ 0 }) {
             return;

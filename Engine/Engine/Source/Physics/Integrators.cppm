@@ -40,7 +40,8 @@ namespace gse::physics {
     ) -> void;
 
     auto update_gravity(
-        motion_component& component
+        motion_component& component,
+        collision_component* coll_component
     ) -> void;
 
     auto update_air_resistance(
@@ -115,19 +116,27 @@ auto gse::physics::update_friction(motion_component& component, const surface::p
     apply_force(component, friction_force, component.current_position);
 }
 
-auto gse::physics::update_gravity(motion_component& component) -> void {
+auto gse::physics::update_gravity(motion_component& component, collision_component* coll_component) -> void {
     if (!component.affected_by_gravity) {
         return;
     }
+    const auto gravity_force = gravity * component.mass;
 
-    if (component.airborne) {
-        const auto gravity_force = gravity * component.mass;
-        apply_force(component, gravity_force, component.current_position);
+    if (coll_component) {
+        for (const auto& point : coll_component->bounding_box.get_obb_vertices()) {
+            apply_force(component, 0.125f* gravity_force, point);
+		}
     }
     else {
-        component.accumulators.current_acceleration.y() = std::max(meters_per_second_squared(0.f), component.accumulators.current_acceleration.y());
-        update_friction(component, properties(surface::type::concrete));
-    }
+        apply_force(component, gravity_force, component.current_position);
+	}
+    //if (component.airborne) {
+
+    //}
+    //else {
+    //    component.accumulators.current_acceleration.y() = std::max(meters_per_second_squared(0.f), component.accumulators.current_acceleration.y());
+    //    update_friction(component, properties(surface::type::concrete));
+    //}
 }
 
 auto gse::physics::update_air_resistance(motion_component& component) -> void {
@@ -249,7 +258,7 @@ auto gse::physics::update_object(motion_component& component, collision_componen
         return;
     }
 
-    update_gravity(component);
+    update_gravity(component, collision_component);
     update_air_resistance(component);
     update_velocity(component);
     update_position(component);
