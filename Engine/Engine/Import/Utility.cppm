@@ -32,6 +32,7 @@ export import :timed_lock;
 export import :timer;
 export import :trace;
 export import :variant_match;
+export import :file_watcher;
 
 export namespace gse {
 	template <typename T>

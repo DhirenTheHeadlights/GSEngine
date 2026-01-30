@@ -49,8 +49,6 @@ export namespace gse {
 		explicit skinned_model(const std::filesystem::path& path) : identifiable(path), m_baked_model_path(path) {}
 		explicit skinned_model(std::string_view name, std::vector<skinned_mesh_data> meshes);
 
-		static auto compile() -> std::set<std::filesystem::path>;
-
 		auto load(const renderer::context& context) -> void;
 		auto unload() -> void;
 
@@ -70,34 +68,6 @@ gse::skinned_model::skinned_model(const std::string_view name, std::vector<skinn
 	for (auto& mesh_data : meshes) {
 		m_meshes.emplace_back(std::move(mesh_data));
 	}
-}
-
-auto gse::skinned_model::compile() -> std::set<std::filesystem::path> {
-	const auto source_root = config::resource_path / "SkinnedModels";
-	const auto baked_root = config::baked_resource_path / "SkinnedModels";
-
-	if (!exists(source_root)) {
-		return {};
-	}
-
-	if (!exists(baked_root)) {
-		create_directories(baked_root);
-	}
-
-	std::set<std::filesystem::path> resources;
-
-	for (const auto& entry : std::filesystem::directory_iterator(source_root)) {
-		if (entry.path().extension() == ".gsmdl") {
-			const auto baked_path = baked_root / entry.path().filename();
-			resources.insert(baked_path);
-
-			if (!exists(baked_path) || last_write_time(entry.path()) > last_write_time(baked_path)) {
-				copy_file(entry.path(), baked_path, std::filesystem::copy_options::overwrite_existing);
-			}
-		}
-	}
-
-	return resources;
 }
 
 auto gse::skinned_model::load(const renderer::context& context) -> void {
@@ -217,7 +187,7 @@ auto gse::skinned_model_instance::update(const physics::motion_component& mc, co
 	else {
 		const auto* resolved = m_model_handle.resolve();
 		const std::size_t mesh_count = resolved ? resolved->meshes().size() : 0;
-
+		
 		if (mesh_count == 0) {
 			m_render_queue_entries.clear();
 			m_cached_mesh_count = 0;
@@ -251,19 +221,16 @@ auto gse::skinned_model_instance::update(const physics::motion_component& mc, co
 		return;
 	}
 
-	// For skinned meshes, we do NOT apply scale from bounding box or pivot correction.
-	// The mesh vertices are already in bind pose coordinates (typically with Y=0 at feet),
-	// and the skeleton defines how vertices move via skinning. We only apply position and rotation.
-	const mat4 rot_mat               = m_rotation;
-	const mat4 trans_mat             = translate(mat4(1.0f), m_position);
-	const mat4 final_model_matrix    = trans_mat * rot_mat;  // Just position + rotation
-	const mat4 normal_matrix         = final_model_matrix.inverse().transpose();
+	const mat4 rot_mat = m_rotation;
+	const mat4 trans_mat = translate(mat4(1.0f), m_position);
+	const mat4 final_model_matrix = trans_mat * rot_mat;
+	const mat4 normal_matrix = final_model_matrix.inverse().transpose();
 
 	for (auto& entry : m_render_queue_entries) {
-		entry.model_matrix  = final_model_matrix;
+		entry.model_matrix = final_model_matrix;
 		entry.normal_matrix = normal_matrix;
-		entry.skin_offset   = skin_offset;
-		entry.joint_count   = joint_count;
+		entry.skin_offset = skin_offset;
+		entry.joint_count = joint_count;
 	}
 
 	m_is_dirty = false;
