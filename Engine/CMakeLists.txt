@@ -1,9 +1,21 @@
-cmake_minimum_required(VERSION 3.26)
+cmake_minimum_required(VERSION 3.28)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 project(Engine)
+
+include(FetchContent)
+
+FetchContent_Declare(
+    tomlplusplus
+    GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
+    GIT_TAG master
+)
+set(TOMLPLUSPLUS_BUILD_MODULES ON CACHE BOOL "" FORCE)
+# Workaround for MSVC module compatibility - VS 2026 still has the noexcept(noexcept(...)) bug
+add_compile_definitions(TOML_DISABLE_NOEXCEPT_NOEXCEPT=1)
+FetchContent_MakeAvailable(tomlplusplus)
 
 file(GLOB_RECURSE ENGINE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cppm" "${CMAKE_CURRENT_BINARY_DIR}/Engine/*.cppm")
 
@@ -34,7 +46,6 @@ find_path(miniaudio_INCLUDE_DIR "miniaudio.h")
 find_package(Freetype CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
 find_package(Vulkan REQUIRED)
-find_package(tomlplusplus CONFIG REQUIRED)
 find_package(TBB CONFIG REQUIRED)
 
 set(VULKAN_SDK_PATH $ENV{VULKAN_SDK})
@@ -87,7 +98,7 @@ target_link_libraries(Engine PUBLIC
     glfw
     Freetype::Freetype
     msdfgen::msdfgen
-    tomlplusplus::tomlplusplus
+    tomlplusplus_modules
     VulkanModule
     TBB::tbb
 )
@@ -109,7 +120,7 @@ if (MSVC)
     add_compile_options(/MP)
     add_compile_options(/Zm500)
 
-    set(EXTERNAL_TARGETS VulkanModule)
+    set(EXTERNAL_TARGETS VulkanModule tomlplusplus_modules)
     foreach(target ${EXTERNAL_TARGETS})
         set_property(TARGET ${target} PROPERTY FOLDER "External")
     endforeach()

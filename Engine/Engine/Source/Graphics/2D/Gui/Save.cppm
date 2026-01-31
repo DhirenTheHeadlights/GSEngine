@@ -1,10 +1,7 @@
-module;
-
-#include <toml++/toml.hpp>
-
 export module gse.graphics:save;
 
 import std;
+import tomlplusplus;
 
 import gse.assert;
 import gse.utility;
@@ -34,26 +31,26 @@ export namespace gse::gui {
     ) -> id_mapped_collection<menu>;
 }
 
-namespace {
-    auto dock_to_string(gse::gui::dock::location location) -> std::string_view {
+namespace gse::gui {
+    auto dock_to_string(const dock::location location) -> std::string_view {
         switch (location) {
-            case gse::gui::dock::location::none:   return "none";
-            case gse::gui::dock::location::center: return "center";
-            case gse::gui::dock::location::left:   return "left";
-            case gse::gui::dock::location::right:  return "right";
-            case gse::gui::dock::location::top:    return "top";
-            case gse::gui::dock::location::bottom: return "bottom";
+            case dock::location::none:   return "none";
+            case dock::location::center: return "center";
+            case dock::location::left:   return "left";
+            case dock::location::right:  return "right";
+            case dock::location::top:    return "top";
+            case dock::location::bottom: return "bottom";
             default:                               return "none";
         }
     }
 
-    auto location_from_string(std::string_view str) -> gse::gui::dock::location {
-        if (str == "left")   return gse::gui::dock::location::left;
-        if (str == "right")  return gse::gui::dock::location::right;
-        if (str == "top")    return gse::gui::dock::location::top;
-        if (str == "bottom") return gse::gui::dock::location::bottom;
-        if (str == "center") return gse::gui::dock::location::center;
-        return gse::gui::dock::location::none;
+    auto location_from_string(const std::string_view str) -> dock::location {
+        if (str == "left")   return dock::location::left;
+        if (str == "right")  return dock::location::right;
+        if (str == "top")    return dock::location::top;
+        if (str == "bottom") return dock::location::bottom;
+        if (str == "center") return dock::location::center;
+        return dock::location::none;
     }
 }
 

@@ -1,10 +1,7 @@
-module;
-
-#include <toml++/toml.hpp>
-
 export module gse.utility:save_system;
 
 import std;
+import tomlplusplus;
 
 import :id;
 import :system;

@@ -47,7 +47,7 @@ export namespace gse {
 		explicit model(const std::filesystem::path& path) : identifiable(path), m_baked_model_path(path) {}
 		explicit model(std::string_view name, std::vector<mesh_data> meshes);
 
-		auto load(const renderer::context& context) -> void;
+		auto load(renderer::context& context) -> void;
 		auto unload() -> void;
 
 		auto meshes() const -> std::span<const mesh>;
@@ -68,7 +68,7 @@ gse::model::model(const std::string_view name, std::vector<mesh_data> meshes) : 
 	}
 }
 
-auto gse::model::load(const renderer::context& context) -> void {
+auto gse::model::load(renderer::context& context) -> void {
 	if (!m_baked_model_path.empty()) {
 		m_meshes.clear();
 
@@ -83,13 +83,20 @@ auto gse::model::load(const renderer::context& context) -> void {
 		in_file.read(reinterpret_cast<char*>(&mesh_count), sizeof(mesh_count));
 		m_meshes.reserve(mesh_count);
 
+		const auto model_relative = m_baked_model_path.lexically_relative(config::baked_resource_path);
+		const auto material_dir = config::baked_resource_path / "Materials" / model_relative.parent_path();
+
 		for (std::uint64_t i = 0; i < mesh_count; ++i) {
 			std::uint64_t mat_name_len;
 			in_file.read(reinterpret_cast<char*>(&mat_name_len), sizeof(mat_name_len));
 			std::string material_name(mat_name_len, '\0');
 			in_file.read(&material_name[0], mat_name_len);
 
-			resource::handle<material> material_handle = context.get<material>(material_name);
+			const auto material_path = material_dir / (material_name + ".gmat");
+			resource::handle<material> material_handle;
+			if (std::filesystem::exists(material_path)) {
+				material_handle = context.queue<material>(material_path.string());
+			}
 
 			std::uint64_t vertex_count;
 			in_file.read(reinterpret_cast<char*>(&vertex_count), sizeof(vertex_count));

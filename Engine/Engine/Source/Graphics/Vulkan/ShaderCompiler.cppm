@@ -604,27 +604,25 @@ struct gse::asset_compiler<gse::shader> {
 
         std::ranges::sort(reflected_vertex_input.attributes, {}, &vk::VertexInputAttributeDescription::location);
 
-        if (shader_layout_name.empty()) {
-            auto [sets] = reflect_descriptor_sets(layout, to_vk_descriptor_type, reflect_members, extract_struct_layout);
-            vk::ShaderStageFlags used_stages{};
+        auto [sets] = reflect_descriptor_sets(layout, to_vk_descriptor_type, reflect_members, extract_struct_layout);
+        vk::ShaderStageFlags used_stages{};
 
-            for (std::uint32_t epi = 0; epi < layout->getEntryPointCount(); ++epi) {
-                auto* ep = layout->getEntryPointByIndex(epi);
-                if (!ep) continue;
-                switch (ep->getStage()) {
-                    case SLANG_STAGE_VERTEX:   used_stages |= vk::ShaderStageFlagBits::eVertex;   break;
-                    case SLANG_STAGE_FRAGMENT: used_stages |= vk::ShaderStageFlagBits::eFragment; break;
-                    case SLANG_STAGE_COMPUTE:  used_stages |= vk::ShaderStageFlagBits::eCompute;  break;
-                    default: break;
-                }
+        for (std::uint32_t epi = 0; epi < layout->getEntryPointCount(); ++epi) {
+            auto* ep = layout->getEntryPointByIndex(epi);
+            if (!ep) continue;
+            switch (ep->getStage()) {
+                case SLANG_STAGE_VERTEX:   used_stages |= vk::ShaderStageFlagBits::eVertex;   break;
+                case SLANG_STAGE_FRAGMENT: used_stages |= vk::ShaderStageFlagBits::eFragment; break;
+                case SLANG_STAGE_COMPUTE:  used_stages |= vk::ShaderStageFlagBits::eCompute;  break;
+                default: break;
             }
-
-            for (auto& s_data : sets | std::views::values) {
-                for (auto& [n, lb, mem] : s_data.bindings) lb.stageFlags = used_stages;
-            }
-
-            reflected_sets = std::move(sets);
         }
+
+        for (auto& s_data : sets | std::views::values) {
+            for (auto& [n, lb, mem] : s_data.bindings) lb.stageFlags = used_stages;
+        }
+
+        reflected_sets = std::move(sets);
 
         auto process_push_constant_variable = [&](
             slang::VariableLayoutReflection* var,
@@ -684,28 +682,26 @@ struct gse::asset_compiler<gse::shader> {
         write_data(out, static_cast<std::uint32_t>(reflected_vertex_input.attributes.size()));
         for (const auto& attr : reflected_vertex_input.attributes) write_data(out, attr);
 
-        if (shader_layout_name.empty()) {
-            write_data(out, static_cast<std::uint32_t>(reflected_sets.size()));
-            for (const auto& [type, set_data] : reflected_sets) {
-                write_data(out, type);
-                write_data(out, static_cast<std::uint32_t>(set_data.bindings.size()));
-                for (const auto& [name, layout_binding, member] : set_data.bindings) {
-                    write_string(out, name);
-                    write_data(out, layout_binding);
-                    write_data(out, member.has_value());
-                    if (member) {
-                        write_string(out, member->name);
-                        write_data(out, member->binding);
-                        write_data(out, member->set);
-                        write_data(out, member->size);
-                        write_data(out, static_cast<std::uint32_t>(member->members.size()));
-                        for (const auto& [m_name, m_data] : member->members) {
-                            write_string(out, m_name);
-                            write_string(out, m_data.name);
-                            write_data(out, m_data.offset);
-                            write_data(out, m_data.size);
-                            write_data(out, m_data.array_size);
-                        }
+        write_data(out, static_cast<std::uint32_t>(reflected_sets.size()));
+        for (const auto& [type, set_data] : reflected_sets) {
+            write_data(out, type);
+            write_data(out, static_cast<std::uint32_t>(set_data.bindings.size()));
+            for (const auto& [name, layout_binding, member] : set_data.bindings) {
+                write_string(out, name);
+                write_data(out, layout_binding);
+                write_data(out, member.has_value());
+                if (member) {
+                    write_string(out, member->name);
+                    write_data(out, member->binding);
+                    write_data(out, member->set);
+                    write_data(out, member->size);
+                    write_data(out, static_cast<std::uint32_t>(member->members.size()));
+                    for (const auto& [m_name, m_data] : member->members) {
+                        write_string(out, m_name);
+                        write_string(out, m_data.name);
+                        write_data(out, m_data.offset);
+                        write_data(out, m_data.size);
+                        write_data(out, m_data.array_size);
                     }
                 }
             }

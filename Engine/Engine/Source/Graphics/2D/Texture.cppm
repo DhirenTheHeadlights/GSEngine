@@ -136,9 +136,15 @@ auto gse::texture::create_vulkan_resources(renderer::context& context, const pro
 		id()
 	);
 
-	const auto format = channels == 4 ? vk::Format::eR8G8B8A8Srgb
-		: channels == 1 ? vk::Format::eR8Unorm
-		: vk::Format::eR8G8B8Srgb;
+
+	// MSDF textures need linear format (Unorm) for correct distance calculations
+	// Regular textures use sRGB for proper gamma handling
+	const bool use_linear = (texture_profile == profile::msdf);
+	const auto format = channels == 4
+		? (use_linear ? vk::Format::eR8G8B8A8Unorm : vk::Format::eR8G8B8A8Srgb)
+		: channels == 1
+			? vk::Format::eR8Unorm
+			: (use_linear ? vk::Format::eR8G8B8Unorm : vk::Format::eR8G8B8Srgb);
 
 	m_texture_image = config.allocator().create_image(
 		vk::ImageCreateInfo{

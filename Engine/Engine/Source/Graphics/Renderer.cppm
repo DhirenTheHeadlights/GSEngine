@@ -17,6 +17,7 @@ import :texture;
 import :shader_compiler;
 import :shader_layout_compiler;
 import :texture_compiler;
+import :font_compiler;
 import :model_compiler;
 import :material_compiler;
 import :skeleton_compiler;

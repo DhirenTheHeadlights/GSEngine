@@ -1,7 +1,6 @@
 export module gse.graphics:ui_renderer;
 
 import std;
-import vulkan_hpp;
 
 import :texture;
 import :font;
@@ -212,7 +211,9 @@ auto gse::renderer::ui::add_sprite_quad(std::vector<vertex>& vertices, std::vect
 }
 
 auto gse::renderer::ui::add_text_quads(std::vector<vertex>& vertices, std::vector<std::uint32_t>& indices, const unified_command& cmd) -> void {
-	for (const auto& [screen_rect, uv_rect] : cmd.font->text_layout(cmd.text, cmd.position, cmd.scale)) {
+	const auto layout = cmd.font->text_layout(cmd.text, cmd.position, cmd.scale);
+
+	for (const auto& [screen_rect, uv_rect] : layout) {
 		if (vertices.size() + 4 > max_vertices || indices.size() + 6 > max_indices) {
 			break;
 		}
@@ -541,6 +542,7 @@ auto gse::renderer::ui::update() -> void {
 	}
 
 	flush_batch();
+
 	m_frame_data.publish();
 }
 

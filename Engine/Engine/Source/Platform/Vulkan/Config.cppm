@@ -5,7 +5,7 @@ module;
 export module gse.platform.vulkan:config;
 
 import std;
-export import vulkan_hpp;
+
 import :persistent_allocator;
 
 export namespace gse::vulkan {
