@@ -49,7 +49,7 @@ export namespace gse {
 		explicit skinned_model(const std::filesystem::path& path) : identifiable(path), m_baked_model_path(path) {}
 		explicit skinned_model(std::string_view name, std::vector<skinned_mesh_data> meshes);
 
-		auto load(const renderer::context& context) -> void;
+		auto load(renderer::context& context) -> void;
 		auto unload() -> void;
 
 		auto meshes() const -> std::span<const skinned_mesh>;
@@ -70,9 +70,12 @@ gse::skinned_model::skinned_model(const std::string_view name, std::vector<skinn
 	}
 }
 
-auto gse::skinned_model::load(const renderer::context& context) -> void {
+auto gse::skinned_model::load(renderer::context& context) -> void {
 	if (!m_baked_model_path.empty() && exists(m_baked_model_path)) {
 		m_meshes.clear();
+
+		const auto model_relative = m_baked_model_path.lexically_relative(config::baked_resource_path);
+		const auto material_dir = config::baked_resource_path / "Materials" / model_relative.parent_path();
 
 		if (std::ifstream file(m_baked_model_path, std::ios::binary); file) {
 			char magic[4];
@@ -93,9 +96,10 @@ auto gse::skinned_model::load(const renderer::context& context) -> void {
 					std::string material_name(material_name_len, '\0');
 					file.read(material_name.data(), material_name_len);
 
+					const auto material_path = material_dir / (material_name + ".gmat");
 					resource::handle<material> material_handle;
-					if (exists(material_name)) {
-						material_handle = context.get<material>(material_name);
+					if (std::filesystem::exists(material_path)) {
+						material_handle = context.queue<material>(material_path.string());
 					}
 
 					std::uint32_t vertex_count;

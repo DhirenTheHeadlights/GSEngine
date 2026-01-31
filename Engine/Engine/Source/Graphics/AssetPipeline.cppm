@@ -195,7 +195,7 @@ auto gse::asset_pipeline::compile_all() -> compile_result {
 
             if (!needs_compile) {
                 ++total_result.skipped_count;
-                if (compiler.queue_fn) {
+                if (compiler.queue_fn && std::filesystem::exists(dest)) {
                     compiler.queue_fn(dest);
                 }
                 continue;
@@ -207,7 +207,7 @@ auto gse::asset_pipeline::compile_all() -> compile_result {
 
             if (compile_single(compiler, file_path)) {
                 ++total_result.success_count;
-                if (compiler.queue_fn) {
+                if (compiler.queue_fn && std::filesystem::exists(dest)) {
                     compiler.queue_fn(dest);
                 }
             } else {
@@ -270,7 +270,7 @@ auto gse::asset_pipeline::compile() -> compile_result {
 
             if (!needs_compile) {
                 ++result.skipped_count;
-                if (compiler.queue_fn) {
+                if (compiler.queue_fn && std::filesystem::exists(dest)) {
                     compiler.queue_fn(dest);
                 }
                 continue;
@@ -282,7 +282,7 @@ auto gse::asset_pipeline::compile() -> compile_result {
 
             if (compile_single(compiler, file_path)) {
                 ++result.success_count;
-                if (compiler.queue_fn) {
+                if (compiler.queue_fn && std::filesystem::exists(dest)) {
                     compiler.queue_fn(dest);
                 }
             } else {

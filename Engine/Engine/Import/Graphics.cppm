@@ -6,6 +6,7 @@ export import :point_light;
 export import :spot_light;
 export import :camera;
 export import :font;
+export import :font_compiler;
 export import :geometry_renderer;
 export import :gui;
 export import :lighting_renderer;

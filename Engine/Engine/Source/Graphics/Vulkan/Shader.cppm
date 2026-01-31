@@ -267,7 +267,9 @@ auto gse::shader::load(const renderer::context& context) -> void {
 	m_vertex_input.attributes.resize(attr_count);
 	for (auto& attr : m_vertex_input.attributes) read_data(in, attr);
 
-	if (m_layout_name.empty()) {
+	// Always read reflected sets data (uniform blocks are always serialized)
+	std::unordered_map<set::binding_type, set> reflected_sets;
+	{
 		std::uint32_t num_sets = 0;
 		read_data(in, num_sets);
 		for (std::uint32_t i = 0; i < num_sets; ++i) {
@@ -304,22 +306,40 @@ auto gse::shader::load(const renderer::context& context) -> void {
 				}
 				bindings.push_back(std::move(b));
 			}
-			m_layout.sets[type] = { .type = type, .bindings = std::move(bindings) };
+			reflected_sets[type] = { .type = type, .bindings = std::move(bindings) };
 		}
 	}
+
+	if (m_layout_name.empty()) {
+		// No shared layout - use reflected data directly
+		m_layout.sets = std::move(reflected_sets);
+	}
 	else {
+		// Using shared layout - merge layout bindings with reflected uniform blocks
 		const auto* layout_ptr = context.shader_layout(m_layout_name);
 		assert(layout_ptr, std::source_location::current(), "Shader layout '{}' not found", m_layout_name);
 
-		for (const auto& [set_index, bindings] : layout_ptr->sets()) { auto type = static_cast<set::binding_type>(set_index);
+		for (const auto& [set_index, layout_bindings] : layout_ptr->sets()) {
+			auto type = static_cast<set::binding_type>(set_index);
 			std::vector<struct binding> resolved_bindings;
-			resolved_bindings.reserve(bindings.size());
+			resolved_bindings.reserve(layout_bindings.size());
 
-			for (const auto& [name, layout_binding] : bindings) {
+			for (const auto& [name, layout_binding] : layout_bindings) {
+				// Look up uniform_block from reflected data
+				std::optional<struct uniform_block> member_opt;
+				if (auto set_it = reflected_sets.find(type); set_it != reflected_sets.end()) {
+					for (const auto& reflected_binding : set_it->second.bindings) {
+						if (reflected_binding.name == name && reflected_binding.member.has_value()) {
+							member_opt = reflected_binding.member;
+							break;
+						}
+					}
+				}
+
 				resolved_bindings.push_back({
 					.name = name,
 					.layout_binding = layout_binding,
-					.member = std::nullopt
+					.member = member_opt
 				});
 			}
 
@@ -444,25 +464,25 @@ auto gse::shader::load(const renderer::context& context) -> void {
 
 			set_data.layout = std::make_shared<vk::raii::DescriptorSetLayout>(context.config().device_config().device, ci);
 		}
+	}
 
-		std::uint32_t max_set_index = 0;
-		for (const auto& t : m_layout.sets | std::views::keys) {
-			max_set_index = std::max(max_set_index, static_cast<uint32_t>(t));
-		}
+	std::uint32_t max_set_index = 0;
+	for (const auto& t : m_layout.sets | std::views::keys) {
+		max_set_index = std::max(max_set_index, static_cast<uint32_t>(t));
+	}
 
-		for (uint32_t i = 0; i <= max_set_index; ++i) {
-			if (auto t = static_cast<set::binding_type>(i); !m_layout.sets.contains(t)) {
-				vk::DescriptorSetLayoutCreateInfo ci{
-					.flags = t == set::binding_type::push ? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR : vk::DescriptorSetLayoutCreateFlags(),
-					.bindingCount = 0,
-					.pBindings = nullptr
-				};
-				set empty_set{
-					.type = t,
-					.layout = std::make_shared<vk::raii::DescriptorSetLayout>(context.config().device_config().device, ci)
-				};
-				m_layout.sets.emplace(t, std::move(empty_set));
-			}
+	for (uint32_t i = 0; i <= max_set_index; ++i) {
+		if (auto t = static_cast<set::binding_type>(i); !m_layout.sets.contains(t)) {
+			vk::DescriptorSetLayoutCreateInfo ci{
+				.flags = t == set::binding_type::push ? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR : vk::DescriptorSetLayoutCreateFlags(),
+				.bindingCount = 0,
+				.pBindings = nullptr
+			};
+			set empty_set{
+				.type = t,
+				.layout = std::make_shared<vk::raii::DescriptorSetLayout>(context.config().device_config().device, ci)
+			};
+			m_layout.sets.emplace(t, std::move(empty_set));
 		}
 	}
 }

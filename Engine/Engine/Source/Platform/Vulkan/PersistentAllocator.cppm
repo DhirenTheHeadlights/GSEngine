@@ -5,7 +5,7 @@ module;
 export module gse.platform.vulkan:persistent_allocator;
 
 import std;
-export import vulkan_hpp;
+export import vulkan;
 
 import gse.assert;
 import gse.utility;
@@ -703,16 +703,16 @@ auto gse::vulkan::allocator::clean_up() -> void {
 	}
 
 	if (leaked_sub_allocations > 0) {
-		std::println(stderr, "ERROR: {} sub-allocations still in use at allocator cleanup!", leaked_sub_allocations);
-		std::println(stderr, "This means resources (images/buffers) will be destroyed AFTER their memory is freed!");
-		std::println(stderr, "Check destruction order - all vulkan::image_resource and vulkan::buffer_resource");
-		std::println(stderr, "must be destroyed BEFORE the allocator.");
+		std::println("ERROR: {} sub-allocations still in use at allocator cleanup!", leaked_sub_allocations);
+		std::println("This means resources (images/buffers) will be destroyed AFTER their memory is freed!");
+		std::println("Check destruction order - all vulkan::image_resource and vulkan::buffer_resource");
+		std::println("must be destroyed BEFORE the allocator.");
 
 		if (m_tracking_enabled && !m_live_allocations.empty()) {
-			std::println(stderr, "\nTracked allocations still alive:");
+			std::println("\nTracked allocations still alive:");
 			for (const auto& [id, debug] : m_live_allocations) {
 				std::println(
-					stderr, "  - [{}] '{}' created at {}:{}:{}",
+					"  - [{}] '{}' created at {}:{}:{}",
 					id,
 					debug.tag.empty() ? "(no tag)" : debug.tag,
 					debug.creation_location.file_name(),
@@ -721,7 +721,7 @@ auto gse::vulkan::allocator::clean_up() -> void {
 				);
 			}
 		} else if (!m_tracking_enabled) {
-			std::println(stderr, "\nEnable 'Vulkan.Track Allocations' setting for detailed allocation info.");
+			std::println("\nEnable 'Vulkan.Track Allocations' setting for detailed allocation info.");
 		}
 
 		assert(

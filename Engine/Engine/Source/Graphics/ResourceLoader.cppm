@@ -34,6 +34,11 @@ export namespace gse::resource {
 			id resource_id,
 			loader_base* loader
 		);
+		handle(
+			id resource_id,
+			loader_base* loader,
+			std::uint32_t version
+		);
 
 		[[nodiscard]] auto resolve(
 		) const -> Resource*;
@@ -155,13 +160,13 @@ export namespace gse::resource {
 				: current_state(other.current_state.load(std::memory_order_relaxed)),
 				path(std::move(other.path)),
 				version(other.version.load(std::memory_order_relaxed)) {
-				resource.write() = std::move(other.resource.write());
+				resource.write() = std::move(const_cast<std::unique_ptr<Resource>&>(other.resource.read()));
 				resource.publish();
 			}
 
 			auto operator=(slot&& other) noexcept -> slot& {
 				if (this != &other) {
-					resource.write() = std::move(other.resource.write());
+					resource.write() = std::move(const_cast<std::unique_ptr<Resource>&>(other.resource.read()));
 					resource.publish();
 					current_state.store(other.current_state.load(std::memory_order_relaxed));
 					path = std::move(other.path);
@@ -171,7 +176,7 @@ export namespace gse::resource {
 			}
 
 			slot(const slot&) = delete;
-			auto operator=(const slot&) -> slot & = delete;
+			auto operator=(const slot&) -> slot& = delete;
 		};
 
 		explicit loader(RenderingContext& context) : m_context(context) {}
@@ -215,16 +220,19 @@ export namespace gse::resource {
 
 		auto get_unlocked(id id) const -> handle<Resource>;
 		auto try_get_unlocked(id id) const -> handle<Resource>;
+		auto resource_version_unlocked(id resource_id) const -> std::uint32_t;
 	};
 }
 
 template <typename Resource>
-gse::resource::handle<Resource>::handle(const gse::id resource_id, loader_base* loader)
-	: identifiable_owned(resource_id), m_loader(loader) {
+gse::resource::handle<Resource>::handle(const gse::id resource_id, loader_base* loader) : identifiable_owned(resource_id), m_loader(loader) {
 	if (m_loader) {
 		m_version = m_loader->resource_version(resource_id);
 	}
 }
+
+template <typename Resource>
+gse::resource::handle<Resource>::handle(const gse::id resource_id, loader_base* loader, const std::uint32_t version) : identifiable_owned(resource_id), m_loader(loader), m_version(version) {}
 
 template <typename Resource>
 auto gse::resource::handle<Resource>::resolve() const -> Resource* {
@@ -335,7 +343,7 @@ auto gse::resource::loader<R, C>::flush() -> void {
                 }
             }
 
-             resource_ptr->load(m_context);
+            resource_ptr->load(m_context);
         });
     }
 
@@ -345,8 +353,7 @@ auto gse::resource::loader<R, C>::flush() -> void {
 template <typename R, typename C> requires gse::is_resource<R, C>
 auto gse::resource::loader<R, C>::resource(id resource_id) -> void* {
 	std::lock_guard lock(m_mutex);
-	slot* slot_ptr = m_resources.try_get(resource_id);
-	if (slot_ptr) {
+	if (slot* slot_ptr = m_resources.try_get(resource_id)) {
 		const auto s = slot_ptr->current_state.load(std::memory_order_acquire);
 		if (s == state::loaded || s == state::reloading) {
 			return const_cast<R*>(slot_ptr->resource.read().get());
@@ -486,6 +493,7 @@ auto gse::resource::loader<R, C>::get(id id) const -> handle<R> {
 template <typename R, typename C> requires gse::is_resource<R, C>
 auto gse::resource::loader<R, C>::get(const std::string& filename_no_ext) const -> handle<R> {
 	const auto resource_id = gse::find(filename_no_ext);
+	std::lock_guard lock(m_mutex);
 	return get_unlocked(resource_id);
 }
 
@@ -549,7 +557,7 @@ auto gse::resource::loader<R, C>::queue(const std::string& name, Args&&... args)
 	const auto resource_id = temp_resource->id();
 
 	m_resources.add(resource_id, slot(std::move(temp_resource), state::queued, ""));
-	return handle<R>(resource_id, this);
+	return handle<R>(resource_id, this, 0);  // New resource starts at version 0
 }
 
 template <typename R, typename C> requires gse::is_resource<R, C>
@@ -561,13 +569,13 @@ auto gse::resource::loader<R, C>::add(R&& resource) -> handle<R> {
 	auto resource_ptr = std::make_unique<R>(std::move(resource));
 	m_resources.add(id, slot(std::move(resource_ptr), state::loaded, ""));
 
-	return handle<R>(id, this);
+	return handle<R>(id, this, 0);
 }
 
 template <typename Resource, typename RenderingContext> requires gse::is_resource<Resource, RenderingContext>
 auto gse::resource::loader<Resource, RenderingContext>::get_unlocked(id id) const -> handle<Resource> {
 	assert(m_resources.contains(id), std::source_location::current(), "Resource with ID {} not found in this loader.", id);
-	return handle<Resource>(id, const_cast<loader*>(this));
+	return handle<Resource>(id, const_cast<loader*>(this), resource_version_unlocked(id));
 }
 
 template <typename Resource, typename RenderingContext> requires gse::is_resource<Resource, RenderingContext>
@@ -575,5 +583,13 @@ auto gse::resource::loader<Resource, RenderingContext>::try_get_unlocked(id id) 
 	if (!m_resources.contains(id)) {
 		return handle<Resource>{};
 	}
-	return handle<Resource>(id, const_cast<loader*>(this));
+	return handle<Resource>(id, const_cast<loader*>(this), resource_version_unlocked(id));
+}
+
+template <typename Resource, typename RenderingContext> requires gse::is_resource<Resource, RenderingContext>
+auto gse::resource::loader<Resource, RenderingContext>::resource_version_unlocked(id resource_id) const -> std::uint32_t {
+	if (const slot* slot_ptr = m_resources.try_get(resource_id); slot_ptr) {
+		return slot_ptr->version.load(std::memory_order_acquire);
+	}
+	return 0;
 }

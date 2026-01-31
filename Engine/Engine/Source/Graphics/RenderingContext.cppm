@@ -256,7 +256,7 @@ template <typename Resource>
 auto gse::renderer::context::queue_gpu_command(Resource* resource, std::function<void(context&, Resource&)> work) const -> void {
 	command final_command = [resource, work_lambda = std::move(work)](context& ctx) {
 		work_lambda(ctx, *resource);
-		};
+	};
 
 	std::lock_guard lock(m_mutex);
 	m_command_queue.push_back(std::move(final_command));
