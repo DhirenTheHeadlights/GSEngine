@@ -88,8 +88,14 @@ auto gse::gui::save(id_mapped_collection<menu>& menus, const std::filesystem::pa
     toml::table root;
     root.insert("menu", std::move(menu_array));
 
+    std::ostringstream oss;
+    oss << root;
+    std::string content = oss.str();
+
+    std::ranges::replace(content, '\'', '"');
+
     std::ofstream file(file_path);
-    file << root;
+    file << content;
 }
 
 auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection<menu>& default_menus) -> id_mapped_collection<menu> {
@@ -99,10 +105,22 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
         return default_menus;
     }
 
+    std::ifstream file(file_path);
+    if (!file) {
+        return default_menus;
+    }
+
+    std::ostringstream oss;
+    oss << file.rdbuf();
+    std::string content = oss.str();
+
+    std::ranges::replace(content, '\'', '"');
+
     toml::table root;
     try {
-        root = toml::parse_file(file_path.string());
-    } catch (const toml::parse_error&) {
+        root = toml::parse(content, file_path.string());
+    } catch (const toml::parse_error& err) {
+        std::println("TOML parse error in {}: {}", file_path.string(), err.what());
         return default_menus;
     }
 

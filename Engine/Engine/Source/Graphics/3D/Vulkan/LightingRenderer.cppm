@@ -43,7 +43,7 @@ gse::renderer::lighting::lighting(context& context) : m_context(context) {}
 
 auto gse::renderer::lighting::initialize() -> void {
 	auto& config = m_context.config();
-	m_shader = m_context.get<shader>("lighting_pass");
+	m_shader = m_context.get<shader>("Shaders/Deferred3D/lighting_pass");
 	m_context.instantly_load(m_shader);
 
 	auto lighting_layouts = m_shader->layouts();

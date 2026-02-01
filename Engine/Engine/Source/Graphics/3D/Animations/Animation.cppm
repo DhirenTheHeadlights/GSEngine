@@ -145,7 +145,6 @@ auto gse::animation::system::tick_animations(const component_chunk<animation_com
 		const auto joint_count = static_cast<std::size_t>(skel.joint_count());
 		ensure_pose_buffers(anim, joint_count);
 
-		// Update time
 		if (clip_c->playing) {
 			clip_c->t += dt * scale;
 		}
@@ -178,12 +177,11 @@ auto gse::animation::system::tick_animations(const component_chunk<animation_com
 		return;
 	}
 
-	constexpr float time_bucket_size = 16'666'666.f;
-
 	std::vector<std::size_t> job_cache_index(m_jobs.size());
 	std::vector<std::size_t> unique_job_indices;
 
 	for (std::size_t i = 0; i < m_jobs.size(); ++i) {
+		constexpr float time_bucket_size = 16'666'666.f;
 		const auto& job = m_jobs[i];
 		const auto time_bucket = static_cast<std::int64_t>(job.sample_t / time{time_bucket_size});
 
@@ -203,21 +201,19 @@ auto gse::animation::system::tick_animations(const component_chunk<animation_com
 
 	task::parallel_for(0uz, unique_job_indices.size(), [&](const std::size_t i) {
 		const auto job_idx = unique_job_indices[i];
-		auto& job = m_jobs[job_idx];
+		const auto& job = m_jobs[job_idx];
 		build_local_pose(*job.anim, *job.skel, *job.clip_asset, job.sample_t);
 		build_global_and_skins(*job.anim, *job.skel);
 	});
 
 	task::parallel_for(0uz, m_jobs.size(), [&](const std::size_t i) {
-		const auto source_idx = job_cache_index[i];
-		if (source_idx != i) {
+		if (const auto source_idx = job_cache_index[i]; source_idx != i) {
 			const auto& source_anim = *m_jobs[source_idx].anim;
 			auto& dest_anim = *m_jobs[i].anim;
 
-			// Copy all pose data (needed for GPU skinning which uses local_pose)
-			std::copy(source_anim.local_pose.begin(), source_anim.local_pose.end(), dest_anim.local_pose.begin());
-			std::copy(source_anim.global_pose.begin(), source_anim.global_pose.end(), dest_anim.global_pose.begin());
-			std::copy(source_anim.skins.begin(), source_anim.skins.end(), dest_anim.skins.begin());
+			std::ranges::copy(source_anim.local_pose, dest_anim.local_pose.begin());
+			std::ranges::copy(source_anim.global_pose, dest_anim.global_pose.begin());
+			std::ranges::copy(source_anim.skins, dest_anim.skins.begin());
 		}
 	});
 }

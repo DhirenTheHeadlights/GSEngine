@@ -8,7 +8,8 @@ import gse.runtime;
 
 export namespace gse::procedural_model {
     auto box(
-        const resource::handle<material>& mat
+        const resource::handle<material>& mat,
+        const vec3<length>& size = vec3<length>(1.f, 1.f, 1.f)
     ) -> resource::handle<model>;
 
     auto sphere(
@@ -18,28 +19,41 @@ export namespace gse::procedural_model {
     ) -> resource::handle<model>;
 }
 
-auto gse::procedural_model::box(const resource::handle<material>& mat) -> resource::handle<model> {
-    static std::once_flag once;
-    static resource::handle<model> handle;
+auto gse::procedural_model::box(const resource::handle<material>& mat, const vec3<length>& size) -> resource::handle<model> {
+    const float sx = size.x().template as<decltype(meters)>();
+    const float sy = size.y().template as<decltype(meters)>();
+    const float sz = size.z().template as<decltype(meters)>();
+
+    const std::string key = std::format("proc/box:{}x{}x{}", sx, sy, sz);
+
+    static std::mutex cache_mutex;
+    static std::unordered_map<std::string, resource::handle<model>> cache;
+
+    {
+        std::lock_guard lk(cache_mutex);
+        if (const auto it = cache.find(key); it != cache.end()) {
+            return it->second;
+        }
+    }
 
     std::vector<vertex> v;
     v.reserve(24);
 
     constexpr float h = 0.5f;
 
-    auto push_face = [&](const vec3<length>& a, const vec3<length>& b, const vec3<length>& c, const vec3<length>& d, const unitless::vec3 n) {
+    auto push_face = [&](const vec3<length>& a, const vec3<length>& b, const vec3<length>& c, const vec3<length>& d, const unitless::vec3 n, float u_scale, float v_scale) {
         v.push_back(vertex{ a, n, { 0.0f, 0.0f } });
-        v.push_back(vertex{ b, n, { 1.0f, 0.0f } });
-        v.push_back(vertex{ c, n, { 1.0f, 1.0f } });
-        v.push_back(vertex{ d, n, { 0.0f, 1.0f } });
+        v.push_back(vertex{ b, n, { u_scale, 0.0f } });
+        v.push_back(vertex{ c, n, { u_scale, v_scale } });
+        v.push_back(vertex{ d, n, { 0.0f, v_scale } });
     };
 
-    push_face({  h, -h, -h }, { -h, -h, -h }, { -h,  h, -h }, {  h,  h, -h }, {  0,  0, -1 });
-    push_face({ -h, -h,  h }, {  h, -h,  h }, {  h,  h,  h }, { -h,  h,  h }, {  0,  0,  1 });
-    push_face({ -h, -h, -h }, { -h, -h,  h }, { -h,  h,  h }, { -h,  h, -h }, { -1,  0,  0 });
-    push_face({  h, -h,  h }, {  h, -h, -h }, {  h,  h, -h }, {  h,  h,  h }, {  1,  0,  0 });
-    push_face({ -h,  h,  h }, {  h,  h,  h }, {  h,  h, -h }, { -h,  h, -h }, {  0,  1,  0 });
-    push_face({ -h, -h, -h }, {  h, -h, -h }, {  h, -h,  h }, { -h, -h,  h }, {  0, -1,  0 });
+    push_face({  h, -h, -h }, { -h, -h, -h }, { -h,  h, -h }, {  h,  h, -h }, {  0,  0, -1 }, sx, sy);
+    push_face({ -h, -h,  h }, {  h, -h,  h }, {  h,  h,  h }, { -h,  h,  h }, {  0,  0,  1 }, sx, sy);
+    push_face({ -h, -h, -h }, { -h, -h,  h }, { -h,  h,  h }, { -h,  h, -h }, { -1,  0,  0 }, sz, sy);
+    push_face({  h, -h,  h }, {  h, -h, -h }, {  h,  h, -h }, {  h,  h,  h }, {  1,  0,  0 }, sz, sy);
+    push_face({ -h,  h,  h }, {  h,  h,  h }, {  h,  h, -h }, { -h,  h, -h }, {  0,  1,  0 }, sx, sz);
+    push_face({ -h, -h, -h }, {  h, -h, -h }, {  h, -h,  h }, { -h, -h,  h }, {  0, -1,  0 }, sx, sz);
 
     std::vector<std::uint32_t> idx;
     idx.reserve(36);
@@ -51,12 +65,15 @@ auto gse::procedural_model::box(const resource::handle<material>& mat) -> resour
 
     std::vector data{ mesh_data{ std::move(v), std::move(idx), mat } };
 
-    std::call_once(
-        once,
-        [&] {
-            handle = queue<model>("proc/unit_box", std::move(data));
+    resource::handle<model> handle;
+    {
+        std::lock_guard lk(cache_mutex);
+        if (const auto it = cache.find(key); it != cache.end()) {
+            return it->second;
         }
-    );
+        handle = queue<model>(key, std::move(data));
+        cache.emplace(key, handle);
+    }
 
     return handle;
 }

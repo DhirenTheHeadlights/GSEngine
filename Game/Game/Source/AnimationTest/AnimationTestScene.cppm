@@ -33,9 +33,9 @@ export namespace gs {
 					build(std::format("Character_{}_{}", x, z))
 						.with<animated_character>({
 							.position = gse::vec3<gse::length>(px, 0.f, pz),
-							.skeleton_name = "character",
-							.clip_name = "mixamo",
-							.model_name = "character"
+							.skeleton_name = "Skeletons/character",
+							.clip_name = "Clips/mixamo.com",
+							.model_name = "SkinnedModels/character"
 						});
 				}
 			}
@@ -87,7 +87,7 @@ export namespace gs {
 
 				const auto mat = gse::queue<gse::material>(
 					"floor_material",
-					gse::get<gse::texture>("concrete_bricks_1")
+					gse::get<gse::texture>("Textures/Textures/concrete_bricks_1")
 				);
 
 				add_component<gse::render_component>({

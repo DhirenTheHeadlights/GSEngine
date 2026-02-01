@@ -58,7 +58,7 @@ export namespace gse {
 }
 
 gse::clip_asset::clip_asset(const std::filesystem::path& path)
-    : identifiable(path), m_baked_path(path) {
+    : identifiable(path, config::baked_resource_path), m_baked_path(path) {
 }
 
 gse::clip_asset::clip_asset(params p)

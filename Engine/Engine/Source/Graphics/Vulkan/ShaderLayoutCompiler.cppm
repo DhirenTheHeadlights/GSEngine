@@ -163,7 +163,6 @@ struct gse::asset_compiler<gse::shader_layout> {
             return false;
         }
 
-        // Reflect bindings from the module
         std::map<std::uint32_t, std::vector<shader_layout_binding>> sets_map;
 
         auto* globals_vl = layout->getGlobalParamsVarLayout();
@@ -222,9 +221,8 @@ struct gse::asset_compiler<gse::shader_layout> {
                     .stageFlags = all_stages,
                 };
 
-                // Check if binding already exists in this set
                 auto& set_bindings = sets_map[set_idx];
-                bool exists = std::ranges::any_of(set_bindings, [&](const auto& b) {
+                bool exists = std::ranges::any_of(set_bindings, [&](const shader_layout_binding& b) {
                     return b.layout_binding.binding == binding;
                 });
 
@@ -237,14 +235,13 @@ struct gse::asset_compiler<gse::shader_layout> {
             }
         }
 
-        // Write output file
         std::filesystem::create_directories(destination.parent_path());
         std::ofstream out(destination, std::ios::binary);
         if (!out.is_open()) {
             return false;
         }
 
-        constexpr std::uint32_t magic = 0x474C4159; // "GLAY"
+        constexpr std::uint32_t magic = 0x474C4159;
         constexpr std::uint32_t version = 1;
         write_data(out, magic);
         write_data(out, version);
@@ -275,10 +272,9 @@ struct gse::asset_compiler<gse::shader_layout> {
         if (!std::filesystem::exists(destination)) {
             return true;
         }
-        return std::filesystem::last_write_time(source) >
-               std::filesystem::last_write_time(destination);
+        return std::filesystem::last_write_time(source) > std::filesystem::last_write_time(destination);
     }
-
+    
     static auto dependencies(
         const std::filesystem::path&
     ) -> std::vector<std::filesystem::path> {

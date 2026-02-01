@@ -14,6 +14,7 @@ import :texture;
 import gse.assert;
 import gse.physics.math;
 import gse.platform;
+import gse.utility;
 
 export namespace gse {
     struct glyph {
@@ -98,7 +99,7 @@ export namespace gse {
     };
 }
 
-gse::font::font(const std::filesystem::path& path) : identifiable(path), m_baked_path(path) {
+gse::font::font(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path), m_baked_path(path) {
     assert(
         exists(path),
         std::source_location::current(),

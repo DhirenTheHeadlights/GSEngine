@@ -1123,25 +1123,42 @@ auto gse::save::system::save_to_file(const std::filesystem::path& path) const ->
         root.insert(category, std::move(map_table));
     }
 
+    std::ostringstream oss;
+    oss << root;
+    std::string content = oss.str();
+
+    std::ranges::replace(content, '\'', '"');
+
     std::ofstream file(path);
     if (!file) {
         return false;
     }
 
-    file << root;
+    file << content;
     mark_all_clean();
     return true;
 }
 
 auto gse::save::system::load_from_file(const std::filesystem::path& path) const -> bool {
     if (!std::filesystem::exists(path)) {
+        std::println("Settings file does not exist: {}", path.string());
         return false;
     }
 
+    std::ifstream file(path);
+    if (!file) {
+        return false;
+    }
+
+    std::ostringstream oss;
+    oss << file.rdbuf();
+    std::string content = oss.str();
+
     toml::table root;
     try {
-        root = toml::parse_file(path.string());
-    } catch (const toml::parse_error&) {
+        root = toml::parse(content, path.string());
+    } catch (const toml::parse_error& err) {
+        std::println("TOML parse error in {}: {}", path.string(), err.what());
         return false;
     }
 
@@ -1258,10 +1275,22 @@ auto gse::save::read_setting_early(const std::filesystem::path& path, const std:
         return std::nullopt;
     }
 
+    std::ifstream file(path);
+    if (!file) {
+        return std::nullopt;
+    }
+
+    std::ostringstream oss;
+    oss << file.rdbuf();
+    std::string content = oss.str();
+
+    std::ranges::replace(content, '\'', '"');
+
     toml::table root;
     try {
-        root = toml::parse_file(path.string());
-    } catch (const toml::parse_error&) {
+        root = toml::parse(content, path.string());
+    } catch (const toml::parse_error& err) {
+        std::println("TOML parse error (early read) in {}: {}", path.string(), err.what());
         return std::nullopt;
     }
 
@@ -1293,10 +1322,19 @@ auto gse::save::read_bool_setting_early(const std::filesystem::path& path, const
         return default_value;
     }
 
+    std::ifstream file(path);
+    if (!file) {
+        return default_value;
+    }
+
+    std::ostringstream oss;
+    oss << file.rdbuf();
+    std::string content = oss.str();
+
     toml::table root;
     try {
-        root = toml::parse_file(path.string());
-    } catch (const toml::parse_error&) {
+        root = toml::parse(content, path.string());
+    } catch (const toml::parse_error& err) {
         return default_value;
     }
 

@@ -34,11 +34,11 @@ export namespace gse {
 
 			const auto mat = gse::queue<material>(
 				"concrete_bricks_material",
-				gse::get<texture>("concrete_bricks_1")
+				gse::get<texture>("Textures/Textures/concrete_bricks_1")
 			);
 
 			add_component<render_component>({
-				.models = { procedural_model::box(mat) }
+				.models = { procedural_model::box(mat, m_size) }
 			});
 
 			actions::bind_button_channel<"Box_Rotate">(owner_id(), key::r, m_rotate_channel);

@@ -230,7 +230,7 @@ namespace gse {
 	};
 }
 
-gse::shader::shader(const std::filesystem::path& path) : identifiable(path) {
+gse::shader::shader(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path) {
 	m_info = {
 		.name = path.stem().string(),
 		.path = path

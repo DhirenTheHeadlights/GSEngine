@@ -33,7 +33,7 @@ export namespace gse {
 
 			const auto mat = gse::queue<material>(
 				"animated_box_material",
-				gse::get<texture>("concrete_bricks_1")
+				gse::get<texture>("Textures/Textures/concrete_bricks_1")
 			);
 
 			add_component<render_component>({
