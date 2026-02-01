@@ -257,7 +257,7 @@ auto gse::gui::system::initialize() -> void {
 	m_theme = static_cast<theme>(system_of<save::system>().read("UI", "Theme", static_cast<int>(theme::dark)));
 	m_ui_scale = system_of<save::system>().read("UI", "Scale", 1.0f);
 
-    m_font = m_rctx.get<font>("MonaspaceNeon-Regular");
+    m_font = m_rctx.get<font>("Fonts/MonaspaceNeon-Regular");
     m_blank_texture = m_rctx.queue<texture>("blank", unitless::vec4(1, 1, 1, 1));
 	m_menus = load(config::resource_path / m_file_path, m_menus);
 

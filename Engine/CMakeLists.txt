@@ -15,6 +15,8 @@ FetchContent_Declare(
 set(TOMLPLUSPLUS_BUILD_MODULES ON CACHE BOOL "" FORCE)
 # Workaround for MSVC module compatibility - VS 2026 still has the noexcept(noexcept(...)) bug
 add_compile_definitions(TOML_DISABLE_NOEXCEPT_NOEXCEPT=1)
+# Increase nested values limit (default 256 seems broken in modules build)
+add_compile_definitions(TOML_MAX_NESTED_VALUES=10000)
 FetchContent_MakeAvailable(tomlplusplus)
 
 file(GLOB_RECURSE ENGINE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cppm" "${CMAKE_CURRENT_BINARY_DIR}/Engine/*.cppm")
@@ -75,10 +77,16 @@ add_library(VulkanModule)
 target_compile_features(VulkanModule PUBLIC cxx_std_23)
 target_compile_definitions(VulkanModule PUBLIC VULKAN_HPP_DISPATCH_LOADER_DYNAMIC VULKAN_HPP_NO_CONSTRUCTORS)
 target_link_libraries(VulkanModule PUBLIC Vulkan::Vulkan)
+
+set(VULKAN_MODULE_FILES ${Vulkan_INCLUDE_DIR}/vulkan/vulkan.cppm)
+if(EXISTS "${Vulkan_INCLUDE_DIR}/vulkan/vulkan_video.cppm")
+    list(APPEND VULKAN_MODULE_FILES ${Vulkan_INCLUDE_DIR}/vulkan/vulkan_video.cppm)
+endif()
+
 target_sources(VulkanModule PRIVATE
   FILE_SET CXX_MODULES
   BASE_DIRS ${Vulkan_INCLUDE_DIR}
-  FILES ${Vulkan_INCLUDE_DIR}/vulkan/vulkan.cppm ${Vulkan_INCLUDE_DIR}/vulkan/vulkan_video.cppm
+  FILES ${VULKAN_MODULE_FILES}
 )
 
 target_include_directories(Engine

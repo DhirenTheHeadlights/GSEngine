@@ -44,7 +44,7 @@ export namespace gse {
 
 	class model : public identifiable {
 	public:
-		explicit model(const std::filesystem::path& path) : identifiable(path), m_baked_model_path(path) {}
+		explicit model(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path), m_baked_model_path(path) {}
 		explicit model(std::string_view name, std::vector<mesh_data> meshes);
 
 		auto load(renderer::context& context) -> void;

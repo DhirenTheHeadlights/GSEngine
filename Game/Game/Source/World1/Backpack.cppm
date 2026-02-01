@@ -15,7 +15,7 @@ public:
 
 		add_component<gse::render_component>({
 			.models = {
-				gse::get<gse::model>("Backpack")
+				gse::get<gse::model>("Models/Backpack/backpack")
 			}
 		});
 	}

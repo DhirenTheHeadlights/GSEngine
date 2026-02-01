@@ -50,7 +50,7 @@ export namespace gse {
 }
 
 gse::shader_layout::shader_layout(const std::filesystem::path& path)
-    : identifiable(path)
+    : identifiable(path, config::baked_resource_path)
     , m_name(path.stem().string())
     , m_path(path) {
 }

@@ -109,7 +109,7 @@ auto gse::renderer::physics_debug::initialize() -> void {
 
 	auto& config = m_context.config();
 
-	m_shader = m_context.get<shader>("physics_debug");
+	m_shader = m_context.get<shader>("Shaders/Standard3D/physics_debug");
 	m_context.instantly_load(m_shader);
 	auto descriptor_set_layouts = m_shader->layouts();
 

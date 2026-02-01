@@ -12,7 +12,7 @@ import gse.platform;
 
 export namespace gse {
 	struct material : identifiable {
-		material(const std::filesystem::path& path) : identifiable(path), path(path) {}
+		material(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path), path(path) {}
         material(
             const std::string_view name,
             const unitless::vec3 ambient,
@@ -83,6 +83,20 @@ auto gse::material::load(const renderer::context& context) -> void {
 		return "";
 	};
 
+	auto material_relative = path.lexically_relative(config::baked_resource_path);
+	auto material_dir = material_relative.parent_path();
+
+	std::string material_dir_str = material_dir.string();
+	std::ranges::replace(material_dir_str, '\\', '/');
+	if (material_dir_str.starts_with("Materials/")) {
+		material_dir_str = "Textures/" + material_dir_str.substr(10);
+	}
+
+	auto make_texture_path = [&](const std::string& filename) -> std::string {
+		auto stem = std::filesystem::path(filename).stem().string();
+		return material_dir_str + "/" + stem;
+	};
+
 	uint32_t magic, version;
 	in_file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
 	in_file.read(reinterpret_cast<char*>(&version), sizeof(version));
@@ -96,13 +110,13 @@ auto gse::material::load(const renderer::context& context) -> void {
 	in_file.read(reinterpret_cast<char*>(&illumination_model), sizeof(illumination_model));
 
 	if (const auto diffuse_filename = read_string(in_file); !diffuse_filename.empty()) {
-		diffuse_texture = context.get<texture>(std::filesystem::path(diffuse_filename).stem().string());
+		diffuse_texture = context.get<texture>(make_texture_path(diffuse_filename));
 	}
 	if (const auto normal_filename = read_string(in_file); !normal_filename.empty()) {
-		normal_texture = context.get<texture>(std::filesystem::path(normal_filename).stem().string());
+		normal_texture = context.get<texture>(make_texture_path(normal_filename));
 	}
 	if (const auto specular_filename = read_string(in_file); !specular_filename.empty()) {
-		specular_texture = context.get<texture>(std::filesystem::path(specular_filename).stem().string());
+		specular_texture = context.get<texture>(make_texture_path(specular_filename));
 	}
 }
 

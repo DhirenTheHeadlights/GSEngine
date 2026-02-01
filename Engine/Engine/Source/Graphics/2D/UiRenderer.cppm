@@ -316,7 +316,7 @@ auto gse::renderer::ui::initialize() -> void {
 		.pColorAttachmentFormats = &color_format
 	};
 
-	m_sprite_shader = m_context.get<shader>("sprite");
+	m_sprite_shader = m_context.get<shader>("Shaders/Standard2D/sprite");
 	m_context.instantly_load(m_sprite_shader);
 
 	{
@@ -352,7 +352,7 @@ auto gse::renderer::ui::initialize() -> void {
 		m_sprite_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
 	}
 
-	m_text_shader = m_context.get<shader>("msdf");
+	m_text_shader = m_context.get<shader>("Shaders/Standard2D/msdf");
 	m_context.instantly_load(m_text_shader);
 
 	{

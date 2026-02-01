@@ -76,7 +76,7 @@ gse::renderer::shadow::shadow(context& context) : m_context(context) {}
 auto gse::renderer::shadow::initialize() -> void {
 	auto& config = m_context.config();
 
-	m_shader = m_context.get<shader>("shadow_pass");
+	m_shader = m_context.get<shader>("Shaders/Deferred3D/shadow_pass");
 	m_context.instantly_load(m_shader);
 
 	auto layouts = m_shader->layouts();

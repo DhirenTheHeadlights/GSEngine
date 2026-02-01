@@ -46,7 +46,7 @@ export namespace gse {
 
 	class skinned_model : public identifiable {
 	public:
-		explicit skinned_model(const std::filesystem::path& path) : identifiable(path), m_baked_model_path(path) {}
+		explicit skinned_model(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path), m_baked_model_path(path) {}
 		explicit skinned_model(std::string_view name, std::vector<skinned_mesh_data> meshes);
 
 		auto load(renderer::context& context) -> void;

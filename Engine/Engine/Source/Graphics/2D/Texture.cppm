@@ -61,7 +61,7 @@ export namespace gse {
 	};
 }
 
-gse::texture::texture(const std::filesystem::path& filepath) : identifiable(filepath), m_image_data{ .path = filepath } {}
+gse::texture::texture(const std::filesystem::path& filepath) : identifiable(filepath, config::baked_resource_path), m_image_data{ .path = filepath } {}
 
 gse::texture::texture(const std::string_view name, const unitless::vec4& color, const unitless::vec2u size) : identifiable(name), m_image_data(image::load(color, size)) {}
 

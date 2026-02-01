@@ -47,7 +47,7 @@ export namespace gse {
 }
 
 gse::skeleton::skeleton(const std::filesystem::path& path)
-    : identifiable(path), m_baked_path(path) {
+    : identifiable(path, config::baked_resource_path), m_baked_path(path) {
 }
 
 gse::skeleton::skeleton(const params& p)

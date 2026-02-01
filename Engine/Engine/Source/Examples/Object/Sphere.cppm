@@ -43,7 +43,7 @@ export namespace gse {
 					procedural_model::sphere(
 						gse::queue<material>(
 							"sun_material",
-							gse::get<texture>("sun")
+							gse::get<texture>("Textures/Textures/sun")
 						),
 						m_params.sectors,
 						m_params.stacks

@@ -343,7 +343,7 @@ auto gse::renderer::geometry::initialize() -> void {
 	transition_gbuffer_images(config);
 	config.on_swap_chain_recreate(transition_gbuffer_images);
 
-	m_shader = m_context.get<shader>("geometry_pass");
+	m_shader = m_context.get<shader>("Shaders/Standard3D/geometry_pass");
 	m_context.instantly_load(m_shader);
 	auto descriptor_set_layouts = m_shader->layouts();
 
@@ -495,7 +495,7 @@ auto gse::renderer::geometry::initialize() -> void {
 	};
 	m_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
 
-	m_skinned_shader = m_context.get<shader>("skinned_geometry_pass");
+	m_skinned_shader = m_context.get<shader>("Shaders/Standard3D/skinned_geometry_pass");
 	m_context.instantly_load(m_skinned_shader);
 	auto skinned_descriptor_set_layouts = m_skinned_shader->layouts();
 
@@ -588,7 +588,7 @@ auto gse::renderer::geometry::initialize() -> void {
 	};
 	m_skinned_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, skinned_pipeline_info);
 
-	m_skin_compute = m_context.get<shader>("skin_compute");
+	m_skin_compute = m_context.get<shader>("Shaders/Compute/skin_compute");
 	m_context.instantly_load(m_skin_compute);
 
 	assert(m_skin_compute->is_compute(), std::source_location::current(), "Skin compute shader is not loaded as a compute shader");
@@ -684,7 +684,7 @@ auto gse::renderer::geometry::initialize() -> void {
 		});
 	}
 
-	m_culling_compute = m_context.get<shader>("cull_instances");
+	m_culling_compute = m_context.get<shader>("Shaders/Compute/cull_instances");
 	m_context.instantly_load(m_culling_compute);
 
 	const auto batch_block = m_culling_compute->uniform_block("batches");
