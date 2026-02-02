@@ -21,7 +21,7 @@ struct std::hash<gse::network::address> {
 
 export namespace gse {
 	struct client_data {
-		id entity_id;
+		id controller_id;
 		actions::state latest_input;
 		std::uint32_t last_input_sequence = 0;
 		bool have_seq = false;
@@ -85,6 +85,7 @@ export namespace gse {
 		spsc_ring_buffer<incoming_packet, 1024> m_incoming;
 		mpsc_ring_buffer<outgoing_packet, 1024> m_outgoing;
 		std::jthread m_thread;
+		std::uint32_t m_next_player_id = 0;
 	};
 }
 
@@ -109,9 +110,7 @@ auto gse::server::initialize() -> void {
 				pkt.from = received->from;
 				pkt.size = received->bytes_read;
 				std::memcpy(pkt.buffer.data(), buffer.data(), received->bytes_read);
-				if (!m_incoming.push(pkt)) {
-					std::println("Server: incoming queue full, dropping packet from {}:{}", pkt.from.ip, pkt.from.port);
-				}
+				m_incoming.push(pkt);
 			}
 
 			outgoing_packet out_pkt;
@@ -121,14 +120,10 @@ auto gse::server::initialize() -> void {
 					.size = out_pkt.size
 				};
 
-				if (m_socket.send_data(out, out_pkt.to) == network::socket_state::error) {
-					std::println("Server: failed to send packet to {}:{}", out_pkt.to.ip, out_pkt.to.port);
-				}
+				m_socket.send_data(out, out_pkt.to);
 			}
 		}
 	});
-
-	std::println("Server started on port {}", m_port);
 }
 
 template <typename T>
@@ -156,12 +151,14 @@ auto gse::server::send(const T& msg, const network::address& to) -> void {
 	pkt.size = stream.bytes_written();
 	std::memcpy(pkt.buffer.data(), buffer.data(), pkt.size);
 
-	if (!m_outgoing.push(pkt)) {
-		std::println("Server: outgoing queue full, dropping packet to {}:{}", to.ip, to.port);
-	}
+	m_outgoing.push(pkt);
 }
 
 auto gse::server::update() -> void {
+	if (!m_owner->current_scene()) {
+		m_owner->activate(find("Default Scene"));
+	}
+
 	constexpr std::size_t max_packets_per_update = 256;
 	std::size_t processed_packets = 0;
 
@@ -179,26 +176,20 @@ auto gse::server::update() -> void {
 		if (it == m_peers.end()) {
 			const auto mid = network::message_id(stream);
 
-			bool handled = false;
-			handled |= network::try_decode<network::connection_request>(stream, mid, [&](const auto&) {
-				std::println("Server: ConnectionRequest from {}:{}", pkt.from.ip, pkt.from.port);
-
-				auto [peer_it, inserted_peer] = m_peers.emplace(pkt.from, network::remote_peer(pkt.from));
-				std::println("[net] peers size={} inserted_peer={} for {}:{}", m_peers.size(), inserted_peer, pkt.from.ip, pkt.from.port);
+			network::try_decode<network::connection_request>(stream, mid, [&](const auto&) {
+				m_peers.emplace(pkt.from, network::remote_peer(pkt.from));
 
 				if (auto* scene = m_owner->current_scene()) {
-					auto entity_id = scene->registry().create("Player");
-					scene->registry().activate(entity_id);
-					auto [client_it, inserted_client] = m_clients.emplace(pkt.from, client_data{ .entity_id = entity_id });
-					std::println("[net] clients size={} inserted_client={} for {}:{}", m_clients.size(), inserted_client, pkt.from.ip, pkt.from.port);
+					const auto controller_name = std::format("PlayerController_{}", m_next_player_id++);
+					auto controller_id = scene->registry().create(controller_name);
+					scene->registry().add_component<player_controller>(controller_id, player_controller_data{});
+					scene->registry().activate(controller_id);
+					m_clients.emplace(pkt.from, client_data{ .controller_id = controller_id });
 
 					if (!m_host_entity.has_value()) {
-						m_host_entity = entity_id;
+						m_host_entity = controller_id;
 						m_host_addr = pkt.from;
-						std::println("Server: Host set to {}:{} (entity {})", pkt.from.ip, pkt.from.port, entity_id);
 					}
-
-					std::println("Server: Created entity {} for {}:{}", entity_id, pkt.from.ip, pkt.from.port);
 				}
 
 				send(network::connection_accepted{}, pkt.from);
@@ -212,10 +203,6 @@ auto gse::server::update() -> void {
 
 				m_pending_snapshots.insert(pkt.from);
 			});
-
-			if (!handled) {
-				std::println("Server: dropped pre-handshake msg {} from {}:{}", mid, pkt.from.ip, pkt.from.port);
-			}
 
 			continue;
 		}
@@ -243,7 +230,6 @@ auto gse::server::update() -> void {
 				send(network::pong{ .sequence = m.sequence }, pkt.from);
 			})
 			.else_if_is([&](const network::pong&) {
-				std::println("Server: Received Pong from {}:{}", pkt.from.ip, pkt.from.port);
 			})
 			.else_if_is([&](const network::input_frame_header& fh) {
 				const std::size_t wc = fh.action_word_count;
@@ -294,8 +280,11 @@ auto gse::server::update() -> void {
 	if (auto* sc = m_owner->current_scene()) {
 		for (const auto& [scene_id, condition] : m_owner->triggers()) {
 			for (const auto& cd : m_clients | std::views::values) {
+				auto* pc = sc->registry().try_linked_object_read<player_controller>(cd.controller_id);
+				const auto controlled_id = pc ? pc->controlled_entity_id : id{};
+
 				evaluation_context ctx{
-					.client_id = cd.entity_id,
+					.client_id = controlled_id,
 					.input = &cd.latest_input,
 					.registry = &sc->registry()
 				};
@@ -304,8 +293,6 @@ auto gse::server::update() -> void {
 				}
 			}
 		}
-	} else {
-		m_owner->activate(find("Default Scene"));
 	}
 
 	if (scene_requested_id) {

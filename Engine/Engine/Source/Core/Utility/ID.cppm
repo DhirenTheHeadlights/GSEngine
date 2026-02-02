@@ -184,7 +184,7 @@ auto gse::identifiable::id() const -> gse::id {
 
 auto gse::identifiable::relative_stem(const std::filesystem::path& path, const std::filesystem::path& base) -> std::string {
 	std::filesystem::path relative = path;
-	if (!base.empty() && path.string().starts_with(base.string())) {
+	if (!base.empty() && path.generic_string().starts_with(base.generic_string())) {
 		relative = path.lexically_relative(base);
 	}
 

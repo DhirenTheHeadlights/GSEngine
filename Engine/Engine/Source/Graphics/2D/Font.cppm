@@ -1,11 +1,13 @@
-export module gse.graphics:font;
+module;
 
-import <algorithm>;
-import <filesystem>;
-import <fstream>;
-import <iostream>;
-import <unordered_map>;
-import <vector>;
+#include <algorithm>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <unordered_map>
+#include <vector>
+
+export module gse.graphics:font;
 
 import <freetype/freetype.h>;
 

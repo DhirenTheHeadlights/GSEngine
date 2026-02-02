@@ -140,6 +140,11 @@ export namespace gse {
 		) -> std::vector<id>;
 
 		template <typename U>
+		auto mark_component_updated(
+			id owner_id
+		) -> void;
+
+		template <typename U>
 		static auto any_components(
 			std::span<const std::reference_wrapper<registry>> registries
 		) -> bool;
@@ -298,7 +303,13 @@ auto gse::registry::add_component(id owner_id, Args&&... args) -> U* {
 	}
 
 	auto& lnk = static_cast<component_link<U>&>(*m_component_links.at(type_idx));
-	return lnk.add(owner_id, this, std::forward<Args>(args)...);
+	auto* comp_ptr = lnk.add(owner_id, this, std::forward<Args>(args)...);
+
+	if (active(owner_id)) {
+		lnk.activate(owner_id);
+	}
+
+	return comp_ptr;
 }
 
 template <gse::is_entity_hook U, typename... Args>
@@ -311,7 +322,14 @@ auto gse::registry::add_hook(id owner_id, Args&&... args) -> U* {
 	}
 
 	auto& lnk = static_cast<hook_link<U>&>(*m_hook_links.at(type_idx));
-	return lnk.add(owner_id, std::forward<Args>(args)...);
+	auto* hook_ptr = lnk.add(owner_id, std::forward<Args>(args)...);
+
+	if (active(owner_id)) {
+		lnk.activate(owner_id);
+		lnk.initialize_hook(owner_id);
+	}
+
+	return hook_ptr;
 }
 
 template <typename U>
@@ -556,6 +574,15 @@ auto gse::registry::drain_component_removes() -> std::vector<id> {
 	if (it == m_component_links.end()) return {};
 	auto& lnk = static_cast<component_link<U>&>(*it->second);
 	return lnk.drain_removes();
+}
+
+template <typename U>
+auto gse::registry::mark_component_updated(const id owner_id) -> void {
+	const auto type_idx = std::type_index(typeid(U));
+	const auto it = m_component_links.find(type_idx);
+	if (it == m_component_links.end()) return;
+	auto& lnk = static_cast<component_link<U>&>(*it->second);
+	lnk.mark_updated(owner_id);
 }
 
 template <typename U>
