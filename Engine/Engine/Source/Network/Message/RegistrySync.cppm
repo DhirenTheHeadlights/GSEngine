@@ -7,6 +7,7 @@ import :bitstream;
 
 import gse.physics;
 import gse.graphics;
+import gse.platform;
 import gse.utility;
 
 export namespace gse::network {
@@ -94,7 +95,8 @@ export namespace gse::network {
 
 	constexpr auto networked_types = std::tuple<
 		std::type_identity<physics::motion_component>,
-		std::type_identity<render_component>
+		std::type_identity<render_component>,
+		std::type_identity<player_controller>
 	>{};
 
 	template <typename F>
@@ -114,6 +116,11 @@ consteval auto gse::network::stable_code(std::string_view s) -> std::uint16_t {
 template <>
 consteval auto gse::network::component_name<gse::physics::motion_component>() -> std::string_view {
 	return "gse.physics.motion_component";
+}
+
+template <>
+consteval auto gse::network::component_name<gse::player_controller>() -> std::string_view {
+	return "gse.player_controller";
 }
 
 template <>

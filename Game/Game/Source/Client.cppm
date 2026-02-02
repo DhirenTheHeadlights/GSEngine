@@ -21,7 +21,10 @@ auto gs::client::initialize() -> void {
 	gse::network::clear_discovery_providers();
     std::vector seed{
 	    gse::network::discovery_result{
-            .addr = gse::network::address{ .ip = "127.0.0.1", .port = 9000 },
+            .addr = gse::network::address{
+            	.ip = "127.0.0.1",
+                .port = 9000
+            },
             .name = "Local Server",
             .map = "dev_map",
             .players = 0,
@@ -33,6 +36,7 @@ auto gs::client::initialize() -> void {
 	gse::network::refresh_servers(gse::milliseconds(200));
 
     m_owner->hook_world<gse::networked_world<gse::local_input_source>>();
+    m_owner->hook_world<gse::player_controller_hook>();
 }
 
 auto gs::client::update() -> void {
@@ -40,6 +44,7 @@ auto gs::client::update() -> void {
         gse::match(m)
             .if_is([&](const gse::network::connection_accepted&) {
                 m_owner->set_networked(true);
+                m_owner->set_authoritative(false);
                 if (const auto* scene = m_owner->current_scene()) {
                     m_owner->deactivate_scene(scene->id());
                 }

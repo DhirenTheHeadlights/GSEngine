@@ -75,6 +75,20 @@ export namespace gse {
 		auto networked(
 		) const -> bool;
 
+		auto set_authoritative(
+			bool is_authoritative
+		) -> void;
+
+		auto authoritative(
+		) const -> bool;
+
+		auto set_local_controlled_entity(
+			gse::id entity_id
+		) -> void;
+
+		auto local_controlled_entity(
+		) const -> gse::id;
+
 		auto registry(
 		) -> registry&;
 
@@ -96,7 +110,9 @@ export namespace gse {
 		std::vector<trigger> m_triggers;
 		std::optional<gse::id> m_active_scene = std::nullopt;
 		bool m_networked = false;
+		bool m_authoritative = true;
 		std::optional<gse::id> m_client_id = std::nullopt;
+		gse::id m_local_controlled_entity{};
 	};
 
 	template <typename InputSource>
@@ -148,23 +164,76 @@ export namespace gse {
 	};
 
 	struct local_input_source {
-		id owner_id{};
-
 		template <typename Fn>
 		auto for_each_context(
 			world& w,
 			Fn&& fn
 		) const -> void {
+			const auto local_id = w.local_controlled_entity();
+			if (!local_id.exists()) {
+				return;
+			}
+
 			const auto& a = w.system_of<actions::system>();
 
 			evaluation_context ctx{
-				.client_id = owner_id,
+				.client_id = local_id,
 				.input = std::addressof(a.current_state()),
 				.registry = &w.m_registry
 			};
 
 			fn(ctx);
 		}
+	};
+
+	class player_controller_hook : public hook<world> {
+	public:
+		using hook::hook;
+
+		auto update(
+		) -> void override {
+			auto* current = m_owner->current_scene();
+			if (!current) {
+				return;
+			}
+
+			const auto& factory = current->get_player_factory();
+			if (!factory) {
+				return;
+			}
+
+			auto& reg = current->registry();
+			const bool is_server = m_owner->authoritative();
+
+			for (auto& pc : reg.linked_objects_write<player_controller>()) {
+				const auto controller_id = pc.owner_id();
+
+				if (is_server) {
+					if (pc.controlled_entity_id.exists()) {
+						continue;
+					}
+
+					const auto player_id = factory(*current);
+					pc.controlled_entity_id = player_id;
+					reg.mark_component_updated<player_controller>(controller_id);
+				}
+				else {
+					if (!pc.controlled_entity_id.exists()) {
+						continue;
+					}
+
+					if (m_processed.contains(controller_id)) {
+						continue;
+					}
+
+					const auto local_player_id = factory(*current);
+					m_owner->set_local_controlled_entity(local_player_id);
+					m_processed.insert(controller_id);
+				}
+			}
+		}
+	private:
+		std::unordered_set<id> m_processed;
 	};
 }
 
@@ -349,6 +418,22 @@ auto gse::world::triggers() -> const std::vector<trigger>& {
 
 auto gse::world::networked() const -> bool {
 	return m_networked;
+}
+
+auto gse::world::set_authoritative(const bool is_authoritative) -> void {
+	m_authoritative = is_authoritative;
+}
+
+auto gse::world::authoritative() const -> bool {
+	return m_authoritative;
+}
+
+auto gse::world::set_local_controlled_entity(const gse::id entity_id) -> void {
+	m_local_controlled_entity = entity_id;
+}
+
+auto gse::world::local_controlled_entity() const -> gse::id {
+	return m_local_controlled_entity;
 }
 
 auto gse::world::registry() -> gse::registry& {

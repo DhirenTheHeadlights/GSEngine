@@ -143,45 +143,23 @@ auto gse::network::system::update() -> void {
 				stream,
 				rep->id,
 				[&]<typename T>(const component_upsert<T>& m) {
-					if constexpr (std::same_as<T, render_component>) {
-						auto fixed = m.data;
+					if constexpr (std::is_same_v<T, render_component>) {
+						auto fixed_data = m.data;
 						auto& rs = system_of<renderer::system>();
 
-						std::println("[net-debug] Received render_component with {} models, {} skinned_models",
-							fixed.model_count, fixed.skinned_model_count);
-
-						std::uint32_t valid_model_count = 0;
-						for (std::uint32_t i = 0; i < fixed.model_count; ++i) {
-							const auto res_id = fixed.models[i].id();
-							std::println("[net-debug]   model[{}] id={} tag={}",
-								i, res_id.number(), res_id.exists() ? std::string(res_id.tag()) : "UNKNOWN");
-							auto handle = rs.try_get<model>(res_id);
-							if (handle.id().exists()) {
-								fixed.models[valid_model_count++] = handle;
-							} else {
-								std::println("[net-warn] Model {} not found locally, skipping",
-									res_id.exists() ? std::string(res_id.tag()) : std::to_string(res_id.number()));
-							}
+						for (std::uint32_t i = 0; i < fixed_data.model_count; ++i) {
+							const auto res_id = fixed_data.models[i].id();
+							fixed_data.models[i] = rs.try_get<model>(res_id);
 						}
-						fixed.model_count = valid_model_count;
 
-						std::uint32_t valid_skinned_count = 0;
-						for (std::uint32_t i = 0; i < fixed.skinned_model_count; ++i) {
-							const id res_id = fixed.skinned_models[i].id();
-							std::println("[net-debug]   skinned_model[{}] id={} tag={}",
-								i, res_id.number(), res_id.exists() ? std::string(res_id.tag()) : "UNKNOWN");
-							auto handle = rs.try_get<skinned_model>(res_id);
-							if (handle.id().exists()) {
-								fixed.skinned_models[valid_skinned_count++] = handle;
-							} else {
-								std::println("[net-warn] Skinned model {} not found locally, skipping",
-									res_id.exists() ? std::string(res_id.tag()) : std::to_string(res_id.number()));
-							}
+						for (std::uint32_t i = 0; i < fixed_data.skinned_model_count; ++i) {
+							const auto res_id = fixed_data.skinned_models[i].id();
+							fixed_data.skinned_models[i] = rs.try_get<skinned_model>(res_id);
 						}
-						fixed.skinned_model_count = valid_skinned_count;
 
-						this->defer_add<T>(m.owner_id, fixed);
-					} else {
+						this->defer_add<T>(m.owner_id, fixed_data);
+					}
+					else {
 						this->defer_add<T>(m.owner_id, m.data);
 					}
 				},

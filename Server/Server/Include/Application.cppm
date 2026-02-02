@@ -32,6 +32,7 @@ auto gse::server_app::initialize() -> void {
 			&m_server->clients()
 		}
 	);
+	m_owner->hook_world<player_controller_hook>();
 }
 
 auto gse::server_app::update() -> void {

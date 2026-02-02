@@ -15,12 +15,15 @@ export namespace gs {
 		using hook::hook;
 
 		auto initialize() -> void override {
-			arena::create(this);
-
-			build("Player")
-				.with<gse::free_camera>({
+			m_owner->set_player_factory([](gse::scene& s) -> gse::id {
+				auto player_id = s.add_entity("Player");
+				s.registry().add_hook<gse::free_camera>(player_id, gse::free_camera::params{
 					.initial_position = gse::vec3<gse::length>(0.f, 0.f, 0.f)
 				});
+				return player_id;
+			});
+
+			arena::create(this);
 
 			build("Backpack")
 				.with<backpack>();
@@ -60,4 +63,4 @@ export namespace gs {
 				});
 		}
 	};
-} 
+}
