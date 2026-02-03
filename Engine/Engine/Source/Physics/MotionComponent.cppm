@@ -39,7 +39,7 @@ export namespace gse::physics {
         quat orientation = quat(1.f, 0.f, 0.f, 0.f);
         vec3<angular_velocity> angular_velocity;
         vec3<angular_acceleration> angular_acceleration;
-        inertia moment_of_inertia = 1.f;
+        inertia moment_of_inertia = 163.f;
 
         vec3<length> center_of_mass;
 

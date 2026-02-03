@@ -19,7 +19,15 @@ export namespace gse::narrow_phase_collision {
 
 namespace gse::narrow_phase_collision {
     static constexpr bool debug = false;
+    static constexpr bool debug_resolve = true;
     constexpr int mpr_collision_refinement_iterations = 32;
+
+    auto resolve_debug_log(const std::string& msg) -> void {
+        if constexpr (debug_resolve) {
+            static std::ofstream log_file("physics_debug.log", std::ios::app);
+            log_file << msg << '\n';
+        }
+    }
 
     struct mpr_result {
         bool collided = false;
@@ -86,6 +94,21 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
         return;
     }
 
+    if constexpr (debug_resolve) {
+        resolve_debug_log(std::format("[RESOLVE] === START ==="));
+        resolve_debug_log(std::format("[RESOLVE] A: pos={} vel={} ang_vel={} mass={} locked={} airborne={}",
+            object_a->current_position, object_a->current_velocity, object_a->angular_velocity,
+            object_a->mass, object_a->position_locked, object_a->airborne));
+        resolve_debug_log(std::format("[RESOLVE] B: pos={} vel={} ang_vel={} mass={} locked={} airborne={}",
+            object_b->current_position, object_b->current_velocity, object_b->angular_velocity,
+            object_b->mass, object_b->position_locked, object_b->airborne));
+        resolve_debug_log(std::format("[RESOLVE] MPR: normal={} penetration={} #contacts={}",
+            res->normal, res->penetration, res->contact_points.size()));
+        for (size_t di = 0; di < res->contact_points.size(); ++di) {
+            resolve_debug_log(std::format("[RESOLVE]   contact[{}]={}", di, res->contact_points[di]));
+        }
+    }
+
     coll_a.collision_information = {
         .colliding = true,
         .collision_normal = res->normal,
@@ -137,6 +160,15 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
         const auto tangent_speed = magnitude(tangent_velocity).as<meters_per_second>();
         const auto normal_speed = abs(vel_along_normal).as<meters_per_second>();
 
+        if constexpr (debug_resolve) {
+            resolve_debug_log(std::format("[RESOLVE]   cp={} r_a={} r_b={}",
+                contact_point, r_a, r_b));
+            resolve_debug_log(std::format("[RESOLVE]   vel_a={} vel_b={} rel_vel={}",
+                vel_a, vel_b, relative_velocity));
+            resolve_debug_log(std::format("[RESOLVE]   vel_along_normal={} normal_spd={:.4f} tangent_spd={:.4f}",
+                vel_along_normal, normal_speed, tangent_speed));
+        }
+
         constexpr float wake_threshold = 0.2f;
         const bool should_wake = normal_speed > wake_threshold || tangent_speed > wake_threshold;
 
@@ -148,6 +180,9 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
         }
 
         if (vel_along_normal > velocity{ 0 }) {
+            if constexpr (debug_resolve) {
+                resolve_debug_log(std::format("[RESOLVE]   SEPARATING (vel_along_normal={}), returning", vel_along_normal));
+            }
             return;
         }
 
@@ -167,6 +202,11 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
 
         const auto impulse_vec = res->normal * jn;
 
+        if constexpr (debug_resolve) {
+            resolve_debug_log(std::format("[RESOLVE]   restitution={:.2f} jn={} impulse_vec={}",
+                restitution, jn, impulse_vec));
+        }
+
         if (magnitude(tangent_velocity) > meters_per_second(1e-4f)) {
             const auto t = normalize(tangent_velocity);
 
@@ -184,6 +224,11 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
             jt = std::clamp(jt, -jn * mu, jn * mu);
             const auto friction_impulse = t * jt;
 
+            if constexpr (debug_resolve) {
+                resolve_debug_log(std::format("[RESOLVE]   friction: jt={} impulse={}",
+                    jt, friction_impulse));
+            }
+
             object_a->current_velocity += friction_impulse * inv_mass_a;
             object_a->angular_velocity += inv_i_a * cross(r_a, friction_impulse);
 
@@ -200,7 +245,14 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
             object_b->current_velocity -= impulse_vec * inv_mass_b;
             object_b->angular_velocity -= 0.4f * inv_i_b * cross(r_b, impulse_vec);
         }
-        
+
+        if constexpr (debug_resolve) {
+            resolve_debug_log(std::format("[RESOLVE]   post: A vel={} ang_vel={}",
+                object_a->current_velocity, object_a->angular_velocity));
+            resolve_debug_log(std::format("[RESOLVE]   post: B vel={} ang_vel={}",
+                object_b->current_velocity, object_b->angular_velocity));
+        }
+
         if (!object_a->position_locked && !object_a->airborne) {
             const auto v = object_a->current_velocity;
             const auto normal_component = dot(v, res->normal) * res->normal;
@@ -216,6 +268,10 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
                 //object_b->current_velocity -= tangential;
             }
         }
+    }
+
+    if constexpr (debug_resolve) {
+        resolve_debug_log("[RESOLVE] === END ===");
     }
 }
 
@@ -343,7 +399,7 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
         unitless::vec3 n_d = face_normal_outward(v1.point, v2.point, v3.point, v0.point); // face (v1,v2,v3), opp v0
 
         // Signed distances to each face plane along its (unit) outward normal.
-        // NOTE: No abs/flip here — orientation is already enforced by face_normal_outward.
+        // NOTE: No abs/flip here ï¿½ orientation is already enforced by face_normal_outward.
         const length inf = meters(std::numeric_limits<float>::infinity());
         length d_a = is_zero(n_a) ? inf : dot(n_a, v0.point);
         length d_b = is_zero(n_b) ? inf : dot(n_b, v0.point);
