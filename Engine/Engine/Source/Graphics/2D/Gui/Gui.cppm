@@ -22,6 +22,8 @@ import :ids;
 import :button_widget;
 export import :tree_widget;
 import :selectable_widget;
+import :dropdown_widget;
+import :input_layers;
 import :menu_bar;
 import :settings_panel;
 import :styles;
@@ -143,6 +145,9 @@ export namespace gse::gui {
 
 		auto profiler(
 		) -> void;
+
+		[[nodiscard]] auto input_layers(
+		) -> input_layer&;
 	private:
 		struct frame_state {
 			const renderer::context* rctx = nullptr;
@@ -190,6 +195,7 @@ export namespace gse::gui {
 
 		tooltip_state m_tooltip;
 		render_layer m_input_layer = render_layer::content;
+		input_layer m_input_layers;
 
 		static constexpr time m_update_interval = seconds(30.f);
 
@@ -250,7 +256,8 @@ export namespace gse::gui {
 		) const -> ui_rect;
 
 		auto apply_scale(
-			style sty
+			style sty,
+			float viewport_height
 		) const -> style;
 	};
 }
@@ -367,7 +374,8 @@ auto gse::gui::system::update() -> void {
 		}
 	}
 
-	const style sty = apply_scale(style::from_theme(m_theme));
+	const auto viewport = m_rctx.window().viewport();
+	const style sty = apply_scale(style::from_theme(m_theme), static_cast<float>(viewport.y()));
 	const input::state& input_state = system_of<input::system>().current_state();
 
 	const unitless::vec2 mouse_position = input_state.mouse_position();
@@ -410,7 +418,7 @@ auto gse::gui::system::begin_frame() -> bool {
 		if (current_viewport_size.x() != m_previous_viewport_size.x() ||
 		    current_viewport_size.y() != m_previous_viewport_size.y()) {
 
-			const style sty = apply_scale(style::from_theme(m_theme));
+			const style sty = apply_scale(style::from_theme(m_theme), current_viewport_size.y());
 			const float menu_bar_h = menu_bar::height(sty);
 
 			const float old_usable_height = m_previous_viewport_size.y() - menu_bar_h;
@@ -458,8 +466,9 @@ auto gse::gui::system::begin_frame() -> bool {
 	m_frame_state = {};
 	m_sprite_commands.clear();
 	m_text_commands.clear();
+	m_input_layers.begin_frame();
 
-	const style sty = apply_scale(style::from_theme(m_theme));
+	const style sty = apply_scale(style::from_theme(m_theme), current_viewport_size.y());
 
 	m_frame_state = {
 		.rctx = std::addressof(m_rctx),
@@ -482,6 +491,10 @@ auto gse::gui::system::begin_frame() -> bool {
 }
 
 auto gse::gui::system::render() -> void {}
+
+auto gse::gui::system::input_layers() -> input_layer& {
+	return m_input_layers;
+}
 
 auto gse::gui::system::end_frame() -> void {
 	 if (!m_frame_state.active) {
@@ -541,7 +554,8 @@ auto gse::gui::system::end_frame() -> void {
 	    .request_save = [this] {
 	        (void)system_of<save::system>().save();
 	    },
-	    .tooltip = &m_tooltip
+	    .tooltip = &m_tooltip,
+	    .input_layers = &m_input_layers
 	};
 
 	if (settings_panel::update(m_settings_panel_state, sp_ctx, settings_rect, m_menu_bar_state.settings_open, system_of<save::system>())) {
@@ -2056,14 +2070,18 @@ auto gse::gui::system::calculate_display_rect(const menu& m) const -> ui_rect {
 	return display_rect;
 }
 
-auto gse::gui::system::apply_scale(style sty) const -> style {
-	sty.padding *= m_ui_scale;
-	sty.title_bar_height *= m_ui_scale;
-	sty.resize_border_thickness *= m_ui_scale;
-	sty.min_menu_size.x() *= m_ui_scale;
-	sty.min_menu_size.y() *= m_ui_scale;
-	sty.font_size *= m_ui_scale;
-	sty.menu_bar_height *= m_ui_scale;
+auto gse::gui::system::apply_scale(style sty, const float viewport_height) const -> style {
+	constexpr float reference_height = 1080.f;
+	const float base_scale = viewport_height / reference_height;
+	const float final_scale = base_scale * m_ui_scale;
+
+	sty.padding *= final_scale;
+	sty.title_bar_height *= final_scale;
+	sty.resize_border_thickness *= final_scale;
+	sty.min_menu_size.x() *= final_scale;
+	sty.min_menu_size.y() *= final_scale;
+	sty.font_size *= final_scale;
+	sty.menu_bar_height *= final_scale;
 	return sty;
 }
 
