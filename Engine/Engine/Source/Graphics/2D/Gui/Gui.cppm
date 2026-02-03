@@ -175,8 +175,12 @@ export namespace gse::gui {
 
 		menu_bar::state m_menu_bar_state;
 		settings_panel::state m_settings_panel_state;
-		theme m_theme = theme::dark;	
+		theme m_theme = theme::dark;
 		float m_ui_scale = 1.0f;
+		int m_font_index = 0;
+		std::vector<std::string> m_available_fonts;
+
+		auto reload_font() -> void;
 
 		std::vector<renderer::sprite_command> m_sprite_commands;
 		std::vector<renderer::text_command> m_text_commands;
@@ -256,12 +260,28 @@ gse::gui::system::system(renderer::context& context) : m_rctx(context) {}
 auto gse::gui::system::initialize() -> void {
 	m_theme = static_cast<theme>(system_of<save::system>().read("UI", "Theme", static_cast<int>(theme::dark)));
 	m_ui_scale = system_of<save::system>().read("UI", "Scale", 1.0f);
+	m_font_index = system_of<save::system>().read("UI", "Font", 0);
 
-    m_font = m_rctx.get<font>("Fonts/MonaspaceNeon-Regular");
-    m_blank_texture = m_rctx.queue<texture>("blank", unitless::vec4(1, 1, 1, 1));
+	m_available_fonts = m_rctx.enumerate_resources("Fonts", ".gfont");
+
+	if (m_available_fonts.empty()) {
+		m_available_fonts.push_back("default");
+	}
+
+	if (m_font_index < 0 || m_font_index >= static_cast<int>(m_available_fonts.size())) {
+		m_font_index = 0;
+	}
+
+	m_font = m_rctx.get<font>("Fonts/" + m_available_fonts[m_font_index]);
+	m_blank_texture = m_rctx.queue<texture>("blank", unitless::vec4(1, 1, 1, 1));
 	m_menus = load(config::resource_path / m_file_path, m_menus);
 
-	publish([this](channel<save::register_property>& ch) {
+	std::vector<std::pair<std::string, int>> font_options;
+	for (int i = 0; i < static_cast<int>(m_available_fonts.size()); ++i) {
+		font_options.emplace_back(m_available_fonts[i], i);
+	}
+
+	publish([this, font_options = std::move(font_options)](channel<save::register_property>& ch) {
 		save::bind(ch, "UI", "Theme", *reinterpret_cast<int*>(&m_theme))
 			.description("UI color theme")
 			.options({
@@ -275,6 +295,11 @@ auto gse::gui::system::initialize() -> void {
 		save::bind(ch, "UI", "Scale", m_ui_scale)
 			.description("UI scale multiplier")
 			.range(0.5f, 3.0f, 0.1f)
+			.commit();
+
+		save::bind(ch, "UI", "Font", m_font_index)
+			.description("UI font")
+			.options(font_options)
 			.commit();
 	});
 
@@ -336,6 +361,12 @@ auto gse::gui::system::initialize() -> void {
 }
 
 auto gse::gui::system::update() -> void {
+	for (const auto& changed : channel_of<save::property_changed>()) {
+		if (changed.category == "UI" && changed.name == "Font") {
+			reload_font();
+		}
+	}
+
 	const style sty = apply_scale(style::from_theme(m_theme));
 	const input::state& input_state = system_of<input::system>().current_state();
 
@@ -2036,4 +2067,8 @@ auto gse::gui::system::apply_scale(style sty) const -> style {
 	return sty;
 }
 
-
+auto gse::gui::system::reload_font() -> void {
+	if (m_font_index >= 0 && m_font_index < static_cast<int>(m_available_fonts.size())) {
+		m_font = m_rctx.get<font>("Fonts/" + m_available_fonts[m_font_index]);
+	}
+}
