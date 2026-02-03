@@ -13,6 +13,8 @@ import :ui_renderer;
 import :menu_bar;
 import :ids;
 import :styles;
+import :dropdown_widget;
+import :input_layers;
 
 export namespace gse::settings_panel {
     using pending_value = std::variant<bool, float, std::size_t>;
@@ -33,6 +35,7 @@ export namespace gse::settings_panel {
     struct state {
         id hot_id;
         id active_id;
+        gui::dropdown_state dropdown;
         std::vector<pending_change> pending_changes;
         popup_type active_popup = popup_type::none;
         bool has_pending_restart = false;
@@ -58,6 +61,7 @@ export namespace gse::settings_panel {
         std::function<void(save::update_request)> publish_update;
         std::function<void()> request_save;
         gui::tooltip_state* tooltip = nullptr;
+        gui::input_layer* input_layers = nullptr;
     };
 
     auto update(
@@ -131,6 +135,10 @@ namespace gse::settings_panel {
         pending_value value,
         std::function<void(save::property_base&)> apply
     ) -> void;
+
+    auto dropdown_blocking_input(
+        const layout_state& layout
+    ) -> bool;
 }
 
 auto gse::settings_panel::default_panel_rect(const gui::style& style, const unitless::vec2 viewport_size) -> gui::ui_rect {
@@ -157,6 +165,16 @@ auto gse::settings_panel::set_tooltip(const context& ctx, const id& widget_id, c
     ctx.tooltip->pending_widget_id = widget_id;
     ctx.tooltip->text = text;
     ctx.tooltip->position = ctx.input.mouse_position();
+}
+
+auto gse::settings_panel::dropdown_blocking_input(const layout_state& layout) -> bool {
+    if (!layout.ctx->input_layers) {
+        return false;
+    }
+    return !layout.ctx->input_layers->input_available_at(
+        layout.ctx->layer,
+        layout.ctx->input.mouse_position()
+    );
 }
 
 auto gse::settings_panel::update(state& state, const context& ctx, const gui::ui_rect& rect, const bool is_open, const save::system& save_sys) -> bool {
@@ -421,7 +439,7 @@ auto gse::settings_panel::draw_toggle(layout_state& layout, const save::property
         set_tooltip(ctx, toggle_id, std::string(prop.description()));
     }
 
-    const bool toggle_hovered = toggle_rect.contains(mouse_pos);
+    const bool toggle_hovered = toggle_rect.contains(mouse_pos) && !dropdown_blocking_input(layout);
     if (toggle_hovered && ctx.input.mouse_button_pressed(mouse_button::button_1)) {
         layout.panel_state->active_id = toggle_id;
     }
@@ -515,7 +533,7 @@ auto gse::settings_panel::draw_slider(layout_state& layout, const save::property
         { track_rect.width() + knob_size, knob_size }
     );
 
-    const bool hovered = hit_rect.contains(mouse_pos);
+    const bool hovered = hit_rect.contains(mouse_pos) && !dropdown_blocking_input(layout);
 
     if (hovered && ctx.input.mouse_button_pressed(mouse_button::button_1)) {
         layout.panel_state->active_id = slider_id;
@@ -628,53 +646,63 @@ auto gse::settings_panel::draw_choice(layout_state& layout, const save::property
         { layout.content_rect.width(), layout.row_height }
     );
 
-    float max_option_width = 60.f;
+    float max_option_width = 80.f;
     if (ctx.font.valid()) {
         for (std::size_t i = 0; i < prop.enum_count(); ++i) {
             const auto label = prop.enum_label(i);
             max_option_width = std::max(
                 max_option_width,
-                ctx.font->width(std::string(label), sty.font_size) + sty.padding * 2.f
+                ctx.font->width(std::string(label), sty.font_size) + sty.padding * 4.f
             );
         }
     }
 
-    const gui::ui_rect choice_rect = gui::ui_rect::from_position_size(
+    const gui::ui_rect header_rect = gui::ui_rect::from_position_size(
         { row_rect.right() - max_option_width, row_rect.center().y() + layout.row_height * 0.4f },
         { max_option_width, layout.row_height * 0.8f }
     );
 
     const unitless::vec2 mouse_pos = ctx.input.mouse_position();
-    const id choice_id = gui::ids::make(std::string(prop.name()) + "_choice");
+    const id dropdown_id = gui::ids::make(std::string(prop.name()) + "_dropdown");
+    const bool is_open = layout.panel_state->dropdown.open_dropdown_id == dropdown_id;
 
     if (row_rect.contains(mouse_pos)) {
-        set_tooltip(ctx, choice_id, std::string(prop.description()));
+        set_tooltip(ctx, dropdown_id, std::string(prop.description()));
     }
 
     const auto* pending = layout.panel_state->find_pending(prop.category(), prop.name());
     const std::size_t current_index = pending ? std::get<std::size_t>(pending->value) : prop.enum_index();
 
-    const bool hovered = choice_rect.contains(mouse_pos);
-    if (hovered && ctx.input.mouse_button_pressed(mouse_button::button_1)) {
-        layout.panel_state->active_id = choice_id;
+    const bool header_hovered = header_rect.contains(mouse_pos);
+    if (header_hovered && ctx.input.mouse_button_pressed(mouse_button::button_1)) {
+        layout.panel_state->active_id = dropdown_id;
     }
 
-    if (hovered && layout.panel_state->active_id == choice_id &&
+    if (header_hovered && layout.panel_state->active_id == dropdown_id &&
         ctx.input.mouse_button_released(mouse_button::button_1)) {
-        const std::size_t next = (current_index + 1) % prop.enum_count();
-
-        queue_change(*layout.panel_state, prop, next, [next](save::property_base& p) {
-            p.set_enum_index(next);
-        });
+        if (is_open) {
+            layout.panel_state->dropdown.open_dropdown_id.reset();
+        }
+        else {
+            layout.panel_state->dropdown.open_dropdown_id = dropdown_id;
+        }
+        layout.panel_state->active_id.reset();
     }
 
-    const unitless::vec4 bg_color = hovered
-        ? sty.color_widget_hovered
-        : sty.color_widget_background;
+    unitless::vec4 header_bg = sty.color_widget_background;
+    if (is_open) {
+        header_bg = sty.color_widget_active;
+    }
+    else if (layout.panel_state->active_id == dropdown_id) {
+        header_bg = sty.color_widget_active;
+    }
+    else if (header_hovered) {
+        header_bg = sty.color_widget_hovered;
+    }
 
     ctx.sprites.push_back({
-        .rect = choice_rect,
-        .color = bg_color,
+        .rect = header_rect,
+        .color = header_bg,
         .texture = ctx.blank_texture,
         .layer = ctx.layer
     });
@@ -682,18 +710,32 @@ auto gse::settings_panel::draw_choice(layout_state& layout, const save::property
     if (ctx.font.valid()) {
         const auto current_label = prop.enum_label(current_index);
         const std::string opt_text(current_label);
-        const float text_width = ctx.font->width(opt_text, sty.font_size);
 
         ctx.texts.push_back({
             .font = ctx.font,
             .text = opt_text,
             .position = {
-                choice_rect.center().x() - text_width * 0.5f,
-                choice_rect.center().y() + sty.font_size * 0.35f
+                header_rect.left() + sty.padding,
+                header_rect.center().y() + sty.font_size * 0.35f
             },
             .scale = sty.font_size,
             .color = sty.color_text,
-            .clip_rect = choice_rect,
+            .clip_rect = header_rect,
+            .layer = ctx.layer
+        });
+
+        const std::string arrow = is_open ? "^" : "v";
+        const float arrow_width = ctx.font->width(arrow, sty.font_size);
+        ctx.texts.push_back({
+            .font = ctx.font,
+            .text = arrow,
+            .position = {
+                header_rect.right() - arrow_width - sty.padding,
+                header_rect.center().y() + sty.font_size * 0.35f
+            },
+            .scale = sty.font_size,
+            .color = sty.color_text_secondary,
+            .clip_rect = header_rect,
             .layer = ctx.layer
         });
 
@@ -717,6 +759,92 @@ auto gse::settings_panel::draw_choice(layout_state& layout, const save::property
     }
 
     layout.cursor.y() -= layout.row_height;
+
+    if (is_open && prop.enum_count() > 0) {
+        constexpr std::size_t max_visible = 8;
+        const std::size_t visible_count = std::min(prop.enum_count(), max_visible);
+        const float option_height = layout.row_height * 0.8f;
+        const float list_height = static_cast<float>(visible_count) * option_height;
+
+        const gui::ui_rect list_rect = gui::ui_rect::from_position_size(
+            { header_rect.left(), header_rect.bottom() },
+            { max_option_width, list_height }
+        );
+
+        if (ctx.input_layers) {
+            ctx.input_layers->register_hit_region(render_layer::modal, list_rect);
+        }
+
+        constexpr float border = 1.f;
+        ctx.sprites.push_back({
+            .rect = list_rect.inset({ -border, -border }),
+            .color = sty.color_border,
+            .texture = ctx.blank_texture,
+            .layer = render_layer::modal
+        });
+
+        ctx.sprites.push_back({
+            .rect = list_rect,
+            .color = sty.color_menu_body,
+            .texture = ctx.blank_texture,
+            .layer = render_layer::modal
+        });
+
+        float option_y = list_rect.top();
+        for (std::size_t i = 0; i < visible_count; ++i) {
+            const gui::ui_rect option_rect = gui::ui_rect::from_position_size(
+                { list_rect.left(), option_y },
+                { list_rect.width(), option_height }
+            );
+
+            const bool option_hovered = option_rect.contains(mouse_pos);
+
+            unitless::vec4 option_bg = sty.color_menu_body;
+            if (i == current_index) {
+                option_bg = sty.color_widget_selected;
+            }
+            else if (option_hovered) {
+                option_bg = sty.color_widget_hovered;
+            }
+
+            ctx.sprites.push_back({
+                .rect = option_rect,
+                .color = option_bg,
+                .texture = ctx.blank_texture,
+                .layer = render_layer::modal
+            });
+
+            if (ctx.font.valid()) {
+                ctx.texts.push_back({
+                    .font = ctx.font,
+                    .text = std::string(prop.enum_label(i)),
+                    .position = {
+                        option_rect.left() + sty.padding,
+                        option_rect.center().y() + sty.font_size * 0.35f
+                    },
+                    .scale = sty.font_size,
+                    .color = sty.color_text,
+                    .clip_rect = option_rect,
+                    .layer = render_layer::modal
+                });
+            }
+
+            if (option_hovered && ctx.input.mouse_button_pressed(mouse_button::button_1)) {
+                queue_change(*layout.panel_state, prop, i, [i](save::property_base& p) {
+                    p.set_enum_index(i);
+                });
+                layout.panel_state->dropdown.open_dropdown_id.reset();
+            }
+
+            option_y -= option_height;
+        }
+
+        if (!list_rect.contains(mouse_pos) &&
+            !header_rect.contains(mouse_pos) &&
+            ctx.input.mouse_button_pressed(mouse_button::button_1)) {
+            layout.panel_state->dropdown.open_dropdown_id.reset();
+        }
+    }
 }
 
 auto gse::settings_panel::queue_change(state& panel_state, const save::property_base& prop, const pending_value value, std::function<void(save::property_base&)> apply) -> void {
@@ -771,7 +899,7 @@ auto gse::settings_panel::draw_apply_button(layout_state& layout, state& panel_s
     );
 
     const unitless::vec2 mouse_pos = ctx.input.mouse_position();
-    const bool hovered = button_rect.contains(mouse_pos);
+    const bool hovered = button_rect.contains(mouse_pos) && !dropdown_blocking_input(layout);
     const id button_id = gui::ids::make("apply_settings");
 
     const bool has_changes = !panel_state.pending_changes.empty();

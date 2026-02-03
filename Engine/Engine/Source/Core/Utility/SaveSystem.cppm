@@ -304,6 +304,10 @@ export namespace gse::save {
             std::initializer_list<std::pair<std::string, T>> opts
         ) -> property_builder&;
 
+        auto options(
+            std::vector<std::pair<std::string, T>> opts
+        ) -> property_builder&;
+
         auto restart_required(
         ) -> property_builder&;
 
@@ -904,6 +908,14 @@ template <typename T>
 auto gse::save::property_builder<T>::options(std::initializer_list<std::pair<std::string, T>> opts) -> property_builder& {
     enum_constraint<T> c;
     c.options = opts;
+    m_constraint = std::move(c);
+    return *this;
+}
+
+template <typename T>
+auto gse::save::property_builder<T>::options(std::vector<std::pair<std::string, T>> opts) -> property_builder& {
+    enum_constraint<T> c;
+    c.options = std::move(opts);
     m_constraint = std::move(c);
     return *this;
 }
