@@ -17,6 +17,8 @@ export namespace gse::gui::draw {
         float extra_right_padding = 0.0f;
         bool toggle_on_row_click = true;
         bool multi_select = false;
+        std::optional<ui_rect> clip_rect = std::nullopt;
+        float scroll_offset = 0.f;
     };
 
     struct tree_selection {
@@ -141,8 +143,10 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
     const ui_rect context_rect = ctx.current_menu->rect.inset({ ctx.style.padding, ctx.style.padding });
     const float indent = std::max(0.f, opt.indent_per_level) * std::max(0, level);
 
+    const float adjusted_y = ctx.layout_cursor.y() + opt.scroll_offset;
+
     const ui_rect row_rect = ui_rect::from_position_size(
-        { context_rect.left() + indent, ctx.layout_cursor.y() },
+        { context_rect.left() + indent, adjusted_y },
         { context_rect.width() - indent, row_height }
     );
 
@@ -150,7 +154,14 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
     std::unordered_set<std::uint64_t>& open_set = global_expand_state.open[tree_scope];
     const bool leaf = tree_node_is_leaf(t, ops);
     bool is_open = open_set.contains(key);
-    const bool hovered = row_rect.contains(ctx.input.mouse_position()) && ctx.input_available();
+
+    const ui_rect effective_clip = opt.clip_rect.value_or(context_rect);
+    const bool row_visible = row_rect.top() >= effective_clip.bottom() - row_height &&
+                              row_rect.bottom() <= effective_clip.top() + row_height;
+
+    const unitless::vec2 mouse_pos = ctx.input.mouse_position();
+    const bool mouse_in_clip = effective_clip.contains(mouse_pos);
+    const bool hovered = row_rect.contains(mouse_pos) && mouse_in_clip && ctx.input_available();
     const id row_widget_id = ids::make(std::format("tree_row##{}", key));
 
     bool self_is_active = hovered;
@@ -160,77 +171,86 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
         selected = true;
     }
 
-    unitless::vec4 background = ctx.style.color_widget_background;
+    if (row_visible) {
+        unitless::vec4 background = ctx.style.color_widget_background;
 
-    if (selected) {
-        background = ctx.style.color_widget_selected;
-    } else if (active_widget_id == row_widget_id) {
-        background = ctx.style.color_widget_active;
-    } else if (hovered) {
-        background = ctx.style.color_widget_hovered;
-        if (ctx.input.mouse_button_pressed(mouse_button::button_1)) {
-            active_widget_id = row_widget_id;
+        if (selected) {
+            background = ctx.style.color_widget_selected;
+        } else if (active_widget_id == row_widget_id) {
+            background = ctx.style.color_widget_active;
+        } else if (hovered) {
+            background = ctx.style.color_widget_hovered;
+            if (ctx.input.mouse_button_pressed(mouse_button::button_1)) {
+                active_widget_id = row_widget_id;
+            }
         }
-    }
 
-    if (active_widget_id == row_widget_id) {
-        self_is_active = true;
-    }
+        if (active_widget_id == row_widget_id) {
+            self_is_active = true;
+        }
 
-    ctx.queue_sprite({
-        .rect = row_rect,
-        .color = background,
-        .texture = ctx.blank_texture
-    });
+        ctx.queue_sprite({
+            .rect = row_rect,
+            .color = background,
+            .texture = ctx.blank_texture
+        });
 
-    const float arrow_w = ctx.style.font_size;
-    const ui_rect arrow_rect = ui_rect::from_position_size(
-        row_rect.top_left(),
-        { arrow_w, row_height }
-    );
+        const float arrow_w = ctx.style.font_size;
+        const ui_rect arrow_rect = ui_rect::from_position_size(
+            row_rect.top_left(),
+            { arrow_w, row_height }
+        );
 
-    if (!leaf) {
+        if (!leaf) {
+            ctx.queue_text({
+                .font = ctx.font,
+                .text = is_open ? "v" : ">",
+                .position = {
+                    arrow_rect.center().x() - ctx.font->width("v", ctx.style.font_size) * 0.5f,
+                    arrow_rect.center().y() + ctx.style.font_size / 2.f
+                },
+                .scale = ctx.style.font_size,
+                .color = ctx.style.color_text,
+                .clip_rect = row_rect
+            });
+        }
+
+        const std::string_view lbl = ops.label ? ops.label(t) : std::string_view{};
+
+        const float label_available_width = std::max(0.0f, row_rect.width() - arrow_w - ctx.style.padding * 0.5f - opt.extra_right_padding);
+
+        const ui_rect label_rect = ui_rect::from_position_size(
+            { row_rect.left() + arrow_w + ctx.style.padding * 0.5f, row_rect.top() },
+            { label_available_width, row_height }
+        );
+
         ctx.queue_text({
             .font = ctx.font,
-            .text = is_open ? "v" : ">",
+            .text = std::string(lbl),
             .position = {
-                arrow_rect.center().x() - ctx.font->width("v", ctx.style.font_size) * 0.5f,
-                arrow_rect.center().y() + ctx.style.font_size / 2.f
+                label_rect.left(),
+                label_rect.center().y() + ctx.style.font_size / 2.f
             },
             .scale = ctx.style.font_size,
             .color = ctx.style.color_text,
-            .clip_rect = row_rect
+            .clip_rect = label_rect
         });
-    }
 
-    const std::string_view lbl = ops.label ? ops.label(t) : std::string_view{};
-    
-    const float label_available_width = std::max(0.0f, row_rect.width() - arrow_w - ctx.style.padding * 0.5f - opt.extra_right_padding);
-    
-    const ui_rect label_rect = ui_rect::from_position_size(
-        { row_rect.left() + arrow_w + ctx.style.padding * 0.5f, row_rect.top() },
-        { label_available_width, row_height }
-    );
-
-    ctx.queue_text({
-        .font = ctx.font,
-        .text = std::string(lbl),
-        .position = {
-            label_rect.left(),
-            label_rect.center().y() + ctx.style.font_size / 2.f
-        },
-        .scale = ctx.style.font_size,
-        .color = ctx.style.color_text,
-        .clip_rect = label_rect
-    });
-
-    if (ops.custom_draw) {
-        ops.custom_draw(t, ctx, row_rect, hovered, selected, level);
+        if (ops.custom_draw) {
+            ops.custom_draw(t, ctx, row_rect, hovered, selected, level);
+        }
+    } else if (hovered && ctx.input.mouse_button_pressed(mouse_button::button_1)) {
+        active_widget_id = row_widget_id;
     }
 
     if (ctx.input.mouse_button_released(mouse_button::button_1)) {
         if (hovered) {
-            if (const bool clicked_arrow = arrow_rect.contains(ctx.input.mouse_position()); !leaf && (opt.toggle_on_row_click || clicked_arrow)) {
+            const ui_rect arrow_rect = ui_rect::from_position_size(
+                row_rect.top_left(),
+                { ctx.style.font_size, row_height }
+            );
+
+            if (const bool clicked_arrow = arrow_rect.contains(mouse_pos); !leaf && (opt.toggle_on_row_click || clicked_arrow)) {
                 if (is_open) {
                     open_set.erase(key);
                 } else {

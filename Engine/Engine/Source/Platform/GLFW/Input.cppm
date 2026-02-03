@@ -162,6 +162,9 @@ auto gse::input::system::update() -> void {
 			.else_if_is([&](const mouse_moved& arg) {
 				persistent_state.on_mouse_moved(static_cast<float>(arg.x_pos), static_cast<float>(arg.y_pos), tok);
 			})
+			.else_if_is([&](const mouse_scrolled& arg) {
+				persistent_state.on_scroll(static_cast<float>(arg.x_offset), static_cast<float>(arg.y_offset), tok);
+			})
 			.else_if_is([&](const text_entered& arg) {
 				persistent_state.append_codepoint(arg.codepoint, tok);
 			});

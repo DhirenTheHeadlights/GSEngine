@@ -23,6 +23,7 @@ import :button_widget;
 export import :tree_widget;
 import :selectable_widget;
 import :dropdown_widget;
+import :scroll_widget;
 import :input_layers;
 import :menu_bar;
 import :settings_panel;
@@ -418,11 +419,17 @@ auto gse::gui::system::begin_frame() -> bool {
 		if (current_viewport_size.x() != m_previous_viewport_size.x() ||
 		    current_viewport_size.y() != m_previous_viewport_size.y()) {
 
-			const style sty = apply_scale(style::from_theme(m_theme), current_viewport_size.y());
-			const float menu_bar_h = menu_bar::height(sty);
+			const style old_sty = apply_scale(style::from_theme(m_theme), m_previous_viewport_size.y());
+			const style new_sty = apply_scale(style::from_theme(m_theme), current_viewport_size.y());
 
-			const float old_usable_height = m_previous_viewport_size.y() - menu_bar_h;
-			const float new_usable_height = current_viewport_size.y() - menu_bar_h;
+			const float old_menu_bar_h = menu_bar::height(old_sty);
+			const float new_menu_bar_h = menu_bar::height(new_sty);
+
+			const float old_usable_height = m_previous_viewport_size.y() - old_menu_bar_h;
+			const float new_usable_height = current_viewport_size.y() - new_menu_bar_h;
+
+			const float scale_x = current_viewport_size.x() / m_previous_viewport_size.x();
+			const float scale_y = new_usable_height / old_usable_height;
 
 			const ui_rect new_screen_rect = ui_rect::from_position_size(
 				{ 0.f, new_usable_height },
@@ -444,12 +451,15 @@ auto gse::gui::system::begin_frame() -> bool {
 						const float new_left = ratio_x * current_viewport_size.x();
 						const float new_top = current_viewport_size.y() - (ratio_y * new_usable_height);
 
-						const float clamped_left = std::clamp(new_left, 0.f, std::max(0.f, current_viewport_size.x() - m.rect.width()));
-						const float clamped_top = std::clamp(new_top, m.rect.height(), new_usable_height);
+						const float new_width = m.rect.width() * scale_x;
+						const float new_height = m.rect.height() * scale_y;
+
+						const float clamped_left = std::clamp(new_left, 0.f, std::max(0.f, current_viewport_size.x() - new_width));
+						const float clamped_top = std::clamp(new_top, new_height, new_usable_height);
 
 						m.rect = ui_rect::from_position_size(
 							{ clamped_left, clamped_top },
-							m.rect.size()
+							{ new_width, new_height }
 						);
 					}
 
@@ -506,9 +516,10 @@ auto gse::gui::system::end_frame() -> void {
     const auto viewport_size = unitless::vec2(m_rctx.window().viewport());
 
     if (m_active_dock_space) {
+		const auto [areas] = m_active_dock_space.value();
         const unitless::vec2 mouse_pos = input_state.mouse_position();
 
-        for (const dock::area& area : m_active_dock_space->areas) {
+        for (const dock::area& area : areas) {
             if (area.rect.contains(mouse_pos)) {
                 m_sprite_commands.push_back({
                     .rect = area.target,
@@ -519,7 +530,7 @@ auto gse::gui::system::end_frame() -> void {
             }
         }
 
-        for (const dock::area& area : m_active_dock_space->areas) {
+        for (const dock::area& area : areas) {
             m_sprite_commands.push_back({
                 .rect = area.rect,
                 .color = m_frame_state.sty.color_dock_preview,
@@ -1913,7 +1924,7 @@ auto gse::gui::system::draw_menu_chrome(menu& current_menu) -> void {
                 .text = current_menu.tab_contents[0],
                 .position = {
                     title_bar_rect.left() + sty.padding,
-                    title_bar_rect.center().y() + sty.font_size / 2.f
+                    title_bar_rect.center().y() + sty.font_size * 0.35f
                 },
                 .scale = sty.font_size,
                 .clip_rect = title_bar_rect
@@ -2051,7 +2062,8 @@ auto gse::gui::system::draw_tab_bar(menu& current_menu, const ui_rect& title_bar
 
 auto gse::gui::system::usable_screen_rect() const -> ui_rect {
 	const auto viewport_size = unitless::vec2(m_rctx.window().viewport());
-	const float usable_height = viewport_size.y() - menu_bar::height(m_frame_state.sty);
+	const style sty = apply_scale(style::from_theme(m_theme), viewport_size.y());
+	const float usable_height = viewport_size.y() - menu_bar::height(sty);
 	return ui_rect::from_position_size(
 		{ 0.f, usable_height },
 		{ viewport_size.x(), usable_height }

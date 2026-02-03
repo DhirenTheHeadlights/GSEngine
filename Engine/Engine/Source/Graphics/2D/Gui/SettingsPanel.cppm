@@ -14,6 +14,7 @@ import :menu_bar;
 import :ids;
 import :styles;
 import :dropdown_widget;
+import :scroll_widget;
 import :input_layers;
 
 export namespace gse::settings_panel {
@@ -36,6 +37,7 @@ export namespace gse::settings_panel {
         id hot_id;
         id active_id;
         gui::dropdown_state dropdown;
+        gui::scroll_state scroll;
         std::vector<pending_change> pending_changes;
         popup_type active_popup = popup_type::none;
         bool has_pending_restart = false;
@@ -82,9 +84,16 @@ namespace gse::settings_panel {
     struct layout_state {
         unitless::vec2 cursor;
         gui::ui_rect content_rect;
+        gui::ui_rect clip_rect;
         float row_height;
         const context* ctx;
         state* panel_state;
+
+        [[nodiscard]] auto is_row_visible() const -> bool {
+            const float row_top = cursor.y();
+            const float row_bottom = cursor.y() - row_height;
+            return row_top >= clip_rect.bottom() && row_bottom <= clip_rect.top();
+        }
     };
 
     auto set_tooltip(
@@ -304,18 +313,32 @@ auto gse::settings_panel::update(state& state, const context& ctx, const gui::ui
         should_close = true;
     }
 
-    const gui::ui_rect content_rect = gui::ui_rect::from_position_size(
-        { rect.left() + sty.padding, rect.top() - sty.title_bar_height - sty.padding },
-        { rect.width() - sty.padding * 2.f, rect.height() - sty.title_bar_height - sty.padding * 2.f }
-    );
-
     const float row_height = ctx.font.valid()
         ? ctx.font->line_height(sty.font_size) + sty.padding
         : 24.f;
 
+    const float button_area_height = row_height + sty.padding * 3.f;
+
+    const gui::ui_rect scroll_rect = gui::ui_rect::from_position_size(
+        { rect.left() + sty.padding, rect.top() - sty.title_bar_height - sty.padding },
+        { rect.width() - sty.padding * 2.f, rect.height() - sty.title_bar_height - sty.padding * 2.f - button_area_height }
+    );
+
+    const gui::scroll_config scroll_config{
+        .scrollbar_width = 6.f * (sty.font_size / 14.f),
+        .scrollbar_min_height = 20.f,
+        .scroll_speed = row_height * 2.f,
+        .smooth_factor = 0.2f,
+        .auto_hide_scrollbar = true,
+        .smooth_scrolling = true
+    };
+
+    auto scroll_ctx = gui::scroll::begin(state.scroll, scroll_rect, sty, ctx.input, scroll_config);
+
     layout_state layout{
-        .cursor = content_rect.top_left(),
-        .content_rect = content_rect,
+        .cursor = { scroll_rect.left(), scroll_rect.top() + state.scroll.offset },
+        .content_rect = scroll_rect,
+        .clip_rect = scroll_rect,
         .row_height = row_height,
         .ctx = &ctx,
         .panel_state = &state
@@ -331,7 +354,16 @@ auto gse::settings_panel::update(state& state, const context& ctx, const gui::ui
         layout.cursor.y() -= sty.padding;
     }
 
-    layout.cursor.y() -= sty.padding * 2.f;
+    gui::scroll::end(state.scroll, scroll_ctx, layout.cursor.y(), sty, ctx.input, ctx.blank_texture, ctx.sprites, ctx.layer, scroll_config);
+
+    const gui::ui_rect button_area_rect = gui::ui_rect::from_position_size(
+        { rect.left() + sty.padding, scroll_rect.bottom() - sty.padding },
+        { rect.width() - sty.padding * 2.f, button_area_height }
+    );
+
+    layout.cursor = button_area_rect.top_left();
+    layout.content_rect = button_area_rect;
+    layout.clip_rect = button_area_rect;
 
     if (draw_apply_button(layout, state)) {
         bool needs_restart = false;
@@ -372,8 +404,14 @@ auto gse::settings_panel::update(state& state, const context& ctx, const gui::ui
 auto gse::settings_panel::draw_section_header(layout_state& layout, const std::string& text) -> void {
     const auto& sty = layout.ctx->style;
 
+    layout.cursor.y() -= layout.row_height;
+
+    if (!layout.is_row_visible()) {
+        return;
+    }
+
     const gui::ui_rect row_rect = gui::ui_rect::from_position_size(
-        layout.cursor,
+        { layout.cursor.x(), layout.cursor.y() + layout.row_height },
         { layout.content_rect.width(), layout.row_height }
     );
 
@@ -387,12 +425,10 @@ auto gse::settings_panel::draw_section_header(layout_state& layout, const std::s
             },
             .scale = sty.font_size,
             .color = sty.color_text_secondary,
-            .clip_rect = layout.content_rect,
+            .clip_rect = layout.clip_rect,
             .layer = layout.ctx->layer
         });
     }
-
-    layout.cursor.y() -= layout.row_height;
 }
 
 auto gse::settings_panel::draw_property(layout_state& layout, const save::property_base& prop) -> void {
@@ -414,12 +450,18 @@ auto gse::settings_panel::draw_toggle(layout_state& layout, const save::property
     const auto& sty = layout.ctx->style;
     const auto& ctx = *layout.ctx;
 
+    layout.cursor.y() -= layout.row_height;
+
+    if (!layout.is_row_visible()) {
+        return;
+    }
+
     constexpr float toggle_width = 40.f;
     constexpr float toggle_height = 20.f;
     constexpr float knob_padding = 2.f;
 
     const gui::ui_rect row_rect = gui::ui_rect::from_position_size(
-        layout.cursor,
+        { layout.cursor.x(), layout.cursor.y() + layout.row_height },
         { layout.content_rect.width(), layout.row_height }
     );
 
@@ -429,7 +471,7 @@ auto gse::settings_panel::draw_toggle(layout_state& layout, const save::property
     );
 
     const unitless::vec2 mouse_pos = ctx.input.mouse_position();
-    const bool hovered = row_rect.contains(mouse_pos);
+    const bool hovered = row_rect.contains(mouse_pos) && layout.clip_rect.contains(mouse_pos);
     const id toggle_id = gui::ids::make(std::string(prop.name()));
 
     const auto* pending = layout.panel_state->find_pending(prop.category(), prop.name());
@@ -439,7 +481,7 @@ auto gse::settings_panel::draw_toggle(layout_state& layout, const save::property
         set_tooltip(ctx, toggle_id, std::string(prop.description()));
     }
 
-    const bool toggle_hovered = toggle_rect.contains(mouse_pos) && !dropdown_blocking_input(layout);
+    const bool toggle_hovered = toggle_rect.contains(mouse_pos) && layout.clip_rect.contains(mouse_pos) && !dropdown_blocking_input(layout);
     if (toggle_hovered && ctx.input.mouse_button_pressed(mouse_button::button_1)) {
         layout.panel_state->active_id = toggle_id;
     }
@@ -490,29 +532,33 @@ auto gse::settings_panel::draw_toggle(layout_state& layout, const save::property
             .font = ctx.font,
             .text = label,
             .position = {
-                layout.cursor.x() + sty.padding,
+                row_rect.left() + sty.padding,
                 row_rect.center().y() + sty.font_size * 0.35f
             },
             .scale = sty.font_size,
             .color = prop.requires_restart() ? sty.color_text_secondary : sty.color_text,
-            .clip_rect = layout.content_rect,
+            .clip_rect = layout.clip_rect,
             .layer = ctx.layer
         });
     }
-
-    layout.cursor.y() -= layout.row_height;
 }
 
 auto gse::settings_panel::draw_slider(layout_state& layout, const save::property_base& prop) -> void {
     const auto& sty = layout.ctx->style;
     const auto& ctx = *layout.ctx;
 
+    layout.cursor.y() -= layout.row_height;
+
+    if (!layout.is_row_visible()) {
+        return;
+    }
+
     constexpr float slider_width = 100.f;
     constexpr float slider_height = 6.f;
     constexpr float knob_size = 14.f;
 
     const gui::ui_rect row_rect = gui::ui_rect::from_position_size(
-        layout.cursor,
+        { layout.cursor.x(), layout.cursor.y() + layout.row_height },
         { layout.content_rect.width(), layout.row_height }
     );
 
@@ -524,7 +570,7 @@ auto gse::settings_panel::draw_slider(layout_state& layout, const save::property
     const unitless::vec2 mouse_pos = ctx.input.mouse_position();
     const id slider_id = gui::ids::make(std::string(prop.name()) + "_slider");
 
-    if (row_rect.contains(mouse_pos)) {
+    if (row_rect.contains(mouse_pos) && layout.clip_rect.contains(mouse_pos)) {
         set_tooltip(ctx, slider_id, std::string(prop.description()));
     }
 
@@ -533,7 +579,7 @@ auto gse::settings_panel::draw_slider(layout_state& layout, const save::property
         { track_rect.width() + knob_size, knob_size }
     );
 
-    const bool hovered = hit_rect.contains(mouse_pos) && !dropdown_blocking_input(layout);
+    const bool hovered = hit_rect.contains(mouse_pos) && layout.clip_rect.contains(mouse_pos) && !dropdown_blocking_input(layout);
 
     if (hovered && ctx.input.mouse_button_pressed(mouse_button::button_1)) {
         layout.panel_state->active_id = slider_id;
@@ -607,12 +653,12 @@ auto gse::settings_panel::draw_slider(layout_state& layout, const save::property
             .font = ctx.font,
             .text = label,
             .position = {
-                layout.cursor.x() + sty.padding,
+                row_rect.left() + sty.padding,
                 row_rect.center().y() + sty.font_size * 0.35f
             },
             .scale = sty.font_size,
             .color = prop.requires_restart() ? sty.color_text_secondary : sty.color_text,
-            .clip_rect = layout.content_rect,
+            .clip_rect = layout.clip_rect,
             .layer = ctx.layer
         });
 
@@ -629,20 +675,27 @@ auto gse::settings_panel::draw_slider(layout_state& layout, const save::property
             },
             .scale = sty.font_size,
             .color = sty.color_text_secondary,
-            .clip_rect = layout.content_rect,
+            .clip_rect = layout.clip_rect,
             .layer = ctx.layer
         });
     }
-
-    layout.cursor.y() -= layout.row_height;
 }
 
 auto gse::settings_panel::draw_choice(layout_state& layout, const save::property_base& prop) -> void {
     const auto& sty = layout.ctx->style;
     const auto& ctx = *layout.ctx;
 
+    const id dropdown_id = gui::ids::make(std::string(prop.name()) + "_dropdown");
+    const bool is_open = layout.panel_state->dropdown.open_dropdown_id == dropdown_id;
+
+    layout.cursor.y() -= layout.row_height;
+
+    if (!layout.is_row_visible() && !is_open) {
+        return;
+    }
+
     const gui::ui_rect row_rect = gui::ui_rect::from_position_size(
-        layout.cursor,
+        { layout.cursor.x(), layout.cursor.y() + layout.row_height },
         { layout.content_rect.width(), layout.row_height }
     );
 
@@ -663,17 +716,15 @@ auto gse::settings_panel::draw_choice(layout_state& layout, const save::property
     );
 
     const unitless::vec2 mouse_pos = ctx.input.mouse_position();
-    const id dropdown_id = gui::ids::make(std::string(prop.name()) + "_dropdown");
-    const bool is_open = layout.panel_state->dropdown.open_dropdown_id == dropdown_id;
 
-    if (row_rect.contains(mouse_pos)) {
+    if (row_rect.contains(mouse_pos) && layout.clip_rect.contains(mouse_pos)) {
         set_tooltip(ctx, dropdown_id, std::string(prop.description()));
     }
 
     const auto* pending = layout.panel_state->find_pending(prop.category(), prop.name());
     const std::size_t current_index = pending ? std::get<std::size_t>(pending->value) : prop.enum_index();
 
-    const bool header_hovered = header_rect.contains(mouse_pos);
+    const bool header_hovered = header_rect.contains(mouse_pos) && layout.clip_rect.contains(mouse_pos);
     if (header_hovered && ctx.input.mouse_button_pressed(mouse_button::button_1)) {
         layout.panel_state->active_id = dropdown_id;
     }
@@ -748,17 +799,15 @@ auto gse::settings_panel::draw_choice(layout_state& layout, const save::property
             .font = ctx.font,
             .text = label,
             .position = {
-                layout.cursor.x() + sty.padding,
+                row_rect.left() + sty.padding,
                 row_rect.center().y() + sty.font_size * 0.35f
             },
             .scale = sty.font_size,
             .color = prop.requires_restart() ? sty.color_text_secondary : sty.color_text,
-            .clip_rect = layout.content_rect,
+            .clip_rect = layout.clip_rect,
             .layer = ctx.layer
         });
     }
-
-    layout.cursor.y() -= layout.row_height;
 
     if (is_open && prop.enum_count() > 0) {
         constexpr std::size_t max_visible = 8;
