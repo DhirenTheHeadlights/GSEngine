@@ -159,6 +159,11 @@ export namespace gse::renderer {
 
 		auto load_layouts(
 		) -> void;
+
+		[[nodiscard]] auto enumerate_resources(
+			const std::string& baked_dir,
+			const std::string& baked_ext
+		) const -> std::vector<std::string>;
 	private:
 		auto loader(
 			const std::type_index& type_index
@@ -456,4 +461,32 @@ auto gse::renderer::context::load_layouts() -> void {
 		std::println("[Layouts] Loaded: {}", name);
 		m_shader_layouts[name] = std::move(layout);
 	}
+}
+
+auto gse::renderer::context::enumerate_resources(
+	const std::string& baked_dir,
+	const std::string& baked_ext
+) const -> std::vector<std::string> {
+	std::vector<std::string> result;
+
+	const auto dir_path = config::baked_resource_path / baked_dir;
+
+	if (!std::filesystem::exists(dir_path)) {
+		return result;
+	}
+
+	for (const auto& entry : std::filesystem::directory_iterator(dir_path)) {
+		if (!entry.is_regular_file()) {
+			continue;
+		}
+
+		if (entry.path().extension().string() != baked_ext) {
+			continue;
+		}
+
+		result.push_back(entry.path().stem().string());
+	}
+
+	std::ranges::sort(result);
+	return result;
 }

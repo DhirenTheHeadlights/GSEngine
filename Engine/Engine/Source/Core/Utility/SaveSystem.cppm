@@ -495,6 +495,10 @@ export namespace gse::save {
             std::initializer_list<std::pair<std::string, T>> opts
         ) -> registration_builder&;
 
+        auto options(
+            std::vector<std::pair<std::string, T>> opts
+        ) -> registration_builder&;
+
         auto restart_required(
         ) -> registration_builder&;
 
@@ -1421,6 +1425,16 @@ auto gse::save::registration_builder<T>::range(T min, T max, T step) -> registra
 
 template <typename T>
 auto gse::save::registration_builder<T>::options(std::initializer_list<std::pair<std::string, T>> opts) -> registration_builder& {
+    if constexpr (std::is_convertible_v<T, int>) {
+        for (const auto& [label, value] : opts) {
+            m_enum_options.emplace_back(label, static_cast<int>(value));
+        }
+    }
+    return *this;
+}
+
+template <typename T>
+auto gse::save::registration_builder<T>::options(std::vector<std::pair<std::string, T>> opts) -> registration_builder& {
     if constexpr (std::is_convertible_v<T, int>) {
         for (const auto& [label, value] : opts) {
             m_enum_options.emplace_back(label, static_cast<int>(value));
