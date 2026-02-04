@@ -12,5 +12,6 @@ Makefile
 /Engine/External/vcpkg
 /Engine/Resources/Misc/gui_layout.toml
 /Engine/Resources/Misc/settings.toml
+/Engine/Resources/Misc/log.txt
 /.claude/settings.local.json
 /.claude

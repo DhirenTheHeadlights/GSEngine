@@ -44,7 +44,7 @@ export namespace gse::gui {
 
 export namespace gse::gui::scroll {
 	auto begin(
-		scroll_state& state,
+		const scroll_state& state,
 		const ui_rect& visible_rect,
 		const style& sty,
 		const input::state& input,
@@ -53,7 +53,7 @@ export namespace gse::gui::scroll {
 
 	auto end(
 		scroll_state& state,
-		scroll_context& ctx,
+		const scroll_context& ctx,
 		float content_cursor_y,
 		const style& sty,
 		const input::state& input,
@@ -80,7 +80,7 @@ export namespace gse::gui::scroll {
 }
 
 auto gse::gui::scroll::begin(
-	scroll_state& state,
+	const scroll_state& state,
 	const ui_rect& visible_rect,
 	const style& sty,
 	const input::state& input,
@@ -97,7 +97,7 @@ auto gse::gui::scroll::begin(
 
 auto gse::gui::scroll::end(
 	scroll_state& state,
-	scroll_context& ctx,
+	const scroll_context& ctx,
 	const float content_cursor_y,
 	const style& sty,
 	const input::state& input,

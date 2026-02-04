@@ -20,8 +20,8 @@ export namespace gse {
 		auto render() -> void override;
 		auto shutdown() -> void override;
 
-		template <typename S>
-		auto system_of() -> S&;
+		template <typename State>
+		auto state_of() -> State&;
 
 		template <typename T>
 		auto channel() -> channel<T>&;
@@ -77,13 +77,13 @@ auto gse::engine::initialize() -> void {
 	});
 
 	auto& reg = m_world.registry();
-	auto& save = m_scheduler.emplace<save::system>(reg);
+	auto& save = m_scheduler.add_system<save::system, save::state>(reg);
 	save.set_auto_save(true, config::resource_path / "Misc/settings.toml");
 
-	auto& input = m_scheduler.emplace<input::system>(reg);
-	m_scheduler.emplace<actions::system>(reg);
-	m_scheduler.emplace<network::system>(reg);
-	m_scheduler.emplace<physics::system>(reg);
+	auto& input = m_scheduler.add_system<input::system, input::system_state>(reg);
+	m_scheduler.add_system<actions::system, actions::system_state>(reg);
+	m_scheduler.add_system<network::system, network::system_state>(reg);
+	m_scheduler.add_system<physics::system, physics::state>(reg);
 
 	m_render_ctx = std::make_unique<renderer::context>(
 		std::string(id().tag()),
@@ -93,14 +93,14 @@ auto gse::engine::initialize() -> void {
 
 	auto& ctx = *m_render_ctx.get();
 
-	m_scheduler.emplace<renderer::system>(reg, ctx);
-	m_scheduler.emplace<renderer::shadow>(reg, ctx);
-	m_scheduler.emplace<renderer::geometry>(reg, ctx);
-	m_scheduler.emplace<renderer::lighting>(reg, ctx);
-	m_scheduler.emplace<renderer::physics_debug>(reg, ctx);
-	m_scheduler.emplace<renderer::ui>(reg, ctx);
-	m_scheduler.emplace<gui::system>(reg, ctx);
-	m_scheduler.emplace<animation::system>(reg);
+	m_scheduler.add_system<renderer::system, renderer::state>(reg, ctx);
+	m_scheduler.add_system<renderer::shadow::system, renderer::shadow::state>(reg, ctx);
+	m_scheduler.add_system<renderer::geometry::system, renderer::geometry::state>(reg, ctx);
+	m_scheduler.add_system<renderer::lighting::system, renderer::lighting::state>(reg, ctx);
+	m_scheduler.add_system<renderer::physics_debug::system, renderer::physics_debug::state>(reg, ctx);
+	m_scheduler.add_system<renderer::ui::system, renderer::ui::state>(reg, ctx);
+	m_scheduler.add_system<gui::system, gui::system_state>(reg, ctx);
+	m_scheduler.add_system<animation::system, animation::state>(reg);
 
 	m_scheduler.initialize();
 
@@ -115,9 +115,8 @@ auto gse::engine::update() -> void {
 	system_clock::update();
 
 	m_world.update();
-	
+
 	m_scheduler.update();
-	m_scheduler.flush_deferred();
 
 	for (const auto& h : m_hooks) {
 		h->update();
@@ -169,9 +168,9 @@ auto gse::engine::direct() -> director {
 	return m_world.direct();
 }
 
-template <typename S>
-auto gse::engine::system_of() -> S& {
-	return m_scheduler.get<S>();
+template <typename State>
+auto gse::engine::state_of() -> State& {
+	return m_scheduler.state<State>();
 }
 
 template <typename T>

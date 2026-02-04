@@ -11,119 +11,82 @@ import :clip;
 import :skeleton;
 import :renderer;
 
+namespace gse::animation {
+	struct anim_job {
+		animation_component* anim = nullptr;
+		clip_component* clip = nullptr;
+		const skeleton* skel = nullptr;
+		const clip_asset* clip_asset = nullptr;
+		float scale = 1.f;
+		bool loop = true;
+		time sample_t{};
+	};
+
+	struct pose_cache_key {
+		const clip_asset* clip = nullptr;
+		const skeleton* skel = nullptr;
+		std::int64_t time_bucket = 0;
+
+		auto operator==(const pose_cache_key&) const -> bool = default;
+	};
+
+	struct pose_cache_key_hash {
+		auto operator()(const pose_cache_key& k) const -> std::size_t {
+			return std::hash<const void*>{}(k.clip) ^
+			       (std::hash<const void*>{}(k.skel) << 1) ^
+			       (std::hash<std::int64_t>{}(k.time_bucket) << 2);
+		}
+	};
+
+	auto wrap_time(time t, time length) -> time;
+	auto lerp_mat4(const mat4& a, const mat4& b, float t) -> mat4;
+	auto sample_track(const joint_track& track, time t, mat4& out) -> bool;
+	auto ensure_pose_buffers(animation_component& anim, std::size_t joint_count) -> void;
+	auto build_local_pose(animation_component& anim, const skeleton& skeleton, const clip_asset& clip, time t) -> void;
+	auto build_global_and_skins(animation_component& anim, const skeleton& skeleton) -> void;
+}
+
 export namespace gse::animation {
-	class system final : public gse::system {
-	public:
-		auto initialize(
-		) -> void override;
+	struct state {
+		time last_tick{};
+		mutable std::vector<anim_job> jobs;
+		mutable std::unordered_map<pose_cache_key, std::size_t, pose_cache_key_hash> pose_cache;
+	};
 
-		auto update(
-		) -> void override;
-	private:
-		struct anim_job {
-			animation_component* anim = nullptr;
-			clip_component* clip = nullptr;
-			const skeleton* skel = nullptr;
-			const clip_asset* clip_asset = nullptr;
-			float scale = 1.f;
-			bool loop = true;
-			time sample_t{};
-		};
-
-		struct pose_cache_key {
-			const clip_asset* clip = nullptr;
-			const skeleton* skel = nullptr;
-			std::int64_t time_bucket = 0;
-
-			auto operator==(const pose_cache_key&) const -> bool = default;
-		};
-
-		struct pose_cache_key_hash {
-			auto operator()(const pose_cache_key& k) const -> std::size_t {
-				return std::hash<const void*>{}(k.clip) ^
-				       (std::hash<const void*>{}(k.skel) << 1) ^
-				       (std::hash<std::int64_t>{}(k.time_bucket) << 2);
-			}
-		};
-
-		time m_last_tick{};
-		mutable std::vector<anim_job> m_jobs;
-		mutable std::unordered_map<pose_cache_key, std::size_t, pose_cache_key_hash> m_pose_cache;
-
-		auto tick_animations(
-			const component_chunk<animation_component>& animations,
-			const component_chunk<clip_component>& clips,
-			time dt
-		) const -> void;
-
-		static auto wrap_time(
-			time t,
-			time length
-		) -> time;
-
-		static auto lerp_mat4(
-			const mat4& a,
-			const mat4& b,
-			float t
-		) -> mat4;
-
-		static auto sample_track(
-			const joint_track& track,
-			time t,
-			mat4& out
-		) -> bool;
-
-		static auto ensure_pose_buffers(
-			animation_component& anim,
-			std::size_t joint_count
-		) -> void;
-
-		static auto build_local_pose(
-			animation_component& anim,
-			const skeleton& skeleton,
-			const clip_asset& clip,
-			time t
-		) -> void;
-
-		static auto build_global_and_skins(
-			animation_component& anim,
-			const skeleton& skeleton
-		) -> void;
+	struct system {
+		static auto initialize(initialize_phase& phase, state& s) -> void;
+		static auto update(update_phase& phase, state& s) -> void;
 	};
 }
 
-auto gse::animation::system::initialize() -> void {
-	m_last_tick = system_clock::now();
+auto gse::animation::system::initialize(initialize_phase&, state& s) -> void {
+	s.last_tick = system_clock::now();
 }
 
-auto gse::animation::system::update() -> void {
+auto gse::animation::system::update(update_phase& phase, state& s) -> void {
 	const time dt = system_clock::dt();
 
-	write([this, dt](
-		const component_chunk<animation_component>& anims,
-		const component_chunk<clip_component>& clips
-	) {
-		tick_animations(anims, clips, dt);
-	});
-}
+	auto animations = phase.registry.chunk<animation_component>();
+	auto clips = phase.registry.chunk<clip_component>();
 
-auto gse::animation::system::tick_animations(const component_chunk<animation_component>& animations, const component_chunk<clip_component>& clips, const time dt) const -> void {
-	auto& renderer = const_cast<renderer::system&>(system_of<renderer::system>());
+	const auto* renderer_state = phase.try_state_of<renderer::state>();
+	if (!renderer_state) {
+		return;
+	}
 
-	m_jobs.clear();
-	m_pose_cache.clear();
+	s.jobs.clear();
+	s.pose_cache.clear();
 
-	// First pass: gather all jobs and update times
 	for (std::size_t i = 0; i < animations.size(); ++i) {
 		auto& anim = animations[i];
 
-		auto* clip_c = clips.write(anim.owner_id());
+		auto* clip_c = phase.registry.try_write<clip_component>(anim.owner_id());
 		if (clip_c == nullptr) {
 			continue;
 		}
 
 		if (const auto& [skeleton_id] = anim.networked_data(); !anim.skeleton && skeleton_id.exists()) {
-			anim.skeleton = renderer.get<skeleton>(skeleton_id);
+			anim.skeleton = renderer_state->get<skeleton>(skeleton_id);
 		}
 
 		if (!anim.skeleton) {
@@ -132,7 +95,7 @@ auto gse::animation::system::tick_animations(const component_chunk<animation_com
 
 		const auto& [clip_id, scale, loop] = clip_c->networked_data();
 		if (!clip_c->clip && clip_id.exists()) {
-			clip_c->clip = renderer.get<clip_asset>(clip_id);
+			clip_c->clip = renderer_state->get<clip_asset>(clip_id);
 		}
 
 		if (!clip_c->clip) {
@@ -162,7 +125,7 @@ auto gse::animation::system::tick_animations(const component_chunk<animation_com
 			clip_c->playing = false;
 		}
 
-		m_jobs.push_back({
+		s.jobs.push_back({
 			.anim = std::addressof(anim),
 			.clip = clip_c,
 			.skel = std::addressof(skel),
@@ -173,16 +136,16 @@ auto gse::animation::system::tick_animations(const component_chunk<animation_com
 		});
 	}
 
-	if (m_jobs.empty()) {
+	if (s.jobs.empty()) {
 		return;
 	}
 
-	std::vector<std::size_t> job_cache_index(m_jobs.size());
+	std::vector<std::size_t> job_cache_index(s.jobs.size());
 	std::vector<std::size_t> unique_job_indices;
 
-	for (std::size_t i = 0; i < m_jobs.size(); ++i) {
+	for (std::size_t i = 0; i < s.jobs.size(); ++i) {
 		constexpr float time_bucket_size = 16'666'666.f;
-		const auto& job = m_jobs[i];
+		const auto& job = s.jobs[i];
 		const auto time_bucket = static_cast<std::int64_t>(job.sample_t / time{time_bucket_size});
 
 		const pose_cache_key key{
@@ -191,7 +154,7 @@ auto gse::animation::system::tick_animations(const component_chunk<animation_com
 			.time_bucket = time_bucket
 		};
 
-		const auto [it, inserted] = m_pose_cache.try_emplace(key, i);
+		const auto [it, inserted] = s.pose_cache.try_emplace(key, i);
 		job_cache_index[i] = it->second;
 
 		if (inserted) {
@@ -201,15 +164,15 @@ auto gse::animation::system::tick_animations(const component_chunk<animation_com
 
 	task::parallel_for(0uz, unique_job_indices.size(), [&](const std::size_t i) {
 		const auto job_idx = unique_job_indices[i];
-		const auto& job = m_jobs[job_idx];
+		const auto& job = s.jobs[job_idx];
 		build_local_pose(*job.anim, *job.skel, *job.clip_asset, job.sample_t);
 		build_global_and_skins(*job.anim, *job.skel);
 	});
 
-	task::parallel_for(0uz, m_jobs.size(), [&](const std::size_t i) {
+	task::parallel_for(0uz, s.jobs.size(), [&](const std::size_t i) {
 		if (const auto source_idx = job_cache_index[i]; source_idx != i) {
-			const auto& source_anim = *m_jobs[source_idx].anim;
-			auto& dest_anim = *m_jobs[i].anim;
+			const auto& source_anim = *s.jobs[source_idx].anim;
+			auto& dest_anim = *s.jobs[i].anim;
 
 			std::ranges::copy(source_anim.local_pose, dest_anim.local_pose.begin());
 			std::ranges::copy(source_anim.global_pose, dest_anim.global_pose.begin());
@@ -218,7 +181,7 @@ auto gse::animation::system::tick_animations(const component_chunk<animation_com
 	});
 }
 
-auto gse::animation::system::wrap_time(const time t, const time length) -> time {
+auto gse::animation::wrap_time(const time t, const time length) -> time {
 	if (length <= time{}) {
 		return 0;
 	}
@@ -228,7 +191,7 @@ auto gse::animation::system::wrap_time(const time t, const time length) -> time 
 	return length * wrapped;
 }
 
-auto gse::animation::system::lerp_mat4(const mat4& a, const mat4& b, const float t) -> mat4 {
+auto gse::animation::lerp_mat4(const mat4& a, const mat4& b, const float t) -> mat4 {
 	if constexpr (requires { a + (b - a) * t; }) {
 		return a + (b - a) * t;
 	}
@@ -237,7 +200,7 @@ auto gse::animation::system::lerp_mat4(const mat4& a, const mat4& b, const float
 	}
 }
 
-auto gse::animation::system::sample_track(const joint_track& track, const time t, mat4& out) -> bool {
+auto gse::animation::sample_track(const joint_track& track, const time t, mat4& out) -> bool {
 	const auto key_count = track.keys.size();
 	if (key_count == 0) {
 		return false;
@@ -284,7 +247,7 @@ auto gse::animation::system::sample_track(const joint_track& track, const time t
 	return true;
 }
 
-auto gse::animation::system::ensure_pose_buffers(animation_component& anim, const std::size_t joint_count) -> void {
+auto gse::animation::ensure_pose_buffers(animation_component& anim, const std::size_t joint_count) -> void {
 	if (anim.local_pose.size() != joint_count) {
 		anim.local_pose.resize(joint_count);
 		anim.global_pose.resize(joint_count);
@@ -292,7 +255,7 @@ auto gse::animation::system::ensure_pose_buffers(animation_component& anim, cons
 	}
 }
 
-auto gse::animation::system::build_local_pose(animation_component& anim, const skeleton& skeleton, const clip_asset& clip, const time t) -> void {
+auto gse::animation::build_local_pose(animation_component& anim, const skeleton& skeleton, const clip_asset& clip, const time t) -> void {
 	const auto joint_count = static_cast<std::size_t>(skeleton.joint_count());
 	const auto joints = skeleton.joints();
 
@@ -308,7 +271,7 @@ auto gse::animation::system::build_local_pose(animation_component& anim, const s
 	}
 }
 
-auto gse::animation::system::build_global_and_skins(animation_component& anim, const skeleton& skeleton) -> void {
+auto gse::animation::build_global_and_skins(animation_component& anim, const skeleton& skeleton) -> void {
 	const auto joint_count = static_cast<std::size_t>(skeleton.joint_count());
 	const auto joints = skeleton.joints();
 	constexpr auto invalid = std::numeric_limits<std::uint16_t>::max();
@@ -326,4 +289,3 @@ auto gse::animation::system::build_global_and_skins(animation_component& anim, c
 		anim.skins[i] = anim.global_pose[i] * jnt.inverse_bind();
 	}
 }
-

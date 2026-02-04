@@ -115,8 +115,8 @@ set(ENGINE_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
 set(BAKED_RESOURCES_PATH "${CMAKE_CURRENT_BINARY_DIR}/Resources/")
 
 configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/Core/Utility/Config.cppm.in
-    ${CMAKE_CURRENT_BINARY_DIR}/Engine/Source/Core/Utility/Config.cppm
+    ${CMAKE_CURRENT_SOURCE_DIR}/Engine/Import/Config.cppm.in
+    ${CMAKE_CURRENT_BINARY_DIR}/Engine/Import/Config.cppm
     @ONLY
 )
 

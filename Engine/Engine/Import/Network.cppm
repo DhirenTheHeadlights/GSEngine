@@ -37,21 +37,21 @@ export namespace gse::network {
 		bool allow_handoff = false;
 	};
 
-	class system final : public gse::system {
+	struct key_hash {
+		auto operator()(const address& a) const noexcept -> size_t {
+			return std::hash<std::string>{}(a.ip) ^ (static_cast<size_t>(a.port) << 1);
+		}
+	};
+
+	struct key_eq {
+		auto operator()(const address& a, const address& b) const noexcept -> bool {
+			return a.ip == b.ip && a.port == b.port;
+		}
+	};
+
+	class system_state {
 	public:
-		system() = default;
-
-		~system(
-		) override = default;
-
-		auto initialize(
-		) -> void override;
-
-		auto update(
-		) -> void override;
-
-		auto shutdown(
-		) -> void override;
+		system_state() = default;
 
 		auto add_discovery_provider(
 			std::unique_ptr<discovery_provider> p
@@ -81,7 +81,7 @@ export namespace gse::network {
 		auto disconnect(
 		) -> void;
 
-		auto state(
+		auto current_state(
 		) const -> client::state;
 
 		template <typename T>
@@ -93,48 +93,44 @@ export namespace gse::network {
 			const std::function<void(inbox_message&)>& handler,
 			time_t<std::uint32_t> timeout = milliseconds(0)
 		) -> void;
-	private:
-		std::unique_ptr<client> m_client;
-		std::vector<std::unique_ptr<discovery_provider>> m_providers;
-		std::vector<discovery_result> m_available_servers;
 
-		std::mutex m_user_inbox_mutex;
-		std::vector<inbox_message> m_user_inbox;
+		std::unique_ptr<client> client_ptr;
+		std::vector<std::unique_ptr<discovery_provider>> providers;
+		std::vector<discovery_result> available_servers;
+		std::mutex user_inbox_mutex;
+		std::vector<inbox_message> user_inbox;
+		std::vector<std::move_only_function<void(registry&)>> deferred;
+	};
 
-		struct key_hash {
-			auto operator()(const address& a) const noexcept -> size_t {
-				return std::hash<std::string>{}(a.ip) ^ (static_cast<size_t>(a.port) << 1);
-			}
-		};
-
-		struct key_eq {
-			auto operator()(const address& a, const address& b) const noexcept -> bool {
-				return a.ip == b.ip && a.port == b.port;
-			}
-		};
+	struct system {
+		static auto initialize(initialize_phase& phase, system_state& s) -> void;
+		static auto update(update_phase& phase, system_state& s) -> void;
+		static auto shutdown(shutdown_phase& phase, system_state& s) -> void;
 	};
 }
 
-auto gse::network::system::initialize() -> void {
+auto gse::network::system::initialize(initialize_phase&, system_state&) -> void {
 	WSADATA wsa_data;
 	if (const auto result = WSAStartup(MAKEWORD(2, 2), &wsa_data); result != 0) {
 		std::println("WSAStartup failed: {}", result);
 	}
 }
 
-auto gse::network::system::shutdown() -> void {
-	m_client.reset();
+auto gse::network::system::shutdown(shutdown_phase&, system_state& s) -> void {
+	s.client_ptr.reset();
 	if (const auto result = WSACleanup(); result != 0) {
 		std::println("WSACleanup failed: {}", result);
 	}
 }
 
-auto gse::network::system::update() -> void {
-	if (!m_client) {
+auto gse::network::system::update(update_phase& phase, system_state& s) -> void {
+	if (!s.client_ptr) {
 		return;
 	}
 
-	m_client->drain([this](inbox_message& msg) {
+	const auto* renderer_state = phase.try_state_of<renderer::state>();
+
+	s.client_ptr->drain([&s, renderer_state](inbox_message& msg) {
 		if (auto* rep = std::get_if<replication_message>(&msg)) {
 			const std::span data(rep->payload);
 			bitstream stream(data);
@@ -145,26 +141,63 @@ auto gse::network::system::update() -> void {
 				[&]<typename T>(const component_upsert<T>& m) {
 					if constexpr (std::is_same_v<T, render_component>) {
 						auto fixed_data = m.data;
-						auto& rs = system_of<renderer::system>();
 
-						for (std::uint32_t i = 0; i < fixed_data.model_count; ++i) {
-							const auto res_id = fixed_data.models[i].id();
-							fixed_data.models[i] = rs.try_get<model>(res_id);
+						if (renderer_state) {
+							for (std::uint32_t i = 0; i < fixed_data.model_count; ++i) {
+								const auto res_id = fixed_data.models[i].id();
+								fixed_data.models[i] = renderer_state->try_get<model>(res_id);
+							}
+
+							for (std::uint32_t i = 0; i < fixed_data.skinned_model_count; ++i) {
+								const auto res_id = fixed_data.skinned_models[i].id();
+								fixed_data.skinned_models[i] = renderer_state->try_get<skinned_model>(res_id);
+							}
 						}
 
-						for (std::uint32_t i = 0; i < fixed_data.skinned_model_count; ++i) {
-							const auto res_id = fixed_data.skinned_models[i].id();
-							fixed_data.skinned_models[i] = rs.try_get<skinned_model>(res_id);
-						}
-
-						this->defer_add<T>(m.owner_id, fixed_data);
+						s.deferred.push_back([entity = m.owner_id, data = std::move(fixed_data)](registry& r) {
+							r.ensure_exists(entity);
+							r.add_deferred_action(entity, [entity, data](registry& reg) -> bool {
+								if (!reg.active(entity)) {
+									reg.ensure_active(entity);
+									return false;
+								}
+								if (auto* c = reg.try_linked_object_write<T>(entity)) {
+									c->networked_data() = data;
+									return true;
+								}
+								reg.add_component<T>(entity, data);
+								return true;
+							});
+						});
 					}
 					else {
-						this->defer_add<T>(m.owner_id, m.data);
+						s.deferred.push_back([entity = m.owner_id, data = m.data](registry& r) {
+							r.ensure_exists(entity);
+							r.add_deferred_action(entity, [entity, data](registry& reg) -> bool {
+								if (!reg.active(entity)) {
+									reg.ensure_active(entity);
+									return false;
+								}
+								if (auto* c = reg.try_linked_object_write<T>(entity)) {
+									c->networked_data() = data;
+									return true;
+								}
+								reg.add_component<T>(entity, data);
+								return true;
+							});
+						});
 					}
 				},
 				[&]<typename T>(const component_remove<T>& m) {
-					this->defer_remove<T>(m.owner_id);
+					if (!m.owner_id.exists()) {
+						return;
+					}
+					s.deferred.push_back([entity = m.owner_id](registry& r) {
+						r.add_deferred_action(entity, [entity](registry& reg) -> bool {
+							reg.remove_link<T>(entity);
+							return true;
+						});
+					});
 				}
 			);
 
@@ -172,29 +205,35 @@ auto gse::network::system::update() -> void {
 		}
 
 		{
-			std::lock_guard lk(m_user_inbox_mutex);
-			m_user_inbox.emplace_back(msg);
+			std::lock_guard lk(s.user_inbox_mutex);
+			s.user_inbox.emplace_back(msg);
 		}
 	});
 
-	if (m_client->current_state() == client::state::connected) {
-		const auto& a = system_of<actions::system>();
-		m_client->push_input(a.current_state(), a.axis1_ids(), a.axis2_ids());
+	for (auto& d : s.deferred) {
+		d(*phase.registry.reg);
+	}
+	s.deferred.clear();
+
+	if (s.client_ptr->current_state() == client::state::connected) {
+		if (const auto* actions_state = phase.try_state_of<actions::system_state>()) {
+			s.client_ptr->push_input(actions_state->current_state(), actions_state->axis1_ids(), actions_state->axis2_ids());
+		}
 	}
 }
 
-auto gse::network::system::add_discovery_provider(std::unique_ptr<discovery_provider> p) -> void {
-	m_providers.emplace_back(std::move(p));
+auto gse::network::system_state::add_discovery_provider(std::unique_ptr<discovery_provider> p) -> void {
+	providers.emplace_back(std::move(p));
 }
 
-auto gse::network::system::clear_discovery_providers() -> void {
-	m_providers.clear();
-	m_available_servers.clear();
+auto gse::network::system_state::clear_discovery_providers() -> void {
+	providers.clear();
+	available_servers.clear();
 }
 
-auto gse::network::system::refresh_servers(const time_t<std::uint32_t> timeout) -> void {
+auto gse::network::system_state::refresh_servers(const time_t<std::uint32_t> timeout) -> void {
 	std::unordered_map<address, discovery_result, key_hash, key_eq> dedup;
-	for (const auto& p : m_providers) {
+	for (const auto& p : providers) {
 		p->refresh(timeout);
 		for (const auto& r : p->results()) {
 			if (auto it = dedup.find(r.addr); it == dedup.end()) {
@@ -205,12 +244,12 @@ auto gse::network::system::refresh_servers(const time_t<std::uint32_t> timeout) 
 			}
 		}
 	}
-	m_available_servers.clear();
-	m_available_servers.reserve(dedup.size());
+	available_servers.clear();
+	available_servers.reserve(dedup.size());
 	for (auto& v : dedup | std::views::values) {
-		m_available_servers.push_back(std::move(v));
+		available_servers.push_back(std::move(v));
 	}
-	std::ranges::sort(m_available_servers, [](const discovery_result& a, const discovery_result& b) {
+	std::ranges::sort(available_servers, [](const discovery_result& a, const discovery_result& b) {
 		if (a.name != b.name) {
 			return a.name < b.name;
 		}
@@ -218,22 +257,22 @@ auto gse::network::system::refresh_servers(const time_t<std::uint32_t> timeout) 
 	});
 }
 
-auto gse::network::system::servers() -> std::span<const discovery_result> {
-	return m_available_servers;
+auto gse::network::system_state::servers() -> std::span<const discovery_result> {
+	return available_servers;
 }
 
-auto gse::network::system::connect(const connection_options& options) -> bool {
-	if (!m_client) {
+auto gse::network::system_state::connect(const connection_options& options) -> bool {
+	if (!client_ptr) {
 		const address bind = options.local_bind.value_or(address{
 			.ip = "0.0.0.0",
 			.port = 0
 		});
-		m_client = std::make_unique<client>(bind, options.addr);
+		client_ptr = std::make_unique<client>(bind, options.addr);
 	}
-	return m_client->connect(options.timeout, options.retry);
+	return client_ptr->connect(options.timeout, options.retry);
 }
 
-auto gse::network::system::connect(const discovery_result& pick, const std::optional<address>& local, const time_t<std::uint32_t> timeout, const time_t<std::uint32_t> retry) -> bool {
+auto gse::network::system_state::connect(const discovery_result& pick, const std::optional<address>& local, const time_t<std::uint32_t> timeout, const time_t<std::uint32_t> retry) -> bool {
 	const connection_options co{
 		.addr = pick.addr,
 		.local_bind = local,
@@ -243,26 +282,26 @@ auto gse::network::system::connect(const discovery_result& pick, const std::opti
 	return connect(co);
 }
 
-auto gse::network::system::disconnect() -> void {
-	m_client.reset();
+auto gse::network::system_state::disconnect() -> void {
+	client_ptr.reset();
 }
 
-auto gse::network::system::state() const -> client::state {
-	if (m_client) {
-		return m_client->current_state();
+auto gse::network::system_state::current_state() const -> client::state {
+	if (client_ptr) {
+		return client_ptr->current_state();
 	}
 	return client::state::disconnected;
 }
 
-auto gse::network::system::drain(const std::function<void(inbox_message&)>& handler, time_t<std::uint32_t> timeout) -> void {
+auto gse::network::system_state::drain(const std::function<void(inbox_message&)>& handler, time_t<std::uint32_t>) -> void {
 	std::vector<inbox_message> batch;
 
 	{
-		std::lock_guard lk(m_user_inbox_mutex);
-		if (m_user_inbox.empty()) {
+		std::lock_guard lk(user_inbox_mutex);
+		if (user_inbox.empty()) {
 			return;
 		}
-		batch.swap(m_user_inbox);
+		batch.swap(user_inbox);
 	}
 
 	for (auto& m : batch) {
@@ -271,8 +310,8 @@ auto gse::network::system::drain(const std::function<void(inbox_message&)>& hand
 }
 
 template <typename T>
-auto gse::network::system::send(const T& m) -> void {
-	if (m_client) {
-		m_client->send(m);
+auto gse::network::system_state::send(const T& m) -> void {
+	if (client_ptr) {
+		client_ptr->send(m);
 	}
 }

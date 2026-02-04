@@ -92,9 +92,9 @@ export namespace gse {
 		auto registry(
 		) -> registry&;
 
-		template <typename S>
-		auto system_of(
-		) -> S&;
+		template <typename State>
+		auto state_of(
+		) -> State&;
 	private:
 		friend class director;
 		friend struct local_input_source;
@@ -131,7 +131,7 @@ export namespace gse {
 				return;
 			}
 
-			auto& a = m_owner->system_of<actions::system>();
+			auto& a = m_owner->state_of<actions::system_state>();
 
 			m_source.for_each_context(
 				*m_owner,
@@ -174,7 +174,7 @@ export namespace gse {
 				return;
 			}
 
-			const auto& a = w.system_of<actions::system>();
+			const auto& a = w.state_of<actions::system_state>();
 
 			evaluation_context ctx{
 				.client_id = local_id,
@@ -255,7 +255,7 @@ gse::world::world(system_provider& provider, const std::string_view name)
 				return;
 			}
 
-			const auto& a = m_owner->system_of<actions::system>();
+			const auto& a = m_owner->state_of<actions::system_state>();
 			const auto& s = a.current_state();
 
 			a.sample_all_channels(s);
@@ -314,22 +314,22 @@ gse::world::world(system_provider& provider, const std::string_view name)
 	add_hook<default_world>();
 }
 
-template <typename S>
-auto gse::world::system_of() -> S& {
+template <typename State>
+auto gse::world::state_of() -> State& {
 	assert(
 		m_provider != nullptr,
 		std::source_location::current(),
 		"world has no system_provider bound."
 	);
 
-	auto* p = m_provider->system_ptr(std::type_index(typeid(S)));
+	auto* p = m_provider->system_ptr(std::type_index(typeid(State)));
 	assert(
 		p != nullptr,
 		std::source_location::current(),
-		"requested system is not registered."
+		"requested state is not registered."
 	);
 
-	return *static_cast<S*>(p);
+	return *static_cast<State*>(p);
 }
 
 auto gse::world::direct() -> director {
@@ -365,7 +365,7 @@ auto gse::world::activate(const gse::id& scene_id) -> void {
 	}
 
 	if (auto* new_scene = scene(scene_id)) {
-		auto& a = system_of<actions::system>();
+		auto& a = state_of<actions::system_state>();
 
 		new_scene->add_hook<default_scene>();
 		new_scene->initialize();

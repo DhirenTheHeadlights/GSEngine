@@ -28,88 +28,86 @@ import gse.utility;
 import gse.platform;
 
 export namespace gse::renderer {
-	class system final : public gse::system {
-	public:
-		explicit system(
-			context& context
-		);
+	struct state {
+		context* ctx = nullptr;
+		bool frame_begun = false;
+		bool hot_reload_enabled = false;
 
-		auto initialize(
-		) -> void override;
+		explicit state(context& c) : ctx(std::addressof(c)) {}
+		state() = default;
 
-		auto update(
-		) -> void override;
+		auto camera() const -> gse::camera& {
+			return ctx->camera();
+		}
 
-		auto begin_frame(
-		) -> bool override;
+		auto set_ui_focus(const bool focus) const -> void {
+			ctx->set_ui_focus(focus);
+		}
 
-		auto end_frame(
-		) -> void override;
-
-		auto shutdown(
-		) -> void override;
-
-		auto camera(
-		) const -> camera&;
-
-		auto set_ui_focus(
-			bool focus
-		) const -> void;
-
-		auto frame_begun(
-		) const -> bool;
+		auto is_frame_begun() const -> bool {
+			return frame_begun;
+		}
 
 		template <typename Resource>
-		auto get(
-			const id& id
-		) const -> resource::handle<Resource>;
+		auto get(const id& resource_id) const -> resource::handle<Resource> {
+			return ctx->get<Resource>(resource_id);
+		}
 
 		template <typename Resource>
-		auto get(
-			const std::string& filename
-		) const -> resource::handle<Resource>;
+		auto get(const std::string& filename) const -> resource::handle<Resource> {
+			return ctx->get<Resource>(filename);
+		}
 
 		template <typename Resource>
-		auto try_get(
-			const id& id
-		) const -> resource::handle<Resource>;
+		auto try_get(const id& resource_id) const -> resource::handle<Resource> {
+			return ctx->try_get<Resource>(resource_id);
+		}
 
 		template <typename Resource>
-		auto try_get(
-			const std::string& filename
-		) const -> resource::handle<Resource>;
+		auto try_get(const std::string& filename) const -> resource::handle<Resource> {
+			return ctx->try_get<Resource>(filename);
+		}
 
 		template <typename Resource, typename... Args>
-		auto queue(
-			const std::string& name,
-			Args&&... args
-		) -> resource::handle<Resource>;
+		auto queue(const std::string& name, Args&&... args) -> resource::handle<Resource> {
+			return ctx->queue<Resource>(name, std::forward<Args>(args)...);
+		}
 
 		template <typename Resource>
-		auto instantly_load(
-			const id& id
-		) -> resource::handle<Resource>;
+		auto instantly_load(const id& resource_id) -> resource::handle<Resource> {
+			return ctx->instantly_load<Resource>(resource_id);
+		}
 
 		template <typename Resource>
-		auto add(
-			Resource&& resource
-		) -> void;
+		auto add(Resource&& resource) -> void {
+			ctx->add<Resource>(std::forward<Resource>(resource));
+		}
 
 		template <typename Resource>
-		auto resource_state(
-			const id& id
-		) const -> resource::state;
-	private:
-		context* m_context = nullptr;
-		bool m_frame_begun = false;
-		bool m_hot_reload_enabled = false;
+		auto resource_state(const id& resource_id) const -> resource::state {
+			return ctx->resource_state<Resource>(resource_id);
+		}
+
+		auto context_ref() -> context& {
+			return *ctx;
+		}
+
+		auto context_ref() const -> const context& {
+			return *ctx;
+		}
+	};
+
+	struct system {
+		static auto initialize(const initialize_phase& phase, state& s) -> void;
+		static auto update(const update_phase& phase, const state& s) -> void;
+		static auto begin_frame(begin_frame_phase& phase, state& s) -> bool;
+		static auto end_frame(end_frame_phase& phase, state& s) -> void;
+		static auto shutdown(shutdown_phase& phase, const state& s) -> void;
 	};
 }
 
-gse::renderer::system::system(context& context) : m_context(std::addressof(context)) {}
-
-auto gse::renderer::system::initialize() -> void {
-	auto& ctx = *m_context;
+auto gse::renderer::system::initialize(const initialize_phase& phase, state& s) -> void {
+	auto& ctx = *s.ctx;
 
 	ctx.add_loader<texture>();
 	ctx.add_loader<model>();
@@ -122,20 +120,24 @@ auto gse::renderer::system::initialize() -> void {
 
 	ctx.compile();
 
-	m_hot_reload_enabled = system_of<save::system>().read("Graphics", "Hot Reload", false);
+	if (const auto* save_state = phase.try_state_of<save::state>()) {
+		s.hot_reload_enabled = save_state->read("Graphics", "Hot Reload", false);
+	}
 
-	publish([this](channel<save::register_property>& ch) {
-		save::bind(ch, "Graphics", "Hot Reload", m_hot_reload_enabled)
-			.description("Automatically reload assets when source files change")
-			.commit();
+	phase.channels.push(save::register_property{
+		.category = "Graphics",
+		.name = "Hot Reload",
+		.description = "Automatically reload assets when source files change",
+		.ref = &s.hot_reload_enabled,
+		.type = typeid(bool)
 	});
 }
 
-auto gse::renderer::system::update() -> void {
-	auto& ctx = *m_context;
+auto gse::renderer::system::update(const update_phase& phase, const state& s) -> void {
+	auto& ctx = *s.ctx;
 
-	if (m_hot_reload_enabled != ctx.hot_reload_enabled()) {
-		if (m_hot_reload_enabled) {
+	if (s.hot_reload_enabled != ctx.hot_reload_enabled()) {
+		if (s.hot_reload_enabled) {
 			ctx.enable_hot_reload();
 		} else {
 			ctx.disable_hot_reload();
@@ -148,32 +150,34 @@ auto gse::renderer::system::update() -> void {
 	ctx.camera().update_orientation();
 
 	if (!ctx.ui_focus()) {
-		const auto delta = system_of<input::system>().current_state().mouse_delta();
-		ctx.camera().process_mouse_movement(delta);
+		if (const auto* input_state = phase.try_state_of<input::system_state>()) {
+			const auto delta = input_state->current_state().mouse_delta();
+			ctx.camera().process_mouse_movement(delta);
+		}
 	}
 }
 
-auto gse::renderer::system::begin_frame() -> bool {
-	auto& ctx = *m_context;
+auto gse::renderer::system::begin_frame(begin_frame_phase&, state& s) -> bool {
+	auto& ctx = *s.ctx;
 
 	ctx.process_gpu_queue();
 
-	m_frame_begun = vulkan::begin_frame({
+	s.frame_begun = vulkan::begin_frame({
 		.window = ctx.window().raw_handle(),
 		.frame_buffer_resized = ctx.window().frame_buffer_resized(),
 		.minimized = ctx.window().minimized(),
 		.config = ctx.config()
 	});
 
-	return m_frame_begun;
+	return s.frame_begun;
 }
 
-auto gse::renderer::system::end_frame() -> void {
-	if (!m_frame_begun) {
+auto gse::renderer::system::end_frame(end_frame_phase&, state& s) -> void {
+	if (!s.frame_begun) {
 		return;
 	}
 
-	auto& ctx = *m_context;
+	auto& ctx = *s.ctx;
 
 	vulkan::end_frame({
 		.window = ctx.window().raw_handle(),
@@ -184,64 +188,12 @@ auto gse::renderer::system::end_frame() -> void {
 
 	ctx.finalize_reloads();
 
-	m_frame_begun = false;
+	s.frame_begun = false;
 }
 
-auto gse::renderer::system::shutdown() -> void {
-	auto& ctx = *m_context;
+auto gse::renderer::system::shutdown(shutdown_phase&, const state& s) -> void {
+	auto& ctx = *s.ctx;
 
 	ctx.config().device_config().device.waitIdle();
 	ctx.shutdown();
-}
-
-auto gse::renderer::system::camera() const -> gse::camera& {
-	return m_context->camera();
-}
-
-auto gse::renderer::system::set_ui_focus(const bool focus) const -> void {
-	m_context->set_ui_focus(focus);
-}
-
-auto gse::renderer::system::frame_begun() const -> bool {
-	return m_frame_begun;
-}
-
-template <typename Resource>
-auto gse::renderer::system::get(const id& id) const -> resource::handle<Resource> {
-	return m_context->get<Resource>(id);
-}
-
-template <typename Resource>
-auto gse::renderer::system::get(const std::string& filename) const -> resource::handle<Resource> {
-	return m_context->get<Resource>(filename);
-}
-
-template <typename Resource>
-auto gse::renderer::system::try_get(const id& id) const -> resource::handle<Resource> {
-	return m_context->try_get<Resource>(id);
-}
-
-template <typename Resource>
-auto gse::renderer::system::try_get(const std::string& filename) const -> resource::handle<Resource> {
-	return m_context->try_get<Resource>(filename);
-}
-
-template <typename Resource, typename ... Args>
-auto gse::renderer::system::queue(const std::string& name, Args&&... args) -> resource::handle<Resource> {
-	return m_context->queue<Resource>(name, std::forward<Args>(args)...);
-}
-
-template <typename Resource>
-auto gse::renderer::system::instantly_load(const id& id) -> resource::handle<Resource> {
-	return m_context->instantly_load<Resource>(id);
-}
-
-template <typename Resource>
-auto gse::renderer::system::add(Resource&& resource) -> void {
-	m_context->add<Resource>(std::forward<Resource>(resource));
-}
-
-template <typename Resource>
-auto gse::renderer::system::resource_state(const id& id) const -> resource::state {
-	return m_context->resource_state<Resource>(id);
 }

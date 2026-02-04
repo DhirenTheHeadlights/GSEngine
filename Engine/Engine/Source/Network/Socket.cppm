@@ -4,6 +4,8 @@ module;
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
+#undef assert
+
 export module gse.network:socket;
 
 import std;

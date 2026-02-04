@@ -19,7 +19,7 @@ import gse.utility;
 export namespace gse::vulkan {
 	auto generate_config(
 		GLFWwindow* window,
-		save::system& save_system
+		save::state& save_state
 	) -> std::unique_ptr<config>;
 
 	struct frame_params {
@@ -81,10 +81,10 @@ namespace gse::vulkan {
 	constexpr std::uint32_t max_frames_in_flight = 2;
 }
 
-auto gse::vulkan::generate_config(GLFWwindow* window, save::system& save_system) -> std::unique_ptr<config> {
+auto gse::vulkan::generate_config(GLFWwindow* window, save::state& save_state) -> std::unique_ptr<config> {
 	auto instance_data = create_instance_and_surface(window);
 	auto [device_data, queue] = create_device_and_queues(instance_data);
-	auto alloc = std::make_unique<allocator>(device_data.device, device_data.physical_device, save_system);
+	auto alloc = std::make_unique<allocator>(device_data.device, device_data.physical_device, save_state);
 	auto descriptor = create_descriptor_pool(device_data);
 	auto swap_chain_data = create_swap_chain_resources(window, instance_data, device_data, *alloc);
 	auto command = create_command_objects(device_data, instance_data);

@@ -29,8 +29,8 @@ export namespace gse::renderer {
 	public:
 		explicit context(
 			const std::string& window_title,
-			input::system& input,
-			save::system& save
+			input::system_state& input,
+			save::state& save
 		);
 		~context() override;
 
@@ -186,7 +186,7 @@ export namespace gse::renderer {
 	};
 }
 
-gse::renderer::context::context(const std::string& window_title, input::system& input, save::system& save)
+gse::renderer::context::context(const std::string& window_title, input::system_state& input, save::state& save)
 	: m_window(window_title, input, save)
 	, m_config(vulkan::generate_config(m_window.raw_handle(), save))
 	, m_validation_layers_enabled(save::read_bool_setting_early(

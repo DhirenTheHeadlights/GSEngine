@@ -8,57 +8,55 @@ import :directional_light;
 import :shader;
 import :shadow_renderer;
 
-export namespace gse::renderer {
-	class lighting final : public gse::system {
-	public:
-		explicit lighting(
-			context& context
-		);
+import gse.utility;
 
-		auto initialize(
-		) -> void override;
+namespace gse::renderer::lighting {
+	auto update_gbuffer_descriptors(struct state& s) -> void;
+}
 
-		auto render(
-		) -> void override;
+export namespace gse::renderer::lighting {
+	struct state {
+		context* ctx = nullptr;
 
-	private:
-		auto update_gbuffer_descriptors(
-		) -> void;
+		vk::raii::Pipeline pipeline = nullptr;
+		vk::raii::PipelineLayout pipeline_layout = nullptr;
+		per_frame_resource<vk::raii::DescriptorSet> descriptor_sets;
+		vk::raii::Sampler buffer_sampler = nullptr;
+		vk::raii::Sampler shadow_sampler = nullptr;
 
-		context& m_context;
-		vk::raii::Pipeline m_pipeline = nullptr;
-		vk::raii::PipelineLayout m_pipeline_layout = nullptr;
-		per_frame_resource<vk::raii::DescriptorSet> m_descriptor_sets;
-		vk::raii::Sampler m_buffer_sampler = nullptr;
-		vk::raii::Sampler m_shadow_sampler = nullptr;
+		resource::handle<shader> shader_handle;
 
-		resource::handle<shader> m_shader;
+		std::unordered_map<std::string, per_frame_resource<vulkan::buffer_resource>> ubo_allocations;
+		per_frame_resource<vulkan::buffer_resource> light_buffers;
 
-		std::unordered_map<std::string, per_frame_resource<vulkan::buffer_resource>> m_ubo_allocations;
-		per_frame_resource<vulkan::buffer_resource> m_light_buffers;
+		explicit state(context& c) : ctx(std::addressof(c)) {}
+		state() = default;
+	};
+
+	struct system {
+		static auto initialize(initialize_phase& phase, state& s) -> void;
+		static auto render(render_phase& phase, const state& s) -> void;
 	};
 }
 
-gse::renderer::lighting::lighting(context& context) : m_context(context) {}
+auto gse::renderer::lighting::system::initialize(initialize_phase& phase, state& s) -> void {
+	auto& config = s.ctx->config();
+	s.shader_handle = s.ctx->get<shader>("Shaders/Deferred3D/lighting_pass");
+	s.ctx->instantly_load(s.shader_handle);
 
-auto gse::renderer::lighting::initialize() -> void {
-	auto& config = m_context.config();
-	m_shader = m_context.get<shader>("Shaders/Deferred3D/lighting_pass");
-	m_context.instantly_load(m_shader);
-
-	auto lighting_layouts = m_shader->layouts();
+	auto lighting_layouts = s.shader_handle->layouts();
 
 	for (std::size_t i = 0; i < per_frame_resource<vk::raii::DescriptorSet>::frames_in_flight; ++i) {
-		m_descriptor_sets[i] = m_shader->descriptor_set(
+		s.descriptor_sets[i] = s.shader_handle->descriptor_set(
 			config.device_config().device,
 			config.descriptor_config().pool,
 			shader::set::binding_type::persistent
 		);
 	}
 
-	const auto cam_block = m_shader->uniform_block("CameraParams");
-	const auto light_block = m_shader->uniform_block("lights_ssbo");
-	const auto shadow_block = m_shader->uniform_block("ShadowParams");
+	const auto cam_block = s.shader_handle->uniform_block("CameraParams");
+	const auto light_block = s.shader_handle->uniform_block("lights_ssbo");
+	const auto shadow_block = s.shader_handle->uniform_block("ShadowParams");
 
 	vk::BufferCreateInfo cam_buffer_info{
 		.size = cam_block.size,
@@ -79,9 +77,9 @@ auto gse::renderer::lighting::initialize() -> void {
 	};
 
 	for (std::size_t i = 0; i < per_frame_resource<vulkan::buffer_resource>::frames_in_flight; ++i) {
-		m_ubo_allocations["CameraParams"][i] = config.allocator().create_buffer(cam_buffer_info);
-		m_ubo_allocations["ShadowParams"][i] = config.allocator().create_buffer(shadow_buffer_info);
-		m_light_buffers[i] = config.allocator().create_buffer(light_buffer_info);
+		s.ubo_allocations["CameraParams"][i] = config.allocator().create_buffer(cam_buffer_info);
+		s.ubo_allocations["ShadowParams"][i] = config.allocator().create_buffer(shadow_buffer_info);
+		s.light_buffers[i] = config.allocator().create_buffer(light_buffer_info);
 	}
 
 	constexpr vk::SamplerCreateInfo sampler_create_info{
@@ -99,7 +97,7 @@ auto gse::renderer::lighting::initialize() -> void {
 		.maxLod = 1.0f,
 		.borderColor = vk::BorderColor::eFloatOpaqueWhite
 	};
-	m_buffer_sampler = config.device_config().device.createSampler(sampler_create_info);
+	s.buffer_sampler = config.device_config().device.createSampler(sampler_create_info);
 
 	constexpr vk::SamplerCreateInfo shadow_sampler_create_info{
 		.magFilter = vk::Filter::eLinear,
@@ -117,14 +115,14 @@ auto gse::renderer::lighting::initialize() -> void {
 		.borderColor = vk::BorderColor::eFloatOpaqueWhite
 	};
 
-	m_shadow_sampler = config.device_config().device.createSampler(shadow_sampler_create_info);
+	s.shadow_sampler = config.device_config().device.createSampler(shadow_sampler_create_info);
 
-	update_gbuffer_descriptors();
-	config.on_swap_chain_recreate([this](vulkan::config&) {
-		update_gbuffer_descriptors();
+	update_gbuffer_descriptors(s);
+	config.on_swap_chain_recreate([&s](vulkan::config&) {
+		update_gbuffer_descriptors(s);
 	});
 
-	auto& shadow_r = system_of<shadow>();
+	const auto* shadow_state = phase.try_state_of<shadow::state>();
 
 	std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>> array_image_infos;
 	std::vector<vk::DescriptorImageInfo> shadow_infos;
@@ -132,8 +130,8 @@ auto gse::renderer::lighting::initialize() -> void {
 
 	for (std::size_t i = 0; i < max_shadow_lights; ++i) {
 		shadow_infos.push_back({
-			.sampler = m_shadow_sampler,
-			.imageView = shadow_r.shadow_map_view(i),
+			.sampler = s.shadow_sampler,
+			.imageView = shadow_state ? shadow_state->shadow_map_view(i) : vk::ImageView{},
 			.imageLayout = vk::ImageLayout::eGeneral
 		});
 	}
@@ -145,7 +143,7 @@ auto gse::renderer::lighting::initialize() -> void {
 			{
 				"CameraParams",
 				{
-					.buffer = m_ubo_allocations["CameraParams"][i].buffer,
+					.buffer = s.ubo_allocations["CameraParams"][i].buffer,
 					.offset = 0,
 					.range = cam_block.size
 				}
@@ -153,7 +151,7 @@ auto gse::renderer::lighting::initialize() -> void {
 			{
 				"lights_ssbo",
 				{
-					.buffer = m_light_buffers[i].buffer,
+					.buffer = s.light_buffers[i].buffer,
 					.offset = 0,
 					.range = light_block.size
 				}
@@ -161,15 +159,15 @@ auto gse::renderer::lighting::initialize() -> void {
 			{
 				"ShadowParams",
 				{
-					.buffer = m_ubo_allocations["ShadowParams"][i].buffer,
+					.buffer = s.ubo_allocations["ShadowParams"][i].buffer,
 					.offset = 0,
 					.range = shadow_block.size
 				}
 			}
 		};
 
-		auto buffer_and_shadow_writes = m_shader->descriptor_writes(
-			**m_descriptor_sets[i],
+		auto buffer_and_shadow_writes = s.shader_handle->descriptor_writes(
+			**s.descriptor_sets[i],
 			lighting_buffer_infos,
 			{},
 			array_image_infos
@@ -178,7 +176,7 @@ auto gse::renderer::lighting::initialize() -> void {
 		config.device_config().device.updateDescriptorSets(buffer_and_shadow_writes, nullptr);
 	}
 
-	const auto range = m_shader->push_constant_range("push_constants");
+	const auto range = s.shader_handle->push_constant_range("push_constants");
 
 	const vk::PipelineLayoutCreateInfo pipeline_layout_info{
 		.setLayoutCount = static_cast<std::uint32_t>(lighting_layouts.size()),
@@ -186,9 +184,9 @@ auto gse::renderer::lighting::initialize() -> void {
 		.pushConstantRangeCount = 1,
 		.pPushConstantRanges = &range
 	};
-	m_pipeline_layout = config.device_config().device.createPipelineLayout(pipeline_layout_info);
+	s.pipeline_layout = config.device_config().device.createPipelineLayout(pipeline_layout_info);
 
-	auto lighting_stages = m_shader->shader_stages();
+	auto lighting_stages = s.shader_handle->shader_stages();
 
 	constexpr vk::PipelineVertexInputStateCreateInfo empty_vertex_input{
 		.vertexBindingDescriptionCount = 0,
@@ -279,45 +277,47 @@ auto gse::renderer::lighting::initialize() -> void {
 		.pDepthStencilState = nullptr,
 		.pColorBlendState = &color_blend_state,
 		.pDynamicState = &dynamic_state,
-		.layout = m_pipeline_layout,
+		.layout = s.pipeline_layout,
 		.basePipelineHandle = nullptr,
 		.basePipelineIndex = -1
 	};
-	m_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, lighting_pipeline_info);
+	s.pipeline = config.device_config().device.createGraphicsPipeline(nullptr, lighting_pipeline_info);
 }
 
-auto gse::renderer::lighting::render() -> void {
-	auto& config = m_context.config();
+auto gse::renderer::lighting::system::render(render_phase& phase, const state& s) -> void {
+	auto& config = s.ctx->config();
 
 	if (!config.frame_in_progress()) {
 		return;
 	}
 
-	auto [dir_chunk, spot_chunk, point_chunk] = this->read<directional_light_component, spot_light_component, point_light_component>();
+	auto dir_chunk = phase.registry.view<directional_light_component>();
+	auto spot_chunk = phase.registry.view<spot_light_component>();
+	auto point_chunk = phase.registry.view<point_light_component>();
 
 	const auto command = config.frame_context().command_buffer;
 
 	const auto frame_index = config.current_frame();
 
-	auto proj = m_context.camera().projection(m_context.window().viewport());
+	auto proj = s.ctx->camera().projection(s.ctx->window().viewport());
 	auto inv_proj = proj.inverse();
-	auto view = m_context.camera().view();
+	auto view = s.ctx->camera().view();
 	auto inv_view = view.inverse();
 
-	const auto& cam_alloc = m_ubo_allocations.at("CameraParams")[frame_index].allocation;
-	const auto& light_alloc = m_light_buffers[frame_index].allocation;
-	const auto& shadow_alloc = m_ubo_allocations.at("ShadowParams")[frame_index].allocation;
+	const auto& cam_alloc = s.ubo_allocations.at("CameraParams")[frame_index].allocation;
+	const auto& light_alloc = s.light_buffers[frame_index].allocation;
+	const auto& shadow_alloc = s.ubo_allocations.at("ShadowParams")[frame_index].allocation;
 
-	m_shader->set_uniform("CameraParams.inv_proj", inv_proj, cam_alloc);
-	m_shader->set_uniform("CameraParams.inv_view", inv_view, cam_alloc);
+	s.shader_handle->set_uniform("CameraParams.inv_proj", inv_proj, cam_alloc);
+	s.shader_handle->set_uniform("CameraParams.inv_view", inv_view, cam_alloc);
 
-	const auto light_block = m_shader->uniform_block("lights_ssbo");
+	const auto light_block = s.shader_handle->uniform_block("lights_ssbo");
 	const auto stride = light_block.size;
 
 	std::vector zero_elem(stride, std::byte{ 0 });
 
 	auto zero_at = [&](const std::size_t index) {
-		m_shader->set_ssbo_struct(
+		s.shader_handle->set_ssbo_struct(
 			"lights_ssbo",
 			index,
 			std::span<const std::byte>(zero_elem.data(), zero_elem.size()),
@@ -326,7 +326,7 @@ auto gse::renderer::lighting::render() -> void {
 	};
 
 	auto set = [&](const std::size_t index, const std::string_view member, auto const& v) {
-		m_shader->set_ssbo_element(
+		s.shader_handle->set_ssbo_element(
 			"lights_ssbo",
 			index,
 			member,
@@ -415,21 +415,22 @@ auto gse::renderer::lighting::render() -> void {
 		++light_count;
 	}
 
-	auto& shadow_r = system_of<shadow>();
-	const auto texel_size = shadow_r.shadow_texel_size();
-	const auto shadow_entries = shadow_r.shadow_lights();
+	const auto* shadow_state = phase.try_state_of<shadow::state>();
+	unitless::vec2 texel_size{};
+	std::span<const shadow_light_entry> shadow_entries{};
+	if (shadow_state) {
+		texel_size = shadow_state->shadow_texel_size();
+		shadow_entries = shadow_state->shadow_lights();
+	}
 
 	std::array<int, max_shadow_lights> shadow_indices{};
 	std::array<mat4, max_shadow_lights> shadow_view_proj{};
 	const std::size_t shadow_light_count =
 		std::min<std::size_t>(shadow_entries.size(), max_shadow_lights);
 
-	// Shadow entries are in order: directional lights, then spot lights
-	// Light indices match this order (directional first, then spot, then point)
-	// So shadow index s corresponds to light index s (since point lights come after and have no shadows)
-	for (std::size_t s = 0; s < shadow_light_count; ++s) {
-		shadow_indices[s] = static_cast<int>(s);
-		shadow_view_proj[s] = shadow_entries[s].proj * shadow_entries[s].view;
+	for (std::size_t idx = 0; idx < shadow_light_count; ++idx) {
+		shadow_indices[idx] = static_cast<int>(idx);
+		shadow_view_proj[idx] = shadow_entries[idx].proj * shadow_entries[idx].view;
 	}
 
 	int shadow_count_i = static_cast<int>(shadow_light_count);
@@ -440,7 +441,7 @@ auto gse::renderer::lighting::render() -> void {
 	shadow_data.emplace("shadow_view_proj", std::as_bytes(std::span(shadow_view_proj.data(), shadow_view_proj.size())));
 	shadow_data.emplace("shadow_texel_size", std::as_bytes(std::span(std::addressof(texel_size), 1)));
 
-	m_shader->set_uniform_block("ShadowParams", shadow_data, shadow_alloc);
+	s.shader_handle->set_uniform_block("ShadowParams", shadow_data, shadow_alloc);
 
 	vk::RenderingAttachmentInfo color_attachment{
 		.imageView = *config.swap_chain_config().image_views[config.frame_context().image_index],
@@ -468,7 +469,7 @@ auto gse::renderer::lighting::render() -> void {
 		[&] {
 			command.bindPipeline(
 				vk::PipelineBindPoint::eGraphics,
-				m_pipeline
+				s.pipeline
 			);
 
 			const vk::Viewport viewport{
@@ -489,17 +490,17 @@ auto gse::renderer::lighting::render() -> void {
 
 			command.bindDescriptorSets(
 				vk::PipelineBindPoint::eGraphics,
-				m_pipeline_layout,
+				s.pipeline_layout,
 				0,
 				1,
-				&**m_descriptor_sets[config.current_frame()],
+				&**s.descriptor_sets[config.current_frame()],
 				0,
 				nullptr
 			);
 
-			m_shader->push_bytes(
+			s.shader_handle->push_bytes(
 				command,
-				m_pipeline_layout,
+				s.pipeline_layout,
 				"push_constants",
 				std::addressof(light_count),
 				0
@@ -510,14 +511,14 @@ auto gse::renderer::lighting::render() -> void {
 	);
 }
 
-auto gse::renderer::lighting::update_gbuffer_descriptors() -> void {
-	auto& config = m_context.config();
+auto gse::renderer::lighting::update_gbuffer_descriptors(state& s) -> void {
+	auto& config = s.ctx->config();
 
 	const std::unordered_map<std::string, vk::DescriptorImageInfo> gbuffer_image_infos = {
 		{
 			"g_albedo",
 			{
-				.sampler = m_buffer_sampler,
+				.sampler = s.buffer_sampler,
 				.imageView = config.swap_chain_config().albedo_image.view,
 				.imageLayout = vk::ImageLayout::eGeneral
 			}
@@ -525,7 +526,7 @@ auto gse::renderer::lighting::update_gbuffer_descriptors() -> void {
 		{
 			"g_normal",
 			{
-				.sampler = m_buffer_sampler,
+				.sampler = s.buffer_sampler,
 				.imageView = config.swap_chain_config().normal_image.view,
 				.imageLayout = vk::ImageLayout::eGeneral
 			}
@@ -533,7 +534,7 @@ auto gse::renderer::lighting::update_gbuffer_descriptors() -> void {
 		{
 			"g_depth",
 			{
-				.sampler = m_buffer_sampler,
+				.sampler = s.buffer_sampler,
 				.imageView = config.swap_chain_config().depth_image.view,
 				.imageLayout = vk::ImageLayout::eGeneral
 			}
@@ -541,8 +542,8 @@ auto gse::renderer::lighting::update_gbuffer_descriptors() -> void {
 	};
 
 	for (std::size_t i = 0; i < per_frame_resource<vk::raii::DescriptorSet>::frames_in_flight; ++i) {
-		const auto writes = m_shader->descriptor_writes(
-			*m_descriptor_sets[i],
+		const auto writes = s.shader_handle->descriptor_writes(
+			*s.descriptor_sets[i],
 			{},
 			gbuffer_image_infos,
 			{}

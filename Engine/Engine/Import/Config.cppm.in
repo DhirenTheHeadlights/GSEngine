@@ -1,4 +1,4 @@
-export module gse.utility:config;
+export module gse.config;
 
 import std;
 

@@ -190,6 +190,14 @@ namespace gse::trace {
 	std::mutex tls_registry_mutex;
 	std::vector<thread_buffer*> tls_registry;
 
+	struct span_info {
+		uuid id;
+		std::uint32_t tid;
+		time_t<std::uint64_t> t0;
+		time_t<std::uint64_t> t1;
+		std::uint64_t parent;
+	};
+
 	struct frame_storage {
 		std::vector<event> merged;
 
@@ -205,19 +213,10 @@ namespace gse::trace {
 		std::vector<flat_node> flat;
 		std::vector<node> node_pool;
 		std::vector<node> roots;
-
-		struct span {
-			uuid id;
-			std::uint32_t tid;
-			time_t<std::uint64_t> t0;
-			time_t<std::uint64_t> t1;
-			std::uint64_t parent;
-		};
-
-		std::unordered_map<std::uint64_t, span> open_spans;
 	};
 
 	double_buffer<frame_storage> frames;
+	std::unordered_map<std::uint64_t, span_info> global_open_spans;
 
 	std::unordered_set<std::uint64_t> open_parents;
 	std::mutex open_m;
@@ -254,6 +253,7 @@ auto gse::trace::start(const config& cfg) -> void {
 	make_tid();
 
 	frames = frame_storage{};
+	global_open_spans.clear();
 }
 
 auto gse::trace::begin_block(id id, std::uint64_t parent) -> std::uint64_t {
@@ -650,14 +650,14 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 		return static_cast<int>(a.type) < static_cast<int>(b.type);
 	});
 
-	std::unordered_map<std::uint64_t, frame_storage::span> spans = fs.open_spans;
+	std::unordered_map<std::uint64_t, span_info> spans = global_open_spans;
 
 	for (const auto& e : fs.merged) {
 		switch (e.type) {
 			case event_type::begin:
 				spans.emplace(
 					e.eid,
-					frame_storage::span{
+					span_info{
 						.id  = e.id,
 						.tid = static_cast<std::uint32_t>(e.tid),
 						.t0  = e.ts,
@@ -751,10 +751,6 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 		for (const auto c : n.children_idx) {
 			const auto& ch = fs.flat[c];
 
-			if (ch.tid != n.tid) {
-				continue;
-			}
-
 			auto a = std::max(ch.start, parent_begin);
 			auto b = std::min(ch.end, parent_end);
 
@@ -772,7 +768,7 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 			return x.a < y.a;
 		});
 
-		time_t<std::uint64_t> covered;
+		time_t<std::uint64_t> covered{};
 
 		seg cur = segs[0];
 
@@ -843,10 +839,10 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 		fs.roots.push_back(fs.node_pool[root_idx]);
 	}
 
-	fs.open_spans.clear();
+	global_open_spans.clear();
 	for (const auto eid : still_open) {
 		if (auto it = spans.find(eid); it != spans.end()) {
-			fs.open_spans.emplace(eid, it->second);
+			global_open_spans.emplace(eid, it->second);
 		}
 	}
 }

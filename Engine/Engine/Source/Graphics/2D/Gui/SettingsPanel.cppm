@@ -71,7 +71,7 @@ export namespace gse::settings_panel {
         const context& ctx,
         const gui::ui_rect& rect,
         bool is_open,
-        const save::system& save_sys
+        const save::state& save_sys
     ) -> bool;
 
     auto default_panel_rect(
@@ -186,7 +186,7 @@ auto gse::settings_panel::dropdown_blocking_input(const layout_state& layout) ->
     );
 }
 
-auto gse::settings_panel::update(state& state, const context& ctx, const gui::ui_rect& rect, const bool is_open, const save::system& save_sys) -> bool {
+auto gse::settings_panel::update(state& state, const context& ctx, const gui::ui_rect& rect, const bool is_open, const save::state& save_sys) -> bool {
     if (!is_open) {
         return false;
     }

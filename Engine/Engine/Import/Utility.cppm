@@ -1,9 +1,11 @@
 export module gse.utility;
 
+export import gse.config;
+
+export import :channel_base;
 export import :clock;
 export import :component;
 export import :concepts;
-export import :config;
 export import :default_scene_hook;
 export import :n_buffer;
 export import :per_frame_resource;
@@ -25,7 +27,8 @@ export import :scheduler;
 export import :scope_exit;
 export import :spsc_ring_buffer;
 export import :save_system;
-export import :system;
+export import :phase_context;
+export import :system_node;
 export import :system_clock;
 export import :task;
 export import :timed_lock;
