@@ -141,7 +141,7 @@ export namespace gse {
 	) -> unitless::vec_t<T, N>;
 
 	template <typename T, std::size_t N>
-	constexpr auto log(
+	constexpr auto logarithm(
 		const unitless::vec_t<T, N>& v
 	) -> unitless::vec_t<T, N>;
 
@@ -461,7 +461,7 @@ constexpr auto gse::exp(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>
 }
 
 template <typename T, std::size_t N>
-constexpr auto gse::log(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N> {
+constexpr auto gse::logarithm(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N> {
 	unitless::vec_t<T, N> out{};
 	for (std::size_t i = 0; i < N; ++i) out[i] = std::log(v[i]);
 	return out;

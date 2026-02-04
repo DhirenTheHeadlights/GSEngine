@@ -10,121 +10,120 @@ import gse.platform;
 import :camera;
 import :shader;
 
-export namespace gse::renderer {
-	class physics_debug final : public gse::system {
-	public:
-		explicit physics_debug(
-			context& context
-		);
+namespace gse::renderer::physics_debug {
+	struct debug_vertex {
+		unitless::vec3 position;
+		unitless::vec3 color;
+	};
 
-		auto initialize(
-		) -> void override;
+	auto add_line(
+		const vec3<length>& a,
+		const vec3<length>& b,
+		const unitless::vec3& color,
+		std::vector<debug_vertex>& out_vertices
+	) -> void;
 
-		auto update(
-		) -> void override;
+	auto build_obb_lines_for_collider(
+		const physics::collision_component& coll,
+		std::vector<debug_vertex>& out_vertices
+	) -> void;
 
-		auto render(
-		) -> void override;
-	private:
-		struct debug_vertex {
-			unitless::vec3 position;
-			unitless::vec3 color;
-		};
+	auto build_contact_debug_for_collider(
+		const physics::collision_component& coll,
+		const physics::motion_component& mc,
+		std::vector<debug_vertex>& out_vertices
+	) -> void;
 
-		context& m_context;
+	auto ensure_vertex_capacity(
+		struct state& s,
+		std::size_t required_vertex_count
+	) -> void;
+}
 
-		vk::raii::Pipeline m_pipeline = nullptr;
-		vk::raii::PipelineLayout m_pipeline_layout = nullptr;
-		per_frame_resource<vk::raii::DescriptorSet> m_descriptor_sets;
+export namespace gse::renderer::physics_debug {
+	struct state {
+		context* ctx = nullptr;
 
-		resource::handle<shader> m_shader;
+		vk::raii::Pipeline pipeline = nullptr;
+		vk::raii::PipelineLayout pipeline_layout = nullptr;
+		per_frame_resource<vk::raii::DescriptorSet> descriptor_sets;
 
-		std::unordered_map<std::string, per_frame_resource<vulkan::buffer_resource>> m_ubo_allocations;
-		vulkan::buffer_resource m_vertex_buffer;
+		resource::handle<shader> shader_handle;
 
-		double_buffer<std::vector<debug_vertex>> m_vertices;
-		std::size_t m_max_vertices = 0;
-		bool m_enabled = true;
+		std::unordered_map<std::string, per_frame_resource<vulkan::buffer_resource>> ubo_allocations;
+		vulkan::buffer_resource vertex_buffer;
 
-		auto ensure_vertex_capacity(
-			std::size_t required_vertex_count
-		) -> void;
+		double_buffer<std::vector<debug_vertex>> vertices;
+		std::size_t max_vertices = 0;
+		bool enabled = true;
 
-		static auto add_line(
-			const vec3<length>& a,
-			const vec3<length>& b,
-			const unitless::vec3& color,
-			std::vector<debug_vertex>& out_vertices
-		) -> void;
+		explicit state(context& c) : ctx(std::addressof(c)) {}
+		state() = default;
+	};
 
-		static auto build_obb_lines_for_collider(
-			const physics::collision_component& coll,
-			std::vector<debug_vertex>& out_vertices
-		) -> void;
-
-		static auto build_contact_debug_for_collider(
-			const physics::collision_component& coll,
-			const physics::motion_component& mc,
-			std::vector<debug_vertex>& out_vertices
-		) -> void;
+	struct system {
+		static auto initialize(const initialize_phase& phase, state& s) -> void;
+		static auto update(const update_phase& phase, state& s) -> void;
+		static auto render(render_phase& phase, const state& s) -> void;
 	};
 }
 
-gse::renderer::physics_debug::physics_debug(context& context) : m_context(context) {}
-
-auto gse::renderer::physics_debug::ensure_vertex_capacity(const std::size_t required_vertex_count) -> void {
-	if (required_vertex_count <= m_max_vertices && m_vertex_buffer.buffer) {
+auto gse::renderer::physics_debug::ensure_vertex_capacity(state& s, const std::size_t required_vertex_count) -> void {
+	if (required_vertex_count <= s.max_vertices && s.vertex_buffer.buffer) {
 		return;
 	}
 
-	auto& config = m_context.config();
-	if (m_vertex_buffer.buffer) {
-		m_vertex_buffer = {};
+	auto& config = s.ctx->config();
+	if (s.vertex_buffer.buffer) {
+		s.vertex_buffer = {};
 	}
 
-	m_max_vertices = std::max<std::size_t>(required_vertex_count, 4096);
+	s.max_vertices = std::max<std::size_t>(required_vertex_count, 4096);
 
 	const vk::BufferCreateInfo buffer_info{
-		.size = m_max_vertices * sizeof(debug_vertex),
+		.size = s.max_vertices * sizeof(debug_vertex),
 		.usage = vk::BufferUsageFlagBits::eVertexBuffer,
 		.sharingMode = vk::SharingMode::eExclusive
 	};
 
 	const std::vector<std::byte> zeros(buffer_info.size);
-	m_vertex_buffer = config.allocator().create_buffer(
+	s.vertex_buffer = config.allocator().create_buffer(
 		buffer_info,
 		zeros.data()
 	);
 }
 
-auto gse::renderer::physics_debug::initialize() -> void {
-	publish([this](channel<save::register_property>& ch) {
-		save::bind(ch, "Graphics", "Physics Debug Renderer Enabled", m_enabled)
-			.description("Enable or disable outlines on collision boxes & visible impulse vectors")
-			.default_value(false)
-			.commit();
+auto gse::renderer::physics_debug::system::initialize(const initialize_phase& phase, state& s) -> void {
+	phase.channels.push(save::register_property{
+		.category = "Graphics",
+		.name = "Physics Debug Renderer Enabled",
+		.description = "Enable or disable outlines on collision boxes & visible impulse vectors",
+		.ref = &s.enabled,
+		.type = typeid(bool)
 	});
 
-	m_enabled = system_of<save::system>().read("Graphics", "Physics Debug Renderer Enabled", true);
+	if (const auto* save_state = phase.try_state_of<save::state>()) {
+		s.enabled = save_state->read("Graphics", "Physics Debug Renderer Enabled", true);
+	}
 
-	auto& config = m_context.config();
+	auto& config = s.ctx->config();
 
-	m_shader = m_context.get<shader>("Shaders/Standard3D/physics_debug");
-	m_context.instantly_load(m_shader);
-	auto descriptor_set_layouts = m_shader->layouts();
+	s.shader_handle = s.ctx->get<shader>("Shaders/Standard3D/physics_debug");
+	s.ctx->instantly_load(s.shader_handle);
+	auto descriptor_set_layouts = s.shader_handle->layouts();
 
-	const auto camera_ubo = m_shader->uniform_block("CameraUBO");
+	const auto camera_ubo = s.shader_handle->uniform_block("CameraUBO");
 
 	vk::BufferCreateInfo camera_ubo_buffer_info{
 		.size = camera_ubo.size,
 		.usage = vk::BufferUsageFlagBits::eUniformBuffer,
 		.sharingMode = vk::SharingMode::eExclusive
 	};
-	
-	for (std::size_t i = 0; i < per_frame_resource<vk::raii::DescriptorSet>::frames_in_flight; ++i) {
-		m_ubo_allocations["CameraUBO"][i] = config.allocator().create_buffer(camera_ubo_buffer_info);
 
-		m_descriptor_sets[i] = m_shader->descriptor_set(
+	for (std::size_t i = 0; i < per_frame_resource<vk::raii::DescriptorSet>::frames_in_flight; ++i) {
+		s.ubo_allocations["CameraUBO"][i] = config.allocator().create_buffer(camera_ubo_buffer_info);
+
+		s.descriptor_sets[i] = s.shader_handle->descriptor_set(
 			config.device_config().device,
 			config.descriptor_config().pool,
 			shader::set::binding_type::persistent
@@ -134,7 +133,7 @@ auto gse::renderer::physics_debug::initialize() -> void {
 			{
 				"CameraUBO",
 				{
-					.buffer = m_ubo_allocations["CameraUBO"][i].buffer,
+					.buffer = s.ubo_allocations["CameraUBO"][i].buffer,
 					.offset = 0,
 					.range = camera_ubo.size
 				}
@@ -144,7 +143,7 @@ auto gse::renderer::physics_debug::initialize() -> void {
 		std::unordered_map<std::string, vk::DescriptorImageInfo> image_infos = {};
 
 		config.device_config().device.updateDescriptorSets(
-			m_shader->descriptor_writes(*m_descriptor_sets[i], buffer_infos, image_infos),
+			s.shader_handle->descriptor_writes(*s.descriptor_sets[i], buffer_infos, image_infos),
 			nullptr
 		);
 	}
@@ -156,10 +155,10 @@ auto gse::renderer::physics_debug::initialize() -> void {
 		.pPushConstantRanges = nullptr
 	};
 
-	m_pipeline_layout = config.device_config().device.createPipelineLayout(pipeline_layout_info);
+	s.pipeline_layout = config.device_config().device.createPipelineLayout(pipeline_layout_info);
 
-	auto shader_stages = m_shader->shader_stages();
-	auto vertex_input_info = m_shader->vertex_input_state();
+	auto shader_stages = s.shader_handle->shader_stages();
+	auto vertex_input_info = s.shader_handle->vertex_input_state();
 
 	constexpr vk::PipelineInputAssemblyStateCreateInfo input_assembly{
 		.topology = vk::PrimitiveTopology::eLineList,
@@ -255,15 +254,15 @@ auto gse::renderer::physics_debug::initialize() -> void {
 		.pDepthStencilState = &depth_stencil,
 		.pColorBlendState = &color_blending,
 		.pDynamicState = &dynamic_state,
-		.layout = m_pipeline_layout,
+		.layout = s.pipeline_layout,
 		.basePipelineHandle = nullptr,
 		.basePipelineIndex = 0
 	};
 
-	m_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
+	s.pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
 
-	frame_sync::on_end([this] {
-		m_vertices.flip();
+	frame_sync::on_end([&s] {
+		s.vertices.flip();
 	});
 }
 
@@ -346,42 +345,42 @@ auto gse::renderer::physics_debug::build_contact_debug_for_collider(const physic
 	}
 }
 
-auto gse::renderer::physics_debug::update() -> void {
-	if (!m_enabled) {
+auto gse::renderer::physics_debug::system::update(const update_phase& phase, state& s) -> void {
+	if (!s.enabled) {
 		return;
 	}
 
-	auto& vertices = m_vertices.write();
+	auto& vertices = s.vertices.write();
 	vertices.clear();
 
-	for (const auto coll_view = this->read<physics::collision_component>(); const auto& coll : coll_view) {
+	for (const auto& coll : phase.registry.chunk<physics::collision_component>()) {
 		if (!coll.resolve_collisions) {
 			continue;
 		}
 
 		build_obb_lines_for_collider(coll, vertices);
 
-		if (const auto* mc = coll_view.associated<physics::motion_component>(coll)) {
+		if (const auto* mc = phase.registry.try_read<physics::motion_component>(coll.owner_id())) {
 			build_contact_debug_for_collider(coll, *mc, vertices);
 		}
 	}
 
 	if (!vertices.empty()) {
-		ensure_vertex_capacity(vertices.size());
+		ensure_vertex_capacity(s, vertices.size());
 
 		const auto byte_count = vertices.size() * sizeof(debug_vertex);
-		if (void* dst = m_vertex_buffer.allocation.mapped()) {
+		if (void* dst = s.vertex_buffer.allocation.mapped()) {
 			std::memcpy(dst, vertices.data(), byte_count);
 		}
 	}
 }
 
-auto gse::renderer::physics_debug::render() -> void {
-	if (!m_enabled) {
+auto gse::renderer::physics_debug::system::render(render_phase&, const state& s) -> void {
+	if (!s.enabled) {
 		return;
 	}
 
-	auto& config = m_context.config();
+	auto& config = s.ctx->config();
 
 	if (!config.frame_in_progress()) {
 		return;
@@ -390,10 +389,10 @@ auto gse::renderer::physics_debug::render() -> void {
 	const auto command = config.frame_context().command_buffer;
 	const auto frame_index = config.current_frame();
 
-	m_shader->set_uniform("CameraUBO.view", m_context.camera().view(), m_ubo_allocations.at("CameraUBO")[frame_index].allocation);
-	m_shader->set_uniform("CameraUBO.proj", m_context.camera().projection(m_context.window().viewport()), m_ubo_allocations.at("CameraUBO")[frame_index].allocation);
+	s.shader_handle->set_uniform("CameraUBO.view", s.ctx->camera().view(), s.ubo_allocations.at("CameraUBO")[frame_index].allocation);
+	s.shader_handle->set_uniform("CameraUBO.proj", s.ctx->camera().projection(s.ctx->window().viewport()), s.ubo_allocations.at("CameraUBO")[frame_index].allocation);
 
-	const auto& verts = m_vertices.read();
+	const auto& verts = s.vertices.read();
 	if (verts.empty()) {
 		return;
 	}
@@ -414,7 +413,7 @@ auto gse::renderer::physics_debug::render() -> void {
 	};
 
 	vulkan::render(config, rendering_info, [&] {
-		command.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
+		command.bindPipeline(vk::PipelineBindPoint::eGraphics, s.pipeline);
 
 		const vk::Viewport viewport{
 			.x = 0.0f,
@@ -433,18 +432,18 @@ auto gse::renderer::physics_debug::render() -> void {
 		command.setScissor(0, scissor);
 
 		const vk::DescriptorSet sets[] = {
-			**m_descriptor_sets[frame_index]
+			**s.descriptor_sets[frame_index]
 		};
 
 		command.bindDescriptorSets(
 			vk::PipelineBindPoint::eGraphics,
-			m_pipeline_layout,
+			s.pipeline_layout,
 			0,
 			vk::ArrayProxy<const vk::DescriptorSet>(1, sets),
 			{}
 		);
 
-		const vk::Buffer vb = m_vertex_buffer.buffer;
+		const vk::Buffer vb = s.vertex_buffer.buffer;
 		constexpr vk::DeviceSize offsets[] = { 0 };
 
 		command.bindVertexBuffers(0, 1, &vb, offsets);

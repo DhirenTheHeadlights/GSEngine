@@ -11,36 +11,36 @@ export namespace gse::network {
 	auto add_discovery_provider(
 		std::unique_ptr<discovery_provider> p
 	) -> void {
-		system_of<system>().add_discovery_provider(std::move(p));
+		state_of<system_state>().add_discovery_provider(std::move(p));
 	}
 
 	auto clear_discovery_providers(
 	) -> void {
-		system_of<system>().clear_discovery_providers();
+		state_of<system_state>().clear_discovery_providers();
 	}
 
 	auto refresh_servers(
 		const time_t<std::uint32_t> timeout = milliseconds(350)
 	) -> void {
-		system_of<system>().refresh_servers(timeout);
+		state_of<system_state>().refresh_servers(timeout);
 	}
 
 	auto servers(
 	) -> std::span<const discovery_result> {
-		return system_of<system>().servers();
+		return state_of<system_state>().servers();
 	}
 
 	auto connect(
 		const connection_options& options
 	) -> bool {
-		return system_of<system>().connect(options);
+		return state_of<system_state>().connect(options);
 	}
 
 	auto drain(
 		const std::function<void(inbox_message&)>& handler,
 		const time_t<std::uint32_t> timeout = seconds(5)
 	) -> void {
-		system_of<system>().drain(handler, timeout);
+		state_of<system_state>().drain(handler, timeout);
 	}
 
 	auto connect(
@@ -49,23 +49,23 @@ export namespace gse::network {
 		const time_t<std::uint32_t> timeout = seconds(5),
 		const time_t<std::uint32_t> retry = seconds(1)
 	) -> bool {
-		return system_of<system>().connect(pick, local, timeout, retry);
+		return state_of<system_state>().connect(pick, local, timeout, retry);
 	}
 
 	auto disconnect(
 	) -> void {
-		system_of<system>().disconnect();
+		state_of<system_state>().disconnect();
 	}
 
 	auto state(
 	) -> client::state {
-		return system_of<system>().state();
+		return state_of<system_state>().current_state();
 	}
 
 	template <typename T>
 	auto send(
 		const T& m
 	) -> void {
-		system_of<system>().send(m);
+		state_of<system_state>().send(m);
 	}
 }

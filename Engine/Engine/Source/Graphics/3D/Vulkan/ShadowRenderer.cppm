@@ -29,58 +29,57 @@ export namespace gse::renderer {
 		const unitless::vec3& direction,
 		const unitless::vec3& up
 	) -> unitless::vec3;
+}
 
-	class shadow final : public gse::system {
-	public:
-		shadow(
-			context& context
-		);
+export namespace gse::renderer::shadow {
+	struct state {
+		context* ctx = nullptr;
 
-		auto initialize(
-		) -> void override;
+		vk::raii::Pipeline pipeline = nullptr;
+		vk::raii::PipelineLayout pipeline_layout = nullptr;
 
-		auto update(
-		) -> void override;
+		resource::handle<shader> shader_handle;
 
-		auto render(
-		) -> void override;
+		double_buffer<std::vector<shadow_light_entry>> shadow_light_entries;
 
-		auto shadow_map_view(
-			std::size_t index
-		) const -> vk::ImageView;
+		unitless::vec2u shadow_extent = { 1024, 1024 };
 
-		auto shadow_texel_size(
-		) const -> unitless::vec2;
+		std::array<vulkan::image_resource, max_shadow_lights> shadow_maps;
 
-		auto shadow_lights(
-		) const -> std::span<const shadow_light_entry>;
+		explicit state(context& c) : ctx(std::addressof(c)) {}
+		state() = default;
 
-	private:
-		context& m_context;
+		auto shadow_map_view(const std::size_t index) const -> vk::ImageView {
+			return shadow_maps[index].view;
+		}
 
-		vk::raii::Pipeline m_pipeline = nullptr;
-		vk::raii::PipelineLayout m_pipeline_layout = nullptr;
+		auto shadow_texel_size() const -> unitless::vec2 {
+			return unitless::vec2(
+				1.0f / static_cast<float>(shadow_extent.x()),
+				1.0f / static_cast<float>(shadow_extent.y())
+			);
+		}
 
-		resource::handle<shader> m_shader;
+		auto shadow_lights() const -> std::span<const shadow_light_entry> {
+			return shadow_light_entries.read();
+		}
+	};
 
-		double_buffer<std::vector<shadow_light_entry>> m_shadow_lights;
-
-		unitless::vec2u m_shadow_extent = { 1024, 1024 };
-
-		std::array<vulkan::image_resource, max_shadow_lights> m_shadow_maps;
+	struct system {
+		static auto initialize(initialize_phase& phase, state& s) -> void;
+		static auto update(const update_phase& phase, state& s) -> void;
+		static auto render(const render_phase& phase, const state& s) -> void;
 	};
 }
 
-gse::renderer::shadow::shadow(context& context) : m_context(context) {}
+auto gse::renderer::shadow::system::initialize(initialize_phase&, state& s) -> void {
+	auto& config = s.ctx->config();
 
-auto gse::renderer::shadow::initialize() -> void {
-	auto& config = m_context.config();
+	s.shader_handle = s.ctx->get<shader>("Shaders/Deferred3D/shadow_pass");
+	s.ctx->instantly_load(s.shader_handle);
 
-	m_shader = m_context.get<shader>("Shaders/Deferred3D/shadow_pass");
-	m_context.instantly_load(m_shader);
-
-	auto layouts = m_shader->layouts();
-	auto range = m_shader->push_constant_range("push_constants");
+	auto layouts = s.shader_handle->layouts();
+	auto range = s.shader_handle->push_constant_range("push_constants");
 
 	const vk::PipelineLayoutCreateInfo pipeline_layout_info{
 		.setLayoutCount = static_cast<std::uint32_t>(layouts.size()),
@@ -89,10 +88,10 @@ auto gse::renderer::shadow::initialize() -> void {
 		.pPushConstantRanges = &range
 	};
 
-	m_pipeline_layout = config.device_config().device.createPipelineLayout(pipeline_layout_info);
+	s.pipeline_layout = config.device_config().device.createPipelineLayout(pipeline_layout_info);
 
-	auto shader_stages = m_shader->shader_stages();
-	auto vertex_input = m_shader->vertex_input_state();
+	auto shader_stages = s.shader_handle->shader_stages();
+	auto vertex_input = s.shader_handle->vertex_input_state();
 
 	constexpr vk::PipelineInputAssemblyStateCreateInfo input_assembly{
 		.topology = vk::PrimitiveTopology::eTriangleList,
@@ -151,15 +150,15 @@ auto gse::renderer::shadow::initialize() -> void {
 	const vk::Viewport viewport{
 		.x = 0.0f,
 		.y = 0.0f,
-		.width = static_cast<float>(m_shadow_extent.x()),
-		.height = static_cast<float>(m_shadow_extent.y()),
+		.width = static_cast<float>(s.shadow_extent.x()),
+		.height = static_cast<float>(s.shadow_extent.y()),
 		.minDepth = 0.0f,
 		.maxDepth = 1.0f
 	};
 
 	const vk::Rect2D scissor{
 		.offset = { 0, 0 },
-		.extent = { m_shadow_extent.x(), m_shadow_extent.y() }
+		.extent = { s.shadow_extent.x(), s.shadow_extent.y() }
 	};
 
 	const vk::PipelineViewportStateCreateInfo viewport_state{
@@ -182,20 +181,20 @@ auto gse::renderer::shadow::initialize() -> void {
 		.pDepthStencilState = &depth_stencil,
 		.pColorBlendState = &color_blend_state,
 		.pDynamicState = nullptr,
-		.layout = m_pipeline_layout,
+		.layout = s.pipeline_layout,
 		.basePipelineHandle = nullptr,
 		.basePipelineIndex = -1
 	};
 
-	m_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
+	s.pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
 
 	const vk::ImageCreateInfo image_info{
 		.flags = {},
 		.imageType = vk::ImageType::e2D,
 		.format = vk::Format::eD32Sfloat,
 		.extent = {
-			.width = m_shadow_extent.x(),
-			.height = m_shadow_extent.y(),
+			.width = s.shadow_extent.x(),
+			.height = s.shadow_extent.y(),
 			.depth = 1u
 		},
 		.mipLevels = 1u,
@@ -222,7 +221,7 @@ auto gse::renderer::shadow::initialize() -> void {
 		}
 	};
 
-	for (auto& img : m_shadow_maps) {
+	for (auto& img : s.shadow_maps) {
 		img = config.allocator().create_image(
 			image_info,
 			vk::MemoryPropertyFlagBits::eDeviceLocal,
@@ -231,11 +230,11 @@ auto gse::renderer::shadow::initialize() -> void {
 	}
 
 	config.add_transient_work(
-        [this](const vk::raii::CommandBuffer& cmd) -> std::vector<vulkan::buffer_resource> {
+        [&s](const vk::raii::CommandBuffer& cmd) -> std::vector<vulkan::buffer_resource> {
             std::vector<vk::ImageMemoryBarrier2> barriers;
-            barriers.reserve(m_shadow_maps.size());
+            barriers.reserve(s.shadow_maps.size());
 
-            for (auto& img : m_shadow_maps) {
+            for (auto& img : s.shadow_maps) {
                 barriers.push_back({
                     .srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
                     .srcAccessMask = {},
@@ -269,18 +268,19 @@ auto gse::renderer::shadow::initialize() -> void {
         }
     );
 
-	frame_sync::on_end([this] {
-		m_shadow_lights.flip();
+	frame_sync::on_end([&s] {
+		s.shadow_light_entries.flip();
 	});
 }
 
-auto gse::renderer::shadow::update() -> void {
-	auto& lights_out = m_shadow_lights.write();
+auto gse::renderer::shadow::system::update(const update_phase& phase, state& s) -> void {
+	auto& lights_out = s.shadow_light_entries.write();
 	lights_out.clear();
 
 	std::size_t next_shadow_index = 0;
 
-	auto [dir_view, spot_view] = this->read<directional_light_component, spot_light_component>();
+	const auto dir_view = phase.registry.chunk<directional_light_component>();
+	const auto spot_view = phase.registry.chunk<spot_light_component>();
 
 	for (const auto& comp : dir_view) {
 		if (next_shadow_index >= max_shadow_lights) {
@@ -350,8 +350,8 @@ auto gse::renderer::shadow::update() -> void {
 	}
 }
 
-auto gse::renderer::shadow::render() -> void {
-    auto& config = m_context.config();
+auto gse::renderer::shadow::system::render(const render_phase& phase, const state& s) -> void {
+    auto& config = s.ctx->config();
 
     if (!config.frame_in_progress()) {
         return;
@@ -359,26 +359,29 @@ auto gse::renderer::shadow::render() -> void {
 
     const auto command = config.frame_context().command_buffer;
 
-    auto& geom = system_of<geometry>();
+    const auto* geom_state = phase.try_state_of<geometry::state>();
+    if (!geom_state) {
+        return;
+    }
 
-    const auto& lights = m_shadow_lights.read();
+    const auto& lights = s.shadow_light_entries.read();
 
     if (lights.empty()) {
         return;
     }
 
-    for (const auto& light : lights) {
-        const auto draw_list = geom.render_queue_excluding(light.ignore_list_ids);
+    for (const auto& [view, proj, ignore_list_ids, shadow_index] : lights) {
+        const auto draw_list = geom_state->render_queue_excluding(ignore_list_ids);
 
         if (draw_list.empty()) {
             continue;
         }
-        if (light.shadow_index < 0 ||
-            static_cast<std::size_t>(light.shadow_index) >= m_shadow_maps.size()) {
+        if (shadow_index < 0 ||
+            static_cast<std::size_t>(shadow_index) >= s.shadow_maps.size()) {
             continue;
         }
 
-        auto& depth_image = m_shadow_maps[static_cast<std::size_t>(light.shadow_index)];
+        const auto& depth_image = s.shadow_maps[static_cast<std::size_t>(shadow_index)];
 
         constexpr vk::MemoryBarrier2 pre_barrier{
             .srcStageMask = vk::PipelineStageFlagBits2::eFragmentShader,
@@ -405,7 +408,7 @@ auto gse::renderer::shadow::render() -> void {
         };
 
         const vk::RenderingInfo rendering_info{
-            .renderArea = { { 0, 0 }, { m_shadow_extent.x(), m_shadow_extent.y() } },
+            .renderArea = { { 0, 0 }, { s.shadow_extent.x(), s.shadow_extent.y() } },
             .layerCount = 1,
             .colorAttachmentCount = 0,
             .pColorAttachments = nullptr,
@@ -413,14 +416,14 @@ auto gse::renderer::shadow::render() -> void {
         };
 
         vulkan::render(config, rendering_info, [&] {
-            command.bindPipeline(vk::PipelineBindPoint::eGraphics, m_pipeline);
+            command.bindPipeline(vk::PipelineBindPoint::eGraphics, s.pipeline);
 
-            const mat4 light_view_proj = light.proj * light.view;
+            const mat4 light_view_proj = proj * view;
 
             for (const auto& e : draw_list) {
-                m_shader->push(
+                s.shader_handle->push(
                     command,
-                    m_pipeline_layout,
+                    s.pipeline_layout,
                     "push_constants",
                     "light_view_proj", light_view_proj,
                     "model", e.model_matrix
@@ -446,21 +449,6 @@ auto gse::renderer::shadow::render() -> void {
 
         command.pipelineBarrier2(post_dep);
     }
-}
-
-auto gse::renderer::shadow::shadow_map_view(const std::size_t index) const -> vk::ImageView {
-	return m_shadow_maps[index].view;
-}
-
-auto gse::renderer::shadow::shadow_texel_size() const -> unitless::vec2 {
-	return unitless::vec2(
-		1.0f / static_cast<float>(m_shadow_extent.x()),
-		1.0f / static_cast<float>(m_shadow_extent.y())
-	);
-}
-
-auto gse::renderer::shadow::shadow_lights() const -> std::span<const shadow_light_entry> {
-	return m_shadow_lights.read();
 }
 
 auto gse::renderer::ensure_non_collinear_up(const unitless::vec3& direction, const unitless::vec3& up) -> unitless::vec3 {

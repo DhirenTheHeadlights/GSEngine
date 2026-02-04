@@ -43,8 +43,8 @@ export namespace gse {
 	public:
 		explicit window(
 			const std::string& title,
-			input::system& input_system,
-			save::system& save_system
+			input::system_state& input_state,
+			save::state& save_state
 		);
 
 		~window() override;
@@ -93,8 +93,8 @@ export namespace gse {
 		) -> std::vector<resolution_info>;
 	private:
 		GLFWwindow* m_window = nullptr;
-		input::system& m_input;
-		save::system& m_save;
+		input::system_state& m_input;
+		save::state& m_save;
 
 		bool m_fullscreen = false;
 		bool m_current_fullscreen = false;
@@ -139,9 +139,9 @@ export namespace gse {
 	};
 }
 
-gse::window::window(const std::string& title, input::system& input_system, save::system& save_system)
-	: m_input(input_system)
-	, m_save(save_system) {
+gse::window::window(const std::string& title, input::system_state& input_state, save::state& save_state)
+	: m_input(input_state)
+	, m_save(save_state) {
 	assert(glfwInit(), std::source_location::current(), "Error initializing GLFW");
 	assert(glfwVulkanSupported(), std::source_location::current(), "Vulkan not supported");
 
@@ -246,18 +246,18 @@ gse::window::window(const std::string& title, input::system& input_system, save:
 	const int cursor_mode = m_mouse_visible ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED;
 	glfwSetInputMode(m_window, GLFW_CURSOR, cursor_mode);
 
-	save_system.bind("Window", "Fullscreen", m_fullscreen)
+	save_state.bind("Window", "Fullscreen", m_fullscreen)
 		.description("Run in fullscreen mode")
 		.default_value(true)
 		.commit();
 
-	save_system.bind("Window", "Mouse Visible", m_mouse_visible)
+	save_state.bind("Window", "Mouse Visible", m_mouse_visible)
 		.description("Show mouse cursor")
 		.default_value(false)
 		.commit();
 
-	m_monitor_index = save_system.read("Window", "Monitor", 0);
-	m_resolution_index = save_system.read("Window", "Resolution", 0);
+	m_monitor_index = save_state.read("Window", "Monitor", 0);
+	m_resolution_index = save_state.read("Window", "Resolution", 0);
 	m_last_monitor_index = m_monitor_index;
 
 	refresh_monitor_settings();

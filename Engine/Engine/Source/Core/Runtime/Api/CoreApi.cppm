@@ -28,8 +28,8 @@ export namespace gse {
     constexpr auto operator|(flags lhs, flags rhs) -> flags;
     constexpr auto has_flag(flags haystack, flags needle) -> bool;
 
-    template <typename S>
-    auto system_of() -> S&;
+    template <typename State>
+    auto state_of() -> State&;
 
     template <typename T>
     auto channel_add(
@@ -60,9 +60,9 @@ constexpr auto gse::has_flag(flags haystack, flags needle) -> bool {
     return (static_cast<std::uint32_t>(haystack) & static_cast<std::uint32_t>(needle)) == static_cast<std::uint32_t>(needle);
 }
 
-template <typename S>
-auto gse::system_of() -> S& {
-    return engine_instance->system_of<S>();
+template <typename State>
+auto gse::state_of() -> State& {
+    return engine_instance->state_of<State>();
 }
 
 template <typename T>

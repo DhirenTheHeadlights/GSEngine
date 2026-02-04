@@ -4,12 +4,12 @@ import std;
 import tomlplusplus;
 
 import :id;
-import :system;
 import :concepts;
+import :phase_context;
 
 export namespace gse::save {
     class property_base;
-    class system;
+    class state;
     template <typename T> class registration_builder;
 
     struct no_constraint {};
@@ -31,6 +31,8 @@ export namespace gse::save {
         std::string name;
         std::function<void(property_base&)> apply;
     };
+
+    struct save_request {};
 
     struct register_property {
         std::string category;
@@ -154,7 +156,7 @@ export namespace gse::save {
     class property final : public property_base {
     public:
         property(
-            system* sys,
+            state* st,
             std::string_view category,
             std::string_view name,
             std::string_view description,
@@ -260,7 +262,7 @@ export namespace gse::save {
             T value
         ) -> void;
     private:
-        system* m_system;
+        state* m_state;
         std::string m_category;
         std::string m_name;
         std::string m_description;
@@ -275,7 +277,7 @@ export namespace gse::save {
     class property_builder {
     public:
         property_builder(
-            system& sys,
+            state& st,
             std::string_view category,
             std::string_view name,
             T& ref
@@ -314,7 +316,7 @@ export namespace gse::save {
         auto commit(
         ) -> property_base*;
     private:
-        system& m_system;
+        state& m_state;
         std::string m_category;
         std::string m_name;
         std::string m_description;
@@ -338,18 +340,13 @@ export namespace gse::save {
         std::span<property_base* const> m_properties;
     };
 
-    class system final : public gse::system {
+    class state {
     public:
-        system() = default;
+        state() = default;
 
-        auto initialize(
-        ) -> void override;
-
-        auto update(
-        ) -> void override;
-
-        auto shutdown(
-        ) -> void override;
+        auto do_initialize(initialize_phase& phase) -> void;
+        auto do_update(update_phase& phase) -> void;
+        auto do_shutdown(shutdown_phase& phase) -> void;
 
         template <typename T>
         auto bind(
@@ -450,6 +447,20 @@ export namespace gse::save {
         auto process_registration(
             const save::register_property& reg
         ) -> void;
+    };
+
+    struct system {
+        static auto initialize(initialize_phase& phase, state& s) -> void {
+            s.do_initialize(phase);
+        }
+
+        static auto update(update_phase& phase, state& s) -> void {
+            s.do_update(phase);
+        }
+
+        static auto shutdown(shutdown_phase& phase, state& s) -> void {
+            s.do_shutdown(phase);
+        }
     };
 
     [[nodiscard]] auto read_setting_early(
@@ -592,7 +603,7 @@ auto gse::save::property_base::set_string(std::string_view) -> void {
 
 template <typename T, typename Constraint>
 gse::save::property<T, Constraint>::property(
-    system* sys,
+    state* st,
     const std::string_view category,
     const std::string_view name,
     const std::string_view description,
@@ -600,7 +611,7 @@ gse::save::property<T, Constraint>::property(
     T default_value,
     Constraint constraint,
     const bool requires_restart
-) : m_system(sys)
+) : m_state(st)
   , m_category(category)
   , m_name(name)
   , m_description(description)
@@ -644,8 +655,8 @@ auto gse::save::property<T, Constraint>::reset_to_default() -> void {
     if (m_ref != m_default) {
         m_ref = m_default;
         m_dirty = true;
-        if (m_system) {
-            m_system->notify_change(*this);
+        if (m_state) {
+            m_state->notify_change(*this);
         }
     }
 }
@@ -861,19 +872,19 @@ auto gse::save::property<T, Constraint>::set(T value) -> void {
     if (m_ref != value) {
         m_ref = std::move(value);
         m_dirty = true;
-        if (m_system) {
-            m_system->notify_change(*this);
+        if (m_state) {
+            m_state->notify_change(*this);
         }
     }
 }
 
 template <typename T>
 gse::save::property_builder<T>::property_builder(
-    system& sys,
+    state& st,
     const std::string_view category,
     const std::string_view name,
     T& ref
-) : m_system(sys)
+) : m_state(st)
   , m_category(category)
   , m_name(name)
   , m_ref(ref)
@@ -933,23 +944,23 @@ auto gse::save::property_builder<T>::commit() -> property_base* {
     if (m_constraint.has_value()) {
         if (auto* range_c = std::any_cast<range_constraint<T>>(&m_constraint)) {
             prop = std::make_unique<property<T, range_constraint<T>>>(
-                &m_system, m_category, m_name, m_description, m_ref, m_default, *range_c, m_requires_restart
+                &m_state, m_category, m_name, m_description, m_ref, m_default, *range_c, m_requires_restart
             );
         }
         else if (auto* enum_c = std::any_cast<enum_constraint<T>>(&m_constraint)) {
             prop = std::make_unique<property<T, enum_constraint<T>>>(
-                &m_system, m_category, m_name, m_description, m_ref, m_default, *enum_c, m_requires_restart
+                &m_state, m_category, m_name, m_description, m_ref, m_default, *enum_c, m_requires_restart
             );
         }
     }
 
     if (!prop) {
         prop = std::make_unique<property<T>>(
-            &m_system, m_category, m_name, m_description, m_ref, m_default, no_constraint{}, m_requires_restart
+            &m_state, m_category, m_name, m_description, m_ref, m_default, no_constraint{}, m_requires_restart
         );
     }
 
-    return m_system.register_property(std::move(prop));
+    return m_state.register_property(std::move(prop));
 }
 
 gse::save::category_view::category_view(const std::span<property_base* const> properties)
@@ -971,7 +982,7 @@ auto gse::save::category_view::empty() const -> bool {
     return m_properties.empty();
 }
 
-auto gse::save::system::initialize() -> void {
+auto gse::save::state::do_initialize(initialize_phase&) -> void {
     if (!m_auto_save_path.empty() && std::filesystem::exists(m_auto_save_path)) {
         if (!load_from_file(m_auto_save_path)) {
             std::println("Failed to load settings from {}", m_auto_save_path.string());
@@ -979,19 +990,23 @@ auto gse::save::system::initialize() -> void {
     }
 }
 
-auto gse::save::system::update() -> void {
-    for (const auto& reg : channel_of<save::register_property>()) {
+auto gse::save::state::do_update(update_phase& phase) -> void {
+    for (const auto& reg : phase.read_channel<save::register_property>()) {
         process_registration(reg);
     }
 
-    for (const auto& [category, name, apply] : channel_of<update_request>()) {
+    if (!phase.read_channel<save_request>().empty()) {
+        save();
+    }
+
+    for (const auto& [category, name, apply] : phase.read_channel<update_request>()) {
         if (auto* prop = find(category, name)) {
             apply(*prop);
         }
     }
 }
 
-auto gse::save::system::shutdown() -> void {
+auto gse::save::state::do_shutdown(shutdown_phase&) -> void {
     if (m_auto_save && !m_auto_save_path.empty()) {
         if (!save_to_file(m_auto_save_path)) {
             std::println("Failed to save settings to {}", m_auto_save_path.string());
@@ -999,7 +1014,7 @@ auto gse::save::system::shutdown() -> void {
     }
 }
 
-auto gse::save::system::process_registration(const save::register_property& reg) -> void {
+auto gse::save::state::process_registration(const save::register_property& reg) -> void {
     if (find(reg.category, reg.name)) {
         return;
     }
@@ -1045,18 +1060,18 @@ auto gse::save::system::process_registration(const save::register_property& reg)
 }
 
 template <typename T>
-auto gse::save::system::bind(const std::string_view category, const std::string_view name, T& ref) -> property_builder<T> {
+auto gse::save::state::bind(const std::string_view category, const std::string_view name, T& ref) -> property_builder<T> {
     return property_builder<T>(*this, category, name, ref);
 }
 
-auto gse::save::system::register_property(std::unique_ptr<property_base> prop) -> property_base* {
+auto gse::save::state::register_property(std::unique_ptr<property_base> prop) -> property_base* {
     auto* ptr = prop.get();
     m_by_category[std::string(prop->category())].push_back(ptr);
     m_properties.push_back(std::move(prop));
     return ptr;
 }
 
-auto gse::save::system::categories() const -> std::vector<std::string_view> {
+auto gse::save::state::categories() const -> std::vector<std::string_view> {
     std::vector<std::string_view> result;
     result.reserve(m_by_category.size());
     for (const auto& cat : m_by_category | std::views::keys) {
@@ -1066,19 +1081,19 @@ auto gse::save::system::categories() const -> std::vector<std::string_view> {
     return result;
 }
 
-auto gse::save::system::properties_in(const std::string_view category) const -> category_view {
+auto gse::save::state::properties_in(const std::string_view category) const -> category_view {
     if (const auto it = m_by_category.find(std::string(category)); it != m_by_category.end()) {
         return category_view(it->second);
     }
     return category_view({});
 }
 
-auto gse::save::system::all_properties() const -> std::span<const std::unique_ptr<property_base>> {
+auto gse::save::state::all_properties() const -> std::span<const std::unique_ptr<property_base>> {
     return m_properties;
 }
 
 template <typename T>
-auto gse::save::system::get(const std::string_view category, const std::string_view name) const -> const property<T>* {
+auto gse::save::state::get(const std::string_view category, const std::string_view name) const -> const property<T>* {
     for (const auto& prop : m_properties) {
         if (prop->category() == category && prop->name() == name) {
             if (prop->type() == typeid(T)) {
@@ -1090,7 +1105,7 @@ auto gse::save::system::get(const std::string_view category, const std::string_v
     return nullptr;
 }
 
-auto gse::save::system::find(const std::string_view category, const std::string_view name) const -> property_base* {
+auto gse::save::state::find(const std::string_view category, const std::string_view name) const -> property_base* {
     for (const auto& prop : m_properties) {
         if (prop->category() == category && prop->name() == name) {
             return prop.get();
@@ -1099,7 +1114,7 @@ auto gse::save::system::find(const std::string_view category, const std::string_
     return nullptr;
 }
 
-auto gse::save::system::save_to_file(const std::filesystem::path& path) const -> bool {
+auto gse::save::state::save_to_file(const std::filesystem::path& path) const -> bool {
     toml::table root;
 
     for (const auto& prop : m_properties) {
@@ -1155,7 +1170,7 @@ auto gse::save::system::save_to_file(const std::filesystem::path& path) const ->
     return true;
 }
 
-auto gse::save::system::load_from_file(const std::filesystem::path& path) const -> bool {
+auto gse::save::state::load_from_file(const std::filesystem::path& path) const -> bool {
     if (!std::filesystem::exists(path)) {
         std::println("Settings file does not exist: {}", path.string());
         return false;
@@ -1223,56 +1238,56 @@ auto gse::save::system::load_from_file(const std::filesystem::path& path) const 
     return true;
 }
 
-auto gse::save::system::set_auto_save(const bool enabled, std::filesystem::path path) -> void {
+auto gse::save::state::set_auto_save(const bool enabled, std::filesystem::path path) -> void {
     m_auto_save = enabled;
     if (!path.empty()) {
         m_auto_save_path = std::move(path);
     }
 }
 
-auto gse::save::system::save() const -> bool {
+auto gse::save::state::save() const -> bool {
     if (m_auto_save_path.empty()) {
         return false;
     }
     return save_to_file(m_auto_save_path);
 }
 
-auto gse::save::system::bind_int_map(const std::string_view category, std::map<std::string, int>& map) -> void {
+auto gse::save::state::bind_int_map(const std::string_view category, std::map<std::string, int>& map) -> void {
     m_int_maps[std::string(category)] = &map;
 }
 
-auto gse::save::system::int_map(const std::string_view category) const -> const std::map<std::string, int>* {
+auto gse::save::state::int_map(const std::string_view category) const -> const std::map<std::string, int>* {
     if (const auto it = m_int_maps.find(std::string(category)); it != m_int_maps.end()) {
         return it->second;
     }
     return nullptr;
 }
 
-auto gse::save::system::has_unsaved_changes() const -> bool {
+auto gse::save::state::has_unsaved_changes() const -> bool {
     return std::ranges::any_of(m_properties, [](const std::unique_ptr<property_base>& p) {
         return p->dirty();
     });
 }
 
-auto gse::save::system::has_pending_restart_changes() const -> bool {
+auto gse::save::state::has_pending_restart_changes() const -> bool {
     return m_restart_pending;
 }
 
-auto gse::save::system::clear_restart_pending() -> void {
+auto gse::save::state::clear_restart_pending() -> void {
     m_restart_pending = false;
 }
 
-auto gse::save::system::mark_all_clean() const -> void {
+auto gse::save::state::mark_all_clean() const -> void {
     for (const auto& prop : m_properties) {
         prop->mark_clean();
     }
 }
 
-auto gse::save::system::on_change(change_callback cb) -> void {
+auto gse::save::state::on_change(change_callback cb) -> void {
     m_callbacks.push_back(std::move(cb));
 }
 
-auto gse::save::system::notify_change(property_base& prop) -> void {
+auto gse::save::state::notify_change(property_base& prop) -> void {
     if (prop.requires_restart()) {
         m_restart_pending = true;
     }
@@ -1280,10 +1295,6 @@ auto gse::save::system::notify_change(property_base& prop) -> void {
     for (const auto& cb : m_callbacks) {
         cb(prop);
     }
-
-    publish([&prop](channel<property_changed>& chan) {
-        chan.emplace(prop.category(), prop.name(), prop.type());
-    });
 }
 
 auto gse::save::read_setting_early(const std::filesystem::path& path, const std::string_view category, const std::string_view name) -> std::optional<std::string> {
@@ -1368,7 +1379,7 @@ auto gse::save::read_bool_setting_early(const std::filesystem::path& path, const
 }
 
 template <typename T>
-auto gse::save::system::read(const std::string_view category, const std::string_view name, T default_value) const -> T {
+auto gse::save::state::read(const std::string_view category, const std::string_view name, T default_value) const -> T {
     if (m_auto_save_path.empty()) {
         return default_value;
     }

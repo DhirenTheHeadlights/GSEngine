@@ -164,120 +164,122 @@ namespace gse::renderer {
 	};
 }
 
-export namespace gse::renderer {
-	class geometry final : public gse::system {
-	public:
-		explicit geometry(
-			context& context
-		);
+export namespace gse::renderer::geometry {
+	struct state {
+		context* ctx = nullptr;
 
-		auto initialize(
-		) -> void override;
+		vk::raii::Pipeline pipeline = nullptr;
+		vk::raii::PipelineLayout pipeline_layout = nullptr;
+		per_frame_resource<vk::raii::DescriptorSet> descriptor_sets;
+		resource::handle<shader> shader_handle;
 
-		auto update(
-		) -> void override;
+		vk::raii::Pipeline skinned_pipeline = nullptr;
+		vk::raii::PipelineLayout skinned_pipeline_layout = nullptr;
+		per_frame_resource<vk::raii::DescriptorSet> skinned_descriptor_sets;
+		resource::handle<shader> skinned_shader;
 
-		auto render(
-		) -> void override;
-
-		auto render_queue(
-		) const -> std::span<const render_queue_entry>;
-
-		auto render_queue_excluding(
-			std::span<const id> exclude_ids
-		) const -> std::vector<render_queue_entry>;
-
-		auto skinned_render_queue(
-		) const -> std::span<const skinned_render_queue_entry>;
-
-		auto skin_buffer(
-		) const -> const vulkan::buffer_resource&;
-	private:
-		context& m_context;
-
-		vk::raii::Pipeline m_pipeline = nullptr;
-		vk::raii::PipelineLayout m_pipeline_layout = nullptr;
-		per_frame_resource<vk::raii::DescriptorSet> m_descriptor_sets;
-		resource::handle<shader> m_shader;
-
-		vk::raii::Pipeline m_skinned_pipeline = nullptr;
-		vk::raii::PipelineLayout m_skinned_pipeline_layout = nullptr;
-		per_frame_resource<vk::raii::DescriptorSet> m_skinned_descriptor_sets;
-		resource::handle<shader> m_skinned_shader;
-
-		std::unordered_map<std::string, per_frame_resource<vulkan::buffer_resource>> m_ubo_allocations;
+		std::unordered_map<std::string, per_frame_resource<vulkan::buffer_resource>> ubo_allocations;
 
 		static constexpr std::size_t max_skin_matrices = 256 * 128;
 		static constexpr std::size_t max_joints = 256;
-		per_frame_resource<vulkan::buffer_resource> m_skin_buffer;
-		per_frame_resource<std::vector<mat4>> m_skin_staging;
+		per_frame_resource<vulkan::buffer_resource> skin_buffer;
+		per_frame_resource<std::vector<mat4>> skin_staging;
 
-		resource::handle<shader> m_skin_compute;
-		vk::raii::Pipeline m_skin_compute_pipeline = nullptr;
-		vk::raii::PipelineLayout m_skin_compute_pipeline_layout = nullptr;
-		per_frame_resource<vk::raii::DescriptorSet> m_skin_compute_sets;
-		vulkan::buffer_resource m_skeleton_buffer;
-		per_frame_resource<vulkan::buffer_resource> m_local_pose_buffer;
-		per_frame_resource<std::vector<mat4>> m_local_pose_staging;
-		const skeleton* m_current_skeleton = nullptr;
-		std::uint32_t m_current_joint_count = 0;
-		bool m_gpu_skinning_enabled = true;
-		per_frame_resource<std::uint32_t> m_pending_compute_instance_count;
+		resource::handle<shader> skin_compute;
+		vk::raii::Pipeline skin_compute_pipeline = nullptr;
+		vk::raii::PipelineLayout skin_compute_pipeline_layout = nullptr;
+		per_frame_resource<vk::raii::DescriptorSet> skin_compute_sets;
+		vulkan::buffer_resource skeleton_buffer;
+		per_frame_resource<vulkan::buffer_resource> local_pose_buffer;
+		per_frame_resource<std::vector<mat4>> local_pose_staging;
+		const skeleton* current_skeleton = nullptr;
+		std::uint32_t current_joint_count = 0;
+		bool gpu_skinning_enabled = true;
+		per_frame_resource<std::uint32_t> pending_compute_instance_count;
 
 		static constexpr std::size_t max_instances = 4096;
-		per_frame_resource<vulkan::buffer_resource> m_instance_buffer;
-		per_frame_resource<std::vector<std::byte>> m_instance_staging;
-		per_frame_resource<std::vector<normal_instance_batch>> m_normal_instance_batches;
-		per_frame_resource<std::vector<skinned_instance_batch>> m_skinned_instance_batches;
+		per_frame_resource<vulkan::buffer_resource> instance_buffer;
+		per_frame_resource<std::vector<std::byte>> instance_staging;
+		per_frame_resource<std::vector<normal_instance_batch>> normal_instance_batches;
+		per_frame_resource<std::vector<skinned_instance_batch>> skinned_instance_batches;
 
-		std::uint32_t m_instance_stride = 0;
-		std::uint32_t m_batch_stride = 0;
-		std::uint32_t m_joint_stride = 0;
-		std::unordered_map<std::string, std::uint32_t> m_instance_offsets;
-		std::unordered_map<std::string, std::uint32_t> m_batch_offsets;
-		std::unordered_map<std::string, std::uint32_t> m_joint_offsets;
+		std::uint32_t instance_stride = 0;
+		std::uint32_t batch_stride = 0;
+		std::uint32_t joint_stride = 0;
+		std::unordered_map<std::string, std::uint32_t> instance_offsets;
+		std::unordered_map<std::string, std::uint32_t> batch_offsets;
+		std::unordered_map<std::string, std::uint32_t> joint_offsets;
 
 		static constexpr std::size_t max_batches = 256;
-		per_frame_resource<vulkan::buffer_resource> m_normal_indirect_commands_buffer;
-		per_frame_resource<vulkan::buffer_resource> m_skinned_indirect_commands_buffer;
+		per_frame_resource<vulkan::buffer_resource> normal_indirect_commands_buffer;
+		per_frame_resource<vulkan::buffer_resource> skinned_indirect_commands_buffer;
 
-		per_frame_resource<vulkan::buffer_resource> m_frustum_buffer;
-		per_frame_resource<vulkan::buffer_resource> m_batch_info_buffer;
-		resource::handle<shader> m_culling_compute;
-		vk::raii::Pipeline m_culling_pipeline = nullptr;
-		vk::raii::PipelineLayout m_culling_pipeline_layout = nullptr;
-		per_frame_resource<vk::raii::DescriptorSet> m_normal_culling_descriptor_sets;
-		per_frame_resource<vk::raii::DescriptorSet> m_skinned_culling_descriptor_sets;
-		bool m_gpu_culling_enabled = true;
+		per_frame_resource<vulkan::buffer_resource> frustum_buffer;
+		per_frame_resource<vulkan::buffer_resource> batch_info_buffer;
+		resource::handle<shader> culling_compute;
+		vk::raii::Pipeline culling_pipeline = nullptr;
+		vk::raii::PipelineLayout culling_pipeline_layout = nullptr;
+		per_frame_resource<vk::raii::DescriptorSet> normal_culling_descriptor_sets;
+		per_frame_resource<vk::raii::DescriptorSet> skinned_culling_descriptor_sets;
+		bool gpu_culling_enabled = true;
 
-		double_buffer<std::vector<render_queue_entry>> m_render_queue;
-		double_buffer<std::vector<id>> m_render_queue_owners;
-		double_buffer<std::vector<skinned_render_queue_entry>> m_skinned_render_queue;
+		double_buffer<std::vector<render_queue_entry>> render_queue_buffer;
+		double_buffer<std::vector<id>> render_queue_owners;
+		double_buffer<std::vector<skinned_render_queue_entry>> skinned_render_queue_buffer;
 
-		resource::handle<texture> m_blank_texture;
+		resource::handle<texture> blank_texture;
 
-		auto dispatch_skin_compute(
-			vk::CommandBuffer command,
-			std::uint32_t instance_count
-		) -> void;
+		explicit state(context& c) : ctx(std::addressof(c)) {}
+		state() = default;
 
-		auto dispatch_culling_compute(
-			vk::CommandBuffer command,
-			std::uint32_t batch_count,
-			const vk::raii::DescriptorSet& culling_set,
-			std::uint32_t batch_offset
-		) const -> void;
+		auto render_queue() const -> std::span<const render_queue_entry> {
+			return render_queue_buffer.read();
+		}
 
-		auto upload_skeleton_data(
-			const skeleton& skel
-		) const -> void;
+		auto render_queue_excluding(std::span<const id> exclude_ids) const -> std::vector<render_queue_entry>;
+
+		auto skinned_render_queue() const -> std::span<const skinned_render_queue_entry> {
+			return skinned_render_queue_buffer.read();
+		}
+
+		auto skin_buff() const -> const vulkan::buffer_resource& {
+			return skin_buffer[ctx->config().current_frame()];
+		}
+	};
+
+	auto dispatch_skin_compute(const state& s, vk::CommandBuffer command, std::uint32_t instance_count) -> void;
+	auto dispatch_culling_compute(const state& s, vk::CommandBuffer command, std::uint32_t batch_count, const vk::raii::DescriptorSet& culling_set, std::uint32_t batch_offset) -> void;
+	auto upload_skeleton_data(const state& s, const skeleton& skel) -> void;
+
+	struct system {
+		static auto initialize(initialize_phase& phase, state& s) -> void;
+		static auto update(update_phase& phase, state& s) -> void;
+		static auto render(render_phase& phase, const state& s) -> void;
 	};
 }
 
-gse::renderer::geometry::geometry(context& context) : m_context(context) {}
+auto gse::renderer::geometry::state::render_queue_excluding(const std::span<const id> exclude_ids) const -> std::vector<render_queue_entry> {
+	const auto& entries = render_queue_buffer.read();
+	const auto& owners = render_queue_owners.read();
 
-auto gse::renderer::geometry::initialize() -> void {
-	auto& config = m_context.config();
+	std::vector<render_queue_entry> result;
+	result.reserve(entries.size());
+
+	for (std::size_t i = 0; i < entries.size(); ++i) {
+		bool excluded = std::ranges::any_of(exclude_ids, [&](const id& ex) {
+			return ex == owners[i];
+		});
+
+		if (!excluded) {
+			result.push_back(entries[i]);
+		}
+	}
+
+	return result;
+}
+
+auto gse::renderer::geometry::system::initialize(initialize_phase&, state& s) -> void {
+	auto& config = s.ctx->config();
 
 	auto transition_gbuffer_images = [](vulkan::config& cfg) {
 		cfg.add_transient_work([&cfg](const vk::raii::CommandBuffer& cmd) -> std::vector<vulkan::buffer_resource> {
@@ -343,11 +345,11 @@ auto gse::renderer::geometry::initialize() -> void {
 	transition_gbuffer_images(config);
 	config.on_swap_chain_recreate(transition_gbuffer_images);
 
-	m_shader = m_context.get<shader>("Shaders/Standard3D/geometry_pass");
-	m_context.instantly_load(m_shader);
-	auto descriptor_set_layouts = m_shader->layouts();
+	s.shader_handle = s.ctx->get<shader>("Shaders/Standard3D/geometry_pass");
+	s.ctx->instantly_load(s.shader_handle);
+	auto descriptor_set_layouts = s.shader_handle->layouts();
 
-	const auto camera_ubo = m_shader->uniform_block("CameraUBO");
+	const auto camera_ubo = s.shader_handle->uniform_block("CameraUBO");
 
 	vk::BufferCreateInfo camera_ubo_buffer_info{
 		.size = camera_ubo.size,
@@ -356,9 +358,9 @@ auto gse::renderer::geometry::initialize() -> void {
 	};
 	
 	for (std::size_t i = 0; i < per_frame_resource<vk::raii::DescriptorSet>::frames_in_flight; ++i) {
-		m_ubo_allocations["CameraUBO"][i] = config.allocator().create_buffer(camera_ubo_buffer_info);
+		s.ubo_allocations["CameraUBO"][i] = config.allocator().create_buffer(camera_ubo_buffer_info);
 
-		m_descriptor_sets[i] = m_shader->descriptor_set(
+		s.descriptor_sets[i] = s.shader_handle->descriptor_set(
 			config.device_config().device,
 			config.descriptor_config().pool,
 			shader::set::binding_type::persistent
@@ -368,7 +370,7 @@ auto gse::renderer::geometry::initialize() -> void {
 			{
 				"CameraUBO",
 				{
-					.buffer = m_ubo_allocations["CameraUBO"][i].buffer,
+					.buffer = s.ubo_allocations["CameraUBO"][i].buffer,
 					.offset = 0,
 					.range = camera_ubo.size
 				}
@@ -378,7 +380,7 @@ auto gse::renderer::geometry::initialize() -> void {
 		std::unordered_map<std::string, vk::DescriptorImageInfo> image_infos = {};
 
 		config.device_config().device.updateDescriptorSets(
-			m_shader->descriptor_writes(*m_descriptor_sets[i], buffer_infos, image_infos),
+			s.shader_handle->descriptor_writes(*s.descriptor_sets[i], buffer_infos, image_infos),
 			nullptr
 		);
 	}
@@ -390,7 +392,7 @@ auto gse::renderer::geometry::initialize() -> void {
 		.pPushConstantRanges = nullptr
 	};
 
-	m_pipeline_layout = config.device_config().device.createPipelineLayout(pipeline_layout_info);
+	s.pipeline_layout = config.device_config().device.createPipelineLayout(pipeline_layout_info);
 
 	constexpr vk::PipelineInputAssemblyStateCreateInfo input_assembly{
 		.topology = vk::PrimitiveTopology::eTriangleList,
@@ -440,7 +442,7 @@ auto gse::renderer::geometry::initialize() -> void {
 		.pAttachments = color_blend_attachments.data()
 	};
 
-	auto shader_stages = m_shader->shader_stages();
+	auto shader_stages = s.shader_handle->shader_stages();
 
 	constexpr vk::PipelineMultisampleStateCreateInfo multisampling{
 		.rasterizationSamples = vk::SampleCountFlagBits::e1,
@@ -451,7 +453,7 @@ auto gse::renderer::geometry::initialize() -> void {
 		.alphaToOneEnable = vk::False
 	};
 
-	auto vertex_input_info = m_shader->vertex_input_state();
+	auto vertex_input_info = s.shader_handle->vertex_input_state();
 
 	const vk::PipelineRenderingCreateInfoKHR geometry_rendering_info = {
 		.colorAttachmentCount = static_cast<uint32_t>(g_buffer_color_formats.size()),
@@ -489,33 +491,33 @@ auto gse::renderer::geometry::initialize() -> void {
 		.pDepthStencilState = &depth_stencil,
 		.pColorBlendState = &color_blending,
 		.pDynamicState = &dynamic_state,
-		.layout = m_pipeline_layout,
+		.layout = s.pipeline_layout,
 		.basePipelineHandle = nullptr,
 		.basePipelineIndex = 0
 	};
-	m_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
+	s.pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
 
-	m_skinned_shader = m_context.get<shader>("Shaders/Standard3D/skinned_geometry_pass");
-	m_context.instantly_load(m_skinned_shader);
-	auto skinned_descriptor_set_layouts = m_skinned_shader->layouts();
+	s.skinned_shader = s.ctx->get<shader>("Shaders/Standard3D/skinned_geometry_pass");
+	s.ctx->instantly_load(s.skinned_shader);
+	auto skinned_descriptor_set_layouts = s.skinned_shader->layouts();
 
-	const auto instance_block = m_shader->uniform_block("instanceData");
-	m_instance_stride = instance_block.size;
+	const auto instance_block = s.shader_handle->uniform_block("instanceData");
+	s.instance_stride = instance_block.size;
 	for (const auto& [name, member] : instance_block.members) {
-		m_instance_offsets[name] = member.offset;
+		s.instance_offsets[name] = member.offset;
 	}
 
-	constexpr vk::DeviceSize skin_buffer_size = max_skin_matrices * sizeof(mat4);
+	constexpr vk::DeviceSize skin_buffer_size = state::max_skin_matrices * sizeof(mat4);
 	for (std::size_t i = 0; i < per_frame_resource<vulkan::buffer_resource>::frames_in_flight; ++i) {
-		m_skin_buffer[i] = config.allocator().create_buffer(
+		s.skin_buffer[i] = config.allocator().create_buffer(
 			vk::BufferCreateInfo{
 				.size = skin_buffer_size,
 				.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
 			}
 		);
-		m_skin_staging[i].reserve(max_skin_matrices);
+		s.skin_staging[i].reserve(state::max_skin_matrices);
 
-		m_skinned_descriptor_sets[i] = m_skinned_shader->descriptor_set(
+		s.skinned_descriptor_sets[i] = s.skinned_shader->descriptor_set(
 			config.device_config().device,
 			config.descriptor_config().pool,
 			shader::set::binding_type::persistent
@@ -525,7 +527,7 @@ auto gse::renderer::geometry::initialize() -> void {
 			{
 				"CameraUBO",
 				{
-					.buffer = m_ubo_allocations["CameraUBO"][i].buffer,
+					.buffer = s.ubo_allocations["CameraUBO"][i].buffer,
 					.offset = 0,
 					.range = camera_ubo.size
 				}
@@ -535,23 +537,23 @@ auto gse::renderer::geometry::initialize() -> void {
 		std::unordered_map<std::string, vk::DescriptorImageInfo> skinned_image_infos = {};
 
 		config.device_config().device.updateDescriptorSets(
-			m_skinned_shader->descriptor_writes(*m_skinned_descriptor_sets[i], skinned_buffer_infos, skinned_image_infos),
+			s.skinned_shader->descriptor_writes(*s.skinned_descriptor_sets[i], skinned_buffer_infos, skinned_image_infos),
 			nullptr
 		);
 
-		const vk::DeviceSize instance_buffer_size = max_instances * 2 * m_instance_stride;
-		m_instance_buffer[i] = config.allocator().create_buffer({
+		const vk::DeviceSize instance_buffer_size = state::max_instances * 2 * s.instance_stride;
+		s.instance_buffer[i] = config.allocator().create_buffer({
 			.size = instance_buffer_size,
 			.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
 		});
-		m_instance_staging[i].reserve(instance_buffer_size);
+		s.instance_staging[i].reserve(instance_buffer_size);
 
-		constexpr vk::DeviceSize indirect_buffer_size = max_batches * sizeof(vk::DrawIndexedIndirectCommand);
-		m_normal_indirect_commands_buffer[i] = config.allocator().create_buffer({
+		constexpr vk::DeviceSize indirect_buffer_size = state::max_batches * sizeof(vk::DrawIndexedIndirectCommand);
+		s.normal_indirect_commands_buffer[i] = config.allocator().create_buffer({
 			.size = indirect_buffer_size,
 			.usage = vk::BufferUsageFlagBits::eIndirectBuffer | vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
 		});
-		m_skinned_indirect_commands_buffer[i] = config.allocator().create_buffer({
+		s.skinned_indirect_commands_buffer[i] = config.allocator().create_buffer({
 			.size = indirect_buffer_size,
 			.usage = vk::BufferUsageFlagBits::eIndirectBuffer | vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
 		});
@@ -564,10 +566,10 @@ auto gse::renderer::geometry::initialize() -> void {
 		.pPushConstantRanges = nullptr
 	};
 
-	m_skinned_pipeline_layout = config.device_config().device.createPipelineLayout(skinned_pipeline_layout_info);
+	s.skinned_pipeline_layout = config.device_config().device.createPipelineLayout(skinned_pipeline_layout_info);
 
-	auto skinned_shader_stages = m_skinned_shader->shader_stages();
-	auto skinned_vertex_input_info = m_skinned_shader->vertex_input_state();
+	auto skinned_shader_stages = s.skinned_shader->shader_stages();
+	auto skinned_vertex_input_info = s.skinned_shader->vertex_input_state();
 
 	const vk::GraphicsPipelineCreateInfo skinned_pipeline_info{
 		.pNext = &geometry_rendering_info,
@@ -582,77 +584,77 @@ auto gse::renderer::geometry::initialize() -> void {
 		.pDepthStencilState = &depth_stencil,
 		.pColorBlendState = &color_blending,
 		.pDynamicState = &dynamic_state,
-		.layout = m_skinned_pipeline_layout,
+		.layout = s.skinned_pipeline_layout,
 		.basePipelineHandle = nullptr,
 		.basePipelineIndex = 0
 	};
-	m_skinned_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, skinned_pipeline_info);
+	s.skinned_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, skinned_pipeline_info);
 
-	m_skin_compute = m_context.get<shader>("Shaders/Compute/skin_compute");
-	m_context.instantly_load(m_skin_compute);
+	s.skin_compute = s.ctx->get<shader>("Shaders/Compute/skin_compute");
+	s.ctx->instantly_load(s.skin_compute);
 
-	assert(m_skin_compute->is_compute(), std::source_location::current(), "Skin compute shader is not loaded as a compute shader");
+	assert(s.skin_compute->is_compute(), std::source_location::current(), "Skin compute shader is not loaded as a compute shader");
 
-	const auto joint_block = m_skin_compute->uniform_block("skeletonData");
-	m_joint_stride = joint_block.size;
+	const auto joint_block = s.skin_compute->uniform_block("skeletonData");
+	s.joint_stride = joint_block.size;
 	for (const auto& [name, member] : joint_block.members) {
-		m_joint_offsets[name] = member.offset;
+		s.joint_offsets[name] = member.offset;
 	}
 
-	m_skeleton_buffer = config.allocator().create_buffer({
-		.size = max_joints * m_joint_stride,
+	s.skeleton_buffer = config.allocator().create_buffer({
+		.size = state::max_joints * s.joint_stride,
 		.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
 	});
 
-	constexpr vk::DeviceSize local_pose_size = max_skin_matrices * sizeof(mat4);
+	constexpr vk::DeviceSize local_pose_size = state::max_skin_matrices * sizeof(mat4);
 	for (std::size_t i = 0; i < per_frame_resource<vulkan::buffer_resource>::frames_in_flight; ++i) {
-		m_local_pose_buffer[i] = config.allocator().create_buffer({
+		s.local_pose_buffer[i] = config.allocator().create_buffer({
 			.size = local_pose_size,
 			.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
 		});
-		m_local_pose_staging[i].reserve(max_skin_matrices);
+		s.local_pose_staging[i].reserve(state::max_skin_matrices);
 
-		m_skin_compute_sets[i] = m_skin_compute->descriptor_set(
+		s.skin_compute_sets[i] = s.skin_compute->descriptor_set(
 			config.device_config().device,
 			config.descriptor_config().pool,
 			shader::set::binding_type::persistent
 		);
 
 		const vk::DescriptorBufferInfo skeleton_info{
-			.buffer = m_skeleton_buffer.buffer,
+			.buffer = s.skeleton_buffer.buffer,
 			.offset = 0,
-			.range = max_joints * m_joint_stride
+			.range = state::max_joints * s.joint_stride
 		};
 
 		const vk::DescriptorBufferInfo local_pose_info{
-			.buffer = m_local_pose_buffer[i].buffer,
+			.buffer = s.local_pose_buffer[i].buffer,
 			.offset = 0,
 			.range = local_pose_size
 		};
 
 		const vk::DescriptorBufferInfo skin_info{
-			.buffer = m_skin_buffer[i].buffer,
+			.buffer = s.skin_buffer[i].buffer,
 			.offset = 0,
 			.range = skin_buffer_size
 		};
 
 		std::array writes{
 			vk::WriteDescriptorSet{
-				.dstSet = *m_skin_compute_sets[i],
+				.dstSet = *s.skin_compute_sets[i],
 				.dstBinding = 0,
 				.descriptorCount = 1,
 				.descriptorType = vk::DescriptorType::eStorageBuffer,
 				.pBufferInfo = &skeleton_info
 			},
 			vk::WriteDescriptorSet{
-				.dstSet = *m_skin_compute_sets[i],
+				.dstSet = *s.skin_compute_sets[i],
 				.dstBinding = 1,
 				.descriptorCount = 1,
 				.descriptorType = vk::DescriptorType::eStorageBuffer,
 				.pBufferInfo = &local_pose_info
 			},
 			vk::WriteDescriptorSet{
-				.dstSet = *m_skin_compute_sets[i],
+				.dstSet = *s.skin_compute_sets[i],
 				.dstBinding = 2,
 				.descriptorCount = 1,
 				.descriptorType = vk::DescriptorType::eStorageBuffer,
@@ -662,53 +664,53 @@ auto gse::renderer::geometry::initialize() -> void {
 
 		config.device_config().device.updateDescriptorSets(writes, nullptr);
 
-		auto compute_layouts = m_skin_compute->layouts();
-		std::vector compute_ranges = { m_skin_compute->push_constant_range("push_constants") };
+		auto compute_layouts = s.skin_compute->layouts();
+		std::vector compute_ranges = { s.skin_compute->push_constant_range("push_constants") };
 
-		m_skin_compute_pipeline_layout = config.device_config().device.createPipelineLayout({
+		s.skin_compute_pipeline_layout = config.device_config().device.createPipelineLayout({
 			.setLayoutCount = static_cast<std::uint32_t>(compute_layouts.size()),
 			.pSetLayouts = compute_layouts.data(),
 			.pushConstantRangeCount = static_cast<std::uint32_t>(compute_ranges.size()),
 			.pPushConstantRanges = compute_ranges.data()
 		});
 
-		m_skin_compute_pipeline = config.device_config().device.createComputePipeline(nullptr, {
-			.stage = m_skin_compute->compute_stage(),
-			.layout = *m_skin_compute_pipeline_layout
+		s.skin_compute_pipeline = config.device_config().device.createComputePipeline(nullptr, {
+			.stage = s.skin_compute->compute_stage(),
+			.layout = *s.skin_compute_pipeline_layout
 		});
 
 		constexpr vk::DeviceSize frustum_size = sizeof(frustum_planes);
-		m_frustum_buffer[i] = config.allocator().create_buffer({
+		s.frustum_buffer[i] = config.allocator().create_buffer({
 			.size = frustum_size,
 			.usage = vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst
 		});
 	}
 
-	m_culling_compute = m_context.get<shader>("Shaders/Compute/cull_instances");
-	m_context.instantly_load(m_culling_compute);
+	s.culling_compute = s.ctx->get<shader>("Shaders/Compute/cull_instances");
+	s.ctx->instantly_load(s.culling_compute);
 
-	const auto batch_block = m_culling_compute->uniform_block("batches");
-	m_batch_stride = batch_block.size;
+	const auto batch_block = s.culling_compute->uniform_block("batches");
+	s.batch_stride = batch_block.size;
 	for (const auto& [name, member] : batch_block.members) {
-		m_batch_offsets[name] = member.offset;
+		s.batch_offsets[name] = member.offset;
 	}
 
 	for (std::size_t i = 0; i < per_frame_resource<vulkan::buffer_resource>::frames_in_flight; ++i) {
-		const vk::DeviceSize batch_info_size = max_batches * 2 * m_batch_stride;
-		m_batch_info_buffer[i] = config.allocator().create_buffer({
+		const vk::DeviceSize batch_info_size = state::max_batches * 2 * s.batch_stride;
+		s.batch_info_buffer[i] = config.allocator().create_buffer({
 			.size = batch_info_size,
 			.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
 		});
 	}
 
-	if (m_culling_compute.valid() && m_culling_compute->is_compute()) {
+	if (s.culling_compute.valid() && s.culling_compute->is_compute()) {
 		for (std::size_t i = 0; i < per_frame_resource<vk::raii::DescriptorSet>::frames_in_flight; ++i) {
-			m_normal_culling_descriptor_sets[i] = m_culling_compute->descriptor_set(
+			s.normal_culling_descriptor_sets[i] = s.culling_compute->descriptor_set(
 				config.device_config().device,
 				config.descriptor_config().pool,
 				shader::set::binding_type::persistent
 			);
-			m_skinned_culling_descriptor_sets[i] = m_culling_compute->descriptor_set(
+			s.skinned_culling_descriptor_sets[i] = s.culling_compute->descriptor_set(
 				config.device_config().device,
 				config.descriptor_config().pool,
 				shader::set::binding_type::persistent
@@ -717,59 +719,59 @@ auto gse::renderer::geometry::initialize() -> void {
 
 		for (std::size_t i = 0; i < per_frame_resource<vk::raii::DescriptorSet>::frames_in_flight; ++i) {
 			const vk::DescriptorBufferInfo frustum_info{
-				.buffer = m_frustum_buffer[i].buffer,
+				.buffer = s.frustum_buffer[i].buffer,
 				.offset = 0,
 				.range = sizeof(frustum_planes)
 			};
 
 			const vk::DescriptorBufferInfo instance_info{
-				.buffer = m_instance_buffer[i].buffer,
+				.buffer = s.instance_buffer[i].buffer,
 				.offset = 0,
 				.range = vk::WholeSize
 			};
 
 			const vk::DescriptorBufferInfo batch_info{
-				.buffer = m_batch_info_buffer[i].buffer,
+				.buffer = s.batch_info_buffer[i].buffer,
 				.offset = 0,
 				.range = vk::WholeSize
 			};
 
 			const vk::DescriptorBufferInfo normal_indirect_info{
-				.buffer = m_normal_indirect_commands_buffer[i].buffer,
+				.buffer = s.normal_indirect_commands_buffer[i].buffer,
 				.offset = 0,
 				.range = vk::WholeSize
 			};
 
 			const vk::DescriptorBufferInfo skinned_indirect_info{
-				.buffer = m_skinned_indirect_commands_buffer[i].buffer,
+				.buffer = s.skinned_indirect_commands_buffer[i].buffer,
 				.offset = 0,
 				.range = vk::WholeSize
 			};
 
 			std::array<vk::WriteDescriptorSet, 4> normal_writes{
 				vk::WriteDescriptorSet{
-					.dstSet = *m_normal_culling_descriptor_sets[i],
+					.dstSet = *s.normal_culling_descriptor_sets[i],
 					.dstBinding = 0,
 					.descriptorCount = 1,
 					.descriptorType = vk::DescriptorType::eUniformBuffer,
 					.pBufferInfo = &frustum_info
 				},
 				vk::WriteDescriptorSet{
-					.dstSet = *m_normal_culling_descriptor_sets[i],
+					.dstSet = *s.normal_culling_descriptor_sets[i],
 					.dstBinding = 1,
 					.descriptorCount = 1,
 					.descriptorType = vk::DescriptorType::eStorageBuffer,
 					.pBufferInfo = &instance_info
 				},
 				vk::WriteDescriptorSet{
-					.dstSet = *m_normal_culling_descriptor_sets[i],
+					.dstSet = *s.normal_culling_descriptor_sets[i],
 					.dstBinding = 2,
 					.descriptorCount = 1,
 					.descriptorType = vk::DescriptorType::eStorageBuffer,
 					.pBufferInfo = &batch_info
 				},
 				vk::WriteDescriptorSet{
-					.dstSet = *m_normal_culling_descriptor_sets[i],
+					.dstSet = *s.normal_culling_descriptor_sets[i],
 					.dstBinding = 3,
 					.descriptorCount = 1,
 					.descriptorType = vk::DescriptorType::eStorageBuffer,
@@ -779,28 +781,28 @@ auto gse::renderer::geometry::initialize() -> void {
 
 			std::array<vk::WriteDescriptorSet, 4> skinned_writes{
 				vk::WriteDescriptorSet{
-					.dstSet = *m_skinned_culling_descriptor_sets[i],
+					.dstSet = *s.skinned_culling_descriptor_sets[i],
 					.dstBinding = 0,
 					.descriptorCount = 1,
 					.descriptorType = vk::DescriptorType::eUniformBuffer,
 					.pBufferInfo = &frustum_info
 				},
 				vk::WriteDescriptorSet{
-					.dstSet = *m_skinned_culling_descriptor_sets[i],
+					.dstSet = *s.skinned_culling_descriptor_sets[i],
 					.dstBinding = 1,
 					.descriptorCount = 1,
 					.descriptorType = vk::DescriptorType::eStorageBuffer,
 					.pBufferInfo = &instance_info
 				},
 				vk::WriteDescriptorSet{
-					.dstSet = *m_skinned_culling_descriptor_sets[i],
+					.dstSet = *s.skinned_culling_descriptor_sets[i],
 					.dstBinding = 2,
 					.descriptorCount = 1,
 					.descriptorType = vk::DescriptorType::eStorageBuffer,
 					.pBufferInfo = &batch_info
 				},
 				vk::WriteDescriptorSet{
-					.dstSet = *m_skinned_culling_descriptor_sets[i],
+					.dstSet = *s.skinned_culling_descriptor_sets[i],
 					.dstBinding = 3,
 					.descriptorCount = 1,
 					.descriptorType = vk::DescriptorType::eStorageBuffer,
@@ -812,401 +814,398 @@ auto gse::renderer::geometry::initialize() -> void {
 			config.device_config().device.updateDescriptorSets(skinned_writes, nullptr);
 		}
 
-		auto culling_layouts = m_culling_compute->layouts();
-		std::vector culling_ranges = { m_culling_compute->push_constant_range("push_constants") };
+		auto culling_layouts = s.culling_compute->layouts();
+		std::vector culling_ranges = { s.culling_compute->push_constant_range("push_constants") };
 
-		m_culling_pipeline_layout = config.device_config().device.createPipelineLayout({
+		s.culling_pipeline_layout = config.device_config().device.createPipelineLayout({
 			.setLayoutCount = static_cast<std::uint32_t>(culling_layouts.size()),
 			.pSetLayouts = culling_layouts.data(),
 			.pushConstantRangeCount = static_cast<std::uint32_t>(culling_ranges.size()),
 			.pPushConstantRanges = culling_ranges.data()
 		});
 
-		m_culling_pipeline = config.device_config().device.createComputePipeline(nullptr, {
-			.stage = m_culling_compute->compute_stage(),
-			.layout = *m_culling_pipeline_layout
+		s.culling_pipeline = config.device_config().device.createComputePipeline(nullptr, {
+			.stage = s.culling_compute->compute_stage(),
+			.layout = *s.culling_pipeline_layout
 		});
 	} else {
-		m_gpu_culling_enabled = false;
+		s.gpu_culling_enabled = false;
 	}
 
-	m_blank_texture = m_context.queue<texture>("blank", unitless::vec4(1, 1, 1, 1));
-	m_context.instantly_load(m_blank_texture);
+	s.blank_texture = s.ctx->queue<texture>("blank", unitless::vec4(1, 1, 1, 1));
+	s.ctx->instantly_load(s.blank_texture);
 
-	frame_sync::on_end([this] {
-		m_render_queue.flip();
-		m_render_queue_owners.flip();
-		m_skinned_render_queue.flip();
+	frame_sync::on_end([&s] {
+		s.render_queue_buffer.flip();
+		s.render_queue_owners.flip();
+		s.skinned_render_queue_buffer.flip();
 	});
 }
 
-auto gse::renderer::geometry::update() -> void {
-	this->write([this](
-		const component_chunk<render_component>& render_chunk,
-		const component_chunk<animation_component>& anim_chunk
-	) {
-		if (render_chunk.empty()) {
-			return;
+auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> void {
+	auto render_chunk = phase.registry.chunk<render_component>();
+
+	if (render_chunk.empty()) {
+		return;
+	}
+
+	const auto frame_index = s.ctx->config().current_frame();
+
+	s.shader_handle->set_uniform(
+		"CameraUBO.view",
+		s.ctx->camera().view(),
+		s.ubo_allocations.at("CameraUBO")[frame_index].allocation
+	);
+
+	s.shader_handle->set_uniform(
+		"CameraUBO.proj",
+		s.ctx->camera().projection(s.ctx->window().viewport()),
+		s.ubo_allocations.at("CameraUBO")[frame_index].allocation
+	);
+
+	auto& out = s.render_queue_buffer.write();
+	out.clear();
+
+	auto& owners_out = s.render_queue_owners.write();
+	owners_out.clear();
+
+	auto& skinned_out = s.skinned_render_queue_buffer.write();
+	skinned_out.clear();
+
+	auto& skin_staging = s.skin_staging[frame_index];
+	skin_staging.clear();
+
+	auto& local_pose_staging = s.local_pose_staging[frame_index];
+	local_pose_staging.clear();
+
+	std::uint32_t skinned_instance_count = 0;
+
+	for (auto& component : render_chunk) {
+		if (!component.render) {
+			continue;
 		}
 
-		const auto frame_index = m_context.config().current_frame();
+		const auto* mc = phase.registry.try_read<physics::motion_component>(component.owner_id());
+		const auto* cc = phase.registry.try_read<physics::collision_component>(component.owner_id());
 
-		m_shader->set_uniform(
-			"CameraUBO.view",
-			m_context.camera().view(),
-			m_ubo_allocations.at("CameraUBO")[frame_index].allocation
-		);
-
-		m_shader->set_uniform(
-			"CameraUBO.proj",
-			m_context.camera().projection(m_context.window().viewport()),
-			m_ubo_allocations.at("CameraUBO")[frame_index].allocation
-		);
-
-		auto& out = m_render_queue.write();
-		out.clear();
-
-		auto& owners_out = m_render_queue_owners.write();
-		owners_out.clear();
-
-		auto& skinned_out = m_skinned_render_queue.write();
-		skinned_out.clear();
-
-		auto& skin_staging = m_skin_staging[frame_index];
-		skin_staging.clear();
-
-		auto& local_pose_staging = m_local_pose_staging[frame_index];
-		local_pose_staging.clear();
-
-		std::uint32_t skinned_instance_count = 0;
-
-		for (auto& component : render_chunk) {
-			if (!component.render) {
+		for (auto& model_handle : component.model_instances) {
+			if (!model_handle.handle().valid() || mc == nullptr || cc == nullptr) {
 				continue;
 			}
 
-			const auto* mc = render_chunk.read_from<physics::motion_component>(component);
-			const auto* cc = render_chunk.read_from<physics::collision_component>(component);
-
-			for (auto& model_handle : component.model_instances) {
-				if (!model_handle.handle().valid() || mc == nullptr || cc == nullptr) {
-					continue;
-				}
-
-				model_handle.update(*mc, *cc);
-				const auto entries = model_handle.render_queue_entries();
-				out.append_range(entries);
-				owners_out.resize(owners_out.size() + entries.size(), component.owner_id());
-			}
-
-			const auto* anim = anim_chunk.read(component.owner_id());
-
-			for (auto& skinned_model_handle : component.skinned_model_instances) {
-				if (!skinned_model_handle.handle().valid() || mc == nullptr || cc == nullptr) {
-					continue;
-				}
-
-				if (anim != nullptr && !anim->local_pose.empty()) {
-					std::uint32_t skin_offset = 0;
-					skin_offset = static_cast<std::uint32_t>(local_pose_staging.size());
-
-					if (m_gpu_skinning_enabled && m_skin_compute.valid()) {
-						local_pose_staging.insert(local_pose_staging.end(), anim->local_pose.begin(), anim->local_pose.end());
-
-						if (anim->skeleton && (m_current_skeleton == nullptr || m_current_skeleton->id() != anim->skeleton.id())) {
-							m_current_skeleton = anim->skeleton.resolve();
-							m_current_joint_count = static_cast<std::uint32_t>(anim->skeleton->joint_count());
-							upload_skeleton_data(*anim->skeleton);
-						}
-
-						++skinned_instance_count;
-					}
-					else if (!anim->skins.empty()) {
-						skin_staging.insert(skin_staging.end(), anim->skins.begin(), anim->skins.end());
-					}
-
-					skinned_model_handle.update(*mc, *cc, skin_offset, m_current_joint_count);
-					const auto entries = skinned_model_handle.render_queue_entries();
-					skinned_out.append_range(entries);
-				}
-			}
+			model_handle.update(*mc, *cc);
+			const auto entries = model_handle.render_queue_entries();
+			out.append_range(entries);
+			owners_out.resize(owners_out.size() + entries.size(), component.owner_id());
 		}
 
-		std::ranges::sort(
-			out,
-			[](const render_queue_entry& a, const render_queue_entry& b) {
-				const auto* ma = a.model.resolve();
-				const auto* mb = b.model.resolve();
+		const auto* anim = phase.registry.try_read<animation_component>(component.owner_id());
 
-				if (ma != mb) {
-					return ma < mb;
+		for (auto& skinned_model_handle : component.skinned_model_instances) {
+			if (!skinned_model_handle.handle().valid() || mc == nullptr || cc == nullptr) {
+				continue;
+			}
+
+			if (anim != nullptr && !anim->local_pose.empty()) {
+				std::uint32_t skin_offset = 0;
+				skin_offset = static_cast<std::uint32_t>(local_pose_staging.size());
+
+				if (s.gpu_skinning_enabled && s.skin_compute.valid()) {
+					local_pose_staging.insert(local_pose_staging.end(), anim->local_pose.begin(), anim->local_pose.end());
+
+					if (anim->skeleton && (s.current_skeleton == nullptr || s.current_skeleton->id() != anim->skeleton.id())) {
+						s.current_skeleton = anim->skeleton.resolve();
+						s.current_joint_count = static_cast<std::uint32_t>(anim->skeleton->joint_count());
+						upload_skeleton_data(s, *anim->skeleton);
+					}
+
+					++skinned_instance_count;
+				}
+				else if (!anim->skins.empty()) {
+					skin_staging.insert(skin_staging.end(), anim->skins.begin(), anim->skins.end());
 				}
 
-				return a.index < b.index;
+				skinned_model_handle.update(*mc, *cc, skin_offset, s.current_joint_count);
+				const auto entries = skinned_model_handle.render_queue_entries();
+				skinned_out.append_range(entries);
 			}
-		);
+		}
+	}
 
-		std::ranges::sort(
-			skinned_out,
-			[](const skinned_render_queue_entry& a, const skinned_render_queue_entry& b) {
-				const auto* ma = a.model.resolve();
-				const auto* mb = b.model.resolve();
+	std::ranges::sort(
+		out,
+		[](const render_queue_entry& a, const render_queue_entry& b) {
+			const auto* ma = a.model.resolve();
+			const auto* mb = b.model.resolve();
 
-				if (ma != mb) {
-					return ma < mb;
-				}
-
-				return a.index < b.index;
+			if (ma != mb) {
+				return ma < mb;
 			}
-		);
 
-		struct instance_data {
-			mat4 model_matrix;
-			mat4 normal_matrix;
-			std::uint32_t skin_offset;
-			std::uint32_t joint_count;
+			return a.index < b.index;
+		}
+	);
+
+	std::ranges::sort(
+		skinned_out,
+		[](const skinned_render_queue_entry& a, const skinned_render_queue_entry& b) {
+			const auto* ma = a.model.resolve();
+			const auto* mb = b.model.resolve();
+
+			if (ma != mb) {
+				return ma < mb;
+			}
+
+			return a.index < b.index;
+		}
+	);
+
+	struct instance_data {
+		mat4 model_matrix;
+		mat4 normal_matrix;
+		std::uint32_t skin_offset;
+		std::uint32_t joint_count;
+	};
+
+	auto& instance_staging = s.instance_staging[frame_index];
+	auto& normal_batches = s.normal_instance_batches[frame_index];
+	auto& skinned_batches = s.skinned_instance_batches[frame_index];
+
+	instance_staging.clear();
+	normal_batches.clear();
+	skinned_batches.clear();
+
+	std::uint32_t global_instance_offset = 0;
+
+	if (!out.empty()) {
+		std::unordered_map<normal_batch_key, std::vector<instance_data>, normal_batch_key_hash> normal_batch_map;
+
+		for (const auto& entry : out) {
+			const normal_batch_key key{
+				.model_ptr = entry.model.resolve(),
+				.mesh_index = entry.index
+			};
+
+			instance_data inst{
+				.model_matrix = entry.model_matrix,
+				.normal_matrix = entry.normal_matrix,
+				.skin_offset = 0,
+				.joint_count = 0
+			};
+
+			normal_batch_map[key].push_back(inst);
+		}
+
+		for (auto& [key, instances] : normal_batch_map) {
+			const auto& mesh = key.model_ptr->meshes()[key.mesh_index];
+			const auto [local_aabb_min, local_aabb_max] = mesh.aabb();
+			const std::uint32_t instance_count = static_cast<std::uint32_t>(instances.size());
+
+			vec3<length> world_aabb_min(meters(std::numeric_limits<float>::max()));
+			vec3<length> world_aabb_max(meters(std::numeric_limits<float>::lowest()));
+
+			for (const auto& inst : instances) {
+				const auto [inst_min, inst_max] = transform_aabb(local_aabb_min, local_aabb_max, inst.model_matrix);
+
+				world_aabb_min = vec3<length>(
+					std::min(world_aabb_min.x(), inst_min.x()),
+					std::min(world_aabb_min.y(), inst_min.y()),
+					std::min(world_aabb_min.z(), inst_min.z())
+				);
+
+				world_aabb_max = vec3<length>(
+					std::max(world_aabb_max.x(), inst_max.x()),
+					std::max(world_aabb_max.y(), inst_max.y()),
+					std::max(world_aabb_max.z(), inst_max.z())
+				);
+			}
+
+			normal_instance_batch batch{
+				.key = key,
+				.first_instance = global_instance_offset,
+				.instance_count = instance_count,
+				.world_aabb_min = world_aabb_min,
+				.world_aabb_max = world_aabb_max
+			};
+
+			for (const auto& inst : instances) {
+				std::byte* offset = instance_staging.data() + (global_instance_offset * s.instance_stride);
+				instance_staging.resize(instance_staging.size() + s.instance_stride);
+				offset = instance_staging.data() + (global_instance_offset * s.instance_stride);
+
+				std::memcpy(offset + s.instance_offsets["model_matrix"], &inst.model_matrix, sizeof(mat4));
+				std::memcpy(offset + s.instance_offsets["normal_matrix"], &inst.normal_matrix, sizeof(mat4));
+				std::memcpy(offset + s.instance_offsets["skin_offset"], &inst.skin_offset, sizeof(std::uint32_t));
+				std::memcpy(offset + s.instance_offsets["joint_count"], &inst.joint_count, sizeof(std::uint32_t));
+
+				global_instance_offset++;
+			}
+			normal_batches.push_back(std::move(batch));
+		}
+	}
+
+	if (!skinned_out.empty()) {
+		std::unordered_map<skinned_batch_key, std::vector<instance_data>, skinned_batch_key_hash> skinned_batch_map;
+
+		for (const auto& entry : skinned_out) {
+			const skinned_batch_key key{
+				.model_ptr = entry.model.resolve(),
+				.mesh_index = entry.index
+			};
+
+			instance_data inst{
+				.model_matrix = entry.model_matrix,
+				.normal_matrix = entry.normal_matrix,
+				.skin_offset = entry.skin_offset,
+				.joint_count = entry.joint_count
+			};
+
+			skinned_batch_map[key].push_back(inst);
+		}
+
+		for (auto& [key, instances] : skinned_batch_map) {
+			const auto& mesh = key.model_ptr->meshes()[key.mesh_index];
+			const auto [local_aabb_min, local_aabb_max] = mesh.aabb();
+			const std::uint32_t instance_count = static_cast<std::uint32_t>(instances.size());
+
+			vec3<length> world_aabb_min(meters(std::numeric_limits<float>::max()));
+			vec3<length> world_aabb_max(meters(std::numeric_limits<float>::lowest()));
+
+			for (const auto& inst : instances) {
+				const auto [inst_min, inst_max] = transform_aabb(local_aabb_min, local_aabb_max, inst.model_matrix);
+
+				world_aabb_min = vec3<length>(
+					std::min(world_aabb_min.x(), inst_min.x()),
+					std::min(world_aabb_min.y(), inst_min.y()),
+					std::min(world_aabb_min.z(), inst_min.z())
+				);
+
+				world_aabb_max = vec3<length>(
+					std::max(world_aabb_max.x(), inst_max.x()),
+					std::max(world_aabb_max.y(), inst_max.y()),
+					std::max(world_aabb_max.z(), inst_max.z())
+				);
+			}
+
+			skinned_instance_batch batch{
+				.key = key,
+				.first_instance = global_instance_offset,
+				.instance_count = instance_count,
+				.world_aabb_min = world_aabb_min,
+				.world_aabb_max = world_aabb_max
+			};
+
+			for (const auto& inst : instances) {
+				std::byte* offset = instance_staging.data() + (global_instance_offset * s.instance_stride);
+				instance_staging.resize(instance_staging.size() + s.instance_stride);
+				offset = instance_staging.data() + (global_instance_offset * s.instance_stride);
+
+				std::memcpy(offset + s.instance_offsets["model_matrix"], &inst.model_matrix, sizeof(mat4));
+				std::memcpy(offset + s.instance_offsets["normal_matrix"], &inst.normal_matrix, sizeof(mat4));
+				std::memcpy(offset + s.instance_offsets["skin_offset"], &inst.skin_offset, sizeof(std::uint32_t));
+				std::memcpy(offset + s.instance_offsets["joint_count"], &inst.joint_count, sizeof(std::uint32_t));
+
+				global_instance_offset++;
+			}
+
+			skinned_batches.push_back(std::move(batch));
+		}
+	}
+
+	if (!instance_staging.empty()) {
+		gse::memcpy(s.instance_buffer[frame_index].allocation.mapped(), instance_staging);
+	}
+
+	const std::size_t total_batch_count = normal_batches.size() + skinned_batches.size();
+
+	if (!normal_batches.empty()) {
+		std::vector<vk::DrawIndexedIndirectCommand> normal_indirect_commands;
+		normal_indirect_commands.reserve(normal_batches.size());
+
+		for (const auto& batch : normal_batches) {
+			const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
+
+			vk::DrawIndexedIndirectCommand cmd{
+				.indexCount = static_cast<std::uint32_t>(mesh.indices().size()),
+				.instanceCount = batch.instance_count,
+				.firstIndex = 0,
+				.vertexOffset = 0,
+				.firstInstance = batch.first_instance
+			};
+
+			normal_indirect_commands.push_back(cmd);
+		}
+
+		if (!normal_indirect_commands.empty()) {
+			gse::memcpy(s.normal_indirect_commands_buffer[frame_index].allocation.mapped(), normal_indirect_commands);
+		}
+	}
+
+	if (!skinned_batches.empty()) {
+		std::vector<vk::DrawIndexedIndirectCommand> skinned_indirect_commands;
+		skinned_indirect_commands.reserve(skinned_batches.size());
+
+		for (const auto& batch : skinned_batches) {
+			const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
+
+			vk::DrawIndexedIndirectCommand cmd{
+				.indexCount = static_cast<std::uint32_t>(mesh.indices().size()),
+				.instanceCount = batch.instance_count,
+				.firstIndex = 0,
+				.vertexOffset = 0,
+				.firstInstance = batch.first_instance
+			};
+
+			skinned_indirect_commands.push_back(cmd);
+		}
+
+		if (!skinned_indirect_commands.empty()) {
+			gse::memcpy(s.skinned_indirect_commands_buffer[frame_index].allocation.mapped(), skinned_indirect_commands);
+		}
+	}
+
+	if (total_batch_count > 0 && s.gpu_culling_enabled && s.culling_compute.valid()) {
+		const mat4 view_proj = s.ctx->camera().projection(s.ctx->window().viewport()) * s.ctx->camera().view();
+		const frustum_planes frustum = extract_frustum_planes(view_proj);
+		gse::memcpy(s.frustum_buffer[frame_index].allocation.mapped(), &frustum);
+
+		std::byte* batch_data = s.batch_info_buffer[frame_index].allocation.mapped();
+
+		auto write_batch_info = [&](const auto& batch, const std::size_t index) {
+			std::byte* offset = batch_data + (index * s.batch_stride);
+
+			std::memcpy(offset + s.batch_offsets["first_instance"], &batch.first_instance, sizeof(std::uint32_t));
+			std::memcpy(offset + s.batch_offsets["instance_count"], &batch.instance_count, sizeof(std::uint32_t));
+
+			const auto aabb_min = batch.world_aabb_min.template as<meters>();
+			std::memcpy(offset + s.batch_offsets["aabb_min"], &aabb_min, sizeof(unitless::vec3));
+
+			const auto aabb_max = batch.world_aabb_max.template as<meters>();
+			std::memcpy(offset + s.batch_offsets["aabb_max"], &aabb_max, sizeof(unitless::vec3));
 		};
 
-		auto& instance_staging = m_instance_staging[frame_index];
-		auto& normal_batches = m_normal_instance_batches[frame_index];
-		auto& skinned_batches = m_skinned_instance_batches[frame_index];
-
-		instance_staging.clear();
-		normal_batches.clear();
-		skinned_batches.clear();
-
-		std::uint32_t global_instance_offset = 0;
-
-		if (!out.empty()) {
-			std::unordered_map<normal_batch_key, std::vector<instance_data>, normal_batch_key_hash> normal_batch_map;
-
-			for (const auto& entry : out) {
-				const normal_batch_key key{
-					.model_ptr = entry.model.resolve(),
-					.mesh_index = entry.index
-				};
-
-				instance_data inst{
-					.model_matrix = entry.model_matrix,
-					.normal_matrix = entry.normal_matrix,
-					.skin_offset = 0,
-					.joint_count = 0
-				};
-
-				normal_batch_map[key].push_back(inst);
-			}
-
-			for (auto& [key, instances] : normal_batch_map) {
-				const auto& mesh = key.model_ptr->meshes()[key.mesh_index];
-				const auto [local_aabb_min, local_aabb_max] = mesh.aabb();
-				const std::uint32_t instance_count = static_cast<std::uint32_t>(instances.size());
-
-				vec3<length> world_aabb_min(meters(std::numeric_limits<float>::max()));
-				vec3<length> world_aabb_max(meters(std::numeric_limits<float>::lowest()));
-
-				for (const auto& inst : instances) {
-					const auto [inst_min, inst_max] = transform_aabb(local_aabb_min, local_aabb_max, inst.model_matrix);
-
-					world_aabb_min = vec3<length>(
-						std::min(world_aabb_min.x(), inst_min.x()),
-						std::min(world_aabb_min.y(), inst_min.y()),
-						std::min(world_aabb_min.z(), inst_min.z())
-					);
-
-					world_aabb_max = vec3<length>(
-						std::max(world_aabb_max.x(), inst_max.x()),
-						std::max(world_aabb_max.y(), inst_max.y()),
-						std::max(world_aabb_max.z(), inst_max.z())
-					);
-				}
-
-				normal_instance_batch batch{
-					.key = key,
-					.first_instance = global_instance_offset,
-					.instance_count = instance_count,
-					.world_aabb_min = world_aabb_min,
-					.world_aabb_max = world_aabb_max
-				};
-
-				for (const auto& inst : instances) {
-					std::byte* offset = instance_staging.data() + (global_instance_offset * m_instance_stride);
-					instance_staging.resize(instance_staging.size() + m_instance_stride);
-					offset = instance_staging.data() + (global_instance_offset * m_instance_stride);
-
-					std::memcpy(offset + m_instance_offsets["model_matrix"], &inst.model_matrix, sizeof(mat4));
-					std::memcpy(offset + m_instance_offsets["normal_matrix"], &inst.normal_matrix, sizeof(mat4));
-					std::memcpy(offset + m_instance_offsets["skin_offset"], &inst.skin_offset, sizeof(std::uint32_t));
-					std::memcpy(offset + m_instance_offsets["joint_count"], &inst.joint_count, sizeof(std::uint32_t));
-
-					global_instance_offset++;
-				}
-				normal_batches.push_back(std::move(batch));
-			}
+		std::size_t batch_index = 0;
+		for (const auto& batch : normal_batches) {
+			write_batch_info(batch, batch_index++);
 		}
-
-			if (!skinned_out.empty()) {
-				std::unordered_map<skinned_batch_key, std::vector<instance_data>, skinned_batch_key_hash> skinned_batch_map;
-
-				for (const auto& entry : skinned_out) {
-					const skinned_batch_key key{
-						.model_ptr = entry.model.resolve(),
-						.mesh_index = entry.index
-					};
-
-					instance_data inst{
-						.model_matrix = entry.model_matrix,
-						.normal_matrix = entry.normal_matrix,
-						.skin_offset = entry.skin_offset,
-						.joint_count = entry.joint_count
-					};
-
-					skinned_batch_map[key].push_back(inst);
-				}
-
-				for (auto& [key, instances] : skinned_batch_map) {
-					const auto& mesh = key.model_ptr->meshes()[key.mesh_index];
-					const auto [local_aabb_min, local_aabb_max] = mesh.aabb();
-					const std::uint32_t instance_count = static_cast<std::uint32_t>(instances.size());
-
-					vec3<length> world_aabb_min(meters(std::numeric_limits<float>::max()));
-					vec3<length> world_aabb_max(meters(std::numeric_limits<float>::lowest()));
-
-					for (const auto& inst : instances) {
-						const auto [inst_min, inst_max] = transform_aabb(local_aabb_min, local_aabb_max, inst.model_matrix);
-
-						world_aabb_min = vec3<length>(
-							std::min(world_aabb_min.x(), inst_min.x()),
-							std::min(world_aabb_min.y(), inst_min.y()),
-							std::min(world_aabb_min.z(), inst_min.z())
-						);
-
-						world_aabb_max = vec3<length>(
-							std::max(world_aabb_max.x(), inst_max.x()),
-							std::max(world_aabb_max.y(), inst_max.y()),
-							std::max(world_aabb_max.z(), inst_max.z())
-						);
-					}
-
-					skinned_instance_batch batch{
-						.key = key,
-						.first_instance = global_instance_offset,
-						.instance_count = instance_count,
-						.world_aabb_min = world_aabb_min,
-						.world_aabb_max = world_aabb_max
-					};
-
-					for (const auto& inst : instances) {
-						std::byte* offset = instance_staging.data() + (global_instance_offset * m_instance_stride);
-						instance_staging.resize(instance_staging.size() + m_instance_stride);
-						offset = instance_staging.data() + (global_instance_offset * m_instance_stride);
-
-						std::memcpy(offset + m_instance_offsets["model_matrix"], &inst.model_matrix, sizeof(mat4));
-						std::memcpy(offset + m_instance_offsets["normal_matrix"], &inst.normal_matrix, sizeof(mat4));
-						std::memcpy(offset + m_instance_offsets["skin_offset"], &inst.skin_offset, sizeof(std::uint32_t));
-						std::memcpy(offset + m_instance_offsets["joint_count"], &inst.joint_count, sizeof(std::uint32_t));
-
-						global_instance_offset++;
-					}
-
-					skinned_batches.push_back(std::move(batch));
-				}
-			}
-
-			if (!instance_staging.empty()) {
-				gse::memcpy(m_instance_buffer[frame_index].allocation.mapped(), instance_staging);
-			}
-
-			const std::size_t total_batch_count = normal_batches.size() + skinned_batches.size();
-
-			if (!normal_batches.empty()) {
-				std::vector<vk::DrawIndexedIndirectCommand> normal_indirect_commands;
-				normal_indirect_commands.reserve(normal_batches.size());
-
-				for (const auto& batch : normal_batches) {
-					const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
-
-					vk::DrawIndexedIndirectCommand cmd{
-						.indexCount = static_cast<std::uint32_t>(mesh.indices().size()),
-						.instanceCount = batch.instance_count,
-						.firstIndex = 0,
-						.vertexOffset = 0,
-						.firstInstance = batch.first_instance
-					};
-
-					normal_indirect_commands.push_back(cmd);
-				}
-
-				if (!normal_indirect_commands.empty()) {
-					gse::memcpy(m_normal_indirect_commands_buffer[frame_index].allocation.mapped(), normal_indirect_commands);
-				}
-			}
-
-			if (!skinned_batches.empty()) {
-				std::vector<vk::DrawIndexedIndirectCommand> skinned_indirect_commands;
-				skinned_indirect_commands.reserve(skinned_batches.size());
-
-				for (const auto& batch : skinned_batches) {
-					const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
-
-					vk::DrawIndexedIndirectCommand cmd{
-						.indexCount = static_cast<std::uint32_t>(mesh.indices().size()),
-						.instanceCount = batch.instance_count,
-						.firstIndex = 0,
-						.vertexOffset = 0,
-						.firstInstance = batch.first_instance
-					};
-
-					skinned_indirect_commands.push_back(cmd);
-				}
-
-				if (!skinned_indirect_commands.empty()) {
-					gse::memcpy(m_skinned_indirect_commands_buffer[frame_index].allocation.mapped(), skinned_indirect_commands);
-				}
-			}
-
-			if (total_batch_count > 0 && m_gpu_culling_enabled && m_culling_compute.valid()) {
-				const mat4 view_proj = m_context.camera().projection(m_context.window().viewport()) * m_context.camera().view();
-				const frustum_planes frustum = extract_frustum_planes(view_proj);
-				gse::memcpy(m_frustum_buffer[frame_index].allocation.mapped(), &frustum);
-
-				std::byte* batch_data = m_batch_info_buffer[frame_index].allocation.mapped();
-
-				auto write_batch_info = [&](const auto& batch, const std::size_t index) {
-					std::byte* offset = batch_data + (index * m_batch_stride);
-
-					std::memcpy(offset + m_batch_offsets["first_instance"], &batch.first_instance, sizeof(std::uint32_t));
-					std::memcpy(offset + m_batch_offsets["instance_count"], &batch.instance_count, sizeof(std::uint32_t));
-
-					const auto aabb_min = batch.world_aabb_min.template as<meters>();
-					std::memcpy(offset + m_batch_offsets["aabb_min"], &aabb_min, sizeof(unitless::vec3));
-
-					const auto aabb_max = batch.world_aabb_max.template as<meters>();
-					std::memcpy(offset + m_batch_offsets["aabb_max"], &aabb_max, sizeof(unitless::vec3));
-				};
-
-				std::size_t batch_index = 0;
-				for (const auto& batch : normal_batches) {
-					write_batch_info(batch, batch_index++);
-				}
-				for (const auto& batch : skinned_batches) {
-					write_batch_info(batch, batch_index++);
-				}
-			}
-
-		if (m_gpu_skinning_enabled && m_skin_compute.valid() && !local_pose_staging.empty() && m_current_joint_count > 0) {
-			gse::memcpy(m_local_pose_buffer[frame_index].allocation.mapped(), local_pose_staging);
-			m_pending_compute_instance_count[frame_index] = skinned_instance_count;
-		} else if (!skin_staging.empty()) {
-			gse::memcpy(m_skin_buffer[frame_index].allocation.mapped(), skin_staging);
-			m_pending_compute_instance_count[frame_index] = 0;
-		} else {
-			m_pending_compute_instance_count[frame_index] = 0;
+		for (const auto& batch : skinned_batches) {
+			write_batch_info(batch, batch_index++);
 		}
-	});
+	}
+
+	if (s.gpu_skinning_enabled && s.skin_compute.valid() && !local_pose_staging.empty() && s.current_joint_count > 0) {
+		gse::memcpy(s.local_pose_buffer[frame_index].allocation.mapped(), local_pose_staging);
+		s.pending_compute_instance_count[frame_index] = skinned_instance_count;
+	} else if (!skin_staging.empty()) {
+		gse::memcpy(s.skin_buffer[frame_index].allocation.mapped(), skin_staging);
+		s.pending_compute_instance_count[frame_index] = 0;
+	} else {
+		s.pending_compute_instance_count[frame_index] = 0;
+	}
 }
 
-auto gse::renderer::geometry::render() -> void {
-    auto& config = m_context.config();
+auto gse::renderer::geometry::system::render(render_phase&, const state& s) -> void {
+    auto& config = s.ctx->config();
 
     if (!config.frame_in_progress()) {
         return;
@@ -1275,19 +1274,19 @@ auto gse::renderer::geometry::render() -> void {
 
     const auto frame_index = config.current_frame();
 
-    if (m_pending_compute_instance_count[frame_index] > 0) {
-        dispatch_skin_compute(command, m_pending_compute_instance_count[frame_index]);
+    if (s.pending_compute_instance_count[frame_index] > 0) {
+        dispatch_skin_compute(s, command, s.pending_compute_instance_count[frame_index]);
     }
 
-    const auto& normal_batches = m_normal_instance_batches[frame_index];
-    const auto& skinned_batches = m_skinned_instance_batches[frame_index];
+    const auto& normal_batches = s.normal_instance_batches[frame_index];
+    const auto& skinned_batches = s.skinned_instance_batches[frame_index];
 
-    if (m_gpu_culling_enabled && m_culling_compute.valid()) {
-		if (const auto& dc = m_normal_culling_descriptor_sets[frame_index]; !normal_batches.empty()) {
-            dispatch_culling_compute(command, static_cast<std::uint32_t>(normal_batches.size()), dc.value(), 0);
+    if (s.gpu_culling_enabled && s.culling_compute.valid()) {
+		if (const auto& dc = s.normal_culling_descriptor_sets[frame_index]; !normal_batches.empty()) {
+            dispatch_culling_compute(s, command, static_cast<std::uint32_t>(normal_batches.size()), dc.value(), 0);
         }
-		if (const auto& dc = m_skinned_culling_descriptor_sets[frame_index]; !skinned_batches.empty()) {
-            dispatch_culling_compute(command, static_cast<std::uint32_t>(skinned_batches.size()), dc.value(), static_cast<std::uint32_t>(normal_batches.size()));
+		if (const auto& dc = s.skinned_culling_descriptor_sets[frame_index]; !skinned_batches.empty()) {
+            dispatch_culling_compute(s, command, static_cast<std::uint32_t>(skinned_batches.size()), dc.value(), static_cast<std::uint32_t>(normal_batches.size()));
         }
     } else {
         std::vector<vk::BufferMemoryBarrier2> indirect_barriers;
@@ -1300,7 +1299,7 @@ auto gse::renderer::geometry::render() -> void {
                 .dstAccessMask = vk::AccessFlagBits2::eIndirectCommandRead,
                 .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
                 .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-                .buffer = m_normal_indirect_commands_buffer[frame_index].buffer,
+                .buffer = s.normal_indirect_commands_buffer[frame_index].buffer,
                 .offset = 0,
                 .size = vk::WholeSize
             });
@@ -1314,7 +1313,7 @@ auto gse::renderer::geometry::render() -> void {
                 .dstAccessMask = vk::AccessFlagBits2::eIndirectCommandRead,
                 .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
                 .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-                .buffer = m_skinned_indirect_commands_buffer[frame_index].buffer,
+                .buffer = s.skinned_indirect_commands_buffer[frame_index].buffer,
                 .offset = 0,
                 .size = vk::WholeSize
             });
@@ -1352,29 +1351,29 @@ auto gse::renderer::geometry::render() -> void {
             if (!normal_batches.empty()) {
                 command.bindPipeline(
                     vk::PipelineBindPoint::eGraphics,
-                    m_pipeline
+                    s.pipeline
                 );
 
-                const vk::DescriptorSet sets[]{ **m_descriptor_sets[frame_index] };
+                const vk::DescriptorSet sets[]{ **s.descriptor_sets[frame_index] };
 
                 command.bindDescriptorSets(
                     vk::PipelineBindPoint::eGraphics,
-                    m_pipeline_layout,
+                    s.pipeline_layout,
                     0,
                     vk::ArrayProxy<const vk::DescriptorSet>(1, sets),
                     {}
                 );
 
                 const vk::DescriptorBufferInfo instance_buffer_info{
-                    .buffer = m_instance_buffer[frame_index].buffer,
+                    .buffer = s.instance_buffer[frame_index].buffer,
                     .offset = 0,
-                    .range = m_instance_buffer[frame_index].allocation.size()
+                    .range = s.instance_buffer[frame_index].allocation.size()
                 };
 
                 const vk::DescriptorBufferInfo skin_buffer_info_normal{
-                    .buffer = m_skin_buffer[frame_index].buffer,
+                    .buffer = s.skin_buffer[frame_index].buffer,
                     .offset = 0,
-                    .range = m_skin_buffer[frame_index].allocation.size()
+                    .range = s.skin_buffer[frame_index].allocation.size()
                 };
 
                 for (std::size_t i = 0; i < normal_batches.size(); ++i) {
@@ -1382,7 +1381,7 @@ auto gse::renderer::geometry::render() -> void {
                     const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
 
                     const bool has_texture = mesh.material().valid() && mesh.material()->diffuse_texture.valid();
-                    const auto& tex_info = has_texture ? mesh.material()->diffuse_texture->descriptor_info() : m_blank_texture->descriptor_info();
+                    const auto& tex_info = has_texture ? mesh.material()->diffuse_texture->descriptor_info() : s.blank_texture->descriptor_info();
 
                     const std::array<vk::WriteDescriptorSet, 3> descriptor_writes{
                         vk::WriteDescriptorSet{
@@ -1410,7 +1409,7 @@ auto gse::renderer::geometry::render() -> void {
 
                     command.pushDescriptorSetKHR(
                         vk::PipelineBindPoint::eGraphics,
-                        m_pipeline_layout,
+                        s.pipeline_layout,
                         1,
                         descriptor_writes
                     );
@@ -1418,7 +1417,7 @@ auto gse::renderer::geometry::render() -> void {
                     mesh.bind(command);
 
                     command.drawIndexedIndirect(
-                        m_normal_indirect_commands_buffer[frame_index].buffer,
+                        s.normal_indirect_commands_buffer[frame_index].buffer,
                         i * sizeof(vk::DrawIndexedIndirectCommand),
                         1,
                         0
@@ -1429,29 +1428,29 @@ auto gse::renderer::geometry::render() -> void {
             if (!skinned_batches.empty()) {
                 command.bindPipeline(
                     vk::PipelineBindPoint::eGraphics,
-                    m_skinned_pipeline
+                    s.skinned_pipeline
                 );
 
-                const vk::DescriptorSet skinned_sets[]{ **m_skinned_descriptor_sets[frame_index] };
+                const vk::DescriptorSet skinned_sets[]{ **s.skinned_descriptor_sets[frame_index] };
 
                 command.bindDescriptorSets(
                     vk::PipelineBindPoint::eGraphics,
-                    m_skinned_pipeline_layout,
+                    s.skinned_pipeline_layout,
                     0,
                     vk::ArrayProxy<const vk::DescriptorSet>(1, skinned_sets),
                     {}
                 );
 
                 const vk::DescriptorBufferInfo skin_buffer_info{
-                    .buffer = m_skin_buffer[frame_index].buffer,
+                    .buffer = s.skin_buffer[frame_index].buffer,
                     .offset = 0,
-                    .range = m_skin_buffer[frame_index].allocation.size()
+                    .range = s.skin_buffer[frame_index].allocation.size()
                 };
 
                 const vk::DescriptorBufferInfo skinned_instance_buffer_info{
-                    .buffer = m_instance_buffer[frame_index].buffer,
+                    .buffer = s.instance_buffer[frame_index].buffer,
                     .offset = 0,
-                    .range = m_instance_buffer[frame_index].allocation.size()
+                    .range = s.instance_buffer[frame_index].allocation.size()
                 };
 
                 for (std::size_t i = 0; i < skinned_batches.size(); ++i) {
@@ -1459,7 +1458,7 @@ auto gse::renderer::geometry::render() -> void {
                     const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
 
                     const bool has_texture = mesh.material().valid() && mesh.material()->diffuse_texture.valid();
-                    const auto& tex_info = has_texture ? mesh.material()->diffuse_texture->descriptor_info() : m_blank_texture->descriptor_info();
+                    const auto& tex_info = has_texture ? mesh.material()->diffuse_texture->descriptor_info() : s.blank_texture->descriptor_info();
 
                     const std::array<vk::WriteDescriptorSet, 3> skinned_descriptor_writes{
                         vk::WriteDescriptorSet{
@@ -1487,7 +1486,7 @@ auto gse::renderer::geometry::render() -> void {
 
                     command.pushDescriptorSetKHR(
                         vk::PipelineBindPoint::eGraphics,
-                        m_skinned_pipeline_layout,
+                        s.skinned_pipeline_layout,
                         1,
                         skinned_descriptor_writes
                     );
@@ -1495,7 +1494,7 @@ auto gse::renderer::geometry::render() -> void {
                     mesh.bind(command);
 
                     command.drawIndexedIndirect(
-                        m_skinned_indirect_commands_buffer[frame_index].buffer,
+                        s.skinned_indirect_commands_buffer[frame_index].buffer,
                         i * sizeof(vk::DrawIndexedIndirectCommand),
                         1,
                         0
@@ -1520,41 +1519,12 @@ auto gse::renderer::geometry::render() -> void {
     command.pipelineBarrier2(post_dep);
 }
 
-auto gse::renderer::geometry::render_queue() const -> std::span<const render_queue_entry> {
-	return m_render_queue.read();
-}
-
-auto gse::renderer::geometry::render_queue_excluding(const std::span<const id> exclude_ids) const -> std::vector<render_queue_entry> {
-	const auto& entries = m_render_queue.read();
-	const auto& owners = m_render_queue_owners.read();
-
-	std::vector<render_queue_entry> result;
-	result.reserve(entries.size());
-
-	for (std::size_t i = 0; i < entries.size(); ++i) {
-		bool excluded = std::ranges::any_of(exclude_ids, [&](const id& ex) { return ex == owners[i]; });
-		if (!excluded) {
-			result.push_back(entries[i]);
-		}
-	}
-
-	return result;
-}
-
-auto gse::renderer::geometry::skinned_render_queue() const -> std::span<const skinned_render_queue_entry> {
-	return m_skinned_render_queue.read();
-}
-
-auto gse::renderer::geometry::skin_buffer() const -> const vulkan::buffer_resource& {
-	return m_skin_buffer[m_context.config().current_frame()];
-}
-
-auto gse::renderer::geometry::dispatch_skin_compute(const vk::CommandBuffer command, const std::uint32_t instance_count) -> void {
-	if (instance_count == 0 || !m_skin_compute.valid()) {
+auto gse::renderer::geometry::dispatch_skin_compute(const state& s, const vk::CommandBuffer command, const std::uint32_t instance_count) -> void {
+	if (instance_count == 0 || !s.skin_compute.valid()) {
 		return;
 	}
 
-	const auto frame_index = m_context.config().current_frame();
+	const auto frame_index = s.ctx->config().current_frame();
 
 	constexpr vk::MemoryBarrier2 host_to_device_barrier{
 		.srcStageMask = vk::PipelineStageFlagBits2::eHost,
@@ -1570,25 +1540,25 @@ auto gse::renderer::geometry::dispatch_skin_compute(const vk::CommandBuffer comm
 
 	command.pipelineBarrier2(host_dep);
 
-	command.bindPipeline(vk::PipelineBindPoint::eCompute, *m_skin_compute_pipeline);
+	command.bindPipeline(vk::PipelineBindPoint::eCompute, *s.skin_compute_pipeline);
 
-	const vk::DescriptorSet sets[]{ *m_skin_compute_sets[frame_index] };
+	const vk::DescriptorSet sets[]{ *s.skin_compute_sets[frame_index] };
 	command.bindDescriptorSets(
 		vk::PipelineBindPoint::eCompute,
-		*m_skin_compute_pipeline_layout,
+		*s.skin_compute_pipeline_layout,
 		0,
 		vk::ArrayProxy<const vk::DescriptorSet>(1, sets),
 		{}
 	);
 
-	m_skin_compute->push(
+	s.skin_compute->push(
 		command,
-		*m_skin_compute_pipeline_layout,
+		*s.skin_compute_pipeline_layout,
 		"push_constants",
-		"joint_count", m_current_joint_count,
+		"joint_count", s.current_joint_count,
 		"instance_count", instance_count,
-		"local_pose_stride", m_current_joint_count,
-		"skin_stride", m_current_joint_count
+		"local_pose_stride", s.current_joint_count,
+		"skin_stride", s.current_joint_count
 	);
 
 	command.dispatch(instance_count, 1, 1);
@@ -1608,8 +1578,8 @@ auto gse::renderer::geometry::dispatch_skin_compute(const vk::CommandBuffer comm
 	command.pipelineBarrier2(compute_dep);
 }
 
-auto gse::renderer::geometry::dispatch_culling_compute(const vk::CommandBuffer command, const std::uint32_t batch_count, const vk::raii::DescriptorSet& culling_set, const std::uint32_t batch_offset) const -> void {
-	if (batch_count == 0 || !m_gpu_culling_enabled || !m_culling_compute.valid()) {
+auto gse::renderer::geometry::dispatch_culling_compute(const state& s, const vk::CommandBuffer command, const std::uint32_t batch_count, const vk::raii::DescriptorSet& culling_set, const std::uint32_t batch_offset) -> void {
+	if (batch_count == 0 || !s.gpu_culling_enabled || !s.culling_compute.valid()) {
 		return;
 	}
 
@@ -1627,20 +1597,20 @@ auto gse::renderer::geometry::dispatch_culling_compute(const vk::CommandBuffer c
 
 	command.pipelineBarrier2(host_dep);
 
-	command.bindPipeline(vk::PipelineBindPoint::eCompute, *m_culling_pipeline);
+	command.bindPipeline(vk::PipelineBindPoint::eCompute, *s.culling_pipeline);
 
 	const vk::DescriptorSet culling_sets[]{ *culling_set };
 	command.bindDescriptorSets(
 		vk::PipelineBindPoint::eCompute,
-		*m_culling_pipeline_layout,
+		*s.culling_pipeline_layout,
 		0,
 		vk::ArrayProxy<const vk::DescriptorSet>(1, culling_sets),
 		{}
 	);
 
-	m_culling_compute->push(
+	s.culling_compute->push(
 		command,
-		*m_culling_pipeline_layout,
+		*s.culling_pipeline_layout,
 		"push_constants",
 		"batch_offset", batch_offset
 	);
@@ -1662,19 +1632,19 @@ auto gse::renderer::geometry::dispatch_culling_compute(const vk::CommandBuffer c
 	command.pipelineBarrier2(compute_dep);
 }
 
-auto gse::renderer::geometry::upload_skeleton_data(const skeleton& skel) const -> void {
+auto gse::renderer::geometry::upload_skeleton_data(const state& s, const skeleton& skel) -> void {
 	const auto joint_count = static_cast<std::size_t>(skel.joint_count());
 	const auto joints = skel.joints();
 
-	std::byte* buffer = m_skeleton_buffer.allocation.mapped();
+	std::byte* buffer = s.skeleton_buffer.allocation.mapped();
 
 	for (std::size_t i = 0; i < joint_count; ++i) {
-		std::byte* offset = buffer + (i * m_joint_stride);
+		std::byte* offset = buffer + (i * s.joint_stride);
 
 		const mat4 inverse_bind = joints[i].inverse_bind();
 		const std::uint32_t parent_index = joints[i].parent_index();
 
-		std::memcpy(offset + m_joint_offsets.at("inverse_bind"), &inverse_bind, sizeof(mat4));
-		std::memcpy(offset + m_joint_offsets.at("parent_index"), &parent_index, sizeof(std::uint32_t));
+		std::memcpy(offset + s.joint_offsets.at("inverse_bind"), &inverse_bind, sizeof(mat4));
+		std::memcpy(offset + s.joint_offsets.at("parent_index"), &parent_index, sizeof(std::uint32_t));
 	}
 }
