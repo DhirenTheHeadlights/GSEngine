@@ -332,7 +332,7 @@ auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_co
 		gse::config::resource_path / "Misc/settings.toml",
 		"Graphics",
 		"Validation Layers",
-		true
+		false
 	);
 
 	std::vector<const char*> validation_layers;

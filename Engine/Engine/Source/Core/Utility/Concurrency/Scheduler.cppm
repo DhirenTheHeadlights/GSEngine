@@ -51,7 +51,7 @@ export namespace gse {
 		) const -> const void* override;
 
 		auto ensure_channel(
-			std::type_index idx, 
+			std::type_index idx,
 			channel_factory_fn factory
 		) -> channel_base& override;
 
@@ -84,9 +84,6 @@ export namespace gse {
 		mutable std::mutex m_channels_mutex;
 		registry* m_registry = nullptr;
 		registry_access m_registry_access{};
-
-		auto snapshot_all_states(
-		) const -> void;
 
 		auto snapshot_all_channels(
 		) -> void;
@@ -141,7 +138,7 @@ auto gse::scheduler::snapshot_ptr(const std::type_index type) const -> const voi
 	if (it == m_state_index.end()) {
 		return nullptr;
 	}
-	return it->second->snapshot_ptr();
+	return it->second->state_ptr();
 }
 
 auto gse::scheduler::system_ptr(const std::type_index idx) -> void* {
@@ -183,8 +180,6 @@ auto gse::scheduler::initialize() -> void {
 		snapshot_all_channels();
 	});
 
-	snapshot_all_states();
-
 	auto writer = make_channel_writer();
 
 	initialize_phase phase{
@@ -193,14 +188,12 @@ auto gse::scheduler::initialize() -> void {
 		.channels = writer
 	};
 
-	for (auto& n : m_nodes) {
+	for (const auto& n : m_nodes) {
 		n->initialize(phase);
 	}
 }
 
 auto gse::scheduler::update() -> void {
-	snapshot_all_states();
-
 	auto writer = make_channel_writer();
 	update_phase phase{
 		.registry = m_registry_access,
@@ -218,8 +211,6 @@ auto gse::scheduler::update() -> void {
 }
 
 auto gse::scheduler::render(const std::function<void()>& in_frame) -> void {
-	snapshot_all_states();
-
 	begin_frame_phase bf_phase{
 		.snapshots = *this
 	};
@@ -236,8 +227,6 @@ auto gse::scheduler::render(const std::function<void()>& in_frame) -> void {
 			started[i] = m_nodes[i]->begin_frame(bf_phase);
 		}
 	}
-
-	snapshot_all_states();
 
 	const registry_access const_reg_access = m_registry_access;
 
@@ -287,12 +276,6 @@ auto gse::scheduler::clear() -> void {
 
 auto gse::scheduler::registry_access_mut() -> registry_access& {
 	return m_registry_access;
-}
-
-auto gse::scheduler::snapshot_all_states() const -> void {
-	for (auto& n : m_nodes) {
-		n->snapshot();
-	}
 }
 
 auto gse::scheduler::snapshot_all_channels() -> void {

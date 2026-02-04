@@ -1,7 +1,7 @@
 export module gse.utility:save_system;
 
 import std;
-import tomlplusplus;
+import <toml++/toml.h>;
 
 import :id;
 import :concepts;
@@ -939,6 +939,8 @@ auto gse::save::property_builder<T>::restart_required() -> property_builder& {
 
 template <typename T>
 auto gse::save::property_builder<T>::commit() -> property_base* {
+    m_ref = m_state.read<T>(m_category, m_name, m_default);
+
     std::unique_ptr<property_base> prop;
 
     if (m_constraint.has_value()) {

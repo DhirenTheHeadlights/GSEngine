@@ -41,6 +41,10 @@ namespace gse::renderer::physics_debug {
 }
 
 export namespace gse::renderer::physics_debug {
+	struct render_data {
+		std::vector<debug_vertex> vertices;
+	};
+
 	struct state {
 		context* ctx = nullptr;
 
@@ -53,7 +57,6 @@ export namespace gse::renderer::physics_debug {
 		std::unordered_map<std::string, per_frame_resource<vulkan::buffer_resource>> ubo_allocations;
 		vulkan::buffer_resource vertex_buffer;
 
-		double_buffer<std::vector<debug_vertex>> vertices;
 		std::size_t max_vertices = 0;
 		bool enabled = true;
 
@@ -62,8 +65,8 @@ export namespace gse::renderer::physics_debug {
 	};
 
 	struct system {
-		static auto initialize(const initialize_phase& phase, state& s) -> void;
-		static auto update(const update_phase& phase, state& s) -> void;
+		static auto initialize(initialize_phase& phase, state& s) -> void;
+		static auto update(update_phase& phase, state& s) -> void;
 		static auto render(render_phase& phase, const state& s) -> void;
 	};
 }
@@ -93,7 +96,7 @@ auto gse::renderer::physics_debug::ensure_vertex_capacity(state& s, const std::s
 	);
 }
 
-auto gse::renderer::physics_debug::system::initialize(const initialize_phase& phase, state& s) -> void {
+auto gse::renderer::physics_debug::system::initialize(initialize_phase& phase, state& s) -> void {
 	phase.channels.push(save::register_property{
 		.category = "Graphics",
 		.name = "Physics Debug Renderer Enabled",
@@ -260,10 +263,6 @@ auto gse::renderer::physics_debug::system::initialize(const initialize_phase& ph
 	};
 
 	s.pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
-
-	frame_sync::on_end([&s] {
-		s.vertices.flip();
-	});
 }
 
 auto gse::renderer::physics_debug::add_line(const vec3<length>& a, const vec3<length>& b, const unitless::vec3& color, std::vector<debug_vertex>& out_vertices) -> void {
@@ -345,13 +344,12 @@ auto gse::renderer::physics_debug::build_contact_debug_for_collider(const physic
 	}
 }
 
-auto gse::renderer::physics_debug::system::update(const update_phase& phase, state& s) -> void {
+auto gse::renderer::physics_debug::system::update(update_phase& phase, state& s) -> void {
 	if (!s.enabled) {
 		return;
 	}
 
-	auto& vertices = s.vertices.write();
-	vertices.clear();
+	std::vector<debug_vertex> vertices;
 
 	for (const auto& coll : phase.registry.chunk<physics::collision_component>()) {
 		if (!coll.resolve_collisions) {
@@ -366,16 +364,11 @@ auto gse::renderer::physics_debug::system::update(const update_phase& phase, sta
 	}
 
 	if (!vertices.empty()) {
-		ensure_vertex_capacity(s, vertices.size());
-
-		const auto byte_count = vertices.size() * sizeof(debug_vertex);
-		if (void* dst = s.vertex_buffer.allocation.mapped()) {
-			std::memcpy(dst, vertices.data(), byte_count);
-		}
+		phase.channels.push(render_data{ std::move(vertices) });
 	}
 }
 
-auto gse::renderer::physics_debug::system::render(render_phase&, const state& s) -> void {
+auto gse::renderer::physics_debug::system::render(render_phase& phase, const state& s) -> void {
 	if (!s.enabled) {
 		return;
 	}
@@ -386,16 +379,29 @@ auto gse::renderer::physics_debug::system::render(render_phase&, const state& s)
 		return;
 	}
 
+	const auto& render_items = phase.read_channel<render_data>();
+	if (render_items.empty()) {
+		return;
+	}
+
+	const auto& verts = render_items[0].vertices;
+	if (verts.empty()) {
+		return;
+	}
+
+	auto& mutable_state = const_cast<state&>(s);
+	ensure_vertex_capacity(mutable_state, verts.size());
+
+	const auto byte_count = verts.size() * sizeof(debug_vertex);
+	if (void* dst = mutable_state.vertex_buffer.allocation.mapped()) {
+		std::memcpy(dst, verts.data(), byte_count);
+	}
+
 	const auto command = config.frame_context().command_buffer;
 	const auto frame_index = config.current_frame();
 
 	s.shader_handle->set_uniform("CameraUBO.view", s.ctx->camera().view(), s.ubo_allocations.at("CameraUBO")[frame_index].allocation);
 	s.shader_handle->set_uniform("CameraUBO.proj", s.ctx->camera().projection(s.ctx->window().viewport()), s.ubo_allocations.at("CameraUBO")[frame_index].allocation);
-
-	const auto& verts = s.vertices.read();
-	if (verts.empty()) {
-		return;
-	}
 
 	vk::RenderingAttachmentInfo color_attachment{
 		.imageView = *config.swap_chain_config().image_views[config.frame_context().image_index],
@@ -443,7 +449,7 @@ auto gse::renderer::physics_debug::system::render(render_phase&, const state& s)
 			{}
 		);
 
-		const vk::Buffer vb = s.vertex_buffer.buffer;
+		const vk::Buffer vb = mutable_state.vertex_buffer.buffer;
 		constexpr vk::DeviceSize offsets[] = { 0 };
 
 		command.bindVertexBuffers(0, 1, &vb, offsets);

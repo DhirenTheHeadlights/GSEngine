@@ -42,6 +42,9 @@ export namespace gse {
 		auto read(
 		) const -> reader;
 
+		auto read_raw(
+		) const -> const std::vector<T>&;
+
 		auto push(
 			T item
 		) -> void;
@@ -69,17 +72,11 @@ export namespace gse {
 	template <typename T>
 	struct typed_channel final : channel_base {
 		channel<T> data;
-		std::vector<T> snapshot;
 
-		auto take_snapshot() -> void override {
-			snapshot.clear();
-			for (const auto& item : data.read()) {
-				snapshot.push_back(item);
-			}
-		}
+		auto take_snapshot() -> void override {}
 
 		auto snapshot_data() const -> const void* override {
-			return &snapshot;
+			return &data.read_raw();
 		}
 
 		auto push_any(std::any item) -> void override {
@@ -131,6 +128,11 @@ gse::channel<T>::channel() {
 template <typename T>
 auto gse::channel<T>::read() const -> reader {
 	return reader(&m_buffer.read());
+}
+
+template <typename T>
+auto gse::channel<T>::read_raw() const -> const std::vector<T>& {
+	return m_buffer.read();
 }
 
 template <typename T>

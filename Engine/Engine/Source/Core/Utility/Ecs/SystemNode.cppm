@@ -33,16 +33,10 @@ export namespace gse {
 			shutdown_phase&
 		) -> void = 0;
 
-		virtual auto snapshot(
-		) -> void = 0;
-
 		virtual auto state_ptr(
 		) -> void* = 0;
 
 		virtual auto state_ptr(
-		) const -> const void* = 0;
-
-		virtual auto snapshot_ptr(
 		) const -> const void* = 0;
 
 		virtual auto state_type(
@@ -81,16 +75,10 @@ export namespace gse {
 			shutdown_phase& phase
 		) -> void override;
 
-		auto snapshot(
-		) -> void override;
-
 		auto state_ptr(
 		) -> void* override;
 
 		auto state_ptr(
-		) const -> const void* override;
-
-		auto snapshot_ptr(
 		) const -> const void* override;
 
 		auto state_type(
@@ -99,14 +87,16 @@ export namespace gse {
 		auto state(
 			this auto& self
 		) -> auto&;
+
 	private:
 		State m_state;
 	};
 }
 
 template <typename S, typename State>
-template <typename ... Args>
-gse::system_node<S, State>::system_node(Args&&... args) : m_state(std::forward<Args>(args)...) {}
+template <typename... Args>
+gse::system_node<S, State>::system_node(Args&&... args)
+	: m_state(std::forward<Args>(args)...) {}
 
 template <typename S, typename State>
 auto gse::system_node<S, State>::initialize(initialize_phase& phase) -> void {
@@ -133,7 +123,7 @@ auto gse::system_node<S, State>::begin_frame(begin_frame_phase& phase) -> bool {
 template <typename S, typename State>
 auto gse::system_node<S, State>::render(render_phase& phase) -> void {
 	if constexpr (has_render<S, State>) {
-		S::render(phase, std::as_const(m_state));
+		S::render(phase, m_state);
 	}
 }
 
@@ -152,20 +142,12 @@ auto gse::system_node<S, State>::shutdown(shutdown_phase& phase) -> void {
 }
 
 template <typename S, typename State>
-auto gse::system_node<S, State>::snapshot() -> void {}
-
-template <typename S, typename State>
 auto gse::system_node<S, State>::state_ptr() -> void* {
 	return &m_state;
 }
 
 template <typename S, typename State>
 auto gse::system_node<S, State>::state_ptr() const -> const void* {
-	return &m_state;
-}
-
-template <typename S, typename State>
-auto gse::system_node<S, State>::snapshot_ptr() const -> const void* {
 	return &m_state;
 }
 
@@ -177,4 +159,4 @@ auto gse::system_node<S, State>::state_type() const -> std::type_index {
 template <typename S, typename State>
 auto gse::system_node<S, State>::state(this auto& self) -> auto& {
 	return self.m_state;
-} 
+}

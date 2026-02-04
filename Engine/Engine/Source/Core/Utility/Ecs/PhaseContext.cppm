@@ -105,24 +105,24 @@ export namespace gse {
 		}
 
 		template <is_component T>
-		auto try_read(id owner) const -> const T* {
+		auto try_read(const id owner) const -> const T* {
 			return reg->try_linked_object_read<T>(owner);
 		}
 
 		template <is_component T>
-		auto try_write(id owner) -> T* {
+		auto try_write(const id owner) -> T* {
 			return reg->try_linked_object_write<T>(owner);
 		}
 
-		auto entity_active(id owner) const -> bool {
+		auto entity_active(const id owner) const -> bool {
 			return reg->active(owner);
 		}
 
-		auto ensure_active(id owner) -> void {
+		auto ensure_active(const id owner) const -> void {
 			reg->ensure_active(owner);
 		}
 
-		auto ensure_exists(id owner) -> void {
+		auto ensure_exists(const id owner) const -> void {
 			reg->ensure_exists(owner);
 		}
 	};
