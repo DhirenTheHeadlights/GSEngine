@@ -165,8 +165,8 @@ export namespace gse {
 		}
 
 		template <typename T>
-		auto read_channel() const -> const std::vector<T>& {
-			return channel_reader.read<T>();
+		auto read_channel() const -> channel_read_guard<T> {
+			return channel_read_guard<T>(channel_reader.read<T>());
 		}
 	};
 
@@ -200,8 +200,8 @@ export namespace gse {
 		}
 
 		template <typename T>
-		auto read_channel() const -> const std::vector<T>& {
-			return channel_reader.read<T>();
+		auto read_channel() const -> channel_read_guard<T> {
+			return channel_read_guard<T>(channel_reader.read<T>());
 		}
 	};
 

@@ -203,6 +203,16 @@ export namespace gse {
 			}
 
 			auto& reg = current->registry();
+
+			if (!m_owner->networked()) {
+				if (!m_local_player_created) {
+					const auto player_id = factory(*current);
+					m_owner->set_local_controlled_entity(player_id);
+					m_local_player_created = true;
+				}
+				return;
+			}
+
 			const bool is_server = m_owner->authoritative();
 
 			for (auto& pc : reg.linked_objects_write<player_controller>()) {
@@ -234,6 +244,7 @@ export namespace gse {
 		}
 	private:
 		std::unordered_set<id> m_processed;
+		bool m_local_player_created = false;
 	};
 }
 
