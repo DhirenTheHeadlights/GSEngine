@@ -371,13 +371,6 @@ auto gse::vulkan::buffer_resource::operator=(buffer_resource&& other) noexcept -
 }
 
 gse::vulkan::allocator::allocator(const vk::raii::Device& device, const vk::raii::PhysicalDevice& physical_device, save::state& save_state) : m_device(*device), m_physical_device(*physical_device) {
-	m_tracking_enabled = save::read_bool_setting_early(
-		config::resource_path / "Misc/settings.toml",
-		"Vulkan",
-		"Track Allocations",
-		false
-	);
-
 	save_state.bind("Vulkan", "Track Allocations", m_tracking_enabled)
 		.description("Track Vulkan memory allocations for debugging destruction order issues")
 		.default_value(false)

@@ -418,9 +418,10 @@ auto gse::renderer::lighting::system::render(render_phase& phase, const state& s
 	const auto* shadow_state = phase.try_state_of<shadow::state>();
 	unitless::vec2 texel_size{};
 	std::span<const shadow_light_entry> shadow_entries{};
-	if (shadow_state) {
+	const auto& shadow_items = phase.read_channel<shadow::render_data>();
+	if (shadow_state && !shadow_items.empty()) {
 		texel_size = shadow_state->shadow_texel_size();
-		shadow_entries = shadow_state->shadow_lights();
+		shadow_entries = shadow_items[0].lights;
 	}
 
 	std::array<int, max_shadow_lights> shadow_indices{};

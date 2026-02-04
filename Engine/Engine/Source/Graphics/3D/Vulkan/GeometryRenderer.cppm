@@ -162,9 +162,20 @@ namespace gse::renderer {
 		vec3<length> world_aabb_min;
 		vec3<length> world_aabb_max;
 	};
+
 }
 
 export namespace gse::renderer::geometry {
+	struct render_data {
+		std::uint32_t frame_index = 0;
+		std::vector<render_queue_entry> render_queue;
+		std::vector<id> render_queue_owners;
+		std::vector<skinned_render_queue_entry> skinned_render_queue;
+		std::vector<normal_instance_batch> normal_batches;
+		std::vector<skinned_instance_batch> skinned_batches;
+		std::uint32_t pending_compute_instance_count = 0;
+	};
+
 	struct state {
 		context* ctx = nullptr;
 
@@ -195,13 +206,10 @@ export namespace gse::renderer::geometry {
 		const skeleton* current_skeleton = nullptr;
 		std::uint32_t current_joint_count = 0;
 		bool gpu_skinning_enabled = true;
-		per_frame_resource<std::uint32_t> pending_compute_instance_count;
 
 		static constexpr std::size_t max_instances = 4096;
 		per_frame_resource<vulkan::buffer_resource> instance_buffer;
 		per_frame_resource<std::vector<std::byte>> instance_staging;
-		per_frame_resource<std::vector<normal_instance_batch>> normal_instance_batches;
-		per_frame_resource<std::vector<skinned_instance_batch>> skinned_instance_batches;
 
 		std::uint32_t instance_stride = 0;
 		std::uint32_t batch_stride = 0;
@@ -223,33 +231,39 @@ export namespace gse::renderer::geometry {
 		per_frame_resource<vk::raii::DescriptorSet> skinned_culling_descriptor_sets;
 		bool gpu_culling_enabled = true;
 
-		double_buffer<std::vector<render_queue_entry>> render_queue_buffer;
-		double_buffer<std::vector<id>> render_queue_owners;
-		double_buffer<std::vector<skinned_render_queue_entry>> skinned_render_queue_buffer;
-
 		resource::handle<texture> blank_texture;
 
 		explicit state(context& c) : ctx(std::addressof(c)) {}
 		state() = default;
-
-		auto render_queue() const -> std::span<const render_queue_entry> {
-			return render_queue_buffer.read();
-		}
-
-		auto render_queue_excluding(std::span<const id> exclude_ids) const -> std::vector<render_queue_entry>;
-
-		auto skinned_render_queue() const -> std::span<const skinned_render_queue_entry> {
-			return skinned_render_queue_buffer.read();
-		}
 
 		auto skin_buff() const -> const vulkan::buffer_resource& {
 			return skin_buffer[ctx->config().current_frame()];
 		}
 	};
 
-	auto dispatch_skin_compute(const state& s, vk::CommandBuffer command, std::uint32_t instance_count) -> void;
-	auto dispatch_culling_compute(const state& s, vk::CommandBuffer command, std::uint32_t batch_count, const vk::raii::DescriptorSet& culling_set, std::uint32_t batch_offset) -> void;
-	auto upload_skeleton_data(const state& s, const skeleton& skel) -> void;
+	auto dispatch_skin_compute(
+		const state& s,
+		vk::CommandBuffer command, 
+		std::uint32_t instance_count
+	) -> void;
+
+	auto dispatch_culling_compute(
+		const state& s,
+		vk::CommandBuffer command,
+		std::uint32_t batch_count,
+		const vk::raii::DescriptorSet& culling_set,
+		std::uint32_t batch_offset
+	) -> void;
+
+	auto upload_skeleton_data(
+		const state& s,
+		const skeleton& skel
+	) -> void;
+
+	auto filter_render_queue(
+		const render_data& data,
+		std::span<const id> exclude_ids
+	) -> std::vector<render_queue_entry>;
 
 	struct system {
 		static auto initialize(initialize_phase& phase, state& s) -> void;
@@ -258,20 +272,17 @@ export namespace gse::renderer::geometry {
 	};
 }
 
-auto gse::renderer::geometry::state::render_queue_excluding(const std::span<const id> exclude_ids) const -> std::vector<render_queue_entry> {
-	const auto& entries = render_queue_buffer.read();
-	const auto& owners = render_queue_owners.read();
-
+auto gse::renderer::geometry::filter_render_queue(const render_data& data, const std::span<const id> exclude_ids) -> std::vector<render_queue_entry> {
 	std::vector<render_queue_entry> result;
-	result.reserve(entries.size());
+	result.reserve(data.render_queue.size());
 
-	for (std::size_t i = 0; i < entries.size(); ++i) {
-		bool excluded = std::ranges::any_of(exclude_ids, [&](const id& ex) {
-			return ex == owners[i];
+	for (std::size_t i = 0; i < data.render_queue.size(); ++i) {
+		const bool excluded = std::ranges::any_of(exclude_ids, [&](const id& ex) {
+			return ex == data.render_queue_owners[i];
 		});
 
 		if (!excluded) {
-			result.push_back(entries[i]);
+			result.push_back(data.render_queue[i]);
 		}
 	}
 
@@ -834,12 +845,6 @@ auto gse::renderer::geometry::system::initialize(initialize_phase&, state& s) ->
 
 	s.blank_texture = s.ctx->queue<texture>("blank", unitless::vec4(1, 1, 1, 1));
 	s.ctx->instantly_load(s.blank_texture);
-
-	frame_sync::on_end([&s] {
-		s.render_queue_buffer.flip();
-		s.render_queue_owners.flip();
-		s.skinned_render_queue_buffer.flip();
-	});
 }
 
 auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> void {
@@ -863,14 +868,12 @@ auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> v
 		s.ubo_allocations.at("CameraUBO")[frame_index].allocation
 	);
 
-	auto& out = s.render_queue_buffer.write();
-	out.clear();
+	render_data data;
+	data.frame_index = frame_index;
 
-	auto& owners_out = s.render_queue_owners.write();
-	owners_out.clear();
-
-	auto& skinned_out = s.skinned_render_queue_buffer.write();
-	skinned_out.clear();
+	auto& out = data.render_queue;
+	auto& owners_out = data.render_queue_owners;
+	auto& skinned_out = data.skinned_render_queue;
 
 	auto& skin_staging = s.skin_staging[frame_index];
 	skin_staging.clear();
@@ -968,12 +971,10 @@ auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> v
 	};
 
 	auto& instance_staging = s.instance_staging[frame_index];
-	auto& normal_batches = s.normal_instance_batches[frame_index];
-	auto& skinned_batches = s.skinned_instance_batches[frame_index];
+	auto& normal_batches = data.normal_batches;
+	auto& skinned_batches = data.skinned_batches;
 
 	instance_staging.clear();
-	normal_batches.clear();
-	skinned_batches.clear();
 
 	std::uint32_t global_instance_offset = 0;
 
@@ -1195,16 +1196,26 @@ auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> v
 
 	if (s.gpu_skinning_enabled && s.skin_compute.valid() && !local_pose_staging.empty() && s.current_joint_count > 0) {
 		gse::memcpy(s.local_pose_buffer[frame_index].allocation.mapped(), local_pose_staging);
-		s.pending_compute_instance_count[frame_index] = skinned_instance_count;
+		data.pending_compute_instance_count = skinned_instance_count;
 	} else if (!skin_staging.empty()) {
 		gse::memcpy(s.skin_buffer[frame_index].allocation.mapped(), skin_staging);
-		s.pending_compute_instance_count[frame_index] = 0;
+		data.pending_compute_instance_count = 0;
 	} else {
-		s.pending_compute_instance_count[frame_index] = 0;
+		data.pending_compute_instance_count = 0;
 	}
+
+	phase.channels.push(std::move(data));
 }
 
-auto gse::renderer::geometry::system::render(render_phase&, const state& s) -> void {
+auto gse::renderer::geometry::system::render(render_phase& phase, const state& s) -> void {
+    const auto& render_items = phase.read_channel<render_data>();
+    if (render_items.empty()) {
+        return;
+    }
+
+    const auto& data = render_items[0];
+    const auto frame_index = data.frame_index;
+
     auto& config = s.ctx->config();
 
     if (!config.frame_in_progress()) {
@@ -1272,14 +1283,12 @@ auto gse::renderer::geometry::system::render(render_phase&, const state& s) -> v
         .pDepthAttachment = &depth_attachment
     };
 
-    const auto frame_index = config.current_frame();
-
-    if (s.pending_compute_instance_count[frame_index] > 0) {
-        dispatch_skin_compute(s, command, s.pending_compute_instance_count[frame_index]);
+    if (data.pending_compute_instance_count > 0) {
+        dispatch_skin_compute(s, command, data.pending_compute_instance_count);
     }
 
-    const auto& normal_batches = s.normal_instance_batches[frame_index];
-    const auto& skinned_batches = s.skinned_instance_batches[frame_index];
+    const auto& normal_batches = data.normal_batches;
+    const auto& skinned_batches = data.skinned_batches;
 
     if (s.gpu_culling_enabled && s.culling_compute.valid()) {
 		if (const auto& dc = s.normal_culling_descriptor_sets[frame_index]; !normal_batches.empty()) {

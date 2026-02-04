@@ -317,7 +317,13 @@ auto gse::gui::system::initialize(initialize_phase& phase, system_state& s) -> v
 		.name = "Theme",
 		.description = "UI color theme",
 		.ref = reinterpret_cast<int*>(&s.current_theme),
-		.type = typeid(int)
+		.type = typeid(int),
+		.enum_options = {
+			{"Dark", static_cast<int>(theme::dark)},
+			{"Darker", static_cast<int>(theme::darker)},
+			{"Light", static_cast<int>(theme::light)},
+			{"High Contrast", static_cast<int>(theme::high_contrast)}
+		}
 	});
 
 	phase.channels.push(save::register_property{
@@ -333,7 +339,8 @@ auto gse::gui::system::initialize(initialize_phase& phase, system_state& s) -> v
 		.name = "Font",
 		.description = "UI font",
 		.ref = &s.font_index,
-		.type = typeid(int)
+		.type = typeid(int),
+		.enum_options = std::move(font_options)
 	});
 
 	auto calculate_group_bounds = [&s](const id root_id) -> ui_rect {
@@ -1830,6 +1837,8 @@ auto gse::gui::handle_resizing_state(system_state& s, const states::resizing& cu
 	float opposing_top = std::numeric_limits<float>::max();
 	float opposing_bottom = 0.f;
 
+	constexpr float dock_gap = 8.f;
+
 	if (m->docked_to != dock::location::none) {
 		for (const menu& other : s.menus.items()) {
 			if (other.id() == m->id()) continue;
@@ -1841,16 +1850,16 @@ auto gse::gui::handle_resizing_state(system_state& s, const states::resizing& cu
 
 			switch (other.docked_to) {
 				case dock::location::left:
-					opposing_left = std::max(opposing_left, other_bounds.right());
+					opposing_left = std::max(opposing_left, other_bounds.right() + dock_gap);
 					break;
 				case dock::location::right:
-					opposing_right = std::min(opposing_right, other_bounds.left());
+					opposing_right = std::min(opposing_right, other_bounds.left() - dock_gap);
 					break;
 				case dock::location::top:
-					opposing_top = std::min(opposing_top, other_bounds.bottom());
+					opposing_top = std::min(opposing_top, other_bounds.bottom() - dock_gap);
 					break;
 				case dock::location::bottom:
-					opposing_bottom = std::max(opposing_bottom, other_bounds.top());
+					opposing_bottom = std::max(opposing_bottom, other_bounds.top() + dock_gap);
 					break;
 				default:
 					break;

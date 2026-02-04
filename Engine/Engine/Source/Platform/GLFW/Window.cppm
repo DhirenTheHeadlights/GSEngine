@@ -83,7 +83,7 @@ export namespace gse {
 		) -> void;
 
 		auto raw_handle(
-		) const -> GLFWwindow* { return m_window; }
+		) const -> GLFWwindow*;
 
 		[[nodiscard]] static auto enumerate_monitors(
 		) -> std::vector<monitor_info>;
@@ -139,9 +139,7 @@ export namespace gse {
 	};
 }
 
-gse::window::window(const std::string& title, input::system_state& input_state, save::state& save_state)
-	: m_input(input_state)
-	, m_save(save_state) {
+gse::window::window(const std::string& title, input::system_state& input_state, save::state& save_state) : m_input(input_state), m_save(save_state) {
 	assert(glfwInit(), std::source_location::current(), "Error initializing GLFW");
 	assert(glfwVulkanSupported(), std::source_location::current(), "Vulkan not supported");
 
@@ -248,7 +246,7 @@ gse::window::window(const std::string& title, input::system_state& input_state, 
 
 	save_state.bind("Window", "Fullscreen", m_fullscreen)
 		.description("Run in fullscreen mode")
-		.default_value(true)
+		.default_value(false)
 		.commit();
 
 	save_state.bind("Window", "Mouse Visible", m_mouse_visible)
@@ -256,11 +254,8 @@ gse::window::window(const std::string& title, input::system_state& input_state, 
 		.default_value(false)
 		.commit();
 
-	m_monitor_index = save_state.read("Window", "Monitor", 0);
-	m_resolution_index = save_state.read("Window", "Resolution", 0);
-	m_last_monitor_index = m_monitor_index;
-
 	refresh_monitor_settings();
+	m_last_monitor_index = m_monitor_index;
 	refresh_resolution_settings();
 
 	glfwFocusWindow(m_window);
@@ -465,6 +460,10 @@ auto gse::window::set_fullscreen(const bool fullscreen) -> void {
 
 auto gse::window::set_mouse_visible(const bool visible) -> void {
 	m_mouse_visible = visible;
+}
+
+auto gse::window::raw_handle() const -> GLFWwindow* {
+	return m_window;
 }
 
 auto gse::window::enumerate_monitors() -> std::vector<monitor_info> {

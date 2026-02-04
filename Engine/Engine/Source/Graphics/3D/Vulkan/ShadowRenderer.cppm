@@ -32,6 +32,10 @@ export namespace gse::renderer {
 }
 
 export namespace gse::renderer::shadow {
+	struct render_data {
+		std::vector<shadow_light_entry> lights;
+	};
+
 	struct state {
 		context* ctx = nullptr;
 
@@ -39,8 +43,6 @@ export namespace gse::renderer::shadow {
 		vk::raii::PipelineLayout pipeline_layout = nullptr;
 
 		resource::handle<shader> shader_handle;
-
-		double_buffer<std::vector<shadow_light_entry>> shadow_light_entries;
 
 		unitless::vec2u shadow_extent = { 1024, 1024 };
 
@@ -59,16 +61,12 @@ export namespace gse::renderer::shadow {
 				1.0f / static_cast<float>(shadow_extent.y())
 			);
 		}
-
-		auto shadow_lights() const -> std::span<const shadow_light_entry> {
-			return shadow_light_entries.read();
-		}
 	};
 
 	struct system {
 		static auto initialize(initialize_phase& phase, state& s) -> void;
-		static auto update(const update_phase& phase, state& s) -> void;
-		static auto render(const render_phase& phase, const state& s) -> void;
+		static auto update(update_phase& phase, state& s) -> void;
+		static auto render(render_phase& phase, const state& s) -> void;
 	};
 }
 
@@ -267,15 +265,10 @@ auto gse::renderer::shadow::system::initialize(initialize_phase&, state& s) -> v
             return {};
         }
     );
-
-	frame_sync::on_end([&s] {
-		s.shadow_light_entries.flip();
-	});
 }
 
-auto gse::renderer::shadow::system::update(const update_phase& phase, state& s) -> void {
-	auto& lights_out = s.shadow_light_entries.write();
-	lights_out.clear();
+auto gse::renderer::shadow::system::update(update_phase& phase, state& s) -> void {
+	render_data data;
 
 	std::size_t next_shadow_index = 0;
 
@@ -312,7 +305,7 @@ auto gse::renderer::shadow::system::update(const update_phase& phase, state& s) 
 
 		entry.ignore_list_ids = comp.ignore_list_ids;
 
-		lights_out.push_back(std::move(entry));
+		data.lights.push_back(std::move(entry));
 		++next_shadow_index;
 	}
 
@@ -345,12 +338,24 @@ auto gse::renderer::shadow::system::update(const update_phase& phase, state& s) 
 
 		entry.ignore_list_ids = comp.ignore_list_ids;
 
-		lights_out.push_back(std::move(entry));
+		data.lights.push_back(std::move(entry));
 		++next_shadow_index;
 	}
+
+	phase.channels.push(std::move(data));
 }
 
-auto gse::renderer::shadow::system::render(const render_phase& phase, const state& s) -> void {
+auto gse::renderer::shadow::system::render(render_phase& phase, const state& s) -> void {
+    const auto& shadow_items = phase.read_channel<render_data>();
+    if (shadow_items.empty()) {
+        return;
+    }
+
+    const auto& geom_items = phase.read_channel<geometry::render_data>();
+    if (geom_items.empty()) {
+        return;
+    }
+
     auto& config = s.ctx->config();
 
     if (!config.frame_in_progress()) {
@@ -359,19 +364,15 @@ auto gse::renderer::shadow::system::render(const render_phase& phase, const stat
 
     const auto command = config.frame_context().command_buffer;
 
-    const auto* geom_state = phase.try_state_of<geometry::state>();
-    if (!geom_state) {
-        return;
-    }
-
-    const auto& lights = s.shadow_light_entries.read();
+    const auto& lights = shadow_items[0].lights;
+    const auto& geom_data = geom_items[0];
 
     if (lights.empty()) {
         return;
     }
 
     for (const auto& [view, proj, ignore_list_ids, shadow_index] : lights) {
-        const auto draw_list = geom_state->render_queue_excluding(ignore_list_ids);
+        const auto draw_list = geometry::filter_render_queue(geom_data, ignore_list_ids);
 
         if (draw_list.empty()) {
             continue;

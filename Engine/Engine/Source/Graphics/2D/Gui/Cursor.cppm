@@ -91,6 +91,14 @@ auto gse::cursor::render_to(const renderer::context& context, std::vector<render
 		});
 		break;
 	}
+	case style::resize_n: {
+		draw_arrow_head({ .commands = commands, .tip_position = mouse_pos, .direction = { 0.f, 1.f }, .texture = blank_texture });
+		break;
+	}
+	case style::resize_s: {
+		draw_arrow_head({ .commands = commands, .tip_position = mouse_pos, .direction = { 0.f, -1.f }, .texture = blank_texture });
+		break;
+	}
 	case style::resize_e: {
 		draw_arrow_head({ .commands = commands, .tip_position = mouse_pos, .direction = { 1.f, 0.f }, .texture = blank_texture });
 		break;
@@ -99,7 +107,27 @@ auto gse::cursor::render_to(const renderer::context& context, std::vector<render
 		draw_arrow_head({ .commands = commands, .tip_position = mouse_pos, .direction = { -1.f, 0.f }, .texture = blank_texture });
 		break;
 	}
-	case style::resize_ew: { 
+	case style::resize_ne: {
+		constexpr float inv_sqrt2 = 0.7071067811865476f;
+		draw_arrow_head({ .commands = commands, .tip_position = mouse_pos, .direction = { inv_sqrt2, inv_sqrt2 }, .texture = blank_texture });
+		break;
+	}
+	case style::resize_nw: {
+		constexpr float inv_sqrt2 = 0.7071067811865476f;
+		draw_arrow_head({ .commands = commands, .tip_position = mouse_pos, .direction = { -inv_sqrt2, inv_sqrt2 }, .texture = blank_texture });
+		break;
+	}
+	case style::resize_se: {
+		constexpr float inv_sqrt2 = 0.7071067811865476f;
+		draw_arrow_head({ .commands = commands, .tip_position = mouse_pos, .direction = { inv_sqrt2, -inv_sqrt2 }, .texture = blank_texture });
+		break;
+	}
+	case style::resize_sw: {
+		constexpr float inv_sqrt2 = 0.7071067811865476f;
+		draw_arrow_head({ .commands = commands, .tip_position = mouse_pos, .direction = { -inv_sqrt2, -inv_sqrt2 }, .texture = blank_texture });
+		break;
+	}
+	case style::resize_ew: {
 		constexpr float offset = 4.f;
 		draw_arrow_head({
 			.commands = commands,
