@@ -6,6 +6,10 @@ import :misc;
 
 import gse.assert;
 
+namespace gse {
+	thread_local const std::uint32_t* expected_frame_index = nullptr;
+}
+
 export namespace gse {
 	template<typename T, std::size_t N = 2>
 	class per_frame_resource {
@@ -74,6 +78,18 @@ auto gse::per_frame_resource<T, N>::operator[](this auto&& self, const std::size
 		frame_index,
 		frames_in_flight - 1
 	);
+
+#ifndef NDEBUG
+	if (expected_frame_index != nullptr) {
+		assert(
+			frame_index == *expected_frame_index,
+			std::source_location::current(),
+			"Frame index mismatch: got {}, expected {}",
+			frame_index,
+			*expected_frame_index
+		);
+	}
+#endif
 
 	if constexpr (is_direct_storage) {
 		return self.m_resources[frame_index];
