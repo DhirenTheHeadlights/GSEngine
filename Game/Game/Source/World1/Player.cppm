@@ -113,7 +113,7 @@ namespace gs {
 				.max_speed = m_max_speed,
 				.mass = gse::pounds(180.f),
 				.self_controlled = true,
-				.update_orientation = false
+				.update_orientation = true
 			});
 
 			gse::length height = gse::feet(6.0f);
@@ -126,7 +126,21 @@ namespace gs {
 				}
 			});
 
-			add_component<gse::render_component>({});
+			add_component<gse::render_component>({
+				.skinned_models = {
+					gse::get<gse::skinned_model>("SkinnedModels/player")
+				}
+			});
+
+			add_component<gse::animation_component>({
+				.skeleton_id = gse::find("Skeletons/player")
+			});
+
+			setup_animation_graph();
+
+			add_component<gse::controller_component>({
+				.graph_id = m_graph_id
+			});
 
 			const auto w = gse::actions::add<"Player_Move_Forward">(gse::key::w);
 			const auto a = gse::actions::add<"Player_Move_Left">(gse::key::a);
@@ -160,40 +174,204 @@ namespace gs {
 		}
 
 		auto update() -> void override {
-			auto& motion_component = component_write<gse::physics::motion_component>();
+			auto& motion = component_write<gse::physics::motion_component>();
+			auto& ctrl = component_write<gse::controller_component>();
 
 			const auto v = m_move_axis_channel.value;
+			const bool moving = v.x() != 0.f || v.y() != 0.f;
+			const bool sprinting = m_shift_channel.held;
 
-			if (!motion_component.airborne && (v.x() != 0.f || v.y() != 0.f)) {
+			if (!motion.airborne && moving) {
 				const auto dir = gse::camera().direction_relative_to_origin(
 					gse::unitless::vec3(v.x(), 0.f, v.y())
 				);
 
 				apply_force(
-					motion_component,
+					motion,
 					m_move_force * gse::unitless::vec3(dir.x(), 0.f, dir.z())
 				);
 			}
 
-			motion_component.max_speed = m_shift_channel.held ? m_shift_max_speed : m_max_speed;
+			motion.max_speed = sprinting ? m_shift_max_speed : m_max_speed;
 
-			if (m_jump_channel.pressed && !motion_component.airborne) {
+			if (m_jump_channel.pressed && !motion.airborne) {
 				apply_impulse(
-					motion_component,
+					motion,
 					gse::vec3<gse::force>(0.f, m_jump_force, 0.f),
 					gse::seconds(0.5f)
 				);
+				gse::animation::set_trigger(ctrl, "jump");
 			}
 
+			const float speed = gse::magnitude(motion.current_velocity).as<gse::meters_per_second>();
+			gse::animation::set_parameter(ctrl, "speed", speed);
+			gse::animation::set_parameter(ctrl, "airborne", motion.airborne);
+			gse::animation::set_parameter(ctrl, "sprinting", sprinting);
+
 			gse::camera().set_position(
-				motion_component.current_position + gse::vec3<gse::length>(
+				motion.current_position + gse::vec3<gse::length>(
 					gse::feet(0.f),
 					gse::feet(6.f),
 					gse::feet(0.f)
 				)
 			);
 		}
+
 	private:
+		auto setup_animation_graph() -> void {
+			const auto idle_clip = gse::find("Clips/idle");
+			const auto walk_clip = gse::find("Clips/walk");
+			const auto run_clip = gse::find("Clips/run");
+			const auto jump_clip = gse::find("Clips/jump");
+
+			m_graph_id = gse::animation::create_graph({
+				.name = "player_locomotion",
+				.default_state = "idle",
+				.states = {
+					{
+						.name = "idle",
+						.clip_id = idle_clip,
+						.speed = 1.f,
+						.loop = true
+					},
+					{
+						.name = "walk",
+						.clip_id = walk_clip,
+						.speed = 1.f,
+						.loop = true
+					},
+					{
+						.name = "run",
+						.clip_id = run_clip,
+						.speed = 1.f,
+						.loop = true
+					},
+					{
+						.name = "jump",
+						.clip_id = jump_clip,
+						.speed = 1.f,
+						.loop = false
+					}
+				},
+				.transitions = {
+					{
+						.from_state = "idle",
+						.to_state = "walk",
+						.blend_duration = gse::seconds(0.2f),
+						.conditions = {
+							{
+								.parameter_name = "speed",
+								.type = gse::transition_condition_type::float_greater,
+								.threshold = 0.1f
+							},
+							{
+								.parameter_name = "airborne",
+								.type = gse::transition_condition_type::bool_equals,
+								.bool_value = false
+							}
+						}
+					},
+					{
+						.from_state = "walk",
+						.to_state = "idle",
+						.blend_duration = gse::seconds(0.2f),
+						.conditions = {
+							{
+								.parameter_name = "speed",
+								.type = gse::transition_condition_type::float_less,
+								.threshold = 0.1f
+							}
+						}
+					},
+					{
+						.from_state = "walk",
+						.to_state = "run",
+						.blend_duration = gse::seconds(0.15f),
+						.conditions = {
+							{
+								.parameter_name = "sprinting",
+								.type = gse::transition_condition_type::bool_equals,
+								.bool_value = true
+							}
+						}
+					},
+					{
+						.from_state = "run",
+						.to_state = "walk",
+						.blend_duration = gse::seconds(0.15f),
+						.conditions = {
+							{
+								.parameter_name = "sprinting",
+								.type = gse::transition_condition_type::bool_equals,
+								.bool_value = false
+							}
+						}
+					},
+					{
+						.from_state = "run",
+						.to_state = "idle",
+						.blend_duration = gse::seconds(0.3f),
+						.conditions = {
+							{
+								.parameter_name = "speed",
+								.type = gse::transition_condition_type::float_less,
+								.threshold = 0.1f
+							}
+						}
+					},
+					{
+						.from_state = "idle",
+						.to_state = "jump",
+						.blend_duration = gse::seconds(0.1f),
+						.conditions = {
+							{
+								.parameter_name = "jump",
+								.type = gse::transition_condition_type::trigger
+							}
+						}
+					},
+					{
+						.from_state = "walk",
+						.to_state = "jump",
+						.blend_duration = gse::seconds(0.1f),
+						.conditions = {
+							{
+								.parameter_name = "jump",
+								.type = gse::transition_condition_type::trigger
+							}
+						}
+					},
+					{
+						.from_state = "run",
+						.to_state = "jump",
+						.blend_duration = gse::seconds(0.1f),
+						.conditions = {
+							{
+								.parameter_name = "jump",
+								.type = gse::transition_condition_type::trigger
+							}
+						}
+					},
+					{
+						.from_state = "jump",
+						.to_state = "idle",
+						.blend_duration = gse::seconds(0.2f),
+						.conditions = {
+							{
+								.parameter_name = "airborne",
+								.type = gse::transition_condition_type::bool_equals,
+								.bool_value = false
+							}
+						},
+						.has_exit_time = true,
+						.exit_time_normalized = 0.5f
+					}
+				}
+			});
+		}
+
+		gse::id m_graph_id;
+
 		gse::velocity m_max_speed = gse::miles_per_hour(20.f);
 		gse::velocity m_shift_max_speed = gse::miles_per_hour(40.f);
 

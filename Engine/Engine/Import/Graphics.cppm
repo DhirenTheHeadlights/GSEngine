@@ -40,4 +40,6 @@ export import :animation_component;
 export import :joint;
 export import :clip;
 export import :clip_component;
+export import :animation_graph;
+export import :controller_component;
 
