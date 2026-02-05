@@ -243,8 +243,9 @@ export namespace gse::renderer::geometry {
 
 	auto dispatch_skin_compute(
 		const state& s,
-		vk::CommandBuffer command, 
-		std::uint32_t instance_count
+		vk::CommandBuffer command,
+		std::uint32_t instance_count,
+		std::uint32_t frame_index
 	) -> void;
 
 	auto dispatch_culling_compute(
@@ -848,120 +849,124 @@ auto gse::renderer::geometry::system::initialize(initialize_phase&, state& s) ->
 }
 
 auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> void {
-	auto render_chunk = phase.registry.chunk<render_component>();
-
-	if (render_chunk.empty()) {
+	if (phase.registry.view<render_component>().empty()) {
 		return;
 	}
 
-	const auto frame_index = s.ctx->config().current_frame();
+	phase.schedule([&s, &channels = phase.channels](
+		chunk<render_component> render,
+		chunk<const physics::motion_component> motion,
+		chunk<const physics::collision_component> collision,
+		chunk<const animation_component> anim
+	) {
+		const auto frame_index = s.ctx->config().current_frame();
 
-	s.shader_handle->set_uniform(
-		"CameraUBO.view",
-		s.ctx->camera().view(),
-		s.ubo_allocations.at("CameraUBO")[frame_index].allocation
-	);
+		s.shader_handle->set_uniform(
+			"CameraUBO.view",
+			s.ctx->camera().view(),
+			s.ubo_allocations.at("CameraUBO")[frame_index].allocation
+		);
 
-	s.shader_handle->set_uniform(
-		"CameraUBO.proj",
-		s.ctx->camera().projection(s.ctx->window().viewport()),
-		s.ubo_allocations.at("CameraUBO")[frame_index].allocation
-	);
+		s.shader_handle->set_uniform(
+			"CameraUBO.proj",
+			s.ctx->camera().projection(s.ctx->window().viewport()),
+			s.ubo_allocations.at("CameraUBO")[frame_index].allocation
+		);
 
-	render_data data;
-	data.frame_index = frame_index;
+		render_data data;
+		data.frame_index = frame_index;
 
-	auto& out = data.render_queue;
-	auto& owners_out = data.render_queue_owners;
-	auto& skinned_out = data.skinned_render_queue;
+		auto& out = data.render_queue;
+		auto& owners_out = data.render_queue_owners;
+		auto& skinned_out = data.skinned_render_queue;
 
-	auto& skin_staging = s.skin_staging[frame_index];
-	skin_staging.clear();
+		auto& skin_staging = s.skin_staging[frame_index];
+		skin_staging.clear();
 
-	auto& local_pose_staging = s.local_pose_staging[frame_index];
-	local_pose_staging.clear();
+		auto& local_pose_staging = s.local_pose_staging[frame_index];
+		local_pose_staging.clear();
 
-	std::uint32_t skinned_instance_count = 0;
+		std::uint32_t skinned_instance_count = 0;
 
-	for (auto& component : render_chunk) {
-		if (!component.render) {
-			continue;
-		}
-
-		const auto* mc = phase.registry.try_read<physics::motion_component>(component.owner_id());
-		const auto* cc = phase.registry.try_read<physics::collision_component>(component.owner_id());
-
-		for (auto& model_handle : component.model_instances) {
-			if (!model_handle.handle().valid() || mc == nullptr || cc == nullptr) {
+		for (auto& component : render) {
+			if (!component.render) {
 				continue;
 			}
 
-			model_handle.update(*mc, *cc);
-			const auto entries = model_handle.render_queue_entries();
-			out.append_range(entries);
-			owners_out.resize(owners_out.size() + entries.size(), component.owner_id());
-		}
+			const auto* mc = motion.find(component.owner_id());
+			const auto* cc = collision.find(component.owner_id());
 
-		const auto* anim = phase.registry.try_read<animation_component>(component.owner_id());
+			for (auto& model_handle : component.model_instances) {
+				if (!model_handle.handle().valid() || mc == nullptr || cc == nullptr) {
+					continue;
+				}
 
-		for (auto& skinned_model_handle : component.skinned_model_instances) {
-			if (!skinned_model_handle.handle().valid() || mc == nullptr || cc == nullptr) {
-				continue;
+				model_handle.update(*mc, *cc);
+				const auto entries = model_handle.render_queue_entries();
+				out.append_range(entries);
+				owners_out.resize(owners_out.size() + entries.size(), component.owner_id());
 			}
 
-			if (anim != nullptr && !anim->local_pose.empty()) {
-				std::uint32_t skin_offset = 0;
-				skin_offset = static_cast<std::uint32_t>(local_pose_staging.size());
+			const auto* anim_comp = anim.find(component.owner_id());
 
-				if (s.gpu_skinning_enabled && s.skin_compute.valid()) {
-					local_pose_staging.insert(local_pose_staging.end(), anim->local_pose.begin(), anim->local_pose.end());
+			for (auto& skinned_model_handle : component.skinned_model_instances) {
+				if (!skinned_model_handle.handle().valid() || mc == nullptr || cc == nullptr) {
+					continue;
+				}
 
-					if (anim->skeleton && (s.current_skeleton == nullptr || s.current_skeleton->id() != anim->skeleton.id())) {
-						s.current_skeleton = anim->skeleton.resolve();
-						s.current_joint_count = static_cast<std::uint32_t>(anim->skeleton->joint_count());
-						upload_skeleton_data(s, *anim->skeleton);
+				if (anim_comp != nullptr && !anim_comp->local_pose.empty()) {
+					std::uint32_t skin_offset = 0;
+					skin_offset = static_cast<std::uint32_t>(local_pose_staging.size());
+
+					if (s.gpu_skinning_enabled && s.skin_compute.valid()) {
+						local_pose_staging.insert(local_pose_staging.end(), anim_comp->local_pose.begin(), anim_comp->local_pose.end());
+
+						if (anim_comp->skeleton && (s.current_skeleton == nullptr || s.current_skeleton->id() != anim_comp->skeleton.id())) {
+							s.current_skeleton = anim_comp->skeleton.resolve();
+							s.current_joint_count = static_cast<std::uint32_t>(anim_comp->skeleton->joint_count());
+							upload_skeleton_data(s, *anim_comp->skeleton);
+						}
+
+						++skinned_instance_count;
+					}
+					else if (!anim_comp->skins.empty()) {
+						skin_staging.insert(skin_staging.end(), anim_comp->skins.begin(), anim_comp->skins.end());
 					}
 
-					++skinned_instance_count;
+					skinned_model_handle.update(*mc, *cc, skin_offset, s.current_joint_count);
+					const auto entries = skinned_model_handle.render_queue_entries();
+					skinned_out.append_range(entries);
 				}
-				else if (!anim->skins.empty()) {
-					skin_staging.insert(skin_staging.end(), anim->skins.begin(), anim->skins.end());
+			}
+		}
+
+		std::ranges::sort(
+			out,
+			[](const render_queue_entry& a, const render_queue_entry& b) {
+				const auto* ma = a.model.resolve();
+				const auto* mb = b.model.resolve();
+
+				if (ma != mb) {
+					return ma < mb;
 				}
 
-				skinned_model_handle.update(*mc, *cc, skin_offset, s.current_joint_count);
-				const auto entries = skinned_model_handle.render_queue_entries();
-				skinned_out.append_range(entries);
+				return a.index < b.index;
 			}
-		}
-	}
+		);
 
-	std::ranges::sort(
-		out,
-		[](const render_queue_entry& a, const render_queue_entry& b) {
-			const auto* ma = a.model.resolve();
-			const auto* mb = b.model.resolve();
+		std::ranges::sort(
+			skinned_out,
+			[](const skinned_render_queue_entry& a, const skinned_render_queue_entry& b) {
+				const auto* ma = a.model.resolve();
+				const auto* mb = b.model.resolve();
 
-			if (ma != mb) {
-				return ma < mb;
+				if (ma != mb) {
+					return ma < mb;
+				}
+
+				return a.index < b.index;
 			}
-
-			return a.index < b.index;
-		}
-	);
-
-	std::ranges::sort(
-		skinned_out,
-		[](const skinned_render_queue_entry& a, const skinned_render_queue_entry& b) {
-			const auto* ma = a.model.resolve();
-			const auto* mb = b.model.resolve();
-
-			if (ma != mb) {
-				return ma < mb;
-			}
-
-			return a.index < b.index;
-		}
-	);
+		);
 
 	struct instance_data {
 		mat4 model_matrix;
@@ -1204,7 +1209,8 @@ auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> v
 		data.pending_compute_instance_count = 0;
 	}
 
-	phase.channels.push(std::move(data));
+		channels.push(std::move(data));
+	});
 }
 
 auto gse::renderer::geometry::system::render(render_phase& phase, const state& s) -> void {
@@ -1284,7 +1290,7 @@ auto gse::renderer::geometry::system::render(render_phase& phase, const state& s
     };
 
     if (data.pending_compute_instance_count > 0) {
-        dispatch_skin_compute(s, command, data.pending_compute_instance_count);
+        dispatch_skin_compute(s, command, data.pending_compute_instance_count, frame_index);
     }
 
     const auto& normal_batches = data.normal_batches;
@@ -1528,12 +1534,10 @@ auto gse::renderer::geometry::system::render(render_phase& phase, const state& s
     command.pipelineBarrier2(post_dep);
 }
 
-auto gse::renderer::geometry::dispatch_skin_compute(const state& s, const vk::CommandBuffer command, const std::uint32_t instance_count) -> void {
+auto gse::renderer::geometry::dispatch_skin_compute(const state& s, const vk::CommandBuffer command, const std::uint32_t instance_count, const std::uint32_t frame_index) -> void {
 	if (instance_count == 0 || !s.skin_compute.valid()) {
 		return;
 	}
-
-	const auto frame_index = s.ctx->config().current_frame();
 
 	constexpr vk::MemoryBarrier2 host_to_device_barrier{
 		.srcStageMask = vk::PipelineStageFlagBits2::eHost,

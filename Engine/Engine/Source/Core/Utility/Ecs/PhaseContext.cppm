@@ -7,6 +7,7 @@ import :registry;
 import :id;
 import :n_buffer;
 import :channel_base;
+import :lambda_traits;
 
 export namespace gse {
 	class system_provider {
@@ -100,18 +101,8 @@ export namespace gse {
 		}
 
 		template <is_component T>
-		auto chunk() -> std::span<T> {
-			return reg->linked_objects_write<T>();
-		}
-
-		template <is_component T>
 		auto try_read(const id owner) const -> const T* {
 			return reg->try_linked_object_read<T>(owner);
-		}
-
-		template <is_component T>
-		auto try_write(const id owner) -> T* {
-			return reg->try_linked_object_write<T>(owner);
 		}
 
 		auto entity_active(const id owner) const -> bool {
@@ -127,9 +118,144 @@ export namespace gse {
 		}
 	};
 
-	struct pending_work_desc {
-		std::vector<std::type_index> component_writes;
-		std::type_index channel_write = typeid(void);
+	template <typename T>
+	class chunk {
+	public:
+		using value_type = T;
+		using pointer = T*;
+		using const_pointer = const T*;
+		using reference = T&;
+		using const_reference = const T&;
+
+		explicit chunk(std::span<T> span) : m_span(span) {}
+
+		auto begin() -> auto { return m_span.begin(); }
+		auto end() -> auto { return m_span.end(); }
+		auto begin() const -> auto { return m_span.begin(); }
+		auto end() const -> auto { return m_span.end(); }
+
+		auto size() const -> std::size_t { return m_span.size(); }
+		auto empty() const -> bool { return m_span.empty(); }
+		auto data() -> pointer { return m_span.data(); }
+		auto data() const -> const_pointer { return m_span.data(); }
+
+		auto operator[](std::size_t i) -> reference { return m_span[i]; }
+		auto operator[](std::size_t i) const -> const_reference { return m_span[i]; }
+
+		auto find(const id owner) -> pointer {
+			build_lookup();
+			if (const auto it = m_lookup->find(owner); it != m_lookup->end()) {
+				return it->second;
+			}
+			return nullptr;
+		}
+
+		auto find(const id owner) const -> const_pointer {
+			const_cast<chunk*>(this)->build_lookup();
+			if (const auto it = m_lookup->find(owner); it != m_lookup->end()) {
+				return it->second;
+			}
+			return nullptr;
+		}
+
+	private:
+		auto build_lookup() -> void {
+			if (m_lookup) return;
+			m_lookup.emplace();
+			m_lookup->reserve(m_span.size());
+			for (auto& item : m_span) {
+				(*m_lookup)[item.owner_id()] = std::addressof(item);
+			}
+		}
+
+		std::span<T> m_span;
+		mutable std::optional<std::unordered_map<id, pointer>> m_lookup;
+	};
+
+	struct queued_work {
+		id name;
+		std::vector<std::type_index> reads;
+		std::vector<std::type_index> writes;
+		std::move_only_function<void(registry&)> execute;
+
+		auto conflicts_with(const queued_work& other) const -> bool {
+			for (const auto& w : writes) {
+				if (std::ranges::contains(other.writes, w)) {
+					return true;
+				}
+			}
+			for (const auto& r : reads) {
+				if (std::ranges::contains(other.writes, r)) {
+					return true;
+				}
+			}
+			for (const auto& w : writes) {
+				if (std::ranges::contains(other.reads, w)) {
+					return true;
+				}
+			}
+			return false;
+		}
+	};
+
+	class work_queue {
+	public:
+		template <typename F>
+		auto schedule(const id name, F&& action) -> void {
+			using traits = lambda_traits<std::decay_t<F>>;
+
+			m_work.push_back(queued_work{
+				.name = name,
+				.reads = traits::reads(),
+				.writes = traits::writes(),
+				.execute = make_executor(std::forward<F>(action))
+			});
+		}
+
+		auto work() -> std::vector<queued_work>& {
+			return m_work;
+		}
+
+	private:
+		template <typename F>
+		static constexpr bool is_raw_registry_lambda =
+			lambda_traits<std::decay_t<F>>::arity == 1 &&
+			std::is_same_v<std::tuple_element_t<0, typename lambda_traits<std::decay_t<F>>::arg_tuple>, registry&>;
+
+		template <typename F>
+		auto make_executor(F&& f) -> std::move_only_function<void(registry&)> {
+			if constexpr (is_raw_registry_lambda<F>) {
+				return [func = std::forward<F>(f)](registry& reg) mutable {
+					func(reg);
+				};
+			}
+			else {
+				return [func = std::forward<F>(f)](registry& reg) mutable {
+					using traits = lambda_traits<std::decay_t<F>>;
+					using arg_tuple = typename traits::arg_tuple;
+					invoke_with_chunks<arg_tuple>(reg, func, std::make_index_sequence<traits::arity>{});
+				};
+			}
+		}
+
+		template <typename ArgTuple, typename F, std::size_t... Is>
+		static auto invoke_with_chunks(registry& reg, F& func, std::index_sequence<Is...>) -> void {
+			func(make_chunk<std::tuple_element_t<Is, ArgTuple>>(reg)...);
+		}
+
+		template <typename ChunkArg>
+		static auto make_chunk(registry& reg) -> ChunkArg {
+			using element_t = chunk_element_t<ChunkArg>;
+
+			if constexpr (is_read_chunk_v<ChunkArg>) {
+				return ChunkArg(reg.linked_objects_read<element_t>());
+			}
+			else {
+				return ChunkArg(reg.linked_objects_write<element_t>());
+			}
+		}
+
+		std::vector<queued_work> m_work;
 	};
 
 	struct initialize_phase {
@@ -149,10 +275,11 @@ export namespace gse {
 	};
 
 	struct update_phase {
-		registry_access& registry;
+		const registry_access& registry;
 		const state_snapshot_provider& snapshots;
 		channel_writer& channels;
 		const channel_reader_provider& channel_reader;
+		work_queue& work;
 
 		template <typename State>
 		auto state_of() const -> const State& {
@@ -167,6 +294,42 @@ export namespace gse {
 		template <typename T>
 		auto read_channel() const -> channel_read_guard<T> {
 			return channel_read_guard<T>(channel_reader.read<T>());
+		}
+
+		template <typename F>
+		auto schedule(F&& action, std::source_location loc = std::source_location::current()) -> void {
+			auto name = std::string(loc.function_name());
+			if (const auto paren = name.find('('); paren != std::string::npos) {
+				name = name.substr(0, paren);
+			}
+			if (const auto space = name.rfind(' '); space != std::string::npos) {
+				name = name.substr(space + 1);
+			}
+			work.schedule(find_or_generate_id(name), std::forward<F>(action));
+		}
+
+		template <is_component T, typename... Args>
+		auto defer_add(const id entity, Args&&... args) -> void {
+			work.schedule(find_or_generate_id("defer_add"), [entity, ...args = std::forward<Args>(args)](gse::registry& reg) mutable {
+				reg.ensure_exists(entity);
+				if (!reg.active(entity)) {
+					reg.ensure_active(entity);
+				}
+				reg.add_component<T>(entity, std::forward<Args>(args)...);
+			});
+		}
+
+		template <is_component T>
+		auto defer_remove(const id entity) -> void {
+			work.schedule(find_or_generate_id("defer_remove"), [entity](gse::registry& reg) {
+				reg.remove_link<T>(entity);
+			});
+		}
+
+		auto defer_activate(const id entity) const -> void {
+			work.schedule(find_or_generate_id("defer_activate"), [entity](gse::registry& reg) {
+				reg.ensure_active(entity);
+			});
 		}
 	};
 

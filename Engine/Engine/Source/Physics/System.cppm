@@ -56,65 +56,60 @@ auto gse::physics::system::update(update_phase& phase, state& s) -> void {
 
 	if (steps == 0) return;
 
-	auto motion_chunk = phase.registry.chunk<motion_component>();
-	auto collision_chunk = phase.registry.chunk<collision_component>();
-
-	for (int step = 0; step < steps; ++step) {
-		for (motion_component& motion : motion_chunk) {
-			motion.airborne = true;
-		}
-
-		for (collision_component& collision : collision_chunk) {
-			if (!collision.resolve_collisions) {
-				continue;
+	phase.schedule([steps](chunk<motion_component> motion, chunk<collision_component> collision) {
+		for (int step = 0; step < steps; ++step) {
+			for (motion_component& mc : motion) {
+				mc.airborne = true;
 			}
 
-			collision.collision_information = {
-				.colliding = false,
-				.collision_normal = {},
-				.penetration = {},
-				.collision_points = {}
+			for (collision_component& cc : collision) {
+				if (!cc.resolve_collisions) {
+					continue;
+				}
+
+				cc.collision_information = {
+					.colliding = false,
+					.collision_normal = {},
+					.penetration = {},
+					.collision_points = {}
+				};
+			}
+
+			std::vector<broad_phase_collision::broad_phase_entry> objects;
+			objects.reserve(collision.size());
+
+			for (collision_component& cc : collision) {
+				if (!cc.resolve_collisions) {
+					continue;
+				}
+
+				objects.push_back({
+					.collision = std::addressof(cc),
+					.motion = motion.find(cc.owner_id())
+				});
+			}
+
+			broad_phase_collision::update(objects);
+
+			struct task_entry {
+				motion_component* motion_ptr;
+				collision_component* collision_ptr;
 			};
-		}
 
-		std::vector<broad_phase_collision::broad_phase_entry> objects;
-		objects.reserve(collision_chunk.size());
+			std::vector<task_entry> tasks;
+			tasks.reserve(motion.size());
 
-		for (collision_component& collision : collision_chunk) {
-			if (!collision.resolve_collisions) {
-				continue;
+			for (motion_component& mc : motion) {
+				tasks.push_back({
+					.motion_ptr = std::addressof(mc),
+					.collision_ptr = collision.find(mc.owner_id())
+				});
 			}
 
-			motion_component* motion = phase.registry.try_write<motion_component>(collision.owner_id());
-
-			objects.push_back({
-				.collision = std::addressof(collision),
-				.motion = motion
+			task::parallel_for(0uz, tasks.size(), [&](const std::size_t i) {
+				auto& [motion_ptr, collision_ptr] = tasks[i];
+				update_object(*motion_ptr, collision_ptr);
 			});
 		}
-
-		broad_phase_collision::update(objects);
-
-		struct task_entry {
-			motion_component* motion;
-			collision_component* collision;
-		};
-
-		std::vector<task_entry> tasks;
-		tasks.reserve(motion_chunk.size());
-
-		for (motion_component& mc : motion_chunk) {
-			collision_component* cc = phase.registry.try_write<collision_component>(mc.owner_id());
-
-			tasks.push_back({
-				.motion = std::addressof(mc),
-				.collision = cc
-			});
-		}
-
-		task::parallel_for(0uz, tasks.size(), [&](const std::size_t i) {
-			auto& [motion, collision] = tasks[i];
-			update_object(*motion, collision);
-		});
-	}
+	});
 }

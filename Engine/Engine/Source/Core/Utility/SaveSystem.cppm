@@ -34,6 +34,11 @@ export namespace gse::save {
 
     struct save_request {};
 
+    struct bind_int_map_request {
+        std::string category;
+        std::map<std::string, int>* map_ptr = nullptr;
+    };
+
     struct register_property {
         std::string category;
         std::string name;
@@ -439,6 +444,7 @@ export namespace gse::save {
         std::vector<change_callback> m_callbacks;
 
         std::unordered_map<std::string, std::map<std::string, int>*> m_int_maps;
+        mutable std::unordered_map<std::string, std::map<std::string, int>> m_int_map_cache;
 
         std::filesystem::path m_auto_save_path;
         bool m_auto_save = false;
@@ -997,6 +1003,12 @@ auto gse::save::state::do_update(update_phase& phase) -> void {
         process_registration(reg);
     }
 
+    for (const auto& [category, map_ptr] : phase.read_channel<bind_int_map_request>()) {
+        if (map_ptr) {
+            bind_int_map(category, *map_ptr);
+        }
+    }
+
     if (!phase.read_channel<save_request>().empty()) {
         save();
     }
@@ -1067,8 +1079,23 @@ auto gse::save::state::bind(const std::string_view category, const std::string_v
 }
 
 auto gse::save::state::register_property(std::unique_ptr<property_base> prop) -> property_base* {
+    const std::string cat(prop->category());
+    const std::string name(prop->name());
+
+    for (auto it = m_properties.begin(); it != m_properties.end(); ++it) {
+        if ((*it)->category() == cat && (*it)->name() == name) {
+            auto& cat_vec = m_by_category[cat];
+            std::erase(cat_vec, it->get());
+
+            auto* ptr = prop.get();
+            *it = std::move(prop);
+            cat_vec.push_back(ptr);
+            return ptr;
+        }
+    }
+
     auto* ptr = prop.get();
-    m_by_category[std::string(prop->category())].push_back(ptr);
+    m_by_category[cat].push_back(ptr);
     m_properties.push_back(std::move(prop));
     return ptr;
 }
@@ -1201,12 +1228,23 @@ auto gse::save::state::load_from_file(const std::filesystem::path& path) const -
 
         std::string cat_str(category.str());
 
-        if (auto it = m_int_maps.find(cat_str); it != m_int_maps.end() && it->second) {
-            it->second->clear();
+        bool all_integers = !cat_table->empty();
+        for (const auto& [name, value_node] : *cat_table) {
+            if (!value_node.is_integer()) {
+                all_integers = false;
+                break;
+            }
+        }
+
+        if (all_integers) {
+            auto& cached = m_int_map_cache[cat_str];
+            cached.clear();
             for (const auto& [name, value_node] : *cat_table) {
-                if (value_node.is_integer()) {
-                    (*it->second)[std::string(name.str())] = static_cast<int>(value_node.value_or<std::int64_t>(0));
-                }
+                cached[std::string(name.str())] = static_cast<int>(value_node.value_or<std::int64_t>(0));
+            }
+
+            if (auto it = m_int_maps.find(cat_str); it != m_int_maps.end() && it->second) {
+                *it->second = cached;
             }
             continue;
         }
@@ -1255,7 +1293,12 @@ auto gse::save::state::save() const -> bool {
 }
 
 auto gse::save::state::bind_int_map(const std::string_view category, std::map<std::string, int>& map) -> void {
-    m_int_maps[std::string(category)] = &map;
+    std::string cat_str(category);
+    m_int_maps[cat_str] = &map;
+
+    if (auto it = m_int_map_cache.find(cat_str); it != m_int_map_cache.end()) {
+        map = it->second;
+    }
 }
 
 auto gse::save::state::int_map(const std::string_view category) const -> const std::map<std::string, int>* {

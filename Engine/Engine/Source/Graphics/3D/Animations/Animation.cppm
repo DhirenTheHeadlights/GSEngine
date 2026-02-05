@@ -132,7 +132,7 @@ export namespace gse::animation {
 
 	struct system {
 		static auto initialize(initialize_phase& phase, state& s) -> void;
-		static auto update(const update_phase& phase, state& s) -> void;
+		static auto update(update_phase& phase, state& s) -> void;
 	};
 }
 
@@ -140,139 +140,140 @@ auto gse::animation::system::initialize(initialize_phase&, state& s) -> void {
 	s.last_tick = system_clock::now();
 }
 
-auto gse::animation::system::update(const update_phase& phase, state& s) -> void {
-	const time dt = system_clock::dt();
-
-	auto animations = phase.registry.chunk<animation_component>();
-
+auto gse::animation::system::update(update_phase& phase, state& s) -> void {
 	const auto* renderer_state = phase.try_state_of<renderer::state>();
 	if (!renderer_state) {
 		return;
 	}
 
-	s.jobs.clear();
-	s.controller_jobs.clear();
-	s.pose_cache.clear();
+	const time dt = system_clock::dt();
 
-	for (std::size_t i = 0; i < animations.size(); ++i) {
-		auto& anim = animations[i];
+	phase.schedule([&s, renderer_state, dt](
+		chunk<animation_component> animations,
+		chunk<controller_component> controllers,
+		chunk<clip_component> clips
+	) {
+		s.jobs.clear();
+		s.controller_jobs.clear();
+		s.pose_cache.clear();
 
-		if (const auto& [skeleton_id] = anim.networked_data(); !anim.skeleton && skeleton_id.exists()) {
-			anim.skeleton = renderer_state->get<skeleton>(skeleton_id);
-		}
+		for (auto& anim : animations) {
+			if (const auto& [skeleton_id] = anim.networked_data(); !anim.skeleton && skeleton_id.exists()) {
+				anim.skeleton = renderer_state->get<skeleton>(skeleton_id);
+			}
 
-		if (!anim.skeleton) {
-			continue;
-		}
-
-		const auto& skel = *anim.skeleton;
-		const auto joint_count = static_cast<std::size_t>(skel.joint_count());
-		ensure_pose_buffers(anim, joint_count);
-
-		if (auto* ctrl_c = phase.registry.try_write<controller_component>(anim.owner_id())) {
-			const auto& [graph_id] = ctrl_c->networked_data();
-			if (const auto it = s.graphs.find(graph_id); it != s.graphs.end()) {
-				s.controller_jobs.push_back({
-					.anim = std::addressof(anim),
-					.ctrl = ctrl_c,
-					.skel = std::addressof(skel),
-					.graph = &it->second
-				});
+			if (!anim.skeleton) {
 				continue;
 			}
-		}
 
-		auto* clip_c = phase.registry.try_write<clip_component>(anim.owner_id());
-		if (clip_c == nullptr) {
-			continue;
-		}
+			const auto& skel = *anim.skeleton;
+			const auto joint_count = static_cast<std::size_t>(skel.joint_count());
+			ensure_pose_buffers(anim, joint_count);
 
-		const auto& [clip_id, scale, loop] = clip_c->networked_data();
-		if (!clip_c->clip && clip_id.exists()) {
-			clip_c->clip = renderer_state->get<clip_asset>(clip_id);
-		}
-
-		if (!clip_c->clip) {
-			continue;
-		}
-
-		const auto& clip = *clip_c->clip;
-
-		if (clip_c->playing) {
-			clip_c->t += dt * scale;
-		}
-
-		const time length = clip.length();
-		time sample_t = clip_c->t;
-		const bool should_loop = (loop && clip.loop());
-
-		if (should_loop) {
-			sample_t = wrap_time(sample_t, length);
-			clip_c->t = sample_t;
-		} else if (length > 0 && sample_t >= length) {
-			sample_t = length;
-			clip_c->t = length;
-			clip_c->playing = false;
-		}
-
-		s.jobs.push_back({
-			.anim = std::addressof(anim),
-			.clip = clip_c,
-			.skel = std::addressof(skel),
-			.clip_asset = std::addressof(clip),
-			.scale = scale,
-			.loop = should_loop,
-			.sample_t = sample_t
-		});
-	}
-
-	if (!s.jobs.empty()) {
-		std::vector<std::size_t> job_cache_index(s.jobs.size());
-		std::vector<std::size_t> unique_job_indices;
-
-		for (std::size_t i = 0; i < s.jobs.size(); ++i) {
-			constexpr float time_bucket_size = 16'666'666.f;
-			const auto& job = s.jobs[i];
-			const auto time_bucket = static_cast<std::int64_t>(job.sample_t / time{time_bucket_size});
-
-			const pose_cache_key key{
-				.clip = job.clip_asset,
-				.skel = job.skel,
-				.time_bucket = time_bucket
-			};
-
-			const auto [it, inserted] = s.pose_cache.try_emplace(key, i);
-			job_cache_index[i] = it->second;
-
-			if (inserted) {
-				unique_job_indices.push_back(i);
+			if (auto* ctrl_c = controllers.find(anim.owner_id())) {
+				const auto& [graph_id] = ctrl_c->networked_data();
+				if (const auto graph_it = s.graphs.find(graph_id); graph_it != s.graphs.end()) {
+					s.controller_jobs.push_back({
+						.anim = std::addressof(anim),
+						.ctrl = ctrl_c,
+						.skel = std::addressof(skel),
+						.graph = &graph_it->second
+					});
+					continue;
+				}
 			}
+
+			auto* clip_c = clips.find(anim.owner_id());
+			if (clip_c == nullptr) {
+				continue;
+			}
+			const auto& [clip_id, scale, loop] = clip_c->networked_data();
+			if (!clip_c->clip && clip_id.exists()) {
+				clip_c->clip = renderer_state->get<clip_asset>(clip_id);
+			}
+
+			if (!clip_c->clip) {
+				continue;
+			}
+
+			const auto& clip = *clip_c->clip;
+
+			if (clip_c->playing) {
+				clip_c->t += dt * scale;
+			}
+
+			const time length = clip.length();
+			time sample_t = clip_c->t;
+			const bool should_loop = (loop && clip.loop());
+
+			if (should_loop) {
+				sample_t = wrap_time(sample_t, length);
+				clip_c->t = sample_t;
+			} else if (length > 0 && sample_t >= length) {
+				sample_t = length;
+				clip_c->t = length;
+				clip_c->playing = false;
+			}
+
+			s.jobs.push_back({
+				.anim = std::addressof(anim),
+				.clip = clip_c,
+				.skel = std::addressof(skel),
+				.clip_asset = std::addressof(clip),
+				.scale = scale,
+				.loop = should_loop,
+				.sample_t = sample_t
+			});
 		}
 
-		task::parallel_for(0uz, unique_job_indices.size(), [&](const std::size_t i) {
-			const auto job_idx = unique_job_indices[i];
-			const auto& job = s.jobs[job_idx];
-			build_local_pose(*job.anim, *job.skel, *job.clip_asset, job.sample_t);
-			build_global_and_skins(*job.anim, *job.skel);
-		});
+		if (!s.jobs.empty()) {
+			std::vector<std::size_t> job_cache_index(s.jobs.size());
+			std::vector<std::size_t> unique_job_indices;
 
-		task::parallel_for(0uz, s.jobs.size(), [&](const std::size_t i) {
-			if (const auto source_idx = job_cache_index[i]; source_idx != i) {
-				const auto& source_anim = *s.jobs[source_idx].anim;
-				auto& dest_anim = *s.jobs[i].anim;
+			for (std::size_t i = 0; i < s.jobs.size(); ++i) {
+				constexpr float time_bucket_size = 16'666'666.f;
+				const auto& job = s.jobs[i];
+				const auto time_bucket = static_cast<std::int64_t>(job.sample_t / time{time_bucket_size});
 
-				std::ranges::copy(source_anim.local_pose, dest_anim.local_pose.begin());
-				std::ranges::copy(source_anim.global_pose, dest_anim.global_pose.begin());
-				std::ranges::copy(source_anim.skins, dest_anim.skins.begin());
+				const pose_cache_key key{
+					.clip = job.clip_asset,
+					.skel = job.skel,
+					.time_bucket = time_bucket
+				};
+
+				const auto [it, inserted] = s.pose_cache.try_emplace(key, i);
+				job_cache_index[i] = it->second;
+
+				if (inserted) {
+					unique_job_indices.push_back(i);
+				}
 			}
-		});
-	}
 
-	if (!s.controller_jobs.empty()) {
-		task::parallel_for(0uz, s.controller_jobs.size(), [&](const std::size_t i) {
-			process_controller_job(s.controller_jobs[i], *renderer_state, dt);
-		});
-	}
+			task::parallel_for(0uz, unique_job_indices.size(), [&](const std::size_t i) {
+				const auto job_idx = unique_job_indices[i];
+				const auto& job = s.jobs[job_idx];
+				build_local_pose(*job.anim, *job.skel, *job.clip_asset, job.sample_t);
+				build_global_and_skins(*job.anim, *job.skel);
+			});
+
+			task::parallel_for(0uz, s.jobs.size(), [&](const std::size_t i) {
+				if (const auto source_idx = job_cache_index[i]; source_idx != i) {
+					const auto& source_anim = *s.jobs[source_idx].anim;
+					auto& dest_anim = *s.jobs[i].anim;
+
+					std::ranges::copy(source_anim.local_pose, dest_anim.local_pose.begin());
+					std::ranges::copy(source_anim.global_pose, dest_anim.global_pose.begin());
+					std::ranges::copy(source_anim.skins, dest_anim.skins.begin());
+				}
+			});
+		}
+
+		if (!s.controller_jobs.empty()) {
+			task::parallel_for(0uz, s.controller_jobs.size(), [&](const std::size_t i) {
+				process_controller_job(s.controller_jobs[i], *renderer_state, dt);
+			});
+		}
+	});
 }
 
 auto gse::animation::wrap_time(const time t, const time length) -> time {

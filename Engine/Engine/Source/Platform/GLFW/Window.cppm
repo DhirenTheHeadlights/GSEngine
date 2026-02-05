@@ -112,6 +112,7 @@ export namespace gse {
 		struct pending_state {
 			std::optional<bool> fullscreen_request;
 			std::optional<int> cursor_mode_request;
+			std::optional<int> move_to_monitor_request;
 			int windowed_pos_x = 100, windowed_pos_y = 100;
 			int windowed_w = 1920, windowed_h = 1080;
 		} m_pending;
@@ -281,9 +282,15 @@ gse::window::~window() {
 
 auto gse::window::update(const bool ui_focus) -> void {
 	if (m_monitor_index != m_last_monitor_index) {
+		const int old_monitor = m_last_monitor_index;
 		m_last_monitor_index = m_monitor_index;
 		m_resolution_index = 0;
 		refresh_resolution_settings();
+
+		if (!m_current_fullscreen && old_monitor != m_monitor_index) {
+			std::lock_guard lock(m_pending_mutex);
+			m_pending.move_to_monitor_request = m_monitor_index;
+		}
 	}
 
 	const bool was_ui_focus = m_ui_focus;
@@ -371,12 +378,14 @@ auto gse::window::request_fullscreen(const bool fullscreen) -> void {
 auto gse::window::process_pending_operations() -> void {
 	std::optional<bool> fullscreen_req;
 	std::optional<int> cursor_mode_req;
+	std::optional<int> move_to_monitor_req;
 	int pos_x, pos_y, w, h;
 
 	{
 		std::lock_guard lock(m_pending_mutex);
 		fullscreen_req = std::exchange(m_pending.fullscreen_request, std::nullopt);
 		cursor_mode_req = std::exchange(m_pending.cursor_mode_request, std::nullopt);
+		move_to_monitor_req = std::exchange(m_pending.move_to_monitor_request, std::nullopt);
 		pos_x = m_pending.windowed_pos_x;
 		pos_y = m_pending.windowed_pos_y;
 		w = m_pending.windowed_w;
@@ -393,6 +402,24 @@ auto gse::window::process_pending_operations() -> void {
 		}
 
 		glfwSetInputMode(m_window, GLFW_CURSOR, new_mode);
+	}
+
+	if (move_to_monitor_req.has_value()) {
+		int monitor_count = 0;
+		GLFWmonitor** monitors = glfwGetMonitors(&monitor_count);
+		const int target = *move_to_monitor_req;
+
+		if (monitors && target >= 0 && target < monitor_count) {
+			int mx, my, mw, mh;
+			glfwGetMonitorWorkarea(monitors[target], &mx, &my, &mw, &mh);
+
+			int ww, wh;
+			glfwGetWindowSize(m_window, &ww, &wh);
+
+			const int new_x = mx + (mw - ww) / 2;
+			const int new_y = my + (mh - wh) / 2;
+			glfwSetWindowPos(m_window, new_x, new_y);
+		}
 	}
 
 	if (!fullscreen_req.has_value() || !m_focused) {
@@ -548,7 +575,7 @@ auto gse::window::refresh_monitor_settings() -> void {
 	}
 
 	m_save.bind("Window", "Monitor", m_monitor_index)
-		.description("Display monitor for fullscreen")
+		.description("Display monitor")
 		.options(std::move(monitor_options))
 		.commit();
 }

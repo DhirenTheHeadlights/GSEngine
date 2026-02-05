@@ -16,8 +16,8 @@ export namespace gs {
 
 		auto initialize() -> void override {
 			m_owner->set_player_factory([](gse::scene& s) -> gse::id {
-				auto player_id = s.add_entity("Player");
-				s.registry().add_hook<gse::free_camera>(player_id, gse::free_camera::params{
+				const auto player_id = s.add_entity("Player");
+				s.registry().add_hook<player>(player_id, player::params{
 					.initial_position = gse::vec3<gse::length>(0.f, 0.f, 0.f)
 				});
 				return player_id;

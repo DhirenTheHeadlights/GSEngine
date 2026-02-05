@@ -589,6 +589,7 @@ auto gse::gui::system::end_frame(end_frame_phase& phase, system_state& s) -> voi
 	const ui_rect settings_rect = settings_panel::default_panel_rect(s.fstate.sty, viewport_size);
 
 	const auto* save_state = phase.try_state_of<save::state>();
+	const auto* actions_state = phase.try_state_of<actions::system_state>();
 
 	const settings_panel::context sp_ctx{
 		.font = s.gui_font,
@@ -604,7 +605,29 @@ auto gse::gui::system::end_frame(end_frame_phase& phase, system_state& s) -> voi
 			phase.channels.push(save::save_request{});
 		},
 		.tooltip = &s.tooltip,
-		.input_layers = &s.input_layers_data
+		.input_layers = &s.input_layers_data,
+		.all_bindings = [actions_state]() -> std::vector<actions::action_binding_info> {
+			return actions_state ? actions_state->all_bindings() : std::vector<actions::action_binding_info>{};
+		},
+		.rebind = [&phase](std::string_view name, key k) {
+			phase.channels.push(actions::rebind_request{
+				.action_name = std::string(name),
+				.new_key = k
+			});
+		},
+		.pressed_key = [&input_st]() -> key {
+			for (int i = 32; i <= 96; ++i) {
+				if (input_st.key_pressed(static_cast<key>(i))) {
+					return static_cast<key>(i);
+				}
+			}
+			for (int i = 256; i <= 348; ++i) {
+				if (input_st.key_pressed(static_cast<key>(i))) {
+					return static_cast<key>(i);
+				}
+			}
+			return key{};
+		}
 	};
 
 	if (save_state && settings_panel::update(s.settings_panel_state, sp_ctx, settings_rect, s.menu_bar_state.settings_open, *save_state)) {

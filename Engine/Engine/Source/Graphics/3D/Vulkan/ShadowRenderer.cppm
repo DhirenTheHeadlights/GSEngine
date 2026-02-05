@@ -272,8 +272,8 @@ auto gse::renderer::shadow::system::update(update_phase& phase, state& s) -> voi
 
 	std::size_t next_shadow_index = 0;
 
-	const auto dir_view = phase.registry.chunk<directional_light_component>();
-	const auto spot_view = phase.registry.chunk<spot_light_component>();
+	const auto dir_view = phase.registry.view<directional_light_component>();
+	const auto spot_view = phase.registry.view<spot_light_component>();
 
 	for (const auto& comp : dir_view) {
 		if (next_shadow_index >= max_shadow_lights) {

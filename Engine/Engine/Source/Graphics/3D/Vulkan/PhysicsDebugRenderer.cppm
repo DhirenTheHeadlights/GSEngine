@@ -351,7 +351,7 @@ auto gse::renderer::physics_debug::system::update(update_phase& phase, state& s)
 
 	std::vector<debug_vertex> vertices;
 
-	for (const auto& coll : phase.registry.chunk<physics::collision_component>()) {
+	for (const auto& coll : phase.registry.view<physics::collision_component>()) {
 		if (!coll.resolve_collisions) {
 			continue;
 		}

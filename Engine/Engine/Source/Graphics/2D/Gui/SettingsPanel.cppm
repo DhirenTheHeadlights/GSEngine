@@ -41,6 +41,7 @@ export namespace gse::settings_panel {
         std::vector<pending_change> pending_changes;
         popup_type active_popup = popup_type::none;
         bool has_pending_restart = false;
+        std::string action_being_rebound;
 
         [[nodiscard]] auto find_pending(const std::string_view category, const std::string_view name) const -> const pending_change* {
             for (const auto& change : pending_changes) {
@@ -64,6 +65,9 @@ export namespace gse::settings_panel {
         std::function<void()> request_save;
         gui::tooltip_state* tooltip = nullptr;
         gui::input_layer* input_layers = nullptr;
+        std::function<std::vector<actions::action_binding_info>()> all_bindings;
+        std::function<void(std::string_view, key)> rebind;
+        std::function<key()> pressed_key;
     };
 
     auto update(
@@ -127,6 +131,13 @@ namespace gse::settings_panel {
         const save::property_base& prop
     ) -> void;
 
+    auto draw_key_binding(
+        layout_state& layout,
+        const std::string& action_name,
+        key current_key,
+        key default_key
+    ) -> void;
+
     auto draw_apply_button(
         layout_state& layout,
         state& panel_state
@@ -188,7 +199,19 @@ auto gse::settings_panel::dropdown_blocking_input(const layout_state& layout) ->
 
 auto gse::settings_panel::update(state& state, const context& ctx, const gui::ui_rect& rect, const bool is_open, const save::state& save_sys) -> bool {
     if (!is_open) {
+        state.action_being_rebound.clear();
         return false;
+    }
+
+    if (!state.action_being_rebound.empty() && ctx.pressed_key) {
+        if (const key k = ctx.pressed_key(); k != key{}) {
+            if (k == key::escape) {
+                state.action_being_rebound.clear();
+            } else if (ctx.rebind) {
+                ctx.rebind(state.action_being_rebound, k);
+                state.action_being_rebound.clear();
+            }
+        }
     }
 
     gui::ids::scope settings_scope("settings_panel");
@@ -349,6 +372,16 @@ auto gse::settings_panel::update(state& state, const context& ctx, const gui::ui
 
         for (const auto* prop : save_sys.properties_in(category)) {
             draw_property(layout, *prop);
+        }
+
+        layout.cursor.y() -= sty.padding;
+    }
+
+    if (ctx.all_bindings) {
+        draw_section_header(layout, "Controls");
+
+        for (const auto& binding : ctx.all_bindings()) {
+            draw_key_binding(layout, binding.name, binding.current_key, binding.default_key);
         }
 
         layout.cursor.y() -= sty.padding;
@@ -893,6 +926,166 @@ auto gse::settings_panel::draw_choice(layout_state& layout, const save::property
             ctx.input.mouse_button_pressed(mouse_button::button_1)) {
             layout.panel_state->dropdown.open_dropdown_id.reset();
         }
+    }
+}
+
+auto gse::settings_panel::draw_key_binding(
+    layout_state& layout,
+    const std::string& action_name,
+    const key current_key,
+    const key default_key
+) -> void {
+    const auto& sty = layout.ctx->style;
+    const auto& ctx = *layout.ctx;
+
+    layout.cursor.y() -= layout.row_height;
+
+    if (!layout.is_row_visible()) {
+        return;
+    }
+
+    const gui::ui_rect row_rect = gui::ui_rect::from_position_size(
+        { layout.cursor.x(), layout.cursor.y() + layout.row_height },
+        { layout.content_rect.width(), layout.row_height }
+    );
+
+    const bool is_listening = (layout.panel_state->action_being_rebound == action_name);
+
+    constexpr float min_button_width = 100.f;
+    constexpr float reset_button_width = 20.f;
+    constexpr float button_gap = 4.f;
+
+    const std::string key_text = is_listening
+        ? "Press key..."
+        : std::string(key_to_string(current_key));
+
+    float button_width = min_button_width;
+    if (ctx.font.valid()) {
+        button_width = std::max(min_button_width, ctx.font->width(key_text, sty.font_size) + sty.padding * 2.f);
+    }
+
+    const gui::ui_rect reset_rect = gui::ui_rect::from_position_size(
+        { row_rect.right() - reset_button_width, row_rect.center().y() + reset_button_width * 0.5f },
+        { reset_button_width, reset_button_width }
+    );
+
+    const gui::ui_rect button_rect = gui::ui_rect::from_position_size(
+        { reset_rect.left() - button_gap - button_width, row_rect.center().y() + layout.row_height * 0.4f },
+        { button_width, layout.row_height * 0.8f }
+    );
+
+    const unitless::vec2 mouse_pos = ctx.input.mouse_position();
+    const id binding_id = gui::ids::make("keybind_" + action_name);
+    const id reset_id = gui::ids::make("keybind_reset_" + action_name);
+
+    const bool button_hovered = button_rect.contains(mouse_pos) && layout.clip_rect.contains(mouse_pos) && !dropdown_blocking_input(layout);
+    const bool reset_hovered = reset_rect.contains(mouse_pos) && layout.clip_rect.contains(mouse_pos) && !dropdown_blocking_input(layout);
+
+    if (button_hovered && ctx.input.mouse_button_pressed(mouse_button::button_1)) {
+        layout.panel_state->active_id = binding_id;
+    }
+
+    if (reset_hovered && ctx.input.mouse_button_pressed(mouse_button::button_1)) {
+        layout.panel_state->active_id = reset_id;
+    }
+
+    if (button_hovered && layout.panel_state->active_id == binding_id &&
+        ctx.input.mouse_button_released(mouse_button::button_1)) {
+        if (is_listening) {
+            layout.panel_state->action_being_rebound.clear();
+        } else {
+            layout.panel_state->action_being_rebound = action_name;
+        }
+        layout.panel_state->active_id.reset();
+    }
+
+    if (reset_hovered && layout.panel_state->active_id == reset_id &&
+        ctx.input.mouse_button_released(mouse_button::button_1)) {
+        if (ctx.rebind && current_key != default_key) {
+            ctx.rebind(action_name, default_key);
+        }
+        layout.panel_state->active_id.reset();
+    }
+
+    unitless::vec4 button_bg = sty.color_widget_background;
+    if (is_listening) {
+        button_bg = unitless::vec4(0.4f, 0.4f, 0.2f, 1.f);
+    } else if (layout.panel_state->active_id == binding_id) {
+        button_bg = sty.color_widget_active;
+    } else if (button_hovered) {
+        button_bg = sty.color_widget_hovered;
+    }
+
+    ctx.sprites.push_back({
+        .rect = button_rect,
+        .color = button_bg,
+        .texture = ctx.blank_texture,
+        .layer = ctx.layer
+    });
+
+    if (ctx.font.valid()) {
+        const float text_width = ctx.font->width(key_text, sty.font_size);
+        ctx.texts.push_back({
+            .font = ctx.font,
+            .text = key_text,
+            .position = {
+                button_rect.center().x() - text_width * 0.5f,
+                button_rect.center().y() + sty.font_size * 0.35f
+            },
+            .scale = sty.font_size,
+            .color = is_listening ? sty.color_text : sty.color_text,
+            .clip_rect = layout.clip_rect,
+            .layer = ctx.layer
+        });
+    }
+
+    const bool show_reset = (current_key != default_key);
+    if (show_reset) {
+        unitless::vec4 reset_bg = sty.color_widget_background;
+        if (layout.panel_state->active_id == reset_id) {
+            reset_bg = sty.color_widget_active;
+        } else if (reset_hovered) {
+            reset_bg = unitless::vec4(0.6f, 0.3f, 0.3f, 1.f);
+        }
+
+        ctx.sprites.push_back({
+            .rect = reset_rect,
+            .color = reset_bg,
+            .texture = ctx.blank_texture,
+            .layer = ctx.layer
+        });
+
+        if (ctx.font.valid()) {
+            const std::string reset_text = "X";
+            const float reset_text_width = ctx.font->width(reset_text, sty.font_size * 0.8f);
+            ctx.texts.push_back({
+                .font = ctx.font,
+                .text = reset_text,
+                .position = {
+                    reset_rect.center().x() - reset_text_width * 0.5f,
+                    reset_rect.center().y() + sty.font_size * 0.3f
+                },
+                .scale = sty.font_size * 0.8f,
+                .color = sty.color_text_secondary,
+                .clip_rect = layout.clip_rect,
+                .layer = ctx.layer
+            });
+        }
+    }
+
+    if (ctx.font.valid()) {
+        ctx.texts.push_back({
+            .font = ctx.font,
+            .text = action_name,
+            .position = {
+                row_rect.left() + sty.padding,
+                row_rect.center().y() + sty.font_size * 0.35f
+            },
+            .scale = sty.font_size,
+            .color = sty.color_text,
+            .clip_rect = layout.clip_rect,
+            .layer = ctx.layer
+        });
     }
 }
 

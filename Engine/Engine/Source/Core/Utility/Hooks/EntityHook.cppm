@@ -138,7 +138,7 @@ auto gse::hook<gse::entity>::try_component_write() -> T* {
 
 template <gse::is_component T>
 auto gse::hook<gse::entity>::configure_when_present(const std::function<void(T&)>& config_func) -> void {
-	registry::deferred_action action = [owner_id = this->owner_id(), config_func = std::move(config_func)](registry& reg) -> bool {
+	registry::deferred_action action = [owner_id = this->owner_id(), config_func](registry& reg) -> bool {
 		if (auto* component = reg.try_linked_object_write<T>(owner_id)) {
 			config_func(*component);
 			return true;

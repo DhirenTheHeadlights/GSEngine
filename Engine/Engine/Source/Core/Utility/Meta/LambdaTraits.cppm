@@ -2,28 +2,52 @@ export module gse.utility:lambda_traits;
 
 import std;
 
-namespace gse {
+export namespace gse {
+    template <typename T>
+    class chunk;
+
+    template <typename T>
+    struct chunk_traits {
+        static constexpr bool is_chunk = false;
+        static constexpr bool is_const_element = false;
+        using element_type = void;
+    };
+
+    template <typename T>
+    struct chunk_traits<chunk<T>> {
+        static constexpr bool is_chunk = true;
+        static constexpr bool is_const_element = std::is_const_v<T>;
+        using element_type = std::remove_const_t<T>;
+    };
+
+    template <typename T>
+    constexpr bool is_chunk_v = chunk_traits<std::remove_cvref_t<T>>::is_chunk;
+
+    template <typename T>
+    constexpr bool is_read_chunk_v = chunk_traits<std::remove_cvref_t<T>>::is_const_element;
+
+    template <typename T>
+    using chunk_element_t = typename chunk_traits<std::remove_cvref_t<T>>::element_type;
+
     template <typename... Args>
     struct param_info {
         static auto read_types() -> std::vector<std::type_index> {
             std::vector<std::type_index> result;
-            ((std::is_const_v<std::remove_reference_t<Args>>
-                ? result.push_back(typeid(std::remove_cvref_t<Args>))
+            ((is_chunk_v<Args> && is_read_chunk_v<Args>
+                ? result.push_back(typeid(chunk_element_t<Args>))
                 : void()), ...);
             return result;
         }
 
         static auto write_types() -> std::vector<std::type_index> {
             std::vector<std::type_index> result;
-            ((!std::is_const_v<std::remove_reference_t<Args>>
-                ? result.push_back(typeid(std::remove_cvref_t<Args>))
+            ((is_chunk_v<Args> && !is_read_chunk_v<Args>
+                ? result.push_back(typeid(chunk_element_t<Args>))
                 : void()), ...);
             return result;
         }
     };
-}
 
-export namespace gse {
     template <typename T>
     struct is_write_param : std::bool_constant<!std::is_const_v<std::remove_reference_t<T>>> {};
 

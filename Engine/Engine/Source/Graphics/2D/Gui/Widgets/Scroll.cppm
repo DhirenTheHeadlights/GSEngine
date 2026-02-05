@@ -90,7 +90,7 @@ auto gse::gui::scroll::begin(
 	ctx.visible_rect = visible_rect;
 	ctx.content_rect = visible_rect;
 	ctx.scroll_offset = state.offset;
-	ctx.content_start_y = visible_rect.top();
+	ctx.content_start_y = visible_rect.top() + state.offset;
 
 	return ctx;
 }
