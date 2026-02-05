@@ -95,6 +95,10 @@ export namespace gse {
 
 		auto make_channel_writer(
 		) -> channel_writer;
+
+		static auto build_work_batches(
+			std::vector<queued_work>& work
+		) -> std::vector<std::vector<queued_work*>>;
 	};
 }
 
@@ -195,18 +199,35 @@ auto gse::scheduler::initialize() -> void {
 
 auto gse::scheduler::update() -> void {
 	auto writer = make_channel_writer();
+	work_queue work;
+
+	const registry_access const_registry_access = m_registry_access;
+
 	update_phase phase{
-		.registry = m_registry_access,
+		.registry = const_registry_access,
 		.snapshots = *this,
 		.channels = writer,
-		.channel_reader = *this
+		.channel_reader = *this,
+		.work = work
 	};
 
-	task::group systems;
-	for (auto& n : m_nodes) {
-		systems.post([&n, &phase] {
-			n->update(phase);
-		});
+	for (const auto& n : m_nodes) {
+		n->update(phase);
+	}
+
+	if (work.work().empty()) {
+		return;
+	}
+
+	for (auto& batch : build_work_batches(work.work())) {
+		if (batch.size() == 1) {
+			batch[0]->execute(*m_registry);
+		}
+		else {
+			task::parallel_for(0uz, batch.size(), [&](const size_t i) {
+				batch[i]->execute(*m_registry);
+			});
+		}
 	}
 }
 
@@ -309,4 +330,35 @@ auto gse::scheduler::make_channel_writer() -> channel_writer {
 		}
 		it->second->push_any(std::move(item));
 	});
+}
+
+auto gse::scheduler::build_work_batches(std::vector<queued_work>& work) -> std::vector<std::vector<queued_work*>> {
+	std::vector<std::vector<queued_work*>> batches;
+
+	for (auto& w : work) {
+		bool placed = false;
+
+		for (auto& batch : batches) {
+			bool conflicts = false;
+
+			for (const auto* existing : batch) {
+				if (w.conflicts_with(*existing)) {
+					conflicts = true;
+					break;
+				}
+			}
+
+			if (!conflicts) {
+				batch.push_back(&w);
+				placed = true;
+				break;
+			}
+		}
+
+		if (!placed) {
+			batches.push_back({ &w });
+		}
+	}
+
+	return batches;
 }

@@ -82,6 +82,11 @@ export namespace gse::actions {
 		id axis_id;
 	};
 
+	struct rebind_request {
+		std::string action_name;
+		key new_key;
+	};
+
 	class description : public identifiable {
 	public:
 		explicit description(
@@ -365,6 +370,7 @@ export namespace gse::actions {
 		id_mapped_collection<actions::description> descriptions;
 		std::vector<pending_key_binding> pending_key_bindings;
 		std::map<std::string, int> rebinds;
+		std::map<std::string, int> action_defaults;
 		std::vector<pending_axis2_req> pending_axis2_reqs;
 		bindings resolved;
 		std::vector<std::uint16_t> axis1_ids_cache;
@@ -578,7 +584,17 @@ auto gse::actions::state::load_transients(const std::span<const word> pressed, c
 	m_held.assign(held);
 }
 
-auto gse::actions::system::initialize(initialize_phase&, system_state& s) -> void {
+auto gse::actions::system::initialize(initialize_phase& phase, system_state& s) -> void {
+	phase.channels.push(save::bind_int_map_request{
+		.category = "Controls",
+		.map_ptr = &s.rebinds
+	});
+
+	phase.channels.push(save::bind_int_map_request{
+		.category = "ActionDefaults",
+		.map_ptr = &s.action_defaults
+	});
+
 	s.finalize_bindings();
 }
 
@@ -588,6 +604,7 @@ auto gse::actions::system::update(update_phase& phase, system_state& s) -> void 
 	for (const auto& [name, default_key, action_id] : phase.read_channel<add_action_request>()) {
 		s.add_description(name, action_id);
 		s.pending_key_bindings.emplace_back(name, default_key, action_id);
+		s.action_defaults[name] = static_cast<int>(default_key);
 		config_changed = true;
 	}
 
@@ -597,6 +614,10 @@ auto gse::actions::system::update(update_phase& phase, system_state& s) -> void 
 			axis_id
 		});
 		config_changed = true;
+	}
+
+	for (const auto& [action_name, new_key] : phase.read_channel<rebind_request>()) {
+		s.rebind(action_name, new_key);
 	}
 
 	if (config_changed) {
@@ -809,15 +830,29 @@ auto gse::actions::system_state::rebinds_map() -> std::map<std::string, int>& {
 }
 
 auto gse::actions::system_state::all_bindings() const -> std::vector<action_binding_info> {
-	std::vector<action_binding_info> result;
-	result.reserve(pending_key_bindings.size());
+	std::map<std::string, action_binding_info> merged;
+
+	for (const auto& [name, default_key] : action_defaults) {
+		const key def = static_cast<key>(default_key);
+		key current = def;
+		if (const auto it = rebinds.find(name); it != rebinds.end()) {
+			current = static_cast<key>(it->second);
+		}
+		merged[name] = { name, current, def };
+	}
 
 	for (const auto& [name, def, action_id] : pending_key_bindings) {
 		key current = def;
 		if (const auto it = rebinds.find(name); it != rebinds.end()) {
 			current = static_cast<key>(it->second);
 		}
-		result.push_back({ name, current, def });
+		merged[name] = { name, current, def };
+	}
+
+	std::vector<action_binding_info> result;
+	result.reserve(merged.size());
+	for (auto& [name, info] : merged) {
+		result.push_back(std::move(info));
 	}
 
 	return result;

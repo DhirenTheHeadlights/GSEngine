@@ -6,8 +6,6 @@ import :id;
 import :non_copyable;
 import :misc;
 import :frame_sync;
-import :task;
-import :lambda_traits;
 
 import :entity;
 import :concepts;
@@ -15,29 +13,9 @@ import :component_link;
 import :hook_link;
 
 export namespace gse {
-	struct deferred_action_desc {
-		id owner;
-		std::vector<std::type_index> reads;
-		std::vector<std::type_index> writes;
-		std::function<bool(registry&)> execute;
-
-		auto conflicts_with(const deferred_action_desc& other) const -> bool {
-			if (owner == other.owner) {
-				return true;
-			}
-			for (const auto& w : writes) {
-				if (std::ranges::contains(other.writes, w)) {
-					return true;
-				}
-			}
-			return false;
-		}
-	};
-
 	class registry final : public non_copyable {
 	public:
 		using uuid = std::uint32_t;
-		using deferred_action = std::function<bool(registry&)>;
 
 		registry();
 
@@ -51,23 +29,6 @@ export namespace gse {
 
 		auto remove(
 			id id
-		) -> void;
-
-		auto update(
-		) -> void;
-
-		auto render(
-		) -> void;
-
-		auto add_deferred_action(
-			id owner_id,
-			deferred_action&& action
-		) -> void;
-
-		template <typename F>
-		auto defer(
-			id owner,
-			F&& action
 		) -> void;
 
 		template <is_component U, typename... Args>
@@ -171,26 +132,24 @@ export namespace gse {
 			id owner_id
 		) -> void;
 
-		template <typename U>
-		static auto any_components(
-			std::span<const std::reference_wrapper<registry>> registries
-		) -> bool;
+		using deferred_action = std::function<bool(registry&)>;
 
-		template <typename U, typename Fn>
-		auto for_each(
-			Fn&& fn
+		auto add_deferred_action(
+			id owner_id,
+			deferred_action action
 		) -> void;
+
+		auto update() -> void;
+		auto render() -> void;
+
 	private:
+		std::vector<std::pair<id, deferred_action>> m_deferred_actions;
 		id_mapped_collection<entity> m_active_entities;
 		std::unordered_set<id> m_inactive_ids;
 		std::vector<std::uint32_t> m_free_indices;
 
 		std::unordered_map<std::type_index, std::unique_ptr<component_link_base>> m_component_links;
 		std::unordered_map<std::type_index, std::unique_ptr<hook_link_base>> m_hook_links;
-
-		std::unordered_map<id, std::vector<deferred_action>> m_deferred_actions;
-		std::vector<deferred_action_desc> m_typed_deferred_actions;
-		std::mutex m_deferred_actions_mutex;
 
 		std::size_t m_read_index = 0;
 		std::size_t m_write_index = 1;
@@ -260,21 +219,6 @@ auto gse::registry::activate(id id) -> void {
 			}
 		}
 	} while (work_was_done);
-
-	if (const auto it = m_deferred_actions.find(id); it != m_deferred_actions.end()) {
-		auto& actions = it->second;
-
-		std::erase_if(
-			actions,
-			[&](auto& action) {
-				return action(*this);
-			}
-		);
-
-		if (actions.empty()) {
-			m_deferred_actions.erase(it);
-		}
-	}
 }
 
 auto gse::registry::remove(const id id) -> void {
@@ -294,168 +238,6 @@ auto gse::registry::remove(const id id) -> void {
 	for (const auto& link : m_hook_links | std::views::values) {
 		link->remove(id);
 	}
-}
-
-auto gse::registry::update() -> void {
-	std::unordered_map<id, std::vector<deferred_action>> legacy_actions;
-	std::vector<deferred_action_desc> typed_actions;
-
-	{
-		std::lock_guard lock(m_deferred_actions_mutex);
-		legacy_actions = std::move(m_deferred_actions);
-		m_deferred_actions.clear();
-		typed_actions = std::move(m_typed_deferred_actions);
-		m_typed_deferred_actions.clear();
-	}
-
-	for (auto& [owner_id, actions] : legacy_actions) {
-		for (auto& action : actions) {
-			if (!action(*this)) {
-				std::lock_guard lock(m_deferred_actions_mutex);
-				m_deferred_actions[owner_id].push_back(std::move(action));
-			}
-		}
-	}
-
-	if (typed_actions.empty()) {
-		return;
-	}
-
-	std::vector<std::vector<deferred_action_desc*>> batches;
-	std::vector<bool> scheduled(typed_actions.size(), false);
-
-	while (true) {
-		std::vector<deferred_action_desc*> batch;
-
-		for (std::size_t i = 0; i < typed_actions.size(); ++i) {
-			if (scheduled[i]) {
-				continue;
-			}
-
-			bool can_add = true;
-			for (const auto* other : batch) {
-				if (typed_actions[i].conflicts_with(*other)) {
-					can_add = false;
-					break;
-				}
-			}
-
-			if (can_add) {
-				batch.push_back(&typed_actions[i]);
-				scheduled[i] = true;
-			}
-		}
-
-		if (batch.empty()) {
-			break;
-		}
-		batches.push_back(std::move(batch));
-	}
-
-	std::vector<deferred_action_desc> retries;
-
-	for (auto& batch : batches) {
-		if (batch.size() == 1) {
-			if (!batch[0]->execute(*this)) {
-				retries.push_back(std::move(*batch[0]));
-			}
-		}
-		else {
-			std::vector<deferred_action_desc*> batch_retries;
-			std::mutex retry_mutex;
-
-			task::parallel_for(0uz, batch.size(), [&](std::size_t i) {
-				if (!batch[i]->execute(*this)) {
-					std::lock_guard lock(retry_mutex);
-					batch_retries.push_back(batch[i]);
-				}
-			});
-
-			for (auto* r : batch_retries) {
-				retries.push_back(std::move(*r));
-			}
-		}
-	}
-
-	if (!retries.empty()) {
-		std::lock_guard lock(m_deferred_actions_mutex);
-		for (auto& r : retries) {
-			m_typed_deferred_actions.push_back(std::move(r));
-		}
-	}
-}
-
-auto gse::registry::render() -> void {
-}
-
-auto gse::registry::add_deferred_action(const id owner_id, deferred_action&& action) -> void {
-	std::lock_guard lock(m_deferred_actions_mutex);
-	m_deferred_actions[owner_id].push_back(std::move(action));
-}
-
-template <typename F>
-auto gse::registry::defer(const id owner, F&& action) -> void {
-	using traits = lambda_traits<std::decay_t<F>>;
-
-	deferred_action_desc desc;
-	desc.owner = owner;
-	desc.reads = traits::reads();
-	desc.writes = traits::writes();
-
-	if constexpr (traits::arity == 0) {
-		desc.execute = [action = std::forward<F>(action)](registry&) mutable -> bool {
-			return action();
-		};
-	}
-	else {
-		desc.execute = [owner, action = std::forward<F>(action)](registry& reg) mutable -> bool {
-			using arg_tuple = traits::arg_tuple;
-
-			auto resolve = [&]<std::size_t... Is>(std::index_sequence<Is...>) -> std::optional<std::tuple<std::add_pointer_t<std::remove_reference_t<std::tuple_element_t<Is, arg_tuple>>>...>> {
-				using ptr_tuple = std::tuple<std::add_pointer_t<std::remove_reference_t<std::tuple_element_t<Is, arg_tuple>>>...>;
-				ptr_tuple result;
-				bool all_resolved = true;
-
-				auto try_resolve = [&]<std::size_t I>() {
-					using arg_t = std::tuple_element_t<I, arg_tuple>;
-					using base_t = param_base_type<arg_t>;
-
-					if constexpr (is_write_param_v<arg_t>) {
-						std::get<I>(result) = reg.try_linked_object_write<base_t>(owner);
-					}
-					else {
-						std::get<I>(result) = const_cast<std::remove_reference_t<arg_t>*>(
-							reg.try_linked_object_read<base_t>(owner)
-						);
-					}
-					if (!std::get<I>(result)) {
-						all_resolved = false;
-					}
-				};
-
-				(try_resolve.template operator()<Is>(), ...);
-
-				if (!all_resolved) {
-					return std::nullopt;
-				}
-				return result;
-			};
-
-			auto resolved = resolve(std::make_index_sequence<traits::arity>{});
-			if (!resolved) {
-				return false;
-			}
-
-			auto invoke = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-				return action(*std::get<Is>(*resolved)...);
-			};
-
-			return invoke(std::make_index_sequence<traits::arity>{});
-		};
-	}
-
-	std::lock_guard lock(m_deferred_actions_mutex);
-	m_typed_deferred_actions.push_back(std::move(desc));
 }
 
 template <gse::is_component U, typename... Args>
@@ -752,18 +534,16 @@ auto gse::registry::mark_component_updated(const id owner_id) -> void {
 	lnk.mark_updated(owner_id);
 }
 
-template <typename U>
-auto gse::registry::any_components(const std::span<const std::reference_wrapper<registry>> registries) -> bool {
-	return std::ranges::any_of(
-		registries, [](const auto& reg) {
-		return !reg.get().template linked_objects_read<U>().empty();
-	}
-	);
+auto gse::registry::add_deferred_action(const id owner_id, deferred_action action) -> void {
+	m_deferred_actions.emplace_back(owner_id, std::move(action));
 }
 
-template <typename U, typename Fn>
-auto gse::registry::for_each(Fn&& fn) -> void {
-	for (auto& obj : linked_objects_write<U>()) {
-		fn(obj);
-	}
+auto gse::registry::update() -> void {
+	std::erase_if(m_deferred_actions, [this](auto& pair) {
+		return pair.second(*this);
+	});
+}
+
+auto gse::registry::render() -> void {
+	// Rendering is handled by the scheduler's render phase
 }

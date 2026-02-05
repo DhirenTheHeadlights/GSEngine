@@ -42,4 +42,6 @@ export import :clip;
 export import :clip_component;
 export import :animation_graph;
 export import :controller_component;
+export import :animation_dsl;
+export import :animation_bindings;
 
