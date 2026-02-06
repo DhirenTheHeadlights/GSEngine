@@ -145,7 +145,6 @@ def main():
         "stb:x64-windows",
         "miniaudio:x64-windows",
         "shader-slang:x64-windows",
-        "tomlplusplus:x64-windows",
         "tbb:x64-windows",
     ]
 

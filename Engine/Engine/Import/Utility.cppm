@@ -1,11 +1,14 @@
 export module gse.utility;
 
+export import gse.config;
+
+export import :channel_base;
 export import :clock;
 export import :component;
 export import :concepts;
-export import :config;
 export import :default_scene_hook;
 export import :n_buffer;
+export import :per_frame_resource;
 export import :entity;
 export import :entity_hook;
 export import :frame_sync;
@@ -23,13 +26,16 @@ export import :scene;
 export import :scheduler;
 export import :scope_exit;
 export import :spsc_ring_buffer;
-export import :system;
+export import :save_system;
+export import :phase_context;
+export import :system_node;
 export import :system_clock;
 export import :task;
 export import :timed_lock;
 export import :timer;
 export import :trace;
 export import :variant_match;
+export import :file_watcher;
 
 export namespace gse {
 	template <typename T>
@@ -41,8 +47,14 @@ export namespace gse {
 
 	template <is_trivially_copyable... Src>
 	auto memcpy(
-		std::byte* dest, 
+		std::byte* dest,
 		const Src*... src
+	) -> void;
+
+	template <std::ranges::contiguous_range Container>
+	auto memcpy(
+		std::byte* dest,
+		const Container& src
 	) -> void;
 }
 
@@ -54,5 +66,12 @@ template <gse::is_trivially_copyable ... Src>
 auto gse::memcpy(std::byte* dest, const Src*... src) -> void {
 	std::byte* out = dest;
 	((std::memcpy(out, src, sizeof(Src)), out += sizeof(Src)), ...);
+}
+
+template <std::ranges::contiguous_range Container>
+auto gse::memcpy(std::byte* dest, const Container& src) -> void {
+	using value_type = std::ranges::range_value_t<Container>;
+	const std::size_t byte_size = std::ranges::size(src) * sizeof(value_type);
+	std::memcpy(dest, std::ranges::data(src), byte_size);
 }
 

@@ -14,7 +14,7 @@ export namespace gs {
 				.affected_by_gravity = false
 			});
 
-			auto model = gse::get<gse::model>("IronMan");
+			auto model = gse::get<gse::model>("Models/IronMan/iron_man");
 			add_component<gse::render_component>({
 				.models = { std::move(model) }
 			});

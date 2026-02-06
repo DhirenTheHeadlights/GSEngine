@@ -12,6 +12,8 @@ import :registry;
 export namespace gse {
 	class scene final : public hookable<scene> {
 	public:
+		using player_factory = std::function<gse::id(scene&)>;
+
 		explicit scene(
 			registry& registry,
 			std::string_view name = "Unnamed Scene"
@@ -37,10 +39,18 @@ export namespace gse {
 
 		auto registry(
 		) const -> registry&;
+
+		auto set_player_factory(
+			player_factory factory
+		) -> void;
+
+		auto get_player_factory(
+		) const -> const player_factory&;
 	private:
 		gse::registry& m_registry;
 		std::vector<gse::id> m_entities;
 		std::vector<gse::id> m_queue;
+		player_factory m_player_factory;
 
 		friend class default_scene;
 
@@ -88,4 +98,12 @@ auto gse::scene::entities() const -> std::span<const gse::id> {
 
 auto gse::scene::registry() const -> gse::registry& {
 	return m_registry;
+}
+
+auto gse::scene::set_player_factory(player_factory factory) -> void {
+	m_player_factory = std::move(factory);
+}
+
+auto gse::scene::get_player_factory() const -> const player_factory& {
+	return m_player_factory;
 }

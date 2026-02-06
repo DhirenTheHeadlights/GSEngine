@@ -131,7 +131,7 @@ auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, ve
 
 template <typename T>
 auto gse::gui::draw::slider_box(const draw_context& ctx, const ui_rect& rect, const id widget_id, T& value, T min, T max, id& hot_widget_id, const id active_widget_id) -> void {
-    if (rect.contains(ctx.input.mouse_position())) {
+    if (rect.contains(ctx.input.mouse_position()) && ctx.input_available()) {
         hot_widget_id = widget_id;
     }
 

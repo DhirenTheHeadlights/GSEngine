@@ -24,6 +24,17 @@ export namespace gse::gui {
 		bottom_left,
 		bottom_right,
 	};
+
+	struct tooltip_state {
+		std::string text;
+		id widget_id;
+		id pending_widget_id;
+		time hover_time{};
+		unitless::vec2 position;
+		bool visible = false;
+
+		static constexpr time show_delay = seconds(0.5f);
+	};
 }
 
 namespace gse::gui::dock {
@@ -74,6 +85,7 @@ export namespace gse::gui {
 		std::vector<std::string> tab_contents;
 		std::uint32_t active_tab_index = 0;
 		bool was_begun_this_frame = false;
+		bool was_visible_last_frame = false;
 	};
 
 	struct draw_context {
@@ -89,12 +101,23 @@ export namespace gse::gui {
 		render_layer current_layer = render_layer::content;
 		std::uint32_t current_z_order = 0;
 
+		render_layer input_layer = render_layer::content;
+		tooltip_state* tooltip = nullptr;
+
 		auto queue_sprite(
 			renderer::sprite_command cmd
 		) const -> void;
 
 		auto queue_text(
 			renderer::text_command cmd
+		) const -> void;
+
+		[[nodiscard]] auto input_available(
+		) const -> bool;
+
+		auto set_tooltip(
+			const id& widget_id,
+			const std::string& text
 		) const -> void;
 	};
 }
@@ -154,4 +177,18 @@ auto gse::gui::draw_context::queue_text(renderer::text_command cmd) const -> voi
 	cmd.layer = current_layer;
 	cmd.z_order = current_z_order;
 	texts.push_back(std::move(cmd));
+}
+
+auto gse::gui::draw_context::input_available() const -> bool {
+	return static_cast<std::uint8_t>(current_layer) >= static_cast<std::uint8_t>(input_layer);
+}
+
+auto gse::gui::draw_context::set_tooltip(const id& widget_id, const std::string& text) const -> void {
+	if (!tooltip || text.empty()) {
+		return;
+	}
+
+	tooltip->pending_widget_id = widget_id;
+	tooltip->text = text;
+	tooltip->position = input.mouse_position();
 }

@@ -24,6 +24,17 @@ public[[vk::binding(6, 0)]] Sampler2D shadow_maps[MAX_LIGHTS];
 
 public[[vk::binding(7, 0)]] Sampler2D extraTex1;
 
+public[[vk::binding(8, 0)]]
+cbuffer PointShadowParams {
+    public int point_shadow_count;
+    public int point_shadow_light_indices[MAX_POINT_SHADOW_LIGHTS];
+    public float3 point_shadow_positions_world[MAX_POINT_SHADOW_LIGHTS];
+    public float point_shadow_near[MAX_POINT_SHADOW_LIGHTS];
+    public float point_shadow_far[MAX_POINT_SHADOW_LIGHTS];
+};
+
+public[[vk::binding(9, 0)]] SamplerCube point_shadow_maps[MAX_POINT_SHADOW_LIGHTS];
+
 public float3 decode_octahedron(float2 e) {
     float3 n;
     n.z = 1.0 - abs(e.x) - abs(e.y);

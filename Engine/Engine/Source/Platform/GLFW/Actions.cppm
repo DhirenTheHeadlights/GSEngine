@@ -9,6 +9,10 @@ import :input;
 import :keys;
 import :input_state;
 
+export namespace gse {
+	auto key_to_string(key k) -> std::string_view;
+}
+
 export namespace gse::actions {
 	template <std::size_t N>
 	struct fixed_string {
@@ -30,7 +34,7 @@ export namespace gse::actions {
 }
 
 export namespace gse::actions {
-	class system;
+	class system_state;
 	class state;
 
 	class handle {
@@ -42,18 +46,18 @@ export namespace gse::actions {
 		}
 
 		auto held(
-			const state& s, 
-			system& sys
+			const state& s,
+			system_state& sys
 		) const -> bool;
 
 		auto pressed(
-			const state& s, 
-			system& sys
+			const state& s,
+			system_state& sys
 		) const -> bool;
 
 		auto released(
 			const state& s,
-			system& sys
+			system_state& sys
 		) const -> bool;
 	private:
 		gse::id m_action_id;
@@ -76,6 +80,11 @@ export namespace gse::actions {
 	struct bind_axis2_request {
 		pending_axis2_info info;
 		id axis_id;
+	};
+
+	struct rebind_request {
+		std::string action_name;
+		key new_key;
 	};
 
 	class description : public identifiable {
@@ -246,19 +255,60 @@ export namespace gse::actions {
 		axis value{};
 	};
 
-	class system final : public gse::system {
+	struct action_binding_info {
+		std::string name;
+		key current_key;
+		key default_key;
+	};
+
+	struct pending_key_binding {
+		std::string name;
+		key def;
+		id action_id;
+	};
+
+	struct pending_axis2_req {
+		pending_axis2_info info;
+		id axis_id;
+	};
+
+	struct bindings {
+		std::vector<std::pair<key, std::uint16_t>> key_to_action;
+		std::vector<std::pair<mouse_button, std::uint16_t>> mouse_to_action;
+
+		struct key_axis1 {
+			key neg;
+			key pos;
+			std::uint16_t axis;
+			float scale = 1.f;
+		};
+		std::vector<key_axis1> axes1_from_keys;
+
+		struct mouse_axis2 {
+			std::uint16_t axis;
+			float px_to_x = 0.1f;
+			float px_to_y = 0.1f;
+		};
+		std::vector<mouse_axis2> axes2_from_mouse;
+	};
+
+	struct resolved_axis2_keys {
+		id id;
+		key left;
+		key right;
+		key back;
+		key fwd;
+		float scale = 1.f;
+	};
+
+	struct channel_binding {
+		id owner;
+		std::function<void(const state&)> sampler;
+	};
+
+	class system_state {
 	public:
-		system() = default;
-		~system() override = default;
-
-		auto initialize(
-		) -> void override;
-
-		auto update(
-		) -> void override;
-
-		auto end_frame(
-		) -> void override;
+		system_state() = default;
 
 		auto current_state(
 		) const -> const state&;
@@ -271,7 +321,7 @@ export namespace gse::actions {
 
 		auto description(
 			id action_id
-		) -> description*;
+		) -> actions::description*;
 
 		auto register_channel(
 			id owner_id,
@@ -297,7 +347,17 @@ export namespace gse::actions {
 			const state& s
 		) const -> void;
 
-	private:
+		auto rebinds_map(
+		) -> std::map<std::string, int>&;
+
+		[[nodiscard]] auto all_bindings(
+		) const -> std::vector<action_binding_info>;
+
+		auto rebind(
+			std::string_view action_name,
+			key new_key
+		) -> void;
+
 		auto finalize_bindings(
 		) -> void;
 
@@ -306,80 +366,41 @@ export namespace gse::actions {
 			id action_id
 		) -> actions::description&;
 
-		double_buffer<state> m_states;
+		double_buffer<state> states;
+		id_mapped_collection<actions::description> descriptions;
+		std::vector<pending_key_binding> pending_key_bindings;
+		std::map<std::string, int> rebinds;
+		std::map<std::string, int> action_defaults;
+		std::vector<pending_axis2_req> pending_axis2_reqs;
+		bindings resolved;
+		std::vector<std::uint16_t> axis1_ids_cache;
+		std::vector<std::uint16_t> axis2_ids_cache;
+		id_mapped_collection<resolved_axis2_keys> axis2_by_id;
+		std::vector<channel_binding> channel_bindings;
+	};
 
-		id_mapped_collection<actions::description> m_descriptions;
-
-		struct pending_key_binding {
-			std::string name;
-			key def;
-			id action_id;
-		};
-		std::vector<pending_key_binding> m_pending_key_bindings;
-		std::unordered_map<std::string, key> m_rebinds;
-
-		struct pending_axis2_req {
-			pending_axis2_info info;
-			id axis_id;
-		};
-		std::vector<pending_axis2_req> m_pending_axis2_reqs;
-
-		struct bindings {
-			std::vector<std::pair<key, std::uint16_t>> key_to_action;
-			std::vector<std::pair<mouse_button, std::uint16_t>> mouse_to_action;
-
-			struct key_axis1 {
-				key neg;
-				key pos;
-				std::uint16_t axis;
-				float scale = 1.f;
-			};
-			std::vector<key_axis1> axes1_from_keys;
-
-			struct mouse_axis2 {
-				std::uint16_t axis;
-				float px_to_x = 0.1f;
-				float px_to_y = 0.1f;
-			};
-			std::vector<mouse_axis2> axes2_from_mouse;
-		} m_resolved;
-
-		std::vector<std::uint16_t> m_axis1_ids_cache;
-		std::vector<std::uint16_t> m_axis2_ids_cache;
-
-		struct resolved_axis2_keys {
-			id id;
-			key left;
-			key right;
-			key back;
-			key fwd;
-			float scale = 1.f;
-		};
-		id_mapped_collection<resolved_axis2_keys> m_axis2_by_id;
-
-		struct channel_binding {
-			id owner;
-			std::function<void(const state&)> sampler;
-		};
-		std::vector<channel_binding> m_channel_bindings;
+	struct system {
+		static auto initialize(initialize_phase& phase, system_state& s) -> void;
+		static auto update(update_phase& phase, system_state& s) -> void;
+		static auto end_frame(end_frame_phase& phase, system_state& s) -> void;
 	};
 }
 
-auto gse::actions::handle::held(const state& s, system& sys) const -> bool {
+auto gse::actions::handle::held(const state& s, system_state& sys) const -> bool {
 	if (const auto* desc = sys.description(m_action_id)) {
 		return s.held(desc->bit_index());
 	}
 	return false;
 }
 
-auto gse::actions::handle::pressed(const state& s, system& sys) const -> bool {
+auto gse::actions::handle::pressed(const state& s, system_state& sys) const -> bool {
 	if (const auto* desc = sys.description(m_action_id)) {
 		return s.pressed(desc->bit_index());
 	}
 	return false;
 }
 
-auto gse::actions::handle::released(const state& s, system& sys) const -> bool {
+auto gse::actions::handle::released(const state& s, system_state& sys) const -> bool {
 	if (const auto* desc = sys.description(m_action_id)) {
 		return s.released(desc->bit_index());
 	}
@@ -563,120 +584,132 @@ auto gse::actions::state::load_transients(const std::span<const word> pressed, c
 	m_held.assign(held);
 }
 
-auto gse::actions::system::initialize() -> void {
-	finalize_bindings();
+auto gse::actions::system::initialize(initialize_phase& phase, system_state& s) -> void {
+	phase.channels.push(save::bind_int_map_request{
+		.category = "Controls",
+		.map_ptr = &s.rebinds
+	});
+
+	phase.channels.push(save::bind_int_map_request{
+		.category = "ActionDefaults",
+		.map_ptr = &s.action_defaults
+	});
+
+	s.finalize_bindings();
 }
 
-auto gse::actions::system::update() -> void {
+auto gse::actions::system::update(update_phase& phase, system_state& s) -> void {
 	bool config_changed = false;
 
-	for (const auto add_requests = channel_of<add_action_request>(); const auto& [name, default_key, action_id] : add_requests) {
-		add_description(name, action_id);
-		m_pending_key_bindings.emplace_back(name, default_key, action_id);
+	for (const auto& [name, default_key, action_id] : phase.read_channel<add_action_request>()) {
+		s.add_description(name, action_id);
+		s.pending_key_bindings.emplace_back(name, default_key, action_id);
+		s.action_defaults[name] = static_cast<int>(default_key);
 		config_changed = true;
 	}
 
-	for (const auto& [info, axis_id] : channel_of<bind_axis2_request>()) {
-		m_pending_axis2_reqs.push_back({
+	for (const auto& [info, axis_id] : phase.read_channel<bind_axis2_request>()) {
+		s.pending_axis2_reqs.push_back({
 			info,
 			axis_id
 		});
 		config_changed = true;
 	}
 
-	if (config_changed) {
-		finalize_bindings();
+	for (const auto& [action_name, new_key] : phase.read_channel<rebind_request>()) {
+		s.rebind(action_name, new_key);
 	}
 
-	const auto& inputs = system_of<input::system>();
-	const auto& in = inputs.current_state();
+	if (config_changed) {
+		s.finalize_bindings();
+	}
 
-	auto& s = m_states.write();
-	s.begin_frame();
+	const auto* input_state = phase.try_state_of<input::system_state>();
+	if (!input_state) {
+		return;
+	}
+	const auto& in = input_state->current_state();
 
-	const auto count = m_descriptions.size();
-	s.ensure_capacity(count);
-	s.reset_axes(m_axis1_ids_cache, m_axis2_ids_cache);
+	auto& action_state = s.states.write();
+	action_state.begin_frame();
 
-	for (auto& [k, bit_index] : m_resolved.key_to_action) {
+	const auto count = s.descriptions.size();
+	action_state.ensure_capacity(count);
+	action_state.reset_axes(s.axis1_ids_cache, s.axis2_ids_cache);
+
+	for (auto& [k, bit_index] : s.resolved.key_to_action) {
 		if (in.key_pressed(k)) {
-			s.set_pressed(bit_index, count);
+			action_state.set_pressed(bit_index, count);
 		}
 		if (in.key_released(k)) {
-			s.set_released(bit_index, count);
+			action_state.set_released(bit_index, count);
 		}
-		s.set_held(bit_index, in.key_held(k), count);
+		action_state.set_held(bit_index, in.key_held(k), count);
 	}
 
-	for (auto& [mb, bit_index] : m_resolved.mouse_to_action) {
+	for (auto& [mb, bit_index] : s.resolved.mouse_to_action) {
 		if (in.mouse_button_pressed(mb)) {
-			s.set_pressed(bit_index, count);
+			action_state.set_pressed(bit_index, count);
 		}
 		if (in.mouse_button_released(mb)) {
-			s.set_released(bit_index, count);
+			action_state.set_released(bit_index, count);
 		}
-		s.set_held(bit_index, in.mouse_button_held(mb), count);
+		action_state.set_held(bit_index, in.mouse_button_held(mb), count);
 	}
 
-	for (const auto& [neg, pos, axis, scale] : m_resolved.axes1_from_keys) {
+	for (const auto& [neg, pos, axis, scale] : s.resolved.axes1_from_keys) {
 		const int v = (in.key_held(pos) ? 1 : 0) - (in.key_held(neg) ? 1 : 0);
-		s.set_axis1(axis, static_cast<float>(v) * scale);
+		action_state.set_axis1(axis, static_cast<float>(v) * scale);
 	}
 
-	for (const auto& [id, left, right, back, fwd, scale] : m_axis2_by_id.items()) {
+	for (const auto& [id, left, right, back, fwd, scale] : s.axis2_by_id.items()) {
 		const int x = (in.key_held(right) ? 1 : 0) - (in.key_held(left) ? 1 : 0);
 		const int y = (in.key_held(back) ? 1 : 0) - (in.key_held(fwd) ? 1 : 0);
-		s.set_axis2(static_cast<std::uint16_t>(id.number()), { static_cast<float>(x) * scale, static_cast<float>(y) * scale });
+		action_state.set_axis2(static_cast<std::uint16_t>(id.number()), { static_cast<float>(x) * scale, static_cast<float>(y) * scale });
 	}
 
-	publish([&s, this](channel<button_channel>& chan) {
-		for (const auto& desc : m_descriptions.items()) {
-			if (const auto idx = desc.bit_index(); s.pressed(idx) || s.released(idx) || s.held(idx)) {
-				chan.emplace(desc.id(), s.held(idx), s.pressed(idx), s.released(idx));
-			}
+	for (const auto& desc : s.descriptions.items()) {
+		if (const auto idx = desc.bit_index(); action_state.pressed(idx) || action_state.released(idx) || action_state.held(idx)) {
+			phase.channels.push(button_channel{ desc.id(), action_state.held(idx), action_state.pressed(idx), action_state.released(idx) });
 		}
-	});
+	}
 
-	publish([&s, this](channel<axis1_channel>& chan) {
-		for (const auto axis_id : m_axis1_ids_cache) {
-			if (const float val = s.axis1(axis_id); std::abs(val) > 0.001f) {
-				chan.emplace(axis_id, val);
-			}
+	for (const auto axis_id : s.axis1_ids_cache) {
+		if (const float val = action_state.axis1(axis_id); std::abs(val) > 0.001f) {
+			phase.channels.push(axis1_channel{ axis_id, val });
 		}
-	});
+	}
 
-	publish([&s, this](channel<axis2_channel>& chan) {
-		for (const auto& [id, left, right, back, fwd, scale] : m_axis2_by_id.items()) {
-			const auto axis_id = static_cast<std::uint16_t>(id.number());
-			if (const auto val = s.axis2_v(axis_id); val.x() > 0.001f || val.y() > 0.001f) {
-				chan.emplace(id, val);
-			}
+	for (const auto& [id, left, right, back, fwd, scale] : s.axis2_by_id.items()) {
+		const auto axis_id = static_cast<std::uint16_t>(id.number());
+		if (const auto val = action_state.axis2_v(axis_id); val.x() > 0.001f || val.y() > 0.001f) {
+			phase.channels.push(axis2_channel{ id, val });
 		}
-	});
+	}
 }
 
-auto gse::actions::system::end_frame() -> void {
-	m_states.flip();
+auto gse::actions::system::end_frame(end_frame_phase&, system_state& s) -> void {
+	s.states.flip();
 }
 
-auto gse::actions::system::current_state() const -> const state& {
-	return m_states.read();
+auto gse::actions::system_state::current_state() const -> const state& {
+	return states.read();
 }
 
-auto gse::actions::system::axis1_ids() const -> std::span<const std::uint16_t> {
-	return m_axis1_ids_cache;
+auto gse::actions::system_state::axis1_ids() const -> std::span<const std::uint16_t> {
+	return axis1_ids_cache;
 }
 
-auto gse::actions::system::axis2_ids() const -> std::span<const std::uint16_t> {
-	return m_axis2_ids_cache;
+auto gse::actions::system_state::axis2_ids() const -> std::span<const std::uint16_t> {
+	return axis2_ids_cache;
 }
 
-auto gse::actions::system::description(const id action_id) -> actions::description* {
-	return m_descriptions.try_get(action_id);
+auto gse::actions::system_state::description(const id action_id) -> actions::description* {
+	return descriptions.try_get(action_id);
 }
 
-auto gse::actions::system::register_channel(const id owner_id, button_channel& channel) -> void {
-	m_channel_bindings.push_back(channel_binding{
+auto gse::actions::system_state::register_channel(const id owner_id, button_channel& channel) -> void {
+	channel_bindings.push_back(channel_binding{
 		.owner = owner_id,
 		.sampler = [this, &channel](const state& s) {
 			if (const auto* desc = description(channel.action_id)) {
@@ -694,8 +727,8 @@ auto gse::actions::system::register_channel(const id owner_id, button_channel& c
 	});
 }
 
-auto gse::actions::system::register_channel(const id owner_id, axis1_channel& channel) -> void {
-	m_channel_bindings.push_back(channel_binding{
+auto gse::actions::system_state::register_channel(const id owner_id, axis1_channel& channel) -> void {
+	channel_bindings.push_back(channel_binding{
 		.owner = owner_id,
 		.sampler = [&channel](const state& s) {
 			channel.value = s.axis1(channel.axis_id);
@@ -703,8 +736,8 @@ auto gse::actions::system::register_channel(const id owner_id, axis1_channel& ch
 	});
 }
 
-auto gse::actions::system::register_channel(const id owner_id, axis2_channel& channel) -> void {
-	m_channel_bindings.push_back(channel_binding{
+auto gse::actions::system_state::register_channel(const id owner_id, axis2_channel& channel) -> void {
+	channel_bindings.push_back(channel_binding{
 		.owner = owner_id,
 		.sampler = [&channel](const state& s) {
 			channel.value = s.axis2_v(static_cast<std::uint16_t>(channel.axis_id.number()));
@@ -712,40 +745,40 @@ auto gse::actions::system::register_channel(const id owner_id, axis2_channel& ch
 	});
 }
 
-auto gse::actions::system::sample_for_entity(const state& s, const id owner_id) const -> void {
-	for (const auto& [owner, sampler] : m_channel_bindings) {
+auto gse::actions::system_state::sample_for_entity(const state& s, const id owner_id) const -> void {
+	for (const auto& [owner, sampler] : channel_bindings) {
 		if (owner == owner_id) {
 			sampler(s);
 		}
 	}
 }
 
-auto gse::actions::system::sample_all_channels(const state& s) const -> void {
-	for (const auto& [owner, sampler] : m_channel_bindings) {
+auto gse::actions::system_state::sample_all_channels(const state& s) const -> void {
+	for (const auto& [owner, sampler] : channel_bindings) {
 		sampler(s);
 	}
 }
 
-auto gse::actions::system::finalize_bindings() -> void {
-	m_resolved = {};
+auto gse::actions::system_state::finalize_bindings() -> void {
+	resolved = {};
 
-	for (const auto& [name, def, action_id] : m_pending_key_bindings) {
-		const key k = (m_rebinds.contains(name) ? m_rebinds[name] : def);
-		const auto* desc = m_descriptions.try_get(action_id);
+	for (const auto& [name, def, action_id] : pending_key_bindings) {
+		const key k = (rebinds.contains(name) ? static_cast<key>(rebinds.at(name)) : def);
+		const auto* desc = descriptions.try_get(action_id);
 		if (!desc) {
 			continue;
 		}
-		m_resolved.key_to_action.emplace_back(k, desc->bit_index());
+		resolved.key_to_action.emplace_back(k, desc->bit_index());
 	}
 
-	m_axis2_by_id.clear();
+	axis2_by_id.clear();
 	auto key_for_action = [&](const id action_id) -> key {
-		const auto* desc = m_descriptions.try_get(action_id);
+		const auto* desc = descriptions.try_get(action_id);
 		if (!desc) {
 			return key{};
 		}
 		const auto bit_index = desc->bit_index();
-		for (const auto& [k, idx] : m_resolved.key_to_action) {
+		for (const auto& [k, idx] : resolved.key_to_action) {
 			if (idx == bit_index) {
 				return k;
 			}
@@ -753,7 +786,7 @@ auto gse::actions::system::finalize_bindings() -> void {
 		return key{};
 	};
 
-	for (const auto& [info, id] : m_pending_axis2_reqs) {
+	for (const auto& [info, id] : pending_axis2_reqs) {
 		resolved_axis2_keys r{
 			.id = id,
 			.left = key_for_action(info.left.id()),
@@ -762,32 +795,180 @@ auto gse::actions::system::finalize_bindings() -> void {
 			.fwd = key_for_action(info.fwd.id()),
 			.scale = info.scale
 		};
-		m_axis2_by_id.add(r.id, std::move(r));
+		axis2_by_id.add(r.id, std::move(r));
 	}
 
-	m_axis1_ids_cache.clear();
-	for (const auto& k : m_resolved.axes1_from_keys) {
-		m_axis1_ids_cache.push_back(k.axis);
+	axis1_ids_cache.clear();
+	for (const auto& k : resolved.axes1_from_keys) {
+		axis1_ids_cache.push_back(k.axis);
 	}
-	std::ranges::sort(m_axis1_ids_cache);
-	m_axis1_ids_cache.erase(std::ranges::unique(m_axis1_ids_cache).begin(), m_axis1_ids_cache.end());
+	std::ranges::sort(axis1_ids_cache);
+	axis1_ids_cache.erase(std::ranges::unique(axis1_ids_cache).begin(), axis1_ids_cache.end());
 
-	m_axis2_ids_cache.clear();
-	for (const auto& [id, l, r, b, f, s] : m_axis2_by_id.items()) {
-		m_axis2_ids_cache.push_back(static_cast<std::uint16_t>(id.number()));
+	axis2_ids_cache.clear();
+	for (const auto& [id, l, r, b, f, s] : axis2_by_id.items()) {
+		axis2_ids_cache.push_back(static_cast<std::uint16_t>(id.number()));
 	}
-	std::ranges::sort(m_axis2_ids_cache);
-	m_axis2_ids_cache.erase(std::ranges::unique(m_axis2_ids_cache).begin(), m_axis2_ids_cache.end());
+	std::ranges::sort(axis2_ids_cache);
+	axis2_ids_cache.erase(std::ranges::unique(axis2_ids_cache).begin(), axis2_ids_cache.end());
 }
 
-auto gse::actions::system::add_description(const std::string_view tag, const id action_id) -> actions::description& {
-	if (const auto existing = m_descriptions.try_get(action_id)) {
+auto gse::actions::system_state::add_description(const std::string_view tag, const id action_id) -> actions::description& {
+	if (const auto existing = descriptions.try_get(action_id)) {
 		return *existing;
 	}
 
-	const auto bit_index = static_cast<std::uint16_t>(m_descriptions.size());
+	const auto bit_index = static_cast<std::uint16_t>(descriptions.size());
 	actions::description desc(std::string(tag), bit_index);
-	auto* desc_ptr = m_descriptions.add(action_id, std::move(desc));
+	auto* desc_ptr = descriptions.add(action_id, std::move(desc));
 
 	return *desc_ptr;
+}
+
+auto gse::actions::system_state::rebinds_map() -> std::map<std::string, int>& {
+	return rebinds;
+}
+
+auto gse::actions::system_state::all_bindings() const -> std::vector<action_binding_info> {
+	std::map<std::string, action_binding_info> merged;
+
+	for (const auto& [name, default_key] : action_defaults) {
+		const key def = static_cast<key>(default_key);
+		key current = def;
+		if (const auto it = rebinds.find(name); it != rebinds.end()) {
+			current = static_cast<key>(it->second);
+		}
+		merged[name] = { name, current, def };
+	}
+
+	for (const auto& [name, def, action_id] : pending_key_bindings) {
+		key current = def;
+		if (const auto it = rebinds.find(name); it != rebinds.end()) {
+			current = static_cast<key>(it->second);
+		}
+		merged[name] = { name, current, def };
+	}
+
+	std::vector<action_binding_info> result;
+	result.reserve(merged.size());
+	for (auto& [name, info] : merged) {
+		result.push_back(std::move(info));
+	}
+
+	return result;
+}
+
+auto gse::actions::system_state::rebind(const std::string_view action_name, const key new_key) -> void {
+	rebinds[std::string(action_name)] = static_cast<int>(new_key);
+	finalize_bindings();
+}
+
+auto gse::key_to_string(const key k) -> std::string_view {
+	switch (k) {
+		case key::space: return "Space";
+		case key::apostrophe: return "'";
+		case key::comma: return ",";
+		case key::minus: return "-";
+		case key::period: return ".";
+		case key::slash: return "/";
+		case key::num_0: return "0";
+		case key::num_1: return "1";
+		case key::num_2: return "2";
+		case key::num_3: return "3";
+		case key::num_4: return "4";
+		case key::num_5: return "5";
+		case key::num_6: return "6";
+		case key::num_7: return "7";
+		case key::num_8: return "8";
+		case key::num_9: return "9";
+		case key::semicolon: return ";";
+		case key::equal: return "=";
+		case key::a: return "A";
+		case key::b: return "B";
+		case key::c: return "C";
+		case key::d: return "D";
+		case key::e: return "E";
+		case key::f: return "F";
+		case key::g: return "G";
+		case key::h: return "H";
+		case key::i: return "I";
+		case key::j: return "J";
+		case key::k: return "K";
+		case key::l: return "L";
+		case key::m: return "M";
+		case key::n: return "N";
+		case key::o: return "O";
+		case key::p: return "P";
+		case key::q: return "Q";
+		case key::r: return "R";
+		case key::s: return "S";
+		case key::t: return "T";
+		case key::u: return "U";
+		case key::v: return "V";
+		case key::w: return "W";
+		case key::x: return "X";
+		case key::y: return "Y";
+		case key::z: return "Z";
+		case key::left_bracket: return "[";
+		case key::backslash: return "\\";
+		case key::right_bracket: return "]";
+		case key::grave_accent: return "`";
+		case key::escape: return "Escape";
+		case key::enter: return "Enter";
+		case key::tab: return "Tab";
+		case key::backspace: return "Backspace";
+		case key::insert: return "Insert";
+		case key::del: return "Delete";
+		case key::right: return "Right";
+		case key::left: return "Left";
+		case key::down: return "Down";
+		case key::up: return "Up";
+		case key::page_up: return "Page Up";
+		case key::page_down: return "Page Down";
+		case key::home: return "Home";
+		case key::end: return "End";
+		case key::caps_lock: return "Caps Lock";
+		case key::scroll_lock: return "Scroll Lock";
+		case key::num_lock: return "Num Lock";
+		case key::print_screen: return "Print Screen";
+		case key::pause: return "Pause";
+		case key::f1: return "F1";
+		case key::f2: return "F2";
+		case key::f3: return "F3";
+		case key::f4: return "F4";
+		case key::f5: return "F5";
+		case key::f6: return "F6";
+		case key::f7: return "F7";
+		case key::f8: return "F8";
+		case key::f9: return "F9";
+		case key::f10: return "F10";
+		case key::f11: return "F11";
+		case key::f12: return "F12";
+		case key::kp_0: return "Numpad 0";
+		case key::kp_1: return "Numpad 1";
+		case key::kp_2: return "Numpad 2";
+		case key::kp_3: return "Numpad 3";
+		case key::kp_4: return "Numpad 4";
+		case key::kp_5: return "Numpad 5";
+		case key::kp_6: return "Numpad 6";
+		case key::kp_7: return "Numpad 7";
+		case key::kp_8: return "Numpad 8";
+		case key::kp_9: return "Numpad 9";
+		case key::kp_decimal: return "Numpad .";
+		case key::kp_divide: return "Numpad /";
+		case key::kp_multiply: return "Numpad *";
+		case key::kp_subtract: return "Numpad -";
+		case key::kp_add: return "Numpad +";
+		case key::kp_enter: return "Numpad Enter";
+		case key::left_shift: return "Left Shift";
+		case key::left_control: return "Left Ctrl";
+		case key::left_alt: return "Left Alt";
+		case key::left_super: return "Left Super";
+		case key::right_shift: return "Right Shift";
+		case key::right_control: return "Right Ctrl";
+		case key::right_alt: return "Right Alt";
+		case key::right_super: return "Right Super";
+		case key::menu: return "Menu";
+		default: return "Unknown";
+	}
 }

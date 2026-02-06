@@ -3,6 +3,7 @@ export module gse.runtime:gui_api;
 import std;
 
 import gse.graphics;
+import gse.platform;
 
 import :core_api;
 
@@ -11,26 +12,28 @@ export namespace gse::gui {
 		const std::string& name,
 		const std::function<void()>& contents
 	) -> void {
-		system_of<system>().start(name, contents);
+		auto& gs = state_of<system_state>();
+		const auto& is = state_of<input::system_state>().current_state();
+		system::start(gs, is, name, contents);
 	}
 
 	auto text(
 		const std::string& text
 	) -> void {
-		system_of<system>().text(text);
+		system::text(state_of<system_state>(), text);
 	}
 
 	auto button(
 		const std::string& text
 	) -> bool {
-		return system_of<system>().button(text);
+		return system::button(state_of<system_state>(), text);
 	}
 
 	auto input(
 		const std::string& name,
 		std::string& buffer
 	) -> void {
-		system_of<system>().input(name, buffer);
+		system::input(state_of<system_state>(), name, buffer);
 	}
 
 	template <is_arithmetic T>
@@ -40,7 +43,7 @@ export namespace gse::gui {
 		T min,
 		T max
 	) -> void {
-		system_of<system>().slider(name, value, min, max);
+		system::slider(state_of<system_state>(), name, value, min, max);
 	}
 
 	template <is_quantity T, auto Unit = typename T::default_unit{} >
@@ -50,7 +53,7 @@ export namespace gse::gui {
 		T min,
 		T max
 	) -> void {
-		system_of<system>().slider<T, Unit>(name, value, min, max);
+		system::slider<T, Unit>(state_of<system_state>(), name, value, min, max);
 	}
 
 	template <typename T, int N>
@@ -60,7 +63,7 @@ export namespace gse::gui {
 		unitless::vec_t<T, N> min,
 		unitless::vec_t<T, N> max
 	) -> void {
-		system_of<system>().slider(name, vec, min, max);
+		system::slider(state_of<system_state>(), name, vec, min, max);
 	}
 
 	template <typename T, int N, auto Unit = typename T::default_unit{} >
@@ -70,7 +73,7 @@ export namespace gse::gui {
 		vec_t<T, N> min,
 		vec_t<T, N> max
 	) -> void {
-		system_of<system>().slider<T, N, Unit>(name, vec, min, max);
+		system::slider<T, N, Unit>(state_of<system_state>(), name, vec, min, max);
 	}
 
 	template <is_arithmetic T>
@@ -78,7 +81,7 @@ export namespace gse::gui {
 		const std::string& name,
 		T val
 	) -> void {
-		system_of<system>().value(name, val);
+		system::value(state_of<system_state>(), name, val);
 	}
 
 	template <is_quantity T, auto Unit = typename T::default_unit{}>
@@ -86,7 +89,7 @@ export namespace gse::gui {
 		const std::string& name,
 		T val
 	) -> void {
-		system_of<system>().value<T, Unit>(name, val);
+		system::value<T, Unit>(state_of<system_state>(), name, val);
 	}
 
 	template <typename T, int N>
@@ -94,7 +97,7 @@ export namespace gse::gui {
 		const std::string& name,
 		unitless::vec_t<T, N> val
 	) -> void {
-		system_of<system>().vec(name, val);
+		system::vec(state_of<system_state>(), name, val);
 	}
 
 	template <typename T, int N, auto Unit = typename T::default_unit{}>
@@ -102,7 +105,7 @@ export namespace gse::gui {
 		const std::string& name,
 		vec_t<T, N> val
 	) -> void {
-		system_of<system>().vec<T, N, Unit>(name, val);
+		system::vec<T, N, Unit>(state_of<system_state>(), name, val);
 	}
 
 	template <typename T>
@@ -112,18 +115,18 @@ export namespace gse::gui {
 		draw::tree_options opt = {},
 		draw::tree_selection* sel = nullptr
 	) -> bool {
-		return system_of<system>().tree(roots, fns, opt, sel);
+		return system::tree(state_of<system_state>(), roots, fns, opt, sel);
 	}
 
 	auto selectable(
 		const std::string& text,
 		const bool selected = false
 	) -> bool {
-		return system_of<system>().selectable(text, selected);
+		return system::selectable(state_of<system_state>(), text, selected);
 	}
 
 	auto profiler(
 	) -> void {
-		system_of<system>().profiler();
+		system::profiler(state_of<system_state>());
 	}
 }

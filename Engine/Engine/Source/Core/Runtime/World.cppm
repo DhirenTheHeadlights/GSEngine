@@ -75,12 +75,26 @@ export namespace gse {
 		auto networked(
 		) const -> bool;
 
+		auto set_authoritative(
+			bool is_authoritative
+		) -> void;
+
+		auto authoritative(
+		) const -> bool;
+
+		auto set_local_controlled_entity(
+			gse::id entity_id
+		) -> void;
+
+		auto local_controlled_entity(
+		) const -> gse::id;
+
 		auto registry(
 		) -> registry&;
 
-		template <typename S>
-		auto system_of(
-		) -> S&;
+		template <typename State>
+		auto state_of(
+		) -> State&;
 	private:
 		friend class director;
 		friend struct local_input_source;
@@ -96,7 +110,9 @@ export namespace gse {
 		std::vector<trigger> m_triggers;
 		std::optional<gse::id> m_active_scene = std::nullopt;
 		bool m_networked = false;
+		bool m_authoritative = true;
 		std::optional<gse::id> m_client_id = std::nullopt;
+		gse::id m_local_controlled_entity{};
 	};
 
 	template <typename InputSource>
@@ -115,7 +131,7 @@ export namespace gse {
 				return;
 			}
 
-			auto& a = m_owner->system_of<actions::system>();
+			auto& a = m_owner->state_of<actions::system_state>();
 
 			m_source.for_each_context(
 				*m_owner,
@@ -148,23 +164,87 @@ export namespace gse {
 	};
 
 	struct local_input_source {
-		id owner_id{};
-
 		template <typename Fn>
 		auto for_each_context(
 			world& w,
 			Fn&& fn
 		) const -> void {
-			const auto& a = w.system_of<actions::system>();
+			const auto local_id = w.local_controlled_entity();
+			if (!local_id.exists()) {
+				return;
+			}
+
+			const auto& a = w.state_of<actions::system_state>();
 
 			evaluation_context ctx{
-				.client_id = owner_id,
+				.client_id = local_id,
 				.input = std::addressof(a.current_state()),
 				.registry = &w.m_registry
 			};
 
 			fn(ctx);
 		}
+	};
+
+	class player_controller_hook : public hook<world> {
+	public:
+		using hook::hook;
+
+		auto update(
+		) -> void override {
+			auto* current = m_owner->current_scene();
+			if (!current) {
+				return;
+			}
+
+			const auto& factory = current->get_player_factory();
+			if (!factory) {
+				return;
+			}
+
+			auto& reg = current->registry();
+
+			if (!m_owner->networked()) {
+				if (!m_local_player_created) {
+					const auto player_id = factory(*current);
+					m_owner->set_local_controlled_entity(player_id);
+					m_local_player_created = true;
+				}
+				return;
+			}
+
+			const bool is_server = m_owner->authoritative();
+
+			for (auto& pc : reg.linked_objects_write<player_controller>()) {
+				const auto controller_id = pc.owner_id();
+
+				if (is_server) {
+					if (pc.controlled_entity_id.exists()) {
+						continue;
+					}
+
+					const auto player_id = factory(*current);
+					pc.controlled_entity_id = player_id;
+					reg.mark_component_updated<player_controller>(controller_id);
+				}
+				else {
+					if (!pc.controlled_entity_id.exists()) {
+						continue;
+					}
+
+					if (m_processed.contains(controller_id)) {
+						continue;
+					}
+
+					const auto local_player_id = factory(*current);
+					m_owner->set_local_controlled_entity(local_player_id);
+					m_processed.insert(controller_id);
+				}
+			}
+		}
+	private:
+		std::unordered_set<id> m_processed;
+		bool m_local_player_created = false;
 	};
 }
 
@@ -186,7 +266,7 @@ gse::world::world(system_provider& provider, const std::string_view name)
 				return;
 			}
 
-			const auto& a = m_owner->system_of<actions::system>();
+			const auto& a = m_owner->state_of<actions::system_state>();
 			const auto& s = a.current_state();
 
 			a.sample_all_channels(s);
@@ -245,22 +325,22 @@ gse::world::world(system_provider& provider, const std::string_view name)
 	add_hook<default_world>();
 }
 
-template <typename S>
-auto gse::world::system_of() -> S& {
+template <typename State>
+auto gse::world::state_of() -> State& {
 	assert(
 		m_provider != nullptr,
 		std::source_location::current(),
 		"world has no system_provider bound."
 	);
 
-	auto* p = m_provider->system_ptr(std::type_index(typeid(S)));
+	auto* p = m_provider->system_ptr(std::type_index(typeid(State)));
 	assert(
 		p != nullptr,
 		std::source_location::current(),
-		"requested system is not registered."
+		"requested state is not registered."
 	);
 
-	return *static_cast<S*>(p);
+	return *static_cast<State*>(p);
 }
 
 auto gse::world::direct() -> director {
@@ -296,7 +376,7 @@ auto gse::world::activate(const gse::id& scene_id) -> void {
 	}
 
 	if (auto* new_scene = scene(scene_id)) {
-		auto& a = system_of<actions::system>();
+		auto& a = state_of<actions::system_state>();
 
 		new_scene->add_hook<default_scene>();
 		new_scene->initialize();
@@ -349,6 +429,22 @@ auto gse::world::triggers() -> const std::vector<trigger>& {
 
 auto gse::world::networked() const -> bool {
 	return m_networked;
+}
+
+auto gse::world::set_authoritative(const bool is_authoritative) -> void {
+	m_authoritative = is_authoritative;
+}
+
+auto gse::world::authoritative() const -> bool {
+	return m_authoritative;
+}
+
+auto gse::world::set_local_controlled_entity(const gse::id entity_id) -> void {
+	m_local_controlled_entity = entity_id;
+}
+
+auto gse::world::local_controlled_entity() const -> gse::id {
+	return m_local_controlled_entity;
 }
 
 auto gse::world::registry() -> gse::registry& {

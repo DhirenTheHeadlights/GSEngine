@@ -55,7 +55,7 @@ export namespace gse::actions {
 	) -> void {
 		auto h = add<Tag>(default_key);
 		channel.action_id = h.id();
-		system_of<system>().register_channel(owner_id, channel);
+		state_of<system_state>().register_channel(owner_id, channel);
 	}
 
 	auto bind_axis2_channel(
@@ -65,7 +65,7 @@ export namespace gse::actions {
 		const id axis_id
 	) -> void {
 		channel.axis_id = axis_id;
-		system_of<system>().register_channel(owner_id, channel);
+		state_of<system_state>().register_channel(owner_id, channel);
 
 		channel_add(bind_axis2_request{
 			.info = info,
@@ -77,55 +77,55 @@ export namespace gse::actions {
 		const id owner_id,
 		button_channel& channel
 	) -> void {
-		system_of<system>().register_channel(owner_id, channel);
+		state_of<system_state>().register_channel(owner_id, channel);
 	}
 
 	auto register_channel(
 		const id owner_id,
 		axis1_channel& channel
 	) -> void {
-		system_of<system>().register_channel(owner_id, channel);
+		state_of<system_state>().register_channel(owner_id, channel);
 	}
 
 	auto register_channel(
 		const id owner_id,
 		axis2_channel& channel
 	) -> void {
-		system_of<system>().register_channel(owner_id, channel);
+		state_of<system_state>().register_channel(owner_id, channel);
 	}
 
 	auto sample_for_entity(
 		const state& s,
 		const id owner_id
 	) -> void {
-		system_of<system>().sample_for_entity(s, owner_id);
+		state_of<system_state>().sample_for_entity(s, owner_id);
 	}
 
 	auto sample_all_channels(
 		const state& s
 	) -> void {
-		system_of<system>().sample_all_channels(s);
+		state_of<system_state>().sample_all_channels(s);
 	}
 
 	auto current_state(
 	) -> const state& {
-		return system_of<system>().current_state();
+		return state_of<system_state>().current_state();
 	}
 
 	auto axis1_ids(
 	) -> std::span<const std::uint16_t> {
-		return system_of<system>().axis1_ids();
+		return state_of<system_state>().axis1_ids();
 	}
 
 	auto axis2_ids(
 	) -> std::span<const std::uint16_t> {
-		return system_of<system>().axis2_ids();
+		return state_of<system_state>().axis2_ids();
 	}
 
 	auto held(
 		const id action_id
 	) -> bool {
-		auto& sys = system_of<system>();
+		auto& sys = state_of<system_state>();
 		if (const auto* desc = sys.description(action_id)) {
 			return sys.current_state().held(desc->bit_index());
 		}
@@ -135,7 +135,7 @@ export namespace gse::actions {
 	auto pressed(
 		const id action_id
 	) -> bool {
-		auto& sys = system_of<system>();
+		auto& sys = state_of<system_state>();
 		if (const auto* desc = sys.description(action_id)) {
 			return sys.current_state().pressed(desc->bit_index());
 		}
@@ -145,7 +145,7 @@ export namespace gse::actions {
 	auto released(
 		const id action_id
 	) -> bool {
-		auto& sys = system_of<system>();
+		auto& sys = state_of<system_state>();
 		if (const auto* desc = sys.description(action_id)) {
 			return sys.current_state().released(desc->bit_index());
 		}
@@ -154,31 +154,31 @@ export namespace gse::actions {
 
 	auto pressed_mask(
 	) -> const mask& {
-		return system_of<system>().current_state().pressed_mask();
+		return state_of<system_state>().current_state().pressed_mask();
 	}
 
 	auto released_mask(
 	) -> const mask& {
-		return system_of<system>().current_state().released_mask();
+		return state_of<system_state>().current_state().released_mask();
 	}
 
 	auto axis1(
 		const id axis_id
 	) -> float {
-		return system_of<system>().current_state().axis1(static_cast<std::uint16_t>(axis_id.number()));
+		return state_of<system_state>().current_state().axis1(static_cast<std::uint16_t>(axis_id.number()));
 	}
 
 	auto axis2(
 		const id axis_id
 	) -> axis {
-		return system_of<system>().current_state().axis2_v(static_cast<std::uint16_t>(axis_id.number()));
+		return state_of<system_state>().current_state().axis2_v(static_cast<std::uint16_t>(axis_id.number()));
 	}
 
 	auto held(
 		const state& s,
 		const id action_id
 	) -> bool {
-		if (const auto* desc = system_of<system>().description(action_id)) {
+		if (const auto* desc = state_of<system_state>().description(action_id)) {
 			return s.held(desc->bit_index());
 		}
 		return false;
@@ -188,7 +188,7 @@ export namespace gse::actions {
 		const state& s,
 		const id action_id
 	) -> bool {
-		if (const auto* desc = system_of<system>().description(action_id)) {
+		if (const auto* desc = state_of<system_state>().description(action_id)) {
 			return s.pressed(desc->bit_index());
 		}
 		return false;
@@ -198,7 +198,7 @@ export namespace gse::actions {
 		const state& s,
 		const id action_id
 	) -> bool {
-		if (const auto* desc = system_of<system>().description(action_id)) {
+		if (const auto* desc = state_of<system_state>().description(action_id)) {
 			return s.released(desc->bit_index());
 		}
 		return false;
@@ -208,20 +208,20 @@ export namespace gse::actions {
 		const handle& h,
 		const state& s
 	) -> bool {
-		return h.held(s, system_of<system>());
+		return h.held(s, state_of<system_state>());
 	}
 
 	auto pressed(
 		const handle& h,
 		const state& s
 	) -> bool {
-		return h.pressed(s, system_of<system>());
+		return h.pressed(s, state_of<system_state>());
 	}
 
 	auto released(
 		const handle& h,
 		const state& s
 	) -> bool {
-		return h.released(s, system_of<system>());
+		return h.released(s, state_of<system_state>());
 	}
 }

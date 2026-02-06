@@ -146,6 +146,7 @@ auto gse::menu_bar::draw_gear_icon(std::vector<renderer::sprite_command>& comman
         .color = color,
         .texture = texture
     });
+
     commands.push_back({
         .rect = gui::ui_rect::from_position_size(
             { center.x() - thickness * 0.5f, center.y() + center_size },

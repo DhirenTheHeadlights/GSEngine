@@ -24,9 +24,6 @@ export namespace gse {
             const params& p
         );
 
-        static auto compile(
-        ) -> std::set<std::filesystem::path>;
-
         auto load(
             const renderer::context& ctx
         ) -> void;
@@ -50,19 +47,75 @@ export namespace gse {
 }
 
 gse::skeleton::skeleton(const std::filesystem::path& path)
-    : identifiable(path), m_baked_path(path) {
+    : identifiable(path, config::baked_resource_path), m_baked_path(path) {
 }
 
 gse::skeleton::skeleton(const params& p)
     : identifiable(p.name), m_joints(p.joints) {
 }
 
-auto gse::skeleton::compile() -> std::set<std::filesystem::path> {
-    return {};
-}
-
 auto gse::skeleton::load(const renderer::context& ctx) -> void {
     (void)ctx;
+
+    if (m_baked_path.empty() || !exists(m_baked_path)) {
+        return;
+    }
+
+    std::ifstream file(m_baked_path, std::ios::binary);
+    if (!file) {
+        return;
+    }
+
+    char magic[4];
+    file.read(magic, 4);
+    if (std::memcmp(magic, "GSKL", 4) != 0) {
+        return;
+    }
+
+    std::uint32_t version;
+    file.read(reinterpret_cast<char*>(&version), sizeof(version));
+
+    std::uint32_t joint_count;
+    file.read(reinterpret_cast<char*>(&joint_count), sizeof(joint_count));
+
+    m_joints.clear();
+    m_joints.reserve(joint_count);
+
+    for (std::uint32_t i = 0; i < joint_count; ++i) {
+        std::uint32_t name_len;
+        file.read(reinterpret_cast<char*>(&name_len), sizeof(name_len));
+
+        std::string name(name_len, '\0');
+        file.read(name.data(), name_len);
+
+        std::uint16_t parent_index;
+        file.read(reinterpret_cast<char*>(&parent_index), sizeof(parent_index));
+
+        mat4 local_bind;
+        for (int row = 0; row < 4; ++row) {
+            for (int col = 0; col < 4; ++col) {
+                float val;
+                file.read(reinterpret_cast<char*>(&val), sizeof(val));
+                local_bind[col][row] = val;
+            }
+        }
+
+        mat4 inverse_bind;
+        for (int row = 0; row < 4; ++row) {
+            for (int col = 0; col < 4; ++col) {
+                float val;
+                file.read(reinterpret_cast<char*>(&val), sizeof(val));
+                inverse_bind[col][row] = val;
+            }
+        }
+
+        m_joints.emplace_back(joint::params{
+            .name = std::move(name),
+            .parent_index = parent_index,
+            .local_bind = local_bind,
+            .inverse_bind = inverse_bind
+        });
+    }
 }
 
 auto gse::skeleton::unload() -> void {

@@ -23,8 +23,7 @@ export namespace gse {
 	) -> id;
 
 	auto generate_temp_id(
-		uuid number, 
-		std::string_view tag
+		uuid number
 	) -> id;
 
 	auto find(
@@ -97,14 +96,20 @@ export namespace gse {
 
 		friend auto generate_id(std::string_view tag) -> id;
 		friend auto generate_id(std::uint64_t number) -> id;
-		friend auto generate_temp_id(uuid number, std::string_view tag) -> id;
+		friend auto generate_temp_id(uuid number) -> id;
 	};
 }
 
 template <>
 struct std::formatter<gse::id> {
-	static constexpr auto parse(std::format_parse_context& ctx) { return ctx.begin(); }
-	static auto format(gse::id value, std::format_context& ctx) {
+	static constexpr auto parse(std::format_parse_context& ctx) {
+		return ctx.begin();
+	}
+
+	static auto format(const gse::id value, std::format_context& ctx) {
+		if (!value.exists()) {
+			return std::format_to(ctx.out(), "[invalid]");
+		}
 		return std::format_to(ctx.out(), "[{}: {}]", value.number(), value.tag());
 	}
 };
@@ -146,6 +151,11 @@ export namespace gse {
 			const std::filesystem::path& path
 		);
 
+		explicit identifiable(
+			const std::filesystem::path& path,
+			const std::filesystem::path& base
+		);
+
 		auto id(
 		) const -> id;
 
@@ -155,26 +165,42 @@ export namespace gse {
 	private:
 		gse::id m_id;
 
-		static auto filename(
-			const std::filesystem::path& path
+		static auto relative_stem(
+			const std::filesystem::path& path,
+			const std::filesystem::path& base
 		) -> std::string;
 	};
 }
 
 gse::identifiable::identifiable(const std::string& tag) : m_id(generate_id(tag)) {}
 
-gse::identifiable::identifiable(const std::filesystem::path& path) : m_id(generate_id(filename(path))) {}
+gse::identifiable::identifiable(const std::filesystem::path& path) : m_id(generate_id(relative_stem(path, {}))) {}
+
+gse::identifiable::identifiable(const std::filesystem::path& path, const std::filesystem::path& base) : m_id(generate_id(relative_stem(path, base))) {}
 
 auto gse::identifiable::id() const -> gse::id {
 	return m_id;
 }
 
-auto gse::identifiable::filename(const std::filesystem::path& path) -> std::string {
-	std::string name = path.filename().string();
-	if (const size_t dot_pos = name.find_first_of('.'); dot_pos != std::string::npos) {
-		return name.substr(0, dot_pos);
+auto gse::identifiable::relative_stem(const std::filesystem::path& path, const std::filesystem::path& base) -> std::string {
+	std::filesystem::path relative = path;
+	if (!base.empty() && path.generic_string().starts_with(base.generic_string())) {
+		relative = path.lexically_relative(base);
 	}
-	return name;
+
+	std::string result;
+	for (auto it = relative.begin(); it != relative.end(); ++it) {
+		if (!result.empty()) {
+			result += '/';
+		}
+		result += it->string();
+	}
+
+	if (const size_t dot_pos = result.find_last_of('.'); dot_pos != std::string::npos) {
+		result = result.substr(0, dot_pos);
+	}
+
+	return result;
 }
 
 export namespace gse {
@@ -446,7 +472,7 @@ auto gse::generate_id(const std::uint64_t number) -> id {
 	return new_id;
 }
 
-auto gse::generate_temp_id(const uuid number, const std::string_view tag) -> id {
+auto gse::generate_temp_id(const uuid number) -> id {
 	return id(number);
 }
 

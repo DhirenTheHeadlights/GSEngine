@@ -44,14 +44,14 @@ float3 reconstruct_world_position(float3 pos_vs) {
     return pos_world_h.xyz;
 }
 
-float attenuation_point_vs(float3 light_pos_vs, float3 pos_vs, float constant, float linear_k, float quadratic) {
-    float d = length(light_pos_vs - pos_vs);
+float attenuation_point(float3 light_pos, float3 frag_pos, float constant, float linear_k, float quadratic) {
+    float d = length(light_pos - frag_pos);
     return 1.0 / (constant + linear_k * d + quadratic * d * d);
 }
 
-float spot_factor_vs(float3 Lvec_vs, float3 dir_vs, float cut_off, float outer_cut_off) {
-    float3 L = normalize(Lvec_vs);
-    float3 D = normalize(dir_vs);
+float spot_factor(float3 frag_to_light, float3 spot_dir, float cut_off, float outer_cut_off) {
+    float3 L = normalize(frag_to_light);
+    float3 D = normalize(spot_dir);
     float cos_theta = dot(-L, D);
     float eps = cut_off - outer_cut_off;
     float t = saturate((cos_theta - outer_cut_off) / max(eps, 1e-4));
@@ -71,10 +71,32 @@ float pcf_shadow(int s, float2 uv, float depth, float bias) {
         for (int x = -1; x <= 1; ++x) {
             float2 duv = float2((float)x, (float)y) * shadow_texel_size;
             float closest = shadow_maps[s].SampleLevel(uv + duv, 0).r;
-            sum += (depth - bias > closest) ? 0.0 : 1.0;
+            sum += (depth > closest + bias) ? 0.0 : 1.0;
         }
     }
     return sum / 9.0;
+}
+
+float compute_point_shadow(int light_index, float3 frag_pos_world) {
+    for (int s = 0; s < point_shadow_count; ++s) {
+        if (point_shadow_light_indices[s] != light_index) {
+            continue;
+        }
+
+        float3 light_to_frag = frag_pos_world - point_shadow_positions_world[s];
+        float sampled_depth = point_shadow_maps[s].SampleLevel(light_to_frag, 0).r;
+
+        float3 abs_dir = abs(light_to_frag);
+        float d = max(abs_dir.x, max(abs_dir.y, abs_dir.z));
+
+        float n = point_shadow_near[s];
+        float f = point_shadow_far[s];
+        float current_depth = f * (d - n) / (d * (f - n));
+
+        float bias = 0.05;
+        return (current_depth > sampled_depth + bias) ? 0.0 : 1.0;
+    }
+    return 1.0;
 }
 
 float compute_shadow_for_light(int light_index, float3 pos_world) {
@@ -84,11 +106,13 @@ float compute_shadow_for_light(int light_index, float3 pos_world) {
         }
 
         float4 light_clip = mul(shadow_view_proj[s], float4(pos_world, 1.0));
+
         if (light_clip.w <= 0.0) {
             return 1.0;
         }
 
         float3 light_ndc = light_clip.xyz / light_clip.w;
+
         float2 shadow_uv = light_ndc.xy * 0.5 + 0.5;
 
         float depth = light_ndc.z;
@@ -100,7 +124,7 @@ float compute_shadow_for_light(int light_index, float3 pos_world) {
             return 1.0;
         }
 
-        float bias = 0.0015;
+        float bias = 0.005;
         return pcf_shadow(s, shadow_uv, depth, bias);
     }
 
@@ -124,6 +148,7 @@ float4 fs_main(VS_OUTPUT input) : SV_Target0 {
     float2 enc_n = g_normal.SampleLevel(uv, 0).rg;
     float3 normal_vs = normalize(decode_octahedron(enc_n));
 
+
     float3 result = float3(0.0, 0.0, 0.0);
 
     for (int i = 0; i < num_lights; ++i) {
@@ -138,14 +163,15 @@ float4 fs_main(VS_OUTPUT input) : SV_Target0 {
         } else if (light.light_type == 1) {
             float3 Lvec = light.position - pos_vs;
             float NdotL = max(dot(normal_vs, normalize(Lvec)), 0.0);
-            float att = attenuation_point_vs(light.position, pos_vs, light.constant, light.linear, light.quadratic);
-            result += albedo * light.color * light.intensity * NdotL * att * shadow;
+            float att = attenuation_point(light.position, pos_vs, light.constant, light.linear, light.quadratic);
+            float point_shadow = compute_point_shadow(i, pos_world);
+            result += albedo * light.color * light.intensity * NdotL * att * point_shadow;
             result += albedo * light.color * light.ambient_strength;
         } else if (light.light_type == 2) {
             float3 Lvec = light.position - pos_vs;
             float NdotL = max(dot(normal_vs, normalize(Lvec)), 0.0);
-            float att = attenuation_point_vs(light.position, pos_vs, light.constant, light.linear, light.quadratic);
-            float sf = spot_factor_vs(Lvec, light.direction, light.cut_off, light.outer_cut_off);
+            float att = attenuation_point(light.position, pos_vs, light.constant, light.linear, light.quadratic);
+            float sf = spot_factor(Lvec, light.direction, light.cut_off, light.outer_cut_off);
             result += albedo * light.color * light.intensity * NdotL * att * sf * shadow;
             result += albedo * light.color * light.ambient_strength;
         }
