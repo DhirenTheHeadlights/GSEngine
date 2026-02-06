@@ -59,6 +59,16 @@ export namespace gse::physics {
             vec3<torque> current_torque;
             vec3<length> position_correction;
         } accumulators;
+
+        struct motor {
+            vec3<velocity> target_velocity;
+            velocity jump_speed;
+            float ground_response = 25.f;
+            float stopping_response = 20.f;
+            float air_steering = 3.f;
+            bool jump_requested = false;
+            bool active = false;
+        } motor;
     };
 
     using inverse_inertia_dimension = internal::dim<-2, 0, -1>;

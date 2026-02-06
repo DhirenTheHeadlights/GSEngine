@@ -68,6 +68,11 @@ namespace gse::physics {
         motion_component& component
     ) -> void;
 
+    auto update_motor(
+        motion_component& component,
+        const collision_component* coll_component
+    ) -> void;
+
     auto update_bb(
         const motion_component& motion_component,
         collision_component& collision_component
@@ -139,7 +144,9 @@ auto gse::physics::update_gravity(motion_component& component, collision_compone
 
     if (!component.airborne) {
         component.accumulators.current_acceleration.y() = std::max(meters_per_second_squared(0.f), component.accumulators.current_acceleration.y());
-        update_friction(component, properties(surface::type::concrete));
+        if (!component.motor.active) {
+            update_friction(component, properties(surface::type::concrete));
+        }
 
         if constexpr (debug) {
             debug_log(std::format("  [GRAVITY] grounded: post_friction accel={} torque={}",
@@ -281,7 +288,7 @@ auto gse::physics::update_velocity(motion_component& component) -> void {
 
     component.current_velocity += component.accumulators.current_acceleration * delta_time;
 
-    if (!component.airborne) {
+    if (!component.airborne && !component.motor.active) {
         for (int i = 0; i < 3; ++i) {
 	        if (const velocity v = component.current_velocity[i]; abs(v) < meters_per_second(0.01f)) {
                 component.current_velocity[i] = meters_per_second(0.f);
@@ -289,12 +296,75 @@ auto gse::physics::update_velocity(motion_component& component) -> void {
         }
     }
 
-    if (magnitude(component.current_velocity) > component.max_speed && !component.airborne) {
+    if (!component.motor.active && magnitude(component.current_velocity) > component.max_speed && !component.airborne) {
         component.current_velocity = normalize(component.current_velocity) * component.max_speed;
     }
 
     if (is_zero(component.current_velocity)) {
         component.current_velocity = { 0.f, 0.f, 0.f };
+    }
+}
+
+auto gse::physics::update_motor(motion_component& component, const collision_component* coll_component) -> void {
+    if (!component.motor.active) {
+        return;
+    }
+
+    const auto dt = gse::system_clock::constant_update_time<time_step>();
+    const float dt_s = dt.as<seconds>();
+    const auto& target = component.motor.target_velocity;
+    const bool has_target = !is_zero(target);
+
+    // Ground movement
+    if (!component.airborne) {
+        if (has_target) {
+            const float t = std::min(1.f, component.motor.ground_response * dt_s);
+            component.current_velocity.x() += (target.x() - component.current_velocity.x()) * t;
+            component.current_velocity.z() += (target.z() - component.current_velocity.z()) * t;
+        } else {
+            const float t = std::min(1.f, component.motor.stopping_response * dt_s);
+            component.current_velocity.x() *= (1.f - t);
+            component.current_velocity.z() *= (1.f - t);
+        }
+    } else if (has_target) {
+        // Air control: steer existing momentum toward desired direction, no speed gain
+        const auto hspeed = magnitude(vec3<velocity>(
+            component.current_velocity.x(), meters_per_second(0.f), component.current_velocity.z()
+        ));
+        if (hspeed > meters_per_second(0.001f)) {
+            const auto dir = normalize(vec3<velocity>(target.x(), meters_per_second(0.f), target.z()));
+            const auto air_target = hspeed * unitless::vec3(dir.x().as<meters_per_second>(), 0.f, dir.z().as<meters_per_second>());
+            const float t = std::min(1.f, component.motor.air_steering * dt_s);
+            component.current_velocity.x() += (air_target.x() - component.current_velocity.x()) * t;
+            component.current_velocity.z() += (air_target.z() - component.current_velocity.z()) * t;
+        }
+    }
+
+    // Wall-sliding: remove velocity component going into active collisions
+    if (coll_component && coll_component->collision_information.colliding) {
+        const auto& n = coll_component->collision_information.collision_normal;
+        const auto vn = n.x() * component.current_velocity.x() + n.z() * component.current_velocity.z();
+        if (vn < meters_per_second(0.f)) {
+            component.current_velocity.x() -= vn * n.x();
+            component.current_velocity.z() -= vn * n.z();
+        }
+    }
+
+    // Jump
+    if (component.motor.jump_requested && !component.airborne) {
+        component.current_velocity.y() = component.motor.jump_speed;
+        component.airborne = true;
+    }
+    component.motor.jump_requested = false;
+
+    // Clamp horizontal speed
+    const auto hspeed = magnitude(vec3<velocity>(
+        component.current_velocity.x(), meters_per_second(0.f), component.current_velocity.z()
+    ));
+    if (hspeed > component.max_speed) {
+        const float scale = component.max_speed / hspeed;
+        component.current_velocity.x() *= scale;
+        component.current_velocity.z() *= scale;
     }
 }
 
@@ -401,6 +471,7 @@ auto gse::physics::update_object(motion_component& component, collision_componen
     update_gravity(component, collision_component);
     update_air_resistance(component);
     update_velocity(component);
+    update_motor(component, collision_component);
     update_position(component);
     update_rotation(component);
 
