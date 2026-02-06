@@ -7,6 +7,7 @@ import :spot_light;
 import :directional_light;
 import :shader;
 import :shadow_renderer;
+import :camera_system;
 
 import gse.utility;
 
@@ -57,6 +58,7 @@ auto gse::renderer::lighting::system::initialize(initialize_phase& phase, state&
 	const auto cam_block = s.shader_handle->uniform_block("CameraParams");
 	const auto light_block = s.shader_handle->uniform_block("lights_ssbo");
 	const auto shadow_block = s.shader_handle->uniform_block("ShadowParams");
+	const auto point_shadow_block = s.shader_handle->uniform_block("PointShadowParams");
 
 	vk::BufferCreateInfo cam_buffer_info{
 		.size = cam_block.size,
@@ -76,9 +78,16 @@ auto gse::renderer::lighting::system::initialize(initialize_phase& phase, state&
 		.sharingMode = vk::SharingMode::eExclusive
 	};
 
+	vk::BufferCreateInfo point_shadow_buffer_info{
+		.size = point_shadow_block.size,
+		.usage = vk::BufferUsageFlagBits::eUniformBuffer,
+		.sharingMode = vk::SharingMode::eExclusive
+	};
+
 	for (std::size_t i = 0; i < per_frame_resource<vulkan::buffer_resource>::frames_in_flight; ++i) {
 		s.ubo_allocations["CameraParams"][i] = config.allocator().create_buffer(cam_buffer_info);
 		s.ubo_allocations["ShadowParams"][i] = config.allocator().create_buffer(shadow_buffer_info);
+		s.ubo_allocations["PointShadowParams"][i] = config.allocator().create_buffer(point_shadow_buffer_info);
 		s.light_buffers[i] = config.allocator().create_buffer(light_buffer_info);
 	}
 
@@ -138,6 +147,19 @@ auto gse::renderer::lighting::system::initialize(initialize_phase& phase, state&
 
 	array_image_infos.emplace("shadow_maps", std::move(shadow_infos));
 
+	std::vector<vk::DescriptorImageInfo> point_shadow_infos;
+	point_shadow_infos.reserve(max_point_shadow_lights);
+
+	for (std::size_t i = 0; i < max_point_shadow_lights; ++i) {
+		point_shadow_infos.push_back({
+			.sampler = shadow_state ? shadow_state->point_shadow_sampler(i) : vk::Sampler{},
+			.imageView = shadow_state ? shadow_state->point_shadow_cube_view(i) : vk::ImageView{},
+			.imageLayout = vk::ImageLayout::eGeneral
+		});
+	}
+
+	array_image_infos.emplace("point_shadow_maps", std::move(point_shadow_infos));
+
 	for (std::size_t i = 0; i < per_frame_resource<vk::raii::DescriptorSet>::frames_in_flight; ++i) {
 		const std::unordered_map<std::string, vk::DescriptorBufferInfo> lighting_buffer_infos = {
 			{
@@ -162,6 +184,14 @@ auto gse::renderer::lighting::system::initialize(initialize_phase& phase, state&
 					.buffer = s.ubo_allocations["ShadowParams"][i].buffer,
 					.offset = 0,
 					.range = shadow_block.size
+				}
+			},
+			{
+				"PointShadowParams",
+				{
+					.buffer = s.ubo_allocations["PointShadowParams"][i].buffer,
+					.offset = 0,
+					.range = point_shadow_block.size
 				}
 			}
 		};
@@ -299,9 +329,10 @@ auto gse::renderer::lighting::system::render(render_phase& phase, const state& s
 
 	const auto frame_index = config.current_frame();
 
-	auto proj = s.ctx->camera().projection(s.ctx->window().viewport());
+	const auto* cam_state = phase.try_state_of<camera::state>();
+	auto proj = cam_state ? cam_state->projection_matrix : mat4(1.0f);
 	auto inv_proj = proj.inverse();
-	auto view = s.ctx->camera().view();
+	auto view = cam_state ? cam_state->view_matrix : mat4(1.0f);
 	auto inv_view = view.inverse();
 
 	const auto& cam_alloc = s.ubo_allocations.at("CameraParams")[frame_index].allocation;
@@ -418,10 +449,12 @@ auto gse::renderer::lighting::system::render(render_phase& phase, const state& s
 	const auto* shadow_state = phase.try_state_of<shadow::state>();
 	unitless::vec2 texel_size{};
 	std::span<const shadow_light_entry> shadow_entries{};
+	std::span<const point_shadow_light_entry> point_shadow_entries{};
 	const auto& shadow_items = phase.read_channel<shadow::render_data>();
 	if (shadow_state && !shadow_items.empty()) {
 		texel_size = shadow_state->shadow_texel_size();
 		shadow_entries = shadow_items[0].lights;
+		point_shadow_entries = shadow_items[0].point_lights;
 	}
 
 	std::array<int, max_shadow_lights> shadow_indices{};
@@ -443,6 +476,46 @@ auto gse::renderer::lighting::system::render(render_phase& phase, const state& s
 	shadow_data.emplace("shadow_texel_size", std::as_bytes(std::span(std::addressof(texel_size), 1)));
 
 	s.shader_handle->set_uniform_block("ShadowParams", shadow_data, shadow_alloc);
+
+	const auto& point_shadow_alloc = s.ubo_allocations.at("PointShadowParams")[frame_index].allocation;
+
+	std::size_t dir_count = 0;
+	for (const auto& comp : dir_chunk) {
+		(void)comp;
+		++dir_count;
+	}
+	std::size_t spot_count = 0;
+	for (const auto& comp : spot_chunk) {
+		(void)comp;
+		++spot_count;
+	}
+
+	const std::size_t point_shadow_count =
+		std::min<std::size_t>(point_shadow_entries.size(), max_point_shadow_lights);
+
+	std::array<int, max_point_shadow_lights> ps_light_indices{};
+	std::array<unitless::vec3, max_point_shadow_lights> ps_positions{};
+	std::array<float, max_point_shadow_lights> ps_near{};
+	std::array<float, max_point_shadow_lights> ps_far{};
+
+	for (std::size_t idx = 0; idx < point_shadow_count; ++idx) {
+		const auto& entry = point_shadow_entries[idx];
+		ps_light_indices[idx] = static_cast<int>(dir_count + spot_count + idx);
+		ps_positions[idx] = entry.world_position.as<meters>();
+		ps_near[idx] = entry.near_plane.as<meters>();
+		ps_far[idx] = entry.far_plane.as<meters>();
+	}
+
+	int ps_count_i = static_cast<int>(point_shadow_count);
+
+	std::unordered_map<std::string, std::span<const std::byte>> point_shadow_data;
+	point_shadow_data.emplace("point_shadow_count", std::as_bytes(std::span(std::addressof(ps_count_i), 1)));
+	point_shadow_data.emplace("point_shadow_light_indices", std::as_bytes(std::span(ps_light_indices.data(), ps_light_indices.size())));
+	point_shadow_data.emplace("point_shadow_positions_world", std::as_bytes(std::span(ps_positions.data(), ps_positions.size())));
+	point_shadow_data.emplace("point_shadow_near", std::as_bytes(std::span(ps_near.data(), ps_near.size())));
+	point_shadow_data.emplace("point_shadow_far", std::as_bytes(std::span(ps_far.data(), ps_far.size())));
+
+	s.shader_handle->set_uniform_block("PointShadowParams", point_shadow_data, point_shadow_alloc);
 
 	vk::RenderingAttachmentInfo color_attachment{
 		.imageView = *config.swap_chain_config().image_views[config.frame_context().image_index],

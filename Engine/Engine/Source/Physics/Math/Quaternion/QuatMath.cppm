@@ -144,6 +144,13 @@ export namespace gse {
 		const unitless::vec3_t<T>& axis,
 		angle_t<T> angle
 	) -> quat_t<T>;
+
+	template <typename T>
+	constexpr auto slerp(
+		const quat_t<T>& a,
+		const quat_t<T>& b,
+		T t
+	) -> quat_t<T>;
 }
 
 template <typename T>
@@ -339,4 +346,25 @@ constexpr auto gse::from_axis_angle(const unitless::vec3_t<T>& axis, angle_t<T> 
 	const T s = std::sin(half_angle);
 	const T c = std::cos(half_angle);
 	return quat_t<T>{ c, axis[0] * s, axis[1] * s, axis[2] * s };
+}
+
+template <typename T>
+constexpr auto gse::slerp(const quat_t<T>& a, const quat_t<T>& b, T t) -> quat_t<T> {
+	T d = dot(a, b);
+
+	// Choose shortest path
+	quat_t<T> b_adj = d < T(0) ? quat_t<T>(b.v4() * T(-1)) : b;
+	d = std::abs(d);
+
+	// Linear interpolation for nearly parallel quaternions
+	if (d > T(0.9995)) {
+		return normalize(quat_t<T>(a.v4() + t * (b_adj.v4() - a.v4())));
+	}
+
+	const T theta = std::acos(d);
+	const T sin_theta = std::sin(theta);
+	const T wa = std::sin((T(1) - t) * theta) / sin_theta;
+	const T wb = std::sin(t * theta) / sin_theta;
+
+	return quat_t<T>(a.v4() * wa + b_adj.v4() * wb);
 }

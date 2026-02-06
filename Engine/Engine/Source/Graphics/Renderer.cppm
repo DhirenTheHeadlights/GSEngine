@@ -23,6 +23,7 @@ import :material_compiler;
 import :skeleton_compiler;
 import :clip_compiler;
 import :skinned_model_compiler;
+import :camera_system;
 
 import gse.utility;
 import gse.platform;
@@ -32,13 +33,10 @@ export namespace gse::renderer {
 		context* ctx = nullptr;
 		bool frame_begun = false;
 		bool hot_reload_enabled = false;
+		unitless::vec2 last_viewport{ 1920.f, 1080.f };
 
 		explicit state(context& c) : ctx(std::addressof(c)) {}
 		state() = default;
-
-		auto camera() const -> gse::camera& {
-			return ctx->camera();
-		}
 
 		auto set_ui_focus(const bool focus) const -> void {
 			ctx->set_ui_focus(focus);
@@ -99,7 +97,7 @@ export namespace gse::renderer {
 
 	struct system {
 		static auto initialize(const initialize_phase& phase, state& s) -> void;
-		static auto update(const update_phase& phase, const state& s) -> void;
+		static auto update(update_phase& phase, state& s) -> void;
 		static auto begin_frame(begin_frame_phase& phase, state& s) -> bool;
 		static auto end_frame(end_frame_phase& phase, state& s) -> void;
 		static auto shutdown(shutdown_phase& phase, const state& s) -> void;
@@ -133,7 +131,7 @@ auto gse::renderer::system::initialize(const initialize_phase& phase, state& s) 
 	});
 }
 
-auto gse::renderer::system::update(const update_phase& phase, const state& s) -> void {
+auto gse::renderer::system::update(update_phase& phase, state& s) -> void {
 	auto& ctx = *s.ctx;
 
 	if (s.hot_reload_enabled != ctx.hot_reload_enabled()) {
@@ -147,13 +145,18 @@ auto gse::renderer::system::update(const update_phase& phase, const state& s) ->
 	ctx.poll_assets();
 	ctx.process_resource_queue();
 	ctx.window().update(ctx.ui_focus());
-	ctx.camera().update_orientation();
 
-	if (!ctx.ui_focus()) {
-		if (const auto* input_state = phase.try_state_of<input::system_state>()) {
-			const auto delta = input_state->current_state().mouse_delta();
-			ctx.camera().process_mouse_movement(delta);
-		}
+	phase.channels.push(camera::ui_focus_update{ .focus = ctx.ui_focus() });
+
+	const auto window_size = ctx.window().viewport();
+	const auto new_viewport = unitless::vec2(
+		static_cast<float>(window_size.x()),
+		static_cast<float>(window_size.y())
+	);
+
+	if (new_viewport.x() != s.last_viewport.x() || new_viewport.y() != s.last_viewport.y()) {
+		phase.channels.push(camera::viewport_update{ .size = new_viewport });
+		s.last_viewport = new_viewport;
 	}
 }
 

@@ -29,7 +29,7 @@ export namespace gse::animation {
 
 		add_state(builder.default_state());
 
-		for (const auto& t : builder.get_transitions()) {
+		for (const auto& t : builder.transitions()) {
 			add_state(t.from_state);
 			add_state(t.to_state);
 		}
@@ -80,7 +80,7 @@ export namespace gse::animation {
 			return transition;
 		};
 
-		for (const auto& t : builder.get_transitions()) {
+		for (const auto& t : builder.transitions()) {
 			if (t.from_any) {
 				for (const auto& [name, s] : collected_states) {
 					if (name != t.to_state.name) {

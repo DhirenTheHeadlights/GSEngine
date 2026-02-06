@@ -16,7 +16,7 @@ export namespace gse {
 		float linear = 0.09f; 
 		float quadratic = 0.032f; 
 		float ambient_strength = 0.025f;
-		id ignore_list;
+		std::vector<id> ignore_list_ids;
 		length near_plane = meters(0.1f);
 		length far_plane = meters(10000.f);
 	};

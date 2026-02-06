@@ -19,20 +19,17 @@ export namespace gs {
 				.stacks = m_stacks,
 			});
 
-			add_component<gse::spot_light_component>({
+			add_component<gse::point_light_component>({
 				.color = gse::unitless::vec3(1.f),
 				.intensity = 25.f,
 				.position = m_position,
-				.direction = gse::unitless::vec3(0.0f, -1.0f, 0.0f),
 				.constant = 1.0f,
 				.linear = 0.09f,
 				.quadratic = 0.032f,
-				.cut_off = gse::degrees(35.f),
-				.outer_cut_off = gse::degrees(65.f),
 				.ambient_strength = 0.025f,
+				.ignore_list_ids = { owner_id() },
 				.near_plane = gse::meters(1.f),
 				.far_plane = gse::meters(100.f),
-				.ignore_list_ids = { owner_id() }
 			});
 
 			configure_when_present([](gse::physics::motion_component& mc) {
@@ -42,8 +39,8 @@ export namespace gs {
 		}
 
 		auto render() -> void override {
-			component_write<gse::spot_light_component>().debug_menu("Sphere Light", owner_id().number());
-			component_write<gse::spot_light_component>().position = component_read<gse::physics::motion_component>().current_position;
+			component_write<gse::point_light_component>().debug_menu("Sphere Light", owner_id().number());
+			component_write<gse::point_light_component>().position = component_read<gse::physics::motion_component>().current_position;
 		}
 	private:
 		static std::size_t m_count;

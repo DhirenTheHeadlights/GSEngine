@@ -2,7 +2,7 @@ export module gse.graphics:geometry_renderer;
 
 import std;
 
-import :camera;
+import :camera_system;
 import :mesh;
 import :skinned_mesh;
 import :model;
@@ -853,7 +853,11 @@ auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> v
 		return;
 	}
 
-	phase.schedule([&s, &channels = phase.channels](
+	const auto* cam_state = phase.try_state_of<camera::state>();
+	const mat4 view_matrix = cam_state ? cam_state->view_matrix : mat4(1.0f);
+	const mat4 proj_matrix = cam_state ? cam_state->projection_matrix : mat4(1.0f);
+
+	phase.schedule([&s, &channels = phase.channels, view_matrix, proj_matrix](
 		chunk<render_component> render,
 		chunk<const physics::motion_component> motion,
 		chunk<const physics::collision_component> collision,
@@ -863,13 +867,13 @@ auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> v
 
 		s.shader_handle->set_uniform(
 			"CameraUBO.view",
-			s.ctx->camera().view(),
+			view_matrix,
 			s.ubo_allocations.at("CameraUBO")[frame_index].allocation
 		);
 
 		s.shader_handle->set_uniform(
 			"CameraUBO.proj",
-			s.ctx->camera().projection(s.ctx->window().viewport()),
+			proj_matrix,
 			s.ubo_allocations.at("CameraUBO")[frame_index].allocation
 		);
 
@@ -1171,7 +1175,7 @@ auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> v
 	}
 
 	if (total_batch_count > 0 && s.gpu_culling_enabled && s.culling_compute.valid()) {
-		const mat4 view_proj = s.ctx->camera().projection(s.ctx->window().viewport()) * s.ctx->camera().view();
+		const mat4 view_proj = proj_matrix * view_matrix;
 		const frustum_planes frustum = extract_frustum_planes(view_proj);
 		gse::memcpy(s.frustum_buffer[frame_index].allocation.mapped(), &frustum);
 

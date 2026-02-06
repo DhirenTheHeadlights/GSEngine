@@ -13,12 +13,22 @@ export namespace gse {
 	public:
 		struct params {
 			vec3<length> initial_position = vec3<length>(0.f, 0.f, 5.f);
+			int priority = 10;
 		};
 
-		explicit free_camera(const params& p) : m_initial_position(p.initial_position) {}
+		explicit free_camera(const params& p)
+			: m_initial_position(p.initial_position)
+			, m_priority(p.priority) {}
 
 		auto initialize() -> void override {
-			camera().set_position(m_initial_position);
+			add_component<camera::follow_component>({
+				.offset = vec3<length>(0.f),
+				.priority = m_priority,
+				.blend_in_duration = milliseconds(300),
+				.active = true,
+				.use_entity_position = false,
+				.position = m_initial_position
+			});
 
 			actions::bind_button_channel<"FreeCamera_Move_Forward">(owner_id(), key::w, m_forward);
 			actions::bind_button_channel<"FreeCamera_Move_Left">(owner_id(), key::a, m_left);
@@ -42,15 +52,17 @@ export namespace gse {
 		}
 
 		auto update() -> void override {
-			auto& camera = gse::camera();
+			auto& cam_follow = component_write<camera::follow_component>();
 
 			const auto v = m_move_axis_channel.value;
 			const float lift = (m_up.held ? 1.f : 0.f) - (m_down.held ? 1.f : 0.f);
 
-			camera.move(camera.direction_relative_to_origin({ v.x(), lift, v.y() }) * 100.f);
+			const auto direction = camera_direction_relative_to_origin({ v.x(), lift, v.y() });
+			cam_follow.position += direction * meters(100.f) * system_clock::dt().as<seconds>();
 		}
 	private:
 		vec3<length> m_initial_position;
+		int m_priority;
 
 		actions::button_channel m_forward;
 		actions::button_channel m_left;
