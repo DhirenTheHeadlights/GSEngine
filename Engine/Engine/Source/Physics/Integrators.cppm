@@ -30,9 +30,17 @@ export namespace gse::physics {
 }
 
 namespace gse::physics {
+    constexpr bool debug = true;
     constexpr auto gravity = gse::vec3<acceleration>(0.f, -9.8f, 0.f);
 
     using time_step = time_t<float, seconds>;
+
+    auto debug_log(const std::string& msg) -> void {
+        if constexpr (debug) {
+            static std::ofstream log_file("physics_debug.log", std::ios::app);
+            log_file << msg << '\n';
+        }
+    }
 
     auto update_friction(
         motion_component& component,
@@ -40,7 +48,8 @@ namespace gse::physics {
     ) -> void;
 
     auto update_gravity(
-        motion_component& component
+        motion_component& component,
+        collision_component* coll_component
     ) -> void;
 
     auto update_air_resistance(
@@ -115,18 +124,125 @@ auto gse::physics::update_friction(motion_component& component, const surface::p
     apply_force(component, friction_force, component.current_position);
 }
 
-auto gse::physics::update_gravity(motion_component& component) -> void {
+auto gse::physics::update_gravity(motion_component& component, collision_component* coll_component) -> void {
     if (!component.affected_by_gravity) {
         return;
     }
+    const auto gravity_force = gravity * component.mass;
 
-    if (component.airborne) {
-        const auto gravity_force = gravity * component.mass;
-        apply_force(component, gravity_force, component.current_position);
+    apply_force(component, gravity_force, component.current_position);
+
+    if constexpr (debug) {
+        debug_log(std::format("  [GRAVITY] pos={} mass={} airborne={} vel={} ang_vel={}",
+            component.current_position, component.mass, component.airborne,
+            component.current_velocity, component.angular_velocity));
+        debug_log(std::format("  [GRAVITY] post_apply_force: accel={} torque={}",
+            component.accumulators.current_acceleration, component.accumulators.current_torque));
     }
-    else {
+
+    if (!component.airborne) {
         component.accumulators.current_acceleration.y() = std::max(meters_per_second_squared(0.f), component.accumulators.current_acceleration.y());
         update_friction(component, properties(surface::type::concrete));
+
+        if constexpr (debug) {
+            debug_log(std::format("  [GRAVITY] grounded: post_friction accel={} torque={}",
+                component.accumulators.current_acceleration, component.accumulators.current_torque));
+        }
+
+        // Apply gravitational tipping torque about the contact support.
+        if (coll_component && coll_component->collision_information.colliding &&
+            !coll_component->collision_information.collision_points.empty()) {
+
+            const auto& contact_points = coll_component->collision_information.collision_points;
+            const auto& normal = coll_component->collision_information.collision_normal;
+
+            if constexpr (debug) {
+                debug_log(std::format("  [GRAVITY] collision: normal={} penetration={} #contacts={}",
+                    normal, coll_component->collision_information.penetration, contact_points.size()));
+                for (size_t i = 0; i < contact_points.size(); ++i) {
+                    debug_log(std::format("  [GRAVITY]   contact[{}]={}", i, contact_points[i]));
+                }
+            }
+
+            vec3<length> contact_centroid = { 0.f, 0.f, 0.f };
+            for (const auto& cp : contact_points) {
+                contact_centroid += cp;
+            }
+            contact_centroid /= static_cast<float>(contact_points.size());
+
+            const auto world_com = component.current_position + component.center_of_mass;
+            const auto lever_arm = world_com - contact_centroid;
+
+            // Split lever arm into the supported direction (along collision
+            // normal) and the tangential/tipping direction.
+            const auto lever_along_normal = dot(lever_arm, normal) * normal;
+            const auto lever_tangential = lever_arm - lever_along_normal;
+            const auto com_offset = magnitude(lever_tangential);
+
+            if constexpr (debug) {
+                debug_log(std::format("  [GRAVITY] centroid={} world_com={} lever_arm={}",
+                    contact_centroid, world_com, lever_arm));
+                debug_log(std::format("  [GRAVITY] lever_along_normal={} lever_tangential={} com_offset={}",
+                    lever_along_normal, lever_tangential, com_offset));
+            }
+
+            constexpr length min_offset = meters(0.01f);
+            if (com_offset > min_offset) {
+                const auto tipping_dir = normalize(lever_tangential);
+
+                // Measure how far the contact points extend in the tipping
+                // direction from their centroid — this is the support radius
+                // that can resist tipping.
+                length support_extent = meters(0.f);
+                for (const auto& cp : contact_points) {
+                    const length proj = dot(cp - contact_centroid, tipping_dir);
+                    support_extent = std::max(support_extent, proj);
+                }
+
+                if constexpr (debug) {
+                    debug_log(std::format("  [GRAVITY] tipping_dir={} support_extent={}",
+                        tipping_dir, support_extent));
+                }
+
+                // Only apply torque for the fraction of the COM that
+                // overhangs past the support edge.  Scale inversely
+                // with object speed so that the tipping torque fills
+                // the gap at low velocity (where collision impulses
+                // are too weak) but fades out as the collision system
+                // takes over, preventing feedback-loop jitter.
+                if (com_offset > support_extent) {
+                    const float speed = magnitude(component.current_velocity).as<meters_per_second>();
+                    const float ang_speed = magnitude(component.angular_velocity).as<radians_per_second>();
+                    constexpr float tipping_speed_threshold = 2.f;
+                    const float velocity_scale = std::clamp(1.f - (speed + ang_speed) / tipping_speed_threshold, 0.f, 1.f);
+
+                    const float overhang_fraction = (com_offset - support_extent) / com_offset;
+                    const auto gravity_torque = cross(lever_arm, gravity_force);
+                    component.accumulators.current_torque += gravity_torque * overhang_fraction * velocity_scale;
+
+                    if constexpr (debug) {
+                        debug_log(std::format("  [GRAVITY] TIPPING: overhang_frac={:.4f} vel_scale={:.4f} gravity_torque={} applied={}",
+                            overhang_fraction, velocity_scale, gravity_torque, gravity_torque * overhang_fraction * velocity_scale));
+                    }
+                } else if constexpr (debug) {
+                    debug_log(std::format("  [GRAVITY] NO_TIP: com_offset({}) <= support_extent({})",
+                        com_offset, support_extent));
+                }
+            } else if constexpr (debug) {
+                debug_log(std::format("  [GRAVITY] NO_TIP: com_offset({}) <= min_offset(0.01)", com_offset));
+            }
+        } else if constexpr (debug) {
+            const bool has_coll = coll_component != nullptr;
+            const bool colliding = has_coll && coll_component->collision_information.colliding;
+            const size_t npts = has_coll ? coll_component->collision_information.collision_points.size() : 0;
+            debug_log(std::format("  [GRAVITY] no tipping check: has_coll={} colliding={} #contacts={}",
+                has_coll, colliding, npts));
+        }
+
+        if constexpr (debug) {
+            debug_log(std::format("  [GRAVITY] final: accel={} torque={}",
+                component.accumulators.current_acceleration, component.accumulators.current_torque));
+        }
     }
 }
 
@@ -195,13 +311,30 @@ auto gse::physics::update_rotation(motion_component& component) -> void {
 
     const auto delta_time = system_clock::constant_update_time<time_step>();
 
+    if constexpr (debug) {
+        debug_log(std::format("  [ROTATION] torque_in={} MoI={} alpha={}",
+            component.accumulators.current_torque, component.moment_of_inertia, alpha));
+        debug_log(std::format("  [ROTATION] ang_vel_before={}", component.angular_velocity));
+    }
+
     component.angular_velocity += alpha * delta_time;
+
+    if constexpr (debug) {
+        debug_log(std::format("  [ROTATION] ang_vel_after_alpha={}", component.angular_velocity));
+    }
 
     constexpr float angular_damping = 1.0f;
     const float factor = std::max(0.f, 1.f - angular_damping * delta_time.as<seconds>());
     component.angular_velocity *= factor;
 
+    if constexpr (debug) {
+        debug_log(std::format("  [ROTATION] ang_vel_after_damp={} (factor={:.4f})", component.angular_velocity, factor));
+    }
+
     if (constexpr angular_velocity max_angular_speed = radians_per_second(20.f); magnitude(component.angular_velocity) > max_angular_speed) {
+        if constexpr (debug) {
+            debug_log(std::format("  [ROTATION] CLAMPED ang_vel from mag={}", magnitude(component.angular_velocity)));
+        }
         component.angular_velocity = normalize(component.angular_velocity) * max_angular_speed;
     }
 
@@ -213,6 +346,10 @@ auto gse::physics::update_rotation(motion_component& component) -> void {
     const quat delta_quaternion = 0.5f * omega_quaternion * component.orientation;
     component.orientation += delta_quaternion * delta_time.as<seconds>();
     component.orientation = normalize(component.orientation);
+
+    if constexpr (debug) {
+        debug_log(std::format("  [ROTATION] orientation={}", component.orientation));
+    }
 }
 
 auto gse::physics::update_bb(const motion_component& motion_component, collision_component& collision_component) -> void {
@@ -249,7 +386,19 @@ auto gse::physics::update_object(motion_component& component, collision_componen
         return;
     }
 
-    update_gravity(component);
+    if constexpr (debug) {
+        static int frame_counter = 0;
+        debug_log(std::format("=== OBJECT FRAME {} === pos={} mass={} airborne={} sleeping={}",
+            frame_counter++, component.current_position, component.mass,
+            component.airborne, component.sleeping));
+        debug_log(std::format("  [START] vel={} ang_vel={} orientation={}",
+            component.current_velocity, component.angular_velocity, component.orientation));
+        debug_log(std::format("  [START] pos_correction={} accel={} torque={}",
+            component.accumulators.position_correction, component.accumulators.current_acceleration,
+            component.accumulators.current_torque));
+    }
+
+    update_gravity(component, collision_component);
     update_air_resistance(component);
     update_velocity(component);
     update_position(component);
@@ -285,4 +434,11 @@ auto gse::physics::update_object(motion_component& component, collision_componen
     constexpr float angular_moving_threshold = 0.05f;
 
     component.moving = linear_speed > linear_moving_threshold || angular_speed > angular_moving_threshold;
+
+    if constexpr (debug) {
+        debug_log(std::format("  [END] pos={} vel={} ang_vel={}",
+            component.current_position, component.current_velocity, component.angular_velocity));
+        debug_log(std::format("  [END] moving={} sleeping={} sleep_time={} lin_speed={:.4f} ang_speed={:.4f}",
+            component.moving, component.sleeping, component.sleep_time, linear_speed, angular_speed));
+    }
 }

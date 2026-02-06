@@ -53,6 +53,7 @@ namespace gse {
 		auto scale() const -> float;
 		auto face_normals() const -> std::array<unitless::vec3, 6>;
 		auto face_vertices(std::uint32_t face_index) const -> std::array<vec3<length>, 4>;
+		auto get_obb_vertices() const -> std::vector<vec3<length>>;
 	private:
 		auto recalculate_aabb() const -> void;
 
@@ -149,6 +150,20 @@ auto gse::bounding_box::face_vertices(const std::uint32_t face_index) const -> s
 		face_center - u_axis * h_u - v_axis * h_v,
 		face_center + u_axis * h_u - v_axis * h_v
 	};
+}
+
+
+auto gse::bounding_box::get_obb_vertices() const -> std::vector<vec3<length>> {
+	const auto obb_data = obb();
+	const auto half_size = obb_data.size / 2.0f;
+	std::vector<vec3<length>> corners(8);
+	for (int i = 0; i < 8; ++i) {
+		const auto x = (i & 1 ? 1 : -1) * half_size.x();
+		const auto y = (i & 2 ? 1 : -1) * half_size.y();
+		const auto z = (i & 4 ? 1 : -1) * half_size.z();
+		corners[i] = m_center + (obb_data.axes[0] * x + obb_data.axes[1] * y + obb_data.axes[2] * z);
+	}
+	return corners;
 }
 
 auto gse::bounding_box::recalculate_aabb() const -> void {
