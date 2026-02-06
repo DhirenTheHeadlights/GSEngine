@@ -30,7 +30,7 @@ export namespace gse::physics {
 }
 
 namespace gse::physics {
-    constexpr bool debug = true;
+    constexpr bool debug = false;
     constexpr auto gravity = gse::vec3<acceleration>(0.f, -9.8f, 0.f);
 
     using time_step = time_t<float, seconds>;
@@ -115,9 +115,6 @@ auto gse::physics::update_friction(motion_component& component, const surface::p
     const force normal = component.mass * magnitude(gravity);
     force friction = normal * surface.friction_coefficient;
 
-    if (component.self_controlled) {
-        friction *= 5.f;
-    }
 
     const vec3 friction_force(-friction * normalize(component.current_velocity));
 
@@ -199,6 +196,15 @@ auto gse::physics::update_gravity(motion_component& component, collision_compone
                     support_extent = std::max(support_extent, proj);
                 }
 
+                // Single contact point can't define a support polygon.
+                // Use smallest half-extent as a conservative stability estimate
+                // to prevent extreme tipping torque from poor contact generation.
+                if (contact_points.size() <= 1) {
+                    const auto he = coll_component->bounding_box.half_extents();
+                    const length min_extent = std::min({he.x(), he.y(), he.z()});
+                    support_extent = std::max(support_extent, min_extent);
+                }
+
                 if constexpr (debug) {
                     debug_log(std::format("  [GRAVITY] tipping_dir={} support_extent={}",
                         tipping_dir, support_extent));
@@ -272,12 +278,6 @@ auto gse::physics::update_air_resistance(motion_component& component) -> void {
 
 auto gse::physics::update_velocity(motion_component& component) -> void {
     const auto delta_time = gse::system_clock::constant_update_time<time_step>();
-
-    if (component.self_controlled && !component.airborne) {
-        constexpr float damping_factor = 5.0f;
-        const float factor = std::max(0.f, 1.f - damping_factor * delta_time.as<seconds>());
-        component.current_velocity *= factor;
-    }
 
     component.current_velocity += component.accumulators.current_acceleration * delta_time;
 

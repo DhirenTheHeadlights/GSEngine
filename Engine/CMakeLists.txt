@@ -5,19 +5,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 project(Engine)
 
-include(FetchContent)
-
-FetchContent_Declare(
-    tomlplusplus
-    GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
-    GIT_TAG master
-)
+# Local toml++ with MSVC C++20 modules fix (depth_counter_scope destructor called twice bug)
 set(TOMLPLUSPLUS_BUILD_MODULES ON CACHE BOOL "" FORCE)
 # Workaround for MSVC module compatibility - VS 2026 still has the noexcept(noexcept(...)) bug
 add_compile_definitions(TOML_DISABLE_NOEXCEPT_NOEXCEPT=1)
-# Increase nested values limit (default 256 seems broken in modules build)
-add_compile_definitions(TOML_MAX_NESTED_VALUES=10000)
-FetchContent_MakeAvailable(tomlplusplus)
+add_subdirectory(External/tomlplusplus)
 
 file(GLOB_RECURSE ENGINE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cppm" "${CMAKE_CURRENT_BINARY_DIR}/Engine/*.cppm")
 

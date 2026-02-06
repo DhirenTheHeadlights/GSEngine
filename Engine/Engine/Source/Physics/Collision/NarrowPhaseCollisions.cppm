@@ -7,13 +7,14 @@ import :bounding_box;
 import :collision_component;
 import gse.physics.math;
 import gse.utility;
+import gse.log;
 
 export namespace gse::narrow_phase_collision {
     auto resolve_collision(
         physics::motion_component* object_a,
         physics::collision_component& coll_a,
         physics::motion_component* object_b,
-        const physics::collision_component& coll_b
+        physics::collision_component& coll_b
     ) -> void;
 }
 
@@ -21,13 +22,6 @@ namespace gse::narrow_phase_collision {
     static constexpr bool debug = false;
     static constexpr bool debug_resolve = true;
     constexpr int mpr_collision_refinement_iterations = 32;
-
-    auto resolve_debug_log(const std::string& msg) -> void {
-        if constexpr (debug_resolve) {
-            static std::ofstream log_file("physics_debug.log", std::ios::app);
-            log_file << msg << '\n';
-        }
-    }
 
     struct mpr_result {
         bool collided = false;
@@ -76,7 +70,7 @@ namespace gse::narrow_phase_collision {
     ) -> std::pair<unitless::vec3, length>;
 }
 
-auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* object_a, physics::collision_component& coll_a, physics::motion_component* object_b, const physics::collision_component& coll_b) -> void {
+auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* object_a, physics::collision_component& coll_a, physics::motion_component* object_b, physics::collision_component& coll_b) -> void {
     if (!object_a || !object_b) {
         return;
     }
@@ -95,18 +89,10 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
     }
 
     if constexpr (debug_resolve) {
-        resolve_debug_log(std::format("[RESOLVE] === START ==="));
-        resolve_debug_log(std::format("[RESOLVE] A: pos={} vel={} ang_vel={} mass={} locked={} airborne={}",
-            object_a->current_position, object_a->current_velocity, object_a->angular_velocity,
-            object_a->mass, object_a->position_locked, object_a->airborne));
-        resolve_debug_log(std::format("[RESOLVE] B: pos={} vel={} ang_vel={} mass={} locked={} airborne={}",
-            object_b->current_position, object_b->current_velocity, object_b->angular_velocity,
-            object_b->mass, object_b->position_locked, object_b->airborne));
-        resolve_debug_log(std::format("[RESOLVE] MPR: normal={} penetration={} #contacts={}",
-            res->normal, res->penetration, res->contact_points.size()));
-        for (size_t di = 0; di < res->contact_points.size(); ++di) {
-            resolve_debug_log(std::format("[RESOLVE]   contact[{}]={}", di, res->contact_points[di]));
-        }
+        log::println(log::level::debug, "[RESOLVE] n={} pen={} #cp={} Av={} Bv={} Aang={} Bang={}",
+            res->normal, res->penetration, res->contact_points.size(),
+            object_a->current_velocity, object_b->current_velocity,
+            object_a->angular_velocity, object_b->angular_velocity);
     }
 
     coll_a.collision_information = {
@@ -116,37 +102,56 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
         .collision_points = res->contact_points
     };
 
-    for (auto& contact_point : res->contact_points) {
-        const inverse_mass inv_mass_a = object_a->position_locked ? inverse_mass{ 0 } : 1.0f / object_a->mass;
-        const inverse_mass inv_mass_b = object_b->position_locked ? inverse_mass{ 0 } : 1.0f / object_b->mass;
-        const inverse_mass total_inv_mass = inv_mass_a + inv_mass_b;
+    coll_b.collision_information = {
+        .colliding = true,
+        .collision_normal = -res->normal,
+        .penetration = res->penetration,
+        .collision_points = res->contact_points
+    };
 
-        if (total_inv_mass <= inverse_mass{ 0 }) {
-            return;
-        }
+    const inverse_mass inv_mass_a = object_a->position_locked ? inverse_mass{ 0 } : 1.0f / object_a->mass;
+    const inverse_mass inv_mass_b = object_b->position_locked ? inverse_mass{ 0 } : 1.0f / object_b->mass;
+    const inverse_mass total_inv_mass = inv_mass_a + inv_mass_b;
 
-        constexpr length slop = meters(0.001f);
-        constexpr float percent = 1.f;
+    if (total_inv_mass <= inverse_mass{ 0 }) {
+        return;
+    }
 
-        const length corrected_penetration = std::max(res->penetration - slop, length{ 0 });
-        const vec3<length> correction = res->normal * corrected_penetration;
-        const float ratio_a = inv_mass_a / total_inv_mass;
-        const float ratio_b = inv_mass_b / total_inv_mass;
+    const float ratio_a = inv_mass_a / total_inv_mass;
+    const float ratio_b = inv_mass_b / total_inv_mass;
 
+    // Airborne flags (once per collision, not per contact)
+    if (res->normal.y() > 0.7f) {
+        object_a->airborne = false;
+    }
+    if (res->normal.y() < -0.7f) {
+        object_b->airborne = false;
+    }
+
+    // Position correction via Baumgarte stabilization (once per collision)
+    {
+        constexpr length slop = meters(0.005f);
+        constexpr float baumgarte = 0.2f;
+        const length corrected_pen = std::max(res->penetration - slop, length{ 0 });
+        const vec3<length> correction = res->normal * corrected_pen * baumgarte;
 
         if (!object_a->position_locked) {
-			object_a->accumulators.position_correction += .1f * (gse::magnitude(correction) > gse::magnitude(coll_a.bounding_box.size()) ? correction : normalize(correction) * coll_a.bounding_box.size() * 0.1f) * ratio_a;
+            object_a->accumulators.position_correction += correction * ratio_a;
         }
         if (!object_b->position_locked) {
-            object_b->accumulators.position_correction -= .1f * (gse::magnitude(correction) > gse::magnitude(coll_b.bounding_box.size())? correction : normalize(correction) * coll_b.bounding_box.size() * 0.1f) * ratio_b;
-        }
-        if (res->normal.y() > 0.7f) {
-            object_a->airborne = false;
-        }
-        if (res->normal.y() < -0.7f) {
-            object_b->airborne = false;
+            object_b->accumulators.position_correction -= correction * ratio_b;
         }
 
+        if constexpr (debug_resolve) {
+            log::println(log::level::debug, "[RESOLVE] correction={} (pen={} slop={})",
+                corrected_pen * baumgarte, res->penetration, slop);
+        }
+    }
+
+    const physics::inv_inertia_mat inv_i_a = object_a->position_locked ? physics::inv_inertia_mat(0.0f) : object_a->inv_inertial_tensor();
+    const physics::inv_inertia_mat inv_i_b = object_b->position_locked ? physics::inv_inertia_mat(0.0f) : object_b->inv_inertial_tensor();
+
+    for (auto& contact_point : res->contact_points) {
         const auto r_a = contact_point - object_a->current_position;
         const auto r_b = contact_point - object_b->current_position;
 
@@ -156,43 +161,30 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
 
         const velocity vel_along_normal = dot(relative_velocity, res->normal);
 
+        if (vel_along_normal > velocity{ 0 }) {
+            continue; // separating at this contact, skip to next
+        }
+
         const auto tangent_velocity = relative_velocity - vel_along_normal * res->normal;
         const auto tangent_speed = magnitude(tangent_velocity).as<meters_per_second>();
         const auto normal_speed = abs(vel_along_normal).as<meters_per_second>();
 
-        if constexpr (debug_resolve) {
-            resolve_debug_log(std::format("[RESOLVE]   cp={} r_a={} r_b={}",
-                contact_point, r_a, r_b));
-            resolve_debug_log(std::format("[RESOLVE]   vel_a={} vel_b={} rel_vel={}",
-                vel_a, vel_b, relative_velocity));
-            resolve_debug_log(std::format("[RESOLVE]   vel_along_normal={} normal_spd={:.4f} tangent_spd={:.4f}",
-                vel_along_normal, normal_speed, tangent_speed));
-        }
-
         constexpr float wake_threshold = 0.2f;
-        const bool should_wake = normal_speed > wake_threshold || tangent_speed > wake_threshold;
-
-        if (should_wake) {
+        if (normal_speed > wake_threshold || tangent_speed > wake_threshold) {
             object_a->sleeping = false;
             object_a->sleep_time = 0.f;
             object_b->sleeping = false;
             object_b->sleep_time = 0.f;
         }
 
-        if (vel_along_normal > velocity{ 0 }) {
-            if constexpr (debug_resolve) {
-                resolve_debug_log(std::format("[RESOLVE]   SEPARATING (vel_along_normal={}), returning", vel_along_normal));
+        float restitution = 0.0f;
+        if (!object_a->self_controlled && !object_b->self_controlled) {
+            if (normal_speed >= 2.0f) {
+                restitution = 0.3f;
+            } else if (normal_speed > 0.5f) {
+                restitution = 0.3f * (normal_speed - 0.5f) / 1.5f;
             }
-            return;
         }
-
-        float restitution = 0.5f;
-        if (normal_speed < 0.1f) {
-            restitution = 0.0f;
-        }
-
-        const physics::inv_inertia_mat inv_i_a = object_a->position_locked ? physics::inv_inertia_mat(0.0f) : object_a->inv_inertial_tensor();
-        const physics::inv_inertia_mat inv_i_b = object_b->position_locked ? physics::inv_inertia_mat(0.0f) : object_b->inv_inertial_tensor();
 
         const auto rcross_a_part = cross(inv_i_a * cross(r_a, res->normal), r_a);
         const auto rcross_b_part = cross(inv_i_b * cross(r_b, res->normal), r_b);
@@ -202,11 +194,7 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
 
         const auto impulse_vec = res->normal * jn;
 
-        if constexpr (debug_resolve) {
-            resolve_debug_log(std::format("[RESOLVE]   restitution={:.2f} jn={} impulse_vec={}",
-                restitution, jn, impulse_vec));
-        }
-
+        // Friction
         if (magnitude(tangent_velocity) > meters_per_second(1e-4f)) {
             const auto t = normalize(tangent_velocity);
 
@@ -220,14 +208,9 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
 
             auto jt = -dot(relative_velocity, t) / denom_t;
 
-            constexpr float mu = 0.6f; // friction coefficient
+            constexpr float mu = 0.6f;
             jt = std::clamp(jt, -jn * mu, jn * mu);
             const auto friction_impulse = t * jt;
-
-            if constexpr (debug_resolve) {
-                resolve_debug_log(std::format("[RESOLVE]   friction: jt={} impulse={}",
-                    jt, friction_impulse));
-            }
 
             object_a->current_velocity += friction_impulse * inv_mass_a;
             object_a->angular_velocity += inv_i_a * cross(r_a, friction_impulse);
@@ -235,7 +218,6 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
             object_b->current_velocity -= friction_impulse * inv_mass_b;
             object_b->angular_velocity -= inv_i_b * cross(r_b, friction_impulse);
         }
-
 
         if (!object_a->position_locked) {
             object_a->current_velocity += impulse_vec * inv_mass_a;
@@ -247,31 +229,14 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
         }
 
         if constexpr (debug_resolve) {
-            resolve_debug_log(std::format("[RESOLVE]   post: A vel={} ang_vel={}",
-                object_a->current_velocity, object_a->angular_velocity));
-            resolve_debug_log(std::format("[RESOLVE]   post: B vel={} ang_vel={}",
-                object_b->current_velocity, object_b->angular_velocity));
-        }
-
-        if (!object_a->position_locked && !object_a->airborne) {
-            const auto v = object_a->current_velocity;
-            const auto normal_component = dot(v, res->normal) * res->normal;
-            if (const auto tangential = v - normal_component; magnitude(tangential) < meters_per_second(0.05f)) {
-                //object_a->current_velocity -= tangential;
-            }
-        }
-
-        if (!object_b->position_locked && !object_b->airborne) {
-            const auto v = object_b->current_velocity;
-            const auto normal_component = dot(v, res->normal) * res->normal;
-            if (const auto tangential = v - normal_component; magnitude(tangential) < meters_per_second(0.05f)) {
-                //object_b->current_velocity -= tangential;
-            }
+            log::println(log::level::debug, "[RESOLVE]   jn={} e={:.2f} nspd={:.4f}", jn, restitution, normal_speed);
         }
     }
 
     if constexpr (debug_resolve) {
-        resolve_debug_log("[RESOLVE] === END ===");
+        log::println(log::level::debug, "[RESOLVE] post Av={} Aang={} Bv={} Bang={}",
+            object_a->current_velocity, object_a->angular_velocity,
+            object_b->current_velocity, object_b->angular_velocity);
     }
 }
 
@@ -314,10 +279,10 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
     const auto obb2 = bb2.obb();
 
     if constexpr (debug) {
-        std::println("[MPR] ---- begin ----");
-        std::println("[MPR] A center: {}, B center: {}", bb1.center(), bb2.center());
-        std::println("[MPR] half extents A: {}, axes A[0..2]: {}, {}, {}", bb1.half_extents(), obb1.axes[0], obb1.axes[1], obb1.axes[2]);
-        std::println("[MPR] half extents B: {}, axes B[0..2]: {}, {}, {}", bb2.half_extents(), obb2.axes[0], obb2.axes[1], obb2.axes[2]);
+        log::println(log::level::debug, "[MPR] ---- begin ----");
+        log::println(log::level::debug, "[MPR] A center: {}, B center: {}", bb1.center(), bb2.center());
+        log::println(log::level::debug, "[MPR] half extents A: {}, axes A[0..2]: {}, {}, {}", bb1.half_extents(), obb1.axes[0], obb1.axes[1], obb1.axes[2]);
+        log::println(log::level::debug, "[MPR] half extents B: {}, axes B[0..2]: {}, {}, {}", bb2.half_extents(), obb2.axes[0], obb2.axes[1], obb2.axes[2]);
     }
 
     unitless::vec3 dir = normalize(bb1.center() - bb2.center());
@@ -334,7 +299,7 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
 
     if (dot(v1.point, dir) <= 0.0f) {
         if constexpr (debug) {
-            std::println("[MPR] ---- end (no collision: phase 1) ----");
+            log::println(log::level::debug, "[MPR] ---- end (no collision: phase 1) ----");
         }
         return std::nullopt;
     }
@@ -352,7 +317,7 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
 
     if (dot(v2.point, dir) <= 0.0f) {
         if constexpr (debug) {
-            std::println("[MPR] ---- end (no collision: phase 2) ----");
+            log::println(log::level::debug, "[MPR] ---- end (no collision: phase 2) ----");
         }
         return std::nullopt;
     }
@@ -367,7 +332,7 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
 
     if (dot(v3.point, dir) <= 0.0f) {
         if constexpr (debug) {
-            std::println("[MPR] ---- end (no collision: phase 3) ----");
+            log::println(log::level::debug, "[MPR] ---- end (no collision: phase 3) ----");
         }
         return std::nullopt;
     }
@@ -390,7 +355,7 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
 
     for (int i = 0; i < mpr_collision_refinement_iterations; ++i) {
         if constexpr (debug) {
-            std::println("\n[MPR][iter {}] v0:{}, v1:{}, v2:{}, v3:{}", i, v0.point, v1.point, v2.point, v3.point);
+            log::println(log::level::debug, "\n[MPR][iter {}] v0:{}, v1:{}, v2:{}, v3:{}", i, v0.point, v1.point, v2.point, v3.point);
         }
         // Outward-facing normals for the 4 tetra faces (each uses the vertex opposite that face)
         unitless::vec3 n_a = face_normal_outward(v0.point, v1.point, v2.point, v3.point); // face (v0,v1,v2), opp v3
@@ -407,7 +372,7 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
         length d_d = is_zero(n_d) ? inf : dot(n_d, v1.point);
 
         if constexpr (debug) {
-            std::println("[MPR][iter {}] d1:{}, d2:{}, d3:{}, d4:{}", i, d_a, d_b, d_c, d_d);
+            log::println(log::level::debug, "[MPR][iter {}] d1:{}, d2:{}, d3:{}, d4:{}", i, d_a, d_b, d_c, d_d);
         }
 
         struct face {
@@ -463,7 +428,7 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
         }
 
         if constexpr (debug) {
-            std::println("[MPR][iter {}] best_n: {}", i, choice.n);
+            log::println(log::level::debug, "[MPR][iter {}] best_n: {}", i, choice.n);
         }
 
         auto replace_vertex = [&](
@@ -517,7 +482,7 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
                 }
 
                 if constexpr (debug) {
-                    std::println("[MPR][iter {}] CONVERGED. penetration: {}", i, penetration_depth);
+                    log::println(log::level::debug,"[MPR][iter {}] CONVERGED. penetration: {}", i, penetration_depth);
                 }
 
                 if constexpr (debug) {
@@ -553,8 +518,8 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
                 );
 
                 if constexpr (debug) {
-                    std::println("[MPR] Contacts complete. Normal: {}, Penetration: {}", collision_normal, penetration_depth);
-                    std::println("[MPR] ---- end (collision) ----");
+                    log::println(log::level::debug,"[MPR] Contacts complete. Normal: {}, Penetration: {}", collision_normal, penetration_depth);
+                    log::println(log::level::debug,"[MPR] ---- end (collision) ----");
                 }
 
                 return mpr_result{
@@ -573,7 +538,7 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
             if (delta2 <= eps2) {
                 skip_face = true;
                 if constexpr (debug) {
-                    std::println("[MPR][iter {}] tiny step on face {} -> skipping", i, choice.id);
+                    log::println(log::level::debug,"[MPR][iter {}] tiny step on face {} -> skipping", i, choice.id);
                 }
             }
             else {
@@ -585,7 +550,7 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
                     equals_within_eps2(v2.point) || equals_within_eps2(v3.point)) {
                     skip_face = true;
                     if constexpr (debug) {
-                        std::println("[MPR][iter {}] p equals existing vertex -> skipping face {}", i, choice.id);
+                        log::println(log::level::debug,"[MPR][iter {}] p equals existing vertex -> skipping face {}", i, choice.id);
                     }
                 }
             }
@@ -600,7 +565,7 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
                     break;
                 }
                 if constexpr (debug) {
-                    std::println("[MPR][iter {}] retry face with best_n: {}", i, choice.n);
+                    log::println(log::level::debug,"[MPR][iter {}] retry face with best_n: {}", i, choice.n);
                 }
                 continue;
             }
@@ -611,15 +576,15 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
 
         if (!progressed) {
             if constexpr (debug) {
-                std::println("[MPR][iter {}] no progress; aborting refinement", i);
+                log::println(log::level::debug,"[MPR][iter {}] no progress; aborting refinement", i);
             }
             break;
         }
     }
 
     if constexpr (debug) {
-        std::println("[MPR][fail] no convergence after {} iters (eps: {}).", mpr_collision_refinement_iterations, eps);
-        std::println("[MPR] ---- end (no collision) ----");
+        log::println(log::level::debug,"[MPR][fail] no convergence after {} iters (eps: {}).", mpr_collision_refinement_iterations, eps);
+        log::println(log::level::debug,"[MPR] ---- end (no collision) ----");
     }
 
     return std::nullopt;
