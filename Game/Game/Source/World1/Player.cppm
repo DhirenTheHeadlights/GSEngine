@@ -113,7 +113,11 @@ namespace gs {
 				.max_speed = m_max_speed,
 				.mass = gse::pounds(180.f),
 				.self_controlled = true,
-				.update_orientation = false
+				.update_orientation = false,
+				.motor = {
+					.jump_speed = gse::meters_per_second(7.f),
+					.active = true
+				}
 			});
 
 			gse::length height = gse::feet(6.0f);
@@ -150,69 +154,20 @@ namespace gs {
 
 		auto update() -> void override {
 			auto& motion = component_write<gse::physics::motion_component>();
-
-			const auto v = m_move_axis_channel.value;
-			const bool moving = v.x() != 0.f || v.y() != 0.f;
 			motion.max_speed = m_shift_channel.held ? m_sprint_speed : m_max_speed;
 
-			const auto dt = gse::system_clock::constant_update_time<gse::time_t<float, gse::seconds>>();
-
-			if (!motion.airborne) {
-				if (moving) {
-					const auto dir = gse::camera_direction_relative_to_origin(
-						gse::unitless::vec3(v.x(), 0.f, v.y())
-					);
-					const auto target = motion.max_speed * gse::unitless::vec3(dir.x(), 0.f, dir.z());
-					const float t = std::min(1.f, m_ground_response * dt.as<gse::seconds>());
-					motion.current_velocity.x() += (target.x() - motion.current_velocity.x()) * t;
-					motion.current_velocity.z() += (target.z() - motion.current_velocity.z()) * t;
-				} else {
-					const float t = std::min(1.f, m_ground_stopping * dt.as<gse::seconds>());
-					motion.current_velocity.x() *= (1.f - t);
-					motion.current_velocity.z() *= (1.f - t);
-				}
-			} else if (moving) {
-				// Air control: steer existing momentum toward desired direction, no speed gain
+			const auto v = m_move_axis_channel.value;
+			if (v.x() != 0.f || v.y() != 0.f) {
 				const auto dir = gse::camera_direction_relative_to_origin(
 					gse::unitless::vec3(v.x(), 0.f, v.y())
 				);
-				const auto hspeed = gse::magnitude(gse::vec3<gse::velocity>(
-					motion.current_velocity.x(), gse::meters_per_second(0.f), motion.current_velocity.z()
-				));
-				const auto target = hspeed * gse::unitless::vec3(dir.x(), 0.f, dir.z());
-				const float t = std::min(1.f, m_air_steering * dt.as<gse::seconds>());
-				motion.current_velocity.x() += (target.x() - motion.current_velocity.x()) * t;
-				motion.current_velocity.z() += (target.z() - motion.current_velocity.z()) * t;
+				motion.motor.target_velocity = motion.max_speed * gse::unitless::vec3(dir.x(), 0.f, dir.z());
+			} else {
+				motion.motor.target_velocity = {};
 			}
 
-			// Wall-sliding: remove velocity component going into active collisions
-			{
-				const auto& coll = component_read<gse::physics::collision_component>();
-				if (coll.collision_information.colliding) {
-					const auto& n = coll.collision_information.collision_normal;
-					const auto vn = n.x() * motion.current_velocity.x() + n.z() * motion.current_velocity.z();
-					if (vn < gse::meters_per_second(0.f)) {
-						motion.current_velocity.x() -= vn * n.x();
-						motion.current_velocity.z() -= vn * n.z();
-					}
-				}
-			}
-
-			if (m_jump_channel.pressed && !motion.airborne) {
-				motion.current_velocity.y() = m_jump_speed;
-				motion.airborne = true;
-			}
-
-			// Clamp horizontal speed to max_speed (prevents runaway when airborne)
-			{
-				const auto hspeed = gse::magnitude(gse::vec3<gse::velocity>(
-					motion.current_velocity.x(), gse::meters_per_second(0.f), motion.current_velocity.z()
-				));
-				if (hspeed > motion.max_speed) {
-					const float scale = motion.max_speed / hspeed;
-					motion.current_velocity.x() *= scale;
-					motion.current_velocity.z() *= scale;
-				}
+			if (m_jump_channel.pressed) {
+				motion.motor.jump_requested = true;
 			}
 
 			m_bindings.update();
@@ -317,11 +272,6 @@ namespace gs {
 
 		gse::velocity m_max_speed = gse::miles_per_hour(20.f);
 		gse::velocity m_sprint_speed = gse::miles_per_hour(40.f);
-
-		float m_ground_response = 25.f;
-		float m_ground_stopping = 20.f;
-		float m_air_steering = 3.f;
-		gse::velocity m_jump_speed = gse::meters_per_second(7.f);
 
 		gse::actions::button_channel m_shift_channel;
 		gse::actions::button_channel m_jump_channel;
