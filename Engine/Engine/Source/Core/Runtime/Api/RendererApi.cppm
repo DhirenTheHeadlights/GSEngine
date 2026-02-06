@@ -52,11 +52,6 @@ export namespace gse {
 		return state_of<renderer::state>().resource_state<Resource>(id);
 	}
 
-	auto camera(
-	) -> camera& {
-		return state_of<renderer::state>().camera();
-	}
-
 	auto set_ui_focus(
 		const bool focus
 	) -> void {

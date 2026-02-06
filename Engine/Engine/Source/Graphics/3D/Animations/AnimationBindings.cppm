@@ -94,16 +94,16 @@ export namespace gse::animation {
 			return *this;
 		}
 
-		auto update() -> void {
+		auto update() const -> void {
 			if (!m_ctrl) return;
 
-			for (auto& p : m_params) {
-				p.sync(*m_ctrl);
+			for (const auto& [name, sync] : m_params) {
+				sync(*m_ctrl);
 			}
 
-			for (auto& t : m_triggers) {
-				if (t.condition()) {
-					m_ctrl->parameters[t.name] = animation_parameter{
+			for (const auto& [name, condition] : m_triggers) {
+				if (condition()) {
+					m_ctrl->parameters[name] = {
 						.value = true,
 						.is_trigger = true
 					};

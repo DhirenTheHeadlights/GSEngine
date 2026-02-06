@@ -79,7 +79,7 @@ namespace gs {
 				return;
 			}
 
-			const auto dir = gse::camera().direction_relative_to_origin(
+			const auto dir = gse::camera_direction_relative_to_origin(
 				gse::unitless::vec3(v.x(), 0.f, v.y())
 			);
 
@@ -136,6 +136,14 @@ namespace gs {
 				.skeleton_id = gse::find("Skeletons/player")
 			});*/
 
+			add_component<gse::camera::follow_component>({
+				.offset = gse::vec3<gse::length>(gse::feet(0.f), gse::feet(6.f), gse::feet(0.f)),
+				.priority = 50,
+				.blend_in_duration = gse::milliseconds(300),
+				.active = true,
+				.use_entity_position = false
+			});
+
 			setup_input();
 			//setup_animation();
 		}
@@ -147,7 +155,7 @@ namespace gs {
 			const bool moving = v.x() != 0.f || v.y() != 0.f;
 
 			if (!motion.airborne && moving) {
-				const auto dir = gse::camera().direction_relative_to_origin(
+				const auto dir = gse::camera_direction_relative_to_origin(
 					gse::unitless::vec3(v.x(), 0.f, v.y())
 				);
 
@@ -169,13 +177,8 @@ namespace gs {
 
 			m_bindings.update();
 
-			gse::camera().set_position(
-				motion.current_position + gse::vec3<gse::length>(
-					gse::feet(0.f),
-					gse::feet(6.f),
-					gse::feet(0.f)
-				)
-			);
+			auto& cam_follow = component_write<gse::camera::follow_component>();
+			cam_follow.position = motion.current_position;
 		}
 
 	private:

@@ -71,11 +71,32 @@ float pcf_shadow(int s, float2 uv, float depth, float bias) {
         for (int x = -1; x <= 1; ++x) {
             float2 duv = float2((float)x, (float)y) * shadow_texel_size;
             float closest = shadow_maps[s].SampleLevel(uv + duv, 0).r;
-            // Shadow when fragment is further from light than shadow map recorded
             sum += (depth > closest + bias) ? 0.0 : 1.0;
         }
     }
     return sum / 9.0;
+}
+
+float compute_point_shadow(int light_index, float3 frag_pos_world) {
+    for (int s = 0; s < point_shadow_count; ++s) {
+        if (point_shadow_light_indices[s] != light_index) {
+            continue;
+        }
+
+        float3 light_to_frag = frag_pos_world - point_shadow_positions_world[s];
+        float sampled_depth = point_shadow_maps[s].SampleLevel(light_to_frag, 0).r;
+
+        float3 abs_dir = abs(light_to_frag);
+        float d = max(abs_dir.x, max(abs_dir.y, abs_dir.z));
+
+        float n = point_shadow_near[s];
+        float f = point_shadow_far[s];
+        float current_depth = f * (d - n) / (d * (f - n));
+
+        float bias = 0.05;
+        return (current_depth > sampled_depth + bias) ? 0.0 : 1.0;
+    }
+    return 1.0;
 }
 
 float compute_shadow_for_light(int light_index, float3 pos_world) {
@@ -84,23 +105,18 @@ float compute_shadow_for_light(int light_index, float3 pos_world) {
             continue;
         }
 
-        // Transform world position to light clip space
         float4 light_clip = mul(shadow_view_proj[s], float4(pos_world, 1.0));
 
-        // Behind the light
         if (light_clip.w <= 0.0) {
             return 1.0;
         }
 
-        // Perspective divide to get NDC
         float3 light_ndc = light_clip.xyz / light_clip.w;
 
-        // NDC to UV - flip Y to compensate for Vulkan's Y-down in projection
         float2 shadow_uv = light_ndc.xy * 0.5 + 0.5;
 
         float depth = light_ndc.z;
 
-        // Outside shadow map bounds
         if (shadow_uv.x < 0.0 || shadow_uv.x > 1.0 || shadow_uv.y < 0.0 || shadow_uv.y > 1.0) {
             return 1.0;
         }
@@ -140,20 +156,18 @@ float4 fs_main(VS_OUTPUT input) : SV_Target0 {
         float shadow = compute_shadow_for_light(i, pos_world);
 
         if (light.light_type == 0) {
-            // Directional light (light.direction is in view space)
             float3 L = normalize(-light.direction);
             float NdotL = max(dot(normal_vs, L), 0.0);
             result += albedo * light.color * light.intensity * NdotL * shadow;
             result += albedo * light.color * light.ambient_strength;
         } else if (light.light_type == 1) {
-            // Point light (light.position is in view space)
             float3 Lvec = light.position - pos_vs;
             float NdotL = max(dot(normal_vs, normalize(Lvec)), 0.0);
             float att = attenuation_point(light.position, pos_vs, light.constant, light.linear, light.quadratic);
-            result += albedo * light.color * light.intensity * NdotL * att * shadow;
+            float point_shadow = compute_point_shadow(i, pos_world);
+            result += albedo * light.color * light.intensity * NdotL * att * point_shadow;
             result += albedo * light.color * light.ambient_strength;
         } else if (light.light_type == 2) {
-            // Spot light (light.position and light.direction are in view space)
             float3 Lvec = light.position - pos_vs;
             float NdotL = max(dot(normal_vs, normalize(Lvec)), 0.0);
             float att = attenuation_point(light.position, pos_vs, light.constant, light.linear, light.quadratic);

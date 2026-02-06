@@ -41,15 +41,15 @@ export namespace gse::animation {
 	};
 
 	template <typename T>
-	auto param(std::string_view name) -> param_handle<T> {
+	auto param(const std::string_view name) -> param_handle<T> {
 		return param_handle<T>{ std::string(name) };
 	}
 
-	auto operator>(const param_handle<float>& p, float value) -> condition {
+	auto operator>(const param_handle<float>& p, const float value) -> condition {
 		return { p.name, condition_type::float_greater, value, false };
 	}
 
-	auto operator<(const param_handle<float>& p, float value) -> condition {
+	auto operator<(const param_handle<float>& p, const float value) -> condition {
 		return { p.name, condition_type::float_less, value, false };
 	}
 
@@ -65,7 +65,7 @@ export namespace gse::animation {
 		std::string name;
 	};
 
-	auto trigger(std::string_view name) -> trigger_handle {
+	auto trigger(const std::string_view name) -> trigger_handle {
 		return trigger_handle{ std::string(name) };
 	}
 
@@ -73,7 +73,7 @@ export namespace gse::animation {
 		return { t.name, condition_type::trigger, 0.f, true };
 	}
 
-	auto after(float normalized_time) -> condition {
+	auto after(const float normalized_time) -> condition {
 		return { "", condition_type::exit_time, normalized_time, false };
 	}
 
@@ -113,7 +113,7 @@ export namespace gse::animation {
 			return *this && to_condition(t);
 		}
 
-		auto blend(float duration) const -> transition_def {
+		auto blend(const float duration) const -> transition_def {
 			auto result = *this;
 			result.blend_duration = duration;
 			return result;
@@ -155,12 +155,8 @@ export namespace gse::animation {
 	constexpr any_state_t any;
 
 	class graph_builder {
-		std::string m_name;
-		state_handle m_default_state;
-		std::vector<transition_def> m_transitions;
-
 	public:
-		graph_builder(std::string_view name, const state_handle& default_state)
+		graph_builder(const std::string_view name, const state_handle& default_state)
 			: m_name(name), m_default_state(default_state) {}
 
 		template <typename... Transitions>
@@ -172,7 +168,11 @@ export namespace gse::animation {
 
 		auto name() const -> const std::string& { return m_name; }
 		auto default_state() const -> const state_handle& { return m_default_state; }
-		auto get_transitions() const -> const std::vector<transition_def>& { return m_transitions; }
+		auto transitions() const -> const std::vector<transition_def>& { return m_transitions; }
+	private:
+		std::string m_name;
+		state_handle m_default_state;
+		std::vector<transition_def> m_transitions;
 	};
 
 	auto graph(std::string_view name, const state_handle& default_state) -> graph_builder {

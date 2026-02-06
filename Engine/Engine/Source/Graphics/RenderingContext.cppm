@@ -5,7 +5,6 @@ import std;
 import :resource_loader;
 import :asset_pipeline;
 import :asset_compiler;
-import :camera;
 import :shader_layout;
 import :shader_layout_compiler;
 
@@ -129,9 +128,6 @@ export namespace gse::renderer {
 		[[nodiscard]] auto config(
 		) -> vulkan::config&;
 
-		[[nodiscard]] auto camera(
-		) -> camera&;
-
 		[[nodiscard]] auto window(
 		) -> window&;
 
@@ -178,7 +174,6 @@ export namespace gse::renderer {
 		mutable std::vector<std::pair<std::type_index, id>> m_pending_gpu_resources;
 		mutable std::recursive_mutex m_mutex;
 
-		gse::camera m_camera;
 		bool m_ui_focus = false;
 		bool m_validation_layers_enabled = false;
 
@@ -378,10 +373,6 @@ auto gse::renderer::context::config() const -> const vulkan::config& {
 auto gse::renderer::context::config() -> vulkan::config& {
 	assert(m_config.get(), std::source_location::current(), "Vulkan config is not initialized.");
 	return *m_config;
-}
-
-auto gse::renderer::context::camera() -> gse::camera& {
-	return m_camera;
 }
 
 auto gse::renderer::context::window() -> gse::window& {

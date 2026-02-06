@@ -10,4 +10,5 @@ export import :animation_graph_api;
 export import :gui_api;
 export import :network_api;
 export import :renderer_api;
+export import :camera_api;
 export import :input_api;

@@ -93,6 +93,7 @@ auto gse::engine::initialize() -> void {
 
 	auto& ctx = *m_render_ctx.get();
 
+	m_scheduler.add_system<camera::system, camera::state>(reg);
 	m_scheduler.add_system<renderer::system, renderer::state>(reg, ctx);
 	m_scheduler.add_system<renderer::shadow::system, renderer::shadow::state>(reg, ctx);
 	m_scheduler.add_system<renderer::geometry::system, renderer::geometry::state>(reg, ctx);

@@ -4,7 +4,6 @@ import std;
 
 import :texture;
 import :font;
-import :camera;
 import :shader;
 import :rendering_context;
 

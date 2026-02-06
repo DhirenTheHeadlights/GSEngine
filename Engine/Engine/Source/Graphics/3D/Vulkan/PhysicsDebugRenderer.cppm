@@ -7,7 +7,7 @@ import gse.physics.math;
 import gse.utility;
 import gse.platform;
 
-import :camera;
+import :camera_system;
 import :shader;
 
 namespace gse::renderer::physics_debug {
@@ -400,8 +400,12 @@ auto gse::renderer::physics_debug::system::render(render_phase& phase, const sta
 	const auto command = config.frame_context().command_buffer;
 	const auto frame_index = config.current_frame();
 
-	s.shader_handle->set_uniform("CameraUBO.view", s.ctx->camera().view(), s.ubo_allocations.at("CameraUBO")[frame_index].allocation);
-	s.shader_handle->set_uniform("CameraUBO.proj", s.ctx->camera().projection(s.ctx->window().viewport()), s.ubo_allocations.at("CameraUBO")[frame_index].allocation);
+	const auto* cam_state = phase.try_state_of<camera::state>();
+	const mat4 view_matrix = cam_state ? cam_state->view_matrix : mat4(1.0f);
+	const mat4 proj_matrix = cam_state ? cam_state->projection_matrix : mat4(1.0f);
+
+	s.shader_handle->set_uniform("CameraUBO.view", view_matrix, s.ubo_allocations.at("CameraUBO")[frame_index].allocation);
+	s.shader_handle->set_uniform("CameraUBO.proj", proj_matrix, s.ubo_allocations.at("CameraUBO")[frame_index].allocation);
 
 	vk::RenderingAttachmentInfo color_attachment{
 		.imageView = *config.swap_chain_config().image_views[config.frame_context().image_index],

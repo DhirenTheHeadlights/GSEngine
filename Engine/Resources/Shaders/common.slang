@@ -1,4 +1,5 @@
 public static const int MAX_LIGHTS = 10;
+public static const int MAX_POINT_SHADOW_LIGHTS = 4;
 
 public enum class LightType {
     Directional = 0,
