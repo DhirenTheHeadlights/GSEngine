@@ -23,7 +23,7 @@ export namespace gse::broad_phase_collision {
 	auto check_collision(
 		physics::collision_component& dynamic_object_collision_component,
 		physics::motion_component* dynamic_object_motion_component,
-		const physics::collision_component& other_collision_component,
+		physics::collision_component& other_collision_component,
 		physics::motion_component* other_motion_component
 	) -> void;
 
@@ -72,11 +72,12 @@ auto gse::broad_phase_collision::check_future_collision(const bounding_box& dyna
 		swept_max.z() > other.min.z() && swept_min.z() < other.max.z();
 }
 
-auto gse::broad_phase_collision::check_collision(physics::collision_component& dynamic_object_collision_component, physics::motion_component* dynamic_object_motion_component, const physics::collision_component& other_collision_component, physics::motion_component* other_motion_component) -> void {
+auto gse::broad_phase_collision::check_collision(physics::collision_component& dynamic_object_collision_component, physics::motion_component* dynamic_object_motion_component, physics::collision_component& other_collision_component, physics::motion_component* other_motion_component) -> void {
 	const auto& box1 = dynamic_object_collision_component.bounding_box;
 	const auto& box2 = other_collision_component.bounding_box;
 
-	if (check_future_collision(box1, dynamic_object_motion_component, box2)) {
+	if (check_future_collision(box1, dynamic_object_motion_component, box2) ||
+		check_future_collision(box2, other_motion_component, box1)) {
 		if (dynamic_object_collision_component.resolve_collisions) {
 			narrow_phase_collision::resolve_collision(dynamic_object_motion_component, dynamic_object_collision_component, other_motion_component, other_collision_component);
 		}
@@ -90,10 +91,7 @@ auto gse::broad_phase_collision::update(const std::span<broad_phase_entry> objec
 		if (!collision_a || !collision_a->resolve_collisions) {
 			continue;
 		}
-		for (std::size_t j = 0; j < n; ++j) {
-			if (i == j) {
-				continue;
-			}
+		for (std::size_t j = i + 1; j < n; ++j) {
 			auto& [collision_b, motion_b] = objects[j];
 			if (!collision_b || !collision_b->resolve_collisions) {
 				continue;
