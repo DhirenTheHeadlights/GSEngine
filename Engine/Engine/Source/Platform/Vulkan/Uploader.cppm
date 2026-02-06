@@ -3,7 +3,6 @@ export module gse.platform.vulkan:uploader;
 import std;
 
 import :config;
-import :resources;
 import :persistent_allocator;
 import :context;
 
@@ -12,7 +11,7 @@ import gse.physics.math;
 export namespace gse::vulkan::uploader {
     auto upload_image_2d(
         config& config,
-        persistent_allocator::image_resource& resource,
+        image_resource& resource,
         std::uint32_t width,
         std::uint32_t height,
         const void* pixel_data,
@@ -22,7 +21,7 @@ export namespace gse::vulkan::uploader {
 
     auto upload_image_layers(
         config& config,
-        persistent_allocator::image_resource& resource,
+        image_resource& resource,
         std::uint32_t width,
         std::uint32_t height,
         const std::vector<const void*>& face_data,
@@ -32,7 +31,7 @@ export namespace gse::vulkan::uploader {
 
     auto upload_image_3d(
         config& config,
-        persistent_allocator::image_resource& resource,
+        image_resource& resource,
         std::uint32_t width,
         std::uint32_t height,
         std::uint32_t depth,
@@ -49,14 +48,14 @@ export namespace gse::vulkan::uploader {
 
     auto upload_mip_mapped_image(
         config& config,
-        persistent_allocator::image_resource& resource,
+        image_resource& resource,
         const std::span<mip_level_data>& mip_levels,
         vk::ImageLayout final_layout = vk::ImageLayout::eShaderReadOnlyOptimal
     ) -> void;
 
     auto transition_image_layout(
 	    vk::CommandBuffer cmd,
-	    persistent_allocator::image_resource& image_resource,
+	    image_resource& image_resource,
 	    vk::ImageLayout new_layout,
 	    vk::ImageAspectFlags aspect_mask,
 	    vk::PipelineStageFlags2 src_stage,
@@ -68,17 +67,16 @@ export namespace gse::vulkan::uploader {
     ) -> void;
 
     auto upload_to_buffer(
-        const persistent_allocator::buffer_resource& destination_buffer,
+        const buffer_resource& destination_buffer,
         const void* data,
         std::size_t size
     ) -> void;
 }
 
-auto gse::vulkan::uploader::upload_image_2d(config& config, persistent_allocator::image_resource& resource, const std::uint32_t width, const std::uint32_t height, const void* pixel_data, const size_t data_size, const vk::ImageLayout final_layout) -> void {
+auto gse::vulkan::uploader::upload_image_2d(config& config, image_resource& resource, const std::uint32_t width, const std::uint32_t height, const void* pixel_data, const size_t data_size, const vk::ImageLayout final_layout) -> void {
     config.add_transient_work(
-        [&](const vk::raii::CommandBuffer& cmd) -> std::vector<persistent_allocator::buffer_resource> {
-            auto staging_buffer = persistent_allocator::create_buffer(
-                config.device_config(),
+        [&](const vk::raii::CommandBuffer& cmd) -> std::vector<buffer_resource> {
+            auto staging_buffer = config.allocator().create_buffer(
                 vk::BufferCreateInfo{
                     .size = data_size,
                     .usage = vk::BufferUsageFlagBits::eTransferSrc
@@ -104,7 +102,7 @@ auto gse::vulkan::uploader::upload_image_2d(config& config, persistent_allocator
                 .imageExtent = { width, height, 1 }
             };
 
-            cmd.copyBufferToImage(*staging_buffer.buffer, *resource.image, vk::ImageLayout::eTransferDstOptimal, region);
+            cmd.copyBufferToImage(staging_buffer.buffer, resource.image, vk::ImageLayout::eTransferDstOptimal, region);
 
             transition_image_layout(
 	            *cmd,
@@ -117,21 +115,20 @@ auto gse::vulkan::uploader::upload_image_2d(config& config, persistent_allocator
 	            vk::AccessFlagBits2::eShaderRead
             );
 
-            std::vector<persistent_allocator::buffer_resource> buffers;
+            std::vector<buffer_resource> buffers;
             buffers.push_back(std::move(staging_buffer));
             return buffers;
         }
     );
 }
 
-auto gse::vulkan::uploader::upload_image_layers(config& config, persistent_allocator::image_resource& resource, const std::uint32_t width, const std::uint32_t height, const std::vector<const void*>& face_data, const size_t bytes_per_face, const vk::ImageLayout final_layout) -> void {
+auto gse::vulkan::uploader::upload_image_layers(config& config, image_resource& resource, const std::uint32_t width, const std::uint32_t height, const std::vector<const void*>& face_data, const size_t bytes_per_face, const vk::ImageLayout final_layout) -> void {
     const std::uint32_t layer_count = static_cast<std::uint32_t>(face_data.size());
     const std::size_t total_size = layer_count * bytes_per_face;
 
     config.add_transient_work(
-        [&](const vk::raii::CommandBuffer& cmd) -> std::vector<persistent_allocator::buffer_resource> {
-            auto staging_buffer = persistent_allocator::create_buffer(
-                config.device_config(),
+        [&](const vk::raii::CommandBuffer& cmd) -> std::vector<buffer_resource> {
+            auto staging_buffer = config.allocator().create_buffer(
                 vk::BufferCreateInfo{
                     .size = total_size,
                     .usage = vk::BufferUsageFlagBits::eTransferSrc
@@ -166,7 +163,7 @@ auto gse::vulkan::uploader::upload_image_layers(config& config, persistent_alloc
                     });
             }
 
-            cmd.copyBufferToImage(*staging_buffer.buffer, *resource.image, vk::ImageLayout::eTransferDstOptimal, regions);
+            cmd.copyBufferToImage(staging_buffer.buffer, resource.image, vk::ImageLayout::eTransferDstOptimal, regions);
 
             transition_image_layout(
 	            *cmd, resource,
@@ -176,18 +173,17 @@ auto gse::vulkan::uploader::upload_image_layers(config& config, persistent_alloc
 	            1, layer_count
             );
 
-            std::vector<persistent_allocator::buffer_resource> buffers;
+            std::vector<buffer_resource> buffers;
             buffers.push_back(std::move(staging_buffer));
             return buffers;
         }
     );
 }
 
-auto gse::vulkan::uploader::upload_image_3d(config& config, persistent_allocator::image_resource& resource, const std::uint32_t width, const std::uint32_t height, const std::uint32_t depth, const void* pixel_data, const size_t data_size, const vk::ImageLayout final_layout) -> void {
+auto gse::vulkan::uploader::upload_image_3d(config& config, image_resource& resource, const std::uint32_t width, const std::uint32_t height, const std::uint32_t depth, const void* pixel_data, const size_t data_size, const vk::ImageLayout final_layout) -> void {
     config.add_transient_work(
-        [&](const vk::raii::CommandBuffer& cmd) -> std::vector<persistent_allocator::buffer_resource> {
-            auto staging_buffer = persistent_allocator::create_buffer(
-                config.device_config(),
+        [&](const vk::raii::CommandBuffer& cmd) -> std::vector<buffer_resource> {
+            auto staging_buffer = config.allocator().create_buffer(
                 vk::BufferCreateInfo{
                     .size = data_size,
                     .usage = vk::BufferUsageFlagBits::eTransferSrc
@@ -213,7 +209,7 @@ auto gse::vulkan::uploader::upload_image_3d(config& config, persistent_allocator
                 .imageExtent = { width, height, depth }
             };
 
-            cmd.copyBufferToImage(*staging_buffer.buffer, *resource.image, vk::ImageLayout::eTransferDstOptimal, region);
+            cmd.copyBufferToImage(staging_buffer.buffer, resource.image, vk::ImageLayout::eTransferDstOptimal, region);
 
             transition_image_layout(
 	            *cmd, resource,
@@ -222,19 +218,19 @@ auto gse::vulkan::uploader::upload_image_3d(config& config, persistent_allocator
 	            vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderRead
             );
 
-            std::vector<persistent_allocator::buffer_resource> buffers;
+            std::vector<buffer_resource> buffers;
             buffers.push_back(std::move(staging_buffer));
             return buffers;
         }
     );
 }
 
-auto gse::vulkan::uploader::upload_mip_mapped_image(config& config, persistent_allocator::image_resource& resource, const std::span<mip_level_data>& mip_levels, const vk::ImageLayout final_layout) -> void {
+auto gse::vulkan::uploader::upload_mip_mapped_image(config& config, image_resource& resource, const std::span<mip_level_data>& mip_levels, const vk::ImageLayout final_layout) -> void {
     config.add_transient_work(
-        [&](const vk::raii::CommandBuffer& cmd) -> std::vector<persistent_allocator::buffer_resource> {
+        [&](const vk::raii::CommandBuffer& cmd) -> std::vector<buffer_resource> {
             const std::uint32_t mip_count = static_cast<std::uint32_t>(mip_levels.size());
 
-            std::vector<persistent_allocator::buffer_resource> staging_buffers;
+            std::vector<buffer_resource> staging_buffers;
             staging_buffers.reserve(mip_levels.size());
 
             transition_image_layout(
@@ -246,8 +242,7 @@ auto gse::vulkan::uploader::upload_mip_mapped_image(config& config, persistent_a
             );
 
             for (const auto& [pixels, size, mip_level] : mip_levels) {
-                auto staging = persistent_allocator::create_buffer(
-                    config.device_config(),
+                auto staging = config.allocator().create_buffer(
                     vk::BufferCreateInfo{
                         .size = mip_level,
                         .usage = vk::BufferUsageFlagBits::eTransferSrc,
@@ -266,7 +261,7 @@ auto gse::vulkan::uploader::upload_mip_mapped_image(config& config, persistent_a
                     .imageExtent = { size.x(), size.y(), 1}
                 };
 
-                cmd.copyBufferToImage(*staging.buffer, *resource.image, vk::ImageLayout::eTransferDstOptimal, region);
+                cmd.copyBufferToImage(staging.buffer, resource.image, vk::ImageLayout::eTransferDstOptimal, region);
                 staging_buffers.push_back(std::move(staging));
             }
 
@@ -283,7 +278,7 @@ auto gse::vulkan::uploader::upload_mip_mapped_image(config& config, persistent_a
     );
 }
 
-auto gse::vulkan::uploader::transition_image_layout(const vk::CommandBuffer cmd, persistent_allocator::image_resource& image_resource, const vk::ImageLayout new_layout, const vk::ImageAspectFlags aspect_mask, const vk::PipelineStageFlags2 src_stage, const vk::AccessFlags2 src_access, const vk::PipelineStageFlags2 dst_stage, const vk::AccessFlags2 dst_access, const std::uint32_t mip_levels, const std::uint32_t layer_count) -> void {
+auto gse::vulkan::uploader::transition_image_layout(const vk::CommandBuffer cmd, image_resource& image_resource, const vk::ImageLayout new_layout, const vk::ImageAspectFlags aspect_mask, const vk::PipelineStageFlags2 src_stage, const vk::AccessFlags2 src_access, const vk::PipelineStageFlags2 dst_stage, const vk::AccessFlags2 dst_access, const std::uint32_t mip_levels, const std::uint32_t layer_count) -> void {
     if (image_resource.current_layout == new_layout) {
         return;
     }
@@ -297,7 +292,7 @@ auto gse::vulkan::uploader::transition_image_layout(const vk::CommandBuffer cmd,
         .newLayout = new_layout,
         .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
         .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .image = *image_resource.image,
+        .image = image_resource.image,
         .subresourceRange = {
             .aspectMask = aspect_mask,
             .baseMipLevel = 0,
@@ -312,7 +307,7 @@ auto gse::vulkan::uploader::transition_image_layout(const vk::CommandBuffer cmd,
     image_resource.current_layout = new_layout;
 }
 
-auto gse::vulkan::uploader::upload_to_buffer(const persistent_allocator::buffer_resource& destination_buffer, const void* data, const std::size_t size) -> void {
+auto gse::vulkan::uploader::upload_to_buffer(const buffer_resource& destination_buffer, const void* data, const std::size_t size) -> void {
     assert(destination_buffer.allocation.mapped(), std::source_location::current(), "Buffer for uploading must be persistently mapped");
     assert(size <= destination_buffer.allocation.size(), std::source_location::current(), "Upload size exceeds buffer allocation size");
 

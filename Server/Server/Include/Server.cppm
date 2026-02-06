@@ -21,7 +21,7 @@ struct std::hash<gse::network::address> {
 
 export namespace gse {
 	struct client_data {
-		id entity_id;
+		id controller_id;
 		actions::state latest_input;
 		std::uint32_t last_input_sequence = 0;
 		bool have_seq = false;
@@ -39,17 +39,18 @@ export namespace gse {
 		std::array<std::byte, max_packet_size> buffer{};
 	};
 
-	class server {
+	class server : public hook<world> {
 	public:
-		explicit server(
+		server(
+			world* owner,
 			std::uint16_t port
 		);
 
-		~server();
+		auto initialize(
+		) -> void override;
 
 		auto update(
-			world& world
-		) -> void;
+		) -> void override;
 
 		template <typename T>
 		auto send(
@@ -74,6 +75,7 @@ export namespace gse {
 			network::remote_peer& peer
 		) -> packet_header;
 
+		std::uint16_t m_port;
 		network::udp_socket m_socket;
 		std::unordered_map<network::address, network::remote_peer> m_peers;
 		std::unordered_map<network::address, client_data> m_clients;
@@ -82,55 +84,46 @@ export namespace gse {
 		std::optional<network::address> m_host_addr;
 		spsc_ring_buffer<incoming_packet, 1024> m_incoming;
 		mpsc_ring_buffer<outgoing_packet, 1024> m_outgoing;
-		std::atomic<bool> m_should_shutdown{ false };
+		std::jthread m_thread;
+		std::uint32_t m_next_player_id = 0;
 	};
 }
 
-gse::server::server(const std::uint16_t port) {
+gse::server::server(world* owner, const std::uint16_t port)
+	: hook(owner), m_port(port) {}
+
+auto gse::server::initialize() -> void {
 	m_socket.bind(network::address{
 		.ip = "0.0.0.0",
-		.port = port
+		.port = m_port
 	});
 
-	task::post(
-		[this] {
-			std::array<std::byte, max_packet_size> buffer;
-			constexpr time_t<std::uint32_t> max_sleep = milliseconds(8);
+	m_thread = std::jthread([this](const std::stop_token& st) {
+		std::array<std::byte, max_packet_size> buffer;
+		constexpr time_t<std::uint32_t> max_sleep = milliseconds(8);
 
-			while (!m_should_shutdown.load(std::memory_order_acquire)) {
-				(void)m_socket.wait_readable(max_sleep);
+		while (!st.stop_requested()) {
+			(void)m_socket.wait_readable(max_sleep);
 
-				if (auto received = m_socket.receive_data(buffer)) {
-					incoming_packet pkt;
-					pkt.from = received->from;
-					pkt.size = received->bytes_read;
-					std::memcpy(pkt.buffer.data(), buffer.data(), received->bytes_read);
-					if (!m_incoming.push(pkt)) {
-						std::println("Server: incoming queue full, dropping packet from {}:{}", pkt.from.ip, pkt.from.port);
-					}
-				}
-
-				outgoing_packet out_pkt;
-				while (m_outgoing.pop(out_pkt)) {
-					const network::packet out{
-						.data = reinterpret_cast<std::uint8_t*>(out_pkt.buffer.data()),
-						.size = out_pkt.size
-					};
-
-					if (m_socket.send_data(out, out_pkt.to) == network::socket_state::error) {
-						std::println("Server: failed to send packet to {}:{}", out_pkt.to.ip, out_pkt.to.port);
-					}
-				}
+			if (const auto received = m_socket.receive_data(buffer)) {
+				incoming_packet pkt;
+				pkt.from = received->from;
+				pkt.size = received->bytes_read;
+				std::memcpy(pkt.buffer.data(), buffer.data(), received->bytes_read);
+				m_incoming.push(pkt);
 			}
-		},
-		find_or_generate_id("Server::NetworkLoop")
-	);
 
-	std::println("Server started on port {}", port);
-}
+			outgoing_packet out_pkt;
+			while (m_outgoing.pop(out_pkt)) {
+				const network::packet out{
+					.data = reinterpret_cast<std::uint8_t*>(out_pkt.buffer.data()),
+					.size = out_pkt.size
+				};
 
-gse::server::~server() {
-	m_should_shutdown.store(true, std::memory_order_release);
+				m_socket.send_data(out, out_pkt.to);
+			}
+		}
+	});
 }
 
 template <typename T>
@@ -158,12 +151,14 @@ auto gse::server::send(const T& msg, const network::address& to) -> void {
 	pkt.size = stream.bytes_written();
 	std::memcpy(pkt.buffer.data(), buffer.data(), pkt.size);
 
-	if (!m_outgoing.push(pkt)) {
-		std::println("Server: outgoing queue full, dropping packet to {}:{}", to.ip, to.port);
-	}
+	m_outgoing.push(pkt);
 }
 
-auto gse::server::update(world& world) -> void {
+auto gse::server::update() -> void {
+	if (!m_owner->current_scene()) {
+		m_owner->activate(find("Default Scene"));
+	}
+
 	constexpr std::size_t max_packets_per_update = 256;
 	std::size_t processed_packets = 0;
 
@@ -181,31 +176,25 @@ auto gse::server::update(world& world) -> void {
 		if (it == m_peers.end()) {
 			const auto mid = network::message_id(stream);
 
-			bool handled = false;
-			handled |= network::try_decode<network::connection_request>(stream, mid, [&](const auto&) {
-				std::println("Server: ConnectionRequest from {}:{}", pkt.from.ip, pkt.from.port);
+			network::try_decode<network::connection_request>(stream, mid, [&](const auto&) {
+				m_peers.emplace(pkt.from, network::remote_peer(pkt.from));
 
-				auto [peer_it, inserted_peer] = m_peers.emplace(pkt.from, network::remote_peer(pkt.from));
-				std::println("[net] peers size={} inserted_peer={} for {}:{}", m_peers.size(), inserted_peer, pkt.from.ip, pkt.from.port);
-
-				if (auto* scene = world.current_scene()) {
-					auto entity_id = scene->registry().create("Player");
-					scene->registry().activate(entity_id);
-					auto [client_it, inserted_client] = m_clients.emplace(pkt.from, client_data{ .entity_id = entity_id });
-					std::println("[net] clients size={} inserted_client={} for {}:{}", m_clients.size(), inserted_client, pkt.from.ip, pkt.from.port);
+				if (auto* scene = m_owner->current_scene()) {
+					const auto controller_name = std::format("PlayerController_{}", m_next_player_id++);
+					auto controller_id = scene->registry().create(controller_name);
+					scene->registry().add_component<player_controller>(controller_id, player_controller_data{});
+					scene->registry().activate(controller_id);
+					m_clients.emplace(pkt.from, client_data{ .controller_id = controller_id });
 
 					if (!m_host_entity.has_value()) {
-						m_host_entity = entity_id;
+						m_host_entity = controller_id;
 						m_host_addr = pkt.from;
-						std::println("Server: Host set to {}:{} (entity {})", pkt.from.ip, pkt.from.port, entity_id);
 					}
-
-					std::println("Server: Created entity {} for {}:{}", entity_id, pkt.from.ip, pkt.from.port);
 				}
 
 				send(network::connection_accepted{}, pkt.from);
 
-				if (const auto* active = world.current_scene()) {
+				if (const auto* active = m_owner->current_scene()) {
 					const network::notify_scene_change msg{
 						.scene_id = active->id()
 					};
@@ -214,10 +203,6 @@ auto gse::server::update(world& world) -> void {
 
 				m_pending_snapshots.insert(pkt.from);
 			});
-
-			if (!handled) {
-				std::println("Server: dropped pre-handshake msg {} from {}:{}", mid, pkt.from.ip, pkt.from.port);
-			}
 
 			continue;
 		}
@@ -240,18 +225,11 @@ auto gse::server::update(world& world) -> void {
 
 		const auto id = network::message_id(stream);
 
-		if (auto* sc = world.current_scene()) {
-			if (network::match_and_apply_components(sc->registry(), stream, id)) {
-				continue;
-			}
-		}
-
 		network::match_message(stream, id)
 			.if_is([&](const network::ping& m) {
 				send(network::pong{ .sequence = m.sequence }, pkt.from);
 			})
 			.else_if_is([&](const network::pong&) {
-				std::println("Server: Received Pong from {}:{}", pkt.from.ip, pkt.from.port);
 			})
 			.else_if_is([&](const network::input_frame_header& fh) {
 				const std::size_t wc = fh.action_word_count;
@@ -284,7 +262,7 @@ auto gse::server::update(world& world) -> void {
 				cd.last_input_sequence = fh.input_sequence;
 
 				cd.latest_input.begin_frame();
-				cd.latest_input.ensure_capacity();
+				cd.latest_input.ensure_capacity(fh.action_word_count * 64);
 				cd.latest_input.load_transients(pressed, released);
 
 				for (auto& [idv, value] : a1) {
@@ -297,7 +275,41 @@ auto gse::server::update(world& world) -> void {
 			});
 	}
 
-	if (auto* sc = world.current_scene()) {
+	std::optional<id> scene_requested_id;
+
+	if (auto* sc = m_owner->current_scene()) {
+		for (const auto& [scene_id, condition] : m_owner->triggers()) {
+			for (const auto& cd : m_clients | std::views::values) {
+				auto* pc = sc->registry().try_linked_object_read<player_controller>(cd.controller_id);
+				const auto controlled_id = pc ? pc->controlled_entity_id : id{};
+
+				evaluation_context ctx{
+					.client_id = controlled_id,
+					.input = &cd.latest_input,
+					.registry = &sc->registry()
+				};
+				if (condition(ctx)) {
+					scene_requested_id = scene_id;
+				}
+			}
+		}
+	}
+
+	if (scene_requested_id) {
+		m_owner->activate(*scene_requested_id);
+
+		if (const auto* active = m_owner->current_scene()) {
+			const network::notify_scene_change msg{
+				.scene_id = active->id()
+			};
+
+			for (const auto& addr : m_clients | std::views::keys) {
+				send(msg, addr);
+			}
+		}
+	}
+
+	if (auto* sc = m_owner->current_scene()) {
 		auto send_all = [this](const auto& msg, const network::address& to) {
 			this->send(msg, to);
 		};

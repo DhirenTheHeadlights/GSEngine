@@ -3,7 +3,10 @@ export module gse.graphics:rendering_context;
 import std;
 
 import :resource_loader;
-import :camera;
+import :asset_pipeline;
+import :asset_compiler;
+import :shader_layout;
+import :shader_layout_compiler;
 
 import gse.platform;
 import gse.utility;
@@ -25,7 +28,8 @@ export namespace gse::renderer {
 	public:
 		explicit context(
 			const std::string& window_title,
-			input::system& input
+			input::system_state& input,
+			save::state& save
 		);
 		~context() override;
 
@@ -42,6 +46,16 @@ export namespace gse::renderer {
 
 		template <typename T>
 		auto get(
+			const std::string& filename
+		) const -> resource::handle<T>;
+
+		template <typename T>
+		auto try_get(
+			id id
+		) const -> resource::handle<T>;
+
+		template <typename T>
+		auto try_get(
 			const std::string& filename
 		) const -> resource::handle<T>;
 
@@ -80,6 +94,21 @@ export namespace gse::renderer {
 		auto compile(
 		) -> void;
 
+		auto poll_assets(
+		) -> void;
+
+		auto enable_hot_reload(
+		) -> void;
+
+		auto disable_hot_reload(
+		) -> void;
+
+		[[nodiscard]] auto hot_reload_enabled(
+		) const -> bool;
+
+		auto finalize_reloads(
+		) -> void;
+
 		template <typename T>
 		[[nodiscard]] auto resource_state(
 			id id
@@ -98,9 +127,6 @@ export namespace gse::renderer {
 
 		[[nodiscard]] auto config(
 		) -> vulkan::config&;
-
-		[[nodiscard]] auto camera(
-		) -> camera&;
 
 		[[nodiscard]] auto window(
 		) -> window&;
@@ -122,6 +148,18 @@ export namespace gse::renderer {
 
 		auto shutdown(
 		) -> void;
+
+		[[nodiscard]] auto shader_layout(
+			const std::string& name
+		) const -> const gse::shader_layout*;
+
+		auto load_layouts(
+		) -> void;
+
+		[[nodiscard]] auto enumerate_resources(
+			const std::string& baked_dir,
+			const std::string& baked_ext
+		) const -> std::vector<std::string>;
 	private:
 		auto loader(
 			const std::type_index& type_index
@@ -129,18 +167,30 @@ export namespace gse::renderer {
 
 		gse::window m_window;
 		std::unique_ptr<vulkan::config> m_config;
+		asset_pipeline m_pipeline{ config::resource_path, config::baked_resource_path };
 		std::unordered_map<std::type_index, std::unique_ptr<resource::loader_base>> m_resource_loaders;
 
 		mutable std::vector<command> m_command_queue;
 		mutable std::vector<std::pair<std::type_index, id>> m_pending_gpu_resources;
 		mutable std::recursive_mutex m_mutex;
 
-		gse::camera m_camera;
 		bool m_ui_focus = false;
+		bool m_validation_layers_enabled = false;
+
+		std::unordered_map<std::string, std::unique_ptr<gse::shader_layout>> m_shader_layouts;
 	};
 }
 
-gse::renderer::context::context(const std::string& window_title, input::system& input) : m_window(window_title, input), m_config(vulkan::generate_config(m_window.raw_handle())) {}
+gse::renderer::context::context(const std::string& window_title, input::system_state& input, save::state& save)
+	: m_window(window_title, input, save)
+	, m_config(vulkan::generate_config(m_window.raw_handle(), save))
+{
+	save.bind("Graphics", "Validation Layers", m_validation_layers_enabled)
+		.description("Enable Vulkan validation layers for debugging (impacts performance significantly)")
+		.default_value(false)
+		.restart_required()
+		.commit();
+}
 
 gse::renderer::context::~context() {
 	m_config.reset();
@@ -151,7 +201,7 @@ auto gse::renderer::context::add_loader() -> resource::loader<T, context>* {
 	const auto type_index = std::type_index(typeid(T));
 	assert(
 		!m_resource_loaders.contains(type_index),
-		std::source_location::current(), 
+		std::source_location::current(),
 		"Resource loader for type {} already exists.",
 		type_index.name()
 	);
@@ -159,6 +209,10 @@ auto gse::renderer::context::add_loader() -> resource::loader<T, context>* {
 	auto new_loader = std::make_unique<resource::loader<T, context>>(*this);
 	auto* loader_ptr = new_loader.get();
 	m_resource_loaders[type_index] = std::move(new_loader);
+
+	if constexpr (has_asset_compiler<T>) {
+		m_pipeline.register_type<T, context>(loader_ptr);
+	}
 
 	return loader_ptr;
 }
@@ -175,6 +229,18 @@ auto gse::renderer::context::get(const std::string& filename) const -> resource:
 	return specific_loader->get(filename);
 }
 
+template <typename T>
+auto gse::renderer::context::try_get(id id) const -> resource::handle<T> {
+	auto* specific_loader = loader<T>();
+	return specific_loader->try_get(id);
+}
+
+template <typename T>
+auto gse::renderer::context::try_get(const std::string& filename) const -> resource::handle<T> {
+	auto* specific_loader = loader<T>();
+	return specific_loader->try_get(filename);
+}
+
 template <typename T, typename... Args>
 auto gse::renderer::context::queue(const std::string& name, Args&&... args) -> resource::handle<T> {
 	auto* specific_loader = loader<T>();
@@ -185,7 +251,7 @@ template <typename Resource>
 auto gse::renderer::context::queue_gpu_command(Resource* resource, std::function<void(context&, Resource&)> work) const -> void {
 	command final_command = [resource, work_lambda = std::move(work)](context& ctx) {
 		work_lambda(ctx, *resource);
-		};
+	};
 
 	std::lock_guard lock(m_mutex);
 	m_command_queue.push_back(std::move(final_command));
@@ -242,8 +308,39 @@ auto gse::renderer::context::process_gpu_queue() -> void {
 }
 
 auto gse::renderer::context::compile() -> void {
+	m_pipeline.register_compiler_only<gse::shader_layout>();
+
+	if (const auto result = m_pipeline.compile_all(); result.success_count > 0 || result.failure_count > 0) {
+		std::println(
+			"[Asset Pipeline] Compiled {} assets ({} skipped, {} failed)",
+			result.success_count, result.skipped_count, result.failure_count
+		);
+	}
+
+	load_layouts();
+}
+
+auto gse::renderer::context::poll_assets() -> void {
+	m_pipeline.poll();
+}
+
+auto gse::renderer::context::enable_hot_reload() -> void {
+	m_pipeline.enable_hot_reload();
+	std::println("[Asset Pipeline] Hot reload enabled");
+}
+
+auto gse::renderer::context::disable_hot_reload() -> void {
+	m_pipeline.disable_hot_reload();
+	std::println("[Asset Pipeline] Hot reload disabled");
+}
+
+auto gse::renderer::context::hot_reload_enabled() const -> bool {
+	return m_pipeline.hot_reload_enabled();
+}
+
+auto gse::renderer::context::finalize_reloads() -> void {
 	for (const auto& loader : m_resource_loaders | std::views::values) {
-		loader->compile();
+		loader->finalize_reloads();
 	}
 }
 
@@ -276,10 +373,6 @@ auto gse::renderer::context::config() const -> const vulkan::config& {
 auto gse::renderer::context::config() -> vulkan::config& {
 	assert(m_config.get(), std::source_location::current(), "Vulkan config is not initialized.");
 	return *m_config;
-}
-
-auto gse::renderer::context::camera() -> gse::camera& {
-	return m_camera;
 }
 
 auto gse::renderer::context::window() -> gse::window& {
@@ -317,6 +410,7 @@ auto gse::renderer::context::shutdown() -> void {
 	}
 
 	m_resource_loaders.clear();
+	m_shader_layouts.clear();
 
 	m_config->swap_chain_config().albedo_image = {};
 	m_config->swap_chain_config().normal_image = {};
@@ -326,4 +420,59 @@ auto gse::renderer::context::shutdown() -> void {
 auto gse::renderer::context::loader(const std::type_index& type_index) const -> resource::loader_base* {
 	assert(m_resource_loaders.contains(type_index), std::source_location::current(), "Resource loader for type {} does not exist.", type_index.name());
 	return m_resource_loaders.at(type_index).get();
+}
+
+auto gse::renderer::context::shader_layout(const std::string& name) const -> const gse::shader_layout* {
+	if (const auto it = m_shader_layouts.find(name); it != m_shader_layouts.end()) {
+		return it->second.get();
+	}
+	return nullptr;
+}
+
+auto gse::renderer::context::load_layouts() -> void {
+	const auto layouts_dir = config::baked_resource_path / "Layouts";
+	if (!std::filesystem::exists(layouts_dir)) {
+		return;
+	}
+
+	for (const auto& entry : std::filesystem::directory_iterator(layouts_dir)) {
+		if (!entry.is_regular_file() || entry.path().extension() != ".glayout") {
+			continue;
+		}
+
+		auto layout = std::make_unique<gse::shader_layout>(entry.path());
+		layout->load(m_config->device_config().device);
+
+		const auto& name = layout->name();
+		std::println("[Layouts] Loaded: {}", name);
+		m_shader_layouts[name] = std::move(layout);
+	}
+}
+
+auto gse::renderer::context::enumerate_resources(
+	const std::string& baked_dir,
+	const std::string& baked_ext
+) const -> std::vector<std::string> {
+	std::vector<std::string> result;
+
+	const auto dir_path = config::baked_resource_path / baked_dir;
+
+	if (!std::filesystem::exists(dir_path)) {
+		return result;
+	}
+
+	for (const auto& entry : std::filesystem::directory_iterator(dir_path)) {
+		if (!entry.is_regular_file()) {
+			continue;
+		}
+
+		if (entry.path().extension().string() != baked_ext) {
+			continue;
+		}
+
+		result.push_back(entry.path().stem().string());
+	}
+
+	std::ranges::sort(result);
+	return result;
 }

@@ -14,10 +14,12 @@ import :config;
 import :persistent_allocator;
 
 import gse.assert;
+import gse.utility;
 
 export namespace gse::vulkan {
 	auto generate_config(
-		GLFWwindow* window
+		GLFWwindow* window,
+		save::state& save_state
 	) -> std::unique_ptr<config>;
 
 	struct frame_params {
@@ -71,18 +73,20 @@ namespace gse::vulkan {
 	auto create_swap_chain_resources(
 		GLFWwindow* window,
 		const instance_config& instance_data,
-		const device_config& device_data
+		const device_config& device_data,
+		allocator& alloc
 	) -> swap_chain_config;
 
 	vk::DebugUtilsMessengerEXT debug_utils_messenger;
 	constexpr std::uint32_t max_frames_in_flight = 2;
 }
 
-auto gse::vulkan::generate_config(GLFWwindow* window) -> std::unique_ptr<config> {
+auto gse::vulkan::generate_config(GLFWwindow* window, save::state& save_state) -> std::unique_ptr<config> {
 	auto instance_data = create_instance_and_surface(window);
 	auto [device_data, queue] = create_device_and_queues(instance_data);
+	auto alloc = std::make_unique<allocator>(device_data.device, device_data.physical_device, save_state);
 	auto descriptor = create_descriptor_pool(device_data);
-	auto swap_chain_data = create_swap_chain_resources(window, instance_data, device_data);
+	auto swap_chain_data = create_swap_chain_resources(window, instance_data, device_data, *alloc);
 	auto command = create_command_objects(device_data, instance_data);
 	auto sync = create_sync_objects(device_data, swap_chain_data);
 
@@ -99,7 +103,8 @@ auto gse::vulkan::generate_config(GLFWwindow* window) -> std::unique_ptr<config>
 		std::move(descriptor),
 		std::move(sync),
 		std::move(swap_chain_data),
-		std::move(frame_context)
+		std::move(frame_context),
+		std::move(alloc)
 	);
 }
 
@@ -107,11 +112,15 @@ auto gse::vulkan::begin_frame(const frame_params& params) -> bool {
     auto& cfg = params.config;
     const auto& device = cfg.device_config().device;
 
+    cfg.set_frame_in_progress(false);
+
     auto recreate_resources = [&] {
         device.waitIdle();
         cfg.swap_chain_config().swap_chain = nullptr;
-        cfg.swap_chain_config() = create_swap_chain_resources(params.window, cfg.instance_config(), cfg.device_config());
+        cfg.swap_chain_config() = create_swap_chain_resources(params.window, cfg.instance_config(), cfg.device_config(), cfg.allocator());
         cfg.sync_config() = create_sync_objects(cfg.device_config(), cfg.swap_chain_config());
+        cfg.notify_swap_chain_recreated();
+        device.waitIdle();
     };
 
     if (params.minimized) {
@@ -201,6 +210,7 @@ auto gse::vulkan::begin_frame(const frame_params& params) -> bool {
 
     frame_ctx.command_buffer.pipelineBarrier2(begin_dep);
 
+    cfg.set_frame_in_progress(true);
     return true;
 }
 
@@ -211,8 +221,10 @@ auto gse::vulkan::end_frame(const frame_params& params) -> void {
     auto recreate_resources = [&] {
         device.waitIdle();
         cfg.swap_chain_config().swap_chain = nullptr;
-        cfg.swap_chain_config() = create_swap_chain_resources(params.window, cfg.instance_config(), cfg.device_config());
+        cfg.swap_chain_config() = create_swap_chain_resources(params.window, cfg.instance_config(), cfg.device_config(), cfg.allocator());
         cfg.sync_config() = create_sync_objects(cfg.device_config(), cfg.swap_chain_config());
+        cfg.notify_swap_chain_recreated();
+        device.waitIdle();
     };
 
     if (params.minimized) {
@@ -292,10 +304,18 @@ auto gse::vulkan::end_frame(const frame_params& params) -> void {
         .pImageIndices = &frame_ctx.image_index
     };
 
-    if (const vk::Result present_result = cfg.queue_config().present.presentKHR(present_info);
-        present_result == vk::Result::eErrorOutOfDateKHR || present_result == vk::Result::eSuboptimalKHR) {
+    vk::Result present_result;
+    try {
+        present_result = cfg.queue_config().present.presentKHR(present_info);
+    }
+    catch (const vk::OutOfDateKHRError&) {
+        present_result = vk::Result::eErrorOutOfDateKHR;
+    }
+
+    if (present_result == vk::Result::eErrorOutOfDateKHR || present_result == vk::Result::eSuboptimalKHR) {
         recreate_resources();
-    } else {
+    }
+    else {
         assert(
             present_result == vk::Result::eSuccess,
             std::source_location::current(),
@@ -304,13 +324,21 @@ auto gse::vulkan::end_frame(const frame_params& params) -> void {
     }
 
     cfg.current_frame() = (cfg.current_frame() + 1) % max_frames_in_flight;
+    cfg.set_frame_in_progress(false);
 }
 
-
 auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_config {
-	const std::vector validation_layers = {
-		"VK_LAYER_KHRONOS_validation"
-	};
+	const bool enable_validation = save::read_bool_setting_early(
+		gse::config::resource_path / "Misc/settings.toml",
+		"Graphics",
+		"Validation Layers",
+		false
+	);
+
+	std::vector<const char*> validation_layers;
+	if (enable_validation) {
+		validation_layers.push_back("VK_LAYER_KHRONOS_validation");
+	}
 
 #if VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
 	VULKAN_HPP_DEFAULT_DISPATCHER.init();
@@ -377,11 +405,11 @@ auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_co
 	};
 
 	const vk::InstanceCreateInfo create_info{
-		.pNext = &features,
+		.pNext = enable_validation ? static_cast<const void*>(&features) : nullptr,
 		.flags = {},
 		.pApplicationInfo = &app_info,
 		.enabledLayerCount = static_cast<uint32_t>(validation_layers.size()),
-		.ppEnabledLayerNames = validation_layers.data(),
+		.ppEnabledLayerNames = validation_layers.empty() ? nullptr : validation_layers.data(),
 		.enabledExtensionCount = static_cast<uint32_t>(extensions.size()),
 		.ppEnabledExtensionNames = extensions.data()
 	};
@@ -391,7 +419,7 @@ auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_co
 
 	try {
 		instance = vk::raii::Instance(context, create_info);
-		std::cout << "Vulkan Instance Created Successfully!\n";
+		std::cout << "Vulkan Instance Created" << (enable_validation ? " with validation layers" : "") << "!\n";
 	} catch (vk::SystemError& err) {
 		std::cerr << "Failed to create Vulkan instance: " << err.what() << "\n";
 		throw;
@@ -401,11 +429,13 @@ auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_co
 	VULKAN_HPP_DEFAULT_DISPATCHER.init(*instance);
 #endif
 
-	try {
-		debug_utils_messenger = instance.createDebugUtilsMessengerEXT(debug_create_info);
-		std::cout << "Debug Messenger Created Successfully!\n";
-	} catch (vk::SystemError& err) {
-		std::cerr << "Failed to create Debug Messenger: " << err.what() << "\n";
+	if (enable_validation) {
+		try {
+			debug_utils_messenger = instance.createDebugUtilsMessengerEXT(debug_create_info);
+			std::cout << "Debug Messenger Created Successfully!\n";
+		} catch (vk::SystemError& err) {
+			std::cerr << "Failed to create Debug Messenger: " << err.what() << "\n";
+		}
 	}
 
 	VkSurfaceKHR temp_surface;
@@ -477,6 +507,7 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
 	vk::PhysicalDeviceFeatures2 features2{
 		.pNext = &present_wait_features,
 		.features = {
+			.drawIndirectFirstInstance = vk::True,
 			.fillModeNonSolid = vk::True,
 			.samplerAnisotropy = vk::True
 		}
@@ -595,12 +626,12 @@ auto gse::vulkan::create_sync_objects(const device_config& device_data, const sw
 
 	in_flight_fences.reserve(max_frames_in_flight);
 
-	constexpr vk::SemaphoreCreateInfo bin_sem_ci{};
 	constexpr vk::FenceCreateInfo fence_ci{
 		.flags = vk::FenceCreateFlagBits::eSignaled
 	};
 
 	for (std::size_t i = 0; i < swap_chain_image_count; ++i) {
+		constexpr vk::SemaphoreCreateInfo bin_sem_ci{};
 		image_available.emplace_back(device_data.device, bin_sem_ci);
 		render_finished.emplace_back(device_data.device, bin_sem_ci);
 	}
@@ -642,7 +673,7 @@ auto gse::vulkan::render(config& config, const vk::RenderingInfo& begin_info, co
 	config.frame_context().command_buffer.endRendering();
 }
 
-auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const instance_config& instance_data, const device_config& device_data) -> swap_chain_config {
+auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const instance_config& instance_data, const device_config& device_data, allocator& alloc) -> swap_chain_config {
     swap_chain_details details = {
         device_data.physical_device.getSurfaceCapabilitiesKHR(*instance_data.surface),
         device_data.physical_device.getSurfaceFormatsKHR(*instance_data.surface),
@@ -723,8 +754,7 @@ auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const instance
     auto images = swap_chain.getImages();
     auto format = surface_format.format;
 
-    auto normal_image = persistent_allocator::create_image(
-        device_data,
+    auto normal_image = alloc.create_image(
         {
             .flags = {},
             .imageType = vk::ImageType::e2D,
@@ -753,8 +783,7 @@ auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const instance
         }
     );
 
-    auto albedo_image = persistent_allocator::create_image(
-        device_data,
+    auto albedo_image = alloc.create_image(
         {
             .flags = {},
             .imageType = vk::ImageType::e2D,
@@ -783,8 +812,7 @@ auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const instance
         }
     );
 
-    auto depth_image = persistent_allocator::create_image(
-        device_data,
+    auto depth_image = alloc.create_image(
         {
             .flags = {},
             .imageType = vk::ImageType::e2D,

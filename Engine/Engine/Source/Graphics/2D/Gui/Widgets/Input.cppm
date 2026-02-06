@@ -59,7 +59,7 @@ auto gse::gui::draw::input(const draw_context& ctx, const std::string& name, std
         { content_rect.width() - label_width, widget_height }
     );
 
-    const bool hovered = box_rect.contains(ctx.input.mouse_position());
+    const bool hovered = box_rect.contains(ctx.input.mouse_position()) && ctx.input_available();
 
     if (hovered) {
         hot_widget_id = widget_id;
@@ -68,7 +68,7 @@ auto gse::gui::draw::input(const draw_context& ctx, const std::string& name, std
     if (ctx.input.mouse_button_pressed(mouse_button::button_1)) {
         if (hovered) {
             focus_widget_id = widget_id;
-        } else if (focus_widget_id == widget_id) {
+        } else if (focus_widget_id == widget_id && ctx.input_available()) {
             focus_widget_id = {};
         }
     }

@@ -34,7 +34,7 @@ auto gse::gui::draw::selectable(const draw_context& ctx, const std::string& name
         { content_rect.width(), widget_height }
     );
 
-    const bool hovered = row_rect.contains(ctx.input.mouse_position());
+    const bool hovered = row_rect.contains(ctx.input.mouse_position()) && ctx.input_available();
 
     if (hovered) {
         hot_widget_id = widget_id;

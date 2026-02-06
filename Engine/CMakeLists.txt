@@ -1,9 +1,23 @@
-cmake_minimum_required(VERSION 3.26)
+cmake_minimum_required(VERSION 3.28)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 project(Engine)
+
+include(FetchContent)
+
+FetchContent_Declare(
+    tomlplusplus
+    GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
+    GIT_TAG master
+)
+set(TOMLPLUSPLUS_BUILD_MODULES ON CACHE BOOL "" FORCE)
+# Workaround for MSVC module compatibility - VS 2026 still has the noexcept(noexcept(...)) bug
+add_compile_definitions(TOML_DISABLE_NOEXCEPT_NOEXCEPT=1)
+# Increase nested values limit (default 256 seems broken in modules build)
+add_compile_definitions(TOML_MAX_NESTED_VALUES=10000)
+FetchContent_MakeAvailable(tomlplusplus)
 
 file(GLOB_RECURSE ENGINE_MODULES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Engine/*.cppm" "${CMAKE_CURRENT_BINARY_DIR}/Engine/*.cppm")
 
@@ -34,7 +48,6 @@ find_path(miniaudio_INCLUDE_DIR "miniaudio.h")
 find_package(Freetype CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
 find_package(Vulkan REQUIRED)
-find_package(tomlplusplus CONFIG REQUIRED)
 find_package(TBB CONFIG REQUIRED)
 
 set(VULKAN_SDK_PATH $ENV{VULKAN_SDK})
@@ -61,13 +74,19 @@ else()
 endif()
 
 add_library(VulkanModule)
-target_compile_features(VulkanModule PUBLIC cxx_std_20)
+target_compile_features(VulkanModule PUBLIC cxx_std_23)
 target_compile_definitions(VulkanModule PUBLIC VULKAN_HPP_DISPATCH_LOADER_DYNAMIC VULKAN_HPP_NO_CONSTRUCTORS)
 target_link_libraries(VulkanModule PUBLIC Vulkan::Vulkan)
+
+set(VULKAN_MODULE_FILES ${Vulkan_INCLUDE_DIR}/vulkan/vulkan.cppm)
+if(EXISTS "${Vulkan_INCLUDE_DIR}/vulkan/vulkan_video.cppm")
+    list(APPEND VULKAN_MODULE_FILES ${Vulkan_INCLUDE_DIR}/vulkan/vulkan_video.cppm)
+endif()
+
 target_sources(VulkanModule PRIVATE
   FILE_SET CXX_MODULES
   BASE_DIRS ${Vulkan_INCLUDE_DIR}
-  FILES ${Vulkan_INCLUDE_DIR}/vulkan/vulkan.cppm
+  FILES ${VULKAN_MODULE_FILES}
 )
 
 target_include_directories(Engine
@@ -87,7 +106,7 @@ target_link_libraries(Engine PUBLIC
     glfw
     Freetype::Freetype
     msdfgen::msdfgen
-    tomlplusplus::tomlplusplus
+    tomlplusplus_modules
     VulkanModule
     TBB::tbb
 )
@@ -96,8 +115,8 @@ set(ENGINE_RESOURCES_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Resources/")
 set(BAKED_RESOURCES_PATH "${CMAKE_CURRENT_BINARY_DIR}/Resources/")
 
 configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/Engine/Source/Core/Utility/Config.cppm.in
-    ${CMAKE_CURRENT_BINARY_DIR}/Engine/Source/Core/Utility/Config.cppm
+    ${CMAKE_CURRENT_SOURCE_DIR}/Engine/Import/Config.cppm.in
+    ${CMAKE_CURRENT_BINARY_DIR}/Engine/Import/Config.cppm
     @ONLY
 )
 
@@ -109,7 +128,7 @@ if (MSVC)
     add_compile_options(/MP)
     add_compile_options(/Zm500)
 
-    set(EXTERNAL_TARGETS VulkanModule)
+    set(EXTERNAL_TARGETS VulkanModule tomlplusplus_modules)
     foreach(target ${EXTERNAL_TARGETS})
         set_property(TARGET ${target} PROPERTY FOLDER "External")
     endforeach()

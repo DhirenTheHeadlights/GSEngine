@@ -4,6 +4,7 @@ import std;
 
 import :mesh;
 import :model;
+import :skinned_model;
 
 import gse.utility;
 import gse.physics.math;
@@ -13,6 +14,8 @@ export namespace gse {
         static constexpr std::size_t max_models = 16;
         std::array<resource::handle<model>, max_models> models{};
         std::uint32_t model_count = 0;
+        std::array<resource::handle<skinned_model>, max_models> skinned_models{};
+        std::uint32_t skinned_model_count = 0;
         bool render = true;
         bool render_bounding_boxes = true;
     };
@@ -20,10 +23,13 @@ export namespace gse {
     struct render_component_data {
         std::array<resource::handle<model>, render_component_net::max_models> models{};
         std::uint32_t model_count = 0;
+        std::array<resource::handle<skinned_model>, render_component_net::max_models> skinned_models{};
+        std::uint32_t skinned_model_count = 0;
         bool render = true;
         bool render_bounding_boxes = true;
 
         std::vector<model_instance> model_instances;
+        std::vector<skinned_model_instance> skinned_model_instances;
         vec3<length> center_of_mass;
         bool has_calculated_com = false;
     };
@@ -31,6 +37,7 @@ export namespace gse {
     struct render_component final : component<render_component_data, render_component_net> {
         struct params {
             std::vector<resource::handle<model>> models;
+            std::vector<resource::handle<skinned_model>> skinned_models;
             vec3<length> center_of_mass;
             bool render = true;
             bool render_bounding_boxes = true;
@@ -47,11 +54,17 @@ export namespace gse {
             const network_data_t& nd
         ) : component(owner_id, nd) {
             const auto n = static_cast<std::size_t>(networked_data().model_count);
-
             model_instances.clear();
             model_instances.reserve(n);
             for (std::size_t i = 0; i < n; ++i) {
                 model_instances.emplace_back(networked_data().models[i]);
+            }
+
+            const auto sn = static_cast<std::size_t>(networked_data().skinned_model_count);
+            skinned_model_instances.clear();
+            skinned_model_instances.reserve(sn);
+            for (std::size_t i = 0; i < sn; ++i) {
+                skinned_model_instances.emplace_back(networked_data().skinned_models[i]);
             }
         }
 
@@ -77,6 +90,19 @@ gse::render_component::render_component(const id owner_id, const params& p) : co
         model_instances.emplace_back(networked_data().models[i]);
     }
 
+    const auto sn = static_cast<std::size_t>(std::min<std::size_t>(p.skinned_models.size(), render_component_net::max_models));
+
+    for (std::size_t i = 0; i < sn; ++i) {
+        networked_data().skinned_models[i] = p.skinned_models[i];
+    }
+    networked_data().skinned_model_count = static_cast<std::uint32_t>(sn);
+
+    skinned_model_instances.clear();
+    skinned_model_instances.reserve(sn);
+    for (std::size_t i = 0; i < sn; ++i) {
+        skinned_model_instances.emplace_back(networked_data().skinned_models[i]);
+    }
+
     center_of_mass = p.center_of_mass;
     has_calculated_com = p.has_calculated_com;
 }
@@ -90,6 +116,10 @@ auto gse::render_component::on_registry(registry* reg) -> void {
                 if (!rc->networked_data().models[i].valid()) return false;
             }
 
+            for (std::size_t i = 0; i < rc->networked_data().skinned_model_count; ++i) {
+                if (!rc->networked_data().skinned_models[i].valid()) return false;
+            }
+
             if (rc->model_instances.size() != rc->networked_data().model_count) {
                 rc->model_instances.clear();
                 rc->model_instances.reserve(rc->networked_data().model_count);
@@ -98,11 +128,24 @@ auto gse::render_component::on_registry(registry* reg) -> void {
                 }
             }
 
+            if (rc->skinned_model_instances.size() != rc->networked_data().skinned_model_count) {
+                rc->skinned_model_instances.clear();
+                rc->skinned_model_instances.reserve(rc->networked_data().skinned_model_count);
+                for (std::size_t i = 0; i < rc->networked_data().skinned_model_count; ++i) {
+                    rc->skinned_model_instances.emplace_back(rc->networked_data().skinned_models[i]);
+                }
+            }
+
             vec3<length> sum;
             std::size_t count = 0;
 
             for (std::size_t i = 0; i < rc->networked_data().model_count; ++i) {
                 sum += rc->networked_data().models[i]->center_of_mass();
+                ++count;
+            }
+
+            for (std::size_t i = 0; i < rc->networked_data().skinned_model_count; ++i) {
+                sum += rc->networked_data().skinned_models[i]->center_of_mass();
                 ++count;
             }
 

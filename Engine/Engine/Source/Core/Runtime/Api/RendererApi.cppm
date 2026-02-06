@@ -13,14 +13,14 @@ export namespace gse {
 	auto get(
 		const id& id
 	) -> resource::handle<Resource> {
-		return system_of<renderer::system>().get<Resource>(id);
+		return state_of<renderer::state>().get<Resource>(id);
 	}
 
 	template <typename Resource>
 	auto get(
 		const std::string& filename
 	) -> resource::handle<Resource> {
-		return system_of<renderer::system>().get<Resource>(filename);
+		return state_of<renderer::state>().get<Resource>(filename);
 	}
 
 	template <typename Resource, typename... Args>
@@ -28,43 +28,38 @@ export namespace gse {
 		const std::string& name,
 		Args&&... args
 	) -> resource::handle<Resource> {
-		return system_of<renderer::system>().queue<Resource>(name, std::forward<Args>(args)...);
+		return state_of<renderer::state>().queue<Resource>(name, std::forward<Args>(args)...);
 	}
 
 	template <typename Resource>
 	auto instantly_load(
 		const id& id
 	) -> resource::handle<Resource> {
-		return system_of<renderer::system>().instantly_load<Resource>(id);
+		return state_of<renderer::state>().instantly_load<Resource>(id);
 	}
 
 	template <typename Resource>
 	auto add(
 		Resource&& resource
 	) -> void {
-		system_of<renderer::system>().add<Resource>(std::forward<Resource>(resource));
+		state_of<renderer::state>().add<Resource>(std::forward<Resource>(resource));
 	}
 
 	template <typename Resource>
 	auto resource_state(
 		const id& id
 	) -> resource::state {
-		return system_of<renderer::system>().resource_state<Resource>(id);
-	}
-
-	auto camera(
-	) -> camera& {
-		return system_of<renderer::system>().camera();
+		return state_of<renderer::state>().resource_state<Resource>(id);
 	}
 
 	auto set_ui_focus(
 		const bool focus
 	) -> void {
-		system_of<renderer::system>().set_ui_focus(focus);
+		state_of<renderer::state>().set_ui_focus(focus);
 	}
 
 	auto frame_begun(
 	) -> bool {
-		return system_of<renderer::system>().frame_begun();
+		return state_of<renderer::state>().is_frame_begun();
 	}
 }

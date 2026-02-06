@@ -20,8 +20,8 @@ export namespace gse {
 		auto render() -> void override;
 		auto shutdown() -> void override;
 
-		template <typename S>
-		auto system_of() -> S&;
+		template <typename State>
+		auto state_of() -> State&;
 
 		template <typename T>
 		auto channel() -> channel<T>&;
@@ -29,10 +29,14 @@ export namespace gse {
 		template <typename T, class ... Args>
 		auto hook_world(
 			Args&&... args
-		) -> void;
+		) -> T&;
 
 		auto set_networked(
 			bool networked
+		) -> void;
+
+		auto set_authoritative(
+			bool authoritative
 		) -> void;
 
 		template <typename T, typename... Args>
@@ -53,6 +57,11 @@ export namespace gse {
 
 		auto direct(
 		) -> director;
+
+		template <typename F>
+		auto defer(
+			F&& action
+		) -> void;
 	private:
 		scheduler m_scheduler;
 		world m_world;
@@ -68,26 +77,31 @@ auto gse::engine::initialize() -> void {
 	});
 
 	auto& reg = m_world.registry();
+	auto& save = m_scheduler.add_system<save::system, save::state>(reg);
+	save.set_auto_save(true, config::resource_path / "Misc/settings.toml");
 
-	auto& input = m_scheduler.emplace<input::system>(reg);
-	m_scheduler.emplace<actions::system>(reg);
-	m_scheduler.emplace<network::system>(reg);
-	m_scheduler.emplace<physics::system>(reg);
+	auto& input = m_scheduler.add_system<input::system, input::system_state>(reg);
+	m_scheduler.add_system<actions::system, actions::system_state>(reg);
+	m_scheduler.add_system<network::system, network::system_state>(reg);
+	m_scheduler.add_system<physics::system, physics::state>(reg);
 
 	m_render_ctx = std::make_unique<renderer::context>(
 		std::string(id().tag()),
-		input
+		input,
+		save
 	);
 
 	auto& ctx = *m_render_ctx.get();
 
-	m_scheduler.emplace<renderer::system>(reg, ctx);
-	m_scheduler.emplace<renderer::shadow>(reg, ctx);
-	m_scheduler.emplace<renderer::geometry>(reg, ctx);
-	m_scheduler.emplace<renderer::lighting>(reg, ctx);
-	m_scheduler.emplace<renderer::physics_debug>(reg, ctx);
-	m_scheduler.emplace<renderer::ui>(reg, ctx);
-	m_scheduler.emplace<gui::system>(reg, ctx);
+	m_scheduler.add_system<camera::system, camera::state>(reg);
+	m_scheduler.add_system<renderer::system, renderer::state>(reg, ctx);
+	m_scheduler.add_system<renderer::shadow::system, renderer::shadow::state>(reg, ctx);
+	m_scheduler.add_system<renderer::geometry::system, renderer::geometry::state>(reg, ctx);
+	m_scheduler.add_system<renderer::lighting::system, renderer::lighting::state>(reg, ctx);
+	m_scheduler.add_system<renderer::physics_debug::system, renderer::physics_debug::state>(reg, ctx);
+	m_scheduler.add_system<renderer::ui::system, renderer::ui::state>(reg, ctx);
+	m_scheduler.add_system<gui::system, gui::system_state>(reg, ctx);
+	m_scheduler.add_system<animation::system, animation::state>(reg);
 
 	m_scheduler.initialize();
 
@@ -102,9 +116,8 @@ auto gse::engine::update() -> void {
 	system_clock::update();
 
 	m_world.update();
-	
+
 	m_scheduler.update();
-	m_scheduler.flush_deferred();
 
 	for (const auto& h : m_hooks) {
 		h->update();
@@ -136,6 +149,10 @@ auto gse::engine::set_networked(const bool networked) -> void {
 	m_world.set_networked(networked);
 }
 
+auto gse::engine::set_authoritative(const bool authoritative) -> void {
+	m_world.set_authoritative(authoritative);
+}
+
 auto gse::engine::activate_scene(const gse::id scene_id) -> void {
 	m_world.activate(scene_id);
 }
@@ -152,9 +169,9 @@ auto gse::engine::direct() -> director {
 	return m_world.direct();
 }
 
-template <typename S>
-auto gse::engine::system_of() -> S& {
-	return m_scheduler.get<S>();
+template <typename State>
+auto gse::engine::state_of() -> State& {
+	return m_scheduler.state<State>();
 }
 
 template <typename T>
@@ -163,11 +180,24 @@ auto gse::engine::channel() -> gse::channel<T>& {
 }
 
 template <typename T, typename... Args>
-auto gse::engine::hook_world(Args&&... args) -> void {
-	m_world.add_hook<T>(std::forward<Args>(args)...);
+auto gse::engine::hook_world(Args&&... args) -> T& {
+	return m_world.add_hook<T>(std::forward<Args>(args)...);
 }
 
 template <typename T, typename ... Args>
 auto gse::engine::add_scene(Args... args) -> scene* {
 	return m_world.add<T>(std::forward<Args>(args)...);
+}
+
+template <typename F>
+auto gse::engine::defer(F&& action) -> void {
+	if (const auto* scene = current_scene()) {
+		scene->registry().add_deferred_action(
+			{},
+			[action = std::forward<F>(action)](registry& reg) {
+				action(reg);
+				return true;
+			}
+		);
+	}
 }

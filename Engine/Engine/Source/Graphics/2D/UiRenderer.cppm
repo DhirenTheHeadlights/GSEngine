@@ -1,11 +1,9 @@
 export module gse.graphics:ui_renderer;
 
 import std;
-import vulkan_hpp;
 
 import :texture;
 import :font;
-import :camera;
 import :shader;
 import :rendering_context;
 
@@ -35,112 +33,108 @@ export namespace gse::renderer {
 		render_layer layer = render_layer::content;
 		std::uint32_t z_order = 0;
 	};
-
-	class ui final : public system {
-	public:
-		explicit ui(
-			context& context
-		);
-
-		auto initialize(
-		) -> void override;
-
-		auto update(
-		) -> void override;
-
-		auto render(
-		) -> void override;
-
-	private:
-		enum class command_type : std::uint8_t {
-			sprite,
-			text
-		};
-
-		struct vertex {
-			unitless::vec2 position;
-			unitless::vec2 uv;
-			unitless::vec4 color;
-		};
-
-		struct draw_batch {
-			command_type type;
-			std::uint32_t index_offset;
-			std::uint32_t index_count;
-			std::optional<rect_t<unitless::vec2>> clip_rect;
-			resource::handle<texture> texture;
-			resource::handle<font> font;
-		};
-
-		struct frame_data {
-			std::vector<vertex> vertices;
-			std::vector<std::uint32_t> indices;
-			std::vector<draw_batch> batches;
-		};
-
-		struct unified_command {
-			command_type type;
-			render_layer layer;
-			std::uint32_t z_order;
-			std::optional<rect_t<unitless::vec2>> clip_rect;
-			
-			resource::handle<texture> texture;
-			rect_t<unitless::vec2> rect;
-			unitless::vec4 color;
-			unitless::vec4 uv_rect;
-			angle rotation;
-			
-			resource::handle<font> font;
-			std::string text;
-			unitless::vec2 position;
-			float scale;
-		};
-
-		static constexpr std::size_t max_quads_per_frame = 32768;
-		static constexpr std::size_t vertices_per_quad = 4;
-		static constexpr std::size_t indices_per_quad = 6;
-		static constexpr std::size_t max_vertices = max_quads_per_frame * vertices_per_quad;
-		static constexpr std::size_t max_indices = max_quads_per_frame * indices_per_quad;
-		static constexpr std::size_t frames_in_flight = 2;
-
-		static auto to_vulkan_scissor(
-			const rect_t<unitless::vec2>& rect,
-			const unitless::vec2& window_size
-		) -> vk::Rect2D;
-
-		static auto add_sprite_quad(
-			std::vector<vertex>& vertices,
-			std::vector<std::uint32_t>& indices,
-			const unified_command& cmd
-		) -> void;
-
-		static auto add_text_quads(
-			std::vector<vertex>& vertices,
-			std::vector<std::uint32_t>& indices,
-			const unified_command& cmd
-		) -> void;
-
-		context& m_context;
-
-		vk::raii::Pipeline m_sprite_pipeline = nullptr;
-		vk::raii::PipelineLayout m_sprite_pipeline_layout = nullptr;
-		resource::handle<shader> m_sprite_shader;
-
-		vk::raii::Pipeline m_text_pipeline = nullptr;
-		vk::raii::PipelineLayout m_text_pipeline_layout = nullptr;
-		resource::handle<shader> m_text_shader;
-
-		struct frame_resources {
-			vulkan::persistent_allocator::buffer_resource vertex_buffer;
-			vulkan::persistent_allocator::buffer_resource index_buffer;
-		};
-
-		std::array<frame_resources, frames_in_flight> m_frame_resources;
-		triple_buffer<frame_data> m_frame_data;
-	};
 }
 
-gse::renderer::ui::ui(context& context) : m_context(context) {}
+namespace gse::renderer::ui {
+	enum class command_type : std::uint8_t {
+		sprite,
+		text
+	};
+
+	struct vertex {
+		unitless::vec2 position;
+		unitless::vec2 uv;
+		unitless::vec4 color;
+	};
+
+	struct draw_batch {
+		command_type type;
+		std::uint32_t index_offset;
+		std::uint32_t index_count;
+		std::optional<rect_t<unitless::vec2>> clip_rect;
+		resource::handle<texture> texture;
+		resource::handle<font> font;
+	};
+
+	struct frame_data {
+		std::vector<vertex> vertices;
+		std::vector<std::uint32_t> indices;
+		std::vector<draw_batch> batches;
+	};
+
+	struct unified_command {
+		command_type type;
+		render_layer layer;
+		std::uint32_t z_order;
+		std::optional<rect_t<unitless::vec2>> clip_rect;
+
+		resource::handle<texture> texture;
+		rect_t<unitless::vec2> rect;
+		unitless::vec4 color;
+		unitless::vec4 uv_rect;
+		angle rotation;
+
+		resource::handle<font> font;
+		std::string text;
+		unitless::vec2 position;
+		float scale;
+	};
+
+	static constexpr std::size_t max_quads_per_frame = 32768;
+	static constexpr std::size_t vertices_per_quad = 4;
+	static constexpr std::size_t indices_per_quad = 6;
+	static constexpr std::size_t max_vertices = max_quads_per_frame * vertices_per_quad;
+	static constexpr std::size_t max_indices = max_quads_per_frame * indices_per_quad;
+	static constexpr std::size_t frames_in_flight = 2;
+
+	auto to_vulkan_scissor(
+		const rect_t<unitless::vec2>& rect,
+		const unitless::vec2& window_size
+	) -> vk::Rect2D;
+
+	auto add_sprite_quad(
+		std::vector<vertex>& vertices,
+		std::vector<std::uint32_t>& indices,
+		const unified_command& cmd
+	) -> void;
+
+	auto add_text_quads(
+		std::vector<vertex>& vertices,
+		std::vector<std::uint32_t>& indices,
+		const unified_command& cmd
+	) -> void;
+}
+
+export namespace gse::renderer::ui {
+	struct frame_resources {
+		vulkan::buffer_resource vertex_buffer;
+		vulkan::buffer_resource index_buffer;
+	};
+
+	struct state {
+		context* ctx = nullptr;
+
+		vk::raii::Pipeline sprite_pipeline = nullptr;
+		vk::raii::PipelineLayout sprite_pipeline_layout = nullptr;
+		resource::handle<shader> sprite_shader;
+
+		vk::raii::Pipeline text_pipeline = nullptr;
+		vk::raii::PipelineLayout text_pipeline_layout = nullptr;
+		resource::handle<shader> text_shader;
+
+		std::array<frame_resources, frames_in_flight> resources;
+		triple_buffer<frame_data> data;
+
+		explicit state(context& c) : ctx(std::addressof(c)) {}
+		state() = default;
+	};
+
+	struct system {
+		static auto initialize(initialize_phase& phase, state& s) -> void;
+		static auto update(const update_phase& phase, state& s) -> void;
+		static auto render(render_phase& phase, const state& s) -> void;
+	};
+}
 
 auto gse::renderer::ui::to_vulkan_scissor(const rect_t<unitless::vec2>& rect, const unitless::vec2& window_size) -> vk::Rect2D {
 	const float left = std::max(0.0f, rect.left());
@@ -246,32 +240,18 @@ auto gse::renderer::ui::add_text_quads(std::vector<vertex>& vertices, std::vecto
 	}
 }
 
-auto gse::renderer::ui::initialize() -> void {
-	auto& config = m_context.config();
+auto gse::renderer::ui::system::initialize(initialize_phase&, state& s) -> void {
+	auto& config = s.ctx->config();
 
 	constexpr vk::PipelineInputAssemblyStateCreateInfo input_assembly{
 		.topology = vk::PrimitiveTopology::eTriangleList
 	};
 
-	const vk::Viewport viewport{
-		.x = 0.0f,
-		.y = 0.0f,
-		.width = static_cast<float>(config.swap_chain_config().extent.width),
-		.height = static_cast<float>(config.swap_chain_config().extent.height),
-		.minDepth = 0.0f,
-		.maxDepth = 1.0f
-	};
-
-	const vk::Rect2D scissor{
-		{ 0, 0 },
-		{ config.swap_chain_config().extent.width, config.swap_chain_config().extent.height }
-	};
-
 	const vk::PipelineViewportStateCreateInfo viewport_state{
 		.viewportCount = 1,
-		.pViewports = &viewport,
+		.pViewports = nullptr,
 		.scissorCount = 1,
-		.pScissors = &scissor
+		.pScissors = nullptr
 	};
 
 	constexpr vk::PipelineRasterizationStateCreateInfo rasterizer{
@@ -312,6 +292,7 @@ auto gse::renderer::ui::initialize() -> void {
 	};
 
 	constexpr std::array dynamic_states = {
+		vk::DynamicState::eViewport,
 		vk::DynamicState::eScissor
 	};
 
@@ -327,12 +308,12 @@ auto gse::renderer::ui::initialize() -> void {
 		.pColorAttachmentFormats = &color_format
 	};
 
-	m_sprite_shader = m_context.get<shader>("sprite");
-	m_context.instantly_load(m_sprite_shader);
+	s.sprite_shader = s.ctx->get<shader>("Shaders/Standard2D/sprite");
+	s.ctx->instantly_load(s.sprite_shader);
 
 	{
-		const auto& dsl = m_sprite_shader->layouts();
-		const auto pc_range = m_sprite_shader->push_constant_range("push_constants");
+		const auto& dsl = s.sprite_shader->layouts();
+		const auto pc_range = s.sprite_shader->push_constant_range("push_constants");
 
 		const vk::PipelineLayoutCreateInfo layout_info{
 			.setLayoutCount = static_cast<std::uint32_t>(dsl.size()),
@@ -341,14 +322,14 @@ auto gse::renderer::ui::initialize() -> void {
 			.pPushConstantRanges = &pc_range
 		};
 
-		m_sprite_pipeline_layout = config.device_config().device.createPipelineLayout(layout_info);
+		s.sprite_pipeline_layout = config.device_config().device.createPipelineLayout(layout_info);
 
-		const auto vertex_input_info = m_sprite_shader->vertex_input_state();
+		const auto vertex_input_info = s.sprite_shader->vertex_input_state();
 
 		vk::GraphicsPipelineCreateInfo pipeline_info{
 			.pNext = &pipeline_rendering_info,
 			.stageCount = 2,
-			.pStages = m_sprite_shader->shader_stages().data(),
+			.pStages = s.sprite_shader->shader_stages().data(),
 			.pVertexInputState = &vertex_input_info,
 			.pInputAssemblyState = &input_assembly,
 			.pViewportState = &viewport_state,
@@ -357,18 +338,18 @@ auto gse::renderer::ui::initialize() -> void {
 			.pDepthStencilState = &depth_stencil_state,
 			.pColorBlendState = &color_blending,
 			.pDynamicState = &dynamic_state_info,
-			.layout = *m_sprite_pipeline_layout
+			.layout = *s.sprite_pipeline_layout
 		};
 
-		m_sprite_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
+		s.sprite_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
 	}
 
-	m_text_shader = m_context.get<shader>("msdf");
-	m_context.instantly_load(m_text_shader);
+	s.text_shader = s.ctx->get<shader>("Shaders/Standard2D/msdf");
+	s.ctx->instantly_load(s.text_shader);
 
 	{
-		const auto& dsl = m_text_shader->layouts();
-		const auto pc_range = m_text_shader->push_constant_range("push_constants");
+		const auto& dsl = s.text_shader->layouts();
+		const auto pc_range = s.text_shader->push_constant_range("push_constants");
 
 		const vk::PipelineLayoutCreateInfo layout_info{
 			.setLayoutCount = static_cast<std::uint32_t>(dsl.size()),
@@ -377,14 +358,14 @@ auto gse::renderer::ui::initialize() -> void {
 			.pPushConstantRanges = &pc_range
 		};
 
-		m_text_pipeline_layout = config.device_config().device.createPipelineLayout(layout_info);
+		s.text_pipeline_layout = config.device_config().device.createPipelineLayout(layout_info);
 
-		const auto vertex_input_info = m_text_shader->vertex_input_state();
+		const auto vertex_input_info = s.text_shader->vertex_input_state();
 
 		vk::GraphicsPipelineCreateInfo pipeline_info{
 			.pNext = &pipeline_rendering_info,
 			.stageCount = 2,
-			.pStages = m_text_shader->shader_stages().data(),
+			.pStages = s.text_shader->shader_stages().data(),
 			.pVertexInputState = &vertex_input_info,
 			.pInputAssemblyState = &input_assembly,
 			.pViewportState = &viewport_state,
@@ -393,26 +374,24 @@ auto gse::renderer::ui::initialize() -> void {
 			.pDepthStencilState = &depth_stencil_state,
 			.pColorBlendState = &color_blending,
 			.pDynamicState = &dynamic_state_info,
-			.layout = *m_text_pipeline_layout
+			.layout = *s.text_pipeline_layout
 		};
 
-		m_text_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
+		s.text_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
 	}
 
 	constexpr std::size_t vertex_buffer_size = max_vertices * sizeof(vertex);
 	constexpr std::size_t index_buffer_size = max_indices * sizeof(std::uint32_t);
 
-	for (auto& [vertex_buffer, index_buffer] : m_frame_resources) {
-		vertex_buffer = vulkan::persistent_allocator::create_buffer(
-			config.device_config(),
+	for (auto& [vertex_buffer, index_buffer] : s.resources) {
+		vertex_buffer = config.allocator().create_buffer(
 			{
 				.size = vertex_buffer_size,
 				.usage = vk::BufferUsageFlagBits::eVertexBuffer
 			}
 		);
 
-		index_buffer = vulkan::persistent_allocator::create_buffer(
-			config.device_config(),
+		index_buffer = config.allocator().create_buffer(
 			{
 				.size = index_buffer_size,
 				.usage = vk::BufferUsageFlagBits::eIndexBuffer
@@ -420,21 +399,21 @@ auto gse::renderer::ui::initialize() -> void {
 		);
 	}
 
-	auto& [vertices, indices, batches] = m_frame_data.write();
+	auto& [vertices, indices, batches] = s.data.write();
 	vertices.reserve(max_vertices);
 	indices.reserve(max_indices);
 	batches.reserve(512);
 }
 
-auto gse::renderer::ui::update() -> void {
-	const auto sprite_commands = channel_of<sprite_command>();
-	const auto text_commands = channel_of<text_command>();
+auto gse::renderer::ui::system::update(const update_phase& phase, state& s) -> void {
+	const auto& sprite_commands = phase.read_channel<sprite_command>();
+	const auto& text_commands = phase.read_channel<text_command>();
 
 	if (sprite_commands.empty() && text_commands.empty()) {
 		return;
 	}
 
-	auto& [vertices, indices, batches] = m_frame_data.write();
+	auto& [vertices, indices, batches] = s.data.write();
 	vertices.clear();
 	indices.clear();
 	batches.clear();
@@ -555,23 +534,24 @@ auto gse::renderer::ui::update() -> void {
 	}
 
 	flush_batch();
-	m_frame_data.publish();
+
+	s.data.publish();
 }
 
-auto gse::renderer::ui::render() -> void {
-	const auto& [vertices, indices, batches] = m_frame_data.read();
+auto gse::renderer::ui::system::render(render_phase&, const state& s) -> void {
+	auto& config = s.ctx->config();
+
+	if (!config.frame_in_progress()) {
+		return;
+	}
+
+	const auto& [vertices, indices, batches] = s.data.read();
 
 	if (batches.empty()) {
 		return;
 	}
-
-	if (batches.empty()) {
-		return;
-	}
-
-	auto& config = m_context.config();
 	const auto frame_index = config.current_frame();
-	auto& [vertex_buffer, index_buffer] = m_frame_resources[frame_index];
+	auto& [vertex_buffer, index_buffer] = s.resources[frame_index];
 
 	std::memcpy(
 		vertex_buffer.allocation.mapped(),
@@ -613,8 +593,18 @@ auto gse::renderer::ui::render() -> void {
 	};
 
 	vulkan::render(config, rendering_info, [&] {
-		command.bindVertexBuffers(0, { *vertex_buffer.buffer }, { vk::DeviceSize{ 0 } });
-		command.bindIndexBuffer(*index_buffer.buffer, 0, vk::IndexType::eUint32);
+		command.bindVertexBuffers(0, { vertex_buffer.buffer }, { vk::DeviceSize{ 0 } });
+		command.bindIndexBuffer(index_buffer.buffer, 0, vk::IndexType::eUint32);
+
+		const vk::Viewport viewport{
+			.x = 0.0f,
+			.y = 0.0f,
+			.width = static_cast<float>(width),
+			.height = static_cast<float>(height),
+			.minDepth = 0.0f,
+			.maxDepth = 1.0f
+		};
+		command.setViewport(0, viewport);
 
 		const vk::Rect2D default_scissor{ { 0, 0 }, { width, height } };
 		command.setScissor(0, { default_scissor });
@@ -631,15 +621,15 @@ auto gse::renderer::ui::render() -> void {
 
 			if (first_batch || type != bound_type) {
 				if (type == command_type::sprite) {
-					command.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_sprite_pipeline);
-					m_sprite_shader->push(
-						command, *m_sprite_pipeline_layout, "push_constants",
+					command.bindPipeline(vk::PipelineBindPoint::eGraphics, *s.sprite_pipeline);
+					s.sprite_shader->push(
+						command, *s.sprite_pipeline_layout, "push_constants",
 						"projection", projection
 					);
 				} else {
-					command.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_text_pipeline);
-					m_text_shader->push(
-						command, *m_text_pipeline_layout, "push_constants",
+					command.bindPipeline(vk::PipelineBindPoint::eGraphics, *s.text_pipeline);
+					s.text_shader->push(
+						command, *s.text_pipeline_layout, "push_constants",
 						"projection", projection
 					);
 				}
@@ -651,8 +641,8 @@ auto gse::renderer::ui::render() -> void {
 
 			if (type == command_type::sprite) {
 				if (texture.valid() && texture.id() != bound_texture.id()) {
-					m_sprite_shader->push_descriptor(
-						command, m_sprite_pipeline_layout,
+					s.sprite_shader->push_descriptor(
+						command, s.sprite_pipeline_layout,
 						"spriteTexture",
 						texture->descriptor_info()
 					);
@@ -660,8 +650,8 @@ auto gse::renderer::ui::render() -> void {
 				}
 			} else {
 				if (font.valid() && font.id() != bound_font.id()) {
-					m_text_shader->push_descriptor(
-						command, m_text_pipeline_layout,
+					s.text_shader->push_descriptor(
+						command, s.text_pipeline_layout,
 						"spriteTexture",
 						font->texture()->descriptor_info()
 					);

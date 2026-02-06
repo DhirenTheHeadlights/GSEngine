@@ -10,7 +10,10 @@ Makefile
 *.ini
 /vc140.pdb
 /Engine/External/vcpkg
-/Engine/Resources/Misc/gui_layout.ggui
-/Engine/External/vcpkg
 /claude.exe
 /CLAUDE.md
+/Engine/Resources/Misc/gui_layout.toml
+/Engine/Resources/Misc/settings.toml
+/Engine/Resources/Misc/log.txt
+/.claude/settings.local.json
+/.claude

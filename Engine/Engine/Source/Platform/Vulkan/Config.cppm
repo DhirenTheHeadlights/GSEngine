@@ -5,8 +5,8 @@ module;
 export module gse.platform.vulkan:config;
 
 import std;
-export import vulkan_hpp;
-import :resources;
+
+import :persistent_allocator;
 
 export namespace gse::vulkan {
     struct instance_config {
@@ -65,13 +65,13 @@ export namespace gse::vulkan {
     struct transient_gpu_work {
         vk::raii::CommandBuffer command_buffer = nullptr;
         vk::raii::Fence fence = nullptr;
-        std::vector<persistent_allocator::buffer_resource> transient_buffers;
+        std::vector<buffer_resource> transient_buffers;
     };
 
     struct sync_config {
         std::vector<vk::raii::Semaphore> image_available_semaphores;
 		std::vector<vk::raii::Semaphore> render_finished_semaphores;
-        std::vector<vk::raii::Fence> in_flight_fences;  
+        std::vector<vk::raii::Fence> in_flight_fences;
         std::vector<std::vector<transient_gpu_work>> transient_work_graveyard;
         std::uint32_t timeline_value = 0;
         sync_config(
@@ -100,7 +100,7 @@ export namespace gse::vulkan {
             present_modes(std::move(present_modes)) {
         }
         swap_chain_details(swap_chain_details&&) = default;
-        auto operator=(swap_chain_details&&) -> swap_chain_details & = default;
+        auto operator=(swap_chain_details&&) -> swap_chain_details& = default;
     };
 
     struct swap_chain_config {
@@ -112,9 +112,9 @@ export namespace gse::vulkan {
         std::vector<vk::raii::ImageView> image_views;
         vk::Format format;
         swap_chain_details details;
-        persistent_allocator::image_resource normal_image;
-        persistent_allocator::image_resource albedo_image;
-        persistent_allocator::image_resource depth_image;
+        image_resource normal_image;
+        image_resource albedo_image;
+        image_resource depth_image;
 
         swap_chain_config(
             vk::raii::SwapchainKHR&& swap_chain,
@@ -125,9 +125,9 @@ export namespace gse::vulkan {
             std::vector<vk::raii::ImageView>&& image_views,
             const vk::Format format,
             swap_chain_details&& details,
-            persistent_allocator::image_resource&& normal_image,
-            persistent_allocator::image_resource&& albedo_image,
-            persistent_allocator::image_resource&& depth_image
+            image_resource&& normal_image,
+            image_resource&& albedo_image,
+            image_resource&& depth_image
         )
             : swap_chain(std::move(swap_chain)),
             surface_format(surface_format),
@@ -165,8 +165,10 @@ export namespace gse::vulkan {
             instance_config&& instance_data, device_config&& device_data,
             queue_config&& queue, command_config&& command,
             descriptor_config&& descriptor, sync_config&& sync,
-            swap_chain_config&& swap_chain_data, frame_context_config&& frame_context
-        ) : m_instance_data(std::move(instance_data)),
+            swap_chain_config&& swap_chain_data, frame_context_config&& frame_context,
+            std::unique_ptr<allocator>&& alloc
+        ) : m_allocator(std::move(alloc)),
+            m_instance_data(std::move(instance_data)),
             m_device_data(std::move(device_data)),
             m_queue(std::move(queue)),
             m_command(std::move(command)),
@@ -175,6 +177,23 @@ export namespace gse::vulkan {
             m_swap_chain_data(std::move(swap_chain_data)),
             m_frame_context(std::move(frame_context)) {}
 
+        using swap_chain_recreate_callback = std::function<void(config&)>;
+
+        auto on_swap_chain_recreate(swap_chain_recreate_callback callback) -> void {
+            m_swap_chain_recreate_callbacks.push_back(std::move(callback));
+        }
+
+        auto notify_swap_chain_recreated() -> void {
+            ++m_swap_chain_generation;
+            for (const auto& callback : m_swap_chain_recreate_callbacks) {
+                callback(*this);
+            }
+        }
+
+        auto swap_chain_generation() const -> std::uint64_t {
+            return m_swap_chain_generation;
+        }
+
         ~config() {
             std::println("Destroying Config");
         }
@@ -182,7 +201,7 @@ export namespace gse::vulkan {
         config(config&&) = default;
         auto operator=(config&&) -> config & = default;
 
-        auto add_transient_work(const std::function<std::vector<persistent_allocator::buffer_resource>(const vk::raii::CommandBuffer&)>& commands) -> void {
+        auto add_transient_work(const std::function<std::vector<buffer_resource>(const vk::raii::CommandBuffer&)>& commands) -> void {
             const vk::CommandBufferAllocateInfo alloc_info{
                 .commandPool = *m_command.pool,
                 .level = vk::CommandBufferLevel::ePrimary,
@@ -276,9 +295,27 @@ export namespace gse::vulkan {
         auto current_frame() -> std::uint32_t& {
             return m_current_frame;
 		}
+
+        auto set_frame_in_progress(const bool in_progress) -> void {
+            m_frame_in_progress = in_progress;
+        }
+
+        [[nodiscard]] auto frame_in_progress() const -> bool {
+            return m_frame_in_progress;
+        }
+
+        [[nodiscard]] auto allocator() -> allocator& {
+            return *m_allocator;
+        }
+
+        [[nodiscard]] auto allocator() const -> const vulkan::allocator& {
+            return *m_allocator;
+        }
+
     private:
         struct instance_config m_instance_data;
         struct device_config m_device_data;
+        std::unique_ptr<vulkan::allocator> m_allocator;
         struct queue_config m_queue;
         struct command_config m_command;
         struct descriptor_config m_descriptor;
@@ -286,6 +323,9 @@ export namespace gse::vulkan {
         struct swap_chain_config m_swap_chain_data;
     	frame_context_config m_frame_context;
         std::uint32_t m_current_frame = 0;
+        std::uint64_t m_swap_chain_generation = 0;
+        bool m_frame_in_progress = false;
+        std::vector<swap_chain_recreate_callback> m_swap_chain_recreate_callbacks;
     };
 }
 
@@ -300,6 +340,3 @@ export namespace gse::vulkan {
     };
 }
 
-#if defined(VULKAN_HPP_DISPATCH_LOADER_DYNAMIC) && (VULKAN_HPP_DISPATCH_LOADER_DYNAMIC == 1)
-export VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
-#endif

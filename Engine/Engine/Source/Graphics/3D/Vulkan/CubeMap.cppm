@@ -8,13 +8,33 @@ import gse.platform;
 export namespace gse {
     class cube_map {
     public:
-        auto create(vulkan::config& config, const std::array<std::filesystem::path, 6>& face_paths) -> void;
-        auto create(const vulkan::config& config, int resolution, bool depth_only = false) -> void;
+        auto create(
+            vulkan::config& config, 
+            const std::array<std::filesystem::path, 6>& face_paths
+        ) -> void;
 
-        auto image_resource() const -> const vulkan::persistent_allocator::image_resource&;
+        auto create(
+            vulkan::config& config,
+            int resolution, 
+            bool depth_only = false
+        ) -> void;
+
+        auto image_resource(
+        ) const -> const vulkan::image_resource&;
+
+        auto face_view(
+            std::size_t face
+        ) const -> vk::ImageView;
+
+        auto sampler(
+        ) const -> vk::Sampler;
+
+        auto resolution(
+        ) const -> int;
     private:
-        vulkan::persistent_allocator::image_resource m_image_resource;
+        vulkan::image_resource m_image_resource;
         vk::raii::Sampler m_sampler = nullptr;
+        std::vector<vk::raii::ImageView> m_face_views;
 
         int m_resolution = 0;
         bool m_depth_only = false;
@@ -58,8 +78,8 @@ auto gse::cube_map::create(vulkan::config& config, const std::array<std::filesys
         }
     };
 
-    m_image_resource = vulkan::persistent_allocator::create_image(
-        config.device_config(), image_info, vk::MemoryPropertyFlagBits::eDeviceLocal, view_info
+    m_image_resource = config.allocator().create_image(
+        image_info, vk::MemoryPropertyFlagBits::eDeviceLocal, view_info
     );
 
     vulkan::uploader::upload_image_layers(
@@ -95,7 +115,7 @@ auto gse::cube_map::create(vulkan::config& config, const std::array<std::filesys
     m_initialized = true;
 }
 
-auto gse::cube_map::create(const vulkan::config& config, const int resolution, const bool depth_only) -> void {
+auto gse::cube_map::create(vulkan::config& config, const int resolution, const bool depth_only) -> void {
     m_resolution = resolution;
     m_depth_only = depth_only;
 
@@ -139,9 +159,31 @@ auto gse::cube_map::create(const vulkan::config& config, const int resolution, c
         }
     };
 
-    m_image_resource = vulkan::persistent_allocator::create_image(
-        config.device_config(), image_info, vk::MemoryPropertyFlagBits::eDeviceLocal, view_info
+    m_image_resource = config.allocator().create_image(
+        image_info, vk::MemoryPropertyFlagBits::eDeviceLocal, view_info
     );
+
+	static constexpr std::uint32_t face_count = 6;
+
+    m_face_views.clear();
+	m_face_views.reserve(face_count);
+    for (std::uint32_t face = 0; face < face_count; ++face) {
+        const vk::ImageViewCreateInfo face_view_info{
+            .flags = {},
+            .image = m_image_resource.image,
+            .viewType = vk::ImageViewType::e2D,
+            .format = format,
+            .components = {},
+            .subresourceRange = {
+                .aspectMask = aspect,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = face,
+                .layerCount = 1
+            }
+        };
+        m_face_views.push_back(config.device_config().device.createImageView(face_view_info));
+    }
 
     constexpr vk::SamplerCreateInfo sampler_info{
         .flags = {},
@@ -166,6 +208,19 @@ auto gse::cube_map::create(const vulkan::config& config, const int resolution, c
     m_initialized = true;
 }
 
-auto gse::cube_map::image_resource() const -> const vulkan::persistent_allocator::image_resource& {
+auto gse::cube_map::image_resource() const -> const vulkan::image_resource& {
     return m_image_resource;
 }
+
+auto gse::cube_map::face_view(std::size_t face) const -> vk::ImageView {
+    return *m_face_views[face];
+}
+
+auto gse::cube_map::sampler() const -> vk::Sampler {
+    return *m_sampler;
+}
+
+auto gse::cube_map::resolution() const -> int {
+    return m_resolution;
+}
+

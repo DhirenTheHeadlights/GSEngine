@@ -10,17 +10,20 @@ import :black_knight;
 import gse;
 
 export namespace gs {
-	class main_test_scene final : public gse::hook<gse::scene> {	
+	class main_test_scene final : public gse::hook<gse::scene> {
 	public:
 		using hook::hook;
 
 		auto initialize() -> void override {
-			arena::create(this);
-
-			build("Player")
-				.with<gs::player>({
+			m_owner->set_player_factory([](gse::scene& s) -> gse::id {
+				const auto player_id = s.add_entity("Player");
+				s.registry().add_hook<player>(player_id, player::params{
 					.initial_position = gse::vec3<gse::length>(0.f, 0.f, 0.f)
 				});
+				return player_id;
+			});
+
+			arena::create(this);
 
 			build("Backpack")
 				.with<backpack>();
@@ -52,6 +55,12 @@ export namespace gs {
 					.sectors = 18,
 					.stacks = 10
 				});
+
+			build("Animated Box")
+				.with<gse::animated_box>({
+					.initial_position = gse::vec3<gse::length>(5.f, -35.f, 0.f),
+					.size = gse::vec3<gse::length>(2.f, 2.f, 2.f)
+				});
 		}
 	};
-} 
+}
