@@ -333,7 +333,7 @@ auto gse::physics::update_motor(motion_component& component, const collision_com
         ));
         if (hspeed > meters_per_second(0.001f)) {
             const auto dir = normalize(vec3<velocity>(target.x(), meters_per_second(0.f), target.z()));
-            const auto air_target = hspeed * unitless::vec3(dir.x().as<meters_per_second>(), 0.f, dir.z().as<meters_per_second>());
+            const auto air_target = hspeed * unitless::vec3(dir.x(), 0.f, dir.z());
             const float t = std::min(1.f, component.motor.air_steering * dt_s);
             component.current_velocity.x() += (air_target.x() - component.current_velocity.x()) * t;
             component.current_velocity.z() += (air_target.z() - component.current_velocity.z()) * t;

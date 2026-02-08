@@ -7,6 +7,7 @@ import gse.graphics;
 import gse.platform;
 import gse.physics;
 import gse.network;
+import gse.log;
 
 import :engine;
 import :world;
@@ -73,6 +74,7 @@ auto gse::channel_add(T&& request) -> void {
 template <typename... Hooks>
 auto gse::start(const flags engine_flags, const engine_config& config) -> void {
     engine_instance = std::make_unique<engine>(config.title);
+	log::println(log::level::info, "Starting GSEngine...");
 
     (engine_instance->add_hook<Hooks>(), ...);
 
