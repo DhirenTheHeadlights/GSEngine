@@ -163,6 +163,12 @@ export namespace gse {
 	template <typename T, int N, int M>
 	constexpr auto identity(
 	) -> mat_t<T, N, M>;
+
+	template <typename T, std::size_t N, std::size_t M>
+	constexpr auto outer_product(
+		const unitless::vec_t<T, N>& a,
+		const unitless::vec_t<T, M>& b
+	) -> mat_t<T, M, N>;
 }
 
 template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
@@ -417,6 +423,17 @@ constexpr auto gse::identity() -> mat_t<T, N, M> {
 	mat_t<T, N, M> result;
 	for (int i = 0; i < N; ++i) {
 		result[i][i] = static_cast<T>(1);
+	}
+	return result;
+}
+
+template <typename T, std::size_t N, std::size_t M>
+constexpr auto gse::outer_product(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, M>& b) -> mat_t<T, M, N> {
+	mat_t<T, M, N> result;
+	for (std::size_t col = 0; col < M; ++col) {
+		for (std::size_t row = 0; row < N; ++row) {
+			result[col][row] = a[row] * b[col];
+		}
 	}
 	return result;
 }

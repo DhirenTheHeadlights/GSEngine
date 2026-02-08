@@ -45,7 +45,7 @@ namespace gse::gui {
 	) -> gui::state;
 
 	auto handle_dragging_state(
-		struct system_state& s,
+		system_state& s,
 		const states::dragging& current,
 		const window& window,
 		unitless::vec2 mouse_position,
@@ -53,7 +53,7 @@ namespace gse::gui {
 	) -> gui::state;
 
 	auto handle_resizing_state(
-		struct system_state& s,
+		system_state& s,
 		const states::resizing& current,
 		unitless::vec2 mouse_position,
 		bool mouse_held,
@@ -61,7 +61,7 @@ namespace gse::gui {
 	) -> gui::state;
 
 	auto handle_resizing_divider_state(
-		struct system_state& s,
+		system_state& s,
 		const states::resizing_divider& current,
 		unitless::vec2 mouse_position,
 		bool mouse_held,
@@ -69,50 +69,51 @@ namespace gse::gui {
 	) -> gui::state;
 
 	auto handle_pending_drag_state(
-		struct system_state& s,
+		system_state& s,
 		const states::pending_drag& current,
 		unitless::vec2 mouse_position,
 		bool mouse_held
 	) -> gui::state;
 
 	auto draw_menu_chrome(
-		struct system_state& s,
+		system_state& s,
+		const input::state& input_state,
 		menu& current_menu
 	) -> void;
 
 	auto draw_tab_bar(
-		struct system_state& s,
+		system_state& s,
 		const input::state& input_state,
 		menu& current_menu,
 		const ui_rect& title_bar_rect
 	) -> void;
 
 	auto usable_screen_rect(
-		const struct system_state& s
+		const system_state& s
 	) -> ui_rect;
 
 	auto calculate_display_rect(
-		const struct system_state& s,
+		const system_state& s,
 		const menu& m
 	) -> ui_rect;
 
 	auto apply_scale(
-		const struct system_state& s,
+		const system_state& s,
 		style sty,
 		float viewport_height
 	) -> style;
 
 	auto reload_font(
-		struct system_state& s
+		system_state& s
 	) -> void;
 
 	auto begin_menu(
-		struct system_state& s,
+		system_state& s,
 		const std::string& name
 	) -> bool;
 
 	auto end_menu(
-		struct system_state& s
+		system_state& s
 	) -> void;
 }
 
@@ -788,7 +789,7 @@ auto gse::gui::system::start(system_state& s, const input::state& input_state, c
 	menu& current_menu = *s.current_menu;
 
 	if (!current_menu.chrome_drawn_this_frame) {
-		draw_menu_chrome(s, current_menu);
+		draw_menu_chrome(s, input_state, current_menu);
 		current_menu.chrome_drawn_this_frame = true;
 	}
 
@@ -1213,7 +1214,7 @@ auto gse::gui::reload_font(system_state& s) -> void {
 	}
 }
 
-auto gse::gui::draw_menu_chrome(system_state& s, menu& current_menu) -> void {
+auto gse::gui::draw_menu_chrome(system_state& s, const input::state& input_state, menu& current_menu) -> void {
 	const style& sty = s.fstate.sty;
 
 	const ui_rect display_rect = calculate_display_rect(s, current_menu);
@@ -1235,7 +1236,7 @@ auto gse::gui::draw_menu_chrome(system_state& s, menu& current_menu) -> void {
 	});
 
 	if (current_menu.tab_contents.size() > 1) {
-		draw_tab_bar(s, s.context->input, current_menu, title_bar_rect);
+		draw_tab_bar(s, input_state, current_menu, title_bar_rect);
 	} else {
 		s.sprite_commands.push_back({
 			.rect = title_bar_rect,
