@@ -145,32 +145,32 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 	}
 
 	static int frame_count = 0;
-	if (frame_count < 30 && !m_graph.contact_constraints().empty()) {
-		float max_penetration = 0.f;
-		float total_lambda = 0.f;
-		int active_contacts = 0;
+	if (m_bodies.empty()) return;
+	if (frame_count < 120) {
+		log::println(log::level::info, "[VBD] frame={} bodies={} contacts={} colors={}",
+			frame_count, m_bodies.size(), m_graph.contact_constraints().size(), m_graph.colors().size());
 
-		for (const auto& c : m_graph.contact_constraints()) {
-			const auto& body_a = m_bodies[c.body_a];
-			const auto& body_b = m_bodies[c.body_b];
-
-			const vec3<length> world_r_a = rotate_vector(body_a.orientation, c.r_a);
-			const vec3<length> world_r_b = rotate_vector(body_b.orientation, c.r_b);
-
-			const vec3<length> p_a = body_a.position + world_r_a;
-			const vec3<length> p_b = body_b.position + world_r_b;
-
-			if (const float gap = dot(p_b - p_a, c.normal).as<meters>(); gap < max_penetration) {
-				max_penetration = gap;
-			}
-			if (c.lambda > 0.f) {
-				total_lambda += c.lambda;
-				active_contacts++;
-			}
+		for (std::uint32_t i = 0; i < m_bodies.size(); ++i) {
+			const auto& b = m_bodies[i];
+			if (b.locked) continue;
+			log::println(log::level::info, "[VBD] frame={} body={} pos={} vel={} ang_vel={}",
+				frame_count, i, b.position, b.body_velocity, b.body_angular_velocity);
 		}
 
-		log::println(log::level::info, "[VBD] frame={} contacts={} active={} max_pen={:.6f} total_lambda={:.2f}",
-			frame_count, m_graph.contact_constraints().size(), active_contacts, max_penetration, total_lambda);
+		for (const auto& c : m_graph.contact_constraints()) {
+			const auto& ba = m_bodies[c.body_a];
+			const auto& bb = m_bodies[c.body_b];
+			const vec3<length> world_r_a = rotate_vector(ba.orientation, c.r_a);
+			const vec3<length> world_r_b = rotate_vector(bb.orientation, c.r_b);
+			const float gap = static_cast<float>((dot(bb.position + world_r_b - ba.position - world_r_a, c.normal) + c.initial_separation).as<meters>());
+
+			log::println(log::level::info, "[VBD] frame={} contact: bodies=({},{}) n={} r_a={} r_b={} gap={} lam={} sep={}",
+				frame_count, c.body_a, c.body_b,
+				c.normal,
+				world_r_a, world_r_b,
+				gap, c.lambda, static_cast<float>(c.initial_separation.as<meters>()));
+		}
+
 		frame_count++;
 	}
 }
@@ -209,10 +209,7 @@ auto gse::vbd::solver::solve_substep(const time_step sub_dt) -> void {
 
 	for (std::uint32_t iter = 0; iter < m_config.iterations; ++iter) {
 		for (const auto& color : m_graph.colors()) {
-			for (auto& [gradient, hessian, _, _2] : m_solve_state) {
-				gradient = {};
-				hessian = mat3(0.f);
-			}
+			m_solve_state.assign(m_bodies.size(), {});
 
 			for (const auto idx : color) {
 				accumulate_contact_gradient_hessian(
@@ -233,9 +230,9 @@ auto gse::vbd::solver::solve_substep(const time_step sub_dt) -> void {
 				perform_local_newton_step(body_idx, m_solve_state[body_idx], h_squared);
 			}
 		}
-
-		update_lagrange_multipliers();
 	}
+
+	update_lagrange_multipliers();
 
 	derive_velocities(sub_dt);
 
@@ -243,12 +240,26 @@ auto gse::vbd::solver::solve_substep(const time_step sub_dt) -> void {
 		solve_motor_constraint(motor, sub_dt);
 	}
 
-	apply_velocity_corrections();
+	constexpr int velocity_iterations = 8;
+	for (int vi = 0; vi < velocity_iterations; ++vi) {
+		apply_velocity_corrections();
+	}
 
 	for (auto& body : m_bodies) {
-		body.position = body.predicted_position;
+		if (body.locked) {
+			body.position = body.predicted_position;
+			if (body.update_orientation) {
+				body.orientation = body.predicted_orientation;
+			}
+			continue;
+		}
+
+		body.position = body.old_position + body.body_velocity * sub_dt;
+
 		if (body.update_orientation) {
-			body.orientation = body.predicted_orientation;
+			const auto w = body.body_angular_velocity.as<radians_per_second>();
+			const quat omega_q{ 0.f, w.x(), w.y(), w.z() };
+			body.orientation = normalize(body.old_orientation + 0.5f * omega_q * body.old_orientation * dt_s);
 		}
 	}
 }
@@ -263,6 +274,7 @@ auto gse::vbd::solver::predict_positions(const time_step sub_dt) -> void {
 			body.inertia_target = body.position;
 			body.predicted_velocity = {};
 			body.predicted_orientation = body.orientation;
+			body.angular_inertia_target = body.orientation;
 			body.predicted_angular_velocity = {};
 			continue;
 		}
@@ -285,6 +297,8 @@ auto gse::vbd::solver::predict_positions(const time_step sub_dt) -> void {
 			body.predicted_orientation = body.orientation;
 			body.predicted_angular_velocity = {};
 		}
+
+		body.angular_inertia_target = body.predicted_orientation;
 	}
 }
 
@@ -305,18 +319,35 @@ auto gse::vbd::solver::accumulate_contact_gradient_hessian(const contact_constra
 	}
 
 	const float rho = m_config.rho;
-	const float lambda_plus_rho_c = std::min(c.lambda + rho * gap, 0.f);
+	const float effective = std::min(rho * gap - c.lambda, 0.f);
 
 	const mat3 n_outer_n = outer_product(c.normal, c.normal);
 
+	const unitless::vec3 r_a_unitless = world_r_a.as<meters>();
+	const unitless::vec3 r_b_unitless = world_r_b.as<meters>();
+	const unitless::vec3 r_cross_n_a = cross(r_a_unitless, c.normal);
+	const unitless::vec3 r_cross_n_b = cross(r_b_unitless, c.normal);
+
 	if (!body_a.locked) {
-		solve_state[c.body_a].gradient -= c.normal * lambda_plus_rho_c;
+		solve_state[c.body_a].gradient -= c.normal * effective;
 		solve_state[c.body_a].hessian += n_outer_n * rho;
+
+		if (body_a.update_orientation) {
+			solve_state[c.body_a].angular_gradient -= r_cross_n_a * effective;
+			solve_state[c.body_a].angular_hessian += outer_product(r_cross_n_a, r_cross_n_a) * rho;
+			solve_state[c.body_a].hessian_xtheta += outer_product(c.normal, r_cross_n_a) * rho;
+		}
 	}
 
 	if (!body_b.locked) {
-		solve_state[c.body_b].gradient += c.normal * lambda_plus_rho_c;
+		solve_state[c.body_b].gradient += c.normal * effective;
 		solve_state[c.body_b].hessian += n_outer_n * rho;
+
+		if (body_b.update_orientation) {
+			solve_state[c.body_b].angular_gradient += r_cross_n_b * effective;
+			solve_state[c.body_b].angular_hessian += outer_product(r_cross_n_b, r_cross_n_b) * rho;
+			solve_state[c.body_b].hessian_xtheta += outer_product(c.normal, r_cross_n_b) * rho;
+		}
 	}
 }
 
@@ -333,23 +364,86 @@ auto gse::vbd::solver::perform_local_newton_step(const std::uint32_t body_idx, c
 	const float inertia_weight = mass / h_squared;
 
 	const unitless::vec3 x_diff = (body.predicted_position - body.inertia_target).as<meters>();
-	const unitless::vec3 gradient = x_diff * inertia_weight + solve_state.gradient;
+	const unitless::vec3 g_lin = x_diff * inertia_weight + solve_state.gradient;
 
-	mat3 hessian = mat3(inertia_weight) + solve_state.hessian;
+	constexpr float reg = 1e-6f;
+	mat3 h_xx = mat3(inertia_weight) + solve_state.hessian;
+	h_xx[0][0] += reg;
+	h_xx[1][1] += reg;
+	h_xx[2][2] += reg;
 
-	constexpr float regularization = 1e-6f;
-	hessian[0][0] += regularization;
-	hessian[1][1] += regularization;
-	hessian[2][2] += regularization;
+	if (!body.update_orientation) {
+		const mat3 inv_h = h_xx.inverse();
+		unitless::vec3 delta_x = -(inv_h * g_lin);
 
-	const mat3 inv_hessian = hessian.inverse();
-	const unitless::vec3 delta_x = -(inv_hessian * gradient);
+		constexpr float max_step = 0.5f;
+		if (const float step_size = magnitude(delta_x); step_size > max_step) {
+			delta_x *= (max_step / step_size);
+		}
 
-	constexpr float max_step = 0.5f;
-	const float step_size = magnitude(delta_x);
-	const unitless::vec3 clamped_delta = step_size > max_step ? delta_x * (max_step / step_size) : delta_x;
+		body.predicted_position += delta_x * meters(1.f);
+		return;
+	}
 
-	body.predicted_position += clamped_delta * meters(1.f);
+	quat q_rel = body.predicted_orientation * conjugate(body.angular_inertia_target);
+
+	float q_s = q_rel.s();
+	unitless::vec3 q_v = q_rel.imaginary_part();
+	if (q_s < 0.f) {
+		q_s = -q_s;
+		q_v = -q_v;
+	}
+
+	unitless::vec3 theta_diff;
+	if (q_s < 0.9999f) {
+		const float angle = 2.f * std::acos(std::clamp(q_s, 0.f, 1.f));
+		const float sin_half = std::sqrt(1.f - q_s * q_s);
+		theta_diff = (sin_half > 1e-6f) ? q_v * (angle / sin_half) : q_v * 2.f;
+	} else {
+		theta_diff = q_v * 2.f;
+	}
+
+	const mat3 i_inv = to_unitless(body.inv_inertia);
+	const mat3 i = i_inv.inverse();
+	const float ang_scale = 1.f / h_squared;
+
+	const unitless::vec3 g_ang = i * theta_diff * ang_scale + solve_state.angular_gradient;
+
+	mat3 h_tt = i * ang_scale + solve_state.angular_hessian;
+	h_tt[0][0] += reg;
+	h_tt[1][1] += reg;
+	h_tt[2][2] += reg;
+
+	const mat3& h_xt = solve_state.hessian_xtheta;
+	const mat3 h_tx = h_xt.transpose();
+
+	const mat3 h_xx_inv = h_xx.inverse();
+	const mat3 s = h_tt - h_tx * h_xx_inv * h_xt;
+	const mat3 s_inv = s.inverse();
+
+	unitless::vec3 delta_theta = -(s_inv * (g_ang - h_tx * (h_xx_inv * g_lin)));
+	unitless::vec3 delta_x = -(h_xx_inv * (g_lin + h_xt * delta_theta));
+
+	constexpr float max_lin_step = 0.5f;
+	constexpr float max_ang_step = 0.5f;
+
+	if (const float lin_size = magnitude(delta_x); lin_size > max_lin_step) {
+		delta_x *= (max_lin_step / lin_size);
+	}
+	if (const float ang_size = magnitude(delta_theta); ang_size > max_ang_step) {
+		delta_theta *= (max_ang_step / ang_size);
+	}
+
+	body.predicted_position += delta_x * meters(1.f);
+
+	if (const float angle = magnitude(delta_theta); angle > 1e-7f) {
+		const unitless::vec3 axis = delta_theta / angle;
+		const float half_angle = angle * 0.5f;
+		const float sh = std::sin(half_angle);
+		const float ch = std::cos(half_angle);
+		const quat delta_q(ch, sh * axis.x(), sh * axis.y(), sh * axis.z());
+		body.predicted_orientation = normalize(delta_q * body.predicted_orientation);
+	}
 }
 
 auto gse::vbd::solver::update_lagrange_multipliers() -> void {
@@ -365,7 +459,7 @@ auto gse::vbd::solver::update_lagrange_multipliers() -> void {
 
 		const float gap = (dot(p_b - p_a, c.normal) + c.initial_separation).as<meters>();
 
-		constexpr float max_lambda = 10000.f;
+		constexpr float max_lambda = 1e6f;
 		c.lambda = std::clamp(c.lambda - m_config.rho * gap, 0.f, max_lambda);
 	}
 }
@@ -393,7 +487,7 @@ auto gse::vbd::solver::derive_velocities(const time_step sub_dt) -> void {
 			if (const quat delta_q = body.predicted_orientation * conjugate(body.old_orientation); std::abs(delta_q.s()) < 0.9999f) {
 				const float angle = 2.f * std::acos(std::clamp(delta_q.s(), -1.f, 1.f));
 				if (const float sin_half = std::sqrt(1.f - delta_q.s() * delta_q.s()); sin_half > 1e-6f) {
-					const unitless::vec3 axis(delta_q.x() / sin_half, delta_q.y() / sin_half, delta_q.z() / sin_half);
+					const unitless::vec3 axis(delta_q.imaginary_part() / sin_half);
 					body.body_angular_velocity = axis * radians_per_second(angle / dt_s);
 				}
 			}
@@ -412,7 +506,19 @@ auto gse::vbd::solver::derive_velocities(const time_step sub_dt) -> void {
 }
 
 auto gse::vbd::solver::apply_velocity_corrections() -> void {
-	for (auto& c : m_graph.contact_constraints()) {
+	if (m_bodies.empty()) return;
+
+	auto& contacts = m_graph.contact_constraints();
+	const auto num_contacts = contacts.size();
+	if (num_contacts == 0) return;
+
+	static std::mt19937 rng(42);
+	std::vector<std::size_t> order(num_contacts);
+	std::iota(order.begin(), order.end(), 0uz);
+	std::ranges::shuffle(order, rng);
+
+	for (const auto ci : order) {
+		auto& c = contacts[ci];
 		if (c.lambda <= 0.f) continue;
 
 		auto& body_a = m_bodies[c.body_a];
@@ -421,41 +527,54 @@ auto gse::vbd::solver::apply_velocity_corrections() -> void {
 		const vec3<length> world_r_a = rotate_vector(body_a.predicted_orientation, c.r_a);
 		const vec3<length> world_r_b = rotate_vector(body_b.predicted_orientation, c.r_b);
 
+		const float w_a_lin = body_a.locked ? 0.f : body_a.inverse_mass().as<per_kilograms>();
+		const float w_b_lin = body_b.locked ? 0.f : body_b.inverse_mass().as<per_kilograms>();
+
+		const mat3 inv_inertia_a = to_unitless(body_a.inv_inertia);
+		const mat3 inv_inertia_b = to_unitless(body_b.inv_inertia);
+
+		const unitless::vec3 n_unit(c.normal.x(), c.normal.y(), c.normal.z());
+		const unitless::vec3 rcross_a_n = cross(world_r_a.as<meters>(), n_unit);
+		const unitless::vec3 rcross_b_n = cross(world_r_b.as<meters>(), n_unit);
+		const unitless::vec3 inv_i_rcross_a_n = inv_inertia_a * rcross_a_n;
+		const unitless::vec3 inv_i_rcross_b_n = inv_inertia_b * rcross_b_n;
+		const float w_rot_a_n = (body_a.locked || !body_a.update_orientation) ? 0.f : dot(rcross_a_n, inv_i_rcross_a_n);
+		const float w_rot_b_n = (body_b.locked || !body_b.update_orientation) ? 0.f : dot(rcross_b_n, inv_i_rcross_b_n);
+		const float w_total_n = w_a_lin + w_b_lin + w_rot_a_n + w_rot_b_n;
+
 		const vec3<velocity> v_a = body_a.body_velocity + cross(body_a.body_angular_velocity, world_r_a);
 		const vec3<velocity> v_b = body_b.body_velocity + cross(body_b.body_angular_velocity, world_r_b);
 		const vec3<velocity> rel_vel = v_a - v_b;
 
 		const velocity v_n = dot(rel_vel, c.normal);
-		const float v_n_val = v_n.as<meters_per_second>();
 
-		const float w_a_lin = body_a.locked ? 0.f : body_a.inverse_mass().as<per_kilograms>();
-		const float w_b_lin = body_b.locked ? 0.f : body_b.inverse_mass().as<per_kilograms>();
-
-		if (v_n_val < -m_config.velocity_sleep_threshold) {
-			if (const float w_total = w_a_lin + w_b_lin; w_total > 1e-10f) {
-				const float delta_v_n = -v_n_val;
-
+		if (const float v_n_val = v_n.as<meters_per_second>(); w_total_n > 1e-10f && v_n_val > m_config.velocity_sleep_threshold) {
+			if (const float impulse = -v_n_val / w_total_n; impulse < -1e-10f) {
 				if (!body_a.locked) {
-					body_a.body_velocity += c.normal * meters_per_second(w_a_lin / w_total * delta_v_n);
+					body_a.body_velocity += c.normal * meters_per_second(w_a_lin * impulse);
+					if (body_a.update_orientation) {
+						body_a.body_angular_velocity += inv_i_rcross_a_n * radians_per_second(impulse);
+					}
 				}
 				if (!body_b.locked) {
-					body_b.body_velocity -= c.normal * meters_per_second(w_b_lin / w_total * delta_v_n);
+					body_b.body_velocity -= c.normal * meters_per_second(w_b_lin * impulse);
+					if (body_b.update_orientation) {
+						body_b.body_angular_velocity -= inv_i_rcross_b_n * radians_per_second(impulse);
+					}
 				}
 			}
 		}
 
+		// Friction (tangential) correction
 		const vec3<velocity> v_t = rel_vel - v_n * c.normal;
 		const velocity v_t_mag = magnitude(v_t);
 
-		if (v_t_mag.as<meters_per_second>() < m_config.velocity_sleep_threshold) continue;
+		if (v_t_mag.as<meters_per_second>() < 1e-7f) continue;
 
 		const unitless::vec3 t = normalize(v_t);
 
 		const unitless::vec3 rcross_a_t = cross(world_r_a.as<meters>(), t);
 		const unitless::vec3 rcross_b_t = cross(world_r_b.as<meters>(), t);
-
-		const mat3 inv_inertia_a = to_unitless(body_a.inv_inertia);
-		const mat3 inv_inertia_b = to_unitless(body_b.inv_inertia);
 
 		const unitless::vec3 inv_inertia_rcross_a_t = inv_inertia_a * rcross_a_t;
 		const unitless::vec3 inv_inertia_rcross_b_t = inv_inertia_b * rcross_b_t;
@@ -472,22 +591,16 @@ auto gse::vbd::solver::apply_velocity_corrections() -> void {
 		delta_lambda_t = std::clamp(delta_lambda_t, -max_friction, max_friction);
 
 		if (!body_a.locked) {
-			const velocity delta_v_a = meters_per_second(w_a_lin * delta_lambda_t);
-			body_a.body_velocity += t * delta_v_a;
-
+			body_a.body_velocity += t * meters_per_second(w_a_lin * delta_lambda_t);
 			if (body_a.update_orientation) {
-				const unitless::vec3 delta_omega_a = inv_inertia_rcross_a_t * delta_lambda_t;
-				body_a.body_angular_velocity += delta_omega_a * radians_per_second(1.f);
+				body_a.body_angular_velocity += inv_inertia_rcross_a_t * radians_per_second(delta_lambda_t);
 			}
 		}
 
 		if (!body_b.locked) {
-			const velocity delta_v_b = meters_per_second(w_b_lin * delta_lambda_t);
-			body_b.body_velocity -= t * delta_v_b;
-
+			body_b.body_velocity -= t * meters_per_second(w_b_lin * delta_lambda_t);
 			if (body_b.update_orientation) {
-				const unitless::vec3 delta_omega_b = inv_inertia_rcross_b_t * delta_lambda_t;
-				body_b.body_angular_velocity -= delta_omega_b * radians_per_second(1.f);
+				body_b.body_angular_velocity -= inv_inertia_rcross_b_t * radians_per_second(delta_lambda_t);
 			}
 		}
 	}
