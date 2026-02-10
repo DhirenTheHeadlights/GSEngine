@@ -12,6 +12,7 @@ export namespace gse::vbd {
 		mat3 hessian = {};
 		unitless::vec3 angular_gradient = {};
 		mat3 angular_hessian = {};
+		mat3 hessian_xtheta = {};
 	};
 
 	struct contact_constraint {

@@ -3,6 +3,7 @@ export module gse.physics:system;
 import std;
 
 import gse.utility;
+import gse.log;
 import gse.physics.math;
 
 import :broad_phase_collision;
@@ -75,7 +76,7 @@ auto gse::physics::system::initialize(const initialize_phase& phase, state& s) -
 		.contact_compliance = 0.f,
 		.contact_damping = 0.f,
 		.friction_coefficient = 0.6f,
-		.rho = 1000.f,
+		.rho = 1e6f,
 		.linear_damping = 1.0f,
 		.velocity_sleep_threshold = 0.001f,
 		.speculative_margin = meters(0.02f)
@@ -181,6 +182,13 @@ auto gse::physics::update_vbd(
 	chunk<collision_component>& collision
 ) -> void {
 	const time_t<float, seconds> const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
+
+	static int vbd_call = 0;
+	if (vbd_call < 120) {
+		log::println(log::level::info, "[VBD-SYS] call={} steps={} motion_size={} collision_size={} use_vbd={}",
+			vbd_call, steps, motion.size(), collision.size(), s.use_vbd_solver);
+		vbd_call++;
+	}
 
 	for (int step = 0; step < steps; ++step) {
 		std::unordered_map<id, std::uint32_t> id_to_body_index;
@@ -373,6 +381,8 @@ auto gse::physics::update_vbd(
 				mc->orientation = bs.orientation;
 				mc->angular_velocity = bs.body_angular_velocity;
 			}
+
+			mc->accumulators = {};
 
 			if (auto* cc = collision.find(mc->owner_id())) {
 				cc->bounding_box.update(mc->current_position, mc->orientation);

@@ -492,11 +492,12 @@ auto gse::gui::system::begin_frame(begin_frame_phase&, system_state& s) -> bool 
 						const float new_height = m.rect.height() * scale_y;
 
 						const float clamped_left = std::clamp(new_left, 0.f, std::max(0.f, current_viewport_size.x() - new_width));
-						const float clamped_top = std::clamp(new_top, new_height, new_usable_height);
+						const float actual_height = std::min(new_height, new_usable_height);
+						const float clamped_top = std::clamp(new_top, actual_height, new_usable_height);
 
 						m.rect = ui_rect::from_position_size(
 							{ clamped_left, clamped_top },
-							{ new_width, new_height }
+							{ new_width, actual_height }
 						);
 					}
 

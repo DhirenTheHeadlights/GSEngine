@@ -24,12 +24,12 @@ export namespace gs {
 			constexpr float box_size = 2.f;
 			constexpr float half_box = box_size / 2.f;
 
-			for (int i = 0; i < 1; ++i) {
+			for (int i = 0; i < 5; ++i) {
 				const float y = half_box + static_cast<float>(i) * box_size;
 				build(std::format("Stacked Box {}", i + 1))
 					.with<gse::box>({
 						.initial_position = gse::vec3<gse::length>(0.f, y, 0.f),
-						.size = gse::vec3<gse::length>(box_size, box_size, box_size)
+						.size = gse::vec3<gse::length>(box_size)
 					});
 			}
 
