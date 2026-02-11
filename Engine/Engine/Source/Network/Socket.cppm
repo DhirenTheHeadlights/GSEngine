@@ -13,6 +13,23 @@ import std;
 import gse.assert;
 import gse.physics.math;
 
+namespace gse::network {
+	struct winsock_initializer {
+		winsock_initializer() {
+			WSADATA wsa_data;
+			if (const int result = WSAStartup(MAKEWORD(2, 2), &wsa_data); result != 0) {
+				std::println(std::cerr, "WSAStartup failed with error: {}", result);
+				std::terminate();
+			}
+		}
+		~winsock_initializer() {
+			WSACleanup();
+		}
+	};
+
+	static winsock_initializer g_winsock_init;
+}
+
 export namespace gse::network {
 	struct packet {
 		std::uint8_t* data;
