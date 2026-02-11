@@ -11,9 +11,23 @@ import gse.platform;
 import :world;
 
 export namespace gse {
+	enum struct flags : std::uint8_t {
+		none = 0,
+		create_window = 1 << 0,
+		render = 1 << 1,
+	};
+
+	constexpr auto operator|(flags lhs, flags rhs) -> flags {
+		return static_cast<flags>(static_cast<std::uint32_t>(lhs) | static_cast<std::uint32_t>(rhs));
+	}
+
+	constexpr auto has_flag(flags haystack, flags needle) -> bool {
+		return (static_cast<std::uint32_t>(haystack) & static_cast<std::uint32_t>(needle)) == static_cast<std::uint32_t>(needle);
+	}
+
 	class engine : public hookable<engine> {
 	public:
-		explicit engine(const std::string& name);
+		explicit engine(const std::string& name, flags engine_flags);
 
 		auto initialize() -> void override;
 		auto update() -> void override;
@@ -22,6 +36,9 @@ export namespace gse {
 
 		template <typename State>
 		auto state_of() -> State&;
+
+		template <typename State>
+		auto has_state() const -> bool;
 
 		template <typename T>
 		auto channel() -> channel<T>&;
@@ -63,13 +80,15 @@ export namespace gse {
 			F&& action
 		) -> void;
 	private:
+		flags m_flags;
 		scheduler m_scheduler;
 		world m_world;
 		std::unique_ptr<renderer::context> m_render_ctx;
 	};
 }
 
-gse::engine::engine(const std::string& name): hookable(name), m_world(m_scheduler, "World") {}
+gse::engine::engine(const std::string& name, const flags engine_flags)
+	: hookable(name), m_flags(engine_flags), m_world(m_scheduler, "World") {}
 
 auto gse::engine::initialize() -> void {
 	trace::start({
@@ -85,23 +104,25 @@ auto gse::engine::initialize() -> void {
 	m_scheduler.add_system<network::system, network::system_state>(reg);
 	m_scheduler.add_system<physics::system, physics::state>(reg);
 
-	m_render_ctx = std::make_unique<renderer::context>(
-		std::string(id().tag()),
-		input,
-		save
-	);
+	if (has_flag(m_flags, flags::render)) {
+		m_render_ctx = std::make_unique<renderer::context>(
+			std::string(id().tag()),
+			input,
+			save
+		);
 
-	auto& ctx = *m_render_ctx.get();
+		auto& ctx = *m_render_ctx.get();
 
-	m_scheduler.add_system<camera::system, camera::state>(reg);
-	m_scheduler.add_system<renderer::system, renderer::state>(reg, ctx);
-	m_scheduler.add_system<renderer::shadow::system, renderer::shadow::state>(reg, ctx);
-	m_scheduler.add_system<renderer::geometry::system, renderer::geometry::state>(reg, ctx);
-	m_scheduler.add_system<renderer::lighting::system, renderer::lighting::state>(reg, ctx);
-	m_scheduler.add_system<renderer::physics_debug::system, renderer::physics_debug::state>(reg, ctx);
-	m_scheduler.add_system<renderer::ui::system, renderer::ui::state>(reg, ctx);
-	m_scheduler.add_system<gui::system, gui::system_state>(reg, ctx);
-	m_scheduler.add_system<animation::system, animation::state>(reg);
+		m_scheduler.add_system<camera::system, camera::state>(reg);
+		m_scheduler.add_system<renderer::system, renderer::state>(reg, ctx);
+		m_scheduler.add_system<renderer::shadow::system, renderer::shadow::state>(reg, ctx);
+		m_scheduler.add_system<renderer::geometry::system, renderer::geometry::state>(reg, ctx);
+		m_scheduler.add_system<renderer::lighting::system, renderer::lighting::state>(reg, ctx);
+		m_scheduler.add_system<renderer::physics_debug::system, renderer::physics_debug::state>(reg, ctx);
+		m_scheduler.add_system<renderer::ui::system, renderer::ui::state>(reg, ctx);
+		m_scheduler.add_system<gui::system, gui::system_state>(reg, ctx);
+		m_scheduler.add_system<animation::system, animation::state>(reg);
+	}
 
 	m_scheduler.initialize();
 
@@ -172,6 +193,11 @@ auto gse::engine::direct() -> director {
 template <typename State>
 auto gse::engine::state_of() -> State& {
 	return m_scheduler.state<State>();
+}
+
+template <typename State>
+auto gse::engine::has_state() const -> bool {
+	return m_scheduler.has<State>();
 }
 
 template <typename T>

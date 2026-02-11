@@ -110,17 +110,12 @@ export namespace gse::network {
 }
 
 auto gse::network::system::initialize(initialize_phase&, system_state&) -> void {
-	WSADATA wsa_data;
-	if (const auto result = WSAStartup(MAKEWORD(2, 2), &wsa_data); result != 0) {
-		std::println("WSAStartup failed: {}", result);
-	}
+	// WinSock initialization handled by static initializer in Socket.cppm
 }
 
 auto gse::network::system::shutdown(shutdown_phase&, system_state& s) -> void {
 	s.client_ptr.reset();
-	if (const auto result = WSACleanup(); result != 0) {
-		std::println("WSACleanup failed: {}", result);
-	}
+	// WinSock cleanup handled by static initializer destructor in Socket.cppm
 }
 
 auto gse::network::system::update(update_phase& phase, system_state& s) -> void {
