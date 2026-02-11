@@ -25,6 +25,7 @@ export namespace gse::physics {
 
 		vbd::solver vbd_solver;
 		vbd::contact_cache contact_cache;
+		std::unordered_map<id, std::uint32_t> sleep_counters;
 	};
 
 	struct system {
@@ -78,7 +79,7 @@ auto gse::physics::system::initialize(const initialize_phase& phase, state& s) -
 		.friction_coefficient = 0.6f,
 		.rho = 1e6f,
 		.linear_damping = 1.0f,
-		.velocity_sleep_threshold = 0.001f,
+		.velocity_sleep_threshold = 0.05f,
 		.speculative_margin = meters(0.02f)
 	});
 }
@@ -202,6 +203,10 @@ auto gse::physics::update_vbd(
 		for (motion_component& mc : motion) {
 			id_to_body_index[mc.owner_id()] = body_idx++;
 
+			const auto eid = mc.owner_id();
+			const auto sc_it = s.sleep_counters.find(eid);
+			const auto sc = sc_it != s.sleep_counters.end() ? sc_it->second : 0u;
+
 			bodies.push_back(vbd::body_state{
 				.position = mc.current_position,
 				.predicted_position = mc.current_position,
@@ -218,7 +223,8 @@ auto gse::physics::update_vbd(
 				.inv_inertia = mc.inv_inertial_tensor(),
 				.locked = mc.position_locked,
 				.update_orientation = mc.update_orientation,
-				.affected_by_gravity = mc.affected_by_gravity
+				.affected_by_gravity = mc.affected_by_gravity,
+				.sleep_counter = sc
 			});
 			motion_ptrs.push_back(std::addressof(mc));
 
@@ -381,6 +387,9 @@ auto gse::physics::update_vbd(
 				mc->orientation = bs.orientation;
 				mc->angular_velocity = bs.body_angular_velocity;
 			}
+
+			s.sleep_counters[mc->owner_id()] = bs.sleep_counter;
+			mc->sleeping = bs.sleeping();
 
 			mc->accumulators = {};
 
