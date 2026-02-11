@@ -4,8 +4,6 @@ import std;
 
 import gse.physics.math;
 import gse.utility;
-import gse.log;
-
 import :vbd_constraints;
 import :vbd_constraint_graph;
 import :vbd_contact_cache;
@@ -144,35 +142,6 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		solve_substep(sub_dt);
 	}
 
-	static int frame_count = 0;
-	if (m_bodies.empty()) return;
-	if (frame_count < 120) {
-		log::println(log::level::info, "[VBD] frame={} bodies={} contacts={} colors={}",
-			frame_count, m_bodies.size(), m_graph.contact_constraints().size(), m_graph.colors().size());
-
-		for (std::uint32_t i = 0; i < m_bodies.size(); ++i) {
-			const auto& b = m_bodies[i];
-			if (b.locked) continue;
-			log::println(log::level::info, "[VBD] frame={} body={} pos={} vel={} ang_vel={}",
-				frame_count, i, b.position, b.body_velocity, b.body_angular_velocity);
-		}
-
-		for (const auto& c : m_graph.contact_constraints()) {
-			const auto& ba = m_bodies[c.body_a];
-			const auto& bb = m_bodies[c.body_b];
-			const vec3<length> world_r_a = rotate_vector(ba.orientation, c.r_a);
-			const vec3<length> world_r_b = rotate_vector(bb.orientation, c.r_b);
-			const float gap = static_cast<float>((dot(bb.position + world_r_b - ba.position - world_r_a, c.normal) + c.initial_separation).as<meters>());
-
-			log::println(log::level::info, "[VBD] frame={} contact: bodies=({},{}) n={} r_a={} r_b={} gap={} lam={} sep={}",
-				frame_count, c.body_a, c.body_b,
-				c.normal,
-				world_r_a, world_r_b,
-				gap, c.lambda, static_cast<float>(c.initial_separation.as<meters>()));
-		}
-
-		frame_count++;
-	}
 }
 
 auto gse::vbd::solver::end_frame(std::vector<body_state>& bodies, contact_cache& cache) -> void {
@@ -245,7 +214,8 @@ auto gse::vbd::solver::solve_substep(const time_step sub_dt) -> void {
 		apply_velocity_corrections();
 	}
 
-	for (auto& body : m_bodies) {
+	for (std::uint32_t bi = 0; bi < m_bodies.size(); ++bi) {
+		auto& body = m_bodies[bi];
 		if (body.locked) {
 			body.position = body.predicted_position;
 			if (body.update_orientation) {
@@ -258,8 +228,16 @@ auto gse::vbd::solver::solve_substep(const time_step sub_dt) -> void {
 
 		if (body.update_orientation) {
 			const auto w = body.body_angular_velocity.as<radians_per_second>();
-			const quat omega_q{ 0.f, w.x(), w.y(), w.z() };
-			body.orientation = normalize(body.old_orientation + 0.5f * omega_q * body.old_orientation * dt_s);
+			const float omega_mag = magnitude(w);
+			if (omega_mag > 1e-7f) {
+				const float angle = omega_mag * dt_s;
+				const unitless::vec3 axis = w / omega_mag;
+				const float half = angle * 0.5f;
+				const quat dq(std::cos(half), std::sin(half) * axis.x(), std::sin(half) * axis.y(), std::sin(half) * axis.z());
+				body.orientation = normalize(dq * body.old_orientation);
+			} else {
+				body.orientation = body.old_orientation;
+			}
 		}
 	}
 }
@@ -290,9 +268,16 @@ auto gse::vbd::solver::predict_positions(const time_step sub_dt) -> void {
 		if (body.update_orientation) {
 			body.predicted_angular_velocity = body.body_angular_velocity;
 			const unitless::vec3 w = body.body_angular_velocity.as<radians_per_second>();
-			const quat omega_q{ 0.f, w.x(), w.y(), w.z() };
-			const quat delta_q = 0.5f * omega_q * body.orientation;
-			body.predicted_orientation = normalize(body.orientation + delta_q * dt_s);
+			const float omega_mag = magnitude(w);
+			if (omega_mag > 1e-7f) {
+				const float angle = omega_mag * dt_s;
+				const unitless::vec3 axis = w / omega_mag;
+				const float half = angle * 0.5f;
+				const quat dq(std::cos(half), std::sin(half) * axis.x(), std::sin(half) * axis.y(), std::sin(half) * axis.z());
+				body.predicted_orientation = normalize(dq * body.orientation);
+			} else {
+				body.predicted_orientation = body.orientation;
+			}
 		} else {
 			body.predicted_orientation = body.orientation;
 			body.predicted_angular_velocity = {};
@@ -461,6 +446,7 @@ auto gse::vbd::solver::update_lagrange_multipliers() -> void {
 
 		constexpr float max_lambda = 1e6f;
 		c.lambda = std::clamp(c.lambda - m_config.rho * gap, 0.f, max_lambda);
+
 	}
 }
 
@@ -484,12 +470,21 @@ auto gse::vbd::solver::derive_velocities(const time_step sub_dt) -> void {
 		}
 
 		if (body.update_orientation) {
-			if (const quat delta_q = body.predicted_orientation * conjugate(body.old_orientation); std::abs(delta_q.s()) < 0.9999f) {
-				const float angle = 2.f * std::acos(std::clamp(delta_q.s(), -1.f, 1.f));
-				if (const float sin_half = std::sqrt(1.f - delta_q.s() * delta_q.s()); sin_half > 1e-6f) {
-					const unitless::vec3 axis(delta_q.imaginary_part() / sin_half);
-					body.body_angular_velocity = axis * radians_per_second(angle / dt_s);
+			const quat delta_q = body.predicted_orientation * conjugate(body.old_orientation);
+			float q_s = delta_q.s();
+			unitless::vec3 q_v = delta_q.imaginary_part();
+			if (q_s < 0.f) { q_s = -q_s; q_v = -q_v; }
+
+			if (q_s < 0.9999f) {
+				const float angle = 2.f * std::acos(std::clamp(q_s, 0.f, 1.f));
+				const float sin_half = std::sqrt(1.f - q_s * q_s);
+				if (sin_half > 1e-6f) {
+					body.body_angular_velocity = (q_v / sin_half) * radians_per_second(angle / dt_s);
+				} else {
+					body.body_angular_velocity = q_v * radians_per_second(2.f / dt_s);
 				}
+			} else {
+				body.body_angular_velocity = q_v * radians_per_second(2.f / dt_s);
 			}
 
 			constexpr float angular_damping = 2.0f;

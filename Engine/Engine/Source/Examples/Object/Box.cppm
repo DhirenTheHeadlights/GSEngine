@@ -22,10 +22,15 @@ export namespace gse {
 		explicit box(const params& p) : m_initial_position(p.initial_position), m_size(p.size), m_initial_orientation(p.initial_orientation) {}
 
 		auto initialize() -> void override {
+			const auto s = m_size.as<meters>();
+			constexpr float box_mass = 1000.f;
+			const float box_inertia = (box_mass / 18.f) * (s.x() * s.x() + s.y() * s.y() + s.z() * s.z());
+
 			add_component<physics::motion_component>({
 				.current_position = m_initial_position,
-				.mass = kilograms(1000.f),
-				.orientation = m_initial_orientation
+				.mass = kilograms(box_mass),
+				.orientation = m_initial_orientation,
+				.moment_of_inertia = box_inertia
 			});
 
 			add_component<physics::collision_component>({
