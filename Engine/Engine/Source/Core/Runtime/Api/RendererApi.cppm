@@ -13,6 +13,9 @@ export namespace gse {
 	auto get(
 		const id& id
 	) -> resource::handle<Resource> {
+		if (!has_state<renderer::state>()) {
+			return {};
+		}
 		return state_of<renderer::state>().get<Resource>(id);
 	}
 
@@ -20,6 +23,9 @@ export namespace gse {
 	auto get(
 		const std::string& filename
 	) -> resource::handle<Resource> {
+		if (!has_state<renderer::state>()) {
+			return {};
+		}
 		return state_of<renderer::state>().get<Resource>(filename);
 	}
 
@@ -28,6 +34,9 @@ export namespace gse {
 		const std::string& name,
 		Args&&... args
 	) -> resource::handle<Resource> {
+		if (!has_state<renderer::state>()) {
+			return {};
+		}
 		return state_of<renderer::state>().queue<Resource>(name, std::forward<Args>(args)...);
 	}
 
@@ -35,6 +44,9 @@ export namespace gse {
 	auto instantly_load(
 		const id& id
 	) -> resource::handle<Resource> {
+		if (!has_state<renderer::state>()) {
+			return {};
+		}
 		return state_of<renderer::state>().instantly_load<Resource>(id);
 	}
 
@@ -42,6 +54,9 @@ export namespace gse {
 	auto add(
 		Resource&& resource
 	) -> void {
+		if (!has_state<renderer::state>()) {
+			return;
+		}
 		state_of<renderer::state>().add<Resource>(std::forward<Resource>(resource));
 	}
 
@@ -49,17 +64,26 @@ export namespace gse {
 	auto resource_state(
 		const id& id
 	) -> resource::state {
+		if (!has_state<renderer::state>()) {
+			return resource::state::unloaded;
+		}
 		return state_of<renderer::state>().resource_state<Resource>(id);
 	}
 
 	auto set_ui_focus(
 		const bool focus
 	) -> void {
+		if (!has_state<renderer::state>()) {
+			return;
+		}
 		state_of<renderer::state>().set_ui_focus(focus);
 	}
 
 	auto frame_begun(
 	) -> bool {
+		if (!has_state<renderer::state>()) {
+			return false;
+		}
 		return state_of<renderer::state>().is_frame_begun();
 	}
 }

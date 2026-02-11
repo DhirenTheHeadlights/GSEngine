@@ -20,17 +20,11 @@ export namespace gse {
         bool fullscreen = false;
     };
 
-    enum struct flags : std::uint8_t {
-        none = 0,
-        create_window = 1 << 0,
-        render = 1 << 1,
-    };
-
-    constexpr auto operator|(flags lhs, flags rhs) -> flags;
-    constexpr auto has_flag(flags haystack, flags needle) -> bool;
-
     template <typename State>
     auto state_of() -> State&;
+
+    template <typename State>
+    auto has_state() -> bool;
 
     template <typename T>
     auto channel_add(
@@ -53,17 +47,14 @@ export namespace gse {
     auto shutdown() -> void;
 }
 
-constexpr auto gse::operator|(flags lhs, flags rhs) -> flags {
-    return static_cast<flags>(static_cast<std::uint32_t>(lhs) | static_cast<std::uint32_t>(rhs));
-}
-
-constexpr auto gse::has_flag(flags haystack, flags needle) -> bool {
-    return (static_cast<std::uint32_t>(haystack) & static_cast<std::uint32_t>(needle)) == static_cast<std::uint32_t>(needle);
-}
-
 template <typename State>
 auto gse::state_of() -> State& {
     return engine_instance->state_of<State>();
+}
+
+template <typename State>
+auto gse::has_state() -> bool {
+    return engine_instance && engine_instance->has_state<State>();
 }
 
 template <typename T>
@@ -73,7 +64,7 @@ auto gse::channel_add(T&& request) -> void {
 
 template <typename... Hooks>
 auto gse::start(const flags engine_flags, const engine_config& config) -> void {
-    engine_instance = std::make_unique<engine>(config.title);
+    engine_instance = std::make_unique<engine>(config.title, engine_flags);
 	log::println(log::level::info, "Starting GSEngine...");
 
     (engine_instance->add_hook<Hooks>(), ...);
@@ -88,7 +79,9 @@ auto gse::start(const flags engine_flags, const engine_config& config) -> void {
     engine_instance->initialize();
     task::start([&] {
         while (!should_shutdown.load(std::memory_order_acquire)) {
-            window::poll_events();
+            if (has_flag(engine_flags, flags::create_window)) {
+                window::poll_events();
+            }
 
             frame_sync::begin();
 
