@@ -75,11 +75,18 @@ export namespace gse::vbd {
 		bool update_orientation = true;
 		bool affected_by_gravity = true;
 
+		std::uint32_t sleep_counter = 0;
+
 		auto inverse_mass() const -> inverse_mass;
+		auto sleeping() const -> bool;
 	};
 }
 
 auto gse::vbd::body_state::inverse_mass() const -> gse::inverse_mass {
 	if (locked) return gse::inverse_mass{ 0.f };
 	return 1.f / mass_value;
+}
+
+auto gse::vbd::body_state::sleeping() const -> bool {
+	return sleep_counter >= 300;
 }

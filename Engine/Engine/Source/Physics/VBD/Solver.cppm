@@ -4,6 +4,7 @@ import std;
 
 import gse.physics.math;
 import gse.utility;
+import gse.log;
 import :vbd_constraints;
 import :vbd_constraint_graph;
 import :vbd_contact_cache;
@@ -100,6 +101,7 @@ export namespace gse::vbd {
 		constraint_graph m_graph;
 		std::vector<body_state> m_bodies;
 		std::vector<body_solve_state> m_solve_state;
+		std::uint32_t m_substep = 0;
 	};
 }
 
@@ -216,7 +218,7 @@ auto gse::vbd::solver::solve_substep(const time_step sub_dt) -> void {
 
 	for (std::uint32_t bi = 0; bi < m_bodies.size(); ++bi) {
 		auto& body = m_bodies[bi];
-		if (body.locked) {
+		if (body.locked || body.sleeping()) {
 			body.position = body.predicted_position;
 			if (body.update_orientation) {
 				body.orientation = body.predicted_orientation;
@@ -247,7 +249,7 @@ auto gse::vbd::solver::predict_positions(const time_step sub_dt) -> void {
 	const float dt_s = sub_dt.as<seconds>();
 
 	for (auto& body : m_bodies) {
-		if (body.locked) {
+		if (body.locked || body.sleeping()) {
 			body.predicted_position = body.position;
 			body.inertia_target = body.position;
 			body.predicted_velocity = {};
@@ -339,7 +341,7 @@ auto gse::vbd::solver::accumulate_contact_gradient_hessian(const contact_constra
 auto gse::vbd::solver::perform_local_newton_step(const std::uint32_t body_idx, const body_solve_state& solve_state, const float h_squared) -> void {
 	auto& body = m_bodies[body_idx];
 
-	if (body.locked) return;
+	if (body.locked || body.sleeping()) return;
 
 	if (const float inv_mass = body.inverse_mass().as<per_kilograms>(); inv_mass < 1e-10f) {
 		return;
@@ -460,15 +462,30 @@ auto gse::vbd::solver::derive_velocities(const time_step sub_dt) -> void {
 			continue;
 		}
 
+		if (body.sleeping()) {
+			body.body_velocity = {};
+			body.body_angular_velocity = {};
+
+			const float wake_dist = magnitude((body.predicted_position - body.position).as<meters>());
+			if (wake_dist > 0.001f) {
+				body.sleep_counter = 0;
+			}
+			continue;
+		}
+
 		body.body_velocity = (body.predicted_position - body.old_position) / sub_dt;
 
 		const float linear_damping_factor = std::max(0.f, 1.f - m_config.linear_damping * dt_s);
 		body.body_velocity *= linear_damping_factor;
 
-		if (const velocity speed = magnitude(body.body_velocity); speed.as<meters_per_second>() < m_config.velocity_sleep_threshold) {
+		const float lin_speed = magnitude(body.body_velocity).as<meters_per_second>();
+		const bool lin_at_rest = lin_speed < m_config.velocity_sleep_threshold;
+
+		if (lin_at_rest) {
 			body.body_velocity = {};
 		}
 
+		bool ang_at_rest = true;
 		if (body.update_orientation) {
 			const quat delta_q = body.predicted_orientation * conjugate(body.old_orientation);
 			float q_s = delta_q.s();
@@ -491,13 +508,35 @@ auto gse::vbd::solver::derive_velocities(const time_step sub_dt) -> void {
 			const float angular_damping_factor = std::max(0.f, 1.f - angular_damping * dt_s);
 			body.body_angular_velocity *= angular_damping_factor;
 
-			if (magnitude(body.body_angular_velocity).as<radians_per_second>() < m_config.velocity_sleep_threshold) {
+			const float ang_speed = magnitude(body.body_angular_velocity).as<radians_per_second>();
+			ang_at_rest = ang_speed < m_config.velocity_sleep_threshold;
+
+			if (ang_at_rest) {
 				body.body_angular_velocity = {};
 			}
 		} else {
 			body.body_angular_velocity = {};
 		}
+
+		if (lin_at_rest && ang_at_rest) {
+			body.sleep_counter++;
+		} else {
+			body.sleep_counter = 0;
+		}
 	}
+
+	if (m_substep % (m_config.substeps * 60) == 0) {
+		for (std::uint32_t i = 0; i < m_bodies.size(); ++i) {
+			const auto& b = m_bodies[i];
+			if (b.locked) continue;
+			const float lv = magnitude(b.body_velocity).as<meters_per_second>();
+			const float av = b.update_orientation ? magnitude(b.body_angular_velocity).as<radians_per_second>() : 0.f;
+			log::println(log::level::info,
+				"[VBD:sleep] body={} lin_v={:.6f} ang_v={:.6f} sleep_cnt={} sleeping={}",
+				i, lv, av, b.sleep_counter, b.sleeping());
+		}
+	}
+	++m_substep;
 }
 
 auto gse::vbd::solver::apply_velocity_corrections() -> void {
@@ -603,7 +642,7 @@ auto gse::vbd::solver::apply_velocity_corrections() -> void {
 
 auto gse::vbd::solver::solve_motor_constraint(velocity_motor_constraint& m, const time_step sub_dt) -> void {
 	auto& body = m_bodies[m.body_index];
-	if (body.locked) return;
+	if (body.locked || body.sleeping()) return;
 
 	const float dt_s = sub_dt.as<seconds>();
 	const float alpha = m.compliance / (dt_s * dt_s);
