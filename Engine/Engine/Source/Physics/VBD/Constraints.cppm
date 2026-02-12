@@ -47,6 +47,7 @@ export namespace gse::vbd {
 
 		float compliance = 0.01f;
 		force max_force = newtons(1000.f);
+		bool horizontal_only = false;
 
 		std::array<float, 3> lambda = { 0.f, 0.f, 0.f };
 	};
@@ -67,6 +68,8 @@ export namespace gse::vbd {
 
 		vec3<angular_velocity> body_angular_velocity;
 		vec3<angular_velocity> predicted_angular_velocity;
+
+		vec3<length> motor_target;
 
 		mass mass_value = kilograms(1.f);
 		physics::inv_inertia_mat inv_inertia;

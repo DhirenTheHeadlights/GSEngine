@@ -77,7 +77,7 @@ auto gse::physics::system::initialize(const initialize_phase& phase, state& s) -
 		.contact_compliance = 0.f,
 		.contact_damping = 0.f,
 		.friction_coefficient = 0.6f,
-		.rho = 1e6f,
+		.rho = 1e9f,
 		.linear_damping = 1.0f,
 		.velocity_sleep_threshold = 0.05f,
 		.speculative_margin = meters(0.02f)
@@ -184,11 +184,10 @@ auto gse::physics::update_vbd(
 ) -> void {
 	const time_t<float, seconds> const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
 
-	static int vbd_call = 0;
-	if (vbd_call < 120) {
-		log::println(log::level::info, "[VBD-SYS] call={} steps={} motion_size={} collision_size={} use_vbd={}",
-			vbd_call, steps, motion.size(), collision.size(), s.use_vbd_solver);
-		vbd_call++;
+	static int vbd_log_count = 0;
+	if (vbd_log_count < 10) {
+		log::println(log::level::info, "update_vbd steps={} motion={} collision={}", steps, motion.size(), collision.size());
+		++vbd_log_count;
 	}
 
 	for (int step = 0; step < steps; ++step) {
@@ -219,6 +218,7 @@ auto gse::physics::update_vbd(
 				.old_orientation = mc.orientation,
 				.body_angular_velocity = mc.angular_velocity,
 				.predicted_angular_velocity = mc.angular_velocity,
+				.motor_target = mc.current_position,
 				.mass_value = mc.mass,
 				.inv_inertia = mc.inv_inertial_tensor(),
 				.locked = mc.position_locked,
@@ -366,8 +366,9 @@ auto gse::physics::update_vbd(
 			s.vbd_solver.add_motor_constraint(vbd::velocity_motor_constraint{
 				.body_index = id_to_body_index[mc.owner_id()],
 				.target_velocity = mc.motor.target_velocity,
-				.compliance = 0.0001f,
-				.max_force = newtons(mc.mass.as<kilograms>() * 100.f),
+				.compliance = 0.5f,
+				.max_force = newtons(mc.mass.as<kilograms>() * 50.f),
+				.horizontal_only = true,
 				.lambda = { 0.f, 0.f, 0.f }
 			});
 		}

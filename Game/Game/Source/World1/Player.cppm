@@ -105,11 +105,15 @@ namespace gs {
 
 	class player_hook final : public gse::hook<gse::entity> {
 	public:
-		using hook::hook;
+		struct params {
+			gse::vec3<gse::length> initial_position;
+		};
+
+		explicit player_hook(const params& p) : m_initial_position(p.initial_position) {}
 
 		auto initialize() -> void override {
 			add_component<gse::physics::motion_component>({
-				.current_position = gse::vec3<gse::length>(0.f, 0.f, 0.f),
+				.current_position = m_initial_position,
 				.max_speed = m_max_speed,
 				.mass = gse::pounds(180.f),
 				.self_controlled = true,
@@ -125,7 +129,7 @@ namespace gs {
 
 			add_component<gse::physics::collision_component>({
 				.bounding_box = {
-					gse::vec3<gse::length>(-10.f, -10.f, -10.f),
+					m_initial_position,
 					{ width, height, width }
 				}
 			});
@@ -141,7 +145,7 @@ namespace gs {
 			});*/
 
 			add_component<gse::camera::follow_component>({
-				.offset = gse::vec3<gse::length>(gse::feet(0.f), gse::feet(6.f), gse::feet(0.f)),
+				.offset = gse::vec3<gse::length>(0.f),
 				.priority = 50,
 				.blend_in_duration = gse::milliseconds(300),
 				.active = true,
@@ -273,6 +277,8 @@ namespace gs {
 		gse::velocity m_max_speed = gse::miles_per_hour(20.f);
 		gse::velocity m_sprint_speed = gse::miles_per_hour(40.f);
 
+		gse::vec3<gse::length> m_initial_position;
+
 		gse::actions::button_channel m_shift_channel;
 		gse::actions::button_channel m_jump_channel;
 		gse::actions::axis2_channel m_move_axis_channel;
@@ -288,7 +294,9 @@ namespace gs {
 
 		auto initialize() -> void override {
 			add_hook<jetpack_hook>();
-			add_hook<player_hook>();
+			add_hook<player_hook>({
+				.initial_position = m_initial_position
+			});
 		}
 	private:
 		gse::vec3<gse::length> m_initial_position;

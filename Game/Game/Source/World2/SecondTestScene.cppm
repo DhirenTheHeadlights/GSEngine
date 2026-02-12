@@ -21,19 +21,25 @@ export namespace gs {
 					.position = gse::vec3<gse::length>(0.f, -0.5f, 0.f)
 				});
 
-			constexpr float box_size = 2.f;
-			constexpr float half_box = box_size / 2.f;
-
-			for (int i = 0; i < 5; ++i) {
-				const float y = half_box + static_cast<float>(i) * box_size;
-				build(std::format("Stacked Box {}", i + 1))
+			for (int i = 0; i < 8; ++i) {
+				const float angle = static_cast<float>(i) * 3.14159f * 2.f / 8.f;
+				const float r = 4.f;
+				const float x = 5.f + r * std::cos(angle);
+				const float z = 5.f + r * std::sin(angle);
+				build(std::format("Small Box {}", i + 1))
 					.with<gse::box>({
-						.initial_position = gse::vec3<gse::length>(0.f, y, 0.f),
-						.size = gse::vec3<gse::length>(box_size)
+						.initial_position = gse::vec3<gse::length>(x, 0.5f, z),
+						.size = gse::vec3<gse::length>(1.f),
+						.box_mass = gse::kilograms(20.f)
 					});
 			}
 
 			build("Player")
+				.with<player>({
+					.initial_position = gse::vec3<gse::length>(5.f, 2.f, 5.f)
+				});
+
+			build("Scene Camera")
 				.with<gse::free_camera>({
 					.initial_position = gse::vec3<gse::length>(15.f, 8.f, 15.f)
 				});
