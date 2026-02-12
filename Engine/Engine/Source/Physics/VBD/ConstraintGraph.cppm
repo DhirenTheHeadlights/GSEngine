@@ -16,6 +16,8 @@ export namespace gse::vbd {
 		) -> std::uint32_t;
 
 		auto compute_coloring(
+			std::uint32_t num_bodies,
+			const std::vector<bool>& locked
 		) -> void;
 
 		auto clear(
@@ -33,12 +35,17 @@ export namespace gse::vbd {
 		auto motor_constraints(
 		) const -> std::span<const velocity_motor_constraint>;
 
-		auto colors(
+		auto body_colors(
 		) const -> std::span<const std::vector<std::uint32_t>>;
+
+		auto body_contact_indices(
+			std::uint32_t body_idx
+		) const -> std::span<const std::uint32_t>;
 	private:
 		std::vector<contact_constraint> m_contacts;
 		std::vector<velocity_motor_constraint> m_motors;
-		std::vector<std::vector<std::uint32_t>> m_colors;
+		std::vector<std::vector<std::uint32_t>> m_body_colors;
+		std::vector<std::vector<std::uint32_t>> m_body_contacts;
 	};
 }
 
@@ -54,28 +61,36 @@ auto gse::vbd::constraint_graph::add_motor(const velocity_motor_constraint& m) -
 	return idx;
 }
 
-auto gse::vbd::constraint_graph::compute_coloring() -> void {
-	m_colors.clear();
+auto gse::vbd::constraint_graph::compute_coloring(
+	const std::uint32_t num_bodies,
+	const std::vector<bool>& locked
+) -> void {
+	m_body_colors.clear();
+	m_body_contacts.assign(num_bodies, {});
 
 	if (m_contacts.empty()) return;
 
-	std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> body_to_constraints;
-
 	for (std::uint32_t i = 0; i < m_contacts.size(); ++i) {
-		body_to_constraints[m_contacts[i].body_a].push_back(i);
-		body_to_constraints[m_contacts[i].body_b].push_back(i);
+		m_body_contacts[m_contacts[i].body_a].push_back(i);
+		m_body_contacts[m_contacts[i].body_b].push_back(i);
 	}
 
-	std::vector constraint_colors(m_contacts.size(), -1);
+	std::vector<std::unordered_set<std::uint32_t>> adjacency(num_bodies);
+	for (const auto& c : m_contacts) {
+		if (locked[c.body_a] || locked[c.body_b]) continue;
+		adjacency[c.body_a].insert(c.body_b);
+		adjacency[c.body_b].insert(c.body_a);
+	}
 
-	for (std::uint32_t i = 0; i < m_contacts.size(); ++i) {
+	std::vector<int> body_color(num_bodies, -1);
+
+	for (std::uint32_t bi = 0; bi < num_bodies; ++bi) {
+		if (locked[bi] || m_body_contacts[bi].empty()) continue;
+
 		std::set<int> neighbor_colors;
-
-		for (const auto body : { m_contacts[i].body_a, m_contacts[i].body_b }) {
-			for (const auto neighbor_idx : body_to_constraints[body]) {
-				if (neighbor_idx != i && constraint_colors[neighbor_idx] >= 0) {
-					neighbor_colors.insert(constraint_colors[neighbor_idx]);
-				}
+		for (const auto neighbor : adjacency[bi]) {
+			if (body_color[neighbor] >= 0) {
+				neighbor_colors.insert(body_color[neighbor]);
 			}
 		}
 
@@ -84,19 +99,20 @@ auto gse::vbd::constraint_graph::compute_coloring() -> void {
 			++color;
 		}
 
-		constraint_colors[i] = color;
+		body_color[bi] = color;
 
-		while (static_cast<std::size_t>(color) >= m_colors.size()) {
-			m_colors.emplace_back();
+		while (static_cast<std::size_t>(color) >= m_body_colors.size()) {
+			m_body_colors.emplace_back();
 		}
-		m_colors[color].push_back(i);
+		m_body_colors[color].push_back(bi);
 	}
 }
 
 auto gse::vbd::constraint_graph::clear() -> void {
 	m_contacts.clear();
 	m_motors.clear();
-	m_colors.clear();
+	m_body_colors.clear();
+	m_body_contacts.clear();
 }
 
 auto gse::vbd::constraint_graph::contact_constraints() -> std::vector<contact_constraint>& {
@@ -115,6 +131,11 @@ auto gse::vbd::constraint_graph::motor_constraints() const -> std::span<const ve
 	return m_motors;
 }
 
-auto gse::vbd::constraint_graph::colors() const -> std::span<const std::vector<std::uint32_t>> {
-	return m_colors;
+auto gse::vbd::constraint_graph::body_colors() const -> std::span<const std::vector<std::uint32_t>> {
+	return m_body_colors;
+}
+
+auto gse::vbd::constraint_graph::body_contact_indices(const std::uint32_t body_idx) const -> std::span<const std::uint32_t> {
+	if (body_idx >= m_body_contacts.size()) return {};
+	return m_body_contacts[body_idx];
 }

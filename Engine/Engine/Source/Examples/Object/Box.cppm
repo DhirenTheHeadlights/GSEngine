@@ -17,18 +17,19 @@ export namespace gse {
 			vec3<length> initial_position = vec3<length>(0.f, 0.f, 0.f);
 			vec3<length> size = vec3<length>(1.f, 1.f, 1.f);
 			quat initial_orientation = quat(1.f, 0.f, 0.f, 0.f);
+			mass box_mass = kilograms(1000.f);
 		};
 
-		explicit box(const params& p) : m_initial_position(p.initial_position), m_size(p.size), m_initial_orientation(p.initial_orientation) {}
+		explicit box(const params& p) : m_initial_position(p.initial_position), m_size(p.size), m_initial_orientation(p.initial_orientation), m_box_mass(p.box_mass) {}
 
 		auto initialize() -> void override {
 			const auto s = m_size.as<meters>();
-			constexpr float box_mass = 1000.f;
-			const float box_inertia = (box_mass / 18.f) * (s.x() * s.x() + s.y() * s.y() + s.z() * s.z());
+			const float mass_val = m_box_mass.as<kilograms>();
+			const float box_inertia = (mass_val / 18.f) * (s.x() * s.x() + s.y() * s.y() + s.z() * s.z());
 
 			add_component<physics::motion_component>({
 				.current_position = m_initial_position,
-				.mass = kilograms(box_mass),
+				.mass = m_box_mass,
 				.orientation = m_initial_orientation,
 				.moment_of_inertia = box_inertia
 			});
@@ -75,6 +76,7 @@ export namespace gse {
 		vec3<length> m_initial_position;
 		vec3<length> m_size;
 		quat m_initial_orientation;
+		mass m_box_mass;
 
 		actions::button_channel m_rotate_channel;
 	};
