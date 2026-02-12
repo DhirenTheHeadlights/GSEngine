@@ -77,7 +77,7 @@ auto gse::physics::system::initialize(const initialize_phase& phase, state& s) -
 		.contact_compliance = 0.f,
 		.contact_damping = 0.f,
 		.friction_coefficient = 0.6f,
-		.rho = 1e9f,
+		.rho = 1.f,
 		.linear_damping = 1.0f,
 		.velocity_sleep_threshold = 0.05f,
 		.speculative_margin = meters(0.02f)
@@ -183,12 +183,6 @@ auto gse::physics::update_vbd(
 	chunk<collision_component>& collision
 ) -> void {
 	const time_t<float, seconds> const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
-
-	static int vbd_log_count = 0;
-	if (vbd_log_count < 10) {
-		log::println(log::level::info, "update_vbd steps={} motion={} collision={}", steps, motion.size(), collision.size());
-		++vbd_log_count;
-	}
 
 	for (int step = 0; step < steps; ++step) {
 		std::unordered_map<id, std::uint32_t> id_to_body_index;

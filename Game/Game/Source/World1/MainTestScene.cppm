@@ -37,7 +37,8 @@ export namespace gs {
 			build("Bigger Box")
 				.with<gse::box>({
 					.initial_position = gse::vec3<gse::length>(-2.f, -40.f, 2.f),
-					.size = gse::vec3<gse::length>(4.f, 4.f, 4.f)
+					.size = gse::vec3<gse::length>(4.f, 4.f, 4.f),
+					.mass = gse::kilograms(1000)
 				});
 
 			build("Center Sphere Light")

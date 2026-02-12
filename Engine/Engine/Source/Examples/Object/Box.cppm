@@ -17,10 +17,10 @@ export namespace gse {
 			vec3<length> initial_position = vec3<length>(0.f, 0.f, 0.f);
 			vec3<length> size = vec3<length>(1.f, 1.f, 1.f);
 			quat initial_orientation = quat(1.f, 0.f, 0.f, 0.f);
-			mass box_mass = kilograms(1000.f);
+			mass mass = kilograms(1000.f);
 		};
 
-		explicit box(const params& p) : m_initial_position(p.initial_position), m_size(p.size), m_initial_orientation(p.initial_orientation), m_box_mass(p.box_mass) {}
+		explicit box(const params& p) : m_initial_position(p.initial_position), m_size(p.size), m_initial_orientation(p.initial_orientation), m_box_mass(p.mass) {}
 
 		auto initialize() -> void override {
 			const auto s = m_size.as<meters>();
