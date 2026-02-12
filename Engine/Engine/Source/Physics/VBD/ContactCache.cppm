@@ -14,7 +14,7 @@ export namespace gse::vbd {
 
 	class contact_cache {
 	public:
-		static constexpr float warm_start_factor = 0.95f;
+		static constexpr float warm_start_factor = 0.7f;
 		static constexpr std::uint32_t max_age = 3;
 
 		auto lookup(
