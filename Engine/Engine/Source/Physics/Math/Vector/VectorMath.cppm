@@ -378,7 +378,7 @@ constexpr auto gse::abs(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N>
 
 template <gse::is_vec V1, gse::is_vec V2> requires (V1::extent == V2::extent)
 constexpr auto gse::min(const V1& a, const V2& b) {
-	using common_elem = std::common_type_t<typename V1::value_type, typename V2::value_type>;
+	using common_elem = internal::common_quantity_t<typename V1::value_type, typename V2::value_type>;
 	using Out = vector_type_for_element_t<common_elem, V1::extent>;
 
 	Out aa{ a };
@@ -390,7 +390,7 @@ constexpr auto gse::min(const V1& a, const V2& b) {
 
 template <gse::is_vec V1, gse::is_vec V2> requires (V1::extent == V2::extent)
 constexpr auto gse::max(const V1& a, const V2& b) {
-	using common_elem = std::common_type_t<typename V1::value_type, typename V2::value_type>;
+	using common_elem = internal::common_quantity_t<typename V1::value_type, typename V2::value_type>;
 	using Out = vector_type_for_element_t<common_elem, V1::extent>;
 
 	Out aa{ a };

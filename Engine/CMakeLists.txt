@@ -1,9 +1,9 @@
-cmake_minimum_required(VERSION 3.28)
+cmake_minimum_required(VERSION 3.30)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-project(Engine)
+project(Engine LANGUAGES CXX)
 
 # Local toml++ with MSVC C++20 modules fix (depth_counter_scope destructor called twice bug)
 set(TOMLPLUSPLUS_BUILD_MODULES ON CACHE BOOL "" FORCE)
@@ -39,13 +39,21 @@ find_package(Stb REQUIRED)
 find_path(miniaudio_INCLUDE_DIR "miniaudio.h")
 find_package(Freetype CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
-find_package(Vulkan REQUIRED)
 find_package(TBB CONFIG REQUIRED)
+find_package(Vulkan)
+
+add_library(VulkanModule STATIC)
+target_sources(VulkanModule PUBLIC
+    FILE_SET CXX_MODULES
+    BASE_DIRS ${Vulkan_INCLUDE_DIR}
+    FILES
+        ${Vulkan_INCLUDE_DIR}/vulkan/vulkan.cppm
+        ${Vulkan_INCLUDE_DIR}/vulkan/vulkan_video.cppm)
+target_compile_features(VulkanModule PUBLIC cxx_std_23)
+target_link_libraries(VulkanModule PUBLIC Vulkan::Headers)
+target_compile_definitions(VulkanModule PUBLIC VULKAN_HPP_DISPATCH_LOADER_DYNAMIC VULKAN_HPP_NO_CONSTRUCTORS)
 
 set(VULKAN_SDK_PATH $ENV{VULKAN_SDK})
-if(NOT VULKAN_SDK_PATH)
-    message(FATAL_ERROR "Vulkan SDK not found! Make sure the VULKAN_SDK environment variable is set.")
-endif()
 
 set(HAVE_SLANG_PACKAGE OFF)
 find_package(slang CONFIG QUIET)
@@ -64,22 +72,6 @@ else()
         message(FATAL_ERROR "Slang not found (neither package nor SDK). Install via vcpkg (slang) or use Vulkan SDK >= 1.3.296.")
     endif()
 endif()
-
-add_library(VulkanModule)
-target_compile_features(VulkanModule PUBLIC cxx_std_23)
-target_compile_definitions(VulkanModule PUBLIC VULKAN_HPP_DISPATCH_LOADER_DYNAMIC VULKAN_HPP_NO_CONSTRUCTORS)
-target_link_libraries(VulkanModule PUBLIC Vulkan::Vulkan)
-
-set(VULKAN_MODULE_FILES ${Vulkan_INCLUDE_DIR}/vulkan/vulkan.cppm)
-if(EXISTS "${Vulkan_INCLUDE_DIR}/vulkan/vulkan_video.cppm")
-    list(APPEND VULKAN_MODULE_FILES ${Vulkan_INCLUDE_DIR}/vulkan/vulkan_video.cppm)
-endif()
-
-target_sources(VulkanModule PRIVATE
-  FILE_SET CXX_MODULES
-  BASE_DIRS ${Vulkan_INCLUDE_DIR}
-  FILES ${VULKAN_MODULE_FILES}
-)
 
 target_include_directories(Engine
     PUBLIC

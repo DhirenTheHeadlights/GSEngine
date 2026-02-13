@@ -11,9 +11,6 @@ namespace gse::internal {
     template <typename Tag>
     struct quantity_traits;
 
-    template <typename T, is_dimension Dim>
-    struct generic_quantity;
-
     template <size_t N>
     struct fixed_string {
         char data[N]{};
@@ -32,18 +29,6 @@ namespace gse::internal {
         return x >= 0 ? static_cast<long long>(x + 0.5L) : static_cast<long long>(x - 0.5L);
     }
 }
-
-template <std::size_t N, typename CharT>
-struct std::formatter<gse::internal::fixed_string<N>, CharT> : std::formatter<std::string_view, CharT> {
-    constexpr auto parse(std::basic_format_parse_context<CharT>& ctx) {
-        return std::formatter<std::string_view, CharT>::parse(ctx);
-    }
-
-    template <typename FormatContext>
-    auto format(const gse::internal::fixed_string<N>& fs, FormatContext& ctx) const {
-        return std::formatter<std::string_view, CharT>::format(static_cast<std::string_view>(fs), ctx);
-    }
-};
 
 namespace gse::internal {
     export template <typename T>
@@ -86,7 +71,6 @@ namespace gse::internal {
 	concept valid_unit_for_quantity = std::same_as<typename UnitType::quantity_tag, typename QuantityType::quantity_tag> || std::same_as<typename QuantityType::quantity_tag, generic_quantity_tag>;
 
     export template <
-        typename Derived,
         is_arithmetic ArithmeticType,
         is_dimension Dimensions,
         typename QuantityTagType,
@@ -94,7 +78,6 @@ namespace gse::internal {
     >
     class quantity {
     public:
-        using derived = Derived;
         using value_type = ArithmeticType;
         using dimension = Dimensions;
         using quantity_tag = QuantityTagType;
@@ -106,33 +89,47 @@ namespace gse::internal {
             ArithmeticType value
         );
 
-        template <is_arithmetic T, is_dimension Dim> requires has_same_dimensions<Dimensions, Dim>
-        constexpr quantity(
-            const generic_quantity<T, Dim>& other
-        );
+        template <is_arithmetic T2, is_dimension Dim2, typename Tag2, typename Unit2>
+            requires has_same_dimensions<Dimensions, Dim2> && (std::same_as<QuantityTagType, Tag2> || std::same_as<Tag2, generic_quantity_tag>)
+        constexpr quantity(const quantity<T2, Dim2, Tag2, Unit2>& other)
+            : m_val(static_cast<ArithmeticType>(other.template as<DefaultUnitType>())) {}
 
-        template <typename D2, is_arithmetic T2, is_dimension Dim2, typename Tag2, typename Unit2> requires has_same_dimensions<Dimensions, Dim2> && std::same_as<QuantityTagType, Tag2>
-		constexpr quantity(
-			const quantity<D2, T2, Dim2, Tag2, Unit2>& other
-		);
+        template <is_unit UnitType> requires valid_unit_for_quantity<UnitType, quantity>
+        constexpr auto set(ArithmeticType value) -> void {
+            m_val = this->converted_value<UnitType>(value);
+        }
 
-        template <is_unit UnitType> requires valid_unit_for_quantity<UnitType, Derived>
-        constexpr auto set(
-            ArithmeticType value
-        ) -> void;
+        template <is_unit UnitType> requires valid_unit_for_quantity<UnitType, quantity>
+        constexpr auto as() const -> ArithmeticType {
+            using r_u = UnitType::conversion_ratio;
+            using r_d = DefaultUnitType::conversion_ratio;
 
-        template <is_unit UnitType> requires valid_unit_for_quantity<UnitType, Derived>
-        constexpr auto as(
-        ) const -> ArithmeticType;
+            const long double v = static_cast<long double>(m_val);
 
-        template <auto UnitObj> requires is_unit<decltype(UnitObj)> && valid_unit_for_quantity<decltype(UnitObj), Derived>
-		constexpr auto as(
-        ) const -> ArithmeticType;
+            const long double num = static_cast<long double>(r_d::num) * static_cast<long double>(r_u::den);
+            const long double den = static_cast<long double>(r_d::den) * static_cast<long double>(r_u::num);
 
-        template <is_unit UnitType> requires valid_unit_for_quantity<UnitType, Derived>
-        constexpr static auto from(
-            ArithmeticType value
-        ) -> Derived;
+            long double out = v * num / den;
+
+            if constexpr (std::is_integral_v<ArithmeticType>) {
+                return static_cast<ArithmeticType>(cexpr_llround(out));
+            }
+            else {
+                return static_cast<ArithmeticType>(out);
+            }
+        }
+
+        template <auto UnitObj> requires is_unit<decltype(UnitObj)> && valid_unit_for_quantity<decltype(UnitObj), quantity>
+		constexpr auto as() const -> ArithmeticType {
+            return this->as<decltype(UnitObj)>();
+        }
+
+        template <is_unit UnitType> requires valid_unit_for_quantity<UnitType, quantity>
+        constexpr static auto from(ArithmeticType value) -> quantity {
+            quantity result;
+            result.m_val = result.converted_value<UnitType>(value);
+            return result;
+        }
 
         constexpr auto operator<=>(
             const quantity&
@@ -147,65 +144,12 @@ namespace gse::internal {
     };
 }
 
-template <typename Derived, gse::internal::is_arithmetic ArithmeticType, gse::internal::is_dimension Dimensions, typename QuantityTagType, typename DefaultUnitType>
-constexpr gse::internal::quantity<Derived, ArithmeticType, Dimensions, QuantityTagType, DefaultUnitType>::quantity(ArithmeticType value): m_val(value) {}
+template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
+constexpr gse::internal::quantity<A, D, Tag, DefUnit>::quantity(A value): m_val(value) {}
 
-template <typename Derived, gse::internal::is_arithmetic ArithmeticType, gse::internal::is_dimension Dimensions, typename QuantityTagType, typename DefaultUnitType>
-template <gse::internal::is_arithmetic T, gse::internal::is_dimension Dim> requires gse::internal::has_same_dimensions<Dimensions, Dim>
-constexpr gse::internal::quantity<Derived, ArithmeticType, Dimensions, QuantityTagType, DefaultUnitType>::quantity(const generic_quantity<T, Dim>& other): m_val(other.template as<default_unit>()) {}
-
-template <typename Derived, gse::internal::is_arithmetic ArithmeticType, gse::internal::is_dimension Dimensions, typename QuantityTagType, typename DefaultUnitType>
-template <typename D2, gse::internal::is_arithmetic T2, gse::internal::is_dimension Dim2, typename Tag2, typename Unit2> requires gse::internal::has_same_dimensions<Dimensions, Dim2>&& std::same_as<QuantityTagType, Tag2>
-constexpr gse::internal::quantity<Derived, ArithmeticType, Dimensions, QuantityTagType, DefaultUnitType>::quantity(const quantity<D2, T2, Dim2, Tag2, Unit2>& other): m_val(static_cast<ArithmeticType>(other.template as<DefaultUnitType>())) {}
-
-template <typename Derived, gse::internal::is_arithmetic ArithmeticType, gse::internal::is_dimension Dimensions, typename QuantityTagType, typename DefaultUnitType>
-template <gse::internal::is_unit UnitType> requires gse::internal::valid_unit_for_quantity<UnitType, Derived>
-constexpr auto gse::internal::quantity<Derived, ArithmeticType, Dimensions, QuantityTagType, DefaultUnitType>::set(ArithmeticType value) -> void {
-    m_val = this->converted_value<UnitType>(value);
-}
-
-template <typename Derived, gse::internal::is_arithmetic ArithmeticType, gse::internal::is_dimension Dimensions, typename QuantityTagType, typename DefaultUnitType>
-template <gse::internal::is_unit UnitType> requires gse::internal::valid_unit_for_quantity<UnitType, Derived>
-constexpr auto gse::internal::quantity<Derived, ArithmeticType, Dimensions, QuantityTagType, DefaultUnitType>::as() const -> ArithmeticType {
-    using u = UnitType;
-    using d = DefaultUnitType;
-
-    using r_u = u::conversion_ratio;
-    using r_d = d::conversion_ratio;
-
-    const long double v = static_cast<long double>(m_val);
-
-    const long double num = static_cast<long double>(r_d::num) * static_cast<long double>(r_u::den);
-    const long double den = static_cast<long double>(r_d::den) * static_cast<long double>(r_u::num);
-
-    long double out = v * num / den;
-
-    if constexpr (std::is_integral_v<ArithmeticType>) {
-        return static_cast<ArithmeticType>(cexpr_llround(out));
-    }
-    else {
-        return static_cast<ArithmeticType>(out);
-    }
-}
-
-template <typename Derived, gse::internal::is_arithmetic ArithmeticType, gse::internal::is_dimension Dimensions, typename QuantityTagType, typename DefaultUnitType>
-template <auto UnitObj> requires gse::internal::is_unit<decltype(UnitObj)> && gse::internal::valid_unit_for_quantity<decltype(UnitObj), Derived>
-constexpr auto gse::internal::quantity<Derived, ArithmeticType, Dimensions, QuantityTagType, DefaultUnitType>::as() const -> ArithmeticType {
-	return this->as<decltype(UnitObj)>();
-}
-
-template <typename Derived, gse::internal::is_arithmetic ArithmeticType, gse::internal::is_dimension Dimensions, typename QuantityTagType, typename DefaultUnitType>
-template <gse::internal::is_unit UnitType> requires gse::internal::valid_unit_for_quantity<UnitType, Derived>
-constexpr auto gse::internal::quantity<Derived, ArithmeticType, Dimensions, QuantityTagType, DefaultUnitType>::from(ArithmeticType value) -> Derived {
-	static_assert(gse::internal::valid_unit_for_quantity<UnitType, Derived>, "Invalid unit type for conversion");
-	Derived result;
-	result.m_val = result.template converted_value<UnitType>(value);
-	return result;
-}
-
-template <typename Derived, gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
+template <gse::internal::is_arithmetic A, gse::internal::is_dimension D, typename Tag, typename DefUnit>
 template <gse::internal::is_unit UnitType>
-constexpr auto gse::internal::quantity<Derived, A, D, Tag,DefUnit>::converted_value(A value) const -> A {
+constexpr auto gse::internal::quantity<A, D, Tag, DefUnit>::converted_value(A value) const -> A {
     using u = UnitType;
     using def = DefUnit;
 
@@ -227,6 +171,26 @@ constexpr auto gse::internal::quantity<Derived, A, D, Tag,DefUnit>::converted_va
     }
 }
 
+template <typename A, typename Dim, typename Tag, typename Unit, typename CharT>
+struct std::formatter<gse::internal::quantity<A, Dim, Tag, Unit>, CharT> {
+    std::formatter<A, CharT> value_fmt;
+
+    template <class ParseContext>
+    constexpr auto parse(ParseContext& ctx) -> ParseContext::iterator {
+        return value_fmt.parse(ctx);
+    }
+
+    template <typename FormatContext>
+    auto format(const gse::internal::quantity<A, Dim, Tag, Unit>& q, FormatContext& ctx) const {
+        auto it = value_fmt.format(q.template as<typename gse::internal::quantity<A, Dim, Tag, Unit>::default_unit>(), ctx);
+        if constexpr (!std::same_as<Unit, gse::internal::no_default_unit>) {
+            it = std::ranges::copy(std::string_view{ " " }, it).out;
+            it = std::ranges::copy(std::string_view{ Unit::unit_name }, it).out;
+        }
+        return it;
+    }
+};
+
 export namespace gse::internal {
     template <typename Q>
     concept is_quantity =
@@ -235,12 +199,7 @@ export namespace gse::internal {
         typename std::remove_cvref_t<Q>::dimension;
         typename std::remove_cvref_t<Q>::quantity_tag;
         typename std::remove_cvref_t<Q>::default_unit;
-        typename std::remove_cvref_t<Q>::derived;
-    } &&
-        std::same_as<
-            typename std::remove_cvref_t<Q>::derived,
-            std::remove_cvref_t<Q>
-        >;
+    };
 
     template <typename Q1, typename Q2>
     concept has_same_dimension_as =
@@ -251,41 +210,23 @@ export namespace gse::internal {
         >;
 
     template <typename T, is_dimension Dim>
-    struct generic_quantity : quantity<generic_quantity<T, Dim>, T, Dim, generic_quantity_tag, no_default_unit> {
-        using quantity<generic_quantity, T, Dim, generic_quantity_tag, no_default_unit>::quantity;
-    };
-}
+    using generic_quantity = quantity<T, Dim, generic_quantity_tag, no_default_unit>;
 
-template <gse::internal::is_quantity Q, typename CharT>
-struct std::formatter<Q, CharT> {
-    std::formatter<typename Q::value_type, CharT> value_fmt;
-
-    template <class ParseContext>
-    constexpr auto parse(ParseContext& ctx) -> ParseContext::iterator {
-        return value_fmt.parse(ctx);
-    }
-
-    template <typename FormatContext>
-    auto format(const Q& q, FormatContext& ctx) const {
-        auto it = value_fmt.format(q.template as<Q::default_unit>(), ctx);
-        if constexpr (!std::same_as<typename Q::default_unit, gse::internal::no_default_unit>) {
-            it = std::ranges::copy(std::string_view{" "}, it).out;
-            it = std::ranges::copy(std::string_view{Q::default_unit::unit_name}, it).out;
+    template <typename T1, typename T2>
+    consteval auto common_quantity_fn() {
+        if constexpr (is_quantity<T1> && is_quantity<T2>) {
+            if constexpr (std::is_same_v<typename T1::quantity_tag, generic_quantity_tag>) {
+                return std::type_identity<T2>{};
+            } else {
+                return std::type_identity<T1>{};
+            }
+        } else {
+            return std::type_identity<std::common_type_t<T1, T2>>{};
         }
-        return it;
     }
-};
 
-namespace std {
-    template <typename D, gse::internal::is_arithmetic A, gse::internal::is_dimension Dim, typename Tag, typename Unit, gse::internal::is_arithmetic T2, gse::internal::is_dimension Dim2>
-    struct common_type<gse::internal::quantity<D, A, Dim, Tag, Unit>, gse::internal::generic_quantity<T2, Dim2>> {
-        using type = gse::internal::quantity<D, A, Dim, Tag, Unit>;
-    };
-
-    template <gse::internal::is_arithmetic T1, gse::internal::is_dimension Dim1, typename D2, gse::internal::is_arithmetic A2, gse::internal::is_dimension Dim2, typename Tag2, typename Unit2>
-    struct common_type<gse::internal::generic_quantity<T1, Dim1>, gse::internal::quantity<D2, A2, Dim2, Tag2, Unit2>> {
-        using type = gse::internal::quantity<D2, A2, Dim2, Tag2, Unit2>;
-    };
+    template <typename T1, typename T2>
+    using common_quantity_t = decltype(common_quantity_fn<T1, T2>())::type;
 }
 
 export namespace gse::internal {

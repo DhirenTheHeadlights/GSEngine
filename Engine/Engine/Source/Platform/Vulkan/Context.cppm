@@ -1,10 +1,7 @@
 module;
 
-#define VULKAN_HPP_ENABLE_DYNAMIC_LOADER
-
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
-#include <vulkan/vulkan_hpp_macros.hpp>
 
 export module gse.platform.vulkan:context;
 
@@ -15,6 +12,10 @@ import :persistent_allocator;
 
 import gse.assert;
 import gse.utility;
+
+namespace vk::detail {
+	DispatchLoaderDynamic defaultDispatchLoaderDynamic;
+}
 
 export namespace gse::vulkan {
 	auto generate_config(
@@ -340,9 +341,7 @@ auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_co
 		validation_layers.push_back("VK_LAYER_KHRONOS_validation");
 	}
 
-#if VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
-	VULKAN_HPP_DEFAULT_DISPATCHER.init();
-#endif
+	vk::detail::defaultDispatchLoaderDynamic.init();
 
 	const std::uint32_t highest_supported_version = vk::enumerateInstanceVersion();
 	const vk::ApplicationInfo app_info{
@@ -425,9 +424,7 @@ auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_co
 		throw;
 	}
 
-#if VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
-	VULKAN_HPP_DEFAULT_DISPATCHER.init(*instance);
-#endif
+	vk::detail::defaultDispatchLoaderDynamic.init(*instance);
 
 	if (enable_validation) {
 		try {
@@ -533,9 +530,7 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
 
 	vk::raii::Device device = physical_device.createDevice(create_info);
 
-#if VK_HPP_DISPATCH_LOADER_DYNAMIC == 1
-	VULKAN_HPP_DEFAULT_DISPATCHER.init(*device);
-#endif
+	vk::detail::defaultDispatchLoaderDynamic.init(*device);
 
 	std::cout << "Logical Device Created Successfully!\n";
 
