@@ -184,7 +184,12 @@ auto gse::gui::draw::slider_box(const draw_context& ctx, const ui_rect& rect, co
         .texture = ctx.blank_texture
     });
 
-    const std::string value_str = std::format("{:.2f}", value);
+    std::string value_str;
+    if constexpr (internal::is_quantity<T>) {
+        value_str = std::format("{:.2f}", value.template as<typename T::default_unit>());
+    } else {
+        value_str = std::format("{:.2f}", value);
+    }
     const float text_width = ctx.font->width(value_str, ctx.style.font_size);
     const unitless::vec2 value_text_pos = {
         rect.center().x() - text_width / 2.f,

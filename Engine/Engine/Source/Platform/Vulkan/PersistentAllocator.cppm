@@ -1,7 +1,5 @@
 module;
 
-#include <vulkan/vulkan_hpp_macros.hpp>
-
 export module gse.platform.vulkan:persistent_allocator;
 
 import std;
@@ -768,7 +766,3 @@ auto gse::vulkan::allocator::memory_flag_preferences(const vk::BufferUsageFlags 
 
 	return { mpf::eHostVisible | mpf::eHostCoherent };
 }
-
-#if defined(VULKAN_HPP_DISPATCH_LOADER_DYNAMIC) && (VULKAN_HPP_DISPATCH_LOADER_DYNAMIC == 1)
-export VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
-#endif

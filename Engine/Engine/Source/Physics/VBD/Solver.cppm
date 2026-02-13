@@ -601,6 +601,61 @@ auto gse::vbd::solver::derive_velocities(const time_step sub_dt) -> void {
 			body.sleep_counter = 0;
 		}
 	}
+
+	for (int pass = 0; pass < 3; ++pass) {
+		for (const auto& c : m_graph.contact_constraints()) {
+			if (c.lambda <= 0.f) continue;
+
+			auto& body_a = m_bodies[c.body_a];
+			auto& body_b = m_bodies[c.body_b];
+
+			const vec3<length> world_r_a = rotate_vector(body_a.predicted_orientation, c.r_a);
+			const vec3<length> world_r_b = rotate_vector(body_b.predicted_orientation, c.r_b);
+
+			const vec3<velocity> v_a = body_a.body_velocity + cross(body_a.body_angular_velocity, world_r_a);
+			const vec3<velocity> v_b = body_b.body_velocity + cross(body_b.body_angular_velocity, world_r_b);
+
+			const float v_n = dot(v_a - v_b, c.normal).as<meters_per_second>();
+
+			if (v_n >= 0.f) continue;
+
+			const float w_a_lin = body_a.locked ? 0.f : body_a.inverse_mass().as<per_kilograms>();
+			const float w_b_lin = body_b.locked ? 0.f : body_b.inverse_mass().as<per_kilograms>();
+
+			const mat3 inv_inertia_a = to_unitless(body_a.inv_inertia);
+			const mat3 inv_inertia_b = to_unitless(body_b.inv_inertia);
+
+			const unitless::vec3 r_a_unitless = world_r_a.as<meters>();
+			const unitless::vec3 r_b_unitless = world_r_b.as<meters>();
+
+			const unitless::vec3 rcross_a_n = cross(r_a_unitless, c.normal);
+			const unitless::vec3 rcross_b_n = cross(r_b_unitless, c.normal);
+
+			const unitless::vec3 iircn_a = inv_inertia_a * rcross_a_n;
+			const unitless::vec3 iircn_b = inv_inertia_b * rcross_b_n;
+
+			const float w_rot_a = (body_a.locked || !body_a.update_orientation) ? 0.f : dot(rcross_a_n, iircn_a);
+			const float w_rot_b = (body_b.locked || !body_b.update_orientation) ? 0.f : dot(rcross_b_n, iircn_b);
+
+			const float w_total = w_a_lin + w_b_lin + w_rot_a + w_rot_b;
+			if (w_total < 1e-10f) continue;
+
+			const float delta_lambda = -v_n / w_total;
+
+			if (!body_a.locked) {
+				body_a.body_velocity += c.normal * meters_per_second(w_a_lin * delta_lambda);
+				if (body_a.update_orientation) {
+					body_a.body_angular_velocity += iircn_a * radians_per_second(delta_lambda);
+				}
+			}
+			if (!body_b.locked) {
+				body_b.body_velocity -= c.normal * meters_per_second(w_b_lin * delta_lambda);
+				if (body_b.update_orientation) {
+					body_b.body_angular_velocity -= iircn_b * radians_per_second(delta_lambda);
+				}
+			}
+		}
+	}
 }
 
 auto gse::vbd::solver::apply_velocity_corrections(const int iterations) -> void {

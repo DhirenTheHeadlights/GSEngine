@@ -63,7 +63,7 @@ auto gse::gui::draw::value(const draw_context& ctx, const std::string& name, T v
 
 template <gse::is_quantity T, auto Unit>
 auto gse::gui::draw::value(const draw_context& ctx, const std::string& name, T value) -> void {
-    value_row<1>(ctx, name, { std::format("{:.2f} {}", value.template as<Unit>(), Unit.unit_name) });
+    value_row<1>(ctx, name, { std::format("{:.2f} {}", value.template as<Unit>(), std::string_view(Unit.unit_name)) });
 }
 
 template <typename T, int N, auto Unit>
