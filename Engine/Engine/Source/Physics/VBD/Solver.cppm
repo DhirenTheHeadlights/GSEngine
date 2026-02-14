@@ -340,14 +340,12 @@ auto gse::vbd::solver::accumulate_contact_gradient_hessian(const contact_constra
 
 	const float gap = (dot(p_b - p_a, c.normal) + c.initial_separation).as<meters>();
 
-	if (gap > 0.f) {
-		return;
-	}
-
 	const float mass_a_val = body_a.locked ? 0.f : body_a.mass_value.as<kilograms>();
 	const float mass_b_val = body_b.locked ? 0.f : body_b.mass_value.as<kilograms>();
 	const float rho = m_config.rho * (std::max(mass_a_val, mass_b_val) / h_squared);
 	const float effective = std::min(rho * gap - c.lambda, 0.f);
+
+	if (effective >= 0.f) return;
 
 	const mat3 n_outer_n = outer_product(c.normal, c.normal);
 
