@@ -104,6 +104,8 @@ export namespace gse::vbd {
 		std::vector<body_state> m_bodies;
 		std::vector<body_solve_state> m_solve_state;
 		float m_h_squared = 0.f;
+		std::uint32_t m_frame_counter = 0;
+		bool m_log_this_frame = false;
 	};
 }
 
@@ -144,10 +146,59 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 	}
 	m_graph.compute_coloring(static_cast<std::uint32_t>(m_bodies.size()), locked);
 
+	m_log_this_frame = (m_frame_counter % 60 == 0);
+	m_frame_counter++;
+
 	const time_step sub_dt = dt / static_cast<float>(m_config.substeps);
 
 	for (std::uint32_t s = 0; s < m_config.substeps; ++s) {
 		solve_substep(sub_dt);
+	}
+
+	if (m_log_this_frame) {
+		log::println("=== VBD frame {} | bodies={} contacts={} ===",
+			m_frame_counter - 1, m_bodies.size(), m_graph.contact_constraints().size());
+
+		for (std::uint32_t bi = 0; bi < m_bodies.size(); ++bi) {
+			const auto& b = m_bodies[bi];
+			if (b.locked) continue;
+			const auto p = b.predicted_position.as<meters>();
+			const auto v = b.body_velocity.as<meters_per_second>();
+			log::println("  body[{}] mass={:.1f}kg pos=({:.3f},{:.3f},{:.3f}) vel=({:.3f},{:.3f},{:.3f}) sleep={}",
+				bi, b.mass_value.as<kilograms>(),
+				p.x(), p.y(), p.z(),
+				v.x(), v.y(), v.z(),
+				b.sleep_counter);
+		}
+
+		for (std::size_t ci = 0; ci < m_graph.contact_constraints().size(); ++ci) {
+			const auto& c = m_graph.contact_constraints()[ci];
+			const auto& ba = m_bodies[c.body_a];
+			const auto& bb = m_bodies[c.body_b];
+
+			const auto p_a = (ba.predicted_position + rotate_vector(ba.predicted_orientation, c.r_a)).as<meters>();
+			const auto p_b = (bb.predicted_position + rotate_vector(bb.predicted_orientation, c.r_b)).as<meters>();
+			const float gap = dot(
+				bb.predicted_position + rotate_vector(bb.predicted_orientation, c.r_b)
+				- ba.predicted_position - rotate_vector(ba.predicted_orientation, c.r_a),
+				c.normal).as<meters>() + c.initial_separation.as<meters>();
+
+			const float mass_a = ba.locked ? 0.f : ba.mass_value.as<kilograms>();
+			const float mass_b = bb.locked ? 0.f : bb.mass_value.as<kilograms>();
+
+			float reduced;
+			if (ba.locked) reduced = mass_b;
+			else if (bb.locked) reduced = mass_a;
+			else reduced = (mass_a * mass_b) / (mass_a + mass_b);
+
+			const float rho_val = m_config.rho * reduced / m_h_squared;
+
+			log::println("  contact[{}] a={} b={} m_a={:.1f} m_b={:.1f} reduced={:.2f} gap={:.6f} rho={:.1f} lambda={:.3f} n=({:.2f},{:.2f},{:.2f})",
+				ci, c.body_a, c.body_b, mass_a, mass_b, reduced, gap, rho_val, c.lambda,
+				c.normal.x(), c.normal.y(), c.normal.z());
+		}
+
+		log::flush();
 	}
 }
 
@@ -196,6 +247,7 @@ auto gse::vbd::solver::solve_substep(const time_step sub_dt) -> void {
 		}
 	}
 
+	bool log_iter = m_log_this_frame;
 	for (std::uint32_t iter = 0; iter < m_config.iterations; ++iter) {
 		for (const auto& body_color : m_graph.body_colors()) {
 			for (const auto bi : body_color) {
@@ -217,9 +269,20 @@ auto gse::vbd::solver::solve_substep(const time_step sub_dt) -> void {
 			}
 
 			for (const auto bi : body_color) {
+				if (log_iter && iter == 0) {
+					const auto& b = m_bodies[bi];
+					const auto& ss = m_solve_state[bi];
+					const float iw = b.mass_value.as<kilograms>() / h_squared;
+					log::println("    newton body[{}] mass={:.1f} inertia_w={:.1f} grad=({:.4f},{:.4f},{:.4f}) hess_diag=({:.1f},{:.1f},{:.1f})",
+						bi, b.mass_value.as<kilograms>(), iw,
+						ss.gradient.x(), ss.gradient.y(), ss.gradient.z(),
+						ss.hessian[0][0], ss.hessian[1][1], ss.hessian[2][2]);
+				}
 				perform_local_newton_step(bi, m_solve_state[bi], h_squared);
 			}
 		}
+
+		if (log_iter && iter == 0) log_iter = false;
 
 		for (const auto& motor : m_graph.motor_constraints()) {
 			if (!contacted_bodies.contains(motor.body_index)) {
@@ -342,7 +405,13 @@ auto gse::vbd::solver::accumulate_contact_gradient_hessian(const contact_constra
 
 	const float mass_a_val = body_a.locked ? 0.f : body_a.mass_value.as<kilograms>();
 	const float mass_b_val = body_b.locked ? 0.f : body_b.mass_value.as<kilograms>();
-	const float rho = m_config.rho * (std::max(mass_a_val, mass_b_val) / h_squared);
+
+	float reduced_mass;
+	if (body_a.locked) reduced_mass = mass_b_val;
+	else if (body_b.locked) reduced_mass = mass_a_val;
+	else reduced_mass = (mass_a_val * mass_b_val) / (mass_a_val + mass_b_val);
+
+	const float rho = m_config.rho * (reduced_mass / h_squared);
 	const float effective = std::min(rho * gap - c.lambda, 0.f);
 
 	if (effective >= 0.f) return;
@@ -394,7 +463,12 @@ auto gse::vbd::solver::accumulate_motor_gradient_hessian(const velocity_motor_co
 		masked_diff[1] = 0.f;
 	}
 
-	solve_state[m.body_index].gradient += masked_diff * stiffness;
+	unitless::vec3 motor_gradient = masked_diff * stiffness;
+	if (const float grad_mag = magnitude(motor_gradient); grad_mag > m.max_force.as<newtons>()) {
+		motor_gradient *= (m.max_force.as<newtons>() / grad_mag);
+	}
+
+	solve_state[m.body_index].gradient += motor_gradient;
 
 	mat3 motor_hessian(0.f);
 	motor_hessian[0][0] = stiffness;
@@ -515,7 +589,13 @@ auto gse::vbd::solver::update_lagrange_multipliers() -> void {
 
 		const float mass_a_val = body_a.locked ? 0.f : body_a.mass_value.as<kilograms>();
 		const float mass_b_val = body_b.locked ? 0.f : body_b.mass_value.as<kilograms>();
-		const float rho = m_config.rho * (std::max(mass_a_val, mass_b_val) / m_h_squared);
+
+		float reduced_mass;
+		if (body_a.locked) reduced_mass = mass_b_val;
+		else if (body_b.locked) reduced_mass = mass_a_val;
+		else reduced_mass = (mass_a_val * mass_b_val) / (mass_a_val + mass_b_val);
+
+		const float rho = m_config.rho * (reduced_mass / m_h_squared);
 		constexpr float max_lambda = 1e6f;
 		c.lambda = std::clamp(c.lambda - rho * gap, 0.f, max_lambda);
 	}
