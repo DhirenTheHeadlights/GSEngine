@@ -20,10 +20,10 @@ export namespace gs {
 				.with<static_object>();
 
 			build_inverted_mass_pyramid();
-			//build_domino_chain();
-			//build_funnel();
-			//build_slope_friction_test();
-			//build_high_speed_impact_target();
+			build_domino_chain();
+			build_funnel();
+			build_slope_friction_test();
+			build_high_speed_impact_target();
 
 			build("Player")
 				.with<player>({

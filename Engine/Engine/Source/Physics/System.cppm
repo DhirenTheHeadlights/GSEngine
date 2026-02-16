@@ -357,7 +357,7 @@ auto gse::physics::update_vbd_gpu(
 	}
 	s.vbd_solver.graph().compute_coloring(static_cast<std::uint32_t>(bodies.size()), locked);
 
-	s.gpu_solver.upload(bodies, s.vbd_solver.graph(), s.vbd_solver.config(), dt.as<seconds>());
+	s.gpu_solver.upload(bodies, s.vbd_solver.graph(), s.vbd_solver.config(), dt);
 
 	s.gpu_prev.bodies = std::move(bodies);
 	s.gpu_prev.contacts = { s.vbd_solver.graph().contact_constraints().begin(), s.vbd_solver.graph().contact_constraints().end() };
