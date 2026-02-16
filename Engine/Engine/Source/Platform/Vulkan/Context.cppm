@@ -333,7 +333,7 @@ auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_co
 		gse::config::resource_path / "Misc/settings.toml",
 		"Graphics",
 		"Validation Layers",
-		false
+		true
 	);
 
 	std::vector<const char*> validation_layers;
@@ -390,8 +390,6 @@ auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_co
 
 	constexpr vk::ValidationFeatureEnableEXT enables[] = {
 		vk::ValidationFeatureEnableEXT::eBestPractices,
-		vk::ValidationFeatureEnableEXT::eGpuAssisted,
-		vk::ValidationFeatureEnableEXT::eDebugPrintf,
 		vk::ValidationFeatureEnableEXT::eSynchronizationValidation
 	};
 
@@ -488,6 +486,7 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
 
 	vk::PhysicalDeviceVulkan12Features vulkan12_features{
 		.pNext = &vulkan13_features,
+		.hostQueryReset = vk::True,
 		.timelineSemaphore = vk::True,
 		.bufferDeviceAddress = vk::True
 	};

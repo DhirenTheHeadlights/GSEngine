@@ -77,12 +77,10 @@ auto gs::client::render() -> void {
         const auto list = gse::network::servers();
         gse::gui::text(std::format("Found: {}", list.size()));
 
-        int idx = 0;
-        for (const auto& s : list) {
-            if (const bool picked = (m_selected == idx); gse::gui::selectable(std::format("{}  {}:{}  {}/{}  v{}", s.name, s.addr.ip, s.addr.port, s.players, s.max_players, s.build), picked)) {
-                m_selected = idx;
+        for (auto [idx, s] : list | std::views::enumerate) {
+            if (const bool picked = (m_selected == static_cast<int>(idx)); gse::gui::selectable(std::format("{}  {}:{}  {}/{}  v{}", s.name, s.addr.ip, s.addr.port, s.players, s.max_players, s.build), picked)) {
+                m_selected = static_cast<int>(idx);
             }
-            ++idx;
         }
 
         if (gse::gui::button("Connect") && m_selected >= 0 && m_selected < static_cast<int>(list.size())) {

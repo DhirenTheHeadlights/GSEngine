@@ -244,7 +244,7 @@ auto gse::scheduler::render(const std::function<void()>& in_frame) -> void {
 			return;
 		}
 
-		for (std::size_t i = 1; i < m_nodes.size(); ++i) {
+		for (auto i : std::views::iota(std::size_t{1}, m_nodes.size())) {
 			started[i] = m_nodes[i]->begin_frame(bf_phase);
 		}
 	}
@@ -284,8 +284,8 @@ auto gse::scheduler::shutdown() -> void {
 		.registry = m_registry_access
 	};
 
-	for (auto it = m_nodes.rbegin(); it != m_nodes.rend(); ++it) {
-		(*it)->shutdown(phase);
+	for (auto& node : m_nodes | std::views::reverse) {
+		node->shutdown(phase);
 	}
 }
 

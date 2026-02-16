@@ -57,7 +57,7 @@ auto gse::procedural_model::box(const resource::handle<material>& mat, const vec
 
     std::vector<std::uint32_t> idx;
     idx.reserve(36);
-    for (std::uint32_t f = 0; f < 6; ++f) {
+    for (auto f : std::views::iota(0u, 6u)) {
         const std::uint32_t o = f * 4;
         idx.push_back(o + 0); idx.push_back(o + 1); idx.push_back(o + 2);
         idx.push_back(o + 2); idx.push_back(o + 3); idx.push_back(o + 0);
@@ -97,13 +97,13 @@ auto gse::procedural_model::sphere(const resource::handle<material>& mat, std::u
     std::vector<vertex> vertices;
     vertices.reserve((stacks + 1) * (sectors + 1));
 
-    for (std::uint32_t i = 0; i <= stacks; ++i) {
+    for (auto i : std::views::iota(0u, stacks + 1)) {
         const float v = static_cast<float>(i) / static_cast<float>(stacks);
         const float phi = std::numbers::pi_v<float> *v;
         const float sp = std::sin(phi);
         const float cp = std::cos(phi);
 
-        for (std::uint32_t j = 0; j <= sectors; ++j) {
+        for (auto j : std::views::iota(0u, sectors + 1)) {
             constexpr float r = 0.5f;
             const float u = static_cast<float>(j) / static_cast<float>(sectors);
             const float theta = 2.f * std::numbers::pi_v<float> * u;
@@ -136,8 +136,8 @@ auto gse::procedural_model::sphere(const resource::handle<material>& mat, std::u
     std::vector<std::uint32_t> indices;
     indices.reserve(stacks * sectors * 6);
 
-    for (int i = 0; i < stacks; ++i) {
-        for (int j = 0; j < sectors; ++j) {
+    for (auto i : std::views::iota(0, static_cast<int>(stacks))) {
+        for (auto j : std::views::iota(0, static_cast<int>(sectors))) {
             const int cur = i * (sectors + 1) + j;
             const int nxt = cur + (sectors + 1);
 

@@ -208,9 +208,9 @@ auto gse::registry::activate(id id) -> void {
 
 		std::vector<hook_link_base*> current_hook_links;
 		current_hook_links.reserve(m_hook_links.size());
-		for (const auto& val : m_hook_links | std::views::values) {
-			current_hook_links.push_back(val.get());
-		}
+		std::ranges::transform(m_hook_links | std::views::values,
+			std::back_inserter(current_hook_links),
+			[](const auto& val) { return val.get(); });
 
 		for (auto* link : current_hook_links) {
 			if (link->activate(id)) {

@@ -27,7 +27,7 @@ export namespace gs {
 
 			build("Player")
 				.with<player>({
-					.initial_position = gse::vec3<gse::length>(0.f, 0.f, 0.f)
+					.initial_position = gse::vec3<gse::length>(0.f, 10.f, 0.f)
 				});
 
 			/*build("Scene Camera")
