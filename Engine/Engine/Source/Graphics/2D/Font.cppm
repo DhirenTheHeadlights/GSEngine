@@ -198,11 +198,11 @@ auto gse::font::load(const renderer::context& context) -> void {
     );
 
     m_kerning.clear();
-    for (const auto& ga : m_glyphs | std::views::values) {
-        if (ga.ft_glyph_index == 0) continue;
+    auto valid_glyphs = m_glyphs | std::views::values
+        | std::views::filter([](const auto& g) { return g.ft_glyph_index != 0; });
+    for (const auto& ga : valid_glyphs) {
         const auto prev = static_cast<std::uint32_t>(ga.ft_glyph_index);
-        for (const auto& gb : m_glyphs | std::views::values) {
-            if (gb.ft_glyph_index == 0) continue;
+        for (const auto& gb : valid_glyphs) {
             const auto next = static_cast<std::uint32_t>(gb.ft_glyph_index);
 
             FT_Vector kv{};

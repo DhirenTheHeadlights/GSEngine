@@ -309,8 +309,8 @@ auto gse::gui::system::initialize(initialize_phase& phase, system_state& s) -> v
 	s.menus = load(config::resource_path / s.file_path, s.menus);
 
 	std::vector<std::pair<std::string, int>> font_options;
-	for (int i = 0; i < static_cast<int>(s.available_fonts.size()); ++i) {
-		font_options.emplace_back(s.available_fonts[i], i);
+	for (auto [i, font] : s.available_fonts | std::views::enumerate) {
+		font_options.emplace_back(font, static_cast<int>(i));
 	}
 
 	phase.channels.push(save::register_property{
@@ -603,8 +603,10 @@ auto gse::gui::system::end_frame(end_frame_phase& phase, system_state& s) -> voi
 		.publish_update = [&phase](save::update_request req) {
 			phase.channels.push(std::move(req));
 		},
-		.request_save = [&phase] {
-			phase.channels.push(save::save_request{});
+		.request_save = [save_state] {
+			if (save_state) {
+				save_state->save();
+			}
 		},
 		.tooltip = &s.tooltip,
 		.input_layers = &s.input_layers_data,
@@ -618,12 +620,12 @@ auto gse::gui::system::end_frame(end_frame_phase& phase, system_state& s) -> voi
 			});
 		},
 		.pressed_key = [&input_st]() -> key {
-			for (int i = 32; i <= 96; ++i) {
+			for (auto i : std::views::iota(32, 97)) {
 				if (input_st.key_pressed(static_cast<key>(i))) {
 					return static_cast<key>(i);
 				}
 			}
-			for (int i = 256; i <= 348; ++i) {
+			for (auto i : std::views::iota(256, 349)) {
 				if (input_st.key_pressed(static_cast<key>(i))) {
 					return static_cast<key>(i);
 				}

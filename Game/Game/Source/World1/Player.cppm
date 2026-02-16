@@ -68,11 +68,6 @@ namespace gs {
 
 			auto motion_component = component_write<gse::physics::motion_component>();
 
-			apply_force(
-				motion_component,
-				gse::vec3<gse::force>(0.f, m_jetpack_force + boost_force, 0.f)
-			);
-
 			const auto v = m_move_axis_channel.value;
 
 			if (v.x() == 0.f && v.y() == 0.f) {
@@ -84,11 +79,6 @@ namespace gs {
 			);
 
 			const auto f = m_jetpack_side_force + boost_force;
-
-			apply_force(
-				motion_component,
-				gse::vec3<gse::force>(f * dir.x(), 0.f, f * dir.z())
-			);
 		}
 	private:
 		gse::force m_jetpack_force = gse::newtons(1000.f);

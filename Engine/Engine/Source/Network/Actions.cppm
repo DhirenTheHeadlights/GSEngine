@@ -38,21 +38,18 @@ auto gse::network::send_input_frame(const udp_socket& socket, remote_peer& peer,
 	const auto& rm = state.released_mask();
 	const auto wc = static_cast<std::uint16_t>(std::max(pm.word_count(), rm.word_count()));
 
-	std::vector<axes1_pair> a1;
-	a1.reserve(axes1_ids.size());
-	for (const auto id : axes1_ids) {
-		if (const float v = state.axis1(id); v != 0.f) {
-			a1.push_back({ id, v });
-		}
-	}
+	auto a1 = axes1_ids
+		| std::views::transform([&](auto id) { return axes1_pair{ id, state.axis1(id) }; })
+		| std::views::filter([](const auto& p) { return p.value != 0.f; })
+		| std::ranges::to<std::vector>();
 
-	std::vector<axes2_pair> a2;
-	a2.reserve(axes2_ids.size());
-	for (const auto id : axes2_ids) {
-		if (const auto v = state.axis2_v(id); v.x() != 0.f || v.y() != 0.f) {
-			a2.push_back({ id, v.x(), v.y() });
-		}
-	}
+	auto a2 = axes2_ids
+		| std::views::transform([&](auto id) -> axes2_pair {
+			const auto v = state.axis2_v(id);
+			return { id, v.x(), v.y() };
+		})
+		| std::views::filter([](const auto& p) { return p.x != 0.f || p.y != 0.f; })
+		| std::ranges::to<std::vector>();
 
 	bitstream s(buffer);
 

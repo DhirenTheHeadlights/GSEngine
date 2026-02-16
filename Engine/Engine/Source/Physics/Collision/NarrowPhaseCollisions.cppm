@@ -506,19 +506,12 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
                 if constexpr (debug) {
                     if (penetration_depth >= meters(10.f)) {
                         std::vector<vec3<length>> face_vertices_obb_1;
-                        std::array<vec3<length>, 4> point_cache;
-                        for (size_t i_face = 0; i_face < 3; i_face++) {
-                            point_cache = bb1.face_vertices(i_face);
-                            for (size_t pt = 0; pt < 4; pt++) {
-                                face_vertices_obb_1.emplace_back(point_cache[pt]);
-                            }
+                        for (size_t i_face = 0; i_face < 3; ++i_face) {
+                            std::ranges::copy(bb1.face_vertices(i_face), std::back_inserter(face_vertices_obb_1));
                         }
                         std::vector<vec3<length>> face_vertices_obb_2;
-                        for (size_t i_face = 0; i_face < 3; i_face++) {
-                            point_cache = bb2.face_vertices(i_face);
-                            for (size_t pt = 0; pt < 4; pt++) {
-                                face_vertices_obb_2.emplace_back(point_cache[pt]);
-                            }
+                        for (size_t i_face = 0; i_face < 3; ++i_face) {
+                            std::ranges::copy(bb2.face_vertices(i_face), std::back_inserter(face_vertices_obb_2));
                         }
                         obb obb_test1 = bb1.obb();
                         obb obb_test2 = bb2.obb();
@@ -797,11 +790,8 @@ auto gse::narrow_phase_collision::sat_penetration(const bounding_box& bb1, const
         }
         };
 
-    // Test face normals
-    for (int i = 0; i < 3; ++i) {
-        test_axis(bb1.obb().axes[i]);
-        test_axis(bb2.obb().axes[i]);
-    }
+    for (const auto& axis : bb1.obb().axes) test_axis(axis);
+    for (const auto& axis : bb2.obb().axes) test_axis(axis);
     // Test edge cross products
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {

@@ -826,10 +826,9 @@ auto gse::save::property<T, Constraint>::enum_label(const std::size_t index) con
 template <typename T, typename Constraint>
 auto gse::save::property<T, Constraint>::enum_index() const -> std::size_t {
     if constexpr (requires { m_constraint.options; }) {
-        for (std::size_t i = 0; i < m_constraint.options.size(); ++i) {
-            if (m_constraint.options[i].second == m_ref) {
-                return i;
-            }
+        const auto it = std::ranges::find_if(m_constraint.options, [this](const auto& opt) { return opt.second == m_ref; });
+        if (it != m_constraint.options.end()) {
+            return static_cast<std::size_t>(std::ranges::distance(m_constraint.options.begin(), it));
         }
     }
     return 0;
@@ -1082,16 +1081,17 @@ auto gse::save::state::register_property(std::unique_ptr<property_base> prop) ->
     const std::string cat(prop->category());
     const std::string name(prop->name());
 
-    for (auto it = m_properties.begin(); it != m_properties.end(); ++it) {
-        if ((*it)->category() == cat && (*it)->name() == name) {
-            auto& cat_vec = m_by_category[cat];
-            std::erase(cat_vec, it->get());
+    auto it = std::ranges::find_if(m_properties, [&](const auto& p) {
+        return p->category() == cat && p->name() == name;
+    });
+    if (it != m_properties.end()) {
+        auto& cat_vec = m_by_category[cat];
+        std::erase(cat_vec, it->get());
 
-            auto* ptr = prop.get();
-            *it = std::move(prop);
-            cat_vec.push_back(ptr);
-            return ptr;
-        }
+        auto* ptr = prop.get();
+        *it = std::move(prop);
+        cat_vec.push_back(ptr);
+        return ptr;
     }
 
     auto* ptr = prop.get();
@@ -1103,9 +1103,7 @@ auto gse::save::state::register_property(std::unique_ptr<property_base> prop) ->
 auto gse::save::state::categories() const -> std::vector<std::string_view> {
     std::vector<std::string_view> result;
     result.reserve(m_by_category.size());
-    for (const auto& cat : m_by_category | std::views::keys) {
-        result.push_back(cat);
-    }
+    std::ranges::copy(m_by_category | std::views::keys, std::back_inserter(result));
     std::ranges::sort(result);
     return result;
 }

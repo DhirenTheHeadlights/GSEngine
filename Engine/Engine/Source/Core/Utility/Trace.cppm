@@ -876,13 +876,12 @@ auto gse::trace::make_loc_id(const std::source_location& loc) -> id {
 			"__cdecl", "__stdcall", "__thiscall", "__vectorcall", "cdecl", "stdcall", "thiscall", "vectorcall"
 		};
 
-		for (auto cc : candidates) {
-			if (tag.size() > cc.size() && tag.substr(0, cc.size()) == cc) {
-				tag.remove_prefix(cc.size());
-				while (!tag.empty() && std::isspace(static_cast<unsigned char>(tag.front()))) {
-					tag.remove_prefix(1);
-				}
-				break;
+		if (auto it = std::ranges::find_if(candidates, [&](std::string_view cc) {
+			return tag.size() > cc.size() && tag.starts_with(cc);
+		}); it != std::end(candidates)) {
+			tag.remove_prefix(it->size());
+			while (!tag.empty() && std::isspace(static_cast<unsigned char>(tag.front()))) {
+				tag.remove_prefix(1);
 			}
 		}
 	} else {

@@ -110,5 +110,5 @@ auto gse::per_frame_resource<T, N>::end(this auto&& self) -> decltype(auto) {
 
 template <typename T, std::size_t N>
 auto gse::per_frame_resource<T, N>::resources(this auto&& self) -> decltype(auto) {
-	return self.m_resources;
+	return (self.m_resources);
 }
