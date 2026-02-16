@@ -79,7 +79,7 @@ namespace gse::vulkan {
 	) -> swap_chain_config;
 
 	vk::DebugUtilsMessengerEXT debug_utils_messenger;
-	constexpr std::uint32_t max_frames_in_flight = 2;
+	export constexpr std::uint32_t max_frames_in_flight = 2;
 }
 
 auto gse::vulkan::generate_config(GLFWwindow* window, save::state& save_state) -> std::unique_ptr<config> {

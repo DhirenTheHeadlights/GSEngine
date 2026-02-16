@@ -254,6 +254,10 @@ export namespace gse::renderer::geometry {
 			float timestamp_period = 0.f;
 			float solve_ms = 0.f;
 			bool descriptors_initialized = false;
+
+			vbd::buffer_layout body_layout;
+			vbd::buffer_layout contact_layout;
+			vbd::buffer_layout motor_layout;
 		};
 		mutable vbd_compute vbd;
 
@@ -916,6 +920,20 @@ auto gse::renderer::geometry::system::initialize(initialize_phase&, state& s) ->
 	s.vbd.sequential_passes_pipeline = create_vbd_pipeline(s.vbd.sequential_passes);
 	s.vbd.finalize_pipeline = create_vbd_pipeline(s.vbd.finalize);
 
+	auto extract_layout = [](const resource::handle<shader>& sh, const std::string& name) {
+		const auto block = sh->uniform_block(name);
+		vbd::buffer_layout layout;
+		layout.stride = block.size;
+		for (const auto& [n, member] : block.members) {
+			layout.offsets[n] = member.offset;
+		}
+		return layout;
+	};
+
+	s.vbd.body_layout = extract_layout(s.vbd.predict, "body_data");
+	s.vbd.contact_layout = extract_layout(s.vbd.predict, "contact_data");
+	s.vbd.motor_layout = extract_layout(s.vbd.predict, "motor_data");
+
 	s.vbd.query_pool = config.device_config().device.createQueryPool({
 		.queryType = vk::QueryType::eTimestamp,
 		.queryCount = 8
@@ -1370,16 +1388,14 @@ auto gse::renderer::geometry::system::render(render_phase& phase, const state& s
         .pDepthAttachment = &depth_attachment
     };
 
-    const auto& gpu_dispatch_items = phase.read_channel<vbd::gpu_dispatch_info>();
-    if (!gpu_dispatch_items.empty()) {
-        auto* solver = gpu_dispatch_items[0].solver;
-        if (solver) {
+    if (const auto& gpu_dispatch_items = phase.read_channel<vbd::gpu_dispatch_info>(); !gpu_dispatch_items.empty()) {
+	    if (auto* solver = gpu_dispatch_items[0].solver) {
             if (!solver->buffers_created()) {
-                solver->create_buffers(config.allocator());
+                solver->create_buffers(config.allocator(), s.vbd.body_layout, s.vbd.contact_layout, s.vbd.motor_layout);
             }
             solver->stage_readback(frame_index);
-            if (solver->pending_dispatch()) {
-                solver->commit_upload();
+            if (solver->pending_dispatch(frame_index)) {
+                solver->commit_upload(frame_index);
                 dispatch_vbd_compute(s, command, *solver, frame_index);
             }
         }
@@ -1776,34 +1792,34 @@ auto gse::renderer::geometry::dispatch_vbd_compute(
 			);
 
 			const vk::DescriptorBufferInfo body_info{
-				.buffer = solver.body_buffer().buffer,
+				.buffer = solver.body_buffer_resources()[i].buffer,
 				.offset = 0,
-				.range = solver.body_buffer().allocation.size()
+				.range = solver.body_buffer_resources()[i].allocation.size()
 			};
 			const vk::DescriptorBufferInfo contact_info{
-				.buffer = solver.contact_buffer().buffer,
+				.buffer = solver.contact_buffer_resources()[i].buffer,
 				.offset = 0,
-				.range = solver.contact_buffer().allocation.size()
+				.range = solver.contact_buffer_resources()[i].allocation.size()
 			};
 			const vk::DescriptorBufferInfo motor_info{
-				.buffer = solver.motor_buffer().buffer,
+				.buffer = solver.motor_buffer_resources()[i].buffer,
 				.offset = 0,
-				.range = solver.motor_buffer().allocation.size()
+				.range = solver.motor_buffer_resources()[i].allocation.size()
 			};
 			const vk::DescriptorBufferInfo color_info{
-				.buffer = solver.color_buffer().buffer,
+				.buffer = solver.color_buffer_resources()[i].buffer,
 				.offset = 0,
-				.range = solver.color_buffer().allocation.size()
+				.range = solver.color_buffer_resources()[i].allocation.size()
 			};
 			const vk::DescriptorBufferInfo map_info{
-				.buffer = solver.body_contact_map_buffer().buffer,
+				.buffer = solver.body_contact_map_buffer_resources()[i].buffer,
 				.offset = 0,
-				.range = solver.body_contact_map_buffer().allocation.size()
+				.range = solver.body_contact_map_buffer_resources()[i].allocation.size()
 			};
 			const vk::DescriptorBufferInfo solve_info{
-				.buffer = solver.solve_state_buffer().buffer,
+				.buffer = solver.solve_state_buffer_resources()[i].buffer,
 				.offset = 0,
-				.range = solver.solve_state_buffer().allocation.size()
+				.range = solver.solve_state_buffer_resources()[i].allocation.size()
 			};
 
 			auto& ds = vbd.descriptor_sets.resources()[i];
@@ -1909,7 +1925,7 @@ auto gse::renderer::geometry::dispatch_vbd_compute(
 	command.writeTimestamp2(vk::PipelineStageFlagBits2::eTopOfPipe, *vbd.query_pool, query_base);
 
 	const auto& cfg = solver.solver_cfg();
-	const float sub_dt = solver.dt() / static_cast<float>(cfg.substeps);
+	const float sub_dt = solver.dt().as<seconds>() / static_cast<float>(cfg.substeps);
 	const float h_squared = sub_dt * sub_dt;
 
 	auto ceil_div = [](const std::uint32_t a, const std::uint32_t b) { return (a + b - 1) / b; };
@@ -1942,6 +1958,7 @@ auto gse::renderer::geometry::dispatch_vbd_compute(
 
 		for (std::uint32_t iter = 0; iter < cfg.iterations; ++iter) {
 			for (const auto& [offset, count] : solver.color_ranges()) {
+				if (count == 0) continue;
 				bind_and_push(vbd.solve_color, vbd.solve_color_pipeline, offset, count, substep, iter);
 				command.dispatch(ceil_div(count, vbd::workgroup_size), 1, 1);
 				command.pipelineBarrier2(compute_dep);
@@ -1984,17 +2001,17 @@ auto gse::renderer::geometry::dispatch_vbd_compute(
 	};
 	command.pipelineBarrier2({ .memoryBarrierCount = 1, .pMemoryBarriers = &compute_to_transfer });
 
-	const vk::DeviceSize body_copy_size = body_count * sizeof(vbd::gpu_body);
-	command.copyBuffer(solver.body_buffer().buffer, solver.readback_buffers()[frame_index % 2].buffer,
+	const vk::DeviceSize body_copy_size = body_count * solver.body_stride();
+	command.copyBuffer(solver.body_buffer(frame_index).buffer, solver.readback_buffer(frame_index).buffer,
 		vk::BufferCopy{ .srcOffset = 0, .dstOffset = 0, .size = body_copy_size });
 
 	if (contact_count > 0) {
-		constexpr vk::DeviceSize lambda_src_offset = sizeof(std::uint32_t) * 2 + sizeof(float);
-		const vk::DeviceSize lambda_dst_base = vbd::max_bodies * sizeof(vbd::gpu_body);
+		const vk::DeviceSize lambda_src_offset = solver.contact_lambda_offset();
+		const vk::DeviceSize lambda_dst_base = vbd::max_bodies * solver.body_stride();
 		for (std::uint32_t ci = 0; ci < contact_count; ++ci) {
-			command.copyBuffer(solver.contact_buffer().buffer, solver.readback_buffers()[frame_index % 2].buffer,
+			command.copyBuffer(solver.contact_buffer(frame_index).buffer, solver.readback_buffer(frame_index).buffer,
 				vk::BufferCopy{
-					.srcOffset = ci * sizeof(vbd::gpu_contact) + lambda_src_offset,
+					.srcOffset = ci * solver.contact_stride() + lambda_src_offset,
 					.dstOffset = lambda_dst_base + ci * sizeof(float),
 					.size = sizeof(float)
 				});
