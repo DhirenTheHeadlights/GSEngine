@@ -105,7 +105,6 @@ auto gse::renderer::system::initialize(const initialize_phase& phase, state& s) 
 	ctx.add_loader<texture>();
 	ctx.add_loader<model>();
 	ctx.add_loader<skinned_model>();
-	ctx.add_loader<shader>();
 	ctx.add_loader<font>();
 	ctx.add_loader<material>();
 	ctx.add_loader<skeleton>();

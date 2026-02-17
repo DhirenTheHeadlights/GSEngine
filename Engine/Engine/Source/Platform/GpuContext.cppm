@@ -5,6 +5,8 @@ import std;
 import :resource_loader;
 import :asset_pipeline;
 import :asset_compiler;
+import :shader;
+import :shader_compiler;
 import :shader_layout;
 import :shader_layout_compiler;
 
@@ -187,6 +189,9 @@ gse::gpu::context::context(const std::string& window_title, input::system_state&
 		.default_value(false)
 		.restart_required()
 		.commit();
+
+	add_loader<shader>();
+	compile();
 }
 
 gse::gpu::context::~context() {

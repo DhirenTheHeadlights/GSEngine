@@ -98,6 +98,10 @@ auto gse::physics::system::initialize(const initialize_phase& phase, state& s) -
 		.velocity_sleep_threshold = 0.05f,
 		.speculative_margin = meters(0.02f)
 	});
+
+	if (s.gpu_ctx) {
+		s.gpu_solver.initialize_compute(*s.gpu_ctx);
+	}
 }
 
 auto gse::physics::system::update(update_phase& phase, state& s) -> void {
@@ -664,10 +668,6 @@ auto gse::physics::system::render(render_phase&, const state& s) -> void {
 
 	const auto command = config.frame_context().command_buffer;
 	const auto frame_index = config.current_frame();
-
-	if (!s.gpu_solver.compute_initialized()) {
-		s.gpu_solver.initialize_compute(*s.gpu_ctx);
-	}
 
 	s.gpu_solver.stage_readback(frame_index);
 
