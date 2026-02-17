@@ -40,7 +40,9 @@ export namespace gse {
 		auto clear() -> void;
 	};
 
-	auto compute_tangent_basis(const unitless::vec3& normal) -> std::pair<unitless::vec3, unitless::vec3>;
+	auto compute_tangent_basis(
+		const unitless::vec3& normal
+	) -> std::pair<unitless::vec3, unitless::vec3>;
 }
 
 namespace gse {
