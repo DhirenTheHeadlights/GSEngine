@@ -52,8 +52,11 @@ export namespace gse::vbd {
 			std::span<const body_state> bodies,
 			const constraint_graph& graph,
 			const solver_config& solver_cfg,
-			time_step dt
+			time_step dt,
+			int steps
 		) -> void;
+
+		auto total_substeps() const -> std::uint32_t { return m_solver_cfg.substeps * m_steps; }
 
 		auto commit_upload(std::uint32_t frame_index) -> void;
 
@@ -65,11 +68,18 @@ export namespace gse::vbd {
 		) -> void;
 
 		auto has_readback_data() const -> bool { return m_staged_valid; }
-		auto pending_dispatch(std::uint32_t fi) const -> bool { return m_pending_dispatch[fi]; }
+		auto pending_dispatch() const -> bool { return m_pending_dispatch; }
+		auto ready_to_dispatch(std::uint32_t frame_index) const -> bool {
+			if (m_awaiting_readback) return false;
+			if (m_fi_locked && frame_index != m_locked_fi) return false;
+			return true;
+		}
 
 		auto mark_dispatched(std::uint32_t frame_index) -> void {
 			m_readback_info[frame_index] = { m_body_count, m_contact_count };
-			m_pending_dispatch[frame_index] = false;
+			m_pending_dispatch = false;
+			m_awaiting_readback = true;
+			m_awaiting_readback_fi = frame_index;
 			m_frame_count++;
 		}
 
@@ -100,7 +110,11 @@ export namespace gse::vbd {
 
 	private:
 		bool m_buffers_created = false;
-		std::array<bool, 2> m_pending_dispatch = {false, false};
+		bool m_pending_dispatch = false;
+		bool m_awaiting_readback = false;
+		bool m_fi_locked = false;
+		std::uint32_t m_awaiting_readback_fi = 0;
+		std::uint32_t m_locked_fi = 0;
 		std::uint32_t m_frame_count = 0;
 
 		std::uint32_t m_body_count = 0;
@@ -108,6 +122,7 @@ export namespace gse::vbd {
 		std::uint32_t m_motor_count = 0;
 		std::uint32_t m_num_colors = 0;
 
+		std::uint32_t m_steps = 1;
 		solver_config m_solver_cfg;
 		time_step m_dt{};
 
@@ -222,17 +237,19 @@ auto gse::vbd::gpu_solver::upload(
 	const std::span<const body_state> bodies,
 	const constraint_graph& graph,
 	const solver_config& solver_cfg,
-	const time_step dt
+	const time_step dt,
+	const int steps
 ) -> void {
 	m_body_count = static_cast<std::uint32_t>(std::min(bodies.size(), static_cast<std::size_t>(max_bodies)));
 	m_contact_count = static_cast<std::uint32_t>(std::min(graph.contact_constraints().size(), static_cast<std::size_t>(max_contacts)));
 	m_motor_count = static_cast<std::uint32_t>(std::min(graph.motor_constraints().size(), static_cast<std::size_t>(max_motors)));
 	m_num_colors = static_cast<std::uint32_t>(graph.body_colors().size());
+	m_steps = static_cast<std::uint32_t>(std::max(steps, 1));
 	m_solver_cfg = solver_cfg;
 	m_dt = dt;
 
 	if (m_body_count == 0) {
-		m_pending_dispatch = {false, false};
+		m_pending_dispatch = false;
 		return;
 	}
 
@@ -439,11 +456,11 @@ auto gse::vbd::gpu_solver::upload(
 		body_motor_index[graph.motor_constraints()[mi].body_index] = mi;
 	}
 
-	m_pending_dispatch = {true, true};
+	m_pending_dispatch = true;
 }
 
 auto gse::vbd::gpu_solver::commit_upload(const std::uint32_t frame_index) -> void {
-	if (!m_pending_dispatch[frame_index] || m_body_count == 0) return;
+	if (!m_pending_dispatch || m_body_count == 0) return;
 
 	gse::memcpy(m_body_buffer[frame_index].allocation.mapped(), m_upload_body_data);
 	gse::memcpy(m_contact_buffer[frame_index].allocation.mapped(), m_upload_contact_data);
@@ -480,29 +497,57 @@ auto gse::vbd::gpu_solver::commit_upload(const std::uint32_t frame_index) -> voi
 }
 
 auto gse::vbd::gpu_solver::stage_readback(const std::uint32_t frame_index) -> void {
-	if (m_frame_count < 2) return;
+	if (m_frame_count < 2) {
+		m_awaiting_readback = false;
+		return;
+	}
+	if (!m_awaiting_readback) return;
+	if (frame_index != m_awaiting_readback_fi) return;
 
-	auto& [body_count, contact_count] = m_readback_info[frame_index];
+	auto& info = m_readback_info[frame_index];
 
-	if (body_count == 0) return;
+	if (info.body_count == 0) return;
 
 	const auto* rb = m_readback_buffer[frame_index].allocation.mapped();
 
-	m_staged_body_count = body_count;
-	m_staged_contact_count = contact_count;
-	m_staged_body_data.assign(rb, rb + body_count * m_body_layout.stride);
+	m_staged_body_count = info.body_count;
+	m_staged_contact_count = info.contact_count;
+	m_staged_body_data.assign(rb, rb + info.body_count * m_body_layout.stride);
 
 	const auto* lambda_data = reinterpret_cast<const float*>(
 		rb + max_bodies * m_body_layout.stride
 	);
-	m_staged_lambdas.assign(lambda_data, lambda_data + contact_count);
+	m_staged_lambdas.assign(lambda_data, lambda_data + info.contact_count);
 
-	body_count = 0;
-	contact_count = 0;
+	info = {};
 
 	m_staged_valid = true;
+	m_awaiting_readback = false;
+
+	if (!m_fi_locked) {
+		m_fi_locked = true;
+		m_locked_fi = frame_index;
+	}
 
 	const auto& bo = m_body_layout.offsets;
+
+	if (!m_upload_body_data.empty()) {
+		const std::uint32_t patch_count = std::min(m_staged_body_count, m_body_count);
+		for (std::uint32_t i = 0; i < patch_count; ++i) {
+			const auto* src = m_staged_body_data.data() + i * m_body_layout.stride;
+			auto* dst = m_upload_body_data.data() + i * m_body_layout.stride;
+
+			std::uint32_t flags;
+			std::memcpy(&flags, src + bo.at("flags"), sizeof(std::uint32_t));
+			if (flags & flag_locked) continue;
+
+			std::memcpy(dst + bo.at("position"), src + bo.at("position"), sizeof(float) * 3);
+			std::memcpy(dst + bo.at("velocity"), src + bo.at("velocity"), sizeof(float) * 3);
+			std::memcpy(dst + bo.at("orientation"), src + bo.at("orientation"), sizeof(float) * 4);
+			std::memcpy(dst + bo.at("angular_velocity"), src + bo.at("angular_velocity"), sizeof(float) * 3);
+			std::memcpy(dst + bo.at("sleep_counter"), src + bo.at("sleep_counter"), sizeof(std::uint32_t));
+		}
+	}
 
 	std::uint32_t first_dynamic = std::numeric_limits<std::uint32_t>::max();
 	for (std::uint32_t i = 0; i < m_staged_body_count; ++i) {

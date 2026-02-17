@@ -52,6 +52,9 @@ export namespace gse::physics {
         bool sleeping = false;
 		bool update_orientation = true;
 
+        vec3<length> render_position;
+        quat render_orientation = quat(1.f, 0.f, 0.f, 0.f);
+
         time sleep_time;
 
         struct accumulators {

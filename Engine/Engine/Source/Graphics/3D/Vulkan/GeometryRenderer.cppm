@@ -1394,7 +1394,7 @@ auto gse::renderer::geometry::system::render(render_phase& phase, const state& s
                 solver->create_buffers(config.allocator(), s.vbd.body_layout, s.vbd.contact_layout, s.vbd.motor_layout);
             }
             solver->stage_readback(frame_index);
-            if (solver->pending_dispatch(frame_index)) {
+            if (solver->pending_dispatch() && solver->ready_to_dispatch(frame_index)) {
                 solver->commit_upload(frame_index);
                 dispatch_vbd_compute(s, command, *solver, frame_index);
             }
@@ -1925,7 +1925,8 @@ auto gse::renderer::geometry::dispatch_vbd_compute(
 	command.writeTimestamp2(vk::PipelineStageFlagBits2::eTopOfPipe, *vbd.query_pool, query_base);
 
 	const auto& cfg = solver.solver_cfg();
-	const float sub_dt = solver.dt().as<seconds>() / static_cast<float>(cfg.substeps);
+	const std::uint32_t total_substeps = solver.total_substeps();
+	const float sub_dt = solver.dt().as<seconds>() / static_cast<float>(total_substeps);
 	const float h_squared = sub_dt * sub_dt;
 
 	auto ceil_div = [](const std::uint32_t a, const std::uint32_t b) { return (a + b - 1) / b; };
@@ -1951,7 +1952,7 @@ auto gse::renderer::geometry::dispatch_vbd_compute(
 		);
 	};
 
-	for (std::uint32_t substep = 0; substep < cfg.substeps; ++substep) {
+	for (std::uint32_t substep = 0; substep < total_substeps; ++substep) {
 		bind_and_push(vbd.predict, vbd.predict_pipeline, 0u, 0u, substep, 0u);
 		command.dispatch(ceil_div(body_count, vbd::workgroup_size), 1, 1);
 		command.pipelineBarrier2(compute_dep);
