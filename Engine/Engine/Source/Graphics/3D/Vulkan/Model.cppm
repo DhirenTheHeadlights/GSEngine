@@ -3,13 +3,12 @@ export module gse.graphics:model;
 import std;
 
 import :mesh;
-import :rendering_context;
 import :material;
 
 import gse.utility;
 import gse.platform;
 import gse.physics;
-import gse.physics.math;
+import gse.math;
 import gse.assert;
 
 export namespace gse {
@@ -47,7 +46,7 @@ export namespace gse {
 		explicit model(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path), m_baked_model_path(path) {}
 		explicit model(std::string_view name, std::vector<mesh_data> meshes);
 
-		auto load(renderer::context& context) -> void;
+		auto load(gpu::context& context) -> void;
 		auto unload() -> void;
 
 		auto meshes() const -> std::span<const mesh>;
@@ -68,7 +67,7 @@ gse::model::model(const std::string_view name, std::vector<mesh_data> meshes) : 
 	}
 }
 
-auto gse::model::load(renderer::context& context) -> void {
+auto gse::model::load(gpu::context& context) -> void {
 	if (!m_baked_model_path.empty()) {
 		m_meshes.clear();
 
@@ -112,7 +111,7 @@ auto gse::model::load(renderer::context& context) -> void {
 
 	context.queue_gpu_command<model>(
 		this, 
-		[](renderer::context& ctx, model& self) {
+		[](gpu::context& ctx, model& self) {
 			for (auto& mesh : self.m_meshes) {
 				mesh.initialize(ctx.config());
 			}

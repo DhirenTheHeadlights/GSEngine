@@ -3,7 +3,7 @@ export module gse.graphics:clip;
 import std;
 
 import gse.utility;
-import gse.physics.math;
+import gse.math;
 import :skeleton;
 
 export namespace gse {
@@ -35,7 +35,7 @@ export namespace gse {
         );
 
         auto load(
-            const renderer::context& ctx
+            const gpu::context& ctx
         ) -> void;
 
         auto unload(
@@ -68,7 +68,7 @@ gse::clip_asset::clip_asset(params p)
       m_tracks(std::move(p.tracks)) {
 }
 
-auto gse::clip_asset::load(const renderer::context& ctx) -> void {
+auto gse::clip_asset::load(const gpu::context& ctx) -> void {
     (void)ctx;
 
     if (m_baked_path.empty() || !exists(m_baked_path)) {

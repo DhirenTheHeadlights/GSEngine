@@ -1,8 +1,8 @@
-export module gse.graphics:shader_layout;
+export module gse.platform:shader_layout;
 
 import std;
 
-import gse.platform;
+import gse.platform.vulkan;
 import gse.utility;
 import gse.assert;
 

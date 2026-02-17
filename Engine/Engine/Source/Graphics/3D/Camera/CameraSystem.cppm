@@ -2,7 +2,7 @@ export module gse.graphics:camera_system;
 
 import std;
 
-import gse.physics.math;
+import gse.math;
 import gse.utility;
 import gse.platform;
 

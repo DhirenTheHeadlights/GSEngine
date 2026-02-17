@@ -4,7 +4,7 @@ import std;
 
 import gse.assert;
 import gse.utility;
-import gse.physics.math;
+import gse.math;
 import gse.platform;
 
 import :actions;

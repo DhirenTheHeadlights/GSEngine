@@ -9,7 +9,7 @@ export module gse.platform:image_loader;
 import std;
 
 import gse.assert;
-import gse.physics.math;
+import gse.math;
 
 export namespace gse::image {
 	struct data {

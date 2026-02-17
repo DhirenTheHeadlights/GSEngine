@@ -4,18 +4,13 @@ import std;
 
 import :clip;
 import :render_component;
-import :resource_loader;
 import :material;
-import :rendering_context;
 import :font;
 import :model;
 import :skinned_model;
-import :shader;
 import :skeleton;
 import :texture;
 
-import :shader_compiler;
-import :shader_layout_compiler;
 import :texture_compiler;
 import :font_compiler;
 import :model_compiler;
@@ -30,12 +25,12 @@ import gse.platform;
 
 export namespace gse::renderer {
 	struct state {
-		context* ctx = nullptr;
+		gpu::context* ctx = nullptr;
 		bool frame_begun = false;
 		bool hot_reload_enabled = false;
 		unitless::vec2 last_viewport{ 1920.f, 1080.f };
 
-		explicit state(context& c) : ctx(std::addressof(c)) {}
+		explicit state(gpu::context& c) : ctx(std::addressof(c)) {}
 		state() = default;
 
 		auto set_ui_focus(const bool focus) const -> void {
@@ -86,11 +81,11 @@ export namespace gse::renderer {
 			return ctx->resource_state<Resource>(resource_id);
 		}
 
-		auto context_ref() -> context& {
+		auto context_ref() -> gpu::context& {
 			return *ctx;
 		}
 
-		auto context_ref() const -> const context& {
+		auto context_ref() const -> const gpu::context& {
 			return *ctx;
 		}
 	};

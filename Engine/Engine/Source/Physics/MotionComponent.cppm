@@ -3,7 +3,7 @@ export module gse.physics:motion_component;
 import std;
 
 import gse.utility;
-import gse.physics.math;
+import gse.math;
 
 export namespace gse::physics {
     struct motion_component_net {

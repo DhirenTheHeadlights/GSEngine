@@ -30,10 +30,6 @@ export namespace gse::vbd {
 
 	class gpu_solver;
 
-	struct gpu_dispatch_info {
-		gpu_solver* solver = nullptr;
-	};
-
 	struct color_range {
 		std::uint32_t offset;
 		std::uint32_t count;
@@ -41,7 +37,10 @@ export namespace gse::vbd {
 
 	class gpu_solver {
 	public:
-		auto create_buffers(vulkan::allocator& alloc, const buffer_layout& body_layout, const buffer_layout& contact_layout, const buffer_layout& motor_layout) -> void;
+		auto create_buffers(vulkan::allocator& alloc) -> void;
+		auto initialize_compute(gpu::context& ctx) -> void;
+		auto dispatch_compute(vk::CommandBuffer cmd, vulkan::config& config, std::uint32_t frame_index) -> void;
+		auto compute_initialized() const -> bool { return m_compute.initialized; }
 		auto buffers_created() const -> bool { return m_buffers_created; }
 
 		auto body_stride() const -> std::uint32_t { return m_body_layout.stride; }
@@ -109,6 +108,31 @@ export namespace gse::vbd {
 		auto frame_count() const -> std::uint32_t { return m_frame_count; }
 
 	private:
+		struct compute_state {
+			resource::handle<shader> predict;
+			resource::handle<shader> solve_color;
+			resource::handle<shader> update_lambda;
+			resource::handle<shader> derive_velocities;
+			resource::handle<shader> sequential_passes;
+			resource::handle<shader> finalize;
+
+			vk::raii::Pipeline predict_pipeline = nullptr;
+			vk::raii::Pipeline solve_color_pipeline = nullptr;
+			vk::raii::Pipeline update_lambda_pipeline = nullptr;
+			vk::raii::Pipeline derive_velocities_pipeline = nullptr;
+			vk::raii::Pipeline sequential_passes_pipeline = nullptr;
+			vk::raii::Pipeline finalize_pipeline = nullptr;
+
+			vk::raii::PipelineLayout pipeline_layout = nullptr;
+			per_frame_resource<vk::raii::DescriptorSet> descriptor_sets;
+			vk::raii::QueryPool query_pool = nullptr;
+			float timestamp_period = 0.f;
+			float solve_ms = 0.f;
+			bool descriptors_initialized = false;
+			bool initialized = false;
+		};
+		compute_state m_compute;
+
 		bool m_buffers_created = false;
 		bool m_pending_dispatch = false;
 		bool m_awaiting_readback = false;
@@ -163,15 +187,8 @@ export namespace gse::vbd {
 }
 
 auto gse::vbd::gpu_solver::create_buffers(
-	vulkan::allocator& alloc,
-	const buffer_layout& body_layout,
-	const buffer_layout& contact_layout,
-	const buffer_layout& motor_layout
+	vulkan::allocator& alloc
 ) -> void {
-	m_body_layout = body_layout;
-	m_contact_layout = contact_layout;
-	m_motor_layout = motor_layout;
-
 	constexpr auto usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc;
 	constexpr auto readback_usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst;
 
@@ -620,4 +637,320 @@ auto gse::vbd::gpu_solver::readback(
 			break;
 		}
 	}
+}
+
+auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
+	m_compute.predict = ctx.get<shader>("Shaders/Compute/vbd_predict");
+	m_compute.solve_color = ctx.get<shader>("Shaders/Compute/vbd_solve_color");
+	m_compute.update_lambda = ctx.get<shader>("Shaders/Compute/vbd_update_lambda");
+	m_compute.derive_velocities = ctx.get<shader>("Shaders/Compute/vbd_derive_velocities");
+	m_compute.sequential_passes = ctx.get<shader>("Shaders/Compute/vbd_sequential_passes");
+	m_compute.finalize = ctx.get<shader>("Shaders/Compute/vbd_finalize");
+
+	ctx.instantly_load(m_compute.predict);
+	ctx.instantly_load(m_compute.solve_color);
+	ctx.instantly_load(m_compute.update_lambda);
+	ctx.instantly_load(m_compute.derive_velocities);
+	ctx.instantly_load(m_compute.sequential_passes);
+	ctx.instantly_load(m_compute.finalize);
+
+	auto& config = ctx.config();
+
+	auto vbd_layouts = m_compute.predict->layouts();
+	std::vector vbd_ranges = { m_compute.predict->push_constant_range("push_constants") };
+
+	m_compute.pipeline_layout = config.device_config().device.createPipelineLayout({
+		.setLayoutCount = static_cast<std::uint32_t>(vbd_layouts.size()),
+		.pSetLayouts = vbd_layouts.data(),
+		.pushConstantRangeCount = static_cast<std::uint32_t>(vbd_ranges.size()),
+		.pPushConstantRanges = vbd_ranges.data()
+	});
+
+	auto create_pipeline = [&](const resource::handle<shader>& sh) {
+		return config.device_config().device.createComputePipeline(nullptr, {
+			.stage = sh->compute_stage(),
+			.layout = *m_compute.pipeline_layout
+		});
+	};
+
+	m_compute.predict_pipeline = create_pipeline(m_compute.predict);
+	m_compute.solve_color_pipeline = create_pipeline(m_compute.solve_color);
+	m_compute.update_lambda_pipeline = create_pipeline(m_compute.update_lambda);
+	m_compute.derive_velocities_pipeline = create_pipeline(m_compute.derive_velocities);
+	m_compute.sequential_passes_pipeline = create_pipeline(m_compute.sequential_passes);
+	m_compute.finalize_pipeline = create_pipeline(m_compute.finalize);
+
+	auto extract_layout = [](const resource::handle<shader>& sh, const std::string& name) {
+		const auto block = sh->uniform_block(name);
+		buffer_layout layout;
+		layout.stride = block.size;
+		for (const auto& [n, member] : block.members) {
+			layout.offsets[n] = member.offset;
+		}
+		return layout;
+	};
+
+	m_body_layout = extract_layout(m_compute.predict, "body_data");
+	m_contact_layout = extract_layout(m_compute.predict, "contact_data");
+	m_motor_layout = extract_layout(m_compute.predict, "motor_data");
+
+	m_compute.query_pool = config.device_config().device.createQueryPool({
+		.queryType = vk::QueryType::eTimestamp,
+		.queryCount = 8
+	});
+	static_cast<vk::Device>(*config.device_config().device).resetQueryPool(*m_compute.query_pool, 0, 8);
+
+	m_compute.timestamp_period = config.device_config().physical_device.getProperties().limits.timestampPeriod;
+
+	create_buffers(config.allocator());
+
+	m_compute.initialized = true;
+}
+
+auto gse::vbd::gpu_solver::dispatch_compute(
+	const vk::CommandBuffer command,
+	vulkan::config& config,
+	const std::uint32_t frame_index
+) -> void {
+	if (!m_compute.descriptors_initialized) {
+		for (std::size_t i = 0; i < per_frame_resource<vk::raii::DescriptorSet>::frames_in_flight; ++i) {
+			m_compute.descriptor_sets.resources()[i] = m_compute.predict->descriptor_set(
+				config.device_config().device,
+				config.descriptor_config().pool,
+				shader::set::binding_type::persistent
+			);
+
+			const vk::DescriptorBufferInfo body_info{
+				.buffer = m_body_buffer.resources()[i].buffer,
+				.offset = 0,
+				.range = m_body_buffer.resources()[i].allocation.size()
+			};
+			const vk::DescriptorBufferInfo contact_info{
+				.buffer = m_contact_buffer.resources()[i].buffer,
+				.offset = 0,
+				.range = m_contact_buffer.resources()[i].allocation.size()
+			};
+			const vk::DescriptorBufferInfo motor_info{
+				.buffer = m_motor_buffer.resources()[i].buffer,
+				.offset = 0,
+				.range = m_motor_buffer.resources()[i].allocation.size()
+			};
+			const vk::DescriptorBufferInfo color_info{
+				.buffer = m_color_buffer.resources()[i].buffer,
+				.offset = 0,
+				.range = m_color_buffer.resources()[i].allocation.size()
+			};
+			const vk::DescriptorBufferInfo map_info{
+				.buffer = m_body_contact_map_buffer.resources()[i].buffer,
+				.offset = 0,
+				.range = m_body_contact_map_buffer.resources()[i].allocation.size()
+			};
+			const vk::DescriptorBufferInfo solve_info{
+				.buffer = m_solve_state_buffer.resources()[i].buffer,
+				.offset = 0,
+				.range = m_solve_state_buffer.resources()[i].allocation.size()
+			};
+
+			auto& ds = m_compute.descriptor_sets.resources()[i];
+			std::array writes{
+				vk::WriteDescriptorSet{
+					.dstSet = *ds,
+					.dstBinding = 0,
+					.descriptorCount = 1,
+					.descriptorType = vk::DescriptorType::eStorageBuffer,
+					.pBufferInfo = &body_info
+				},
+				vk::WriteDescriptorSet{
+					.dstSet = *ds,
+					.dstBinding = 1,
+					.descriptorCount = 1,
+					.descriptorType = vk::DescriptorType::eStorageBuffer,
+					.pBufferInfo = &contact_info
+				},
+				vk::WriteDescriptorSet{
+					.dstSet = *ds,
+					.dstBinding = 2,
+					.descriptorCount = 1,
+					.descriptorType = vk::DescriptorType::eStorageBuffer,
+					.pBufferInfo = &motor_info
+				},
+				vk::WriteDescriptorSet{
+					.dstSet = *ds,
+					.dstBinding = 3,
+					.descriptorCount = 1,
+					.descriptorType = vk::DescriptorType::eStorageBuffer,
+					.pBufferInfo = &color_info
+				},
+				vk::WriteDescriptorSet{
+					.dstSet = *ds,
+					.dstBinding = 4,
+					.descriptorCount = 1,
+					.descriptorType = vk::DescriptorType::eStorageBuffer,
+					.pBufferInfo = &map_info
+				},
+				vk::WriteDescriptorSet{
+					.dstSet = *ds,
+					.dstBinding = 5,
+					.descriptorCount = 1,
+					.descriptorType = vk::DescriptorType::eStorageBuffer,
+					.pBufferInfo = &solve_info
+				}
+			};
+
+			config.device_config().device.updateDescriptorSets(writes, nullptr);
+		}
+
+		m_compute.descriptors_initialized = true;
+	}
+
+	if (m_body_count == 0) return;
+
+	if (m_frame_count >= 2) {
+		const std::uint32_t prev_query_base = (frame_index % 2) * 4;
+		std::array<std::uint64_t, 2> timestamps{};
+		const vk::Device device = *config.device_config().device;
+		auto result = device.getQueryPoolResults(
+			*m_compute.query_pool, prev_query_base, 2,
+			sizeof(timestamps), timestamps.data(), sizeof(std::uint64_t),
+			vk::QueryResultFlagBits::e64
+		);
+		if (result == vk::Result::eSuccess) {
+			m_compute.solve_ms = static_cast<float>(timestamps[1] - timestamps[0]) * m_compute.timestamp_period * 1e-6f;
+		}
+	}
+
+	const std::uint32_t query_base = (frame_index % 2) * 4;
+	command.resetQueryPool(*m_compute.query_pool, query_base, 4);
+
+	constexpr vk::MemoryBarrier2 host_to_compute{
+		.srcStageMask = vk::PipelineStageFlagBits2::eHost,
+		.srcAccessMask = vk::AccessFlagBits2::eHostWrite,
+		.dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+		.dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite
+	};
+	constexpr vk::MemoryBarrier2 prev_transfer_to_transfer{
+		.srcStageMask = vk::PipelineStageFlagBits2::eCopy,
+		.srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+		.dstStageMask = vk::PipelineStageFlagBits2::eCopy,
+		.dstAccessMask = vk::AccessFlagBits2::eTransferWrite
+	};
+	constexpr vk::MemoryBarrier2 init_barriers[] = { host_to_compute, prev_transfer_to_transfer };
+	command.pipelineBarrier2({ .memoryBarrierCount = 2, .pMemoryBarriers = init_barriers });
+
+	const vk::DescriptorSet sets[] = { *m_compute.descriptor_sets[frame_index % 2] };
+
+	constexpr vk::MemoryBarrier2 compute_barrier{
+		.srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+		.srcAccessMask = vk::AccessFlagBits2::eShaderStorageWrite,
+		.dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+		.dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite
+	};
+	const vk::DependencyInfo compute_dep{ .memoryBarrierCount = 1, .pMemoryBarriers = &compute_barrier };
+
+	command.writeTimestamp2(vk::PipelineStageFlagBits2::eTopOfPipe, *m_compute.query_pool, query_base);
+
+	const auto& cfg = m_solver_cfg;
+	const std::uint32_t total = total_substeps();
+	const float sub_dt = m_dt.as<seconds>() / static_cast<float>(total);
+	const float h_squared = sub_dt * sub_dt;
+
+	auto ceil_div = [](const std::uint32_t a, const std::uint32_t b) { return (a + b - 1) / b; };
+
+	auto bind_and_push = [&](const resource::handle<shader>& sh, const vk::raii::Pipeline& pipeline,
+		std::uint32_t color_offset, std::uint32_t color_count,
+		std::uint32_t substep, std::uint32_t iteration) {
+		command.bindPipeline(vk::PipelineBindPoint::eCompute, *pipeline);
+		command.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *m_compute.pipeline_layout, 0, { 1, sets }, {});
+		sh->push(command, *m_compute.pipeline_layout, "push_constants",
+			"body_count", m_body_count,
+			"contact_count", m_contact_count,
+			"motor_count", m_motor_count,
+			"color_offset", color_offset,
+			"color_count", color_count,
+			"h_squared", h_squared,
+			"dt", sub_dt,
+			"rho", cfg.rho,
+			"linear_damping", cfg.linear_damping,
+			"velocity_sleep_threshold", cfg.velocity_sleep_threshold,
+			"substep", substep,
+			"iteration", iteration
+		);
+	};
+
+	for (std::uint32_t substep = 0; substep < total; ++substep) {
+		bind_and_push(m_compute.predict, m_compute.predict_pipeline, 0u, 0u, substep, 0u);
+		command.dispatch(ceil_div(m_body_count, workgroup_size), 1, 1);
+		command.pipelineBarrier2(compute_dep);
+
+		for (std::uint32_t iter = 0; iter < cfg.iterations; ++iter) {
+			for (const auto& [offset, count] : m_color_ranges) {
+				if (count == 0) continue;
+				bind_and_push(m_compute.solve_color, m_compute.solve_color_pipeline, offset, count, substep, iter);
+				command.dispatch(ceil_div(count, workgroup_size), 1, 1);
+				command.pipelineBarrier2(compute_dep);
+			}
+
+			if (m_motor_only_count > 0) {
+				bind_and_push(m_compute.solve_color, m_compute.solve_color_pipeline,
+					m_motor_only_offset, m_motor_only_count, substep, iter);
+				command.dispatch(ceil_div(m_motor_only_count, workgroup_size), 1, 1);
+				command.pipelineBarrier2(compute_dep);
+			}
+		}
+
+		if (m_contact_count > 0) {
+			bind_and_push(m_compute.update_lambda, m_compute.update_lambda_pipeline, 0u, 0u, substep, 0u);
+			command.dispatch(ceil_div(m_contact_count, workgroup_size), 1, 1);
+			command.pipelineBarrier2(compute_dep);
+		}
+
+		bind_and_push(m_compute.derive_velocities, m_compute.derive_velocities_pipeline, 0u, 0u, substep, 0u);
+		command.dispatch(ceil_div(m_body_count, workgroup_size), 1, 1);
+		command.pipelineBarrier2(compute_dep);
+
+		bind_and_push(m_compute.sequential_passes, m_compute.sequential_passes_pipeline, 0u, 0u, substep, 0u);
+		command.dispatch(1, 1, 1);
+		command.pipelineBarrier2(compute_dep);
+
+		bind_and_push(m_compute.finalize, m_compute.finalize_pipeline, 0u, 0u, substep, 0u);
+		command.dispatch(ceil_div(m_body_count, workgroup_size), 1, 1);
+		command.pipelineBarrier2(compute_dep);
+	}
+
+	command.writeTimestamp2(vk::PipelineStageFlagBits2::eComputeShader, *m_compute.query_pool, query_base + 1);
+
+	constexpr vk::MemoryBarrier2 compute_to_transfer{
+		.srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+		.srcAccessMask = vk::AccessFlagBits2::eShaderStorageWrite,
+		.dstStageMask = vk::PipelineStageFlagBits2::eCopy,
+		.dstAccessMask = vk::AccessFlagBits2::eTransferRead
+	};
+	command.pipelineBarrier2({ .memoryBarrierCount = 1, .pMemoryBarriers = &compute_to_transfer });
+
+	const vk::DeviceSize body_copy_size = m_body_count * m_body_layout.stride;
+	command.copyBuffer(m_body_buffer[frame_index].buffer, m_readback_buffer[frame_index].buffer,
+		vk::BufferCopy{ .srcOffset = 0, .dstOffset = 0, .size = body_copy_size });
+
+	if (m_contact_count > 0) {
+		const vk::DeviceSize lambda_src_offset = m_contact_layout.offsets.at("lambda");
+		const vk::DeviceSize lambda_dst_base = max_bodies * m_body_layout.stride;
+		for (std::uint32_t ci = 0; ci < m_contact_count; ++ci) {
+			command.copyBuffer(m_contact_buffer[frame_index].buffer, m_readback_buffer[frame_index].buffer,
+				vk::BufferCopy{
+					.srcOffset = ci * m_contact_layout.stride + lambda_src_offset,
+					.dstOffset = lambda_dst_base + ci * sizeof(float),
+					.size = sizeof(float)
+				});
+		}
+	}
+
+	constexpr vk::MemoryBarrier2 compute_to_host{
+		.srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+		.srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+		.dstStageMask = vk::PipelineStageFlagBits2::eHost,
+		.dstAccessMask = vk::AccessFlagBits2::eHostRead
+	};
+	command.pipelineBarrier2({ .memoryBarrierCount = 1, .pMemoryBarriers = &compute_to_host });
+
+	mark_dispatched(frame_index);
 }

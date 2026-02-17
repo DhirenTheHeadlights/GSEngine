@@ -4,9 +4,8 @@ import std;
 
 import gse.platform;
 import gse.assert;
-import gse.physics.math;
+import gse.math;
 
-import :asset_compiler;
 import :material;
 
 export template<>

@@ -3,7 +3,7 @@ export module gse.graphics:animation;
 import std;
 
 import gse.utility;
-import gse.physics.math;
+import gse.math;
 
 import :animation_component;
 import :clip_component;

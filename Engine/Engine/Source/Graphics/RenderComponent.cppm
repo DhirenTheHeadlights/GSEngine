@@ -7,7 +7,7 @@ import :model;
 import :skinned_model;
 
 import gse.utility;
-import gse.physics.math;
+import gse.math;
 
 export namespace gse {
     struct render_component_net {

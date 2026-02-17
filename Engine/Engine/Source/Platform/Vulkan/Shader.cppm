@@ -6,15 +6,15 @@ module;
 
 #undef assert
 
-export module gse.graphics:shader;
+export module gse.platform:shader;
 
 import std;
 
-import :rendering_context;
+import :gpu_context;
 import :shader_layout;
 
 import gse.assert;
-import gse.platform;
+import gse.platform.vulkan;
 import gse.utility;
 
 namespace gse {
@@ -73,7 +73,7 @@ namespace gse {
 		explicit shader(const std::filesystem::path& path);
 
 		auto load(
-			const renderer::context& context
+			const gpu::context& context
 		) -> void;
 
 		auto unload(
@@ -237,7 +237,7 @@ gse::shader::shader(const std::filesystem::path& path) : identifiable(path, conf
 	};
 }
 
-auto gse::shader::load(const renderer::context& context) -> void {
+auto gse::shader::load(const gpu::context& context) -> void {
 	std::ifstream in(m_info.path, std::ios::binary);
 	assert(in.is_open(), std::source_location::current(), "Failed to open gshader asset: {}", m_info.path.string());
 

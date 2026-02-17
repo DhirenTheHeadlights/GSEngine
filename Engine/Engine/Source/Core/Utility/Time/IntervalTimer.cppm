@@ -3,7 +3,7 @@ export module gse.utility:interval_timer;
 import std;
 
 import gse.assert;
-import gse.physics.math;
+import gse.math;
 
 import :clock;
 import :system_clock;

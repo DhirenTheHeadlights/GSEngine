@@ -3,7 +3,7 @@ export module gse.graphics:animation_dsl;
 import std;
 
 import gse.utility;
-import gse.physics.math;
+import gse.math;
 
 export namespace gse::animation {
 	enum class condition_type {

@@ -1,4 +1,4 @@
-export module gse.physics.math:circle;
+export module gse.math:circle;
 
 import std;
 

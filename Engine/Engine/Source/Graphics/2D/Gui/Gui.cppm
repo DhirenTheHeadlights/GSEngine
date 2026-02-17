@@ -4,12 +4,11 @@ import std;
 
 import gse.platform;
 import gse.utility;
-import gse.physics.math;
+import gse.math;
 
 import :types;
 import :layout;
 import :font;
-import :rendering_context;
 import :ui_renderer;
 import :texture;
 import :cursor;
@@ -31,7 +30,7 @@ import :styles;
 
 namespace gse::gui {
 	struct frame_state {
-		const renderer::context* rctx = nullptr;
+		const gpu::context* rctx = nullptr;
 		style sty{};
 		bool active = false;
 	};
@@ -119,7 +118,7 @@ namespace gse::gui {
 
 export namespace gse::gui {
 	struct system_state {
-		renderer::context* rctx = nullptr;
+		gpu::context* rctx = nullptr;
 
 		id_mapped_collection<menu> menus;
 		menu* current_menu = nullptr;
@@ -161,7 +160,7 @@ export namespace gse::gui {
 
 		static constexpr time update_interval = seconds(30.f);
 
-		explicit system_state(renderer::context& c) : rctx(std::addressof(c)) {}
+		explicit system_state(gpu::context& c) : rctx(std::addressof(c)) {}
 		system_state() = default;
 
 		auto input_layers() -> input_layer& {

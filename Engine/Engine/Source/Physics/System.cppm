@@ -4,7 +4,8 @@ import std;
 
 import gse.utility;
 import gse.log;
-import gse.physics.math;
+import gse.math;
+import gse.platform;
 
 import :narrow_phase_collision;
 import :motion_component;
@@ -21,9 +22,10 @@ export namespace gse::physics {
 		time_t<float, seconds> accumulator{};
 		bool update_phys = true;
 		bool use_gpu_solver = false;
+		gpu::context* gpu_ctx = nullptr;
 
 		vbd::solver vbd_solver;
-		vbd::gpu_solver gpu_solver;
+		mutable vbd::gpu_solver gpu_solver;
 		vbd::contact_cache contact_cache;
 		std::unordered_map<id, std::uint32_t> sleep_counters;
 
@@ -37,6 +39,7 @@ export namespace gse::physics {
 	struct system {
 		static auto initialize(const initialize_phase& phase, state& s) -> void;
 		static auto update(update_phase& phase, state& s) -> void;
+		static auto render(render_phase& phase, const state& s) -> void;
 	};
 }
 
@@ -120,7 +123,7 @@ auto gse::physics::system::update(update_phase& phase, state& s) -> void {
 	const float alpha = s.accumulator.as<seconds>() / const_update_time.as<seconds>();
 
 	if (s.use_gpu_solver) {
-		phase.schedule([steps, alpha, &s, &channels = phase.channels, const_update_time](chunk<motion_component> motion, chunk<collision_component> collision) {
+		phase.schedule([steps, alpha, &s, const_update_time](chunk<motion_component> motion, chunk<collision_component> collision) {
 			for (motion_component& mc : motion) {
 				mc.render_position = mc.current_position;
 				mc.render_orientation = mc.orientation;
@@ -138,8 +141,6 @@ auto gse::physics::system::update(update_phase& phase, state& s) -> void {
 					mc.render_orientation = slerp(mc.render_orientation, mc.orientation, alpha);
 				}
 			}
-
-			channels.push(vbd::gpu_dispatch_info{ &s.gpu_solver });
 		});
 		return;
 	}
@@ -652,5 +653,26 @@ auto gse::physics::update_vbd(
 			}
 			mc.motor.jump_requested = false;
 		}
+	}
+}
+
+auto gse::physics::system::render(render_phase&, const state& s) -> void {
+	if (!s.gpu_ctx || !s.use_gpu_solver) return;
+
+	auto& config = s.gpu_ctx->config();
+	if (!config.frame_in_progress()) return;
+
+	const auto command = config.frame_context().command_buffer;
+	const auto frame_index = config.current_frame();
+
+	if (!s.gpu_solver.compute_initialized()) {
+		s.gpu_solver.initialize_compute(*s.gpu_ctx);
+	}
+
+	s.gpu_solver.stage_readback(frame_index);
+
+	if (s.gpu_solver.pending_dispatch() && s.gpu_solver.ready_to_dispatch(frame_index)) {
+		s.gpu_solver.commit_upload(frame_index);
+		s.gpu_solver.dispatch_compute(command, config, frame_index);
 	}
 }

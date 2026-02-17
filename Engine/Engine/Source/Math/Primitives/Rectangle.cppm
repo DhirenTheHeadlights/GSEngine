@@ -1,4 +1,4 @@
-export module gse.physics.math:rectangle;
+export module gse.math:rectangle;
 
 import std;
 

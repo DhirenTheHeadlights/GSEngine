@@ -5,7 +5,7 @@ import std;
 import :material;
 
 import gse.platform;
-import gse.physics.math;
+import gse.math;
 import gse.assert;
 
 export namespace gse {

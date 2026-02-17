@@ -1,4 +1,4 @@
-export module gse.graphics:resource_loader;
+export module gse.platform:resource_loader;
 
 import std;
 
@@ -520,9 +520,16 @@ auto gse::resource::loader<R, C>::instantly_load(id resource_id) -> void {
 		std::lock_guard lock(m_mutex);
 		slot_ptr = m_resources.try_get(resource_id);
 		assert(slot_ptr, std::source_location::current(), "invalid id");
-		if (slot_ptr->current_state == state::loaded ||
-			slot_ptr->current_state == state::loading)
+		if (slot_ptr->current_state == state::loaded)
 			return;
+	}
+
+	while (slot_ptr->current_state.load(std::memory_order_acquire) == state::loading) {
+		std::this_thread::yield();
+	}
+
+	if (slot_ptr->current_state.load(std::memory_order_acquire) == state::loaded) {
+		return;
 	}
 
 	const gpu_work_token token(this, resource_id, m_context.gpu_queue_size());

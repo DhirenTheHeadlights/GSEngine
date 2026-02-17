@@ -2,7 +2,7 @@ export module gse.physics:vbd_constraints;
 
 import std;
 
-import gse.physics.math;
+import gse.math;
 import :contact_manifold;
 import :motion_component;
 

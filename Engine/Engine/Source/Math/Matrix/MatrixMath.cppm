@@ -1,4 +1,4 @@
-export module gse.physics.math:matrix_math;
+export module gse.math:matrix_math;
 
 import std;
 

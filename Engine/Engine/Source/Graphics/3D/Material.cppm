@@ -3,10 +3,8 @@ export module gse.graphics:material;
 import std;
 
 import :texture;
-import :shader;
-import :rendering_context;
 
-import gse.physics.math;
+import gse.math;
 import gse.utility;
 import gse.platform;
 
@@ -42,7 +40,7 @@ export namespace gse {
             normal_texture(normal_texture),
 			specular_texture(specular_texture) {}
 
-        auto load(const renderer::context& context) -> void;
+        auto load(const gpu::context& context) -> void;
 
         auto unload() -> void;
 
@@ -64,7 +62,7 @@ export namespace gse {
     };
 }
 
-auto gse::material::load(const renderer::context& context) -> void {
+auto gse::material::load(const gpu::context& context) -> void {
 	if (path.empty()) {
 		return;
 	}

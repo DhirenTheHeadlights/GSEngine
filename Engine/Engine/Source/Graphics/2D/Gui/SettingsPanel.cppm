@@ -4,7 +4,7 @@ import std;
 
 import gse.platform;
 import gse.utility;
-import gse.physics.math;
+import gse.math;
 
 import :types;
 import :font;

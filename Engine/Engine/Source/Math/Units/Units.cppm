@@ -1,4 +1,4 @@
-export module gse.physics.math:units;
+export module gse.math:units;
 
 import std;
 import :dimension;

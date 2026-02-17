@@ -1,6 +1,6 @@
 export module gse.graphics:camera_data;
 
-import gse.physics.math;
+import gse.math;
 import gse.utility;
 
 export namespace gse::camera {

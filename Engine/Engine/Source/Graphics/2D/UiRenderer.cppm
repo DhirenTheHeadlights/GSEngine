@@ -4,12 +4,10 @@ import std;
 
 import :texture;
 import :font;
-import :shader;
-import :rendering_context;
 
 import gse.platform;
 import gse.utility;
-import gse.physics.math;
+import gse.math;
 
 export namespace gse::renderer {
 	struct sprite_command {
@@ -112,7 +110,7 @@ export namespace gse::renderer::ui {
 	};
 
 	struct state {
-		context* ctx = nullptr;
+		gpu::context* ctx = nullptr;
 
 		vk::raii::Pipeline sprite_pipeline = nullptr;
 		vk::raii::PipelineLayout sprite_pipeline_layout = nullptr;
@@ -125,7 +123,7 @@ export namespace gse::renderer::ui {
 		std::array<frame_resources, frames_in_flight> resources;
 		triple_buffer<frame_data> data;
 
-		explicit state(context& c) : ctx(std::addressof(c)) {}
+		explicit state(gpu::context& c) : ctx(std::addressof(c)) {}
 		state() = default;
 	};
 

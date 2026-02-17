@@ -3,7 +3,7 @@ export module gse.graphics:controller_component;
 import std;
 
 import gse.utility;
-import gse.physics.math;
+import gse.math;
 
 export namespace gse {
 	struct animation_parameter {

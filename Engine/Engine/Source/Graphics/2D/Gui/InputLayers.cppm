@@ -2,10 +2,10 @@ export module gse.graphics:input_layers;
 
 import std;
 
-import gse.physics.math;
+import gse.math;
+import gse.platform;
 import gse.utility;
 
-import :rendering_context;
 
 namespace gse::gui {
 	using ui_rect = rect_t<unitless::vec2>;

@@ -1,6 +1,6 @@
 export module gse.physics;
 
-export import gse.physics.math;
+export import gse.math;
 
 export import :bounding_box;
 export import :collision_component;

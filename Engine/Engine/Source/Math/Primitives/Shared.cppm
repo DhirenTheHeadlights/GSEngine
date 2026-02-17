@@ -1,4 +1,4 @@
-export module gse.physics.math:primitive_math_shared;
+export module gse.math:primitive_math_shared;
 
 import std;
 

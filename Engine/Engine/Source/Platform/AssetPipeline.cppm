@@ -1,9 +1,8 @@
-export module gse.graphics:asset_pipeline;
+export module gse.platform:asset_pipeline;
 
 import std;
 
 import gse.utility;
-import gse.platform;
 
 import :asset_compiler;
 import :resource_loader;
