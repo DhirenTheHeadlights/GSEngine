@@ -155,7 +155,11 @@ namespace gs {
 				const auto dir = gse::camera_direction_relative_to_origin(
 					gse::unitless::vec3(v.x(), 0.f, v.y())
 				);
-				motion.motor.target_velocity = motion.max_speed * gse::unitless::vec3(dir.x(), 0.f, dir.z());
+				const auto horizontal = gse::unitless::vec3(dir.x(), 0.f, dir.z());
+			const float len = gse::magnitude(horizontal);
+			motion.motor.target_velocity = len > 1e-6f
+				? motion.max_speed * (horizontal / len)
+				: gse::vec3<gse::velocity>{};
 			} else {
 				motion.motor.target_velocity = {};
 			}
@@ -167,7 +171,7 @@ namespace gs {
 			m_bindings.update();
 
 			auto& cam_follow = component_write<gse::camera::follow_component>();
-			cam_follow.position = motion.current_position;
+			cam_follow.position = motion.render_position;
 		}
 
 	private:
