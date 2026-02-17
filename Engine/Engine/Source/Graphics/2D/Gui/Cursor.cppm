@@ -3,9 +3,8 @@ export module gse.graphics:cursor;
 import std;
 
 import gse.platform;
-import gse.physics.math;
+import gse.math;
 
-import :rendering_context;
 import :ui_renderer;
 import :texture;
 
@@ -30,7 +29,7 @@ export namespace gse::cursor {
 	) -> void;
 
 	auto render_to(
-		const renderer::context& context,
+		const gpu::context& context,
 		std::vector<renderer::sprite_command>& commands, unitless::vec2 mouse_pos
 	) -> void;
 }
@@ -61,7 +60,7 @@ auto gse::cursor::set_style(const style new_style) -> void {
 	current_style = new_style;
 }
 
-auto gse::cursor::render_to(const renderer::context& context, std::vector<renderer::sprite_command>& commands, const unitless::vec2 mouse_pos) -> void {
+auto gse::cursor::render_to(const gpu::context& context, std::vector<renderer::sprite_command>& commands, const unitless::vec2 mouse_pos) -> void {
 	const resource::handle<texture> blank_texture = context.get<texture>(find("blank"));
 	constexpr unitless::vec4 color = { 1.f, 1.f, 1.f, 1.f };
 	constexpr float length = 22.f;

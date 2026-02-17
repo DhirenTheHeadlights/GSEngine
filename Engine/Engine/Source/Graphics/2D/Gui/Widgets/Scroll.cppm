@@ -4,9 +4,8 @@ import std;
 
 import gse.platform;
 import gse.utility;
-import gse.physics.math;
+import gse.math;
 
-import :rendering_context;
 import :font;
 import :texture;
 import :ui_renderer;

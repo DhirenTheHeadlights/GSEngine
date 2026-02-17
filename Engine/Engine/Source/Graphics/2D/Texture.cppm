@@ -2,10 +2,9 @@ export module gse.graphics:texture;
 
 import std;
 
-import :rendering_context;
-
+import gse.assert;
 import gse.utility;
-import gse.physics.math;
+import gse.math;
 import gse.platform;
 
 export namespace gse {
@@ -37,7 +36,7 @@ export namespace gse {
 		);
 
 		auto load(
-			const renderer::context& context
+			const gpu::context& context
 		) -> void;
 
 		auto unload(
@@ -50,7 +49,7 @@ export namespace gse {
 		) const -> const image::data&;
 	private:
 		auto create_vulkan_resources(
-			renderer::context& context,
+			gpu::context& context,
 			profile texture_profile
 		) -> void;
 
@@ -67,7 +66,7 @@ gse::texture::texture(const std::string_view name, const unitless::vec4& color, 
 
 gse::texture::texture(const std::string_view name, const std::vector<std::byte>& data, const unitless::vec2u size, const std::uint32_t channels, const profile texture_profile) : identifiable(name), m_image_data(image::data{ .path = {}, .size = size, .channels = channels, .pixels = data }), m_profile(texture_profile) {}
 
-auto gse::texture::load(const renderer::context& context) -> void {
+auto gse::texture::load(const gpu::context& context) -> void {
 	if (!m_image_data.path.empty()) {
 		std::ifstream in_file(m_image_data.path, std::ios::binary);
 		assert(
@@ -98,7 +97,7 @@ auto gse::texture::load(const renderer::context& context) -> void {
 		m_image_data.channels = channels;
 	}
 
-	context.queue_gpu_command<texture>(this, [](renderer::context& ctx, texture& self) {
+	context.queue_gpu_command<texture>(this, [](gpu::context& ctx, texture& self) {
 		self.create_vulkan_resources(ctx, self.m_profile);
 	});
 }
@@ -121,7 +120,7 @@ auto gse::texture::image_data() const -> const image::data& {
 	return m_image_data;
 }
 
-auto gse::texture::create_vulkan_resources(renderer::context& context, const profile texture_profile) -> void {
+auto gse::texture::create_vulkan_resources(gpu::context& context, const profile texture_profile) -> void {
 	auto& config = context.config();
 
 	const auto width = m_image_data.size.x();
@@ -136,9 +135,6 @@ auto gse::texture::create_vulkan_resources(renderer::context& context, const pro
 		id()
 	);
 
-
-	// MSDF textures need linear format (Unorm) for correct distance calculations
-	// Regular textures use sRGB for proper gamma handling
 	const bool use_linear = (texture_profile == profile::msdf);
 	const auto format = channels == 4
 		? (use_linear ? vk::Format::eR8G8B8A8Unorm : vk::Format::eR8G8B8A8Srgb)

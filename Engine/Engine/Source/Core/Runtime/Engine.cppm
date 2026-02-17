@@ -83,7 +83,7 @@ export namespace gse {
 		flags m_flags;
 		scheduler m_scheduler;
 		world m_world;
-		std::unique_ptr<renderer::context> m_render_ctx;
+		std::unique_ptr<gpu::context> m_render_ctx;
 	};
 }
 
@@ -105,7 +105,7 @@ auto gse::engine::initialize() -> void {
 	m_scheduler.add_system<physics::system, physics::state>(reg);
 
 	if (has_flag(m_flags, flags::render)) {
-		m_render_ctx = std::make_unique<renderer::context>(
+		m_render_ctx = std::make_unique<gpu::context>(
 			std::string(id().tag()),
 			input,
 			save
@@ -122,6 +122,8 @@ auto gse::engine::initialize() -> void {
 		m_scheduler.add_system<renderer::ui::system, renderer::ui::state>(reg, ctx);
 		m_scheduler.add_system<gui::system, gui::system_state>(reg, ctx);
 		m_scheduler.add_system<animation::system, animation::state>(reg);
+
+		m_scheduler.state<physics::state>().gpu_ctx = m_render_ctx.get();
 	}
 
 	m_scheduler.initialize();

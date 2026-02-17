@@ -11,7 +11,7 @@ export module gse.network:socket;
 import std;
 
 import gse.assert;
-import gse.physics.math;
+import gse.math;
 
 namespace gse::network {
 	struct winsock_initializer {

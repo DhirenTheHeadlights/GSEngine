@@ -3,12 +3,11 @@ export module gse.graphics:physics_debug_renderer;
 import std;
 
 import gse.physics;
-import gse.physics.math;
+import gse.math;
 import gse.utility;
 import gse.platform;
 
 import :camera_system;
-import :shader;
 
 namespace gse::renderer::physics_debug {
 	struct debug_vertex {
@@ -46,7 +45,7 @@ export namespace gse::renderer::physics_debug {
 	};
 
 	struct state {
-		context* ctx = nullptr;
+		gpu::context* ctx = nullptr;
 
 		vk::raii::Pipeline pipeline = nullptr;
 		vk::raii::PipelineLayout pipeline_layout = nullptr;
@@ -60,7 +59,7 @@ export namespace gse::renderer::physics_debug {
 		std::size_t max_vertices = 0;
 		bool enabled = true;
 
-		explicit state(context& c) : ctx(std::addressof(c)) {}
+		explicit state(gpu::context& c) : ctx(std::addressof(c)) {}
 		state() = default;
 	};
 

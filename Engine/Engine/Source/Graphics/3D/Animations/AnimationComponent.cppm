@@ -2,11 +2,11 @@ export module gse.graphics:animation_component;
 
 import std;
 
+import gse.platform;
 import gse.utility;
 
 import :skeleton;
 import :clip;
-import :resource_loader;
 
 export namespace gse {
 	struct animation_component_data {

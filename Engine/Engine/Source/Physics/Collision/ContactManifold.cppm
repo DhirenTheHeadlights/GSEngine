@@ -2,7 +2,7 @@ export module gse.physics:contact_manifold;
 
 import std;
 
-import gse.physics.math;
+import gse.math;
 
 export namespace gse {
 	enum class feature_type : std::uint8_t {

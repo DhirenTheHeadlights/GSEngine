@@ -3,7 +3,7 @@ export module gse.graphics:menu_bar;
 import std;
 
 import gse.platform;
-import gse.physics.math;
+import gse.math;
 
 import :types;
 import :font;

@@ -2,7 +2,7 @@ export module gse.physics:bounding_box;
 
 import std;
 
-import gse.physics.math;
+import gse.math;
 
 export namespace gse {
 	struct collision_information {

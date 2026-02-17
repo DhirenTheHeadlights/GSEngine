@@ -3,7 +3,7 @@ export module gse.graphics:animation_graph;
 import std;
 
 import gse.utility;
-import gse.physics.math;
+import gse.math;
 
 export namespace gse {
 	enum class transition_condition_type {

@@ -5,10 +5,10 @@ import std;
 import :point_light;
 import :spot_light;
 import :directional_light;
-import :shader;
 import :shadow_renderer;
 import :camera_system;
 
+import gse.platform;
 import gse.utility;
 
 namespace gse::renderer::lighting {
@@ -17,7 +17,7 @@ namespace gse::renderer::lighting {
 
 export namespace gse::renderer::lighting {
 	struct state {
-		context* ctx = nullptr;
+		gpu::context* ctx = nullptr;
 
 		vk::raii::Pipeline pipeline = nullptr;
 		vk::raii::PipelineLayout pipeline_layout = nullptr;
@@ -30,7 +30,7 @@ export namespace gse::renderer::lighting {
 		std::unordered_map<std::string, per_frame_resource<vulkan::buffer_resource>> ubo_allocations;
 		per_frame_resource<vulkan::buffer_resource> light_buffers;
 
-		explicit state(context& c) : ctx(std::addressof(c)) {}
+		explicit state(gpu::context& c) : ctx(std::addressof(c)) {}
 		state() = default;
 	};
 

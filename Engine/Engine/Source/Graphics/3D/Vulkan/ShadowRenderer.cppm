@@ -5,15 +5,15 @@ import std;
 import :render_component;
 import :mesh;
 import :model;
-import :shader;
 import :spot_light;
 import :directional_light;
 import :point_light;
 import :cube_map;
 import :geometry_renderer;
 
+import gse.platform;
 import gse.physics;
-import gse.physics.math;
+import gse.math;
 import gse.utility;
 
 export namespace gse::renderer {
@@ -49,7 +49,7 @@ export namespace gse::renderer::shadow {
 	};
 
 	struct state {
-		context* ctx = nullptr;
+		gpu::context* ctx = nullptr;
 
 		vk::raii::Pipeline pipeline = nullptr;
 		vk::raii::PipelineLayout pipeline_layout = nullptr;
@@ -62,7 +62,7 @@ export namespace gse::renderer::shadow {
 		std::array<vulkan::image_resource, max_shadow_lights> shadow_maps;
 		std::array<cube_map, max_point_shadow_lights> point_shadow_cubemaps;
 
-		explicit state(context& c) : ctx(std::addressof(c)) {}
+		explicit state(gpu::context& c) : ctx(std::addressof(c)) {}
 		state() = default;
 
 		auto shadow_map_view(std::size_t index) const -> vk::ImageView;

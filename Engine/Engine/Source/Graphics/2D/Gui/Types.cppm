@@ -2,7 +2,7 @@ export module gse.graphics:types;
 
 import std;
 
-import gse.physics.math;
+import gse.math;
 import gse.utility;
 
 import :font;

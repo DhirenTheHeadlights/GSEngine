@@ -6,7 +6,7 @@ import :config;
 import :persistent_allocator;
 import :context;
 
-import gse.physics.math;
+import gse.math;
 
 export namespace gse::vulkan::uploader {
     auto upload_image_2d(

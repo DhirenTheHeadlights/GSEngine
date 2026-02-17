@@ -2,7 +2,7 @@ export module gse.graphics:value_widget;
 
 import std;
 
-import gse.physics.math;
+import gse.math;
 
 import :types;
 import :styles;

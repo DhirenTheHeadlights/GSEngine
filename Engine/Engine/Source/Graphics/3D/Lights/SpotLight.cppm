@@ -2,7 +2,7 @@ export module gse.graphics:spot_light;
 
 import std;
 
-import gse.physics.math;
+import gse.math;
 import gse.utility;
 
 import :gui;

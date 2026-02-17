@@ -4,7 +4,7 @@ import std;
 
 import :keys;
 
-import gse.physics.math;
+import gse.math;
 
 namespace gse::detail {
 	struct input_state_token;

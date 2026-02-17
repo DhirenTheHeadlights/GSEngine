@@ -4,7 +4,7 @@ import std;
 
 import gse.utility;
 import gse.graphics;
-import gse.physics.math;
+import gse.math;
 
 import :core_api;
 

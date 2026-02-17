@@ -3,13 +3,12 @@ export module gse.graphics:skinned_model;
 import std;
 
 import :skinned_mesh;
-import :rendering_context;
 import :material;
 
 import gse.utility;
 import gse.platform;
 import gse.physics;
-import gse.physics.math;
+import gse.math;
 import gse.assert;
 
 export namespace gse {
@@ -49,7 +48,7 @@ export namespace gse {
 		explicit skinned_model(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path), m_baked_model_path(path) {}
 		explicit skinned_model(std::string_view name, std::vector<skinned_mesh_data> meshes);
 
-		auto load(renderer::context& context) -> void;
+		auto load(gpu::context& context) -> void;
 		auto unload() -> void;
 
 		auto meshes() const -> std::span<const skinned_mesh>;
@@ -70,7 +69,7 @@ gse::skinned_model::skinned_model(const std::string_view name, std::vector<skinn
 	}
 }
 
-auto gse::skinned_model::load(renderer::context& context) -> void {
+auto gse::skinned_model::load(gpu::context& context) -> void {
 	if (!m_baked_model_path.empty() && exists(m_baked_model_path)) {
 		m_meshes.clear();
 
@@ -152,7 +151,7 @@ auto gse::skinned_model::load(renderer::context& context) -> void {
 
 	context.queue_gpu_command<skinned_model>(
 		this,
-		[](renderer::context& ctx, skinned_model& self) {
+		[](gpu::context& ctx, skinned_model& self) {
 			for (auto& mesh : self.m_meshes) {
 				mesh.initialize(ctx.config());
 			}

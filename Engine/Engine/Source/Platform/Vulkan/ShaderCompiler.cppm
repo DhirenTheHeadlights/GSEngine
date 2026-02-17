@@ -6,11 +6,11 @@ module;
 
 #undef assert
 
-export module gse.graphics:shader_compiler;
+export module gse.platform:shader_compiler;
 
 import std;
 
-import gse.platform;
+import gse.platform.vulkan;
 import gse.assert;
 
 import :asset_compiler;

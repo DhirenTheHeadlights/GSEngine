@@ -3,7 +3,7 @@ export module gse.graphics:joint;
 import std;
 
 import gse.utility;
-import gse.physics.math;
+import gse.math;
 
 export namespace gse {
     class joint : public identifiable {

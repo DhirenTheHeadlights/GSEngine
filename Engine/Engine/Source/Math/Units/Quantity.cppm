@@ -1,5 +1,5 @@
 
-export module gse.physics.math:quant;
+export module gse.math:quant;
 
 import std;
 

@@ -10,11 +10,10 @@ import :skinned_model;
 import :render_component;
 import :animation_component;
 import :material;
-import :shader;
 import :skeleton;
 import :texture;
 
-import gse.physics.math;
+import gse.math;
 import gse.utility;
 import gse.platform;
 import gse.physics;
@@ -177,7 +176,7 @@ export namespace gse::renderer::geometry {
 	};
 
 	struct state {
-		context* ctx = nullptr;
+		gpu::context* ctx = nullptr;
 
 		vk::raii::Pipeline pipeline = nullptr;
 		vk::raii::PipelineLayout pipeline_layout = nullptr;
@@ -233,48 +232,13 @@ export namespace gse::renderer::geometry {
 
 		resource::handle<texture> blank_texture;
 
-		struct vbd_compute {
-			resource::handle<shader> predict;
-			resource::handle<shader> solve_color;
-			resource::handle<shader> update_lambda;
-			resource::handle<shader> derive_velocities;
-			resource::handle<shader> sequential_passes;
-			resource::handle<shader> finalize;
-
-			vk::raii::Pipeline predict_pipeline = nullptr;
-			vk::raii::Pipeline solve_color_pipeline = nullptr;
-			vk::raii::Pipeline update_lambda_pipeline = nullptr;
-			vk::raii::Pipeline derive_velocities_pipeline = nullptr;
-			vk::raii::Pipeline sequential_passes_pipeline = nullptr;
-			vk::raii::Pipeline finalize_pipeline = nullptr;
-
-			vk::raii::PipelineLayout pipeline_layout = nullptr;
-			per_frame_resource<vk::raii::DescriptorSet> descriptor_sets;
-			vk::raii::QueryPool query_pool = nullptr;
-			float timestamp_period = 0.f;
-			float solve_ms = 0.f;
-			bool descriptors_initialized = false;
-
-			vbd::buffer_layout body_layout;
-			vbd::buffer_layout contact_layout;
-			vbd::buffer_layout motor_layout;
-		};
-		mutable vbd_compute vbd;
-
-		explicit state(context& c) : ctx(std::addressof(c)) {}
+		explicit state(gpu::context& c) : ctx(std::addressof(c)) {}
 		state() = default;
 
 		auto skin_buff() const -> const vulkan::buffer_resource& {
 			return skin_buffer[ctx->config().current_frame()];
 		}
 	};
-
-	auto dispatch_vbd_compute(
-		const state& s,
-		vk::CommandBuffer command,
-		vbd::gpu_solver& solver,
-		std::uint32_t frame_index
-	) -> void;
 
 	auto dispatch_skin_compute(
 		const state& s,
@@ -881,66 +845,6 @@ auto gse::renderer::geometry::system::initialize(initialize_phase&, state& s) ->
 
 	s.blank_texture = s.ctx->queue<texture>("blank", unitless::vec4(1, 1, 1, 1));
 	s.ctx->instantly_load(s.blank_texture);
-
-	s.vbd.predict = s.ctx->get<shader>("Shaders/Compute/vbd_predict");
-	s.vbd.solve_color = s.ctx->get<shader>("Shaders/Compute/vbd_solve_color");
-	s.vbd.update_lambda = s.ctx->get<shader>("Shaders/Compute/vbd_update_lambda");
-	s.vbd.derive_velocities = s.ctx->get<shader>("Shaders/Compute/vbd_derive_velocities");
-	s.vbd.sequential_passes = s.ctx->get<shader>("Shaders/Compute/vbd_sequential_passes");
-	s.vbd.finalize = s.ctx->get<shader>("Shaders/Compute/vbd_finalize");
-
-	s.ctx->instantly_load(s.vbd.predict);
-	s.ctx->instantly_load(s.vbd.solve_color);
-	s.ctx->instantly_load(s.vbd.update_lambda);
-	s.ctx->instantly_load(s.vbd.derive_velocities);
-	s.ctx->instantly_load(s.vbd.sequential_passes);
-	s.ctx->instantly_load(s.vbd.finalize);
-
-	auto vbd_layouts = s.vbd.predict->layouts();
-	std::vector vbd_ranges = { s.vbd.predict->push_constant_range("push_constants") };
-
-	s.vbd.pipeline_layout = config.device_config().device.createPipelineLayout({
-		.setLayoutCount = static_cast<std::uint32_t>(vbd_layouts.size()),
-		.pSetLayouts = vbd_layouts.data(),
-		.pushConstantRangeCount = static_cast<std::uint32_t>(vbd_ranges.size()),
-		.pPushConstantRanges = vbd_ranges.data()
-	});
-
-	auto create_vbd_pipeline = [&](const resource::handle<shader>& sh) {
-		return config.device_config().device.createComputePipeline(nullptr, {
-			.stage = sh->compute_stage(),
-			.layout = *s.vbd.pipeline_layout
-		});
-	};
-
-	s.vbd.predict_pipeline = create_vbd_pipeline(s.vbd.predict);
-	s.vbd.solve_color_pipeline = create_vbd_pipeline(s.vbd.solve_color);
-	s.vbd.update_lambda_pipeline = create_vbd_pipeline(s.vbd.update_lambda);
-	s.vbd.derive_velocities_pipeline = create_vbd_pipeline(s.vbd.derive_velocities);
-	s.vbd.sequential_passes_pipeline = create_vbd_pipeline(s.vbd.sequential_passes);
-	s.vbd.finalize_pipeline = create_vbd_pipeline(s.vbd.finalize);
-
-	auto extract_layout = [](const resource::handle<shader>& sh, const std::string& name) {
-		const auto block = sh->uniform_block(name);
-		vbd::buffer_layout layout;
-		layout.stride = block.size;
-		for (const auto& [n, member] : block.members) {
-			layout.offsets[n] = member.offset;
-		}
-		return layout;
-	};
-
-	s.vbd.body_layout = extract_layout(s.vbd.predict, "body_data");
-	s.vbd.contact_layout = extract_layout(s.vbd.predict, "contact_data");
-	s.vbd.motor_layout = extract_layout(s.vbd.predict, "motor_data");
-
-	s.vbd.query_pool = config.device_config().device.createQueryPool({
-		.queryType = vk::QueryType::eTimestamp,
-		.queryCount = 8
-	});
-	static_cast<vk::Device>(*config.device_config().device).resetQueryPool(*s.vbd.query_pool, 0, 8);
-
-	s.vbd.timestamp_period = config.device_config().physical_device.getProperties().limits.timestampPeriod;
 }
 
 auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> void {
@@ -1388,19 +1292,6 @@ auto gse::renderer::geometry::system::render(render_phase& phase, const state& s
         .pDepthAttachment = &depth_attachment
     };
 
-    if (const auto& gpu_dispatch_items = phase.read_channel<vbd::gpu_dispatch_info>(); !gpu_dispatch_items.empty()) {
-	    if (auto* solver = gpu_dispatch_items[0].solver) {
-            if (!solver->buffers_created()) {
-                solver->create_buffers(config.allocator(), s.vbd.body_layout, s.vbd.contact_layout, s.vbd.motor_layout);
-            }
-            solver->stage_readback(frame_index);
-            if (solver->pending_dispatch() && solver->ready_to_dispatch(frame_index)) {
-                solver->commit_upload(frame_index);
-                dispatch_vbd_compute(s, command, *solver, frame_index);
-            }
-        }
-    }
-
     if (data.pending_compute_instance_count > 0) {
         dispatch_skin_compute(s, command, data.pending_compute_instance_count, frame_index);
     }
@@ -1774,258 +1665,3 @@ auto gse::renderer::geometry::upload_skeleton_data(const state& s, const skeleto
 	}
 }
 
-auto gse::renderer::geometry::dispatch_vbd_compute(
-	const state& s,
-	const vk::CommandBuffer command,
-	vbd::gpu_solver& solver,
-	const std::uint32_t frame_index
-) -> void {
-	auto& vbd = s.vbd;
-	auto& config = s.ctx->config();
-
-	if (!vbd.descriptors_initialized) {
-		for (std::size_t i = 0; i < per_frame_resource<vk::raii::DescriptorSet>::frames_in_flight; ++i) {
-			vbd.descriptor_sets.resources()[i] = vbd.predict->descriptor_set(
-				config.device_config().device,
-				config.descriptor_config().pool,
-				shader::set::binding_type::persistent
-			);
-
-			const vk::DescriptorBufferInfo body_info{
-				.buffer = solver.body_buffer_resources()[i].buffer,
-				.offset = 0,
-				.range = solver.body_buffer_resources()[i].allocation.size()
-			};
-			const vk::DescriptorBufferInfo contact_info{
-				.buffer = solver.contact_buffer_resources()[i].buffer,
-				.offset = 0,
-				.range = solver.contact_buffer_resources()[i].allocation.size()
-			};
-			const vk::DescriptorBufferInfo motor_info{
-				.buffer = solver.motor_buffer_resources()[i].buffer,
-				.offset = 0,
-				.range = solver.motor_buffer_resources()[i].allocation.size()
-			};
-			const vk::DescriptorBufferInfo color_info{
-				.buffer = solver.color_buffer_resources()[i].buffer,
-				.offset = 0,
-				.range = solver.color_buffer_resources()[i].allocation.size()
-			};
-			const vk::DescriptorBufferInfo map_info{
-				.buffer = solver.body_contact_map_buffer_resources()[i].buffer,
-				.offset = 0,
-				.range = solver.body_contact_map_buffer_resources()[i].allocation.size()
-			};
-			const vk::DescriptorBufferInfo solve_info{
-				.buffer = solver.solve_state_buffer_resources()[i].buffer,
-				.offset = 0,
-				.range = solver.solve_state_buffer_resources()[i].allocation.size()
-			};
-
-			auto& ds = vbd.descriptor_sets.resources()[i];
-			std::array writes{
-				vk::WriteDescriptorSet{
-					.dstSet = *ds,
-					.dstBinding = 0,
-					.descriptorCount = 1,
-					.descriptorType = vk::DescriptorType::eStorageBuffer,
-					.pBufferInfo = &body_info
-				},
-				vk::WriteDescriptorSet{
-					.dstSet = *ds,
-					.dstBinding = 1,
-					.descriptorCount = 1,
-					.descriptorType = vk::DescriptorType::eStorageBuffer,
-					.pBufferInfo = &contact_info
-				},
-				vk::WriteDescriptorSet{
-					.dstSet = *ds,
-					.dstBinding = 2,
-					.descriptorCount = 1,
-					.descriptorType = vk::DescriptorType::eStorageBuffer,
-					.pBufferInfo = &motor_info
-				},
-				vk::WriteDescriptorSet{
-					.dstSet = *ds,
-					.dstBinding = 3,
-					.descriptorCount = 1,
-					.descriptorType = vk::DescriptorType::eStorageBuffer,
-					.pBufferInfo = &color_info
-				},
-				vk::WriteDescriptorSet{
-					.dstSet = *ds,
-					.dstBinding = 4,
-					.descriptorCount = 1,
-					.descriptorType = vk::DescriptorType::eStorageBuffer,
-					.pBufferInfo = &map_info
-				},
-				vk::WriteDescriptorSet{
-					.dstSet = *ds,
-					.dstBinding = 5,
-					.descriptorCount = 1,
-					.descriptorType = vk::DescriptorType::eStorageBuffer,
-					.pBufferInfo = &solve_info
-				}
-			};
-
-			config.device_config().device.updateDescriptorSets(writes, nullptr);
-		}
-
-		vbd.descriptors_initialized = true;
-	}
-
-	const auto body_count = solver.body_count();
-	const auto contact_count = solver.contact_count();
-	const auto motor_count = solver.motor_count();
-
-	if (body_count == 0) return;
-
-	if (solver.frame_count() >= 2) {
-		const std::uint32_t prev_query_base = (frame_index % 2) * 4;
-		std::array<std::uint64_t, 2> timestamps{};
-		const vk::Device device= *config.device_config().device;
-		auto result = device.getQueryPoolResults(
-			*vbd.query_pool, prev_query_base, 2,
-			sizeof(timestamps), timestamps.data(), sizeof(std::uint64_t),
-			vk::QueryResultFlagBits::e64
-		);
-		if (result == vk::Result::eSuccess) {
-			vbd.solve_ms = static_cast<float>(timestamps[1] - timestamps[0]) * vbd.timestamp_period * 1e-6f;
-		}
-	}
-
-	const std::uint32_t query_base = (frame_index % 2) * 4;
-	command.resetQueryPool(*vbd.query_pool, query_base, 4);
-
-	constexpr vk::MemoryBarrier2 host_to_compute{
-		.srcStageMask = vk::PipelineStageFlagBits2::eHost,
-		.srcAccessMask = vk::AccessFlagBits2::eHostWrite,
-		.dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
-		.dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite
-	};
-	constexpr vk::MemoryBarrier2 prev_transfer_to_transfer{
-		.srcStageMask = vk::PipelineStageFlagBits2::eCopy,
-		.srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
-		.dstStageMask = vk::PipelineStageFlagBits2::eCopy,
-		.dstAccessMask = vk::AccessFlagBits2::eTransferWrite
-	};
-	constexpr vk::MemoryBarrier2 init_barriers[] = { host_to_compute, prev_transfer_to_transfer };
-	command.pipelineBarrier2({ .memoryBarrierCount = 2, .pMemoryBarriers = init_barriers });
-
-	const vk::DescriptorSet sets[] = { *vbd.descriptor_sets[frame_index % 2] };
-
-	constexpr vk::MemoryBarrier2 compute_barrier{
-		.srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
-		.srcAccessMask = vk::AccessFlagBits2::eShaderStorageWrite,
-		.dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
-		.dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite
-	};
-	const vk::DependencyInfo compute_dep{ .memoryBarrierCount = 1, .pMemoryBarriers = &compute_barrier };
-
-	command.writeTimestamp2(vk::PipelineStageFlagBits2::eTopOfPipe, *vbd.query_pool, query_base);
-
-	const auto& cfg = solver.solver_cfg();
-	const std::uint32_t total_substeps = solver.total_substeps();
-	const float sub_dt = solver.dt().as<seconds>() / static_cast<float>(total_substeps);
-	const float h_squared = sub_dt * sub_dt;
-
-	auto ceil_div = [](const std::uint32_t a, const std::uint32_t b) { return (a + b - 1) / b; };
-
-	auto bind_and_push = [&](const resource::handle<shader>& sh, const vk::raii::Pipeline& pipeline,
-		std::uint32_t color_offset, std::uint32_t color_count,
-		std::uint32_t substep, std::uint32_t iteration) {
-		command.bindPipeline(vk::PipelineBindPoint::eCompute, *pipeline);
-		command.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *vbd.pipeline_layout, 0, { 1, sets }, {});
-		sh->push(command, *vbd.pipeline_layout, "push_constants",
-			"body_count", body_count,
-			"contact_count", contact_count,
-			"motor_count", motor_count,
-			"color_offset", color_offset,
-			"color_count", color_count,
-			"h_squared", h_squared,
-			"dt", sub_dt,
-			"rho", cfg.rho,
-			"linear_damping", cfg.linear_damping,
-			"velocity_sleep_threshold", cfg.velocity_sleep_threshold,
-			"substep", substep,
-			"iteration", iteration
-		);
-	};
-
-	for (std::uint32_t substep = 0; substep < total_substeps; ++substep) {
-		bind_and_push(vbd.predict, vbd.predict_pipeline, 0u, 0u, substep, 0u);
-		command.dispatch(ceil_div(body_count, vbd::workgroup_size), 1, 1);
-		command.pipelineBarrier2(compute_dep);
-
-		for (std::uint32_t iter = 0; iter < cfg.iterations; ++iter) {
-			for (const auto& [offset, count] : solver.color_ranges()) {
-				if (count == 0) continue;
-				bind_and_push(vbd.solve_color, vbd.solve_color_pipeline, offset, count, substep, iter);
-				command.dispatch(ceil_div(count, vbd::workgroup_size), 1, 1);
-				command.pipelineBarrier2(compute_dep);
-			}
-
-			if (solver.motor_only_count() > 0) {
-				bind_and_push(vbd.solve_color, vbd.solve_color_pipeline,
-					solver.motor_only_offset(), solver.motor_only_count(), substep, iter);
-				command.dispatch(ceil_div(solver.motor_only_count(), vbd::workgroup_size), 1, 1);
-				command.pipelineBarrier2(compute_dep);
-			}
-		}
-
-		if (contact_count > 0) {
-			bind_and_push(vbd.update_lambda, vbd.update_lambda_pipeline, 0u, 0u, substep, 0u);
-			command.dispatch(ceil_div(contact_count, vbd::workgroup_size), 1, 1);
-			command.pipelineBarrier2(compute_dep);
-		}
-
-		bind_and_push(vbd.derive_velocities, vbd.derive_velocities_pipeline, 0u, 0u, substep, 0u);
-		command.dispatch(ceil_div(body_count, vbd::workgroup_size), 1, 1);
-		command.pipelineBarrier2(compute_dep);
-
-		bind_and_push(vbd.sequential_passes, vbd.sequential_passes_pipeline, 0u, 0u, substep, 0u);
-		command.dispatch(1, 1, 1);
-		command.pipelineBarrier2(compute_dep);
-
-		bind_and_push(vbd.finalize, vbd.finalize_pipeline, 0u, 0u, substep, 0u);
-		command.dispatch(ceil_div(body_count, vbd::workgroup_size), 1, 1);
-		command.pipelineBarrier2(compute_dep);
-	}
-
-	command.writeTimestamp2(vk::PipelineStageFlagBits2::eComputeShader, *vbd.query_pool, query_base + 1);
-
-	constexpr vk::MemoryBarrier2 compute_to_transfer{
-		.srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
-		.srcAccessMask = vk::AccessFlagBits2::eShaderStorageWrite,
-		.dstStageMask = vk::PipelineStageFlagBits2::eCopy,
-		.dstAccessMask = vk::AccessFlagBits2::eTransferRead
-	};
-	command.pipelineBarrier2({ .memoryBarrierCount = 1, .pMemoryBarriers = &compute_to_transfer });
-
-	const vk::DeviceSize body_copy_size = body_count * solver.body_stride();
-	command.copyBuffer(solver.body_buffer(frame_index).buffer, solver.readback_buffer(frame_index).buffer,
-		vk::BufferCopy{ .srcOffset = 0, .dstOffset = 0, .size = body_copy_size });
-
-	if (contact_count > 0) {
-		const vk::DeviceSize lambda_src_offset = solver.contact_lambda_offset();
-		const vk::DeviceSize lambda_dst_base = vbd::max_bodies * solver.body_stride();
-		for (std::uint32_t ci = 0; ci < contact_count; ++ci) {
-			command.copyBuffer(solver.contact_buffer(frame_index).buffer, solver.readback_buffer(frame_index).buffer,
-				vk::BufferCopy{
-					.srcOffset = ci * solver.contact_stride() + lambda_src_offset,
-					.dstOffset = lambda_dst_base + ci * sizeof(float),
-					.size = sizeof(float)
-				});
-		}
-	}
-
-	constexpr vk::MemoryBarrier2 compute_to_host{
-		.srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
-		.srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
-		.dstStageMask = vk::PipelineStageFlagBits2::eHost,
-		.dstAccessMask = vk::AccessFlagBits2::eHostRead
-	};
-	command.pipelineBarrier2({ .memoryBarrierCount = 1, .pMemoryBarriers = &compute_to_host });
-
-	solver.mark_dispatched(frame_index);
-}

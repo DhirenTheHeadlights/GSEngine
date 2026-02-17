@@ -1,4 +1,4 @@
-export module gse.graphics:asset_compiler;
+export module gse.platform:asset_compiler;
 
 import std;
 

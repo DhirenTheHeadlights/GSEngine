@@ -14,7 +14,7 @@ import <freetype/freetype.h>;
 import :texture;
 
 import gse.assert;
-import gse.physics.math;
+import gse.math;
 import gse.platform;
 import gse.utility;
 
@@ -61,7 +61,7 @@ export namespace gse {
         ~font();
 
         auto load(
-            const renderer::context& context
+            const gpu::context& context
         ) -> void;
 
         auto unload(
@@ -118,7 +118,7 @@ gse::font::~font() {
     }
 }
 
-auto gse::font::load(const renderer::context& context) -> void {
+auto gse::font::load(const gpu::context& context) -> void {
     std::ifstream in_file(m_baked_path, std::ios::binary);
     assert(
         in_file.is_open(), std::source_location::current(),

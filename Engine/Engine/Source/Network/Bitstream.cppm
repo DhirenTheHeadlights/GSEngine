@@ -3,7 +3,7 @@ export module gse.network:bitstream;
 import std;
 
 import gse.assert;
-import gse.physics.math;
+import gse.math;
 import gse.utility;
 
 export namespace gse::network {

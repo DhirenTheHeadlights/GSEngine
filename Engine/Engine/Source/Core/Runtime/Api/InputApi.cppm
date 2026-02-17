@@ -2,7 +2,7 @@ export module gse.runtime:input_api;
 
 import std;
 
-import gse.physics.math;
+import gse.math;
 
 import :core_api;
 

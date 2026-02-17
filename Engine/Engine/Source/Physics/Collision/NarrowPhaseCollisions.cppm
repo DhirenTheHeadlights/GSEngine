@@ -6,7 +6,7 @@ import :motion_component;
 import :bounding_box;
 import :collision_component;
 import :contact_manifold;
-import gse.physics.math;
+import gse.math;
 import gse.utility;
 import gse.log;
 

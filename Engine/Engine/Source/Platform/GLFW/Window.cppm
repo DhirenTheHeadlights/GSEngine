@@ -10,7 +10,7 @@ import std;
 import :input;
 
 import gse.assert;
-import gse.physics.math;
+import gse.math;
 import gse.utility;
 
 export namespace gse {
