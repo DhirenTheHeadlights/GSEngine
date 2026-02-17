@@ -151,9 +151,14 @@ float mat3_det(mat3 m) {
          + m[2].x * (m[0].y * m[1].z - m[1].y * m[0].z);
 }
 
+bool is_finite3(float3 v) {
+    return !isinf(v.x) && !isinf(v.y) && !isinf(v.z)
+        && !isnan(v.x) && !isnan(v.y) && !isnan(v.z);
+}
+
 mat3 mat3_inverse(mat3 m) {
     float d = mat3_det(m);
-    if (abs(d) < 1e-20) return mat3_identity(1.0);
+    if (abs(d) < 1e-6) return mat3_identity(1.0);
     float inv_d = 1.0 / d;
     mat3 result;
     result[0] = float3(
@@ -293,6 +298,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
         mat3 inv_h = mat3_inverse(h_xx);
         float3 delta_x = -mat3_mul_vec(inv_h, g_lin);
 
+        if (!is_finite3(delta_x)) { body_data[bi] = body; return; }
         float step_size = length(delta_x);
         if (step_size > 0.5) delta_x *= (0.5 / step_size);
 
@@ -334,6 +340,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     float3 delta_theta = -mat3_mul_vec(s_inv, g_ang - mat3_mul_vec(mat3_mul(h_tx, h_xx_inv), g_lin));
     float3 delta_x = -mat3_mul_vec(h_xx_inv, g_lin + mat3_mul_vec(hess_xt, delta_theta));
 
+    if (!is_finite3(delta_x) || !is_finite3(delta_theta)) { body_data[bi] = body; return; }
     float lin_size = length(delta_x);
     if (lin_size > 0.5) delta_x *= (0.5 / lin_size);
     float ang_size = length(delta_theta);

@@ -63,9 +63,24 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
 
     if (locked || sleeping) return;
 
+    float3 pp = body.predicted_position.xyz;
+    if (any(isnan(pp)) || any(isinf(pp))) {
+        body.predicted_position = body.position;
+        body.velocity = float4(0, 0, 0, 0);
+        body.angular_velocity = float4(0, 0, 0, 0);
+        body_data[bi] = body;
+        return;
+    }
+
     body.position = body.predicted_position;
     if (update_orient) {
-        body.orientation = body.predicted_orientation;
+        float4 po = body.predicted_orientation;
+        if (any(isnan(po)) || any(isinf(po))) {
+            body.predicted_orientation = body.orientation;
+            body.angular_velocity = float4(0, 0, 0, 0);
+        } else {
+            body.orientation = body.predicted_orientation;
+        }
     }
 
     body_data[bi] = body;

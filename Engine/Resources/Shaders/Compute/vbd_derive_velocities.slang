@@ -118,8 +118,17 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     }
 
     float3 new_vel = (body.predicted_position.xyz - body.old_position.xyz) / pc.dt;
+    if (any(isnan(new_vel)) || any(isinf(new_vel))) {
+        body.velocity = float4(0, 0, 0, 0);
+        body.predicted_position = body.old_position;
+        body_data[bi] = body;
+        return;
+    }
     float linear_damping_factor = max(0.0, 1.0 - pc.linear_damping * pc.dt);
     new_vel *= linear_damping_factor;
+    static const float MAX_SPEED = 100.0;
+    float speed = length(new_vel);
+    if (speed > MAX_SPEED) new_vel *= (MAX_SPEED / speed);
     body.velocity = float4(new_vel, 0);
 
     float lin_speed = length(new_vel);
@@ -145,9 +154,12 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
             ang_vel = q_v * (2.0 / pc.dt);
         }
 
+        if (any(isnan(ang_vel)) || any(isinf(ang_vel))) ang_vel = float3(0, 0, 0);
         float angular_damping = 1.0;
         float angular_damping_factor = max(0.0, 1.0 - angular_damping * pc.dt);
         ang_vel *= angular_damping_factor;
+        float ang_spd = length(ang_vel);
+        if (ang_spd > 50.0) ang_vel *= (50.0 / ang_spd);
         body.angular_velocity = float4(ang_vel, 0);
 
         float ang_speed = length(ang_vel);

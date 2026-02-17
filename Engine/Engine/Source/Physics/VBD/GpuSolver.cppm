@@ -37,15 +37,34 @@ export namespace gse::vbd {
 
 	class gpu_solver {
 	public:
-		auto create_buffers(vulkan::allocator& alloc) -> void;
-		auto initialize_compute(gpu::context& ctx) -> void;
-		auto dispatch_compute(vk::CommandBuffer cmd, vulkan::config& config, std::uint32_t frame_index) -> void;
-		auto compute_initialized() const -> bool { return m_compute.initialized; }
-		auto buffers_created() const -> bool { return m_buffers_created; }
+		auto create_buffers(
+			vulkan::allocator& alloc
+		) -> void;
 
-		auto body_stride() const -> std::uint32_t { return m_body_layout.stride; }
-		auto contact_stride() const -> std::uint32_t { return m_contact_layout.stride; }
-		auto contact_lambda_offset() const -> std::uint32_t { return m_contact_layout.offsets.at("lambda"); }
+		auto initialize_compute(
+			gpu::context& ctx
+		) -> void;
+
+		auto dispatch_compute(
+			vk::CommandBuffer cmd, 
+			vulkan::config& config, 
+			std::uint32_t frame_index
+		) -> void;
+
+		auto compute_initialized(
+		) const -> bool;
+
+		auto buffers_created(
+		) const -> bool;
+
+		auto body_stride(
+		) const -> std::uint32_t;
+
+		auto contact_stride(
+		) const -> std::uint32_t;
+
+		auto contact_lambda_offset(
+		) const -> std::uint32_t;
 
 		auto upload(
 			std::span<const body_state> bodies,
@@ -55,57 +74,121 @@ export namespace gse::vbd {
 			int steps
 		) -> void;
 
-		auto total_substeps() const -> std::uint32_t { return m_solver_cfg.substeps * m_steps; }
+		auto total_substeps(
+		) const -> std::uint32_t;
 
-		auto commit_upload(std::uint32_t frame_index) -> void;
+		auto commit_upload(
+			std::uint32_t frame_index
+		) -> void;
 
-		auto stage_readback(std::uint32_t frame_index) -> void;
+		auto stage_readback(
+			std::uint32_t frame_index
+		) -> void;
 
 		auto readback(
 			std::span<body_state> bodies,
 			std::vector<contact_constraint>& contacts
 		) -> void;
 
-		auto has_readback_data() const -> bool { return m_staged_valid; }
-		auto pending_dispatch() const -> bool { return m_pending_dispatch; }
-		auto ready_to_dispatch(std::uint32_t frame_index) const -> bool {
-			if (m_awaiting_readback) return false;
-			if (m_fi_locked && frame_index != m_locked_fi) return false;
-			return true;
-		}
+		auto has_readback_data(
+		) const -> bool;
 
-		auto mark_dispatched(std::uint32_t frame_index) -> void {
-			m_readback_info[frame_index] = { m_body_count, m_contact_count };
-			m_pending_dispatch = false;
-			m_awaiting_readback = true;
-			m_awaiting_readback_fi = frame_index;
-			m_frame_count++;
-		}
+		auto pending_dispatch(
+		) const -> bool;
 
-		auto body_buffer(this auto&& self, std::uint32_t fi) -> auto& { return self.m_body_buffer[fi]; }
-		auto contact_buffer(this auto&& self, std::uint32_t fi) -> auto& { return self.m_contact_buffer[fi]; }
-		auto motor_buffer(this auto&& self, std::uint32_t fi) -> auto& { return self.m_motor_buffer[fi]; }
-		auto color_buffer(this auto&& self, std::uint32_t fi) -> auto& { return self.m_color_buffer[fi]; }
-		auto body_contact_map_buffer(this auto&& self, std::uint32_t fi) -> auto& { return self.m_body_contact_map_buffer[fi]; }
-		auto solve_state_buffer(this auto&& self, std::uint32_t fi) -> auto& { return self.m_solve_state_buffer[fi]; }
-		auto readback_buffer(this auto&& self, std::uint32_t fi) -> auto& { return self.m_readback_buffer[fi]; }
+		auto ready_to_dispatch(
+			std::uint32_t frame_index
+		) const -> bool;
 
-		auto body_buffer_resources(this auto&& self) -> auto& { return self.m_body_buffer.resources(); }
-		auto contact_buffer_resources(this auto&& self) -> auto& { return self.m_contact_buffer.resources(); }
-		auto motor_buffer_resources(this auto&& self) -> auto& { return self.m_motor_buffer.resources(); }
-		auto color_buffer_resources(this auto&& self) -> auto& { return self.m_color_buffer.resources(); }
-		auto body_contact_map_buffer_resources(this auto&& self) -> auto& { return self.m_body_contact_map_buffer.resources(); }
-		auto solve_state_buffer_resources(this auto&& self) -> auto& { return self.m_solve_state_buffer.resources(); }
+		auto mark_dispatched(
+			std::uint32_t frame_index
+		) -> void;
 
-		auto body_count() const -> std::uint32_t { return m_body_count; }
-		auto contact_count() const -> std::uint32_t { return m_contact_count; }
-		auto motor_count() const -> std::uint32_t { return m_motor_count; }
-		auto color_ranges() const -> std::span<const color_range> { return m_color_ranges; }
-		auto motor_only_offset() const -> std::uint32_t { return m_motor_only_offset; }
-		auto motor_only_count() const -> std::uint32_t { return m_motor_only_count; }
-		auto solver_cfg() const -> const solver_config& { return m_solver_cfg; }
-		auto dt() const -> time_step { return m_dt; }
-		auto frame_count() const -> std::uint32_t { return m_frame_count; }
+		auto body_buffer(
+			this auto&& self,
+			std::uint32_t fi
+		) -> auto&;
+
+		auto contact_buffer(
+			this auto&& self,
+			std::uint32_t fi
+		) -> auto&;
+
+		auto motor_buffer(
+			this auto&& self,
+			std::uint32_t fi
+		) -> auto&;
+
+		auto color_buffer(
+			this auto&& self,
+			std::uint32_t fi
+		) -> auto&;
+
+		auto body_contact_map_buffer(
+			this auto&& self,
+			std::uint32_t fi
+		) -> auto&;
+
+		auto solve_state_buffer(
+			this auto&& self,
+			std::uint32_t fi
+		) -> auto&;
+
+		auto readback_buffer(
+			this auto&& self,
+			std::uint32_t fi
+		) -> auto&;
+
+		auto body_buffer_resources(
+			this auto&& self
+		) -> auto&;
+
+		auto contact_buffer_resources(
+			this auto&& self
+		) -> auto&;
+
+		auto motor_buffer_resources(
+			this auto&& self
+		) -> auto&;
+
+		auto color_buffer_resources(
+			this auto&& self
+		) -> auto&;
+
+		auto body_contact_map_buffer_resources(
+			this auto&& self
+		) -> auto&;
+
+		auto solve_state_buffer_resources(
+			this auto&& self
+		) -> auto&;
+
+		auto body_count(
+		) const -> std::uint32_t;
+
+		auto contact_count(
+		) const -> std::uint32_t;
+
+		auto motor_count(
+		) const -> std::uint32_t;
+
+		auto color_ranges(
+		) const -> std::span<const color_range>;
+
+		auto motor_only_offset(
+		) const -> std::uint32_t;
+
+		auto motor_only_count(
+		) const -> std::uint32_t;
+
+		auto solver_cfg(
+		) const -> const solver_config&;
+
+		auto dt(
+		) const -> time_step;
+
+		auto frame_count(
+		) const -> std::uint32_t;
 
 	private:
 		struct compute_state {
@@ -130,8 +213,7 @@ export namespace gse::vbd {
 			float solve_ms = 0.f;
 			bool descriptors_initialized = false;
 			bool initialized = false;
-		};
-		compute_state m_compute;
+		} m_compute;
 
 		bool m_buffers_created = false;
 		bool m_pending_dispatch = false;
@@ -186,9 +268,7 @@ export namespace gse::vbd {
 	};
 }
 
-auto gse::vbd::gpu_solver::create_buffers(
-	vulkan::allocator& alloc
-) -> void {
+auto gse::vbd::gpu_solver::create_buffers(vulkan::allocator& alloc) -> void {
 	constexpr auto usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc;
 	constexpr auto readback_usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst;
 
@@ -250,13 +330,7 @@ auto gse::vbd::gpu_solver::create_buffers(
 	m_buffers_created = true;
 }
 
-auto gse::vbd::gpu_solver::upload(
-	const std::span<const body_state> bodies,
-	const constraint_graph& graph,
-	const solver_config& solver_cfg,
-	const time_step dt,
-	const int steps
-) -> void {
+auto gse::vbd::gpu_solver::upload(const std::span<const body_state> bodies, const constraint_graph& graph, const solver_config& solver_cfg, const time_step dt, const int steps) -> void {
 	m_body_count = static_cast<std::uint32_t>(std::min(bodies.size(), static_cast<std::size_t>(max_bodies)));
 	m_contact_count = static_cast<std::uint32_t>(std::min(graph.contact_constraints().size(), static_cast<std::size_t>(max_contacts)));
 	m_motor_count = static_cast<std::uint32_t>(std::min(graph.motor_constraints().size(), static_cast<std::size_t>(max_motors)));
@@ -476,6 +550,10 @@ auto gse::vbd::gpu_solver::upload(
 	m_pending_dispatch = true;
 }
 
+auto gse::vbd::gpu_solver::total_substeps() const -> std::uint32_t {
+	return m_solver_cfg.substeps * m_steps;
+}
+
 auto gse::vbd::gpu_solver::commit_upload(const std::uint32_t frame_index) -> void {
 	if (!m_pending_dispatch || m_body_count == 0) return;
 
@@ -592,10 +670,7 @@ auto gse::vbd::gpu_solver::stage_readback(const std::uint32_t frame_index) -> vo
 	}
 }
 
-auto gse::vbd::gpu_solver::readback(
-	const std::span<body_state> bodies,
-	std::vector<contact_constraint>& contacts
-) -> void {
+auto gse::vbd::gpu_solver::readback(const std::span<body_state> bodies, std::vector<contact_constraint>& contacts) -> void {
 	if (!m_staged_valid) return;
 
 	const auto& bo = m_body_layout.offsets;
@@ -637,6 +712,116 @@ auto gse::vbd::gpu_solver::readback(
 			break;
 		}
 	}
+}
+
+auto gse::vbd::gpu_solver::has_readback_data() const -> bool {
+	return m_staged_valid;
+}
+
+auto gse::vbd::gpu_solver::pending_dispatch() const -> bool {
+	return m_pending_dispatch;
+}
+
+auto gse::vbd::gpu_solver::ready_to_dispatch(const std::uint32_t frame_index) const -> bool {
+	if (m_awaiting_readback) return false;
+	if (m_fi_locked && frame_index != m_locked_fi) return false;
+	return true;
+}
+
+auto gse::vbd::gpu_solver::mark_dispatched(const std::uint32_t frame_index) -> void {
+	m_readback_info[frame_index] = { m_body_count, m_contact_count };
+	m_pending_dispatch = false;
+	m_awaiting_readback = true;
+	m_awaiting_readback_fi = frame_index;
+	m_frame_count++;
+}
+
+auto gse::vbd::gpu_solver::body_buffer(this auto&& self, std::uint32_t fi) -> auto& {
+	return self.m_body_buffer[fi];
+}
+
+auto gse::vbd::gpu_solver::contact_buffer(this auto&& self, std::uint32_t fi) -> auto& {
+	return self.m_contact_buffer[fi];
+}
+
+auto gse::vbd::gpu_solver::motor_buffer(this auto&& self, std::uint32_t fi) -> auto& {
+	return self.m_motor_buffer[fi];
+}
+
+auto gse::vbd::gpu_solver::color_buffer(this auto&& self, std::uint32_t fi) -> auto& {
+	return self.m_color_buffer[fi];
+}
+
+auto gse::vbd::gpu_solver::body_contact_map_buffer(this auto&& self, std::uint32_t fi) -> auto& {
+	return self.m_body_contact_map_buffer[fi];
+}
+
+auto gse::vbd::gpu_solver::solve_state_buffer(this auto&& self, std::uint32_t fi) -> auto& {
+	return self.m_solve_state_buffer[fi];
+}
+
+auto gse::vbd::gpu_solver::readback_buffer(this auto&& self, std::uint32_t fi) -> auto& {
+	return self.m_readback_buffer[fi];
+}
+
+auto gse::vbd::gpu_solver::body_buffer_resources(this auto&& self) -> auto& {
+	return self.m_body_buffer.resources();
+}
+
+auto gse::vbd::gpu_solver::contact_buffer_resources(this auto&& self) -> auto& {
+	return self.m_contact_buffer.resources();
+}
+
+auto gse::vbd::gpu_solver::motor_buffer_resources(this auto&& self) -> auto& {
+	return self.m_motor_buffer.resources();
+}
+
+auto gse::vbd::gpu_solver::color_buffer_resources(this auto&& self) -> auto& {
+	return self.m_color_buffer.resources();
+}
+
+auto gse::vbd::gpu_solver::body_contact_map_buffer_resources(this auto&& self) -> auto& {
+	return self.m_body_contact_map_buffer.resources();
+}
+
+auto gse::vbd::gpu_solver::solve_state_buffer_resources(this auto&& self) -> auto& {
+	return self.m_solve_state_buffer.resources();
+}
+
+auto gse::vbd::gpu_solver::body_count() const -> std::uint32_t {
+	return m_body_count;
+}
+
+auto gse::vbd::gpu_solver::contact_count() const -> std::uint32_t {
+	return m_contact_count;
+}
+
+auto gse::vbd::gpu_solver::motor_count() const -> std::uint32_t {
+	return m_motor_count;
+}
+
+auto gse::vbd::gpu_solver::color_ranges() const -> std::span<const color_range> {
+	return m_color_ranges;
+}
+
+auto gse::vbd::gpu_solver::motor_only_offset() const -> std::uint32_t {
+	return m_motor_only_offset;
+}
+
+auto gse::vbd::gpu_solver::motor_only_count() const -> std::uint32_t {
+	return m_motor_only_count;
+}
+
+auto gse::vbd::gpu_solver::solver_cfg() const -> const solver_config& {
+	return m_solver_cfg;
+}
+
+auto gse::vbd::gpu_solver::dt() const -> time_step {
+	return m_dt;
+}
+
+auto gse::vbd::gpu_solver::frame_count() const -> std::uint32_t {
+	return m_frame_count;
 }
 
 auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
@@ -953,4 +1138,24 @@ auto gse::vbd::gpu_solver::dispatch_compute(
 	command.pipelineBarrier2({ .memoryBarrierCount = 1, .pMemoryBarriers = &compute_to_host });
 
 	mark_dispatched(frame_index);
+}
+
+auto gse::vbd::gpu_solver::compute_initialized() const -> bool {
+	return m_compute.initialized;
+}
+
+auto gse::vbd::gpu_solver::buffers_created() const -> bool {
+	return m_buffers_created;
+}
+
+auto gse::vbd::gpu_solver::body_stride() const -> std::uint32_t {
+	return m_body_layout.stride;
+}
+
+auto gse::vbd::gpu_solver::contact_stride() const -> std::uint32_t {
+	return m_contact_layout.stride;
+}
+
+auto gse::vbd::gpu_solver::contact_lambda_offset() const -> std::uint32_t {
+	return m_contact_layout.offsets.at("lambda");
 }
