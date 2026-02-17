@@ -132,6 +132,8 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
 
             float delta_lambda = -v_n / w_total;
 
+            if (isnan(delta_lambda) || isinf(delta_lambda)) continue;
+
             if (!a_locked) {
                 ba.velocity.xyz += c.normal.xyz * (w_a_lin * delta_lambda);
                 if (a_orient) ba.angular_velocity.xyz += iircn_a * delta_lambda;
@@ -196,6 +198,8 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
             float delta_lambda_t = -v_t_mag / w_total_t;
             float max_friction = c.friction_coeff * c.lambda * pc.h_squared;
             delta_lambda_t = clamp(delta_lambda_t, -max_friction, max_friction);
+
+            if (isnan(delta_lambda_t) || isinf(delta_lambda_t)) continue;
 
             if (!a_locked) {
                 ba.velocity.xyz += t * (w_a_lin * delta_lambda_t);

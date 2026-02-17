@@ -112,6 +112,8 @@ auto gse::engine::initialize() -> void {
 		);
 
 		auto& ctx = *m_render_ctx.get();
+		ctx.add_loader<shader>();
+		ctx.compile();
 
 		m_scheduler.add_system<camera::system, camera::state>(reg);
 		m_scheduler.add_system<renderer::system, renderer::state>(reg, ctx);
