@@ -139,8 +139,8 @@ auto gse::model::center_of_mass() const -> vec3<length> {
 }
 
 auto gse::model_instance::update(const physics::motion_component& mc, const physics::collision_component& cc) -> void {
-	m_position = mc.current_position;
-	m_rotation = mc.orientation;
+	m_position = mc.render_position;
+	m_rotation = mc.render_orientation;
 	m_scale = cc.bounding_box.size().as<meters>();
 	m_is_dirty = true;
 

@@ -55,6 +55,7 @@ namespace gse::physics {
 	) -> void;
 
 	auto update_vbd_gpu(
+		int steps,
 		state& s,
 		chunk<motion_component>& motion,
 		chunk<collision_component>& collision,
@@ -109,17 +110,6 @@ auto gse::physics::system::update(update_phase& phase, state& s) -> void {
 
 	const time_t<float, seconds> const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
 
-	if (s.use_gpu_solver) {
-		if (s.accumulator < const_update_time) return;
-		s.accumulator -= const_update_time;
-
-		phase.schedule([&s, &channels = phase.channels, const_update_time](chunk<motion_component> motion, chunk<collision_component> collision) {
-			update_vbd_gpu(s, motion, collision, const_update_time);
-			channels.push(vbd::gpu_dispatch_info{ &s.gpu_solver });
-		});
-		return;
-	}
-
 	int steps = 0;
 	while (s.accumulator >= const_update_time) {
 		s.accumulator -= const_update_time;
@@ -128,12 +118,56 @@ auto gse::physics::system::update(update_phase& phase, state& s) -> void {
 
 	if (steps == 0) return;
 
-	phase.schedule([steps, &s](chunk<motion_component> motion, chunk<collision_component> collision) {
+	const float alpha = s.accumulator.as<seconds>() / const_update_time.as<seconds>();
+
+	if (s.use_gpu_solver) {
+		phase.schedule([steps, alpha, &s, &channels = phase.channels, const_update_time](chunk<motion_component> motion, chunk<collision_component> collision) {
+			for (motion_component& mc : motion) {
+				mc.render_position = mc.current_position;
+				mc.render_orientation = mc.orientation;
+			}
+
+			update_vbd_gpu(steps, s, motion, collision, const_update_time);
+
+			for (motion_component& mc : motion) {
+				if (mc.position_locked) {
+					mc.render_position = mc.current_position;
+					mc.render_orientation = mc.orientation;
+				}
+				else {
+					mc.render_position = lerp(mc.render_position, mc.current_position, alpha);
+					mc.render_orientation = slerp(mc.render_orientation, mc.orientation, alpha);
+				}
+			}
+
+			channels.push(vbd::gpu_dispatch_info{ &s.gpu_solver });
+		});
+		return;
+	}
+
+	phase.schedule([steps, alpha, &s, const_update_time](chunk<motion_component> motion, chunk<collision_component> collision) {
+		for (motion_component& mc : motion) {
+			mc.render_position = mc.current_position;
+			mc.render_orientation = mc.orientation;
+		}
+
 		update_vbd(steps, s, motion, collision);
+
+		for (motion_component& mc : motion) {
+			if (mc.position_locked) {
+				mc.render_position = mc.current_position;
+				mc.render_orientation = mc.orientation;
+			}
+			else {
+				mc.render_position = lerp(mc.render_position, mc.current_position, alpha);
+				mc.render_orientation = slerp(mc.render_orientation, mc.orientation, alpha);
+			}
+		}
 	});
 }
 
 auto gse::physics::update_vbd_gpu(
+	const int steps,
 	state& s,
 	chunk<motion_component>& motion,
 	chunk<collision_component>& collision,
@@ -147,7 +181,7 @@ auto gse::physics::update_vbd_gpu(
 		for (std::size_t i = 0; i < s.gpu_prev.entity_ids.size(); ++i) {
 			const auto eid = s.gpu_prev.entity_ids[i];
 			auto* mc = motion.find(eid);
-			if (!mc) continue;
+			if (!mc || mc->position_locked) continue;
 			const auto& bs = s.gpu_prev.bodies[i];
 
 			mc->current_position = bs.position;
@@ -357,7 +391,7 @@ auto gse::physics::update_vbd_gpu(
 	}
 	s.vbd_solver.graph().compute_coloring(static_cast<std::uint32_t>(bodies.size()), locked);
 
-	s.gpu_solver.upload(bodies, s.vbd_solver.graph(), s.vbd_solver.config(), dt);
+	s.gpu_solver.upload(bodies, s.vbd_solver.graph(), s.vbd_solver.config(), dt * static_cast<float>(steps), steps);
 
 	s.gpu_prev.bodies = std::move(bodies);
 	s.gpu_prev.contacts = { s.vbd_solver.graph().contact_constraints().begin(), s.vbd_solver.graph().contact_constraints().end() };
