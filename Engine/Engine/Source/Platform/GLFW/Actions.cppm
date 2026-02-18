@@ -217,6 +217,13 @@ export namespace gse::actions {
 			std::span<const word> pressed,
 			std::span<const word> released
 		) -> void;
+
+		auto set_camera_yaw(
+			float yaw
+		) -> void;
+
+		auto camera_yaw(
+		) const -> float;
 	private:
 		auto ensure_axis1_capacity(
 			std::uint16_t id
@@ -232,6 +239,7 @@ export namespace gse::actions {
 
 		std::vector<float> m_axes1;
 		std::vector<axis> m_axes2;
+		float m_camera_yaw = 0.f;
 	};
 
 	struct button_channel {
@@ -582,6 +590,14 @@ auto gse::actions::state::load_transients(const std::span<const word> pressed, c
 		held[i] = (held[i] | p) & ~r;
 	}
 	m_held.assign(held);
+}
+
+auto gse::actions::state::set_camera_yaw(const float yaw) -> void {
+	m_camera_yaw = yaw;
+}
+
+auto gse::actions::state::camera_yaw() const -> float {
+	return m_camera_yaw;
 }
 
 auto gse::actions::system::initialize(initialize_phase& phase, system_state& s) -> void {

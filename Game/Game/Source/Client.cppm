@@ -22,7 +22,7 @@ auto gs::client::initialize() -> void {
     std::vector seed{
 	    gse::network::discovery_result{
             .addr = gse::network::address{
-            	.ip = "207.191.198.190",
+            	.ip = "192.168.1.156",
                 .port = 9000
             },
             .name = "GoonSquad Server",
