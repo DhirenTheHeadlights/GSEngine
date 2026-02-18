@@ -105,6 +105,11 @@ export namespace gse::vbd {
 		std::vector<body_state> m_bodies;
 		std::vector<body_solve_state> m_solve_state;
 		float m_h_squared = 0.f;
+
+		static constexpr std::uint32_t no_motor = std::numeric_limits<std::uint32_t>::max();
+		std::vector<std::uint32_t> m_body_motor_index;
+		std::vector<bool> m_body_in_color_group;
+		std::vector<bool> m_body_has_contact;
 	};
 }
 
@@ -139,11 +144,31 @@ auto gse::vbd::solver::add_motor_constraint(const velocity_motor_constraint& m) 
 }
 
 auto gse::vbd::solver::solve(const time_step dt) -> void {
-	std::vector<bool> locked(m_bodies.size());
-	for (std::uint32_t i = 0; i < m_bodies.size(); ++i) {
+	const auto num_bodies = static_cast<std::uint32_t>(m_bodies.size());
+
+	std::vector<bool> locked(num_bodies);
+	for (std::uint32_t i = 0; i < num_bodies; ++i) {
 		locked[i] = m_bodies[i].locked;
 	}
-	m_graph.compute_coloring(static_cast<std::uint32_t>(m_bodies.size()), locked);
+	m_graph.compute_coloring(num_bodies, locked);
+
+	m_body_motor_index.assign(num_bodies, no_motor);
+	for (std::uint32_t mi = 0; mi < m_graph.motor_constraints().size(); ++mi) {
+		m_body_motor_index[m_graph.motor_constraints()[mi].body_index] = mi;
+	}
+
+	m_body_in_color_group.assign(num_bodies, false);
+	for (const auto& bc : m_graph.body_colors()) {
+		for (const auto bi : bc) {
+			m_body_in_color_group[bi] = true;
+		}
+	}
+
+	m_body_has_contact.assign(num_bodies, false);
+	for (const auto& c : m_graph.contact_constraints()) {
+		m_body_has_contact[c.body_a] = true;
+		m_body_has_contact[c.body_b] = true;
+	}
 
 	const time_step sub_dt = dt / static_cast<float>(m_config.substeps);
 
@@ -185,35 +210,18 @@ auto gse::vbd::solver::solve_substep(const time_step sub_dt) -> void {
 
 	predict_positions(sub_dt);
 
-	std::unordered_map<std::uint32_t, std::uint32_t> body_to_motor;
-	for (std::uint32_t mi = 0; mi < m_graph.motor_constraints().size(); ++mi) {
-		body_to_motor[m_graph.motor_constraints()[mi].body_index] = mi;
-	}
-
-	std::unordered_set<std::uint32_t> contacted_bodies;
-	for (const auto& bc : m_graph.body_colors()) {
-		for (const auto bi : bc) {
-			contacted_bodies.insert(bi);
-		}
-	}
+	const auto& contacts = m_graph.contact_constraints();
+	const auto& motors = m_graph.motor_constraints();
 
 	for (std::uint32_t iter = 0; iter < m_config.iterations; ++iter) {
 		for (const auto& body_color : m_graph.body_colors()) {
 			for (const auto bi : body_color) {
 				m_solve_state[bi] = {};
 				for (const auto ci : m_graph.body_contact_indices(bi)) {
-					accumulate_contact_gradient_hessian(
-						m_graph.contact_constraints()[ci],
-						h_squared,
-						m_solve_state
-					);
+					accumulate_contact_gradient_hessian(contacts[ci], h_squared, m_solve_state);
 				}
-				if (auto it = body_to_motor.find(bi); it != body_to_motor.end()) {
-					accumulate_motor_gradient_hessian(
-						m_graph.motor_constraints()[it->second],
-						h_squared,
-						m_solve_state
-					);
+				if (const auto mi = m_body_motor_index[bi]; mi != no_motor) {
+					accumulate_motor_gradient_hessian(motors[mi], h_squared, m_solve_state);
 				}
 			}
 
@@ -222,8 +230,8 @@ auto gse::vbd::solver::solve_substep(const time_step sub_dt) -> void {
 			}
 		}
 
-		for (const auto& motor : m_graph.motor_constraints()) {
-			if (!contacted_bodies.contains(motor.body_index)) {
+		for (const auto& motor : motors) {
+			if (!m_body_in_color_group[motor.body_index]) {
 				m_solve_state[motor.body_index] = {};
 				accumulate_motor_gradient_hessian(motor, h_squared, m_solve_state);
 				perform_local_newton_step(motor.body_index, m_solve_state[motor.body_index], h_squared);
@@ -233,7 +241,7 @@ auto gse::vbd::solver::solve_substep(const time_step sub_dt) -> void {
 
 	update_lagrange_multipliers();
 	derive_velocities(sub_dt);
-	apply_velocity_corrections(8);
+	apply_velocity_corrections(4);
 
 	for (auto& body : m_bodies) {
 		if (body.locked || body.sleeping()) continue;
@@ -538,11 +546,7 @@ auto gse::vbd::solver::update_lagrange_multipliers() -> void {
 auto gse::vbd::solver::derive_velocities(const time_step sub_dt) -> void {
 	const float dt_s = sub_dt.as<seconds>();
 
-	std::vector has_contact(m_bodies.size(), false);
-	for (const auto& c : m_graph.contact_constraints()) {
-		has_contact[c.body_a] = true;
-		has_contact[c.body_b] = true;
-	}
+	const auto& has_contact = m_body_has_contact;
 
 	for (std::uint32_t bi = 0; bi < m_bodies.size(); ++bi) {
 		auto& body = m_bodies[bi];
@@ -614,7 +618,7 @@ auto gse::vbd::solver::derive_velocities(const time_step sub_dt) -> void {
 		}
 	}
 
-	for (int pass = 0; pass < 3; ++pass) {
+	for (int pass = 0; pass < 2; ++pass) {
 		for (const auto& c : m_graph.contact_constraints()) {
 			if (c.lambda <= 0.f) continue;
 

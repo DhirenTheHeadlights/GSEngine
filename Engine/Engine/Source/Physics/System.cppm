@@ -89,8 +89,8 @@ auto gse::physics::system::initialize(const initialize_phase& phase, state& s) -
 	}
 
 	s.vbd_solver.configure(vbd::solver_config{
-		.substeps = 10,
-		.iterations = 20,
+		.substeps = 4,
+		.iterations = 8,
 		.contact_compliance = 0.f,
 		.contact_damping = 0.f,
 		.friction_coefficient = 0.6f,
@@ -500,18 +500,34 @@ auto gse::physics::update_vbd(
 ) -> void {
 	const time_t<float, seconds> const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
 
-	for (int step = 0; step < steps; ++step) {
-		std::unordered_map<id, std::uint32_t> id_to_body_index;
-		std::vector<vbd::body_state> bodies;
-		std::vector<motion_component*> motion_ptrs;
+	std::unordered_map<id, std::uint32_t> id_to_body_index;
+	id_to_body_index.reserve(motion.size());
+	std::vector<motion_component*> motion_ptrs;
+	motion_ptrs.reserve(motion.size());
 
-		bodies.reserve(motion.size());
-		motion_ptrs.reserve(motion.size());
-
+	{
 		std::uint32_t body_idx = 0;
 		for (motion_component& mc : motion) {
 			id_to_body_index[mc.owner_id()] = body_idx++;
+			motion_ptrs.push_back(std::addressof(mc));
+		}
+	}
 
+	std::vector<collision_pair> objects;
+	objects.reserve(collision.size());
+	for (collision_component& cc : collision) {
+		if (!cc.resolve_collisions) continue;
+		objects.push_back({
+			.collision = std::addressof(cc),
+			.motion = motion.find(cc.owner_id())
+		});
+	}
+
+	for (int step = 0; step < steps; ++step) {
+		std::vector<vbd::body_state> bodies;
+		bodies.reserve(motion.size());
+
+		for (motion_component& mc : motion) {
 			const auto eid = mc.owner_id();
 			const auto sc_it = s.sleep_counters.find(eid);
 			const auto sc = sc_it != s.sleep_counters.end() ? sc_it->second : 0u;
@@ -536,7 +552,6 @@ auto gse::physics::update_vbd(
 				.affected_by_gravity = mc.affected_by_gravity,
 				.sleep_counter = sc
 			});
-			motion_ptrs.push_back(std::addressof(mc));
 
 			mc.airborne = true;
 		}
@@ -553,18 +568,6 @@ auto gse::physics::update_vbd(
 		}
 
 		s.vbd_solver.begin_frame(bodies, s.contact_cache);
-
-		std::vector<collision_pair> objects;
-		objects.reserve(collision.size());
-
-		for (collision_component& cc : collision) {
-			if (!cc.resolve_collisions) continue;
-
-			objects.push_back({
-				.collision = std::addressof(cc),
-				.motion = motion.find(cc.owner_id())
-			});
-		}
 
 		for (std::size_t i = 0; i < objects.size(); ++i) {
 			for (std::size_t j = i + 1; j < objects.size(); ++j) {
@@ -607,10 +610,12 @@ auto gse::physics::update_vbd(
 				const auto id_a = collision_a->owner_id();
 				const auto id_b = collision_b->owner_id();
 
-				if (!id_to_body_index.contains(id_a) || !id_to_body_index.contains(id_b)) continue;
+				const auto it_a = id_to_body_index.find(id_a);
+				const auto it_b = id_to_body_index.find(id_b);
+				if (it_a == id_to_body_index.end() || it_b == id_to_body_index.end()) continue;
 
-				const std::uint32_t body_a = id_to_body_index[id_a];
-				const std::uint32_t body_b = id_to_body_index[id_b];
+				const std::uint32_t body_a = it_a->second;
+				const std::uint32_t body_b = it_b->second;
 
 				if (normal.y() > 0.7f && motion_b) {
 					motion_b->airborne = false;
@@ -671,10 +676,11 @@ auto gse::physics::update_vbd(
 
 		for (motion_component& mc : motion) {
 			if (!mc.motor.active) continue;
-			if (!id_to_body_index.contains(mc.owner_id())) continue;
+			const auto it = id_to_body_index.find(mc.owner_id());
+			if (it == id_to_body_index.end()) continue;
 
 			s.vbd_solver.add_motor_constraint(vbd::velocity_motor_constraint{
-				.body_index = id_to_body_index[mc.owner_id()],
+				.body_index = it->second,
 				.target_velocity = mc.motor.target_velocity,
 				.compliance = 0.5f,
 				.max_force = newtons(mc.mass.as<kilograms>() * 50.f),

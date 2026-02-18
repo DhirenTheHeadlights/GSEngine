@@ -1197,12 +1197,12 @@ auto gse::vbd::gpu_solver::dispatch_compute(const vk::CommandBuffer command, vul
 		);
 	};
 
+	const std::uint32_t n = m_body_count;
+	const std::uint32_t total_pairs = n * (n - 1) / 2;
+
 	bind_and_push(m_compute.collision_reset, m_compute.collision_reset_pipeline, 0u, 0u, 0u, 0u);
 	command.dispatch(ceil_div(m_body_count, workgroup_size), 1, 1);
 	command.pipelineBarrier2(compute_dep);
-
-	const std::uint32_t n = m_body_count;
-	const std::uint32_t total_pairs = n * (n - 1) / 2;
 
 	bind_and_push(m_compute.collision_broad_phase, m_compute.collision_broad_phase_pipeline, 0u, 0u, 0u, 0u);
 	command.dispatch(ceil_div(total_pairs, workgroup_size), 1, 1);
@@ -1216,28 +1216,28 @@ auto gse::vbd::gpu_solver::dispatch_compute(const vk::CommandBuffer command, vul
 	command.dispatch(1, 1, 1);
 	command.pipelineBarrier2(compute_dep);
 
-	for (std::uint32_t substep = 0; substep < total; ++substep) {
-		bind_and_push(m_compute.predict, m_compute.predict_pipeline, 0u, 0u, substep, 0u);
+	for (std::uint32_t sub = 0; sub < total; ++sub) {
+		bind_and_push(m_compute.predict, m_compute.predict_pipeline, 0u, 0u, sub, 0u);
 		command.dispatch(ceil_div(m_body_count, workgroup_size), 1, 1);
 		command.pipelineBarrier2(compute_dep);
 
-		bind_and_push(m_compute.solve_color, m_compute.solve_color_pipeline, 0u, 0u, substep, cfg.iterations);
+		bind_and_push(m_compute.solve_color, m_compute.solve_color_pipeline, 0u, 0u, sub, cfg.iterations);
 		command.dispatch(1, 1, 1);
 		command.pipelineBarrier2(compute_dep);
 
-		bind_and_push(m_compute.update_lambda, m_compute.update_lambda_pipeline, 0u, 0u, substep, 0u);
+		bind_and_push(m_compute.update_lambda, m_compute.update_lambda_pipeline, 0u, 0u, sub, 0u);
 		command.dispatch(ceil_div(max_contacts, workgroup_size), 1, 1);
 		command.pipelineBarrier2(compute_dep);
 
-		bind_and_push(m_compute.derive_velocities, m_compute.derive_velocities_pipeline, 0u, 0u, substep, 0u);
+		bind_and_push(m_compute.derive_velocities, m_compute.derive_velocities_pipeline, 0u, 0u, sub, 0u);
 		command.dispatch(ceil_div(m_body_count, workgroup_size), 1, 1);
 		command.pipelineBarrier2(compute_dep);
 
-		bind_and_push(m_compute.sequential_passes, m_compute.sequential_passes_pipeline, 0u, 0u, substep, 0u);
+		bind_and_push(m_compute.sequential_passes, m_compute.sequential_passes_pipeline, 0u, 0u, sub, 0u);
 		command.dispatch(1, 1, 1);
 		command.pipelineBarrier2(compute_dep);
 
-		bind_and_push(m_compute.finalize, m_compute.finalize_pipeline, 0u, 0u, substep, 0u);
+		bind_and_push(m_compute.finalize, m_compute.finalize_pipeline, 0u, 0u, sub, 0u);
 		command.dispatch(ceil_div(m_body_count, workgroup_size), 1, 1);
 		command.pipelineBarrier2(compute_dep);
 	}

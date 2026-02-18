@@ -80,6 +80,12 @@ struct push_constants {
 [[vk::push_constant]]
 ConstantBuffer<push_constants> pc;
 
+float3 rotate_vector(float4 q, float3 v) {
+    float3 u = q.yzw;
+    float s = q.x;
+    return 2.0 * dot(u, v) * u + (s * s - dot(u, u)) * v + 2.0 * s * cross(u, v);
+}
+
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
@@ -96,6 +102,22 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     body.position = body.predicted_position;
     if (update_orient) {
         body.orientation = body.predicted_orientation;
+    }
+
+    float3 he = body.half_extents.xyz;
+    if (dot(he, he) > 0.0) {
+        float4 q = body.orientation;
+        float3 ax = rotate_vector(q, float3(1, 0, 0));
+        float3 ay = rotate_vector(q, float3(0, 1, 0));
+        float3 az = rotate_vector(q, float3(0, 0, 1));
+
+        float3 aabb_he;
+        aabb_he.x = abs(ax.x) * he.x + abs(ay.x) * he.y + abs(az.x) * he.z;
+        aabb_he.y = abs(ax.y) * he.x + abs(ay.y) * he.y + abs(az.y) * he.z;
+        aabb_he.z = abs(ax.z) * he.x + abs(ay.z) * he.y + abs(az.z) * he.z;
+
+        body.aabb_min = float4(body.position.xyz - aabb_he, 0);
+        body.aabb_max = float4(body.position.xyz + aabb_he, 0);
     }
 
     body_data[bi] = body;
