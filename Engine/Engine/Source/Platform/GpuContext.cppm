@@ -178,10 +178,7 @@ export namespace gse::gpu {
 	};
 }
 
-gse::gpu::context::context(const std::string& window_title, input::system_state& input, save::state& save)
-	: m_window(window_title, input, save)
-	, m_config(vulkan::generate_config(m_window.raw_handle(), save))
-{
+gse::gpu::context::context(const std::string& window_title, input::system_state& input, save::state& save) : m_window(window_title, input, save), m_config(vulkan::generate_config(m_window.raw_handle(), save)) {
 	save.bind("Graphics", "Validation Layers", m_validation_layers_enabled)
 		.description("Enable Vulkan validation layers for debugging (impacts performance significantly)")
 		.default_value(false)

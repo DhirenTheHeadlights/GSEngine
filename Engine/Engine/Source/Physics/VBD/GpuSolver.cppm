@@ -273,6 +273,7 @@ export namespace gse::vbd {
 		std::uint32_t m_contact_count = 0;
 		std::uint32_t m_motor_count = 0;
 		std::uint32_t m_num_colors = 0;
+		std::uint32_t m_gpu_num_colors = 8;
 
 		std::uint32_t m_steps = 1;
 		solver_config m_solver_cfg;
@@ -397,7 +398,7 @@ auto gse::vbd::gpu_solver::create_buffers(vulkan::allocator& alloc) -> void {
 	const vk::DeviceSize readback_size =
 		max_bodies * m_body_layout.stride +
 		max_contacts * m_contact_layout.stride +
-		sizeof(std::uint32_t);
+		collision_state_uints * sizeof(std::uint32_t);
 	for (auto& rb : m_readback_buffer) {
 		rb = alloc.create_buffer({
 			.size = readback_size,
@@ -677,6 +678,12 @@ auto gse::vbd::gpu_solver::stage_readback(const std::uint32_t frame_index) -> vo
 	std::uint32_t gpu_contact_count = 0;
 	std::memcpy(&gpu_contact_count, rb + count_offset, sizeof(std::uint32_t));
 	m_staged_contact_count = std::min(gpu_contact_count, max_contacts);
+
+	std::uint32_t readback_num_colors = 0;
+	std::memcpy(&readback_num_colors, rb + count_offset + 6 * sizeof(std::uint32_t), sizeof(std::uint32_t));
+	if (readback_num_colors > 0 && readback_num_colors <= max_colors) {
+		m_gpu_num_colors = readback_num_colors;
+	}
 
 	const vk::DeviceSize contact_data_size = m_staged_contact_count * m_contact_layout.stride;
 	m_staged_contact_data.assign(rb + contact_region_offset, rb + contact_region_offset + contact_data_size);
@@ -1216,29 +1223,40 @@ auto gse::vbd::gpu_solver::dispatch_compute(const vk::CommandBuffer command, vul
 	command.dispatch(1, 1, 1);
 	command.pipelineBarrier2(compute_dep);
 
+	const std::uint32_t body_workgroups = ceil_div(m_body_count, workgroup_size);
+	const std::uint32_t num_colors = std::min(m_gpu_num_colors + 2, max_colors);
+
 	for (std::uint32_t sub = 0; sub < total; ++sub) {
 		bind_and_push(m_compute.predict, m_compute.predict_pipeline, 0u, 0u, sub, 0u);
-		command.dispatch(ceil_div(m_body_count, workgroup_size), 1, 1);
+		command.dispatch(body_workgroups, 1, 1);
 		command.pipelineBarrier2(compute_dep);
 
-		bind_and_push(m_compute.solve_color, m_compute.solve_color_pipeline, 0u, 0u, sub, cfg.iterations);
-		command.dispatch(1, 1, 1);
-		command.pipelineBarrier2(compute_dep);
+		for (std::uint32_t iter = 0; iter < cfg.iterations; ++iter) {
+			for (std::uint32_t c = 0; c < num_colors; ++c) {
+				bind_and_push(m_compute.solve_color, m_compute.solve_color_pipeline, c, 0u, sub, iter);
+				command.dispatch(body_workgroups, 1, 1);
+				command.pipelineBarrier2(compute_dep);
+			}
+		}
 
 		bind_and_push(m_compute.update_lambda, m_compute.update_lambda_pipeline, 0u, 0u, sub, 0u);
 		command.dispatch(ceil_div(max_contacts, workgroup_size), 1, 1);
 		command.pipelineBarrier2(compute_dep);
 
 		bind_and_push(m_compute.derive_velocities, m_compute.derive_velocities_pipeline, 0u, 0u, sub, 0u);
-		command.dispatch(ceil_div(m_body_count, workgroup_size), 1, 1);
+		command.dispatch(body_workgroups, 1, 1);
 		command.pipelineBarrier2(compute_dep);
 
-		bind_and_push(m_compute.sequential_passes, m_compute.sequential_passes_pipeline, 0u, 0u, sub, 0u);
-		command.dispatch(1, 1, 1);
-		command.pipelineBarrier2(compute_dep);
+		for (std::uint32_t pass = 0; pass < 8u; ++pass) {
+			for (std::uint32_t c = 0; c < num_colors; ++c) {
+				bind_and_push(m_compute.sequential_passes, m_compute.sequential_passes_pipeline, c, 0u, sub, pass);
+				command.dispatch(body_workgroups, 1, 1);
+				command.pipelineBarrier2(compute_dep);
+			}
+		}
 
 		bind_and_push(m_compute.finalize, m_compute.finalize_pipeline, 0u, 0u, sub, 0u);
-		command.dispatch(ceil_div(m_body_count, workgroup_size), 1, 1);
+		command.dispatch(body_workgroups, 1, 1);
 		command.pipelineBarrier2(compute_dep);
 	}
 
@@ -1282,12 +1300,12 @@ auto gse::vbd::gpu_solver::dispatch_compute(const vk::CommandBuffer command, vul
 
 	const vk::DeviceSize count_dst = contact_dst_base + contact_copy_size;
 	command.copyBuffer(
-		m_collision_state_buffer[frame_index].buffer, 
+		m_collision_state_buffer[frame_index].buffer,
 		m_readback_buffer[frame_index].buffer,
 		vk::BufferCopy{
 			.srcOffset = 0,
 			.dstOffset = count_dst,
-			.size = sizeof(std::uint32_t)
+			.size = collision_state_uints * sizeof(std::uint32_t)
 		}
 	);
 

@@ -194,8 +194,6 @@ mat3 mat3_inverse(mat3 m) {
     return result;
 }
 
-groupshared uint s_body_color[MAX_BODIES];
-
 void solve_body(uint bi) {
     GpuBody body = body_data[bi];
 
@@ -373,31 +371,14 @@ void solve_body(uint bi) {
 }
 
 [shader("compute")]
-[numthreads(512, 1, 1)]
-void cs_main(uint3 group_thread_id : SV_GroupThreadID) {
-    uint tid = group_thread_id.x;
-    uint num_colors = collision_state[6];
-    uint num_iterations = pc.iteration;
-
-    if (tid < MAX_BODIES) s_body_color[tid] = 0xFFFFFFFF;
-    GroupMemoryBarrierWithGroupSync();
-
-    for (uint c = 0; c < num_colors; c++) {
-        uint count = color_data[MAX_COLORS + c];
-        uint offset = color_data[c];
-        for (uint j = tid; j < count; j += 512) {
-            uint bi = color_data[MAX_COLORS * 2 + offset + j];
-            if (bi < MAX_BODIES) s_body_color[bi] = c;
-        }
-    }
-    GroupMemoryBarrierWithGroupSync();
-
-    for (uint iter = 0; iter < num_iterations; iter++) {
-        for (uint c = 0; c < num_colors; c++) {
-            if (tid < pc.body_count && s_body_color[tid] == c) {
-                solve_body(tid);
-            }
-            DeviceMemoryBarrierWithGroupSync();
-        }
-    }
+[numthreads(64, 1, 1)]
+void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
+    uint idx = dispatch_id.x;
+    uint color_idx = pc.color_offset;
+    uint count = color_data[MAX_COLORS + color_idx];
+    if (idx >= count) return;
+    uint offset = color_data[color_idx];
+    uint bi = color_data[MAX_COLORS * 2 + offset + idx];
+    if (bi >= pc.body_count) return;
+    solve_body(bi);
 }
