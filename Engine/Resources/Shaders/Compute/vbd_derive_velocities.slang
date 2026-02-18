@@ -19,6 +19,9 @@ struct GpuBody {
     float4 inv_inertia_col0;
     float4 inv_inertia_col1;
     float4 inv_inertia_col2;
+    float4 half_extents;
+    float4 aabb_min;
+    float4 aabb_max;
 };
 
 struct GpuContact {
@@ -32,13 +35,22 @@ struct GpuContact {
     float friction_coeff;
     float mass_a;
     float mass_b;
-    float _pad0;
+    uint feature_packed;
+};
+
+struct GpuWarmStart {
+    uint body_a;
+    uint body_b;
+    uint feature_packed;
+    float lambda;
 };
 
 static const uint FLAG_LOCKED = 1;
 static const uint FLAG_UPDATE_ORIENTATION = 2;
 static const uint SLEEP_THRESHOLD = 300;
 static const uint MAX_BODIES = 500;
+static const uint MAX_CONTACTS = 2000;
+static const uint MAX_COLLISION_PAIRS = 8192;
 
 struct push_constants {
     uint body_count;
@@ -59,8 +71,11 @@ struct push_constants {
 [[vk::binding(1, 0)]] RWStructuredBuffer<GpuContact> contact_data;
 [[vk::binding(2, 0)]] StructuredBuffer<uint> motor_data;
 [[vk::binding(3, 0)]] StructuredBuffer<uint> color_data;
-[[vk::binding(4, 0)]] StructuredBuffer<uint> body_contact_map;
+[[vk::binding(4, 0)]] RWStructuredBuffer<uint> body_contact_map;
 [[vk::binding(5, 0)]] RWStructuredBuffer<float4> solve_state;
+[[vk::binding(6, 0)]] RWStructuredBuffer<uint> collision_pairs;
+[[vk::binding(7, 0)]] RWStructuredBuffer<uint> collision_state;
+[[vk::binding(8, 0)]] StructuredBuffer<GpuWarmStart> warm_starts;
 
 [[vk::push_constant]]
 ConstantBuffer<push_constants> pc;
@@ -118,17 +133,8 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     }
 
     float3 new_vel = (body.predicted_position.xyz - body.old_position.xyz) / pc.dt;
-    if (any(isnan(new_vel)) || any(isinf(new_vel))) {
-        body.velocity = float4(0, 0, 0, 0);
-        body.predicted_position = body.old_position;
-        body_data[bi] = body;
-        return;
-    }
     float linear_damping_factor = max(0.0, 1.0 - pc.linear_damping * pc.dt);
     new_vel *= linear_damping_factor;
-    static const float MAX_SPEED = 100.0;
-    float speed = length(new_vel);
-    if (speed > MAX_SPEED) new_vel *= (MAX_SPEED / speed);
     body.velocity = float4(new_vel, 0);
 
     float lin_speed = length(new_vel);
@@ -154,12 +160,9 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
             ang_vel = q_v * (2.0 / pc.dt);
         }
 
-        if (any(isnan(ang_vel)) || any(isinf(ang_vel))) ang_vel = float3(0, 0, 0);
         float angular_damping = 1.0;
         float angular_damping_factor = max(0.0, 1.0 - angular_damping * pc.dt);
         ang_vel *= angular_damping_factor;
-        float ang_spd = length(ang_vel);
-        if (ang_spd > 50.0) ang_vel *= (50.0 / ang_spd);
         body.angular_velocity = float4(ang_vel, 0);
 
         float ang_speed = length(ang_vel);

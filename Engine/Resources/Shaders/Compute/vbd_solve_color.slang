@@ -19,6 +19,9 @@ struct GpuBody {
     float4 inv_inertia_col0;
     float4 inv_inertia_col1;
     float4 inv_inertia_col2;
+    float4 half_extents;
+    float4 aabb_min;
+    float4 aabb_max;
 };
 
 struct GpuContact {
@@ -32,7 +35,7 @@ struct GpuContact {
     float friction_coeff;
     float mass_a;
     float mass_b;
-    float _pad0;
+    uint feature_packed;
 };
 
 struct GpuMotor {
@@ -43,12 +46,21 @@ struct GpuMotor {
     float4 target_velocity;
 };
 
+struct GpuWarmStart {
+    uint body_a;
+    uint body_b;
+    uint feature_packed;
+    float lambda;
+};
+
 static const uint FLAG_LOCKED = 1;
 static const uint FLAG_UPDATE_ORIENTATION = 2;
 static const uint FLAG_AFFECTED_BY_GRAVITY = 4;
 static const uint SLEEP_THRESHOLD = 300;
 static const uint MAX_BODIES = 500;
 static const uint MAX_CONTACTS = 2000;
+static const uint MAX_COLLISION_PAIRS = 8192;
+static const uint MAX_COLORS = 32;
 
 struct push_constants {
     uint body_count;
@@ -69,8 +81,11 @@ struct push_constants {
 [[vk::binding(1, 0)]] RWStructuredBuffer<GpuContact> contact_data;
 [[vk::binding(2, 0)]] StructuredBuffer<GpuMotor> motor_data;
 [[vk::binding(3, 0)]] StructuredBuffer<uint> color_data;
-[[vk::binding(4, 0)]] StructuredBuffer<uint> body_contact_map;
+[[vk::binding(4, 0)]] RWStructuredBuffer<uint> body_contact_map;
 [[vk::binding(5, 0)]] RWStructuredBuffer<float4> solve_state;
+[[vk::binding(6, 0)]] RWStructuredBuffer<uint> collision_pairs;
+[[vk::binding(7, 0)]] RWStructuredBuffer<uint> collision_state;
+[[vk::binding(8, 0)]] StructuredBuffer<GpuWarmStart> warm_starts;
 
 [[vk::push_constant]]
 ConstantBuffer<push_constants> pc;
@@ -158,7 +173,7 @@ bool is_finite3(float3 v) {
 
 mat3 mat3_inverse(mat3 m) {
     float d = mat3_det(m);
-    if (abs(d) < 1e-6) return mat3_identity(1.0);
+    if (abs(d) < 1e-20) return mat3_identity(1.0);
     float inv_d = 1.0 / d;
     mat3 result;
     result[0] = float3(
@@ -179,13 +194,9 @@ mat3 mat3_inverse(mat3 m) {
     return result;
 }
 
-[shader("compute")]
-[numthreads(64, 1, 1)]
-void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
-    uint thread_idx = dispatch_id.x;
-    if (thread_idx >= pc.color_count) return;
+groupshared uint s_body_color[MAX_BODIES];
 
-    uint bi = color_data[32 * 2 + pc.color_offset + thread_idx];
+void solve_body(uint bi) {
     GpuBody body = body_data[bi];
 
     bool locked = (body.flags & FLAG_LOCKED) != 0;
@@ -359,4 +370,34 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     }
 
     body_data[bi] = body;
+}
+
+[shader("compute")]
+[numthreads(512, 1, 1)]
+void cs_main(uint3 group_thread_id : SV_GroupThreadID) {
+    uint tid = group_thread_id.x;
+    uint num_colors = collision_state[6];
+    uint num_iterations = pc.iteration;
+
+    if (tid < MAX_BODIES) s_body_color[tid] = 0xFFFFFFFF;
+    GroupMemoryBarrierWithGroupSync();
+
+    for (uint c = 0; c < num_colors; c++) {
+        uint count = color_data[MAX_COLORS + c];
+        uint offset = color_data[c];
+        for (uint j = tid; j < count; j += 512) {
+            uint bi = color_data[MAX_COLORS * 2 + offset + j];
+            if (bi < MAX_BODIES) s_body_color[bi] = c;
+        }
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    for (uint iter = 0; iter < num_iterations; iter++) {
+        for (uint c = 0; c < num_colors; c++) {
+            if (tid < pc.body_count && s_body_color[tid] == c) {
+                solve_body(tid);
+            }
+            DeviceMemoryBarrierWithGroupSync();
+        }
+    }
 }

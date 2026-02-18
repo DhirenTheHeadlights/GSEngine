@@ -1,4 +1,20 @@
+static const uint MAX_BODIES = 500;
 static const uint MAX_CONTACTS = 2000;
+
+struct push_constants {
+    uint body_count;
+    uint contact_count;
+    uint motor_count;
+    uint color_offset;
+    uint color_count;
+    float h_squared;
+    float dt;
+    float rho;
+    float linear_damping;
+    float velocity_sleep_threshold;
+    uint substep;
+    uint iteration;
+};
 
 struct GpuBody {
     float4 position;
@@ -47,23 +63,6 @@ struct GpuWarmStart {
     float lambda;
 };
 
-static const uint FLAG_LOCKED = 1;
-
-struct push_constants {
-    uint body_count;
-    uint contact_count;
-    uint motor_count;
-    uint color_offset;
-    uint color_count;
-    float h_squared;
-    float dt;
-    float rho;
-    float linear_damping;
-    float velocity_sleep_threshold;
-    uint substep;
-    uint iteration;
-};
-
 [[vk::binding(0, 0)]] RWStructuredBuffer<GpuBody> body_data;
 [[vk::binding(1, 0)]] RWStructuredBuffer<GpuContact> contact_data;
 [[vk::binding(2, 0)]] StructuredBuffer<uint> motor_data;
@@ -77,35 +76,18 @@ struct push_constants {
 [[vk::push_constant]]
 ConstantBuffer<push_constants> pc;
 
-float3 rotate_vector(float4 q, float3 v) {
-    float3 u = q.yzw;
-    float s = q.x;
-    return 2.0 * dot(u, v) * u + (s * s - dot(u, u)) * v + 2.0 * s * cross(u, v);
-}
-
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
-    uint ci = dispatch_id.x;
-    uint actual_contact_count = min(collision_state[0], MAX_CONTACTS);
-    if (ci >= actual_contact_count) return;
+    uint bi = dispatch_id.x;
 
-    GpuContact c = contact_data[ci];
-    GpuBody body_a = body_data[c.body_a];
-    GpuBody body_b = body_data[c.body_b];
+    if (bi == 0) {
+        collision_pairs[0] = 0;
+        collision_state[0] = 0;
+    }
 
-    float3 world_r_a = rotate_vector(body_a.predicted_orientation, c.r_a.xyz);
-    float3 world_r_b = rotate_vector(body_b.predicted_orientation, c.r_b.xyz);
-
-    float3 p_a = body_a.predicted_position.xyz + world_r_a;
-    float3 p_b = body_b.predicted_position.xyz + world_r_b;
-
-    float gap = dot(p_b - p_a, c.normal.xyz) + c.initial_separation;
-    if (gap >= 0.0) return;
-
-    float lambda_mass = max(c.mass_a, c.mass_b);
-    float rho_val = pc.rho * (lambda_mass / pc.h_squared);
-    float new_lambda = clamp(c.lambda - rho_val * gap, 0.0, 1e6);
-
-    contact_data[ci].lambda = new_lambda;
+    if (bi < pc.body_count) {
+        body_contact_map[bi] = 0;
+        body_contact_map[MAX_BODIES + bi] = 0;
+    }
 }
