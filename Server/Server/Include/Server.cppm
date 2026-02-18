@@ -24,6 +24,7 @@ export namespace gse {
 		id controller_id;
 		actions::state latest_input;
 		std::uint32_t last_input_sequence = 0;
+		float camera_yaw = 0.f;
 		bool have_seq = false;
 	};
 
@@ -58,6 +59,12 @@ export namespace gse {
 			const network::address& to
 		) -> void;
 
+		template <typename T>
+		auto send_reliable(
+			const T& msg,
+			const network::address& to
+		) -> void;
+
 		auto peers(
 		) const -> const std::unordered_map<network::address, network::remote_peer>&;
 
@@ -86,6 +93,11 @@ export namespace gse {
 		mpsc_ring_buffer<outgoing_packet, 1024> m_outgoing;
 		std::jthread m_thread;
 		std::uint32_t m_next_player_id = 0;
+
+		auto resend_reliable_messages(
+		) -> void;
+
+		static constexpr std::uint32_t reliable_retry_interval_ms = 200;
 	};
 }
 
@@ -93,10 +105,17 @@ gse::server::server(world* owner, const std::uint16_t port)
 	: hook(owner), m_port(port) {}
 
 auto gse::server::initialize() -> void {
-	m_socket.bind(network::address{
+	if (!m_socket.bind(network::address{
 		.ip = "0.0.0.0",
 		.port = m_port
-	});
+	})) {
+		std::println(std::cerr, "Server: Failed to bind socket to port {}", m_port);
+		return;
+	}
+
+	if (const auto local = m_socket.local_address()) {
+		std::println("Server: Listening on port {}", local->port);
+	}
 
 	m_thread = std::jthread([this](const std::stop_token& st) {
 		std::array<std::byte, max_packet_size> buffer;
@@ -105,12 +124,14 @@ auto gse::server::initialize() -> void {
 		while (!st.stop_requested()) {
 			(void)m_socket.wait_readable(max_sleep);
 
-			if (const auto received = m_socket.receive_data(buffer)) {
+			while (const auto received = m_socket.receive_data(buffer)) {
 				incoming_packet pkt;
 				pkt.from = received->from;
 				pkt.size = received->bytes_read;
 				std::memcpy(pkt.buffer.data(), buffer.data(), received->bytes_read);
-				m_incoming.push(pkt);
+				if (!m_incoming.push(pkt)) {
+					break;
+				}
 			}
 
 			outgoing_packet out_pkt;
@@ -154,6 +175,72 @@ auto gse::server::send(const T& msg, const network::address& to) -> void {
 	m_outgoing.push(pkt);
 }
 
+template <typename T>
+auto gse::server::send_reliable(const T& msg, const network::address& to) -> void {
+	const auto it = m_peers.find(to);
+	if (it == m_peers.end()) {
+		return;
+	}
+
+	auto& peer = it->second;
+
+	std::array<std::byte, max_packet_size> buffer;
+	const packet_header header{
+		.sequence = ++peer.sequence(),
+		.ack = peer.remote_ack_sequence(),
+		.ack_bits = peer.remote_ack_bitfield()
+	};
+
+	network::bitstream stream(buffer);
+	stream.write(header);
+	network::write(stream, msg);
+
+	const std::size_t size = stream.bytes_written();
+
+	peer.queue_reliable(header.sequence, std::span(buffer.data(), size));
+
+	outgoing_packet pkt;
+	pkt.to = to;
+	pkt.size = size;
+	std::memcpy(pkt.buffer.data(), buffer.data(), size);
+
+	m_outgoing.push(pkt);
+}
+
+auto gse::server::resend_reliable_messages() -> void {
+	for (auto& [addr, peer] : m_peers) {
+		auto to_resend = peer.get_messages_to_resend(reliable_retry_interval_ms);
+
+		for (auto* msg : to_resend) {
+			std::array<std::byte, max_packet_size> buffer;
+
+			const packet_header new_header{
+				.sequence = ++peer.sequence(),
+				.ack = peer.remote_ack_sequence(),
+				.ack_bits = peer.remote_ack_bitfield()
+			};
+
+			network::bitstream stream(buffer);
+			stream.write(new_header);
+
+			constexpr std::size_t header_size = sizeof(packet_header);
+			if (msg->data.size() > header_size) {
+				stream.write_bytes(msg->data.data() + header_size, msg->data.size() - header_size);
+			}
+
+			outgoing_packet pkt;
+			pkt.to = addr;
+			pkt.size = stream.bytes_written();
+			std::memcpy(pkt.buffer.data(), buffer.data(), pkt.size);
+
+			m_outgoing.push(pkt);
+
+			msg->sent_time_ms = network::current_time_ms();
+			++msg->send_count;
+		}
+	}
+}
+
 auto gse::server::update() -> void {
 	if (!m_owner->current_scene()) {
 		m_owner->activate(find("Default Scene"));
@@ -172,10 +259,9 @@ auto gse::server::update() -> void {
 
 		const auto it = m_peers.find(pkt.from);
 		const auto header = stream.read<packet_header>();
+		const auto mid = network::message_id(stream);
 
 		if (it == m_peers.end()) {
-			const auto mid = network::message_id(stream);
-
 			network::try_decode<network::connection_request>(stream, mid, [&](const auto&) {
 				m_peers.emplace(pkt.from, network::remote_peer(pkt.from));
 
@@ -192,13 +278,13 @@ auto gse::server::update() -> void {
 					}
 				}
 
-				send(network::connection_accepted{}, pkt.from);
+				send_reliable(network::connection_accepted{}, pkt.from);
 
 				if (const auto* active = m_owner->current_scene()) {
 					const network::notify_scene_change msg{
 						.scene_id = active->id()
 					};
-					send(msg, pkt.from);
+					send_reliable(msg, pkt.from);
 				}
 
 				m_pending_snapshots.insert(pkt.from);
@@ -207,7 +293,26 @@ auto gse::server::update() -> void {
 			continue;
 		}
 
-		if (auto& peer = it->second; header.sequence > peer.remote_ack_sequence()) {
+		if (network::try_decode<network::connection_request>(stream, mid, [&](const auto&) {
+			send_reliable(network::connection_accepted{}, pkt.from);
+
+			if (const auto* active = m_owner->current_scene()) {
+				const network::notify_scene_change msg{
+					.scene_id = active->id()
+				};
+				send_reliable(msg, pkt.from);
+			}
+
+			m_pending_snapshots.insert(pkt.from);
+		})) {
+			continue;
+		}
+
+		auto& peer = it->second;
+
+		peer.process_acks(header.ack, header.ack_bits);
+
+		if (header.sequence > peer.remote_ack_sequence()) {
 			if (const std::uint32_t diff = header.sequence - peer.remote_ack_sequence(); diff < 32) {
 				peer.remote_ack_bitfield() <<= diff;
 				peer.remote_ack_bitfield() |= (1 << (diff - 1));
@@ -223,9 +328,7 @@ auto gse::server::update() -> void {
 			}
 		}
 
-		const auto id = network::message_id(stream);
-
-		network::match_message(stream, id)
+		network::match_message(stream, mid)
 			.if_is([&](const network::ping& m) {
 				send(network::pong{ .sequence = m.sequence }, pkt.from);
 			})
@@ -260,6 +363,7 @@ auto gse::server::update() -> void {
 				}
 
 				cd.last_input_sequence = fh.input_sequence;
+				cd.camera_yaw = fh.camera_yaw;
 
 				cd.latest_input.begin_frame();
 				cd.latest_input.ensure_capacity(fh.action_word_count * 64);
@@ -272,6 +376,8 @@ auto gse::server::update() -> void {
 				for (auto& [idv, x, y] : a2) {
 					cd.latest_input.set_axis2(idv, actions::axis{ x, y });
 				}
+
+				cd.latest_input.set_camera_yaw(cd.camera_yaw);
 			});
 	}
 
@@ -304,10 +410,12 @@ auto gse::server::update() -> void {
 			};
 
 			for (const auto& addr : m_clients | std::views::keys) {
-				send(msg, addr);
+				send_reliable(msg, addr);
 			}
 		}
 	}
+
+	resend_reliable_messages();
 
 	if (auto* sc = m_owner->current_scene()) {
 		auto send_all = [this](const auto& msg, const network::address& to) {

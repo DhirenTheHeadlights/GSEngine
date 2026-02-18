@@ -377,13 +377,32 @@ auto gse::gui::system::initialize(initialize_phase& phase, system_state& s) -> v
 			} else {
 				m.rect = calculate_group_bounds(m.id());
 
-				if (m.rect.top() > screen_rect.top()) {
-					const float delta = m.rect.top() - screen_rect.top();
-					m.rect = ui_rect::from_position_size(
-						{ m.rect.left(), m.rect.top() - delta },
-						m.rect.size()
-					);
+				// Clamp size to fit within screen
+				const float max_width = screen_rect.width();
+				const float max_height = screen_rect.height();
+				const float clamped_width = std::min(m.rect.width(), max_width);
+				const float clamped_height = std::min(m.rect.height(), max_height);
+
+				// Clamp position to keep window on screen
+				float new_left = m.rect.left();
+				float new_top = m.rect.top();
+
+				if (new_left < 0.f) {
+					new_left = 0.f;
+				} else if (new_left + clamped_width > screen_rect.width()) {
+					new_left = std::max(0.f, screen_rect.width() - clamped_width);
 				}
+
+				if (new_top > screen_rect.top()) {
+					new_top = screen_rect.top();
+				} else if (new_top - clamped_height < 0.f) {
+					new_top = clamped_height;
+				}
+
+				m.rect = ui_rect::from_position_size(
+					{ new_left, new_top },
+					{ clamped_width, clamped_height }
+				);
 			}
 
 			layout::update(s.menus, m.id());
@@ -490,13 +509,15 @@ auto gse::gui::system::begin_frame(begin_frame_phase&, system_state& s) -> bool 
 						const float new_width = m.rect.width() * scale_x;
 						const float new_height = m.rect.height() * scale_y;
 
-						const float clamped_left = std::clamp(new_left, 0.f, std::max(0.f, current_viewport_size.x() - new_width));
+						const float actual_width = std::min(new_width, current_viewport_size.x());
 						const float actual_height = std::min(new_height, new_usable_height);
+
+						const float clamped_left = std::clamp(new_left, 0.f, std::max(0.f, current_viewport_size.x() - actual_width));
 						const float clamped_top = std::clamp(new_top, actual_height, new_usable_height);
 
 						m.rect = ui_rect::from_position_size(
 							{ clamped_left, clamped_top },
-							{ new_width, actual_height }
+							{ actual_width, actual_height }
 						);
 					}
 
@@ -1722,8 +1743,11 @@ auto gse::gui::handle_dragging_state(system_state& s, const states::dragging& cu
 	const unitless::vec2 old_top_left = m->rect.top_left();
 	unitless::vec2 new_top_left = mouse_position + current.offset;
 
-	new_top_left.x() = std::clamp(new_top_left.x(), 0.f, screen_rect.width() - m->rect.width());
-	new_top_left.y() = std::clamp(new_top_left.y(), m->rect.height(), screen_rect.top());
+	const float max_x = std::max(0.f, screen_rect.width() - m->rect.width());
+	new_top_left.x() = std::clamp(new_top_left.x(), 0.f, max_x);
+
+	const float min_y = std::min(m->rect.height(), screen_rect.top());
+	new_top_left.y() = std::clamp(new_top_left.y(), min_y, screen_rect.top());
 
 	if (const unitless::vec2 delta = new_top_left - old_top_left; delta.x() != 0 || delta.y() != 0) {
 		std::function<void(id)> move_group = [&](const id current_id) {

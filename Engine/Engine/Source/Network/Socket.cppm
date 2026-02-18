@@ -64,10 +64,13 @@ export namespace gse::network {
 
 		auto bind(
 			const address& address
-		) const -> void;
+		) -> bool;
+
+		auto local_address(
+		) const -> std::optional<address>;
 
 		auto send_data(
-			const packet& packet, 
+			const packet& packet,
 			const address& address
 		) const -> socket_state;
 
@@ -86,8 +89,12 @@ export namespace gse::network {
 
 		auto id(
 		) const -> std::uint64_t;
+
+		auto valid(
+		) const -> bool;
 	private:
 		std::uint64_t m_socket_id;
+		address m_local_address;
 	};
 }
 
@@ -102,7 +109,15 @@ gse::network::udp_socket::~udp_socket() {
 	}
 }
 
-auto gse::network::udp_socket::bind(const address& address) const -> void {
+auto gse::network::udp_socket::bind(const address& address) -> bool {
+	if (m_socket_id == INVALID_SOCKET) {
+		return false;
+	}
+
+	// Allow address reuse to avoid TIME_WAIT issues
+	int opt = 1;
+	setsockopt(m_socket_id, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&opt), sizeof(opt));
+
 	sockaddr_in addr {
 		.sin_family = AF_INET,
 		.sin_port = htons(address.port),
@@ -112,14 +127,41 @@ auto gse::network::udp_socket::bind(const address& address) const -> void {
 	inet_pton(AF_INET, address.ip.c_str(), &addr.sin_addr);
 
 	if (::bind(m_socket_id, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
-		assert(false, std::source_location::current(), "Failed to bind socket.");
+		const int err = WSAGetLastError();
+		std::println(std::cerr, "Failed to bind socket: error {}", err);
 		closesocket(m_socket_id);
+		m_socket_id = INVALID_SOCKET;
+		return false;
+	}
+
+	// Retrieve the actual bound address (important when port 0 was requested)
+	sockaddr_in bound_addr{};
+	int bound_addr_len = sizeof(bound_addr);
+	if (getsockname(m_socket_id, reinterpret_cast<sockaddr*>(&bound_addr), &bound_addr_len) == 0) {
+		m_local_address.ip = inet_ntoa(bound_addr.sin_addr);
+		m_local_address.port = ntohs(bound_addr.sin_port);
 	}
 
 	u_long mode = 1;
 	if (ioctlsocket(m_socket_id, FIONBIO, &mode) == SOCKET_ERROR) {
-		assert(false, std::source_location::current(), "Failed to set non-blocking mode.");
+		std::println(std::cerr, "Failed to set non-blocking mode");
+		closesocket(m_socket_id);
+		m_socket_id = INVALID_SOCKET;
+		return false;
 	}
+
+	return true;
+}
+
+auto gse::network::udp_socket::local_address() const -> std::optional<address> {
+	if (m_socket_id == INVALID_SOCKET || m_local_address.port == 0) {
+		return std::nullopt;
+	}
+	return m_local_address;
+}
+
+auto gse::network::udp_socket::valid() const -> bool {
+	return m_socket_id != INVALID_SOCKET;
 }
 
 auto gse::network::udp_socket::send_data(const packet& packet, const address& address) const -> socket_state {

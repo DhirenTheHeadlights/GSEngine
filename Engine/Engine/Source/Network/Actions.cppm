@@ -29,11 +29,12 @@ export namespace gse::network {
 		std::uint32_t input_sequence,
 		const actions::state& state,
 		std::span<const std::uint16_t> axes1_ids,
-		std::span<const std::uint16_t> axes2_ids
+		std::span<const std::uint16_t> axes2_ids,
+		float camera_yaw = 0.f
 	) -> void;
 }
 
-auto gse::network::send_input_frame(const udp_socket& socket, remote_peer& peer, std::array<std::byte, max_packet_size>& buffer, const std::uint32_t input_sequence, const actions::state& state, const std::span<const std::uint16_t> axes1_ids, const std::span<const std::uint16_t> axes2_ids) -> void {
+auto gse::network::send_input_frame(const udp_socket& socket, remote_peer& peer, std::array<std::byte, max_packet_size>& buffer, const std::uint32_t input_sequence, const actions::state& state, const std::span<const std::uint16_t> axes1_ids, const std::span<const std::uint16_t> axes2_ids, const float camera_yaw) -> void {
 	const auto& pm = state.pressed_mask();
 	const auto& rm = state.released_mask();
 	const auto wc = static_cast<std::uint16_t>(std::max(pm.word_count(), rm.word_count()));
@@ -45,9 +46,9 @@ auto gse::network::send_input_frame(const udp_socket& socket, remote_peer& peer,
 
 	auto a2 = axes2_ids
 		| std::views::transform([&](auto id) -> axes2_pair {
-			const auto v = state.axis2_v(id);
-			return { id, v.x(), v.y() };
-		})
+		const auto v = state.axis2_v(id);
+		return { id, v.x(), v.y() };
+			})
 		| std::views::filter([](const auto& p) { return p.x != 0.f || p.y != 0.f; })
 		| std::ranges::to<std::vector>();
 
@@ -65,7 +66,8 @@ auto gse::network::send_input_frame(const udp_socket& socket, remote_peer& peer,
 		.client_time_ms = system_clock::now<time_t<std::uint32_t>>().as<milliseconds>(),
 		.action_word_count = wc,
 		.axes1_count = static_cast<std::uint16_t>(a1.size()),
-		.axes2_count = static_cast<std::uint16_t>(a2.size())
+		.axes2_count = static_cast<std::uint16_t>(a2.size()),
+		.camera_yaw = camera_yaw
 	};
 	write(s, hdr);
 
@@ -93,9 +95,8 @@ auto gse::network::send_input_frame(const udp_socket& socket, remote_peer& peer,
 		.size = s.bytes_written()
 	};
 
-	assert(
-		socket.send_data(pkt, peer.addr()) != socket_state::error,
-		std::source_location::current(),
-		"Failed to send input frame from client."
-	);
+	if (socket.send_data(pkt, peer.addr()) == socket_state::error) {
+		std::println("[Network Warning] Failed to send input frame from client to {}", peer.addr().ip);
+		return;
+	}
 }

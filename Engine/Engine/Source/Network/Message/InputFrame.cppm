@@ -11,6 +11,7 @@ export namespace gse::network {
         std::uint16_t action_word_count = 0;
         std::uint16_t axes1_count = 0;
         std::uint16_t axes2_count = 0;
+        float camera_yaw = 0.f;  // Camera facing direction in radians
     };
 
     constexpr auto message_id(
