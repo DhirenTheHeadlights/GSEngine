@@ -92,78 +92,6 @@ float3 mat3_mul_vec(mat3 m, float3 v) {
     return m[0] * v.x + m[1] * v.y + m[2] * v.z;
 }
 
-groupshared uint s_body_color[MAX_BODIES];
-
-void apply_normal_impulse(uint bi) {
-    GpuBody my_body = body_data[bi];
-    if ((my_body.flags & FLAG_LOCKED) != 0) return;
-    bool my_orient = (my_body.flags & FLAG_UPDATE_ORIENTATION) != 0;
-
-    uint co = body_contact_map[bi];
-    uint cc = body_contact_map[MAX_BODIES + bi];
-
-    for (uint ci_idx = 0; ci_idx < cc; ci_idx++) {
-        uint ci = body_contact_map[MAX_BODIES * 2 + co + ci_idx];
-        GpuContact ct = contact_data[ci];
-        if (ct.lambda <= 0.0) continue;
-
-        GpuBody ba = body_data[ct.body_a];
-        GpuBody bb = body_data[ct.body_b];
-        bool is_a = (ct.body_a == bi);
-
-        bool a_locked = (ba.flags & FLAG_LOCKED) != 0;
-        bool b_locked = (bb.flags & FLAG_LOCKED) != 0;
-        bool a_orient = (ba.flags & FLAG_UPDATE_ORIENTATION) != 0;
-        bool b_orient = (bb.flags & FLAG_UPDATE_ORIENTATION) != 0;
-
-        float3 world_r_a = rotate_vector(ba.predicted_orientation, ct.r_a.xyz);
-        float3 world_r_b = rotate_vector(bb.predicted_orientation, ct.r_b.xyz);
-
-        float3 vel_a = is_a ? my_body.velocity.xyz : ba.velocity.xyz;
-        float3 ang_a = is_a ? my_body.angular_velocity.xyz : ba.angular_velocity.xyz;
-        float3 vel_b = is_a ? bb.velocity.xyz : my_body.velocity.xyz;
-        float3 ang_b = is_a ? bb.angular_velocity.xyz : my_body.angular_velocity.xyz;
-
-        float3 v_a = vel_a + cross(ang_a, world_r_a);
-        float3 v_b = vel_b + cross(ang_b, world_r_b);
-
-        float v_n = dot(v_a - v_b, ct.normal.xyz);
-        if (v_n >= 0.0) continue;
-
-        float w_a_lin = a_locked ? 0.0 : (1.0 / max(ba.mass, 1e-10));
-        float w_b_lin = b_locked ? 0.0 : (1.0 / max(bb.mass, 1e-10));
-
-        mat3 inv_i_a = mat3(ba.inv_inertia_col0.xyz, ba.inv_inertia_col1.xyz, ba.inv_inertia_col2.xyz);
-        mat3 inv_i_b = mat3(bb.inv_inertia_col0.xyz, bb.inv_inertia_col1.xyz, bb.inv_inertia_col2.xyz);
-
-        float3 rcross_a = cross(world_r_a, ct.normal.xyz);
-        float3 rcross_b = cross(world_r_b, ct.normal.xyz);
-
-        float3 iircn_a = mat3_mul_vec(inv_i_a, rcross_a);
-        float3 iircn_b = mat3_mul_vec(inv_i_b, rcross_b);
-
-        float w_rot_a = (a_locked || !a_orient) ? 0.0 : dot(rcross_a, iircn_a);
-        float w_rot_b = (b_locked || !b_orient) ? 0.0 : dot(rcross_b, iircn_b);
-
-        float w_total = w_a_lin + w_b_lin + w_rot_a + w_rot_b;
-        if (w_total < 1e-10) continue;
-
-        float delta_lambda = -v_n / w_total;
-        if (isnan(delta_lambda) || isinf(delta_lambda)) continue;
-
-        if (is_a) {
-            my_body.velocity.xyz += ct.normal.xyz * (w_a_lin * delta_lambda);
-            if (my_orient) my_body.angular_velocity.xyz += iircn_a * delta_lambda;
-        } else {
-            my_body.velocity.xyz -= ct.normal.xyz * (w_b_lin * delta_lambda);
-            if (my_orient) my_body.angular_velocity.xyz -= iircn_b * delta_lambda;
-        }
-    }
-
-    body_data[bi].velocity = my_body.velocity;
-    body_data[bi].angular_velocity = my_body.angular_velocity;
-}
-
 void apply_friction_impulse(uint bi) {
     GpuBody my_body = body_data[bi];
     if ((my_body.flags & FLAG_LOCKED) != 0) return;
@@ -241,39 +169,14 @@ void apply_friction_impulse(uint bi) {
 }
 
 [shader("compute")]
-[numthreads(512, 1, 1)]
-void cs_main(uint3 group_thread_id : SV_GroupThreadID) {
-    uint tid = group_thread_id.x;
-    uint num_colors = collision_state[6];
-
-    if (tid < MAX_BODIES) s_body_color[tid] = 0xFFFFFFFF;
-    GroupMemoryBarrierWithGroupSync();
-
-    for (uint c = 0; c < num_colors; c++) {
-        uint count = color_data[MAX_COLORS + c];
-        uint offset = color_data[c];
-        for (uint j = tid; j < count; j += 512) {
-            uint bi = color_data[MAX_COLORS * 2 + offset + j];
-            if (bi < MAX_BODIES) s_body_color[bi] = c;
-        }
-    }
-    GroupMemoryBarrierWithGroupSync();
-
-    for (int pass = 0; pass < 3; pass++) {
-        for (uint c = 0; c < num_colors; c++) {
-            if (tid < pc.body_count && s_body_color[tid] == c) {
-                apply_normal_impulse(tid);
-            }
-            DeviceMemoryBarrierWithGroupSync();
-        }
-    }
-
-    for (int pass = 0; pass < 8; pass++) {
-        for (uint c = 0; c < num_colors; c++) {
-            if (tid < pc.body_count && s_body_color[tid] == c) {
-                apply_friction_impulse(tid);
-            }
-            DeviceMemoryBarrierWithGroupSync();
-        }
-    }
+[numthreads(64, 1, 1)]
+void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
+    uint idx = dispatch_id.x;
+    uint color_idx = pc.color_offset;
+    uint count = color_data[MAX_COLORS + color_idx];
+    if (idx >= count) return;
+    uint offset = color_data[color_idx];
+    uint bi = color_data[MAX_COLORS * 2 + offset + idx];
+    if (bi >= pc.body_count) return;
+    apply_friction_impulse(bi);
 }
