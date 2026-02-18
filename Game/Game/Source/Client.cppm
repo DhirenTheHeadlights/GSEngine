@@ -30,6 +30,17 @@ auto gs::client::initialize() -> void {
             .players = 0,
             .max_players = 8,
             .build = 1
+        },
+        gse::network::discovery_result{
+            .addr = gse::network::address{
+                .ip = "127.0.0.1",
+                .port = 9000
+            },
+            .name = "Local",
+            .map = "dev_map",
+            .players = 0,
+            .max_players = 8,
+            .build = 1
         }
     };
 	gse::network::add_discovery_provider(std::make_unique<gse::network::wan_directory_provider>(std::move(seed)));
