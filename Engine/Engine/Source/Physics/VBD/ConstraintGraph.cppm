@@ -75,11 +75,15 @@ auto gse::vbd::constraint_graph::compute_coloring(
 		m_body_contacts[m_contacts[i].body_b].push_back(i);
 	}
 
-	std::vector<std::unordered_set<std::uint32_t>> adjacency(num_bodies);
+	std::vector<std::vector<std::uint32_t>> adjacency(num_bodies);
 	for (const auto& c : m_contacts) {
 		if (locked[c.body_a] || locked[c.body_b]) continue;
-		adjacency[c.body_a].insert(c.body_b);
-		adjacency[c.body_b].insert(c.body_a);
+		adjacency[c.body_a].push_back(c.body_b);
+		adjacency[c.body_b].push_back(c.body_a);
+	}
+	for (auto& adj : adjacency) {
+		std::ranges::sort(adj);
+		adj.erase(std::ranges::unique(adj).begin(), adj.end());
 	}
 
 	std::vector<int> body_color(num_bodies, -1);
@@ -87,15 +91,15 @@ auto gse::vbd::constraint_graph::compute_coloring(
 	for (std::uint32_t bi = 0; bi < num_bodies; ++bi) {
 		if (locked[bi] || m_body_contacts[bi].empty()) continue;
 
-		std::set<int> neighbor_colors;
+		std::uint32_t used_colors = 0;
 		for (const auto neighbor : adjacency[bi]) {
-			if (body_color[neighbor] >= 0) {
-				neighbor_colors.insert(body_color[neighbor]);
+			if (body_color[neighbor] >= 0 && body_color[neighbor] < 32) {
+				used_colors |= (1u << body_color[neighbor]);
 			}
 		}
 
 		int color = 0;
-		while (neighbor_colors.contains(color)) {
+		while (used_colors & (1u << color)) {
 			++color;
 		}
 

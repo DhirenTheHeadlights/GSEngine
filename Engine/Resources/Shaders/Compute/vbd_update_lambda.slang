@@ -101,7 +101,6 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     float3 p_b = body_b.predicted_position.xyz + world_r_b;
 
     float gap = dot(p_b - p_a, c.normal.xyz) + c.initial_separation;
-    if (gap >= 0.0) return;
 
     float lambda_mass = max(c.mass_a, c.mass_b);
     float rho_val = pc.rho * (lambda_mass / pc.h_squared);
