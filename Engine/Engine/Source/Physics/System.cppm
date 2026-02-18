@@ -31,8 +31,9 @@ export namespace gse::physics {
 
 		struct gpu_prev_frame {
 			std::vector<vbd::body_state> bodies;
-			std::vector<vbd::contact_constraint> contacts;
 			std::vector<id> entity_ids;
+			std::vector<std::vector<std::uint32_t>> prev_body_colors;
+			std::vector<vbd::warm_start_entry> warm_start_contacts;
 		} gpu_prev;
 	};
 
@@ -180,16 +181,35 @@ auto gse::physics::update_vbd_gpu(
 	if (!s.gpu_solver.buffers_created()) return;
 
 	if (s.gpu_solver.has_readback_data() && !s.gpu_prev.entity_ids.empty()) {
-		s.gpu_solver.readback(s.gpu_prev.bodies, s.gpu_prev.contacts);
+		std::vector<vbd::contact_readback_entry> readback_contacts;
+		s.gpu_solver.readback(s.gpu_prev.bodies, readback_contacts);
+
+		log::println(log::level::info, "GPU_READBACK fc={} bodies={} contacts={}",
+			s.gpu_solver.frame_count(), s.gpu_prev.bodies.size(), readback_contacts.size());
 
 		for (std::size_t i = 0; i < s.gpu_prev.entity_ids.size(); ++i) {
 			const auto eid = s.gpu_prev.entity_ids[i];
 			auto* mc = motion.find(eid);
 			if (!mc) continue;
 
-			if (!mc->position_locked) {
-				const auto& bs = s.gpu_prev.bodies[i];
+			const auto& bs = s.gpu_prev.bodies[i];
+			const auto gp = bs.position.as<meters>();
+			const auto gv = bs.body_velocity.as<meters_per_second>();
 
+			if (mc->position_locked) {
+				const auto cp = mc->current_position.as<meters>();
+				if (magnitude(gp - cp) > 0.001f) {
+					log::println(log::level::warning, "GPU_LOCKED_DRIFT bi={} gpu=({:.3f},{:.3f},{:.3f}) cpu=({:.3f},{:.3f},{:.3f})",
+						i, gp.x(), gp.y(), gp.z(), cp.x(), cp.y(), cp.z());
+				}
+			}
+
+			if (i < 3 || (mc->position_locked && i < 10)) {
+				log::println(log::level::info, "GPU_BODY bi={} locked={} pos=({:.3f},{:.3f},{:.3f}) vel=({:.3f},{:.3f},{:.3f})",
+					i, mc->position_locked, gp.x(), gp.y(), gp.z(), gv.x(), gv.y(), gv.z());
+			}
+
+			if (!mc->position_locked) {
 				mc->current_position = bs.position;
 				mc->current_velocity = bs.body_velocity;
 				if (mc->update_orientation) {
@@ -202,21 +222,125 @@ auto gse::physics::update_vbd_gpu(
 				mc->accumulators = {};
 			}
 
+			mc->airborne = true;
+
 			if (auto* cc = collision.find(eid)) {
 				cc->bounding_box.update(mc->current_position, mc->orientation);
+				if (cc->resolve_collisions) {
+					cc->collision_information = {
+						.colliding = false,
+						.collision_normal = {},
+						.penetration = {},
+						.collision_points = {}
+					};
+				}
 			}
 		}
 
-		for (const auto& c : s.gpu_prev.contacts) {
-			s.contact_cache.store(c.body_a, c.body_b, c.feature, vbd::cached_lambda{
+		auto unpack_feature = [](const std::uint32_t packed) -> feature_id {
+			const auto feat_a = (packed >> 16) & 0xFFFF;
+			const auto feat_b = packed & 0xFFFF;
+			return {
+				.type_a = static_cast<feature_type>((feat_a >> 8) & 0xFF),
+				.type_b = static_cast<feature_type>((feat_b >> 8) & 0xFF),
+				.index_a = static_cast<std::uint8_t>(feat_a & 0xFF),
+				.index_b = static_cast<std::uint8_t>(feat_b & 0xFF)
+			};
+		};
+
+		for (std::size_t ci = 0; ci < readback_contacts.size() && ci < 5; ++ci) {
+			const auto& c = readback_contacts[ci];
+			log::println(log::level::info, "GPU_CONTACT[{}] a={} b={} sep={:.4f} lambda={:.4f} n=({:.3f},{:.3f},{:.3f})",
+				ci, c.body_a, c.body_b, c.separation, c.lambda,
+				c.normal.x(), c.normal.y(), c.normal.z());
+		}
+
+		for (const auto& c : readback_contacts) {
+			if (c.body_a >= s.gpu_prev.entity_ids.size() || c.body_b >= s.gpu_prev.entity_ids.size()) continue;
+
+			const auto eid_a = s.gpu_prev.entity_ids[c.body_a];
+			const auto eid_b = s.gpu_prev.entity_ids[c.body_b];
+
+			if (auto* mc_b = motion.find(eid_b)) {
+				if (c.normal.y() > 0.7f) mc_b->airborne = false;
+			}
+			if (auto* mc_a = motion.find(eid_a)) {
+				if (c.normal.y() < -0.7f) mc_a->airborne = false;
+			}
+
+			if (auto* cc_a = collision.find(eid_a)) {
+				cc_a->collision_information.colliding = true;
+				cc_a->collision_information.collision_normal = c.normal;
+				cc_a->collision_information.penetration = meters(-c.separation);
+			}
+			if (auto* cc_b = collision.find(eid_b)) {
+				cc_b->collision_information.colliding = true;
+				cc_b->collision_information.collision_normal = -c.normal;
+				cc_b->collision_information.penetration = meters(-c.separation);
+			}
+
+			s.contact_cache.store(c.body_a, c.body_b, unpack_feature(c.feature_packed), vbd::cached_lambda{
 				.lambda = c.lambda,
-				.lambda_tangent_u = c.lambda_tangent_u,
-				.lambda_tangent_v = c.lambda_tangent_v,
+				.lambda_tangent_u = 0.f,
+				.lambda_tangent_v = 0.f,
 				.age = 0
 			});
 		}
+
+		vbd::constraint_graph color_graph;
+		for (const auto& c : readback_contacts) {
+			color_graph.add_contact(vbd::contact_constraint{
+				.body_a = c.body_a,
+				.body_b = c.body_b
+			});
+		}
+
+		std::vector<bool> locked_prev(s.gpu_prev.bodies.size());
+		for (std::size_t i = 0; i < s.gpu_prev.bodies.size(); ++i) {
+			locked_prev[i] = s.gpu_prev.bodies[i].locked;
+		}
+		color_graph.compute_coloring(static_cast<std::uint32_t>(s.gpu_prev.bodies.size()), locked_prev);
+
+		s.gpu_prev.prev_body_colors.clear();
+		for (const auto& bc : color_graph.body_colors()) {
+			s.gpu_prev.prev_body_colors.push_back(bc);
+		}
+
+		std::unordered_set<std::uint32_t> colored_bodies;
+		for (const auto& bc : s.gpu_prev.prev_body_colors) {
+			for (auto bi : bc) colored_bodies.insert(bi);
+		}
+		std::vector<std::uint32_t> uncolored;
+		for (std::uint32_t i = 0; i < s.gpu_prev.bodies.size(); ++i) {
+			if (!s.gpu_prev.bodies[i].locked && !colored_bodies.contains(i)) {
+				uncolored.push_back(i);
+			}
+		}
+		if (!uncolored.empty()) {
+			s.gpu_prev.prev_body_colors.push_back(std::move(uncolored));
+		}
+
+		log::println(log::level::info, "GPU_COLORING colors={} warm_starts={}",
+			s.gpu_prev.prev_body_colors.size(), readback_contacts.size());
+
+		s.gpu_prev.warm_start_contacts.clear();
+		s.gpu_prev.warm_start_contacts.reserve(readback_contacts.size());
+		for (const auto& c : readback_contacts) {
+			s.gpu_prev.warm_start_contacts.push_back(vbd::warm_start_entry{
+				.body_a = c.body_a,
+				.body_b = c.body_b,
+				.feature_packed = c.feature_packed,
+				.lambda = c.lambda
+			});
+		}
+		std::ranges::sort(s.gpu_prev.warm_start_contacts, [](const auto& a, const auto& b) {
+			if (a.body_a != b.body_a) return a.body_a < b.body_a;
+			if (a.body_b != b.body_b) return a.body_b < b.body_b;
+			return a.feature_packed < b.feature_packed;
+		});
 	}
 	else {
+		log::println(log::level::info, "GPU_EXTRAP fc={}", s.gpu_solver.frame_count());
 		const auto extrap_dt = dt * static_cast<float>(steps);
 		for (motion_component& mc : motion) {
 			if (mc.position_locked || mc.sleeping) continue;
@@ -273,131 +397,49 @@ auto gse::physics::update_vbd_gpu(
 			.sleep_counter = sc
 		});
 		entity_ids.push_back(eid);
-		mc.airborne = true;
+	}
+
+	std::vector<vbd::collision_body_data> collision_data(bodies.size());
+	for (auto& cd : collision_data) {
+		cd.aabb_min = unitless::vec3(1e30f, 1e30f, 1e30f);
+		cd.aabb_max = unitless::vec3(-1e30f, -1e30f, -1e30f);
 	}
 
 	for (collision_component& cc : collision) {
 		if (!cc.resolve_collisions) continue;
-		cc.collision_information = {
-			.colliding = false,
-			.collision_normal = {},
-			.penetration = {},
-			.collision_points = {}
+		const auto it = id_to_body_index.find(cc.owner_id());
+		if (it == id_to_body_index.end()) continue;
+
+		const auto he = cc.bounding_box.half_extents().as<meters>();
+		const auto& bb_aabb = cc.bounding_box.aabb();
+		collision_data[it->second] = {
+			.half_extents = he,
+			.aabb_min = bb_aabb.min.as<meters>(),
+			.aabb_max = bb_aabb.max.as<meters>()
 		};
 	}
 
-	s.vbd_solver.begin_frame(bodies, s.contact_cache);
+	std::uint32_t num_locked = 0, num_collision = 0;
+	for (std::uint32_t i = 0; i < bodies.size(); ++i) {
+		if (bodies[i].locked) num_locked++;
+	}
+	for (std::uint32_t i = 0; i < collision_data.size(); ++i) {
+		if (collision_data[i].aabb_max.x() > collision_data[i].aabb_min.x()) num_collision++;
+	}
+	log::println(log::level::info, "GPU_UPLOAD bodies={} locked={} collision_bodies={}", bodies.size(), num_locked, num_collision);
 
-	std::vector<collision_pair> objects;
-	objects.reserve(collision.size());
-
-	for (collision_component& cc : collision) {
-		if (!cc.resolve_collisions) continue;
-		objects.push_back({
-			.collision = std::addressof(cc),
-			.motion = motion.find(cc.owner_id())
-		});
+	for (std::uint32_t i = 0; i < std::min(static_cast<std::uint32_t>(bodies.size()), 5u); ++i) {
+		const auto p = bodies[i].position.as<meters>();
+		const auto he = collision_data[i].half_extents;
+		const auto amin = collision_data[i].aabb_min;
+		const auto amax = collision_data[i].aabb_max;
+		log::println(log::level::info, "GPU_BODY_UPLOAD[{}] locked={} pos=({:.3f},{:.3f},{:.3f}) he=({:.3f},{:.3f},{:.3f}) aabb=[({:.3f},{:.3f},{:.3f})-({:.3f},{:.3f},{:.3f})]",
+			i, bodies[i].locked, p.x(), p.y(), p.z(),
+			he.x(), he.y(), he.z(),
+			amin.x(), amin.y(), amin.z(), amax.x(), amax.y(), amax.z());
 	}
 
-	for (std::size_t i = 0; i < objects.size(); ++i) {
-		for (std::size_t j = i + 1; j < objects.size(); ++j) {
-			auto& [collision_a, motion_a] = objects[i];
-			auto& [collision_b, motion_b] = objects[j];
-
-			const auto& [max_a, min_a] = collision_a->bounding_box.aabb();
-			const auto& [max_b, min_b] = collision_b->bounding_box.aabb();
-
-			const bool overlap =
-				min_a.x() <= max_b.x() && max_a.x() >= min_b.x() &&
-				min_a.y() <= max_b.y() && max_a.y() >= min_b.y() &&
-				min_a.z() <= max_b.z() && max_a.z() >= min_b.z();
-
-			if (!overlap) continue;
-
-			auto sat_result = narrow_phase_collision::sat_speculative(
-				collision_a->bounding_box,
-				collision_b->bounding_box,
-				s.vbd_solver.config().speculative_margin
-			);
-
-			if (!sat_result) continue;
-
-			auto [normal, separation, is_speculative] = *sat_result;
-
-			if (dot(normal, collision_b->bounding_box.center() - collision_a->bounding_box.center()) < 0.f) {
-				normal = -normal;
-			}
-
-			auto manifold = narrow_phase_collision::generate_manifold(
-				collision_a->bounding_box,
-				collision_b->bounding_box,
-				normal,
-				s.vbd_solver.config().speculative_margin
-			);
-
-			if (manifold.point_count == 0) continue;
-
-			const auto id_a = collision_a->owner_id();
-			const auto id_b = collision_b->owner_id();
-
-			if (!id_to_body_index.contains(id_a) || !id_to_body_index.contains(id_b)) continue;
-
-			const std::uint32_t body_a = id_to_body_index[id_a];
-			const std::uint32_t body_b = id_to_body_index[id_b];
-
-			if (normal.y() > 0.7f && motion_b) motion_b->airborne = false;
-			if (normal.y() < -0.7f && motion_a) motion_a->airborne = false;
-
-			collision_a->collision_information.colliding = true;
-			collision_a->collision_information.collision_normal = normal;
-			collision_a->collision_information.penetration = -separation;
-
-			collision_b->collision_information.colliding = true;
-			collision_b->collision_information.collision_normal = -normal;
-			collision_b->collision_information.penetration = -separation;
-
-			for (std::uint32_t p = 0; p < manifold.point_count; ++p) {
-				const auto& [position_on_a, position_on_b, normal, separation, feature] = manifold.points[p];
-				const auto& body_state_a = s.vbd_solver.body_states()[body_a];
-				const auto& body_state_b = s.vbd_solver.body_states()[body_b];
-
-				const vec3<length> world_r_a = position_on_a - body_state_a.position;
-				const vec3<length> world_r_b = position_on_b - body_state_b.position;
-
-				const auto to_local = [](const quat& q, const vec3<length>& v) {
-					const unitless::vec3 v_unitless = v.as<meters>();
-					const unitless::vec3 rotated = mat3_cast(conjugate(q)) * v_unitless;
-					return rotated * meters(1.f);
-				};
-
-				const vec3<length> local_r_a = to_local(body_state_a.orientation, world_r_a);
-				const vec3<length> local_r_b = to_local(body_state_b.orientation, world_r_b);
-
-				auto cached = s.contact_cache.lookup(body_a, body_b, feature);
-
-				s.vbd_solver.add_contact_constraint(vbd::contact_constraint{
-					.body_a = body_a,
-					.body_b = body_b,
-					.normal = normal,
-					.tangent_u = manifold.tangent_u,
-					.tangent_v = manifold.tangent_v,
-					.r_a = local_r_a,
-					.r_b = local_r_b,
-					.initial_separation = separation,
-					.compliance = s.vbd_solver.config().contact_compliance,
-					.damping = s.vbd_solver.config().contact_damping,
-					.lambda = cached ? cached->lambda * vbd::contact_cache::warm_start_factor : 0.f,
-					.lambda_tangent_u = cached ? cached->lambda_tangent_u * vbd::contact_cache::warm_start_factor : 0.f,
-					.lambda_tangent_v = cached ? cached->lambda_tangent_v * vbd::contact_cache::warm_start_factor : 0.f,
-					.friction_coeff = s.vbd_solver.config().friction_coefficient,
-					.feature = feature
-				});
-
-				collision_a->collision_information.collision_points.push_back(position_on_a);
-			}
-		}
-	}
-
+	std::vector<vbd::velocity_motor_constraint> motors;
 	for (motion_component& mc : motion) {
 		if (!mc.motor.active) continue;
 		if (!id_to_body_index.contains(mc.owner_id())) continue;
@@ -405,10 +447,9 @@ auto gse::physics::update_vbd_gpu(
 		const auto idx = id_to_body_index[mc.owner_id()];
 		if (bodies[idx].sleeping() && magnitude(mc.motor.target_velocity) > 0.01f) {
 			bodies[idx].sleep_counter = 0;
-			s.vbd_solver.body_states()[idx].sleep_counter = 0;
 		}
 
-		s.vbd_solver.add_motor_constraint(vbd::velocity_motor_constraint{
+		motors.push_back(vbd::velocity_motor_constraint{
 			.body_index = idx,
 			.target_velocity = mc.motor.target_velocity,
 			.compliance = 0.5f,
@@ -418,16 +459,36 @@ auto gse::physics::update_vbd_gpu(
 		});
 	}
 
-	std::vector<bool> locked(bodies.size());
-	for (std::uint32_t i = 0; i < bodies.size(); ++i) {
-		locked[i] = bodies[i].locked;
+	bool fallback_coloring = s.gpu_prev.prev_body_colors.empty();
+	if (fallback_coloring) {
+		std::vector<std::uint32_t> all_dynamic;
+		for (std::uint32_t i = 0; i < bodies.size(); ++i) {
+			if (!bodies[i].locked) all_dynamic.push_back(i);
+		}
+		if (!all_dynamic.empty()) {
+			s.gpu_prev.prev_body_colors.push_back(std::move(all_dynamic));
+		}
 	}
-	s.vbd_solver.graph().compute_coloring(static_cast<std::uint32_t>(bodies.size()), locked);
 
-	s.gpu_solver.upload(bodies, s.vbd_solver.graph(), s.vbd_solver.config(), dt * static_cast<float>(steps), steps);
+	log::println(log::level::info, "GPU_COLORS fallback={} color_groups={} motors={} warm_starts={}",
+		fallback_coloring, s.gpu_prev.prev_body_colors.size(), motors.size(), s.gpu_prev.warm_start_contacts.size());
+	for (std::size_t c = 0; c < s.gpu_prev.prev_body_colors.size() && c < 5; ++c) {
+		log::println(log::level::info, "  color[{}] size={}", c, s.gpu_prev.prev_body_colors[c].size());
+	}
+
+	s.gpu_solver.upload(
+		bodies,
+		collision_data,
+		{},
+		s.gpu_prev.prev_body_colors,
+		motors,
+		s.gpu_prev.warm_start_contacts,
+		s.vbd_solver.config(),
+		dt * static_cast<float>(steps),
+		steps
+	);
 
 	s.gpu_prev.bodies = std::move(bodies);
-	s.gpu_prev.contacts = { s.vbd_solver.graph().contact_constraints().begin(), s.vbd_solver.graph().contact_constraints().end() };
 	s.gpu_prev.entity_ids = std::move(entity_ids);
 }
 

@@ -1,4 +1,21 @@
+static const uint MAX_BODIES = 500;
 static const uint MAX_CONTACTS = 2000;
+static const uint MAX_COLLISION_PAIRS = 8192;
+
+struct push_constants {
+    uint body_count;
+    uint contact_count;
+    uint motor_count;
+    uint color_offset;
+    uint color_count;
+    float h_squared;
+    float dt;
+    float rho;
+    float linear_damping;
+    float velocity_sleep_threshold;
+    uint substep;
+    uint iteration;
+};
 
 struct GpuBody {
     float4 position;
@@ -47,23 +64,6 @@ struct GpuWarmStart {
     float lambda;
 };
 
-static const uint FLAG_LOCKED = 1;
-
-struct push_constants {
-    uint body_count;
-    uint contact_count;
-    uint motor_count;
-    uint color_offset;
-    uint color_count;
-    float h_squared;
-    float dt;
-    float rho;
-    float linear_damping;
-    float velocity_sleep_threshold;
-    uint substep;
-    uint iteration;
-};
-
 [[vk::binding(0, 0)]] RWStructuredBuffer<GpuBody> body_data;
 [[vk::binding(1, 0)]] RWStructuredBuffer<GpuContact> contact_data;
 [[vk::binding(2, 0)]] StructuredBuffer<uint> motor_data;
@@ -77,35 +77,39 @@ struct push_constants {
 [[vk::push_constant]]
 ConstantBuffer<push_constants> pc;
 
-float3 rotate_vector(float4 q, float3 v) {
-    float3 u = q.yzw;
-    float s = q.x;
-    return 2.0 * dot(u, v) * u + (s * s - dot(u, u)) * v + 2.0 * s * cross(u, v);
-}
-
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
-    uint ci = dispatch_id.x;
-    uint actual_contact_count = min(collision_state[0], MAX_CONTACTS);
-    if (ci >= actual_contact_count) return;
+    uint n = pc.body_count;
+    uint total_pairs = n * (n - 1) / 2;
+    uint tid = dispatch_id.x;
+    if (tid >= total_pairs) return;
 
-    GpuContact c = contact_data[ci];
-    GpuBody body_a = body_data[c.body_a];
-    GpuBody body_b = body_data[c.body_b];
+    float fn = float(n);
+    float ftid = float(tid);
+    float term = 2.0f * fn - 1.0f;
+    uint i = (uint)floor((term - sqrt(term * term - 8.0f * ftid)) * 0.5f);
+    uint j = tid - i * (2 * n - i - 1) / 2 + i + 1;
 
-    float3 world_r_a = rotate_vector(body_a.predicted_orientation, c.r_a.xyz);
-    float3 world_r_b = rotate_vector(body_b.predicted_orientation, c.r_b.xyz);
+    if (i >= n || j >= n || i >= j) return;
 
-    float3 p_a = body_a.predicted_position.xyz + world_r_a;
-    float3 p_b = body_b.predicted_position.xyz + world_r_b;
+    float3 min_a = body_data[i].aabb_min.xyz;
+    float3 max_a = body_data[i].aabb_max.xyz;
+    float3 min_b = body_data[j].aabb_min.xyz;
+    float3 max_b = body_data[j].aabb_max.xyz;
 
-    float gap = dot(p_b - p_a, c.normal.xyz) + c.initial_separation;
-    if (gap >= 0.0) return;
+    bool overlap =
+        min_a.x <= max_b.x && max_a.x >= min_b.x &&
+        min_a.y <= max_b.y && max_a.y >= min_b.y &&
+        min_a.z <= max_b.z && max_a.z >= min_b.z;
 
-    float lambda_mass = max(c.mass_a, c.mass_b);
-    float rho_val = pc.rho * (lambda_mass / pc.h_squared);
-    float new_lambda = clamp(c.lambda - rho_val * gap, 0.0, 1e6);
+    if (!overlap) return;
 
-    contact_data[ci].lambda = new_lambda;
+    uint slot;
+    InterlockedAdd(collision_pairs[0], 1, slot);
+
+    if (slot >= MAX_COLLISION_PAIRS) return;
+
+    collision_pairs[1 + slot * 2] = i;
+    collision_pairs[1 + slot * 2 + 1] = j;
 }
