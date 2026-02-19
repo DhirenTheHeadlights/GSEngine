@@ -3,7 +3,7 @@ export module gse.physics:system;
 import std;
 
 import gse.utility;
-import gse.log;
+
 import gse.math;
 import gse.platform;
 
@@ -115,7 +115,7 @@ auto gse::physics::system::update(update_phase& phase, state& s) -> void {
 	frame_time = std::min(frame_time, max_time_step);
 	s.accumulator += frame_time;
 
-	const time_t<float, seconds> const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
+	const auto const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
 
 	int steps = 0;
 	while (s.accumulator >= const_update_time) {
@@ -171,21 +171,12 @@ auto gse::physics::system::update(update_phase& phase, state& s) -> void {
 	});
 }
 
-auto gse::physics::update_vbd_gpu(
-	const int steps,
-	state& s,
-	chunk<motion_component>& motion,
-	chunk<collision_component>& collision,
-	const time_t<float, seconds> dt
-) -> void {
+auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_component>& motion, chunk<collision_component>& collision, const time_t<float, seconds> dt) -> void {
 	if (!s.gpu_solver.buffers_created()) return;
 
 	if (s.gpu_solver.has_readback_data() && !s.gpu_prev.entity_ids.empty()) {
 		std::vector<vbd::contact_readback_entry> readback_contacts;
 		s.gpu_solver.readback(s.gpu_prev.bodies, readback_contacts);
-
-		log::println(log::level::info, "GPU_READBACK fc={} bodies={} contacts={}",
-			s.gpu_solver.frame_count(), s.gpu_prev.bodies.size(), readback_contacts.size());
 
 		for (std::size_t i = 0; i < s.gpu_prev.entity_ids.size(); ++i) {
 			const auto eid = s.gpu_prev.entity_ids[i];
@@ -193,21 +184,6 @@ auto gse::physics::update_vbd_gpu(
 			if (!mc) continue;
 
 			const auto& bs = s.gpu_prev.bodies[i];
-			const auto gp = bs.position.as<meters>();
-			const auto gv = bs.body_velocity.as<meters_per_second>();
-
-			if (mc->position_locked) {
-				const auto cp = mc->current_position.as<meters>();
-				if (magnitude(gp - cp) > 0.001f) {
-					log::println(log::level::warning, "GPU_LOCKED_DRIFT bi={} gpu=({:.3f},{:.3f},{:.3f}) cpu=({:.3f},{:.3f},{:.3f})",
-						i, gp.x(), gp.y(), gp.z(), cp.x(), cp.y(), cp.z());
-				}
-			}
-
-			if (i < 3 || (mc->position_locked && i < 10)) {
-				log::println(log::level::info, "GPU_BODY bi={} locked={} pos=({:.3f},{:.3f},{:.3f}) vel=({:.3f},{:.3f},{:.3f})",
-					i, mc->position_locked, gp.x(), gp.y(), gp.z(), gv.x(), gv.y(), gv.z());
-			}
 
 			if (!mc->position_locked) {
 				mc->current_position = bs.position;
@@ -248,39 +224,32 @@ auto gse::physics::update_vbd_gpu(
 			};
 		};
 
-		for (std::size_t ci = 0; ci < readback_contacts.size() && ci < 5; ++ci) {
-			const auto& c = readback_contacts[ci];
-			log::println(log::level::info, "GPU_CONTACT[{}] a={} b={} sep={:.4f} lambda={:.4f} n=({:.3f},{:.3f},{:.3f})",
-				ci, c.body_a, c.body_b, c.separation, c.lambda,
-				c.normal.x(), c.normal.y(), c.normal.z());
-		}
+		for (const auto& [body_a, body_b, lambda, normal, separation, feature_packed] : readback_contacts) {
+			if (body_a >= s.gpu_prev.entity_ids.size() || body_b >= s.gpu_prev.entity_ids.size()) continue;
 
-		for (const auto& c : readback_contacts) {
-			if (c.body_a >= s.gpu_prev.entity_ids.size() || c.body_b >= s.gpu_prev.entity_ids.size()) continue;
-
-			const auto eid_a = s.gpu_prev.entity_ids[c.body_a];
-			const auto eid_b = s.gpu_prev.entity_ids[c.body_b];
+			const auto eid_a = s.gpu_prev.entity_ids[body_a];
+			const auto eid_b = s.gpu_prev.entity_ids[body_b];
 
 			if (auto* mc_b = motion.find(eid_b)) {
-				if (c.normal.y() > 0.7f) mc_b->airborne = false;
+				if (normal.y() > 0.7f) mc_b->airborne = false;
 			}
 			if (auto* mc_a = motion.find(eid_a)) {
-				if (c.normal.y() < -0.7f) mc_a->airborne = false;
+				if (normal.y() < -0.7f) mc_a->airborne = false;
 			}
 
 			if (auto* cc_a = collision.find(eid_a)) {
 				cc_a->collision_information.colliding = true;
-				cc_a->collision_information.collision_normal = c.normal;
-				cc_a->collision_information.penetration = meters(-c.separation);
+				cc_a->collision_information.collision_normal = normal;
+				cc_a->collision_information.penetration = meters(-separation);
 			}
 			if (auto* cc_b = collision.find(eid_b)) {
 				cc_b->collision_information.colliding = true;
-				cc_b->collision_information.collision_normal = -c.normal;
-				cc_b->collision_information.penetration = meters(-c.separation);
+				cc_b->collision_information.collision_normal = -normal;
+				cc_b->collision_information.penetration = meters(-separation);
 			}
 
-			s.contact_cache.store(c.body_a, c.body_b, unpack_feature(c.feature_packed), vbd::cached_lambda{
-				.lambda = c.lambda,
+			s.contact_cache.store(body_a, body_b, unpack_feature(feature_packed), vbd::cached_lambda{
+				.lambda = lambda,
 				.lambda_tangent_u = 0.f,
 				.lambda_tangent_v = 0.f,
 				.age = 0
@@ -320,9 +289,6 @@ auto gse::physics::update_vbd_gpu(
 			s.gpu_prev.prev_body_colors.push_back(std::move(uncolored));
 		}
 
-		log::println(log::level::info, "GPU_COLORING colors={} warm_starts={}",
-			s.gpu_prev.prev_body_colors.size(), readback_contacts.size());
-
 		s.gpu_prev.warm_start_contacts.clear();
 		s.gpu_prev.warm_start_contacts.reserve(readback_contacts.size());
 		for (const auto& c : readback_contacts) {
@@ -333,14 +299,13 @@ auto gse::physics::update_vbd_gpu(
 				.lambda = c.lambda
 			});
 		}
-		std::ranges::sort(s.gpu_prev.warm_start_contacts, [](const auto& a, const auto& b) {
+		std::ranges::sort(s.gpu_prev.warm_start_contacts, [](const vbd::warm_start_entry& a, const vbd::warm_start_entry& b) {
 			if (a.body_a != b.body_a) return a.body_a < b.body_a;
 			if (a.body_b != b.body_b) return a.body_b < b.body_b;
 			return a.feature_packed < b.feature_packed;
 		});
 	}
 	else {
-		log::println(log::level::info, "GPU_EXTRAP fc={}", s.gpu_solver.frame_count());
 		const auto extrap_dt = dt * static_cast<float>(steps);
 		for (motion_component& mc : motion) {
 			if (mc.position_locked || mc.sleeping) continue;
@@ -411,32 +376,12 @@ auto gse::physics::update_vbd_gpu(
 		if (it == id_to_body_index.end()) continue;
 
 		const auto he = cc.bounding_box.half_extents().as<meters>();
-		const auto& bb_aabb = cc.bounding_box.aabb();
+		const auto& [max, min] = cc.bounding_box.aabb();
 		collision_data[it->second] = {
 			.half_extents = he,
-			.aabb_min = bb_aabb.min.as<meters>(),
-			.aabb_max = bb_aabb.max.as<meters>()
+			.aabb_min = min.as<meters>(),
+			.aabb_max = max.as<meters>()
 		};
-	}
-
-	std::uint32_t num_locked = 0, num_collision = 0;
-	for (std::uint32_t i = 0; i < bodies.size(); ++i) {
-		if (bodies[i].locked) num_locked++;
-	}
-	for (std::uint32_t i = 0; i < collision_data.size(); ++i) {
-		if (collision_data[i].aabb_max.x() > collision_data[i].aabb_min.x()) num_collision++;
-	}
-	log::println(log::level::info, "GPU_UPLOAD bodies={} locked={} collision_bodies={}", bodies.size(), num_locked, num_collision);
-
-	for (std::uint32_t i = 0; i < std::min(static_cast<std::uint32_t>(bodies.size()), 5u); ++i) {
-		const auto p = bodies[i].position.as<meters>();
-		const auto he = collision_data[i].half_extents;
-		const auto amin = collision_data[i].aabb_min;
-		const auto amax = collision_data[i].aabb_max;
-		log::println(log::level::info, "GPU_BODY_UPLOAD[{}] locked={} pos=({:.3f},{:.3f},{:.3f}) he=({:.3f},{:.3f},{:.3f}) aabb=[({:.3f},{:.3f},{:.3f})-({:.3f},{:.3f},{:.3f})]",
-			i, bodies[i].locked, p.x(), p.y(), p.z(),
-			he.x(), he.y(), he.z(),
-			amin.x(), amin.y(), amin.z(), amax.x(), amax.y(), amax.z());
 	}
 
 	std::vector<vbd::velocity_motor_constraint> motors;
@@ -459,8 +404,7 @@ auto gse::physics::update_vbd_gpu(
 		});
 	}
 
-	bool fallback_coloring = s.gpu_prev.prev_body_colors.empty();
-	if (fallback_coloring) {
+	if (s.gpu_prev.prev_body_colors.empty()) {
 		std::vector<std::uint32_t> all_dynamic;
 		for (std::uint32_t i = 0; i < bodies.size(); ++i) {
 			if (!bodies[i].locked) all_dynamic.push_back(i);
@@ -468,12 +412,6 @@ auto gse::physics::update_vbd_gpu(
 		if (!all_dynamic.empty()) {
 			s.gpu_prev.prev_body_colors.push_back(std::move(all_dynamic));
 		}
-	}
-
-	log::println(log::level::info, "GPU_COLORS fallback={} color_groups={} motors={} warm_starts={}",
-		fallback_coloring, s.gpu_prev.prev_body_colors.size(), motors.size(), s.gpu_prev.warm_start_contacts.size());
-	for (std::size_t c = 0; c < s.gpu_prev.prev_body_colors.size() && c < 5; ++c) {
-		log::println(log::level::info, "  color[{}] size={}", c, s.gpu_prev.prev_body_colors[c].size());
 	}
 
 	s.gpu_solver.upload(
@@ -492,12 +430,7 @@ auto gse::physics::update_vbd_gpu(
 	s.gpu_prev.entity_ids = std::move(entity_ids);
 }
 
-auto gse::physics::update_vbd(
-	const int steps,
-	state& s,
-	chunk<motion_component>& motion,
-	chunk<collision_component>& collision
-) -> void {
+auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>& motion, chunk<collision_component>& collision) -> void {
 	const time_t<float, seconds> const_update_time = system_clock::constant_update_time<time_t<float, seconds>>();
 
 	std::unordered_map<id, std::uint32_t> id_to_body_index;
@@ -643,7 +576,7 @@ auto gse::physics::update_vbd(
 					const auto to_local = [](const quat& q, const vec3<length>& v) {
 						const unitless::vec3 v_unitless = v.as<meters>();
 						const unitless::vec3 rotated = mat3_cast(conjugate(q)) * v_unitless;
-						return rotated * meters(1.f);
+						return rotated;
 					};
 
 					const vec3<length> local_r_a = to_local(body_state_a.orientation, world_r_a);

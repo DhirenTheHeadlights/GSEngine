@@ -46,38 +46,11 @@ export namespace gse {
 			add_component<render_component>({
 				.models = { procedural_model::box(mat, m_size) }
 			});
-
-			actions::bind_button_channel<"Box_Rotate">(owner_id(), key::r, m_rotate_channel);
-		}
-
-		auto update() -> void override {
-			auto& motion = component_write<physics::motion_component>();
-
-			if (!motion.affected_by_gravity) {
-				return;
-			}
-
-			if (!m_rotate_channel.pressed) {
-				return;
-			}
-
-			motion.orientation += quat(unitless::axis_z, degrees(26.f));
-		}
-
-		auto render() -> void override {
-			gui::start(
-				std::format("Box {}", owner_id()),
-				[&motion = component_write<physics::motion_component>()] {
-					gui::slider("Position", motion.current_position, vec3<length>(-100.f), vec3<length>(100.f));
-				}
-			);
 		}
 	private:
 		vec3<length> m_initial_position;
 		vec3<length> m_size;
 		quat m_initial_orientation;
 		mass m_box_mass;
-
-		actions::button_channel m_rotate_channel;
 	};
 }

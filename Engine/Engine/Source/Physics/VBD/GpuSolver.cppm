@@ -3,7 +3,7 @@ export module gse.physics:vbd_gpu_solver;
 import std;
 
 import gse.utility;
-import gse.log;
+
 import gse.platform;
 
 import :vbd_constraints;
@@ -639,20 +639,6 @@ auto gse::vbd::gpu_solver::commit_upload(const std::uint32_t frame_index) -> voi
 		}
 	}
 
-	if (first_dynamic < m_body_count) {
-		const auto* elem = m_upload_body_data.data() + first_dynamic * m_body_layout.stride;
-		unitless::vec3 pos, vel;
-		std::uint32_t flags, sleep;
-		std::memcpy(&pos, elem + bo.at("position"), sizeof(unitless::vec3));
-		std::memcpy(&vel, elem + bo.at("velocity"), sizeof(unitless::vec3));
-		std::memcpy(&flags, elem + bo.at("flags"), sizeof(std::uint32_t));
-		std::memcpy(&sleep, elem + bo.at("sleep_counter"), sizeof(std::uint32_t));
-		log::println(log::level::debug, "COMMIT fc={} bodies={} dyn_bi={} pos=({:.3f},{:.3f},{:.3f}) vel=({:.3f},{:.3f},{:.3f}) flags={} sleep={}",
-			m_frame_count, m_body_count, first_dynamic,
-			pos.x(), pos.y(), pos.z(),
-			vel.x(), vel.y(), vel.z(),
-			flags, sleep);
-	}
 }
 
 auto gse::vbd::gpu_solver::stage_readback(const std::uint32_t frame_index) -> void {
@@ -729,19 +715,6 @@ auto gse::vbd::gpu_solver::stage_readback(const std::uint32_t frame_index) -> vo
 		}
 	}
 
-	if (first_dynamic < m_staged_body_count) {
-		const auto* elem = m_staged_body_data.data() + first_dynamic * m_body_layout.stride;
-		unitless::vec3 pos, vel;
-		std::uint32_t sleep;
-		std::memcpy(&pos, elem + bo.at("position"), sizeof(unitless::vec3));
-		std::memcpy(&vel, elem + bo.at("velocity"), sizeof(unitless::vec3));
-		std::memcpy(&sleep, elem + bo.at("sleep_counter"), sizeof(std::uint32_t));
-		log::println(log::level::debug, "STAGE  fc={} fi={} dyn_bi={} contacts={} pos=({:.3f},{:.3f},{:.3f}) vel=({:.3f},{:.3f},{:.3f}) sleep={}",
-			m_frame_count, frame_index, first_dynamic, m_staged_contact_count,
-			pos.x(), pos.y(), pos.z(),
-			vel.x(), vel.y(), vel.z(),
-			sleep);
-	}
 }
 
 auto gse::vbd::gpu_solver::readback(const std::span<body_state> bodies, std::vector<contact_readback_entry>& contacts_out) -> void {
@@ -789,15 +762,6 @@ auto gse::vbd::gpu_solver::readback(const std::span<body_state> bodies, std::vec
 
 	m_staged_valid = false;
 
-	for (std::uint32_t i = 0; i < count; ++i) {
-		if (!bodies[i].locked) {
-			const auto p = bodies[i].position.as<meters>();
-			const auto v = bodies[i].body_velocity.as<meters_per_second>();
-			log::println(log::level::debug, "APPLY  dyn_bi={} pos=({:.3f},{:.3f},{:.3f}) vel=({:.3f},{:.3f},{:.3f}) sleep={} contacts={}",
-				i, p.x(), p.y(), p.z(), v.x(), v.y(), v.z(), bodies[i].sleep_counter, contacts_out.size());
-			break;
-		}
-	}
 }
 
 auto gse::vbd::gpu_solver::has_readback_data() const -> bool {
