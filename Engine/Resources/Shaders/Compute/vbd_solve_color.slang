@@ -211,6 +211,7 @@ void solve_body(uint bi) {
     float3 ang_grad = float3(0, 0, 0);
     mat3 ang_hess = mat3_identity(0);
     mat3 hess_xt = mat3_identity(0);
+    float3 blocking_normal = float3(0, 0, 0);
 
     uint contact_offset = body_contact_map[bi];
     uint contact_count = body_contact_map[MAX_BODIES + bi];
@@ -221,6 +222,16 @@ void solve_body(uint bi) {
 
         GpuBody body_a = body_data[c.body_a];
         GpuBody body_b = body_data[c.body_b];
+
+        bool is_a = (c.body_a == bi);
+        uint other_flags = is_a ? body_b.flags : body_a.flags;
+        if ((other_flags & FLAG_LOCKED) == 0) {
+            float other_mass = is_a ? body_b.mass : body_a.mass;
+            if (other_mass > body.mass) {
+                float3 push_dir = is_a ? c.normal.xyz : -c.normal.xyz;
+                blocking_normal += push_dir;
+            }
+        }
 
         float3 world_r_a = rotate_vector(body_a.predicted_orientation, c.r_a.xyz);
         float3 world_r_b = rotate_vector(body_b.predicted_orientation, c.r_b.xyz);
@@ -233,14 +244,9 @@ void solve_body(uint bi) {
 
         mat3 n_outer_n = outer_product3(c.normal.xyz, c.normal.xyz);
 
-        bool is_a = (c.body_a == bi);
-
         float mass_self = is_a ? c.mass_a : c.mass_b;
-        float mass_other = is_a ? c.mass_b : c.mass_a;
-        bool other_locked = is_a ? ((body_b.flags & FLAG_LOCKED) != 0) : ((body_a.flags & FLAG_LOCKED) != 0);
 
-        float mass_scale = other_locked ? 1.0 : min(1.0, mass_other / max(mass_self, 1e-10));
-        float rho_val = pc.rho * mass_self * mass_scale / pc.h_squared;
+        float rho_val = pc.rho * mass_self / pc.h_squared;
         float effective = rho_val * gap;
 
         float3 r_unitless = is_a ? world_r_a : world_r_b;
@@ -284,12 +290,24 @@ void solve_body(uint bi) {
             motor_grad *= (m.max_force / grad_mag);
         }
 
+        float grad_before = length(motor_grad);
+        float bn_len = length(blocking_normal);
+        if (bn_len > 1e-6) {
+            float3 bn = blocking_normal / bn_len;
+            float proj = dot(motor_grad, bn);
+            if (proj < 0.0) {
+                motor_grad -= bn * proj;
+            }
+        }
+        float grad_after = length(motor_grad);
+        float motor_scale = (grad_before > 1e-10) ? (grad_after / grad_before) : 0.0;
+
         grad += motor_grad;
 
         mat3 motor_hess = mat3_identity(0);
-        motor_hess[0].x = stiffness;
-        motor_hess[1].y = (m.horizontal_only != 0) ? 0.0 : stiffness;
-        motor_hess[2].z = stiffness;
+        motor_hess[0].x = stiffness * motor_scale;
+        motor_hess[1].y = (m.horizontal_only != 0) ? 0.0 : stiffness * motor_scale;
+        motor_hess[2].z = stiffness * motor_scale;
         hess = mat3_add(hess, motor_hess);
     }
 

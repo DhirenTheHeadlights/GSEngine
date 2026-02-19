@@ -358,12 +358,9 @@ auto gse::vbd::solver::accumulate_contact_gradient_hessian(const contact_constra
 	const unitless::vec3 r_cross_n_a = cross(r_a_unitless, c.normal);
 	const unitless::vec3 r_cross_n_b = cross(r_b_unitless, c.normal);
 
-	const float mass_a_val = body_a.locked ? 0.f : body_a.mass_value.as<kilograms>();
-	const float mass_b_val = body_b.locked ? 0.f : body_b.mass_value.as<kilograms>();
-
 	if (!body_a.locked) {
-		const float mass_scale_a = body_b.locked ? 1.f : std::min(1.f, mass_b_val / mass_a_val);
-		const float rho_a = m_config.rho * mass_a_val * mass_scale_a / h_squared;
+		const float mass_a_val = body_a.mass_value.as<kilograms>();
+		const float rho_a = m_config.rho * mass_a_val / h_squared;
 		const float effective_a = rho_a * gap;
 
 		solve_state[c.body_a].gradient -= c.normal * effective_a;
@@ -377,8 +374,8 @@ auto gse::vbd::solver::accumulate_contact_gradient_hessian(const contact_constra
 	}
 
 	if (!body_b.locked) {
-		const float mass_scale_b = body_a.locked ? 1.f : std::min(1.f, mass_a_val / mass_b_val);
-		const float rho_b = m_config.rho * mass_b_val * mass_scale_b / h_squared;
+		const float mass_b_val = body_b.mass_value.as<kilograms>();
+		const float rho_b = m_config.rho * mass_b_val / h_squared;
 		const float effective_b = rho_b * gap;
 
 		solve_state[c.body_b].gradient += c.normal * effective_b;
@@ -414,12 +411,30 @@ auto gse::vbd::solver::accumulate_motor_gradient_hessian(const velocity_motor_co
 		motor_gradient *= (m.max_force.as<newtons>() / grad_mag);
 	}
 
+	const float grad_before = magnitude(motor_gradient);
+
+	const auto& contacts = m_graph.contact_constraints();
+	for (const auto ci : m_graph.body_contact_indices(m.body_index)) {
+		const auto& c = contacts[ci];
+		const auto other = (c.body_a == m.body_index) ? c.body_b : c.body_a;
+		if (m_bodies[other].locked) continue;
+		if (m_bodies[other].mass_value.as<kilograms>() <= mass) continue;
+
+		const unitless::vec3 push_dir = (c.body_a == m.body_index) ? c.normal : -c.normal;
+		if (const float proj = dot(motor_gradient, push_dir); proj < 0.f) {
+			motor_gradient -= push_dir * proj;
+		}
+	}
+
+	const float grad_after = magnitude(motor_gradient);
+	const float motor_scale = (grad_before > 1e-10f) ? (grad_after / grad_before) : 0.f;
+
 	solve_state[m.body_index].gradient += motor_gradient;
 
 	mat3 motor_hessian(0.f);
-	motor_hessian[0][0] = stiffness;
-	motor_hessian[1][1] = m.horizontal_only ? 0.f : stiffness;
-	motor_hessian[2][2] = stiffness;
+	motor_hessian[0][0] = stiffness * motor_scale;
+	motor_hessian[1][1] = m.horizontal_only ? 0.f : stiffness * motor_scale;
+	motor_hessian[2][2] = stiffness * motor_scale;
 
 	solve_state[m.body_index].hessian += motor_hessian;
 }
@@ -691,6 +706,7 @@ auto gse::vbd::solver::apply_velocity_corrections(const int iterations) -> void 
 		for (const auto ci : order) {
 			auto& c = contacts[ci];
 			if (c.lambda <= 0.f) continue;
+			if (m_body_motor_index[c.body_a] != no_motor || m_body_motor_index[c.body_b] != no_motor) continue;
 
 			auto& body_a = m_bodies[c.body_a];
 			auto& body_b = m_bodies[c.body_b];
@@ -731,7 +747,7 @@ auto gse::vbd::solver::apply_velocity_corrections(const int iterations) -> void 
 
 			float delta_lambda_t = -v_t_mag.as<meters_per_second>() / w_total_t;
 
-			const float max_friction = c.friction_coeff * c.lambda * m_h_squared;
+			const float max_friction = c.friction_coeff * c.lambda * std::sqrt(m_h_squared);
 			delta_lambda_t = std::clamp(delta_lambda_t, -max_friction, max_friction);
 
 			if (!body_a.locked) {

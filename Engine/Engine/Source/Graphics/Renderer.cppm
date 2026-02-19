@@ -22,6 +22,7 @@ import :camera_system;
 
 import gse.utility;
 import gse.platform;
+import gse.audio;
 
 export namespace gse::renderer {
 	struct state {
@@ -109,6 +110,7 @@ auto gse::renderer::system::initialize(const initialize_phase& phase, state& s) 
 	ctx.add_loader<material>();
 	ctx.add_loader<skeleton>();
 	ctx.add_loader<clip_asset>();
+	ctx.add_loader<audio_clip>();
 
 	ctx.compile();
 

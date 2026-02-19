@@ -4,6 +4,7 @@ import std;
 
 import gse.utility;
 import gse.graphics;
+import gse.audio;
 import gse.platform;
 import gse.physics;
 import gse.network;

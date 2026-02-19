@@ -5,6 +5,7 @@ import std;
 import gse.utility;
 import gse.network;
 import gse.graphics;
+import gse.audio;
 import gse.physics;
 import gse.platform;
 
@@ -124,6 +125,7 @@ auto gse::engine::initialize() -> void {
 		m_scheduler.add_system<renderer::ui::system, renderer::ui::state>(reg, ctx);
 		m_scheduler.add_system<gui::system, gui::system_state>(reg, ctx);
 		m_scheduler.add_system<animation::system, animation::state>(reg);
+		m_scheduler.add_system<audio::system, audio::state>(reg, ctx);
 
 		m_scheduler.state<physics::state>().gpu_ctx = m_render_ctx.get();
 	}

@@ -20,6 +20,7 @@ export import :lambda_traits;
 export import :misc;
 export import :mpsc_ring_buffer;
 export import :non_copyable;
+export import :percentage;
 export import :registry;
 export import :scene_hook;
 export import :scene;

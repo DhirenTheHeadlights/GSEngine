@@ -22,13 +22,13 @@ export namespace gse {
             std::filesystem::path baked_root
         );
 
-        template<typename Resource, typename Context>
+        template <typename Resource, typename Context>
             requires has_asset_compiler<Resource>
         auto register_type(
             resource::loader<Resource, Context>* loader
         ) -> void;
 
-        template<typename Resource>
+        template <typename Resource>
             requires has_asset_compiler<Resource>
         auto register_compiler_only() -> void {
             std::lock_guard lock(m_mutex);
@@ -61,7 +61,7 @@ export namespace gse {
         template<typename Resource>
             requires has_asset_compiler<Resource>
         auto compile(
-        ) -> compile_result;
+        ) const -> compile_result;
 
         auto enable_hot_reload(
         ) -> void;
@@ -108,7 +108,7 @@ export namespace gse {
         auto compile_single(
             const compiler_entry& compiler,
             const std::filesystem::path& source
-        ) -> bool;
+        ) const -> bool;
     };
 }
 
@@ -119,7 +119,7 @@ gse::asset_pipeline::asset_pipeline(
   , m_baked_root(std::move(baked_root)) {
 }
 
-template<typename Resource, typename Context>
+template <typename Resource, typename Context>
     requires gse::has_asset_compiler<Resource>
 auto gse::asset_pipeline::register_type(resource::loader<Resource, Context>* loader) -> void {
     std::lock_guard lock(m_mutex);
@@ -218,9 +218,9 @@ auto gse::asset_pipeline::compile_all() -> compile_result {
     return total_result;
 }
 
-template<typename Resource>
+template <typename Resource>
     requires gse::has_asset_compiler<Resource>
-auto gse::asset_pipeline::compile() -> compile_result {
+auto gse::asset_pipeline::compile() const -> compile_result {
     compile_result result;
     const auto target_type = std::type_index(typeid(Resource));
 
@@ -369,20 +369,14 @@ auto gse::asset_pipeline::find_compiler(const std::filesystem::path& source) con
     return nullptr;
 }
 
-auto gse::asset_pipeline::compute_baked_path(
-    const compiler_entry& compiler,
-    const std::filesystem::path& source
-) const -> std::filesystem::path {
+auto gse::asset_pipeline::compute_baked_path(const compiler_entry& compiler, const std::filesystem::path& source) const -> std::filesystem::path {
     const auto source_dir = m_resource_root / compiler.source_dir;
     auto relative = source.lexically_relative(source_dir);
     relative.replace_extension(compiler.baked_ext);
     return m_baked_root / compiler.baked_dir / relative;
 }
 
-auto gse::asset_pipeline::compile_single(
-    const compiler_entry& compiler,
-    const std::filesystem::path& source
-) -> bool {
+auto gse::asset_pipeline::compile_single(const compiler_entry& compiler, const std::filesystem::path& source) const -> bool {
     const auto dest = compute_baked_path(compiler, source);
     return compiler.compile_fn(source, dest);
 }
