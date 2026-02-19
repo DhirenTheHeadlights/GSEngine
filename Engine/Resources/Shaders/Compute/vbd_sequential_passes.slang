@@ -92,13 +92,15 @@ float3 mat3_mul_vec(mat3 m, float3 v) {
     return m[0] * v.x + m[1] * v.y + m[2] * v.z;
 }
 
-void apply_friction_impulse(uint bi) {
+void apply_velocity_correction(uint bi) {
     GpuBody my_body = body_data[bi];
     if ((my_body.flags & FLAG_LOCKED) != 0) return;
     bool my_orient = (my_body.flags & FLAG_UPDATE_ORIENTATION) != 0;
 
     uint co = body_contact_map[bi];
     uint cc = body_contact_map[MAX_BODIES + bi];
+
+    bool do_normal = pc.iteration < 2;
 
     for (uint ci_idx = 0; ci_idx < cc; ci_idx++) {
         uint ci = body_contact_map[MAX_BODIES * 2 + co + ci_idx];
@@ -131,36 +133,63 @@ void apply_friction_impulse(uint bi) {
 
         float3 v_a = vel_a + cross(ang_a, world_r_a);
         float3 v_b = vel_b + cross(ang_b, world_r_b);
-
         float3 v_rel = v_a - v_b;
-        float3 v_t = v_rel - dot(v_rel, ct.normal.xyz) * ct.normal.xyz;
-        float v_t_mag = length(v_t);
-        if (v_t_mag < 1e-7) continue;
 
-        float3 t = v_t / v_t_mag;
-        float3 rcross_a_t = cross(world_r_a, t);
-        float3 rcross_b_t = cross(world_r_b, t);
+        if (do_normal) {
+            float v_n = dot(v_rel, ct.normal.xyz);
+            if (v_n >= 0.0) continue;
 
-        float3 iirct_a = mat3_mul_vec(inv_i_a, rcross_a_t);
-        float3 iirct_b = mat3_mul_vec(inv_i_b, rcross_b_t);
+            float3 rcross_a_n = cross(world_r_a, ct.normal.xyz);
+            float3 rcross_b_n = cross(world_r_b, ct.normal.xyz);
 
-        float w_rot_a_t = (a_locked || !a_orient) ? 0.0 : dot(rcross_a_t, iirct_a);
-        float w_rot_b_t = (b_locked || !b_orient) ? 0.0 : dot(rcross_b_t, iirct_b);
+            float3 iircn_a = mat3_mul_vec(inv_i_a, rcross_a_n);
+            float3 iircn_b = mat3_mul_vec(inv_i_b, rcross_b_n);
 
-        float w_total_t = w_a_lin + w_b_lin + w_rot_a_t + w_rot_b_t;
-        if (w_total_t < 1e-10) continue;
+            float w_rot_a = (a_locked || !a_orient) ? 0.0 : dot(rcross_a_n, iircn_a);
+            float w_rot_b = (b_locked || !b_orient) ? 0.0 : dot(rcross_b_n, iircn_b);
 
-        float delta_lambda_t = -v_t_mag / w_total_t;
-        float max_friction = ct.friction_coeff * ct.lambda * pc.h_squared;
-        delta_lambda_t = clamp(delta_lambda_t, -max_friction, max_friction);
-        if (isnan(delta_lambda_t) || isinf(delta_lambda_t)) continue;
+            float w_total = w_a_lin + w_b_lin + w_rot_a + w_rot_b;
+            if (w_total < 1e-10) continue;
 
-        if (is_a) {
-            my_body.velocity.xyz += t * (w_a_lin * delta_lambda_t);
-            if (my_orient) my_body.angular_velocity.xyz += iirct_a * delta_lambda_t;
+            float delta_lambda = -v_n / w_total;
+
+            if (is_a) {
+                my_body.velocity.xyz += ct.normal.xyz * (w_a_lin * delta_lambda);
+                if (my_orient) my_body.angular_velocity.xyz += iircn_a * delta_lambda;
+            } else {
+                my_body.velocity.xyz -= ct.normal.xyz * (w_b_lin * delta_lambda);
+                if (my_orient) my_body.angular_velocity.xyz -= iircn_b * delta_lambda;
+            }
         } else {
-            my_body.velocity.xyz -= t * (w_b_lin * delta_lambda_t);
-            if (my_orient) my_body.angular_velocity.xyz -= iirct_b * delta_lambda_t;
+            float3 v_t = v_rel - dot(v_rel, ct.normal.xyz) * ct.normal.xyz;
+            float v_t_mag = length(v_t);
+            if (v_t_mag < 1e-7) continue;
+
+            float3 t = v_t / v_t_mag;
+            float3 rcross_a_t = cross(world_r_a, t);
+            float3 rcross_b_t = cross(world_r_b, t);
+
+            float3 iirct_a = mat3_mul_vec(inv_i_a, rcross_a_t);
+            float3 iirct_b = mat3_mul_vec(inv_i_b, rcross_b_t);
+
+            float w_rot_a_t = (a_locked || !a_orient) ? 0.0 : dot(rcross_a_t, iirct_a);
+            float w_rot_b_t = (b_locked || !b_orient) ? 0.0 : dot(rcross_b_t, iirct_b);
+
+            float w_total_t = w_a_lin + w_b_lin + w_rot_a_t + w_rot_b_t;
+            if (w_total_t < 1e-10) continue;
+
+            float delta_lambda_t = -v_t_mag / w_total_t;
+            float max_friction = ct.friction_coeff * ct.lambda * sqrt(pc.h_squared);
+            delta_lambda_t = clamp(delta_lambda_t, -max_friction, max_friction);
+            if (isnan(delta_lambda_t) || isinf(delta_lambda_t)) continue;
+
+            if (is_a) {
+                my_body.velocity.xyz += t * (w_a_lin * delta_lambda_t);
+                if (my_orient) my_body.angular_velocity.xyz += iirct_a * delta_lambda_t;
+            } else {
+                my_body.velocity.xyz -= t * (w_b_lin * delta_lambda_t);
+                if (my_orient) my_body.angular_velocity.xyz -= iirct_b * delta_lambda_t;
+            }
         }
     }
 
@@ -178,5 +207,5 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     uint offset = color_data[color_idx];
     uint bi = color_data[MAX_COLORS * 2 + offset + idx];
     if (bi >= pc.body_count) return;
-    apply_friction_impulse(bi);
+    apply_velocity_correction(bi);
 }

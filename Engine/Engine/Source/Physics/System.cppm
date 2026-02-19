@@ -125,7 +125,7 @@ auto gse::physics::system::update(update_phase& phase, state& s) -> void {
 
 	if (steps == 0) return;
 
-	const float alpha = s.accumulator.as<seconds>() / const_update_time.as<seconds>();
+	const float alpha = s.accumulator / const_update_time;
 
 	if (s.use_gpu_solver) {
 		phase.schedule([steps, alpha, &s, const_update_time](chunk<motion_component> motion, chunk<collision_component> collision) {
@@ -387,6 +387,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 	std::vector<vbd::velocity_motor_constraint> motors;
 	for (motion_component& mc : motion) {
 		if (!mc.motor.active) continue;
+		if (mc.airborne) continue;
 		if (!id_to_body_index.contains(mc.owner_id())) continue;
 
 		const auto idx = id_to_body_index[mc.owner_id()];
@@ -609,6 +610,7 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 
 		for (motion_component& mc : motion) {
 			if (!mc.motor.active) continue;
+			if (mc.airborne) continue;
 			const auto it = id_to_body_index.find(mc.owner_id());
 			if (it == id_to_body_index.end()) continue;
 

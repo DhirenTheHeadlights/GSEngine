@@ -696,6 +696,11 @@ auto gse::vbd::gpu_solver::stage_readback(const std::uint32_t frame_index) -> vo
 			std::memcpy(&cpu_flags, dst + bo.at("flags"), sizeof(std::uint32_t));
 			if (cpu_flags & flag_locked) continue;
 
+			float orient[4];
+			std::memcpy(orient, src + bo.at("orientation"), sizeof(float) * 4);
+			const float q_len_sq = orient[0] * orient[0] + orient[1] * orient[1] + orient[2] * orient[2] + orient[3] * orient[3];
+			if (q_len_sq < 0.5f) continue;
+
 			std::memcpy(dst + bo.at("position"), src + bo.at("position"), sizeof(float) * 3);
 			std::memcpy(dst + bo.at("velocity"), src + bo.at("velocity"), sizeof(float) * 3);
 			std::memcpy(dst + bo.at("orientation"), src + bo.at("orientation"), sizeof(float) * 4);
@@ -726,6 +731,11 @@ auto gse::vbd::gpu_solver::readback(const std::span<body_state> bodies, std::vec
 		const auto* elem = m_staged_body_data.data() + i * m_body_layout.stride;
 		auto& b = bodies[i];
 
+		float orient[4];
+		std::memcpy(orient, elem + bo.at("orientation"), sizeof(float) * 4);
+		const float q_len_sq = orient[0] * orient[0] + orient[1] * orient[1] + orient[2] * orient[2] + orient[3] * orient[3];
+		if (q_len_sq < 0.5f) continue;
+
 		unitless::vec3 pos;
 		std::memcpy(&pos, elem + bo.at("position"), sizeof(unitless::vec3));
 		b.position = pos * meters(1.f);
@@ -734,7 +744,7 @@ auto gse::vbd::gpu_solver::readback(const std::span<body_state> bodies, std::vec
 		std::memcpy(&vel, elem + bo.at("velocity"), sizeof(unitless::vec3));
 		b.body_velocity = vel * meters_per_second(1.f);
 
-		std::memcpy(&b.orientation, elem + bo.at("orientation"), sizeof(quat));
+		std::memcpy(&b.orientation, orient, sizeof(quat));
 
 		unitless::vec3 av;
 		std::memcpy(&av, elem + bo.at("angular_velocity"), sizeof(unitless::vec3));
