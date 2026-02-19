@@ -8,6 +8,7 @@ import :registry;
 import :task;
 import :system_clock;
 import :frame_sync;
+import :trace;
 
 import gse.assert;
 
@@ -221,11 +222,15 @@ auto gse::scheduler::update() -> void {
 
 	for (auto& batch : build_work_batches(work.work())) {
 		if (batch.size() == 1) {
-			batch[0]->execute(*m_registry);
+			trace::scope(batch[0]->name, [&] {
+				batch[0]->execute(*m_registry);
+			});
 		}
 		else {
 			task::parallel_for(0uz, batch.size(), [&](const size_t i) {
-				batch[i]->execute(*m_registry);
+				trace::scope(batch[i]->name, [&] {
+					batch[i]->execute(*m_registry);
+				});
 			});
 		}
 	}

@@ -8,7 +8,6 @@ import :collision_component;
 import :contact_manifold;
 import gse.math;
 import gse.utility;
-import gse.log;
 
 export namespace gse::narrow_phase_collision {
     auto resolve_collision(
@@ -39,8 +38,6 @@ export namespace gse::narrow_phase_collision {
 }
 
 namespace gse::narrow_phase_collision {
-    static constexpr bool debug = false;
-    static constexpr bool debug_resolve = true;
     constexpr int mpr_collision_refinement_iterations = 32;
 
     struct mpr_result {
@@ -108,13 +105,6 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
         return;
     }
 
-    if constexpr (debug_resolve) {
-        log::println(log::level::debug, "[RESOLVE] n={} pen={} #cp={} Av={} Bv={} Aang={} Bang={}",
-            res->normal, res->penetration, res->contact_points.size(),
-            object_a->current_velocity, object_b->current_velocity,
-            object_a->angular_velocity, object_b->angular_velocity);
-    }
-
     coll_a.collision_information = {
         .colliding = true,
         .collision_normal = res->normal,
@@ -140,7 +130,6 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
     const float ratio_a = inv_mass_a / total_inv_mass;
     const float ratio_b = inv_mass_b / total_inv_mass;
 
-    // Airborne flags (once per collision, not per contact)
     if (res->normal.y() > 0.7f) {
         object_a->airborne = false;
     }
@@ -148,7 +137,6 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
         object_b->airborne = false;
     }
 
-    // Position correction via Baumgarte stabilization (once per collision)
     {
         constexpr length slop = meters(0.005f);
         constexpr float baumgarte = 0.2f;
@@ -160,11 +148,6 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
         }
         if (!object_b->position_locked) {
             object_b->accumulators.position_correction -= correction * ratio_b;
-        }
-
-        if constexpr (debug_resolve) {
-            log::println(log::level::debug, "[RESOLVE] correction={} (pen={} slop={})",
-                corrected_pen * baumgarte, res->penetration, slop);
         }
     }
 
@@ -182,7 +165,7 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
         const velocity vel_along_normal = dot(relative_velocity, res->normal);
 
         if (vel_along_normal > velocity{ 0 }) {
-            continue; // separating at this contact, skip to next
+            continue;
         }
 
         const auto tangent_velocity = relative_velocity - vel_along_normal * res->normal;
@@ -213,7 +196,6 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
 
         const auto impulse_vec = res->normal * jn;
 
-        // Friction
         if (magnitude(tangent_velocity) > meters_per_second(1e-4f)) {
             const auto t = normalize(tangent_velocity);
 
@@ -246,16 +228,6 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
             object_b->current_velocity -= impulse_vec * inv_mass_b;
             object_b->angular_velocity -= 0.4f * inv_i_b * cross(r_b, impulse_vec);
         }
-
-        if constexpr (debug_resolve) {
-            log::println(log::level::debug, "[RESOLVE]   jn={} e={:.2f} nspd={:.4f}", jn, restitution, normal_speed);
-        }
-    }
-
-    if constexpr (debug_resolve) {
-        log::println(log::level::debug, "[RESOLVE] post Av={} Aang={} Bv={} Bang={}",
-            object_a->current_velocity, object_a->angular_velocity,
-            object_b->current_velocity, object_b->angular_velocity);
     }
 }
 
@@ -264,7 +236,7 @@ auto gse::narrow_phase_collision::support_obb(const bounding_box& bb, const unit
     const auto he = bb.half_extents();
     const auto obb = bb.obb();
 
-    constexpr float tol = 1e-6f; // tune to your scale (see below)
+    constexpr float tol = 1e-6f;
 
     for (int i = 0; i < 3; ++i) {
         const float d = dot(dir, obb.axes[i]);
@@ -296,13 +268,6 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
     const auto obb1 = bb1.obb();
     const auto obb2 = bb2.obb();
 
-    if constexpr (debug) {
-        log::println(log::level::debug, "[MPR] ---- begin ----");
-        log::println(log::level::debug, "[MPR] A center: {}, B center: {}", bb1.center(), bb2.center());
-        log::println(log::level::debug, "[MPR] half extents A: {}, axes A[0..2]: {}, {}, {}", bb1.half_extents(), obb1.axes[0], obb1.axes[1], obb1.axes[2]);
-        log::println(log::level::debug, "[MPR] half extents B: {}, axes B[0..2]: {}, {}, {}", bb2.half_extents(), obb2.axes[0], obb2.axes[1], obb2.axes[2]);
-    }
-
     unitless::vec3 dir = normalize(bb1.center() - bb2.center());
 
     if (is_zero(dir)) {
@@ -316,9 +281,6 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
     minkowski_point v1 = minkowski_difference(bb1, bb2, dir);
 
     if (dot(v1.point, dir) <= 0.0f) {
-        if constexpr (debug) {
-            log::println(log::level::debug, "[MPR] ---- end (no collision: phase 1) ----");
-        }
         return std::nullopt;
     }
 
@@ -334,9 +296,6 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
     minkowski_point v2 = minkowski_difference(bb1, bb2, dir);
 
     if (dot(v2.point, dir) <= 0.0f) {
-        if constexpr (debug) {
-            log::println(log::level::debug, "[MPR] ---- end (no collision: phase 2) ----");
-        }
         return std::nullopt;
     }
 
@@ -349,9 +308,6 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
     minkowski_point v3 = minkowski_difference(bb1, bb2, dir);
 
     if (dot(v3.point, dir) <= 0.0f) {
-        if constexpr (debug) {
-            log::println(log::level::debug, "[MPR] ---- end (no collision: phase 3) ----");
-        }
         return std::nullopt;
     }
 
@@ -360,38 +316,26 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
         const vec3<length>& c,
         const vec3<length>& opp) -> unitless::vec3
         {
-            unitless::vec3 n = normalize(cross(b - a, c - a));     // must be unit
+            unitless::vec3 n = normalize(cross(b - a, c - a));
             if (is_zero(n)) return n;
 
-            // If normal points toward the opposite vertex, flip it.
-            // outward means it points AWAY from opp
-            if (dot(n, opp - a) > 0) { // dot returns length here; compare to 0 length
+            if (dot(n, opp - a) > 0) {
                 n = -n;
             }
             return n;
         };
 
     for (int i = 0; i < mpr_collision_refinement_iterations; ++i) {
-        if constexpr (debug) {
-            log::println(log::level::debug, "\n[MPR][iter {}] v0:{}, v1:{}, v2:{}, v3:{}", i, v0.point, v1.point, v2.point, v3.point);
-        }
-        // Outward-facing normals for the 4 tetra faces (each uses the vertex opposite that face)
-        unitless::vec3 n_a = face_normal_outward(v0.point, v1.point, v2.point, v3.point); // face (v0,v1,v2), opp v3
-        unitless::vec3 n_b = face_normal_outward(v0.point, v2.point, v3.point, v1.point); // face (v0,v2,v3), opp v1
-        unitless::vec3 n_c = face_normal_outward(v0.point, v3.point, v1.point, v2.point); // face (v0,v3,v1), opp v2
-        unitless::vec3 n_d = face_normal_outward(v1.point, v2.point, v3.point, v0.point); // face (v1,v2,v3), opp v0
+        unitless::vec3 n_a = face_normal_outward(v0.point, v1.point, v2.point, v3.point);
+        unitless::vec3 n_b = face_normal_outward(v0.point, v2.point, v3.point, v1.point);
+        unitless::vec3 n_c = face_normal_outward(v0.point, v3.point, v1.point, v2.point);
+        unitless::vec3 n_d = face_normal_outward(v1.point, v2.point, v3.point, v0.point);
 
-        // Signed distances to each face plane along its (unit) outward normal.
-        // NOTE: No abs/flip here � orientation is already enforced by face_normal_outward.
         const length inf = meters(std::numeric_limits<float>::infinity());
         length d_a = is_zero(n_a) ? inf : dot(n_a, v0.point);
         length d_b = is_zero(n_b) ? inf : dot(n_b, v0.point);
         length d_c = is_zero(n_c) ? inf : dot(n_c, v0.point);
         length d_d = is_zero(n_d) ? inf : dot(n_d, v1.point);
-
-        if constexpr (debug) {
-            log::println(log::level::debug, "[MPR][iter {}] d1:{}, d2:{}, d3:{}, d4:{}", i, d_a, d_b, d_c, d_d);
-        }
 
         struct face {
             int id;
@@ -445,10 +389,6 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
             choice = pick(false);
         }
 
-        if constexpr (debug) {
-            log::println(log::level::debug, "[MPR][iter {}] best_n: {}", i, choice.n);
-        }
-
         auto replace_vertex = [&](
             const int face_id,
             const minkowski_point& p
@@ -480,7 +420,6 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
             if (const length projection_dist = dot(p.point, choice.n); projection_dist - choice.d < eps) {
                 auto collision_normal = -choice.n;
                 length penetration_depth = choice.d;
-                //LEAVING THE ORIGINAL ASSIGNMENT FOR LATER ANALYSIS OF ALGORITHM APPROPRIATENESS- SAT WORKS BETTER THAN MPR FOR CURRENT TEST CASES
                 penetration_depth = sat_penetration(bb1, bb2).second;
 
                 const unitless::vec3 n = normalize(collision_normal);
@@ -494,32 +433,8 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
                 const length max_depth = half_extent_on(bb1) + half_extent_on(bb2);
                 penetration_depth = std::min(penetration_depth, max_depth);
 
-
                 if (const unitless::vec3 center_dir = normalize(bb2.center() - bb1.center()); !is_zero(center_dir) && dot(collision_normal, center_dir) < 0.0f) {
                     collision_normal = -collision_normal;
-                }
-
-                if constexpr (debug) {
-                    log::println(log::level::debug,"[MPR][iter {}] CONVERGED. penetration: {}", i, penetration_depth);
-                }
-
-                if constexpr (debug) {
-                    if (penetration_depth >= meters(10.f)) {
-                        std::vector<vec3<length>> face_vertices_obb_1;
-                        for (size_t i_face = 0; i_face < 3; ++i_face) {
-                            std::ranges::copy(bb1.face_vertices(i_face), std::back_inserter(face_vertices_obb_1));
-                        }
-                        std::vector<vec3<length>> face_vertices_obb_2;
-                        for (size_t i_face = 0; i_face < 3; ++i_face) {
-                            std::ranges::copy(bb2.face_vertices(i_face), std::back_inserter(face_vertices_obb_2));
-                        }
-                        obb obb_test1 = bb1.obb();
-                        obb obb_test2 = bb2.obb();
-                        (void)obb_test1;
-                        (void)obb_test2;
-                        (void)face_vertices_obb_1;
-                        (void)face_vertices_obb_2;
-                    }
                 }
 
                 std::vector<vec3<length>> contact_points = generate_contact_points(
@@ -527,11 +442,6 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
 	                bb2,
 	                collision_normal
                 );
-
-                if constexpr (debug) {
-                    log::println(log::level::debug,"[MPR] Contacts complete. Normal: {}, Penetration: {}", collision_normal, penetration_depth);
-                    log::println(log::level::debug,"[MPR] ---- end (collision) ----");
-                }
 
                 return mpr_result{
                     .collided = true,
@@ -548,9 +458,6 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
             bool skip_face = false;
             if (delta2 <= eps2) {
                 skip_face = true;
-                if constexpr (debug) {
-                    log::println(log::level::debug,"[MPR][iter {}] tiny step on face {} -> skipping", i, choice.id);
-                }
             }
             else {
                 auto equals_within_eps2 = [&](const vec3<length>& q) {
@@ -560,9 +467,6 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
                 if (equals_within_eps2(v0.point) || equals_within_eps2(v1.point) ||
                     equals_within_eps2(v2.point) || equals_within_eps2(v3.point)) {
                     skip_face = true;
-                    if constexpr (debug) {
-                        log::println(log::level::debug,"[MPR][iter {}] p equals existing vertex -> skipping face {}", i, choice.id);
-                    }
                 }
             }
 
@@ -575,9 +479,6 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
                 if (is_zero(choice.n)) {
                     break;
                 }
-                if constexpr (debug) {
-                    log::println(log::level::debug,"[MPR][iter {}] retry face with best_n: {}", i, choice.n);
-                }
                 continue;
             }
 
@@ -586,16 +487,8 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
         }
 
         if (!progressed) {
-            if constexpr (debug) {
-                log::println(log::level::debug,"[MPR][iter {}] no progress; aborting refinement", i);
-            }
             break;
         }
-    }
-
-    if constexpr (debug) {
-        log::println(log::level::debug,"[MPR][fail] no convergence after {} iters (eps: {}).", mpr_collision_refinement_iterations, eps);
-        log::println(log::level::debug,"[MPR] ---- end (no collision) ----");
     }
 
     return std::nullopt;
@@ -631,7 +524,6 @@ auto gse::narrow_phase_collision::generate_contact_points(const bounding_box& bb
     const auto info2 = find_best_face(bb2, -n);
 
 	constexpr float face_similarity_threshold = 0.95f;
-	//If the faces are nearly parallel, we can treat this as a face-face contact
 
     if (!((info1.max_dot >= face_similarity_threshold) ||
         (info2.max_dot >= face_similarity_threshold))) {
@@ -639,7 +531,6 @@ auto gse::narrow_phase_collision::generate_contact_points(const bounding_box& bb
 
         const vec3<length> c = (mk.support_a + mk.support_b) * 0.5f;
         contacts.push_back(c);
-        // SKIP FACE CLIPPING, RETURN THE VERTEX-FACE CONTACT
         return contacts;
     }
 
@@ -713,7 +604,7 @@ auto gse::narrow_phase_collision::generate_contact_points(const bounding_box& bb
 
         const auto edge_vec = v2 - v1;
         if (magnitude(edge_vec) < meters(1e-6f)) {
-            continue; // skip this clipping plane entirely
+            continue;
         }
         const unitless::vec3 edge = normalize(edge_vec);
         unitless::vec3 plane_normal = cross(ref_normal, edge);
@@ -743,18 +634,6 @@ auto gse::narrow_phase_collision::generate_contact_points(const bounding_box& bb
         }
     }
 
-    //if (contacts.empty()) {
-    //    int index = -1;
-    //    float max_dot_product = -std::numeric_limits<float>::max();
-    //    for (size_t i = 0; i < inc_face_poly.size(); i++) {
-    //        if (const float dot_prod = dot(inc_face_poly[i].as<gse::meters>(), collision_normal); dot_prod > max_dot_product) {
-    //            max_dot_product = dot_prod;
-    //            index = static_cast<int>(i);
-    //        }
-    //    }
-    //    if (index != -1) contacts.push_back(inc_face_poly[index]);
-    //}
-
     return contacts;
 }
 
@@ -764,12 +643,10 @@ auto gse::narrow_phase_collision::sat_penetration(const bounding_box& bb1, const
     length min_pen = meters(std::numeric_limits<float>::max());
     unitless::vec3 best_axis;
 
-    // Test 15 axes: 3 from each OBB + 9 cross products
     auto test_axis = [&](unitless::vec3 axis) {
         if (is_zero(axis)) return;
         axis = normalize(axis);
 
-        // Project both OBBs onto axis
         auto project = [&](const bounding_box& bb) {
             length r = 0;
 			const auto he = bb.half_extents();
@@ -792,7 +669,6 @@ auto gse::narrow_phase_collision::sat_penetration(const bounding_box& bb1, const
 
     for (const auto& axis : bb1.obb().axes) test_axis(axis);
     for (const auto& axis : bb2.obb().axes) test_axis(axis);
-    // Test edge cross products
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {
             test_axis(cross(bb1.obb().axes[i], bb2.obb().axes[j]));

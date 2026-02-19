@@ -7,13 +7,10 @@
   },
   "configurePresets": [
     {
-      "name": "x64-Debug",
-      "displayName": "x64 Debug",
-      "description": "Debug build using Ninja and vcpkg",
+      "name": "x64-base",
+      "hidden": true,
       "generator": "Visual Studio 17 2022",
-      "binaryDir": "${sourceDir}/out/build/x64-Debug",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/Engine/External/vcpkg/scripts/buildsystems/vcpkg.cmake",
         "VCPKG_TARGET_TRIPLET": "x64-windows"
       },
@@ -26,33 +23,39 @@
       }
     },
     {
+      "name": "x64-Debug",
+      "displayName": "x64 Debug",
+      "inherits": "x64-base",
+      "binaryDir": "${sourceDir}/out/build/x64-Debug"
+    },
+    {
       "name": "x64-Release",
       "displayName": "x64 Release",
-      "description": "Release build with RelWithDebInfo using Ninja and vcpkg",
-      "generator": "Visual Studio 17 2022",
-      "binaryDir": "${sourceDir}/out/build/x64-Release",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/Engine/External/vcpkg/scripts/buildsystems/vcpkg.cmake",
-        "VCPKG_TARGET_TRIPLET": "x64-windows"
-      },
-      "inheritEnvironments": [ "msvc_x64_x64" ],
-      "vendor": {
-        "microsoft.com/VisualStudioSettings/CMake/1.0": {
-          "enableClangTidyCodeAnalysis": true,
-          "clangTidyChecks": ""
-        }
-      }
+      "inherits": "x64-base",
+      "binaryDir": "${sourceDir}/out/build/x64-Release"
+    },
+    {
+      "name": "x64-RelWithDebInfo",
+      "displayName": "x64 RelWithDebInfo",
+      "inherits": "x64-base",
+      "binaryDir": "${sourceDir}/out/build/x64-RelWithDebInfo"
     }
   ],
   "buildPresets": [
     {
       "name": "x64-Debug",
-      "configurePreset": "x64-Debug"
+      "configurePreset": "x64-Debug",
+      "configuration": "Debug"
     },
     {
       "name": "x64-Release",
-      "configurePreset": "x64-Release"
+      "configurePreset": "x64-Release",
+      "configuration": "Release"
+    },
+    {
+      "name": "x64-RelWithDebInfo",
+      "configurePreset": "x64-RelWithDebInfo",
+      "configuration": "RelWithDebInfo"
     }
   ],
   "testPresets": []
