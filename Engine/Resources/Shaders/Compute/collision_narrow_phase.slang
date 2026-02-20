@@ -446,7 +446,7 @@ float warm_start_lookup(uint ba, uint bb, uint feature_packed, uint ws_count) {
     if (lo < ws_count) {
         GpuWarmStart ws = warm_starts[lo];
         if (ws.body_a == ba && ws.body_b == bb && ws.feature_packed == feature_packed) {
-            return ws.lambda * 0.7;
+            return ws.lambda * 0.3;
         }
     }
 

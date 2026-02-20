@@ -47,6 +47,7 @@ struct GpuWarmStart {
 
 static const uint FLAG_LOCKED = 1;
 static const uint FLAG_UPDATE_ORIENTATION = 2;
+static const uint SLEEP_THRESHOLD = 300;
 static const uint MAX_BODIES = 500;
 static const uint MAX_CONTACTS = 2000;
 static const uint MAX_COLLISION_PAIRS = 8192;
@@ -95,17 +96,25 @@ float3 mat3_mul_vec(mat3 m, float3 v) {
 void apply_velocity_correction(uint bi) {
     GpuBody my_body = body_data[bi];
     if ((my_body.flags & FLAG_LOCKED) != 0) return;
+    if (my_body.sleep_counter >= SLEEP_THRESHOLD) return;
     bool my_orient = (my_body.flags & FLAG_UPDATE_ORIENTATION) != 0;
 
     uint co = body_contact_map[bi];
     uint cc = body_contact_map[MAX_BODIES + bi];
 
     bool do_normal = pc.iteration < 2;
+    uint motor_map_offset = MAX_BODIES * 2 + MAX_CONTACTS * 2;
 
     for (uint ci_idx = 0; ci_idx < cc; ci_idx++) {
         uint ci = body_contact_map[MAX_BODIES * 2 + co + ci_idx];
         GpuContact ct = contact_data[ci];
         if (ct.lambda <= 0.0) continue;
+
+        if (!do_normal) {
+            bool a_has_motor = body_contact_map[motor_map_offset + ct.body_a] != 0xFFFFFFFF;
+            bool b_has_motor = body_contact_map[motor_map_offset + ct.body_b] != 0xFFFFFFFF;
+            if (a_has_motor || b_has_motor) continue;
+        }
 
         GpuBody ba = body_data[ct.body_a];
         GpuBody bb = body_data[ct.body_b];
@@ -152,6 +161,7 @@ void apply_velocity_correction(uint bi) {
             if (w_total < 1e-10) continue;
 
             float delta_lambda = -v_n / w_total;
+            if (isnan(delta_lambda) || isinf(delta_lambda)) continue;
 
             if (is_a) {
                 my_body.velocity.xyz += ct.normal.xyz * (w_a_lin * delta_lambda);
