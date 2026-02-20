@@ -44,7 +44,9 @@ export namespace gse::vulkan {
 	) -> queue_family;
 
 	auto render(
-		config& config, const vk::RenderingInfo& begin_info, const std::function<void()>& render
+		config& config, 
+        const vk::RenderingInfo& begin_info,
+        const std::function<void()>& render
 	) -> void;
 }
 

@@ -128,13 +128,14 @@ auto gse::physics::system::update(update_phase& phase, state& s) -> void {
 	const float alpha = s.accumulator / const_update_time;
 
 	if (s.use_gpu_solver) {
-		phase.schedule([steps, alpha, &s, const_update_time](chunk<motion_component> motion, chunk<collision_component> collision) {
+		const int gpu_steps = std::min(steps, 1);
+		phase.schedule([gpu_steps, alpha, &s, const_update_time](chunk<motion_component> motion, chunk<collision_component> collision) {
 			for (motion_component& mc : motion) {
 				mc.render_position = mc.current_position;
 				mc.render_orientation = mc.orientation;
 			}
 
-			update_vbd_gpu(steps, s, motion, collision, const_update_time);
+			update_vbd_gpu(gpu_steps, s, motion, collision, const_update_time);
 
 			for (motion_component& mc : motion) {
 				if (mc.position_locked) {
@@ -306,15 +307,6 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		});
 	}
 	else {
-		const auto extrap_dt = dt * static_cast<float>(steps);
-		for (motion_component& mc : motion) {
-			if (mc.position_locked || mc.sleeping) continue;
-			const auto v = mc.current_velocity;
-			mc.current_position += v * extrap_dt;
-			if (auto* cc = collision.find(mc.owner_id())) {
-				cc->bounding_box.update(mc.current_position, mc.orientation);
-			}
-		}
 	}
 
 	for (motion_component& mc : motion) {

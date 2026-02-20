@@ -173,7 +173,12 @@ bool is_finite3(float3 v) {
 
 mat3 mat3_inverse(mat3 m) {
     float d = mat3_det(m);
-    if (abs(d) < 1e-20) return mat3_identity(1.0);
+    float diag_max = max(abs(m[0].x), max(abs(m[1].y), abs(m[2].z)));
+    float threshold = diag_max * diag_max * diag_max * 1e-12;
+    if (abs(d) < max(threshold, 1e-20)) {
+        float s = (diag_max > 1e-20) ? 1.0 / diag_max : 1.0;
+        return mat3_identity(s);
+    }
     float inv_d = 1.0 / d;
     mat3 result;
     result[0] = float3(
@@ -211,7 +216,6 @@ void solve_body(uint bi) {
     float3 ang_grad = float3(0, 0, 0);
     mat3 ang_hess = mat3_identity(0);
     mat3 hess_xt = mat3_identity(0);
-    float3 blocking_normal = float3(0, 0, 0);
 
     uint contact_offset = body_contact_map[bi];
     uint contact_count = body_contact_map[MAX_BODIES + bi];
@@ -224,14 +228,6 @@ void solve_body(uint bi) {
         GpuBody body_b = body_data[c.body_b];
 
         bool is_a = (c.body_a == bi);
-        uint other_flags = is_a ? body_b.flags : body_a.flags;
-        if ((other_flags & FLAG_LOCKED) == 0) {
-            float other_mass = is_a ? body_b.mass : body_a.mass;
-            if (other_mass > body.mass) {
-                float3 push_dir = is_a ? c.normal.xyz : -c.normal.xyz;
-                blocking_normal += push_dir;
-            }
-        }
 
         float3 world_r_a = rotate_vector(body_a.predicted_orientation, c.r_a.xyz);
         float3 world_r_b = rotate_vector(body_b.predicted_orientation, c.r_b.xyz);
@@ -266,11 +262,7 @@ void solve_body(uint bi) {
                 ang_grad += r_cross_n * effective;
             }
             ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(r_cross_n, r_cross_n), rho_val));
-            if (is_a) {
-                hess_xt = mat3_add(hess_xt, mat3_scale(outer_product3(c.normal.xyz, r_cross_n), rho_val));
-            } else {
-                hess_xt = mat3_add(hess_xt, mat3_scale(outer_product3(c.normal.xyz, r_cross_n), rho_val));
-            }
+            hess_xt = mat3_add(hess_xt, mat3_scale(outer_product3(c.normal.xyz, r_cross_n), rho_val));
         }
     }
 
@@ -291,14 +283,22 @@ void solve_body(uint bi) {
         }
 
         float grad_before = length(motor_grad);
-        float bn_len = length(blocking_normal);
-        if (bn_len > 1e-6) {
-            float3 bn = blocking_normal / bn_len;
-            float proj = dot(motor_grad, bn);
+
+        for (uint ci_idx = 0; ci_idx < contact_count; ci_idx++) {
+            uint ci = body_contact_map[MAX_BODIES * 2 + contact_offset + ci_idx];
+            GpuContact c = contact_data[ci];
+            bool is_a = (c.body_a == bi);
+            uint other = is_a ? c.body_b : c.body_a;
+            GpuBody other_body = body_data[other];
+            if ((other_body.flags & FLAG_LOCKED) != 0) continue;
+            if (other_body.mass <= body.mass) continue;
+            float3 push_dir = is_a ? c.normal.xyz : -c.normal.xyz;
+            float proj = dot(motor_grad, push_dir);
             if (proj < 0.0) {
-                motor_grad -= bn * proj;
+                motor_grad -= push_dir * proj;
             }
         }
+
         float grad_after = length(motor_grad);
         float motor_scale = (grad_before > 1e-10) ? (grad_after / grad_before) : 0.0;
 
@@ -327,7 +327,7 @@ void solve_body(uint bi) {
 
         if (!is_finite3(delta_x)) { body_data[bi] = body; return; }
         float step_size = length(delta_x);
-        if (step_size > 0.5) delta_x *= (0.5 / step_size);
+        if (step_size > 0.2) delta_x *= (0.2 / step_size);
 
         body.predicted_position.xyz += delta_x;
         body_data[bi] = body;
@@ -354,10 +354,11 @@ void solve_body(uint bi) {
 
     float3 g_ang = mat3_mul_vec(i_mat, theta_diff) * ang_scale + ang_grad;
 
+    float ang_reg = 1e-6;
     mat3 h_tt = mat3_add(mat3_scale(i_mat, ang_scale), ang_hess);
-    h_tt[0].x += reg;
-    h_tt[1].y += reg;
-    h_tt[2].z += reg;
+    h_tt[0].x += ang_reg;
+    h_tt[1].y += ang_reg;
+    h_tt[2].z += ang_reg;
 
     mat3 h_tx = mat3_transpose(hess_xt);
     mat3 h_xx_inv = mat3_inverse(h_xx);
@@ -369,9 +370,9 @@ void solve_body(uint bi) {
 
     if (!is_finite3(delta_x) || !is_finite3(delta_theta)) { body_data[bi] = body; return; }
     float lin_size = length(delta_x);
-    if (lin_size > 0.5) delta_x *= (0.5 / lin_size);
+    if (lin_size > 0.2) delta_x *= (0.2 / lin_size);
     float ang_size = length(delta_theta);
-    if (ang_size > 0.5) delta_theta *= (0.5 / ang_size);
+    if (ang_size > 0.2) delta_theta *= (0.2 / ang_size);
 
     body.predicted_position.xyz += delta_x;
 

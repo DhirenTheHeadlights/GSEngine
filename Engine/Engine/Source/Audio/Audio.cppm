@@ -270,7 +270,10 @@ auto gse::audio::state::play(const audio_clip& clip, const bool loop) -> voice_h
 	ma_sound_set_looping(&sound, loop ? MA_TRUE : MA_FALSE);
 	ma_sound_start(&sound);
 
-	return voice_handle{ .index = index, .generation = generation };
+	return voice_handle{
+		.index = index,
+		.generation = generation
+	};
 }
 
 auto gse::audio::state::stop(const voice_handle handle) -> void {

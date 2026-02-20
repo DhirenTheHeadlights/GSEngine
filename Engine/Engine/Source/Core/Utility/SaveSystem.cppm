@@ -1,7 +1,7 @@
 export module gse.utility:save_system;
 
 import std;
-import <toml++/toml.h>;
+import tomlplusplus;
 
 import :id;
 import :concepts;

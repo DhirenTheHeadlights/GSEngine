@@ -1,3 +1,4 @@
+static const uint FLAG_LOCKED = 1;
 static const uint MAX_BODIES = 500;
 static const uint MAX_CONTACTS = 2000;
 static const uint MAX_COLLISION_PAIRS = 8192;
@@ -92,6 +93,10 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     uint j = tid - i * (2 * n - i - 1) / 2 + i + 1;
 
     if (i >= n || j >= n || i >= j) return;
+
+    bool i_locked = (body_data[i].flags & FLAG_LOCKED) != 0;
+    bool j_locked = (body_data[j].flags & FLAG_LOCKED) != 0;
+    if (i_locked && j_locked) return;
 
     float3 min_a = body_data[i].aabb_min.xyz;
     float3 max_a = body_data[i].aabb_max.xyz;

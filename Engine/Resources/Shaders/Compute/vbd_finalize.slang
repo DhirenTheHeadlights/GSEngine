@@ -99,6 +99,36 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
 
     if (locked || sleeping) return;
 
+    bool bad_pp = isinf(body.predicted_position.x) || isinf(body.predicted_position.y) || isinf(body.predicted_position.z)
+               || isnan(body.predicted_position.x) || isnan(body.predicted_position.y) || isnan(body.predicted_position.z);
+    if (bad_pp) {
+        body.predicted_position = body.old_position;
+        body.predicted_orientation = body.old_orientation;
+        body.velocity = float4(0, 0, 0, 0);
+        body.angular_velocity = float4(0, 0, 0, 0);
+        body.position = body.old_position;
+        body.orientation = body.old_orientation;
+        body_data[bi] = body;
+        return;
+    }
+
+    float q_len_sq = body.predicted_orientation.x * body.predicted_orientation.x
+                   + body.predicted_orientation.y * body.predicted_orientation.y
+                   + body.predicted_orientation.z * body.predicted_orientation.z
+                   + body.predicted_orientation.w * body.predicted_orientation.w;
+    if (q_len_sq < 0.5 || isnan(q_len_sq)) {
+        body.predicted_orientation = body.orientation;
+        body.angular_velocity = float4(0, 0, 0, 0);
+    }
+
+    float lin_spd = length(body.velocity.xyz);
+    if (lin_spd > 30.0) body.velocity = body.velocity * (30.0 / lin_spd);
+
+    if (update_orient) {
+        float ang_spd = length(body.angular_velocity.xyz);
+        if (ang_spd > 20.0) body.angular_velocity = body.angular_velocity * (20.0 / ang_spd);
+    }
+
     body.position = body.predicted_position;
     if (update_orient) {
         body.orientation = body.predicted_orientation;

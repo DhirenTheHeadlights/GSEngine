@@ -132,8 +132,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
 
     for (uint bi = 0; bi < body_count; bi++) {
         bool locked = (body_data[bi].flags & FLAG_LOCKED) != 0;
-        bool sleeping = body_data[bi].sleep_counter >= SLEEP_THRESHOLD;
-        if (locked || sleeping) continue;
+        if (locked) continue;
 
         uint cc = body_contact_map[MAX_BODIES + bi];
         if (cc == 0) continue;
@@ -150,11 +149,13 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
         }
 
         uint chosen = 0;
-        while (chosen < MAX_COLORS - 1 && (neighbor_colors & (1u << chosen)) != 0) {
+        while (chosen < MAX_COLORS && (neighbor_colors & (1u << chosen)) != 0) {
             chosen++;
         }
 
-        body_color[bi] = chosen;
+        if (chosen < MAX_COLORS) {
+            body_color[bi] = chosen;
+        }
     }
 
     uint max_contact_color = 0;
@@ -169,8 +170,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     uint motor_map_offset = MAX_BODIES * 2 + MAX_CONTACTS * 2;
     for (uint bi = 0; bi < body_count; bi++) {
         bool locked = (body_data[bi].flags & FLAG_LOCKED) != 0;
-        bool sleeping = body_data[bi].sleep_counter >= SLEEP_THRESHOLD;
-        if (locked || sleeping) continue;
+        if (locked) continue;
 
         uint cc = body_contact_map[MAX_BODIES + bi];
         bool has_motor = body_contact_map[motor_map_offset + bi] != 0xFFFFFFFF;
