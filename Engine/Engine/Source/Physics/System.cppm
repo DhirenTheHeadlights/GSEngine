@@ -95,7 +95,9 @@ auto gse::physics::system::initialize(const initialize_phase& phase, state& s) -
 		.contact_damping = 0.f,
 		.friction_coefficient = 0.6f,
 		.rho = 1.f,
+		.restitution = 0.3f,
 		.linear_damping = 0.3f,
+		.angular_damping = 0.3f,
 		.velocity_sleep_threshold = 0.05f,
 		.speculative_margin = meters(0.02f)
 	});
