@@ -36,6 +36,7 @@ export namespace gse::vbd {
 		float lambda_tangent_v = 0.f;
 
 		float friction_coeff = 0.6f;
+		float pre_solve_v_n = 0.f;
 
 		feature_id feature;
 	};
