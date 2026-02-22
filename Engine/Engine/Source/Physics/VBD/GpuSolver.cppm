@@ -1316,7 +1316,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(const vk::CommandBuffer command, vul
 		command.pipelineBarrier2(compute_dep);
 
 		if (debug.enable_velocity_corrections) {
-			for (std::uint32_t pass = 0; pass < 8u; ++pass) {
+			for (std::uint32_t pass = 0; pass < 6u; ++pass) {
 				for (std::uint32_t c = 0; c < num_colors; ++c) {
 					bind_and_push(m_compute.sequential_passes, m_compute.sequential_passes_pipeline, c, 0u, sub, pass);
 					command.dispatch(body_workgroups, 1, 1);

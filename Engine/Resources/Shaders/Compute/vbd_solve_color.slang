@@ -327,7 +327,7 @@ void solve_body(uint bi) {
 
         if (!is_finite3(delta_x)) { body_data[bi] = body; return; }
         float step_size = length(delta_x);
-        if (step_size > 0.2) delta_x *= (0.2 / step_size);
+        if (step_size > 0.5) delta_x *= (0.5 / step_size);
 
         body.predicted_position.xyz += delta_x;
         body_data[bi] = body;
@@ -370,9 +370,9 @@ void solve_body(uint bi) {
 
     if (!is_finite3(delta_x) || !is_finite3(delta_theta)) { body_data[bi] = body; return; }
     float lin_size = length(delta_x);
-    if (lin_size > 0.2) delta_x *= (0.2 / lin_size);
+    if (lin_size > 0.5) delta_x *= (0.5 / lin_size);
     float ang_size = length(delta_theta);
-    if (ang_size > 0.2) delta_theta *= (0.2 / ang_size);
+    if (ang_size > 0.5) delta_theta *= (0.5 / ang_size);
 
     body.predicted_position.xyz += delta_x;
 
