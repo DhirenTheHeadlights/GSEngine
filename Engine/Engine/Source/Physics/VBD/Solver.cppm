@@ -19,7 +19,9 @@ export namespace gse::vbd {
 		float contact_damping = 0.f;
 		float friction_coefficient = 0.6f;
 		float rho = 1000.f;
+		float restitution = 0.3f;
 		float linear_damping = 1.0f;
+		float angular_damping = 1.0f;
 		float velocity_sleep_threshold = 0.001f;
 		length speculative_margin = meters(0.02f);
 	};
@@ -209,6 +211,19 @@ auto gse::vbd::solver::solve_substep(const time_step sub_dt) -> void {
 	}
 
 	predict_positions(sub_dt);
+
+	for (auto& c : m_graph.contact_constraints()) {
+		const auto& body_a = m_bodies[c.body_a];
+		const auto& body_b = m_bodies[c.body_b];
+
+		const vec3<length> world_r_a = rotate_vector(body_a.predicted_orientation, c.r_a);
+		const vec3<length> world_r_b = rotate_vector(body_b.predicted_orientation, c.r_b);
+
+		const vec3<velocity> v_a = body_a.predicted_velocity + cross(body_a.predicted_angular_velocity, world_r_a);
+		const vec3<velocity> v_b = body_b.predicted_velocity + cross(body_b.predicted_angular_velocity, world_r_b);
+
+		c.pre_solve_v_n = dot(v_a - v_b, c.normal).as<meters_per_second>();
+	}
 
 	const auto& contacts = m_graph.contact_constraints();
 	const auto& motors = m_graph.motor_constraints();
@@ -614,8 +629,7 @@ auto gse::vbd::solver::derive_velocities(const time_step sub_dt) -> void {
 				body.body_angular_velocity = q_v * radians_per_second(2.f / dt_s);
 			}
 
-			constexpr float angular_damping = 1.0f;
-			const float angular_damping_factor = std::max(0.f, 1.f - angular_damping * dt_s);
+			const float angular_damping_factor = std::max(0.f, 1.f - m_config.angular_damping * dt_s);
 			body.body_angular_velocity *= angular_damping_factor;
 
 			const float ang_speed = magnitude(body.body_angular_velocity).as<radians_per_second>();
@@ -633,9 +647,12 @@ auto gse::vbd::solver::derive_velocities(const time_step sub_dt) -> void {
 		}
 	}
 
+	const float restitution_threshold = 2.f * 9.8f * dt_s;
+
 	for (int pass = 0; pass < 2; ++pass) {
 		for (const auto& c : m_graph.contact_constraints()) {
-			if (c.lambda <= 0.f) continue;
+			if (c.pre_solve_v_n >= -restitution_threshold && c.lambda <= 0.f) continue;
+			if (m_body_motor_index[c.body_a] != no_motor || m_body_motor_index[c.body_b] != no_motor) continue;
 
 			auto& body_a = m_bodies[c.body_a];
 			auto& body_b = m_bodies[c.body_b];
@@ -648,7 +665,11 @@ auto gse::vbd::solver::derive_velocities(const time_step sub_dt) -> void {
 
 			const float v_n = dot(v_a - v_b, c.normal).as<meters_per_second>();
 
-			if (v_n >= 0.f) continue;
+			const float e = (c.pre_solve_v_n < -restitution_threshold) ? m_config.restitution : 0.f;
+			const float v_n_target = -e * c.pre_solve_v_n;
+			const float delta_v = v_n_target - v_n;
+
+			if (delta_v <= 0.f) continue;
 
 			const float w_a_lin = body_a.locked ? 0.f : body_a.inverse_mass().as<per_kilograms>();
 			const float w_b_lin = body_b.locked ? 0.f : body_b.inverse_mass().as<per_kilograms>();
@@ -671,7 +692,7 @@ auto gse::vbd::solver::derive_velocities(const time_step sub_dt) -> void {
 			const float w_total = w_a_lin + w_b_lin + w_rot_a + w_rot_b;
 			if (w_total < 1e-10f) continue;
 
-			const float delta_lambda = -v_n / w_total;
+			const float delta_lambda = delta_v / w_total;
 
 			if (!body_a.locked) {
 				body_a.body_velocity += c.normal * meters_per_second(w_a_lin * delta_lambda);
