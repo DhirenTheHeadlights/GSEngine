@@ -218,6 +218,12 @@ export namespace gse::actions {
 			std::span<const word> released
 		) -> void;
 
+		auto load_state(
+			std::span<const word> pressed,
+			std::span<const word> released,
+			std::span<const word> held
+		) -> void;
+
 		auto set_camera_yaw(
 			float yaw
 		) -> void;
@@ -241,6 +247,25 @@ export namespace gse::actions {
 		std::vector<axis> m_axes2;
 		float m_camera_yaw = 0.f;
 	};
+
+	inline thread_local float g_context_camera_yaw = 0.f;
+	inline thread_local bool g_context_camera_yaw_set = false;
+
+	inline auto set_context_camera_yaw(float yaw) -> void {
+		g_context_camera_yaw = yaw;
+		g_context_camera_yaw_set = true;
+	}
+
+	inline auto clear_context_camera_yaw() -> void {
+		g_context_camera_yaw_set = false;
+	}
+
+	inline auto get_context_camera_yaw() -> std::optional<float> {
+		if (g_context_camera_yaw_set) {
+			return g_context_camera_yaw;
+		}
+		return std::nullopt;
+	}
 
 	struct button_channel {
 		id action_id{};
@@ -589,6 +614,12 @@ auto gse::actions::state::load_transients(const std::span<const word> pressed, c
 		const word r = (i < rw.size() ? rw[i] : 0);
 		held[i] = (held[i] | p) & ~r;
 	}
+	m_held.assign(held);
+}
+
+auto gse::actions::state::load_state(const std::span<const word> pressed, const std::span<const word> released, const std::span<const word> held) -> void {
+	m_pressed.assign(pressed);
+	m_released.assign(released);
 	m_held.assign(held);
 }
 
