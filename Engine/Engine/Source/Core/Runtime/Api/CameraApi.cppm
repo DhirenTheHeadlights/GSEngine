@@ -63,7 +63,11 @@ export namespace gse {
 		if (has_state<camera::state>()) {
 			return state_of<camera::state>().direction_relative_to_origin(direction);
 		}
-		// Fallback for server: use camera_yaw from actions state (transmitted from client)
+		// Fallback for server: use per-client camera_yaw from context (set during input processing)
+		if (const auto context_yaw = actions::get_context_camera_yaw()) {
+			return direction_from_yaw(direction, *context_yaw);
+		}
+		// Further fallback: use global actions state camera_yaw
 		if (has_state<actions::system_state>()) {
 			const float yaw = state_of<actions::system_state>().current_state().camera_yaw();
 			return direction_from_yaw(direction, yaw);
