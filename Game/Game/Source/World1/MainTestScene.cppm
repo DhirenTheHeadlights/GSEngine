@@ -15,8 +15,8 @@ export namespace gs {
 		using hook::hook;
 
 		auto initialize() -> void override {
-			m_owner->set_player_factory([](gse::scene& s) -> gse::id {
-				const auto player_id = s.add_entity("Player");
+			m_owner->set_player_factory([next_id = 0u](gse::scene& s) mutable -> gse::id {
+				const auto player_id = s.add_entity(std::format("Player_{}", next_id++));
 				s.registry().add_hook<player>(player_id, player::params{
 					.initial_position = gse::vec3<gse::length>(0.f, 0.f, 0.f)
 				});

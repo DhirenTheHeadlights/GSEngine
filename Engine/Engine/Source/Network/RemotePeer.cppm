@@ -4,6 +4,9 @@ import std;
 
 import :socket;
 
+import gse.math;
+import gse.utility;
+
 export namespace gse::network {
 	struct pending_reliable_message {
 		std::uint32_t sequence = 0;
@@ -13,8 +16,7 @@ export namespace gse::network {
 	};
 
 	inline auto current_time_ms() -> std::uint64_t {
-		const auto now = std::chrono::steady_clock::now();
-		return std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+		return system_clock::now<time_t<std::uint64_t, milliseconds>>().as<milliseconds>();
 	}
 
 	class remote_peer {
@@ -43,7 +45,7 @@ export namespace gse::network {
 			std::uint32_t ack_bits
 		) -> void;
 
-		auto get_messages_to_resend(
+		auto messages_to_resend(
 			std::uint32_t retry_interval_ms
 		) -> std::vector<pending_reliable_message*>;
 
@@ -110,7 +112,7 @@ auto gse::network::remote_peer::process_acks(const std::uint32_t ack, const std:
 	m_last_processed_ack = std::max(m_last_processed_ack, ack);
 }
 
-auto gse::network::remote_peer::get_messages_to_resend(const std::uint32_t retry_interval_ms) -> std::vector<pending_reliable_message*> {
+auto gse::network::remote_peer::messages_to_resend(const std::uint32_t retry_interval_ms) -> std::vector<pending_reliable_message*> {
 	std::vector<pending_reliable_message*> result;
 	const auto now = current_time_ms();
 

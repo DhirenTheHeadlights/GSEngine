@@ -9,14 +9,18 @@
     {
       "name": "x64-base",
       "hidden": true,
-      "generator": "Visual Studio 17 2022",
+      "generator": "Visual Studio 18 2026",
+      "architecture": {
+        "value": "x64",
+        "strategy": "set"
+      },
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/Engine/External/vcpkg/scripts/buildsystems/vcpkg.cmake",
         "VCPKG_TARGET_TRIPLET": "x64-windows"
       },
-      "inheritEnvironments": [ "msvc_x64_x64" ],
       "vendor": {
         "microsoft.com/VisualStudioSettings/CMake/1.0": {
+          "inheritEnvironments": [ "msvc_x64_x64" ],
           "enableClangTidyCodeAnalysis": true,
           "clangTidyChecks": ""
         }

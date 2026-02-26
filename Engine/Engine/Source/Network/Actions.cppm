@@ -37,7 +37,8 @@ export namespace gse::network {
 auto gse::network::send_input_frame(const udp_socket& socket, remote_peer& peer, std::array<std::byte, max_packet_size>& buffer, const std::uint32_t input_sequence, const actions::state& state, const std::span<const std::uint16_t> axes1_ids, const std::span<const std::uint16_t> axes2_ids, const float camera_yaw) -> void {
 	const auto& pm = state.pressed_mask();
 	const auto& rm = state.released_mask();
-	const auto wc = static_cast<std::uint16_t>(std::max(pm.word_count(), rm.word_count()));
+	const auto& hm = state.held_mask();
+	const auto wc = static_cast<std::uint16_t>(std::max({ pm.word_count(), rm.word_count(), hm.word_count() }));
 
 	auto a1 = axes1_ids
 		| std::views::transform([&](auto id) { return axes1_pair{ id, state.axis1(id) }; })
@@ -73,6 +74,7 @@ auto gse::network::send_input_frame(const udp_socket& socket, remote_peer& peer,
 
 	const auto& pw = pm.words();
 	const auto& rw = rm.words();
+	const auto& hw = hm.words();
 
 	for (std::size_t i = 0; i < wc; ++i) {
 		const std::uint64_t w = (i < pw.size()) ? pw[i] : 0ull;
@@ -80,6 +82,10 @@ auto gse::network::send_input_frame(const udp_socket& socket, remote_peer& peer,
 	}
 	for (std::size_t i = 0; i < wc; ++i) {
 		const std::uint64_t w = (i < rw.size()) ? rw[i] : 0ull;
+		s.write(w);
+	}
+	for (std::size_t i = 0; i < wc; ++i) {
+		const std::uint64_t w = (i < hw.size()) ? hw[i] : 0ull;
 		s.write(w);
 	}
 
