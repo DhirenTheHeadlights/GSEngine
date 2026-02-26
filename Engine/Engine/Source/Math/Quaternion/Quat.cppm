@@ -31,8 +31,6 @@ namespace gse {
 		constexpr auto v4(this auto&& self) -> unitless::vec_t<T, 4>;
 		constexpr auto euler_angles() const -> vec3<angle_t<T>>;
 	private:
-		using base_type::base_type;
-
 		using base_type::w;
 		using base_type::r;
 		using base_type::g;

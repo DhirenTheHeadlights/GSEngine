@@ -30,10 +30,10 @@ export namespace gs {
 					});
 			}
 
-			build("Player")
+			/*build("Player")
 				.with<player>({
 					.initial_position = gse::vec3<gse::length>(0.f, 0.f, 0.f)
-				});
+				});*/
 
 			build("Scene Camera")
 				.with<gse::free_camera>({

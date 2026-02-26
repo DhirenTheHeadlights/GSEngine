@@ -198,49 +198,22 @@ constexpr auto gse::dot(const V1& lhs, const V2& rhs) {
 
 	storage_type sum{};
 	simd::dot(lhs.as_storage_span(), rhs.as_storage_span(), sum);
-
-	if constexpr (gse::internal::is_arithmetic_wrapper<result_type>) {
-		return result_type(sum);
-	} else {
-		return sum;
-	}
+	return result_type(sum);
 }
 
 template <gse::is_vec V>
 constexpr auto gse::magnitude(const V& v) {
 	using storage_type = V::storage_type;
 	auto d = dot(v, v);
-
-	const auto d_val = [&] {
-		if constexpr (internal::is_arithmetic_wrapper<decltype(d)>) {
-			using dot_storage_t = internal::vec_storage_type_t<decltype(d)>;
-			return *reinterpret_cast<const dot_storage_t*>(&d);
-		} else {
-			return d;
-		}
-	}();
-
-	storage_type m = std::sqrt(d_val);
-
-	if constexpr (gse::internal::is_arithmetic_wrapper<typename V::value_type>) {
-		return typename V::value_type(m);
-	} else {
-		return m;
-	}
+	storage_type m = std::sqrt(internal::to_storage(d));
+	return typename V::value_type(m);
 }
 
 template <gse::is_vec V>
 constexpr auto gse::normalize(const V& v) {
 	using storage_type = V::storage_type;
 	auto mag = magnitude(v);
-
-	const auto m = [&] {
-		if constexpr (gse::internal::is_arithmetic_wrapper<decltype(mag)>) {
-			return *reinterpret_cast<const storage_type*>(&mag);
-		} else {
-			return mag;
-		}
-	}();
+	const auto m = internal::to_storage(mag);
 
 	unitless::vec_t<storage_type, V::extent> out{};
 	if (m == storage_type(0)) return out;
@@ -275,75 +248,28 @@ constexpr auto gse::cross(const V1& lhs, const V2& rhs) {
 template <gse::is_vec V1, gse::is_vec V2> requires (V1::extent == V2::extent)
 constexpr auto gse::project(const V1& a, const V2& b) {
 	auto bb = dot(b, b);
-	const auto bb_val = [&] {
-		if constexpr (internal::is_arithmetic_wrapper<decltype(bb)>) {
-			return *reinterpret_cast<const decltype(bb)::value_type*>(&bb);
-		} else {
-			return bb;
-		}
-	}();
-
+	const auto bb_val = internal::to_storage(bb);
 	if (bb_val == 0) return V2{};
 
 	auto ab = dot(a, b);
-	const auto ab_val = [&] {
-		if constexpr (internal::is_arithmetic_wrapper<decltype(ab)>) {
-			return *reinterpret_cast<const decltype(ab)::value_type*>(&ab);
-		} else {
-			return ab;
-		}
-	}();
-
+	const auto ab_val = internal::to_storage(ab);
 	return b * (ab_val / bb_val);
 }
 
 template <gse::is_vec V1, gse::is_vec V2> requires (V1::extent == V2::extent)
 constexpr auto gse::reflect(const V1& v, const V2& n) {
 	auto d = dot(v, n);
-	const auto d_val = [&] {
-		if constexpr (internal::is_arithmetic_wrapper<decltype(d)>) {
-			return *reinterpret_cast<const decltype(d)::value_type*>(&d);
-		} else {
-			return d;
-		}
-	}();
-
-	return v - n * (2 * d_val);
+	return v - n * (2 * internal::to_storage(d));
 }
 
 template <gse::is_vec V1, gse::is_vec V2> requires (V1::extent == V2::extent)
 constexpr auto gse::angle_between(const V1& a, const V2& b) -> V1::storage_type {
 	using storage_type = V1::storage_type;
-	auto ma = magnitude(a);
-	auto mb = magnitude(b);
-
-	const auto ma_val = [&] {
-		if constexpr (internal::is_arithmetic_wrapper<decltype(ma)>) {
-			return *reinterpret_cast<const storage_type*>(&ma);
-		} else {
-			return ma;
-		}
-	}();
-
-	const auto mb_val = [&] {
-		if constexpr (internal::is_arithmetic_wrapper<decltype(mb)>) {
-			return *reinterpret_cast<const storage_type*>(&mb);
-		} else {
-			return mb;
-		}
-	}();
-
+	const auto ma_val = internal::to_storage(magnitude(a));
+	const auto mb_val = internal::to_storage(magnitude(b));
 	if (ma_val == 0 || mb_val == 0) return 0;
 
-	auto d = dot(a, b);
-	const auto d_val = [&] {
-		if constexpr (internal::is_arithmetic_wrapper<decltype(d)>) {
-			return *reinterpret_cast<const decltype(d)::value_type*>(&d);
-		} else {
-			return d;
-		}
-	}();
-
+	const auto d_val = internal::to_storage(dot(a, b));
 	auto cosine = std::clamp(d_val / (ma_val * mb_val), storage_type(-1), storage_type(1));
 	return std::acos(cosine);
 }

@@ -32,6 +32,11 @@ export namespace gse::internal {
 	using vec_storage_type_t = vec_storage_type<T>::type;
 
 	template <typename T>
+	constexpr auto to_storage(const T& val) -> const vec_storage_type_t<T>& {
+		return *reinterpret_cast<const vec_storage_type_t<T>*>(&val);
+	}
+
+	template <typename T>
 	concept is_derivable_unit = requires { typename T::conversion_ratio; };
 
 	template <typename V>
@@ -82,7 +87,7 @@ export namespace gse::vec {
 }
 
 export namespace gse::vec {
-	template <typename Derived, internal::is_vec_element T, std::size_t N>
+	template <internal::is_vec_element T, std::size_t N>
 	class base : public storage<T, N> {
 	public:
 		using tag = void;
@@ -105,11 +110,11 @@ export namespace gse::vec {
 		template <typename... Args>
 		constexpr base(Args&&... args) requires gse::internal::vec_ctor_compatible<T, N, Args...>;
 
-		template <typename D, std::size_t M>
-		constexpr base(const base<D, T, M>& other) requires (M <= N);
+		template <std::size_t M>
+		constexpr base(const base<T, M>& other) requires (M <= N);
 
-		template <typename D, internal::is_vec_element T2>
-		constexpr base(const base<D, T2, N>& other);
+		template <internal::is_vec_element T2>
+		constexpr base(const base<T2, N>& other);
 
 		constexpr decltype(auto) at(this auto& self, std::size_t index);
 		constexpr decltype(auto) operator[](this auto& self, std::size_t index);
@@ -136,17 +141,17 @@ export namespace gse::vec {
 
 export namespace gse::unitless {
 	template <typename A, std::size_t N> requires std::is_arithmetic_v<A>
-	class vec_t : public vec::base<vec_t<A, N>, A, N> {
+	class vec_t : public vec::base<A, N> {
 	public:
-		using vec::base<vec_t, A, N>::base;
+		using vec::base<A, N>::base;
 	};
 }
 
 export namespace gse {
 	template <internal::is_arithmetic_wrapper Q, std::size_t N>
-	class quantity_vec : public vec::base<quantity_vec<Q, N>, Q, N> {
+	class quantity_vec : public vec::base<Q, N> {
 	public:
-		using vec::base<quantity_vec, Q, N>::base;
+		using vec::base<Q, N>::base;
 
 		template <typename Unit> requires internal::is_derivable_unit<Unit>
 		constexpr auto as() const -> unitless::vec_t<typename Q::value_type, N>;
@@ -174,12 +179,7 @@ export namespace gse {
 	using vector_type_for_element_t = vector_type_for_element<T, N>::type;
 
 	template <typename V>
-	concept is_vec = 
-		requires(const V& v) {
-        typename V::tag;   
-        typename V::value_type; 
-        { v.as_storage_span() }; 
-    };
+	concept is_vec = internal::is_vec_like<V>;
 }
 
 export template <typename A, std::size_t N, typename CharT>
@@ -228,41 +228,41 @@ struct std::formatter<gse::quantity_vec<Q, N>, CharT> {
 	}
 };
 
-template <typename Derived, gse::internal::is_vec_element T, std::size_t N>
-constexpr gse::vec::base<Derived, T, N>::base(const T& value) {
+template <gse::internal::is_vec_element T, std::size_t N>
+constexpr gse::vec::base<T, N>::base(const T& value) {
 	this->data.fill(value);
 }
 
-template <typename Derived, gse::internal::is_vec_element T, std::size_t N>
-constexpr gse::vec::base<Derived, T, N>::base(const T* values) {
+template <gse::internal::is_vec_element T, std::size_t N>
+constexpr gse::vec::base<T, N>::base(const T* values) {
 	std::copy_n(values, N, this->data.begin());
 }
 
-template <typename Derived, gse::internal::is_vec_element T, std::size_t N>
-constexpr gse::vec::base<Derived, T, N>::base(const storage<T, N>& data) : storage<T, N>(data) {}
+template <gse::internal::is_vec_element T, std::size_t N>
+constexpr gse::vec::base<T, N>::base(const storage<T, N>& data) : storage<T, N>(data) {}
 
-template <typename Derived, gse::internal::is_vec_element T, std::size_t N>
-constexpr gse::vec::base<Derived, T, N>::base(const std::array<T, N>& data) : storage<T, N>{ data } {}
+template <gse::internal::is_vec_element T, std::size_t N>
+constexpr gse::vec::base<T, N>::base(const std::array<T, N>& data) : storage<T, N>{ data } {}
 
-template <typename Derived, gse::internal::is_vec_element T, std::size_t N>
+template <gse::internal::is_vec_element T, std::size_t N>
 template <typename V> requires (sizeof(V) < sizeof(T))
-	constexpr gse::vec::base<Derived, T, N>::base(const storage<V, N>& data) {
+	constexpr gse::vec::base<T, N>::base(const storage<V, N>& data) {
 	for (std::size_t i = 0; i < data.data.size(); ++i) {
 		this->data[i] = static_cast<T>(data.data[i]);
 	}
 }
 
-template <typename Derived, gse::internal::is_vec_element T, std::size_t N>
+template <gse::internal::is_vec_element T, std::size_t N>
 template <typename V> requires (sizeof(V) < sizeof(T))
-	constexpr gse::vec::base<Derived, T, N>::base(const std::array<V, N>& data) {
+	constexpr gse::vec::base<T, N>::base(const std::array<V, N>& data) {
 	for (std::size_t i = 0; i < data.size(); ++i) {
 		this->data[i] = static_cast<T>(data[i]);
 	}
 }
 
-template <typename Derived, gse::internal::is_vec_element T, std::size_t N>
+template <gse::internal::is_vec_element T, std::size_t N>
 template <typename... Args>
-constexpr gse::vec::base<Derived, T, N>::base(Args&&... args)
+constexpr gse::vec::base<T, N>::base(Args&&... args)
 	requires gse::internal::vec_ctor_compatible<T, N, Args...> {
 	std::size_t idx = 0;
 
@@ -281,9 +281,9 @@ constexpr gse::vec::base<Derived, T, N>::base(Args&&... args)
 	(append(std::forward<Args>(args)), ...);
 }
 
-template <typename Derived, gse::internal::is_vec_element T, std::size_t N>
-template <typename D, std::size_t M>
-constexpr gse::vec::base<Derived, T, N>::base(const base<D, T, M>& other) requires (M <= N) {
+template <gse::internal::is_vec_element T, std::size_t N>
+template <std::size_t M>
+constexpr gse::vec::base<T, N>::base(const base<T, M>& other) requires (M <= N) {
 	for (std::size_t i = 0; i < M; ++i) {
 		this->data[i] = other.data[i];
 	}
@@ -292,98 +292,90 @@ constexpr gse::vec::base<Derived, T, N>::base(const base<D, T, M>& other) requir
 	}
 }
 
-template <typename Derived, gse::internal::is_vec_element T, std::size_t N>
-template <typename D, gse::internal::is_vec_element T2>
-constexpr gse::vec::base<Derived, T, N>::base(const base<D, T2, N>& other) {
+template <gse::internal::is_vec_element T, std::size_t N>
+template <gse::internal::is_vec_element T2>
+constexpr gse::vec::base<T, N>::base(const base<T2, N>& other) {
 	for (std::size_t i = 0; i < N; ++i) {
 		this->data[i] = static_cast<T>(other[i]);
 	}
 }
 
-template <typename Derived, gse::internal::is_vec_element T, std::size_t N>
-constexpr decltype(auto) gse::vec::base<Derived, T, N>::at(this auto& self, std::size_t index) {
+template <gse::internal::is_vec_element T, std::size_t N>
+constexpr decltype(auto) gse::vec::base<T, N>::at(this auto& self, std::size_t index) {
 	return self.data.at(index);
 }
 
-template <typename Derived, gse::internal::is_vec_element T, std::size_t N>
-constexpr decltype(auto) gse::vec::base<Derived, T, N>::operator[](this auto& self, std::size_t index) {
+template <gse::internal::is_vec_element T, std::size_t N>
+constexpr decltype(auto) gse::vec::base<T, N>::operator[](this auto& self, std::size_t index) {
 	return self.data[index];
 }
 
-template <typename Derived, gse::internal::is_vec_element T, std::size_t N>
+template <gse::internal::is_vec_element T, std::size_t N>
 template <typename E> requires std::is_enum_v<E>
-constexpr decltype(auto) gse::vec::base<Derived, T, N>::operator[](this auto& self, E index) {
+constexpr decltype(auto) gse::vec::base<T, N>::operator[](this auto& self, E index) {
 	return self.at(static_cast<std::size_t>(index));
 }
 
-template <typename Derived, gse::internal::is_vec_element T, std::size_t N>
-constexpr decltype(auto) gse::vec::base<Derived, T, N>::x(this auto&& self) requires(N > 0) {
+template <gse::internal::is_vec_element T, std::size_t N>
+constexpr decltype(auto) gse::vec::base<T, N>::x(this auto&& self) requires(N > 0) {
 	return self.at(0);
 }
 
-template <typename Derived, gse::internal::is_vec_element T, std::size_t N>
-constexpr decltype(auto) gse::vec::base<Derived, T, N>::y(this auto&& self) requires(N > 1) {
+template <gse::internal::is_vec_element T, std::size_t N>
+constexpr decltype(auto) gse::vec::base<T, N>::y(this auto&& self) requires(N > 1) {
 	return self.at(1);
 }
 
-template <typename Derived, gse::internal::is_vec_element T, std::size_t N>
-constexpr decltype(auto) gse::vec::base<Derived, T, N>::z(this auto&& self) requires(N > 2) {
+template <gse::internal::is_vec_element T, std::size_t N>
+constexpr decltype(auto) gse::vec::base<T, N>::z(this auto&& self) requires(N > 2) {
 	return self.at(2);
 }
 
-template <typename Derived, gse::internal::is_vec_element T, std::size_t N>
-constexpr decltype(auto) gse::vec::base<Derived, T, N>::w(this auto&& self) requires(N > 3) {
+template <gse::internal::is_vec_element T, std::size_t N>
+constexpr decltype(auto) gse::vec::base<T, N>::w(this auto&& self) requires(N > 3) {
 	return self.at(3);
 }
 
-template <typename Derived, gse::internal::is_vec_element T, std::size_t N>
-constexpr decltype(auto) gse::vec::base<Derived, T, N>::r(this auto&& self) requires (N > 0) {
+template <gse::internal::is_vec_element T, std::size_t N>
+constexpr decltype(auto) gse::vec::base<T, N>::r(this auto&& self) requires (N > 0) {
 	return self.at(0);
 }
 
-template <typename Derived, gse::internal::is_vec_element T, std::size_t N>
-constexpr decltype(auto) gse::vec::base<Derived, T, N>::g(this auto&& self) requires (N > 1) {
+template <gse::internal::is_vec_element T, std::size_t N>
+constexpr decltype(auto) gse::vec::base<T, N>::g(this auto&& self) requires (N > 1) {
 	return self.at(1);
 }
 
-template <typename Derived, gse::internal::is_vec_element T, std::size_t N>
-constexpr decltype(auto) gse::vec::base<Derived, T, N>::b(this auto&& self) requires (N > 2) {
+template <gse::internal::is_vec_element T, std::size_t N>
+constexpr decltype(auto) gse::vec::base<T, N>::b(this auto&& self) requires (N > 2) {
 	return self.at(2);
 }
 
-template <typename Derived, gse::internal::is_vec_element T, std::size_t N>
-constexpr decltype(auto) gse::vec::base<Derived, T, N>::a(this auto&& self) requires (N > 3) {
+template <gse::internal::is_vec_element T, std::size_t N>
+constexpr decltype(auto) gse::vec::base<T, N>::a(this auto&& self) requires (N > 3) {
 	return self.at(3);
 }
 
-template <typename Derived, gse::internal::is_vec_element T, std::size_t N>
-constexpr auto gse::vec::base<Derived, T, N>::begin(this auto&& self) {
+template <gse::internal::is_vec_element T, std::size_t N>
+constexpr auto gse::vec::base<T, N>::begin(this auto&& self) {
 	return self.data.begin();
 }
 
-template <typename Derived, gse::internal::is_vec_element T, std::size_t N>
-constexpr auto gse::vec::base<Derived, T, N>::end(this auto&& self) {
+template <gse::internal::is_vec_element T, std::size_t N>
+constexpr auto gse::vec::base<T, N>::end(this auto&& self) {
 	return self.data.end();
 }
 
-template <typename Derived, gse::internal::is_vec_element T, std::size_t N>
-auto gse::vec::base<Derived, T, N>::as_storage_span(this auto&& self) {
-	if constexpr (std::is_const_v<std::remove_reference_t<decltype(self)>>) {
-		return std::span<const storage_type, N>(
-			reinterpret_cast<const storage_type*>(self.data.data()), N
-		);
-	}
-	else {
-		return std::span<storage_type, N>(
-			reinterpret_cast<storage_type*>(self.data.data()), N
-		);
-	}
+template <gse::internal::is_vec_element T, std::size_t N>
+auto gse::vec::base<T, N>::as_storage_span(this auto&& self) {
+	using qualified_storage = std::conditional_t<std::is_const_v<std::remove_reference_t<decltype(self)>>, const storage_type, storage_type>;
+	return std::span<qualified_storage, N>(reinterpret_cast<qualified_storage*>(self.data.data()), N);
 }
 
 template <gse::internal::is_arithmetic_wrapper Q, std::size_t N >
 template <typename Unit> requires gse::internal::is_derivable_unit<Unit>
 constexpr auto gse::quantity_vec<Q, N>::as() const -> unitless::vec_t<typename Q::value_type, N> {
-	using storage_type = vec::base<quantity_vec, Q, N>::storage_type;
+	using storage_type = vec::base<Q, N>::storage_type;
 	unitless::vec_t<typename Q::value_type, N> result{};
 
 	using ratio = Unit::conversion_ratio;
@@ -399,12 +391,6 @@ template <auto TargetUnit> requires gse::internal::is_derivable_unit<decltype(Ta
 constexpr auto gse::quantity_vec<Q, N>::as() const -> unitless::vec_t<typename Q::value_type, N> {
 	return this->as<decltype(TargetUnit)>();
 }
-
-template <typename T, std::size_t N>
-concept ref_t = sizeof(T) * N > 16;
-
-template <typename T, std::size_t N>
-concept val_t = !ref_t<T, N>;
 
 export namespace gse::vec {
 	template <typename U, typename V>
@@ -431,157 +417,58 @@ export namespace gse::vec {
 	template <typename U, typename V>
 	concept are_divisible = requires { typename div_exposed_t<U, V>; };
 
-	template <typename D1, typename D2, internal::is_vec_element T1, internal::is_vec_element T2, std::size_t N>
-		requires ref_t<T1, N>
-	constexpr auto operator+(
-		const base<D1, T1, N>& lhs,
-		const base<D2, T2, N>& rhs
-	);
+	template <internal::is_vec_element T1, internal::is_vec_element T2, std::size_t N>
+	constexpr auto operator+(const base<T1, N>& lhs, const base<T2, N>& rhs);
 
-	template <typename D1, typename D2, internal::is_vec_element T1, internal::is_vec_element T2, std::size_t N>
-		requires val_t<T1, N>
-	constexpr auto operator+(
-		base<D1, T1, N> lhs,
-		const base<D2, T2, N>& rhs
-	);
+	template <internal::is_vec_element T1, internal::is_vec_element T2, std::size_t N>
+	constexpr auto operator-(const base<T1, N>& lhs, const base<T2, N>& rhs);
 
-	template <typename D1, typename D2, internal::is_vec_element T1, internal::is_vec_element T2, std::size_t N>
-		requires ref_t<T1, N>
-	constexpr auto operator-(
-		const base<D1, T1, N>& lhs,
-		const base<D2, T2, N>& rhs
-	);
+	template <internal::is_vec_element T1, internal::is_vec_element T2, std::size_t N>
+	constexpr auto operator*(const base<T1, N>& lhs, const base<T2, N>& rhs);
 
-	template <typename D1, typename D2, internal::is_vec_element T1, internal::is_vec_element T2, std::size_t N>
-		requires val_t<T1, N>
-	constexpr auto operator-(
-		base<D1, T1, N> lhs,
-		const base<D2, T2, N>& rhs
-	);
+	template <internal::is_vec_element T1, internal::is_vec_element T2, std::size_t N>
+	constexpr auto operator/(const base<T1, N>& lhs, const base<T2, N>& rhs);
 
-	template <typename D1, typename D2, internal::is_vec_element T1, internal::is_vec_element T2, std::size_t N>
-		requires ref_t<T1, N>
-	constexpr auto operator*(
-		const base<D1, T1, N>& lhs,
-		const base<D2, T2, N>& rhs
-	);
-
-	template <typename D1, typename D2, internal::is_vec_element T1, internal::is_vec_element T2, std::size_t N>
-		requires val_t<T1, N>
-	constexpr auto operator*(
-		base<D1, T1, N> lhs,
-		const base<D2, T2, N>& rhs
-	);
-
-	template <typename D1, typename D2, internal::is_vec_element T1, internal::is_vec_element T2, std::size_t N>
-		requires ref_t<T1, N>
-	constexpr auto operator/(
-		const base<D1, T1, N>& lhs,
-		const base<D2, T2, N>& rhs
-	);
-
-	template <typename D1, typename D2, internal::is_vec_element T1, internal::is_vec_element T2, std::size_t N>
-		requires val_t<T1, N>
-	constexpr auto operator/(
-		base<D1, T1, N> lhs,
-		const base<D2, T2, N>& rhs
-	);
-
-	template <typename D1, typename D2, internal::is_vec_element T1, internal::is_vec_element T2, std::size_t N>
+	template <internal::is_vec_element T1, internal::is_vec_element T2, std::size_t N>
 		requires are_addable<T1, T2>
-	constexpr auto operator+=(
-		base<D1, T1, N>& lhs,
-		const base<D2, T2, N>& rhs
-	) -> base<D1, T1, N>&;
+	constexpr auto operator+=(base<T1, N>& lhs, const base<T2, N>& rhs) -> base<T1, N>&;
 
-	template <typename D1, typename D2, internal::is_vec_element T1, internal::is_vec_element T2, std::size_t N>
+	template <internal::is_vec_element T1, internal::is_vec_element T2, std::size_t N>
 		requires are_subtractable<T1, T2>
-	constexpr auto operator-=(
-		base<D1, T1, N>& lhs,
-		const base<D2, T2, N>& rhs
-	) -> base<D1, T1, N>&;
+	constexpr auto operator-=(base<T1, N>& lhs, const base<T2, N>& rhs) -> base<T1, N>&;
 
-	template <typename D1, typename D2, internal::is_vec_element T1, internal::is_vec_element T2, std::size_t N>
+	template <internal::is_vec_element T1, internal::is_vec_element T2, std::size_t N>
 		requires are_multipliable<T1, T2>
-	constexpr auto operator*=(
-		base<D1, T1, N>& lhs,
-		const base<D2, T2, N>& rhs
-	) -> base<D1, T1, N>&;
+	constexpr auto operator*=(base<T1, N>& lhs, const base<T2, N>& rhs) -> base<T1, N>&;
 
-	template <typename D1, typename D2, internal::is_vec_element T1, internal::is_vec_element T2, std::size_t N>
+	template <internal::is_vec_element T1, internal::is_vec_element T2, std::size_t N>
 		requires are_divisible<T1, T2>
-	constexpr auto operator/=(
-		base<D1, T1, N>& lhs,
-		const base<D2, T2, N>& rhs
-	) -> base<D1, T1, N>&;
+	constexpr auto operator/=(base<T1, N>& lhs, const base<T2, N>& rhs) -> base<T1, N>&;
 
-	template <typename D, internal::is_vec_element T, internal::is_vec_element S, std::size_t N>
-		requires ref_t<T, N>
-	constexpr auto operator*(
-		const base<D, T, N>& lhs,
-		const S& rhs
-	);
+	template <internal::is_vec_element T, internal::is_vec_element S, std::size_t N>
+	constexpr auto operator*(const base<T, N>& lhs, const S& rhs);
 
-	template <typename D, internal::is_vec_element T, internal::is_vec_element S, std::size_t N>
-		requires ref_t<T, N>
-	constexpr auto operator*(
-		const S& lhs,
-		const base<D, T, N>& rhs
-	);
+	template <internal::is_vec_element T, internal::is_vec_element S, std::size_t N>
+	constexpr auto operator*(const S& lhs, const base<T, N>& rhs);
 
-	template <typename D, internal::is_vec_element T, internal::is_vec_element S, std::size_t N>
-		requires ref_t<T, N>
-	constexpr auto operator/(
-		const base<D, T, N>& lhs,
-		const S& rhs
-	);
+	template <internal::is_vec_element T, internal::is_vec_element S, std::size_t N>
+	constexpr auto operator/(const base<T, N>& lhs, const S& rhs);
 
-	template <typename D, internal::is_vec_element T, internal::is_vec_element S, std::size_t N>
-		requires val_t<T, N>
-	constexpr auto operator*(
-		base<D, T, N> lhs,
-		const S& rhs
-	);
+	template <internal::is_vec_element T, internal::is_vec_element S, std::size_t N>
+	constexpr auto operator*=(base<T, N>& lhs, const S& rhs) -> base<T, N>&;
 
-	template <typename D, internal::is_vec_element T, internal::is_vec_element S, std::size_t N>
-		requires val_t<T, N>
-	constexpr auto operator*(
-		const S& lhs,
-		base<D, T, N> rhs
-	);
+	template <internal::is_vec_element T, internal::is_vec_element S, std::size_t N>
+	constexpr auto operator/=(base<T, N>& lhs, const S& rhs) -> base<T, N>&;
 
-	template <typename D, internal::is_vec_element T, internal::is_vec_element S, std::size_t N>
-		requires val_t<T, N>
-	constexpr auto operator/(
-		base<D, T, N> lhs,
-		const S& rhs
-	);
+	template <internal::is_vec_element T, std::size_t N>
+	constexpr auto operator+(const base<T, N>& v);
 
-	template <typename D, internal::is_vec_element T, internal::is_vec_element S, std::size_t N>
-	constexpr auto operator*=(
-		base<D, T, N>& lhs,
-		const S& rhs
-	) -> base<D, T, N>&;
-
-	template <typename D, internal::is_vec_element T, internal::is_vec_element S, std::size_t N>
-	constexpr auto operator/=(
-		base<D, T, N>& lhs,
-		const S& rhs
-	) -> base<D, T, N>&;
-
-	template <typename D, internal::is_vec_element T, std::size_t N>
-	constexpr auto operator+(
-		const base<D, T, N>& v
-	);
-
-	template <typename D, internal::is_vec_element T, std::size_t N>
-	constexpr auto operator-(
-		const base<D, T, N>& v
-	);
+	template <internal::is_vec_element T, std::size_t N>
+	constexpr auto operator-(const base<T, N>& v);
 }
-template <typename D1, typename D2, gse::internal::is_vec_element T1, gse::internal::is_vec_element T2, std::size_t N>
-	requires ref_t<T1, N>
-constexpr auto gse::vec::operator+(const base<D1, T1, N>& lhs, const base<D2, T2, N>& rhs) {
+
+template <gse::internal::is_vec_element T1, gse::internal::is_vec_element T2, std::size_t N>
+constexpr auto gse::vec::operator+(const base<T1, N>& lhs, const base<T2, N>& rhs) {
 	using result_type = add_exposed_t<T1, T2>;
 	using result_vec = vector_type_for_element_t<result_type, N>;
 
@@ -590,20 +477,8 @@ constexpr auto gse::vec::operator+(const base<D1, T1, N>& lhs, const base<D2, T2
 	return out;
 }
 
-template <typename D1, typename D2, gse::internal::is_vec_element T1, gse::internal::is_vec_element T2, std::size_t N>
-	requires val_t<T1, N>
-constexpr auto gse::vec::operator+(base<D1, T1, N> lhs, const base<D2, T2, N>& rhs) {
-	using result_type = add_exposed_t<T1, T2>;
-	using result_vec = vector_type_for_element_t<result_type, N>;
-
-	result_vec out{};
-	simd::add(lhs.as_storage_span(), rhs.as_storage_span(), out.as_storage_span());
-	return out;
-}
-
-template <typename D1, typename D2, gse::internal::is_vec_element T1, gse::internal::is_vec_element T2, std::size_t N>
-	requires ref_t<T1, N>
-constexpr auto gse::vec::operator-(const base<D1, T1, N>& lhs, const base<D2, T2, N>& rhs) {
+template <gse::internal::is_vec_element T1, gse::internal::is_vec_element T2, std::size_t N>
+constexpr auto gse::vec::operator-(const base<T1, N>& lhs, const base<T2, N>& rhs) {
 	using result_type = sub_exposed_t<T1, T2>;
 	using result_vec = vector_type_for_element_t<result_type, N>;
 
@@ -612,20 +487,8 @@ constexpr auto gse::vec::operator-(const base<D1, T1, N>& lhs, const base<D2, T2
 	return out;
 }
 
-template <typename D1, typename D2, gse::internal::is_vec_element T1, gse::internal::is_vec_element T2, std::size_t N>
-	requires val_t<T1, N>
-constexpr auto gse::vec::operator-(base<D1, T1, N> lhs, const base<D2, T2, N>& rhs) {
-	using result_type = sub_exposed_t<T1, T2>;
-	using result_vec = vector_type_for_element_t<result_type, N>;
-
-	result_vec out{};
-	simd::sub(lhs.as_storage_span(), rhs.as_storage_span(), out.as_storage_span());
-	return out;
-}
-
-template <typename D1, typename D2, gse::internal::is_vec_element T1, gse::internal::is_vec_element T2, std::size_t N>
-	requires ref_t<T1, N>
-constexpr auto gse::vec::operator*(const base<D1, T1, N>& lhs, const base<D2, T2, N>& rhs) {
+template <gse::internal::is_vec_element T1, gse::internal::is_vec_element T2, std::size_t N>
+constexpr auto gse::vec::operator*(const base<T1, N>& lhs, const base<T2, N>& rhs) {
 	using result_type = mul_exposed_t<T1, T2>;
 	using result_vec = vector_type_for_element_t<result_type, N>;
 
@@ -634,20 +497,8 @@ constexpr auto gse::vec::operator*(const base<D1, T1, N>& lhs, const base<D2, T2
 	return out;
 }
 
-template <typename D1, typename D2, gse::internal::is_vec_element T1, gse::internal::is_vec_element T2, std::size_t N>
-	requires val_t<T1, N>
-constexpr auto gse::vec::operator*(base<D1, T1, N> lhs, const base<D2, T2, N>& rhs) {
-	using result_type = mul_exposed_t<T1, T2>;
-	using result_vec = vector_type_for_element_t<result_type, N>;
-
-	result_vec out{};
-	simd::mul(lhs.as_storage_span(), rhs.as_storage_span(), out.as_storage_span());
-	return out;
-}
-
-template <typename D1, typename D2, gse::internal::is_vec_element T1, gse::internal::is_vec_element T2, std::size_t N>
-	requires ref_t<T1, N>
-constexpr auto gse::vec::operator/(const base<D1, T1, N>& lhs, const base<D2, T2, N>& rhs) {
+template <gse::internal::is_vec_element T1, gse::internal::is_vec_element T2, std::size_t N>
+constexpr auto gse::vec::operator/(const base<T1, N>& lhs, const base<T2, N>& rhs) {
 	using result_type = div_exposed_t<T1, T2>;
 	using result_vec = vector_type_for_element_t<result_type, N>;
 
@@ -656,176 +507,80 @@ constexpr auto gse::vec::operator/(const base<D1, T1, N>& lhs, const base<D2, T2
 	return out;
 }
 
-template <typename D1, typename D2, gse::internal::is_vec_element T1, gse::internal::is_vec_element T2, std::size_t N>
-	requires val_t<T1, N>
-constexpr auto gse::vec::operator/(base<D1, T1, N> lhs, const base<D2, T2, N>& rhs) {
-	using result_type = div_exposed_t<T1, T2>;
-	using result_vec = vector_type_for_element_t<result_type, N>;
-
-	result_vec out{};
-	simd::div(lhs.as_storage_span(), rhs.as_storage_span(), out.as_storage_span());
-	return out;
-}
-
-template <typename D1, typename D2, gse::internal::is_vec_element T1, gse::internal::is_vec_element T2, std::size_t N>
+template <gse::internal::is_vec_element T1, gse::internal::is_vec_element T2, std::size_t N>
 	requires gse::vec::are_addable<T1, T2>
-constexpr auto gse::vec::operator+=(base<D1, T1, N>& lhs, const base<D2, T2, N>& rhs) -> base<D1, T1, N>& {
+constexpr auto gse::vec::operator+=(base<T1, N>& lhs, const base<T2, N>& rhs) -> base<T1, N>& {
 	simd::add(lhs.as_storage_span(), rhs.as_storage_span(), lhs.as_storage_span());
 	return lhs;
 }
 
-template <typename D1, typename D2, gse::internal::is_vec_element T1, gse::internal::is_vec_element T2, std::size_t N>
+template <gse::internal::is_vec_element T1, gse::internal::is_vec_element T2, std::size_t N>
 	requires gse::vec::are_subtractable<T1, T2>
-constexpr auto gse::vec::operator-=(base<D1, T1, N>& lhs, const base<D2, T2, N>& rhs) -> base<D1, T1, N>& {
+constexpr auto gse::vec::operator-=(base<T1, N>& lhs, const base<T2, N>& rhs) -> base<T1, N>& {
 	simd::sub(lhs.as_storage_span(), rhs.as_storage_span(), lhs.as_storage_span());
 	return lhs;
 }
 
-template <typename D1, typename D2, gse::internal::is_vec_element T1, gse::internal::is_vec_element T2, std::size_t N>
+template <gse::internal::is_vec_element T1, gse::internal::is_vec_element T2, std::size_t N>
 	requires gse::vec::are_multipliable<T1, T2>
-constexpr auto gse::vec::operator*=(base<D1, T1, N>& lhs, const base<D2, T2, N>& rhs) -> base<D1, T1, N>& {
+constexpr auto gse::vec::operator*=(base<T1, N>& lhs, const base<T2, N>& rhs) -> base<T1, N>& {
 	simd::mul(lhs.as_storage_span(), rhs.as_storage_span(), lhs.as_storage_span());
 	return lhs;
 }
 
-template <typename D1, typename D2, gse::internal::is_vec_element T1, gse::internal::is_vec_element T2, std::size_t N>
+template <gse::internal::is_vec_element T1, gse::internal::is_vec_element T2, std::size_t N>
 	requires gse::vec::are_divisible<T1, T2>
-constexpr auto gse::vec::operator/=(base<D1, T1, N>& lhs, const base<D2, T2, N>& rhs) -> base<D1, T1, N>& {
+constexpr auto gse::vec::operator/=(base<T1, N>& lhs, const base<T2, N>& rhs) -> base<T1, N>& {
 	simd::div(lhs.as_storage_span(), rhs.as_storage_span(), lhs.as_storage_span());
 	return lhs;
 }
 
-template <typename D, gse::internal::is_vec_element T, gse::internal::is_vec_element S, std::size_t N>
-	requires ref_t<T, N>
-constexpr auto gse::vec::operator*(const base<D, T, N>& lhs, const S& rhs) {
+template <gse::internal::is_vec_element T, gse::internal::is_vec_element S, std::size_t N>
+constexpr auto gse::vec::operator*(const base<T, N>& lhs, const S& rhs) {
 	using result_type = decltype(std::declval<T>()* rhs);
 	using result_vec = vector_type_for_element_t<result_type, N>;
 
 	result_vec out{};
-	const auto scalar_primitive = [&] {
-		if constexpr (internal::is_arithmetic_wrapper<S>) {
-			using scalar_storage_t = internal::vec_storage_type_t<S>;
-			return *reinterpret_cast<const scalar_storage_t*>(&rhs);
-		}
-		else {
-			return rhs;
-		}
-	}();
-	simd::mul_s(lhs.as_storage_span(), static_cast<base<D, T, N>::storage_type>(scalar_primitive), out.as_storage_span());
+	simd::mul_s(lhs.as_storage_span(), static_cast<base<T, N>::storage_type>(internal::to_storage(rhs)), out.as_storage_span());
 	return out;
 }
 
-template <typename D, gse::internal::is_vec_element T, gse::internal::is_vec_element S, std::size_t N>
-	requires ref_t<T, N>
-constexpr auto gse::vec::operator*(const S& lhs, const base<D, T, N>& rhs) {
+template <gse::internal::is_vec_element T, gse::internal::is_vec_element S, std::size_t N>
+constexpr auto gse::vec::operator*(const S& lhs, const base<T, N>& rhs) {
 	return rhs * lhs;
 }
 
-template <typename D, gse::internal::is_vec_element T, gse::internal::is_vec_element S, std::size_t N>
-	requires ref_t<T, N>
-constexpr auto gse::vec::operator/(const base<D, T, N>& lhs, const S& rhs) {
+template <gse::internal::is_vec_element T, gse::internal::is_vec_element S, std::size_t N>
+constexpr auto gse::vec::operator/(const base<T, N>& lhs, const S& rhs) {
 	using result_type = decltype(std::declval<T>() / rhs);
 	using result_vec = vector_type_for_element_t<result_type, N>;
 
 	result_vec out{};
-	const auto scalar_primitive = [&] {
-		if constexpr (internal::is_arithmetic_wrapper<S>) {
-			using scalar_storage_t = internal::vec_storage_type_t<S>;
-			return *reinterpret_cast<const scalar_storage_t*>(&rhs);
-		}
-		else {
-			return rhs;
-		}
-	}();
-	simd::div_s(lhs.as_storage_span(), static_cast<base<D, T, N>::storage_type>(scalar_primitive), out.as_storage_span());
+	simd::div_s(lhs.as_storage_span(), static_cast<base<T, N>::storage_type>(internal::to_storage(rhs)), out.as_storage_span());
 	return out;
 }
 
-template <typename D, gse::internal::is_vec_element T, gse::internal::is_vec_element S, std::size_t N>
-	requires val_t<T, N>
-constexpr auto gse::vec::operator*(base<D, T, N> lhs, const S& rhs) {
-	using result_type = decltype(std::declval<T>() * rhs);
-	using result_vec = vector_type_for_element_t<result_type, N>;
-
-	result_vec out{};
-	const auto scalar_primitive = [&] {
-		if constexpr (internal::is_arithmetic_wrapper<S>) {
-			using scalar_storage_t = internal::vec_storage_type_t<S>;
-			return *reinterpret_cast<const scalar_storage_t*>(&rhs);
-		}
-		else {
-			return rhs;
-		}
-	}();
-	simd::mul_s(lhs.as_storage_span(), static_cast<base<D, T, N>::storage_type>(scalar_primitive), out.as_storage_span());
-	return out;
-}
-
-template <typename D, gse::internal::is_vec_element T, gse::internal::is_vec_element S, std::size_t N>
-	requires val_t<T, N>
-constexpr auto gse::vec::operator*(const S& lhs, base<D, T, N> rhs) {
-	return rhs * lhs;
-}
-
-template <typename D, gse::internal::is_vec_element T, gse::internal::is_vec_element S, std::size_t N>
-	requires val_t<T, N>
-constexpr auto gse::vec::operator/(base<D, T, N> lhs, const S& rhs) {
-	using result_type = decltype(std::declval<T>() / rhs);
-	using result_vec = vector_type_for_element_t<result_type, N>;
-
-	result_vec out{};
-	const auto scalar_primitive = [&] {
-		if constexpr (internal::is_arithmetic_wrapper<S>) {
-			using scalar_storage_t = internal::vec_storage_type_t<S>;
-			return *reinterpret_cast<const scalar_storage_t*>(&rhs);
-		}
-		else {
-			return rhs;
-		}
-	}();
-	simd::div_s(lhs.as_storage_span(), static_cast<base<D, T, N>::storage_type>(scalar_primitive), out.as_storage_span());
-	return out;
-}
-
-template <typename D, gse::internal::is_vec_element T, gse::internal::is_vec_element S, std::size_t N>
-constexpr auto gse::vec::operator*=(base<D, T, N>& lhs, const S& rhs) -> base<D, T, N>& {
-	const auto scalar_primitive = [&] {
-		if constexpr (internal::is_arithmetic_wrapper<S>) {
-			using scalar_storage_t = internal::vec_storage_type_t<S>;
-			return *reinterpret_cast<const scalar_storage_t*>(&rhs);
-		}
-		else {
-			return rhs;
-		}
-	}();
-	simd::mul_s(lhs.as_storage_span(), static_cast<base<D, T, N>::storage_type>(scalar_primitive), lhs.as_storage_span());
+template <gse::internal::is_vec_element T, gse::internal::is_vec_element S, std::size_t N>
+constexpr auto gse::vec::operator*=(base<T, N>& lhs, const S& rhs) -> base<T, N>& {
+	simd::mul_s(lhs.as_storage_span(), static_cast<base<T, N>::storage_type>(internal::to_storage(rhs)), lhs.as_storage_span());
 	return lhs;
 }
 
-template <typename D, gse::internal::is_vec_element T, gse::internal::is_vec_element S, std::size_t N>
-constexpr auto gse::vec::operator/=(base<D, T, N>& lhs, const S& rhs) -> base<D, T, N>& {
-	const auto scalar_primitive = [&] {
-		if constexpr (internal::is_arithmetic_wrapper<S>) {
-			using scalar_storage_t = internal::vec_storage_type_t<S>;
-			return *reinterpret_cast<const scalar_storage_t*>(&rhs);
-		}
-		else {
-			return rhs;
-		}
-	}();
-	simd::div_s(lhs.as_storage_span(), static_cast<base<D, T, N>::storage_type>(scalar_primitive), lhs.as_storage_span());
+template <gse::internal::is_vec_element T, gse::internal::is_vec_element S, std::size_t N>
+constexpr auto gse::vec::operator/=(base<T, N>& lhs, const S& rhs) -> base<T, N>& {
+	simd::div_s(lhs.as_storage_span(), static_cast<base<T, N>::storage_type>(internal::to_storage(rhs)), lhs.as_storage_span());
 	return lhs;
 }
 
-template <typename D, gse::internal::is_vec_element T, std::size_t N>
-constexpr auto gse::vec::operator+(const base<D, T, N>& v) {
+template <gse::internal::is_vec_element T, std::size_t N>
+constexpr auto gse::vec::operator+(const base<T, N>& v) {
 	return v;
 }
 
-template <typename D, gse::internal::is_vec_element T, std::size_t N>
-constexpr auto gse::vec::operator-(const base<D, T, N>& v) {
-	D out{};
-	simd::mul_s(v.as_storage_span(), static_cast<base<D, T, N>::storage_type>(-1), out.as_storage_span());
+template <gse::internal::is_vec_element T, std::size_t N>
+constexpr auto gse::vec::operator-(const base<T, N>& v) {
+	vector_type_for_element_t<T, N> out{};
+	simd::mul_s(v.as_storage_span(), static_cast<base<T, N>::storage_type>(-1), out.as_storage_span());
 	return out;
 }
 

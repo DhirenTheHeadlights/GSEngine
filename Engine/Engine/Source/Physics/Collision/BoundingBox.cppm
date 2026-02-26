@@ -27,6 +27,12 @@ namespace gse {
 	struct aabb {
 		vec3<length> max;
 		vec3<length> min;
+
+		auto overlaps(const aabb& other, length margin = meters(0.f)) const -> bool {
+			return min.x() - margin <= other.max.x() && max.x() + margin >= other.min.x() &&
+				   min.y() - margin <= other.max.y() && max.y() + margin >= other.min.y() &&
+				   min.z() - margin <= other.max.z() && max.z() + margin >= other.min.z();
+		}
 	};
 
 	struct obb {

@@ -9,18 +9,24 @@ export namespace gse::vbd {
 		float lambda = 0.f;
 		float lambda_tangent_u = 0.f;
 		float lambda_tangent_v = 0.f;
+		float penalty = 0.f;
 		std::uint32_t age = 0;
 	};
 
 	class contact_cache {
 	public:
-		static constexpr float warm_start_factor = 0.7f;
+		static constexpr float warm_start_factor = 0.95f;
 		static constexpr std::uint32_t max_age = 3;
 
 		auto lookup(
-			std::uint32_t body_a, 
-			std::uint32_t body_b, 
+			std::uint32_t body_a,
+			std::uint32_t body_b,
 			const feature_id& fid
+		) const -> std::optional<cached_lambda>;
+
+		auto lookup_body_pair(
+			std::uint32_t body_a,
+			std::uint32_t body_b
 		) const -> std::optional<cached_lambda>;
 
 		auto store(
@@ -88,11 +94,42 @@ auto gse::vbd::contact_cache::lookup(const std::uint32_t body_a, const std::uint
 			.lambda = it->second.lambda,
 			.lambda_tangent_u = it->second.lambda_tangent_u,
 			.lambda_tangent_v = it->second.lambda_tangent_v,
+			.penalty = it->second.penalty,
 			.age = it->second.age
 		};
 	}
 
 	return std::nullopt;
+}
+
+auto gse::vbd::contact_cache::lookup_body_pair(const std::uint32_t body_a, const std::uint32_t body_b) const -> std::optional<cached_lambda> {
+	float sum_lambda = 0.f;
+	float sum_tu = 0.f;
+	float sum_tv = 0.f;
+	float sum_penalty = 0.f;
+	int count = 0;
+
+	for (const auto& [key, val] : m_cache) {
+		if ((key.body_a == body_a && key.body_b == body_b) ||
+			(key.body_a == body_b && key.body_b == body_a)) {
+			sum_lambda += val.lambda;
+			sum_tu += val.lambda_tangent_u;
+			sum_tv += val.lambda_tangent_v;
+			sum_penalty += val.penalty;
+			++count;
+		}
+	}
+
+	if (count == 0) return std::nullopt;
+
+	const float inv = 1.f / static_cast<float>(count);
+	return cached_lambda{
+		.lambda = sum_lambda * inv,
+		.lambda_tangent_u = sum_tu * inv,
+		.lambda_tangent_v = sum_tv * inv,
+		.penalty = sum_penalty * inv,
+		.age = 0
+	};
 }
 
 auto gse::vbd::contact_cache::store(const std::uint32_t body_a, const std::uint32_t body_b, const feature_id& fid, const cached_lambda& data) -> void {
@@ -105,6 +142,7 @@ auto gse::vbd::contact_cache::store(const std::uint32_t body_a, const std::uint3
 		.lambda = data.lambda,
 		.lambda_tangent_u = data.lambda_tangent_u,
 		.lambda_tangent_v = data.lambda_tangent_v,
+		.penalty = data.penalty,
 		.age = 0
 	};
 }

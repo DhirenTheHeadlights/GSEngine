@@ -21,19 +21,19 @@ export namespace gs {
 
 			build_inverted_mass_pyramid();
 			build_domino_chain();
-			build_funnel();
-			build_slope_friction_test();
-			build_high_speed_impact_target();
+			//build_funnel();
+			//build_slope_friction_test();
+			//build_high_speed_impact_target();
 
-			build("Player")
+			/*build("Player")
 				.with<player>({
 					.initial_position = gse::vec3<gse::length>(0.f, 10.f, 0.f)
-				});
+				});*/
 
-			/*build("Scene Camera")
+			build("Scene Camera")
 				.with<gse::free_camera>({
 					.initial_position = gse::vec3<gse::length>(0.f, 20.f, 40.f)
-				});*/
+				});
 
 			build("Scene Light")
 				.with<sphere_light>({
@@ -74,14 +74,15 @@ export namespace gs {
 		auto build_domino_chain() const -> void {
 			constexpr float z = -10.f;
 			constexpr float start_x = -8.f;
-			constexpr float spacing = 1.5f;
+			constexpr float spacing = 0.9f;
 
 			for (int i = 0; i < 12; ++i) {
 				const float x = start_x + static_cast<float>(i) * spacing;
 				build(std::format("Domino {}", i + 1))
 					.with<gse::box>({
-						.initial_position = gse::vec3<gse::length>(x, 1.f, z),
+						.initial_position = gse::vec3<gse::length>(x, (i == 0) ? 1.2f : 1.f, z),
 						.size = gse::vec3<gse::length>(0.3f, 2.f, 1.f),
+						.initial_orientation = (i == 0) ? gse::quat({ 0.f, 0.f, 1.f }, gse::radians(-0.4f)) : gse::quat(),
 						.mass = gse::kilograms(30.f)
 					});
 			}
@@ -130,7 +131,7 @@ export namespace gs {
 				for (int col = 0; col < 3; ++col) {
 					const float bx = cx - 1.f + static_cast<float>(col) * 1.1f;
 					const float by = 0.5f + static_cast<float>(row) * 1.1f;
-					const float bz = cz;
+					const float bz = cz - 3.f;
 					build(std::format("Funnel Box r{}c{}", row, col))
 						.with<gse::box>({
 							.initial_position = gse::vec3<gse::length>(bx, by, bz),
