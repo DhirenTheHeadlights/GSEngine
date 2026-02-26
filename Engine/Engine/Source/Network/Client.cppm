@@ -17,6 +17,7 @@ import :connection;
 import :ping_pong;
 import :notify_scene_change;
 import :input_frame;
+import :server_info;
 
 export namespace gse::network {
 	struct replication_message {
@@ -30,7 +31,8 @@ export namespace gse::network {
 		ping,
 		pong,
 		notify_scene_change,
-		replication_message 
+		replication_message,
+		server_info_response
 	>;
 
 	class client {
@@ -239,6 +241,11 @@ auto gse::network::client::tick() -> void {
 					std::lock_guard lk(m_inbox_mutex);
 					m_inbox.emplace_back(m);
 				}
+				handled_internally = true;
+			})
+			.else_if_is<server_info_response>([&](const server_info_response& m) {
+				std::lock_guard lk(m_inbox_mutex);
+				m_inbox.emplace_back(m);
 				handled_internally = true;
 			});
 
