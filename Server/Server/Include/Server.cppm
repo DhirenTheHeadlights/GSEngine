@@ -209,7 +209,7 @@ auto gse::server::send_reliable(const T& msg, const network::address& to) -> voi
 
 auto gse::server::resend_reliable_messages() -> void {
 	for (auto& [addr, peer] : m_peers) {
-		auto to_resend = peer.get_messages_to_resend(reliable_retry_interval_ms);
+		auto to_resend = peer.messages_to_resend(reliable_retry_interval_ms);
 
 		for (auto* msg : to_resend) {
 			std::array<std::byte, max_packet_size> buffer;
@@ -262,6 +262,26 @@ auto gse::server::update() -> void {
 		const auto mid = network::message_id(stream);
 
 		if (it == m_peers.end()) {
+			if (network::try_decode<network::server_info_request>(stream, mid, [&](const auto&) {
+				std::array<std::byte, max_packet_size> buffer;
+				network::bitstream out_stream(buffer);
+
+				const packet_header header_out{};
+				out_stream.write(header_out);
+				network::write(out_stream, network::server_info_response{
+					.players = static_cast<std::uint8_t>(m_clients.size()),
+					.max_players = 8
+				});
+
+				outgoing_packet out_pkt;
+				out_pkt.to = pkt.from;
+				out_pkt.size = out_stream.bytes_written();
+				std::memcpy(out_pkt.buffer.data(), buffer.data(), out_pkt.size);
+				m_outgoing.push(out_pkt);
+			})) {
+				continue;
+			}
+
 			network::try_decode<network::connection_request>(stream, mid, [&](const auto&) {
 				m_peers.emplace(pkt.from, network::remote_peer(pkt.from));
 
@@ -294,6 +314,25 @@ auto gse::server::update() -> void {
 		}
 
 		if (network::try_decode<network::connection_request>(stream, mid, [&](const auto&) {
+			if (auto client_it = m_clients.find(pkt.from); client_it != m_clients.end()) {
+				if (auto* scene = m_owner->current_scene()) {
+					scene->registry().remove(client_it->second.controller_id);
+				}
+				m_clients.erase(client_it);
+			}
+
+			if (auto* scene = m_owner->current_scene()) {
+				const auto controller_name = std::format("PlayerController_{}", m_next_player_id++);
+				auto controller_id = scene->registry().create(controller_name);
+				scene->registry().add_component<player_controller>(controller_id, player_controller_data{});
+				scene->registry().activate(controller_id);
+				m_clients.emplace(pkt.from, client_data{ .controller_id = controller_id });
+
+				if (m_host_addr == pkt.from) {
+					m_host_entity = controller_id;
+				}
+			}
+
 			send_reliable(network::connection_accepted{}, pkt.from);
 
 			if (const auto* active = m_owner->current_scene()) {
@@ -334,10 +373,16 @@ auto gse::server::update() -> void {
 			})
 			.else_if_is([&](const network::pong&) {
 			})
+			.else_if_is([&](const network::server_info_request&) {
+				send(network::server_info_response{
+					.players = static_cast<std::uint8_t>(m_clients.size()),
+					.max_players = 8
+				}, pkt.from);
+			})
 			.else_if_is([&](const network::input_frame_header& fh) {
 				const std::size_t wc = fh.action_word_count;
 
-				std::vector<std::uint64_t> pressed(wc), released(wc);
+				std::vector<std::uint64_t> pressed(wc), released(wc), held(wc);
 
 				for (std::size_t i = 0; i < wc; ++i) {
 					pressed[i] = stream.read<std::uint64_t>();
@@ -345,6 +390,10 @@ auto gse::server::update() -> void {
 
 				for (std::size_t i = 0; i < wc; ++i) {
 					released[i] = stream.read<std::uint64_t>();
+				}
+
+				for (std::size_t i = 0; i < wc; ++i) {
+					held[i] = stream.read<std::uint64_t>();
 				}
 
 				std::vector<network::axes1_pair> a1(fh.axes1_count);
@@ -367,7 +416,7 @@ auto gse::server::update() -> void {
 
 				cd.latest_input.begin_frame();
 				cd.latest_input.ensure_capacity(fh.action_word_count * 64);
-				cd.latest_input.load_transients(pressed, released);
+				cd.latest_input.load_state(pressed, released, held);
 
 				for (auto& [idv, value] : a1) {
 					cd.latest_input.set_axis1(idv, value);
