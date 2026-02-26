@@ -14,6 +14,9 @@ export namespace gs {
         std::uint32_t m_ping_seq = 0;
         int m_selected = -1;
         gse::clock m_refresh_clock;
+        gse::interval_timer<> m_server_info_timer{ gse::seconds(10.f) };
+        std::uint8_t m_connected_players = 0;
+        std::uint8_t m_connected_max_players = 0;
     };
 }
 
@@ -59,16 +62,25 @@ auto gs::client::update() -> void {
                 if (const auto* scene = m_owner->current_scene()) {
                     m_owner->deactivate_scene(scene->id());
                 }
+                gse::network::send(gse::network::server_info_request{});
             })
             .else_if_is([&](const gse::network::notify_scene_change& msg) {
                 m_owner->activate_scene(msg.scene_id);
                 std::println("Switched to scene: {}", msg.scene_id);
+            })
+            .else_if_is([&](const gse::network::server_info_response& msg) {
+                m_connected_players = msg.players;
+                m_connected_max_players = msg.max_players;
             });
     });
 
     if (m_refresh_clock.elapsed<std::uint32_t>() > 1000u) {
         gse::network::refresh_servers(gse::milliseconds(150));
         m_refresh_clock.reset();
+    }
+
+    if (gse::network::state() == gse::network::client::state::connected && m_server_info_timer.tick()) {
+        gse::network::send(gse::network::server_info_request{});
     }
 }
 
@@ -77,7 +89,9 @@ auto gs::client::render() -> void {
         switch (gse::network::state()) {
             case gse::network::client::state::disconnected: gse::gui::text("Status: Disconnected"); break;
             case gse::network::client::state::connecting:   gse::gui::text("Status: Connecting..."); break;
-            case gse::network::client::state::connected:    gse::gui::text("Status: Connected"); break;
+            case gse::network::client::state::connected:
+                gse::gui::text(std::format("Status: Connected ({}/{})", m_connected_players, m_connected_max_players));
+                break;
             default: break;
         }
 

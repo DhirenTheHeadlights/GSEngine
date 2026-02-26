@@ -209,7 +209,7 @@ auto gse::server::send_reliable(const T& msg, const network::address& to) -> voi
 
 auto gse::server::resend_reliable_messages() -> void {
 	for (auto& [addr, peer] : m_peers) {
-		auto to_resend = peer.get_messages_to_resend(reliable_retry_interval_ms);
+		auto to_resend = peer.messages_to_resend(reliable_retry_interval_ms);
 
 		for (auto* msg : to_resend) {
 			std::array<std::byte, max_packet_size> buffer;
@@ -262,6 +262,26 @@ auto gse::server::update() -> void {
 		const auto mid = network::message_id(stream);
 
 		if (it == m_peers.end()) {
+			if (network::try_decode<network::server_info_request>(stream, mid, [&](const auto&) {
+				std::array<std::byte, max_packet_size> buffer;
+				network::bitstream out_stream(buffer);
+
+				const packet_header header_out{};
+				out_stream.write(header_out);
+				network::write(out_stream, network::server_info_response{
+					.players = static_cast<std::uint8_t>(m_clients.size()),
+					.max_players = 8
+				});
+
+				outgoing_packet out_pkt;
+				out_pkt.to = pkt.from;
+				out_pkt.size = out_stream.bytes_written();
+				std::memcpy(out_pkt.buffer.data(), buffer.data(), out_pkt.size);
+				m_outgoing.push(out_pkt);
+			})) {
+				continue;
+			}
+
 			network::try_decode<network::connection_request>(stream, mid, [&](const auto&) {
 				m_peers.emplace(pkt.from, network::remote_peer(pkt.from));
 
@@ -352,6 +372,12 @@ auto gse::server::update() -> void {
 				send(network::pong{ .sequence = m.sequence }, pkt.from);
 			})
 			.else_if_is([&](const network::pong&) {
+			})
+			.else_if_is([&](const network::server_info_request&) {
+				send(network::server_info_response{
+					.players = static_cast<std::uint8_t>(m_clients.size()),
+					.max_players = 8
+				}, pkt.from);
 			})
 			.else_if_is([&](const network::input_frame_header& fh) {
 				const std::size_t wc = fh.action_word_count;

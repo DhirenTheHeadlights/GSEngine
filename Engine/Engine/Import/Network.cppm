@@ -27,6 +27,7 @@ export import :client;
 export import :discovery;
 export import :registry_sync;
 export import :replication;
+export import :server_info;
 
 export namespace gse::network {
 	struct connection_options {
