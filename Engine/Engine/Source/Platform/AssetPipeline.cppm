@@ -56,7 +56,7 @@ export namespace gse {
         }
 
         auto compile_all(
-        ) -> compile_result;
+        ) const -> compile_result;
 
         template<typename Resource>
             requires has_asset_compiler<Resource>
@@ -150,7 +150,7 @@ auto gse::asset_pipeline::register_type(resource::loader<Resource, Context>* loa
     m_compilers.push_back(std::move(entry));
 }
 
-auto gse::asset_pipeline::compile_all() -> compile_result {
+auto gse::asset_pipeline::compile_all() const -> compile_result {
     compile_result total_result;
 
     for (const auto& compiler : m_compilers) {

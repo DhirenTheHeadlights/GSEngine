@@ -56,11 +56,11 @@ export namespace gse::network {
         ) -> void;
 
         std::vector<discovery_result> m_seed;
-        mutable std::vector<discovery_result> m_published;  // Stable buffer for returning spans
-        std::vector<discovery_result> m_pending;            // Written by async thread
+        mutable std::vector<discovery_result> m_published;  
+        std::vector<discovery_result> m_pending;            
         mutable std::mutex m_mutex;
         std::atomic<bool> m_querying{ false };
-        std::atomic<bool> m_has_pending{ false };
+        mutable std::atomic<bool> m_has_pending{ false };
         time_t<std::uint32_t> m_last_refresh{ seconds(0) };
     };
 }

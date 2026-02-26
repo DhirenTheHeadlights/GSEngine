@@ -85,8 +85,8 @@ auto gse::camera::system::update(update_phase& phase, state& s) -> void {
 		}
 	}
 
-	const quat yaw_rotation = from_axis_angle({ 0.f, 1.f, 0.f }, s.yaw);
-	const quat pitch_rotation = from_axis_angle({ 1.f, 0.f, 0.f }, s.pitch);
+	const quat yaw_rotation = quat({ 0.f, 1.f, 0.f }, s.yaw);
+	const quat pitch_rotation = quat({ 1.f, 0.f, 0.f }, s.pitch);
 	const quat new_orientation = normalize(yaw_rotation * pitch_rotation);
 
 	phase.schedule([&s, new_orientation, dt](chunk<follow_component> cameras) {

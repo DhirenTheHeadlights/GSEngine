@@ -35,6 +35,8 @@ export namespace gse::vbd {
 		float lambda_tangent_u = 0.f;
 		float lambda_tangent_v = 0.f;
 
+		float penalty = 0.f;
+
 		float friction_coeff = 0.6f;
 		float pre_solve_v_n = 0.f;
 
