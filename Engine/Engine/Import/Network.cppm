@@ -160,7 +160,8 @@ auto gse::network::system::update(update_phase& phase, system_state& s) -> void 
 									c->networked_data() = data;
 									return true;
 								}
-								reg.add_component<T>(entity, data);
+								auto* c = reg.add_component<T>(entity, data);
+								c->networked_data() = data;
 								return true;
 							});
 						});
@@ -177,7 +178,8 @@ auto gse::network::system::update(update_phase& phase, system_state& s) -> void 
 									c->networked_data() = data;
 									return true;
 								}
-								reg.add_component<T>(entity, data);
+								auto* c = reg.add_component<T>(entity, data);
+								c->networked_data() = data;
 								return true;
 							});
 						});
