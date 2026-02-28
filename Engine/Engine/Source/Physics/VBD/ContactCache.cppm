@@ -24,11 +24,6 @@ export namespace gse::vbd {
 			const feature_id& fid
 		) const -> std::optional<cached_lambda>;
 
-		auto lookup_body_pair(
-			std::uint32_t body_a,
-			std::uint32_t body_b
-		) const -> std::optional<cached_lambda>;
-
 		auto store(
 			std::uint32_t body_a, 
 			std::uint32_t body_b, 
@@ -90,46 +85,38 @@ auto gse::vbd::contact_cache::lookup(const std::uint32_t body_a, const std::uint
 	};
 
 	if (const auto it = m_cache.find(key_swapped); it != m_cache.end()) {
-		return cached_lambda{
-			.lambda = it->second.lambda,
-			.lambda_tangent_u = it->second.lambda_tangent_u,
-			.lambda_tangent_v = it->second.lambda_tangent_v,
-			.penalty = it->second.penalty,
-			.age = it->second.age
-		};
+		return it->second;
 	}
 
-	return std::nullopt;
-}
-
-auto gse::vbd::contact_cache::lookup_body_pair(const std::uint32_t body_a, const std::uint32_t body_b) const -> std::optional<cached_lambda> {
 	float sum_lambda = 0.f;
 	float sum_tu = 0.f;
 	float sum_tv = 0.f;
 	float sum_penalty = 0.f;
 	int count = 0;
 
-	for (const auto& [key, val] : m_cache) {
-		if ((key.body_a == body_a && key.body_b == body_b) ||
-			(key.body_a == body_b && key.body_b == body_a)) {
-			sum_lambda += val.lambda;
-			sum_tu += val.lambda_tangent_u;
-			sum_tv += val.lambda_tangent_v;
-			sum_penalty += val.penalty;
+	for (const auto& [k, v] : m_cache) {
+		if ((k.body_a == body_a && k.body_b == body_b) ||
+			(k.body_a == body_b && k.body_b == body_a)) {
+			sum_lambda += v.lambda;
+			sum_tu += v.lambda_tangent_u;
+			sum_tv += v.lambda_tangent_v;
+			sum_penalty += v.penalty;
 			++count;
 		}
 	}
 
-	if (count == 0) return std::nullopt;
+	if (count > 0) {
+		const float inv = 1.f / static_cast<float>(count);
+		return cached_lambda{
+			.lambda = sum_lambda * inv,
+			.lambda_tangent_u = sum_tu * inv,
+			.lambda_tangent_v = sum_tv * inv,
+			.penalty = sum_penalty * inv,
+			.age = 0
+		};
+	}
 
-	const float inv = 1.f / static_cast<float>(count);
-	return cached_lambda{
-		.lambda = sum_lambda * inv,
-		.lambda_tangent_u = sum_tu * inv,
-		.lambda_tangent_v = sum_tv * inv,
-		.penalty = sum_penalty * inv,
-		.age = 0
-	};
+	return std::nullopt;
 }
 
 auto gse::vbd::contact_cache::store(const std::uint32_t body_a, const std::uint32_t body_b, const feature_id& fid, const cached_lambda& data) -> void {
@@ -138,6 +125,14 @@ auto gse::vbd::contact_cache::store(const std::uint32_t body_a, const std::uint3
 		.body_b = body_b,
 		.feature = fid
 	};
+
+	if (data.lambda == 0.f && data.lambda_tangent_u == 0.f && data.lambda_tangent_v == 0.f) {
+		if (const auto it = m_cache.find(key); it != m_cache.end() && it->second.lambda != 0.f) {
+			it->second.age = 0;
+			return;
+		}
+	}
+
 	m_cache[key] = cached_lambda{
 		.lambda = data.lambda,
 		.lambda_tangent_u = data.lambda_tangent_u,

@@ -21,13 +21,13 @@ export namespace gse::vbd {
 		float friction_coefficient = 0.6f;
 		float rho = 1000.f;
 		float restitution = 0.3f;
-		float linear_damping = 1.0f;
-		float angular_damping = 1.0f;
+		float linear_damping = 0.05f;
+		float angular_damping = 0.05f;
 		float velocity_sleep_threshold = 0.001f;
 		length speculative_margin = meters(0.02f);
-		float penalty_min_ratio = 0.1f;
-		float penalty_max = 1e9f;
-		float beta = 1e5f;
+		float penalty_min_ratio = 0.01f;
+		float penalty_max = 1e15f;
+		float beta_ratio = 0.25f;
 		float gamma = 0.99f;
 	};
 
@@ -81,6 +81,7 @@ export namespace gse::vbd {
 		auto accumulate_contact_gradient_hessian(
 			const contact_constraint& c,
 			float h_squared,
+			float alpha,
 			std::vector<body_solve_state>& solve_state
 		) const -> void;
 
@@ -97,7 +98,7 @@ export namespace gse::vbd {
 		) -> void;
 
 		auto update_lagrange_multipliers(
-			bool update_penalty
+			float alpha
 		) -> void;
 
 		auto derive_velocities(
@@ -233,12 +234,12 @@ auto gse::vbd::solver::solve_substep(const time_step sub_dt) -> void {
 	++s_substep;
 	const bool log_this = false;
 
-	for (std::uint32_t iter = 0; iter < m_config.iterations; ++iter) {
+	auto run_primal_iteration = [&](float alpha) {
 		for (const auto& body_color : m_graph.body_colors()) {
 			for (const auto bi : body_color) {
 				m_solve_state[bi] = {};
 				for (const auto ci : m_graph.body_contact_indices(bi)) {
-					accumulate_contact_gradient_hessian(contacts[ci], h_squared, m_solve_state);
+					accumulate_contact_gradient_hessian(contacts[ci], h_squared, alpha, m_solve_state);
 				}
 				if (const auto mi = m_body_motor_index[bi]; mi != no_motor) {
 					accumulate_motor_gradient_hessian(motors[mi], h_squared, m_solve_state);
@@ -257,12 +258,17 @@ auto gse::vbd::solver::solve_substep(const time_step sub_dt) -> void {
 				perform_local_newton_step(motor.body_index, m_solve_state[motor.body_index], h_squared);
 			}
 		}
-	}
+	};
 
-	update_lagrange_multipliers(true);
+	for (std::uint32_t iter = 0; iter < m_config.iterations; ++iter) {
+		run_primal_iteration(1.0f);
+		update_lagrange_multipliers(1.0f);
+	}
 
 	derive_velocities(sub_dt);
 	apply_velocity_corrections(4);
+	
+	run_primal_iteration(0.0f);
 
 	for (std::uint32_t bi = 0; bi < m_bodies.size(); ++bi) {
 		auto& body = m_bodies[bi];
@@ -364,7 +370,7 @@ auto gse::vbd::solver::predict_positions(const time_step sub_dt) -> void {
 	}
 }
 
-auto gse::vbd::solver::accumulate_contact_gradient_hessian(const contact_constraint& c, const float h_squared, std::vector<body_solve_state>& solve_state) const -> void {
+auto gse::vbd::solver::accumulate_contact_gradient_hessian(const contact_constraint& c, const float h_squared, const float alpha, std::vector<body_solve_state>& solve_state) const -> void {
 	const auto& body_a = m_bodies[c.body_a];
 	const auto& body_b = m_bodies[c.body_b];
 
@@ -374,7 +380,8 @@ auto gse::vbd::solver::accumulate_contact_gradient_hessian(const contact_constra
 	const vec3<length> p_a = body_a.predicted_position + world_r_a;
 	const vec3<length> p_b = body_b.predicted_position + world_r_b;
 
-	const float gap = (dot(p_b - p_a, c.normal) + c.initial_separation).as<meters>();
+	const float C0 = c.initial_separation.as<meters>();
+	const float gap = dot(p_b - p_a, c.normal).as<meters>() + C0 * (1.0f - alpha);
 
 	const mat3 n_outer_n = outer_product(c.normal, c.normal);
 
@@ -383,9 +390,9 @@ auto gse::vbd::solver::accumulate_contact_gradient_hessian(const contact_constra
 	const unitless::vec3 r_cross_n_a = cross(r_a_unitless, c.normal);
 	const unitless::vec3 r_cross_n_b = cross(r_b_unitless, c.normal);
 
-	const float effective = std::min(c.penalty * gap - c.lambda, 0.f);
+	if (gap < 0.f) {
+		const float effective = std::min(c.penalty * gap - c.lambda, 0.f);
 
-	if (effective < 0.f) {
 		if (!body_a.locked) {
 			solve_state[c.body_a].gradient -= c.normal * effective;
 			solve_state[c.body_a].hessian += n_outer_n * c.penalty;
@@ -555,7 +562,7 @@ auto gse::vbd::solver::perform_local_newton_step(const std::uint32_t body_idx, c
 	}
 }
 
-auto gse::vbd::solver::update_lagrange_multipliers(const bool update_penalty) -> void {
+auto gse::vbd::solver::update_lagrange_multipliers(const float alpha) -> void {
 	for (auto& c : m_graph.contact_constraints()) {
 		const auto& body_a = m_bodies[c.body_a];
 		const auto& body_b = m_bodies[c.body_b];
@@ -566,18 +573,28 @@ auto gse::vbd::solver::update_lagrange_multipliers(const bool update_penalty) ->
 		const vec3<length> p_a = body_a.predicted_position + world_r_a;
 		const vec3<length> p_b = body_b.predicted_position + world_r_b;
 
-		const float gap = (dot(p_b - p_a, c.normal) + c.initial_separation).as<meters>();
+		const float C0 = c.initial_separation.as<meters>();
+		const float gap = dot(p_b - p_a, c.normal).as<meters>() + C0 * (1.0f - alpha);
 
 		const float mass_a_val = body_a.locked ? 0.f : body_a.mass_value.as<kilograms>();
 		const float mass_b_val = body_b.locked ? 0.f : body_b.mass_value.as<kilograms>();
 		const float penalty_floor = m_config.penalty_min_ratio * std::max(mass_a_val, mass_b_val) / m_h_squared;
 		c.penalty = std::max(c.penalty, penalty_floor);
 
-		constexpr float max_lambda = 1e6f;
-		c.lambda = std::clamp(c.lambda - c.penalty * gap, 0.f, max_lambda);
+		if (gap >= 0.f) {
+			c.lambda = 0.f;
+		} else {
+			const float effective_mass = std::max(mass_a_val, mass_b_val);
+			const float inertial_weight = effective_mass / m_h_squared;
+			const float dynamic_beta = m_config.beta_ratio * inertial_weight;
+			
+			const float dynamic_max_lambda = 1000.f * inertial_weight;
+			
+			c.lambda = std::clamp(c.lambda - c.penalty * gap, 0.f, dynamic_max_lambda);
 
-		if (update_penalty && c.lambda > 0.f) {
-			c.penalty = std::min(c.penalty + m_config.beta * std::abs(gap), m_config.penalty_max);
+			if (c.lambda > 0.f) {
+				c.penalty = std::min(c.penalty + dynamic_beta * std::abs(gap), m_config.penalty_max);
+			}
 		}
 	}
 }
@@ -818,6 +835,13 @@ auto gse::vbd::solver::apply_velocity_corrections(const int iterations) -> void 
 			float delta_lambda_t = -v_t_mag.as<meters_per_second>() / w_total_t;
 
 			const float max_friction = c.friction_coeff * effective_normal_impulse;
+			
+			static int s_fric_log = 0;
+			if (++s_fric_log % 64 == 0) {
+				log::println("[VBD-Fric] a={} b={} v_t={:.4f} normal_impulse={:.4f} max_fric={:.4f} delta_t_req={:.4f}",
+					c.body_a, c.body_b, v_t_mag.as<meters_per_second>(), effective_normal_impulse, max_friction, delta_lambda_t);
+			}
+
 			delta_lambda_t = std::clamp(delta_lambda_t, -max_friction, max_friction);
 
 			if (!body_a.locked) {
