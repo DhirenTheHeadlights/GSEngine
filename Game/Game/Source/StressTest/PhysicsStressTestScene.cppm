@@ -19,16 +19,16 @@ export namespace gs {
 				})
 				.with<static_object>();
 
-			build_inverted_mass_pyramid();
+			//build_inverted_mass_pyramid();
 			build_domino_chain();
 			//build_funnel();
 			//build_slope_friction_test();
 			//build_high_speed_impact_target();
 
-			/*build("Player")
+			build("Player")
 				.with<player>({
 					.initial_position = gse::vec3<gse::length>(0.f, 10.f, 0.f)
-				});*/
+				});
 
 			build("Scene Camera")
 				.with<gse::free_camera>({
@@ -82,7 +82,7 @@ export namespace gs {
 					.with<gse::box>({
 						.initial_position = gse::vec3<gse::length>(x, (i == 0) ? 1.2f : 1.f, z),
 						.size = gse::vec3<gse::length>(0.3f, 2.f, 1.f),
-						.initial_orientation = (i == 0) ? gse::quat({ 0.f, 0.f, 1.f }, gse::radians(-0.4f)) : gse::quat(),
+						.initial_orientation = (i == 0) ? gse::quat({ 0.f, 0.f, 1.f }, gse::radians(-0.8f)) : gse::quat(),
 						.mass = gse::kilograms(30.f)
 					});
 			}

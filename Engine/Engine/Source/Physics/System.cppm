@@ -97,13 +97,12 @@ auto gse::physics::system::initialize(const initialize_phase& phase, state& s) -
 		.friction_coefficient = 0.6f,
 		.rho = 1.f,
 		.restitution = 0.3f,
-		.linear_damping = 0.3f,
-		.angular_damping = 0.3f,
+		.linear_damping = 0.05f,
+		.angular_damping = 0.05f,
 		.velocity_sleep_threshold = 0.05f,
 		.speculative_margin = meters(0.02f),
-		.penalty_min_ratio = 0.1f,
+		.penalty_min_ratio = 0.0001f,
 		.penalty_max = 1e9f,
-		.beta = 1e5f,
 		.gamma = 0.99f
 	});
 
@@ -520,17 +519,17 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 
 				if (!sat_result) continue;
 
-				auto [normal, separation, is_speculative] = *sat_result;
+				auto& sat = *sat_result;
 
-				if (dot(normal, collision_b->bounding_box.center() - collision_a->bounding_box.center()) < 0.f) {
-					normal = -normal;
+				if (dot(sat.normal, collision_b->bounding_box.center() - collision_a->bounding_box.center()) < 0.f) {
+					sat.normal = -sat.normal;
 				}
 
 				auto manifold = narrow_phase_collision::generate_manifold(
 					collision_a->bounding_box,
 					collision_b->bounding_box,
-					normal,
-					s.vbd_solver.config().speculative_margin
+					sat.normal,
+					sat.separation
 				);
 
 				if (manifold.point_count == 0) continue;
@@ -545,31 +544,20 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 				const std::uint32_t body_a = it_a->second;
 				const std::uint32_t body_b = it_b->second;
 
-				static int s_contact_log = 0;
-				++s_contact_log;
-				const bool log_contacts = s_contact_log <= 500 && !bodies[body_a].locked && !bodies[body_b].locked;
-
-				if (log_contacts) {
-					log::println("[Contact-Gen] frame={} a={} b={} sat_n=({:.3f},{:.3f},{:.3f}) sat_sep={:.4f} spec={} pts={}",
-						s_contact_log, body_a, body_b,
-						normal.x(), normal.y(), normal.z(),
-						separation.as<meters>(), is_speculative, manifold.point_count);
-				}
-
-				if (normal.y() > 0.7f && motion_b) {
+				if (sat.normal.y() > 0.7f && motion_b) {
 					motion_b->airborne = false;
 				}
-				if (normal.y() < -0.7f && motion_a) {
+				if (sat.normal.y() < -0.7f && motion_a) {
 					motion_a->airborne = false;
 				}
 
 				collision_a->collision_information.colliding = true;
-				collision_a->collision_information.collision_normal = normal;
-				collision_a->collision_information.penetration = -separation;
+				collision_a->collision_information.collision_normal = sat.normal;
+				collision_a->collision_information.penetration = -sat.separation;
 
 				collision_b->collision_information.colliding = true;
-				collision_b->collision_information.collision_normal = -normal;
-				collision_b->collision_information.penetration = -separation;
+				collision_b->collision_information.collision_normal = -sat.normal;
+				collision_b->collision_information.penetration = -sat.separation;
 
 				for (std::uint32_t p = 0; p < manifold.point_count; ++p) {
 					const auto& [position_on_a, position_on_b, normal, separation, feature] = manifold.points[p];
@@ -589,17 +577,6 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 					const vec3<length> local_r_b = to_local(body_state_b.orientation, world_r_b);
 
 					auto cached = s.contact_cache.lookup(body_a, body_b, feature);
-					if (!cached) cached = s.contact_cache.lookup_body_pair(body_a, body_b);
-
-					if (log_contacts) {
-						log::println("[Contact-Pt] a={} b={} pt_n=({:.3f},{:.3f},{:.3f}) pt_sep={:.4f} wr_a=({:.3f},{:.3f},{:.3f}) wr_b=({:.3f},{:.3f},{:.3f}) warm={:.3f}",
-							body_a, body_b,
-							normal.x(), normal.y(), normal.z(), separation.as<meters>(),
-							world_r_a.x().as<meters>(), world_r_a.y().as<meters>(), world_r_a.z().as<meters>(),
-							world_r_b.x().as<meters>(), world_r_b.y().as<meters>(), world_r_b.z().as<meters>(),
-							cached ? cached->lambda : 0.f);
-						log::flush();
-					}
 
 					const auto& cfg = s.vbd_solver.config();
 					const float sub_dt = const_update_time.as<seconds>() / static_cast<float>(cfg.substeps);
@@ -608,6 +585,11 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 					const float mass_b_val = body_state_b.locked ? 0.f : body_state_b.mass_value.as<kilograms>();
 					const float penalty_floor = cfg.penalty_min_ratio * std::max(mass_a_val, mass_b_val) / h_sq;
 					const float init_penalty = cached ? std::max(cached->penalty * cfg.gamma, penalty_floor) : penalty_floor;
+
+					const float eff_mass = (mass_a_val > 0.f && mass_b_val > 0.f)
+						? (mass_a_val * mass_b_val) / (mass_a_val + mass_b_val)
+						: std::max(mass_a_val, mass_b_val);
+					const float damping_coeff = cfg.contact_damping * 2.f * std::sqrt(init_penalty * eff_mass);
 
 					s.vbd_solver.add_contact_constraint(vbd::contact_constraint{
 						.body_a = body_a,
@@ -619,7 +601,7 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 						.r_b = local_r_b,
 						.initial_separation = separation,
 						.compliance = cfg.contact_compliance,
-						.damping = cfg.contact_damping,
+						.damping = damping_coeff,
 						.lambda = cached ? cached->lambda * vbd::contact_cache::warm_start_factor : 0.f,
 						.lambda_tangent_u = cached ? cached->lambda_tangent_u * vbd::contact_cache::warm_start_factor : 0.f,
 						.lambda_tangent_v = cached ? cached->lambda_tangent_v * vbd::contact_cache::warm_start_factor : 0.f,

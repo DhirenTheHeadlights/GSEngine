@@ -10,6 +10,12 @@ import gse.math;
 import gse.utility;
 
 export namespace gse::narrow_phase_collision {
+    struct sat_result {
+        unitless::vec3 normal;
+        length separation;
+        bool is_speculative;
+    };
+
     auto resolve_collision(
         physics::motion_component* object_a,
         physics::collision_component& coll_a,
@@ -21,19 +27,13 @@ export namespace gse::narrow_phase_collision {
         const bounding_box& bb1,
         const bounding_box& bb2,
         length speculative_margin
-    ) -> std::optional<std::tuple<unitless::vec3, length, bool>>;
-
-    auto identify_feature(
-        const bounding_box& bb,
-        const vec3<length>& contact_point,
-        const unitless::vec3& normal
-    ) -> std::pair<feature_type, std::uint8_t>;
+    ) -> std::optional<sat_result>;
 
     auto generate_manifold(
         const bounding_box& bb1,
         const bounding_box& bb2,
         const unitless::vec3& normal,
-        length speculative_margin = meters(0.f)
+        length separation
     ) -> contact_manifold;
 }
 
@@ -682,7 +682,7 @@ auto gse::narrow_phase_collision::sat_speculative(
     const bounding_box& bb1,
     const bounding_box& bb2,
     const length speculative_margin
-) -> std::optional<std::tuple<unitless::vec3, length, bool>> {
+) -> std::optional<sat_result> {
     length min_overlap = meters(std::numeric_limits<float>::max());
     unitless::vec3 best_axis;
     bool all_positive = true;
@@ -735,69 +735,18 @@ auto gse::narrow_phase_collision::sat_speculative(
         best_axis = -best_axis;
     }
 
-    const bool is_speculative = !all_positive;
-    return std::make_tuple(best_axis, min_overlap, is_speculative);
-}
-
-auto gse::narrow_phase_collision::identify_feature(
-    const bounding_box& bb,
-    const vec3<length>& contact_pt,
-    const unitless::vec3& normal
-) -> std::pair<feature_type, std::uint8_t> {
-    const auto& normals = bb.face_normals();
-    constexpr float face_threshold = 0.98f;
-
-    for (std::uint8_t i = 0; i < 6; ++i) {
-        if (std::abs(dot(normal, normals[i])) > face_threshold) {
-            return { feature_type::face, i };
-        }
-    }
-
-    const auto vertices = bb.obb_vertices();
-    length min_dist = meters(std::numeric_limits<float>::max());
-    std::uint8_t closest_vertex = 0;
-
-    for (std::uint8_t i = 0; i < 8; ++i) {
-        const length dist = magnitude(contact_pt - vertices[i]);
-        if (dist < min_dist) {
-            min_dist = dist;
-            closest_vertex = i;
-        }
-    }
-
-    constexpr length vertex_threshold = meters(0.01f);
-    if (min_dist < vertex_threshold) {
-        return { feature_type::vertex, closest_vertex };
-    }
-
-    length min_edge_dist = meters(std::numeric_limits<float>::max());
-    std::uint8_t closest_edge = 0;
-
-    for (std::uint8_t i = 0; i < bounding_box::edge_count; ++i) {
-        const auto [p0, p1] = bb.edge_endpoints(i);
-        const auto edge = p1 - p0;
-        const auto edge_len_sq = dot(edge, edge);
-        if (edge_len_sq < meters(1e-8f) * meters(1.f)) continue;
-
-        float t = dot(contact_pt - p0, edge) / edge_len_sq;
-        t = std::clamp(t, 0.f, 1.f);
-        const auto closest = p0 + edge * t;
-        const length dist = magnitude(contact_pt - closest);
-
-        if (dist < min_edge_dist) {
-            min_edge_dist = dist;
-            closest_edge = i;
-        }
-    }
-
-    return { feature_type::edge, closest_edge };
+    return sat_result{
+        .normal = best_axis,
+        .separation = min_overlap,
+        .is_speculative = !all_positive
+    };
 }
 
 auto gse::narrow_phase_collision::generate_manifold(
     const bounding_box& bb1,
     const bounding_box& bb2,
     const unitless::vec3& normal,
-    const length speculative_margin
+    const length separation
 ) -> contact_manifold {
     contact_manifold manifold;
 
@@ -805,47 +754,46 @@ auto gse::narrow_phase_collision::generate_manifold(
     manifold.tangent_u = tangent_u;
     manifold.tangent_v = tangent_v;
 
+    const auto derive_feature = [&](std::uint8_t point_ordinal) -> feature_id {
+        int best = 0;
+        float best_d = 0.f;
+        for (int i = 0; i < 3; ++i) {
+            const float d = std::abs(dot(normal, bb1.obb().axes[i]));
+            if (d > best_d) { best_d = d; best = i; }
+        }
+        return {
+            .type_a = feature_type::face,
+            .type_b = feature_type::face,
+            .index_a = static_cast<std::uint8_t>(best),
+            .index_b = point_ordinal
+        };
+    };
+
     auto contact_points = generate_contact_points(bb1, bb2, normal);
 
-    auto sat_result = sat_speculative(bb1, bb2, speculative_margin);
-    const length separation = sat_result ? std::get<1>(*sat_result) : meters(0.f);
-
+    std::uint8_t ordinal = 0;
     for (const auto& cp : contact_points) {
         if (manifold.point_count >= 4) break;
-
-        auto [type_a, index_a] = identify_feature(bb1, cp, normal);
-        auto [type_b, index_b] = identify_feature(bb2, cp, -normal);
 
         manifold.add_point(contact_point{
             .position_on_a = cp,
             .position_on_b = cp,
             .normal = normal,
             .separation = -separation,
-            .feature = {
-                .type_a = type_a,
-                .type_b = type_b,
-                .index_a = index_a,
-                .index_b = index_b
-            }
+            .feature = derive_feature(ordinal)
         });
+        ++ordinal;
     }
 
-    if (manifold.point_count == 0 && sat_result) {
+    if (manifold.point_count == 0) {
         const auto mk = minkowski_difference(bb1, bb2, normal);
-        auto [type_a, index_a] = identify_feature(bb1, mk.support_a, normal);
-        auto [type_b, index_b] = identify_feature(bb2, mk.support_b, -normal);
 
         manifold.add_point(contact_point{
             .position_on_a = mk.support_a,
             .position_on_b = mk.support_b,
             .normal = normal,
             .separation = -separation,
-            .feature = {
-                .type_a = type_a,
-                .type_b = type_b,
-                .index_a = index_a,
-                .index_b = index_b
-            }
+            .feature = derive_feature(0)
         });
     }
 
