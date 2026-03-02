@@ -274,11 +274,7 @@ auto gse::vbd::solver::solve_substep(const time_step sub_dt) -> void {
 		auto& body = m_bodies[bi];
 		if (body.locked || body.sleeping()) continue;
 
-		if (m_body_motor_index[bi] != no_motor) {
-			body.position = body.predicted_position;
-		} else {
-			body.position = body.old_position + body.body_velocity * sub_dt;
-		}
+		body.position = body.predicted_position;
 
 		if (body.update_orientation) {
 			body.orientation = body.predicted_orientation;
@@ -390,9 +386,9 @@ auto gse::vbd::solver::accumulate_contact_gradient_hessian(const contact_constra
 	const unitless::vec3 r_cross_n_a = cross(r_a_unitless, c.normal);
 	const unitless::vec3 r_cross_n_b = cross(r_b_unitless, c.normal);
 
-	if (gap < 0.f) {
-		const float effective = std::min(c.penalty * gap - c.lambda, 0.f);
+	const float effective = std::min(c.penalty * gap - c.lambda, 0.f);
 
+	if (effective < 0.f) {
 		if (!body_a.locked) {
 			solve_state[c.body_a].gradient -= c.normal * effective;
 			solve_state[c.body_a].hessian += n_outer_n * c.penalty;
@@ -581,20 +577,16 @@ auto gse::vbd::solver::update_lagrange_multipliers(const float alpha) -> void {
 		const float penalty_floor = m_config.penalty_min_ratio * std::max(mass_a_val, mass_b_val) / m_h_squared;
 		c.penalty = std::max(c.penalty, penalty_floor);
 
-		if (gap >= 0.f) {
-			c.lambda = 0.f;
-		} else {
-			const float effective_mass = std::max(mass_a_val, mass_b_val);
-			const float inertial_weight = effective_mass / m_h_squared;
-			const float dynamic_beta = m_config.beta_ratio * inertial_weight;
-			
-			const float dynamic_max_lambda = 1000.f * inertial_weight;
-			
-			c.lambda = std::clamp(c.lambda - c.penalty * gap, 0.f, dynamic_max_lambda);
+		const float effective_mass = std::max(mass_a_val, mass_b_val);
+		const float inertial_weight = effective_mass / m_h_squared;
+		const float dynamic_beta = m_config.beta_ratio * inertial_weight;
+		
+		const float dynamic_max_lambda = 1000.f * inertial_weight;
+		
+		c.lambda = std::clamp(c.lambda - c.penalty * gap, 0.f, dynamic_max_lambda);
 
-			if (c.lambda > 0.f) {
-				c.penalty = std::min(c.penalty + dynamic_beta * std::abs(gap), m_config.penalty_max);
-			}
+		if (c.lambda > 0.f) {
+			c.penalty = std::min(c.penalty + dynamic_beta * std::abs(gap), m_config.penalty_max);
 		}
 	}
 }

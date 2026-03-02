@@ -114,7 +114,9 @@ auto gs::client::render() -> void {
         }
 
         if (gse::gui::button("Send Ping") && gse::network::state() == gse::network::client::state::connected) {
-            gse::network::send(gse::network::ping{ ++m_ping_seq });
+            gse::network::send(gse::network::ping{ 
+                .sequence = ++m_ping_seq
+            });
         }
     });
 }
