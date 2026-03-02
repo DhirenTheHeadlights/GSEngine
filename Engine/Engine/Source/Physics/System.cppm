@@ -320,6 +320,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		if (mc.motor.jump_requested && !mc.airborne) {
 			mc.current_velocity.y() = mc.motor.jump_speed;
 			mc.airborne = true;
+			s.sleep_counters[mc.owner_id()] = 0;
 		}
 		mc.motor.jump_requested = false;
 	}
@@ -710,6 +711,7 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 			if (mc.motor.jump_requested && !mc.airborne) {
 				mc.current_velocity.y() = mc.motor.jump_speed;
 				mc.airborne = true;
+				s.sleep_counters[mc.owner_id()] = 0;
 			}
 			mc.motor.jump_requested = false;
 		}
