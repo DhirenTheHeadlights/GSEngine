@@ -457,15 +457,13 @@ auto gse::vbd::gpu_solver::upload(
 			position,
 			predicted_position,
 			inertia_target,
-			old_position,
+			initial_position,
 			body_velocity,
-			predicted_velocity,
 			orientation,
 			predicted_orientation,
 			angular_inertia_target,
-			old_orientation,
+			initial_orientation,
 			body_angular_velocity,
-			predicted_angular_velocity,
 			motor_target,
 			mass_value,
 			inv_inertia,
@@ -490,14 +488,11 @@ auto gse::vbd::gpu_solver::upload(
 			const auto it_pos = inertia_target.as<meters>();
 			gse::memcpy(elem + bo.at("inertia_target"), &it_pos);
 
-			const auto op = old_position.as<meters>();
+			const auto op = initial_position.as<meters>();
 			gse::memcpy(elem + bo.at("old_position"), &op);
 
 			const auto vel = body_velocity.as<meters_per_second>();
 			gse::memcpy(elem + bo.at("velocity"), &vel);
-
-			const auto pv = predicted_velocity.as<meters_per_second>();
-			gse::memcpy(elem + bo.at("predicted_velocity"), &pv);
 
 			gse::memcpy(elem + bo.at("orientation"), &orientation);
 
@@ -505,13 +500,10 @@ auto gse::vbd::gpu_solver::upload(
 
 			gse::memcpy(elem + bo.at("angular_inertia_target"), &angular_inertia_target);
 
-			gse::memcpy(elem + bo.at("old_orientation"), &old_orientation);
+			gse::memcpy(elem + bo.at("old_orientation"), &initial_orientation);
 
 			const auto av = body_angular_velocity.as<radians_per_second>();
 			gse::memcpy(elem + bo.at("angular_velocity"), &av);
-
-			const auto pav = predicted_angular_velocity.as<radians_per_second>();
-			gse::memcpy(elem + bo.at("predicted_angular_velocity"), &pav);
 		}
 
 		const auto mt = motor_target.as<meters>();
@@ -614,10 +606,12 @@ auto gse::vbd::gpu_solver::upload(
 	std::memcpy(&friction_bits, &solver_cfg.friction_coefficient, sizeof(float));
 	m_upload_collision_state[2] = friction_bits;
 	std::uint32_t compliance_bits;
-	std::memcpy(&compliance_bits, &solver_cfg.contact_compliance, sizeof(float));
+	const float zero_compliance = 0.0f;
+	std::memcpy(&compliance_bits, &zero_compliance, sizeof(float));
 	m_upload_collision_state[3] = compliance_bits;
 	std::uint32_t damping_bits;
-	std::memcpy(&damping_bits, &solver_cfg.contact_damping, sizeof(float));
+	const float zero_damping = 0.0f;
+	std::memcpy(&damping_bits, &zero_damping, sizeof(float));
 	m_upload_collision_state[4] = damping_bits;
 	m_upload_collision_state[5] = static_cast<std::uint32_t>(prev_contacts.size());
 	m_upload_collision_state[6] = m_num_colors;
@@ -633,7 +627,7 @@ auto gse::vbd::gpu_solver::upload(
 }
 
 auto gse::vbd::gpu_solver::total_substeps() const -> std::uint32_t {
-	return m_solver_cfg.substeps * m_steps;
+	return 1 * m_steps;
 }
 
 auto gse::vbd::gpu_solver::commit_upload(const std::uint32_t frame_index) -> void {
@@ -1262,8 +1256,8 @@ auto gse::vbd::gpu_solver::dispatch_compute(const vk::CommandBuffer command, vul
 			"color_count", color_count,
 			"h_squared", h_squared,
 			"dt", sub_dt,
-			"rho", cfg.rho,
-			"linear_damping", cfg.linear_damping,
+			"rho", cfg.beta,
+			"linear_damping", 0.0f,
 			"velocity_sleep_threshold", cfg.velocity_sleep_threshold,
 			"substep", substep,
 			"iteration", iteration

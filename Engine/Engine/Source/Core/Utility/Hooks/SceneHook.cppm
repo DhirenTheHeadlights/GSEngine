@@ -8,6 +8,7 @@ import :misc;
 import :hook;
 import :registry;
 import :concepts;
+import :behavior_hook;
 
 export namespace gse {
 	class scene;
@@ -33,9 +34,28 @@ public:
 			requires (is_entity_hook<T> || is_component<T>) && !has_params<T>
 		auto with(
 		) -> builder&;
+
+		auto with_init(
+			behavior_hook::behavior_func func
+		) -> builder&;
+
+		auto with_update(
+			behavior_hook::behavior_func func
+		) -> builder&;
+
+		auto with_render(
+			behavior_hook::behavior_func func
+		) -> builder&;
+
+		auto with_shutdown(
+			behavior_hook::behavior_func func
+		) -> builder&;
 	private:
 		id m_entity_id;
 		registry* m_registry = nullptr;
+
+		auto ensure_behavior_hook(
+		) -> behavior_hook*;
 	};
 
 	hook(
@@ -91,4 +111,31 @@ auto gse::hook<gse::scene>::builder::with() -> builder& {
 		m_registry->add_component<T>(m_entity_id);
 	}
 	return *this;
+}
+
+auto gse::hook<gse::scene>::builder::with_init(behavior_hook::behavior_func func) -> builder& {
+	ensure_behavior_hook()->on_init(std::move(func));
+	return *this;
+}
+
+auto gse::hook<gse::scene>::builder::with_update(behavior_hook::behavior_func func) -> builder& {
+	ensure_behavior_hook()->on_update(std::move(func));
+	return *this;
+}
+
+auto gse::hook<gse::scene>::builder::with_render(behavior_hook::behavior_func func) -> builder& {
+	ensure_behavior_hook()->on_render(std::move(func));
+	return *this;
+}
+
+auto gse::hook<gse::scene>::builder::with_shutdown(behavior_hook::behavior_func func) -> builder& {
+	ensure_behavior_hook()->on_shutdown(std::move(func));
+	return *this;
+}
+
+auto gse::hook<gse::scene>::builder::ensure_behavior_hook() -> behavior_hook* {
+	if (auto* hook = m_registry->try_linked_object_write<behavior_hook>(m_entity_id)) {
+		return hook;
+	}
+	return m_registry->add_hook<behavior_hook>(m_entity_id);
 }

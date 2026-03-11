@@ -12,23 +12,32 @@ export namespace gs {
 		using hook::hook;
 
 		auto initialize() -> void override {
+			const auto floor_pos = gse::vec3<gse::length>(0.f, -0.5f, 0.f);
 			build("Floor")
 				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(0.f, -0.5f, 0.f),
+					.initial_position = floor_pos,
 					.size = gse::vec3<gse::length>(60.f, 1.f, 60.f)
 				})
-				.with<static_object>();
+				.with_init([](gse::hook<gse::entity>& h) {
+					h.configure_when_present([](gse::physics::motion_component& mc) {
+						mc.affected_by_gravity = false;
+						mc.position_locked = true;
+					});
+				})
+				.with_update([floor_pos](gse::hook<gse::entity>& h) {
+					h.template component_write<gse::physics::motion_component>().current_position = floor_pos;
+				});
 
 			build_inverted_mass_pyramid();
-			build_domino_chain();
+			//build_domino_chain();
 			//build_funnel();
 			//build_slope_friction_test();
 			//build_high_speed_impact_target();
 
-			build("Player")
+			/*build("Player")
 				.with<player>({
 					.initial_position = gse::vec3<gse::length>(0.f, 10.f, 0.f)
-				});
+				});*/
 
 			build("Scene Camera")
 				.with<gse::free_camera>({
@@ -110,7 +119,12 @@ export namespace gs {
 					.size = gse::vec3<gse::length>(wall_len, wall_height, 0.3f),
 					.initial_orientation = left_rot
 				})
-				.with<static_object>();
+				.with_init([](gse::hook<gse::entity>& h) {
+					h.configure_when_present([](gse::physics::motion_component& mc) {
+						mc.affected_by_gravity = false;
+						mc.position_locked = true;
+					});
+				});
 
 			build("Funnel Right Wall")
 				.with<gse::box>({
@@ -118,14 +132,24 @@ export namespace gs {
 					.size = gse::vec3<gse::length>(wall_len, wall_height, 0.3f),
 					.initial_orientation = right_rot
 				})
-				.with<static_object>();
+				.with_init([](gse::hook<gse::entity>& h) {
+					h.configure_when_present([](gse::physics::motion_component& mc) {
+						mc.affected_by_gravity = false;
+						mc.position_locked = true;
+					});
+				});
 
 			build("Funnel Back Wall")
 				.with<gse::box>({
 					.initial_position = gse::vec3<gse::length>(cx, wall_height * 0.5f, cz - half_len),
 					.size = gse::vec3<gse::length>(spread * 2.f + 1.f, wall_height, 0.3f)
 				})
-				.with<static_object>();
+				.with_init([](gse::hook<gse::entity>& h) {
+					h.configure_when_present([](gse::physics::motion_component& mc) {
+						mc.affected_by_gravity = false;
+						mc.position_locked = true;
+					});
+				});
 
 			for (int row = 0; row < 3; ++row) {
 				for (int col = 0; col < 3; ++col) {
@@ -154,7 +178,12 @@ export namespace gs {
 					.size = gse::vec3<gse::length>(10.f, 0.5f, 4.f),
 					.initial_orientation = ramp_tilt
 				})
-				.with<static_object>();
+				.with_init([](gse::hook<gse::entity>& h) {
+					h.configure_when_present([](gse::physics::motion_component& mc) {
+						mc.affected_by_gravity = false;
+						mc.position_locked = true;
+					});
+				});
 
 			build("Ramp Box Should Hold")
 				.with<gse::box>({
@@ -171,7 +200,12 @@ export namespace gs {
 					.size = gse::vec3<gse::length>(10.f, 0.5f, 4.f),
 					.initial_orientation = steep_tilt
 				})
-				.with<static_object>();
+				.with_init([](gse::hook<gse::entity>& h) {
+					h.configure_when_present([](gse::physics::motion_component& mc) {
+						mc.affected_by_gravity = false;
+						mc.position_locked = true;
+					});
+				});
 
 			build("Steep Box Should Slide")
 				.with<gse::box>({
@@ -198,14 +232,5 @@ export namespace gs {
 				}
 			}
 		}
-
-		struct static_object final : hook<gse::entity> {
-			auto initialize() -> void override {
-				configure_when_present([](gse::physics::motion_component& mc) {
-					mc.affected_by_gravity = false;
-					mc.position_locked = true;
-				});
-			}
-		};
 	};
 }

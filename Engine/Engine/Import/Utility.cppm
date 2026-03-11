@@ -4,6 +4,7 @@ export import gse.config;
 
 export import :channel_base;
 export import :clock;
+export import :behavior_hook;
 export import :component;
 export import :concepts;
 export import :default_scene_hook;

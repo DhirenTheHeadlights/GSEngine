@@ -11,11 +11,17 @@ export namespace gse {
 		face
 	};
 
+	constexpr std::uint8_t feature_side_none = 0xFF;
+
 	struct feature_id {
 		feature_type type_a = feature_type::face;
 		feature_type type_b = feature_type::face;
 		std::uint8_t index_a = 0;
 		std::uint8_t index_b = 0;
+		std::uint8_t side_a0 = feature_side_none;
+		std::uint8_t side_a1 = feature_side_none;
+		std::uint8_t side_b0 = feature_side_none;
+		std::uint8_t side_b1 = feature_side_none;
 
 		auto operator==(const feature_id&) const -> bool = default;
 	};
@@ -43,19 +49,6 @@ export namespace gse {
 	auto compute_tangent_basis(
 		const unitless::vec3& normal
 	) -> std::pair<unitless::vec3, unitless::vec3>;
-}
-
-namespace gse {
-	struct feature_id_hash {
-		auto operator()(const feature_id& fid) const noexcept -> std::size_t {
-			std::size_t h = 0;
-			h ^= std::hash<std::uint8_t>{}(static_cast<std::uint8_t>(fid.type_a)) + 0x9e3779b9 + (h << 6) + (h >> 2);
-			h ^= std::hash<std::uint8_t>{}(static_cast<std::uint8_t>(fid.type_b)) + 0x9e3779b9 + (h << 6) + (h >> 2);
-			h ^= std::hash<std::uint8_t>{}(fid.index_a) + 0x9e3779b9 + (h << 6) + (h >> 2);
-			h ^= std::hash<std::uint8_t>{}(fid.index_b) + 0x9e3779b9 + (h << 6) + (h >> 2);
-			return h;
-		}
-	};
 }
 
 auto gse::contact_manifold::add_point(const contact_point& p) -> bool {

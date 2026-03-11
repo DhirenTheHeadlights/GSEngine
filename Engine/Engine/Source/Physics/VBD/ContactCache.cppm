@@ -2,20 +2,22 @@ export module gse.physics:vbd_contact_cache;
 
 import std;
 
+import gse.math;
 import :contact_manifold;
 
 export namespace gse::vbd {
 	struct cached_lambda {
-		float lambda = 0.f;
-		float lambda_tangent_u = 0.f;
-		float lambda_tangent_v = 0.f;
-		float penalty = 0.f;
+		float lambda[3] = {};
+		float penalty[3] = {};
+		unitless::vec3 normal = {};
+		vec3<length> local_anchor_a = {};
+		vec3<length> local_anchor_b = {};
+		bool sticking = false;
 		std::uint32_t age = 0;
 	};
 
 	class contact_cache {
 	public:
-		static constexpr float warm_start_factor = 0.95f;
 		static constexpr std::uint32_t max_age = 3;
 
 		auto lookup(
@@ -25,9 +27,9 @@ export namespace gse::vbd {
 		) const -> std::optional<cached_lambda>;
 
 		auto store(
-			std::uint32_t body_a, 
-			std::uint32_t body_b, 
-			const feature_id& fid, 
+			std::uint32_t body_a,
+			std::uint32_t body_b,
+			const feature_id& fid,
 			const cached_lambda& data
 		) -> void;
 
@@ -54,6 +56,10 @@ export namespace gse::vbd {
 				h ^= std::hash<std::uint8_t>{}(static_cast<std::uint8_t>(k.feature.type_b)) + 0x9e3779b9 + (h << 6) + (h >> 2);
 				h ^= std::hash<std::uint8_t>{}(k.feature.index_a) + 0x9e3779b9 + (h << 6) + (h >> 2);
 				h ^= std::hash<std::uint8_t>{}(k.feature.index_b) + 0x9e3779b9 + (h << 6) + (h >> 2);
+				h ^= std::hash<std::uint8_t>{}(k.feature.side_a0) + 0x9e3779b9 + (h << 6) + (h >> 2);
+				h ^= std::hash<std::uint8_t>{}(k.feature.side_a1) + 0x9e3779b9 + (h << 6) + (h >> 2);
+				h ^= std::hash<std::uint8_t>{}(k.feature.side_b0) + 0x9e3779b9 + (h << 6) + (h >> 2);
+				h ^= std::hash<std::uint8_t>{}(k.feature.side_b1) + 0x9e3779b9 + (h << 6) + (h >> 2);
 				return h;
 			}
 		};
@@ -62,7 +68,11 @@ export namespace gse::vbd {
 	};
 }
 
-auto gse::vbd::contact_cache::lookup(const std::uint32_t body_a, const std::uint32_t body_b, const feature_id& fid) const -> std::optional<cached_lambda> {
+auto gse::vbd::contact_cache::lookup(
+	const std::uint32_t body_a,
+	const std::uint32_t body_b,
+	const feature_id& fid
+) const -> std::optional<cached_lambda> {
 	const cache_key key{
 		.body_a = body_a,
 		.body_b = body_b,
@@ -80,40 +90,19 @@ auto gse::vbd::contact_cache::lookup(const std::uint32_t body_a, const std::uint
 			.type_a = fid.type_b,
 			.type_b = fid.type_a,
 			.index_a = fid.index_b,
-			.index_b = fid.index_a
+			.index_b = fid.index_a,
+			.side_a0 = fid.side_b0,
+			.side_a1 = fid.side_b1,
+			.side_b0 = fid.side_a0,
+			.side_b1 = fid.side_a1
 		}
 	};
 
 	if (const auto it = m_cache.find(key_swapped); it != m_cache.end()) {
-		return it->second;
-	}
-
-	float sum_lambda = 0.f;
-	float sum_tu = 0.f;
-	float sum_tv = 0.f;
-	float sum_penalty = 0.f;
-	int count = 0;
-
-	for (const auto& [k, v] : m_cache) {
-		if ((k.body_a == body_a && k.body_b == body_b) ||
-			(k.body_a == body_b && k.body_b == body_a)) {
-			sum_lambda += v.lambda;
-			sum_tu += v.lambda_tangent_u;
-			sum_tv += v.lambda_tangent_v;
-			sum_penalty += v.penalty;
-			++count;
-		}
-	}
-
-	if (count > 0) {
-		const float inv = 1.f / static_cast<float>(count);
-		return cached_lambda{
-			.lambda = sum_lambda * inv,
-			.lambda_tangent_u = sum_tu * inv,
-			.lambda_tangent_v = sum_tv * inv,
-			.penalty = sum_penalty * inv,
-			.age = 0
-		};
+		auto result = it->second;
+		result.normal = -result.normal;
+		std::swap(result.local_anchor_a, result.local_anchor_b);
+		return result;
 	}
 
 	return std::nullopt;
@@ -125,21 +114,8 @@ auto gse::vbd::contact_cache::store(const std::uint32_t body_a, const std::uint3
 		.body_b = body_b,
 		.feature = fid
 	};
-
-	if (data.lambda == 0.f && data.lambda_tangent_u == 0.f && data.lambda_tangent_v == 0.f) {
-		if (const auto it = m_cache.find(key); it != m_cache.end() && it->second.lambda != 0.f) {
-			it->second.age = 0;
-			return;
-		}
-	}
-
-	m_cache[key] = cached_lambda{
-		.lambda = data.lambda,
-		.lambda_tangent_u = data.lambda_tangent_u,
-		.lambda_tangent_v = data.lambda_tangent_v,
-		.penalty = data.penalty,
-		.age = 0
-	};
+	m_cache[key] = data;
+	m_cache[key].age = 0;
 }
 
 auto gse::vbd::contact_cache::age_and_prune() -> void {
