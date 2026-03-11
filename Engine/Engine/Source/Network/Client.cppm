@@ -74,7 +74,7 @@ export namespace gse::network {
 			const actions::state& s,
 			std::span<const std::uint16_t> axis1_ids,
 			std::span<const std::uint16_t> axis2_ids,
-			float camera_yaw = 0.f
+			angle camera_yaw = {}
 		) -> void;
 
 	private:
@@ -103,7 +103,7 @@ export namespace gse::network {
 			actions::state state;
 			std::vector<std::uint16_t> axis1_ids;
 			std::vector<std::uint16_t> axis2_ids;
-			float camera_yaw = 0.f;
+			angle camera_yaw;
 		};
 
 		std::mutex m_input_mutex;
@@ -344,7 +344,7 @@ auto gse::network::client::drain(const std::function<void(inbox_message&)>& on_r
 	}
 }
 
-auto gse::network::client::push_input(const actions::state& s, std::span<const std::uint16_t> axis1_ids, std::span<const std::uint16_t> axis2_ids, const float camera_yaw) -> void {
+auto gse::network::client::push_input(const actions::state& s, std::span<const std::uint16_t> axis1_ids, std::span<const std::uint16_t> axis2_ids, const angle camera_yaw) -> void {
 	input_snapshot snap;
 	snap.state = s;
 	snap.axis1_ids.assign(axis1_ids.begin(), axis1_ids.end());

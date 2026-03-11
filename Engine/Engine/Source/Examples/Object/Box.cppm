@@ -23,6 +23,7 @@ export namespace gse {
 		explicit box(const params& p) : m_initial_position(p.initial_position), m_size(p.size), m_initial_orientation(p.initial_orientation), m_box_mass(p.mass) {}
 
 		auto initialize() -> void override {
+			static constexpr density row = kilograms_per_cubic_meter(2000.f);
 			const auto s = m_size.as<meters>();
 			const float mass_val = m_box_mass.as<kilograms>();
 			const float box_inertia = (mass_val / 18.f) * (s.x() * s.x() + s.y() * s.y() + s.z() * s.z());

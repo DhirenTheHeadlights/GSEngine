@@ -12,13 +12,20 @@ export namespace gs {
 		using hook::hook;
 
 		auto initialize() -> void override {
+			const auto floor_pos = gse::vec3<gse::length>(0.f, -0.5f, 0.f);
 			build("Floor")
 				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(0.f, -0.5f, 0.f),
+					.initial_position = floor_pos,
 					.size = gse::vec3<gse::length>(20.f, 1.f, 20.f)
 				})
-				.with<positioned_object_hook>({
-					.position = gse::vec3<gse::length>(0.f, -0.5f, 0.f)
+				.with_init([](hook<gse::entity>& h) {
+					h.configure_when_present([](gse::physics::motion_component& mc) {
+						mc.affected_by_gravity = false;
+						mc.position_locked = true;
+					});
+				})
+				.with_update([floor_pos](hook<gse::entity>& h) {
+					h.component_write<gse::physics::motion_component>().current_position = floor_pos;
 				});
 
 			for (int i = 0; i < 5; ++i) {
@@ -49,25 +56,5 @@ export namespace gs {
 				});
 		}
 	private:
-		struct positioned_object_hook final : hook<gse::entity> {
-			struct params {
-				gse::vec3<gse::length> position;
-			};
-
-			positioned_object_hook(const params& p) : position(p.position) {}
-
-			gse::vec3<gse::length> position;
-
-			auto initialize() -> void override {
-				configure_when_present([](gse::physics::motion_component& mc) {
-					mc.affected_by_gravity = false;
-					mc.position_locked = true;
-				});
-			}
-
-			auto update() -> void override {
-				component_write<gse::physics::motion_component>().current_position = position;
-			}
-		};
 	};
 }

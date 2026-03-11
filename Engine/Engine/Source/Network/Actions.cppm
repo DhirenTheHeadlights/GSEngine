@@ -2,6 +2,7 @@ export module gse.network:actions;
 
 import std;
 
+import gse.math;
 import gse.platform;
 
 import :socket;
@@ -30,11 +31,11 @@ export namespace gse::network {
 		const actions::state& state,
 		std::span<const std::uint16_t> axes1_ids,
 		std::span<const std::uint16_t> axes2_ids,
-		float camera_yaw = 0.f
+		angle camera_yaw = {}
 	) -> void;
 }
 
-auto gse::network::send_input_frame(const udp_socket& socket, remote_peer& peer, std::array<std::byte, max_packet_size>& buffer, const std::uint32_t input_sequence, const actions::state& state, const std::span<const std::uint16_t> axes1_ids, const std::span<const std::uint16_t> axes2_ids, const float camera_yaw) -> void {
+auto gse::network::send_input_frame(const udp_socket& socket, remote_peer& peer, std::array<std::byte, max_packet_size>& buffer, const std::uint32_t input_sequence, const actions::state& state, const std::span<const std::uint16_t> axes1_ids, const std::span<const std::uint16_t> axes2_ids, const angle camera_yaw) -> void {
 	const auto& pm = state.pressed_mask();
 	const auto& rm = state.released_mask();
 	const auto& hm = state.held_mask();
@@ -68,7 +69,7 @@ auto gse::network::send_input_frame(const udp_socket& socket, remote_peer& peer,
 		.action_word_count = wc,
 		.axes1_count = static_cast<std::uint16_t>(a1.size()),
 		.axes2_count = static_cast<std::uint16_t>(a2.size()),
-		.camera_yaw = camera_yaw
+		.camera_yaw = camera_yaw.as<radians>()
 	};
 	write(s, hdr);
 

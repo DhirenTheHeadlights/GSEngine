@@ -26,19 +26,14 @@ export namespace gse::vbd {
 		vec3<length> r_a;
 		vec3<length> r_b;
 
-		length initial_separation;
+		float C0[3] = {};
 
-		float compliance = 0.f;
-		float damping = 0.f;
+		float lambda[3] = {};
+		float penalty[3] = {};
 
-		float lambda = 0.f;
-		float lambda_tangent_u = 0.f;
-		float lambda_tangent_v = 0.f;
-
-		float penalty = 0.f;
-
+		float penalty_floor = 1.f;
 		float friction_coeff = 0.6f;
-		float pre_solve_v_n = 0.f;
+		bool sticking = false;
 
 		feature_id feature;
 	};
@@ -59,18 +54,16 @@ export namespace gse::vbd {
 		vec3<length> position;
 		vec3<length> predicted_position;
 		vec3<length> inertia_target;
-		vec3<length> old_position;
+		vec3<length> initial_position;
 
 		vec3<velocity> body_velocity;
-		vec3<velocity> predicted_velocity;
 
 		quat orientation;
 		quat predicted_orientation;
 		quat angular_inertia_target;
-		quat old_orientation;
+		quat initial_orientation;
 
 		vec3<angular_velocity> body_angular_velocity;
-		vec3<angular_velocity> predicted_angular_velocity;
 
 		vec3<length> motor_target;
 

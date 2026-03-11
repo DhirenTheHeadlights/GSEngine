@@ -215,11 +215,9 @@ auto gse::network::system::update(update_phase& phase, system_state& s) -> void 
 
 	if (s.client_ptr->current_state() == client::state::connected) {
 		if (const auto* actions_state = phase.try_state_of<actions::system_state>()) {
-			float yaw = 0.f;
+			angle yaw;
 			if (const auto* cam_state = phase.try_state_of<camera::state>()) {
-				const auto q = cam_state->orientation();
-				yaw = std::atan2(2.f * (q.s() * q.y() + q.x() * q.z()),
-				                 1.f - 2.f * (q.y() * q.y() + q.z() * q.z()));
+				yaw = cam_state->yaw;
 			}
 			s.client_ptr->push_input(
 				actions_state->current_state(),
