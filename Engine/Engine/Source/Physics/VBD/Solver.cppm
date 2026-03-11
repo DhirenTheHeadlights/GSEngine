@@ -315,6 +315,14 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 			}
 		}
 
+		for (std::uint32_t i = 0; i < num_bodies; ++i) {
+			if (m_bodies[i].locked || m_bodies[i].sleeping()) continue;
+			if (m_body_in_color_group[i]) continue;
+			if (m_body_motor_index[i] != no_motor) continue;
+			m_solve_state[i] = {};
+			perform_newton_step(i, h_squared);
+		}
+
 		if (it < static_cast<int>(m_config.iterations)) {
 			update_dual(current_alpha);
 		}
