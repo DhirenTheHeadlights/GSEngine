@@ -18,14 +18,14 @@ export namespace gs {
 					.initial_position = floor_pos,
 					.size = gse::vec3<gse::length>(60.f, 1.f, 60.f)
 				})
-				.with_init([](gse::hook<gse::entity>& h) {
+				.with_init([](hook<gse::entity>& h) {
 					h.configure_when_present([](gse::physics::motion_component& mc) {
 						mc.affected_by_gravity = false;
 						mc.position_locked = true;
 					});
 				})
-				.with_update([floor_pos](gse::hook<gse::entity>& h) {
-					h.template component_write<gse::physics::motion_component>().current_position = floor_pos;
+				.with_update([floor_pos](hook<gse::entity>& h) {
+					h.component_write<gse::physics::motion_component>().current_position = floor_pos;
 				});
 
 			build_inverted_mass_pyramid();

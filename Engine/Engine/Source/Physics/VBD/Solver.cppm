@@ -106,6 +106,38 @@ namespace gse::vbd {
 	auto to_unitless(const physics::inv_inertia_mat& m) -> mat3 {
 		return mat3{ m.data };
 	}
+
+	auto contact_effective_mass(
+		const body_state& body_a,
+		const body_state& body_b,
+		const vec3<length>& rAW,
+		const vec3<length>& rBW,
+		const unitless::vec3 dir
+	) -> float {
+		float inv_mass_sum =
+			body_a.inverse_mass().as<per_kilograms>() +
+			body_b.inverse_mass().as<per_kilograms>();
+
+		if (body_a.update_orientation && !body_a.locked) {
+			const mat3 inv_i_a = to_unitless(body_a.inv_inertia);
+			const unitless::vec3 r_a = rAW.as<meters>();
+			const unitless::vec3 ang_j_a = cross(r_a, dir);
+			inv_mass_sum += dot(cross(inv_i_a * ang_j_a, r_a), dir);
+		}
+
+		if (body_b.update_orientation && !body_b.locked) {
+			const mat3 inv_i_b = to_unitless(body_b.inv_inertia);
+			const unitless::vec3 r_b = rBW.as<meters>();
+			const unitless::vec3 ang_j_b = cross(r_b, dir);
+			inv_mass_sum += dot(cross(inv_i_b * ang_j_b, r_b), dir);
+		}
+
+		if (!std::isfinite(inv_mass_sum) || inv_mass_sum <= 1e-10f) {
+			return 0.f;
+		}
+
+		return 1.f / inv_mass_sum;
+	}
 }
 
 auto gse::vbd::solver::configure(const solver_config& cfg) -> void {
@@ -170,14 +202,36 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 	}
 
 	for (auto& c : m_graph.contact_constraints()) {
-		const float floor = std::max(c.penalty_floor, m_config.penalty_min);
+		const auto& ba = m_bodies[c.body_a];
+		const auto& bb = m_bodies[c.body_b];
+		const vec3<length> rAW = rotate_vector(ba.orientation, c.r_a);
+		const vec3<length> rBW = rotate_vector(bb.orientation, c.r_b);
+
+		const float row_floor[3] = {
+			std::max(c.penalty_floor, m_config.penalty_min),
+			c.sticking
+				? std::clamp(
+					contact_effective_mass(ba, bb, rAW, rBW, c.tangent_u) / h_squared,
+					m_config.penalty_min,
+					m_config.penalty_max
+				)
+				: m_config.penalty_min,
+			c.sticking
+				? std::clamp(
+					contact_effective_mass(ba, bb, rAW, rBW, c.tangent_v) / h_squared,
+					m_config.penalty_min,
+					m_config.penalty_max
+				)
+				: m_config.penalty_min
+		};
+
 		for (int i = 0; i < 3; i++) {
 			if (m_config.post_stabilize) {
-				c.penalty[i] = std::clamp(c.penalty[i] * m_config.gamma, floor, m_config.penalty_max);
+				c.penalty[i] = std::clamp(c.penalty[i] * m_config.gamma, row_floor[i], m_config.penalty_max);
 			}
 			else {
 				c.lambda[i] *= m_config.alpha * m_config.gamma;
-				c.penalty[i] = std::clamp(c.penalty[i] * m_config.gamma, floor, m_config.penalty_max);
+				c.penalty[i] = std::clamp(c.penalty[i] * m_config.gamma, row_floor[i], m_config.penalty_max);
 			}
 		}
 	}
@@ -365,10 +419,13 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 
 auto gse::vbd::solver::end_frame(std::vector<body_state>& bodies, contact_cache& cache) -> void {
 	for (const auto& c : m_graph.contact_constraints()) {
+		const float friction_bound = std::abs(c.lambda[0]) * c.friction_coeff;
+		const float tangential_lambda = std::hypot(c.lambda[1], c.lambda[2]);
+		const float tangential_gap = std::hypot(c.C0[1], c.C0[2]);
 		const bool sticking =
 			c.lambda[0] < -1e-3f &&
-			std::abs(c.C0[1]) < m_config.stick_threshold &&
-			std::abs(c.C0[2]) < m_config.stick_threshold;
+			tangential_gap < m_config.stick_threshold &&
+			tangential_lambda < friction_bound;
 
 		cache.store(c.body_a, c.body_b, c.feature, cached_lambda{
 			.lambda = { c.lambda[0], c.lambda[1], c.lambda[2] },
@@ -416,10 +473,8 @@ auto gse::vbd::solver::accumulate_contact(const contact_constraint& c, const std
 
 	float f[3];
 	f[0] = std::min(c.penalty[0] * C[0] + c.lambda[0], 0.f);
-	if (f[0] >= -1e-9f) {
-		return;
-	}
-
+	// Keep the normal Hessian even when the clamped normal force is zero.
+	// Resting contacts near the margin rely on that support stiffness to avoid sag/oscillation.
 	const float friction_bound = std::abs(c.lambda[0]) * c.friction_coeff;
 	f[1] = std::clamp(c.penalty[1] * C[1] + c.lambda[1], -friction_bound, friction_bound);
 	f[2] = std::clamp(c.penalty[2] * C[2] + c.lambda[2], -friction_bound, friction_bound);
