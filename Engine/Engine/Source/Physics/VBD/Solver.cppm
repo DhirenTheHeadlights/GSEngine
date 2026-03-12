@@ -206,9 +206,21 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		const auto& bb = m_bodies[c.body_b];
 		const vec3<length> rAW = rotate_vector(ba.orientation, c.r_a);
 		const vec3<length> rBW = rotate_vector(bb.orientation, c.r_b);
+		const float base_floor = std::max(c.penalty_floor, m_config.penalty_min);
+		const bool persistent_active_normal =
+			c.lambda[0] < -1e-3f &&
+			c.C0[0] < -1e-4f;
+		const float normal_floor =
+			persistent_active_normal
+				? std::clamp(
+					contact_effective_mass(ba, bb, rAW, rBW, c.normal) / h_squared,
+					base_floor,
+					m_config.penalty_max
+				)
+				: base_floor;
 
 		const float row_floor[3] = {
-			std::max(c.penalty_floor, m_config.penalty_min),
+			normal_floor,
 			c.sticking
 				? std::clamp(
 					contact_effective_mass(ba, bb, rAW, rBW, c.tangent_u) / h_squared,

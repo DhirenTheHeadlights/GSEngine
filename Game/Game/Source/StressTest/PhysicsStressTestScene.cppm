@@ -119,7 +119,7 @@ export namespace gs {
 					.size = gse::vec3<gse::length>(wall_len, wall_height, 0.3f),
 					.initial_orientation = left_rot
 				})
-				.with_init([](gse::hook<gse::entity>& h) {
+				.with_init([](hook<gse::entity>& h) {
 					h.configure_when_present([](gse::physics::motion_component& mc) {
 						mc.affected_by_gravity = false;
 						mc.position_locked = true;
@@ -132,7 +132,7 @@ export namespace gs {
 					.size = gse::vec3<gse::length>(wall_len, wall_height, 0.3f),
 					.initial_orientation = right_rot
 				})
-				.with_init([](gse::hook<gse::entity>& h) {
+				.with_init([](hook<gse::entity>& h) {
 					h.configure_when_present([](gse::physics::motion_component& mc) {
 						mc.affected_by_gravity = false;
 						mc.position_locked = true;
@@ -144,7 +144,7 @@ export namespace gs {
 					.initial_position = gse::vec3<gse::length>(cx, wall_height * 0.5f, cz - half_len),
 					.size = gse::vec3<gse::length>(spread * 2.f + 1.f, wall_height, 0.3f)
 				})
-				.with_init([](gse::hook<gse::entity>& h) {
+				.with_init([](hook<gse::entity>& h) {
 					h.configure_when_present([](gse::physics::motion_component& mc) {
 						mc.affected_by_gravity = false;
 						mc.position_locked = true;
@@ -178,7 +178,7 @@ export namespace gs {
 					.size = gse::vec3<gse::length>(10.f, 0.5f, 4.f),
 					.initial_orientation = ramp_tilt
 				})
-				.with_init([](gse::hook<gse::entity>& h) {
+				.with_init([](hook<gse::entity>& h) {
 					h.configure_when_present([](gse::physics::motion_component& mc) {
 						mc.affected_by_gravity = false;
 						mc.position_locked = true;
@@ -200,7 +200,7 @@ export namespace gs {
 					.size = gse::vec3<gse::length>(10.f, 0.5f, 4.f),
 					.initial_orientation = steep_tilt
 				})
-				.with_init([](gse::hook<gse::entity>& h) {
+				.with_init([](hook<gse::entity>& h) {
 					h.configure_when_present([](gse::physics::motion_component& mc) {
 						mc.affected_by_gravity = false;
 						mc.position_locked = true;
