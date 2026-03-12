@@ -3,6 +3,7 @@ export module gse.physics:system;
 import std;
 
 import gse.utility;
+import gse.log;
 
 import gse.math;
 import gse.platform;
@@ -27,6 +28,7 @@ export namespace gse::physics {
 		mutable vbd::gpu_solver gpu_solver;
 		vbd::contact_cache contact_cache;
 		std::unordered_map<id, std::uint32_t> sleep_counters;
+		std::uint64_t debug_frame = 0;
 
 		struct gpu_prev_frame {
 			std::vector<vbd::body_state> bodies;
@@ -459,6 +461,7 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 	};
 
 	for (int step = 0; step < steps; ++step) {
+		const std::uint64_t frame = s.debug_frame++;
 		std::vector<vbd::body_state> bodies;
 		bodies.reserve(motion.size());
 
@@ -502,6 +505,7 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 		}
 
 		s.vbd_solver.begin_frame(bodies, s.contact_cache);
+		bool traced_player_wall_frame = false;
 
 		for (std::size_t i = 0; i < objects.size(); ++i) {
 			for (std::size_t j = i + 1; j < objects.size(); ++j) {
@@ -545,6 +549,37 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 
 				const std::uint32_t body_a = it_a->second;
 				const std::uint32_t body_b = it_b->second;
+				const bool player_a = motion_a && motion_a->self_controlled;
+				const bool player_b = motion_b && motion_b->self_controlled;
+				const bool player_wall_contact =
+					(player_a || player_b) &&
+					std::abs(sat.normal.y()) < 0.35f;
+
+				if (player_wall_contact) {
+					const motion_component& player = player_a ? *motion_a : *motion_b;
+					log::println(
+						"[PhysTrace] frame={} pair={}<->{} player={} manifold_points={} sat_n=({:.3f},{:.3f},{:.3f}) sep={:.5f} pos=({:.3f},{:.3f},{:.3f}) vel=({:.3f},{:.3f},{:.3f}) motor=({:.3f},{:.3f},{:.3f})",
+						frame,
+						id_a.number(),
+						id_b.number(),
+						player.owner_id().number(),
+						manifold.point_count,
+						sat.normal.x(),
+						sat.normal.y(),
+						sat.normal.z(),
+						sat.separation.as<meters>(),
+						player.current_position.x().as<meters>(),
+						player.current_position.y().as<meters>(),
+						player.current_position.z().as<meters>(),
+						player.current_velocity.x().as<meters_per_second>(),
+						player.current_velocity.y().as<meters_per_second>(),
+						player.current_velocity.z().as<meters_per_second>(),
+						player.motor.target_velocity.x().as<meters_per_second>(),
+						player.motor.target_velocity.y().as<meters_per_second>(),
+						player.motor.target_velocity.z().as<meters_per_second>()
+					);
+					traced_player_wall_frame = true;
+				}
 
 				if (sat.normal.y() > 0.7f && motion_b) {
 					motion_b->airborne = false;
@@ -566,13 +601,7 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 
 				const auto& bs_a = s.vbd_solver.body_states()[body_a];
 				const auto& bs_b = s.vbd_solver.body_states()[body_b];
-				const float mass_a_val = bs_a.locked ? 0.f : bs_a.mass_value.as<kilograms>();
-				const float mass_b_val = bs_b.locked ? 0.f : bs_b.mass_value.as<kilograms>();
-				const float eff_mass = (mass_a_val > 0.f && mass_b_val > 0.f)
-					? (mass_a_val * mass_b_val) / (mass_a_val + mass_b_val)
-					: std::max(mass_a_val, mass_b_val);
-				const float dt_s = const_update_time.as<seconds>();
-				const float penalty_floor = std::max(cfg.penalty_min, eff_mass / (dt_s * dt_s));
+				const float penalty_floor = cfg.penalty_min;
 
 				for (std::uint32_t p = 0; p < manifold.point_count; ++p) {
 					const auto& [position_on_a, position_on_b, normal, separation, feature] = manifold.points[p];
@@ -580,19 +609,75 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 					const vec3<length> world_r_a = position_on_a - bs_a.position;
 					const vec3<length> world_r_b = position_on_b - bs_b.position;
 
-					const vec3<length> local_r_a = to_local(bs_a.orientation, world_r_a);
-					const vec3<length> local_r_b = to_local(bs_b.orientation, world_r_b);
+					vec3<length> local_r_a = to_local(bs_a.orientation, world_r_a);
+					vec3<length> local_r_b = to_local(bs_b.orientation, world_r_b);
 
 					auto cached = s.contact_cache.lookup(body_a, body_b, feature);
+					const bool reuse_cached_response =
+						cached &&
+						(cached->lambda[0] < -1e-3f || cached->sticking);
 
 					float init_lambda[3] = {};
 					float init_penalty[3] = { penalty_floor, penalty_floor, penalty_floor };
+					bool reused_anchors = false;
 
-					if (cached) {
+					if (reuse_cached_response) {
 						for (int k = 0; k < 3; ++k) {
-							init_lambda[k] = cached->lambda[k];
 							init_penalty[k] = std::max(cached->penalty[k], penalty_floor);
 						}
+
+						const unitless::vec3 cached_force =
+							cached->normal * cached->lambda[0] +
+							cached->tangent_u * cached->lambda[1] +
+							cached->tangent_v * cached->lambda[2];
+
+						init_lambda[0] = std::min(dot(cached_force, constraint_normal), 0.f);
+						init_lambda[1] = dot(cached_force, manifold.tangent_u);
+						init_lambda[2] = dot(cached_force, manifold.tangent_v);
+
+						const float friction_bound = std::abs(init_lambda[0]) * cfg.friction_coefficient;
+						init_lambda[1] = std::clamp(init_lambda[1], -friction_bound, friction_bound);
+						init_lambda[2] = std::clamp(init_lambda[2], -friction_bound, friction_bound);
+
+						if (cached->sticking) {
+							local_r_a = cached->local_anchor_a;
+							local_r_b = cached->local_anchor_b;
+							reused_anchors = true;
+						}
+					}
+
+					if (player_wall_contact) {
+						log::println(
+							"[PhysTrace] frame={} contact {}<->{} feature=({},{},{},{},{},{},{},{}) p={} cached={} cached_stick={} reused_anchors={} sep={:.5f} init_lambda=({:.3f},{:.3f},{:.3f}) init_pen=({:.1f},{:.1f},{:.1f}) point_a=({:.3f},{:.3f},{:.3f}) point_b=({:.3f},{:.3f},{:.3f})",
+							frame,
+							id_a.number(),
+							id_b.number(),
+							static_cast<int>(feature.type_a),
+							static_cast<int>(feature.type_b),
+							feature.index_a,
+							feature.index_b,
+							feature.side_a0,
+							feature.side_a1,
+							feature.side_b0,
+							feature.side_b1,
+							p,
+							cached.has_value(),
+							cached ? cached->sticking : false,
+							reused_anchors,
+							separation.as<meters>(),
+							init_lambda[0],
+							init_lambda[1],
+							init_lambda[2],
+							init_penalty[0],
+							init_penalty[1],
+							init_penalty[2],
+							position_on_a.x().as<meters>(),
+							position_on_a.y().as<meters>(),
+							position_on_a.z().as<meters>(),
+							position_on_b.x().as<meters>(),
+							position_on_b.y().as<meters>(),
+							position_on_b.z().as<meters>()
+						);
 					}
 
 					s.vbd_solver.add_contact_constraint(vbd::contact_constraint{
@@ -634,6 +719,67 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 		}
 
 		s.vbd_solver.solve(const_update_time);
+
+		for (const auto& c : s.vbd_solver.graph().contact_constraints()) {
+			const bool player_a = c.body_a < motion_ptrs.size() && motion_ptrs[c.body_a] && motion_ptrs[c.body_a]->self_controlled;
+			const bool player_b = c.body_b < motion_ptrs.size() && motion_ptrs[c.body_b] && motion_ptrs[c.body_b]->self_controlled;
+			if (!(player_a || player_b)) continue;
+			if (std::abs(c.normal.y()) >= 0.35f) continue;
+
+			const auto& body_a = s.vbd_solver.body_states()[c.body_a];
+			const auto& body_b = s.vbd_solver.body_states()[c.body_b];
+			const auto* player = motion_ptrs[player_a ? c.body_a : c.body_b];
+			const auto& player_body = s.vbd_solver.body_states()[player_a ? c.body_a : c.body_b];
+			const auto player_id = player->owner_id().number();
+			const auto other_id = motion_ptrs[player_a ? c.body_b : c.body_a]->owner_id().number();
+
+			const vec3<length> rAW = rotate_vector(body_a.orientation, c.r_a);
+			const vec3<length> rBW = rotate_vector(body_b.orientation, c.r_b);
+			const vec3<length> pA = body_a.position + rAW;
+			const vec3<length> pB = body_b.position + rBW;
+			const unitless::vec3 d = (pA - pB).as<meters>();
+
+			const float cn = dot(c.normal, d) + s.vbd_solver.config().collision_margin;
+			const float cu = dot(c.tangent_u, d);
+			const float cv = dot(c.tangent_v, d);
+			const float friction_bound = std::abs(c.lambda[0]) * c.friction_coeff;
+
+			log::println(
+				"[PhysTrace] frame={} solved {}<->{} feature=({},{},{},{},{},{},{},{}) C=({:.5f},{:.5f},{:.5f}) lambda=({:.3f},{:.3f},{:.3f}) pen=({:.1f},{:.1f},{:.1f}) fric_bound={:.3f} player_vel=({:.3f},{:.3f},{:.3f}) motor=({:.3f},{:.3f},{:.3f})",
+				frame,
+				player_id,
+				other_id,
+				static_cast<int>(c.feature.type_a),
+				static_cast<int>(c.feature.type_b),
+				c.feature.index_a,
+				c.feature.index_b,
+				c.feature.side_a0,
+				c.feature.side_a1,
+				c.feature.side_b0,
+				c.feature.side_b1,
+				cn,
+				cu,
+				cv,
+				c.lambda[0],
+				c.lambda[1],
+				c.lambda[2],
+				c.penalty[0],
+				c.penalty[1],
+				c.penalty[2],
+				friction_bound,
+				player_body.body_velocity.x().as<meters_per_second>(),
+				player_body.body_velocity.y().as<meters_per_second>(),
+				player_body.body_velocity.z().as<meters_per_second>(),
+				player->motor.target_velocity.x().as<meters_per_second>(),
+				player->motor.target_velocity.y().as<meters_per_second>(),
+				player->motor.target_velocity.z().as<meters_per_second>()
+			);
+			traced_player_wall_frame = true;
+		}
+
+		if (traced_player_wall_frame) {
+			log::flush();
+		}
 
 		std::vector<vbd::body_state> result_bodies;
 		s.vbd_solver.end_frame(result_bodies, s.contact_cache);

@@ -10,6 +10,8 @@ export namespace gse::vbd {
 		float lambda[3] = {};
 		float penalty[3] = {};
 		unitless::vec3 normal = {};
+		unitless::vec3 tangent_u = {};
+		unitless::vec3 tangent_v = {};
 		vec3<length> local_anchor_a = {};
 		vec3<length> local_anchor_b = {};
 		bool sticking = false;
@@ -101,6 +103,8 @@ auto gse::vbd::contact_cache::lookup(
 	if (const auto it = m_cache.find(key_swapped); it != m_cache.end()) {
 		auto result = it->second;
 		result.normal = -result.normal;
+		result.tangent_u = -result.tangent_u;
+		result.tangent_v = -result.tangent_v;
 		std::swap(result.local_anchor_a, result.local_anchor_b);
 		return result;
 	}

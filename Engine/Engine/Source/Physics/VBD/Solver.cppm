@@ -374,6 +374,8 @@ auto gse::vbd::solver::end_frame(std::vector<body_state>& bodies, contact_cache&
 			.lambda = { c.lambda[0], c.lambda[1], c.lambda[2] },
 			.penalty = { c.penalty[0], c.penalty[1], c.penalty[2] },
 			.normal = c.normal,
+			.tangent_u = c.tangent_u,
+			.tangent_v = c.tangent_v,
 			.local_anchor_a = c.r_a,
 			.local_anchor_b = c.r_b,
 			.sticking = sticking,
@@ -412,10 +414,13 @@ auto gse::vbd::solver::accumulate_contact(const contact_constraint& c, const std
 	for (int i = 0; i < 3; i++)
 		C[i] = Cn[i] - c.C0[i] * alpha;
 
-	const float friction_bound = std::abs(c.lambda[0]) * c.friction_coeff;
-
 	float f[3];
 	f[0] = std::min(c.penalty[0] * C[0] + c.lambda[0], 0.f);
+	if (f[0] >= -1e-9f) {
+		return;
+	}
+
+	const float friction_bound = std::abs(c.lambda[0]) * c.friction_coeff;
 	f[1] = std::clamp(c.penalty[1] * C[1] + c.lambda[1], -friction_bound, friction_bound);
 	f[2] = std::clamp(c.penalty[2] * C[2] + c.lambda[2], -friction_bound, friction_bound);
 
@@ -424,6 +429,7 @@ auto gse::vbd::solver::accumulate_contact(const contact_constraint& c, const std
 	const unitless::vec3 dirs[3] = { c.normal, c.tangent_u, c.tangent_v };
 
 	for (int i = 0; i < 3; i++) {
+		if (i > 0 && friction_bound <= 1e-10f) continue;
 		if (std::abs(f[i]) < 1e-12f && c.penalty[i] < 1e-6f) continue;
 
 		const unitless::vec3 J_lin = dirs[i] * sign;
@@ -468,6 +474,16 @@ auto gse::vbd::solver::accumulate_motor(const velocity_motor_constraint& m, cons
 		const auto& c = contacts[ci];
 		const auto other = (c.body_a == m.body_index) ? c.body_b : c.body_a;
 		if (m_bodies[other].locked) continue;
+
+		const auto& body_a = m_bodies[c.body_a];
+		const auto& body_b = m_bodies[c.body_b];
+		const vec3<length> rAW = rotate_vector(body_a.predicted_orientation, c.r_a);
+		const vec3<length> rBW = rotate_vector(body_b.predicted_orientation, c.r_b);
+		const vec3<length> pA = body_a.predicted_position + rAW;
+		const vec3<length> pB = body_b.predicted_position + rBW;
+		const unitless::vec3 d = (pA - pB).as<meters>();
+		const float normal_gap = dot(c.normal, d) + m_config.collision_margin;
+		if (normal_gap >= 0.f && c.lambda[0] >= -1e-3f) continue;
 
 		const unitless::vec3 push_dir = (c.body_a == m.body_index) ? c.normal : -c.normal;
 		if (const float proj = dot(motor_gradient, push_dir); proj < 0.f) {

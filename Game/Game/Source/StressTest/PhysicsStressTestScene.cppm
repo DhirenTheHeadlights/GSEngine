@@ -29,15 +29,15 @@ export namespace gs {
 				});
 
 			build_inverted_mass_pyramid();
-			//build_domino_chain();
+			build_domino_chain();
 			//build_funnel();
 			//build_slope_friction_test();
 			//build_high_speed_impact_target();
 
-			/*build("Player")
+			build("Player")
 				.with<player>({
 					.initial_position = gse::vec3<gse::length>(0.f, 10.f, 0.f)
-				});*/
+				});
 
 			build("Scene Camera")
 				.with<gse::free_camera>({
