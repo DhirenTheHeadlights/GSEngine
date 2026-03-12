@@ -3,7 +3,6 @@ export module gse.physics:system;
 import std;
 
 import gse.utility;
-import gse.log;
 
 import gse.math;
 import gse.platform;
@@ -28,7 +27,6 @@ export namespace gse::physics {
 		mutable vbd::gpu_solver gpu_solver;
 		vbd::contact_cache contact_cache;
 		std::unordered_map<id, std::uint32_t> sleep_counters;
-		std::uint64_t debug_frame = 0;
 
 		struct gpu_prev_frame {
 			std::vector<vbd::body_state> bodies;
@@ -461,7 +459,6 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 	};
 
 	for (int step = 0; step < steps; ++step) {
-		const std::uint64_t frame = s.debug_frame++;
 		std::vector<vbd::body_state> bodies;
 		bodies.reserve(motion.size());
 
@@ -505,8 +502,6 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 		}
 
 		s.vbd_solver.begin_frame(bodies, s.contact_cache);
-		bool traced_player_wall_frame = false;
-		bool traced_heavy_floor_frame = false;
 
 		for (std::size_t i = 0; i < objects.size(); ++i) {
 			for (std::size_t j = i + 1; j < objects.size(); ++j) {
@@ -550,79 +545,6 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 
 				const std::uint32_t body_a = it_a->second;
 				const std::uint32_t body_b = it_b->second;
-				const bool player_a = motion_a && motion_a->self_controlled;
-				const bool player_b = motion_b && motion_b->self_controlled;
-				const bool player_wall_contact =
-					(player_a || player_b) &&
-					std::abs(sat.normal.y()) < 0.35f;
-				const bool heavy_a =
-					motion_a &&
-					!motion_a->position_locked &&
-					motion_a->mass.as<kilograms>() >= 50000.f;
-				const bool heavy_b =
-					motion_b &&
-					!motion_b->position_locked &&
-					motion_b->mass.as<kilograms>() >= 50000.f;
-				const bool heavy_floor_contact =
-					(heavy_a || heavy_b) &&
-					std::abs(sat.normal.y()) > 0.7f &&
-					((motion_a && motion_a->position_locked) || (motion_b && motion_b->position_locked));
-
-				if (player_wall_contact) {
-					const motion_component& player = player_a ? *motion_a : *motion_b;
-					const motion_component& other_motion = player_a ? *motion_b : *motion_a;
-					log::println(
-						"[PhysTrace] frame={} pair={}<->{} player={} other={} other_mass={:.1f} manifold_points={} sat_n=({:.3f},{:.3f},{:.3f}) sep={:.5f} pos=({:.3f},{:.3f},{:.3f}) vel=({:.3f},{:.3f},{:.3f}) other_vel=({:.3f},{:.3f},{:.3f}) motor=({:.3f},{:.3f},{:.3f})",
-						frame,
-						id_a.number(),
-						id_b.number(),
-						player.owner_id().number(),
-						other_motion.owner_id().number(),
-						other_motion.mass.as<kilograms>(),
-						manifold.point_count,
-						sat.normal.x(),
-						sat.normal.y(),
-						sat.normal.z(),
-						sat.separation.as<meters>(),
-						player.current_position.x().as<meters>(),
-						player.current_position.y().as<meters>(),
-						player.current_position.z().as<meters>(),
-						player.current_velocity.x().as<meters_per_second>(),
-						player.current_velocity.y().as<meters_per_second>(),
-						player.current_velocity.z().as<meters_per_second>(),
-						other_motion.current_velocity.x().as<meters_per_second>(),
-						other_motion.current_velocity.y().as<meters_per_second>(),
-						other_motion.current_velocity.z().as<meters_per_second>(),
-						player.motor.target_velocity.x().as<meters_per_second>(),
-						player.motor.target_velocity.y().as<meters_per_second>(),
-						player.motor.target_velocity.z().as<meters_per_second>()
-					);
-					traced_player_wall_frame = true;
-				}
-
-				if (heavy_floor_contact) {
-					const motion_component& heavy = heavy_a ? *motion_a : *motion_b;
-					log::println(
-						"[HeavyTrace] frame={} pair={}<->{} heavy={} mass={:.1f} manifold_points={} sat_n=({:.3f},{:.3f},{:.3f}) sep={:.5f} pos=({:.3f},{:.3f},{:.3f}) vel=({:.3f},{:.3f},{:.3f})",
-						frame,
-						id_a.number(),
-						id_b.number(),
-						heavy.owner_id().number(),
-						heavy.mass.as<kilograms>(),
-						manifold.point_count,
-						sat.normal.x(),
-						sat.normal.y(),
-						sat.normal.z(),
-						sat.separation.as<meters>(),
-						heavy.current_position.x().as<meters>(),
-						heavy.current_position.y().as<meters>(),
-						heavy.current_position.z().as<meters>(),
-						heavy.current_velocity.x().as<meters_per_second>(),
-						heavy.current_velocity.y().as<meters_per_second>(),
-						heavy.current_velocity.z().as<meters_per_second>()
-					);
-					traced_heavy_floor_frame = true;
-				}
 
 				if (sat.normal.y() > 0.7f && motion_b) {
 					motion_b->airborne = false;
@@ -661,9 +583,11 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 					const bool reuse_cached_normal =
 						cached &&
 						(cached->lambda[0] < -1e-3f || current_normal_gap < -1e-4f);
-					const bool reuse_cached_sticking =
+					const bool reuse_cached_tangent =
 						reuse_cached_normal &&
-						cached &&
+						cached.has_value();
+					const bool reuse_cached_sticking =
+						reuse_cached_tangent &&
 						cached->sticking;
 
 					float init_lambda[3] = {};
@@ -677,7 +601,7 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 						init_lambda[0] = std::min(dot(cached_normal_force, constraint_normal), 0.f);
 					}
 
-					if (reuse_cached_sticking) {
+					if (reuse_cached_tangent) {
 						init_penalty[1] = std::max(cached->penalty[1], penalty_floor);
 						init_penalty[2] = std::max(cached->penalty[2], penalty_floor);
 
@@ -691,85 +615,12 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 						const float friction_bound = std::abs(init_lambda[0]) * cfg.friction_coefficient;
 						init_lambda[1] = std::clamp(init_lambda[1], -friction_bound, friction_bound);
 						init_lambda[2] = std::clamp(init_lambda[2], -friction_bound, friction_bound);
+					}
 
+					if (reuse_cached_sticking) {
 						local_r_a = cached->local_anchor_a;
 						local_r_b = cached->local_anchor_b;
 						reused_anchors = true;
-					}
-
-					if (player_wall_contact) {
-						log::println(
-							"[PhysTrace] frame={} contact {}<->{} feature=({},{},{},{},{},{},{},{}) p={} cached={} cached_stick={} reuse_n={} reuse_t={} reused_anchors={} gap={:.5f} sep={:.5f} init_lambda=({:.3f},{:.3f},{:.3f}) init_pen=({:.1f},{:.1f},{:.1f}) point_a=({:.3f},{:.3f},{:.3f}) point_b=({:.3f},{:.3f},{:.3f})",
-							frame,
-							id_a.number(),
-							id_b.number(),
-							static_cast<int>(feature.type_a),
-							static_cast<int>(feature.type_b),
-							feature.index_a,
-							feature.index_b,
-							feature.side_a0,
-							feature.side_a1,
-							feature.side_b0,
-							feature.side_b1,
-							p,
-							cached.has_value(),
-							cached ? cached->sticking : false,
-							reuse_cached_normal,
-							reuse_cached_sticking,
-							reused_anchors,
-							current_normal_gap,
-							separation.as<meters>(),
-							init_lambda[0],
-							init_lambda[1],
-							init_lambda[2],
-							init_penalty[0],
-							init_penalty[1],
-							init_penalty[2],
-							position_on_a.x().as<meters>(),
-							position_on_a.y().as<meters>(),
-							position_on_a.z().as<meters>(),
-							position_on_b.x().as<meters>(),
-							position_on_b.y().as<meters>(),
-							position_on_b.z().as<meters>()
-						);
-					}
-
-					if (heavy_floor_contact) {
-						const motion_component& heavy = heavy_a ? *motion_a : *motion_b;
-						log::println(
-							"[HeavyTrace] frame={} contact {}<->{} feature=({},{},{},{},{},{},{},{}) p={} cached={} cached_stick={} reuse_n={} reuse_t={} reused_anchors={} gap={:.5f} sep={:.5f} init_lambda=({:.3f},{:.3f},{:.3f}) init_pen=({:.1f},{:.1f},{:.1f}) pos=({:.3f},{:.3f},{:.3f}) vel=({:.3f},{:.3f},{:.3f})",
-							frame,
-							id_a.number(),
-							id_b.number(),
-							static_cast<int>(feature.type_a),
-							static_cast<int>(feature.type_b),
-							feature.index_a,
-							feature.index_b,
-							feature.side_a0,
-							feature.side_a1,
-							feature.side_b0,
-							feature.side_b1,
-							p,
-							cached.has_value(),
-							cached ? cached->sticking : false,
-							reuse_cached_normal,
-							reuse_cached_sticking,
-							reused_anchors,
-							current_normal_gap,
-							separation.as<meters>(),
-							init_lambda[0],
-							init_lambda[1],
-							init_lambda[2],
-							init_penalty[0],
-							init_penalty[1],
-							init_penalty[2],
-							heavy.current_position.x().as<meters>(),
-							heavy.current_position.y().as<meters>(),
-							heavy.current_position.z().as<meters>(),
-							heavy.current_velocity.x().as<meters_per_second>(),
-							heavy.current_velocity.y().as<meters_per_second>(),
-							heavy.current_velocity.z().as<meters_per_second>()
-						);
 					}
 
 					s.vbd_solver.add_contact_constraint(vbd::contact_constraint{
@@ -811,138 +662,6 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 		}
 
 		s.vbd_solver.solve(const_update_time);
-
-		for (const auto& c : s.vbd_solver.graph().contact_constraints()) {
-			const bool player_a = c.body_a < motion_ptrs.size() && motion_ptrs[c.body_a] && motion_ptrs[c.body_a]->self_controlled;
-			const bool player_b = c.body_b < motion_ptrs.size() && motion_ptrs[c.body_b] && motion_ptrs[c.body_b]->self_controlled;
-			if (!(player_a || player_b)) continue;
-			if (std::abs(c.normal.y()) >= 0.35f) continue;
-
-			const auto& body_a = s.vbd_solver.body_states()[c.body_a];
-			const auto& body_b = s.vbd_solver.body_states()[c.body_b];
-			const auto* player = motion_ptrs[player_a ? c.body_a : c.body_b];
-			const auto& player_body = s.vbd_solver.body_states()[player_a ? c.body_a : c.body_b];
-			const auto player_id = player->owner_id().number();
-			const auto* other_motion = motion_ptrs[player_a ? c.body_b : c.body_a];
-			const auto& other_body = s.vbd_solver.body_states()[player_a ? c.body_b : c.body_a];
-			const auto other_id = other_motion->owner_id().number();
-
-			const vec3<length> rAW = rotate_vector(body_a.orientation, c.r_a);
-			const vec3<length> rBW = rotate_vector(body_b.orientation, c.r_b);
-			const vec3<length> pA = body_a.position + rAW;
-			const vec3<length> pB = body_b.position + rBW;
-			const unitless::vec3 d = (pA - pB).as<meters>();
-
-			const float cn = dot(c.normal, d) + s.vbd_solver.config().collision_margin;
-			const float cu = dot(c.tangent_u, d);
-			const float cv = dot(c.tangent_v, d);
-			const float friction_bound = std::abs(c.lambda[0]) * c.friction_coeff;
-
-			log::println(
-				"[PhysTrace] frame={} solved {}<->{} feature=({},{},{},{},{},{},{},{}) C=({:.5f},{:.5f},{:.5f}) lambda=({:.3f},{:.3f},{:.3f}) pen=({:.1f},{:.1f},{:.1f}) fric_bound={:.3f} player_vel=({:.3f},{:.3f},{:.3f}) other_vel=({:.3f},{:.3f},{:.3f}) motor=({:.3f},{:.3f},{:.3f})",
-				frame,
-				player_id,
-				other_id,
-				static_cast<int>(c.feature.type_a),
-				static_cast<int>(c.feature.type_b),
-				c.feature.index_a,
-				c.feature.index_b,
-				c.feature.side_a0,
-				c.feature.side_a1,
-				c.feature.side_b0,
-				c.feature.side_b1,
-				cn,
-				cu,
-				cv,
-				c.lambda[0],
-				c.lambda[1],
-				c.lambda[2],
-				c.penalty[0],
-				c.penalty[1],
-				c.penalty[2],
-				friction_bound,
-				player_body.body_velocity.x().as<meters_per_second>(),
-				player_body.body_velocity.y().as<meters_per_second>(),
-				player_body.body_velocity.z().as<meters_per_second>(),
-				other_body.body_velocity.x().as<meters_per_second>(),
-				other_body.body_velocity.y().as<meters_per_second>(),
-				other_body.body_velocity.z().as<meters_per_second>(),
-				player->motor.target_velocity.x().as<meters_per_second>(),
-				player->motor.target_velocity.y().as<meters_per_second>(),
-				player->motor.target_velocity.z().as<meters_per_second>()
-			);
-			traced_player_wall_frame = true;
-		}
-
-		for (const auto& c : s.vbd_solver.graph().contact_constraints()) {
-			const bool heavy_a =
-				c.body_a < motion_ptrs.size() &&
-				motion_ptrs[c.body_a] &&
-				!motion_ptrs[c.body_a]->position_locked &&
-				motion_ptrs[c.body_a]->mass.as<kilograms>() >= 50000.f;
-			const bool heavy_b =
-				c.body_b < motion_ptrs.size() &&
-				motion_ptrs[c.body_b] &&
-				!motion_ptrs[c.body_b]->position_locked &&
-				motion_ptrs[c.body_b]->mass.as<kilograms>() >= 50000.f;
-			if (!(heavy_a || heavy_b)) continue;
-
-			const auto* other = motion_ptrs[heavy_a ? c.body_b : c.body_a];
-			if (!other || !other->position_locked) continue;
-			if (std::abs(c.normal.y()) <= 0.7f) continue;
-
-			const auto& body_a = s.vbd_solver.body_states()[c.body_a];
-			const auto& body_b = s.vbd_solver.body_states()[c.body_b];
-			const auto* heavy = motion_ptrs[heavy_a ? c.body_a : c.body_b];
-			const auto& heavy_body = s.vbd_solver.body_states()[heavy_a ? c.body_a : c.body_b];
-
-			const vec3<length> rAW = rotate_vector(body_a.orientation, c.r_a);
-			const vec3<length> rBW = rotate_vector(body_b.orientation, c.r_b);
-			const vec3<length> pA = body_a.position + rAW;
-			const vec3<length> pB = body_b.position + rBW;
-			const unitless::vec3 d = (pA - pB).as<meters>();
-
-			const float cn = dot(c.normal, d) + s.vbd_solver.config().collision_margin;
-			const float cu = dot(c.tangent_u, d);
-			const float cv = dot(c.tangent_v, d);
-			const float friction_bound = std::abs(c.lambda[0]) * c.friction_coeff;
-
-			log::println(
-				"[HeavyTrace] frame={} solved {}<->{} feature=({},{},{},{},{},{},{},{}) C=({:.5f},{:.5f},{:.5f}) lambda=({:.3f},{:.3f},{:.3f}) pen=({:.1f},{:.1f},{:.1f}) fric_bound={:.3f} pos=({:.3f},{:.3f},{:.3f}) vel=({:.3f},{:.3f},{:.3f})",
-				frame,
-				heavy->owner_id().number(),
-				other->owner_id().number(),
-				static_cast<int>(c.feature.type_a),
-				static_cast<int>(c.feature.type_b),
-				c.feature.index_a,
-				c.feature.index_b,
-				c.feature.side_a0,
-				c.feature.side_a1,
-				c.feature.side_b0,
-				c.feature.side_b1,
-				cn,
-				cu,
-				cv,
-				c.lambda[0],
-				c.lambda[1],
-				c.lambda[2],
-				c.penalty[0],
-				c.penalty[1],
-				c.penalty[2],
-				friction_bound,
-				heavy_body.position.x().as<meters>(),
-				heavy_body.position.y().as<meters>(),
-				heavy_body.position.z().as<meters>(),
-				heavy_body.body_velocity.x().as<meters_per_second>(),
-				heavy_body.body_velocity.y().as<meters_per_second>(),
-				heavy_body.body_velocity.z().as<meters_per_second>()
-			);
-			traced_heavy_floor_frame = true;
-		}
-
-		if (traced_player_wall_frame || traced_heavy_floor_frame) {
-			log::flush();
-		}
 
 		std::vector<vbd::body_state> result_bodies;
 		s.vbd_solver.end_frame(result_bodies, s.contact_cache);
