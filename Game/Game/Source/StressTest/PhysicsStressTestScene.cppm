@@ -31,7 +31,7 @@ export namespace gs {
 			build_inverted_mass_pyramid();
 			build_domino_chain();
 			//build_funnel();
-			//build_slope_friction_test();
+			build_slope_friction_test();
 			//build_high_speed_impact_target();
 
 			build("Player")
@@ -170,12 +170,22 @@ export namespace gs {
 			constexpr float x = 0.f;
 			constexpr float z = 15.f;
 
+			const gse::vec3<gse::length> ramp_size(10.f, 0.5f, 4.f);
+			const gse::vec3<gse::length> box_size(1.f);
+			const auto resting_offset_for = [&](const gse::quat& tilt) {
+				return gse::rotate_vector(
+					tilt,
+					gse::vec3<gse::length>(0.f, ramp_size.y() * 0.5f + box_size.y() * 0.5f, 0.f)
+				);
+			};
+
 			const gse::quat ramp_tilt(gse::unitless::axis_z, gse::degrees(30.f));
+			const gse::vec3<gse::length> ramp_position(x, 2.f, z);
 
 			build("Ramp 30deg")
 				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(x, 2.f, z),
-					.size = gse::vec3<gse::length>(10.f, 0.5f, 4.f),
+					.initial_position = ramp_position,
+					.size = ramp_size,
 					.initial_orientation = ramp_tilt
 				})
 				.with_init([](hook<gse::entity>& h) {
@@ -187,17 +197,19 @@ export namespace gs {
 
 			build("Ramp Box Should Hold")
 				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(x, 4.5f, z),
-					.size = gse::vec3<gse::length>(1.f),
+					.initial_position = ramp_position + resting_offset_for(ramp_tilt),
+					.size = box_size,
+					.initial_orientation = ramp_tilt,
 					.mass = gse::kilograms(50.f)
 				});
 
 			const gse::quat steep_tilt(gse::unitless::axis_z, gse::degrees(45.f));
+			const gse::vec3<gse::length> steep_ramp_position(x + 12.f, 2.f, z);
 
 			build("Steep Ramp 45deg")
 				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(x + 12.f, 2.f, z),
-					.size = gse::vec3<gse::length>(10.f, 0.5f, 4.f),
+					.initial_position = steep_ramp_position,
+					.size = ramp_size,
 					.initial_orientation = steep_tilt
 				})
 				.with_init([](hook<gse::entity>& h) {
@@ -209,8 +221,9 @@ export namespace gs {
 
 			build("Steep Box Should Slide")
 				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(x + 12.f, 5.5f, z),
-					.size = gse::vec3<gse::length>(1.f),
+					.initial_position = steep_ramp_position + resting_offset_for(steep_tilt),
+					.size = box_size,
+					.initial_orientation = steep_tilt,
 					.mass = gse::kilograms(50.f)
 				});
 		}

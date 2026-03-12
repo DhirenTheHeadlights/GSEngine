@@ -4,7 +4,6 @@ import std;
 
 import gse.math;
 import gse.utility;
-import gse.log;
 import :vbd_constraints;
 import :vbd_constraint_graph;
 import :vbd_contact_cache;
@@ -540,7 +539,11 @@ auto gse::vbd::solver::accumulate_motor(const velocity_motor_constraint& m, cons
 	for (const auto ci : m_graph.body_contact_indices(m.body_index)) {
 		const auto& c = contacts[ci];
 		const auto other = (c.body_a == m.body_index) ? c.body_b : c.body_a;
-		if (m_bodies[other].locked) continue;
+		const auto& other_body = m_bodies[other];
+		const bool blocking_body =
+			other_body.locked ||
+			other_body.mass_value.as<kilograms>() >= mass;
+		if (!blocking_body) continue;
 
 		const auto& body_a = m_bodies[c.body_a];
 		const auto& body_b = m_bodies[c.body_b];
@@ -553,7 +556,9 @@ auto gse::vbd::solver::accumulate_motor(const velocity_motor_constraint& m, cons
 		if (normal_gap >= 0.f && c.lambda[0] >= -1e-3f) continue;
 
 		const unitless::vec3 push_dir = (c.body_a == m.body_index) ? c.normal : -c.normal;
-		if (const float proj = dot(motor_gradient, push_dir); proj < 0.f) {
+		// Newton updates move opposite the gradient, so only a positive projection
+		// would drive the motor further into the contact.
+		if (const float proj = dot(motor_gradient, push_dir); proj > 0.f) {
 			motor_gradient -= push_dir * proj;
 		}
 	}
