@@ -292,6 +292,16 @@ void solve_body(uint bi) {
             GpuBody other_body = body_data[other];
             if ((other_body.flags & FLAG_LOCKED) != 0) continue;
             if (other_body.mass <= body.mass) continue;
+
+            GpuBody contact_body_a = body_data[c.body_a];
+            GpuBody contact_body_b = body_data[c.body_b];
+            float3 contact_r_a = rotate_vector(contact_body_a.predicted_orientation, c.r_a.xyz);
+            float3 contact_r_b = rotate_vector(contact_body_b.predicted_orientation, c.r_b.xyz);
+            float3 contact_p_a = contact_body_a.predicted_position.xyz + contact_r_a;
+            float3 contact_p_b = contact_body_b.predicted_position.xyz + contact_r_b;
+            float gap = dot(contact_p_b - contact_p_a, c.normal.xyz) + c.initial_separation;
+            if (gap >= 0.0 && c.lambda <= 1e-4) continue;
+
             float3 push_dir = is_a ? c.normal.xyz : -c.normal.xyz;
             float proj = dot(motor_grad, push_dir);
             if (proj < 0.0) {
