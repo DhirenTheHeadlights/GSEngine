@@ -30,9 +30,9 @@ export namespace gs {
 
 			build_inverted_mass_pyramid();
 			build_domino_chain();
-			//build_funnel();
+			build_funnel();
 			build_slope_friction_test();
-			//build_high_speed_impact_target();
+			build_high_speed_impact_target();
 
 			build("Player")
 				.with<player>({
@@ -61,21 +61,21 @@ export namespace gs {
 			build("Pyramid Light Base")
 				.with<gse::box>({
 					.initial_position = gse::vec3<gse::length>(x, 0.5f, z),
-					.size = gse::vec3<gse::length>(1.f),
+					.size = gse::vec3<gse::length>(gse::meters(1.f)),
 					.mass = gse::kilograms(5.f)
 				});
 
 			build("Pyramid Mid")
 				.with<gse::box>({
 					.initial_position = gse::vec3<gse::length>(x, 1.5f, z),
-					.size = gse::vec3<gse::length>(1.f),
+					.size = gse::vec3<gse::length>(gse::meters(1.f)),
 					.mass = gse::kilograms(50.f)
 				});
 
 			build("Pyramid Heavy Top")
 				.with<gse::box>({
 					.initial_position = gse::vec3<gse::length>(x, 2.5f, z),
-					.size = gse::vec3<gse::length>(1.f),
+					.size = gse::vec3<gse::length>(gse::meters(1.f)),
 					.mass = gse::kilograms(500.f)
 				});
 		}
@@ -159,7 +159,7 @@ export namespace gs {
 					build(std::format("Funnel Box r{}c{}", row, col))
 						.with<gse::box>({
 							.initial_position = gse::vec3<gse::length>(bx, by, bz),
-							.size = gse::vec3<gse::length>(1.f),
+							.size = gse::vec3<gse::length>(gse::meters(1.f)),
 							.mass = gse::kilograms(40.f)
 						});
 				}
@@ -171,7 +171,7 @@ export namespace gs {
 			constexpr float z = 15.f;
 
 			const gse::vec3<gse::length> ramp_size(10.f, 0.5f, 4.f);
-			const gse::vec3<gse::length> box_size(1.f);
+			const gse::vec3<gse::length> box_size(gse::meters(1.f));
 			const auto resting_offset_for = [&](const gse::quat& tilt) {
 				return gse::rotate_vector(
 					tilt,
@@ -239,7 +239,7 @@ export namespace gs {
 					build(std::format("Impact Wall r{}c{}", row, col))
 						.with<gse::box>({
 							.initial_position = gse::vec3<gse::length>(bx, by, z),
-							.size = gse::vec3<gse::length>(1.f),
+							.size = gse::vec3<gse::length>(gse::meters(1.f)),
 							.mass = gse::kilograms(80.f)
 						});
 				}

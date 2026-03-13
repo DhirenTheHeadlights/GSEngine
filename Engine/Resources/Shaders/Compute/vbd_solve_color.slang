@@ -15,7 +15,7 @@ struct GpuBody {
     float mass;
     uint flags;
     uint sleep_counter;
-    float _pad0;
+    float accel_weight;
     float4 inv_inertia_col0;
     float4 inv_inertia_col1;
     float4 inv_inertia_col2;
@@ -27,15 +27,17 @@ struct GpuBody {
 struct GpuContact {
     uint body_a;
     uint body_b;
-    float initial_separation;
-    float lambda;
+    uint feature_key_hi;
+    uint feature_key_lo;
+    uint sticking;
     float4 normal;
+    float4 tangent_u;
+    float4 tangent_v;
     float4 r_a;
     float4 r_b;
-    float friction_coeff;
-    float mass_a;
-    float mass_b;
-    uint feature_packed;
+    float4 c0_friction;
+    float4 lambda;
+    float4 penalty;
 };
 
 struct GpuMotor {
@@ -49,8 +51,16 @@ struct GpuMotor {
 struct GpuWarmStart {
     uint body_a;
     uint body_b;
-    uint feature_packed;
-    float lambda;
+    uint feature_key_hi;
+    uint feature_key_lo;
+    uint sticking;
+    float4 normal;
+    float4 tangent_u;
+    float4 tangent_v;
+    float4 local_anchor_a;
+    float4 local_anchor_b;
+    float4 lambda;
+    float4 penalty;
 };
 
 static const uint FLAG_LOCKED = 1;
@@ -68,11 +78,23 @@ struct push_constants {
     uint motor_count;
     uint color_offset;
     uint color_count;
+    uint warm_start_count;
+    uint post_stabilize;
+    uint _pad0;
     float h_squared;
     float dt;
-    float rho;
+    float beta;
     float linear_damping;
     float velocity_sleep_threshold;
+    float current_alpha;
+    float collision_margin;
+    float friction_coefficient;
+    float penalty_min;
+    float penalty_max;
+    float gamma;
+    float solver_alpha;
+    float speculative_margin;
+    float stick_threshold;
     uint substep;
     uint iteration;
 };
@@ -235,34 +257,39 @@ void solve_body(uint bi) {
         float3 p_a = body_a.predicted_position.xyz + world_r_a;
         float3 p_b = body_b.predicted_position.xyz + world_r_b;
 
-        float gap = dot(p_b - p_a, c.normal.xyz) + c.initial_separation;
-        if (gap >= 0.0) continue;
+        float3 d = p_a - p_b;
+        float3 Cn = float3(
+            dot(c.normal.xyz, d) + pc.collision_margin,
+            dot(c.tangent_u.xyz, d),
+            dot(c.tangent_v.xyz, d)
+        );
+        float3 C = Cn - c.c0_friction.xyz * pc.current_alpha;
 
-        mat3 n_outer_n = outer_product3(c.normal.xyz, c.normal.xyz);
+        float3 force = float3(0, 0, 0);
+        force.x = min(c.penalty.x * C.x + c.lambda.x, 0.0);
+        float friction_bound = abs(c.lambda.x) * c.c0_friction.w;
+        force.y = clamp(c.penalty.y * C.y + c.lambda.y, -friction_bound, friction_bound);
+        force.z = clamp(c.penalty.z * C.z + c.lambda.z, -friction_bound, friction_bound);
 
-        float mass_self = is_a ? c.mass_a : c.mass_b;
+        float sign = is_a ? 1.0 : -1.0;
+        float3 r = is_a ? world_r_a : world_r_b;
+        float3 dirs[3] = { c.normal.xyz, c.tangent_u.xyz, c.tangent_v.xyz };
 
-        float rho_val = pc.rho * mass_self / pc.h_squared;
-        float effective = rho_val * gap;
+        for (uint row = 0; row < 3; row++) {
+            if (row > 0 && friction_bound <= 1e-10) continue;
+            if (abs(force[row]) < 1e-12 && c.penalty[row] < 1e-6) continue;
 
-        float3 r_unitless = is_a ? world_r_a : world_r_b;
-        float3 r_cross_n = cross(r_unitless, c.normal.xyz);
+            float3 J_lin = dirs[row] * sign;
+            float3 J_ang = cross(r, dirs[row]) * sign;
 
-        if (is_a) {
-            grad -= c.normal.xyz * effective;
-        } else {
-            grad += c.normal.xyz * effective;
-        }
-        hess = mat3_add(hess, mat3_scale(n_outer_n, rho_val));
+            grad += J_lin * force[row];
+            hess = mat3_add(hess, mat3_scale(outer_product3(J_lin, J_lin), c.penalty[row]));
 
-        if (update_orient) {
-            if (is_a) {
-                ang_grad -= r_cross_n * effective;
-            } else {
-                ang_grad += r_cross_n * effective;
+            if (update_orient) {
+                ang_grad += J_ang * force[row];
+                ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(J_ang, J_ang), c.penalty[row]));
+                hess_xt = mat3_add(hess_xt, mat3_scale(outer_product3(J_lin, J_ang), c.penalty[row]));
             }
-            ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(r_cross_n, r_cross_n), rho_val));
-            hess_xt = mat3_add(hess_xt, mat3_scale(outer_product3(c.normal.xyz, r_cross_n), rho_val));
         }
     }
 
@@ -290,8 +317,10 @@ void solve_body(uint bi) {
             bool is_a = (c.body_a == bi);
             uint other = is_a ? c.body_b : c.body_a;
             GpuBody other_body = body_data[other];
-            if ((other_body.flags & FLAG_LOCKED) != 0) continue;
-            if (other_body.mass <= body.mass) continue;
+            bool blocking_body =
+                ((other_body.flags & FLAG_LOCKED) != 0) ||
+                (other_body.mass >= body.mass);
+            if (!blocking_body) continue;
 
             GpuBody contact_body_a = body_data[c.body_a];
             GpuBody contact_body_b = body_data[c.body_b];
@@ -299,12 +328,13 @@ void solve_body(uint bi) {
             float3 contact_r_b = rotate_vector(contact_body_b.predicted_orientation, c.r_b.xyz);
             float3 contact_p_a = contact_body_a.predicted_position.xyz + contact_r_a;
             float3 contact_p_b = contact_body_b.predicted_position.xyz + contact_r_b;
-            float gap = dot(contact_p_b - contact_p_a, c.normal.xyz) + c.initial_separation;
-            if (gap >= 0.0 && c.lambda <= 1e-4) continue;
+            float3 contact_d = contact_p_a - contact_p_b;
+            float normal_gap = dot(c.normal.xyz, contact_d) + pc.collision_margin;
+            if (normal_gap >= 0.0 && c.lambda.x >= -1e-3) continue;
 
             float3 push_dir = is_a ? c.normal.xyz : -c.normal.xyz;
             float proj = dot(motor_grad, push_dir);
-            if (proj < 0.0) {
+            if (proj > 0.0) {
                 motor_grad -= push_dir * proj;
             }
         }

@@ -55,7 +55,7 @@ export namespace gse::internal {
 	template <typename T, std::size_t N, typename Arg>
 	struct vec_arg_traits_impl<T, N, Arg, false> {
 		using a = std::remove_reference_t<Arg>;
-		static constexpr bool valid = std::is_convertible_v<Arg, T>;
+		static constexpr bool valid = std::is_constructible_v<T, Arg>;
 		static constexpr std::size_t count = 1;
 	};
 
@@ -97,6 +97,11 @@ export namespace gse::vec {
 
 		constexpr base() = default;
 		constexpr base(const T& value);
+
+		template <typename U>
+			requires (!std::same_as<T, U> && std::is_constructible_v<T, const U&> && !is_vec_like<std::remove_cvref_t<U>>)
+		constexpr base(const U& value) { this->data.fill(T(value)); }
+
 		constexpr base(const T* values);
 		constexpr base(const storage<T, N>& data);
 		constexpr base(const std::array<T, N>& data);

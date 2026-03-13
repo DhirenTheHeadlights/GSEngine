@@ -32,7 +32,7 @@ export namespace gse {
 				.current_position = m_initial_position,
 				.mass = m_box_mass,
 				.orientation = m_initial_orientation,
-				.moment_of_inertia = box_inertia
+				.moment_of_inertia = kilograms_meters_squared(box_inertia)
 			});
 
 			add_component<physics::collision_component>({

@@ -85,7 +85,7 @@ namespace gse::internal {
 
         constexpr quantity() = default;
 
-        constexpr quantity(
+        explicit constexpr quantity(
             ArithmeticType value
         );
 

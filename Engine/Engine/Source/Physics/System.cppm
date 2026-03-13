@@ -11,7 +11,6 @@ import :motion_component;
 import :collision_component;
 import :contact_manifold;
 import :vbd_constraints;
-import :vbd_constraint_graph;
 import :vbd_contact_cache;
 import :vbd_solver;
 import :vbd_gpu_solver;
@@ -31,7 +30,6 @@ export namespace gse::physics {
 		struct gpu_prev_frame {
 			std::vector<vbd::body_state> bodies;
 			std::vector<id> entity_ids;
-			std::vector<std::vector<std::uint32_t>> prev_body_colors;
 			std::vector<vbd::warm_start_entry> warm_start_contacts;
 		} gpu_prev;
 	};
@@ -96,10 +94,10 @@ auto gse::physics::system::initialize(const initialize_phase& phase, state& s) -
 		.post_stabilize = true,
 		.penalty_min = 1.0f,
 		.penalty_max = 1e9f,
-		.collision_margin = 0.0005f,
-		.stick_threshold = 0.01f,
+		.collision_margin = meters(0.0005f),
+		.stick_threshold = meters(0.01f),
 		.friction_coefficient = 0.6f,
-		.velocity_sleep_threshold = 0.05f,
+		.velocity_sleep_threshold = meters_per_second(0.05f),
 		.speculative_margin = meters(0.02f)
 	});
 
@@ -217,22 +215,29 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 			}
 		}
 
-		auto unpack_feature = [](const std::uint32_t packed) -> feature_id {
-			const auto feat_a = (packed >> 16) & 0xFFFF;
-			const auto feat_b = packed & 0xFFFF;
+		auto unpack_feature = [](const std::uint64_t packed) -> feature_id {
 			return {
-				.type_a = static_cast<feature_type>((feat_a >> 8) & 0xFF),
-				.type_b = static_cast<feature_type>((feat_b >> 8) & 0xFF),
-				.index_a = static_cast<std::uint8_t>(feat_a & 0xFF),
-				.index_b = static_cast<std::uint8_t>(feat_b & 0xFF)
+				.type_a = static_cast<feature_type>((packed >> 56) & 0xFF),
+				.type_b = static_cast<feature_type>((packed >> 24) & 0xFF),
+				.index_a = static_cast<std::uint8_t>((packed >> 48) & 0xFF),
+				.index_b = static_cast<std::uint8_t>((packed >> 16) & 0xFF),
+				.side_a0 = static_cast<std::uint8_t>((packed >> 40) & 0xFF),
+				.side_a1 = static_cast<std::uint8_t>((packed >> 32) & 0xFF),
+				.side_b0 = static_cast<std::uint8_t>((packed >> 8) & 0xFF),
+				.side_b1 = static_cast<std::uint8_t>(packed & 0xFF)
 			};
 		};
 
-		for (const auto& [body_a, body_b, lambda, normal, separation, feature_packed] : readback_contacts) {
+		const auto& cfg = s.vbd_solver.config();
+		for (const auto& c : readback_contacts) {
+			const auto body_a = c.body_a;
+			const auto body_b = c.body_b;
 			if (body_a >= s.gpu_prev.entity_ids.size() || body_b >= s.gpu_prev.entity_ids.size()) continue;
 
 			const auto eid_a = s.gpu_prev.entity_ids[body_a];
 			const auto eid_b = s.gpu_prev.entity_ids[body_b];
+			const auto& normal = c.normal;
+			const float separation = c.c0[0];
 
 			if (auto* mc_b = motion.find(eid_b)) {
 				if (normal.y() > 0.7f) mc_b->airborne = false;
@@ -252,61 +257,56 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 				cc_b->collision_information.penetration = meters(-separation);
 			}
 
-			s.contact_cache.store(body_a, body_b, unpack_feature(feature_packed), vbd::cached_lambda{
-				.lambda = { lambda, 0.f, 0.f },
-				.penalty = {},
-				.normal = normal,
+			const float friction_bound = std::abs(c.lambda[0]) * c.friction_coeff;
+			const float tangential_lambda = std::hypot(c.lambda[1], c.lambda[2]);
+			const float tangential_gap = std::hypot(c.c0[1], c.c0[2]);
+			const bool sticking =
+				c.lambda[0] < -1e-3f &&
+				tangential_gap < cfg.stick_threshold.as<meters>() &&
+				tangential_lambda < friction_bound;
+
+			s.contact_cache.store(body_a, body_b, unpack_feature(c.feature_key), vbd::cached_lambda{
+				.lambda = { c.lambda[0], c.lambda[1], c.lambda[2] },
+				.penalty = { c.penalty[0], c.penalty[1], c.penalty[2] },
+				.normal = c.normal,
+				.tangent_u = c.tangent_u,
+				.tangent_v = c.tangent_v,
+				.local_anchor_a = c.local_anchor_a,
+				.local_anchor_b = c.local_anchor_b,
+				.sticking = sticking,
 				.age = 0
 			});
-		}
-
-		vbd::constraint_graph color_graph;
-		for (const auto& c : readback_contacts) {
-			color_graph.add_contact(vbd::contact_constraint{
-				.body_a = c.body_a,
-				.body_b = c.body_b
-			});
-		}
-
-		std::vector<bool> locked_prev(s.gpu_prev.bodies.size());
-		for (std::size_t i = 0; i < s.gpu_prev.bodies.size(); ++i) {
-			locked_prev[i] = s.gpu_prev.bodies[i].locked;
-		}
-		color_graph.compute_coloring(static_cast<std::uint32_t>(s.gpu_prev.bodies.size()), locked_prev);
-
-		s.gpu_prev.prev_body_colors.clear();
-		for (const auto& bc : color_graph.body_colors()) {
-			s.gpu_prev.prev_body_colors.push_back(bc);
-		}
-
-		std::unordered_set<std::uint32_t> colored_bodies;
-		for (const auto& bc : s.gpu_prev.prev_body_colors) {
-			for (auto bi : bc) colored_bodies.insert(bi);
-		}
-		std::vector<std::uint32_t> uncolored;
-		for (std::uint32_t i = 0; i < s.gpu_prev.bodies.size(); ++i) {
-			if (!s.gpu_prev.bodies[i].locked && !colored_bodies.contains(i)) {
-				uncolored.push_back(i);
-			}
-		}
-		if (!uncolored.empty()) {
-			s.gpu_prev.prev_body_colors.push_back(std::move(uncolored));
 		}
 
 		s.gpu_prev.warm_start_contacts.clear();
 		s.gpu_prev.warm_start_contacts.reserve(readback_contacts.size());
 		for (const auto& c : readback_contacts) {
+			const float friction_bound = std::abs(c.lambda[0]) * c.friction_coeff;
+			const float tangential_lambda = std::hypot(c.lambda[1], c.lambda[2]);
+			const float tangential_gap = std::hypot(c.c0[1], c.c0[2]);
+			const bool sticking =
+				c.lambda[0] < -1e-3f &&
+				tangential_gap < cfg.stick_threshold.as<meters>() &&
+				tangential_lambda < friction_bound;
+
 			s.gpu_prev.warm_start_contacts.push_back(vbd::warm_start_entry{
 				.body_a = c.body_a,
 				.body_b = c.body_b,
-				.feature_packed = c.feature_packed,
-				.lambda = c.lambda
+				.feature_key = c.feature_key,
+				.sticking = sticking,
+				.normal = c.normal,
+				.tangent_u = c.tangent_u,
+				.tangent_v = c.tangent_v,
+				.local_anchor_a = c.local_anchor_a,
+				.local_anchor_b = c.local_anchor_b,
+				.lambda = { c.lambda[0], c.lambda[1], c.lambda[2] },
+				.penalty = { c.penalty[0], c.penalty[1], c.penalty[2] }
 			});
 		}
 		std::ranges::sort(s.gpu_prev.warm_start_contacts, [](const vbd::warm_start_entry& a, const vbd::warm_start_entry& b) {
 			if (a.body_a != b.body_a) return a.body_a < b.body_a;
 			if (a.body_b != b.body_b) return a.body_b < b.body_b;
-			return a.feature_packed < b.feature_packed;
+			return a.feature_key < b.feature_key;
 		});
 	}
 	else {
@@ -325,9 +325,20 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 	std::unordered_map<id, std::uint32_t> id_to_body_index;
 	std::vector<vbd::body_state> bodies;
 	std::vector<id> entity_ids;
+	std::vector<float> accel_weights;
 
 	bodies.reserve(motion.size());
 	entity_ids.reserve(motion.size());
+	accel_weights.reserve(motion.size());
+
+	std::unordered_map<id, vec3<velocity>> prev_gpu_velocity;
+	prev_gpu_velocity.reserve(s.gpu_prev.entity_ids.size());
+	for (std::size_t i = 0; i < s.gpu_prev.entity_ids.size() && i < s.gpu_prev.bodies.size(); ++i) {
+		prev_gpu_velocity.emplace(s.gpu_prev.entity_ids[i], s.gpu_prev.bodies[i].body_velocity);
+	}
+
+	const float dt_s = dt.as<seconds>();
+	constexpr float gravity_mag = 9.8f;
 
 	std::uint32_t body_idx = 0;
 	for (motion_component& mc : motion) {
@@ -336,6 +347,19 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 
 		const auto sc_it = s.sleep_counters.find(eid);
 		const auto sc = sc_it != s.sleep_counters.end() ? sc_it->second : 0u;
+
+		float accel_weight = 0.f;
+		if (!mc.position_locked && sc < 300u && dt_s > 1e-6f) {
+			if (const auto prev_it = prev_gpu_velocity.find(eid); prev_it != prev_gpu_velocity.end()) {
+				const float delta_vy = (mc.current_velocity.y() - prev_it->second.y()).as<meters_per_second>();
+				const float accel_y = delta_vy / dt_s;
+				accel_weight = std::clamp(-accel_y / gravity_mag, 0.f, 1.f);
+				if (!std::isfinite(accel_weight)) {
+					accel_weight = 0.f;
+				}
+			}
+		}
+		accel_weights.push_back(accel_weight);
 
 		bodies.push_back({
 			.position = mc.current_position,
@@ -361,8 +385,8 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 
 	std::vector<vbd::collision_body_data> collision_data(bodies.size());
 	for (auto& cd : collision_data) {
-		cd.aabb_min = unitless::vec3(1e30f, 1e30f, 1e30f);
-		cd.aabb_max = unitless::vec3(-1e30f, -1e30f, -1e30f);
+		cd.aabb_min = vec3<length>(meters(1e30f));
+		cd.aabb_max = vec3<length>(meters(-1e30f));
 	}
 
 	for (collision_component& cc : collision) {
@@ -370,12 +394,11 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		const auto it = id_to_body_index.find(cc.owner_id());
 		if (it == id_to_body_index.end()) continue;
 
-		const auto he = cc.bounding_box.half_extents().as<meters>();
 		const auto& [max, min] = cc.bounding_box.aabb();
 		collision_data[it->second] = {
-			.half_extents = he,
-			.aabb_min = min.as<meters>(),
-			.aabb_max = max.as<meters>()
+			.half_extents = cc.bounding_box.half_extents(),
+			.aabb_min = min,
+			.aabb_max = max
 		};
 	}
 
@@ -386,7 +409,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		if (!id_to_body_index.contains(mc.owner_id())) continue;
 
 		const auto idx = id_to_body_index[mc.owner_id()];
-		if (bodies[idx].sleeping() && magnitude(mc.motor.target_velocity) > 0.01f) {
+		if (bodies[idx].sleeping() && magnitude(mc.motor.target_velocity) > meters_per_second(.01f)) {
 			bodies[idx].sleep_counter = 0;
 		}
 
@@ -400,21 +423,10 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		});
 	}
 
-	if (s.gpu_prev.prev_body_colors.empty()) {
-		std::vector<std::uint32_t> all_dynamic;
-		for (std::uint32_t i = 0; i < bodies.size(); ++i) {
-			if (!bodies[i].locked) all_dynamic.push_back(i);
-		}
-		if (!all_dynamic.empty()) {
-			s.gpu_prev.prev_body_colors.push_back(std::move(all_dynamic));
-		}
-	}
-
 	s.gpu_solver.upload(
 		bodies,
 		collision_data,
-		{},
-		s.gpu_prev.prev_body_colors,
+		accel_weights,
 		motors,
 		s.gpu_prev.warm_start_contacts,
 		s.vbd_solver.config(),
@@ -523,7 +535,7 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 
 				auto& sat = *sat_result;
 
-				if (dot(sat.normal, collision_b->bounding_box.center() - collision_a->bounding_box.center()) < 0.f) {
+				if (dot(sat.normal, collision_b->bounding_box.center() - collision_a->bounding_box.center()) < meters(0.f)) {
 					sat.normal = -sat.normal;
 				}
 
@@ -579,7 +591,7 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 
 					auto cached = s.contact_cache.lookup(body_a, body_b, feature);
 					const unitless::vec3 current_d = (position_on_a - position_on_b).as<meters>();
-					const float current_normal_gap = dot(constraint_normal, current_d) + cfg.collision_margin;
+					const float current_normal_gap = dot(constraint_normal, current_d) + cfg.collision_margin.as<meters>();
 					const bool reuse_cached_normal =
 						cached &&
 						(cached->lambda[0] < -1e-3f || current_normal_gap < -1e-4f);
@@ -592,7 +604,6 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 
 					float init_lambda[3] = {};
 					float init_penalty[3] = { penalty_floor, penalty_floor, penalty_floor };
-					bool reused_anchors = false;
 
 					if (reuse_cached_normal) {
 						init_penalty[0] = std::max(cached->penalty[0], penalty_floor);
@@ -618,6 +629,7 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 					}
 
 					if (reuse_cached_sticking) {
+						bool reused_anchors = false;
 						local_r_a = cached->local_anchor_a;
 						local_r_b = cached->local_anchor_b;
 						reused_anchors = true;

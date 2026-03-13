@@ -58,6 +58,24 @@ export namespace gse {
 		std::byte* dest,
 		const Container& src
 	) -> void;
+
+	template <is_trivially_copyable T>
+	auto memcpy(
+		T& dest,
+		const std::byte* src
+	) -> void;
+
+	template <is_trivially_copyable T, std::size_t N>
+	auto memcpy(
+		std::byte* dest,
+		const T (&src)[N]
+	) -> void;
+
+	auto memcpy(
+		std::byte* dest,
+		const void* src,
+		std::size_t size
+	) -> void;
 }
 
 auto gse::scope(const std::function<void()>& in_scope) -> void {
@@ -75,5 +93,19 @@ auto gse::memcpy(std::byte* dest, const Container& src) -> void {
 	using value_type = std::ranges::range_value_t<Container>;
 	const std::size_t byte_size = std::ranges::size(src) * sizeof(value_type);
 	std::memcpy(dest, std::ranges::data(src), byte_size);
+}
+
+template <gse::is_trivially_copyable T>
+auto gse::memcpy(T& dest, const std::byte* src) -> void {
+	std::memcpy(std::addressof(dest), src, sizeof(T));
+}
+
+template <gse::is_trivially_copyable T, std::size_t N>
+auto gse::memcpy(std::byte* dest, const T (&src)[N]) -> void {
+	std::memcpy(dest, src, sizeof(T) * N);
+}
+
+auto gse::memcpy(std::byte* dest, const void* src, const std::size_t size) -> void {
+	std::memcpy(dest, src, size);
 }
 

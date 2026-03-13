@@ -32,7 +32,7 @@ export namespace gs {
 				build(std::format("Stack Box {}", i + 1))
 					.with<gse::box>({
 						.initial_position = gse::vec3<gse::length>(5.f, 0.5f + static_cast<float>(i) * 1.0f, 5.f),
-						.size = gse::vec3<gse::length>(1.f),
+						.size = gse::vec3<gse::length>(gse::meters(1.f)),
 						.mass = gse::kilograms(200.f)
 					});
 			}

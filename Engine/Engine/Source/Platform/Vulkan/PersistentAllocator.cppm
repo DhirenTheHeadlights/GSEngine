@@ -567,7 +567,7 @@ auto gse::vulkan::allocator::create_buffer(const vk::BufferCreateInfo& buffer_in
 	m_device.bindBufferMemory(buffer, alloc.memory(), alloc.offset());
 
 	if (data && alloc.mapped()) {
-		std::memcpy(alloc.mapped(), data, buffer_info.size);
+		gse::memcpy(alloc.mapped(), data, buffer_info.size);
 	}
 	else if (data && !alloc.mapped()) {
 		assert(false, std::source_location::current(), "Buffer created with data, but the allocated memory is not mappable.");
@@ -597,7 +597,7 @@ auto gse::vulkan::allocator::create_image(const vk::ImageCreateInfo& info, const
 	m_device.bindImageMemory(image, alloc.memory(), alloc.offset());
 
 	if (data && alloc.mapped()) {
-		std::memcpy(alloc.mapped(), data, requirements.size);
+		gse::memcpy(alloc.mapped(), data, requirements.size);
 	}
 
 	vk::ImageView view;

@@ -776,10 +776,9 @@ auto gse::shader::set_uniform(std::string_view full_name, const T& value, const 
 				member_name
 			);
 
-			std::memcpy(
+			gse::memcpy(
 				alloc.mapped() + mem_info.offset,
-				&value,
-				sizeof(T)
+				&value
 			);
 			return;
 		}
@@ -834,10 +833,9 @@ auto gse::shader::set_uniform_block(const std::string_view block_name, const std
 			name
 		);
 
-		std::memcpy(
+		gse::memcpy(
 			alloc.mapped() + member_info.offset,
-			bytes.data(),
-			bytes.size()
+			bytes
 		);
 	}
 }
@@ -882,10 +880,9 @@ auto gse::shader::set_ssbo_element(std::string_view block_name, const std::uint3
 	);
 
 	const auto base = alloc.mapped();
-	std::memcpy(
+	gse::memcpy(
 		base + index * elem_stride + m_info.offset,
-		bytes.data(),
-		bytes.size()
+		bytes
 	);
 }
 
@@ -918,10 +915,9 @@ auto gse::shader::set_ssbo_struct(std::string_view block_name, const std::uint32
 	);
 
 	const auto base = alloc.mapped();
-	std::memcpy(
+	gse::memcpy(
 		base + index * elem_stride,
-		element_bytes.data(),
-		element_bytes.size()
+		element_bytes
 	);
 }
 
@@ -1080,7 +1076,7 @@ auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout
 			"Provided bytes for '{}' (size {}) exceed member size ({})", mi.name, n, mi.size
 		);
 
-        std::memcpy(buffer.data() + mi.offset, src_ptr, n);
+        gse::memcpy(buffer.data() + mi.offset, src_ptr, n);
     };
 
     auto args = std::forward_as_tuple(std::forward<NameValue>(name_value_pairs)...);

@@ -74,7 +74,7 @@ auto gs::client::update() -> void {
             });
     });
 
-    if (m_refresh_clock.elapsed<std::uint32_t>() > 1000u) {
+    if (m_refresh_clock.elapsed<std::uint32_t>() > gse::seconds(1000u)) {
         gse::network::refresh_servers(gse::milliseconds(150));
         m_refresh_clock.reset();
     }

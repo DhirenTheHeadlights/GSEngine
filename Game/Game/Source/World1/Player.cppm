@@ -135,7 +135,7 @@ namespace gs {
 			});*/
 
 			add_component<gse::camera::follow_component>({
-				.offset = gse::vec3<gse::length>(0.f),
+				.offset = gse::vec3<gse::length>(gse::meters(0.f)),
 				.priority = 50,
 				.blend_in_duration = gse::milliseconds(300),
 				.active = true,
@@ -156,10 +156,10 @@ namespace gs {
 					gse::unitless::vec3(v.x(), 0.f, v.y())
 				);
 				const auto horizontal = gse::unitless::vec3(dir.x(), 0.f, dir.z());
-			const float len = gse::magnitude(horizontal);
-			motion.motor.target_velocity = len > 1e-6f
-				? motion.max_speed * (horizontal / len)
-				: gse::vec3<gse::velocity>{};
+				const float len = gse::magnitude(horizontal);
+				motion.motor.target_velocity = len > 1e-6f
+					? motion.max_speed * (horizontal / len)
+					: gse::vec3<gse::velocity>{};
 			} else {
 				motion.motor.target_velocity = {};
 			}
