@@ -17,7 +17,7 @@ struct GpuBody {
     float mass;
     uint flags;
     uint sleep_counter;
-    float _pad0;
+    float accel_weight;
     float4 inv_inertia_col0;
     float4 inv_inertia_col1;
     float4 inv_inertia_col2;
@@ -29,22 +29,32 @@ struct GpuBody {
 struct GpuContact {
     uint body_a;
     uint body_b;
-    float initial_separation;
-    float lambda;
+    uint feature_key_hi;
+    uint feature_key_lo;
+    uint sticking;
     float4 normal;
+    float4 tangent_u;
+    float4 tangent_v;
     float4 r_a;
     float4 r_b;
-    float friction_coeff;
-    float mass_a;
-    float mass_b;
-    uint feature_packed;
+    float4 c0_friction;
+    float4 lambda;
+    float4 penalty;
 };
 
 struct GpuWarmStart {
     uint body_a;
     uint body_b;
-    uint feature_packed;
-    float lambda;
+    uint feature_key_hi;
+    uint feature_key_lo;
+    uint sticking;
+    float4 normal;
+    float4 tangent_u;
+    float4 tangent_v;
+    float4 local_anchor_a;
+    float4 local_anchor_b;
+    float4 lambda;
+    float4 penalty;
 };
 
 static const uint FLAG_LOCKED = 1;
@@ -55,11 +65,23 @@ struct push_constants {
     uint motor_count;
     uint color_offset;
     uint color_count;
+    uint warm_start_count;
+    uint post_stabilize;
+    uint _pad0;
     float h_squared;
     float dt;
-    float rho;
+    float beta;
     float linear_damping;
     float velocity_sleep_threshold;
+    float current_alpha;
+    float collision_margin;
+    float friction_coefficient;
+    float penalty_min;
+    float penalty_max;
+    float gamma;
+    float solver_alpha;
+    float speculative_margin;
+    float stick_threshold;
     uint substep;
     uint iteration;
 };
@@ -99,12 +121,37 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
 
     float3 p_a = body_a.predicted_position.xyz + world_r_a;
     float3 p_b = body_b.predicted_position.xyz + world_r_b;
+    float3 d = p_a - p_b;
 
-    float gap = dot(p_b - p_a, c.normal.xyz) + c.initial_separation;
+    float3 Cn = float3(
+        dot(c.normal.xyz, d) + pc.collision_margin,
+        dot(c.tangent_u.xyz, d),
+        dot(c.tangent_v.xyz, d)
+    );
+    float3 C = Cn - c.c0_friction.xyz * pc.current_alpha;
 
-    float lambda_mass = max(c.mass_a, c.mass_b);
-    float rho_val = pc.rho * (lambda_mass / pc.h_squared);
-    float new_lambda = clamp(c.lambda - rho_val * gap, 0.0, 1e6);
+    float4 lambda = c.lambda;
+    float4 penalty = c.penalty;
 
-    contact_data[ci].lambda = new_lambda;
+    lambda.x = min(penalty.x * C.x + lambda.x, 0.0);
+
+    float friction_bound = abs(lambda.x) * c.c0_friction.w;
+    lambda.y = clamp(penalty.y * C.y + lambda.y, -friction_bound, friction_bound);
+    lambda.z = clamp(penalty.z * C.z + lambda.z, -friction_bound, friction_bound);
+
+    if (lambda.x < 0.0) {
+        penalty.x = min(penalty.x + pc.beta * abs(C.x), pc.penalty_max);
+    }
+
+    if (friction_bound > 1e-10) {
+        if (abs(lambda.y) < friction_bound) {
+            penalty.y = min(penalty.y + pc.beta * abs(C.y), pc.penalty_max);
+        }
+        if (abs(lambda.z) < friction_bound) {
+            penalty.z = min(penalty.z + pc.beta * abs(C.z), pc.penalty_max);
+        }
+    }
+
+    contact_data[ci].lambda = lambda;
+    contact_data[ci].penalty = penalty;
 }

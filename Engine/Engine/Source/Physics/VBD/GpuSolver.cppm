@@ -8,7 +8,6 @@ import gse.log;
 import gse.platform;
 
 import :vbd_constraints;
-import :vbd_constraint_graph;
 import :vbd_solver;
 
 export namespace gse::vbd {
@@ -31,36 +30,44 @@ export namespace gse::vbd {
 	constexpr std::uint32_t flag_update_orientation = 2u;
 	constexpr std::uint32_t flag_affected_by_gravity = 4u;
 
-	struct color_range {
-		std::uint32_t offset;
-		std::uint32_t count;
-	};
-
 	struct collision_body_data {
-		unitless::vec3 half_extents;
-		unitless::vec3 aabb_min;
-		unitless::vec3 aabb_max;
+		vec3<length> half_extents;
+		vec3<length> aabb_min;
+		vec3<length> aabb_max;
 	};
 
 	struct warm_start_entry {
-		std::uint32_t body_a;
-		std::uint32_t body_b;
-		std::uint32_t feature_packed;
-		float lambda;
+		std::uint32_t body_a = 0;
+		std::uint32_t body_b = 0;
+		std::uint64_t feature_key = 0;
+		bool sticking = false;
+		unitless::vec3 normal = {};
+		unitless::vec3 tangent_u = {};
+		unitless::vec3 tangent_v = {};
+		vec3<length> local_anchor_a = {};
+		vec3<length> local_anchor_b = {};
+		std::array<float, 3> lambda = {};
+		std::array<float, 3> penalty = {};
 	};
 
 	struct contact_readback_entry {
-		std::uint32_t body_a;
-		std::uint32_t body_b;
-		float lambda;
-		unitless::vec3 normal;
-		float separation;
-		std::uint32_t feature_packed;
+		std::uint32_t body_a = 0;
+		std::uint32_t body_b = 0;
+		std::uint64_t feature_key = 0;
+		bool sticking = false;
+		unitless::vec3 normal = {};
+		unitless::vec3 tangent_u = {};
+		unitless::vec3 tangent_v = {};
+		vec3<length> local_anchor_a = {};
+		vec3<length> local_anchor_b = {};
+		std::array<float, 3> c0 = {};
+		std::array<float, 3> lambda = {};
+		std::array<float, 3> penalty = {};
+		float friction_coeff = 0.f;
 	};
 
 	struct gpu_debug_config {
 		bool enable_warm_start = true;
-		bool enable_velocity_corrections = true;
 		bool enable_solve_iterations = true;
 		bool log_diagnostics = true;
 		std::uint32_t log_interval = 60;
@@ -79,7 +86,7 @@ export namespace gse::vbd {
 		) -> void;
 
 		auto dispatch_compute(
-			vk::CommandBuffer cmd,
+			vk::CommandBuffer command,
 			vulkan::config& config,
 			std::uint32_t frame_index
 		) -> void;
@@ -102,8 +109,7 @@ export namespace gse::vbd {
 		auto upload(
 			std::span<const body_state> bodies,
 			std::span<const collision_body_data> collision_data,
-			std::span<const color_range> prev_coloring,
-			std::span<const std::vector<std::uint32_t>> prev_body_colors,
+			std::span<const float> accel_weights,
 			std::span<const velocity_motor_constraint> motors,
 			std::span<const warm_start_entry> prev_contacts,
 			const solver_config& solver_cfg,
@@ -221,15 +227,6 @@ export namespace gse::vbd {
 		auto motor_count(
 		) const -> std::uint32_t;
 
-		auto color_ranges(
-		) const -> std::span<const color_range>;
-
-		auto motor_only_offset(
-		) const -> std::uint32_t;
-
-		auto motor_only_count(
-		) const -> std::uint32_t;
-
 		auto solver_cfg(
 		) const -> const solver_config&;
 
@@ -245,7 +242,6 @@ export namespace gse::vbd {
 			resource::handle<shader> solve_color;
 			resource::handle<shader> update_lambda;
 			resource::handle<shader> derive_velocities;
-			resource::handle<shader> sequential_passes;
 			resource::handle<shader> finalize;
 			resource::handle<shader> collision_reset;
 			resource::handle<shader> collision_broad_phase;
@@ -256,7 +252,6 @@ export namespace gse::vbd {
 			vk::raii::Pipeline solve_color_pipeline = nullptr;
 			vk::raii::Pipeline update_lambda_pipeline = nullptr;
 			vk::raii::Pipeline derive_velocities_pipeline = nullptr;
-			vk::raii::Pipeline sequential_passes_pipeline = nullptr;
 			vk::raii::Pipeline finalize_pipeline = nullptr;
 			vk::raii::Pipeline collision_reset_pipeline = nullptr;
 			vk::raii::Pipeline collision_broad_phase_pipeline = nullptr;
@@ -284,8 +279,6 @@ export namespace gse::vbd {
 		std::uint32_t m_body_count = 0;
 		std::uint32_t m_contact_count = 0;
 		std::uint32_t m_motor_count = 0;
-		std::uint32_t m_num_colors = 0;
-		std::uint32_t m_gpu_num_colors = 8;
 
 		std::uint32_t m_steps = 1;
 		solver_config m_solver_cfg;
@@ -294,10 +287,9 @@ export namespace gse::vbd {
 		buffer_layout m_body_layout;
 		buffer_layout m_contact_layout;
 		buffer_layout m_motor_layout;
+		buffer_layout m_warm_start_layout;
 
-		std::vector<color_range> m_color_ranges;
-		std::uint32_t m_motor_only_offset = 0;
-		std::uint32_t m_motor_only_count = 0;
+		std::uint32_t m_warm_start_count = 0;
 
 		per_frame_resource<vulkan::buffer_resource> m_body_buffer;
 		per_frame_resource<vulkan::buffer_resource> m_contact_buffer;
@@ -318,10 +310,10 @@ export namespace gse::vbd {
 
 		std::vector<std::byte> m_upload_body_data;
 		std::vector<std::byte> m_upload_motor_data;
+		std::vector<std::byte> m_upload_warm_start_data;
 		std::vector<std::uint32_t> m_upload_color_data;
 		std::vector<std::uint32_t> m_upload_body_contact_map;
 		std::vector<std::uint32_t> m_upload_collision_state;
-		std::vector<warm_start_entry> m_upload_warm_starts;
 
 		std::vector<std::byte> m_staged_body_data;
 		std::vector<std::byte> m_staged_contact_data;
@@ -370,6 +362,7 @@ auto gse::vbd::gpu_solver::create_buffers(vulkan::allocator& alloc) -> void {
 		max_bodies * sizeof(std::uint32_t) * 2 +
 		max_contacts * 2 * sizeof(std::uint32_t) +
 		max_bodies * sizeof(std::uint32_t);
+
 	for (auto& buf : m_body_contact_map_buffer) {
 		buf = alloc.create_buffer({
 			.size = map_buffer_size,
@@ -384,8 +377,7 @@ auto gse::vbd::gpu_solver::create_buffers(vulkan::allocator& alloc) -> void {
 		});
 	}
 
-	const vk::DeviceSize collision_pair_size =
-		sizeof(std::uint32_t) + max_collision_pairs * 2 * sizeof(std::uint32_t);
+	const vk::DeviceSize collision_pair_size = sizeof(std::uint32_t) + max_collision_pairs * 2 * sizeof(std::uint32_t);
 	for (auto& buf : m_collision_pair_buffer) {
 		buf = alloc.create_buffer({
 			.size = collision_pair_size,
@@ -401,7 +393,7 @@ auto gse::vbd::gpu_solver::create_buffers(vulkan::allocator& alloc) -> void {
 		});
 	}
 
-	const vk::DeviceSize warm_start_size = max_contacts * sizeof(warm_start_entry);
+	const vk::DeviceSize warm_start_size = max_contacts * m_warm_start_layout.stride;
 	for (auto& buf : m_warm_start_buffer) {
 		buf = alloc.create_buffer({
 			.size = std::max(warm_start_size, static_cast<vk::DeviceSize>(16)),
@@ -413,6 +405,7 @@ auto gse::vbd::gpu_solver::create_buffers(vulkan::allocator& alloc) -> void {
 		max_bodies * m_body_layout.stride +
 		max_contacts * m_contact_layout.stride +
 		collision_state_uints * sizeof(std::uint32_t);
+
 	for (auto& rb : m_readback_buffer) {
 		rb = alloc.create_buffer({
 			.size = readback_size,
@@ -427,8 +420,7 @@ auto gse::vbd::gpu_solver::create_buffers(vulkan::allocator& alloc) -> void {
 auto gse::vbd::gpu_solver::upload(
 	const std::span<const body_state> bodies,
 	const std::span<const collision_body_data> collision_data,
-	const std::span<const color_range> prev_coloring,
-	const std::span<const std::vector<std::uint32_t>> prev_body_colors,
+	const std::span<const float> accel_weights,
 	const std::span<const velocity_motor_constraint> motors,
 	const std::span<const warm_start_entry> prev_contacts,
 	const solver_config& solver_cfg,
@@ -438,7 +430,6 @@ auto gse::vbd::gpu_solver::upload(
 	m_body_count = static_cast<std::uint32_t>(std::min(bodies.size(), static_cast<std::size_t>(max_bodies)));
 	m_contact_count = max_contacts;
 	m_motor_count = static_cast<std::uint32_t>(std::min(motors.size(), static_cast<std::size_t>(max_motors)));
-	m_num_colors = static_cast<std::uint32_t>(prev_body_colors.size());
 	m_steps = static_cast<std::uint32_t>(std::max(steps, 1));
 	m_solver_cfg = solver_cfg;
 	m_dt = dt;
@@ -477,9 +468,8 @@ auto gse::vbd::gpu_solver::upload(
 
 		const auto pos = position.as<meters>();
 		const bool has_valid_pos = locked || (pos.x() != 0.f || pos.y() != 0.f || pos.z() != 0.f);
-		const bool use_cpu_state = has_valid_pos || m_frame_count < 2;
 
-		if (use_cpu_state) {
+		if (has_valid_pos || m_frame_count < 2) {
 			gse::memcpy(elem + bo.at("position"), &pos);
 
 			const auto pp = predicted_position.as<meters>();
@@ -520,6 +510,12 @@ auto gse::vbd::gpu_solver::upload(
 
 		gse::memcpy(elem + bo.at("sleep_counter"), &sleep_counter);
 
+		const float accel_weight =
+			i < accel_weights.size()
+				? accel_weights[i]
+				: 0.f;
+		gse::memcpy(elem + bo.at("accel_weight"), &accel_weight);
+
 		const auto inv_i = mat3{ inv_inertia.data };
 		gse::memcpy(elem + bo.at("inv_inertia_col0"), &inv_i[0]);
 		gse::memcpy(elem + bo.at("inv_inertia_col1"), &inv_i[1]);
@@ -527,9 +523,12 @@ auto gse::vbd::gpu_solver::upload(
 
 		if (i < collision_data.size()) {
 			const auto& [half_extents, aabb_min, aabb_max] = collision_data[i];
-			gse::memcpy(elem + bo.at("half_extents"), &half_extents);
-			gse::memcpy(elem + bo.at("aabb_min"), &aabb_min);
-			gse::memcpy(elem + bo.at("aabb_max"), &aabb_max);
+			const auto he = half_extents.as<meters>();
+			const auto amin = aabb_min.as<meters>();
+			const auto amax = aabb_max.as<meters>();
+			gse::memcpy(elem + bo.at("half_extents"), &he);
+			gse::memcpy(elem + bo.at("aabb_min"), &amin);
+			gse::memcpy(elem + bo.at("aabb_max"), &amax);
 		}
 	}
 
@@ -556,35 +555,6 @@ auto gse::vbd::gpu_solver::upload(
 	m_upload_color_data.resize(color_data_size);
 	std::memset(m_upload_color_data.data(), 0, color_data_size * sizeof(std::uint32_t));
 
-	auto* color_offsets = m_upload_color_data.data();
-	auto* color_counts = m_upload_color_data.data() + max_colors;
-	auto* body_indices = m_upload_color_data.data() + max_colors * 2;
-
-	m_color_ranges.clear();
-	m_color_ranges.reserve(m_num_colors);
-
-	std::uint32_t idx = 0;
-	std::unordered_set<std::uint32_t> contacted_bodies;
-	for (std::uint32_t c = 0; c < m_num_colors; ++c) {
-		const auto& bc = prev_body_colors[c];
-		color_offsets[c] = idx;
-		color_counts[c] = static_cast<std::uint32_t>(bc.size());
-		m_color_ranges.push_back({ idx, static_cast<std::uint32_t>(bc.size()) });
-		for (const auto bi : bc) {
-			body_indices[idx++] = bi;
-			contacted_bodies.insert(bi);
-		}
-	}
-
-	m_motor_only_offset = idx;
-	m_motor_only_count = 0;
-	for (std::uint32_t mi = 0; mi < m_motor_count; ++mi) {
-		if (!contacted_bodies.contains(motors[mi].body_index)) {
-			body_indices[idx++] = motors[mi].body_index;
-			m_motor_only_count++;
-		}
-	}
-
 	constexpr std::uint32_t map_data_size = max_bodies * 2 + max_contacts * 2 + max_bodies;
 	m_upload_body_contact_map.resize(map_data_size);
 	std::memset(m_upload_body_contact_map.data(), 0, map_data_size * sizeof(std::uint32_t));
@@ -598,29 +568,47 @@ auto gse::vbd::gpu_solver::upload(
 
 	m_upload_collision_state.resize(collision_state_uints, 0);
 	m_upload_collision_state[0] = 0;
-	std::uint32_t margin_bits;
-	float margin_f = solver_cfg.speculative_margin.as<meters>();
-	std::memcpy(&margin_bits, &margin_f, sizeof(float));
-	m_upload_collision_state[1] = margin_bits;
-	std::uint32_t friction_bits;
-	std::memcpy(&friction_bits, &solver_cfg.friction_coefficient, sizeof(float));
-	m_upload_collision_state[2] = friction_bits;
-	std::uint32_t compliance_bits;
-	const float zero_compliance = 0.0f;
-	std::memcpy(&compliance_bits, &zero_compliance, sizeof(float));
-	m_upload_collision_state[3] = compliance_bits;
-	std::uint32_t damping_bits;
-	const float zero_damping = 0.0f;
-	std::memcpy(&damping_bits, &zero_damping, sizeof(float));
-	m_upload_collision_state[4] = damping_bits;
-	m_upload_collision_state[5] = static_cast<std::uint32_t>(prev_contacts.size());
-	m_upload_collision_state[6] = m_num_colors;
+	m_upload_collision_state[1] = 0;
 
 	if (debug.enable_warm_start) {
-		m_upload_warm_starts.assign(prev_contacts.begin(), prev_contacts.end());
+		m_warm_start_count = static_cast<std::uint32_t>(std::min(prev_contacts.size(), static_cast<std::size_t>(max_contacts)));
 	} else {
-		m_upload_warm_starts.clear();
-		m_upload_collision_state[5] = 0;
+		m_warm_start_count = 0;
+	}
+
+	const auto& wo = m_warm_start_layout.offsets;
+	m_upload_warm_start_data.assign(m_warm_start_count * m_warm_start_layout.stride, std::byte{0});
+	for (std::uint32_t i = 0; i < m_warm_start_count; ++i) {
+		const auto& ws = prev_contacts[i];
+		auto* elem = m_upload_warm_start_data.data() + i * m_warm_start_layout.stride;
+
+		gse::memcpy(elem + wo.at("body_a"), &ws.body_a);
+		gse::memcpy(elem + wo.at("body_b"), &ws.body_b);
+		const auto feature_hi = static_cast<std::uint32_t>(ws.feature_key >> 32);
+		const auto feature_lo = static_cast<std::uint32_t>(ws.feature_key & 0xFFFFFFFFu);
+		gse::memcpy(elem + wo.at("feature_key_hi"), &feature_hi);
+		gse::memcpy(elem + wo.at("feature_key_lo"), &feature_lo);
+
+		const std::uint32_t sticking = ws.sticking ? 1u : 0u;
+		gse::memcpy(elem + wo.at("sticking"), &sticking);
+
+		const auto normal = ws.normal;
+		gse::memcpy(elem + wo.at("normal"), &normal);
+
+		const auto tangent_u = ws.tangent_u;
+		gse::memcpy(elem + wo.at("tangent_u"), &tangent_u);
+
+		const auto tangent_v = ws.tangent_v;
+		gse::memcpy(elem + wo.at("tangent_v"), &tangent_v);
+
+		const auto local_anchor_a = ws.local_anchor_a.as<meters>();
+		gse::memcpy(elem + wo.at("local_anchor_a"), &local_anchor_a);
+
+		const auto local_anchor_b = ws.local_anchor_b.as<meters>();
+		gse::memcpy(elem + wo.at("local_anchor_b"), &local_anchor_b);
+
+		gse::memcpy(elem + wo.at("lambda"), ws.lambda.data(), sizeof(float) * 3);
+		gse::memcpy(elem + wo.at("penalty"), ws.penalty.data(), sizeof(float) * 3);
 	}
 
 	m_pending_dispatch = true;
@@ -639,11 +627,10 @@ auto gse::vbd::gpu_solver::commit_upload(const std::uint32_t frame_index) -> voi
 	gse::memcpy(m_body_contact_map_buffer[frame_index].allocation.mapped(), m_upload_body_contact_map);
 	gse::memcpy(m_collision_state_buffer[frame_index].allocation.mapped(), m_upload_collision_state);
 
-	if (!m_upload_warm_starts.empty()) {
-		std::memcpy(
+	if (!m_upload_warm_start_data.empty()) {
+		gse::memcpy(
 			m_warm_start_buffer[frame_index].allocation.mapped(),
-			m_upload_warm_starts.data(),
-			m_upload_warm_starts.size() * sizeof(warm_start_entry)
+			m_upload_warm_start_data
 		);
 	}
 }
@@ -669,14 +656,8 @@ auto gse::vbd::gpu_solver::stage_readback(const std::uint32_t frame_index) -> vo
 	const vk::DeviceSize count_offset = contact_region_offset + max_contacts * m_contact_layout.stride;
 
 	std::uint32_t gpu_contact_count = 0;
-	std::memcpy(&gpu_contact_count, rb + count_offset, sizeof(std::uint32_t));
+	gse::memcpy(gpu_contact_count, rb + count_offset);
 	m_staged_contact_count = std::min(gpu_contact_count, max_contacts);
-
-	std::uint32_t readback_num_colors = 0;
-	std::memcpy(&readback_num_colors, rb + count_offset + 6 * sizeof(std::uint32_t), sizeof(std::uint32_t));
-	if (readback_num_colors > 0 && readback_num_colors <= max_colors) {
-		m_gpu_num_colors = readback_num_colors;
-	}
 
 	const vk::DeviceSize contact_data_size = m_staged_contact_count * m_contact_layout.stride;
 	m_staged_contact_data.assign(rb + contact_region_offset, rb + contact_region_offset + contact_data_size);
@@ -704,29 +685,29 @@ auto gse::vbd::gpu_solver::stage_readback(const std::uint32_t frame_index) -> vo
 			auto* dst = m_upload_body_data.data() + i * m_body_layout.stride;
 
 			std::uint32_t cpu_flags;
-			std::memcpy(&cpu_flags, dst + bo.at("flags"), sizeof(std::uint32_t));
+			gse::memcpy(cpu_flags, dst + bo.at("flags"));
 			if (cpu_flags & flag_locked) continue;
 
 			float orient[4];
-			std::memcpy(orient, src + bo.at("orientation"), sizeof(float) * 4);
+			gse::memcpy(orient, src + bo.at("orientation"));
 			const float q_len_sq = orient[0] * orient[0] + orient[1] * orient[1] + orient[2] * orient[2] + orient[3] * orient[3];
 			if (q_len_sq < 0.5f) continue;
 
 			float pos[3];
-			std::memcpy(pos, src + bo.at("position"), sizeof(float) * 3);
+			gse::memcpy(pos, src + bo.at("position"));
 			if (!is_finite_vec3(pos)) continue;
 
 			float vel[3];
-			std::memcpy(vel, src + bo.at("velocity"), sizeof(float) * 3);
+			gse::memcpy(vel, src + bo.at("velocity"));
 			if (!is_finite_vec3(vel)) continue;
 
-			std::memcpy(dst + bo.at("position"), pos, sizeof(float) * 3);
-			std::memcpy(dst + bo.at("velocity"), vel, sizeof(float) * 3);
-			std::memcpy(dst + bo.at("orientation"), orient, sizeof(float) * 4);
-			std::memcpy(dst + bo.at("angular_velocity"), src + bo.at("angular_velocity"), sizeof(float) * 3);
-			std::memcpy(dst + bo.at("sleep_counter"), src + bo.at("sleep_counter"), sizeof(std::uint32_t));
-			std::memcpy(dst + bo.at("aabb_min"), src + bo.at("aabb_min"), sizeof(float) * 3);
-			std::memcpy(dst + bo.at("aabb_max"), src + bo.at("aabb_max"), sizeof(float) * 3);
+			gse::memcpy(dst + bo.at("position"), pos);
+			gse::memcpy(dst + bo.at("velocity"), vel);
+			gse::memcpy(dst + bo.at("orientation"), orient);
+			gse::memcpy(dst + bo.at("angular_velocity"), src + bo.at("angular_velocity"), sizeof(float) * 3);
+			gse::memcpy(dst + bo.at("sleep_counter"), src + bo.at("sleep_counter"), sizeof(std::uint32_t));
+			gse::memcpy(dst + bo.at("aabb_min"), src + bo.at("aabb_min"), sizeof(float) * 3);
+			gse::memcpy(dst + bo.at("aabb_max"), src + bo.at("aabb_max"), sizeof(float) * 3);
 		}
 		m_readback_patched_this_frame = true;
 	}
@@ -745,24 +726,24 @@ auto gse::vbd::gpu_solver::stage_readback(const std::uint32_t frame_index) -> vo
 			const auto* elem = m_staged_body_data.data() + i * m_body_layout.stride;
 
 			std::uint32_t flags;
-			std::memcpy(&flags, elem + bo.at("flags"), sizeof(std::uint32_t));
+			gse::memcpy(flags, elem + bo.at("flags"));
 			if (flags & flag_locked) continue;
 
 			float pos[3], vel[3], ang[3], orient[4];
-			std::memcpy(pos, elem + bo.at("position"), sizeof(float) * 3);
-			std::memcpy(vel, elem + bo.at("velocity"), sizeof(float) * 3);
-			std::memcpy(ang, elem + bo.at("angular_velocity"), sizeof(float) * 3);
-			std::memcpy(orient, elem + bo.at("orientation"), sizeof(float) * 4);
+			gse::memcpy(pos, elem + bo.at("position"));
+			gse::memcpy(vel, elem + bo.at("velocity"));
+			gse::memcpy(ang, elem + bo.at("angular_velocity"));
+			gse::memcpy(orient, elem + bo.at("orientation"));
 
-			bool pos_nan = !std::isfinite(pos[0]) || !std::isfinite(pos[1]) || !std::isfinite(pos[2]);
-			bool vel_nan = !std::isfinite(vel[0]) || !std::isfinite(vel[1]) || !std::isfinite(vel[2]);
+			const bool pos_nan = !std::isfinite(pos[0]) || !std::isfinite(pos[1]) || !std::isfinite(pos[2]);
+			const bool vel_nan = !std::isfinite(vel[0]) || !std::isfinite(vel[1]) || !std::isfinite(vel[2]);
 			if (pos_nan || vel_nan) { nan_count++; continue; }
 
-			float q_len_sq = orient[0]*orient[0] + orient[1]*orient[1] + orient[2]*orient[2] + orient[3]*orient[3];
+			const float q_len_sq = orient[0]*orient[0] + orient[1]*orient[1] + orient[2]*orient[2] + orient[3]*orient[3];
 			if (q_len_sq < 0.5f) bad_quat_count++;
 
-			float lin_spd = std::sqrt(vel[0]*vel[0] + vel[1]*vel[1] + vel[2]*vel[2]);
-			float ang_spd = std::sqrt(ang[0]*ang[0] + ang[1]*ang[1] + ang[2]*ang[2]);
+			const float lin_spd = std::sqrt(vel[0]*vel[0] + vel[1]*vel[1] + vel[2]*vel[2]);
+			const float ang_spd = std::sqrt(ang[0]*ang[0] + ang[1]*ang[1] + ang[2]*ang[2]);
 
 			if (lin_spd > max_lin_vel) { max_lin_vel = lin_spd; max_lin_body = i; }
 			if (ang_spd > max_ang_vel) { max_ang_vel = ang_spd; max_ang_body = i; }
@@ -770,8 +751,8 @@ auto gse::vbd::gpu_solver::stage_readback(const std::uint32_t frame_index) -> vo
 			if (pos[1] < min_pos_y) min_pos_y = pos[1];
 		}
 
-		bool trouble = nan_count > 0 || bad_quat_count > 0 || max_lin_vel > 20.f || max_ang_vel > 30.f;
-		bool periodic = m_frame_count % debug.log_interval == 0;
+		const bool trouble = nan_count > 0 || bad_quat_count > 0 || max_lin_vel > 20.f || max_ang_vel > 30.f;
+		const bool periodic = m_frame_count % debug.log_interval == 0;
 
 		if (trouble || periodic) {
 			log::println("[GPU Phys] frame={} bodies={} contacts={} nan={} bad_q={}", m_frame_count, m_staged_body_count, m_staged_contact_count, nan_count, bad_quat_count);
@@ -785,8 +766,8 @@ auto gse::vbd::gpu_solver::stage_readback(const std::uint32_t frame_index) -> vo
 		if (max_lin_vel > 20.f) {
 			const auto* elem = m_staged_body_data.data() + max_lin_body * m_body_layout.stride;
 			float pos[3], vel[3];
-			std::memcpy(pos, elem + bo.at("position"), sizeof(float) * 3);
-			std::memcpy(vel, elem + bo.at("velocity"), sizeof(float) * 3);
+			gse::memcpy(pos, elem + bo.at("position"));
+			gse::memcpy(vel, elem + bo.at("velocity"));
 			log::println("  FAST body {}: pos=({:.3f},{:.3f},{:.3f}) vel=({:.3f},{:.3f},{:.3f})", max_lin_body, pos[0], pos[1], pos[2], vel[0], vel[1], vel[2]);
 			log::flush();
 		}
@@ -807,16 +788,16 @@ auto gse::vbd::gpu_solver::readback(const std::span<body_state> bodies, std::vec
 		auto& b = bodies[i];
 
 		float orient[4];
-		std::memcpy(orient, elem + bo.at("orientation"), sizeof(float) * 4);
+		gse::memcpy(orient, elem + bo.at("orientation"));
 		const float q_len_sq = orient[0] * orient[0] + orient[1] * orient[1] + orient[2] * orient[2] + orient[3] * orient[3];
 		if (q_len_sq < 0.5f) continue;
 
 		float pos[3];
-		std::memcpy(pos, elem + bo.at("position"), sizeof(float) * 3);
+		gse::memcpy(pos, elem + bo.at("position"));
 		if (!is_finite_vec3(pos)) continue;
 
 		float vel[3];
-		std::memcpy(vel, elem + bo.at("velocity"), sizeof(float) * 3);
+		gse::memcpy(vel, elem + bo.at("velocity"));
 
 		b.position = unitless::vec3(pos[0], pos[1], pos[2]) * meters(1.f);
 
@@ -826,17 +807,17 @@ auto gse::vbd::gpu_solver::readback(const std::span<body_state> bodies, std::vec
 			b.body_velocity = {};
 		}
 
-		std::memcpy(&b.orientation, orient, sizeof(quat));
+		gse::memcpy(reinterpret_cast<std::byte*>(&b.orientation), orient);
 
 		float av[3];
-		std::memcpy(av, elem + bo.at("angular_velocity"), sizeof(float) * 3);
+		gse::memcpy(av, elem + bo.at("angular_velocity"));
 		if (is_finite_vec3(av)) {
 			b.body_angular_velocity = unitless::vec3(av[0], av[1], av[2]) * radians_per_second(1.f);
 		} else {
 			b.body_angular_velocity = {};
 		}
 
-		std::memcpy(&b.sleep_counter, elem + bo.at("sleep_counter"), sizeof(std::uint32_t));
+		gse::memcpy(b.sleep_counter, elem + bo.at("sleep_counter"));
 	}
 
 	const auto& co = m_contact_layout.offsets;
@@ -846,12 +827,44 @@ auto gse::vbd::gpu_solver::readback(const std::span<body_state> bodies, std::vec
 		const auto* elem = m_staged_contact_data.data() + i * m_contact_layout.stride;
 
 		contact_readback_entry entry;
-		std::memcpy(&entry.body_a, elem + co.at("body_a"), sizeof(std::uint32_t));
-		std::memcpy(&entry.body_b, elem + co.at("body_b"), sizeof(std::uint32_t));
-		std::memcpy(&entry.lambda, elem + co.at("lambda"), sizeof(float));
-		std::memcpy(&entry.normal, elem + co.at("normal"), sizeof(unitless::vec3));
-		std::memcpy(&entry.separation, elem + co.at("initial_separation"), sizeof(float));
-		std::memcpy(&entry.feature_packed, elem + co.at("feature_packed"), sizeof(std::uint32_t));
+		gse::memcpy(entry.body_a, elem + co.at("body_a"));
+		gse::memcpy(entry.body_b, elem + co.at("body_b"));
+		std::uint32_t feature_hi = 0;
+		std::uint32_t feature_lo = 0;
+		gse::memcpy(feature_hi, elem + co.at("feature_key_hi"));
+		gse::memcpy(feature_lo, elem + co.at("feature_key_lo"));
+		entry.feature_key =
+			(static_cast<std::uint64_t>(feature_hi) << 32) |
+			static_cast<std::uint64_t>(feature_lo);
+
+		std::uint32_t sticking = 0;
+		gse::memcpy(sticking, elem + co.at("sticking"));
+		entry.sticking = sticking != 0;
+
+		gse::memcpy(entry.normal, elem + co.at("normal"));
+		gse::memcpy(entry.tangent_u, elem + co.at("tangent_u"));
+		gse::memcpy(entry.tangent_v, elem + co.at("tangent_v"));
+
+		unitless::vec3 local_anchor_a{};
+		gse::memcpy(local_anchor_a, elem + co.at("r_a"));
+		entry.local_anchor_a = local_anchor_a * meters(1.f);
+
+		unitless::vec3 local_anchor_b{};
+		gse::memcpy(local_anchor_b, elem + co.at("r_b"));
+		entry.local_anchor_b = local_anchor_b * meters(1.f);
+
+		float c0_friction[4] = {};
+		gse::memcpy(c0_friction, elem + co.at("c0_friction"));
+		entry.c0 = { c0_friction[0], c0_friction[1], c0_friction[2] };
+		entry.friction_coeff = c0_friction[3];
+
+		float lambda[4] = {};
+		gse::memcpy(lambda, elem + co.at("lambda"));
+		entry.lambda = { lambda[0], lambda[1], lambda[2] };
+
+		float penalty[4] = {};
+		gse::memcpy(penalty, elem + co.at("penalty"));
+		entry.penalty = { penalty[0], penalty[1], penalty[2] };
 
 		contacts_out.push_back(entry);
 	}
@@ -958,18 +971,6 @@ auto gse::vbd::gpu_solver::motor_count() const -> std::uint32_t {
 	return m_motor_count;
 }
 
-auto gse::vbd::gpu_solver::color_ranges() const -> std::span<const color_range> {
-	return m_color_ranges;
-}
-
-auto gse::vbd::gpu_solver::motor_only_offset() const -> std::uint32_t {
-	return m_motor_only_offset;
-}
-
-auto gse::vbd::gpu_solver::motor_only_count() const -> std::uint32_t {
-	return m_motor_only_count;
-}
-
 auto gse::vbd::gpu_solver::solver_cfg() const -> const solver_config& {
 	return m_solver_cfg;
 }
@@ -987,7 +988,6 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 	m_compute.solve_color = ctx.get<shader>("Shaders/Compute/vbd_solve_color");
 	m_compute.update_lambda = ctx.get<shader>("Shaders/Compute/vbd_update_lambda");
 	m_compute.derive_velocities = ctx.get<shader>("Shaders/Compute/vbd_derive_velocities");
-	m_compute.sequential_passes = ctx.get<shader>("Shaders/Compute/vbd_sequential_passes");
 	m_compute.finalize = ctx.get<shader>("Shaders/Compute/vbd_finalize");
 	m_compute.collision_reset = ctx.get<shader>("Shaders/Compute/collision_reset");
 	m_compute.collision_broad_phase = ctx.get<shader>("Shaders/Compute/collision_broad_phase");
@@ -998,7 +998,6 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 	ctx.instantly_load(m_compute.solve_color);
 	ctx.instantly_load(m_compute.update_lambda);
 	ctx.instantly_load(m_compute.derive_velocities);
-	ctx.instantly_load(m_compute.sequential_passes);
 	ctx.instantly_load(m_compute.finalize);
 	ctx.instantly_load(m_compute.collision_reset);
 	ctx.instantly_load(m_compute.collision_broad_phase);
@@ -1028,7 +1027,6 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 	m_compute.solve_color_pipeline = create_pipeline(m_compute.solve_color);
 	m_compute.update_lambda_pipeline = create_pipeline(m_compute.update_lambda);
 	m_compute.derive_velocities_pipeline = create_pipeline(m_compute.derive_velocities);
-	m_compute.sequential_passes_pipeline = create_pipeline(m_compute.sequential_passes);
 	m_compute.finalize_pipeline = create_pipeline(m_compute.finalize);
 	m_compute.collision_reset_pipeline = create_pipeline(m_compute.collision_reset);
 	m_compute.collision_broad_phase_pipeline = create_pipeline(m_compute.collision_broad_phase);
@@ -1048,6 +1046,7 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 	m_body_layout = extract_layout(m_compute.predict, "body_data");
 	m_contact_layout = extract_layout(m_compute.predict, "contact_data");
 	m_motor_layout = extract_layout(m_compute.predict, "motor_data");
+	m_warm_start_layout = extract_layout(m_compute.predict, "warm_starts");
 
 	m_compute.query_pool = config.device_config().device.createQueryPool({
 		.queryType = vk::QueryType::eTimestamp,
@@ -1238,14 +1237,14 @@ auto gse::vbd::gpu_solver::dispatch_compute(const vk::CommandBuffer command, vul
 
 	const auto& cfg = m_solver_cfg;
 	const std::uint32_t total = total_substeps();
-	const float sub_dt = m_dt.as<seconds>() / static_cast<float>(total);
-	const float h_squared = sub_dt * sub_dt;
+	const time_step sub_dt = m_dt / static_cast<float>(total);
+	const float h_squared = sub_dt.as<seconds>() * sub_dt.as<seconds>();
 
 	auto ceil_div = [](const std::uint32_t a, const std::uint32_t b) {
 		return (a + b - 1) / b;
 	};
 
-	auto bind_and_push = [&](const resource::handle<shader>& sh, const vk::raii::Pipeline& pipeline, std::uint32_t color_offset, std::uint32_t color_count, std::uint32_t substep, std::uint32_t iteration) {
+	auto bind_and_push = [&](const resource::handle<shader>& sh, const vk::raii::Pipeline& pipeline, std::uint32_t color_offset, std::uint32_t color_count, std::uint32_t substep, std::uint32_t iteration, float current_alpha) {
 		command.bindPipeline(vk::PipelineBindPoint::eCompute, *pipeline);
 		command.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *m_compute.pipeline_layout, 0, { 1, sets }, {});
 		sh->push(command, *m_compute.pipeline_layout, "push_constants",
@@ -1254,11 +1253,23 @@ auto gse::vbd::gpu_solver::dispatch_compute(const vk::CommandBuffer command, vul
 			"motor_count", m_motor_count,
 			"color_offset", color_offset,
 			"color_count", color_count,
+			"warm_start_count", m_warm_start_count,
+			"post_stabilize", cfg.post_stabilize ? 1u : 0u,
+			"_pad0", 0u,
 			"h_squared", h_squared,
-			"dt", sub_dt,
-			"rho", cfg.beta,
+			"dt", sub_dt.as<seconds>(),
+			"beta", cfg.beta,
 			"linear_damping", 0.0f,
-			"velocity_sleep_threshold", cfg.velocity_sleep_threshold,
+			"velocity_sleep_threshold", cfg.velocity_sleep_threshold.as<meters_per_second>(),
+			"current_alpha", current_alpha,
+			"collision_margin", cfg.collision_margin.as<meters>(),
+			"friction_coefficient", cfg.friction_coefficient,
+			"penalty_min", cfg.penalty_min,
+			"penalty_max", cfg.penalty_max,
+			"gamma", cfg.gamma,
+			"solver_alpha", cfg.alpha,
+			"speculative_margin", cfg.speculative_margin.as<meters>(),
+			"stick_threshold", cfg.stick_threshold.as<meters>(),
 			"substep", substep,
 			"iteration", iteration
 		);
@@ -1267,59 +1278,72 @@ auto gse::vbd::gpu_solver::dispatch_compute(const vk::CommandBuffer command, vul
 	const std::uint32_t n = m_body_count;
 	const std::uint32_t total_pairs = n * (n - 1) / 2;
 
-	bind_and_push(m_compute.collision_reset, m_compute.collision_reset_pipeline, 0u, 0u, 0u, 0u);
+	bind_and_push(m_compute.collision_reset, m_compute.collision_reset_pipeline, 0u, 0u, 0u, 0u, 0.f);
 	command.dispatch(ceil_div(m_body_count, workgroup_size), 1, 1);
 	command.pipelineBarrier2(compute_dep);
 
-	bind_and_push(m_compute.collision_broad_phase, m_compute.collision_broad_phase_pipeline, 0u, 0u, 0u, 0u);
+	bind_and_push(m_compute.collision_broad_phase, m_compute.collision_broad_phase_pipeline, 0u, 0u, 0u, 0u, 0.f);
 	command.dispatch(ceil_div(total_pairs, workgroup_size), 1, 1);
 	command.pipelineBarrier2(compute_dep);
 
-	bind_and_push(m_compute.collision_narrow_phase, m_compute.collision_narrow_phase_pipeline, 0u, 0u, 0u, 0u);
+	bind_and_push(m_compute.collision_narrow_phase, m_compute.collision_narrow_phase_pipeline, 0u, 0u, 0u, 0u, 0.f);
 	command.dispatch(ceil_div(max_collision_pairs, workgroup_size), 1, 1);
 	command.pipelineBarrier2(compute_dep);
 
-	bind_and_push(m_compute.collision_build_adjacency, m_compute.collision_build_adjacency_pipeline, 0u, 0u, 0u, 0u);
+	bind_and_push(m_compute.collision_build_adjacency, m_compute.collision_build_adjacency_pipeline, 0u, 0u, 0u, 0u, 0.f);
 	command.dispatch(1, 1, 1);
 	command.pipelineBarrier2(compute_dep);
 
 	const std::uint32_t body_workgroups = ceil_div(m_body_count, workgroup_size);
-	const std::uint32_t num_colors = std::min(std::max(m_gpu_num_colors * 2, m_gpu_num_colors + 4), max_colors);
+	constexpr std::uint32_t num_colors = max_colors;
+	const std::uint32_t total_iterations =
+		cfg.iterations +
+		(cfg.post_stabilize ? 1u : 0u);
 
 	for (std::uint32_t sub = 0; sub < total; ++sub) {
-		bind_and_push(m_compute.predict, m_compute.predict_pipeline, 0u, 0u, sub, 0u);
+		bind_and_push(m_compute.predict, m_compute.predict_pipeline, 0u, 0u, sub, 0u, 0.f);
 		command.dispatch(body_workgroups, 1, 1);
 		command.pipelineBarrier2(compute_dep);
 
 		if (debug.enable_solve_iterations) {
-			for (std::uint32_t iter = 0; iter < cfg.iterations; ++iter) {
+			for (std::uint32_t iterations = 0; iterations < total_iterations; ++iterations) {
+				const float current_alpha =
+					cfg.post_stabilize
+						? (iterations < cfg.iterations ? 1.f : 0.f)
+						: cfg.alpha;
+
 				for (std::uint32_t c = 0; c < num_colors; ++c) {
-					bind_and_push(m_compute.solve_color, m_compute.solve_color_pipeline, c, 0u, sub, iter);
+					bind_and_push(m_compute.solve_color, m_compute.solve_color_pipeline, c, 0u, sub, iterations, current_alpha);
+					command.dispatch(body_workgroups, 1, 1);
+					command.pipelineBarrier2(compute_dep);
+				}
+
+				if (iterations < cfg.iterations) {
+					bind_and_push(m_compute.update_lambda, m_compute.update_lambda_pipeline, 0u, 0u, sub, iterations, current_alpha);
+					command.dispatch(ceil_div(max_contacts, workgroup_size), 1, 1);
+					command.pipelineBarrier2(compute_dep);
+				}
+
+				if (cfg.iterations > 0 && iterations == cfg.iterations - 1u) {
+					bind_and_push(m_compute.derive_velocities, m_compute.derive_velocities_pipeline, 0u, 0u, sub, iterations, current_alpha);
 					command.dispatch(body_workgroups, 1, 1);
 					command.pipelineBarrier2(compute_dep);
 				}
 			}
 		}
-
-		bind_and_push(m_compute.update_lambda, m_compute.update_lambda_pipeline, 0u, 0u, sub, 0u);
-		command.dispatch(ceil_div(max_contacts, workgroup_size), 1, 1);
-		command.pipelineBarrier2(compute_dep);
-
-		bind_and_push(m_compute.derive_velocities, m_compute.derive_velocities_pipeline, 0u, 0u, sub, 0u);
-		command.dispatch(body_workgroups, 1, 1);
-		command.pipelineBarrier2(compute_dep);
-
-		if (debug.enable_velocity_corrections) {
-			for (std::uint32_t pass = 0; pass < 6u; ++pass) {
-				for (std::uint32_t c = 0; c < num_colors; ++c) {
-					bind_and_push(m_compute.sequential_passes, m_compute.sequential_passes_pipeline, c, 0u, sub, pass);
-					command.dispatch(body_workgroups, 1, 1);
-					command.pipelineBarrier2(compute_dep);
-				}
-			}
+		else {
+			bind_and_push(m_compute.derive_velocities, m_compute.derive_velocities_pipeline, 0u, 0u, sub, 0u, 0.f);
+			command.dispatch(body_workgroups, 1, 1);
+			command.pipelineBarrier2(compute_dep);
 		}
 
-		bind_and_push(m_compute.finalize, m_compute.finalize_pipeline, 0u, 0u, sub, 0u);
+		if (debug.enable_solve_iterations && cfg.iterations == 0u) {
+			bind_and_push(m_compute.derive_velocities, m_compute.derive_velocities_pipeline, 0u, 0u, sub, 0u, 0.f);
+			command.dispatch(body_workgroups, 1, 1);
+			command.pipelineBarrier2(compute_dep);
+		}
+
+		bind_and_push(m_compute.finalize, m_compute.finalize_pipeline, 0u, 0u, sub, 0u, 0.f);
 		command.dispatch(body_workgroups, 1, 1);
 		command.pipelineBarrier2(compute_dep);
 	}

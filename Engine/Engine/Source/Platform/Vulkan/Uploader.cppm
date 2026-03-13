@@ -7,6 +7,7 @@ import :persistent_allocator;
 import :context;
 
 import gse.math;
+import gse.utility;
 
 export namespace gse::vulkan::uploader {
     auto upload_image_2d(
@@ -137,7 +138,7 @@ auto gse::vulkan::uploader::upload_image_layers(config& config, image_resource& 
 
             const auto mapped = staging_buffer.allocation.mapped();
             for (std::size_t i = 0; i < layer_count; ++i) {
-                std::memcpy(mapped + i * bytes_per_face, face_data[i], bytes_per_face);
+                gse::memcpy(mapped + i * bytes_per_face, face_data[i], bytes_per_face);
             }
 
             transition_image_layout(
@@ -311,5 +312,5 @@ auto gse::vulkan::uploader::upload_to_buffer(const buffer_resource& destination_
     assert(destination_buffer.allocation.mapped(), std::source_location::current(), "Buffer for uploading must be persistently mapped");
     assert(size <= destination_buffer.allocation.size(), std::source_location::current(), "Upload size exceeds buffer allocation size");
 
-    std::memcpy(destination_buffer.allocation.mapped(), data, size);
+    gse::memcpy(destination_buffer.allocation.mapped(), data, size);
 }

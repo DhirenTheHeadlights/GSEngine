@@ -209,7 +209,7 @@ auto gse::animation::system::update(update_phase& phase, state& s) -> void {
 			if (should_loop) {
 				sample_t = wrap_time(sample_t, length);
 				clip_c->t = sample_t;
-			} else if (length > 0 && sample_t >= length) {
+			} else if (length > seconds(0.f) && sample_t >= length) {
 				sample_t = length;
 				clip_c->t = length;
 				clip_c->playing = false;
@@ -277,8 +277,8 @@ auto gse::animation::system::update(update_phase& phase, state& s) -> void {
 }
 
 auto gse::animation::wrap_time(const time t, const time length) -> time {
-	if (length <= time{}) {
-		return 0;
+	if (length <= seconds(0.f)) {
+		return seconds(0.f);
 	}
 
 	const float ratio = t / length;
@@ -325,7 +325,7 @@ auto gse::animation::sample_track(const joint_track& track, const time t, mat4& 
 	const auto& next = track.keys[hi];
 
 	const auto denom = next.time - prev.time;
-	if (denom <= 0.f) {
+	if (denom <= seconds(0.f)) {
 		out = next.local_transform;
 		return true;
 	}
@@ -553,9 +553,9 @@ auto gse::animation::process_controller_job(const controller_job& job, const ren
 				ctrl.blend.from_state = ctrl.current_state;
 				ctrl.blend.to_state = transition->to_state;
 				ctrl.blend.blend_duration = transition->blend_duration;
-				ctrl.blend.blend_elapsed = 0;
+				ctrl.blend.blend_elapsed = seconds(0.f);
 				ctrl.blend.from_time = ctrl.state_time;
-				ctrl.blend.to_time = 0;
+				ctrl.blend.to_time = seconds(0.f);
 				break;
 			}
 		}

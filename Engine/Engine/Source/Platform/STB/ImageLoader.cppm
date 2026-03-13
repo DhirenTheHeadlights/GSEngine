@@ -10,6 +10,7 @@ import std;
 
 import gse.assert;
 import gse.math;
+import gse.utility;
 
 export namespace gse::image {
 	struct data {
@@ -68,7 +69,7 @@ auto gse::image::load(const std::filesystem::path& path) -> data {
     assert(pixels, std::source_location::current(), "Failed to load image: {}", path.string());
 
     img_data.pixels.resize(img_data.size_bytes());
-    std::memcpy(img_data.pixels.data(), pixels, img_data.size_bytes());
+    gse::memcpy(img_data.pixels.data(), pixels, img_data.size_bytes());
 
     stbi_image_free(pixels);
 
@@ -86,7 +87,7 @@ auto gse::image::load(const unitless::vec4 color, const unitless::vec2u size) ->
     std::vector<std::byte> pixels(total_pixels * 4);
 
     for (std::size_t i = 0; i < total_pixels; ++i) {
-        std::memcpy(pixels.data() + i * 4, pixel_data.data(), 4);
+        gse::memcpy(pixels.data() + i * 4, pixel_data);
     }
 
     return {
@@ -124,7 +125,7 @@ auto gse::image::load_raw(const std::filesystem::path& path) -> data {
     assert(pixels, std::source_location::current(), "Failed to load image: {}", path.string());
 
     img_data.pixels.resize(img_data.size_bytes());
-    std::memcpy(img_data.pixels.data(), pixels, img_data.size_bytes());
+    gse::memcpy(img_data.pixels.data(), pixels, img_data.size_bytes());
     stbi_image_free(pixels);
 
     return img_data;

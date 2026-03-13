@@ -347,7 +347,7 @@ auto gse::narrow_phase_collision::clip_polygon(const std::vector<clip_vertex>& s
 
 auto gse::narrow_phase_collision::build_clipped_face_contacts(const bounding_box& bb1, const bounding_box& bb2, const unitless::vec3& collision_normal) -> std::optional<clipped_face_contacts> {
 	unitless::vec3 n = normalize(collision_normal);
-	if (dot(n, bb2.center() - bb1.center()) < 0.0f) {
+	if (dot(n, (bb2.center() - bb1.center()).as<meters>()) < 0.0f) {
 		n = -n;
 	}
 
@@ -400,7 +400,7 @@ auto gse::narrow_phase_collision::build_clipped_face_contacts(const bounding_box
 		}
 		plane_normal /= plane_length;
 
-		if (dot(plane_normal, reference_center - v1) < 0.0f) {
+		if (dot(plane_normal, reference_center - v1) < meters(0.0f)) {
 			plane_normal = -plane_normal;
 		}
 
@@ -522,7 +522,7 @@ auto gse::narrow_phase_collision::generate_contact_points(const bounding_box& bb
 
 	std::vector<vec3<length>> contacts;
 	unitless::vec3 n = normalize(collision_normal);
-	if (dot(n, bb2.center() - bb1.center()) < 0.0f) {
+	if (dot(n, (bb2.center() - bb1.center()).as<meters>()) < 0.0f) {
 		n = -n;
 	}
 
@@ -550,7 +550,7 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
 
 	minkowski_point v1 = minkowski_difference(bb1, bb2, dir);
 
-	if (dot(v1.point, dir) <= 0.0f) {
+	if (dot(v1.point, dir) <= meters(0.0f)) {
 		return std::nullopt;
 	}
 
@@ -565,19 +565,19 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
 
 	minkowski_point v2 = minkowski_difference(bb1, bb2, dir);
 
-	if (dot(v2.point, dir) <= 0.0f) {
+	if (dot(v2.point, dir) <= meters(0.0f)) {
 		return std::nullopt;
 	}
 
 	dir = normalize(cross(v1.point - v0.point, v2.point - v0.point));
 
-	if (dot(dir, -v0.point) < 0.0f) {
+	if (dot(dir, -v0.point) < meters(0.0f)) {
 		dir = -dir;
 	}
 
 	minkowski_point v3 = minkowski_difference(bb1, bb2, dir);
 
-	if (dot(v3.point, dir) <= 0.0f) {
+	if (dot(v3.point, dir) <= meters(0.0f)) {
 		return std::nullopt;
 	}
 
@@ -585,7 +585,7 @@ auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const b
 		unitless::vec3 n = normalize(cross(b - a, c - a));
 		if (is_zero(n)) return n;
 
-		if (dot(n, opp - a) > 0) {
+		if (dot(n, opp - a) > meters(0.0f)) {
 			n = -n;
 		}
 		return n;
@@ -802,7 +802,7 @@ auto gse::narrow_phase_collision::sat_penetration(const bounding_box& bb1, const
 		axis = normalize(axis);
 
 		auto project = [&](const bounding_box& bb) {
-			length r = 0;
+			length r = meters(0);
 			const auto he = bb.half_extents();
 			for (int i = 0; i < 3; ++i) {
 				r += abs(dot(axis, bb.obb().axes[i]) * he[i]);
@@ -815,7 +815,7 @@ auto gse::narrow_phase_collision::sat_penetration(const bounding_box& bb1, const
 		length dist = abs(dot(axis, bb1.center() - bb2.center()));
 		length overlap = r1 + r2 - dist;
 
-		if (overlap > 0) {
+		if (overlap > meters(0.f)) {
 			update_sat_choice(best_axis, axis, overlap, source, extent_scale);
 			if (source == sat_axis_source::face) {
 				update_sat_choice(best_face_axis, axis, overlap, source, extent_scale);
@@ -850,7 +850,7 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
 		return;
 	}
 
-	if (dot(object_a->current_position - object_b->current_position, res->normal) < 0) {
+	if (dot(object_a->current_position - object_b->current_position, res->normal) < meters(0.0f)) {
 		res->normal *= -1.0f;
 	}
 
@@ -927,9 +927,9 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
 
 		if (constexpr float wake_threshold = 0.2f; normal_speed > wake_threshold || tangent_speed > wake_threshold) {
 			object_a->sleeping = false;
-			object_a->sleep_time = 0.f;
+			object_a->sleep_time = {};
 			object_b->sleeping = false;
-			object_b->sleep_time = 0.f;
+			object_b->sleep_time = {};
 		}
 
 		float restitution = 0.0f;
@@ -1036,7 +1036,7 @@ auto gse::narrow_phase_collision::sat_speculative(const bounding_box& bb1, const
 	}
 
 	best_axis = prefer_face_sat_axis(best_axis, best_face_axis);
-	if (dot(best_axis.axis, bb2.center() - bb1.center()) < 0.f) {
+	if (dot(best_axis.axis, bb2.center() - bb1.center()) < meters(0.0f)) {
 		best_axis.axis = -best_axis.axis;
 	}
 

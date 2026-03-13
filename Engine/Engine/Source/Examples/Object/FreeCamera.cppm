@@ -22,7 +22,7 @@ export namespace gse {
 
 		auto initialize() -> void override {
 			add_component<camera::follow_component>({
-				.offset = vec3<length>(0.f),
+				.offset = vec3<length>(meters(0.f)),
 				.priority = m_priority,
 				.blend_in_duration = milliseconds(300),
 				.active = true,

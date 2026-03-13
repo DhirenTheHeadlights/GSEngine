@@ -134,10 +134,10 @@ gse::network::client::client(const address& listen, const address& server) : m_s
 			if (m_state.load(std::memory_order_relaxed) == state::connecting) {
 				const auto retry_elapsed = m_retry_clock.elapsed<std::uint32_t>();
 				const auto total_elapsed = m_connection_start_clock.elapsed<std::uint32_t>();
-				const auto ms_to_retry = (retry_elapsed >= m_retry) ? 0u : (m_retry - retry_elapsed);
-				const auto ms_to_timeout = (total_elapsed >= m_timeout) ? 0u : (m_timeout - total_elapsed);
-				const auto ms = std::min(ms_to_retry, ms_to_timeout);
-				wait = std::min(wait, ms == 0 ? 1 : ms);
+				const auto to_retry = (retry_elapsed >= m_retry) ? seconds(0u) : (m_retry - retry_elapsed);
+				const auto to_timeout = (total_elapsed >= m_timeout) ? seconds(0u) : (m_timeout - total_elapsed);
+				const auto time = std::min(to_retry, to_timeout);
+				wait = std::min(wait, time == seconds(0u) ? seconds(1u) : time);
 			}
 
 			(void)m_socket.wait_readable(wait);
@@ -267,7 +267,7 @@ auto gse::network::client::tick() -> void {
 		}
 
 		if (current == state::connected) {
-		if (m_input_clock.elapsed<std::uint32_t>() > 16u) {
+		if (m_input_clock.elapsed<std::uint32_t>() > milliseconds(16u)) {
 			std::optional<input_snapshot> next;
 
 			{

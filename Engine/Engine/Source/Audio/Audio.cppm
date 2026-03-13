@@ -212,7 +212,7 @@ auto gse::audio_clip::load(const gpu::context&) -> void {
 		m_sample_rate = decoder.outputSampleRate;
 		m_channels = decoder.outputChannels;
 		m_frame_count = length;
-		m_duration = (length > 0 && m_sample_rate > 0) ? seconds(static_cast<float>(length) / static_cast<float>(m_sample_rate)) : 0;
+		m_duration = (length > 0 && m_sample_rate > 0) ? seconds(static_cast<float>(length) / static_cast<float>(m_sample_rate)) : seconds(0.f);
 		ma_decoder_uninit(&decoder);
 	}
 }

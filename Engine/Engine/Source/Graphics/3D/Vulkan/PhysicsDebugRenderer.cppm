@@ -391,9 +391,8 @@ auto gse::renderer::physics_debug::system::render(render_phase& phase, const sta
 	auto& mutable_state = const_cast<state&>(s);
 	ensure_vertex_capacity(mutable_state, verts.size());
 
-	const auto byte_count = verts.size() * sizeof(debug_vertex);
-	if (void* dst = mutable_state.vertex_buffer.allocation.mapped()) {
-		std::memcpy(dst, verts.data(), byte_count);
+	if (auto* dst = mutable_state.vertex_buffer.allocation.mapped()) {
+		gse::memcpy(dst, verts);
 	}
 
 	const auto command = config.frame_context().command_buffer;

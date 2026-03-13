@@ -20,10 +20,10 @@ export namespace gse::vbd {
 		bool post_stabilize = true;
 		float penalty_min = 1.0f;
 		float penalty_max = 1e9f;
-		float collision_margin = 0.0005f;
-		float stick_threshold = 0.01f;
+		length collision_margin = meters(0.0005f);
+		length stick_threshold = meters(0.01f);
 		float friction_coefficient = 0.6f;
-		float velocity_sleep_threshold = 0.001f;
+		velocity velocity_sleep_threshold = meters_per_second(0.001f);
 		length speculative_margin = meters(0.02f);
 	};
 
@@ -195,7 +195,7 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		const vec3<length> pB = bb.position + rBW;
 		const unitless::vec3 d = (pA - pB).as<meters>();
 
-		c.C0[0] = dot(c.normal, d) + m_config.collision_margin;
+		c.C0[0] = dot(c.normal, d) + m_config.collision_margin.as<meters>();
 		c.C0[1] = dot(c.tangent_u, d);
 		c.C0[2] = dot(c.tangent_v, d);
 	}
@@ -435,7 +435,7 @@ auto gse::vbd::solver::end_frame(std::vector<body_state>& bodies, contact_cache&
 		const float tangential_gap = std::hypot(c.C0[1], c.C0[2]);
 		const bool sticking =
 			c.lambda[0] < -1e-3f &&
-			tangential_gap < m_config.stick_threshold &&
+			tangential_gap < m_config.stick_threshold.as<meters>() &&
 			tangential_lambda < friction_bound;
 
 		cache.store(c.body_a, c.body_b, c.feature, cached_lambda{
@@ -474,7 +474,7 @@ auto gse::vbd::solver::accumulate_contact(const contact_constraint& c, const std
 	const unitless::vec3 d = (pA - pB).as<meters>();
 
 	float Cn[3];
-	Cn[0] = dot(c.normal, d) + m_config.collision_margin;
+	Cn[0] = dot(c.normal, d) + m_config.collision_margin.as<meters>();
 	Cn[1] = dot(c.tangent_u, d);
 	Cn[2] = dot(c.tangent_v, d);
 
@@ -552,7 +552,7 @@ auto gse::vbd::solver::accumulate_motor(const velocity_motor_constraint& m, cons
 		const vec3<length> pA = body_a.predicted_position + rAW;
 		const vec3<length> pB = body_b.predicted_position + rBW;
 		const unitless::vec3 d = (pA - pB).as<meters>();
-		const float normal_gap = dot(c.normal, d) + m_config.collision_margin;
+		const float normal_gap = dot(c.normal, d) + m_config.collision_margin.as<meters>();
 		if (normal_gap >= 0.f && c.lambda[0] >= -1e-3f) continue;
 
 		const unitless::vec3 push_dir = (c.body_a == m.body_index) ? c.normal : -c.normal;
@@ -680,7 +680,7 @@ auto gse::vbd::solver::update_dual(const float alpha) -> void {
 		const unitless::vec3 d = (pA - pB).as<meters>();
 
 		float Cn[3];
-		Cn[0] = dot(c.normal, d) + m_config.collision_margin;
+		Cn[0] = dot(c.normal, d) + m_config.collision_margin.as<meters>();
 		Cn[1] = dot(c.tangent_u, d);
 		Cn[2] = dot(c.tangent_v, d);
 

@@ -9,11 +9,23 @@ struct push_constants {
     uint motor_count;
     uint color_offset;
     uint color_count;
+    uint warm_start_count;
+    uint post_stabilize;
+    uint _pad0;
     float h_squared;
     float dt;
-    float rho;
+    float beta;
     float linear_damping;
     float velocity_sleep_threshold;
+    float current_alpha;
+    float collision_margin;
+    float friction_coefficient;
+    float penalty_min;
+    float penalty_max;
+    float gamma;
+    float solver_alpha;
+    float speculative_margin;
+    float stick_threshold;
     uint substep;
     uint iteration;
 };
@@ -35,7 +47,7 @@ struct GpuBody {
     float mass;
     uint flags;
     uint sleep_counter;
-    float _pad0;
+    float accel_weight;
     float4 inv_inertia_col0;
     float4 inv_inertia_col1;
     float4 inv_inertia_col2;
@@ -47,22 +59,32 @@ struct GpuBody {
 struct GpuContact {
     uint body_a;
     uint body_b;
-    float initial_separation;
-    float lambda;
+    uint feature_key_hi;
+    uint feature_key_lo;
+    uint sticking;
     float4 normal;
+    float4 tangent_u;
+    float4 tangent_v;
     float4 r_a;
     float4 r_b;
-    float friction_coeff;
-    float mass_a;
-    float mass_b;
-    uint feature_packed;
+    float4 c0_friction;
+    float4 lambda;
+    float4 penalty;
 };
 
 struct GpuWarmStart {
     uint body_a;
     uint body_b;
-    uint feature_packed;
-    float lambda;
+    uint feature_key_hi;
+    uint feature_key_lo;
+    uint sticking;
+    float4 normal;
+    float4 tangent_u;
+    float4 tangent_v;
+    float4 local_anchor_a;
+    float4 local_anchor_b;
+    float4 lambda;
+    float4 penalty;
 };
 
 [[vk::binding(0, 0)]] RWStructuredBuffer<GpuBody> body_data;

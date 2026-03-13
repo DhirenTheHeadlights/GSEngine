@@ -551,17 +551,9 @@ auto gse::renderer::ui::system::render(render_phase&, const state& s) -> void {
 	const auto frame_index = config.current_frame();
 	auto& [vertex_buffer, index_buffer] = s.resources[frame_index];
 
-	std::memcpy(
-		vertex_buffer.allocation.mapped(),
-		vertices.data(),
-		vertices.size() * sizeof(vertex)
-	);
+	gse::memcpy(vertex_buffer.allocation.mapped(), vertices);
 
-	std::memcpy(
-		index_buffer.allocation.mapped(),
-		indices.data(),
-		indices.size() * sizeof(std::uint32_t)
-	);
+	gse::memcpy(index_buffer.allocation.mapped(), indices);
 
 	const auto& command = config.frame_context().command_buffer;
 	const auto [width, height] = config.swap_chain_config().extent;

@@ -121,7 +121,7 @@ auto gse::network::bitstream::write(const std::span<const std::byte> data) -> vo
 
 	if ((m_head_bits % 8) == 0) {
 		const std::size_t byte_index = m_head_bits / 8;
-		std::memcpy(m_buffer.data() + byte_index, data.data(), data.size_bytes());
+		gse::memcpy(m_buffer.data() + byte_index, data);
 		m_head_bits += bits;
 		return;
 	}
@@ -169,7 +169,7 @@ auto gse::network::bitstream::read(std::span<std::byte> data) -> void {
 
 	if ((m_head_bits % 8) == 0) {
 		const std::size_t byte_index = m_head_bits / 8;
-		std::memcpy(data.data(), m_buffer.data() + byte_index, data.size_bytes());
+		gse::memcpy(data.data(), m_buffer.data() + byte_index, data.size_bytes());
 		m_head_bits += bits;
 		return;
 	}
