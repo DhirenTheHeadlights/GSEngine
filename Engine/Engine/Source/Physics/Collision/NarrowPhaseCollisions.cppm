@@ -6,6 +6,7 @@ import :motion_component;
 import :bounding_box;
 import :collision_component;
 import :contact_manifold;
+
 import gse.math;
 import gse.utility;
 
@@ -927,18 +928,14 @@ auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* o
 
 		if (constexpr float wake_threshold = 0.2f; normal_speed > wake_threshold || tangent_speed > wake_threshold) {
 			object_a->sleeping = false;
-			object_a->sleep_time = {};
 			object_b->sleeping = false;
-			object_b->sleep_time = {};
 		}
 
 		float restitution = 0.0f;
-		if (!object_a->self_controlled && !object_b->self_controlled) {
-			if (normal_speed >= 2.0f) {
-				restitution = 0.3f;
-			} else if (normal_speed > 0.5f) {
-				restitution = 0.3f * (normal_speed - 0.5f) / 1.5f;
-			}
+		if (normal_speed >= 2.0f) {
+			restitution = 0.3f;
+		} else if (normal_speed > 0.5f) {
+			restitution = 0.3f * (normal_speed - 0.5f) / 1.5f;
 		}
 
 		const auto rcross_a_part = cross(inv_i_a * cross(r_a, res->normal), r_a);

@@ -41,6 +41,10 @@ export namespace gse::vbd {
 			contact_cache& cache
 		) -> void;
 
+		auto seed_previous_velocities(
+			std::span<const vec3<velocity>> velocities
+		) -> void;
+
 		auto add_contact_constraint(
 			const contact_constraint& c
 		) -> void;
@@ -153,6 +157,11 @@ auto gse::vbd::solver::begin_frame(const std::vector<body_state>& bodies, contac
 	m_graph.clear();
 
 	cache.age_and_prune();
+}
+
+auto gse::vbd::solver::seed_previous_velocities(const std::span<const vec3<velocity>> velocities) -> void {
+	m_prev_velocity.assign(velocities.begin(), velocities.end());
+	m_accel_weight.assign(velocities.size(), 0.f);
 }
 
 auto gse::vbd::solver::add_contact_constraint(const contact_constraint& c) -> void {

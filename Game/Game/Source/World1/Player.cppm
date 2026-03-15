@@ -104,14 +104,9 @@ namespace gs {
 		auto initialize() -> void override {
 			add_component<gse::physics::motion_component>({
 				.current_position = m_initial_position,
-				.max_speed = m_max_speed,
 				.mass = gse::pounds(180.f),
-				.self_controlled = true,
 				.update_orientation = false,
-				.motor = {
-					.jump_speed = gse::meters_per_second(7.f),
-					.active = true
-				}
+				.velocity_drive_active = true
 			});
 
 			gse::length height = gse::feet(6.0f);
@@ -148,7 +143,7 @@ namespace gs {
 
 		auto update() -> void override {
 			auto& motion = component_write<gse::physics::motion_component>();
-			motion.max_speed = m_shift_channel.held ? m_sprint_speed : m_max_speed;
+			const auto speed = m_shift_channel.held ? m_sprint_speed : m_walk_speed;
 
 			const auto v = m_move_axis_channel.value;
 			if (v.x() != 0.f || v.y() != 0.f) {
@@ -157,15 +152,15 @@ namespace gs {
 				);
 				const auto horizontal = gse::unitless::vec3(dir.x(), 0.f, dir.z());
 				const float len = gse::magnitude(horizontal);
-				motion.motor.target_velocity = len > 1e-6f
-					? motion.max_speed * (horizontal / len)
+				motion.velocity_drive_target = len > 1e-6f
+					? speed * (horizontal / len)
 					: gse::vec3<gse::velocity>{};
 			} else {
-				motion.motor.target_velocity = {};
+				motion.velocity_drive_target = {};
 			}
 
-			if (m_jump_channel.pressed) {
-				motion.motor.jump_requested = true;
+			if (m_jump_channel.pressed && !motion.airborne) {
+				motion.pending_impulse.y() = m_jump_speed;
 			}
 
 			m_bindings.update();
@@ -268,8 +263,9 @@ namespace gs {
 
 		gse::animation::bindings m_bindings;
 
-		gse::velocity m_max_speed = gse::miles_per_hour(20.f);
+		gse::velocity m_walk_speed = gse::miles_per_hour(20.f);
 		gse::velocity m_sprint_speed = gse::miles_per_hour(40.f);
+		gse::velocity m_jump_speed = gse::meters_per_second(7.f);
 
 		gse::vec3<gse::length> m_initial_position;
 

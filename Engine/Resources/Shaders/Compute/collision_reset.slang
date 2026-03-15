@@ -1,5 +1,6 @@
 static const uint MAX_BODIES = 500;
 static const uint MAX_CONTACTS = 2000;
+static const uint COLLISION_STATE_HEADER_UINTS = 8;
 
 struct push_constants {
     uint body_count;
@@ -107,6 +108,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
         collision_pairs[0] = 0;
         collision_state[0] = 0;
         collision_state[1] = 0;
+        collision_state[2] = 0;
     }
 
     if (bi < pc.body_count) {
