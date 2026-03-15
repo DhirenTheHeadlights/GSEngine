@@ -433,11 +433,19 @@ void solve_body(uint bi) {
 [numthreads(64, 1, 1)]
 void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     uint idx = dispatch_id.x;
-    uint color_idx = pc.color_offset;
-    uint count = color_data[MAX_COLORS + color_idx];
-    if (idx >= count) return;
-    uint offset = color_data[color_idx];
-    uint bi = color_data[MAX_COLORS * 2 + offset + idx];
-    if (bi >= pc.body_count) return;
-    solve_body(bi);
+    uint num_colors = pc.color_count;
+
+    for (uint color = 0; color < num_colors; color++) {
+        uint count = color_data[MAX_COLORS + color];
+        if (idx < count) {
+            uint offset = color_data[color];
+            uint bi = color_data[MAX_COLORS * 2 + offset + idx];
+            if (bi < pc.body_count) {
+                solve_body(bi);
+            }
+        }
+
+        DeviceMemoryBarrier();
+        GroupMemoryBarrierWithGroupSync();
+    }
 }
