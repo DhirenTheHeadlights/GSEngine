@@ -187,7 +187,8 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
         }
     }
 
-    uint motor_only_color = max_contact_color;
+    uint motor_only_color = max_contact_color < MAX_COLORS ? max_contact_color : 0;
+    bool used_motor_only_color = false;
 
     uint motor_map_offset = MAX_BODIES * 2 + MAX_CONTACTS * 2;
     for (uint bi = 0; bi < body_count; bi++) {
@@ -201,6 +202,25 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
 
         if (body_color[bi] == 0xFFFFFFFF) {
             body_color[bi] = motor_only_color;
+            used_motor_only_color = true;
+        }
+    }
+
+    uint free_body_color =
+        (used_motor_only_color && motor_only_color + 1 < MAX_COLORS)
+            ? (motor_only_color + 1)
+            : motor_only_color;
+    for (uint bi = 0; bi < body_count; bi++) {
+        bool locked = (body_data[bi].flags & FLAG_LOCKED) != 0;
+        if (locked) continue;
+
+        uint cc = body_contact_map[MAX_BODIES + bi];
+        bool has_motor = body_contact_map[motor_map_offset + bi] != 0xFFFFFFFF;
+
+        if (cc != 0 || has_motor) continue;
+
+        if (body_color[bi] == 0xFFFFFFFF) {
+            body_color[bi] = free_body_color;
         }
     }
 

@@ -10,9 +10,7 @@ export namespace gse::physics {
         vec3<length> current_position;
         vec3<velocity> current_velocity;
 
-        velocity max_speed = meters_per_second(1.f);
         mass mass = kilograms(1.f);
-        length most_recent_y_collision = meters(std::numeric_limits<float>::max());
 
         quat orientation = quat(1.f, 0.f, 0.f, 0.f);
         vec3<angular_velocity> angular_velocity;
@@ -22,9 +20,7 @@ export namespace gse::physics {
         vec3<length> center_of_mass;
 
         bool affected_by_gravity = true;
-        bool moving = false;
         bool airborne = true;
-        bool self_controlled = false;
         bool position_locked = false;
     };
 
@@ -32,9 +28,7 @@ export namespace gse::physics {
         vec3<length> current_position;
         vec3<velocity> current_velocity;
 
-        velocity max_speed = meters_per_second(1.f);
         mass mass = kilograms(1.f);
-        length most_recent_y_collision = meters(std::numeric_limits<float>::max());
 
         quat orientation = quat(1.f, 0.f, 0.f, 0.f);
         vec3<angular_velocity> angular_velocity;
@@ -44,18 +38,16 @@ export namespace gse::physics {
         vec3<length> center_of_mass;
 
         bool affected_by_gravity = true;
-        bool moving = false;
         bool airborne = true;
-        bool self_controlled = false;
         bool position_locked = false;
         bool can_sleep = true;
         bool sleeping = false;
 		bool update_orientation = true;
 
+        vec3<length> previous_position;
+        quat previous_orientation = quat(1.f, 0.f, 0.f, 0.f);
         vec3<length> render_position;
         quat render_orientation = quat(1.f, 0.f, 0.f, 0.f);
-
-        time sleep_time;
 
         struct accumulators {
             vec3<acceleration> current_acceleration;
@@ -63,15 +55,10 @@ export namespace gse::physics {
             vec3<length> position_correction;
         } accumulators;
 
-        struct motor {
-            vec3<velocity> target_velocity;
-            velocity jump_speed;
-            float ground_response = 25.f;
-            float stopping_response = 20.f;
-            float air_steering = 3.f;
-            bool jump_requested = false;
-            bool active = false;
-        } motor;
+        vec3<velocity> velocity_drive_target;
+        bool velocity_drive_active = false;
+
+        vec3<velocity> pending_impulse;
     };
 
     using inverse_inertia_dimension = internal::dim<-2, 0, -1>;

@@ -24,6 +24,7 @@ namespace gse::renderer::physics_debug {
 
 	auto build_obb_lines_for_collider(
 		const physics::collision_component& coll,
+		const physics::motion_component* mc,
 		std::vector<debug_vertex>& out_vertices
 	) -> void;
 
@@ -272,8 +273,11 @@ auto gse::renderer::physics_debug::add_line(const vec3<length>& a, const vec3<le
 	out_vertices.push_back(debug_vertex{ pb, color });
 }
 
-auto gse::renderer::physics_debug::build_obb_lines_for_collider(const physics::collision_component& coll, std::vector<debug_vertex>& out_vertices) -> void {
-	const auto bb = coll.bounding_box;
+auto gse::renderer::physics_debug::build_obb_lines_for_collider(const physics::collision_component& coll, const physics::motion_component* mc, std::vector<debug_vertex>& out_vertices) -> void {
+	auto bb = coll.bounding_box;
+	if (mc) {
+		bb.update(mc->render_position, mc->render_orientation);
+	}
 	std::array<vec3<length>, 8> corners;
 
 	const auto half = bb.half_extents();
@@ -355,9 +359,10 @@ auto gse::renderer::physics_debug::system::update(update_phase& phase, state& s)
 			continue;
 		}
 
-		build_obb_lines_for_collider(coll, vertices);
+		const auto* mc = phase.registry.try_read<physics::motion_component>(coll.owner_id());
+		build_obb_lines_for_collider(coll, mc, vertices);
 
-		if (const auto* mc = phase.registry.try_read<physics::motion_component>(coll.owner_id())) {
+		if (mc) {
 			build_contact_debug_for_collider(coll, *mc, vertices);
 		}
 	}

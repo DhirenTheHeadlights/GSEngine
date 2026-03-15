@@ -3,6 +3,9 @@ static const uint FLAG_UPDATE_ORIENTATION = 2;
 static const uint MAX_BODIES = 500;
 static const uint MAX_CONTACTS = 2000;
 static const uint MAX_COLLISION_PAIRS = 8192;
+static const uint COLLISION_STATE_HEADER_UINTS = 8;
+static const uint NARROW_PHASE_DEBUG_RECORD_UINTS = 8;
+static const uint MAX_NARROW_PHASE_DEBUG_RECORDS = 32;
 static const uint FEATURE_VERTEX = 0;
 static const uint FEATURE_EDGE = 1;
 static const uint FEATURE_FACE = 2;
@@ -750,6 +753,14 @@ struct ContactCandidate {
 struct ContactResult {
     ContactCandidate candidates[4];
     int count;
+    uint clipped_vertex_count;
+    uint raw_candidate_count;
+    uint unique_candidate_count;
+    uint reference_face;
+    uint incident_face;
+    bool clipped_valid;
+    bool used_fallback;
+    bool reference_is_a;
 };
 
 float3 support_obb(float3 center, float3 he, float3 axes[3], float3 dir) {
@@ -838,6 +849,14 @@ ContactResult generate_contacts(
 ) {
     ContactResult result;
     result.count = 0;
+    result.clipped_vertex_count = 0;
+    result.raw_candidate_count = 0;
+    result.unique_candidate_count = 0;
+    result.reference_face = 0;
+    result.incident_face = 0;
+    result.clipped_valid = false;
+    result.used_fallback = false;
+    result.reference_is_a = true;
 
     float contact_gap = -separation;
 
@@ -856,6 +875,11 @@ ContactResult generate_contacts(
     );
 
     if (clipped.valid) {
+        result.clipped_valid = true;
+        result.clipped_vertex_count = clipped.vertices.count;
+        result.reference_face = clipped.reference_face;
+        result.incident_face = clipped.incident_face;
+        result.reference_is_a = clipped.reference_is_a;
         for (int i = 0; i < clipped.vertices.count && candidate_count < MAX_CLIP_VERTS; i++) {
             ClipVertexData vertex = clipped.vertices.verts[i];
 
@@ -874,6 +898,8 @@ ContactResult generate_contacts(
         }
     }
 
+    result.raw_candidate_count = candidate_count;
+
     for (int i = 1; i < candidate_count; i++) {
         ContactCandidate key = candidates[i];
         int j = i - 1;
@@ -884,19 +910,37 @@ ContactResult generate_contacts(
         candidates[j + 1] = key;
     }
 
-    for (int i = 0; i < candidate_count && result.count < 4; i++) {
-        if (result.count > 0 &&
+    int result_count = 0;
+    for (int i = 0; i < candidate_count && result_count < 4; i++) {
+        if (result_count > 0 &&
             feature_equal(
-                result.candidates[result.count - 1].feature_hi,
-                result.candidates[result.count - 1].feature_lo,
+                result.candidates[result_count - 1].feature_hi,
+                result.candidates[result_count - 1].feature_lo,
                 candidates[i].feature_hi,
                 candidates[i].feature_lo
             )) {
             continue;
         }
 
-        result.candidates[result.count++] = candidates[i];
+        result.candidates[result_count] = candidates[i];
+        result_count++;
     }
+    result.count = result_count;
+
+    uint unique_candidate_count = 0;
+    for (int i = 0; i < candidate_count; i++) {
+        if (i > 0 &&
+            feature_equal(
+                candidates[i - 1].feature_hi,
+                candidates[i - 1].feature_lo,
+                candidates[i].feature_hi,
+                candidates[i].feature_lo
+            )) {
+            continue;
+        }
+        unique_candidate_count++;
+    }
+    result.unique_candidate_count = unique_candidate_count;
 
     if (result.count > 0) {
         return result;
@@ -914,10 +958,59 @@ ContactResult generate_contacts(
     result.candidates[0].feature_hi = pack_feature_component(detail_a.type, detail_a.face, detail_a.side0, detail_a.side1);
     result.candidates[0].feature_lo = pack_feature_component(detail_b.type, detail_b.face, detail_b.side0, detail_b.side1);
     result.count = 1;
+    result.unique_candidate_count = 1;
+    result.used_fallback = true;
     return result;
 }
 
+void record_narrow_phase_debug(
+    uint body_a_idx,
+    uint body_b_idx,
+    SatResult sat,
+    ContactResult contacts
+) {
+    uint expected_clipped_count = min(contacts.clipped_vertex_count, 4u);
+    bool lost_clipped_contacts =
+        contacts.clipped_valid &&
+        contacts.clipped_vertex_count > 1 &&
+        contacts.count < expected_clipped_count;
+    bool dedup_collapse =
+        contacts.raw_candidate_count > 1 &&
+        contacts.unique_candidate_count <= 1;
+    bool suspicious =
+        contacts.used_fallback ||
+        !contacts.clipped_valid ||
+        lost_clipped_contacts ||
+        dedup_collapse;
+    if (!suspicious) {
+        return;
+    }
+
+    uint debug_index;
+    InterlockedAdd(collision_state[2], 1, debug_index);
+    if (debug_index >= MAX_NARROW_PHASE_DEBUG_RECORDS) {
+        return;
+    }
+
+    uint base = COLLISION_STATE_HEADER_UINTS + debug_index * NARROW_PHASE_DEBUG_RECORD_UINTS;
+    uint flags = 0;
+    if (contacts.clipped_valid) flags |= 0x1u;
+    if (contacts.used_fallback) flags |= 0x2u;
+    if (sat.is_speculative) flags |= 0x4u;
+    if (contacts.reference_is_a) flags |= 0x8u;
+
+    collision_state[base + 0] = body_a_idx;
+    collision_state[base + 1] = body_b_idx;
+    collision_state[base + 2] = flags;
+    collision_state[base + 3] = contacts.clipped_vertex_count;
+    collision_state[base + 4] = contacts.raw_candidate_count;
+    collision_state[base + 5] = contacts.unique_candidate_count;
+    collision_state[base + 6] = contacts.count;
+    collision_state[base + 7] = (contacts.reference_face & 0xFFu) | ((contacts.incident_face & 0xFFu) << 8);
+}
+
 bool warm_start_lookup(uint ba, uint bb, uint feature_hi, uint feature_lo, uint ws_count, out GpuWarmStart result) {
+    result = (GpuWarmStart)0;
     if (ws_count == 0) return false;
 
     uint lo = 0;
@@ -979,6 +1072,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     float3 constraint_normal = -sat.normal;
 
     ContactResult contacts = generate_contacts(center_a, he_a, axes_a, center_b, he_b, axes_b, sat.normal, sat.separation);
+    record_narrow_phase_debug(body_a_idx, body_b_idx, sat, contacts);
 
     for (int p = 0; p < contacts.count; p++) {
         uint ci;

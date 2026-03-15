@@ -17,9 +17,14 @@ export namespace gse::vbd {
 	constexpr std::uint32_t max_colors = 32;
 	constexpr std::uint32_t max_collision_pairs = 8192;
 	constexpr std::uint32_t workgroup_size = 64;
+	constexpr std::uint32_t collision_state_header_uints = 8;
+	constexpr std::uint32_t narrow_phase_debug_record_uints = 8;
+	constexpr std::uint32_t max_narrow_phase_debug_records = 32;
 
 	constexpr std::uint32_t solve_state_float4s_per_body = 11;
-	constexpr std::uint32_t collision_state_uints = 8;
+	constexpr std::uint32_t collision_state_uints =
+		collision_state_header_uints +
+		narrow_phase_debug_record_uints * max_narrow_phase_debug_records;
 
 	struct buffer_layout {
 		std::uint32_t stride = 0;
@@ -64,6 +69,21 @@ export namespace gse::vbd {
 		std::array<float, 3> lambda = {};
 		std::array<float, 3> penalty = {};
 		float friction_coeff = 0.f;
+	};
+
+	struct narrow_phase_debug_entry {
+		std::uint32_t body_a = 0;
+		std::uint32_t body_b = 0;
+		bool clipped_valid = false;
+		bool used_fallback = false;
+		bool speculative = false;
+		bool reference_is_a = false;
+		std::uint32_t clipped_vertices = 0;
+		std::uint32_t raw_candidates = 0;
+		std::uint32_t unique_candidates = 0;
+		std::uint32_t result_count = 0;
+		std::uint32_t reference_face = 0;
+		std::uint32_t incident_face = 0;
 	};
 
 	struct gpu_debug_config {
@@ -112,6 +132,7 @@ export namespace gse::vbd {
 			std::span<const float> accel_weights,
 			std::span<const velocity_motor_constraint> motors,
 			std::span<const warm_start_entry> prev_contacts,
+			std::span<const std::uint32_t> authoritative_body_indices,
 			const solver_config& solver_cfg,
 			time_step dt,
 			int steps
@@ -236,6 +257,9 @@ export namespace gse::vbd {
 		auto frame_count(
 		) const -> std::uint32_t;
 
+		auto narrow_phase_debug_entries(
+		) const -> std::span<const narrow_phase_debug_entry>;
+
 	private:
 		struct compute_state {
 			resource::handle<shader> predict;
@@ -269,11 +293,7 @@ export namespace gse::vbd {
 
 		bool m_buffers_created = false;
 		bool m_pending_dispatch = false;
-		bool m_awaiting_readback = false;
-		bool m_fi_locked = false;
-
-		std::uint32_t m_awaiting_readback_fi = 0;
-		std::uint32_t m_locked_fi = 0;
+		std::array<bool, 2> m_readback_pending{};
 		std::uint32_t m_frame_count = 0;
 
 		std::uint32_t m_body_count = 0;
@@ -314,14 +334,15 @@ export namespace gse::vbd {
 		std::vector<std::uint32_t> m_upload_color_data;
 		std::vector<std::uint32_t> m_upload_body_contact_map;
 		std::vector<std::uint32_t> m_upload_collision_state;
+		std::vector<std::uint8_t> m_upload_authoritative_bodies;
 
 		std::vector<std::byte> m_staged_body_data;
 		std::vector<std::byte> m_staged_contact_data;
+		std::vector<narrow_phase_debug_entry> m_staged_narrow_phase_debug;
 		std::uint32_t m_staged_body_count = 0;
 		std::uint32_t m_staged_contact_count = 0;
 
 		bool m_staged_valid = false;
-		bool m_readback_patched_this_frame = false;
 	};
 }
 
@@ -423,6 +444,7 @@ auto gse::vbd::gpu_solver::upload(
 	const std::span<const float> accel_weights,
 	const std::span<const velocity_motor_constraint> motors,
 	const std::span<const warm_start_entry> prev_contacts,
+	const std::span<const std::uint32_t> authoritative_body_indices,
 	const solver_config& solver_cfg,
 	const time_step dt,
 	const int steps
@@ -439,10 +461,14 @@ auto gse::vbd::gpu_solver::upload(
 		return;
 	}
 
-	m_readback_patched_this_frame = false;
-
 	const auto& bo = m_body_layout.offsets;
 	m_upload_body_data.resize(m_body_count * m_body_layout.stride, std::byte{0});
+	m_upload_authoritative_bodies.assign(m_body_count, 0);
+	for (const auto body_index : authoritative_body_indices) {
+		if (body_index < m_upload_authoritative_bodies.size()) {
+			m_upload_authoritative_bodies[body_index] = 1;
+		}
+	}
 	for (std::uint32_t i = 0; i < m_body_count; ++i) {
 		const auto& [
 			position,
@@ -636,16 +662,15 @@ auto gse::vbd::gpu_solver::commit_upload(const std::uint32_t frame_index) -> voi
 }
 
 auto gse::vbd::gpu_solver::stage_readback(const std::uint32_t frame_index) -> void {
-	if (m_frame_count < 2) {
-		m_awaiting_readback = false;
-		return;
-	}
-	if (!m_awaiting_readback) return;
-	if (frame_index != m_awaiting_readback_fi) return;
+	if (!m_readback_pending[frame_index]) return;
 
 	auto& info = m_readback_info[frame_index];
 
-	if (info.body_count == 0) return;
+	if (info.body_count == 0) {
+		info = {};
+		m_readback_pending[frame_index] = false;
+		return;
+	}
 
 	const auto* rb = m_readback_buffer[frame_index].allocation.mapped();
 
@@ -653,24 +678,50 @@ auto gse::vbd::gpu_solver::stage_readback(const std::uint32_t frame_index) -> vo
 	m_staged_body_data.assign(rb, rb + info.body_count * m_body_layout.stride);
 
 	const vk::DeviceSize contact_region_offset = max_bodies * m_body_layout.stride;
-	const vk::DeviceSize count_offset = contact_region_offset + max_contacts * m_contact_layout.stride;
+	const vk::DeviceSize state_offset = contact_region_offset + max_contacts * m_contact_layout.stride;
 
-	std::uint32_t gpu_contact_count = 0;
-	gse::memcpy(gpu_contact_count, rb + count_offset);
+	std::array<std::uint32_t, collision_state_uints> staged_collision_state{};
+	gse::memcpy(
+		reinterpret_cast<std::byte*>(staged_collision_state.data()),
+		rb + state_offset,
+		collision_state_uints * sizeof(std::uint32_t)
+	);
+
+	const std::uint32_t gpu_contact_count = staged_collision_state[0];
 	m_staged_contact_count = std::min(gpu_contact_count, max_contacts);
 
 	const vk::DeviceSize contact_data_size = m_staged_contact_count * m_contact_layout.stride;
 	m_staged_contact_data.assign(rb + contact_region_offset, rb + contact_region_offset + contact_data_size);
 
+	m_staged_narrow_phase_debug.clear();
+	const std::uint32_t debug_count = std::min(staged_collision_state[2], max_narrow_phase_debug_records);
+	m_staged_narrow_phase_debug.reserve(debug_count);
+	for (std::uint32_t i = 0; i < debug_count; ++i) {
+		const std::uint32_t base = collision_state_header_uints + i * narrow_phase_debug_record_uints;
+		if (base + narrow_phase_debug_record_uints > staged_collision_state.size()) break;
+
+		const std::uint32_t flags = staged_collision_state[base + 2];
+		const std::uint32_t packed_faces = staged_collision_state[base + 7];
+		m_staged_narrow_phase_debug.push_back(narrow_phase_debug_entry{
+			.body_a = staged_collision_state[base + 0],
+			.body_b = staged_collision_state[base + 1],
+			.clipped_valid = (flags & 0x1u) != 0,
+			.used_fallback = (flags & 0x2u) != 0,
+			.speculative = (flags & 0x4u) != 0,
+			.reference_is_a = (flags & 0x8u) != 0,
+			.clipped_vertices = staged_collision_state[base + 3],
+			.raw_candidates = staged_collision_state[base + 4],
+			.unique_candidates = staged_collision_state[base + 5],
+			.result_count = staged_collision_state[base + 6],
+			.reference_face = packed_faces & 0xFFu,
+			.incident_face = (packed_faces >> 8) & 0xFFu
+		});
+	}
+
 	info = {};
 
 	m_staged_valid = true;
-	m_awaiting_readback = false;
-
-	if (!m_fi_locked) {
-		m_fi_locked = true;
-		m_locked_fi = frame_index;
-	}
+	m_readback_pending[frame_index] = false;
 
 	const auto& bo = m_body_layout.offsets;
 
@@ -684,7 +735,11 @@ auto gse::vbd::gpu_solver::stage_readback(const std::uint32_t frame_index) -> vo
 			const auto* src = m_staged_body_data.data() + i * m_body_layout.stride;
 			auto* dst = m_upload_body_data.data() + i * m_body_layout.stride;
 
-			std::uint32_t cpu_flags;
+			if (i < m_upload_authoritative_bodies.size() && m_upload_authoritative_bodies[i] != 0) {
+				continue;
+			}
+
+			std::uint32_t cpu_flags = 0;
 			gse::memcpy(cpu_flags, dst + bo.at("flags"));
 			if (cpu_flags & flag_locked) continue;
 
@@ -709,7 +764,6 @@ auto gse::vbd::gpu_solver::stage_readback(const std::uint32_t frame_index) -> vo
 			gse::memcpy(dst + bo.at("aabb_min"), src + bo.at("aabb_min"), sizeof(float) * 3);
 			gse::memcpy(dst + bo.at("aabb_max"), src + bo.at("aabb_max"), sizeof(float) * 3);
 		}
-		m_readback_patched_this_frame = true;
 	}
 
 	if (debug.log_diagnostics) {
@@ -882,16 +936,13 @@ auto gse::vbd::gpu_solver::pending_dispatch() const -> bool {
 }
 
 auto gse::vbd::gpu_solver::ready_to_dispatch(const std::uint32_t frame_index) const -> bool {
-	if (m_awaiting_readback) return false;
-	if (m_fi_locked && frame_index != m_locked_fi) return false;
-	return true;
+	return !m_readback_pending[frame_index];
 }
 
 auto gse::vbd::gpu_solver::mark_dispatched(const std::uint32_t frame_index) -> void {
 	m_readback_info[frame_index] = { m_body_count, m_contact_count };
 	m_pending_dispatch = false;
-	m_awaiting_readback = true;
-	m_awaiting_readback_fi = frame_index;
+	m_readback_pending[frame_index] = true;
 	m_frame_count++;
 }
 
@@ -1426,4 +1477,8 @@ auto gse::vbd::gpu_solver::contact_stride() const -> std::uint32_t {
 
 auto gse::vbd::gpu_solver::contact_lambda_offset() const -> std::uint32_t {
 	return m_contact_layout.offsets.at("lambda");
+}
+
+auto gse::vbd::gpu_solver::narrow_phase_debug_entries() const -> std::span<const narrow_phase_debug_entry> {
+	return m_staged_narrow_phase_debug;
 }

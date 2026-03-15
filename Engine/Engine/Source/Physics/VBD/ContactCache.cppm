@@ -40,6 +40,10 @@ export namespace gse::vbd {
 
 		auto clear(
 		) -> void;
+
+		auto remove_body(
+			std::uint32_t body_index
+		) -> void;
 	private:
 		struct cache_key {
 			std::uint32_t body_a;
@@ -135,4 +139,15 @@ auto gse::vbd::contact_cache::age_and_prune() -> void {
 
 auto gse::vbd::contact_cache::clear() -> void {
 	m_cache.clear();
+}
+
+auto gse::vbd::contact_cache::remove_body(const std::uint32_t body_index) -> void {
+	for (auto it = m_cache.begin(); it != m_cache.end(); ) {
+		if (it->first.body_a == body_index || it->first.body_b == body_index) {
+			it = m_cache.erase(it);
+		}
+		else {
+			++it;
+		}
+	}
 }

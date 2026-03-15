@@ -166,34 +166,6 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
         }
     }
 
-    bool bad_pos = isinf(body.position.x) || isinf(body.position.y) || isinf(body.position.z)
-                || isnan(body.position.x) || isnan(body.position.y) || isnan(body.position.z);
-    bool bad_vel = isinf(body.velocity.x) || isinf(body.velocity.y) || isinf(body.velocity.z)
-                || isnan(body.velocity.x) || isnan(body.velocity.y) || isnan(body.velocity.z);
-    bool bad_ang = isinf(body.angular_velocity.x) || isinf(body.angular_velocity.y) || isinf(body.angular_velocity.z)
-                || isnan(body.angular_velocity.x) || isnan(body.angular_velocity.y) || isnan(body.angular_velocity.z);
-    float q_len_sq = body.orientation.x * body.orientation.x + body.orientation.y * body.orientation.y
-                   + body.orientation.z * body.orientation.z + body.orientation.w * body.orientation.w;
-    bool bad_quat = q_len_sq < 0.5 || isnan(q_len_sq);
-
-    if (bad_pos || bad_vel || bad_ang || bad_quat) {
-        if (bad_pos) body.position = body.old_position;
-        body.velocity = float4(0, 0, 0, 0);
-        body.angular_velocity = float4(0, 0, 0, 0);
-        if (bad_quat) body.orientation = float4(1, 0, 0, 0);
-        body.predicted_position = body.position;
-        body.inertia_target = body.position;
-        body.motor_target = body.position;
-        body.predicted_velocity = float4(0, 0, 0, 0);
-        body.predicted_orientation = body.orientation;
-        body.angular_inertia_target = body.orientation;
-        body.predicted_angular_velocity = float4(0, 0, 0, 0);
-        body.old_position = body.position;
-        body.old_orientation = body.orientation;
-        body_data[bi] = body;
-        return;
-    }
-
     body.old_position = body.position;
     body.old_orientation = body.orientation;
 
