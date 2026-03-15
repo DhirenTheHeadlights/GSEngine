@@ -351,6 +351,7 @@ export namespace gse::vbd {
 #endif
 		std::uint32_t m_staged_body_count = 0;
 		std::uint32_t m_staged_contact_count = 0;
+		std::uint32_t m_staged_color_count = max_colors;
 		bool m_staged_valid = false;
 	};
 }
@@ -698,6 +699,7 @@ auto gse::vbd::gpu_solver::stage_readback(const std::uint32_t frame_index) -> vo
 
 	const std::uint32_t gpu_contact_count = staged_collision_state[0];
 	m_staged_contact_count = std::min(gpu_contact_count, max_contacts);
+	m_staged_color_count = std::min(staged_collision_state[1], max_colors);
 
 	const vk::DeviceSize contact_data_size = m_staged_contact_count * m_contact_layout.stride;
 	m_staged_contact_data.assign(rb + contact_region_offset, rb + contact_region_offset + contact_data_size);
@@ -831,7 +833,7 @@ auto gse::vbd::gpu_solver::stage_readback(const std::uint32_t frame_index) -> vo
 		const bool periodic = m_frame_count % debug.log_interval == 0;
 
 		if (trouble || periodic) {
-			log::println("[GPU Phys] frame={} bodies={} contacts={} nan={} bad_q={}", m_frame_count, m_staged_body_count, m_staged_contact_count, nan_count, bad_quat_count);
+			log::println("[GPU Phys] frame={} bodies={} contacts={} nan={} bad_q={} solve={:.2f}ms", m_frame_count, m_staged_body_count, m_staged_contact_count, nan_count, bad_quat_count, m_compute.solve_ms);
 			log::println("  max_lin_vel={:.2f} (body {}) max_ang_vel={:.2f} (body {}) y_range=[{:.2f}, {:.2f}]", max_lin_vel, max_lin_body, max_ang_vel, max_ang_body, min_pos_y, max_pos_y);
 		}
 
@@ -1385,11 +1387,9 @@ auto gse::vbd::gpu_solver::dispatch_compute(const vk::CommandBuffer command, vul
 						? (iterations < cfg.iterations ? 1.f : 0.f)
 						: cfg.alpha;
 
-				for (std::uint32_t c = 0; c < num_colors; ++c) {
-					bind_and_push(m_compute.solve_color, m_compute.solve_color_pipeline, c, 0u, sub, iterations, current_alpha);
-					command.dispatch(body_workgroups, 1, 1);
-					command.pipelineBarrier2(compute_dep);
-				}
+				bind_and_push(m_compute.solve_color, m_compute.solve_color_pipeline, 0u, num_colors, sub, iterations, current_alpha);
+				command.dispatch(body_workgroups, 1, 1);
+				command.pipelineBarrier2(compute_dep);
 
 				if (iterations < cfg.iterations) {
 					bind_and_push(m_compute.update_lambda, m_compute.update_lambda_pipeline, 0u, 0u, sub, iterations, current_alpha);
