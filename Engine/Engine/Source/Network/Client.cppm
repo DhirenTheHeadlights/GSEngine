@@ -160,6 +160,7 @@ auto gse::network::client::connect(const time_t<std::uint32_t> timeout, const ti
 		return false;
 	}
 
+	std::println("Client: Connecting to {}:{}...", m_server.addr().ip, m_server.addr().port);
 	send(connection_request{});
 
 	m_state = state::connecting;
@@ -177,6 +178,7 @@ auto gse::network::client::tick() -> void {
 
 	if (current == state::connecting) {
 		if (m_connection_start_clock.elapsed<std::uint32_t>() > m_timeout) {
+			std::println(std::cerr, "Client: Connection timed out");
 			m_state = state::disconnected;
 		}
 		else if (m_retry_clock.elapsed<std::uint32_t>() > m_retry) {
@@ -216,6 +218,7 @@ auto gse::network::client::tick() -> void {
 
 		match_message(stream, id)
 			.if_is<connection_accepted>([&](const connection_accepted&) {
+				std::println("Client: Connected to {}:{}", m_server.addr().ip, m_server.addr().port);
 				m_state = state::connected;
 				send_ack();
 				{

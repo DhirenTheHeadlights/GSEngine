@@ -58,19 +58,17 @@ export namespace gse {
 	}
 
 	auto camera_direction_relative_to_origin(
-		const unitless::vec3& direction
+		const unitless::vec3& direction,
+		id entity_id
 	) -> unitless::vec3 {
 		if (has_state<camera::state>()) {
 			return state_of<camera::state>().direction_relative_to_origin(direction);
 		}
-		// Fallback for server: use per-client camera_yaw from context (set during input processing)
-		if (const auto context_yaw = actions::get_context_camera_yaw()) {
-			return direction_from_yaw(direction, *context_yaw);
+		if (const auto entity_yaw = actions::entity_camera_yaw(entity_id)) {
+			return direction_from_yaw(direction, *entity_yaw);
 		}
-		// Further fallback: use global actions state camera_yaw
-		if (has_state<actions::system_state>()) {
-			const float yaw = state_of<actions::system_state>().current_state().camera_yaw();
-			return direction_from_yaw(direction, yaw);
+		if (const auto context_yaw = actions::context_camera_yaw()) {
+			return direction_from_yaw(direction, *context_yaw);
 		}
 		return direction;
 	}
