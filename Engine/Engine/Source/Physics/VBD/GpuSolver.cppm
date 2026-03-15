@@ -10,6 +10,10 @@ import gse.platform;
 import :vbd_constraints;
 import :vbd_solver;
 
+#ifndef GSE_GPU_COMPARE
+#define GSE_GPU_COMPARE 0
+#endif
+
 export namespace gse::vbd {
 	constexpr std::uint32_t max_bodies = 500;
 	constexpr std::uint32_t max_contacts = 2000;
@@ -71,6 +75,7 @@ export namespace gse::vbd {
 		float friction_coeff = 0.f;
 	};
 
+#if GSE_GPU_COMPARE
 	struct narrow_phase_debug_entry {
 		std::uint32_t body_a = 0;
 		std::uint32_t body_b = 0;
@@ -85,6 +90,7 @@ export namespace gse::vbd {
 		std::uint32_t reference_face = 0;
 		std::uint32_t incident_face = 0;
 	};
+#endif
 
 	struct gpu_debug_config {
 		bool enable_warm_start = true;
@@ -257,8 +263,10 @@ export namespace gse::vbd {
 		auto frame_count(
 		) const -> std::uint32_t;
 
+#if GSE_GPU_COMPARE
 		auto narrow_phase_debug_entries(
 		) const -> std::span<const narrow_phase_debug_entry>;
+#endif
 
 	private:
 		struct compute_state {
@@ -338,10 +346,11 @@ export namespace gse::vbd {
 
 		std::vector<std::byte> m_staged_body_data;
 		std::vector<std::byte> m_staged_contact_data;
+#if GSE_GPU_COMPARE
 		std::vector<narrow_phase_debug_entry> m_staged_narrow_phase_debug;
+#endif
 		std::uint32_t m_staged_body_count = 0;
 		std::uint32_t m_staged_contact_count = 0;
-
 		bool m_staged_valid = false;
 	};
 }
@@ -693,6 +702,7 @@ auto gse::vbd::gpu_solver::stage_readback(const std::uint32_t frame_index) -> vo
 	const vk::DeviceSize contact_data_size = m_staged_contact_count * m_contact_layout.stride;
 	m_staged_contact_data.assign(rb + contact_region_offset, rb + contact_region_offset + contact_data_size);
 
+#if GSE_GPU_COMPARE
 	m_staged_narrow_phase_debug.clear();
 	const std::uint32_t debug_count = std::min(staged_collision_state[2], max_narrow_phase_debug_records);
 	m_staged_narrow_phase_debug.reserve(debug_count);
@@ -717,6 +727,7 @@ auto gse::vbd::gpu_solver::stage_readback(const std::uint32_t frame_index) -> vo
 			.incident_face = (packed_faces >> 8) & 0xFFu
 		});
 	}
+#endif
 
 	info = {};
 
@@ -761,8 +772,19 @@ auto gse::vbd::gpu_solver::stage_readback(const std::uint32_t frame_index) -> vo
 			gse::memcpy(dst + bo.at("orientation"), orient);
 			gse::memcpy(dst + bo.at("angular_velocity"), src + bo.at("angular_velocity"), sizeof(float) * 3);
 			gse::memcpy(dst + bo.at("sleep_counter"), src + bo.at("sleep_counter"), sizeof(std::uint32_t));
-			gse::memcpy(dst + bo.at("aabb_min"), src + bo.at("aabb_min"), sizeof(float) * 3);
-			gse::memcpy(dst + bo.at("aabb_max"), src + bo.at("aabb_max"), sizeof(float) * 3);
+
+			float he[3];
+			gse::memcpy(he, dst + bo.at("half_extents"));
+			const quat q(orient[0], orient[1], orient[2], orient[3]);
+			const auto rot = mat3_cast(q);
+			float aabb_he[3];
+			for (int a = 0; a < 3; ++a) {
+				aabb_he[a] = std::abs(rot[0][a]) * he[0] + std::abs(rot[1][a]) * he[1] + std::abs(rot[2][a]) * he[2];
+			}
+			float amin[3] = { pos[0] - aabb_he[0], pos[1] - aabb_he[1], pos[2] - aabb_he[2] };
+			float amax[3] = { pos[0] + aabb_he[0], pos[1] + aabb_he[1], pos[2] + aabb_he[2] };
+			gse::memcpy(dst + bo.at("aabb_min"), amin);
+			gse::memcpy(dst + bo.at("aabb_max"), amax);
 		}
 	}
 
@@ -1479,6 +1501,8 @@ auto gse::vbd::gpu_solver::contact_lambda_offset() const -> std::uint32_t {
 	return m_contact_layout.offsets.at("lambda");
 }
 
+#if GSE_GPU_COMPARE
 auto gse::vbd::gpu_solver::narrow_phase_debug_entries() const -> std::span<const narrow_phase_debug_entry> {
 	return m_staged_narrow_phase_debug;
 }
+#endif

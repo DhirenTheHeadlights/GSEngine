@@ -125,10 +125,11 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     float3 min_b = body_data[j].aabb_min.xyz;
     float3 max_b = body_data[j].aabb_max.xyz;
 
+    float margin = pc.speculative_margin;
     bool overlap =
-        min_a.x <= max_b.x && max_a.x >= min_b.x &&
-        min_a.y <= max_b.y && max_a.y >= min_b.y &&
-        min_a.z <= max_b.z && max_a.z >= min_b.z;
+        min_a.x - margin <= max_b.x && max_a.x + margin >= min_b.x &&
+        min_a.y - margin <= max_b.y && max_a.y + margin >= min_b.y &&
+        min_a.z - margin <= max_b.z && max_a.z + margin >= min_b.z;
 
     if (!overlap) return;
 
