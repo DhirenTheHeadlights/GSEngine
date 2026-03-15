@@ -57,7 +57,7 @@ export namespace gse {
 			const auto v = m_move_axis_channel.value;
 			const float lift = (m_up.held ? 1.f : 0.f) - (m_down.held ? 1.f : 0.f);
 
-			const auto direction = camera_direction_relative_to_origin({ v.x(), lift, v.y() });
+			const auto direction = camera_direction_relative_to_origin({ v.x(), lift, v.y() }, owner_id());
 			cam_follow.position += direction * meters(100.f) * system_clock::dt().as<seconds>();
 		}
 	private:
