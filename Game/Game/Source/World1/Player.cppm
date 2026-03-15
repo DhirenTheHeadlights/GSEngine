@@ -208,7 +208,7 @@ namespace gs {
 							walk >> run  && sprinting,
 							run  >> walk && !sprinting,
 							run  >> idle && speed < 0.1f,
-							gse::animation::any  >> jump && jump_trig,
+							gse::animation::any >> jump && jump_trig,
 							jump >> idle && !airborne && gse::animation::after(0.5f)
 						)
 				)

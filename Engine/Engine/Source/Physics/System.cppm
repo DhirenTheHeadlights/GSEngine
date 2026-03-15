@@ -16,6 +16,10 @@ import :vbd_contact_cache;
 import :vbd_solver;
 import :vbd_gpu_solver;
 
+#ifndef GSE_GPU_COMPARE
+#define GSE_GPU_COMPARE 0
+#endif
+
 export namespace gse::physics {
 	struct state {
 		time_t<float, seconds> accumulator{};
@@ -34,6 +38,7 @@ export namespace gse::physics {
 			std::vector<vbd::warm_start_entry> warm_start_contacts;
 		} gpu_prev;
 
+#if GSE_GPU_COMPARE
 		mutable struct gpu_compare_state {
 			bool enabled = true;
 			std::uint64_t next_sequence = 1;
@@ -71,6 +76,20 @@ export namespace gse::physics {
 			per_frame_resource<std::optional<snapshot>> in_flight;
 			std::deque<snapshot> completed;
 		} gpu_compare;
+#else
+		mutable struct gpu_readback_state {
+			struct snapshot {
+				std::vector<id> entity_ids;
+				std::vector<vbd::body_state> gpu_input_bodies;
+				std::vector<vbd::body_state> gpu_result_bodies;
+				std::vector<vbd::contact_readback_entry> gpu_contacts;
+			};
+
+			std::optional<snapshot> pending;
+			per_frame_resource<std::optional<snapshot>> in_flight;
+			std::deque<snapshot> completed;
+		} gpu_readback;
+#endif
 	};
 
 	struct system {
@@ -210,11 +229,14 @@ namespace gse::physics {
 		});
 	}
 
+#if GSE_GPU_COMPARE
 	struct compare_collision_object {
 		std::uint32_t body_index = 0;
 		bounding_box box;
 	};
+#endif
 
+#if GSE_GPU_COMPARE
 	auto to_local_anchor(const quat& q, const vec3<length>& v) -> vec3<length> {
 		const unitless::vec3 v_unitless = v.as<meters>();
 		const unitless::vec3 rotated = mat3_cast(conjugate(q)) * v_unitless;
@@ -731,6 +753,7 @@ namespace gse::physics {
 
 		log::flush();
 	}
+#endif
 
 	auto update_vbd(
 		int steps,
@@ -854,6 +877,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		mc.previous_orientation = mc.orientation;
 	}
 
+#if GSE_GPU_COMPARE
 	if (!s.gpu_compare.completed.empty()) {
 		auto completed = std::move(s.gpu_compare.completed.front());
 		s.gpu_compare.completed.pop_front();
@@ -861,6 +885,11 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		if (s.gpu_compare.enabled) {
 			log_gpu_cpu_deviations(completed, completed.gpu_contacts, completed.gpu_narrow_phase_debug);
 		}
+#else
+	if (!s.gpu_readback.completed.empty()) {
+		auto completed = std::move(s.gpu_readback.completed.front());
+		s.gpu_readback.completed.pop_front();
+#endif
 
 		for (std::size_t i = 0; i < completed.entity_ids.size(); ++i) {
 			const auto eid = completed.entity_ids[i];
@@ -908,8 +937,6 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 			const auto& normal = c.normal;
 			const float separation = c.c0[0];
 
-			// GPU readback normals are stored as the solver constraint normal, which is the
-			// inverse of the SAT normal used by the CPU gameplay path for grounded state.
 			if (auto* mc_b = motion.find(eid_b)) {
 				if (normal.y() < -0.7f) mc_b->airborne = false;
 			}
@@ -1084,6 +1111,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		const auto it = id_to_body_index.find(cc.owner_id());
 		if (it == id_to_body_index.end()) continue;
 
+		cc.bounding_box.update(bodies[it->second].position, bodies[it->second].orientation);
 		const auto& [max, min] = cc.bounding_box.aabb();
 		collision_data[it->second] = {
 			.half_extents = cc.bounding_box.half_extents(),
@@ -1125,6 +1153,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		steps
 	);
 
+#if GSE_GPU_COMPARE
 	const std::uint64_t sequence = s.gpu_compare.next_sequence++;
 	if (s.gpu_compare.enabled) {
 		std::vector<vec3<velocity>> previous_velocities;
@@ -1162,6 +1191,12 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 			.gpu_input_bodies = bodies
 		};
 	}
+#else
+	s.gpu_readback.pending = state::gpu_readback_state::snapshot{
+		.entity_ids = entity_ids,
+		.gpu_input_bodies = bodies
+	};
+#endif
 }
 
 auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>& motion, chunk<collision_component>& collision) -> void {
@@ -1453,6 +1488,7 @@ auto gse::physics::system::render(render_phase&, const state& s) -> void {
 
 	s.gpu_solver.stage_readback(frame_index);
 	if (s.gpu_solver.has_readback_data()) {
+#if GSE_GPU_COMPARE
 		auto& in_flight = s.gpu_compare.in_flight[frame_index];
 		if (in_flight.has_value()) {
 			auto completed = std::move(*in_flight);
@@ -1470,9 +1506,25 @@ auto gse::physics::system::render(render_phase&, const state& s) -> void {
 			log::println("[GPU Compare] readback staged without an in-flight snapshot for frame={}", frame_index);
 			log::flush();
 		}
+#else
+		auto& in_flight = s.gpu_readback.in_flight[frame_index];
+		if (in_flight.has_value()) {
+			auto completed = std::move(*in_flight);
+			in_flight.reset();
+			completed.gpu_result_bodies = completed.gpu_input_bodies;
+			s.gpu_solver.readback(completed.gpu_result_bodies, completed.gpu_contacts);
+			s.gpu_readback.completed.push_back(std::move(completed));
+		}
+		else {
+			std::vector<vbd::body_state> discard_bodies;
+			std::vector<vbd::contact_readback_entry> discard_contacts;
+			s.gpu_solver.readback(discard_bodies, discard_contacts);
+		}
+#endif
 	}
 
 	if (s.gpu_solver.pending_dispatch() && s.gpu_solver.ready_to_dispatch(frame_index)) {
+#if GSE_GPU_COMPARE
 		if (s.gpu_compare.pending.has_value()) {
 			s.gpu_compare.in_flight[frame_index] = std::move(s.gpu_compare.pending);
 			s.gpu_compare.pending.reset();
@@ -1480,6 +1532,15 @@ auto gse::physics::system::render(render_phase&, const state& s) -> void {
 		else {
 			s.gpu_compare.in_flight[frame_index].reset();
 		}
+#else
+		if (s.gpu_readback.pending.has_value()) {
+			s.gpu_readback.in_flight[frame_index] = std::move(s.gpu_readback.pending);
+			s.gpu_readback.pending.reset();
+		}
+		else {
+			s.gpu_readback.in_flight[frame_index].reset();
+		}
+#endif
 
 		s.gpu_solver.commit_upload(frame_index);
 		s.gpu_solver.dispatch_compute(command, config, frame_index);

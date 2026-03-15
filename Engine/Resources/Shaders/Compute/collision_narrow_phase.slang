@@ -1063,6 +1063,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     float3 axes_b[3] = { rot_b[0], rot_b[1], rot_b[2] };
 
     SatResult sat = sat_speculative(center_a, he_a, axes_a, center_b, he_b, axes_b, pc.speculative_margin);
+
     if (!sat.valid) return;
 
     float3 tangent_u;
