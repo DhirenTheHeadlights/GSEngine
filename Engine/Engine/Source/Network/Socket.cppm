@@ -174,6 +174,7 @@ auto gse::network::udp_socket::send_data(const packet& packet, const address& ad
 	inet_pton(AF_INET, address.ip.c_str(), &addr.sin_addr);
 
 	if (const auto result = sendto(m_socket_id, reinterpret_cast<const char*>(packet.data), packet.size, 0, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)); result == SOCKET_ERROR) {
+		std::println(std::cerr, "Socket: sendto failed, error {}", WSAGetLastError());
 		return socket_state::error;
 	}
 

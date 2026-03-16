@@ -47,6 +47,9 @@ export namespace gse {
 					.registry = reg
 				};
 
+				
+				actions::set_entity_camera_yaw(controlled_id, s.camera_yaw());
+
 				actions::set_context_camera_yaw(s.camera_yaw());
 				fn(ctx);
 				actions::clear_context_camera_yaw();

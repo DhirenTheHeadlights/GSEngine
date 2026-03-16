@@ -158,6 +158,9 @@ export namespace gse::actions {
 			std::span<const std::uint16_t> axes2
 		) -> void;
 
+		auto clear_all_axes(
+		) -> void;
+
 		auto set_pressed(
 			std::uint16_t bit_index,
 			std::size_t count
@@ -248,23 +251,39 @@ export namespace gse::actions {
 		float m_camera_yaw = 0.f;
 	};
 
-	inline thread_local float g_context_camera_yaw = 0.f;
-	inline thread_local bool g_context_camera_yaw_set = false;
+	thread_local float g_context_camera_yaw = 0.f;
+	thread_local bool g_context_camera_yaw_set = false;
+	thread_local std::unordered_map<id, float> g_entity_camera_yaw;
 
-	inline auto set_context_camera_yaw(float yaw) -> void {
+	auto set_context_camera_yaw(float yaw) -> void {
 		g_context_camera_yaw = yaw;
 		g_context_camera_yaw_set = true;
 	}
 
-	inline auto clear_context_camera_yaw() -> void {
+	auto clear_context_camera_yaw() -> void {
 		g_context_camera_yaw_set = false;
 	}
 
-	inline auto get_context_camera_yaw() -> std::optional<float> {
+	auto context_camera_yaw() -> std::optional<float> {
 		if (g_context_camera_yaw_set) {
 			return g_context_camera_yaw;
 		}
 		return std::nullopt;
+	}
+
+	auto set_entity_camera_yaw(id entity_id, float yaw) -> void {
+		g_entity_camera_yaw[entity_id] = yaw;
+	}
+
+	auto entity_camera_yaw(id entity_id) -> std::optional<float> {
+		if (auto it = g_entity_camera_yaw.find(entity_id); it != g_entity_camera_yaw.end()) {
+			return it->second;
+		}
+		return std::nullopt;
+	}
+
+	auto clear_entity_camera_yaw(id entity_id) -> void {
+		g_entity_camera_yaw.erase(entity_id);
 	}
 
 	struct button_channel {
@@ -511,6 +530,11 @@ auto gse::actions::state::reset_axes(const std::span<const std::uint16_t> axes1,
 			m_axes2[id] = {};
 		}
 	}
+}
+
+auto gse::actions::state::clear_all_axes() -> void {
+	std::fill(m_axes1.begin(), m_axes1.end(), 0.f);
+	std::fill(m_axes2.begin(), m_axes2.end(), axis{});
 }
 
 auto gse::actions::state::set_pressed(const std::uint16_t bit_index, const std::size_t count) -> void {
