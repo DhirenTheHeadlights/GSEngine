@@ -23,6 +23,7 @@ import :vbd_gpu_solver;
 export namespace gse::physics {
 	struct state {
 		time_t<float, seconds> accumulator{};
+		time_t<float, seconds> gpu_interp_accumulator{};
 		bool update_phys = true;
 		bool use_gpu_solver = false;
 		gpu::context* gpu_ctx = nullptr;
@@ -836,7 +837,9 @@ auto gse::physics::system::update(update_phase& phase, state& s) -> void {
 
 	if (s.use_gpu_solver) {
 		const int gpu_steps = std::min(steps, 1);
-		phase.schedule([gpu_steps, alpha, &s, const_update_time](chunk<motion_component> motion, chunk<collision_component> collision) {
+		s.gpu_interp_accumulator += frame_time;
+		const float gpu_alpha = std::clamp(s.gpu_interp_accumulator / const_update_time, 0.f, 1.f);
+		phase.schedule([gpu_steps, gpu_alpha, &s, const_update_time](chunk<motion_component> motion, chunk<collision_component> collision) {
 			update_vbd_gpu(gpu_steps, s, motion, collision, const_update_time);
 
 			for (motion_component& mc : motion) {
@@ -845,8 +848,8 @@ auto gse::physics::system::update(update_phase& phase, state& s) -> void {
 					mc.render_orientation = mc.orientation;
 				}
 				else {
-					mc.render_position = lerp(mc.previous_position, mc.current_position, alpha);
-					mc.render_orientation = slerp(mc.previous_orientation, mc.orientation, alpha);
+					mc.render_position = lerp(mc.previous_position, mc.current_position, gpu_alpha);
+					mc.render_orientation = slerp(mc.previous_orientation, mc.orientation, gpu_alpha);
 				}
 			}
 		});
@@ -872,11 +875,6 @@ auto gse::physics::system::update(update_phase& phase, state& s) -> void {
 auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_component>& motion, chunk<collision_component>& collision, const time_t<float, seconds> dt) -> void {
 	if (!s.gpu_solver.buffers_created()) return;
 
-	for (motion_component& mc : motion) {
-		mc.previous_position = mc.current_position;
-		mc.previous_orientation = mc.orientation;
-	}
-
 #if GSE_GPU_COMPARE
 	if (!s.gpu_compare.completed.empty()) {
 		auto completed = std::move(s.gpu_compare.completed.front());
@@ -891,6 +889,8 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		s.gpu_readback.completed.pop_front();
 #endif
 
+		s.gpu_interp_accumulator = fmod(s.gpu_interp_accumulator, dt);
+
 		for (std::size_t i = 0; i < completed.entity_ids.size(); ++i) {
 			const auto eid = completed.entity_ids[i];
 			auto* mc = motion.find(eid);
@@ -899,6 +899,8 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 			const auto& bs = completed.gpu_result_bodies[i];
 
 			if (!mc->position_locked) {
+				mc->previous_position = mc->current_position;
+				mc->previous_orientation = mc->orientation;
 				mc->current_position = bs.position;
 				mc->current_velocity = bs.body_velocity;
 				if (mc->update_orientation) {
