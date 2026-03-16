@@ -429,10 +429,39 @@ void solve_body(uint bi) {
     body_data[bi] = body;
 }
 
+static const uint BARRIER_COUNTER_INDEX = 3;
+
+groupshared uint gs_barrier_target;
+
+void global_barrier(uint local_id, uint num_groups) {
+    DeviceMemoryBarrierWithGroupSync();
+
+    if (local_id == 0) {
+        uint prev;
+        InterlockedAdd(collision_state[BARRIER_COUNTER_INDEX], 1u, prev);
+        gs_barrier_target = ((prev / num_groups) + 1u) * num_groups;
+    }
+
+    GroupMemoryBarrierWithGroupSync();
+
+    if (local_id == 0) {
+        uint target = gs_barrier_target;
+        while (true) {
+            uint val;
+            InterlockedAdd(collision_state[BARRIER_COUNTER_INDEX], 0u, val);
+            if (val >= target) break;
+        }
+    }
+
+    GroupMemoryBarrierWithGroupSync();
+}
+
 [shader("compute")]
 [numthreads(64, 1, 1)]
-void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
+void cs_main(uint3 dispatch_id : SV_DispatchThreadID, uint3 group_thread_id : SV_GroupThreadID) {
     uint idx = dispatch_id.x;
+    uint local_id = group_thread_id.x;
+    uint num_groups = (pc.body_count + 63u) / 64u;
     uint num_colors = pc.color_count;
 
     for (uint color = 0; color < num_colors; color++) {
@@ -445,7 +474,8 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
             }
         }
 
-        DeviceMemoryBarrier();
-        GroupMemoryBarrierWithGroupSync();
+        if (color + 1u < num_colors) {
+            global_barrier(local_id, num_groups);
+        }
     }
 }

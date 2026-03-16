@@ -407,6 +407,10 @@ constexpr auto gse::internal::operator-(const Q& v) -> Q {
 export namespace gse {
     template <typename ToQuantity, typename FromQuantity> requires gse::internal::has_same_dimension_as<ToQuantity, FromQuantity>
     constexpr auto quantity_cast(const FromQuantity& q) -> ToQuantity;
+
+    template <internal::is_quantity Q1, internal::is_quantity Q2>
+        requires internal::has_same_dimension_as<Q1, Q2>
+    constexpr auto fmod(const Q1& a, const Q2& b) -> Q1;
 }
 
 template <typename ToQuantity, typename FromQuantity> requires gse::internal::has_same_dimension_as<ToQuantity, FromQuantity>
@@ -426,4 +430,10 @@ constexpr auto gse::quantity_cast(const FromQuantity& q) -> ToQuantity {
             static_cast<to_val>(value_in_to_unit)
         );
     }
+}
+
+template <gse::internal::is_quantity Q1, gse::internal::is_quantity Q2>
+    requires gse::internal::has_same_dimension_as<Q1, Q2>
+constexpr auto gse::fmod(const Q1& a, const Q2& b) -> Q1 {
+    return Q1(std::fmod(a.template as<typename Q1::default_unit>(), b.template as<typename Q1::default_unit>()));
 }
