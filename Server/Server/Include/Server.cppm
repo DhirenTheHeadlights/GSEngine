@@ -283,6 +283,13 @@ auto gse::server::update() -> void {
 			}
 
 			network::try_decode<network::connection_request>(stream, mid, [&](const auto&) {
+				constexpr std::uint8_t max_players = 8;
+				if (m_clients.size() >= max_players) {
+					std::println("Client [{}:{}] failed to connect (server full: {}/{})",
+						pkt.from.ip, pkt.from.port, m_clients.size(), max_players);
+					return;
+				}
+
 				m_peers.emplace(pkt.from, network::remote_peer(pkt.from));
 
 				if (auto* scene = m_owner->current_scene()) {
@@ -299,6 +306,8 @@ auto gse::server::update() -> void {
 				}
 
 				send_reliable(network::connection_accepted{}, pkt.from);
+				std::println("Client [{}:{}] connected ({}/{})",
+					pkt.from.ip, pkt.from.port, m_clients.size(), max_players);
 
 				if (const auto* active = m_owner->current_scene()) {
 					const network::notify_scene_change msg{
@@ -315,7 +324,13 @@ auto gse::server::update() -> void {
 
 		if (network::try_decode<network::connection_request>(stream, mid, [&](const auto&) {
 			if (auto client_it = m_clients.find(pkt.from); client_it != m_clients.end()) {
+				std::println("Client [{}:{}] reconnecting...", pkt.from.ip, pkt.from.port);
 				if (auto* scene = m_owner->current_scene()) {
+					if (auto* pc = scene->registry().try_linked_object_write<player_controller>(client_it->second.controller_id)) {
+						if (pc->controlled_entity_id.exists()) {
+							scene->registry().remove(pc->controlled_entity_id);
+						}
+					}
 					scene->registry().remove(client_it->second.controller_id);
 				}
 				m_clients.erase(client_it);
@@ -334,6 +349,7 @@ auto gse::server::update() -> void {
 			}
 
 			send_reliable(network::connection_accepted{}, pkt.from);
+			std::println("Client [{}:{}] reconnected", pkt.from.ip, pkt.from.port);
 
 			if (const auto* active = m_owner->current_scene()) {
 				const network::notify_scene_change msg{
@@ -417,6 +433,9 @@ auto gse::server::update() -> void {
 				cd.latest_input.begin_frame();
 				cd.latest_input.ensure_capacity(fh.action_word_count * 64);
 				cd.latest_input.load_state(pressed, released, held);
+
+				
+				cd.latest_input.clear_all_axes();
 
 				for (auto& [idv, value] : a1) {
 					cd.latest_input.set_axis1(idv, value);

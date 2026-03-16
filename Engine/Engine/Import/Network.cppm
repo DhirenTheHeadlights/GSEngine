@@ -192,7 +192,13 @@ auto gse::network::system::update(update_phase& phase, system_state& s) -> void 
 					}
 					s.deferred.push_back([entity = m.owner_id](registry& r) {
 						r.add_deferred_action(entity, [entity](registry& reg) -> bool {
-							reg.remove_link<T>(entity);
+							if constexpr (std::is_same_v<T, player_controller>) {
+								if (reg.exists(entity)) {
+									reg.remove(entity);
+								}
+							} else {
+								reg.remove_link<T>(entity);
+							}
 							return true;
 						});
 					});

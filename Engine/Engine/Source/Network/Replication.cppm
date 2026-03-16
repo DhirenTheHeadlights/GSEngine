@@ -91,7 +91,7 @@ template <typename T>
 auto gse::network::snapshot_components_to(auto& send_fn, registry& reg, const address& addr) -> void {
     std::size_t count = 0;
 
-    for (const auto& c : reg.linked_objects_read<T>()) {
+    for (const auto& c : reg.linked_objects_write<T>()) {
         component_upsert<T> m{
             .owner_id = c.owner_id(),
             .data = c.networked_data()
