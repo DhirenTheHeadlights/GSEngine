@@ -41,8 +41,22 @@ namespace gse::renderer::physics_debug {
 }
 
 export namespace gse::renderer::physics_debug {
+	struct debug_stats {
+		std::uint32_t body_count = 0;
+		std::uint32_t sleeping_count = 0;
+		std::uint32_t contact_count = 0;
+		std::uint32_t motor_count = 0;
+		std::uint32_t colliding_pairs = 0;
+		time_t<float, seconds> solve_time{};
+		velocity max_linear_speed{};
+		angular_velocity max_angular_speed{};
+		length max_penetration{};
+		bool gpu_solver_active = false;
+	};
+
 	struct render_data {
 		std::vector<debug_vertex> vertices;
+		debug_stats stats;
 	};
 
 	struct state {
@@ -59,13 +73,14 @@ export namespace gse::renderer::physics_debug {
 
 		std::size_t max_vertices = 0;
 		bool enabled = true;
+		debug_stats latest_stats;
 
 		explicit state(gpu::context& c) : ctx(std::addressof(c)) {}
 		state() = default;
 	};
 
 	struct system {
-		static auto initialize(initialize_phase& phase, state& s) -> void;
+		static auto initialize(const initialize_phase& phase, state& s) -> void;
 		static auto update(update_phase& phase, state& s) -> void;
 		static auto render(render_phase& phase, const state& s) -> void;
 	};
@@ -96,7 +111,7 @@ auto gse::renderer::physics_debug::ensure_vertex_capacity(state& s, const std::s
 	);
 }
 
-auto gse::renderer::physics_debug::system::initialize(initialize_phase& phase, state& s) -> void {
+auto gse::renderer::physics_debug::system::initialize(const initialize_phase& phase, state& s) -> void {
 	phase.channels.push(save::register_property{
 		.category = "Graphics",
 		.name = "Physics Debug Renderer Enabled",
@@ -311,16 +326,15 @@ auto gse::renderer::physics_debug::build_contact_debug_for_collider(const physic
 		return;
 	}
 
+	const float pen_m = penetration.as<meters>();
+	const float t = std::clamp(pen_m / 0.05f, 0.f, 1.f);
+	const unitless::vec3 satisfaction_color{ t, 1.f - t, 0.f };
+
 	for (auto& collision_point : collision_points) {
 		const auto p = collision_point;
 		const auto n = collision_normal;
 
-		constexpr length cross_size = meters(0.1f);
-
-		constexpr unitless::vec3 cross_color{ 1.0f, 1.0f, 1.0f };
-		constexpr unitless::vec3 normal_color{ 1.0f, 0.0f, 0.0f };
-		constexpr unitless::vec3 penetration_color{ 1.0f, 1.0f, 0.0f };
-		constexpr unitless::vec3 center_link_color{ 0.0f, 1.0f, 1.0f };
+		constexpr length cross_size = meters(0.05f);
 
 		const vec3<length> px1 = p + vec3<length>{ cross_size, 0.0f, 0.0f };
 		const vec3<length> px2 = p - vec3<length>{ cross_size, 0.0f, 0.0f };
@@ -331,19 +345,17 @@ auto gse::renderer::physics_debug::build_contact_debug_for_collider(const physic
 		const vec3<length> pz1 = p + vec3<length>{ 0.0f, 0.0f, cross_size };
 		const vec3<length> pz2 = p - vec3<length>{ 0.0f, 0.0f, cross_size };
 
-		add_line(px1, px2, cross_color, out_vertices);
-		add_line(py1, py2, cross_color, out_vertices);
-		add_line(pz1, pz2, cross_color, out_vertices);
+		add_line(px1, px2, satisfaction_color, out_vertices);
+		add_line(py1, py2, satisfaction_color, out_vertices);
+		add_line(pz1, pz2, satisfaction_color, out_vertices);
 
 		const length normal_len = std::min(penetration, meters(0.5f));
 		const vec3<length> normal_end = p + n * normal_len;
-		add_line(p, normal_end, normal_color, out_vertices);
+		add_line(p, normal_end, satisfaction_color, out_vertices);
 
+		constexpr unitless::vec3 penetration_color{ 1.0f, 1.0f, 0.0f };
 		const vec3<length> projected = p - n * penetration;
 		add_line(p, projected, penetration_color, out_vertices);
-
-		const auto center = coll.bounding_box.center();
-		add_line(center, p, center_link_color, out_vertices);
 	}
 }
 
@@ -353,6 +365,17 @@ auto gse::renderer::physics_debug::system::update(update_phase& phase, state& s)
 	}
 
 	std::vector<debug_vertex> vertices;
+	debug_stats stats;
+
+	for (const auto& mc : phase.registry.view<physics::motion_component>()) {
+		stats.body_count++;
+		if (mc.sleeping) stats.sleeping_count++;
+
+		const auto lin = magnitude(mc.current_velocity);
+		const auto ang = magnitude(mc.angular_velocity);
+		if (lin > stats.max_linear_speed) stats.max_linear_speed = lin;
+		if (ang > stats.max_angular_speed) stats.max_angular_speed = ang;
+	}
 
 	for (const auto& coll : phase.registry.view<physics::collision_component>()) {
 		if (!coll.resolve_collisions) {
@@ -365,11 +388,25 @@ auto gse::renderer::physics_debug::system::update(update_phase& phase, state& s)
 		if (mc) {
 			build_contact_debug_for_collider(coll, *mc, vertices);
 		}
+
+		if (coll.collision_information.colliding) {
+			stats.colliding_pairs++;
+			if (coll.collision_information.penetration > stats.max_penetration)
+				stats.max_penetration = coll.collision_information.penetration;
+		}
 	}
 
-	if (!vertices.empty()) {
-		phase.channels.push(render_data{ std::move(vertices) });
+	if (const auto* ps = phase.try_state_of<physics::state>()) {
+		if (ps->use_gpu_solver && ps->gpu_solver.compute_initialized()) {
+			stats.gpu_solver_active = true;
+			stats.contact_count = ps->gpu_solver.contact_count();
+			stats.motor_count = ps->gpu_solver.motor_count();
+			stats.solve_time = ps->gpu_solver.solve_time();
+		}
 	}
+
+	s.latest_stats = stats;
+	phase.channels.push(render_data{ std::move(vertices), stats });
 }
 
 auto gse::renderer::physics_debug::system::render(render_phase& phase, const state& s) -> void {

@@ -24,7 +24,7 @@ export namespace gse {
 		id controller_id;
 		actions::state latest_input;
 		std::uint32_t last_input_sequence = 0;
-		float camera_yaw = 0.f;
+		gse::angle camera_yaw{};
 		bool have_seq = false;
 	};
 
@@ -428,7 +428,7 @@ auto gse::server::update() -> void {
 				}
 
 				cd.last_input_sequence = fh.input_sequence;
-				cd.camera_yaw = fh.camera_yaw;
+				cd.camera_yaw = gse::radians(fh.camera_yaw);
 
 				cd.latest_input.begin_frame();
 				cd.latest_input.ensure_capacity(fh.action_word_count * 64);

@@ -12,48 +12,51 @@ export namespace gse::audio {
 	auto play(
 		const std::string& clip_name,
 		bool loop = false
-	) -> voice_handle {
-		auto& s = state_of<state>();
-		auto clip = s.ctx->get<audio_clip>(clip_name);
-		return s.play(*clip, loop);
+	) -> void {
+		defer<state>([clip_name, loop](state& s) {
+			auto clip = s.ctx->get<audio_clip>(clip_name);
+			s.play(*clip, loop);
+		});
 	}
 
 	auto play(
 		const resource::handle<audio_clip>& clip,
 		bool loop = false
-	) -> voice_handle {
-		return state_of<state>().play(*clip, loop);
+	) -> void {
+		defer<state>([clip, loop](state& s) {
+			s.play(*clip, loop);
+		});
 	}
 
 	auto stop(
 		voice_handle handle
 	) -> void {
-		state_of<state>().stop(handle);
+		defer<state>([handle](state& s) { s.stop(handle); });
 	}
 
 	auto pause(
 		voice_handle handle
 	) -> void {
-		state_of<state>().pause(handle);
+		defer<state>([handle](state& s) { s.pause(handle); });
 	}
 
 	auto resume(
 		voice_handle handle
 	) -> void {
-		state_of<state>().resume(handle);
+		defer<state>([handle](state& s) { s.resume(handle); });
 	}
 
 	auto set_volume(
 		voice_handle handle,
 		percentage<float> vol
 	) -> void {
-		state_of<state>().set_volume(handle, vol);
+		defer<state>([handle, vol](state& s) { s.set_volume(handle, vol); });
 	}
 
 	auto set_master_volume(
 		percentage<float> vol
 	) -> void {
-		state_of<state>().set_master_volume(vol);
+		defer<state>([vol](state& s) { s.set_master_volume(vol); });
 	}
 
 	auto master_volume(

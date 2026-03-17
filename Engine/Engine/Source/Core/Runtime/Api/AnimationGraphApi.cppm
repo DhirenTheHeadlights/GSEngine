@@ -10,7 +10,9 @@ import :core_api;
 export namespace gse::animation {
 	auto create_graph(const animation_graph& graph) -> id {
 		const auto graph_id = generate_id(graph.name);
-		state_of<animation::state>().graphs.emplace(graph_id, graph);
+		defer<animation::state>([graph_id, graph](animation::state& s) {
+			s.graphs.emplace(graph_id, graph);
+		});
 		return graph_id;
 	}
 
