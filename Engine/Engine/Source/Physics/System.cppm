@@ -24,6 +24,7 @@ export namespace gse::physics {
 	struct state {
 		time_t<float, seconds> accumulator{};
 		time_t<float, seconds> gpu_interp_accumulator{};
+		time_t<float, seconds> gpu_readback_interval{seconds(1.f / 60.f)};
 		bool update_phys = true;
 		bool use_gpu_solver = false;
 		gpu::context* gpu_ctx = nullptr;
@@ -839,11 +840,14 @@ auto gse::physics::system::update(update_phase& phase, state& s) -> void {
 	const float alpha = s.accumulator / const_update_time;
 
 	if (s.use_gpu_solver) {
-		const int gpu_steps = std::min(steps, 1);
 		s.gpu_interp_accumulator += frame_time;
-		const float gpu_alpha = std::clamp(s.gpu_interp_accumulator / const_update_time, 0.f, 1.f);
-		phase.schedule([gpu_steps, gpu_alpha, &s, const_update_time](chunk<motion_component> motion, chunk<collision_component> collision) {
-			update_vbd_gpu(gpu_steps, s, motion, collision, const_update_time);
+		phase.schedule([steps, &s, const_update_time](chunk<motion_component> motion, chunk<collision_component> collision) {
+			update_vbd_gpu(steps, s, motion, collision, const_update_time);
+
+			const float gpu_alpha = std::clamp(
+				s.gpu_interp_accumulator / s.gpu_readback_interval,
+				0.f, 1.f
+			);
 
 			for (motion_component& mc : motion) {
 				if (mc.position_locked) {
@@ -892,7 +896,8 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		s.gpu_readback.completed.pop_front();
 #endif
 
-		s.gpu_interp_accumulator = fmod(s.gpu_interp_accumulator, dt);
+		s.gpu_readback_interval = std::max(s.gpu_interp_accumulator, dt);
+		s.gpu_interp_accumulator = {};
 
 		for (std::size_t i = 0; i < completed.entity_ids.size(); ++i) {
 			const auto eid = completed.entity_ids[i];
