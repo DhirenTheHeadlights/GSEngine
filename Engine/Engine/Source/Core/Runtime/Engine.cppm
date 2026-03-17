@@ -36,13 +36,20 @@ export namespace gse {
 		auto shutdown() -> void override;
 
 		template <typename State>
-		auto state_of() -> State&;
+		auto state_of() -> const State&;
+
+		template <typename State>
+		auto try_state_of() -> const State*;
+
 
 		template <typename State>
 		auto has_state() const -> bool;
 
 		template <typename T>
 		auto channel() -> channel<T>&;
+
+		template <typename State, typename F>
+		auto defer(F&& fn) -> void;
 
 		template <typename T, class ... Args>
 		auto hook_world(
@@ -103,7 +110,6 @@ auto gse::engine::initialize() -> void {
 	auto& input = m_scheduler.add_system<input::system, input::system_state>(reg);
 	m_scheduler.add_system<actions::system, actions::system_state>(reg);
 	m_scheduler.add_system<network::system, network::system_state>(reg);
-	m_scheduler.add_system<physics::system, physics::state>(reg);
 
 	if (has_flag(m_flags, flags::render)) {
 		m_render_ctx = std::make_unique<gpu::context>(
@@ -116,6 +122,7 @@ auto gse::engine::initialize() -> void {
 		ctx.add_loader<shader>();
 		ctx.compile();
 
+		m_scheduler.add_system<physics::system, physics::state>(reg, ctx);
 		m_scheduler.add_system<camera::system, camera::state>(reg);
 		m_scheduler.add_system<renderer::system, renderer::state>(reg, ctx);
 		m_scheduler.add_system<renderer::shadow::system, renderer::shadow::state>(reg, ctx);
@@ -126,8 +133,9 @@ auto gse::engine::initialize() -> void {
 		m_scheduler.add_system<gui::system, gui::system_state>(reg, ctx);
 		m_scheduler.add_system<animation::system, animation::state>(reg);
 		m_scheduler.add_system<audio::system, audio::state>(reg, ctx);
-
-		m_scheduler.state<physics::state>().gpu_ctx = m_render_ctx.get();
+	}
+	else {
+		m_scheduler.add_system<physics::system, physics::state>(reg);
 	}
 
 	m_scheduler.initialize();
@@ -197,8 +205,13 @@ auto gse::engine::direct() -> director {
 }
 
 template <typename State>
-auto gse::engine::state_of() -> State& {
+auto gse::engine::state_of() -> const State& {
 	return m_scheduler.state<State>();
+}
+
+template <typename State>
+auto gse::engine::try_state_of() -> const State* {
+	return m_scheduler.try_state_of<State>();
 }
 
 template <typename State>
@@ -209,6 +222,11 @@ auto gse::engine::has_state() const -> bool {
 template <typename T>
 auto gse::engine::channel() -> gse::channel<T>& {
 	return m_scheduler.channel<T>();
+}
+
+template <typename State, typename F>
+auto gse::engine::defer(F&& fn) -> void {
+	m_scheduler.defer<State>(std::forward<F>(fn));
 }
 
 template <typename T, typename... Args>

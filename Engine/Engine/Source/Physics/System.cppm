@@ -28,6 +28,9 @@ export namespace gse::physics {
 		bool use_gpu_solver = false;
 		gpu::context* gpu_ctx = nullptr;
 
+		state() = default;
+		explicit state(gpu::context& ctx) : gpu_ctx(&ctx) {}
+
 		vbd::solver vbd_solver;
 		mutable vbd::gpu_solver gpu_solver;
 		vbd::contact_cache contact_cache;
@@ -946,15 +949,25 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 				if (normal.y() > 0.7f) mc_a->airborne = false;
 			}
 
+			const auto& bs_a = completed.gpu_result_bodies[body_a];
+			const auto& bs_b = completed.gpu_result_bodies[body_b];
+			const auto world_r_a = rotate_vector(bs_a.orientation, c.local_anchor_a);
+			const auto world_r_b = rotate_vector(bs_b.orientation, c.local_anchor_b);
+			const auto contact_point_a = bs_a.position + world_r_a;
+			const auto contact_point_b = bs_b.position + world_r_b;
+			const auto midpoint = (contact_point_a + contact_point_b) * 0.5f;
+
 			if (auto* cc_a = collision.find(eid_a)) {
 				cc_a->collision_information.colliding = true;
 				cc_a->collision_information.collision_normal = normal;
 				cc_a->collision_information.penetration = meters(-separation);
+				cc_a->collision_information.collision_points.push_back(midpoint);
 			}
 			if (auto* cc_b = collision.find(eid_b)) {
 				cc_b->collision_information.colliding = true;
 				cc_b->collision_information.collision_normal = -normal;
 				cc_b->collision_information.penetration = meters(-separation);
+				cc_b->collision_information.collision_points.push_back(midpoint);
 			}
 
 			const float friction_bound = std::abs(c.lambda[0]) * c.friction_coeff;

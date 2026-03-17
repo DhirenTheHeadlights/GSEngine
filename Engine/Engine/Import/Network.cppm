@@ -66,7 +66,7 @@ export namespace gse::network {
 		) -> void;
 
 		auto servers(
-		) -> std::span<const discovery_result>;
+		) const -> std::span<const discovery_result>;
 
 		auto connect(
 			const connection_options& options
@@ -105,7 +105,7 @@ export namespace gse::network {
 
 	struct system {
 		static auto initialize(initialize_phase& phase, system_state& s) -> void;
-		static auto update(update_phase& phase, system_state& s) -> void;
+		static auto update(const update_phase& phase, system_state& s) -> void;
 		static auto shutdown(shutdown_phase& phase, system_state& s) -> void;
 	};
 }
@@ -119,7 +119,7 @@ auto gse::network::system::shutdown(shutdown_phase&, system_state& s) -> void {
 	// WinSock cleanup handled by static initializer destructor in Socket.cppm
 }
 
-auto gse::network::system::update(update_phase& phase, system_state& s) -> void {
+auto gse::network::system::update(const update_phase& phase, system_state& s) -> void {
 	if (!s.client_ptr) {
 		return;
 	}
@@ -270,7 +270,7 @@ auto gse::network::system_state::refresh_servers(const time_t<std::uint32_t> tim
 	});
 }
 
-auto gse::network::system_state::servers() -> std::span<const discovery_result> {
+auto gse::network::system_state::servers() const -> std::span<const discovery_result> {
 	return available_servers;
 }
 

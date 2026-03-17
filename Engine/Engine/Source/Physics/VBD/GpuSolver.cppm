@@ -263,6 +263,9 @@ export namespace gse::vbd {
 		auto frame_count(
 		) const -> std::uint32_t;
 
+		auto solve_time(
+		) const -> time_step;
+
 #if GSE_GPU_COMPARE
 		auto narrow_phase_debug_entries(
 		) const -> std::span<const narrow_phase_debug_entry>;
@@ -1056,6 +1059,10 @@ auto gse::vbd::gpu_solver::dt() const -> time_step {
 
 auto gse::vbd::gpu_solver::frame_count() const -> std::uint32_t {
 	return m_frame_count;
+}
+
+auto gse::vbd::gpu_solver::solve_time() const -> time_step {
+	return milliseconds(m_compute.solve_ms);
 }
 
 auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {

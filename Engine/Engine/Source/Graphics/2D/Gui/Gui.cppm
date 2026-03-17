@@ -36,7 +36,7 @@ namespace gse::gui {
 	};
 
 	auto handle_idle_state(
-		struct system_state& s,
+		const struct system_state& s,
 		const input::state& input_state,
 		unitless::vec2 mouse_position,
 		bool mouse_held,
@@ -44,7 +44,7 @@ namespace gse::gui {
 	) -> gui::state;
 
 	auto handle_dragging_state(
-		system_state& s,
+		const system_state& s,
 		const states::dragging& current,
 		const window& window,
 		unitless::vec2 mouse_position,
@@ -52,7 +52,7 @@ namespace gse::gui {
 	) -> gui::state;
 
 	auto handle_resizing_state(
-		system_state& s,
+		const system_state& s,
 		const states::resizing& current,
 		unitless::vec2 mouse_position,
 		bool mouse_held,
@@ -60,7 +60,7 @@ namespace gse::gui {
 	) -> gui::state;
 
 	auto handle_resizing_divider_state(
-		system_state& s,
+		const system_state& s,
 		const states::resizing_divider& current,
 		unitless::vec2 mouse_position,
 		bool mouse_held,
@@ -68,20 +68,20 @@ namespace gse::gui {
 	) -> gui::state;
 
 	auto handle_pending_drag_state(
-		system_state& s,
+		const system_state& s,
 		const states::pending_drag& current,
 		unitless::vec2 mouse_position,
 		bool mouse_held
 	) -> gui::state;
 
 	auto draw_menu_chrome(
-		system_state& s,
+		const system_state& s,
 		const input::state& input_state,
 		menu& current_menu
 	) -> void;
 
 	auto draw_tab_bar(
-		system_state& s,
+		const system_state& s,
 		const input::state& input_state,
 		menu& current_menu,
 		const ui_rect& title_bar_rect
@@ -107,12 +107,12 @@ namespace gse::gui {
 	) -> void;
 
 	auto begin_menu(
-		system_state& s,
+		const system_state& s,
 		const std::string& name
 	) -> bool;
 
 	auto end_menu(
-		system_state& s
+		const system_state& s
 	) -> void;
 }
 
@@ -120,43 +120,43 @@ export namespace gse::gui {
 	struct system_state {
 		gpu::context* rctx = nullptr;
 
-		id_mapped_collection<menu> menus;
-		menu* current_menu = nullptr;
+		mutable id_mapped_collection<menu> menus;
+		mutable menu* current_menu = nullptr;
 
 		resource::handle<font> gui_font;
 		resource::handle<texture> blank_texture;
 
-		std::optional<dock::space> active_dock_space;
-		gui::state current_state;
+		mutable std::optional<dock::space> active_dock_space;
+		mutable gui::state current_state;
 
 		std::filesystem::path file_path = "Misc/gui_layout.toml";
 		clock save_clock;
 
-		id hot_widget_id;
-		id active_widget_id;
-		id focus_widget_id;
+		mutable id hot_widget_id;
+		mutable id active_widget_id;
+		mutable id focus_widget_id;
 
-		std::unique_ptr<ids::scope> current_scope;
+		mutable std::unique_ptr<ids::scope> current_scope;
 
-		frame_state fstate{};
-		draw_context* context = nullptr;
+		mutable frame_state fstate{};
+		mutable draw_context* context = nullptr;
 
-		menu_bar::state menu_bar_state;
-		settings_panel::state settings_panel_state;
+		mutable menu_bar::state menu_bar_state;
+		mutable settings_panel::state settings_panel_state;
 		theme current_theme = theme::dark;
 		float ui_scale = 1.0f;
 		int font_index = 0;
 		std::vector<std::string> available_fonts;
 
-		std::vector<renderer::sprite_command> sprite_commands;
-		std::vector<renderer::text_command> text_commands;
+		mutable std::vector<renderer::sprite_command> sprite_commands;
+		mutable std::vector<renderer::text_command> text_commands;
 
 		std::vector<id> visible_menu_ids_last_frame;
 		unitless::vec2 previous_viewport_size;
 
-		tooltip_state tooltip;
-		render_layer input_layer_render = render_layer::content;
-		input_layer input_layers_data;
+		mutable tooltip_state tooltip;
+		mutable render_layer input_layer_render = render_layer::content;
+		mutable input_layer input_layers_data;
 
 		static constexpr time update_interval = seconds(30.f);
 
@@ -179,31 +179,31 @@ export namespace gse::gui {
 		static auto save(system_state& s) -> void;
 
 		static auto start(
-			system_state& s,
+			const system_state& s,
 			const input::state& input_state,
 			const std::string& name,
 			const std::function<void()>& contents
 		) -> void;
 
 		static auto text(
-			system_state& s,
+			const system_state& s,
 			const std::string& text
 		) -> void;
 
 		static auto button(
-			system_state& s,
+			const system_state& s,
 			const std::string& text
 		) -> bool;
 
 		static auto input(
-			system_state& s,
+			const system_state& s,
 			const std::string& name,
 			std::string& buffer
 		) -> void;
 
 		template <is_arithmetic T>
 		static auto slider(
-			system_state& s,
+			const system_state& s,
 			const std::string& name,
 			T& value,
 			T min,
@@ -212,7 +212,7 @@ export namespace gse::gui {
 
 		template <is_quantity T, auto Unit = typename T::default_unit{}>
 		static auto slider(
-			system_state& s,
+			const system_state& s,
 			const std::string& name,
 			T& value,
 			T min,
@@ -221,7 +221,7 @@ export namespace gse::gui {
 
 		template <typename T, int N>
 		static auto slider(
-			system_state& s,
+			const system_state& s,
 			const std::string& name,
 			unitless::vec_t<T, N>& vec,
 			unitless::vec_t<T, N> min,
@@ -230,7 +230,7 @@ export namespace gse::gui {
 
 		template <typename T, int N, auto Unit = typename T::default_unit{}>
 		static auto slider(
-			system_state& s,
+			const system_state& s,
 			const std::string& name,
 			vec_t<T, N>& vec,
 			vec_t<T, N> min,
@@ -239,35 +239,35 @@ export namespace gse::gui {
 
 		template <is_arithmetic T>
 		static auto value(
-			system_state& s,
+			const system_state& s,
 			const std::string& name,
 			T value
 		) -> void;
 
 		template <is_quantity T, auto Unit = typename T::default_unit{}>
 		static auto value(
-			system_state& s,
+			const system_state& s,
 			const std::string& name,
 			T value
 		) -> void;
 
 		template <typename T, int N>
 		static auto vec(
-			system_state& s,
+			const system_state& s,
 			const std::string& name,
 			unitless::vec_t<T, N> vec
 		) -> void;
 
 		template <typename T, int N, auto Unit = typename T::default_unit{}>
 		static auto vec(
-			system_state& s,
+			const system_state& s,
 			const std::string& name,
 			vec_t<T, N> vec
 		) -> void;
 
 		template <typename T>
 		static auto tree(
-			system_state& s,
+			const system_state& s,
 			std::span<const T> roots,
 			const draw::tree_ops<T>& fns,
 			draw::tree_options opt = {},
@@ -275,13 +275,13 @@ export namespace gse::gui {
 		) -> bool;
 
 		static auto selectable(
-			system_state& s,
+			const system_state& s,
 			const std::string& text,
 			bool selected = false
 		) -> bool;
 
 		static auto profiler(
-			system_state& s
+			const system_state& s
 		) -> void;
 	};
 }
@@ -377,13 +377,11 @@ auto gse::gui::system::initialize(initialize_phase& phase, system_state& s) -> v
 			} else {
 				m.rect = calculate_group_bounds(m.id());
 
-				// Clamp size to fit within screen
 				const float max_width = screen_rect.width();
 				const float max_height = screen_rect.height();
 				const float clamped_width = std::min(m.rect.width(), max_width);
 				const float clamped_height = std::min(m.rect.height(), max_height);
 
-				// Clamp position to keep window on screen
 				float new_left = m.rect.left();
 				float new_top = m.rect.top();
 
@@ -800,7 +798,7 @@ auto gse::gui::system::save(system_state& s) -> void {
 	gui::save(s.menus, config::resource_path / s.file_path);
 }
 
-auto gse::gui::system::start(system_state& s, const input::state& input_state, const std::string& name, const std::function<void()>& contents) -> void {
+auto gse::gui::system::start(const system_state& s, const input::state& input_state, const std::string& name, const std::function<void()>& contents) -> void {
 	if (!s.fstate.active) {
 		return;
 	}
@@ -865,7 +863,7 @@ auto gse::gui::system::start(system_state& s, const input::state& input_state, c
 	end_menu(s);
 }
 
-auto gse::gui::system::text(system_state& s, const std::string& text) -> void {
+auto gse::gui::system::text(const system_state& s, const std::string& text) -> void {
 	if (!s.context) {
 		return;
 	}
@@ -873,7 +871,7 @@ auto gse::gui::system::text(system_state& s, const std::string& text) -> void {
 	draw::text(*s.context, "", text);
 }
 
-auto gse::gui::system::button(system_state& s, const std::string& text) -> bool {
+auto gse::gui::system::button(const system_state& s, const std::string& text) -> bool {
 	if (!s.context) {
 		return false;
 	}
@@ -881,7 +879,7 @@ auto gse::gui::system::button(system_state& s, const std::string& text) -> bool 
 	return draw::button(*s.context, text, s.hot_widget_id, s.active_widget_id);
 }
 
-auto gse::gui::system::input(system_state& s, const std::string& name, std::string& buffer) -> void {
+auto gse::gui::system::input(const system_state& s, const std::string& name, std::string& buffer) -> void {
 	if (!s.context) {
 		return;
 	}
@@ -890,7 +888,7 @@ auto gse::gui::system::input(system_state& s, const std::string& name, std::stri
 }
 
 template <gse::is_arithmetic T>
-auto gse::gui::system::slider(system_state& s, const std::string& name, T& value, T min, T max) -> void {
+auto gse::gui::system::slider(const system_state& s, const std::string& name, T& value, T min, T max) -> void {
 	if (!s.context) {
 		return;
 	}
@@ -899,7 +897,7 @@ auto gse::gui::system::slider(system_state& s, const std::string& name, T& value
 }
 
 template <gse::is_quantity T, auto Unit>
-auto gse::gui::system::slider(system_state& s, const std::string& name, T& value, T min, T max) -> void {
+auto gse::gui::system::slider(const system_state& s, const std::string& name, T& value, T min, T max) -> void {
 	if (!s.context) {
 		return;
 	}
@@ -908,7 +906,7 @@ auto gse::gui::system::slider(system_state& s, const std::string& name, T& value
 }
 
 template <typename T, int N>
-auto gse::gui::system::slider(system_state& s, const std::string& name, unitless::vec_t<T, N>& vec, unitless::vec_t<T, N> min, unitless::vec_t<T, N> max) -> void {
+auto gse::gui::system::slider(const system_state& s, const std::string& name, unitless::vec_t<T, N>& vec, unitless::vec_t<T, N> min, unitless::vec_t<T, N> max) -> void {
 	if (!s.context) {
 		return;
 	}
@@ -917,7 +915,7 @@ auto gse::gui::system::slider(system_state& s, const std::string& name, unitless
 }
 
 template <typename T, int N, auto Unit>
-auto gse::gui::system::slider(system_state& s, const std::string& name, vec_t<T, N>& vec, vec_t<T, N> min, vec_t<T, N> max) -> void {
+auto gse::gui::system::slider(const system_state& s, const std::string& name, vec_t<T, N>& vec, vec_t<T, N> min, vec_t<T, N> max) -> void {
 	if (!s.context) {
 		return;
 	}
@@ -926,7 +924,7 @@ auto gse::gui::system::slider(system_state& s, const std::string& name, vec_t<T,
 }
 
 template <gse::is_arithmetic T>
-auto gse::gui::system::value(system_state& s, const std::string& name, T value) -> void {
+auto gse::gui::system::value(const system_state& s, const std::string& name, T value) -> void {
 	if (!s.context) {
 		return;
 	}
@@ -935,7 +933,7 @@ auto gse::gui::system::value(system_state& s, const std::string& name, T value) 
 }
 
 template <gse::is_quantity T, auto Unit>
-auto gse::gui::system::value(system_state& s, const std::string& name, T value) -> void {
+auto gse::gui::system::value(const system_state& s, const std::string& name, T value) -> void {
 	if (!s.context) {
 		return;
 	}
@@ -944,7 +942,7 @@ auto gse::gui::system::value(system_state& s, const std::string& name, T value) 
 }
 
 template <typename T, int N>
-auto gse::gui::system::vec(system_state& s, const std::string& name, unitless::vec_t<T, N> vec) -> void {
+auto gse::gui::system::vec(const system_state& s, const std::string& name, unitless::vec_t<T, N> vec) -> void {
 	if (!s.context) {
 		return;
 	}
@@ -953,7 +951,7 @@ auto gse::gui::system::vec(system_state& s, const std::string& name, unitless::v
 }
 
 template <typename T, int N, auto Unit>
-auto gse::gui::system::vec(system_state& s, const std::string& name, vec_t<T, N> vec) -> void {
+auto gse::gui::system::vec(const system_state& s, const std::string& name, vec_t<T, N> vec) -> void {
 	if (!s.context) {
 		return;
 	}
@@ -962,7 +960,7 @@ auto gse::gui::system::vec(system_state& s, const std::string& name, vec_t<T, N>
 }
 
 template <typename T>
-auto gse::gui::system::tree(system_state& s, std::span<const T> roots, const draw::tree_ops<T>& fns, draw::tree_options opt, draw::tree_selection* sel) -> bool {
+auto gse::gui::system::tree(const system_state& s, std::span<const T> roots, const draw::tree_ops<T>& fns, draw::tree_options opt, draw::tree_selection* sel) -> bool {
 	if (!s.context) {
 		return false;
 	}
@@ -970,7 +968,7 @@ auto gse::gui::system::tree(system_state& s, std::span<const T> roots, const dra
 	return draw::tree(*s.context, roots, fns, opt, sel, s.active_widget_id);
 }
 
-auto gse::gui::system::selectable(system_state& s, const std::string& text, const bool selected) -> bool {
+auto gse::gui::system::selectable(const system_state& s, const std::string& text, const bool selected) -> bool {
 	if (!s.context) {
 		return false;
 	}
@@ -978,7 +976,7 @@ auto gse::gui::system::selectable(system_state& s, const std::string& text, cons
 	return draw::selectable(*s.context, text, selected, s.hot_widget_id, s.active_widget_id);
 }
 
-auto gse::gui::system::profiler(system_state& s) -> void {
+auto gse::gui::system::profiler(const system_state& s) -> void {
 	trace::thread_pause pause;
 
 	const std::span<const trace::node> roots = trace::view().roots;
@@ -1146,7 +1144,7 @@ auto gse::gui::system::profiler(system_state& s) -> void {
 	trace::set_finalize_paused(tree(s, roots, ops, options, &selection));
 }
 
-auto gse::gui::begin_menu(system_state& s, const std::string& name) -> bool {
+auto gse::gui::begin_menu(const system_state& s, const std::string& name) -> bool {
 	for (menu& m : s.menus.items()) {
 		if (const auto it = std::ranges::find(m.tab_contents, name); it != m.tab_contents.end()) {
 			s.current_menu = &m;
@@ -1189,7 +1187,7 @@ auto gse::gui::begin_menu(system_state& s, const std::string& name) -> bool {
 	return false;
 }
 
-auto gse::gui::end_menu(system_state& s) -> void {
+auto gse::gui::end_menu(const system_state& s) -> void {
 	s.current_scope.reset();
 	s.current_menu = nullptr;
 }
@@ -1237,7 +1235,7 @@ auto gse::gui::reload_font(system_state& s) -> void {
 	}
 }
 
-auto gse::gui::draw_menu_chrome(system_state& s, const input::state& input_state, menu& current_menu) -> void {
+auto gse::gui::draw_menu_chrome(const system_state& s, const input::state& input_state, menu& current_menu) -> void {
 	const style& sty = s.fstate.sty;
 
 	const ui_rect display_rect = calculate_display_rect(s, current_menu);
@@ -1282,7 +1280,7 @@ auto gse::gui::draw_menu_chrome(system_state& s, const input::state& input_state
 	}
 }
 
-auto gse::gui::draw_tab_bar(system_state& s, const input::state& input_state, menu& current_menu, const ui_rect& title_bar_rect) -> void {
+auto gse::gui::draw_tab_bar(const system_state& s, const input::state& input_state, menu& current_menu, const ui_rect& title_bar_rect) -> void {
 	const style& sty = s.fstate.sty;
 	const unitless::vec2 mouse_pos = input_state.mouse_position();
 	const bool mouse_clicked = input_state.mouse_button_pressed(mouse_button::button_1);
@@ -1408,7 +1406,7 @@ auto gse::gui::draw_tab_bar(system_state& s, const input::state& input_state, me
 	}
 }
 
-auto gse::gui::handle_idle_state(system_state& s, const input::state& input_state, unitless::vec2 mouse_position, const bool mouse_held, const style& style) -> gui::state {
+auto gse::gui::handle_idle_state(const system_state& s, const input::state& input_state, unitless::vec2 mouse_position, const bool mouse_held, const style& style) -> gui::state {
 	struct interaction_candidate {
 		std::variant<states::resizing, states::dragging, states::resizing_divider, states::pending_drag> future_state;
 		cursor::style cursor;
@@ -1667,7 +1665,7 @@ auto gse::gui::handle_idle_state(system_state& s, const input::state& input_stat
 	return states::idle{};
 }
 
-auto gse::gui::handle_dragging_state(system_state& s, const states::dragging& current, const window& window, const unitless::vec2 mouse_position, const bool mouse_held) -> gui::state {
+auto gse::gui::handle_dragging_state(const system_state& s, const states::dragging& current, const window& window, const unitless::vec2 mouse_position, const bool mouse_held) -> gui::state {
 	menu* m = s.menus.try_get(current.menu_id);
 	if (!m) {
 		set_style(cursor::style::arrow);
@@ -1789,7 +1787,7 @@ auto gse::gui::handle_dragging_state(system_state& s, const states::dragging& cu
 	return current;
 }
 
-auto gse::gui::handle_resizing_state(system_state& s, const states::resizing& current, const unitless::vec2 mouse_position, const bool mouse_held, const style& style) -> gui::state {
+auto gse::gui::handle_resizing_state(const system_state& s, const states::resizing& current, const unitless::vec2 mouse_position, const bool mouse_held, const style& style) -> gui::state {
 	if (!mouse_held) {
 		s.active_dock_space.reset();
 		set_style(cursor::style::arrow);
@@ -2006,7 +2004,7 @@ auto gse::gui::handle_resizing_state(system_state& s, const states::resizing& cu
 	return current;
 }
 
-auto gse::gui::handle_resizing_divider_state(system_state& s, const states::resizing_divider& current, const unitless::vec2 mouse_position, const bool mouse_held, const style& style) -> gui::state {
+auto gse::gui::handle_resizing_divider_state(const system_state& s, const states::resizing_divider& current, const unitless::vec2 mouse_position, const bool mouse_held, const style& style) -> gui::state {
 	menu* parent = s.menus.try_get(current.parent_id);
 	menu* child = s.menus.try_get(current.child_id);
 
@@ -2122,7 +2120,7 @@ auto gse::gui::handle_resizing_divider_state(system_state& s, const states::resi
 	return current;
 }
 
-auto gse::gui::handle_pending_drag_state(system_state& s, const states::pending_drag& current, const unitless::vec2 mouse_position, const bool mouse_held) -> gui::state {
+auto gse::gui::handle_pending_drag_state(const system_state& s, const states::pending_drag& current, const unitless::vec2 mouse_position, const bool mouse_held) -> gui::state {
 	if (!mouse_held) {
 		return states::idle{};
 	}

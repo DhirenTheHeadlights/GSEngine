@@ -63,17 +63,17 @@ export namespace gse::renderer {
 		}
 
 		template <typename Resource, typename... Args>
-		auto queue(const std::string& name, Args&&... args) -> resource::handle<Resource> {
+		auto queue(const std::string& name, Args&&... args) const -> resource::handle<Resource> {
 			return ctx->queue<Resource>(name, std::forward<Args>(args)...);
 		}
 
 		template <typename Resource>
-		auto instantly_load(const id& resource_id) -> resource::handle<Resource> {
+		auto instantly_load(const id& resource_id) const -> resource::handle<Resource> {
 			return ctx->instantly_load<Resource>(resource_id);
 		}
 
 		template <typename Resource>
-		auto add(Resource&& resource) -> void {
+		auto add(Resource&& resource) const -> void {
 			ctx->add<Resource>(std::forward<Resource>(resource));
 		}
 

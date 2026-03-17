@@ -22,7 +22,10 @@ export namespace gse {
     };
 
     template <typename State>
-    auto state_of() -> State&;
+    auto state_of() -> const State&;
+
+    template <typename State>
+    auto try_state_of() -> const State*;
 
     template <typename State>
     auto has_state() -> bool;
@@ -31,6 +34,12 @@ export namespace gse {
     auto channel_add(
         T&& request
     ) -> void;
+
+    template <typename State, typename F>
+    auto defer(
+        F&& fn
+    ) -> void;
+
 }
 
 namespace gse {
@@ -49,8 +58,13 @@ export namespace gse {
 }
 
 template <typename State>
-auto gse::state_of() -> State& {
+auto gse::state_of() -> const State& {
     return engine_instance->state_of<State>();
+}
+
+template <typename State>
+auto gse::try_state_of() -> const State* {
+	return engine_instance->try_state_of<State>();
 }
 
 template <typename State>
@@ -61,6 +75,11 @@ auto gse::has_state() -> bool {
 template <typename T>
 auto gse::channel_add(T&& request) -> void {
     engine_instance->channel<std::decay_t<T>>().push(std::forward<T>(request));
+}
+
+template <typename State, typename F>
+auto gse::defer(F&& fn) -> void {
+    engine_instance->defer<State>(std::forward<F>(fn));
 }
 
 template <typename... Hooks>

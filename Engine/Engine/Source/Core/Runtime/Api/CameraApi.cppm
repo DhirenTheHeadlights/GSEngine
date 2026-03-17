@@ -38,37 +38,37 @@ export namespace gse {
 		return state_of<camera::state>().orientation();
 	}
 
-	// Returns the camera's yaw angle in radians (rotation around Y axis)
-	auto camera_yaw() -> float {
+	auto camera_yaw() -> angle {
 		const quat q = camera_orientation();
-		// Extract yaw from quaternion (Y-up coordinate system)
-		return std::atan2(2.f * (q.s() * q.y() + q.x() * q.z()),
-		                  1.f - 2.f * (q.y() * q.y() + q.z() * q.z()));
+		return radians(std::atan2(2.f * (q.s() * q.y() + q.x() * q.z()), 1.f - 2.f * (q.y() * q.y() + q.z() * q.z())));
 	}
 
-	// Rotate a direction vector by a yaw angle (radians) around Y axis
-	auto direction_from_yaw(const unitless::vec3& direction, float yaw) -> unitless::vec3 {
-		const float cos_yaw = std::cos(yaw);
-		const float sin_yaw = std::sin(yaw);
+	auto direction_from_angle(
+		const unitless::vec3& direction, 
+		const angle yaw
+	) -> unitless::vec3 {
+		const float r = yaw.as<radians>();
+		const float c = std::cos(r);
+		const float s = std::sin(r);
 		return unitless::vec3(
-			direction.x() * cos_yaw + direction.z() * sin_yaw,
+			direction.x() * c + direction.z() * s,
 			direction.y(),
-			-direction.x() * sin_yaw + direction.z() * cos_yaw
+			-direction.x() * s + direction.z() * c
 		);
 	}
 
 	auto camera_direction_relative_to_origin(
 		const unitless::vec3& direction,
-		id entity_id
+		const id entity_id
 	) -> unitless::vec3 {
 		if (has_state<camera::state>()) {
 			return state_of<camera::state>().direction_relative_to_origin(direction);
 		}
 		if (const auto entity_yaw = actions::entity_camera_yaw(entity_id)) {
-			return direction_from_yaw(direction, *entity_yaw);
+			return direction_from_angle(direction, *entity_yaw);
 		}
 		if (const auto context_yaw = actions::context_camera_yaw()) {
-			return direction_from_yaw(direction, *context_yaw);
+			return direction_from_angle(direction, *context_yaw);
 		}
 		return direction;
 	}
@@ -83,9 +83,8 @@ export namespace gse {
 	auto set_camera_viewport(
 		const unitless::vec2& viewport
 	) -> void {
-		if (!has_state<camera::state>()) {
-			return;
-		}
-		state_of<camera::state>().viewport = viewport;
+		channel_add(camera::viewport_update{ 
+			.size = viewport
+		});
 	}
 }

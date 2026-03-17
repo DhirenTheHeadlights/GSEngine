@@ -33,10 +33,6 @@ export namespace gse {
 
 		template <typename State>
 		auto state(
-		) -> State&;
-
-		template <typename State>
-		auto state(
 		) const -> const State&;
 
 		template <typename State>
@@ -78,11 +74,25 @@ export namespace gse {
 
 		auto registry_access_mut(
 		) -> registry_access&;
+
+		auto push_deferred(
+			std::move_only_function<void()> fn
+		) -> void;
+
+		template <typename State, typename F>
+		auto defer(
+			F&& fn
+		) -> void;
+
 	private:
+		auto drain_deferred(
+		) -> void;
 		std::vector<std::unique_ptr<system_node_base>> m_nodes;
 		std::unordered_map<std::type_index, system_node_base*> m_state_index;
 		std::unordered_map<std::type_index, std::unique_ptr<channel_base>> m_channels;
 		mutable std::mutex m_channels_mutex;
+		std::vector<std::move_only_function<void()>> m_deferred;
+		std::mutex m_deferred_mutex;
 		registry* m_registry = nullptr;
 		registry_access m_registry_access{};
 
@@ -117,13 +127,6 @@ auto gse::scheduler::add_system(registry& reg, Args&&... args) -> State& {
 	m_nodes.push_back(std::move(ptr));
 
 	return raw->state();
-}
-
-template <typename State>
-auto gse::scheduler::state() -> State& {
-	const auto it = m_state_index.find(std::type_index(typeid(State)));
-	assert(it != m_state_index.end(), std::source_location::current(), "state not found");
-	return *static_cast<State*>(it->second->state_ptr());
 }
 
 template <typename State>
@@ -198,7 +201,32 @@ auto gse::scheduler::initialize() -> void {
 	}
 }
 
+auto gse::scheduler::push_deferred(std::move_only_function<void()> fn) -> void {
+	std::lock_guard lock(m_deferred_mutex);
+	m_deferred.push_back(std::move(fn));
+}
+
+auto gse::scheduler::drain_deferred() -> void {
+	std::vector<std::move_only_function<void()>> batch;
+	{
+		std::lock_guard lock(m_deferred_mutex);
+		batch.swap(m_deferred);
+	}
+	for (auto& fn : batch) {
+		fn();
+	}
+}
+
+template <typename State, typename F>
+auto gse::scheduler::defer(F&& fn) -> void {
+	push_deferred([this, f = std::forward<F>(fn)]() mutable {
+		auto* ptr = system_ptr(std::type_index(typeid(State)));
+		if (ptr) f(*static_cast<State*>(ptr));
+	});
+}
+
 auto gse::scheduler::update() -> void {
+	drain_deferred();
 	auto writer = make_channel_writer();
 	work_queue work;
 
