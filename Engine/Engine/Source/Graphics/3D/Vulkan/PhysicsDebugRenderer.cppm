@@ -335,6 +335,8 @@ auto gse::renderer::physics_debug::build_contact_debug_for_collider(const physic
 		const auto n = collision_normal;
 
 		constexpr length cross_size = meters(0.05f);
+		constexpr unitless::vec3 cross_color{ 1.f, 1.f, 1.f };
+		constexpr unitless::vec3 normal_color{ 0.f, 0.7f, 1.f };
 
 		const vec3<length> px1 = p + vec3<length>{ cross_size, 0.0f, 0.0f };
 		const vec3<length> px2 = p - vec3<length>{ cross_size, 0.0f, 0.0f };
@@ -349,13 +351,10 @@ auto gse::renderer::physics_debug::build_contact_debug_for_collider(const physic
 		add_line(py1, py2, satisfaction_color, out_vertices);
 		add_line(pz1, pz2, satisfaction_color, out_vertices);
 
-		const length normal_len = std::min(penetration, meters(0.5f));
+		constexpr length min_normal_len = meters(0.15f);
+		const length normal_len = std::max(std::min(penetration, meters(0.5f)), min_normal_len);
 		const vec3<length> normal_end = p + n * normal_len;
-		add_line(p, normal_end, satisfaction_color, out_vertices);
-
-		constexpr unitless::vec3 penetration_color{ 1.0f, 1.0f, 0.0f };
-		const vec3<length> projected = p - n * penetration;
-		add_line(p, projected, penetration_color, out_vertices);
+		add_line(p, normal_end, normal_color, out_vertices);
 	}
 }
 
