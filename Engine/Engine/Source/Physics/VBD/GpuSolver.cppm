@@ -2,6 +2,7 @@ export module gse.physics:vbd_gpu_solver;
 
 import std;
 
+import gse.assert;
 import gse.utility;
 import gse.log;
 
@@ -112,9 +113,7 @@ export namespace gse::vbd {
 		) -> void;
 
 		auto dispatch_compute(
-			vk::CommandBuffer command,
-			vulkan::config& config,
-			std::uint32_t frame_index
+			vulkan::config& config
 		) -> void;
 
 		auto compute_initialized(
@@ -148,11 +147,9 @@ export namespace gse::vbd {
 		) const -> std::uint32_t;
 
 		auto commit_upload(
-			std::uint32_t frame_index
 		) -> void;
 
 		auto stage_readback(
-			std::uint32_t frame_index
 		) -> void;
 
 		auto readback(
@@ -167,83 +164,21 @@ export namespace gse::vbd {
 		) const -> bool;
 
 		auto ready_to_dispatch(
-			std::uint32_t frame_index
 		) const -> bool;
 
 		auto mark_dispatched(
-			std::uint32_t frame_index
 		) -> void;
 
-		auto body_buffer(
-			this auto&& self,
-			std::uint32_t fi
-		) -> auto&;
-
-		auto contact_buffer(
-			this auto&& self,
-			std::uint32_t fi
-		) -> auto&;
-
-		auto motor_buffer(
-			this auto&& self,
-			std::uint32_t fi
-		) -> auto&;
-
-		auto color_buffer(
-			this auto&& self,
-			std::uint32_t fi
-		) -> auto&;
-
-		auto body_contact_map_buffer(
-			this auto&& self,
-			std::uint32_t fi
-		) -> auto&;
-
-		auto solve_state_buffer(
-			this auto&& self,
-			std::uint32_t fi
-		) -> auto&;
-
-		auto readback_buffer(
-			this auto&& self,
-			std::uint32_t fi
-		) -> auto&;
-
-		auto body_buffer_resources(
-			this auto&& self
-		) -> auto&;
-
-		auto contact_buffer_resources(
-			this auto&& self
-		) -> auto&;
-
-		auto motor_buffer_resources(
-			this auto&& self
-		) -> auto&;
-
-		auto color_buffer_resources(
-			this auto&& self
-		) -> auto&;
-
-		auto body_contact_map_buffer_resources(
-			this auto&& self
-		) -> auto&;
-
-		auto solve_state_buffer_resources(
-			this auto&& self
-		) -> auto&;
-
-		auto collision_pair_buffer_resources(
-			this auto&& self
-		) -> auto&;
-
-		auto collision_state_buffer_resources(
-			this auto&& self
-		) -> auto&;
-
-		auto warm_start_buffer_resources(
-			this auto&& self
-		) -> auto&;
+		auto body_buffer(this auto&& self) -> auto& { return self.m_body_buffer; }
+		auto contact_buffer(this auto&& self) -> auto& { return self.m_contact_buffer; }
+		auto motor_buffer(this auto&& self) -> auto& { return self.m_motor_buffer; }
+		auto color_buffer(this auto&& self) -> auto& { return self.m_color_buffer; }
+		auto body_contact_map_buffer(this auto&& self) -> auto& { return self.m_body_contact_map_buffer; }
+		auto solve_state_buffer(this auto&& self) -> auto& { return self.m_solve_state_buffer; }
+		auto readback_buffer(this auto&& self) -> auto& { return self.m_readback_buffer; }
+		auto collision_pair_buffer(this auto&& self) -> auto& { return self.m_collision_pair_buffer; }
+		auto collision_state_buffer(this auto&& self) -> auto& { return self.m_collision_state_buffer; }
+		auto warm_start_buffer(this auto&& self) -> auto& { return self.m_warm_start_buffer; }
 
 		auto body_count(
 		) const -> std::uint32_t;
@@ -294,8 +229,12 @@ export namespace gse::vbd {
 			vk::raii::Pipeline collision_build_adjacency_pipeline = nullptr;
 
 			vk::raii::PipelineLayout pipeline_layout = nullptr;
-			per_frame_resource<vk::raii::DescriptorSet> descriptor_sets;
+			vk::raii::DescriptorSet descriptor_set = nullptr;
 			vk::raii::QueryPool query_pool = nullptr;
+			vk::raii::CommandPool command_pool = nullptr;
+			vk::raii::CommandBuffer command_buffer = nullptr;
+			vk::raii::Fence fence = nullptr;
+			vk::raii::Queue* queue = nullptr;
 			float timestamp_period = 0.f;
 			float solve_ms = 0.f;
 			bool descriptors_initialized = false;
@@ -304,7 +243,8 @@ export namespace gse::vbd {
 
 		bool m_buffers_created = false;
 		bool m_pending_dispatch = false;
-		std::array<bool, 2> m_readback_pending{};
+		bool m_readback_pending = false;
+		bool m_first_submit = true;
 		std::uint32_t m_frame_count = 0;
 
 		std::uint32_t m_body_count = 0;
@@ -322,22 +262,22 @@ export namespace gse::vbd {
 
 		std::uint32_t m_warm_start_count = 0;
 
-		per_frame_resource<vulkan::buffer_resource> m_body_buffer;
-		per_frame_resource<vulkan::buffer_resource> m_contact_buffer;
-		per_frame_resource<vulkan::buffer_resource> m_motor_buffer;
-		per_frame_resource<vulkan::buffer_resource> m_color_buffer;
-		per_frame_resource<vulkan::buffer_resource> m_body_contact_map_buffer;
-		per_frame_resource<vulkan::buffer_resource> m_solve_state_buffer;
-		per_frame_resource<vulkan::buffer_resource> m_readback_buffer;
-		per_frame_resource<vulkan::buffer_resource> m_collision_pair_buffer;
-		per_frame_resource<vulkan::buffer_resource> m_collision_state_buffer;
-		per_frame_resource<vulkan::buffer_resource> m_warm_start_buffer;
+		vulkan::buffer_resource m_body_buffer;
+		vulkan::buffer_resource m_contact_buffer;
+		vulkan::buffer_resource m_motor_buffer;
+		vulkan::buffer_resource m_color_buffer;
+		vulkan::buffer_resource m_body_contact_map_buffer;
+		vulkan::buffer_resource m_solve_state_buffer;
+		vulkan::buffer_resource m_readback_buffer;
+		vulkan::buffer_resource m_collision_pair_buffer;
+		vulkan::buffer_resource m_collision_state_buffer;
+		vulkan::buffer_resource m_warm_start_buffer;
 
 		struct readback_frame_info {
 			std::uint32_t body_count = 0;
 			std::uint32_t contact_count = 0;
 		};
-		std::array<readback_frame_info, 2> m_readback_info{};
+		readback_frame_info m_readback_info{};
 
 		std::vector<std::byte> m_upload_body_data;
 		std::vector<std::byte> m_upload_motor_data;
@@ -366,90 +306,70 @@ auto gse::vbd::gpu_solver::create_buffers(vulkan::allocator& alloc) -> void {
 	constexpr auto usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc;
 	constexpr auto readback_usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst;
 
-	for (auto& buf : m_body_buffer) {
-		buf = alloc.create_buffer({
-			.size = max_bodies * m_body_layout.stride,
-			.usage = usage | vk::BufferUsageFlagBits::eTransferDst
-		});
-	}
+	m_body_buffer = alloc.create_buffer({
+		.size = max_bodies * m_body_layout.stride,
+		.usage = usage | vk::BufferUsageFlagBits::eTransferDst
+	});
 
-	for (auto& buf : m_contact_buffer) {
-		buf = alloc.create_buffer({
-			.size = max_contacts * m_contact_layout.stride,
-			.usage = usage
-		});
-	}
+	m_contact_buffer = alloc.create_buffer({
+		.size = max_contacts * m_contact_layout.stride,
+		.usage = usage
+	});
 
-	for (auto& buf : m_motor_buffer) {
-		buf = alloc.create_buffer({
-			.size = max_motors * m_motor_layout.stride,
-			.usage = vk::BufferUsageFlagBits::eStorageBuffer
-		});
-	}
+	m_motor_buffer = alloc.create_buffer({
+		.size = max_motors * m_motor_layout.stride,
+		.usage = vk::BufferUsageFlagBits::eStorageBuffer
+	});
 
 	const vk::DeviceSize color_buffer_size = max_colors * sizeof(std::uint32_t) * 2 + max_bodies * sizeof(std::uint32_t);
-	for (auto& buf : m_color_buffer) {
-		buf = alloc.create_buffer({
-			.size = color_buffer_size,
-			.usage = vk::BufferUsageFlagBits::eStorageBuffer
-		});
-	}
+	m_color_buffer = alloc.create_buffer({
+		.size = color_buffer_size,
+		.usage = vk::BufferUsageFlagBits::eStorageBuffer
+	});
 
 	const vk::DeviceSize map_buffer_size =
 		max_bodies * sizeof(std::uint32_t) * 2 +
 		max_contacts * 2 * sizeof(std::uint32_t) +
 		max_bodies * sizeof(std::uint32_t);
 
-	for (auto& buf : m_body_contact_map_buffer) {
-		buf = alloc.create_buffer({
-			.size = map_buffer_size,
-			.usage = vk::BufferUsageFlagBits::eStorageBuffer
-		});
-	}
+	m_body_contact_map_buffer = alloc.create_buffer({
+		.size = map_buffer_size,
+		.usage = vk::BufferUsageFlagBits::eStorageBuffer
+	});
 
-	for (auto& buf : m_solve_state_buffer) {
-		buf = alloc.create_buffer({
-			.size = max_bodies * solve_state_float4s_per_body * sizeof(float) * 4,
-			.usage = vk::BufferUsageFlagBits::eStorageBuffer
-		});
-	}
+	m_solve_state_buffer = alloc.create_buffer({
+		.size = max_bodies * solve_state_float4s_per_body * sizeof(float) * 4,
+		.usage = vk::BufferUsageFlagBits::eStorageBuffer
+	});
 
 	const vk::DeviceSize collision_pair_size = sizeof(std::uint32_t) + max_collision_pairs * 2 * sizeof(std::uint32_t);
-	for (auto& buf : m_collision_pair_buffer) {
-		buf = alloc.create_buffer({
-			.size = collision_pair_size,
-			.usage = vk::BufferUsageFlagBits::eStorageBuffer
-		});
-	}
+	m_collision_pair_buffer = alloc.create_buffer({
+		.size = collision_pair_size,
+		.usage = vk::BufferUsageFlagBits::eStorageBuffer
+	});
 
 	const vk::DeviceSize collision_state_size = collision_state_uints * sizeof(std::uint32_t);
-	for (auto& buf : m_collision_state_buffer) {
-		buf = alloc.create_buffer({
-			.size = collision_state_size,
-			.usage = usage
-		});
-	}
+	m_collision_state_buffer = alloc.create_buffer({
+		.size = collision_state_size,
+		.usage = usage
+	});
 
 	const vk::DeviceSize warm_start_size = max_contacts * m_warm_start_layout.stride;
-	for (auto& buf : m_warm_start_buffer) {
-		buf = alloc.create_buffer({
-			.size = std::max(warm_start_size, static_cast<vk::DeviceSize>(16)),
-			.usage = vk::BufferUsageFlagBits::eStorageBuffer
-		});
-	}
+	m_warm_start_buffer = alloc.create_buffer({
+		.size = std::max(warm_start_size, static_cast<vk::DeviceSize>(16)),
+		.usage = vk::BufferUsageFlagBits::eStorageBuffer
+	});
 
 	const vk::DeviceSize readback_size =
 		max_bodies * m_body_layout.stride +
 		max_contacts * m_contact_layout.stride +
 		collision_state_uints * sizeof(std::uint32_t);
 
-	for (auto& rb : m_readback_buffer) {
-		rb = alloc.create_buffer({
-			.size = readback_size,
-			.usage = readback_usage
-		});
-		std::memset(rb.allocation.mapped(), 0, rb.allocation.size());
-	}
+	m_readback_buffer = alloc.create_buffer({
+		.size = readback_size,
+		.usage = readback_usage
+	});
+	std::memset(m_readback_buffer.allocation.mapped(), 0, m_readback_buffer.allocation.size());
 
 	m_buffers_created = true;
 }
@@ -660,7 +580,7 @@ auto gse::vbd::gpu_solver::total_substeps() const -> std::uint32_t {
 	return 1 * m_steps;
 }
 
-auto gse::vbd::gpu_solver::commit_upload(const std::uint32_t frame_index) -> void {
+auto gse::vbd::gpu_solver::commit_upload() -> void {
 	if (!m_pending_dispatch || m_body_count == 0) return;
 
 	if (m_latest_gpu_body_count > 0 && !m_latest_gpu_body_data.empty() && !m_upload_body_data.empty()) {
@@ -720,36 +640,36 @@ auto gse::vbd::gpu_solver::commit_upload(const std::uint32_t frame_index) -> voi
 		float pos[3] = {}, vel[3] = {};
 		gse::memcpy(pos, m_upload_body_data.data() + m_body_layout.offsets.at("position"));
 		gse::memcpy(vel, m_upload_body_data.data() + m_body_layout.offsets.at("velocity"));
-		log::println("[COMMIT] fi={} body0_pos=({:.3f},{:.3f},{:.3f}) body0_vel=({:.3f},{:.3f},{:.3f}) frame={} warm_starts={}",
-			frame_index, pos[0], pos[1], pos[2], vel[0], vel[1], vel[2], m_frame_count, m_warm_start_count);
+		log::println("[COMMIT] body0_pos=({:.3f},{:.3f},{:.3f}) body0_vel=({:.3f},{:.3f},{:.3f}) frame={} warm_starts={}",
+			pos[0], pos[1], pos[2], vel[0], vel[1], vel[2], m_frame_count, m_warm_start_count);
 	}
 
-	gse::memcpy(m_body_buffer[frame_index].allocation.mapped(), m_upload_body_data);
-	gse::memcpy(m_motor_buffer[frame_index].allocation.mapped(), m_upload_motor_data);
-	gse::memcpy(m_color_buffer[frame_index].allocation.mapped(), m_upload_color_data);
-	gse::memcpy(m_body_contact_map_buffer[frame_index].allocation.mapped(), m_upload_body_contact_map);
-	gse::memcpy(m_collision_state_buffer[frame_index].allocation.mapped(), m_upload_collision_state);
+	gse::memcpy(m_body_buffer.allocation.mapped(), m_upload_body_data);
+	gse::memcpy(m_motor_buffer.allocation.mapped(), m_upload_motor_data);
+	gse::memcpy(m_color_buffer.allocation.mapped(), m_upload_color_data);
+	gse::memcpy(m_body_contact_map_buffer.allocation.mapped(), m_upload_body_contact_map);
+	gse::memcpy(m_collision_state_buffer.allocation.mapped(), m_upload_collision_state);
 
 	if (!m_upload_warm_start_data.empty()) {
 		gse::memcpy(
-			m_warm_start_buffer[frame_index].allocation.mapped(),
+			m_warm_start_buffer.allocation.mapped(),
 			m_upload_warm_start_data
 		);
 	}
 }
 
-auto gse::vbd::gpu_solver::stage_readback(const std::uint32_t frame_index) -> void {
-	if (!m_readback_pending[frame_index]) return;
+auto gse::vbd::gpu_solver::stage_readback() -> void {
+	if (!m_readback_pending) return;
 
-	auto& info = m_readback_info[frame_index];
+	auto& info = m_readback_info;
 
 	if (info.body_count == 0) {
 		info = {};
-		m_readback_pending[frame_index] = false;
+		m_readback_pending = false;
 		return;
 	}
 
-	const auto* rb = m_readback_buffer[frame_index].allocation.mapped();
+	const auto* rb = m_readback_buffer.allocation.mapped();
 
 	m_staged_body_count = info.body_count;
 	m_staged_body_data.assign(rb, rb + info.body_count * m_body_layout.stride);
@@ -801,7 +721,7 @@ auto gse::vbd::gpu_solver::stage_readback(const std::uint32_t frame_index) -> vo
 	info = {};
 
 	m_staged_valid = true;
-	m_readback_pending[frame_index] = false;
+	m_readback_pending = false;
 
 	m_latest_gpu_body_data = m_staged_body_data;
 	m_latest_gpu_body_count = m_staged_body_count;
@@ -818,8 +738,8 @@ auto gse::vbd::gpu_solver::stage_readback(const std::uint32_t frame_index) -> vo
 		if (!m_upload_body_data.empty()) {
 			gse::memcpy(cpu_pos, m_upload_body_data.data() + bo2.at("position"));
 		}
-		log::println("[STAGE_RB] fi={} gpu0=({:.3f},{:.3f},{:.3f}) vel0=({:.3f},{:.3f},{:.3f}) cpu0_after_patch=({:.3f},{:.3f},{:.3f}) contacts={}",
-			frame_index, gpu_pos[0], gpu_pos[1], gpu_pos[2], gpu_vel[0], gpu_vel[1], gpu_vel[2], cpu_pos[0], cpu_pos[1], cpu_pos[2], m_staged_contact_count);
+		log::println("[STAGE_RB] gpu0=({:.3f},{:.3f},{:.3f}) vel0=({:.3f},{:.3f},{:.3f}) cpu0_after_patch=({:.3f},{:.3f},{:.3f}) contacts={}",
+			gpu_pos[0], gpu_pos[1], gpu_pos[2], gpu_vel[0], gpu_vel[1], gpu_vel[2], cpu_pos[0], cpu_pos[1], cpu_pos[2], m_staged_contact_count);
 	}
 
 	if (debug.log_diagnostics) {
@@ -991,79 +911,15 @@ auto gse::vbd::gpu_solver::pending_dispatch() const -> bool {
 	return m_pending_dispatch;
 }
 
-auto gse::vbd::gpu_solver::ready_to_dispatch(const std::uint32_t frame_index) const -> bool {
-	return !m_readback_pending[frame_index];
+auto gse::vbd::gpu_solver::ready_to_dispatch() const -> bool {
+	return !m_readback_pending;
 }
 
-auto gse::vbd::gpu_solver::mark_dispatched(const std::uint32_t frame_index) -> void {
-	m_readback_info[frame_index] = { m_body_count, m_contact_count };
+auto gse::vbd::gpu_solver::mark_dispatched() -> void {
+	m_readback_info = { m_body_count, m_contact_count };
 	m_pending_dispatch = false;
-	m_readback_pending[frame_index] = true;
+	m_readback_pending = true;
 	m_frame_count++;
-}
-
-auto gse::vbd::gpu_solver::body_buffer(this auto&& self, std::uint32_t fi) -> auto& {
-	return self.m_body_buffer[fi];
-}
-
-auto gse::vbd::gpu_solver::contact_buffer(this auto&& self, std::uint32_t fi) -> auto& {
-	return self.m_contact_buffer[fi];
-}
-
-auto gse::vbd::gpu_solver::motor_buffer(this auto&& self, std::uint32_t fi) -> auto& {
-	return self.m_motor_buffer[fi];
-}
-
-auto gse::vbd::gpu_solver::color_buffer(this auto&& self, std::uint32_t fi) -> auto& {
-	return self.m_color_buffer[fi];
-}
-
-auto gse::vbd::gpu_solver::body_contact_map_buffer(this auto&& self, std::uint32_t fi) -> auto& {
-	return self.m_body_contact_map_buffer[fi];
-}
-
-auto gse::vbd::gpu_solver::solve_state_buffer(this auto&& self, std::uint32_t fi) -> auto& {
-	return self.m_solve_state_buffer[fi];
-}
-
-auto gse::vbd::gpu_solver::readback_buffer(this auto&& self, std::uint32_t fi) -> auto& {
-	return self.m_readback_buffer[fi];
-}
-
-auto gse::vbd::gpu_solver::body_buffer_resources(this auto&& self) -> auto& {
-	return self.m_body_buffer.resources();
-}
-
-auto gse::vbd::gpu_solver::contact_buffer_resources(this auto&& self) -> auto& {
-	return self.m_contact_buffer.resources();
-}
-
-auto gse::vbd::gpu_solver::motor_buffer_resources(this auto&& self) -> auto& {
-	return self.m_motor_buffer.resources();
-}
-
-auto gse::vbd::gpu_solver::color_buffer_resources(this auto&& self) -> auto& {
-	return self.m_color_buffer.resources();
-}
-
-auto gse::vbd::gpu_solver::body_contact_map_buffer_resources(this auto&& self) -> auto& {
-	return self.m_body_contact_map_buffer.resources();
-}
-
-auto gse::vbd::gpu_solver::solve_state_buffer_resources(this auto&& self) -> auto& {
-	return self.m_solve_state_buffer.resources();
-}
-
-auto gse::vbd::gpu_solver::collision_pair_buffer_resources(this auto&& self) -> auto& {
-	return self.m_collision_pair_buffer.resources();
-}
-
-auto gse::vbd::gpu_solver::collision_state_buffer_resources(this auto&& self) -> auto& {
-	return self.m_collision_state_buffer.resources();
-}
-
-auto gse::vbd::gpu_solver::warm_start_buffer_resources(this auto&& self) -> auto& {
-	return self.m_warm_start_buffer.resources();
 }
 
 auto gse::vbd::gpu_solver::body_count() const -> std::uint32_t {
@@ -1169,145 +1025,169 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 
 	create_buffers(config.allocator());
 
+	m_compute.command_pool = config.device_config().device.createCommandPool({
+		.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+		.queueFamilyIndex = config.queue_config().compute_family_index
+	});
+
+	m_compute.command_buffer = std::move(config.device_config().device.allocateCommandBuffers({
+		.commandPool = *m_compute.command_pool,
+		.level = vk::CommandBufferLevel::ePrimary,
+		.commandBufferCount = 1
+	}).front());
+
+	m_compute.fence = config.device_config().device.createFence({
+		.flags = vk::FenceCreateFlagBits::eSignaled
+	});
+
+	m_compute.queue = &config.queue_config().compute;
+
 	m_compute.initialized = true;
 }
 
-auto gse::vbd::gpu_solver::dispatch_compute(const vk::CommandBuffer command, vulkan::config& config, const std::uint32_t frame_index) -> void {
+auto gse::vbd::gpu_solver::dispatch_compute(vulkan::config& config) -> void {
+	const vk::Device device = *config.device_config().device;
+
 	if (!m_compute.descriptors_initialized) {
-		for (std::size_t i = 0; i < per_frame_resource<vk::raii::DescriptorSet>::frames_in_flight; ++i) {
-			m_compute.descriptor_sets.resources()[i] = m_compute.predict->descriptor_set(
-				config.device_config().device,
-				config.descriptor_config().pool,
-				shader::set::binding_type::persistent
-			);
+		m_compute.descriptor_set = m_compute.predict->descriptor_set(
+			config.device_config().device,
+			config.descriptor_config().pool,
+			shader::set::binding_type::persistent
+		);
 
-			const vk::DescriptorBufferInfo body_info{
-				.buffer = m_body_buffer.resources()[i].buffer,
-				.offset = 0,
-				.range = vk::WholeSize
-			};
-			const vk::DescriptorBufferInfo contact_info{
-				.buffer = m_contact_buffer.resources()[i].buffer,
-				.offset = 0,
-				.range = vk::WholeSize
-			};
-			const vk::DescriptorBufferInfo motor_info{
-				.buffer = m_motor_buffer.resources()[i].buffer,
-				.offset = 0,
-				.range = vk::WholeSize
-			};
-			const vk::DescriptorBufferInfo color_info{
-				.buffer = m_color_buffer.resources()[i].buffer,
-				.offset = 0,
-				.range = vk::WholeSize
-			};
-			const vk::DescriptorBufferInfo map_info{
-				.buffer = m_body_contact_map_buffer.resources()[i].buffer,
-				.offset = 0,
-				.range = vk::WholeSize
-			};
-			const vk::DescriptorBufferInfo solve_info{
-				.buffer = m_solve_state_buffer.resources()[i].buffer,
-				.offset = 0,
-				.range = vk::WholeSize
-			};
-			const vk::DescriptorBufferInfo collision_pair_info{
-				.buffer = m_collision_pair_buffer.resources()[i].buffer,
-				.offset = 0,
-				.range = vk::WholeSize
-			};
-			const vk::DescriptorBufferInfo collision_state_info{
-				.buffer = m_collision_state_buffer.resources()[i].buffer,
-				.offset = 0,
-				.range = vk::WholeSize
-			};
-			const vk::DescriptorBufferInfo warm_start_info{
-				.buffer = m_warm_start_buffer.resources()[i].buffer,
-				.offset = 0,
-				.range = vk::WholeSize
-			};
+		const vk::DescriptorBufferInfo body_info{
+			.buffer = m_body_buffer.buffer,
+			.offset = 0,
+			.range = vk::WholeSize
+		};
+		const vk::DescriptorBufferInfo contact_info{
+			.buffer = m_contact_buffer.buffer,
+			.offset = 0,
+			.range = vk::WholeSize
+		};
+		const vk::DescriptorBufferInfo motor_info{
+			.buffer = m_motor_buffer.buffer,
+			.offset = 0,
+			.range = vk::WholeSize
+		};
+		const vk::DescriptorBufferInfo color_info{
+			.buffer = m_color_buffer.buffer,
+			.offset = 0,
+			.range = vk::WholeSize
+		};
+		const vk::DescriptorBufferInfo map_info{
+			.buffer = m_body_contact_map_buffer.buffer,
+			.offset = 0,
+			.range = vk::WholeSize
+		};
+		const vk::DescriptorBufferInfo solve_info{
+			.buffer = m_solve_state_buffer.buffer,
+			.offset = 0,
+			.range = vk::WholeSize
+		};
+		const vk::DescriptorBufferInfo collision_pair_info{
+			.buffer = m_collision_pair_buffer.buffer,
+			.offset = 0,
+			.range = vk::WholeSize
+		};
+		const vk::DescriptorBufferInfo collision_state_info{
+			.buffer = m_collision_state_buffer.buffer,
+			.offset = 0,
+			.range = vk::WholeSize
+		};
+		const vk::DescriptorBufferInfo warm_start_info{
+			.buffer = m_warm_start_buffer.buffer,
+			.offset = 0,
+			.range = vk::WholeSize
+		};
 
-			auto& ds = m_compute.descriptor_sets.resources()[i];
-			std::array writes{
-				vk::WriteDescriptorSet{
-					.dstSet = *ds,
-					.dstBinding = 0,
-					.descriptorCount = 1,
-					.descriptorType = vk::DescriptorType::eStorageBuffer,
-					.pBufferInfo = &body_info
-				},
-				vk::WriteDescriptorSet{
-					.dstSet = *ds,
-					.dstBinding = 1,
-					.descriptorCount = 1,
-					.descriptorType = vk::DescriptorType::eStorageBuffer,
-					.pBufferInfo = &contact_info
-				},
-				vk::WriteDescriptorSet{
-					.dstSet = *ds,
-					.dstBinding = 2,
-					.descriptorCount = 1,
-					.descriptorType = vk::DescriptorType::eStorageBuffer,
-					.pBufferInfo = &motor_info
-				},
-				vk::WriteDescriptorSet{
-					.dstSet = *ds,
-					.dstBinding = 3,
-					.descriptorCount = 1,
-					.descriptorType = vk::DescriptorType::eStorageBuffer,
-					.pBufferInfo = &color_info
-				},
-				vk::WriteDescriptorSet{
-					.dstSet = *ds,
-					.dstBinding = 4,
-					.descriptorCount = 1,
-					.descriptorType = vk::DescriptorType::eStorageBuffer,
-					.pBufferInfo = &map_info
-				},
-				vk::WriteDescriptorSet{
-					.dstSet = *ds,
-					.dstBinding = 5,
-					.descriptorCount = 1,
-					.descriptorType = vk::DescriptorType::eStorageBuffer,
-					.pBufferInfo = &solve_info
-				},
-				vk::WriteDescriptorSet{
-					.dstSet = *ds,
-					.dstBinding = 6,
-					.descriptorCount = 1,
-					.descriptorType = vk::DescriptorType::eStorageBuffer,
-					.pBufferInfo = &collision_pair_info
-				},
-				vk::WriteDescriptorSet{
-					.dstSet = *ds,
-					.dstBinding = 7,
-					.descriptorCount = 1,
-					.descriptorType = vk::DescriptorType::eStorageBuffer,
-					.pBufferInfo = &collision_state_info
-				},
-				vk::WriteDescriptorSet{
-					.dstSet = *ds,
-					.dstBinding = 8,
-					.descriptorCount = 1,
-					.descriptorType = vk::DescriptorType::eStorageBuffer,
-					.pBufferInfo = &warm_start_info
-				}
-			};
+		auto& ds = m_compute.descriptor_set;
+		std::array writes{
+			vk::WriteDescriptorSet{
+				.dstSet = *ds,
+				.dstBinding = 0,
+				.descriptorCount = 1,
+				.descriptorType = vk::DescriptorType::eStorageBuffer,
+				.pBufferInfo = &body_info
+			},
+			vk::WriteDescriptorSet{
+				.dstSet = *ds,
+				.dstBinding = 1,
+				.descriptorCount = 1,
+				.descriptorType = vk::DescriptorType::eStorageBuffer,
+				.pBufferInfo = &contact_info
+			},
+			vk::WriteDescriptorSet{
+				.dstSet = *ds,
+				.dstBinding = 2,
+				.descriptorCount = 1,
+				.descriptorType = vk::DescriptorType::eStorageBuffer,
+				.pBufferInfo = &motor_info
+			},
+			vk::WriteDescriptorSet{
+				.dstSet = *ds,
+				.dstBinding = 3,
+				.descriptorCount = 1,
+				.descriptorType = vk::DescriptorType::eStorageBuffer,
+				.pBufferInfo = &color_info
+			},
+			vk::WriteDescriptorSet{
+				.dstSet = *ds,
+				.dstBinding = 4,
+				.descriptorCount = 1,
+				.descriptorType = vk::DescriptorType::eStorageBuffer,
+				.pBufferInfo = &map_info
+			},
+			vk::WriteDescriptorSet{
+				.dstSet = *ds,
+				.dstBinding = 5,
+				.descriptorCount = 1,
+				.descriptorType = vk::DescriptorType::eStorageBuffer,
+				.pBufferInfo = &solve_info
+			},
+			vk::WriteDescriptorSet{
+				.dstSet = *ds,
+				.dstBinding = 6,
+				.descriptorCount = 1,
+				.descriptorType = vk::DescriptorType::eStorageBuffer,
+				.pBufferInfo = &collision_pair_info
+			},
+			vk::WriteDescriptorSet{
+				.dstSet = *ds,
+				.dstBinding = 7,
+				.descriptorCount = 1,
+				.descriptorType = vk::DescriptorType::eStorageBuffer,
+				.pBufferInfo = &collision_state_info
+			},
+			vk::WriteDescriptorSet{
+				.dstSet = *ds,
+				.dstBinding = 8,
+				.descriptorCount = 1,
+				.descriptorType = vk::DescriptorType::eStorageBuffer,
+				.pBufferInfo = &warm_start_info
+			}
+		};
 
-			config.device_config().device.updateDescriptorSets(writes, nullptr);
-		}
+		assert(
+			config.device_config().device.updateDescriptorSets(writes, nullptr) == vk::Result::eSuccess,
+			std::source_location::current(),
+			"Failed to update descriptor sets!"
+		);
 
 		m_compute.descriptors_initialized = true;
 	}
 
 	if (m_body_count == 0) return;
 
+	if (!m_first_submit) {
+		device.waitForFences(*m_compute.fence, vk::True, std::numeric_limits<std::uint64_t>::max());
+	}
+	device.resetFences(*m_compute.fence);
+
 	if (m_frame_count >= 2) {
-		const std::uint32_t prev_query_base = (frame_index % 2) * 4;
 		std::array<std::uint64_t, 2> timestamps{};
-		const vk::Device device = *config.device_config().device;
 		auto result = device.getQueryPoolResults(
-			*m_compute.query_pool, prev_query_base, 2,
+			*m_compute.query_pool, 0, 2,
 			sizeof(timestamps), timestamps.data(), sizeof(std::uint64_t),
 			vk::QueryResultFlagBits::e64
 		);
@@ -1316,7 +1196,12 @@ auto gse::vbd::gpu_solver::dispatch_compute(const vk::CommandBuffer command, vul
 		}
 	}
 
-	const std::uint32_t query_base = (frame_index % 2) * 4;
+	m_compute.command_buffer.reset({});
+	m_compute.command_buffer.begin({});
+
+	const vk::CommandBuffer command = *m_compute.command_buffer;
+
+	constexpr std::uint32_t query_base = 0;
 	command.resetQueryPool(*m_compute.query_pool, query_base, 4);
 
 	constexpr vk::MemoryBarrier2 host_to_compute{
@@ -1334,7 +1219,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(const vk::CommandBuffer command, vul
 	constexpr vk::MemoryBarrier2 init_barriers[] = { host_to_compute, prev_transfer_to_transfer };
 	command.pipelineBarrier2({ .memoryBarrierCount = 2, .pMemoryBarriers = init_barriers });
 
-	const vk::DescriptorSet sets[] = { *m_compute.descriptor_sets[frame_index % 2] };
+	const vk::DescriptorSet sets[] = { *m_compute.descriptor_set };
 
 	constexpr vk::MemoryBarrier2 compute_barrier{
 		.srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
@@ -1473,8 +1358,8 @@ auto gse::vbd::gpu_solver::dispatch_compute(const vk::CommandBuffer command, vul
 
 	const vk::DeviceSize body_copy_size = m_body_count * m_body_layout.stride;
 	command.copyBuffer(
-		m_body_buffer[frame_index].buffer, 
-		m_readback_buffer[frame_index].buffer,
+		m_body_buffer.buffer,
+		m_readback_buffer.buffer,
 		vk::BufferCopy{
 			.srcOffset = 0,
 			.dstOffset = 0,
@@ -1486,8 +1371,8 @@ auto gse::vbd::gpu_solver::dispatch_compute(const vk::CommandBuffer command, vul
 	const vk::DeviceSize contact_copy_size = max_contacts * m_contact_layout.stride;
 
 	command.copyBuffer(
-		m_contact_buffer[frame_index].buffer, 
-		m_readback_buffer[frame_index].buffer,
+		m_contact_buffer.buffer,
+		m_readback_buffer.buffer,
 		vk::BufferCopy{
 			.srcOffset = 0,
 			.dstOffset = contact_dst_base,
@@ -1497,8 +1382,8 @@ auto gse::vbd::gpu_solver::dispatch_compute(const vk::CommandBuffer command, vul
 
 	const vk::DeviceSize count_dst = contact_dst_base + contact_copy_size;
 	command.copyBuffer(
-		m_collision_state_buffer[frame_index].buffer,
-		m_readback_buffer[frame_index].buffer,
+		m_collision_state_buffer.buffer,
+		m_readback_buffer.buffer,
 		vk::BufferCopy{
 			.srcOffset = 0,
 			.dstOffset = count_dst,
@@ -1514,7 +1399,17 @@ auto gse::vbd::gpu_solver::dispatch_compute(const vk::CommandBuffer command, vul
 	};
 	command.pipelineBarrier2({ .memoryBarrierCount = 1, .pMemoryBarriers = &compute_to_host });
 
-	mark_dispatched(frame_index);
+	m_compute.command_buffer.end();
+
+	const vk::CommandBuffer submit_cmd = *m_compute.command_buffer;
+	const vk::SubmitInfo submit_info{
+		.commandBufferCount = 1,
+		.pCommandBuffers = &submit_cmd
+	};
+	m_compute.queue->submit(submit_info, *m_compute.fence);
+
+	mark_dispatched();
+	m_first_submit = false;
 }
 
 auto gse::vbd::gpu_solver::compute_initialized() const -> bool {

@@ -78,7 +78,7 @@ export namespace gse::physics {
 			};
 
 			std::optional<snapshot> pending;
-			per_frame_resource<std::optional<snapshot>> in_flight;
+			std::optional<snapshot> in_flight;
 			std::deque<snapshot> completed;
 		} gpu_compare;
 #else
@@ -91,7 +91,7 @@ export namespace gse::physics {
 			};
 
 			std::optional<snapshot> pending;
-			per_frame_resource<std::optional<snapshot>> in_flight;
+			std::optional<snapshot> in_flight;
 			std::deque<snapshot> completed;
 		} gpu_readback;
 #endif
@@ -1517,18 +1517,15 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 
 auto gse::physics::system::render(render_phase&, const state& s) -> void {
 	if (!s.gpu_ctx || !s.use_gpu_solver) return;
+	if (!s.gpu_solver.compute_initialized()) return;
 
 	auto& config = s.gpu_ctx->config();
-	if (!config.frame_in_progress()) return;
 
-	const auto command = config.frame_context().command_buffer;
-	constexpr std::uint32_t physics_fi = 0;
-
-	s.gpu_solver.stage_readback(physics_fi);
+	s.gpu_solver.stage_readback();
 	const bool had_readback = s.gpu_solver.has_readback_data();
 	if (had_readback) {
 #if GSE_GPU_COMPARE
-		auto& in_flight = s.gpu_compare.in_flight[physics_fi];
+		auto& in_flight = s.gpu_compare.in_flight;
 		if (in_flight.has_value()) {
 			auto completed = std::move(*in_flight);
 			in_flight.reset();
@@ -1542,11 +1539,9 @@ auto gse::physics::system::render(render_phase&, const state& s) -> void {
 			std::vector<vbd::body_state> discard_bodies;
 			std::vector<vbd::contact_readback_entry> discard_contacts;
 			s.gpu_solver.readback(discard_bodies, discard_contacts);
-			log::println("[GPU Compare] readback staged without an in-flight snapshot for frame={}", frame_index);
-			log::flush();
 		}
 #else
-		auto& in_flight = s.gpu_readback.in_flight[physics_fi];
+		auto& in_flight = s.gpu_readback.in_flight;
 		if (in_flight.has_value()) {
 			auto completed = std::move(*in_flight);
 			in_flight.reset();
@@ -1562,29 +1557,26 @@ auto gse::physics::system::render(render_phase&, const state& s) -> void {
 #endif
 	}
 
-	log::println("[RENDER] fi={} had_readback={} pending={} ready={} completed_queue={}",
-		physics_fi, had_readback, s.gpu_solver.pending_dispatch(), s.gpu_solver.ready_to_dispatch(physics_fi), s.gpu_readback.completed.size());
-
-	if (s.gpu_solver.pending_dispatch() && s.gpu_solver.ready_to_dispatch(physics_fi)) {
+	if (s.gpu_solver.pending_dispatch() && s.gpu_solver.ready_to_dispatch()) {
 #if GSE_GPU_COMPARE
 		if (s.gpu_compare.pending.has_value()) {
-			s.gpu_compare.in_flight[physics_fi] = std::move(s.gpu_compare.pending);
+			s.gpu_compare.in_flight = std::move(s.gpu_compare.pending);
 			s.gpu_compare.pending.reset();
 		}
 		else {
-			s.gpu_compare.in_flight[physics_fi].reset();
+			s.gpu_compare.in_flight.reset();
 		}
 #else
 		if (s.gpu_readback.pending.has_value()) {
-			s.gpu_readback.in_flight[physics_fi] = std::move(s.gpu_readback.pending);
+			s.gpu_readback.in_flight = std::move(s.gpu_readback.pending);
 			s.gpu_readback.pending.reset();
 		}
 		else {
-			s.gpu_readback.in_flight[physics_fi].reset();
+			s.gpu_readback.in_flight.reset();
 		}
 #endif
 
-		s.gpu_solver.commit_upload(physics_fi);
-		s.gpu_solver.dispatch_compute(command, config, physics_fi);
+		s.gpu_solver.commit_upload();
+		s.gpu_solver.dispatch_compute(config);
 	}
 }
