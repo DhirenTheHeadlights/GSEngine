@@ -356,6 +356,9 @@ export namespace gse::vbd {
 		std::uint32_t m_staged_contact_count = 0;
 		std::uint32_t m_staged_color_count = max_colors;
 		bool m_staged_valid = false;
+
+		std::vector<std::byte> m_latest_gpu_body_data;
+		std::uint32_t m_latest_gpu_body_count = 0;
 	};
 }
 
@@ -660,6 +663,67 @@ auto gse::vbd::gpu_solver::total_substeps() const -> std::uint32_t {
 auto gse::vbd::gpu_solver::commit_upload(const std::uint32_t frame_index) -> void {
 	if (!m_pending_dispatch || m_body_count == 0) return;
 
+	if (m_latest_gpu_body_count > 0 && !m_latest_gpu_body_data.empty() && !m_upload_body_data.empty()) {
+		const auto& bo = m_body_layout.offsets;
+		auto is_finite_vec3 = [](const float* v) {
+			return std::isfinite(v[0]) && std::isfinite(v[1]) && std::isfinite(v[2]);
+		};
+
+		const std::uint32_t patch_count = std::min(m_latest_gpu_body_count, m_body_count);
+		for (std::uint32_t i = 0; i < patch_count; ++i) {
+			const auto* src = m_latest_gpu_body_data.data() + i * m_body_layout.stride;
+			auto* dst = m_upload_body_data.data() + i * m_body_layout.stride;
+
+			if (i < m_upload_authoritative_bodies.size() && m_upload_authoritative_bodies[i] != 0) {
+				continue;
+			}
+
+			std::uint32_t cpu_flags = 0;
+			gse::memcpy(cpu_flags, dst + bo.at("flags"));
+			if (cpu_flags & flag_locked) continue;
+
+			float orient[4];
+			gse::memcpy(orient, src + bo.at("orientation"));
+			const float q_len_sq = orient[0] * orient[0] + orient[1] * orient[1] + orient[2] * orient[2] + orient[3] * orient[3];
+			if (q_len_sq < 0.5f) continue;
+
+			float pos[3];
+			gse::memcpy(pos, src + bo.at("position"));
+			if (!is_finite_vec3(pos)) continue;
+
+			float vel[3];
+			gse::memcpy(vel, src + bo.at("velocity"));
+			if (!is_finite_vec3(vel)) continue;
+
+			gse::memcpy(dst + bo.at("position"), pos);
+			gse::memcpy(dst + bo.at("velocity"), vel);
+			gse::memcpy(dst + bo.at("orientation"), orient);
+			gse::memcpy(dst + bo.at("angular_velocity"), src + bo.at("angular_velocity"), sizeof(float) * 3);
+			gse::memcpy(dst + bo.at("sleep_counter"), src + bo.at("sleep_counter"), sizeof(std::uint32_t));
+
+			float he[3];
+			gse::memcpy(he, dst + bo.at("half_extents"));
+			const quat q(orient[0], orient[1], orient[2], orient[3]);
+			const auto rot = mat3_cast(q);
+			float aabb_he[3];
+			for (int a = 0; a < 3; ++a) {
+				aabb_he[a] = std::abs(rot[0][a]) * he[0] + std::abs(rot[1][a]) * he[1] + std::abs(rot[2][a]) * he[2];
+			}
+			float amin[3] = { pos[0] - aabb_he[0], pos[1] - aabb_he[1], pos[2] - aabb_he[2] };
+			float amax[3] = { pos[0] + aabb_he[0], pos[1] + aabb_he[1], pos[2] + aabb_he[2] };
+			gse::memcpy(dst + bo.at("aabb_min"), amin);
+			gse::memcpy(dst + bo.at("aabb_max"), amax);
+		}
+	}
+
+	if (!m_upload_body_data.empty() && m_body_count > 0) {
+		float pos[3] = {}, vel[3] = {};
+		gse::memcpy(pos, m_upload_body_data.data() + m_body_layout.offsets.at("position"));
+		gse::memcpy(vel, m_upload_body_data.data() + m_body_layout.offsets.at("velocity"));
+		log::println("[COMMIT] fi={} body0_pos=({:.3f},{:.3f},{:.3f}) body0_vel=({:.3f},{:.3f},{:.3f}) frame={} warm_starts={}",
+			frame_index, pos[0], pos[1], pos[2], vel[0], vel[1], vel[2], m_frame_count, m_warm_start_count);
+	}
+
 	gse::memcpy(m_body_buffer[frame_index].allocation.mapped(), m_upload_body_data);
 	gse::memcpy(m_motor_buffer[frame_index].allocation.mapped(), m_upload_motor_data);
 	gse::memcpy(m_color_buffer[frame_index].allocation.mapped(), m_upload_color_data);
@@ -739,58 +803,23 @@ auto gse::vbd::gpu_solver::stage_readback(const std::uint32_t frame_index) -> vo
 	m_staged_valid = true;
 	m_readback_pending[frame_index] = false;
 
+	m_latest_gpu_body_data = m_staged_body_data;
+	m_latest_gpu_body_count = m_staged_body_count;
+
 	const auto& bo = m_body_layout.offsets;
 
-	if (!m_upload_body_data.empty()) {
-		auto is_finite_vec3 = [](const float* v) {
-			return std::isfinite(v[0]) && std::isfinite(v[1]) && std::isfinite(v[2]);
-		};
-
-		const std::uint32_t patch_count = std::min(m_staged_body_count, m_body_count);
-		for (std::uint32_t i = 0; i < patch_count; ++i) {
-			const auto* src = m_staged_body_data.data() + i * m_body_layout.stride;
-			auto* dst = m_upload_body_data.data() + i * m_body_layout.stride;
-
-			if (i < m_upload_authoritative_bodies.size() && m_upload_authoritative_bodies[i] != 0) {
-				continue;
-			}
-
-			std::uint32_t cpu_flags = 0;
-			gse::memcpy(cpu_flags, dst + bo.at("flags"));
-			if (cpu_flags & flag_locked) continue;
-
-			float orient[4];
-			gse::memcpy(orient, src + bo.at("orientation"));
-			const float q_len_sq = orient[0] * orient[0] + orient[1] * orient[1] + orient[2] * orient[2] + orient[3] * orient[3];
-			if (q_len_sq < 0.5f) continue;
-
-			float pos[3];
-			gse::memcpy(pos, src + bo.at("position"));
-			if (!is_finite_vec3(pos)) continue;
-
-			float vel[3];
-			gse::memcpy(vel, src + bo.at("velocity"));
-			if (!is_finite_vec3(vel)) continue;
-
-			gse::memcpy(dst + bo.at("position"), pos);
-			gse::memcpy(dst + bo.at("velocity"), vel);
-			gse::memcpy(dst + bo.at("orientation"), orient);
-			gse::memcpy(dst + bo.at("angular_velocity"), src + bo.at("angular_velocity"), sizeof(float) * 3);
-			gse::memcpy(dst + bo.at("sleep_counter"), src + bo.at("sleep_counter"), sizeof(std::uint32_t));
-
-			float he[3];
-			gse::memcpy(he, dst + bo.at("half_extents"));
-			const quat q(orient[0], orient[1], orient[2], orient[3]);
-			const auto rot = mat3_cast(q);
-			float aabb_he[3];
-			for (int a = 0; a < 3; ++a) {
-				aabb_he[a] = std::abs(rot[0][a]) * he[0] + std::abs(rot[1][a]) * he[1] + std::abs(rot[2][a]) * he[2];
-			}
-			float amin[3] = { pos[0] - aabb_he[0], pos[1] - aabb_he[1], pos[2] - aabb_he[2] };
-			float amax[3] = { pos[0] + aabb_he[0], pos[1] + aabb_he[1], pos[2] + aabb_he[2] };
-			gse::memcpy(dst + bo.at("aabb_min"), amin);
-			gse::memcpy(dst + bo.at("aabb_max"), amax);
+	{
+		const auto& bo2 = m_body_layout.offsets;
+		float gpu_pos[3] = {}, gpu_vel[3] = {}, cpu_pos[3] = {};
+		if (m_staged_body_count > 0) {
+			gse::memcpy(gpu_pos, m_staged_body_data.data() + bo2.at("position"));
+			gse::memcpy(gpu_vel, m_staged_body_data.data() + bo2.at("velocity"));
 		}
+		if (!m_upload_body_data.empty()) {
+			gse::memcpy(cpu_pos, m_upload_body_data.data() + bo2.at("position"));
+		}
+		log::println("[STAGE_RB] fi={} gpu0=({:.3f},{:.3f},{:.3f}) vel0=({:.3f},{:.3f},{:.3f}) cpu0_after_patch=({:.3f},{:.3f},{:.3f}) contacts={}",
+			frame_index, gpu_pos[0], gpu_pos[1], gpu_pos[2], gpu_vel[0], gpu_vel[1], gpu_vel[2], cpu_pos[0], cpu_pos[1], cpu_pos[2], m_staged_contact_count);
 	}
 
 	if (debug.log_diagnostics) {

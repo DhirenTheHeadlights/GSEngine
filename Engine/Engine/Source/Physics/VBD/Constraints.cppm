@@ -26,9 +26,9 @@ export namespace gse::vbd {
 		vec3<length> r_a;
 		vec3<length> r_b;
 
-		float C0[3] = {};
+		length C0[3] = {};
 
-		float lambda[3] = {};
+		length lambda[3] = {};
 		float penalty[3] = {};
 
 		float penalty_floor = 1.f;
