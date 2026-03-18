@@ -104,6 +104,15 @@ export namespace gse::vbd {
 	public:
 		gpu_debug_config debug;
 
+		~gpu_solver() {
+			if (m_compute.initialized && m_compute.device && *m_compute.fence) {
+				static_cast<void>(m_compute.device->waitForFences(
+					*m_compute.fence, vk::True,
+					std::numeric_limits<std::uint64_t>::max()
+				));
+			}
+		}
+
 		auto create_buffers(
 			vulkan::allocator& alloc
 		) -> void;
@@ -235,6 +244,7 @@ export namespace gse::vbd {
 			vk::raii::CommandBuffer command_buffer = nullptr;
 			vk::raii::Fence fence = nullptr;
 			vk::raii::Queue* queue = nullptr;
+			const vk::raii::Device* device = nullptr;
 			float timestamp_period = 0.f;
 			float solve_ms = 0.f;
 			bool descriptors_initialized = false;
@@ -1041,6 +1051,7 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 	});
 
 	m_compute.queue = &config.queue_config().compute;
+	m_compute.device = &config.device_config().device;
 
 	m_compute.initialized = true;
 }
@@ -1168,11 +1179,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(vulkan::config& config) -> void {
 			}
 		};
 
-		assert(
-			config.device_config().device.updateDescriptorSets(writes, nullptr) == vk::Result::eSuccess,
-			std::source_location::current(),
-			"Failed to update descriptor sets!"
-		);
+		config.device_config().device.updateDescriptorSets(writes, nullptr);
 
 		m_compute.descriptors_initialized = true;
 	}
@@ -1180,7 +1187,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(vulkan::config& config) -> void {
 	if (m_body_count == 0) return;
 
 	if (!m_first_submit) {
-		device.waitForFences(*m_compute.fence, vk::True, std::numeric_limits<std::uint64_t>::max());
+		static_cast<void>(device.waitForFences(*m_compute.fence, vk::True, std::numeric_limits<std::uint64_t>::max()));
 	}
 	device.resetFences(*m_compute.fence);
 
