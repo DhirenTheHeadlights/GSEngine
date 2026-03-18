@@ -2,6 +2,11 @@ export module gse.utility:file_watcher;
 
 import std;
 
+import gse.math;
+
+import :interval_timer;
+import :system_clock;
+
 export namespace gse {
     class file_watcher {
     public:
@@ -42,6 +47,7 @@ export namespace gse {
         std::vector<watch_entry> m_watches;
         std::unordered_map<std::filesystem::path, std::filesystem::file_time_type> m_directory_files;
         mutable std::mutex m_mutex;
+        interval_timer<> m_poll_timer{ milliseconds(500.f) };
 
         static auto matches_extensions(
             const std::filesystem::path& path,
@@ -118,6 +124,11 @@ auto gse::file_watcher::unwatch(const std::filesystem::path& path) -> void {
 
 auto gse::file_watcher::poll() -> std::size_t {
     std::lock_guard lock(m_mutex);
+
+    if (!m_poll_timer.tick()) {
+        return 0;
+    }
+
     std::size_t changes = 0;
 
     for (auto& [path, last_modified, on_change, is_directory, recursive, extensions] : m_watches) {

@@ -240,9 +240,9 @@ auto gse::scheduler::update() -> void {
 		.work = work
 	};
 
-	for (const auto& n : m_nodes) {
-		n->update(phase);
-	}
+	task::parallel_for(0uz, m_nodes.size(), [&](const std::size_t i) {
+		m_nodes[i]->update(phase);
+	});
 
 	if (work.work().empty()) {
 		return;

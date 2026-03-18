@@ -92,6 +92,14 @@ export namespace gse::gui {
 		system::value<T, Unit>(state_of<system_state>(), name, val);
 	}
 
+	template <auto Unit, is_quantity T>
+	auto value(
+		const std::string& name,
+		unit_display<Unit, T> ud
+	) -> void {
+		system::value(state_of<system_state>(), name, ud);
+	}
+
 	template <typename T, int N>
 	auto vec(
 		const std::string& name,
@@ -106,6 +114,14 @@ export namespace gse::gui {
 		vec_t<T, N> val
 	) -> void {
 		system::vec<T, N, Unit>(state_of<system_state>(), name, val);
+	}
+
+	template <auto Unit, typename T, int N>
+	auto vec(
+		const std::string& name,
+		unit_display<Unit, vec_t<T, N>> ud
+	) -> void {
+		system::vec(state_of<system_state>(), name, ud);
 	}
 
 	template <typename T>

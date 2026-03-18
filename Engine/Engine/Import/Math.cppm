@@ -11,6 +11,7 @@ export import :quant;
 export import :rectangle;
 export import :circle;
 export import :segment;
+export import :unit_display;
 export import :units;
 export import :vector;
 export import :vector_math;

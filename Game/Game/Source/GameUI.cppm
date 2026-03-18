@@ -67,7 +67,7 @@ export namespace gs {
 							if (gpu_solver_active) {
 								gse::gui::value("GPU Contacts", contact_count);
 								gse::gui::value("GPU Motors", motor_count);
-								gse::gui::value("GPU Solve Time", solve_time);
+								gse::gui::value("GPU Solve Time", in<gse::milliseconds>(solve_time));
 							}
 						}
 					);

@@ -251,6 +251,13 @@ export namespace gse::gui {
 			T value
 		) -> void;
 
+		template <auto Unit, is_quantity T>
+		static auto value(
+			const system_state& s,
+			const std::string& name,
+			unit_display<Unit, T> ud
+		) -> void;
+
 		template <typename T, int N>
 		static auto vec(
 			const system_state& s,
@@ -263,6 +270,13 @@ export namespace gse::gui {
 			const system_state& s,
 			const std::string& name,
 			vec_t<T, N> vec
+		) -> void;
+
+		template <auto Unit, typename T, int N>
+		static auto vec(
+			const system_state& s,
+			const std::string& name,
+			unit_display<Unit, vec_t<T, N>> ud
 		) -> void;
 
 		template <typename T>
@@ -941,6 +955,15 @@ auto gse::gui::system::value(const system_state& s, const std::string& name, T v
 	draw::value<T, Unit>(*s.context, name, value);
 }
 
+template <auto Unit, gse::is_quantity T>
+auto gse::gui::system::value(const system_state& s, const std::string& name, unit_display<Unit, T> ud) -> void {
+	if (!s.context) {
+		return;
+	}
+
+	draw::value(*s.context, name, ud);
+}
+
 template <typename T, int N>
 auto gse::gui::system::vec(const system_state& s, const std::string& name, unitless::vec_t<T, N> vec) -> void {
 	if (!s.context) {
@@ -957,6 +980,15 @@ auto gse::gui::system::vec(const system_state& s, const std::string& name, vec_t
 	}
 
 	draw::vec<T, N, Unit>(*s.context, name, vec);
+}
+
+template <auto Unit, typename T, int N>
+auto gse::gui::system::vec(const system_state& s, const std::string& name, unit_display<Unit, vec_t<T, N>> ud) -> void {
+	if (!s.context) {
+		return;
+	}
+
+	draw::vec(*s.context, name, ud);
 }
 
 template <typename T>
