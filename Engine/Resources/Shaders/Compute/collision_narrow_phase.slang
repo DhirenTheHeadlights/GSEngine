@@ -1078,7 +1078,10 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     for (int p = 0; p < contacts.count; p++) {
         uint ci;
         InterlockedAdd(collision_state[0], 1, ci);
-        if (ci >= MAX_CONTACTS) return;
+        if (ci >= MAX_CONTACTS) {
+            InterlockedAdd(collision_state[0], -1, ci);
+            return;
+        }
 
         ContactCandidate candidate = contacts.candidates[p];
         float3 world_anchor_a = candidate.position_on_a;

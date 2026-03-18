@@ -33,6 +33,7 @@ export namespace gs {
 			build_funnel();
 			build_slope_friction_test();
 			build_high_speed_impact_target();
+			build_box_grid();
 
 			build("Player")
 				.with<player>({
@@ -242,6 +243,31 @@ export namespace gs {
 							.size = gse::vec3<gse::length>(gse::meters(1.f)),
 							.mass = gse::kilograms(80.f)
 						});
+				}
+			}
+		}
+
+		auto build_box_grid() const -> void {
+			constexpr int grid_x = 6;
+			constexpr int grid_z = 6;
+			constexpr int layers = 3;
+			constexpr float spacing = 1.1f;
+			constexpr float base_x = 20.f;
+			constexpr float base_z = -10.f;
+
+			for (int layer = 0; layer < layers; ++layer) {
+				for (int ix = 0; ix < grid_x; ++ix) {
+					for (int iz = 0; iz < grid_z; ++iz) {
+						const float x = base_x + static_cast<float>(ix) * spacing;
+						const float y = 0.5f + static_cast<float>(layer) * 1.05f;
+						const float z = base_z + static_cast<float>(iz) * spacing;
+						build(std::format("Grid L{}R{}C{}", layer, ix, iz))
+							.with<gse::box>({
+								.initial_position = gse::vec3<gse::length>(x, y, z),
+								.size = gse::vec3<gse::length>(gse::meters(1.f)),
+								.mass = gse::kilograms(20.f)
+							});
+					}
 				}
 			}
 		}

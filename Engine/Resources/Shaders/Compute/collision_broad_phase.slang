@@ -136,7 +136,10 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
     uint slot;
     InterlockedAdd(collision_pairs[0], 1, slot);
 
-    if (slot >= MAX_COLLISION_PAIRS) return;
+    if (slot >= MAX_COLLISION_PAIRS) {
+        InterlockedAdd(collision_pairs[0], -1, slot);
+        return;
+    }
 
     collision_pairs[1 + slot * 2] = i;
     collision_pairs[1 + slot * 2 + 1] = j;
