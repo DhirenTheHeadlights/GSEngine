@@ -23,8 +23,6 @@ import :vbd_gpu_solver;
 export namespace gse::physics {
 	struct state {
 		time_t<float, seconds> accumulator{};
-		time_t<float, seconds> gpu_interp_accumulator{};
-		time_t<float, seconds> gpu_readback_interval{seconds(1.f / 60.f)};
 		bool update_phys = true;
 		bool use_gpu_solver = false;
 		gpu::context* gpu_ctx = nullptr;
@@ -853,12 +851,6 @@ auto gse::physics::system::update(update_phase& phase, state& s) -> void {
 				else {
 					mc.render_position = lerp(mc.render_position, mc.current_position, blend);
 					mc.render_orientation = slerp(mc.render_orientation, mc.orientation, blend);
-					if (mc.velocity_drive_active) {
-						const auto p = mc.render_position.as<meters>();
-						const auto cur = mc.current_position.as<meters>();
-						log::println("[INTERP] blend={:.3f} cur=({:.3f},{:.3f},{:.3f}) render=({:.3f},{:.3f},{:.3f})",
-							blend, cur.x(), cur.y(), cur.z(), p.x(), p.y(), p.z());
-					}
 				}
 			}
 		});
@@ -898,7 +890,6 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		s.gpu_readback.completed.pop_front();
 #endif
 
-		bool any_body_moved = false;
 		for (std::size_t i = 0; i < completed.entity_ids.size(); ++i) {
 			const auto eid = completed.entity_ids[i];
 			auto* mc = motion.find(eid);
@@ -914,7 +905,6 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 					mc->previous_position = mc->current_position;
 					mc->previous_orientation = mc->orientation;
 					mc->current_position = bs.position;
-					any_body_moved = true;
 				}
 
 				mc->current_velocity = bs.body_velocity;
@@ -941,11 +931,6 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 					};
 				}
 			}
-		}
-
-		if (any_body_moved) {
-			s.gpu_readback_interval = std::max(s.gpu_interp_accumulator, dt);
-			s.gpu_interp_accumulator = {};
 		}
 
 		const auto& cfg = s.vbd_solver.config();
@@ -995,17 +980,6 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 				tangential_gap < cfg.stick_threshold.as<meters>() &&
 				tangential_lambda < friction_bound;
 
-			s.contact_cache.store(body_a, body_b, unpack_feature(c.feature_key), vbd::cached_lambda{
-				.lambda = { meters(c.lambda[0]), meters(c.lambda[1]), meters(c.lambda[2]) },
-				.penalty = { c.penalty[0], c.penalty[1], c.penalty[2] },
-				.normal = c.normal,
-				.tangent_u = c.tangent_u,
-				.tangent_v = c.tangent_v,
-				.local_anchor_a = c.local_anchor_a,
-				.local_anchor_b = c.local_anchor_b,
-				.sticking = sticking,
-				.age = 0
-			});
 		}
 
 		s.gpu_prev.warm_start_contacts.clear();
@@ -1042,7 +1016,6 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		s.gpu_prev.result_bodies = completed.gpu_result_bodies;
 		s.gpu_prev.result_entity_ids = completed.entity_ids;
 	}
-	refresh_airborne_from_collisions(s, motion, collision);
 
 	if (steps <= 0) {
 		return;
@@ -1127,7 +1100,6 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 	for (const auto eid : launched_entities) {
 		if (const auto it = id_to_body_index.find(eid); it != id_to_body_index.end()) {
 			jumped_body_indices.push_back(it->second);
-			s.contact_cache.remove_body(it->second);
 		}
 	}
 	invalidate_warm_start_entries(s.gpu_prev.warm_start_contacts, jumped_body_indices);
@@ -1162,12 +1134,6 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		if (bodies[idx].sleeping() && magnitude(mc.velocity_drive_target) > meters_per_second(.01f)) {
 			bodies[idx].sleep_counter = 0;
 		}
-
-		const auto upload_pos = bodies[idx].position.as<meters>();
-		const auto upload_vel = bodies[idx].body_velocity.as<meters_per_second>();
-		const auto tv = mc.velocity_drive_target.as<meters_per_second>();
-		log::println("[UPLOAD] body={} pos=({:.3f},{:.3f},{:.3f}) vel=({:.3f},{:.3f},{:.3f}) motor_target=({:.3f},{:.3f},{:.3f}) airborne={} steps={}",
-			idx, upload_pos.x(), upload_pos.y(), upload_pos.z(), upload_vel.x(), upload_vel.y(), upload_vel.z(), tv.x(), tv.y(), tv.z(), mc.airborne, steps);
 
 		motors.push_back(vbd::velocity_motor_constraint{
 			.body_index = idx,
@@ -1536,8 +1502,10 @@ auto gse::physics::system::render(render_phase&, const state& s) -> void {
 			s.gpu_compare.completed.push_back(std::move(completed));
 		}
 		else {
-			std::vector<vbd::body_state> discard_bodies;
-			std::vector<vbd::contact_readback_entry> discard_contacts;
+			static thread_local std::vector<vbd::body_state> discard_bodies;
+			static thread_local std::vector<vbd::contact_readback_entry> discard_contacts;
+			discard_bodies.clear();
+			discard_contacts.clear();
 			s.gpu_solver.readback(discard_bodies, discard_contacts);
 		}
 #else
@@ -1550,8 +1518,10 @@ auto gse::physics::system::render(render_phase&, const state& s) -> void {
 			s.gpu_readback.completed.push_back(std::move(completed));
 		}
 		else {
-			std::vector<vbd::body_state> discard_bodies;
-			std::vector<vbd::contact_readback_entry> discard_contacts;
+			static thread_local std::vector<vbd::body_state> discard_bodies;
+			static thread_local std::vector<vbd::contact_readback_entry> discard_contacts;
+			discard_bodies.clear();
+			discard_contacts.clear();
 			s.gpu_solver.readback(discard_bodies, discard_contacts);
 		}
 #endif

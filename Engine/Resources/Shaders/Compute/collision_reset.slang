@@ -110,6 +110,9 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
         collision_state[1] = 0;
         collision_state[2] = 0;
         collision_state[3] = 0;
+        collision_state[4] = 0;
+        collision_state[5] = 0;
+        collision_state[6] = 0;
     }
 
     if (bi < pc.body_count) {
