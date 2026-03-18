@@ -207,7 +207,7 @@ namespace gse::physics {
 		vbd::contact_cache cache;
 		for (const auto& c : warm_start_contacts) {
 			cache.store(c.body_a, c.body_b, unpack_feature(c.feature_key), vbd::cached_lambda{
-				.lambda = { c.lambda[0], c.lambda[1], c.lambda[2] },
+				.lambda = { meters(c.lambda[0]), meters(c.lambda[1]), meters(c.lambda[2]) },
 				.penalty = { c.penalty[0], c.penalty[1], c.penalty[2] },
 				.normal = c.normal,
 				.tangent_u = c.tangent_u,
@@ -346,11 +346,11 @@ namespace gse::physics {
 						vec3<length> local_r_b = to_local_anchor(bs_b.orientation, position_on_b - bs_b.position);
 
 						auto cached = cache.lookup(body_a, body_b, feature);
-						const unitless::vec3 current_d = (position_on_a - position_on_b).as<meters>();
-						const float current_normal_gap = dot(constraint_normal, current_d) + cfg.collision_margin.as<meters>();
+						const vec3<length> current_d = position_on_a - position_on_b;
+						const length current_normal_gap = dot(constraint_normal, current_d) + cfg.collision_margin;
 						const bool reuse_cached_normal =
 							cached &&
-							(cached->lambda[0] < -1e-3f || current_normal_gap < -1e-4f);
+							(cached->lambda[0] < meters(-1e-3f) || current_normal_gap < meters(-1e-4f));
 						const bool reuse_cached_tangent =
 							reuse_cached_normal &&
 							cached.has_value();
@@ -358,28 +358,28 @@ namespace gse::physics {
 							reuse_cached_tangent &&
 							cached->sticking;
 
-						float init_lambda[3] = {};
+						length init_lambda[3] = {};
 						float init_penalty[3] = { penalty_floor, penalty_floor, penalty_floor };
 
 						if (reuse_cached_normal) {
 							init_penalty[0] = std::max(cached->penalty[0], penalty_floor);
 
-							const unitless::vec3 cached_normal_force = cached->normal * cached->lambda[0];
-							init_lambda[0] = std::min(dot(cached_normal_force, constraint_normal), 0.f);
+							const vec3<length> cached_normal_force = cached->normal * cached->lambda[0];
+							init_lambda[0] = std::min(dot(cached_normal_force, constraint_normal), length{});
 						}
 
 						if (reuse_cached_tangent) {
 							init_penalty[1] = std::max(cached->penalty[1], penalty_floor);
 							init_penalty[2] = std::max(cached->penalty[2], penalty_floor);
 
-							const unitless::vec3 cached_tangent_force =
+							const vec3<length> cached_tangent_force =
 								cached->tangent_u * cached->lambda[1] +
 								cached->tangent_v * cached->lambda[2];
 
 							init_lambda[1] = dot(cached_tangent_force, manifold.tangent_u);
 							init_lambda[2] = dot(cached_tangent_force, manifold.tangent_v);
 
-							const float friction_bound = std::abs(init_lambda[0]) * cfg.friction_coefficient;
+							const length friction_bound = abs(init_lambda[0]) * cfg.friction_coefficient;
 							init_lambda[1] = std::clamp(init_lambda[1], -friction_bound, friction_bound);
 							init_lambda[2] = std::clamp(init_lambda[2], -friction_bound, friction_bound);
 						}
@@ -397,7 +397,7 @@ namespace gse::physics {
 							.tangent_v = manifold.tangent_v,
 							.r_a = local_r_a,
 							.r_b = local_r_b,
-							.C0 = { separation.as<meters>(), 0.f, 0.f },
+							.C0 = { separation, {}, {} },
 							.lambda = { init_lambda[0], init_lambda[1], init_lambda[2] },
 							.penalty = { init_penalty[0], init_penalty[1], init_penalty[2] },
 							.penalty_floor = penalty_floor,
@@ -428,8 +428,8 @@ namespace gse::physics {
 						.tangent_v = c.tangent_v,
 						.local_anchor_a = c.r_a,
 						.local_anchor_b = c.r_b,
-						.c0 = { c.C0[0], c.C0[1], c.C0[2] },
-						.lambda = { c.lambda[0], c.lambda[1], c.lambda[2] },
+						.c0 = { c.C0[0].as<meters>(), c.C0[1].as<meters>(), c.C0[2].as<meters>() },
+						.lambda = { c.lambda[0].as<meters>(), c.lambda[1].as<meters>(), c.lambda[2].as<meters>() },
 						.penalty = { c.penalty[0], c.penalty[1], c.penalty[2] },
 						.friction_coeff = c.friction_coeff
 					});
@@ -840,14 +840,10 @@ auto gse::physics::system::update(update_phase& phase, state& s) -> void {
 	const float alpha = s.accumulator / const_update_time;
 
 	if (s.use_gpu_solver) {
-		s.gpu_interp_accumulator += frame_time;
-		phase.schedule([steps, &s, const_update_time](chunk<motion_component> motion, chunk<collision_component> collision) {
+		phase.schedule([steps, frame_time, &s, const_update_time](chunk<motion_component> motion, chunk<collision_component> collision) {
 			update_vbd_gpu(steps, s, motion, collision, const_update_time);
 
-			const float gpu_alpha = std::clamp(
-				s.gpu_interp_accumulator / s.gpu_readback_interval,
-				0.f, 1.f
-			);
+			const float blend = std::min(frame_time / (const_update_time * 2.f), 1.f);
 
 			for (motion_component& mc : motion) {
 				if (mc.position_locked) {
@@ -855,8 +851,14 @@ auto gse::physics::system::update(update_phase& phase, state& s) -> void {
 					mc.render_orientation = mc.orientation;
 				}
 				else {
-					mc.render_position = lerp(mc.previous_position, mc.current_position, gpu_alpha);
-					mc.render_orientation = slerp(mc.previous_orientation, mc.orientation, gpu_alpha);
+					mc.render_position = lerp(mc.render_position, mc.current_position, blend);
+					mc.render_orientation = slerp(mc.render_orientation, mc.orientation, blend);
+					if (mc.velocity_drive_active) {
+						const auto p = mc.render_position.as<meters>();
+						const auto cur = mc.current_position.as<meters>();
+						log::println("[INTERP] blend={:.3f} cur=({:.3f},{:.3f},{:.3f}) render=({:.3f},{:.3f},{:.3f})",
+							blend, cur.x(), cur.y(), cur.z(), p.x(), p.y(), p.z());
+					}
 				}
 			}
 		});
@@ -896,9 +898,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		s.gpu_readback.completed.pop_front();
 #endif
 
-		s.gpu_readback_interval = std::max(s.gpu_interp_accumulator, dt);
-		s.gpu_interp_accumulator = {};
-
+		bool any_body_moved = false;
 		for (std::size_t i = 0; i < completed.entity_ids.size(); ++i) {
 			const auto eid = completed.entity_ids[i];
 			auto* mc = motion.find(eid);
@@ -907,9 +907,16 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 			const auto& bs = completed.gpu_result_bodies[i];
 
 			if (!mc->position_locked) {
-				mc->previous_position = mc->current_position;
-				mc->previous_orientation = mc->orientation;
-				mc->current_position = bs.position;
+				const auto diff = bs.position - mc->current_position;
+				const bool body_moved = magnitude(diff).as<meters>() > 1e-6f;
+
+				if (body_moved) {
+					mc->previous_position = mc->current_position;
+					mc->previous_orientation = mc->orientation;
+					mc->current_position = bs.position;
+					any_body_moved = true;
+				}
+
 				mc->current_velocity = bs.body_velocity;
 				if (mc->update_orientation) {
 					mc->orientation = bs.orientation;
@@ -934,6 +941,11 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 					};
 				}
 			}
+		}
+
+		if (any_body_moved) {
+			s.gpu_readback_interval = std::max(s.gpu_interp_accumulator, dt);
+			s.gpu_interp_accumulator = {};
 		}
 
 		const auto& cfg = s.vbd_solver.config();
@@ -984,7 +996,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 				tangential_lambda < friction_bound;
 
 			s.contact_cache.store(body_a, body_b, unpack_feature(c.feature_key), vbd::cached_lambda{
-				.lambda = { c.lambda[0], c.lambda[1], c.lambda[2] },
+				.lambda = { meters(c.lambda[0]), meters(c.lambda[1]), meters(c.lambda[2]) },
 				.penalty = { c.penalty[0], c.penalty[1], c.penalty[2] },
 				.normal = c.normal,
 				.tangent_u = c.tangent_u,
@@ -1150,6 +1162,12 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		if (bodies[idx].sleeping() && magnitude(mc.velocity_drive_target) > meters_per_second(.01f)) {
 			bodies[idx].sleep_counter = 0;
 		}
+
+		const auto upload_pos = bodies[idx].position.as<meters>();
+		const auto upload_vel = bodies[idx].body_velocity.as<meters_per_second>();
+		const auto tv = mc.velocity_drive_target.as<meters_per_second>();
+		log::println("[UPLOAD] body={} pos=({:.3f},{:.3f},{:.3f}) vel=({:.3f},{:.3f},{:.3f}) motor_target=({:.3f},{:.3f},{:.3f}) airborne={} steps={}",
+			idx, upload_pos.x(), upload_pos.y(), upload_pos.z(), upload_vel.x(), upload_vel.y(), upload_vel.z(), tv.x(), tv.y(), tv.z(), mc.airborne, steps);
 
 		motors.push_back(vbd::velocity_motor_constraint{
 			.body_index = idx,
@@ -1374,11 +1392,11 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 					vec3<length> local_r_b = to_local(bs_b.orientation, world_r_b);
 
 					auto cached = s.contact_cache.lookup(body_a, body_b, feature);
-					const unitless::vec3 current_d = (position_on_a - position_on_b).as<meters>();
-					const float current_normal_gap = dot(constraint_normal, current_d) + cfg.collision_margin.as<meters>();
+					const vec3<length> current_d = position_on_a - position_on_b;
+					const length current_normal_gap = dot(constraint_normal, current_d) + cfg.collision_margin;
 					const bool reuse_cached_normal =
 						cached &&
-						(cached->lambda[0] < -1e-3f || current_normal_gap < -1e-4f);
+						(cached->lambda[0] < meters(-1e-3f) || current_normal_gap < meters(-1e-4f));
 					const bool reuse_cached_tangent =
 						reuse_cached_normal &&
 						cached.has_value();
@@ -1386,28 +1404,28 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 						reuse_cached_tangent &&
 						cached->sticking;
 
-					float init_lambda[3] = {};
+					length init_lambda[3] = {};
 					float init_penalty[3] = { penalty_floor, penalty_floor, penalty_floor };
 
 					if (reuse_cached_normal) {
 						init_penalty[0] = std::max(cached->penalty[0], penalty_floor);
 
-						const unitless::vec3 cached_normal_force = cached->normal * cached->lambda[0];
-						init_lambda[0] = std::min(dot(cached_normal_force, constraint_normal), 0.f);
+						const vec3<length> cached_normal_force = cached->normal * cached->lambda[0];
+						init_lambda[0] = std::min(dot(cached_normal_force, constraint_normal), length{});
 					}
 
 					if (reuse_cached_tangent) {
 						init_penalty[1] = std::max(cached->penalty[1], penalty_floor);
 						init_penalty[2] = std::max(cached->penalty[2], penalty_floor);
 
-						const unitless::vec3 cached_tangent_force =
+						const vec3<length> cached_tangent_force =
 							cached->tangent_u * cached->lambda[1] +
 							cached->tangent_v * cached->lambda[2];
 
 						init_lambda[1] = dot(cached_tangent_force, manifold.tangent_u);
 						init_lambda[2] = dot(cached_tangent_force, manifold.tangent_v);
 
-						const float friction_bound = std::abs(init_lambda[0]) * cfg.friction_coefficient;
+						const length friction_bound = abs(init_lambda[0]) * cfg.friction_coefficient;
 						init_lambda[1] = std::clamp(init_lambda[1], -friction_bound, friction_bound);
 						init_lambda[2] = std::clamp(init_lambda[2], -friction_bound, friction_bound);
 					}
@@ -1427,7 +1445,7 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 						.tangent_v = manifold.tangent_v,
 						.r_a = local_r_a,
 						.r_b = local_r_b,
-						.C0 = { separation.as<meters>(), 0.f, 0.f },
+						.C0 = { separation, {}, {} },
 						.lambda = { init_lambda[0], init_lambda[1], init_lambda[2] },
 						.penalty = { init_penalty[0], init_penalty[1], init_penalty[2] },
 						.penalty_floor = penalty_floor,
@@ -1504,12 +1522,13 @@ auto gse::physics::system::render(render_phase&, const state& s) -> void {
 	if (!config.frame_in_progress()) return;
 
 	const auto command = config.frame_context().command_buffer;
-	const auto frame_index = config.current_frame();
+	constexpr std::uint32_t physics_fi = 0;
 
-	s.gpu_solver.stage_readback(frame_index);
-	if (s.gpu_solver.has_readback_data()) {
+	s.gpu_solver.stage_readback(physics_fi);
+	const bool had_readback = s.gpu_solver.has_readback_data();
+	if (had_readback) {
 #if GSE_GPU_COMPARE
-		auto& in_flight = s.gpu_compare.in_flight[frame_index];
+		auto& in_flight = s.gpu_compare.in_flight[physics_fi];
 		if (in_flight.has_value()) {
 			auto completed = std::move(*in_flight);
 			in_flight.reset();
@@ -1527,7 +1546,7 @@ auto gse::physics::system::render(render_phase&, const state& s) -> void {
 			log::flush();
 		}
 #else
-		auto& in_flight = s.gpu_readback.in_flight[frame_index];
+		auto& in_flight = s.gpu_readback.in_flight[physics_fi];
 		if (in_flight.has_value()) {
 			auto completed = std::move(*in_flight);
 			in_flight.reset();
@@ -1543,26 +1562,29 @@ auto gse::physics::system::render(render_phase&, const state& s) -> void {
 #endif
 	}
 
-	if (s.gpu_solver.pending_dispatch() && s.gpu_solver.ready_to_dispatch(frame_index)) {
+	log::println("[RENDER] fi={} had_readback={} pending={} ready={} completed_queue={}",
+		physics_fi, had_readback, s.gpu_solver.pending_dispatch(), s.gpu_solver.ready_to_dispatch(physics_fi), s.gpu_readback.completed.size());
+
+	if (s.gpu_solver.pending_dispatch() && s.gpu_solver.ready_to_dispatch(physics_fi)) {
 #if GSE_GPU_COMPARE
 		if (s.gpu_compare.pending.has_value()) {
-			s.gpu_compare.in_flight[frame_index] = std::move(s.gpu_compare.pending);
+			s.gpu_compare.in_flight[physics_fi] = std::move(s.gpu_compare.pending);
 			s.gpu_compare.pending.reset();
 		}
 		else {
-			s.gpu_compare.in_flight[frame_index].reset();
+			s.gpu_compare.in_flight[physics_fi].reset();
 		}
 #else
 		if (s.gpu_readback.pending.has_value()) {
-			s.gpu_readback.in_flight[frame_index] = std::move(s.gpu_readback.pending);
+			s.gpu_readback.in_flight[physics_fi] = std::move(s.gpu_readback.pending);
 			s.gpu_readback.pending.reset();
 		}
 		else {
-			s.gpu_readback.in_flight[frame_index].reset();
+			s.gpu_readback.in_flight[physics_fi].reset();
 		}
 #endif
 
-		s.gpu_solver.commit_upload(frame_index);
-		s.gpu_solver.dispatch_compute(command, config, frame_index);
+		s.gpu_solver.commit_upload(physics_fi);
+		s.gpu_solver.dispatch_compute(command, config, physics_fi);
 	}
 }

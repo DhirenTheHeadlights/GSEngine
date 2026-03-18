@@ -71,7 +71,7 @@ export namespace gse::vbd {
 		auto graph(this auto&& self) -> auto& { return self.m_graph; }
 	private:
 		auto accumulate_contact(
-			const contact_constraint& c,
+			const contact_constraint& constraint,
 			std::uint32_t body_idx,
 			float h_squared,
 			float alpha
@@ -202,9 +202,9 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		const vec3<length> rBW = rotate_vector(bb.orientation, c.r_b);
 		const vec3<length> pA = ba.position + rAW;
 		const vec3<length> pB = bb.position + rBW;
-		const unitless::vec3 d = (pA - pB).as<meters>();
+		const vec3<length> d = pA - pB;
 
-		c.C0[0] = dot(c.normal, d) + m_config.collision_margin.as<meters>();
+		c.C0[0] = dot(c.normal, d) + m_config.collision_margin;
 		c.C0[1] = dot(c.tangent_u, d);
 		c.C0[2] = dot(c.tangent_v, d);
 	}
@@ -216,8 +216,8 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		const vec3<length> rBW = rotate_vector(bb.orientation, c.r_b);
 		const float base_floor = std::max(c.penalty_floor, m_config.penalty_min);
 		const bool persistent_active_normal =
-			c.lambda[0] < -1e-3f &&
-			c.C0[0] < -1e-4f;
+			c.lambda[0] < meters(-1e-3f) &&
+			c.C0[0] < meters(-1e-4f);
 		const float normal_floor =
 			persistent_active_normal
 				? std::clamp(
@@ -439,12 +439,12 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 
 auto gse::vbd::solver::end_frame(std::vector<body_state>& bodies, contact_cache& cache) -> void {
 	for (const auto& c : m_graph.contact_constraints()) {
-		const float friction_bound = std::abs(c.lambda[0]) * c.friction_coeff;
-		const float tangential_lambda = std::hypot(c.lambda[1], c.lambda[2]);
-		const float tangential_gap = std::hypot(c.C0[1], c.C0[2]);
+		const length friction_bound = abs(c.lambda[0]) * c.friction_coeff;
+		const length tangential_lambda = meters(std::hypot(c.lambda[1].as<meters>(), c.lambda[2].as<meters>()));
+		const length tangential_gap = meters(std::hypot(c.C0[1].as<meters>(), c.C0[2].as<meters>()));
 		const bool sticking =
-			c.lambda[0] < -1e-3f &&
-			tangential_gap < m_config.stick_threshold.as<meters>() &&
+			c.lambda[0] < meters(-1e-3f) &&
+			tangential_gap < m_config.stick_threshold &&
 			tangential_lambda < friction_bound;
 
 		cache.store(c.body_a, c.body_b, c.feature, cached_lambda{
@@ -471,52 +471,51 @@ auto gse::vbd::solver::body_states() const -> std::span<const body_state> {
 	return m_bodies;
 }
 
-auto gse::vbd::solver::accumulate_contact(const contact_constraint& c, const std::uint32_t body_idx, const float h_squared, const float alpha) -> void {
-	const auto& body_a = m_bodies[c.body_a];
-	const auto& body_b = m_bodies[c.body_b];
-	const bool is_a = (body_idx == c.body_a);
+auto gse::vbd::solver::accumulate_contact(const contact_constraint& constraint, const std::uint32_t body_idx, const float h_squared, const float alpha) -> void {
+	const auto& body_a = m_bodies[constraint.body_a];
+	const auto& body_b = m_bodies[constraint.body_b];
+	const bool is_a = (body_idx == constraint.body_a);
 
-	const vec3<length> rAW = rotate_vector(body_a.predicted_orientation, c.r_a);
-	const vec3<length> rBW = rotate_vector(body_b.predicted_orientation, c.r_b);
-	const vec3<length> pA = body_a.predicted_position + rAW;
-	const vec3<length> pB = body_b.predicted_position + rBW;
-	const unitless::vec3 d = (pA - pB).as<meters>();
+	const vec3<length> r_aw = rotate_vector(body_a.predicted_orientation, constraint.r_a);
+	const vec3<length> r_bw = rotate_vector(body_b.predicted_orientation, constraint.r_b);
+	const vec3<length> p_a = body_a.predicted_position + r_aw;
+	const vec3<length> p_b = body_b.predicted_position + r_bw;
+	const vec3<length> d = p_a - p_b;
 
-	float Cn[3];
-	Cn[0] = dot(c.normal, d) + m_config.collision_margin.as<meters>();
-	Cn[1] = dot(c.tangent_u, d);
-	Cn[2] = dot(c.tangent_v, d);
+	length cn[3];
+	cn[0] = dot(constraint.normal, d) + m_config.collision_margin;
+	cn[1] = dot(constraint.tangent_u, d);
+	cn[2] = dot(constraint.tangent_v, d);
 
-	float C[3];
+	length c[3];
 	for (int i = 0; i < 3; i++)
-		C[i] = Cn[i] - c.C0[i] * alpha;
+		c[i] = cn[i] - constraint.C0[i] * alpha;
 
-	float f[3];
-	f[0] = std::min(c.penalty[0] * C[0] + c.lambda[0], 0.f);
-	// Keep the normal Hessian even when the clamped normal force is zero.
-	// Resting contacts near the margin rely on that support stiffness to avoid sag/oscillation.
-	const float friction_bound = std::abs(c.lambda[0]) * c.friction_coeff;
-	f[1] = std::clamp(c.penalty[1] * C[1] + c.lambda[1], -friction_bound, friction_bound);
-	f[2] = std::clamp(c.penalty[2] * C[2] + c.lambda[2], -friction_bound, friction_bound);
+	length f[3];
+	f[0] = std::min(constraint.penalty[0] * c[0] + constraint.lambda[0], length{});
+	const length friction_bound = abs(constraint.lambda[0]) * constraint.friction_coeff;
+	f[1] = std::clamp(constraint.penalty[1] * c[1] + constraint.lambda[1], -friction_bound, friction_bound);
+	f[2] = std::clamp(constraint.penalty[2] * c[2] + constraint.lambda[2], -friction_bound, friction_bound);
 
 	const float sign = is_a ? 1.f : -1.f;
-	const unitless::vec3 r = (is_a ? rAW : rBW).as<meters>();
-	const unitless::vec3 dirs[3] = { c.normal, c.tangent_u, c.tangent_v };
+	const unitless::vec3 r = (is_a ? r_aw : r_bw).as<meters>();
+	const unitless::vec3 dirs[3] = { constraint.normal, constraint.tangent_u, constraint.tangent_v };
 
 	for (int i = 0; i < 3; i++) {
-		if (i > 0 && friction_bound <= 1e-10f) continue;
-		if (std::abs(f[i]) < 1e-12f && c.penalty[i] < 1e-6f) continue;
+		if (i > 0 && friction_bound <= meters(1e-10f)) continue;
+		if (abs(f[i]) < meters(1e-12f) && constraint.penalty[i] < 1e-6f) continue;
 
-		const unitless::vec3 J_lin = dirs[i] * sign;
-		const unitless::vec3 J_ang = cross(r, dirs[i]) * sign;
+		const unitless::vec3 j_lin = dirs[i] * sign;
+		const unitless::vec3 j_ang = cross(r, dirs[i]) * sign;
 
-		m_solve_state[body_idx].gradient += J_lin * f[i];
-		m_solve_state[body_idx].hessian += outer_product(J_lin, J_lin) * c.penalty[i];
+		const float fi = f[i].as<meters>();
+		m_solve_state[body_idx].gradient += j_lin * fi;
+		m_solve_state[body_idx].hessian += outer_product(j_lin, j_lin) * constraint.penalty[i];
 
 		if (m_bodies[body_idx].update_orientation) {
-			m_solve_state[body_idx].angular_gradient += J_ang * f[i];
-			m_solve_state[body_idx].angular_hessian += outer_product(J_ang, J_ang) * c.penalty[i];
-			m_solve_state[body_idx].hessian_xtheta += outer_product(J_lin, J_ang) * c.penalty[i];
+			m_solve_state[body_idx].angular_gradient += j_ang * fi;
+			m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * constraint.penalty[i];
+			m_solve_state[body_idx].hessian_xtheta += outer_product(j_lin, j_ang) * constraint.penalty[i];
 		}
 	}
 }
@@ -560,13 +559,11 @@ auto gse::vbd::solver::accumulate_motor(const velocity_motor_constraint& m, cons
 		const vec3<length> rBW = rotate_vector(body_b.predicted_orientation, c.r_b);
 		const vec3<length> pA = body_a.predicted_position + rAW;
 		const vec3<length> pB = body_b.predicted_position + rBW;
-		const unitless::vec3 d = (pA - pB).as<meters>();
-		const float normal_gap = dot(c.normal, d) + m_config.collision_margin.as<meters>();
-		if (normal_gap >= 0.f && c.lambda[0] >= -1e-3f) continue;
+		const vec3<length> d = pA - pB;
+		const length normal_gap = dot(c.normal, d) + m_config.collision_margin;
+		if (normal_gap >= length{} && c.lambda[0] >= meters(-1e-3f)) continue;
 
 		const unitless::vec3 push_dir = (c.body_a == m.body_index) ? c.normal : -c.normal;
-		// Newton updates move opposite the gradient, so only a positive projection
-		// would drive the motor further into the contact.
 		if (const float proj = dot(motor_gradient, push_dir); proj > 0.f) {
 			motor_gradient -= push_dir * proj;
 		}
@@ -686,34 +683,34 @@ auto gse::vbd::solver::update_dual(const float alpha) -> void {
 		const vec3<length> rBW = rotate_vector(body_b.predicted_orientation, c.r_b);
 		const vec3<length> pA = body_a.predicted_position + rAW;
 		const vec3<length> pB = body_b.predicted_position + rBW;
-		const unitless::vec3 d = (pA - pB).as<meters>();
+		const vec3<length> d = pA - pB;
 
-		float Cn[3];
-		Cn[0] = dot(c.normal, d) + m_config.collision_margin.as<meters>();
+		length Cn[3];
+		Cn[0] = dot(c.normal, d) + m_config.collision_margin;
 		Cn[1] = dot(c.tangent_u, d);
 		Cn[2] = dot(c.tangent_v, d);
 
-		float C[3];
+		length C[3];
 		for (int i = 0; i < 3; i++)
 			C[i] = Cn[i] - c.C0[i] * alpha;
 
-		c.lambda[0] = std::min(c.penalty[0] * C[0] + c.lambda[0], 0.f);
+		c.lambda[0] = std::min(c.penalty[0] * C[0] + c.lambda[0], length{});
 
-		const float friction_bound = std::abs(c.lambda[0]) * c.friction_coeff;
+		const length friction_bound = abs(c.lambda[0]) * c.friction_coeff;
 
 		c.lambda[1] = std::clamp(c.penalty[1] * C[1] + c.lambda[1], -friction_bound, friction_bound);
 		c.lambda[2] = std::clamp(c.penalty[2] * C[2] + c.lambda[2], -friction_bound, friction_bound);
 
-		if (c.lambda[0] < 0.f) {
-			c.penalty[0] = std::min(c.penalty[0] + m_config.beta * std::abs(C[0]), m_config.penalty_max);
+		if (c.lambda[0] < length{}) {
+			c.penalty[0] = std::min(c.penalty[0] + m_config.beta * abs(C[0]).as<meters>(), m_config.penalty_max);
 		}
 
-		if (friction_bound > 1e-10f) {
-			if (std::abs(c.lambda[1]) < friction_bound) {
-				c.penalty[1] = std::min(c.penalty[1] + m_config.beta * std::abs(C[1]), m_config.penalty_max);
+		if (friction_bound > meters(1e-10f)) {
+			if (abs(c.lambda[1]) < friction_bound) {
+				c.penalty[1] = std::min(c.penalty[1] + m_config.beta * abs(C[1]).as<meters>(), m_config.penalty_max);
 			}
-			if (std::abs(c.lambda[2]) < friction_bound) {
-				c.penalty[2] = std::min(c.penalty[2] + m_config.beta * std::abs(C[2]), m_config.penalty_max);
+			if (abs(c.lambda[2]) < friction_bound) {
+				c.penalty[2] = std::min(c.penalty[2] + m_config.beta * abs(C[2]).as<meters>(), m_config.penalty_max);
 			}
 		}
 	}

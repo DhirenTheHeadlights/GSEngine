@@ -348,7 +348,7 @@ auto gse::narrow_phase_collision::clip_polygon(const std::vector<clip_vertex>& s
 
 auto gse::narrow_phase_collision::build_clipped_face_contacts(const bounding_box& bb1, const bounding_box& bb2, const unitless::vec3& collision_normal) -> std::optional<clipped_face_contacts> {
 	unitless::vec3 n = normalize(collision_normal);
-	if (dot(n, (bb2.center() - bb1.center()).as<meters>()) < 0.0f) {
+	if (dot(n, bb2.center() - bb1.center()) < length{}) {
 		n = -n;
 	}
 
@@ -523,7 +523,7 @@ auto gse::narrow_phase_collision::generate_contact_points(const bounding_box& bb
 
 	std::vector<vec3<length>> contacts;
 	unitless::vec3 n = normalize(collision_normal);
-	if (dot(n, (bb2.center() - bb1.center()).as<meters>()) < 0.0f) {
+	if (dot(n, bb2.center() - bb1.center()) < length{}) {
 		n = -n;
 	}
 

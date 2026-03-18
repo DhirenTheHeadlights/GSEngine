@@ -7,7 +7,7 @@ import :contact_manifold;
 
 export namespace gse::vbd {
 	struct cached_lambda {
-		float lambda[3] = {};
+		length lambda[3] = {};
 		float penalty[3] = {};
 		unitless::vec3 normal = {};
 		unitless::vec3 tangent_u = {};
