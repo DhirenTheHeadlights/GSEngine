@@ -24,6 +24,7 @@ export namespace gse::vbd {
 		length stick_threshold = meters(0.01f);
 		float friction_coefficient = 0.6f;
 		velocity velocity_sleep_threshold = meters_per_second(0.001f);
+		angular_velocity angular_sleep_threshold = radians_per_second(0.05f);
 		length speculative_margin = meters(0.02f);
 	};
 
@@ -332,10 +333,15 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 
 	for (const auto& motor : m_graph.motor_constraints()) {
 		auto& body = m_bodies[motor.body_index];
-		if (body.locked || body.sleeping()) continue;
+		if (body.locked) continue;
 
-		if (body.sleeping() && magnitude(motor.target_velocity).as<meters_per_second>() > 0.01f) {
-			body.sleep_counter = 0;
+		if (body.sleeping()) {
+			if (magnitude(motor.target_velocity).as<meters_per_second>() > 0.01f) {
+				body.sleep_counter = 0;
+			}
+			else {
+				continue;
+			}
 		}
 
 		const vec3<length> target = body.initial_position + motor.target_velocity * dt;
@@ -348,11 +354,12 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		}
 	}
 
+	const velocity wake_thresh = m_config.velocity_sleep_threshold * 10.f;
 	for (const auto& c : m_graph.contact_constraints()) {
 		auto& a = m_bodies[c.body_a];
 		auto& b = m_bodies[c.body_b];
-		if (a.sleeping() && !b.locked && !b.sleeping()) a.sleep_counter = 0;
-		if (b.sleeping() && !a.locked && !a.sleeping()) b.sleep_counter = 0;
+		if (a.sleeping() && !b.locked && !b.sleeping() && magnitude(b.body_velocity) > wake_thresh) a.sleep_counter = 0;
+		if (b.sleeping() && !a.locked && !a.sleeping() && magnitude(a.body_velocity) > wake_thresh) b.sleep_counter = 0;
 	}
 
 	const auto& contacts = m_graph.contact_constraints();
@@ -430,7 +437,19 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 	}
 
 	for (auto& body : m_bodies) {
-		if (body.locked || body.sleeping()) continue;
+		if (body.locked) continue;
+		if (body.sleeping()) {
+			continue;
+		}
+
+		if (magnitude(body.body_velocity) < m_config.velocity_sleep_threshold &&
+			magnitude(body.body_angular_velocity) < m_config.angular_sleep_threshold) {
+			++body.sleep_counter;
+		}
+		else {
+			body.sleep_counter /= 2;
+		}
+
 		body.position = body.predicted_position;
 		if (body.update_orientation)
 			body.orientation = body.predicted_orientation;

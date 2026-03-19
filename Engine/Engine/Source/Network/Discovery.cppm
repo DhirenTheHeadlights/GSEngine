@@ -118,11 +118,10 @@ auto gse::network::wan_directory_provider::query_servers_async(time_t<std::uint3
     }
 
     std::unordered_map<std::string, server_info_response> responses;
-    const auto start_time = std::chrono::steady_clock::now();
-    const auto timeout_duration = std::chrono::milliseconds(timeout.as<milliseconds>());
+    clock timeout_clock;
     std::array<std::byte, 256> recv_buffer;
 
-    while (std::chrono::steady_clock::now() - start_time < timeout_duration) {
+    while (timeout_clock.elapsed<std::uint32_t>() < timeout) {
         if (socket.wait_readable(milliseconds(10)) != wait_result::ready) {
             continue;
         }

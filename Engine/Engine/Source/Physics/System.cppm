@@ -809,6 +809,7 @@ auto gse::physics::system::initialize(const initialize_phase& phase, state& s) -
 		.stick_threshold = meters(0.01f),
 		.friction_coefficient = 0.6f,
 		.velocity_sleep_threshold = meters_per_second(0.05f),
+		.angular_sleep_threshold = radians_per_second(0.05f),
 		.speculative_margin = meters(0.02f)
 	});
 
@@ -1061,7 +1062,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		const auto sc = sc_it != s.sleep_counters.end() ? sc_it->second : 0u;
 
 		float accel_weight = 0.f;
-		if (!mc.position_locked && sc < 300u && dt_s > 1e-6f) {
+		if (!mc.position_locked && sc < 60u && dt_s > 1e-6f) {
 			if (const auto prev_it = prev_gpu_velocity.find(eid); prev_it != prev_gpu_velocity.end()) {
 				const float delta_vy = (mc.current_velocity.y() - prev_it->second.y()).as<meters_per_second>();
 				const float accel_y = delta_vy / dt_s;
