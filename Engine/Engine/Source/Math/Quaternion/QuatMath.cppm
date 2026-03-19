@@ -155,18 +155,18 @@ export namespace gse {
 	template <typename T>
 	constexpr auto to_axis_angle(
 		const quat_t<T>& q
-	) -> unitless::vec3_t<T>;
+	) -> vec3<angle_t<T>>;
 
 	template <typename T>
 	constexpr auto from_axis_angle_vector(
-		const unitless::vec3_t<T>& aa
+		const vec3<angle_t<T>>& aa
 	) -> quat_t<T>;
 
 	template <typename T>
 	constexpr auto difference_axis_angle(
 		const quat_t<T>& q_from,
 		const quat_t<T>& q_to
-	) -> unitless::vec3_t<T>;
+	) -> vec3<angle_t<T>>;
 
 	template <typename T, typename Q>
 	constexpr auto rotate_vector(
@@ -398,7 +398,7 @@ constexpr auto gse::slerp(const quat_t<T>& a, const quat_t<T>& b, T t) -> quat_t
 }
 
 template <typename T>
-constexpr auto gse::to_axis_angle(const quat_t<T>& q) -> unitless::vec3_t<T> {
+constexpr auto gse::to_axis_angle(const quat_t<T>& q) -> vec3<angle_t<T>> {
 	const T w = q.s() >= T(0) ? q.s() : -q.s();
 	const T sign = q.s() >= T(0) ? T(1) : T(-1);
 	const T x = sign * q.x();
@@ -408,30 +408,33 @@ constexpr auto gse::to_axis_angle(const quat_t<T>& q) -> unitless::vec3_t<T> {
 	const T sin_half = std::sqrt(x * x + y * y + z * z);
 
 	if (sin_half < T(1e-7)) {
-		return unitless::vec3_t<T>{ T(2) * x, T(2) * y, T(2) * z };
+		return { radians(T(2) * x), radians(T(2) * y), radians(T(2) * z) };
 	}
 
 	const T angle = T(2) * std::atan2(sin_half, w);
 	const T scale = angle / sin_half;
-	return unitless::vec3_t<T>{ scale * x, scale * y, scale * z };
+	return { radians(scale * x), radians(scale * y), radians(scale * z) };
 }
 
 template <typename T>
-constexpr auto gse::from_axis_angle_vector(const unitless::vec3_t<T>& aa) -> quat_t<T> {
-	const T angle_sq = aa.x() * aa.x() + aa.y() * aa.y() + aa.z() * aa.z();
+constexpr auto gse::from_axis_angle_vector(const vec3<angle_t<T>>& aa) -> quat_t<T> {
+	const T ax = aa.x().template as<radians>();
+	const T ay = aa.y().template as<radians>();
+	const T az = aa.z().template as<radians>();
+	const T angle_sq = ax * ax + ay * ay + az * az;
 
 	if (angle_sq < T(1e-14)) {
-		return normalize(quat_t<T>{ T(1), aa.x() * T(0.5), aa.y() * T(0.5), aa.z() * T(0.5) });
+		return normalize(quat_t<T>{ T(1), ax * T(0.5), ay * T(0.5), az * T(0.5) });
 	}
 
 	const T angle = std::sqrt(angle_sq);
 	const T half_angle = angle * T(0.5);
 	const T s = std::sin(half_angle) / angle;
-	return quat_t<T>{ std::cos(half_angle), s * aa.x(), s * aa.y(), s * aa.z() };
+	return quat_t<T>{ std::cos(half_angle), s * ax, s * ay, s * az };
 }
 
 template <typename T>
-constexpr auto gse::difference_axis_angle(const quat_t<T>& q_from, const quat_t<T>& q_to) -> unitless::vec3_t<T> {
+constexpr auto gse::difference_axis_angle(const quat_t<T>& q_from, const quat_t<T>& q_to) -> vec3<angle_t<T>> {
 	const quat_t<T> delta_q = q_to * conjugate(q_from);
 	return to_axis_angle(delta_q);
 }

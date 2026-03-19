@@ -26,10 +26,10 @@ export namespace gse::vbd {
 		vec3<length> r_a;
 		vec3<length> r_b;
 
-		length C0[3] = {};
+		vec3<length> c0;
 
-		length lambda[3] = {};
-		float penalty[3] = {};
+		vec3<length> lambda;
+		unitless::vec3 penalty;
 
 		float penalty_floor = 1.f;
 		float friction_coeff = 0.6f;
@@ -46,8 +46,34 @@ export namespace gse::vbd {
 		float compliance = 0.01f;
 		force max_force = newtons(1000.f);
 		bool horizontal_only = false;
+	};
 
-		std::array<float, 3> lambda = { 0.f, 0.f, 0.f };
+	enum class joint_type : std::uint8_t { distance, fixed, hinge, slider };
+
+	struct joint_constraint {
+		std::uint32_t body_a = 0;
+		std::uint32_t body_b = 0;
+		joint_type type = joint_type::distance;
+
+		vec3<length> local_anchor_a;
+		vec3<length> local_anchor_b;
+		unitless::vec3 local_axis_a = { 0.f, 1.f, 0.f };
+		unitless::vec3 local_axis_b = { 0.f, 1.f, 0.f };
+
+		length target_distance = {};
+		angle limit_lower = radians(-std::numbers::pi_v<float>);
+		angle limit_upper = radians(std::numbers::pi_v<float>);
+		bool limits_enabled = false;
+		quat rest_orientation;
+
+		vec3<length> pos_lambda;
+		unitless::vec3 pos_penalty;
+
+		vec3<angle> ang_lambda;
+		unitless::vec3 ang_penalty;
+
+		angle limit_lambda = {};
+		float limit_penalty = 0.f;
 	};
 
 	struct body_state {
