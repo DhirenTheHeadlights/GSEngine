@@ -450,6 +450,14 @@ auto gse::resource::loader<R, C>::finalize_reloads() -> void {
 		reloads_to_process.swap(m_pending_reloads);
 	}
 
+	if (reloads_to_process.empty()) {
+		return;
+	}
+
+	// Hot reload runs after frame submission, so old GPU resources may still be referenced
+	// by in-flight graphics work. Retire that work before unloading the old resource.
+	m_context.config().device_config().device.waitIdle();
+
 	for (const id rid : reloads_to_process) {
 		slot* slot_ptr;
 		{
@@ -468,7 +476,14 @@ auto gse::resource::loader<R, C>::finalize_reloads() -> void {
 		slot_ptr->current_state.store(state::reloading, std::memory_order_release);
 
 		auto new_resource = std::make_unique<R>(slot_ptr->path);
+		const auto queue_size_before = m_context.gpu_queue_size();
 		new_resource->load(m_context);
+		const bool queued_gpu_work = m_context.gpu_queue_size() > queue_size_before;
+
+		if (queued_gpu_work) {
+			m_context.process_gpu_queue();
+			m_context.config().device_config().device.waitIdle();
+		}
 
 		if (slot_ptr->resource.read()) {
 			auto* old_resource = const_cast<R*>(slot_ptr->resource.read().get());

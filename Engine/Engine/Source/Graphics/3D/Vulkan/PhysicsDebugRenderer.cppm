@@ -36,6 +36,7 @@ namespace gse::renderer::physics_debug {
 
 	auto ensure_vertex_capacity(
 		struct state& s,
+		std::size_t frame_index,
 		std::size_t required_vertex_count
 	) -> void;
 }
@@ -69,9 +70,9 @@ export namespace gse::renderer::physics_debug {
 		resource::handle<shader> shader_handle;
 
 		std::unordered_map<std::string, per_frame_resource<vulkan::buffer_resource>> ubo_allocations;
-		vulkan::buffer_resource vertex_buffer;
+		per_frame_resource<vulkan::buffer_resource> vertex_buffers;
 
-		std::size_t max_vertices = 0;
+		per_frame_resource<std::size_t> max_vertices;
 		bool enabled = true;
 		debug_stats latest_stats;
 
@@ -86,26 +87,32 @@ export namespace gse::renderer::physics_debug {
 	};
 }
 
-auto gse::renderer::physics_debug::ensure_vertex_capacity(state& s, const std::size_t required_vertex_count) -> void {
-	if (required_vertex_count <= s.max_vertices && s.vertex_buffer.buffer) {
+auto gse::renderer::physics_debug::ensure_vertex_capacity(state& s, const std::size_t frame_index, const std::size_t required_vertex_count) -> void {
+	auto& max_vertices = s.max_vertices[frame_index];
+	auto& vertex_buffer = s.vertex_buffers[frame_index];
+
+	if (required_vertex_count <= max_vertices && vertex_buffer.buffer) {
 		return;
 	}
 
 	auto& config = s.ctx->config();
-	if (s.vertex_buffer.buffer) {
-		s.vertex_buffer = {};
+	if (vertex_buffer.buffer) {
+		vertex_buffer = {};
 	}
 
-	s.max_vertices = std::max<std::size_t>(required_vertex_count, 4096);
+	max_vertices = std::max<std::size_t>(max_vertices, 4096);
+	while (max_vertices < required_vertex_count) {
+		max_vertices *= 2;
+	}
 
 	const vk::BufferCreateInfo buffer_info{
-		.size = s.max_vertices * sizeof(debug_vertex),
+		.size = max_vertices * sizeof(debug_vertex),
 		.usage = vk::BufferUsageFlagBits::eVertexBuffer,
 		.sharingMode = vk::SharingMode::eExclusive
 	};
 
 	const std::vector<std::byte> zeros(buffer_info.size);
-	s.vertex_buffer = config.allocator().create_buffer(
+	vertex_buffer = config.allocator().create_buffer(
 		buffer_info,
 		zeros.data()
 	);
@@ -430,14 +437,15 @@ auto gse::renderer::physics_debug::system::render(render_phase& phase, const sta
 	}
 
 	auto& mutable_state = const_cast<state&>(s);
-	ensure_vertex_capacity(mutable_state, verts.size());
+	const auto frame_index = config.current_frame();
+	ensure_vertex_capacity(mutable_state, frame_index, verts.size());
 
-	if (auto* dst = mutable_state.vertex_buffer.allocation.mapped()) {
+	auto& vertex_buffer = mutable_state.vertex_buffers[frame_index];
+	if (auto* dst = vertex_buffer.allocation.mapped()) {
 		gse::memcpy(dst, verts);
 	}
 
 	const auto command = config.frame_context().command_buffer;
-	const auto frame_index = config.current_frame();
 
 	const auto* cam_state = phase.try_state_of<camera::state>();
 	const mat4 view_matrix = cam_state ? cam_state->view_matrix : mat4(1.0f);
@@ -492,7 +500,7 @@ auto gse::renderer::physics_debug::system::render(render_phase& phase, const sta
 			{}
 		);
 
-		const vk::Buffer vb = mutable_state.vertex_buffer.buffer;
+		const vk::Buffer vb = vertex_buffer.buffer;
 		constexpr vk::DeviceSize offsets[] = { 0 };
 
 		command.bindVertexBuffers(0, 1, &vb, offsets);

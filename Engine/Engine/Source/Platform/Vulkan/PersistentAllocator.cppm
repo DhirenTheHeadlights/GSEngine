@@ -18,7 +18,7 @@ export namespace gse::vulkan {
 	};
 
 	struct allocation_debug_info {
-		std::source_location creation_location;
+		std::source_location creation_location = std::source_location::current();
 		std::string tag;
 		std::uint64_t allocation_id = 0;
 	};
@@ -215,6 +215,7 @@ export namespace gse::vulkan {
 		std::atomic<std::uint64_t> m_next_allocation_id = 1;
 		bool m_cleaned_up = false;
 		bool m_tracking_enabled = false;
+		bool m_name_resources = false;
 		std::unordered_map<std::uint64_t, allocation_debug_info> m_live_allocations;
 	};
 }
@@ -373,6 +374,11 @@ gse::vulkan::allocator::allocator(const vk::raii::Device& device, const vk::raii
 		.description("Track Vulkan memory allocations for debugging destruction order issues")
 		.default_value(false)
 		.commit();
+
+	save_state.bind("Vulkan", "Name Resources", m_name_resources)
+		.description("Assign debug names to Vulkan buffers to improve validation output")
+		.default_value(false)
+		.commit();
 }
 
 gse::vulkan::allocator::allocator(allocator&& other) noexcept : m_device(other.m_device), m_physical_device(other.m_physical_device), m_pools(std::move(other.m_pools)) {
@@ -467,9 +473,9 @@ auto gse::vulkan::allocator::allocate(const vk::MemoryRequirements& requirements
 		}
 
 		allocation_debug_info debug_info;
+		debug_info.creation_location = loc;
+		debug_info.tag = tag;
 		if (m_tracking_enabled) {
-			debug_info.creation_location = loc;
-			debug_info.tag = tag;
 			debug_info.allocation_id = m_next_allocation_id++;
 			m_live_allocations[debug_info.allocation_id] = debug_info;
 			++m_live_allocation_count;
@@ -518,9 +524,9 @@ auto gse::vulkan::allocator::allocate(const vk::MemoryRequirements& requirements
 	if (suffix_size > 0) new_block.allocations.push_back({ aligned_offset + requirements.size, suffix_size, false });
 
 	allocation_debug_info debug_info;
+	debug_info.creation_location = loc;
+	debug_info.tag = tag;
 	if (m_tracking_enabled) {
-		debug_info.creation_location = loc;
-		debug_info.tag = tag;
 		debug_info.allocation_id = m_next_allocation_id++;
 		m_live_allocations[debug_info.allocation_id] = debug_info;
 		++m_live_allocation_count;
@@ -565,6 +571,20 @@ auto gse::vulkan::allocator::create_buffer(const vk::BufferCreateInfo& buffer_in
 	assert(success, std::source_location::current(), "Failed to allocate memory for buffer after trying all preferences.");
 
 	m_device.bindBufferMemory(buffer, alloc.memory(), alloc.offset());
+
+	if (m_name_resources) {
+		const auto& debug_info = alloc.debug_info();
+		const auto file = std::filesystem::path(debug_info.creation_location.file_name()).filename().string();
+		const auto name = debug_info.tag.empty()
+			? std::format("Buffer ({}:{})", file, debug_info.creation_location.line())
+			: std::format("Buffer '{}' ({}:{})", debug_info.tag, file, debug_info.creation_location.line());
+
+		m_device.setDebugUtilsObjectNameEXT({
+			.objectType = vk::ObjectType::eBuffer,
+			.objectHandle = static_cast<std::uint64_t>(std::bit_cast<std::uintptr_t>(buffer)),
+			.pObjectName = name.c_str()
+		});
+	}
 
 	if (data && alloc.mapped()) {
 		gse::memcpy(alloc.mapped(), data, buffer_info.size);

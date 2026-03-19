@@ -386,23 +386,23 @@ auto gse::vbd::gpu_solver::create_buffers(vulkan::allocator& alloc) -> void {
 	m_body_buffer = alloc.create_buffer({
 		.size = max_bodies * m_body_layout.stride,
 		.usage = usage | vk::BufferUsageFlagBits::eTransferDst
-	});
+	}, nullptr, "VBD Body Buffer");
 
 	m_contact_buffer = alloc.create_buffer({
 		.size = max_contacts * m_contact_layout.stride,
 		.usage = usage
-	});
+	}, nullptr, "VBD Contact Buffer");
 
 	m_motor_buffer = alloc.create_buffer({
 		.size = max_motors * m_motor_layout.stride,
 		.usage = vk::BufferUsageFlagBits::eStorageBuffer
-	});
+	}, nullptr, "VBD Motor Buffer");
 
 	const vk::DeviceSize color_buffer_size = max_colors * sizeof(std::uint32_t) * 2 + max_bodies * sizeof(std::uint32_t);
 	m_color_buffer = alloc.create_buffer({
 		.size = color_buffer_size,
 		.usage = vk::BufferUsageFlagBits::eStorageBuffer
-	});
+	}, nullptr, "VBD Color Buffer");
 
 	const vk::DeviceSize map_buffer_size =
 		max_bodies * sizeof(std::uint32_t) * 2 +
@@ -412,30 +412,30 @@ auto gse::vbd::gpu_solver::create_buffers(vulkan::allocator& alloc) -> void {
 	m_body_contact_map_buffer = alloc.create_buffer({
 		.size = map_buffer_size,
 		.usage = vk::BufferUsageFlagBits::eStorageBuffer
-	});
+	}, nullptr, "VBD Body Contact Map Buffer");
 
 	m_solve_state_buffer = alloc.create_buffer({
 		.size = max_bodies * solve_state_float4s_per_body * sizeof(float) * 4,
 		.usage = vk::BufferUsageFlagBits::eStorageBuffer
-	});
+	}, nullptr, "VBD Solve State Buffer");
 
 	const vk::DeviceSize collision_pair_size = sizeof(std::uint32_t) + max_collision_pairs * 2 * sizeof(std::uint32_t);
 	m_collision_pair_buffer = alloc.create_buffer({
 		.size = collision_pair_size,
 		.usage = vk::BufferUsageFlagBits::eStorageBuffer
-	});
+	}, nullptr, "VBD Collision Pair Buffer");
 
 	const vk::DeviceSize collision_state_size = collision_state_uints * sizeof(std::uint32_t);
 	m_collision_state_buffer = alloc.create_buffer({
 		.size = collision_state_size,
 		.usage = usage
-	});
+	}, nullptr, "VBD Collision State Buffer");
 
 	const vk::DeviceSize warm_start_size = max_contacts * m_warm_start_layout.stride;
 	m_warm_start_buffer = alloc.create_buffer({
 		.size = std::max(warm_start_size, static_cast<vk::DeviceSize>(16)),
 		.usage = vk::BufferUsageFlagBits::eStorageBuffer
-	});
+	}, nullptr, "VBD Warm Start Buffer");
 
 	const vk::DeviceSize readback_size =
 		max_bodies * m_body_layout.stride +
@@ -445,7 +445,7 @@ auto gse::vbd::gpu_solver::create_buffers(vulkan::allocator& alloc) -> void {
 	m_readback_buffer = alloc.create_buffer({
 		.size = readback_size,
 		.usage = readback_usage
-	});
+	}, nullptr, "VBD Readback Buffer");
 	std::memset(m_readback_buffer.allocation.mapped(), 0, m_readback_buffer.allocation.size());
 
 	m_buffers_created = true;
