@@ -1,98 +1,9 @@
-struct GpuBody {
-    float4 position;
-    float4 predicted_position;
-    float4 inertia_target;
-    float4 old_position;
-    float4 velocity;
-    float4 predicted_velocity;
-    float4 orientation;
-    float4 predicted_orientation;
-    float4 angular_inertia_target;
-    float4 old_orientation;
-    float4 angular_velocity;
-    float4 predicted_angular_velocity;
-    float4 motor_target;
-    float mass;
-    uint flags;
-    uint sleep_counter;
-    float accel_weight;
-    float4 inv_inertia_col0;
-    float4 inv_inertia_col1;
-    float4 inv_inertia_col2;
-    float4 half_extents;
-    float4 aabb_min;
-    float4 aabb_max;
-};
-
-struct GpuContact {
-    uint body_a;
-    uint body_b;
-    uint feature_key_hi;
-    uint feature_key_lo;
-    uint sticking;
-    float4 normal;
-    float4 tangent_u;
-    float4 tangent_v;
-    float4 r_a;
-    float4 r_b;
-    float4 c0_friction;
-    float4 lambda;
-    float4 penalty;
-};
-
-struct GpuWarmStart {
-    uint body_a;
-    uint body_b;
-    uint feature_key_hi;
-    uint feature_key_lo;
-    uint sticking;
-    float4 normal;
-    float4 tangent_u;
-    float4 tangent_v;
-    float4 local_anchor_a;
-    float4 local_anchor_b;
-    float4 lambda;
-    float4 penalty;
-};
-
-static const uint FLAG_LOCKED = 1;
-static const uint FLAG_UPDATE_ORIENTATION = 2;
-static const uint SLEEP_THRESHOLD = 300;
-static const uint MAX_BODIES = 500;
-static const uint MAX_CONTACTS = 2000;
-static const uint MAX_COLLISION_PAIRS = 8192;
-
-struct push_constants {
-    uint body_count;
-    uint contact_count;
-    uint motor_count;
-    uint color_offset;
-    uint color_count;
-    uint warm_start_count;
-    uint post_stabilize;
-    uint _pad0;
-    float h_squared;
-    float dt;
-    float beta;
-    float linear_damping;
-    float velocity_sleep_threshold;
-    float current_alpha;
-    float collision_margin;
-    float friction_coefficient;
-    float penalty_min;
-    float penalty_max;
-    float gamma;
-    float solver_alpha;
-    float speculative_margin;
-    float stick_threshold;
-    uint substep;
-    uint iteration;
-};
+import vbd_shared;
 
 [[vk::binding(0, 0)]] RWStructuredBuffer<GpuBody> body_data;
 [[vk::binding(1, 0)]] RWStructuredBuffer<GpuContact> contact_data;
-[[vk::binding(2, 0)]] StructuredBuffer<uint> motor_data;
-[[vk::binding(3, 0)]] StructuredBuffer<uint> color_data;
+[[vk::binding(2, 0)]] StructuredBuffer<GpuMotor> motor_data;
+[[vk::binding(3, 0)]] RWStructuredBuffer<uint> color_data;
 [[vk::binding(4, 0)]] RWStructuredBuffer<uint> body_contact_map;
 [[vk::binding(5, 0)]] RWStructuredBuffer<float4> solve_state;
 [[vk::binding(6, 0)]] RWStructuredBuffer<uint> collision_pairs;
@@ -100,32 +11,7 @@ struct push_constants {
 [[vk::binding(8, 0)]] StructuredBuffer<GpuWarmStart> warm_starts;
 
 [[vk::push_constant]]
-ConstantBuffer<push_constants> pc;
-
-float4 quat_mul(float4 a, float4 b) {
-    return float4(
-        a.x * b.x - a.y * b.y - a.z * b.z - a.w * b.w,
-        a.x * b.y + a.y * b.x + a.z * b.w - a.w * b.z,
-        a.x * b.z - a.y * b.w + a.z * b.x + a.w * b.y,
-        a.x * b.w + a.y * b.z - a.z * b.y + a.w * b.x
-    );
-}
-
-float4 quat_conjugate(float4 q) {
-    return float4(q.x, -q.y, -q.z, -q.w);
-}
-
-float3 rotate_vector(float4 q, float3 v) {
-    float3 u = q.yzw;
-    float s = q.x;
-    return 2.0 * dot(u, v) * u + (s * s - dot(u, u)) * v + 2.0 * s * cross(u, v);
-}
-
-typedef float3x3 mat3;
-
-float3 mat3_mul_vec(mat3 m, float3 v) {
-    return m[0] * v.x + m[1] * v.y + m[2] * v.z;
-}
+ConstantBuffer<vbd_push_constants> pc;
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
@@ -177,6 +63,14 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
         body.angular_velocity = float4(ang_vel, 0);
     } else {
         body.angular_velocity = float4(0, 0, 0, 0);
+    }
+
+    float lin_speed = length(body.velocity.xyz);
+    float ang_speed = length(body.angular_velocity.xyz);
+    if (lin_speed < pc.velocity_sleep_threshold && ang_speed < pc.velocity_sleep_threshold) {
+        body.sleep_counter = body.sleep_counter + 1;
+    } else {
+        body.sleep_counter = body.sleep_counter / 2;
     }
 
     body_data[bi] = body;

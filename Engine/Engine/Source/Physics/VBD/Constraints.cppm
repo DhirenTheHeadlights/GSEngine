@@ -87,5 +87,5 @@ auto gse::vbd::body_state::inverse_mass() const -> gse::inverse_mass {
 }
 
 auto gse::vbd::body_state::sleeping() const -> bool {
-	return sleep_counter >= 300;
+	return sleep_counter >= 60;
 }

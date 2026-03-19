@@ -39,9 +39,19 @@ export namespace gse {
 				.bounding_box = { m_initial_position, m_size }
 			});
 
+			static std::mt19937 rng(std::random_device{}());
+			static std::uniform_real_distribution<float> dist(0.3f, 1.0f);
+			static int box_color_id = 0;
+			const auto id_str = std::to_string(box_color_id++);
+
+			const auto tex = gse::queue<texture>(
+				"box_color_" + id_str,
+				unitless::vec4(dist(rng), dist(rng), dist(rng), 1.0f)
+			);
+
 			const auto mat = gse::queue<material>(
-				"concrete_bricks_material",
-				gse::get<texture>("Textures/Textures/concrete_bricks_1")
+				"box_mat_" + id_str,
+				tex
 			);
 
 			add_component<render_component>({

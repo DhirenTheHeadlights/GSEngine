@@ -1032,7 +1032,7 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 	auto& config = ctx.config();
 
 	auto vbd_layouts = m_compute.predict->layouts();
-	std::vector vbd_ranges = { m_compute.predict->push_constant_range("push_constants") };
+	std::vector vbd_ranges = { m_compute.predict->push_constant_range("vbd_push_constants") };
 
 	m_compute.pipeline_layout = config.device_config().device.createPipelineLayout({
 		.setLayoutCount = static_cast<std::uint32_t>(vbd_layouts.size()),
@@ -1360,7 +1360,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(vulkan::config& config) -> void {
 	auto bind_and_push = [&](const resource::handle<shader>& sh, const vk::raii::Pipeline& pipeline, std::uint32_t color_offset, std::uint32_t color_count, std::uint32_t substep, std::uint32_t iteration, float current_alpha) {
 		command.bindPipeline(vk::PipelineBindPoint::eCompute, *pipeline);
 		command.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *m_compute.pipeline_layout, 0, { 1, sets }, {});
-		sh->push(command, *m_compute.pipeline_layout, "push_constants",
+		sh->push(command, *m_compute.pipeline_layout, "vbd_push_constants",
 			"body_count", m_body_count,
 			"contact_count", max_contacts,
 			"motor_count", m_motor_count,

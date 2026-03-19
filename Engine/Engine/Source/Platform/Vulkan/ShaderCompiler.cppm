@@ -354,7 +354,7 @@ struct gse::asset_compiler<gse::shader> {
         using namespace shader_compile;
 
         const std::string filename = source.filename().string();
-        if (source.parent_path().filename() == "Layouts" || filename == "common.slang") {
+        if (source.parent_path().filename() == "Layouts") {
             return true;
         }
 
@@ -432,8 +432,7 @@ struct gse::asset_compiler<gse::shader> {
         const bool is_graphics = vs_ep && fs_ep && !cs_ep;
 
         if (!is_compute && !is_graphics) {
-            std::println("Shader '{}' must define either (vs_main and fs_main) or cs_main", filename);
-            return false;
+            return true;
         }
 
         Slang::ComPtr<slang::IComponentType> composed;
@@ -772,6 +771,9 @@ struct gse::asset_compiler<gse::shader> {
         }
         if (const auto common_file = config::resource_path / "Shaders" / "common.slang"; std::filesystem::exists(common_file)) {
             deps.push_back(common_file);
+        }
+        if (const auto shared_file = config::resource_path / "Shaders" / "Compute" / "vbd_shared.slang"; std::filesystem::exists(shared_file)) {
+            deps.push_back(shared_file);
         }
         return deps;
     }
