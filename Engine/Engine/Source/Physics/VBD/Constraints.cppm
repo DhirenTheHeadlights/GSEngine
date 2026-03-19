@@ -74,6 +74,10 @@ export namespace gse::vbd {
 
 		angle limit_lambda = {};
 		float limit_penalty = 0.f;
+
+		vec3<length> pos_c0;
+		vec3<angle> ang_c0;
+		angle limit_c0 = {};
 	};
 
 	struct body_state {

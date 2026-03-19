@@ -30,6 +30,7 @@ export namespace gse::physics {
 		angle limit_upper = radians(std::numbers::pi_v<float>);
 		bool limits_enabled = false;
 		quat rest_orientation;
+		bool rest_orientation_initialized = false;
 
 		vec3<length> pos_lambda;
 		unitless::vec3 pos_penalty;
@@ -863,6 +864,11 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 			const auto it_a = id_to_body_index.find(jd.entity_a);
 			const auto it_b = id_to_body_index.find(jd.entity_b);
 			if (it_a == id_to_body_index.end() || it_b == id_to_body_index.end()) continue;
+
+			if (!jd.rest_orientation_initialized && jd.type != vbd::joint_type::distance) {
+				jd.rest_orientation = bodies[it_b->second].orientation * conjugate(bodies[it_a->second].orientation);
+				jd.rest_orientation_initialized = true;
+			}
 
 			s.vbd_solver.add_joint_constraint(vbd::joint_constraint{
 				.body_a = it_a->second,

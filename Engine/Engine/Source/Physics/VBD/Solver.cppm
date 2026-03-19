@@ -95,7 +95,8 @@ export namespace gse::vbd {
 		auto accumulate_joint(
 			const joint_constraint& constraint,
 			std::uint32_t body_idx,
-			float h_squared
+			float h_squared,
+			float alpha
 		) -> void;
 
 		auto update_dual(
@@ -130,6 +131,24 @@ namespace gse::vbd {
 		const float s = q[0];
 		const unitless::vec3 t = 2.f * cross(u, v);
 		return v + s * t + cross(u, t);
+	}
+
+	auto accumulate_geometric_stiffness(
+		body_solve_state& state,
+		const unitless::vec3& r,
+		const unitless::vec3& dir,
+		float abs_force
+	) -> void {
+		const float rd = dot(r, dir);
+		for (int j = 0; j < 3; ++j) {
+			float col_norm = 0.f;
+			for (int i = 0; i < 3; ++i) {
+				float h = r[i] * dir[j];
+				if (i == j) h -= rd;
+				col_norm += std::abs(h);
+			}
+			state.angular_hessian[j][j] += col_norm * abs_force;
+		}
 	}
 
 	auto contact_effective_mass(
@@ -288,6 +307,10 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		const vec3<length> rAW = rotate_vector(ba.orientation, j.local_anchor_a);
 		const vec3<length> rBW = rotate_vector(bb.orientation, j.local_anchor_b);
 
+		for (int k = 0; k < 3; ++k) j.pos_lambda[k] *= m_config.gamma;
+		for (int k = 0; k < 3; ++k) j.ang_lambda[k] *= m_config.gamma;
+		if (j.limits_enabled) j.limit_lambda *= m_config.gamma;
+
 		const unitless::vec3 dirs[3] = { { 1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 1.f } };
 
 		int num_pos_rows = 3;
@@ -312,17 +335,104 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 				dir = dirs[k];
 			}
 			const float eff = contact_effective_mass(ba, bb, rAW, rBW, dir) / h_squared;
-			if (j.pos_penalty[k] < eff) j.pos_penalty[k] = std::clamp(eff, m_config.penalty_min, m_config.penalty_max);
+			j.pos_penalty[k] = std::clamp(
+				std::max(j.pos_penalty[k] * m_config.gamma, eff),
+				m_config.penalty_min, m_config.penalty_max
+			);
 		}
 
 		int num_ang_rows = 3;
 		if (j.type == joint_type::distance) num_ang_rows = 0;
 		else if (j.type == joint_type::hinge) num_ang_rows = 2;
+
 		for (int k = 0; k < num_ang_rows; ++k) {
-			if (j.ang_penalty[k] < m_config.penalty_min) j.ang_penalty[k] = m_config.penalty_min;
+			unitless::vec3 ang_dir;
+			if (j.type == joint_type::hinge) {
+				const unitless::vec3 axis_a = rotate_axis(ba.orientation, j.local_axis_a);
+				unitless::vec3 perp_u = cross(axis_a, unitless::vec3{ 0.f, 1.f, 0.f });
+				if (magnitude(perp_u) < 1e-6f) perp_u = cross(axis_a, unitless::vec3{ 1.f, 0.f, 0.f });
+				perp_u = normalize(perp_u);
+				ang_dir = k == 0 ? perp_u : normalize(cross(axis_a, perp_u));
+			}
+			else {
+				ang_dir = dirs[k];
+			}
+
+			float inv_i_sum = 0.f;
+			if (!ba.locked) inv_i_sum += dot(ang_dir, to_unitless(ba.inv_inertia) * ang_dir);
+			if (!bb.locked) inv_i_sum += dot(ang_dir, to_unitless(bb.inv_inertia) * ang_dir);
+			const float eff_ang = inv_i_sum > 1e-10f ? (1.f / inv_i_sum) / h_squared : m_config.penalty_min;
+
+			j.ang_penalty[k] = std::clamp(
+				std::max(j.ang_penalty[k] * m_config.gamma, eff_ang),
+				m_config.penalty_min, m_config.penalty_max
+			);
 		}
-		if (j.limits_enabled && j.limit_penalty < m_config.penalty_min) {
-			j.limit_penalty = m_config.penalty_min;
+
+		if (j.limits_enabled) {
+			const unitless::vec3 limit_axis = rotate_axis(ba.orientation, j.local_axis_a);
+			float inv_i_sum = 0.f;
+			if (!ba.locked) inv_i_sum += dot(limit_axis, to_unitless(ba.inv_inertia) * limit_axis);
+			if (!bb.locked) inv_i_sum += dot(limit_axis, to_unitless(bb.inv_inertia) * limit_axis);
+			const float eff_limit = inv_i_sum > 1e-10f ? (1.f / inv_i_sum) / h_squared : m_config.penalty_min;
+
+			j.limit_penalty = std::clamp(
+				std::max(j.limit_penalty * m_config.gamma, eff_limit),
+				m_config.penalty_min, m_config.penalty_max
+			);
+		}
+	}
+
+	for (auto& j : m_graph.joint_constraints()) {
+		const auto& ba = m_bodies[j.body_a];
+		const auto& bb = m_bodies[j.body_b];
+		const vec3<length> rAW = rotate_vector(ba.orientation, j.local_anchor_a);
+		const vec3<length> rBW = rotate_vector(bb.orientation, j.local_anchor_b);
+		const vec3<length> d = (ba.position + rAW) - (bb.position + rBW);
+
+		if (j.type == joint_type::distance) {
+			j.pos_c0[0] = meters(magnitude(d).as<meters>()) - j.target_distance;
+		}
+		else if (j.type == joint_type::fixed || j.type == joint_type::hinge) {
+			const unitless::vec3 dirs[3] = { { 1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 1.f } };
+			for (int k = 0; k < 3; ++k) j.pos_c0[k] = dot(dirs[k], d);
+
+			const quat q_error = bb.orientation * conjugate(ba.orientation) * conjugate(j.rest_orientation);
+			const vec3<angle> theta = to_axis_angle(q_error);
+
+			if (j.type == joint_type::fixed) {
+				for (int k = 0; k < 3; ++k) j.ang_c0[k] = theta[k];
+			}
+			else {
+				const unitless::vec3 axis_a = rotate_axis(ba.orientation, j.local_axis_a);
+				const unitless::vec3 axis_b = rotate_axis(bb.orientation, j.local_axis_b);
+				const unitless::vec3 swing_error = cross(axis_a, axis_b);
+				unitless::vec3 perp_u = cross(axis_a, unitless::vec3{ 0.f, 1.f, 0.f });
+				if (magnitude(perp_u) < 1e-6f) perp_u = cross(axis_a, unitless::vec3{ 1.f, 0.f, 0.f });
+				perp_u = normalize(perp_u);
+				const unitless::vec3 perp_v = normalize(cross(axis_a, perp_u));
+				j.ang_c0[0] = radians(dot(perp_u, swing_error));
+				j.ang_c0[1] = radians(dot(perp_v, swing_error));
+
+				if (j.limits_enabled) {
+					const angle twist_angle = dot(axis_a, theta);
+					if (twist_angle < j.limit_lower) j.limit_c0 = twist_angle - j.limit_lower;
+					else if (twist_angle > j.limit_upper) j.limit_c0 = twist_angle - j.limit_upper;
+					else j.limit_c0 = angle{};
+				}
+			}
+		}
+		else if (j.type == joint_type::slider) {
+			const unitless::vec3 axis_w = normalize(rotate_axis(ba.orientation, j.local_axis_a));
+			unitless::vec3 perp0 = cross(axis_w, unitless::vec3{ 0.f, 1.f, 0.f });
+			if (magnitude(perp0) < 1e-6f) perp0 = cross(axis_w, unitless::vec3{ 1.f, 0.f, 0.f });
+			perp0 = normalize(perp0);
+			const unitless::vec3 perp1 = normalize(cross(axis_w, perp0));
+			j.pos_c0[0] = dot(perp0, d);
+			j.pos_c0[1] = dot(perp1, d);
+
+			const auto slider_theta = to_axis_angle(bb.orientation * conjugate(ba.orientation) * conjugate(j.rest_orientation));
+			for (int k = 0; k < 3; ++k) j.ang_c0[k] = slider_theta[k];
 		}
 	}
 
@@ -453,7 +563,7 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 					accumulate_contact(contacts[ci], bi, h_squared, current_alpha);
 				}
 				for (const auto ji : m_graph.body_joint_indices(bi)) {
-					accumulate_joint(joints[ji], bi, h_squared);
+					accumulate_joint(joints[ji], bi, h_squared, current_alpha);
 				}
 				if (const auto mi = m_body_motor_index[bi]; mi != no_motor) {
 					accumulate_motor(motors[mi], h_squared);
@@ -470,7 +580,7 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 				m_solve_state[motor.body_index] = {};
 				accumulate_motor(motor, h_squared);
 				for (const auto ji : m_graph.body_joint_indices(motor.body_index)) {
-					accumulate_joint(joints[ji], motor.body_index, h_squared);
+					accumulate_joint(joints[ji], motor.body_index, h_squared, current_alpha);
 				}
 				perform_newton_step(motor.body_index, h_squared);
 			}
@@ -482,17 +592,17 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 			if (m_body_motor_index[i] != no_motor) continue;
 			m_solve_state[i] = {};
 			for (const auto ji : m_graph.body_joint_indices(i)) {
-				accumulate_joint(joints[ji], i, h_squared);
+				accumulate_joint(joints[ji], i, h_squared, current_alpha);
 			}
 			perform_newton_step(i, h_squared);
 		}
 
 		if (it < static_cast<int>(m_config.iterations)) {
 			update_dual(current_alpha);
-			update_joint_dual();
 		}
 
 		if (it == static_cast<int>(m_config.iterations) - 1) {
+			update_joint_dual();
 			for (auto& body : m_bodies) {
 				if (!body.locked && !body.sleeping() && body.mass_value > mass{}) {
 					body.body_velocity = (body.predicted_position - body.initial_position) / dt;
@@ -810,7 +920,7 @@ auto gse::vbd::solver::update_dual(const float alpha) -> void {
 	}
 }
 
-auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, const std::uint32_t body_idx, const float h_squared) -> void {
+auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, const std::uint32_t body_idx, const float h_squared, const float alpha) -> void {
 	const auto& body_a = m_bodies[constraint.body_a];
 	const auto& body_b = m_bodies[constraint.body_b];
 	const bool is_a = (body_idx == constraint.body_a);
@@ -827,7 +937,7 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 	if (constraint.type == joint_type::distance) {
 		const float d_mag = magnitude(d).as<meters>();
 		const unitless::vec3 d_hat = d_mag > 1e-7f ? d.as<meters>() / d_mag : unitless::vec3{ 0.f, 1.f, 0.f };
-		const length c = meters(d_mag) - constraint.target_distance;
+		const length c = (meters(d_mag) - constraint.target_distance) - constraint.pos_c0[0] * alpha;
 		const length f = constraint.pos_penalty[0] * c + constraint.pos_lambda[0];
 
 		const unitless::vec3 j_lin = d_hat * sign;
@@ -841,13 +951,14 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 			m_solve_state[body_idx].angular_gradient += j_ang * fi;
 			m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * constraint.pos_penalty[0];
 			m_solve_state[body_idx].hessian_xtheta += outer_product(j_lin, j_ang) * constraint.pos_penalty[0];
+			accumulate_geometric_stiffness(m_solve_state[body_idx], r, d_hat, std::abs(fi));
 		}
 	}
 	else if (constraint.type == joint_type::fixed || constraint.type == joint_type::hinge) {
 		const unitless::vec3 dirs[3] = { { 1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 1.f } };
 
 		for (int k = 0; k < 3; ++k) {
-			const length c = dot(dirs[k], d);
+			const length c = dot(dirs[k], d) - constraint.pos_c0[k] * alpha;
 			const length f = constraint.pos_penalty[k] * c + constraint.pos_lambda[k];
 
 			const unitless::vec3 j_lin = dirs[k] * sign;
@@ -861,6 +972,7 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 				m_solve_state[body_idx].angular_gradient += j_ang * fi;
 				m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * constraint.pos_penalty[k];
 				m_solve_state[body_idx].hessian_xtheta += outer_product(j_lin, j_ang) * constraint.pos_penalty[k];
+				accumulate_geometric_stiffness(m_solve_state[body_idx], r, dirs[k], std::abs(fi));
 			}
 		}
 
@@ -870,11 +982,11 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 
 			if (constraint.type == joint_type::fixed) {
 				for (int k = 0; k < 3; ++k) {
-					const float c_ang = theta[k].as<radians>();
-					const float f_ang = constraint.ang_penalty[k] * c_ang + constraint.ang_lambda[k].as<radians>();
+					const angle c_ang = theta[k] - constraint.ang_c0[k] * alpha;
+					const angle f_ang = constraint.ang_penalty[k] * c_ang + constraint.ang_lambda[k];
 
 					const unitless::vec3 j_ang = dirs[k] * (-sign);
-					m_solve_state[body_idx].angular_gradient += j_ang * f_ang;
+					m_solve_state[body_idx].angular_gradient += j_ang * f_ang.as<radians>();
 					m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * constraint.ang_penalty[k];
 				}
 			}
@@ -890,41 +1002,42 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 				perp_u = normalize(perp_u);
 				const unitless::vec3 perp_v = normalize(cross(axis_a, perp_u));
 
-				const float c_u = dot(perp_u, swing_error);
-				const float c_v = dot(perp_v, swing_error);
+				const angle c_u = radians(dot(perp_u, swing_error)) - constraint.ang_c0[0] * alpha;
+				const angle c_v = radians(dot(perp_v, swing_error)) - constraint.ang_c0[1] * alpha;
 
-				const float f_u = constraint.ang_penalty[0] * c_u + constraint.ang_lambda[0].as<radians>();
-				const float f_v = constraint.ang_penalty[1] * c_v + constraint.ang_lambda[1].as<radians>();
+				const angle f_u = constraint.ang_penalty[0] * c_u + constraint.ang_lambda[0];
+				const angle f_v = constraint.ang_penalty[1] * c_v + constraint.ang_lambda[1];
 
 				const unitless::vec3 j_ang_u = perp_u * (-sign);
 				const unitless::vec3 j_ang_v = perp_v * (-sign);
 
-				m_solve_state[body_idx].angular_gradient += j_ang_u * f_u;
+				m_solve_state[body_idx].angular_gradient += j_ang_u * f_u.as<radians>();
 				m_solve_state[body_idx].angular_hessian += outer_product(j_ang_u, j_ang_u) * constraint.ang_penalty[0];
 
-				m_solve_state[body_idx].angular_gradient += j_ang_v * f_v;
+				m_solve_state[body_idx].angular_gradient += j_ang_v * f_v.as<radians>();
 				m_solve_state[body_idx].angular_hessian += outer_product(j_ang_v, j_ang_v) * constraint.ang_penalty[1];
 
 				if (constraint.limits_enabled) {
-					const float twist = dot(axis_a, theta.as<radians>());
-					const float lower = constraint.limit_lower.as<radians>();
-					const float upper = constraint.limit_upper.as<radians>();
+					const angle twist = dot(axis_a, theta);
+					const angle lower = constraint.limit_lower;
+					const angle upper = constraint.limit_upper;
 
 					bool limit_active = false;
-					float c_limit = 0.f;
+					angle c_limit = {};
 
 					if (twist < lower) {
-						c_limit = twist - lower;
+						c_limit = (twist - lower) - constraint.limit_c0 * alpha;
 						limit_active = true;
 					}
 					else if (twist > upper) {
-						c_limit = twist - upper;
+						c_limit = (twist - upper) - constraint.limit_c0 * alpha;
 						limit_active = true;
 					}
 
 					if (limit_active) {
-						const float f_limit = constraint.limit_penalty * c_limit + constraint.limit_lambda.as<radians>();
-						const float f_clamped = (c_limit < 0.f) ? std::min(f_limit, 0.f) : std::max(f_limit, 0.f);
+						const float c_limit_f = c_limit.as<radians>();
+						const float f_limit = constraint.limit_penalty * c_limit_f + constraint.limit_lambda.as<radians>();
+						const float f_clamped = (c_limit_f < 0.f) ? std::min(f_limit, 0.f) : std::max(f_limit, 0.f);
 
 						const unitless::vec3 j_limit = axis_a * (-sign);
 						m_solve_state[body_idx].angular_gradient += j_limit * f_clamped;
@@ -945,7 +1058,7 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 
 		const unitless::vec3 perps[2] = { perp0, perp1 };
 		for (int k = 0; k < 2; ++k) {
-			const length C = dot(perps[k], d);
+			const length C = dot(perps[k], d) - constraint.pos_c0[k] * alpha;
 			const length f = constraint.pos_penalty[k] * C + constraint.pos_lambda[k];
 
 			const unitless::vec3 j_lin = perps[k] * sign;
@@ -959,6 +1072,7 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 				m_solve_state[body_idx].angular_gradient += j_ang * fi;
 				m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * constraint.pos_penalty[k];
 				m_solve_state[body_idx].hessian_xtheta += outer_product(j_lin, j_ang) * constraint.pos_penalty[k];
+				accumulate_geometric_stiffness(m_solve_state[body_idx], r, perps[k], std::abs(fi));
 			}
 		}
 
@@ -968,11 +1082,11 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 			const unitless::vec3 dirs[3] = { { 1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 1.f } };
 
 			for (int k = 0; k < 3; ++k) {
-				const float C_ang = theta[k].as<radians>();
-				const float f_ang = constraint.ang_penalty[k] * C_ang + constraint.ang_lambda[k].as<radians>();
+				const angle c_ang = theta[k] - constraint.ang_c0[k] * alpha;
+				const angle f_ang = constraint.ang_penalty[k] * c_ang + constraint.ang_lambda[k];
 
 				const unitless::vec3 j_ang = dirs[k] * (-sign);
-				m_solve_state[body_idx].angular_gradient += j_ang * f_ang;
+				m_solve_state[body_idx].angular_gradient += j_ang * f_ang.as<radians>();
 				m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * constraint.ang_penalty[k];
 			}
 		}
@@ -984,6 +1098,8 @@ auto gse::vbd::solver::update_joint_dual() -> void {
 		const auto& body_a = m_bodies[j.body_a];
 		const auto& body_b = m_bodies[j.body_b];
 
+		if ((body_a.locked || body_a.sleeping()) && (body_b.locked || body_b.sleeping())) continue;
+
 		const vec3<length> r_aw = rotate_vector(body_a.predicted_orientation, j.local_anchor_a);
 		const vec3<length> r_bw = rotate_vector(body_b.predicted_orientation, j.local_anchor_b);
 		const vec3<length> p_a = body_a.predicted_position + r_aw;
@@ -992,14 +1108,14 @@ auto gse::vbd::solver::update_joint_dual() -> void {
 
 		if (j.type == joint_type::distance) {
 			const float d_mag = magnitude(d).as<meters>();
-			const length C = meters(d_mag) - j.target_distance;
+			const length C = (meters(d_mag) - j.target_distance) - j.pos_c0[0];
 			j.pos_lambda[0] = j.pos_penalty[0] * C + j.pos_lambda[0];
 			j.pos_penalty[0] = std::min(j.pos_penalty[0] + m_config.beta * std::abs(C.as<meters>()), m_config.penalty_max);
 		}
 		else if (j.type == joint_type::fixed || j.type == joint_type::hinge) {
 			for (int k = 0; k < 3; ++k) {
 				const unitless::vec3 dirs[3] = { { 1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 1.f } };
-				const length c = dot(dirs[k], d);
+				const length c = dot(dirs[k], d) - j.pos_c0[k];
 				j.pos_lambda[k] = j.pos_penalty[k] * c + j.pos_lambda[k];
 				j.pos_penalty[k] = std::min(j.pos_penalty[k] + m_config.beta * std::abs(c.as<meters>()), m_config.penalty_max);
 			}
@@ -1009,9 +1125,9 @@ auto gse::vbd::solver::update_joint_dual() -> void {
 
 			if (j.type == joint_type::fixed) {
 				for (int k = 0; k < 3; ++k) {
-					const angle c_ang = theta[k];
+					const angle c_ang = theta[k] - j.ang_c0[k];
 					j.ang_lambda[k] = j.ang_penalty[k] * c_ang + j.ang_lambda[k];
-					j.ang_penalty[k] = std::min(j.ang_penalty[k] + m_config.beta * std::abs(c_ang.as<radians>()), m_config.penalty_max);
+					j.ang_penalty[k] = std::min(j.ang_penalty[k] + m_config.beta * abs(c_ang).as<radians>(), m_config.penalty_max);
 				}
 			}
 			else {
@@ -1026,29 +1142,29 @@ auto gse::vbd::solver::update_joint_dual() -> void {
 				perp_u = normalize(perp_u);
 				const unitless::vec3 perp_v = normalize(cross(axis_a, perp_u));
 
-				const float c_u = dot(perp_u, swing_error);
-				const float c_v = dot(perp_v, swing_error);
+				const angle c_u = radians(dot(perp_u, swing_error)) - j.ang_c0[0];
+				const angle c_v = radians(dot(perp_v, swing_error)) - j.ang_c0[1];
 
-				j.ang_lambda[0] = radians(j.ang_penalty[0] * c_u) + j.ang_lambda[0];
-				j.ang_penalty[0] = std::min(j.ang_penalty[0] + m_config.beta * std::abs(c_u), m_config.penalty_max);
+				j.ang_lambda[0] = j.ang_penalty[0] * c_u + j.ang_lambda[0];
+				j.ang_penalty[0] = std::min(j.ang_penalty[0] + m_config.beta * abs(c_u).as<radians>(), m_config.penalty_max);
 
-				j.ang_lambda[1] = radians(j.ang_penalty[1] * c_v) + j.ang_lambda[1];
-				j.ang_penalty[1] = std::min(j.ang_penalty[1] + m_config.beta * std::abs(c_v), m_config.penalty_max);
+				j.ang_lambda[1] = j.ang_penalty[1] * c_v + j.ang_lambda[1];
+				j.ang_penalty[1] = std::min(j.ang_penalty[1] + m_config.beta * abs(c_v).as<radians>(), m_config.penalty_max);
 
 				if (j.limits_enabled) {
-					const float twist = dot(axis_a, theta.as<radians>());
-					const float lower = j.limit_lower.as<radians>();
-					const float upper = j.limit_upper.as<radians>();
+					const angle twist = dot(axis_a, theta);
+					const angle lower = j.limit_lower;
+					const angle upper = j.limit_upper;
 
 					if (twist < lower) {
-						const float c_limit = twist - lower;
-						j.limit_lambda = std::min(radians(j.limit_penalty * c_limit) + j.limit_lambda, angle{});
-						j.limit_penalty = std::min(j.limit_penalty + m_config.beta * std::abs(c_limit), m_config.penalty_max);
+						const angle c_limit = (twist - lower) - j.limit_c0;
+						j.limit_lambda = std::min(j.limit_penalty * c_limit + j.limit_lambda, angle{});
+						j.limit_penalty = std::min(j.limit_penalty + m_config.beta * abs(c_limit).as<radians>(), m_config.penalty_max);
 					}
 					else if (twist > upper) {
-						const float c_limit = twist - upper;
-						j.limit_lambda = std::max(radians(j.limit_penalty * c_limit) + j.limit_lambda, angle{});
-						j.limit_penalty = std::min(j.limit_penalty + m_config.beta * std::abs(c_limit), m_config.penalty_max);
+						const angle c_limit = (twist - upper) - j.limit_c0;
+						j.limit_lambda = std::max(j.limit_penalty * c_limit + j.limit_lambda, angle{});
+						j.limit_penalty = std::min(j.limit_penalty + m_config.beta * abs(c_limit).as<radians>(), m_config.penalty_max);
 					}
 				}
 			}
@@ -1064,7 +1180,7 @@ auto gse::vbd::solver::update_joint_dual() -> void {
 
 			const unitless::vec3 perps[2] = { perp0, perp1 };
 			for (int k = 0; k < 2; ++k) {
-				const length c = dot(perps[k], d);
+				const length c = dot(perps[k], d) - j.pos_c0[k];
 				j.pos_lambda[k] = j.pos_penalty[k] * c + j.pos_lambda[k];
 				j.pos_penalty[k] = std::min(j.pos_penalty[k] + m_config.beta * std::abs(c.as<meters>()), m_config.penalty_max);
 			}
@@ -1073,9 +1189,9 @@ auto gse::vbd::solver::update_joint_dual() -> void {
 			const vec3<angle> theta = to_axis_angle(q_error);
 
 			for (int k = 0; k < 3; ++k) {
-				const angle c_ang = theta[k];
+				const angle c_ang = theta[k] - j.ang_c0[k];
 				j.ang_lambda[k] = j.ang_penalty[k] * c_ang + j.ang_lambda[k];
-				j.ang_penalty[k] = std::min(j.ang_penalty[k] + m_config.beta * std::abs(c_ang.as<radians>()), m_config.penalty_max);
+				j.ang_penalty[k] = std::min(j.ang_penalty[k] + m_config.beta * abs(c_ang).as<radians>(), m_config.penalty_max);
 			}
 		}
 	}

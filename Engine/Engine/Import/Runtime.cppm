@@ -13,3 +13,4 @@ export import :renderer_api;
 export import :camera_api;
 export import :input_api;
 export import :audio_api;
+export import :physics_api;

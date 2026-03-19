@@ -50,6 +50,9 @@ public:
 		auto with_shutdown(
 			behavior_hook::behavior_func func
 		) -> builder&;
+
+		auto identify(
+		) const -> id;
 	private:
 		id m_entity_id;
 		registry* m_registry = nullptr;
@@ -131,6 +134,10 @@ auto gse::hook<gse::scene>::builder::with_render(behavior_hook::behavior_func fu
 auto gse::hook<gse::scene>::builder::with_shutdown(behavior_hook::behavior_func func) -> builder& {
 	ensure_behavior_hook()->on_shutdown(std::move(func));
 	return *this;
+}
+
+auto gse::hook<gse::scene>::builder::identify() const -> id {
+	return m_entity_id;
 }
 
 auto gse::hook<gse::scene>::builder::ensure_behavior_hook() -> behavior_hook* {
