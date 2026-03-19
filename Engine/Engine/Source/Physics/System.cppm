@@ -16,11 +16,31 @@ import :vbd_contact_cache;
 import :vbd_solver;
 import :vbd_gpu_solver;
 
-#ifndef GSE_GPU_COMPARE
-#define GSE_GPU_COMPARE 0
-#endif
-
 export namespace gse::physics {
+	struct joint_definition {
+		id entity_a;
+		id entity_b;
+		vbd::joint_type type = vbd::joint_type::distance;
+		vec3<length> local_anchor_a;
+		vec3<length> local_anchor_b;
+		unitless::vec3 local_axis_a = { 0.f, 1.f, 0.f };
+		unitless::vec3 local_axis_b = { 0.f, 1.f, 0.f };
+		length target_distance = {};
+		angle limit_lower = radians(-std::numbers::pi_v<float>);
+		angle limit_upper = radians(std::numbers::pi_v<float>);
+		bool limits_enabled = false;
+		quat rest_orientation;
+
+		vec3<length> pos_lambda;
+		unitless::vec3 pos_penalty;
+		vec3<angle> ang_lambda;
+		unitless::vec3 ang_penalty;
+		angle limit_lambda = {};
+		float limit_penalty = 0.f;
+	};
+
+	using joint_handle = std::uint32_t;
+
 	struct state {
 		time_t<float, seconds> accumulator{};
 		bool update_phys = true;
@@ -34,6 +54,7 @@ export namespace gse::physics {
 		mutable vbd::gpu_solver gpu_solver;
 		vbd::contact_cache contact_cache;
 		std::unordered_map<id, std::uint32_t> sleep_counters;
+		std::vector<joint_definition> joints;
 
 		struct gpu_prev_frame {
 			std::vector<vbd::body_state> result_bodies;
@@ -41,45 +62,6 @@ export namespace gse::physics {
 			std::vector<vbd::warm_start_entry> warm_start_contacts;
 		} gpu_prev;
 
-#if GSE_GPU_COMPARE
-		mutable struct gpu_compare_state {
-			bool enabled = true;
-			std::uint64_t next_sequence = 1;
-			vbd::solver cpu_reference_solver;
-
-			struct contact_snapshot {
-				std::uint32_t body_a = 0;
-				std::uint32_t body_b = 0;
-				std::uint64_t feature_key = 0;
-				unitless::vec3 normal = {};
-				unitless::vec3 tangent_u = {};
-				unitless::vec3 tangent_v = {};
-				vec3<length> local_anchor_a = {};
-				vec3<length> local_anchor_b = {};
-				std::array<float, 3> c0 = {};
-				std::array<float, 3> lambda = {};
-				std::array<float, 3> penalty = {};
-				float friction_coeff = 0.f;
-			};
-
-			struct snapshot {
-				std::uint64_t sequence = 0;
-				std::uint32_t substeps = 1;
-				std::size_t warm_start_count = 0;
-				std::vector<id> entity_ids;
-				std::vector<vbd::body_state> gpu_input_bodies;
-				std::vector<vbd::body_state> gpu_result_bodies;
-				std::vector<vbd::contact_readback_entry> gpu_contacts;
-				std::vector<vbd::narrow_phase_debug_entry> gpu_narrow_phase_debug;
-				std::vector<vbd::body_state> cpu_result_bodies;
-				std::vector<contact_snapshot> cpu_contacts;
-			};
-
-			std::optional<snapshot> pending;
-			std::optional<snapshot> in_flight;
-			std::deque<snapshot> completed;
-		} gpu_compare;
-#else
 		mutable struct gpu_readback_state {
 			struct snapshot {
 				std::vector<id> entity_ids;
@@ -92,14 +74,28 @@ export namespace gse::physics {
 			std::optional<snapshot> in_flight;
 			std::deque<snapshot> completed;
 		} gpu_readback;
-#endif
 	};
+
+	auto create_joint(state& s, const joint_definition& def) -> joint_handle;
+	auto remove_joint(state& s, joint_handle handle) -> void;
 
 	struct system {
 		static auto initialize(const initialize_phase& phase, state& s) -> void;
 		static auto update(update_phase& phase, state& s) -> void;
 		static auto render(render_phase& phase, const state& s) -> void;
 	};
+}
+
+auto gse::physics::create_joint(state& s, const joint_definition& def) -> joint_handle {
+	const auto handle = static_cast<joint_handle>(s.joints.size());
+	s.joints.push_back(def);
+	return handle;
+}
+
+auto gse::physics::remove_joint(state& s, const joint_handle handle) -> void {
+	if (handle < s.joints.size()) {
+		s.joints.erase(s.joints.begin() + handle);
+	}
 }
 
 namespace gse::physics {
@@ -205,8 +201,8 @@ namespace gse::physics {
 		vbd::contact_cache cache;
 		for (const auto& c : warm_start_contacts) {
 			cache.store(c.body_a, c.body_b, unpack_feature(c.feature_key), vbd::cached_lambda{
-				.lambda = { meters(c.lambda[0]), meters(c.lambda[1]), meters(c.lambda[2]) },
-				.penalty = { c.penalty[0], c.penalty[1], c.penalty[2] },
+				.lambda = c.lambda,
+				.penalty = c.penalty,
 				.normal = c.normal,
 				.tangent_u = c.tangent_u,
 				.tangent_v = c.tangent_v,
@@ -232,531 +228,7 @@ namespace gse::physics {
 		});
 	}
 
-#if GSE_GPU_COMPARE
-	struct compare_collision_object {
-		std::uint32_t body_index = 0;
-		bounding_box box;
-	};
-#endif
 
-#if GSE_GPU_COMPARE
-	auto to_local_anchor(const quat& q, const vec3<length>& v) -> vec3<length> {
-		const unitless::vec3 v_unitless = v.as<meters>();
-		const unitless::vec3 rotated = mat3_cast(conjugate(q)) * v_unitless;
-		return rotated * meters(1.f);
-	}
-
-	auto quaternion_angle_difference(const quat& a, const quat& b) -> float {
-		const quat dq = normalize(a * conjugate(b));
-		return 2.f * std::acos(std::clamp(std::abs(dq.s()), 0.f, 1.f));
-	}
-
-	auto build_cpu_reference_snapshot(
-		state& s,
-		chunk<collision_component>& collision,
-		const std::unordered_map<id, std::uint32_t>& id_to_body_index,
-		const std::vector<vbd::body_state>& bodies,
-		const std::vector<id>& entity_ids,
-		const std::vector<vbd::velocity_motor_constraint>& motors,
-		const std::span<const vbd::warm_start_entry> warm_start_contacts,
-		const std::span<const vec3<velocity>> previous_velocities,
-		const time_t<float, seconds> dt,
-		const int steps,
-		const std::uint64_t sequence
-	) -> state::gpu_compare_state::snapshot {
-		state::gpu_compare_state::snapshot snapshot;
-		snapshot.sequence = sequence;
-		snapshot.substeps = static_cast<std::uint32_t>(std::max(steps, 1));
-		snapshot.warm_start_count = warm_start_contacts.size();
-		snapshot.entity_ids = entity_ids;
-
-		auto& solver = s.gpu_compare.cpu_reference_solver;
-		solver.configure(s.vbd_solver.config());
-		solver.seed_previous_velocities(previous_velocities);
-
-		auto cache = build_contact_cache_from_warm_start(warm_start_contacts);
-
-		std::vector<vbd::body_state> step_bodies = bodies;
-		std::vector<compare_collision_object> objects;
-		objects.reserve(collision.size());
-		for (collision_component& cc : collision) {
-			if (!cc.resolve_collisions) continue;
-			const auto it = id_to_body_index.find(cc.owner_id());
-			if (it == id_to_body_index.end()) continue;
-			objects.push_back({
-				.body_index = it->second,
-				.box = cc.bounding_box
-			});
-		}
-
-		const int total_steps = std::max(steps, 1);
-		for (int step = 0; step < total_steps; ++step) {
-			for (auto& object : objects) {
-				if (object.body_index >= step_bodies.size()) continue;
-				const auto& body = step_bodies[object.body_index];
-				object.box.update(body.position, body.orientation);
-			}
-
-			solver.begin_frame(step_bodies, cache);
-
-			for (std::size_t i = 0; i < objects.size(); ++i) {
-				for (std::size_t j = i + 1; j < objects.size(); ++j) {
-					auto& object_a = objects[i];
-					auto& object_b = objects[j];
-
-					const auto& aabb_a = object_a.box.aabb();
-					const auto& aabb_b = object_b.box.aabb();
-					if (!aabb_a.overlaps(aabb_b, solver.config().speculative_margin)) continue;
-
-					auto sat_result = narrow_phase_collision::sat_speculative(
-						object_a.box,
-						object_b.box,
-						solver.config().speculative_margin
-					);
-					if (!sat_result) continue;
-
-					auto& sat = *sat_result;
-					if (dot(sat.normal, object_b.box.center() - object_a.box.center()) < meters(0.f)) {
-						sat.normal = -sat.normal;
-					}
-
-					auto manifold = narrow_phase_collision::generate_manifold(
-						object_a.box,
-						object_b.box,
-						sat.normal,
-						sat.separation
-					);
-					if (manifold.point_count == 0) continue;
-
-					const std::uint32_t body_a = object_a.body_index;
-					const std::uint32_t body_b = object_b.body_index;
-					const auto& cfg = solver.config();
-					const unitless::vec3 constraint_normal = -sat.normal;
-
-					const auto& bs_a = solver.body_states()[body_a];
-					const auto& bs_b = solver.body_states()[body_b];
-					const float penalty_floor = cfg.penalty_min;
-
-					for (std::uint32_t p = 0; p < manifold.point_count; ++p) {
-						const auto& [position_on_a, position_on_b, normal, separation, feature] = manifold.points[p];
-
-						vec3<length> local_r_a = to_local_anchor(bs_a.orientation, position_on_a - bs_a.position);
-						vec3<length> local_r_b = to_local_anchor(bs_b.orientation, position_on_b - bs_b.position);
-
-						auto cached = cache.lookup(body_a, body_b, feature);
-						const vec3<length> current_d = position_on_a - position_on_b;
-						const length current_normal_gap = dot(constraint_normal, current_d) + cfg.collision_margin;
-						const bool reuse_cached_normal =
-							cached &&
-							(cached->lambda[0] < meters(-1e-3f) || current_normal_gap < meters(-1e-4f));
-						const bool reuse_cached_tangent =
-							reuse_cached_normal &&
-							cached.has_value();
-						const bool reuse_cached_sticking =
-							reuse_cached_tangent &&
-							cached->sticking;
-
-						length init_lambda[3] = {};
-						float init_penalty[3] = { penalty_floor, penalty_floor, penalty_floor };
-
-						if (reuse_cached_normal) {
-							init_penalty[0] = std::max(cached->penalty[0], penalty_floor);
-
-							const vec3<length> cached_normal_force = cached->normal * cached->lambda[0];
-							init_lambda[0] = std::min(dot(cached_normal_force, constraint_normal), length{});
-						}
-
-						if (reuse_cached_tangent) {
-							init_penalty[1] = std::max(cached->penalty[1], penalty_floor);
-							init_penalty[2] = std::max(cached->penalty[2], penalty_floor);
-
-							const vec3<length> cached_tangent_force =
-								cached->tangent_u * cached->lambda[1] +
-								cached->tangent_v * cached->lambda[2];
-
-							init_lambda[1] = dot(cached_tangent_force, manifold.tangent_u);
-							init_lambda[2] = dot(cached_tangent_force, manifold.tangent_v);
-
-							const length friction_bound = abs(init_lambda[0]) * cfg.friction_coefficient;
-							init_lambda[1] = std::clamp(init_lambda[1], -friction_bound, friction_bound);
-							init_lambda[2] = std::clamp(init_lambda[2], -friction_bound, friction_bound);
-						}
-
-						if (reuse_cached_sticking) {
-							local_r_a = cached->local_anchor_a;
-							local_r_b = cached->local_anchor_b;
-						}
-
-						solver.add_contact_constraint(vbd::contact_constraint{
-							.body_a = body_a,
-							.body_b = body_b,
-							.normal = constraint_normal,
-							.tangent_u = manifold.tangent_u,
-							.tangent_v = manifold.tangent_v,
-							.r_a = local_r_a,
-							.r_b = local_r_b,
-							.C0 = { separation, {}, {} },
-							.lambda = { init_lambda[0], init_lambda[1], init_lambda[2] },
-							.penalty = { init_penalty[0], init_penalty[1], init_penalty[2] },
-							.penalty_floor = penalty_floor,
-							.friction_coeff = cfg.friction_coefficient,
-							.sticking = cached ? cached->sticking : false,
-							.feature = feature
-						});
-					}
-				}
-			}
-
-			for (const auto& motor : motors) {
-				solver.add_motor_constraint(motor);
-			}
-
-			solver.solve(dt);
-
-			if (step + 1 == total_steps) {
-				const auto& contacts = solver.graph().contact_constraints();
-				snapshot.cpu_contacts.reserve(contacts.size());
-				for (const auto& c : contacts) {
-					snapshot.cpu_contacts.push_back(state::gpu_compare_state::contact_snapshot{
-						.body_a = c.body_a,
-						.body_b = c.body_b,
-						.feature_key = pack_feature(c.feature),
-						.normal = c.normal,
-						.tangent_u = c.tangent_u,
-						.tangent_v = c.tangent_v,
-						.local_anchor_a = c.r_a,
-						.local_anchor_b = c.r_b,
-						.c0 = { c.C0[0].as<meters>(), c.C0[1].as<meters>(), c.C0[2].as<meters>() },
-						.lambda = { c.lambda[0].as<meters>(), c.lambda[1].as<meters>(), c.lambda[2].as<meters>() },
-						.penalty = { c.penalty[0], c.penalty[1], c.penalty[2] },
-						.friction_coeff = c.friction_coeff
-					});
-				}
-			}
-
-			solver.end_frame(step_bodies, cache);
-		}
-
-		snapshot.cpu_result_bodies = step_bodies;
-		return snapshot;
-	}
-
-	auto log_gpu_cpu_deviations(
-		const state::gpu_compare_state::snapshot& snapshot,
-		const std::span<const vbd::contact_readback_entry> gpu_contacts,
-		const std::span<const vbd::narrow_phase_debug_entry> gpu_narrow_phase_debug
-	) -> void {
-		const auto body_count = std::min(snapshot.cpu_result_bodies.size(), snapshot.gpu_result_bodies.size());
-		if (body_count == 0) {
-			return;
-		}
-
-		constexpr float pos_threshold = 0.02f;
-		constexpr float vel_threshold = 0.25f;
-		constexpr float rot_threshold = 0.05f;
-		constexpr float ang_vel_threshold = 0.5f;
-		constexpr float lambda_threshold = 5.f;
-		constexpr float c0_threshold = 0.01f;
-		constexpr float normal_threshold = 0.02f;
-		constexpr std::size_t max_detail_logs = 8;
-
-		float max_pos_error = 0.f;
-		float max_vel_error = 0.f;
-		float max_rot_error = 0.f;
-		float max_ang_vel_error = 0.f;
-		std::size_t max_pos_body = 0;
-		std::size_t max_vel_body = 0;
-		std::size_t max_rot_body = 0;
-		std::size_t max_ang_vel_body = 0;
-		std::size_t large_body_errors = 0;
-
-		for (std::size_t i = 0; i < body_count; ++i) {
-			const auto& cpu = snapshot.cpu_result_bodies[i];
-			const auto& gpu = snapshot.gpu_result_bodies[i];
-
-			const float pos_error = magnitude((gpu.position - cpu.position).as<meters>());
-			const float vel_error = magnitude((gpu.body_velocity - cpu.body_velocity).as<meters_per_second>());
-			const float rot_error = quaternion_angle_difference(gpu.orientation, cpu.orientation);
-			const float ang_vel_error = magnitude((gpu.body_angular_velocity - cpu.body_angular_velocity).as<radians_per_second>());
-
-			if (pos_error > max_pos_error) { max_pos_error = pos_error; max_pos_body = i; }
-			if (vel_error > max_vel_error) { max_vel_error = vel_error; max_vel_body = i; }
-			if (rot_error > max_rot_error) { max_rot_error = rot_error; max_rot_body = i; }
-			if (ang_vel_error > max_ang_vel_error) { max_ang_vel_error = ang_vel_error; max_ang_vel_body = i; }
-
-			if (pos_error > pos_threshold || vel_error > vel_threshold || rot_error > rot_threshold || ang_vel_error > ang_vel_threshold) {
-				large_body_errors++;
-			}
-		}
-
-		std::unordered_map<contact_compare_key, const vbd::contact_readback_entry*, contact_compare_key_hash> gpu_contact_map;
-		gpu_contact_map.reserve(gpu_contacts.size());
-		for (const auto& c : gpu_contacts) {
-			gpu_contact_map.insert_or_assign(contact_compare_key{
-				.body_a = c.body_a,
-				.body_b = c.body_b,
-				.feature_key = c.feature_key
-			}, std::addressof(c));
-		}
-
-		const auto pack_body_pair = [](const std::uint32_t body_a, const std::uint32_t body_b) {
-			return (static_cast<std::uint64_t>(body_a) << 32) | static_cast<std::uint64_t>(body_b);
-		};
-
-		std::unordered_map<std::uint64_t, const vbd::narrow_phase_debug_entry*> gpu_debug_by_pair;
-		gpu_debug_by_pair.reserve(gpu_narrow_phase_debug.size());
-		for (const auto& debug_entry : gpu_narrow_phase_debug) {
-			gpu_debug_by_pair.emplace(pack_body_pair(debug_entry.body_a, debug_entry.body_b), std::addressof(debug_entry));
-		}
-
-		std::size_t missing_gpu_contacts = 0;
-		std::size_t extra_gpu_contacts = 0;
-		float max_lambda_error = 0.f;
-		float max_c0_error = 0.f;
-		float max_normal_error = 0.f;
-		std::size_t contact_detail_logs = 0;
-
-		std::unordered_set<contact_compare_key, contact_compare_key_hash> matched_keys;
-		matched_keys.reserve(snapshot.cpu_contacts.size());
-		for (const auto& c : snapshot.cpu_contacts) {
-			const contact_compare_key key{
-				.body_a = c.body_a,
-				.body_b = c.body_b,
-				.feature_key = c.feature_key
-			};
-
-			const auto it = gpu_contact_map.find(key);
-			if (it == gpu_contact_map.end()) {
-				missing_gpu_contacts++;
-				if (contact_detail_logs < max_detail_logs) {
-					log::println(
-						"  missing gpu contact: bodies=({}, {}) feature={:#018x}",
-						c.body_a,
-						c.body_b,
-						c.feature_key
-					);
-					contact_detail_logs++;
-				}
-				continue;
-			}
-
-			matched_keys.insert(key);
-			const auto& gpu = *it->second;
-
-			float lambda_error = 0.f;
-			float c0_error = 0.f;
-			for (int row = 0; row < 3; ++row) {
-				lambda_error = std::max(lambda_error, std::abs(gpu.lambda[row] - c.lambda[row]));
-				c0_error = std::max(c0_error, std::abs(gpu.c0[row] - c.c0[row]));
-			}
-
-			const float normal_error = magnitude(gpu.normal - c.normal);
-			max_lambda_error = std::max(max_lambda_error, lambda_error);
-			max_c0_error = std::max(max_c0_error, c0_error);
-			max_normal_error = std::max(max_normal_error, normal_error);
-
-			if ((lambda_error > lambda_threshold || c0_error > c0_threshold || normal_error > normal_threshold) && contact_detail_logs < max_detail_logs) {
-				log::println(
-					"  contact diff: bodies=({}, {}) feature={:#018x} lambda_err={:.4f} c0_err={:.4f} normal_err={:.4f} cpu_lambda=({:.3f},{:.3f},{:.3f}) gpu_lambda=({:.3f},{:.3f},{:.3f})",
-					c.body_a,
-					c.body_b,
-					c.feature_key,
-					lambda_error,
-					c0_error,
-					normal_error,
-					c.lambda[0],
-					c.lambda[1],
-					c.lambda[2],
-					gpu.lambda[0],
-					gpu.lambda[1],
-					gpu.lambda[2]
-				);
-				contact_detail_logs++;
-			}
-		}
-
-		for (const auto& c : gpu_contacts) {
-			const contact_compare_key key{
-				.body_a = c.body_a,
-				.body_b = c.body_b,
-				.feature_key = c.feature_key
-			};
-			if (!matched_keys.contains(key)) {
-				extra_gpu_contacts++;
-				if (contact_detail_logs < max_detail_logs) {
-					log::println(
-						"  extra gpu contact: bodies=({}, {}) feature={:#018x}",
-						c.body_a,
-						c.body_b,
-						c.feature_key
-					);
-					contact_detail_logs++;
-				}
-			}
-		}
-
-		const bool has_large_contact_error =
-			snapshot.cpu_contacts.size() != gpu_contacts.size() ||
-			missing_gpu_contacts > 0 ||
-			extra_gpu_contacts > 0 ||
-			max_lambda_error > lambda_threshold ||
-			max_c0_error > c0_threshold ||
-			max_normal_error > normal_threshold;
-
-		const bool has_large_body_error =
-			large_body_errors > 0 ||
-			max_pos_error > pos_threshold ||
-			max_vel_error > vel_threshold ||
-			max_rot_error > rot_threshold ||
-			max_ang_vel_error > ang_vel_threshold;
-
-		if (!has_large_body_error && !has_large_contact_error) {
-			return;
-		}
-
-		log::println(
-			"[GPU Compare] seq={} substeps={} warm_starts={} bodies={} cpu_contacts={} gpu_contacts={} max_pos={:.4f} body={} max_vel={:.4f} body={} max_rot={:.4f} body={} max_ang_vel={:.4f} body={}",
-			snapshot.sequence,
-			snapshot.substeps,
-			snapshot.warm_start_count,
-			body_count,
-			snapshot.cpu_contacts.size(),
-			gpu_contacts.size(),
-			max_pos_error,
-			max_pos_body,
-			max_vel_error,
-			max_vel_body,
-			max_rot_error,
-			max_rot_body,
-			max_ang_vel_error,
-			max_ang_vel_body
-		);
-		log::println(
-			"  contact_mismatch: missing_gpu={} extra_gpu={} max_lambda={:.4f} max_c0={:.4f} max_normal={:.4f}",
-			missing_gpu_contacts,
-			extra_gpu_contacts,
-			max_lambda_error,
-			max_c0_error,
-			max_normal_error
-		);
-		if ((missing_gpu_contacts > 0 || extra_gpu_contacts > 0) && snapshot.substeps > 1) {
-			log::println(
-				"  hint: contact-set drift with multi-substep solve usually points at GPU contact generation staying stale across substeps or feature-id mismatch"
-			);
-		}
-		else if (missing_gpu_contacts == 0 && extra_gpu_contacts == 0 && (max_lambda_error > lambda_threshold || max_c0_error > c0_threshold || max_normal_error > normal_threshold)) {
-			log::println(
-				"  hint: contacts match but rows diverge, so focus on solve/update_lambda semantics rather than narrow phase"
-			);
-		}
-		else if (missing_gpu_contacts == 0 && extra_gpu_contacts == 0 && max_lambda_error <= lambda_threshold && max_c0_error <= c0_threshold && max_normal_error <= normal_threshold) {
-			log::println(
-				"  hint: contacts match, so focus on predict/derive/finalize body updates"
-			);
-		}
-
-		std::size_t debug_pair_logs = 0;
-		std::unordered_set<std::uint64_t> logged_debug_pairs;
-		logged_debug_pairs.reserve(8);
-		for (const auto& c : snapshot.cpu_contacts) {
-			const contact_compare_key key{
-				.body_a = c.body_a,
-				.body_b = c.body_b,
-				.feature_key = c.feature_key
-			};
-			if (gpu_contact_map.contains(key)) {
-				continue;
-			}
-
-			const std::uint64_t pair_key = pack_body_pair(c.body_a, c.body_b);
-			if (logged_debug_pairs.contains(pair_key)) {
-				continue;
-			}
-
-			const auto debug_it = gpu_debug_by_pair.find(pair_key);
-			if (debug_it == gpu_debug_by_pair.end()) {
-				continue;
-			}
-
-			const auto& debug_entry = *debug_it->second;
-			log::println(
-				"  gpu narrow-phase: bodies=({}, {}) clipped_valid={} clipped_verts={} raw={} unique={} result={} fallback={} speculative={} ref_is_a={} faces=({}, {})",
-				debug_entry.body_a,
-				debug_entry.body_b,
-				debug_entry.clipped_valid ? 1 : 0,
-				debug_entry.clipped_vertices,
-				debug_entry.raw_candidates,
-				debug_entry.unique_candidates,
-				debug_entry.result_count,
-				debug_entry.used_fallback ? 1 : 0,
-				debug_entry.speculative ? 1 : 0,
-				debug_entry.reference_is_a ? 1 : 0,
-				debug_entry.reference_face,
-				debug_entry.incident_face
-			);
-			logged_debug_pairs.insert(pair_key);
-			debug_pair_logs++;
-			if (debug_pair_logs >= 4) {
-				break;
-			}
-		}
-
-		if (debug_pair_logs == 0 && !gpu_narrow_phase_debug.empty()) {
-			const std::size_t fallback_debug_logs = std::min<std::size_t>(gpu_narrow_phase_debug.size(), 3);
-			for (std::size_t i = 0; i < fallback_debug_logs; ++i) {
-				const auto& debug_entry = gpu_narrow_phase_debug[i];
-				log::println(
-					"  gpu narrow-phase: bodies=({}, {}) clipped_valid={} clipped_verts={} raw={} unique={} result={} fallback={} speculative={} ref_is_a={} faces=({}, {})",
-					debug_entry.body_a,
-					debug_entry.body_b,
-					debug_entry.clipped_valid ? 1 : 0,
-					debug_entry.clipped_vertices,
-					debug_entry.raw_candidates,
-					debug_entry.unique_candidates,
-					debug_entry.result_count,
-					debug_entry.used_fallback ? 1 : 0,
-					debug_entry.speculative ? 1 : 0,
-					debug_entry.reference_is_a ? 1 : 0,
-					debug_entry.reference_face,
-					debug_entry.incident_face
-				);
-			}
-		}
-
-		std::size_t detail_logs = 0;
-		for (std::size_t i = 0; i < body_count && detail_logs < max_detail_logs; ++i) {
-			const auto& cpu = snapshot.cpu_result_bodies[i];
-			const auto& gpu = snapshot.gpu_result_bodies[i];
-
-			const float pos_error = magnitude((gpu.position - cpu.position).as<meters>());
-			const float vel_error = magnitude((gpu.body_velocity - cpu.body_velocity).as<meters_per_second>());
-			const float rot_error = quaternion_angle_difference(gpu.orientation, cpu.orientation);
-			const float ang_vel_error = magnitude((gpu.body_angular_velocity - cpu.body_angular_velocity).as<radians_per_second>());
-
-			if (pos_error <= pos_threshold && vel_error <= vel_threshold && rot_error <= rot_threshold && ang_vel_error <= ang_vel_threshold) {
-				continue;
-			}
-
-			log::println(
-				"  body {}: pos_err={:.4f} vel_err={:.4f} rot_err={:.4f} ang_vel_err={:.4f} cpu_pos=({:.3f},{:.3f},{:.3f}) gpu_pos=({:.3f},{:.3f},{:.3f})",
-				i,
-				pos_error,
-				vel_error,
-				rot_error,
-				ang_vel_error,
-				cpu.position.x().as<meters>(),
-				cpu.position.y().as<meters>(),
-				cpu.position.z().as<meters>(),
-				gpu.position.x().as<meters>(),
-				gpu.position.y().as<meters>(),
-				gpu.position.z().as<meters>()
-			);
-			detail_logs++;
-		}
-
-		log::flush();
-	}
-#endif
 
 	auto update_vbd(
 		int steps,
@@ -877,19 +349,9 @@ auto gse::physics::system::update(update_phase& phase, state& s) -> void {
 auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_component>& motion, chunk<collision_component>& collision, const time_t<float, seconds> dt) -> void {
 	if (!s.gpu_solver.buffers_created()) return;
 
-#if GSE_GPU_COMPARE
-	if (!s.gpu_compare.completed.empty()) {
-		auto completed = std::move(s.gpu_compare.completed.front());
-		s.gpu_compare.completed.pop_front();
-
-		if (s.gpu_compare.enabled) {
-			log_gpu_cpu_deviations(completed, completed.gpu_contacts, completed.gpu_narrow_phase_debug);
-		}
-#else
 	if (!s.gpu_readback.completed.empty()) {
 		auto completed = std::move(s.gpu_readback.completed.front());
 		s.gpu_readback.completed.pop_front();
-#endif
 
 		for (std::size_t i = 0; i < completed.entity_ids.size(); ++i) {
 			const auto eid = completed.entity_ids[i];
@@ -943,7 +405,6 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 			const auto eid_a = completed.entity_ids[body_a];
 			const auto eid_b = completed.entity_ids[body_b];
 			const auto& normal = c.normal;
-			const float separation = c.c0[0];
 
 			if (auto* mc_b = motion.find(eid_b)) {
 				if (normal.y() < -0.7f) mc_b->airborne = false;
@@ -963,22 +424,22 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 			if (auto* cc_a = collision.find(eid_a)) {
 				cc_a->collision_information.colliding = true;
 				cc_a->collision_information.collision_normal = normal;
-				cc_a->collision_information.penetration = meters(-separation);
+				cc_a->collision_information.penetration = -c.c0[0];
 				cc_a->collision_information.collision_points.push_back(midpoint);
 			}
 			if (auto* cc_b = collision.find(eid_b)) {
 				cc_b->collision_information.colliding = true;
 				cc_b->collision_information.collision_normal = -normal;
-				cc_b->collision_information.penetration = meters(-separation);
+				cc_b->collision_information.penetration = -c.c0[0];
 				cc_b->collision_information.collision_points.push_back(midpoint);
 			}
 
-			const float friction_bound = std::abs(c.lambda[0]) * c.friction_coeff;
-			const float tangential_lambda = std::hypot(c.lambda[1], c.lambda[2]);
-			const float tangential_gap = std::hypot(c.c0[1], c.c0[2]);
+			const length friction_bound = abs(c.lambda[0]) * c.friction_coeff;
+			const length tangential_lambda = meters(std::hypot(c.lambda[1].as<meters>(), c.lambda[2].as<meters>()));
+			const length tangential_gap = meters(std::hypot(c.c0[1].as<meters>(), c.c0[2].as<meters>()));
 			const bool sticking =
-				c.lambda[0] < -1e-3f &&
-				tangential_gap < cfg.stick_threshold.as<meters>() &&
+				c.lambda[0] < meters(-1e-3f) &&
+				tangential_gap < cfg.stick_threshold &&
 				tangential_lambda < friction_bound;
 
 		}
@@ -986,12 +447,12 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		s.gpu_prev.warm_start_contacts.clear();
 		s.gpu_prev.warm_start_contacts.reserve(completed.gpu_contacts.size());
 		for (const auto& c : completed.gpu_contacts) {
-			const float friction_bound = std::abs(c.lambda[0]) * c.friction_coeff;
-			const float tangential_lambda = std::hypot(c.lambda[1], c.lambda[2]);
-			const float tangential_gap = std::hypot(c.c0[1], c.c0[2]);
+			const length friction_bound = abs(c.lambda[0]) * c.friction_coeff;
+			const length tangential_lambda = meters(std::hypot(c.lambda[1].as<meters>(), c.lambda[2].as<meters>()));
+			const length tangential_gap = meters(std::hypot(c.c0[1].as<meters>(), c.c0[2].as<meters>()));
 			const bool sticking =
-				c.lambda[0] < -1e-3f &&
-				tangential_gap < cfg.stick_threshold.as<meters>() &&
+				c.lambda[0] < meters(-1e-3f) &&
+				tangential_gap < cfg.stick_threshold &&
 				tangential_lambda < friction_bound;
 
 			s.gpu_prev.warm_start_contacts.push_back(vbd::warm_start_entry{
@@ -1004,8 +465,8 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 				.tangent_v = c.tangent_v,
 				.local_anchor_a = c.local_anchor_a,
 				.local_anchor_b = c.local_anchor_b,
-				.lambda = { c.lambda[0], c.lambda[1], c.lambda[2] },
-				.penalty = { c.penalty[0], c.penalty[1], c.penalty[2] }
+				.lambda = c.lambda,
+				.penalty = c.penalty,
 			});
 		}
 		std::ranges::sort(s.gpu_prev.warm_start_contacts, [](const vbd::warm_start_entry& a, const vbd::warm_start_entry& b) {
@@ -1142,7 +603,6 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 			.compliance = 0.5f,
 			.max_force = newtons(mc.mass.as<kilograms>() * 50.f),
 			.horizontal_only = true,
-			.lambda = { 0.f, 0.f, 0.f }
 		});
 	}
 
@@ -1158,50 +618,10 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		steps
 	);
 
-#if GSE_GPU_COMPARE
-	const std::uint64_t sequence = s.gpu_compare.next_sequence++;
-	if (s.gpu_compare.enabled) {
-		std::vector<vec3<velocity>> previous_velocities;
-		previous_velocities.reserve(entity_ids.size());
-		for (std::size_t i = 0; i < entity_ids.size(); ++i) {
-			if (const auto prev_it = prev_gpu_velocity.find(entity_ids[i]); prev_it != prev_gpu_velocity.end()) {
-				previous_velocities.push_back(prev_it->second);
-			}
-			else {
-				previous_velocities.push_back(bodies[i].body_velocity);
-			}
-		}
-
-		s.gpu_compare.pending = build_cpu_reference_snapshot(
-			s,
-			collision,
-			id_to_body_index,
-			bodies,
-			entity_ids,
-			motors,
-			s.gpu_prev.warm_start_contacts,
-			previous_velocities,
-			dt,
-			steps,
-			sequence
-		);
-		s.gpu_compare.pending->gpu_input_bodies = bodies;
-	}
-	else {
-		s.gpu_compare.pending = state::gpu_compare_state::snapshot{
-			.sequence = sequence,
-			.substeps = static_cast<std::uint32_t>(std::max(steps, 1)),
-			.warm_start_count = s.gpu_prev.warm_start_contacts.size(),
-			.entity_ids = entity_ids,
-			.gpu_input_bodies = bodies
-		};
-	}
-#else
 	s.gpu_readback.pending = state::gpu_readback_state::snapshot{
 		.entity_ids = entity_ids,
 		.gpu_input_bodies = bodies
 	};
-#endif
 }
 
 auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>& motion, chunk<collision_component>& collision) -> void {
@@ -1371,8 +791,8 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 						reuse_cached_tangent &&
 						cached->sticking;
 
-					length init_lambda[3] = {};
-					float init_penalty[3] = { penalty_floor, penalty_floor, penalty_floor };
+					vec3<length> init_lambda;
+					unitless::vec3 init_penalty = { penalty_floor, penalty_floor, penalty_floor };
 
 					if (reuse_cached_normal) {
 						init_penalty[0] = std::max(cached->penalty[0], penalty_floor);
@@ -1398,10 +818,8 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 					}
 
 					if (reuse_cached_sticking) {
-						bool reused_anchors = false;
 						local_r_a = cached->local_anchor_a;
 						local_r_b = cached->local_anchor_b;
-						reused_anchors = true;
 					}
 
 					s.vbd_solver.add_contact_constraint(vbd::contact_constraint{
@@ -1412,9 +830,9 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 						.tangent_v = manifold.tangent_v,
 						.r_a = local_r_a,
 						.r_b = local_r_b,
-						.C0 = { separation, {}, {} },
-						.lambda = { init_lambda[0], init_lambda[1], init_lambda[2] },
-						.penalty = { init_penalty[0], init_penalty[1], init_penalty[2] },
+						.c0 = { separation, 0.f, 0.f },
+						.lambda = init_lambda,
+						.penalty = init_penalty,
 						.penalty_floor = penalty_floor,
 						.friction_coeff = cfg.friction_coefficient,
 						.sticking = cached ? cached->sticking : false,
@@ -1438,11 +856,57 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 				.compliance = 0.5f,
 				.max_force = newtons(mc.mass.as<kilograms>() * 50.f),
 				.horizontal_only = true,
-				.lambda = { 0.f, 0.f, 0.f }
+			});
+		}
+
+		for (auto& jd : s.joints) {
+			const auto it_a = id_to_body_index.find(jd.entity_a);
+			const auto it_b = id_to_body_index.find(jd.entity_b);
+			if (it_a == id_to_body_index.end() || it_b == id_to_body_index.end()) continue;
+
+			s.vbd_solver.add_joint_constraint(vbd::joint_constraint{
+				.body_a = it_a->second,
+				.body_b = it_b->second,
+				.type = jd.type,
+				.local_anchor_a = jd.local_anchor_a,
+				.local_anchor_b = jd.local_anchor_b,
+				.local_axis_a = jd.local_axis_a,
+				.local_axis_b = jd.local_axis_b,
+				.target_distance = jd.target_distance,
+				.limit_lower = jd.limit_lower,
+				.limit_upper = jd.limit_upper,
+				.limits_enabled = jd.limits_enabled,
+				.rest_orientation = jd.rest_orientation,
+				.pos_lambda = jd.pos_lambda,
+				.pos_penalty = jd.pos_penalty,
+				.ang_lambda = jd.ang_lambda,
+				.ang_penalty = jd.ang_penalty,
+				.limit_lambda = jd.limit_lambda,
+				.limit_penalty = jd.limit_penalty,
 			});
 		}
 
 		s.vbd_solver.solve(const_update_time);
+
+		{
+			std::uint32_t ji = 0;
+			const auto& solved_joints = s.vbd_solver.graph().joint_constraints();
+			for (auto& jd : s.joints) {
+				const auto it_a = id_to_body_index.find(jd.entity_a);
+				const auto it_b = id_to_body_index.find(jd.entity_b);
+				if (it_a == id_to_body_index.end() || it_b == id_to_body_index.end()) continue;
+				if (ji < solved_joints.size()) {
+					const auto& sj = solved_joints[ji];
+					jd.pos_lambda = sj.pos_lambda;
+					jd.pos_penalty = sj.pos_penalty;
+					jd.ang_lambda = sj.ang_lambda;
+					jd.ang_penalty = sj.ang_penalty;
+					jd.limit_lambda = sj.limit_lambda;
+					jd.limit_penalty = sj.limit_penalty;
+				}
+				++ji;
+			}
+		}
 
 		std::vector<vbd::body_state> result_bodies;
 		s.vbd_solver.end_frame(result_bodies, s.contact_cache);
@@ -1491,25 +955,6 @@ auto gse::physics::system::render(render_phase&, const state& s) -> void {
 	s.gpu_solver.stage_readback();
 	const bool had_readback = s.gpu_solver.has_readback_data();
 	if (had_readback) {
-#if GSE_GPU_COMPARE
-		auto& in_flight = s.gpu_compare.in_flight;
-		if (in_flight.has_value()) {
-			auto completed = std::move(*in_flight);
-			in_flight.reset();
-			completed.gpu_result_bodies = completed.gpu_input_bodies;
-			s.gpu_solver.readback(completed.gpu_result_bodies, completed.gpu_contacts);
-			const auto gpu_narrow_phase_debug = s.gpu_solver.narrow_phase_debug_entries();
-			completed.gpu_narrow_phase_debug.assign(gpu_narrow_phase_debug.begin(), gpu_narrow_phase_debug.end());
-			s.gpu_compare.completed.push_back(std::move(completed));
-		}
-		else {
-			static thread_local std::vector<vbd::body_state> discard_bodies;
-			static thread_local std::vector<vbd::contact_readback_entry> discard_contacts;
-			discard_bodies.clear();
-			discard_contacts.clear();
-			s.gpu_solver.readback(discard_bodies, discard_contacts);
-		}
-#else
 		auto& in_flight = s.gpu_readback.in_flight;
 		if (in_flight.has_value()) {
 			auto completed = std::move(*in_flight);
@@ -1525,19 +970,9 @@ auto gse::physics::system::render(render_phase&, const state& s) -> void {
 			discard_contacts.clear();
 			s.gpu_solver.readback(discard_bodies, discard_contacts);
 		}
-#endif
 	}
 
 	if (s.gpu_solver.pending_dispatch() && s.gpu_solver.ready_to_dispatch()) {
-#if GSE_GPU_COMPARE
-		if (s.gpu_compare.pending.has_value()) {
-			s.gpu_compare.in_flight = std::move(s.gpu_compare.pending);
-			s.gpu_compare.pending.reset();
-		}
-		else {
-			s.gpu_compare.in_flight.reset();
-		}
-#else
 		if (s.gpu_readback.pending.has_value()) {
 			s.gpu_readback.in_flight = std::move(s.gpu_readback.pending);
 			s.gpu_readback.pending.reset();
@@ -1545,7 +980,6 @@ auto gse::physics::system::render(render_phase&, const state& s) -> void {
 		else {
 			s.gpu_readback.in_flight.reset();
 		}
-#endif
 
 		s.gpu_solver.commit_upload();
 		s.gpu_solver.dispatch_compute(config);
