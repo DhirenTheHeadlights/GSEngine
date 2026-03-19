@@ -380,6 +380,21 @@ auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_co
 			callback_data->pMessage
 		);
 
+		for (std::uint32_t i = 0; i < callback_data->objectCount; ++i) {
+			const auto& object = callback_data->pObjects[i];
+			if (!object.pObjectName || object.pObjectName[0] == '\0') {
+				continue;
+			}
+
+			std::println(
+				"  Object {}: {} 0x{:x} '{}'",
+				i,
+				vk::to_string(static_cast<vk::ObjectType>(object.objectType)),
+				object.objectHandle,
+				object.pObjectName
+			);
+		}
+
 		return vk::False;
 	};
 
