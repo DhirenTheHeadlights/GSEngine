@@ -8,7 +8,7 @@ import gse.utility;
 import gse.platform;
 
 import :vbd_constraints;
-import :vbd_solver;
+import :vbd_solver;	
 
 export namespace gse::vbd {
 	constexpr std::uint32_t max_bodies = 500;
