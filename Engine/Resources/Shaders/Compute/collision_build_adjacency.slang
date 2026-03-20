@@ -9,6 +9,7 @@ import vbd_shared;
 [[vk::binding(6, 0)]] RWStructuredBuffer<uint> collision_pairs;
 [[vk::binding(7, 0)]] RWStructuredBuffer<uint> collision_state;
 [[vk::binding(8, 0)]] StructuredBuffer<GpuWarmStart> warm_starts;
+[[vk::binding(9, 0)]] RWStructuredBuffer<GpuJoint> joint_data;
 
 [[vk::push_constant]]
 ConstantBuffer<vbd_push_constants> pc;
@@ -52,6 +53,95 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
         slot_offsets[c.body_b]++;
     }
 
+    uint num_joints = pc.joint_count;
+    for (uint bi = 0; bi < body_count; bi++) {
+        body_contact_map[JOINT_MAP_BASE + bi] = 0;
+        body_contact_map[JOINT_MAP_BASE + MAX_BODIES + bi] = 0;
+    }
+
+    for (uint ji = 0; ji < num_joints; ji++) {
+        GpuJoint j = joint_data[ji];
+        body_contact_map[JOINT_MAP_BASE + MAX_BODIES + j.body_a]++;
+        body_contact_map[JOINT_MAP_BASE + MAX_BODIES + j.body_b]++;
+    }
+
+    uint joint_running_offset = 0;
+    for (uint bi = 0; bi < body_count; bi++) {
+        body_contact_map[JOINT_MAP_BASE + bi] = joint_running_offset;
+        joint_running_offset += body_contact_map[JOINT_MAP_BASE + MAX_BODIES + bi];
+    }
+
+    for (uint bi = 0; bi < body_count; bi++) {
+        slot_offsets[bi] = 0;
+    }
+
+    for (uint ji = 0; ji < num_joints; ji++) {
+        GpuJoint j = joint_data[ji];
+        uint off_a = body_contact_map[JOINT_MAP_BASE + j.body_a] + slot_offsets[j.body_a];
+        body_contact_map[JOINT_MAP_BASE + MAX_BODIES * 2 + off_a] = ji;
+        slot_offsets[j.body_a]++;
+
+        uint off_b = body_contact_map[JOINT_MAP_BASE + j.body_b] + slot_offsets[j.body_b];
+        body_contact_map[JOINT_MAP_BASE + MAX_BODIES * 2 + off_b] = ji;
+        slot_offsets[j.body_b]++;
+    }
+
+    for (uint ji = 0; ji < num_joints; ji++) {
+        GpuJoint j = joint_data[ji];
+        GpuBody ba = body_data[j.body_a];
+        GpuBody bb = body_data[j.body_b];
+        float3 r_aw = rotate_vector(ba.orientation, j.local_anchor_a.xyz);
+        float3 r_bw = rotate_vector(bb.orientation, j.local_anchor_b.xyz);
+        float3 d = (ba.position.xyz + r_aw) - (bb.position.xyz + r_bw);
+
+        if (j.type == JOINT_TYPE_DISTANCE) {
+            j.pos_c0.x = length(d) - j.target_distance;
+        }
+        else if (j.type == JOINT_TYPE_FIXED || j.type == JOINT_TYPE_HINGE) {
+            j.pos_c0 = float4(d.x, d.y, d.z, 0);
+
+            float4 q_error = quat_mul(bb.orientation, quat_mul(quat_conjugate(ba.orientation), quat_conjugate(j.rest_orientation)));
+            float3 theta = to_axis_angle(q_error);
+
+            if (j.type == JOINT_TYPE_FIXED) {
+                j.ang_c0 = float4(theta, 0);
+            }
+            else {
+                float3 axis_a = rotate_vector(ba.orientation, j.local_axis_a.xyz);
+                float3 axis_b = rotate_vector(bb.orientation, j.local_axis_b.xyz);
+                float3 swing_error = cross(axis_a, axis_b);
+                float3 perp_u = cross(axis_a, float3(0, 1, 0));
+                if (length(perp_u) < 1e-6) perp_u = cross(axis_a, float3(1, 0, 0));
+                perp_u = normalize(perp_u);
+                float3 perp_v = normalize(cross(axis_a, perp_u));
+                j.ang_c0.x = dot(perp_u, swing_error);
+                j.ang_c0.y = dot(perp_v, swing_error);
+
+                if (j.limits_enabled != 0) {
+                    float twist = dot(axis_a, theta);
+                    if (twist < j.limit_lower) j.limit_c0 = twist - j.limit_lower;
+                    else if (twist > j.limit_upper) j.limit_c0 = twist - j.limit_upper;
+                    else j.limit_c0 = 0.0;
+                }
+            }
+        }
+        else if (j.type == JOINT_TYPE_SLIDER) {
+            float3 axis_w = normalize(rotate_vector(ba.orientation, j.local_axis_a.xyz));
+            float3 perp0 = cross(axis_w, float3(0, 1, 0));
+            if (length(perp0) < 1e-6) perp0 = cross(axis_w, float3(1, 0, 0));
+            perp0 = normalize(perp0);
+            float3 perp1 = normalize(cross(axis_w, perp0));
+            j.pos_c0.x = dot(perp0, d);
+            j.pos_c0.y = dot(perp1, d);
+
+            float4 q_error = quat_mul(bb.orientation, quat_mul(quat_conjugate(ba.orientation), quat_conjugate(j.rest_orientation)));
+            float3 theta = to_axis_angle(q_error);
+            j.ang_c0 = float4(theta, 0);
+        }
+
+        joint_data[ji] = j;
+    }
+
     uint body_color[MAX_BODIES];
     for (uint bi = 0; bi < body_count; bi++) {
         body_color[bi] = 0xFFFFFFFF;
@@ -68,7 +158,8 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
         if (locked) continue;
 
         uint cc = body_contact_map[MAX_BODIES + bi];
-        if (cc == 0) continue;
+        uint jc = body_contact_map[JOINT_MAP_BASE + MAX_BODIES + bi];
+        if (cc == 0 && jc == 0) continue;
 
         uint neighbor_colors = 0;
         uint off = body_contact_map[bi];
@@ -76,6 +167,16 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
             uint ci = body_contact_map[MAX_BODIES * 2 + off + k];
             GpuContact con = contact_data[ci];
             uint other = (con.body_a == bi) ? con.body_b : con.body_a;
+            if (body_color[other] < MAX_COLORS) {
+                neighbor_colors |= (1u << body_color[other]);
+            }
+        }
+
+        uint j_off = body_contact_map[JOINT_MAP_BASE + bi];
+        for (uint k = 0; k < jc; k++) {
+            uint ji = body_contact_map[JOINT_MAP_BASE + MAX_BODIES * 2 + j_off + k];
+            GpuJoint jnt = joint_data[ji];
+            uint other = (jnt.body_a == bi) ? jnt.body_b : jnt.body_a;
             if (body_color[other] < MAX_COLORS) {
                 neighbor_colors |= (1u << body_color[other]);
             }
@@ -108,8 +209,9 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
 
         uint cc = body_contact_map[MAX_BODIES + bi];
         bool has_motor = body_contact_map[motor_map_offset + bi] != 0xFFFFFFFF;
+        uint jc = body_contact_map[JOINT_MAP_BASE + MAX_BODIES + bi];
 
-        if (cc == 0 && !has_motor) continue;
+        if (cc == 0 && !has_motor && jc == 0) continue;
 
         if (body_color[bi] == 0xFFFFFFFF) {
             body_color[bi] = motor_only_color;
@@ -127,8 +229,9 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
 
         uint cc = body_contact_map[MAX_BODIES + bi];
         bool has_motor = body_contact_map[motor_map_offset + bi] != 0xFFFFFFFF;
+        uint jc = body_contact_map[JOINT_MAP_BASE + MAX_BODIES + bi];
 
-        if (cc != 0 || has_motor) continue;
+        if (cc != 0 || has_motor || jc != 0) continue;
 
         if (body_color[bi] == 0xFFFFFFFF) {
             body_color[bi] = free_body_color;
