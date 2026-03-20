@@ -58,6 +58,7 @@ export namespace gse::physics {
 		std::vector<joint_definition> joints;
 
 		bool compare_solvers = false;
+		interval_timer<> comparison_timer{ seconds(0.25f) };
 		struct solver_comparison_snapshot {
 			std::vector<vbd::body_state> cpu_result;
 			std::vector<vbd::joint_constraint> cpu_joints;
@@ -277,7 +278,7 @@ auto gse::physics::system::initialize(const initialize_phase& phase, state& s) -
 	phase.channels.push(save::register_property{
 		.category = "Physics",
 		.name = "Compare Solvers",
-		.description = "Run one CPU vs GPU comparison frame and log results",
+		.description = "Log CPU vs GPU solver comparison every 0.25 seconds",
 		.ref = &s.compare_solvers,
 		.type = typeid(bool)
 	});
@@ -539,7 +540,6 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 			}
 
 			s.comparison_pending.reset();
-			s.compare_solvers = false;
 		}
 
 		s.gpu_prev.result_bodies = completed.gpu_result_bodies;
@@ -726,7 +726,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		.gpu_joint_count = static_cast<std::uint32_t>(gpu_joints.size())
 	};
 
-	if (s.compare_solvers) {
+	if (s.compare_solvers && s.comparison_timer.tick()) {
 		vbd::solver cpu_ref;
 		cpu_ref.configure(s.vbd_solver.config());
 		vbd::contact_cache ref_cache;
