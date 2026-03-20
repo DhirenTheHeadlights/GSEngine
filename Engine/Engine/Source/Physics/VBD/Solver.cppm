@@ -23,6 +23,7 @@ export namespace gse::vbd {
 		length collision_margin = meters(0.0005f);
 		length stick_threshold = meters(0.01f);
 		float friction_coefficient = 0.6f;
+		velocity restitution_threshold = meters_per_second(0.5f);
 		velocity velocity_sleep_threshold = meters_per_second(0.001f);
 		angular_velocity angular_sleep_threshold = radians_per_second(0.05f);
 		length speculative_margin = meters(0.02f);
@@ -252,6 +253,11 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		c.c0[0] = dot(c.normal, d) + m_config.collision_margin;
 		c.c0[1] = dot(c.tangent_u, d);
 		c.c0[2] = dot(c.tangent_v, d);
+
+		const auto va = ba.body_velocity + cross(ba.body_angular_velocity, rAW);
+		const auto vb = bb.body_velocity + cross(bb.body_angular_velocity, rBW);
+		const velocity v_rel_n = dot(c.normal, va - vb);
+		c.approach_speed = std::min(v_rel_n, velocity{});
 	}
 
 	for (auto& c : m_graph.contact_constraints()) {
@@ -610,6 +616,44 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 					if (body.update_orientation) {
 						body.body_angular_velocity = difference_axis_angle(body.initial_orientation, body.predicted_orientation) / dt;
 					}
+				}
+			}
+
+			{
+				for (const auto& c : m_graph.contact_constraints()) {
+					if (c.restitution <= 0.f) continue;
+					if (c.lambda[0] >= length{}) continue;
+					if (c.approach_speed >= -m_config.restitution_threshold) continue;
+
+					auto& ba = m_bodies[c.body_a];
+					auto& bb = m_bodies[c.body_b];
+
+					const vec3<length> rAW = rotate_vector(ba.orientation, c.r_a);
+					const vec3<length> rBW = rotate_vector(bb.orientation, c.r_b);
+
+					const auto va = ba.body_velocity + cross(ba.body_angular_velocity, rAW);
+					const auto vb = bb.body_velocity + cross(bb.body_angular_velocity, rBW);
+					const velocity v_rel_after = dot(c.normal, va - vb);
+
+					const float speed_ratio = std::clamp(
+						(-c.approach_speed - m_config.restitution_threshold) / m_config.restitution_threshold,
+						0.f, 1.f
+					);
+					const velocity v_target = -c.restitution * speed_ratio * c.approach_speed;
+					const velocity dv = v_target - v_rel_after;
+
+					if (dv <= velocity{}) continue;
+
+					const gse::inverse_mass w_a = ba.locked ? gse::inverse_mass{} : 1.f / ba.mass_value;
+					const gse::inverse_mass w_b = bb.locked ? gse::inverse_mass{} : 1.f / bb.mass_value;
+					const gse::inverse_mass w_total = w_a + w_b;
+
+					if (w_total <= gse::inverse_mass{}) continue;
+
+					const auto impulse = c.normal * (dv / w_total);
+
+					if (!ba.locked) ba.body_velocity += impulse * w_a;
+					if (!bb.locked) bb.body_velocity -= impulse * w_b;
 				}
 			}
 		}

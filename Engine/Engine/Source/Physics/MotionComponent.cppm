@@ -37,6 +37,8 @@ export namespace gse::physics {
 
         vec3<length> center_of_mass;
 
+        float restitution = 0.3f;
+
         bool affected_by_gravity = true;
         bool airborne = true;
         bool position_locked = false;

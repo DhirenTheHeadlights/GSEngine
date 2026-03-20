@@ -33,7 +33,10 @@ export namespace gse::vbd {
 
 		float penalty_floor = 1.f;
 		float friction_coeff = 0.6f;
+		float restitution = 0.f;
 		bool sticking = false;
+
+		velocity approach_speed = {};
 
 		feature_id feature;
 	};

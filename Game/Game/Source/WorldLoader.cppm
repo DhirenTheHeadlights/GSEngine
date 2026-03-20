@@ -6,6 +6,7 @@ import :second_test_scene;
 import :physics_stress_test_scene;
 import :physics_joint_test_scene;
 import :animation_test_scene;
+import :sphere_collision_test_scene;
 
 export namespace gs {
 	class world_loader final : public gse::hook<gse::engine> {
@@ -19,6 +20,7 @@ export namespace gs {
 			m_animation_test_scene_key = gse::actions::add<"Load Animation Test Scene">(gse::key::f4);
 			m_stress_test_scene_key = gse::actions::add<"Load Stress Test Scene">(gse::key::f5);
 			m_joint_test_scene_key = gse::actions::add<"Load Joint Test Scene">(gse::key::f6);
+			m_sphere_test_scene_key = gse::actions::add<"Load Sphere Test Scene">(gse::key::f7);
 
 			m_owner->direct()
 				.when({
@@ -56,6 +58,12 @@ export namespace gs {
 					.condition = [&](const gse::evaluation_context& ctx) {
 						return gse::actions::pressed(m_joint_test_scene_key, *ctx.input);
 					}
+				})
+				.when({
+					.scene_id = m_owner->add_scene<sphere_collision_test_scene>("Sphere Collision Test")->id(),
+					.condition = [&](const gse::evaluation_context& ctx) {
+						return gse::actions::pressed(m_sphere_test_scene_key, *ctx.input);
+					}
 				});
 		}
 		
@@ -66,5 +74,6 @@ export namespace gs {
 		gse::actions::handle m_animation_test_scene_key;
 		gse::actions::handle m_stress_test_scene_key;
 		gse::actions::handle m_joint_test_scene_key;
+		gse::actions::handle m_sphere_test_scene_key;
 	};
 }

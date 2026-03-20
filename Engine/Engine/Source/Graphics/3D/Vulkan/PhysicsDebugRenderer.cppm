@@ -11,7 +11,7 @@ import :camera_system;
 
 namespace gse::renderer::physics_debug {
 	struct debug_vertex {
-		unitless::vec3 position;
+		vec3<length> position;
 		unitless::vec3 color;
 	};
 
@@ -23,6 +23,24 @@ namespace gse::renderer::physics_debug {
 	) -> void;
 
 	auto build_obb_lines_for_collider(
+		const physics::collision_component& coll,
+		const physics::motion_component* mc,
+		std::vector<debug_vertex>& out_vertices
+	) -> void;
+
+	auto build_sphere_lines_for_collider(
+		const physics::collision_component& coll,
+		const physics::motion_component* mc,
+		std::vector<debug_vertex>& out_vertices
+	) -> void;
+
+	auto build_capsule_lines_for_collider(
+		const physics::collision_component& coll,
+		const physics::motion_component* mc,
+		std::vector<debug_vertex>& out_vertices
+	) -> void;
+
+	auto build_shape_lines_for_collider(
 		const physics::collision_component& coll,
 		const physics::motion_component* mc,
 		std::vector<debug_vertex>& out_vertices
@@ -82,8 +100,8 @@ export namespace gse::renderer::physics_debug {
 
 	struct system {
 		static auto initialize(const initialize_phase& phase, state& s) -> void;
-		static auto update(update_phase& phase, state& s) -> void;
-		static auto render(render_phase& phase, const state& s) -> void;
+		static auto update(const update_phase& phase, state& s) -> void;
+		static auto render(const render_phase& phase, const state& s) -> void;
 	};
 }
 
@@ -288,11 +306,8 @@ auto gse::renderer::physics_debug::system::initialize(const initialize_phase& ph
 }
 
 auto gse::renderer::physics_debug::add_line(const vec3<length>& a, const vec3<length>& b, const unitless::vec3& color, std::vector<debug_vertex>& out_vertices) -> void {
-	const auto pa = a.as<meters>().data;
-	const auto pb = b.as<meters>().data;
-
-	out_vertices.push_back(debug_vertex{ pa, color });
-	out_vertices.push_back(debug_vertex{ pb, color });
+	out_vertices.push_back(debug_vertex{ a, color });
+	out_vertices.push_back(debug_vertex{ b, color });
 }
 
 auto gse::renderer::physics_debug::build_obb_lines_for_collider(const physics::collision_component& coll, const physics::motion_component* mc, std::vector<debug_vertex>& out_vertices) -> void {
@@ -327,6 +342,105 @@ auto gse::renderer::physics_debug::build_obb_lines_for_collider(const physics::c
 	}
 }
 
+auto gse::renderer::physics_debug::build_sphere_lines_for_collider(const physics::collision_component& coll, const physics::motion_component* mc, std::vector<debug_vertex>& out_vertices) -> void {
+	auto bb = coll.bounding_box;
+	if (mc) {
+		bb.update(mc->render_position, mc->render_orientation);
+	}
+
+	const auto center = bb.center();
+	const auto axes = bb.obb().axes;
+	const auto radius = coll.shape_radius;
+
+	constexpr unitless::vec3 color{ 0.0f, 1.0f, 0.0f };
+	constexpr int segments = 32;
+
+	for (int ring = 0; ring < 3; ++ring) {
+		const auto& u = axes[ring];
+		const auto& v = axes[(ring + 1) % 3];
+
+		for (int i = 0; i < segments; ++i) {
+			const float a0 = 2.f * std::numbers::pi_v<float> * static_cast<float>(i) / segments;
+			const float a1 = 2.f * std::numbers::pi_v<float> * static_cast<float>(i + 1) / segments;
+
+			const auto p0 = center + u * (radius * std::cos(a0)) + v * (radius * std::sin(a0));
+			const auto p1 = center + u * (radius * std::cos(a1)) + v * (radius * std::sin(a1));
+
+			add_line(p0, p1, color, out_vertices);
+		}
+	}
+}
+
+auto gse::renderer::physics_debug::build_capsule_lines_for_collider(const physics::collision_component& coll, const physics::motion_component* mc, std::vector<debug_vertex>& out_vertices) -> void {
+	auto bb = coll.bounding_box;
+	if (mc) {
+		bb.update(mc->render_position, mc->render_orientation);
+	}
+
+	const auto center = bb.center();
+	const auto axes = bb.obb().axes;
+	const auto radius = coll.shape_radius;
+	const auto half_height = coll.shape_half_height;
+
+	const auto& cap_axis = axes[1];
+	const auto& u = axes[0];
+	const auto& v = axes[2];
+
+	const auto top = center + cap_axis * half_height;
+	const auto bottom = center - cap_axis * half_height;
+
+	constexpr unitless::vec3 color{ 0.0f, 1.0f, 0.0f };
+	constexpr int segments = 24;
+	constexpr int half_segments = segments / 2;
+
+	for (const auto& ring_center : { top, bottom }) {
+		for (int i = 0; i < segments; ++i) {
+			const float a0 = 2.f * std::numbers::pi_v<float> * static_cast<float>(i) / segments;
+			const float a1 = 2.f * std::numbers::pi_v<float> * static_cast<float>(i + 1) / segments;
+			const auto p0 = ring_center + u * (radius * std::cos(a0)) + v * (radius * std::sin(a0));
+			const auto p1 = ring_center + u * (radius * std::cos(a1)) + v * (radius * std::sin(a1));
+			add_line(p0, p1, color, out_vertices);
+		}
+	}
+
+	for (int i = 0; i < 4; ++i) {
+		const float angle = static_cast<float>(i) * std::numbers::pi_v<float> * 0.5f;
+		const auto offset = u * (radius * std::cos(angle)) + v * (radius * std::sin(angle));
+		add_line(top + offset, bottom + offset, color, out_vertices);
+	}
+
+	for (int plane = 0; plane < 2; ++plane) {
+		const auto& ring_u = (plane == 0) ? u : v;
+
+		for (int i = 0; i < half_segments; ++i) {
+			const float a0 = std::numbers::pi_v<float> * static_cast<float>(i) / half_segments;
+			const float a1 = std::numbers::pi_v<float> * static_cast<float>(i + 1) / half_segments;
+
+			const auto p0 = top + ring_u * (radius * std::cos(a0)) + cap_axis * (radius * std::sin(a0));
+			const auto p1 = top + ring_u * (radius * std::cos(a1)) + cap_axis * (radius * std::sin(a1));
+			add_line(p0, p1, color, out_vertices);
+
+			const auto q0 = bottom + ring_u * (radius * std::cos(a0)) - cap_axis * (radius * std::sin(a0));
+			const auto q1 = bottom + ring_u * (radius * std::cos(a1)) - cap_axis * (radius * std::sin(a1));
+			add_line(q0, q1, color, out_vertices);
+		}
+	}
+}
+
+auto gse::renderer::physics_debug::build_shape_lines_for_collider(const physics::collision_component& coll, const physics::motion_component* mc, std::vector<debug_vertex>& out_vertices) -> void {
+	switch (coll.shape) {
+	case physics::shape_type::sphere:
+		build_sphere_lines_for_collider(coll, mc, out_vertices);
+		break;
+	case physics::shape_type::capsule:
+		build_capsule_lines_for_collider(coll, mc, out_vertices);
+		break;
+	default:
+		build_obb_lines_for_collider(coll, mc, out_vertices);
+		break;
+	}
+}
+
 auto gse::renderer::physics_debug::build_contact_debug_for_collider(const physics::collision_component& coll, const physics::motion_component& mc, std::vector<debug_vertex>& out_vertices) -> void {
 	const auto& [colliding, collision_normal, penetration, collision_points] = coll.collision_information;
 	if (!colliding || mc.position_locked) {
@@ -342,7 +456,6 @@ auto gse::renderer::physics_debug::build_contact_debug_for_collider(const physic
 		const auto n = collision_normal;
 
 		constexpr length cross_size = meters(0.05f);
-		constexpr unitless::vec3 cross_color{ 1.f, 1.f, 1.f };
 		constexpr unitless::vec3 normal_color{ 0.f, 0.7f, 1.f };
 
 		const vec3<length> px1 = p + vec3<length>{ cross_size, 0.0f, 0.0f };
@@ -365,7 +478,7 @@ auto gse::renderer::physics_debug::build_contact_debug_for_collider(const physic
 	}
 }
 
-auto gse::renderer::physics_debug::system::update(update_phase& phase, state& s) -> void {
+auto gse::renderer::physics_debug::system::update(const update_phase& phase, state& s) -> void {
 	if (!s.enabled) {
 		return;
 	}
@@ -389,7 +502,7 @@ auto gse::renderer::physics_debug::system::update(update_phase& phase, state& s)
 		}
 
 		const auto* mc = phase.registry.try_read<physics::motion_component>(coll.owner_id());
-		build_obb_lines_for_collider(coll, mc, vertices);
+		build_shape_lines_for_collider(coll, mc, vertices);
 
 		if (mc) {
 			build_contact_debug_for_collider(coll, *mc, vertices);
@@ -415,7 +528,7 @@ auto gse::renderer::physics_debug::system::update(update_phase& phase, state& s)
 	phase.channels.push(render_data{ std::move(vertices), stats });
 }
 
-auto gse::renderer::physics_debug::system::render(render_phase& phase, const state& s) -> void {
+auto gse::renderer::physics_debug::system::render(const render_phase& phase, const state& s) -> void {
 	if (!s.enabled) {
 		return;
 	}

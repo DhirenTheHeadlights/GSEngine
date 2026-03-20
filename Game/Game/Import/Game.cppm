@@ -8,6 +8,7 @@ import :skybox_scene;
 import :second_test_scene;
 import :physics_stress_test_scene;
 import :physics_joint_test_scene;
+import :sphere_collision_test_scene;
 
 export import :client;
 export import :client_ui;
