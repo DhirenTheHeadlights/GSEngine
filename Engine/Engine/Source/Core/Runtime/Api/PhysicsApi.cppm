@@ -28,6 +28,12 @@ export namespace gse::physics {
 		unitless::vec3 axis = { 0.f, 1.f, 0.f };
 	};
 
+	struct spring_joint {
+		length target;
+		inverse_mass compliance = per_kilograms(0.01f);
+		float damping = 0.5f;
+	};
+
 	auto join(
 		id a,
 		id b,
@@ -50,6 +56,12 @@ export namespace gse::physics {
 		id a,
 		id b,
 		const slider_joint& config
+	) -> void;
+
+	auto join(
+		id a,
+		id b,
+		const spring_joint& config
 	) -> void;
 }
 
@@ -101,6 +113,19 @@ auto gse::physics::join(const id a, const id b, const slider_joint& config) -> v
 			.type = vbd::joint_type::slider,
 			.local_axis_a = config.axis,
 			.local_axis_b = config.axis,
+		});
+	});
+}
+
+auto gse::physics::join(const id a, const id b, const spring_joint& config) -> void {
+	defer<state>([a, b, config](state& s) {
+		create_joint(s, joint_definition{
+			.entity_a = a,
+			.entity_b = b,
+			.type = vbd::joint_type::distance,
+			.target_distance = config.target,
+			.compliance = config.compliance,
+			.damping = config.damping,
 		});
 	});
 }

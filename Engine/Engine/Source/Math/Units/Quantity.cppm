@@ -437,3 +437,34 @@ template <gse::internal::is_quantity Q1, gse::internal::is_quantity Q2>
 constexpr auto gse::fmod(const Q1& a, const Q2& b) -> Q1 {
     return Q1(std::fmod(a.template as<typename Q1::default_unit>(), b.template as<typename Q1::default_unit>()));
 }
+
+export namespace gse {
+    template <internal::is_quantity Q>
+    constexpr auto abs(const Q& q) -> Q {
+        return Q(std::abs(q.template as<typename Q::default_unit>()));
+    }
+
+    template <internal::is_quantity Q>
+    constexpr auto isfinite(const Q& q) -> bool {
+        return std::isfinite(q.template as<typename Q::default_unit>());
+    }
+
+    template <internal::is_quantity Q>
+    constexpr auto isnan(const Q& q) -> bool {
+        return std::isnan(q.template as<typename Q::default_unit>());
+    }
+
+    template <internal::is_quantity Q1, internal::is_quantity Q2>
+        requires internal::has_same_dimension_as<Q1, Q2>
+    auto hypot(const Q1& a, const Q2& b) -> Q1 {
+        return Q1(std::hypot(a.template as<typename Q1::default_unit>(), b.template as<typename Q1::default_unit>()));
+    }
+
+    template <internal::is_quantity Q>
+    constexpr auto sqrt(const Q& q) {
+        using result_d = decltype(internal::dim_sqrt(typename Q::dimension()));
+        return internal::generic_quantity<typename Q::value_type, result_d>(
+            std::sqrt(q.template as<typename Q::default_unit>())
+        );
+    }
+}

@@ -37,10 +37,6 @@ export namespace gse {
 		const NumberType& max
 	) -> NumberType;
 
-	template <is_quantity Q>
-	auto abs(
-		const Q& value
-	) -> Q;
 }
 
 namespace gse {
@@ -72,7 +68,3 @@ auto gse::random_value(const NumberType& max) -> NumberType {
 	}
 }
 
-template <gse::is_quantity Q>
-auto gse::abs(const Q& value) -> Q {
-	return value < Q(0) ? -value : value;
-}

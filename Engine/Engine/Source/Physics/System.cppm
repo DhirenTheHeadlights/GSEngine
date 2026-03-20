@@ -26,6 +26,8 @@ export namespace gse::physics {
 		unitless::vec3 local_axis_a = { 0.f, 1.f, 0.f };
 		unitless::vec3 local_axis_b = { 0.f, 1.f, 0.f };
 		length target_distance = {};
+		inverse_mass compliance = {};
+		float damping = 0.f;
 		angle limit_lower = radians(-std::numbers::pi_v<float>);
 		angle limit_upper = radians(std::numbers::pi_v<float>);
 		bool limits_enabled = false;
@@ -33,7 +35,7 @@ export namespace gse::physics {
 		bool rest_orientation_initialized = false;
 
 		vec3<length> pos_lambda;
-		unitless::vec3 pos_penalty;
+		vec3<stiffness> pos_penalty;
 		vec3<angle> ang_lambda;
 		unitless::vec3 ang_penalty;
 		angle limit_lambda = {};
@@ -222,7 +224,7 @@ namespace gse::physics {
 		for (const auto& c : warm_start_contacts) {
 			cache.store(c.body_a, c.body_b, unpack_feature(c.feature_key), vbd::cached_lambda{
 				.lambda = c.lambda,
-				.penalty = c.penalty,
+				.penalty = { newtons_per_meter(c.penalty.x()), newtons_per_meter(c.penalty.y()), newtons_per_meter(c.penalty.z()) },
 				.normal = c.normal,
 				.tangent_u = c.tangent_u,
 				.tangent_v = c.tangent_v,
@@ -300,11 +302,11 @@ auto gse::physics::system::initialize(const initialize_phase& phase, state& s) -
 	s.vbd_solver.configure(vbd::solver_config{
 		.iterations = 10,
 		.alpha = 0.99f,
-		.beta = 100000.f,
+		.beta = newtons_per_meter(100000.f),
 		.gamma = 0.99f,
 		.post_stabilize = true,
-		.penalty_min = 1.0f,
-		.penalty_max = 1e9f,
+		.penalty_min = newtons_per_meter(1.0f),
+		.penalty_max = newtons_per_meter(1e9f),
 		.collision_margin = meters(0.0005f),
 		.stick_threshold = meters(0.01f),
 		.friction_coefficient = 0.6f,
@@ -463,8 +465,8 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 			}
 
 			const length friction_bound = abs(c.lambda[0]) * c.friction_coeff;
-			const length tangential_lambda = meters(std::hypot(c.lambda[1].as<meters>(), c.lambda[2].as<meters>()));
-			const length tangential_gap = meters(std::hypot(c.c0[1].as<meters>(), c.c0[2].as<meters>()));
+			const length tangential_lambda = hypot(c.lambda[1], c.lambda[2]);
+			const length tangential_gap = hypot(c.c0[1], c.c0[2]);
 			const bool sticking =
 				c.lambda[0] < meters(-1e-3f) &&
 				tangential_gap < cfg.stick_threshold &&
@@ -476,8 +478,8 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		s.gpu_prev.warm_start_contacts.reserve(completed.gpu_contacts.size());
 		for (const auto& c : completed.gpu_contacts) {
 			const length friction_bound = abs(c.lambda[0]) * c.friction_coeff;
-			const length tangential_lambda = meters(std::hypot(c.lambda[1].as<meters>(), c.lambda[2].as<meters>()));
-			const length tangential_gap = meters(std::hypot(c.c0[1].as<meters>(), c.c0[2].as<meters>()));
+			const length tangential_lambda = hypot(c.lambda[1], c.lambda[2]);
+			const length tangential_gap = hypot(c.c0[1], c.c0[2]);
 			const bool sticking =
 				c.lambda[0] < meters(-1e-3f) &&
 				tangential_gap < cfg.stick_threshold &&
@@ -587,8 +589,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		prev_gpu_velocity.emplace(s.gpu_prev.result_entity_ids[i], s.gpu_prev.result_bodies[i].body_velocity);
 	}
 
-	const float dt_s = dt.as<seconds>();
-	constexpr float gravity_mag = 9.8f;
+	constexpr acceleration gravity_mag = meters_per_second_squared(9.8f);
 
 	std::uint32_t body_idx = 0;
 	for (motion_component& mc : motion) {
@@ -599,10 +600,10 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		const auto sc = sc_it != s.sleep_counters.end() ? sc_it->second : 0u;
 
 		float accel_weight = 0.f;
-		if (!mc.position_locked && sc < 60u && dt_s > 1e-6f) {
+		if (!mc.position_locked && sc < 60u && dt.as<seconds>() > 1e-6f) {
 			if (const auto prev_it = prev_gpu_velocity.find(eid); prev_it != prev_gpu_velocity.end()) {
-				const float delta_vy = (mc.current_velocity.y() - prev_it->second.y()).as<meters_per_second>();
-				const float accel_y = delta_vy / dt_s;
+				const velocity delta_vy = mc.current_velocity.y() - prev_it->second.y();
+				const acceleration accel_y = delta_vy / dt;
 				accel_weight = std::clamp(-accel_y / gravity_mag, 0.f, 1.f);
 				if (!std::isfinite(accel_weight)) {
 					accel_weight = 0.f;
@@ -703,6 +704,8 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 			.local_axis_a = jd.local_axis_a,
 			.local_axis_b = jd.local_axis_b,
 			.target_distance = jd.target_distance,
+			.compliance = jd.compliance,
+			.damping = jd.damping,
 			.limit_lower = jd.limit_lower,
 			.limit_upper = jd.limit_upper,
 			.limits_enabled = jd.limits_enabled,
@@ -909,7 +912,7 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 
 				const auto& bs_a = s.vbd_solver.body_states()[body_a];
 				const auto& bs_b = s.vbd_solver.body_states()[body_b];
-				const float penalty_floor = cfg.penalty_min;
+				const stiffness penalty_floor = cfg.penalty_min;
 
 				for (std::uint32_t p = 0; p < manifold.point_count; ++p) {
 					const auto& [position_on_a, position_on_b, normal, separation, feature] = manifold.points[p];
@@ -934,7 +937,7 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 						cached->sticking;
 
 					vec3<length> init_lambda;
-					unitless::vec3 init_penalty = { penalty_floor, penalty_floor, penalty_floor };
+					vec3<stiffness> init_penalty = { penalty_floor, penalty_floor, penalty_floor };
 
 					if (reuse_cached_normal) {
 						init_penalty[0] = std::max(cached->penalty[0], penalty_floor);
@@ -1026,6 +1029,8 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 				.local_axis_a = jd.local_axis_a,
 				.local_axis_b = jd.local_axis_b,
 				.target_distance = jd.target_distance,
+			.compliance = jd.compliance,
+			.damping = jd.damping,
 				.limit_lower = jd.limit_lower,
 				.limit_upper = jd.limit_upper,
 				.limits_enabled = jd.limits_enabled,

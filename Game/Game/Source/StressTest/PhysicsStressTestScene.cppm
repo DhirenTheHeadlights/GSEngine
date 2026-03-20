@@ -34,6 +34,7 @@ export namespace gs {
 			build_slope_friction_test();
 			build_high_speed_impact_target();
 			build_box_grid();
+			build_spring_tests();
 
 			build("Bouncy Sphere")
 				.with<gse::sphere>({
@@ -252,6 +253,79 @@ export namespace gs {
 							.mass = gse::kilograms(80.f)
 						});
 				}
+			}
+		}
+
+		auto build_spring_tests() const -> void {
+			constexpr float x = -25.f;
+			constexpr float z = -20.f;
+
+			constexpr std::array compliances = { gse::per_kilograms(0.001f), gse::per_kilograms(0.01f), gse::per_kilograms(0.1f) };
+
+			for (int i = 0; i < 3; ++i) {
+				const std::array<std::string, 3> labels = { "Stiff", "Medium", "Soft" };
+				const float bx = x + static_cast<float>(i) * 5.f;
+
+				const auto anchor_id = build(std::format("Spring {} Anchor", labels[i]))
+					.with<gse::box>({
+						.initial_position = gse::vec3<gse::length>(bx, 10.f, z),
+						.size = gse::vec3<gse::length>(0.5f, 0.5f, 0.5f)
+					})
+					.with_init([](hook<gse::entity>& h) {
+						h.configure_when_present([](gse::physics::motion_component& mc) {
+							mc.affected_by_gravity = false;
+							mc.position_locked = true;
+						});
+					})
+					.identify();
+
+				const auto bob_id = build(std::format("Spring {} Bob", labels[i]))
+					.with<gse::sphere>({
+						.initial_position = gse::vec3<gse::length>(bx + 2.f, 10.f, z),
+						.radius = gse::meters(0.5f),
+						.sectors = 16,
+						.stacks = 12
+					})
+					.identify();
+
+				gse::physics::join(anchor_id, bob_id, gse::physics::spring_joint{
+					.target = gse::meters(4.f),
+					.compliance = compliances[i],
+					.damping = 0.3f,
+				});
+			}
+
+			const auto chain_anchor = build("Spring Chain Anchor")
+				.with<gse::box>({
+					.initial_position = gse::vec3<gse::length>(x + 18.f, 12.f, z),
+					.size = gse::vec3<gse::length>(0.5f, 0.5f, 0.5f)
+				})
+				.with_init([](hook<gse::entity>& h) {
+					h.configure_when_present([](gse::physics::motion_component& mc) {
+						mc.affected_by_gravity = false;
+						mc.position_locked = true;
+					});
+				})
+				.identify();
+
+			auto prev_id = chain_anchor;
+			for (int i = 0; i < 5; ++i) {
+				const float by = 12.f - static_cast<float>(i + 1) * 2.f;
+				const auto link_id = build(std::format("Spring Chain Link {}", i))
+					.with<gse::sphere>({
+						.initial_position = gse::vec3<gse::length>(x + 18.f, by, z),
+						.radius = gse::meters(0.4f),
+						.sectors = 16,
+						.stacks = 12
+					})
+					.identify();
+
+				gse::physics::join(prev_id, link_id, gse::physics::spring_joint{
+					.target = gse::meters(1.5f),
+					.compliance = gse::per_kilograms(0.02f),
+					.damping = 0.5f,
+				});
+				prev_id = link_id;
 			}
 		}
 

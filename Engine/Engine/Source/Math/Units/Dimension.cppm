@@ -41,4 +41,12 @@ export namespace gse::internal {
 		&& D1::length == D2::length
 		&& D1::time == D2::time
 		&& D1::mass == D2::mass;
+
+	template <is_dimension D>
+		requires (D::length % 2 == 0 && D::time % 2 == 0 && D::mass % 2 == 0)
+	constexpr auto dim_sqrt(D) -> auto {
+		return dim<D::length / 2, D::time / 2, D::mass / 2>{};
+	}
+
+	using dimensionless = dim<0, 0, 0>;
 }

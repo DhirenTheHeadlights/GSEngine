@@ -24,6 +24,9 @@ namespace gse {
 		template <std::size_t OtherCols, std::size_t OtherRows>
 		constexpr mat(const mat<T, OtherCols, OtherRows>& other);
 
+		template <typename TargetDim>
+		constexpr auto as() const -> mat<T, Cols, Rows, TargetDim> { return { data }; }
+
 		constexpr auto operator[](this auto& self, std::size_t index) -> decltype(auto);
 
 		constexpr auto transpose() const -> mat<T, Rows, Cols, Dim>;
