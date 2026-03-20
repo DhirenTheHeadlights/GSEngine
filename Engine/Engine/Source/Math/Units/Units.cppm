@@ -280,6 +280,54 @@ export namespace gse {
 }
 
 export namespace gse {
+    struct time_squared_tag {};
+
+    constexpr internal::unit<time_squared_tag, std::ratio<1>, "s^2"> seconds_squared;
+
+    template <typename T = float, auto U = seconds_squared>
+    using time_squared_t = internal::quantity<T, internal::dim<0, 2, 0>, time_squared_tag, decltype(U)>;
+    using time_squared = time_squared_t<>;
+
+    template <>
+    struct internal::quantity_traits<time_squared_tag> {
+        template <typename T, auto U = seconds_squared>
+        using type = time_squared_t<T, U>;
+    };
+}
+
+export namespace gse {
+    struct stiffness_tag {};
+
+    constexpr internal::unit<stiffness_tag, std::ratio<1>, "N/m"> newtons_per_meter;
+
+    template <typename T = float, auto U = newtons_per_meter>
+    using stiffness_t = internal::quantity<T, internal::dim<0, -2, 1>, stiffness_tag, decltype(U)>;
+    using stiffness = stiffness_t<>;
+
+    template <>
+    struct internal::quantity_traits<stiffness_tag> {
+        template <typename T, auto U = newtons_per_meter>
+        using type = stiffness_t<T, U>;
+    };
+}
+
+export namespace gse {
+    struct inverse_inertia_tag {};
+
+    constexpr internal::unit<inverse_inertia_tag, std::ratio<1>, "1/(kg-m^2)"> per_kilogram_meter_squared;
+
+    template <typename T = float, auto U = per_kilogram_meter_squared>
+    using inverse_inertia_t = internal::quantity<T, internal::dim<-2, 0, -1>, inverse_inertia_tag, decltype(U)>;
+    using inverse_inertia = inverse_inertia_t<>;
+
+    template <>
+    struct internal::quantity_traits<inverse_inertia_tag> {
+        template <typename T, auto U = per_kilogram_meter_squared>
+        using type = inverse_inertia_t<T, U>;
+    };
+}
+
+export namespace gse {
     struct area_tag {};
 
     constexpr internal::unit<area_tag, std::ratio<1>, "m^2"> square_meters;

@@ -29,9 +29,9 @@ export namespace gse::vbd {
 		vec3<length> c0;
 
 		vec3<length> lambda;
-		unitless::vec3 penalty;
+		vec3<stiffness> penalty;
 
-		float penalty_floor = 1.f;
+		stiffness penalty_floor = newtons_per_meter(1.f);
 		float friction_coeff = 0.6f;
 		float restitution = 0.f;
 		bool sticking = false;
@@ -64,13 +64,15 @@ export namespace gse::vbd {
 		unitless::vec3 local_axis_b = { 0.f, 1.f, 0.f };
 
 		length target_distance = {};
+		inverse_mass compliance = {};
+		float damping = 0.f;
 		angle limit_lower = radians(-std::numbers::pi_v<float>);
 		angle limit_upper = radians(std::numbers::pi_v<float>);
 		bool limits_enabled = false;
 		quat rest_orientation;
 
 		vec3<length> pos_lambda;
-		unitless::vec3 pos_penalty;
+		vec3<stiffness> pos_penalty;
 
 		vec3<angle> ang_lambda;
 		unitless::vec3 ang_penalty;

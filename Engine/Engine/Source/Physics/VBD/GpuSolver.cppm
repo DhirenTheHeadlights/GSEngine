@@ -737,7 +737,7 @@ auto gse::vbd::gpu_solver::upload(
 		const auto& body_b_state = bodies[j.body_b];
 
 		auto pos_lambda = j.pos_lambda;
-		auto pos_penalty = j.pos_penalty;
+		auto pos_penalty = j.pos_penalty.as<newtons_per_meter>();
 		auto ang_lambda = j.ang_lambda;
 		auto ang_penalty = j.ang_penalty;
 		auto limit_lambda_val = j.limit_lambda;
@@ -781,7 +781,7 @@ auto gse::vbd::gpu_solver::upload(
 				const auto inv_i = mat3{ body_b_state.inv_inertia.data };
 				inv_i_sum += dot(ang_dir, inv_i * ang_dir);
 			}
-			return inv_i_sum > 1e-10f ? (1.f / inv_i_sum) : solver_cfg.penalty_min;
+			return inv_i_sum > 1e-10f ? (1.f / inv_i_sum) : solver_cfg.penalty_min.as<newtons_per_meter>();
 		};
 
 		const unitless::vec3 dirs[3] = { { 1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 1.f } };
@@ -810,7 +810,7 @@ auto gse::vbd::gpu_solver::upload(
 			const float eff = contact_eff_mass(dir) / h_squared_val;
 			pos_penalty[k] = std::clamp(
 				std::max(pos_penalty[k] * solver_cfg.gamma, eff),
-				solver_cfg.penalty_min, solver_cfg.penalty_max
+				solver_cfg.penalty_min.as<newtons_per_meter>(), solver_cfg.penalty_max.as<newtons_per_meter>()
 			);
 		}
 
@@ -833,7 +833,7 @@ auto gse::vbd::gpu_solver::upload(
 			const float eff_ang = angular_eff_mass(ang_dir) / h_squared_val;
 			ang_penalty[k] = std::clamp(
 				std::max(ang_penalty[k] * solver_cfg.gamma, eff_ang),
-				solver_cfg.penalty_min, solver_cfg.penalty_max
+				solver_cfg.penalty_min.as<newtons_per_meter>(), solver_cfg.penalty_max.as<newtons_per_meter>()
 			);
 		}
 
@@ -842,7 +842,7 @@ auto gse::vbd::gpu_solver::upload(
 			const float eff_limit = angular_eff_mass(limit_axis) / h_squared_val;
 			limit_penalty_val = std::clamp(
 				std::max(limit_penalty_val * solver_cfg.gamma, eff_limit),
-				solver_cfg.penalty_min, solver_cfg.penalty_max
+				solver_cfg.penalty_min.as<newtons_per_meter>(), solver_cfg.penalty_max.as<newtons_per_meter>()
 			);
 		}
 
