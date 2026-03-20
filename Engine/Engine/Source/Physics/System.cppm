@@ -57,6 +57,13 @@ export namespace gse::physics {
 		std::unordered_map<id, std::uint32_t> sleep_counters;
 		std::vector<joint_definition> joints;
 
+		bool compare_solvers = false;
+		struct solver_comparison_snapshot {
+			std::vector<vbd::body_state> cpu_result;
+			std::vector<vbd::joint_constraint> cpu_joints;
+		};
+		std::optional<solver_comparison_snapshot> comparison_pending;
+
 		struct gpu_prev_frame {
 			std::vector<vbd::body_state> result_bodies;
 			std::vector<id> result_entity_ids;
@@ -69,6 +76,8 @@ export namespace gse::physics {
 				std::vector<vbd::body_state> gpu_input_bodies;
 				std::vector<vbd::body_state> gpu_result_bodies;
 				std::vector<vbd::contact_readback_entry> gpu_contacts;
+				std::vector<vbd::joint_constraint> gpu_joint_readback;
+				std::uint32_t gpu_joint_count = 0;
 			};
 
 			std::optional<snapshot> pending;
@@ -262,6 +271,14 @@ auto gse::physics::system::initialize(const initialize_phase& phase, state& s) -
 		.name = "Use GPU Solver",
 		.description = "Run VBD solver on GPU via compute shaders",
 		.ref = &s.use_gpu_solver,
+		.type = typeid(bool)
+	});
+
+	phase.channels.push(save::register_property{
+		.category = "Physics",
+		.name = "Compare Solvers",
+		.description = "Run one CPU vs GPU comparison frame and log results",
+		.ref = &s.compare_solvers,
 		.type = typeid(bool)
 	});
 
@@ -476,6 +493,55 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 			return a.feature_key < b.feature_key;
 		});
 
+		{
+			std::uint32_t ji = 0;
+			for (auto& jd : s.joints) {
+				if (ji >= completed.gpu_joint_readback.size()) break;
+				const auto& sj = completed.gpu_joint_readback[ji];
+				jd.pos_lambda = sj.pos_lambda;
+				jd.pos_penalty = sj.pos_penalty;
+				jd.ang_lambda = sj.ang_lambda;
+				jd.ang_penalty = sj.ang_penalty;
+				jd.limit_lambda = sj.limit_lambda;
+				jd.limit_penalty = sj.limit_penalty;
+				++ji;
+			}
+		}
+
+		if (s.comparison_pending.has_value()) {
+			const auto& cpu = s.comparison_pending->cpu_result;
+			const auto& gpu = completed.gpu_result_bodies;
+			const auto count = std::min(cpu.size(), gpu.size());
+
+			float max_pos_err = 0.f, max_vel_err = 0.f, max_ang_err = 0.f;
+			std::uint32_t worst_pos_idx = 0;
+
+			for (std::uint32_t i = 0; i < count; ++i) {
+				if (cpu[i].locked) continue;
+				const float pe = magnitude(gpu[i].position - cpu[i].position).as<meters>();
+				const float ve = magnitude(gpu[i].body_velocity - cpu[i].body_velocity).as<meters_per_second>();
+				const float ae = magnitude(gpu[i].body_angular_velocity - cpu[i].body_angular_velocity).as<radians_per_second>();
+				if (pe > max_pos_err) { max_pos_err = pe; worst_pos_idx = i; }
+				if (ve > max_vel_err) max_vel_err = ve;
+				if (ae > max_ang_err) max_ang_err = ae;
+			}
+
+			gse::log::println("SOLVER COMPARE: {} bodies, max_pos_err={} (body {}), max_vel_err={}, max_ang_err={}",
+				count, max_pos_err, worst_pos_idx, max_vel_err, max_ang_err);
+
+			if (max_pos_err > 1e-4f) {
+				const auto& cb = cpu[worst_pos_idx];
+				const auto& gb = gpu[worst_pos_idx];
+				gse::log::println("  worst body[{}]: cpu=({},{},{}) gpu=({},{},{})",
+					worst_pos_idx,
+					cb.position.x().as<meters>(), cb.position.y().as<meters>(), cb.position.z().as<meters>(),
+					gb.position.x().as<meters>(), gb.position.y().as<meters>(), gb.position.z().as<meters>());
+			}
+
+			s.comparison_pending.reset();
+			s.compare_solvers = false;
+		}
+
 		s.gpu_prev.result_bodies = completed.gpu_result_bodies;
 		s.gpu_prev.result_entity_ids = completed.entity_ids;
 	}
@@ -607,11 +673,46 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		});
 	}
 
+	std::vector<vbd::joint_constraint> gpu_joints;
+	gpu_joints.reserve(s.joints.size());
+	for (auto& jd : s.joints) {
+		const auto it_a = id_to_body_index.find(jd.entity_a);
+		const auto it_b = id_to_body_index.find(jd.entity_b);
+		if (it_a == id_to_body_index.end() || it_b == id_to_body_index.end()) continue;
+
+		if (!jd.rest_orientation_initialized && jd.type != vbd::joint_type::distance) {
+			jd.rest_orientation = bodies[it_b->second].orientation * conjugate(bodies[it_a->second].orientation);
+			jd.rest_orientation_initialized = true;
+		}
+
+		gpu_joints.push_back(vbd::joint_constraint{
+			.body_a = it_a->second,
+			.body_b = it_b->second,
+			.type = jd.type,
+			.local_anchor_a = jd.local_anchor_a,
+			.local_anchor_b = jd.local_anchor_b,
+			.local_axis_a = jd.local_axis_a,
+			.local_axis_b = jd.local_axis_b,
+			.target_distance = jd.target_distance,
+			.limit_lower = jd.limit_lower,
+			.limit_upper = jd.limit_upper,
+			.limits_enabled = jd.limits_enabled,
+			.rest_orientation = jd.rest_orientation,
+			.pos_lambda = jd.pos_lambda,
+			.pos_penalty = jd.pos_penalty,
+			.ang_lambda = jd.ang_lambda,
+			.ang_penalty = jd.ang_penalty,
+			.limit_lambda = jd.limit_lambda,
+			.limit_penalty = jd.limit_penalty,
+		});
+	}
+
 	s.gpu_solver.upload(
 		bodies,
 		collision_data,
 		accel_weights,
 		motors,
+		gpu_joints,
 		s.gpu_prev.warm_start_contacts,
 		jumped_body_indices,
 		s.vbd_solver.config(),
@@ -621,8 +722,31 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 
 	s.gpu_readback.pending = state::gpu_readback_state::snapshot{
 		.entity_ids = entity_ids,
-		.gpu_input_bodies = bodies
+		.gpu_input_bodies = bodies,
+		.gpu_joint_count = static_cast<std::uint32_t>(gpu_joints.size())
 	};
+
+	if (s.compare_solvers) {
+		vbd::solver cpu_ref;
+		cpu_ref.configure(s.vbd_solver.config());
+		vbd::contact_cache ref_cache;
+		cpu_ref.begin_frame(bodies, ref_cache);
+
+		for (const auto& m : motors) cpu_ref.add_motor_constraint(m);
+		for (const auto& j : gpu_joints) cpu_ref.add_joint_constraint(j);
+
+		cpu_ref.solve(dt * static_cast<float>(steps));
+
+		std::vector<vbd::body_state> cpu_result;
+		cpu_ref.end_frame(cpu_result, ref_cache);
+
+		s.comparison_pending = state::solver_comparison_snapshot{
+			.cpu_result = std::move(cpu_result),
+			.cpu_joints = cpu_ref.graph().joint_constraints()
+				| std::views::all
+				| std::ranges::to<std::vector>(),
+		};
+	}
 }
 
 auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>& motion, chunk<collision_component>& collision) -> void {
@@ -966,15 +1090,19 @@ auto gse::physics::system::render(render_phase&, const state& s) -> void {
 			auto completed = std::move(*in_flight);
 			in_flight.reset();
 			completed.gpu_result_bodies = completed.gpu_input_bodies;
-			s.gpu_solver.readback(completed.gpu_result_bodies, completed.gpu_contacts);
+			std::vector<vbd::joint_constraint> joint_readback(completed.gpu_joint_count);
+			s.gpu_solver.readback(completed.gpu_result_bodies, completed.gpu_contacts, joint_readback);
+			completed.gpu_joint_readback = std::move(joint_readback);
 			s.gpu_readback.completed.push_back(std::move(completed));
 		}
 		else {
 			static thread_local std::vector<vbd::body_state> discard_bodies;
 			static thread_local std::vector<vbd::contact_readback_entry> discard_contacts;
+			static thread_local std::vector<vbd::joint_constraint> discard_joints;
 			discard_bodies.clear();
 			discard_contacts.clear();
-			s.gpu_solver.readback(discard_bodies, discard_contacts);
+			discard_joints.clear();
+			s.gpu_solver.readback(discard_bodies, discard_contacts, discard_joints);
 		}
 	}
 

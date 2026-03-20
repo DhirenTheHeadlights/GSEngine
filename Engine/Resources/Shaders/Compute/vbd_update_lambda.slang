@@ -9,6 +9,7 @@ import vbd_shared;
 [[vk::binding(6, 0)]] RWStructuredBuffer<uint> collision_pairs;
 [[vk::binding(7, 0)]] RWStructuredBuffer<uint> collision_state;
 [[vk::binding(8, 0)]] StructuredBuffer<GpuWarmStart> warm_starts;
+[[vk::binding(9, 0)]] RWStructuredBuffer<GpuJoint> joint_data;
 
 [[vk::push_constant]]
 ConstantBuffer<vbd_push_constants> pc;

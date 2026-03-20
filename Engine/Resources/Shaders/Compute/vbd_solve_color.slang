@@ -9,6 +9,7 @@ import vbd_shared;
 [[vk::binding(6, 0)]] RWStructuredBuffer<uint> collision_pairs;
 [[vk::binding(7, 0)]] RWStructuredBuffer<uint> collision_state;
 [[vk::binding(8, 0)]] StructuredBuffer<GpuWarmStart> warm_starts;
+[[vk::binding(9, 0)]] RWStructuredBuffer<GpuJoint> joint_data;
 
 [[vk::push_constant]]
 ConstantBuffer<vbd_push_constants> pc;
@@ -96,6 +97,179 @@ mat3 mat3_inverse(mat3 m) {
         (m[0].x * m[1].y - m[1].x * m[0].y) * inv_d
     );
     return result;
+}
+
+void accumulate_geometric_stiffness(float3 r, float3 dir, float abs_force, inout mat3 ang_hess) {
+    float rd = dot(r, dir);
+    for (int j = 0; j < 3; j++) {
+        float col_norm = 0.0;
+        for (int i = 0; i < 3; i++) {
+            float h = r[i] * dir[j];
+            if (i == j) h -= rd;
+            col_norm += abs(h);
+        }
+        ang_hess[j][j] += col_norm * abs_force;
+    }
+}
+
+void accumulate_joint_for_body(
+    uint bi, GpuJoint j, bool update_orient,
+    inout float3 grad, inout mat3 hess,
+    inout float3 ang_grad, inout mat3 ang_hess,
+    inout mat3 hess_xt
+) {
+    GpuBody body_a = body_data[j.body_a];
+    GpuBody body_b = body_data[j.body_b];
+    bool is_a = (j.body_a == bi);
+    float sign = is_a ? 1.0 : -1.0;
+
+    float3 r_aw = rotate_vector(body_a.predicted_orientation, j.local_anchor_a.xyz);
+    float3 r_bw = rotate_vector(body_b.predicted_orientation, j.local_anchor_b.xyz);
+    float3 p_a = body_a.predicted_position.xyz + r_aw;
+    float3 p_b = body_b.predicted_position.xyz + r_bw;
+    float3 d = p_a - p_b;
+    float3 r = is_a ? r_aw : r_bw;
+
+    if (j.type == JOINT_TYPE_DISTANCE) {
+        float d_mag = length(d);
+        float3 d_hat = d_mag > 1e-7 ? d / d_mag : float3(0, 1, 0);
+        float c = (d_mag - j.target_distance) - j.pos_c0.x * pc.current_alpha;
+        float f = j.pos_penalty.x * c + j.pos_lambda.x;
+
+        float3 j_lin = d_hat * sign;
+        float3 j_ang = cross(r, d_hat) * sign;
+
+        grad += j_lin * f;
+        hess = mat3_add(hess, mat3_scale(outer_product3(j_lin, j_lin), j.pos_penalty.x));
+
+        if (update_orient) {
+            ang_grad += j_ang * f;
+            ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(j_ang, j_ang), j.pos_penalty.x));
+            hess_xt = mat3_add(hess_xt, mat3_scale(outer_product3(j_lin, j_ang), j.pos_penalty.x));
+            accumulate_geometric_stiffness(r, d_hat, abs(f), ang_hess);
+        }
+    }
+    else if (j.type == JOINT_TYPE_FIXED || j.type == JOINT_TYPE_HINGE) {
+        float3 dirs[3] = { float3(1, 0, 0), float3(0, 1, 0), float3(0, 0, 1) };
+        for (int k = 0; k < 3; k++) {
+            float c = dot(dirs[k], d) - j.pos_c0[k] * pc.current_alpha;
+            float f = j.pos_penalty[k] * c + j.pos_lambda[k];
+
+            float3 j_lin = dirs[k] * sign;
+            float3 j_ang = cross(r, dirs[k]) * sign;
+
+            grad += j_lin * f;
+            hess = mat3_add(hess, mat3_scale(outer_product3(j_lin, j_lin), j.pos_penalty[k]));
+
+            if (update_orient) {
+                ang_grad += j_ang * f;
+                ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(j_ang, j_ang), j.pos_penalty[k]));
+                hess_xt = mat3_add(hess_xt, mat3_scale(outer_product3(j_lin, j_ang), j.pos_penalty[k]));
+                accumulate_geometric_stiffness(r, dirs[k], abs(f), ang_hess);
+            }
+        }
+
+        if (update_orient) {
+            float4 q_error = quat_mul(body_b.predicted_orientation, quat_mul(quat_conjugate(body_a.predicted_orientation), quat_conjugate(j.rest_orientation)));
+            float3 theta = to_axis_angle(q_error);
+
+            if (j.type == JOINT_TYPE_FIXED) {
+                for (int k = 0; k < 3; k++) {
+                    float c_ang = theta[k] - j.ang_c0[k] * pc.current_alpha;
+                    float f_ang = j.ang_penalty[k] * c_ang + j.ang_lambda[k];
+                    float3 j_ang_dir = dirs[k] * (-sign);
+                    ang_grad += j_ang_dir * f_ang;
+                    ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(j_ang_dir, j_ang_dir), j.ang_penalty[k]));
+                }
+            }
+            else {
+                float3 axis_a = rotate_vector(body_a.predicted_orientation, j.local_axis_a.xyz);
+                float3 axis_b = rotate_vector(body_b.predicted_orientation, j.local_axis_b.xyz);
+                float3 swing_error = cross(axis_a, axis_b);
+
+                float3 perp_u = cross(axis_a, float3(0, 1, 0));
+                if (length(perp_u) < 1e-6) perp_u = cross(axis_a, float3(1, 0, 0));
+                perp_u = normalize(perp_u);
+                float3 perp_v = normalize(cross(axis_a, perp_u));
+
+                float c_u = dot(perp_u, swing_error) - j.ang_c0.x * pc.current_alpha;
+                float c_v = dot(perp_v, swing_error) - j.ang_c0.y * pc.current_alpha;
+                float f_u = j.ang_penalty.x * c_u + j.ang_lambda.x;
+                float f_v = j.ang_penalty.y * c_v + j.ang_lambda.y;
+
+                float3 j_ang_u = perp_u * (-sign);
+                float3 j_ang_v = perp_v * (-sign);
+
+                ang_grad += j_ang_u * f_u;
+                ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(j_ang_u, j_ang_u), j.ang_penalty.x));
+                ang_grad += j_ang_v * f_v;
+                ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(j_ang_v, j_ang_v), j.ang_penalty.y));
+
+                if (j.limits_enabled != 0) {
+                    float twist = dot(axis_a, theta);
+                    bool limit_active = false;
+                    float c_limit = 0.0;
+
+                    if (twist < j.limit_lower) {
+                        c_limit = (twist - j.limit_lower) - j.limit_c0 * pc.current_alpha;
+                        limit_active = true;
+                    }
+                    else if (twist > j.limit_upper) {
+                        c_limit = (twist - j.limit_upper) - j.limit_c0 * pc.current_alpha;
+                        limit_active = true;
+                    }
+
+                    if (limit_active) {
+                        float f_limit = j.limit_penalty * c_limit + j.limit_lambda;
+                        float f_clamped = (c_limit < 0.0) ? min(f_limit, 0.0) : max(f_limit, 0.0);
+                        float3 j_limit = axis_a * (-sign);
+                        ang_grad += j_limit * f_clamped;
+                        ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(j_limit, j_limit), j.limit_penalty));
+                    }
+                }
+            }
+        }
+    }
+    else if (j.type == JOINT_TYPE_SLIDER) {
+        float3 axis_w = normalize(rotate_vector(body_a.predicted_orientation, j.local_axis_a.xyz));
+        float3 perp0 = cross(axis_w, float3(0, 1, 0));
+        if (length(perp0) < 1e-6) perp0 = cross(axis_w, float3(1, 0, 0));
+        perp0 = normalize(perp0);
+        float3 perp1 = normalize(cross(axis_w, perp0));
+
+        float3 perps[2] = { perp0, perp1 };
+        for (int k = 0; k < 2; k++) {
+            float c = dot(perps[k], d) - j.pos_c0[k] * pc.current_alpha;
+            float f = j.pos_penalty[k] * c + j.pos_lambda[k];
+
+            float3 j_lin = perps[k] * sign;
+            float3 j_ang = cross(r, perps[k]) * sign;
+
+            grad += j_lin * f;
+            hess = mat3_add(hess, mat3_scale(outer_product3(j_lin, j_lin), j.pos_penalty[k]));
+
+            if (update_orient) {
+                ang_grad += j_ang * f;
+                ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(j_ang, j_ang), j.pos_penalty[k]));
+                hess_xt = mat3_add(hess_xt, mat3_scale(outer_product3(j_lin, j_ang), j.pos_penalty[k]));
+                accumulate_geometric_stiffness(r, perps[k], abs(f), ang_hess);
+            }
+        }
+
+        if (update_orient) {
+            float4 q_error = quat_mul(body_b.predicted_orientation, quat_mul(quat_conjugate(body_a.predicted_orientation), quat_conjugate(j.rest_orientation)));
+            float3 theta = to_axis_angle(q_error);
+            float3 dirs[3] = { float3(1, 0, 0), float3(0, 1, 0), float3(0, 0, 1) };
+
+            for (int k = 0; k < 3; k++) {
+                float c_ang = theta[k] - j.ang_c0[k] * pc.current_alpha;
+                float f_ang = j.ang_penalty[k] * c_ang + j.ang_lambda[k];
+                float3 j_ang_dir = dirs[k] * (-sign);
+                ang_grad += j_ang_dir * f_ang;
+                ang_hess = mat3_add(ang_hess, mat3_scale(outer_product3(j_ang_dir, j_ang_dir), j.ang_penalty[k]));
+            }
+        }
+    }
 }
 
 void solve_body(uint bi) {
@@ -226,6 +400,15 @@ void solve_body(uint bi) {
         motor_hess[1].y = (m.horizontal_only != 0) ? 0.0 : stiffness * motor_scale;
         motor_hess[2].z = stiffness * motor_scale;
         hess = mat3_add(hess, motor_hess);
+    }
+
+    uint joint_offset = body_contact_map[JOINT_MAP_BASE + bi];
+    uint joint_count_for_body = body_contact_map[JOINT_MAP_BASE + MAX_BODIES + bi];
+
+    for (uint ji_idx = 0; ji_idx < joint_count_for_body; ji_idx++) {
+        uint ji = body_contact_map[JOINT_MAP_BASE + MAX_BODIES * 2 + joint_offset + ji_idx];
+        GpuJoint j = joint_data[ji];
+        accumulate_joint_for_body(bi, j, update_orient, grad, hess, ang_grad, ang_hess, hess_xt);
     }
 
     float inertia_weight = body.mass / pc.h_squared;

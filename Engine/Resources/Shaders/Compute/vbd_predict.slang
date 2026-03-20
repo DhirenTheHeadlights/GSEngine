@@ -9,6 +9,7 @@ import vbd_shared;
 [[vk::binding(6, 0)]] RWStructuredBuffer<uint> collision_pairs;
 [[vk::binding(7, 0)]] RWStructuredBuffer<uint> collision_state;
 [[vk::binding(8, 0)]] StructuredBuffer<GpuWarmStart> warm_starts;
+[[vk::binding(9, 0)]] RWStructuredBuffer<GpuJoint> joint_data;
 
 [[vk::push_constant]]
 ConstantBuffer<vbd_push_constants> pc;
@@ -51,6 +52,26 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
                     body.sleep_counter = 0;
                     sleeping = false;
                     break;
+                }
+            }
+
+            if (sleeping) {
+                uint j_off = body_contact_map[JOINT_MAP_BASE + bi];
+                uint jc = body_contact_map[JOINT_MAP_BASE + MAX_BODIES + bi];
+                for (uint k = 0; k < jc; k++) {
+                    uint ji = body_contact_map[JOINT_MAP_BASE + MAX_BODIES * 2 + j_off + k];
+                    GpuJoint jnt = joint_data[ji];
+                    uint other = (jnt.body_a == bi) ? jnt.body_b : jnt.body_a;
+                    GpuBody other_body = body_data[other];
+                    bool other_locked = (other_body.flags & FLAG_LOCKED) != 0;
+                    bool other_sleeping = other_body.sleep_counter >= SLEEP_THRESHOLD;
+                    float other_speed = length(other_body.velocity.xyz);
+
+                    if (!other_locked && !other_sleeping && other_speed > wake_thresh) {
+                        body.sleep_counter = 0;
+                        sleeping = false;
+                        break;
+                    }
                 }
             }
         }

@@ -6,6 +6,14 @@ public static const uint MAX_BODIES = 500;
 public static const uint MAX_CONTACTS = 2000;
 public static const uint MAX_COLLISION_PAIRS = 8192;
 public static const uint MAX_COLORS = 32;
+public static const uint MAX_JOINTS = 128;
+
+public static const uint JOINT_TYPE_DISTANCE = 0;
+public static const uint JOINT_TYPE_FIXED = 1;
+public static const uint JOINT_TYPE_HINGE = 2;
+public static const uint JOINT_TYPE_SLIDER = 3;
+
+public static const uint JOINT_MAP_BASE = MAX_BODIES * 2 + MAX_CONTACTS * 2 + MAX_BODIES;
 
 public struct GpuBody {
     public float4 position;
@@ -72,6 +80,36 @@ public struct GpuWarmStart {
     public float4 penalty;
 };
 
+public struct GpuJoint {
+    public uint body_a;
+    public uint body_b;
+    public uint type;
+    public uint limits_enabled;
+    public float4 local_anchor_a;
+    public float4 local_anchor_b;
+    public float4 local_axis_a;
+    public float4 local_axis_b;
+    public float target_distance;
+    public float limit_lower;
+    public float limit_upper;
+    public float _pad0;
+    public float4 rest_orientation;
+    public float4 pos_lambda;
+    public float4 pos_penalty;
+    public float4 ang_lambda;
+    public float4 ang_penalty;
+    public float limit_lambda;
+    public float limit_penalty;
+    public float _pad1;
+    public float _pad2;
+    public float4 pos_c0;
+    public float4 ang_c0;
+    public float limit_c0;
+    public float _pad3;
+    public float _pad4;
+    public float _pad5;
+};
+
 public struct vbd_push_constants {
     public uint body_count;
     public uint contact_count;
@@ -80,7 +118,7 @@ public struct vbd_push_constants {
     public uint color_count;
     public uint warm_start_count;
     public uint post_stabilize;
-    public uint _pad0;
+    public uint joint_count;
     public float h_squared;
     public float dt;
     public float beta;
@@ -121,4 +159,14 @@ public float4 quat_conjugate(float4 q) {
 public float4 quat_normalize(float4 q) {
     float len = length(q);
     return len > 1e-10 ? q / len : float4(1, 0, 0, 0);
+}
+
+public float3 to_axis_angle(float4 q) {
+    float q_s = q.x;
+    float3 q_v = q.yzw;
+    if (q_s < 0.0) { q_s = -q_s; q_v = -q_v; }
+    if (q_s > 0.9999) return q_v * 2.0;
+    float angle = 2.0 * acos(clamp(q_s, 0.0, 1.0));
+    float sin_half = sqrt(1.0 - q_s * q_s);
+    return (sin_half > 1e-6) ? q_v * (angle / sin_half) : q_v * 2.0;
 }
