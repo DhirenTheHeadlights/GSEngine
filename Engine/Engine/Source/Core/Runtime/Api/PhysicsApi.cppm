@@ -29,34 +29,33 @@ export namespace gse::physics {
 	};
 
 	auto join(
-		id a, 
-		id b, 
+		id a,
+		id b,
 		const fixed_joint& config
-	) -> joint_handle;
+	) -> void;
 
 	auto join(
 		id a,
-		id b, 
+		id b,
 		const distance_joint& config
-	) -> joint_handle;
+	) -> void;
 
 	auto join(
-		id a, 
-		id b, 
+		id a,
+		id b,
 		const hinge_joint& config
-	) -> joint_handle;
+	) -> void;
 
 	auto join(
-		id a, 
-		id b, 
+		id a,
+		id b,
 		const slider_joint& config
-	) -> joint_handle;
+	) -> void;
 }
 
-auto gse::physics::join(const id a, const id b, const fixed_joint& config) -> joint_handle {
-	joint_handle handle{};
-	defer<state>([a, b, config, &handle](state& s) {
-		handle = create_joint(s, joint_definition{
+auto gse::physics::join(const id a, const id b, const fixed_joint& config) -> void {
+	defer<state>([a, b, config](state& s) {
+		create_joint(s, joint_definition{
 			.entity_a = a,
 			.entity_b = b,
 			.type = vbd::joint_type::fixed,
@@ -64,26 +63,22 @@ auto gse::physics::join(const id a, const id b, const fixed_joint& config) -> jo
 			.local_anchor_b = config.anchor_b,
 		});
 	});
-	return handle;
 }
 
-auto gse::physics::join(const id a, const id b, const distance_joint& config) -> joint_handle {
-	joint_handle handle{};
-	defer<state>([a, b, config, &handle](state& s) {
-		handle = create_joint(s, joint_definition{
+auto gse::physics::join(const id a, const id b, const distance_joint& config) -> void {
+	defer<state>([a, b, config](state& s) {
+		create_joint(s, joint_definition{
 			.entity_a = a,
 			.entity_b = b,
 			.type = vbd::joint_type::distance,
 			.target_distance = config.target,
 		});
 	});
-	return handle;
 }
 
-auto gse::physics::join(const id a, const id b, const hinge_joint& config) -> joint_handle {
-	joint_handle handle{};
-	defer<state>([a, b, config, &handle](state& s) {
-		handle = create_joint(s, joint_definition{
+auto gse::physics::join(const id a, const id b, const hinge_joint& config) -> void {
+	defer<state>([a, b, config](state& s) {
+		create_joint(s, joint_definition{
 			.entity_a = a,
 			.entity_b = b,
 			.type = vbd::joint_type::hinge,
@@ -96,13 +91,11 @@ auto gse::physics::join(const id a, const id b, const hinge_joint& config) -> jo
 			.limits_enabled = config.limits.has_value(),
 		});
 	});
-	return handle;
 }
 
-auto gse::physics::join(const id a, const id b, const slider_joint& config) -> joint_handle {
-	joint_handle handle{};
-	defer<state>([a, b, config, &handle](state& s) {
-		handle = create_joint(s, joint_definition{
+auto gse::physics::join(const id a, const id b, const slider_joint& config) -> void {
+	defer<state>([a, b, config](state& s) {
+		create_joint(s, joint_definition{
 			.entity_a = a,
 			.entity_b = b,
 			.type = vbd::joint_type::slider,
@@ -110,5 +103,4 @@ auto gse::physics::join(const id a, const id b, const slider_joint& config) -> j
 			.local_axis_b = config.axis,
 		});
 	});
-	return handle;
 }
