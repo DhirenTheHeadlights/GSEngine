@@ -142,11 +142,20 @@ namespace gse::physics {
 				const auto& aabb_b = collision_b->bounding_box.aabb();
 				if (!aabb_a.overlaps(aabb_b, speculative_margin)) continue;
 
-				auto sat_result = narrow_phase_collision::sat_speculative(
-					collision_a->bounding_box,
-					collision_b->bounding_box,
-					speculative_margin
-				);
+				const narrow_phase_collision::shape_data sd_a{
+					.bb = &collision_a->bounding_box,
+					.type = collision_a->shape,
+					.radius = collision_a->shape_radius,
+					.half_height = collision_a->shape_half_height
+				};
+				const narrow_phase_collision::shape_data sd_b{
+					.bb = &collision_b->bounding_box,
+					.type = collision_b->shape,
+					.radius = collision_b->shape_radius,
+					.half_height = collision_b->shape_half_height
+				};
+
+				auto sat_result = narrow_phase_collision::speculative_test(sd_a, sd_b, speculative_margin);
 				if (!sat_result) continue;
 
 				auto sat = *sat_result;
@@ -839,10 +848,21 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 
 				if (!aabb_a.overlaps(aabb_b, s.vbd_solver.config().speculative_margin)) continue;
 
-				auto sat_result = narrow_phase_collision::sat_speculative(
-					collision_a->bounding_box,
-					collision_b->bounding_box,
-					s.vbd_solver.config().speculative_margin
+				const narrow_phase_collision::shape_data sd_a{
+					.bb = &collision_a->bounding_box,
+					.type = collision_a->shape,
+					.radius = collision_a->shape_radius,
+					.half_height = collision_a->shape_half_height
+				};
+				const narrow_phase_collision::shape_data sd_b{
+					.bb = &collision_b->bounding_box,
+					.type = collision_b->shape,
+					.radius = collision_b->shape_radius,
+					.half_height = collision_b->shape_half_height
+				};
+
+				auto sat_result = narrow_phase_collision::speculative_test(
+					sd_a, sd_b, s.vbd_solver.config().speculative_margin
 				);
 
 				if (!sat_result) continue;
@@ -853,11 +873,8 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 					sat.normal = -sat.normal;
 				}
 
-				auto manifold = narrow_phase_collision::generate_manifold(
-					collision_a->bounding_box,
-					collision_b->bounding_box,
-					sat.normal,
-					sat.separation
+				auto manifold = narrow_phase_collision::generate_shape_manifold(
+					sd_a, sd_b, sat.normal, sat.separation
 				);
 
 				if (manifold.point_count == 0) continue;
@@ -947,6 +964,11 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 						local_r_b = cached->local_anchor_b;
 					}
 
+					const float pair_restitution = std::max(
+						motion_a ? motion_a->restitution : 0.f,
+						motion_b ? motion_b->restitution : 0.f
+					);
+
 					s.vbd_solver.add_contact_constraint(vbd::contact_constraint{
 						.body_a = body_a,
 						.body_b = body_b,
@@ -960,6 +982,7 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 						.penalty = init_penalty,
 						.penalty_floor = penalty_floor,
 						.friction_coeff = cfg.friction_coefficient,
+						.restitution = pair_restitution,
 						.sticking = cached ? cached->sticking : false,
 						.feature = feature
 					});

@@ -2,7 +2,6 @@ export module gse.physics:narrow_phase_collision;
 
 import std;
 
-import :motion_component;
 import :bounding_box;
 import :collision_component;
 import :contact_manifold;
@@ -17,12 +16,12 @@ export namespace gse::narrow_phase_collision {
 		bool is_speculative;
 	};
 
-	auto resolve_collision(
-		physics::motion_component* object_a,
-		physics::collision_component& coll_a, 
-		physics::motion_component* object_b,
-		physics::collision_component& coll_b
-	) -> void;
+	struct shape_data {
+		const bounding_box* bb = nullptr;
+		physics::shape_type type = physics::shape_type::box;
+		length radius = {};
+		length half_height = {};
+	};
 
 	auto sat_speculative(
 		const bounding_box& bb1,
@@ -31,26 +30,31 @@ export namespace gse::narrow_phase_collision {
 	) -> std::optional<sat_result>;
 
 	auto generate_manifold(
-		const bounding_box& bb1, 
+		const bounding_box& bb1,
 		const bounding_box& bb2,
+		const unitless::vec3& normal,
+		length separation
+	) -> contact_manifold;
+
+	auto speculative_test(
+		const shape_data& a,
+		const shape_data& b,
+		length speculative_margin
+	) -> std::optional<sat_result>;
+
+	auto generate_shape_manifold(
+		const shape_data& a,
+		const shape_data& b,
 		const unitless::vec3& normal,
 		length separation
 	) -> contact_manifold;
 }
 
 namespace gse::narrow_phase_collision {
-	constexpr int mpr_collision_refinement_iterations = 32;
 	constexpr float sat_axis_relative_tolerance = 0.95f;
 	constexpr float sat_axis_absolute_tolerance = 0.01f;
 
 	enum class sat_axis_source { face, cross };
-
-	struct mpr_result {
-		bool collided = false;
-		unitless::vec3 normal;
-		length penetration;
-		std::vector<vec3<length>> contact_points;
-	};
 
 	struct minkowski_point {
 		vec3<length> point;
@@ -153,17 +157,6 @@ namespace gse::narrow_phase_collision {
 		const clip_vertex& vertex
 	) -> feature_id;
 
-	auto generate_contact_points(
-		const bounding_box& bb1,
-		const bounding_box& bb2,
-		const unitless::vec3& collision_normal
-	) -> std::vector<vec3<length>>;
-
-	auto mpr_collision(
-		const bounding_box& bb1,
-		const bounding_box& bb2
-	) -> std::optional<mpr_result>;
-
 	auto should_replace_sat_choice(
 		const sat_axis_choice& best,
 		length overlap,
@@ -187,6 +180,37 @@ namespace gse::narrow_phase_collision {
 		const bounding_box& bb1,
 		const bounding_box& bb2
 	) -> std::pair<unitless::vec3, length>;
+
+	constexpr std::uint8_t sphere_surface_index = 6;
+	constexpr std::uint8_t capsule_barrel_index = 6;
+	constexpr std::uint8_t capsule_cap_a_index = 7;
+	constexpr std::uint8_t capsule_cap_b_index = 8;
+
+	struct obb_query_result {
+		vec3<length> closest;
+		unitless::vec3 normal;
+		length signed_distance;
+	};
+
+	auto capsule_endpoints(const bounding_box& bb, length half_height) -> std::pair<vec3<length>, vec3<length>>;
+	auto closest_point_on_segment(const vec3<length>& a, const vec3<length>& b, const vec3<length>& p) -> vec3<length>;
+	auto segment_segment_closest_params(const vec3<length>& p1, const vec3<length>& q1, const vec3<length>& p2, const vec3<length>& q2) -> std::pair<float, float>;
+	auto query_obb(const bounding_box& bb, const vec3<length>& point) -> obb_query_result;
+	auto segment_obb_query(const bounding_box& bb, const vec3<length>& seg_start, const vec3<length>& seg_end) -> std::pair<vec3<length>, obb_query_result>;
+	auto classify_box_face(const bounding_box& bb, const unitless::vec3& direction) -> std::uint8_t;
+	auto classify_capsule_feature(float t_param) -> std::pair<feature_type, std::uint8_t>;
+
+	auto sphere_sphere_speculative(const vec3<length>& ca, length ra, const vec3<length>& cb, length rb, length margin) -> std::optional<sat_result>;
+	auto box_sphere_speculative(const bounding_box& bb, const vec3<length>& center, length radius, length margin) -> std::optional<sat_result>;
+	auto capsule_capsule_speculative(const bounding_box& bb_a, length ha, length ra, const bounding_box& bb_b, length hb, length rb, length margin) -> std::optional<sat_result>;
+	auto box_capsule_speculative(const bounding_box& bb, const bounding_box& cap_bb, length half_h, length radius, length margin) -> std::optional<sat_result>;
+	auto sphere_capsule_speculative(const vec3<length>& sph_center, length sph_r, const bounding_box& cap_bb, length cap_h, length cap_r, length margin) -> std::optional<sat_result>;
+
+	auto sphere_sphere_manifold(const vec3<length>& ca, length ra, const vec3<length>& cb, length rb, const unitless::vec3& normal, length separation) -> contact_manifold;
+	auto box_sphere_manifold(const bounding_box& bb, const vec3<length>& center, length radius, const unitless::vec3& normal, length separation) -> contact_manifold;
+	auto capsule_capsule_manifold(const bounding_box& bb_a, length ha, length ra, const bounding_box& bb_b, length hb, length rb, const unitless::vec3& normal, length separation) -> contact_manifold;
+	auto box_capsule_manifold(const bounding_box& bb, const bounding_box& cap_bb, length cap_h, length cap_r, const unitless::vec3& normal, length separation) -> contact_manifold;
+	auto sphere_capsule_manifold(const vec3<length>& sph_center, length sph_r, const bounding_box& cap_bb, length cap_h, length cap_r, const unitless::vec3& normal, length separation) -> contact_manifold;
 }
 
 auto gse::narrow_phase_collision::support_obb(const bounding_box& bb, const unitless::vec3& dir) -> vec3<length> {
@@ -509,247 +533,6 @@ auto gse::narrow_phase_collision::build_feature_from_clip_vertex(const clipped_f
 	};
 }
 
-auto gse::narrow_phase_collision::generate_contact_points(const bounding_box& bb1, const bounding_box& bb2, const unitless::vec3& collision_normal) -> std::vector<vec3<length>> {
-	if (const auto clipped = build_clipped_face_contacts(bb1, bb2, collision_normal)) {
-		std::vector<vec3<length>> contacts;
-		contacts.reserve(clipped->vertices.size());
-		for (const auto& vertex : clipped->vertices) {
-			contacts.push_back(vertex.point);
-		}
-		if (!contacts.empty()) {
-			return contacts;
-		}
-	}
-
-	std::vector<vec3<length>> contacts;
-	unitless::vec3 n = normalize(collision_normal);
-	if (dot(n, bb2.center() - bb1.center()) < length{}) {
-		n = -n;
-	}
-
-	const auto mk = minkowski_difference(bb1, bb2, n);
-	contacts.push_back((mk.support_a + mk.support_b) * 0.5f);
-	return contacts;
-}
-
-auto gse::narrow_phase_collision::mpr_collision(const bounding_box& bb1, const bounding_box& bb2) -> std::optional<mpr_result> {
-	constexpr length eps = meters(1e-4f);
-	constexpr auto eps2 = eps * eps;
-
-	const auto obb1 = bb1.obb();
-	const auto obb2 = bb2.obb();
-
-	unitless::vec3 dir = normalize(bb1.center() - bb2.center());
-
-	if (is_zero(dir)) {
-		dir = { 1.0f, 0.0f, 0.0f };
-	}
-
-	minkowski_point v0 = minkowski_difference(bb1, bb2, dir);
-
-	dir = normalize(-v0.point);
-
-	minkowski_point v1 = minkowski_difference(bb1, bb2, dir);
-
-	if (dot(v1.point, dir) <= meters(0.0f)) {
-		return std::nullopt;
-	}
-
-	dir = normalize(cross(v0.point - v1.point, -v0.point));
-
-	if (is_zero(dir)) {
-		dir = normalize(cross(v0.point - v1.point, unitless::axis_y));
-		if (is_zero(dir)) {
-			dir = normalize(cross(v0.point - v1.point, unitless::axis_x));
-		}
-	}
-
-	minkowski_point v2 = minkowski_difference(bb1, bb2, dir);
-
-	if (dot(v2.point, dir) <= meters(0.0f)) {
-		return std::nullopt;
-	}
-
-	dir = normalize(cross(v1.point - v0.point, v2.point - v0.point));
-
-	if (dot(dir, -v0.point) < meters(0.0f)) {
-		dir = -dir;
-	}
-
-	minkowski_point v3 = minkowski_difference(bb1, bb2, dir);
-
-	if (dot(v3.point, dir) <= meters(0.0f)) {
-		return std::nullopt;
-	}
-
-	auto face_normal_outward = [](const vec3<length>& a, const vec3<length>& b, const vec3<length>& c, const vec3<length>& opp) -> unitless::vec3 {
-		unitless::vec3 n = normalize(cross(b - a, c - a));
-		if (is_zero(n)) return n;
-
-		if (dot(n, opp - a) > meters(0.0f)) {
-			n = -n;
-		}
-		return n;
-	};
-
-	for (int i = 0; i < mpr_collision_refinement_iterations; ++i) {
-		unitless::vec3 n_a = face_normal_outward(v0.point, v1.point, v2.point, v3.point);
-		unitless::vec3 n_b = face_normal_outward(v0.point, v2.point, v3.point, v1.point);
-		unitless::vec3 n_c = face_normal_outward(v0.point, v3.point, v1.point, v2.point);
-		unitless::vec3 n_d = face_normal_outward(v1.point, v2.point, v3.point, v0.point);
-
-		constexpr length inf = meters(std::numeric_limits<float>::infinity());
-		length d_a = is_zero(n_a) ? inf : dot(n_a, v0.point);
-		length d_b = is_zero(n_b) ? inf : dot(n_b, v0.point);
-		length d_c = is_zero(n_c) ? inf : dot(n_c, v0.point);
-		length d_d = is_zero(n_d) ? inf : dot(n_d, v1.point);
-
-		struct face {
-			int id;
-			unitless::vec3 n;
-			length d;
-		};
-
-		face faces[4] = {
-			{ 0, n_a, d_a },
-			{ 1, n_b, d_b },
-			{ 2, n_c, d_c },
-			{ 3, n_d, d_d }
-		};
-
-		auto pick = [&](const bool require_positive) -> face {
-			length best = meters(std::numeric_limits<float>::infinity());
-			int idx = -1;
-			for (int k = 0; k < 4; ++k) {
-				if (is_zero(faces[k].n)) {
-					continue;
-				}
-				if (require_positive) {
-					if (faces[k].d <= eps) {
-						continue;
-					}
-				}
-				if (faces[k].d < best) {
-					best = faces[k].d;
-					idx = k;
-				}
-			}
-			if (idx < 0) {
-				best = length{ -1 };
-				for (int k = 0; k < 4; ++k) {
-					if (is_zero(faces[k].n)) {
-						continue;
-					}
-					if (faces[k].d > best) {
-						best = faces[k].d;
-						idx = k;
-					}
-				}
-			}
-			return faces[idx];
-		};
-
-		face choice = pick(true);
-		if (choice.d == meters(std::numeric_limits<float>::infinity())) {
-			choice = pick(false);
-		}
-
-		auto replace_vertex = [&](const int face_id, const minkowski_point& p) {
-			switch (face_id) {
-			case 0:  v3 = p; break;
-			case 1:  v1 = p; break;
-			case 2:  v2 = p; break;
-			case 3:  v0 = p; break;
-			default: v3 = p; break;
-			}
-		};
-
-		auto vertex_point = [&](const int face_id) -> const vec3<length>& {
-			switch (face_id) {
-			case 0:  return v3.point;
-			case 1:  return v1.point;
-			case 2:  return v2.point;
-			case 3:  return v0.point;
-			default: return v3.point;
-			}
-		};
-
-		bool progressed = false;
-		for (int attempt = 0; attempt < 4 && !progressed; ++attempt) {
-			minkowski_point p = minkowski_difference(bb1, bb2, choice.n);
-			if (const length projection_dist = dot(p.point, choice.n); projection_dist - choice.d < eps) {
-				auto collision_normal = -choice.n;
-				length penetration_depth = choice.d;
-				penetration_depth = sat_penetration(bb1, bb2).second;
-
-				const unitless::vec3 n = normalize(collision_normal);
-
-				auto half_extent_on = [&](const bounding_box& bb) -> length {
-					const length maxp = dot(support_obb(bb, n), n);
-					const length minp = dot(support_obb(bb, -n), n);
-					return (maxp - minp) * 0.5f;
-				};
-
-				const length max_depth = half_extent_on(bb1) + half_extent_on(bb2);
-				penetration_depth = std::min(penetration_depth, max_depth);
-
-				if (const unitless::vec3 center_dir = normalize(bb2.center() - bb1.center()); !is_zero(center_dir) && dot(collision_normal, center_dir) < 0.0f) {
-					collision_normal = -collision_normal;
-				}
-
-				std::vector<vec3<length>> contact_points = generate_contact_points(bb1, bb2, collision_normal);
-
-				return mpr_result{
-					.collided = true,
-					.normal = collision_normal,
-					.penetration = penetration_depth,
-					.contact_points = contact_points
-				};
-			}
-
-			const vec3<length>& opp = vertex_point(choice.id);
-			const vec3<length> delta = p.point - opp;
-			const auto delta2 = dot(delta, delta);
-
-			bool skip_face = false;
-			if (delta2 <= eps2) {
-				skip_face = true;
-			}
-			else {
-				auto equals_within_eps2 = [&](const vec3<length>& q) {
-					return dot(p.point - q, p.point - q) <= eps2;
-				};
-
-				if (equals_within_eps2(v0.point) || equals_within_eps2(v1.point) ||
-					equals_within_eps2(v2.point) || equals_within_eps2(v3.point)) {
-					skip_face = true;
-				}
-			}
-
-			if (skip_face) {
-				faces[choice.id].d = meters(std::numeric_limits<float>::infinity());
-				choice = pick(true);
-				if (choice.d == meters(std::numeric_limits<float>::infinity())) {
-					choice = pick(false);
-				}
-				if (is_zero(choice.n)) {
-					break;
-				}
-				continue;
-			}
-
-			replace_vertex(choice.id, p);
-			progressed = true;
-		}
-
-		if (!progressed) {
-			break;
-		}
-	}
-
-	return std::nullopt;
-}
-
 auto gse::narrow_phase_collision::should_replace_sat_choice(const sat_axis_choice& best, const length overlap, const float extent_scale) -> bool {
 	if (!best.valid) {
 		return true;
@@ -839,146 +622,6 @@ auto gse::narrow_phase_collision::sat_penetration(const bounding_box& bb1, const
 
 	best_axis = prefer_face_sat_axis(best_axis, best_face_axis);
 	return { best_axis.axis, best_axis.overlap };
-}
-
-auto gse::narrow_phase_collision::resolve_collision(physics::motion_component* object_a, physics::collision_component& coll_a, physics::motion_component* object_b, physics::collision_component& coll_b) -> void {
-	if (!object_a || !object_b) {
-		return;
-	}
-
-	auto res = mpr_collision(coll_a.bounding_box, coll_b.bounding_box);
-	if (!res) {
-		return;
-	}
-
-	if (dot(object_a->current_position - object_b->current_position, res->normal) < meters(0.0f)) {
-		res->normal *= -1.0f;
-	}
-
-	if (res->contact_points.empty()) {
-		return;
-	}
-
-	coll_a.collision_information = {
-		.colliding = true,
-		.collision_normal = res->normal,
-		.penetration = res->penetration,
-		.collision_points = res->contact_points
-	};
-
-	coll_b.collision_information = {
-		.colliding = true,
-		.collision_normal = -res->normal,
-		.penetration = res->penetration,
-		.collision_points = res->contact_points
-	};
-
-	const inverse_mass inv_mass_a = object_a->position_locked ? inverse_mass{ 0 } : 1.0f / object_a->mass;
-	const inverse_mass inv_mass_b = object_b->position_locked ? inverse_mass{ 0 } : 1.0f / object_b->mass;
-	const inverse_mass total_inv_mass = inv_mass_a + inv_mass_b;
-
-	if (total_inv_mass <= inverse_mass{ 0 }) {
-		return;
-	}
-
-	const float ratio_a = inv_mass_a / total_inv_mass;
-	const float ratio_b = inv_mass_b / total_inv_mass;
-
-	if (res->normal.y() > 0.7f) {
-		object_a->airborne = false;
-	}
-	if (res->normal.y() < -0.7f) {
-		object_b->airborne = false;
-	}
-
-	{
-		constexpr length slop = meters(0.005f);
-		constexpr float baumgarte = 0.2f;
-		const length corrected_pen = std::max(res->penetration - slop, length{ 0 });
-		const vec3<length> correction = res->normal * corrected_pen * baumgarte;
-
-		if (!object_a->position_locked) {
-			object_a->accumulators.position_correction += correction * ratio_a;
-		}
-		if (!object_b->position_locked) {
-			object_b->accumulators.position_correction -= correction * ratio_b;
-		}
-	}
-
-	const physics::inv_inertia_mat inv_i_a = object_a->position_locked ? physics::inv_inertia_mat(0.0f) : object_a->inv_inertial_tensor();
-	const physics::inv_inertia_mat inv_i_b = object_b->position_locked ? physics::inv_inertia_mat(0.0f) : object_b->inv_inertial_tensor();
-
-	for (auto& contact_point : res->contact_points) {
-		const auto r_a = contact_point - object_a->current_position;
-		const auto r_b = contact_point - object_b->current_position;
-
-		const auto vel_a = object_a->current_velocity + cross(object_a->angular_velocity, r_a);
-		const auto vel_b = object_b->current_velocity + cross(object_b->angular_velocity, r_b);
-		const auto relative_velocity = vel_a - vel_b;
-
-		const velocity vel_along_normal = dot(relative_velocity, res->normal);
-
-		if (vel_along_normal > velocity{ 0 }) {
-			continue;
-		}
-
-		const auto tangent_velocity = relative_velocity - vel_along_normal * res->normal;
-		const auto tangent_speed = magnitude(tangent_velocity).as<meters_per_second>();
-		const auto normal_speed = abs(vel_along_normal).as<meters_per_second>();
-
-		if (constexpr float wake_threshold = 0.2f; normal_speed > wake_threshold || tangent_speed > wake_threshold) {
-			object_a->sleeping = false;
-			object_b->sleeping = false;
-		}
-
-		float restitution = 0.0f;
-		if (normal_speed >= 2.0f) {
-			restitution = 0.3f;
-		} else if (normal_speed > 0.5f) {
-			restitution = 0.3f * (normal_speed - 0.5f) / 1.5f;
-		}
-
-		const auto rcross_a_part = cross(inv_i_a * cross(r_a, res->normal), r_a);
-		const auto rcross_b_part = cross(inv_i_b * cross(r_b, res->normal), r_b);
-
-		const inverse_mass denom = total_inv_mass + dot(rcross_a_part, res->normal) + dot(rcross_b_part, res->normal);
-		const auto jn = -(1.0f + restitution) * vel_along_normal / denom;
-
-		const auto impulse_vec = res->normal * jn;
-
-		if (magnitude(tangent_velocity) > meters_per_second(1e-4f)) {
-			const auto t = normalize(tangent_velocity);
-
-			const auto rcross_a_t = cross(inv_i_a * cross(r_a, t), r_a);
-			const auto rcross_b_t = cross(inv_i_b * cross(r_b, t), r_b);
-
-			const inverse_mass denom_t =
-				total_inv_mass
-				+ dot(rcross_a_t, t)
-				+ dot(rcross_b_t, t);
-
-			auto jt = -dot(relative_velocity, t) / denom_t;
-
-			constexpr float mu = 0.6f;
-			jt = std::clamp(jt, -jn * mu, jn * mu);
-			const auto friction_impulse = t * jt;
-
-			object_a->current_velocity += friction_impulse * inv_mass_a;
-			object_a->angular_velocity += inv_i_a * cross(r_a, friction_impulse);
-
-			object_b->current_velocity -= friction_impulse * inv_mass_b;
-			object_b->angular_velocity -= inv_i_b * cross(r_b, friction_impulse);
-		}
-
-		if (!object_a->position_locked) {
-			object_a->current_velocity += impulse_vec * inv_mass_a;
-			object_a->angular_velocity += 0.4f * inv_i_a * cross(r_a, impulse_vec);
-		}
-		if (!object_b->position_locked) {
-			object_b->current_velocity -= impulse_vec * inv_mass_b;
-			object_b->angular_velocity -= 0.4f * inv_i_b * cross(r_b, impulse_vec);
-		}
-	}
 }
 
 auto gse::narrow_phase_collision::sat_speculative(const bounding_box& bb1, const bounding_box& bb2, const length speculative_margin) -> std::optional<sat_result> {
@@ -1222,6 +865,532 @@ auto gse::narrow_phase_collision::generate_manifold(const bounding_box& bb1, con
 			.separation = meters(0.f),
 			.feature = derive_fallback_feature(cp)
 		});
+	}
+
+	return manifold;
+}
+
+auto gse::narrow_phase_collision::capsule_endpoints(const bounding_box& bb, const length half_height) -> std::pair<vec3<length>, vec3<length>> {
+	const auto axis = mat3_cast(bb.obb().orientation) * unitless::vec3(0.f, 1.f, 0.f);
+	return { bb.center() + axis * half_height, bb.center() - axis * half_height };
+}
+
+auto gse::narrow_phase_collision::closest_point_on_segment(const vec3<length>& a, const vec3<length>& b, const vec3<length>& p) -> vec3<length> {
+	const auto ab = b - a;
+	if (magnitude(ab) < meters(1e-8f)) return a;
+	const auto ab_f = ab.as<meters>();
+	const auto ap_f = (p - a).as<meters>();
+	const float t = std::clamp(dot(ap_f, ab_f) / dot(ab_f, ab_f), 0.f, 1.f);
+	return a + ab * t;
+}
+
+auto gse::narrow_phase_collision::segment_segment_closest_params(
+	const vec3<length>& p1, const vec3<length>& q1,
+	const vec3<length>& p2, const vec3<length>& q2
+) -> std::pair<float, float> {
+	const auto d1 = (q1 - p1).as<meters>();
+	const auto d2 = (q2 - p2).as<meters>();
+	const auto r = (p1 - p2).as<meters>();
+
+	const float a = dot(d1, d1);
+	const float e = dot(d2, d2);
+	const float f = dot(d2, r);
+
+	constexpr float eps = 1e-8f;
+
+	if (a <= eps && e <= eps) return { 0.f, 0.f };
+
+	float s, t;
+	if (a <= eps) {
+		s = 0.f;
+		t = std::clamp(f / e, 0.f, 1.f);
+	} else {
+		const float c = dot(d1, r);
+		if (e <= eps) {
+			t = 0.f;
+			s = std::clamp(-c / a, 0.f, 1.f);
+		} else {
+			const float b_val = dot(d1, d2);
+			const float denom = a * e - b_val * b_val;
+			s = (denom > eps) ? std::clamp((b_val * f - c * e) / denom, 0.f, 1.f) : 0.f;
+			t = (b_val * s + f) / e;
+			if (t < 0.f) {
+				t = 0.f;
+				s = std::clamp(-c / a, 0.f, 1.f);
+			} else if (t > 1.f) {
+				t = 1.f;
+				s = std::clamp((b_val - c) / a, 0.f, 1.f);
+			}
+		}
+	}
+
+	return { s, t };
+}
+
+auto gse::narrow_phase_collision::query_obb(const bounding_box& bb, const vec3<length>& point) -> obb_query_result {
+	const auto o = bb.obb();
+	const auto he = bb.half_extents();
+	const auto diff = point - o.center;
+
+	std::array<length, 3> local;
+	bool inside = true;
+	for (int i = 0; i < 3; ++i) {
+		local[i] = dot(o.axes[i], diff);
+		if (abs(local[i]) > he[i]) inside = false;
+	}
+
+	if (!inside) {
+		auto cp = o.center;
+		for (int i = 0; i < 3; ++i) {
+			cp += o.axes[i] * std::clamp(local[i], -he[i], he[i]);
+		}
+		const auto to_point = point - cp;
+		const auto dist = magnitude(to_point);
+		unitless::vec3 normal = (dist > meters(1e-6f)) ? normalize(to_point) : o.axes[0];
+		return { cp, normal, dist };
+	}
+
+	int min_axis = 0;
+	length min_depth = he[0] - abs(local[0]);
+	for (int i = 1; i < 3; ++i) {
+		length depth = he[i] - abs(local[i]);
+		if (depth < min_depth) {
+			min_depth = depth;
+			min_axis = i;
+		}
+	}
+
+	float sign = (local[min_axis] >= length{}) ? 1.f : -1.f;
+	auto cp = o.center;
+	for (int i = 0; i < 3; ++i) {
+		cp += o.axes[i] * (i == min_axis ? he[i] * sign : local[i]);
+	}
+	return { cp, o.axes[min_axis] * sign, -min_depth };
+}
+
+auto gse::narrow_phase_collision::segment_obb_query(
+	const bounding_box& bb,
+	const vec3<length>& seg_start,
+	const vec3<length>& seg_end
+) -> std::pair<vec3<length>, obb_query_result> {
+	auto seg_pt = closest_point_on_segment(seg_start, seg_end, bb.center());
+	auto best = query_obb(bb, seg_pt);
+	auto best_pt = seg_pt;
+
+	for (int iter = 0; iter < 3; ++iter) {
+		seg_pt = closest_point_on_segment(seg_start, seg_end, best.closest);
+		auto result = query_obb(bb, seg_pt);
+		if (result.signed_distance < best.signed_distance) {
+			best = result;
+			best_pt = seg_pt;
+		}
+	}
+
+	for (const auto& pt : { seg_start, seg_end }) {
+		auto result = query_obb(bb, pt);
+		if (result.signed_distance < best.signed_distance) {
+			best = result;
+			best_pt = pt;
+		}
+	}
+
+	return { best_pt, best };
+}
+
+auto gse::narrow_phase_collision::classify_box_face(const bounding_box& bb, const unitless::vec3& direction) -> std::uint8_t {
+	const auto normals = bb.face_normals();
+	std::uint8_t best = 0;
+	float best_dot = -std::numeric_limits<float>::max();
+	for (std::uint8_t i = 0; i < 6; ++i) {
+		if (const float d = dot(normals[i], direction); d > best_dot) {
+			best_dot = d;
+			best = i;
+		}
+	}
+	return best;
+}
+
+auto gse::narrow_phase_collision::classify_capsule_feature(const float t) -> std::pair<feature_type, std::uint8_t> {
+	constexpr float cap_threshold = 0.01f;
+	if (t < cap_threshold) return { feature_type::vertex, capsule_cap_a_index };
+	if (t > 1.f - cap_threshold) return { feature_type::vertex, capsule_cap_b_index };
+	return { feature_type::edge, capsule_barrel_index };
+}
+
+auto gse::narrow_phase_collision::sphere_sphere_speculative(
+	const vec3<length>& ca, const length ra,
+	const vec3<length>& cb, const length rb,
+	const length margin
+) -> std::optional<sat_result> {
+	const auto diff = cb - ca;
+	const auto dist = magnitude(diff);
+	const length separation = ra + rb - dist;
+
+	if (separation < -margin) return std::nullopt;
+
+	unitless::vec3 normal = (dist > meters(1e-6f)) ? normalize(diff) : unitless::vec3(0.f, 1.f, 0.f);
+
+	return sat_result{
+		.normal = normal,
+		.separation = separation,
+		.is_speculative = separation < length{}
+	};
+}
+
+auto gse::narrow_phase_collision::box_sphere_speculative(
+	const bounding_box& bb,
+	const vec3<length>& center, const length radius,
+	const length margin
+) -> std::optional<sat_result> {
+	const auto [closest, normal, signed_dist] = query_obb(bb, center);
+	const length separation = radius - signed_dist;
+
+	if (separation < -margin) return std::nullopt;
+
+	return sat_result{
+		.normal = normal,
+		.separation = separation,
+		.is_speculative = separation < length{}
+	};
+}
+
+auto gse::narrow_phase_collision::capsule_capsule_speculative(
+	const bounding_box& bb_a, const length ha, const length ra,
+	const bounding_box& bb_b, const length hb, const length rb,
+	const length margin
+) -> std::optional<sat_result> {
+	const auto [a0, a1] = capsule_endpoints(bb_a, ha);
+	const auto [b0, b1] = capsule_endpoints(bb_b, hb);
+
+	auto [s, t] = segment_segment_closest_params(a0, a1, b0, b1);
+	const auto closest_a = a0 + (a1 - a0) * s;
+	const auto closest_b = b0 + (b1 - b0) * t;
+
+	const auto diff = closest_b - closest_a;
+	const auto dist = magnitude(diff);
+	const length separation = ra + rb - dist;
+
+	if (separation < -margin) return std::nullopt;
+
+	unitless::vec3 normal = (dist > meters(1e-6f)) ? normalize(diff) : unitless::vec3(0.f, 1.f, 0.f);
+
+	return sat_result{
+		.normal = normal,
+		.separation = separation,
+		.is_speculative = separation < length{}
+	};
+}
+
+auto gse::narrow_phase_collision::box_capsule_speculative(
+	const bounding_box& bb,
+	const bounding_box& cap_bb, const length half_h, const length radius,
+	const length margin
+) -> std::optional<sat_result> {
+	const auto [seg_start, seg_end] = capsule_endpoints(cap_bb, half_h);
+	const auto [seg_pt, obb_result] = segment_obb_query(bb, seg_start, seg_end);
+
+	const length separation = radius - obb_result.signed_distance;
+
+	if (separation < -margin) return std::nullopt;
+
+	return sat_result{
+		.normal = obb_result.normal,
+		.separation = separation,
+		.is_speculative = separation < length{}
+	};
+}
+
+auto gse::narrow_phase_collision::sphere_capsule_speculative(
+	const vec3<length>& sph_center, const length sph_r,
+	const bounding_box& cap_bb, const length cap_h, const length cap_r,
+	const length margin
+) -> std::optional<sat_result> {
+	const auto [seg_start, seg_end] = capsule_endpoints(cap_bb, cap_h);
+	const auto closest_on_seg = closest_point_on_segment(seg_start, seg_end, sph_center);
+
+	const auto diff = closest_on_seg - sph_center;
+	const auto dist = magnitude(diff);
+	const length separation = sph_r + cap_r - dist;
+
+	if (separation < -margin) return std::nullopt;
+
+	unitless::vec3 normal = (dist > meters(1e-6f)) ? normalize(diff) : unitless::vec3(0.f, 1.f, 0.f);
+
+	return sat_result{
+		.normal = normal,
+		.separation = separation,
+		.is_speculative = separation < length{}
+	};
+}
+
+auto gse::narrow_phase_collision::sphere_sphere_manifold(
+	const vec3<length>& ca, const length ra,
+	const vec3<length>& cb, const length rb,
+	const unitless::vec3& normal, const length separation
+) -> contact_manifold {
+	contact_manifold manifold;
+	auto [tu, tv] = compute_tangent_basis(normal);
+	manifold.tangent_u = tu;
+	manifold.tangent_v = tv;
+
+	manifold.add_point(contact_point{
+		.position_on_a = ca + normal * ra,
+		.position_on_b = cb - normal * rb,
+		.normal = normal,
+		.separation = meters(0.f),
+		.feature = feature_id{
+			.type_a = feature_type::face,
+			.type_b = feature_type::face,
+			.index_a = sphere_surface_index,
+			.index_b = sphere_surface_index,
+		}
+	});
+
+	return manifold;
+}
+
+auto gse::narrow_phase_collision::box_sphere_manifold(
+	const bounding_box& bb,
+	const vec3<length>& center, const length radius,
+	const unitless::vec3& normal, const length separation
+) -> contact_manifold {
+	contact_manifold manifold;
+	auto [tu, tv] = compute_tangent_basis(normal);
+	manifold.tangent_u = tu;
+	manifold.tangent_v = tv;
+
+	const auto [closest, obb_normal, signed_dist] = query_obb(bb, center);
+	const auto box_face = classify_box_face(bb, normal);
+	const auto face_normals = bb.face_normals();
+	const bool face_contact = dot(normal, face_normals[box_face]) > 0.9f;
+
+	if (face_contact) {
+		const length ring_radius = radius * 0.3f;
+		constexpr int ring_count = 4;
+
+		for (int i = 0; i < ring_count; ++i) {
+			const float angle = static_cast<float>(i) * (2.f * std::numbers::pi_v<float> / ring_count);
+			const auto offset = tu * (ring_radius * std::cos(angle)) + tv * (ring_radius * std::sin(angle));
+
+			const auto box_point = closest + offset;
+			const auto sphere_point = center + normalize(box_point - center) * radius;
+
+			manifold.add_point(contact_point{
+				.position_on_a = box_point,
+				.position_on_b = sphere_point,
+				.normal = normal,
+				.separation = meters(0.f),
+				.feature = feature_id{
+					.type_a = feature_type::face,
+					.type_b = feature_type::face,
+					.index_a = box_face,
+					.index_b = sphere_surface_index,
+					.side_b0 = static_cast<std::uint8_t>(i),
+				}
+			});
+		}
+	} else {
+		manifold.add_point(contact_point{
+			.position_on_a = closest,
+			.position_on_b = center - normal * radius,
+			.normal = normal,
+			.separation = meters(0.f),
+			.feature = feature_id{
+				.type_a = feature_type::face,
+				.type_b = feature_type::face,
+				.index_a = box_face,
+				.index_b = sphere_surface_index,
+			}
+		});
+	}
+
+	return manifold;
+}
+
+auto gse::narrow_phase_collision::capsule_capsule_manifold(
+	const bounding_box& bb_a, const length ha, const length ra,
+	const bounding_box& bb_b, const length hb, const length rb,
+	const unitless::vec3& normal, const length separation
+) -> contact_manifold {
+	contact_manifold manifold;
+	auto [tu, tv] = compute_tangent_basis(normal);
+	manifold.tangent_u = tu;
+	manifold.tangent_v = tv;
+
+	const auto [a0, a1] = capsule_endpoints(bb_a, ha);
+	const auto [b0, b1] = capsule_endpoints(bb_b, hb);
+
+	auto [s, t] = segment_segment_closest_params(a0, a1, b0, b1);
+	const auto closest_a = a0 + (a1 - a0) * s;
+	const auto closest_b = b0 + (b1 - b0) * t;
+
+	auto [type_a, index_a] = classify_capsule_feature(s);
+	auto [type_b, index_b] = classify_capsule_feature(t);
+
+	manifold.add_point(contact_point{
+		.position_on_a = closest_a + normal * ra,
+		.position_on_b = closest_b - normal * rb,
+		.normal = normal,
+		.separation = meters(0.f),
+		.feature = feature_id{
+			.type_a = type_a,
+			.type_b = type_b,
+			.index_a = index_a,
+			.index_b = index_b,
+		}
+	});
+
+	return manifold;
+}
+
+auto gse::narrow_phase_collision::box_capsule_manifold(
+	const bounding_box& bb,
+	const bounding_box& cap_bb, const length cap_h, const length cap_r,
+	const unitless::vec3& normal, const length separation
+) -> contact_manifold {
+	contact_manifold manifold;
+	auto [tu, tv] = compute_tangent_basis(normal);
+	manifold.tangent_u = tu;
+	manifold.tangent_v = tv;
+
+	const auto [seg_start, seg_end] = capsule_endpoints(cap_bb, cap_h);
+	const auto [seg_pt, obb_result] = segment_obb_query(bb, seg_start, seg_end);
+
+	float t_param = 0.5f;
+	const auto seg_diff = seg_end - seg_start;
+	if (magnitude(seg_diff) > meters(1e-6f)) {
+		const auto d = seg_diff.as<meters>();
+		const auto p = (seg_pt - seg_start).as<meters>();
+		t_param = std::clamp(dot(p, d) / dot(d, d), 0.f, 1.f);
+	}
+
+	auto [cap_type, cap_index] = classify_capsule_feature(t_param);
+
+	manifold.add_point(contact_point{
+		.position_on_a = obb_result.closest,
+		.position_on_b = seg_pt - normal * cap_r,
+		.normal = normal,
+		.separation = meters(0.f),
+		.feature = feature_id{
+			.type_a = feature_type::face,
+			.type_b = cap_type,
+			.index_a = classify_box_face(bb, normal),
+			.index_b = cap_index,
+		}
+	});
+
+	return manifold;
+}
+
+auto gse::narrow_phase_collision::sphere_capsule_manifold(
+	const vec3<length>& sph_center, const length sph_r,
+	const bounding_box& cap_bb, const length cap_h, const length cap_r,
+	const unitless::vec3& normal, const length separation
+) -> contact_manifold {
+	contact_manifold manifold;
+	auto [tu, tv] = compute_tangent_basis(normal);
+	manifold.tangent_u = tu;
+	manifold.tangent_v = tv;
+
+	const auto [seg_start, seg_end] = capsule_endpoints(cap_bb, cap_h);
+	const auto closest_on_seg = closest_point_on_segment(seg_start, seg_end, sph_center);
+
+	float t_param = 0.5f;
+	const auto seg_diff = seg_end - seg_start;
+	if (magnitude(seg_diff) > meters(1e-6f)) {
+		const auto d = seg_diff.as<meters>();
+		const auto p = (closest_on_seg - seg_start).as<meters>();
+		t_param = std::clamp(dot(p, d) / dot(d, d), 0.f, 1.f);
+	}
+
+	auto [cap_type, cap_index] = classify_capsule_feature(t_param);
+
+	manifold.add_point(contact_point{
+		.position_on_a = sph_center + normal * sph_r,
+		.position_on_b = closest_on_seg - normal * cap_r,
+		.normal = normal,
+		.separation = meters(0.f),
+		.feature = feature_id{
+			.type_a = feature_type::face,
+			.type_b = cap_type,
+			.index_a = sphere_surface_index,
+			.index_b = cap_index,
+		}
+	});
+
+	return manifold;
+}
+
+auto gse::narrow_phase_collision::speculative_test(
+	const shape_data& a, const shape_data& b, const length margin
+) -> std::optional<sat_result> {
+	using st = physics::shape_type;
+	const bool swap = a.type > b.type;
+	const auto& lo = swap ? b : a;
+	const auto& hi = swap ? a : b;
+
+	std::optional<sat_result> result;
+
+	if (lo.type == st::box && hi.type == st::box) {
+		result = sat_speculative(*lo.bb, *hi.bb, margin);
+	} else if (lo.type == st::box && hi.type == st::sphere) {
+		result = box_sphere_speculative(*lo.bb, hi.bb->center(), hi.radius, margin);
+	} else if (lo.type == st::box && hi.type == st::capsule) {
+		result = box_capsule_speculative(*lo.bb, *hi.bb, hi.half_height, hi.radius, margin);
+	} else if (lo.type == st::sphere && hi.type == st::sphere) {
+		result = sphere_sphere_speculative(lo.bb->center(), lo.radius, hi.bb->center(), hi.radius, margin);
+	} else if (lo.type == st::sphere && hi.type == st::capsule) {
+		result = sphere_capsule_speculative(lo.bb->center(), lo.radius, *hi.bb, hi.half_height, hi.radius, margin);
+	} else if (lo.type == st::capsule && hi.type == st::capsule) {
+		result = capsule_capsule_speculative(*lo.bb, lo.half_height, lo.radius, *hi.bb, hi.half_height, hi.radius, margin);
+	}
+
+	if (swap && result) {
+		result->normal = -result->normal;
+	}
+
+	return result;
+}
+
+auto gse::narrow_phase_collision::generate_shape_manifold(
+	const shape_data& a, const shape_data& b,
+	const unitless::vec3& normal, const length separation
+) -> contact_manifold {
+	using st = physics::shape_type;
+	const bool swap = a.type > b.type;
+	const auto& lo = swap ? b : a;
+	const auto& hi = swap ? a : b;
+	const auto n = swap ? -normal : normal;
+
+	contact_manifold manifold;
+
+	if (lo.type == st::box && hi.type == st::box) {
+		manifold = generate_manifold(*lo.bb, *hi.bb, n, separation);
+	} else if (lo.type == st::box && hi.type == st::sphere) {
+		manifold = box_sphere_manifold(*lo.bb, hi.bb->center(), hi.radius, n, separation);
+	} else if (lo.type == st::box && hi.type == st::capsule) {
+		manifold = box_capsule_manifold(*lo.bb, *hi.bb, hi.half_height, hi.radius, n, separation);
+	} else if (lo.type == st::sphere && hi.type == st::sphere) {
+		manifold = sphere_sphere_manifold(lo.bb->center(), lo.radius, hi.bb->center(), hi.radius, n, separation);
+	} else if (lo.type == st::sphere && hi.type == st::capsule) {
+		manifold = sphere_capsule_manifold(lo.bb->center(), lo.radius, *hi.bb, hi.half_height, hi.radius, n, separation);
+	} else if (lo.type == st::capsule && hi.type == st::capsule) {
+		manifold = capsule_capsule_manifold(*lo.bb, lo.half_height, lo.radius, *hi.bb, hi.half_height, hi.radius, n, separation);
+	}
+
+	if (swap) {
+		for (std::uint32_t i = 0; i < manifold.point_count; ++i) {
+			std::swap(manifold.points[i].position_on_a, manifold.points[i].position_on_b);
+			manifold.points[i].normal = -manifold.points[i].normal;
+			auto& f = manifold.points[i].feature;
+			std::swap(f.type_a, f.type_b);
+			std::swap(f.index_a, f.index_b);
+			std::swap(f.side_a0, f.side_b0);
+			std::swap(f.side_a1, f.side_b1);
+		}
+		auto [tu, tv] = compute_tangent_basis(normal);
+		manifold.tangent_u = tu;
+		manifold.tangent_v = tv;
 	}
 
 	return manifold;

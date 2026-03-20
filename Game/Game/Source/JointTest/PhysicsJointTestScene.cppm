@@ -34,6 +34,14 @@ export namespace gs {
 			build_slider_elevator();
 			build_pendulum_chain();
 
+			build("Sphere Ball")
+				.with<gse::sphere>({
+					.initial_position = gse::vec3<gse::length>(0.f, 6.f, -8.f),
+					.radius = gse::meters(1.f),
+					.sectors = 24,
+					.stacks = 16
+				});
+
 			build("Player")
 				.with<player>({
 					.initial_position = gse::vec3<gse::length>(0.f, 10.f, 0.f)

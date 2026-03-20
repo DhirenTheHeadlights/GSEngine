@@ -35,6 +35,14 @@ export namespace gs {
 			build_high_speed_impact_target();
 			build_box_grid();
 
+			build("Bouncy Sphere")
+				.with<gse::sphere>({
+					.initial_position = gse::vec3<gse::length>(-15.f, 8.f, 0.f),
+					.radius = gse::meters(1.f),
+					.sectors = 24,
+					.stacks = 16
+				});
+
 			build("Player")
 				.with<player>({
 					.initial_position = gse::vec3<gse::length>(0.f, 10.f, 0.f)

@@ -37,6 +37,14 @@ export namespace gs {
 					});
 			}
 
+			build("Sphere")
+				.with<gse::sphere>({
+					.initial_position = gse::vec3<gse::length>(-3.f, 5.f, 5.f),
+					.radius = gse::meters(1.f),
+					.sectors = 24,
+					.stacks = 16
+				});
+
 			build("Player")
 				.with<player>({
 					.initial_position = gse::vec3<gse::length>(0.f, 0.f, 0.f)
