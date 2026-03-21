@@ -12,99 +12,87 @@ import :quat_math;
 import :simd;
 
 export namespace gse {
-	template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
-	constexpr auto operator==(
-		const mat_t<T, Cols, Rows, Dim>& lhs,
-		const mat_t<T, Cols, Rows, Dim>& rhs
-	) -> bool;
-
-	template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
-	constexpr auto operator!=(
-		const mat_t<T, Cols, Rows, Dim>& lhs,
-		const mat_t<T, Cols, Rows, Dim>& rhs
-	) -> bool;
-
-	template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
+	template <internal::is_vec_element E1, internal::is_vec_element E2, std::size_t Cols, std::size_t Rows>
+		requires requires { typename gse::vec::add_exposed_t<E1, E2>; }
 	constexpr auto operator+(
-		const mat_t<T, Cols, Rows, Dim>& lhs,
-		const mat_t<T, Cols, Rows, Dim>& rhs
-	) -> mat_t<T, Cols, Rows, Dim>;
+		const mat<E1, Cols, Rows>& lhs,
+		const mat<E2, Cols, Rows>& rhs
+	);
 
-	template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
+	template <internal::is_vec_element E1, internal::is_vec_element E2, std::size_t Cols, std::size_t Rows>
+		requires requires { typename gse::vec::sub_exposed_t<E1, E2>; }
 	constexpr auto operator-(
-		const mat_t<T, Cols, Rows, Dim>& lhs,
-		const mat_t<T, Cols, Rows, Dim>& rhs
-	) -> mat_t<T, Cols, Rows, Dim>;
-
-	template <typename T, std::size_t Cols, std::size_t Rows, std::size_t OtherCols, typename Dim1, typename Dim2>
-	constexpr auto operator*(
-		const mat_t<T, Cols, Rows, Dim1>& lhs,
-		const mat_t<T, OtherCols, Cols, Dim2>& rhs
-	) -> mat_t<T, OtherCols, Rows, decltype(Dim1{} *Dim2{})>;
-
-	template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
-	constexpr auto operator*(
-		const mat_t<T, Cols, Rows, Dim>& lhs,
-		const unitless::vec_t<T, Cols>& rhs
+		const mat<E1, Cols, Rows>& lhs,
+		const mat<E2, Cols, Rows>& rhs
 	);
 
-	template <typename T, std::size_t Cols, std::size_t Rows, typename Dim, typename Q>
+	template <internal::is_vec_element E1, internal::is_vec_element E2, std::size_t Cols, std::size_t Rows, std::size_t OtherCols>
 	constexpr auto operator*(
-		const mat_t<T, Cols, Rows, Dim>& lhs,
-		const vec_t<Q, Cols>& rhs
+		const mat<E1, Cols, Rows>& lhs,
+		const mat<E2, OtherCols, Cols>& rhs
 	);
 
-	template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
+	template <internal::is_vec_element E, std::size_t Cols, std::size_t Rows, is_vec V>
+		requires (V::extent == Cols)
 	constexpr auto operator*(
-		const mat_t<T, Cols, Rows, Dim>& lhs,
-		T rhs
-	) -> mat_t<T, Cols, Rows, Dim>;
+		const mat<E, Cols, Rows>& lhs,
+		const V& rhs
+	);
 
-	template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
+	template <internal::is_vec_element E, std::size_t Cols, std::size_t Rows, internal::is_vec_element S>
 	constexpr auto operator*(
-		T lhs,
-		const mat_t<T, Cols, Rows, Dim>& rhs
-	) -> mat_t<T, Cols, Rows, Dim>;
+		const mat<E, Cols, Rows>& lhs,
+		const S& rhs
+	);
 
-	template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
+	template <internal::is_vec_element S, internal::is_vec_element E, std::size_t Cols, std::size_t Rows>
+	constexpr auto operator*(
+		const S& lhs,
+		const mat<E, Cols, Rows>& rhs
+	);
+
+	template <internal::is_vec_element E, std::size_t Cols, std::size_t Rows, internal::is_vec_element S>
 	constexpr auto operator/(
-		const mat_t<T, Cols, Rows, Dim>& lhs,
-		T rhs
-	) -> mat_t<T, Cols, Rows, Dim>;
+		const mat<E, Cols, Rows>& lhs,
+		const S& rhs
+	);
 
-	template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
+	template <internal::is_vec_element E1, internal::is_vec_element E2, std::size_t Cols, std::size_t Rows>
+		requires (requires { typename gse::vec::add_exposed_t<E1, E2>; } && std::same_as<vec::add_exposed_t<E1, E2>, E1>)
 	constexpr auto operator+=(
-		mat_t<T, Cols, Rows, Dim>& lhs,
-		const mat_t<T, Cols, Rows, Dim>& rhs
-	) -> mat_t<T, Cols, Rows, Dim>&;
+		mat<E1, Cols, Rows>& lhs,
+		const mat<E2, Cols, Rows>& rhs
+	) -> auto&;
 
-	template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
+	template <internal::is_vec_element E1, internal::is_vec_element E2, std::size_t Cols, std::size_t Rows>
+		requires (requires { typename gse::vec::sub_exposed_t<E1, E2>; } && std::same_as<vec::sub_exposed_t<E1, E2>, E1>)
 	constexpr auto operator-=(
-		mat_t<T, Cols, Rows, Dim>& lhs,
-		const mat_t<T, Cols, Rows, Dim>& rhs
-	) -> mat_t<T, Cols, Rows, Dim>&;
+		mat<E1, Cols, Rows>& lhs,
+		const mat<E2, Cols, Rows>& rhs
+	) -> auto&;
 
-	template <typename T, std::size_t N, typename Dim, typename RhsDim>
-		requires internal::has_same_dimensions<RhsDim, Dim>
+	template <internal::is_vec_element E, std::size_t N>
 	constexpr auto operator*=(
-		mat_t<T, N, N, Dim>& lhs,
-		const mat_t<T, N, N, RhsDim>& rhs
-	) -> mat_t<T, N, N, Dim>&;
+		mat<E, N, N>& lhs,
+		const mat<E, N, N>& rhs
+	) -> auto&;
 
-	template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
+	template <internal::is_vec_element E, std::size_t Cols, std::size_t Rows, internal::is_vec_element S>
+		requires internal::is_arithmetic<S>
 	constexpr auto operator*=(
-		mat_t<T, Cols, Rows, Dim>& lhs, T rhs
-	) -> mat_t<T, Cols, Rows, Dim>&;
+		mat<E, Cols, Rows>& lhs, S rhs
+	) -> auto&;
 
-	template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
+	template <internal::is_vec_element E, std::size_t Cols, std::size_t Rows, internal::is_vec_element S>
+		requires internal::is_arithmetic<S>
 	constexpr auto operator/=(
-		mat_t<T, Cols, Rows, Dim>& lhs, T rhs
-	) -> mat_t<T, Cols, Rows, Dim>&;
+		mat<E, Cols, Rows>& lhs, S rhs
+	) -> auto&;
 
-	template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
+	template <internal::is_vec_element E, std::size_t Cols, std::size_t Rows>
 	constexpr auto operator-(
-		const mat_t<T, Cols, Rows, Dim>& m
-	) -> mat_t<T, Cols, Rows, Dim>;
+		const mat<E, Cols, Rows>& m
+	) -> auto;
 
 	template <typename T>
 	constexpr auto look_at(
@@ -131,212 +119,189 @@ export namespace gse {
 		length_t<T> far
 	) -> mat4_t<T>;
 
-	template <typename T, typename Dim>
+	template <typename T>
 	constexpr auto translate(
-		const mat4_t<T, Dim>& matrix,
+		const mat4_t<T>& matrix,
 		const vec3<length_t<T>>& translation
-	) -> mat4_t<T, Dim>;
+	) -> mat4_t<T>;
 
-	template <typename T, typename Dim>
+	template <typename T>
 	constexpr auto rotate(
-		const mat_t<T, 4, 4, Dim>& matrix,
+		const mat4_t<T>& matrix,
 		unitless::axis axis,
 		std::type_identity_t<angle_t<T>> angle
-	) -> mat_t<T, 4, 4, Dim>;
+	) -> mat4_t<T>;
 
-	template <typename T, typename Dim>
+	template <typename T>
 	constexpr auto scale(
-		const mat_t<T, 4, 4, Dim>& matrix,
+		const mat4_t<T>& matrix,
 		const unitless::vec3& scale
-	) -> mat_t<T, 4, 4, Dim>;
+	) -> mat4_t<T>;
 
-	template <typename T, int N, int M, typename Dim>
+	template <internal::is_vec_element E, std::size_t N, std::size_t M>
 	constexpr auto value_ptr(
-		mat_t<T, N, M, Dim>& matrix
-	) -> T*;
+		mat<E, N, M>& matrix
+	) -> typename mat<E, N, M>::value_type*;
 
-	template <typename T, int N, int M, typename Dim>
+	template <internal::is_vec_element E, std::size_t N, std::size_t M>
 	constexpr auto value_ptr(
-		const mat_t<T, N, M, Dim>& matrix
-	) -> const T*;
+		const mat<E, N, M>& matrix
+	) -> const typename mat<E, N, M>::value_type*;
 
-	template <typename T, int N, int M>
+	template <typename T, std::size_t N, std::size_t M>
 	constexpr auto identity(
 	) -> mat_t<T, N, M>;
 
-	template <typename T, std::size_t N, std::size_t M>
+	template <is_vec V1, is_vec V2>
+		requires (std::same_as<typename V1::storage_type, typename V2::storage_type>)
 	constexpr auto outer_product(
-		const unitless::vec_t<T, N>& a,
-		const unitless::vec_t<T, M>& b
-	) -> mat_t<T, M, N>;
+		const V1& a,
+		const V2& b
+	);
 }
 
-template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
-constexpr auto gse::operator==(const mat_t<T, Cols, Rows, Dim>& lhs, const mat_t<T, Cols, Rows, Dim>& rhs) -> bool {
-	for (std::size_t i = 0; i < Cols; ++i) {
-		if (lhs[i] != rhs[i]) {
-			return false;
-		}
-	}
-	return true;
-}
-
-template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
-constexpr auto gse::operator!=(const mat_t<T, Cols, Rows, Dim>& lhs, const mat_t<T, Cols, Rows, Dim>& rhs) -> bool {
-	return !(lhs == rhs);
-}
-
-template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
-constexpr auto gse::operator+(const mat_t<T, Cols, Rows, Dim>& lhs, const mat_t<T, Cols, Rows, Dim>& rhs) -> mat_t<T, Cols, Rows, Dim> {
-	mat_t<T, Cols, Rows, Dim> result;
-	for (std::size_t i = 0; i < Cols; ++i) {
-		result[i] = lhs[i] + rhs[i];
+template <gse::internal::is_vec_element E1, gse::internal::is_vec_element E2, std::size_t Cols, std::size_t Rows>
+	requires requires { typename gse::vec::add_exposed_t<E1, E2>; }
+constexpr auto gse::operator+(const mat<E1, Cols, Rows>& lhs, const mat<E2, Cols, Rows>& rhs) {
+	using RE = vec::add_exposed_t<E1, E2>;
+	mat<RE, Cols, Rows> result;
+	for (std::size_t c = 0; c < Cols; ++c) {
+		simd::add(lhs[c].as_storage_span(), rhs[c].as_storage_span(), result[c].as_storage_span());
 	}
 	return result;
 }
 
-template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
-constexpr auto gse::operator-(const mat_t<T, Cols, Rows, Dim>& lhs, const mat_t<T, Cols, Rows, Dim>& rhs) -> mat_t<T, Cols, Rows, Dim> {
-	mat_t<T, Cols, Rows, Dim> result;
-	for (std::size_t i = 0; i < Cols; ++i) {
-		result[i] = lhs[i] - rhs[i];
+template <gse::internal::is_vec_element E1, gse::internal::is_vec_element E2, std::size_t Cols, std::size_t Rows>
+	requires requires { typename gse::vec::sub_exposed_t<E1, E2>; }
+constexpr auto gse::operator-(const mat<E1, Cols, Rows>& lhs, const mat<E2, Cols, Rows>& rhs) {
+	using RE = vec::sub_exposed_t<E1, E2>;
+	mat<RE, Cols, Rows> result;
+	for (std::size_t c = 0; c < Cols; ++c) {
+		simd::sub(lhs[c].as_storage_span(), rhs[c].as_storage_span(), result[c].as_storage_span());
 	}
 	return result;
 }
 
-template <typename T, std::size_t Cols, std::size_t Rows, std::size_t OtherCols, typename Dim1, typename Dim2>
-constexpr auto gse::operator*(const mat_t<T, Cols, Rows, Dim1>& lhs, const mat_t<T, OtherCols, Cols, Dim2>& rhs)  -> mat_t<T, OtherCols, Rows, decltype(Dim1{} *Dim2{})> {
-	using result_dim = decltype(Dim1{} * Dim2{});
-	mat_t<T, OtherCols, Rows, result_dim> result;
+template <gse::internal::is_vec_element E1, gse::internal::is_vec_element E2, std::size_t Cols, std::size_t Rows, std::size_t OtherCols>
+constexpr auto gse::operator*(const mat<E1, Cols, Rows>& lhs, const mat<E2, OtherCols, Cols>& rhs) {
+	using RE = vec::mul_exposed_t<E1, E2>;
+	mat<RE, OtherCols, Rows> result;
 
-	if constexpr (std::is_same_v<T, float> && Cols == 4 && Rows == 4 && OtherCols == 4) {
+	if constexpr (std::is_same_v<E1, float> && std::is_same_v<E2, float> && Cols == 4 && Rows == 4 && OtherCols == 4) {
 		if (!std::is_constant_evaluated()) {
-			simd::mul_mat4(&lhs[0][0], &rhs[0][0], &result[0][0]);
+			simd::mul_mat4(lhs[0].as_storage_span().data(), rhs[0].as_storage_span().data(), result[0].as_storage_span().data());
 			return result;
 		}
 	}
 
 	for (std::size_t j = 0; j < OtherCols; ++j) {
-		for (std::size_t k = 0; k < Cols; ++k) {
-			result[j] += lhs[k] * rhs[j][k];
+		auto rj = result[j].as_storage_span();
+		for (std::size_t i = 0; i < Rows; ++i) {
+			typename mat<RE, OtherCols, Rows>::value_type sum{};
+			for (std::size_t k = 0; k < Cols; ++k) {
+				sum += lhs[k].as_storage_span()[i] * rhs[j].as_storage_span()[k];
+			}
+			rj[i] = sum;
 		}
 	}
 	return result;
 }
 
-template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
-constexpr auto gse::operator*(const mat_t<T, Cols, Rows, Dim>& lhs, const unitless::vec_t<T, Cols>& rhs) {
-	if constexpr (internal::has_same_dimensions<Dim, internal::dim<0, 0, 0, 0>>) {
-		unitless::vec_t<T, Rows> result{};
-		for (std::size_t i = 0; i < Rows; ++i) {
-			T sum{};
-			for (std::size_t j = 0; j < Cols; ++j) {
-				sum += lhs[j][i] * rhs[j];
-			}
-			result[i] = sum;
-		}
-		return result;
-	} else {
-		using result_quantity = internal::generic_quantity<T, Dim>;
-		vector_type_for_element_t<result_quantity, Rows> result{};
-		for (std::size_t i = 0; i < Rows; ++i) {
-			result_quantity sum{};
-			for (std::size_t j = 0; j < Cols; ++j) {
-				sum += result_quantity(lhs[j][i]) * rhs[j];
-			}
-			result[i] = sum;
-		}
-		return result;
-	}
-}
+template <gse::internal::is_vec_element E, std::size_t Cols, std::size_t Rows, gse::is_vec V>
+	requires (V::extent == Cols)
+constexpr auto gse::operator*(const mat<E, Cols, Rows>& lhs, const V& rhs) {
+	using result_elem = vec::mul_exposed_t<E, typename V::value_type>;
+	using VT = mat<E, Cols, Rows>::value_type;
 
-template <typename T, std::size_t Cols, std::size_t Rows, typename Dim, typename Q>
-constexpr auto gse::operator*(const mat_t<T, Cols, Rows, Dim>& lhs, const vec_t<Q, Cols>& rhs) {
-	using result_dimension = decltype(Dim{} * typename Q::dimension{});
-	using result_value_type = std::common_type_t<T, typename Q::value_type>;
-	using result_quantity = internal::generic_quantity<result_value_type, result_dimension>;
-
-	vec_t<result_quantity, Rows> result{};
+	vec::base<result_elem, Rows> result{};
+	auto result_span = result.as_storage_span();
+	auto rhs_span = rhs.as_storage_span();
 
 	for (std::size_t i = 0; i < Rows; ++i) {
-		result_quantity sum{};
+		VT sum{};
 		for (std::size_t j = 0; j < Cols; ++j) {
-			auto mat_element_as_quantity = internal::generic_quantity<T, Dim>(lhs[j][i]);
-			sum += mat_element_as_quantity * rhs[j];
+			sum += lhs[j].as_storage_span()[i] * rhs_span[j];
 		}
-		result[i] = sum;
-	}
-
-	return result;
-}
-
-template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
-constexpr auto gse::operator*(const mat_t<T, Cols, Rows, Dim>& lhs, T rhs) -> mat_t<T, Cols, Rows, Dim> {
-	mat_t<T, Cols, Rows, Dim> result;
-	for (std::size_t i = 0; i < Cols; ++i) {
-		result[i] = lhs[i] * rhs;
+		result_span[i] = sum;
 	}
 	return result;
 }
 
-template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
-constexpr auto gse::operator*(T lhs, const mat_t<T, Cols, Rows, Dim>& rhs) -> mat_t<T, Cols, Rows, Dim> {
+template <gse::internal::is_vec_element E, std::size_t Cols, std::size_t Rows, gse::internal::is_vec_element S>
+constexpr auto gse::operator*(const mat<E, Cols, Rows>& lhs, const S& rhs) {
+	using RE = vec::mul_exposed_t<E, S>;
+	mat<RE, Cols, Rows> result;
+	const auto scalar = static_cast<typename mat<E, Cols, Rows>::value_type>(internal::to_storage(rhs));
+	for (std::size_t c = 0; c < Cols; ++c) {
+		simd::mul_s(lhs[c].as_storage_span(), scalar, result[c].as_storage_span());
+	}
+	return result;
+}
+
+template <gse::internal::is_vec_element S, gse::internal::is_vec_element E, std::size_t Cols, std::size_t Rows>
+constexpr auto gse::operator*(const S& lhs, const mat<E, Cols, Rows>& rhs) {
 	return rhs * lhs;
 }
 
-template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
-constexpr auto gse::operator/(const mat_t<T, Cols, Rows, Dim>& lhs, T rhs) -> mat_t<T, Cols, Rows, Dim> {
-	mat_t<T, Cols, Rows, Dim> result;
-	for (std::size_t i = 0; i < Cols; ++i) {
-		result[i] = lhs[i] / rhs;
+template <gse::internal::is_vec_element E, std::size_t Cols, std::size_t Rows, gse::internal::is_vec_element S>
+constexpr auto gse::operator/(const mat<E, Cols, Rows>& lhs, const S& rhs) {
+	using RE = vec::div_exposed_t<E, S>;
+	mat<RE, Cols, Rows> result;
+	const auto scalar = static_cast<typename mat<E, Cols, Rows>::value_type>(internal::to_storage(rhs));
+	for (std::size_t c = 0; c < Cols; ++c) {
+		simd::div_s(lhs[c].as_storage_span(), scalar, result[c].as_storage_span());
 	}
 	return result;
 }
 
-template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
-constexpr auto gse::operator+=(mat_t<T, Cols, Rows, Dim>& lhs, const mat_t<T, Cols, Rows, Dim>& rhs) -> mat_t<T, Cols, Rows, Dim>& {
-	for (std::size_t i = 0; i < Cols; ++i) {
-		lhs[i] += rhs[i];
+template <gse::internal::is_vec_element E1, gse::internal::is_vec_element E2, std::size_t Cols, std::size_t Rows>
+	requires (requires { typename gse::vec::add_exposed_t<E1, E2>; } && std::same_as<gse::vec::add_exposed_t<E1, E2>, E1>)
+constexpr auto gse::operator+=(mat<E1, Cols, Rows>& lhs, const mat<E2, Cols, Rows>& rhs) -> auto& {
+	for (std::size_t c = 0; c < Cols; ++c) {
+		simd::add(lhs[c].as_storage_span(), rhs[c].as_storage_span(), lhs[c].as_storage_span());
 	}
 	return lhs;
 }
 
-template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
-constexpr auto gse::operator-=(mat_t<T, Cols, Rows, Dim>& lhs, const mat_t<T, Cols, Rows, Dim>& rhs) -> mat_t<T, Cols, Rows, Dim>& {
-	for (std::size_t i = 0; i < Cols; ++i) {
-		lhs[i] -= rhs[i];
+template <gse::internal::is_vec_element E1, gse::internal::is_vec_element E2, std::size_t Cols, std::size_t Rows>
+	requires (requires { typename gse::vec::sub_exposed_t<E1, E2>; } && std::same_as<gse::vec::sub_exposed_t<E1, E2>, E1>)
+constexpr auto gse::operator-=(mat<E1, Cols, Rows>& lhs, const mat<E2, Cols, Rows>& rhs) -> auto& {
+	for (std::size_t c = 0; c < Cols; ++c) {
+		simd::sub(lhs[c].as_storage_span(), rhs[c].as_storage_span(), lhs[c].as_storage_span());
 	}
 	return lhs;
 }
 
-template <typename T, std::size_t N, typename Dim, typename RhsDim>
-	requires gse::internal::has_same_dimensions<RhsDim, Dim>
-constexpr auto gse::operator*=(mat_t<T, N, N, Dim>& lhs, const mat_t<T, N, N, RhsDim>& rhs) -> mat_t<T, N, N, Dim>& {
+template <gse::internal::is_vec_element E, std::size_t N>
+constexpr auto gse::operator*=(mat<E, N, N>& lhs, const mat<E, N, N>& rhs) -> auto& {
 	lhs = lhs * rhs;
 	return lhs;
 }
 
-template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
-constexpr auto gse::operator*=(mat_t<T, Cols, Rows, Dim>& lhs, T rhs) -> mat_t<T, Cols, Rows, Dim>& {
-	for (std::size_t i = 0; i < Cols; ++i) {
-		lhs[i] *= rhs;
+template <gse::internal::is_vec_element E, std::size_t Cols, std::size_t Rows, gse::internal::is_vec_element S>
+	requires gse::internal::is_arithmetic<S>
+constexpr auto gse::operator*=(mat<E, Cols, Rows>& lhs, S rhs) -> auto& {
+	for (std::size_t c = 0; c < Cols; ++c) {
+		simd::mul_s(lhs[c].as_storage_span(), rhs, lhs[c].as_storage_span());
 	}
 	return lhs;
 }
 
-template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
-constexpr auto gse::operator/=(mat_t<T, Cols, Rows, Dim>& lhs, T rhs) -> mat_t<T, Cols, Rows, Dim>& {
-	for (std::size_t i = 0; i < Cols; ++i) {
-		lhs[i] /= rhs;
+template <gse::internal::is_vec_element E, std::size_t Cols, std::size_t Rows, gse::internal::is_vec_element S>
+	requires gse::internal::is_arithmetic<S>
+constexpr auto gse::operator/=(mat<E, Cols, Rows>& lhs, S rhs) -> auto& {
+	for (std::size_t c = 0; c < Cols; ++c) {
+		simd::div_s(lhs[c].as_storage_span(), rhs, lhs[c].as_storage_span());
 	}
 	return lhs;
 }
 
-template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
-constexpr auto gse::operator-(const mat_t<T, Cols, Rows, Dim>& m) -> mat_t<T, Cols, Rows, Dim> {
-	mat_t<T, Cols, Rows, Dim> result;
-	for (std::size_t i = 0; i < Cols; ++i) {
-		result[i] = -m[i];
+template <gse::internal::is_vec_element E, std::size_t Cols, std::size_t Rows>
+constexpr auto gse::operator-(const mat<E, Cols, Rows>& m) {
+	using VT = mat<E, Cols, Rows>::value_type;
+	mat<E, Cols, Rows> result;
+	for (std::size_t c = 0; c < Cols; ++c) {
+		simd::mul_s(m[c].as_storage_span(), static_cast<VT>(-1), result[c].as_storage_span());
 	}
 	return result;
 }
@@ -390,9 +355,9 @@ constexpr auto gse::orthographic(length_t<T> left, length_t<T> right, length_t<T
 	};
 }
 
-template <typename T, typename Dim>
-constexpr auto gse::translate(const mat4_t<T, Dim>& matrix, const vec3<length_t<T>>& translation) -> mat4_t<T, Dim> {
-	return matrix * mat4_t<T, Dim>{
+template <typename T>
+constexpr auto gse::translate(const mat4_t<T>& matrix, const vec3<length_t<T>>& translation) -> mat4_t<T> {
+	return matrix * mat4_t<T>{
 		{ 1, 0, 0, 0 },
 		{ 0, 1, 0, 0 },
 		{ 0, 0, 1, 0 },
@@ -400,8 +365,8 @@ constexpr auto gse::translate(const mat4_t<T, Dim>& matrix, const vec3<length_t<
 	};
 }
 
-template <typename T, typename Dim>
-constexpr auto gse::rotate(const mat_t<T, 4, 4, Dim>& matrix, const unitless::axis axis, std::type_identity_t<angle_t<T>> angle) -> mat_t<T, 4, 4, Dim> {
+template <typename T>
+constexpr auto gse::rotate(const mat4_t<T>& matrix, const unitless::axis axis, std::type_identity_t<angle_t<T>> angle) -> mat4_t<T> {
 	auto a = normalize(unitless::to_axis_v<T>(axis));
 	T half_angle = angle.template as<radians>() / 2;
 	T s = std::sin(half_angle);
@@ -411,8 +376,8 @@ constexpr auto gse::rotate(const mat_t<T, 4, 4, Dim>& matrix, const unitless::ax
 	return matrix * rotation_matrix;
 }
 
-template <typename T, typename Dim>
-constexpr auto gse::scale(const mat_t<T, 4, 4, Dim>& matrix, const unitless::vec3& scale) -> mat_t<T, 4, 4, Dim> {
+template <typename T>
+constexpr auto gse::scale(const mat4_t<T>& matrix, const unitless::vec3& scale) -> mat4_t<T> {
 	return matrix * mat4_t<T>{
 		{ scale.x(), 0, 0, 0 },
 		{ 0,		scale.y(),	0,			0 },
@@ -421,31 +386,37 @@ constexpr auto gse::scale(const mat_t<T, 4, 4, Dim>& matrix, const unitless::vec
 	};
 }
 
-template <typename T, int Cols, int Rows, typename Dim>
-constexpr auto gse::value_ptr(mat_t<T, Cols, Rows, Dim>& matrix) -> T* {
-	return &matrix[0][0];
+template <gse::internal::is_vec_element E, std::size_t Cols, std::size_t Rows>
+constexpr auto gse::value_ptr(mat<E, Cols, Rows>& matrix) -> typename mat<E, Cols, Rows>::value_type* {
+	return matrix[0].as_storage_span().data();
 }
 
-template <typename T, int Cols, int Rows, typename Dim>
-constexpr auto gse::value_ptr(const mat_t<T, Cols, Rows, Dim>& matrix) -> const T* {
-	return &matrix[0][0];
+template <gse::internal::is_vec_element E, std::size_t Cols, std::size_t Rows>
+constexpr auto gse::value_ptr(const mat<E, Cols, Rows>& matrix) -> const typename mat<E, Cols, Rows>::value_type* {
+	return matrix[0].as_storage_span().data();
 }
 
-template <typename T, int N, int M>
+template <typename T, std::size_t N, std::size_t M>
 constexpr auto gse::identity() -> mat_t<T, N, M> {
 	mat_t<T, N, M> result;
-	for (int i = 0; i < N; ++i) {
+	for (std::size_t i = 0; i < N; ++i) {
 		result[i][i] = static_cast<T>(1);
 	}
 	return result;
 }
 
-template <typename T, std::size_t N, std::size_t M>
-constexpr auto gse::outer_product(const unitless::vec_t<T, N>& a, const unitless::vec_t<T, M>& b) -> mat_t<T, M, N> {
-	mat_t<T, M, N> result;
+template <gse::is_vec V1, gse::is_vec V2>
+	requires (std::same_as<typename V1::storage_type, typename V2::storage_type>)
+constexpr auto gse::outer_product(const V1& a, const V2& b) {
+	constexpr auto N = V1::extent;
+	constexpr auto M = V2::extent;
+	using result_elem = vec::mul_exposed_t<typename V1::value_type, typename V2::value_type>;
+
+	mat<result_elem, M, N> result;
 	for (std::size_t col = 0; col < M; ++col) {
+		auto rc = result[col].as_storage_span();
 		for (std::size_t row = 0; row < N; ++row) {
-			result[col][row] = a[row] * b[col];
+			rc[row] = a.as_storage_span()[row] * b.as_storage_span()[col];
 		}
 	}
 	return result;

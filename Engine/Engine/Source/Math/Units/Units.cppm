@@ -361,3 +361,19 @@ export namespace gse {
         using type = angular_stiffness_t<T, U>;
     };
 }
+
+export namespace gse {
+    struct linear_angular_stiffness_tag {};
+
+    constexpr internal::unit<linear_angular_stiffness_tag, std::ratio<1>, "N/rad"> newtons_per_radian;
+
+    template <typename T = float, auto U = newtons_per_radian>
+    using linear_angular_stiffness_t = internal::quantity<T, internal::dim<1, -2, 1, -1>, linear_angular_stiffness_tag, decltype(U)>;
+    using linear_angular_stiffness = linear_angular_stiffness_t<>;
+
+    template <>
+    struct internal::quantity_traits<linear_angular_stiffness_tag> {
+        template <typename T, auto U = newtons_per_radian>
+        using type = linear_angular_stiffness_t<T, U>;
+    };
+}

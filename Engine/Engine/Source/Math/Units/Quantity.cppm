@@ -68,7 +68,7 @@ namespace gse::internal {
     using no_default_unit = unit<generic_quantity_tag, std::ratio<1>, "no_default_unit">;
 
     template <typename UnitType, typename QuantityType>
-	concept valid_unit_for_quantity = std::same_as<typename UnitType::quantity_tag, typename QuantityType::quantity_tag> || std::same_as<typename QuantityType::quantity_tag, generic_quantity_tag>;
+	concept valid_unit_for_quantity = std::same_as<typename UnitType::quantity_tag, typename QuantityType::quantity_tag> || std::same_as<typename QuantityType::quantity_tag, generic_quantity_tag> || std::same_as<typename UnitType::quantity_tag, generic_quantity_tag>;
 
     export template <
         is_arithmetic ArithmeticType,

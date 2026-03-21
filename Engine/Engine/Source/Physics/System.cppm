@@ -34,11 +34,11 @@ export namespace gse::physics {
 		quat rest_orientation;
 		bool rest_orientation_initialized = false;
 
-		vec3<length> pos_lambda;
+		vec3<force> pos_lambda;
 		vec3<stiffness> pos_penalty;
-		vec3<angle> ang_lambda;
+		vec3<torque> ang_lambda;
 		vec3<angular_stiffness> ang_penalty;
-		angle limit_lambda = {};
+		torque limit_lambda = {};
 		angular_stiffness limit_penalty = {};
 	};
 
@@ -464,11 +464,11 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 				cc_b->collision_information.collision_points.push_back(midpoint);
 			}
 
-			const length friction_bound = abs(c.lambda[0]) * c.friction_coeff;
-			const length tangential_lambda = hypot(c.lambda[1], c.lambda[2]);
+			const force friction_bound = abs(c.lambda[0]) * c.friction_coeff;
+			const force tangential_lambda = hypot(c.lambda[1], c.lambda[2]);
 			const length tangential_gap = hypot(c.c0[1], c.c0[2]);
 			const bool sticking =
-				c.lambda[0] < meters(-1e-3f) &&
+				c.lambda[0] < newtons(-1e-3f) &&
 				tangential_gap < cfg.stick_threshold &&
 				tangential_lambda < friction_bound;
 
@@ -477,11 +477,11 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		s.gpu_prev.warm_start_contacts.clear();
 		s.gpu_prev.warm_start_contacts.reserve(completed.gpu_contacts.size());
 		for (const auto& c : completed.gpu_contacts) {
-			const length friction_bound = abs(c.lambda[0]) * c.friction_coeff;
-			const length tangential_lambda = hypot(c.lambda[1], c.lambda[2]);
+			const force friction_bound = abs(c.lambda[0]) * c.friction_coeff;
+			const force tangential_lambda = hypot(c.lambda[1], c.lambda[2]);
 			const length tangential_gap = hypot(c.c0[1], c.c0[2]);
 			const bool sticking =
-				c.lambda[0] < meters(-1e-3f) &&
+				c.lambda[0] < newtons(-1e-3f) &&
 				tangential_gap < cfg.stick_threshold &&
 				tangential_lambda < friction_bound;
 
@@ -928,7 +928,7 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 					const length current_normal_gap = dot(constraint_normal, current_d) + cfg.collision_margin;
 					const bool reuse_cached_normal =
 						cached &&
-						(cached->lambda[0] < meters(-1e-3f) || current_normal_gap < meters(-1e-4f));
+						(cached->lambda[0] < newtons(-1e-3f) || current_normal_gap < meters(-1e-4f));
 					const bool reuse_cached_tangent =
 						reuse_cached_normal &&
 						cached.has_value();
@@ -936,28 +936,28 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 						reuse_cached_tangent &&
 						cached->sticking;
 
-					vec3<length> init_lambda;
+					vec3<force> init_lambda;
 					vec3<stiffness> init_penalty = { penalty_floor, penalty_floor, penalty_floor };
 
 					if (reuse_cached_normal) {
 						init_penalty[0] = std::max(cached->penalty[0], penalty_floor);
 
-						const vec3<length> cached_normal_force = cached->normal * cached->lambda[0];
-						init_lambda[0] = std::min(dot(cached_normal_force, constraint_normal), length{});
+						const vec3<force> cached_normal_force = cached->normal * cached->lambda[0];
+						init_lambda[0] = std::min(dot(cached_normal_force, constraint_normal), force{});
 					}
 
 					if (reuse_cached_tangent) {
 						init_penalty[1] = std::max(cached->penalty[1], penalty_floor);
 						init_penalty[2] = std::max(cached->penalty[2], penalty_floor);
 
-						const vec3<length> cached_tangent_force =
+						const vec3<force> cached_tangent_force =
 							cached->tangent_u * cached->lambda[1] +
 							cached->tangent_v * cached->lambda[2];
 
 						init_lambda[1] = dot(cached_tangent_force, manifold.tangent_u);
 						init_lambda[2] = dot(cached_tangent_force, manifold.tangent_v);
 
-						const length friction_bound = abs(init_lambda[0]) * cfg.friction_coefficient;
+						const force friction_bound = abs(init_lambda[0]) * cfg.friction_coefficient;
 						init_lambda[1] = std::clamp(init_lambda[1], -friction_bound, friction_bound);
 						init_lambda[2] = std::clamp(init_lambda[2], -friction_bound, friction_bound);
 					}

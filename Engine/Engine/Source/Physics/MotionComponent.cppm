@@ -63,8 +63,7 @@ export namespace gse::physics {
         vec3<velocity> pending_impulse;
     };
 
-    using inverse_inertia_dimension = internal::dim<-2, 0, -1, 0>;
-    using inv_inertia_mat = mat3_t<float, inverse_inertia_dimension>;
+    using inv_inertia_mat = mat<inverse_inertia, 3, 3>;
 
     struct motion_component : component<motion_component_data, motion_component_net> {
         using component::component;
@@ -82,7 +81,8 @@ auto gse::physics::motion_component::transformation_matrix() const -> mat4 {
 
 auto gse::physics::motion_component::inv_inertial_tensor() const -> inv_inertia_mat {
     const float i_body = moment_of_inertia.as<kilograms_meters_squared>();
-    const inv_inertia_mat inv_i_body = gse::identity<float, 3, 3>() * (1.f / i_body);
+    const mat3 inv_i_body_raw = gse::identity<float, 3, 3>() * (1.f / i_body);
     const auto rotation = mat3_cast(orientation);
-    return rotation * inv_i_body * rotation.transpose();
+    const mat3 result_raw = rotation * inv_i_body_raw * rotation.transpose();
+    return inv_inertia_mat(result_raw);
 }

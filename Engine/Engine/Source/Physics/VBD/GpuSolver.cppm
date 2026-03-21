@@ -49,7 +49,7 @@ export namespace gse::vbd {
 		unitless::vec3 tangent_v;
 		vec3<length> local_anchor_a;
 		vec3<length> local_anchor_b;
-		vec3<length> lambda;
+		vec3<force> lambda;
 		unitless::vec3 penalty;
 	};
 
@@ -64,7 +64,7 @@ export namespace gse::vbd {
 		vec3<length> local_anchor_a;
 		vec3<length> local_anchor_b;
 		vec3<length> c0;
-		vec3<length> lambda;
+		vec3<force> lambda;
 		unitless::vec3 penalty;
 		float friction_coeff = 0.f;
 	};
@@ -577,7 +577,7 @@ auto gse::vbd::gpu_solver::upload(
 				: 0.f;
 		gse::memcpy(elem + bo_accel_weight, &accel_weight);
 
-		const auto inv_i = mat3{ inv_inertia.data };
+		const auto inv_i = inv_inertia.as<per_kilogram_meter_squared>();
 		gse::memcpy(elem + bo_inv_inertia_col0, &inv_i[0]);
 		gse::memcpy(elem + bo_inv_inertia_col1, &inv_i[1]);
 		gse::memcpy(elem + bo_inv_inertia_col2, &inv_i[2]);
@@ -675,7 +675,7 @@ auto gse::vbd::gpu_solver::upload(
 		const auto anchor_b = ws_local_anchor_b.as<meters>();
 		gse::memcpy(elem + wo_local_anchor_b, &anchor_b);
 
-		const auto lambda = ws_lambda.as<meters>();
+		const auto lambda = ws_lambda.as<newtons>();
 		gse::memcpy(elem + wo_lambda, &lambda);
 
 		gse::memcpy(elem + wo_penalty, &ws_penalty);
@@ -695,11 +695,8 @@ auto gse::vbd::gpu_solver::upload(
 
 	m_upload_joint_data.assign(m_joint_count * m_joint_layout.stride, std::byte{0});
 
-	const float h_squared_val = [&] {
-		const auto total = static_cast<float>(std::max(m_steps, 1u));
-		const float sub_dt_s = dt.as<seconds>() / total;
-		return sub_dt_s * sub_dt_s;
-	}();
+	const time_step sub_dt = dt / static_cast<float>(std::max(m_steps, 1u));
+	const time_squared h_squared = sub_dt * sub_dt;
 
 	for (std::uint32_t i = 0; i < m_joint_count; ++i) {
 		const auto& j = joints[i];
@@ -737,11 +734,11 @@ auto gse::vbd::gpu_solver::upload(
 		const auto& body_b_state = bodies[j.body_b];
 
 		auto pos_lambda = j.pos_lambda;
-		auto pos_penalty = j.pos_penalty.as<newtons_per_meter>();
+		auto pos_penalty = j.pos_penalty;
 		auto ang_lambda = j.ang_lambda;
-		auto ang_penalty = j.ang_penalty.as<newton_meters_per_radian>();
+		auto ang_penalty = j.ang_penalty;
 		auto limit_lambda_val = j.limit_lambda;
-		auto limit_penalty_val = j.limit_penalty.as<newton_meters_per_radian>();
+		auto limit_penalty_val = j.limit_penalty;
 
 		for (int k = 0; k < 3; ++k) pos_lambda[k] *= solver_cfg.gamma;
 		for (int k = 0; k < 3; ++k) ang_lambda[k] *= solver_cfg.gamma;
@@ -750,38 +747,34 @@ auto gse::vbd::gpu_solver::upload(
 		const auto r_aw = rotate_vector(body_a_state.orientation, j.local_anchor_a);
 		const auto r_bw = rotate_vector(body_b_state.orientation, j.local_anchor_b);
 
-		auto contact_eff_mass = [&](const unitless::vec3& dir) -> float {
-			float inv_mass_sum = 0.f;
-			if (!body_a_state.locked && body_a_state.mass_value.as<kilograms>() > 1e-10f)
-				inv_mass_sum += 1.f / body_a_state.mass_value.as<kilograms>();
-			if (!body_b_state.locked && body_b_state.mass_value.as<kilograms>() > 1e-10f)
-				inv_mass_sum += 1.f / body_b_state.mass_value.as<kilograms>();
+		auto contact_eff_mass = [&](const unitless::vec3& dir) -> mass {
+			inverse_mass inv_mass_sum{};
+			if (!body_a_state.locked && body_a_state.mass_value > mass{})
+				inv_mass_sum += 1.f / body_a_state.mass_value;
+			if (!body_b_state.locked && body_b_state.mass_value > mass{})
+				inv_mass_sum += 1.f / body_b_state.mass_value;
 
 			if (body_a_state.update_orientation && !body_a_state.locked) {
-				const auto inv_i = mat3{ body_a_state.inv_inertia.data };
-				const auto ang_j = cross(r_aw.as<meters>(), dir);
-				inv_mass_sum += dot(cross(inv_i * ang_j, r_aw.as<meters>()), dir);
+				const auto ang_j = cross(r_aw, dir);
+				inv_mass_sum += dot(cross(body_a_state.inv_inertia * ang_j, r_aw), dir);
 			}
 			if (body_b_state.update_orientation && !body_b_state.locked) {
-				const auto inv_i = mat3{ body_b_state.inv_inertia.data };
-				const auto ang_j = cross(r_bw.as<meters>(), dir);
-				inv_mass_sum += dot(cross(inv_i * ang_j, r_bw.as<meters>()), dir);
+				const auto ang_j = cross(r_bw, dir);
+				inv_mass_sum += dot(cross(body_b_state.inv_inertia * ang_j, r_bw), dir);
 			}
-			if (inv_mass_sum <= 1e-10f) return 0.f;
+			if (inv_mass_sum <= per_kilograms(1e-10f)) return mass{};
 			return 1.f / inv_mass_sum;
 		};
 
-		auto angular_eff_mass = [&](const unitless::vec3& ang_dir) -> float {
-			float inv_i_sum = 0.f;
+		auto angular_inv_i = [&](const unitless::vec3& ang_dir) -> inverse_inertia {
+			inverse_inertia inv_i_sum{};
 			if (!body_a_state.locked) {
-				const auto inv_i = mat3{ body_a_state.inv_inertia.data };
-				inv_i_sum += dot(ang_dir, inv_i * ang_dir);
+				inv_i_sum += dot(ang_dir, body_a_state.inv_inertia * ang_dir);
 			}
 			if (!body_b_state.locked) {
-				const auto inv_i = mat3{ body_b_state.inv_inertia.data };
-				inv_i_sum += dot(ang_dir, inv_i * ang_dir);
+				inv_i_sum += dot(ang_dir, body_b_state.inv_inertia * ang_dir);
 			}
-			return inv_i_sum > 1e-10f ? (1.f / inv_i_sum) : solver_cfg.penalty_min.as<newtons_per_meter>();
+			return inv_i_sum;
 		};
 
 		const unitless::vec3 dirs[3] = { { 1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 1.f } };
@@ -794,8 +787,7 @@ auto gse::vbd::gpu_solver::upload(
 			unitless::vec3 dir;
 			if (j.type == joint_type::distance) {
 				const auto d = (body_a_state.position + r_aw) - (body_b_state.position + r_bw);
-				const float d_mag = magnitude(d).as<meters>();
-				dir = d_mag > 1e-7f ? d.as<meters>() / d_mag : unitless::vec3{ 0.f, 1.f, 0.f };
+				dir = magnitude(d) > meters(1e-7f) ? normalize(d) : unitless::vec3{ 0.f, 1.f, 0.f };
 			}
 			else if (j.type == joint_type::slider) {
 				const auto axis_w = rot_axis(body_a_state.orientation, j.local_axis_a);
@@ -807,10 +799,10 @@ auto gse::vbd::gpu_solver::upload(
 			else {
 				dir = dirs[k];
 			}
-			const float eff = contact_eff_mass(dir) / h_squared_val;
+			const stiffness eff = contact_eff_mass(dir) / h_squared;
 			pos_penalty[k] = std::clamp(
 				std::max(pos_penalty[k] * solver_cfg.gamma, eff),
-				solver_cfg.penalty_min.as<newtons_per_meter>(), solver_cfg.penalty_max.as<newtons_per_meter>()
+				solver_cfg.penalty_min, solver_cfg.penalty_max
 			);
 		}
 
@@ -830,19 +822,25 @@ auto gse::vbd::gpu_solver::upload(
 			else {
 				ang_dir = dirs[k];
 			}
-			const float eff_ang = angular_eff_mass(ang_dir) / h_squared_val;
+			const auto inv_i_sum = angular_inv_i(ang_dir);
+			const angular_stiffness eff_ang = inv_i_sum > per_kilogram_meter_squared(1e-10f)
+				? 1.f / inv_i_sum / h_squared / rad
+				: solver_cfg.ang_penalty_min;
 			ang_penalty[k] = std::clamp(
 				std::max(ang_penalty[k] * solver_cfg.gamma, eff_ang),
-				solver_cfg.penalty_min.as<newtons_per_meter>(), solver_cfg.penalty_max.as<newtons_per_meter>()
+				solver_cfg.ang_penalty_min, solver_cfg.ang_penalty_max
 			);
 		}
 
 		if (j.limits_enabled) {
 			const auto limit_axis = rot_axis(body_a_state.orientation, j.local_axis_a);
-			const float eff_limit = angular_eff_mass(limit_axis) / h_squared_val;
+			const auto inv_i_sum = angular_inv_i(limit_axis);
+			const angular_stiffness eff_limit = inv_i_sum > per_kilogram_meter_squared(1e-10f)
+				? 1.f / inv_i_sum / h_squared / rad
+				: solver_cfg.ang_penalty_min;
 			limit_penalty_val = std::clamp(
 				std::max(limit_penalty_val * solver_cfg.gamma, eff_limit),
-				solver_cfg.penalty_min.as<newtons_per_meter>(), solver_cfg.penalty_max.as<newtons_per_meter>()
+				solver_cfg.ang_penalty_min, solver_cfg.ang_penalty_max
 			);
 		}
 
@@ -852,7 +850,7 @@ auto gse::vbd::gpu_solver::upload(
 		angle limit_c0_val = {};
 
 		if (j.type == joint_type::distance) {
-			pos_c0_val[0] = meters(magnitude(d_vec).as<meters>()) - j.target_distance;
+			pos_c0_val[0] = magnitude(d_vec) - j.target_distance;
 		}
 		else if (j.type == joint_type::fixed || j.type == joint_type::hinge) {
 			for (int k = 0; k < 3; ++k) pos_c0_val[k] = dot(dirs[k], d_vec);
@@ -894,24 +892,18 @@ auto gse::vbd::gpu_solver::upload(
 			for (int k = 0; k < 3; ++k) ang_c0_val[k] = slider_theta[k];
 		}
 
-		const auto pl = pos_lambda.as<meters>();
-		gse::memcpy(elem + jo_pos_lambda, &pl);
+		gse::memcpy(elem + jo_pos_lambda, &pos_lambda);
 		gse::memcpy(elem + jo_pos_penalty, &pos_penalty);
 
-		const auto al = ang_lambda.as<radians>();
-		gse::memcpy(elem + jo_ang_lambda, &al);
+		gse::memcpy(elem + jo_ang_lambda, &ang_lambda);
 		gse::memcpy(elem + jo_ang_penalty, &ang_penalty);
 
-		const float ll_val = limit_lambda_val.as<radians>();
-		gse::memcpy(elem + jo_limit_lambda, &ll_val);
+		gse::memcpy(elem + jo_limit_lambda, &limit_lambda_val);
 		gse::memcpy(elem + jo_limit_penalty, &limit_penalty_val);
 
-		const auto pc0 = pos_c0_val.as<meters>();
-		gse::memcpy(elem + jo_pos_c0, &pc0);
-		const auto ac0 = ang_c0_val.as<radians>();
-		gse::memcpy(elem + jo_ang_c0, &ac0);
-		const float lc0 = limit_c0_val.as<radians>();
-		gse::memcpy(elem + jo_limit_c0, &lc0);
+		gse::memcpy(elem + jo_pos_c0, &pos_c0_val);
+		gse::memcpy(elem + jo_ang_c0, &ang_c0_val);
+		gse::memcpy(elem + jo_limit_c0, &limit_c0_val);
 	}
 
 	m_pending_dispatch = true;
@@ -1156,7 +1148,7 @@ auto gse::vbd::gpu_solver::readback(const std::span<body_state> bodies, std::vec
 
 		unitless::vec3 lambda_raw{};
 		gse::memcpy(lambda_raw, elem + co_lambda);
-		entry.lambda = { meters(lambda_raw[0]), meters(lambda_raw[1]), meters(lambda_raw[2]) };
+		entry.lambda = { newtons(lambda_raw[0]), newtons(lambda_raw[1]), newtons(lambda_raw[2]) };
 
 		gse::memcpy(entry.penalty, elem + co_penalty);
 
@@ -1179,13 +1171,13 @@ auto gse::vbd::gpu_solver::readback(const std::span<body_state> bodies, std::vec
 
 		unitless::vec3 pl_raw{};
 		gse::memcpy(pl_raw, elem + jo_pos_lambda);
-		jout.pos_lambda = { meters(pl_raw[0]), meters(pl_raw[1]), meters(pl_raw[2]) };
+		jout.pos_lambda = { newtons(pl_raw[0]), newtons(pl_raw[1]), newtons(pl_raw[2]) };
 
 		gse::memcpy(jout.pos_penalty, elem + jo_pos_penalty);
 
 		unitless::vec3 al_raw{};
 		gse::memcpy(al_raw, elem + jo_ang_lambda);
-		jout.ang_lambda = { radians(al_raw[0]), radians(al_raw[1]), radians(al_raw[2]) };
+		jout.ang_lambda = { newton_meters(al_raw[0]), newton_meters(al_raw[1]), newton_meters(al_raw[2]) };
 
 		unitless::vec3 ap_raw{};
 		gse::memcpy(ap_raw, elem + jo_ang_penalty);
@@ -1193,7 +1185,7 @@ auto gse::vbd::gpu_solver::readback(const std::span<body_state> bodies, std::vec
 
 		float ll_val = 0.f;
 		gse::memcpy(ll_val, elem + jo_limit_lambda);
-		jout.limit_lambda = radians(ll_val);
+		jout.limit_lambda = newton_meters(ll_val);
 
 		float lp_val = 0.f;
 		gse::memcpy(lp_val, elem + jo_limit_penalty);

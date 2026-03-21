@@ -7,12 +7,16 @@ import :contact_manifold;
 import :motion_component;
 
 export namespace gse::vbd {
+	using stiffness_mat3 = mat<stiffness, 3, 3>;
+	using ang_stiffness_mat3 = mat<angular_stiffness, 3, 3>;
+	using xtheta_mat3 = mat<linear_angular_stiffness, 3, 3>;
+
 	struct body_solve_state {
-		unitless::vec3 gradient = {};
-		mat3 hessian = {};
-		unitless::vec3 angular_gradient = {};
-		mat3 angular_hessian = {};
-		mat3 hessian_xtheta = {};
+		vec3<force> gradient = {};
+		stiffness_mat3 hessian = {};
+		vec3<torque> angular_gradient = {};
+		ang_stiffness_mat3 angular_hessian = {};
+		xtheta_mat3 hessian_xtheta = {};
 	};
 
 	struct contact_constraint {
@@ -28,7 +32,7 @@ export namespace gse::vbd {
 
 		vec3<length> c0;
 
-		vec3<length> lambda;
+		vec3<force> lambda;
 		vec3<stiffness> penalty;
 
 		stiffness penalty_floor = newtons_per_meter(1.f);
@@ -71,13 +75,13 @@ export namespace gse::vbd {
 		bool limits_enabled = false;
 		quat rest_orientation;
 
-		vec3<length> pos_lambda;
+		vec3<force> pos_lambda;
 		vec3<stiffness> pos_penalty;
 
-		vec3<angle> ang_lambda;
+		vec3<torque> ang_lambda;
 		vec3<angular_stiffness> ang_penalty;
 
-		angle limit_lambda = {};
+		torque limit_lambda = {};
 		angular_stiffness limit_penalty = {};
 
 		vec3<length> pos_c0;
