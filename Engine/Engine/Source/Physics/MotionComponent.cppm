@@ -63,7 +63,7 @@ export namespace gse::physics {
         vec3<velocity> pending_impulse;
     };
 
-    using inverse_inertia_dimension = internal::dim<-2, 0, -1>;
+    using inverse_inertia_dimension = internal::dim<-2, 0, -1, 0>;
     using inv_inertia_mat = mat3_t<float, inverse_inertia_dimension>;
 
     struct motion_component : component<motion_component_data, motion_component_net> {

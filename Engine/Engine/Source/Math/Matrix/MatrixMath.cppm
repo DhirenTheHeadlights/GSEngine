@@ -226,7 +226,7 @@ constexpr auto gse::operator*(const mat_t<T, Cols, Rows, Dim1>& lhs, const mat_t
 
 template <typename T, std::size_t Cols, std::size_t Rows, typename Dim>
 constexpr auto gse::operator*(const mat_t<T, Cols, Rows, Dim>& lhs, const unitless::vec_t<T, Cols>& rhs) {
-	if constexpr (internal::has_same_dimensions<Dim, internal::dim<0, 0, 0>>) {
+	if constexpr (internal::has_same_dimensions<Dim, internal::dim<0, 0, 0, 0>>) {
 		unitless::vec_t<T, Rows> result{};
 		for (std::size_t i = 0; i < Rows; ++i) {
 			T sum{};

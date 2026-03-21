@@ -8,7 +8,7 @@ import :quat;
 import gse.assert;
 
 namespace gse {
-	template <internal::is_arithmetic T, std::size_t Cols, std::size_t Rows, internal::is_dimension Dim = internal::dim<0, 0, 0>>
+	template <internal::is_arithmetic T, std::size_t Cols, std::size_t Rows, internal::is_dimension Dim = internal::dim<0, 0, 0, 0>>
 	struct mat {
 		using value_type = T;
 		using dim = Dim;
@@ -70,16 +70,16 @@ struct std::formatter<gse::mat<T, Cols, Rows>, CharT> {
 };
 
 export namespace gse {
-	template <typename T, std::size_t Cols, std::size_t Rows, typename Dim = internal::dim<0, 0, 0>>
+	template <typename T, std::size_t Cols, std::size_t Rows, typename Dim = internal::dim<0, 0, 0, 0>>
 	using mat_t = mat<T, Cols, Rows, Dim>;
 
-	template <typename T, typename Dim = internal::dim<0, 0, 0>>
+	template <typename T, typename Dim = internal::dim<0, 0, 0, 0>>
 	using mat2_t = mat<T, 2, 2, Dim>;
 
-	template <typename T, typename Dim = internal::dim<0, 0, 0>>
+	template <typename T, typename Dim = internal::dim<0, 0, 0, 0>>
 	using mat3_t = mat<T, 3, 3, Dim>;
 
-	template <typename T, typename Dim = internal::dim<0, 0, 0>>
+	template <typename T, typename Dim = internal::dim<0, 0, 0, 0>>
 	using mat4_t = mat<T, 4, 4, Dim>;
 
 	using mat2i = mat<int, 2, 2>;
@@ -95,7 +95,7 @@ export namespace gse {
 	using mat4d = mat<double, 4, 4>;
 }
 
-template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows, gse::internal::is_dimension Dim = gse::internal::dim<0, 0, 0>>
+template <gse::internal::is_arithmetic T, std::size_t Cols, std::size_t Rows, gse::internal::is_dimension Dim = gse::internal::dim<0, 0, 0, 0>>
 constexpr gse::mat<T, Cols, Rows, Dim>::mat(const T& value) : data{} {
 	for (std::size_t i = 0; i < std::min(Cols, Rows); ++i) {
 		data[i][i] = value;

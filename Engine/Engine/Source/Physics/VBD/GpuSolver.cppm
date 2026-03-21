@@ -739,9 +739,9 @@ auto gse::vbd::gpu_solver::upload(
 		auto pos_lambda = j.pos_lambda;
 		auto pos_penalty = j.pos_penalty.as<newtons_per_meter>();
 		auto ang_lambda = j.ang_lambda;
-		auto ang_penalty = j.ang_penalty;
+		auto ang_penalty = j.ang_penalty.as<newton_meters_per_radian>();
 		auto limit_lambda_val = j.limit_lambda;
-		auto limit_penalty_val = j.limit_penalty;
+		auto limit_penalty_val = j.limit_penalty.as<newton_meters_per_radian>();
 
 		for (int k = 0; k < 3; ++k) pos_lambda[k] *= solver_cfg.gamma;
 		for (int k = 0; k < 3; ++k) ang_lambda[k] *= solver_cfg.gamma;
@@ -1187,7 +1187,9 @@ auto gse::vbd::gpu_solver::readback(const std::span<body_state> bodies, std::vec
 		gse::memcpy(al_raw, elem + jo_ang_lambda);
 		jout.ang_lambda = { radians(al_raw[0]), radians(al_raw[1]), radians(al_raw[2]) };
 
-		gse::memcpy(jout.ang_penalty, elem + jo_ang_penalty);
+		unitless::vec3 ap_raw{};
+		gse::memcpy(ap_raw, elem + jo_ang_penalty);
+		jout.ang_penalty = { newton_meters_per_radian(ap_raw[0]), newton_meters_per_radian(ap_raw[1]), newton_meters_per_radian(ap_raw[2]) };
 
 		float ll_val = 0.f;
 		gse::memcpy(ll_val, elem + jo_limit_lambda);
@@ -1195,7 +1197,7 @@ auto gse::vbd::gpu_solver::readback(const std::span<body_state> bodies, std::vec
 
 		float lp_val = 0.f;
 		gse::memcpy(lp_val, elem + jo_limit_penalty);
-		jout.limit_penalty = lp_val;
+		jout.limit_penalty = newton_meters_per_radian(lp_val);
 	}
 
 	m_staged_valid = false;

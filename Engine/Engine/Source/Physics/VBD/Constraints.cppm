@@ -75,10 +75,10 @@ export namespace gse::vbd {
 		vec3<stiffness> pos_penalty;
 
 		vec3<angle> ang_lambda;
-		unitless::vec3 ang_penalty;
+		vec3<angular_stiffness> ang_penalty;
 
 		angle limit_lambda = {};
-		float limit_penalty = 0.f;
+		angular_stiffness limit_penalty = {};
 
 		vec3<length> pos_c0;
 		vec3<angle> ang_c0;
