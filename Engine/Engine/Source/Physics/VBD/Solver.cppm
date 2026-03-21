@@ -135,9 +135,9 @@ namespace gse::vbd {
 
 	auto accumulate_geometric_stiffness(
 		body_solve_state& state,
-		const unitless::vec3& r,
+		const vec3<length>& r,
 		const unitless::vec3& dir,
-		float abs_force
+		force abs_force
 	) -> void;
 
 	auto contact_effective_mass(
@@ -885,7 +885,7 @@ auto gse::vbd::solver::accumulate_motor(const velocity_motor_constraint& m, cons
 	m_solve_state[m.body_index].gradient += motor_gradient;
 
 	const stiffness scaled_stiffness = motor_stiffness * motor_scale;
-	stiffness_mat3 motor_hessian(scaled_stiffness);
+	mat3<stiffness> motor_hessian(scaled_stiffness);
 	if (m.horizontal_only) {
 		motor_hessian[1][1] = stiffness{};
 	}
@@ -908,7 +908,7 @@ auto gse::vbd::solver::perform_newton_step(const std::uint32_t body_idx, const t
 	const vec3<force> g_lin = (body.predicted_position - body.inertia_target) * inertia_weight + m_solve_state[body_idx].gradient;
 
 	constexpr stiffness reg = newtons_per_meter(1e-6f);
-	stiffness_mat3 h_xx = stiffness_mat3(inertia_weight) + m_solve_state[body_idx].hessian;
+	mat3<stiffness> h_xx = mat3<stiffness>(inertia_weight) + m_solve_state[body_idx].hessian;
 	h_xx[0][0] += reg;
 	h_xx[1][1] += reg;
 	h_xx[2][2] += reg;
@@ -946,45 +946,41 @@ auto gse::vbd::solver::perform_newton_step(const std::uint32_t body_idx, const t
 	}
 
 	const auto i_body = body.inv_inertia.inverse();
-	const ang_stiffness_mat3 ang_inertia_hessian = i_body / h_squared / rad;
+	const mat3<angular_stiffness> ang_inertia_hessian = i_body / h_squared / rad;
 	const vec3<torque> g_ang_inertia = ang_inertia_hessian * theta_diff;
 
-	const auto h_xx_f = h_xx.as<newtons_per_meter>();
-	const auto g_lin_f = g_lin.as<newtons>();
-	const auto g_ang_f = (m_solve_state[body_idx].angular_gradient + g_ang_inertia).as<newton_meters>();
+	const vec3<torque> g_ang = m_solve_state[body_idx].angular_gradient + g_ang_inertia;
 
 	auto h_tt = m_solve_state[body_idx].angular_hessian + ang_inertia_hessian;
 	constexpr angular_stiffness ang_reg = newton_meters_per_radian(1e-6f);
 	h_tt[0][0] += ang_reg;
 	h_tt[1][1] += ang_reg;
 	h_tt[2][2] += ang_reg;
-	const auto h_tt_f = h_tt.as<newton_meters_per_radian>();
 
-	const auto h_xt_f = m_solve_state[body_idx].hessian_xtheta.as<newtons_per_radian>();
-	const mat3 h_tx_f = h_xt_f.transpose();
+	const auto& h_xt = m_solve_state[body_idx].hessian_xtheta;
+	const auto h_tx = h_xt.transpose() * rad;
 
-	const mat3 h_xx_inv = h_xx_f.inverse();
-	const mat3 s = h_tt_f - h_tx_f * h_xx_inv * h_xt_f;
-	const mat3 s_inv = s.inverse();
+	const auto h_xx_inv = h_xx.inverse();
+	const auto s = h_tt - h_tx * h_xx_inv * h_xt;
+	const auto s_inv = s.inverse();
 
-	unitless::vec3 delta_theta = -(s_inv * (g_ang_f - h_tx_f * (h_xx_inv * g_lin_f)));
-	unitless::vec3 delta_x = -(h_xx_inv * (g_lin_f + h_xt_f * delta_theta));
+	auto delta_theta = -(s_inv * (g_ang - h_tx * (h_xx_inv * g_lin)));
+	auto delta_x = -(h_xx_inv * (g_lin + h_xt * delta_theta));
 
-	constexpr float max_lin_step = 0.5f;
-	constexpr float max_ang_step = 0.5f;
+	constexpr length max_lin_step = meters(0.5f);
+	constexpr angle max_ang_step = radians(0.5f);
 
-	if (const float lin_size = magnitude(delta_x); lin_size > max_lin_step) {
+	if (const auto lin_size = magnitude(delta_x); lin_size > max_lin_step) {
 		delta_x *= (max_lin_step / lin_size);
 	}
-	if (const float ang_size = magnitude(delta_theta); ang_size > max_ang_step) {
+	if (const auto ang_size = magnitude(delta_theta); ang_size > max_ang_step) {
 		delta_theta *= (max_ang_step / ang_size);
 	}
 
-	body.predicted_position += delta_x * meters(1.f);
+	body.predicted_position += delta_x;
 
-	if (magnitude(delta_theta) > 1e-7f) {
-		const vec3<angle> aa = { radians(delta_theta.x()), radians(delta_theta.y()), radians(delta_theta.z()) };
-		body.predicted_orientation = normalize(from_axis_angle_vector(aa) * body.predicted_orientation);
+	if (magnitude(delta_theta) > radians(1e-7f)) {
+		body.predicted_orientation = normalize(from_axis_angle_vector(vec3<angle>(delta_theta)) * body.predicted_orientation);
 	}
 }
 
@@ -1066,7 +1062,7 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 			m_solve_state[body_idx].angular_gradient += j_ang * fi;
 			m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * constraint.pos_penalty[0] / rad;
 			m_solve_state[body_idx].hessian_xtheta += outer_product(j_lin, j_ang) * constraint.pos_penalty[0] / rad;
-			accumulate_geometric_stiffness(m_solve_state[body_idx], r.as<meters>(), d_hat, abs(fi).as<newtons>());
+			accumulate_geometric_stiffness(m_solve_state[body_idx], r, d_hat, abs(fi));
 		}
 	}
 	else if (constraint.type == joint_type::fixed || constraint.type == joint_type::hinge) {
@@ -1086,7 +1082,7 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 				m_solve_state[body_idx].angular_gradient += j_ang * fi;
 				m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * constraint.pos_penalty[k] / rad;
 				m_solve_state[body_idx].hessian_xtheta += outer_product(j_lin, j_ang) * constraint.pos_penalty[k] / rad;
-				accumulate_geometric_stiffness(m_solve_state[body_idx], r.as<meters>(), dirs[k], abs(fi).as<newtons>());
+				accumulate_geometric_stiffness(m_solve_state[body_idx], r, dirs[k], abs(fi));
 			}
 		}
 
@@ -1184,7 +1180,7 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 				m_solve_state[body_idx].angular_gradient += j_ang * fi;
 				m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * constraint.pos_penalty[k] / rad;
 				m_solve_state[body_idx].hessian_xtheta += outer_product(j_lin, j_ang) * constraint.pos_penalty[k] / rad;
-				accumulate_geometric_stiffness(m_solve_state[body_idx], r.as<meters>(), perps[k], abs(fi).as<newtons>());
+				accumulate_geometric_stiffness(m_solve_state[body_idx], r, perps[k], abs(fi));
 			}
 		}
 
@@ -1320,18 +1316,19 @@ auto gse::vbd::rotate_axis(const quat& q, const unitless::vec3& v) -> unitless::
 	return v + s * t + cross(u, t);
 }
 
-auto gse::vbd::accumulate_geometric_stiffness(body_solve_state& state, const unitless::vec3& r, const unitless::vec3& dir, const float abs_force) -> void {
-	const float rd = dot(r, dir);
+auto gse::vbd::accumulate_geometric_stiffness(body_solve_state& state, const vec3<length>& r, const unitless::vec3& dir, const force abs_force) -> void {
+	length rd{};
+	for (int i = 0; i < 3; ++i) rd += r[i] * dir[i];
 	for (int j = 0; j < 3; ++j) {
-		float col_norm = 0.f;
+		length col_norm{};
 		for (int i = 0; i < 3; ++i) {
-			float h = r[i] * dir[j];
+			length h = r[i] * dir[j];
 			if (i == j) {
 				h -= rd;
 			}
-			col_norm += std::abs(h);
+			col_norm += abs(h);
 		}
-		state.angular_hessian[j][j] += newton_meters_per_radian(col_norm * abs_force);
+		state.angular_hessian[j][j] += col_norm * abs_force / rad;
 	}
 }
 

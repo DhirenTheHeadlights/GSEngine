@@ -10,16 +10,16 @@ import gse.platform;
 import :core_api;
 
 export namespace gse {
-	auto camera_view() -> mat4 {
+	auto camera_view() -> unitless::mat4 {
 		if (!has_state<camera::state>()) {
-			return mat4(1.f);
+			return unitless::mat4(1.f);
 		}
 		return state_of<camera::state>().view_matrix;
 	}
 
-	auto camera_projection() -> mat4 {
+	auto camera_projection() -> unitless::mat4 {
 		if (!has_state<camera::state>()) {
-			return mat4(1.f);
+			return unitless::mat4(1.f);
 		}
 		return state_of<camera::state>().projection_matrix;
 	}

@@ -17,8 +17,8 @@ export namespace gse {
 	struct render_queue_entry {
 		resource::handle<model> model;
 		std::size_t index;
-		mat4 model_matrix;
-		mat4 normal_matrix;
+		unitless::mat4 model_matrix;
+		unitless::mat4 normal_matrix;
 		unitless::vec3 color;
 	};
 
@@ -165,8 +165,8 @@ auto gse::model_instance::update(const physics::motion_component& mc, const phys
 						render_queue_entry{
 							.model = m_model_handle,
 							.index = i,
-							.model_matrix = mat4(1.0f),
-							.normal_matrix = mat4(1.0f),
+							.model_matrix = unitless::mat4(1.0f),
+							.normal_matrix = unitless::mat4(1.0f),
 							.color = unitless::vec3(1.0f)
 						}
 					);
@@ -185,12 +185,12 @@ auto gse::model_instance::update(const physics::motion_component& mc, const phys
 	const auto* mdl = m_model_handle.resolve();
 	const vec3 center_of_mass = mdl->center_of_mass();
 
-	const mat4 scale_mat             = scale(mat4(1.0f), m_scale);
-	const mat4 rot_mat               = m_rotation;
-	const mat4 trans_mat             = translate(mat4(1.0f), m_position);
-	const mat4 pivot_correction_mat  = translate(mat4(1.0f), -center_of_mass);
-	const mat4 final_model_matrix    = trans_mat * rot_mat * scale_mat * pivot_correction_mat;
-	const mat4 normal_matrix         = final_model_matrix.inverse().transpose();
+	const unitless::mat4 scale_mat             = scale(unitless::mat4(1.0f), m_scale);
+	const unitless::mat4 rot_mat               = m_rotation;
+	const unitless::mat4 trans_mat             = translate(unitless::mat4(1.0f), m_position);
+	const unitless::mat4 pivot_correction_mat  = translate(unitless::mat4(1.0f), -center_of_mass);
+	const unitless::mat4 final_model_matrix    = trans_mat * rot_mat * scale_mat * pivot_correction_mat;
+	const unitless::mat4 normal_matrix         = final_model_matrix.inverse().transpose();
 
 	for (auto& entry : m_render_queue_entries) {
 		entry.model_matrix  = final_model_matrix;

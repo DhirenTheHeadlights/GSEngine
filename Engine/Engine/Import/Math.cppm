@@ -3,6 +3,7 @@ export module gse.math;
 import std;
 
 export import :dimension;
+export import :matrix_base;
 export import :matrix;
 export import :matrix_math;
 export import :quat;

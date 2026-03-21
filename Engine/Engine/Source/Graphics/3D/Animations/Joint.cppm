@@ -11,8 +11,8 @@ export namespace gse {
         struct params {
             std::string name;
             std::uint16_t parent_index;
-            mat4 local_bind;
-            mat4 inverse_bind;
+            unitless::mat4 local_bind;
+            unitless::mat4 inverse_bind;
         };
 
         explicit joint(
@@ -23,14 +23,14 @@ export namespace gse {
         ) const -> std::uint16_t;
 
         auto local_bind(
-        ) const -> mat4;
+        ) const -> unitless::mat4;
 
         auto inverse_bind(
-        ) const -> mat4;
+        ) const -> unitless::mat4;
     private:
         std::uint16_t m_parent_index = std::numeric_limits<std::uint16_t>::max();
-        mat4 m_local_bind;
-        mat4 m_inverse_bind;
+        unitless::mat4 m_local_bind;
+        unitless::mat4 m_inverse_bind;
     };
 }
 
@@ -45,10 +45,10 @@ auto gse::joint::parent_index() const -> std::uint16_t {
     return m_parent_index;
 }
 
-auto gse::joint::local_bind() const -> mat4 {
+auto gse::joint::local_bind() const -> unitless::mat4 {
     return m_local_bind;
 }
 
-auto gse::joint::inverse_bind() const -> mat4 {
+auto gse::joint::inverse_bind() const -> unitless::mat4 {
     return m_inverse_bind;
 }

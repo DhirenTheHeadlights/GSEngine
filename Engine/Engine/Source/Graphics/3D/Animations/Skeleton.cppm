@@ -91,7 +91,7 @@ auto gse::skeleton::load(const gpu::context& ctx) -> void {
         std::uint16_t parent_index;
         file.read(reinterpret_cast<char*>(&parent_index), sizeof(parent_index));
 
-        mat4 local_bind;
+        unitless::mat4 local_bind;
         for (int row = 0; row < 4; ++row) {
             for (int col = 0; col < 4; ++col) {
                 float val;
@@ -100,7 +100,7 @@ auto gse::skeleton::load(const gpu::context& ctx) -> void {
             }
         }
 
-        mat4 inverse_bind;
+        unitless::mat4 inverse_bind;
         for (int row = 0; row < 4; ++row) {
             for (int col = 0; col < 4; ++col) {
                 float val;

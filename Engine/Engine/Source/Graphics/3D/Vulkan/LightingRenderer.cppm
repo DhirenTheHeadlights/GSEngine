@@ -330,9 +330,9 @@ auto gse::renderer::lighting::system::render(render_phase& phase, const state& s
 	const auto frame_index = config.current_frame();
 
 	const auto* cam_state = phase.try_state_of<camera::state>();
-	auto proj = cam_state ? cam_state->projection_matrix : mat4(1.0f);
+	auto proj = cam_state ? cam_state->projection_matrix : unitless::mat4(1.0f);
 	auto inv_proj = proj.inverse();
-	auto view = cam_state ? cam_state->view_matrix : mat4(1.0f);
+	auto view = cam_state ? cam_state->view_matrix : unitless::mat4(1.0f);
 	auto inv_view = view.inverse();
 
 	const auto& cam_alloc = s.ubo_allocations.at("CameraParams")[frame_index].allocation;
@@ -458,7 +458,7 @@ auto gse::renderer::lighting::system::render(render_phase& phase, const state& s
 	}
 
 	std::array<int, max_shadow_lights> shadow_indices{};
-	std::array<mat4, max_shadow_lights> shadow_view_proj{};
+	std::array<unitless::mat4, max_shadow_lights> shadow_view_proj{};
 	const std::size_t shadow_light_count =
 		std::min<std::size_t>(shadow_entries.size(), max_shadow_lights);
 
