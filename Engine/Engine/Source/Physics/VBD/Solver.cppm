@@ -214,8 +214,8 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		c.c0[1] = dot(c.tangent_u, d);
 		c.c0[2] = dot(c.tangent_v, d);
 
-		const auto va = ba.body_velocity + cross(ba.body_angular_velocity, r_aw);
-		const auto vb = bb.body_velocity + cross(bb.body_angular_velocity, r_bw);
+		const auto va = ba.body_velocity + cross(ba.body_angular_velocity, r_aw) / rad;
+		const auto vb = bb.body_velocity + cross(bb.body_angular_velocity, r_bw) / rad;
 		const velocity v_rel_n = dot(c.normal, va - vb);
 		c.approach_speed = std::min(v_rel_n, velocity{});
 	}
@@ -355,13 +355,14 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 				inv_i_sum += dot(ang_dir, bb.inv_inertia * ang_dir);
 			}
 
-			const float eff_ang = inv_i_sum > per_kilogram_meter_squared(1e-10f)
-				? (1.f / inv_i_sum / h_squared).as<newton_meters>()
-				: m_config.penalty_min.as<newtons_per_meter>();
+			const angular_stiffness eff_ang = inv_i_sum > per_kilogram_meter_squared(1e-10f)
+				? newton_meters_per_radian((1.f / inv_i_sum / h_squared).as<newton_meters>())
+				: newton_meters_per_radian(m_config.penalty_min.as<newtons_per_meter>());
 
 			j.ang_penalty[k] = std::clamp(
 				std::max(j.ang_penalty[k] * m_config.gamma, eff_ang),
-				m_config.penalty_min.as<newtons_per_meter>(), m_config.penalty_max.as<newtons_per_meter>()
+				newton_meters_per_radian(m_config.penalty_min.as<newtons_per_meter>()),
+				newton_meters_per_radian(m_config.penalty_max.as<newtons_per_meter>())
 			);
 		}
 
@@ -376,13 +377,14 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 				inv_i_sum += dot(limit_axis, bb.inv_inertia * limit_axis);
 			}
 
-			const float eff_limit = inv_i_sum > per_kilogram_meter_squared(1e-10f)
-				? ((1.f / inv_i_sum) / h_squared).as<newton_meters>()
-				: m_config.penalty_min.as<newtons_per_meter>();
+			const angular_stiffness eff_limit = inv_i_sum > per_kilogram_meter_squared(1e-10f)
+				? newton_meters_per_radian(((1.f / inv_i_sum) / h_squared).as<newton_meters>())
+				: newton_meters_per_radian(m_config.penalty_min.as<newtons_per_meter>());
 
 			j.limit_penalty = std::clamp(
 				std::max(j.limit_penalty * m_config.gamma, eff_limit),
-				m_config.penalty_min.as<newtons_per_meter>(), m_config.penalty_max.as<newtons_per_meter>()
+				newton_meters_per_radian(m_config.penalty_min.as<newtons_per_meter>()),
+				newton_meters_per_radian(m_config.penalty_max.as<newtons_per_meter>())
 			);
 		}
 	}
@@ -676,8 +678,8 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 					const vec3<length> rAW = rotate_vector(ba.orientation, c.r_a);
 					const vec3<length> rBW = rotate_vector(bb.orientation, c.r_b);
 
-					const auto va = ba.body_velocity + cross(ba.body_angular_velocity, rAW);
-					const auto vb = bb.body_velocity + cross(bb.body_angular_velocity, rBW);
+					const auto va = ba.body_velocity + cross(ba.body_angular_velocity, rAW) / rad;
+					const auto vb = bb.body_velocity + cross(bb.body_angular_velocity, rBW) / rad;
 					const velocity v_rel_after = dot(c.normal, va - vb);
 
 					const float speed_ratio = std::clamp(
@@ -1048,8 +1050,8 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 		length c = (meters(d_mag) - constraint.target_distance) - constraint.pos_c0[0] * alpha;
 
 		if (constraint.damping > 0.f) {
-			const auto vel_a = body_a.body_velocity + cross(body_a.body_angular_velocity, r_aw);
-			const auto vel_b = body_b.body_velocity + cross(body_b.body_angular_velocity, r_bw);
+			const auto vel_a = body_a.body_velocity + cross(body_a.body_angular_velocity, r_aw) / rad;
+			const auto vel_b = body_b.body_velocity + cross(body_b.body_angular_velocity, r_bw) / rad;
 			const velocity v_rel = dot(d_hat, vel_a - vel_b);
 			c += v_rel * dt * constraint.damping;
 		}
@@ -1098,12 +1100,13 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 
 			if (constraint.type == joint_type::fixed) {
 				for (int k = 0; k < 3; ++k) {
+					const float pen_k = constraint.ang_penalty[k].as<newton_meters_per_radian>();
 					const angle c_ang = theta[k] - constraint.ang_c0[k] * alpha;
-					const angle f_ang = constraint.ang_penalty[k] * c_ang + constraint.ang_lambda[k];
+					const angle f_ang = pen_k * c_ang + constraint.ang_lambda[k];
 
 					const unitless::vec3 j_ang = dirs[k] * (-sign);
 					m_solve_state[body_idx].angular_gradient += j_ang * f_ang.as<radians>();
-					m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * constraint.ang_penalty[k];
+					m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * pen_k;
 				}
 			}
 			else {
@@ -1118,20 +1121,22 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 				perp_u = normalize(perp_u);
 				const unitless::vec3 perp_v = normalize(cross(axis_a, perp_u));
 
+				const float pen_u = constraint.ang_penalty[0].as<newton_meters_per_radian>();
+				const float pen_v = constraint.ang_penalty[1].as<newton_meters_per_radian>();
 				const angle c_u = radians(dot(perp_u, swing_error)) - constraint.ang_c0[0] * alpha;
 				const angle c_v = radians(dot(perp_v, swing_error)) - constraint.ang_c0[1] * alpha;
 
-				const angle f_u = constraint.ang_penalty[0] * c_u + constraint.ang_lambda[0];
-				const angle f_v = constraint.ang_penalty[1] * c_v + constraint.ang_lambda[1];
+				const angle f_u = pen_u * c_u + constraint.ang_lambda[0];
+				const angle f_v = pen_v * c_v + constraint.ang_lambda[1];
 
 				const unitless::vec3 j_ang_u = perp_u * (-sign);
 				const unitless::vec3 j_ang_v = perp_v * (-sign);
 
 				m_solve_state[body_idx].angular_gradient += j_ang_u * f_u.as<radians>();
-				m_solve_state[body_idx].angular_hessian += outer_product(j_ang_u, j_ang_u) * constraint.ang_penalty[0];
+				m_solve_state[body_idx].angular_hessian += outer_product(j_ang_u, j_ang_u) * pen_u;
 
 				m_solve_state[body_idx].angular_gradient += j_ang_v * f_v.as<radians>();
-				m_solve_state[body_idx].angular_hessian += outer_product(j_ang_v, j_ang_v) * constraint.ang_penalty[1];
+				m_solve_state[body_idx].angular_hessian += outer_product(j_ang_v, j_ang_v) * pen_v;
 
 				if (constraint.limits_enabled) {
 					const angle twist = dot(axis_a, theta);
@@ -1151,13 +1156,14 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 					}
 
 					if (limit_active) {
+						const float lp = constraint.limit_penalty.as<newton_meters_per_radian>();
 						const float c_limit_f = c_limit.as<radians>();
-						const float f_limit = constraint.limit_penalty * c_limit_f + constraint.limit_lambda.as<radians>();
+						const float f_limit = lp * c_limit_f + constraint.limit_lambda.as<radians>();
 						const float f_clamped = (c_limit_f < 0.f) ? std::min(f_limit, 0.f) : std::max(f_limit, 0.f);
 
 						const unitless::vec3 j_limit = axis_a * (-sign);
 						m_solve_state[body_idx].angular_gradient += j_limit * f_clamped;
-						m_solve_state[body_idx].angular_hessian += outer_product(j_limit, j_limit) * constraint.limit_penalty;
+						m_solve_state[body_idx].angular_hessian += outer_product(j_limit, j_limit) * lp;
 					}
 				}
 			}
@@ -1198,12 +1204,13 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 			const unitless::vec3 dirs[3] = { { 1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 1.f } };
 
 			for (int k = 0; k < 3; ++k) {
+				const float pen_k = constraint.ang_penalty[k].as<newton_meters_per_radian>();
 				const angle c_ang = theta[k] - constraint.ang_c0[k] * alpha;
-				const angle f_ang = constraint.ang_penalty[k] * c_ang + constraint.ang_lambda[k];
+				const angle f_ang = pen_k * c_ang + constraint.ang_lambda[k];
 
 				const unitless::vec3 j_ang = dirs[k] * (-sign);
 				m_solve_state[body_idx].angular_gradient += j_ang * f_ang.as<radians>();
-				m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * constraint.ang_penalty[k];
+				m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * pen_k;
 			}
 		}
 	}
@@ -1247,8 +1254,11 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> void {
 			if (j.type == joint_type::fixed) {
 				for (int k = 0; k < 3; ++k) {
 					const angle c_ang = theta[k] - j.ang_c0[k];
-					j.ang_lambda[k] = j.ang_penalty[k] * c_ang + j.ang_lambda[k];
-					j.ang_penalty[k] = std::min(j.ang_penalty[k] + m_config.beta.as<newtons_per_meter>() * abs(c_ang).as<radians>(), m_config.penalty_max.as<newtons_per_meter>());
+					j.ang_lambda[k] = j.ang_penalty[k].as<newton_meters_per_radian>() * c_ang + j.ang_lambda[k];
+					j.ang_penalty[k] = std::min(
+						j.ang_penalty[k] + newton_meters_per_radian(m_config.beta.as<newtons_per_meter>() * abs(c_ang).as<radians>()),
+						newton_meters_per_radian(m_config.penalty_max.as<newtons_per_meter>())
+					);
 				}
 			}
 			else {
@@ -1266,11 +1276,17 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> void {
 				const angle c_u = radians(dot(perp_u, swing_error)) - j.ang_c0[0];
 				const angle c_v = radians(dot(perp_v, swing_error)) - j.ang_c0[1];
 
-				j.ang_lambda[0] = j.ang_penalty[0] * c_u + j.ang_lambda[0];
-				j.ang_penalty[0] = std::min(j.ang_penalty[0] + m_config.beta.as<newtons_per_meter>() * abs(c_u).as<radians>(), m_config.penalty_max.as<newtons_per_meter>());
+				j.ang_lambda[0] = j.ang_penalty[0].as<newton_meters_per_radian>() * c_u + j.ang_lambda[0];
+				j.ang_penalty[0] = std::min(
+					j.ang_penalty[0] + newton_meters_per_radian(m_config.beta.as<newtons_per_meter>() * abs(c_u).as<radians>()),
+					newton_meters_per_radian(m_config.penalty_max.as<newtons_per_meter>())
+				);
 
-				j.ang_lambda[1] = j.ang_penalty[1] * c_v + j.ang_lambda[1];
-				j.ang_penalty[1] = std::min(j.ang_penalty[1] + m_config.beta.as<newtons_per_meter>() * abs(c_v).as<radians>(), m_config.penalty_max.as<newtons_per_meter>());
+				j.ang_lambda[1] = j.ang_penalty[1].as<newton_meters_per_radian>() * c_v + j.ang_lambda[1];
+				j.ang_penalty[1] = std::min(
+					j.ang_penalty[1] + newton_meters_per_radian(m_config.beta.as<newtons_per_meter>() * abs(c_v).as<radians>()),
+					newton_meters_per_radian(m_config.penalty_max.as<newtons_per_meter>())
+				);
 
 				if (j.limits_enabled) {
 					const angle twist = dot(axis_a, theta);
@@ -1279,13 +1295,19 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> void {
 
 					if (twist < lower) {
 						const angle c_limit = (twist - lower) - j.limit_c0;
-						j.limit_lambda = std::min(j.limit_penalty * c_limit + j.limit_lambda, angle{});
-						j.limit_penalty = std::min(j.limit_penalty + m_config.beta.as<newtons_per_meter>() * abs(c_limit).as<radians>(), m_config.penalty_max.as<newtons_per_meter>());
+						j.limit_lambda = std::min(j.limit_penalty.as<newton_meters_per_radian>() * c_limit + j.limit_lambda, angle{});
+						j.limit_penalty = std::min(
+							j.limit_penalty + newton_meters_per_radian(m_config.beta.as<newtons_per_meter>() * abs(c_limit).as<radians>()),
+							newton_meters_per_radian(m_config.penalty_max.as<newtons_per_meter>())
+						);
 					}
 					else if (twist > upper) {
 						const angle c_limit = (twist - upper) - j.limit_c0;
-						j.limit_lambda = std::max(j.limit_penalty * c_limit + j.limit_lambda, angle{});
-						j.limit_penalty = std::min(j.limit_penalty + m_config.beta.as<newtons_per_meter>() * abs(c_limit).as<radians>(), m_config.penalty_max.as<newtons_per_meter>());
+						j.limit_lambda = std::max(j.limit_penalty.as<newton_meters_per_radian>() * c_limit + j.limit_lambda, angle{});
+						j.limit_penalty = std::min(
+							j.limit_penalty + newton_meters_per_radian(m_config.beta.as<newtons_per_meter>() * abs(c_limit).as<radians>()),
+							newton_meters_per_radian(m_config.penalty_max.as<newtons_per_meter>())
+						);
 					}
 				}
 			}
@@ -1311,8 +1333,11 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> void {
 
 			for (int k = 0; k < 3; ++k) {
 				const angle c_ang = theta[k] - j.ang_c0[k];
-				j.ang_lambda[k] = j.ang_penalty[k] * c_ang + j.ang_lambda[k];
-				j.ang_penalty[k] = std::min(j.ang_penalty[k] + m_config.beta.as<newtons_per_meter>() * abs(c_ang).as<radians>(), m_config.penalty_max.as<newtons_per_meter>());
+				j.ang_lambda[k] = j.ang_penalty[k].as<newton_meters_per_radian>() * c_ang + j.ang_lambda[k];
+				j.ang_penalty[k] = std::min(
+					j.ang_penalty[k] + newton_meters_per_radian(m_config.beta.as<newtons_per_meter>() * abs(c_ang).as<radians>()),
+					newton_meters_per_radian(m_config.penalty_max.as<newtons_per_meter>())
+				);
 			}
 		}
 	}

@@ -37,9 +37,9 @@ export namespace gse::physics {
 		vec3<length> pos_lambda;
 		vec3<stiffness> pos_penalty;
 		vec3<angle> ang_lambda;
-		unitless::vec3 ang_penalty;
+		vec3<angular_stiffness> ang_penalty;
 		angle limit_lambda = {};
-		float limit_penalty = 0.f;
+		angular_stiffness limit_penalty = {};
 	};
 
 	using joint_handle = std::uint32_t;

@@ -369,7 +369,7 @@ constexpr auto gse::internal::operator/(const Q& lhs, const S& rhs) -> Q {
 template <gse::internal::is_arithmetic S, gse::internal::is_quantity Q>
 constexpr auto gse::internal::operator/(const S& lhs, const Q& rhs) {
 	using result_v = Q::value_type;
-	using result_d = decltype(dim<0, 0, 0>() / typename Q::dimension());
+	using result_d = decltype(dimensionless{} / typename Q::dimension());
 	return generic_quantity<result_v, result_d>(static_cast<result_v>(lhs) / rhs.template as<typename Q::default_unit>());
 }
 
