@@ -63,26 +63,24 @@ export namespace gse::physics {
         vec3<velocity> pending_impulse;
     };
 
-    using inv_inertia_mat = mat<inverse_inertia, 3, 3>;
-
     struct motion_component : component<motion_component_data, motion_component_net> {
         using component::component;
 
-        auto transformation_matrix() const -> mat4;
-        auto inv_inertial_tensor() const -> inv_inertia_mat;
+        auto transformation_matrix() const -> unitless::mat4;
+        auto inv_inertial_tensor() const -> mat3<inverse_inertia>;
     };
 }
 
-auto gse::physics::motion_component::transformation_matrix() const -> mat4 {
-    const mat4 translation = translate(mat4(1.0f), current_position);
-    const auto rotation = mat4(mat3_cast(orientation));
+auto gse::physics::motion_component::transformation_matrix() const -> unitless::mat4 {
+    const unitless::mat4 translation = translate(unitless::mat4(1.0f), current_position);
+    const auto rotation = unitless::mat4(mat3_cast(orientation));
     return translation * rotation;
 }
 
-auto gse::physics::motion_component::inv_inertial_tensor() const -> inv_inertia_mat {
+auto gse::physics::motion_component::inv_inertial_tensor() const -> mat3<inverse_inertia> {
     const float i_body = moment_of_inertia.as<kilograms_meters_squared>();
-    const mat3 inv_i_body_raw = gse::identity<float, 3, 3>() * (1.f / i_body);
+    const unitless::mat3 inv_i_body_raw = gse::identity<float, 3, 3>() * (1.f / i_body);
     const auto rotation = mat3_cast(orientation);
-    const mat3 result_raw = rotation * inv_i_body_raw * rotation.transpose();
-    return inv_inertia_mat(result_raw);
+    const unitless::mat3 result_raw = rotation * inv_i_body_raw * rotation.transpose();
+    return mat3<inverse_inertia>(result_raw);
 }

@@ -7,16 +7,12 @@ import :contact_manifold;
 import :motion_component;
 
 export namespace gse::vbd {
-	using stiffness_mat3 = mat<stiffness, 3, 3>;
-	using ang_stiffness_mat3 = mat<angular_stiffness, 3, 3>;
-	using xtheta_mat3 = mat<linear_angular_stiffness, 3, 3>;
-
 	struct body_solve_state {
 		vec3<force> gradient = {};
-		stiffness_mat3 hessian = {};
+		mat3<stiffness> hessian = {};
 		vec3<torque> angular_gradient = {};
-		ang_stiffness_mat3 angular_hessian = {};
-		xtheta_mat3 hessian_xtheta = {};
+		mat3<angular_stiffness> angular_hessian = {};
+		mat3<linear_angular_stiffness> hessian_xtheta = {};
 	};
 
 	struct contact_constraint {
@@ -107,7 +103,7 @@ export namespace gse::vbd {
 		vec3<length> motor_target;
 
 		mass mass_value = kilograms(1.f);
-		physics::inv_inertia_mat inv_inertia;
+		mat3<inverse_inertia> inv_inertia;
 
 		bool locked = false;
 		bool update_orientation = true;

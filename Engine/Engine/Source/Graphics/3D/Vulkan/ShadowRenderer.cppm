@@ -18,15 +18,15 @@ import gse.utility;
 
 export namespace gse::renderer {
 	struct shadow_light_entry {
-		mat4 view;
-		mat4 proj;
+		unitless::mat4 view;
+		unitless::mat4 proj;
 		std::vector<id> ignore_list_ids;
 		int shadow_index = -1;
 	};
 
 	struct point_shadow_light_entry {
 		vec3<length> world_position;
-		std::array<mat4, 6> face_view_proj;
+		std::array<unitless::mat4, 6> face_view_proj;
 		length near_plane;
 		length far_plane;
 		std::vector<id> ignore_list_ids;
@@ -539,7 +539,7 @@ auto gse::renderer::shadow::system::render(render_phase& phase, const state& s) 
             };
             command.setScissor(0, scissor);
 
-            const mat4 light_view_proj = proj * view;
+            const unitless::mat4 light_view_proj = proj * view;
 
             for (const auto& e : draw_list) {
                 s.shader_handle->push(

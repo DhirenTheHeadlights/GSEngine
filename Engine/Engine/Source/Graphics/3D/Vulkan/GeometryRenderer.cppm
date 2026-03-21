@@ -21,7 +21,7 @@ import gse.physics;
 namespace gse::renderer {
 	using frustum_planes = std::array<unitless::vec4, 6>;
 
-	auto transform_aabb(const vec3<length>& local_min, const vec3<length>& local_max, const mat4& model_matrix) -> std::pair<vec3<length>, vec3<length>> {
+	auto transform_aabb(const vec3<length>& local_min, const vec3<length>& local_max, const unitless::mat4& model_matrix) -> std::pair<vec3<length>, vec3<length>> {
 		const std::array corners = {
 			unitless::vec4(local_min.as<meters>(), 1.0f),
 			unitless::vec4(local_max.x().as<meters>(), local_min.y().as<meters>(), local_min.z().as<meters>(), 1.0f),
@@ -60,7 +60,7 @@ namespace gse::renderer {
 		return { world_min, world_max };
 	}
 
-	auto extract_frustum_planes(const mat4& view_proj) -> frustum_planes {
+	auto extract_frustum_planes(const unitless::mat4& view_proj) -> frustum_planes {
 		frustum_planes planes;
 
 		planes[0] = unitless::vec4(
@@ -193,7 +193,7 @@ export namespace gse::renderer::geometry {
 		static constexpr std::size_t max_skin_matrices = 256 * 128;
 		static constexpr std::size_t max_joints = 256;
 		per_frame_resource<vulkan::buffer_resource> skin_buffer;
-		per_frame_resource<std::vector<mat4>> skin_staging;
+		per_frame_resource<std::vector<unitless::mat4>> skin_staging;
 
 		resource::handle<shader> skin_compute;
 		vk::raii::Pipeline skin_compute_pipeline = nullptr;
@@ -201,7 +201,7 @@ export namespace gse::renderer::geometry {
 		per_frame_resource<vk::raii::DescriptorSet> skin_compute_sets;
 		vulkan::buffer_resource skeleton_buffer;
 		per_frame_resource<vulkan::buffer_resource> local_pose_buffer;
-		per_frame_resource<std::vector<mat4>> local_pose_staging;
+		per_frame_resource<std::vector<unitless::mat4>> local_pose_staging;
 		const skeleton* current_skeleton = nullptr;
 		std::uint32_t current_joint_count = 0;
 		bool gpu_skinning_enabled = true;
@@ -518,7 +518,7 @@ auto gse::renderer::geometry::system::initialize(initialize_phase&, state& s) ->
 		s.instance_offsets[name] = member.offset;
 	}
 
-	constexpr vk::DeviceSize skin_buffer_size = state::max_skin_matrices * sizeof(mat4);
+	constexpr vk::DeviceSize skin_buffer_size = state::max_skin_matrices * sizeof(unitless::mat4);
 	for (std::size_t i = 0; i < per_frame_resource<vulkan::buffer_resource>::frames_in_flight; ++i) {
 		s.skin_buffer[i] = config.allocator().create_buffer(
 			vk::BufferCreateInfo{
@@ -617,7 +617,7 @@ auto gse::renderer::geometry::system::initialize(initialize_phase&, state& s) ->
 		.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
 	});
 
-	constexpr vk::DeviceSize local_pose_size = state::max_skin_matrices * sizeof(mat4);
+	constexpr vk::DeviceSize local_pose_size = state::max_skin_matrices * sizeof(unitless::mat4);
 	for (std::size_t i = 0; i < per_frame_resource<vulkan::buffer_resource>::frames_in_flight; ++i) {
 		s.local_pose_buffer[i] = config.allocator().create_buffer({
 			.size = local_pose_size,
@@ -853,8 +853,8 @@ auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> v
 	}
 
 	const auto* cam_state = phase.try_state_of<camera::state>();
-	const mat4 view_matrix = cam_state ? cam_state->view_matrix : mat4(1.0f);
-	const mat4 proj_matrix = cam_state ? cam_state->projection_matrix : mat4(1.0f);
+	const unitless::mat4 view_matrix = cam_state ? cam_state->view_matrix : unitless::mat4(1.0f);
+	const unitless::mat4 proj_matrix = cam_state ? cam_state->projection_matrix : unitless::mat4(1.0f);
 
 	phase.schedule([&s, &channels = phase.channels, view_matrix, proj_matrix](
 		chunk<render_component> render,
@@ -972,8 +972,8 @@ auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> v
 		);
 
 	struct instance_data {
-		mat4 model_matrix;
-		mat4 normal_matrix;
+		unitless::mat4 model_matrix;
+		unitless::mat4 normal_matrix;
 		std::uint32_t skin_offset;
 		std::uint32_t joint_count;
 	};
@@ -1174,7 +1174,7 @@ auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> v
 	}
 
 	if (total_batch_count > 0 && s.gpu_culling_enabled && s.culling_compute.valid()) {
-		const mat4 view_proj = proj_matrix * view_matrix;
+		const unitless::mat4 view_proj = proj_matrix * view_matrix;
 		const frustum_planes frustum = extract_frustum_planes(view_proj);
 		gse::memcpy(s.frustum_buffer[frame_index].allocation.mapped(), &frustum);
 
@@ -1657,7 +1657,7 @@ auto gse::renderer::geometry::upload_skeleton_data(const state& s, const skeleto
 	for (std::size_t i = 0; i < joint_count; ++i) {
 		std::byte* offset = buffer + (i * s.joint_stride);
 
-		const mat4 inverse_bind = joints[i].inverse_bind();
+		const unitless::mat4 inverse_bind = joints[i].inverse_bind();
 		const std::uint32_t parent_index = joints[i].parent_index();
 
 		gse::memcpy(offset + s.joint_offsets.at("inverse_bind"), &inverse_bind);

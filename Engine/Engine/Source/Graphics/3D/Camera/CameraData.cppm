@@ -35,8 +35,8 @@ export namespace gse::camera {
 		angle pitch = degrees(0.0f);
 		float mouse_sensitivity = 0.1f;
 
-		mat4 view_matrix = mat4(1.0f);
-		mat4 projection_matrix = mat4(1.0f);
+		unitless::mat4 view_matrix = unitless::mat4(1.0f);
+		unitless::mat4 projection_matrix = unitless::mat4(1.0f);
 
 		unitless::vec2 viewport{ 1920.f, 1080.f };
 		bool ui_focus = false;

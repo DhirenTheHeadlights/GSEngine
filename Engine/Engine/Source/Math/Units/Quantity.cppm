@@ -31,12 +31,6 @@ namespace gse::internal {
 }
 
 namespace gse::internal {
-    export template <typename T>
-    concept is_ratio = requires {
-        { T::num } -> std::convertible_to<std::intmax_t>;
-        { T::den } -> std::convertible_to<std::intmax_t>;
-    };
-
     export template <typename QuantityTagType, is_ratio ConversionRatio, fixed_string UnitName>
     struct unit {
         using quantity_tag = QuantityTagType;
@@ -93,6 +87,12 @@ namespace gse::internal {
             requires has_same_dimensions<Dimensions, Dim2> && (std::same_as<QuantityTagType, Tag2> || std::same_as<Tag2, generic_quantity_tag>)
         constexpr quantity(const quantity<T2, Dim2, Tag2, Unit2>& other)
             : m_val(static_cast<ArithmeticType>(other.template as<DefaultUnitType>())) {}
+
+        template <is_arithmetic T2, is_dimension Dim2, typename Tag2, typename Unit2>
+            requires (!has_same_dimensions<Dimensions, Dim2>)
+        constexpr quantity(const quantity<T2, Dim2, Tag2, Unit2>&) {
+            dimension_mismatch_diagnostic<Dimensions, Dim2>{};
+        }
 
         template <is_unit UnitType> requires valid_unit_for_quantity<UnitType, quantity>
         constexpr auto set(ArithmeticType value) -> void {
@@ -317,6 +317,34 @@ export namespace gse::internal {
 	constexpr auto operator-(
 		const Q& v
 	) -> Q;
+
+	template <is_quantity Q1, is_quantity Q2>
+		requires (!has_same_dimension_as<Q1, Q2>)
+	constexpr auto operator+(const Q1& lhs, const Q2&) -> Q1 {
+		dimension_mismatch_diagnostic<typename Q1::dimension, typename Q2::dimension>{};
+		return lhs;
+	}
+
+	template <is_quantity Q1, is_quantity Q2>
+		requires (!has_same_dimension_as<Q1, Q2>)
+	constexpr auto operator-(const Q1& lhs, const Q2&) -> Q1 {
+		dimension_mismatch_diagnostic<typename Q1::dimension, typename Q2::dimension>{};
+		return lhs;
+	}
+
+	template <is_quantity Q1, is_quantity Q2>
+		requires (!has_same_dimension_as<Q1, Q2>)
+	constexpr auto operator+=(Q1& lhs, const Q2&) -> Q1& {
+		dimension_mismatch_diagnostic<typename Q1::dimension, typename Q2::dimension>{};
+		return lhs;
+	}
+
+	template <is_quantity Q1, is_quantity Q2>
+		requires (!has_same_dimension_as<Q1, Q2>)
+	constexpr auto operator-=(Q1& lhs, const Q2&) -> Q1& {
+		dimension_mismatch_diagnostic<typename Q1::dimension, typename Q2::dimension>{};
+		return lhs;
+	}
 }
 
 template <gse::internal::is_quantity Q1, gse::internal::is_quantity Q2>

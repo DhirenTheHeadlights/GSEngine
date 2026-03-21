@@ -128,11 +128,11 @@ export namespace gse {
 	template <typename T>
 	constexpr auto mat3_cast(
 		const quat_t<T>& q
-	) -> mat3_t<T>;
+	) -> unitless::mat3_t<T>;
 
 	template <typename T>
 	constexpr auto from_mat4(
-		const mat4_t<T>& m
+		const unitless::mat4_t<T>& m
 	) -> quat_t<T>;
 
 	template <typename T>
@@ -157,10 +157,23 @@ export namespace gse {
 		const quat_t<T>& q
 	) -> vec3<angle_t<T>>;
 
-	template <typename T>
-	constexpr auto from_axis_angle_vector(
-		const vec3<angle_t<T>>& aa
-	) -> quat_t<T>;
+	template <internal::is_quantity Q>
+	constexpr auto from_axis_angle_vector(const vec3<Q>& aa) -> quat_t<typename Q::value_type> {
+		using T = typename Q::value_type;
+		const T ax = angle_t<T>(aa.x()).template as<radians>();
+		const T ay = angle_t<T>(aa.y()).template as<radians>();
+		const T az = angle_t<T>(aa.z()).template as<radians>();
+		const T angle_sq = ax * ax + ay * ay + az * az;
+
+		if (angle_sq < T(1e-14)) {
+			return normalize(quat_t<T>{ T(1), ax * T(0.5), ay * T(0.5), az * T(0.5) });
+		}
+
+		const T angle = std::sqrt(angle_sq);
+		const T half_angle = angle * T(0.5);
+		const T s = std::sin(half_angle) / angle;
+		return quat_t<T>{ std::cos(half_angle), s * ax, s * ay, s * az };
+	}
 
 	template <typename T>
 	constexpr auto difference_axis_angle(
@@ -304,7 +317,7 @@ constexpr auto gse::dot(const quat_t<T>& lhs, const quat_t<T>& rhs) -> T {
 }
 
 template <typename T>
-constexpr auto gse::mat3_cast(const quat_t<T>& q) -> mat3_t<T> {
+constexpr auto gse::mat3_cast(const quat_t<T>& q) -> unitless::mat3_t<T> {
 	const T x = q[1];
 	const T y = q[2];
 	const T z = q[3];
@@ -321,7 +334,7 @@ constexpr auto gse::mat3_cast(const quat_t<T>& q) -> mat3_t<T> {
 	const T wx = w * x2;
 	const T wy = w * y2;
 	const T wz = w * z2;
-	return mat3_t<T>{
+	return unitless::mat3_t<T>{
 		unitless::vec3_t<T>{ T(1) - (yy + zz), xy + wz, xz - wy },
 		unitless::vec3_t<T>{ xy - wz, T(1) - (xx + zz), yz + wx },
 		unitless::vec3_t<T>{ xz + wy, yz - wx, T(1) - (xx + yy) }
@@ -329,7 +342,7 @@ constexpr auto gse::mat3_cast(const quat_t<T>& q) -> mat3_t<T> {
 }
 
 template <typename T>
-constexpr auto gse::from_mat4(const mat4_t<T>& m) -> quat_t<T> {
+constexpr auto gse::from_mat4(const unitless::mat4_t<T>& m) -> quat_t<T> {
 	const T trace = m[0][0] + m[1][1] + m[2][2];
 	quat_t<T> q{};
 	if (trace > T(0)) {
@@ -416,22 +429,6 @@ constexpr auto gse::to_axis_angle(const quat_t<T>& q) -> vec3<angle_t<T>> {
 	return { radians(scale * x), radians(scale * y), radians(scale * z) };
 }
 
-template <typename T>
-constexpr auto gse::from_axis_angle_vector(const vec3<angle_t<T>>& aa) -> quat_t<T> {
-	const T ax = aa.x().template as<radians>();
-	const T ay = aa.y().template as<radians>();
-	const T az = aa.z().template as<radians>();
-	const T angle_sq = ax * ax + ay * ay + az * az;
-
-	if (angle_sq < T(1e-14)) {
-		return normalize(quat_t<T>{ T(1), ax * T(0.5), ay * T(0.5), az * T(0.5) });
-	}
-
-	const T angle = std::sqrt(angle_sq);
-	const T half_angle = angle * T(0.5);
-	const T s = std::sin(half_angle) / angle;
-	return quat_t<T>{ std::cos(half_angle), s * ax, s * ay, s * az };
-}
 
 template <typename T>
 constexpr auto gse::difference_axis_angle(const quat_t<T>& q_from, const quat_t<T>& q_to) -> vec3<angle_t<T>> {

@@ -17,9 +17,9 @@ export namespace gse {
 		animation_component(const id owner_id, const params& p) : component(owner_id, p) {}
 
 		resource::handle<skeleton> skeleton;
-		std::vector<mat4> local_pose;
-		std::vector<mat4> global_pose;
-		std::vector<mat4> skins;
+		std::vector<unitless::mat4> local_pose;
+		std::vector<unitless::mat4> global_pose;
+		std::vector<unitless::mat4> skins;
 		std::uint32_t skin_buffer_offset = 0;
 	};
 }
