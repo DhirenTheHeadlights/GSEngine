@@ -13,6 +13,7 @@ export import :circle;
 export import :segment;
 export import :unit_display;
 export import :units;
+export import :vector_base;
 export import :vector;
 export import :vector_math;
 
