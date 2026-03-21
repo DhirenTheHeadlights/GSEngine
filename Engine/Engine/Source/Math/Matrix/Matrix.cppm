@@ -44,7 +44,7 @@ export namespace gse {
 			std::size_t index
 		);
 
-		constexpr auto operator==(const mat&) const = default;
+		constexpr auto operator==(const mat&) const -> bool = default;
 
 		constexpr auto transpose(
 		) const -> mat<Element, Rows, Cols>;

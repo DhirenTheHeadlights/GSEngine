@@ -58,14 +58,14 @@ export namespace gse {
 	);
 
 	template <internal::is_vec_element E1, internal::is_vec_element E2, std::size_t Cols, std::size_t Rows>
-		requires (requires { typename gse::vec::add_exposed_t<E1, E2>; } && std::same_as<vec::add_exposed_t<E1, E2>, E1>)
+		requires (requires { typename gse::vec::add_exposed_t<E1, E2>; } && std::same_as<gse::vec::add_exposed_t<E1, E2>, E1>)
 	constexpr auto operator+=(
 		mat<E1, Cols, Rows>& lhs,
 		const mat<E2, Cols, Rows>& rhs
 	) -> auto&;
 
 	template <internal::is_vec_element E1, internal::is_vec_element E2, std::size_t Cols, std::size_t Rows>
-		requires (requires { typename gse::vec::sub_exposed_t<E1, E2>; } && std::same_as<vec::sub_exposed_t<E1, E2>, E1>)
+		requires (requires { typename gse::vec::sub_exposed_t<E1, E2>; } && std::same_as<gse::vec::sub_exposed_t<E1, E2>, E1>)
 	constexpr auto operator-=(
 		mat<E1, Cols, Rows>& lhs,
 		const mat<E2, Cols, Rows>& rhs
