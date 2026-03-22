@@ -16,7 +16,7 @@ import :world;
 export namespace gse {
     struct engine_config {
         std::string title = "GSEngine Application";
-        std::optional<unitless::vec2> size = std::nullopt;
+        std::optional<vec2f> size = std::nullopt;
         bool resizable = true;
         bool fullscreen = false;
     };

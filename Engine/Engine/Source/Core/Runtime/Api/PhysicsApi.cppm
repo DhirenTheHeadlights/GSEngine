@@ -20,12 +20,12 @@ export namespace gse::physics {
 	struct hinge_joint {
 		vec3<length> anchor_a;
 		vec3<length> anchor_b;
-		unitless::vec3 axis = { 0.f, 1.f, 0.f };
+		vec3f axis = { 0.f, 1.f, 0.f };
 		std::optional<std::pair<angle, angle>> limits;
 	};
 
 	struct slider_joint {
-		unitless::vec3 axis = { 0.f, 1.f, 0.f };
+		vec3f axis = { 0.f, 1.f, 0.f };
 	};
 
 	struct spring_joint {

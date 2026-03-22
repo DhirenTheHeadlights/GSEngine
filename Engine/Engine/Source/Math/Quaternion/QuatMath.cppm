@@ -84,8 +84,8 @@ export namespace gse {
 	template <typename T>
 	constexpr auto operator*(
 		const quaternion<T>& lhs,
-		const unitless::vec3_t<T>& rhs
-	) -> unitless::vec3_t<T>;
+		const vec3<T>& rhs
+	) -> vec3<T>;
 
 	template <typename T>
 	constexpr auto operator*=(
@@ -128,11 +128,11 @@ export namespace gse {
 	template <typename T>
 	constexpr auto mat3_cast(
 		const quat_t<T>& q
-	) -> unitless::mat3_t<T>;
+	) -> mat3<T>;
 
 	template <typename T>
 	constexpr auto from_mat4(
-		const unitless::mat4_t<T>& m
+		const mat4<T>& m
 	) -> quat_t<T>;
 
 	template <typename T>
@@ -141,7 +141,7 @@ export namespace gse {
 
 	template <typename T>
 	constexpr auto from_axis_angle(
-		const unitless::vec3_t<T>& axis,
+		const vec3<T>& axis,
 		angle_t<T> angle
 	) -> quat_t<T>;
 
@@ -208,9 +208,9 @@ template <typename T>
 constexpr auto gse::operator*(const quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T> {
 	const T s1 = lhs[0];
 	const T s2 = rhs[0];
-	const unitless::vec3_t<T> v1{ lhs[1], lhs[2], lhs[3] };
-	const unitless::vec3_t<T> v2{ rhs[1], rhs[2], rhs[3] };
-	const unitless::vec3_t<T> vec_part = s1 * v2 + s2 * v1 + cross(v1, v2);
+	const vec3<T> v1{ lhs[1], lhs[2], lhs[3] };
+	const vec3<T> v2{ rhs[1], rhs[2], rhs[3] };
+	const vec3<T> vec_part = s1 * v2 + s2 * v1 + cross(v1, v2);
 	const T scalar_part = s1 * s2 - dot(v1, v2);
 	return quat_t<T>(vec_part, scalar_part);
 }
@@ -266,10 +266,10 @@ constexpr auto gse::operator/(const T& lhs, const quat_t<T>& rhs) -> quat_t<T> {
 }
 
 template <typename T>
-constexpr auto gse::operator*(const quaternion<T>& lhs, const unitless::vec3_t<T>& rhs) -> unitless::vec3_t<T> {
-	const unitless::vec3_t<T> u{ lhs[1], lhs[2], lhs[3] };
+constexpr auto gse::operator*(const quaternion<T>& lhs, const vec3<T>& rhs) -> vec3<T> {
+	const vec3<T> u{ lhs[1], lhs[2], lhs[3] };
 	const T s = lhs[0];
-	const unitless::vec3_t<T> t = T(2) * cross(u, rhs);
+	const vec3<T> t = T(2) * cross(u, rhs);
 	return rhs + s * t + cross(u, t);
 }
 
@@ -297,7 +297,7 @@ constexpr auto gse::normalize(const quat_t<T>& q) -> quat_t<T> {
 
 template <typename T>
 constexpr auto gse::conjugate(const quat_t<T>& q) -> quat_t<T> {
-	const unitless::vec4_t<T> mask{ T(1), T(-1), T(-1), T(-1) };
+	const vec4<T> mask{ T(1), T(-1), T(-1), T(-1) };
 	return quat_t<T>(q.v4() * mask);
 }
 
@@ -317,7 +317,7 @@ constexpr auto gse::dot(const quat_t<T>& lhs, const quat_t<T>& rhs) -> T {
 }
 
 template <typename T>
-constexpr auto gse::mat3_cast(const quat_t<T>& q) -> unitless::mat3_t<T> {
+constexpr auto gse::mat3_cast(const quat_t<T>& q) -> mat3<T> {
 	const T x = q[1];
 	const T y = q[2];
 	const T z = q[3];
@@ -334,15 +334,15 @@ constexpr auto gse::mat3_cast(const quat_t<T>& q) -> unitless::mat3_t<T> {
 	const T wx = w * x2;
 	const T wy = w * y2;
 	const T wz = w * z2;
-	return unitless::mat3_t<T>{
-		unitless::vec3_t<T>{ T(1) - (yy + zz), xy + wz, xz - wy },
-		unitless::vec3_t<T>{ xy - wz, T(1) - (xx + zz), yz + wx },
-		unitless::vec3_t<T>{ xz + wy, yz - wx, T(1) - (xx + yy) }
+	return mat3<T>{
+		vec3<T>{ T(1) - (yy + zz), xy + wz, xz - wy },
+		vec3<T>{ xy - wz, T(1) - (xx + zz), yz + wx },
+		vec3<T>{ xz + wy, yz - wx, T(1) - (xx + yy) }
 	};
 }
 
 template <typename T>
-constexpr auto gse::from_mat4(const unitless::mat4_t<T>& m) -> quat_t<T> {
+constexpr auto gse::from_mat4(const mat4<T>& m) -> quat_t<T> {
 	const T trace = m[0][0] + m[1][1] + m[2][2];
 	quat_t<T> q{};
 	if (trace > T(0)) {
@@ -382,7 +382,7 @@ constexpr auto gse::identity() -> quat_t<T> {
 }
 
 template <typename T>
-constexpr auto gse::from_axis_angle(const unitless::vec3_t<T>& axis, angle_t<T> angle) -> quat_t<T> {
+constexpr auto gse::from_axis_angle(const vec3<T>& axis, angle_t<T> angle) -> quat_t<T> {
 	const T half_angle = angle.template as<radians>() / T(2);
 	const T s = std::sin(half_angle);
 	const T c = std::cos(half_angle);
@@ -438,14 +438,10 @@ constexpr auto gse::difference_axis_angle(const quat_t<T>& q_from, const quat_t<
 
 template <typename T, typename Q>
 constexpr auto gse::rotate_vector(const quat_t<T>& q, const vec3<Q>& v) -> vec3<Q> {
-	const auto v_unitless = v.template as<typename Q::default_unit>();
-	const unitless::vec3_t<T> rotated = mat3_cast(q) * v_unitless;
-	return { Q(rotated[0]), Q(rotated[1]), Q(rotated[2]) };
+	return mat3_cast(q) * v;
 }
 
 template <typename T, typename Q>
 constexpr auto gse::inverse_rotate_vector(const quat_t<T>& q, const vec3<Q>& v) -> vec3<Q> {
-	const auto v_unitless = v.template as<typename Q::default_unit>();
-	const unitless::vec3_t<T> rotated = mat3_cast(conjugate(q)) * v_unitless;
-	return { Q(rotated[0]), Q(rotated[1]), Q(rotated[2]) };
+	return mat3_cast(conjugate(q)) * v;
 }

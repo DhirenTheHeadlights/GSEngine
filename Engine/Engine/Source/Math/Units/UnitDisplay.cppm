@@ -34,7 +34,7 @@ struct std::formatter<gse::unit_display<Unit, gse::internal::quantity<A, Dim, Ta
 };
 
 template <auto Unit, gse::internal::is_arithmetic_wrapper Q, std::size_t N, typename CharT>
-struct std::formatter<gse::unit_display<Unit, gse::quantity_vec<Q, N>>, CharT> {
+struct std::formatter<gse::unit_display<Unit, gse::vec<Q, N>>, CharT> {
     std::formatter<gse::unit_display<Unit, Q>, CharT> elem_;
 
     template <class ParseContext>
@@ -43,7 +43,7 @@ struct std::formatter<gse::unit_display<Unit, gse::quantity_vec<Q, N>>, CharT> {
     }
 
     template <class FormatContext>
-    auto format(const gse::unit_display<Unit, gse::quantity_vec<Q, N>>& ud, FormatContext& ctx) const -> FormatContext::iterator {
+    auto format(const gse::unit_display<Unit, gse::vec<Q, N>>& ud, FormatContext& ctx) const -> FormatContext::iterator {
         auto out = ctx.out();
         out = std::format_to(out, "(");
         for (std::size_t i = 0; i < N; ++i) {

@@ -18,15 +18,15 @@ import gse.utility;
 
 export namespace gse::renderer {
 	struct shadow_light_entry {
-		unitless::mat4 view;
-		unitless::mat4 proj;
+		mat4f view;
+		mat4f proj;
 		std::vector<id> ignore_list_ids;
 		int shadow_index = -1;
 	};
 
 	struct point_shadow_light_entry {
 		vec3<length> world_position;
-		std::array<unitless::mat4, 6> face_view_proj;
+		std::array<mat4f, 6> face_view_proj;
 		length near_plane;
 		length far_plane;
 		std::vector<id> ignore_list_ids;
@@ -37,9 +37,9 @@ export namespace gse::renderer {
 	constexpr std::size_t max_point_shadow_lights = 4;
 
 	auto ensure_non_collinear_up(
-		const unitless::vec3& direction,
-		const unitless::vec3& up
-	) -> unitless::vec3;
+		const vec3f& direction,
+		const vec3f& up
+	) -> vec3f;
 }
 
 export namespace gse::renderer::shadow {
@@ -56,8 +56,8 @@ export namespace gse::renderer::shadow {
 
 		resource::handle<shader> shader_handle;
 
-		unitless::vec2u shadow_extent = { 1024, 1024 };
-		unitless::vec2u point_shadow_extent = { 512, 512 };
+		vec2u shadow_extent = { 1024, 1024 };
+		vec2u point_shadow_extent = { 512, 512 };
 
 		std::array<vulkan::image_resource, max_shadow_lights> shadow_maps;
 		std::array<cube_map, max_point_shadow_lights> point_shadow_cubemaps;
@@ -69,7 +69,7 @@ export namespace gse::renderer::shadow {
 		auto point_shadow_cube_view(std::size_t index) const -> vk::ImageView;
 		auto point_shadow_face_view(std::size_t index, std::size_t face) const -> vk::ImageView;
 		auto point_shadow_sampler(std::size_t index) const -> vk::Sampler;
-		auto shadow_texel_size() const -> unitless::vec2;
+		auto shadow_texel_size() const -> vec2f;
 	};
 
 	struct system {
@@ -95,8 +95,8 @@ auto gse::renderer::shadow::state::point_shadow_sampler(const std::size_t index)
 	return point_shadow_cubemaps[index].sampler();
 }
 
-auto gse::renderer::shadow::state::shadow_texel_size() const -> unitless::vec2 {
-	return unitless::vec2(
+auto gse::renderer::shadow::state::shadow_texel_size() const -> vec2f {
+	return vec2f(
 		1.0f / static_cast<float>(shadow_extent.x()),
 		1.0f / static_cast<float>(shadow_extent.y())
 	);
@@ -422,27 +422,27 @@ auto gse::renderer::shadow::system::update(update_phase& phase, state& s) -> voi
 
 		entry.face_view_proj[0] = proj * look_at(
 			pos, pos + vec3<length>(meters(1.0f), meters(0.0f), meters(0.0f)),
-			unitless::vec3(0.0f, -1.0f, 0.0f)
+			vec3f(0.0f, -1.0f, 0.0f)
 		);
 		entry.face_view_proj[1] = proj * look_at(
 			pos, pos + vec3<length>(meters(-1.0f), meters(0.0f), meters(0.0f)),
-			unitless::vec3(0.0f, -1.0f, 0.0f)
+			vec3f(0.0f, -1.0f, 0.0f)
 		);
 		entry.face_view_proj[2] = proj * look_at(
 			pos, pos + vec3<length>(meters(0.0f), meters(1.0f), meters(0.0f)),
-			unitless::vec3(0.0f, 0.0f, 1.0f)
+			vec3f(0.0f, 0.0f, 1.0f)
 		);
 		entry.face_view_proj[3] = proj * look_at(
 			pos, pos + vec3<length>(meters(0.0f), meters(-1.0f), meters(0.0f)),
-			unitless::vec3(0.0f, 0.0f, -1.0f)
+			vec3f(0.0f, 0.0f, -1.0f)
 		);
 		entry.face_view_proj[4] = proj * look_at(
 			pos, pos + vec3<length>(meters(0.0f), meters(0.0f), meters(1.0f)),
-			unitless::vec3(0.0f, -1.0f, 0.0f)
+			vec3f(0.0f, -1.0f, 0.0f)
 		);
 		entry.face_view_proj[5] = proj * look_at(
 			pos, pos + vec3<length>(meters(0.0f), meters(0.0f), meters(-1.0f)),
-			unitless::vec3(0.0f, -1.0f, 0.0f)
+			vec3f(0.0f, -1.0f, 0.0f)
 		);
 
 		data.point_lights.push_back(std::move(entry));
@@ -539,7 +539,7 @@ auto gse::renderer::shadow::system::render(render_phase& phase, const state& s) 
             };
             command.setScissor(0, scissor);
 
-            const unitless::mat4 light_view_proj = proj * view;
+            const mat4f light_view_proj = proj * view;
 
             for (const auto& e : draw_list) {
                 s.shader_handle->push(
@@ -693,14 +693,14 @@ auto gse::renderer::shadow::system::render(render_phase& phase, const state& s) 
     }
 }
 
-auto gse::renderer::ensure_non_collinear_up(const unitless::vec3& direction, const unitless::vec3& up) -> unitless::vec3 {
+auto gse::renderer::ensure_non_collinear_up(const vec3f& direction, const vec3f& up) -> vec3f {
 	auto normalized_direction = normalize(direction);
 	auto normalized_up = normalize(up);
 	if (const float dot_product = dot(normalized_direction, normalized_up); std::abs(dot_product) > 1.0f - std::numeric_limits<float>::epsilon()) {
 		if (std::abs(normalized_direction.y()) > 0.9f) {
-			normalized_up = unitless::vec3(0.0f, 0.0f, 1.0f);
+			normalized_up = vec3f(0.0f, 0.0f, 1.0f);
 		} else {
-			normalized_up = unitless::vec3(0.0f, 1.0f, 0.0f);
+			normalized_up = vec3f(0.0f, 1.0f, 0.0f);
 		}
 	}
 	return normalized_up;

@@ -55,15 +55,15 @@ namespace gse::animation {
 	) -> time;
 
 	auto lerp_mat4(
-		const unitless::mat4& a,
-		const unitless::mat4& b,
+		const mat4f& a,
+		const mat4f& b,
 		float t
-	) -> unitless::mat4;
+	) -> mat4f;
 
 	auto sample_track(
 		const joint_track& track,
 		time t,
-		unitless::mat4& out
+		mat4f& out
 	) -> bool;
 
 	auto ensure_pose_buffers(
@@ -84,16 +84,16 @@ namespace gse::animation {
 	) -> void;
 
 	auto sample_clip_to_pose(
-		std::vector<unitless::mat4>& pose,
+		std::vector<mat4f>& pose,
 		const skeleton& skel,
 		const clip_asset& clip,
 		time t
 	) -> void;
 
 	auto blend_poses(
-		std::vector<unitless::mat4>& out,
-		const std::vector<unitless::mat4>& from,
-		const std::vector<unitless::mat4>& to,
+		std::vector<mat4f>& out,
+		const std::vector<mat4f>& from,
+		const std::vector<mat4f>& to,
 		float alpha
 	) -> void;
 
@@ -286,7 +286,7 @@ auto gse::animation::wrap_time(const time t, const time length) -> time {
 	return length * wrapped;
 }
 
-auto gse::animation::lerp_mat4(const unitless::mat4& a, const unitless::mat4& b, const float t) -> unitless::mat4 {
+auto gse::animation::lerp_mat4(const mat4f& a, const mat4f& b, const float t) -> mat4f {
 	if constexpr (requires { a + (b - a) * t; }) {
 		return a + (b - a) * t;
 	}
@@ -295,7 +295,7 @@ auto gse::animation::lerp_mat4(const unitless::mat4& a, const unitless::mat4& b,
 	}
 }
 
-auto gse::animation::sample_track(const joint_track& track, const time t, unitless::mat4& out) -> bool {
+auto gse::animation::sample_track(const joint_track& track, const time t, mat4f& out) -> bool {
 	const auto key_count = track.keys.size();
 	if (key_count == 0) {
 		return false;
@@ -358,7 +358,7 @@ auto gse::animation::build_local_pose(animation_component& anim, const skeleton&
 		anim.local_pose[i] = joints[i].local_bind();
 	}
 
-	unitless::mat4 sampled;
+	mat4f sampled;
 	for (const auto& track : clip.tracks()) {
 		if (const auto idx = static_cast<std::size_t>(track.joint_index); idx < joint_count && sample_track(track, t, sampled)) {
 			anim.local_pose[idx] = sampled;
@@ -385,7 +385,7 @@ auto gse::animation::build_global_and_skins(animation_component& anim, const ske
 	}
 }
 
-auto gse::animation::sample_clip_to_pose(std::vector<unitless::mat4>& pose, const skeleton& skel, const clip_asset& clip, const time t) -> void {
+auto gse::animation::sample_clip_to_pose(std::vector<mat4f>& pose, const skeleton& skel, const clip_asset& clip, const time t) -> void {
 	const auto joint_count = static_cast<std::size_t>(skel.joint_count());
 	const auto joints = skel.joints();
 
@@ -397,7 +397,7 @@ auto gse::animation::sample_clip_to_pose(std::vector<unitless::mat4>& pose, cons
 		pose[i] = joints[i].local_bind();
 	}
 
-	unitless::mat4 sampled;
+	mat4f sampled;
 	for (const auto& track : clip.tracks()) {
 		if (const auto idx = static_cast<std::size_t>(track.joint_index); idx < joint_count && sample_track(track, t, sampled)) {
 			pose[idx] = sampled;
@@ -405,7 +405,7 @@ auto gse::animation::sample_clip_to_pose(std::vector<unitless::mat4>& pose, cons
 	}
 }
 
-auto gse::animation::blend_poses(std::vector<unitless::mat4>& out, const std::vector<unitless::mat4>& from, const std::vector<unitless::mat4>& to, const float alpha) -> void {
+auto gse::animation::blend_poses(std::vector<mat4f>& out, const std::vector<mat4f>& from, const std::vector<mat4f>& to, const float alpha) -> void {
 	const auto count = std::min(from.size(), to.size());
 	if (out.size() != count) {
 		out.resize(count);

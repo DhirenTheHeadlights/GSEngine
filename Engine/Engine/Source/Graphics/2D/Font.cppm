@@ -28,28 +28,28 @@ export namespace gse {
         float x_advance = 0;
         float shape_w = 0, shape_h = 0;
 
-        auto uv() const -> unitless::vec4;
-        auto size() const -> unitless::vec2;
-        auto bearing() const -> unitless::vec2;
+        auto uv() const -> vec4f;
+        auto size() const -> vec2f;
+        auto bearing() const -> vec2f;
     };
 }
 
-auto gse::glyph::uv() const -> unitless::vec4 {
+auto gse::glyph::uv() const -> vec4f {
 	return { u0, v0, u1 - u0, v1 - v0 };
 }
 
-auto gse::glyph::size() const -> unitless::vec2 {
+auto gse::glyph::size() const -> vec2f {
 	return { width, height };
 }
 
-auto gse::glyph::bearing() const -> unitless::vec2 {
+auto gse::glyph::bearing() const -> vec2f {
 	return { x_offset, y_offset };
 }
 
 export namespace gse {
     struct positioned_glyph {
-        rect_t<unitless::vec2> screen_rect;
-        unitless::vec4 uv_rect;
+        rect_t<vec2f> screen_rect;
+        vec4f uv_rect;
     };
 
     class font : public identifiable {
@@ -72,7 +72,7 @@ export namespace gse {
 
         auto text_layout(
             std::string_view text, 
-            unitless::vec2 start, 
+            vec2f start, 
             float scale = 1.0f
         ) const -> std::vector<positioned_glyph>;
 
@@ -156,7 +156,7 @@ auto gse::font::load(const gpu::context& context) -> void {
     m_texture = std::make_unique<gse::texture>(
         std::format("msdf_font_atlas_{}", m_baked_path.stem().string()),
         atlas_pixel_data,
-        unitless::vec2u{ atlas_width, atlas_height },
+        vec2u{ atlas_width, atlas_height },
         channels,
         texture::profile::msdf
     );
@@ -234,7 +234,7 @@ auto gse::font::texture() const -> const gse::texture* {
     return m_texture.get();
 }
 
-auto gse::font::text_layout(const std::string_view text, const unitless::vec2 start, const float scale) const -> std::vector<positioned_glyph> {
+auto gse::font::text_layout(const std::string_view text, const vec2f start, const float scale) const -> std::vector<positioned_glyph> {
     std::vector<positioned_glyph> positioned_glyphs;
     if (text.empty() || m_glyphs.empty()) {
 	    return {};
@@ -288,25 +288,25 @@ auto gse::font::text_layout(const std::string_view text, const unitless::vec2 st
         const float bx = std::isfinite(g.x_offset) ? g.x_offset : 0.0f;
         const float by = std::isfinite(g.y_offset) ? g.y_offset : 0.0f;
 
-        unitless::vec2 quad_pos{
+        vec2f quad_pos{
             cursor.x() + bx * scale,
             cursor.y() + by * scale
         };
 
         const float gw = std::isfinite(g.width)  ? std::max(g.width,  0.0f) : 0.0f;
         const float gh = std::isfinite(g.height) ? std::max(g.height, 0.0f) : 0.0f;
-        unitless::vec2 quad_size{ gw * scale, gh * scale };
+        vec2f quad_size{ gw * scale, gh * scale };
 
         const bool emit_rect = (quad_size.x() > 0.0f && quad_size.y() > 0.0f);
 
-        unitless::vec4 full_cell_uv = g.uv();
+        vec4f full_cell_uv = g.uv();
         if (!std::isfinite(full_cell_uv.x()) || !std::isfinite(full_cell_uv.y()) ||
             !std::isfinite(full_cell_uv.z()) || !std::isfinite(full_cell_uv.w()) ||
             full_cell_uv.z() <= 0.0f || full_cell_uv.w() <= 0.0f) {
             full_cell_uv = { 0.0f, 0.0f, 1.0f, 1.0f };
         }
 
-        unitless::vec4 corrected_uv = full_cell_uv;
+        vec4f corrected_uv = full_cell_uv;
 
         const double sw = g.shape_w;
         const double sh = g.shape_h;
@@ -334,7 +334,7 @@ auto gse::font::text_layout(const std::string_view text, const unitless::vec2 st
                         const float dw = static_cast<float>(pw / m_glyph_cell_size);
                         const float dh = static_cast<float>(ph / m_glyph_cell_size);
 
-                        unitless::vec4 uv{
+                        vec4f uv{
                             full_cell_uv.x() + dx * full_cell_uv.z(),
                             full_cell_uv.y() + dy * full_cell_uv.w(),
                             dw * full_cell_uv.z(),
@@ -354,7 +354,7 @@ auto gse::font::text_layout(const std::string_view text, const unitless::vec2 st
 
         if (emit_rect) {
             positioned_glyphs.emplace_back(positioned_glyph{
-                .screen_rect = rect_t<unitless::vec2>::from_position_size(quad_pos, quad_size),
+                .screen_rect = rect_t<vec2f>::from_position_size(quad_pos, quad_size),
 				.uv_rect = corrected_uv
             });
         }

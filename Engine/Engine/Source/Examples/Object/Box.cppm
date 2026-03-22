@@ -24,15 +24,13 @@ export namespace gse {
 
 		auto initialize() -> void override {
 			static constexpr density row = kilograms_per_cubic_meter(2000.f);
-			const auto s = m_size.as<meters>();
-			const float mass_val = m_box_mass.as<kilograms>();
-			const float box_inertia = (mass_val / 18.f) * (s.x() * s.x() + s.y() * s.y() + s.z() * s.z());
+			const inertia box_inertia = m_box_mass * dot(m_size, m_size) / 18.f;
 
 			add_component<physics::motion_component>({
 				.current_position = m_initial_position,
 				.mass = m_box_mass,
 				.orientation = m_initial_orientation,
-				.moment_of_inertia = kilograms_meters_squared(box_inertia)
+				.moment_of_inertia = box_inertia
 			});
 
 			add_component<physics::collision_component>({
@@ -43,7 +41,7 @@ export namespace gse {
 
 			const auto tex = gse::queue<texture>(
 				name + "_color",
-				unitless::vec4(random_value(0.3f, 1.0f), random_value(0.3f, 1.0f), random_value(0.3f, 1.0f), 1.0f)
+				vec4f(random_value(0.3f, 1.0f), random_value(0.3f, 1.0f), random_value(0.3f, 1.0f), 1.0f)
 			);
 
 			const auto mat = gse::queue<material>(

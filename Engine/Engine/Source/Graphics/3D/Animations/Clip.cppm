@@ -9,7 +9,7 @@ import :skeleton;
 export namespace gse {
     struct joint_keyframe {
         time time;
-        unitless::mat4 local_transform;
+        mat4f local_transform;
     };
 
     struct joint_track {
@@ -122,7 +122,7 @@ auto gse::clip_asset::load(const gpu::context& ctx) -> void {
             float key_time_seconds;
             file.read(reinterpret_cast<char*>(&key_time_seconds), sizeof(key_time_seconds));
 
-            unitless::mat4 local_transform;
+            mat4f local_transform;
             for (int row = 0; row < 4; ++row) {
                 for (int col = 0; col < 4; ++col) {
                     float val;

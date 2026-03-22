@@ -9,9 +9,9 @@ export namespace gse::vbd {
 	struct cached_lambda {
 		vec3<force> lambda;
 		vec3<stiffness> penalty;
-		unitless::vec3 normal = {};
-		unitless::vec3 tangent_u = {};
-		unitless::vec3 tangent_v = {};
+		vec3f normal = {};
+		vec3f tangent_u = {};
+		vec3f tangent_v = {};
 		vec3<length> local_anchor_a = {};
 		vec3<length> local_anchor_b = {};
 		bool sticking = false;

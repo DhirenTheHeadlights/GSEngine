@@ -38,13 +38,13 @@ export namespace gse::input {
 		) const -> bool;
 
 		auto mouse_position(
-		) const -> unitless::vec2;
+		) const -> vec2f;
 
 		auto mouse_delta(
-		) const -> unitless::vec2;
+		) const -> vec2f;
 
 		auto scroll_delta(
-		) const -> unitless::vec2;
+		) const -> vec2f;
 
 		auto text_entered(
 		) const -> const std::string&;
@@ -107,10 +107,10 @@ export namespace gse::input {
 		std::unordered_set<mouse_button> m_mouse_buttons_pressed_this_frame;
 		std::unordered_set<mouse_button> m_mouse_buttons_released_this_frame;
 
-		unitless::vec2 m_mouse_position;
-		unitless::vec2 m_mouse_prev_position;
-		unitless::vec2 m_mouse_delta;
-		unitless::vec2 m_scroll_delta;
+		vec2f m_mouse_position;
+		vec2f m_mouse_prev_position;
+		vec2f m_mouse_delta;
+		vec2f m_scroll_delta;
 		std::string m_text_entered_this_frame;
 	};
 }
@@ -139,15 +139,15 @@ auto gse::input::state::mouse_button_released(const mouse_button button) const -
 	return m_mouse_buttons_released_this_frame.contains(button);
 }
 
-auto gse::input::state::mouse_position() const -> unitless::vec2 {
+auto gse::input::state::mouse_position() const -> vec2f {
 	return m_mouse_position;
 }
 
-auto gse::input::state::mouse_delta() const -> unitless::vec2 {
+auto gse::input::state::mouse_delta() const -> vec2f {
 	return m_mouse_delta;
 }
 
-auto gse::input::state::scroll_delta() const -> unitless::vec2 {
+auto gse::input::state::scroll_delta() const -> vec2f {
 	return m_scroll_delta;
 }
 
@@ -190,7 +190,7 @@ auto gse::input::state::on_mouse_moved(const float x, const float y, const detai
 }
 
 auto gse::input::state::on_scroll(const float x, const float y, const detail::input_state_token&) -> void {
-	m_scroll_delta += unitless::vec2{ x, y };
+	m_scroll_delta += vec2f{ x, y };
 }
 
 auto gse::input::state::append_codepoint(const std::uint32_t codepoint, const detail::input_state_token&) -> void {

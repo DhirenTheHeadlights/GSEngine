@@ -33,7 +33,7 @@ export namespace gse {
 		bool state_playing = true;
 		blend_state blend;
 		std::unordered_map<std::string, animation_parameter> parameters;
-		std::vector<unitless::mat4> blend_from_pose;
-		std::vector<unitless::mat4> blend_to_pose;
+		std::vector<mat4f> blend_from_pose;
+		std::vector<mat4f> blend_to_pose;
 	};
 }

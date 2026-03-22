@@ -44,13 +44,13 @@ export namespace gse::vbd {
 		std::uint32_t body_b = 0;
 		std::uint64_t feature_key = 0;
 		bool sticking = false;
-		unitless::vec3 normal;
-		unitless::vec3 tangent_u;
-		unitless::vec3 tangent_v;
+		vec3f normal;
+		vec3f tangent_u;
+		vec3f tangent_v;
 		vec3<length> local_anchor_a;
 		vec3<length> local_anchor_b;
 		vec3<force> lambda;
-		unitless::vec3 penalty;
+		vec3f penalty;
 	};
 
 	struct contact_readback_entry {
@@ -58,14 +58,14 @@ export namespace gse::vbd {
 		std::uint32_t body_b = 0;
 		std::uint64_t feature_key = 0;
 		bool sticking = false;
-		unitless::vec3 normal;
-		unitless::vec3 tangent_u;
-		unitless::vec3 tangent_v;
+		vec3f normal;
+		vec3f tangent_u;
+		vec3f tangent_v;
 		vec3<length> local_anchor_a;
 		vec3<length> local_anchor_b;
 		vec3<length> c0;
 		vec3<force> lambda;
-		unitless::vec3 penalty;
+		vec3f penalty;
 		float friction_coeff = 0.f;
 	};
 
@@ -482,10 +482,10 @@ auto gse::vbd::gpu_solver::upload(
 		return;
 	}
 
-	auto rot_axis = [](const quat& q, const unitless::vec3& v) -> unitless::vec3 {
-		const unitless::vec3 u{ q[1], q[2], q[3] };
+	auto rot_axis = [](const quat& q, const vec3f& v) -> vec3f {
+		const vec3f u{ q[1], q[2], q[3] };
 		const float s = q[0];
-		const unitless::vec3 t = 2.f * cross(u, v);
+		const vec3f t = 2.f * cross(u, v);
 		return v + s * t + cross(u, t);
 	};
 
@@ -527,23 +527,23 @@ auto gse::vbd::gpu_solver::upload(
 
 		auto* elem = m_upload_body_data.data() + i * m_body_layout.stride;
 
-		const auto pos = position.as<meters>();
-		const bool has_valid_pos = locked || (pos.x() != 0.f || pos.y() != 0.f || pos.z() != 0.f);
+		auto pos_span = position.as_storage_span();
+		const bool has_valid_pos = locked || (pos_span[0] != 0.f || pos_span[1] != 0.f || pos_span[2] != 0.f);
 
 		if (has_valid_pos || m_frame_count < 2) {
-			gse::memcpy(elem + bo_position, &pos);
+			gse::memcpy(elem + bo_position, pos_span);
 
-			const auto pp = predicted_position.as<meters>();
-			gse::memcpy(elem + bo_predicted_position, &pp);
+			auto pp_span = predicted_position.as_storage_span();
+			gse::memcpy(elem + bo_predicted_position, pp_span);
 
-			const auto it_pos = inertia_target.as<meters>();
-			gse::memcpy(elem + bo_inertia_target, &it_pos);
+			auto it_span = inertia_target.as_storage_span();
+			gse::memcpy(elem + bo_inertia_target, it_span);
 
-			const auto op = initial_position.as<meters>();
-			gse::memcpy(elem + bo_old_position, &op);
+			auto op_span = initial_position.as_storage_span();
+			gse::memcpy(elem + bo_old_position, op_span);
 
-			const auto vel = body_velocity.as<meters_per_second>();
-			gse::memcpy(elem + bo_velocity, &vel);
+			auto vel_span = body_velocity.as_storage_span();
+			gse::memcpy(elem + bo_velocity, vel_span);
 
 			gse::memcpy(elem + bo_orientation, &orientation);
 
@@ -553,12 +553,12 @@ auto gse::vbd::gpu_solver::upload(
 
 			gse::memcpy(elem + bo_old_orientation, &initial_orientation);
 
-			const auto av = body_angular_velocity.as<radians_per_second>();
-			gse::memcpy(elem + bo_angular_velocity, &av);
+			auto av_span = body_angular_velocity.as_storage_span();
+			gse::memcpy(elem + bo_angular_velocity, av_span);
 		}
 
-		const auto mt = motor_target.as<meters>();
-		gse::memcpy(elem + bo_motor_target, &mt);
+		auto mt_span = motor_target.as_storage_span();
+		gse::memcpy(elem + bo_motor_target, mt_span);
 
 		const float mass = mass_value.as<kilograms>();
 		gse::memcpy(elem + bo_mass, &mass);
@@ -577,19 +577,15 @@ auto gse::vbd::gpu_solver::upload(
 				: 0.f;
 		gse::memcpy(elem + bo_accel_weight, &accel_weight);
 
-		const auto inv_i = inv_inertia.as<per_kilogram_meter_squared>();
-		gse::memcpy(elem + bo_inv_inertia_col0, &inv_i[0]);
-		gse::memcpy(elem + bo_inv_inertia_col1, &inv_i[1]);
-		gse::memcpy(elem + bo_inv_inertia_col2, &inv_i[2]);
+		gse::memcpy(elem + bo_inv_inertia_col0, inv_inertia[0].as_storage_span());
+		gse::memcpy(elem + bo_inv_inertia_col1, inv_inertia[1].as_storage_span());
+		gse::memcpy(elem + bo_inv_inertia_col2, inv_inertia[2].as_storage_span());
 
 		if (i < collision_data.size()) {
 			const auto& [half_extents, aabb_min, aabb_max] = collision_data[i];
-			const auto he = half_extents.as<meters>();
-			const auto amin = aabb_min.as<meters>();
-			const auto amax = aabb_max.as<meters>();
-			gse::memcpy(elem + bo_half_extents, &he);
-			gse::memcpy(elem + bo_aabb_min, &amin);
-			gse::memcpy(elem + bo_aabb_max, &amax);
+			gse::memcpy(elem + bo_half_extents, half_extents.as_storage_span());
+			gse::memcpy(elem + bo_aabb_min, aabb_min.as_storage_span());
+			gse::memcpy(elem + bo_aabb_max, aabb_max.as_storage_span());
 		}
 	}
 
@@ -614,8 +610,7 @@ auto gse::vbd::gpu_solver::upload(
 		const std::uint32_t horiz = horizontal_only ? 1u : 0u;
 		gse::memcpy(elem + mo_horizontal_only, &horiz);
 
-		const auto tv = target_velocity.as<meters_per_second>();
-		gse::memcpy(elem + mo_target_velocity, &tv);
+		gse::memcpy(elem + mo_target_velocity, target_velocity.as_storage_span());
 	}
 
 	constexpr std::uint32_t color_data_size = max_colors * 2 + max_bodies;
@@ -669,14 +664,9 @@ auto gse::vbd::gpu_solver::upload(
 		gse::memcpy(elem + wo_tangent_u, &ws_tangent_u);
 		gse::memcpy(elem + wo_tangent_v, &ws_tangent_v);
 
-		const auto anchor_a = ws_local_anchor_a.as<meters>();
-		gse::memcpy(elem + wo_local_anchor_a, &anchor_a);
-
-		const auto anchor_b = ws_local_anchor_b.as<meters>();
-		gse::memcpy(elem + wo_local_anchor_b, &anchor_b);
-
-		const auto lambda = ws_lambda.as<newtons>();
-		gse::memcpy(elem + wo_lambda, &lambda);
+		gse::memcpy(elem + wo_local_anchor_a, ws_local_anchor_a.as_storage_span());
+		gse::memcpy(elem + wo_local_anchor_b, ws_local_anchor_b.as_storage_span());
+		gse::memcpy(elem + wo_lambda, ws_lambda.as_storage_span());
 
 		gse::memcpy(elem + wo_penalty, &ws_penalty);
 	}
@@ -711,11 +701,8 @@ auto gse::vbd::gpu_solver::upload(
 		const std::uint32_t limits = j.limits_enabled ? 1u : 0u;
 		gse::memcpy(elem + jo_limits_enabled, &limits);
 
-		const auto la = j.local_anchor_a.as<meters>();
-		gse::memcpy(elem + jo_local_anchor_a, &la);
-
-		const auto lb = j.local_anchor_b.as<meters>();
-		gse::memcpy(elem + jo_local_anchor_b, &lb);
+		gse::memcpy(elem + jo_local_anchor_a, j.local_anchor_a.as_storage_span());
+		gse::memcpy(elem + jo_local_anchor_b, j.local_anchor_b.as_storage_span());
 
 		gse::memcpy(elem + jo_local_axis_a, &j.local_axis_a);
 		gse::memcpy(elem + jo_local_axis_b, &j.local_axis_b);
@@ -747,7 +734,7 @@ auto gse::vbd::gpu_solver::upload(
 		const auto r_aw = rotate_vector(body_a_state.orientation, j.local_anchor_a);
 		const auto r_bw = rotate_vector(body_b_state.orientation, j.local_anchor_b);
 
-		auto contact_eff_mass = [&](const unitless::vec3& dir) -> mass {
+		auto contact_eff_mass = [&](const vec3f& dir) -> mass {
 			inverse_mass inv_mass_sum{};
 			if (!body_a_state.locked && body_a_state.mass_value > mass{})
 				inv_mass_sum += 1.f / body_a_state.mass_value;
@@ -766,7 +753,7 @@ auto gse::vbd::gpu_solver::upload(
 			return 1.f / inv_mass_sum;
 		};
 
-		auto angular_inv_i = [&](const unitless::vec3& ang_dir) -> inverse_inertia {
+		auto angular_inv_i = [&](const vec3f& ang_dir) -> inverse_inertia {
 			inverse_inertia inv_i_sum{};
 			if (!body_a_state.locked) {
 				inv_i_sum += dot(ang_dir, body_a_state.inv_inertia * ang_dir);
@@ -777,22 +764,22 @@ auto gse::vbd::gpu_solver::upload(
 			return inv_i_sum;
 		};
 
-		const unitless::vec3 dirs[3] = { { 1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 1.f } };
+		const vec3f dirs[3] = { { 1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 1.f } };
 
 		int num_pos_rows = 3;
 		if (j.type == joint_type::distance) num_pos_rows = 1;
 		else if (j.type == joint_type::slider) num_pos_rows = 2;
 
 		for (int k = 0; k < num_pos_rows; ++k) {
-			unitless::vec3 dir;
+			vec3f dir;
 			if (j.type == joint_type::distance) {
 				const auto d = (body_a_state.position + r_aw) - (body_b_state.position + r_bw);
-				dir = magnitude(d) > meters(1e-7f) ? normalize(d) : unitless::vec3{ 0.f, 1.f, 0.f };
+				dir = magnitude(d) > meters(1e-7f) ? normalize(d) : vec3f{ 0.f, 1.f, 0.f };
 			}
 			else if (j.type == joint_type::slider) {
 				const auto axis_w = rot_axis(body_a_state.orientation, j.local_axis_a);
-				unitless::vec3 perp0 = cross(axis_w, unitless::vec3{ 0.f, 1.f, 0.f });
-				if (magnitude(perp0) < 1e-6f) perp0 = cross(axis_w, unitless::vec3{ 1.f, 0.f, 0.f });
+				vec3f perp0 = cross(axis_w, vec3f{ 0.f, 1.f, 0.f });
+				if (magnitude(perp0) < 1e-6f) perp0 = cross(axis_w, vec3f{ 1.f, 0.f, 0.f });
 				perp0 = normalize(perp0);
 				dir = k == 0 ? perp0 : normalize(cross(axis_w, perp0));
 			}
@@ -811,11 +798,11 @@ auto gse::vbd::gpu_solver::upload(
 		else if (j.type == joint_type::hinge) num_ang_rows = 2;
 
 		for (int k = 0; k < num_ang_rows; ++k) {
-			unitless::vec3 ang_dir;
+			vec3f ang_dir;
 			if (j.type == joint_type::hinge) {
 				const auto axis_a = rot_axis(body_a_state.orientation, j.local_axis_a);
-				unitless::vec3 perp_u = cross(axis_a, unitless::vec3{ 0.f, 1.f, 0.f });
-				if (magnitude(perp_u) < 1e-6f) perp_u = cross(axis_a, unitless::vec3{ 1.f, 0.f, 0.f });
+				vec3f perp_u = cross(axis_a, vec3f{ 0.f, 1.f, 0.f });
+				if (magnitude(perp_u) < 1e-6f) perp_u = cross(axis_a, vec3f{ 1.f, 0.f, 0.f });
 				perp_u = normalize(perp_u);
 				ang_dir = k == 0 ? perp_u : normalize(cross(axis_a, perp_u));
 			}
@@ -865,8 +852,8 @@ auto gse::vbd::gpu_solver::upload(
 				const auto axis_a = rot_axis(body_a_state.orientation, j.local_axis_a);
 				const auto axis_b = rot_axis(body_b_state.orientation, j.local_axis_b);
 				const auto swing_error = cross(axis_a, axis_b);
-				unitless::vec3 perp_u = cross(axis_a, unitless::vec3{ 0.f, 1.f, 0.f });
-				if (magnitude(perp_u) < 1e-6f) perp_u = cross(axis_a, unitless::vec3{ 1.f, 0.f, 0.f });
+				vec3f perp_u = cross(axis_a, vec3f{ 0.f, 1.f, 0.f });
+				if (magnitude(perp_u) < 1e-6f) perp_u = cross(axis_a, vec3f{ 1.f, 0.f, 0.f });
 				perp_u = normalize(perp_u);
 				const auto perp_v = normalize(cross(axis_a, perp_u));
 				ang_c0_val[0] = radians(dot(perp_u, swing_error));
@@ -881,8 +868,8 @@ auto gse::vbd::gpu_solver::upload(
 		}
 		else if (j.type == joint_type::slider) {
 			const auto axis_w = normalize(rot_axis(body_a_state.orientation, j.local_axis_a));
-			unitless::vec3 perp0 = cross(axis_w, unitless::vec3{ 0.f, 1.f, 0.f });
-			if (magnitude(perp0) < 1e-6f) perp0 = cross(axis_w, unitless::vec3{ 1.f, 0.f, 0.f });
+			vec3f perp0 = cross(axis_w, vec3f{ 0.f, 1.f, 0.f });
+			if (magnitude(perp0) < 1e-6f) perp0 = cross(axis_w, vec3f{ 1.f, 0.f, 0.f });
 			perp0 = normalize(perp0);
 			const auto perp1 = normalize(cross(axis_w, perp0));
 			pos_c0_val[0] = dot(perp0, d_vec);
@@ -955,9 +942,9 @@ auto gse::vbd::gpu_solver::commit_upload() -> void {
 			gse::memcpy(vel, src + bo_velocity);
 			if (!is_finite_vec3(vel)) continue;
 
-			gse::memcpy(dst + bo_position, pos);
-			gse::memcpy(dst + bo_velocity, vel);
-			gse::memcpy(dst + bo_orientation, orient);
+			gse::memcpy(dst + bo_position, &pos);
+			gse::memcpy(dst + bo_velocity, &vel);
+			gse::memcpy(dst + bo_orientation, &orient);
 			gse::memcpy(dst + bo_angular_velocity, src + bo_angular_velocity, sizeof(float) * 3);
 			gse::memcpy(dst + bo_sleep_counter, src + bo_sleep_counter, sizeof(std::uint32_t));
 
@@ -971,8 +958,8 @@ auto gse::vbd::gpu_solver::commit_upload() -> void {
 			}
 			float amin[3] = { pos[0] - aabb_he[0], pos[1] - aabb_he[1], pos[2] - aabb_he[2] };
 			float amax[3] = { pos[0] + aabb_he[0], pos[1] + aabb_he[1], pos[2] + aabb_he[2] };
-			gse::memcpy(dst + bo_aabb_min, amin);
-			gse::memcpy(dst + bo_aabb_max, amax);
+			gse::memcpy(dst + bo_aabb_min, &amin);
+			gse::memcpy(dst + bo_aabb_max, &amax);
 		}
 	}
 
@@ -1083,20 +1070,20 @@ auto gse::vbd::gpu_solver::readback(const std::span<body_state> bodies, std::vec
 		float vel[3];
 		gse::memcpy(vel, elem + bo_velocity);
 
-		b.position = unitless::vec3(pos[0], pos[1], pos[2]) * meters(1.f);
+		b.position = vec3f(pos[0], pos[1], pos[2]) * meters(1.f);
 
 		if (is_finite_vec3(vel)) {
-			b.body_velocity = unitless::vec3(vel[0], vel[1], vel[2]) * meters_per_second(1.f);
+			b.body_velocity = vec3f(vel[0], vel[1], vel[2]) * meters_per_second(1.f);
 		} else {
 			b.body_velocity = {};
 		}
 
-		gse::memcpy(reinterpret_cast<std::byte*>(&b.orientation), orient);
+		gse::memcpy(reinterpret_cast<std::byte*>(&b.orientation), &orient);
 
 		float av[3];
 		gse::memcpy(av, elem + bo_angular_velocity);
 		if (is_finite_vec3(av)) {
-			b.body_angular_velocity = unitless::vec3(av[0], av[1], av[2]) * radians_per_second(1.f);
+			b.body_angular_velocity = vec3f(av[0], av[1], av[2]) * radians_per_second(1.f);
 		} else {
 			b.body_angular_velocity = {};
 		}
@@ -1133,11 +1120,11 @@ auto gse::vbd::gpu_solver::readback(const std::span<body_state> bodies, std::vec
 		gse::memcpy(entry.tangent_u, elem + co_tangent_u);
 		gse::memcpy(entry.tangent_v, elem + co_tangent_v);
 
-		unitless::vec3 local_anchor_a{};
+		vec3f local_anchor_a{};
 		gse::memcpy(local_anchor_a, elem + co_r_a);
 		entry.local_anchor_a = local_anchor_a * meters(1.f);
 
-		unitless::vec3 local_anchor_b{};
+		vec3f local_anchor_b{};
 		gse::memcpy(local_anchor_b, elem + co_r_b);
 		entry.local_anchor_b = local_anchor_b * meters(1.f);
 
@@ -1146,7 +1133,7 @@ auto gse::vbd::gpu_solver::readback(const std::span<body_state> bodies, std::vec
 		entry.c0 = { meters(c0_friction[0]), meters(c0_friction[1]), meters(c0_friction[2]) };
 		entry.friction_coeff = c0_friction[3];
 
-		unitless::vec3 lambda_raw{};
+		vec3f lambda_raw{};
 		gse::memcpy(lambda_raw, elem + co_lambda);
 		entry.lambda = { newtons(lambda_raw[0]), newtons(lambda_raw[1]), newtons(lambda_raw[2]) };
 
@@ -1169,17 +1156,17 @@ auto gse::vbd::gpu_solver::readback(const std::span<body_state> bodies, std::vec
 		const auto* elem = m_staged_joint_data.data() + i * m_joint_layout.stride;
 		auto& jout = joints_out[i];
 
-		unitless::vec3 pl_raw{};
+		vec3f pl_raw{};
 		gse::memcpy(pl_raw, elem + jo_pos_lambda);
 		jout.pos_lambda = { newtons(pl_raw[0]), newtons(pl_raw[1]), newtons(pl_raw[2]) };
 
 		gse::memcpy(jout.pos_penalty, elem + jo_pos_penalty);
 
-		unitless::vec3 al_raw{};
+		vec3f al_raw{};
 		gse::memcpy(al_raw, elem + jo_ang_lambda);
 		jout.ang_lambda = { newton_meters(al_raw[0]), newton_meters(al_raw[1]), newton_meters(al_raw[2]) };
 
-		unitless::vec3 ap_raw{};
+		vec3f ap_raw{};
 		gse::memcpy(ap_raw, elem + jo_ang_penalty);
 		jout.ang_penalty = { newton_meters_per_radian(ap_raw[0]), newton_meters_per_radian(ap_raw[1]), newton_meters_per_radian(ap_raw[2]) };
 

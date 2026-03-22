@@ -23,8 +23,8 @@ export namespace gse::physics {
 		vbd::joint_type type = vbd::joint_type::distance;
 		vec3<length> local_anchor_a;
 		vec3<length> local_anchor_b;
-		unitless::vec3 local_axis_a = { 0.f, 1.f, 0.f };
-		unitless::vec3 local_axis_b = { 0.f, 1.f, 0.f };
+		vec3f local_axis_a = { 0.f, 1.f, 0.f };
+		vec3f local_axis_b = { 0.f, 1.f, 0.f };
 		length target_distance = {};
 		inverse_mass compliance = {};
 		float damping = 0.f;
@@ -250,8 +250,6 @@ namespace gse::physics {
 		});
 	}
 
-
-
 	auto update_vbd(
 		int steps,
 		state& s,
@@ -391,10 +389,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 			const auto& bs = completed.gpu_result_bodies[i];
 
 			if (!mc->position_locked) {
-				const auto diff = bs.position - mc->current_position;
-				const bool body_moved = magnitude(diff).as<meters>() > 1e-6f;
-
-				if (body_moved) {
+				if (const auto diff = bs.position - mc->current_position; magnitude(diff) > meters(1e-6f)) {
 					mc->previous_position = mc->current_position;
 					mc->previous_orientation = mc->orientation;
 					mc->current_position = bs.position;
@@ -525,14 +520,16 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 			const auto& gpu = completed.gpu_result_bodies;
 			const auto count = std::min(cpu.size(), gpu.size());
 
-			float max_pos_err = 0.f, max_vel_err = 0.f, max_ang_err = 0.f;
+			length max_pos_err{};
+			velocity max_vel_err{};
+			angular_velocity max_ang_err{};
 			std::uint32_t worst_pos_idx = 0;
 
 			for (std::uint32_t i = 0; i < count; ++i) {
 				if (cpu[i].locked) continue;
-				const float pe = magnitude(gpu[i].position - cpu[i].position).as<meters>();
-				const float ve = magnitude(gpu[i].body_velocity - cpu[i].body_velocity).as<meters_per_second>();
-				const float ae = magnitude(gpu[i].body_angular_velocity - cpu[i].body_angular_velocity).as<radians_per_second>();
+				const auto pe = magnitude(gpu[i].position - cpu[i].position);
+				const auto ve = magnitude(gpu[i].body_velocity - cpu[i].body_velocity);
+				const auto ae = magnitude(gpu[i].body_angular_velocity - cpu[i].body_angular_velocity);
 				if (pe > max_pos_err) { max_pos_err = pe; worst_pos_idx = i; }
 				if (ve > max_vel_err) max_vel_err = ve;
 				if (ae > max_ang_err) max_ang_err = ae;
@@ -541,13 +538,11 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 			gse::log::println("SOLVER COMPARE: {} bodies, max_pos_err={} (body {}), max_vel_err={}, max_ang_err={}",
 				count, max_pos_err, worst_pos_idx, max_vel_err, max_ang_err);
 
-			if (max_pos_err > 1e-4f) {
+			if (max_pos_err > meters(1e-4f)) {
 				const auto& cb = cpu[worst_pos_idx];
 				const auto& gb = gpu[worst_pos_idx];
-				gse::log::println("  worst body[{}]: cpu=({},{},{}) gpu=({},{},{})",
-					worst_pos_idx,
-					cb.position.x().as<meters>(), cb.position.y().as<meters>(), cb.position.z().as<meters>(),
-					gb.position.x().as<meters>(), gb.position.y().as<meters>(), gb.position.z().as<meters>());
+				gse::log::println("  worst body[{}]: cpu={} gpu={}",
+					worst_pos_idx, cb.position, gb.position);
 			}
 
 			s.comparison_pending.reset();
@@ -566,7 +561,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 
 	for (motion_component& mc : motion) {
 		if (mc.position_locked) continue;
-		if (magnitude(mc.pending_impulse).as<meters_per_second>() > 1e-6f) {
+		if (magnitude(mc.pending_impulse) > meters_per_second(1e-6f)) {
 			mc.current_velocity += mc.pending_impulse;
 			s.sleep_counters[mc.owner_id()] = 0;
 			launched_entities.push_back(mc.owner_id());
@@ -678,7 +673,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 			.body_index = idx,
 			.target_velocity = mc.velocity_drive_target,
 			.compliance = 0.5f,
-			.max_force = newtons(mc.mass.as<kilograms>() * 50.f),
+			.max_force = mc.mass * meters_per_second_squared(50.f),
 			.horizontal_only = true,
 		});
 	}
@@ -787,11 +782,6 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 		});
 	}
 
-	const auto to_local = [](const quat& q, const vec3<length>& v) {
-		const unitless::vec3 v_unitless = v.as<meters>();
-		const unitless::vec3 rotated = mat3_cast(conjugate(q)) * v_unitless;
-		return rotated;
-	};
 
 	for (int step = 0; step < steps; ++step) {
 		std::vector<vbd::body_state> bodies;
@@ -908,7 +898,7 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 				collision_b->collision_information.penetration = -sat.separation;
 
 				const auto& cfg = s.vbd_solver.config();
-				const unitless::vec3 constraint_normal = -sat.normal;
+				const vec3f constraint_normal = -sat.normal;
 
 				const auto& bs_a = s.vbd_solver.body_states()[body_a];
 				const auto& bs_b = s.vbd_solver.body_states()[body_b];
@@ -920,8 +910,8 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 					const vec3<length> world_r_a = position_on_a - bs_a.position;
 					const vec3<length> world_r_b = position_on_b - bs_b.position;
 
-					vec3<length> local_r_a = to_local(bs_a.orientation, world_r_a);
-					vec3<length> local_r_b = to_local(bs_b.orientation, world_r_b);
+					vec3<length> local_r_a = inverse_rotate_vector(bs_a.orientation, world_r_a);
+					vec3<length> local_r_b = inverse_rotate_vector(bs_b.orientation, world_r_b);
 
 					auto cached = s.contact_cache.lookup(body_a, body_b, feature);
 					const vec3<length> current_d = position_on_a - position_on_b;
@@ -1092,7 +1082,7 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 
 		for (motion_component& mc : motion) {
 			if (mc.position_locked) continue;
-			if (magnitude(mc.pending_impulse).as<meters_per_second>() > 1e-6f) {
+			if (magnitude(mc.pending_impulse) > meters_per_second(1e-6f)) {
 				mc.current_velocity += mc.pending_impulse;
 				s.sleep_counters[mc.owner_id()] = 0;
 				if (const auto it = id_to_body_index.find(mc.owner_id()); it != id_to_body_index.end()) {

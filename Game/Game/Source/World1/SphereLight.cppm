@@ -20,7 +20,7 @@ export namespace gs {
 			});
 
 			add_component<gse::point_light_component>({
-				.color = gse::unitless::vec3(1.f),
+				.color = gse::vec3f(1.f),
 				.intensity = 25.f,
 				.position = m_position,
 				.constant = 1.0f,

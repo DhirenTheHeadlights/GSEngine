@@ -69,7 +69,7 @@ export namespace gse {
 		) const -> bool;
 
 		auto viewport(
-		) const -> unitless::vec2i;
+		) const -> vec2i;
 
 		auto frame_buffer_resized(
 		) -> bool;
@@ -343,7 +343,7 @@ auto gse::window::mouse_visible() const -> bool {
 	return m_mouse_visible;
 }
 
-auto gse::window::viewport() const -> unitless::vec2i {
+auto gse::window::viewport() const -> vec2i {
 	int width = 0, height = 0;
 	glfwGetFramebufferSize(m_window, &width, &height);
 	return { width, height };
