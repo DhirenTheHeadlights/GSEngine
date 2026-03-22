@@ -58,8 +58,8 @@ struct gse::asset_compiler<gse::model> {
         std::string current_material_name;
 
         std::vector<vec3<length>> temp_positions;
-        std::vector<unitless::vec3> temp_normals;
-        std::vector<unitless::vec2> temp_tex_coords;
+        std::vector<vec3f> temp_normals;
+        std::vector<vec2f> temp_tex_coords;
 
         std::string line;
         while (std::getline(model_file, line)) {

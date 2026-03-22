@@ -3,7 +3,6 @@ export module gse.math;
 import std;
 
 export import :dimension;
-export import :matrix_base;
 export import :matrix;
 export import :matrix_math;
 export import :quat;
@@ -14,7 +13,6 @@ export import :circle;
 export import :segment;
 export import :unit_display;
 export import :units;
-export import :vector_base;
 export import :vector;
 export import :vector_math;
 

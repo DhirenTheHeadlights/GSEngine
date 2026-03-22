@@ -38,7 +38,7 @@ namespace gse::gui {
 	auto handle_idle_state(
 		const struct system_state& s,
 		const input::state& input_state,
-		unitless::vec2 mouse_position,
+		vec2f mouse_position,
 		bool mouse_held,
 		const style& style
 	) -> gui::state;
@@ -47,14 +47,14 @@ namespace gse::gui {
 		const system_state& s,
 		const states::dragging& current,
 		const window& window,
-		unitless::vec2 mouse_position,
+		vec2f mouse_position,
 		bool mouse_held
 	) -> gui::state;
 
 	auto handle_resizing_state(
 		const system_state& s,
 		const states::resizing& current,
-		unitless::vec2 mouse_position,
+		vec2f mouse_position,
 		bool mouse_held,
 		const style& style
 	) -> gui::state;
@@ -62,7 +62,7 @@ namespace gse::gui {
 	auto handle_resizing_divider_state(
 		const system_state& s,
 		const states::resizing_divider& current,
-		unitless::vec2 mouse_position,
+		vec2f mouse_position,
 		bool mouse_held,
 		const style& style
 	) -> gui::state;
@@ -70,7 +70,7 @@ namespace gse::gui {
 	auto handle_pending_drag_state(
 		const system_state& s,
 		const states::pending_drag& current,
-		unitless::vec2 mouse_position,
+		vec2f mouse_position,
 		bool mouse_held
 	) -> gui::state;
 
@@ -152,7 +152,7 @@ export namespace gse::gui {
 		mutable std::vector<renderer::text_command> text_commands;
 
 		std::vector<id> visible_menu_ids_last_frame;
-		unitless::vec2 previous_viewport_size;
+		vec2f previous_viewport_size;
 
 		mutable tooltip_state tooltip;
 		mutable render_layer input_layer_render = render_layer::content;
@@ -223,18 +223,18 @@ export namespace gse::gui {
 		static auto slider(
 			const system_state& s,
 			const std::string& name,
-			unitless::vec_t<T, N>& vec,
-			unitless::vec_t<T, N> min,
-			unitless::vec_t<T, N> max
+			gse::vec<T, N>& v,
+			gse::vec<T, N> min,
+			gse::vec<T, N> max
 		) -> void;
 
 		template <typename T, int N, auto Unit = typename T::default_unit{}>
 		static auto slider(
 			const system_state& s,
 			const std::string& name,
-			vec_t<T, N>& vec,
-			vec_t<T, N> min,
-			vec_t<T, N> max
+			gse::vec<T, N>& v,
+			gse::vec<T, N> min,
+			gse::vec<T, N> max
 		) -> void;
 
 		template <is_arithmetic T>
@@ -262,21 +262,21 @@ export namespace gse::gui {
 		static auto vec(
 			const system_state& s,
 			const std::string& name,
-			unitless::vec_t<T, N> vec
+			gse::vec<T, N> v
 		) -> void;
 
 		template <typename T, int N, auto Unit = typename T::default_unit{}>
 		static auto vec(
 			const system_state& s,
 			const std::string& name,
-			vec_t<T, N> vec
+			gse::vec<T, N> v
 		) -> void;
 
 		template <auto Unit, typename T, int N>
 		static auto vec(
 			const system_state& s,
 			const std::string& name,
-			unit_display<Unit, vec_t<T, N>> ud
+			unit_display<Unit, gse::vec<T, N>> ud
 		) -> void;
 
 		template <typename T>
@@ -318,7 +318,7 @@ auto gse::gui::system::initialize(initialize_phase& phase, system_state& s) -> v
 	}
 
 	s.gui_font = s.rctx->get<font>("Fonts/" + s.available_fonts[s.font_index]);
-	s.blank_texture = s.rctx->queue<texture>("blank", unitless::vec4(1, 1, 1, 1));
+	s.blank_texture = s.rctx->queue<texture>("blank", vec4f(1, 1, 1, 1));
 	s.menus = load(config::resource_path / s.file_path, s.menus);
 
 	std::vector<std::pair<std::string, int>> font_options;
@@ -428,7 +428,7 @@ auto gse::gui::system::initialize(initialize_phase& phase, system_state& s) -> v
 		s.visible_menu_ids_last_frame.push_back(m.id());
 	}
 
-	s.previous_viewport_size = unitless::vec2(s.rctx->window().viewport());
+	s.previous_viewport_size = vec2f(s.rctx->window().viewport());
 }
 
 auto gse::gui::system::update(update_phase& phase, system_state& s) -> void {
@@ -446,7 +446,7 @@ auto gse::gui::system::update(update_phase& phase, system_state& s) -> void {
 	const auto viewport = s.rctx->window().viewport();
 	const style sty = apply_scale(s, style::from_theme(s.current_theme), static_cast<float>(viewport.y()));
 
-	const unitless::vec2 mouse_position = input_state->current_state().mouse_position();
+	const vec2f mouse_position = input_state->current_state().mouse_position();
 	const bool mouse_held = input_state->current_state().mouse_button_held(mouse_button::button_1);
 
 	match(s.current_state)
@@ -476,7 +476,7 @@ auto gse::gui::system::update(update_phase& phase, system_state& s) -> void {
 }
 
 auto gse::gui::system::begin_frame(begin_frame_phase&, system_state& s) -> bool {
-	const auto current_viewport_size = unitless::vec2(s.rctx->window().viewport());
+	const auto current_viewport_size = vec2f(s.rctx->window().viewport());
 
 	if (s.previous_viewport_size.x() > 0.f && s.previous_viewport_size.y() > 0.f) {
 		if (current_viewport_size.x() <= 0.f || current_viewport_size.y() <= 0.f) {
@@ -585,11 +585,11 @@ auto gse::gui::system::end_frame(end_frame_phase& phase, system_state& s) -> voi
 	}
 
 	const input::state& input_st = input_state_ptr->current_state();
-	const auto viewport_size = unitless::vec2(s.rctx->window().viewport());
+	const auto viewport_size = vec2f(s.rctx->window().viewport());
 
 	if (s.active_dock_space) {
 		const auto [areas] = s.active_dock_space.value();
-		const unitless::vec2 mouse_pos = input_st.mouse_position();
+		const vec2f mouse_pos = input_st.mouse_position();
 
 		for (const dock::area& area : areas) {
 			if (area.rect.contains(mouse_pos)) {
@@ -671,7 +671,7 @@ auto gse::gui::system::end_frame(end_frame_phase& phase, system_state& s) -> voi
 	}
 
 	if (s.menu_bar_state.settings_open && input_st.mouse_button_pressed(mouse_button::button_1)) {
-		const unitless::vec2 mouse_pos = input_st.mouse_position();
+		const vec2f mouse_pos = input_st.mouse_position();
 
 		if (const ui_rect bar_rect = menu_bar::bar_rect(s.fstate.sty, viewport_size); !settings_rect.contains(mouse_pos) && !bar_rect.contains(mouse_pos)) {
 			s.menu_bar_state.settings_open = false;
@@ -700,7 +700,7 @@ auto gse::gui::system::end_frame(end_frame_phase& phase, system_state& s) -> voi
 		const float tooltip_width = text_width + padding * 2.f;
 		const float tooltip_height = text_height + padding;
 
-		unitless::vec2 tooltip_pos = s.tooltip.position + unitless::vec2(15.f, -15.f);
+		vec2f tooltip_pos = s.tooltip.position + vec2f(15.f, -15.f);
 
 		if (tooltip_pos.x() + tooltip_width > viewport_size.x()) {
 			tooltip_pos.x() = viewport_size.x() - tooltip_width;
@@ -852,7 +852,7 @@ auto gse::gui::system::start(const system_state& s, const input::state& input_st
 	});
 
 	const ui_rect content_rect = body_rect.inset({ sty.padding, sty.padding });
-	unitless::vec2 layout_cursor = content_rect.top_left();
+	vec2f layout_cursor = content_rect.top_left();
 
 	ids::scope menu_scope(current_menu.id().number());
 
@@ -920,21 +920,21 @@ auto gse::gui::system::slider(const system_state& s, const std::string& name, T&
 }
 
 template <typename T, int N>
-auto gse::gui::system::slider(const system_state& s, const std::string& name, unitless::vec_t<T, N>& vec, unitless::vec_t<T, N> min, unitless::vec_t<T, N> max) -> void {
+auto gse::gui::system::slider(const system_state& s, const std::string& name, gse::vec<T, N>& v, gse::vec<T, N> min, gse::vec<T, N> max) -> void {
 	if (!s.context) {
 		return;
 	}
 
-	draw::slider<T, N>(*s.context, name, vec, min, max, s.hot_widget_id, s.active_widget_id);
+	draw::slider<T, N>(*s.context, name, v, min, max, s.hot_widget_id, s.active_widget_id);
 }
 
 template <typename T, int N, auto Unit>
-auto gse::gui::system::slider(const system_state& s, const std::string& name, vec_t<T, N>& vec, vec_t<T, N> min, vec_t<T, N> max) -> void {
+auto gse::gui::system::slider(const system_state& s, const std::string& name, gse::vec<T, N>& v, gse::vec<T, N> min, gse::vec<T, N> max) -> void {
 	if (!s.context) {
 		return;
 	}
 
-	draw::slider<T, N, Unit>(*s.context, name, vec, min, max, s.hot_widget_id, s.active_widget_id);
+	draw::slider<T, N, Unit>(*s.context, name, v, min, max, s.hot_widget_id, s.active_widget_id);
 }
 
 template <gse::is_arithmetic T>
@@ -965,25 +965,25 @@ auto gse::gui::system::value(const system_state& s, const std::string& name, uni
 }
 
 template <typename T, int N>
-auto gse::gui::system::vec(const system_state& s, const std::string& name, unitless::vec_t<T, N> vec) -> void {
+auto gse::gui::system::vec(const system_state& s, const std::string& name, gse::vec<T, N> v) -> void {
 	if (!s.context) {
 		return;
 	}
 
-	draw::vec(*s.context, name, vec);
+	draw::vec(*s.context, name, v);
 }
 
 template <typename T, int N, auto Unit>
-auto gse::gui::system::vec(const system_state& s, const std::string& name, vec_t<T, N> vec) -> void {
+auto gse::gui::system::vec(const system_state& s, const std::string& name, gse::vec<T, N> v) -> void {
 	if (!s.context) {
 		return;
 	}
 
-	draw::vec<T, N, Unit>(*s.context, name, vec);
+	draw::vec<T, N, Unit>(*s.context, name, v);
 }
 
 template <auto Unit, typename T, int N>
-auto gse::gui::system::vec(const system_state& s, const std::string& name, unit_display<Unit, vec_t<T, N>> ud) -> void {
+auto gse::gui::system::vec(const system_state& s, const std::string& name, unit_display<Unit, gse::vec<T, N>> ud) -> void {
 	if (!s.context) {
 		return;
 	}
@@ -1033,7 +1033,7 @@ auto gse::gui::system::profiler(const system_state& s) -> void {
 	const ui_rect menu_content = s.current_menu->rect.inset({ pad, pad });
 
 	const bool mouse_held = s.context->input.mouse_button_held(mouse_button::button_1);
-	const unitless::vec2 mouse_pos = s.context->input.mouse_position();
+	const vec2f mouse_pos = s.context->input.mouse_position();
 
 	if (!mouse_held) {
 		resizing_col_idx = -1;
@@ -1225,7 +1225,7 @@ auto gse::gui::end_menu(const system_state& s) -> void {
 }
 
 auto gse::gui::usable_screen_rect(const system_state& s) -> ui_rect {
-	const auto viewport_size = unitless::vec2(s.rctx->window().viewport());
+	const auto viewport_size = vec2f(s.rctx->window().viewport());
 	const style sty = apply_scale(s, style::from_theme(s.current_theme), viewport_size.y());
 	const float usable_height = viewport_size.y() - menu_bar::height(sty);
 	return ui_rect::from_position_size(
@@ -1314,7 +1314,7 @@ auto gse::gui::draw_menu_chrome(const system_state& s, const input::state& input
 
 auto gse::gui::draw_tab_bar(const system_state& s, const input::state& input_state, menu& current_menu, const ui_rect& title_bar_rect) -> void {
 	const style& sty = s.fstate.sty;
-	const unitless::vec2 mouse_pos = input_state.mouse_position();
+	const vec2f mouse_pos = input_state.mouse_position();
 	const bool mouse_clicked = input_state.mouse_button_pressed(mouse_button::button_1);
 
 	s.sprite_commands.push_back({
@@ -1386,11 +1386,11 @@ auto gse::gui::draw_tab_bar(const system_state& s, const input::state& input_sta
 			current_menu.active_tab_index = static_cast<uint32_t>(i);
 		}
 
-		unitless::vec4 tab_color;
+		vec4f tab_color;
 		if (is_active) {
 			tab_color = sty.color_menu_body;
 		} else if (is_hovered) {
-			tab_color = unitless::vec4(
+			tab_color = vec4f(
 				sty.color_title_bar.x() * 1.2f,
 				sty.color_title_bar.y() * 1.2f,
 				sty.color_title_bar.z() * 1.2f,
@@ -1438,48 +1438,48 @@ auto gse::gui::draw_tab_bar(const system_state& s, const input::state& input_sta
 	}
 }
 
-auto gse::gui::handle_idle_state(const system_state& s, const input::state& input_state, unitless::vec2 mouse_position, const bool mouse_held, const style& style) -> gui::state {
+auto gse::gui::handle_idle_state(const system_state& s, const input::state& input_state, vec2f mouse_position, const bool mouse_held, const style& style) -> gui::state {
 	struct interaction_candidate {
 		std::variant<states::resizing, states::dragging, states::resizing_divider, states::pending_drag> future_state;
 		cursor::style cursor;
 	};
 
 	struct resize_rule {
-		std::function<bool(const ui_rect&, const unitless::vec2&)> condition;
+		std::function<bool(const ui_rect&, const vec2f&)> condition;
 		resize_handle handle;
 		cursor::style cursor;
 	};
 
 	const std::array<resize_rule, 8> resize_rules = {{
-		{ [style](const ui_rect& r, const unitless::vec2& p) {
+		{ [style](const ui_rect& r, const vec2f& p) {
 			const float t = style.resize_border_thickness;
 			return std::abs(p.y() - r.top()) < t && std::abs(p.x() - r.left()) < t;
 		}, resize_handle::top_left, cursor::style::resize_nw },
-		{ [style](const ui_rect& r, const unitless::vec2& p) {
+		{ [style](const ui_rect& r, const vec2f& p) {
 			const float t = style.resize_border_thickness;
 			return std::abs(p.y() - r.top()) < t && std::abs(p.x() - r.right()) < t;
 		}, resize_handle::top_right, cursor::style::resize_ne },
-		{ [style](const ui_rect& r, const unitless::vec2& p) {
+		{ [style](const ui_rect& r, const vec2f& p) {
 			const float t = style.resize_border_thickness;
 			return std::abs(p.y() - r.bottom()) < t && std::abs(p.x() - r.left()) < t;
 		}, resize_handle::bottom_left, cursor::style::resize_sw },
-		{ [style](const ui_rect& r, const unitless::vec2& p) {
+		{ [style](const ui_rect& r, const vec2f& p) {
 			const float t = style.resize_border_thickness;
 			return std::abs(p.y() - r.bottom()) < t && std::abs(p.x() - r.right()) < t;
 		}, resize_handle::bottom_right, cursor::style::resize_se },
-		{ [style](const ui_rect& r, const unitless::vec2& p) {
+		{ [style](const ui_rect& r, const vec2f& p) {
 			const float t = style.resize_border_thickness;
 			return std::abs(p.x() - r.left()) < t;
 		}, resize_handle::left, cursor::style::resize_w },
-		{ [style](const ui_rect& r, const unitless::vec2& p) {
+		{ [style](const ui_rect& r, const vec2f& p) {
 			const float t = style.resize_border_thickness;
 			return std::abs(p.x() - r.right()) < t;
 		}, resize_handle::right, cursor::style::resize_e },
-		{ [style](const ui_rect& r, const unitless::vec2& p) {
+		{ [style](const ui_rect& r, const vec2f& p) {
 			const float t = style.resize_border_thickness;
 			return std::abs(p.y() - r.top()) < t;
 		}, resize_handle::top, cursor::style::resize_n },
-		{ [style](const ui_rect& r, const unitless::vec2& p) {
+		{ [style](const ui_rect& r, const vec2f& p) {
 			const float t = style.resize_border_thickness;
 			return std::abs(p.y() - r.bottom()) < t;
 		}, resize_handle::bottom, cursor::style::resize_s },
@@ -1697,7 +1697,7 @@ auto gse::gui::handle_idle_state(const system_state& s, const input::state& inpu
 	return states::idle{};
 }
 
-auto gse::gui::handle_dragging_state(const system_state& s, const states::dragging& current, const window& window, const unitless::vec2 mouse_position, const bool mouse_held) -> gui::state {
+auto gse::gui::handle_dragging_state(const system_state& s, const states::dragging& current, const window& window, const vec2f mouse_position, const bool mouse_held) -> gui::state {
 	menu* m = s.menus.try_get(current.menu_id);
 	if (!m) {
 		set_style(cursor::style::arrow);
@@ -1770,8 +1770,8 @@ auto gse::gui::handle_dragging_state(const system_state& s, const states::draggi
 	set_style(cursor::style::omni_move);
 
 	const ui_rect screen_rect = usable_screen_rect(s);
-	const unitless::vec2 old_top_left = m->rect.top_left();
-	unitless::vec2 new_top_left = mouse_position + current.offset;
+	const vec2f old_top_left = m->rect.top_left();
+	vec2f new_top_left = mouse_position + current.offset;
 
 	const float max_x = std::max(0.f, screen_rect.width() - m->rect.width());
 	new_top_left.x() = std::clamp(new_top_left.x(), 0.f, max_x);
@@ -1779,7 +1779,7 @@ auto gse::gui::handle_dragging_state(const system_state& s, const states::draggi
 	const float min_y = std::min(m->rect.height(), screen_rect.top());
 	new_top_left.y() = std::clamp(new_top_left.y(), min_y, screen_rect.top());
 
-	if (const unitless::vec2 delta = new_top_left - old_top_left; delta.x() != 0 || delta.y() != 0) {
+	if (const vec2f delta = new_top_left - old_top_left; delta.x() != 0 || delta.y() != 0) {
 		std::function<void(id)> move_group = [&](const id current_id) {
 			if (menu* item = s.menus.try_get(current_id)) {
 				item->rect = ui_rect::from_position_size(item->rect.top_left() + delta, item->rect.size());
@@ -1819,7 +1819,7 @@ auto gse::gui::handle_dragging_state(const system_state& s, const states::draggi
 	return current;
 }
 
-auto gse::gui::handle_resizing_state(const system_state& s, const states::resizing& current, const unitless::vec2 mouse_position, const bool mouse_held, const style& style) -> gui::state {
+auto gse::gui::handle_resizing_state(const system_state& s, const states::resizing& current, const vec2f mouse_position, const bool mouse_held, const style& style) -> gui::state {
 	if (!mouse_held) {
 		s.active_dock_space.reset();
 		set_style(cursor::style::arrow);
@@ -1869,16 +1869,16 @@ auto gse::gui::handle_resizing_state(const system_state& s, const states::resizi
 		return bounds;
 	};
 
-	auto calculate_min_required_size = [&s, &style](const id root_id) -> unitless::vec2 {
-		std::function<unitless::vec2(id)> rec = [&](const id node_id) -> unitless::vec2 {
-			unitless::vec2 req = style.min_menu_size;
+	auto calculate_min_required_size = [&s, &style](const id root_id) -> vec2f {
+		std::function<vec2f(id)> rec = [&](const id node_id) -> vec2f {
+			vec2f req = style.min_menu_size;
 
 			for (const menu& child : s.menus.items()) {
 				if (child.owner_id() != node_id || !child.was_visible_last_frame) {
 					continue;
 				}
 
-				const unitless::vec2 c = rec(child.id());
+				const vec2f c = rec(child.id());
 
 				switch (child.docked_to) {
 					case dock::location::left:
@@ -1905,10 +1905,10 @@ auto gse::gui::handle_resizing_state(const system_state& s, const states::resizi
 	};
 
 	const ui_rect group_rect = calculate_group_bounds(m->id());
-	unitless::vec2 min_corner = group_rect.min();
-	unitless::vec2 max_corner = group_rect.max();
+	vec2f min_corner = group_rect.min();
+	vec2f max_corner = group_rect.max();
 
-	const unitless::vec2 subtree_min = calculate_min_required_size(m->id());
+	const vec2f subtree_min = calculate_min_required_size(m->id());
 	const float min_w = subtree_min.x();
 	const float min_h = subtree_min.y();
 
@@ -2036,7 +2036,7 @@ auto gse::gui::handle_resizing_state(const system_state& s, const states::resizi
 	return current;
 }
 
-auto gse::gui::handle_resizing_divider_state(const system_state& s, const states::resizing_divider& current, const unitless::vec2 mouse_position, const bool mouse_held, const style& style) -> gui::state {
+auto gse::gui::handle_resizing_divider_state(const system_state& s, const states::resizing_divider& current, const vec2f mouse_position, const bool mouse_held, const style& style) -> gui::state {
 	menu* parent = s.menus.try_get(current.parent_id);
 	menu* child = s.menus.try_get(current.child_id);
 
@@ -2152,7 +2152,7 @@ auto gse::gui::handle_resizing_divider_state(const system_state& s, const states
 	return current;
 }
 
-auto gse::gui::handle_pending_drag_state(const system_state& s, const states::pending_drag& current, const unitless::vec2 mouse_position, const bool mouse_held) -> gui::state {
+auto gse::gui::handle_pending_drag_state(const system_state& s, const states::pending_drag& current, const vec2f mouse_position, const bool mouse_held) -> gui::state {
 	if (!mouse_held) {
 		return states::idle{};
 	}
@@ -2166,7 +2166,7 @@ auto gse::gui::handle_pending_drag_state(const system_state& s, const states::pe
 		}
 
 		id drag_menu_id = current.menu_id;
-		unitless::vec2 drag_offset = current.offset;
+		vec2f drag_offset = current.offset;
 
 		if (current.tab_index.has_value() && m->tab_contents.size() > 1) {
 			if (const std::uint32_t tab_idx = current.tab_index.value(); tab_idx < m->tab_contents.size()) {
@@ -2181,10 +2181,10 @@ auto gse::gui::handle_pending_drag_state(const system_state& s, const states::pe
 					m->active_tab_index--;
 				}
 
-				constexpr unitless::vec2 default_size = { 300.f, 200.f };
+				constexpr vec2f default_size = { 300.f, 200.f };
 
 				const style sty = s.fstate.sty;
-				const unitless::vec2 new_top_left = {
+				const vec2f new_top_left = {
 					mouse_position.x() - default_size.x() * 0.5f,
 					mouse_position.y() + sty.title_bar_height * 0.5f
 				};

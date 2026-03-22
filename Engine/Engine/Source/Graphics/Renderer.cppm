@@ -29,7 +29,7 @@ export namespace gse::renderer {
 		gpu::context* ctx = nullptr;
 		bool frame_begun = false;
 		bool hot_reload_enabled = false;
-		unitless::vec2 last_viewport{ 1920.f, 1080.f };
+		vec2f last_viewport{ 1920.f, 1080.f };
 
 		explicit state(gpu::context& c) : ctx(std::addressof(c)) {}
 		state() = default;
@@ -145,7 +145,7 @@ auto gse::renderer::system::update(update_phase& phase, state& s) -> void {
 	phase.channels.push(camera::ui_focus_update{ .focus = ctx.ui_focus() });
 
 	const auto window_size = ctx.window().viewport();
-	const auto new_viewport = unitless::vec2(
+	const auto new_viewport = vec2f(
 		static_cast<float>(window_size.x()),
 		static_cast<float>(window_size.y())
 	);

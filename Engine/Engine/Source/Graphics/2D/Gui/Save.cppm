@@ -160,11 +160,11 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
         if (const auto* rect_arr = tbl->get("rect"); rect_arr && rect_arr->is_array()) {
             const auto& arr = *rect_arr->as_array();
             if (arr.size() == 4) {
-                unitless::vec2 pos{
+                vec2f pos{
                     static_cast<float>(arr[0].value_or(0.0)),
                     static_cast<float>(arr[1].value_or(0.0))
                 };
-                unitless::vec2 size{
+                vec2f size{
                     static_cast<float>(arr[2].value_or(0.0)),
                     static_cast<float>(arr[3].value_or(0.0))
                 };

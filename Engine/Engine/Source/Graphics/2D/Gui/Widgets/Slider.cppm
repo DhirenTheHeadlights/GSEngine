@@ -37,9 +37,9 @@ export namespace gse::gui::draw {
     auto slider(
         const draw_context& ctx,
         const std::string& name,
-        unitless::vec_t<T, N>& vec,
-        unitless::vec_t<T, N> min,
-        unitless::vec_t<T, N> max,
+        gse::vec<T, N>& v,
+        gse::vec<T, N> min,
+        gse::vec<T, N> max,
         id& hot_widget_id,
         id& active_widget_id
     ) -> void;
@@ -48,9 +48,9 @@ export namespace gse::gui::draw {
     auto slider(
         const draw_context& ctx,
         const std::string& name,
-        vec_t<T, N>& vec,
-        vec_t<T, N> min,
-        vec_t<T, N> max,
+        gse::vec<T, N>& v,
+        gse::vec<T, N> min,
+        gse::vec<T, N> max,
         id& hot_widget_id,
         id& active_widget_id
     ) -> void;
@@ -99,13 +99,13 @@ auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, T&
 }
 
 template <typename T, std::size_t N>
-auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, unitless::vec_t<T, N>& vec, unitless::vec_t<T, N> min, unitless::vec_t<T, N> max, id& hot_widget_id, id& active_widget_id) -> void {
+auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, gse::vec<T, N>& v, gse::vec<T, N> min, gse::vec<T, N> max, id& hot_widget_id, id& active_widget_id) -> void {
     std::array<T*, N> value_ptrs;
     std::array<T, N> min_values;
     std::array<T, N> max_values;
 
     for (std::size_t i = 0; i < N; ++i) {
-        value_ptrs[i] = &vec.data[i];
+        value_ptrs[i] = &v.data[i];
         min_values[i] = min.data[i];
         max_values[i] = max.data[i];
     }
@@ -114,13 +114,13 @@ auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, un
 }
 
 template <typename T, std::size_t N, auto Unit>
-auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, vec_t<T, N>& vec, vec_t<T, N> min, vec_t<T, N> max, id& hot_widget_id, id& active_widget_id) -> void {
+auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, gse::vec<T, N>& v, gse::vec<T, N> min, gse::vec<T, N> max, id& hot_widget_id, id& active_widget_id) -> void {
     std::array<T*, N> value_ptrs;
     std::array<T, N> min_values;
     std::array<T, N> max_values;
 
     for (std::size_t i = 0; i < N; ++i) {
-        value_ptrs[i] = &vec.data[i];
+        value_ptrs[i] = &v.data[i];
         min_values[i] = min.data[i];
         max_values[i] = max.data[i];
     }
@@ -191,7 +191,7 @@ auto gse::gui::draw::slider_box(const draw_context& ctx, const ui_rect& rect, co
         value_str = std::format("{:.2f}", value);
     }
     const float text_width = ctx.font->width(value_str, ctx.style.font_size);
-    const unitless::vec2 value_text_pos = {
+    const vec2f value_text_pos = {
         rect.center().x() - text_width / 2.f,
         rect.center().y() + ctx.style.font_size / 2.f
     };
@@ -238,7 +238,7 @@ auto gse::gui::draw::slider_row(const draw_context& ctx, const std::string& name
     const float all_spacing = ctx.style.padding * std::max(0.0f, static_cast<float>(N - 1));
     const float slider_box_width = (values_total_width - all_spacing) / static_cast<float>(N);
 
-    unitless::vec2 current_box_pos = { row_rect.left() + label_width, row_rect.top() };
+    vec2f current_box_pos = { row_rect.left() + label_width, row_rect.top() };
 
     for (std::size_t i = 0; i < N; ++i) {
         const ui_rect box_rect = ui_rect::from_position_size(

@@ -15,7 +15,7 @@ export namespace gse::camera {
 	};
 
 	struct viewport_update {
-		unitless::vec2 size{ 1920.f, 1080.f };
+		vec2f size{ 1920.f, 1080.f };
 	};
 }
 
@@ -36,16 +36,16 @@ namespace gse::camera {
 
 	auto compute_view_matrix(
 		const target& t
-	) -> unitless::mat4 {
-		const auto rotation = unitless::mat4(conjugate(t.orientation));
-		const unitless::mat4 translation = translate(unitless::mat4(1.0f), -t.position);
+	) -> mat4f {
+		const auto rotation = mat4f(conjugate(t.orientation));
+		const mat4f translation = translate(mat4f(1.0f), -t.position);
 		return rotation * translation;
 	}
 
 	auto compute_projection_matrix(
 		const target& t,
-		const unitless::vec2& viewport
-	) -> unitless::mat4 {
+		const vec2f& viewport
+	) -> mat4f {
 		const float aspect_ratio = viewport.x() / viewport.y();
 		return perspective(degrees(t.fov), aspect_ratio, t.near_plane, t.far_plane);
 	}

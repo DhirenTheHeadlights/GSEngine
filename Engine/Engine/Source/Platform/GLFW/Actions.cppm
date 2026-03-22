@@ -105,7 +105,7 @@ export namespace gse::actions {
 	};
 
 	using word = std::uint64_t;
-	using axis = unitless::vec2;
+	using axis = vec2f;
 
 	class mask {
 	public:

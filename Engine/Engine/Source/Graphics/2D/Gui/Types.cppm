@@ -11,7 +11,7 @@ import :ui_renderer;
 import :styles;
 
 export namespace gse::gui {
-	using ui_rect = rect_t<unitless::vec2>;
+	using ui_rect = rect_t<vec2f>;
 
 	enum class resize_handle {
 		none,
@@ -30,7 +30,7 @@ export namespace gse::gui {
 		id widget_id;
 		id pending_widget_id;
 		time hover_time{};
-		unitless::vec2 position;
+		vec2f position;
 		bool visible = false;
 
 		static constexpr time show_delay = seconds(0.5f);
@@ -75,8 +75,8 @@ export namespace gse::gui {
 		);
 
 		ui_rect rect;
-		unitless::vec2 grab_offset;
-		std::optional<unitless::vec2> pre_docked_size;
+		vec2f grab_offset;
+		std::optional<vec2f> pre_docked_size;
 		bool grabbed = false;
 		bool chrome_drawn_this_frame = false;
 		float dock_split_ratio = 0.5f;
@@ -94,7 +94,7 @@ export namespace gse::gui {
 		const input::state& input;
 		resource::handle<font> font;
 		resource::handle<texture> blank_texture;
-		unitless::vec2& layout_cursor;
+		vec2f& layout_cursor;
 		std::vector<renderer::sprite_command>& sprites;
 		std::vector<renderer::text_command>& texts;
 
@@ -127,7 +127,7 @@ namespace gse::gui::states {
 
 	struct dragging {
 		id menu_id;
-		unitless::vec2 offset;
+		vec2f offset;
 	};
 
 	struct resizing {
@@ -142,8 +142,8 @@ namespace gse::gui::states {
 
 	struct pending_drag {
 		id menu_id;
-		unitless::vec2 start_position;
-		unitless::vec2 offset;
+		vec2f start_position;
+		vec2f offset;
 		std::optional<std::uint32_t> tab_index;
 	};
 }

@@ -29,7 +29,7 @@ export namespace gse {
 	struct contact_point {
 		vec3<length> position_on_a;
 		vec3<length> position_on_b;
-		unitless::vec3 normal;
+		vec3f normal;
 		length separation;
 		feature_id feature;
 	};
@@ -39,16 +39,16 @@ export namespace gse {
 		std::uint32_t body_b = 0;
 		std::array<contact_point, 4> points;
 		std::uint32_t point_count = 0;
-		unitless::vec3 tangent_u;
-		unitless::vec3 tangent_v;
+		vec3f tangent_u;
+		vec3f tangent_v;
 
 		auto add_point(const contact_point& p) -> bool;
 		auto clear() -> void;
 	};
 
 	auto compute_tangent_basis(
-		const unitless::vec3& normal
-	) -> std::pair<unitless::vec3, unitless::vec3>;
+		const vec3f& normal
+	) -> std::pair<vec3f, vec3f>;
 }
 
 auto gse::contact_manifold::add_point(const contact_point& p) -> bool {
@@ -63,14 +63,14 @@ auto gse::contact_manifold::clear() -> void {
 	point_count = 0;
 }
 
-auto gse::compute_tangent_basis(const unitless::vec3& normal) -> std::pair<unitless::vec3, unitless::vec3> {
-	unitless::vec3 u;
+auto gse::compute_tangent_basis(const vec3f& normal) -> std::pair<vec3f, vec3f> {
+	vec3f u;
 	if (std::abs(normal.x()) < 0.9f) {
-		u = cross(normal, unitless::vec3(1.f, 0.f, 0.f));
+		u = cross(normal, vec3f(1.f, 0.f, 0.f));
 	} else {
-		u = cross(normal, unitless::vec3(0.f, 1.f, 0.f));
+		u = cross(normal, vec3f(0.f, 1.f, 0.f));
 	}
 	u = normalize(u);
-	const unitless::vec3 v = cross(normal, u);
+	const vec3f v = cross(normal, u);
 	return { u, v };
 }

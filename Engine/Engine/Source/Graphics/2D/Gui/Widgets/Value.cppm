@@ -33,21 +33,21 @@ export namespace gse::gui::draw {
     auto vec(
         const draw_context& ctx,
         const std::string& name,
-        const vec_t<T, N>& vec
+        const gse::vec<T, N>& v
     ) -> void;
 
     template <typename T, int N>
     auto vec(
         const draw_context& ctx,
         const std::string& name,
-        unitless::vec_t<T, N> vec
+        gse::vec<T, N> v
     ) -> void;
 
     template <auto Unit, typename T, int N>
     auto vec(
         const draw_context& ctx,
         const std::string& name,
-        unit_display<Unit, vec_t<T, N>> ud
+        unit_display<Unit, gse::vec<T, N>> ud
     ) -> void;
 }
 
@@ -81,33 +81,21 @@ auto gse::gui::draw::value(const draw_context& ctx, const std::string& name, T v
 }
 
 template <typename T, int N, auto Unit>
-auto gse::gui::draw::vec(const draw_context& ctx, const std::string& name, const vec_t<T, N>& vec) -> void {
+auto gse::gui::draw::vec(const draw_context& ctx, const std::string& name, const gse::vec<T, N>& v) -> void {
     std::array<std::string, N> values;
-    const auto val_unitless = vec.template as<Unit>();
-
-    std::apply(
-        [&](auto&&... args) {
-            int i = 0;
-            ((values[i++] = std::format("{:.2f}", args)), ...);
-        },
-        val_unitless.data
-    );
-
+    for (const auto& [i, elem] : v | std::views::enumerate) {
+        values[i] = std::format("{:.2f}", elem.template as<Unit>());
+    }
     value_row<N>(ctx, name, values);
 }
 
 template <typename T, int N>
-auto gse::gui::draw::vec(const draw_context& ctx, const std::string& name, unitless::vec_t<T, N> vec) -> void {
+auto gse::gui::draw::vec(const draw_context& ctx, const std::string& name, gse::vec<T, N> v) -> void {
     std::array<std::string, N> values;
 
-    std::apply(
-        [&](auto&&... args) {
-            int i = 0;
-            ((values[i++] = std::format("{:.2f}", args)), ...);
-        },
-        vec.data
-    );
-
+    for (const auto& [i, elem] : v | std::views::enumerate) {
+        values[i] = std::format("{:.2f}", elem);
+    }
     value_row<N>(ctx, name, values);
 }
 
@@ -117,7 +105,7 @@ auto gse::gui::draw::value(const draw_context& ctx, const std::string& name, uni
 }
 
 template <auto Unit, typename T, int N>
-auto gse::gui::draw::vec(const draw_context& ctx, const std::string& name, unit_display<Unit, vec_t<T, N>> ud) -> void {
+auto gse::gui::draw::vec(const draw_context& ctx, const std::string& name, unit_display<Unit, gse::vec<T, N>> ud) -> void {
     vec<T, N, Unit>(ctx, name, ud.value);
 }
 
@@ -129,7 +117,7 @@ auto gse::gui::draw::value_box(const draw_context& ctx, const std::string& value
     });
 
     const float text_width = ctx.font->width(value, ctx.style.font_size);
-    const unitless::vec2 text_pos = {
+    const vec2f text_pos = {
         rect.center().x() - text_width / 2.f,
         rect.center().y() + ctx.style.font_size / 2.f
     };
@@ -159,7 +147,7 @@ auto gse::gui::draw::value_row(const draw_context& ctx, const std::string& name,
     );
 
     const float label_width = content_rect.width() * 0.4f;
-    const unitless::vec2 label_pos = {
+    const vec2f label_pos = {
         row_rect.left(),
         row_rect.center().y() + ctx.style.font_size / 2.f
     };
@@ -177,7 +165,7 @@ auto gse::gui::draw::value_row(const draw_context& ctx, const std::string& name,
     const float all_spacing = ctx.style.padding * std::max(0.0f, static_cast<float>(N - 1));
     const float value_box_width = (values_total_width - all_spacing) / static_cast<float>(N);
 
-    unitless::vec2 current_box_pos = { row_rect.left() + label_width, row_rect.top() };
+    vec2f current_box_pos = { row_rect.left() + label_width, row_rect.top() };
 
     for (const std::string& value_str : values) {
         const ui_rect box_rect = ui_rect::from_position_size(current_box_pos, { value_box_width, widget_height });

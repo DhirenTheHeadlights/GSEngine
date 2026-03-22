@@ -44,7 +44,7 @@ auto gse::gui::draw::selectable(const draw_context& ctx, const std::string& name
         active_widget_id = widget_id;
     }
 
-    unitless::vec4 bg_color = ctx.style.color_widget_background;
+    vec4f bg_color = ctx.style.color_widget_background;
     if (selected) {
         bg_color = ctx.style.color_widget_selected;
     } else if (active_widget_id == widget_id) {
@@ -60,7 +60,7 @@ auto gse::gui::draw::selectable(const draw_context& ctx, const std::string& name
     });
 
     const float text_w = ctx.font->width(name, ctx.style.font_size);
-    const unitless::vec2 text_pos = {
+    const vec2f text_pos = {
         row_rect.center().x() - text_w / 2.f,
         row_rect.center().y() + ctx.style.font_size / 2.f
     };

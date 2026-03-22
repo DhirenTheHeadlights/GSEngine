@@ -15,7 +15,7 @@ import gse.utility;
 export namespace gse::image {
 	struct data {
 		std::filesystem::path path;
-		unitless::vec2u size;
+		vec2u size;
 		std::uint32_t channels = 0;
 		std::vector<std::byte> pixels;
 
@@ -35,8 +35,8 @@ export namespace gse::image {
     ) -> data;
 
     auto load(
-        unitless::vec4 color, 
-        unitless::vec2u size
+        vec4f color, 
+        vec2u size
     ) -> data;
 
 	auto load_rgba(
@@ -53,7 +53,7 @@ export namespace gse::image {
 
 	auto dimensions(
         const std::filesystem::path& path
-    ) -> unitless::vec2u;
+    ) -> vec2u;
 }
 
 auto gse::image::load(const std::filesystem::path& path) -> data {
@@ -76,7 +76,7 @@ auto gse::image::load(const std::filesystem::path& path) -> data {
     return img_data;
 }
 
-auto gse::image::load(const unitless::vec4 color, const unitless::vec2u size) -> data {
+auto gse::image::load(const vec4f color, const vec2u size) -> data {
     std::array<std::byte, 4> pixel_data;
     pixel_data[0] = static_cast<std::byte>(color.x() * 255.0f);
     pixel_data[1] = static_cast<std::byte>(color.y() * 255.0f);
@@ -91,7 +91,7 @@ auto gse::image::load(const unitless::vec4 color, const unitless::vec2u size) ->
     }
 
     return {
-        .size = unitless::vec2u(size),
+        .size = vec2u(size),
         .channels = 4,
         .pixels = std::move(pixels)
     };
@@ -131,7 +131,7 @@ auto gse::image::load_raw(const std::filesystem::path& path) -> data {
     return img_data;
 }
 
-auto gse::image::dimensions(const std::filesystem::path& path) -> unitless::vec2u {
+auto gse::image::dimensions(const std::filesystem::path& path) -> vec2u {
     int w, h, c;
     auto* pixels = stbi_load(path.string().c_str(), &w, &h, &c, 0);
     stbi_image_free(pixels);

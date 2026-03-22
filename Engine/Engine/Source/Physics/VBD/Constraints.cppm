@@ -19,9 +19,9 @@ export namespace gse::vbd {
 		std::uint32_t body_a = 0;
 		std::uint32_t body_b = 0;
 
-		unitless::vec3 normal;
-		unitless::vec3 tangent_u;
-		unitless::vec3 tangent_v;
+		vec3f normal;
+		vec3f tangent_u;
+		vec3f tangent_v;
 
 		vec3<length> r_a;
 		vec3<length> r_b;
@@ -60,8 +60,8 @@ export namespace gse::vbd {
 
 		vec3<length> local_anchor_a;
 		vec3<length> local_anchor_b;
-		unitless::vec3 local_axis_a = { 0.f, 1.f, 0.f };
-		unitless::vec3 local_axis_b = { 0.f, 1.f, 0.f };
+		vec3f local_axis_a = { 0.f, 1.f, 0.f };
+		vec3f local_axis_b = { 0.f, 1.f, 0.f };
 
 		length target_distance = {};
 		inverse_mass compliance = {};

@@ -43,7 +43,7 @@ export namespace gse::vulkan::uploader {
 
     struct mip_level_data {
         const void* pixels = nullptr;
-        unitless::vec2_t<std::uint32_t> size;
+        vec2<std::uint32_t> size;
         std::size_t mip_level;
     };
 

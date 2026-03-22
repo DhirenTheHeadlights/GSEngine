@@ -127,16 +127,16 @@ export namespace gse::vbd {
 }
 
 namespace gse::vbd {
-	// MSVC modules ADL workaround: gse::operator*(quat, unitless::vec3) not found from gse::vbd
+	// MSVC modules ADL workaround: gse::operator*(quat, vec3f) not found from gse::vbd
 	auto rotate_axis(
 		const quat& q,
-		const unitless::vec3& v
-	) -> unitless::vec3;
+		const vec3f& v
+	) -> vec3f;
 
 	auto accumulate_geometric_stiffness(
 		body_solve_state& state,
 		const vec3<length>& r,
-		const unitless::vec3& dir,
+		const vec3f& dir,
 		force abs_force
 	) -> void;
 
@@ -145,7 +145,7 @@ namespace gse::vbd {
 		const body_state& body_b,
 		const vec3<length>& r_aw,
 		const vec3<length>& r_bw,
-		const unitless::vec3& dir
+		const vec3f& dir
 	) -> mass;
 }
 
@@ -287,7 +287,7 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 			j.limit_lambda *= m_config.gamma;
 		}
 
-		const unitless::vec3 dirs[3] = { { 1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 1.f } };
+		const vec3f dirs[3] = { { 1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 1.f } };
 
 		int num_pos_rows = 3;
 		if (j.type == joint_type::distance) {
@@ -298,16 +298,16 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		}
 
 		for (int k = 0; k < num_pos_rows; ++k) {
-			unitless::vec3 dir;
+			vec3f dir;
 			if (j.type == joint_type::distance) {
 				const vec3<length> d = (ba.position + r_aw) - (bb.position + r_bw);
-				dir = magnitude(d) > meters(1e-7f) ? normalize(d) : unitless::vec3{ 0.f, 1.f, 0.f };
+				dir = magnitude(d) > meters(1e-7f) ? normalize(d) : vec3f{ 0.f, 1.f, 0.f };
 			}
 			else if (j.type == joint_type::slider) {
-				const unitless::vec3 axis_w = rotate_axis(ba.orientation, j.local_axis_a);
-				unitless::vec3 perp0 = cross(axis_w, unitless::vec3{ 0.f, 1.f, 0.f });
+				const vec3f axis_w = rotate_axis(ba.orientation, j.local_axis_a);
+				vec3f perp0 = cross(axis_w, vec3f{ 0.f, 1.f, 0.f });
 				if (magnitude(perp0) < 1e-6f) {
-					perp0 = cross(axis_w, unitless::vec3{ 1.f, 0.f, 0.f });
+					perp0 = cross(axis_w, vec3f{ 1.f, 0.f, 0.f });
 				}
 				perp0 = normalize(perp0);
 				dir = k == 0 ? perp0 : normalize(cross(axis_w, perp0));
@@ -334,12 +334,12 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		}
 
 		for (int k = 0; k < num_ang_rows; ++k) {
-			unitless::vec3 ang_dir;
+			vec3f ang_dir;
 			if (j.type == joint_type::hinge) {
-				const unitless::vec3 axis_a = rotate_axis(ba.orientation, j.local_axis_a);
-				unitless::vec3 perp_u = cross(axis_a, unitless::vec3{ 0.f, 1.f, 0.f });
+				const vec3f axis_a = rotate_axis(ba.orientation, j.local_axis_a);
+				vec3f perp_u = cross(axis_a, vec3f{ 0.f, 1.f, 0.f });
 				if (magnitude(perp_u) < 1e-6f) {
-					perp_u = cross(axis_a, unitless::vec3{ 1.f, 0.f, 0.f });
+					perp_u = cross(axis_a, vec3f{ 1.f, 0.f, 0.f });
 				}
 				perp_u = normalize(perp_u);
 				ang_dir = k == 0 ? perp_u : normalize(cross(axis_a, perp_u));
@@ -368,7 +368,7 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		}
 
 		if (j.limits_enabled) {
-			const unitless::vec3 limit_axis = rotate_axis(ba.orientation, j.local_axis_a);
+			const vec3f limit_axis = rotate_axis(ba.orientation, j.local_axis_a);
 			inverse_inertia inv_i_sum{};
 
 			if (!ba.locked) {
@@ -401,7 +401,7 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 			j.pos_c0[0] = magnitude(d) - j.target_distance;
 		}
 		else if (j.type == joint_type::fixed || j.type == joint_type::hinge) {
-			const unitless::vec3 dirs[3] = { { 1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 1.f } };
+			const vec3f dirs[3] = { { 1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 1.f } };
 			for (int k = 0; k < 3; ++k) {
 				j.pos_c0[k] = dot(dirs[k], d);
 			}
@@ -415,18 +415,18 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 				}
 			}
 			else {
-				const unitless::vec3 axis_a = rotate_axis(ba.orientation, j.local_axis_a);
-				const unitless::vec3 axis_b = rotate_axis(bb.orientation, j.local_axis_b);
-				const unitless::vec3 swing_error = cross(axis_a, axis_b);
+				const vec3f axis_a = rotate_axis(ba.orientation, j.local_axis_a);
+				const vec3f axis_b = rotate_axis(bb.orientation, j.local_axis_b);
+				const vec3f swing_error = cross(axis_a, axis_b);
 
-				unitless::vec3 perp_u = cross(axis_a, unitless::vec3{ 0.f, 1.f, 0.f });
+				vec3f perp_u = cross(axis_a, vec3f{ 0.f, 1.f, 0.f });
 
 				if (magnitude(perp_u) < 1e-6f) {
-					perp_u = cross(axis_a, unitless::vec3{ 1.f, 0.f, 0.f });
+					perp_u = cross(axis_a, vec3f{ 1.f, 0.f, 0.f });
 				}
 
 				perp_u = normalize(perp_u);
-				const unitless::vec3 perp_v = normalize(cross(axis_a, perp_u));
+				const vec3f perp_v = normalize(cross(axis_a, perp_u));
 				j.ang_c0[0] = radians(dot(perp_u, swing_error));
 				j.ang_c0[1] = radians(dot(perp_v, swing_error));
 
@@ -445,13 +445,13 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 			}
 		}
 		else if (j.type == joint_type::slider) {
-			const unitless::vec3 axis_w = normalize(rotate_axis(ba.orientation, j.local_axis_a));
-			unitless::vec3 perp0 = cross(axis_w, unitless::vec3{ 0.f, 1.f, 0.f });
+			const vec3f axis_w = normalize(rotate_axis(ba.orientation, j.local_axis_a));
+			vec3f perp0 = cross(axis_w, vec3f{ 0.f, 1.f, 0.f });
 			if (magnitude(perp0) < 1e-6f) {
-				perp0 = cross(axis_w, unitless::vec3{ 1.f, 0.f, 0.f });
+				perp0 = cross(axis_w, vec3f{ 1.f, 0.f, 0.f });
 			}
 			perp0 = normalize(perp0);
-			const unitless::vec3 perp1 = normalize(cross(axis_w, perp0));
+			const vec3f perp1 = normalize(cross(axis_w, perp0));
 			j.pos_c0[0] = dot(perp0, d);
 			j.pos_c0[1] = dot(perp1, d);
 
@@ -809,7 +809,7 @@ auto gse::vbd::solver::accumulate_contact(const contact_constraint& constraint, 
 			continue;
 		}
 
-		const unitless::vec3 j_lin = dirs[i] * sign;
+		const vec3f j_lin = dirs[i] * sign;
 		const vec3<length> j_ang = cross(r, dirs[i]);
 
 		m_solve_state[body_idx].gradient += j_lin * f[i];
@@ -873,7 +873,7 @@ auto gse::vbd::solver::accumulate_motor(const velocity_motor_constraint& m, cons
 			continue;
 		}
 
-		const unitless::vec3 push_dir = (c.body_a == m.body_index) ? c.normal : -c.normal;
+		const vec3f push_dir = (c.body_a == m.body_index) ? c.normal : -c.normal;
 		if (const force proj = dot(motor_gradient, push_dir); proj > force{}) {
 			motor_gradient -= push_dir * proj;
 		}
@@ -928,7 +928,7 @@ auto gse::vbd::solver::perform_newton_step(const std::uint32_t body_idx, const t
 
 	quat q_rel = body.predicted_orientation * conjugate(body.angular_inertia_target);
 	float q_s = q_rel.s();
-	unitless::vec3 q_v = q_rel.imaginary_part();
+	vec3f q_v = q_rel.imaginary_part();
 	if (q_s < 0.f) {
 		q_s = -q_s;
 		q_v = -q_v;
@@ -938,7 +938,7 @@ auto gse::vbd::solver::perform_newton_step(const std::uint32_t body_idx, const t
 	if (q_s < 0.9999f) {
 		const float a = 2.f * std::acos(std::clamp(q_s, 0.f, 1.f));
 		const float sin_half = std::sqrt(1.f - q_s * q_s);
-		const unitless::vec3 axis = (sin_half > 1e-6f) ? q_v * (a / sin_half) : q_v * 2.f;
+		const vec3f axis = (sin_half > 1e-6f) ? q_v * (a / sin_half) : q_v * 2.f;
 		theta_diff = { radians(axis.x()), radians(axis.y()), radians(axis.z()) };
 	}
 	else {
@@ -1040,7 +1040,7 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 
 	if (constraint.type == joint_type::distance) {
 		const auto d_mag = magnitude(d);
-		const unitless::vec3 d_hat = d_mag > meters(1e-7f) ? normalize(d) : unitless::vec3{ 0.f, 1.f, 0.f };
+		const vec3f d_hat = d_mag > meters(1e-7f) ? normalize(d) : vec3f{ 0.f, 1.f, 0.f };
 		length c = (d_mag - constraint.target_distance) - constraint.pos_c0[0] * alpha;
 
 		if (constraint.damping > 0.f) {
@@ -1052,7 +1052,7 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 
 		const force fi = constraint.pos_penalty[0] * c + constraint.pos_lambda[0];
 
-		const unitless::vec3 j_lin = d_hat * sign;
+		const vec3f j_lin = d_hat * sign;
 		const vec3<length> j_ang = cross(r, d_hat);
 
 		m_solve_state[body_idx].gradient += j_lin * fi;
@@ -1066,13 +1066,13 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 		}
 	}
 	else if (constraint.type == joint_type::fixed || constraint.type == joint_type::hinge) {
-		const unitless::vec3 dirs[3] = { { 1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 1.f } };
+		const vec3f dirs[3] = { { 1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 1.f } };
 
 		for (int k = 0; k < 3; ++k) {
 			const length c = dot(dirs[k], d) - constraint.pos_c0[k] * alpha;
 			const force fi = constraint.pos_penalty[k] * c + constraint.pos_lambda[k];
 
-			const unitless::vec3 j_lin = dirs[k] * sign;
+			const vec3f j_lin = dirs[k] * sign;
 			const vec3<length> j_ang = cross(r, dirs[k]);
 
 			m_solve_state[body_idx].gradient += j_lin * fi;
@@ -1095,22 +1095,22 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 					const angle c_ang = theta[k] - constraint.ang_c0[k] * alpha;
 					const torque f_ang = constraint.ang_penalty[k] * c_ang + constraint.ang_lambda[k];
 
-					const unitless::vec3 j_ang = dirs[k] * (-sign);
+					const vec3f j_ang = dirs[k] * (-sign);
 					m_solve_state[body_idx].angular_gradient += j_ang * f_ang;
 					m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * constraint.ang_penalty[k];
 				}
 			}
 			else {
-				const unitless::vec3 axis_a = rotate_axis(body_a.predicted_orientation, constraint.local_axis_a);
-				const unitless::vec3 axis_b = rotate_axis(body_b.predicted_orientation, constraint.local_axis_b);
-				const unitless::vec3 swing_error = cross(axis_a, axis_b);
+				const vec3f axis_a = rotate_axis(body_a.predicted_orientation, constraint.local_axis_a);
+				const vec3f axis_b = rotate_axis(body_b.predicted_orientation, constraint.local_axis_b);
+				const vec3f swing_error = cross(axis_a, axis_b);
 
-				unitless::vec3 perp_u = cross(axis_a, unitless::vec3{ 0.f, 1.f, 0.f });
+				vec3f perp_u = cross(axis_a, vec3f{ 0.f, 1.f, 0.f });
 				if (magnitude(perp_u) < 1e-6f) {
-					perp_u = cross(axis_a, unitless::vec3{ 1.f, 0.f, 0.f });
+					perp_u = cross(axis_a, vec3f{ 1.f, 0.f, 0.f });
 				}
 				perp_u = normalize(perp_u);
-				const unitless::vec3 perp_v = normalize(cross(axis_a, perp_u));
+				const vec3f perp_v = normalize(cross(axis_a, perp_u));
 
 				const angle c_u = radians(dot(perp_u, swing_error)) - constraint.ang_c0[0] * alpha;
 				const angle c_v = radians(dot(perp_v, swing_error)) - constraint.ang_c0[1] * alpha;
@@ -1118,8 +1118,8 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 				const torque f_u = constraint.ang_penalty[0] * c_u + constraint.ang_lambda[0];
 				const torque f_v = constraint.ang_penalty[1] * c_v + constraint.ang_lambda[1];
 
-				const unitless::vec3 j_ang_u = perp_u * (-sign);
-				const unitless::vec3 j_ang_v = perp_v * (-sign);
+				const vec3f j_ang_u = perp_u * (-sign);
+				const vec3f j_ang_v = perp_v * (-sign);
 
 				m_solve_state[body_idx].angular_gradient += j_ang_u * f_u;
 				m_solve_state[body_idx].angular_hessian += outer_product(j_ang_u, j_ang_u) * constraint.ang_penalty[0];
@@ -1148,7 +1148,7 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 						const torque f_limit = constraint.limit_penalty * c_limit + constraint.limit_lambda;
 						const torque f_clamped = (c_limit < angle{}) ? std::min(f_limit, torque{}) : std::max(f_limit, torque{});
 
-						const unitless::vec3 j_limit = axis_a * (-sign);
+						const vec3f j_limit = axis_a * (-sign);
 						m_solve_state[body_idx].angular_gradient += j_limit * f_clamped;
 						m_solve_state[body_idx].angular_hessian += outer_product(j_limit, j_limit) * constraint.limit_penalty;
 					}
@@ -1157,20 +1157,20 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 		}
 	}
 	else if (constraint.type == joint_type::slider) {
-		const unitless::vec3 axis_w = normalize(rotate_axis(body_a.predicted_orientation, constraint.local_axis_a));
-		unitless::vec3 perp0 = cross(axis_w, unitless::vec3{ 0.f, 1.f, 0.f });
+		const vec3f axis_w = normalize(rotate_axis(body_a.predicted_orientation, constraint.local_axis_a));
+		vec3f perp0 = cross(axis_w, vec3f{ 0.f, 1.f, 0.f });
 		if (magnitude(perp0) < 1e-6f) {
-			perp0 = cross(axis_w, unitless::vec3{ 1.f, 0.f, 0.f });
+			perp0 = cross(axis_w, vec3f{ 1.f, 0.f, 0.f });
 		}
 		perp0 = normalize(perp0);
-		const unitless::vec3 perp1 = normalize(cross(axis_w, perp0));
+		const vec3f perp1 = normalize(cross(axis_w, perp0));
 
-		const unitless::vec3 perps[2] = { perp0, perp1 };
+		const vec3f perps[2] = { perp0, perp1 };
 		for (int k = 0; k < 2; ++k) {
 			const length C = dot(perps[k], d) - constraint.pos_c0[k] * alpha;
 			const force fi = constraint.pos_penalty[k] * C + constraint.pos_lambda[k];
 
-			const unitless::vec3 j_lin = perps[k] * sign;
+			const vec3f j_lin = perps[k] * sign;
 			const vec3<length> j_ang = cross(r, perps[k]);
 
 			m_solve_state[body_idx].gradient += j_lin * fi;
@@ -1187,13 +1187,13 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 		if (m_bodies[body_idx].update_orientation) {
 			const quat q_error = body_b.predicted_orientation * conjugate(body_a.predicted_orientation) * conjugate(constraint.rest_orientation);
 			const vec3<angle> theta = to_axis_angle(q_error);
-			const unitless::vec3 dirs[3] = { { 1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 1.f } };
+			const vec3f dirs[3] = { { 1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 1.f } };
 
 			for (int k = 0; k < 3; ++k) {
 				const angle c_ang = theta[k] - constraint.ang_c0[k] * alpha;
 				const torque f_ang = constraint.ang_penalty[k] * c_ang + constraint.ang_lambda[k];
 
-				const unitless::vec3 j_ang = dirs[k] * (-sign);
+				const vec3f j_ang = dirs[k] * (-sign);
 				m_solve_state[body_idx].angular_gradient += j_ang * f_ang;
 				m_solve_state[body_idx].angular_hessian += outer_product(j_ang, j_ang) * constraint.ang_penalty[k];
 			}
@@ -1226,7 +1226,7 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> void {
 		}
 		else if (j.type == joint_type::fixed || j.type == joint_type::hinge) {
 			for (int k = 0; k < 3; ++k) {
-				const unitless::vec3 dirs[3] = { { 1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 1.f } };
+				const vec3f dirs[3] = { { 1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 1.f } };
 				const length c = dot(dirs[k], d) - j.pos_c0[k];
 				j.pos_lambda[k] = j.pos_penalty[k] * c + j.pos_lambda[k];
 				j.pos_penalty[k] = std::min(j.pos_penalty[k] + m_config.beta * abs(c).as<meters>(), m_config.penalty_max);
@@ -1243,16 +1243,16 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> void {
 				}
 			}
 			else {
-				const unitless::vec3 axis_a = rotate_axis(body_a.predicted_orientation, j.local_axis_a);
-				const unitless::vec3 axis_b = rotate_axis(body_b.predicted_orientation, j.local_axis_b);
-				const unitless::vec3 swing_error = cross(axis_a, axis_b);
+				const vec3f axis_a = rotate_axis(body_a.predicted_orientation, j.local_axis_a);
+				const vec3f axis_b = rotate_axis(body_b.predicted_orientation, j.local_axis_b);
+				const vec3f swing_error = cross(axis_a, axis_b);
 
-				unitless::vec3 perp_u = cross(axis_a, unitless::vec3{ 0.f, 1.f, 0.f });
+				vec3f perp_u = cross(axis_a, vec3f{ 0.f, 1.f, 0.f });
 				if (magnitude(perp_u) < 1e-6f) {
-					perp_u = cross(axis_a, unitless::vec3{ 1.f, 0.f, 0.f });
+					perp_u = cross(axis_a, vec3f{ 1.f, 0.f, 0.f });
 				}
 				perp_u = normalize(perp_u);
-				const unitless::vec3 perp_v = normalize(cross(axis_a, perp_u));
+				const vec3f perp_v = normalize(cross(axis_a, perp_u));
 
 				const angle c_u = radians(dot(perp_u, swing_error)) - j.ang_c0[0];
 				const angle c_v = radians(dot(perp_v, swing_error)) - j.ang_c0[1];
@@ -1282,15 +1282,15 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> void {
 			}
 		}
 		else if (j.type == joint_type::slider) {
-			const unitless::vec3 axis_w = normalize(rotate_axis(body_a.predicted_orientation, j.local_axis_a));
-			unitless::vec3 perp0 = cross(axis_w, unitless::vec3{ 0.f, 1.f, 0.f });
+			const vec3f axis_w = normalize(rotate_axis(body_a.predicted_orientation, j.local_axis_a));
+			vec3f perp0 = cross(axis_w, vec3f{ 0.f, 1.f, 0.f });
 			if (magnitude(perp0) < 1e-6f) {
-				perp0 = cross(axis_w, unitless::vec3{ 1.f, 0.f, 0.f });
+				perp0 = cross(axis_w, vec3f{ 1.f, 0.f, 0.f });
 			}
 			perp0 = normalize(perp0);
-			const unitless::vec3 perp1 = normalize(cross(axis_w, perp0));
+			const vec3f perp1 = normalize(cross(axis_w, perp0));
 
-			const unitless::vec3 perps[2] = { perp0, perp1 };
+			const vec3f perps[2] = { perp0, perp1 };
 			for (int k = 0; k < 2; ++k) {
 				const length c = dot(perps[k], d) - j.pos_c0[k];
 				j.pos_lambda[k] = j.pos_penalty[k] * c + j.pos_lambda[k];
@@ -1309,14 +1309,14 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> void {
 	}
 }
 
-auto gse::vbd::rotate_axis(const quat& q, const unitless::vec3& v) -> unitless::vec3 {
-	const unitless::vec3 u{ q[1], q[2], q[3] };
+auto gse::vbd::rotate_axis(const quat& q, const vec3f& v) -> vec3f {
+	const vec3f u{ q[1], q[2], q[3] };
 	const float s = q[0];
-	const unitless::vec3 t = 2.f * cross(u, v);
+	const vec3f t = 2.f * cross(u, v);
 	return v + s * t + cross(u, t);
 }
 
-auto gse::vbd::accumulate_geometric_stiffness(body_solve_state& state, const vec3<length>& r, const unitless::vec3& dir, const force abs_force) -> void {
+auto gse::vbd::accumulate_geometric_stiffness(body_solve_state& state, const vec3<length>& r, const vec3f& dir, const force abs_force) -> void {
 	length rd{};
 	for (int i = 0; i < 3; ++i) rd += r[i] * dir[i];
 	for (int j = 0; j < 3; ++j) {
@@ -1332,7 +1332,7 @@ auto gse::vbd::accumulate_geometric_stiffness(body_solve_state& state, const vec
 	}
 }
 
-auto gse::vbd::contact_effective_mass(const body_state& body_a, const body_state& body_b, const vec3<length>& r_aw, const vec3<length>& r_bw, const unitless::vec3& dir) -> mass {
+auto gse::vbd::contact_effective_mass(const body_state& body_a, const body_state& body_b, const vec3<length>& r_aw, const vec3<length>& r_bw, const vec3f& dir) -> mass {
 	inverse_mass inv_mass_sum =
 		body_a.inverse_mass() +
 		body_b.inverse_mass();

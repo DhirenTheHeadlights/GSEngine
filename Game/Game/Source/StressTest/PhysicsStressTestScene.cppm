@@ -117,8 +117,8 @@ export namespace gs {
 			constexpr float spread = 4.f;
 			const float angle_deg = std::atan2(spread - half_opening, wall_len) * (180.f / 3.14159265f);
 
-			const gse::quat left_rot(gse::unitless::axis_y, gse::degrees(angle_deg));
-			const gse::quat right_rot(gse::unitless::axis_y, gse::degrees(-angle_deg));
+			const gse::quat left_rot(gse::axis_y, gse::degrees(angle_deg));
+			const gse::quat right_rot(gse::axis_y, gse::degrees(-angle_deg));
 
 			const float half_len = wall_len * 0.5f;
 			const float mid_offset = (spread + half_opening) * 0.5f;
@@ -189,7 +189,7 @@ export namespace gs {
 				);
 			};
 
-			const gse::quat ramp_tilt(gse::unitless::axis_z, gse::degrees(30.f));
+			const gse::quat ramp_tilt(gse::axis_z, gse::degrees(30.f));
 			const gse::vec3<gse::length> ramp_position(x, 2.f, z);
 
 			build("Ramp 30deg")
@@ -213,7 +213,7 @@ export namespace gs {
 					.mass = gse::kilograms(50.f)
 				});
 
-			const gse::quat steep_tilt(gse::unitless::axis_z, gse::degrees(45.f));
+			const gse::quat steep_tilt(gse::axis_z, gse::degrees(45.f));
 			const gse::vec3<gse::length> steep_ramp_position(x + 12.f, 2.f, z);
 
 			build("Steep Ramp 45deg")

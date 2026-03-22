@@ -12,13 +12,13 @@ import :camera_system;
 namespace gse::renderer::physics_debug {
 	struct debug_vertex {
 		vec3<length> position;
-		unitless::vec3 color;
+		vec3f color;
 	};
 
 	auto add_line(
 		const vec3<length>& a,
 		const vec3<length>& b,
-		const unitless::vec3& color,
+		const vec3f& color,
 		std::vector<debug_vertex>& out_vertices
 	) -> void;
 
@@ -305,7 +305,7 @@ auto gse::renderer::physics_debug::system::initialize(const initialize_phase& ph
 	s.pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
 }
 
-auto gse::renderer::physics_debug::add_line(const vec3<length>& a, const vec3<length>& b, const unitless::vec3& color, std::vector<debug_vertex>& out_vertices) -> void {
+auto gse::renderer::physics_debug::add_line(const vec3<length>& a, const vec3<length>& b, const vec3f& color, std::vector<debug_vertex>& out_vertices) -> void {
 	out_vertices.push_back(debug_vertex{ a, color });
 	out_vertices.push_back(debug_vertex{ b, color });
 }
@@ -335,7 +335,7 @@ auto gse::renderer::physics_debug::build_obb_lines_for_collider(const physics::c
 		{0, 4}, {1, 5}, {2, 6}, {3, 7}
 	} };
 
-	constexpr unitless::vec3 color{ 0.0f, 1.0f, 0.0f };
+	constexpr vec3f color{ 0.0f, 1.0f, 0.0f };
 
 	for (const auto& [fst, snd] : edges) {
 		add_line(corners[fst], corners[snd], color, out_vertices);
@@ -352,7 +352,7 @@ auto gse::renderer::physics_debug::build_sphere_lines_for_collider(const physics
 	const auto axes = bb.obb().axes;
 	const auto radius = coll.shape_radius;
 
-	constexpr unitless::vec3 color{ 0.0f, 1.0f, 0.0f };
+	constexpr vec3f color{ 0.0f, 1.0f, 0.0f };
 	constexpr int segments = 32;
 
 	for (int ring = 0; ring < 3; ++ring) {
@@ -389,7 +389,7 @@ auto gse::renderer::physics_debug::build_capsule_lines_for_collider(const physic
 	const auto top = center + cap_axis * half_height;
 	const auto bottom = center - cap_axis * half_height;
 
-	constexpr unitless::vec3 color{ 0.0f, 1.0f, 0.0f };
+	constexpr vec3f color{ 0.0f, 1.0f, 0.0f };
 	constexpr int segments = 24;
 	constexpr int half_segments = segments / 2;
 
@@ -449,14 +449,14 @@ auto gse::renderer::physics_debug::build_contact_debug_for_collider(const physic
 
 	const float pen_m = penetration.as<meters>();
 	const float t = std::clamp(pen_m / 0.05f, 0.f, 1.f);
-	const unitless::vec3 satisfaction_color{ t, 1.f - t, 0.f };
+	const vec3f satisfaction_color{ t, 1.f - t, 0.f };
 
 	for (auto& collision_point : collision_points) {
 		const auto p = collision_point;
 		const auto n = collision_normal;
 
 		constexpr length cross_size = meters(0.05f);
-		constexpr unitless::vec3 normal_color{ 0.f, 0.7f, 1.f };
+		constexpr vec3f normal_color{ 0.f, 0.7f, 1.f };
 
 		const vec3<length> px1 = p + vec3<length>{ cross_size, 0.0f, 0.0f };
 		const vec3<length> px2 = p - vec3<length>{ cross_size, 0.0f, 0.0f };
@@ -561,8 +561,8 @@ auto gse::renderer::physics_debug::system::render(const render_phase& phase, con
 	const auto command = config.frame_context().command_buffer;
 
 	const auto* cam_state = phase.try_state_of<camera::state>();
-	const unitless::mat4 view_matrix = cam_state ? cam_state->view_matrix : unitless::mat4(1.0f);
-	const unitless::mat4 proj_matrix = cam_state ? cam_state->projection_matrix : unitless::mat4(1.0f);
+	const mat4f view_matrix = cam_state ? cam_state->view_matrix : mat4f(1.0f);
+	const mat4f proj_matrix = cam_state ? cam_state->projection_matrix : mat4f(1.0f);
 
 	s.shader_handle->set_uniform("CameraUBO.view", view_matrix, s.ubo_allocations.at("CameraUBO")[frame_index].allocation);
 	s.shader_handle->set_uniform("CameraUBO.proj", proj_matrix, s.ubo_allocations.at("CameraUBO")[frame_index].allocation);

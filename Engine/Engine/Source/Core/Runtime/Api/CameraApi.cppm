@@ -10,16 +10,16 @@ import gse.platform;
 import :core_api;
 
 export namespace gse {
-	auto camera_view() -> unitless::mat4 {
+	auto camera_view() -> mat4f {
 		if (!has_state<camera::state>()) {
-			return unitless::mat4(1.f);
+			return mat4f(1.f);
 		}
 		return state_of<camera::state>().view_matrix;
 	}
 
-	auto camera_projection() -> unitless::mat4 {
+	auto camera_projection() -> mat4f {
 		if (!has_state<camera::state>()) {
-			return unitless::mat4(1.f);
+			return mat4f(1.f);
 		}
 		return state_of<camera::state>().projection_matrix;
 	}
@@ -44,13 +44,13 @@ export namespace gse {
 	}
 
 	auto direction_from_angle(
-		const unitless::vec3& direction, 
+		const vec3f& direction, 
 		const angle yaw
-	) -> unitless::vec3 {
+	) -> vec3f {
 		const float r = yaw.as<radians>();
 		const float c = std::cos(r);
 		const float s = std::sin(r);
-		return unitless::vec3(
+		return vec3f(
 			direction.x() * c + direction.z() * s,
 			direction.y(),
 			-direction.x() * s + direction.z() * c
@@ -58,9 +58,9 @@ export namespace gse {
 	}
 
 	auto camera_direction_relative_to_origin(
-		const unitless::vec3& direction,
+		const vec3f& direction,
 		const id entity_id
-	) -> unitless::vec3 {
+	) -> vec3f {
 		if (has_state<camera::state>()) {
 			return state_of<camera::state>().direction_relative_to_origin(direction);
 		}
@@ -81,7 +81,7 @@ export namespace gse {
 	}
 
 	auto set_camera_viewport(
-		const unitless::vec2& viewport
+		const vec2f& viewport
 	) -> void {
 		channel_add(camera::viewport_update{ 
 			.size = viewport

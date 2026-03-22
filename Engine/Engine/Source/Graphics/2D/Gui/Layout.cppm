@@ -115,19 +115,19 @@ auto gse::gui::layout::undock(id_mapped_collection<menu>& menus, const id child_
 		return; 
 	}
 
-	constexpr unitless::vec2 min_menu_size = { 200.f, 200.f };
+	constexpr vec2f min_menu_size = { 200.f, 200.f };
 
-	const unitless::vec2 target_size = min_menu_size * 1.5f;
+	const vec2f target_size = min_menu_size * 1.5f;
 	const float scale_x = target_size.x() / group_bounds.width();
 	const float scale_y = target_size.y() / group_bounds.height();
 
 	std::function<void(id)> scale_group = [&](const id current_id) {
 		if (menu* item = menus.try_get(current_id)) {
-			unitless::vec2 offset = item->rect.top_left() - group_bounds.top_left();
+			vec2f offset = item->rect.top_left() - group_bounds.top_left();
 			offset.x() *= scale_x;
 			offset.y() *= scale_y;
 			
-			unitless::vec2 new_size = item->rect.size();
+			vec2f new_size = item->rect.size();
 			new_size.x() *= scale_x;
 			new_size.y() *= scale_y;
 
@@ -177,7 +177,7 @@ auto gse::gui::layout::dock_space(const ui_rect& target_area) -> dock::space {
 	dock::space space;
 
 	const auto center = target_area.center();
-	const unitless::vec2 widget_size = {
+	const vec2f widget_size = {
 		std::min(50.f, target_area.width() * 0.2f),
 		std::min(50.f, target_area.height() * 0.2f)
 	};
@@ -185,11 +185,11 @@ auto gse::gui::layout::dock_space(const ui_rect& target_area) -> dock::space {
 	const float half_widget_w = widget_size.x() / 2.f;
 	const float half_widget_h = widget_size.y() / 2.f;
 
-	const unitless::vec2 center_pos = { center.x() - half_widget_w, center.y() + half_widget_h };
-	const unitless::vec2 top_pos = { center.x() - half_widget_w, center.y() + widget_size.y() * 1.5f };
-	const unitless::vec2 bottom_pos = { center.x() - half_widget_w, center.y() - widget_size.y() * 0.5f };
-	const unitless::vec2 left_pos = { center.x() - widget_size.x() * 1.5f, center.y() + half_widget_h };
-	const unitless::vec2 right_pos = { center.x() + widget_size.x() * 0.5f, center.y() + half_widget_h };
+	const vec2f center_pos = { center.x() - half_widget_w, center.y() + half_widget_h };
+	const vec2f top_pos = { center.x() - half_widget_w, center.y() + widget_size.y() * 1.5f };
+	const vec2f bottom_pos = { center.x() - half_widget_w, center.y() - widget_size.y() * 0.5f };
+	const vec2f left_pos = { center.x() - widget_size.x() * 1.5f, center.y() + half_widget_h };
+	const vec2f right_pos = { center.x() + widget_size.x() * 0.5f, center.y() + half_widget_h };
 
 	// Center
 	space.areas[0] = {

@@ -35,10 +35,10 @@ export namespace gse::camera {
 		angle pitch = degrees(0.0f);
 		float mouse_sensitivity = 0.1f;
 
-		unitless::mat4 view_matrix = unitless::mat4(1.0f);
-		unitless::mat4 projection_matrix = unitless::mat4(1.0f);
+		mat4f view_matrix = mat4f(1.0f);
+		mat4f projection_matrix = mat4f(1.0f);
 
-		unitless::vec2 viewport{ 1920.f, 1080.f };
+		vec2f viewport{ 1920.f, 1080.f };
 		bool ui_focus = false;
 
 		auto position(
@@ -48,8 +48,8 @@ export namespace gse::camera {
 		) const -> quat;
 
 		auto direction_relative_to_origin(
-			const unitless::vec3& direction
-		) const -> unitless::vec3;
+			const vec3f& direction
+		) const -> vec3f;
 	};
 }
 
@@ -61,7 +61,7 @@ auto gse::camera::state::orientation() const -> quat {
 	return current.orientation;
 }
 
-auto gse::camera::state::direction_relative_to_origin(const unitless::vec3& direction) const -> unitless::vec3 {
+auto gse::camera::state::direction_relative_to_origin(const vec3f& direction) const -> vec3f {
 	const auto u = current.orientation.imaginary_part();
 	const auto t = 2.f * cross(u, direction);
 	return direction + current.orientation.s() * t + cross(u, t);

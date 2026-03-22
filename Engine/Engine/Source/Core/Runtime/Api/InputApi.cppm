@@ -51,12 +51,12 @@ export namespace gse::mouse {
 	}
 
 	auto position(
-	) -> unitless::vec2 {
+	) -> vec2f {
 		return state_of<input::system_state>().current_state().mouse_position();
 	}
 
 	auto delta(
-	) -> unitless::vec2 {
+	) -> vec2f {
 		return state_of<input::system_state>().current_state().mouse_delta();
 	}
 }

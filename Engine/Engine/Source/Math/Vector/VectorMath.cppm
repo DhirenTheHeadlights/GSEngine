@@ -125,37 +125,31 @@ export namespace gse {
 		const V2& b
 	);
 
-	template <typename T, std::size_t N>
+	template <typename T, std::size_t N> requires std::is_arithmetic_v<T>
 	constexpr auto sin(
-		const unitless::vec_t<T, N>& v
-	) -> unitless::vec_t<T, N>;
+		const vec<T, N>& v
+	) -> vec<T, N>;
 
-	template <typename T, std::size_t N>
+	template <typename T, std::size_t N> requires std::is_arithmetic_v<T>
 	constexpr auto cos(
-		const unitless::vec_t<T, N>& v
-	) -> unitless::vec_t<T, N>;
+		const vec<T, N>& v
+	) -> vec<T, N>;
 
-	template <typename T, std::size_t N>
+	template <typename T, std::size_t N> requires std::is_arithmetic_v<T>
 	constexpr auto exp(
-		const unitless::vec_t<T, N>& v
-	) -> unitless::vec_t<T, N>;
+		const vec<T, N>& v
+	) -> vec<T, N>;
 
-	template <typename T, std::size_t N>
+	template <typename T, std::size_t N> requires std::is_arithmetic_v<T>
 	constexpr auto logarithm(
-		const unitless::vec_t<T, N>& v
-	) -> unitless::vec_t<T, N>;
+		const vec<T, N>& v
+	) -> vec<T, N>;
 
-	template <typename T, std::size_t N>
+	template <typename T, std::size_t N> requires std::is_arithmetic_v<T>
 	constexpr auto pow(
-		const unitless::vec_t<T, N>& v,
+		const vec<T, N>& v,
 		T exponent
-	) -> unitless::vec_t<T, N>;
-
-	template <typename T, std::size_t N, typename S>
-	constexpr auto pow(
-		const vec_t<T, N>& v,
-		S exponent
-	) -> vec_t<decltype(T{} * T{}), N > ;
+	) -> vec<T, N>;
 
 	template <is_vec V1, is_vec V2> requires (V1::extent == V2::extent)
 	constexpr auto epsilon_equal_index(
@@ -172,21 +166,13 @@ export namespace gse {
 		std::size_t j = 1
 	) -> V;
 
-	template <typename T>
+	template <is_vec V> requires (V::extent == 3)
 	constexpr auto barycentric(
-		const unitless::vec3_t<T>& p,
-		const unitless::vec3_t<T>& a,
-		const unitless::vec3_t<T>& b,
-		const unitless::vec3_t<T>& c
-	) -> unitless::vec3_t<T>;
-
-	template <typename T>
-	constexpr auto barycentric(
-		const vec3<length_t<T>>& p,
-		const vec3<length_t<T>>& a,
-		const vec3<length_t<T>>& b,
-		const vec3<length_t<T>>& c
-	) -> unitless::vec3_t<T>;
+		const V& p,
+		const V& a,
+		const V& b,
+		const V& c
+	) -> vec3<typename V::storage_type>;
 }
 
 template <gse::is_vec V1, gse::is_vec V2> requires (V1::extent == V2::extent)
@@ -215,7 +201,7 @@ constexpr auto gse::normalize(const V& v) {
 	auto mag = magnitude(v);
 	const auto m = internal::to_storage(mag);
 
-	unitless::vec_t<storage_type, V::extent> out{};
+	vec<storage_type, V::extent> out{};
 	if (m == storage_type(0)) return out;
 	simd::div_s(v.as_storage_span(), m, out.as_storage_span());
 	return out;
@@ -231,7 +217,7 @@ constexpr auto gse::cross(const V1& lhs, const V2& rhs) {
 	using T1 = V1::value_type;
 	using T2 = V2::value_type;
 	using result_type = decltype(std::declval<T1>() * std::declval<T2>());
-	vec::base<result_type, 3> out{};
+	vec<result_type, 3> out{};
 	auto out_span = out.as_storage_span();
 	auto lhs_span = lhs.as_storage_span();
 	auto rhs_span = rhs.as_storage_span();
@@ -303,9 +289,9 @@ constexpr auto gse::abs(const V& v) -> V {
 template <gse::is_vec V1, gse::is_vec V2> requires (V1::extent == V2::extent)
 constexpr auto gse::min(const V1& a, const V2& b) {
 	using common_elem = internal::common_quantity_t<typename V1::value_type, typename V2::value_type>;
-	vec::base<common_elem, V1::extent> aa{ a };
-	vec::base<common_elem, V1::extent> bb{ b };
-	vec::base<common_elem, V1::extent> out{};
+	vec<common_elem, V1::extent> aa{ a };
+	vec<common_elem, V1::extent> bb{ b };
+	vec<common_elem, V1::extent> out{};
 	simd::min(aa.as_storage_span(), bb.as_storage_span(), out.as_storage_span());
 	return out;
 }
@@ -313,9 +299,9 @@ constexpr auto gse::min(const V1& a, const V2& b) {
 template <gse::is_vec V1, gse::is_vec V2> requires (V1::extent == V2::extent)
 constexpr auto gse::max(const V1& a, const V2& b) {
 	using common_elem = internal::common_quantity_t<typename V1::value_type, typename V2::value_type>;
-	vec::base<common_elem, V1::extent> aa{ a };
-	vec::base<common_elem, V1::extent> bb{ b };
-	vec::base<common_elem, V1::extent> out{};
+	vec<common_elem, V1::extent> aa{ a };
+	vec<common_elem, V1::extent> bb{ b };
+	vec<common_elem, V1::extent> out{};
 	simd::max(aa.as_storage_span(), bb.as_storage_span(), out.as_storage_span());
 	return out;
 }
@@ -361,44 +347,39 @@ constexpr auto gse::reflect_across(const V1& a, const V2& b) {
 	return a - 2 * internal::to_storage(dot(a, b)) * b;
 }
 
-template <typename T, std::size_t N>
-constexpr auto gse::sin(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N> {
-	unitless::vec_t<T, N> out{};
+template <typename T, std::size_t N> requires std::is_arithmetic_v<T>
+constexpr auto gse::sin(const vec<T, N>& v) -> vec<T, N> {
+	vec<T, N> out{};
 	for (std::size_t i = 0; i < N; ++i) out[i] = std::sin(v[i]);
 	return out;
 }
 
-template <typename T, std::size_t N>
-constexpr auto gse::cos(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N> {
-	unitless::vec_t<T, N> out{};
+template <typename T, std::size_t N> requires std::is_arithmetic_v<T>
+constexpr auto gse::cos(const vec<T, N>& v) -> vec<T, N> {
+	vec<T, N> out{};
 	for (std::size_t i = 0; i < N; ++i) out[i] = std::cos(v[i]);
 	return out;
 }
 
-template <typename T, std::size_t N>
-constexpr auto gse::exp(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N> {
-	unitless::vec_t<T, N> out{};
+template <typename T, std::size_t N> requires std::is_arithmetic_v<T>
+constexpr auto gse::exp(const vec<T, N>& v) -> vec<T, N> {
+	vec<T, N> out{};
 	for (std::size_t i = 0; i < N; ++i) out[i] = std::exp(v[i]);
 	return out;
 }
 
-template <typename T, std::size_t N>
-constexpr auto gse::logarithm(const unitless::vec_t<T, N>& v) -> unitless::vec_t<T, N> {
-	unitless::vec_t<T, N> out{};
+template <typename T, std::size_t N> requires std::is_arithmetic_v<T>
+constexpr auto gse::logarithm(const vec<T, N>& v) -> vec<T, N> {
+	vec<T, N> out{};
 	for (std::size_t i = 0; i < N; ++i) out[i] = std::log(v[i]);
 	return out;
 }
 
-template <typename T, std::size_t N>
-constexpr auto gse::pow(const unitless::vec_t<T, N>& v, T exponent) -> unitless::vec_t<T, N> {
-	unitless::vec_t<T, N> out{};
+template <typename T, std::size_t N> requires std::is_arithmetic_v<T>
+constexpr auto gse::pow(const vec<T, N>& v, T exponent) -> vec<T, N> {
+	vec<T, N> out{};
 	for (std::size_t i = 0; i < N; ++i) out[i] = std::pow(v[i], exponent);
 	return out;
-}
-
-template <typename T, std::size_t N, typename S>
-constexpr auto gse::pow(const vec_t<T, N>& v, S exponent) -> vec_t<decltype(T{} * T{}), N> {
-	return pow(v.template as<typename T::default_unit>(), static_cast<T>(exponent));
 }
 
 template <gse::is_vec V1, gse::is_vec V2> requires (V1::extent == V2::extent)
@@ -438,14 +419,23 @@ constexpr auto gse::rotate(const V& v, angle_t<typename V::storage_type> angle, 
 	return result;
 }
 
-template <typename T>
-constexpr auto gse::barycentric(const unitless::vec3_t<T>& p, const unitless::vec3_t<T>& a, const unitless::vec3_t<T>& b, const unitless::vec3_t<T>& c) -> unitless::vec3_t<T> {
-	unitless::vec_t<T, 3> v0 = b - a, v1 = c - a, v2 = p - a;
-	T d00 = dot(v0, v0);
-	T d01 = dot(v0, v1);
-	T d11 = dot(v1, v1);
-	T d20 = dot(v2, v0);
-	T d21 = dot(v2, v1);
+template <gse::is_vec V> requires (V::extent == 3)
+constexpr auto gse::barycentric(const V& p, const V& a, const V& b, const V& c) -> vec3<typename V::storage_type> {
+	using T = V::storage_type;
+	auto ps = p.as_storage_span();
+	auto as = a.as_storage_span();
+	auto bs = b.as_storage_span();
+	auto cs = c.as_storage_span();
+
+	T v0x = bs[0] - as[0], v0y = bs[1] - as[1], v0z = bs[2] - as[2];
+	T v1x = cs[0] - as[0], v1y = cs[1] - as[1], v1z = cs[2] - as[2];
+	T v2x = ps[0] - as[0], v2y = ps[1] - as[1], v2z = ps[2] - as[2];
+
+	T d00 = v0x * v0x + v0y * v0y + v0z * v0z;
+	T d01 = v0x * v1x + v0y * v1y + v0z * v1z;
+	T d11 = v1x * v1x + v1y * v1y + v1z * v1z;
+	T d20 = v2x * v0x + v2y * v0y + v2z * v0z;
+	T d21 = v2x * v1x + v2y * v1y + v2z * v1z;
 	T denom = d00 * d11 - d01 * d01;
 
 	if (denom == T(0)) {
@@ -457,14 +447,4 @@ constexpr auto gse::barycentric(const unitless::vec3_t<T>& p, const unitless::ve
 	T u = T(1) - v - w;
 
 	return { u, v, w };
-}
-
-template <typename T>
-constexpr auto gse::barycentric(const vec3<length_t<T>>& p, const vec3<length_t<T>>& a, const vec3<length_t<T>>& b, const vec3<length_t<T>>& c) -> unitless::vec3_t<T> {
-	return barycentric(
-		p.template as<typename length_t<T>::default_unit>(),
-		a.template as<typename length_t<T>::default_unit>(),
-		b.template as<typename length_t<T>::default_unit>(),
-		c.template as<typename length_t<T>::default_unit>()
-	);
 }

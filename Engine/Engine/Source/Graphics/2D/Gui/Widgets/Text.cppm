@@ -29,7 +29,7 @@ auto gse::gui::draw::text(const draw_context& ctx, const std::string& name, cons
     const float label_width = name.empty() ? 0.f : content_rect.width() * 0.4f;
 
     if (!name.empty()) {
-        const unitless::vec2 label_pos = {
+        const vec2f label_pos = {
             row_rect.left(),
             row_rect.center().y() + ctx.style.font_size / 2.f
         };
@@ -44,7 +44,7 @@ auto gse::gui::draw::text(const draw_context& ctx, const std::string& name, cons
         });
     }
 
-    const unitless::vec2 value_pos = {
+    const vec2f value_pos = {
         row_rect.left() + label_width,
         row_rect.center().y() + ctx.style.font_size / 2.f
     };

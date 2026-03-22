@@ -23,14 +23,14 @@ export namespace gse {
 
 		texture(
 			std::string_view name, 
-			const unitless::vec4& color, 
-			unitless::vec2u size = { 1, 1 }
+			const vec4f& color, 
+			vec2u size = { 1, 1 }
 		);
 
 		texture(
 			std::string_view name,
 			const std::vector<std::byte>& data,
-			unitless::vec2u size,
+			vec2u size,
 			std::uint32_t channels,
 			profile texture_profile = profile::generic_repeat
 		);
@@ -62,9 +62,9 @@ export namespace gse {
 
 gse::texture::texture(const std::filesystem::path& filepath) : identifiable(filepath, config::baked_resource_path), m_image_data{ .path = filepath } {}
 
-gse::texture::texture(const std::string_view name, const unitless::vec4& color, const unitless::vec2u size) : identifiable(name), m_image_data(image::load(color, size)) {}
+gse::texture::texture(const std::string_view name, const vec4f& color, const vec2u size) : identifiable(name), m_image_data(image::load(color, size)) {}
 
-gse::texture::texture(const std::string_view name, const std::vector<std::byte>& data, const unitless::vec2u size, const std::uint32_t channels, const profile texture_profile) : identifiable(name), m_image_data(image::data{ .path = {}, .size = size, .channels = channels, .pixels = data }), m_profile(texture_profile) {}
+gse::texture::texture(const std::string_view name, const std::vector<std::byte>& data, const vec2u size, const std::uint32_t channels, const profile texture_profile) : identifiable(name), m_image_data(image::data{ .path = {}, .size = size, .channels = channels, .pixels = data }), m_profile(texture_profile) {}
 
 auto gse::texture::load(const gpu::context& context) -> void {
 	if (!m_image_data.path.empty()) {

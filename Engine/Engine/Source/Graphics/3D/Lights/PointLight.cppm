@@ -9,7 +9,7 @@ import gse.utility;
 
 export namespace gse {
 	struct point_light_data {
-		unitless::vec3 color;
+		vec3f color;
 		float intensity = 1.0f;
 		vec3<length> position;
 		float constant = 1.0f; 

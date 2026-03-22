@@ -75,7 +75,7 @@ namespace gs {
 			}
 
 			const auto dir = gse::camera_direction_relative_to_origin(
-				gse::unitless::vec3(v.x(), 0.f, v.y()),
+				gse::vec3f(v.x(), 0.f, v.y()),
 				owner_id()
 			);
 
@@ -149,10 +149,10 @@ namespace gs {
 			const auto v = m_move_axis_channel.value;
 			if (v.x() != 0.f || v.y() != 0.f) {
 				const auto dir = gse::camera_direction_relative_to_origin(
-					gse::unitless::vec3(v.x(), 0.f, v.y()),
+					gse::vec3f(v.x(), 0.f, v.y()),
 					owner_id()
 				);
-				const auto horizontal = gse::unitless::vec3(dir.x(), 0.f, dir.z());
+				const auto horizontal = gse::vec3f(dir.x(), 0.f, dir.z());
 				const float len = gse::magnitude(horizontal);
 				motion.velocity_drive_target = len > 1e-6f
 					? speed * (horizontal / len)

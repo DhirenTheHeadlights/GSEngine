@@ -80,13 +80,13 @@ export namespace gse::settings_panel {
 
     auto default_panel_rect(
         const gui::style& style,
-        unitless::vec2 viewport_size
+        vec2f viewport_size
     ) -> gui::ui_rect;
 }
 
 namespace gse::settings_panel {
     struct layout_state {
-        unitless::vec2 cursor;
+        vec2f cursor;
         gui::ui_rect content_rect;
         gui::ui_rect clip_rect;
         float row_height;
@@ -161,7 +161,7 @@ namespace gse::settings_panel {
     ) -> bool;
 }
 
-auto gse::settings_panel::default_panel_rect(const gui::style& style, const unitless::vec2 viewport_size) -> gui::ui_rect {
+auto gse::settings_panel::default_panel_rect(const gui::style& style, const vec2f viewport_size) -> gui::ui_rect {
     const float usable_height = viewport_size.y() - style.menu_bar_height;
 
     constexpr float screen_fill_ratio = 0.8f;
@@ -303,11 +303,11 @@ auto gse::settings_panel::update(state& state, const context& ctx, const gui::ui
         { close_button_size, close_button_size }
     );
 
-    const unitless::vec2 mouse_pos = ctx.input.mouse_position();
+    const vec2f mouse_pos = ctx.input.mouse_position();
     const bool close_hovered = close_button_rect.contains(mouse_pos);
 
-    const unitless::vec4 close_bg_color = close_hovered
-        ? unitless::vec4(0.8f, 0.2f, 0.2f, 1.0f)
+    const vec4f close_bg_color = close_hovered
+        ? vec4f(0.8f, 0.2f, 0.2f, 1.0f)
         : sty.color_widget_background;
 
     ctx.sprites.push_back({
@@ -503,7 +503,7 @@ auto gse::settings_panel::draw_toggle(layout_state& layout, const save::property
         { toggle_width, toggle_height }
     );
 
-    const unitless::vec2 mouse_pos = ctx.input.mouse_position();
+    const vec2f mouse_pos = ctx.input.mouse_position();
     const bool hovered = row_rect.contains(mouse_pos) && layout.clip_rect.contains(mouse_pos);
     const id toggle_id = gui::ids::make(std::string(prop.name()));
 
@@ -527,7 +527,7 @@ auto gse::settings_panel::draw_toggle(layout_state& layout, const save::property
         });
     }
 
-    const unitless::vec4 track_color = value ? sty.color_toggle_on : sty.color_toggle_off;
+    const vec4f track_color = value ? sty.color_toggle_on : sty.color_toggle_off;
 
     ctx.sprites.push_back({
         .rect = toggle_rect,
@@ -546,7 +546,7 @@ auto gse::settings_panel::draw_toggle(layout_state& layout, const save::property
         { knob_size, knob_size }
     );
 
-    const unitless::vec4 knob_color = toggle_hovered ? sty.color_handle_hovered : sty.color_handle;
+    const vec4f knob_color = toggle_hovered ? sty.color_handle_hovered : sty.color_handle;
 
     ctx.sprites.push_back({
         .rect = knob_rect,
@@ -600,7 +600,7 @@ auto gse::settings_panel::draw_slider(layout_state& layout, const save::property
         { slider_width, slider_height }
     );
 
-    const unitless::vec2 mouse_pos = ctx.input.mouse_position();
+    const vec2f mouse_pos = ctx.input.mouse_position();
     const id slider_id = gui::ids::make(std::string(prop.name()) + "_slider");
 
     if (row_rect.contains(mouse_pos) && layout.clip_rect.contains(mouse_pos)) {
@@ -665,7 +665,7 @@ auto gse::settings_panel::draw_slider(layout_state& layout, const save::property
     );
 
     const bool is_active = layout.panel_state->active_id == slider_id;
-    const unitless::vec4 knob_color = (hovered || is_active)
+    const vec4f knob_color = (hovered || is_active)
         ? sty.color_handle_hovered
         : sty.color_handle;
 
@@ -748,7 +748,7 @@ auto gse::settings_panel::draw_choice(layout_state& layout, const save::property
         { max_option_width, layout.row_height * 0.8f }
     );
 
-    const unitless::vec2 mouse_pos = ctx.input.mouse_position();
+    const vec2f mouse_pos = ctx.input.mouse_position();
 
     if (row_rect.contains(mouse_pos) && layout.clip_rect.contains(mouse_pos)) {
         set_tooltip(ctx, dropdown_id, std::string(prop.description()));
@@ -773,7 +773,7 @@ auto gse::settings_panel::draw_choice(layout_state& layout, const save::property
         layout.panel_state->active_id.reset();
     }
 
-    unitless::vec4 header_bg = sty.color_widget_background;
+    vec4f header_bg = sty.color_widget_background;
     if (is_open) {
         header_bg = sty.color_widget_active;
     }
@@ -881,7 +881,7 @@ auto gse::settings_panel::draw_choice(layout_state& layout, const save::property
 
             const bool option_hovered = option_rect.contains(mouse_pos);
 
-            unitless::vec4 option_bg = sty.color_menu_body;
+            vec4f option_bg = sty.color_menu_body;
             if (i == current_index) {
                 option_bg = sty.color_widget_selected;
             }
@@ -974,7 +974,7 @@ auto gse::settings_panel::draw_key_binding(
         { button_width, layout.row_height * 0.8f }
     );
 
-    const unitless::vec2 mouse_pos = ctx.input.mouse_position();
+    const vec2f mouse_pos = ctx.input.mouse_position();
     const id binding_id = gui::ids::make("keybind_" + action_name);
     const id reset_id = gui::ids::make("keybind_reset_" + action_name);
 
@@ -1007,9 +1007,9 @@ auto gse::settings_panel::draw_key_binding(
         layout.panel_state->active_id.reset();
     }
 
-    unitless::vec4 button_bg = sty.color_widget_background;
+    vec4f button_bg = sty.color_widget_background;
     if (is_listening) {
-        button_bg = unitless::vec4(0.4f, 0.4f, 0.2f, 1.f);
+        button_bg = vec4f(0.4f, 0.4f, 0.2f, 1.f);
     } else if (layout.panel_state->active_id == binding_id) {
         button_bg = sty.color_widget_active;
     } else if (button_hovered) {
@@ -1041,11 +1041,11 @@ auto gse::settings_panel::draw_key_binding(
 
     const bool show_reset = (current_key != default_key);
     if (show_reset) {
-        unitless::vec4 reset_bg = sty.color_widget_background;
+        vec4f reset_bg = sty.color_widget_background;
         if (layout.panel_state->active_id == reset_id) {
             reset_bg = sty.color_widget_active;
         } else if (reset_hovered) {
-            reset_bg = unitless::vec4(0.6f, 0.3f, 0.3f, 1.f);
+            reset_bg = vec4f(0.6f, 0.3f, 0.3f, 1.f);
         }
 
         ctx.sprites.push_back({
@@ -1140,7 +1140,7 @@ auto gse::settings_panel::draw_apply_button(layout_state& layout, state& panel_s
         { button_width, button_height }
     );
 
-    const unitless::vec2 mouse_pos = ctx.input.mouse_position();
+    const vec2f mouse_pos = ctx.input.mouse_position();
     const bool hovered = button_rect.contains(mouse_pos) && !dropdown_blocking_input(layout);
     const id button_id = gui::ids::make("apply_settings");
 
@@ -1150,7 +1150,7 @@ auto gse::settings_panel::draw_apply_button(layout_state& layout, state& panel_s
         panel_state.active_id = button_id;
     }
 
-    unitless::vec4 bg_color = sty.color_widget_background;
+    vec4f bg_color = sty.color_widget_background;
     if (!has_changes) {
         bg_color = sty.color_widget_background * 0.5f;
         bg_color.w() = 1.f;
@@ -1173,7 +1173,7 @@ auto gse::settings_panel::draw_apply_button(layout_state& layout, state& panel_s
             : "Apply";
 
         const float text_width = ctx.font->width(text, sty.font_size);
-        const unitless::vec2 text_pos = {
+        const vec2f text_pos = {
             button_rect.center().x() - text_width * 0.5f,
             button_rect.center().y() + sty.font_size * 0.35f
         };
@@ -1217,7 +1217,7 @@ auto gse::settings_panel::draw_restart_popup(state& panel_state, const context& 
     // Darken background
     ctx.sprites.push_back({
         .rect = panel_rect,
-        .color = unitless::vec4(0.f, 0.f, 0.f, 0.5f),
+        .color = vec4f(0.f, 0.f, 0.f, 0.5f),
         .texture = ctx.blank_texture,
         .layer = render_layer::modal
     });
@@ -1289,7 +1289,7 @@ auto gse::settings_panel::draw_restart_popup(state& panel_state, const context& 
         { btn_width, btn_height }
     );
 
-    const unitless::vec2 mouse_pos = ctx.input.mouse_position();
+    const vec2f mouse_pos = ctx.input.mouse_position();
 
     const bool later_hovered = later_rect.contains(mouse_pos);
     ctx.sprites.push_back({
@@ -1318,7 +1318,7 @@ auto gse::settings_panel::draw_restart_popup(state& panel_state, const context& 
     const bool restart_hovered = restart_rect.contains(mouse_pos);
     ctx.sprites.push_back({
         .rect = restart_rect,
-        .color = restart_hovered ? unitless::vec4(0.3f, 0.6f, 0.3f, 1.f) : unitless::vec4(0.2f, 0.5f, 0.2f, 1.f),
+        .color = restart_hovered ? vec4f(0.3f, 0.6f, 0.3f, 1.f) : vec4f(0.2f, 0.5f, 0.2f, 1.f),
         .texture = ctx.blank_texture,
         .layer = render_layer::modal
     });

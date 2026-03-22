@@ -55,9 +55,9 @@ export namespace gs {
 
 			auto initialize() -> void override {
 				add_component<gse::directional_light_component>({
-					.color = gse::unitless::vec3(1.f, 0.95f, 0.9f),
+					.color = gse::vec3f(1.f, 0.95f, 0.9f),
 					.intensity = 1.5f,
-					.direction = gse::unitless::vec3(-0.5f, -1.f, -0.3f),
+					.direction = gse::vec3f(-0.5f, -1.f, -0.3f),
 					.ambient_strength = 0.15f
 				});
 			}
