@@ -5,6 +5,7 @@ import std;
 export namespace gse {
 	template <typename T, std::size_t Capacity>
 	class mpsc_ring_buffer {
+		static_assert((Capacity & (Capacity - 1)) == 0, "Capacity must be a power of two");
 	public:
 		auto push(
 			const T& value
@@ -19,8 +20,8 @@ export namespace gse {
 		) -> std::size_t;
 
 		std::array<T, Capacity> m_data{};
-		std::atomic<std::size_t> m_head{ 0 };
-		std::atomic<std::size_t> m_tail{ 0 };
+		alignas(std::hardware_destructive_interference_size) std::atomic<std::size_t> m_head{ 0 };
+		alignas(std::hardware_destructive_interference_size) std::atomic<std::size_t> m_tail{ 0 };
 	};
 }
 
@@ -58,6 +59,6 @@ auto gse::mpsc_ring_buffer<T, Capacity>::pop(T& out) -> bool {
 
 template <typename T, std::size_t Capacity>
 constexpr auto gse::mpsc_ring_buffer<T, Capacity>::index(const std::size_t i) -> std::size_t {
-	return i % Capacity;
+	return i & (Capacity - 1);
 }
 
