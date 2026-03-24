@@ -545,13 +545,13 @@ auto gse::vbd::gpu_solver::upload(
 			auto vel_span = body_velocity.as_storage_span();
 			gse::memcpy(elem + bo_velocity, vel_span);
 
-			gse::memcpy(elem + bo_orientation, &orientation);
+			gse::memcpy(elem + bo_orientation, orientation);
 
-			gse::memcpy(elem + bo_predicted_orientation, &predicted_orientation);
+			gse::memcpy(elem + bo_predicted_orientation, predicted_orientation);
 
-			gse::memcpy(elem + bo_angular_inertia_target, &angular_inertia_target);
+			gse::memcpy(elem + bo_angular_inertia_target, angular_inertia_target);
 
-			gse::memcpy(elem + bo_old_orientation, &initial_orientation);
+			gse::memcpy(elem + bo_old_orientation, initial_orientation);
 
 			auto av_span = body_angular_velocity.as_storage_span();
 			gse::memcpy(elem + bo_angular_velocity, av_span);
@@ -561,21 +561,21 @@ auto gse::vbd::gpu_solver::upload(
 		gse::memcpy(elem + bo_motor_target, mt_span);
 
 		const float mass = mass_value.as<kilograms>();
-		gse::memcpy(elem + bo_mass, &mass);
+		gse::memcpy(elem + bo_mass, mass);
 
 		std::uint32_t flags = 0;
 		if (locked) flags |= flag_locked;
 		if (update_orientation) flags |= flag_update_orientation;
 		if (affected_by_gravity) flags |= flag_affected_by_gravity;
-		gse::memcpy(elem + bo_flags, &flags);
+		gse::memcpy(elem + bo_flags, flags);
 
-		gse::memcpy(elem + bo_sleep_counter, &sleep_counter);
+		gse::memcpy(elem + bo_sleep_counter, sleep_counter);
 
 		const float accel_weight =
 			i < accel_weights.size()
 				? accel_weights[i]
 				: 0.f;
-		gse::memcpy(elem + bo_accel_weight, &accel_weight);
+		gse::memcpy(elem + bo_accel_weight, accel_weight);
 
 		gse::memcpy(elem + bo_inv_inertia_col0, inv_inertia[0].as_storage_span());
 		gse::memcpy(elem + bo_inv_inertia_col1, inv_inertia[1].as_storage_span());
@@ -601,14 +601,14 @@ auto gse::vbd::gpu_solver::upload(
 		] = motors[i];
 		auto* elem = m_upload_motor_data.data() + i * m_motor_layout.stride;
 
-		gse::memcpy(elem + mo_body_index, &body_index);
-		gse::memcpy(elem + mo_compliance, &compliance);
+		gse::memcpy(elem + mo_body_index, body_index);
+		gse::memcpy(elem + mo_compliance, compliance);
 
 		const float max_f = max_force.as<newtons>();
-		gse::memcpy(elem + mo_max_force, &max_f);
+		gse::memcpy(elem + mo_max_force, max_f);
 
 		const std::uint32_t horiz = horizontal_only ? 1u : 0u;
-		gse::memcpy(elem + mo_horizontal_only, &horiz);
+		gse::memcpy(elem + mo_horizontal_only, horiz);
 
 		gse::memcpy(elem + mo_target_velocity, target_velocity.as_storage_span());
 	}
@@ -650,25 +650,25 @@ auto gse::vbd::gpu_solver::upload(
 		] = prev_contacts[i];
 		auto* elem = m_upload_warm_start_data.data() + i * m_warm_start_layout.stride;
 
-		gse::memcpy(elem + wo_body_a, &ws_body_a);
-		gse::memcpy(elem + wo_body_b, &ws_body_b);
+		gse::memcpy(elem + wo_body_a, ws_body_a);
+		gse::memcpy(elem + wo_body_b, ws_body_b);
 		const auto feature_hi = static_cast<std::uint32_t>(ws_feature_key >> 32);
 		const auto feature_lo = static_cast<std::uint32_t>(ws_feature_key & 0xFFFFFFFFu);
-		gse::memcpy(elem + wo_feature_key_hi, &feature_hi);
-		gse::memcpy(elem + wo_feature_key_lo, &feature_lo);
+		gse::memcpy(elem + wo_feature_key_hi, feature_hi);
+		gse::memcpy(elem + wo_feature_key_lo, feature_lo);
 
 		const std::uint32_t sticking = ws_sticking ? 1u : 0u;
-		gse::memcpy(elem + wo_sticking, &sticking);
+		gse::memcpy(elem + wo_sticking, sticking);
 
-		gse::memcpy(elem + wo_normal, &ws_normal);
-		gse::memcpy(elem + wo_tangent_u, &ws_tangent_u);
-		gse::memcpy(elem + wo_tangent_v, &ws_tangent_v);
+		gse::memcpy(elem + wo_normal, ws_normal);
+		gse::memcpy(elem + wo_tangent_u, ws_tangent_u);
+		gse::memcpy(elem + wo_tangent_v, ws_tangent_v);
 
 		gse::memcpy(elem + wo_local_anchor_a, ws_local_anchor_a.as_storage_span());
 		gse::memcpy(elem + wo_local_anchor_b, ws_local_anchor_b.as_storage_span());
 		gse::memcpy(elem + wo_lambda, ws_lambda.as_storage_span());
 
-		gse::memcpy(elem + wo_penalty, &ws_penalty);
+		gse::memcpy(elem + wo_penalty, ws_penalty);
 	}
 
 	m_joint_count = static_cast<std::uint32_t>(std::min(joints.size(), static_cast<std::size_t>(max_joints)));
@@ -692,30 +692,30 @@ auto gse::vbd::gpu_solver::upload(
 		const auto& j = joints[i];
 		auto* elem = m_upload_joint_data.data() + i * m_joint_layout.stride;
 
-		gse::memcpy(elem + jo_body_a, &j.body_a);
-		gse::memcpy(elem + jo_body_b, &j.body_b);
+		gse::memcpy(elem + jo_body_a, j.body_a);
+		gse::memcpy(elem + jo_body_b, j.body_b);
 
 		const auto type_val = static_cast<std::uint32_t>(j.type);
-		gse::memcpy(elem + jo_type, &type_val);
+		gse::memcpy(elem + jo_type, type_val);
 
 		const std::uint32_t limits = j.limits_enabled ? 1u : 0u;
-		gse::memcpy(elem + jo_limits_enabled, &limits);
+		gse::memcpy(elem + jo_limits_enabled, limits);
 
 		gse::memcpy(elem + jo_local_anchor_a, j.local_anchor_a.as_storage_span());
 		gse::memcpy(elem + jo_local_anchor_b, j.local_anchor_b.as_storage_span());
 
-		gse::memcpy(elem + jo_local_axis_a, &j.local_axis_a);
-		gse::memcpy(elem + jo_local_axis_b, &j.local_axis_b);
+		gse::memcpy(elem + jo_local_axis_a, j.local_axis_a);
+		gse::memcpy(elem + jo_local_axis_b, j.local_axis_b);
 
 		const float target_dist = j.target_distance.as<meters>();
-		gse::memcpy(elem + jo_target_distance, &target_dist);
+		gse::memcpy(elem + jo_target_distance, target_dist);
 
 		const float ll = j.limit_lower.as<radians>();
-		gse::memcpy(elem + jo_limit_lower, &ll);
+		gse::memcpy(elem + jo_limit_lower, ll);
 		const float lu = j.limit_upper.as<radians>();
-		gse::memcpy(elem + jo_limit_upper, &lu);
+		gse::memcpy(elem + jo_limit_upper, lu);
 
-		gse::memcpy(elem + jo_rest_orientation, &j.rest_orientation);
+		gse::memcpy(elem + jo_rest_orientation, j.rest_orientation);
 
 		const auto& body_a_state = bodies[j.body_a];
 		const auto& body_b_state = bodies[j.body_b];
@@ -879,18 +879,18 @@ auto gse::vbd::gpu_solver::upload(
 			for (int k = 0; k < 3; ++k) ang_c0_val[k] = slider_theta[k];
 		}
 
-		gse::memcpy(elem + jo_pos_lambda, &pos_lambda);
-		gse::memcpy(elem + jo_pos_penalty, &pos_penalty);
+		gse::memcpy(elem + jo_pos_lambda, pos_lambda);
+		gse::memcpy(elem + jo_pos_penalty, pos_penalty);
 
-		gse::memcpy(elem + jo_ang_lambda, &ang_lambda);
-		gse::memcpy(elem + jo_ang_penalty, &ang_penalty);
+		gse::memcpy(elem + jo_ang_lambda, ang_lambda);
+		gse::memcpy(elem + jo_ang_penalty, ang_penalty);
 
-		gse::memcpy(elem + jo_limit_lambda, &limit_lambda_val);
-		gse::memcpy(elem + jo_limit_penalty, &limit_penalty_val);
+		gse::memcpy(elem + jo_limit_lambda, limit_lambda_val);
+		gse::memcpy(elem + jo_limit_penalty, limit_penalty_val);
 
-		gse::memcpy(elem + jo_pos_c0, &pos_c0_val);
-		gse::memcpy(elem + jo_ang_c0, &ang_c0_val);
-		gse::memcpy(elem + jo_limit_c0, &limit_c0_val);
+		gse::memcpy(elem + jo_pos_c0, pos_c0_val);
+		gse::memcpy(elem + jo_ang_c0, ang_c0_val);
+		gse::memcpy(elem + jo_limit_c0, limit_c0_val);
 	}
 
 	m_pending_dispatch = true;
@@ -942,9 +942,9 @@ auto gse::vbd::gpu_solver::commit_upload() -> void {
 			gse::memcpy(vel, src + bo_velocity);
 			if (!is_finite_vec3(vel)) continue;
 
-			gse::memcpy(dst + bo_position, &pos);
-			gse::memcpy(dst + bo_velocity, &vel);
-			gse::memcpy(dst + bo_orientation, &orient);
+			gse::memcpy(dst + bo_position, pos);
+			gse::memcpy(dst + bo_velocity, vel);
+			gse::memcpy(dst + bo_orientation, orient);
 			gse::memcpy(dst + bo_angular_velocity, src + bo_angular_velocity, sizeof(float) * 3);
 			gse::memcpy(dst + bo_sleep_counter, src + bo_sleep_counter, sizeof(std::uint32_t));
 
@@ -958,8 +958,8 @@ auto gse::vbd::gpu_solver::commit_upload() -> void {
 			}
 			float amin[3] = { pos[0] - aabb_he[0], pos[1] - aabb_he[1], pos[2] - aabb_he[2] };
 			float amax[3] = { pos[0] + aabb_he[0], pos[1] + aabb_he[1], pos[2] + aabb_he[2] };
-			gse::memcpy(dst + bo_aabb_min, &amin);
-			gse::memcpy(dst + bo_aabb_max, &amax);
+			gse::memcpy(dst + bo_aabb_min, amin);
+			gse::memcpy(dst + bo_aabb_max, amax);
 		}
 	}
 
@@ -1078,7 +1078,7 @@ auto gse::vbd::gpu_solver::readback(const std::span<body_state> bodies, std::vec
 			b.body_velocity = {};
 		}
 
-		gse::memcpy(reinterpret_cast<std::byte*>(&b.orientation), &orient);
+		gse::memcpy(reinterpret_cast<std::byte*>(&b.orientation), orient);
 
 		float av[3];
 		gse::memcpy(av, elem + bo_angular_velocity);

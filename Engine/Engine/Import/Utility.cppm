@@ -50,8 +50,8 @@ export namespace gse {
 	template <is_trivially_copyable... Src>
 	auto memcpy(
 		std::byte* dest,
-		const Src*... src
-	) -> void;
+		const Src&... src
+	) -> void requires (!std::is_pointer_v<Src> && ...);
 
 	template <std::ranges::contiguous_range Container>
 	auto memcpy(
@@ -83,9 +83,9 @@ auto gse::scope(const std::function<void()>& in_scope) -> void {
 }
 
 template <gse::is_trivially_copyable ... Src>
-auto gse::memcpy(std::byte* dest, const Src*... src) -> void {
+auto gse::memcpy(std::byte* dest, const Src&... src) -> void requires (!std::is_pointer_v<Src> && ...) {
 	std::byte* out = dest;
-	((std::memcpy(out, src, sizeof(Src)), out += sizeof(Src)), ...);
+	((std::memcpy(out, std::addressof(src), sizeof(Src)), out += sizeof(Src)), ...);
 }
 
 template <std::ranges::contiguous_range Container>
