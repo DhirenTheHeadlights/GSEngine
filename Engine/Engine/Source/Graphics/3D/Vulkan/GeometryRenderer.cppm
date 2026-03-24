@@ -255,7 +255,7 @@ export namespace gse::renderer::geometry {
 	struct system {
 		static auto initialize(initialize_phase& phase, state& s) -> void;
 		static auto update(update_phase& phase, state& s) -> void;
-		static auto render(render_phase& phase, const state& s) -> void;
+		static auto render(const render_phase& phase, const state& s) -> void;
 	};
 }
 
@@ -1024,15 +1024,15 @@ auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> v
 				.world_aabb_max = world_aabb_max
 			};
 
-			for (const auto& inst : instances) {
+			for (const auto& [model_matrix, normal_matrix, skin_offset, joint_count] : instances) {
 				std::byte* offset = instance_staging.data() + (global_instance_offset * s.instance_stride);
 				instance_staging.resize(instance_staging.size() + s.instance_stride);
 				offset = instance_staging.data() + (global_instance_offset * s.instance_stride);
 
-				gse::memcpy(offset + s.instance_offsets["model_matrix"], &inst.model_matrix);
-				gse::memcpy(offset + s.instance_offsets["normal_matrix"], &inst.normal_matrix);
-				gse::memcpy(offset + s.instance_offsets["skin_offset"], &inst.skin_offset);
-				gse::memcpy(offset + s.instance_offsets["joint_count"], &inst.joint_count);
+				gse::memcpy(offset + s.instance_offsets["model_matrix"], model_matrix);
+				gse::memcpy(offset + s.instance_offsets["normal_matrix"], normal_matrix);
+				gse::memcpy(offset + s.instance_offsets["skin_offset"], skin_offset);
+				gse::memcpy(offset + s.instance_offsets["joint_count"], joint_count);
 
 				global_instance_offset++;
 			}
@@ -1091,15 +1091,15 @@ auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> v
 				.world_aabb_max = world_aabb_max
 			};
 
-			for (const auto& inst : instances) {
+			for (const auto& [model_matrix, normal_matrix, skin_offset, joint_count] : instances) {
 				std::byte* offset = instance_staging.data() + (global_instance_offset * s.instance_stride);
 				instance_staging.resize(instance_staging.size() + s.instance_stride);
 				offset = instance_staging.data() + (global_instance_offset * s.instance_stride);
 
-				gse::memcpy(offset + s.instance_offsets["model_matrix"], &inst.model_matrix);
-				gse::memcpy(offset + s.instance_offsets["normal_matrix"], &inst.normal_matrix);
-				gse::memcpy(offset + s.instance_offsets["skin_offset"], &inst.skin_offset);
-				gse::memcpy(offset + s.instance_offsets["joint_count"], &inst.joint_count);
+				gse::memcpy(offset + s.instance_offsets["model_matrix"], model_matrix);
+				gse::memcpy(offset + s.instance_offsets["normal_matrix"], normal_matrix);
+				gse::memcpy(offset + s.instance_offsets["skin_offset"], skin_offset);
+				gse::memcpy(offset + s.instance_offsets["joint_count"], joint_count);
 
 				global_instance_offset++;
 			}
@@ -1164,15 +1164,15 @@ auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> v
 		const mat4f view_proj = proj_matrix * view_matrix;
 		const frustum_planes frustum = extract_frustum_planes(view_proj);
 
-		gse::memcpy(s.frustum_buffer[frame_index].allocation.mapped(), &frustum);
+		gse::memcpy(s.frustum_buffer[frame_index].allocation.mapped(), frustum);
 
 		std::byte* batch_data = s.batch_info_buffer[frame_index].allocation.mapped();
 
 		auto write_batch_info = [&](const auto& batch, const std::size_t index) {
 			std::byte* offset = batch_data + (index * s.batch_stride);
 
-			gse::memcpy(offset + s.batch_offsets["first_instance"], &batch.first_instance);
-			gse::memcpy(offset + s.batch_offsets["instance_count"], &batch.instance_count);
+			gse::memcpy(offset + s.batch_offsets["first_instance"], batch.first_instance);
+			gse::memcpy(offset + s.batch_offsets["instance_count"], batch.instance_count);
 
 			gse::memcpy(offset + s.batch_offsets["aabb_min"], batch.world_aabb_min.as_storage_span());
 			gse::memcpy(offset + s.batch_offsets["aabb_max"], batch.world_aabb_max.as_storage_span());
@@ -1201,7 +1201,7 @@ auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> v
 	});
 }
 
-auto gse::renderer::geometry::system::render(render_phase& phase, const state& s) -> void {
+auto gse::renderer::geometry::system::render(const render_phase& phase, const state& s) -> void {
     const auto& render_items = phase.read_channel<render_data>();
     if (render_items.empty()) {
         return;
@@ -1645,8 +1645,8 @@ auto gse::renderer::geometry::upload_skeleton_data(const state& s, const skeleto
 		const mat4f inverse_bind = joints[i].inverse_bind();
 		const std::uint32_t parent_index = joints[i].parent_index();
 
-		gse::memcpy(offset + s.joint_offsets.at("inverse_bind"), &inverse_bind);
-		gse::memcpy(offset + s.joint_offsets.at("parent_index"), &parent_index);
+		gse::memcpy(offset + s.joint_offsets.at("inverse_bind"), inverse_bind);
+		gse::memcpy(offset + s.joint_offsets.at("parent_index"), parent_index);
 	}
 }
 

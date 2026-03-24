@@ -778,7 +778,7 @@ auto gse::shader::set_uniform(std::string_view full_name, const T& value, const 
 
 			gse::memcpy(
 				alloc.mapped() + mem_info.offset,
-				&value
+				value
 			);
 			return;
 		}
