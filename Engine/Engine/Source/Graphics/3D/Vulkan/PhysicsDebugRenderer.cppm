@@ -145,10 +145,6 @@ auto gse::renderer::physics_debug::system::initialize(const initialize_phase& ph
 		.type = typeid(bool)
 	});
 
-	if (const auto* save_state = phase.try_state_of<save::state>()) {
-		s.enabled = save_state->read("Graphics", "Physics Debug Renderer Enabled", true);
-	}
-
 	auto& config = s.ctx->config();
 
 	s.shader_handle = s.ctx->get<shader>("Shaders/Standard3D/physics_debug");

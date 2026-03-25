@@ -301,12 +301,6 @@ export namespace gse::gui {
 }
 
 auto gse::gui::system::initialize(initialize_phase& phase, system_state& s) -> void {
-	if (const auto* save_state = phase.try_state_of<save::state>()) {
-		s.current_theme = static_cast<theme>(save_state->read("UI", "Theme", static_cast<int>(theme::dark)));
-		s.ui_scale = save_state->read("UI", "Scale", 1.0f);
-		s.font_index = save_state->read("UI", "Font", 0);
-	}
-
 	s.available_fonts = s.rctx->enumerate_resources("Fonts", ".gfont");
 
 	if (s.available_fonts.empty()) {
@@ -635,10 +629,8 @@ auto gse::gui::system::end_frame(end_frame_phase& phase, system_state& s) -> voi
 		.publish_update = [&phase](save::update_request req) {
 			phase.channels.push(std::move(req));
 		},
-		.request_save = [save_state] {
-			if (save_state) {
-				save_state->save();
-			}
+		.request_save = [&phase] {
+			phase.channels.push(save::save_request{});
 		},
 		.tooltip = &s.tooltip,
 		.input_layers = &s.input_layers_data,

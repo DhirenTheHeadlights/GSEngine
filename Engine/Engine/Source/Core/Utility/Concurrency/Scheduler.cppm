@@ -72,9 +72,6 @@ export namespace gse {
 		auto clear(
 		) -> void;
 
-		auto registry_access_mut(
-		) -> registry_access&;
-
 		auto push_deferred(
 			std::move_only_function<void()> fn
 		) -> void;
@@ -83,7 +80,6 @@ export namespace gse {
 		auto defer(
 			F&& fn
 		) -> void;
-
 	private:
 		auto drain_deferred(
 		) -> void;
@@ -317,7 +313,7 @@ auto gse::scheduler::shutdown() -> void {
 		.registry = m_registry_access
 	};
 
-	for (auto& node : m_nodes | std::views::reverse) {
+	for (const auto& node : m_nodes | std::views::reverse) {
 		node->shutdown(phase);
 	}
 }
@@ -326,10 +322,6 @@ auto gse::scheduler::clear() -> void {
 	m_nodes.clear();
 	m_state_index.clear();
 	m_channels.clear();
-}
-
-auto gse::scheduler::registry_access_mut() -> registry_access& {
-	return m_registry_access;
 }
 
 auto gse::scheduler::snapshot_all_channels() -> void {
