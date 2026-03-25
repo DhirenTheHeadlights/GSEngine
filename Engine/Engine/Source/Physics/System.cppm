@@ -292,11 +292,6 @@ auto gse::physics::system::initialize(const initialize_phase& phase, state& s) -
 		.type = typeid(bool)
 	});
 
-	if (const auto* save_state = phase.try_state_of<save::state>()) {
-		s.update_phys = save_state->read("Physics", "Update Physics", true);
-		s.use_gpu_solver = save_state->read("Physics", "Use GPU Solver", false);
-	}
-
 	s.vbd_solver.configure(vbd::solver_config{
 		.iterations = 10,
 		.alpha = 0.99f,

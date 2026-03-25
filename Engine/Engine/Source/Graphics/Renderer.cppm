@@ -114,10 +114,6 @@ auto gse::renderer::system::initialize(const initialize_phase& phase, state& s) 
 
 	ctx.compile();
 
-	if (const auto* save_state = phase.try_state_of<save::state>()) {
-		s.hot_reload_enabled = save_state->read("Graphics", "Hot Reload", false);
-	}
-
 	phase.channels.push(save::register_property{
 		.category = "Graphics",
 		.name = "Hot Reload",
