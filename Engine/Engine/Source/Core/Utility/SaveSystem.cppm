@@ -1,7 +1,7 @@
 export module gse.utility:save_system;
 
 import std;
-import <toml++/toml.h>;
+import tomlplusplus;
 
 import :id;
 import :concepts;
@@ -10,7 +10,6 @@ import :phase_context;
 export namespace gse::save {
     class property_base;
     class state;
-    template <typename T> class registration_builder;
 
     struct no_constraint {};
 
@@ -85,12 +84,13 @@ export namespace gse::save {
         virtual auto reset_to_default(
         ) -> void = 0;
 
-        virtual auto serialize(
-            std::ostream& os
+        virtual auto write_toml(
+            toml::table& table,
+            std::string_view key
         ) const -> void = 0;
 
-        virtual auto deserialize(
-            std::istream& is
+        virtual auto read_toml(
+            const toml::node& node
         ) -> bool = 0;
 
         [[nodiscard]] virtual auto as_void_ptr(
@@ -183,12 +183,13 @@ export namespace gse::save {
         auto reset_to_default(
         ) -> void override;
 
-        auto serialize(
-            std::ostream& os
+        auto write_toml(
+            toml::table& table,
+            std::string_view key
         ) const -> void override;
 
-        auto deserialize(
-            std::istream& is
+        auto read_toml(
+            const toml::node& node
         ) -> bool override;
 
         [[nodiscard]] auto as_void_ptr(
@@ -387,11 +388,11 @@ export namespace gse::save {
 
         auto save_to_file(
             const std::filesystem::path& path
-        ) const -> bool;
+        ) -> bool;
 
         auto load_from_file(
             const std::filesystem::path& path
-        ) const -> bool;
+        ) -> bool;
 
         auto set_auto_save(
             bool enabled,
@@ -399,7 +400,7 @@ export namespace gse::save {
         ) -> void;
 
         auto save(
-        ) const -> bool;
+        ) -> bool;
 
         [[nodiscard]] auto has_unsaved_changes(
         ) const -> bool;
@@ -408,7 +409,7 @@ export namespace gse::save {
         ) const -> bool;
 
         auto mark_all_clean(
-        ) const -> void;
+        ) -> void;
 
         auto clear_restart_pending(
         ) -> void;
@@ -440,13 +441,14 @@ export namespace gse::save {
 
     private:
         std::vector<std::unique_ptr<property_base>> m_properties;
-        mutable std::unordered_map<std::string, std::vector<property_base*>> m_by_category;
+        std::unordered_map<std::string, std::vector<property_base*>> m_by_category;
         std::vector<change_callback> m_callbacks;
 
         std::unordered_map<std::string, std::map<std::string, int>*> m_int_maps;
-        mutable std::unordered_map<std::string, std::map<std::string, int>> m_int_map_cache;
+        std::unordered_map<std::string, std::map<std::string, int>> m_int_map_cache;
 
         std::filesystem::path m_auto_save_path;
+        toml::table m_loaded_toml;
         bool m_auto_save = false;
         bool m_restart_pending = false;
 
@@ -488,64 +490,6 @@ export namespace gse::save {
         std::type_index type;
     };
 
-    template <typename T>
-    class registration_builder {
-    public:
-        registration_builder(
-            channel<register_property>& ch,
-            std::string_view category,
-            std::string_view name,
-            T& ref
-        );
-
-        auto description(
-            std::string_view desc
-        ) -> registration_builder&;
-
-        auto default_value(
-            T value
-        ) -> registration_builder&;
-
-        auto range(
-            T min,
-            T max,
-            T step = T{ 1 }
-        ) -> registration_builder& requires std::is_arithmetic_v<T>;
-
-        auto options(
-            std::initializer_list<std::pair<std::string, T>> opts
-        ) -> registration_builder&;
-
-        auto options(
-            std::vector<std::pair<std::string, T>> opts
-        ) -> registration_builder&;
-
-        auto restart_required(
-        ) -> registration_builder&;
-
-        auto commit(
-        ) const -> void;
-
-    private:
-        channel<register_property>& m_channel;
-        std::string m_category;
-        std::string m_name;
-        std::string m_description;
-        T& m_ref;
-        float m_range_min = 0.f;
-        float m_range_max = 1.f;
-        float m_range_step = 0.1f;
-        std::vector<std::pair<std::string, int>> m_enum_options;
-        bool m_requires_restart = false;
-    };
-
-    template <typename T>
-    auto bind(
-        channel<register_property>& ch,
-        std::string_view category,
-        std::string_view name,
-        T& ref
-    ) -> registration_builder<T>;
 }
 
 auto gse::save::property_base::as_bool() const -> bool {
@@ -668,42 +612,55 @@ auto gse::save::property<T, Constraint>::reset_to_default() -> void {
 }
 
 template <typename T, typename Constraint>
-auto gse::save::property<T, Constraint>::serialize(std::ostream& os) const -> void {
-    if constexpr (std::is_same_v<T, std::string>) {
-        os << std::quoted(m_ref);
+auto gse::save::property<T, Constraint>::write_toml(toml::table& table, const std::string_view key) const -> void {
+    if constexpr (std::is_same_v<T, bool>) {
+        table.insert(key, m_ref);
     }
-    else if constexpr (std::is_same_v<T, bool>) {
-        os << (m_ref ? "true" : "false");
+    else if constexpr (std::is_same_v<T, float>) {
+        table.insert(key, static_cast<double>(m_ref));
+    }
+    else if constexpr (std::is_same_v<T, int>) {
+        table.insert(key, static_cast<std::int64_t>(m_ref));
+    }
+    else if constexpr (std::is_same_v<T, std::string>) {
+        table.insert(key, m_ref);
     }
     else if constexpr (std::is_enum_v<T>) {
-        os << static_cast<std::underlying_type_t<T>>(m_ref);
-    }
-    else {
-        os << m_ref;
+        table.insert(key, static_cast<std::int64_t>(m_ref));
     }
 }
 
 template <typename T, typename Constraint>
-auto gse::save::property<T, Constraint>::deserialize(std::istream& is) -> bool {
-    if constexpr (std::is_same_v<T, std::string>) {
-        T value{};
-        if (!(is >> std::quoted(value))) return false;
-        set(std::move(value));
+auto gse::save::property<T, Constraint>::read_toml(const toml::node& node) -> bool {
+    if constexpr (std::is_same_v<T, bool>) {
+        if (!node.is_boolean()) return false;
+        set(node.value_or(false));
     }
-    else if constexpr (std::is_same_v<T, bool>) {
-        std::string s;
-        if (!(is >> s)) return false;
-        set(s == "true" || s == "1");
+    else if constexpr (std::is_same_v<T, float>) {
+        if (node.is_floating_point()) {
+            set(static_cast<float>(node.value_or(0.0)));
+        }
+        else if (node.is_integer()) {
+            set(static_cast<float>(node.value_or<std::int64_t>(0)));
+        }
+        else {
+            return false;
+        }
+    }
+    else if constexpr (std::is_same_v<T, int>) {
+        if (!node.is_integer()) return false;
+        set(static_cast<int>(node.value_or<std::int64_t>(0)));
+    }
+    else if constexpr (std::is_same_v<T, std::string>) {
+        if (!node.is_string()) return false;
+        set(node.value_or<std::string>(""));
     }
     else if constexpr (std::is_enum_v<T>) {
-        std::underlying_type_t<T> value{};
-        if (!(is >> value)) return false;
-        set(static_cast<T>(value));
+        if (!node.is_integer()) return false;
+        set(static_cast<T>(node.value_or<std::int64_t>(0)));
     }
     else {
-        T value{};
-        if (!(is >> value)) return false;
-        set(std::move(value));
+        return false;
     }
     return true;
 }
@@ -826,10 +783,9 @@ auto gse::save::property<T, Constraint>::enum_label(const std::size_t index) con
 template <typename T, typename Constraint>
 auto gse::save::property<T, Constraint>::enum_index() const -> std::size_t {
     if constexpr (requires { m_constraint.options; }) {
-        for (std::size_t i = 0; i < m_constraint.options.size(); ++i) {
-            if (m_constraint.options[i].second == m_ref) {
-                return i;
-            }
+        const auto it = std::ranges::find_if(m_constraint.options, [this](const auto& opt) { return opt.second == m_ref; });
+        if (it != m_constraint.options.end()) {
+            return static_cast<std::size_t>(std::ranges::distance(m_constraint.options.begin(), it));
         }
     }
     return 0;
@@ -1069,7 +1025,14 @@ auto gse::save::state::process_registration(const save::register_property& reg) 
     }
 
     if (prop) {
-        register_property(std::move(prop));
+        auto* registered = register_property(std::move(prop));
+
+        if (const auto* cat_table = m_loaded_toml[reg.category].as_table()) {
+            if (const auto* node = cat_table->get(reg.name)) {
+                registered->read_toml(*node);
+                registered->mark_clean();
+            }
+        }
     }
 }
 
@@ -1082,16 +1045,17 @@ auto gse::save::state::register_property(std::unique_ptr<property_base> prop) ->
     const std::string cat(prop->category());
     const std::string name(prop->name());
 
-    for (auto it = m_properties.begin(); it != m_properties.end(); ++it) {
-        if ((*it)->category() == cat && (*it)->name() == name) {
-            auto& cat_vec = m_by_category[cat];
-            std::erase(cat_vec, it->get());
+    auto it = std::ranges::find_if(m_properties, [&](const auto& p) {
+        return p->category() == cat && p->name() == name;
+    });
+    if (it != m_properties.end()) {
+        auto& cat_vec = m_by_category[cat];
+        std::erase(cat_vec, it->get());
 
-            auto* ptr = prop.get();
-            *it = std::move(prop);
-            cat_vec.push_back(ptr);
-            return ptr;
-        }
+        auto* ptr = prop.get();
+        *it = std::move(prop);
+        cat_vec.push_back(ptr);
+        return ptr;
     }
 
     auto* ptr = prop.get();
@@ -1103,9 +1067,7 @@ auto gse::save::state::register_property(std::unique_ptr<property_base> prop) ->
 auto gse::save::state::categories() const -> std::vector<std::string_view> {
     std::vector<std::string_view> result;
     result.reserve(m_by_category.size());
-    for (const auto& cat : m_by_category | std::views::keys) {
-        result.push_back(cat);
-    }
+    std::ranges::copy(m_by_category | std::views::keys, std::back_inserter(result));
     std::ranges::sort(result);
     return result;
 }
@@ -1143,34 +1105,17 @@ auto gse::save::state::find(const std::string_view category, const std::string_v
     return nullptr;
 }
 
-auto gse::save::state::save_to_file(const std::filesystem::path& path) const -> bool {
+auto gse::save::state::save_to_file(const std::filesystem::path& path) -> bool {
     toml::table root;
 
     for (const auto& prop : m_properties) {
         std::string category(prop->category());
-        std::string name(prop->name());
 
         if (!root.contains(category)) {
             root.insert(category, toml::table{});
         }
 
-        auto& cat_table = *root[category].as_table();
-
-        if (prop->type() == typeid(bool)) {
-            cat_table.insert(name, prop->as_bool());
-        } else if (prop->type() == typeid(float)) {
-            cat_table.insert(name, static_cast<double>(prop->as_float()));
-        } else if (prop->type() == typeid(int)) {
-            cat_table.insert(name, static_cast<std::int64_t>(prop->as_int()));
-        } else if (prop->type() == typeid(std::string)) {
-            cat_table.insert(name, std::string(prop->as_string()));
-        } else if (prop->constraint_kind() == constraint_type::enumeration) {
-            cat_table.insert(name, static_cast<std::int64_t>(prop->as_int()));
-        } else {
-            std::ostringstream oss;
-            prop->serialize(oss);
-            cat_table.insert(name, oss.str());
-        }
+        prop->write_toml(*root[category].as_table(), prop->name());
     }
 
     for (const auto& [category, map_ptr] : m_int_maps) {
@@ -1199,7 +1144,7 @@ auto gse::save::state::save_to_file(const std::filesystem::path& path) const -> 
     return true;
 }
 
-auto gse::save::state::load_from_file(const std::filesystem::path& path) const -> bool {
+auto gse::save::state::load_from_file(const std::filesystem::path& path) -> bool {
     if (!std::filesystem::exists(path)) {
         std::println("Settings file does not exist: {}", path.string());
         return false;
@@ -1214,62 +1159,36 @@ auto gse::save::state::load_from_file(const std::filesystem::path& path) const -
     oss << file.rdbuf();
     std::string content = oss.str();
 
-    toml::table root;
     try {
-        root = toml::parse(content, path.string());
+        m_loaded_toml = toml::parse(content, path.string());
     } catch (const toml::parse_error& err) {
         std::println("TOML parse error in {}: {}", path.string(), err.what());
         return false;
     }
 
-    for (const auto& [category, cat_node] : root) {
+    for (const auto& [category, cat_node] : m_loaded_toml) {
         const auto* cat_table = cat_node.as_table();
         if (!cat_table) continue;
 
         std::string cat_str(category.str());
+        std::map<std::string, int> int_map_entries;
 
-        bool all_integers = !cat_table->empty();
         for (const auto& [name, value_node] : *cat_table) {
-            if (!value_node.is_integer()) {
-                all_integers = false;
-                break;
+            auto* prop = find(cat_str, name.str());
+
+            if (prop) {
+                prop->read_toml(value_node);
+            }
+            else if (value_node.is_integer()) {
+                int_map_entries[std::string(name.str())] = static_cast<int>(value_node.value_or<std::int64_t>(0));
             }
         }
 
-        if (all_integers) {
-            auto& cached = m_int_map_cache[cat_str];
-            cached.clear();
-            for (const auto& [name, value_node] : *cat_table) {
-                cached[std::string(name.str())] = static_cast<int>(value_node.value_or<std::int64_t>(0));
-            }
+        if (!int_map_entries.empty()) {
+            m_int_map_cache[cat_str] = std::move(int_map_entries);
 
             if (auto it = m_int_maps.find(cat_str); it != m_int_maps.end() && it->second) {
-                *it->second = cached;
-            }
-            continue;
-        }
-
-        for (const auto& [name, value_node] : *cat_table) {
-            std::string key = cat_str + "." + std::string(name.str());
-
-            property_base* prop = nullptr;
-            for (const auto& p : m_properties) {
-                if (std::string(p->category()) + "." + std::string(p->name()) == key) {
-                    prop = p.get();
-                    break;
-                }
-            }
-
-            if (!prop) continue;
-
-            if (value_node.is_boolean()) {
-                prop->set_bool(value_node.value_or(false));
-            } else if (value_node.is_integer()) {
-                prop->set_int(static_cast<int>(value_node.value_or<std::int64_t>(0)));
-            } else if (value_node.is_floating_point()) {
-                prop->set_float(static_cast<float>(value_node.value_or(0.0)));
-            } else if (value_node.is_string()) {
-                prop->set_string(value_node.value_or<std::string>(""));
+                *it->second = m_int_map_cache[cat_str];
             }
         }
     }
@@ -1285,7 +1204,7 @@ auto gse::save::state::set_auto_save(const bool enabled, std::filesystem::path p
     }
 }
 
-auto gse::save::state::save() const -> bool {
+auto gse::save::state::save() -> bool {
     if (m_auto_save_path.empty()) {
         return false;
     }
@@ -1322,7 +1241,7 @@ auto gse::save::state::clear_restart_pending() -> void {
     m_restart_pending = false;
 }
 
-auto gse::save::state::mark_all_clean() const -> void {
+auto gse::save::state::mark_all_clean() -> void {
     for (const auto& prop : m_properties) {
         prop->mark_clean();
     }
@@ -1461,79 +1380,3 @@ auto gse::save::state::read(const std::string_view category, const std::string_v
     }
 }
 
-template <typename T>
-gse::save::registration_builder<T>::registration_builder(
-    channel<register_property>& ch,
-    const std::string_view category,
-    const std::string_view name,
-    T& ref
-) : m_channel(ch)
-  , m_category(category)
-  , m_name(name)
-  , m_ref(ref) {}
-
-template <typename T>
-auto gse::save::registration_builder<T>::description(const std::string_view desc) -> registration_builder& {
-    m_description = desc;
-    return *this;
-}
-
-template <typename T>
-auto gse::save::registration_builder<T>::default_value(T) -> registration_builder& {
-    return *this;
-}
-
-template <typename T>
-auto gse::save::registration_builder<T>::range(T min, T max, T step) -> registration_builder& requires std::is_arithmetic_v<T> {
-    m_range_min = static_cast<float>(min);
-    m_range_max = static_cast<float>(max);
-    m_range_step = static_cast<float>(step);
-    return *this;
-}
-
-template <typename T>
-auto gse::save::registration_builder<T>::options(std::initializer_list<std::pair<std::string, T>> opts) -> registration_builder& {
-    if constexpr (std::is_convertible_v<T, int>) {
-        for (const auto& [label, value] : opts) {
-            m_enum_options.emplace_back(label, static_cast<int>(value));
-        }
-    }
-    return *this;
-}
-
-template <typename T>
-auto gse::save::registration_builder<T>::options(std::vector<std::pair<std::string, T>> opts) -> registration_builder& {
-    if constexpr (std::is_convertible_v<T, int>) {
-        for (const auto& [label, value] : opts) {
-            m_enum_options.emplace_back(label, static_cast<int>(value));
-        }
-    }
-    return *this;
-}
-
-template <typename T>
-auto gse::save::registration_builder<T>::restart_required() -> registration_builder& {
-    m_requires_restart = true;
-    return *this;
-}
-
-template <typename T>
-auto gse::save::registration_builder<T>::commit() const -> void {
-    m_channel.push({
-        .category = m_category,
-        .name = m_name,
-        .description = m_description,
-        .ref = reinterpret_cast<void*>(&m_ref),
-        .type = typeid(T),
-        .range_min = m_range_min,
-        .range_max = m_range_max,
-        .range_step = m_range_step,
-        .enum_options = m_enum_options,
-        .requires_restart = m_requires_restart
-    });
-}
-
-template <typename T>
-auto gse::save::bind(channel<register_property>& ch, const std::string_view category, const std::string_view name, T& ref) -> registration_builder<T> {
-    return registration_builder<T>(ch, category, name, ref);
-}

@@ -56,24 +56,24 @@ export namespace gse::gui {
 		system::slider<T, Unit>(state_of<system_state>(), name, value, min, max);
 	}
 
-	template <typename T, int N>
+	template <typename T, int N> requires std::is_arithmetic_v<T>
 	auto slider(
 		const std::string& name,
-		unitless::vec_t<T, N>& vec,
-		unitless::vec_t<T, N> min,
-		unitless::vec_t<T, N> max
+		gse::vec<T, N>& v,
+		gse::vec<T, N> min,
+		gse::vec<T, N> max
 	) -> void {
-		system::slider(state_of<system_state>(), name, vec, min, max);
+		system::slider(state_of<system_state>(), name, v, min, max);
 	}
 
-	template <typename T, int N, auto Unit = typename T::default_unit{} >
+	template <typename T, int N, auto Unit = typename T::default_unit{}> requires internal::is_arithmetic_wrapper<T>
 	auto slider(
 		const std::string& name,
-		vec_t<T, N>& vec,
-		vec_t<T, N> min,
-		vec_t<T, N> max
+		gse::vec<T, N>& v,
+		gse::vec<T, N> min,
+		gse::vec<T, N> max
 	) -> void {
-		system::slider<T, N, Unit>(state_of<system_state>(), name, vec, min, max);
+		system::slider<T, N, Unit>(state_of<system_state>(), name, v, min, max);
 	}
 
 	template <is_arithmetic T>
@@ -92,20 +92,36 @@ export namespace gse::gui {
 		system::value<T, Unit>(state_of<system_state>(), name, val);
 	}
 
-	template <typename T, int N>
+	template <auto Unit, is_quantity T>
+	auto value(
+		const std::string& name,
+		unit_display<Unit, T> ud
+	) -> void {
+		system::value(state_of<system_state>(), name, ud);
+	}
+
+	template <typename T, int N> requires std::is_arithmetic_v<T>
 	auto vec(
 		const std::string& name,
-		unitless::vec_t<T, N> val
+		gse::vec<T, N> val
 	) -> void {
 		system::vec(state_of<system_state>(), name, val);
 	}
 
-	template <typename T, int N, auto Unit = typename T::default_unit{}>
+	template <typename T, int N, auto Unit = typename T::default_unit{}> requires internal::is_arithmetic_wrapper<T>
 	auto vec(
 		const std::string& name,
-		vec_t<T, N> val
+		gse::vec<T, N> val
 	) -> void {
 		system::vec<T, N, Unit>(state_of<system_state>(), name, val);
+	}
+
+	template <auto Unit, typename T, int N>
+	auto vec(
+		const std::string& name,
+		unit_display<Unit, gse::vec<T, N>> ud
+	) -> void {
+		system::vec(state_of<system_state>(), name, ud);
 	}
 
 	template <typename T>

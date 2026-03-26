@@ -2,7 +2,7 @@ export module gse.graphics:styles;
 
 import std;
 	
-import gse.physics.math;
+import gse.math;
 
 export namespace gse::gui {
     enum class theme {
@@ -14,52 +14,52 @@ export namespace gse::gui {
 
 	struct style {
 		// Window chrome
-		unitless::vec4 color_title_bar = { 0.18f, 0.18f, 0.20f, 0.95f };
-		unitless::vec4 color_title_bar_inactive = { 0.12f, 0.12f, 0.14f, 0.95f };
-		unitless::vec4 color_menu_body = { 0.10f, 0.10f, 0.12f, 0.98f };
-		unitless::vec4 color_menu_bar = { 0.08f, 0.08f, 0.10f, 1.0f };
-		unitless::vec4 color_border = { 0.06f, 0.06f, 0.08f, 1.0f };
+		vec4f color_title_bar = { 0.18f, 0.18f, 0.20f, 0.95f };
+		vec4f color_title_bar_inactive = { 0.12f, 0.12f, 0.14f, 0.95f };
+		vec4f color_menu_body = { 0.10f, 0.10f, 0.12f, 0.98f };
+		vec4f color_menu_bar = { 0.08f, 0.08f, 0.10f, 1.0f };
+		vec4f color_border = { 0.06f, 0.06f, 0.08f, 1.0f };
 
 		// Text
-		unitless::vec4 color_text = { 0.92f, 0.92f, 0.94f, 1.0f };
-		unitless::vec4 color_text_secondary = { 0.6f, 0.6f, 0.62f, 1.0f };
-		unitless::vec4 color_text_disabled = { 0.5f, 0.5f, 0.52f, 1.0f };
+		vec4f color_text = { 0.92f, 0.92f, 0.94f, 1.0f };
+		vec4f color_text_secondary = { 0.6f, 0.6f, 0.62f, 1.0f };
+		vec4f color_text_disabled = { 0.5f, 0.5f, 0.52f, 1.0f };
 
 		// Icons
-		unitless::vec4 color_icon = { 0.7f, 0.7f, 0.72f, 1.0f };
-		unitless::vec4 color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f };
+		vec4f color_icon = { 0.7f, 0.7f, 0.72f, 1.0f };
+		vec4f color_icon_hovered = { 1.0f, 1.0f, 1.0f, 1.0f };
 
 		// Interactive widget states (buttons, selectables, tree rows)
-		unitless::vec4 color_widget_background = { 0.22f, 0.22f, 0.24f, 1.0f };
-		unitless::vec4 color_widget_hovered = { 0.30f, 0.30f, 0.34f, 1.0f };
-		unitless::vec4 color_widget_active = { 0.24f, 0.52f, 0.88f, 1.0f };
-		unitless::vec4 color_widget_selected = { 0.24f, 0.52f, 0.88f, 0.85f };
+		vec4f color_widget_background = { 0.22f, 0.22f, 0.24f, 1.0f };
+		vec4f color_widget_hovered = { 0.30f, 0.30f, 0.34f, 1.0f };
+		vec4f color_widget_active = { 0.24f, 0.52f, 0.88f, 1.0f };
+		vec4f color_widget_selected = { 0.24f, 0.52f, 0.88f, 0.85f };
 
 		// Sliders
-		unitless::vec4 color_slider_fill = { 0.24f, 0.52f, 0.88f, 0.9f };
+		vec4f color_slider_fill = { 0.24f, 0.52f, 0.88f, 0.9f };
 
 		// Toggle switches
-		unitless::vec4 color_toggle_on = { 0.2f, 0.65f, 0.35f, 1.0f };
-		unitless::vec4 color_toggle_off = { 0.28f, 0.28f, 0.30f, 1.0f };
+		vec4f color_toggle_on = { 0.2f, 0.65f, 0.35f, 1.0f };
+		vec4f color_toggle_off = { 0.28f, 0.28f, 0.30f, 1.0f };
 
 		// Knobs/handles (for toggles, sliders)
-		unitless::vec4 color_handle = { 0.92f, 0.92f, 0.94f, 1.0f };
-		unitless::vec4 color_handle_hovered = { 1.0f, 1.0f, 1.0f, 1.0f };
+		vec4f color_handle = { 0.92f, 0.92f, 0.94f, 1.0f };
+		vec4f color_handle_hovered = { 1.0f, 1.0f, 1.0f, 1.0f };
 
 		// Input fields
-		unitless::vec4 color_input_background = { 0.08f, 0.08f, 0.10f, 1.0f };
-		unitless::vec4 color_selection = { 0.24f, 0.52f, 0.88f, 0.45f };
-		unitless::vec4 color_caret = { 0.92f, 0.92f, 0.94f, 1.0f };
+		vec4f color_input_background = { 0.08f, 0.08f, 0.10f, 1.0f };
+		vec4f color_selection = { 0.24f, 0.52f, 0.88f, 0.45f };
+		vec4f color_caret = { 0.92f, 0.92f, 0.94f, 1.0f };
 
 		// Docking system
-		unitless::vec4 color_dock_preview = { 0.24f, 0.52f, 0.88f, 0.35f };
-		unitless::vec4 color_dock_tab_active = { 0.24f, 0.52f, 0.88f, 0.6f };
+		vec4f color_dock_preview = { 0.24f, 0.52f, 0.88f, 0.35f };
+		vec4f color_dock_tab_active = { 0.24f, 0.52f, 0.88f, 0.6f };
 
 		// Sizing
 		float padding = 10.f;
 		float title_bar_height = 30.f;
 		float resize_border_thickness = 8.f;
-		unitless::vec2 min_menu_size = { 150.f, 100.f };
+		vec2f min_menu_size = { 150.f, 100.f };
 		float font_size = 16.f;
 		float menu_bar_height = 32.f;
 		std::filesystem::path font;

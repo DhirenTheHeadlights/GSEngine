@@ -3,7 +3,7 @@ export module gse.network:bitstream;
 import std;
 
 import gse.assert;
-import gse.physics.math;
+import gse.math;
 import gse.utility;
 
 export namespace gse::network {
@@ -76,6 +76,11 @@ export namespace gse::network {
 
 		auto current_message_id(
 		) const -> std::uint16_t;
+
+		enum class read_result { ok, incomplete };
+		auto try_read(
+			std::span<std::byte> data
+		) -> read_result;
 	private:
 		auto can_advance(
 			std::size_t bits
@@ -116,7 +121,7 @@ auto gse::network::bitstream::write(const std::span<const std::byte> data) -> vo
 
 	if ((m_head_bits % 8) == 0) {
 		const std::size_t byte_index = m_head_bits / 8;
-		std::memcpy(m_buffer.data() + byte_index, data.data(), data.size_bytes());
+		gse::memcpy(m_buffer.data() + byte_index, data);
 		m_head_bits += bits;
 		return;
 	}
@@ -153,21 +158,18 @@ auto gse::network::bitstream::read(std::span<std::byte> data) -> void {
 	const std::size_t bits = data.size_bytes() * 8;
 	const bool ok = can_advance(bits);
 
-	assert(
-		ok,
-		std::source_location::current(),
-		"Bitstream underflow id=0x{:04X} need={} have={} head_bits={}", m_cur_msg_id, bits, remaining_bits(), m_head_bits
-	);
-
 	if (!ok) {
+		// Log warning instead of asserting
+		std::println("[Network Warning] Incomplete packet read: need {} bits, have {} bits available",
+			bits, m_buffer.size() * 8 - m_head_bits);
+		std::fill(data.begin(), data.end(), std::byte(0));
 		m_error = true;
-		std::ranges::fill(data, std::byte{ 0 });
 		return;
 	}
 
 	if ((m_head_bits % 8) == 0) {
 		const std::size_t byte_index = m_head_bits / 8;
-		std::memcpy(data.data(), m_buffer.data() + byte_index, data.size_bytes());
+		gse::memcpy(data.data(), m_buffer.data() + byte_index, data.size_bytes());
 		m_head_bits += bits;
 		return;
 	}
@@ -245,4 +247,13 @@ auto gse::network::bitstream::current_message_id() const -> std::uint16_t {
 auto gse::network::bitstream::can_advance(const std::size_t bits) const -> bool {
 	const std::size_t cap = capacity_bits();
 	return bits <= (cap - std::min(m_head_bits, cap));
+}
+
+auto gse::network::bitstream::try_read(std::span<std::byte> data) -> read_result {
+	const std::size_t bits = data.size_bytes() * 8;
+	if (!can_advance(bits)) {
+		return read_result::incomplete;
+	}
+	read(data);
+	return read_result::ok;
 }

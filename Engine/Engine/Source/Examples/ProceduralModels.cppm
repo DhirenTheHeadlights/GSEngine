@@ -5,6 +5,7 @@ import std;
 import gse.graphics;
 import gse.physics;
 import gse.runtime;
+import gse.platform;
 
 export namespace gse::procedural_model {
     auto box(
@@ -20,9 +21,9 @@ export namespace gse::procedural_model {
 }
 
 auto gse::procedural_model::box(const resource::handle<material>& mat, const vec3<length>& size) -> resource::handle<model> {
-    const float sx = size.x().template as<decltype(meters)>();
-    const float sy = size.y().template as<decltype(meters)>();
-    const float sz = size.z().template as<decltype(meters)>();
+    const float sx = size.x().as<meters>();
+    const float sy = size.y().as<meters>();
+    const float sz = size.z().as<meters>();
 
     const std::string key = std::format("proc/box:{}x{}x{}", sx, sy, sz);
 
@@ -41,7 +42,7 @@ auto gse::procedural_model::box(const resource::handle<material>& mat, const vec
 
     constexpr float h = 0.5f;
 
-    auto push_face = [&](const vec3<length>& a, const vec3<length>& b, const vec3<length>& c, const vec3<length>& d, const unitless::vec3 n, float u_scale, float v_scale) {
+    auto push_face = [&](const vec3<length>& a, const vec3<length>& b, const vec3<length>& c, const vec3<length>& d, const vec3f n, float u_scale, float v_scale) {
         v.push_back(vertex{ a, n, { 0.0f, 0.0f } });
         v.push_back(vertex{ b, n, { u_scale, 0.0f } });
         v.push_back(vertex{ c, n, { u_scale, v_scale } });
@@ -57,7 +58,7 @@ auto gse::procedural_model::box(const resource::handle<material>& mat, const vec
 
     std::vector<std::uint32_t> idx;
     idx.reserve(36);
-    for (std::uint32_t f = 0; f < 6; ++f) {
+    for (const auto f : std::views::iota(0u, 6u)) {
         const std::uint32_t o = f * 4;
         idx.push_back(o + 0); idx.push_back(o + 1); idx.push_back(o + 2);
         idx.push_back(o + 2); idx.push_back(o + 3); idx.push_back(o + 0);
@@ -97,13 +98,13 @@ auto gse::procedural_model::sphere(const resource::handle<material>& mat, std::u
     std::vector<vertex> vertices;
     vertices.reserve((stacks + 1) * (sectors + 1));
 
-    for (std::uint32_t i = 0; i <= stacks; ++i) {
+    for (const auto i : std::views::iota(0u, stacks + 1)) {
         const float v = static_cast<float>(i) / static_cast<float>(stacks);
         const float phi = std::numbers::pi_v<float> *v;
         const float sp = std::sin(phi);
         const float cp = std::cos(phi);
 
-        for (std::uint32_t j = 0; j <= sectors; ++j) {
+        for (const auto j : std::views::iota(0u, sectors + 1)) {
             constexpr float r = 0.5f;
             const float u = static_cast<float>(j) / static_cast<float>(sectors);
             const float theta = 2.f * std::numbers::pi_v<float> * u;
@@ -116,13 +117,13 @@ auto gse::procedural_model::sphere(const resource::handle<material>& mat, std::u
             	r * sp * st
             };
 
-            const unitless::vec3 n{
+            const vec3f n{
             	sp * ct,
             	cp,
             	sp * st
             };
 
-            const unitless::vec2 t{
+            const vec2f t{
             	u,
             	v
             };
@@ -136,8 +137,8 @@ auto gse::procedural_model::sphere(const resource::handle<material>& mat, std::u
     std::vector<std::uint32_t> indices;
     indices.reserve(stacks * sectors * 6);
 
-    for (int i = 0; i < stacks; ++i) {
-        for (int j = 0; j < sectors; ++j) {
+    for (const auto i : std::views::iota(0, static_cast<int>(stacks))) {
+        for (const auto j : std::views::iota(0, static_cast<int>(sectors))) {
             const int cur = i * (sectors + 1) + j;
             const int nxt = cur + (sectors + 1);
 

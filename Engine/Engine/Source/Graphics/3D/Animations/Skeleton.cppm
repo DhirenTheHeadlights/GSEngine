@@ -2,11 +2,11 @@ export module gse.graphics:skeleton;
 
 import std;
 
+import gse.platform;
 import gse.utility;
-import gse.physics.math;
+import gse.math;
 
 import :joint;
-import :rendering_context;
 
 export namespace gse {
     class skeleton : public identifiable {
@@ -25,7 +25,7 @@ export namespace gse {
         );
 
         auto load(
-            const renderer::context& ctx
+            const gpu::context& ctx
         ) -> void;
 
         auto unload(
@@ -54,7 +54,7 @@ gse::skeleton::skeleton(const params& p)
     : identifiable(p.name), m_joints(p.joints) {
 }
 
-auto gse::skeleton::load(const renderer::context& ctx) -> void {
+auto gse::skeleton::load(const gpu::context& ctx) -> void {
     (void)ctx;
 
     if (m_baked_path.empty() || !exists(m_baked_path)) {
@@ -91,7 +91,7 @@ auto gse::skeleton::load(const renderer::context& ctx) -> void {
         std::uint16_t parent_index;
         file.read(reinterpret_cast<char*>(&parent_index), sizeof(parent_index));
 
-        mat4 local_bind;
+        mat4f local_bind;
         for (int row = 0; row < 4; ++row) {
             for (int col = 0; col < 4; ++col) {
                 float val;
@@ -100,7 +100,7 @@ auto gse::skeleton::load(const renderer::context& ctx) -> void {
             }
         }
 
-        mat4 inverse_bind;
+        mat4f inverse_bind;
         for (int row = 0; row < 4; ++row) {
             for (int col = 0; col < 4; ++col) {
                 float val;

@@ -4,7 +4,7 @@ import std;
 
 import :misc;
 
-import gse.physics.math;
+import gse.math;
 
 export namespace gse {
 	struct entity {

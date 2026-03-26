@@ -1,7 +1,7 @@
 export module gse.utility:clock;
 
 import std;
-import gse.physics.math;
+import gse.math;
 
 export namespace gse {
 	class clock {

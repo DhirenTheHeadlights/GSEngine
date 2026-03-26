@@ -263,7 +263,7 @@ auto gse::gui::draw::input(const draw_context& ctx, const std::string& name, std
         }
     }
 
-    const unitless::vec2 label_pos = {
+    const vec2f label_pos = {
         row_rect.left(),
         row_rect.center().y() + ctx.style.font_size / 2.f
     };
@@ -285,7 +285,7 @@ auto gse::gui::draw::input(const draw_context& ctx, const std::string& name, std
 
     constexpr float text_padding = 5.f;
     const ui_rect clip_rect = box_rect.inset({ text_padding, 0.f });
-    const unitless::vec2 text_pos = {
+    const vec2f text_pos = {
         box_rect.left() + text_padding,
         box_rect.center().y() + ctx.style.font_size / 2.f
     };

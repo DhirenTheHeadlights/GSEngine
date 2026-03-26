@@ -684,7 +684,7 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 
 	std::unordered_set<std::uint64_t> still_open;
 	for (const auto& [eid, sp] : spans) {
-		if (sp.t1 == 0) {
+		if (sp.t1 == decltype(sp.t1){}) {
 			still_open.insert(eid);
 		}
 	}
@@ -735,7 +735,7 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 		const auto parent_end = n.end;
 		const auto parent_tot = parent_end - parent_begin;
 
-		if (n.children_idx.empty() || parent_tot <= 0) {
+		if (n.children_idx.empty() || parent_tot <= decltype(parent_tot){}) {
 			n.self = parent_tot;
 			return;
 		}
@@ -784,7 +784,7 @@ auto gse::trace::build_tree(frame_storage& fs) -> void {
 		}
 		covered += (cur.b - cur.a);
 
-		n.self = (covered < parent_tot) ? (parent_tot - covered) : 0;
+		n.self = (covered < parent_tot) ? (parent_tot - covered) : decltype(parent_tot){};
 	};
 
 	for (const auto r : roots_idx) {
@@ -876,13 +876,12 @@ auto gse::trace::make_loc_id(const std::source_location& loc) -> id {
 			"__cdecl", "__stdcall", "__thiscall", "__vectorcall", "cdecl", "stdcall", "thiscall", "vectorcall"
 		};
 
-		for (auto cc : candidates) {
-			if (tag.size() > cc.size() && tag.substr(0, cc.size()) == cc) {
-				tag.remove_prefix(cc.size());
-				while (!tag.empty() && std::isspace(static_cast<unsigned char>(tag.front()))) {
-					tag.remove_prefix(1);
-				}
-				break;
+		if (auto it = std::ranges::find_if(candidates, [&](std::string_view cc) {
+			return tag.size() > cc.size() && tag.starts_with(cc);
+		}); it != std::end(candidates)) {
+			tag.remove_prefix(it->size());
+			while (!tag.empty() && std::isspace(static_cast<unsigned char>(tag.front()))) {
+				tag.remove_prefix(1);
 			}
 		}
 	} else {

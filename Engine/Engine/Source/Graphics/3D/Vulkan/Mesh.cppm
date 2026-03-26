@@ -5,13 +5,13 @@ import std;
 import :material;
 
 import gse.platform;
-import gse.physics.math;
+import gse.math;
 
 export namespace gse {
     struct vertex {
         vec3<length> position;
-        unitless::vec3 normal;
-        unitless::vec2 tex_coords;
+        vec3f normal;
+        vec2f tex_coords;
     };
 
     struct mesh_data {
@@ -129,10 +129,10 @@ auto gse::mesh::draw_instanced(const vk::CommandBuffer command_buffer, const std
 }
 
 auto gse::mesh::center_of_mass() const -> vec3<length> {
-    constexpr unitless::vec3d reference_point(0.f);
+    constexpr vec3d reference_point(0.f);
 
     double total_volume = 0.f;
-    unitless::vec3 moment(0.f);
+    vec3f moment(0.f);
 
     assert(m_indices.size() % 3 == 0, std::source_location::current(), "m_indices count is not a multiple of 3. Ensure that each face is defined by exactly three m_indices.");
 
@@ -143,19 +143,19 @@ auto gse::mesh::center_of_mass() const -> vec3<length> {
 
         assert(idx0 < m_vertices.size() && idx1 < m_vertices.size() && idx2 < m_vertices.size(), std::source_location::current(), "Index out of range while accessing m_vertices.");
 
-        const unitless::vec3d v0(m_vertices[idx0].position.as<meters>());
-        const unitless::vec3d v1(m_vertices[idx1].position.as<meters>());
-        const unitless::vec3d v2(m_vertices[idx2].position.as<meters>());
+		const vec3d v0(m_vertices[idx0].position.x().as<meters>(), m_vertices[idx0].position.y().as<meters>(), m_vertices[idx0].position.z().as<meters>());
+        const vec3d v1(m_vertices[idx1].position.x().as<meters>(), m_vertices[idx1].position.y().as<meters>(), m_vertices[idx1].position.z().as<meters>());
+        const vec3d v2(m_vertices[idx2].position.x().as<meters>(), m_vertices[idx2].position.y().as<meters>(), m_vertices[idx2].position.z().as<meters>());
 
-        unitless::vec3d a = v0 - reference_point;
-        unitless::vec3d b = v1 - reference_point;
-        unitless::vec3d c = v2 - reference_point;
+        vec3d a = v0 - reference_point;
+        vec3d b = v1 - reference_point;
+        vec3d c = v2 - reference_point;
 
         auto volume = std::abs(dot(a, cross(b, c)) / 6.0);
-        unitless::vec3d tetra_com = (v0 + v1 + v2 + reference_point) / 4.0;
+        vec3d tetra_com = (v0 + v1 + v2 + reference_point) / 4.0;
 
         total_volume += volume;
-        moment += unitless::vec3(tetra_com * volume);
+        moment += vec3f(tetra_com * volume);
     }
 
     assert(total_volume != 0.0, std::source_location::current(), "Total volume is zero. Check if the mesh is closed and correctly oriented.");

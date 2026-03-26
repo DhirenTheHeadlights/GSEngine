@@ -4,9 +4,8 @@ import std;
 
 import gse.platform;
 import gse.assert;
-import gse.physics.math;
+import gse.math;
 
-import :asset_compiler;
 import :material;
 
 export template<>
@@ -38,10 +37,10 @@ struct gse::asset_compiler<gse::material> {
         }
 
         struct material_parse_data {
-            unitless::vec3 ambient = unitless::vec3(1.0f);
-            unitless::vec3 diffuse = unitless::vec3(1.0f);
-            unitless::vec3 specular = unitless::vec3(1.0f);
-            unitless::vec3 emission = unitless::vec3(0.0f);
+            vec3f ambient = vec3f(1.0f);
+            vec3f diffuse = vec3f(1.0f);
+            vec3f specular = vec3f(1.0f);
+            vec3f emission = vec3f(0.0f);
             float shininess = 0.0f;
             float optical_density = 1.0f;
             float transparency = 1.0f;

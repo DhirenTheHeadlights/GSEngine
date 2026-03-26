@@ -131,7 +131,7 @@ auto gse::gui::draw::dropdown_impl(const draw_context& ctx, const std::string& n
 		active_widget_id.reset();
 	}
 
-	unitless::vec4 header_bg = ctx.style.color_widget_background;
+	vec4f header_bg = ctx.style.color_widget_background;
 	if (is_open) {
 		header_bg = ctx.style.color_widget_active;
 	}
@@ -216,7 +216,7 @@ auto gse::gui::draw::dropdown_impl(const draw_context& ctx, const std::string& n
 		});
 
 		const float max_scroll = std::max(0.f, total_content_height - visible_height);
-		const unitless::vec2 mouse_pos = ctx.input.mouse_position();
+		const vec2f mouse_pos = ctx.input.mouse_position();
 		const bool mouse_in_list = list_rect.contains(mouse_pos);
 
 		if (mouse_in_list && needs_scroll) {
@@ -263,7 +263,7 @@ auto gse::gui::draw::dropdown_impl(const draw_context& ctx, const std::string& n
 
 			const bool option_hovered = option_rect.contains(mouse_pos) && content_area.contains(mouse_pos);
 
-			unitless::vec4 option_bg = ctx.style.color_menu_body;
+			vec4f option_bg = ctx.style.color_menu_body;
 			if (i == current_index) {
 				option_bg = ctx.style.color_widget_selected;
 			}
@@ -304,7 +304,7 @@ auto gse::gui::draw::dropdown_impl(const draw_context& ctx, const std::string& n
 				{ config.scrollbar_width, visible_height }
 			);
 
-			unitless::vec4 track_color = ctx.style.color_widget_background;
+			vec4f track_color = ctx.style.color_widget_background;
 			track_color.w() *= 0.3f;
 			ctx.queue_sprite({
 				.rect = scrollbar_track,
@@ -342,7 +342,7 @@ auto gse::gui::draw::dropdown_impl(const draw_context& ctx, const std::string& n
 				}
 			}
 
-			unitless::vec4 bar_color = ctx.style.color_widget_background;
+			vec4f bar_color = ctx.style.color_widget_background;
 			if (state.scroll.scrollbar_held) {
 				bar_color = ctx.style.color_widget_active;
 			}

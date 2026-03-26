@@ -215,6 +215,29 @@ export namespace gse {
 
 			const bool is_server = m_owner->authoritative();
 
+			if (!is_server) {
+				const auto current_local = m_owner->local_controlled_entity();
+				if (current_local.exists()) {
+					
+					id our_controller{};
+					for (const auto& [ctrl_id, local_id] : m_controller_to_local_player) {
+						if (local_id == current_local) {
+							our_controller = ctrl_id;
+							break;
+						}
+					}
+
+					if (our_controller.exists() && !reg.try_linked_object_write<player_controller>(our_controller)) {
+						if (reg.exists(current_local)) {
+							reg.remove(current_local);
+						}
+						m_owner->set_local_controlled_entity({});
+						m_processed.erase(our_controller);
+						m_controller_to_local_player.erase(our_controller);
+					}
+				}
+			}
+
 			for (auto& pc : reg.linked_objects_write<player_controller>()) {
 				const auto controller_id = pc.owner_id();
 
@@ -236,14 +259,36 @@ export namespace gse {
 						continue;
 					}
 
+					const auto current_local = m_owner->local_controlled_entity();
+					if (current_local.exists() && reg.exists(current_local)) {
+						m_processed.insert(controller_id);
+						continue;
+					}
+
+					if (current_local.exists()) {
+						for (auto it = m_controller_to_local_player.begin(); it != m_controller_to_local_player.end(); ) {
+							if (it->second == current_local) {
+								m_processed.erase(it->first);
+								it = m_controller_to_local_player.erase(it);
+							} else {
+								++it;
+							}
+						}
+						if (reg.exists(current_local)) {
+							reg.remove(current_local);
+						}
+					}
+
 					const auto local_player_id = factory(*current);
 					m_owner->set_local_controlled_entity(local_player_id);
 					m_processed.insert(controller_id);
+					m_controller_to_local_player[controller_id] = local_player_id;
 				}
 			}
 		}
 	private:
 		std::unordered_set<id> m_processed;
+		std::unordered_map<id, id> m_controller_to_local_player;
 		bool m_local_player_created = false;
 	};
 }

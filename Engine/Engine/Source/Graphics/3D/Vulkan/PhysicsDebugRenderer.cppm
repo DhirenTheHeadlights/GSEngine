@@ -3,28 +3,46 @@ export module gse.graphics:physics_debug_renderer;
 import std;
 
 import gse.physics;
-import gse.physics.math;
+import gse.math;
 import gse.utility;
 import gse.platform;
 
 import :camera_system;
-import :shader;
 
 namespace gse::renderer::physics_debug {
 	struct debug_vertex {
-		unitless::vec3 position;
-		unitless::vec3 color;
+		vec3<length> position;
+		vec3f color;
 	};
 
 	auto add_line(
 		const vec3<length>& a,
 		const vec3<length>& b,
-		const unitless::vec3& color,
+		const vec3f& color,
 		std::vector<debug_vertex>& out_vertices
 	) -> void;
 
 	auto build_obb_lines_for_collider(
 		const physics::collision_component& coll,
+		const physics::motion_component* mc,
+		std::vector<debug_vertex>& out_vertices
+	) -> void;
+
+	auto build_sphere_lines_for_collider(
+		const physics::collision_component& coll,
+		const physics::motion_component* mc,
+		std::vector<debug_vertex>& out_vertices
+	) -> void;
+
+	auto build_capsule_lines_for_collider(
+		const physics::collision_component& coll,
+		const physics::motion_component* mc,
+		std::vector<debug_vertex>& out_vertices
+	) -> void;
+
+	auto build_shape_lines_for_collider(
+		const physics::collision_component& coll,
+		const physics::motion_component* mc,
 		std::vector<debug_vertex>& out_vertices
 	) -> void;
 
@@ -36,17 +54,32 @@ namespace gse::renderer::physics_debug {
 
 	auto ensure_vertex_capacity(
 		struct state& s,
+		std::size_t frame_index,
 		std::size_t required_vertex_count
 	) -> void;
 }
 
 export namespace gse::renderer::physics_debug {
+	struct debug_stats {
+		std::uint32_t body_count = 0;
+		std::uint32_t sleeping_count = 0;
+		std::uint32_t contact_count = 0;
+		std::uint32_t motor_count = 0;
+		std::uint32_t colliding_pairs = 0;
+		time_t<float, seconds> solve_time{};
+		velocity max_linear_speed{};
+		angular_velocity max_angular_speed{};
+		length max_penetration{};
+		bool gpu_solver_active = false;
+	};
+
 	struct render_data {
 		std::vector<debug_vertex> vertices;
+		debug_stats stats;
 	};
 
 	struct state {
-		context* ctx = nullptr;
+		gpu::context* ctx = nullptr;
 
 		vk::raii::Pipeline pipeline = nullptr;
 		vk::raii::PipelineLayout pipeline_layout = nullptr;
@@ -55,48 +88,55 @@ export namespace gse::renderer::physics_debug {
 		resource::handle<shader> shader_handle;
 
 		std::unordered_map<std::string, per_frame_resource<vulkan::buffer_resource>> ubo_allocations;
-		vulkan::buffer_resource vertex_buffer;
+		per_frame_resource<vulkan::buffer_resource> vertex_buffers;
 
-		std::size_t max_vertices = 0;
+		per_frame_resource<std::size_t> max_vertices;
 		bool enabled = true;
+		debug_stats latest_stats;
 
-		explicit state(context& c) : ctx(std::addressof(c)) {}
+		explicit state(gpu::context& c) : ctx(std::addressof(c)) {}
 		state() = default;
 	};
 
 	struct system {
-		static auto initialize(initialize_phase& phase, state& s) -> void;
-		static auto update(update_phase& phase, state& s) -> void;
-		static auto render(render_phase& phase, const state& s) -> void;
+		static auto initialize(const initialize_phase& phase, state& s) -> void;
+		static auto update(const update_phase& phase, state& s) -> void;
+		static auto render(const render_phase& phase, const state& s) -> void;
 	};
 }
 
-auto gse::renderer::physics_debug::ensure_vertex_capacity(state& s, const std::size_t required_vertex_count) -> void {
-	if (required_vertex_count <= s.max_vertices && s.vertex_buffer.buffer) {
+auto gse::renderer::physics_debug::ensure_vertex_capacity(state& s, const std::size_t frame_index, const std::size_t required_vertex_count) -> void {
+	auto& max_vertices = s.max_vertices[frame_index];
+	auto& vertex_buffer = s.vertex_buffers[frame_index];
+
+	if (required_vertex_count <= max_vertices && vertex_buffer.buffer) {
 		return;
 	}
 
 	auto& config = s.ctx->config();
-	if (s.vertex_buffer.buffer) {
-		s.vertex_buffer = {};
+	if (vertex_buffer.buffer) {
+		vertex_buffer = {};
 	}
 
-	s.max_vertices = std::max<std::size_t>(required_vertex_count, 4096);
+	max_vertices = std::max<std::size_t>(max_vertices, 4096);
+	while (max_vertices < required_vertex_count) {
+		max_vertices *= 2;
+	}
 
 	const vk::BufferCreateInfo buffer_info{
-		.size = s.max_vertices * sizeof(debug_vertex),
+		.size = max_vertices * sizeof(debug_vertex),
 		.usage = vk::BufferUsageFlagBits::eVertexBuffer,
 		.sharingMode = vk::SharingMode::eExclusive
 	};
 
 	const std::vector<std::byte> zeros(buffer_info.size);
-	s.vertex_buffer = config.allocator().create_buffer(
+	vertex_buffer = config.allocator().create_buffer(
 		buffer_info,
 		zeros.data()
 	);
 }
 
-auto gse::renderer::physics_debug::system::initialize(initialize_phase& phase, state& s) -> void {
+auto gse::renderer::physics_debug::system::initialize(const initialize_phase& phase, state& s) -> void {
 	phase.channels.push(save::register_property{
 		.category = "Graphics",
 		.name = "Physics Debug Renderer Enabled",
@@ -104,10 +144,6 @@ auto gse::renderer::physics_debug::system::initialize(initialize_phase& phase, s
 		.ref = &s.enabled,
 		.type = typeid(bool)
 	});
-
-	if (const auto* save_state = phase.try_state_of<save::state>()) {
-		s.enabled = save_state->read("Graphics", "Physics Debug Renderer Enabled", true);
-	}
 
 	auto& config = s.ctx->config();
 
@@ -265,16 +301,16 @@ auto gse::renderer::physics_debug::system::initialize(initialize_phase& phase, s
 	s.pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
 }
 
-auto gse::renderer::physics_debug::add_line(const vec3<length>& a, const vec3<length>& b, const unitless::vec3& color, std::vector<debug_vertex>& out_vertices) -> void {
-	const auto pa = a.as<meters>().data;
-	const auto pb = b.as<meters>().data;
-
-	out_vertices.push_back(debug_vertex{ pa, color });
-	out_vertices.push_back(debug_vertex{ pb, color });
+auto gse::renderer::physics_debug::add_line(const vec3<length>& a, const vec3<length>& b, const vec3f& color, std::vector<debug_vertex>& out_vertices) -> void {
+	out_vertices.push_back(debug_vertex{ a, color });
+	out_vertices.push_back(debug_vertex{ b, color });
 }
 
-auto gse::renderer::physics_debug::build_obb_lines_for_collider(const physics::collision_component& coll, std::vector<debug_vertex>& out_vertices) -> void {
-	const auto bb = coll.bounding_box;
+auto gse::renderer::physics_debug::build_obb_lines_for_collider(const physics::collision_component& coll, const physics::motion_component* mc, std::vector<debug_vertex>& out_vertices) -> void {
+	auto bb = coll.bounding_box;
+	if (mc) {
+		bb.update(mc->render_position, mc->render_orientation);
+	}
 	std::array<vec3<length>, 8> corners;
 
 	const auto half = bb.half_extents();
@@ -295,10 +331,109 @@ auto gse::renderer::physics_debug::build_obb_lines_for_collider(const physics::c
 		{0, 4}, {1, 5}, {2, 6}, {3, 7}
 	} };
 
-	constexpr unitless::vec3 color{ 0.0f, 1.0f, 0.0f };
+	constexpr vec3f color{ 0.0f, 1.0f, 0.0f };
 
 	for (const auto& [fst, snd] : edges) {
 		add_line(corners[fst], corners[snd], color, out_vertices);
+	}
+}
+
+auto gse::renderer::physics_debug::build_sphere_lines_for_collider(const physics::collision_component& coll, const physics::motion_component* mc, std::vector<debug_vertex>& out_vertices) -> void {
+	auto bb = coll.bounding_box;
+	if (mc) {
+		bb.update(mc->render_position, mc->render_orientation);
+	}
+
+	const auto center = bb.center();
+	const auto axes = bb.obb().axes;
+	const auto radius = coll.shape_radius;
+
+	constexpr vec3f color{ 0.0f, 1.0f, 0.0f };
+	constexpr int segments = 32;
+
+	for (int ring = 0; ring < 3; ++ring) {
+		const auto& u = axes[ring];
+		const auto& v = axes[(ring + 1) % 3];
+
+		for (int i = 0; i < segments; ++i) {
+			const float a0 = 2.f * std::numbers::pi_v<float> * static_cast<float>(i) / segments;
+			const float a1 = 2.f * std::numbers::pi_v<float> * static_cast<float>(i + 1) / segments;
+
+			const auto p0 = center + u * (radius * std::cos(a0)) + v * (radius * std::sin(a0));
+			const auto p1 = center + u * (radius * std::cos(a1)) + v * (radius * std::sin(a1));
+
+			add_line(p0, p1, color, out_vertices);
+		}
+	}
+}
+
+auto gse::renderer::physics_debug::build_capsule_lines_for_collider(const physics::collision_component& coll, const physics::motion_component* mc, std::vector<debug_vertex>& out_vertices) -> void {
+	auto bb = coll.bounding_box;
+	if (mc) {
+		bb.update(mc->render_position, mc->render_orientation);
+	}
+
+	const auto center = bb.center();
+	const auto axes = bb.obb().axes;
+	const auto radius = coll.shape_radius;
+	const auto half_height = coll.shape_half_height;
+
+	const auto& cap_axis = axes[1];
+	const auto& u = axes[0];
+	const auto& v = axes[2];
+
+	const auto top = center + cap_axis * half_height;
+	const auto bottom = center - cap_axis * half_height;
+
+	constexpr vec3f color{ 0.0f, 1.0f, 0.0f };
+	constexpr int segments = 24;
+	constexpr int half_segments = segments / 2;
+
+	for (const auto& ring_center : { top, bottom }) {
+		for (int i = 0; i < segments; ++i) {
+			const float a0 = 2.f * std::numbers::pi_v<float> * static_cast<float>(i) / segments;
+			const float a1 = 2.f * std::numbers::pi_v<float> * static_cast<float>(i + 1) / segments;
+			const auto p0 = ring_center + u * (radius * std::cos(a0)) + v * (radius * std::sin(a0));
+			const auto p1 = ring_center + u * (radius * std::cos(a1)) + v * (radius * std::sin(a1));
+			add_line(p0, p1, color, out_vertices);
+		}
+	}
+
+	for (int i = 0; i < 4; ++i) {
+		const float angle = static_cast<float>(i) * std::numbers::pi_v<float> * 0.5f;
+		const auto offset = u * (radius * std::cos(angle)) + v * (radius * std::sin(angle));
+		add_line(top + offset, bottom + offset, color, out_vertices);
+	}
+
+	for (int plane = 0; plane < 2; ++plane) {
+		const auto& ring_u = (plane == 0) ? u : v;
+
+		for (int i = 0; i < half_segments; ++i) {
+			const float a0 = std::numbers::pi_v<float> * static_cast<float>(i) / half_segments;
+			const float a1 = std::numbers::pi_v<float> * static_cast<float>(i + 1) / half_segments;
+
+			const auto p0 = top + ring_u * (radius * std::cos(a0)) + cap_axis * (radius * std::sin(a0));
+			const auto p1 = top + ring_u * (radius * std::cos(a1)) + cap_axis * (radius * std::sin(a1));
+			add_line(p0, p1, color, out_vertices);
+
+			const auto q0 = bottom + ring_u * (radius * std::cos(a0)) - cap_axis * (radius * std::sin(a0));
+			const auto q1 = bottom + ring_u * (radius * std::cos(a1)) - cap_axis * (radius * std::sin(a1));
+			add_line(q0, q1, color, out_vertices);
+		}
+	}
+}
+
+auto gse::renderer::physics_debug::build_shape_lines_for_collider(const physics::collision_component& coll, const physics::motion_component* mc, std::vector<debug_vertex>& out_vertices) -> void {
+	switch (coll.shape) {
+	case physics::shape_type::sphere:
+		build_sphere_lines_for_collider(coll, mc, out_vertices);
+		break;
+	case physics::shape_type::capsule:
+		build_capsule_lines_for_collider(coll, mc, out_vertices);
+		break;
+	default:
+		build_obb_lines_for_collider(coll, mc, out_vertices);
+		break;
 	}
 }
 
@@ -308,16 +443,16 @@ auto gse::renderer::physics_debug::build_contact_debug_for_collider(const physic
 		return;
 	}
 
+	const float pen_m = penetration.as<meters>();
+	const float t = std::clamp(pen_m / 0.05f, 0.f, 1.f);
+	const vec3f satisfaction_color{ t, 1.f - t, 0.f };
+
 	for (auto& collision_point : collision_points) {
 		const auto p = collision_point;
 		const auto n = collision_normal;
 
-		constexpr length cross_size = meters(0.1f);
-
-		constexpr unitless::vec3 cross_color{ 1.0f, 1.0f, 1.0f };
-		constexpr unitless::vec3 normal_color{ 1.0f, 0.0f, 0.0f };
-		constexpr unitless::vec3 penetration_color{ 1.0f, 1.0f, 0.0f };
-		constexpr unitless::vec3 center_link_color{ 0.0f, 1.0f, 1.0f };
+		constexpr length cross_size = meters(0.05f);
+		constexpr vec3f normal_color{ 0.f, 0.7f, 1.f };
 
 		const vec3<length> px1 = p + vec3<length>{ cross_size, 0.0f, 0.0f };
 		const vec3<length> px2 = p - vec3<length>{ cross_size, 0.0f, 0.0f };
@@ -328,47 +463,68 @@ auto gse::renderer::physics_debug::build_contact_debug_for_collider(const physic
 		const vec3<length> pz1 = p + vec3<length>{ 0.0f, 0.0f, cross_size };
 		const vec3<length> pz2 = p - vec3<length>{ 0.0f, 0.0f, cross_size };
 
-		add_line(px1, px2, cross_color, out_vertices);
-		add_line(py1, py2, cross_color, out_vertices);
-		add_line(pz1, pz2, cross_color, out_vertices);
+		add_line(px1, px2, satisfaction_color, out_vertices);
+		add_line(py1, py2, satisfaction_color, out_vertices);
+		add_line(pz1, pz2, satisfaction_color, out_vertices);
 
-		const length normal_len = std::min(penetration, meters(0.5f));
+		constexpr length min_normal_len = meters(0.15f);
+		const length normal_len = std::max(std::min(penetration, meters(0.5f)), min_normal_len);
 		const vec3<length> normal_end = p + n * normal_len;
 		add_line(p, normal_end, normal_color, out_vertices);
-
-		const vec3<length> projected = p - n * penetration;
-		add_line(p, projected, penetration_color, out_vertices);
-
-		const auto center = coll.bounding_box.center();
-		add_line(center, p, center_link_color, out_vertices);
 	}
 }
 
-auto gse::renderer::physics_debug::system::update(update_phase& phase, state& s) -> void {
+auto gse::renderer::physics_debug::system::update(const update_phase& phase, state& s) -> void {
 	if (!s.enabled) {
 		return;
 	}
 
 	std::vector<debug_vertex> vertices;
+	debug_stats stats;
+
+	for (const auto& mc : phase.registry.view<physics::motion_component>()) {
+		stats.body_count++;
+		if (mc.sleeping) stats.sleeping_count++;
+
+		const auto lin = magnitude(mc.current_velocity);
+		const auto ang = magnitude(mc.angular_velocity);
+		if (lin > stats.max_linear_speed) stats.max_linear_speed = lin;
+		if (ang > stats.max_angular_speed) stats.max_angular_speed = ang;
+	}
 
 	for (const auto& coll : phase.registry.view<physics::collision_component>()) {
 		if (!coll.resolve_collisions) {
 			continue;
 		}
 
-		build_obb_lines_for_collider(coll, vertices);
+		const auto* mc = phase.registry.try_read<physics::motion_component>(coll.owner_id());
+		build_shape_lines_for_collider(coll, mc, vertices);
 
-		if (const auto* mc = phase.registry.try_read<physics::motion_component>(coll.owner_id())) {
+		if (mc) {
 			build_contact_debug_for_collider(coll, *mc, vertices);
+		}
+
+		if (coll.collision_information.colliding) {
+			stats.colliding_pairs++;
+			if (coll.collision_information.penetration > stats.max_penetration)
+				stats.max_penetration = coll.collision_information.penetration;
 		}
 	}
 
-	if (!vertices.empty()) {
-		phase.channels.push(render_data{ std::move(vertices) });
+	if (const auto* ps = phase.try_state_of<physics::state>()) {
+		if (ps->use_gpu_solver && ps->gpu_solver.compute_initialized()) {
+			stats.gpu_solver_active = true;
+			stats.contact_count = ps->gpu_solver.contact_count();
+			stats.motor_count = ps->gpu_solver.motor_count();
+			stats.solve_time = ps->gpu_solver.solve_time();
+		}
 	}
+
+	s.latest_stats = stats;
+	phase.channels.push(render_data{ std::move(vertices), stats });
 }
 
-auto gse::renderer::physics_debug::system::render(render_phase& phase, const state& s) -> void {
+auto gse::renderer::physics_debug::system::render(const render_phase& phase, const state& s) -> void {
 	if (!s.enabled) {
 		return;
 	}
@@ -390,19 +546,19 @@ auto gse::renderer::physics_debug::system::render(render_phase& phase, const sta
 	}
 
 	auto& mutable_state = const_cast<state&>(s);
-	ensure_vertex_capacity(mutable_state, verts.size());
+	const auto frame_index = config.current_frame();
+	ensure_vertex_capacity(mutable_state, frame_index, verts.size());
 
-	const auto byte_count = verts.size() * sizeof(debug_vertex);
-	if (void* dst = mutable_state.vertex_buffer.allocation.mapped()) {
-		std::memcpy(dst, verts.data(), byte_count);
+	auto& vertex_buffer = mutable_state.vertex_buffers[frame_index];
+	if (auto* dst = vertex_buffer.allocation.mapped()) {
+		gse::memcpy(dst, verts);
 	}
 
 	const auto command = config.frame_context().command_buffer;
-	const auto frame_index = config.current_frame();
 
 	const auto* cam_state = phase.try_state_of<camera::state>();
-	const mat4 view_matrix = cam_state ? cam_state->view_matrix : mat4(1.0f);
-	const mat4 proj_matrix = cam_state ? cam_state->projection_matrix : mat4(1.0f);
+	const mat4f view_matrix = cam_state ? cam_state->view_matrix : mat4f(1.0f);
+	const mat4f proj_matrix = cam_state ? cam_state->projection_matrix : mat4f(1.0f);
 
 	s.shader_handle->set_uniform("CameraUBO.view", view_matrix, s.ubo_allocations.at("CameraUBO")[frame_index].allocation);
 	s.shader_handle->set_uniform("CameraUBO.proj", proj_matrix, s.ubo_allocations.at("CameraUBO")[frame_index].allocation);
@@ -453,7 +609,7 @@ auto gse::renderer::physics_debug::system::render(render_phase& phase, const sta
 			{}
 		);
 
-		const vk::Buffer vb = mutable_state.vertex_buffer.buffer;
+		const vk::Buffer vb = vertex_buffer.buffer;
 		constexpr vk::DeviceSize offsets[] = { 0 };
 
 		command.bindVertexBuffers(0, 1, &vb, offsets);

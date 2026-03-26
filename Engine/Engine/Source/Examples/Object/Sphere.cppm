@@ -35,7 +35,9 @@ export namespace gse {
 			);
 
 			add_component<physics::collision_component>({
-				.bounding_box = { m_params.initial_position, size }
+				.bounding_box = { m_params.initial_position, size },
+				.shape = physics::shape_type::sphere,
+				.shape_radius = m_params.radius
 			});
 
 			add_component<render_component>({

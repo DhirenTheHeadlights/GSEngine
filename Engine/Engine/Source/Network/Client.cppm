@@ -4,7 +4,7 @@ import std;
 
 import gse.assert;
 import gse.utility;
-import gse.physics.math;
+import gse.math;
 import gse.platform;
 
 import :actions;
@@ -17,6 +17,7 @@ import :connection;
 import :ping_pong;
 import :notify_scene_change;
 import :input_frame;
+import :server_info;
 
 export namespace gse::network {
 	struct replication_message {
@@ -30,7 +31,8 @@ export namespace gse::network {
 		ping,
 		pong,
 		notify_scene_change,
-		replication_message 
+		replication_message,
+		server_info_response
 	>;
 
 	class client {
@@ -71,9 +73,13 @@ export namespace gse::network {
 		auto push_input(
 			const actions::state& s,
 			std::span<const std::uint16_t> axis1_ids,
-			std::span<const std::uint16_t> axis2_ids
+			std::span<const std::uint16_t> axis2_ids,
+			angle camera_yaw = {}
 		) -> void;
+
 	private:
+		auto send_ack(
+		) -> void;
 		udp_socket m_socket;
 		remote_peer m_server;
 		std::atomic<state> m_state = state::disconnected;
@@ -81,7 +87,8 @@ export namespace gse::network {
 		time_t<std::uint32_t> m_timeout;
 		time_t<std::uint32_t> m_retry;
 
-		clock m_connection_clock;
+		clock m_connection_start_clock;
+		clock m_retry_clock;
 
 		std::mutex m_inbox_mutex;
 		std::vector<inbox_message> m_inbox;
@@ -96,6 +103,7 @@ export namespace gse::network {
 			actions::state state;
 			std::vector<std::uint16_t> axis1_ids;
 			std::vector<std::uint16_t> axis2_ids;
+			angle camera_yaw;
 		};
 
 		std::mutex m_input_mutex;
@@ -106,7 +114,14 @@ export namespace gse::network {
 }
 
 gse::network::client::client(const address& listen, const address& server) : m_server(server) {
-	m_socket.bind(listen);
+	if (!m_socket.bind(listen)) {
+		std::println(std::cerr, "Client: Failed to bind socket to {}:{}", listen.ip, listen.port);
+		return;
+	}
+
+	if (const auto local = m_socket.local_address()) {
+		std::println("Client: Bound to local port {}", local->port);
+	}
 
 	m_running.store(true, std::memory_order_release);
 
@@ -117,11 +132,12 @@ gse::network::client::client(const address& listen, const address& server) : m_s
 
 			auto wait = max_sleep;
 			if (m_state.load(std::memory_order_relaxed) == state::connecting) {
-				const auto elapsed = m_connection_clock.elapsed<std::uint32_t>();
-				const auto ms_to_retry = (elapsed >= m_retry) ? 0u : (m_retry - elapsed);
-				const auto ms_to_timeout = (elapsed >= m_timeout) ? 0u : (m_timeout - elapsed);
-				const auto ms = std::min(ms_to_retry, ms_to_timeout);
-				wait = std::min(wait, ms == 0 ? 1 : ms);
+				const auto retry_elapsed = m_retry_clock.elapsed<std::uint32_t>();
+				const auto total_elapsed = m_connection_start_clock.elapsed<std::uint32_t>();
+				const auto to_retry = (retry_elapsed >= m_retry) ? seconds(0u) : (m_retry - retry_elapsed);
+				const auto to_timeout = (total_elapsed >= m_timeout) ? seconds(0u) : (m_timeout - total_elapsed);
+				const auto time = std::min(to_retry, to_timeout);
+				wait = std::min(wait, time == seconds(0u) ? seconds(1u) : time);
 			}
 
 			(void)m_socket.wait_readable(wait);
@@ -139,13 +155,20 @@ auto gse::network::client::connect(const time_t<std::uint32_t> timeout, const ti
 		return false;
 	}
 
+	if (!m_socket.valid()) {
+		std::println(std::cerr, "Client: Cannot connect - socket is not valid");
+		return false;
+	}
+
+	std::println("Client: Connecting to {}:{}...", m_server.addr().ip, m_server.addr().port);
 	send(connection_request{});
 
 	m_state = state::connecting;
 	m_timeout = timeout;
 	m_retry = retry;
 
-	m_connection_clock.reset();
+	m_connection_start_clock.reset();
+	m_retry_clock.reset();
 
 	return true;
 }
@@ -154,12 +177,13 @@ auto gse::network::client::tick() -> void {
 	const auto current = m_state.load(std::memory_order_relaxed);
 
 	if (current == state::connecting) {
-		if (m_connection_clock.elapsed<std::uint32_t>() > m_retry) {
-			send(connection_request{});
-			m_connection_clock.reset();
-		}
-		if (m_connection_clock.elapsed<std::uint32_t>() > m_timeout) {
+		if (m_connection_start_clock.elapsed<std::uint32_t>() > m_timeout) {
+			std::println(std::cerr, "Client: Connection timed out");
 			m_state = state::disconnected;
+		}
+		else if (m_retry_clock.elapsed<std::uint32_t>() > m_retry) {
+			send(connection_request{});
+			m_retry_clock.reset();
 		}
 	}
 
@@ -194,9 +218,13 @@ auto gse::network::client::tick() -> void {
 
 		match_message(stream, id)
 			.if_is<connection_accepted>([&](const connection_accepted&) {
+				std::println("Client: Connected to {}:{}", m_server.addr().ip, m_server.addr().port);
 				m_state = state::connected;
-				std::lock_guard lk(m_inbox_mutex);
-				m_inbox.emplace_back(connection_accepted{});
+				send_ack();
+				{
+					std::lock_guard lk(m_inbox_mutex);
+					m_inbox.emplace_back(connection_accepted{});
+				}
 				handled_internally = true;
 			})
 			.else_if_is<ping>([&](const ping& m) {
@@ -211,6 +239,14 @@ auto gse::network::client::tick() -> void {
 				handled_internally = true;
 			})
 			.else_if_is<notify_scene_change>([&](const notify_scene_change& m) {
+				send_ack();
+				{
+					std::lock_guard lk(m_inbox_mutex);
+					m_inbox.emplace_back(m);
+				}
+				handled_internally = true;
+			})
+			.else_if_is<server_info_response>([&](const server_info_response& m) {
 				std::lock_guard lk(m_inbox_mutex);
 				m_inbox.emplace_back(m);
 				handled_internally = true;
@@ -234,7 +270,7 @@ auto gse::network::client::tick() -> void {
 		}
 
 		if (current == state::connected) {
-		if (m_input_clock.elapsed<std::uint32_t>() > 16u) {
+		if (m_input_clock.elapsed<std::uint32_t>() > milliseconds(16u)) {
 			std::optional<input_snapshot> next;
 
 			{
@@ -258,9 +294,16 @@ auto gse::network::client::tick() -> void {
 					++m_input_sequence,
 					m_last_input.state,
 					m_last_input.axis1_ids,
-					m_last_input.axis2_ids
+					m_last_input.axis2_ids,
+					m_last_input.camera_yaw
 				);
 				m_input_clock.reset();
+
+				// Clear transient pressed/released bits after first transmission
+				// to prevent re-sending stale key presses on retransmits
+				if (!next) {
+					m_last_input.state.begin_frame();
+				}
 			}
 		}
 	}
@@ -304,12 +347,17 @@ auto gse::network::client::drain(const std::function<void(inbox_message&)>& on_r
 	}
 }
 
-auto gse::network::client::push_input(const actions::state& s, std::span<const std::uint16_t> axis1_ids, std::span<const std::uint16_t> axis2_ids) -> void {
+auto gse::network::client::push_input(const actions::state& s, std::span<const std::uint16_t> axis1_ids, std::span<const std::uint16_t> axis2_ids, const angle camera_yaw) -> void {
 	input_snapshot snap;
 	snap.state = s;
 	snap.axis1_ids.assign(axis1_ids.begin(), axis1_ids.end());
 	snap.axis2_ids.assign(axis2_ids.begin(), axis2_ids.end());
+	snap.camera_yaw = camera_yaw;
 
 	std::lock_guard lk(m_input_mutex);
 	m_next_input.emplace(std::move(snap));
+}
+
+auto gse::network::client::send_ack() -> void {
+	send(pong{ .sequence = 0 });
 }

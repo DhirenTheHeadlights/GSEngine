@@ -3,7 +3,7 @@ export module gse.runtime:actions_api;
 import std;
 
 import gse.utility;
-import gse.physics.math;
+import gse.math;
 import gse.platform;
 
 import :core_api;
@@ -55,7 +55,7 @@ export namespace gse::actions {
 	) -> void {
 		auto h = add<Tag>(default_key);
 		channel.action_id = h.id();
-		state_of<system_state>().register_channel(owner_id, channel);
+		defer<system_state>([owner_id, &channel](system_state& s) { s.register_channel(owner_id, channel); });
 	}
 
 	auto bind_axis2_channel(
@@ -65,7 +65,7 @@ export namespace gse::actions {
 		const id axis_id
 	) -> void {
 		channel.axis_id = axis_id;
-		state_of<system_state>().register_channel(owner_id, channel);
+		defer<system_state>([owner_id, &channel](system_state& s) { s.register_channel(owner_id, channel); });
 
 		channel_add(bind_axis2_request{
 			.info = info,
@@ -77,34 +77,34 @@ export namespace gse::actions {
 		const id owner_id,
 		button_channel& channel
 	) -> void {
-		state_of<system_state>().register_channel(owner_id, channel);
+		defer<system_state>([owner_id, &channel](system_state& s) { s.register_channel(owner_id, channel); });
 	}
 
 	auto register_channel(
 		const id owner_id,
 		axis1_channel& channel
 	) -> void {
-		state_of<system_state>().register_channel(owner_id, channel);
+		defer<system_state>([owner_id, &channel](system_state& s) { s.register_channel(owner_id, channel); });
 	}
 
 	auto register_channel(
 		const id owner_id,
 		axis2_channel& channel
 	) -> void {
-		state_of<system_state>().register_channel(owner_id, channel);
+		defer<system_state>([owner_id, &channel](system_state& s) { s.register_channel(owner_id, channel); });
 	}
 
 	auto sample_for_entity(
 		const state& s,
 		const id owner_id
 	) -> void {
-		state_of<system_state>().sample_for_entity(s, owner_id);
+		defer<system_state>([&s, owner_id](system_state& sys) { sys.sample_for_entity(s, owner_id); });
 	}
 
 	auto sample_all_channels(
 		const state& s
 	) -> void {
-		state_of<system_state>().sample_all_channels(s);
+		defer<system_state>([&s](system_state& sys) { sys.sample_all_channels(s); });
 	}
 
 	auto current_state(

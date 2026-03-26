@@ -1,7 +1,7 @@
 export module gse.utility:system_clock;
 
 import std;
-import gse.physics.math;
+import gse.math;
 
 import :clock;
 

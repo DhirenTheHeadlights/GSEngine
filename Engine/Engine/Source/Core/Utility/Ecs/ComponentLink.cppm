@@ -122,10 +122,9 @@ export namespace gse {
 template <gse::is_component T>
 template <typename... Args>
 auto gse::component_link<T>::add(const owner_id_t owner_id, registry* reg, Args&&... args) -> T* {
-	gse::assert(!try_get_write(owner_id), std::source_location::current(),
-		"Attempting to add a component of type {} to owner {} that already has one.",
-		typeid(T).name(), owner_id
-	);
+	if (auto* existing = try_get_write(owner_id)) {
+		return existing;
+	}
 
 	const link_id_t new_link_id = generate_id(std::string(typeid(T).name()) + std::to_string(m_next_link_id++));
 	m_link_to_owner_map[new_link_id] = owner_id;

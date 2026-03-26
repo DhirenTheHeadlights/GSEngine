@@ -8,8 +8,8 @@ import gse.runtime;
 import gse.utility;
 
 namespace gse::animation_examples {
-	auto make_translation(float x, float y, float z) -> mat4 {
-		return mat4{
+	auto make_translation(float x, float y, float z) -> mat4f {
+		return mat4f{
 			{ 1.f, 0.f, 0.f, 0.f },
 			{ 0.f, 1.f, 0.f, 0.f },
 			{ 0.f, 0.f, 1.f, 0.f },
@@ -17,10 +17,10 @@ namespace gse::animation_examples {
 		};
 	}
 
-	auto make_rotation_z(const float angle_rad) -> mat4 {
+	auto make_rotation_z(const float angle_rad) -> mat4f {
 		const float c = std::cos(angle_rad);
 		const float s = std::sin(angle_rad);
-		return mat4{
+		return mat4f{
 			{ c, s, 0.f, 0.f },
 			{ -s, c, 0.f, 0.f },
 			{ 0.f, 0.f, 1.f, 0.f },

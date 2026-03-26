@@ -1,4 +1,4 @@
-export module gse.physics.math;
+export module gse.math;
 
 import std;
 
@@ -11,6 +11,7 @@ export import :quant;
 export import :rectangle;
 export import :circle;
 export import :segment;
+export import :unit_display;
 export import :units;
 export import :vector;
 export import :vector_math;
@@ -36,10 +37,6 @@ export namespace gse {
 		const NumberType& max
 	) -> NumberType;
 
-	template <is_quantity Q>
-	auto abs(
-		const Q& value
-	) -> Q;
 }
 
 namespace gse {
@@ -71,7 +68,3 @@ auto gse::random_value(const NumberType& max) -> NumberType {
 	}
 }
 
-template <gse::is_quantity Q>
-auto gse::abs(const Q& value) -> Q {
-	return value < Q(0) ? -value : value;
-}

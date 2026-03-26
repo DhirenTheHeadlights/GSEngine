@@ -2,7 +2,7 @@ export module gse.graphics:cube_map;
 
 import std;
 
-import gse.physics.math;
+import gse.math;
 import gse.platform;
 
 export namespace gse {

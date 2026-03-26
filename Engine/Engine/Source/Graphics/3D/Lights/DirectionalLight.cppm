@@ -2,14 +2,14 @@ export module gse.graphics:directional_light;
 
 import std;
 
-import gse.physics.math;
+import gse.math;
 import gse.utility;
 
 export namespace gse {
 	struct directional_light_data {
-		unitless::vec3 color = { 1.0f, 1.0f, 1.0f };
+		vec3f color = { 1.0f, 1.0f, 1.0f };
 		float intensity = 1.0f;
-		unitless::vec3 direction = { 0.0f, -1.0f, 0.0f };
+		vec3f direction = { 0.0f, -1.0f, 0.0f };
 		float ambient_strength = 1.0f;
 		length near_plane = meters(0.1f);
 		length far_plane = meters(10000.f);

@@ -3,13 +3,12 @@ export module gse.graphics:skinned_model;
 import std;
 
 import :skinned_mesh;
-import :rendering_context;
 import :material;
 
 import gse.utility;
 import gse.platform;
 import gse.physics;
-import gse.physics.math;
+import gse.math;
 import gse.assert;
 
 export namespace gse {
@@ -18,9 +17,9 @@ export namespace gse {
 	struct skinned_render_queue_entry {
 		resource::handle<skinned_model> model;
 		std::size_t index;
-		mat4 model_matrix;
-		mat4 normal_matrix;
-		unitless::vec3 color;
+		mat4f model_matrix;
+		mat4f normal_matrix;
+		vec3f color;
 		std::uint32_t skin_offset;
 		std::uint32_t joint_count;
 	};
@@ -39,7 +38,7 @@ export namespace gse {
 
 		vec3<length> m_position;
 		quat m_rotation;
-		unitless::vec3 m_scale = { 1.f, 1.f, 1.f };
+		vec3f m_scale = { 1.f, 1.f, 1.f };
 		bool m_is_dirty = true;
 		std::size_t m_cached_mesh_count = 0;
 	};
@@ -49,7 +48,7 @@ export namespace gse {
 		explicit skinned_model(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path), m_baked_model_path(path) {}
 		explicit skinned_model(std::string_view name, std::vector<skinned_mesh_data> meshes);
 
-		auto load(renderer::context& context) -> void;
+		auto load(gpu::context& context) -> void;
 		auto unload() -> void;
 
 		auto meshes() const -> std::span<const skinned_mesh>;
@@ -70,7 +69,7 @@ gse::skinned_model::skinned_model(const std::string_view name, std::vector<skinn
 	}
 }
 
-auto gse::skinned_model::load(renderer::context& context) -> void {
+auto gse::skinned_model::load(gpu::context& context) -> void {
 	if (!m_baked_model_path.empty() && exists(m_baked_model_path)) {
 		m_meshes.clear();
 
@@ -117,12 +116,12 @@ auto gse::skinned_model::load(renderer::context& context) -> void {
 						file.read(reinterpret_cast<char*>(&nx), sizeof(float));
 						file.read(reinterpret_cast<char*>(&ny), sizeof(float));
 						file.read(reinterpret_cast<char*>(&nz), sizeof(float));
-						vertices[v].normal = unitless::vec3{ nx, ny, nz };
+						vertices[v].normal = vec3f{ nx, ny, nz };
 
 						float u, vt;
 						file.read(reinterpret_cast<char*>(&u), sizeof(float));
 						file.read(reinterpret_cast<char*>(&vt), sizeof(float));
-						vertices[v].tex_coords = unitless::vec2{ u, vt };
+						vertices[v].tex_coords = vec2f{ u, vt };
 
 						file.read(reinterpret_cast<char*>(vertices[v].bone_indices.data()), 4 * sizeof(std::uint32_t));
 
@@ -131,7 +130,7 @@ auto gse::skinned_model::load(renderer::context& context) -> void {
 						file.read(reinterpret_cast<char*>(&w1), sizeof(float));
 						file.read(reinterpret_cast<char*>(&w2), sizeof(float));
 						file.read(reinterpret_cast<char*>(&w3), sizeof(float));
-						vertices[v].bone_weights = unitless::vec4{ w0, w1, w2, w3 };
+						vertices[v].bone_weights = vec4f{ w0, w1, w2, w3 };
 					}
 
 					std::uint32_t index_count;
@@ -152,7 +151,7 @@ auto gse::skinned_model::load(renderer::context& context) -> void {
 
 	context.queue_gpu_command<skinned_model>(
 		this,
-		[](renderer::context& ctx, skinned_model& self) {
+		[](gpu::context& ctx, skinned_model& self) {
 			for (auto& mesh : self.m_meshes) {
 				mesh.initialize(ctx.config());
 			}
@@ -179,9 +178,9 @@ auto gse::skinned_model::center_of_mass() const -> vec3<length> {
 }
 
 auto gse::skinned_model_instance::update(const physics::motion_component& mc, const physics::collision_component& cc, const std::uint32_t skin_offset, const std::uint32_t joint_count) -> void {
-	m_position = mc.current_position;
-	m_rotation = mc.orientation;
-	m_scale = cc.bounding_box.size().as<meters>();
+	m_position = mc.render_position;
+	m_rotation = mc.render_orientation;
+	m_scale = { cc.bounding_box.size().x().as<meters>(), cc.bounding_box.size().y().as<meters>(), cc.bounding_box.size().z().as<meters>() };
 	m_is_dirty = true;
 
 	if (!m_model_handle.valid()) {
@@ -206,9 +205,9 @@ auto gse::skinned_model_instance::update(const physics::motion_component& mc, co
 						skinned_render_queue_entry{
 							.model = m_model_handle,
 							.index = i,
-							.model_matrix = mat4(1.0f),
-							.normal_matrix = mat4(1.0f),
-							.color = unitless::vec3(1.0f),
+							.model_matrix = mat4f(1.0f),
+							.normal_matrix = mat4f(1.0f),
+							.color = vec3f(1.0f),
 							.skin_offset = skin_offset,
 							.joint_count = joint_count
 						}
@@ -225,10 +224,10 @@ auto gse::skinned_model_instance::update(const physics::motion_component& mc, co
 		return;
 	}
 
-	const mat4 rot_mat = m_rotation;
-	const mat4 trans_mat = translate(mat4(1.0f), m_position);
-	const mat4 final_model_matrix = trans_mat * rot_mat;
-	const mat4 normal_matrix = final_model_matrix.inverse().transpose();
+	const mat4f rot_mat = m_rotation;
+	const mat4f trans_mat = translate(mat4f(1.0f), m_position);
+	const mat4f final_model_matrix = trans_mat * rot_mat;
+	const mat4f normal_matrix = final_model_matrix.inverse().transpose();
 
 	for (auto& entry : m_render_queue_entries) {
 		entry.model_matrix = final_model_matrix;

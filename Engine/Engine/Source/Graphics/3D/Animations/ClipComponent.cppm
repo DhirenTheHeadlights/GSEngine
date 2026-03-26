@@ -2,10 +2,10 @@ export module gse.graphics:clip_component;
 
 import std;
 
+import gse.platform;
 import gse.utility;
 
 import :clip;
-import :resource_loader;
 
 export namespace gse {
 	struct clip_component_data {

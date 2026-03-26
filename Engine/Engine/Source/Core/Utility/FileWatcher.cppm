@@ -2,6 +2,11 @@ export module gse.utility:file_watcher;
 
 import std;
 
+import gse.math;
+
+import :interval_timer;
+import :system_clock;
+
 export namespace gse {
     class file_watcher {
     public:
@@ -42,13 +47,14 @@ export namespace gse {
         std::vector<watch_entry> m_watches;
         std::unordered_map<std::filesystem::path, std::filesystem::file_time_type> m_directory_files;
         mutable std::mutex m_mutex;
+        interval_timer<> m_poll_timer{ milliseconds(500.f) };
 
-        auto matches_extensions(
+        static auto matches_extensions(
             const std::filesystem::path& path,
             std::span<const std::string> extensions
-        ) const -> bool;
+        ) -> bool;
 
-        auto scan_directory(
+        static auto scan_directory(
             const std::filesystem::path& directory,
             std::span<const std::string> extensions,
             bool recursive
@@ -87,8 +93,7 @@ auto gse::file_watcher::watch_directory(
 
     std::vector<std::string> ext_vec(extensions.begin(), extensions.end());
 
-    auto files = scan_directory(directory, extensions, recursive);
-    for (const auto& [file_path, mod_time] : files) {
+    for (const auto& [file_path, mod_time] : scan_directory(directory, extensions, recursive)) {
         m_directory_files[file_path] = mod_time;
     }
 
@@ -119,34 +124,35 @@ auto gse::file_watcher::unwatch(const std::filesystem::path& path) -> void {
 
 auto gse::file_watcher::poll() -> std::size_t {
     std::lock_guard lock(m_mutex);
+
+    if (!m_poll_timer.tick()) {
+        return 0;
+    }
+
     std::size_t changes = 0;
 
-    for (auto& entry : m_watches) {
-        if (entry.is_directory) {
-            auto current_files = scan_directory(entry.path, entry.extensions, entry.recursive);
-
-            for (const auto& [file_path, mod_time] : current_files) {
-                auto it = m_directory_files.find(file_path);
-
-                if (it == m_directory_files.end()) {
+    for (auto& [path, last_modified, on_change, is_directory, recursive, extensions] : m_watches) {
+        if (is_directory) {
+            for (const auto& [file_path, mod_time] : scan_directory(path, extensions, recursive)) {
+	            if (auto it = m_directory_files.find(file_path); it == m_directory_files.end()) {
                     m_directory_files[file_path] = mod_time;
-                    entry.on_change(file_path);
+                    on_change(file_path);
                     ++changes;
                 } else if (it->second < mod_time) {
                     it->second = mod_time;
-                    entry.on_change(file_path);
+                    on_change(file_path);
                     ++changes;
                 }
             }
         } else {
-            if (!std::filesystem::exists(entry.path)) {
+            if (!std::filesystem::exists(path)) {
                 continue;
             }
 
-            auto current_time = std::filesystem::last_write_time(entry.path);
-            if (entry.last_modified < current_time) {
-                entry.last_modified = current_time;
-                entry.on_change(entry.path);
+            auto current_time = std::filesystem::last_write_time(path);
+            if (last_modified < current_time) {
+                last_modified = current_time;
+                on_change(path);
                 ++changes;
             }
         }
@@ -161,10 +167,7 @@ auto gse::file_watcher::clear() -> void {
     m_directory_files.clear();
 }
 
-auto gse::file_watcher::matches_extensions(
-    const std::filesystem::path& path,
-    std::span<const std::string> extensions
-) const -> bool {
+auto gse::file_watcher::matches_extensions(const std::filesystem::path& path, std::span<const std::string> extensions) -> bool {
     if (extensions.empty()) {
         return true;
     }
@@ -173,11 +176,7 @@ auto gse::file_watcher::matches_extensions(
     return std::ranges::find(extensions, ext) != extensions.end();
 }
 
-auto gse::file_watcher::scan_directory(
-    const std::filesystem::path& directory,
-    std::span<const std::string> extensions,
-    const bool recursive
-) -> std::unordered_map<std::filesystem::path, std::filesystem::file_time_type> {
+auto gse::file_watcher::scan_directory(const std::filesystem::path& directory, const std::span<const std::string> extensions, const bool recursive) -> std::unordered_map<std::filesystem::path, std::filesystem::file_time_type> {
     std::unordered_map<std::filesystem::path, std::filesystem::file_time_type> result;
 
     auto process_entry = [&](const std::filesystem::directory_entry& entry) {

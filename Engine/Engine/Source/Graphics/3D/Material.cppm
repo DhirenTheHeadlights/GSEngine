@@ -3,10 +3,8 @@ export module gse.graphics:material;
 import std;
 
 import :texture;
-import :shader;
-import :rendering_context;
 
-import gse.physics.math;
+import gse.math;
 import gse.utility;
 import gse.platform;
 
@@ -15,10 +13,10 @@ export namespace gse {
 		material(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path), path(path) {}
         material(
             const std::string_view name,
-            const unitless::vec3 ambient,
-            const unitless::vec3 diffuse,
-            const unitless::vec3 specular,
-            const unitless::vec3 emission,
+            const vec3f ambient,
+            const vec3f diffuse,
+            const vec3f specular,
+            const vec3f emission,
             const float shininess = 0.0f,
             const float optical_density = 1.0f,
             const float transparency = 1.0f,
@@ -42,14 +40,14 @@ export namespace gse {
             normal_texture(normal_texture),
 			specular_texture(specular_texture) {}
 
-        auto load(const renderer::context& context) -> void;
+        auto load(const gpu::context& context) -> void;
 
         auto unload() -> void;
 
-        unitless::vec3 ambient = unitless::vec3(1.0f);
-        unitless::vec3 diffuse = unitless::vec3(1.0f);
-        unitless::vec3 specular = unitless::vec3(1.0f);
-        unitless::vec3 emission = unitless::vec3(0.0f);
+        vec3f ambient = vec3f(1.0f);
+        vec3f diffuse = vec3f(1.0f);
+        vec3f specular = vec3f(1.0f);
+        vec3f emission = vec3f(0.0f);
 
         float shininess = 0.0f;
         float optical_density = 1.0f;
@@ -64,7 +62,7 @@ export namespace gse {
     };
 }
 
-auto gse::material::load(const renderer::context& context) -> void {
+auto gse::material::load(const gpu::context& context) -> void {
 	if (path.empty()) {
 		return;
 	}

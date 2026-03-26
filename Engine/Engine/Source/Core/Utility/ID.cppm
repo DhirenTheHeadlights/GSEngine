@@ -3,7 +3,7 @@ export module gse.utility:id;
 import std;
 
 import gse.assert;
-import gse.physics.math;
+import gse.math;
 
 import :n_buffer;
 

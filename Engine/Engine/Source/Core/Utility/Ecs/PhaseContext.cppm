@@ -204,6 +204,7 @@ export namespace gse {
 		auto schedule(const id name, F&& action) -> void {
 			using traits = lambda_traits<std::decay_t<F>>;
 
+			std::lock_guard lock(m_mutex);
 			m_work.push_back(queued_work{
 				.name = name,
 				.reads = traits::reads(),
@@ -256,6 +257,7 @@ export namespace gse {
 		}
 
 		std::vector<queued_work> m_work;
+		std::mutex m_mutex;
 	};
 
 	struct initialize_phase {

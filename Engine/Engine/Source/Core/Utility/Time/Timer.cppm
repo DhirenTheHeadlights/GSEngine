@@ -4,7 +4,7 @@ import std;
 
 import :clock;
 
-import gse.physics.math;
+import gse.math;
 
 export namespace gse {
 	class scoped_timer : public clock {

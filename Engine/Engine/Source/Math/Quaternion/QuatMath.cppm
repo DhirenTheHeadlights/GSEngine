@@ -1,0 +1,447 @@
+export module gse.math:quat_math;
+
+import std;
+
+import :units;
+import :vector;
+import :vector_math;
+import :quat;
+import :matrix;
+
+export namespace gse {
+	template <typename T>
+	constexpr auto operator+(
+		const quat_t<T>& lhs,
+		const quat_t<T>& rhs
+	) -> quat_t<T>;
+
+	template <typename T>
+	constexpr auto operator-(
+		const quat_t<T>& lhs,
+		const quat_t<T>& rhs
+	) -> quat_t<T>;
+
+	template <typename T>
+	constexpr auto operator*(
+		const quat_t<T>& lhs,
+		const quat_t<T>& rhs
+	) -> quat_t<T>;
+
+	template <typename T>
+	constexpr auto operator/(
+		const quat_t<T>& lhs,
+		const quat_t<T>& rhs
+	) -> quat_t<T>;
+
+	template <typename T>
+	constexpr auto operator+=(
+		quat_t<T>& lhs,
+		const quat_t<T>& rhs
+	) -> quat_t<T>&;
+
+	template <typename T>
+	constexpr auto operator-=(
+		quat_t<T>& lhs,
+		const quat_t<T>& rhs
+	) -> quat_t<T>&;
+
+	template <typename T>
+	constexpr auto operator*=(
+		quat_t<T>& lhs,
+		const quat_t<T>& rhs
+	) -> quat_t<T>&;
+
+	template <typename T>
+	constexpr auto operator/=(
+		quat_t<T>& lhs,
+		const quat_t<T>& rhs
+	) -> quat_t<T>&;
+
+	template <typename T>
+	constexpr auto operator*(
+		const quat_t<T>& lhs,
+		const T& rhs
+	) -> quat_t<T>;
+
+	template <typename T>
+	constexpr auto operator*(
+		const T& lhs,
+		const quat_t<T>& rhs
+	) -> quat_t<T>;
+
+	template <typename T>
+	constexpr auto operator/(
+		const quat_t<T>& lhs,
+		const T& rhs
+	) -> quat_t<T>;
+
+	template <typename T>
+	constexpr auto operator/(
+		const T& lhs,
+		const quat_t<T>& rhs
+	) -> quat_t<T>;
+
+	template <typename T>
+	constexpr auto operator*(
+		const quaternion<T>& lhs,
+		const vec3<T>& rhs
+	) -> vec3<T>;
+
+	template <typename T>
+	constexpr auto operator*=(
+		quat_t<T>& lhs,
+		const T& rhs
+	) -> quat_t<T>&;
+
+	template <typename T>
+	constexpr auto operator/=(
+		quat_t<T>& lhs,
+		const T& rhs
+	) -> quat_t<T>&;
+
+	template <typename T>
+	constexpr auto normalize(
+		const quat_t<T>& q
+	) -> quat_t<T>;
+
+	template <typename T>
+	constexpr auto conjugate(
+		const quat_t<T>& q
+	) -> quat_t<T>;
+
+	template <typename T>
+	constexpr auto norm_squared(
+		const quat_t<T>& q
+	) -> T;
+
+	template <typename T>
+	constexpr auto inverse(
+		const quat_t<T>& q
+	) -> quat_t<T>;
+
+	template <typename T>
+	constexpr auto dot(
+		const quat_t<T>& lhs,
+		const quat_t<T>& rhs
+	) -> T;
+
+	template <typename T>
+	constexpr auto mat3_cast(
+		const quat_t<T>& q
+	) -> mat3<T>;
+
+	template <typename T>
+	constexpr auto from_mat4(
+		const mat4<T>& m
+	) -> quat_t<T>;
+
+	template <typename T>
+	constexpr auto identity(
+	) -> quat_t<T>;
+
+	template <typename T>
+	constexpr auto from_axis_angle(
+		const vec3<T>& axis,
+		angle_t<T> angle
+	) -> quat_t<T>;
+
+	template <typename T>
+	constexpr auto slerp(
+		const quat_t<T>& a,
+		const quat_t<T>& b,
+		T t
+	) -> quat_t<T>;
+
+	template <typename T>
+	constexpr auto to_axis_angle(
+		const quat_t<T>& q
+	) -> vec3<angle_t<T>>;
+
+	template <internal::is_quantity Q>
+	constexpr auto from_axis_angle_vector(const vec3<Q>& aa) -> quat_t<typename Q::value_type> {
+		using T = typename Q::value_type;
+		const T ax = angle_t<T>(aa.x()).template as<radians>();
+		const T ay = angle_t<T>(aa.y()).template as<radians>();
+		const T az = angle_t<T>(aa.z()).template as<radians>();
+		const T angle_sq = ax * ax + ay * ay + az * az;
+
+		if (angle_sq < T(1e-14)) {
+			return normalize(quat_t<T>{ T(1), ax * T(0.5), ay * T(0.5), az * T(0.5) });
+		}
+
+		const T angle = std::sqrt(angle_sq);
+		const T half_angle = angle * T(0.5);
+		const T s = std::sin(half_angle) / angle;
+		return quat_t<T>{ std::cos(half_angle), s * ax, s * ay, s * az };
+	}
+
+	template <typename T>
+	constexpr auto difference_axis_angle(
+		const quat_t<T>& q_from,
+		const quat_t<T>& q_to
+	) -> vec3<angle_t<T>>;
+
+	template <typename T, typename Q>
+	constexpr auto rotate_vector(
+		const quat_t<T>& q,
+		const vec3<Q>& v
+	) -> vec3<Q>;
+
+	template <typename T, typename Q>
+	constexpr auto inverse_rotate_vector(
+		const quat_t<T>& q,
+		const vec3<Q>& v
+	) -> vec3<Q>;
+}
+
+template <typename T>
+constexpr auto gse::operator+(const quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T> {
+	return quat_t<T>(lhs.v4() + rhs.v4());
+}
+
+template <typename T>
+constexpr auto gse::operator-(const quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T> {
+	return quat_t<T>(lhs.v4() - rhs.v4());
+}
+
+template <typename T>
+constexpr auto gse::operator*(const quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T> {
+	const T s1 = lhs[0];
+	const T s2 = rhs[0];
+	const vec3<T> v1{ lhs[1], lhs[2], lhs[3] };
+	const vec3<T> v2{ rhs[1], rhs[2], rhs[3] };
+	const vec3<T> vec_part = s1 * v2 + s2 * v1 + cross(v1, v2);
+	const T scalar_part = s1 * s2 - dot(v1, v2);
+	return quat_t<T>(vec_part, scalar_part);
+}
+
+template <typename T>
+constexpr auto gse::operator/(const quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T> {
+	return lhs * inverse(rhs);
+}
+
+template <typename T>
+constexpr auto gse::operator+=(quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T>& {
+	lhs = lhs + rhs;
+	return lhs;
+}
+
+template <typename T>
+constexpr auto gse::operator-=(quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T>& {
+	lhs = lhs - rhs;
+	return lhs;
+}
+
+template <typename T>
+constexpr auto gse::operator*=(quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T>& {
+	lhs = lhs * rhs;
+	return lhs;
+}
+
+template <typename T>
+constexpr auto gse::operator/=(quat_t<T>& lhs, const quat_t<T>& rhs) -> quat_t<T>& {
+	lhs = lhs / rhs;
+	return lhs;
+}
+
+template <typename T>
+constexpr auto gse::operator*(const quat_t<T>& lhs, const T& rhs) -> quat_t<T> {
+	return quat_t<T>(lhs.v4() * rhs);
+}
+
+template <typename T>
+constexpr auto gse::operator*(const T& lhs, const quat_t<T>& rhs) -> quat_t<T> {
+	return rhs * lhs;
+}
+
+template <typename T>
+constexpr auto gse::operator/(const quat_t<T>& lhs, const T& rhs) -> quat_t<T> {
+	return quat_t<T>(lhs.v4() / rhs);
+}
+
+template <typename T>
+constexpr auto gse::operator/(const T& lhs, const quat_t<T>& rhs) -> quat_t<T> {
+	const quat_t<T> s_quat{ lhs, T(0), T(0), T(0) };
+	return s_quat / rhs;
+}
+
+template <typename T>
+constexpr auto gse::operator*(const quaternion<T>& lhs, const vec3<T>& rhs) -> vec3<T> {
+	const vec3<T> u{ lhs[1], lhs[2], lhs[3] };
+	const T s = lhs[0];
+	const vec3<T> t = T(2) * cross(u, rhs);
+	return rhs + s * t + cross(u, t);
+}
+
+template <typename T>
+constexpr auto gse::operator*=(quat_t<T>& lhs, const T& rhs) -> quat_t<T>& {
+	lhs = lhs * rhs;
+	return lhs;
+}
+
+template <typename T>
+constexpr auto gse::operator/=(quat_t<T>& lhs, const T& rhs) -> quat_t<T>& {
+	lhs = lhs / rhs;
+	return lhs;
+}
+
+template <typename T>
+constexpr auto gse::normalize(const quat_t<T>& q) -> quat_t<T> {
+	const T n2 = dot(q.v4(), q.v4());
+	if (n2 == T(0)) {
+		return quat_t<T>{};
+	}
+	const T inv_n = T(1) / std::sqrt(n2);
+	return quat_t<T>(q.v4() * inv_n);
+}
+
+template <typename T>
+constexpr auto gse::conjugate(const quat_t<T>& q) -> quat_t<T> {
+	const vec4<T> mask{ T(1), T(-1), T(-1), T(-1) };
+	return quat_t<T>(q.v4() * mask);
+}
+
+template <typename T>
+constexpr auto gse::norm_squared(const quat_t<T>& q) -> T {
+	return dot(q.v4(), q.v4());
+}
+
+template <typename T>
+constexpr auto gse::inverse(const quat_t<T>& q) -> quat_t<T> {
+	return conjugate(q) / norm_squared(q);
+}
+
+template <typename T>
+constexpr auto gse::dot(const quat_t<T>& lhs, const quat_t<T>& rhs) -> T {
+	return dot(lhs.v4(), rhs.v4());
+}
+
+template <typename T>
+constexpr auto gse::mat3_cast(const quat_t<T>& q) -> mat3<T> {
+	const T x = q[1];
+	const T y = q[2];
+	const T z = q[3];
+	const T w = q[0];
+	const T x2 = x + x;
+	const T y2 = y + y;
+	const T z2 = z + z;
+	const T xx = x * x2;
+	const T xy = x * y2;
+	const T xz = x * z2;
+	const T yy = y * y2;
+	const T yz = y * z2;
+	const T zz = z * z2;
+	const T wx = w * x2;
+	const T wy = w * y2;
+	const T wz = w * z2;
+	return mat3<T>{
+		vec3<T>{ T(1) - (yy + zz), xy + wz, xz - wy },
+		vec3<T>{ xy - wz, T(1) - (xx + zz), yz + wx },
+		vec3<T>{ xz + wy, yz - wx, T(1) - (xx + yy) }
+	};
+}
+
+template <typename T>
+constexpr auto gse::from_mat4(const mat4<T>& m) -> quat_t<T> {
+	const T trace = m[0][0] + m[1][1] + m[2][2];
+	quat_t<T> q{};
+	if (trace > T(0)) {
+		const T s = std::sqrt(trace + T(1)) * T(2);
+		q[0] = T(0.25) * s;
+		q[1] = (m[1][2] - m[2][1]) / s;
+		q[2] = (m[2][0] - m[0][2]) / s;
+		q[3] = (m[0][1] - m[1][0]) / s;
+	}
+	else if ((m[0][0] > m[1][1]) && (m[0][0] > m[2][2])) {
+		const T s = std::sqrt(T(1) + m[0][0] - m[1][1] - m[2][2]) * T(2);
+		q[0] = (m[1][2] - m[2][1]) / s;
+		q[1] = T(0.25) * s;
+		q[2] = (m[1][0] + m[0][1]) / s;
+		q[3] = (m[2][0] + m[0][2]) / s;
+	}
+	else if (m[1][1] > m[2][2]) {
+		const T s = std::sqrt(T(1) + m[1][1] - m[0][0] - m[2][2]) * T(2);
+		q[0] = (m[2][0] - m[0][2]) / s;
+		q[1] = (m[1][0] + m[0][1]) / s;
+		q[2] = T(0.25) * s;
+		q[3] = (m[2][1] + m[1][2]) / s;
+	}
+	else {
+		const T s = std::sqrt(T(1) + m[2][2] - m[0][0] - m[1][1]) * T(2);
+		q[0] = (m[0][1] - m[1][0]) / s;
+		q[1] = (m[2][0] + m[0][2]) / s;
+		q[2] = (m[2][1] + m[1][2]) / s;
+		q[3] = T(0.25) * s;
+	}
+	return q;
+}
+
+template <typename T>
+constexpr auto gse::identity() -> quat_t<T> {
+	return quat_t<T>{ T(1), T(0), T(0), T(0) };
+}
+
+template <typename T>
+constexpr auto gse::from_axis_angle(const vec3<T>& axis, angle_t<T> angle) -> quat_t<T> {
+	const T half_angle = angle.template as<radians>() / T(2);
+	const T s = std::sin(half_angle);
+	const T c = std::cos(half_angle);
+	return quat_t<T>{ c, axis[0] * s, axis[1] * s, axis[2] * s };
+}
+
+template <typename T>
+constexpr auto gse::slerp(const quat_t<T>& a, const quat_t<T>& b, T t) -> quat_t<T> {
+	T d = dot(a, b);
+
+	// Choose shortest path
+	quat_t<T> b_adj = d < T(0) ? quat_t<T>(b.v4() * T(-1)) : b;
+	d = std::abs(d);
+
+	// Linear interpolation for nearly parallel quaternions
+	if (d > T(0.9995)) {
+		return normalize(quat_t<T>(a.v4() + t * (b_adj.v4() - a.v4())));
+	}
+
+	const T theta = std::acos(d);
+	const T sin_theta = std::sin(theta);
+	const T wa = std::sin((T(1) - t) * theta) / sin_theta;
+	const T wb = std::sin(t * theta) / sin_theta;
+
+	return quat_t<T>(a.v4() * wa + b_adj.v4() * wb);
+}
+
+template <typename T>
+constexpr auto gse::to_axis_angle(const quat_t<T>& q) -> vec3<angle_t<T>> {
+	const T w = q.s() >= T(0) ? q.s() : -q.s();
+	const T sign = q.s() >= T(0) ? T(1) : T(-1);
+	const T x = sign * q.x();
+	const T y = sign * q.y();
+	const T z = sign * q.z();
+
+	const T sin_half = std::sqrt(x * x + y * y + z * z);
+
+	if (sin_half < T(1e-7)) {
+		return { radians(T(2) * x), radians(T(2) * y), radians(T(2) * z) };
+	}
+
+	const T angle = T(2) * std::atan2(sin_half, w);
+	const T scale = angle / sin_half;
+	return { radians(scale * x), radians(scale * y), radians(scale * z) };
+}
+
+
+template <typename T>
+constexpr auto gse::difference_axis_angle(const quat_t<T>& q_from, const quat_t<T>& q_to) -> vec3<angle_t<T>> {
+	const quat_t<T> delta_q = q_to * conjugate(q_from);
+	return to_axis_angle(delta_q);
+}
+
+template <typename T, typename Q>
+constexpr auto gse::rotate_vector(const quat_t<T>& q, const vec3<Q>& v) -> vec3<Q> {
+	return mat3_cast(q) * v;
+}
+
+template <typename T, typename Q>
+constexpr auto gse::inverse_rotate_vector(const quat_t<T>& q, const vec3<Q>& v) -> vec3<Q> {
+	return mat3_cast(conjugate(q)) * v;
+}

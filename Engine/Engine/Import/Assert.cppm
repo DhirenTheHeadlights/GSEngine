@@ -15,8 +15,8 @@ export namespace gse {
 	template <typename... Args>
     auto assert(
 	    bool condition,
-        std::source_location loc = std::source_location::current(),
-		std::format_string<Args...> fmt = "{}",
+        std::source_location loc,
+		std::string_view fmt,
 	    Args&&... args
     ) -> void;
 }
@@ -32,10 +32,10 @@ namespace gse {
 }
 
 template <class... Args>
-auto gse::assert(const bool condition, const std::source_location loc, std::format_string<Args...> fmt, Args&&... args) -> void {
+auto gse::assert(const bool condition, const std::source_location loc, std::string_view fmt, Args&&... args) -> void {
     if (condition) return;
 
-	const std::string comment = std::format(fmt, std::forward<Args>(args)...);
+	const std::string comment = std::vformat(fmt, std::make_format_args(args...));
     const std::string message = std::format(
         "[Assertion Failure]\n"
         "File: {}\n"

@@ -6,7 +6,7 @@ export module gse.platform:input;
 
 import std;
 
-import gse.physics.math;
+import gse.math;
 import gse.utility;
 
 import :keys;

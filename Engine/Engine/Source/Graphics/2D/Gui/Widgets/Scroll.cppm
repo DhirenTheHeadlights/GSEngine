@@ -4,16 +4,15 @@ import std;
 
 import gse.platform;
 import gse.utility;
-import gse.physics.math;
+import gse.math;
 
-import :rendering_context;
 import :font;
 import :texture;
 import :ui_renderer;
 import :styles;
 
 export namespace gse::gui {
-	using ui_rect = rect_t<unitless::vec2>;
+	using ui_rect = rect_t<vec2f>;
 
 	struct scroll_state {
 		float offset = 0.f;
@@ -112,7 +111,7 @@ auto gse::gui::scroll::end(
 
 	const float max_scroll = std::max(0.f, content_height - visible_height);
 
-	const unitless::vec2 mouse_pos = input.mouse_position();
+	const vec2f mouse_pos = input.mouse_position();
 	const bool mouse_in_region = ctx.visible_rect.contains(mouse_pos);
 
 	if (mouse_in_region && max_scroll > 0.f) {
@@ -203,7 +202,7 @@ auto gse::gui::scroll::end(
 		}
 	}
 
-	unitless::vec4 track_color = sty.color_widget_background;
+	vec4f track_color = sty.color_widget_background;
 	track_color.w() *= 0.3f;
 
 	sprites.push_back({
@@ -213,7 +212,7 @@ auto gse::gui::scroll::end(
 		.layer = layer
 	});
 
-	unitless::vec4 bar_color = sty.color_widget_background;
+	vec4f bar_color = sty.color_widget_background;
 	if (state.scrollbar_held) {
 		bar_color = sty.color_widget_active;
 	} else if (state.scrollbar_hovered) {
