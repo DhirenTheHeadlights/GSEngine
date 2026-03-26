@@ -219,12 +219,6 @@ export namespace gse::renderer::geometry {
 
 		resource::handle<texture> blank_texture;
 
-		bool mesh_shaders_enabled = false;
-		vk::raii::Pipeline mesh_pipeline = nullptr;
-		vk::raii::PipelineLayout mesh_pipeline_layout = nullptr;
-		per_frame_resource<vk::raii::DescriptorSet> mesh_descriptor_sets;
-		resource::handle<shader> mesh_shader_handle;
-
 		explicit state(gpu::context& c) : ctx(std::addressof(c)) {}
 		state() = default;
 
@@ -349,18 +343,17 @@ auto gse::renderer::geometry::system::initialize(initialize_phase&, state& s) ->
 	transition_gbuffer_images(config);
 	config.on_swap_chain_recreate(transition_gbuffer_images);
 
-	s.shader_handle = s.ctx->get<shader>("Shaders/Standard3D/geometry_pass");
+	s.shader_handle = s.ctx->get<shader>("Shaders/Standard3D/meshlet_geometry");
 	s.ctx->instantly_load(s.shader_handle);
-	auto descriptor_set_layouts = s.shader_handle->layouts();
 
 	const auto camera_ubo = s.shader_handle->uniform_block("CameraUBO");
 
-	vk::BufferCreateInfo camera_ubo_buffer_info{
+	const vk::BufferCreateInfo camera_ubo_buffer_info{
 		.size = camera_ubo.size,
 		.usage = vk::BufferUsageFlagBits::eUniformBuffer,
 		.sharingMode = vk::SharingMode::eExclusive
 	};
-	
+
 	for (std::size_t i = 0; i < per_frame_resource<vk::raii::DescriptorSet>::frames_in_flight; ++i) {
 		s.ubo_allocations["CameraUBO"][i] = config.allocator().create_buffer(camera_ubo_buffer_info);
 
@@ -370,7 +363,7 @@ auto gse::renderer::geometry::system::initialize(initialize_phase&, state& s) ->
 			shader::set::binding_type::persistent
 		);
 
-		std::unordered_map<std::string, vk::DescriptorBufferInfo> buffer_infos{
+		const std::unordered_map<std::string, vk::DescriptorBufferInfo> buffer_infos{
 			{
 				"CameraUBO",
 				{
@@ -381,27 +374,11 @@ auto gse::renderer::geometry::system::initialize(initialize_phase&, state& s) ->
 			}
 		};
 
-		std::unordered_map<std::string, vk::DescriptorImageInfo> image_infos = {};
-
 		config.device_config().device.updateDescriptorSets(
-			s.shader_handle->descriptor_writes(*s.descriptor_sets[i], buffer_infos, image_infos),
+			s.shader_handle->descriptor_writes(*s.descriptor_sets[i], buffer_infos, {}),
 			nullptr
 		);
 	}
-
-	const vk::PipelineLayoutCreateInfo pipeline_layout_info{
-		.setLayoutCount = static_cast<std::uint32_t>(descriptor_set_layouts.size()),
-		.pSetLayouts = descriptor_set_layouts.data(),
-		.pushConstantRangeCount = 0,
-		.pPushConstantRanges = nullptr
-	};
-
-	s.pipeline_layout = config.device_config().device.createPipelineLayout(pipeline_layout_info);
-
-	constexpr vk::PipelineInputAssemblyStateCreateInfo input_assembly{
-		.topology = vk::PrimitiveTopology::eTriangleList,
-		.primitiveRestartEnable = vk::False
-	};
 
 	constexpr vk::PipelineRasterizationStateCreateInfo rasterizer{
 		.depthClampEnable = vk::False,
@@ -446,8 +423,6 @@ auto gse::renderer::geometry::system::initialize(initialize_phase&, state& s) ->
 		.pAttachments = color_blend_attachments.data()
 	};
 
-	auto shader_stages = s.shader_handle->shader_stages();
-
 	constexpr vk::PipelineMultisampleStateCreateInfo multisampling{
 		.rasterizationSamples = vk::SampleCountFlagBits::e1,
 		.sampleShadingEnable = vk::False,
@@ -457,9 +432,12 @@ auto gse::renderer::geometry::system::initialize(initialize_phase&, state& s) ->
 		.alphaToOneEnable = vk::False
 	};
 
-	auto vertex_input_info = s.shader_handle->vertex_input_state();
+	constexpr vk::PipelineInputAssemblyStateCreateInfo input_assembly{
+		.topology = vk::PrimitiveTopology::eTriangleList,
+		.primitiveRestartEnable = vk::False
+	};
 
-	const vk::PipelineRenderingCreateInfoKHR geometry_rendering_info = {
+	const vk::PipelineRenderingCreateInfoKHR geometry_rendering_info{
 		.colorAttachmentCount = static_cast<uint32_t>(g_buffer_color_formats.size()),
 		.pColorAttachmentFormats = g_buffer_color_formats.data(),
 		.depthAttachmentFormat = vk::Format::eD32Sfloat
@@ -482,30 +460,11 @@ auto gse::renderer::geometry::system::initialize(initialize_phase&, state& s) ->
 		.pScissors = nullptr
 	};
 
-	const vk::GraphicsPipelineCreateInfo pipeline_info{
-		.pNext = &geometry_rendering_info,
-		.stageCount = static_cast<std::uint32_t>(shader_stages.size()),
-		.pStages = shader_stages.data(),
-		.pVertexInputState = &vertex_input_info,
-		.pInputAssemblyState = &input_assembly,
-		.pTessellationState = nullptr,
-		.pViewportState = &viewport_state,
-		.pRasterizationState = &rasterizer,
-		.pMultisampleState = &multisampling,
-		.pDepthStencilState = &depth_stencil,
-		.pColorBlendState = &color_blending,
-		.pDynamicState = &dynamic_state,
-		.layout = s.pipeline_layout,
-		.basePipelineHandle = nullptr,
-		.basePipelineIndex = 0
-	};
-	s.pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
-
 	s.skinned_shader = s.ctx->get<shader>("Shaders/Standard3D/skinned_geometry_pass");
 	s.ctx->instantly_load(s.skinned_shader);
 	auto skinned_descriptor_set_layouts = s.skinned_shader->layouts();
 
-	const auto instance_block = s.shader_handle->uniform_block("instanceData");
+	const auto instance_block = s.skinned_shader->uniform_block("instanceData");
 	s.instance_stride = instance_block.size;
 	for (const auto& [name, member] : instance_block.members) {
 		s.instance_offsets[name] = member.offset;
@@ -839,121 +798,36 @@ auto gse::renderer::geometry::system::initialize(initialize_phase&, state& s) ->
 	s.blank_texture = s.ctx->queue<texture>("blank", vec4f(1, 1, 1, 1));
 	s.ctx->instantly_load(s.blank_texture);
 
-	if (config.mesh_shaders_enabled()) {
-		s.mesh_shader_handle = s.ctx->get<shader>("Shaders/Standard3D/meshlet_geometry");
-		if (s.mesh_shader_handle.valid()) {
-			s.ctx->instantly_load(s.mesh_shader_handle);
+	auto pipeline_layouts = s.shader_handle->layouts();
+	const auto pc_range = s.shader_handle->push_constant_range("PushConstants");
 
-			if (s.mesh_shader_handle->is_mesh_shader()) {
-				auto mesh_layouts = s.mesh_shader_handle->layouts();
+	s.pipeline_layout = config.device_config().device.createPipelineLayout({
+		.setLayoutCount = static_cast<std::uint32_t>(pipeline_layouts.size()),
+		.pSetLayouts = pipeline_layouts.data(),
+		.pushConstantRangeCount = 1,
+		.pPushConstantRanges = &pc_range
+	});
 
-				const auto mesh_pc_range = s.mesh_shader_handle->push_constant_range("PushConstants");
+	const auto pipeline_stages = s.shader_handle->mesh_shader_stages();
 
-				s.mesh_pipeline_layout = config.device_config().device.createPipelineLayout({
-					.setLayoutCount = static_cast<std::uint32_t>(mesh_layouts.size()),
-					.pSetLayouts = mesh_layouts.data(),
-					.pushConstantRangeCount = 1,
-					.pPushConstantRanges = &mesh_pc_range
-				});
+	const vk::GraphicsPipelineCreateInfo pipeline_info{
+		.pNext = &geometry_rendering_info,
+		.stageCount = static_cast<std::uint32_t>(pipeline_stages.size()),
+		.pStages = pipeline_stages.data(),
+		.pVertexInputState = nullptr,
+		.pInputAssemblyState = nullptr,
+		.pTessellationState = nullptr,
+		.pViewportState = &viewport_state,
+		.pRasterizationState = &rasterizer,
+		.pMultisampleState = &multisampling,
+		.pDepthStencilState = &depth_stencil,
+		.pColorBlendState = &color_blending,
+		.pDynamicState = &dynamic_state,
+		.layout = s.pipeline_layout
+	};
 
-				const auto mesh_stages = s.mesh_shader_handle->mesh_shader_stages();
-
-				const std::array g_buffer_mesh_formats = {
-					config.swap_chain_config().albedo_image.format,
-					config.swap_chain_config().normal_image.format
-				};
-
-				std::array<vk::PipelineColorBlendAttachmentState, 2> mesh_blend_attachments;
-				mesh_blend_attachments.fill({
-					.blendEnable = vk::False,
-					.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
-				});
-
-				const vk::PipelineColorBlendStateCreateInfo mesh_color_blending{
-					.logicOpEnable = vk::False,
-					.logicOp = vk::LogicOp::eCopy,
-					.attachmentCount = static_cast<std::uint32_t>(mesh_blend_attachments.size()),
-					.pAttachments = mesh_blend_attachments.data()
-				};
-
-				constexpr vk::PipelineRasterizationStateCreateInfo mesh_rasterizer{
-					.depthClampEnable = vk::False,
-					.rasterizerDiscardEnable = vk::False,
-					.polygonMode = vk::PolygonMode::eFill,
-					.cullMode = vk::CullModeFlagBits::eBack,
-					.frontFace = vk::FrontFace::eCounterClockwise,
-					.depthBiasEnable = vk::False,
-					.lineWidth = 1.0f
-				};
-
-				constexpr vk::PipelineDepthStencilStateCreateInfo mesh_depth_stencil{
-					.depthTestEnable = vk::True,
-					.depthWriteEnable = vk::True,
-					.depthCompareOp = vk::CompareOp::eLess,
-					.depthBoundsTestEnable = vk::False,
-					.stencilTestEnable = vk::False,
-					.minDepthBounds = 0.0f,
-					.maxDepthBounds = 1.0f
-				};
-
-				constexpr vk::PipelineMultisampleStateCreateInfo mesh_multisampling{
-					.rasterizationSamples = vk::SampleCountFlagBits::e1,
-					.sampleShadingEnable = vk::False,
-					.minSampleShading = 1.0f
-				};
-
-				const vk::PipelineRenderingCreateInfoKHR mesh_rendering_info{
-					.colorAttachmentCount = static_cast<std::uint32_t>(g_buffer_mesh_formats.size()),
-					.pColorAttachmentFormats = g_buffer_mesh_formats.data(),
-					.depthAttachmentFormat = vk::Format::eD32Sfloat
-				};
-
-				constexpr std::array mesh_dynamic_states = {
-					vk::DynamicState::eViewport,
-					vk::DynamicState::eScissor
-				};
-
-				const vk::PipelineDynamicStateCreateInfo mesh_dynamic_state{
-					.dynamicStateCount = static_cast<std::uint32_t>(mesh_dynamic_states.size()),
-					.pDynamicStates = mesh_dynamic_states.data()
-				};
-
-				constexpr vk::PipelineViewportStateCreateInfo mesh_viewport_state{
-					.viewportCount = 1,
-					.scissorCount = 1
-				};
-
-				const vk::GraphicsPipelineCreateInfo mesh_pipeline_info{
-					.pNext = &mesh_rendering_info,
-					.stageCount = static_cast<std::uint32_t>(mesh_stages.size()),
-					.pStages = mesh_stages.data(),
-					.pVertexInputState = nullptr,
-					.pInputAssemblyState = nullptr,
-					.pTessellationState = nullptr,
-					.pViewportState = &mesh_viewport_state,
-					.pRasterizationState = &mesh_rasterizer,
-					.pMultisampleState = &mesh_multisampling,
-					.pDepthStencilState = &mesh_depth_stencil,
-					.pColorBlendState = &mesh_color_blending,
-					.pDynamicState = &mesh_dynamic_state,
-					.layout = s.mesh_pipeline_layout
-				};
-
-				s.mesh_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, mesh_pipeline_info);
-
-				for (std::size_t i = 0; i < per_frame_resource<vk::raii::DescriptorSet>::frames_in_flight; ++i) {
-					s.mesh_descriptor_sets[i] = s.mesh_shader_handle->descriptor_set(
-						config.device_config().device,
-						*config.descriptor_config().pool,
-						shader::set::binding_type::persistent
-					);
-				}
-
-				s.mesh_shaders_enabled = true;
-				std::println("Mesh shader pipeline created successfully");
-			}
-		}
-	}
+	s.pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
+	std::println("Mesh shader pipeline created successfully");
 }
 
 auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> void {
@@ -1480,37 +1354,32 @@ auto gse::renderer::geometry::system::render(const render_phase& phase, const st
                     .range = s.instance_buffer[frame_index].allocation.size()
                 };
 
-                const vk::DescriptorBufferInfo skin_buffer_info_normal{
-                    .buffer = s.skin_buffer[frame_index].buffer,
-                    .offset = 0,
-                    .range = s.skin_buffer[frame_index].allocation.size()
-                };
-
-                bool vertex_pipeline_bound = false;
-                bool mesh_pipeline_bound = false;
+                bool pipeline_bound = false;
 
                 for (std::size_t i = 0; i < normal_batches.size(); ++i) {
                     const auto& batch = normal_batches[i];
                     const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
 
+                    if (!mesh.has_meshlets()) {
+                        continue;
+                    }
+
                     const bool has_texture = mesh.material().valid() && mesh.material()->diffuse_texture.valid();
                     const auto& tex_info = has_texture ? mesh.material()->diffuse_texture->descriptor_info() : s.blank_texture->descriptor_info();
 
-                    if (s.mesh_shaders_enabled && mesh.has_meshlets()) {
-                        if (!mesh_pipeline_bound) {
-                            command.bindPipeline(vk::PipelineBindPoint::eGraphics, s.mesh_pipeline);
+                    if (!pipeline_bound) {
+                        command.bindPipeline(vk::PipelineBindPoint::eGraphics, s.pipeline);
 
-                            const vk::DescriptorSet mesh_sets[]{ **s.mesh_descriptor_sets[frame_index] };
-                            command.bindDescriptorSets(
-                                vk::PipelineBindPoint::eGraphics,
-                                s.mesh_pipeline_layout,
-                                0,
-                                vk::ArrayProxy<const vk::DescriptorSet>(1, mesh_sets),
-                                {}
-                            );
-                            mesh_pipeline_bound = true;
-                            vertex_pipeline_bound = false;
-                        }
+                        const vk::DescriptorSet sets[]{ **s.descriptor_sets[frame_index] };
+                        command.bindDescriptorSets(
+                            vk::PipelineBindPoint::eGraphics,
+                            s.pipeline_layout,
+                            0,
+                            vk::ArrayProxy<const vk::DescriptorSet>(1, sets),
+                            {}
+                        );
+                        pipeline_bound = true;
+                    }
 
                         const vk::DescriptorBufferInfo vertex_storage_info{
                             .buffer = mesh.vertex_storage_buffer(),
@@ -1538,7 +1407,7 @@ auto gse::renderer::geometry::system::render(const render_phase& phase, const st
                             .range = vk::WholeSize
                         };
 
-                        const std::array<vk::WriteDescriptorSet, 7> mesh_descriptor_writes{
+                        const std::array<vk::WriteDescriptorSet, 7> descriptor_writes{
                             vk::WriteDescriptorSet{
                                 .dstBinding = 0,
                                 .descriptorCount = 1,
@@ -1585,16 +1454,16 @@ auto gse::renderer::geometry::system::render(const render_phase& phase, const st
 
                         command.pushDescriptorSetKHR(
                             vk::PipelineBindPoint::eGraphics,
-                            s.mesh_pipeline_layout,
+                            s.pipeline_layout,
                             1,
-                            mesh_descriptor_writes
+                            descriptor_writes
                         );
 
                         const std::uint32_t ml_count = mesh.meshlet_count();
                         for (std::uint32_t inst = 0; inst < batch.instance_count; ++inst) {
-                            s.mesh_shader_handle->push(
+                            s.shader_handle->push(
                                 command,
-                                *s.mesh_pipeline_layout,
+                                *s.pipeline_layout,
                                 "PushConstants",
                                 "meshlet_offset", std::uint32_t(0),
                                 "meshlet_count", ml_count,
@@ -1604,62 +1473,6 @@ auto gse::renderer::geometry::system::render(const render_phase& phase, const st
                             const std::uint32_t task_groups = (ml_count + 31) / 32;
                             command.drawMeshTasksEXT(task_groups, 1, 1);
                         }
-                    } else {
-                        if (!vertex_pipeline_bound) {
-                            command.bindPipeline(vk::PipelineBindPoint::eGraphics, s.pipeline);
-
-                            const vk::DescriptorSet sets[]{ **s.descriptor_sets[frame_index] };
-                            command.bindDescriptorSets(
-                                vk::PipelineBindPoint::eGraphics,
-                                s.pipeline_layout,
-                                0,
-                                vk::ArrayProxy<const vk::DescriptorSet>(1, sets),
-                                {}
-                            );
-                            vertex_pipeline_bound = true;
-                            mesh_pipeline_bound = false;
-                        }
-
-                        const std::array<vk::WriteDescriptorSet, 3> descriptor_writes{
-                            vk::WriteDescriptorSet{
-                                .dstBinding = 2,
-                                .dstArrayElement = 0,
-                                .descriptorCount = 1,
-                                .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-                                .pImageInfo = &tex_info
-                            },
-                            vk::WriteDescriptorSet{
-                                .dstBinding = 3,
-                                .dstArrayElement = 0,
-                                .descriptorCount = 1,
-                                .descriptorType = vk::DescriptorType::eStorageBuffer,
-                                .pBufferInfo = &skin_buffer_info_normal
-                            },
-                            vk::WriteDescriptorSet{
-                                .dstBinding = 4,
-                                .dstArrayElement = 0,
-                                .descriptorCount = 1,
-                                .descriptorType = vk::DescriptorType::eStorageBuffer,
-                                .pBufferInfo = &instance_buffer_info
-                            }
-                        };
-
-                        command.pushDescriptorSetKHR(
-                            vk::PipelineBindPoint::eGraphics,
-                            s.pipeline_layout,
-                            1,
-                            descriptor_writes
-                        );
-
-                        mesh.bind(command);
-
-                        command.drawIndexedIndirect(
-                            s.normal_indirect_commands_buffer[frame_index].buffer,
-                            i * sizeof(vk::DrawIndexedIndirectCommand),
-                            1,
-                            0
-                        );
-                    }
                 }
             }
 
