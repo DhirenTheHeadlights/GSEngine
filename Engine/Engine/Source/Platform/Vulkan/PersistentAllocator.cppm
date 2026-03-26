@@ -150,7 +150,7 @@ export namespace gse::vulkan {
 			const vk::BufferCreateInfo& buffer_info,
 			const void* data = nullptr,
 			std::string_view tag = "",
-			std::source_location loc = std::source_location::current()
+			const std::source_location& loc = std::source_location::current()
 		) -> buffer_resource;
 
 		auto create_image(
@@ -544,7 +544,7 @@ auto gse::vulkan::allocator::allocate(const vk::MemoryRequirements& requirements
 	};
 }
 
-auto gse::vulkan::allocator::create_buffer(const vk::BufferCreateInfo& buffer_info, const void* data, const std::string_view tag, const std::source_location loc) -> buffer_resource {
+auto gse::vulkan::allocator::create_buffer(const vk::BufferCreateInfo& buffer_info, const void* data, const std::string_view tag, const std::source_location& loc) -> buffer_resource {
 	auto buffer = m_device.createBuffer(buffer_info, nullptr);
 	const auto requirements = m_device.getBufferMemoryRequirements(buffer);
 

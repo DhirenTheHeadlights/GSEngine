@@ -398,7 +398,6 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 
 				s.sleep_counters[eid] = bs.sleep_counter;
 				mc->sleeping = bs.sleeping();
-				mc->accumulators = {};
 			}
 
 			mc->airborne = true;
@@ -1067,8 +1066,6 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 
 			s.sleep_counters[mc->owner_id()] = bs.sleep_counter;
 			mc->sleeping = bs.sleeping();
-
-			mc->accumulators = {};
 
 			if (auto* cc = collision.find(mc->owner_id())) {
 				cc->bounding_box.update(mc->current_position, mc->orientation);
