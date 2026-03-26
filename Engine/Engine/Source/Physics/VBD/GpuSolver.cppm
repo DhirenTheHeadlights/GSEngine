@@ -560,8 +560,7 @@ auto gse::vbd::gpu_solver::upload(
 		auto mt_span = motor_target.as_storage_span();
 		gse::memcpy(elem + bo_motor_target, mt_span);
 
-		const float mass = mass_value.as<kilograms>();
-		gse::memcpy(elem + bo_mass, mass);
+		gse::memcpy(elem + bo_mass, mass_value);
 
 		std::uint32_t flags = 0;
 		if (locked) flags |= flag_locked;
@@ -604,8 +603,7 @@ auto gse::vbd::gpu_solver::upload(
 		gse::memcpy(elem + mo_body_index, body_index);
 		gse::memcpy(elem + mo_compliance, compliance);
 
-		const float max_f = max_force.as<newtons>();
-		gse::memcpy(elem + mo_max_force, max_f);
+		gse::memcpy(elem + mo_max_force, max_force);
 
 		const std::uint32_t horiz = horizontal_only ? 1u : 0u;
 		gse::memcpy(elem + mo_horizontal_only, horiz);
@@ -707,13 +705,9 @@ auto gse::vbd::gpu_solver::upload(
 		gse::memcpy(elem + jo_local_axis_a, j.local_axis_a);
 		gse::memcpy(elem + jo_local_axis_b, j.local_axis_b);
 
-		const float target_dist = j.target_distance.as<meters>();
-		gse::memcpy(elem + jo_target_distance, target_dist);
-
-		const float ll = j.limit_lower.as<radians>();
-		gse::memcpy(elem + jo_limit_lower, ll);
-		const float lu = j.limit_upper.as<radians>();
-		gse::memcpy(elem + jo_limit_upper, lu);
+		gse::memcpy(elem + jo_target_distance, j.target_distance);
+		gse::memcpy(elem + jo_limit_lower, j.limit_lower);
+		gse::memcpy(elem + jo_limit_upper, j.limit_upper);
 
 		gse::memcpy(elem + jo_rest_orientation, j.rest_orientation);
 
@@ -1617,7 +1611,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(vulkan::config& config) -> void {
 	const auto& cfg = m_solver_cfg;
 	const std::uint32_t total = total_substeps();
 	const time_step sub_dt = m_dt / static_cast<float>(total);
-	const float h_squared = sub_dt.as<seconds>() * sub_dt.as<seconds>();
+	const float h_squared = (sub_dt * sub_dt).as<seconds_squared>();
 
 	auto ceil_div = [](const std::uint32_t a, const std::uint32_t b) {
 		return (a + b - 1) / b;

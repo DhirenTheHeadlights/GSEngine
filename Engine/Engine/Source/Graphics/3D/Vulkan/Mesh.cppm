@@ -12,17 +12,41 @@ export namespace gse {
         vec3<length> position;
         vec3f normal;
         vec2f tex_coords;
+
+        auto operator==(const vertex&) const -> bool = default;
+    };
+
+    struct meshlet_descriptor {
+        std::uint32_t vertex_offset;
+        std::uint32_t triangle_offset;
+        std::uint32_t vertex_count;
+        std::uint32_t triangle_count;
+    };
+
+    struct meshlet_bounds {
+        vec3<length> center;
+        length radius;
+        vec3f cone_axis;
+        float cone_cutoff;
+    };
+
+    struct meshlet_data {
+        std::vector<meshlet_descriptor> descriptors;
+        std::vector<std::uint32_t> vertex_indices;
+        std::vector<std::uint8_t> triangles;
+        std::vector<meshlet_bounds> bounds;
     };
 
     struct mesh_data {
         std::vector<vertex> vertices;
         std::vector<std::uint32_t> indices;
         resource::handle<material> material;
+        meshlet_data meshlets;
     };
 
     class mesh final : non_copyable {
     public:
-        explicit mesh(mesh_data&& data) : m_vertices(std::move(data.vertices)), m_indices(std::move(data.indices)), m_material(data.material) {}
+        explicit mesh(mesh_data&& data);
         mesh(std::vector<vertex> vertices, std::vector<std::uint32_t> indices, const resource::handle<material>& material = {}) : m_vertices(std::move(vertices)), m_indices(std::move(indices)), m_material(material) {}
 
         mesh(mesh&& other) noexcept;
@@ -37,76 +61,134 @@ export namespace gse {
         auto material() const -> const resource::handle<material>&;
         auto indices() const -> const std::vector<std::uint32_t>&;
         auto aabb() const -> std::pair<vec3<length>, vec3<length>>;
+
+        auto has_meshlets() const -> bool { return !m_meshlets.descriptors.empty(); }
+        auto meshlet_count() const -> std::uint32_t { return static_cast<std::uint32_t>(m_meshlets.descriptors.size()); }
+        auto meshlet_descriptor_buffer() const -> vk::Buffer { return m_meshlet_descriptor_buffer.buffer; }
+        auto meshlet_vertex_buffer() const -> vk::Buffer { return m_meshlet_vertex_buffer.buffer; }
+        auto meshlet_triangle_buffer() const -> vk::Buffer { return m_meshlet_triangle_buffer.buffer; }
+        auto meshlet_bounds_buffer() const -> vk::Buffer { return m_meshlet_bounds_buffer.buffer; }
+        auto vertex_storage_buffer() const -> vk::Buffer { return m_vertex_storage_buffer.buffer; }
     private:
         vulkan::buffer_resource m_vertex_buffer;
         vulkan::buffer_resource m_index_buffer;
+        vulkan::buffer_resource m_vertex_storage_buffer;
+        vulkan::buffer_resource m_meshlet_descriptor_buffer;
+        vulkan::buffer_resource m_meshlet_vertex_buffer;
+        vulkan::buffer_resource m_meshlet_triangle_buffer;
+        vulkan::buffer_resource m_meshlet_bounds_buffer;
 
         std::vector<vertex> m_vertices;
         std::vector<std::uint32_t> m_indices;
         resource::handle<gse::material> m_material;
+        meshlet_data m_meshlets;
     };
 
     auto generate_bounding_box_mesh(vec3<length> upper, vec3<length> lower) -> mesh_data;
 }
 
+gse::mesh::mesh(mesh_data&& data)
+    : m_vertices(std::move(data.vertices)),
+    m_indices(std::move(data.indices)),
+    m_material(data.material),
+    m_meshlets(std::move(data.meshlets)) {}
+
 gse::mesh::mesh(mesh&& other) noexcept
     : m_vertex_buffer(std::move(other.m_vertex_buffer)),
     m_index_buffer(std::move(other.m_index_buffer)),
+    m_vertex_storage_buffer(std::move(other.m_vertex_storage_buffer)),
+    m_meshlet_descriptor_buffer(std::move(other.m_meshlet_descriptor_buffer)),
+    m_meshlet_vertex_buffer(std::move(other.m_meshlet_vertex_buffer)),
+    m_meshlet_triangle_buffer(std::move(other.m_meshlet_triangle_buffer)),
+    m_meshlet_bounds_buffer(std::move(other.m_meshlet_bounds_buffer)),
     m_vertices(std::move(other.m_vertices)),
     m_indices(std::move(other.m_indices)),
-    m_material(std::move(other.m_material)) {
+    m_material(std::move(other.m_material)),
+    m_meshlets(std::move(other.m_meshlets)) {
     other.m_vertex_buffer = {};
     other.m_index_buffer = {};
+    other.m_vertex_storage_buffer = {};
+    other.m_meshlet_descriptor_buffer = {};
+    other.m_meshlet_vertex_buffer = {};
+    other.m_meshlet_triangle_buffer = {};
+    other.m_meshlet_bounds_buffer = {};
 }
 
 auto gse::mesh::initialize(vulkan::config& config) -> void {
     const vk::DeviceSize vertex_buffer_size = sizeof(vertex) * m_vertices.size();
     const vk::DeviceSize index_buffer_size = sizeof(std::uint32_t) * m_indices.size();
 
-    const vk::BufferCreateInfo vertex_final_info{
+    constexpr auto storage_usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst;
+
+    m_vertex_buffer = config.allocator().create_buffer({
         .size = vertex_buffer_size,
         .usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst
-    };
-    this->m_vertex_buffer = config.allocator().create_buffer(
-        vertex_final_info
-    );
+    });
 
-    const vk::BufferCreateInfo index_final_info{
+    m_index_buffer = config.allocator().create_buffer({
         .size = index_buffer_size,
         .usage = vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst
-    };
-    this->m_index_buffer = config.allocator().create_buffer(
-        index_final_info
-    );
+    });
+
+    m_vertex_storage_buffer = config.allocator().create_buffer({
+        .size = vertex_buffer_size,
+        .usage = storage_usage
+    });
+
+    const bool has_ml = has_meshlets();
+
+    if (has_ml) {
+        m_meshlet_descriptor_buffer = config.allocator().create_buffer({
+            .size = sizeof(meshlet_descriptor) * m_meshlets.descriptors.size(),
+            .usage = storage_usage
+        });
+
+        m_meshlet_vertex_buffer = config.allocator().create_buffer({
+            .size = sizeof(std::uint32_t) * m_meshlets.vertex_indices.size(),
+            .usage = storage_usage
+        });
+
+        const auto tri_size = (m_meshlets.triangles.size() + 3) & ~std::size_t(3);
+        m_meshlet_triangle_buffer = config.allocator().create_buffer({
+            .size = tri_size,
+            .usage = storage_usage
+        });
+
+        m_meshlet_bounds_buffer = config.allocator().create_buffer({
+            .size = sizeof(meshlet_bounds) * m_meshlets.bounds.size(),
+            .usage = storage_usage
+        });
+    }
 
     config.add_transient_work(
-        [&](const vk::raii::CommandBuffer& command_buffer) -> std::vector<vulkan::buffer_resource> {
-            auto vertex_staging = config.allocator().create_buffer(
-                vk::BufferCreateInfo{
-                    .size = vertex_buffer_size,
+        [this, &config, vertex_buffer_size, index_buffer_size, has_ml](const vk::raii::CommandBuffer& command_buffer) -> std::vector<vulkan::buffer_resource> {
+            std::vector<vulkan::buffer_resource> transient;
+
+            auto stage_copy = [&](vk::Buffer dst, const void* data, vk::DeviceSize size) {
+                auto staging = config.allocator().create_buffer({
+                    .size = size,
                     .usage = vk::BufferUsageFlagBits::eTransferSrc
-                },
-                m_vertices.data()
-            );
+                }, data);
+                command_buffer.copyBuffer(staging.buffer, dst, vk::BufferCopy(0, 0, size));
+                transient.push_back(std::move(staging));
+            };
 
-            auto index_staging = config.allocator().create_buffer(
-                vk::BufferCreateInfo{
-                    .size = index_buffer_size,
-                    .usage = vk::BufferUsageFlagBits::eTransferSrc
-                },
-                m_indices.data()
-            );
+            stage_copy(m_vertex_buffer.buffer, m_vertices.data(), vertex_buffer_size);
+            stage_copy(m_index_buffer.buffer, m_indices.data(), index_buffer_size);
+            stage_copy(m_vertex_storage_buffer.buffer, m_vertices.data(), vertex_buffer_size);
 
-            const vk::BufferCopy vertex_copy_region(0, 0, vertex_buffer_size);
-            command_buffer.copyBuffer(vertex_staging.buffer, this->m_vertex_buffer.buffer, vertex_copy_region);
+            if (has_ml) {
+                stage_copy(m_meshlet_descriptor_buffer.buffer, m_meshlets.descriptors.data(),
+                    sizeof(meshlet_descriptor) * m_meshlets.descriptors.size());
+                stage_copy(m_meshlet_vertex_buffer.buffer, m_meshlets.vertex_indices.data(),
+                    sizeof(std::uint32_t) * m_meshlets.vertex_indices.size());
+                const auto tri_size = (m_meshlets.triangles.size() + 3) & ~std::size_t(3);
+                stage_copy(m_meshlet_triangle_buffer.buffer, m_meshlets.triangles.data(), tri_size);
+                stage_copy(m_meshlet_bounds_buffer.buffer, m_meshlets.bounds.data(),
+                    sizeof(meshlet_bounds) * m_meshlets.bounds.size());
+            }
 
-            const vk::BufferCopy index_copy_region(0, 0, index_buffer_size);
-            command_buffer.copyBuffer(index_staging.buffer, this->m_index_buffer.buffer, index_copy_region);
-
-            std::vector<vulkan::buffer_resource> transient_resources;
-            transient_resources.push_back(std::move(vertex_staging));
-            transient_resources.push_back(std::move(index_staging));
-            return transient_resources;
+            return transient;
         }
     );
 }
@@ -129,10 +211,14 @@ auto gse::mesh::draw_instanced(const vk::CommandBuffer command_buffer, const std
 }
 
 auto gse::mesh::center_of_mass() const -> vec3<length> {
-    constexpr vec3d reference_point(0.f);
+    using length_d = length_t<double>;
+    using volume_d = volume_t<double>;
+    using vec3ld = vec3<length_d>;
 
-    double total_volume = 0.f;
-    vec3f moment(0.f);
+    const vec3ld reference_point{};
+
+    volume_d total_volume{};
+    vec3ld moment;
 
     assert(m_indices.size() % 3 == 0, std::source_location::current(), "m_indices count is not a multiple of 3. Ensure that each face is defined by exactly three m_indices.");
 
@@ -143,24 +229,25 @@ auto gse::mesh::center_of_mass() const -> vec3<length> {
 
         assert(idx0 < m_vertices.size() && idx1 < m_vertices.size() && idx2 < m_vertices.size(), std::source_location::current(), "Index out of range while accessing m_vertices.");
 
-		const vec3d v0(m_vertices[idx0].position.x().as<meters>(), m_vertices[idx0].position.y().as<meters>(), m_vertices[idx0].position.z().as<meters>());
-        const vec3d v1(m_vertices[idx1].position.x().as<meters>(), m_vertices[idx1].position.y().as<meters>(), m_vertices[idx1].position.z().as<meters>());
-        const vec3d v2(m_vertices[idx2].position.x().as<meters>(), m_vertices[idx2].position.y().as<meters>(), m_vertices[idx2].position.z().as<meters>());
+        const vec3ld v0 = { length_d(m_vertices[idx0].position.x()), length_d(m_vertices[idx0].position.y()), length_d(m_vertices[idx0].position.z()) };
+        const vec3ld v1 = { length_d(m_vertices[idx1].position.x()), length_d(m_vertices[idx1].position.y()), length_d(m_vertices[idx1].position.z()) };
+        const vec3ld v2 = { length_d(m_vertices[idx2].position.x()), length_d(m_vertices[idx2].position.y()), length_d(m_vertices[idx2].position.z()) };
 
-        vec3d a = v0 - reference_point;
-        vec3d b = v1 - reference_point;
-        vec3d c = v2 - reference_point;
+        const vec3ld a = v0 - reference_point;
+        const vec3ld b = v1 - reference_point;
+        const vec3ld c = v2 - reference_point;
 
-        auto volume = std::abs(dot(a, cross(b, c)) / 6.0);
-        vec3d tetra_com = (v0 + v1 + v2 + reference_point) / 4.0;
+        const volume_d volume = abs(dot(a, cross(b, c))) / 6.0;
+        const vec3ld tetra_com = (v0 + v1 + v2 + reference_point) / 4.0;
 
-        total_volume += volume;
-        moment += vec3f(tetra_com * volume);
+        total_volume = total_volume + volume;
+        moment += tetra_com * gse::internal::to_storage(volume);
     }
 
-    assert(total_volume != 0.0, std::source_location::current(), "Total volume is zero. Check if the mesh is closed and correctly oriented.");
+    assert(total_volume != volume_d{}, std::source_location::current(), "Total volume is zero. Check if the mesh is closed and correctly oriented.");
 
-    return moment / static_cast<float>(total_volume);
+    const auto result = moment / gse::internal::to_storage(total_volume);
+    return { length(result.x()), length(result.y()), length(result.z()) };
 }
 
 auto gse::mesh::material() const -> const resource::handle<gse::material>& {

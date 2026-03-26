@@ -47,9 +47,8 @@ export namespace gse {
 		const vec3f& direction, 
 		const angle yaw
 	) -> vec3f {
-		const float r = yaw.as<radians>();
-		const float c = std::cos(r);
-		const float s = std::sin(r);
+		const float c = gse::cos(yaw);
+		const float s = gse::sin(yaw);
 		return vec3f(
 			direction.x() * c + direction.z() * s,
 			direction.y(),

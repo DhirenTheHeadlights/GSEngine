@@ -66,9 +66,8 @@ auto gse::physics::motion_component::transformation_matrix() const -> mat4f {
 }
 
 auto gse::physics::motion_component::inv_inertial_tensor() const -> mat3<inverse_inertia> {
-    const float i_body = moment_of_inertia.as<kilograms_meters_squared>();
-    const mat3f inv_i_body_raw = gse::identity<float, 3, 3>() * (1.f / i_body);
-    const auto rotation = mat3_cast(orientation);
-    const mat3f result_raw = rotation * inv_i_body_raw * rotation.transpose();
-    return mat3<inverse_inertia>(result_raw);
+    const inverse_inertia inv_i = 1.f / moment_of_inertia;
+    const mat3<inverse_inertia> inv_i_body = gse::identity<float, 3, 3>() * inv_i;
+    const mat3f rotation = mat3_cast(orientation);
+    return rotation * inv_i_body * rotation.transpose();
 }

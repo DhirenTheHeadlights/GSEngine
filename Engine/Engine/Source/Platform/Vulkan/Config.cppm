@@ -312,6 +312,9 @@ export namespace gse::vulkan {
             return *m_allocator;
         }
 
+        auto set_mesh_shaders_enabled(bool enabled) -> void { m_mesh_shaders_enabled = enabled; }
+        [[nodiscard]] auto mesh_shaders_enabled() const -> bool { return m_mesh_shaders_enabled; }
+
     private:
         struct instance_config m_instance_data;
         struct device_config m_device_data;
@@ -325,6 +328,7 @@ export namespace gse::vulkan {
         std::uint32_t m_current_frame = 0;
         std::uint64_t m_swap_chain_generation = 0;
         bool m_frame_in_progress = false;
+        bool m_mesh_shaders_enabled = false;
         std::vector<swap_chain_recreate_callback> m_swap_chain_recreate_callbacks;
     };
 }

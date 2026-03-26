@@ -197,6 +197,8 @@ export namespace gse::resource {
 		auto queue_by_path(const std::filesystem::path& baked_path) -> void override;
 		auto finalize_reloads() -> void override;
 
+		auto set_pre_load_fn(std::function<void(const std::filesystem::path&)> fn) -> void { m_pre_load_fn = std::move(fn); }
+
 		auto get(id id) const -> handle<Resource>;
 		auto get(const std::string& filename_no_ext) const -> handle<Resource>;
 		auto try_get(id id) const -> handle<Resource>;
@@ -217,6 +219,8 @@ export namespace gse::resource {
 
 		std::vector<id> m_pending_reloads;
 		std::mutex m_reload_mutex;
+
+		std::function<void(const std::filesystem::path&)> m_pre_load_fn;
 
 		auto get_unlocked(id id) const -> handle<Resource>;
 		auto try_get_unlocked(id id) const -> handle<Resource>;
@@ -329,6 +333,7 @@ auto gse::resource::loader<R, C>::flush() -> void {
             gpu_work_token token(this, rid, m_context.gpu_queue_size());
 
             R* resource_ptr;
+            std::filesystem::path path;
             {
                 std::lock_guard lock(m_mutex);
                 if (auto* slot = m_resources.try_get(rid)) {
@@ -337,10 +342,15 @@ auto gse::resource::loader<R, C>::flush() -> void {
                         slot->resource.publish();
                     }
                     resource_ptr = slot->resource.read().get();
+                    path = slot->path;
                 } else {
                     update_state(rid, state::failed);
                     return;
                 }
+            }
+
+            if (m_pre_load_fn && !path.empty()) {
+                m_pre_load_fn(path);
             }
 
             resource_ptr->load(m_context);
@@ -548,6 +558,10 @@ auto gse::resource::loader<R, C>::instantly_load(id resource_id) -> void {
 	}
 
 	const gpu_work_token token(this, resource_id, m_context.gpu_queue_size());
+
+	if (m_pre_load_fn && !slot_ptr->path.empty()) {
+		m_pre_load_fn(slot_ptr->path);
+	}
 
 	const bool work_was_queued = m_context.execute_and_detect_gpu_queue(
 		[&](const auto& ctx) {

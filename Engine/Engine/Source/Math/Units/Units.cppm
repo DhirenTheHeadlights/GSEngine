@@ -314,6 +314,22 @@ export namespace gse {
 }
 
 export namespace gse {
+    struct stiffness_per_length_tag {};
+
+    constexpr internal::unit<stiffness_per_length_tag, std::ratio<1>, "N/m^2"> newtons_per_meter_squared;
+
+    template <typename T = float, auto U = newtons_per_meter_squared>
+    using stiffness_per_length_t = internal::quantity<T, internal::dimi<-1, -2, 1, 0>, stiffness_per_length_tag, decltype(U)>;
+    using stiffness_per_length = stiffness_per_length_t<>;
+
+    template <>
+    struct internal::quantity_traits<stiffness_per_length_tag> {
+        template <typename T, auto U = newtons_per_meter_squared>
+        using type = stiffness_per_length_t<T, U>;
+    };
+}
+
+export namespace gse {
     struct inverse_inertia_tag {};
 
     constexpr internal::unit<inverse_inertia_tag, std::ratio<1>, "1/(kg-m^2)"> per_kilogram_meter_squared;
@@ -347,6 +363,22 @@ export namespace gse {
 }
 
 export namespace gse {
+    struct volume_tag {};
+
+    constexpr internal::unit<volume_tag, std::ratio<1>, "m^3"> cubic_meters;
+
+    template <typename T = float, auto U = cubic_meters>
+    using volume_t = internal::quantity<T, internal::dimi<3, 0, 0, 0>, volume_tag, decltype(U)>;
+    using volume = volume_t<>;
+
+    template <>
+    struct internal::quantity_traits<volume_tag> {
+        template <typename T, auto U = cubic_meters>
+        using type = volume_t<T, U>;
+    };
+}
+
+export namespace gse {
     struct angular_stiffness_tag {};
 
     constexpr internal::unit<angular_stiffness_tag, std::ratio<1>, "N-m/rad"> newton_meters_per_radian;
@@ -359,6 +391,22 @@ export namespace gse {
     struct internal::quantity_traits<angular_stiffness_tag> {
         template <typename T, auto U = newton_meters_per_radian>
         using type = angular_stiffness_t<T, U>;
+    };
+}
+
+export namespace gse {
+    struct angular_stiffness_per_angle_tag {};
+
+    constexpr internal::unit<angular_stiffness_per_angle_tag, std::ratio<1>, "N-m/rad^2"> newton_meters_per_radian_squared;
+
+    template <typename T = float, auto U = newton_meters_per_radian_squared>
+    using angular_stiffness_per_angle_t = internal::quantity<T, internal::dimi<2, -2, 1, -2>, angular_stiffness_per_angle_tag, decltype(U)>;
+    using angular_stiffness_per_angle = angular_stiffness_per_angle_t<>;
+
+    template <>
+    struct internal::quantity_traits<angular_stiffness_per_angle_tag> {
+        template <typename T, auto U = newton_meters_per_radian_squared>
+        using type = angular_stiffness_per_angle_t<T, U>;
     };
 }
 
@@ -376,4 +424,21 @@ export namespace gse {
         template <typename T, auto U = newtons_per_radian>
         using type = linear_angular_stiffness_t<T, U>;
     };
+}
+
+export namespace gse {
+    template <typename T>
+    constexpr auto cos(const angle_t<T>& q) -> T {
+        return std::cos(q.template as<radians>());
+    }
+
+    template <typename T>
+    constexpr auto sin(const angle_t<T>& q) -> T {
+        return std::sin(q.template as<radians>());
+    }
+
+    template <typename T>
+    constexpr auto tan(const angle_t<T>& q) -> T {
+        return std::tan(q.template as<radians>());
+    }
 }

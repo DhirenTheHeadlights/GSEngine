@@ -443,8 +443,7 @@ auto gse::renderer::physics_debug::build_contact_debug_for_collider(const physic
 		return;
 	}
 
-	const float pen_m = penetration.as<meters>();
-	const float t = std::clamp(pen_m / 0.05f, 0.f, 1.f);
+	const float t = std::clamp(penetration / meters(0.05f), 0.f, 1.f);
 	const vec3f satisfaction_color{ t, 1.f - t, 0.f };
 
 	for (auto& collision_point : collision_points) {

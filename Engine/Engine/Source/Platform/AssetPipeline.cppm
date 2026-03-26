@@ -63,6 +63,10 @@ export namespace gse {
         auto compile(
         ) const -> compile_result;
 
+        auto recompile_stale(
+            const std::filesystem::path& baked_path
+        ) -> bool;
+
         auto enable_hot_reload(
         ) -> void;
 
@@ -98,6 +102,10 @@ export namespace gse {
 
         auto find_compiler(
             const std::filesystem::path& source
+        ) const -> const compiler_entry*;
+
+        auto find_compiler_for_baked(
+            const std::filesystem::path& baked_path
         ) const -> const compiler_entry*;
 
         auto compute_baked_path(
@@ -146,6 +154,10 @@ auto gse::asset_pipeline::register_type(resource::loader<Resource, Context>* loa
             loader->queue_by_path(baked_path);
         }
     };
+
+    loader->set_pre_load_fn([this](const std::filesystem::path& baked_path) {
+        recompile_stale(baked_path);
+    });
 
     m_compilers.push_back(std::move(entry));
 }
@@ -367,6 +379,49 @@ auto gse::asset_pipeline::find_compiler(const std::filesystem::path& source) con
     }
 
     return nullptr;
+}
+
+auto gse::asset_pipeline::find_compiler_for_baked(const std::filesystem::path& baked_path) const -> const compiler_entry* {
+    const auto ext = baked_path.extension().string();
+
+    for (const auto& compiler : m_compilers) {
+        if (compiler.baked_ext == ext) {
+            return &compiler;
+        }
+    }
+
+    return nullptr;
+}
+
+auto gse::asset_pipeline::recompile_stale(const std::filesystem::path& baked_path) -> bool {
+    const compiler_entry* entry;
+    {
+        std::lock_guard lock(m_mutex);
+        entry = find_compiler_for_baked(baked_path);
+    }
+
+    if (!entry) {
+        return false;
+    }
+
+    const auto relative = baked_path.lexically_relative(m_baked_root / entry->baked_dir);
+    auto source_relative = relative;
+    source_relative.replace_extension(entry->extensions.empty() ? "" : entry->extensions.front());
+    const auto source = m_resource_root / entry->source_dir / source_relative;
+
+    if (!std::filesystem::exists(source)) {
+        return false;
+    }
+
+    if (!entry->needs_recompile_fn(source, baked_path)) {
+        return true;
+    }
+
+    if (!std::filesystem::exists(baked_path.parent_path())) {
+        std::filesystem::create_directories(baked_path.parent_path());
+    }
+
+    return entry->compile_fn(source, baked_path);
 }
 
 auto gse::asset_pipeline::compute_baked_path(const compiler_entry& compiler, const std::filesystem::path& source) const -> std::filesystem::path {

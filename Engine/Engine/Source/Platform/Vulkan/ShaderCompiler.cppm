@@ -180,10 +180,12 @@ namespace gse::shader_compile {
 
     auto to_vk_stage_flags(const SlangStage slang_stage) -> vk::ShaderStageFlags {
         switch (slang_stage) {
-            case SLANG_STAGE_VERTEX:   return vk::ShaderStageFlagBits::eVertex;
-            case SLANG_STAGE_FRAGMENT: return vk::ShaderStageFlagBits::eFragment;
-            case SLANG_STAGE_GEOMETRY: return vk::ShaderStageFlagBits::eGeometry;
-            case SLANG_STAGE_COMPUTE:  return vk::ShaderStageFlagBits::eCompute;
+            case SLANG_STAGE_VERTEX:        return vk::ShaderStageFlagBits::eVertex;
+            case SLANG_STAGE_FRAGMENT:      return vk::ShaderStageFlagBits::eFragment;
+            case SLANG_STAGE_GEOMETRY:      return vk::ShaderStageFlagBits::eGeometry;
+            case SLANG_STAGE_COMPUTE:       return vk::ShaderStageFlagBits::eCompute;
+            case SLANG_STAGE_AMPLIFICATION: return vk::ShaderStageFlagBits::eTaskEXT;
+            case SLANG_STAGE_MESH:          return vk::ShaderStageFlagBits::eMeshEXT;
             default: return {};
         }
     }
@@ -412,7 +414,7 @@ struct gse::asset_compiler<gse::shader> {
             return false;
         }
 
-        Slang::ComPtr<slang::IEntryPoint> vs_ep, fs_ep, cs_ep;
+        Slang::ComPtr<slang::IEntryPoint> vs_ep, fs_ep, cs_ep, as_ep, ms_ep;
         {
             const int ep_count = mod->getDefinedEntryPointCount();
             for (int i = 0; i < ep_count; ++i) {
@@ -424,14 +426,19 @@ struct gse::asset_compiler<gse::shader> {
                     fs_ep = ep;
                 } else if (!std::strcmp(n, "cs_main")) {
                     cs_ep = ep;
+                } else if (!std::strcmp(n, "as_main")) {
+                    as_ep = ep;
+                } else if (!std::strcmp(n, "ms_main")) {
+                    ms_ep = ep;
                 }
             }
         }
 
-        const bool is_compute = cs_ep && !vs_ep && !fs_ep;
-        const bool is_graphics = vs_ep && fs_ep && !cs_ep;
+        const bool is_compute = cs_ep && !vs_ep && !fs_ep && !as_ep && !ms_ep;
+        const bool is_graphics = vs_ep && fs_ep && !cs_ep && !as_ep && !ms_ep;
+        const bool is_mesh_pipeline = as_ep && ms_ep && fs_ep && !vs_ep && !cs_ep;
 
-        if (!is_compute && !is_graphics) {
+        if (!is_compute && !is_graphics && !is_mesh_pipeline) {
             return true;
         }
 
@@ -440,6 +447,11 @@ struct gse::asset_compiler<gse::shader> {
             if (is_compute) {
                 slang::IComponentType* parts[] = { cs_ep.get() };
                 if (SLANG_FAILED(session->createCompositeComponentType(parts, 1, composed.writeRef(), diags.writeRef()))) {
+                    return false;
+                }
+            } else if (is_mesh_pipeline) {
+                slang::IComponentType* parts[] = { as_ep.get(), ms_ep.get(), fs_ep.get() };
+                if (SLANG_FAILED(session->createCompositeComponentType(parts, 3, composed.writeRef(), diags.writeRef()))) {
                     return false;
                 }
             } else {
@@ -609,12 +621,7 @@ struct gse::asset_compiler<gse::shader> {
         for (std::uint32_t epi = 0; epi < layout->getEntryPointCount(); ++epi) {
             auto* ep = layout->getEntryPointByIndex(epi);
             if (!ep) continue;
-            switch (ep->getStage()) {
-                case SLANG_STAGE_VERTEX:   used_stages |= vk::ShaderStageFlagBits::eVertex;   break;
-                case SLANG_STAGE_FRAGMENT: used_stages |= vk::ShaderStageFlagBits::eFragment; break;
-                case SLANG_STAGE_COMPUTE:  used_stages |= vk::ShaderStageFlagBits::eCompute;  break;
-                default: break;
-            }
+            used_stages |= to_vk_stage_flags(ep->getStage());
         }
 
         for (auto& s_data : sets | std::views::values) {
@@ -676,7 +683,8 @@ struct gse::asset_compiler<gse::shader> {
         std::ofstream out(destination, std::ios::binary);
         if (!out.is_open()) return false;
 
-        write_data(out, is_compute);
+        const std::uint8_t shader_type = is_compute ? std::uint8_t(1) : is_mesh_pipeline ? std::uint8_t(2) : std::uint8_t(0);
+        write_data(out, shader_type);
         write_string(out, shader_layout_name);
         write_data(out, static_cast<std::uint32_t>(reflected_vertex_input.attributes.size()));
         for (const auto& attr : reflected_vertex_input.attributes) write_data(out, attr);
@@ -721,31 +729,30 @@ struct gse::asset_compiler<gse::shader> {
             }
         }
 
+        auto write_blob = [&](std::uint32_t entry_point_index) -> bool {
+            Slang::ComPtr<ISlangBlob> blob, gen_diags;
+            if (SLANG_FAILED(program->getEntryPointCode(entry_point_index, 0, blob.writeRef(), gen_diags.writeRef())) || !blob) {
+                return false;
+            }
+            const auto size = blob->getBufferSize();
+            write_data(out, size);
+            out.write(static_cast<const char*>(blob->getBufferPointer()), size);
+            return true;
+        };
+
         if (is_compute) {
-            Slang::ComPtr<ISlangBlob> compute_blob, gen_diags;
-            if (SLANG_FAILED(program->getEntryPointCode(0, 0, compute_blob.writeRef(), gen_diags.writeRef())) || !compute_blob) {
-                return false;
-            }
-            const auto compute_size = compute_blob->getBufferSize();
-            write_data(out, compute_size);
-            out.write(static_cast<const char*>(compute_blob->getBufferPointer()), compute_size);
+            if (!write_blob(0)) return false;
+        } else if (is_mesh_pipeline) {
+            if (!write_blob(0)) return false;
+            if (!write_blob(1)) return false;
+            if (!write_blob(2)) return false;
         } else {
-            Slang::ComPtr<ISlangBlob> vert_blob, frag_blob, gen_diags;
-            if (SLANG_FAILED(program->getEntryPointCode(0, 0, vert_blob.writeRef(), gen_diags.writeRef())) || !vert_blob) {
-                return false;
-            }
-            if (SLANG_FAILED(program->getEntryPointCode(1, 0, frag_blob.writeRef(), gen_diags.writeRef())) || !frag_blob) {
-                return false;
-            }
-            const auto vert_size = vert_blob->getBufferSize();
-            const auto frag_size = frag_blob->getBufferSize();
-            write_data(out, vert_size);
-            out.write(static_cast<const char*>(vert_blob->getBufferPointer()), vert_size);
-            write_data(out, frag_size);
-            out.write(static_cast<const char*>(frag_blob->getBufferPointer()), frag_size);
+            if (!write_blob(0)) return false;
+            if (!write_blob(1)) return false;
         }
 
-        std::println("Shader compiled: {} ({})", destination.filename().string(), is_compute ? "Compute" : "Graphics");
+        constexpr const char* type_names[] = { "Graphics", "Compute", "Mesh Pipeline" };
+        std::println("Shader compiled: {} ({})", destination.filename().string(), type_names[shader_type]);
         return true;
     }
 

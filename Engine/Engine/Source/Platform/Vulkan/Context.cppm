@@ -55,9 +55,15 @@ namespace gse::vulkan {
 		GLFWwindow* window
 	) -> instance_config;
 
+	struct device_creation_result {
+		device_config device;
+		queue_config queue;
+		bool mesh_shaders_enabled = false;
+	};
+
 	auto create_device_and_queues(
 		const instance_config& instance_data
-	) -> std::tuple<device_config, queue_config>;
+	) -> device_creation_result;
 
 	auto create_command_objects(
 		const device_config& device_data,
@@ -86,22 +92,22 @@ namespace gse::vulkan {
 
 auto gse::vulkan::generate_config(GLFWwindow* window, save::state& save_state) -> std::unique_ptr<config> {
 	auto instance_data = create_instance_and_surface(window);
-	auto [device_data, queue] = create_device_and_queues(instance_data);
-	auto alloc = std::make_unique<allocator>(device_data.device, device_data.physical_device, save_state);
-	auto descriptor = create_descriptor_pool(device_data);
-	auto swap_chain_data = create_swap_chain_resources(window, instance_data, device_data, *alloc);
-	auto command = create_command_objects(device_data, instance_data);
-	auto sync = create_sync_objects(device_data, swap_chain_data);
+	auto result = create_device_and_queues(instance_data);
+	auto alloc = std::make_unique<allocator>(result.device.device, result.device.physical_device, save_state);
+	auto descriptor = create_descriptor_pool(result.device);
+	auto swap_chain_data = create_swap_chain_resources(window, instance_data, result.device, *alloc);
+	auto command = create_command_objects(result.device, instance_data);
+	auto sync = create_sync_objects(result.device, swap_chain_data);
 
 	frame_context_config frame_context(
 		0,
 		*command.buffers[0]
 	);
 
-	return std::make_unique<config>(
+	auto cfg = std::make_unique<config>(
 		std::move(instance_data),
-		std::move(device_data),
-		std::move(queue),
+		std::move(result.device),
+		std::move(result.queue),
 		std::move(command),
 		std::move(descriptor),
 		std::move(sync),
@@ -109,6 +115,9 @@ auto gse::vulkan::generate_config(GLFWwindow* window, save::state& save_state) -
 		std::move(frame_context),
 		std::move(alloc)
 	);
+
+	cfg->set_mesh_shaders_enabled(result.mesh_shaders_enabled);
+	return cfg;
 }
 
 auto gse::vulkan::begin_frame(const frame_params& params) -> bool {
@@ -458,7 +467,7 @@ auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_co
 	return instance_config(std::move(context), std::move(instance), std::move(surface));
 }
 
-auto gse::vulkan::create_device_and_queues(const instance_config& instance_data) -> std::tuple<device_config, queue_config> {
+auto gse::vulkan::create_device_and_queues(const instance_config& instance_data) -> device_creation_result {
 	const auto devices = instance_data.instance.enumeratePhysicalDevices();
 	assert(!devices.empty(), std::source_location::current(), "No Vulkan-compatible GPUs found!");
 
@@ -497,6 +506,16 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
 		queue_create_infos.push_back(queue_create_info);
 	}
 
+	const auto feature_chain = physical_device.getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceMeshShaderFeaturesEXT>();
+	const auto& mesh_shader_query = feature_chain.get<vk::PhysicalDeviceMeshShaderFeaturesEXT>();
+	const bool mesh_shaders_supported = mesh_shader_query.meshShader && mesh_shader_query.taskShader;
+
+	if (mesh_shaders_supported) {
+		std::println("Mesh shader support detected");
+	} else {
+		std::println("Mesh shaders not supported, using vertex pipeline fallback");
+	}
+
 	vk::PhysicalDeviceVulkan13Features vulkan13_features{
 		.synchronization2 = vk::True,
 		.dynamicRendering = vk::True
@@ -514,8 +533,16 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
 		.shaderDrawParameters = vk::True
 	};
 
+	vk::PhysicalDeviceMeshShaderFeaturesEXT mesh_shader_features{
+		.pNext = &vulkan11_features,
+		.taskShader = vk::True,
+		.meshShader = vk::True
+	};
+
 	vk::PhysicalDevicePresentWaitFeaturesKHR present_wait_features{
-		.pNext = &vulkan11_features
+		.pNext = mesh_shaders_supported
+			? static_cast<void*>(&mesh_shader_features)
+			: static_cast<void*>(&vulkan11_features)
 	};
 
 	vk::PhysicalDeviceFeatures2 features2{
@@ -527,12 +554,16 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
 		}
 	};
 
-	const std::vector device_extensions = {
+	std::vector device_extensions = {
 		vk::KHRSwapchainExtensionName,
 		vk::KHRSynchronization2ExtensionName,
 		vk::KHRDynamicRenderingExtensionName,
 		vk::KHRPushDescriptorExtensionName
 	};
+
+	if (mesh_shaders_supported) {
+		device_extensions.push_back(vk::EXTMeshShaderExtensionName);
+	}
 
 	vk::DeviceCreateInfo create_info{
 		.pNext = &features2,
@@ -555,10 +586,11 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
 	vk::raii::Queue present_queue = device.getQueue(present_family.value(), 0);
 	vk::raii::Queue compute_queue = device.getQueue(compute_family.value(), 0);
 
-	auto device_conf = device_config(std::move(physical_device), std::move(device));
-	auto queue_conf = queue_config(std::move(graphics_queue), std::move(present_queue), std::move(compute_queue), compute_family.value());
-
-	return std::make_tuple(std::move(device_conf), std::move(queue_conf));
+	return {
+		.device = device_config(std::move(physical_device), std::move(device)),
+		.queue = queue_config(std::move(graphics_queue), std::move(present_queue), std::move(compute_queue), compute_family.value()),
+		.mesh_shaders_enabled = mesh_shaders_supported
+	};
 }
 
 auto gse::vulkan::create_command_objects(const device_config& device_data, const instance_config& instance_data) -> command_config {

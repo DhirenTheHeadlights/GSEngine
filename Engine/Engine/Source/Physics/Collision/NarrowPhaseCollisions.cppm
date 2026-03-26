@@ -95,7 +95,7 @@ namespace gse::narrow_phase_collision {
 	struct sat_axis_choice {
 		vec3f axis = {};
 		length overlap = meters(std::numeric_limits<float>::max());
-		float extent_scale = 0.f;
+		length extent_scale = {};
 		sat_axis_source source = sat_axis_source::face;
 		bool valid = false;
 	};
@@ -160,7 +160,7 @@ namespace gse::narrow_phase_collision {
 	auto should_replace_sat_choice(
 		const sat_axis_choice& best,
 		length overlap,
-		float extent_scale
+		length extent_scale
 	) -> bool;
 
 	auto update_sat_choice(
@@ -168,7 +168,7 @@ namespace gse::narrow_phase_collision {
 		const vec3f& axis,
 		length overlap,
 		sat_axis_source source,
-		float extent_scale
+		length extent_scale
 	) -> void;
 
 	auto prefer_face_sat_axis(
@@ -464,15 +464,15 @@ auto gse::narrow_phase_collision::build_clipped_face_contacts(const bounding_box
 
 	const float face_alignment = dot(reference_normal, -normalize(incident_info.normal));
 	if (constexpr float slanted_face_alignment_threshold = 0.985f; !polygon.empty() && face_alignment < slanted_face_alignment_threshold) {
-		float max_incident_span = 0.f;
+		length max_incident_span = meters(0.f);
 		for (std::size_t i = 0; i < incident_info.vertices.size(); ++i) {
 			const auto edge_length = magnitude(
 				incident_info.vertices[(i + 1) % incident_info.vertices.size()] - incident_info.vertices[i]
-			).as<meters>();
+			);
 			max_incident_span = std::max(max_incident_span, edge_length);
 		}
 
-		const length contact_band = meters(std::clamp(max_incident_span * 0.1f, 0.01f, 0.1f));
+		const length contact_band = std::clamp(max_incident_span * 0.1f, meters(0.01f), meters(0.1f));
 		length closest_plane_distance = meters(std::numeric_limits<float>::lowest());
 		for (const auto& vertex : polygon) {
 			closest_plane_distance = std::max(
@@ -533,7 +533,7 @@ auto gse::narrow_phase_collision::build_feature_from_clip_vertex(const clipped_f
 	};
 }
 
-auto gse::narrow_phase_collision::should_replace_sat_choice(const sat_axis_choice& best, const length overlap, const float extent_scale) -> bool {
+auto gse::narrow_phase_collision::should_replace_sat_choice(const sat_axis_choice& best, const length overlap, const length extent_scale) -> bool {
 	if (!best.valid) {
 		return true;
 	}
@@ -544,12 +544,12 @@ auto gse::narrow_phase_collision::should_replace_sat_choice(const sat_axis_choic
 
 	const length replace_threshold =
 		best.overlap * sat_axis_relative_tolerance -
-		meters(sat_axis_absolute_tolerance * std::max(extent_scale, 1e-3f));
+		sat_axis_absolute_tolerance * std::max(extent_scale, meters(1e-3f));
 
 	return overlap < replace_threshold;
 }
 
-auto gse::narrow_phase_collision::update_sat_choice(sat_axis_choice& best, const vec3f& axis, const length overlap, const sat_axis_source source, const float extent_scale) -> void {
+auto gse::narrow_phase_collision::update_sat_choice(sat_axis_choice& best, const vec3f& axis, const length overlap, const sat_axis_source source, const length extent_scale) -> void {
 	if (should_replace_sat_choice(best, overlap, extent_scale)) {
 		best = sat_axis_choice{
 			.axis = axis,
@@ -568,7 +568,7 @@ auto gse::narrow_phase_collision::prefer_face_sat_axis(sat_axis_choice best, con
 
 	const length cross_replace_threshold =
 		best_face.overlap * sat_axis_relative_tolerance -
-		meters(sat_axis_absolute_tolerance * std::max(best_face.extent_scale, 1e-3f));
+		sat_axis_absolute_tolerance * std::max(best_face.extent_scale, meters(1e-3f));
 
 	if (best.overlap >= cross_replace_threshold) {
 		return best_face;
@@ -581,7 +581,7 @@ auto gse::narrow_phase_collision::sat_penetration(const bounding_box& bb1, const
 	sat_axis_choice best_axis;
 	sat_axis_choice best_face_axis;
 
-	auto test_axis = [&](vec3f axis, const sat_axis_source source, const float extent_scale) {
+	auto test_axis = [&](vec3f axis, const sat_axis_source source, const length extent_scale) {
 		if (is_zero(axis)) return;
 		axis = normalize(axis);
 
@@ -611,12 +611,12 @@ auto gse::narrow_phase_collision::sat_penetration(const bounding_box& bb1, const
 	auto half2 = bb2.half_extents();
 
 	for (int i = 0; i < 3; ++i) {
-		test_axis(bb1.obb().axes[i], sat_axis_source::face, half[i].as<meters>());
-		test_axis(bb2.obb().axes[i], sat_axis_source::face, half2[i].as<meters>());
+		test_axis(bb1.obb().axes[i], sat_axis_source::face, half[i]);
+		test_axis(bb2.obb().axes[i], sat_axis_source::face, half2[i]);
 	}
 	for (int i = 0; i < 3; ++i) {
 		for (int j = 0; j < 3; ++j) {
-			test_axis(cross(bb1.obb().axes[i], bb2.obb().axes[j]), sat_axis_source::cross, 0.f);
+			test_axis(cross(bb1.obb().axes[i], bb2.obb().axes[j]), sat_axis_source::cross, length{});
 		}
 	}
 
@@ -629,7 +629,7 @@ auto gse::narrow_phase_collision::sat_speculative(const bounding_box& bb1, const
 	sat_axis_choice best_face_axis;
 	bool all_positive = true;
 
-	auto test_axis = [&](vec3f axis, const sat_axis_source source, const float extent_scale) {
+	auto test_axis = [&](vec3f axis, const sat_axis_source source, const length extent_scale) {
 		if (is_zero(axis)) return true;
 		axis = normalize(axis);
 
@@ -665,13 +665,13 @@ auto gse::narrow_phase_collision::sat_speculative(const bounding_box& bb1, const
 	auto half = bb1.half_extents();
 	auto half2 = bb2.half_extents();
 	for (int i = 0; i < 3; ++i) {
-		if (!test_axis(bb1.obb().axes[i], sat_axis_source::face, half[i].as<meters>())) return std::nullopt;
-		if (!test_axis(bb2.obb().axes[i], sat_axis_source::face, half2[i].as<meters>())) return std::nullopt;
+		if (!test_axis(bb1.obb().axes[i], sat_axis_source::face, half[i])) return std::nullopt;
+		if (!test_axis(bb2.obb().axes[i], sat_axis_source::face, half2[i])) return std::nullopt;
 	}
 
 	for (int i = 0; i < 3; ++i) {
 		for (int j = 0; j < 3; ++j) {
-			if (!test_axis(cross(bb1.obb().axes[i], bb2.obb().axes[j]), sat_axis_source::cross, 0.f)) return std::nullopt;
+			if (!test_axis(cross(bb1.obb().axes[i], bb2.obb().axes[j]), sat_axis_source::cross, length{})) return std::nullopt;
 		}
 	}
 
@@ -705,8 +705,9 @@ auto gse::narrow_phase_collision::generate_manifold(const bounding_box& bb1, con
 		return (candidate.position_on_a + candidate.position_on_b) * 0.5f;
 	};
 
-	const auto quantize = [](const float value) -> int {
-		return static_cast<int>(std::floor(value * 10000.f + (value >= 0.f ? 0.5f : -0.5f)));
+	const auto quantize = [](const length value) -> int {
+		const float v = value.template as<meters>();
+		return static_cast<int>(std::floor(v * 10000.f + (v >= 0.f ? 0.5f : -0.5f)));
 	};
 
 	const auto pack_feature = [](const feature_id& feature) -> std::uint64_t {
@@ -742,32 +743,32 @@ auto gse::narrow_phase_collision::generate_manifold(const bounding_box& bb1, con
 
 			const auto half_extents = bb.half_extents();
 			const auto box = bb.obb();
-			const vec3f local = {
-				dot(world_point - box.center, box.axes[0]).as<meters>(),
-				dot(world_point - box.center, box.axes[1]).as<meters>(),
-				dot(world_point - box.center, box.axes[2]).as<meters>()
+			const std::array<length, 3> local = {
+				dot(world_point - box.center, box.axes[0]),
+				dot(world_point - box.center, box.axes[1]),
+				dot(world_point - box.center, box.axes[2])
 			};
 
 			const std::uint8_t axis_idx = face_index / 2;
 			const std::uint8_t u_axis = (axis_idx + 1) % 3;
 			const std::uint8_t v_axis = (axis_idx + 2) % 3;
-			const float tangent_scale = std::max(half_extents[u_axis].as<meters>(), half_extents[v_axis].as<meters>());
-			const float boundary_threshold = std::clamp(tangent_scale * 0.002f, 0.0005f, 0.01f);
+			const length tangent_scale = std::max(half_extents[u_axis], half_extents[v_axis]);
+			const length boundary_threshold = std::clamp(tangent_scale * 0.002f, meters(0.0005f), meters(0.01f));
 
 			detail result{
 				.face = face_index
 			};
 
-			auto boundary_distance = [&](const std::uint8_t axis) -> float {
-				const float half_extent = half_extents[axis].as<meters>();
-				return half_extent - std::clamp(std::abs(local[axis]), 0.f, half_extent);
+			auto boundary_distance = [&](const std::uint8_t axis) -> length {
+				const length half_extent = half_extents[axis];
+				return half_extent - std::clamp(abs(local[axis]), length{}, half_extent);
 			};
 
 			if (boundary_distance(u_axis) <= boundary_threshold) {
-				result.side0 = local[u_axis] >= 0.f ? 0 : 1;
+				result.side0 = local[u_axis] >= length{} ? 0 : 1;
 			}
 			if (boundary_distance(v_axis) <= boundary_threshold) {
-				const std::uint8_t side = local[v_axis] >= 0.f ? 2 : 3;
+				const std::uint8_t side = local[v_axis] >= length{} ? 2 : 3;
 				if (result.side0 == feature_side_none) {
 					result.side0 = side;
 				}
@@ -822,15 +823,15 @@ auto gse::narrow_phase_collision::generate_manifold(const bounding_box& bb1, con
 		const std::uint64_t rhs_key = pack_feature(rhs.feature);
 		if (lhs_key != rhs_key) return lhs_key < rhs_key;
 
-		const int lhs_u = quantize(dot(candidate_midpoint(lhs), tangent_u).as<meters>());
-		const int rhs_u = quantize(dot(candidate_midpoint(rhs), tangent_u).as<meters>());
+		const int lhs_u = quantize(dot(candidate_midpoint(lhs), tangent_u));
+		const int rhs_u = quantize(dot(candidate_midpoint(rhs), tangent_u));
 		if (lhs_u != rhs_u) return lhs_u < rhs_u;
 
-		const int lhs_v = quantize(dot(candidate_midpoint(lhs), tangent_v).as<meters>());
-		const int rhs_v = quantize(dot(candidate_midpoint(rhs), tangent_v).as<meters>());
+		const int lhs_v = quantize(dot(candidate_midpoint(lhs), tangent_v));
+		const int rhs_v = quantize(dot(candidate_midpoint(rhs), tangent_v));
 		if (lhs_v != rhs_v) return lhs_v < rhs_v;
 
-		return dot(candidate_midpoint(lhs), normal).as<meters>() < dot(candidate_midpoint(rhs), normal).as<meters>();
+		return dot(candidate_midpoint(lhs), normal) < dot(candidate_midpoint(rhs), normal);
 	});
 
 	std::vector<manifold_candidate> unique_candidates;
