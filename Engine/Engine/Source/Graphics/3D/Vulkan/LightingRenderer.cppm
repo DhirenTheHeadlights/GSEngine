@@ -405,12 +405,11 @@ auto gse::renderer::lighting::system::render(render_phase& phase, const state& s
 		zero_at(light_count);
 
 		int type = 2;
-		auto pos_meters = vec3f(comp.position.x().as<meters>(), comp.position.y().as<meters>(), comp.position.z().as<meters>());
-		float cut_off_cos = std::cos(comp.cut_off.as<radians>());
-		float outer_cut_off_cos = std::cos(comp.outer_cut_off.as<radians>());
+		const float cut_off_cos = gse::cos(comp.cut_off);
+		const float outer_cut_off_cos = gse::cos(comp.outer_cut_off);
 
 		set(light_count, "light_type", type);
-		set(light_count, "position", to_view_pos(pos_meters));
+		set(light_count, "position", to_view_pos(comp.position));
 		set(light_count, "direction", to_view_dir(comp.direction));
 		set(light_count, "color", comp.color);
 		set(light_count, "intensity", comp.intensity);
@@ -432,10 +431,8 @@ auto gse::renderer::lighting::system::render(render_phase& phase, const state& s
 		zero_at(light_count);
 
 		int type = 1;
-		auto pos_meters = vec3f(comp.position.x().as<meters>(), comp.position.y().as<meters>(), comp.position.z().as<meters>());
-
 		set(light_count, "light_type", type);
-		set(light_count, "position", to_view_pos(pos_meters));
+		set(light_count, "position", to_view_pos(comp.position));
 		set(light_count, "color", comp.color);
 		set(light_count, "intensity", comp.intensity);
 		set(light_count, "constant", comp.constant);
@@ -494,16 +491,16 @@ auto gse::renderer::lighting::system::render(render_phase& phase, const state& s
 		std::min<std::size_t>(point_shadow_entries.size(), max_point_shadow_lights);
 
 	std::array<int, max_point_shadow_lights> ps_light_indices{};
-	std::array<vec3f, max_point_shadow_lights> ps_positions{};
-	std::array<float, max_point_shadow_lights> ps_near{};
-	std::array<float, max_point_shadow_lights> ps_far{};
+	std::array<vec3<length>, max_point_shadow_lights> ps_positions{};
+	std::array<length, max_point_shadow_lights> ps_near{};
+	std::array<length, max_point_shadow_lights> ps_far{};
 
 	for (std::size_t idx = 0; idx < point_shadow_count; ++idx) {
 		const auto& entry = point_shadow_entries[idx];
 		ps_light_indices[idx] = static_cast<int>(dir_count + spot_count + idx);
-		ps_positions[idx] = vec3f(entry.world_position.x().as<meters>(), entry.world_position.y().as<meters>(), entry.world_position.z().as<meters>());
-		ps_near[idx] = entry.near_plane.as<meters>();
-		ps_far[idx] = entry.far_plane.as<meters>();
+		ps_positions[idx] = entry.world_position;
+		ps_near[idx] = entry.near_plane;
+		ps_far[idx] = entry.far_plane;
 	}
 
 	int ps_count_i = static_cast<int>(point_shadow_count);

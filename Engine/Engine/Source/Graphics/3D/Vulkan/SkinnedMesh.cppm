@@ -133,10 +133,14 @@ auto gse::skinned_mesh::draw_instanced(const vk::CommandBuffer command_buffer, c
 }
 
 auto gse::skinned_mesh::center_of_mass() const -> vec3<length> {
-    constexpr vec3d reference_point(0.f);
+    using length_d = length_t<double>;
+    using volume_d = volume_t<double>;
+    using vec3ld = vec3<length_d>;
 
-    double total_volume = 0.f;
-    vec3f moment(0.f);
+    const vec3ld reference_point{};
+
+    volume_d total_volume{};
+    vec3ld moment;
 
     assert(m_indices.size() % 3 == 0, std::source_location::current(), "m_indices count is not a multiple of 3.");
 
@@ -147,24 +151,25 @@ auto gse::skinned_mesh::center_of_mass() const -> vec3<length> {
 
         assert(idx0 < m_vertices.size() && idx1 < m_vertices.size() && idx2 < m_vertices.size(), std::source_location::current(), "Index out of range.");
 
-		const vec3d v0(m_vertices[idx0].position.x().as<meters>(), m_vertices[idx0].position.y().as<meters>(), m_vertices[idx0].position.z().as<meters>());
-        const vec3d v1(m_vertices[idx1].position.x().as<meters>(), m_vertices[idx1].position.y().as<meters>(), m_vertices[idx1].position.z().as<meters>());
-        const vec3d v2(m_vertices[idx2].position.x().as<meters>(), m_vertices[idx2].position.y().as<meters>(), m_vertices[idx2].position.z().as<meters>());
+        const vec3ld v0 = { length_d(m_vertices[idx0].position.x()), length_d(m_vertices[idx0].position.y()), length_d(m_vertices[idx0].position.z()) };
+        const vec3ld v1 = { length_d(m_vertices[idx1].position.x()), length_d(m_vertices[idx1].position.y()), length_d(m_vertices[idx1].position.z()) };
+        const vec3ld v2 = { length_d(m_vertices[idx2].position.x()), length_d(m_vertices[idx2].position.y()), length_d(m_vertices[idx2].position.z()) };
 
-        vec3d a = v0 - reference_point;
-        vec3d b = v1 - reference_point;
-        vec3d c = v2 - reference_point;
+        const vec3ld a = v0 - reference_point;
+        const vec3ld b = v1 - reference_point;
+        const vec3ld c = v2 - reference_point;
 
-        auto volume = std::abs(dot(a, cross(b, c)) / 6.0);
-        vec3d tetra_com = (v0 + v1 + v2 + reference_point) / 4.0;
+        const volume_d volume = abs(dot(a, cross(b, c))) / 6.0;
+        const vec3ld tetra_com = (v0 + v1 + v2 + reference_point) / 4.0;
 
-        total_volume += volume;
-        moment += vec3f(tetra_com * volume);
+        total_volume = total_volume + volume;
+        moment += tetra_com * gse::internal::to_storage(volume);
     }
 
-    assert(total_volume != 0.0, std::source_location::current(), "Total volume is zero.");
+    assert(total_volume != volume_d{}, std::source_location::current(), "Total volume is zero.");
 
-    return moment / static_cast<float>(total_volume);
+    const auto result = moment / gse::internal::to_storage(total_volume);
+    return { length(result.x()), length(result.y()), length(result.z()) };
 }
 
 auto gse::skinned_mesh::material() const -> const resource::handle<gse::material>& {

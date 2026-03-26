@@ -295,7 +295,7 @@ auto gse::physics::system::initialize(const initialize_phase& phase, state& s) -
 	s.vbd_solver.configure(vbd::solver_config{
 		.iterations = 10,
 		.alpha = 0.99f,
-		.beta = newtons_per_meter(100000.f),
+		.beta = newtons_per_meter_squared(100000.f),
 		.gamma = 0.99f,
 		.post_stabilize = true,
 		.penalty_min = newtons_per_meter(1.0f),
@@ -589,7 +589,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		const auto sc = sc_it != s.sleep_counters.end() ? sc_it->second : 0u;
 
 		float accel_weight = 0.f;
-		if (!mc.position_locked && sc < 60u && dt.as<seconds>() > 1e-6f) {
+		if (!mc.position_locked && sc < 60u && dt > time_t<float, seconds>(seconds(1e-6f))) {
 			if (const auto prev_it = prev_gpu_velocity.find(eid); prev_it != prev_gpu_velocity.end()) {
 				const velocity delta_vy = mc.current_velocity.y() - prev_it->second.y();
 				const acceleration accel_y = delta_vy / dt;
@@ -989,7 +989,7 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 				.body_index = it->second,
 				.target_velocity = mc.velocity_drive_target,
 				.compliance = 0.5f,
-				.max_force = newtons(mc.mass.as<kilograms>() * 50.f),
+				.max_force = mc.mass * meters_per_second_squared(50.f),
 				.horizontal_only = true,
 			});
 		}

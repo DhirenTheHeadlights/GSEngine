@@ -203,11 +203,16 @@ namespace gse {
 			vk::DescriptorPool pool,
 			set::binding_type type
 		) const -> vk::raii::DescriptorSet;
+		auto is_mesh_shader() const -> bool;
+		auto mesh_shader_stages() const -> std::array<vk::PipelineShaderStageCreateInfo, 3>;
 	private:
 		vk::raii::ShaderModule m_vert_module = nullptr;
 		vk::raii::ShaderModule m_frag_module = nullptr;
 		vk::raii::ShaderModule m_compute_module = nullptr;
+		vk::raii::ShaderModule m_task_module = nullptr;
+		vk::raii::ShaderModule m_mesh_module = nullptr;
 		bool m_is_compute = false;
+		bool m_is_mesh_shader_pipeline = false;
 
 		struct layout m_layout;
 		vertex_input m_vertex_input;
@@ -258,7 +263,10 @@ auto gse::shader::load(const gpu::context& context) -> void {
 			stream.read(reinterpret_cast<char*>(&value), sizeof(value));
 		};
 
-	read_data(in, m_is_compute);
+	std::uint8_t shader_type = 0;
+	read_data(in, shader_type);
+	m_is_compute = (shader_type == 1);
+	m_is_mesh_shader_pipeline = (shader_type == 2);
 
 	read_string(in, m_layout_name);
 
@@ -378,35 +386,26 @@ auto gse::shader::load(const gpu::context& context) -> void {
 		}
 	}
 
+	auto read_shader_module = [&]() -> vk::raii::ShaderModule {
+		std::uint64_t size = 0;
+		read_data(in, size);
+		std::vector<char> code(size);
+		in.read(code.data(), size);
+		return context.config().device_config().device.createShaderModule({
+			.codeSize = code.size(),
+			.pCode = reinterpret_cast<const std::uint32_t*>(code.data())
+		});
+	};
+
 	if (m_is_compute) {
-		std::uint64_t compute_size = 0;
-		read_data(in, compute_size);
-		std::vector<char> compute_code(compute_size);
-		in.read(compute_code.data(), compute_size);
-
-		m_compute_module = context.config().device_config().device.createShaderModule({
-			.codeSize = compute_code.size(),
-			.pCode = reinterpret_cast<const std::uint32_t*>(compute_code.data())
-		});
+		m_compute_module = read_shader_module();
+	} else if (m_is_mesh_shader_pipeline) {
+		m_task_module = read_shader_module();
+		m_mesh_module = read_shader_module();
+		m_frag_module = read_shader_module();
 	} else {
-		std::uint64_t vert_size = 0, frag_size = 0;
-		read_data(in, vert_size);
-		std::vector<char> vert_code(vert_size);
-		in.read(vert_code.data(), vert_size);
-
-		read_data(in, frag_size);
-		std::vector<char> frag_code(frag_size);
-		in.read(frag_code.data(), frag_size);
-
-		m_vert_module = context.config().device_config().device.createShaderModule({
-			.codeSize = vert_code.size(),
-			.pCode = reinterpret_cast<const std::uint32_t*>(vert_code.data())
-		});
-
-		m_frag_module = context.config().device_config().device.createShaderModule({
-			.codeSize = frag_code.size(),
-			.pCode = reinterpret_cast<const std::uint32_t*>(frag_code.data())
-		});
+		m_vert_module = read_shader_module();
+		m_frag_module = read_shader_module();
 	}
 
 	if (!m_vertex_input.attributes.empty()) {
@@ -524,6 +523,31 @@ auto gse::shader::compute_stage() const -> vk::PipelineShaderStageCreateInfo {
 		.stage = vk::ShaderStageFlagBits::eCompute,
 		.module = *m_compute_module,
 		.pName = "main"
+	};
+}
+
+auto gse::shader::is_mesh_shader() const -> bool {
+	return m_is_mesh_shader_pipeline;
+}
+
+auto gse::shader::mesh_shader_stages() const -> std::array<vk::PipelineShaderStageCreateInfo, 3> {
+	assert(m_is_mesh_shader_pipeline, std::source_location::current(), "Cannot get mesh shader stages from a non-mesh shader");
+	return {
+		vk::PipelineShaderStageCreateInfo{
+			.stage = vk::ShaderStageFlagBits::eTaskEXT,
+			.module = *m_task_module,
+			.pName = "main"
+		},
+		vk::PipelineShaderStageCreateInfo{
+			.stage = vk::ShaderStageFlagBits::eMeshEXT,
+			.module = *m_mesh_module,
+			.pName = "main"
+		},
+		vk::PipelineShaderStageCreateInfo{
+			.stage = vk::ShaderStageFlagBits::eFragment,
+			.module = *m_frag_module,
+			.pName = "main"
+		}
 	};
 }
 
