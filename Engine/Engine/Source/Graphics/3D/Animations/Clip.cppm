@@ -3,13 +3,13 @@ export module gse.graphics:clip;
 import std;
 
 import gse.utility;
-import gse.physics.math;
+import gse.math;
 import :skeleton;
 
 export namespace gse {
     struct joint_keyframe {
         time time;
-        mat4 local_transform;
+        mat4f local_transform;
     };
 
     struct joint_track {
@@ -35,7 +35,7 @@ export namespace gse {
         );
 
         auto load(
-            const renderer::context& ctx
+            const gpu::context& ctx
         ) -> void;
 
         auto unload(
@@ -68,7 +68,7 @@ gse::clip_asset::clip_asset(params p)
       m_tracks(std::move(p.tracks)) {
 }
 
-auto gse::clip_asset::load(const renderer::context& ctx) -> void {
+auto gse::clip_asset::load(const gpu::context& ctx) -> void {
     (void)ctx;
 
     if (m_baked_path.empty() || !exists(m_baked_path)) {
@@ -122,7 +122,7 @@ auto gse::clip_asset::load(const renderer::context& ctx) -> void {
             float key_time_seconds;
             file.read(reinterpret_cast<char*>(&key_time_seconds), sizeof(key_time_seconds));
 
-            mat4 local_transform;
+            mat4f local_transform;
             for (int row = 0; row < 4; ++row) {
                 for (int col = 0; col < 4; ++col) {
                     float val;

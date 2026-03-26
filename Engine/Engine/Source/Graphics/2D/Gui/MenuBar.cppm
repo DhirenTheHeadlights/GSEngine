@@ -3,7 +3,7 @@ export module gse.graphics:menu_bar;
 import std;
 
 import gse.platform;
-import gse.physics.math;
+import gse.math;
 
 import :types;
 import :font;
@@ -28,7 +28,7 @@ export namespace gse::menu_bar {
         state& state,
         const context& ctx,
         const input::state& input,
-        unitless::vec2 viewport_size
+        vec2f viewport_size
     ) -> void;
 
     auto height(
@@ -37,16 +37,16 @@ export namespace gse::menu_bar {
 
     auto bar_rect(
         const gui::style& style,
-        unitless::vec2 viewport_size
+        vec2f viewport_size
     ) -> gui::ui_rect;
 }
 
 namespace gse::menu_bar {
     auto draw_gear_icon(
         std::vector<renderer::sprite_command>& commands,
-        unitless::vec2 center,
+        vec2f center,
         float size,
-        unitless::vec4 color,
+        vec4f color,
         resource::handle<texture> texture
     ) -> void;
 }
@@ -55,14 +55,14 @@ auto gse::menu_bar::height(const gui::style& style) -> float {
     return style.menu_bar_height;
 }
 
-auto gse::menu_bar::bar_rect(const gui::style& style, const unitless::vec2 viewport_size) -> gui::ui_rect {
+auto gse::menu_bar::bar_rect(const gui::style& style, const vec2f viewport_size) -> gui::ui_rect {
     return gui::ui_rect::from_position_size(
         { 0.f, viewport_size.y() },
         { viewport_size.x(), height(style) }
     );
 }
 
-auto gse::menu_bar::update(state& state, const context& ctx, const input::state& input, const unitless::vec2 viewport_size) -> void {
+auto gse::menu_bar::update(state& state, const context& ctx, const input::state& input, const vec2f viewport_size) -> void {
     const auto& sty = ctx.style;
     constexpr float button_size = 24.f;
     
@@ -88,7 +88,7 @@ auto gse::menu_bar::update(state& state, const context& ctx, const input::state&
         });
     }
     
-    const unitless::vec2 settings_center = {
+    const vec2f settings_center = {
         bar.right() - sty.padding - button_size * 0.5f,
         bar.center().y()
     };
@@ -98,18 +98,18 @@ auto gse::menu_bar::update(state& state, const context& ctx, const input::state&
         { button_size, button_size }
     );
     
-    const unitless::vec2 mouse_pos = input.mouse_position();
+    const vec2f mouse_pos = input.mouse_position();
     state.settings_hovered = settings_hit_rect.contains(mouse_pos);
     
     if (state.settings_hovered && input.mouse_button_pressed(mouse_button::button_1)) {
         state.settings_open = !state.settings_open;
     }
     
-    const unitless::vec4 gear_color = state.settings_hovered ? sty.color_icon_hovered : sty.color_icon;
+    const vec4f gear_color = state.settings_hovered ? sty.color_icon_hovered : sty.color_icon;
     draw_gear_icon(ctx.sprites, settings_center, button_size * 0.4f, gear_color, ctx.blank_texture);
 }
 
-auto gse::menu_bar::draw_gear_icon(std::vector<renderer::sprite_command>& commands, const unitless::vec2 center, const float size, const unitless::vec4 color, const resource::handle<texture> texture) -> void {
+auto gse::menu_bar::draw_gear_icon(std::vector<renderer::sprite_command>& commands, const vec2f center, const float size, const vec4f color, const resource::handle<texture> texture) -> void {
     constexpr float thickness = 2.f;
     constexpr int tooth_count = 6;
     
@@ -118,12 +118,12 @@ auto gse::menu_bar::draw_gear_icon(std::vector<renderer::sprite_command>& comman
     
     for (int i = 0; i < tooth_count; ++i) {
         const float angle_rad = static_cast<float>(i) * (2.f * 3.14159f / static_cast<float>(tooth_count));
-        const unitless::vec2 dir = { std::cos(angle_rad), std::sin(angle_rad) };
+        const vec2f dir = { std::cos(angle_rad), std::sin(angle_rad) };
         
-        const unitless::vec2 inner_point = center + dir * inner_radius;
-        const unitless::vec2 outer_point = center + dir * outer_radius;
+        const vec2f inner_point = center + dir * inner_radius;
+        const vec2f outer_point = center + dir * outer_radius;
         
-        const unitless::vec2 mid = (inner_point + outer_point) * 0.5f;
+        const vec2f mid = (inner_point + outer_point) * 0.5f;
         const float len = outer_radius - inner_radius;
         
         commands.push_back({

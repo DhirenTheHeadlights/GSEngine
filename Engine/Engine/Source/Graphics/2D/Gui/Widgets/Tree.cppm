@@ -3,7 +3,7 @@
 import std;
 
 import gse.utility;
-import gse.physics.math;
+import gse.math;
 import gse.platform;
 
 import :types;
@@ -159,7 +159,7 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
     const bool row_visible = row_rect.top() >= effective_clip.bottom() - row_height &&
                               row_rect.bottom() <= effective_clip.top() + row_height;
 
-    const unitless::vec2 mouse_pos = ctx.input.mouse_position();
+    const vec2f mouse_pos = ctx.input.mouse_position();
     const bool mouse_in_clip = effective_clip.contains(mouse_pos);
     const bool hovered = row_rect.contains(mouse_pos) && mouse_in_clip && ctx.input_available();
     const id row_widget_id = ids::make(std::format("tree_row##{}", key));
@@ -172,7 +172,7 @@ auto gse::gui::draw::tree_node(const draw_context& ctx, const T& t, const tree_o
     }
 
     if (row_visible) {
-        unitless::vec4 background = ctx.style.color_widget_background;
+        vec4f background = ctx.style.color_widget_background;
 
         if (selected) {
             background = ctx.style.color_widget_selected;

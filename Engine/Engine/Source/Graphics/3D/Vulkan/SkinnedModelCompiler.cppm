@@ -4,7 +4,6 @@ import std;
 
 import gse.platform;
 
-import :asset_compiler;
 import :skinned_model;
 
 export template<>

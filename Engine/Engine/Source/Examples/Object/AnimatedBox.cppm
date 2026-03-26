@@ -67,7 +67,7 @@ export namespace gse {
 				return;
 			}
 
-			const mat4& root_pose = anim->global_pose[0];
+			const mat4f& root_pose = anim->global_pose[0];
 
 			auto& motion = component_write<physics::motion_component>();
 			motion.current_position = m_initial_position + vec3<length>(

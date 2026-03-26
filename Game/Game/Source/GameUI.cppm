@@ -29,7 +29,7 @@ export namespace gs {
 					gse::gui::vec("Mouse Position", gse::mouse::position());
 					gse::gui::input("Input Test", m_buff);
 					gse::gui::slider("Slider Test", m_slider_value, gse::meters(0.0f), gse::meters(10.0f));
-					gse::gui::slider("Vec Slider Test", m_vec_value, gse::vec3<gse::length>(0.f), gse::vec3<gse::length>(10.f));
+					gse::gui::slider("Vec Slider Test", m_vec_value, gse::vec3<gse::length>(gse::meters(0.f)), gse::vec3<gse::length>(gse::meters(10.f)));
 				}
 			);
 
@@ -39,6 +39,40 @@ export namespace gs {
 					gse::gui::profiler();
 				}
 			);
+
+			if (const auto* pds = gse::try_state_of<gse::renderer::physics_debug::state>()) {
+				if (pds->enabled) {
+					const auto& [
+						body_count, 
+						sleeping_count,
+						contact_count,
+						motor_count,
+						colliding_pairs,
+						solve_time,
+						max_linear_speed,
+						max_angular_speed,
+						max_penetration,
+						gpu_solver_active
+					] = pds->latest_stats;
+
+					gse::gui::start(
+						"Physics Debug",
+						[&] {
+							gse::gui::value("Bodies", body_count);
+							gse::gui::value("Sleeping", sleeping_count);
+							gse::gui::value("Colliding Pairs", colliding_pairs);
+							gse::gui::value("Max Penetration", max_penetration);
+							gse::gui::value("Max Linear Speed", max_linear_speed);
+							gse::gui::value("Max Angular Speed", max_angular_speed);
+							if (gpu_solver_active) {
+								gse::gui::value("GPU Contacts", contact_count);
+								gse::gui::value("GPU Motors", motor_count);
+								gse::gui::value("GPU Solve Time", in<gse::milliseconds>(solve_time));
+							}
+						}
+					);
+				}
+			}
 
 			gse::set_ui_focus(m_show_cross_hair);
 		}

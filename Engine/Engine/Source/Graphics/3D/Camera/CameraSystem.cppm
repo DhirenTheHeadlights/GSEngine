@@ -2,7 +2,7 @@ export module gse.graphics:camera_system;
 
 import std;
 
-import gse.physics.math;
+import gse.math;
 import gse.utility;
 import gse.platform;
 
@@ -15,7 +15,7 @@ export namespace gse::camera {
 	};
 
 	struct viewport_update {
-		unitless::vec2 size{ 1920.f, 1080.f };
+		vec2f size{ 1920.f, 1080.f };
 	};
 }
 
@@ -36,16 +36,16 @@ namespace gse::camera {
 
 	auto compute_view_matrix(
 		const target& t
-	) -> mat4 {
-		const auto rotation = mat4(conjugate(t.orientation));
-		const mat4 translation = translate(mat4(1.0f), -t.position);
+	) -> mat4f {
+		const auto rotation = mat4f(conjugate(t.orientation));
+		const mat4f translation = translate(mat4f(1.0f), -t.position);
 		return rotation * translation;
 	}
 
 	auto compute_projection_matrix(
 		const target& t,
-		const unitless::vec2& viewport
-	) -> mat4 {
+		const vec2f& viewport
+	) -> mat4f {
 		const float aspect_ratio = viewport.x() / viewport.y();
 		return perspective(degrees(t.fov), aspect_ratio, t.near_plane, t.far_plane);
 	}
@@ -85,8 +85,8 @@ auto gse::camera::system::update(update_phase& phase, state& s) -> void {
 		}
 	}
 
-	const quat yaw_rotation = from_axis_angle({ 0.f, 1.f, 0.f }, s.yaw);
-	const quat pitch_rotation = from_axis_angle({ 1.f, 0.f, 0.f }, s.pitch);
+	const quat yaw_rotation = quat({ 0.f, 1.f, 0.f }, s.yaw);
+	const quat pitch_rotation = quat({ 1.f, 0.f, 0.f }, s.pitch);
 	const quat new_orientation = normalize(yaw_rotation * pitch_rotation);
 
 	phase.schedule([&s, new_orientation, dt](chunk<follow_component> cameras) {

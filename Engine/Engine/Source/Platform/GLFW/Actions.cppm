@@ -3,6 +3,7 @@ export module gse.platform:actions;
 import std;
 
 import gse.utility;
+import gse.math;
 import gse.assert;
 
 import :input;
@@ -47,17 +48,17 @@ export namespace gse::actions {
 
 		auto held(
 			const state& s,
-			system_state& sys
+			const system_state& sys
 		) const -> bool;
 
 		auto pressed(
 			const state& s,
-			system_state& sys
+			const system_state& sys
 		) const -> bool;
 
 		auto released(
 			const state& s,
-			system_state& sys
+			const system_state& sys
 		) const -> bool;
 	private:
 		gse::id m_action_id;
@@ -104,7 +105,7 @@ export namespace gse::actions {
 	};
 
 	using word = std::uint64_t;
-	using axis = unitless::vec2;
+	using axis = vec2f;
 
 	class mask {
 	public:
@@ -156,6 +157,9 @@ export namespace gse::actions {
 		auto reset_axes(
 			std::span<const std::uint16_t> axes1,
 			std::span<const std::uint16_t> axes2
+		) -> void;
+
+		auto clear_all_axes(
 		) -> void;
 
 		auto set_pressed(
@@ -217,6 +221,19 @@ export namespace gse::actions {
 			std::span<const word> pressed,
 			std::span<const word> released
 		) -> void;
+
+		auto load_state(
+			std::span<const word> pressed,
+			std::span<const word> released,
+			std::span<const word> held
+		) -> void;
+
+		auto set_camera_yaw(
+			angle yaw
+		) -> void;
+
+		auto camera_yaw(
+		) const -> angle;
 	private:
 		auto ensure_axis1_capacity(
 			std::uint16_t id
@@ -232,7 +249,43 @@ export namespace gse::actions {
 
 		std::vector<float> m_axes1;
 		std::vector<axis> m_axes2;
+		angle m_camera_yaw{};
 	};
+
+	thread_local angle g_context_camera_yaw{};
+	thread_local bool g_context_camera_yaw_set = false;
+	thread_local std::unordered_map<id, angle> g_entity_camera_yaw;
+
+	auto set_context_camera_yaw(angle yaw) -> void {
+		g_context_camera_yaw = yaw;
+		g_context_camera_yaw_set = true;
+	}
+
+	auto clear_context_camera_yaw() -> void {
+		g_context_camera_yaw_set = false;
+	}
+
+	auto context_camera_yaw() -> std::optional<angle> {
+		if (g_context_camera_yaw_set) {
+			return g_context_camera_yaw;
+		}
+		return std::nullopt;
+	}
+
+	auto set_entity_camera_yaw(id entity_id, angle yaw) -> void {
+		g_entity_camera_yaw[entity_id] = yaw;
+	}
+
+	auto entity_camera_yaw(id entity_id) -> std::optional<angle> {
+		if (auto it = g_entity_camera_yaw.find(entity_id); it != g_entity_camera_yaw.end()) {
+			return it->second;
+		}
+		return std::nullopt;
+	}
+
+	auto clear_entity_camera_yaw(id entity_id) -> void {
+		g_entity_camera_yaw.erase(entity_id);
+	}
 
 	struct button_channel {
 		id action_id{};
@@ -321,22 +374,22 @@ export namespace gse::actions {
 
 		auto description(
 			id action_id
-		) -> actions::description*;
+		) const -> const actions::description*;
 
 		auto register_channel(
 			id owner_id,
 			button_channel& channel
-		) -> void;
+		) const -> void;
 
 		auto register_channel(
 			id owner_id,
 			axis1_channel& channel
-		) -> void;
+		) const -> void;
 
 		auto register_channel(
 			id owner_id,
 			axis2_channel& channel
-		) -> void;
+		) const -> void;
 
 		auto sample_for_entity(
 			const state& s,
@@ -376,7 +429,7 @@ export namespace gse::actions {
 		std::vector<std::uint16_t> axis1_ids_cache;
 		std::vector<std::uint16_t> axis2_ids_cache;
 		id_mapped_collection<resolved_axis2_keys> axis2_by_id;
-		std::vector<channel_binding> channel_bindings;
+		mutable std::vector<channel_binding> channel_bindings;
 	};
 
 	struct system {
@@ -386,21 +439,21 @@ export namespace gse::actions {
 	};
 }
 
-auto gse::actions::handle::held(const state& s, system_state& sys) const -> bool {
+auto gse::actions::handle::held(const state& s, const system_state& sys) const -> bool {
 	if (const auto* desc = sys.description(m_action_id)) {
 		return s.held(desc->bit_index());
 	}
 	return false;
 }
 
-auto gse::actions::handle::pressed(const state& s, system_state& sys) const -> bool {
+auto gse::actions::handle::pressed(const state& s, const system_state& sys) const -> bool {
 	if (const auto* desc = sys.description(m_action_id)) {
 		return s.pressed(desc->bit_index());
 	}
 	return false;
 }
 
-auto gse::actions::handle::released(const state& s, system_state& sys) const -> bool {
+auto gse::actions::handle::released(const state& s, const system_state& sys) const -> bool {
 	if (const auto* desc = sys.description(m_action_id)) {
 		return s.released(desc->bit_index());
 	}
@@ -478,6 +531,11 @@ auto gse::actions::state::reset_axes(const std::span<const std::uint16_t> axes1,
 			m_axes2[id] = {};
 		}
 	}
+}
+
+auto gse::actions::state::clear_all_axes() -> void {
+	std::fill(m_axes1.begin(), m_axes1.end(), 0.f);
+	std::fill(m_axes2.begin(), m_axes2.end(), axis{});
 }
 
 auto gse::actions::state::set_pressed(const std::uint16_t bit_index, const std::size_t count) -> void {
@@ -582,6 +640,20 @@ auto gse::actions::state::load_transients(const std::span<const word> pressed, c
 		held[i] = (held[i] | p) & ~r;
 	}
 	m_held.assign(held);
+}
+
+auto gse::actions::state::load_state(const std::span<const word> pressed, const std::span<const word> released, const std::span<const word> held) -> void {
+	m_pressed.assign(pressed);
+	m_released.assign(released);
+	m_held.assign(held);
+}
+
+auto gse::actions::state::set_camera_yaw(const angle yaw) -> void {
+	m_camera_yaw = yaw;
+}
+
+auto gse::actions::state::camera_yaw() const -> angle {
+	return m_camera_yaw;
 }
 
 auto gse::actions::system::initialize(initialize_phase& phase, system_state& s) -> void {
@@ -704,11 +776,11 @@ auto gse::actions::system_state::axis2_ids() const -> std::span<const std::uint1
 	return axis2_ids_cache;
 }
 
-auto gse::actions::system_state::description(const id action_id) -> actions::description* {
+auto gse::actions::system_state::description(const id action_id) const -> const actions::description* {
 	return descriptions.try_get(action_id);
 }
 
-auto gse::actions::system_state::register_channel(const id owner_id, button_channel& channel) -> void {
+auto gse::actions::system_state::register_channel(const id owner_id, button_channel& channel) const -> void {
 	channel_bindings.push_back(channel_binding{
 		.owner = owner_id,
 		.sampler = [this, &channel](const state& s) {
@@ -727,7 +799,7 @@ auto gse::actions::system_state::register_channel(const id owner_id, button_chan
 	});
 }
 
-auto gse::actions::system_state::register_channel(const id owner_id, axis1_channel& channel) -> void {
+auto gse::actions::system_state::register_channel(const id owner_id, axis1_channel& channel) const -> void {
 	channel_bindings.push_back(channel_binding{
 		.owner = owner_id,
 		.sampler = [&channel](const state& s) {
@@ -736,7 +808,7 @@ auto gse::actions::system_state::register_channel(const id owner_id, axis1_chann
 	});
 }
 
-auto gse::actions::system_state::register_channel(const id owner_id, axis2_channel& channel) -> void {
+auto gse::actions::system_state::register_channel(const id owner_id, axis2_channel& channel) const -> void {
 	channel_bindings.push_back(channel_binding{
 		.owner = owner_id,
 		.sampler = [&channel](const state& s) {

@@ -1,7 +1,5 @@
 module;
 
-#include <vulkan/vulkan_hpp_macros.hpp>
-
 export module gse.platform.vulkan:config;
 
 import std;
@@ -33,9 +31,11 @@ export namespace gse::vulkan {
     struct queue_config {
         vk::raii::Queue graphics;
         vk::raii::Queue present;
+        vk::raii::Queue compute;
+        std::uint32_t compute_family_index = 0;
         std::unique_ptr<std::recursive_mutex> mutex;
-        queue_config(vk::raii::Queue&& graphics, vk::raii::Queue&& present)
-            : graphics(std::move(graphics)), present(std::move(present)), mutex(std::make_unique<std::recursive_mutex>()) {
+        queue_config(vk::raii::Queue&& graphics, vk::raii::Queue&& present, vk::raii::Queue&& compute, std::uint32_t compute_family)
+            : graphics(std::move(graphics)), present(std::move(present)), compute(std::move(compute)), compute_family_index(compute_family), mutex(std::make_unique<std::recursive_mutex>()) {
         }
         queue_config(queue_config&&) = default;
         auto operator=(queue_config&&) -> queue_config & = default;
@@ -333,6 +333,7 @@ export namespace gse::vulkan {
     struct queue_family {
         std::optional<std::uint32_t> graphics_family;
         std::optional<std::uint32_t> present_family;
+        std::optional<std::uint32_t> compute_family;
 
         auto complete() const -> bool {
             return graphics_family.has_value() && present_family.has_value();

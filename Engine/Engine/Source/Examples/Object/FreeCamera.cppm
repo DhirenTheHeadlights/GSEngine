@@ -22,7 +22,7 @@ export namespace gse {
 
 		auto initialize() -> void override {
 			add_component<camera::follow_component>({
-				.offset = vec3<length>(0.f),
+				.offset = vec3<length>(meters(0.f)),
 				.priority = m_priority,
 				.blend_in_duration = milliseconds(300),
 				.active = true,
@@ -57,7 +57,7 @@ export namespace gse {
 			const auto v = m_move_axis_channel.value;
 			const float lift = (m_up.held ? 1.f : 0.f) - (m_down.held ? 1.f : 0.f);
 
-			const auto direction = camera_direction_relative_to_origin({ v.x(), lift, v.y() });
+			const auto direction = camera_direction_relative_to_origin({ v.x(), lift, v.y() }, owner_id());
 			cam_follow.position += direction * meters(100.f) * system_clock::dt().as<seconds>();
 		}
 	private:

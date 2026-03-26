@@ -12,72 +12,57 @@ export namespace gs {
 		using hook::hook;
 
 		auto initialize() -> void override {
-			// SHADOW DEBUG SCENE
-			// Light at (0, 10, 0) pointing straight down
-			// Floor at y = 0 (10 units below light)
-			// Small box at (0, 2, 0) - should cast shadow on floor
-			//
-			// Expected: Point (0, 0, 0) on floor should have:
-			//   - shadow_uv ≈ (0.5, 0.5) - center of shadow map
-			//   - depth ≈ some value based on projection
-
-			build("Shadow Test Box")
-				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(0.f, 2.f, 0.f),
-					.size = gse::vec3<gse::length>(2.f, 2.f, 2.f)  // Small 2x2x2 box
-				});
-
+			const auto floor_pos = gse::vec3<gse::length>(0.f, -0.5f, 0.f);
 			build("Floor")
 				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(0.f, -0.5f, 0.f),
-					.size = gse::vec3<gse::length>(20.f, 1.f, 20.f)  // Floor at y=0 (top surface)
+					.initial_position = floor_pos,
+					.size = gse::vec3<gse::length>(20.f, 1.f, 20.f)
 				})
-				.with<positioned_object_hook>({
-					.position = gse::vec3<gse::length>(0.f, -0.5f, 0.f)
+				.with_init([](hook<gse::entity>& h) {
+					h.configure_when_present([](gse::physics::motion_component& mc) {
+						mc.affected_by_gravity = false;
+						mc.position_locked = true;
+					});
+				})
+				.with_update([floor_pos](hook<gse::entity>& h) {
+					h.component_write<gse::physics::motion_component>().current_position = floor_pos;
+				});
+
+			for (int i = 0; i < 5; ++i) {
+				build(std::format("Stack Box {}", i + 1))
+					.with<gse::box>({
+						.initial_position = gse::vec3<gse::length>(5.f, 0.5f + static_cast<float>(i) * 1.0f, 5.f),
+						.size = gse::vec3<gse::length>(gse::meters(1.f)),
+						.mass = gse::kilograms(200.f)
+					});
+			}
+
+			build("Sphere")
+				.with<gse::sphere>({
+					.initial_position = gse::vec3<gse::length>(-3.f, 5.f, 5.f),
+					.radius = gse::meters(1.f),
+					.sectors = 24,
+					.stacks = 16
 				});
 
 			build("Player")
-				.with<gse::free_camera>({
-					.initial_position = gse::vec3<gse::length>(15.f, 5.f, 15.f)
+				.with<player>({
+					.initial_position = gse::vec3<gse::length>(0.f, 0.f, 0.f)
 				});
 
-			// Spotlight straight down from y=10
+			build("Scene Camera")
+				.with<gse::free_camera>({
+					.initial_position = gse::vec3<gse::length>(15.f, 8.f, 15.f)
+				});
+
 			build("Test Light")
-				.with<gse::spot_light_component>({
-					.color = gse::unitless::vec3(1.f),
-					.intensity = 10.f,
-					.position = gse::vec3<gse::length>(0.f, 10.f, 0.f),
-					.direction = gse::unitless::vec3(0.0f, -1.0f, 0.0f),
-					.constant = 1.0f,
-					.linear = 0.09f,
-					.quadratic = 0.032f,
-					.cut_off = gse::degrees(45.f),  // Wider angle for easier testing
-					.outer_cut_off = gse::degrees(60.f),
-					.ambient_strength = 0.1f,
-					.near_plane = gse::meters(1.f),
-					.far_plane = gse::meters(100.f),
+				.with<sphere_light>({
+					.initial_position = gse::vec3<gse::length>(10.f, 15.f, 10.f),
+					.radius = gse::meters(0.5f),
+					.sectors = 12,
+					.stacks = 8
 				});
 		}
 	private:
-		struct positioned_object_hook final : hook<gse::entity> {
-			struct params {
-				gse::vec3<gse::length> position;
-			};
-
-			positioned_object_hook(const params& p) : position(p.position) {}
-
-			gse::vec3<gse::length> position;
-
-			auto initialize() -> void override {
-				configure_when_present([](gse::physics::motion_component& mc) {
-					mc.affected_by_gravity = false;
-					mc.position_locked = true;
-				});
-			}
-
-			auto update() -> void override {
-				component_write<gse::physics::motion_component>().current_position = position;
-			}
-		};
 	};
 }

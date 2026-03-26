@@ -5,7 +5,6 @@ import std;
 import gse.platform;
 import gse.assert;
 
-import :asset_compiler;
 import :texture;
 
 export template<>

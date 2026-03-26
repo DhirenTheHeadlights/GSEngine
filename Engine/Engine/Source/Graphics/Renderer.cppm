@@ -4,18 +4,13 @@ import std;
 
 import :clip;
 import :render_component;
-import :resource_loader;
 import :material;
-import :rendering_context;
 import :font;
 import :model;
 import :skinned_model;
-import :shader;
 import :skeleton;
 import :texture;
 
-import :shader_compiler;
-import :shader_layout_compiler;
 import :texture_compiler;
 import :font_compiler;
 import :model_compiler;
@@ -27,15 +22,16 @@ import :camera_system;
 
 import gse.utility;
 import gse.platform;
+import gse.audio;
 
 export namespace gse::renderer {
 	struct state {
-		context* ctx = nullptr;
+		gpu::context* ctx = nullptr;
 		bool frame_begun = false;
 		bool hot_reload_enabled = false;
-		unitless::vec2 last_viewport{ 1920.f, 1080.f };
+		vec2f last_viewport{ 1920.f, 1080.f };
 
-		explicit state(context& c) : ctx(std::addressof(c)) {}
+		explicit state(gpu::context& c) : ctx(std::addressof(c)) {}
 		state() = default;
 
 		auto set_ui_focus(const bool focus) const -> void {
@@ -67,17 +63,17 @@ export namespace gse::renderer {
 		}
 
 		template <typename Resource, typename... Args>
-		auto queue(const std::string& name, Args&&... args) -> resource::handle<Resource> {
+		auto queue(const std::string& name, Args&&... args) const -> resource::handle<Resource> {
 			return ctx->queue<Resource>(name, std::forward<Args>(args)...);
 		}
 
 		template <typename Resource>
-		auto instantly_load(const id& resource_id) -> resource::handle<Resource> {
+		auto instantly_load(const id& resource_id) const -> resource::handle<Resource> {
 			return ctx->instantly_load<Resource>(resource_id);
 		}
 
 		template <typename Resource>
-		auto add(Resource&& resource) -> void {
+		auto add(Resource&& resource) const -> void {
 			ctx->add<Resource>(std::forward<Resource>(resource));
 		}
 
@@ -86,11 +82,11 @@ export namespace gse::renderer {
 			return ctx->resource_state<Resource>(resource_id);
 		}
 
-		auto context_ref() -> context& {
+		auto context_ref() -> gpu::context& {
 			return *ctx;
 		}
 
-		auto context_ref() const -> const context& {
+		auto context_ref() const -> const gpu::context& {
 			return *ctx;
 		}
 	};
@@ -110,17 +106,13 @@ auto gse::renderer::system::initialize(const initialize_phase& phase, state& s) 
 	ctx.add_loader<texture>();
 	ctx.add_loader<model>();
 	ctx.add_loader<skinned_model>();
-	ctx.add_loader<shader>();
 	ctx.add_loader<font>();
 	ctx.add_loader<material>();
 	ctx.add_loader<skeleton>();
 	ctx.add_loader<clip_asset>();
+	ctx.add_loader<audio_clip>();
 
 	ctx.compile();
-
-	if (const auto* save_state = phase.try_state_of<save::state>()) {
-		s.hot_reload_enabled = save_state->read("Graphics", "Hot Reload", false);
-	}
 
 	phase.channels.push(save::register_property{
 		.category = "Graphics",
@@ -149,7 +141,7 @@ auto gse::renderer::system::update(update_phase& phase, state& s) -> void {
 	phase.channels.push(camera::ui_focus_update{ .focus = ctx.ui_focus() });
 
 	const auto window_size = ctx.window().viewport();
-	const auto new_viewport = unitless::vec2(
+	const auto new_viewport = vec2f(
 		static_cast<float>(window_size.x()),
 		static_cast<float>(window_size.y())
 	);

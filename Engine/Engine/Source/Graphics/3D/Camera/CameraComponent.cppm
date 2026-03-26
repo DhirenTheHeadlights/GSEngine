@@ -2,7 +2,7 @@ export module gse.graphics:camera_component;
 
 import std;
 
-import gse.physics.math;
+import gse.math;
 import gse.utility;
 
 export namespace gse::camera {

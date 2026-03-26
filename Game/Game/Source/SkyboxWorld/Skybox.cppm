@@ -25,9 +25,9 @@ export namespace gs {
 			});
 
 			add_component<gse::directional_light_component>({
-				.color = gse::unitless::vec3(1.f),
+				.color = gse::vec3f(1.f),
 				.intensity = 1.f,
-				.direction = gse::unitless::vec3(0.0f, -1.0f, 0.0f),
+				.direction = gse::vec3f(0.0f, -1.0f, 0.0f),
 				.ambient_strength = 1.0f
 			});
 		}

@@ -10,96 +10,82 @@ import :skinned_model;
 import :render_component;
 import :animation_component;
 import :material;
-import :shader;
 import :skeleton;
 import :texture;
 
-import gse.physics.math;
+import gse.math;
 import gse.utility;
 import gse.platform;
 import gse.physics;
+import gse.log;
 
 namespace gse::renderer {
-	using frustum_planes = std::array<unitless::vec4, 6>;
+	using frustum_planes = std::array<vec4f, 6>;
 
-	auto transform_aabb(const vec3<length>& local_min, const vec3<length>& local_max, const mat4& model_matrix) -> std::pair<vec3<length>, vec3<length>> {
+	auto transform_aabb(const vec3<length>& local_min, const vec3<length>& local_max, const mat4f& model_matrix) -> std::pair<vec3<length>, vec3<length>> {
 		const std::array corners = {
-			unitless::vec4(local_min.as<meters>(), 1.0f),
-			unitless::vec4(local_max.x().as<meters>(), local_min.y().as<meters>(), local_min.z().as<meters>(), 1.0f),
-			unitless::vec4(local_min.x().as<meters>(), local_max.y().as<meters>(), local_min.z().as<meters>(), 1.0f),
-			unitless::vec4(local_max.x().as<meters>(), local_max.y().as<meters>(), local_min.z().as<meters>(), 1.0f),
-			unitless::vec4(local_min.x().as<meters>(), local_min.y().as<meters>(), local_max.z().as<meters>(), 1.0f),
-			unitless::vec4(local_max.x().as<meters>(), local_min.y().as<meters>(), local_max.z().as<meters>(), 1.0f),
-			unitless::vec4(local_min.x().as<meters>(), local_max.y().as<meters>(), local_max.z().as<meters>(), 1.0f),
-			unitless::vec4(local_max.as<meters>(), 1.0f)
+			vec4<length>(local_min.x(), local_min.y(), local_min.z(), meters(1.0f)),
+			vec4<length>(local_max.x(), local_min.y(), local_min.z(), meters(1.0f)),
+			vec4<length>(local_min.x(), local_max.y(), local_min.z(), meters(1.0f)),
+			vec4<length>(local_max.x(), local_max.y(), local_min.z(), meters(1.0f)),
+			vec4<length>(local_min.x(), local_min.y(), local_max.z(), meters(1.0f)),
+			vec4<length>(local_max.x(), local_min.y(), local_max.z(), meters(1.0f)),
+			vec4<length>(local_min.x(), local_max.y(), local_max.z(), meters(1.0f)),
+			vec4<length>(local_max.x(), local_max.y(), local_max.z(), meters(1.0f))
 		};
 
 		vec3<length> world_min(meters(std::numeric_limits<float>::max()));
 		vec3<length> world_max(meters(std::numeric_limits<float>::lowest()));
 
 		for (const auto& corner : corners) {
-			const unitless::vec4 world_corner = model_matrix * corner;
-			const vec3<length> world_pos(
-				meters(world_corner.x()),
-				meters(world_corner.y()),
-				meters(world_corner.z())
-			);
-
-			world_min = vec3<length>(
-				std::min(world_min.x(), world_pos.x()),
-				std::min(world_min.y(), world_pos.y()),
-				std::min(world_min.z(), world_pos.z())
-			);
-
-			world_max = vec3<length>(
-				std::max(world_max.x(), world_pos.x()),
-				std::max(world_max.y(), world_pos.y()),
-				std::max(world_max.z(), world_pos.z())
-			);
+			const auto wc = model_matrix * corner;
+			const vec3<length> world_pos(wc.x(), wc.y(), wc.z());
+			world_min = min(world_min, world_pos);
+			world_max = max(world_max, world_pos);
 		}
 
 		return { world_min, world_max };
 	}
 
-	auto extract_frustum_planes(const mat4& view_proj) -> frustum_planes {
+	auto extract_frustum_planes(const mat4f& view_proj) -> frustum_planes {
 		frustum_planes planes;
 
-		planes[0] = unitless::vec4(
+		planes[0] = vec4f(
 			view_proj[0][3] + view_proj[0][0],
 			view_proj[1][3] + view_proj[1][0],
 			view_proj[2][3] + view_proj[2][0],
 			view_proj[3][3] + view_proj[3][0]
 		);
 
-		planes[1] = unitless::vec4(
+		planes[1] = vec4f(
 			view_proj[0][3] - view_proj[0][0],
 			view_proj[1][3] - view_proj[1][0],
 			view_proj[2][3] - view_proj[2][0],
 			view_proj[3][3] - view_proj[3][0]
 		);
 
-		planes[2] = unitless::vec4(
+		planes[2] = vec4f(
 			view_proj[0][3] + view_proj[0][1],
 			view_proj[1][3] + view_proj[1][1],
 			view_proj[2][3] + view_proj[2][1],
 			view_proj[3][3] + view_proj[3][1]
 		);
 
-		planes[3] = unitless::vec4(
+		planes[3] = vec4f(
 			view_proj[0][3] - view_proj[0][1],
 			view_proj[1][3] - view_proj[1][1],
 			view_proj[2][3] - view_proj[2][1],
 			view_proj[3][3] - view_proj[3][1]
 		);
 
-		planes[4] = unitless::vec4(
+		planes[4] = vec4f(
 			view_proj[0][3] + view_proj[0][2],
 			view_proj[1][3] + view_proj[1][2],
 			view_proj[2][3] + view_proj[2][2],
 			view_proj[3][3] + view_proj[3][2]
 		);
 
-		planes[5] = unitless::vec4(
+		planes[5] = vec4f(
 			view_proj[0][3] - view_proj[0][2],
 			view_proj[1][3] - view_proj[1][2],
 			view_proj[2][3] - view_proj[2][2],
@@ -177,7 +163,7 @@ export namespace gse::renderer::geometry {
 	};
 
 	struct state {
-		context* ctx = nullptr;
+		gpu::context* ctx = nullptr;
 
 		vk::raii::Pipeline pipeline = nullptr;
 		vk::raii::PipelineLayout pipeline_layout = nullptr;
@@ -194,7 +180,7 @@ export namespace gse::renderer::geometry {
 		static constexpr std::size_t max_skin_matrices = 256 * 128;
 		static constexpr std::size_t max_joints = 256;
 		per_frame_resource<vulkan::buffer_resource> skin_buffer;
-		per_frame_resource<std::vector<mat4>> skin_staging;
+		per_frame_resource<std::vector<mat4f>> skin_staging;
 
 		resource::handle<shader> skin_compute;
 		vk::raii::Pipeline skin_compute_pipeline = nullptr;
@@ -202,7 +188,7 @@ export namespace gse::renderer::geometry {
 		per_frame_resource<vk::raii::DescriptorSet> skin_compute_sets;
 		vulkan::buffer_resource skeleton_buffer;
 		per_frame_resource<vulkan::buffer_resource> local_pose_buffer;
-		per_frame_resource<std::vector<mat4>> local_pose_staging;
+		per_frame_resource<std::vector<mat4f>> local_pose_staging;
 		const skeleton* current_skeleton = nullptr;
 		std::uint32_t current_joint_count = 0;
 		bool gpu_skinning_enabled = true;
@@ -233,7 +219,7 @@ export namespace gse::renderer::geometry {
 
 		resource::handle<texture> blank_texture;
 
-		explicit state(context& c) : ctx(std::addressof(c)) {}
+		explicit state(gpu::context& c) : ctx(std::addressof(c)) {}
 		state() = default;
 
 		auto skin_buff() const -> const vulkan::buffer_resource& {
@@ -269,7 +255,7 @@ export namespace gse::renderer::geometry {
 	struct system {
 		static auto initialize(initialize_phase& phase, state& s) -> void;
 		static auto update(update_phase& phase, state& s) -> void;
-		static auto render(render_phase& phase, const state& s) -> void;
+		static auto render(const render_phase& phase, const state& s) -> void;
 	};
 }
 
@@ -519,7 +505,7 @@ auto gse::renderer::geometry::system::initialize(initialize_phase&, state& s) ->
 		s.instance_offsets[name] = member.offset;
 	}
 
-	constexpr vk::DeviceSize skin_buffer_size = state::max_skin_matrices * sizeof(mat4);
+	constexpr vk::DeviceSize skin_buffer_size = state::max_skin_matrices * sizeof(mat4f);
 	for (std::size_t i = 0; i < per_frame_resource<vulkan::buffer_resource>::frames_in_flight; ++i) {
 		s.skin_buffer[i] = config.allocator().create_buffer(
 			vk::BufferCreateInfo{
@@ -618,7 +604,7 @@ auto gse::renderer::geometry::system::initialize(initialize_phase&, state& s) ->
 		.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
 	});
 
-	constexpr vk::DeviceSize local_pose_size = state::max_skin_matrices * sizeof(mat4);
+	constexpr vk::DeviceSize local_pose_size = state::max_skin_matrices * sizeof(mat4f);
 	for (std::size_t i = 0; i < per_frame_resource<vulkan::buffer_resource>::frames_in_flight; ++i) {
 		s.local_pose_buffer[i] = config.allocator().create_buffer({
 			.size = local_pose_size,
@@ -844,7 +830,7 @@ auto gse::renderer::geometry::system::initialize(initialize_phase&, state& s) ->
 		s.gpu_culling_enabled = false;
 	}
 
-	s.blank_texture = s.ctx->queue<texture>("blank", unitless::vec4(1, 1, 1, 1));
+	s.blank_texture = s.ctx->queue<texture>("blank", vec4f(1, 1, 1, 1));
 	s.ctx->instantly_load(s.blank_texture);
 }
 
@@ -854,8 +840,8 @@ auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> v
 	}
 
 	const auto* cam_state = phase.try_state_of<camera::state>();
-	const mat4 view_matrix = cam_state ? cam_state->view_matrix : mat4(1.0f);
-	const mat4 proj_matrix = cam_state ? cam_state->projection_matrix : mat4(1.0f);
+	const mat4f view_matrix = cam_state ? cam_state->view_matrix : mat4f(1.0f);
+	const mat4f proj_matrix = cam_state ? cam_state->projection_matrix : mat4f(1.0f);
 
 	phase.schedule([&s, &channels = phase.channels, view_matrix, proj_matrix](
 		chunk<render_component> render,
@@ -973,8 +959,8 @@ auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> v
 		);
 
 	struct instance_data {
-		mat4 model_matrix;
-		mat4 normal_matrix;
+		mat4f model_matrix;
+		mat4f normal_matrix;
 		std::uint32_t skin_offset;
 		std::uint32_t joint_count;
 	};
@@ -1011,8 +997,8 @@ auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> v
 			const auto [local_aabb_min, local_aabb_max] = mesh.aabb();
 			const std::uint32_t instance_count = static_cast<std::uint32_t>(instances.size());
 
-			vec3<length> world_aabb_min(meters(std::numeric_limits<float>::max()));
-			vec3<length> world_aabb_max(meters(std::numeric_limits<float>::lowest()));
+			vec3 world_aabb_min(meters(std::numeric_limits<float>::max()));
+			vec3 world_aabb_max(meters(std::numeric_limits<float>::lowest()));
 
 			for (const auto& inst : instances) {
 				const auto [inst_min, inst_max] = transform_aabb(local_aabb_min, local_aabb_max, inst.model_matrix);
@@ -1038,15 +1024,15 @@ auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> v
 				.world_aabb_max = world_aabb_max
 			};
 
-			for (const auto& inst : instances) {
+			for (const auto& [model_matrix, normal_matrix, skin_offset, joint_count] : instances) {
 				std::byte* offset = instance_staging.data() + (global_instance_offset * s.instance_stride);
 				instance_staging.resize(instance_staging.size() + s.instance_stride);
 				offset = instance_staging.data() + (global_instance_offset * s.instance_stride);
 
-				std::memcpy(offset + s.instance_offsets["model_matrix"], &inst.model_matrix, sizeof(mat4));
-				std::memcpy(offset + s.instance_offsets["normal_matrix"], &inst.normal_matrix, sizeof(mat4));
-				std::memcpy(offset + s.instance_offsets["skin_offset"], &inst.skin_offset, sizeof(std::uint32_t));
-				std::memcpy(offset + s.instance_offsets["joint_count"], &inst.joint_count, sizeof(std::uint32_t));
+				gse::memcpy(offset + s.instance_offsets["model_matrix"], model_matrix);
+				gse::memcpy(offset + s.instance_offsets["normal_matrix"], normal_matrix);
+				gse::memcpy(offset + s.instance_offsets["skin_offset"], skin_offset);
+				gse::memcpy(offset + s.instance_offsets["joint_count"], joint_count);
 
 				global_instance_offset++;
 			}
@@ -1078,8 +1064,8 @@ auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> v
 			const auto [local_aabb_min, local_aabb_max] = mesh.aabb();
 			const std::uint32_t instance_count = static_cast<std::uint32_t>(instances.size());
 
-			vec3<length> world_aabb_min(meters(std::numeric_limits<float>::max()));
-			vec3<length> world_aabb_max(meters(std::numeric_limits<float>::lowest()));
+			vec3 world_aabb_min(meters(std::numeric_limits<float>::max()));
+			vec3 world_aabb_max(meters(std::numeric_limits<float>::lowest()));
 
 			for (const auto& inst : instances) {
 				const auto [inst_min, inst_max] = transform_aabb(local_aabb_min, local_aabb_max, inst.model_matrix);
@@ -1105,15 +1091,15 @@ auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> v
 				.world_aabb_max = world_aabb_max
 			};
 
-			for (const auto& inst : instances) {
+			for (const auto& [model_matrix, normal_matrix, skin_offset, joint_count] : instances) {
 				std::byte* offset = instance_staging.data() + (global_instance_offset * s.instance_stride);
 				instance_staging.resize(instance_staging.size() + s.instance_stride);
 				offset = instance_staging.data() + (global_instance_offset * s.instance_stride);
 
-				std::memcpy(offset + s.instance_offsets["model_matrix"], &inst.model_matrix, sizeof(mat4));
-				std::memcpy(offset + s.instance_offsets["normal_matrix"], &inst.normal_matrix, sizeof(mat4));
-				std::memcpy(offset + s.instance_offsets["skin_offset"], &inst.skin_offset, sizeof(std::uint32_t));
-				std::memcpy(offset + s.instance_offsets["joint_count"], &inst.joint_count, sizeof(std::uint32_t));
+				gse::memcpy(offset + s.instance_offsets["model_matrix"], model_matrix);
+				gse::memcpy(offset + s.instance_offsets["normal_matrix"], normal_matrix);
+				gse::memcpy(offset + s.instance_offsets["skin_offset"], skin_offset);
+				gse::memcpy(offset + s.instance_offsets["joint_count"], joint_count);
 
 				global_instance_offset++;
 			}
@@ -1175,23 +1161,21 @@ auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> v
 	}
 
 	if (total_batch_count > 0 && s.gpu_culling_enabled && s.culling_compute.valid()) {
-		const mat4 view_proj = proj_matrix * view_matrix;
+		const mat4f view_proj = proj_matrix * view_matrix;
 		const frustum_planes frustum = extract_frustum_planes(view_proj);
-		gse::memcpy(s.frustum_buffer[frame_index].allocation.mapped(), &frustum);
+
+		gse::memcpy(s.frustum_buffer[frame_index].allocation.mapped(), frustum);
 
 		std::byte* batch_data = s.batch_info_buffer[frame_index].allocation.mapped();
 
 		auto write_batch_info = [&](const auto& batch, const std::size_t index) {
 			std::byte* offset = batch_data + (index * s.batch_stride);
 
-			std::memcpy(offset + s.batch_offsets["first_instance"], &batch.first_instance, sizeof(std::uint32_t));
-			std::memcpy(offset + s.batch_offsets["instance_count"], &batch.instance_count, sizeof(std::uint32_t));
+			gse::memcpy(offset + s.batch_offsets["first_instance"], batch.first_instance);
+			gse::memcpy(offset + s.batch_offsets["instance_count"], batch.instance_count);
 
-			const auto aabb_min = batch.world_aabb_min.template as<meters>();
-			std::memcpy(offset + s.batch_offsets["aabb_min"], &aabb_min, sizeof(unitless::vec3));
-
-			const auto aabb_max = batch.world_aabb_max.template as<meters>();
-			std::memcpy(offset + s.batch_offsets["aabb_max"], &aabb_max, sizeof(unitless::vec3));
+			gse::memcpy(offset + s.batch_offsets["aabb_min"], batch.world_aabb_min.as_storage_span());
+			gse::memcpy(offset + s.batch_offsets["aabb_max"], batch.world_aabb_max.as_storage_span());
 		};
 
 		std::size_t batch_index = 0;
@@ -1217,7 +1201,7 @@ auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> v
 	});
 }
 
-auto gse::renderer::geometry::system::render(render_phase& phase, const state& s) -> void {
+auto gse::renderer::geometry::system::render(const render_phase& phase, const state& s) -> void {
     const auto& render_items = phase.read_channel<render_data>();
     if (render_items.empty()) {
         return;
@@ -1658,10 +1642,11 @@ auto gse::renderer::geometry::upload_skeleton_data(const state& s, const skeleto
 	for (std::size_t i = 0; i < joint_count; ++i) {
 		std::byte* offset = buffer + (i * s.joint_stride);
 
-		const mat4 inverse_bind = joints[i].inverse_bind();
+		const mat4f inverse_bind = joints[i].inverse_bind();
 		const std::uint32_t parent_index = joints[i].parent_index();
 
-		std::memcpy(offset + s.joint_offsets.at("inverse_bind"), &inverse_bind, sizeof(mat4));
-		std::memcpy(offset + s.joint_offsets.at("parent_index"), &parent_index, sizeof(std::uint32_t));
+		gse::memcpy(offset + s.joint_offsets.at("inverse_bind"), inverse_bind);
+		gse::memcpy(offset + s.joint_offsets.at("parent_index"), parent_index);
 	}
 }
+

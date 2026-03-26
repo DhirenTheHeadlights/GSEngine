@@ -22,6 +22,14 @@ export namespace gs {
 				.with<gse::box>({
 					.initial_position = gse::vec3<gse::length>(0.f, -500.f, 0.f),
 					.size = gse::vec3<gse::length>(20000.f, 10.f, 20000.f)
+				})
+				.with_init([](gse::hook<gse::entity>& h) {
+					h.configure_when_present([](gse::physics::collision_component& cc) {
+						cc.resolve_collisions = false;
+					});
+					h.configure_when_present([](gse::physics::motion_component& mc) {
+						mc.affected_by_gravity = false;
+					});
 				});
 
 			build("Player")
@@ -34,14 +42,5 @@ export namespace gs {
 			
 		}
 	private:
-		class floor_hook final : hook<gse::entity> {
-		public:
-			using hook::hook;
-
-			auto initialize() -> void override {
-				component_write<gse::physics::collision_component>().resolve_collisions = false;
-				component_write<gse::physics::motion_component>().affected_by_gravity = false;
-			}
-		};
 	};
 }

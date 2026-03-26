@@ -5,10 +5,10 @@ import std;
 import :point_light;
 import :spot_light;
 import :directional_light;
-import :shader;
 import :shadow_renderer;
 import :camera_system;
 
+import gse.platform;
 import gse.utility;
 
 namespace gse::renderer::lighting {
@@ -17,7 +17,7 @@ namespace gse::renderer::lighting {
 
 export namespace gse::renderer::lighting {
 	struct state {
-		context* ctx = nullptr;
+		gpu::context* ctx = nullptr;
 
 		vk::raii::Pipeline pipeline = nullptr;
 		vk::raii::PipelineLayout pipeline_layout = nullptr;
@@ -30,7 +30,7 @@ export namespace gse::renderer::lighting {
 		std::unordered_map<std::string, per_frame_resource<vulkan::buffer_resource>> ubo_allocations;
 		per_frame_resource<vulkan::buffer_resource> light_buffers;
 
-		explicit state(context& c) : ctx(std::addressof(c)) {}
+		explicit state(gpu::context& c) : ctx(std::addressof(c)) {}
 		state() = default;
 	};
 
@@ -330,9 +330,9 @@ auto gse::renderer::lighting::system::render(render_phase& phase, const state& s
 	const auto frame_index = config.current_frame();
 
 	const auto* cam_state = phase.try_state_of<camera::state>();
-	auto proj = cam_state ? cam_state->projection_matrix : mat4(1.0f);
+	auto proj = cam_state ? cam_state->projection_matrix : mat4f(1.0f);
 	auto inv_proj = proj.inverse();
-	auto view = cam_state ? cam_state->view_matrix : mat4(1.0f);
+	auto view = cam_state ? cam_state->view_matrix : mat4f(1.0f);
 	auto inv_view = view.inverse();
 
 	const auto& cam_alloc = s.ubo_allocations.at("CameraParams")[frame_index].allocation;
@@ -372,10 +372,10 @@ auto gse::renderer::lighting::system::render(render_phase& phase, const state& s
 		return vec3<length>(vp.x(), vp.y(), vp.z());
 	};
 
-	auto to_view_dir = [&](const unitless::vec3& world_dir) {
-		const auto d4 = unitless::vec4(world_dir, 0.0f);
+	auto to_view_dir = [&](const vec3f& world_dir) {
+		const auto d4 = vec4f(world_dir, 0.0f);
 		const auto vd = view * d4;
-		return unitless::vec3(vd.x(), vd.y(), vd.z());
+		return vec3f(vd.x(), vd.y(), vd.z());
 	};
 
 	std::size_t light_count = 0;
@@ -405,7 +405,7 @@ auto gse::renderer::lighting::system::render(render_phase& phase, const state& s
 		zero_at(light_count);
 
 		int type = 2;
-		auto pos_meters = comp.position.as<meters>();
+		auto pos_meters = vec3f(comp.position.x().as<meters>(), comp.position.y().as<meters>(), comp.position.z().as<meters>());
 		float cut_off_cos = std::cos(comp.cut_off.as<radians>());
 		float outer_cut_off_cos = std::cos(comp.outer_cut_off.as<radians>());
 
@@ -432,7 +432,7 @@ auto gse::renderer::lighting::system::render(render_phase& phase, const state& s
 		zero_at(light_count);
 
 		int type = 1;
-		auto pos_meters = comp.position.as<meters>();
+		auto pos_meters = vec3f(comp.position.x().as<meters>(), comp.position.y().as<meters>(), comp.position.z().as<meters>());
 
 		set(light_count, "light_type", type);
 		set(light_count, "position", to_view_pos(pos_meters));
@@ -447,7 +447,7 @@ auto gse::renderer::lighting::system::render(render_phase& phase, const state& s
 	}
 
 	const auto* shadow_state = phase.try_state_of<shadow::state>();
-	unitless::vec2 texel_size{};
+	vec2f texel_size{};
 	std::span<const shadow_light_entry> shadow_entries{};
 	std::span<const point_shadow_light_entry> point_shadow_entries{};
 	const auto& shadow_items = phase.read_channel<shadow::render_data>();
@@ -458,7 +458,7 @@ auto gse::renderer::lighting::system::render(render_phase& phase, const state& s
 	}
 
 	std::array<int, max_shadow_lights> shadow_indices{};
-	std::array<mat4, max_shadow_lights> shadow_view_proj{};
+	std::array<mat4f, max_shadow_lights> shadow_view_proj{};
 	const std::size_t shadow_light_count =
 		std::min<std::size_t>(shadow_entries.size(), max_shadow_lights);
 
@@ -494,14 +494,14 @@ auto gse::renderer::lighting::system::render(render_phase& phase, const state& s
 		std::min<std::size_t>(point_shadow_entries.size(), max_point_shadow_lights);
 
 	std::array<int, max_point_shadow_lights> ps_light_indices{};
-	std::array<unitless::vec3, max_point_shadow_lights> ps_positions{};
+	std::array<vec3f, max_point_shadow_lights> ps_positions{};
 	std::array<float, max_point_shadow_lights> ps_near{};
 	std::array<float, max_point_shadow_lights> ps_far{};
 
 	for (std::size_t idx = 0; idx < point_shadow_count; ++idx) {
 		const auto& entry = point_shadow_entries[idx];
 		ps_light_indices[idx] = static_cast<int>(dir_count + spot_count + idx);
-		ps_positions[idx] = entry.world_position.as<meters>();
+		ps_positions[idx] = vec3f(entry.world_position.x().as<meters>(), entry.world_position.y().as<meters>(), entry.world_position.z().as<meters>());
 		ps_near[idx] = entry.near_plane.as<meters>();
 		ps_far[idx] = entry.far_plane.as<meters>();
 	}

@@ -2,17 +2,17 @@ export module gse.graphics:spot_light;
 
 import std;
 
-import gse.physics.math;
+import gse.math;
 import gse.utility;
 
 import :gui;
 
 export namespace gse {
 	struct spot_light_data {
-		unitless::vec3 color;
+		vec3f color;
 		float intensity = 1.0f;
 		vec3<length> position;
-		unitless::vec3 direction;
+		vec3f direction;
 		float constant = 1.0f;
 		float linear = 0.09f;
 		float quadratic = 0.032f;

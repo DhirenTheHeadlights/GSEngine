@@ -3,9 +3,8 @@ export module gse.graphics:cursor;
 import std;
 
 import gse.platform;
-import gse.physics.math;
+import gse.math;
 
-import :rendering_context;
 import :ui_renderer;
 import :texture;
 
@@ -30,8 +29,8 @@ export namespace gse::cursor {
 	) -> void;
 
 	auto render_to(
-		const renderer::context& context,
-		std::vector<renderer::sprite_command>& commands, unitless::vec2 mouse_pos
+		const gpu::context& context,
+		std::vector<renderer::sprite_command>& commands, vec2f mouse_pos
 	) -> void;
 }
 
@@ -39,9 +38,9 @@ namespace gse::cursor {
 	auto current_style = style::arrow;
 
 	struct line_params {
-		segment_t<unitless::vec2> line;
+		segment_t<vec2f> line;
 		float thickness;
-		unitless::vec4 color;
+		vec4f color;
 		resource::handle<texture> texture;
 	};
 
@@ -49,8 +48,8 @@ namespace gse::cursor {
 
 	struct arrow_head_params {
 		std::vector<renderer::sprite_command>& commands;
-		unitless::vec2 tip_position;
-		unitless::vec2 direction;
+		vec2f tip_position;
+		vec2f direction;
 		resource::handle<texture> texture;
 	};
 
@@ -61,9 +60,9 @@ auto gse::cursor::set_style(const style new_style) -> void {
 	current_style = new_style;
 }
 
-auto gse::cursor::render_to(const renderer::context& context, std::vector<renderer::sprite_command>& commands, const unitless::vec2 mouse_pos) -> void {
+auto gse::cursor::render_to(const gpu::context& context, std::vector<renderer::sprite_command>& commands, const vec2f mouse_pos) -> void {
 	const resource::handle<texture> blank_texture = context.get<texture>(find("blank"));
-	constexpr unitless::vec4 color = { 1.f, 1.f, 1.f, 1.f };
+	constexpr vec4f color = { 1.f, 1.f, 1.f, 1.f };
 	constexpr float length = 22.f;
 	constexpr float half_len = length / 2.f;
 
@@ -131,13 +130,13 @@ auto gse::cursor::render_to(const renderer::context& context, std::vector<render
 		constexpr float offset = 4.f;
 		draw_arrow_head({
 			.commands = commands,
-			.tip_position = mouse_pos + unitless::vec2{ -offset, 0.f },
+			.tip_position = mouse_pos + vec2f{ -offset, 0.f },
 			.direction = { -1.f, 0.f },
 			.texture = blank_texture
 		});
 		draw_arrow_head({
 			.commands = commands,
-			.tip_position = mouse_pos + unitless::vec2{ offset, 0.f },
+			.tip_position = mouse_pos + vec2f{ offset, 0.f },
 			.direction = { 1.f, 0.f },
 			.texture = blank_texture
 		});
@@ -145,10 +144,10 @@ auto gse::cursor::render_to(const renderer::context& context, std::vector<render
 	}
 	case style::omni_move: {
 		constexpr float offset = 10.f;
-		draw_arrow_head({ .commands = commands, .tip_position = mouse_pos + unitless::vec2{ 0.f, offset }, .direction = { 0.f, 1.f }, .texture = blank_texture });
-		draw_arrow_head({ .commands = commands, .tip_position = mouse_pos + unitless::vec2{ 0.f, -offset }, .direction = { 0.f, -1.f }, .texture = blank_texture });
-		draw_arrow_head({ .commands = commands, .tip_position = mouse_pos + unitless::vec2{ offset, 0.f }, .direction = { 1.f, 0.f }, .texture = blank_texture });
-		draw_arrow_head({ .commands = commands, .tip_position = mouse_pos + unitless::vec2{ -offset, 0.f }, .direction = { -1.f, 0.f }, .texture = blank_texture });
+		draw_arrow_head({ .commands = commands, .tip_position = mouse_pos + vec2f{ 0.f, offset }, .direction = { 0.f, 1.f }, .texture = blank_texture });
+		draw_arrow_head({ .commands = commands, .tip_position = mouse_pos + vec2f{ 0.f, -offset }, .direction = { 0.f, -1.f }, .texture = blank_texture });
+		draw_arrow_head({ .commands = commands, .tip_position = mouse_pos + vec2f{ offset, 0.f }, .direction = { 1.f, 0.f }, .texture = blank_texture });
+		draw_arrow_head({ .commands = commands, .tip_position = mouse_pos + vec2f{ -offset, 0.f }, .direction = { -1.f, 0.f }, .texture = blank_texture });
 		break;
 	}
 	default:
@@ -158,12 +157,12 @@ auto gse::cursor::render_to(const renderer::context& context, std::vector<render
 
 auto gse::cursor::draw_line(std::vector<renderer::sprite_command>& commands, const line_params& params) -> void {
 	const float len = params.line.length();
-	const unitless::vec2 mid = params.line.midpoint();
-	const unitless::vec2 size = { len, params.thickness };
-	const unitless::vec2 half_size = size / 2.f;
+	const vec2f mid = params.line.midpoint();
+	const vec2f size = { len, params.thickness };
+	const vec2f half_size = size / 2.f;
 
 	commands.push_back({
-		.rect = rect_t<unitless::vec2>({
+		.rect = rect_t<vec2f>({
 			.min = mid - half_size,
 			.max = mid + half_size
 		}),
@@ -177,12 +176,12 @@ auto gse::cursor::draw_line(std::vector<renderer::sprite_command>& commands, con
 auto gse::cursor::draw_arrow_head(const arrow_head_params& params) -> void {
 	constexpr float head_length = 8.f;
 	constexpr angle head_half_angle = degrees(30.f);
-	constexpr unitless::vec4 white = { 1.f, 1.f, 1.f, 1.f };
+	constexpr vec4f white = { 1.f, 1.f, 1.f, 1.f };
 	constexpr float thickness = 2.f;
 
-	const unitless::vec2 base_dir = normalize(params.direction);
-	const unitless::vec2 dir1 = rotate(base_dir, head_half_angle);
-	const unitless::vec2 dir2 = rotate(base_dir, -head_half_angle);
+	const vec2f base_dir = normalize(params.direction);
+	const vec2f dir1 = rotate(base_dir, head_half_angle);
+	const vec2f dir2 = rotate(base_dir, -head_half_angle);
 
 	draw_line(params.commands, {
 		.line = { params.tip_position, params.tip_position + dir1 * head_length },

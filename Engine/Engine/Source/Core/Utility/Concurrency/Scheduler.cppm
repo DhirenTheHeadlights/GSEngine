@@ -8,6 +8,7 @@ import :registry;
 import :task;
 import :system_clock;
 import :frame_sync;
+import :trace;
 
 import gse.assert;
 
@@ -28,10 +29,6 @@ export namespace gse {
 		auto add_system(
 			registry& reg,
 			Args&&... args
-		) -> State&;
-
-		template <typename State>
-		auto state(
 		) -> State&;
 
 		template <typename State>
@@ -75,13 +72,23 @@ export namespace gse {
 		auto clear(
 		) -> void;
 
-		auto registry_access_mut(
-		) -> registry_access&;
+		auto push_deferred(
+			std::move_only_function<void()> fn
+		) -> void;
+
+		template <typename State, typename F>
+		auto defer(
+			F&& fn
+		) -> void;
 	private:
+		auto drain_deferred(
+		) -> void;
 		std::vector<std::unique_ptr<system_node_base>> m_nodes;
 		std::unordered_map<std::type_index, system_node_base*> m_state_index;
 		std::unordered_map<std::type_index, std::unique_ptr<channel_base>> m_channels;
 		mutable std::mutex m_channels_mutex;
+		std::vector<std::move_only_function<void()>> m_deferred;
+		std::mutex m_deferred_mutex;
 		registry* m_registry = nullptr;
 		registry_access m_registry_access{};
 
@@ -116,13 +123,6 @@ auto gse::scheduler::add_system(registry& reg, Args&&... args) -> State& {
 	m_nodes.push_back(std::move(ptr));
 
 	return raw->state();
-}
-
-template <typename State>
-auto gse::scheduler::state() -> State& {
-	const auto it = m_state_index.find(std::type_index(typeid(State)));
-	assert(it != m_state_index.end(), std::source_location::current(), "state not found");
-	return *static_cast<State*>(it->second->state_ptr());
 }
 
 template <typename State>
@@ -197,7 +197,32 @@ auto gse::scheduler::initialize() -> void {
 	}
 }
 
+auto gse::scheduler::push_deferred(std::move_only_function<void()> fn) -> void {
+	std::lock_guard lock(m_deferred_mutex);
+	m_deferred.push_back(std::move(fn));
+}
+
+auto gse::scheduler::drain_deferred() -> void {
+	std::vector<std::move_only_function<void()>> batch;
+	{
+		std::lock_guard lock(m_deferred_mutex);
+		batch.swap(m_deferred);
+	}
+	for (auto& fn : batch) {
+		fn();
+	}
+}
+
+template <typename State, typename F>
+auto gse::scheduler::defer(F&& fn) -> void {
+	push_deferred([this, f = std::forward<F>(fn)]() mutable {
+		auto* ptr = system_ptr(std::type_index(typeid(State)));
+		if (ptr) f(*static_cast<State*>(ptr));
+	});
+}
+
 auto gse::scheduler::update() -> void {
+	drain_deferred();
 	auto writer = make_channel_writer();
 	work_queue work;
 
@@ -211,9 +236,9 @@ auto gse::scheduler::update() -> void {
 		.work = work
 	};
 
-	for (const auto& n : m_nodes) {
-		n->update(phase);
-	}
+	task::parallel_for(0uz, m_nodes.size(), [&](const std::size_t i) {
+		m_nodes[i]->update(phase);
+	});
 
 	if (work.work().empty()) {
 		return;
@@ -221,11 +246,15 @@ auto gse::scheduler::update() -> void {
 
 	for (auto& batch : build_work_batches(work.work())) {
 		if (batch.size() == 1) {
-			batch[0]->execute(*m_registry);
+			trace::scope(batch[0]->name, [&] {
+				batch[0]->execute(*m_registry);
+			});
 		}
 		else {
 			task::parallel_for(0uz, batch.size(), [&](const size_t i) {
-				batch[i]->execute(*m_registry);
+				trace::scope(batch[i]->name, [&] {
+					batch[i]->execute(*m_registry);
+				});
 			});
 		}
 	}
@@ -244,7 +273,7 @@ auto gse::scheduler::render(const std::function<void()>& in_frame) -> void {
 			return;
 		}
 
-		for (std::size_t i = 1; i < m_nodes.size(); ++i) {
+		for (auto i : std::views::iota(std::size_t{1}, m_nodes.size())) {
 			started[i] = m_nodes[i]->begin_frame(bf_phase);
 		}
 	}
@@ -284,8 +313,8 @@ auto gse::scheduler::shutdown() -> void {
 		.registry = m_registry_access
 	};
 
-	for (auto it = m_nodes.rbegin(); it != m_nodes.rend(); ++it) {
-		(*it)->shutdown(phase);
+	for (const auto& node : m_nodes | std::views::reverse) {
+		node->shutdown(phase);
 	}
 }
 
@@ -293,10 +322,6 @@ auto gse::scheduler::clear() -> void {
 	m_nodes.clear();
 	m_state_index.clear();
 	m_channels.clear();
-}
-
-auto gse::scheduler::registry_access_mut() -> registry_access& {
-	return m_registry_access;
 }
 
 auto gse::scheduler::snapshot_all_channels() -> void {

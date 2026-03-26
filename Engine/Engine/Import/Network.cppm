@@ -10,7 +10,7 @@ export module gse.network;
 
 import std;
 import gse.utility;
-import gse.physics; 
+import gse.physics;
 import gse.graphics;
 
 export import :actions;
@@ -27,6 +27,7 @@ export import :client;
 export import :discovery;
 export import :registry_sync;
 export import :replication;
+export import :server_info;
 
 export namespace gse::network {
 	struct connection_options {
@@ -65,7 +66,7 @@ export namespace gse::network {
 		) -> void;
 
 		auto servers(
-		) -> std::span<const discovery_result>;
+		) const -> std::span<const discovery_result>;
 
 		auto connect(
 			const connection_options& options
@@ -104,26 +105,21 @@ export namespace gse::network {
 
 	struct system {
 		static auto initialize(initialize_phase& phase, system_state& s) -> void;
-		static auto update(update_phase& phase, system_state& s) -> void;
+		static auto update(const update_phase& phase, system_state& s) -> void;
 		static auto shutdown(shutdown_phase& phase, system_state& s) -> void;
 	};
 }
 
 auto gse::network::system::initialize(initialize_phase&, system_state&) -> void {
-	WSADATA wsa_data;
-	if (const auto result = WSAStartup(MAKEWORD(2, 2), &wsa_data); result != 0) {
-		std::println("WSAStartup failed: {}", result);
-	}
+	// WinSock initialization handled by static initializer in Socket.cppm
 }
 
 auto gse::network::system::shutdown(shutdown_phase&, system_state& s) -> void {
 	s.client_ptr.reset();
-	if (const auto result = WSACleanup(); result != 0) {
-		std::println("WSACleanup failed: {}", result);
-	}
+	// WinSock cleanup handled by static initializer destructor in Socket.cppm
 }
 
-auto gse::network::system::update(update_phase& phase, system_state& s) -> void {
+auto gse::network::system::update(const update_phase& phase, system_state& s) -> void {
 	if (!s.client_ptr) {
 		return;
 	}
@@ -165,7 +161,8 @@ auto gse::network::system::update(update_phase& phase, system_state& s) -> void 
 									c->networked_data() = data;
 									return true;
 								}
-								reg.add_component<T>(entity, data);
+								auto* c = reg.add_component<T>(entity, data);
+								c->networked_data() = data;
 								return true;
 							});
 						});
@@ -182,7 +179,8 @@ auto gse::network::system::update(update_phase& phase, system_state& s) -> void 
 									c->networked_data() = data;
 									return true;
 								}
-								reg.add_component<T>(entity, data);
+								auto* c = reg.add_component<T>(entity, data);
+								c->networked_data() = data;
 								return true;
 							});
 						});
@@ -194,7 +192,13 @@ auto gse::network::system::update(update_phase& phase, system_state& s) -> void 
 					}
 					s.deferred.push_back([entity = m.owner_id](registry& r) {
 						r.add_deferred_action(entity, [entity](registry& reg) -> bool {
-							reg.remove_link<T>(entity);
+							if constexpr (std::is_same_v<T, player_controller>) {
+								if (reg.exists(entity)) {
+									reg.remove(entity);
+								}
+							} else {
+								reg.remove_link<T>(entity);
+							}
 							return true;
 						});
 					});
@@ -217,7 +221,16 @@ auto gse::network::system::update(update_phase& phase, system_state& s) -> void 
 
 	if (s.client_ptr->current_state() == client::state::connected) {
 		if (const auto* actions_state = phase.try_state_of<actions::system_state>()) {
-			s.client_ptr->push_input(actions_state->current_state(), actions_state->axis1_ids(), actions_state->axis2_ids());
+			angle yaw;
+			if (const auto* cam_state = phase.try_state_of<camera::state>()) {
+				yaw = cam_state->yaw;
+			}
+			s.client_ptr->push_input(
+				actions_state->current_state(),
+				actions_state->axis1_ids(),
+				actions_state->axis2_ids(),
+				yaw
+			);
 		}
 	}
 }
@@ -257,7 +270,7 @@ auto gse::network::system_state::refresh_servers(const time_t<std::uint32_t> tim
 	});
 }
 
-auto gse::network::system_state::servers() -> std::span<const discovery_result> {
+auto gse::network::system_state::servers() const -> std::span<const discovery_result> {
 	return available_servers;
 }
 

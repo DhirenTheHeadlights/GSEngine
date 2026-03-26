@@ -17,60 +17,46 @@ export namespace gse {
 			vec3<length> initial_position = vec3<length>(0.f, 0.f, 0.f);
 			vec3<length> size = vec3<length>(1.f, 1.f, 1.f);
 			quat initial_orientation = quat(1.f, 0.f, 0.f, 0.f);
+			mass mass = kilograms(1000.f);
 		};
 
-		explicit box(const params& p) : m_initial_position(p.initial_position), m_size(p.size), m_initial_orientation(p.initial_orientation) {}
+		explicit box(const params& p) : m_initial_position(p.initial_position), m_size(p.size), m_initial_orientation(p.initial_orientation), m_box_mass(p.mass) {}
 
 		auto initialize() -> void override {
+			static constexpr density row = kilograms_per_cubic_meter(2000.f);
+			const inertia box_inertia = m_box_mass * dot(m_size, m_size) / 18.f;
+
 			add_component<physics::motion_component>({
 				.current_position = m_initial_position,
-				.mass = kilograms(1000.f),
-				.orientation = m_initial_orientation
+				.mass = m_box_mass,
+				.orientation = m_initial_orientation,
+				.moment_of_inertia = box_inertia
 			});
 
 			add_component<physics::collision_component>({
 				.bounding_box = { m_initial_position, m_size }
 			});
 
+			const auto name = std::string(owner_id().tag());
+
+			const auto tex = gse::queue<texture>(
+				name + "_color",
+				vec4f(random_value(0.3f, 1.0f), random_value(0.3f, 1.0f), random_value(0.3f, 1.0f), 1.0f)
+			);
+
 			const auto mat = gse::queue<material>(
-				"concrete_bricks_material",
-				gse::get<texture>("Textures/Textures/concrete_bricks_1")
+				name + "_mat",
+				tex
 			);
 
 			add_component<render_component>({
 				.models = { procedural_model::box(mat, m_size) }
 			});
-
-			actions::bind_button_channel<"Box_Rotate">(owner_id(), key::r, m_rotate_channel);
-		}
-
-		auto update() -> void override {
-			auto& motion = component_write<physics::motion_component>();
-
-			if (!motion.affected_by_gravity) {
-				return;
-			}
-
-			if (!m_rotate_channel.pressed) {
-				return;
-			}
-
-			motion.orientation += quat(unitless::axis_z, degrees(26.f));
-		}
-
-		auto render() -> void override {
-			gui::start(
-				std::format("Box {}", owner_id()),
-				[&motion = component_write<physics::motion_component>()] {
-					gui::slider("Position", motion.current_position, vec3<length>(-100.f), vec3<length>(100.f));
-				}
-			);
 		}
 	private:
 		vec3<length> m_initial_position;
 		vec3<length> m_size;
 		quat m_initial_orientation;
-
-		actions::button_channel m_rotate_channel;
+		mass m_box_mass;
 	};
 }

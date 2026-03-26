@@ -3,13 +3,12 @@ export module gse.graphics:model;
 import std;
 
 import :mesh;
-import :rendering_context;
 import :material;
 
 import gse.utility;
 import gse.platform;
 import gse.physics;
-import gse.physics.math;
+import gse.math;
 import gse.assert;
 
 export namespace gse {
@@ -18,9 +17,9 @@ export namespace gse {
 	struct render_queue_entry {
 		resource::handle<model> model;
 		std::size_t index;
-		mat4 model_matrix;
-		mat4 normal_matrix;
-		unitless::vec3 color;
+		mat4f model_matrix;
+		mat4f normal_matrix;
+		vec3f color;
 	};
 
 	class model_instance {
@@ -37,7 +36,7 @@ export namespace gse {
 
 		vec3<length> m_position;
 		quat m_rotation;
-		unitless::vec3 m_scale = { 1.f, 1.f, 1.f };
+		vec3f m_scale = { 1.f, 1.f, 1.f };
 		bool m_is_dirty = true;
 		std::size_t m_cached_mesh_count = 0;
 	};
@@ -47,7 +46,7 @@ export namespace gse {
 		explicit model(const std::filesystem::path& path) : identifiable(path, config::baked_resource_path), m_baked_model_path(path) {}
 		explicit model(std::string_view name, std::vector<mesh_data> meshes);
 
-		auto load(renderer::context& context) -> void;
+		auto load(gpu::context& context) -> void;
 		auto unload() -> void;
 
 		auto meshes() const -> std::span<const mesh>;
@@ -68,7 +67,7 @@ gse::model::model(const std::string_view name, std::vector<mesh_data> meshes) : 
 	}
 }
 
-auto gse::model::load(renderer::context& context) -> void {
+auto gse::model::load(gpu::context& context) -> void {
 	if (!m_baked_model_path.empty()) {
 		m_meshes.clear();
 
@@ -112,7 +111,7 @@ auto gse::model::load(renderer::context& context) -> void {
 
 	context.queue_gpu_command<model>(
 		this, 
-		[](renderer::context& ctx, model& self) {
+		[](gpu::context& ctx, model& self) {
 			for (auto& mesh : self.m_meshes) {
 				mesh.initialize(ctx.config());
 			}
@@ -139,9 +138,9 @@ auto gse::model::center_of_mass() const -> vec3<length> {
 }
 
 auto gse::model_instance::update(const physics::motion_component& mc, const physics::collision_component& cc) -> void {
-	m_position = mc.current_position;
-	m_rotation = mc.orientation;
-	m_scale = cc.bounding_box.size().as<meters>();
+	m_position = mc.render_position;
+	m_rotation = mc.render_orientation;
+	m_scale = { cc.bounding_box.size().x().as<meters>(), cc.bounding_box.size().y().as<meters>(), cc.bounding_box.size().z().as<meters>() };
 	m_is_dirty = true;
 
 	if (!m_model_handle.valid()) {
@@ -166,9 +165,9 @@ auto gse::model_instance::update(const physics::motion_component& mc, const phys
 						render_queue_entry{
 							.model = m_model_handle,
 							.index = i,
-							.model_matrix = mat4(1.0f),
-							.normal_matrix = mat4(1.0f),
-							.color = unitless::vec3(1.0f)
+							.model_matrix = mat4f(1.0f),
+							.normal_matrix = mat4f(1.0f),
+							.color = vec3f(1.0f)
 						}
 					);
 				}
@@ -186,12 +185,12 @@ auto gse::model_instance::update(const physics::motion_component& mc, const phys
 	const auto* mdl = m_model_handle.resolve();
 	const vec3 center_of_mass = mdl->center_of_mass();
 
-	const mat4 scale_mat             = scale(mat4(1.0f), m_scale);
-	const mat4 rot_mat               = m_rotation;
-	const mat4 trans_mat             = translate(mat4(1.0f), m_position);
-	const mat4 pivot_correction_mat  = translate(mat4(1.0f), -center_of_mass);
-	const mat4 final_model_matrix    = trans_mat * rot_mat * scale_mat * pivot_correction_mat;
-	const mat4 normal_matrix         = final_model_matrix.inverse().transpose();
+	const mat4f scale_mat             = scale(mat4f(1.0f), m_scale);
+	const mat4f rot_mat               = m_rotation;
+	const mat4f trans_mat             = translate(mat4f(1.0f), m_position);
+	const mat4f pivot_correction_mat  = translate(mat4f(1.0f), -center_of_mass);
+	const mat4f final_model_matrix    = trans_mat * rot_mat * scale_mat * pivot_correction_mat;
+	const mat4f normal_matrix         = final_model_matrix.inverse().transpose();
 
 	for (auto& entry : m_render_queue_entries) {
 		entry.model_matrix  = final_model_matrix;

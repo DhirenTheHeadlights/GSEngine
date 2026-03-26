@@ -2,23 +2,23 @@ export module gse.physics:bounding_box;
 
 import std;
 
-import gse.physics.math;
+import gse.math;
 
 export namespace gse {
 	struct collision_information {
 		bool colliding = false;
-		unitless::vec3 collision_normal;
+		vec3f collision_normal;
 		length penetration;
 		std::vector<vec3<length>> collision_points;
 
-		auto axis() const -> unitless::axis {
-			if (!epsilon_equal_index(collision_normal, unitless::vec3(), static_cast<int>(unitless::axis::x))) {
-				return unitless::axis::x;
+		auto axis() const -> axis {
+			if (!epsilon_equal_index(collision_normal, vec3f(), static_cast<int>(axis::x))) {
+				return axis::x;
 			}
-			if (!epsilon_equal_index(collision_normal, unitless::vec3(), static_cast<int>(unitless::axis::y))) {
-				return unitless::axis::y;
+			if (!epsilon_equal_index(collision_normal, vec3f(), static_cast<int>(axis::y))) {
+				return axis::y;
 			}
-			return unitless::axis::z; // Assume it is the z axis
+			return axis::z; // Assume it is the z axis
 		}
 	};
 }
@@ -27,13 +27,19 @@ namespace gse {
 	struct aabb {
 		vec3<length> max;
 		vec3<length> min;
+
+		auto overlaps(const aabb& other, const length margin = meters(0.f)) const -> bool {
+			return min.x() - margin <= other.max.x() && max.x() + margin >= other.min.x() &&
+				   min.y() - margin <= other.max.y() && max.y() + margin >= other.min.y() &&
+				   min.z() - margin <= other.max.z() && max.z() + margin >= other.min.z();
+		}
 	};
 
 	struct obb {
 		vec3<length> center;
 		vec3<length> size;
 		quat orientation;
-		std::array<unitless::vec3, 3> axes;
+		std::array<vec3f, 3> axes;
 	};
 
 	class bounding_box {
@@ -51,9 +57,12 @@ namespace gse {
 		auto size() const -> vec3<length>;
 		auto half_extents() const -> vec3<length>;
 		auto scale() const -> float;
-		auto face_normals() const -> std::array<unitless::vec3, 6>;
+		auto face_normals() const -> std::array<vec3f, 6>;
 		auto face_vertices(std::uint32_t face_index) const -> std::array<vec3<length>, 4>;
 		auto obb_vertices() const -> std::vector<vec3<length>>;
+		auto edge_endpoints(std::uint32_t edge_index) const -> std::pair<vec3<length>, vec3<length>>;
+
+		static constexpr std::uint32_t edge_count = 12;
 	private:
 		auto recalculate_aabb() const -> void;
 
@@ -115,7 +124,7 @@ auto gse::bounding_box::scale() const -> float {
 	return m_scale;
 }
 
-auto gse::bounding_box::face_normals() const -> std::array<unitless::vec3, 6> {
+auto gse::bounding_box::face_normals() const -> std::array<vec3f, 6> {
 	const auto obb_data = obb();
 	return {
 		 obb_data.axes[0],
@@ -164,6 +173,19 @@ auto gse::bounding_box::obb_vertices() const -> std::vector<vec3<length>> {
 		corners[i] = m_center + (obb_data.axes[0] * x + obb_data.axes[1] * y + obb_data.axes[2] * z);
 	}
 	return corners;
+}
+
+auto gse::bounding_box::edge_endpoints(const std::uint32_t edge_index) const -> std::pair<vec3<length>, vec3<length>> {
+	const auto vertices = obb_vertices();
+
+	static constexpr std::array<std::pair<std::uint32_t, std::uint32_t>, 12> edge_indices = {{
+		{0, 1}, {2, 3}, {4, 5}, {6, 7},
+		{0, 2}, {1, 3}, {4, 6}, {5, 7},
+		{0, 4}, {1, 5}, {2, 6}, {3, 7}
+	}};
+
+	const auto& [i0, i1] = edge_indices[edge_index % 12];
+	return { vertices[i0], vertices[i1] };
 }
 
 auto gse::bounding_box::recalculate_aabb() const -> void {

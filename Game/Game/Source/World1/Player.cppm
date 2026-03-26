@@ -68,11 +68,6 @@ namespace gs {
 
 			auto motion_component = component_write<gse::physics::motion_component>();
 
-			apply_force(
-				motion_component,
-				gse::vec3<gse::force>(0.f, m_jetpack_force + boost_force, 0.f)
-			);
-
 			const auto v = m_move_axis_channel.value;
 
 			if (v.x() == 0.f && v.y() == 0.f) {
@@ -80,15 +75,11 @@ namespace gs {
 			}
 
 			const auto dir = gse::camera_direction_relative_to_origin(
-				gse::unitless::vec3(v.x(), 0.f, v.y())
+				gse::vec3f(v.x(), 0.f, v.y()),
+				owner_id()
 			);
 
 			const auto f = m_jetpack_side_force + boost_force;
-
-			apply_force(
-				motion_component,
-				gse::vec3<gse::force>(f * dir.x(), 0.f, f * dir.z())
-			);
 		}
 	private:
 		gse::force m_jetpack_force = gse::newtons(1000.f);
@@ -105,19 +96,18 @@ namespace gs {
 
 	class player_hook final : public gse::hook<gse::entity> {
 	public:
-		using hook::hook;
+		struct params {
+			gse::vec3<gse::length> initial_position;
+		};
+
+		explicit player_hook(const params& p) : m_initial_position(p.initial_position) {}
 
 		auto initialize() -> void override {
 			add_component<gse::physics::motion_component>({
-				.current_position = gse::vec3<gse::length>(0.f, 0.f, 0.f),
-				.max_speed = m_max_speed,
+				.current_position = m_initial_position,
 				.mass = gse::pounds(180.f),
-				.self_controlled = true,
 				.update_orientation = false,
-				.motor = {
-					.jump_speed = gse::meters_per_second(7.f),
-					.active = true
-				}
+				.velocity_drive_active = true
 			});
 
 			gse::length height = gse::feet(6.0f);
@@ -125,7 +115,7 @@ namespace gs {
 
 			add_component<gse::physics::collision_component>({
 				.bounding_box = {
-					gse::vec3<gse::length>(-10.f, -10.f, -10.f),
+					m_initial_position,
 					{ width, height, width }
 				}
 			});
@@ -141,7 +131,7 @@ namespace gs {
 			});*/
 
 			add_component<gse::camera::follow_component>({
-				.offset = gse::vec3<gse::length>(gse::feet(0.f), gse::feet(6.f), gse::feet(0.f)),
+				.offset = gse::vec3<gse::length>(gse::meters(0.f)),
 				.priority = 50,
 				.blend_in_duration = gse::milliseconds(300),
 				.active = true,
@@ -154,26 +144,31 @@ namespace gs {
 
 		auto update() -> void override {
 			auto& motion = component_write<gse::physics::motion_component>();
-			motion.max_speed = m_shift_channel.held ? m_sprint_speed : m_max_speed;
+			const auto speed = m_shift_channel.held ? m_sprint_speed : m_walk_speed;
 
 			const auto v = m_move_axis_channel.value;
 			if (v.x() != 0.f || v.y() != 0.f) {
 				const auto dir = gse::camera_direction_relative_to_origin(
-					gse::unitless::vec3(v.x(), 0.f, v.y())
+					gse::vec3f(v.x(), 0.f, v.y()),
+					owner_id()
 				);
-				motion.motor.target_velocity = motion.max_speed * gse::unitless::vec3(dir.x(), 0.f, dir.z());
+				const auto horizontal = gse::vec3f(dir.x(), 0.f, dir.z());
+				const float len = gse::magnitude(horizontal);
+				motion.velocity_drive_target = len > 1e-6f
+					? speed * (horizontal / len)
+					: gse::vec3<gse::velocity>{};
 			} else {
-				motion.motor.target_velocity = {};
+				motion.velocity_drive_target = {};
 			}
 
-			if (m_jump_channel.pressed) {
-				motion.motor.jump_requested = true;
+			if (m_jump_channel.pressed && !motion.airborne) {
+				motion.pending_impulse.y() = m_jump_speed;
 			}
 
 			m_bindings.update();
 
 			auto& cam_follow = component_write<gse::camera::follow_component>();
-			cam_follow.position = motion.current_position;
+			cam_follow.position = motion.render_position;
 		}
 
 	private:
@@ -215,7 +210,7 @@ namespace gs {
 							walk >> run  && sprinting,
 							run  >> walk && !sprinting,
 							run  >> idle && speed < 0.1f,
-							gse::animation::any  >> jump && jump_trig,
+							gse::animation::any >> jump && jump_trig,
 							jump >> idle && !airborne && gse::animation::after(0.5f)
 						)
 				)
@@ -270,8 +265,11 @@ namespace gs {
 
 		gse::animation::bindings m_bindings;
 
-		gse::velocity m_max_speed = gse::miles_per_hour(20.f);
+		gse::velocity m_walk_speed = gse::miles_per_hour(20.f);
 		gse::velocity m_sprint_speed = gse::miles_per_hour(40.f);
+		gse::velocity m_jump_speed = gse::meters_per_second(7.f);
+
+		gse::vec3<gse::length> m_initial_position;
 
 		gse::actions::button_channel m_shift_channel;
 		gse::actions::button_channel m_jump_channel;
@@ -288,7 +286,9 @@ namespace gs {
 
 		auto initialize() -> void override {
 			add_hook<jetpack_hook>();
-			add_hook<player_hook>();
+			add_hook<player_hook>({
+				.initial_position = m_initial_position
+			});
 		}
 	private:
 		gse::vec3<gse::length> m_initial_position;

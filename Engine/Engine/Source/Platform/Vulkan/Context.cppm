@@ -1,10 +1,7 @@
 module;
 
-#define VULKAN_HPP_ENABLE_DYNAMIC_LOADER
-
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
-#include <vulkan/vulkan_hpp_macros.hpp>
 
 export module gse.platform.vulkan:context;
 
@@ -15,6 +12,10 @@ import :persistent_allocator;
 
 import gse.assert;
 import gse.utility;
+
+namespace vk::detail {
+	DispatchLoaderDynamic defaultDispatchLoaderDynamic;
+}
 
 export namespace gse::vulkan {
 	auto generate_config(
@@ -43,7 +44,9 @@ export namespace gse::vulkan {
 	) -> queue_family;
 
 	auto render(
-		config& config, const vk::RenderingInfo& begin_info, const std::function<void()>& render
+		config& config, 
+        const vk::RenderingInfo& begin_info,
+        const std::function<void()>& render
 	) -> void;
 }
 
@@ -78,7 +81,7 @@ namespace gse::vulkan {
 	) -> swap_chain_config;
 
 	vk::DebugUtilsMessengerEXT debug_utils_messenger;
-	constexpr std::uint32_t max_frames_in_flight = 2;
+	export constexpr std::uint32_t max_frames_in_flight = 2;
 }
 
 auto gse::vulkan::generate_config(GLFWwindow* window, save::state& save_state) -> std::unique_ptr<config> {
@@ -332,7 +335,7 @@ auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_co
 		gse::config::resource_path / "Misc/settings.toml",
 		"Graphics",
 		"Validation Layers",
-		false
+		true
 	);
 
 	std::vector<const char*> validation_layers;
@@ -340,9 +343,7 @@ auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_co
 		validation_layers.push_back("VK_LAYER_KHRONOS_validation");
 	}
 
-#if VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
-	VULKAN_HPP_DEFAULT_DISPATCHER.init();
-#endif
+	vk::detail::defaultDispatchLoaderDynamic.init();
 
 	const std::uint32_t highest_supported_version = vk::enumerateInstanceVersion();
 	const vk::ApplicationInfo app_info{
@@ -379,6 +380,21 @@ auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_co
 			callback_data->pMessage
 		);
 
+		for (std::uint32_t i = 0; i < callback_data->objectCount; ++i) {
+			const auto& object = callback_data->pObjects[i];
+			if (!object.pObjectName || object.pObjectName[0] == '\0') {
+				continue;
+			}
+
+			std::println(
+				"  Object {}: {} 0x{:x} '{}'",
+				i,
+				vk::to_string(static_cast<vk::ObjectType>(object.objectType)),
+				object.objectHandle,
+				object.pObjectName
+			);
+		}
+
 		return vk::False;
 	};
 
@@ -391,8 +407,6 @@ auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_co
 
 	constexpr vk::ValidationFeatureEnableEXT enables[] = {
 		vk::ValidationFeatureEnableEXT::eBestPractices,
-		vk::ValidationFeatureEnableEXT::eGpuAssisted,
-		vk::ValidationFeatureEnableEXT::eDebugPrintf,
 		vk::ValidationFeatureEnableEXT::eSynchronizationValidation
 	};
 
@@ -425,9 +439,7 @@ auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_co
 		throw;
 	}
 
-#if VULKAN_HPP_DISPATCH_LOADER_DYNAMIC
-	VULKAN_HPP_DEFAULT_DISPATCHER.init(*instance);
-#endif
+	vk::detail::defaultDispatchLoaderDynamic.init(*instance);
 
 	if (enable_validation) {
 		try {
@@ -465,12 +477,13 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
 
 	std::cout << "Selected GPU: " << physical_device.getProperties().deviceName << "\n";
 
-	auto [graphics_family, present_family] = find_queue_families(physical_device, instance_data.surface);
+	auto [graphics_family, present_family, compute_family] = find_queue_families(physical_device, instance_data.surface);
 
 	std::vector<vk::DeviceQueueCreateInfo> queue_create_infos;
 	std::set unique_queue_families = {
 		graphics_family.value(),
-		present_family.value()
+		present_family.value(),
+		compute_family.value()
 	};
 
 	float queue_priority = 1.0f;
@@ -491,6 +504,7 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
 
 	vk::PhysicalDeviceVulkan12Features vulkan12_features{
 		.pNext = &vulkan13_features,
+		.hostQueryReset = vk::True,
 		.timelineSemaphore = vk::True,
 		.bufferDeviceAddress = vk::True
 	};
@@ -533,23 +547,22 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
 
 	vk::raii::Device device = physical_device.createDevice(create_info);
 
-#if VK_HPP_DISPATCH_LOADER_DYNAMIC == 1
-	VULKAN_HPP_DEFAULT_DISPATCHER.init(*device);
-#endif
+	vk::detail::defaultDispatchLoaderDynamic.init(*device);
 
 	std::cout << "Logical Device Created Successfully!\n";
 
 	vk::raii::Queue graphics_queue = device.getQueue(graphics_family.value(), 0);
 	vk::raii::Queue present_queue = device.getQueue(present_family.value(), 0);
+	vk::raii::Queue compute_queue = device.getQueue(compute_family.value(), 0);
 
 	auto device_conf = device_config(std::move(physical_device), std::move(device));
-	auto queue_conf = queue_config(std::move(graphics_queue), std::move(present_queue));
+	auto queue_conf = queue_config(std::move(graphics_queue), std::move(present_queue), std::move(compute_queue), compute_family.value());
 
 	return std::make_tuple(std::move(device_conf), std::move(queue_conf));
 }
 
 auto gse::vulkan::create_command_objects(const device_config& device_data, const instance_config& instance_data) -> command_config {
-	const auto [graphics_family, present_family] = find_queue_families(device_data.physical_device, instance_data.surface);
+	const auto [graphics_family, present_family, _] = find_queue_families(device_data.physical_device, instance_data.surface);
 
 	const vk::CommandPoolCreateInfo pool_info{
 		.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
@@ -659,9 +672,14 @@ auto gse::vulkan::find_queue_families(const vk::raii::PhysicalDevice& device, co
 		if (device.getSurfaceSupportKHR(i, surface)) {
 			indices.present_family = i;
 		}
-		if (indices.complete()) {
-			break;
+		if ((queue_families[i].queueFlags & vk::QueueFlagBits::eCompute) &&
+			!(queue_families[i].queueFlags & vk::QueueFlagBits::eGraphics)) {
+			indices.compute_family = i;
 		}
+	}
+
+	if (!indices.compute_family.has_value()) {
+		indices.compute_family = indices.graphics_family;
 	}
 
 	return indices;
@@ -734,7 +752,7 @@ auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const instance
         .imageUsage = vk::ImageUsageFlagBits::eColorAttachment
     };
 
-    auto [graphics_family, present_family] = find_queue_families(device_data.physical_device, instance_data.surface);
+    auto [graphics_family, present_family, _] = find_queue_families(device_data.physical_device, instance_data.surface);
     const std::uint32_t queue_family_indices[] = { graphics_family.value(), present_family.value() };
 
     if (graphics_family != present_family) {

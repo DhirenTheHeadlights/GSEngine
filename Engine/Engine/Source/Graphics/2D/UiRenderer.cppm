@@ -4,20 +4,18 @@ import std;
 
 import :texture;
 import :font;
-import :shader;
-import :rendering_context;
 
 import gse.platform;
 import gse.utility;
-import gse.physics.math;
+import gse.math;
 
 export namespace gse::renderer {
 	struct sprite_command {
-		rect_t<unitless::vec2> rect;
-		unitless::vec4 color = { 1.0f, 1.0f, 1.0f, 1.0f };
+		rect_t<vec2f> rect;
+		vec4f color = { 1.0f, 1.0f, 1.0f, 1.0f };
 		resource::handle<texture> texture;
-		unitless::vec4 uv_rect = { 0.0f, 0.0f, 1.0f, 1.0f };
-		std::optional<rect_t<unitless::vec2>> clip_rect = std::nullopt;
+		vec4f uv_rect = { 0.0f, 0.0f, 1.0f, 1.0f };
+		std::optional<rect_t<vec2f>> clip_rect = std::nullopt;
 		angle rotation;
 		render_layer layer = render_layer::content;
 		std::uint32_t z_order = 0;
@@ -26,10 +24,10 @@ export namespace gse::renderer {
 	struct text_command {
 		resource::handle<font> font;
 		std::string text;
-		unitless::vec2 position;
+		vec2f position;
 		float scale = 1.0f;
-		unitless::vec4 color = { 1.0f, 1.0f, 1.0f, 1.0f };
-		std::optional<rect_t<unitless::vec2>> clip_rect = std::nullopt;
+		vec4f color = { 1.0f, 1.0f, 1.0f, 1.0f };
+		std::optional<rect_t<vec2f>> clip_rect = std::nullopt;
 		render_layer layer = render_layer::content;
 		std::uint32_t z_order = 0;
 	};
@@ -42,16 +40,16 @@ namespace gse::renderer::ui {
 	};
 
 	struct vertex {
-		unitless::vec2 position;
-		unitless::vec2 uv;
-		unitless::vec4 color;
+		vec2f position;
+		vec2f uv;
+		vec4f color;
 	};
 
 	struct draw_batch {
 		command_type type;
 		std::uint32_t index_offset;
 		std::uint32_t index_count;
-		std::optional<rect_t<unitless::vec2>> clip_rect;
+		std::optional<rect_t<vec2f>> clip_rect;
 		resource::handle<texture> texture;
 		resource::handle<font> font;
 	};
@@ -66,17 +64,17 @@ namespace gse::renderer::ui {
 		command_type type;
 		render_layer layer;
 		std::uint32_t z_order;
-		std::optional<rect_t<unitless::vec2>> clip_rect;
+		std::optional<rect_t<vec2f>> clip_rect;
 
 		resource::handle<texture> texture;
-		rect_t<unitless::vec2> rect;
-		unitless::vec4 color;
-		unitless::vec4 uv_rect;
+		rect_t<vec2f> rect;
+		vec4f color;
+		vec4f uv_rect;
 		angle rotation;
 
 		resource::handle<font> font;
 		std::string text;
-		unitless::vec2 position;
+		vec2f position;
 		float scale;
 	};
 
@@ -88,8 +86,8 @@ namespace gse::renderer::ui {
 	static constexpr std::size_t frames_in_flight = 2;
 
 	auto to_vulkan_scissor(
-		const rect_t<unitless::vec2>& rect,
-		const unitless::vec2& window_size
+		const rect_t<vec2f>& rect,
+		const vec2f& window_size
 	) -> vk::Rect2D;
 
 	auto add_sprite_quad(
@@ -112,7 +110,7 @@ export namespace gse::renderer::ui {
 	};
 
 	struct state {
-		context* ctx = nullptr;
+		gpu::context* ctx = nullptr;
 
 		vk::raii::Pipeline sprite_pipeline = nullptr;
 		vk::raii::PipelineLayout sprite_pipeline_layout = nullptr;
@@ -125,7 +123,7 @@ export namespace gse::renderer::ui {
 		std::array<frame_resources, frames_in_flight> resources;
 		triple_buffer<frame_data> data;
 
-		explicit state(context& c) : ctx(std::addressof(c)) {}
+		explicit state(gpu::context& c) : ctx(std::addressof(c)) {}
 		state() = default;
 	};
 
@@ -136,7 +134,7 @@ export namespace gse::renderer::ui {
 	};
 }
 
-auto gse::renderer::ui::to_vulkan_scissor(const rect_t<unitless::vec2>& rect, const unitless::vec2& window_size) -> vk::Rect2D {
+auto gse::renderer::ui::to_vulkan_scissor(const rect_t<vec2f>& rect, const vec2f& window_size) -> vk::Rect2D {
 	const float left = std::max(0.0f, rect.left());
 	const float right = std::min(window_size.x(), rect.right());
 	const float bottom = std::max(0.0f, rect.bottom());
@@ -164,28 +162,28 @@ auto gse::renderer::ui::add_sprite_quad(std::vector<vertex>& vertices, std::vect
 
 	const auto base_index = static_cast<std::uint32_t>(vertices.size());
 
-	const unitless::vec2 top_left = cmd.rect.top_left();
-	const unitless::vec2 size = cmd.rect.size();
-	const unitless::vec2 center = {
+	const vec2f top_left = cmd.rect.top_left();
+	const vec2f size = cmd.rect.size();
+	const vec2f center = {
 		top_left.x() + size.x() * 0.5f,
 		top_left.y() - size.y() * 0.5f
 	};
 
-	const unitless::vec2 half = { size.x() * 0.5f, size.y() * 0.5f };
-	unitless::vec2 o0 = { -half.x(),  half.y() };
-	unitless::vec2 o1 = { half.x(),  half.y() };
-	unitless::vec2 o2 = { half.x(), -half.y() };
-	unitless::vec2 o3 = { -half.x(), -half.y() };
+	const vec2f half = { size.x() * 0.5f, size.y() * 0.5f };
+	vec2f o0 = { -half.x(),  half.y() };
+	vec2f o1 = { half.x(),  half.y() };
+	vec2f o2 = { half.x(), -half.y() };
+	vec2f o3 = { -half.x(), -half.y() };
 
 	o0 = rotate(o0, cmd.rotation);
 	o1 = rotate(o1, cmd.rotation);
 	o2 = rotate(o2, cmd.rotation);
 	o3 = rotate(o3, cmd.rotation);
 
-	const unitless::vec2 p0 = center + o0;
-	const unitless::vec2 p1 = center + o1;
-	const unitless::vec2 p2 = center + o2;
-	const unitless::vec2 p3 = center + o3;
+	const vec2f p0 = center + o0;
+	const vec2f p1 = center + o1;
+	const vec2f p2 = center + o2;
+	const vec2f p3 = center + o3;
 
 	const float u0 = cmd.uv_rect.x();
 	const float v0 = cmd.uv_rect.y();
@@ -213,13 +211,13 @@ auto gse::renderer::ui::add_text_quads(std::vector<vertex>& vertices, std::vecto
 
 		const auto base_index = static_cast<std::uint32_t>(vertices.size());
 
-		const unitless::vec2 top_left = screen_rect.top_left();
-		const unitless::vec2 sz = screen_rect.size();
+		const vec2f top_left = screen_rect.top_left();
+		const vec2f sz = screen_rect.size();
 
-		const unitless::vec2 p0 = top_left;
-		const unitless::vec2 p1 = { top_left.x() + sz.x(), top_left.y() };
-		const unitless::vec2 p2 = { top_left.x() + sz.x(), top_left.y() - sz.y() };
-		const unitless::vec2 p3 = { top_left.x(), top_left.y() - sz.y() };
+		const vec2f p0 = top_left;
+		const vec2f p1 = { top_left.x() + sz.x(), top_left.y() };
+		const vec2f p2 = { top_left.x() + sz.x(), top_left.y() - sz.y() };
+		const vec2f p3 = { top_left.x(), top_left.y() - sz.y() };
 
 		const float u0 = uv_rect.x();
 		const float v0 = uv_rect.y();
@@ -488,7 +486,7 @@ auto gse::renderer::ui::system::update(const update_phase& phase, state& s) -> v
 	auto current_type = command_type::sprite;
 	resource::handle<texture> current_texture;
 	resource::handle<font> current_font;
-	std::optional<rect_t<unitless::vec2>> current_clip;
+	std::optional<rect_t<vec2f>> current_clip;
 	std::uint32_t batch_index_start = 0;
 
 	auto flush_batch = [&] {
@@ -553,21 +551,13 @@ auto gse::renderer::ui::system::render(render_phase&, const state& s) -> void {
 	const auto frame_index = config.current_frame();
 	auto& [vertex_buffer, index_buffer] = s.resources[frame_index];
 
-	std::memcpy(
-		vertex_buffer.allocation.mapped(),
-		vertices.data(),
-		vertices.size() * sizeof(vertex)
-	);
+	gse::memcpy(vertex_buffer.allocation.mapped(), vertices);
 
-	std::memcpy(
-		index_buffer.allocation.mapped(),
-		indices.data(),
-		indices.size() * sizeof(std::uint32_t)
-	);
+	gse::memcpy(index_buffer.allocation.mapped(), indices);
 
 	const auto& command = config.frame_context().command_buffer;
 	const auto [width, height] = config.swap_chain_config().extent;
-	const unitless::vec2 window_size = { static_cast<float>(width), static_cast<float>(height) };
+	const vec2f window_size = { static_cast<float>(width), static_cast<float>(height) };
 
 	const auto projection = orthographic(
 		meters(0.0f),
