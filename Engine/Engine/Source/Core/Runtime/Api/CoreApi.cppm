@@ -50,7 +50,7 @@ namespace gse {
 export namespace gse {
     template <typename... Hooks>
     auto start(
-        flags engine_flags = flags::create_window | flags::render,
+        flags<engine_flag> engine_flags = flags<engine_flag>{ engine_flag::create_window } | engine_flag::render,
         const engine_config& config = {}
     ) -> void;
 
@@ -83,7 +83,7 @@ auto gse::defer(F&& fn) -> void {
 }
 
 template <typename... Hooks>
-auto gse::start(const flags engine_flags, const engine_config& config) -> void {
+auto gse::start(const flags<engine_flag> engine_flags, const engine_config& config) -> void {
     engine_instance = std::make_unique<engine>(config.title, engine_flags);
 	log::println(log::level::info, "Starting GSEngine...");
 
@@ -99,7 +99,7 @@ auto gse::start(const flags engine_flags, const engine_config& config) -> void {
     engine_instance->initialize();
     task::start([&] {
         while (!should_shutdown.load(std::memory_order_acquire)) {
-            if (has_flag(engine_flags, flags::create_window)) {
+            if (engine_flags.test(engine_flag::create_window)) {
                 window::poll_events();
             }
 
@@ -115,7 +115,7 @@ auto gse::start(const flags engine_flags, const engine_config& config) -> void {
                     find_or_generate_id("Engine::Update")
                 );
 
-                if (has_flag(engine_flags, flags::render)) {
+                if (engine_flags.test(engine_flag::render)) {
                     frame_tasks.post(
                         [&] {
                             engine_instance->render();

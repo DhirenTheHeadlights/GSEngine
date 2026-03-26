@@ -12,23 +12,14 @@ import gse.platform;
 import :world;
 
 export namespace gse {
-	enum struct flags : std::uint8_t {
-		none = 0,
+	enum class engine_flag : std::uint8_t {
 		create_window = 1 << 0,
 		render = 1 << 1,
 	};
 
-	constexpr auto operator|(flags lhs, flags rhs) -> flags {
-		return static_cast<flags>(static_cast<std::uint32_t>(lhs) | static_cast<std::uint32_t>(rhs));
-	}
-
-	constexpr auto has_flag(flags haystack, flags needle) -> bool {
-		return (static_cast<std::uint32_t>(haystack) & static_cast<std::uint32_t>(needle)) == static_cast<std::uint32_t>(needle);
-	}
-
 	class engine : public hookable<engine> {
 	public:
-		explicit engine(const std::string& name, flags engine_flags);
+		explicit engine(const std::string& name, flags<engine_flag> engine_flags);
 
 		auto initialize() -> void override;
 		auto update() -> void override;
@@ -88,14 +79,14 @@ export namespace gse {
 			F&& action
 		) -> void;
 	private:
-		flags m_flags;
+		flags<engine_flag> m_flags;
 		scheduler m_scheduler;
 		world m_world;
 		std::unique_ptr<gpu::context> m_render_ctx;
 	};
 }
 
-gse::engine::engine(const std::string& name, const flags engine_flags)
+gse::engine::engine(const std::string& name, const flags<engine_flag> engine_flags)
 	: hookable(name), m_flags(engine_flags), m_world(m_scheduler, "World") {}
 
 auto gse::engine::initialize() -> void {
@@ -111,7 +102,7 @@ auto gse::engine::initialize() -> void {
 	m_scheduler.add_system<actions::system, actions::system_state>(reg);
 	m_scheduler.add_system<network::system, network::system_state>(reg);
 
-	if (has_flag(m_flags, flags::render)) {
+	if (m_flags.test(engine_flag::render)) {
 		m_render_ctx = std::make_unique<gpu::context>(
 			std::string(id().tag()),
 			input,

@@ -14,10 +14,7 @@ export namespace gse::physics {
 
         quat orientation = quat(1.f, 0.f, 0.f, 0.f);
         vec3<angular_velocity> angular_velocity;
-        vec3<angular_acceleration> angular_acceleration;
         inertia moment_of_inertia = kilograms_meters_squared(1.f);
-
-        vec3<length> center_of_mass;
 
         bool affected_by_gravity = true;
         bool airborne = true;
@@ -32,10 +29,7 @@ export namespace gse::physics {
 
         quat orientation = quat(1.f, 0.f, 0.f, 0.f);
         vec3<angular_velocity> angular_velocity;
-        vec3<angular_acceleration> angular_acceleration;
         inertia moment_of_inertia = kilograms_meters_squared(163.f);
-
-        vec3<length> center_of_mass;
 
         float restitution = 0.3f;
 
@@ -50,12 +44,6 @@ export namespace gse::physics {
         quat previous_orientation = quat(1.f, 0.f, 0.f, 0.f);
         vec3<length> render_position;
         quat render_orientation = quat(1.f, 0.f, 0.f, 0.f);
-
-        struct accumulators {
-            vec3<acceleration> current_acceleration;
-            vec3<torque> current_torque;
-            vec3<length> position_correction;
-        } accumulators;
 
         vec3<velocity> velocity_drive_target;
         bool velocity_drive_active = false;
