@@ -162,8 +162,8 @@ auto gse::network::bitstream::read(std::span<std::byte> data) -> void {
 		// Log warning instead of asserting
 		std::println("[Network Warning] Incomplete packet read: need {} bits, have {} bits available",
 			bits, m_buffer.size() * 8 - m_head_bits);
-		// Zero-fill the requested data
 		std::fill(data.begin(), data.end(), std::byte(0));
+		m_error = true;
 		return;
 	}
 

@@ -137,15 +137,15 @@ auto gse::vbd::constraint_graph::compute_coloring(
 	for (std::uint32_t bi = 0; bi < num_bodies; ++bi) {
 		if (locked[bi] || (m_body_contacts[bi].empty() && m_body_joints[bi].empty())) continue;
 
-		std::uint32_t used_colors = 0;
+		std::uint64_t used_colors = 0;
 		for (const auto neighbor : adjacency[bi]) {
-			if (body_color[neighbor] >= 0 && body_color[neighbor] < 32) {
-				used_colors |= (1u << body_color[neighbor]);
+			if (body_color[neighbor] >= 0 && body_color[neighbor] < 64) {
+				used_colors |= (1ull << body_color[neighbor]);
 			}
 		}
 
 		int color = 0;
-		while (used_colors & (1u << color)) {
+		while (color < 64 && (used_colors & (1ull << color))) {
 			++color;
 		}
 
