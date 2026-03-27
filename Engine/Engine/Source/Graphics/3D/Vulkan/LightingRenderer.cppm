@@ -366,16 +366,10 @@ auto gse::renderer::lighting::system::render(render_phase& phase, const state& s
 		);
 	};
 
-	auto to_view_pos = [&](const vec3<position>& world_pos) {
-		const auto p = vec4<length>(world_pos.x().quantity_from_origin(), world_pos.y().quantity_from_origin(), world_pos.z().quantity_from_origin(), meters(1.0f));
-		auto vp = view * p;
-		return vec3<length>(vp.x(), vp.y(), vp.z());
-	};
-
-	auto to_view_dir = [&](const vec3f& world_dir) {
-		const auto d4 = vec4f(world_dir, 0.0f);
-		const auto vd = view * d4;
-		return vec3f(vd.x(), vd.y(), vd.z());
+	const mat3f view_rot(view);
+	const vec3<displacement> view_translation = { meters(view[3][0]), meters(view[3][1]), meters(view[3][2]) };
+	auto to_view_pos = [&](const vec3<position>& p) {
+		return view_rot * (p - vec3<position>{}) + view_translation;
 	};
 
 	std::size_t light_count = 0;
@@ -389,7 +383,7 @@ auto gse::renderer::lighting::system::render(render_phase& phase, const state& s
 
 		int type = 0;
 		set(light_count, "light_type", type);
-		set(light_count, "direction", to_view_dir(comp.direction));
+		set(light_count, "direction", view_rot * comp.direction);
 		set(light_count, "color", comp.color);
 		set(light_count, "intensity", comp.intensity);
 		set(light_count, "ambient_strength", comp.ambient_strength);
@@ -410,7 +404,7 @@ auto gse::renderer::lighting::system::render(render_phase& phase, const state& s
 
 		set(light_count, "light_type", type);
 		set(light_count, "position", to_view_pos(comp.position));
-		set(light_count, "direction", to_view_dir(comp.direction));
+		set(light_count, "direction", view_rot * comp.direction);
 		set(light_count, "color", comp.color);
 		set(light_count, "intensity", comp.intensity);
 		set(light_count, "constant", comp.constant);

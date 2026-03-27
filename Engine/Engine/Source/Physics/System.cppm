@@ -21,12 +21,12 @@ export namespace gse::physics {
 		id entity_a;
 		id entity_b;
 		vbd::joint_type type = vbd::joint_type::distance;
-		vec3<displacement> local_anchor_a;
-		vec3<displacement> local_anchor_b;
+		vec3<lever_arm> local_anchor_a;
+		vec3<lever_arm> local_anchor_b;
 		vec3f local_axis_a = { 0.f, 1.f, 0.f };
 		vec3f local_axis_b = { 0.f, 1.f, 0.f };
-		length target_distance = {};
-		inverse_mass compliance = {};
+		displacement target_distance = {};
+		linear_compliance compliance = {};
 		float damping = 0.f;
 		angle limit_lower = radians(-std::numbers::pi_v<float>);
 		angle limit_upper = radians(std::numbers::pi_v<float>);
@@ -63,6 +63,7 @@ export namespace gse::physics {
 		interval_timer<> comparison_timer{ seconds(0.25f) };
 		struct solver_comparison_snapshot {
 			std::vector<vbd::body_state> cpu_result;
+			std::vector<vbd::contact_constraint> cpu_contacts;
 			std::vector<vbd::joint_constraint> cpu_joints;
 		};
 		std::optional<solver_comparison_snapshot> comparison_pending;
@@ -165,11 +166,194 @@ namespace gse::physics {
 					sat.normal = -sat.normal;
 				}
 
+				auto manifold = narrow_phase_collision::generate_shape_manifold(
+					sd_a, sd_b, sat.normal, sat.separation
+				);
+				if (manifold.point_count == 0) continue;
+
 				if (sat.normal.y() > 0.7f && motion_b && !motion_b->position_locked) {
 					motion_b->airborne = false;
 				}
 				if (sat.normal.y() < -0.7f && motion_a && !motion_a->position_locked) {
 					motion_a->airborne = false;
+				}
+			}
+		}
+	}
+
+	auto collect_collision_objects(
+		chunk<motion_component>& motion,
+		chunk<collision_component>& collision
+	) -> std::vector<collision_pair> {
+		std::vector<collision_pair> objects;
+		objects.reserve(collision.size());
+		for (collision_component& cc : collision) {
+			if (!cc.resolve_collisions) continue;
+			objects.push_back({
+				.collision = std::addressof(cc),
+				.motion = motion.find(cc.owner_id())
+			});
+		}
+		return objects;
+	}
+
+	auto add_scene_contacts_to_solver(
+		vbd::solver& solver,
+		vbd::contact_cache& contact_cache,
+		const std::vector<collision_pair>& objects,
+		const std::unordered_map<id, std::uint32_t>& id_to_body_index,
+		const bool update_scene_state
+	) -> void {
+		for (std::size_t i = 0; i < objects.size(); ++i) {
+			for (std::size_t j = i + 1; j < objects.size(); ++j) {
+				auto& [collision_a, motion_a] = objects[i];
+				auto& [collision_b, motion_b] = objects[j];
+
+				const auto& aabb_a = collision_a->bounding_box.aabb();
+				const auto& aabb_b = collision_b->bounding_box.aabb();
+
+				if (!aabb_a.overlaps(aabb_b, solver.config().speculative_margin)) continue;
+
+				const narrow_phase_collision::shape_data sd_a{
+					.bb = &collision_a->bounding_box,
+					.type = collision_a->shape,
+					.radius = collision_a->shape_radius,
+					.half_height = collision_a->shape_half_height
+				};
+				const narrow_phase_collision::shape_data sd_b{
+					.bb = &collision_b->bounding_box,
+					.type = collision_b->shape,
+					.radius = collision_b->shape_radius,
+					.half_height = collision_b->shape_half_height
+				};
+
+				auto sat_result = narrow_phase_collision::speculative_test(
+					sd_a, sd_b, solver.config().speculative_margin
+				);
+
+				if (!sat_result) continue;
+
+				auto& sat = *sat_result;
+				if (dot(sat.normal, collision_b->bounding_box.center() - collision_a->bounding_box.center()) < meters(0.f)) {
+					sat.normal = -sat.normal;
+				}
+
+				auto manifold = narrow_phase_collision::generate_shape_manifold(
+					sd_a, sd_b, sat.normal, sat.separation
+				);
+
+				if (manifold.point_count == 0) continue;
+
+				const auto it_a = id_to_body_index.find(collision_a->owner_id());
+				const auto it_b = id_to_body_index.find(collision_b->owner_id());
+				if (it_a == id_to_body_index.end() || it_b == id_to_body_index.end()) continue;
+
+				const std::uint32_t body_a = it_a->second;
+				const std::uint32_t body_b = it_b->second;
+
+				if (update_scene_state) {
+					if (sat.normal.y() > 0.7f && motion_b) {
+						motion_b->airborne = false;
+					}
+					if (sat.normal.y() < -0.7f && motion_a) {
+						motion_a->airborne = false;
+					}
+
+					collision_a->collision_information.colliding = true;
+					collision_a->collision_information.collision_normal = sat.normal;
+					collision_a->collision_information.penetration = -sat.separation;
+
+					collision_b->collision_information.colliding = true;
+					collision_b->collision_information.collision_normal = -sat.normal;
+					collision_b->collision_information.penetration = -sat.separation;
+				}
+
+				const auto& cfg = solver.config();
+				const vec3f constraint_normal = -sat.normal;
+
+				const auto& bs_a = solver.body_states()[body_a];
+				const auto& bs_b = solver.body_states()[body_b];
+				const stiffness penalty_floor = cfg.penalty_min;
+
+				for (std::uint32_t p = 0; p < manifold.point_count; ++p) {
+					const auto& [position_on_a, position_on_b, normal, separation, feature] = manifold.points[p];
+
+					const vec3<lever_arm> world_r_a = position_on_a - bs_a.position;
+					const vec3<lever_arm> world_r_b = position_on_b - bs_b.position;
+
+					vec3<lever_arm> local_r_a = inverse_rotate_vector(bs_a.orientation, world_r_a);
+					vec3<lever_arm> local_r_b = inverse_rotate_vector(bs_b.orientation, world_r_b);
+
+					auto cached = contact_cache.lookup(body_a, body_b, feature);
+					const vec3<gap> current_d = position_on_a - position_on_b;
+					const length current_normal_gap = dot(constraint_normal, current_d) + cfg.collision_margin;
+					const bool reuse_cached_normal =
+						cached &&
+						(cached->lambda[0] < newtons(-1e-3f) || current_normal_gap < meters(-1e-4f));
+					const bool reuse_cached_tangent =
+						reuse_cached_normal &&
+						cached.has_value();
+					const bool reuse_cached_sticking =
+						reuse_cached_tangent &&
+						cached->sticking;
+
+					vec3<force> init_lambda;
+					vec3<stiffness> init_penalty = { penalty_floor, penalty_floor, penalty_floor };
+
+					if (reuse_cached_normal) {
+						init_penalty[0] = std::max(cached->penalty[0], penalty_floor);
+
+						const vec3<force> cached_normal_force = cached->normal * cached->lambda[0];
+						init_lambda[0] = std::min(dot(cached_normal_force, constraint_normal), force{});
+					}
+
+					if (reuse_cached_tangent) {
+						init_penalty[1] = std::max(cached->penalty[1], penalty_floor);
+						init_penalty[2] = std::max(cached->penalty[2], penalty_floor);
+
+						const vec3<force> cached_tangent_force =
+							cached->tangent_u * cached->lambda[1] +
+							cached->tangent_v * cached->lambda[2];
+
+						init_lambda[1] = dot(cached_tangent_force, manifold.tangent_u);
+						init_lambda[2] = dot(cached_tangent_force, manifold.tangent_v);
+
+						const force friction_bound = abs(init_lambda[0]) * cfg.friction_coefficient;
+						init_lambda[1] = std::clamp(init_lambda[1], -friction_bound, friction_bound);
+						init_lambda[2] = std::clamp(init_lambda[2], -friction_bound, friction_bound);
+					}
+
+					if (reuse_cached_sticking) {
+						local_r_a = cached->local_anchor_a;
+						local_r_b = cached->local_anchor_b;
+					}
+
+					const float pair_restitution = std::max(
+						motion_a ? motion_a->restitution : 0.f,
+						motion_b ? motion_b->restitution : 0.f
+					);
+
+					solver.add_contact_constraint(vbd::contact_constraint{
+						.body_a = body_a,
+						.body_b = body_b,
+						.normal = constraint_normal,
+						.tangent_u = manifold.tangent_u,
+						.tangent_v = manifold.tangent_v,
+						.r_a = local_r_a,
+						.r_b = local_r_b,
+						.c0 = { separation, 0.f, 0.f },
+						.lambda = init_lambda,
+						.penalty = init_penalty,
+						.penalty_floor = penalty_floor,
+						.friction_coeff = cfg.friction_coefficient,
+						.restitution = pair_restitution,
+						.sticking = cached ? cached->sticking : false,
+						.feature = feature
+					});
+
+					if (update_scene_state) {
+						collision_a->collision_information.collision_points.push_back(position_on_a);
+					}
 				}
 			}
 		}
@@ -295,7 +479,7 @@ auto gse::physics::system::initialize(const initialize_phase& phase, state& s) -
 	s.vbd_solver.configure(vbd::solver_config{
 		.iterations = 10,
 		.alpha = 0.99f,
-		.beta = newtons_per_meter_squared(100000.f),
+		.beta = newtons_per_meter(100000.f),
 		.gamma = 0.99f,
 		.post_stabilize = true,
 		.penalty_min = newtons_per_meter(1.0f),
@@ -452,15 +636,6 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 				cc_b->collision_information.penetration = -c.c0[0];
 				cc_b->collision_information.collision_points.push_back(midpoint);
 			}
-
-			const force friction_bound = abs(c.lambda[0]) * c.friction_coeff;
-			const force tangential_lambda = hypot(c.lambda[1], c.lambda[2]);
-			const length tangential_gap = hypot(c.c0[1], c.c0[2]);
-			const bool sticking =
-				c.lambda[0] < newtons(-1e-3f) &&
-				tangential_gap < cfg.stick_threshold &&
-				tangential_lambda < friction_bound;
-
 		}
 
 		s.gpu_prev.warm_start_contacts.clear();
@@ -512,6 +687,8 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		if (s.comparison_pending.has_value()) {
 			const auto& cpu = s.comparison_pending->cpu_result;
 			const auto& gpu = completed.gpu_result_bodies;
+			const auto& cpu_contacts = s.comparison_pending->cpu_contacts;
+			const auto& cpu_joints = s.comparison_pending->cpu_joints;
 			const auto count = std::min(cpu.size(), gpu.size());
 
 			length max_pos_err{};
@@ -529,14 +706,192 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 				if (ae > max_ang_err) max_ang_err = ae;
 			}
 
-			gse::log::println("SOLVER COMPARE: {} bodies, max_pos_err={} (body {}), max_vel_err={}, max_ang_err={}",
-				count, max_pos_err, worst_pos_idx, max_vel_err, max_ang_err);
+			std::unordered_map<contact_compare_key, const vbd::contact_constraint*, contact_compare_key_hash> cpu_contact_map;
+			cpu_contact_map.reserve(cpu_contacts.size());
+			for (const auto& c : cpu_contacts) {
+				cpu_contact_map[contact_compare_key{
+					.body_a = c.body_a,
+					.body_b = c.body_b,
+					.feature_key = pack_feature(c.feature)
+				}] = std::addressof(c);
+			}
+
+			std::unordered_map<contact_compare_key, const vbd::contact_readback_entry*, contact_compare_key_hash> gpu_contact_map;
+			gpu_contact_map.reserve(completed.gpu_contacts.size());
+			for (const auto& c : completed.gpu_contacts) {
+				gpu_contact_map[contact_compare_key{
+					.body_a = c.body_a,
+					.body_b = c.body_b,
+					.feature_key = c.feature_key
+				}] = std::addressof(c);
+			}
+
+			std::uint32_t matched_contacts = 0;
+			std::uint32_t cpu_only_contacts = 0;
+			std::uint32_t gpu_only_contacts = 0;
+			force max_contact_lambda_err{};
+			stiffness max_contact_penalty_err{};
+			length max_contact_c0_err{};
+			contact_compare_key worst_contact_key{};
+			const vbd::contact_constraint* worst_cpu_contact = nullptr;
+			const vbd::contact_readback_entry* worst_gpu_contact = nullptr;
+
+			for (const auto& [key, cpu_contact] : cpu_contact_map) {
+				const auto it = gpu_contact_map.find(key);
+				if (it == gpu_contact_map.end()) {
+					++cpu_only_contacts;
+					continue;
+				}
+
+				++matched_contacts;
+				const auto* gpu_contact = it->second;
+				const vec3<stiffness> gpu_penalty{
+					newtons_per_meter(gpu_contact->penalty.x()),
+					newtons_per_meter(gpu_contact->penalty.y()),
+					newtons_per_meter(gpu_contact->penalty.z())
+				};
+
+				const force lambda_err = magnitude(cpu_contact->lambda - gpu_contact->lambda);
+				const stiffness penalty_err = magnitude(cpu_contact->penalty - gpu_penalty);
+				const length c0_err = magnitude(cpu_contact->c0 - gpu_contact->c0);
+
+				if (lambda_err > max_contact_lambda_err) {
+					max_contact_lambda_err = lambda_err;
+					max_contact_penalty_err = penalty_err;
+					max_contact_c0_err = c0_err;
+					worst_contact_key = key;
+					worst_cpu_contact = cpu_contact;
+					worst_gpu_contact = gpu_contact;
+				}
+				else if (penalty_err > max_contact_penalty_err) {
+					max_contact_penalty_err = penalty_err;
+					max_contact_c0_err = c0_err;
+					worst_contact_key = key;
+					worst_cpu_contact = cpu_contact;
+					worst_gpu_contact = gpu_contact;
+				}
+			}
+
+			for (const auto& [key, gpu_contact] : gpu_contact_map) {
+				if (!cpu_contact_map.contains(key)) {
+					++gpu_only_contacts;
+				}
+			}
+
+			const auto joint_count = std::min(cpu_joints.size(), completed.gpu_joint_readback.size());
+			force max_joint_pos_lambda_err{};
+			stiffness max_joint_pos_penalty_err{};
+			torque max_joint_ang_lambda_err{};
+			angular_stiffness max_joint_ang_penalty_err{};
+			torque max_joint_limit_lambda_err{};
+			angular_stiffness max_joint_limit_penalty_err{};
+			std::uint32_t worst_joint_pos_idx = 0;
+			std::uint32_t worst_joint_ang_idx = 0;
+			std::uint32_t worst_joint_limit_idx = 0;
+
+			for (std::uint32_t i = 0; i < joint_count; ++i) {
+				const auto pos_lambda_err = magnitude(cpu_joints[i].pos_lambda - completed.gpu_joint_readback[i].pos_lambda);
+				const auto pos_penalty_err = magnitude(cpu_joints[i].pos_penalty - completed.gpu_joint_readback[i].pos_penalty);
+				const auto ang_lambda_err = magnitude(cpu_joints[i].ang_lambda - completed.gpu_joint_readback[i].ang_lambda);
+				const auto ang_penalty_err = magnitude(cpu_joints[i].ang_penalty - completed.gpu_joint_readback[i].ang_penalty);
+				const auto limit_lambda_err = abs(cpu_joints[i].limit_lambda - completed.gpu_joint_readback[i].limit_lambda);
+				const auto limit_penalty_err = abs(cpu_joints[i].limit_penalty - completed.gpu_joint_readback[i].limit_penalty);
+
+				if (pos_lambda_err > max_joint_pos_lambda_err) {
+					max_joint_pos_lambda_err = pos_lambda_err;
+					worst_joint_pos_idx = i;
+				}
+				if (pos_penalty_err > max_joint_pos_penalty_err) {
+					max_joint_pos_penalty_err = pos_penalty_err;
+					worst_joint_pos_idx = i;
+				}
+				if (ang_lambda_err > max_joint_ang_lambda_err) {
+					max_joint_ang_lambda_err = ang_lambda_err;
+					worst_joint_ang_idx = i;
+				}
+				if (ang_penalty_err > max_joint_ang_penalty_err) {
+					max_joint_ang_penalty_err = ang_penalty_err;
+					worst_joint_ang_idx = i;
+				}
+				if (limit_lambda_err > max_joint_limit_lambda_err) {
+					max_joint_limit_lambda_err = limit_lambda_err;
+					worst_joint_limit_idx = i;
+				}
+				if (limit_penalty_err > max_joint_limit_penalty_err) {
+					max_joint_limit_penalty_err = limit_penalty_err;
+					worst_joint_limit_idx = i;
+				}
+			}
+
+			gse::log::println(
+				"SOLVER COMPARE: bodies={} max_pos_err={} (body {}), max_vel_err={}, max_ang_err={}, contacts cpu={} gpu={} matched={} cpu_only={} gpu_only={}, joints cpu={} gpu={}",
+				count,
+				max_pos_err,
+				worst_pos_idx,
+				max_vel_err,
+				max_ang_err,
+				cpu_contacts.size(),
+				completed.gpu_contacts.size(),
+				matched_contacts,
+				cpu_only_contacts,
+				gpu_only_contacts,
+				cpu_joints.size(),
+				completed.gpu_joint_readback.size()
+			);
+
+			gse::log::println(
+				"  contact deltas: max_lambda_err={}, max_penalty_err={}, max_c0_err={}",
+				max_contact_lambda_err,
+				max_contact_penalty_err,
+				max_contact_c0_err
+			);
+
+			gse::log::println(
+				"  joint deltas: max_pos_lambda_err={} (joint {}), max_pos_penalty_err={}, max_ang_lambda_err={} (joint {}), max_ang_penalty_err={}, max_limit_lambda_err={} (joint {}), max_limit_penalty_err={}",
+				max_joint_pos_lambda_err,
+				worst_joint_pos_idx,
+				max_joint_pos_penalty_err,
+				max_joint_ang_lambda_err,
+				worst_joint_ang_idx,
+				max_joint_ang_penalty_err,
+				max_joint_limit_lambda_err,
+				worst_joint_limit_idx,
+				max_joint_limit_penalty_err
+			);
 
 			if (max_pos_err > meters(1e-4f)) {
 				const auto& cb = cpu[worst_pos_idx];
 				const auto& gb = gpu[worst_pos_idx];
-				gse::log::println("  worst body[{}]: cpu={} gpu={}",
-					worst_pos_idx, cb.position, gb.position);
+				gse::log::println(
+					"  worst body[{}] entity={}: cpu_pos={} gpu_pos={} cpu_vel={} gpu_vel={} cpu_ang={} gpu_ang={}",
+					worst_pos_idx,
+					worst_pos_idx < completed.entity_ids.size() ? completed.entity_ids[worst_pos_idx] : id{},
+					cb.position,
+					gb.position,
+					cb.body_velocity,
+					gb.body_velocity,
+					cb.body_angular_velocity,
+					gb.body_angular_velocity
+				);
+			}
+
+			if (worst_cpu_contact && worst_gpu_contact) {
+				gse::log::println(
+					"  worst contact: bodies=({}, {}), feature={}, cpu_lambda={} gpu_lambda={} cpu_penalty={} gpu_penalty={} cpu_c0={} gpu_c0={}",
+					worst_contact_key.body_a,
+					worst_contact_key.body_b,
+					worst_contact_key.feature_key,
+					worst_cpu_contact->lambda,
+					worst_gpu_contact->lambda,
+					worst_cpu_contact->penalty,
+					vec3<stiffness>{
+						newtons_per_meter(worst_gpu_contact->penalty.x()),
+						newtons_per_meter(worst_gpu_contact->penalty.y()),
+						newtons_per_meter(worst_gpu_contact->penalty.z())
+					},
+					worst_cpu_contact->c0,
+					worst_gpu_contact->c0
+				);
 			}
 
 			s.comparison_pending.reset();
@@ -555,8 +910,8 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 
 	for (motion_component& mc : motion) {
 		if (mc.position_locked) continue;
-		if (magnitude(mc.pending_impulse) > meters_per_second(1e-6f)) {
-			mc.current_velocity += mc.pending_impulse;
+		if (magnitude(mc.pending_impulse) > newton_seconds(1e-6f)) {
+			mc.current_velocity += mc.pending_impulse / mc.mass;
 			s.sleep_counters[mc.owner_id()] = 0;
 			launched_entities.push_back(mc.owner_id());
 			mc.pending_impulse = {};
@@ -652,6 +1007,8 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 		};
 	}
 
+	refresh_airborne_from_collisions(s, motion, collision);
+
 	std::vector<vbd::velocity_motor_constraint> motors;
 	for (motion_component& mc : motion) {
 		if (!mc.velocity_drive_active) continue;
@@ -728,25 +1085,48 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 	};
 
 	if (s.compare_solvers && s.comparison_timer.tick()) {
-		vbd::solver cpu_ref;
-		cpu_ref.configure(s.vbd_solver.config());
-		vbd::contact_cache ref_cache;
-		cpu_ref.begin_frame(bodies, ref_cache);
+		if (steps != 1) {
+			gse::log::println("SOLVER COMPARE: skipped for {} fixed steps; single-step captures are the only apples-to-apples parity check right now", steps);
+		}
+		else {
+			vbd::solver cpu_ref;
+			cpu_ref.configure(s.vbd_solver.config());
+			auto ref_cache = build_contact_cache_from_warm_start(s.gpu_prev.warm_start_contacts);
+			cpu_ref.begin_frame(bodies, ref_cache);
 
-		for (const auto& m : motors) cpu_ref.add_motor_constraint(m);
-		for (const auto& j : gpu_joints) cpu_ref.add_joint_constraint(j);
+			std::vector<vec3<velocity>> ref_prev_velocities;
+			ref_prev_velocities.reserve(entity_ids.size());
+			for (std::size_t i = 0; i < entity_ids.size(); ++i) {
+				if (const auto it = prev_gpu_velocity.find(entity_ids[i]); it != prev_gpu_velocity.end()) {
+					ref_prev_velocities.push_back(it->second);
+				}
+				else {
+					ref_prev_velocities.push_back(bodies[i].body_velocity);
+				}
+			}
+			cpu_ref.seed_previous_velocities(ref_prev_velocities);
 
-		cpu_ref.solve(dt * static_cast<float>(steps));
+			const auto objects = collect_collision_objects(motion, collision);
+			add_scene_contacts_to_solver(cpu_ref, ref_cache, objects, id_to_body_index, false);
 
-		std::vector<vbd::body_state> cpu_result;
-		cpu_ref.end_frame(cpu_result, ref_cache);
+			for (const auto& m : motors) cpu_ref.add_motor_constraint(m);
+			for (const auto& j : gpu_joints) cpu_ref.add_joint_constraint(j);
 
-		s.comparison_pending = state::solver_comparison_snapshot{
-			.cpu_result = std::move(cpu_result),
-			.cpu_joints = cpu_ref.graph().joint_constraints()
-				| std::views::all
-				| std::ranges::to<std::vector>(),
-		};
+			cpu_ref.solve(dt);
+
+			std::vector<vbd::body_state> cpu_result;
+			cpu_ref.end_frame(cpu_result, ref_cache);
+
+			s.comparison_pending = state::solver_comparison_snapshot{
+				.cpu_result = std::move(cpu_result),
+				.cpu_contacts = cpu_ref.graph().contact_constraints()
+					| std::views::all
+					| std::ranges::to<std::vector>(),
+				.cpu_joints = cpu_ref.graph().joint_constraints()
+					| std::views::all
+					| std::ranges::to<std::vector>(),
+			};
+		}
 	}
 }
 
@@ -766,16 +1146,7 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 		}
 	}
 
-	std::vector<collision_pair> objects;
-	objects.reserve(collision.size());
-	for (collision_component& cc : collision) {
-		if (!cc.resolve_collisions) continue;
-		objects.push_back({
-			.collision = std::addressof(cc),
-			.motion = motion.find(cc.owner_id())
-		});
-	}
-
+	const auto objects = collect_collision_objects(motion, collision);
 
 	for (int step = 0; step < steps; ++step) {
 		std::vector<vbd::body_state> bodies;
@@ -824,160 +1195,7 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 		}
 
 		s.vbd_solver.begin_frame(bodies, s.contact_cache);
-
-		for (std::size_t i = 0; i < objects.size(); ++i) {
-			for (std::size_t j = i + 1; j < objects.size(); ++j) {
-				auto& [collision_a, motion_a] = objects[i];
-				auto& [collision_b, motion_b] = objects[j];
-
-				const auto& aabb_a = collision_a->bounding_box.aabb();
-				const auto& aabb_b = collision_b->bounding_box.aabb();
-
-				if (!aabb_a.overlaps(aabb_b, s.vbd_solver.config().speculative_margin)) continue;
-
-				const narrow_phase_collision::shape_data sd_a{
-					.bb = &collision_a->bounding_box,
-					.type = collision_a->shape,
-					.radius = collision_a->shape_radius,
-					.half_height = collision_a->shape_half_height
-				};
-				const narrow_phase_collision::shape_data sd_b{
-					.bb = &collision_b->bounding_box,
-					.type = collision_b->shape,
-					.radius = collision_b->shape_radius,
-					.half_height = collision_b->shape_half_height
-				};
-
-				auto sat_result = narrow_phase_collision::speculative_test(
-					sd_a, sd_b, s.vbd_solver.config().speculative_margin
-				);
-
-				if (!sat_result) continue;
-
-				auto& sat = *sat_result;
-
-				if (dot(sat.normal, collision_b->bounding_box.center() - collision_a->bounding_box.center()) < meters(0.f)) {
-					sat.normal = -sat.normal;
-				}
-
-				auto manifold = narrow_phase_collision::generate_shape_manifold(
-					sd_a, sd_b, sat.normal, sat.separation
-				);
-
-				if (manifold.point_count == 0) continue;
-
-				const auto id_a = collision_a->owner_id();
-				const auto id_b = collision_b->owner_id();
-
-				const auto it_a = id_to_body_index.find(id_a);
-				const auto it_b = id_to_body_index.find(id_b);
-				if (it_a == id_to_body_index.end() || it_b == id_to_body_index.end()) continue;
-
-				const std::uint32_t body_a = it_a->second;
-				const std::uint32_t body_b = it_b->second;
-
-				if (sat.normal.y() > 0.7f && motion_b) {
-					motion_b->airborne = false;
-				}
-				if (sat.normal.y() < -0.7f && motion_a) {
-					motion_a->airborne = false;
-				}
-
-				collision_a->collision_information.colliding = true;
-				collision_a->collision_information.collision_normal = sat.normal;
-				collision_a->collision_information.penetration = -sat.separation;
-
-				collision_b->collision_information.colliding = true;
-				collision_b->collision_information.collision_normal = -sat.normal;
-				collision_b->collision_information.penetration = -sat.separation;
-
-				const auto& cfg = s.vbd_solver.config();
-				const vec3f constraint_normal = -sat.normal;
-
-				const auto& bs_a = s.vbd_solver.body_states()[body_a];
-				const auto& bs_b = s.vbd_solver.body_states()[body_b];
-				const stiffness penalty_floor = cfg.penalty_min;
-
-				for (std::uint32_t p = 0; p < manifold.point_count; ++p) {
-					const auto& [position_on_a, position_on_b, normal, separation, feature] = manifold.points[p];
-
-					const vec3<displacement> world_r_a = position_on_a - bs_a.position;
-					const vec3<displacement> world_r_b = position_on_b - bs_b.position;
-
-					vec3<displacement> local_r_a = inverse_rotate_vector(bs_a.orientation, world_r_a);
-					vec3<displacement> local_r_b = inverse_rotate_vector(bs_b.orientation, world_r_b);
-
-					auto cached = s.contact_cache.lookup(body_a, body_b, feature);
-					const vec3<displacement> current_d = position_on_a - position_on_b;
-					const length current_normal_gap = dot(constraint_normal, current_d) + cfg.collision_margin;
-					const bool reuse_cached_normal =
-						cached &&
-						(cached->lambda[0] < newtons(-1e-3f) || current_normal_gap < meters(-1e-4f));
-					const bool reuse_cached_tangent =
-						reuse_cached_normal &&
-						cached.has_value();
-					const bool reuse_cached_sticking =
-						reuse_cached_tangent &&
-						cached->sticking;
-
-					vec3<force> init_lambda;
-					vec3<stiffness> init_penalty = { penalty_floor, penalty_floor, penalty_floor };
-
-					if (reuse_cached_normal) {
-						init_penalty[0] = std::max(cached->penalty[0], penalty_floor);
-
-						const vec3<force> cached_normal_force = cached->normal * cached->lambda[0];
-						init_lambda[0] = std::min(dot(cached_normal_force, constraint_normal), force{});
-					}
-
-					if (reuse_cached_tangent) {
-						init_penalty[1] = std::max(cached->penalty[1], penalty_floor);
-						init_penalty[2] = std::max(cached->penalty[2], penalty_floor);
-
-						const vec3<force> cached_tangent_force =
-							cached->tangent_u * cached->lambda[1] +
-							cached->tangent_v * cached->lambda[2];
-
-						init_lambda[1] = dot(cached_tangent_force, manifold.tangent_u);
-						init_lambda[2] = dot(cached_tangent_force, manifold.tangent_v);
-
-						const force friction_bound = abs(init_lambda[0]) * cfg.friction_coefficient;
-						init_lambda[1] = std::clamp(init_lambda[1], -friction_bound, friction_bound);
-						init_lambda[2] = std::clamp(init_lambda[2], -friction_bound, friction_bound);
-					}
-
-					if (reuse_cached_sticking) {
-						local_r_a = cached->local_anchor_a;
-						local_r_b = cached->local_anchor_b;
-					}
-
-					const float pair_restitution = std::max(
-						motion_a ? motion_a->restitution : 0.f,
-						motion_b ? motion_b->restitution : 0.f
-					);
-
-					s.vbd_solver.add_contact_constraint(vbd::contact_constraint{
-						.body_a = body_a,
-						.body_b = body_b,
-						.normal = constraint_normal,
-						.tangent_u = manifold.tangent_u,
-						.tangent_v = manifold.tangent_v,
-						.r_a = local_r_a,
-						.r_b = local_r_b,
-						.c0 = { separation, 0.f, 0.f },
-						.lambda = init_lambda,
-						.penalty = init_penalty,
-						.penalty_floor = penalty_floor,
-						.friction_coeff = cfg.friction_coefficient,
-						.restitution = pair_restitution,
-						.sticking = cached ? cached->sticking : false,
-						.feature = feature
-					});
-
-					collision_a->collision_information.collision_points.push_back(position_on_a);
-				}
-			}
-		}
+		add_scene_contacts_to_solver(s.vbd_solver, s.contact_cache, objects, id_to_body_index, true);
 
 		for (motion_component& mc : motion) {
 			if (!mc.velocity_drive_active) continue;
@@ -1074,8 +1292,8 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 
 		for (motion_component& mc : motion) {
 			if (mc.position_locked) continue;
-			if (magnitude(mc.pending_impulse) > meters_per_second(1e-6f)) {
-				mc.current_velocity += mc.pending_impulse;
+			if (magnitude(mc.pending_impulse) > newton_seconds(1e-6f)) {
+				mc.current_velocity += mc.pending_impulse / mc.mass;
 				s.sleep_counters[mc.owner_id()] = 0;
 				if (const auto it = id_to_body_index.find(mc.owner_id()); it != id_to_body_index.end()) {
 					s.contact_cache.remove_body(it->second);
@@ -1129,3 +1347,4 @@ auto gse::physics::system::render(render_phase&, const state& s) -> void {
 		s.gpu_solver.dispatch_compute(config);
 	}
 }
+

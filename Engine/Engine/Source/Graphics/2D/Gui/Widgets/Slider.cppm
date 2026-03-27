@@ -37,9 +37,9 @@ export namespace gse::gui::draw {
     auto slider(
         const draw_context& ctx,
         const std::string& name,
-        gse::vec<T, N>& v,
-        gse::vec<T, N> min,
-        gse::vec<T, N> max,
+        vec<T, N>& v,
+        vec<T, N> min,
+        vec<T, N> max,
         id& hot_widget_id,
         id& active_widget_id
     ) -> void;
@@ -48,9 +48,9 @@ export namespace gse::gui::draw {
     auto slider(
         const draw_context& ctx,
         const std::string& name,
-        gse::vec<T, N>& v,
-        gse::vec<T, N> min,
-        gse::vec<T, N> max,
+        vec<T, N>& v,
+        vec<T, N> min,
+        vec<T, N> max,
         id& hot_widget_id,
         id& active_widget_id
     ) -> void;
@@ -99,30 +99,30 @@ auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, T&
 }
 
 template <typename T, std::size_t N>
-auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, gse::vec<T, N>& v, gse::vec<T, N> min, gse::vec<T, N> max, id& hot_widget_id, id& active_widget_id) -> void {
+auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, vec<T, N>& v, vec<T, N> min, vec<T, N> max, id& hot_widget_id, id& active_widget_id) -> void {
     std::array<T*, N> value_ptrs;
     std::array<T, N> min_values;
     std::array<T, N> max_values;
 
     for (std::size_t i = 0; i < N; ++i) {
-        value_ptrs[i] = &v.data[i];
-        min_values[i] = min.data[i];
-        max_values[i] = max.data[i];
+        value_ptrs[i] = &v.as_storage_span()[i];
+        min_values[i] = min.as_storage_span()[i];
+        max_values[i] = max.as_storage_span()[i];
     }
 
     slider_row<T, N>(ctx, name, value_ptrs, min_values, max_values, hot_widget_id, active_widget_id);
 }
 
 template <typename T, std::size_t N, auto Unit>
-auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, gse::vec<T, N>& v, gse::vec<T, N> min, gse::vec<T, N> max, id& hot_widget_id, id& active_widget_id) -> void {
+auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, vec<T, N>& v, vec<T, N> min, vec<T, N> max, id& hot_widget_id, id& active_widget_id) -> void {
     std::array<T*, N> value_ptrs;
     std::array<T, N> min_values;
     std::array<T, N> max_values;
 
     for (std::size_t i = 0; i < N; ++i) {
-        value_ptrs[i] = &v.data[i];
-        min_values[i] = min.data[i];
-        max_values[i] = max.data[i];
+        value_ptrs[i] = &v.as_storage_span()[i];
+        min_values[i] = min.as_storage_span()[i];
+        max_values[i] = max.as_storage_span()[i];
     }
 
     const std::string name_with_unit = name + " (" + std::string(Unit.unit_name) + ")";

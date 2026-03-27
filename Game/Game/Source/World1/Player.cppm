@@ -162,7 +162,7 @@ namespace gs {
 			}
 
 			if (m_jump_channel.pressed && !motion.airborne) {
-				motion.pending_impulse.y() = m_jump_speed;
+				motion.pending_impulse.y() = m_jump_speed * motion.mass;
 			}
 
 			m_bindings.update();

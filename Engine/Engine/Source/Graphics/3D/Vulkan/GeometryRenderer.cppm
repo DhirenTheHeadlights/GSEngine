@@ -1170,8 +1170,8 @@ auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> v
 			gse::memcpy(offset + s.batch_offsets["first_instance"], batch.first_instance);
 			gse::memcpy(offset + s.batch_offsets["instance_count"], batch.instance_count);
 
-			gse::memcpy(offset + s.batch_offsets["aabb_min"], batch.world_aabb_min.as_storage_span());
-			gse::memcpy(offset + s.batch_offsets["aabb_max"], batch.world_aabb_max.as_storage_span());
+			gse::memcpy(offset + s.batch_offsets["aabb_min"], batch.world_aabb_min);
+			gse::memcpy(offset + s.batch_offsets["aabb_max"], batch.world_aabb_max);
 		};
 
 		std::size_t batch_index = 0;

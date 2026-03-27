@@ -52,18 +52,18 @@ struct gse::asset_compiler<gse::model> {
 private:
     struct vertex_hash {
         auto operator()(const vertex& v) const -> std::size_t {
-            auto hash_float = [](float f) -> std::size_t {
+            auto hash_float = [](const float f) -> std::size_t {
                 return std::hash<std::uint32_t>{}(std::bit_cast<std::uint32_t>(f));
             };
 
             std::size_t h = 0;
-            auto combine = [&](std::size_t v) {
+            auto combine = [&](const std::size_t v) {
                 h ^= v + 0x9e3779b9 + (h << 6) + (h >> 2);
             };
 
-            combine(hash_float(v.position.x().as<meters>()));
-            combine(hash_float(v.position.y().as<meters>()));
-            combine(hash_float(v.position.z().as<meters>()));
+            combine(hash_float(internal::to_storage(v.position.x())));
+            combine(hash_float(internal::to_storage(v.position.y())));
+            combine(hash_float(internal::to_storage(v.position.z())));
             combine(hash_float(v.normal.x()));
             combine(hash_float(v.normal.y()));
             combine(hash_float(v.normal.z()));
@@ -100,7 +100,7 @@ private:
     static auto write_binary(
         std::ofstream& out,
         const void* data,
-        std::size_t size
+        const std::size_t size
     ) -> void {
         out.write(static_cast<const char*>(data), static_cast<std::streamsize>(size));
     }
@@ -142,7 +142,7 @@ auto gse::asset_compiler<gse::model>::compile_one(
     std::vector<mesh_build_data> built_meshes;
     std::string current_material_name;
 
-    std::vector<vec3<length>> temp_positions;
+    std::vector<vec3<displacement>> temp_positions;
     std::vector<vec3f> temp_normals;
     std::vector<vec2f> temp_tex_coords;
 
@@ -388,10 +388,10 @@ auto gse::asset_compiler<gse::model>::build_meshlets(
 auto gse::asset_compiler<gse::model>::compute_meshlet_bounds(
     const std::vector<vertex>& vertices,
     const meshlet_descriptor& desc,
-    std::span<const std::uint32_t> meshlet_vertex_indices,
-    std::span<const std::uint8_t> meshlet_triangles
+    const std::span<const std::uint32_t> meshlet_vertex_indices,
+    const std::span<const std::uint8_t> meshlet_triangles
 ) -> meshlet_bounds {
-    vec3<length> centroid{};
+    vec3<displacement> centroid{};
     for (std::uint32_t i = 0; i < desc.vertex_count; ++i) {
         centroid += vertices[meshlet_vertex_indices[i]].position;
     }
@@ -399,8 +399,8 @@ auto gse::asset_compiler<gse::model>::compute_meshlet_bounds(
 
     length max_dist{};
     for (std::uint32_t i = 0; i < desc.vertex_count; ++i) {
-        const vec3<length> d = vertices[meshlet_vertex_indices[i]].position - centroid;
-        max_dist = std::max(max_dist, magnitude(d));
+        const vec3<displacement> d = vertices[meshlet_vertex_indices[i]].position - centroid;
+        max_dist = std::max<length>(max_dist, magnitude(d));
     }
 
     vec3f avg_normal(0.f);
@@ -420,8 +420,8 @@ auto gse::asset_compiler<gse::model>::compute_meshlet_bounds(
         const auto i1 = meshlet_vertex_indices[meshlet_triangles[t * 3 + 1]];
         const auto i2 = meshlet_vertex_indices[meshlet_triangles[t * 3 + 2]];
 
-        const vec3<length> edge1 = vertices[i1].position - vertices[i0].position;
-        const vec3<length> edge2 = vertices[i2].position - vertices[i0].position;
+        const vec3<displacement> edge1 = vertices[i1].position - vertices[i0].position;
+        const vec3<displacement> edge2 = vertices[i2].position - vertices[i0].position;
         const vec3f face_normal = normalize(cross(edge1, edge2));
         if (magnitude(face_normal) > 0.5f) {
             min_dot = std::min(min_dot, dot(face_normal, cone_axis));

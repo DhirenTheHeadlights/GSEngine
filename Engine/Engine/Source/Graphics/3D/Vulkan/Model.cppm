@@ -36,7 +36,7 @@ export namespace gse {
 
 		vec3<position> m_position;
 		quat m_rotation;
-		vec3f m_scale = { 1.f, 1.f, 1.f };
+		vec3<displacement> m_scale = { meters(1.f), meters(1.f), meters(1.f) };
 		bool m_is_dirty = true;
 		std::size_t m_cached_mesh_count = 0;
 	};
@@ -117,6 +117,9 @@ auto gse::model::load(gpu::context& context) -> void {
 
 			std::uint64_t meshlet_count;
 			read_val(meshlet_count);
+			if (meshlet_count == 0) {
+				std::println("Warning: model '{}' mesh {} has no meshlets; mesh shader path will skip it", m_baked_model_path.string(), i);
+			}
 
 			ml.descriptors.resize(meshlet_count);
 			in_file.read(reinterpret_cast<char*>(ml.descriptors.data()), meshlet_count * sizeof(meshlet_descriptor));
@@ -174,7 +177,7 @@ auto gse::model::center_of_mass() const -> vec3<length> {
 auto gse::model_instance::update(const physics::motion_component& mc, const physics::collision_component& cc) -> void {
 	m_position = mc.render_position;
 	m_rotation = mc.render_orientation;
-	m_scale = { cc.bounding_box.size().x().as<meters>(), cc.bounding_box.size().y().as<meters>(), cc.bounding_box.size().z().as<meters>() };
+	m_scale = cc.bounding_box.size();
 	m_is_dirty = true;
 
 	if (!m_model_handle.valid()) {

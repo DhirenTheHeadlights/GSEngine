@@ -8,7 +8,7 @@ export namespace gse {
 	struct collision_information {
 		bool colliding = false;
 		vec3f collision_normal;
-		length penetration;
+		penetration penetration;
 		std::vector<vec3<position>> collision_points;
 
 		auto axis() const -> axis {
@@ -37,14 +37,14 @@ namespace gse {
 
 	struct obb {
 		vec3<position> center;
-		vec3<length> size;
+		vec3<displacement> size;
 		quat orientation;
 		std::array<vec3f, 3> axes;
 	};
 
 	class bounding_box {
 	public:
-		bounding_box(const vec3<position>& center, const vec3<length>& size, std::uint32_t scale = 1);
+		bounding_box(const vec3<position>& center, const vec3<displacement>& size, std::uint32_t scale = 1);
 
 		auto update(const vec3<position>& new_position, const quat& new_orientation) -> void;
 
@@ -54,8 +54,8 @@ namespace gse {
 		auto obb() const -> obb;
 
 		auto center() const -> vec3<position>;
-		auto size() const -> vec3<length>;
-		auto half_extents() const -> vec3<length>;
+		auto size() const -> vec3<displacement>;
+		auto half_extents() const -> vec3<displacement>;
 		auto scale() const -> float;
 		auto face_normals() const -> std::array<vec3f, 6>;
 		auto face_vertices(std::uint32_t face_index) const -> std::array<vec3<position>, 4>;
@@ -67,8 +67,8 @@ namespace gse {
 		auto recalculate_aabb() const -> void;
 
 		vec3<position> m_center;
-		vec3<length> m_base_size;
-		vec3<length> m_scaled_size;
+		vec3<displacement> m_base_size;
+		vec3<displacement> m_scaled_size;
 		quat m_orientation;
 		float m_scale = 1.0f;
 
@@ -77,7 +77,7 @@ namespace gse {
 	};
 }
 
-gse::bounding_box::bounding_box(const vec3<position>& center, const vec3<length>& size, const std::uint32_t scale) : m_center(center), m_base_size(size), m_scaled_size(size), m_scale(scale) {}
+gse::bounding_box::bounding_box(const vec3<position>& center, const vec3<displacement>& size, const std::uint32_t scale) : m_center(center), m_base_size(size), m_scaled_size(size), m_scale(scale) {}
 
 auto gse::bounding_box::update(const vec3<position>& new_position, const quat& new_orientation) -> void {
 	m_center = new_position;
@@ -112,11 +112,11 @@ auto gse::bounding_box::center() const -> vec3<position> {
 	return m_center;
 }
 
-auto gse::bounding_box::size() const -> vec3<length> {
+auto gse::bounding_box::size() const -> vec3<displacement> {
 	return m_scaled_size;
 }
 
-auto gse::bounding_box::half_extents() const -> vec3<length> {
+auto gse::bounding_box::half_extents() const -> vec3<displacement> {
 	return m_scaled_size / 2.0f;
 }
 
@@ -151,7 +151,7 @@ auto gse::bounding_box::face_vertices(const std::uint32_t face_index) const -> s
 	const auto h_u = half_ext[(axis_idx + 1) % 3];
 	const auto h_v = half_ext[(axis_idx + 2) % 3];
 
-	const auto face_center = box_obb.center + primary_axis * (half_ext[axis_idx] * sign);
+	const vec3<position> face_center = box_obb.center + primary_axis * (half_ext[axis_idx] * sign);
 
 	return {
 		face_center + u_axis * h_u + v_axis * h_v,

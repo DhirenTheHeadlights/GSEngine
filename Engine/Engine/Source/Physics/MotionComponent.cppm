@@ -7,7 +7,7 @@ import gse.math;
 
 export namespace gse::physics {
     struct motion_component_net {
-        vec3<position> current_position;
+        vec3<current_position> current_position;
         vec3<velocity> current_velocity;
 
         mass mass = kilograms(1.f);
@@ -22,7 +22,7 @@ export namespace gse::physics {
     };
 
     struct motion_component_data {
-        vec3<position> current_position;
+        vec3<current_position> current_position;
         vec3<velocity> current_velocity;
 
         mass mass = kilograms(1.f);
@@ -40,15 +40,15 @@ export namespace gse::physics {
         bool sleeping = false;
 		bool update_orientation = true;
 
-        vec3<position> previous_position;
+        vec3<previous_position> previous_position;
         quat previous_orientation = quat(1.f, 0.f, 0.f, 0.f);
-        vec3<position> render_position;
+        vec3<render_position> render_position;
         quat render_orientation = quat(1.f, 0.f, 0.f, 0.f);
 
         vec3<velocity> velocity_drive_target;
         bool velocity_drive_active = false;
 
-        vec3<velocity> pending_impulse;
+        vec3<impulse> pending_impulse;
     };
 
     struct motion_component : component<motion_component_data, motion_component_net> {
@@ -67,7 +67,7 @@ auto gse::physics::motion_component::transformation_matrix() const -> mat4f {
 
 auto gse::physics::motion_component::inv_inertial_tensor() const -> mat3<inverse_inertia> {
     const inverse_inertia inv_i = 1.f / moment_of_inertia;
-    const mat3<inverse_inertia> inv_i_body = gse::identity<float, 3, 3>() * inv_i;
-    const mat3f rotation = mat3_cast(orientation);
+    const auto inv_i_body = gse::identity<float, 3, 3>() * inv_i;
+    const auto rotation = mat3_cast(orientation);
     return rotation * inv_i_body * rotation.transpose();
 }

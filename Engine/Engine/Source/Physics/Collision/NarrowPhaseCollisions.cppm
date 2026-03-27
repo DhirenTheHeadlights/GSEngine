@@ -12,7 +12,7 @@ import gse.utility;
 export namespace gse::narrow_phase_collision {
 	struct sat_result {
 		vec3f normal;
-		length separation;
+		separation separation;
 		bool is_speculative;
 	};
 
@@ -33,7 +33,7 @@ export namespace gse::narrow_phase_collision {
 		const bounding_box& bb1,
 		const bounding_box& bb2,
 		const vec3f& normal,
-		length separation
+		separation separation
 	) -> contact_manifold;
 
 	auto speculative_test(
@@ -46,7 +46,7 @@ export namespace gse::narrow_phase_collision {
 		const shape_data& a,
 		const shape_data& b,
 		const vec3f& normal,
-		length separation
+		separation separation
 	) -> contact_manifold;
 }
 
@@ -206,11 +206,11 @@ namespace gse::narrow_phase_collision {
 	auto box_capsule_speculative(const bounding_box& bb, const bounding_box& cap_bb, length half_h, length radius, length margin) -> std::optional<sat_result>;
 	auto sphere_capsule_speculative(const vec3<position>& sph_center, length sph_r, const bounding_box& cap_bb, length cap_h, length cap_r, length margin) -> std::optional<sat_result>;
 
-	auto sphere_sphere_manifold(const vec3<position>& ca, length ra, const vec3<position>& cb, length rb, const vec3f& normal, length separation) -> contact_manifold;
-	auto box_sphere_manifold(const bounding_box& bb, const vec3<position>& center, length radius, const vec3f& normal, length separation) -> contact_manifold;
-	auto capsule_capsule_manifold(const bounding_box& bb_a, length ha, length ra, const bounding_box& bb_b, length hb, length rb, const vec3f& normal, length separation) -> contact_manifold;
-	auto box_capsule_manifold(const bounding_box& bb, const bounding_box& cap_bb, length cap_h, length cap_r, const vec3f& normal, length separation) -> contact_manifold;
-	auto sphere_capsule_manifold(const vec3<position>& sph_center, length sph_r, const bounding_box& cap_bb, length cap_h, length cap_r, const vec3f& normal, length separation) -> contact_manifold;
+	auto sphere_sphere_manifold(const vec3<position>& ca, length ra, const vec3<position>& cb, length rb, const vec3f& normal, separation separation) -> contact_manifold;
+	auto box_sphere_manifold(const bounding_box& bb, const vec3<position>& center, length radius, const vec3f& normal, separation separation) -> contact_manifold;
+	auto capsule_capsule_manifold(const bounding_box& bb_a, length ha, length ra, const bounding_box& bb_b, length hb, length rb, const vec3f& normal, separation separation) -> contact_manifold;
+	auto box_capsule_manifold(const bounding_box& bb, const bounding_box& cap_bb, length cap_h, length cap_r, const vec3f& normal, separation separation) -> contact_manifold;
+	auto sphere_capsule_manifold(const vec3<position>& sph_center, length sph_r, const bounding_box& cap_bb, length cap_h, length cap_r, const vec3f& normal, separation separation) -> contact_manifold;
 }
 
 auto gse::narrow_phase_collision::support_obb(const bounding_box& bb, const vec3f& dir) -> vec3<position> {
@@ -687,7 +687,7 @@ auto gse::narrow_phase_collision::sat_speculative(const bounding_box& bb1, const
 	};
 }
 
-auto gse::narrow_phase_collision::generate_manifold(const bounding_box& bb1, const bounding_box& bb2, const vec3f& normal, const length separation) -> contact_manifold {
+auto gse::narrow_phase_collision::generate_manifold(const bounding_box& bb1, const bounding_box& bb2, const vec3f& normal, const separation separation) -> contact_manifold {
 	contact_manifold manifold;
 
 	auto [tangent_u, tangent_v] = compute_tangent_basis(normal);
@@ -706,7 +706,7 @@ auto gse::narrow_phase_collision::generate_manifold(const bounding_box& bb1, con
 	};
 
 	const auto quantize = [](const length value) -> int {
-		const float v = value.template as<meters>();
+		const float v = internal::to_storage(value);
 		return static_cast<int>(std::floor(v * 10000.f + (v >= 0.f ? 0.5f : -0.5f)));
 	};
 
@@ -881,7 +881,13 @@ auto gse::narrow_phase_collision::closest_point_on_segment(const vec3<position>&
 	const auto ab = b - a;
 	if (magnitude(ab) < meters(1e-8f)) return a;
 	const auto ap = p - a;
-	const float t = std::clamp(dot(ap, ab) / dot(ab, ab), 0.f, 1.f);
+
+	float numer{};
+	float denom{};
+	simd::dot(ap.as_storage_span(), ab.as_storage_span(), numer);
+	simd::dot(ab.as_storage_span(), ab.as_storage_span(), denom);
+
+	const float t = std::clamp(numer / denom, 0.f, 1.f);
 	return a + ab * t;
 }
 
@@ -935,7 +941,7 @@ auto gse::narrow_phase_collision::query_obb(const bounding_box& bb, const vec3<p
 	const auto he = bb.half_extents();
 	const auto diff = point - o.center;
 
-	std::array<length, 3> local;
+	std::array<displacement, 3> local;
 	bool inside = true;
 	for (int i = 0; i < 3; ++i) {
 		local[i] = dot(o.axes[i], diff);
@@ -954,18 +960,21 @@ auto gse::narrow_phase_collision::query_obb(const bounding_box& bb, const vec3<p
 	}
 
 	int min_axis = 0;
-	length min_depth = he[0] - abs(local[0]);
+	auto min_depth = he[0] - abs(local[0]);
 	for (int i = 1; i < 3; ++i) {
-		if (length depth = he[i] - abs(local[i]); depth < min_depth) {
+		if (auto depth = he[i] - abs(local[i]); depth < min_depth) {
 			min_depth = depth;
 			min_axis = i;
 		}
 	}
 
-	const float sign = local[min_axis] >= length{} ? 1.f : -1.f;
+	const float sign = local[min_axis] >= displacement{} ? 1.f : -1.f;
 	auto cp = o.center;
 	for (int i = 0; i < 3; ++i) {
-		cp += o.axes[i] * (i == min_axis ? he[i] * sign : local[i]);
+		const auto offset = (i == min_axis)
+			? he[i] * sign
+			: local[i];
+		cp += o.axes[i] * offset;
 	}
 	return { cp, o.axes[min_axis] * sign, -min_depth };
 }
@@ -1024,7 +1033,7 @@ auto gse::narrow_phase_collision::sphere_sphere_speculative(
 ) -> std::optional<sat_result> {
 	const auto diff = cb - ca;
 	const auto dist = magnitude(diff);
-	const length separation = ra + rb - dist;
+	const separation separation = ra + rb - dist;
 
 	if (separation < -margin) return std::nullopt;
 
@@ -1043,7 +1052,7 @@ auto gse::narrow_phase_collision::box_sphere_speculative(
 	const length margin
 ) -> std::optional<sat_result> {
 	const auto [closest, normal, signed_dist] = query_obb(bb, center);
-	const length separation = radius - signed_dist;
+	const separation separation = radius - signed_dist;
 
 	if (separation < -margin) return std::nullopt;
 
@@ -1068,7 +1077,7 @@ auto gse::narrow_phase_collision::capsule_capsule_speculative(
 
 	const auto diff = closest_b - closest_a;
 	const auto dist = magnitude(diff);
-	const length separation = ra + rb - dist;
+	const separation separation = ra + rb - dist;
 
 	if (separation < -margin) return std::nullopt;
 
@@ -1089,7 +1098,7 @@ auto gse::narrow_phase_collision::box_capsule_speculative(
 	const auto [seg_start, seg_end] = capsule_endpoints(cap_bb, half_h);
 	const auto [seg_pt, obb_result] = segment_obb_query(bb, seg_start, seg_end);
 
-	const length separation = radius - obb_result.signed_distance;
+	const separation separation = radius - obb_result.signed_distance;
 
 	if (separation < -margin) return std::nullopt;
 
@@ -1110,7 +1119,7 @@ auto gse::narrow_phase_collision::sphere_capsule_speculative(
 
 	const auto diff = closest_on_seg - sph_center;
 	const auto dist = magnitude(diff);
-	const length separation = sph_r + cap_r - dist;
+	const separation separation = sph_r + cap_r - dist;
 
 	if (separation < -margin) return std::nullopt;
 
@@ -1126,7 +1135,7 @@ auto gse::narrow_phase_collision::sphere_capsule_speculative(
 auto gse::narrow_phase_collision::sphere_sphere_manifold(
 	const vec3<position>& ca, const length ra,
 	const vec3<position>& cb, const length rb,
-	const vec3f& normal, const length separation
+	const vec3f& normal, const separation separation
 ) -> contact_manifold {
 	contact_manifold manifold;
 	auto [tu, tv] = compute_tangent_basis(normal);
@@ -1152,7 +1161,7 @@ auto gse::narrow_phase_collision::sphere_sphere_manifold(
 auto gse::narrow_phase_collision::box_sphere_manifold(
 	const bounding_box& bb,
 	const vec3<position>& center, const length radius,
-	const vec3f& normal, const length separation
+	const vec3f& normal, const separation separation
 ) -> contact_manifold {
 	contact_manifold manifold;
 	auto [tu, tv] = compute_tangent_basis(normal);
@@ -1208,7 +1217,7 @@ auto gse::narrow_phase_collision::box_sphere_manifold(
 auto gse::narrow_phase_collision::capsule_capsule_manifold(
 	const bounding_box& bb_a, const length ha, const length ra,
 	const bounding_box& bb_b, const length hb, const length rb,
-	const vec3f& normal, const length separation
+	const vec3f& normal, const separation separation
 ) -> contact_manifold {
 	contact_manifold manifold;
 	auto [tu, tv] = compute_tangent_basis(normal);
@@ -1244,7 +1253,7 @@ auto gse::narrow_phase_collision::capsule_capsule_manifold(
 auto gse::narrow_phase_collision::box_capsule_manifold(
 	const bounding_box& bb,
 	const bounding_box& cap_bb, const length cap_h, const length cap_r,
-	const vec3f& normal, const length separation
+	const vec3f& normal, const separation separation
 ) -> contact_manifold {
 	contact_manifold manifold;
 	auto [tu, tv] = compute_tangent_basis(normal);
@@ -1281,7 +1290,7 @@ auto gse::narrow_phase_collision::box_capsule_manifold(
 auto gse::narrow_phase_collision::sphere_capsule_manifold(
 	const vec3<position>& sph_center, const length sph_r,
 	const bounding_box& cap_bb, const length cap_h, const length cap_r,
-	const vec3f& normal, const length separation
+	const vec3f& normal, const separation separation
 ) -> contact_manifold {
 	contact_manifold manifold;
 	auto [tu, tv] = compute_tangent_basis(normal);
@@ -1348,7 +1357,7 @@ auto gse::narrow_phase_collision::speculative_test(
 
 auto gse::narrow_phase_collision::generate_shape_manifold(
 	const shape_data& a, const shape_data& b,
-	const vec3f& normal, const length separation
+	const vec3f& normal, const separation separation
 ) -> contact_manifold {
 	using st = physics::shape_type;
 	const bool swap = a.type > b.type;

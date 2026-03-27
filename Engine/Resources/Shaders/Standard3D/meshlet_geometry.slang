@@ -109,8 +109,11 @@ void as_main(uint gtid : SV_GroupThreadID, uint gid : SV_GroupID) {
 
         if (visible && bounds.cone_cutoff >= 0.0) {
             float3 world_cone_axis = normalize(mul((float3x3)inst.model_matrix, bounds.cone_axis));
-            float3 view_dir = normalize(world_center);
-            if (dot(world_cone_axis, view_dir) > bounds.cone_cutoff) {
+            float3 view_center = mul(view, float4(world_center, 1.0)).xyz;
+            float3 view_cone_axis = normalize(mul((float3x3)view, world_cone_axis));
+            float3 view_dir = normalize(-view_center);
+            float cone_sin = sqrt(1.0 - bounds.cone_cutoff * bounds.cone_cutoff);
+            if (dot(view_cone_axis, view_dir) < -cone_sin) {
                 visible = false;
             }
         }
@@ -144,12 +147,12 @@ struct MeshOutput {
 [outputtopology("triangle")]
 void ms_main(
     uint gtid : SV_GroupThreadID,
-    uint gid : SV_GroupIndex,
+    uint3 group_id : SV_GroupID,
     in payload MeshletPayload p,
     OutputVertices<MeshOutput, 64> out_verts,
     OutputIndices<uint3, 124> out_tris
 ) {
-    uint meshlet_global_idx = p.meshlet_indices[gid];
+    uint meshlet_global_idx = p.meshlet_indices[group_id.x];
     MeshletDescriptor desc = meshlets[meshlet_global_idx];
     InstanceData inst = instanceData[p.instance_idx];
 

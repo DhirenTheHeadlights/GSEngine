@@ -10,7 +10,7 @@ import gse.assert;
 
 export namespace gse {
     struct skinned_vertex {
-        vec3<length> position;
+        vec3<displacement> position;
         vec3f normal;
         vec2f tex_coords;
         std::array<std::uint32_t, 4> bone_indices;
@@ -35,10 +35,10 @@ export namespace gse {
         auto draw(vk::CommandBuffer command_buffer) const -> void;
         auto draw_instanced(vk::CommandBuffer command_buffer, std::uint32_t instance_count, std::uint32_t first_instance = 0) const -> void;
 
-        auto center_of_mass() const -> vec3<length>;
+        auto center_of_mass() const -> vec3<displacement>;
         auto material() const -> const resource::handle<gse::material>&;
         auto indices() const -> const std::vector<std::uint32_t>&;
-        auto aabb() const -> std::pair<vec3<length>, vec3<length>>;
+        auto aabb() const -> std::pair<vec3<displacement>, vec3<displacement>>;
     private:
         vulkan::buffer_resource m_vertex_buffer;
         vulkan::buffer_resource m_index_buffer;
@@ -132,15 +132,15 @@ auto gse::skinned_mesh::draw_instanced(const vk::CommandBuffer command_buffer, c
     command_buffer.drawIndexed(static_cast<std::uint32_t>(m_indices.size()), instance_count, 0, 0, first_instance);
 }
 
-auto gse::skinned_mesh::center_of_mass() const -> vec3<length> {
+auto gse::skinned_mesh::center_of_mass() const -> vec3<displacement> {
     using length_d = length_t<double>;
     using volume_d = volume_t<double>;
-    using vec3ld = vec3<length_d>;
+    using vec3_ld = vec3<length_d>;
 
-    const vec3ld reference_point{};
+    const vec3_ld reference_point{};
 
     volume_d total_volume{};
-    vec3ld moment;
+    decltype(vec3_ld{} * volume_d{}) moment{};
 
     assert(m_indices.size() % 3 == 0, std::source_location::current(), "m_indices count is not a multiple of 3.");
 
@@ -151,25 +151,24 @@ auto gse::skinned_mesh::center_of_mass() const -> vec3<length> {
 
         assert(idx0 < m_vertices.size() && idx1 < m_vertices.size() && idx2 < m_vertices.size(), std::source_location::current(), "Index out of range.");
 
-        const vec3ld v0 = { length_d(m_vertices[idx0].position.x()), length_d(m_vertices[idx0].position.y()), length_d(m_vertices[idx0].position.z()) };
-        const vec3ld v1 = { length_d(m_vertices[idx1].position.x()), length_d(m_vertices[idx1].position.y()), length_d(m_vertices[idx1].position.z()) };
-        const vec3ld v2 = { length_d(m_vertices[idx2].position.x()), length_d(m_vertices[idx2].position.y()), length_d(m_vertices[idx2].position.z()) };
+        const vec3_ld v0 = { length_d(m_vertices[idx0].position.x()), length_d(m_vertices[idx0].position.y()), length_d(m_vertices[idx0].position.z()) };
+        const vec3_ld v1 = { length_d(m_vertices[idx1].position.x()), length_d(m_vertices[idx1].position.y()), length_d(m_vertices[idx1].position.z()) };
+        const vec3_ld v2 = { length_d(m_vertices[idx2].position.x()), length_d(m_vertices[idx2].position.y()), length_d(m_vertices[idx2].position.z()) };
 
-        const vec3ld a = v0 - reference_point;
-        const vec3ld b = v1 - reference_point;
-        const vec3ld c = v2 - reference_point;
+        const vec3_ld a = v0 - reference_point;
+        const vec3_ld b = v1 - reference_point;
+        const vec3_ld c = v2 - reference_point;
 
         const volume_d volume = abs(dot(a, cross(b, c))) / 6.0;
-        const vec3ld tetra_com = (v0 + v1 + v2 + reference_point) / 4.0;
+        const vec3_ld tetra_com = (v0 + v1 + v2 + reference_point) / 4.0;
 
         total_volume = total_volume + volume;
-        moment += tetra_com * gse::internal::to_storage(volume);
+        moment += tetra_com * volume;
     }
 
     assert(total_volume != volume_d{}, std::source_location::current(), "Total volume is zero.");
 
-    const auto result = moment / gse::internal::to_storage(total_volume);
-    return { length(result.x()), length(result.y()), length(result.z()) };
+    return vec3<displacement>(moment / total_volume);
 }
 
 auto gse::skinned_mesh::material() const -> const resource::handle<gse::material>& {
@@ -180,13 +179,13 @@ auto gse::skinned_mesh::indices() const -> const std::vector<std::uint32_t>& {
     return m_indices;
 }
 
-auto gse::skinned_mesh::aabb() const -> std::pair<vec3<length>, vec3<length>> {
+auto gse::skinned_mesh::aabb() const -> std::pair<vec3<displacement>, vec3<displacement>> {
     if (m_vertices.empty()) {
         return {};
     }
 
-    vec3<length> min_point = m_vertices[0].position;
-    vec3<length> max_point = m_vertices[0].position;
+    vec3<displacement> min_point = m_vertices[0].position;
+    vec3<displacement> max_point = m_vertices[0].position;
 
     for (const auto& vertex : m_vertices) {
         min_point.x() = std::min(min_point.x(), vertex.position.x());

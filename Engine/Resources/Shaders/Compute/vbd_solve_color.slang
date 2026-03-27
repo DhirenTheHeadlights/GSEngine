@@ -134,6 +134,12 @@ void accumulate_joint_for_body(
         float d_mag = length(d);
         float3 d_hat = d_mag > 1e-7 ? d / d_mag : float3(0, 1, 0);
         float c = (d_mag - j.target_distance) - j.pos_c0.x * pc.current_alpha;
+        if (j.damping > 0.0) {
+            float3 vel_a = body_a.velocity.xyz + cross(body_a.angular_velocity.xyz, r_aw);
+            float3 vel_b = body_b.velocity.xyz + cross(body_b.angular_velocity.xyz, r_bw);
+            float v_rel = dot(d_hat, vel_a - vel_b);
+            c += v_rel * pc.dt * j.damping;
+        }
         float f = j.pos_penalty.x * c + j.pos_lambda.x;
 
         float3 j_lin = d_hat * sign;

@@ -38,7 +38,7 @@ export namespace gse {
 
 		vec3<position> m_position;
 		quat m_rotation;
-		vec3f m_scale = { 1.f, 1.f, 1.f };
+		vec3<displacement> m_scale = { meters(1.f), meters(1.f), meters(1.f) };
 		bool m_is_dirty = true;
 		std::size_t m_cached_mesh_count = 0;
 	};
@@ -110,7 +110,7 @@ auto gse::skinned_model::load(gpu::context& context) -> void {
 						file.read(reinterpret_cast<char*>(&px), sizeof(float));
 						file.read(reinterpret_cast<char*>(&py), sizeof(float));
 						file.read(reinterpret_cast<char*>(&pz), sizeof(float));
-						vertices[v].position = vec3<length>{ px, py, pz };
+						vertices[v].position = vec3<displacement>{ meters(px), meters(py), meters(pz) };
 
 						float nx, ny, nz;
 						file.read(reinterpret_cast<char*>(&nx), sizeof(float));
@@ -180,7 +180,7 @@ auto gse::skinned_model::center_of_mass() const -> vec3<length> {
 auto gse::skinned_model_instance::update(const physics::motion_component& mc, const physics::collision_component& cc, const std::uint32_t skin_offset, const std::uint32_t joint_count) -> void {
 	m_position = mc.render_position;
 	m_rotation = mc.render_orientation;
-	m_scale = { cc.bounding_box.size().x().as<meters>(), cc.bounding_box.size().y().as<meters>(), cc.bounding_box.size().z().as<meters>() };
+	m_scale = cc.bounding_box.size();
 	m_is_dirty = true;
 
 	if (!m_model_handle.valid()) {
@@ -224,9 +224,10 @@ auto gse::skinned_model_instance::update(const physics::motion_component& mc, co
 		return;
 	}
 
+	const mat4f scale_mat = scale(mat4f(1.0f), m_scale);
 	const mat4f rot_mat = m_rotation;
 	const mat4f trans_mat = translate(mat4f(1.0f), m_position);
-	const mat4f final_model_matrix = trans_mat * rot_mat;
+	const mat4f final_model_matrix = trans_mat * rot_mat * scale_mat;
 	const mat4f normal_matrix = final_model_matrix.inverse().transpose();
 
 	for (auto& entry : m_render_queue_entries) {
