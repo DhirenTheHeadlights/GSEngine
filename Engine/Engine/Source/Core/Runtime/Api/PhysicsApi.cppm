@@ -9,8 +9,8 @@ import :core_api;
 
 export namespace gse::physics {
 	struct fixed_joint {
-		vec3<length> anchor_a;
-		vec3<length> anchor_b;
+		vec3<displacement> anchor_a;
+		vec3<displacement> anchor_b;
 	};
 
 	struct distance_joint {
@@ -18,8 +18,8 @@ export namespace gse::physics {
 	};
 
 	struct hinge_joint {
-		vec3<length> anchor_a;
-		vec3<length> anchor_b;
+		vec3<displacement> anchor_a;
+		vec3<displacement> anchor_b;
 		vec3f axis = { 0.f, 1.f, 0.f };
 		std::optional<std::pair<angle, angle>> limits;
 	};

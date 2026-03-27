@@ -21,8 +21,8 @@ export namespace gse::physics {
 		id entity_a;
 		id entity_b;
 		vbd::joint_type type = vbd::joint_type::distance;
-		vec3<length> local_anchor_a;
-		vec3<length> local_anchor_b;
+		vec3<displacement> local_anchor_a;
+		vec3<displacement> local_anchor_b;
 		vec3f local_axis_a = { 0.f, 1.f, 0.f };
 		vec3f local_axis_b = { 0.f, 1.f, 0.f };
 		length target_distance = {};
@@ -634,8 +634,8 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 
 	std::vector<vbd::collision_body_data> collision_data(bodies.size());
 	for (auto& cd : collision_data) {
-		cd.aabb_min = vec3<length>(meters(1e30f));
-		cd.aabb_max = vec3<length>(meters(-1e30f));
+		cd.aabb_min = vec3<position>(position(1e30f));
+		cd.aabb_max = vec3<position>(position(-1e30f));
 	}
 
 	for (collision_component& cc : collision) {
@@ -901,14 +901,14 @@ auto gse::physics::update_vbd(const int steps, state& s, chunk<motion_component>
 				for (std::uint32_t p = 0; p < manifold.point_count; ++p) {
 					const auto& [position_on_a, position_on_b, normal, separation, feature] = manifold.points[p];
 
-					const vec3<length> world_r_a = position_on_a - bs_a.position;
-					const vec3<length> world_r_b = position_on_b - bs_b.position;
+					const vec3<displacement> world_r_a = position_on_a - bs_a.position;
+					const vec3<displacement> world_r_b = position_on_b - bs_b.position;
 
-					vec3<length> local_r_a = inverse_rotate_vector(bs_a.orientation, world_r_a);
-					vec3<length> local_r_b = inverse_rotate_vector(bs_b.orientation, world_r_b);
+					vec3<displacement> local_r_a = inverse_rotate_vector(bs_a.orientation, world_r_a);
+					vec3<displacement> local_r_b = inverse_rotate_vector(bs_b.orientation, world_r_b);
 
 					auto cached = s.contact_cache.lookup(body_a, body_b, feature);
-					const vec3<length> current_d = position_on_a - position_on_b;
+					const vec3<displacement> current_d = position_on_a - position_on_b;
 					const length current_normal_gap = dot(constraint_normal, current_d) + cfg.collision_margin;
 					const bool reuse_cached_normal =
 						cached &&

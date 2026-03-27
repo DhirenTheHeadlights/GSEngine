@@ -7,7 +7,7 @@ import gse.math;
 
 export namespace gse::physics {
     struct motion_component_net {
-        vec3<length> current_position;
+        vec3<position> current_position;
         vec3<velocity> current_velocity;
 
         mass mass = kilograms(1.f);
@@ -22,7 +22,7 @@ export namespace gse::physics {
     };
 
     struct motion_component_data {
-        vec3<length> current_position;
+        vec3<position> current_position;
         vec3<velocity> current_velocity;
 
         mass mass = kilograms(1.f);
@@ -40,9 +40,9 @@ export namespace gse::physics {
         bool sleeping = false;
 		bool update_orientation = true;
 
-        vec3<length> previous_position;
+        vec3<position> previous_position;
         quat previous_orientation = quat(1.f, 0.f, 0.f, 0.f);
-        vec3<length> render_position;
+        vec3<position> render_position;
         quat render_orientation = quat(1.f, 0.f, 0.f, 0.f);
 
         vec3<velocity> velocity_drive_target;

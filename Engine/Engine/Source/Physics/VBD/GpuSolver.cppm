@@ -35,8 +35,8 @@ export namespace gse::vbd {
 
 	struct collision_body_data {
 		vec3<length> half_extents;
-		vec3<length> aabb_min;
-		vec3<length> aabb_max;
+		vec3<position> aabb_min;
+		vec3<position> aabb_max;
 	};
 
 	struct warm_start_entry {
@@ -47,8 +47,8 @@ export namespace gse::vbd {
 		vec3f normal;
 		vec3f tangent_u;
 		vec3f tangent_v;
-		vec3<length> local_anchor_a;
-		vec3<length> local_anchor_b;
+		vec3<displacement> local_anchor_a;
+		vec3<displacement> local_anchor_b;
 		vec3<force> lambda;
 		vec3f penalty;
 	};
@@ -61,8 +61,8 @@ export namespace gse::vbd {
 		vec3f normal;
 		vec3f tangent_u;
 		vec3f tangent_v;
-		vec3<length> local_anchor_a;
-		vec3<length> local_anchor_b;
+		vec3<displacement> local_anchor_a;
+		vec3<displacement> local_anchor_b;
 		vec3<length> c0;
 		vec3<force> lambda;
 		vec3f penalty;
@@ -1057,28 +1057,24 @@ auto gse::vbd::gpu_solver::readback(const std::span<body_state> bodies, std::vec
 		const float q_len_sq = orient[0] * orient[0] + orient[1] * orient[1] + orient[2] * orient[2] + orient[3] * orient[3];
 		if (q_len_sq < 0.5f) continue;
 
-		float pos[3];
-		gse::memcpy(pos, elem + bo_position);
-		if (!is_finite_vec3(pos)) continue;
+		gse::memcpy(b.position, elem + bo_position);
+		if (!std::isfinite(b.position.x().as<meters>()) ||
+			!std::isfinite(b.position.y().as<meters>()) ||
+			!std::isfinite(b.position.z().as<meters>())) continue;
 
-		float vel[3];
-		gse::memcpy(vel, elem + bo_velocity);
-
-		b.position = vec3f(pos[0], pos[1], pos[2]) * meters(1.f);
-
-		if (is_finite_vec3(vel)) {
-			b.body_velocity = vec3f(vel[0], vel[1], vel[2]) * meters_per_second(1.f);
-		} else {
+		gse::memcpy(b.body_velocity, elem + bo_velocity);
+		if (!std::isfinite(b.body_velocity.x().as<meters_per_second>()) ||
+			!std::isfinite(b.body_velocity.y().as<meters_per_second>()) ||
+			!std::isfinite(b.body_velocity.z().as<meters_per_second>())) {
 			b.body_velocity = {};
 		}
 
 		gse::memcpy(reinterpret_cast<std::byte*>(&b.orientation), orient);
 
-		float av[3];
-		gse::memcpy(av, elem + bo_angular_velocity);
-		if (is_finite_vec3(av)) {
-			b.body_angular_velocity = vec3f(av[0], av[1], av[2]) * radians_per_second(1.f);
-		} else {
+		gse::memcpy(b.body_angular_velocity, elem + bo_angular_velocity);
+		if (!std::isfinite(b.body_angular_velocity.x().as<radians_per_second>()) ||
+			!std::isfinite(b.body_angular_velocity.y().as<radians_per_second>()) ||
+			!std::isfinite(b.body_angular_velocity.z().as<radians_per_second>())) {
 			b.body_angular_velocity = {};
 		}
 
@@ -1114,17 +1110,12 @@ auto gse::vbd::gpu_solver::readback(const std::span<body_state> bodies, std::vec
 		gse::memcpy(entry.tangent_u, elem + co_tangent_u);
 		gse::memcpy(entry.tangent_v, elem + co_tangent_v);
 
-		vec3f local_anchor_a{};
-		gse::memcpy(local_anchor_a, elem + co_r_a);
-		entry.local_anchor_a = local_anchor_a * meters(1.f);
-
-		vec3f local_anchor_b{};
-		gse::memcpy(local_anchor_b, elem + co_r_b);
-		entry.local_anchor_b = local_anchor_b * meters(1.f);
+		gse::memcpy(entry.local_anchor_a, elem + co_r_a);
+		gse::memcpy(entry.local_anchor_b, elem + co_r_b);
 
 		float c0_friction[4] = {};
 		gse::memcpy(c0_friction, elem + co_c0_friction);
-		entry.c0 = { meters(c0_friction[0]), meters(c0_friction[1]), meters(c0_friction[2]) };
+		gse::memcpy(entry.c0, c0_friction);
 		entry.friction_coeff = c0_friction[3];
 
 		vec3f lambda_raw{};
