@@ -10,7 +10,7 @@ export namespace gs {
 
 		auto initialize() -> void override {
 			add_component<gse::physics::motion_component>({
-				.current_position = gse::vec3<gse::length>(0.f, 0.f, 0.f),
+				.current_position = gse::vec3<gse::position>(0.f, 0.f, 0.f),
 				.affected_by_gravity = false
 			});
 

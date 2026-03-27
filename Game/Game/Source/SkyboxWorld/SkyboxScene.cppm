@@ -14,13 +14,13 @@ export namespace gs {
 		auto initialize() -> void override {
 			build("Skybox")
 				.with<skybox>({
-					.initial_position = gse::vec3<gse::length>(0.f, 0.f, 0.f),
+					.initial_position = gse::vec3<gse::position>(0.f, 0.f, 0.f),
 					.size = gse::vec3<gse::length>(20000.f, 20000.f, 20000.f)
 				});
 
 			build("Skybox Floor")
 				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(0.f, -500.f, 0.f),
+					.initial_position = gse::vec3<gse::position>(0.f, -500.f, 0.f),
 					.size = gse::vec3<gse::length>(20000.f, 10.f, 20000.f)
 				})
 				.with_init([](gse::hook<gse::entity>& h) {
@@ -34,7 +34,7 @@ export namespace gs {
 
 			build("Player")
 				.with<player>({
-					.initial_position = gse::vec3<gse::length>(0.f, 0.f, 0.f)
+					.initial_position = gse::vec3<gse::position>(0.f, 0.f, 0.f)
 				});
 		}
 

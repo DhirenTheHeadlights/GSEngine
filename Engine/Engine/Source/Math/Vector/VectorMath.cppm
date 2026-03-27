@@ -173,6 +173,9 @@ export namespace gse {
 		const V& b,
 		const V& c
 	) -> vec3<typename V::storage_type>;
+
+	template <is_vec V>
+	constexpr auto isfinite(const V& v) -> bool;
 }
 
 template <gse::is_vec V1, gse::is_vec V2> requires (V1::extent == V2::extent)
@@ -447,4 +450,12 @@ constexpr auto gse::barycentric(const V& p, const V& a, const V& b, const V& c) 
 	T u = T(1) - v - w;
 
 	return { u, v, w };
+}
+
+template <gse::is_vec V>
+constexpr auto gse::isfinite(const V& v) -> bool {
+	for (const auto s : v.as_storage_span()) {
+		if (!std::isfinite(s)) return false;
+	}
+	return true;
 }

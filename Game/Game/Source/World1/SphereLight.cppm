@@ -45,7 +45,7 @@ export namespace gs {
 	private:
 		static std::size_t m_count;
 
-		gse::vec3<gse::length> m_position;
+		gse::vec3<gse::position> m_position;
 		gse::length m_radius;
 		int m_sectors;
 		int m_stacks;

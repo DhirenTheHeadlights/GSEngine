@@ -12,7 +12,7 @@ export namespace gs {
 		using hook::hook;
 
 		auto initialize() -> void override {
-			const auto floor_pos = gse::vec3<gse::length>(0.f, -0.5f, 0.f);
+			const auto floor_pos = gse::vec3<gse::position>(0.f, -0.5f, 0.f);
 			build("Floor")
 				.with<gse::box>({
 					.initial_position = floor_pos,
@@ -38,7 +38,7 @@ export namespace gs {
 
 			build("Bouncy Sphere")
 				.with<gse::sphere>({
-					.initial_position = gse::vec3<gse::length>(-15.f, 8.f, 0.f),
+					.initial_position = gse::vec3<gse::position>(-15.f, 8.f, 0.f),
 					.radius = gse::meters(1.f),
 					.sectors = 24,
 					.stacks = 16
@@ -46,17 +46,17 @@ export namespace gs {
 
 			build("Player")
 				.with<player>({
-					.initial_position = gse::vec3<gse::length>(0.f, 10.f, 0.f)
+					.initial_position = gse::vec3<gse::position>(0.f, 10.f, 0.f)
 				});
 
 			build("Scene Camera")
 				.with<gse::free_camera>({
-					.initial_position = gse::vec3<gse::length>(0.f, 20.f, 40.f)
+					.initial_position = gse::vec3<gse::position>(0.f, 20.f, 40.f)
 				});
 
 			build("Scene Light")
 				.with<sphere_light>({
-					.initial_position = gse::vec3<gse::length>(0.f, 25.f, 0.f),
+					.initial_position = gse::vec3<gse::position>(0.f, 25.f, 0.f),
 					.radius = gse::meters(0.5f),
 					.sectors = 12,
 					.stacks = 8
@@ -70,22 +70,22 @@ export namespace gs {
 
 			build("Pyramid Light Base")
 				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(x, 0.5f, z),
-					.size = gse::vec3<gse::length>(gse::meters(1.f)),
+					.initial_position = gse::vec3<gse::position>(x, 0.5f, z),
+					.size = gse::vec3(gse::meters(1.f)),
 					.mass = gse::kilograms(5.f)
 				});
 
 			build("Pyramid Mid")
 				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(x, 1.5f, z),
-					.size = gse::vec3<gse::length>(gse::meters(1.f)),
+					.initial_position = gse::vec3<gse::position>(x, 1.5f, z),
+					.size = gse::vec3(gse::meters(1.f)),
 					.mass = gse::kilograms(50.f)
 				});
 
 			build("Pyramid Heavy Top")
 				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(x, 2.5f, z),
-					.size = gse::vec3<gse::length>(gse::meters(1.f)),
+					.initial_position = gse::vec3<gse::position>(x, 2.5f, z),
+					.size = gse::vec3(gse::meters(1.f)),
 					.mass = gse::kilograms(500.f)
 				});
 		}
@@ -99,7 +99,7 @@ export namespace gs {
 				const float x = start_x + static_cast<float>(i) * spacing;
 				build(std::format("Domino {}", i + 1))
 					.with<gse::box>({
-						.initial_position = gse::vec3<gse::length>(x, (i == 0) ? 1.2f : 1.f, z),
+						.initial_position = gse::vec3<gse::position>(x, (i == 0) ? 1.2f : 1.f, z),
 						.size = gse::vec3<gse::length>(0.3f, 2.f, 1.f),
 						.initial_orientation = (i == 0) ? gse::quat({ 0.f, 0.f, 1.f }, gse::radians(-0.8f)) : gse::quat(),
 						.mass = gse::kilograms(30.f)
@@ -125,7 +125,7 @@ export namespace gs {
 
 			build("Funnel Left Wall")
 				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(cx - mid_offset, wall_height * 0.5f, cz),
+					.initial_position = gse::vec3<gse::position>(cx - mid_offset, wall_height * 0.5f, cz),
 					.size = gse::vec3<gse::length>(wall_len, wall_height, 0.3f),
 					.initial_orientation = left_rot
 				})
@@ -138,7 +138,7 @@ export namespace gs {
 
 			build("Funnel Right Wall")
 				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(cx + mid_offset, wall_height * 0.5f, cz),
+					.initial_position = gse::vec3<gse::position>(cx + mid_offset, wall_height * 0.5f, cz),
 					.size = gse::vec3<gse::length>(wall_len, wall_height, 0.3f),
 					.initial_orientation = right_rot
 				})
@@ -151,7 +151,7 @@ export namespace gs {
 
 			build("Funnel Back Wall")
 				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(cx, wall_height * 0.5f, cz - half_len),
+					.initial_position = gse::vec3<gse::position>(cx, wall_height * 0.5f, cz - half_len),
 					.size = gse::vec3<gse::length>(spread * 2.f + 1.f, wall_height, 0.3f)
 				})
 				.with_init([](hook<gse::entity>& h) {
@@ -168,8 +168,8 @@ export namespace gs {
 					const float bz = cz - 3.f;
 					build(std::format("Funnel Box r{}c{}", row, col))
 						.with<gse::box>({
-							.initial_position = gse::vec3<gse::length>(bx, by, bz),
-							.size = gse::vec3<gse::length>(gse::meters(1.f)),
+							.initial_position = gse::vec3<gse::position>(bx, by, bz),
+							.size = gse::vec3(gse::meters(1.f)),
 							.mass = gse::kilograms(40.f)
 						});
 				}
@@ -181,7 +181,7 @@ export namespace gs {
 			constexpr float z = 15.f;
 
 			const gse::vec3<gse::length> ramp_size(10.f, 0.5f, 4.f);
-			const gse::vec3<gse::length> box_size(gse::meters(1.f));
+			const gse::vec3 box_size(gse::meters(1.f));
 			const auto resting_offset_for = [&](const gse::quat& tilt) {
 				return gse::rotate_vector(
 					tilt,
@@ -190,7 +190,7 @@ export namespace gs {
 			};
 
 			const gse::quat ramp_tilt(gse::axis_z, gse::degrees(30.f));
-			const gse::vec3<gse::length> ramp_position(x, 2.f, z);
+			const gse::vec3<gse::position> ramp_position(x, 2.f, z);
 
 			build("Ramp 30deg")
 				.with<gse::box>({
@@ -214,7 +214,7 @@ export namespace gs {
 				});
 
 			const gse::quat steep_tilt(gse::axis_z, gse::degrees(45.f));
-			const gse::vec3<gse::length> steep_ramp_position(x + 12.f, 2.f, z);
+			const gse::vec3<gse::position> steep_ramp_position(x + 12.f, 2.f, z);
 
 			build("Steep Ramp 45deg")
 				.with<gse::box>({
@@ -248,8 +248,8 @@ export namespace gs {
 					const float by = 0.5f + static_cast<float>(row) * 1.05f;
 					build(std::format("Impact Wall r{}c{}", row, col))
 						.with<gse::box>({
-							.initial_position = gse::vec3<gse::length>(bx, by, z),
-							.size = gse::vec3<gse::length>(gse::meters(1.f)),
+							.initial_position = gse::vec3<gse::position>(bx, by, z),
+							.size = gse::vec3(gse::meters(1.f)),
 							.mass = gse::kilograms(80.f)
 						});
 				}
@@ -268,7 +268,7 @@ export namespace gs {
 
 				const auto anchor_id = build(std::format("Spring {} Anchor", labels[i]))
 					.with<gse::box>({
-						.initial_position = gse::vec3<gse::length>(bx, 10.f, z),
+						.initial_position = gse::vec3<gse::position>(bx, 10.f, z),
 						.size = gse::vec3<gse::length>(0.5f, 0.5f, 0.5f)
 					})
 					.with_init([](hook<gse::entity>& h) {
@@ -281,7 +281,7 @@ export namespace gs {
 
 				const auto bob_id = build(std::format("Spring {} Bob", labels[i]))
 					.with<gse::sphere>({
-						.initial_position = gse::vec3<gse::length>(bx + 2.f, 10.f, z),
+						.initial_position = gse::vec3<gse::position>(bx + 2.f, 10.f, z),
 						.radius = gse::meters(0.5f),
 						.sectors = 16,
 						.stacks = 12
@@ -297,7 +297,7 @@ export namespace gs {
 
 			const auto chain_anchor = build("Spring Chain Anchor")
 				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(x + 18.f, 12.f, z),
+					.initial_position = gse::vec3<gse::position>(x + 18.f, 12.f, z),
 					.size = gse::vec3<gse::length>(0.5f, 0.5f, 0.5f)
 				})
 				.with_init([](hook<gse::entity>& h) {
@@ -313,7 +313,7 @@ export namespace gs {
 				const float by = 12.f - static_cast<float>(i + 1) * 2.f;
 				const auto link_id = build(std::format("Spring Chain Link {}", i))
 					.with<gse::sphere>({
-						.initial_position = gse::vec3<gse::length>(x + 18.f, by, z),
+						.initial_position = gse::vec3<gse::position>(x + 18.f, by, z),
 						.radius = gse::meters(0.4f),
 						.sectors = 16,
 						.stacks = 12
@@ -345,8 +345,8 @@ export namespace gs {
 						const float z = base_z + static_cast<float>(iz) * spacing;
 						build(std::format("Grid L{}R{}C{}", layer, ix, iz))
 							.with<gse::box>({
-								.initial_position = gse::vec3<gse::length>(x, y, z),
-								.size = gse::vec3<gse::length>(gse::meters(1.f)),
+								.initial_position = gse::vec3<gse::position>(x, y, z),
+								.size = gse::vec3(gse::meters(1.f)),
 								.mass = gse::kilograms(20.f)
 							});
 					}

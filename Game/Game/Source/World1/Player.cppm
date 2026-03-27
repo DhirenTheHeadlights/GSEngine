@@ -97,7 +97,7 @@ namespace gs {
 	class player_hook final : public gse::hook<gse::entity> {
 	public:
 		struct params {
-			gse::vec3<gse::length> initial_position;
+			gse::vec3<gse::position> initial_position;
 		};
 
 		explicit player_hook(const params& p) : m_initial_position(p.initial_position) {}
@@ -269,7 +269,7 @@ namespace gs {
 		gse::velocity m_sprint_speed = gse::miles_per_hour(40.f);
 		gse::velocity m_jump_speed = gse::meters_per_second(7.f);
 
-		gse::vec3<gse::length> m_initial_position;
+		gse::vec3<gse::position> m_initial_position;
 
 		gse::actions::button_channel m_shift_channel;
 		gse::actions::button_channel m_jump_channel;
@@ -279,7 +279,7 @@ namespace gs {
 	class player final : public gse::hook<gse::entity> {
 	public:
 		struct params {
-			gse::vec3<gse::length> initial_position;
+			gse::vec3<gse::position> initial_position;
 		};
 
 		explicit player(const params& p) : m_initial_position(p.initial_position) {}
@@ -291,6 +291,6 @@ namespace gs {
 			});
 		}
 	private:
-		gse::vec3<gse::length> m_initial_position;
+		gse::vec3<gse::position> m_initial_position;
 	};
 }

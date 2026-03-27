@@ -12,7 +12,7 @@ export namespace gs {
 		using hook::hook;
 
 		auto initialize() -> void override {
-			const auto floor_pos = gse::vec3<gse::length>(0.f, -0.5f, 0.f);
+			const auto floor_pos = gse::vec3<gse::position>(0.f, -0.5f, 0.f);
 			build("Floor")
 				.with<gse::box>({
 					.initial_position = floor_pos,
@@ -36,17 +36,17 @@ export namespace gs {
 
 			build("Player")
 				.with<player>({
-					.initial_position = gse::vec3<gse::length>(0.f, 3.f, 20.f)
+					.initial_position = gse::vec3<gse::position>(0.f, 3.f, 20.f)
 				});
 
 			build("Scene Camera")
 				.with<gse::free_camera>({
-					.initial_position = gse::vec3<gse::length>(0.f, 15.f, 35.f)
+					.initial_position = gse::vec3<gse::position>(0.f, 15.f, 35.f)
 				});
 
 			build("Scene Light")
 				.with<sphere_light>({
-					.initial_position = gse::vec3<gse::length>(0.f, 25.f, 0.f),
+					.initial_position = gse::vec3<gse::position>(0.f, 25.f, 0.f),
 					.radius = gse::meters(0.5f),
 					.sectors = 12,
 					.stacks = 8
@@ -61,7 +61,7 @@ export namespace gs {
 			for (int i = 0; i < 5; ++i) {
 				build(std::format("Drop Sphere {}", i))
 					.with<gse::sphere>({
-						.initial_position = gse::vec3<gse::length>(
+						.initial_position = gse::vec3<gse::position>(
 							x, 2.f + static_cast<float>(i) * 3.f, z
 						),
 						.radius = gse::meters(1.f),
@@ -77,7 +77,7 @@ export namespace gs {
 
 			build("Stack Base Sphere")
 				.with<gse::sphere>({
-					.initial_position = gse::vec3<gse::length>(x, 1.f, z),
+					.initial_position = gse::vec3<gse::position>(x, 1.f, z),
 					.radius = gse::meters(1.f),
 					.sectors = 24,
 					.stacks = 16
@@ -85,7 +85,7 @@ export namespace gs {
 
 			build("Stack Mid Sphere")
 				.with<gse::sphere>({
-					.initial_position = gse::vec3<gse::length>(x, 3.f, z),
+					.initial_position = gse::vec3<gse::position>(x, 3.f, z),
 					.radius = gse::meters(1.f),
 					.sectors = 24,
 					.stacks = 16
@@ -93,7 +93,7 @@ export namespace gs {
 
 			build("Stack Top Sphere")
 				.with<gse::sphere>({
-					.initial_position = gse::vec3<gse::length>(x, 5.f, z),
+					.initial_position = gse::vec3<gse::position>(x, 5.f, z),
 					.radius = gse::meters(1.f),
 					.sectors = 24,
 					.stacks = 16
@@ -106,7 +106,7 @@ export namespace gs {
 
 			build("Box Pedestal")
 				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(x, 0.5f, z),
+					.initial_position = gse::vec3<gse::position>(x, 0.5f, z),
 					.size = gse::vec3<gse::length>(3.f, 1.f, 3.f)
 				})
 				.with_init([](hook<gse::entity>& h) {
@@ -118,7 +118,7 @@ export namespace gs {
 
 			build("Sphere On Box")
 				.with<gse::sphere>({
-					.initial_position = gse::vec3<gse::length>(x, 4.f, z),
+					.initial_position = gse::vec3<gse::position>(x, 4.f, z),
 					.radius = gse::meters(1.f),
 					.sectors = 24,
 					.stacks = 16
@@ -126,7 +126,7 @@ export namespace gs {
 
 			build("Box Wall Left")
 				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(x - 3.f, 2.f, z),
+					.initial_position = gse::vec3<gse::position>(x - 3.f, 2.f, z),
 					.size = gse::vec3<gse::length>(0.5f, 4.f, 4.f)
 				})
 				.with_init([](hook<gse::entity>& h) {
@@ -138,7 +138,7 @@ export namespace gs {
 
 			build("Box Wall Right")
 				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(x + 3.f, 2.f, z),
+					.initial_position = gse::vec3<gse::position>(x + 3.f, 2.f, z),
 					.size = gse::vec3<gse::length>(0.5f, 4.f, 4.f)
 				})
 				.with_init([](hook<gse::entity>& h) {
@@ -150,7 +150,7 @@ export namespace gs {
 
 			build("Sphere Between Walls")
 				.with<gse::sphere>({
-					.initial_position = gse::vec3<gse::length>(x, 8.f, z),
+					.initial_position = gse::vec3<gse::position>(x, 8.f, z),
 					.radius = gse::meters(1.2f),
 					.sectors = 24,
 					.stacks = 16
@@ -167,7 +167,7 @@ export namespace gs {
 					const float bz = z - static_cast<float>(row) * 2.f;
 					build(std::format("Pin r{}c{}", row, col))
 						.with<gse::box>({
-							.initial_position = gse::vec3<gse::length>(bx, 1.f, bz),
+							.initial_position = gse::vec3<gse::position>(bx, 1.f, bz),
 							.size = gse::vec3<gse::length>(0.8f, 2.f, 0.8f),
 							.mass = gse::kilograms(20.f)
 						});
@@ -176,7 +176,7 @@ export namespace gs {
 
 			build("Bowling Sphere")
 				.with<gse::sphere>({
-					.initial_position = gse::vec3<gse::length>(x, 1.5f, z + 12.f),
+					.initial_position = gse::vec3<gse::position>(x, 1.5f, z + 12.f),
 					.radius = gse::meters(1.5f),
 					.sectors = 24,
 					.stacks = 16
@@ -198,7 +198,7 @@ export namespace gs {
 				const float r = radii[i];
 				build(std::format("Size Sphere {}", i))
 					.with<gse::sphere>({
-						.initial_position = gse::vec3<gse::length>(
+						.initial_position = gse::vec3<gse::position>(
 							x + static_cast<float>(i) * 4.f, r + 3.f, z
 						),
 						.radius = gse::meters(r),

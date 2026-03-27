@@ -6,8 +6,8 @@ import gse.platform;
 import gse.assert;
 import gse.math;
 
-import :model;
 import :mesh;
+import :model;
 
 export template<>
 struct gse::asset_compiler<gse::model> {
@@ -37,13 +37,6 @@ struct gse::asset_compiler<gse::model> {
         const std::filesystem::path& destination
     ) -> bool {
         if (!std::filesystem::exists(destination)) {
-            return true;
-        }
-        std::ifstream f(destination, std::ios::binary);
-        std::uint32_t magic = 0, version = 0;
-        f.read(reinterpret_cast<char*>(&magic), sizeof(magic));
-        f.read(reinterpret_cast<char*>(&version), sizeof(version));
-        if (magic != 0x474D444C || version != 2) {
             return true;
         }
         return std::filesystem::last_write_time(source) >

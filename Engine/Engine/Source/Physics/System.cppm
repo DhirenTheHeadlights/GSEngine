@@ -438,7 +438,7 @@ auto gse::physics::update_vbd_gpu(const int steps, state& s, chunk<motion_compon
 			const auto world_r_b = rotate_vector(bs_b.orientation, c.local_anchor_b);
 			const auto contact_point_a = bs_a.position + world_r_a;
 			const auto contact_point_b = bs_b.position + world_r_b;
-			const auto midpoint = (contact_point_a + contact_point_b) * 0.5f;
+			const auto midpoint = contact_point_a + (contact_point_b - contact_point_a) * 0.5f;
 
 			if (auto* cc_a = collision.find(eid_a)) {
 				cc_a->collision_information.colliding = true;

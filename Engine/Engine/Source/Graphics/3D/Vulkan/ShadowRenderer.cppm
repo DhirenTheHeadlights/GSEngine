@@ -371,7 +371,7 @@ auto gse::renderer::shadow::system::update(update_phase& phase, state& s) -> voi
 		shadow_light_entry entry;
 		entry.shadow_index = static_cast<int>(next_shadow_index);
 
-		auto pos = comp.position;
+		const vec3<length> pos = vec3<length>(comp.position - vec3<position>{});
 		auto dir = comp.direction;
 		const auto cutoff = comp.cut_off;
 
@@ -405,7 +405,7 @@ auto gse::renderer::shadow::system::update(update_phase& phase, state& s) -> voi
 
 		point_shadow_light_entry entry;
 		entry.point_shadow_index = static_cast<int>(next_point_shadow_index);
-		entry.world_position = comp.position;
+		entry.world_position = vec3<length>(comp.position - vec3<position>{});
 		entry.near_plane = comp.near_plane;
 		entry.far_plane = comp.far_plane;
 
@@ -418,7 +418,7 @@ auto gse::renderer::shadow::system::update(update_phase& phase, state& s) -> voi
 			comp.far_plane
 		);
 
-		const auto pos = comp.position;
+		const vec3<length> pos = vec3<length>(comp.position - vec3<position>{});
 
 		entry.face_view_proj[0] = proj * look_at(
 			pos, pos + vec3<length>(meters(1.0f), meters(0.0f), meters(0.0f)),

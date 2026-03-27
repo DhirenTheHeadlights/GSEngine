@@ -34,7 +34,7 @@ export namespace gse {
 		std::vector<render_queue_entry> m_render_queue_entries;
 		resource::handle<model> m_model_handle;
 
-		vec3<length> m_position;
+		vec3<position> m_position;
 		quat m_rotation;
 		vec3f m_scale = { 1.f, 1.f, 1.f };
 		bool m_is_dirty = true;

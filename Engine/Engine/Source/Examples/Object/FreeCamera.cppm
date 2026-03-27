@@ -12,7 +12,7 @@ export namespace gse {
 	class free_camera final : public hook<entity> {
 	public:
 		struct params {
-			vec3<length> initial_position = vec3<length>(0.f, 0.f, 5.f);
+			vec3<position> initial_position = vec3<position>(0.f, 0.f, 5.f);
 			int priority = 10;
 		};
 
@@ -61,7 +61,7 @@ export namespace gse {
 			cam_follow.position += direction * meters_per_second(100.f) * system_clock::dt();
 		}
 	private:
-		vec3<length> m_initial_position;
+		vec3<position> m_initial_position;
 		int m_priority;
 
 		actions::button_channel m_forward;

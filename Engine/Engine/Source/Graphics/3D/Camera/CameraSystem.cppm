@@ -38,7 +38,7 @@ namespace gse::camera {
 		const target& t
 	) -> mat4f {
 		const auto rotation = mat4f(conjugate(t.orientation));
-		const mat4f translation = translate(mat4f(1.0f), -t.position);
+		const mat4f translation = translate(mat4f(1.0f), -(t.position - vec3<position>{}));
 		return rotation * translation;
 	}
 

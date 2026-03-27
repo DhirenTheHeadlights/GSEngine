@@ -12,7 +12,7 @@ export namespace gs {
 		using hook::hook;
 
 		auto initialize() -> void override {
-			const auto floor_pos = gse::vec3<gse::length>(0.f, -0.5f, 0.f);
+			const auto floor_pos = gse::vec3<gse::position>(0.f, -0.5f, 0.f);
 			build("Floor")
 				.with<gse::box>({
 					.initial_position = floor_pos,
@@ -36,7 +36,7 @@ export namespace gs {
 
 			build("Sphere Ball")
 				.with<gse::sphere>({
-					.initial_position = gse::vec3<gse::length>(0.f, 6.f, -8.f),
+					.initial_position = gse::vec3<gse::position>(0.f, 6.f, -8.f),
 					.radius = gse::meters(1.f),
 					.sectors = 24,
 					.stacks = 16
@@ -44,17 +44,17 @@ export namespace gs {
 
 			build("Player")
 				.with<player>({
-					.initial_position = gse::vec3<gse::length>(0.f, 10.f, 0.f)
+					.initial_position = gse::vec3<gse::position>(0.f, 10.f, 0.f)
 				});
 
 			build("Scene Camera")
 				.with<gse::free_camera>({
-					.initial_position = gse::vec3<gse::length>(0.f, 15.f, 30.f)
+					.initial_position = gse::vec3<gse::position>(0.f, 15.f, 30.f)
 				});
 
 			build("Scene Light")
 				.with<sphere_light>({
-					.initial_position = gse::vec3<gse::length>(0.f, 30.f, 0.f),
+					.initial_position = gse::vec3<gse::position>(0.f, 30.f, 0.f),
 					.radius = gse::meters(0.5f),
 					.sectors = 12,
 					.stacks = 8
@@ -68,8 +68,8 @@ export namespace gs {
 
 			const auto anchor_id = build("Fixed Anchor")
 				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(x, 5.f, z),
-					.size = gse::vec3<gse::length>(gse::meters(1.f)),
+					.initial_position = gse::vec3<gse::position>(x, 5.f, z),
+					.size = gse::vec3(gse::meters(1.f)),
 					.mass = gse::kilograms(100.f)
 				})
 				.with_init([](hook<gse::entity>& h) {
@@ -82,15 +82,15 @@ export namespace gs {
 
 			const auto hanging_id = build("Fixed Hanging Box")
 				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(x, 3.5f, z),
-					.size = gse::vec3<gse::length>(gse::meters(1.f)),
+					.initial_position = gse::vec3<gse::position>(x, 3.5f, z),
+					.size = gse::vec3(gse::meters(1.f)),
 					.mass = gse::kilograms(20.f)
 				})
 				.identify();
 
 			gse::physics::join(anchor_id, hanging_id, gse::physics::fixed_joint{
-				.anchor_a = gse::vec3<gse::length>(0.f, -0.5f, 0.f),
-				.anchor_b = gse::vec3<gse::length>(0.f, 0.5f, 0.f),
+				.anchor_a = gse::vec3<gse::displacement>(0.f, -0.5f, 0.f),
+				.anchor_b = gse::vec3<gse::displacement>(0.f, 0.5f, 0.f),
 			});
 		}
 
@@ -100,7 +100,7 @@ export namespace gs {
 
 			const auto pivot_id = build("Distance Pivot")
 				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(x, 8.f, z),
+					.initial_position = gse::vec3<gse::position>(x, 8.f, z),
 					.size = gse::vec3<gse::length>(0.5f, 0.5f, 0.5f),
 					.mass = gse::kilograms(100.f)
 				})
@@ -114,8 +114,8 @@ export namespace gs {
 
 			const auto bob_id = build("Distance Bob")
 				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(x + 3.f, 5.f, z),
-					.size = gse::vec3<gse::length>(gse::meters(1.f)),
+					.initial_position = gse::vec3<gse::position>(x + 3.f, 5.f, z),
+					.size = gse::vec3(gse::meters(1.f)),
 					.mass = gse::kilograms(30.f)
 				})
 				.identify();
@@ -131,7 +131,7 @@ export namespace gs {
 
 			const auto frame_id = build("Hinge Frame")
 				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(x, 2.f, z),
+					.initial_position = gse::vec3<gse::position>(x, 2.f, z),
 					.size = gse::vec3<gse::length>(0.3f, 4.f, 0.3f),
 					.mass = gse::kilograms(500.f)
 				})
@@ -145,7 +145,7 @@ export namespace gs {
 
 			const auto door_id = build("Hinge Door")
 				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(x + 1.5f, 2.f, z),
+					.initial_position = gse::vec3<gse::position>(x + 1.5f, 2.f, z),
 					.size = gse::vec3<gse::length>(3.f, 3.5f, 0.2f),
 					.mass = gse::kilograms(40.f)
 				})
@@ -157,8 +157,8 @@ export namespace gs {
 				.identify();
 
 			gse::physics::join(frame_id, door_id, gse::physics::hinge_joint{
-				.anchor_a = gse::vec3<gse::length>(0.15f, 0.f, 0.f),
-				.anchor_b = gse::vec3<gse::length>(-1.5f, 0.f, 0.f),
+				.anchor_a = gse::vec3<gse::displacement>(0.15f, 0.f, 0.f),
+				.anchor_b = gse::vec3<gse::displacement>(-1.5f, 0.f, 0.f),
 				.axis = { 0.f, 1.f, 0.f },
 				.limits = std::pair{ gse::radians(-1.57f), gse::radians(1.57f) },
 			});
@@ -170,7 +170,7 @@ export namespace gs {
 
 			const auto rail_id = build("Slider Rail")
 				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(x, 4.f, z),
+					.initial_position = gse::vec3<gse::position>(x, 4.f, z),
 					.size = gse::vec3<gse::length>(0.3f, 8.f, 0.3f),
 					.mass = gse::kilograms(500.f)
 				})
@@ -184,7 +184,7 @@ export namespace gs {
 
 			const auto platform_id = build("Slider Platform")
 				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(x, 6.f, z),
+					.initial_position = gse::vec3<gse::position>(x, 6.f, z),
 					.size = gse::vec3<gse::length>(2.f, 0.3f, 2.f),
 					.mass = gse::kilograms(30.f)
 				})
@@ -203,7 +203,7 @@ export namespace gs {
 
 			const auto ceiling_id = build("Chain Ceiling")
 				.with<gse::box>({
-					.initial_position = gse::vec3<gse::length>(x, 12.f, z),
+					.initial_position = gse::vec3<gse::position>(x, 12.f, z),
 					.size = gse::vec3<gse::length>(1.f, 0.5f, 1.f),
 					.mass = gse::kilograms(500.f)
 				})
@@ -223,7 +223,7 @@ export namespace gs {
 				const float x_offset = (i == chain_length - 1) ? 2.f : 0.f;
 				const auto link_id = build(std::format("Chain Link {}", i))
 					.with<gse::box>({
-						.initial_position = gse::vec3<gse::length>(x + x_offset, y, z),
+						.initial_position = gse::vec3<gse::position>(x + x_offset, y, z),
 						.size = gse::vec3<gse::length>(0.6f, 0.6f, 0.6f),
 						.mass = gse::kilograms(15.f)
 					})
