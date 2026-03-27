@@ -135,7 +135,7 @@ namespace gse::vbd {
 
 	auto accumulate_geometric_stiffness(
 		body_solve_state& state,
-		const vec3<length>& r,
+		const vec3<displacement>& r,
 		const vec3f& dir,
 		force abs_force
 	) -> void;
@@ -143,8 +143,8 @@ namespace gse::vbd {
 	auto contact_effective_mass(
 		const body_state& body_a,
 		const body_state& body_b,
-		const vec3<length>& r_aw,
-		const vec3<length>& r_bw,
+		const vec3<displacement>& r_aw,
+		const vec3<displacement>& r_bw,
 		const vec3f& dir
 	) -> mass;
 }
@@ -207,11 +207,11 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 	for (auto& c : m_graph.contact_constraints()) {
 		const auto& ba = m_bodies[c.body_a];
 		const auto& bb = m_bodies[c.body_b];
-		const vec3<length> r_aw = rotate_vector(ba.orientation, c.r_a);
-		const vec3<length> r_bw = rotate_vector(bb.orientation, c.r_b);
-		const vec3<length> p_a = ba.position + r_aw;
-		const vec3<length> p_b = bb.position + r_bw;
-		const vec3<length> d = p_a - p_b;
+		const vec3<displacement> r_aw = rotate_vector(ba.orientation, c.r_a);
+		const vec3<displacement> r_bw = rotate_vector(bb.orientation, c.r_b);
+		const vec3<position> p_a = ba.position + r_aw;
+		const vec3<position> p_b = bb.position + r_bw;
+		const vec3<displacement> d = p_a - p_b;
 
 		c.c0[0] = dot(c.normal, d) + m_config.collision_margin;
 		c.c0[1] = dot(c.tangent_u, d);
@@ -227,8 +227,8 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		const auto& ba = m_bodies[c.body_a];
 		const auto& bb = m_bodies[c.body_b];
 
-		const vec3<length> r_aw = rotate_vector(ba.orientation, c.r_a);
-		const vec3<length> r_bw = rotate_vector(bb.orientation, c.r_b);
+		const vec3<displacement> r_aw = rotate_vector(ba.orientation, c.r_a);
+		const vec3<displacement> r_bw = rotate_vector(bb.orientation, c.r_b);
 
 		const stiffness base_floor = std::max(c.penalty_floor, m_config.penalty_min);
 		const bool persistent_active_normal = c.lambda[0] < newtons(-1e-3f) && c.c0[0] < meters(-1e-4f);
@@ -274,8 +274,8 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 	for (auto& j : m_graph.joint_constraints()) {
 		const auto& ba = m_bodies[j.body_a];
 		const auto& bb = m_bodies[j.body_b];
-		const vec3<length> r_aw = rotate_vector(ba.orientation, j.local_anchor_a);
-		const vec3<length> r_bw = rotate_vector(bb.orientation, j.local_anchor_b);
+		const vec3<displacement> r_aw = rotate_vector(ba.orientation, j.local_anchor_a);
+		const vec3<displacement> r_bw = rotate_vector(bb.orientation, j.local_anchor_b);
 
 		for (int k = 0; k < 3; ++k) {
 			j.pos_lambda[k] *= m_config.gamma;
@@ -300,7 +300,7 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		for (int k = 0; k < num_pos_rows; ++k) {
 			vec3f dir;
 			if (j.type == joint_type::distance) {
-				const vec3<length> d = (ba.position + r_aw) - (bb.position + r_bw);
+				const vec3<displacement> d = (ba.position + r_aw) - (bb.position + r_bw);
 				dir = magnitude(d) > meters(1e-7f) ? normalize(d) : vec3f{ 0.f, 1.f, 0.f };
 			}
 			else if (j.type == joint_type::slider) {
@@ -393,9 +393,9 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 		const auto& ba = m_bodies[j.body_a];
 		const auto& bb = m_bodies[j.body_b];
 
-		const vec3<length> r_aw = rotate_vector(ba.orientation, j.local_anchor_a);
-		const vec3<length> r_bw = rotate_vector(bb.orientation, j.local_anchor_b);
-		const vec3<length> d = (ba.position + r_aw) - (bb.position + r_bw);
+		const vec3<displacement> r_aw = rotate_vector(ba.orientation, j.local_anchor_a);
+		const vec3<displacement> r_bw = rotate_vector(bb.orientation, j.local_anchor_b);
+		const vec3<displacement> d = (ba.position + r_aw) - (bb.position + r_bw);
 
 		if (j.type == joint_type::distance) {
 			j.pos_c0[0] = magnitude(d) - j.target_distance;
@@ -552,7 +552,7 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 			}
 		}
 
-		const vec3<length> target = body.initial_position + motor.target_velocity * dt;
+		const vec3<position> target = body.initial_position + motor.target_velocity * dt;
 		if (motor.horizontal_only) {
 			body.motor_target.x() = target.x();
 			body.motor_target.z() = target.z();
@@ -675,8 +675,8 @@ auto gse::vbd::solver::solve(const time_step dt) -> void {
 					auto& ba = m_bodies[c.body_a];
 					auto& bb = m_bodies[c.body_b];
 
-					const vec3<length> rAW = rotate_vector(ba.orientation, c.r_a);
-					const vec3<length> rBW = rotate_vector(bb.orientation, c.r_b);
+					const vec3<displacement> rAW = rotate_vector(ba.orientation, c.r_a);
+					const vec3<displacement> rBW = rotate_vector(bb.orientation, c.r_b);
 
 					const auto va = ba.body_velocity + cross(ba.body_angular_velocity, rAW) / rad;
 					const auto vb = bb.body_velocity + cross(bb.body_angular_velocity, rBW) / rad;
@@ -777,11 +777,11 @@ auto gse::vbd::solver::accumulate_contact(const contact_constraint& constraint, 
 	const auto& body_b = m_bodies[constraint.body_b];
 	const bool is_a = (body_idx == constraint.body_a);
 
-	const vec3<length> r_aw = rotate_vector(body_a.predicted_orientation, constraint.r_a);
-	const vec3<length> r_bw = rotate_vector(body_b.predicted_orientation, constraint.r_b);
-	const vec3<length> p_a = body_a.predicted_position + r_aw;
-	const vec3<length> p_b = body_b.predicted_position + r_bw;
-	const vec3<length> d = p_a - p_b;
+	const vec3<displacement> r_aw = rotate_vector(body_a.predicted_orientation, constraint.r_a);
+	const vec3<displacement> r_bw = rotate_vector(body_b.predicted_orientation, constraint.r_b);
+	const vec3<position> p_a = body_a.predicted_position + r_aw;
+	const vec3<position> p_b = body_b.predicted_position + r_bw;
+	const vec3<displacement> d = p_a - p_b;
 
 	const vec3<length> cn = {
 		dot(constraint.normal, d) + m_config.collision_margin,
@@ -797,7 +797,7 @@ auto gse::vbd::solver::accumulate_contact(const contact_constraint& constraint, 
 	const force f2 = std::clamp<force>(constraint.penalty[2] * c[2] + constraint.lambda[2], -friction_bound, friction_bound);
 
 	const float sign = is_a ? 1.f : -1.f;
-	const vec3<length> r = (is_a ? r_aw : r_bw) * sign;
+	const vec3<displacement> r = (is_a ? r_aw : r_bw) * sign;
 	const std::array dirs = { constraint.normal, constraint.tangent_u, constraint.tangent_v };
 	const std::array f = { f0, f1, f2 };
 
@@ -810,7 +810,7 @@ auto gse::vbd::solver::accumulate_contact(const contact_constraint& constraint, 
 		}
 
 		const vec3f j_lin = dirs[i] * sign;
-		const vec3<length> j_ang = cross(r, dirs[i]);
+		const vec3<displacement> j_ang = cross(r, dirs[i]);
 
 		m_solve_state[body_idx].gradient += j_lin * f[i];
 		m_solve_state[body_idx].hessian += outer_product(j_lin, j_lin) * constraint.penalty[i];
@@ -832,11 +832,11 @@ auto gse::vbd::solver::accumulate_motor(const velocity_motor_constraint& m, cons
 	const float compliance = std::max(m.compliance, 1e-6f);
 	const stiffness motor_stiffness = body.mass_value / h_squared / compliance;
 
-	const vec3<length> diff = body.predicted_position - body.motor_target;
+	const vec3<displacement> diff = body.predicted_position - body.motor_target;
 
-	vec3<length> masked_diff = diff;
+	vec3<displacement> masked_diff = diff;
 	if (m.horizontal_only) {
-		masked_diff[1] = length{};
+		masked_diff[1] = displacement{};
 	}
 
 	vec3<force> motor_gradient = masked_diff * motor_stiffness;
@@ -863,11 +863,11 @@ auto gse::vbd::solver::accumulate_motor(const velocity_motor_constraint& m, cons
 		const auto& body_a = m_bodies[c.body_a];
 		const auto& body_b = m_bodies[c.body_b];
 
-		const vec3<length> r_aw = rotate_vector(body_a.predicted_orientation, c.r_a);
-		const vec3<length> r_bw = rotate_vector(body_b.predicted_orientation, c.r_b);
-		const vec3<length> p_a = body_a.predicted_position + r_aw;
-		const vec3<length> p_b = body_b.predicted_position + r_bw;
-		const vec3<length> d = p_a - p_b;
+		const vec3<displacement> r_aw = rotate_vector(body_a.predicted_orientation, c.r_a);
+		const vec3<displacement> r_bw = rotate_vector(body_b.predicted_orientation, c.r_b);
+		const vec3<position> p_a = body_a.predicted_position + r_aw;
+		const vec3<position> p_b = body_b.predicted_position + r_bw;
+		const vec3<displacement> d = p_a - p_b;
 
 		if (const length normal_gap = dot(c.normal, d) + m_config.collision_margin; normal_gap >= length{} && c.lambda[0] >= newtons(-1e-3f)) {
 			continue;
@@ -989,11 +989,11 @@ auto gse::vbd::solver::update_dual(const float alpha) -> void {
 		const auto& body_a = m_bodies[con.body_a];
 		const auto& body_b = m_bodies[con.body_b];
 
-		const vec3<length> rAW = rotate_vector(body_a.predicted_orientation, con.r_a);
-		const vec3<length> rBW = rotate_vector(body_b.predicted_orientation, con.r_b);
-		const vec3<length> pA = body_a.predicted_position + rAW;
-		const vec3<length> pB = body_b.predicted_position + rBW;
-		const vec3<length> d = pA - pB;
+		const vec3<displacement> rAW = rotate_vector(body_a.predicted_orientation, con.r_a);
+		const vec3<displacement> rBW = rotate_vector(body_b.predicted_orientation, con.r_b);
+		const vec3<position> pA = body_a.predicted_position + rAW;
+		const vec3<position> pB = body_b.predicted_position + rBW;
+		const vec3<displacement> d = pA - pB;
 
 		const vec3<length> cn = {
 			dot(con.normal, d) + m_config.collision_margin,
@@ -1030,13 +1030,13 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 	const bool is_a = (body_idx == constraint.body_a);
 	const float sign = is_a ? 1.f : -1.f;
 
-	const vec3<length> r_aw = rotate_vector(body_a.predicted_orientation, constraint.local_anchor_a);
-	const vec3<length> r_bw = rotate_vector(body_b.predicted_orientation, constraint.local_anchor_b);
-	const vec3<length> p_a = body_a.predicted_position + r_aw;
-	const vec3<length> p_b = body_b.predicted_position + r_bw;
-	const vec3<length> d = p_a - p_b;
+	const vec3<displacement> r_aw = rotate_vector(body_a.predicted_orientation, constraint.local_anchor_a);
+	const vec3<displacement> r_bw = rotate_vector(body_b.predicted_orientation, constraint.local_anchor_b);
+	const vec3<position> p_a = body_a.predicted_position + r_aw;
+	const vec3<position> p_b = body_b.predicted_position + r_bw;
+	const vec3<displacement> d = p_a - p_b;
 
-	const vec3<length> r = (is_a ? r_aw : r_bw) * sign;
+	const vec3<displacement> r = (is_a ? r_aw : r_bw) * sign;
 
 	if (constraint.type == joint_type::distance) {
 		const auto d_mag = magnitude(d);
@@ -1053,7 +1053,7 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 		const force fi = constraint.pos_penalty[0] * c + constraint.pos_lambda[0];
 
 		const vec3f j_lin = d_hat * sign;
-		const vec3<length> j_ang = cross(r, d_hat);
+		const vec3<displacement> j_ang = cross(r, d_hat);
 
 		m_solve_state[body_idx].gradient += j_lin * fi;
 		m_solve_state[body_idx].hessian += outer_product(j_lin, j_lin) * constraint.pos_penalty[0];
@@ -1073,7 +1073,7 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 			const force fi = constraint.pos_penalty[k] * c + constraint.pos_lambda[k];
 
 			const vec3f j_lin = dirs[k] * sign;
-			const vec3<length> j_ang = cross(r, dirs[k]);
+			const vec3<displacement> j_ang = cross(r, dirs[k]);
 
 			m_solve_state[body_idx].gradient += j_lin * fi;
 			m_solve_state[body_idx].hessian += outer_product(j_lin, j_lin) * constraint.pos_penalty[k];
@@ -1171,7 +1171,7 @@ auto gse::vbd::solver::accumulate_joint(const joint_constraint& constraint, cons
 			const force fi = constraint.pos_penalty[k] * C + constraint.pos_lambda[k];
 
 			const vec3f j_lin = perps[k] * sign;
-			const vec3<length> j_ang = cross(r, perps[k]);
+			const vec3<displacement> j_ang = cross(r, perps[k]);
 
 			m_solve_state[body_idx].gradient += j_lin * fi;
 			m_solve_state[body_idx].hessian += outer_product(j_lin, j_lin) * constraint.pos_penalty[k];
@@ -1210,11 +1210,11 @@ auto gse::vbd::solver::update_joint_dual(const time_squared h_squared) -> void {
 			continue;
 		}
 
-		const vec3<length> r_aw = rotate_vector(body_a.predicted_orientation, j.local_anchor_a);
-		const vec3<length> r_bw = rotate_vector(body_b.predicted_orientation, j.local_anchor_b);
-		const vec3<length> p_a = body_a.predicted_position + r_aw;
-		const vec3<length> p_b = body_b.predicted_position + r_bw;
-		const vec3<length> d = p_a - p_b;
+		const vec3<displacement> r_aw = rotate_vector(body_a.predicted_orientation, j.local_anchor_a);
+		const vec3<displacement> r_bw = rotate_vector(body_b.predicted_orientation, j.local_anchor_b);
+		const vec3<position> p_a = body_a.predicted_position + r_aw;
+		const vec3<position> p_b = body_b.predicted_position + r_bw;
+		const vec3<displacement> d = p_a - p_b;
 
 		if (j.type == joint_type::distance) {
 			const length c = (magnitude(d) - j.target_distance) - j.pos_c0[0];
@@ -1316,7 +1316,7 @@ auto gse::vbd::rotate_axis(const quat& q, const vec3f& v) -> vec3f {
 	return v + s * t + cross(u, t);
 }
 
-auto gse::vbd::accumulate_geometric_stiffness(body_solve_state& state, const vec3<length>& r, const vec3f& dir, const force abs_force) -> void {
+auto gse::vbd::accumulate_geometric_stiffness(body_solve_state& state, const vec3<displacement>& r, const vec3f& dir, const force abs_force) -> void {
 	length rd{};
 	for (int i = 0; i < 3; ++i) rd += r[i] * dir[i];
 	for (int j = 0; j < 3; ++j) {
@@ -1332,7 +1332,7 @@ auto gse::vbd::accumulate_geometric_stiffness(body_solve_state& state, const vec
 	}
 }
 
-auto gse::vbd::contact_effective_mass(const body_state& body_a, const body_state& body_b, const vec3<length>& r_aw, const vec3<length>& r_bw, const vec3f& dir) -> mass {
+auto gse::vbd::contact_effective_mass(const body_state& body_a, const body_state& body_b, const vec3<displacement>& r_aw, const vec3<displacement>& r_bw, const vec3f& dir) -> mass {
 	inverse_mass inv_mass_sum =
 		body_a.inverse_mass() +
 		body_b.inverse_mass();

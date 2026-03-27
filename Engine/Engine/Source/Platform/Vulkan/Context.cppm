@@ -523,6 +523,7 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
 
 	vk::PhysicalDeviceVulkan12Features vulkan12_features{
 		.pNext = &vulkan13_features,
+		.scalarBlockLayout = vk::True,
 		.hostQueryReset = vk::True,
 		.timelineSemaphore = vk::True,
 		.bufferDeviceAddress = vk::True

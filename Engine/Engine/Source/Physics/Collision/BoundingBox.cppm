@@ -9,7 +9,7 @@ export namespace gse {
 		bool colliding = false;
 		vec3f collision_normal;
 		length penetration;
-		std::vector<vec3<length>> collision_points;
+		std::vector<vec3<position>> collision_points;
 
 		auto axis() const -> axis {
 			if (!epsilon_equal_index(collision_normal, vec3f(), static_cast<int>(axis::x))) {
@@ -25,8 +25,8 @@ export namespace gse {
 
 namespace gse {
 	struct aabb {
-		vec3<length> max;
-		vec3<length> min;
+		vec3<position> max;
+		vec3<position> min;
 
 		auto overlaps(const aabb& other, const length margin = meters(0.f)) const -> bool {
 			return min.x() - margin <= other.max.x() && max.x() + margin >= other.min.x() &&
@@ -36,7 +36,7 @@ namespace gse {
 	};
 
 	struct obb {
-		vec3<length> center;
+		vec3<position> center;
 		vec3<length> size;
 		quat orientation;
 		std::array<vec3f, 3> axes;
@@ -44,29 +44,29 @@ namespace gse {
 
 	class bounding_box {
 	public:
-		bounding_box(const vec3<length>& center, const vec3<length>& size, std::uint32_t scale = 1);
+		bounding_box(const vec3<position>& center, const vec3<length>& size, std::uint32_t scale = 1);
 
-		auto update(const vec3<length>& new_position, const quat& new_orientation) -> void;
+		auto update(const vec3<position>& new_position, const quat& new_orientation) -> void;
 
 		auto set_scale(float scale) -> void;
 
 		auto aabb() const -> const aabb&;
 		auto obb() const -> obb;
 
-		auto center() const -> vec3<length>;
+		auto center() const -> vec3<position>;
 		auto size() const -> vec3<length>;
 		auto half_extents() const -> vec3<length>;
 		auto scale() const -> float;
 		auto face_normals() const -> std::array<vec3f, 6>;
-		auto face_vertices(std::uint32_t face_index) const -> std::array<vec3<length>, 4>;
-		auto obb_vertices() const -> std::vector<vec3<length>>;
-		auto edge_endpoints(std::uint32_t edge_index) const -> std::pair<vec3<length>, vec3<length>>;
+		auto face_vertices(std::uint32_t face_index) const -> std::array<vec3<position>, 4>;
+		auto obb_vertices() const -> std::vector<vec3<position>>;
+		auto edge_endpoints(std::uint32_t edge_index) const -> std::pair<vec3<position>, vec3<position>>;
 
 		static constexpr std::uint32_t edge_count = 12;
 	private:
 		auto recalculate_aabb() const -> void;
 
-		vec3<length> m_center;
+		vec3<position> m_center;
 		vec3<length> m_base_size;
 		vec3<length> m_scaled_size;
 		quat m_orientation;
@@ -77,9 +77,9 @@ namespace gse {
 	};
 }
 
-gse::bounding_box::bounding_box(const vec3<length>& center, const vec3<length>& size, const std::uint32_t scale) : m_center(center), m_base_size(size), m_scaled_size(size), m_scale(scale) {}
+gse::bounding_box::bounding_box(const vec3<position>& center, const vec3<length>& size, const std::uint32_t scale) : m_center(center), m_base_size(size), m_scaled_size(size), m_scale(scale) {}
 
-auto gse::bounding_box::update(const vec3<length>& new_position, const quat& new_orientation) -> void {
+auto gse::bounding_box::update(const vec3<position>& new_position, const quat& new_orientation) -> void {
 	m_center = new_position;
 	m_orientation = new_orientation;
 	m_is_aabb_dirty = true;
@@ -108,7 +108,7 @@ auto gse::bounding_box::obb() const -> gse::obb {
 	};
 }
 
-auto gse::bounding_box::center() const -> vec3<length> {
+auto gse::bounding_box::center() const -> vec3<position> {
 	return m_center;
 }
 
@@ -136,7 +136,7 @@ auto gse::bounding_box::face_normals() const -> std::array<vec3f, 6> {
 	};
 }
 
-auto gse::bounding_box::face_vertices(const std::uint32_t face_index) const -> std::array<vec3<length>, 4> {
+auto gse::bounding_box::face_vertices(const std::uint32_t face_index) const -> std::array<vec3<position>, 4> {
 	const auto half_ext = half_extents();
 
 	const int axis_idx = face_index / 2; 
@@ -151,7 +151,7 @@ auto gse::bounding_box::face_vertices(const std::uint32_t face_index) const -> s
 	const auto h_u = half_ext[(axis_idx + 1) % 3];
 	const auto h_v = half_ext[(axis_idx + 2) % 3];
 
-	const vec3<length> face_center = box_obb.center + primary_axis * (half_ext[axis_idx] * sign);
+	const auto face_center = box_obb.center + primary_axis * (half_ext[axis_idx] * sign);
 
 	return {
 		face_center + u_axis * h_u + v_axis * h_v,
@@ -162,10 +162,10 @@ auto gse::bounding_box::face_vertices(const std::uint32_t face_index) const -> s
 }
 
 
-auto gse::bounding_box::obb_vertices() const -> std::vector<vec3<length>> {
+auto gse::bounding_box::obb_vertices() const -> std::vector<vec3<position>> {
 	const auto obb_data = obb();
 	const auto half_size = obb_data.size / 2.0f;
-	std::vector<vec3<length>> corners(8);
+	std::vector<vec3<position>> corners(8);
 	for (int i = 0; i < 8; ++i) {
 		const auto x = (i & 1 ? 1 : -1) * half_size.x();
 		const auto y = (i & 2 ? 1 : -1) * half_size.y();
@@ -175,7 +175,7 @@ auto gse::bounding_box::obb_vertices() const -> std::vector<vec3<length>> {
 	return corners;
 }
 
-auto gse::bounding_box::edge_endpoints(const std::uint32_t edge_index) const -> std::pair<vec3<length>, vec3<length>> {
+auto gse::bounding_box::edge_endpoints(const std::uint32_t edge_index) const -> std::pair<vec3<position>, vec3<position>> {
 	const auto vertices = obb_vertices();
 
 	static constexpr std::array<std::pair<std::uint32_t, std::uint32_t>, 12> edge_indices = {{
@@ -192,7 +192,7 @@ auto gse::bounding_box::recalculate_aabb() const -> void {
 	const auto obb_data = obb();
 	const auto half_size = obb_data.size / 2.0f;
 
-	std::array<vec3<length>, 8> corners;
+	std::array<vec3<position>, 8> corners;
 	for (int i = 0; i < 8; ++i) {
 		const auto x = (i & 1 ? 1 : -1) * half_size.x();
 		const auto y = (i & 2 ? 1 : -1) * half_size.y();
@@ -200,12 +200,12 @@ auto gse::bounding_box::recalculate_aabb() const -> void {
 		corners[i] = m_center + (obb_data.axes[0] * x + obb_data.axes[1] * y + obb_data.axes[2] * z);
 	}
 
-	vec3<length> min_corner(
+	vec3<position> min_corner(
 		std::numeric_limits<float>::max(),
 		std::numeric_limits<float>::max(),
 		std::numeric_limits<float>::max()
 	);
-	vec3<length> max_corner(
+	vec3<position> max_corner(
 		std::numeric_limits<float>::lowest(),
 		std::numeric_limits<float>::lowest(),
 		std::numeric_limits<float>::lowest()

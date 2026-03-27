@@ -37,10 +37,10 @@ export namespace gse {
 		length_t<T> far
 	) -> mat4<T>;
 
-	template <typename T>
+	template <typename T, internal::is_vec_element L>
 	constexpr auto translate(
 		const mat4<T>& matrix,
-		const vec3<length_t<T>>& translation
+		const vec3<L>& translation
 	) -> mat4<T>;
 
 	template <typename T>
@@ -128,8 +128,8 @@ constexpr auto gse::orthographic(length_t<T> left, length_t<T> right, length_t<T
 	};
 }
 
-template <typename T>
-constexpr auto gse::translate(const mat4<T>& matrix, const vec3<length_t<T>>& translation) -> mat4<T> {
+template <typename T, gse::internal::is_vec_element L>
+constexpr auto gse::translate(const mat4<T>& matrix, const vec3<L>& translation) -> mat4<T> {
 	return matrix * mat4<T>{
 		{ 1, 0, 0, 0 },
 		{ 0, 1, 0, 0 },

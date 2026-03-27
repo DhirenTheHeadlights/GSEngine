@@ -1464,7 +1464,7 @@ auto gse::renderer::geometry::system::render(const render_phase& phase, const st
                             s.shader_handle->push(
                                 command,
                                 *s.pipeline_layout,
-                                "PushConstants",
+                                "push_constants",
                                 "meshlet_offset", std::uint32_t(0),
                                 "meshlet_count", ml_count,
                                 "instance_index", batch.first_instance + inst

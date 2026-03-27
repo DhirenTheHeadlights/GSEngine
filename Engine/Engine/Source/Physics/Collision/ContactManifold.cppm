@@ -27,8 +27,8 @@ export namespace gse {
 	};
 
 	struct contact_point {
-		vec3<length> position_on_a;
-		vec3<length> position_on_b;
+		vec3<position> position_on_a;
+		vec3<position> position_on_b;
 		vec3f normal;
 		length separation;
 		feature_id feature;

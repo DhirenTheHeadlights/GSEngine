@@ -373,7 +373,8 @@ struct gse::asset_compiler<gse::shader> {
         {
             slang::TargetDesc target{
                 .format = SLANG_SPIRV,
-                .profile = global_session->findProfile("spirv_1_5")
+                .profile = global_session->findProfile("spirv_1_5"),
+                .forceGLSLScalarBufferLayout = true
             };
 
             std::vector<std::string> sp_storage;
