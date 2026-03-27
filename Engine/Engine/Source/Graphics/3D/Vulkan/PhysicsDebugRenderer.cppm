@@ -11,13 +11,13 @@ import :camera_system;
 
 namespace gse::renderer::physics_debug {
 	struct debug_vertex {
-		vec3<length> position;
+		vec3<position> position;
 		vec3f color;
 	};
 
 	auto add_line(
-		const vec3<length>& a,
-		const vec3<length>& b,
+		const vec3<position>& a,
+		const vec3<position>& b,
 		const vec3f& color,
 		std::vector<debug_vertex>& out_vertices
 	) -> void;
@@ -301,7 +301,7 @@ auto gse::renderer::physics_debug::system::initialize(const initialize_phase& ph
 	s.pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
 }
 
-auto gse::renderer::physics_debug::add_line(const vec3<length>& a, const vec3<length>& b, const vec3f& color, std::vector<debug_vertex>& out_vertices) -> void {
+auto gse::renderer::physics_debug::add_line(const vec3<position>& a, const vec3<position>& b, const vec3f& color, std::vector<debug_vertex>& out_vertices) -> void {
 	out_vertices.push_back(debug_vertex{ a, color });
 	out_vertices.push_back(debug_vertex{ b, color });
 }
@@ -311,7 +311,7 @@ auto gse::renderer::physics_debug::build_obb_lines_for_collider(const physics::c
 	if (mc) {
 		bb.update(mc->render_position, mc->render_orientation);
 	}
-	std::array<vec3<length>, 8> corners;
+	std::array<vec3<position>, 8> corners;
 
 	const auto half = bb.half_extents();
 	const auto axes = bb.obb().axes;
@@ -349,9 +349,9 @@ auto gse::renderer::physics_debug::build_sphere_lines_for_collider(const physics
 	const auto radius = coll.shape_radius;
 
 	constexpr vec3f color{ 0.0f, 1.0f, 0.0f };
-	constexpr int segments = 32;
 
 	for (int ring = 0; ring < 3; ++ring) {
+		constexpr int segments = 32;
 		const auto& u = axes[ring];
 		const auto& v = axes[(ring + 1) % 3];
 
@@ -453,14 +453,14 @@ auto gse::renderer::physics_debug::build_contact_debug_for_collider(const physic
 		constexpr length cross_size = meters(0.05f);
 		constexpr vec3f normal_color{ 0.f, 0.7f, 1.f };
 
-		const vec3<length> px1 = p + vec3<length>{ cross_size, 0.0f, 0.0f };
-		const vec3<length> px2 = p - vec3<length>{ cross_size, 0.0f, 0.0f };
+		const auto px1 = p + vec3<length>{ cross_size, meters(0.f), meters(0.f) };
+		const auto px2 = p - vec3<length>{ cross_size, meters(0.f), meters(0.f) };
 
-		const vec3<length> py1 = p + vec3<length>{ 0.0f, cross_size, 0.0f };
-		const vec3<length> py2 = p - vec3<length>{ 0.0f, cross_size, 0.0f };
+		const auto py1 = p + vec3<length>{ meters(0.f), cross_size, meters(0.f) };
+		const auto py2 = p - vec3<length>{ meters(0.f), cross_size, meters(0.f) };
 
-		const vec3<length> pz1 = p + vec3<length>{ 0.0f, 0.0f, cross_size };
-		const vec3<length> pz2 = p - vec3<length>{ 0.0f, 0.0f, cross_size };
+		const auto pz1 = p + vec3<length>{ meters(0.f), meters(0.f), cross_size };
+		const auto pz2 = p - vec3<length>{ meters(0.f), meters(0.f), cross_size };
 
 		add_line(px1, px2, satisfaction_color, out_vertices);
 		add_line(py1, py2, satisfaction_color, out_vertices);
@@ -468,7 +468,7 @@ auto gse::renderer::physics_debug::build_contact_debug_for_collider(const physic
 
 		constexpr length min_normal_len = meters(0.15f);
 		const length normal_len = std::max(std::min(penetration, meters(0.5f)), min_normal_len);
-		const vec3<length> normal_end = p + n * normal_len;
+		const auto normal_end = p + n * normal_len;
 		add_line(p, normal_end, normal_color, out_vertices);
 	}
 }

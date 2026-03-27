@@ -36,7 +36,7 @@ export namespace gs {
 			component_write<gse::directional_light_component>().debug_menu("Skybox Light", owner_id().number());
 		}
 	private:
-		gse::vec3<gse::length> m_initial_position;
+		gse::vec3<gse::position> m_initial_position;
 		gse::vec3<gse::length> m_size;
 	};
 }

@@ -13,7 +13,7 @@ export namespace gse {
 	class sphere final : public hook<entity> {
 	public:
 		struct params {
-			vec3<length> initial_position = vec3<length>(0.f, 0.f, 0.f);
+			vec3<position> initial_position = vec3<position>(0.f, 0.f, 0.f);
 			length radius = meters(1.f);
 			int sectors = 36;
 			int stacks = 18;

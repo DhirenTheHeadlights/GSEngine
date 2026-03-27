@@ -24,9 +24,9 @@ export namespace gse {
 		return state_of<camera::state>().projection_matrix;
 	}
 
-	auto camera_position() -> vec3<length> {
+	auto camera_position() -> vec3<position> {
 		if (!has_state<camera::state>()) {
-			return vec3<length>(0.f, 0.f, 0.f);
+			return vec3<position>(0.f, 0.f, 0.f);
 		}
 		return state_of<camera::state>().position();
 	}

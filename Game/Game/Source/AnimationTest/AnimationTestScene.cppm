@@ -11,7 +11,7 @@ export namespace gs {
 		auto initialize() -> void override {
 			build("Player")
 				.with<gse::free_camera>({
-					.initial_position = gse::vec3<gse::length>(0.f, 0.f, 0.f)
+					.initial_position = gse::vec3<gse::position>(0.f, 0.f, 0.f)
 				});
 
 			build("Sun")
@@ -32,7 +32,7 @@ export namespace gs {
 
 					build(std::format("Character_{}_{}", x, z))
 						.with<animated_character>({
-							.position = gse::vec3<gse::length>(px, 0.f, pz),
+							.position = gse::vec3<gse::position>(px, 0.f, pz),
 							.skeleton_name = "Skeletons/character",
 							.clip_name = "Clips/mixamo.com",
 							.model_name = "SkinnedModels/character"
@@ -42,7 +42,7 @@ export namespace gs {
 
 			build("Floor")
 				.with<static_floor>({
-					.position = gse::vec3<gse::length>(0.f, -0.25f, 0.f),
+					.position = gse::vec3<gse::position>(0.f, -0.25f, 0.f),
 					.size = gse::vec3<gse::length>(50.f, 0.5f, 50.f)
 				});
 		}
@@ -65,13 +65,13 @@ export namespace gs {
 
 		struct static_floor final : hook<gse::entity> {
 			struct params {
-				gse::vec3<gse::length> position;
+				gse::vec3<gse::position> position;
 				gse::vec3<gse::length> size;
 			};
 
 			explicit static_floor(const params& p) : m_position(p.position), m_size(p.size) {}
 
-			gse::vec3<gse::length> m_position;
+			gse::vec3<gse::position> m_position;
 			gse::vec3<gse::length> m_size;
 
 			auto initialize() -> void override {
@@ -98,7 +98,7 @@ export namespace gs {
 
 		struct animated_character final : hook<gse::entity> {
 			struct params {
-				gse::vec3<gse::length> position;
+				gse::vec3<gse::position> position;
 				std::string skeleton_name;
 				std::string clip_name;
 				std::string model_name;
@@ -110,7 +110,7 @@ export namespace gs {
 				, clip_name(p.clip_name)
 				, model_name(p.model_name) {}
 
-			gse::vec3<gse::length> position;
+			gse::vec3<gse::position> position;
 			std::string skeleton_name;
 			std::string clip_name;
 			std::string model_name;
@@ -124,7 +124,7 @@ export namespace gs {
 
 				add_component<gse::physics::collision_component>({
 					.bounding_box = {
-						gse::vec3<gse::length>(-0.5f, -0.5f, -0.5f),
+						gse::vec3<gse::position>(-0.5f, -0.5f, -0.5f),
 						gse::vec3<gse::length>(0.5f, 0.5f, 0.5f)
 					}
 				});

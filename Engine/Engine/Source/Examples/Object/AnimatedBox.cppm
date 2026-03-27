@@ -15,7 +15,7 @@ export namespace gse {
 	class animated_box final : public hook<entity> {
 	public:
 		struct params {
-			vec3<length> initial_position = vec3<length>(0.f, 0.f, 0.f);
+			vec3<position> initial_position = vec3<position>(0.f, 0.f, 0.f);
 			vec3<length> size = vec3<length>(1.f, 1.f, 1.f);
 		};
 
@@ -77,7 +77,7 @@ export namespace gse {
 			);
 		}
 	private:
-		vec3<length> m_initial_position;
+		vec3<position> m_initial_position;
 		vec3<length> m_size;
 		id m_skeleton_id;
 		id m_clip_id;

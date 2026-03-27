@@ -12,7 +12,7 @@ export namespace gse::camera {
 		time blend_in_duration = milliseconds(300);
 		bool active = true;
 		bool use_entity_position = true;
-		vec3<length> position{};
+		vec3<position> position{};
 	};
 
 	struct follow_component : component<follow_component_data> {

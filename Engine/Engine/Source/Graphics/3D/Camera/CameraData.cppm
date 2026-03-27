@@ -5,7 +5,7 @@ import gse.utility;
 
 export namespace gse::camera {
 	struct target {
-		vec3<length> position{};
+		vec3<position> position{};
 		quat orientation = identity<float>();
 		float fov = 45.0f;
 		length near_plane = meters(0.1f);
@@ -42,7 +42,7 @@ export namespace gse::camera {
 		bool ui_focus = false;
 
 		auto position(
-		) const -> vec3<length>;
+		) const -> vec3<position>;
 
 		auto orientation(
 		) const -> quat;
@@ -53,7 +53,7 @@ export namespace gse::camera {
 	};
 }
 
-auto gse::camera::state::position() const -> vec3<length> {
+auto gse::camera::state::position() const -> vec3<gse::position> {
 	return current.position;
 }
 

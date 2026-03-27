@@ -12,7 +12,7 @@ export namespace gs {
 		using hook::hook;
 
 		auto initialize() -> void override {
-			const auto floor_pos = gse::vec3<gse::length>(0.f, -0.5f, 0.f);
+			const auto floor_pos = gse::vec3<gse::position>(0.f, -0.5f, 0.f);
 			build("Floor")
 				.with<gse::box>({
 					.initial_position = floor_pos,
@@ -31,7 +31,7 @@ export namespace gs {
 			for (int i = 0; i < 5; ++i) {
 				build(std::format("Stack Box {}", i + 1))
 					.with<gse::box>({
-						.initial_position = gse::vec3<gse::length>(5.f, 0.5f + static_cast<float>(i) * 1.0f, 5.f),
+						.initial_position = gse::vec3<gse::position>(5.f, 0.5f + static_cast<float>(i) * 1.0f, 5.f),
 						.size = gse::vec3<gse::length>(gse::meters(1.f)),
 						.mass = gse::kilograms(200.f)
 					});
@@ -39,7 +39,7 @@ export namespace gs {
 
 			build("Sphere")
 				.with<gse::sphere>({
-					.initial_position = gse::vec3<gse::length>(-3.f, 5.f, 5.f),
+					.initial_position = gse::vec3<gse::position>(-3.f, 5.f, 5.f),
 					.radius = gse::meters(1.f),
 					.sectors = 24,
 					.stacks = 16
@@ -47,17 +47,17 @@ export namespace gs {
 
 			build("Player")
 				.with<player>({
-					.initial_position = gse::vec3<gse::length>(0.f, 0.f, 0.f)
+					.initial_position = gse::vec3<gse::position>(0.f, 0.f, 0.f)
 				});
 
 			build("Scene Camera")
 				.with<gse::free_camera>({
-					.initial_position = gse::vec3<gse::length>(15.f, 8.f, 15.f)
+					.initial_position = gse::vec3<gse::position>(15.f, 8.f, 15.f)
 				});
 
 			build("Test Light")
 				.with<sphere_light>({
-					.initial_position = gse::vec3<gse::length>(10.f, 15.f, 10.f),
+					.initial_position = gse::vec3<gse::position>(10.f, 15.f, 10.f),
 					.radius = gse::meters(0.5f),
 					.sectors = 12,
 					.stacks = 8

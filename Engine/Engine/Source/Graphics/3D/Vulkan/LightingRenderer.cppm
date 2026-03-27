@@ -366,8 +366,8 @@ auto gse::renderer::lighting::system::render(render_phase& phase, const state& s
 		);
 	};
 
-	auto to_view_pos = [&](const vec3<length>& world_pos) {
-		const auto p = vec4<length>(world_pos, meters(1.0f));
+	auto to_view_pos = [&](const vec3<position>& world_pos) {
+		const auto p = vec4<length>(world_pos.x().quantity_from_origin(), world_pos.y().quantity_from_origin(), world_pos.z().quantity_from_origin(), meters(1.0f));
 		auto vp = view * p;
 		return vec3<length>(vp.x(), vp.y(), vp.z());
 	};

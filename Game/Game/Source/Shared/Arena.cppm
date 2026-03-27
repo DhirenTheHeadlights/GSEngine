@@ -27,11 +27,11 @@ namespace gs::arena {
 		}
 	private:
 		gse::vec3<gse::length> m_size;
-		gse::vec3<gse::length> m_initial_position;
+		gse::vec3<gse::position> m_initial_position;
 	};
 
 	export auto create(const gse::hook<gse::scene>* scene) -> void {
-		constexpr auto arena_position = gse::vec3<gse::length>(0.f, 0.f, 0.f);
+		constexpr auto arena_position = gse::vec3<gse::position>(0.f, 0.f, 0.f);
 
 		constexpr gse::length arena_size = gse::meters(100.f);
 		constexpr gse::length wall_thickness = gse::meters(10.f);

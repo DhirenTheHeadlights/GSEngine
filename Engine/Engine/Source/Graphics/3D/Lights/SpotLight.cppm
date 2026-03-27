@@ -11,7 +11,7 @@ export namespace gse {
 	struct spot_light_data {
 		vec3f color;
 		float intensity = 1.0f;
-		vec3<length> position;
+		vec3<position> position;
 		vec3f direction;
 		float constant = 1.0f;
 		float linear = 0.09f;

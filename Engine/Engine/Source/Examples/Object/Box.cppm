@@ -14,7 +14,7 @@ export namespace gse {
 	class box final : public hook<entity> {
 	public:
 		struct params {
-			vec3<length> initial_position = vec3<length>(0.f, 0.f, 0.f);
+			vec3<position> initial_position = vec3<position>(0.f, 0.f, 0.f);
 			vec3<length> size = vec3<length>(1.f, 1.f, 1.f);
 			quat initial_orientation = quat(1.f, 0.f, 0.f, 0.f);
 			mass mass = kilograms(1000.f);
@@ -54,7 +54,7 @@ export namespace gse {
 			});
 		}
 	private:
-		vec3<length> m_initial_position;
+		vec3<position> m_initial_position;
 		vec3<length> m_size;
 		quat m_initial_orientation;
 		mass m_box_mass;
