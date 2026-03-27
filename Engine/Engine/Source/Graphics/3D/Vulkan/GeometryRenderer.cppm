@@ -799,7 +799,7 @@ auto gse::renderer::geometry::system::initialize(initialize_phase&, state& s) ->
 	s.ctx->instantly_load(s.blank_texture);
 
 	auto pipeline_layouts = s.shader_handle->layouts();
-	const auto pc_range = s.shader_handle->push_constant_range("PushConstants");
+	const auto pc_range = s.shader_handle->push_constant_range("push_constants");
 
 	s.pipeline_layout = config.device_config().device.createPipelineLayout({
 		.setLayoutCount = static_cast<std::uint32_t>(pipeline_layouts.size()),
