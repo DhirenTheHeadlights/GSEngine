@@ -12,8 +12,8 @@ export namespace gse::vbd {
 		vec3f normal = {};
 		vec3f tangent_u = {};
 		vec3f tangent_v = {};
-		vec3<displacement> local_anchor_a = {};
-		vec3<displacement> local_anchor_b = {};
+		vec3<lever_arm> local_anchor_a = {};
+		vec3<lever_arm> local_anchor_b = {};
 		bool sticking = false;
 		std::uint32_t age = 0;
 	};

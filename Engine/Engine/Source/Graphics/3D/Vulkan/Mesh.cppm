@@ -9,7 +9,7 @@ import gse.math;
 
 export namespace gse {
     struct vertex {
-        vec3<length> position;
+        vec3<displacement> position;
         vec3f normal;
         vec2f tex_coords;
 
@@ -24,7 +24,7 @@ export namespace gse {
     };
 
     struct meshlet_bounds {
-        vec3<length> center;
+        vec3<displacement> center;
         length radius;
         vec3f cone_axis;
         float cone_cutoff;
@@ -57,10 +57,10 @@ export namespace gse {
         auto draw(vk::CommandBuffer command_buffer) const -> void;
         auto draw_instanced(vk::CommandBuffer command_buffer, std::uint32_t instance_count, std::uint32_t first_instance = 0) const -> void;
 
-        auto center_of_mass() const -> vec3<length>;
+        auto center_of_mass() const -> vec3<displacement>;
         auto material() const -> const resource::handle<material>&;
         auto indices() const -> const std::vector<std::uint32_t>&;
-        auto aabb() const -> std::pair<vec3<length>, vec3<length>>;
+        auto aabb() const -> std::pair<vec3<displacement>, vec3<displacement>>;
 
         auto has_meshlets() const -> bool { return !m_meshlets.descriptors.empty(); }
         auto meshlet_count() const -> std::uint32_t { return static_cast<std::uint32_t>(m_meshlets.descriptors.size()); }
@@ -84,7 +84,15 @@ export namespace gse {
         meshlet_data m_meshlets;
     };
 
-    auto generate_bounding_box_mesh(vec3<length> upper, vec3<length> lower) -> mesh_data;
+    auto generate_bounding_box_mesh(
+        vec3<displacement> upper, 
+        vec3<displacement> lower
+    ) -> mesh_data;
+
+    auto build_runtime_meshlets(
+        const std::vector<vertex>& vertices, 
+        const std::vector<std::uint32_t>& indices
+    ) -> meshlet_data;
 }
 
 gse::mesh::mesh(mesh_data&& data)
@@ -115,6 +123,10 @@ gse::mesh::mesh(mesh&& other) noexcept
 }
 
 auto gse::mesh::initialize(vulkan::config& config) -> void {
+    if (!has_meshlets() && !m_vertices.empty() && !m_indices.empty()) {
+        m_meshlets = build_runtime_meshlets(m_vertices, m_indices);
+    }
+
     const vk::DeviceSize vertex_buffer_size = sizeof(vertex) * m_vertices.size();
     const vk::DeviceSize index_buffer_size = sizeof(std::uint32_t) * m_indices.size();
 
@@ -210,15 +222,15 @@ auto gse::mesh::draw_instanced(const vk::CommandBuffer command_buffer, const std
     command_buffer.drawIndexed(static_cast<std::uint32_t>(m_indices.size()), instance_count, 0, 0, first_instance);
 }
 
-auto gse::mesh::center_of_mass() const -> vec3<length> {
+auto gse::mesh::center_of_mass() const -> vec3<displacement> {
     using length_d = length_t<double>;
     using volume_d = volume_t<double>;
-    using vec3ld = vec3<length_d>;
+    using vec3_ld = vec3<length_d>;
 
-    const vec3ld reference_point{};
+    constexpr vec3_ld reference_point{};
 
     volume_d total_volume{};
-    vec3ld moment;
+    decltype(vec3_ld{} * volume_d{}) moment{};
 
     assert(m_indices.size() % 3 == 0, std::source_location::current(), "m_indices count is not a multiple of 3. Ensure that each face is defined by exactly three m_indices.");
 
@@ -229,25 +241,24 @@ auto gse::mesh::center_of_mass() const -> vec3<length> {
 
         assert(idx0 < m_vertices.size() && idx1 < m_vertices.size() && idx2 < m_vertices.size(), std::source_location::current(), "Index out of range while accessing m_vertices.");
 
-        const vec3ld v0 = { length_d(m_vertices[idx0].position.x()), length_d(m_vertices[idx0].position.y()), length_d(m_vertices[idx0].position.z()) };
-        const vec3ld v1 = { length_d(m_vertices[idx1].position.x()), length_d(m_vertices[idx1].position.y()), length_d(m_vertices[idx1].position.z()) };
-        const vec3ld v2 = { length_d(m_vertices[idx2].position.x()), length_d(m_vertices[idx2].position.y()), length_d(m_vertices[idx2].position.z()) };
+        const vec3_ld v0 = { length_d(m_vertices[idx0].position.x()), length_d(m_vertices[idx0].position.y()), length_d(m_vertices[idx0].position.z()) };
+        const vec3_ld v1 = { length_d(m_vertices[idx1].position.x()), length_d(m_vertices[idx1].position.y()), length_d(m_vertices[idx1].position.z()) };
+        const vec3_ld v2 = { length_d(m_vertices[idx2].position.x()), length_d(m_vertices[idx2].position.y()), length_d(m_vertices[idx2].position.z()) };
 
-        const vec3ld a = v0 - reference_point;
-        const vec3ld b = v1 - reference_point;
-        const vec3ld c = v2 - reference_point;
+        const vec3_ld a = v0 - reference_point;
+        const vec3_ld b = v1 - reference_point;
+        const vec3_ld c = v2 - reference_point;
 
-        const volume_d volume = abs(dot(a, cross(b, c))) / 6.0;
-        const vec3ld tetra_com = (v0 + v1 + v2 + reference_point) / 4.0;
+        const auto volume = abs(dot(a, cross(b, c))) / 6.0;
+        const vec3_ld tetra_com = (v0 + v1 + v2 + reference_point) / 4.0;
 
         total_volume = total_volume + volume;
-        moment += tetra_com * gse::internal::to_storage(volume);
+        moment += tetra_com * volume;
     }
 
     assert(total_volume != volume_d{}, std::source_location::current(), "Total volume is zero. Check if the mesh is closed and correctly oriented.");
 
-    const auto result = moment / gse::internal::to_storage(total_volume);
-    return { length(result.x()), length(result.y()), length(result.z()) };
+    return vec3<displacement>(moment / total_volume);
 }
 
 auto gse::mesh::material() const -> const resource::handle<gse::material>& {
@@ -258,13 +269,13 @@ auto gse::mesh::indices() const -> const std::vector<std::uint32_t>& {
     return m_indices;
 }
 
-auto gse::mesh::aabb() const -> std::pair<vec3<length>, vec3<length>> {
+auto gse::mesh::aabb() const -> std::pair<vec3<displacement>, vec3<displacement>> {
     if (m_vertices.empty()) {
         return {};
     }
 
-    vec3<length> min_point = m_vertices[0].position;
-    vec3<length> max_point = m_vertices[0].position;
+    vec3<displacement> min_point = m_vertices[0].position;
+    vec3<displacement> max_point = m_vertices[0].position;
 
     for (const auto& vertex : m_vertices) {
         min_point.x() = std::min(min_point.x(), vertex.position.x());
@@ -279,8 +290,8 @@ auto gse::mesh::aabb() const -> std::pair<vec3<length>, vec3<length>> {
     return { min_point, max_point };
 }
 
-auto gse::generate_bounding_box_mesh(const vec3<length> upper, const vec3<length> lower) -> mesh_data {
-    auto create_vertex = [](const vec3<length>& position) -> vertex {
+auto gse::generate_bounding_box_mesh(const vec3<displacement> upper, const vec3<displacement> lower) -> mesh_data {
+    auto create_vertex = [](const vec3<displacement>& position) -> vertex {
 		return {
 			.position = position,
 			.normal = { 0.0f, 0.0f, 0.0f },
@@ -312,4 +323,123 @@ auto gse::generate_bounding_box_mesh(const vec3<length> upper, const vec3<length
         .vertices = vertices,
         .indices = indices
     };
+}
+
+auto gse::build_runtime_meshlets(const std::vector<vertex>& vertices, const std::vector<std::uint32_t>& indices) -> meshlet_data {
+    constexpr std::uint32_t max_vertices = 64;
+    constexpr std::uint32_t max_triangles = 124;
+
+    meshlet_data result;
+
+    std::unordered_map<std::uint32_t, std::uint8_t> local_vertex_map;
+    std::vector<std::uint32_t> current_vertices;
+    std::vector<std::uint8_t> current_triangles;
+
+    auto compute_bounds = [&](const meshlet_descriptor& desc) -> meshlet_bounds {
+        vec3<displacement> centroid{};
+        for (std::uint32_t i = 0; i < desc.vertex_count; ++i) {
+            centroid += vertices[current_vertices[i]].position;
+        }
+        centroid /= static_cast<float>(desc.vertex_count);
+
+        length max_dist{};
+        for (std::uint32_t i = 0; i < desc.vertex_count; ++i) {
+            const vec3<displacement> d = vertices[current_vertices[i]].position - centroid;
+            max_dist = std::max<displacement>(max_dist, magnitude(d));
+        }
+
+        vec3f avg_normal(0.f);
+        for (std::uint32_t t = 0; t < desc.triangle_count; ++t) {
+            const auto i0 = current_vertices[current_triangles[t * 3 + 0]];
+            const auto i1 = current_vertices[current_triangles[t * 3 + 1]];
+            const auto i2 = current_vertices[current_triangles[t * 3 + 2]];
+            avg_normal += vertices[i0].normal + vertices[i1].normal + vertices[i2].normal;
+        }
+
+        const float normal_len = magnitude(avg_normal);
+        const vec3f cone_axis = normal_len > 1e-6f ? avg_normal / normal_len : vec3f(0.f, 1.f, 0.f);
+
+        float min_dot = 1.f;
+        for (std::uint32_t t = 0; t < desc.triangle_count; ++t) {
+            const auto i0 = current_vertices[current_triangles[t * 3 + 0]];
+            const auto i1 = current_vertices[current_triangles[t * 3 + 1]];
+            const auto i2 = current_vertices[current_triangles[t * 3 + 2]];
+
+            const vec3<displacement> edge1 = vertices[i1].position - vertices[i0].position;
+            const vec3<displacement> edge2 = vertices[i2].position - vertices[i0].position;
+            const vec3f face_normal = normalize(cross(edge1, edge2));
+            if (magnitude(face_normal) > 0.5f) {
+                min_dot = std::min(min_dot, dot(face_normal, cone_axis));
+            }
+        }
+
+        const float cone_cutoff = min_dot < 0.f ? -1.f : min_dot;
+
+        return {
+            .center = centroid,
+            .radius = max_dist,
+            .cone_axis = cone_axis,
+            .cone_cutoff = cone_cutoff
+        };
+    };
+
+    auto finalize_meshlet = [&] {
+        if (current_triangles.empty()) {
+            return;
+        }
+
+        const meshlet_descriptor desc{
+            .vertex_offset = static_cast<std::uint32_t>(result.vertex_indices.size()),
+            .triangle_offset = static_cast<std::uint32_t>(result.triangles.size()),
+            .vertex_count = static_cast<std::uint32_t>(current_vertices.size()),
+            .triangle_count = static_cast<std::uint32_t>(current_triangles.size() / 3)
+        };
+
+        const auto bounds = compute_bounds(desc);
+
+        result.vertex_indices.insert(result.vertex_indices.end(), current_vertices.begin(), current_vertices.end());
+        result.triangles.insert(result.triangles.end(), current_triangles.begin(), current_triangles.end());
+        result.descriptors.push_back(desc);
+        result.bounds.push_back(bounds);
+
+        local_vertex_map.clear();
+        current_vertices.clear();
+        current_triangles.clear();
+    };
+
+    for (std::size_t i = 0; i + 2 < indices.size(); i += 3) {
+        std::uint32_t tri_indices[3] = { indices[i], indices[i + 1], indices[i + 2] };
+
+        std::uint32_t new_vertex_count = 0;
+        for (const auto idx : tri_indices) {
+            if (!local_vertex_map.contains(idx)) {
+                ++new_vertex_count;
+            }
+        }
+
+        if (current_vertices.size() + new_vertex_count > max_vertices || current_triangles.size() / 3 >= max_triangles) {
+            finalize_meshlet();
+        }
+
+        std::uint8_t local_tri[3];
+        for (int j = 0; j < 3; ++j) {
+            auto [it, inserted] = local_vertex_map.emplace(tri_indices[j], static_cast<std::uint8_t>(current_vertices.size()));
+            if (inserted) {
+                current_vertices.push_back(tri_indices[j]);
+            }
+            local_tri[j] = it->second;
+        }
+
+        current_triangles.push_back(local_tri[0]);
+        current_triangles.push_back(local_tri[1]);
+        current_triangles.push_back(local_tri[2]);
+    }
+
+    finalize_meshlet();
+
+    while (result.triangles.size() % 4 != 0) {
+        result.triangles.push_back(0);
+    }
+
+    return result;
 }

@@ -184,7 +184,7 @@ export namespace gs {
 				.with_init([](hook<gse::entity>& h) {
 					h.configure_when_present([](gse::physics::motion_component& mc) {
 						mc.mass = gse::kilograms(500.f);
-						mc.pending_impulse = gse::vec3<gse::velocity>(0.f, 0.f, -15.f);
+						mc.pending_impulse = gse::vec3<gse::velocity>(0.f, 0.f, -15.f) * gse::kilograms(500.f);
 					});
 				});
 		}

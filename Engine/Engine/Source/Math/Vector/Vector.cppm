@@ -244,6 +244,10 @@ export namespace gse {
 		constexpr auto operator-(
 			this const Self& self
 		) -> Self;
+
+		constexpr auto operator<=>(
+			const vec&
+		) const = default;
 	};
 
 	template <internal::is_vec_element S, typename V>

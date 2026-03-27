@@ -15,6 +15,8 @@ export import :unit_display;
 export import :units;
 export import :vector;
 export import :vector_math;
+export import :mixed_vec;
+export import :mixed_mat;
 
 export namespace gse {
 	template <typename T>

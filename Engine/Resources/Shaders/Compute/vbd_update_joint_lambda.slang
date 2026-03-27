@@ -40,7 +40,11 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
         float d_mag = length(d);
         float c = (d_mag - j.target_distance) - j.pos_c0.x;
         j.pos_lambda.x = j.pos_penalty.x * c + j.pos_lambda.x;
-        j.pos_penalty.x = min(j.pos_penalty.x + pc.beta * abs(c), pc.penalty_max);
+        float penalty_cap = pc.penalty_max;
+        if (j.compliance > 0.0) {
+            penalty_cap = min(1.0 / max(j.compliance * pc.h_squared, 1e-10), pc.penalty_max);
+        }
+        j.pos_penalty.x = min(j.pos_penalty.x + pc.beta * abs(c), penalty_cap);
     }
     else if (j.type == JOINT_TYPE_FIXED || j.type == JOINT_TYPE_HINGE) {
         float3 dirs[3] = { float3(1, 0, 0), float3(0, 1, 0), float3(0, 0, 1) };
@@ -57,7 +61,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
             for (int k = 0; k < 3; k++) {
                 float c_ang = theta[k] - j.ang_c0[k];
                 j.ang_lambda[k] = j.ang_penalty[k] * c_ang + j.ang_lambda[k];
-                j.ang_penalty[k] = min(j.ang_penalty[k] + pc.beta * abs(c_ang), pc.penalty_max);
+                j.ang_penalty[k] = min(j.ang_penalty[k] + pc.ang_beta * abs(c_ang), pc.penalty_max);
             }
         }
         else {
@@ -74,10 +78,10 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
             float c_v = dot(perp_v, swing_error) - j.ang_c0.y;
 
             j.ang_lambda.x = j.ang_penalty.x * c_u + j.ang_lambda.x;
-            j.ang_penalty.x = min(j.ang_penalty.x + pc.beta * abs(c_u), pc.penalty_max);
+            j.ang_penalty.x = min(j.ang_penalty.x + pc.ang_beta * abs(c_u), pc.penalty_max);
 
             j.ang_lambda.y = j.ang_penalty.y * c_v + j.ang_lambda.y;
-            j.ang_penalty.y = min(j.ang_penalty.y + pc.beta * abs(c_v), pc.penalty_max);
+            j.ang_penalty.y = min(j.ang_penalty.y + pc.ang_beta * abs(c_v), pc.penalty_max);
 
             if (j.limits_enabled != 0) {
                 float twist = dot(axis_a, theta);
@@ -85,12 +89,12 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
                 if (twist < j.limit_lower) {
                     float c_limit = (twist - j.limit_lower) - j.limit_c0;
                     j.limit_lambda = min(j.limit_penalty * c_limit + j.limit_lambda, 0.0);
-                    j.limit_penalty = min(j.limit_penalty + pc.beta * abs(c_limit), pc.penalty_max);
+                    j.limit_penalty = min(j.limit_penalty + pc.ang_beta * abs(c_limit), pc.penalty_max);
                 }
                 else if (twist > j.limit_upper) {
                     float c_limit = (twist - j.limit_upper) - j.limit_c0;
                     j.limit_lambda = max(j.limit_penalty * c_limit + j.limit_lambda, 0.0);
-                    j.limit_penalty = min(j.limit_penalty + pc.beta * abs(c_limit), pc.penalty_max);
+                    j.limit_penalty = min(j.limit_penalty + pc.ang_beta * abs(c_limit), pc.penalty_max);
                 }
             }
         }
@@ -115,7 +119,7 @@ void cs_main(uint3 dispatch_id : SV_DispatchThreadID) {
         for (int k = 0; k < 3; k++) {
             float c_ang = theta[k] - j.ang_c0[k];
             j.ang_lambda[k] = j.ang_penalty[k] * c_ang + j.ang_lambda[k];
-            j.ang_penalty[k] = min(j.ang_penalty[k] + pc.beta * abs(c_ang), pc.penalty_max);
+            j.ang_penalty[k] = min(j.ang_penalty[k] + pc.ang_beta * abs(c_ang), pc.penalty_max);
         }
     }
 

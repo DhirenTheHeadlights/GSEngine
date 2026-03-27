@@ -467,7 +467,7 @@ auto gse::renderer::physics_debug::build_contact_debug_for_collider(const physic
 		add_line(pz1, pz2, satisfaction_color, out_vertices);
 
 		constexpr length min_normal_len = meters(0.15f);
-		const length normal_len = std::max(std::min(penetration, meters(0.5f)), min_normal_len);
+		const length normal_len = std::max<length>(std::min<length>(penetration, meters(0.5f)), min_normal_len);
 		const auto normal_end = p + n * normal_len;
 		add_line(p, normal_end, normal_color, out_vertices);
 	}

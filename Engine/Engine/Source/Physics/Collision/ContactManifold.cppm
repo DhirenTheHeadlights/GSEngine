@@ -30,7 +30,7 @@ export namespace gse {
 		vec3<position> position_on_a;
 		vec3<position> position_on_b;
 		vec3f normal;
-		length separation;
+		separation separation;
 		feature_id feature;
 	};
 

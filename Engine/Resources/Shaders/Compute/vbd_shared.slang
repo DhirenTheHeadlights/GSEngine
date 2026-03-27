@@ -90,9 +90,13 @@ public struct GpuJoint {
     public float4 local_axis_a;
     public float4 local_axis_b;
     public float target_distance;
+    public float compliance;
+    public float damping;
+    public float _pad0;
     public float limit_lower;
     public float limit_upper;
-    public float _pad0;
+    public float _pad1;
+    public float _pad2;
     public float4 rest_orientation;
     public float4 pos_lambda;
     public float4 pos_penalty;
@@ -100,14 +104,14 @@ public struct GpuJoint {
     public float4 ang_penalty;
     public float limit_lambda;
     public float limit_penalty;
-    public float _pad1;
-    public float _pad2;
+    public float _pad3;
+    public float _pad4;
     public float4 pos_c0;
     public float4 ang_c0;
     public float limit_c0;
-    public float _pad3;
-    public float _pad4;
     public float _pad5;
+    public float _pad6;
+    public float _pad7;
 };
 
 public struct vbd_push_constants {
@@ -122,8 +126,10 @@ public struct vbd_push_constants {
     public float h_squared;
     public float dt;
     public float beta;
+    public float ang_beta;
     public float linear_damping;
     public float velocity_sleep_threshold;
+    public float angular_sleep_threshold;
     public float current_alpha;
     public float collision_margin;
     public float friction_coefficient;
