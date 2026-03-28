@@ -330,9 +330,9 @@ auto gse::renderer::lighting::system::render(render_phase& phase, const state& s
 	const auto frame_index = config.current_frame();
 
 	const auto* cam_state = phase.try_state_of<camera::state>();
-	auto proj = cam_state ? cam_state->projection_matrix : mat4f(1.0f);
+	auto proj = cam_state ? cam_state->projection_matrix : projection_matrix{};
 	auto inv_proj = proj.inverse();
-	auto view = cam_state ? cam_state->view_matrix : mat4f(1.0f);
+	auto view = cam_state ? cam_state->view_matrix : view_matrix{};
 	auto inv_view = view.inverse();
 
 	const auto& cam_alloc = s.ubo_allocations.at("CameraParams")[frame_index].allocation;
@@ -366,12 +366,6 @@ auto gse::renderer::lighting::system::render(render_phase& phase, const state& s
 		);
 	};
 
-	const mat3f view_rot(view);
-	const vec3<displacement> view_translation = { meters(view[3][0]), meters(view[3][1]), meters(view[3][2]) };
-	auto to_view_pos = [&](const vec3<position>& p) {
-		return view_rot * (p - vec3<position>{}) + view_translation;
-	};
-
 	std::size_t light_count = 0;
 
 	for (const auto& comp : dir_chunk) {
@@ -383,7 +377,7 @@ auto gse::renderer::lighting::system::render(render_phase& phase, const state& s
 
 		int type = 0;
 		set(light_count, "light_type", type);
-		set(light_count, "direction", view_rot * comp.direction);
+		set(light_count, "direction", view.transform_direction(comp.direction));
 		set(light_count, "color", comp.color);
 		set(light_count, "intensity", comp.intensity);
 		set(light_count, "ambient_strength", comp.ambient_strength);
@@ -403,8 +397,8 @@ auto gse::renderer::lighting::system::render(render_phase& phase, const state& s
 		const float outer_cut_off_cos = gse::cos(comp.outer_cut_off);
 
 		set(light_count, "light_type", type);
-		set(light_count, "position", to_view_pos(comp.position));
-		set(light_count, "direction", view_rot * comp.direction);
+		set(light_count, "position", view.transform_point(comp.position));
+		set(light_count, "direction", view.transform_direction(comp.direction));
 		set(light_count, "color", comp.color);
 		set(light_count, "intensity", comp.intensity);
 		set(light_count, "constant", comp.constant);
@@ -426,7 +420,7 @@ auto gse::renderer::lighting::system::render(render_phase& phase, const state& s
 
 		int type = 1;
 		set(light_count, "light_type", type);
-		set(light_count, "position", to_view_pos(comp.position));
+		set(light_count, "position", view.transform_point(comp.position));
 		set(light_count, "color", comp.color);
 		set(light_count, "intensity", comp.intensity);
 		set(light_count, "constant", comp.constant);
@@ -449,7 +443,7 @@ auto gse::renderer::lighting::system::render(render_phase& phase, const state& s
 	}
 
 	std::array<int, max_shadow_lights> shadow_indices{};
-	std::array<mat4f, max_shadow_lights> shadow_view_proj{};
+	std::array<view_projection_matrix, max_shadow_lights> shadow_view_proj{};
 	const std::size_t shadow_light_count =
 		std::min<std::size_t>(shadow_entries.size(), max_shadow_lights);
 

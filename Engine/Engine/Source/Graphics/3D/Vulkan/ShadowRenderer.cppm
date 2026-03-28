@@ -18,15 +18,15 @@ import gse.utility;
 
 export namespace gse::renderer {
 	struct shadow_light_entry {
-		mat4f view;
-		mat4f proj;
+		view_matrix view;
+		projection_matrix proj;
 		std::vector<id> ignore_list_ids;
 		int shadow_index = -1;
 	};
 
 	struct point_shadow_light_entry {
 		vec3<length> world_position;
-		std::array<mat4f, 6> face_view_proj;
+		std::array<view_projection_matrix, 6> face_view_proj;
 		length near_plane;
 		length far_plane;
 		std::vector<id> ignore_list_ids;
@@ -349,7 +349,7 @@ auto gse::renderer::shadow::system::update(update_phase& phase, state& s) -> voi
 			comp.far_plane
 		);
 
-		auto up = ensure_non_collinear_up(dir, { 0.0f, 1.0f, 0.0f });
+		auto up = ensure_non_collinear_up(dir, axis_y);
 
 		entry.view = look_at(
 			light_pos,
@@ -382,7 +382,7 @@ auto gse::renderer::shadow::system::update(update_phase& phase, state& s) -> voi
 			comp.far_plane
 		);
 
-		auto up = ensure_non_collinear_up(dir, { 0.0f, 1.0f, 0.0f });
+		auto up = ensure_non_collinear_up(dir, axis_y);
 
 		entry.view = look_at(
 			pos,
@@ -422,27 +422,27 @@ auto gse::renderer::shadow::system::update(update_phase& phase, state& s) -> voi
 
 		entry.face_view_proj[0] = proj * look_at(
 			pos, pos + vec3<length>(meters(1.0f), meters(0.0f), meters(0.0f)),
-			vec3f(0.0f, -1.0f, 0.0f)
+			-axis_y
 		);
 		entry.face_view_proj[1] = proj * look_at(
 			pos, pos + vec3<length>(meters(-1.0f), meters(0.0f), meters(0.0f)),
-			vec3f(0.0f, -1.0f, 0.0f)
+			-axis_y
 		);
 		entry.face_view_proj[2] = proj * look_at(
 			pos, pos + vec3<length>(meters(0.0f), meters(1.0f), meters(0.0f)),
-			vec3f(0.0f, 0.0f, 1.0f)
+			axis_z
 		);
 		entry.face_view_proj[3] = proj * look_at(
 			pos, pos + vec3<length>(meters(0.0f), meters(-1.0f), meters(0.0f)),
-			vec3f(0.0f, 0.0f, -1.0f)
+			-axis_z
 		);
 		entry.face_view_proj[4] = proj * look_at(
 			pos, pos + vec3<length>(meters(0.0f), meters(0.0f), meters(1.0f)),
-			vec3f(0.0f, -1.0f, 0.0f)
+			-axis_y
 		);
 		entry.face_view_proj[5] = proj * look_at(
 			pos, pos + vec3<length>(meters(0.0f), meters(0.0f), meters(-1.0f)),
-			vec3f(0.0f, -1.0f, 0.0f)
+			-axis_y
 		);
 
 		data.point_lights.push_back(std::move(entry));
@@ -539,7 +539,7 @@ auto gse::renderer::shadow::system::render(render_phase& phase, const state& s) 
             };
             command.setScissor(0, scissor);
 
-            const mat4f light_view_proj = proj * view;
+            const auto light_view_proj = proj * view;
 
             for (const auto& e : draw_list) {
                 s.shader_handle->push(
@@ -698,9 +698,9 @@ auto gse::renderer::ensure_non_collinear_up(const vec3f& direction, const vec3f&
 	auto normalized_up = normalize(up);
 	if (const float dot_product = dot(normalized_direction, normalized_up); std::abs(dot_product) > 1.0f - std::numeric_limits<float>::epsilon()) {
 		if (std::abs(normalized_direction.y()) > 0.9f) {
-			normalized_up = vec3f(0.0f, 0.0f, 1.0f);
+			normalized_up = axis_z;
 		} else {
-			normalized_up = vec3f(0.0f, 1.0f, 0.0f);
+			normalized_up = axis_y;
 		}
 	}
 	return normalized_up;

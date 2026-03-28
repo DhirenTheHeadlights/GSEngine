@@ -36,18 +36,18 @@ namespace gse::camera {
 
 	auto compute_view_matrix(
 		const target& t
-	) -> mat4f {
+	) -> view_matrix {
 		const auto rotation = mat4f(conjugate(t.orientation));
 		const mat4f translation = translate(mat4f(1.0f), -(t.position - vec3<position>{}));
-		return rotation * translation;
+		return spatial_matrix(rotation * translation);
 	}
 
 	auto compute_projection_matrix(
 		const target& t,
 		const vec2f& viewport
-	) -> mat4f {
+	) -> projection_matrix {
 		const float aspect_ratio = viewport.x() / viewport.y();
-		return perspective(degrees(t.fov), aspect_ratio, t.near_plane, t.far_plane);
+		return perspective(t.fov, aspect_ratio, t.near_plane, t.far_plane);
 	}
 }
 
@@ -107,7 +107,7 @@ auto gse::camera::system::update(update_phase& phase, state& s) -> void {
 
 				best_target.position = cam.position + cam.offset;
 				best_target.orientation = new_orientation;
-				best_target.fov = 45.0f;
+				best_target.fov = degrees(45.0f);
 				best_target.near_plane = meters(0.1f);
 				best_target.far_plane = meters(10000.0f);
 			}

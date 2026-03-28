@@ -47,50 +47,28 @@ namespace gse::renderer {
 		return { world_min, world_max };
 	}
 
-	auto extract_frustum_planes(const mat4f& view_proj) -> frustum_planes {
+	auto extract_frustum_planes(const view_projection_matrix& vp) -> frustum_planes {
 		frustum_planes planes;
 
-		planes[0] = vec4f(
-			view_proj[0][3] + view_proj[0][0],
-			view_proj[1][3] + view_proj[1][0],
-			view_proj[2][3] + view_proj[2][0],
-			view_proj[3][3] + view_proj[3][0]
-		);
+		auto at = [&]<std::size_t C, std::size_t R>(std::integral_constant<std::size_t, C>, std::integral_constant<std::size_t, R>) {
+			return internal::to_storage(vp.at<C, R>());
+		};
 
-		planes[1] = vec4f(
-			view_proj[0][3] - view_proj[0][0],
-			view_proj[1][3] - view_proj[1][0],
-			view_proj[2][3] - view_proj[2][0],
-			view_proj[3][3] - view_proj[3][0]
-		);
+		constexpr auto c0 = std::integral_constant<std::size_t, 0>{};
+		constexpr auto c1 = std::integral_constant<std::size_t, 1>{};
+		constexpr auto c2 = std::integral_constant<std::size_t, 2>{};
+		constexpr auto c3 = std::integral_constant<std::size_t, 3>{};
+		constexpr auto r0 = std::integral_constant<std::size_t, 0>{};
+		constexpr auto r1 = std::integral_constant<std::size_t, 1>{};
+		constexpr auto r2 = std::integral_constant<std::size_t, 2>{};
+		constexpr auto r3 = std::integral_constant<std::size_t, 3>{};
 
-		planes[2] = vec4f(
-			view_proj[0][3] + view_proj[0][1],
-			view_proj[1][3] + view_proj[1][1],
-			view_proj[2][3] + view_proj[2][1],
-			view_proj[3][3] + view_proj[3][1]
-		);
-
-		planes[3] = vec4f(
-			view_proj[0][3] - view_proj[0][1],
-			view_proj[1][3] - view_proj[1][1],
-			view_proj[2][3] - view_proj[2][1],
-			view_proj[3][3] - view_proj[3][1]
-		);
-
-		planes[4] = vec4f(
-			view_proj[0][3] + view_proj[0][2],
-			view_proj[1][3] + view_proj[1][2],
-			view_proj[2][3] + view_proj[2][2],
-			view_proj[3][3] + view_proj[3][2]
-		);
-
-		planes[5] = vec4f(
-			view_proj[0][3] - view_proj[0][2],
-			view_proj[1][3] - view_proj[1][2],
-			view_proj[2][3] - view_proj[2][2],
-			view_proj[3][3] - view_proj[3][2]
-		);
+		planes[0] = { at(c0,r3) + at(c0,r0), at(c1,r3) + at(c1,r0), at(c2,r3) + at(c2,r0), at(c3,r3) + at(c3,r0) };
+		planes[1] = { at(c0,r3) - at(c0,r0), at(c1,r3) - at(c1,r0), at(c2,r3) - at(c2,r0), at(c3,r3) - at(c3,r0) };
+		planes[2] = { at(c0,r3) + at(c0,r1), at(c1,r3) + at(c1,r1), at(c2,r3) + at(c2,r1), at(c3,r3) + at(c3,r1) };
+		planes[3] = { at(c0,r3) - at(c0,r1), at(c1,r3) - at(c1,r1), at(c2,r3) - at(c2,r1), at(c3,r3) - at(c3,r1) };
+		planes[4] = { at(c0,r3) + at(c0,r2), at(c1,r3) + at(c1,r2), at(c2,r3) + at(c2,r2), at(c3,r3) + at(c3,r2) };
+		planes[5] = { at(c0,r3) - at(c0,r2), at(c1,r3) - at(c1,r2), at(c2,r3) - at(c2,r2), at(c3,r3) - at(c3,r2) };
 
 		for (auto& plane : planes) {
 			if (const float length = magnitude(plane); length > 0.0f) {
@@ -836,8 +814,8 @@ auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> v
 	}
 
 	const auto* cam_state = phase.try_state_of<camera::state>();
-	const mat4f view_matrix = cam_state ? cam_state->view_matrix : mat4f(1.0f);
-	const mat4f proj_matrix = cam_state ? cam_state->projection_matrix : mat4f(1.0f);
+	const gse::view_matrix view_matrix = cam_state ? cam_state->view_matrix : gse::view_matrix{};
+	const gse::projection_matrix proj_matrix = cam_state ? cam_state->projection_matrix : gse::projection_matrix{};
 
 	phase.schedule([&s, &channels = phase.channels, view_matrix, proj_matrix](
 		chunk<render_component> render,
@@ -1157,7 +1135,7 @@ auto gse::renderer::geometry::system::update(update_phase& phase, state& s) -> v
 	}
 
 	if (total_batch_count > 0 && s.gpu_culling_enabled && s.culling_compute.valid()) {
-		const mat4f view_proj = proj_matrix * view_matrix;
+		const auto view_proj = proj_matrix * view_matrix;
 		const frustum_planes frustum = extract_frustum_planes(view_proj);
 
 		gse::memcpy(s.frustum_buffer[frame_index].allocation.mapped(), frustum);

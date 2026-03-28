@@ -555,13 +555,19 @@ export namespace gse {
 	};
 
 	template <typename T>
-	auto to_axis_v(
-		axis a
-	) -> vec3<T>;
+	constexpr auto to_axis_v(const axis a) -> vec3<T> {
+		switch (a) {
+			case axis::x: return { 1, 0, 0 };
+			case axis::y: return { 0, 1, 0 };
+			case axis::z: return { 0, 0, 1 };
+			case axis::w: return { 0, 0, 0 };
+		}
+		return {};
+	}
 
-	auto axis_x = to_axis_v<float>(axis::x);
-	auto axis_y = to_axis_v<float>(axis::y);
-	auto axis_z = to_axis_v<float>(axis::z);
+	constexpr auto axis_x = to_axis_v<float>(axis::x);
+	constexpr auto axis_y = to_axis_v<float>(axis::y);
+	constexpr auto axis_z = to_axis_v<float>(axis::z);
 }
 
 export template <gse::internal::is_vec_element T, std::size_t N, typename CharT>
@@ -587,13 +593,3 @@ struct std::formatter<gse::vec<T, N>, CharT> {
 	}
 };
 
-template <typename T>
-auto gse::to_axis_v(const axis a) -> vec3<T> {
-	switch (a) {
-		case axis::x: return { 1, 0, 0 };
-		case axis::y: return { 0, 1, 0 };
-		case axis::z: return { 0, 0, 1 };
-		case axis::w: return { 0, 0, 0 };
-	}
-	return {};
-}

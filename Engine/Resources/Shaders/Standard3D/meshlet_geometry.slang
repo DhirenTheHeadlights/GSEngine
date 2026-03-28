@@ -143,7 +143,7 @@ struct MeshOutput {
 };
 
 [shader("mesh")]
-[numthreads(64, 1, 1)]
+[numthreads(128, 1, 1)]
 [outputtopology("triangle")]
 void ms_main(
     uint gtid : SV_GroupThreadID,
@@ -178,14 +178,16 @@ void ms_main(
     }
 
     if (gtid < desc.triangle_count) {
-        uint byte_offset = (desc.triangle_offset + gtid * 3);
+        uint byte_offset = desc.triangle_offset + gtid * 3;
         uint word_offset = byte_offset & ~3u;
         uint byte_in_word = byte_offset & 3u;
 
         uint word0 = meshletTriangles.Load(word_offset);
-        uint word1 = meshletTriangles.Load(word_offset + 4);
-
-        uint combined = (word1 << (32 - byte_in_word * 8)) | (word0 >> (byte_in_word * 8));
+        uint combined = word0 >> (byte_in_word * 8);
+        if (byte_in_word > 1) {
+            uint word1 = meshletTriangles.Load(word_offset + 4);
+            combined |= word1 << (32 - byte_in_word * 8);
+        }
         uint i0 = combined & 0xFF;
         uint i1 = (combined >> 8) & 0xFF;
         uint i2 = (combined >> 16) & 0xFF;

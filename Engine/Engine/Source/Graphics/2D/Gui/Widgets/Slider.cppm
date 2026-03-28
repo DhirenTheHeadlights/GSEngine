@@ -33,7 +33,7 @@ export namespace gse::gui::draw {
         id& active_widget_id
     ) -> void;
 
-    template <typename T, std::size_t N>
+    template <typename T, std::size_t N> requires is_arithmetic<T>
     auto slider(
         const draw_context& ctx,
         const std::string& name,
@@ -44,7 +44,7 @@ export namespace gse::gui::draw {
         id& active_widget_id
     ) -> void;
 
-    template <typename T, std::size_t N, auto Unit = typename T::default_unit{}>
+    template <internal::is_quantity T, std::size_t N, auto Unit = typename T::default_unit{}>
     auto slider(
         const draw_context& ctx,
         const std::string& name,
@@ -98,31 +98,31 @@ auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, T&
     slider_row<T, 1>(ctx, name_with_unit, value_ptrs, min_values, max_values, hot_widget_id, active_widget_id);
 }
 
-template <typename T, std::size_t N>
-auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, vec<T, N>& v, vec<T, N> min, vec<T, N> max, id& hot_widget_id, id& active_widget_id) -> void {
+template <typename T, std::size_t N> requires gse::is_arithmetic<T>
+auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, gse::vec<T, N>& v, gse::vec<T, N> min, gse::vec<T, N> max, id& hot_widget_id, id& active_widget_id) -> void {
     std::array<T*, N> value_ptrs;
     std::array<T, N> min_values;
     std::array<T, N> max_values;
 
     for (std::size_t i = 0; i < N; ++i) {
-        value_ptrs[i] = &v.as_storage_span()[i];
-        min_values[i] = min.as_storage_span()[i];
-        max_values[i] = max.as_storage_span()[i];
+        value_ptrs[i] = &v[i];
+        min_values[i] = min[i];
+        max_values[i] = max[i];
     }
 
     slider_row<T, N>(ctx, name, value_ptrs, min_values, max_values, hot_widget_id, active_widget_id);
 }
 
-template <typename T, std::size_t N, auto Unit>
-auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, vec<T, N>& v, vec<T, N> min, vec<T, N> max, id& hot_widget_id, id& active_widget_id) -> void {
+template <gse::internal::is_quantity T, std::size_t N, auto Unit>
+auto gse::gui::draw::slider(const draw_context& ctx, const std::string& name, gse::vec<T, N>& v, gse::vec<T, N> min, gse::vec<T, N> max, id& hot_widget_id, id& active_widget_id) -> void {
     std::array<T*, N> value_ptrs;
     std::array<T, N> min_values;
     std::array<T, N> max_values;
 
     for (std::size_t i = 0; i < N; ++i) {
-        value_ptrs[i] = &v.as_storage_span()[i];
-        min_values[i] = min.as_storage_span()[i];
-        max_values[i] = max.as_storage_span()[i];
+        value_ptrs[i] = &v[i];
+        min_values[i] = min[i];
+        max_values[i] = max[i];
     }
 
     const std::string name_with_unit = name + " (" + std::string(Unit.unit_name) + ")";
