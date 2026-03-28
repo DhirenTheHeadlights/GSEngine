@@ -17,6 +17,7 @@ export import :vector;
 export import :vector_math;
 export import :mixed_vec;
 export import :mixed_mat;
+export import :matrix_types;
 
 export namespace gse {
 	template <typename T>

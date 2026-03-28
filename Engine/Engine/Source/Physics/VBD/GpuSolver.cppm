@@ -747,7 +747,7 @@ auto gse::vbd::gpu_solver::upload(
 			return inv_i_sum;
 		};
 
-		const vec3f dirs[3] = { { 1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 1.f } };
+		constexpr vec3f dirs[3] = { axis_x, axis_y, axis_z };
 
 		int num_pos_rows = 3;
 		if (j.type == joint_type::distance) num_pos_rows = 1;
@@ -757,12 +757,12 @@ auto gse::vbd::gpu_solver::upload(
 			vec3f dir;
 			if (j.type == joint_type::distance) {
 				const auto d = (body_a_state.position + r_aw) - (body_b_state.position + r_bw);
-				dir = magnitude(d) > meters(1e-7f) ? normalize(d) : vec3f{ 0.f, 1.f, 0.f };
+				dir = magnitude(d) > meters(1e-7f) ? normalize(d) : axis_y;
 			}
 			else if (j.type == joint_type::slider) {
 				const auto axis_w = rot_axis(body_a_state.orientation, j.local_axis_a);
-				vec3f perp0 = cross(axis_w, vec3f{ 0.f, 1.f, 0.f });
-				if (magnitude(perp0) < 1e-6f) perp0 = cross(axis_w, vec3f{ 1.f, 0.f, 0.f });
+				vec3f perp0 = cross(axis_w, axis_y);
+				if (magnitude(perp0) < 1e-6f) perp0 = cross(axis_w, axis_x);
 				perp0 = normalize(perp0);
 				dir = k == 0 ? perp0 : normalize(cross(axis_w, perp0));
 			}
@@ -784,8 +784,8 @@ auto gse::vbd::gpu_solver::upload(
 			vec3f ang_dir;
 			if (j.type == joint_type::hinge) {
 				const auto axis_a = rot_axis(body_a_state.orientation, j.local_axis_a);
-				vec3f perp_u = cross(axis_a, vec3f{ 0.f, 1.f, 0.f });
-				if (magnitude(perp_u) < 1e-6f) perp_u = cross(axis_a, vec3f{ 1.f, 0.f, 0.f });
+				vec3f perp_u = cross(axis_a, axis_y);
+				if (magnitude(perp_u) < 1e-6f) perp_u = cross(axis_a, axis_x);
 				perp_u = normalize(perp_u);
 				ang_dir = k == 0 ? perp_u : normalize(cross(axis_a, perp_u));
 			}
@@ -835,8 +835,8 @@ auto gse::vbd::gpu_solver::upload(
 				const auto axis_a = rot_axis(body_a_state.orientation, j.local_axis_a);
 				const auto axis_b = rot_axis(body_b_state.orientation, j.local_axis_b);
 				const auto swing_error = cross(axis_a, axis_b);
-				vec3f perp_u = cross(axis_a, vec3f{ 0.f, 1.f, 0.f });
-				if (magnitude(perp_u) < 1e-6f) perp_u = cross(axis_a, vec3f{ 1.f, 0.f, 0.f });
+				vec3f perp_u = cross(axis_a, axis_y);
+				if (magnitude(perp_u) < 1e-6f) perp_u = cross(axis_a, axis_x);
 				perp_u = normalize(perp_u);
 				const auto perp_v = normalize(cross(axis_a, perp_u));
 				ang_c0_val[0] = radians(dot(perp_u, swing_error));
@@ -851,8 +851,8 @@ auto gse::vbd::gpu_solver::upload(
 		}
 		else if (j.type == joint_type::slider) {
 			const auto axis_w = normalize(rot_axis(body_a_state.orientation, j.local_axis_a));
-			vec3f perp0 = cross(axis_w, vec3f{ 0.f, 1.f, 0.f });
-			if (magnitude(perp0) < 1e-6f) perp0 = cross(axis_w, vec3f{ 1.f, 0.f, 0.f });
+			vec3f perp0 = cross(axis_w, axis_y);
+			if (magnitude(perp0) < 1e-6f) perp0 = cross(axis_w, axis_x);
 			perp0 = normalize(perp0);
 			const auto perp1 = normalize(cross(axis_w, perp0));
 			pos_c0_val[0] = dot(perp0, d_vec);

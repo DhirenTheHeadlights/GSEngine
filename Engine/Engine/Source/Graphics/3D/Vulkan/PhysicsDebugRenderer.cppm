@@ -556,8 +556,8 @@ auto gse::renderer::physics_debug::system::render(const render_phase& phase, con
 	const auto command = config.frame_context().command_buffer;
 
 	const auto* cam_state = phase.try_state_of<camera::state>();
-	const mat4f view_matrix = cam_state ? cam_state->view_matrix : mat4f(1.0f);
-	const mat4f proj_matrix = cam_state ? cam_state->projection_matrix : mat4f(1.0f);
+	const auto view_matrix = cam_state ? cam_state->view_matrix : gse::view_matrix{};
+	const auto proj_matrix = cam_state ? cam_state->projection_matrix : gse::projection_matrix{};
 
 	s.shader_handle->set_uniform("CameraUBO.view", view_matrix, s.ubo_allocations.at("CameraUBO")[frame_index].allocation);
 	s.shader_handle->set_uniform("CameraUBO.proj", proj_matrix, s.ubo_allocations.at("CameraUBO")[frame_index].allocation);

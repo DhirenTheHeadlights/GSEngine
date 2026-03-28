@@ -35,7 +35,7 @@ export namespace gse {
 		);
 
 		template <std::size_t I>
-		constexpr auto get(
+		constexpr auto at(
 		) const -> internal::nth_t<I, Qs...>;
 
 		template <std::size_t I>
@@ -50,7 +50,7 @@ constexpr gse::mixed_vec<Qs...>::mixed_vec(const vec<float, size>& raw) : base(r
 
 template <typename... Qs>
 template <std::size_t I>
-constexpr auto gse::mixed_vec<Qs...>::get() const -> internal::nth_t<I, Qs...> {
+constexpr auto gse::mixed_vec<Qs...>::at() const -> internal::nth_t<I, Qs...> {
 	return internal::nth_t<I, Qs...>((*this)[I]);
 }
 

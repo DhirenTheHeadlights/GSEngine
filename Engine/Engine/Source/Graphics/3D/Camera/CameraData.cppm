@@ -7,7 +7,7 @@ export namespace gse::camera {
 	struct target {
 		vec3<position> position{};
 		quat orientation = identity<float>();
-		float fov = 45.0f;
+		angle fov = degrees(45.0f);
 		length near_plane = meters(0.1f);
 		length far_plane = meters(10000.0f);
 	};
@@ -35,8 +35,8 @@ export namespace gse::camera {
 		angle pitch = degrees(0.0f);
 		float mouse_sensitivity = 0.1f;
 
-		mat4f view_matrix = mat4f(1.0f);
-		mat4f projection_matrix = mat4f(1.0f);
+		gse::view_matrix view_matrix{};
+		gse::projection_matrix projection_matrix{};
 
 		vec2f viewport{ 1920.f, 1080.f };
 		bool ui_focus = false;

@@ -250,6 +250,7 @@ namespace gse::internal {
             requires has_same_dimensions<Dimensions, Dim2> &&
                 same_unit_family_v<QuantityTagType, Tag2> &&
                 (is_generic_tag_v<Tag2> || is_generic_tag_v<QuantityTagType> || semantic_kind_v<QuantityTagType> == semantic_kind_v<Tag2>)
+        explicit(!is_generic_tag_v<Tag2> && is_generic_tag_v<QuantityTagType>)
         constexpr quantity(const quantity<T2, Dim2, Tag2, Unit2>& other)
             : m_val(static_cast<ArithmeticType>(other.template as<DefaultUnitType>())) {}
 

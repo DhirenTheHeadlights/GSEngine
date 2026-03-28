@@ -29,7 +29,7 @@ export namespace gs {
 					gse::gui::vec("Mouse Position", gse::mouse::position());
 					gse::gui::input("Input Test", m_buff);
 					gse::gui::slider("Slider Test", m_slider_value, gse::meters(0.0f), gse::meters(10.0f));
-					//gse::gui::slider("Vec Slider Test", m_vec_value, gse::vec3<gse::length>(gse::meters(0.f)), gse::vec3<gse::length>(gse::meters(10.f)));
+					gse::gui::slider("Vec Slider Test", m_vec_value, gse::vec3<gse::length>(gse::meters(0.f)), gse::vec3<gse::length>(gse::meters(10.f)));
 				}
 			);
 
