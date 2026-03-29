@@ -552,10 +552,8 @@ auto gse::renderer::ui::system::render(render_phase&, const state& s) -> void {
 	auto& [vertex_buffer, index_buffer] = s.resources[frame_index];
 
 	gse::memcpy(vertex_buffer.allocation.mapped(), vertices);
-
 	gse::memcpy(index_buffer.allocation.mapped(), indices);
 
-	const auto& command = config.frame_context().command_buffer;
 	const auto [width, height] = config.swap_chain_config().extent;
 	const vec2f window_size = { static_cast<float>(width), static_cast<float>(height) };
 
@@ -568,100 +566,116 @@ auto gse::renderer::ui::system::render(render_phase&, const state& s) -> void {
 		meters(1.0f)
 	);
 
+	auto sprite_pc = s.sprite_shader->cache_push_block("push_constants");
+	sprite_pc.set("projection", projection);
+
+	auto text_pc = s.text_shader->cache_push_block("push_constants");
+	text_pc.set("projection", projection);
+
+	const auto image_index = config.frame_context().image_index;
+	const auto extent = config.swap_chain_config().extent;
+
 	vk::RenderingAttachmentInfo color_attachment{
-		.imageView = *config.swap_chain_config().image_views[config.frame_context().image_index],
+		.imageView = *config.swap_chain_config().image_views[image_index],
 		.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
 		.loadOp = vk::AttachmentLoadOp::eLoad,
 		.storeOp = vk::AttachmentStoreOp::eStore,
 	};
 
 	const vk::RenderingInfo rendering_info{
-		.renderArea = {{ 0, 0 }, config.swap_chain_config().extent },
+		.renderArea = {{ 0, 0 }, extent },
 		.layerCount = 1,
 		.colorAttachmentCount = 1,
 		.pColorAttachments = &color_attachment,
 	};
 
-	vulkan::render(config, rendering_info, [&] {
-		command.bindVertexBuffers(0, { vertex_buffer.buffer }, { vk::DeviceSize{ 0 } });
-		command.bindIndexBuffer(index_buffer.buffer, 0, vk::IndexType::eUint32);
+	const auto sprite_binding = s.sprite_shader->binding("spriteTexture");
+	const auto text_binding = s.text_shader->binding("spriteTexture");
 
-		const vk::Viewport viewport{
-			.x = 0.0f,
-			.y = 0.0f,
-			.width = static_cast<float>(width),
-			.height = static_cast<float>(height),
-			.minDepth = 0.0f,
-			.maxDepth = 1.0f
-		};
-		command.setViewport(0, viewport);
+	s.ctx->graph()
+		.add_pass<ui::state>()
+		.writes(vulkan::swapchain_write())
+		.uploads(vulkan::upload(vertex_buffer), vulkan::upload(index_buffer))
+		.record_graphics(rendering_info, [&s, &batches, frame_index, width, height, window_size,
+			sprite_pc = std::move(sprite_pc), text_pc = std::move(text_pc),
+			sprite_binding, text_binding,
+			vb = vertex_buffer.buffer, ib = index_buffer.buffer](vulkan::recording_context& ctx) {
 
-		const vk::Rect2D default_scissor{ { 0, 0 }, { width, height } };
-		command.setScissor(0, { default_scissor });
+			const vk::Buffer vbufs[]{ vb };
+			const vk::DeviceSize voffs[]{ 0 };
+			ctx.bind_vertex_buffers(0, vbufs, voffs);
+			ctx.bind_index_buffer(ib, 0, vk::IndexType::eUint32);
 
-		auto bound_type = command_type::sprite;
-		resource::handle<texture> bound_texture;
-		resource::handle<font> bound_font;
-		bool first_batch = true;
+			const vk::Viewport viewport{
+				.x = 0.0f,
+				.y = 0.0f,
+				.width = static_cast<float>(width),
+				.height = static_cast<float>(height),
+				.minDepth = 0.0f,
+				.maxDepth = 1.0f
+			};
+			ctx.set_viewport(viewport);
 
-		for (const auto& [type, index_offset, index_count, clip_rect, texture, font] : batches) {
-			if (index_count == 0) {
-				continue;
-			}
+			const vk::Rect2D default_scissor{ { 0, 0 }, { width, height } };
+			ctx.set_scissor(default_scissor);
 
-			if (first_batch || type != bound_type) {
+			auto bound_type = command_type::sprite;
+			resource::handle<texture> bound_texture;
+			resource::handle<font> bound_font;
+			bool first_batch = true;
+
+			for (const auto& [type, index_offset, index_count, clip_rect, texture, font] : batches) {
+				if (index_count == 0) {
+					continue;
+				}
+
+				if (first_batch || type != bound_type) {
+					if (type == command_type::sprite) {
+						ctx.bind_pipeline(vk::PipelineBindPoint::eGraphics, *s.sprite_pipeline);
+						ctx.push(sprite_pc, *s.sprite_pipeline_layout);
+					} else {
+						ctx.bind_pipeline(vk::PipelineBindPoint::eGraphics, *s.text_pipeline);
+						ctx.push(text_pc, *s.text_pipeline_layout);
+					}
+					bound_type = type;
+					bound_texture = {};
+					bound_font = {};
+					first_batch = false;
+				}
+
 				if (type == command_type::sprite) {
-					command.bindPipeline(vk::PipelineBindPoint::eGraphics, *s.sprite_pipeline);
-					s.sprite_shader->push(
-						command, *s.sprite_pipeline_layout, "push_constants",
-						"projection", projection
-					);
+					if (texture.valid() && texture.id() != bound_texture.id() && sprite_binding) {
+						const auto info = texture->descriptor_info();
+						const vk::WriteDescriptorSet write{
+							.dstBinding = sprite_binding->binding,
+							.descriptorCount = 1,
+							.descriptorType = sprite_binding->descriptorType,
+							.pImageInfo = &info
+						};
+						ctx.push_descriptor(vk::PipelineBindPoint::eGraphics, *s.sprite_pipeline_layout, 1, std::span(&write, 1));
+						bound_texture = texture;
+					}
 				} else {
-					command.bindPipeline(vk::PipelineBindPoint::eGraphics, *s.text_pipeline);
-					s.text_shader->push(
-						command, *s.text_pipeline_layout, "push_constants",
-						"projection", projection
-					);
+					if (font.valid() && font.id() != bound_font.id() && text_binding) {
+						const auto info = font->texture()->descriptor_info();
+						const vk::WriteDescriptorSet write{
+							.dstBinding = text_binding->binding,
+							.descriptorCount = 1,
+							.descriptorType = text_binding->descriptorType,
+							.pImageInfo = &info
+						};
+						ctx.push_descriptor(vk::PipelineBindPoint::eGraphics, *s.text_pipeline_layout, 1, std::span(&write, 1));
+						bound_font = font;
+					}
 				}
-				bound_type = type;
-				bound_texture = {};
-				bound_font = {};
-				first_batch = false;
-			}
 
-			if (type == command_type::sprite) {
-				if (texture.valid() && texture.id() != bound_texture.id()) {
-					s.sprite_shader->push_descriptor(
-						command, s.sprite_pipeline_layout,
-						"spriteTexture",
-						texture->descriptor_info()
-					);
-					bound_texture = texture;
+				if (clip_rect) {
+					ctx.set_scissor(to_vulkan_scissor(*clip_rect, window_size));
+				} else {
+					ctx.set_scissor(default_scissor);
 				}
-			} else {
-				if (font.valid() && font.id() != bound_font.id()) {
-					s.text_shader->push_descriptor(
-						command, s.text_pipeline_layout,
-						"spriteTexture",
-						font->texture()->descriptor_info()
-					);
-					bound_font = font;
-				}
-			}
 
-			if (clip_rect) {
-				command.setScissor(0, { to_vulkan_scissor(*clip_rect, window_size) });
-			} else {
-				command.setScissor(0, { default_scissor });
+				ctx.draw_indexed(index_count, 1, index_offset, 0, 0);
 			}
-
-			command.drawIndexed(
-				index_count,
-				1,
-				index_offset,
-				0,
-				0
-			);
-		}
-	});
+		});
 }

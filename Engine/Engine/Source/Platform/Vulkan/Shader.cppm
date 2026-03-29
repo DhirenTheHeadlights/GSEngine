@@ -12,6 +12,7 @@ import std;
 
 import :gpu_context;
 import :shader_layout;
+import :render_graph;
 
 import gse.assert;
 import gse.platform.vulkan;
@@ -175,6 +176,10 @@ namespace gse {
 			const vk::DescriptorBufferInfo& buffer_info
 		) const -> void;
 
+		auto cache_push_block(
+			std::string_view block_name
+		) const -> vulkan::cached_push_constants;
+
 		auto push_bytes(
 			vk::CommandBuffer command,
 			vk::PipelineLayout layout,
@@ -319,11 +324,9 @@ auto gse::shader::load(const gpu::context& context) -> void {
 	}
 
 	if (m_layout_name.empty()) {
-		// No shared layout - use reflected data directly
 		m_layout.sets = std::move(reflected_sets);
 	}
 	else {
-		// Using shared layout - merge layout bindings with reflected uniform blocks
 		const auto* layout_ptr = context.shader_layout(m_layout_name);
 		assert(layout_ptr, std::source_location::current(), "Shader layout '{}' not found", m_layout_name);
 
@@ -333,7 +336,6 @@ auto gse::shader::load(const gpu::context& context) -> void {
 			resolved_bindings.reserve(layout_bindings.size());
 
 			for (const auto& [name, layout_binding] : layout_bindings) {
-				// Look up uniform_block from reflected data
 				std::optional<struct uniform_block> member_opt;
 				if (auto set_it = reflected_sets.find(type); set_it != reflected_sets.end()) {
 					for (const auto& reflected_binding : set_it->second.bindings) {
@@ -356,6 +358,12 @@ auto gse::shader::load(const gpu::context& context) -> void {
 				.layout = layout_ptr->vk_layout(set_index),
 				.bindings = std::move(resolved_bindings)
 			};
+		}
+
+		for (auto& [type, reflected_set] : reflected_sets) {
+			if (!m_layout.sets.contains(type)) {
+				m_layout.sets[type] = std::move(reflected_set);
+			}
 		}
 	}
 
@@ -444,25 +452,25 @@ auto gse::shader::load(const gpu::context& context) -> void {
 		});
 	}
 
-	if (m_layout_name.empty()) {
-		for (auto& [type, set_data] : m_layout.sets) {
-			std::vector<vk::DescriptorSetLayoutBinding> raw_bindings;
-			raw_bindings.reserve(set_data.bindings.size());
+	for (auto& [type, set_data] : m_layout.sets) {
+		if (!std::holds_alternative<std::monostate>(set_data.layout)) continue;
 
-			for (const auto& b : set_data.bindings) {
-				auto lb = b.layout_binding;
-				lb.pImmutableSamplers = nullptr;
-				raw_bindings.push_back(lb);
-			}
+		std::vector<vk::DescriptorSetLayoutBinding> raw_bindings;
+		raw_bindings.reserve(set_data.bindings.size());
 
-			vk::DescriptorSetLayoutCreateInfo ci{
-				.flags = type == set::binding_type::push ? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR : vk::DescriptorSetLayoutCreateFlags(),
-				.bindingCount = static_cast<uint32_t>(raw_bindings.size()),
-				.pBindings = raw_bindings.data()
-			};
-
-			set_data.layout = std::make_shared<vk::raii::DescriptorSetLayout>(context.config().device_config().device, ci);
+		for (const auto& b : set_data.bindings) {
+			auto lb = b.layout_binding;
+			lb.pImmutableSamplers = nullptr;
+			raw_bindings.push_back(lb);
 		}
+
+		vk::DescriptorSetLayoutCreateInfo ci{
+			.flags = type == set::binding_type::push ? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR : vk::DescriptorSetLayoutCreateFlags(),
+			.bindingCount = static_cast<uint32_t>(raw_bindings.size()),
+			.pBindings = raw_bindings.data()
+		};
+
+		set_data.layout = std::make_shared<vk::raii::DescriptorSetLayout>(context.config().device_config().device, ci);
 	}
 
 	std::uint32_t max_set_index = 0;
@@ -567,6 +575,20 @@ auto gse::shader::push_block(const std::string& name) const -> struct uniform_bl
 	const auto it = std::ranges::find_if(m_push_constants, [&](auto& b){ return b.name == name; });
     assert(it != m_push_constants.end(), std::source_location::current(), "Push constant block '{}' not found", name);
     return *it;
+}
+
+auto gse::shader::cache_push_block(const std::string_view block_name) const -> vulkan::cached_push_constants {
+	const auto it = std::ranges::find_if(m_push_constants, [&](auto& b) { return b.name == block_name; });
+	assert(it != m_push_constants.end(), std::source_location::current(), "Push constant block '{}' not found", block_name);
+	std::unordered_map<std::string, vulkan::push_constant_member> members;
+	for (const auto& [name, member] : it->members) {
+		members[name] = { .offset = member.offset, .size = member.size };
+	}
+	return {
+		.data = std::vector<std::byte>(it->size, std::byte{ 0 }),
+		.stage_flags = it->stage_flags,
+		.members = std::move(members)
+	};
 }
 
 auto gse::shader::uniform_block(const std::string& name) const -> class uniform_block {

@@ -511,11 +511,11 @@ auto gse::renderer::physics_debug::system::update(const update_phase& phase, sta
 	}
 
 	if (const auto* ps = phase.try_state_of<physics::state>()) {
-		if (ps->use_gpu_solver && ps->gpu_solver.compute_initialized()) {
+		if (ps->use_gpu_solver && ps->gpu_stats.active) {
 			stats.gpu_solver_active = true;
-			stats.contact_count = ps->gpu_solver.contact_count();
-			stats.motor_count = ps->gpu_solver.motor_count();
-			stats.solve_time = ps->gpu_solver.solve_time();
+			stats.contact_count = ps->gpu_stats.contact_count;
+			stats.motor_count = ps->gpu_stats.motor_count;
+			stats.solve_time = ps->gpu_stats.solve_time;
 		}
 	}
 
@@ -553,65 +553,61 @@ auto gse::renderer::physics_debug::system::render(const render_phase& phase, con
 		gse::memcpy(dst, verts);
 	}
 
-	const auto command = config.frame_context().command_buffer;
-
 	const auto* cam_state = phase.try_state_of<camera::state>();
 	const auto view_matrix = cam_state ? cam_state->view_matrix : gse::view_matrix{};
-	const auto proj_matrix = cam_state ? cam_state->projection_matrix : gse::projection_matrix{};
+	const auto proj_matrix = cam_state ? cam_state->projection_matrix : projection_matrix{};
 
 	s.shader_handle->set_uniform("CameraUBO.view", view_matrix, s.ubo_allocations.at("CameraUBO")[frame_index].allocation);
 	s.shader_handle->set_uniform("CameraUBO.proj", proj_matrix, s.ubo_allocations.at("CameraUBO")[frame_index].allocation);
 
+	const auto extent = config.swap_chain_config().extent;
+	const auto image_index = config.frame_context().image_index;
+	const auto vertex_count = static_cast<std::uint32_t>(verts.size());
+
 	vk::RenderingAttachmentInfo color_attachment{
-		.imageView = *config.swap_chain_config().image_views[config.frame_context().image_index],
+		.imageView = *config.swap_chain_config().image_views[image_index],
 		.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
 		.loadOp = vk::AttachmentLoadOp::eLoad,
 		.storeOp = vk::AttachmentStoreOp::eStore
 	};
 
 	const vk::RenderingInfo rendering_info{
-		.renderArea = { { 0, 0 }, config.swap_chain_config().extent },
+		.renderArea = { { 0, 0 }, extent },
 		.layerCount = 1,
 		.colorAttachmentCount = 1,
 		.pColorAttachments = &color_attachment,
 		.pDepthAttachment = nullptr
 	};
 
-	vulkan::render(config, rendering_info, [&] {
-		command.bindPipeline(vk::PipelineBindPoint::eGraphics, s.pipeline);
+	s.ctx->graph()
+		.add_pass<state>()
+		.writes(vulkan::swapchain_write())
+		.uploads(vulkan::upload(s.ubo_allocations.at("CameraUBO")[frame_index]))
+		.record_graphics(rendering_info, [&s, frame_index, extent, vertex_count, vb = vertex_buffer.buffer](vulkan::recording_context& ctx) {
+			ctx.bind_pipeline(vk::PipelineBindPoint::eGraphics, s.pipeline);
 
-		const vk::Viewport viewport{
-			.x = 0.0f,
-			.y = 0.0f,
-			.width = static_cast<float>(config.swap_chain_config().extent.width),
-			.height = static_cast<float>(config.swap_chain_config().extent.height),
-			.minDepth = 0.0f,
-			.maxDepth = 1.0f
-		};
-		command.setViewport(0, viewport);
+			const vk::Viewport viewport{
+				.x = 0.0f,
+				.y = 0.0f,
+				.width = static_cast<float>(extent.width),
+				.height = static_cast<float>(extent.height),
+				.minDepth = 0.0f,
+				.maxDepth = 1.0f
+			};
+			ctx.set_viewport(viewport);
 
-		const vk::Rect2D scissor{
-			.offset = { 0, 0 },
-			.extent = config.swap_chain_config().extent
-		};
-		command.setScissor(0, scissor);
+			const vk::Rect2D scissor{
+				.offset = { 0, 0 },
+				.extent = extent
+			};
+			ctx.set_scissor(scissor);
 
-		const vk::DescriptorSet sets[] = {
-			**s.descriptor_sets[frame_index]
-		};
+			const vk::DescriptorSet sets[]{ **s.descriptor_sets[frame_index] };
+			ctx.bind_descriptor_sets(vk::PipelineBindPoint::eGraphics, s.pipeline_layout, 0, sets);
 
-		command.bindDescriptorSets(
-			vk::PipelineBindPoint::eGraphics,
-			s.pipeline_layout,
-			0,
-			vk::ArrayProxy<const vk::DescriptorSet>(1, sets),
-			{}
-		);
-
-		const vk::Buffer vb = vertex_buffer.buffer;
-		constexpr vk::DeviceSize offsets[] = { 0 };
-
-		command.bindVertexBuffers(0, 1, &vb, offsets);
-		command.draw(static_cast<std::uint32_t>(verts.size()), 1, 0, 0);
-	});
+			const vk::Buffer vbufs[]{ vb };
+			const vk::DeviceSize voffs[]{ 0 };
+			ctx.bind_vertex_buffers(0, vbufs, voffs);
+			ctx.draw(vertex_count);
+		});
 }

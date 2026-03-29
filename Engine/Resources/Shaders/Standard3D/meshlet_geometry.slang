@@ -1,39 +1,6 @@
 import common;
-
-[[vk::binding(0, 0)]]
-public cbuffer CameraUBO {
-    public float4x4 view;
-    public float4x4 proj;
-};
-
-struct Vertex {
-    float3 position;
-    float3 normal;
-    float2 tex_coords;
-};
-
-struct MeshletDescriptor {
-    uint vertex_offset;
-    uint triangle_offset;
-    uint vertex_count;
-    uint triangle_count;
-};
-
-struct MeshletBounds {
-    float3 center;
-    float radius;
-    float3 cone_axis;
-    float cone_cutoff;
-};
-
-struct InstanceData {
-    float4x4 model_matrix;
-    float4x4 normal_matrix;
-    uint skin_offset;
-    uint joint_count;
-    uint _pad0;
-    uint _pad1;
-};
+import forward_3d;
+import meshlet_common;
 
 [[vk::binding(0, 1)]] StructuredBuffer<Vertex> vertices;
 [[vk::binding(1, 1)]] StructuredBuffer<MeshletDescriptor> meshlets;
@@ -48,42 +15,13 @@ cbuffer PushConstants {
     uint meshlet_offset;
     uint meshlet_count;
     uint instance_index;
-};
-
-struct MeshletPayload {
-    uint meshlet_indices[32];
-    uint count;
-    uint instance_idx;
+    int num_lights;
+    uint2 screen_size;
 };
 
 groupshared MeshletPayload s_payload;
 
-bool frustum_cull_sphere(float3 center, float radius) {
-    float4 c = float4(center, 1.0);
-
-    float4x4 vp = mul(proj, view);
-
-    for (int i = 0; i < 6; i++) {
-        float4 plane;
-        if (i == 0) plane = vp[3] + vp[0];
-        else if (i == 1) plane = vp[3] - vp[0];
-        else if (i == 2) plane = vp[3] + vp[1];
-        else if (i == 3) plane = vp[3] - vp[1];
-        else if (i == 4) plane = vp[3] + vp[2];
-        else plane = vp[3] - vp[2];
-
-        float len = length(plane.xyz);
-        if (len > 0.0) {
-            plane /= len;
-        }
-
-        if (dot(plane.xyz, center) + plane.w + radius < 0.0) {
-            return true;
-        }
-    }
-    return false;
-}
-
+[Layout(LayoutKind::Forward3D)]
 [shader("amplification")]
 [numthreads(32, 1, 1)]
 void as_main(uint gtid : SV_GroupThreadID, uint gid : SV_GroupID) {
@@ -105,7 +43,7 @@ void as_main(uint gtid : SV_GroupThreadID, uint gid : SV_GroupID) {
         float max_scale = sqrt(max(scale_sq.x, max(scale_sq.y, scale_sq.z)));
         float world_radius = bounds.radius * max_scale;
 
-        visible = !frustum_cull_sphere(world_center, world_radius);
+        visible = !frustum_cull_sphere(world_center, world_radius, view, proj);
 
         if (visible && bounds.cone_cutoff >= 0.0) {
             float3 world_cone_axis = normalize(mul((float3x3)inst.model_matrix, bounds.cone_axis));
@@ -136,12 +74,14 @@ void as_main(uint gtid : SV_GroupThreadID, uint gid : SV_GroupID) {
 }
 
 struct MeshOutput {
-    float4 clip_pos    : SV_Position;
-    float3 view_pos    : TEXCOORD0;
-    float3 view_normal : TEXCOORD1;
-    float2 tex_coord   : TEXCOORD2;
+    precise float4 clip_pos    : SV_Position;
+    float3 world_pos   : TEXCOORD0;
+    float3 view_pos    : TEXCOORD1;
+    float3 view_normal : TEXCOORD2;
+    float2 tex_coord   : TEXCOORD3;
 };
 
+[Layout(LayoutKind::Forward3D)]
 [shader("mesh")]
 [numthreads(128, 1, 1)]
 [outputtopology("triangle")]
@@ -162,61 +102,145 @@ void ms_main(
         uint global_vertex_idx = meshletVertexIndices[desc.vertex_offset + gtid];
         Vertex v = vertices[global_vertex_idx];
 
-        float4 world_pos = mul(inst.model_matrix, float4(v.position, 1.0));
-        float4 view_pos = mul(view, world_pos);
-        float4 clip_pos = mul(proj, view_pos);
-
-        float3 world_n = normalize(mul((float3x3)inst.normal_matrix, v.normal));
-        float3 view_n = normalize(mul((float3x3)view, world_n));
+        MeshVertexOutput mv = compute_mesh_vertex(v, inst, view, proj);
 
         MeshOutput mo;
-        mo.clip_pos = clip_pos;
-        mo.view_pos = view_pos.xyz;
-        mo.view_normal = view_n;
-        mo.tex_coord = v.tex_coords;
+        mo.clip_pos = mv.clip_pos;
+        mo.world_pos = mv.world_pos;
+        mo.view_pos = mv.view_pos;
+        mo.view_normal = mv.view_normal;
+        mo.tex_coord = mv.tex_coord;
         out_verts[gtid] = mo;
     }
 
     if (gtid < desc.triangle_count) {
-        uint byte_offset = desc.triangle_offset + gtid * 3;
-        uint word_offset = byte_offset & ~3u;
-        uint byte_in_word = byte_offset & 3u;
+        out_tris[gtid] = load_meshlet_triangle(meshletTriangles, desc.triangle_offset + gtid * 3);
+    }
+}
 
-        uint word0 = meshletTriangles.Load(word_offset);
-        uint combined = word0 >> (byte_in_word * 8);
-        if (byte_in_word > 1) {
-            uint word1 = meshletTriangles.Load(word_offset + 4);
-            combined |= word1 << (32 - byte_in_word * 8);
+float attenuation_point(float3 light_pos, float3 frag_pos, float constant, float linear_k, float quadratic) {
+    float d = length(light_pos - frag_pos);
+    return 1.0 / (constant + linear_k * d + quadratic * d * d);
+}
+
+float spot_factor(float3 frag_to_light, float3 spot_dir, float cut_off, float outer_cut_off) {
+    float3 L = normalize(frag_to_light);
+    float3 D = normalize(spot_dir);
+    float cos_theta = dot(-L, D);
+    float eps = cut_off - outer_cut_off;
+    float t = saturate((cos_theta - outer_cut_off) / max(eps, 1e-4));
+    return t;
+}
+
+float pcf_shadow(int s, float2 uv, float depth, float bias) {
+    float sum = 0.0;
+    for (int y = -1; y <= 1; ++y) {
+        for (int x = -1; x <= 1; ++x) {
+            float2 duv = float2((float)x, (float)y) * shadow_texel_size;
+            float closest = shadow_maps[s].SampleLevel(uv + duv, 0).r;
+            sum += (depth > closest + bias) ? 0.0 : 1.0;
         }
-        uint i0 = combined & 0xFF;
-        uint i1 = (combined >> 8) & 0xFF;
-        uint i2 = (combined >> 16) & 0xFF;
-
-        out_tris[gtid] = uint3(i0, i1, i2);
     }
+    return sum / 9.0;
 }
 
-float2 encode_octahedron(float3 n) {
-    n /= abs(n.x) + abs(n.y) + abs(n.z);
-    float2 enc = n.xy;
-    if (n.z < 0.0) {
-        enc = (1.0 - abs(enc.yx)) * float2(
-            enc.x >= 0.0 ? 1.0 : -1.0,
-            enc.y >= 0.0 ? 1.0 : -1.0
-        );
+float compute_point_shadow(int light_index, float3 frag_pos_world) {
+    for (int s = 0; s < point_shadow_count; ++s) {
+        if (point_shadow_light_indices[s] != light_index) {
+            continue;
+        }
+
+        float3 light_to_frag = frag_pos_world - point_shadow_positions_world[s];
+        float sampled_depth = point_shadow_maps[s].SampleLevel(light_to_frag, 0).r;
+
+        float3 abs_dir = abs(light_to_frag);
+        float d = max(abs_dir.x, max(abs_dir.y, abs_dir.z));
+
+        float n = point_shadow_near[s];
+        float f = point_shadow_far[s];
+        float current_depth = f * (d - n) / (d * (f - n));
+
+        float bias = 0.05;
+        return (current_depth > sampled_depth + bias) ? 0.0 : 1.0;
     }
-    return enc;
+    return 1.0;
 }
 
-struct FS_OUTPUT {
-    float3 out_albedo : SV_Target0;
-    float2 out_normal : SV_Target1;
-};
+float compute_shadow_for_light(int light_index, float3 pos_world) {
+    for (int s = 0; s < shadow_light_count; ++s) {
+        if (shadow_light_indices[s] != light_index) {
+            continue;
+        }
 
+        float4 light_clip = mul(shadow_view_proj[s], float4(pos_world, 1.0));
+
+        if (light_clip.w <= 0.0) {
+            return 1.0;
+        }
+
+        float3 light_ndc = light_clip.xyz / light_clip.w;
+
+        float2 shadow_uv = light_ndc.xy * 0.5 + 0.5;
+
+        float depth = light_ndc.z;
+
+        if (shadow_uv.x < 0.0 || shadow_uv.x > 1.0 || shadow_uv.y < 0.0 || shadow_uv.y > 1.0) {
+            return 1.0;
+        }
+        if (depth < 0.0 || depth > 1.0) {
+            return 1.0;
+        }
+
+        float bias = 0.005;
+        return pcf_shadow(s, shadow_uv, depth, bias);
+    }
+
+    return 1.0;
+}
+
+[Layout(LayoutKind::Forward3D)]
 [shader("fragment")]
-FS_OUTPUT fs_main(MeshOutput input) {
-    FS_OUTPUT o;
-    o.out_albedo = diffuseSampler.Sample(input.tex_coord).rgb;
-    o.out_normal = encode_octahedron(normalize(input.view_normal));
-    return o;
+float4 fs_main(MeshOutput input) : SV_Target0 {
+    float3 albedo = diffuseSampler.Sample(input.tex_coord).rgb;
+    float3 normal_vs = normalize(input.view_normal);
+    float3 pos_vs = input.view_pos;
+    float3 pos_world = input.world_pos;
+
+    float3 result = float3(0.0, 0.0, 0.0);
+
+    uint2 tile_id = uint2(input.clip_pos.xy) / TILE_SIZE;
+    uint tiles_x = (screen_size.x + TILE_SIZE - 1) / TILE_SIZE;
+    uint tile_index = tile_id.y * tiles_x + tile_id.x;
+    uint2 tile_info = tile_light_table[tile_index];
+    uint list_offset = tile_info.x;
+    uint tile_count = tile_info.y;
+
+    for (uint t = 0; t < tile_count; ++t) {
+        int i = (int)light_index_list[list_offset + t];
+        Light light = lights_ssbo[i];
+        float shadow = compute_shadow_for_light(i, pos_world);
+
+        if (light.light_type == LightType::Directional) {
+            float3 L = normalize(-light.direction);
+            float NdotL = max(dot(normal_vs, L), 0.0);
+            result += albedo * light.color * light.intensity * NdotL * shadow;
+            result += albedo * light.color * light.ambient_strength;
+        } else if (light.light_type == LightType::Point) {
+            float3 Lvec = light.position - pos_vs;
+            float NdotL = max(dot(normal_vs, normalize(Lvec)), 0.0);
+            float att = attenuation_point(light.position, pos_vs, light.constant, light.linear, light.quadratic);
+            float point_shadow = compute_point_shadow(i, pos_world);
+            result += albedo * light.color * light.intensity * NdotL * att * point_shadow;
+            result += albedo * light.color * light.ambient_strength;
+        } else if (light.light_type == LightType::Spot) {
+            float3 Lvec = light.position - pos_vs;
+            float NdotL = max(dot(normal_vs, normalize(Lvec)), 0.0);
+            float att = attenuation_point(light.position, pos_vs, light.constant, light.linear, light.quadratic);
+            float sf = spot_factor(Lvec, light.direction, light.cut_off, light.outer_cut_off);
+            result += albedo * light.color * light.intensity * NdotL * att * sf * shadow;
+            result += albedo * light.color * light.ambient_strength;
+        }
+    }
+
+    return float4(result, 1.0);
 }

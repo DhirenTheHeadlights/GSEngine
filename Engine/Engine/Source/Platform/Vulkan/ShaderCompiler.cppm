@@ -228,6 +228,7 @@ namespace gse::shader_compile {
 
         for (int i = 0; i < field_count; ++i) {
             auto* var = element_tl->getFieldByIndex(i);
+            if (var->getCategory() == slang::ParameterCategory::PushConstantBuffer) continue;
             auto* tl = var->getTypeLayout();
             const auto binding_range_count = tl->getBindingRangeCount();
 
@@ -497,13 +498,21 @@ struct gse::asset_compiler<gse::shader> {
 
         std::string shader_layout_name;
         if (!is_compute) {
-            auto v_layout = layout_from_attr(vs_ep.get());
-            auto f_layout = layout_from_attr(fs_ep.get());
-            if (!v_layout.empty() && !f_layout.empty() && v_layout != f_layout) {
-                std::println("Mismatched [Layout(...)] on vs_main/fs_main in shader: {}", filename);
-                return false;
+            std::array<std::string, 4> candidates = {
+                layout_from_attr(vs_ep.get()),
+                layout_from_attr(fs_ep.get()),
+                layout_from_attr(as_ep.get()),
+                layout_from_attr(ms_ep.get())
+            };
+
+            for (const auto& c : candidates) {
+                if (c.empty()) continue;
+                if (!shader_layout_name.empty() && shader_layout_name != c) {
+                    std::println("Mismatched [Layout(...)] across entry points in shader: {}", filename);
+                    return false;
+                }
+                shader_layout_name = c;
             }
-            shader_layout_name = !v_layout.empty() ? v_layout : f_layout;
         }
 
         slang::ProgramLayout* layout = program->getLayout(0, diags.writeRef());

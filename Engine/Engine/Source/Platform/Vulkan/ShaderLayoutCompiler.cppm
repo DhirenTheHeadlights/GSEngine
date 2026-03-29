@@ -201,7 +201,7 @@ struct gse::asset_compiler<gse::shader_layout> {
         }
 
         const int field_count = element_tl->getFieldCount();
-        vk::ShaderStageFlags all_stages = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
+        vk::ShaderStageFlags all_stages = vk::ShaderStageFlagBits::eAll;
 
         for (int i = 0; i < field_count; ++i) {
             auto* var = element_tl->getFieldByIndex(i);

@@ -418,4 +418,24 @@ export namespace gse {
 	concept has_shutdown = requires(shutdown_phase& p, State& s) {
 		{ S::shutdown(p, s) } -> std::same_as<void>;
 	};
+
+	template <typename S, typename State, typename RenderState>
+	concept has_render_with_state = requires(render_phase& p, const State& s, RenderState& rs) {
+		{ S::render(p, s, rs) } -> std::same_as<void>;
+	};
+
+	template <typename S, typename State, typename RenderState>
+	concept has_begin_frame_with_state = requires(begin_frame_phase& p, State& s, RenderState& rs) {
+		{ S::begin_frame(p, s, rs) } -> std::same_as<bool>;
+	};
+
+	template <typename S, typename State, typename RenderState>
+	concept has_end_frame_with_state = requires(end_frame_phase& p, State& s, RenderState& rs) {
+		{ S::end_frame(p, s, rs) } -> std::same_as<void>;
+	};
+
+	template <typename S, typename State, typename RenderState>
+	concept has_initialize_render_state = requires(initialize_phase& p, State& s, RenderState& rs) {
+		{ S::initialize_render_state(p, s, rs) } -> std::same_as<void>;
+	};
 }

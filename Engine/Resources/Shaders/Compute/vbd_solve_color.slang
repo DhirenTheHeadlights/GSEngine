@@ -519,7 +519,7 @@ void global_barrier(uint local_id, uint num_groups) {
         }
     }
 
-    GroupMemoryBarrierWithGroupSync();
+    DeviceMemoryBarrierWithGroupSync();
 }
 
 [shader("compute")]

@@ -113,12 +113,15 @@ auto gse::engine::initialize() -> void {
 		ctx.add_loader<shader>();
 		ctx.compile();
 
-		m_scheduler.add_system<physics::system, physics::state>(reg, ctx);
+		m_scheduler.add_system<physics::system, physics::state, physics::render_state>(reg, ctx);
 		m_scheduler.add_system<camera::system, camera::state>(reg);
 		m_scheduler.add_system<renderer::system, renderer::state>(reg, ctx);
 		m_scheduler.add_system<renderer::shadow::system, renderer::shadow::state>(reg, ctx);
-		m_scheduler.add_system<renderer::geometry::system, renderer::geometry::state>(reg, ctx);
-		m_scheduler.add_system<renderer::lighting::system, renderer::lighting::state>(reg, ctx);
+		m_scheduler.add_system<renderer::geometry_collector::system, renderer::geometry_collector::state>(reg, ctx);
+		m_scheduler.add_system<renderer::skin_compute::system, renderer::skin_compute::state>(reg, ctx);
+		m_scheduler.add_system<renderer::cull_compute::system, renderer::cull_compute::state>(reg, ctx);
+		m_scheduler.add_system<renderer::light_culling::system, renderer::light_culling::state>(reg, ctx);
+		m_scheduler.add_system<renderer::forward::system, renderer::forward::state>(reg, ctx);
 		m_scheduler.add_system<renderer::physics_debug::system, renderer::physics_debug::state>(reg, ctx);
 		m_scheduler.add_system<renderer::ui::system, renderer::ui::state>(reg, ctx);
 		m_scheduler.add_system<gui::system, gui::system_state>(reg, ctx);
@@ -151,7 +154,15 @@ auto gse::engine::update() -> void {
 }
 
 auto gse::engine::render() -> void {
+	if (m_render_ctx) {
+		m_render_ctx->graph().clear();
+	}
+
 	m_scheduler.render([this] {
+		if (m_render_ctx) {
+			m_render_ctx->graph().execute();
+		}
+
 		for (const auto& h : m_hooks) {
 			h->render();
 		}

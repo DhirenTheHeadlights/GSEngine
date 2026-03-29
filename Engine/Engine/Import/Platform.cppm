@@ -19,3 +19,4 @@ export import :asset_pipeline;
 export import :gpu_context;
 export import :shader;
 export import :shader_compiler;
+export import :render_graph;

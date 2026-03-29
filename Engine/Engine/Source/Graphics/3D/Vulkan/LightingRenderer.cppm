@@ -5,7 +5,8 @@ import std;
 import :point_light;
 import :spot_light;
 import :directional_light;
-import :shadow_renderer;
+import :shadow_data;
+import :light_culling_renderer;
 import :camera_system;
 
 import gse.platform;
@@ -13,6 +14,7 @@ import gse.utility;
 
 namespace gse::renderer::lighting {
 	auto update_gbuffer_descriptors(struct state& s) -> void;
+	auto update_tile_descriptors(struct state& s, const light_culling::state& lc) -> void;
 }
 
 export namespace gse::renderer::lighting {
@@ -127,8 +129,17 @@ auto gse::renderer::lighting::system::initialize(initialize_phase& phase, state&
 	s.shadow_sampler = config.device_config().device.createSampler(shadow_sampler_create_info);
 
 	update_gbuffer_descriptors(s);
-	config.on_swap_chain_recreate([&s](vulkan::config&) {
+
+	const auto* lc_state = phase.try_state_of<light_culling::state>();
+	if (lc_state) {
+		update_tile_descriptors(s, *lc_state);
+	}
+
+	config.on_swap_chain_recreate([&s, lc_state](vulkan::config&) {
 		update_gbuffer_descriptors(s);
+		if (lc_state) {
+			update_tile_descriptors(s, *lc_state);
+		}
 	});
 
 	const auto* shadow_state = phase.try_state_of<shadow::state>();
@@ -557,12 +568,14 @@ auto gse::renderer::lighting::system::render(render_phase& phase, const state& s
 				nullptr
 			);
 
-			s.shader_handle->push_bytes(
+			const int num_lights_i = static_cast<int>(light_count);
+			const std::array<std::uint32_t, 2> screen_sz = { config.swap_chain_config().extent.width, config.swap_chain_config().extent.height };
+			s.shader_handle->push(
 				command,
 				s.pipeline_layout,
 				"push_constants",
-				std::addressof(light_count),
-				0
+				"num_lights", num_lights_i,
+				"screen_size", screen_sz
 			);
 
 			command.draw(3, 1, 0, 0);
@@ -605,6 +618,40 @@ auto gse::renderer::lighting::update_gbuffer_descriptors(state& s) -> void {
 			*s.descriptor_sets[i],
 			{},
 			gbuffer_image_infos,
+			{}
+		);
+
+		config.device_config().device.updateDescriptorSets(writes, nullptr);
+	}
+}
+
+auto gse::renderer::lighting::update_tile_descriptors(state& s, const light_culling::state& lc) -> void {
+	auto& config = s.ctx->config();
+
+	for (std::size_t i = 0; i < per_frame_resource<vk::raii::DescriptorSet>::frames_in_flight; ++i) {
+		const std::unordered_map<std::string, vk::DescriptorBufferInfo> tile_buffer_infos = {
+			{
+				"light_index_list",
+				{
+					.buffer = lc.light_index_list_buffer(static_cast<std::uint32_t>(i)),
+					.offset = 0,
+					.range = lc.light_index_list_size(static_cast<std::uint32_t>(i))
+				}
+			},
+			{
+				"tile_light_table",
+				{
+					.buffer = lc.tile_light_table_buffer(static_cast<std::uint32_t>(i)),
+					.offset = 0,
+					.range = lc.tile_light_table_size(static_cast<std::uint32_t>(i))
+				}
+			}
+		};
+
+		auto writes = s.shader_handle->descriptor_writes(
+			*s.descriptor_sets[i],
+			tile_buffer_infos,
+			{},
 			{}
 		);
 
