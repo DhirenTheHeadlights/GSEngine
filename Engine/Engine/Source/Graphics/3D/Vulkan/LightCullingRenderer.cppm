@@ -6,6 +6,7 @@ import :point_light;
 import :spot_light;
 import :directional_light;
 import :camera_system;
+import :depth_prepass_renderer;
 import :shadow_data;
 
 import gse.platform;
@@ -341,9 +342,10 @@ auto gse::renderer::light_culling::system::render(render_phase& phase, const sta
 
 	s.ctx->graph()
 		.add_pass<state>()
+		.after<depth_prepass::state>()
 		.uploads(
-			vulkan::upload(s.culling_params_buffers[frame_index]),
-			vulkan::upload(s.light_buffers[frame_index])
+			vulkan::upload(s.culling_params_buffers[frame_index], vk::PipelineStageFlagBits2::eComputeShader),
+			vulkan::upload(s.light_buffers[frame_index], vk::PipelineStageFlagBits2::eComputeShader)
 		)
 		.reads(vulkan::sampled(depth_image, vk::PipelineStageFlagBits2::eComputeShader))
 		.writes(

@@ -156,6 +156,11 @@ export namespace gse::vulkan {
 		vk::PipelineStageFlags2 stage
 	) -> resource_usage;
 
+	auto indirect_read(
+		const buffer_resource& buf,
+		vk::PipelineStageFlags2 stage
+	) -> resource_usage;
+
 	auto attachment(
 		const image_resource& img,
 		vk::PipelineStageFlags2 stage
@@ -171,6 +176,11 @@ export namespace gse::vulkan {
 
 	auto upload(
 		const buffer_resource& buf
+	) -> upload_ref;
+
+	auto upload(
+		const buffer_resource& buf,
+		vk::PipelineStageFlags2 dst_stage
 	) -> upload_ref;
 
 	struct graphics_pass_info {
@@ -358,6 +368,10 @@ auto gse::vulkan::storage_read(const buffer_resource& buf, vk::PipelineStageFlag
 	return { { .ptr = std::addressof(buf), .type = resource_type::buffer }, stage, vk::AccessFlagBits2::eShaderStorageRead };
 }
 
+auto gse::vulkan::indirect_read(const buffer_resource& buf, vk::PipelineStageFlags2 stage) -> resource_usage {
+	return { { .ptr = std::addressof(buf), .type = resource_type::buffer }, stage, vk::AccessFlagBits2::eIndirectCommandRead };
+}
+
 auto gse::vulkan::attachment(const image_resource& img, vk::PipelineStageFlags2 stage) -> resource_usage {
 	const auto access = (stage == vk::PipelineStageFlagBits2::eLateFragmentTests || stage == vk::PipelineStageFlagBits2::eEarlyFragmentTests)
 		? vk::AccessFlagBits2::eDepthStencilAttachmentWrite
@@ -378,7 +392,11 @@ auto gse::vulkan::swapchain_write() -> resource_usage {
 }
 
 auto gse::vulkan::upload(const buffer_resource& buf) -> upload_ref {
-	return { std::addressof(buf) };
+	return { std::addressof(buf), vk::PipelineStageFlagBits2::eAllCommands };
+}
+
+auto gse::vulkan::upload(const buffer_resource& buf, const vk::PipelineStageFlags2 dst_stage) -> upload_ref {
+	return { std::addressof(buf), dst_stage };
 }
 
 gse::vulkan::pass_builder::pass_builder(render_graph& graph, std::type_index pass_type)
@@ -538,6 +556,8 @@ auto gse::vulkan::render_graph::execute() -> void {
 			if (auto it = type_to_index.find(dep); it != type_to_index.end()) {
 				adj[it->second].push_back(i);
 				++in_degree[i];
+			} else if (m_passes.size() > 3) {
+				std::println("[Graph] WARNING: after<{}> not found for pass {}", dep.name(), m_passes[i].pass_type.name());
 			}
 		}
 	}

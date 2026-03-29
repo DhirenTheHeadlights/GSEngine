@@ -3,8 +3,7 @@ export module gse.graphics:forward_renderer;
 import std;
 
 import :geometry_collector;
-import :cull_compute_renderer;
-import :skin_compute_renderer;
+import :depth_prepass_renderer;
 import :shadow_data;
 import :light_culling_renderer;
 import :camera_system;
@@ -18,8 +17,6 @@ import gse.utility;
 import gse.platform;
 
 export namespace gse::renderer::forward {
-	struct depth_prepass {};
-
 	struct state {
 		gpu::context* ctx = nullptr;
 
@@ -27,11 +24,6 @@ export namespace gse::renderer::forward {
 		vk::raii::PipelineLayout pipeline_layout = nullptr;
 		per_frame_resource<vk::raii::DescriptorSet> descriptor_sets;
 		resource::handle<shader> shader_handle;
-
-		vk::raii::Pipeline depth_only_pipeline = nullptr;
-		vk::raii::PipelineLayout depth_only_pipeline_layout = nullptr;
-		per_frame_resource<vk::raii::DescriptorSet> depth_only_descriptor_sets;
-		resource::handle<shader> depth_only_shader;
 
 		vk::raii::Pipeline skinned_pipeline = nullptr;
 		vk::raii::PipelineLayout skinned_pipeline_layout = nullptr;
@@ -67,43 +59,6 @@ export namespace gse::renderer::forward {
 
 auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& s) -> void {
 	auto& config = s.ctx->config();
-	const auto* gc_state = phase.try_state_of<geometry_collector::state>();
-
-	auto transition_images = [](vulkan::config& cfg) {
-		cfg.add_transient_work([&cfg](const vk::raii::CommandBuffer& cmd) -> std::vector<vulkan::buffer_resource> {
-			const vk::ImageMemoryBarrier2 barrier{
-				.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
-				.srcAccessMask = {},
-				.dstStageMask = vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-				.dstAccessMask = vk::AccessFlagBits2::eDepthStencilAttachmentWrite | vk::AccessFlagBits2::eDepthStencilAttachmentRead,
-				.oldLayout = vk::ImageLayout::eUndefined,
-				.newLayout = vk::ImageLayout::eGeneral,
-				.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-				.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-				.image = cfg.swap_chain_config().depth_image.image,
-				.subresourceRange = {
-					.aspectMask = vk::ImageAspectFlagBits::eDepth,
-					.baseMipLevel = 0,
-					.levelCount = 1,
-					.baseArrayLayer = 0,
-					.layerCount = 1
-				}
-			};
-
-			const vk::DependencyInfo dep{
-				.imageMemoryBarrierCount = 1,
-				.pImageMemoryBarriers = &barrier
-			};
-
-			cmd.pipelineBarrier2(dep);
-			cfg.swap_chain_config().depth_image.current_layout = vk::ImageLayout::eGeneral;
-
-			return {};
-		});
-	};
-
-	transition_images(config);
-	config.on_swap_chain_recreate(transition_images);
 
 	s.shader_handle = s.ctx->get<shader>("Shaders/Standard3D/meshlet_geometry");
 	s.ctx->instantly_load(s.shader_handle);
@@ -308,18 +263,6 @@ auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& 
 		.lineWidth = 1.0f
 	};
 
-	constexpr vk::PipelineDepthStencilStateCreateInfo depth_stencil_prepass{
-		.depthTestEnable = vk::True,
-		.depthWriteEnable = vk::True,
-		.depthCompareOp = vk::CompareOp::eLess,
-		.depthBoundsTestEnable = vk::False,
-		.stencilTestEnable = vk::False,
-		.front = {},
-		.back = {},
-		.minDepthBounds = 0.0f,
-		.maxDepthBounds = 1.0f
-	};
-
 	constexpr vk::PipelineDepthStencilStateCreateInfo depth_stencil_forward{
 		.depthTestEnable = vk::True,
 		.depthWriteEnable = vk::False,
@@ -412,69 +355,6 @@ auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& 
 	};
 
 	s.pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
-
-	s.depth_only_shader = s.ctx->get<shader>("Shaders/Standard3D/meshlet_depth_only");
-	s.ctx->instantly_load(s.depth_only_shader);
-
-	auto depth_only_layouts = s.depth_only_shader->layouts();
-	const auto depth_only_pc_range = s.depth_only_shader->push_constant_range("push_constants");
-
-	s.depth_only_pipeline_layout = config.device_config().device.createPipelineLayout({
-		.setLayoutCount = static_cast<std::uint32_t>(depth_only_layouts.size()),
-		.pSetLayouts = depth_only_layouts.data(),
-		.pushConstantRangeCount = 1,
-		.pPushConstantRanges = &depth_only_pc_range
-	});
-
-	const auto depth_only_stages = s.depth_only_shader->mesh_shader_stages();
-
-	const vk::PipelineRenderingCreateInfoKHR depth_only_rendering_info{
-		.colorAttachmentCount = 0,
-		.depthAttachmentFormat = vk::Format::eD32Sfloat
-	};
-
-	const vk::GraphicsPipelineCreateInfo depth_only_pipeline_info{
-		.pNext = &depth_only_rendering_info,
-		.stageCount = static_cast<std::uint32_t>(depth_only_stages.size()),
-		.pStages = depth_only_stages.data(),
-		.pVertexInputState = nullptr,
-		.pInputAssemblyState = nullptr,
-		.pTessellationState = nullptr,
-		.pViewportState = &viewport_state,
-		.pRasterizationState = &rasterizer,
-		.pMultisampleState = &multisampling,
-		.pDepthStencilState = &depth_stencil_prepass,
-		.pColorBlendState = nullptr,
-		.pDynamicState = &dynamic_state,
-		.layout = *s.depth_only_pipeline_layout
-	};
-
-	s.depth_only_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, depth_only_pipeline_info);
-
-	const auto depth_only_cam_ubo = s.depth_only_shader->uniform_block("CameraUBO");
-	for (std::size_t i = 0; i < per_frame_resource<vk::raii::DescriptorSet>::frames_in_flight; ++i) {
-		s.depth_only_descriptor_sets[i] = s.depth_only_shader->descriptor_set(
-			config.device_config().device,
-			config.descriptor_config().pool,
-			shader::set::binding_type::persistent
-		);
-
-		const std::unordered_map<std::string, vk::DescriptorBufferInfo> depth_only_buffer_infos{
-			{
-				"CameraUBO",
-				{
-					.buffer = s.ubo_allocations["CameraUBO"][i].buffer,
-					.offset = 0,
-					.range = depth_only_cam_ubo.size
-				}
-			}
-		};
-
-		config.device_config().device.updateDescriptorSets(
-			s.depth_only_shader->descriptor_writes(*s.depth_only_descriptor_sets[i], depth_only_buffer_infos, {}),
-			nullptr
-		);
-	}
 
 	s.skinned_shader = s.ctx->get<shader>("Shaders/Standard3D/skinned_geometry_pass");
 	s.ctx->instantly_load(s.skinned_shader);
@@ -699,13 +579,19 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 	const auto& skinned_batches = data.skinned_batches;
 
 	const auto* gc_state = phase.try_state_of<geometry_collector::state>();
-	if (!gc_state) {
+	const auto* lc_state = phase.try_state_of<light_culling::state>();
+	if (!gc_state || !lc_state) {
 		return;
 	}
 
 	const auto extent = config.swap_chain_config().extent;
 	const int num_lights_i = static_cast<int>(light_count);
 	const std::array<std::uint32_t, 2> screen_sz = { extent.width, extent.height };
+	const auto graphics_upload_stage =
+		vk::PipelineStageFlagBits2::eTaskShaderEXT |
+		vk::PipelineStageFlagBits2::eMeshShaderEXT |
+		vk::PipelineStageFlagBits2::eVertexShader |
+		vk::PipelineStageFlagBits2::eFragmentShader;
 
 	vk::RenderingAttachmentInfo color_attachment{
 		.imageView = *config.swap_chain_config().image_views[config.frame_context().image_index],
@@ -718,95 +604,6 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 			}
 		}
 	};
-
-	vk::RenderingAttachmentInfo depth_prepass_attachment{
-		.imageView = config.swap_chain_config().depth_image.view,
-		.imageLayout = vk::ImageLayout::eGeneral,
-		.loadOp = vk::AttachmentLoadOp::eClear,
-		.storeOp = vk::AttachmentStoreOp::eStore,
-		.clearValue = vk::ClearValue{
-			.depthStencil = vk::ClearDepthStencilValue{
-				.depth = 1.0f
-			}
-		}
-	};
-
-	const vk::RenderingInfo depth_prepass_rendering_info{
-		.renderArea = { { 0, 0 }, extent },
-		.layerCount = 1,
-		.colorAttachmentCount = 0,
-		.pColorAttachments = nullptr,
-		.pDepthAttachment = &depth_prepass_attachment
-	};
-
-	s.ctx->graph()
-		.add_pass<depth_prepass>()
-		.after<cull_compute::state>()
-		.uploads(
-			vulkan::upload(s.ubo_allocations.at("CameraUBO")[frame_index]),
-			vulkan::upload(gc_state->instance_buffer[frame_index])
-		)
-		.writes(vulkan::attachment(config.swap_chain_config().depth_image, vk::PipelineStageFlagBits2::eLateFragmentTests))
-		.record_graphics(depth_prepass_rendering_info, [&s, &normal_batches, gc_state, frame_index, extent](vulkan::recording_context& ctx) {
-			const vk::Viewport viewport{
-				.x = 0.0f,
-				.y = 0.0f,
-				.width = static_cast<float>(extent.width),
-				.height = static_cast<float>(extent.height),
-				.minDepth = 0.0f,
-				.maxDepth = 1.0f
-			};
-			ctx.set_viewport(viewport);
-			ctx.set_scissor({ { 0, 0 }, extent });
-
-			if (normal_batches.empty()) return;
-
-			ctx.bind_pipeline(vk::PipelineBindPoint::eGraphics, *s.depth_only_pipeline);
-			const vk::DescriptorSet sets[]{ *s.depth_only_descriptor_sets[frame_index] };
-			ctx.bind_descriptor_sets(vk::PipelineBindPoint::eGraphics, *s.depth_only_pipeline_layout, 0, sets);
-
-			const vk::DescriptorBufferInfo instance_buffer_info{
-				.buffer = gc_state->instance_buffer[frame_index].buffer,
-				.offset = 0,
-				.range = gc_state->instance_buffer[frame_index].allocation.size()
-			};
-
-			for (std::size_t i = 0; i < normal_batches.size(); ++i) {
-				const auto& batch = normal_batches[i];
-				const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
-
-				if (!mesh.has_meshlets()) continue;
-
-				const vk::DescriptorBufferInfo vertex_storage_info{ .buffer = mesh.vertex_storage_buffer(), .offset = 0, .range = vk::WholeSize };
-				const vk::DescriptorBufferInfo meshlet_desc_info{ .buffer = mesh.meshlet_descriptor_buffer(), .offset = 0, .range = vk::WholeSize };
-				const vk::DescriptorBufferInfo meshlet_vert_info{ .buffer = mesh.meshlet_vertex_buffer(), .offset = 0, .range = vk::WholeSize };
-				const vk::DescriptorBufferInfo meshlet_tri_info{ .buffer = mesh.meshlet_triangle_buffer(), .offset = 0, .range = vk::WholeSize };
-				const vk::DescriptorBufferInfo meshlet_bounds_info{ .buffer = mesh.meshlet_bounds_buffer(), .offset = 0, .range = vk::WholeSize };
-
-				const std::array<vk::WriteDescriptorSet, 6> descriptor_writes{
-					vk::WriteDescriptorSet{ .dstBinding = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &vertex_storage_info },
-					vk::WriteDescriptorSet{ .dstBinding = 1, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &meshlet_desc_info },
-					vk::WriteDescriptorSet{ .dstBinding = 2, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &meshlet_vert_info },
-					vk::WriteDescriptorSet{ .dstBinding = 3, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &meshlet_tri_info },
-					vk::WriteDescriptorSet{ .dstBinding = 4, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &meshlet_bounds_info },
-					vk::WriteDescriptorSet{ .dstBinding = 5, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &instance_buffer_info }
-				};
-
-				ctx.push_descriptor(vk::PipelineBindPoint::eGraphics, *s.depth_only_pipeline_layout, 1, descriptor_writes);
-
-				const std::uint32_t ml_count = mesh.meshlet_count();
-				for (std::uint32_t inst = 0; inst < batch.instance_count; ++inst) {
-					auto pc = s.depth_only_shader->cache_push_block("push_constants");
-					pc.set("meshlet_offset", std::uint32_t(0));
-					pc.set("meshlet_count", ml_count);
-					pc.set("instance_index", batch.first_instance + inst);
-					ctx.push(pc, *s.depth_only_pipeline_layout);
-
-					const std::uint32_t task_groups = (ml_count + 31) / 32;
-					ctx.draw_mesh_tasks(task_groups, 1, 1);
-				}
-			}
-		});
 
 	vk::RenderingAttachmentInfo depth_attachment{
 		.imageView = config.swap_chain_config().depth_image.view,
@@ -826,13 +623,19 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 	s.ctx->graph()
 		.add_pass<state>()
 		.after<light_culling::state>()
-		.after<depth_prepass>()
+		.after<depth_prepass::state>()
 		.uploads(
-			vulkan::upload(s.ubo_allocations.at("CameraUBO")[frame_index]),
-			vulkan::upload(s.light_buffers[frame_index]),
-			vulkan::upload(s.shadow_params_buffers[frame_index]),
-			vulkan::upload(s.point_shadow_params_buffers[frame_index]),
-			vulkan::upload(gc_state->instance_buffer[frame_index])
+			vulkan::upload(s.ubo_allocations.at("CameraUBO")[frame_index], graphics_upload_stage),
+			vulkan::upload(s.light_buffers[frame_index], graphics_upload_stage),
+			vulkan::upload(s.shadow_params_buffers[frame_index], graphics_upload_stage),
+			vulkan::upload(s.point_shadow_params_buffers[frame_index], graphics_upload_stage),
+			vulkan::upload(gc_state->instance_buffer[frame_index], graphics_upload_stage)
+		)
+		.reads(
+			vulkan::storage_read(lc_state->tile_light_table_buffers[frame_index], vk::PipelineStageFlagBits2::eFragmentShader),
+			vulkan::storage_read(lc_state->light_index_list_buffers[frame_index], vk::PipelineStageFlagBits2::eFragmentShader),
+			vulkan::storage_read(gc_state->skin_buffer[frame_index], vk::PipelineStageFlagBits2::eVertexShader),
+			vulkan::indirect_read(gc_state->skinned_indirect_commands_buffer[frame_index], vk::PipelineStageFlagBits2::eDrawIndirect)
 		)
 		.writes(
 			vulkan::attachment(config.swap_chain_config().depth_image, vk::PipelineStageFlagBits2::eLateFragmentTests),

@@ -12,6 +12,7 @@ export import :font_compiler;
 export import :geometry_collector;
 export import :skin_compute_renderer;
 export import :cull_compute_renderer;
+export import :depth_prepass_renderer;
 export import :forward_renderer;
 export import :gui;
 export import :light_culling_renderer;
