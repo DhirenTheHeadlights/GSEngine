@@ -2,7 +2,7 @@ import common;
 import standard_3d;
 
 struct VS_OUTPUT {
-    float4 clip_pos    : SV_Position;
+    precise float4 clip_pos    : SV_Position;
     float3 view_pos    : TEXCOORD0;
     float3 view_normal : TEXCOORD1;
     float2 tex_coord   : TEXCOORD2;
