@@ -191,37 +191,6 @@ auto gse::vulkan::begin_frame(const frame_params& params) -> bool {
     };
     cfg.frame_context().command_buffer.begin(begin_info);
 
-    const auto& swap = cfg.swap_chain_config();
-    const auto& frame_ctx = cfg.frame_context();
-
-    const vk::ImageMemoryBarrier2 color_barrier{
-        .srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
-        .srcAccessMask = {},
-        .dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-        .dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
-        .oldLayout = vk::ImageLayout::eUndefined,
-        .newLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .image = swap.images[frame_ctx.image_index],
-        .subresourceRange = {
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1
-        }
-    };
-
-    std::array<vk::ImageMemoryBarrier2, 1> barriers{ color_barrier };
-
-    const vk::DependencyInfo begin_dep{
-        .imageMemoryBarrierCount = static_cast<std::uint32_t>(barriers.size()),
-        .pImageMemoryBarriers = barriers.data()
-    };
-
-    frame_ctx.command_buffer.pipelineBarrier2(begin_dep);
-
     cfg.set_frame_in_progress(true);
     return true;
 }
@@ -239,37 +208,7 @@ auto gse::vulkan::end_frame(const frame_params& params) -> void {
         device.waitIdle();
     };
 
-    if (params.minimized) {
-        return;
-    }
-
     const auto& frame_ctx = cfg.frame_context();
-
-    vk::ImageMemoryBarrier2 present_barrier{
-        .srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-        .srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
-        .dstStageMask = vk::PipelineStageFlagBits2::eBottomOfPipe,
-        .dstAccessMask = {},
-        .oldLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .newLayout = vk::ImageLayout::ePresentSrcKHR,
-        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .image = cfg.swap_chain_config().images[frame_ctx.image_index],
-        .subresourceRange = {
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1
-        }
-    };
-
-    const vk::DependencyInfo dependency_info{
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers = &present_barrier
-    };
-
-    frame_ctx.command_buffer.pipelineBarrier2(dependency_info);
     frame_ctx.command_buffer.end();
 
     const vk::SemaphoreSubmitInfo wait_info{

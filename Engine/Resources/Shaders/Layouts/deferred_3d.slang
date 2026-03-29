@@ -35,6 +35,12 @@ cbuffer PointShadowParams {
 
 public[[vk::binding(9, 0)]] SamplerCube point_shadow_maps[MAX_POINT_SHADOW_LIGHTS];
 
+public static const uint TILE_SIZE = 16;
+public static const uint MAX_LIGHTS_PER_TILE = 64;
+
+public[[vk::binding(10, 0)]] StructuredBuffer<uint> light_index_list;
+public[[vk::binding(11, 0)]] StructuredBuffer<uint2> tile_light_table;
+
 public float3 decode_octahedron(float2 e) {
     float3 n;
     n.z = 1.0 - abs(e.x) - abs(e.y);

@@ -25,7 +25,7 @@ export namespace gse {
 			std::type_index idx
 		) const -> const void* override;
 
-		template <typename S, typename State, typename... Args>
+		template <typename S, typename State, typename RenderState = void, typename... Args>
 		auto add_system(
 			registry& reg,
 			Args&&... args
@@ -109,14 +109,14 @@ export namespace gse {
 	};
 }
 
-template <typename S, typename State, typename... Args>
+template <typename S, typename State, typename RenderState, typename... Args>
 auto gse::scheduler::add_system(registry& reg, Args&&... args) -> State& {
 	if (m_registry == nullptr) {
 		m_registry = &reg;
 		m_registry_access.reg = m_registry;
 	}
 
-	auto ptr = std::make_unique<system_node<S, State>>(std::forward<Args>(args)...);
+	auto ptr = std::make_unique<system_node<S, State, RenderState>>(std::forward<Args>(args)...);
 	auto* raw = ptr.get();
 
 	m_state_index.emplace(std::type_index(typeid(State)), raw);

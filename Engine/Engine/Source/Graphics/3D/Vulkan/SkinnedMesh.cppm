@@ -35,8 +35,11 @@ export namespace gse {
         auto draw(vk::CommandBuffer command_buffer) const -> void;
         auto draw_instanced(vk::CommandBuffer command_buffer, std::uint32_t instance_count, std::uint32_t first_instance = 0) const -> void;
 
+        auto vertex_buffer() const -> vk::Buffer { return m_vertex_buffer.buffer; }
+        auto index_buffer() const -> vk::Buffer { return m_index_buffer.buffer; }
+
         auto center_of_mass() const -> vec3<displacement>;
-        auto material() const -> const resource::handle<gse::material>&;
+        auto material() const -> const resource::handle<material>&;
         auto indices() const -> const std::vector<std::uint32_t>&;
         auto aabb() const -> std::pair<vec3<displacement>, vec3<displacement>>;
     private:

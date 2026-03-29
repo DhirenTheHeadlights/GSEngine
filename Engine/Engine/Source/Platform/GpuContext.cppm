@@ -7,11 +7,12 @@ import :asset_pipeline;
 import :asset_compiler;
 import :shader_layout;
 import :shader_layout_compiler;
-
-import gse.platform.vulkan;
 import :window;
 import :input_state;
+import :render_graph;
+
 import gse.utility;
+import gse.platform.vulkan;
 
 export namespace gse {
 	enum class render_layer : std::uint8_t {
@@ -136,6 +137,9 @@ export namespace gse::gpu {
 			id resource_id
 		) const -> void;
 
+		[[nodiscard]] auto graph(
+		) -> vulkan::render_graph&;
+
 		auto set_ui_focus(
 			bool focus
 		) -> void;
@@ -171,6 +175,7 @@ export namespace gse::gpu {
 		mutable std::vector<std::pair<std::type_index, id>> m_pending_gpu_resources;
 		mutable std::recursive_mutex m_mutex;
 
+		std::unique_ptr<vulkan::render_graph> m_render_graph;
 		bool m_ui_focus = false;
 		bool m_validation_layers_enabled = false;
 
@@ -178,7 +183,7 @@ export namespace gse::gpu {
 	};
 }
 
-gse::gpu::context::context(const std::string& window_title, input::system_state& input, save::state& save) : m_window(window_title, input, save), m_config(vulkan::generate_config(m_window.raw_handle(), save)) {
+gse::gpu::context::context(const std::string& window_title, input::system_state& input, save::state& save) : m_window(window_title, input, save), m_config(vulkan::generate_config(m_window.raw_handle(), save)), m_render_graph(std::make_unique<vulkan::render_graph>(*m_config)) {
 	save.bind("Graphics", "Validation Layers", m_validation_layers_enabled)
 		.description("Enable Vulkan validation layers for debugging (impacts performance significantly)")
 		.default_value(false)
@@ -355,6 +360,10 @@ auto gse::gpu::context::loader(this auto&& self) -> decltype(auto) {
 auto gse::gpu::context::config(this auto&& self) -> decltype(auto) {
 	assert(self.m_config.get(), std::source_location::current(), "Vulkan config is not initialized.");
 	return *self.m_config;
+}
+
+auto gse::gpu::context::graph() -> vulkan::render_graph& {
+	return *m_render_graph;
 }
 
 auto gse::gpu::context::window() -> gse::window& {

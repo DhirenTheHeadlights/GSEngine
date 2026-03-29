@@ -27,6 +27,7 @@ VS_OUTPUT vs_main(uint vidx: SV_VertexID) {
 [[vk::push_constant]]
 cbuffer PushConstants {
     int num_lights;
+    uint2 screen_size;
 };
 
 float3 reconstruct_view_position(float2 uv, float depth) {
@@ -151,7 +152,15 @@ float4 fs_main(VS_OUTPUT input) : SV_Target0 {
 
     float3 result = float3(0.0, 0.0, 0.0);
 
-    for (int i = 0; i < num_lights; ++i) {
+    uint2 tile_id = uint2(input.position.xy) / TILE_SIZE;
+    uint tiles_x = (screen_size.x + TILE_SIZE - 1) / TILE_SIZE;
+    uint tile_index = tile_id.y * tiles_x + tile_id.x;
+    uint2 tile_info = tile_light_table[tile_index];
+    uint list_offset = tile_info.x;
+    uint tile_count = tile_info.y;
+
+    for (uint t = 0; t < tile_count; ++t) {
+        int i = (int)light_index_list[list_offset + t];
         Light light = lights_ssbo[i];
         float shadow = compute_shadow_for_light(i, pos_world);
 

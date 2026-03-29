@@ -62,6 +62,9 @@ export namespace gse {
         auto indices() const -> const std::vector<std::uint32_t>&;
         auto aabb() const -> std::pair<vec3<displacement>, vec3<displacement>>;
 
+        auto vertex_buffer() const -> vk::Buffer { return m_vertex_buffer.buffer; }
+        auto index_buffer() const -> vk::Buffer { return m_index_buffer.buffer; }
+
         auto has_meshlets() const -> bool { return !m_meshlets.descriptors.empty(); }
         auto meshlet_count() const -> std::uint32_t { return static_cast<std::uint32_t>(m_meshlets.descriptors.size()); }
         auto meshlet_descriptor_buffer() const -> vk::Buffer { return m_meshlet_descriptor_buffer.buffer; }
