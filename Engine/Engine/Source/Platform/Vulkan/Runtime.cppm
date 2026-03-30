@@ -1,13 +1,17 @@
 module;
 
-export module gse.platform:vulkan_config;
+export module gse.platform:vulkan_runtime;
 
 import std;
 
 import :vulkan_allocator;
+import :descriptor_heap;
+import :descriptor_buffer_types;
+
+import gse.assert;
 
 export namespace gse::vulkan {
-    struct instance_config {
+	struct instance_config {
         vk::raii::Context context;
         vk::raii::Instance instance;
         vk::raii::SurfaceKHR surface;
@@ -50,28 +54,6 @@ export namespace gse::vulkan {
         }
         command_config(command_config&&) = default;
         auto operator=(command_config&&) -> command_config & = default;
-    };
-
-    struct descriptor_config {
-        vk::raii::DescriptorPool pool;
-    	std::unique_ptr<std::recursive_mutex> mutex;
-        explicit descriptor_config(vk::raii::DescriptorPool&& pool)
-            : pool(std::move(pool)), mutex(std::make_unique<std::recursive_mutex>()) {
-        }
-        descriptor_config(descriptor_config&&) = default;
-        auto operator=(descriptor_config&&) -> descriptor_config & = default;
-    };
-
-    struct descriptor_buffer_properties {
-        vk::DeviceSize offset_alignment = 0;
-        vk::DeviceSize uniform_buffer_descriptor_size = 0;
-        vk::DeviceSize storage_buffer_descriptor_size = 0;
-        vk::DeviceSize sampled_image_descriptor_size = 0;
-        vk::DeviceSize sampler_descriptor_size = 0;
-        vk::DeviceSize combined_image_sampler_descriptor_size = 0;
-        vk::DeviceSize storage_image_descriptor_size = 0;
-        vk::DeviceSize input_attachment_descriptor_size = 0;
-        bool supported = false;
     };
 
     struct transient_gpu_work {
@@ -165,27 +147,28 @@ export namespace gse::vulkan {
         auto operator=(frame_context_config&&) -> frame_context_config & = default;
     };
 
-    class config {
+    class runtime : non_copyable {
     public:
-        config(
+        runtime(
             instance_config&& instance_data, device_config&& device_data,
             queue_config&& queue, command_config&& command,
-            descriptor_config&& descriptor, sync_config&& sync,
+            sync_config&& sync,
             swap_chain_config&& swap_chain_data, frame_context_config&& frame_context,
             std::unique_ptr<allocator>&& alloc,
+            std::unique_ptr<descriptor_heap>&& desc_heap,
             descriptor_buffer_properties&& desc_buf_props = {}
-        ) : m_allocator(std::move(alloc)),
-            m_instance_data(std::move(instance_data)),
+        ) : m_instance_data(std::move(instance_data)),
             m_device_data(std::move(device_data)),
+            m_allocator(std::move(alloc)),
             m_queue(std::move(queue)),
             m_command(std::move(command)),
-            m_descriptor(std::move(descriptor)),
+            m_descriptor_heap(std::move(desc_heap)),
             m_sync(std::move(sync)),
             m_swap_chain_data(std::move(swap_chain_data)),
             m_frame_context(std::move(frame_context)),
             m_descriptor_buffer_props(std::move(desc_buf_props)) {}
 
-        using swap_chain_recreate_callback = std::function<void(config&)>;
+        using swap_chain_recreate_callback = std::function<void()>;
 
         auto on_swap_chain_recreate(swap_chain_recreate_callback callback) -> void {
             m_swap_chain_recreate_callbacks.push_back(std::move(callback));
@@ -194,7 +177,7 @@ export namespace gse::vulkan {
         auto notify_swap_chain_recreated() -> void {
             ++m_swap_chain_generation;
             for (const auto& callback : m_swap_chain_recreate_callbacks) {
-                callback(*this);
+                callback();
             }
         }
 
@@ -202,12 +185,9 @@ export namespace gse::vulkan {
             return m_swap_chain_generation;
         }
 
-        ~config() {
-            std::println("Destroying Config");
+        ~runtime() override {
+            std::println("Destroying Runtime");
         }
-
-        config(config&&) = default;
-        auto operator=(config&&) -> config & = default;
 
         auto add_transient_work(const std::function<std::vector<buffer_resource>(const vk::raii::CommandBuffer&)>& commands) -> void {
             const vk::CommandBufferAllocateInfo alloc_info{
@@ -280,8 +260,17 @@ export namespace gse::vulkan {
             return m_command;
 		}
 
-        auto descriptor_config() -> descriptor_config& {
-            return m_descriptor;
+        [[nodiscard]] auto descriptor_heap(this auto& self) -> decltype(auto) {
+            using self_t = std::remove_reference_t<decltype(self)>;
+            using heap_ref_t = std::conditional_t<
+                std::is_const_v<self_t>,
+                const gse::vulkan::descriptor_heap&,
+                gse::vulkan::descriptor_heap&
+            >;
+            assert(self.m_descriptor_heap.get(),
+                std::source_location::current(),
+                "Descriptor heap is unavailable because descriptor buffers are unsupported");
+            return static_cast<heap_ref_t>(*self.m_descriptor_heap);
         }
 
         auto sync_config() -> sync_config& {
@@ -320,18 +309,24 @@ export namespace gse::vulkan {
             return *m_allocator;
         }
 
-        auto set_mesh_shaders_enabled(bool enabled) -> void { m_mesh_shaders_enabled = enabled; }
-        [[nodiscard]] auto mesh_shaders_enabled() const -> bool { return m_mesh_shaders_enabled; }
+        auto set_mesh_shaders_enabled(const bool enabled) -> void {
+	        m_mesh_shaders_enabled = enabled;
+        }
 
-        [[nodiscard]] auto descriptor_buffer_props() const -> const descriptor_buffer_properties& { return m_descriptor_buffer_props; }
+        [[nodiscard]] auto mesh_shaders_enabled() const -> bool {
+	        return m_mesh_shaders_enabled;
+        }
 
+        [[nodiscard]] auto descriptor_buffer_props() const -> const descriptor_buffer_properties& {
+	        return m_descriptor_buffer_props;
+        }
     private:
         struct instance_config m_instance_data;
         struct device_config m_device_data;
         std::unique_ptr<vulkan::allocator> m_allocator;
         struct queue_config m_queue;
         struct command_config m_command;
-        struct descriptor_config m_descriptor;
+        std::unique_ptr<vulkan::descriptor_heap> m_descriptor_heap;
         struct sync_config m_sync;
         struct swap_chain_config m_swap_chain_data;
     	frame_context_config m_frame_context;

@@ -41,6 +41,17 @@ export namespace gse {
         [[nodiscard]] auto vk_layouts(
         ) const -> std::vector<vk::DescriptorSetLayout>;
 
+        [[nodiscard]] auto layout_size(
+            const vk::raii::Device& device,
+            std::uint32_t set_index
+        ) const -> vk::DeviceSize;
+
+        [[nodiscard]] auto binding_offset(
+            const vk::raii::Device& device,
+            std::uint32_t set_index,
+            std::uint32_t binding
+        ) const -> vk::DeviceSize;
+
     private:
         std::string m_name;
         std::filesystem::path m_path;
@@ -121,7 +132,7 @@ auto gse::shader_layout::load(const vk::raii::Device& device) -> void {
         vk::DescriptorSetLayoutCreateInfo ci{
             .flags = is_push_set
                 ? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR
-                : vk::DescriptorSetLayoutCreateFlags{},
+                : vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT,
             .bindingCount = static_cast<std::uint32_t>(raw_bindings.size()),
             .pBindings = raw_bindings.data()
         };
@@ -129,14 +140,13 @@ auto gse::shader_layout::load(const vk::raii::Device& device) -> void {
         m_vk_layouts[set.set_index] = std::make_shared<vk::raii::DescriptorSetLayout>(device, ci);
     }
 
-    // Create empty layouts for gaps
     for (std::uint32_t i = 0; i <= max_set; ++i) {
         if (!m_vk_layouts[i]) {
             const bool is_push_set = (i == 1);
             vk::DescriptorSetLayoutCreateInfo ci{
                 .flags = is_push_set
                     ? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR
-                    : vk::DescriptorSetLayoutCreateFlags{},
+                    : vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT,
                 .bindingCount = 0,
                 .pBindings = nullptr
             };
@@ -171,4 +181,16 @@ auto gse::shader_layout::vk_layouts() const -> std::vector<vk::DescriptorSetLayo
         result.push_back(layout ? **layout : vk::DescriptorSetLayout{});
     }
     return result;
+}
+
+auto gse::shader_layout::layout_size(const vk::raii::Device& device, std::uint32_t set_index) const -> vk::DeviceSize {
+    assert(set_index < m_vk_layouts.size() && m_vk_layouts[set_index],
+        std::source_location::current(), "Layout set {} not found", set_index);
+    return (*device).getDescriptorSetLayoutSizeEXT(**m_vk_layouts[set_index]);
+}
+
+auto gse::shader_layout::binding_offset(const vk::raii::Device& device, std::uint32_t set_index, std::uint32_t binding) const -> vk::DeviceSize {
+    assert(set_index < m_vk_layouts.size() && m_vk_layouts[set_index],
+        std::source_location::current(), "Layout set {} not found", set_index);
+    return (*device).getDescriptorSetLayoutBindingOffsetEXT(**m_vk_layouts[set_index], binding);
 }

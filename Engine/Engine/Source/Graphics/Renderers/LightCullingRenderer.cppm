@@ -18,7 +18,7 @@ export namespace gse::renderer::light_culling {
 
 	struct state {
 		gpu::pipeline pipeline;
-		per_frame_resource<gpu::descriptor_set> descriptor_sets;
+		per_frame_resource<vulkan::descriptor_region> descriptors;
 
 		resource::handle<shader> shader_handle;
 
@@ -76,19 +76,12 @@ auto gse::renderer::light_culling::update_depth_descriptor(state& s) -> void {
 		.imageLayout = vk::ImageLayout::eGeneral
 	};
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_set>::frames_in_flight; ++i) {
+	for (std::size_t i = 0; i < per_frame_resource<vulkan::descriptor_region>::frames_in_flight; ++i) {
 		const std::unordered_map<std::string, vk::DescriptorImageInfo> image_infos = {
 			{ "g_depth", depth_info }
 		};
 
-		auto writes = s.shader_handle->descriptor_writes(
-			s.descriptor_sets[i].native(),
-			{},
-			image_infos,
-			{}
-		);
-
-		gpu::update_descriptors_raw(*s.ctx, writes);
+		gpu::write_descriptors(*s.ctx, s.descriptors[i], *s.shader_handle, {}, image_infos);
 	}
 }
 
@@ -150,14 +143,7 @@ auto gse::renderer::light_culling::rebuild_tile_buffers(state& s) -> void {
 			}
 		};
 
-		auto writes = s.shader_handle->descriptor_writes(
-			s.descriptor_sets[i].native(),
-			buffer_infos,
-			{},
-			{}
-		);
-
-		gpu::update_descriptors_raw(*s.ctx, writes);
+		gpu::write_descriptors(*s.ctx, s.descriptors[i], *s.shader_handle, buffer_infos);
 	}
 
 	update_depth_descriptor(s);
@@ -171,8 +157,8 @@ auto gse::renderer::light_culling::system::initialize(initialize_phase& phase, s
 	ctx.instantly_load(s.shader_handle);
 	assert(s.shader_handle->is_compute(), std::source_location::current(), "Shader for light culling system must be a compute shader");
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_set>::frames_in_flight; ++i) {
-		s.descriptor_sets[i] = gpu::allocate_descriptor_set(ctx, *s.shader_handle);
+	for (std::size_t i = 0; i < per_frame_resource<vulkan::descriptor_region>::frames_in_flight; ++i) {
+		s.descriptors[i] = gpu::allocate_descriptors(ctx, *s.shader_handle);
 	}
 
 	const auto params_block = s.shader_handle->uniform_block("CullingParams");
@@ -204,7 +190,7 @@ auto gse::renderer::light_culling::system::initialize(initialize_phase& phase, s
 
 	rebuild_tile_buffers(s);
 
-	ctx.on_swap_chain_recreate([&s](vulkan::config&) {
+	ctx.on_swap_chain_recreate([&s]() {
 		rebuild_tile_buffers(s);
 	});
 }
@@ -328,7 +314,7 @@ auto gse::renderer::light_culling::system::render(const render_phase& phase, con
 		)
 		.record([&s, frame_index, tiles](vulkan::recording_context& ctx) {
 			ctx.bind_pipeline(vk::PipelineBindPoint::eCompute, s.pipeline);
-			ctx.bind_descriptor_set(vk::PipelineBindPoint::eCompute, s.pipeline, 0, s.descriptor_sets[frame_index]);
+			ctx.bind_descriptors(vk::PipelineBindPoint::eCompute, s.pipeline, s.descriptors[frame_index]);
 			ctx.dispatch(tiles.x(), tiles.y(), 1);
 		});
 }

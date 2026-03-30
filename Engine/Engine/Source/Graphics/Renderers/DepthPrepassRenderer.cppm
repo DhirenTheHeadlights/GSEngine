@@ -12,11 +12,11 @@ import gse.utility;
 export namespace gse::renderer::depth_prepass {
 	struct state {
 		gpu::pipeline meshlet_pipeline;
-		per_frame_resource<gpu::descriptor_set> meshlet_descriptor_sets;
+		per_frame_resource<vulkan::descriptor_region> meshlet_descriptors;
 		resource::handle<shader> meshlet_shader;
 
 		gpu::pipeline skinned_pipeline;
-		per_frame_resource<gpu::descriptor_set> skinned_descriptor_sets;
+		per_frame_resource<vulkan::descriptor_region> skinned_descriptors;
 		resource::handle<shader> skinned_shader;
 
 		std::unordered_map<std::string, per_frame_resource<gpu::buffer>> ubo_allocations;
@@ -76,7 +76,7 @@ auto gse::renderer::depth_prepass::system::initialize(initialize_phase& phase, s
 	};
 
 	transition_depth();
-	ctx.on_swap_chain_recreate([gpu](vulkan::config&) {
+	ctx.on_swap_chain_recreate([gpu]() {
 		gpu->add_transient_work([gpu](const vk::raii::CommandBuffer& cmd) -> std::vector<vulkan::buffer_resource> {
 			auto& depth = gpu->graph().depth_image();
 			const vk::ImageMemoryBarrier2 barrier{
@@ -121,8 +121,8 @@ auto gse::renderer::depth_prepass::system::initialize(initialize_phase& phase, s
 		.push_constant_block = "push_constants"
 	});
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_set>::frames_in_flight; ++i) {
-		s.meshlet_descriptor_sets[i] = gpu::allocate_descriptor_set(ctx, *s.meshlet_shader);
+	for (std::size_t i = 0; i < per_frame_resource<vulkan::descriptor_region>::frames_in_flight; ++i) {
+		s.meshlet_descriptors[i] = gpu::allocate_descriptors(ctx, *s.meshlet_shader);
 
 		const std::unordered_map<std::string, vk::DescriptorBufferInfo> meshlet_buffer_infos{
 			{
@@ -135,7 +135,7 @@ auto gse::renderer::depth_prepass::system::initialize(initialize_phase& phase, s
 			}
 		};
 
-		gpu::update_descriptors(ctx, s.meshlet_descriptor_sets[i], *s.meshlet_shader, meshlet_buffer_infos);
+		gpu::write_descriptors(ctx, s.meshlet_descriptors[i], *s.meshlet_shader, meshlet_buffer_infos);
 	}
 
 	s.skinned_shader = ctx.get<shader>("Shaders/Standard3D/skinned_depth_only");
@@ -147,8 +147,8 @@ auto gse::renderer::depth_prepass::system::initialize(initialize_phase& phase, s
 	});
 
 	const auto skinned_camera_ubo = s.skinned_shader->uniform_block("CameraUBO");
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_set>::frames_in_flight; ++i) {
-		s.skinned_descriptor_sets[i] = gpu::allocate_descriptor_set(ctx, *s.skinned_shader);
+	for (std::size_t i = 0; i < per_frame_resource<vulkan::descriptor_region>::frames_in_flight; ++i) {
+		s.skinned_descriptors[i] = gpu::allocate_descriptors(ctx, *s.skinned_shader);
 
 		const std::unordered_map<std::string, vk::DescriptorBufferInfo> skinned_buffer_infos{
 			{
@@ -161,7 +161,7 @@ auto gse::renderer::depth_prepass::system::initialize(initialize_phase& phase, s
 			}
 		};
 
-		gpu::update_descriptors(ctx, s.skinned_descriptor_sets[i], *s.skinned_shader, skinned_buffer_infos);
+		gpu::write_descriptors(ctx, s.skinned_descriptors[i], *s.skinned_shader, skinned_buffer_infos);
 	}
 }
 
@@ -215,7 +215,7 @@ auto gse::renderer::depth_prepass::system::render(const render_phase& phase, con
 
 			if (!data.normal_batches.empty()) {
 				ctx.bind_pipeline(vk::PipelineBindPoint::eGraphics, s.meshlet_pipeline);
-				ctx.bind_descriptor_set(vk::PipelineBindPoint::eGraphics, s.meshlet_pipeline, 0, s.meshlet_descriptor_sets[frame_index]);
+				ctx.bind_descriptors(vk::PipelineBindPoint::eGraphics, s.meshlet_pipeline, s.meshlet_descriptors[frame_index]);
 
 				const vk::DescriptorBufferInfo instance_buffer_info{
 					.buffer = gc_state->instance_buffer[frame_index].buffer,
@@ -262,7 +262,7 @@ auto gse::renderer::depth_prepass::system::render(const render_phase& phase, con
 
 			if (!data.skinned_batches.empty()) {
 				ctx.bind_pipeline(vk::PipelineBindPoint::eGraphics, s.skinned_pipeline);
-				ctx.bind_descriptor_set(vk::PipelineBindPoint::eGraphics, s.skinned_pipeline, 0, s.skinned_descriptor_sets[frame_index]);
+				ctx.bind_descriptors(vk::PipelineBindPoint::eGraphics, s.skinned_pipeline, s.skinned_descriptors[frame_index]);
 
 				const vk::DescriptorBufferInfo skin_buffer_info{
 					.buffer = gc_state->skin_buffer[frame_index].buffer,

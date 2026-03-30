@@ -81,7 +81,7 @@ export namespace gse::renderer::physics_debug {
 
 	struct state {
 		gpu::pipeline pipeline;
-		per_frame_resource<gpu::descriptor_set> descriptor_sets;
+		per_frame_resource<vulkan::descriptor_region> descriptors;
 
 		resource::handle<shader> shader_handle;
 
@@ -141,13 +141,13 @@ auto gse::renderer::physics_debug::system::initialize(const initialize_phase& ph
 
 	const auto camera_ubo = s.shader_handle->uniform_block("CameraUBO");
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_set>::frames_in_flight; ++i) {
+	for (std::size_t i = 0; i < per_frame_resource<vulkan::descriptor_region>::frames_in_flight; ++i) {
 		s.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx, {
 			.size = camera_ubo.size,
 			.usage = gpu::buffer_usage::uniform
 		});
 
-		s.descriptor_sets[i] = gpu::allocate_descriptor_set(ctx, *s.shader_handle);
+		s.descriptors[i] = gpu::allocate_descriptors(ctx, *s.shader_handle);
 
 		const std::unordered_map<std::string, vk::DescriptorBufferInfo> buffer_infos{
 			{
@@ -160,7 +160,7 @@ auto gse::renderer::physics_debug::system::initialize(const initialize_phase& ph
 			}
 		};
 
-		gpu::update_descriptors(ctx, s.descriptor_sets[i], *s.shader_handle, buffer_infos);
+		gpu::write_descriptors(ctx, s.descriptors[i], *s.shader_handle, buffer_infos);
 	}
 
 	s.pipeline = gpu::create_graphics_pipeline(ctx, *s.shader_handle, {
@@ -450,7 +450,7 @@ auto gse::renderer::physics_debug::system::render(const render_phase& phase, con
 			ctx.set_viewport(0.0f, 0.0f, static_cast<float>(ext_w), static_cast<float>(ext_h));
 			ctx.set_scissor(0, 0, ext_w, ext_h);
 
-			ctx.bind_descriptor_set(vk::PipelineBindPoint::eGraphics, s.pipeline, 0, s.descriptor_sets[frame_index]);
+			ctx.bind_descriptors(vk::PipelineBindPoint::eGraphics, s.pipeline, s.descriptors[frame_index]);
 
 			const vk::Buffer vbufs[]{ vb };
 			const vk::DeviceSize voffs[]{ 0 };

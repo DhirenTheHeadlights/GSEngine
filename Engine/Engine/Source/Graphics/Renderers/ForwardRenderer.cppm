@@ -19,11 +19,11 @@ import gse.platform;
 export namespace gse::renderer::forward {
 	struct state {
 		gpu::pipeline pipeline;
-		per_frame_resource<gpu::descriptor_set> descriptor_sets;
+		per_frame_resource<vulkan::descriptor_region> descriptors;
 		resource::handle<shader> shader_handle;
 
 		gpu::pipeline skinned_pipeline;
-		per_frame_resource<gpu::descriptor_set> skinned_descriptor_sets;
+		per_frame_resource<vulkan::descriptor_region> skinned_descriptors;
 		resource::handle<shader> skinned_shader;
 
 		per_frame_resource<gpu::buffer> light_buffers;
@@ -73,7 +73,7 @@ auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& 
 		.max_lod = 1.0f
 	});
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_set>::frames_in_flight; ++i) {
+	for (std::size_t i = 0; i < per_frame_resource<vulkan::descriptor_region>::frames_in_flight; ++i) {
 		s.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx, {
 			.size = camera_ubo.size,
 			.usage = gpu::buffer_usage::uniform
@@ -94,7 +94,7 @@ auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& 
 			.usage = gpu::buffer_usage::uniform
 		});
 
-		s.descriptor_sets[i] = gpu::allocate_descriptor_set(ctx, *s.shader_handle);
+		s.descriptors[i] = gpu::allocate_descriptors(ctx, *s.shader_handle);
 
 		const std::unordered_map<std::string, vk::DescriptorBufferInfo> buffer_infos{
 			{
@@ -131,7 +131,7 @@ auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& 
 			}
 		};
 
-		gpu::update_descriptors(ctx, s.descriptor_sets[i], *s.shader_handle, buffer_infos);
+		gpu::write_descriptors(ctx, s.descriptors[i], *s.shader_handle, buffer_infos);
 	}
 
 	const auto* shadow_state = phase.try_state_of<shadow::state>();
@@ -163,7 +163,7 @@ auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& 
 
 	const auto* lc_state = phase.try_state_of<light_culling::state>();
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_set>::frames_in_flight; ++i) {
+	for (std::size_t i = 0; i < per_frame_resource<vulkan::descriptor_region>::frames_in_flight; ++i) {
 		std::unordered_map<std::string, vk::DescriptorBufferInfo> tile_buffer_infos;
 		if (lc_state) {
 			const auto fi = static_cast<std::uint32_t>(i);
@@ -187,9 +187,9 @@ auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& 
 			};
 		}
 
-		gpu::update_descriptors(
+		gpu::write_descriptors(
 			ctx,
-			s.descriptor_sets[i],
+			s.descriptors[i],
 			*s.shader_handle,
 			tile_buffer_infos,
 			{},
@@ -198,10 +198,10 @@ auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& 
 	}
 
 	auto* gpu = &ctx;
-	ctx.on_swap_chain_recreate([&s, lc_state, gpu](vulkan::config&) {
+	ctx.on_swap_chain_recreate([&s, lc_state, gpu]() {
 		if (!lc_state) return;
 		const auto* lc = lc_state;
-		for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_set>::frames_in_flight; ++i) {
+		for (std::size_t i = 0; i < per_frame_resource<vulkan::descriptor_region>::frames_in_flight; ++i) {
 			const auto fi = static_cast<std::uint32_t>(i);
 			const std::unordered_map<std::string, vk::DescriptorBufferInfo> tile_buffer_infos = {
 				{
@@ -221,13 +221,7 @@ auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& 
 					}
 				}
 			};
-			auto writes = s.shader_handle->descriptor_writes(
-				s.descriptor_sets[i].native(),
-				tile_buffer_infos,
-				{},
-				{}
-			);
-			gpu::update_descriptors_raw(*gpu, writes);
+			gpu::write_descriptors(*gpu, s.descriptors[i], *s.shader_handle, tile_buffer_infos);
 		}
 	});
 
@@ -239,8 +233,8 @@ auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& 
 	s.skinned_shader = ctx.get<shader>("Shaders/Standard3D/skinned_geometry_pass");
 	ctx.instantly_load(s.skinned_shader);
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_set>::frames_in_flight; ++i) {
-		s.skinned_descriptor_sets[i] = gpu::allocate_descriptor_set(ctx, *s.skinned_shader);
+	for (std::size_t i = 0; i < per_frame_resource<vulkan::descriptor_region>::frames_in_flight; ++i) {
+		s.skinned_descriptors[i] = gpu::allocate_descriptors(ctx, *s.skinned_shader);
 
 		const std::unordered_map<std::string, vk::DescriptorBufferInfo> skinned_buffer_infos{
 			{
@@ -253,7 +247,7 @@ auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& 
 			}
 		};
 
-		gpu::update_descriptors(ctx, s.skinned_descriptor_sets[i], *s.skinned_shader, skinned_buffer_infos);
+		gpu::write_descriptors(ctx, s.skinned_descriptors[i], *s.skinned_shader, skinned_buffer_infos);
 	}
 
 	s.skinned_pipeline = gpu::create_graphics_pipeline(ctx, *s.skinned_shader, {
@@ -483,7 +477,7 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 
 					if (!pipeline_bound) {
 						ctx.bind_pipeline(vk::PipelineBindPoint::eGraphics, s.pipeline);
-						ctx.bind_descriptor_set(vk::PipelineBindPoint::eGraphics, s.pipeline, 0, s.descriptor_sets[frame_index]);
+						ctx.bind_descriptors(vk::PipelineBindPoint::eGraphics, s.pipeline, s.descriptors[frame_index]);
 						pipeline_bound = true;
 					}
 
@@ -578,7 +572,7 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 
 			if (!skinned_batches.empty()) {
 				ctx.bind_pipeline(vk::PipelineBindPoint::eGraphics, s.skinned_pipeline);
-				ctx.bind_descriptor_set(vk::PipelineBindPoint::eGraphics, s.skinned_pipeline, 0, s.skinned_descriptor_sets[frame_index]);
+				ctx.bind_descriptors(vk::PipelineBindPoint::eGraphics, s.skinned_pipeline, s.skinned_descriptors[frame_index]);
 
 				const vk::DescriptorBufferInfo skin_buffer_info{
 					.buffer = gc_state->skin_buffer[frame_index].buffer,

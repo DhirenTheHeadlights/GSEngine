@@ -12,9 +12,10 @@ import :input_state;
 import :render_graph;
 
 import gse.utility;
-import :vulkan_config;
+import :vulkan_runtime;
 import :vulkan_context;
 import :vulkan_uploader;
+import :descriptor_heap;
 
 export namespace gse {
 	enum class render_layer : std::uint8_t {
@@ -134,7 +135,7 @@ export namespace gse::gpu {
 		) -> void;
 
 		[[nodiscard]] auto allocator(
-		) -> vulkan::allocator&;
+		) const -> vulkan::allocator&;
 
 		[[nodiscard]] auto device(
 		) -> vk::raii::Device&;
@@ -142,8 +143,9 @@ export namespace gse::gpu {
 		[[nodiscard]] auto device(
 		) const -> const vk::raii::Device&;
 
-		[[nodiscard]] auto descriptor_pool(
-		) -> vk::DescriptorPool;
+		[[nodiscard]] auto descriptor_heap(
+			this auto& self
+		) -> decltype(auto);
 
 		[[nodiscard]] auto surface_format(
 		) const -> vk::Format;
@@ -158,13 +160,13 @@ export namespace gse::gpu {
 		) -> const vk::raii::PhysicalDevice&;
 
 		auto add_transient_work(
-			const std::function<std::vector<vulkan::buffer_resource>(const vk::raii::CommandBuffer&)>& commands
+			const auto& commands
 		) -> void;
 
-		using swap_chain_recreate_callback = std::function<void(vulkan::config&)>;
+		using swap_chain_recreate_callback = std::function<void()>;
 		auto on_swap_chain_recreate(
 			swap_chain_recreate_callback callback
-		) -> void;
+		) const -> void;
 
 		auto upload_image_2d(
 			vulkan::image_resource& resource,
@@ -197,7 +199,7 @@ export namespace gse::gpu {
 		) const -> void;
 
 		[[nodiscard]] auto graph(
-		) -> vulkan::render_graph&;
+		) const -> vulkan::render_graph&;
 
 		auto set_ui_focus(
 			bool focus
@@ -226,7 +228,7 @@ export namespace gse::gpu {
 		) const -> resource::loader_base*;
 
 		gse::window m_window;
-		std::unique_ptr<vulkan::config> m_config;
+		std::unique_ptr<vulkan::runtime> m_runtime;
 		asset_pipeline m_pipeline{ config::resource_path, config::baked_resource_path };
 		std::unordered_map<std::type_index, std::unique_ptr<resource::loader_base>> m_resource_loaders;
 
@@ -242,7 +244,7 @@ export namespace gse::gpu {
 	};
 }
 
-gse::gpu::context::context(const std::string& window_title, input::system_state& input, save::state& save) : m_window(window_title, input, save), m_config(vulkan::generate_config(m_window.raw_handle(), save)), m_render_graph(std::make_unique<vulkan::render_graph>(*m_config)) {
+gse::gpu::context::context(const std::string& window_title, input::system_state& input, save::state& save) : m_window(window_title, input, save), m_runtime(vulkan::create_runtime(m_window.raw_handle(), save)), m_render_graph(std::make_unique<vulkan::render_graph>(*m_runtime)) {
 	save.bind("Graphics", "Validation Layers", m_validation_layers_enabled)
 		.description("Enable Vulkan validation layers for debugging (impacts performance significantly)")
 		.default_value(false)
@@ -251,7 +253,7 @@ gse::gpu::context::context(const std::string& window_title, input::system_state&
 }
 
 gse::gpu::context::~context() {
-	m_config.reset();
+	m_runtime.reset();
 }
 
 template <typename T>
@@ -421,7 +423,7 @@ auto gse::gpu::context::begin_frame() -> bool {
 		.window = m_window.raw_handle(),
 		.frame_buffer_resized = m_window.frame_buffer_resized(),
 		.minimized = m_window.minimized(),
-		.config = *m_config
+		.runtime = *m_runtime
 	});
 }
 
@@ -430,63 +432,69 @@ auto gse::gpu::context::end_frame() -> void {
 		.window = m_window.raw_handle(),
 		.frame_buffer_resized = m_window.frame_buffer_resized(),
 		.minimized = m_window.minimized(),
-		.config = *m_config
+		.runtime = *m_runtime
 	});
 }
 
 auto gse::gpu::context::wait_idle() -> void {
-	m_config->device_config().device.waitIdle();
+	m_runtime->device_config().device.waitIdle();
 }
 
-auto gse::gpu::context::allocator() -> vulkan::allocator& {
-	return m_config->allocator();
+auto gse::gpu::context::allocator() const -> vulkan::allocator& {
+	return m_runtime->allocator();
 }
 
 auto gse::gpu::context::device() -> vk::raii::Device& {
-	return m_config->device_config().device;
+	return m_runtime->device_config().device;
 }
 
 auto gse::gpu::context::device() const -> const vk::raii::Device& {
-	return m_config->device_config().device;
+	return m_runtime->device_config().device;
 }
 
-auto gse::gpu::context::add_transient_work(const std::function<std::vector<vulkan::buffer_resource>(const vk::raii::CommandBuffer&)>& commands) -> void {
-	m_config->add_transient_work(commands);
+auto gse::gpu::context::add_transient_work(const auto& commands) -> void {
+	m_runtime->add_transient_work(commands);
 }
 
-auto gse::gpu::context::descriptor_pool() -> vk::DescriptorPool {
-	return *m_config->descriptor_config().pool;
+auto gse::gpu::context::descriptor_heap(this auto& self) -> decltype(auto) {
+	using self_t = std::remove_reference_t<decltype(self)>;
+	using runtime_ref_t = std::conditional_t<
+		std::is_const_v<self_t>,
+		const vulkan::runtime&,
+		vulkan::runtime&
+	>;
+	return static_cast<runtime_ref_t>(*self.m_runtime).descriptor_heap();
 }
 
 auto gse::gpu::context::surface_format() const -> vk::Format {
-	return m_config->swap_chain_config().surface_format.format;
+	return m_runtime->swap_chain_config().surface_format.format;
 }
 
 auto gse::gpu::context::compute_queue_family() const -> std::uint32_t {
-	return m_config->queue_config().compute_family_index;
+	return m_runtime->queue_config().compute_family_index;
 }
 
 auto gse::gpu::context::compute_queue_ref() -> const vk::raii::Queue& {
-	return m_config->queue_config().compute;
+	return m_runtime->queue_config().compute;
 }
 
 auto gse::gpu::context::physical_device() -> const vk::raii::PhysicalDevice& {
-	return m_config->device_config().physical_device;
+	return m_runtime->device_config().physical_device;
 }
 
-auto gse::gpu::context::on_swap_chain_recreate(swap_chain_recreate_callback callback) -> void {
-	m_config->on_swap_chain_recreate(std::move(callback));
+auto gse::gpu::context::on_swap_chain_recreate(swap_chain_recreate_callback callback) const -> void {
+	m_runtime->on_swap_chain_recreate(std::move(callback));
 }
 
 auto gse::gpu::context::upload_image_2d(vulkan::image_resource& resource, const vec2u size, const void* pixel_data, const std::size_t data_size, const vk::ImageLayout final_layout) -> void {
-	vulkan::uploader::upload_image_2d(*m_config, resource, size, pixel_data, data_size, final_layout);
+	vulkan::uploader::upload_image_2d(*m_runtime, resource, size, pixel_data, data_size, final_layout);
 }
 
 auto gse::gpu::context::upload_image_layers(vulkan::image_resource& resource, const vec2u size, const std::vector<const void*>& face_data, const std::size_t bytes_per_face, const vk::ImageLayout final_layout) -> void {
-	vulkan::uploader::upload_image_layers(*m_config, resource, size, face_data, bytes_per_face, final_layout);
+	vulkan::uploader::upload_image_layers(*m_runtime, resource, size, face_data, bytes_per_face, final_layout);
 }
 
-auto gse::gpu::context::graph() -> vulkan::render_graph& {
+auto gse::gpu::context::graph() const -> vulkan::render_graph& {
 	return *m_render_graph;
 }
 
@@ -517,11 +525,11 @@ auto gse::gpu::context::ui_focus() const -> bool {
 }
 
 auto gse::gpu::context::shutdown() -> void {
-	if (!m_config) return;
+	if (!m_runtime) return;
 
 	m_window.shutdown();
 
-	m_config->device_config().device.waitIdle();
+	m_runtime->device_config().device.waitIdle();
 
 	for (auto& loader : m_resource_loaders | std::views::values) {
 		loader.reset();
@@ -530,7 +538,7 @@ auto gse::gpu::context::shutdown() -> void {
 	m_resource_loaders.clear();
 	m_shader_layouts.clear();
 
-	m_config->swap_chain_config().depth_image = {};
+	m_runtime->swap_chain_config().depth_image = {};
 }
 
 auto gse::gpu::context::loader(const std::type_index& type_index) const -> resource::loader_base* {
@@ -557,7 +565,7 @@ auto gse::gpu::context::load_layouts() -> void {
 		}
 
 		auto layout = std::make_unique<gse::shader_layout>(entry.path());
-		layout->load(m_config->device_config().device);
+		layout->load(m_runtime->device_config().device);
 
 		const auto& name = layout->name();
 		std::println("[Layouts] Loaded: {}", name);

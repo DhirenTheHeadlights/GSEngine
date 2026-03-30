@@ -7,8 +7,10 @@ export module gse.platform:vulkan_context;
 
 import std;
 
-import :vulkan_config;
+import :vulkan_runtime;
 import :vulkan_allocator;
+import :descriptor_heap;
+import :descriptor_buffer_types;
 
 import gse.assert;
 import gse.utility;
@@ -18,16 +20,16 @@ namespace vk::detail {
 }
 
 export namespace gse::vulkan {
-	auto generate_config(
+	auto create_runtime(
 		GLFWwindow* window,
 		save::state& save_state
-	) -> std::unique_ptr<config>;
+	) -> std::unique_ptr<runtime>;
 
 	struct frame_params {
 		GLFWwindow* window;
 		bool frame_buffer_resized;
 		bool minimized;
-		config& config;
+		runtime& runtime;
 	};
 
 	auto begin_frame(
@@ -66,10 +68,6 @@ namespace gse::vulkan {
 		const instance_config& instance_data
 	) -> command_config;
 
-	auto create_descriptor_pool(
-		const device_config& device_data
-	) -> descriptor_config;
-
 	auto query_descriptor_buffer_properties(
 		const vk::raii::PhysicalDevice& physical_device
 	) -> descriptor_buffer_properties;
@@ -90,39 +88,42 @@ namespace gse::vulkan {
 	export constexpr std::uint32_t max_frames_in_flight = 2;
 }
 
-auto gse::vulkan::generate_config(GLFWwindow* window, save::state& save_state) -> std::unique_ptr<config> {
+auto gse::vulkan::create_runtime(GLFWwindow* window, save::state& save_state) -> std::unique_ptr<runtime> {
 	auto instance_data = create_instance_and_surface(window);
 	auto result = create_device_and_queues(instance_data);
 	auto alloc = std::make_unique<allocator>(result.device.device, result.device.physical_device, save_state);
-	auto descriptor = create_descriptor_pool(result.device);
 	auto swap_chain_data = create_swap_chain_resources(window, instance_data, result.device, *alloc);
 	auto command = create_command_objects(result.device, instance_data);
 	auto sync = create_sync_objects(result.device, swap_chain_data);
+
+	auto desc_heap = result.desc_buf_props.supported
+		? std::make_unique<descriptor_heap>(result.device.device, result.device.physical_device, result.desc_buf_props)
+		: nullptr;
 
 	frame_context_config frame_context(
 		0,
 		*command.buffers[0]
 	);
 
-	auto cfg = std::make_unique<config>(
+	auto runtime_state = std::make_unique<runtime>(
 		std::move(instance_data),
 		std::move(result.device),
 		std::move(result.queue),
 		std::move(command),
-		std::move(descriptor),
 		std::move(sync),
 		std::move(swap_chain_data),
 		std::move(frame_context),
 		std::move(alloc),
+		std::move(desc_heap),
 		std::move(result.desc_buf_props)
 	);
 
-	cfg->set_mesh_shaders_enabled(result.mesh_shaders_enabled);
-	return cfg;
+	runtime_state->set_mesh_shaders_enabled(result.mesh_shaders_enabled);
+	return runtime_state;
 }
 
 auto gse::vulkan::begin_frame(const frame_params& params) -> bool {
-    auto& cfg = params.config;
+    auto& cfg = params.runtime;
     const auto& device = cfg.device_config().device;
 
     cfg.set_frame_in_progress(false);
@@ -197,7 +198,7 @@ auto gse::vulkan::begin_frame(const frame_params& params) -> bool {
 }
 
 auto gse::vulkan::end_frame(const frame_params& params) -> void {
-    auto& cfg = params.config;
+    auto& cfg = params.runtime;
     const auto& device = cfg.device_config().device;
 
     auto recreate_resources = [&] {
@@ -605,30 +606,6 @@ auto gse::vulkan::create_command_objects(const device_config& device_data, const
 	}
 
 	return command_config(std::move(pool), std::move(buffers));
-}
-
-auto gse::vulkan::create_descriptor_pool(const device_config& device_data) -> descriptor_config {
-	constexpr uint32_t max_sets = 512;
-
-	std::vector<vk::DescriptorPoolSize> pool_sizes = {
-		{ vk::DescriptorType::eUniformBuffer,          4096 },
-		{ vk::DescriptorType::eCombinedImageSampler,   4096 },
-		{ vk::DescriptorType::eStorageBuffer,          1024 },
-		{ vk::DescriptorType::eInputAttachment,        4096 },
-	};
-
-	const vk::DescriptorPoolCreateInfo pool_info{
-		.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-		.maxSets = max_sets,
-		.poolSizeCount = static_cast<uint32_t>(pool_sizes.size()),
-		.pPoolSizes = pool_sizes.data()
-	};
-
-	vk::raii::DescriptorPool pool = device_data.device.createDescriptorPool(pool_info);
-
-	std::cout << "Descriptor Pool Created Successfully!\n";
-
-	return descriptor_config(std::move(pool));
 }
 
 auto gse::vulkan::query_descriptor_buffer_properties(const vk::raii::PhysicalDevice& physical_device) -> descriptor_buffer_properties {

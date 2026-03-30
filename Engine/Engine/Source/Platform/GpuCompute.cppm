@@ -3,6 +3,7 @@ export module gse.platform:gpu_compute;
 import std;
 
 import :gpu_types;
+import :descriptor_heap;
 
 import gse.assert;
 import :vulkan_allocator;
@@ -48,10 +49,9 @@ export namespace gse::gpu {
 			const pipeline& p
 		) -> void;
 
-		auto bind_descriptor_set(
+		auto bind_descriptors(
 			const pipeline& p,
-			std::uint32_t first_set,
-			const descriptor_set& set
+			const vulkan::descriptor_region& region
 		) -> void;
 
 		auto dispatch(
@@ -189,9 +189,8 @@ auto gse::gpu::compute_queue::bind_pipeline(const pipeline& p) -> void {
 	(*m_cmd).bindPipeline(vk::PipelineBindPoint::eCompute, p.native_pipeline());
 }
 
-auto gse::gpu::compute_queue::bind_descriptor_set(const pipeline& p, const std::uint32_t first_set, const descriptor_set& set) -> void {
-	const vk::DescriptorSet native = set.native();
-	(*m_cmd).bindDescriptorSets(vk::PipelineBindPoint::eCompute, p.native_layout(), first_set, 1, &native, 0, nullptr);
+auto gse::gpu::compute_queue::bind_descriptors(const pipeline& p, const vulkan::descriptor_region& region) -> void {
+	region.heap->bind(*m_cmd, vk::PipelineBindPoint::eCompute, p.native_layout(), 0, region);
 }
 
 auto gse::gpu::compute_queue::dispatch(const std::uint32_t x, const std::uint32_t y, const std::uint32_t z) -> void {

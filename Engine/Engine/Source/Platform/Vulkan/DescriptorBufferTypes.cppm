@@ -1,0 +1,19 @@
+module;
+
+export module gse.platform:descriptor_buffer_types;
+
+export import vulkan;
+
+export namespace gse::vulkan {
+    struct descriptor_buffer_properties {
+        vk::DeviceSize offset_alignment = 0;
+        vk::DeviceSize uniform_buffer_descriptor_size = 0;
+        vk::DeviceSize storage_buffer_descriptor_size = 0;
+        vk::DeviceSize sampled_image_descriptor_size = 0;
+        vk::DeviceSize sampler_descriptor_size = 0;
+        vk::DeviceSize combined_image_sampler_descriptor_size = 0;
+        vk::DeviceSize storage_image_descriptor_size = 0;
+        vk::DeviceSize input_attachment_descriptor_size = 0;
+        bool supported = false;
+    };
+}
