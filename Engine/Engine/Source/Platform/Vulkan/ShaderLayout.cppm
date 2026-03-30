@@ -2,7 +2,7 @@ export module gse.platform:shader_layout;
 
 import std;
 
-import gse.platform.vulkan;
+import :vulkan_allocator;
 import gse.utility;
 import gse.assert;
 

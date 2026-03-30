@@ -1,10 +1,10 @@
 module;
 
-export module gse.platform.vulkan:config;
+export module gse.platform:vulkan_config;
 
 import std;
 
-import :persistent_allocator;
+import :vulkan_allocator;
 
 export namespace gse::vulkan {
     struct instance_config {
@@ -124,8 +124,6 @@ export namespace gse::vulkan {
         std::vector<vk::raii::ImageView> image_views;
         vk::Format format;
         swap_chain_details details;
-        image_resource normal_image;
-        image_resource albedo_image;
         image_resource depth_image;
 
         swap_chain_config(
@@ -137,8 +135,6 @@ export namespace gse::vulkan {
             std::vector<vk::raii::ImageView>&& image_views,
             const vk::Format format,
             swap_chain_details&& details,
-            image_resource&& normal_image,
-            image_resource&& albedo_image,
             image_resource&& depth_image
         )
             : swap_chain(std::move(swap_chain)),
@@ -149,8 +145,6 @@ export namespace gse::vulkan {
             image_views(std::move(image_views)),
             format(format),
             details(std::move(details)),
-            normal_image(std::move(normal_image)),
-            albedo_image(std::move(albedo_image)),
             depth_image(std::move(depth_image)) {
         }
 

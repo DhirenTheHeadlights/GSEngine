@@ -11,19 +11,16 @@ import gse.utility;
 
 export namespace gse::renderer::cull_compute {
 	struct state {
-		gpu::context* ctx = nullptr;
 		resource::handle<shader> shader_handle;
-		vk::raii::Pipeline pipeline = nullptr;
-		vk::raii::PipelineLayout pipeline_layout = nullptr;
-		per_frame_resource<vk::raii::DescriptorSet> normal_descriptor_sets;
-		per_frame_resource<vk::raii::DescriptorSet> skinned_descriptor_sets;
-		per_frame_resource<vulkan::buffer_resource> frustum_buffer;
-		per_frame_resource<vulkan::buffer_resource> batch_info_buffer;
+		gpu::pipeline pipeline;
+		per_frame_resource<gpu::descriptor_set> normal_descriptor_sets;
+		per_frame_resource<gpu::descriptor_set> skinned_descriptor_sets;
+		per_frame_resource<gpu::buffer> frustum_buffer;
+		per_frame_resource<gpu::buffer> batch_info_buffer;
 		std::uint32_t batch_stride = 0;
 		std::unordered_map<std::string, std::uint32_t> batch_offsets;
 		bool enabled = true;
 
-		explicit state(gpu::context& c) : ctx(std::addressof(c)) {}
 		state() = default;
 	};
 
@@ -41,10 +38,10 @@ export namespace gse::renderer::cull_compute {
 }
 
 auto gse::renderer::cull_compute::system::initialize(initialize_phase& phase, state& s) -> void {
-	auto& config = s.ctx->config();
+	auto& ctx = phase.get<gpu::context>();
 
-	s.shader_handle = s.ctx->get<shader>("Shaders/Compute/cull_instances");
-	s.ctx->instantly_load(s.shader_handle);
+	s.shader_handle = ctx.get<shader>("Shaders/Compute/cull_instances");
+	ctx.instantly_load(s.shader_handle);
 
 	if (!s.shader_handle.valid() || !s.shader_handle->is_compute()) {
 		s.enabled = false;
@@ -59,36 +56,30 @@ auto gse::renderer::cull_compute::system::initialize(initialize_phase& phase, st
 
 	const auto* gc = phase.try_state_of<geometry_collector::state>();
 
-	for (std::size_t i = 0; i < per_frame_resource<vulkan::buffer_resource>::frames_in_flight; ++i) {
+	s.pipeline = gpu::create_compute_pipeline(ctx, *s.shader_handle, "push_constants");
+
+	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		constexpr vk::DeviceSize frustum_size = sizeof(std::array<vec4f, 6>);
-		s.frustum_buffer[i] = config.allocator().create_buffer({
+		s.frustum_buffer[i] = gpu::create_buffer(ctx, {
 			.size = frustum_size,
-			.usage = vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst
+			.usage = gpu::buffer_usage::uniform | gpu::buffer_usage::transfer_dst
 		});
 
 		const vk::DeviceSize batch_info_size = geometry_collector::state::max_batches * 2 * s.batch_stride;
-		s.batch_info_buffer[i] = config.allocator().create_buffer({
+		s.batch_info_buffer[i] = gpu::create_buffer(ctx, {
 			.size = batch_info_size,
-			.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
+			.usage = gpu::buffer_usage::storage | gpu::buffer_usage::transfer_dst
 		});
 	}
 
-	for (std::size_t i = 0; i < per_frame_resource<vk::raii::DescriptorSet>::frames_in_flight; ++i) {
-		s.normal_descriptor_sets[i] = s.shader_handle->descriptor_set(
-			config.device_config().device,
-			config.descriptor_config().pool,
-			shader::set::binding_type::persistent
-		);
-		s.skinned_descriptor_sets[i] = s.shader_handle->descriptor_set(
-			config.device_config().device,
-			config.descriptor_config().pool,
-			shader::set::binding_type::persistent
-		);
+	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_set>::frames_in_flight; ++i) {
+		s.normal_descriptor_sets[i] = gpu::allocate_descriptor_set(ctx, *s.shader_handle);
+		s.skinned_descriptor_sets[i] = gpu::allocate_descriptor_set(ctx, *s.shader_handle);
 	}
 
-	for (std::size_t i = 0; i < per_frame_resource<vk::raii::DescriptorSet>::frames_in_flight; ++i) {
+	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_set>::frames_in_flight; ++i) {
 		const vk::DescriptorBufferInfo frustum_info{
-			.buffer = s.frustum_buffer[i].buffer,
+			.buffer = s.frustum_buffer[i].native().buffer,
 			.offset = 0,
 			.range = sizeof(std::array<vec4f, 6>)
 		};
@@ -100,7 +91,7 @@ auto gse::renderer::cull_compute::system::initialize(initialize_phase& phase, st
 		};
 
 		const vk::DescriptorBufferInfo batch_info{
-			.buffer = s.batch_info_buffer[i].buffer,
+			.buffer = s.batch_info_buffer[i].native().buffer,
 			.offset = 0,
 			.range = vk::WholeSize
 		};
@@ -119,28 +110,28 @@ auto gse::renderer::cull_compute::system::initialize(initialize_phase& phase, st
 
 		std::array<vk::WriteDescriptorSet, 4> normal_writes{
 			vk::WriteDescriptorSet{
-				.dstSet = *s.normal_descriptor_sets[i],
+				.dstSet = s.normal_descriptor_sets[i].native(),
 				.dstBinding = 0,
 				.descriptorCount = 1,
 				.descriptorType = vk::DescriptorType::eUniformBuffer,
 				.pBufferInfo = &frustum_info
 			},
 			vk::WriteDescriptorSet{
-				.dstSet = *s.normal_descriptor_sets[i],
+				.dstSet = s.normal_descriptor_sets[i].native(),
 				.dstBinding = 1,
 				.descriptorCount = 1,
 				.descriptorType = vk::DescriptorType::eStorageBuffer,
 				.pBufferInfo = &instance_info
 			},
 			vk::WriteDescriptorSet{
-				.dstSet = *s.normal_descriptor_sets[i],
+				.dstSet = s.normal_descriptor_sets[i].native(),
 				.dstBinding = 2,
 				.descriptorCount = 1,
 				.descriptorType = vk::DescriptorType::eStorageBuffer,
 				.pBufferInfo = &batch_info
 			},
 			vk::WriteDescriptorSet{
-				.dstSet = *s.normal_descriptor_sets[i],
+				.dstSet = s.normal_descriptor_sets[i].native(),
 				.dstBinding = 3,
 				.descriptorCount = 1,
 				.descriptorType = vk::DescriptorType::eStorageBuffer,
@@ -150,28 +141,28 @@ auto gse::renderer::cull_compute::system::initialize(initialize_phase& phase, st
 
 		std::array<vk::WriteDescriptorSet, 4> skinned_writes{
 			vk::WriteDescriptorSet{
-				.dstSet = *s.skinned_descriptor_sets[i],
+				.dstSet = s.skinned_descriptor_sets[i].native(),
 				.dstBinding = 0,
 				.descriptorCount = 1,
 				.descriptorType = vk::DescriptorType::eUniformBuffer,
 				.pBufferInfo = &frustum_info
 			},
 			vk::WriteDescriptorSet{
-				.dstSet = *s.skinned_descriptor_sets[i],
+				.dstSet = s.skinned_descriptor_sets[i].native(),
 				.dstBinding = 1,
 				.descriptorCount = 1,
 				.descriptorType = vk::DescriptorType::eStorageBuffer,
 				.pBufferInfo = &instance_info
 			},
 			vk::WriteDescriptorSet{
-				.dstSet = *s.skinned_descriptor_sets[i],
+				.dstSet = s.skinned_descriptor_sets[i].native(),
 				.dstBinding = 2,
 				.descriptorCount = 1,
 				.descriptorType = vk::DescriptorType::eStorageBuffer,
 				.pBufferInfo = &batch_info
 			},
 			vk::WriteDescriptorSet{
-				.dstSet = *s.skinned_descriptor_sets[i],
+				.dstSet = s.skinned_descriptor_sets[i].native(),
 				.dstBinding = 3,
 				.descriptorCount = 1,
 				.descriptorType = vk::DescriptorType::eStorageBuffer,
@@ -179,27 +170,14 @@ auto gse::renderer::cull_compute::system::initialize(initialize_phase& phase, st
 			}
 		};
 
-		config.device_config().device.updateDescriptorSets(normal_writes, nullptr);
-		config.device_config().device.updateDescriptorSets(skinned_writes, nullptr);
+		gpu::update_descriptors_raw(ctx, normal_writes);
+		gpu::update_descriptors_raw(ctx, skinned_writes);
 	}
-
-	auto culling_layouts = s.shader_handle->layouts();
-	std::vector culling_ranges = { s.shader_handle->push_constant_range("push_constants") };
-
-	s.pipeline_layout = config.device_config().device.createPipelineLayout({
-		.setLayoutCount = static_cast<std::uint32_t>(culling_layouts.size()),
-		.pSetLayouts = culling_layouts.data(),
-		.pushConstantRangeCount = static_cast<std::uint32_t>(culling_ranges.size()),
-		.pPushConstantRanges = culling_ranges.data()
-	});
-
-	s.pipeline = config.device_config().device.createComputePipeline(nullptr, {
-		.stage = s.shader_handle->compute_stage(),
-		.layout = *s.pipeline_layout
-	});
 }
 
 auto gse::renderer::cull_compute::system::render(const render_phase& phase, const state& s) -> void {
+	auto& ctx = phase.get<gpu::context>();
+
 	const auto& render_items = phase.read_channel<geometry_collector::render_data>();
 	if (render_items.empty()) {
 		return;
@@ -224,9 +202,9 @@ auto gse::renderer::cull_compute::system::render(const render_phase& phase, cons
 		const auto view_proj = proj_matrix * view_matrix;
 		const auto frustum = extract_frustum_planes(view_proj);
 
-		gse::memcpy(s.frustum_buffer[frame_index].allocation.mapped(), frustum);
+		gse::memcpy(s.frustum_buffer[frame_index].mapped(), frustum);
 
-		std::byte* batch_data = s.batch_info_buffer[frame_index].allocation.mapped();
+		std::byte* batch_data = s.batch_info_buffer[frame_index].mapped();
 
 		auto write_batch_info = [&](const auto& batch, const std::size_t index) {
 			std::byte* offset = batch_data + (index * s.batch_stride);
@@ -246,7 +224,7 @@ auto gse::renderer::cull_compute::system::render(const render_phase& phase, cons
 		}
 	}
 
-	auto& graph = s.ctx->graph();
+	auto& graph = ctx.graph();
 
 	if (s.enabled) {
 		if (!normal_batches.empty()) {
@@ -256,16 +234,15 @@ auto gse::renderer::cull_compute::system::render(const render_phase& phase, cons
 			const auto& dc = s.normal_descriptor_sets[frame_index];
 
 			auto normal_pass = graph.add_pass<state>();
-			normal_pass.track(s.frustum_buffer[frame_index]);
-			normal_pass.track(s.batch_info_buffer[frame_index]);
+			normal_pass.track(s.frustum_buffer[frame_index].native());
+			normal_pass.track(s.batch_info_buffer[frame_index].native());
 
 			normal_pass
 				.writes(vulkan::storage(gc->normal_indirect_commands_buffer[frame_index], vk::PipelineStageFlagBits2::eComputeShader))
 				.record([&s, frame_index, batch_count = static_cast<std::uint32_t>(normal_batches.size()), &dc, cull_pc = std::move(cull_pc)](vulkan::recording_context& ctx) {
-					ctx.bind_pipeline(vk::PipelineBindPoint::eCompute, *s.pipeline);
-					const vk::DescriptorSet sets[]{ *dc.value() };
-					ctx.bind_descriptor_sets(vk::PipelineBindPoint::eCompute, *s.pipeline_layout, 0, sets);
-					ctx.push(cull_pc, *s.pipeline_layout);
+					ctx.bind_pipeline(vk::PipelineBindPoint::eCompute, s.pipeline);
+					ctx.bind_descriptor_set(vk::PipelineBindPoint::eCompute, s.pipeline, 0, dc);
+					ctx.push(s.pipeline, cull_pc);
 					ctx.dispatch(batch_count, 1, 1);
 				});
 		}
@@ -277,17 +254,16 @@ auto gse::renderer::cull_compute::system::render(const render_phase& phase, cons
 			const auto& dc = s.skinned_descriptor_sets[frame_index];
 
 			auto skinned_pass = graph.add_pass<state>();
-			skinned_pass.track(s.frustum_buffer[frame_index]);
-			skinned_pass.track(s.batch_info_buffer[frame_index]);
+			skinned_pass.track(s.frustum_buffer[frame_index].native());
+			skinned_pass.track(s.batch_info_buffer[frame_index].native());
 
 			skinned_pass
 				.after<skin_compute::state>()
 				.writes(vulkan::storage(gc->skinned_indirect_commands_buffer[frame_index], vk::PipelineStageFlagBits2::eComputeShader))
 				.record([&s, frame_index, batch_count = static_cast<std::uint32_t>(skinned_batches.size()), &dc, cull_pc = std::move(cull_pc)](vulkan::recording_context& ctx) {
-					ctx.bind_pipeline(vk::PipelineBindPoint::eCompute, *s.pipeline);
-					const vk::DescriptorSet sets[]{ *dc.value() };
-					ctx.bind_descriptor_sets(vk::PipelineBindPoint::eCompute, *s.pipeline_layout, 0, sets);
-					ctx.push(cull_pc, *s.pipeline_layout);
+					ctx.bind_pipeline(vk::PipelineBindPoint::eCompute, s.pipeline);
+					ctx.bind_descriptor_set(vk::PipelineBindPoint::eCompute, s.pipeline, 0, dc);
+					ctx.push(s.pipeline, cull_pc);
 					ctx.dispatch(batch_count, 1, 1);
 				});
 		}

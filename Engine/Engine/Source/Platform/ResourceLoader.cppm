@@ -466,7 +466,7 @@ auto gse::resource::loader<R, C>::finalize_reloads() -> void {
 
 	// Hot reload runs after frame submission, so old GPU resources may still be referenced
 	// by in-flight graphics work. Retire that work before unloading the old resource.
-	m_context.config().device_config().device.waitIdle();
+	m_context.wait_idle();
 
 	for (const id rid : reloads_to_process) {
 		slot* slot_ptr;
@@ -492,7 +492,7 @@ auto gse::resource::loader<R, C>::finalize_reloads() -> void {
 
 		if (queued_gpu_work) {
 			m_context.process_gpu_queue();
-			m_context.config().device_config().device.waitIdle();
+			m_context.wait_idle();
 		}
 
 		if (slot_ptr->resource.read()) {
@@ -575,7 +575,7 @@ auto gse::resource::loader<R, C>::instantly_load(id resource_id) -> void {
 
 	if (work_was_queued) {
 		m_context.process_gpu_queue();
-		m_context.config().device_config().device.waitIdle();
+		m_context.wait_idle();
 	}
 }
 

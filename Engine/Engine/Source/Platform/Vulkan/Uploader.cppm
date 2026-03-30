@@ -1,10 +1,10 @@
-export module gse.platform.vulkan:uploader;
+export module gse.platform:vulkan_uploader;
 
 import std;
 
-import :config;
-import :persistent_allocator;
-import :context;
+import :vulkan_config;
+import :vulkan_allocator;
+import :vulkan_context;
 
 import gse.math;
 import gse.utility;
@@ -13,37 +13,33 @@ export namespace gse::vulkan::uploader {
     auto upload_image_2d(
         config& config,
         image_resource& resource,
-        std::uint32_t width,
-        std::uint32_t height,
+        vec2u size,
         const void* pixel_data,
-        size_t data_size,
+        std::size_t data_size,
         vk::ImageLayout final_layout = vk::ImageLayout::eShaderReadOnlyOptimal
     ) -> void;
 
     auto upload_image_layers(
         config& config,
         image_resource& resource,
-        std::uint32_t width,
-        std::uint32_t height,
+        vec2u size,
         const std::vector<const void*>& face_data,
-        size_t bytes_per_face,
+        std::size_t bytes_per_face,
         vk::ImageLayout final_layout = vk::ImageLayout::eShaderReadOnlyOptimal
     ) -> void;
 
     auto upload_image_3d(
         config& config,
         image_resource& resource,
-        std::uint32_t width,
-        std::uint32_t height,
-        std::uint32_t depth,
+        vec3u size,
         const void* pixel_data,
-        size_t data_size,
+        std::size_t data_size,
         vk::ImageLayout final_layout = vk::ImageLayout::eShaderReadOnlyOptimal
     ) -> void;
 
     struct mip_level_data {
         const void* pixels = nullptr;
-        vec2<std::uint32_t> size;
+        vec2u size;
         std::size_t mip_level;
     };
 
@@ -74,9 +70,9 @@ export namespace gse::vulkan::uploader {
     ) -> void;
 }
 
-auto gse::vulkan::uploader::upload_image_2d(config& config, image_resource& resource, const std::uint32_t width, const std::uint32_t height, const void* pixel_data, const size_t data_size, const vk::ImageLayout final_layout) -> void {
+auto gse::vulkan::uploader::upload_image_2d(config& config, image_resource& resource, const vec2u size, const void* pixel_data, const std::size_t data_size, const vk::ImageLayout final_layout) -> void {
     config.add_transient_work(
-        [&](const vk::raii::CommandBuffer& cmd) -> std::vector<buffer_resource> {
+        [&, size](const vk::raii::CommandBuffer& cmd) -> std::vector<buffer_resource> {
             auto staging_buffer = config.allocator().create_buffer(
                 vk::BufferCreateInfo{
                     .size = data_size,
@@ -100,20 +96,16 @@ auto gse::vulkan::uploader::upload_image_2d(config& config, image_resource& reso
                     .baseArrayLayer = 0,
                     .layerCount = 1
                 },
-                .imageExtent = { width, height, 1 }
+                .imageExtent = { size.x(), size.y(), 1 }
             };
 
             cmd.copyBufferToImage(staging_buffer.buffer, resource.image, vk::ImageLayout::eTransferDstOptimal, region);
 
             transition_image_layout(
-	            *cmd,
-	            resource,
-	            final_layout,
-	            vk::ImageAspectFlagBits::eColor,
-	            vk::PipelineStageFlagBits2::eTransfer,
-	            vk::AccessFlagBits2::eTransferWrite,
-	            vk::PipelineStageFlagBits2::eFragmentShader,
-	            vk::AccessFlagBits2::eShaderRead
+	            *cmd, resource,
+	            final_layout, vk::ImageAspectFlagBits::eColor,
+	            vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite,
+	            vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderRead
             );
 
             std::vector<buffer_resource> buffers;
@@ -123,12 +115,12 @@ auto gse::vulkan::uploader::upload_image_2d(config& config, image_resource& reso
     );
 }
 
-auto gse::vulkan::uploader::upload_image_layers(config& config, image_resource& resource, const std::uint32_t width, const std::uint32_t height, const std::vector<const void*>& face_data, const size_t bytes_per_face, const vk::ImageLayout final_layout) -> void {
+auto gse::vulkan::uploader::upload_image_layers(config& config, image_resource& resource, const vec2u size, const std::vector<const void*>& face_data, const std::size_t bytes_per_face, const vk::ImageLayout final_layout) -> void {
     const std::uint32_t layer_count = static_cast<std::uint32_t>(face_data.size());
     const std::size_t total_size = layer_count * bytes_per_face;
 
     config.add_transient_work(
-        [&](const vk::raii::CommandBuffer& cmd) -> std::vector<buffer_resource> {
+        [&, size, layer_count, total_size](const vk::raii::CommandBuffer& cmd) -> std::vector<buffer_resource> {
             auto staging_buffer = config.allocator().create_buffer(
                 vk::BufferCreateInfo{
                     .size = total_size,
@@ -160,7 +152,7 @@ auto gse::vulkan::uploader::upload_image_layers(config& config, image_resource& 
                         .baseArrayLayer = i,
                         .layerCount = 1
                     },
-                    .imageExtent = { width, height, 1 }
+                    .imageExtent = { size.x(), size.y(), 1 }
                     });
             }
 
@@ -181,9 +173,9 @@ auto gse::vulkan::uploader::upload_image_layers(config& config, image_resource& 
     );
 }
 
-auto gse::vulkan::uploader::upload_image_3d(config& config, image_resource& resource, const std::uint32_t width, const std::uint32_t height, const std::uint32_t depth, const void* pixel_data, const size_t data_size, const vk::ImageLayout final_layout) -> void {
+auto gse::vulkan::uploader::upload_image_3d(config& config, image_resource& resource, const vec3u size, const void* pixel_data, const std::size_t data_size, const vk::ImageLayout final_layout) -> void {
     config.add_transient_work(
-        [&](const vk::raii::CommandBuffer& cmd) -> std::vector<buffer_resource> {
+        [&, size](const vk::raii::CommandBuffer& cmd) -> std::vector<buffer_resource> {
             auto staging_buffer = config.allocator().create_buffer(
                 vk::BufferCreateInfo{
                     .size = data_size,
@@ -207,7 +199,7 @@ auto gse::vulkan::uploader::upload_image_3d(config& config, image_resource& reso
                     .baseArrayLayer = 0,
                     .layerCount = 1
                 },
-                .imageExtent = { width, height, depth }
+                .imageExtent = { size.x(), size.y(), size.z() }
             };
 
             cmd.copyBufferToImage(staging_buffer.buffer, resource.image, vk::ImageLayout::eTransferDstOptimal, region);

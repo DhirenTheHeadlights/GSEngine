@@ -140,6 +140,7 @@ export namespace gse::renderer::geometry_collector {
 		gpu::context* ctx = nullptr;
 
 		per_frame_resource<vulkan::buffer_resource> instance_buffer;
+
 		per_frame_resource<std::vector<std::byte>> instance_staging;
 		std::uint32_t instance_stride = 0;
 		std::unordered_map<std::string, std::uint32_t> instance_offsets;
@@ -166,7 +167,6 @@ export namespace gse::renderer::geometry_collector {
 
 		resource::handle<shader> shader_handle;
 
-		explicit state(gpu::context& c) : ctx(std::addressof(c)) {}
 		state() = default;
 	};
 
@@ -221,10 +221,11 @@ auto gse::renderer::geometry_collector::upload_skeleton_data(const state& s, con
 }
 
 auto gse::renderer::geometry_collector::system::initialize(initialize_phase& phase, state& s) -> void {
-	auto& config = s.ctx->config();
+	auto& ctx = phase.get<gpu::context>();
+	s.ctx = &ctx;
 
-	s.shader_handle = s.ctx->get<shader>("Shaders/Standard3D/skinned_geometry_pass");
-	s.ctx->instantly_load(s.shader_handle);
+	s.shader_handle = ctx.get<shader>("Shaders/Standard3D/skinned_geometry_pass");
+	ctx.instantly_load(s.shader_handle);
 
 	const auto camera_ubo = s.shader_handle->uniform_block("CameraUBO");
 
@@ -235,14 +236,14 @@ auto gse::renderer::geometry_collector::system::initialize(initialize_phase& pha
 	}
 
 	for (std::size_t i = 0; i < per_frame_resource<vulkan::buffer_resource>::frames_in_flight; ++i) {
-		s.ubo_allocations["CameraUBO"][i] = config.allocator().create_buffer({
+		s.ubo_allocations["CameraUBO"][i] = ctx.allocator().create_buffer({
 			.size = camera_ubo.size,
 			.usage = vk::BufferUsageFlagBits::eUniformBuffer,
 			.sharingMode = vk::SharingMode::eExclusive
 		});
 
 		constexpr vk::DeviceSize skin_buffer_size = state::max_skin_matrices * sizeof(mat4f);
-		s.skin_buffer[i] = config.allocator().create_buffer(
+		s.skin_buffer[i] = ctx.allocator().create_buffer(
 			vk::BufferCreateInfo{
 				.size = skin_buffer_size,
 				.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
@@ -251,32 +252,32 @@ auto gse::renderer::geometry_collector::system::initialize(initialize_phase& pha
 		s.skin_staging[i].reserve(state::max_skin_matrices);
 
 		const vk::DeviceSize instance_buffer_size = state::max_instances * 2 * s.instance_stride;
-		s.instance_buffer[i] = config.allocator().create_buffer({
+		s.instance_buffer[i] = ctx.allocator().create_buffer({
 			.size = instance_buffer_size,
 			.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
 		});
 		s.instance_staging[i].reserve(instance_buffer_size);
 
 		constexpr vk::DeviceSize indirect_buffer_size = state::max_batches * sizeof(vk::DrawIndexedIndirectCommand);
-		s.normal_indirect_commands_buffer[i] = config.allocator().create_buffer({
+		s.normal_indirect_commands_buffer[i] = ctx.allocator().create_buffer({
 			.size = indirect_buffer_size,
 			.usage = vk::BufferUsageFlagBits::eIndirectBuffer | vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
 		});
-		s.skinned_indirect_commands_buffer[i] = config.allocator().create_buffer({
+		s.skinned_indirect_commands_buffer[i] = ctx.allocator().create_buffer({
 			.size = indirect_buffer_size,
 			.usage = vk::BufferUsageFlagBits::eIndirectBuffer | vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
 		});
 
 		constexpr vk::DeviceSize local_pose_size = state::max_skin_matrices * sizeof(mat4f);
-		s.local_pose_buffer[i] = config.allocator().create_buffer({
+		s.local_pose_buffer[i] = ctx.allocator().create_buffer({
 			.size = local_pose_size,
 			.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
 		});
 		s.local_pose_staging[i].reserve(state::max_skin_matrices);
 	}
 
-	auto skin_compute = s.ctx->get<shader>("Shaders/Compute/skin_compute");
-	s.ctx->instantly_load(skin_compute);
+	auto skin_compute = ctx.get<shader>("Shaders/Compute/skin_compute");
+	ctx.instantly_load(skin_compute);
 
 	const auto joint_block = skin_compute->uniform_block("skeletonData");
 	s.joint_stride = joint_block.size;
@@ -284,7 +285,7 @@ auto gse::renderer::geometry_collector::system::initialize(initialize_phase& pha
 		s.joint_offsets[name] = member.offset;
 	}
 
-	s.skeleton_buffer = config.allocator().create_buffer({
+	s.skeleton_buffer = ctx.allocator().create_buffer({
 		.size = state::max_joints * s.joint_stride,
 		.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
 	});

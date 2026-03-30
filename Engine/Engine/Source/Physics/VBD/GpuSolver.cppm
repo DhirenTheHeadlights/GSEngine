@@ -161,11 +161,8 @@ export namespace gse::vbd {
 	class gpu_solver {
 	public:
 		~gpu_solver() {
-			if (m_compute.initialized && m_compute.device && *m_compute.fence) {
-				static_cast<void>(m_compute.device->waitForFences(
-					*m_compute.fence, vk::True,
-					std::numeric_limits<std::uint64_t>::max()
-				));
+			if (m_compute.initialized) {
+				m_compute.queue.wait();
 			}
 		}
 
@@ -178,7 +175,7 @@ export namespace gse::vbd {
 		) -> void;
 
 		auto dispatch_compute(
-			vulkan::config& config
+			gpu::context& ctx
 		) -> void;
 
 		auto compute_initialized(
@@ -285,26 +282,19 @@ export namespace gse::vbd {
 			resource::handle<shader> collision_build_adjacency;
 			resource::handle<shader> update_joint_lambda;
 
-			vk::raii::Pipeline predict_pipeline = nullptr;
-			vk::raii::Pipeline solve_color_pipeline = nullptr;
-			vk::raii::Pipeline update_lambda_pipeline = nullptr;
-			vk::raii::Pipeline derive_velocities_pipeline = nullptr;
-			vk::raii::Pipeline finalize_pipeline = nullptr;
-			vk::raii::Pipeline collision_reset_pipeline = nullptr;
-			vk::raii::Pipeline collision_broad_phase_pipeline = nullptr;
-			vk::raii::Pipeline collision_narrow_phase_pipeline = nullptr;
-			vk::raii::Pipeline collision_build_adjacency_pipeline = nullptr;
-			vk::raii::Pipeline update_joint_lambda_pipeline = nullptr;
+			gpu::pipeline predict_pipeline;
+			gpu::pipeline solve_color_pipeline;
+			gpu::pipeline update_lambda_pipeline;
+			gpu::pipeline derive_velocities_pipeline;
+			gpu::pipeline finalize_pipeline;
+			gpu::pipeline collision_reset_pipeline;
+			gpu::pipeline collision_broad_phase_pipeline;
+			gpu::pipeline collision_narrow_phase_pipeline;
+			gpu::pipeline collision_build_adjacency_pipeline;
+			gpu::pipeline update_joint_lambda_pipeline;
 
-			vk::raii::PipelineLayout pipeline_layout = nullptr;
-			vk::raii::DescriptorSet descriptor_set = nullptr;
-			vk::raii::QueryPool query_pool = nullptr;
-			vk::raii::CommandPool command_pool = nullptr;
-			vk::raii::CommandBuffer command_buffer = nullptr;
-			vk::raii::Fence fence = nullptr;
-			vk::raii::Queue* queue = nullptr;
-			const vk::raii::Device* device = nullptr;
-			float timestamp_period = 0.f;
+			gpu::descriptor_set descriptor_set;
+			gpu::compute_queue queue;
 			float solve_ms = 0.f;
 			bool descriptors_initialized = false;
 			bool initialized = false;
@@ -962,7 +952,7 @@ auto gse::vbd::gpu_solver::stage_readback() -> void {
 	if (!m_readback_pending) return;
 
 	if (!m_first_submit) {
-		static_cast<void>(m_compute.device->waitForFences(*m_compute.fence, vk::True, std::numeric_limits<std::uint64_t>::max()));
+		m_compute.queue.wait();
 	}
 
 	auto& info = m_readback_info;
@@ -1186,35 +1176,16 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 	ctx.instantly_load(m_compute.collision_build_adjacency);
 	ctx.instantly_load(m_compute.update_joint_lambda);
 
-	auto& config = ctx.config();
-
-	auto vbd_layouts = m_compute.predict->layouts();
-	std::vector vbd_ranges = { m_compute.predict->push_constant_range("vbd_push_constants") };
-
-	m_compute.pipeline_layout = config.device_config().device.createPipelineLayout({
-		.setLayoutCount = static_cast<std::uint32_t>(vbd_layouts.size()),
-		.pSetLayouts = vbd_layouts.data(),
-		.pushConstantRangeCount = static_cast<std::uint32_t>(vbd_ranges.size()),
-		.pPushConstantRanges = vbd_ranges.data()
-	});
-
-	auto create_pipeline = [&](const resource::handle<shader>& sh) {
-		return config.device_config().device.createComputePipeline(nullptr, {
-			.stage = sh->compute_stage(),
-			.layout = *m_compute.pipeline_layout
-		});
-	};
-
-	m_compute.predict_pipeline = create_pipeline(m_compute.predict);
-	m_compute.solve_color_pipeline = create_pipeline(m_compute.solve_color);
-	m_compute.update_lambda_pipeline = create_pipeline(m_compute.update_lambda);
-	m_compute.derive_velocities_pipeline = create_pipeline(m_compute.derive_velocities);
-	m_compute.finalize_pipeline = create_pipeline(m_compute.finalize);
-	m_compute.collision_reset_pipeline = create_pipeline(m_compute.collision_reset);
-	m_compute.collision_broad_phase_pipeline = create_pipeline(m_compute.collision_broad_phase);
-	m_compute.collision_narrow_phase_pipeline = create_pipeline(m_compute.collision_narrow_phase);
-	m_compute.collision_build_adjacency_pipeline = create_pipeline(m_compute.collision_build_adjacency);
-	m_compute.update_joint_lambda_pipeline = create_pipeline(m_compute.update_joint_lambda);
+	m_compute.predict_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.predict, "vbd_push_constants");
+	m_compute.solve_color_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.solve_color, "vbd_push_constants");
+	m_compute.update_lambda_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.update_lambda, "vbd_push_constants");
+	m_compute.derive_velocities_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.derive_velocities, "vbd_push_constants");
+	m_compute.finalize_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.finalize, "vbd_push_constants");
+	m_compute.collision_reset_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.collision_reset, "vbd_push_constants");
+	m_compute.collision_broad_phase_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.collision_broad_phase, "vbd_push_constants");
+	m_compute.collision_narrow_phase_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.collision_narrow_phase, "vbd_push_constants");
+	m_compute.collision_build_adjacency_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.collision_build_adjacency, "vbd_push_constants");
+	m_compute.update_joint_lambda_pipeline = gpu::create_compute_pipeline(ctx, *m_compute.update_joint_lambda, "vbd_push_constants");
 
 	auto extract_layout = [](const resource::handle<shader>& sh, const std::string& name) {
 		const auto block = sh->uniform_block(name);
@@ -1325,46 +1296,16 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 		m_jo.limit_c0 = o.at("limit_c0");
 	}
 
-	m_compute.query_pool = config.device_config().device.createQueryPool({
-		.queryType = vk::QueryType::eTimestamp,
-		.queryCount = 8
-	});
-	static_cast<vk::Device>(*config.device_config().device).resetQueryPool(*m_compute.query_pool, 0, 8);
+	create_buffers(ctx.allocator());
 
-	m_compute.timestamp_period = config.device_config().physical_device.getProperties().limits.timestampPeriod;
-
-	create_buffers(config.allocator());
-
-	m_compute.command_pool = config.device_config().device.createCommandPool({
-		.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-		.queueFamilyIndex = config.queue_config().compute_family_index
-	});
-
-	m_compute.command_buffer = std::move(config.device_config().device.allocateCommandBuffers({
-		.commandPool = *m_compute.command_pool,
-		.level = vk::CommandBufferLevel::ePrimary,
-		.commandBufferCount = 1
-	}).front());
-
-	m_compute.fence = config.device_config().device.createFence({
-		.flags = vk::FenceCreateFlagBits::eSignaled
-	});
-
-	m_compute.queue = &config.queue_config().compute;
-	m_compute.device = &config.device_config().device;
+	m_compute.queue = gpu::create_compute_queue(ctx);
 
 	m_compute.initialized = true;
 }
 
-auto gse::vbd::gpu_solver::dispatch_compute(vulkan::config& config) -> void {
-	const vk::Device device = *config.device_config().device;
-
+auto gse::vbd::gpu_solver::dispatch_compute(gpu::context& ctx) -> void {
 	if (!m_compute.descriptors_initialized) {
-		m_compute.descriptor_set = m_compute.predict->descriptor_set(
-			config.device_config().device,
-			config.descriptor_config().pool,
-			shader::set::binding_type::persistent
-		);
+		m_compute.descriptor_set = gpu::allocate_descriptor_set(ctx, *m_compute.predict);
 
 		const vk::DescriptorBufferInfo body_info{
 			.buffer = m_body_buffer.buffer,
@@ -1417,73 +1358,73 @@ auto gse::vbd::gpu_solver::dispatch_compute(vulkan::config& config) -> void {
 			.range = vk::WholeSize
 		};
 
-		auto& ds = m_compute.descriptor_set;
+		const auto ds = m_compute.descriptor_set.native();
 		std::array writes{
 			vk::WriteDescriptorSet{
-				.dstSet = *ds,
+				.dstSet = ds,
 				.dstBinding = 0,
 				.descriptorCount = 1,
 				.descriptorType = vk::DescriptorType::eStorageBuffer,
 				.pBufferInfo = &body_info
 			},
 			vk::WriteDescriptorSet{
-				.dstSet = *ds,
+				.dstSet = ds,
 				.dstBinding = 1,
 				.descriptorCount = 1,
 				.descriptorType = vk::DescriptorType::eStorageBuffer,
 				.pBufferInfo = &contact_info
 			},
 			vk::WriteDescriptorSet{
-				.dstSet = *ds,
+				.dstSet = ds,
 				.dstBinding = 2,
 				.descriptorCount = 1,
 				.descriptorType = vk::DescriptorType::eStorageBuffer,
 				.pBufferInfo = &motor_info
 			},
 			vk::WriteDescriptorSet{
-				.dstSet = *ds,
+				.dstSet = ds,
 				.dstBinding = 3,
 				.descriptorCount = 1,
 				.descriptorType = vk::DescriptorType::eStorageBuffer,
 				.pBufferInfo = &color_info
 			},
 			vk::WriteDescriptorSet{
-				.dstSet = *ds,
+				.dstSet = ds,
 				.dstBinding = 4,
 				.descriptorCount = 1,
 				.descriptorType = vk::DescriptorType::eStorageBuffer,
 				.pBufferInfo = &map_info
 			},
 			vk::WriteDescriptorSet{
-				.dstSet = *ds,
+				.dstSet = ds,
 				.dstBinding = 5,
 				.descriptorCount = 1,
 				.descriptorType = vk::DescriptorType::eStorageBuffer,
 				.pBufferInfo = &solve_info
 			},
 			vk::WriteDescriptorSet{
-				.dstSet = *ds,
+				.dstSet = ds,
 				.dstBinding = 6,
 				.descriptorCount = 1,
 				.descriptorType = vk::DescriptorType::eStorageBuffer,
 				.pBufferInfo = &collision_pair_info
 			},
 			vk::WriteDescriptorSet{
-				.dstSet = *ds,
+				.dstSet = ds,
 				.dstBinding = 7,
 				.descriptorCount = 1,
 				.descriptorType = vk::DescriptorType::eStorageBuffer,
 				.pBufferInfo = &collision_state_info
 			},
 			vk::WriteDescriptorSet{
-				.dstSet = *ds,
+				.dstSet = ds,
 				.dstBinding = 8,
 				.descriptorCount = 1,
 				.descriptorType = vk::DescriptorType::eStorageBuffer,
 				.pBufferInfo = &warm_start_info
 			},
 			vk::WriteDescriptorSet{
-				.dstSet = *ds,
+				.dstSet = ds,
 				.dstBinding = 9,
 				.descriptorCount = 1,
 				.descriptorType = vk::DescriptorType::eStorageBuffer,
@@ -1491,59 +1432,20 @@ auto gse::vbd::gpu_solver::dispatch_compute(vulkan::config& config) -> void {
 			}
 		};
 
-		config.device_config().device.updateDescriptorSets(writes, nullptr);
+		gpu::update_descriptors_raw(ctx, writes);
 
 		m_compute.descriptors_initialized = true;
 	}
 
 	if (m_body_count == 0) return;
 
-	if (m_frame_count >= 2) {
-		std::array<std::uint64_t, 2> timestamps{};
-		auto result = device.getQueryPoolResults(
-			*m_compute.query_pool, 0, 2,
-			sizeof(timestamps), timestamps.data(), sizeof(std::uint64_t),
-			vk::QueryResultFlagBits::e64
-		);
-		if (result == vk::Result::eSuccess) {
-			m_compute.solve_ms = static_cast<float>(timestamps[1] - timestamps[0]) * m_compute.timestamp_period * 1e-6f;
-		}
-	}
+	m_compute.solve_ms = m_compute.queue.read_timing();
 
-	m_compute.command_buffer.reset({});
-	m_compute.command_buffer.begin({});
+	m_compute.queue.wait();
+	m_compute.queue.begin();
 
-	const vk::CommandBuffer command = *m_compute.command_buffer;
-
-	constexpr std::uint32_t query_base = 0;
-	command.resetQueryPool(*m_compute.query_pool, query_base, 4);
-
-	constexpr vk::MemoryBarrier2 host_to_compute{
-		.srcStageMask = vk::PipelineStageFlagBits2::eHost,
-		.srcAccessMask = vk::AccessFlagBits2::eHostWrite,
-		.dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
-		.dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite
-	};
-	constexpr vk::MemoryBarrier2 prev_transfer_to_transfer{
-		.srcStageMask = vk::PipelineStageFlagBits2::eCopy,
-		.srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
-		.dstStageMask = vk::PipelineStageFlagBits2::eCopy,
-		.dstAccessMask = vk::AccessFlagBits2::eTransferWrite
-	};
-	constexpr vk::MemoryBarrier2 init_barriers[] = { host_to_compute, prev_transfer_to_transfer };
-	command.pipelineBarrier2({ .memoryBarrierCount = 2, .pMemoryBarriers = init_barriers });
-
-	const vk::DescriptorSet sets[] = { *m_compute.descriptor_set };
-
-	constexpr vk::MemoryBarrier2 compute_barrier{
-		.srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
-		.srcAccessMask = vk::AccessFlagBits2::eShaderStorageWrite,
-		.dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
-		.dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite
-	};
-	const vk::DependencyInfo compute_dep{ .memoryBarrierCount = 1, .pMemoryBarriers = &compute_barrier };
-
-	command.writeTimestamp2(vk::PipelineStageFlagBits2::eTopOfPipe, *m_compute.query_pool, query_base);
+	constexpr gpu::barrier_scope init_scopes[] = { gpu::barrier_scope::host_to_compute, gpu::barrier_scope::transfer_to_transfer };
+	m_compute.queue.barriers(init_scopes);
 
 	const auto& cfg = m_solver_cfg;
 	const std::uint32_t total = total_substeps();
@@ -1554,10 +1456,12 @@ auto gse::vbd::gpu_solver::dispatch_compute(vulkan::config& config) -> void {
 		return (a + b - 1) / b;
 	};
 
-	auto bind_and_push = [&](const resource::handle<shader>& sh, const vk::raii::Pipeline& pipeline, std::uint32_t color_offset, std::uint32_t color_count, std::uint32_t substep, std::uint32_t iteration, float current_alpha, const std::uint32_t warm_start_count) {
-		command.bindPipeline(vk::PipelineBindPoint::eCompute, *pipeline);
-		command.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *m_compute.pipeline_layout, 0, { 1, sets }, {});
-		sh->push(command, *m_compute.pipeline_layout, "vbd_push_constants",
+	m_compute.queue.begin_timing();
+
+	auto bind_and_push = [&](const resource::handle<shader>& sh, const gpu::pipeline& pipeline, std::uint32_t color_offset, std::uint32_t color_count, std::uint32_t substep, std::uint32_t iteration, float current_alpha, const std::uint32_t warm_start_count) {
+		m_compute.queue.bind_pipeline(pipeline);
+		m_compute.queue.bind_descriptor_set(pipeline, 0, m_compute.descriptor_set);
+		sh->push(m_compute.queue.native_command_buffer(), pipeline.native_layout(), "vbd_push_constants",
 			"body_count", m_body_count,
 			"contact_count", max_contacts,
 			"motor_count", m_motor_count,
@@ -1599,27 +1503,25 @@ auto gse::vbd::gpu_solver::dispatch_compute(vulkan::config& config) -> void {
 	for (std::uint32_t sub = 0; sub < total; ++sub) {
 		const std::uint32_t substep_warm_start_count = (sub == 0) ? m_warm_start_count : 0u;
 
-		// Only the first substep can safely use the sorted previous-frame warm-start
-		// buffer. Later substeps must rebuild contacts from the updated body state.
 		bind_and_push(m_compute.collision_reset, m_compute.collision_reset_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
-		command.dispatch(ceil_div(m_body_count, workgroup_size), 1, 1);
-		command.pipelineBarrier2(compute_dep);
+		m_compute.queue.dispatch(ceil_div(m_body_count, workgroup_size), 1, 1);
+		m_compute.queue.barrier(gpu::barrier_scope::compute_to_compute);
 
 		bind_and_push(m_compute.collision_broad_phase, m_compute.collision_broad_phase_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
-		command.dispatch(ceil_div(total_pairs, workgroup_size), 1, 1);
-		command.pipelineBarrier2(compute_dep);
+		m_compute.queue.dispatch(ceil_div(total_pairs, workgroup_size), 1, 1);
+		m_compute.queue.barrier(gpu::barrier_scope::compute_to_compute);
 
 		bind_and_push(m_compute.collision_narrow_phase, m_compute.collision_narrow_phase_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
-		command.dispatch(ceil_div(max_collision_pairs, workgroup_size), 1, 1);
-		command.pipelineBarrier2(compute_dep);
+		m_compute.queue.dispatch(ceil_div(max_collision_pairs, workgroup_size), 1, 1);
+		m_compute.queue.barrier(gpu::barrier_scope::compute_to_compute);
 
 		bind_and_push(m_compute.collision_build_adjacency, m_compute.collision_build_adjacency_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
-		command.dispatch(1, 1, 1);
-		command.pipelineBarrier2(compute_dep);
+		m_compute.queue.dispatch(1, 1, 1);
+		m_compute.queue.barrier(gpu::barrier_scope::compute_to_compute);
 
 		bind_and_push(m_compute.predict, m_compute.predict_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
-		command.dispatch(body_workgroups, 1, 1);
-		command.pipelineBarrier2(compute_dep);
+		m_compute.queue.dispatch(body_workgroups, 1, 1);
+		m_compute.queue.barrier(gpu::barrier_scope::compute_to_compute);
 
 		for (std::uint32_t iterations = 0; iterations < total_iterations; ++iterations) {
 			const float current_alpha =
@@ -1628,55 +1530,47 @@ auto gse::vbd::gpu_solver::dispatch_compute(vulkan::config& config) -> void {
 					: cfg.alpha;
 
 			bind_and_push(m_compute.solve_color, m_compute.solve_color_pipeline, 0u, num_colors, sub, iterations, current_alpha, substep_warm_start_count);
-			command.dispatch(body_workgroups, 1, 1);
-			command.pipelineBarrier2(compute_dep);
+			m_compute.queue.dispatch(body_workgroups, 1, 1);
+			m_compute.queue.barrier(gpu::barrier_scope::compute_to_compute);
 
 			if (iterations < cfg.iterations) {
 				bind_and_push(m_compute.update_lambda, m_compute.update_lambda_pipeline, 0u, 0u, sub, iterations, current_alpha, substep_warm_start_count);
-				command.dispatch(ceil_div(max_contacts, workgroup_size), 1, 1);
-				command.pipelineBarrier2(compute_dep);
+				m_compute.queue.dispatch(ceil_div(max_contacts, workgroup_size), 1, 1);
+				m_compute.queue.barrier(gpu::barrier_scope::compute_to_compute);
 			}
 
 			if (cfg.iterations > 0 && iterations == cfg.iterations - 1u) {
 				if (m_joint_count > 0) {
 					bind_and_push(m_compute.update_joint_lambda, m_compute.update_joint_lambda_pipeline, 0u, 0u, sub, iterations, current_alpha, substep_warm_start_count);
-					command.dispatch(ceil_div(m_joint_count, workgroup_size), 1, 1);
-					command.pipelineBarrier2(compute_dep);
+					m_compute.queue.dispatch(ceil_div(m_joint_count, workgroup_size), 1, 1);
+					m_compute.queue.barrier(gpu::barrier_scope::compute_to_compute);
 				}
 
 				bind_and_push(m_compute.derive_velocities, m_compute.derive_velocities_pipeline, 0u, 0u, sub, iterations, current_alpha, substep_warm_start_count);
-				command.dispatch(body_workgroups, 1, 1);
-				command.pipelineBarrier2(compute_dep);
+				m_compute.queue.dispatch(body_workgroups, 1, 1);
+				m_compute.queue.barrier(gpu::barrier_scope::compute_to_compute);
 			}
 		}
 
 		if (cfg.iterations == 0u) {
 			bind_and_push(m_compute.derive_velocities, m_compute.derive_velocities_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
-			command.dispatch(body_workgroups, 1, 1);
-			command.pipelineBarrier2(compute_dep);
+			m_compute.queue.dispatch(body_workgroups, 1, 1);
+			m_compute.queue.barrier(gpu::barrier_scope::compute_to_compute);
 		}
 
 		bind_and_push(m_compute.finalize, m_compute.finalize_pipeline, 0u, 0u, sub, 0u, 0.f, substep_warm_start_count);
-		command.dispatch(body_workgroups, 1, 1);
-		command.pipelineBarrier2(compute_dep);
+		m_compute.queue.dispatch(body_workgroups, 1, 1);
+		m_compute.queue.barrier(gpu::barrier_scope::compute_to_compute);
 	}
 
-	command.writeTimestamp2(vk::PipelineStageFlagBits2::eComputeShader, *m_compute.query_pool, query_base + 1);
+	m_compute.queue.end_timing();
 
-	constexpr vk::MemoryBarrier2 compute_to_transfer{
-		.srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
-		.srcAccessMask = vk::AccessFlagBits2::eShaderStorageWrite,
-		.dstStageMask = vk::PipelineStageFlagBits2::eCopy,
-		.dstAccessMask = vk::AccessFlagBits2::eTransferRead
-	};
+	m_compute.queue.barrier(gpu::barrier_scope::compute_to_transfer);
 
-	command.pipelineBarrier2({
-		.memoryBarrierCount = 1,
-		.pMemoryBarriers = &compute_to_transfer
-	});
+	const auto cmd = m_compute.queue.native_command_buffer();
 
 	const vk::DeviceSize body_copy_size = m_body_count * m_body_layout.stride;
-	command.copyBuffer(
+	cmd.copyBuffer(
 		m_body_buffer.buffer,
 		m_readback_buffer.buffer,
 		vk::BufferCopy{
@@ -1689,7 +1583,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(vulkan::config& config) -> void {
 	const vk::DeviceSize contact_dst_base = max_bodies * m_body_layout.stride;
 	const vk::DeviceSize contact_copy_size = max_contacts * m_contact_layout.stride;
 
-	command.copyBuffer(
+	cmd.copyBuffer(
 		m_contact_buffer.buffer,
 		m_readback_buffer.buffer,
 		vk::BufferCopy{
@@ -1700,7 +1594,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(vulkan::config& config) -> void {
 	);
 
 	const vk::DeviceSize count_dst = contact_dst_base + contact_copy_size;
-	command.copyBuffer(
+	cmd.copyBuffer(
 		m_collision_state_buffer.buffer,
 		m_readback_buffer.buffer,
 		vk::BufferCopy{
@@ -1713,7 +1607,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(vulkan::config& config) -> void {
 	if (m_joint_count > 0) {
 		const vk::DeviceSize joint_dst = count_dst + collision_state_uints * sizeof(std::uint32_t);
 		const vk::DeviceSize joint_copy_size = m_joint_count * m_joint_layout.stride;
-		command.copyBuffer(
+		cmd.copyBuffer(
 			m_joint_buffer.buffer,
 			m_readback_buffer.buffer,
 			vk::BufferCopy{
@@ -1724,23 +1618,9 @@ auto gse::vbd::gpu_solver::dispatch_compute(vulkan::config& config) -> void {
 		);
 	}
 
-	constexpr vk::MemoryBarrier2 compute_to_host{
-		.srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
-		.srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
-		.dstStageMask = vk::PipelineStageFlagBits2::eHost,
-		.dstAccessMask = vk::AccessFlagBits2::eHostRead
-	};
-	command.pipelineBarrier2({ .memoryBarrierCount = 1, .pMemoryBarriers = &compute_to_host });
+	m_compute.queue.barrier(gpu::barrier_scope::transfer_to_host);
 
-	m_compute.command_buffer.end();
-
-	const vk::CommandBuffer submit_cmd = *m_compute.command_buffer;
-	const vk::SubmitInfo submit_info{
-		.commandBufferCount = 1,
-		.pCommandBuffers = &submit_cmd
-	};
-	device.resetFences(*m_compute.fence);
-	m_compute.queue->submit(submit_info, *m_compute.fence);
+	m_compute.queue.submit();
 
 	mark_dispatched();
 	m_first_submit = false;

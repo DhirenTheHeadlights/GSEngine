@@ -260,7 +260,21 @@ export namespace gse {
 		std::mutex m_mutex;
 	};
 
-	struct initialize_phase {
+	struct phase_gpu_access {
+		void* gpu_ctx = nullptr;
+
+		template <typename T>
+		auto get() const -> T& {
+			return *static_cast<T*>(gpu_ctx);
+		}
+
+		template <typename T>
+		auto try_get() const -> T* {
+			return static_cast<T*>(gpu_ctx);
+		}
+	};
+
+	struct initialize_phase : phase_gpu_access {
 		registry_access& registry;
 		const state_snapshot_provider& snapshots;
 		channel_writer& channels;
@@ -276,7 +290,7 @@ export namespace gse {
 		}
 	};
 
-	struct update_phase {
+	struct update_phase : phase_gpu_access {
 		const registry_access& registry;
 		const state_snapshot_provider& snapshots;
 		channel_writer& channels;
@@ -335,7 +349,7 @@ export namespace gse {
 		}
 	};
 
-	struct begin_frame_phase {
+	struct begin_frame_phase : phase_gpu_access {
 		const state_snapshot_provider& snapshots;
 
 		template <typename State>
@@ -349,7 +363,7 @@ export namespace gse {
 		}
 	};
 
-	struct render_phase {
+	struct render_phase : phase_gpu_access {
 		const registry_access& registry;
 		const state_snapshot_provider& snapshots;
 		const channel_reader_provider& channel_reader;
@@ -370,7 +384,7 @@ export namespace gse {
 		}
 	};
 
-	struct end_frame_phase {
+	struct end_frame_phase : phase_gpu_access {
 		const state_snapshot_provider& snapshots;
 		channel_writer& channels;
 
@@ -385,7 +399,7 @@ export namespace gse {
 		}
 	};
 
-	struct shutdown_phase {
+	struct shutdown_phase : phase_gpu_access {
 		registry_access& registry;
 	};
 

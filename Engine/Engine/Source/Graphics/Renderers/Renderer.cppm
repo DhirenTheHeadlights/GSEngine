@@ -31,7 +31,6 @@ export namespace gse::renderer {
 		bool hot_reload_enabled = false;
 		vec2f last_viewport{ 1920.f, 1080.f };
 
-		explicit state(gpu::context& c) : ctx(std::addressof(c)) {}
 		state() = default;
 
 		auto set_ui_focus(const bool focus) const -> void {
@@ -101,7 +100,8 @@ export namespace gse::renderer {
 }
 
 auto gse::renderer::system::initialize(const initialize_phase& phase, state& s) -> void {
-	auto& ctx = *s.ctx;
+	auto& ctx = phase.get<gpu::context>();
+	s.ctx = &ctx;
 
 	ctx.add_loader<texture>();
 	ctx.add_loader<model>();
@@ -124,7 +124,7 @@ auto gse::renderer::system::initialize(const initialize_phase& phase, state& s) 
 }
 
 auto gse::renderer::system::update(update_phase& phase, state& s) -> void {
-	auto& ctx = *s.ctx;
+	auto& ctx = phase.get<gpu::context>();
 
 	if (s.hot_reload_enabled != ctx.hot_reload_enabled()) {
 		if (s.hot_reload_enabled) {
@@ -152,43 +152,33 @@ auto gse::renderer::system::update(update_phase& phase, state& s) -> void {
 	}
 }
 
-auto gse::renderer::system::begin_frame(begin_frame_phase&, state& s) -> bool {
-	auto& ctx = *s.ctx;
+auto gse::renderer::system::begin_frame(begin_frame_phase& phase, state& s) -> bool {
+	auto& ctx = phase.get<gpu::context>();
 
 	ctx.process_gpu_queue();
 
-	s.frame_begun = vulkan::begin_frame({
-		.window = ctx.window().raw_handle(),
-		.frame_buffer_resized = ctx.window().frame_buffer_resized(),
-		.minimized = ctx.window().minimized(),
-		.config = ctx.config()
-	});
+	s.frame_begun = ctx.begin_frame();
 
 	return s.frame_begun;
 }
 
-auto gse::renderer::system::end_frame(end_frame_phase&, state& s) -> void {
+auto gse::renderer::system::end_frame(end_frame_phase& phase, state& s) -> void {
 	if (!s.frame_begun) {
 		return;
 	}
 
-	auto& ctx = *s.ctx;
+	auto& ctx = phase.get<gpu::context>();
 
-	vulkan::end_frame({
-		.window = ctx.window().raw_handle(),
-		.frame_buffer_resized = ctx.window().frame_buffer_resized(),
-		.minimized = ctx.window().minimized(),
-		.config = ctx.config()
-	});
+	ctx.end_frame();
 
 	ctx.finalize_reloads();
 
 	s.frame_begun = false;
 }
 
-auto gse::renderer::system::shutdown(shutdown_phase&, const state& s) -> void {
-	auto& ctx = *s.ctx;
+auto gse::renderer::system::shutdown(shutdown_phase& phase, const state& s) -> void {
+	auto& ctx = phase.get<gpu::context>();
 
-	ctx.config().device_config().device.waitIdle();
+	ctx.wait_idle();
 	ctx.shutdown();
 }

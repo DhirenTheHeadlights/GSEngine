@@ -1,6 +1,6 @@
 module;
 
-export module gse.platform.vulkan:persistent_allocator;
+export module gse.platform:vulkan_allocator;
 
 import std;
 export import vulkan;

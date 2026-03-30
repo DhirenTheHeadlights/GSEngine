@@ -113,21 +113,23 @@ auto gse::engine::initialize() -> void {
 		ctx.add_loader<shader>();
 		ctx.compile();
 
-		m_scheduler.add_system<physics::system, physics::state, physics::render_state>(reg, ctx);
+		m_scheduler.set_gpu_context(&ctx);
+
+		m_scheduler.add_system<physics::system, physics::state, physics::render_state>(reg);
 		m_scheduler.add_system<camera::system, camera::state>(reg);
-		m_scheduler.add_system<renderer::system, renderer::state>(reg, ctx);
-		m_scheduler.add_system<renderer::shadow::system, renderer::shadow::state>(reg, ctx);
-		m_scheduler.add_system<renderer::geometry_collector::system, renderer::geometry_collector::state>(reg, ctx);
-		m_scheduler.add_system<renderer::skin_compute::system, renderer::skin_compute::state>(reg, ctx);
-		m_scheduler.add_system<renderer::cull_compute::system, renderer::cull_compute::state>(reg, ctx);
-		m_scheduler.add_system<renderer::depth_prepass::system, renderer::depth_prepass::state>(reg, ctx);
-		m_scheduler.add_system<renderer::light_culling::system, renderer::light_culling::state>(reg, ctx);
-		m_scheduler.add_system<renderer::forward::system, renderer::forward::state>(reg, ctx);
-		m_scheduler.add_system<renderer::physics_debug::system, renderer::physics_debug::state>(reg, ctx);
-		m_scheduler.add_system<renderer::ui::system, renderer::ui::state>(reg, ctx);
-		m_scheduler.add_system<gui::system, gui::system_state>(reg, ctx);
+		m_scheduler.add_system<renderer::system, renderer::state>(reg);
+		m_scheduler.add_system<renderer::shadow::system, renderer::shadow::state>(reg);
+		m_scheduler.add_system<renderer::geometry_collector::system, renderer::geometry_collector::state>(reg);
+		m_scheduler.add_system<renderer::skin_compute::system, renderer::skin_compute::state>(reg);
+		m_scheduler.add_system<renderer::cull_compute::system, renderer::cull_compute::state>(reg);
+		m_scheduler.add_system<renderer::depth_prepass::system, renderer::depth_prepass::state>(reg);
+		m_scheduler.add_system<renderer::light_culling::system, renderer::light_culling::state>(reg);
+		m_scheduler.add_system<renderer::forward::system, renderer::forward::state>(reg);
+		m_scheduler.add_system<renderer::physics_debug::system, renderer::physics_debug::state>(reg);
+		m_scheduler.add_system<renderer::ui::system, renderer::ui::state>(reg);
+		m_scheduler.add_system<gui::system, gui::system_state>(reg);
 		m_scheduler.add_system<animation::system, animation::state>(reg);
-		m_scheduler.add_system<audio::system, audio::state>(reg, ctx);
+		m_scheduler.add_system<audio::system, audio::state>(reg);
 	}
 	else {
 		m_scheduler.add_system<physics::system, physics::state>(reg);
