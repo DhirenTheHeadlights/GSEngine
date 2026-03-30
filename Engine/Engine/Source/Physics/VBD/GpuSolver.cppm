@@ -293,7 +293,7 @@ export namespace gse::vbd {
 			gpu::pipeline collision_build_adjacency_pipeline;
 			gpu::pipeline update_joint_lambda_pipeline;
 
-			gpu::descriptor_set descriptor_set;
+			vulkan::descriptor_region descriptors;
 			gpu::compute_queue queue;
 			float solve_ms = 0.f;
 			bool descriptors_initialized = false;
@@ -1305,134 +1305,22 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 
 auto gse::vbd::gpu_solver::dispatch_compute(gpu::context& ctx) -> void {
 	if (!m_compute.descriptors_initialized) {
-		m_compute.descriptor_set = gpu::allocate_descriptor_set(ctx, *m_compute.predict);
+		m_compute.descriptors = gpu::allocate_descriptors(ctx, *m_compute.predict);
 
-		const vk::DescriptorBufferInfo body_info{
-			.buffer = m_body_buffer.buffer,
-			.offset = 0,
-			.range = vk::WholeSize
-		};
-		const vk::DescriptorBufferInfo contact_info{
-			.buffer = m_contact_buffer.buffer,
-			.offset = 0,
-			.range = vk::WholeSize
-		};
-		const vk::DescriptorBufferInfo motor_info{
-			.buffer = m_motor_buffer.buffer,
-			.offset = 0,
-			.range = vk::WholeSize
-		};
-		const vk::DescriptorBufferInfo color_info{
-			.buffer = m_color_buffer.buffer,
-			.offset = 0,
-			.range = vk::WholeSize
-		};
-		const vk::DescriptorBufferInfo map_info{
-			.buffer = m_body_contact_map_buffer.buffer,
-			.offset = 0,
-			.range = vk::WholeSize
-		};
-		const vk::DescriptorBufferInfo solve_info{
-			.buffer = m_solve_state_buffer.buffer,
-			.offset = 0,
-			.range = vk::WholeSize
-		};
-		const vk::DescriptorBufferInfo collision_pair_info{
-			.buffer = m_collision_pair_buffer.buffer,
-			.offset = 0,
-			.range = vk::WholeSize
-		};
-		const vk::DescriptorBufferInfo collision_state_info{
-			.buffer = m_collision_state_buffer.buffer,
-			.offset = 0,
-			.range = vk::WholeSize
-		};
-		const vk::DescriptorBufferInfo warm_start_info{
-			.buffer = m_warm_start_buffer.buffer,
-			.offset = 0,
-			.range = vk::WholeSize
-		};
-		const vk::DescriptorBufferInfo joint_info{
-			.buffer = m_joint_buffer.buffer,
-			.offset = 0,
-			.range = vk::WholeSize
+		const std::unordered_map<std::string, vk::DescriptorBufferInfo> buffer_infos{
+			{ "bodies",          { .buffer = m_body_buffer.buffer,             .offset = 0, .range = vk::WholeSize } },
+			{ "contacts",        { .buffer = m_contact_buffer.buffer,          .offset = 0, .range = vk::WholeSize } },
+			{ "motors",          { .buffer = m_motor_buffer.buffer,            .offset = 0, .range = vk::WholeSize } },
+			{ "colors",          { .buffer = m_color_buffer.buffer,            .offset = 0, .range = vk::WholeSize } },
+			{ "map",             { .buffer = m_body_contact_map_buffer.buffer, .offset = 0, .range = vk::WholeSize } },
+			{ "solve_data",      { .buffer = m_solve_state_buffer.buffer,      .offset = 0, .range = vk::WholeSize } },
+			{ "collision_pairs", { .buffer = m_collision_pair_buffer.buffer,   .offset = 0, .range = vk::WholeSize } },
+			{ "collision_state", { .buffer = m_collision_state_buffer.buffer,  .offset = 0, .range = vk::WholeSize } },
+			{ "warm_start",      { .buffer = m_warm_start_buffer.buffer,       .offset = 0, .range = vk::WholeSize } },
+			{ "joint_matrix",    { .buffer = m_joint_buffer.buffer,            .offset = 0, .range = vk::WholeSize } }
 		};
 
-		const auto ds = m_compute.descriptor_set.native();
-		std::array writes{
-			vk::WriteDescriptorSet{
-				.dstSet = ds,
-				.dstBinding = 0,
-				.descriptorCount = 1,
-				.descriptorType = vk::DescriptorType::eStorageBuffer,
-				.pBufferInfo = &body_info
-			},
-			vk::WriteDescriptorSet{
-				.dstSet = ds,
-				.dstBinding = 1,
-				.descriptorCount = 1,
-				.descriptorType = vk::DescriptorType::eStorageBuffer,
-				.pBufferInfo = &contact_info
-			},
-			vk::WriteDescriptorSet{
-				.dstSet = ds,
-				.dstBinding = 2,
-				.descriptorCount = 1,
-				.descriptorType = vk::DescriptorType::eStorageBuffer,
-				.pBufferInfo = &motor_info
-			},
-			vk::WriteDescriptorSet{
-				.dstSet = ds,
-				.dstBinding = 3,
-				.descriptorCount = 1,
-				.descriptorType = vk::DescriptorType::eStorageBuffer,
-				.pBufferInfo = &color_info
-			},
-			vk::WriteDescriptorSet{
-				.dstSet = ds,
-				.dstBinding = 4,
-				.descriptorCount = 1,
-				.descriptorType = vk::DescriptorType::eStorageBuffer,
-				.pBufferInfo = &map_info
-			},
-			vk::WriteDescriptorSet{
-				.dstSet = ds,
-				.dstBinding = 5,
-				.descriptorCount = 1,
-				.descriptorType = vk::DescriptorType::eStorageBuffer,
-				.pBufferInfo = &solve_info
-			},
-			vk::WriteDescriptorSet{
-				.dstSet = ds,
-				.dstBinding = 6,
-				.descriptorCount = 1,
-				.descriptorType = vk::DescriptorType::eStorageBuffer,
-				.pBufferInfo = &collision_pair_info
-			},
-			vk::WriteDescriptorSet{
-				.dstSet = ds,
-				.dstBinding = 7,
-				.descriptorCount = 1,
-				.descriptorType = vk::DescriptorType::eStorageBuffer,
-				.pBufferInfo = &collision_state_info
-			},
-			vk::WriteDescriptorSet{
-				.dstSet = ds,
-				.dstBinding = 8,
-				.descriptorCount = 1,
-				.descriptorType = vk::DescriptorType::eStorageBuffer,
-				.pBufferInfo = &warm_start_info
-			},
-			vk::WriteDescriptorSet{
-				.dstSet = ds,
-				.dstBinding = 9,
-				.descriptorCount = 1,
-				.descriptorType = vk::DescriptorType::eStorageBuffer,
-				.pBufferInfo = &joint_info
-			}
-		};
-
-		gpu::update_descriptors_raw(ctx, writes);
+		gpu::write_descriptors(ctx, m_compute.descriptors, *m_compute.predict, buffer_infos);
 
 		m_compute.descriptors_initialized = true;
 	}
@@ -1460,7 +1348,7 @@ auto gse::vbd::gpu_solver::dispatch_compute(gpu::context& ctx) -> void {
 
 	auto bind_and_push = [&](const resource::handle<shader>& sh, const gpu::pipeline& pipeline, std::uint32_t color_offset, std::uint32_t color_count, std::uint32_t substep, std::uint32_t iteration, float current_alpha, const std::uint32_t warm_start_count) {
 		m_compute.queue.bind_pipeline(pipeline);
-		m_compute.queue.bind_descriptor_set(pipeline, 0, m_compute.descriptor_set);
+		m_compute.queue.bind_descriptors(pipeline, m_compute.descriptors);
 		sh->push(m_compute.queue.native_command_buffer(), pipeline.native_layout(), "vbd_push_constants",
 			"body_count", m_body_count,
 			"contact_count", max_contacts,

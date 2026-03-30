@@ -10,6 +10,7 @@ export import :player_controller;
 export import :app;
 
 export import :vulkan_allocator;
+export import :descriptor_heap;
 
 export import :asset_compiler;
 export import :resource_loader;

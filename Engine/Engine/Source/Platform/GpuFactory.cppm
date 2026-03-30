@@ -45,32 +45,18 @@ export namespace gse::gpu {
 		const sampler_desc& desc = {}
 	) -> sampler;
 
-	auto allocate_descriptor_set(
+	auto allocate_descriptors(
 		context& ctx,
-		const shader& s,
-		shader::set::binding_type type = shader::set::binding_type::persistent
-	) -> descriptor_set;
+		const shader& s
+	) -> vulkan::descriptor_region;
 
-	auto update_descriptors_raw(
+	auto write_descriptors(
 		context& ctx,
-		std::span<const vk::WriteDescriptorSet> writes
-	) -> void;
-
-	auto update_descriptors(
-		context& ctx,
-		const descriptor_set& set,
+		const vulkan::descriptor_region& region,
 		const shader& s,
 		const std::unordered_map<std::string, vk::DescriptorBufferInfo>& buffer_infos,
-		const std::unordered_map<std::string, vk::DescriptorImageInfo>& image_infos = {}
-	) -> void;
-
-	auto update_descriptors(
-		context& ctx,
-		const descriptor_set& set,
-		const shader& s,
-		const std::unordered_map<std::string, vk::DescriptorBufferInfo>& buffer_infos,
-		const std::unordered_map<std::string, vk::DescriptorImageInfo>& image_infos,
-		const std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>>& image_array_infos
+		const std::unordered_map<std::string, vk::DescriptorImageInfo>& image_infos = {},
+		const std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>>& image_array_infos = {}
 	) -> void;
 
 	auto create_compute_queue(
@@ -394,40 +380,19 @@ auto gse::gpu::create_sampler(context& ctx, const sampler_desc& desc) -> sampler
 	return sampler(device.createSampler(info));
 }
 
-auto gse::gpu::allocate_descriptor_set(context& ctx, const shader& s, const shader::set::binding_type type) -> descriptor_set {
-	auto set = s.descriptor_set(
-		ctx.device(),
-		ctx.descriptor_pool(),
-		type
-	);
-	return descriptor_set(std::move(set));
+auto gse::gpu::allocate_descriptors(context& ctx, const shader& s) -> vulkan::descriptor_region {
+	return s.allocate_descriptors(ctx.descriptor_heap());
 }
 
-auto gse::gpu::update_descriptors_raw(context& ctx, const std::span<const vk::WriteDescriptorSet> writes) -> void {
-	ctx.device().updateDescriptorSets(writes, nullptr);
-}
-
-auto gse::gpu::update_descriptors(
+auto gse::gpu::write_descriptors(
 	context& ctx,
-	const descriptor_set& set,
-	const shader& s,
-	const std::unordered_map<std::string, vk::DescriptorBufferInfo>& buffer_infos,
-	const std::unordered_map<std::string, vk::DescriptorImageInfo>& image_infos
-) -> void {
-	auto writes = s.descriptor_writes(set.native(), buffer_infos, image_infos);
-	ctx.device().updateDescriptorSets(writes, nullptr);
-}
-
-auto gse::gpu::update_descriptors(
-	context& ctx,
-	const descriptor_set& set,
+	const vulkan::descriptor_region& region,
 	const shader& s,
 	const std::unordered_map<std::string, vk::DescriptorBufferInfo>& buffer_infos,
 	const std::unordered_map<std::string, vk::DescriptorImageInfo>& image_infos,
 	const std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>>& image_array_infos
 ) -> void {
-	auto writes = s.descriptor_writes(set.native(), buffer_infos, image_infos, image_array_infos);
-	ctx.device().updateDescriptorSets(writes, nullptr);
+	s.write_descriptors(region, buffer_infos, image_infos, image_array_infos);
 }
 
 auto gse::gpu::create_compute_queue(context& ctx) -> compute_queue {

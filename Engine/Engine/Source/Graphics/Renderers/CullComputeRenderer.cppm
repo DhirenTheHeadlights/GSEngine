@@ -13,8 +13,8 @@ export namespace gse::renderer::cull_compute {
 	struct state {
 		resource::handle<shader> shader_handle;
 		gpu::pipeline pipeline;
-		per_frame_resource<gpu::descriptor_set> normal_descriptor_sets;
-		per_frame_resource<gpu::descriptor_set> skinned_descriptor_sets;
+		per_frame_resource<vulkan::descriptor_region> normal_descriptors;
+		per_frame_resource<vulkan::descriptor_region> skinned_descriptors;
 		per_frame_resource<gpu::buffer> frustum_buffer;
 		per_frame_resource<gpu::buffer> batch_info_buffer;
 		std::uint32_t batch_stride = 0;
@@ -72,12 +72,12 @@ auto gse::renderer::cull_compute::system::initialize(initialize_phase& phase, st
 		});
 	}
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_set>::frames_in_flight; ++i) {
-		s.normal_descriptor_sets[i] = gpu::allocate_descriptor_set(ctx, *s.shader_handle);
-		s.skinned_descriptor_sets[i] = gpu::allocate_descriptor_set(ctx, *s.shader_handle);
+	for (std::size_t i = 0; i < per_frame_resource<vulkan::descriptor_region>::frames_in_flight; ++i) {
+		s.normal_descriptors[i] = gpu::allocate_descriptors(ctx, *s.shader_handle);
+		s.skinned_descriptors[i] = gpu::allocate_descriptors(ctx, *s.shader_handle);
 	}
 
-	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_set>::frames_in_flight; ++i) {
+	for (std::size_t i = 0; i < per_frame_resource<vulkan::descriptor_region>::frames_in_flight; ++i) {
 		const vk::DescriptorBufferInfo frustum_info{
 			.buffer = s.frustum_buffer[i].native().buffer,
 			.offset = 0,
@@ -96,82 +96,28 @@ auto gse::renderer::cull_compute::system::initialize(initialize_phase& phase, st
 			.range = vk::WholeSize
 		};
 
-		const vk::DescriptorBufferInfo normal_indirect_info{
+		const std::unordered_map<std::string, vk::DescriptorBufferInfo> shared_infos = {
+			{ "FrustumUBO", frustum_info },
+			{ "instances", instance_info },
+			{ "batches", batch_info }
+		};
+
+		auto normal_infos = shared_infos;
+		normal_infos["indirectCommands"] = {
 			.buffer = gc->normal_indirect_commands_buffer[i].buffer,
 			.offset = 0,
 			.range = vk::WholeSize
 		};
 
-		const vk::DescriptorBufferInfo skinned_indirect_info{
+		auto skinned_infos = shared_infos;
+		skinned_infos["indirectCommands"] = {
 			.buffer = gc->skinned_indirect_commands_buffer[i].buffer,
 			.offset = 0,
 			.range = vk::WholeSize
 		};
 
-		std::array<vk::WriteDescriptorSet, 4> normal_writes{
-			vk::WriteDescriptorSet{
-				.dstSet = s.normal_descriptor_sets[i].native(),
-				.dstBinding = 0,
-				.descriptorCount = 1,
-				.descriptorType = vk::DescriptorType::eUniformBuffer,
-				.pBufferInfo = &frustum_info
-			},
-			vk::WriteDescriptorSet{
-				.dstSet = s.normal_descriptor_sets[i].native(),
-				.dstBinding = 1,
-				.descriptorCount = 1,
-				.descriptorType = vk::DescriptorType::eStorageBuffer,
-				.pBufferInfo = &instance_info
-			},
-			vk::WriteDescriptorSet{
-				.dstSet = s.normal_descriptor_sets[i].native(),
-				.dstBinding = 2,
-				.descriptorCount = 1,
-				.descriptorType = vk::DescriptorType::eStorageBuffer,
-				.pBufferInfo = &batch_info
-			},
-			vk::WriteDescriptorSet{
-				.dstSet = s.normal_descriptor_sets[i].native(),
-				.dstBinding = 3,
-				.descriptorCount = 1,
-				.descriptorType = vk::DescriptorType::eStorageBuffer,
-				.pBufferInfo = &normal_indirect_info
-			}
-		};
-
-		std::array<vk::WriteDescriptorSet, 4> skinned_writes{
-			vk::WriteDescriptorSet{
-				.dstSet = s.skinned_descriptor_sets[i].native(),
-				.dstBinding = 0,
-				.descriptorCount = 1,
-				.descriptorType = vk::DescriptorType::eUniformBuffer,
-				.pBufferInfo = &frustum_info
-			},
-			vk::WriteDescriptorSet{
-				.dstSet = s.skinned_descriptor_sets[i].native(),
-				.dstBinding = 1,
-				.descriptorCount = 1,
-				.descriptorType = vk::DescriptorType::eStorageBuffer,
-				.pBufferInfo = &instance_info
-			},
-			vk::WriteDescriptorSet{
-				.dstSet = s.skinned_descriptor_sets[i].native(),
-				.dstBinding = 2,
-				.descriptorCount = 1,
-				.descriptorType = vk::DescriptorType::eStorageBuffer,
-				.pBufferInfo = &batch_info
-			},
-			vk::WriteDescriptorSet{
-				.dstSet = s.skinned_descriptor_sets[i].native(),
-				.dstBinding = 3,
-				.descriptorCount = 1,
-				.descriptorType = vk::DescriptorType::eStorageBuffer,
-				.pBufferInfo = &skinned_indirect_info
-			}
-		};
-
-		gpu::update_descriptors_raw(ctx, normal_writes);
-		gpu::update_descriptors_raw(ctx, skinned_writes);
+		gpu::write_descriptors(ctx, s.normal_descriptors[i], *s.shader_handle, normal_infos);
+		gpu::write_descriptors(ctx, s.skinned_descriptors[i], *s.shader_handle, skinned_infos);
 	}
 }
 
@@ -231,17 +177,15 @@ auto gse::renderer::cull_compute::system::render(const render_phase& phase, cons
 			auto cull_pc = s.shader_handle->cache_push_block("push_constants");
 			cull_pc.set("batch_offset", 0u);
 
-			const auto& dc = s.normal_descriptor_sets[frame_index];
-
 			auto normal_pass = graph.add_pass<state>();
 			normal_pass.track(s.frustum_buffer[frame_index].native());
 			normal_pass.track(s.batch_info_buffer[frame_index].native());
 
 			normal_pass
 				.writes(vulkan::storage(gc->normal_indirect_commands_buffer[frame_index], vk::PipelineStageFlagBits2::eComputeShader))
-				.record([&s, frame_index, batch_count = static_cast<std::uint32_t>(normal_batches.size()), &dc, cull_pc = std::move(cull_pc)](vulkan::recording_context& ctx) {
+				.record([&s, frame_index, batch_count = static_cast<std::uint32_t>(normal_batches.size()), cull_pc = std::move(cull_pc)](vulkan::recording_context& ctx) {
 					ctx.bind_pipeline(vk::PipelineBindPoint::eCompute, s.pipeline);
-					ctx.bind_descriptor_set(vk::PipelineBindPoint::eCompute, s.pipeline, 0, dc);
+					ctx.bind_descriptors(vk::PipelineBindPoint::eCompute, s.pipeline, s.normal_descriptors[frame_index]);
 					ctx.push(s.pipeline, cull_pc);
 					ctx.dispatch(batch_count, 1, 1);
 				});
@@ -251,8 +195,6 @@ auto gse::renderer::cull_compute::system::render(const render_phase& phase, cons
 			auto cull_pc = s.shader_handle->cache_push_block("push_constants");
 			cull_pc.set("batch_offset", static_cast<std::uint32_t>(normal_batches.size()));
 
-			const auto& dc = s.skinned_descriptor_sets[frame_index];
-
 			auto skinned_pass = graph.add_pass<state>();
 			skinned_pass.track(s.frustum_buffer[frame_index].native());
 			skinned_pass.track(s.batch_info_buffer[frame_index].native());
@@ -260,9 +202,9 @@ auto gse::renderer::cull_compute::system::render(const render_phase& phase, cons
 			skinned_pass
 				.after<skin_compute::state>()
 				.writes(vulkan::storage(gc->skinned_indirect_commands_buffer[frame_index], vk::PipelineStageFlagBits2::eComputeShader))
-				.record([&s, frame_index, batch_count = static_cast<std::uint32_t>(skinned_batches.size()), &dc, cull_pc = std::move(cull_pc)](vulkan::recording_context& ctx) {
+				.record([&s, frame_index, batch_count = static_cast<std::uint32_t>(skinned_batches.size()), cull_pc = std::move(cull_pc)](vulkan::recording_context& ctx) {
 					ctx.bind_pipeline(vk::PipelineBindPoint::eCompute, s.pipeline);
-					ctx.bind_descriptor_set(vk::PipelineBindPoint::eCompute, s.pipeline, 0, dc);
+					ctx.bind_descriptors(vk::PipelineBindPoint::eCompute, s.pipeline, s.skinned_descriptors[frame_index]);
 					ctx.push(s.pipeline, cull_pc);
 					ctx.dispatch(batch_count, 1, 1);
 				});

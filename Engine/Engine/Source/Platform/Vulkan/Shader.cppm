@@ -13,6 +13,7 @@ import std;
 import :gpu_context;
 import :shader_layout;
 import :render_graph;
+import :descriptor_heap;
 
 import gse.assert;
 import :vulkan_allocator;
@@ -121,18 +122,16 @@ namespace gse {
 		auto vertex_input_state(
 		) const -> vk::PipelineVertexInputStateCreateInfo;
 
-		auto descriptor_writes(
-			vk::DescriptorSet set,
-			const std::unordered_map<std::string, vk::DescriptorBufferInfo>& buffer_infos,
-			const std::unordered_map<std::string, vk::DescriptorImageInfo>& image_infos
-		) const -> std::vector<vk::WriteDescriptorSet>;
+		auto allocate_descriptors(
+			vulkan::descriptor_heap& heap
+		) const -> vulkan::descriptor_region;
 
-		auto descriptor_writes(
-			vk::DescriptorSet set,
+		auto write_descriptors(
+			const vulkan::descriptor_region& region,
 			const std::unordered_map<std::string, vk::DescriptorBufferInfo>& buffer_infos,
 			const std::unordered_map<std::string, vk::DescriptorImageInfo>& image_infos,
-			const std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>>& image_array_infos
-		) const -> std::vector<vk::WriteDescriptorSet>;
+			const std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>>& image_array_infos = {}
+		) const -> void;
 
 		template <typename T>
 		auto set_uniform(
@@ -196,18 +195,6 @@ namespace gse {
 			NameValue&&... name_value_pairs
 		) const -> void;
 
-		auto descriptor_set(
-			const vk::raii::Device& device,
-			vk::DescriptorPool pool,
-			set::binding_type type,
-			std::uint32_t count
-		) const -> std::vector<vk::raii::DescriptorSet>;
-
-		auto descriptor_set(
-			const vk::raii::Device& device,
-			vk::DescriptorPool pool,
-			set::binding_type type
-		) const -> vk::raii::DescriptorSet;
 		auto is_mesh_shader() const -> bool;
 		auto mesh_shader_stages() const -> std::array<vk::PipelineShaderStageCreateInfo, 3>;
 	private:
@@ -465,7 +452,9 @@ auto gse::shader::load(const gpu::context& context) -> void {
 		}
 
 		vk::DescriptorSetLayoutCreateInfo ci{
-			.flags = type == set::binding_type::push ? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR : vk::DescriptorSetLayoutCreateFlags(),
+			.flags = type == set::binding_type::push
+				? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR
+				: vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT,
 			.bindingCount = static_cast<uint32_t>(raw_bindings.size()),
 			.pBindings = raw_bindings.data()
 		};
@@ -481,7 +470,9 @@ auto gse::shader::load(const gpu::context& context) -> void {
 	for (uint32_t i = 0; i <= max_set_index; ++i) {
 		if (auto t = static_cast<set::binding_type>(i); !m_layout.sets.contains(t)) {
 			vk::DescriptorSetLayoutCreateInfo ci{
-				.flags = t == set::binding_type::push ? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR : vk::DescriptorSetLayoutCreateFlags(),
+				.flags = t == set::binding_type::push
+					? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR
+					: vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT,
 				.bindingCount = 0,
 				.pBindings = nullptr
 			};
@@ -681,87 +672,93 @@ auto gse::shader::vertex_input_state() const -> vk::PipelineVertexInputStateCrea
 	};
 }
 
-auto gse::shader::descriptor_writes(const vk::DescriptorSet set, const std::unordered_map<std::string, vk::DescriptorBufferInfo>& buffer_infos, const std::unordered_map<std::string, vk::DescriptorImageInfo>& image_infos) const -> std::vector<vk::WriteDescriptorSet> {
-	const std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>> empty_arrays;
-	return descriptor_writes(set, buffer_infos, image_infos, empty_arrays);
+auto gse::shader::allocate_descriptors(vulkan::descriptor_heap& heap) const -> vulkan::descriptor_region {
+	assert(
+		m_layout.sets.contains(set::binding_type::persistent),
+		std::source_location::current(),
+		"Shader has no persistent descriptor set to allocate"
+	);
+
+	const auto& persistent_set = m_layout.sets.at(set::binding_type::persistent);
+	const auto set_layout = layout(persistent_set);
+	const auto size = heap.layout_size(set_layout);
+
+	return heap.allocate(size);
 }
 
-auto gse::shader::descriptor_writes(const vk::DescriptorSet set, const std::unordered_map<std::string, vk::DescriptorBufferInfo>& buffer_infos, const std::unordered_map<std::string, vk::DescriptorImageInfo>& image_infos, const std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>>& image_array_infos) const -> std::vector<vk::WriteDescriptorSet> {
-	std::vector<vk::WriteDescriptorSet> writes;
-	std::unordered_set<std::string> used_keys;
+auto gse::shader::write_descriptors(
+	const vulkan::descriptor_region& region,
+	const std::unordered_map<std::string, vk::DescriptorBufferInfo>& buffer_infos,
+	const std::unordered_map<std::string, vk::DescriptorImageInfo>& image_infos,
+	const std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>>& image_array_infos
+) const -> void {
+	assert(region, std::source_location::current(), "Cannot write to null descriptor region");
+	auto& heap = *region.heap;
+	const auto& props = heap.props();
 
 	for (const auto& s : m_layout.sets | std::views::values) {
+		if (s.type != set::binding_type::persistent) continue;
+
+		const auto set_layout = layout(s);
+
 		for (const auto& [binding_name, layout_binding, member] : s.bindings) {
+			const auto boff = heap.binding_offset(set_layout, layout_binding.binding);
+
 			if (auto it = buffer_infos.find(binding_name); it != buffer_infos.end()) {
-				writes.emplace_back(vk::WriteDescriptorSet{
-					.pNext = nullptr,
-					.dstSet = set,
-					.dstBinding = layout_binding.binding,
-					.dstArrayElement = 0,
-					.descriptorCount = layout_binding.descriptorCount,
-					.descriptorType = layout_binding.descriptorType,
-					.pImageInfo = nullptr,
-					.pBufferInfo = &it->second,
-					.pTexelBufferView = nullptr
-				});
-				used_keys.insert(binding_name);
+				const auto& buf_info = it->second;
+				const auto buf_addr = heap.buffer_address(buf_info.buffer);
+
+				const bool is_uniform = layout_binding.descriptorType == vk::DescriptorType::eUniformBuffer
+					|| layout_binding.descriptorType == vk::DescriptorType::eUniformBufferDynamic;
+
+				const vk::DescriptorAddressInfoEXT addr_info{
+					.address = buf_addr + buf_info.offset,
+					.range = buf_info.range,
+					.format = vk::Format::eUndefined
+				};
+
+				if (is_uniform) {
+					const vk::DescriptorGetInfoEXT get_info{
+						.type = vk::DescriptorType::eUniformBuffer,
+						.data = { .pUniformBuffer = &addr_info }
+					};
+					heap.write_descriptor(region, boff, get_info, props.uniform_buffer_descriptor_size);
+				}
+				else {
+					const vk::DescriptorGetInfoEXT get_info{
+						.type = vk::DescriptorType::eStorageBuffer,
+						.data = { .pStorageBuffer = &addr_info }
+					};
+					heap.write_descriptor(region, boff, get_info, props.storage_buffer_descriptor_size);
+				}
 				continue;
 			}
 
 			if (auto it_arr = image_array_infos.find(binding_name); it_arr != image_array_infos.end()) {
 				const auto& vec = it_arr->second;
-				assert(
-					!vec.empty(),
-					std::source_location::current(),
-					"Image array '{}' has zero elements",
-					binding_name
-				);
+				const auto desc_size = props.combined_image_sampler_descriptor_size;
 
-				const auto count = static_cast<std::uint32_t>(
-					std::min<std::size_t>(layout_binding.descriptorCount, vec.size())
-				);
-
-				writes.emplace_back(vk::WriteDescriptorSet{
-					.pNext = nullptr,
-					.dstSet = set,
-					.dstBinding = layout_binding.binding,
-					.dstArrayElement = 0,
-					.descriptorCount = count,
-					.descriptorType = layout_binding.descriptorType,
-					.pImageInfo = vec.data(),
-					.pBufferInfo = nullptr,
-					.pTexelBufferView = nullptr
-				});
-				used_keys.insert(binding_name);
+				for (std::size_t i = 0; i < vec.size() && i < layout_binding.descriptorCount; ++i) {
+					const vk::DescriptorImageInfo& img = vec[i];
+					const vk::DescriptorGetInfoEXT get_info{
+						.type = vk::DescriptorType::eCombinedImageSampler,
+						.data = { .pCombinedImageSampler = &img }
+					};
+					heap.write_descriptor(region, boff + i * desc_size, get_info, desc_size);
+				}
 				continue;
 			}
 
 			if (auto it2 = image_infos.find(binding_name); it2 != image_infos.end()) {
-				writes.emplace_back(vk::WriteDescriptorSet{
-					.pNext = nullptr,
-					.dstSet = set,
-					.dstBinding = layout_binding.binding,
-					.dstArrayElement = 0,
-					.descriptorCount = layout_binding.descriptorCount,
-					.descriptorType = layout_binding.descriptorType,
-					.pImageInfo = &it2->second,
-					.pBufferInfo = nullptr,
-					.pTexelBufferView = nullptr
-				});
-				used_keys.insert(binding_name);
+				const vk::DescriptorImageInfo& img = it2->second;
+				const vk::DescriptorGetInfoEXT get_info{
+					.type = vk::DescriptorType::eCombinedImageSampler,
+					.data = { .pCombinedImageSampler = &img }
+				};
+				heap.write_descriptor(region, boff, get_info, props.combined_image_sampler_descriptor_size);
 			}
 		}
 	}
-
-	const auto total_inputs = buffer_infos.size() + image_infos.size() + image_array_infos.size();
-
-	assert(
-		used_keys.size() == total_inputs,
-		std::source_location::current(),
-		"Some descriptor inputs were not used. Possibly extra or misnamed keys?"
-	);
-
-	return writes;
 }
 
 template <typename T>
@@ -1140,32 +1137,3 @@ auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout
     );
 }
 
-auto gse::shader::descriptor_set(const vk::raii::Device& device, const vk::DescriptorPool pool, const set::binding_type type, const std::uint32_t count) const -> std::vector<vk::raii::DescriptorSet> {
-	assert(
-		m_layout.sets.contains(type),
-		std::source_location::current(),
-		"Shader does not have set of type {}",
-		static_cast<int>(type)
-	);
-
-	const auto& set_info = layout(m_layout.sets.at(type));
-	assert(
-		set_info,
-		std::source_location::current(),
-		"Descriptor set layout is not initialized"
-	);
-
-	const vk::DescriptorSetAllocateInfo alloc_info{
-		.descriptorPool = pool,
-		.descriptorSetCount = count,
-		.pSetLayouts = &set_info
-	};
-
-	return device.allocateDescriptorSets(alloc_info);
-}
-
-auto gse::shader::descriptor_set(const vk::raii::Device& device, const vk::DescriptorPool pool, const set::binding_type type) const -> vk::raii::DescriptorSet {
-	auto sets = descriptor_set(device, pool, type, 1);
-	assert(!sets.empty(), std::source_location::current(), "Failed to allocate descriptor set for shader layout");
-	return std::move(sets.front());
-}
