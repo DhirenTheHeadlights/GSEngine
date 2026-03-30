@@ -50,7 +50,7 @@ auto gse::renderer::skin_compute::system::initialize(initialize_phase& phase, st
 			{
 				"skeletonData",
 				{
-					.buffer = gc->skeleton_buffer.buffer,
+					.buffer = gc->skeleton_buffer.native().buffer,
 					.offset = 0,
 					.range = geometry_collector::state::max_joints * gc->joint_stride
 				}
@@ -58,7 +58,7 @@ auto gse::renderer::skin_compute::system::initialize(initialize_phase& phase, st
 			{
 				"localPoses",
 				{
-					.buffer = gc->local_pose_buffer[i].buffer,
+					.buffer = gc->local_pose_buffer[i].native().buffer,
 					.offset = 0,
 					.range = local_pose_size
 				}
@@ -66,7 +66,7 @@ auto gse::renderer::skin_compute::system::initialize(initialize_phase& phase, st
 			{
 				"skinMatrices",
 				{
-					.buffer = gc->skin_buffer[i].buffer,
+					.buffer = gc->skin_buffer[i].native().buffer,
 					.offset = 0,
 					.range = skin_buffer_size
 				}
@@ -102,13 +102,13 @@ auto gse::renderer::skin_compute::system::render(const render_phase& phase, cons
 	auto pass = ctx.graph().add_pass<state>();
 	pass.when(data.pending_compute_instance_count > 0);
 
-	pass.track(gc->skeleton_buffer);
-	pass.track(gc->local_pose_buffer[frame_index]);
+	pass.track(gc->skeleton_buffer.native());
+	pass.track(gc->local_pose_buffer[frame_index].native());
 
-	pass.writes(vulkan::storage(gc->skin_buffer[frame_index], vk::PipelineStageFlagBits2::eComputeShader))
+	pass.writes(vulkan::storage(gc->skin_buffer[frame_index].native(), vk::PipelineStageFlagBits2::eComputeShader))
 		.record([&s, frame_index, instance_count = data.pending_compute_instance_count, skin_pc = std::move(skin_pc)](vulkan::recording_context& ctx) {
-			ctx.bind_pipeline(vk::PipelineBindPoint::eCompute, s.pipeline);
-			ctx.bind_descriptors(vk::PipelineBindPoint::eCompute, s.pipeline, s.descriptors[frame_index]);
+			ctx.bind(s.pipeline);
+			ctx.bind_descriptors(s.pipeline, s.descriptors[frame_index]);
 			ctx.push(s.pipeline, skin_pc);
 			ctx.dispatch(instance_count, 1, 1);
 		});

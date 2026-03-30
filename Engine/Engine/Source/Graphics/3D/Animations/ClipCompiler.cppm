@@ -3,6 +3,7 @@ export module gse.graphics:clip_compiler;
 import std;
 
 import gse.platform;
+import gse.log;
 
 import :clip;
 
@@ -30,7 +31,7 @@ struct gse::asset_compiler<gse::clip_asset> {
     ) -> bool {
         std::filesystem::create_directories(destination.parent_path());
         std::filesystem::copy_file(source, destination, std::filesystem::copy_options::overwrite_existing);
-        std::println("Clip compiled: {}", destination.filename().string());
+        log::println(log::category::assets, "Clip compiled: {}", destination.filename().string());
         return true;
     }
 

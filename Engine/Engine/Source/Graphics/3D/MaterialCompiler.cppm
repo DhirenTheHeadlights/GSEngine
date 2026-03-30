@@ -4,6 +4,7 @@ import std;
 
 import gse.platform;
 import gse.assert;
+import gse.log;
 import gse.math;
 
 import :material;
@@ -32,7 +33,7 @@ struct gse::asset_compiler<gse::material> {
     ) -> bool {
         std::ifstream mtl_file(source);
         if (!mtl_file.is_open()) {
-            std::println("Failed to open material file: {}", source.string());
+            log::println(log::level::error, log::category::assets, "Failed to open material file: {}", source.string());
             return false;
         }
 
@@ -70,7 +71,7 @@ struct gse::asset_compiler<gse::material> {
             const auto source_texture_path = weakly_canonical(source.parent_path() / texture_path_in_mtl);
 
             if (!std::filesystem::exists(source_texture_path)) {
-                std::println("Warning: Texture '{}' referenced in '{}' was not found. Skipping.",
+                log::println(log::level::warning, log::category::assets, "Texture '{}' referenced in '{}' was not found. Skipping",
                     texture_path_in_mtl, source.string());
                 return "";
             }
@@ -113,7 +114,7 @@ struct gse::asset_compiler<gse::material> {
             write_string(out_file, normal_path);
             write_string(out_file, specular_path);
 
-            std::println("Material compiled: {}", baked_path.filename().string());
+            log::println(log::category::assets, "Material compiled: {}", baked_path.filename().string());
             return true;
         };
 

@@ -11,6 +11,7 @@ export module gse.network:socket;
 import std;
 
 import gse.assert;
+import gse.log;
 import gse.math;
 
 namespace gse::network {
@@ -18,7 +19,7 @@ namespace gse::network {
 		winsock_initializer() {
 			WSADATA wsa_data;
 			if (const int result = WSAStartup(MAKEWORD(2, 2), &wsa_data); result != 0) {
-				std::println(std::cerr, "WSAStartup failed with error: {}", result);
+				log::println(log::level::error, log::category::network, "WSAStartup failed with error: {}", result);
 				std::terminate();
 			}
 		}
@@ -128,7 +129,7 @@ auto gse::network::udp_socket::bind(const address& address) -> bool {
 
 	if (::bind(m_socket_id, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
 		const int err = WSAGetLastError();
-		std::println(std::cerr, "Failed to bind socket: error {}", err);
+		log::println(log::level::error, log::category::network, "Failed to bind socket: error {}", err);
 		closesocket(m_socket_id);
 		m_socket_id = INVALID_SOCKET;
 		return false;
@@ -144,7 +145,7 @@ auto gse::network::udp_socket::bind(const address& address) -> bool {
 
 	u_long mode = 1;
 	if (ioctlsocket(m_socket_id, FIONBIO, &mode) == SOCKET_ERROR) {
-		std::println(std::cerr, "Failed to set non-blocking mode");
+		log::println(log::level::error, log::category::network, "Failed to set non-blocking mode");
 		closesocket(m_socket_id);
 		m_socket_id = INVALID_SOCKET;
 		return false;
@@ -174,7 +175,7 @@ auto gse::network::udp_socket::send_data(const packet& packet, const address& ad
 	inet_pton(AF_INET, address.ip.c_str(), &addr.sin_addr);
 
 	if (const auto result = sendto(m_socket_id, reinterpret_cast<const char*>(packet.data), packet.size, 0, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)); result == SOCKET_ERROR) {
-		std::println(std::cerr, "Socket: sendto failed, error {}", WSAGetLastError());
+		log::println(log::level::error, log::category::network, "Socket sendto failed with error {}", WSAGetLastError());
 		return socket_state::error;
 	}
 

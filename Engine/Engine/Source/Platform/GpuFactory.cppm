@@ -3,6 +3,9 @@ export module gse.platform:gpu_factory;
 import std;
 
 import :gpu_types;
+import :gpu_buffer;
+import :gpu_pipeline;
+import :gpu_image;
 import :gpu_compute;
 import :gpu_context;
 import :shader;
@@ -40,6 +43,11 @@ export namespace gse::gpu {
 		const std::string& push_constant_block = {}
 	) -> pipeline;
 
+	auto create_image(
+		context& ctx,
+		const image_desc& desc
+	) -> image;
+
 	auto create_sampler(
 		context& ctx,
 		const sampler_desc& desc = {}
@@ -59,6 +67,18 @@ export namespace gse::gpu {
 		const std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>>& image_array_infos = {}
 	) -> void;
 
+	struct buffer_upload {
+		const buffer* dst = nullptr;
+		const void* data = nullptr;
+		std::size_t size = 0;
+		std::size_t dst_offset = 0;
+	};
+
+	auto upload_to_buffers(
+		context& ctx,
+		std::span<const buffer_upload> uploads
+	) -> void;
+
 	auto create_compute_queue(
 		context& ctx
 	) -> compute_queue;
@@ -66,13 +86,18 @@ export namespace gse::gpu {
 
 namespace {
 	auto to_vk(gse::gpu::buffer_usage usage) -> vk::BufferUsageFlags {
+		using enum gse::gpu::buffer_flag;
 		vk::BufferUsageFlags flags;
-		if (gse::gpu::has_flag(usage, gse::gpu::buffer_usage::uniform))      flags |= vk::BufferUsageFlagBits::eUniformBuffer;
-		if (gse::gpu::has_flag(usage, gse::gpu::buffer_usage::storage))      flags |= vk::BufferUsageFlagBits::eStorageBuffer;
-		if (gse::gpu::has_flag(usage, gse::gpu::buffer_usage::indirect))     flags |= vk::BufferUsageFlagBits::eIndirectBuffer;
-		if (gse::gpu::has_flag(usage, gse::gpu::buffer_usage::transfer_dst)) flags |= vk::BufferUsageFlagBits::eTransferDst;
-		if (gse::gpu::has_flag(usage, gse::gpu::buffer_usage::vertex))       flags |= vk::BufferUsageFlagBits::eVertexBuffer;
-		if (gse::gpu::has_flag(usage, gse::gpu::buffer_usage::index))        flags |= vk::BufferUsageFlagBits::eIndexBuffer;
+		if (usage.test(uniform))      flags |= vk::BufferUsageFlagBits::eUniformBuffer;
+		if (usage.test(storage))      flags |= vk::BufferUsageFlagBits::eStorageBuffer;
+		if (usage.test(indirect))     flags |= vk::BufferUsageFlagBits::eIndirectBuffer;
+		if (usage.test(transfer_dst)) flags |= vk::BufferUsageFlagBits::eTransferDst;
+		if (usage.test(vertex))       flags |= vk::BufferUsageFlagBits::eVertexBuffer;
+		if (usage.test(index))        flags |= vk::BufferUsageFlagBits::eIndexBuffer;
+		if (usage.test(transfer_src)) flags |= vk::BufferUsageFlagBits::eTransferSrc;
+		if (usage.test(uniform) || usage.test(storage) || usage.test(indirect)) {
+			flags |= vk::BufferUsageFlagBits::eShaderDeviceAddress;
+		}
 		return flags;
 	}
 
@@ -183,8 +208,103 @@ auto gse::gpu::create_buffer(context& ctx, const buffer_desc& desc) -> buffer {
 	auto resource = ctx.allocator().create_buffer({
 		.size = static_cast<vk::DeviceSize>(desc.size),
 		.usage = vk_usage
-	});
+	}, desc.data);
 	return buffer(std::move(resource));
+}
+
+auto gse::gpu::create_image(context& ctx, const image_desc& desc) -> image {
+	auto to_vk_format = [](image_format f) -> vk::Format {
+		switch (f) {
+			case image_format::d32_sfloat:       return vk::Format::eD32Sfloat;
+			case image_format::r8g8b8a8_srgb:    return vk::Format::eR8G8B8A8Srgb;
+			case image_format::r8g8b8a8_unorm:   return vk::Format::eR8G8B8A8Unorm;
+			case image_format::r8g8b8_srgb:      return vk::Format::eR8G8B8Srgb;
+			case image_format::r8g8b8_unorm:     return vk::Format::eR8G8B8Unorm;
+			case image_format::r8_unorm:          return vk::Format::eR8Unorm;
+			case image_format::b10g11r11_ufloat:  return vk::Format::eB10G11R11UfloatPack32;
+			case image_format::r8g8_snorm:        return vk::Format::eR8G8Snorm;
+		}
+		return vk::Format::eD32Sfloat;
+	};
+
+	const auto vk_format = to_vk_format(desc.format);
+	const bool is_depth = desc.format == image_format::d32_sfloat;
+	const bool is_cube = desc.view == image_view_type::cube;
+	const std::uint32_t layers = is_cube ? 6u : 1u;
+
+	vk::ImageUsageFlags usage{};
+	using enum image_flag;
+	if (desc.usage.test(sampled))          usage |= vk::ImageUsageFlagBits::eSampled;
+	if (desc.usage.test(depth_attachment)) usage |= vk::ImageUsageFlagBits::eDepthStencilAttachment;
+	if (desc.usage.test(color_attachment)) usage |= vk::ImageUsageFlagBits::eColorAttachment;
+	if (desc.usage.test(transfer_dst))     usage |= vk::ImageUsageFlagBits::eTransferDst;
+	if (desc.usage.test(storage))          usage |= vk::ImageUsageFlagBits::eStorage;
+
+	auto resource = ctx.allocator().create_image(
+		{
+			.flags = is_cube ? vk::ImageCreateFlagBits::eCubeCompatible : vk::ImageCreateFlags{},
+			.imageType = vk::ImageType::e2D,
+			.format = vk_format,
+			.extent = { desc.size.x(), desc.size.y(), 1 },
+			.mipLevels = 1,
+			.arrayLayers = layers,
+			.samples = vk::SampleCountFlagBits::e1,
+			.tiling = vk::ImageTiling::eOptimal,
+			.usage = usage
+		},
+		vk::MemoryPropertyFlagBits::eDeviceLocal,
+		{
+			.viewType = is_cube ? vk::ImageViewType::eCube : vk::ImageViewType::e2D,
+			.format = vk_format,
+			.subresourceRange = {
+				.aspectMask = is_depth ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor,
+				.baseMipLevel = 0,
+				.levelCount = 1,
+				.baseArrayLayer = 0,
+				.layerCount = layers
+			}
+		}
+	);
+
+	if (desc.ready_layout != image_layout::undefined) {
+		auto to_vk_layout = [](image_layout l) -> vk::ImageLayout {
+			switch (l) {
+				case image_layout::general:          return vk::ImageLayout::eGeneral;
+				case image_layout::shader_read_only: return vk::ImageLayout::eShaderReadOnlyOptimal;
+				default:                             return vk::ImageLayout::eUndefined;
+			}
+		};
+
+		const auto target = to_vk_layout(desc.ready_layout);
+		const auto aspect = is_depth ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor;
+		const auto img = resource.image;
+
+		ctx.add_transient_work([img, target, aspect, layers](const auto& cmd) {
+			const vk::ImageMemoryBarrier2 barrier{
+				.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
+				.srcAccessMask = {},
+				.dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+				.dstAccessMask = vk::AccessFlagBits2::eShaderRead,
+				.oldLayout = vk::ImageLayout::eUndefined,
+				.newLayout = target,
+				.image = img,
+				.subresourceRange = {
+					.aspectMask = aspect,
+					.baseMipLevel = 0, .levelCount = 1,
+					.baseArrayLayer = 0, .layerCount = layers
+				}
+			};
+
+			const vk::DependencyInfo dep{ .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier };
+			cmd.pipelineBarrier2(dep);
+
+			return std::vector<vulkan::buffer_resource>{};
+		});
+
+		resource.current_layout = target;
+	}
+
+	return image(std::move(resource), desc.format, desc.size);
 }
 
 auto gse::gpu::create_graphics_pipeline(context& ctx, const shader& s, const graphics_pipeline_desc& desc) -> pipeline {
@@ -291,6 +411,7 @@ auto gse::gpu::create_graphics_pipeline(context& ctx, const shader& s, const gra
 
 		vk::raii::Pipeline handle = device.createGraphicsPipeline(nullptr, {
 			.pNext = &rendering_info,
+			.flags = vk::PipelineCreateFlagBits::eDescriptorBufferEXT,
 			.stageCount = static_cast<std::uint32_t>(stages.size()),
 			.pStages = stages.data(),
 			.pVertexInputState = nullptr,
@@ -305,7 +426,7 @@ auto gse::gpu::create_graphics_pipeline(context& ctx, const shader& s, const gra
 			.layout = *pipeline_layout
 		});
 
-		return pipeline(std::move(handle), std::move(pipeline_layout));
+		return pipeline(std::move(handle), std::move(pipeline_layout), bind_point::graphics);
 	}
 
 	const auto stages = s.shader_stages();
@@ -313,6 +434,7 @@ auto gse::gpu::create_graphics_pipeline(context& ctx, const shader& s, const gra
 
 	vk::raii::Pipeline handle = device.createGraphicsPipeline(nullptr, {
 		.pNext = &rendering_info,
+		.flags = vk::PipelineCreateFlagBits::eDescriptorBufferEXT,
 		.stageCount = static_cast<std::uint32_t>(stages.size()),
 		.pStages = stages.data(),
 		.pVertexInputState = &vertex_input,
@@ -327,7 +449,7 @@ auto gse::gpu::create_graphics_pipeline(context& ctx, const shader& s, const gra
 		.layout = *pipeline_layout
 	});
 
-	return pipeline(std::move(handle), std::move(pipeline_layout));
+	return pipeline(std::move(handle), std::move(pipeline_layout), bind_point::graphics);
 }
 
 auto gse::gpu::create_compute_pipeline(context& ctx, const shader& s, const std::string& push_constant_block) -> pipeline {
@@ -349,11 +471,12 @@ auto gse::gpu::create_compute_pipeline(context& ctx, const shader& s, const std:
 	});
 
 	vk::raii::Pipeline handle = device.createComputePipeline(nullptr, {
+		.flags = vk::PipelineCreateFlagBits::eDescriptorBufferEXT,
 		.stage = s.compute_stage(),
 		.layout = *pipeline_layout
 	});
 
-	return pipeline(std::move(handle), std::move(pipeline_layout));
+	return pipeline(std::move(handle), std::move(pipeline_layout), bind_point::compute);
 }
 
 auto gse::gpu::create_sampler(context& ctx, const sampler_desc& desc) -> sampler {
@@ -393,6 +516,45 @@ auto gse::gpu::write_descriptors(
 	const std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>>& image_array_infos
 ) -> void {
 	s.write_descriptors(region, buffer_infos, image_infos, image_array_infos);
+}
+
+auto gse::gpu::upload_to_buffers(context& ctx, std::span<const buffer_upload> uploads) -> void {
+	if (uploads.empty()) return;
+
+	struct upload_entry {
+		vk::Buffer dst;
+		const void* data;
+		vk::DeviceSize size;
+		vk::DeviceSize offset;
+	};
+
+	std::vector<upload_entry> entries;
+	entries.reserve(uploads.size());
+	for (const auto& u : uploads) {
+		entries.push_back({
+			.dst = u.dst->native().buffer,
+			.data = u.data,
+			.size = static_cast<vk::DeviceSize>(u.size),
+			.offset = static_cast<vk::DeviceSize>(u.dst_offset)
+		});
+	}
+
+	ctx.add_transient_work([&ctx, entries = std::move(entries)](const auto& cmd) {
+		std::vector<vulkan::buffer_resource> transient;
+		transient.reserve(entries.size());
+
+		for (const auto& e : entries) {
+			auto staging = ctx.allocator().create_buffer({
+				.size = e.size,
+				.usage = vk::BufferUsageFlagBits::eTransferSrc
+			}, e.data);
+
+			cmd.copyBuffer(staging.buffer, e.dst, vk::BufferCopy(0, e.offset, e.size));
+			transient.push_back(std::move(staging));
+		}
+
+		return transient;
+	});
 }
 
 auto gse::gpu::create_compute_queue(context& ctx) -> compute_queue {

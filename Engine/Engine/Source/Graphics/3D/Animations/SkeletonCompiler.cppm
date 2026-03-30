@@ -3,6 +3,7 @@ export module gse.graphics:skeleton_compiler;
 import std;
 
 import gse.platform;
+import gse.log;
 
 import :skeleton;
 
@@ -30,7 +31,7 @@ struct gse::asset_compiler<gse::skeleton> {
     ) -> bool {
         std::filesystem::create_directories(destination.parent_path());
         std::filesystem::copy_file(source, destination, std::filesystem::copy_options::overwrite_existing);
-        std::println("Skeleton compiled: {}", destination.filename().string());
+        log::println(log::category::assets, "Skeleton compiled: {}", destination.filename().string());
         return true;
     }
 

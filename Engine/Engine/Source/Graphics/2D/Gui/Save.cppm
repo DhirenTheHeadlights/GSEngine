@@ -4,6 +4,7 @@ import std;
 import tomlplusplus;
 
 import gse.assert;
+import gse.log;
 import gse.utility;
 
 import :types;
@@ -120,7 +121,7 @@ auto gse::gui::load(const std::filesystem::path& file_path, id_mapped_collection
     try {
         root = toml::parse(content, file_path.string());
     } catch (const toml::parse_error& err) {
-        std::println("TOML parse error in {}: {}", file_path.string(), err.what());
+        log::println(log::level::warning, log::category::save_system, "TOML parse error in {}: {}", file_path.string(), err.what());
         return default_menus;
     }
 

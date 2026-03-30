@@ -10,6 +10,7 @@ export module gse.audio;
 import std;
 
 import gse.assert;
+import gse.log;
 import gse.utility;
 import gse.math;
 import gse.platform;
@@ -78,10 +79,10 @@ struct gse::asset_compiler<gse::audio_clip> {
 		std::error_code ec;
 		std::filesystem::copy_file(source, destination, std::filesystem::copy_options::overwrite_existing, ec);
 		if (ec) {
-			std::println("Warning: Failed to compile audio '{}': {}", source.string(), ec.message());
+			log::println(log::level::warning, log::category::assets, "Failed to compile audio '{}': {}", source.string(), ec.message());
 			return false;
 		}
-		std::println("Audio compiled: {}", destination.filename().string());
+		log::println(log::category::assets, "Audio compiled: {}", destination.filename().string());
 		return true;
 	}
 

@@ -6,6 +6,7 @@ import std;
 export import vulkan;
 
 import gse.assert;
+import gse.log;
 import gse.utility;
 
 export namespace gse::vulkan {
@@ -109,6 +110,7 @@ export namespace gse::vulkan {
 
 	struct buffer_resource_info {
 		vk::Buffer buffer = nullptr;
+		vk::DeviceSize size = 0;
 		allocation allocation;
 	};
 
@@ -116,10 +118,12 @@ export namespace gse::vulkan {
 		buffer_resource() = default;
 		buffer_resource(
 			const vk::Buffer buffer,
-			vulkan::allocation allocation
+			vulkan::allocation allocation,
+			const vk::DeviceSize size
 		) {
 			this->buffer = buffer;
 			this->allocation = std::move(allocation);
+			this->size = size;
 		}
 		~buffer_resource() override;
 		buffer_resource(buffer_resource&& other) noexcept;
@@ -143,7 +147,8 @@ export namespace gse::vulkan {
 			const vk::MemoryRequirements& requirements,
 			vk::MemoryPropertyFlags properties = vk::MemoryPropertyFlagBits::eDeviceLocal,
 			std::string_view tag = "",
-			std::source_location loc = std::source_location::current()
+			std::source_location loc = std::source_location::current(),
+			bool device_address = false
 		) -> std::expected<allocation, std::string>;
 
 		auto create_buffer(
@@ -192,15 +197,21 @@ export namespace gse::vulkan {
 		struct pool_key {
 			std::uint32_t memory_type_index;
 			vk::MemoryPropertyFlags properties;
+			bool device_address = false;
 
 			auto operator==(const pool_key& other) const -> bool {
-				return memory_type_index == other.memory_type_index && properties == other.properties;
+				return memory_type_index == other.memory_type_index
+					&& properties == other.properties
+					&& device_address == other.device_address;
 			}
 		};
 
 		struct pool_key_hash {
 			auto operator()(const pool_key& key) const noexcept -> std::size_t {
-				return std::hash<std::uint32_t>()(key.memory_type_index) ^ std::hash<vk::MemoryPropertyFlags>()(key.properties);
+				const auto memory_hash = std::hash<std::uint32_t>()(key.memory_type_index);
+				const auto props_hash = std::hash<vk::MemoryPropertyFlags>()(key.properties);
+				const auto address_hash = std::hash<bool>()(key.device_address);
+				return memory_hash ^ (props_hash << 1) ^ (address_hash << 2);
 			}
 		};
 
@@ -352,8 +363,10 @@ gse::vulkan::buffer_resource::~buffer_resource() {
 
 gse::vulkan::buffer_resource::buffer_resource(buffer_resource&& other) noexcept {
 	buffer = other.buffer;
+	size = other.size;
 	allocation = std::move(other.allocation);
 	other.buffer = nullptr;
+	other.size = 0;
 }
 
 auto gse::vulkan::buffer_resource::operator=(buffer_resource&& other) noexcept -> buffer_resource& {
@@ -363,8 +376,10 @@ auto gse::vulkan::buffer_resource::operator=(buffer_resource&& other) noexcept -
 		}
 
 		buffer = other.buffer;
+		size = other.size;
 		allocation = std::move(other.allocation);
 		other.buffer = nullptr;
+		other.size = 0;
 	}
 	return *this;
 }
@@ -402,7 +417,7 @@ gse::vulkan::allocator::~allocator() {
 	clean_up();
 }
 
-auto gse::vulkan::allocator::allocate(const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties, const std::string_view tag, const std::source_location loc) -> std::expected<allocation, std::string> {
+auto gse::vulkan::allocator::allocate(const vk::MemoryRequirements& requirements, const vk::MemoryPropertyFlags properties, const std::string_view tag, const std::source_location loc, const bool device_address) -> std::expected<allocation, std::string> {
 	std::lock_guard lock(m_mutex);
 
 	if (m_tracking_enabled) {
@@ -428,7 +443,7 @@ auto gse::vulkan::allocator::allocate(const vk::MemoryRequirements& requirements
 		return std::unexpected{ "Failed to find suitable memory type for allocation!" };
 	}
 
-	auto& [memory_type_index, blocks] = m_pools[{ new_memory_type_index, properties }];
+	auto& [memory_type_index, blocks] = m_pools[{ new_memory_type_index, properties, device_address }];
 	if (blocks.empty()) memory_type_index = new_memory_type_index;
 
 	memory_block* best_block = nullptr;
@@ -497,7 +512,11 @@ auto gse::vulkan::allocator::allocate(const vk::MemoryRequirements& requirements
 	const vk::DeviceSize required_space = aligned_offset + requirements.size;
 	const auto new_block_size = std::max(required_space, k_default_block_size);
 
+	const vk::MemoryAllocateFlagsInfo flags_info{
+		.flags = vk::MemoryAllocateFlagBits::eDeviceAddress
+	};
 	const vk::MemoryAllocateInfo alloc_info{
+		.pNext = device_address ? static_cast<const void*>(&flags_info) : nullptr,
 		.allocationSize = new_block_size,
 		.memoryTypeIndex = new_memory_type_index
 	};
@@ -545,7 +564,18 @@ auto gse::vulkan::allocator::allocate(const vk::MemoryRequirements& requirements
 }
 
 auto gse::vulkan::allocator::create_buffer(const vk::BufferCreateInfo& buffer_info, const void* data, const std::string_view tag, const std::source_location& loc) -> buffer_resource {
-	auto buffer = m_device.createBuffer(buffer_info, nullptr);
+	auto actual_buffer_info = buffer_info;
+	constexpr auto device_addressable_usage =
+		vk::BufferUsageFlagBits::eUniformBuffer
+		| vk::BufferUsageFlagBits::eStorageBuffer
+		| vk::BufferUsageFlagBits::eIndirectBuffer;
+	const bool needs_device_address = static_cast<bool>(actual_buffer_info.usage & device_addressable_usage);
+
+	if (needs_device_address) {
+		actual_buffer_info.usage |= vk::BufferUsageFlagBits::eShaderDeviceAddress;
+	}
+
+	auto buffer = m_device.createBuffer(actual_buffer_info, nullptr);
 	const auto requirements = m_device.getBufferMemoryRequirements(buffer);
 
 	allocation alloc{};
@@ -553,14 +583,14 @@ auto gse::vulkan::allocator::create_buffer(const vk::BufferCreateInfo& buffer_in
 
 	if (data) {
 		constexpr vk::MemoryPropertyFlags required_flags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
-		if (auto expected_alloc = allocate(requirements, required_flags, tag, loc)) {
+		if (auto expected_alloc = allocate(requirements, required_flags, tag, loc, needs_device_address)) {
 			alloc = std::move(*expected_alloc);
 			success = true;
 		}
 	}
 	else {
-		for (const auto property_preferences = memory_flag_preferences(buffer_info.usage); const auto& props : property_preferences) {
-			if (auto expected_alloc = allocate(requirements, props, tag, loc)) {
+		for (const auto property_preferences = memory_flag_preferences(actual_buffer_info.usage); const auto& props : property_preferences) {
+			if (auto expected_alloc = allocate(requirements, props, tag, loc, needs_device_address)) {
 				alloc = std::move(*expected_alloc);
 				success = true;
 				break;
@@ -587,13 +617,13 @@ auto gse::vulkan::allocator::create_buffer(const vk::BufferCreateInfo& buffer_in
 	}
 
 	if (data && alloc.mapped()) {
-		gse::memcpy(alloc.mapped(), data, buffer_info.size);
+		gse::memcpy(alloc.mapped(), data, actual_buffer_info.size);
 	}
 	else if (data && !alloc.mapped()) {
 		assert(false, std::source_location::current(), "Buffer created with data, but the allocated memory is not mappable.");
 	}
 
-	return { buffer, std::move(alloc) };
+	return { buffer, std::move(alloc), actual_buffer_info.size };
 }
 
 auto gse::vulkan::allocator::create_image(const vk::ImageCreateInfo& info, const vk::MemoryPropertyFlags properties, const vk::ImageViewCreateInfo& view_info, const void* data, const std::string_view tag, const std::source_location loc) -> image_resource {
@@ -714,16 +744,17 @@ auto gse::vulkan::allocator::clean_up() -> void {
 	}
 
 	if (leaked_sub_allocations > 0) {
-		std::println("ERROR: {} sub-allocations still in use at allocator cleanup!", leaked_sub_allocations);
-		std::println("This means resources (images/buffers) will be destroyed AFTER their memory is freed!");
-		std::println("Check destruction order - all vulkan::image_resource and vulkan::buffer_resource");
-		std::println("must be destroyed BEFORE the allocator.");
+		log::println(log::level::error, log::category::vulkan_memory, "{} sub-allocations still in use at allocator cleanup!", leaked_sub_allocations);
+		log::println(log::level::error, log::category::vulkan_memory, "Resources are being destroyed after their memory is freed.");
+		log::println(log::level::error, log::category::vulkan_memory, "Destroy all vulkan::image_resource and vulkan::buffer_resource instances before the allocator.");
 
 		if (m_tracking_enabled && !m_live_allocations.empty()) {
-			std::println("\nTracked allocations still alive:");
+			log::println(log::level::error, log::category::vulkan_memory, "Tracked allocations still alive:");
 			for (const auto& [id, debug] : m_live_allocations) {
-				std::println(
-					"  - [{}] '{}' created at {}:{}:{}",
+				log::println(
+					log::level::error,
+					log::category::vulkan_memory,
+					"- [{}] '{}' created at {}:{}:{}",
 					id,
 					debug.tag.empty() ? "(no tag)" : debug.tag,
 					debug.creation_location.file_name(),
@@ -732,7 +763,7 @@ auto gse::vulkan::allocator::clean_up() -> void {
 				);
 			}
 		} else if (!m_tracking_enabled) {
-			std::println("\nEnable 'Vulkan.Track Allocations' setting for detailed allocation info.");
+			log::println(log::level::warning, log::category::vulkan_memory, "Enable 'Vulkan.Track Allocations' for detailed allocation info.");
 		}
 
 		assert(

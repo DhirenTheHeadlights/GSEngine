@@ -4,6 +4,7 @@ import std;
 
 import gse.platform;
 import gse.assert;
+import gse.log;
 
 import :texture;
 
@@ -31,7 +32,7 @@ struct gse::asset_compiler<gse::texture> {
     ) -> bool {
         const auto image_data = image::load(source);
         if (image_data.pixels.empty()) {
-            std::println("Warning: Failed to load texture '{}', skipping.", source.string());
+            log::println(log::level::warning, log::category::assets, "Failed to load texture '{}', skipping", source.string());
             return false;
         }
 
@@ -80,7 +81,7 @@ struct gse::asset_compiler<gse::texture> {
         out_file.write(reinterpret_cast<const char*>(&data_size), sizeof(data_size));
         out_file.write(reinterpret_cast<const char*>(image_data.pixels.data()), data_size);
 
-        std::println("Texture compiled: {}", destination.filename().string());
+        log::println(log::category::assets, "Texture compiled: {}", destination.filename().string());
         return true;
     }
 

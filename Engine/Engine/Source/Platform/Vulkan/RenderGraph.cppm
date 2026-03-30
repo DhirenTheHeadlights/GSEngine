@@ -3,6 +3,9 @@ export module gse.platform:render_graph;
 import std;
 
 import :gpu_types;
+import :gpu_buffer;
+import :gpu_pipeline;
+import :gpu_image;
 import :descriptor_heap;
 
 import gse.assert;
@@ -238,6 +241,42 @@ export namespace gse::vulkan {
 			const gpu::buffer& buf,
 			vk::DeviceSize offset = 0,
 			vk::IndexType index_type = vk::IndexType::eUint32
+		) -> void;
+
+		auto bind(
+			const gpu::pipeline& p
+		) -> void;
+
+		auto bind_descriptors(
+			const gpu::pipeline& p,
+			const descriptor_region& region
+		) -> void;
+
+		auto bind_vertex(
+			const gpu::buffer& buf,
+			std::size_t offset = 0
+		) -> void;
+
+		auto bind_index(
+			const gpu::buffer& buf,
+			gpu::index_type type = gpu::index_type::uint32,
+			std::size_t offset = 0
+		) -> void;
+
+		auto set_viewport(
+			vec2u extent
+		) -> void;
+
+		auto set_scissor(
+			vec2u extent
+		) -> void;
+
+		auto begin_rendering(
+			vec2u extent,
+			const gpu::image* depth = nullptr,
+			gpu::image_layout depth_layout = gpu::image_layout::general,
+			bool clear_depth = true,
+			float clear_depth_value = 1.0f
 		) -> void;
 
 	private:
@@ -494,6 +533,76 @@ auto gse::vulkan::recording_context::push_storage_buffers(const vk::PipelineBind
 	}
 
 	m_cmd.pushDescriptorSetKHR(point, p.native_layout(), set_index, static_cast<std::uint32_t>(writes.size()), writes.data());
+}
+
+auto gse::vulkan::recording_context::bind(const gpu::pipeline& p) -> void {
+	const auto point = p.point() == gpu::bind_point::graphics
+		? vk::PipelineBindPoint::eGraphics
+		: vk::PipelineBindPoint::eCompute;
+	m_cmd.bindPipeline(point, p.native_pipeline());
+}
+
+auto gse::vulkan::recording_context::bind_descriptors(const gpu::pipeline& p, const descriptor_region& region) -> void {
+	assert(region, std::source_location::current(), "Cannot bind null descriptor region");
+	const auto point = p.point() == gpu::bind_point::graphics
+		? vk::PipelineBindPoint::eGraphics
+		: vk::PipelineBindPoint::eCompute;
+	region.heap->bind(m_cmd, point, p.native_layout(), 0, region);
+}
+
+auto gse::vulkan::recording_context::bind_vertex(const gpu::buffer& buf, const std::size_t offset) -> void {
+	const vk::Buffer buffers[]{ buf.native().buffer };
+	const vk::DeviceSize offsets[]{ static_cast<vk::DeviceSize>(offset) };
+	m_cmd.bindVertexBuffers(0, 1, buffers, offsets);
+}
+
+auto gse::vulkan::recording_context::bind_index(const gpu::buffer& buf, const gpu::index_type type, const std::size_t offset) -> void {
+	const auto vk_type = type == gpu::index_type::uint16 ? vk::IndexType::eUint16 : vk::IndexType::eUint32;
+	m_cmd.bindIndexBuffer(buf.native().buffer, static_cast<vk::DeviceSize>(offset), vk_type);
+}
+
+auto gse::vulkan::recording_context::set_viewport(const vec2u extent) -> void {
+	const vk::Viewport vp{
+		.x = 0.0f, .y = 0.0f,
+		.width = static_cast<float>(extent.x()), .height = static_cast<float>(extent.y()),
+		.minDepth = 0.0f, .maxDepth = 1.0f
+	};
+	m_cmd.setViewport(0, vp);
+}
+
+auto gse::vulkan::recording_context::set_scissor(const vec2u extent) -> void {
+	const vk::Rect2D sc{ .offset = { 0, 0 }, .extent = { extent.x(), extent.y() } };
+	m_cmd.setScissor(0, sc);
+}
+
+auto gse::vulkan::recording_context::begin_rendering(const vec2u extent, const gpu::image* depth, const gpu::image_layout depth_layout, const bool clear_depth, const float clear_depth_value) -> void {
+	auto to_vk = [](gpu::image_layout l) -> vk::ImageLayout {
+		switch (l) {
+			case gpu::image_layout::general:          return vk::ImageLayout::eGeneral;
+			case gpu::image_layout::shader_read_only: return vk::ImageLayout::eShaderReadOnlyOptimal;
+			default:                                  return vk::ImageLayout::eUndefined;
+		}
+	};
+
+	std::optional<vk::RenderingAttachmentInfo> depth_att;
+	if (depth) {
+		depth_att = vk::RenderingAttachmentInfo{
+			.imageView = depth->native().view,
+			.imageLayout = to_vk(depth_layout),
+			.loadOp = clear_depth ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad,
+			.storeOp = vk::AttachmentStoreOp::eStore,
+			.clearValue = vk::ClearValue{ .depthStencil = { clear_depth_value, 0 } }
+		};
+	}
+
+	const vk::RenderingInfo ri{
+		.renderArea = { { 0, 0 }, { extent.x(), extent.y() } },
+		.layerCount = 1,
+		.colorAttachmentCount = 0,
+		.pColorAttachments = nullptr,
+		.pDepthAttachment = depth_att ? &*depth_att : nullptr
+	};
+	m_cmd.beginRendering(ri);
 }
 
 auto gse::vulkan::recording_context::bind_vertex_buffer(const gpu::buffer& buf, const vk::DeviceSize offset) -> void {

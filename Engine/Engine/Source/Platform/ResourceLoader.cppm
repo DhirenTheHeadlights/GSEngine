@@ -2,6 +2,7 @@ export module gse.platform:resource_loader;
 
 import std;
 
+import gse.log;
 import gse.utility;
 import gse.assert;
 
@@ -505,7 +506,7 @@ auto gse::resource::loader<R, C>::finalize_reloads() -> void {
 		slot_ptr->version.fetch_add(1, std::memory_order_release);
 		slot_ptr->current_state.store(state::loaded, std::memory_order_release);
 
-		std::println("[Hot Reload] Reloaded resource: {}", slot_ptr->path.filename().string());
+		log::println(log::category::assets, "Hot reload reloaded resource: {}", slot_ptr->path.filename().string());
 	}
 }
 

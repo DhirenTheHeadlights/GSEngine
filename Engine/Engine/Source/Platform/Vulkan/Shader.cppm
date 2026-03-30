@@ -453,7 +453,7 @@ auto gse::shader::load(const gpu::context& context) -> void {
 
 		vk::DescriptorSetLayoutCreateInfo ci{
 			.flags = type == set::binding_type::push
-				? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR
+				? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR | vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT
 				: vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT,
 			.bindingCount = static_cast<uint32_t>(raw_bindings.size()),
 			.pBindings = raw_bindings.data()
@@ -471,7 +471,7 @@ auto gse::shader::load(const gpu::context& context) -> void {
 		if (auto t = static_cast<set::binding_type>(i); !m_layout.sets.contains(t)) {
 			vk::DescriptorSetLayoutCreateInfo ci{
 				.flags = t == set::binding_type::push
-					? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR
+					? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR | vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT
 					: vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT,
 				.bindingCount = 0,
 				.pBindings = nullptr
@@ -683,6 +683,9 @@ auto gse::shader::allocate_descriptors(vulkan::descriptor_heap& heap) const -> v
 	const auto set_layout = layout(persistent_set);
 	const auto size = heap.layout_size(set_layout);
 
+	log::println(log::category::vulkan, "[Descriptor] Allocating region for '{}': layout_size={}, bindings={}",
+		m_info.name, size, persistent_set.bindings.size());
+
 	return heap.allocate(size);
 }
 
@@ -702,11 +705,36 @@ auto gse::shader::write_descriptors(
 		const auto set_layout = layout(s);
 
 		for (const auto& [binding_name, layout_binding, member] : s.bindings) {
+			const bool in_bufs = buffer_infos.contains(binding_name);
+			const bool in_imgs = image_infos.contains(binding_name);
+			const bool in_arrs = image_array_infos.contains(binding_name);
+			if (!in_bufs && !in_imgs && !in_arrs) {
+				log::println(log::level::warning, log::category::vulkan,
+					"[Descriptor] Binding '{}' (binding={}) not provided", binding_name, layout_binding.binding);
+			}
+
 			const auto boff = heap.binding_offset(set_layout, layout_binding.binding);
 
 			if (auto it = buffer_infos.find(binding_name); it != buffer_infos.end()) {
 				const auto& buf_info = it->second;
+				assert(
+					buf_info.range != vk::WholeSize,
+					std::source_location::current(),
+					"Descriptor buffer writes require an explicit range for '{}'",
+					binding_name
+				);
 				const auto buf_addr = heap.buffer_address(buf_info.buffer);
+
+				assert(
+					buf_addr != 0,
+					std::source_location::current(),
+					"Buffer '{}' has zero device address — was it created with eShaderDeviceAddress?",
+					binding_name
+				);
+
+				log::println(log::category::vulkan, "[Descriptor] Write buffer '{}': binding={}, boff={}, addr=0x{:x}, range={}, region=[{}, {}]",
+					binding_name, layout_binding.binding, boff, buf_addr + buf_info.offset, buf_info.range,
+					region.offset, region.size);
 
 				const bool is_uniform = layout_binding.descriptorType == vk::DescriptorType::eUniformBuffer
 					|| layout_binding.descriptorType == vk::DescriptorType::eUniformBufferDynamic;
@@ -738,6 +766,9 @@ auto gse::shader::write_descriptors(
 				const auto& vec = it_arr->second;
 				const auto desc_size = props.combined_image_sampler_descriptor_size;
 
+				log::println(log::category::vulkan, "[Descriptor] Write image array '{}': binding={}, boff={}, count={}, desc_size={}",
+					binding_name, layout_binding.binding, boff, vec.size(), desc_size);
+
 				for (std::size_t i = 0; i < vec.size() && i < layout_binding.descriptorCount; ++i) {
 					const vk::DescriptorImageInfo& img = vec[i];
 					const vk::DescriptorGetInfoEXT get_info{
@@ -751,6 +782,9 @@ auto gse::shader::write_descriptors(
 
 			if (auto it2 = image_infos.find(binding_name); it2 != image_infos.end()) {
 				const vk::DescriptorImageInfo& img = it2->second;
+
+				log::println(log::category::vulkan, "[Descriptor] Write image '{}': binding={}, boff={}, view={}, sampler={}",
+					binding_name, layout_binding.binding, boff, !!img.imageView, !!img.sampler);
 				const vk::DescriptorGetInfoEXT get_info{
 					.type = vk::DescriptorType::eCombinedImageSampler,
 					.data = { .pCombinedImageSampler = &img }
@@ -1136,4 +1170,3 @@ auto gse::shader::push(const vk::CommandBuffer command, const vk::PipelineLayout
         buffer.data()
     );
 }
-

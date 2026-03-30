@@ -8,6 +8,7 @@ import :vulkan_allocator;
 import :descriptor_buffer_types;
 
 import gse.assert;
+import gse.log;
 
 export namespace gse::vulkan {
 	class descriptor_heap;
@@ -99,11 +100,13 @@ export namespace gse::vulkan {
 }
 
 gse::vulkan::descriptor_heap::descriptor_heap(const vk::raii::Device& device, const vk::raii::PhysicalDevice& physical_device, const descriptor_buffer_properties& props, vk::DeviceSize capacity) : m_device(*device), m_capacity(capacity), m_props(props) {
+	vk::BufferUsageFlags descriptor_buffer_usage =
+		vk::BufferUsageFlagBits::eResourceDescriptorBufferEXT
+		| vk::BufferUsageFlagBits::eSamplerDescriptorBufferEXT;
+
 	const vk::BufferCreateInfo buffer_info{
 		.size = capacity,
-		.usage = vk::BufferUsageFlagBits::eResourceDescriptorBufferEXT
-			| vk::BufferUsageFlagBits::eSamplerDescriptorBufferEXT
-			| vk::BufferUsageFlagBits::eShaderDeviceAddress
+		.usage = descriptor_buffer_usage | vk::BufferUsageFlagBits::eShaderDeviceAddress
 	};
 
 	m_buffer = m_device.createBuffer(buffer_info, nullptr);
@@ -146,7 +149,7 @@ gse::vulkan::descriptor_heap::descriptor_heap(const vk::raii::Device& device, co
 	const vk::BufferDeviceAddressInfo addr_info{ .buffer = m_buffer };
 	m_address = m_device.getBufferAddress(addr_info);
 
-	std::println("Descriptor heap created: {} KB, address 0x{:x}", capacity / 1024, m_address);
+	log::println(log::category::vulkan_memory, "Descriptor heap created: {} KB, address 0x{:x}", capacity / 1024, m_address);
 }
 
 gse::vulkan::descriptor_heap::~descriptor_heap() {

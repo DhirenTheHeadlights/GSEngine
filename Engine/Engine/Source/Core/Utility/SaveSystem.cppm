@@ -3,6 +3,7 @@ export module gse.utility:save_system;
 import std;
 import tomlplusplus;
 
+import gse.log;
 import :id;
 import :concepts;
 import :phase_context;
@@ -949,7 +950,7 @@ auto gse::save::category_view::empty() const -> bool {
 auto gse::save::state::do_initialize(initialize_phase&) -> void {
     if (!m_auto_save_path.empty() && std::filesystem::exists(m_auto_save_path)) {
         if (!load_from_file(m_auto_save_path)) {
-            std::println("Failed to load settings from {}", m_auto_save_path.string());
+            log::println(log::level::warning, log::category::save_system, "Failed to load settings from {}", m_auto_save_path.string());
         }
     }
 }
@@ -979,7 +980,7 @@ auto gse::save::state::do_update(update_phase& phase) -> void {
 auto gse::save::state::do_shutdown(shutdown_phase&) -> void {
     if (m_auto_save && !m_auto_save_path.empty()) {
         if (!save_to_file(m_auto_save_path)) {
-            std::println("Failed to save settings to {}", m_auto_save_path.string());
+            log::println(log::level::warning, log::category::save_system, "Failed to save settings to {}", m_auto_save_path.string());
         }
     }
 }
@@ -1146,7 +1147,7 @@ auto gse::save::state::save_to_file(const std::filesystem::path& path) -> bool {
 
 auto gse::save::state::load_from_file(const std::filesystem::path& path) -> bool {
     if (!std::filesystem::exists(path)) {
-        std::println("Settings file does not exist: {}", path.string());
+        log::println(log::level::warning, log::category::save_system, "Settings file does not exist: {}", path.string());
         return false;
     }
 
@@ -1162,7 +1163,7 @@ auto gse::save::state::load_from_file(const std::filesystem::path& path) -> bool
     try {
         m_loaded_toml = toml::parse(content, path.string());
     } catch (const toml::parse_error& err) {
-        std::println("TOML parse error in {}: {}", path.string(), err.what());
+        log::println(log::level::warning, log::category::save_system, "TOML parse error in {}: {}", path.string(), err.what());
         return false;
     }
 
@@ -1281,7 +1282,7 @@ auto gse::save::read_setting_early(const std::filesystem::path& path, const std:
     try {
         root = toml::parse(content, path.string());
     } catch (const toml::parse_error& err) {
-        std::println("TOML parse error (early read) in {}: {}", path.string(), err.what());
+        log::println(log::level::warning, log::category::save_system, "TOML parse error (early read) in {}: {}", path.string(), err.what());
         return std::nullopt;
     }
 

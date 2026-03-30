@@ -62,13 +62,13 @@ auto gse::renderer::cull_compute::system::initialize(initialize_phase& phase, st
 		constexpr vk::DeviceSize frustum_size = sizeof(std::array<vec4f, 6>);
 		s.frustum_buffer[i] = gpu::create_buffer(ctx, {
 			.size = frustum_size,
-			.usage = gpu::buffer_usage::uniform | gpu::buffer_usage::transfer_dst
+			.usage = gpu::buffer_flag::uniform | gpu::buffer_flag::transfer_dst
 		});
 
 		const vk::DeviceSize batch_info_size = geometry_collector::state::max_batches * 2 * s.batch_stride;
 		s.batch_info_buffer[i] = gpu::create_buffer(ctx, {
 			.size = batch_info_size,
-			.usage = gpu::buffer_usage::storage | gpu::buffer_usage::transfer_dst
+			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
 	}
 
@@ -85,15 +85,15 @@ auto gse::renderer::cull_compute::system::initialize(initialize_phase& phase, st
 		};
 
 		const vk::DescriptorBufferInfo instance_info{
-			.buffer = gc->instance_buffer[i].buffer,
+			.buffer = gc->instance_buffer[i].native().buffer,
 			.offset = 0,
-			.range = vk::WholeSize
+			.range = gc->instance_buffer[i].size()
 		};
 
 		const vk::DescriptorBufferInfo batch_info{
 			.buffer = s.batch_info_buffer[i].native().buffer,
 			.offset = 0,
-			.range = vk::WholeSize
+			.range = s.batch_info_buffer[i].size()
 		};
 
 		const std::unordered_map<std::string, vk::DescriptorBufferInfo> shared_infos = {
@@ -104,16 +104,16 @@ auto gse::renderer::cull_compute::system::initialize(initialize_phase& phase, st
 
 		auto normal_infos = shared_infos;
 		normal_infos["indirectCommands"] = {
-			.buffer = gc->normal_indirect_commands_buffer[i].buffer,
+			.buffer = gc->normal_indirect_commands_buffer[i].native().buffer,
 			.offset = 0,
-			.range = vk::WholeSize
+			.range = gc->normal_indirect_commands_buffer[i].size()
 		};
 
 		auto skinned_infos = shared_infos;
 		skinned_infos["indirectCommands"] = {
-			.buffer = gc->skinned_indirect_commands_buffer[i].buffer,
+			.buffer = gc->skinned_indirect_commands_buffer[i].native().buffer,
 			.offset = 0,
-			.range = vk::WholeSize
+			.range = gc->skinned_indirect_commands_buffer[i].size()
 		};
 
 		gpu::write_descriptors(ctx, s.normal_descriptors[i], *s.shader_handle, normal_infos);
@@ -182,10 +182,10 @@ auto gse::renderer::cull_compute::system::render(const render_phase& phase, cons
 			normal_pass.track(s.batch_info_buffer[frame_index].native());
 
 			normal_pass
-				.writes(vulkan::storage(gc->normal_indirect_commands_buffer[frame_index], vk::PipelineStageFlagBits2::eComputeShader))
+				.writes(vulkan::storage(gc->normal_indirect_commands_buffer[frame_index].native(), vk::PipelineStageFlagBits2::eComputeShader))
 				.record([&s, frame_index, batch_count = static_cast<std::uint32_t>(normal_batches.size()), cull_pc = std::move(cull_pc)](vulkan::recording_context& ctx) {
-					ctx.bind_pipeline(vk::PipelineBindPoint::eCompute, s.pipeline);
-					ctx.bind_descriptors(vk::PipelineBindPoint::eCompute, s.pipeline, s.normal_descriptors[frame_index]);
+					ctx.bind(s.pipeline);
+					ctx.bind_descriptors(s.pipeline, s.normal_descriptors[frame_index]);
 					ctx.push(s.pipeline, cull_pc);
 					ctx.dispatch(batch_count, 1, 1);
 				});
@@ -201,10 +201,10 @@ auto gse::renderer::cull_compute::system::render(const render_phase& phase, cons
 
 			skinned_pass
 				.after<skin_compute::state>()
-				.writes(vulkan::storage(gc->skinned_indirect_commands_buffer[frame_index], vk::PipelineStageFlagBits2::eComputeShader))
+				.writes(vulkan::storage(gc->skinned_indirect_commands_buffer[frame_index].native(), vk::PipelineStageFlagBits2::eComputeShader))
 				.record([&s, frame_index, batch_count = static_cast<std::uint32_t>(skinned_batches.size()), cull_pc = std::move(cull_pc)](vulkan::recording_context& ctx) {
-					ctx.bind_pipeline(vk::PipelineBindPoint::eCompute, s.pipeline);
-					ctx.bind_descriptors(vk::PipelineBindPoint::eCompute, s.pipeline, s.skinned_descriptors[frame_index]);
+					ctx.bind(s.pipeline);
+					ctx.bind_descriptors(s.pipeline, s.skinned_descriptors[frame_index]);
 					ctx.push(s.pipeline, cull_pc);
 					ctx.dispatch(batch_count, 1, 1);
 				});
@@ -212,12 +212,12 @@ auto gse::renderer::cull_compute::system::render(const render_phase& phase, cons
 	} else {
 		if (!normal_batches.empty()) {
 			auto normal_upload = graph.add_pass<state>();
-			normal_upload.track(gc->normal_indirect_commands_buffer[frame_index]);
+			normal_upload.track(gc->normal_indirect_commands_buffer[frame_index].native());
 			normal_upload.record([](vulkan::recording_context&) {});
 		}
 		if (!skinned_batches.empty()) {
 			auto skinned_upload = graph.add_pass<state>();
-			skinned_upload.track(gc->skinned_indirect_commands_buffer[frame_index]);
+			skinned_upload.track(gc->skinned_indirect_commands_buffer[frame_index].native());
 			skinned_upload.record([](vulkan::recording_context&) {});
 		}
 	}

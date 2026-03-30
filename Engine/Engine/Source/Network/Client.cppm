@@ -3,6 +3,7 @@ export module gse.network:client;
 import std;
 
 import gse.assert;
+import gse.log;
 import gse.utility;
 import gse.math;
 import gse.platform;
@@ -115,12 +116,12 @@ export namespace gse::network {
 
 gse::network::client::client(const address& listen, const address& server) : m_server(server) {
 	if (!m_socket.bind(listen)) {
-		std::println(std::cerr, "Client: Failed to bind socket to {}:{}", listen.ip, listen.port);
+		log::println(log::level::error, log::category::network, "Client failed to bind socket to {}:{}", listen.ip, listen.port);
 		return;
 	}
 
 	if (const auto local = m_socket.local_address()) {
-		std::println("Client: Bound to local port {}", local->port);
+		log::println(log::category::network, "Client bound to local port {}", local->port);
 	}
 
 	m_running.store(true, std::memory_order_release);
@@ -156,11 +157,11 @@ auto gse::network::client::connect(const time_t<std::uint32_t> timeout, const ti
 	}
 
 	if (!m_socket.valid()) {
-		std::println(std::cerr, "Client: Cannot connect - socket is not valid");
+		log::println(log::level::error, log::category::network, "Client cannot connect because the socket is not valid");
 		return false;
 	}
 
-	std::println("Client: Connecting to {}:{}...", m_server.addr().ip, m_server.addr().port);
+	log::println(log::category::network, "Client connecting to {}:{}...", m_server.addr().ip, m_server.addr().port);
 	send(connection_request{});
 
 	m_state = state::connecting;
@@ -178,7 +179,7 @@ auto gse::network::client::tick() -> void {
 
 	if (current == state::connecting) {
 		if (m_connection_start_clock.elapsed<std::uint32_t>() > m_timeout) {
-			std::println(std::cerr, "Client: Connection timed out");
+			log::println(log::level::warning, log::category::network, "Client connection timed out");
 			m_state = state::disconnected;
 		}
 		else if (m_retry_clock.elapsed<std::uint32_t>() > m_retry) {
@@ -218,7 +219,7 @@ auto gse::network::client::tick() -> void {
 
 		match_message(stream, id)
 			.if_is<connection_accepted>([&](const connection_accepted&) {
-				std::println("Client: Connected to {}:{}", m_server.addr().ip, m_server.addr().port);
+				log::println(log::category::network, "Client connected to {}:{}", m_server.addr().ip, m_server.addr().port);
 				m_state = state::connected;
 				send_ack();
 				{

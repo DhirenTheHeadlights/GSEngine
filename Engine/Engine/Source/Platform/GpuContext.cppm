@@ -11,6 +11,7 @@ import :window;
 import :input_state;
 import :render_graph;
 
+import gse.log;
 import gse.utility;
 import :vulkan_runtime;
 import :vulkan_context;
@@ -371,8 +372,10 @@ auto gse::gpu::context::compile() -> void {
 	m_pipeline.register_compiler_only<gse::shader_layout>();
 
 	if (const auto result = m_pipeline.compile_all(); result.success_count > 0 || result.failure_count > 0) {
-		std::println(
-			"[Asset Pipeline] Compiled {} assets ({} skipped, {} failed)",
+		log::println(
+			result.failure_count > 0 ? log::level::warning : log::level::info,
+			log::category::assets,
+			"Compiled {} assets ({} skipped, {} failed)",
 			result.success_count, result.skipped_count, result.failure_count
 		);
 	}
@@ -386,12 +389,12 @@ auto gse::gpu::context::poll_assets() -> void {
 
 auto gse::gpu::context::enable_hot_reload() -> void {
 	m_pipeline.enable_hot_reload();
-	std::println("[Asset Pipeline] Hot reload enabled");
+	log::println(log::category::assets, "Hot reload enabled");
 }
 
 auto gse::gpu::context::disable_hot_reload() -> void {
 	m_pipeline.disable_hot_reload();
-	std::println("[Asset Pipeline] Hot reload disabled");
+	log::println(log::category::assets, "Hot reload disabled");
 }
 
 auto gse::gpu::context::hot_reload_enabled() const -> bool {
@@ -568,7 +571,7 @@ auto gse::gpu::context::load_layouts() -> void {
 		layout->load(m_runtime->device_config().device);
 
 		const auto& name = layout->name();
-		std::println("[Layouts] Loaded: {}", name);
+		log::println(log::category::assets, "Layout loaded: {}", name);
 		m_shader_layouts[name] = std::move(layout);
 	}
 }

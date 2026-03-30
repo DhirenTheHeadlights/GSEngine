@@ -121,7 +121,7 @@ auto gse::renderer::physics_debug::ensure_vertex_capacity(state& s, gpu::context
 
 	vertex_buffer = gpu::create_buffer(ctx, {
 		.size = max_vertices * sizeof(debug_vertex),
-		.usage = gpu::buffer_usage::vertex
+		.usage = gpu::buffer_flag::vertex
 	});
 }
 
@@ -144,7 +144,7 @@ auto gse::renderer::physics_debug::system::initialize(const initialize_phase& ph
 	for (std::size_t i = 0; i < per_frame_resource<vulkan::descriptor_region>::frames_in_flight; ++i) {
 		s.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx, {
 			.size = camera_ubo.size,
-			.usage = gpu::buffer_usage::uniform
+			.usage = gpu::buffer_flag::uniform
 		});
 
 		s.descriptors[i] = gpu::allocate_descriptors(ctx, *s.shader_handle);
@@ -442,19 +442,16 @@ auto gse::renderer::physics_debug::system::render(const render_phase& phase, con
 	auto pass = ctx.graph().add_pass<state>();
 	pass.track(s.ubo_allocations.at("CameraUBO")[frame_index].native());
 
+	const vec2u ext_size{ ext_w, ext_h };
+
 	pass
 		.color_output_load()
-		.record([&s, frame_index, ext_w, ext_h, vertex_count, vb = vertex_buffer.native().buffer](vulkan::recording_context& ctx) {
-			ctx.bind_pipeline(vk::PipelineBindPoint::eGraphics, s.pipeline);
-
-			ctx.set_viewport(0.0f, 0.0f, static_cast<float>(ext_w), static_cast<float>(ext_h));
-			ctx.set_scissor(0, 0, ext_w, ext_h);
-
-			ctx.bind_descriptors(vk::PipelineBindPoint::eGraphics, s.pipeline, s.descriptors[frame_index]);
-
-			const vk::Buffer vbufs[]{ vb };
-			const vk::DeviceSize voffs[]{ 0 };
-			ctx.bind_vertex_buffers(0, vbufs, voffs);
+		.record([&s, frame_index, ext_size, vertex_count, &vertex_buffer](vulkan::recording_context& ctx) {
+			ctx.bind(s.pipeline);
+			ctx.set_viewport(ext_size);
+			ctx.set_scissor(ext_size);
+			ctx.bind_descriptors(s.pipeline, s.descriptors[frame_index]);
+			ctx.bind_vertex(vertex_buffer);
 			ctx.draw(vertex_count);
 		});
 }

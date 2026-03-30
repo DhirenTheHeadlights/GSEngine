@@ -10,6 +10,7 @@ import gse.platform;
 import gse.physics;
 import gse.math;
 import gse.assert;
+import gse.log;
 
 export namespace gse {
 	class model;
@@ -118,7 +119,13 @@ auto gse::model::load(gpu::context& context) -> void {
 			std::uint64_t meshlet_count;
 			read_val(meshlet_count);
 			if (meshlet_count == 0) {
-				std::println("Warning: model '{}' mesh {} has no meshlets; mesh shader path will skip it", m_baked_model_path.string(), i);
+				log::println(
+					log::level::warning,
+					log::category::render,
+					"Model '{}' mesh {} has no meshlets; mesh shader path will skip it",
+					m_baked_model_path.string(),
+					i
+				);
 			}
 
 			ml.descriptors.resize(meshlet_count);

@@ -12,11 +12,24 @@ import std;
 
 import :vulkan_allocator;
 import gse.assert;
+import gse.log;
 
 import :asset_compiler;
 import :shader;
 
 namespace gse::shader_compile {
+    auto log_diagnostics(slang::IBlob* diagnostics) -> void {
+        if (!diagnostics || diagnostics->getBufferSize() == 0) {
+            return;
+        }
+
+        const std::string message(
+            static_cast<const char*>(diagnostics->getBufferPointer()),
+            diagnostics->getBufferSize()
+        );
+        log::println(log::level::error, log::category::assets, "{}", message);
+    }
+
     auto write_string(std::ofstream& stream, const std::string& str) -> void {
         const auto size = static_cast<std::uint32_t>(str.size());
         stream.write(reinterpret_cast<const char*>(&size), sizeof(size));
@@ -366,7 +379,7 @@ struct gse::asset_compiler<gse::shader> {
 
         Slang::ComPtr<slang::IGlobalSession> global_session;
         if (SLANG_FAILED(createGlobalSession(global_session.writeRef())) || !global_session) {
-            std::println("Failed to create Slang global session");
+            log::println(log::level::error, log::category::assets, "Failed to create Slang global session");
             return false;
         }
 
@@ -398,7 +411,7 @@ struct gse::asset_compiler<gse::shader> {
             };
 
             if (SLANG_FAILED(global_session->createSession(sdesc, session.writeRef())) || !session) {
-                std::println("Failed to create Slang session");
+                log::println(log::level::error, log::category::assets, "Failed to create Slang session");
                 return false;
             }
         }
@@ -407,12 +420,10 @@ struct gse::asset_compiler<gse::shader> {
         Slang::ComPtr<slang::IBlob> diags;
         Slang::ComPtr mod(session->loadModule(source.string().c_str(), diags.writeRef()));
 
-        if (diags && diags->getBufferSize()) {
-            std::fprintf(stderr, "%s", static_cast<const char*>(diags->getBufferPointer()));
-        }
+        log_diagnostics(diags.get());
 
         if (!mod) {
-            std::println("Failed to load shader module: {}", filename);
+            log::println(log::level::error, log::category::assets, "Failed to load shader module: {}", filename);
             return false;
         }
 
@@ -466,9 +477,7 @@ struct gse::asset_compiler<gse::shader> {
 
         Slang::ComPtr<slang::IComponentType> program;
         if (SLANG_FAILED(composed->link(program.writeRef(), diags.writeRef()))) {
-            if (diags && diags->getBufferSize()) {
-                std::fprintf(stderr, "%s", static_cast<const char*>(diags->getBufferPointer()));
-            }
+            log_diagnostics(diags.get());
             return false;
         }
 
@@ -508,7 +517,7 @@ struct gse::asset_compiler<gse::shader> {
             for (const auto& c : candidates) {
                 if (c.empty()) continue;
                 if (!shader_layout_name.empty() && shader_layout_name != c) {
-                    std::println("Mismatched [Layout(...)] across entry points in shader: {}", filename);
+                    log::println(log::level::warning, log::category::assets, "Mismatched [Layout(...)] across entry points in shader: {}", filename);
                     return false;
                 }
                 shader_layout_name = c;
@@ -762,7 +771,7 @@ struct gse::asset_compiler<gse::shader> {
         }
 
         constexpr const char* type_names[] = { "Graphics", "Compute", "Mesh Pipeline" };
-        std::println("Shader compiled: {} ({})", destination.filename().string(), type_names[shader_type]);
+        log::println(log::category::assets, "Shader compiled: {} ({})", destination.filename().string(), type_names[shader_type]);
         return true;
     }
 

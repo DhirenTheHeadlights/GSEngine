@@ -2,6 +2,7 @@ export module gse.platform:asset_pipeline;
 
 import std;
 
+import gse.log;
 import gse.utility;
 
 import :asset_compiler;
@@ -334,12 +335,12 @@ auto gse::asset_pipeline::enable_hot_reload() -> void {
                 }
 
                 if (compile_single(compiler, changed_file)) {
-                    std::println("[Hot Reload] Recompiled: {}", changed_file.filename().string());
+                    log::println(log::category::assets, "Hot reload recompiled: {}", changed_file.filename().string());
                     if (compiler.reload_fn) {
                         compiler.reload_fn(dest);
                     }
                 } else {
-                    std::println("[Hot Reload] Failed to recompile: {}", changed_file.filename().string());
+                    log::println(log::level::warning, log::category::assets, "Hot reload failed to recompile: {}", changed_file.filename().string());
                 }
             },
             compiler.extensions,

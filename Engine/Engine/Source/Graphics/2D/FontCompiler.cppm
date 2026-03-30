@@ -10,6 +10,7 @@ import std;
 
 import gse.platform;
 import gse.assert;
+import gse.log;
 
 import :font;
 
@@ -37,13 +38,13 @@ struct gse::asset_compiler<gse::font> {
     ) -> bool {
         FT_Library ft_lib;
         if (FT_Init_FreeType(&ft_lib)) {
-            std::println(stderr, "Error: Failed to initialize FreeType.");
+            log::println(log::level::error, log::category::assets, "Failed to initialize FreeType");
             return false;
         }
 
         FT_Face ft_face;
         if (FT_New_Face(ft_lib, source.string().c_str(), 0, &ft_face)) {
-            std::println(stderr, "Error: Failed to load font face from '{}'.", source.string());
+            log::println(log::level::error, log::category::assets, "Failed to load font face from '{}'", source.string());
             FT_Done_FreeType(ft_lib);
             return false;
         }
@@ -57,7 +58,7 @@ struct gse::asset_compiler<gse::font> {
         msdfgen::FreetypeHandle* ft_handle = msdfgen::initializeFreetype();
         msdfgen::FontHandle* font_handle = loadFont(ft_handle, source.string().c_str());
         if (!font_handle) {
-            std::println(stderr, "Error: Failed to load font into msdfgen: {}", source.string());
+            log::println(log::level::error, log::category::assets, "Failed to load font into msdfgen: {}", source.string());
             FT_Done_Face(ft_face);
             FT_Done_FreeType(ft_lib);
             return false;
@@ -130,7 +131,7 @@ struct gse::asset_compiler<gse::font> {
         std::filesystem::create_directories(destination.parent_path());
         std::ofstream out_file(destination, std::ios::binary);
         if (!out_file.is_open()) {
-            std::println(stderr, "Error: Failed to open baked font file for writing: {}", destination.string());
+            log::println(log::level::error, log::category::assets, "Failed to open baked font file for writing: {}", destination.string());
             return false;
         }
 
@@ -171,7 +172,7 @@ struct gse::asset_compiler<gse::font> {
             out_file.write(reinterpret_cast<const char*>(&glyph_data), sizeof(glyph_data));
         }
 
-        std::println("Font compiled: {}", destination.filename().string());
+        log::println(log::category::assets, "Font compiled: {}", destination.filename().string());
         return true;
     }
 

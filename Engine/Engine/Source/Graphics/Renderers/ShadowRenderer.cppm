@@ -26,7 +26,7 @@ export namespace gse::renderer::shadow {
 }
 
 auto gse::renderer::shadow::state::shadow_map_view(const std::size_t index) const -> vk::ImageView {
-	return shadow_maps[index].view;
+	return shadow_maps[index].native().view;
 }
 
 auto gse::renderer::shadow::state::point_shadow_cube_view(const std::size_t index) const -> vk::ImageView {
@@ -105,11 +105,11 @@ auto gse::renderer::shadow::system::initialize(initialize_phase& phase, state& s
 	};
 
 	for (auto& img : s.shadow_maps) {
-		img = ctx.allocator().create_image(
-			image_info,
-			vk::MemoryPropertyFlagBits::eDeviceLocal,
-			view_info
-		);
+		img = gpu::create_image(ctx, {
+			.size = s.shadow_extent,
+			.format = gpu::image_format::d32_sfloat,
+			.usage = gpu::image_flag::depth_attachment | gpu::image_flag::sampled
+		});
 	}
 
 	for (auto& cm : s.point_shadow_cubemaps) {
@@ -131,7 +131,7 @@ auto gse::renderer::shadow::system::initialize(initialize_phase& phase, state& s
                     .newLayout = vk::ImageLayout::eGeneral,
                     .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
                     .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-                    .image = img.image,
+                    .image = img.native().image,
                     .subresourceRange = {
                         .aspectMask = vk::ImageAspectFlagBits::eDepth,
                         .baseMipLevel = 0,
@@ -141,7 +141,7 @@ auto gse::renderer::shadow::system::initialize(initialize_phase& phase, state& s
                     }
                 });
 
-                img.current_layout = vk::ImageLayout::eGeneral;
+                img.set_layout(gpu::image_layout::general);
             }
 
             for (auto& cm : s.point_shadow_cubemaps) {
@@ -352,7 +352,7 @@ auto gse::renderer::shadow::system::render(render_phase& phase, const state& s) 
         batches.push_back({
             .draw_list = std::move(draw_list),
             .light_view_proj = proj * view,
-            .depth_view = s.shadow_maps[static_cast<std::size_t>(shadow_index)].view,
+            .depth_view = s.shadow_maps[static_cast<std::size_t>(shadow_index)].native().view,
             .extent = { s.shadow_extent.x(), s.shadow_extent.y() }
         });
     }
@@ -407,10 +407,11 @@ auto gse::renderer::shadow::system::render(render_phase& phase, const state& s) 
 
                 ctx.begin_rendering(rendering_info);
 
-                ctx.bind_pipeline(vk::PipelineBindPoint::eGraphics, s.pipeline);
+                ctx.bind(s.pipeline);
 
-                ctx.set_viewport(0.0f, 0.0f, static_cast<float>(batch.extent.width), static_cast<float>(batch.extent.height));
-                ctx.set_scissor(0, 0, batch.extent.width, batch.extent.height);
+                const vec2u ext{ batch.extent.width, batch.extent.height };
+                ctx.set_viewport(ext);
+                ctx.set_scissor(ext);
 
                 for (const auto& e : batch.draw_list) {
                     auto pc = s.shader_handle->cache_push_block("push_constants");
@@ -419,10 +420,8 @@ auto gse::renderer::shadow::system::render(render_phase& phase, const state& s) 
                     ctx.push(s.pipeline, pc);
 
                     const auto& mesh = e.model->meshes()[e.index];
-                    const vk::Buffer vbufs[]{ mesh.vertex_buffer() };
-                    const vk::DeviceSize voffs[]{ 0 };
-                    ctx.bind_vertex_buffers(0, vbufs, voffs);
-                    ctx.bind_index_buffer(mesh.index_buffer(), 0, vk::IndexType::eUint32);
+                    ctx.bind_vertex(mesh.vertex_gpu_buffer());
+                    ctx.bind_index(mesh.index_gpu_buffer());
                     ctx.draw_indexed(static_cast<std::uint32_t>(mesh.indices().size()));
                 }
 

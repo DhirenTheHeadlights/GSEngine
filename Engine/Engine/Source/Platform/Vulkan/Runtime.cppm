@@ -9,6 +9,7 @@ import :descriptor_heap;
 import :descriptor_buffer_types;
 
 import gse.assert;
+import gse.log;
 
 export namespace gse::vulkan {
 	struct instance_config {
@@ -25,8 +26,18 @@ export namespace gse::vulkan {
     struct device_config {
         vk::raii::PhysicalDevice physical_device;
         vk::raii::Device device;
-        device_config(vk::raii::PhysicalDevice&& physical_device, vk::raii::Device&& device)
-            : physical_device(std::move(physical_device)), device(std::move(device)) {
+        bool device_fault_enabled = false;
+        bool device_fault_vendor_binary_enabled = false;
+        device_config(
+            vk::raii::PhysicalDevice&& physical_device,
+            vk::raii::Device&& device,
+            const bool device_fault_enabled = false,
+            const bool device_fault_vendor_binary_enabled = false
+        )
+            : physical_device(std::move(physical_device)),
+            device(std::move(device)),
+            device_fault_enabled(device_fault_enabled),
+            device_fault_vendor_binary_enabled(device_fault_vendor_binary_enabled) {
         }
         device_config(device_config&&) = default;
         auto operator=(device_config&&) -> device_config & = default;
@@ -181,12 +192,16 @@ export namespace gse::vulkan {
             }
         }
 
+        auto report_device_lost(
+            std::string_view operation
+        ) -> void;
+
         auto swap_chain_generation() const -> std::uint64_t {
             return m_swap_chain_generation;
         }
 
         ~runtime() override {
-            std::println("Destroying Runtime");
+            log::println(log::category::runtime, "Destroying Runtime");
         }
 
         auto add_transient_work(const std::function<std::vector<buffer_resource>(const vk::raii::CommandBuffer&)>& commands) -> void {
@@ -214,7 +229,12 @@ export namespace gse::vulkan {
                 .pCommandBuffers = &*command_buffer
             };
 
-            m_queue.graphics.submit(submit_info, *fence);
+            try {
+                m_queue.graphics.submit(submit_info, *fence);
+            } catch (const vk::DeviceLostError&) {
+                report_device_lost("transient graphics submission");
+                throw;
+            }
 
             m_sync.transient_work_graveyard[m_current_frame].push_back({
                 .command_buffer = std::move(command_buffer),
@@ -226,11 +246,16 @@ export namespace gse::vulkan {
         auto cleanup_finished_frame_resources() -> void {
             for (auto& work : m_sync.transient_work_graveyard[m_current_frame]) {
                 if (*work.fence) {
-                    (void)m_device_data.device.waitForFences(
-                        *work.fence,
-                        vk::True,
-                        std::numeric_limits<std::uint64_t>::max()
-                    );
+                    try {
+                        (void)m_device_data.device.waitForFences(
+                            *work.fence,
+                            vk::True,
+                            std::numeric_limits<std::uint64_t>::max()
+                        );
+                    } catch (const vk::DeviceLostError&) {
+                        report_device_lost("transient fence wait");
+                        throw;
+                    }
                 }
             }
             m_sync.transient_work_graveyard[m_current_frame].clear();
@@ -335,8 +360,89 @@ export namespace gse::vulkan {
         bool m_frame_in_progress = false;
         bool m_mesh_shaders_enabled = false;
         descriptor_buffer_properties m_descriptor_buffer_props;
+        std::atomic<bool> m_device_lost_reported = false;
         std::vector<swap_chain_recreate_callback> m_swap_chain_recreate_callbacks;
     };
+}
+
+auto gse::vulkan::runtime::report_device_lost(const std::string_view operation) -> void {
+    bool expected = false;
+    if (!m_device_lost_reported.compare_exchange_strong(expected, true, std::memory_order_relaxed)) {
+        return;
+    }
+
+    log::println(log::level::error, log::category::vulkan, "Vulkan device lost during {}", operation);
+
+    if (!m_device_data.device_fault_enabled) {
+        log::println(log::level::warning, log::category::vulkan, "VK_EXT_device_fault is unavailable on this device");
+        return;
+    }
+
+    vk::DeviceFaultCountsEXT counts{};
+    if (const auto result = m_device_data.device.getFaultInfoEXT(&counts, nullptr); result != vk::Result::eSuccess) {
+        log::println(log::level::warning, log::category::vulkan, "Failed to query device fault counts: {}", vk::to_string(result));
+        return;
+    }
+
+    std::vector<vk::DeviceFaultAddressInfoEXT> address_infos(counts.addressInfoCount);
+    std::vector<vk::DeviceFaultVendorInfoEXT> vendor_infos(counts.vendorInfoCount);
+    std::vector<std::byte> vendor_binary(
+        m_device_data.device_fault_vendor_binary_enabled ? static_cast<std::size_t>(counts.vendorBinarySize) : 0
+    );
+
+    counts.addressInfoCount = static_cast<std::uint32_t>(address_infos.size());
+    counts.vendorInfoCount = static_cast<std::uint32_t>(vendor_infos.size());
+    counts.vendorBinarySize = static_cast<vk::DeviceSize>(vendor_binary.size());
+
+    vk::DeviceFaultInfoEXT fault_info{
+        .pAddressInfos = address_infos.empty() ? nullptr : address_infos.data(),
+        .pVendorInfos = vendor_infos.empty() ? nullptr : vendor_infos.data(),
+        .pVendorBinaryData = vendor_binary.empty() ? nullptr : vendor_binary.data()
+    };
+
+    if (const auto result = m_device_data.device.getFaultInfoEXT(&counts, &fault_info); result != vk::Result::eSuccess) {
+        log::println(log::level::warning, log::category::vulkan, "Failed to query device fault info: {}", vk::to_string(result));
+        return;
+    }
+
+    const char* description = fault_info.description.data();
+    log::println(
+        log::level::error,
+        log::category::vulkan,
+        "Device fault description: {}",
+        (description && description[0] != '\0') ? std::string_view(description) : std::string_view("(no description)")
+    );
+
+    for (std::size_t i = 0; i < address_infos.size(); ++i) {
+        const auto& address_info = address_infos[i];
+        log::println(
+            log::level::error,
+            log::category::vulkan,
+            "Fault address {}: type={}, reported=0x{:x}, precision=0x{:x}",
+            i,
+            vk::to_string(address_info.addressType),
+            address_info.reportedAddress,
+            address_info.addressPrecision
+        );
+    }
+
+    for (std::size_t i = 0; i < vendor_infos.size(); ++i) {
+        const auto& vendor_info = vendor_infos[i];
+        const char* vendor_description = vendor_info.description.data();
+        log::println(
+            log::level::error,
+            log::category::vulkan,
+            "Vendor fault {}: '{}' code=0x{:x} data=0x{:x}",
+            i,
+            (vendor_description && vendor_description[0] != '\0') ? std::string_view(vendor_description) : std::string_view("(no description)"),
+            vendor_info.vendorFaultCode,
+            vendor_info.vendorFaultData
+        );
+    }
+
+    if (!vendor_binary.empty()) {
+        log::println(log::level::error, log::category::vulkan, "Device fault vendor binary size: {} bytes", vendor_binary.size());
+    }
 }
 
 export namespace gse::vulkan {

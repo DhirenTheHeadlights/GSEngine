@@ -100,12 +100,12 @@ auto gse::renderer::light_culling::rebuild_tile_buffers(state& s) -> void {
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		s.light_index_list_buffers[i] = gpu::create_buffer(*s.ctx, {
 			.size = index_list_size,
-			.usage = gpu::buffer_usage::storage
+			.usage = gpu::buffer_flag::storage
 		});
 
 		s.tile_light_table_buffers[i] = gpu::create_buffer(*s.ctx, {
 			.size = tile_table_size,
-			.usage = gpu::buffer_usage::storage
+			.usage = gpu::buffer_flag::storage
 		});
 
 		const std::unordered_map<std::string, vk::DescriptorBufferInfo> buffer_infos = {
@@ -167,12 +167,12 @@ auto gse::renderer::light_culling::system::initialize(initialize_phase& phase, s
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		s.culling_params_buffers[i] = gpu::create_buffer(ctx, {
 			.size = params_block.size,
-			.usage = gpu::buffer_usage::uniform
+			.usage = gpu::buffer_flag::uniform
 		});
 
 		s.light_buffers[i] = gpu::create_buffer(ctx, {
 			.size = light_block.size,
-			.usage = gpu::buffer_usage::storage
+			.usage = gpu::buffer_flag::storage
 		});
 	}
 
@@ -313,8 +313,8 @@ auto gse::renderer::light_culling::system::render(const render_phase& phase, con
 			vulkan::storage(s.light_index_list_buffers[frame_index].native(), vk::PipelineStageFlagBits2::eComputeShader)
 		)
 		.record([&s, frame_index, tiles](vulkan::recording_context& ctx) {
-			ctx.bind_pipeline(vk::PipelineBindPoint::eCompute, s.pipeline);
-			ctx.bind_descriptors(vk::PipelineBindPoint::eCompute, s.pipeline, s.descriptors[frame_index]);
+			ctx.bind(s.pipeline);
+			ctx.bind_descriptors(s.pipeline, s.descriptors[frame_index]);
 			ctx.dispatch(tiles.x(), tiles.y(), 1);
 		});
 }

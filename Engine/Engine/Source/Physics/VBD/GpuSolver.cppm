@@ -167,7 +167,7 @@ export namespace gse::vbd {
 		}
 
 		auto create_buffers(
-			vulkan::allocator& alloc
+			gpu::context& ctx
 		) -> void;
 
 		auto initialize_compute(
@@ -329,17 +329,17 @@ export namespace gse::vbd {
 
 		std::uint32_t m_warm_start_count = 0;
 
-		vulkan::buffer_resource m_body_buffer;
-		vulkan::buffer_resource m_contact_buffer;
-		vulkan::buffer_resource m_motor_buffer;
-		vulkan::buffer_resource m_color_buffer;
-		vulkan::buffer_resource m_body_contact_map_buffer;
-		vulkan::buffer_resource m_solve_state_buffer;
-		vulkan::buffer_resource m_readback_buffer;
-		vulkan::buffer_resource m_collision_pair_buffer;
-		vulkan::buffer_resource m_collision_state_buffer;
-		vulkan::buffer_resource m_warm_start_buffer;
-		vulkan::buffer_resource m_joint_buffer;
+		gpu::buffer m_body_buffer;
+		gpu::buffer m_contact_buffer;
+		gpu::buffer m_motor_buffer;
+		gpu::buffer m_color_buffer;
+		gpu::buffer m_body_contact_map_buffer;
+		gpu::buffer m_solve_state_buffer;
+		gpu::buffer m_readback_buffer;
+		gpu::buffer m_collision_pair_buffer;
+		gpu::buffer m_collision_state_buffer;
+		gpu::buffer m_warm_start_buffer;
+		gpu::buffer m_joint_buffer;
 
 		struct readback_frame_info {
 			std::uint32_t body_count = 0;
@@ -369,83 +369,84 @@ export namespace gse::vbd {
 	};
 }
 
-auto gse::vbd::gpu_solver::create_buffers(vulkan::allocator& alloc) -> void {
-	constexpr auto usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc;
-	constexpr auto readback_usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst;
+auto gse::vbd::gpu_solver::create_buffers(gpu::context& ctx) -> void {
+	const auto storage_src = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_src;
+	const auto storage_dst = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst;
+	const auto storage_src_dst = storage_src | gpu::buffer_flag::transfer_dst;
 
-	m_body_buffer = alloc.create_buffer({
+	m_body_buffer = gpu::create_buffer(ctx, {
 		.size = max_bodies * m_body_layout.stride,
-		.usage = usage | vk::BufferUsageFlagBits::eTransferDst
-	}, nullptr, "VBD Body Buffer");
+		.usage = storage_src_dst
+	});
 
-	m_contact_buffer = alloc.create_buffer({
+	m_contact_buffer = gpu::create_buffer(ctx, {
 		.size = max_contacts * m_contact_layout.stride,
-		.usage = usage
-	}, nullptr, "VBD Contact Buffer");
+		.usage = storage_src
+	});
 
-	m_motor_buffer = alloc.create_buffer({
+	m_motor_buffer = gpu::create_buffer(ctx, {
 		.size = max_motors * m_motor_layout.stride,
-		.usage = vk::BufferUsageFlagBits::eStorageBuffer
-	}, nullptr, "VBD Motor Buffer");
+		.usage = gpu::buffer_flag::storage
+	});
 
-	const vk::DeviceSize color_buffer_size = max_colors * sizeof(std::uint32_t) * 2 + max_bodies * sizeof(std::uint32_t);
-	m_color_buffer = alloc.create_buffer({
+	const std::size_t color_buffer_size = max_colors * sizeof(std::uint32_t) * 2 + max_bodies * sizeof(std::uint32_t);
+	m_color_buffer = gpu::create_buffer(ctx, {
 		.size = color_buffer_size,
-		.usage = vk::BufferUsageFlagBits::eStorageBuffer
-	}, nullptr, "VBD Color Buffer");
+		.usage = gpu::buffer_flag::storage
+	});
 
-	const vk::DeviceSize map_buffer_size =
+	const std::size_t map_buffer_size =
 		max_bodies * sizeof(std::uint32_t) * 2 +
 		max_contacts * 2 * sizeof(std::uint32_t) +
 		max_bodies * sizeof(std::uint32_t) +
 		max_bodies * sizeof(std::uint32_t) * 2 +
 		max_joints * 2 * sizeof(std::uint32_t);
 
-	m_body_contact_map_buffer = alloc.create_buffer({
+	m_body_contact_map_buffer = gpu::create_buffer(ctx, {
 		.size = map_buffer_size,
-		.usage = vk::BufferUsageFlagBits::eStorageBuffer
-	}, nullptr, "VBD Body Contact Map Buffer");
+		.usage = gpu::buffer_flag::storage
+	});
 
-	m_solve_state_buffer = alloc.create_buffer({
+	m_solve_state_buffer = gpu::create_buffer(ctx, {
 		.size = max_bodies * solve_state_float4s_per_body * sizeof(float) * 4,
-		.usage = vk::BufferUsageFlagBits::eStorageBuffer
-	}, nullptr, "VBD Solve State Buffer");
+		.usage = gpu::buffer_flag::storage
+	});
 
-	const vk::DeviceSize collision_pair_size = sizeof(std::uint32_t) + max_collision_pairs * 2 * sizeof(std::uint32_t);
-	m_collision_pair_buffer = alloc.create_buffer({
+	const std::size_t collision_pair_size = sizeof(std::uint32_t) + max_collision_pairs * 2 * sizeof(std::uint32_t);
+	m_collision_pair_buffer = gpu::create_buffer(ctx, {
 		.size = collision_pair_size,
-		.usage = vk::BufferUsageFlagBits::eStorageBuffer
-	}, nullptr, "VBD Collision Pair Buffer");
+		.usage = gpu::buffer_flag::storage
+	});
 
-	const vk::DeviceSize collision_state_size = collision_state_uints * sizeof(std::uint32_t);
-	m_collision_state_buffer = alloc.create_buffer({
+	const std::size_t collision_state_size = collision_state_uints * sizeof(std::uint32_t);
+	m_collision_state_buffer = gpu::create_buffer(ctx, {
 		.size = collision_state_size,
-		.usage = usage
-	}, nullptr, "VBD Collision State Buffer");
+		.usage = storage_src
+	});
 
-	const vk::DeviceSize warm_start_size = max_contacts * m_warm_start_layout.stride;
-	m_warm_start_buffer = alloc.create_buffer({
-		.size = std::max(warm_start_size, static_cast<vk::DeviceSize>(16)),
-		.usage = vk::BufferUsageFlagBits::eStorageBuffer
-	}, nullptr, "VBD Warm Start Buffer");
+	const std::size_t warm_start_size = max_contacts * m_warm_start_layout.stride;
+	m_warm_start_buffer = gpu::create_buffer(ctx, {
+		.size = std::max<std::size_t>(warm_start_size, 16),
+		.usage = gpu::buffer_flag::storage
+	});
 
-	const vk::DeviceSize joint_buffer_size = max_joints * m_joint_layout.stride;
-	m_joint_buffer = alloc.create_buffer({
-		.size = std::max(joint_buffer_size, static_cast<vk::DeviceSize>(16)),
-		.usage = usage
-	}, nullptr, "VBD Joint Buffer");
+	const std::size_t joint_buffer_size = max_joints * m_joint_layout.stride;
+	m_joint_buffer = gpu::create_buffer(ctx, {
+		.size = std::max<std::size_t>(joint_buffer_size, 16),
+		.usage = storage_src
+	});
 
-	const vk::DeviceSize readback_size =
+	const std::size_t readback_size =
 		max_bodies * m_body_layout.stride +
 		max_contacts * m_contact_layout.stride +
 		collision_state_uints * sizeof(std::uint32_t) +
 		max_joints * m_joint_layout.stride;
 
-	m_readback_buffer = alloc.create_buffer({
+	m_readback_buffer = gpu::create_buffer(ctx, {
 		.size = readback_size,
-		.usage = readback_usage
-	}, nullptr, "VBD Readback Buffer");
-	std::memset(m_readback_buffer.allocation.mapped(), 0, m_readback_buffer.allocation.size());
+		.usage = storage_dst
+	});
+	std::memset(m_readback_buffer.mapped(), 0, m_readback_buffer.size());
 
 	m_buffers_created = true;
 }
@@ -927,22 +928,22 @@ auto gse::vbd::gpu_solver::commit_upload() -> void {
 		}
 	}
 
-	gse::memcpy(m_body_buffer.allocation.mapped(), m_upload_body_data);
-	gse::memcpy(m_motor_buffer.allocation.mapped(), m_upload_motor_data);
-	gse::memcpy(m_color_buffer.allocation.mapped(), m_upload_color_data);
-	gse::memcpy(m_body_contact_map_buffer.allocation.mapped(), m_upload_body_contact_map);
-	gse::memcpy(m_collision_state_buffer.allocation.mapped(), m_upload_collision_state);
+	gse::memcpy(m_body_buffer.mapped(), m_upload_body_data);
+	gse::memcpy(m_motor_buffer.mapped(), m_upload_motor_data);
+	gse::memcpy(m_color_buffer.mapped(), m_upload_color_data);
+	gse::memcpy(m_body_contact_map_buffer.mapped(), m_upload_body_contact_map);
+	gse::memcpy(m_collision_state_buffer.mapped(), m_upload_collision_state);
 
 	if (!m_upload_warm_start_data.empty()) {
 		gse::memcpy(
-			m_warm_start_buffer.allocation.mapped(),
+			m_warm_start_buffer.mapped(),
 			m_upload_warm_start_data
 		);
 	}
 
 	if (!m_upload_joint_data.empty()) {
 		gse::memcpy(
-			m_joint_buffer.allocation.mapped(),
+			m_joint_buffer.mapped(),
 			m_upload_joint_data
 		);
 	}
@@ -963,7 +964,7 @@ auto gse::vbd::gpu_solver::stage_readback() -> void {
 		return;
 	}
 
-	const auto* rb = m_readback_buffer.allocation.mapped();
+	const auto* rb = m_readback_buffer.mapped();
 
 	m_staged_body_count = info.body_count;
 	m_latest_gpu_body_data.assign(rb, rb + info.body_count * m_body_layout.stride);
@@ -1296,7 +1297,7 @@ auto gse::vbd::gpu_solver::initialize_compute(gpu::context& ctx) -> void {
 		m_jo.limit_c0 = o.at("limit_c0");
 	}
 
-	create_buffers(ctx.allocator());
+	create_buffers(ctx);
 
 	m_compute.queue = gpu::create_compute_queue(ctx);
 
@@ -1308,16 +1309,16 @@ auto gse::vbd::gpu_solver::dispatch_compute(gpu::context& ctx) -> void {
 		m_compute.descriptors = gpu::allocate_descriptors(ctx, *m_compute.predict);
 
 		const std::unordered_map<std::string, vk::DescriptorBufferInfo> buffer_infos{
-			{ "bodies",          { .buffer = m_body_buffer.buffer,             .offset = 0, .range = vk::WholeSize } },
-			{ "contacts",        { .buffer = m_contact_buffer.buffer,          .offset = 0, .range = vk::WholeSize } },
-			{ "motors",          { .buffer = m_motor_buffer.buffer,            .offset = 0, .range = vk::WholeSize } },
-			{ "colors",          { .buffer = m_color_buffer.buffer,            .offset = 0, .range = vk::WholeSize } },
-			{ "map",             { .buffer = m_body_contact_map_buffer.buffer, .offset = 0, .range = vk::WholeSize } },
-			{ "solve_data",      { .buffer = m_solve_state_buffer.buffer,      .offset = 0, .range = vk::WholeSize } },
-			{ "collision_pairs", { .buffer = m_collision_pair_buffer.buffer,   .offset = 0, .range = vk::WholeSize } },
-			{ "collision_state", { .buffer = m_collision_state_buffer.buffer,  .offset = 0, .range = vk::WholeSize } },
-			{ "warm_start",      { .buffer = m_warm_start_buffer.buffer,       .offset = 0, .range = vk::WholeSize } },
-			{ "joint_matrix",    { .buffer = m_joint_buffer.buffer,            .offset = 0, .range = vk::WholeSize } }
+			{ "body_data",         { .buffer = m_body_buffer.native().buffer,             .offset = 0, .range = m_body_buffer.size() } },
+			{ "contact_data",      { .buffer = m_contact_buffer.native().buffer,          .offset = 0, .range = m_contact_buffer.size() } },
+			{ "motor_data",        { .buffer = m_motor_buffer.native().buffer,            .offset = 0, .range = m_motor_buffer.size() } },
+			{ "color_data",        { .buffer = m_color_buffer.native().buffer,            .offset = 0, .range = m_color_buffer.size() } },
+			{ "body_contact_map",  { .buffer = m_body_contact_map_buffer.native().buffer, .offset = 0, .range = m_body_contact_map_buffer.size() } },
+			{ "solve_state",       { .buffer = m_solve_state_buffer.native().buffer,      .offset = 0, .range = m_solve_state_buffer.size() } },
+			{ "collision_pairs",   { .buffer = m_collision_pair_buffer.native().buffer,   .offset = 0, .range = m_collision_pair_buffer.size() } },
+			{ "collision_state",   { .buffer = m_collision_state_buffer.native().buffer,  .offset = 0, .range = m_collision_state_buffer.size() } },
+			{ "warm_starts",       { .buffer = m_warm_start_buffer.native().buffer,       .offset = 0, .range = m_warm_start_buffer.size() } },
+			{ "joint_data",        { .buffer = m_joint_buffer.native().buffer,            .offset = 0, .range = m_joint_buffer.size() } }
 		};
 
 		gpu::write_descriptors(ctx, m_compute.descriptors, *m_compute.predict, buffer_infos);
@@ -1459,8 +1460,8 @@ auto gse::vbd::gpu_solver::dispatch_compute(gpu::context& ctx) -> void {
 
 	const vk::DeviceSize body_copy_size = m_body_count * m_body_layout.stride;
 	cmd.copyBuffer(
-		m_body_buffer.buffer,
-		m_readback_buffer.buffer,
+		m_body_buffer.native().buffer,
+		m_readback_buffer.native().buffer,
 		vk::BufferCopy{
 			.srcOffset = 0,
 			.dstOffset = 0,
@@ -1472,8 +1473,8 @@ auto gse::vbd::gpu_solver::dispatch_compute(gpu::context& ctx) -> void {
 	const vk::DeviceSize contact_copy_size = max_contacts * m_contact_layout.stride;
 
 	cmd.copyBuffer(
-		m_contact_buffer.buffer,
-		m_readback_buffer.buffer,
+		m_contact_buffer.native().buffer,
+		m_readback_buffer.native().buffer,
 		vk::BufferCopy{
 			.srcOffset = 0,
 			.dstOffset = contact_dst_base,
@@ -1483,8 +1484,8 @@ auto gse::vbd::gpu_solver::dispatch_compute(gpu::context& ctx) -> void {
 
 	const vk::DeviceSize count_dst = contact_dst_base + contact_copy_size;
 	cmd.copyBuffer(
-		m_collision_state_buffer.buffer,
-		m_readback_buffer.buffer,
+		m_collision_state_buffer.native().buffer,
+		m_readback_buffer.native().buffer,
 		vk::BufferCopy{
 			.srcOffset = 0,
 			.dstOffset = count_dst,
@@ -1496,8 +1497,8 @@ auto gse::vbd::gpu_solver::dispatch_compute(gpu::context& ctx) -> void {
 		const vk::DeviceSize joint_dst = count_dst + collision_state_uints * sizeof(std::uint32_t);
 		const vk::DeviceSize joint_copy_size = m_joint_count * m_joint_layout.stride;
 		cmd.copyBuffer(
-			m_joint_buffer.buffer,
-			m_readback_buffer.buffer,
+			m_joint_buffer.native().buffer,
+			m_readback_buffer.native().buffer,
 			vk::BufferCopy{
 				.srcOffset = 0,
 				.dstOffset = joint_dst,
