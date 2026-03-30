@@ -41,10 +41,7 @@ export namespace gse::renderer::shadow {
 	};
 
 	struct state {
-		gpu::context* ctx = nullptr;
-
-		vk::raii::Pipeline pipeline = nullptr;
-		vk::raii::PipelineLayout pipeline_layout = nullptr;
+		gpu::pipeline pipeline;
 
 		resource::handle<shader> shader_handle;
 
@@ -54,7 +51,6 @@ export namespace gse::renderer::shadow {
 		std::array<vulkan::image_resource, max_shadow_lights> shadow_maps;
 		std::array<cube_map, max_point_shadow_lights> point_shadow_cubemaps;
 
-		explicit state(gpu::context& c) : ctx(std::addressof(c)) {}
 		state() = default;
 
 		auto shadow_map_view(

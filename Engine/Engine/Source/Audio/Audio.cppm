@@ -119,16 +119,13 @@ export namespace gse::audio {
 	};
 
 	struct state {
+		gpu::context* ctx = nullptr;
 		ma_engine engine{};
 		bool engine_initialized = false;
-		gpu::context* ctx = nullptr;
 
 		std::vector<std::unique_ptr<voice_slot>> voices;
 		std::vector<std::uint32_t> free_list;
 		percentage<float> master_vol = percentage<float>::one();
-
-		explicit state(gpu::context& c) : ctx(std::addressof(c)) {}
-		state() = default;
 
 		auto play(
 			const audio_clip& clip,
@@ -344,7 +341,10 @@ auto gse::audio::state::valid_voice(const voice_handle handle) const -> bool {
 		&& voices[handle.index]->generation == handle.generation;
 }
 
-auto gse::audio::system::initialize(const initialize_phase&, state& s) -> void {
+auto gse::audio::system::initialize(const initialize_phase& phase, state& s) -> void {
+	if (phase.try_get<gpu::context>()) {
+		s.ctx = &phase.get<gpu::context>();
+	}
 	const ma_engine_config cfg = ma_engine_config_init();
 	const auto result = ma_engine_init(&cfg, &s.engine);
 	assert(result == MA_SUCCESS, std::source_location::current(), "Failed to initialize audio engine");

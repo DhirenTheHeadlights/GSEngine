@@ -51,7 +51,7 @@ export namespace gse {
 
         mesh(mesh&& other) noexcept;
 
-        auto initialize(vulkan::config& config) -> void;
+        auto initialize(gpu::context& ctx) -> void;
 
         auto bind(vk::CommandBuffer command_buffer) const -> void;
         auto draw(vk::CommandBuffer command_buffer) const -> void;
@@ -125,7 +125,7 @@ gse::mesh::mesh(mesh&& other) noexcept
     other.m_meshlet_bounds_buffer = {};
 }
 
-auto gse::mesh::initialize(vulkan::config& config) -> void {
+auto gse::mesh::initialize(gpu::context& ctx) -> void {
     if (!has_meshlets() && !m_vertices.empty() && !m_indices.empty()) {
         m_meshlets = build_runtime_meshlets(m_vertices, m_indices);
     }
@@ -135,17 +135,17 @@ auto gse::mesh::initialize(vulkan::config& config) -> void {
 
     constexpr auto storage_usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst;
 
-    m_vertex_buffer = config.allocator().create_buffer({
+    m_vertex_buffer = ctx.allocator().create_buffer({
         .size = vertex_buffer_size,
         .usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst
     });
 
-    m_index_buffer = config.allocator().create_buffer({
+    m_index_buffer = ctx.allocator().create_buffer({
         .size = index_buffer_size,
         .usage = vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst
     });
 
-    m_vertex_storage_buffer = config.allocator().create_buffer({
+    m_vertex_storage_buffer = ctx.allocator().create_buffer({
         .size = vertex_buffer_size,
         .usage = storage_usage
     });
@@ -153,34 +153,34 @@ auto gse::mesh::initialize(vulkan::config& config) -> void {
     const bool has_ml = has_meshlets();
 
     if (has_ml) {
-        m_meshlet_descriptor_buffer = config.allocator().create_buffer({
+        m_meshlet_descriptor_buffer = ctx.allocator().create_buffer({
             .size = sizeof(meshlet_descriptor) * m_meshlets.descriptors.size(),
             .usage = storage_usage
         });
 
-        m_meshlet_vertex_buffer = config.allocator().create_buffer({
+        m_meshlet_vertex_buffer = ctx.allocator().create_buffer({
             .size = sizeof(std::uint32_t) * m_meshlets.vertex_indices.size(),
             .usage = storage_usage
         });
 
         const auto tri_size = (m_meshlets.triangles.size() + 3) & ~std::size_t(3);
-        m_meshlet_triangle_buffer = config.allocator().create_buffer({
+        m_meshlet_triangle_buffer = ctx.allocator().create_buffer({
             .size = tri_size,
             .usage = storage_usage
         });
 
-        m_meshlet_bounds_buffer = config.allocator().create_buffer({
+        m_meshlet_bounds_buffer = ctx.allocator().create_buffer({
             .size = sizeof(meshlet_bounds) * m_meshlets.bounds.size(),
             .usage = storage_usage
         });
     }
 
-    config.add_transient_work(
-        [this, &config, vertex_buffer_size, index_buffer_size, has_ml](const vk::raii::CommandBuffer& command_buffer) -> std::vector<vulkan::buffer_resource> {
+    ctx.add_transient_work(
+        [this, &ctx, vertex_buffer_size, index_buffer_size, has_ml](const vk::raii::CommandBuffer& command_buffer) -> std::vector<vulkan::buffer_resource> {
             std::vector<vulkan::buffer_resource> transient;
 
             auto stage_copy = [&](vk::Buffer dst, const void* data, vk::DeviceSize size) {
-                auto staging = config.allocator().create_buffer({
+                auto staging = ctx.allocator().create_buffer({
                     .size = size,
                     .usage = vk::BufferUsageFlagBits::eTransferSrc
                 }, data);

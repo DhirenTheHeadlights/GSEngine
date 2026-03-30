@@ -153,7 +153,7 @@ auto gse::skinned_model::load(gpu::context& context) -> void {
 		this,
 		[](gpu::context& ctx, skinned_model& self) {
 			for (auto& mesh : self.m_meshes) {
-				mesh.initialize(ctx.config());
+				mesh.initialize(ctx);
 			}
 		}
 	);

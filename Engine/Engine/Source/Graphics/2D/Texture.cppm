@@ -121,8 +121,6 @@ auto gse::texture::image_data() const -> const image::data& {
 }
 
 auto gse::texture::create_vulkan_resources(gpu::context& context, const profile texture_profile) -> void {
-	auto& config = context.config();
-
 	const auto width = m_image_data.size.x();
 	const auto height = m_image_data.size.y();
 	const auto channels = m_image_data.channels;
@@ -142,7 +140,7 @@ auto gse::texture::create_vulkan_resources(gpu::context& context, const profile 
 			? vk::Format::eR8Unorm
 			: (use_linear ? vk::Format::eR8G8B8Unorm : vk::Format::eR8G8B8Srgb);
 
-	m_texture_image = config.allocator().create_image(
+	m_texture_image = context.allocator().create_image(
 		vk::ImageCreateInfo{
 			.imageType = vk::ImageType::e2D,
 			.format = format,
@@ -169,10 +167,9 @@ auto gse::texture::create_vulkan_resources(gpu::context& context, const profile 
 		}
 	);
 
-	vulkan::uploader::upload_image_2d(
-		config,
+	context.upload_image_2d(
 		m_texture_image,
-		width, height,
+		{ width, height },
 		m_image_data.pixels.data(),
 		data_size,
 		vk::ImageLayout::eShaderReadOnlyOptimal
@@ -213,7 +210,7 @@ auto gse::texture::create_vulkan_resources(gpu::context& context, const profile 
 		sampler_info.addressModeW = vk::SamplerAddressMode::eClampToEdge;
 		break;
 	}
-	m_texture_sampler = config.device_config().device.createSampler(sampler_info);
+	m_texture_sampler = context.device().createSampler(sampler_info);
 
 	m_image_data.pixels.clear();
 	m_image_data.pixels.shrink_to_fit();

@@ -54,6 +54,7 @@ namespace gse::renderer::physics_debug {
 
 	auto ensure_vertex_capacity(
 		struct state& s,
+		gpu::context& ctx,
 		std::size_t frame_index,
 		std::size_t required_vertex_count
 	) -> void;
@@ -79,22 +80,18 @@ export namespace gse::renderer::physics_debug {
 	};
 
 	struct state {
-		gpu::context* ctx = nullptr;
-
-		vk::raii::Pipeline pipeline = nullptr;
-		vk::raii::PipelineLayout pipeline_layout = nullptr;
-		per_frame_resource<vk::raii::DescriptorSet> descriptor_sets;
+		gpu::pipeline pipeline;
+		per_frame_resource<gpu::descriptor_set> descriptor_sets;
 
 		resource::handle<shader> shader_handle;
 
-		std::unordered_map<std::string, per_frame_resource<vulkan::buffer_resource>> ubo_allocations;
-		per_frame_resource<vulkan::buffer_resource> vertex_buffers;
+		std::unordered_map<std::string, per_frame_resource<gpu::buffer>> ubo_allocations;
+		per_frame_resource<gpu::buffer> vertex_buffers;
 
 		per_frame_resource<std::size_t> max_vertices;
 		bool enabled = true;
 		debug_stats latest_stats;
 
-		explicit state(gpu::context& c) : ctx(std::addressof(c)) {}
 		state() = default;
 	};
 
@@ -105,16 +102,15 @@ export namespace gse::renderer::physics_debug {
 	};
 }
 
-auto gse::renderer::physics_debug::ensure_vertex_capacity(state& s, const std::size_t frame_index, const std::size_t required_vertex_count) -> void {
+auto gse::renderer::physics_debug::ensure_vertex_capacity(state& s, gpu::context& ctx, const std::size_t frame_index, const std::size_t required_vertex_count) -> void {
 	auto& max_vertices = s.max_vertices[frame_index];
 	auto& vertex_buffer = s.vertex_buffers[frame_index];
 
-	if (required_vertex_count <= max_vertices && vertex_buffer.buffer) {
+	if (required_vertex_count <= max_vertices && vertex_buffer) {
 		return;
 	}
 
-	auto& config = s.ctx->config();
-	if (vertex_buffer.buffer) {
+	if (vertex_buffer) {
 		vertex_buffer = {};
 	}
 
@@ -123,20 +119,15 @@ auto gse::renderer::physics_debug::ensure_vertex_capacity(state& s, const std::s
 		max_vertices *= 2;
 	}
 
-	const vk::BufferCreateInfo buffer_info{
+	vertex_buffer = gpu::create_buffer(ctx, {
 		.size = max_vertices * sizeof(debug_vertex),
-		.usage = vk::BufferUsageFlagBits::eVertexBuffer,
-		.sharingMode = vk::SharingMode::eExclusive
-	};
-
-	const std::vector<std::byte> zeros(buffer_info.size);
-	vertex_buffer = config.allocator().create_buffer(
-		buffer_info,
-		zeros.data()
-	);
+		.usage = gpu::buffer_usage::vertex
+	});
 }
 
 auto gse::renderer::physics_debug::system::initialize(const initialize_phase& phase, state& s) -> void {
+	auto& ctx = phase.get<gpu::context>();
+
 	phase.channels.push(save::register_property{
 		.category = "Graphics",
 		.name = "Physics Debug Renderer Enabled",
@@ -145,160 +136,43 @@ auto gse::renderer::physics_debug::system::initialize(const initialize_phase& ph
 		.type = typeid(bool)
 	});
 
-	auto& config = s.ctx->config();
-
-	s.shader_handle = s.ctx->get<shader>("Shaders/Standard3D/physics_debug");
-	s.ctx->instantly_load(s.shader_handle);
-	auto descriptor_set_layouts = s.shader_handle->layouts();
+	s.shader_handle = ctx.get<shader>("Shaders/Standard3D/physics_debug");
+	ctx.instantly_load(s.shader_handle);
 
 	const auto camera_ubo = s.shader_handle->uniform_block("CameraUBO");
 
-	vk::BufferCreateInfo camera_ubo_buffer_info{
-		.size = camera_ubo.size,
-		.usage = vk::BufferUsageFlagBits::eUniformBuffer,
-		.sharingMode = vk::SharingMode::eExclusive
-	};
+	for (std::size_t i = 0; i < per_frame_resource<gpu::descriptor_set>::frames_in_flight; ++i) {
+		s.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx, {
+			.size = camera_ubo.size,
+			.usage = gpu::buffer_usage::uniform
+		});
 
-	for (std::size_t i = 0; i < per_frame_resource<vk::raii::DescriptorSet>::frames_in_flight; ++i) {
-		s.ubo_allocations["CameraUBO"][i] = config.allocator().create_buffer(camera_ubo_buffer_info);
+		s.descriptor_sets[i] = gpu::allocate_descriptor_set(ctx, *s.shader_handle);
 
-		s.descriptor_sets[i] = s.shader_handle->descriptor_set(
-			config.device_config().device,
-			config.descriptor_config().pool,
-			shader::set::binding_type::persistent
-		);
-
-		std::unordered_map<std::string, vk::DescriptorBufferInfo> buffer_infos{
+		const std::unordered_map<std::string, vk::DescriptorBufferInfo> buffer_infos{
 			{
 				"CameraUBO",
 				{
-					.buffer = s.ubo_allocations["CameraUBO"][i].buffer,
+					.buffer = s.ubo_allocations["CameraUBO"][i].native().buffer,
 					.offset = 0,
 					.range = camera_ubo.size
 				}
 			}
 		};
 
-		std::unordered_map<std::string, vk::DescriptorImageInfo> image_infos = {};
-
-		config.device_config().device.updateDescriptorSets(
-			s.shader_handle->descriptor_writes(*s.descriptor_sets[i], buffer_infos, image_infos),
-			nullptr
-		);
+		gpu::update_descriptors(ctx, s.descriptor_sets[i], *s.shader_handle, buffer_infos);
 	}
 
-	const vk::PipelineLayoutCreateInfo pipeline_layout_info{
-		.setLayoutCount = static_cast<std::uint32_t>(descriptor_set_layouts.size()),
-		.pSetLayouts = descriptor_set_layouts.data(),
-		.pushConstantRangeCount = 0,
-		.pPushConstantRanges = nullptr
-	};
-
-	s.pipeline_layout = config.device_config().device.createPipelineLayout(pipeline_layout_info);
-
-	auto shader_stages = s.shader_handle->shader_stages();
-	auto vertex_input_info = s.shader_handle->vertex_input_state();
-
-	constexpr vk::PipelineInputAssemblyStateCreateInfo input_assembly{
-		.topology = vk::PrimitiveTopology::eLineList,
-		.primitiveRestartEnable = vk::False
-	};
-
-	constexpr vk::PipelineRasterizationStateCreateInfo rasterizer{
-		.depthClampEnable = vk::False,
-		.rasterizerDiscardEnable = vk::False,
-		.polygonMode = vk::PolygonMode::eLine,
-		.cullMode = vk::CullModeFlagBits::eNone,
-		.frontFace = vk::FrontFace::eCounterClockwise,
-		.depthBiasEnable = vk::False,
-		.depthBiasConstantFactor = 0.0f,
-		.depthBiasClamp = 0.0f,
-		.depthBiasSlopeFactor = 0.0f,
-		.lineWidth = 1.0f
-	};
-
-	constexpr vk::PipelineDepthStencilStateCreateInfo depth_stencil{
-		.depthTestEnable = vk::False,
-		.depthWriteEnable = vk::False,
-		.depthCompareOp = vk::CompareOp::eLess,
-		.depthBoundsTestEnable = vk::False,
-		.stencilTestEnable = vk::False,
-		.front = {},
-		.back = {},
-		.minDepthBounds = 0.0f,
-		.maxDepthBounds = 1.0f
-	};
-
-	constexpr vk::PipelineMultisampleStateCreateInfo multisampling{
-		.rasterizationSamples = vk::SampleCountFlagBits::e1,
-		.sampleShadingEnable = vk::False,
-		.minSampleShading = 1.0f,
-		.pSampleMask = nullptr,
-		.alphaToCoverageEnable = vk::False,
-		.alphaToOneEnable = vk::False
-	};
-
-	constexpr vk::PipelineColorBlendAttachmentState color_blend_attachment{
-		.blendEnable = vk::True,
-		.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha,
-		.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
-		.colorBlendOp = vk::BlendOp::eAdd,
-		.srcAlphaBlendFactor = vk::BlendFactor::eOne,
-		.dstAlphaBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
-		.alphaBlendOp = vk::BlendOp::eAdd,
-		.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
-	};
-
-	const vk::PipelineColorBlendStateCreateInfo color_blending{
-		.logicOpEnable = vk::False,
-		.logicOp = vk::LogicOp::eCopy,
-		.attachmentCount = 1,
-		.pAttachments = &color_blend_attachment
-	};
-
-	const auto color_format = config.swap_chain_config().surface_format.format;
-
-	const vk::PipelineRenderingCreateInfoKHR rendering_info{
-		.colorAttachmentCount = 1,
-		.pColorAttachmentFormats = &color_format
-	};
-
-	constexpr std::array dynamic_states = {
-		vk::DynamicState::eViewport,
-		vk::DynamicState::eScissor
-	};
-
-	const vk::PipelineDynamicStateCreateInfo dynamic_state{
-		.dynamicStateCount = static_cast<std::uint32_t>(dynamic_states.size()),
-		.pDynamicStates = dynamic_states.data()
-	};
-
-	const vk::PipelineViewportStateCreateInfo viewport_state{
-		.viewportCount = 1,
-		.pViewports = nullptr,
-		.scissorCount = 1,
-		.pScissors = nullptr
-	};
-
-	const vk::GraphicsPipelineCreateInfo pipeline_info{
-		.pNext = &rendering_info,
-		.stageCount = static_cast<std::uint32_t>(shader_stages.size()),
-		.pStages = shader_stages.data(),
-		.pVertexInputState = &vertex_input_info,
-		.pInputAssemblyState = &input_assembly,
-		.pTessellationState = nullptr,
-		.pViewportState = &viewport_state,
-		.pRasterizationState = &rasterizer,
-		.pMultisampleState = &multisampling,
-		.pDepthStencilState = &depth_stencil,
-		.pColorBlendState = &color_blending,
-		.pDynamicState = &dynamic_state,
-		.layout = s.pipeline_layout,
-		.basePipelineHandle = nullptr,
-		.basePipelineIndex = 0
-	};
-
-	s.pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
+	s.pipeline = gpu::create_graphics_pipeline(ctx, *s.shader_handle, {
+		.rasterization = {
+			.polygon = gpu::polygon_mode::line,
+			.cull = gpu::cull_mode::none
+		},
+		.depth = { .test = false, .write = false },
+		.blend = gpu::blend_preset::alpha,
+		.depth_fmt = gpu::depth_format::none,
+		.topology = gpu::topology::line_list
+	});
 }
 
 auto gse::renderer::physics_debug::add_line(const vec3<position>& a, const vec3<position>& b, const vec3f& color, std::vector<debug_vertex>& out_vertices) -> void {
@@ -524,11 +398,13 @@ auto gse::renderer::physics_debug::system::update(const update_phase& phase, sta
 }
 
 auto gse::renderer::physics_debug::system::render(const render_phase& phase, const state& s) -> void {
+	auto& ctx = phase.get<gpu::context>();
+
 	if (!s.enabled) {
 		return;
 	}
 
-	if (!s.ctx->graph().frame_in_progress()) {
+	if (!ctx.graph().frame_in_progress()) {
 		return;
 	}
 
@@ -543,11 +419,11 @@ auto gse::renderer::physics_debug::system::render(const render_phase& phase, con
 	}
 
 	auto& mutable_state = const_cast<state&>(s);
-	const auto frame_index = s.ctx->graph().current_frame();
-	ensure_vertex_capacity(mutable_state, frame_index, verts.size());
+	const auto frame_index = ctx.graph().current_frame();
+	ensure_vertex_capacity(mutable_state, ctx, frame_index, verts.size());
 
 	auto& vertex_buffer = mutable_state.vertex_buffers[frame_index];
-	if (auto* dst = vertex_buffer.allocation.mapped()) {
+	if (auto* dst = vertex_buffer.mapped()) {
 		gse::memcpy(dst, verts);
 	}
 
@@ -555,27 +431,26 @@ auto gse::renderer::physics_debug::system::render(const render_phase& phase, con
 	const auto view_matrix = cam_state ? cam_state->view_matrix : gse::view_matrix{};
 	const auto proj_matrix = cam_state ? cam_state->projection_matrix : projection_matrix{};
 
-	s.shader_handle->set_uniform("CameraUBO.view", view_matrix, s.ubo_allocations.at("CameraUBO")[frame_index].allocation);
-	s.shader_handle->set_uniform("CameraUBO.proj", proj_matrix, s.ubo_allocations.at("CameraUBO")[frame_index].allocation);
+	s.shader_handle->set_uniform("CameraUBO.view", view_matrix, s.ubo_allocations.at("CameraUBO")[frame_index].native().allocation);
+	s.shader_handle->set_uniform("CameraUBO.proj", proj_matrix, s.ubo_allocations.at("CameraUBO")[frame_index].native().allocation);
 
-	const auto ext = s.ctx->graph().extent();
+	const auto ext = ctx.graph().extent();
 	const auto ext_w = ext.x();
 	const auto ext_h = ext.y();
 	const auto vertex_count = static_cast<std::uint32_t>(verts.size());
 
-	auto pass = s.ctx->graph().add_pass<state>();
-	pass.track(s.ubo_allocations.at("CameraUBO")[frame_index]);
+	auto pass = ctx.graph().add_pass<state>();
+	pass.track(s.ubo_allocations.at("CameraUBO")[frame_index].native());
 
 	pass
 		.color_output_load()
-		.record([&s, frame_index, ext_w, ext_h, vertex_count, vb = vertex_buffer.buffer](vulkan::recording_context& ctx) {
+		.record([&s, frame_index, ext_w, ext_h, vertex_count, vb = vertex_buffer.native().buffer](vulkan::recording_context& ctx) {
 			ctx.bind_pipeline(vk::PipelineBindPoint::eGraphics, s.pipeline);
 
 			ctx.set_viewport(0.0f, 0.0f, static_cast<float>(ext_w), static_cast<float>(ext_h));
 			ctx.set_scissor(0, 0, ext_w, ext_h);
 
-			const vk::DescriptorSet sets[]{ **s.descriptor_sets[frame_index] };
-			ctx.bind_descriptor_sets(vk::PipelineBindPoint::eGraphics, s.pipeline_layout, 0, sets);
+			ctx.bind_descriptor_set(vk::PipelineBindPoint::eGraphics, s.pipeline, 0, s.descriptor_sets[frame_index]);
 
 			const vk::Buffer vbufs[]{ vb };
 			const vk::DeviceSize voffs[]{ 0 };

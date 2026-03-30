@@ -2,8 +2,10 @@ export module gse.platform:render_graph;
 
 import std;
 
+import :gpu_types;
+
 import gse.assert;
-import gse.platform.vulkan;
+import :vulkan_config;
 import gse.utility;
 import gse.math;
 
@@ -198,6 +200,48 @@ export namespace gse::vulkan {
 		auto end_rendering(
 		) -> void;
 
+		auto bind_pipeline(
+			vk::PipelineBindPoint point,
+			const gpu::pipeline& p
+		) -> void;
+
+		auto bind_descriptor_set(
+			vk::PipelineBindPoint point,
+			const gpu::pipeline& p,
+			std::uint32_t first_set,
+			const gpu::descriptor_set& set
+		) -> void;
+
+		auto push(
+			const gpu::pipeline& p,
+			const cached_push_constants& cache
+		) -> void;
+
+		auto draw_indirect(
+			const gpu::buffer& buf,
+			vk::DeviceSize offset,
+			std::uint32_t draw_count,
+			std::uint32_t stride
+		) -> void;
+
+		auto push_storage_buffers(
+			vk::PipelineBindPoint point,
+			const gpu::pipeline& p,
+			std::uint32_t set_index,
+			std::span<const gpu::descriptor_buffer_binding> bindings
+		) -> void;
+
+		auto bind_vertex_buffer(
+			const gpu::buffer& buf,
+			vk::DeviceSize offset = 0
+		) -> void;
+
+		auto bind_index_buffer(
+			const gpu::buffer& buf,
+			vk::DeviceSize offset = 0,
+			vk::IndexType index_type = vk::IndexType::eUint32
+		) -> void;
+
 	private:
 		friend class render_graph;
 		vk::CommandBuffer m_cmd;
@@ -225,6 +269,10 @@ export namespace gse::vulkan {
 
 		auto track(
 			const buffer_resource& buf
+		) -> pass_builder&;
+
+		auto track(
+			const gpu::buffer& buf
 		) -> pass_builder&;
 
 		template <typename... Args>
@@ -406,6 +454,59 @@ auto gse::vulkan::recording_context::end_rendering() -> void {
 	m_cmd.endRendering();
 }
 
+auto gse::vulkan::recording_context::bind_pipeline(const vk::PipelineBindPoint point, const gpu::pipeline& p) -> void {
+	m_cmd.bindPipeline(point, p.native_pipeline());
+}
+
+auto gse::vulkan::recording_context::bind_descriptor_set(const vk::PipelineBindPoint point, const gpu::pipeline& p, const std::uint32_t first_set, const gpu::descriptor_set& set) -> void {
+	const vk::DescriptorSet native_set = set.native();
+	m_cmd.bindDescriptorSets(point, p.native_layout(), first_set, 1, &native_set, 0, nullptr);
+}
+
+auto gse::vulkan::recording_context::push(const gpu::pipeline& p, const cached_push_constants& cache) -> void {
+	cache.replay(m_cmd, p.native_layout());
+}
+
+auto gse::vulkan::recording_context::draw_indirect(const gpu::buffer& buf, const vk::DeviceSize offset, const std::uint32_t draw_count, const std::uint32_t stride) -> void {
+	m_cmd.drawIndexedIndirect(buf.native().buffer, offset, draw_count, stride);
+}
+
+auto gse::vulkan::recording_context::push_storage_buffers(const vk::PipelineBindPoint point, const gpu::pipeline& p, const std::uint32_t set_index, const std::span<const gpu::descriptor_buffer_binding> bindings) -> void {
+	std::vector<vk::DescriptorBufferInfo> buffer_infos;
+	std::vector<vk::WriteDescriptorSet> writes;
+	buffer_infos.reserve(bindings.size());
+	writes.reserve(bindings.size());
+
+	for (const auto& b : bindings) {
+		buffer_infos.push_back({
+			.buffer = b.buf->native().buffer,
+			.offset = b.offset,
+			.range = b.range == 0 ? b.buf->size() : b.range
+		});
+	}
+
+	for (std::size_t i = 0; i < bindings.size(); ++i) {
+		writes.push_back({
+			.dstBinding = bindings[i].binding,
+			.descriptorCount = 1,
+			.descriptorType = vk::DescriptorType::eStorageBuffer,
+			.pBufferInfo = &buffer_infos[i]
+		});
+	}
+
+	m_cmd.pushDescriptorSetKHR(point, p.native_layout(), set_index, static_cast<std::uint32_t>(writes.size()), writes.data());
+}
+
+auto gse::vulkan::recording_context::bind_vertex_buffer(const gpu::buffer& buf, const vk::DeviceSize offset) -> void {
+	const vk::Buffer buffers[]{ buf.native().buffer };
+	const vk::DeviceSize offsets[]{ offset };
+	m_cmd.bindVertexBuffers(0, 1, buffers, offsets);
+}
+
+auto gse::vulkan::recording_context::bind_index_buffer(const gpu::buffer& buf, const vk::DeviceSize offset, const vk::IndexType index_type) -> void {
+	m_cmd.bindIndexBuffer(buf.native().buffer, offset, index_type);
+}
+
 auto gse::vulkan::sampled(const image_resource& img, vk::PipelineStageFlags2 stage) -> resource_usage {
 	return { { .ptr = std::addressof(img), .type = resource_type::image }, stage, vk::AccessFlagBits2::eShaderSampledRead };
 }
@@ -442,6 +543,11 @@ gse::vulkan::pass_builder::~pass_builder() {
 
 auto gse::vulkan::pass_builder::track(const buffer_resource& buf) -> pass_builder& {
 	add_tracked(std::addressof(buf));
+	return *this;
+}
+
+auto gse::vulkan::pass_builder::track(const gpu::buffer& buf) -> pass_builder& {
+	add_tracked(std::addressof(buf.native()));
 	return *this;
 }
 

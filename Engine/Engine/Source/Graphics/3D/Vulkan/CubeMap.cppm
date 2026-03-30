@@ -9,12 +9,12 @@ export namespace gse {
     class cube_map {
     public:
         auto create(
-            vulkan::config& config, 
+            gpu::context& ctx, 
             const std::array<std::filesystem::path, 6>& face_paths
         ) -> void;
 
         auto create(
-            vulkan::config& config,
+            gpu::context& ctx,
             int resolution, 
             bool depth_only = false
         ) -> void;
@@ -42,7 +42,7 @@ export namespace gse {
     };
 }
 
-auto gse::cube_map::create(vulkan::config& config, const std::array<std::filesystem::path, 6>& face_paths) -> void {
+auto gse::cube_map::create(gpu::context& ctx, const std::array<std::filesystem::path, 6>& face_paths) -> void {
     const auto faces = image::load_cube_faces(face_paths);
 
     const vk::ImageCreateInfo image_info{
@@ -78,15 +78,13 @@ auto gse::cube_map::create(vulkan::config& config, const std::array<std::filesys
         }
     };
 
-    m_image_resource = config.allocator().create_image(
+    m_image_resource = ctx.allocator().create_image(
         image_info, vk::MemoryPropertyFlagBits::eDeviceLocal, view_info
     );
 
-    vulkan::uploader::upload_image_layers(
-        config,
+    ctx.upload_image_layers(
         m_image_resource,
-        faces[0].size.x(),
-        faces[0].size.y(),
+        faces[0].size,
         reinterpret_cast<const std::vector<const void*>&>(faces),
         faces[0].size_bytes(),
         vk::ImageLayout::eShaderReadOnlyOptimal
@@ -111,11 +109,11 @@ auto gse::cube_map::create(vulkan::config& config, const std::array<std::filesys
         .unnormalizedCoordinates = vk::False
     };
      
-    m_sampler = config.device_config().device.createSampler(sampler_info);
+    m_sampler = ctx.device().createSampler(sampler_info);
     m_initialized = true;
 }
 
-auto gse::cube_map::create(vulkan::config& config, const int resolution, const bool depth_only) -> void {
+auto gse::cube_map::create(gpu::context& ctx, const int resolution, const bool depth_only) -> void {
     m_resolution = resolution;
     m_depth_only = depth_only;
 
@@ -159,7 +157,7 @@ auto gse::cube_map::create(vulkan::config& config, const int resolution, const b
         }
     };
 
-    m_image_resource = config.allocator().create_image(
+    m_image_resource = ctx.allocator().create_image(
         image_info, vk::MemoryPropertyFlagBits::eDeviceLocal, view_info
     );
 
@@ -182,7 +180,7 @@ auto gse::cube_map::create(vulkan::config& config, const int resolution, const b
                 .layerCount = 1
             }
         };
-        m_face_views.push_back(config.device_config().device.createImageView(face_view_info));
+        m_face_views.push_back(ctx.device().createImageView(face_view_info));
     }
 
     constexpr vk::SamplerCreateInfo sampler_info{
@@ -204,7 +202,7 @@ auto gse::cube_map::create(vulkan::config& config, const int resolution, const b
         .unnormalizedCoordinates = vk::False
     };
 
-    m_sampler = config.device_config().device.createSampler(sampler_info);
+    m_sampler = ctx.device().createSampler(sampler_info);
     m_initialized = true;
 }
 

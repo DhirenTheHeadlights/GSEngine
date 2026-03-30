@@ -105,25 +105,20 @@ namespace gse::renderer::ui {
 
 export namespace gse::renderer::ui {
 	struct frame_resources {
-		vulkan::buffer_resource vertex_buffer;
-		vulkan::buffer_resource index_buffer;
+		gpu::buffer vertex_buffer;
+		gpu::buffer index_buffer;
 	};
 
 	struct state {
-		gpu::context* ctx = nullptr;
-
-		vk::raii::Pipeline sprite_pipeline = nullptr;
-		vk::raii::PipelineLayout sprite_pipeline_layout = nullptr;
+		gpu::pipeline sprite_pipeline;
 		resource::handle<shader> sprite_shader;
 
-		vk::raii::Pipeline text_pipeline = nullptr;
-		vk::raii::PipelineLayout text_pipeline_layout = nullptr;
+		gpu::pipeline text_pipeline;
 		resource::handle<shader> text_shader;
 
 		std::array<frame_resources, frames_in_flight> resources;
 		triple_buffer<frame_data> data;
 
-		explicit state(gpu::context& c) : ctx(std::addressof(c)) {}
 		state() = default;
 	};
 
@@ -238,163 +233,44 @@ auto gse::renderer::ui::add_text_quads(std::vector<vertex>& vertices, std::vecto
 	}
 }
 
-auto gse::renderer::ui::system::initialize(initialize_phase&, state& s) -> void {
-	auto& config = s.ctx->config();
+auto gse::renderer::ui::system::initialize(initialize_phase& phase, state& s) -> void {
+	auto& ctx = phase.get<gpu::context>();
 
-	constexpr vk::PipelineInputAssemblyStateCreateInfo input_assembly{
-		.topology = vk::PrimitiveTopology::eTriangleList
-	};
+	s.sprite_shader = ctx.get<shader>("Shaders/Standard2D/sprite");
+	ctx.instantly_load(s.sprite_shader);
 
-	const vk::PipelineViewportStateCreateInfo viewport_state{
-		.viewportCount = 1,
-		.pViewports = nullptr,
-		.scissorCount = 1,
-		.pScissors = nullptr
-	};
+	s.sprite_pipeline = gpu::create_graphics_pipeline(ctx, *s.sprite_shader, {
+		.rasterization = { .cull = gpu::cull_mode::none },
+		.depth = { .test = false, .write = false },
+		.blend = gpu::blend_preset::alpha_premultiplied,
+		.depth_fmt = gpu::depth_format::none,
+		.push_constant_block = "push_constants"
+	});
 
-	constexpr vk::PipelineRasterizationStateCreateInfo rasterizer{
-		.polygonMode = vk::PolygonMode::eFill,
-		.cullMode = vk::CullModeFlagBits::eNone,
-		.frontFace = vk::FrontFace::eCounterClockwise,
-		.lineWidth = 1.0f
-	};
+	s.text_shader = ctx.get<shader>("Shaders/Standard2D/msdf");
+	ctx.instantly_load(s.text_shader);
 
-	constexpr vk::PipelineMultisampleStateCreateInfo multisampling{
-		.rasterizationSamples = vk::SampleCountFlagBits::e1
-	};
-
-	constexpr vk::PipelineColorBlendAttachmentState color_blend_attachment{
-		.blendEnable = vk::True,
-		.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha,
-		.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
-		.colorBlendOp = vk::BlendOp::eAdd,
-		.srcAlphaBlendFactor = vk::BlendFactor::eOne,
-		.dstAlphaBlendFactor = vk::BlendFactor::eZero,
-		.alphaBlendOp = vk::BlendOp::eAdd,
-		.colorWriteMask = vk::ColorComponentFlagBits::eR |
-		                  vk::ColorComponentFlagBits::eG |
-		                  vk::ColorComponentFlagBits::eB |
-		                  vk::ColorComponentFlagBits::eA
-	};
-
-	const vk::PipelineColorBlendStateCreateInfo color_blending{
-		.attachmentCount = 1,
-		.pAttachments = &color_blend_attachment
-	};
-
-	constexpr vk::PipelineDepthStencilStateCreateInfo depth_stencil_state{
-		.depthTestEnable = vk::False,
-		.depthWriteEnable = vk::False,
-		.depthCompareOp = vk::CompareOp::eLess,
-		.stencilTestEnable = vk::False
-	};
-
-	constexpr std::array dynamic_states = {
-		vk::DynamicState::eViewport,
-		vk::DynamicState::eScissor
-	};
-
-	const vk::PipelineDynamicStateCreateInfo dynamic_state_info{
-		.dynamicStateCount = static_cast<std::uint32_t>(dynamic_states.size()),
-		.pDynamicStates = dynamic_states.data()
-	};
-
-	const vk::Format color_format = config.swap_chain_config().surface_format.format;
-
-	const vk::PipelineRenderingCreateInfoKHR pipeline_rendering_info{
-		.colorAttachmentCount = 1,
-		.pColorAttachmentFormats = &color_format
-	};
-
-	s.sprite_shader = s.ctx->get<shader>("Shaders/Standard2D/sprite");
-	s.ctx->instantly_load(s.sprite_shader);
-
-	{
-		const auto& dsl = s.sprite_shader->layouts();
-		const auto pc_range = s.sprite_shader->push_constant_range("push_constants");
-
-		const vk::PipelineLayoutCreateInfo layout_info{
-			.setLayoutCount = static_cast<std::uint32_t>(dsl.size()),
-			.pSetLayouts = dsl.data(),
-			.pushConstantRangeCount = 1,
-			.pPushConstantRanges = &pc_range
-		};
-
-		s.sprite_pipeline_layout = config.device_config().device.createPipelineLayout(layout_info);
-
-		const auto vertex_input_info = s.sprite_shader->vertex_input_state();
-
-		vk::GraphicsPipelineCreateInfo pipeline_info{
-			.pNext = &pipeline_rendering_info,
-			.stageCount = 2,
-			.pStages = s.sprite_shader->shader_stages().data(),
-			.pVertexInputState = &vertex_input_info,
-			.pInputAssemblyState = &input_assembly,
-			.pViewportState = &viewport_state,
-			.pRasterizationState = &rasterizer,
-			.pMultisampleState = &multisampling,
-			.pDepthStencilState = &depth_stencil_state,
-			.pColorBlendState = &color_blending,
-			.pDynamicState = &dynamic_state_info,
-			.layout = *s.sprite_pipeline_layout
-		};
-
-		s.sprite_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
-	}
-
-	s.text_shader = s.ctx->get<shader>("Shaders/Standard2D/msdf");
-	s.ctx->instantly_load(s.text_shader);
-
-	{
-		const auto& dsl = s.text_shader->layouts();
-		const auto pc_range = s.text_shader->push_constant_range("push_constants");
-
-		const vk::PipelineLayoutCreateInfo layout_info{
-			.setLayoutCount = static_cast<std::uint32_t>(dsl.size()),
-			.pSetLayouts = dsl.data(),
-			.pushConstantRangeCount = 1,
-			.pPushConstantRanges = &pc_range
-		};
-
-		s.text_pipeline_layout = config.device_config().device.createPipelineLayout(layout_info);
-
-		const auto vertex_input_info = s.text_shader->vertex_input_state();
-
-		vk::GraphicsPipelineCreateInfo pipeline_info{
-			.pNext = &pipeline_rendering_info,
-			.stageCount = 2,
-			.pStages = s.text_shader->shader_stages().data(),
-			.pVertexInputState = &vertex_input_info,
-			.pInputAssemblyState = &input_assembly,
-			.pViewportState = &viewport_state,
-			.pRasterizationState = &rasterizer,
-			.pMultisampleState = &multisampling,
-			.pDepthStencilState = &depth_stencil_state,
-			.pColorBlendState = &color_blending,
-			.pDynamicState = &dynamic_state_info,
-			.layout = *s.text_pipeline_layout
-		};
-
-		s.text_pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
-	}
+	s.text_pipeline = gpu::create_graphics_pipeline(ctx, *s.text_shader, {
+		.rasterization = { .cull = gpu::cull_mode::none },
+		.depth = { .test = false, .write = false },
+		.blend = gpu::blend_preset::alpha_premultiplied,
+		.depth_fmt = gpu::depth_format::none,
+		.push_constant_block = "push_constants"
+	});
 
 	constexpr std::size_t vertex_buffer_size = max_vertices * sizeof(vertex);
 	constexpr std::size_t index_buffer_size = max_indices * sizeof(std::uint32_t);
 
 	for (auto& [vertex_buffer, index_buffer] : s.resources) {
-		vertex_buffer = config.allocator().create_buffer(
-			{
-				.size = vertex_buffer_size,
-				.usage = vk::BufferUsageFlagBits::eVertexBuffer
-			}
-		);
+		vertex_buffer = gpu::create_buffer(ctx, {
+			.size = vertex_buffer_size,
+			.usage = gpu::buffer_usage::vertex
+		});
 
-		index_buffer = config.allocator().create_buffer(
-			{
-				.size = index_buffer_size,
-				.usage = vk::BufferUsageFlagBits::eIndexBuffer
-			}
-		);
+		index_buffer = gpu::create_buffer(ctx, {
+			.size = index_buffer_size,
+			.usage = gpu::buffer_usage::index
+		});
 	}
 
 	auto& [vertices, indices, batches] = s.data.write();
@@ -536,8 +412,10 @@ auto gse::renderer::ui::system::update(const update_phase& phase, state& s) -> v
 	s.data.publish();
 }
 
-auto gse::renderer::ui::system::render(render_phase&, const state& s) -> void {
-	if (!s.ctx->graph().frame_in_progress()) {
+auto gse::renderer::ui::system::render(render_phase& phase, const state& s) -> void {
+	auto& ctx = phase.get<gpu::context>();
+
+	if (!ctx.graph().frame_in_progress()) {
 		return;
 	}
 
@@ -546,13 +424,13 @@ auto gse::renderer::ui::system::render(render_phase&, const state& s) -> void {
 	if (batches.empty()) {
 		return;
 	}
-	const auto frame_index = s.ctx->graph().current_frame();
+	const auto frame_index = ctx.graph().current_frame();
 	auto& [vertex_buffer, index_buffer] = s.resources[frame_index];
 
-	gse::memcpy(vertex_buffer.allocation.mapped(), vertices);
-	gse::memcpy(index_buffer.allocation.mapped(), indices);
+	gse::memcpy(vertex_buffer.mapped(), vertices);
+	gse::memcpy(index_buffer.mapped(), indices);
 
-	const auto ext = s.ctx->graph().extent();
+	const auto ext = ctx.graph().extent();
 	const auto width = ext.x();
 	const auto height = ext.y();
 	const vec2f window_size = { static_cast<float>(width), static_cast<float>(height) };
@@ -575,16 +453,16 @@ auto gse::renderer::ui::system::render(render_phase&, const state& s) -> void {
 	const auto sprite_binding = s.sprite_shader->binding("spriteTexture");
 	const auto text_binding = s.text_shader->binding("spriteTexture");
 
-	auto pass = s.ctx->graph().add_pass<ui::state>();
-	pass.track(vertex_buffer);
-	pass.track(index_buffer);
+	auto pass = ctx.graph().add_pass<ui::state>();
+	pass.track(vertex_buffer.native());
+	pass.track(index_buffer.native());
 
 	pass
 		.color_output_load()
 		.record([&s, &batches, frame_index, width, height, window_size,
 			sprite_pc = std::move(sprite_pc), text_pc = std::move(text_pc),
 			sprite_binding, text_binding,
-			vb = vertex_buffer.buffer, ib = index_buffer.buffer](vulkan::recording_context& ctx) {
+			vb = vertex_buffer.native().buffer, ib = index_buffer.native().buffer](vulkan::recording_context& ctx) {
 
 			const vk::Buffer vbufs[]{ vb };
 			const vk::DeviceSize voffs[]{ 0 };
@@ -606,11 +484,11 @@ auto gse::renderer::ui::system::render(render_phase&, const state& s) -> void {
 
 				if (first_batch || type != bound_type) {
 					if (type == command_type::sprite) {
-						ctx.bind_pipeline(vk::PipelineBindPoint::eGraphics, *s.sprite_pipeline);
-						ctx.push(sprite_pc, *s.sprite_pipeline_layout);
+						ctx.bind_pipeline(vk::PipelineBindPoint::eGraphics, s.sprite_pipeline);
+						ctx.push(s.sprite_pipeline, sprite_pc);
 					} else {
-						ctx.bind_pipeline(vk::PipelineBindPoint::eGraphics, *s.text_pipeline);
-						ctx.push(text_pc, *s.text_pipeline_layout);
+						ctx.bind_pipeline(vk::PipelineBindPoint::eGraphics, s.text_pipeline);
+						ctx.push(s.text_pipeline, text_pc);
 					}
 					bound_type = type;
 					bound_texture = {};
@@ -627,7 +505,7 @@ auto gse::renderer::ui::system::render(render_phase&, const state& s) -> void {
 							.descriptorType = sprite_binding->descriptorType,
 							.pImageInfo = &info
 						};
-						ctx.push_descriptor(vk::PipelineBindPoint::eGraphics, *s.sprite_pipeline_layout, 1, std::span(&write, 1));
+						ctx.push_descriptor(vk::PipelineBindPoint::eGraphics, s.sprite_pipeline.native_layout(), 1, std::span(&write, 1));
 						bound_texture = texture;
 					}
 				} else {
@@ -639,7 +517,7 @@ auto gse::renderer::ui::system::render(render_phase&, const state& s) -> void {
 							.descriptorType = text_binding->descriptorType,
 							.pImageInfo = &info
 						};
-						ctx.push_descriptor(vk::PipelineBindPoint::eGraphics, *s.text_pipeline_layout, 1, std::span(&write, 1));
+						ctx.push_descriptor(vk::PipelineBindPoint::eGraphics, s.text_pipeline.native_layout(), 1, std::span(&write, 1));
 						bound_font = font;
 					}
 				}

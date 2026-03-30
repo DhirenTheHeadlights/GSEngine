@@ -29,7 +29,7 @@ export namespace gse {
 
         skinned_mesh(skinned_mesh&& other) noexcept;
 
-        auto initialize(vulkan::config& config) -> void;
+        auto initialize(gpu::context& ctx) -> void;
 
         auto bind(vk::CommandBuffer command_buffer) const -> void;
         auto draw(vk::CommandBuffer command_buffer) const -> void;
@@ -62,7 +62,7 @@ gse::skinned_mesh::skinned_mesh(skinned_mesh&& other) noexcept
     other.m_index_buffer = {};
 }
 
-auto gse::skinned_mesh::initialize(vulkan::config& config) -> void {
+auto gse::skinned_mesh::initialize(gpu::context& ctx) -> void {
     if (m_vertices.empty() || m_indices.empty()) {
         return;
     }
@@ -74,7 +74,7 @@ auto gse::skinned_mesh::initialize(vulkan::config& config) -> void {
         .size = vertex_buffer_size,
         .usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst
     };
-    this->m_vertex_buffer = config.allocator().create_buffer(
+    this->m_vertex_buffer = ctx.allocator().create_buffer(
         vertex_final_info
     );
 
@@ -82,13 +82,13 @@ auto gse::skinned_mesh::initialize(vulkan::config& config) -> void {
         .size = index_buffer_size,
         .usage = vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst
     };
-    this->m_index_buffer = config.allocator().create_buffer(
+    this->m_index_buffer = ctx.allocator().create_buffer(
         index_final_info
     );
 
-    config.add_transient_work(
+    ctx.add_transient_work(
         [&](const vk::raii::CommandBuffer& command_buffer) -> std::vector<vulkan::buffer_resource> {
-            auto vertex_staging = config.allocator().create_buffer(
+            auto vertex_staging = ctx.allocator().create_buffer(
                 vk::BufferCreateInfo{
                     .size = vertex_buffer_size,
                     .usage = vk::BufferUsageFlagBits::eTransferSrc
@@ -96,7 +96,7 @@ auto gse::skinned_mesh::initialize(vulkan::config& config) -> void {
                 m_vertices.data()
             );
 
-            auto index_staging = config.allocator().create_buffer(
+            auto index_staging = ctx.allocator().create_buffer(
                 vk::BufferCreateInfo{
                     .size = index_buffer_size,
                     .usage = vk::BufferUsageFlagBits::eTransferSrc

@@ -12,7 +12,9 @@ import :input_state;
 import :render_graph;
 
 import gse.utility;
-import gse.platform.vulkan;
+import :vulkan_config;
+import :vulkan_context;
+import :vulkan_uploader;
 
 export namespace gse {
 	enum class render_layer : std::uint8_t {
@@ -122,12 +124,69 @@ export namespace gse::gpu {
 			this auto&& self
 		) -> decltype(auto);
 
-		[[nodiscard]] auto config(
-			this auto&& self
-		) -> decltype(auto);
+		auto begin_frame(
+		) -> bool;
+
+		auto end_frame(
+		) -> void;
+
+		auto wait_idle(
+		) -> void;
+
+		[[nodiscard]] auto allocator(
+		) -> vulkan::allocator&;
+
+		[[nodiscard]] auto device(
+		) -> vk::raii::Device&;
+
+		[[nodiscard]] auto device(
+		) const -> const vk::raii::Device&;
+
+		[[nodiscard]] auto descriptor_pool(
+		) -> vk::DescriptorPool;
+
+		[[nodiscard]] auto surface_format(
+		) const -> vk::Format;
+
+		[[nodiscard]] auto compute_queue_family(
+		) const -> std::uint32_t;
+
+		[[nodiscard]] auto compute_queue_ref(
+		) -> const vk::raii::Queue&;
+
+		[[nodiscard]] auto physical_device(
+		) -> const vk::raii::PhysicalDevice&;
+
+		auto add_transient_work(
+			const std::function<std::vector<vulkan::buffer_resource>(const vk::raii::CommandBuffer&)>& commands
+		) -> void;
+
+		using swap_chain_recreate_callback = std::function<void(vulkan::config&)>;
+		auto on_swap_chain_recreate(
+			swap_chain_recreate_callback callback
+		) -> void;
+
+		auto upload_image_2d(
+			vulkan::image_resource& resource,
+			vec2u size,
+			const void* pixel_data,
+			std::size_t data_size,
+			vk::ImageLayout final_layout = vk::ImageLayout::eShaderReadOnlyOptimal
+		) -> void;
+
+		auto upload_image_layers(
+			vulkan::image_resource& resource,
+			vec2u size,
+			const std::vector<const void*>& face_data,
+			std::size_t bytes_per_face,
+			vk::ImageLayout final_layout = vk::ImageLayout::eShaderReadOnlyOptimal
+		) -> void;
 
 		[[nodiscard]] auto window(
 		) -> window&;
+
+		[[nodiscard]] auto window(
+		) const -> const gse::window&;
 
 		[[nodiscard]] auto gpu_queue_size(
 		) const -> size_t;
@@ -357,9 +416,74 @@ auto gse::gpu::context::loader(this auto&& self) -> decltype(auto) {
 	return static_cast<resource::loader<T, context>*>(base_loader);
 }
 
-auto gse::gpu::context::config(this auto&& self) -> decltype(auto) {
-	assert(self.m_config.get(), std::source_location::current(), "Vulkan config is not initialized.");
-	return *self.m_config;
+auto gse::gpu::context::begin_frame() -> bool {
+	return vulkan::begin_frame({
+		.window = m_window.raw_handle(),
+		.frame_buffer_resized = m_window.frame_buffer_resized(),
+		.minimized = m_window.minimized(),
+		.config = *m_config
+	});
+}
+
+auto gse::gpu::context::end_frame() -> void {
+	vulkan::end_frame({
+		.window = m_window.raw_handle(),
+		.frame_buffer_resized = m_window.frame_buffer_resized(),
+		.minimized = m_window.minimized(),
+		.config = *m_config
+	});
+}
+
+auto gse::gpu::context::wait_idle() -> void {
+	m_config->device_config().device.waitIdle();
+}
+
+auto gse::gpu::context::allocator() -> vulkan::allocator& {
+	return m_config->allocator();
+}
+
+auto gse::gpu::context::device() -> vk::raii::Device& {
+	return m_config->device_config().device;
+}
+
+auto gse::gpu::context::device() const -> const vk::raii::Device& {
+	return m_config->device_config().device;
+}
+
+auto gse::gpu::context::add_transient_work(const std::function<std::vector<vulkan::buffer_resource>(const vk::raii::CommandBuffer&)>& commands) -> void {
+	m_config->add_transient_work(commands);
+}
+
+auto gse::gpu::context::descriptor_pool() -> vk::DescriptorPool {
+	return *m_config->descriptor_config().pool;
+}
+
+auto gse::gpu::context::surface_format() const -> vk::Format {
+	return m_config->swap_chain_config().surface_format.format;
+}
+
+auto gse::gpu::context::compute_queue_family() const -> std::uint32_t {
+	return m_config->queue_config().compute_family_index;
+}
+
+auto gse::gpu::context::compute_queue_ref() -> const vk::raii::Queue& {
+	return m_config->queue_config().compute;
+}
+
+auto gse::gpu::context::physical_device() -> const vk::raii::PhysicalDevice& {
+	return m_config->device_config().physical_device;
+}
+
+auto gse::gpu::context::on_swap_chain_recreate(swap_chain_recreate_callback callback) -> void {
+	m_config->on_swap_chain_recreate(std::move(callback));
+}
+
+auto gse::gpu::context::upload_image_2d(vulkan::image_resource& resource, const vec2u size, const void* pixel_data, const std::size_t data_size, const vk::ImageLayout final_layout) -> void {
+	vulkan::uploader::upload_image_2d(*m_config, resource, size, pixel_data, data_size, final_layout);
+}
+
+auto gse::gpu::context::upload_image_layers(vulkan::image_resource& resource, const vec2u size, const std::vector<const void*>& face_data, const std::size_t bytes_per_face, const vk::ImageLayout final_layout) -> void {
+	vulkan::uploader::upload_image_layers(*m_config, resource, size, face_data, bytes_per_face, final_layout);
 }
 
 auto gse::gpu::context::graph() -> vulkan::render_graph& {
@@ -367,6 +491,10 @@ auto gse::gpu::context::graph() -> vulkan::render_graph& {
 }
 
 auto gse::gpu::context::window() -> gse::window& {
+	return m_window;
+}
+
+auto gse::gpu::context::window() const -> const gse::window& {
 	return m_window;
 }
 
@@ -402,8 +530,6 @@ auto gse::gpu::context::shutdown() -> void {
 	m_resource_loaders.clear();
 	m_shader_layouts.clear();
 
-	m_config->swap_chain_config().albedo_image = {};
-	m_config->swap_chain_config().normal_image = {};
 	m_config->swap_chain_config().depth_image = {};
 }
 

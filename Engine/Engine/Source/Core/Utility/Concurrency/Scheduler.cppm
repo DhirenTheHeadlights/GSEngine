@@ -17,6 +17,10 @@ export namespace gse {
 	public:
 		scheduler() = default;
 
+		auto set_gpu_context(
+			void* ctx
+		) -> void;
+
 		auto system_ptr(
 			std::type_index idx
 		) -> void* override;
@@ -91,6 +95,7 @@ export namespace gse {
 		std::mutex m_deferred_mutex;
 		registry* m_registry = nullptr;
 		registry_access m_registry_access{};
+		void* m_gpu_ctx = nullptr;
 
 		auto snapshot_all_channels(
 		) -> void;
@@ -179,6 +184,10 @@ auto gse::scheduler::channel() -> gse::channel<T>& {
 	return static_cast<typed_channel<T>&>(base).data;
 }
 
+auto gse::scheduler::set_gpu_context(void* ctx) -> void {
+	m_gpu_ctx = ctx;
+}
+
 auto gse::scheduler::initialize() -> void {
 	frame_sync::on_begin([this] {
 		snapshot_all_channels();
@@ -191,6 +200,7 @@ auto gse::scheduler::initialize() -> void {
 		.snapshots = *this,
 		.channels = writer
 	};
+	phase.gpu_ctx = m_gpu_ctx;
 
 	for (const auto& n : m_nodes) {
 		n->initialize(phase);
@@ -235,6 +245,7 @@ auto gse::scheduler::update() -> void {
 		.channel_reader = *this,
 		.work = work
 	};
+	phase.gpu_ctx = m_gpu_ctx;
 
 	task::parallel_for(0uz, m_nodes.size(), [&](const std::size_t i) {
 		m_nodes[i]->update(phase);
@@ -264,6 +275,7 @@ auto gse::scheduler::render(const std::function<void()>& in_frame) -> void {
 	begin_frame_phase bf_phase{
 		.snapshots = *this
 	};
+	bf_phase.gpu_ctx = m_gpu_ctx;
 
 	std::vector started(m_nodes.size(), false);
 
@@ -285,6 +297,7 @@ auto gse::scheduler::render(const std::function<void()>& in_frame) -> void {
 		.snapshots = *this,
 		.channel_reader = *this
 	};
+	r_phase.gpu_ctx = m_gpu_ctx;
 
 	for (const auto& n : m_nodes) {
 		n->render(r_phase);
@@ -300,6 +313,7 @@ auto gse::scheduler::render(const std::function<void()>& in_frame) -> void {
 		.snapshots = *this,
 		.channels = ef_writer
 	};
+	ef_phase.gpu_ctx = m_gpu_ctx;
 
 	for (std::size_t i = m_nodes.size(); i-- > 0;) {
 		if (started[i]) {
@@ -312,6 +326,7 @@ auto gse::scheduler::shutdown() -> void {
 	shutdown_phase phase{
 		.registry = m_registry_access
 	};
+	phase.gpu_ctx = m_gpu_ctx;
 
 	for (const auto& node : m_nodes | std::views::reverse) {
 		node->shutdown(phase);

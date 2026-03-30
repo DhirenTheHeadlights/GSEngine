@@ -15,7 +15,7 @@ import :shader_layout;
 import :render_graph;
 
 import gse.assert;
-import gse.platform.vulkan;
+import :vulkan_allocator;
 import gse.utility;
 
 namespace gse {
@@ -399,7 +399,7 @@ auto gse::shader::load(const gpu::context& context) -> void {
 		read_data(in, size);
 		std::vector<char> code(size);
 		in.read(code.data(), size);
-		return context.config().device_config().device.createShaderModule({
+		return context.device().createShaderModule({
 			.codeSize = code.size(),
 			.pCode = reinterpret_cast<const std::uint32_t*>(code.data())
 		});
@@ -470,7 +470,7 @@ auto gse::shader::load(const gpu::context& context) -> void {
 			.pBindings = raw_bindings.data()
 		};
 
-		set_data.layout = std::make_shared<vk::raii::DescriptorSetLayout>(context.config().device_config().device, ci);
+		set_data.layout = std::make_shared<vk::raii::DescriptorSetLayout>(context.device(), ci);
 	}
 
 	std::uint32_t max_set_index = 0;
@@ -487,7 +487,7 @@ auto gse::shader::load(const gpu::context& context) -> void {
 			};
 			set empty_set{
 				.type = t,
-				.layout = std::make_shared<vk::raii::DescriptorSetLayout>(context.config().device_config().device, ci)
+				.layout = std::make_shared<vk::raii::DescriptorSetLayout>(context.device(), ci)
 			};
 			m_layout.sets.emplace(t, std::move(empty_set));
 		}

@@ -48,117 +48,28 @@ auto gse::renderer::shadow::state::shadow_texel_size() const -> vec2f {
 	);
 }
 
-auto gse::renderer::shadow::system::initialize(initialize_phase&, state& s) -> void {
-	auto& config = s.ctx->config();
+auto gse::renderer::shadow::system::initialize(initialize_phase& phase, state& s) -> void {
+	auto& ctx = phase.get<gpu::context>();
 
-	s.shader_handle = s.ctx->get<shader>("Shaders/Deferred3D/shadow_pass");
-	s.ctx->instantly_load(s.shader_handle);
+	s.shader_handle = ctx.get<shader>("Shaders/Deferred3D/shadow_pass");
+	ctx.instantly_load(s.shader_handle);
 
-	auto layouts = s.shader_handle->layouts();
-	auto range = s.shader_handle->push_constant_range("push_constants");
-
-	const vk::PipelineLayoutCreateInfo pipeline_layout_info{
-		.setLayoutCount = static_cast<std::uint32_t>(layouts.size()),
-		.pSetLayouts = layouts.data(),
-		.pushConstantRangeCount = 1u,
-		.pPushConstantRanges = &range
-	};
-
-	s.pipeline_layout = config.device_config().device.createPipelineLayout(pipeline_layout_info);
-
-	auto shader_stages = s.shader_handle->shader_stages();
-	auto vertex_input = s.shader_handle->vertex_input_state();
-
-	constexpr vk::PipelineInputAssemblyStateCreateInfo input_assembly{
-		.topology = vk::PrimitiveTopology::eTriangleList,
-		.primitiveRestartEnable = vk::False
-	};
-
-	constexpr vk::PipelineRasterizationStateCreateInfo rasterizer{
-		.depthClampEnable = vk::False,
-		.rasterizerDiscardEnable = vk::False,
-		.polygonMode = vk::PolygonMode::eFill,
-		.cullMode = vk::CullModeFlagBits::eBack,
-		.frontFace = vk::FrontFace::eCounterClockwise,
-		.depthBiasEnable = vk::True,
-		.depthBiasConstantFactor = 1.25f,
-		.depthBiasClamp = 0.0f,
-		.depthBiasSlopeFactor = 1.75f,
-		.lineWidth = 1.0f
-	};
-
-	constexpr vk::PipelineDepthStencilStateCreateInfo depth_stencil{
-		.depthTestEnable = vk::True,
-		.depthWriteEnable = vk::True,
-		.depthCompareOp = vk::CompareOp::eLessOrEqual,
-		.depthBoundsTestEnable = vk::False,
-		.stencilTestEnable = vk::False,
-		.front = {},
-		.back = {},
-		.minDepthBounds = 0.0f,
-		.maxDepthBounds = 1.0f
-	};
-
-	constexpr vk::PipelineMultisampleStateCreateInfo multisampling{
-		.rasterizationSamples = vk::SampleCountFlagBits::e1,
-		.sampleShadingEnable = vk::False,
-		.minSampleShading = 1.0f,
-		.pSampleMask = nullptr,
-		.alphaToCoverageEnable = vk::False,
-		.alphaToOneEnable = vk::False
-	};
-
-	constexpr vk::PipelineColorBlendStateCreateInfo color_blend_state{
-		.logicOpEnable = vk::False,
-		.logicOp = vk::LogicOp::eCopy,
-		.attachmentCount = 0u,
-		.pAttachments = nullptr,
-		.blendConstants = std::array{ 0.0f, 0.0f, 0.0f, 0.0f }
-	};
-
-	const vk::PipelineRenderingCreateInfoKHR rendering_info{
-		.colorAttachmentCount = 0u,
-		.pColorAttachmentFormats = nullptr,
-		.depthAttachmentFormat = vk::Format::eD32Sfloat,
-		.stencilAttachmentFormat = vk::Format::eUndefined
-	};
-
-	constexpr std::array dynamic_states = {
-		vk::DynamicState::eViewport,
-		vk::DynamicState::eScissor
-	};
-
-	const vk::PipelineDynamicStateCreateInfo dynamic_state{
-		.dynamicStateCount = static_cast<std::uint32_t>(dynamic_states.size()),
-		.pDynamicStates = dynamic_states.data()
-	};
-
-	const vk::PipelineViewportStateCreateInfo viewport_state{
-		.viewportCount = 1u,
-		.pViewports = nullptr,
-		.scissorCount = 1u,
-		.pScissors = nullptr
-	};
-
-	const vk::GraphicsPipelineCreateInfo pipeline_info{
-		.pNext = &rendering_info,
-		.stageCount = static_cast<std::uint32_t>(shader_stages.size()),
-		.pStages = shader_stages.data(),
-		.pVertexInputState = &vertex_input,
-		.pInputAssemblyState = &input_assembly,
-		.pTessellationState = nullptr,
-		.pViewportState = &viewport_state,
-		.pRasterizationState = &rasterizer,
-		.pMultisampleState = &multisampling,
-		.pDepthStencilState = &depth_stencil,
-		.pColorBlendState = &color_blend_state,
-		.pDynamicState = &dynamic_state,
-		.layout = s.pipeline_layout,
-		.basePipelineHandle = nullptr,
-		.basePipelineIndex = -1
-	};
-
-	s.pipeline = config.device_config().device.createGraphicsPipeline(nullptr, pipeline_info);
+	s.pipeline = gpu::create_graphics_pipeline(ctx, *s.shader_handle, {
+		.rasterization = {
+			.cull = gpu::cull_mode::back,
+			.depth_bias = true,
+			.depth_bias_constant = 1.25f,
+			.depth_bias_clamp = 0.0f,
+			.depth_bias_slope = 1.75f
+		},
+		.depth = {
+			.test = true,
+			.write = true,
+			.compare = gpu::compare_op::less_or_equal
+		},
+		.color = gpu::color_format::none,
+		.push_constant_block = "push_constants"
+	});
 
 	const vk::ImageCreateInfo image_info{
 		.flags = {},
@@ -194,7 +105,7 @@ auto gse::renderer::shadow::system::initialize(initialize_phase&, state& s) -> v
 	};
 
 	for (auto& img : s.shadow_maps) {
-		img = config.allocator().create_image(
+		img = ctx.allocator().create_image(
 			image_info,
 			vk::MemoryPropertyFlagBits::eDeviceLocal,
 			view_info
@@ -202,10 +113,10 @@ auto gse::renderer::shadow::system::initialize(initialize_phase&, state& s) -> v
 	}
 
 	for (auto& cm : s.point_shadow_cubemaps) {
-		cm.create(config, static_cast<int>(s.point_shadow_extent.x()), true);
+		cm.create(ctx, static_cast<int>(s.point_shadow_extent.x()), true);
 	}
 
-	config.add_transient_work(
+	ctx.add_transient_work(
         [&s](const vk::raii::CommandBuffer& cmd) -> std::vector<vulkan::buffer_resource> {
             std::vector<vk::ImageMemoryBarrier2> barriers;
             barriers.reserve(s.shadow_maps.size() + s.point_shadow_cubemaps.size());
@@ -399,6 +310,8 @@ auto gse::renderer::shadow::system::update(update_phase& phase, state& s) -> voi
 }
 
 auto gse::renderer::shadow::system::render(render_phase& phase, const state& s) -> void {
+    auto& ctx = phase.get<gpu::context>();
+
     const auto& shadow_items = phase.read_channel<render_data>();
     if (shadow_items.empty()) {
         return;
@@ -409,7 +322,7 @@ auto gse::renderer::shadow::system::render(render_phase& phase, const state& s) 
         return;
     }
 
-    if (!s.ctx->graph().frame_in_progress()) {
+    if (!ctx.graph().frame_in_progress()) {
         return;
     }
 
@@ -470,7 +383,7 @@ auto gse::renderer::shadow::system::render(render_phase& phase, const state& s) 
         return;
     }
 
-    s.ctx->graph()
+    ctx.graph()
         .add_pass<state>()
         .record([&s, batches = std::move(batches)](vulkan::recording_context& ctx) {
             for (const auto& batch : batches) {
@@ -503,7 +416,7 @@ auto gse::renderer::shadow::system::render(render_phase& phase, const state& s) 
                     auto pc = s.shader_handle->cache_push_block("push_constants");
                     pc.set("light_view_proj", batch.light_view_proj);
                     pc.set("model", e.model_matrix);
-                    ctx.push(pc, s.pipeline_layout);
+                    ctx.push(s.pipeline, pc);
 
                     const auto& mesh = e.model->meshes()[e.index];
                     const vk::Buffer vbufs[]{ mesh.vertex_buffer() };

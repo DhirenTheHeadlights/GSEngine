@@ -72,11 +72,7 @@ export namespace gse::physics {
 		time_t<float, seconds> accumulator{};
 		bool update_phys = true;
 		bool use_gpu_solver = false;
-		gpu::context* gpu_ctx = nullptr;
 		bool gpu_buffers_created = false;
-
-		state() = default;
-		explicit state(gpu::context& ctx) : gpu_ctx(&ctx) {}
 
 		vbd::solver vbd_solver;
 		vbd::contact_cache contact_cache;
@@ -527,9 +523,10 @@ auto gse::physics::system::initialize(const initialize_phase& phase, state& s) -
 
 }
 
-auto gse::physics::system::initialize_render_state(const initialize_phase&, state& s, render_state& rs) -> void {
-	if (s.gpu_ctx) {
-		rs.gpu_solver.initialize_compute(*s.gpu_ctx);
+auto gse::physics::system::initialize_render_state(const initialize_phase& phase, state& s, render_state& rs) -> void {
+	if (phase.try_get<gpu::context>()) {
+		auto& ctx = phase.get<gpu::context>();
+		rs.gpu_solver.initialize_compute(ctx);
 		s.gpu_buffers_created = rs.gpu_solver.buffers_created();
 	}
 }
@@ -1354,10 +1351,8 @@ auto gse::physics::system::begin_frame(begin_frame_phase&, state& s, render_stat
 }
 
 auto gse::physics::system::render(render_phase& phase, const state& s, render_state& rs) -> void {
-	if (!s.gpu_ctx || !s.use_gpu_solver) return;
+	if (!phase.try_get<gpu::context>() || !s.use_gpu_solver) return;
 	if (!rs.gpu_solver.compute_initialized()) return;
-
-	auto& config = s.gpu_ctx->config();
 
 	rs.gpu_solver.stage_readback();
 	if (rs.gpu_solver.has_readback_data()) {
@@ -1410,7 +1405,8 @@ auto gse::physics::system::render(render_phase& phase, const state& s, render_st
 
 	if (rs.gpu_solver.pending_dispatch() && rs.gpu_solver.ready_to_dispatch()) {
 		rs.gpu_solver.commit_upload();
-		rs.gpu_solver.dispatch_compute(config);
+		auto& ctx = phase.get<gpu::context>();
+		rs.gpu_solver.dispatch_compute(ctx);
 	}
 }
 
