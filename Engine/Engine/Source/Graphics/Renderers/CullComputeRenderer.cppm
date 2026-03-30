@@ -255,12 +255,11 @@ auto gse::renderer::cull_compute::system::render(const render_phase& phase, cons
 
 			const auto& dc = s.normal_descriptor_sets[frame_index];
 
-			graph
-				.add_pass<state>()
-				.uploads(
-					vulkan::upload(s.frustum_buffer[frame_index]),
-					vulkan::upload(s.batch_info_buffer[frame_index])
-				)
+			auto normal_pass = graph.add_pass<state>();
+			normal_pass.track(s.frustum_buffer[frame_index]);
+			normal_pass.track(s.batch_info_buffer[frame_index]);
+
+			normal_pass
 				.writes(vulkan::storage(gc->normal_indirect_commands_buffer[frame_index], vk::PipelineStageFlagBits2::eComputeShader))
 				.record([&s, frame_index, batch_count = static_cast<std::uint32_t>(normal_batches.size()), &dc, cull_pc = std::move(cull_pc)](vulkan::recording_context& ctx) {
 					ctx.bind_pipeline(vk::PipelineBindPoint::eCompute, *s.pipeline);
@@ -277,13 +276,12 @@ auto gse::renderer::cull_compute::system::render(const render_phase& phase, cons
 
 			const auto& dc = s.skinned_descriptor_sets[frame_index];
 
-			graph
-				.add_pass<state>()
+			auto skinned_pass = graph.add_pass<state>();
+			skinned_pass.track(s.frustum_buffer[frame_index]);
+			skinned_pass.track(s.batch_info_buffer[frame_index]);
+
+			skinned_pass
 				.after<skin_compute::state>()
-				.uploads(
-					vulkan::upload(s.frustum_buffer[frame_index]),
-					vulkan::upload(s.batch_info_buffer[frame_index])
-				)
 				.writes(vulkan::storage(gc->skinned_indirect_commands_buffer[frame_index], vk::PipelineStageFlagBits2::eComputeShader))
 				.record([&s, frame_index, batch_count = static_cast<std::uint32_t>(skinned_batches.size()), &dc, cull_pc = std::move(cull_pc)](vulkan::recording_context& ctx) {
 					ctx.bind_pipeline(vk::PipelineBindPoint::eCompute, *s.pipeline);
@@ -295,16 +293,14 @@ auto gse::renderer::cull_compute::system::render(const render_phase& phase, cons
 		}
 	} else {
 		if (!normal_batches.empty()) {
-			graph
-				.add_pass<state>()
-				.uploads(vulkan::upload(gc->normal_indirect_commands_buffer[frame_index]))
-				.record([](vulkan::recording_context&) {});
+			auto normal_upload = graph.add_pass<state>();
+			normal_upload.track(gc->normal_indirect_commands_buffer[frame_index]);
+			normal_upload.record([](vulkan::recording_context&) {});
 		}
 		if (!skinned_batches.empty()) {
-			graph
-				.add_pass<state>()
-				.uploads(vulkan::upload(gc->skinned_indirect_commands_buffer[frame_index]))
-				.record([](vulkan::recording_context&) {});
+			auto skinned_upload = graph.add_pass<state>();
+			skinned_upload.track(gc->skinned_indirect_commands_buffer[frame_index]);
+			skinned_upload.record([](vulkan::recording_context&) {});
 		}
 	}
 }

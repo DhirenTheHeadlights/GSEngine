@@ -267,8 +267,7 @@ auto gse::renderer::depth_prepass::system::render(const render_phase& phase, con
 		return;
 	}
 
-	auto& config = s.ctx->config();
-	if (!config.frame_in_progress()) {
+	if (!s.ctx->graph().frame_in_progress()) {
 		return;
 	}
 
@@ -290,55 +289,23 @@ auto gse::renderer::depth_prepass::system::render(const render_phase& phase, con
 	s.skinned_shader->set_uniform("CameraUBO.view", view, cam_alloc);
 	s.skinned_shader->set_uniform("CameraUBO.proj", proj, cam_alloc);
 
-	const auto extent = config.swap_chain_config().extent;
-	const auto graphics_upload_stage =
-		vk::PipelineStageFlagBits2::eTaskShaderEXT |
-		vk::PipelineStageFlagBits2::eMeshShaderEXT |
-		vk::PipelineStageFlagBits2::eVertexShader;
+	const auto ext = s.ctx->graph().extent();
+	const auto ext_w = ext.x();
+	const auto ext_h = ext.y();
 
-	vk::RenderingAttachmentInfo depth_attachment{
-		.imageView = config.swap_chain_config().depth_image.view,
-		.imageLayout = vk::ImageLayout::eGeneral,
-		.loadOp = vk::AttachmentLoadOp::eClear,
-		.storeOp = vk::AttachmentStoreOp::eStore,
-		.clearValue = vk::ClearValue{
-			.depthStencil = vk::ClearDepthStencilValue{
-				.depth = 1.0f
-			}
-		}
-	};
+	auto pass = s.ctx->graph().add_pass<state>();
+	pass.track(s.ubo_allocations.at("CameraUBO")[frame_index]);
+	pass.track(gc_state->instance_buffer[frame_index]);
 
-	const vk::RenderingInfo rendering_info{
-		.renderArea = { { 0, 0 }, extent },
-		.layerCount = 1,
-		.colorAttachmentCount = 0,
-		.pColorAttachments = nullptr,
-		.pDepthAttachment = &depth_attachment
-	};
-
-	s.ctx->graph()
-		.add_pass<state>()
-		.after<cull_compute::state>()
-		.uploads(
-			vulkan::upload(s.ubo_allocations.at("CameraUBO")[frame_index], graphics_upload_stage),
-			vulkan::upload(gc_state->instance_buffer[frame_index], graphics_upload_stage)
-		)
+	pass.after<cull_compute::state>()
 		.reads(
 			vulkan::storage_read(gc_state->skin_buffer[frame_index], vk::PipelineStageFlagBits2::eVertexShader),
 			vulkan::indirect_read(gc_state->skinned_indirect_commands_buffer[frame_index], vk::PipelineStageFlagBits2::eDrawIndirect)
 		)
-		.writes(vulkan::attachment(config.swap_chain_config().depth_image, vk::PipelineStageFlagBits2::eLateFragmentTests))
-		.record_graphics(rendering_info, [&s, gc_state, &data, frame_index, extent](vulkan::recording_context& ctx) {
-			const vk::Viewport viewport{
-				.x = 0.0f,
-				.y = 0.0f,
-				.width = static_cast<float>(extent.width),
-				.height = static_cast<float>(extent.height),
-				.minDepth = 0.0f,
-				.maxDepth = 1.0f
-			};
-			ctx.set_viewport(viewport);
-			ctx.set_scissor({ { 0, 0 }, extent });
+		.depth_output(vulkan::depth_clear{ 1.0f })
+		.record([&s, gc_state, &data, frame_index, ext_w, ext_h](vulkan::recording_context& ctx) {
+			ctx.set_viewport(0.0f, 0.0f, static_cast<float>(ext_w), static_cast<float>(ext_h));
+			ctx.set_scissor(0, 0, ext_w, ext_h);
 
 			if (!data.normal_batches.empty()) {
 				ctx.bind_pipeline(vk::PipelineBindPoint::eGraphics, *s.meshlet_pipeline);

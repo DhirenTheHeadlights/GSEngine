@@ -305,7 +305,7 @@ auto gse::renderer::geometry_collector::system::update(update_phase& phase, stat
 		chunk<const physics::collision_component> collision,
 		chunk<const animation_component> anim
 	) {
-		const auto frame_index = s.ctx->config().current_frame();
+		const auto frame_index = s.ctx->graph().current_frame();
 
 		const auto& cam_alloc = s.ubo_allocations.at("CameraUBO")[frame_index].allocation;
 		s.shader_handle->set_uniform("CameraUBO.view", view_matrix, cam_alloc);

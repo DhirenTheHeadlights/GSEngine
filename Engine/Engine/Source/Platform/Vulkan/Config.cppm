@@ -62,6 +62,18 @@ export namespace gse::vulkan {
         auto operator=(descriptor_config&&) -> descriptor_config & = default;
     };
 
+    struct descriptor_buffer_properties {
+        vk::DeviceSize offset_alignment = 0;
+        vk::DeviceSize uniform_buffer_descriptor_size = 0;
+        vk::DeviceSize storage_buffer_descriptor_size = 0;
+        vk::DeviceSize sampled_image_descriptor_size = 0;
+        vk::DeviceSize sampler_descriptor_size = 0;
+        vk::DeviceSize combined_image_sampler_descriptor_size = 0;
+        vk::DeviceSize storage_image_descriptor_size = 0;
+        vk::DeviceSize input_attachment_descriptor_size = 0;
+        bool supported = false;
+    };
+
     struct transient_gpu_work {
         vk::raii::CommandBuffer command_buffer = nullptr;
         vk::raii::Fence fence = nullptr;
@@ -166,7 +178,8 @@ export namespace gse::vulkan {
             queue_config&& queue, command_config&& command,
             descriptor_config&& descriptor, sync_config&& sync,
             swap_chain_config&& swap_chain_data, frame_context_config&& frame_context,
-            std::unique_ptr<allocator>&& alloc
+            std::unique_ptr<allocator>&& alloc,
+            descriptor_buffer_properties&& desc_buf_props = {}
         ) : m_allocator(std::move(alloc)),
             m_instance_data(std::move(instance_data)),
             m_device_data(std::move(device_data)),
@@ -175,7 +188,8 @@ export namespace gse::vulkan {
             m_descriptor(std::move(descriptor)),
             m_sync(std::move(sync)),
             m_swap_chain_data(std::move(swap_chain_data)),
-            m_frame_context(std::move(frame_context)) {}
+            m_frame_context(std::move(frame_context)),
+            m_descriptor_buffer_props(std::move(desc_buf_props)) {}
 
         using swap_chain_recreate_callback = std::function<void(config&)>;
 
@@ -315,6 +329,8 @@ export namespace gse::vulkan {
         auto set_mesh_shaders_enabled(bool enabled) -> void { m_mesh_shaders_enabled = enabled; }
         [[nodiscard]] auto mesh_shaders_enabled() const -> bool { return m_mesh_shaders_enabled; }
 
+        [[nodiscard]] auto descriptor_buffer_props() const -> const descriptor_buffer_properties& { return m_descriptor_buffer_props; }
+
     private:
         struct instance_config m_instance_data;
         struct device_config m_device_data;
@@ -329,6 +345,7 @@ export namespace gse::vulkan {
         std::uint64_t m_swap_chain_generation = 0;
         bool m_frame_in_progress = false;
         bool m_mesh_shaders_enabled = false;
+        descriptor_buffer_properties m_descriptor_buffer_props;
         std::vector<swap_chain_recreate_callback> m_swap_chain_recreate_callbacks;
     };
 }

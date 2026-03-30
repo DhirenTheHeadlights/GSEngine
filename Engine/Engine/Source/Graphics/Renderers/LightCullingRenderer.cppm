@@ -63,7 +63,7 @@ export namespace gse::renderer::light_culling {
 
 	struct system {
 		static auto initialize(initialize_phase& phase, state& s) -> void;
-		static auto render(render_phase& phase, const state& s) -> void;
+		static auto render(const render_phase& phase, const state& s) -> void;
 	};
 }
 
@@ -235,14 +235,14 @@ auto gse::renderer::light_culling::system::initialize(initialize_phase& phase, s
 	});
 }
 
-auto gse::renderer::light_culling::system::render(render_phase& phase, const state& s) -> void {
-	auto& config = s.ctx->config();
+auto gse::renderer::light_culling::system::render(const render_phase& phase, const state& s) -> void {
+	auto& graph = s.ctx->graph();
 
-	if (!config.frame_in_progress()) {
+	if (!graph.frame_in_progress()) {
 		return;
 	}
 
-	const auto frame_index = config.current_frame();
+	const auto frame_index = graph.current_frame();
 
 	const auto* cam_state = phase.try_state_of<camera::state>();
 	const auto proj = cam_state ? cam_state->projection_matrix : projection_matrix{};
@@ -253,8 +253,8 @@ auto gse::renderer::light_culling::system::render(render_phase& phase, const sta
 	s.shader_handle->set_uniform("CullingParams.projection", proj, params_alloc);
 	s.shader_handle->set_uniform("CullingParams.inv_proj", inv_proj, params_alloc);
 
-	const auto extent = config.swap_chain_config().extent;
-	std::array<std::uint32_t, 2> screen_size_arr = { extent.width, extent.height };
+	const auto extent = graph.extent();
+	const std::array screen_size_arr = { extent.x(), extent.y() };
 	s.shader_handle->set_uniform("CullingParams.screen_size", screen_size_arr, params_alloc);
 
 	const auto dir_chunk = phase.registry.view<directional_light_component>();
@@ -338,16 +338,15 @@ auto gse::renderer::light_culling::system::render(render_phase& phase, const sta
 	s.shader_handle->set_uniform("CullingParams.num_lights", num_lights, params_alloc);
 
 	const auto tiles = s.tile_count();
-	const auto& depth_image = config.swap_chain_config().depth_image;
+	const auto& depth_image = graph.depth_image();
 
-	s.ctx->graph()
-		.add_pass<state>()
-		.after<depth_prepass::state>()
-		.uploads(
-			vulkan::upload(s.culling_params_buffers[frame_index], vk::PipelineStageFlagBits2::eComputeShader),
-			vulkan::upload(s.light_buffers[frame_index], vk::PipelineStageFlagBits2::eComputeShader)
-		)
-		.reads(vulkan::sampled(depth_image, vk::PipelineStageFlagBits2::eComputeShader))
+	auto pass = graph.add_pass<state>();
+	pass.after<depth_prepass::state>();
+
+	pass.track(s.culling_params_buffers[frame_index]);
+	pass.track(s.light_buffers[frame_index]);
+
+	pass.reads(vulkan::sampled(depth_image, vk::PipelineStageFlagBits2::eComputeShader))
 		.writes(
 			vulkan::storage(s.tile_light_table_buffers[frame_index], vk::PipelineStageFlagBits2::eComputeShader),
 			vulkan::storage(s.light_index_list_buffers[frame_index], vk::PipelineStageFlagBits2::eComputeShader)

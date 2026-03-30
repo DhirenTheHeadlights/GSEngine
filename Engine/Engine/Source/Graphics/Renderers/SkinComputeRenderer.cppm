@@ -132,14 +132,13 @@ auto gse::renderer::skin_compute::system::render(const render_phase& phase, cons
 	skin_pc.set("local_pose_stride", gc->current_joint_count);
 	skin_pc.set("skin_stride", gc->current_joint_count);
 
-	s.ctx->graph()
-		.add_pass<state>()
-		.when(data.pending_compute_instance_count > 0)
-		.uploads(
-			vulkan::upload(gc->skeleton_buffer),
-			vulkan::upload(gc->local_pose_buffer[frame_index])
-		)
-		.writes(vulkan::storage(gc->skin_buffer[frame_index], vk::PipelineStageFlagBits2::eComputeShader))
+	auto pass = s.ctx->graph().add_pass<state>();
+	pass.when(data.pending_compute_instance_count > 0);
+
+	pass.track(gc->skeleton_buffer);
+	pass.track(gc->local_pose_buffer[frame_index]);
+
+	pass.writes(vulkan::storage(gc->skin_buffer[frame_index], vk::PipelineStageFlagBits2::eComputeShader))
 		.record([&s, frame_index, instance_count = data.pending_compute_instance_count, skin_pc = std::move(skin_pc)](vulkan::recording_context& ctx) {
 			ctx.bind_pipeline(vk::PipelineBindPoint::eCompute, *s.pipeline);
 			const vk::DescriptorSet sets[]{ *s.descriptor_sets[frame_index] };
