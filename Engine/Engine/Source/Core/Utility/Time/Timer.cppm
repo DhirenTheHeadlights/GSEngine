@@ -4,6 +4,7 @@ import std;
 
 import :clock;
 
+import gse.log;
 import gse.math;
 
 export namespace gse {
@@ -29,7 +30,7 @@ gse::scoped_timer::~scoped_timer() {
 	if (!m_completed) {
 		const auto elapsed_time = elapsed<float>().as<milliseconds>();
 		if (m_print) {
-			std::println("[Timer] {} took {}", m_name, elapsed_time);
+			log::println(log::level::debug, log::category::runtime, "Timer '{}' took {}", m_name, elapsed_time);
 		}
 	}
 }

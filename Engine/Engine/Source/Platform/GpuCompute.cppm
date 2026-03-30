@@ -3,6 +3,8 @@ export module gse.platform:gpu_compute;
 import std;
 
 import :gpu_types;
+import :gpu_buffer;
+import :gpu_pipeline;
 import :descriptor_heap;
 
 import gse.assert;

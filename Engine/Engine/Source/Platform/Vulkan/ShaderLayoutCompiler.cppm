@@ -12,11 +12,24 @@ import std;
 
 import :vulkan_allocator;
 import gse.assert;
+import gse.log;
 
 import :asset_compiler;
 import :shader_layout;
 
 namespace gse::layout_compile {
+    auto log_diagnostics(slang::IBlob* diagnostics) -> void {
+        if (!diagnostics || diagnostics->getBufferSize() == 0) {
+            return;
+        }
+
+        const std::string message(
+            static_cast<const char*>(diagnostics->getBufferPointer()),
+            diagnostics->getBufferSize()
+        );
+        log::println(log::level::error, log::category::assets, "{}", message);
+    }
+
     auto write_string(std::ofstream& stream, const std::string& str) -> void {
         const auto size = static_cast<std::uint32_t>(str.size());
         stream.write(reinterpret_cast<const char*>(&size), sizeof(size));
@@ -96,7 +109,7 @@ struct gse::asset_compiler<gse::shader_layout> {
 
         Slang::ComPtr<slang::IGlobalSession> global_session;
         if (SLANG_FAILED(createGlobalSession(global_session.writeRef())) || !global_session) {
-            std::println("Failed to create Slang global session");
+            log::println(log::level::error, log::category::assets, "Failed to create Slang global session");
             return false;
         }
 
@@ -127,7 +140,7 @@ struct gse::asset_compiler<gse::shader_layout> {
             };
 
             if (SLANG_FAILED(global_session->createSession(sdesc, session.writeRef())) || !session) {
-                std::println("Failed to create Slang session");
+                log::println(log::level::error, log::category::assets, "Failed to create Slang session");
                 return false;
             }
         }
@@ -135,12 +148,10 @@ struct gse::asset_compiler<gse::shader_layout> {
         Slang::ComPtr<slang::IBlob> diags;
         Slang::ComPtr mod(session->loadModule(source.string().c_str(), diags.writeRef()));
 
-        if (diags && diags->getBufferSize()) {
-            std::fprintf(stderr, "%s", static_cast<const char*>(diags->getBufferPointer()));
-        }
+        log_diagnostics(diags.get());
 
         if (!mod) {
-            std::println("Failed to load layout module: {}", layout_name);
+            log::println(log::level::error, log::category::assets, "Failed to load layout module: {}", layout_name);
             return false;
         }
 
@@ -152,9 +163,7 @@ struct gse::asset_compiler<gse::shader_layout> {
 
         Slang::ComPtr<slang::IComponentType> program;
         if (SLANG_FAILED(composed->link(program.writeRef(), diags.writeRef()))) {
-            if (diags && diags->getBufferSize()) {
-                std::fprintf(stderr, "%s", static_cast<const char*>(diags->getBufferPointer()));
-            }
+            log_diagnostics(diags.get());
             return false;
         }
 
@@ -167,7 +176,7 @@ struct gse::asset_compiler<gse::shader_layout> {
 
         auto* globals_vl = layout->getGlobalParamsVarLayout();
         if (!globals_vl) {
-            std::println("Layout {} has no global parameters", layout_name);
+            log::println(log::level::warning, log::category::assets, "Layout {} has no global parameters", layout_name);
             return false;
         }
 
@@ -196,7 +205,7 @@ struct gse::asset_compiler<gse::shader_layout> {
         }
 
         if (!element_tl || element_tl->getKind() != slang::TypeReflection::Kind::Struct) {
-            std::println("Layout {} has unexpected structure", layout_name);
+            log::println(log::level::warning, log::category::assets, "Layout {} has unexpected structure", layout_name);
             return false;
         }
 
@@ -261,7 +270,7 @@ struct gse::asset_compiler<gse::shader_layout> {
             }
         }
 
-        std::println("Layout compiled: {}", destination.filename().string());
+        log::println(log::category::assets, "Layout compiled: {}", destination.filename().string());
         return true;
     }
 

@@ -48,7 +48,7 @@ export namespace gse::renderer::shadow {
 		vec2u shadow_extent = { 1024, 1024 };
 		vec2u point_shadow_extent = { 512, 512 };
 
-		std::array<vulkan::image_resource, max_shadow_lights> shadow_maps;
+		std::array<gpu::image, max_shadow_lights> shadow_maps;
 		std::array<cube_map, max_point_shadow_lights> point_shadow_cubemaps;
 
 		state() = default;

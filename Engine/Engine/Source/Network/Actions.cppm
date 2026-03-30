@@ -2,6 +2,7 @@ export module gse.network:actions;
 
 import std;
 
+import gse.log;
 import gse.math;
 import gse.platform;
 
@@ -103,7 +104,7 @@ auto gse::network::send_input_frame(const udp_socket& socket, remote_peer& peer,
 	};
 
 	if (socket.send_data(pkt, peer.addr()) == socket_state::error) {
-		std::println("[Network Warning] Failed to send input frame from client to {}", peer.addr().ip);
+		log::println(log::level::warning, log::category::network, "Failed to send input frame from client to {}", peer.addr().ip);
 		return;
 	}
 }

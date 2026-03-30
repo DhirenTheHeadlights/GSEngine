@@ -264,12 +264,12 @@ auto gse::renderer::ui::system::initialize(initialize_phase& phase, state& s) ->
 	for (auto& [vertex_buffer, index_buffer] : s.resources) {
 		vertex_buffer = gpu::create_buffer(ctx, {
 			.size = vertex_buffer_size,
-			.usage = gpu::buffer_usage::vertex
+			.usage = gpu::buffer_flag::vertex
 		});
 
 		index_buffer = gpu::create_buffer(ctx, {
 			.size = index_buffer_size,
-			.usage = gpu::buffer_usage::index
+			.usage = gpu::buffer_flag::index
 		});
 	}
 
@@ -457,20 +457,20 @@ auto gse::renderer::ui::system::render(render_phase& phase, const state& s) -> v
 	pass.track(vertex_buffer.native());
 	pass.track(index_buffer.native());
 
+	const vec2u ext_size{ width, height };
+
 	pass
 		.color_output_load()
-		.record([&s, &batches, frame_index, width, height, window_size,
+		.record([&s, &batches, frame_index, ext_size, window_size,
 			sprite_pc = std::move(sprite_pc), text_pc = std::move(text_pc),
 			sprite_binding, text_binding,
-			vb = vertex_buffer.native().buffer, ib = index_buffer.native().buffer](vulkan::recording_context& ctx) {
+			&vertex_buffer, &index_buffer](vulkan::recording_context& ctx) {
 
-			const vk::Buffer vbufs[]{ vb };
-			const vk::DeviceSize voffs[]{ 0 };
-			ctx.bind_vertex_buffers(0, vbufs, voffs);
-			ctx.bind_index_buffer(ib, 0, vk::IndexType::eUint32);
+			ctx.bind_vertex(vertex_buffer);
+			ctx.bind_index(index_buffer);
 
-			ctx.set_viewport(0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height));
-			ctx.set_scissor(0, 0, width, height);
+			ctx.set_viewport(ext_size);
+			ctx.set_scissor(ext_size);
 
 			auto bound_type = command_type::sprite;
 			resource::handle<texture> bound_texture;
@@ -484,10 +484,10 @@ auto gse::renderer::ui::system::render(render_phase& phase, const state& s) -> v
 
 				if (first_batch || type != bound_type) {
 					if (type == command_type::sprite) {
-						ctx.bind_pipeline(vk::PipelineBindPoint::eGraphics, s.sprite_pipeline);
+						ctx.bind(s.sprite_pipeline);
 						ctx.push(s.sprite_pipeline, sprite_pc);
 					} else {
-						ctx.bind_pipeline(vk::PipelineBindPoint::eGraphics, s.text_pipeline);
+						ctx.bind(s.text_pipeline);
 						ctx.push(s.text_pipeline, text_pc);
 					}
 					bound_type = type;
@@ -526,7 +526,7 @@ auto gse::renderer::ui::system::render(render_phase& phase, const state& s) -> v
 					const auto sc = to_vulkan_scissor(*clip_rect, window_size);
 					ctx.set_scissor(sc.offset.x, sc.offset.y, sc.extent.width, sc.extent.height);
 				} else {
-					ctx.set_scissor(0, 0, width, height);
+					ctx.set_scissor(ext_size);
 				}
 
 				ctx.draw_indexed(index_count, 1, index_offset, 0, 0);

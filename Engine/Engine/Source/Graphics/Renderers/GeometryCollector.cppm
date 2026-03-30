@@ -139,7 +139,7 @@ export namespace gse::renderer::geometry_collector {
 	struct state {
 		gpu::context* ctx = nullptr;
 
-		per_frame_resource<vulkan::buffer_resource> instance_buffer;
+		per_frame_resource<gpu::buffer> instance_buffer;
 
 		per_frame_resource<std::vector<std::byte>> instance_staging;
 		std::uint32_t instance_stride = 0;
@@ -152,18 +152,18 @@ export namespace gse::renderer::geometry_collector {
 		std::uint32_t joint_stride = 0;
 		std::unordered_map<std::string, std::uint32_t> joint_offsets;
 
-		std::unordered_map<std::string, per_frame_resource<vulkan::buffer_resource>> ubo_allocations;
+		std::unordered_map<std::string, per_frame_resource<gpu::buffer>> ubo_allocations;
 
 		static constexpr std::size_t max_instances = 4096;
 		static constexpr std::size_t max_skin_matrices = 256 * 128;
 		static constexpr std::size_t max_joints = 256;
 		static constexpr std::size_t max_batches = 256;
 
-		per_frame_resource<vulkan::buffer_resource> normal_indirect_commands_buffer;
-		per_frame_resource<vulkan::buffer_resource> skinned_indirect_commands_buffer;
-		vulkan::buffer_resource skeleton_buffer;
-		per_frame_resource<vulkan::buffer_resource> local_pose_buffer;
-		per_frame_resource<vulkan::buffer_resource> skin_buffer;
+		per_frame_resource<gpu::buffer> normal_indirect_commands_buffer;
+		per_frame_resource<gpu::buffer> skinned_indirect_commands_buffer;
+		gpu::buffer skeleton_buffer;
+		per_frame_resource<gpu::buffer> local_pose_buffer;
+		per_frame_resource<gpu::buffer> skin_buffer;
 
 		resource::handle<shader> shader_handle;
 
@@ -207,7 +207,7 @@ auto gse::renderer::geometry_collector::upload_skeleton_data(const state& s, con
 	const auto joint_count = static_cast<std::size_t>(skel.joint_count());
 	const auto joints = skel.joints();
 
-	std::byte* buffer = s.skeleton_buffer.allocation.mapped();
+	std::byte* buffer = s.skeleton_buffer.mapped();
 
 	for (std::size_t i = 0; i < joint_count; ++i) {
 		std::byte* offset = buffer + (i * s.joint_stride);
@@ -236,42 +236,39 @@ auto gse::renderer::geometry_collector::system::initialize(initialize_phase& pha
 	}
 
 	for (std::size_t i = 0; i < per_frame_resource<vulkan::buffer_resource>::frames_in_flight; ++i) {
-		s.ubo_allocations["CameraUBO"][i] = ctx.allocator().create_buffer({
+		s.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx, {
 			.size = camera_ubo.size,
-			.usage = vk::BufferUsageFlagBits::eUniformBuffer,
-			.sharingMode = vk::SharingMode::eExclusive
+			.usage = gpu::buffer_flag::uniform
 		});
 
-		constexpr vk::DeviceSize skin_buffer_size = state::max_skin_matrices * sizeof(mat4f);
-		s.skin_buffer[i] = ctx.allocator().create_buffer(
-			vk::BufferCreateInfo{
-				.size = skin_buffer_size,
-				.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
-			}
-		);
+		constexpr std::size_t skin_buffer_size = state::max_skin_matrices * sizeof(mat4f);
+		s.skin_buffer[i] = gpu::create_buffer(ctx, {
+			.size = skin_buffer_size,
+			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
+		});
 		s.skin_staging[i].reserve(state::max_skin_matrices);
 
-		const vk::DeviceSize instance_buffer_size = state::max_instances * 2 * s.instance_stride;
-		s.instance_buffer[i] = ctx.allocator().create_buffer({
+		const std::size_t instance_buffer_size = state::max_instances * 2 * s.instance_stride;
+		s.instance_buffer[i] = gpu::create_buffer(ctx, {
 			.size = instance_buffer_size,
-			.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
+			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
 		s.instance_staging[i].reserve(instance_buffer_size);
 
-		constexpr vk::DeviceSize indirect_buffer_size = state::max_batches * sizeof(vk::DrawIndexedIndirectCommand);
-		s.normal_indirect_commands_buffer[i] = ctx.allocator().create_buffer({
+		constexpr std::size_t indirect_buffer_size = state::max_batches * sizeof(vk::DrawIndexedIndirectCommand);
+		s.normal_indirect_commands_buffer[i] = gpu::create_buffer(ctx, {
 			.size = indirect_buffer_size,
-			.usage = vk::BufferUsageFlagBits::eIndirectBuffer | vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
+			.usage = gpu::buffer_flag::indirect | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
-		s.skinned_indirect_commands_buffer[i] = ctx.allocator().create_buffer({
+		s.skinned_indirect_commands_buffer[i] = gpu::create_buffer(ctx, {
 			.size = indirect_buffer_size,
-			.usage = vk::BufferUsageFlagBits::eIndirectBuffer | vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
+			.usage = gpu::buffer_flag::indirect | gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
 
-		constexpr vk::DeviceSize local_pose_size = state::max_skin_matrices * sizeof(mat4f);
-		s.local_pose_buffer[i] = ctx.allocator().create_buffer({
+		constexpr std::size_t local_pose_size = state::max_skin_matrices * sizeof(mat4f);
+		s.local_pose_buffer[i] = gpu::create_buffer(ctx, {
 			.size = local_pose_size,
-			.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
+			.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 		});
 		s.local_pose_staging[i].reserve(state::max_skin_matrices);
 	}
@@ -285,9 +282,9 @@ auto gse::renderer::geometry_collector::system::initialize(initialize_phase& pha
 		s.joint_offsets[name] = member.offset;
 	}
 
-	s.skeleton_buffer = ctx.allocator().create_buffer({
+	s.skeleton_buffer = gpu::create_buffer(ctx, {
 		.size = state::max_joints * s.joint_stride,
-		.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst
+		.usage = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst
 	});
 }
 
@@ -308,7 +305,7 @@ auto gse::renderer::geometry_collector::system::update(update_phase& phase, stat
 	) {
 		const auto frame_index = s.ctx->graph().current_frame();
 
-		const auto& cam_alloc = s.ubo_allocations.at("CameraUBO")[frame_index].allocation;
+		const auto& cam_alloc = s.ubo_allocations.at("CameraUBO")[frame_index].native().allocation;
 		s.shader_handle->set_uniform("CameraUBO.view", view_matrix, cam_alloc);
 		s.shader_handle->set_uniform("CameraUBO.proj", proj_matrix, cam_alloc);
 
@@ -553,7 +550,7 @@ auto gse::renderer::geometry_collector::system::update(update_phase& phase, stat
 	}
 
 	if (!instance_staging.empty()) {
-		gse::memcpy(s.instance_buffer[frame_index].allocation.mapped(), instance_staging);
+		gse::memcpy(s.instance_buffer[frame_index].mapped(), instance_staging);
 	}
 
 	if (!normal_batches.empty()) {
@@ -575,7 +572,7 @@ auto gse::renderer::geometry_collector::system::update(update_phase& phase, stat
 		}
 
 		if (!normal_indirect_commands.empty()) {
-			gse::memcpy(s.normal_indirect_commands_buffer[frame_index].allocation.mapped(), normal_indirect_commands);
+			gse::memcpy(s.normal_indirect_commands_buffer[frame_index].mapped(), normal_indirect_commands);
 		}
 	}
 
@@ -598,15 +595,15 @@ auto gse::renderer::geometry_collector::system::update(update_phase& phase, stat
 		}
 
 		if (!skinned_indirect_commands.empty()) {
-			gse::memcpy(s.skinned_indirect_commands_buffer[frame_index].allocation.mapped(), skinned_indirect_commands);
+			gse::memcpy(s.skinned_indirect_commands_buffer[frame_index].mapped(), skinned_indirect_commands);
 		}
 	}
 
 	if (!local_pose_staging.empty() && s.current_joint_count > 0) {
-		gse::memcpy(s.local_pose_buffer[frame_index].allocation.mapped(), local_pose_staging);
+		gse::memcpy(s.local_pose_buffer[frame_index].mapped(), local_pose_staging);
 		data.pending_compute_instance_count = skinned_instance_count;
 	} else if (!skin_staging.empty()) {
-		gse::memcpy(s.skin_buffer[frame_index].allocation.mapped(), skin_staging);
+		gse::memcpy(s.skin_buffer[frame_index].mapped(), skin_staging);
 		data.pending_compute_instance_count = 0;
 	} else {
 		data.pending_compute_instance_count = 0;

@@ -13,6 +13,7 @@ import :descriptor_heap;
 import :descriptor_buffer_types;
 
 import gse.assert;
+import gse.log;
 import gse.utility;
 
 namespace vk::detail {
@@ -142,16 +143,28 @@ auto gse::vulkan::begin_frame(const frame_params& params) -> bool {
     }
 
     assert(
-        device.waitForFences(
-            *cfg.sync_config().in_flight_fences[cfg.current_frame()],
-            vk::True,
-            std::numeric_limits<std::uint64_t>::max()
-        ) == vk::Result::eSuccess,
+        [&]() {
+            try {
+                return device.waitForFences(
+                    *cfg.sync_config().in_flight_fences[cfg.current_frame()],
+                    vk::True,
+                    std::numeric_limits<std::uint64_t>::max()
+                ) == vk::Result::eSuccess;
+            } catch (const vk::DeviceLostError&) {
+                cfg.report_device_lost(std::format("begin_frame waitForFences (frame {})", cfg.current_frame()));
+                throw;
+            }
+        }(),
         std::source_location::current(),
         "Failed to wait for in-flight fence!"
     );
 
-    cfg.cleanup_finished_frame_resources();
+    try {
+        cfg.cleanup_finished_frame_resources();
+    } catch (const vk::DeviceLostError&) {
+        cfg.report_device_lost(std::format("cleanup_finished_frame_resources (frame {})", cfg.current_frame()));
+        throw;
+    }
 
     if (params.frame_buffer_resized) {
         recreate_resources();
@@ -171,6 +184,9 @@ auto gse::vulkan::begin_frame(const frame_params& params) -> bool {
         std::tie(result, image_index) = device.acquireNextImage2KHR(acquire_info);
     } catch (const vk::OutOfDateKHRError&) {
         result = vk::Result::eErrorOutOfDateKHR;
+    } catch (const vk::DeviceLostError&) {
+        cfg.report_device_lost(std::format("acquireNextImage2KHR (frame {})", cfg.current_frame()));
+        throw;
     }
 
     if (result == vk::Result::eErrorOutOfDateKHR) {
@@ -242,10 +258,15 @@ auto gse::vulkan::end_frame(const frame_params& params) -> void {
         .pSignalSemaphoreInfos = &signal_info
     };
 
-    cfg.queue_config().graphics.submit2(
-        submit_info2,
-        *cfg.sync_config().in_flight_fences[cfg.current_frame()]
-    );
+    try {
+        cfg.queue_config().graphics.submit2(
+            submit_info2,
+            *cfg.sync_config().in_flight_fences[cfg.current_frame()]
+        );
+    } catch (const vk::DeviceLostError&) {
+        cfg.report_device_lost(std::format("submit2 (frame {}, image {})", cfg.current_frame(), frame_ctx.image_index));
+        throw;
+    }
 
     const vk::Semaphore render_finished_handle = *cfg.sync_config().render_finished_semaphores[frame_ctx.image_index];
 
@@ -263,6 +284,10 @@ auto gse::vulkan::end_frame(const frame_params& params) -> void {
     }
     catch (const vk::OutOfDateKHRError&) {
         present_result = vk::Result::eErrorOutOfDateKHR;
+    }
+    catch (const vk::DeviceLostError&) {
+        cfg.report_device_lost(std::format("presentKHR (frame {}, image {})", cfg.current_frame(), frame_ctx.image_index));
+        throw;
     }
 
     if (present_result == vk::Result::eErrorOutOfDateKHR || present_result == vk::Result::eSuboptimalKHR) {
@@ -322,13 +347,12 @@ auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_co
 			return vk::False;
 		}
 
-		std::println(
-			"[{}] {}\n",
-			message_severity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eError ? "ERROR" :
-			message_severity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning ? "WARN" :
-			message_severity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo ? "INFO" : "VERB",
-			callback_data->pMessage
-		);
+		const auto lvl =
+			message_severity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eError ? log::level::error :
+			message_severity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning ? log::level::warning :
+			log::level::info;
+
+		log::println(lvl, log::category::vulkan_validation, "{}", callback_data->pMessage);
 
 		for (std::uint32_t i = 0; i < callback_data->objectCount; ++i) {
 			const auto& object = callback_data->pObjects[i];
@@ -336,14 +360,18 @@ auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_co
 				continue;
 			}
 
-			std::println(
-				"  Object {}: {} 0x{:x} '{}'",
+			log::println(
+				lvl,
+				log::category::vulkan_validation,
+				"Object {}: {} 0x{:x} '{}'",
 				i,
 				vk::to_string(static_cast<vk::ObjectType>(object.objectType)),
 				object.objectHandle,
 				object.pObjectName
 			);
 		}
+
+		log::flush();
 
 		return vk::False;
 	};
@@ -383,9 +411,9 @@ auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_co
 
 	try {
 		instance = vk::raii::Instance(context, create_info);
-		std::cout << "Vulkan Instance Created" << (enable_validation ? " with validation layers" : "") << "!\n";
+		log::println(log::category::vulkan, "Vulkan Instance Created{}!", enable_validation ? " with validation layers" : "");
 	} catch (vk::SystemError& err) {
-		std::cerr << "Failed to create Vulkan instance: " << err.what() << "\n";
+		log::println(log::level::error, log::category::vulkan, "Failed to create Vulkan instance: {}", err.what());
 		throw;
 	}
 
@@ -394,9 +422,9 @@ auto gse::vulkan::create_instance_and_surface(GLFWwindow* window) -> instance_co
 	if (enable_validation) {
 		try {
 			debug_utils_messenger = instance.createDebugUtilsMessengerEXT(debug_create_info);
-			std::cout << "Debug Messenger Created Successfully!\n";
+			log::println(log::category::vulkan, "Debug Messenger Created Successfully!");
 		} catch (vk::SystemError& err) {
-			std::cerr << "Failed to create Debug Messenger: " << err.what() << "\n";
+			log::println(log::level::error, log::category::vulkan, "Failed to create Debug Messenger: {}", err.what());
 		}
 	}
 
@@ -425,7 +453,8 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
 		physical_device = devices[0];
 	}
 
-	std::cout << "Selected GPU: " << physical_device.getProperties().deviceName << "\n";
+	const auto physical_device_properties = physical_device.getProperties();
+	log::println(log::category::vulkan, "Selected GPU: {}", std::string_view(physical_device_properties.deviceName.data()));
 
 	auto [graphics_family, present_family, compute_family] = find_queue_families(physical_device, instance_data.surface);
 
@@ -447,26 +476,47 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
 		queue_create_infos.push_back(queue_create_info);
 	}
 
+	const auto available_extensions = physical_device.enumerateDeviceExtensionProperties();
+	const auto supports_extension = [&](const char* extension_name) {
+		return std::ranges::any_of(available_extensions, [&](const auto& extension) {
+			return std::strcmp(extension.extensionName.data(), extension_name) == 0;
+		});
+	};
+	const bool device_fault_extension_supported = supports_extension(vk::EXTDeviceFaultExtensionName);
+
 	const auto feature_chain = physical_device.getFeatures2<
 		vk::PhysicalDeviceFeatures2,
 		vk::PhysicalDeviceMeshShaderFeaturesEXT,
-		vk::PhysicalDeviceDescriptorBufferFeaturesEXT
+		vk::PhysicalDeviceDescriptorBufferFeaturesEXT,
+		vk::PhysicalDeviceFaultFeaturesEXT
 	>();
 	const auto& mesh_shader_query = feature_chain.get<vk::PhysicalDeviceMeshShaderFeaturesEXT>();
 	const bool mesh_shaders_supported = mesh_shader_query.meshShader && mesh_shader_query.taskShader;
 	const auto& desc_buf_query = feature_chain.get<vk::PhysicalDeviceDescriptorBufferFeaturesEXT>();
 	const bool descriptor_buffer_supported = desc_buf_query.descriptorBuffer;
+	const bool descriptor_buffer_push_descriptors_supported = desc_buf_query.descriptorBufferPushDescriptors;
+	const auto& fault_query = feature_chain.get<vk::PhysicalDeviceFaultFeaturesEXT>();
+	const bool device_fault_supported = device_fault_extension_supported && fault_query.deviceFault;
+	const bool device_fault_vendor_binary_supported = device_fault_supported && fault_query.deviceFaultVendorBinary;
 
 	if (mesh_shaders_supported) {
-		std::println("Mesh shader support detected");
+		log::println(log::category::vulkan, "Mesh shader support detected");
 	} else {
-		std::println("Mesh shaders not supported, using vertex pipeline fallback");
+		log::println(log::level::warning, log::category::vulkan, "Mesh shaders not supported, using vertex pipeline fallback");
 	}
 
 	if (descriptor_buffer_supported) {
-		std::println("Descriptor buffer support detected");
+		log::println(log::category::vulkan, "Descriptor buffer support detected");
 	} else {
-		std::println("Descriptor buffer not supported");
+		log::println(log::level::warning, log::category::vulkan, "Descriptor buffer not supported");
+	}
+
+	if (descriptor_buffer_supported && descriptor_buffer_push_descriptors_supported) {
+		log::println(log::category::vulkan, "Descriptor buffer push descriptor interop detected");
+	}
+
+	if (device_fault_supported) {
+		log::println(log::category::vulkan, "Device fault support detected");
 	}
 
 	vk::PhysicalDeviceVulkan13Features vulkan13_features{
@@ -497,15 +547,24 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
 		.pNext = mesh_shaders_supported
 			? static_cast<void*>(&mesh_shader_features)
 			: static_cast<void*>(&vulkan11_features),
-		.descriptorBuffer = vk::True
+		.descriptorBuffer = vk::True,
+		.descriptorBufferPushDescriptors = descriptor_buffer_push_descriptors_supported ? vk::True : vk::False
+	};
+
+	void* feature_chain_head = descriptor_buffer_supported
+		? static_cast<void*>(&descriptor_buffer_features)
+		: (mesh_shaders_supported
+			? static_cast<void*>(&mesh_shader_features)
+			: static_cast<void*>(&vulkan11_features));
+
+	vk::PhysicalDeviceFaultFeaturesEXT fault_features{
+		.pNext = feature_chain_head,
+		.deviceFault = device_fault_supported ? vk::True : vk::False,
+		.deviceFaultVendorBinary = device_fault_vendor_binary_supported ? vk::True : vk::False
 	};
 
 	vk::PhysicalDevicePresentWaitFeaturesKHR present_wait_features{
-		.pNext = descriptor_buffer_supported
-			? static_cast<void*>(&descriptor_buffer_features)
-			: (mesh_shaders_supported
-				? static_cast<void*>(&mesh_shader_features)
-				: static_cast<void*>(&vulkan11_features))
+		.pNext = device_fault_supported ? static_cast<void*>(&fault_features) : feature_chain_head
 	};
 
 	vk::PhysicalDeviceFeatures2 features2{
@@ -532,6 +591,10 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
 		device_extensions.push_back(vk::EXTDescriptorBufferExtensionName);
 	}
 
+	if (device_fault_supported) {
+		device_extensions.push_back(vk::EXTDeviceFaultExtensionName);
+	}
+
 	vk::DeviceCreateInfo create_info{
 		.pNext = &features2,
 		.flags = {},
@@ -547,7 +610,7 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
 
 	vk::detail::defaultDispatchLoaderDynamic.init(*device);
 
-	std::cout << "Logical Device Created Successfully!\n";
+	log::println(log::category::vulkan, "Logical Device Created Successfully!");
 
 	vk::raii::Queue graphics_queue = device.getQueue(graphics_family.value(), 0);
 	vk::raii::Queue present_queue = device.getQueue(present_family.value(), 0);
@@ -556,9 +619,15 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
 	auto desc_buf_props = descriptor_buffer_supported
 		? query_descriptor_buffer_properties(physical_device)
 		: descriptor_buffer_properties{};
+	desc_buf_props.push_descriptors_supported = descriptor_buffer_push_descriptors_supported;
 
 	return {
-		.device = device_config(std::move(physical_device), std::move(device)),
+		.device = device_config(
+			std::move(physical_device),
+			std::move(device),
+			device_fault_supported,
+			device_fault_vendor_binary_supported
+		),
 		.queue = queue_config(std::move(graphics_queue), std::move(present_queue), std::move(compute_queue), compute_family.value()),
 		.mesh_shaders_enabled = mesh_shaders_supported,
 		.desc_buf_props = std::move(desc_buf_props)
@@ -575,7 +644,7 @@ auto gse::vulkan::create_command_objects(const device_config& device_data, const
 
 	vk::raii::CommandPool pool = device_data.device.createCommandPool(pool_info);
 
-	std::cout << "Command Pool Created Successfully!\n";
+	log::println(log::category::vulkan, "Command Pool Created Successfully!");
 
 	const std::string pool_name = "Primary Command Pool";
 	const vk::DebugUtilsObjectNameInfoEXT pool_name_info{
@@ -593,7 +662,7 @@ auto gse::vulkan::create_command_objects(const device_config& device_data, const
 
 	std::vector<vk::raii::CommandBuffer> buffers = device_data.device.allocateCommandBuffers(alloc_info);
 
-	std::cout << "Command Buffers Created Successfully!\n";
+	log::println(log::category::vulkan, "Command Buffers Created Successfully!");
 
 	for (std::uint32_t i = 0; i < buffers.size(); ++i) {
 		const std::string name = "Primary Command Buffer " + std::to_string(i);
@@ -615,15 +684,16 @@ auto gse::vulkan::query_descriptor_buffer_properties(const vk::raii::PhysicalDev
 	>();
 	const auto& db = props.get<vk::PhysicalDeviceDescriptorBufferPropertiesEXT>();
 
-	std::println("Descriptor buffer properties:");
-	std::println("  offset alignment: {}", db.descriptorBufferOffsetAlignment);
-	std::println("  uniform buffer size: {}", db.uniformBufferDescriptorSize);
-	std::println("  storage buffer size: {}", db.storageBufferDescriptorSize);
-	std::println("  sampled image size: {}", db.sampledImageDescriptorSize);
-	std::println("  sampler size: {}", db.samplerDescriptorSize);
-	std::println("  combined image sampler size: {}", db.combinedImageSamplerDescriptorSize);
-	std::println("  storage image size: {}", db.storageImageDescriptorSize);
-	std::println("  input attachment size: {}", db.inputAttachmentDescriptorSize);
+	log::println(log::category::vulkan, "Descriptor buffer properties:");
+	log::println(log::category::vulkan, "  offset alignment: {}", db.descriptorBufferOffsetAlignment);
+	log::println(log::category::vulkan, "  uniform buffer size: {}", db.uniformBufferDescriptorSize);
+	log::println(log::category::vulkan, "  storage buffer size: {}", db.storageBufferDescriptorSize);
+	log::println(log::category::vulkan, "  sampled image size: {}", db.sampledImageDescriptorSize);
+	log::println(log::category::vulkan, "  sampler size: {}", db.samplerDescriptorSize);
+	log::println(log::category::vulkan, "  combined image sampler size: {}", db.combinedImageSamplerDescriptorSize);
+	log::println(log::category::vulkan, "  storage image size: {}", db.storageImageDescriptorSize);
+	log::println(log::category::vulkan, "  input attachment size: {}", db.inputAttachmentDescriptorSize);
+	log::println(log::category::vulkan, "  bufferless push descriptors: {}", db.bufferlessPushDescriptors ? "true" : "false");
 
 	return {
 		.offset_alignment = db.descriptorBufferOffsetAlignment,
@@ -634,6 +704,8 @@ auto gse::vulkan::query_descriptor_buffer_properties(const vk::raii::PhysicalDev
 		.combined_image_sampler_descriptor_size = db.combinedImageSamplerDescriptorSize,
 		.storage_image_descriptor_size = db.storageImageDescriptorSize,
 		.input_attachment_descriptor_size = db.inputAttachmentDescriptorSize,
+		.push_descriptors_supported = false,
+		.bufferless_push_descriptors = static_cast<bool>(db.bufferlessPushDescriptors),
 		.supported = true
 	};
 }

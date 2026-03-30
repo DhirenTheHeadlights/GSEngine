@@ -3,6 +3,7 @@ export module gse.network:bitstream;
 import std;
 
 import gse.assert;
+import gse.log;
 import gse.math;
 import gse.utility;
 
@@ -159,8 +160,7 @@ auto gse::network::bitstream::read(std::span<std::byte> data) -> void {
 	const bool ok = can_advance(bits);
 
 	if (!ok) {
-		// Log warning instead of asserting
-		std::println("[Network Warning] Incomplete packet read: need {} bits, have {} bits available",
+		log::println(log::level::warning, log::category::network, "Incomplete packet read: need {} bits, have {} bits available",
 			bits, m_buffer.size() * 8 - m_head_bits);
 		std::fill(data.begin(), data.end(), std::byte(0));
 		m_error = true;

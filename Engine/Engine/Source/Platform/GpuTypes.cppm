@@ -2,34 +2,27 @@ export module gse.platform:gpu_types;
 
 import std;
 
-import :vulkan_allocator;
 import gse.utility;
+import gse.math;
 
 export namespace gse::gpu {
-	enum class buffer_usage : std::uint32_t {
+	enum class buffer_flag : std::uint32_t {
 		uniform      = 0x01,
 		storage      = 0x02,
 		indirect     = 0x04,
 		transfer_dst = 0x08,
 		vertex       = 0x10,
 		index        = 0x20,
+		transfer_src = 0x40,
 	};
 
-	constexpr auto operator|(buffer_usage a, buffer_usage b) -> buffer_usage {
-		return static_cast<buffer_usage>(static_cast<std::uint32_t>(a) | static_cast<std::uint32_t>(b));
-	}
-
-	constexpr auto operator&(buffer_usage a, buffer_usage b) -> buffer_usage {
-		return static_cast<buffer_usage>(static_cast<std::uint32_t>(a) & static_cast<std::uint32_t>(b));
-	}
-
-	constexpr auto has_flag(buffer_usage flags, buffer_usage flag) -> bool {
-		return (flags & flag) == flag;
-	}
+	using buffer_usage = gse::flags<buffer_flag>;
+	constexpr auto operator|(buffer_flag a, buffer_flag b) -> buffer_usage { return buffer_usage(a) | b; }
 
 	struct buffer_desc {
 		std::size_t size = 0;
-		buffer_usage usage = buffer_usage::storage;
+		buffer_usage usage = buffer_flag::storage;
+		const void* data = nullptr;
 	};
 
 	enum class cull_mode : std::uint8_t { none, front, back };
@@ -59,12 +52,32 @@ export namespace gse::gpu {
 		float depth_bias_slope = 0.0f;
 	};
 
-	enum class color_format : std::uint8_t { swapchain, none };
-	enum class depth_format : std::uint8_t { d32_sfloat, none };
+	enum class color_format : std::uint8_t {
+		swapchain,
+		none
+	};
+	enum class depth_format : std::uint8_t {
+		d32_sfloat,
+		none
+	};
 
-	enum class sampler_filter : std::uint8_t { nearest, linear };
-	enum class sampler_address_mode : std::uint8_t { repeat, clamp_to_edge, clamp_to_border, mirrored_repeat };
-	enum class border_color : std::uint8_t { float_opaque_white, float_opaque_black, float_transparent_black };
+	enum class sampler_filter : std::uint8_t {
+		nearest,
+		linear
+	};
+
+	enum class sampler_address_mode : std::uint8_t {
+		repeat,
+		clamp_to_edge,
+		clamp_to_border,
+		mirrored_repeat
+	};
+
+	enum class border_color : std::uint8_t {
+		float_opaque_white,
+		float_opaque_black,
+		float_transparent_black
+	};
 
 	struct sampler_desc {
 		sampler_filter min = sampler_filter::linear;
@@ -80,138 +93,54 @@ export namespace gse::gpu {
 		float max_lod = 0.0f;
 	};
 
-	class buffer final : public non_copyable {
-	public:
-		buffer() = default;
-		buffer(vulkan::buffer_resource&& resource);
-		buffer(buffer&&) noexcept = default;
-		auto operator=(buffer&&) noexcept -> buffer& = default;
-
-		[[nodiscard]] auto mapped() const -> std::byte*;
-		[[nodiscard]] auto size() const -> std::size_t;
-
-		[[nodiscard]] auto native() const -> const vulkan::buffer_resource&;
-		[[nodiscard]] auto native() -> vulkan::buffer_resource&;
-
-		explicit operator bool() const;
-	private:
-		vulkan::buffer_resource m_resource;
+	enum class image_format : std::uint8_t {
+		d32_sfloat,
+		r8g8b8a8_srgb,
+		r8g8b8a8_unorm,
+		r8g8b8_srgb,
+		r8g8b8_unorm,
+		r8_unorm,
+		b10g11r11_ufloat,
+		r8g8_snorm
 	};
 
-	class pipeline final : public non_copyable {
-	public:
-		pipeline() = default;
-		pipeline(
-			vk::raii::Pipeline&& handle,
-			vk::raii::PipelineLayout&& layout
-		);
-		pipeline(pipeline&&) noexcept = default;
-		auto operator=(pipeline&&) noexcept -> pipeline& = default;
-
-		[[nodiscard]] auto native_pipeline() const -> vk::Pipeline;
-		[[nodiscard]] auto native_layout() const -> vk::PipelineLayout;
-
-		explicit operator bool() const;
-	private:
-		vk::raii::Pipeline m_handle = nullptr;
-		vk::raii::PipelineLayout m_layout = nullptr;
+	enum class image_view_type : std::uint8_t {
+		e2d,
+		cube
 	};
 
-	class descriptor_set final : public non_copyable {
-	public:
-		descriptor_set() = default;
-		descriptor_set(vk::raii::DescriptorSet&& set);
-		descriptor_set(descriptor_set&&) noexcept = default;
-		auto operator=(descriptor_set&&) noexcept -> descriptor_set& = default;
-
-		[[nodiscard]] auto native() const -> vk::DescriptorSet;
-
-		explicit operator bool() const;
-	private:
-		vk::raii::DescriptorSet m_set = nullptr;
+	enum class image_flag : std::uint8_t {
+		sampled          = 1 << 0,
+		depth_attachment = 1 << 1,
+		color_attachment = 1 << 2,
+		transfer_dst     = 1 << 3,
+		storage          = 1 << 4
 	};
 
-	class sampler final : public non_copyable {
-	public:
-		sampler() = default;
-		sampler(vk::raii::Sampler&& s);
-		sampler(sampler&&) noexcept = default;
-		auto operator=(sampler&&) noexcept -> sampler& = default;
+	using image_usage = gse::flags<image_flag>;
+	constexpr auto operator|(image_flag a, image_flag b) -> image_usage { return image_usage(a) | b; }
 
-		[[nodiscard]] auto native() const -> vk::Sampler;
-
-		explicit operator bool() const;
-	private:
-		vk::raii::Sampler m_sampler = nullptr;
+	enum class image_layout : std::uint8_t {
+		undefined,
+		general,
+		shader_read_only
 	};
 
-	struct descriptor_buffer_binding {
-		std::uint32_t binding = 0;
-		const buffer* buf = nullptr;
-		std::size_t offset = 0;
-		std::size_t range = 0;
+	struct image_desc {
+		vec2u size = { 1, 1 };
+		image_format format = image_format::d32_sfloat;
+		image_view_type view = image_view_type::e2d;
+		image_usage usage = image_flag::sampled | image_flag::depth_attachment;
+		image_layout ready_layout = image_layout::undefined;
 	};
-}
 
-gse::gpu::buffer::buffer(vulkan::buffer_resource&& resource)
-	: m_resource(std::move(resource)) {}
+	enum class index_type : std::uint8_t {
+		uint16,
+		uint32
+	};
 
-auto gse::gpu::buffer::mapped() const -> std::byte* {
-	return m_resource.allocation.mapped();
-}
-
-auto gse::gpu::buffer::size() const -> std::size_t {
-	return m_resource.allocation.size();
-}
-
-auto gse::gpu::buffer::native() const -> const vulkan::buffer_resource& {
-	return m_resource;
-}
-
-auto gse::gpu::buffer::native() -> vulkan::buffer_resource& {
-	return m_resource;
-}
-
-gse::gpu::buffer::operator bool() const {
-	return m_resource.buffer != nullptr;
-}
-
-gse::gpu::pipeline::pipeline(
-	vk::raii::Pipeline&& handle,
-	vk::raii::PipelineLayout&& layout
-) : m_handle(std::move(handle)),
-    m_layout(std::move(layout)) {}
-
-auto gse::gpu::pipeline::native_pipeline() const -> vk::Pipeline {
-	return *m_handle;
-}
-
-auto gse::gpu::pipeline::native_layout() const -> vk::PipelineLayout {
-	return *m_layout;
-}
-
-gse::gpu::pipeline::operator bool() const {
-	return *m_handle != nullptr;
-}
-
-gse::gpu::descriptor_set::descriptor_set(vk::raii::DescriptorSet&& set)
-	: m_set(std::move(set)) {}
-
-auto gse::gpu::descriptor_set::native() const -> vk::DescriptorSet {
-	return *m_set;
-}
-
-gse::gpu::descriptor_set::operator bool() const {
-	return *m_set != nullptr;
-}
-
-gse::gpu::sampler::sampler(vk::raii::Sampler&& s)
-	: m_sampler(std::move(s)) {}
-
-auto gse::gpu::sampler::native() const -> vk::Sampler {
-	return *m_sampler;
-}
-
-gse::gpu::sampler::operator bool() const {
-	return *m_sampler != nullptr;
+	enum class bind_point : std::uint8_t {
+		graphics,
+		compute
+	};
 }

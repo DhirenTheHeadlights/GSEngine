@@ -62,24 +62,31 @@ export namespace gse {
         auto indices() const -> const std::vector<std::uint32_t>&;
         auto aabb() const -> std::pair<vec3<displacement>, vec3<displacement>>;
 
-        auto vertex_buffer() const -> vk::Buffer { return m_vertex_buffer.buffer; }
-        auto index_buffer() const -> vk::Buffer { return m_index_buffer.buffer; }
+        auto vertex_buffer() const -> vk::Buffer { return m_vertex_buffer.native().buffer; }
+        auto index_buffer() const -> vk::Buffer { return m_index_buffer.native().buffer; }
+        auto vertex_gpu_buffer(this const mesh& self) -> const gpu::buffer& { return self.m_vertex_buffer; }
+        auto index_gpu_buffer(this const mesh& self) -> const gpu::buffer& { return self.m_index_buffer; }
 
         auto has_meshlets() const -> bool { return !m_meshlets.descriptors.empty(); }
         auto meshlet_count() const -> std::uint32_t { return static_cast<std::uint32_t>(m_meshlets.descriptors.size()); }
-        auto meshlet_descriptor_buffer() const -> vk::Buffer { return m_meshlet_descriptor_buffer.buffer; }
-        auto meshlet_vertex_buffer() const -> vk::Buffer { return m_meshlet_vertex_buffer.buffer; }
-        auto meshlet_triangle_buffer() const -> vk::Buffer { return m_meshlet_triangle_buffer.buffer; }
-        auto meshlet_bounds_buffer() const -> vk::Buffer { return m_meshlet_bounds_buffer.buffer; }
-        auto vertex_storage_buffer() const -> vk::Buffer { return m_vertex_storage_buffer.buffer; }
+        auto meshlet_descriptor_buffer() const -> vk::Buffer { return m_meshlet_descriptor_buffer.native().buffer; }
+        auto meshlet_descriptor_buffer_size() const -> std::size_t { return m_meshlet_descriptor_buffer.size(); }
+        auto meshlet_vertex_buffer() const -> vk::Buffer { return m_meshlet_vertex_buffer.native().buffer; }
+        auto meshlet_vertex_buffer_size() const -> std::size_t { return m_meshlet_vertex_buffer.size(); }
+        auto meshlet_triangle_buffer() const -> vk::Buffer { return m_meshlet_triangle_buffer.native().buffer; }
+        auto meshlet_triangle_buffer_size() const -> std::size_t { return m_meshlet_triangle_buffer.size(); }
+        auto meshlet_bounds_buffer() const -> vk::Buffer { return m_meshlet_bounds_buffer.native().buffer; }
+        auto meshlet_bounds_buffer_size() const -> std::size_t { return m_meshlet_bounds_buffer.size(); }
+        auto vertex_storage_buffer() const -> vk::Buffer { return m_vertex_storage_buffer.native().buffer; }
+        auto vertex_storage_buffer_size() const -> std::size_t { return m_vertex_storage_buffer.size(); }
     private:
-        vulkan::buffer_resource m_vertex_buffer;
-        vulkan::buffer_resource m_index_buffer;
-        vulkan::buffer_resource m_vertex_storage_buffer;
-        vulkan::buffer_resource m_meshlet_descriptor_buffer;
-        vulkan::buffer_resource m_meshlet_vertex_buffer;
-        vulkan::buffer_resource m_meshlet_triangle_buffer;
-        vulkan::buffer_resource m_meshlet_bounds_buffer;
+        gpu::buffer m_vertex_buffer;
+        gpu::buffer m_index_buffer;
+        gpu::buffer m_vertex_storage_buffer;
+        gpu::buffer m_meshlet_descriptor_buffer;
+        gpu::buffer m_meshlet_vertex_buffer;
+        gpu::buffer m_meshlet_triangle_buffer;
+        gpu::buffer m_meshlet_bounds_buffer;
 
         std::vector<vertex> m_vertices;
         std::vector<std::uint32_t> m_indices;
@@ -130,91 +137,78 @@ auto gse::mesh::initialize(gpu::context& ctx) -> void {
         m_meshlets = build_runtime_meshlets(m_vertices, m_indices);
     }
 
-    const vk::DeviceSize vertex_buffer_size = sizeof(vertex) * m_vertices.size();
-    const vk::DeviceSize index_buffer_size = sizeof(std::uint32_t) * m_indices.size();
+    const std::size_t vertex_buffer_size = sizeof(vertex) * m_vertices.size();
+    const std::size_t index_buffer_size = sizeof(std::uint32_t) * m_indices.size();
 
-    constexpr auto storage_usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst;
+    const auto storage_dst = gpu::buffer_flag::storage | gpu::buffer_flag::transfer_dst;
 
-    m_vertex_buffer = ctx.allocator().create_buffer({
+    m_vertex_buffer = gpu::create_buffer(ctx, {
         .size = vertex_buffer_size,
-        .usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst
+        .usage = gpu::buffer_flag::vertex | gpu::buffer_flag::transfer_dst
     });
 
-    m_index_buffer = ctx.allocator().create_buffer({
+    m_index_buffer = gpu::create_buffer(ctx, {
         .size = index_buffer_size,
-        .usage = vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst
+        .usage = gpu::buffer_flag::index | gpu::buffer_flag::transfer_dst
     });
 
-    m_vertex_storage_buffer = ctx.allocator().create_buffer({
+    m_vertex_storage_buffer = gpu::create_buffer(ctx, {
         .size = vertex_buffer_size,
-        .usage = storage_usage
+        .usage = storage_dst
     });
 
     const bool has_ml = has_meshlets();
 
     if (has_ml) {
-        m_meshlet_descriptor_buffer = ctx.allocator().create_buffer({
+        m_meshlet_descriptor_buffer = gpu::create_buffer(ctx, {
             .size = sizeof(meshlet_descriptor) * m_meshlets.descriptors.size(),
-            .usage = storage_usage
+            .usage = storage_dst
         });
 
-        m_meshlet_vertex_buffer = ctx.allocator().create_buffer({
+        m_meshlet_vertex_buffer = gpu::create_buffer(ctx, {
             .size = sizeof(std::uint32_t) * m_meshlets.vertex_indices.size(),
-            .usage = storage_usage
+            .usage = storage_dst
         });
 
         const auto tri_size = (m_meshlets.triangles.size() + 3) & ~std::size_t(3);
-        m_meshlet_triangle_buffer = ctx.allocator().create_buffer({
+        m_meshlet_triangle_buffer = gpu::create_buffer(ctx, {
             .size = tri_size,
-            .usage = storage_usage
+            .usage = storage_dst
         });
 
-        m_meshlet_bounds_buffer = ctx.allocator().create_buffer({
+        m_meshlet_bounds_buffer = gpu::create_buffer(ctx, {
             .size = sizeof(meshlet_bounds) * m_meshlets.bounds.size(),
-            .usage = storage_usage
+            .usage = storage_dst
         });
     }
 
-    ctx.add_transient_work(
-        [this, &ctx, vertex_buffer_size, index_buffer_size, has_ml](const vk::raii::CommandBuffer& command_buffer) -> std::vector<vulkan::buffer_resource> {
-            std::vector<vulkan::buffer_resource> transient;
+    std::vector<gpu::buffer_upload> uploads{
+        { &m_vertex_buffer, m_vertices.data(), vertex_buffer_size },
+        { &m_index_buffer, m_indices.data(), index_buffer_size },
+        { &m_vertex_storage_buffer, m_vertices.data(), vertex_buffer_size }
+    };
 
-            auto stage_copy = [&](vk::Buffer dst, const void* data, vk::DeviceSize size) {
-                auto staging = ctx.allocator().create_buffer({
-                    .size = size,
-                    .usage = vk::BufferUsageFlagBits::eTransferSrc
-                }, data);
-                command_buffer.copyBuffer(staging.buffer, dst, vk::BufferCopy(0, 0, size));
-                transient.push_back(std::move(staging));
-            };
+    if (has_ml) {
+        uploads.push_back({ &m_meshlet_descriptor_buffer, m_meshlets.descriptors.data(),
+            sizeof(meshlet_descriptor) * m_meshlets.descriptors.size() });
+        uploads.push_back({ &m_meshlet_vertex_buffer, m_meshlets.vertex_indices.data(),
+            sizeof(std::uint32_t) * m_meshlets.vertex_indices.size() });
+        const auto tri_size = (m_meshlets.triangles.size() + 3) & ~std::size_t(3);
+        uploads.push_back({ &m_meshlet_triangle_buffer, m_meshlets.triangles.data(), tri_size });
+        uploads.push_back({ &m_meshlet_bounds_buffer, m_meshlets.bounds.data(),
+            sizeof(meshlet_bounds) * m_meshlets.bounds.size() });
+    }
 
-            stage_copy(m_vertex_buffer.buffer, m_vertices.data(), vertex_buffer_size);
-            stage_copy(m_index_buffer.buffer, m_indices.data(), index_buffer_size);
-            stage_copy(m_vertex_storage_buffer.buffer, m_vertices.data(), vertex_buffer_size);
-
-            if (has_ml) {
-                stage_copy(m_meshlet_descriptor_buffer.buffer, m_meshlets.descriptors.data(),
-                    sizeof(meshlet_descriptor) * m_meshlets.descriptors.size());
-                stage_copy(m_meshlet_vertex_buffer.buffer, m_meshlets.vertex_indices.data(),
-                    sizeof(std::uint32_t) * m_meshlets.vertex_indices.size());
-                const auto tri_size = (m_meshlets.triangles.size() + 3) & ~std::size_t(3);
-                stage_copy(m_meshlet_triangle_buffer.buffer, m_meshlets.triangles.data(), tri_size);
-                stage_copy(m_meshlet_bounds_buffer.buffer, m_meshlets.bounds.data(),
-                    sizeof(meshlet_bounds) * m_meshlets.bounds.size());
-            }
-
-            return transient;
-        }
-    );
+    gpu::upload_to_buffers(ctx, uploads);
 }
 
 auto gse::mesh::bind(const vk::CommandBuffer command_buffer) const -> void {
-    if (!m_vertex_buffer.buffer || !m_index_buffer.buffer) {
+    if (!m_vertex_buffer || !m_index_buffer) {
         return;
     }
 
-    command_buffer.bindVertexBuffers(0, { m_vertex_buffer.buffer }, { 0 });
-    command_buffer.bindIndexBuffer(m_index_buffer.buffer, 0, vk::IndexType::eUint32);
+    command_buffer.bindVertexBuffers(0, { vertex_buffer() }, { 0 });
+    command_buffer.bindIndexBuffer(index_buffer(), 0, vk::IndexType::eUint32);
 }
 
 auto gse::mesh::draw(const vk::CommandBuffer command_buffer) const -> void {

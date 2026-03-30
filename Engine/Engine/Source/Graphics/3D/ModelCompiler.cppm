@@ -4,6 +4,7 @@ import std;
 
 import gse.platform;
 import gse.assert;
+import gse.log;
 import gse.math;
 
 import :mesh;
@@ -117,7 +118,7 @@ auto gse::asset_compiler<gse::model>::compile_one(
 ) -> bool {
     std::ifstream model_file(source);
     if (!model_file.is_open()) {
-        std::println("Failed to open model file: {}", source.string());
+        log::println(log::level::error, log::category::assets, "Failed to open model file: {}", source.string());
         return false;
     }
 
@@ -275,7 +276,7 @@ auto gse::asset_compiler<gse::model>::compile_one(
         write_binary(out_file, m.meshlets.bounds.data(), meshlet_count * sizeof(meshlet_bounds));
     }
 
-    std::println("Model compiled: {} ({} meshes)", destination.filename().string(), mesh_count);
+    log::println(log::category::assets, "Model compiled: {} ({} meshes)", destination.filename().string(), mesh_count);
     return true;
 }
 

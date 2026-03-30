@@ -111,7 +111,7 @@ auto gse::renderer::depth_prepass::system::initialize(initialize_phase& phase, s
 	for (std::size_t i = 0; i < per_frame_resource<gpu::buffer>::frames_in_flight; ++i) {
 		s.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx, {
 			.size = meshlet_camera_ubo.size,
-			.usage = gpu::buffer_usage::uniform
+			.usage = gpu::buffer_flag::uniform
 		});
 	}
 
@@ -201,26 +201,27 @@ auto gse::renderer::depth_prepass::system::render(const render_phase& phase, con
 
 	auto pass = ctx.graph().add_pass<state>();
 	pass.track(s.ubo_allocations.at("CameraUBO")[frame_index].native());
-	pass.track(gc_state->instance_buffer[frame_index]);
+	pass.track(gc_state->instance_buffer[frame_index].native());
 
 	pass.after<cull_compute::state>()
 		.reads(
-			vulkan::storage_read(gc_state->skin_buffer[frame_index], vk::PipelineStageFlagBits2::eVertexShader),
-			vulkan::indirect_read(gc_state->skinned_indirect_commands_buffer[frame_index], vk::PipelineStageFlagBits2::eDrawIndirect)
+			vulkan::storage_read(gc_state->skin_buffer[frame_index].native(), vk::PipelineStageFlagBits2::eVertexShader),
+			vulkan::indirect_read(gc_state->skinned_indirect_commands_buffer[frame_index].native(), vk::PipelineStageFlagBits2::eDrawIndirect)
 		)
 		.depth_output(vulkan::depth_clear{ 1.0f })
 		.record([&s, gc_state, &data, frame_index, ext_w, ext_h](vulkan::recording_context& ctx) {
-			ctx.set_viewport(0.0f, 0.0f, static_cast<float>(ext_w), static_cast<float>(ext_h));
-			ctx.set_scissor(0, 0, ext_w, ext_h);
+			const vec2u ext_size{ ext_w, ext_h };
+			ctx.set_viewport(ext_size);
+			ctx.set_scissor(ext_size);
 
 			if (!data.normal_batches.empty()) {
-				ctx.bind_pipeline(vk::PipelineBindPoint::eGraphics, s.meshlet_pipeline);
-				ctx.bind_descriptors(vk::PipelineBindPoint::eGraphics, s.meshlet_pipeline, s.meshlet_descriptors[frame_index]);
+				ctx.bind(s.meshlet_pipeline);
+				ctx.bind_descriptors(s.meshlet_pipeline, s.meshlet_descriptors[frame_index]);
 
 				const vk::DescriptorBufferInfo instance_buffer_info{
-					.buffer = gc_state->instance_buffer[frame_index].buffer,
+					.buffer = gc_state->instance_buffer[frame_index].native().buffer,
 					.offset = 0,
-					.range = gc_state->instance_buffer[frame_index].allocation.size()
+					.range = gc_state->instance_buffer[frame_index].size()
 				};
 
 				for (const auto& batch : data.normal_batches) {
@@ -229,11 +230,11 @@ auto gse::renderer::depth_prepass::system::render(const render_phase& phase, con
 						continue;
 					}
 
-					const vk::DescriptorBufferInfo vertex_storage_info{ .buffer = mesh.vertex_storage_buffer(), .offset = 0, .range = vk::WholeSize };
-					const vk::DescriptorBufferInfo meshlet_desc_info{ .buffer = mesh.meshlet_descriptor_buffer(), .offset = 0, .range = vk::WholeSize };
-					const vk::DescriptorBufferInfo meshlet_vert_info{ .buffer = mesh.meshlet_vertex_buffer(), .offset = 0, .range = vk::WholeSize };
-					const vk::DescriptorBufferInfo meshlet_tri_info{ .buffer = mesh.meshlet_triangle_buffer(), .offset = 0, .range = vk::WholeSize };
-					const vk::DescriptorBufferInfo meshlet_bounds_info{ .buffer = mesh.meshlet_bounds_buffer(), .offset = 0, .range = vk::WholeSize };
+					const vk::DescriptorBufferInfo vertex_storage_info{ .buffer = mesh.vertex_storage_buffer(), .offset = 0, .range = mesh.vertex_storage_buffer_size() };
+					const vk::DescriptorBufferInfo meshlet_desc_info{ .buffer = mesh.meshlet_descriptor_buffer(), .offset = 0, .range = mesh.meshlet_descriptor_buffer_size() };
+					const vk::DescriptorBufferInfo meshlet_vert_info{ .buffer = mesh.meshlet_vertex_buffer(), .offset = 0, .range = mesh.meshlet_vertex_buffer_size() };
+					const vk::DescriptorBufferInfo meshlet_tri_info{ .buffer = mesh.meshlet_triangle_buffer(), .offset = 0, .range = mesh.meshlet_triangle_buffer_size() };
+					const vk::DescriptorBufferInfo meshlet_bounds_info{ .buffer = mesh.meshlet_bounds_buffer(), .offset = 0, .range = mesh.meshlet_bounds_buffer_size() };
 
 					const std::array<vk::WriteDescriptorSet, 6> descriptor_writes{
 						vk::WriteDescriptorSet{ .dstBinding = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &vertex_storage_info },
@@ -261,19 +262,19 @@ auto gse::renderer::depth_prepass::system::render(const render_phase& phase, con
 			}
 
 			if (!data.skinned_batches.empty()) {
-				ctx.bind_pipeline(vk::PipelineBindPoint::eGraphics, s.skinned_pipeline);
-				ctx.bind_descriptors(vk::PipelineBindPoint::eGraphics, s.skinned_pipeline, s.skinned_descriptors[frame_index]);
+				ctx.bind(s.skinned_pipeline);
+				ctx.bind_descriptors(s.skinned_pipeline, s.skinned_descriptors[frame_index]);
 
 				const vk::DescriptorBufferInfo skin_buffer_info{
-					.buffer = gc_state->skin_buffer[frame_index].buffer,
+					.buffer = gc_state->skin_buffer[frame_index].native().buffer,
 					.offset = 0,
-					.range = gc_state->skin_buffer[frame_index].allocation.size()
+					.range = gc_state->skin_buffer[frame_index].size()
 				};
 
 				const vk::DescriptorBufferInfo instance_buffer_info{
-					.buffer = gc_state->instance_buffer[frame_index].buffer,
+					.buffer = gc_state->instance_buffer[frame_index].native().buffer,
 					.offset = 0,
-					.range = gc_state->instance_buffer[frame_index].allocation.size()
+					.range = gc_state->instance_buffer[frame_index].size()
 				};
 
 				const std::array<vk::WriteDescriptorSet, 2> descriptor_writes{
@@ -298,13 +299,11 @@ auto gse::renderer::depth_prepass::system::render(const render_phase& phase, con
 					const auto& batch = data.skinned_batches[i];
 					const auto& mesh = batch.key.model_ptr->meshes()[batch.key.mesh_index];
 
-					const vk::Buffer vertex_buffers[]{ mesh.vertex_buffer() };
-					const vk::DeviceSize offsets[]{ 0 };
-					ctx.bind_vertex_buffers(0, vertex_buffers, offsets);
-					ctx.bind_index_buffer(mesh.index_buffer(), 0, vk::IndexType::eUint32);
+					ctx.bind_vertex(mesh.vertex_gpu_buffer());
+					ctx.bind_index(mesh.index_gpu_buffer());
 
 					ctx.draw_indirect(
-						gc_state->skinned_indirect_commands_buffer[frame_index].buffer,
+						gc_state->skinned_indirect_commands_buffer[frame_index],
 						i * sizeof(vk::DrawIndexedIndirectCommand),
 						1,
 						0

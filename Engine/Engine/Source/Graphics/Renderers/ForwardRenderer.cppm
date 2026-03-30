@@ -34,6 +34,10 @@ export namespace gse::renderer::forward {
 
 		resource::handle<texture> blank_texture;
 
+		gpu::image placeholder_depth;
+		gpu::image placeholder_cube_depth;
+		gpu::sampler placeholder_cube_sampler;
+
 		std::unordered_map<std::string, per_frame_resource<gpu::buffer>> ubo_allocations;
 
 		state() = default;
@@ -73,25 +77,47 @@ auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& 
 		.max_lod = 1.0f
 	});
 
+	s.placeholder_depth = gpu::create_image(ctx, {
+		.format = gpu::image_format::d32_sfloat,
+		.view = gpu::image_view_type::e2d,
+		.usage = gpu::image_flag::sampled | gpu::image_flag::depth_attachment,
+		.ready_layout = gpu::image_layout::general
+	});
+
+	s.placeholder_cube_depth = gpu::create_image(ctx, {
+		.format = gpu::image_format::d32_sfloat,
+		.view = gpu::image_view_type::cube,
+		.usage = gpu::image_flag::sampled | gpu::image_flag::depth_attachment,
+		.ready_layout = gpu::image_layout::general
+	});
+
+	s.placeholder_cube_sampler = gpu::create_sampler(ctx, {
+		.min = gpu::sampler_filter::nearest,
+		.mag = gpu::sampler_filter::nearest,
+		.address_u = gpu::sampler_address_mode::clamp_to_edge,
+		.address_v = gpu::sampler_address_mode::clamp_to_edge,
+		.address_w = gpu::sampler_address_mode::clamp_to_edge
+	});
+
 	for (std::size_t i = 0; i < per_frame_resource<vulkan::descriptor_region>::frames_in_flight; ++i) {
 		s.ubo_allocations["CameraUBO"][i] = gpu::create_buffer(ctx, {
 			.size = camera_ubo.size,
-			.usage = gpu::buffer_usage::uniform
+			.usage = gpu::buffer_flag::uniform
 		});
 
 		s.light_buffers[i] = gpu::create_buffer(ctx, {
 			.size = light_block.size,
-			.usage = gpu::buffer_usage::storage
+			.usage = gpu::buffer_flag::storage
 		});
 
 		s.shadow_params_buffers[i] = gpu::create_buffer(ctx, {
 			.size = shadow_block.size,
-			.usage = gpu::buffer_usage::uniform
+			.usage = gpu::buffer_flag::uniform
 		});
 
 		s.point_shadow_params_buffers[i] = gpu::create_buffer(ctx, {
 			.size = point_shadow_block.size,
-			.usage = gpu::buffer_usage::uniform
+			.usage = gpu::buffer_flag::uniform
 		});
 
 		s.descriptors[i] = gpu::allocate_descriptors(ctx, *s.shader_handle);
@@ -143,7 +169,7 @@ auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& 
 	for (std::size_t i = 0; i < max_shadow_lights; ++i) {
 		shadow_infos.push_back({
 			.sampler = s.shadow_sampler.native(),
-			.imageView = shadow_state ? shadow_state->shadow_map_view(i) : vk::ImageView{},
+			.imageView = shadow_state ? shadow_state->shadow_map_view(i) : s.placeholder_depth.native().view,
 			.imageLayout = vk::ImageLayout::eGeneral
 		});
 	}
@@ -154,8 +180,8 @@ auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& 
 
 	for (std::size_t i = 0; i < max_point_shadow_lights; ++i) {
 		point_shadow_infos.push_back({
-			.sampler = shadow_state ? shadow_state->point_shadow_sampler(i) : vk::Sampler{},
-			.imageView = shadow_state ? shadow_state->point_shadow_cube_view(i) : vk::ImageView{},
+			.sampler = shadow_state ? shadow_state->point_shadow_sampler(i) : s.placeholder_cube_sampler.native(),
+			.imageView = shadow_state ? shadow_state->point_shadow_cube_view(i) : s.placeholder_cube_depth.native().view,
 			.imageLayout = vk::ImageLayout::eGeneral
 		});
 	}
@@ -438,7 +464,7 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 	pass.track(s.light_buffers[frame_index]);
 	pass.track(s.shadow_params_buffers[frame_index]);
 	pass.track(s.point_shadow_params_buffers[frame_index]);
-	pass.track(gc_state->instance_buffer[frame_index]);
+	pass.track(gc_state->instance_buffer[frame_index].native());
 
 	pass
 		.after<light_culling::state>()
@@ -446,20 +472,21 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 		.reads(
 			vulkan::storage_read(lc_state->tile_light_table_buffers[frame_index].native(), vk::PipelineStageFlagBits2::eFragmentShader),
 			vulkan::storage_read(lc_state->light_index_list_buffers[frame_index].native(), vk::PipelineStageFlagBits2::eFragmentShader),
-			vulkan::storage_read(gc_state->skin_buffer[frame_index], vk::PipelineStageFlagBits2::eVertexShader),
-			vulkan::indirect_read(gc_state->skinned_indirect_commands_buffer[frame_index], vk::PipelineStageFlagBits2::eDrawIndirect)
+			vulkan::storage_read(gc_state->skin_buffer[frame_index].native(), vk::PipelineStageFlagBits2::eVertexShader),
+			vulkan::indirect_read(gc_state->skinned_indirect_commands_buffer[frame_index].native(), vk::PipelineStageFlagBits2::eDrawIndirect)
 		)
 		.color_output(vulkan::color_clear{ 0.1f, 0.1f, 0.1f, 1.0f })
 		.depth_output_load()
 		.record([&s, &normal_batches, &skinned_batches, gc_state, frame_index, num_lights_i, screen_sz, ext_w, ext_h](vulkan::recording_context& ctx) {
-			ctx.set_viewport(0.0f, 0.0f, static_cast<float>(ext_w), static_cast<float>(ext_h));
-			ctx.set_scissor(0, 0, ext_w, ext_h);
+			const vec2u ext_size{ ext_w, ext_h };
+			ctx.set_viewport(ext_size);
+			ctx.set_scissor(ext_size);
 
 			if (!normal_batches.empty()) {
 				const vk::DescriptorBufferInfo instance_buffer_info{
-					.buffer = gc_state->instance_buffer[frame_index].buffer,
+					.buffer = gc_state->instance_buffer[frame_index].native().buffer,
 					.offset = 0,
-					.range = gc_state->instance_buffer[frame_index].allocation.size()
+					.range = gc_state->instance_buffer[frame_index].size()
 				};
 
 				bool pipeline_bound = false;
@@ -476,35 +503,35 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 					const auto& tex_info = has_texture ? mesh.material()->diffuse_texture->descriptor_info() : s.blank_texture->descriptor_info();
 
 					if (!pipeline_bound) {
-						ctx.bind_pipeline(vk::PipelineBindPoint::eGraphics, s.pipeline);
-						ctx.bind_descriptors(vk::PipelineBindPoint::eGraphics, s.pipeline, s.descriptors[frame_index]);
+						ctx.bind(s.pipeline);
+						ctx.bind_descriptors(s.pipeline, s.descriptors[frame_index]);
 						pipeline_bound = true;
 					}
 
 					const vk::DescriptorBufferInfo vertex_storage_info{
 						.buffer = mesh.vertex_storage_buffer(),
 						.offset = 0,
-						.range = vk::WholeSize
+						.range = mesh.vertex_storage_buffer_size()
 					};
 					const vk::DescriptorBufferInfo meshlet_desc_info{
 						.buffer = mesh.meshlet_descriptor_buffer(),
 						.offset = 0,
-						.range = vk::WholeSize
+						.range = mesh.meshlet_descriptor_buffer_size()
 					};
 					const vk::DescriptorBufferInfo meshlet_vert_info{
 						.buffer = mesh.meshlet_vertex_buffer(),
 						.offset = 0,
-						.range = vk::WholeSize
+						.range = mesh.meshlet_vertex_buffer_size()
 					};
 					const vk::DescriptorBufferInfo meshlet_tri_info{
 						.buffer = mesh.meshlet_triangle_buffer(),
 						.offset = 0,
-						.range = vk::WholeSize
+						.range = mesh.meshlet_triangle_buffer_size()
 					};
 					const vk::DescriptorBufferInfo meshlet_bounds_info{
 						.buffer = mesh.meshlet_bounds_buffer(),
 						.offset = 0,
-						.range = vk::WholeSize
+						.range = mesh.meshlet_bounds_buffer_size()
 					};
 
 					const std::array<vk::WriteDescriptorSet, 7> descriptor_writes{
@@ -571,19 +598,19 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 			}
 
 			if (!skinned_batches.empty()) {
-				ctx.bind_pipeline(vk::PipelineBindPoint::eGraphics, s.skinned_pipeline);
-				ctx.bind_descriptors(vk::PipelineBindPoint::eGraphics, s.skinned_pipeline, s.skinned_descriptors[frame_index]);
+				ctx.bind(s.skinned_pipeline);
+				ctx.bind_descriptors(s.skinned_pipeline, s.skinned_descriptors[frame_index]);
 
 				const vk::DescriptorBufferInfo skin_buffer_info{
-					.buffer = gc_state->skin_buffer[frame_index].buffer,
+					.buffer = gc_state->skin_buffer[frame_index].native().buffer,
 					.offset = 0,
-					.range = gc_state->skin_buffer[frame_index].allocation.size()
+					.range = gc_state->skin_buffer[frame_index].size()
 				};
 
 				const vk::DescriptorBufferInfo skinned_instance_buffer_info{
-					.buffer = gc_state->instance_buffer[frame_index].buffer,
+					.buffer = gc_state->instance_buffer[frame_index].native().buffer,
 					.offset = 0,
-					.range = gc_state->instance_buffer[frame_index].allocation.size()
+					.range = gc_state->instance_buffer[frame_index].size()
 				};
 
 				for (std::size_t i = 0; i < skinned_batches.size(); ++i) {
@@ -619,13 +646,11 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 
 					ctx.push_descriptor(vk::PipelineBindPoint::eGraphics, s.skinned_pipeline.native_layout(), 1, skinned_descriptor_writes);
 
-					const vk::Buffer vbufs[]{ mesh.vertex_buffer() };
-					const vk::DeviceSize voffs[]{ 0 };
-					ctx.bind_vertex_buffers(0, vbufs, voffs);
-					ctx.bind_index_buffer(mesh.index_buffer(), 0, vk::IndexType::eUint32);
+					ctx.bind_vertex(mesh.vertex_gpu_buffer());
+					ctx.bind_index(mesh.index_gpu_buffer());
 
 					ctx.draw_indirect(
-						gc_state->skinned_indirect_commands_buffer[frame_index].buffer,
+						gc_state->skinned_indirect_commands_buffer[frame_index],
 						i * sizeof(vk::DrawIndexedIndirectCommand),
 						1,
 						0

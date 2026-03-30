@@ -11,6 +11,8 @@ import :lambda_traits;
 import :id;
 import :trace;
 
+import gse.log;
+
 export namespace gse {
 	using job = std::function<void()>;
 }
@@ -157,10 +159,10 @@ auto gse::task::group::post(job j, const id id) -> void {
 			}, parent_eid);
 		}
 		catch (const std::exception& e) {
-			std::println("Exception in task: {}", e.what());
+			log::println(log::level::error, log::category::task, "Exception in task: {}", e.what());
 		}
 		catch (...) {
-			std::println("Exception in task");
+			log::println(log::level::error, log::category::task, "Exception in task");
 		}
 	});
 }
@@ -361,9 +363,9 @@ auto gse::task::enqueue(job j, id id, parent parent) -> void {
 				j();
 			}, parent_eid);
 		} catch (const std::exception& e) {
-			std::println("Exception in task: {}", e.what());
+			log::println(log::level::error, log::category::task, "Exception in task: {}", e.what());
 		} catch (...) {
-			std::println("Exception in task");
+			log::println(log::level::error, log::category::task, "Exception in task");
 		}
 	});
 }

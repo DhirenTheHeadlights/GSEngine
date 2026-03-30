@@ -35,16 +35,18 @@ export namespace gse {
         auto draw(vk::CommandBuffer command_buffer) const -> void;
         auto draw_instanced(vk::CommandBuffer command_buffer, std::uint32_t instance_count, std::uint32_t first_instance = 0) const -> void;
 
-        auto vertex_buffer() const -> vk::Buffer { return m_vertex_buffer.buffer; }
-        auto index_buffer() const -> vk::Buffer { return m_index_buffer.buffer; }
+        auto vertex_buffer() const -> vk::Buffer { return m_vertex_buffer.native().buffer; }
+        auto index_buffer() const -> vk::Buffer { return m_index_buffer.native().buffer; }
+        auto vertex_gpu_buffer(this const skinned_mesh& self) -> const gpu::buffer& { return self.m_vertex_buffer; }
+        auto index_gpu_buffer(this const skinned_mesh& self) -> const gpu::buffer& { return self.m_index_buffer; }
 
         auto center_of_mass() const -> vec3<displacement>;
         auto material() const -> const resource::handle<material>&;
         auto indices() const -> const std::vector<std::uint32_t>&;
         auto aabb() const -> std::pair<vec3<displacement>, vec3<displacement>>;
     private:
-        vulkan::buffer_resource m_vertex_buffer;
-        vulkan::buffer_resource m_index_buffer;
+        gpu::buffer m_vertex_buffer;
+        gpu::buffer m_index_buffer;
 
         std::vector<skinned_vertex> m_vertices;
         std::vector<std::uint32_t> m_indices;
@@ -67,64 +69,32 @@ auto gse::skinned_mesh::initialize(gpu::context& ctx) -> void {
         return;
     }
 
-    const vk::DeviceSize vertex_buffer_size = sizeof(skinned_vertex) * m_vertices.size();
-    const vk::DeviceSize index_buffer_size = sizeof(std::uint32_t) * m_indices.size();
+    const std::size_t vertex_buffer_size = sizeof(skinned_vertex) * m_vertices.size();
+    const std::size_t index_buffer_size = sizeof(std::uint32_t) * m_indices.size();
 
-    const vk::BufferCreateInfo vertex_final_info{
+    m_vertex_buffer = gpu::create_buffer(ctx, {
         .size = vertex_buffer_size,
-        .usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst
-    };
-    this->m_vertex_buffer = ctx.allocator().create_buffer(
-        vertex_final_info
-    );
+        .usage = gpu::buffer_flag::vertex | gpu::buffer_flag::transfer_dst
+    });
 
-    const vk::BufferCreateInfo index_final_info{
+    m_index_buffer = gpu::create_buffer(ctx, {
         .size = index_buffer_size,
-        .usage = vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst
-    };
-    this->m_index_buffer = ctx.allocator().create_buffer(
-        index_final_info
-    );
+        .usage = gpu::buffer_flag::index | gpu::buffer_flag::transfer_dst
+    });
 
-    ctx.add_transient_work(
-        [&](const vk::raii::CommandBuffer& command_buffer) -> std::vector<vulkan::buffer_resource> {
-            auto vertex_staging = ctx.allocator().create_buffer(
-                vk::BufferCreateInfo{
-                    .size = vertex_buffer_size,
-                    .usage = vk::BufferUsageFlagBits::eTransferSrc
-                },
-                m_vertices.data()
-            );
-
-            auto index_staging = ctx.allocator().create_buffer(
-                vk::BufferCreateInfo{
-                    .size = index_buffer_size,
-                    .usage = vk::BufferUsageFlagBits::eTransferSrc
-                },
-                m_indices.data()
-            );
-
-            const vk::BufferCopy vertex_copy_region(0, 0, vertex_buffer_size);
-            command_buffer.copyBuffer(vertex_staging.buffer, this->m_vertex_buffer.buffer, vertex_copy_region);
-
-            const vk::BufferCopy index_copy_region(0, 0, index_buffer_size);
-            command_buffer.copyBuffer(index_staging.buffer, this->m_index_buffer.buffer, index_copy_region);
-
-            std::vector<vulkan::buffer_resource> transient_resources;
-            transient_resources.push_back(std::move(vertex_staging));
-            transient_resources.push_back(std::move(index_staging));
-            return transient_resources;
-        }
-    );
+    gpu::upload_to_buffers(ctx, std::array{
+        gpu::buffer_upload{ &m_vertex_buffer, m_vertices.data(), vertex_buffer_size },
+        gpu::buffer_upload{ &m_index_buffer, m_indices.data(), index_buffer_size }
+    });
 }
 
 auto gse::skinned_mesh::bind(const vk::CommandBuffer command_buffer) const -> void {
-    if (!m_vertex_buffer.buffer || !m_index_buffer.buffer) {
+    if (!m_vertex_buffer || !m_index_buffer) {
         return;
     }
 
-    command_buffer.bindVertexBuffers(0, { m_vertex_buffer.buffer }, { 0 });
-    command_buffer.bindIndexBuffer(m_index_buffer.buffer, 0, vk::IndexType::eUint32);
+    command_buffer.bindVertexBuffers(0, { vertex_buffer() }, { 0 });
+    command_buffer.bindIndexBuffer(index_buffer(), 0, vk::IndexType::eUint32);
 }
 
 auto gse::skinned_mesh::draw(const vk::CommandBuffer command_buffer) const -> void {
