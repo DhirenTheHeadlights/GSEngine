@@ -409,9 +409,7 @@ auto gse::renderer::shadow::system::render(render_phase& phase, const state& s) 
         return;
     }
 
-    auto& config = s.ctx->config();
-
-    if (!config.frame_in_progress()) {
+    if (!s.ctx->graph().frame_in_progress()) {
         return;
     }
 
@@ -498,21 +496,8 @@ auto gse::renderer::shadow::system::render(render_phase& phase, const state& s) 
 
                 ctx.bind_pipeline(vk::PipelineBindPoint::eGraphics, s.pipeline);
 
-                const vk::Viewport viewport{
-                    .x = 0.0f,
-                    .y = 0.0f,
-                    .width = static_cast<float>(batch.extent.width),
-                    .height = static_cast<float>(batch.extent.height),
-                    .minDepth = 0.0f,
-                    .maxDepth = 1.0f
-                };
-                ctx.set_viewport(viewport);
-
-                const vk::Rect2D scissor{
-                    .offset = { 0, 0 },
-                    .extent = batch.extent
-                };
-                ctx.set_scissor(scissor);
+                ctx.set_viewport(0.0f, 0.0f, static_cast<float>(batch.extent.width), static_cast<float>(batch.extent.height));
+                ctx.set_scissor(0, 0, batch.extent.width, batch.extent.height);
 
                 for (const auto& e : batch.draw_list) {
                     auto pc = s.shader_handle->cache_push_block("push_constants");

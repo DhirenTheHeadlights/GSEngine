@@ -43,11 +43,6 @@ export namespace gse::vulkan {
 		const vk::raii::SurfaceKHR& surface
 	) -> queue_family;
 
-	auto render(
-		config& config, 
-        const vk::RenderingInfo& begin_info,
-        const std::function<void()>& render
-	) -> void;
 }
 
 namespace gse::vulkan {
@@ -59,6 +54,7 @@ namespace gse::vulkan {
 		device_config device;
 		queue_config queue;
 		bool mesh_shaders_enabled = false;
+		descriptor_buffer_properties desc_buf_props;
 	};
 
 	auto create_device_and_queues(
@@ -73,6 +69,10 @@ namespace gse::vulkan {
 	auto create_descriptor_pool(
 		const device_config& device_data
 	) -> descriptor_config;
+
+	auto query_descriptor_buffer_properties(
+		const vk::raii::PhysicalDevice& physical_device
+	) -> descriptor_buffer_properties;
 
 	auto create_sync_objects(
 		const device_config& device_data,
@@ -113,7 +113,8 @@ auto gse::vulkan::generate_config(GLFWwindow* window, save::state& save_state) -
 		std::move(sync),
 		std::move(swap_chain_data),
 		std::move(frame_context),
-		std::move(alloc)
+		std::move(alloc),
+		std::move(result.desc_buf_props)
 	);
 
 	cfg->set_mesh_shaders_enabled(result.mesh_shaders_enabled);
@@ -445,14 +446,26 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
 		queue_create_infos.push_back(queue_create_info);
 	}
 
-	const auto feature_chain = physical_device.getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceMeshShaderFeaturesEXT>();
+	const auto feature_chain = physical_device.getFeatures2<
+		vk::PhysicalDeviceFeatures2,
+		vk::PhysicalDeviceMeshShaderFeaturesEXT,
+		vk::PhysicalDeviceDescriptorBufferFeaturesEXT
+	>();
 	const auto& mesh_shader_query = feature_chain.get<vk::PhysicalDeviceMeshShaderFeaturesEXT>();
 	const bool mesh_shaders_supported = mesh_shader_query.meshShader && mesh_shader_query.taskShader;
+	const auto& desc_buf_query = feature_chain.get<vk::PhysicalDeviceDescriptorBufferFeaturesEXT>();
+	const bool descriptor_buffer_supported = desc_buf_query.descriptorBuffer;
 
 	if (mesh_shaders_supported) {
 		std::println("Mesh shader support detected");
 	} else {
 		std::println("Mesh shaders not supported, using vertex pipeline fallback");
+	}
+
+	if (descriptor_buffer_supported) {
+		std::println("Descriptor buffer support detected");
+	} else {
+		std::println("Descriptor buffer not supported");
 	}
 
 	vk::PhysicalDeviceVulkan13Features vulkan13_features{
@@ -479,10 +492,19 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
 		.meshShader = vk::True
 	};
 
-	vk::PhysicalDevicePresentWaitFeaturesKHR present_wait_features{
+	vk::PhysicalDeviceDescriptorBufferFeaturesEXT descriptor_buffer_features{
 		.pNext = mesh_shaders_supported
 			? static_cast<void*>(&mesh_shader_features)
-			: static_cast<void*>(&vulkan11_features)
+			: static_cast<void*>(&vulkan11_features),
+		.descriptorBuffer = vk::True
+	};
+
+	vk::PhysicalDevicePresentWaitFeaturesKHR present_wait_features{
+		.pNext = descriptor_buffer_supported
+			? static_cast<void*>(&descriptor_buffer_features)
+			: (mesh_shaders_supported
+				? static_cast<void*>(&mesh_shader_features)
+				: static_cast<void*>(&vulkan11_features))
 	};
 
 	vk::PhysicalDeviceFeatures2 features2{
@@ -503,6 +525,10 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
 
 	if (mesh_shaders_supported) {
 		device_extensions.push_back(vk::EXTMeshShaderExtensionName);
+	}
+
+	if (descriptor_buffer_supported) {
+		device_extensions.push_back(vk::EXTDescriptorBufferExtensionName);
 	}
 
 	vk::DeviceCreateInfo create_info{
@@ -526,10 +552,15 @@ auto gse::vulkan::create_device_and_queues(const instance_config& instance_data)
 	vk::raii::Queue present_queue = device.getQueue(present_family.value(), 0);
 	vk::raii::Queue compute_queue = device.getQueue(compute_family.value(), 0);
 
+	auto desc_buf_props = descriptor_buffer_supported
+		? query_descriptor_buffer_properties(physical_device)
+		: descriptor_buffer_properties{};
+
 	return {
 		.device = device_config(std::move(physical_device), std::move(device)),
 		.queue = queue_config(std::move(graphics_queue), std::move(present_queue), std::move(compute_queue), compute_family.value()),
-		.mesh_shaders_enabled = mesh_shaders_supported
+		.mesh_shaders_enabled = mesh_shaders_supported,
+		.desc_buf_props = std::move(desc_buf_props)
 	};
 }
 
@@ -600,6 +631,36 @@ auto gse::vulkan::create_descriptor_pool(const device_config& device_data) -> de
 	return descriptor_config(std::move(pool));
 }
 
+auto gse::vulkan::query_descriptor_buffer_properties(const vk::raii::PhysicalDevice& physical_device) -> descriptor_buffer_properties {
+	const auto props = physical_device.getProperties2<
+		vk::PhysicalDeviceProperties2,
+		vk::PhysicalDeviceDescriptorBufferPropertiesEXT
+	>();
+	const auto& db = props.get<vk::PhysicalDeviceDescriptorBufferPropertiesEXT>();
+
+	std::println("Descriptor buffer properties:");
+	std::println("  offset alignment: {}", db.descriptorBufferOffsetAlignment);
+	std::println("  uniform buffer size: {}", db.uniformBufferDescriptorSize);
+	std::println("  storage buffer size: {}", db.storageBufferDescriptorSize);
+	std::println("  sampled image size: {}", db.sampledImageDescriptorSize);
+	std::println("  sampler size: {}", db.samplerDescriptorSize);
+	std::println("  combined image sampler size: {}", db.combinedImageSamplerDescriptorSize);
+	std::println("  storage image size: {}", db.storageImageDescriptorSize);
+	std::println("  input attachment size: {}", db.inputAttachmentDescriptorSize);
+
+	return {
+		.offset_alignment = db.descriptorBufferOffsetAlignment,
+		.uniform_buffer_descriptor_size = db.uniformBufferDescriptorSize,
+		.storage_buffer_descriptor_size = db.storageBufferDescriptorSize,
+		.sampled_image_descriptor_size = db.sampledImageDescriptorSize,
+		.sampler_descriptor_size = db.samplerDescriptorSize,
+		.combined_image_sampler_descriptor_size = db.combinedImageSamplerDescriptorSize,
+		.storage_image_descriptor_size = db.storageImageDescriptorSize,
+		.input_attachment_descriptor_size = db.inputAttachmentDescriptorSize,
+		.supported = true
+	};
+}
+
 auto gse::vulkan::create_sync_objects(const device_config& device_data, const swap_chain_config& swap_chain_data) -> sync_config {
 	std::vector<vk::raii::Semaphore> image_available;
 	std::vector<vk::raii::Semaphore> render_finished;
@@ -655,12 +716,6 @@ auto gse::vulkan::find_queue_families(const vk::raii::PhysicalDevice& device, co
 	}
 
 	return indices;
-}
-
-auto gse::vulkan::render(config& config, const vk::RenderingInfo& begin_info, const std::function<void()>& render) -> void {
-	config.frame_context().command_buffer.beginRendering(begin_info);
-	render();
-	config.frame_context().command_buffer.endRendering();
 }
 
 auto gse::vulkan::create_swap_chain_resources(GLFWwindow* window, const instance_config& instance_data, const device_config& device_data, allocator& alloc) -> swap_chain_config {

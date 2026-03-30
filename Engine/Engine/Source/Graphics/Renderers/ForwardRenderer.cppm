@@ -428,9 +428,7 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 	const auto& data = render_items[0];
 	const auto frame_index = data.frame_index;
 
-	auto& config = s.ctx->config();
-
-	if (!config.frame_in_progress()) {
+	if (!s.ctx->graph().frame_in_progress()) {
 		return;
 	}
 
@@ -548,9 +546,13 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 
 	const auto& point_shadow_alloc = s.point_shadow_params_buffers[frame_index].allocation;
 	std::size_t dir_count = 0;
-	for (const auto& comp : dir_chunk) { (void)comp; ++dir_count; }
+	for (const auto& comp : dir_chunk) {
+		(void)comp; ++dir_count;
+	}
 	std::size_t spot_count = 0;
-	for (const auto& comp : spot_chunk) { (void)comp; ++spot_count; }
+	for (const auto& comp : spot_chunk) {
+		(void)comp; ++spot_count;
+	}
 
 	const std::size_t point_shadow_count = std::min<std::size_t>(point_shadow_entries.size(), max_point_shadow_lights);
 	std::array<int, max_point_shadow_lights> ps_light_indices{};
@@ -584,79 +586,33 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 		return;
 	}
 
-	const auto extent = config.swap_chain_config().extent;
+	const auto ext = s.ctx->graph().extent();
+	const auto ext_w = ext.x();
+	const auto ext_h = ext.y();
 	const int num_lights_i = static_cast<int>(light_count);
-	const std::array<std::uint32_t, 2> screen_sz = { extent.width, extent.height };
-	const auto graphics_upload_stage =
-		vk::PipelineStageFlagBits2::eTaskShaderEXT |
-		vk::PipelineStageFlagBits2::eMeshShaderEXT |
-		vk::PipelineStageFlagBits2::eVertexShader |
-		vk::PipelineStageFlagBits2::eFragmentShader;
+	const std::array screen_sz = { ext_w, ext_h };
 
-	vk::RenderingAttachmentInfo color_attachment{
-		.imageView = *config.swap_chain_config().image_views[config.frame_context().image_index],
-		.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-		.loadOp = vk::AttachmentLoadOp::eClear,
-		.storeOp = vk::AttachmentStoreOp::eStore,
-		.clearValue = vk::ClearValue{
-			.color = vk::ClearColorValue{
-				.float32 = std::array{ 0.1f, 0.1f, 0.1f, 1.0f }
-			}
-		}
-	};
+	auto pass = s.ctx->graph().add_pass<state>();
+	pass.track(s.ubo_allocations.at("CameraUBO")[frame_index]);
+	pass.track(s.light_buffers[frame_index]);
+	pass.track(s.shadow_params_buffers[frame_index]);
+	pass.track(s.point_shadow_params_buffers[frame_index]);
+	pass.track(gc_state->instance_buffer[frame_index]);
 
-	vk::RenderingAttachmentInfo depth_attachment{
-		.imageView = config.swap_chain_config().depth_image.view,
-		.imageLayout = vk::ImageLayout::eGeneral,
-		.loadOp = vk::AttachmentLoadOp::eLoad,
-		.storeOp = vk::AttachmentStoreOp::eStore
-	};
-
-	const vk::RenderingInfo rendering_info{
-		.renderArea = { { 0, 0 }, extent },
-		.layerCount = 1,
-		.colorAttachmentCount = 1,
-		.pColorAttachments = &color_attachment,
-		.pDepthAttachment = &depth_attachment
-	};
-
-	s.ctx->graph()
-		.add_pass<state>()
+	pass
 		.after<light_culling::state>()
 		.after<depth_prepass::state>()
-		.uploads(
-			vulkan::upload(s.ubo_allocations.at("CameraUBO")[frame_index], graphics_upload_stage),
-			vulkan::upload(s.light_buffers[frame_index], graphics_upload_stage),
-			vulkan::upload(s.shadow_params_buffers[frame_index], graphics_upload_stage),
-			vulkan::upload(s.point_shadow_params_buffers[frame_index], graphics_upload_stage),
-			vulkan::upload(gc_state->instance_buffer[frame_index], graphics_upload_stage)
-		)
 		.reads(
 			vulkan::storage_read(lc_state->tile_light_table_buffers[frame_index], vk::PipelineStageFlagBits2::eFragmentShader),
 			vulkan::storage_read(lc_state->light_index_list_buffers[frame_index], vk::PipelineStageFlagBits2::eFragmentShader),
 			vulkan::storage_read(gc_state->skin_buffer[frame_index], vk::PipelineStageFlagBits2::eVertexShader),
 			vulkan::indirect_read(gc_state->skinned_indirect_commands_buffer[frame_index], vk::PipelineStageFlagBits2::eDrawIndirect)
 		)
-		.writes(
-			vulkan::attachment(config.swap_chain_config().depth_image, vk::PipelineStageFlagBits2::eLateFragmentTests),
-			vulkan::swapchain_write()
-		)
-		.record_graphics(rendering_info, [&s, &normal_batches, &skinned_batches, gc_state, frame_index, num_lights_i, screen_sz, extent](vulkan::recording_context& ctx) {
-			const vk::Viewport viewport{
-				.x = 0.0f,
-				.y = 0.0f,
-				.width = static_cast<float>(extent.width),
-				.height = static_cast<float>(extent.height),
-				.minDepth = 0.0f,
-				.maxDepth = 1.0f
-			};
-			ctx.set_viewport(viewport);
-
-			const vk::Rect2D scissor{
-				.offset = { 0, 0 },
-				.extent = extent
-			};
-			ctx.set_scissor(scissor);
+		.color_output(vulkan::color_clear{ 0.1f, 0.1f, 0.1f, 1.0f })
+		.depth_output_load()
+		.record([&s, &normal_batches, &skinned_batches, gc_state, frame_index, num_lights_i, screen_sz, ext_w, ext_h](vulkan::recording_context& ctx) {
+			ctx.set_viewport(0.0f, 0.0f, static_cast<float>(ext_w), static_cast<float>(ext_h));
+			ctx.set_scissor(0, 0, ext_w, ext_h);
 
 			if (!normal_batches.empty()) {
 				const vk::DescriptorBufferInfo instance_buffer_info{

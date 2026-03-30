@@ -537,9 +537,7 @@ auto gse::renderer::ui::system::update(const update_phase& phase, state& s) -> v
 }
 
 auto gse::renderer::ui::system::render(render_phase&, const state& s) -> void {
-	auto& config = s.ctx->config();
-
-	if (!config.frame_in_progress()) {
+	if (!s.ctx->graph().frame_in_progress()) {
 		return;
 	}
 
@@ -548,13 +546,15 @@ auto gse::renderer::ui::system::render(render_phase&, const state& s) -> void {
 	if (batches.empty()) {
 		return;
 	}
-	const auto frame_index = config.current_frame();
+	const auto frame_index = s.ctx->graph().current_frame();
 	auto& [vertex_buffer, index_buffer] = s.resources[frame_index];
 
 	gse::memcpy(vertex_buffer.allocation.mapped(), vertices);
 	gse::memcpy(index_buffer.allocation.mapped(), indices);
 
-	const auto [width, height] = config.swap_chain_config().extent;
+	const auto ext = s.ctx->graph().extent();
+	const auto width = ext.x();
+	const auto height = ext.y();
 	const vec2f window_size = { static_cast<float>(width), static_cast<float>(height) };
 
 	const auto projection = orthographic(
@@ -572,31 +572,16 @@ auto gse::renderer::ui::system::render(render_phase&, const state& s) -> void {
 	auto text_pc = s.text_shader->cache_push_block("push_constants");
 	text_pc.set("projection", projection);
 
-	const auto image_index = config.frame_context().image_index;
-	const auto extent = config.swap_chain_config().extent;
-
-	vk::RenderingAttachmentInfo color_attachment{
-		.imageView = *config.swap_chain_config().image_views[image_index],
-		.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-		.loadOp = vk::AttachmentLoadOp::eLoad,
-		.storeOp = vk::AttachmentStoreOp::eStore,
-	};
-
-	const vk::RenderingInfo rendering_info{
-		.renderArea = {{ 0, 0 }, extent },
-		.layerCount = 1,
-		.colorAttachmentCount = 1,
-		.pColorAttachments = &color_attachment,
-	};
-
 	const auto sprite_binding = s.sprite_shader->binding("spriteTexture");
 	const auto text_binding = s.text_shader->binding("spriteTexture");
 
-	s.ctx->graph()
-		.add_pass<ui::state>()
-		.writes(vulkan::swapchain_write())
-		.uploads(vulkan::upload(vertex_buffer), vulkan::upload(index_buffer))
-		.record_graphics(rendering_info, [&s, &batches, frame_index, width, height, window_size,
+	auto pass = s.ctx->graph().add_pass<ui::state>();
+	pass.track(vertex_buffer);
+	pass.track(index_buffer);
+
+	pass
+		.color_output_load()
+		.record([&s, &batches, frame_index, width, height, window_size,
 			sprite_pc = std::move(sprite_pc), text_pc = std::move(text_pc),
 			sprite_binding, text_binding,
 			vb = vertex_buffer.buffer, ib = index_buffer.buffer](vulkan::recording_context& ctx) {
@@ -606,18 +591,8 @@ auto gse::renderer::ui::system::render(render_phase&, const state& s) -> void {
 			ctx.bind_vertex_buffers(0, vbufs, voffs);
 			ctx.bind_index_buffer(ib, 0, vk::IndexType::eUint32);
 
-			const vk::Viewport viewport{
-				.x = 0.0f,
-				.y = 0.0f,
-				.width = static_cast<float>(width),
-				.height = static_cast<float>(height),
-				.minDepth = 0.0f,
-				.maxDepth = 1.0f
-			};
-			ctx.set_viewport(viewport);
-
-			const vk::Rect2D default_scissor{ { 0, 0 }, { width, height } };
-			ctx.set_scissor(default_scissor);
+			ctx.set_viewport(0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height));
+			ctx.set_scissor(0, 0, width, height);
 
 			auto bound_type = command_type::sprite;
 			resource::handle<texture> bound_texture;
@@ -670,9 +645,10 @@ auto gse::renderer::ui::system::render(render_phase&, const state& s) -> void {
 				}
 
 				if (clip_rect) {
-					ctx.set_scissor(to_vulkan_scissor(*clip_rect, window_size));
+					const auto sc = to_vulkan_scissor(*clip_rect, window_size);
+					ctx.set_scissor(sc.offset.x, sc.offset.y, sc.extent.width, sc.extent.height);
 				} else {
-					ctx.set_scissor(default_scissor);
+					ctx.set_scissor(0, 0, width, height);
 				}
 
 				ctx.draw_indexed(index_count, 1, index_offset, 0, 0);

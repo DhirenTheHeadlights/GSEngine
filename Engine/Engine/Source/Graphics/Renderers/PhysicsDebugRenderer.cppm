@@ -528,9 +528,7 @@ auto gse::renderer::physics_debug::system::render(const render_phase& phase, con
 		return;
 	}
 
-	auto& config = s.ctx->config();
-
-	if (!config.frame_in_progress()) {
+	if (!s.ctx->graph().frame_in_progress()) {
 		return;
 	}
 
@@ -545,7 +543,7 @@ auto gse::renderer::physics_debug::system::render(const render_phase& phase, con
 	}
 
 	auto& mutable_state = const_cast<state&>(s);
-	const auto frame_index = config.current_frame();
+	const auto frame_index = s.ctx->graph().current_frame();
 	ensure_vertex_capacity(mutable_state, frame_index, verts.size());
 
 	auto& vertex_buffer = mutable_state.vertex_buffers[frame_index];
@@ -560,47 +558,21 @@ auto gse::renderer::physics_debug::system::render(const render_phase& phase, con
 	s.shader_handle->set_uniform("CameraUBO.view", view_matrix, s.ubo_allocations.at("CameraUBO")[frame_index].allocation);
 	s.shader_handle->set_uniform("CameraUBO.proj", proj_matrix, s.ubo_allocations.at("CameraUBO")[frame_index].allocation);
 
-	const auto extent = config.swap_chain_config().extent;
-	const auto image_index = config.frame_context().image_index;
+	const auto ext = s.ctx->graph().extent();
+	const auto ext_w = ext.x();
+	const auto ext_h = ext.y();
 	const auto vertex_count = static_cast<std::uint32_t>(verts.size());
 
-	vk::RenderingAttachmentInfo color_attachment{
-		.imageView = *config.swap_chain_config().image_views[image_index],
-		.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-		.loadOp = vk::AttachmentLoadOp::eLoad,
-		.storeOp = vk::AttachmentStoreOp::eStore
-	};
+	auto pass = s.ctx->graph().add_pass<state>();
+	pass.track(s.ubo_allocations.at("CameraUBO")[frame_index]);
 
-	const vk::RenderingInfo rendering_info{
-		.renderArea = { { 0, 0 }, extent },
-		.layerCount = 1,
-		.colorAttachmentCount = 1,
-		.pColorAttachments = &color_attachment,
-		.pDepthAttachment = nullptr
-	};
-
-	s.ctx->graph()
-		.add_pass<state>()
-		.writes(vulkan::swapchain_write())
-		.uploads(vulkan::upload(s.ubo_allocations.at("CameraUBO")[frame_index]))
-		.record_graphics(rendering_info, [&s, frame_index, extent, vertex_count, vb = vertex_buffer.buffer](vulkan::recording_context& ctx) {
+	pass
+		.color_output_load()
+		.record([&s, frame_index, ext_w, ext_h, vertex_count, vb = vertex_buffer.buffer](vulkan::recording_context& ctx) {
 			ctx.bind_pipeline(vk::PipelineBindPoint::eGraphics, s.pipeline);
 
-			const vk::Viewport viewport{
-				.x = 0.0f,
-				.y = 0.0f,
-				.width = static_cast<float>(extent.width),
-				.height = static_cast<float>(extent.height),
-				.minDepth = 0.0f,
-				.maxDepth = 1.0f
-			};
-			ctx.set_viewport(viewport);
-
-			const vk::Rect2D scissor{
-				.offset = { 0, 0 },
-				.extent = extent
-			};
-			ctx.set_scissor(scissor);
+			ctx.set_viewport(0.0f, 0.0f, static_cast<float>(ext_w), static_cast<float>(ext_h));
+			ctx.set_scissor(0, 0, ext_w, ext_h);
 
 			const vk::DescriptorSet sets[]{ **s.descriptor_sets[frame_index] };
 			ctx.bind_descriptor_sets(vk::PipelineBindPoint::eGraphics, s.pipeline_layout, 0, sets);
