@@ -11,6 +11,7 @@ import :vulkan_runtime;
 import :vulkan_allocator;
 import :descriptor_heap;
 import :descriptor_buffer_types;
+import :gpu_frame;
 
 import gse.assert;
 import gse.log;
@@ -35,7 +36,7 @@ export namespace gse::vulkan {
 
 	auto begin_frame(
 		const frame_params& params
-	) -> bool;
+	) -> std::expected<gpu::frame_token, gpu::frame_status>;
 
 	auto end_frame(
 		const frame_params& params
@@ -123,7 +124,7 @@ auto gse::vulkan::create_runtime(GLFWwindow* window, save::state& save_state) ->
 	return runtime_state;
 }
 
-auto gse::vulkan::begin_frame(const frame_params& params) -> bool {
+auto gse::vulkan::begin_frame(const frame_params& params) -> std::expected<gpu::frame_token, gpu::frame_status> {
     auto& cfg = params.runtime;
     const auto& device = cfg.device_config().device;
 
@@ -139,36 +140,31 @@ auto gse::vulkan::begin_frame(const frame_params& params) -> bool {
     };
 
     if (params.minimized) {
-        return false;
+        return std::unexpected(gpu::frame_status::minimized);
     }
 
-    assert(
-        [&]() {
-            try {
-                return device.waitForFences(
-                    *cfg.sync_config().in_flight_fences[cfg.current_frame()],
-                    vk::True,
-                    std::numeric_limits<std::uint64_t>::max()
-                ) == vk::Result::eSuccess;
-            } catch (const vk::DeviceLostError&) {
-                cfg.report_device_lost(std::format("begin_frame waitForFences (frame {})", cfg.current_frame()));
-                throw;
-            }
-        }(),
-        std::source_location::current(),
-        "Failed to wait for in-flight fence!"
-    );
+    try {
+        const auto fence_result = device.waitForFences(
+            *cfg.sync_config().in_flight_fences[cfg.current_frame()],
+            vk::True,
+            std::numeric_limits<std::uint64_t>::max()
+        );
+        assert(fence_result == vk::Result::eSuccess, std::source_location::current(), "Failed to wait for in-flight fence!");
+    } catch (const vk::DeviceLostError&) {
+        cfg.report_device_lost(std::format("begin_frame waitForFences (frame {})", cfg.current_frame()));
+        return std::unexpected(gpu::frame_status::device_lost);
+    }
 
     try {
         cfg.cleanup_finished_frame_resources();
     } catch (const vk::DeviceLostError&) {
         cfg.report_device_lost(std::format("cleanup_finished_frame_resources (frame {})", cfg.current_frame()));
-        throw;
+        return std::unexpected(gpu::frame_status::device_lost);
     }
 
     if (params.frame_buffer_resized) {
         recreate_resources();
-        return false;
+        return std::unexpected(gpu::frame_status::swapchain_out_of_date);
     }
 
     vk::Result result;
@@ -186,12 +182,12 @@ auto gse::vulkan::begin_frame(const frame_params& params) -> bool {
         result = vk::Result::eErrorOutOfDateKHR;
     } catch (const vk::DeviceLostError&) {
         cfg.report_device_lost(std::format("acquireNextImage2KHR (frame {})", cfg.current_frame()));
-        throw;
+        return std::unexpected(gpu::frame_status::device_lost);
     }
 
     if (result == vk::Result::eErrorOutOfDateKHR) {
         recreate_resources();
-        return false;
+        return std::unexpected(gpu::frame_status::swapchain_out_of_date);
     }
 
     assert(result == vk::Result::eSuccess || result == vk::Result::eSuboptimalKHR,
@@ -203,14 +199,18 @@ auto gse::vulkan::begin_frame(const frame_params& params) -> bool {
     cfg.frame_context() = { image_index, *cfg.command_config().buffers[cfg.current_frame()] };
     cfg.frame_context().command_buffer.reset({});
 
-    constexpr vk::CommandBufferBeginInfo begin_info{
+    constexpr vk::CommandBufferBeginInfo cmd_begin_info{
         .flags = {},
         .pInheritanceInfo = nullptr
     };
-    cfg.frame_context().command_buffer.begin(begin_info);
+    cfg.frame_context().command_buffer.begin(cmd_begin_info);
 
     cfg.set_frame_in_progress(true);
-    return true;
+
+    return gpu::frame_token{
+        .frame_index = cfg.current_frame(),
+        .image_index = image_index
+    };
 }
 
 auto gse::vulkan::end_frame(const frame_params& params) -> void {

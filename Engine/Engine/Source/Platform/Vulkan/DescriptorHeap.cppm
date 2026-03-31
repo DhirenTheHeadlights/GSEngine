@@ -36,6 +36,15 @@ export namespace gse::vulkan {
 			vk::DeviceSize size
 		) -> descriptor_region;
 
+		auto begin_frame(
+			std::uint32_t frame_index
+		) -> void;
+
+		auto allocate_transient(
+			std::uint32_t frame_index,
+			vk::DeviceSize size
+		) -> descriptor_region;
+
 		auto write_bytes(
 			const descriptor_region& region,
 			vk::DeviceSize offset_within_region,
@@ -69,7 +78,7 @@ export namespace gse::vulkan {
 		) const -> vk::DeviceSize;
 
 		[[nodiscard]] auto binding_offset(
-			vk::DescriptorSetLayout layout, 
+			vk::DescriptorSetLayout layout,
 			std::uint32_t binding
 		) const -> vk::DeviceSize;
 
@@ -87,6 +96,9 @@ export namespace gse::vulkan {
 			vk::DeviceSize value
 		) const -> vk::DeviceSize;
 
+		auto init_transient_zone(
+		) -> void;
+
 		vk::Device m_device;
 		vk::Buffer m_buffer = nullptr;
 		vk::DeviceMemory m_memory = nullptr;
@@ -96,6 +108,66 @@ export namespace gse::vulkan {
 		vk::DeviceSize m_bump_offset = 0;
 		descriptor_buffer_properties m_props;
 		std::mutex m_alloc_mutex;
+
+		bool m_transient_initialized = false;
+		vk::DeviceSize m_persistent_end = 0;
+		vk::DeviceSize m_transient_slice_size = 0;
+		std::array<vk::DeviceSize, 2> m_transient_offsets = {};
+		std::array<vk::DeviceSize, 2> m_transient_bases = {};
+	};
+
+	struct descriptor_binding_info {
+		vk::DeviceSize offset = 0;
+		vk::DeviceSize descriptor_size = 0;
+		vk::DescriptorType type = {};
+	};
+
+	class descriptor_writer {
+	public:
+		descriptor_writer() = default;
+
+		descriptor_writer(
+			descriptor_heap& heap,
+			vk::DescriptorSetLayout layout,
+			vk::DeviceSize layout_size,
+			std::vector<descriptor_binding_info> bindings,
+			bool is_push = false
+		);
+
+		auto begin(
+			std::uint32_t frame_index
+		) -> descriptor_region;
+
+		auto buffer(
+			std::uint32_t binding,
+			vk::Buffer buf,
+			vk::DeviceSize offset,
+			vk::DeviceSize range
+		) -> descriptor_writer&;
+
+		auto image(
+			std::uint32_t binding,
+			vk::ImageView view,
+			vk::Sampler sampler,
+			vk::ImageLayout layout = vk::ImageLayout::eGeneral
+		) -> descriptor_writer&;
+
+		auto commit(
+			vk::CommandBuffer cmd,
+			vk::PipelineBindPoint point,
+			vk::PipelineLayout layout,
+			std::uint32_t set_index
+		) -> void;
+
+	private:
+		descriptor_heap* m_heap = nullptr;
+		vk::DeviceSize m_layout_size = 0;
+		std::vector<descriptor_binding_info> m_bindings;
+		descriptor_region m_current_region;
+		bool m_is_push = false;
+		std::vector<vk::DescriptorBufferInfo> m_push_buffer_infos;
+		std::vector<vk::DescriptorImageInfo> m_push_image_infos;
+		std::vector<vk::WriteDescriptorSet> m_push_writes;
 	};
 }
 
@@ -244,7 +316,182 @@ auto gse::vulkan::descriptor_heap::address() const -> vk::DeviceAddress {
 	return m_address;
 }
 
+auto gse::vulkan::descriptor_heap::begin_frame(std::uint32_t frame_index) -> void {
+	if (!m_transient_initialized) {
+		init_transient_zone();
+	}
+	m_transient_offsets[frame_index] = m_transient_bases[frame_index];
+}
+
+auto gse::vulkan::descriptor_heap::allocate_transient(std::uint32_t frame_index, vk::DeviceSize size) -> descriptor_region {
+	assert(m_transient_initialized, std::source_location::current(), "begin_frame must be called before allocate_transient");
+
+	const auto aligned_size = align_up(size);
+	const auto offset = m_transient_offsets[frame_index];
+	const auto slice_end = m_transient_bases[frame_index] + m_transient_slice_size;
+
+	assert(
+		offset + aligned_size <= slice_end,
+		std::source_location::current(),
+		"Transient descriptor heap slice exhausted for frame {}: requested {} at {}, slice ends at {}",
+		frame_index, aligned_size, offset, slice_end
+	);
+
+	m_transient_offsets[frame_index] = offset + aligned_size;
+
+	return {
+		.offset = offset,
+		.size = aligned_size,
+		.heap = this
+	};
+}
+
+auto gse::vulkan::descriptor_heap::init_transient_zone() -> void {
+	m_persistent_end = align_up(m_bump_offset);
+	const auto remaining = m_capacity - m_persistent_end;
+	constexpr std::uint32_t frames = 2;
+	m_transient_slice_size = (remaining / frames) & ~(m_props.offset_alignment - 1);
+
+	for (std::uint32_t i = 0; i < frames; ++i) {
+		m_transient_bases[i] = m_persistent_end + i * m_transient_slice_size;
+		m_transient_offsets[i] = m_transient_bases[i];
+	}
+
+	m_transient_initialized = true;
+
+	log::println(log::category::vulkan_memory,
+		"Descriptor heap transient zone: persistent={} bytes, {} slices x {} KB each",
+		m_persistent_end, frames, m_transient_slice_size / 1024);
+}
+
 auto gse::vulkan::descriptor_heap::align_up(vk::DeviceSize value) const -> vk::DeviceSize {
 	const auto alignment = m_props.offset_alignment;
 	return (value + alignment - 1) & ~(alignment - 1);
+}
+
+gse::vulkan::descriptor_writer::descriptor_writer(
+	descriptor_heap& heap,
+	vk::DescriptorSetLayout layout,
+	vk::DeviceSize layout_size,
+	std::vector<descriptor_binding_info> bindings,
+	bool is_push
+) : m_heap(&heap), m_layout_size(layout_size), m_bindings(std::move(bindings)), m_is_push(is_push) {}
+
+auto gse::vulkan::descriptor_writer::begin(std::uint32_t frame_index) -> descriptor_region {
+	if (m_is_push) {
+		m_push_buffer_infos.clear();
+		m_push_image_infos.clear();
+		m_push_writes.clear();
+		m_push_buffer_infos.reserve(m_bindings.size());
+		m_push_image_infos.reserve(m_bindings.size());
+		m_push_writes.reserve(m_bindings.size());
+		m_current_region = {};
+		return m_current_region;
+	}
+	m_current_region = m_heap->allocate_transient(frame_index, m_layout_size);
+	return m_current_region;
+}
+
+auto gse::vulkan::descriptor_writer::buffer(
+	std::uint32_t binding,
+	vk::Buffer buf,
+	vk::DeviceSize offset,
+	vk::DeviceSize range
+) -> descriptor_writer& {
+	assert(binding < m_bindings.size(), std::source_location::current(),
+		"Binding {} out of range (max {})", binding, m_bindings.size());
+
+	if (m_is_push) {
+		const auto& info = m_bindings[binding];
+		m_push_buffer_infos.push_back({
+			.buffer = buf,
+			.offset = offset,
+			.range = range
+		});
+		m_push_writes.push_back({
+			.dstBinding = binding,
+			.descriptorCount = 1,
+			.descriptorType = info.type,
+			.pBufferInfo = &m_push_buffer_infos.back()
+		});
+		return *this;
+	}
+
+	const auto& info = m_bindings[binding];
+	const auto addr = m_heap->buffer_address(buf);
+
+	const vk::DescriptorAddressInfoEXT addr_info{
+		.address = addr + offset,
+		.range = range,
+		.format = vk::Format::eUndefined
+	};
+
+	const bool is_uniform = info.type == vk::DescriptorType::eUniformBuffer
+		|| info.type == vk::DescriptorType::eUniformBufferDynamic;
+
+	const vk::DescriptorGetInfoEXT get_info{
+		.type = is_uniform ? vk::DescriptorType::eUniformBuffer : vk::DescriptorType::eStorageBuffer,
+		.data = is_uniform
+			? vk::DescriptorDataEXT{ .pUniformBuffer = &addr_info }
+			: vk::DescriptorDataEXT{ .pStorageBuffer = &addr_info }
+	};
+
+	m_heap->write_descriptor(m_current_region, info.offset, get_info, info.descriptor_size);
+	return *this;
+}
+
+auto gse::vulkan::descriptor_writer::image(
+	std::uint32_t binding,
+	vk::ImageView view,
+	vk::Sampler sampler,
+	vk::ImageLayout layout
+) -> descriptor_writer& {
+	assert(binding < m_bindings.size(), std::source_location::current(),
+		"Binding {} out of range (max {})", binding, m_bindings.size());
+
+	if (m_is_push) {
+		m_push_image_infos.push_back({
+			.sampler = sampler,
+			.imageView = view,
+			.imageLayout = layout
+		});
+		m_push_writes.push_back({
+			.dstBinding = binding,
+			.descriptorCount = 1,
+			.descriptorType = m_bindings[binding].type,
+			.pImageInfo = &m_push_image_infos.back()
+		});
+		return *this;
+	}
+
+	const auto& info = m_bindings[binding];
+
+	const vk::DescriptorImageInfo img_info{
+		.sampler = sampler,
+		.imageView = view,
+		.imageLayout = layout
+	};
+
+	const vk::DescriptorGetInfoEXT get_info{
+		.type = vk::DescriptorType::eCombinedImageSampler,
+		.data = { .pCombinedImageSampler = &img_info }
+	};
+
+	m_heap->write_descriptor(m_current_region, info.offset, get_info, info.descriptor_size);
+	return *this;
+}
+
+auto gse::vulkan::descriptor_writer::commit(
+	vk::CommandBuffer cmd,
+	vk::PipelineBindPoint point,
+	vk::PipelineLayout layout,
+	std::uint32_t set_index
+) -> void {
+	if (m_is_push) {
+		cmd.pushDescriptorSetKHR(point, layout, set_index,
+			static_cast<std::uint32_t>(m_push_writes.size()), m_push_writes.data());
+		return;
+	}
+	assert(m_current_region, std::source_location::current(), "Cannot commit without begin()");
+	m_current_region.heap->bind(cmd, point, layout, set_index, m_current_region);
 }

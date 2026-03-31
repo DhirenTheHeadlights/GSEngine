@@ -7,6 +7,7 @@ import :gpu_buffer;
 import :gpu_pipeline;
 import :gpu_image;
 import :gpu_compute;
+import :gpu_device;
 import :gpu_context;
 import :shader;
 import :render_graph;
@@ -27,39 +28,39 @@ export namespace gse::gpu {
 	};
 
 	auto create_buffer(
-		context& ctx,
+		device& dev,
 		const buffer_desc& desc
 	) -> buffer;
 
 	auto create_graphics_pipeline(
-		context& ctx,
+		device& dev,
 		const shader& s,
 		const graphics_pipeline_desc& desc = {}
 	) -> pipeline;
 
 	auto create_compute_pipeline(
-		context& ctx,
+		device& dev,
 		const shader& s,
 		const std::string& push_constant_block = {}
 	) -> pipeline;
 
 	auto create_image(
-		context& ctx,
+		device& dev,
 		const image_desc& desc
 	) -> image;
 
 	auto create_sampler(
-		context& ctx,
+		device& dev,
 		const sampler_desc& desc = {}
 	) -> sampler;
 
 	auto allocate_descriptors(
-		context& ctx,
+		device& dev,
 		const shader& s
 	) -> vulkan::descriptor_region;
 
 	auto write_descriptors(
-		context& ctx,
+		device& dev,
 		const vulkan::descriptor_region& region,
 		const shader& s,
 		const std::unordered_map<std::string, vk::DescriptorBufferInfo>& buffer_infos,
@@ -75,13 +76,23 @@ export namespace gse::gpu {
 	};
 
 	auto upload_to_buffers(
-		context& ctx,
+		device& dev,
 		std::span<const buffer_upload> uploads
 	) -> void;
 
 	auto create_compute_queue(
-		context& ctx
+		device& dev
 	) -> compute_queue;
+
+	inline auto create_buffer(context& ctx, const buffer_desc& desc) -> buffer { return create_buffer(ctx.device_ref(), desc); }
+	inline auto create_graphics_pipeline(context& ctx, const shader& s, const graphics_pipeline_desc& desc = {}) -> pipeline { return create_graphics_pipeline(ctx.device_ref(), s, desc); }
+	inline auto create_compute_pipeline(context& ctx, const shader& s, const std::string& push_constant_block = {}) -> pipeline { return create_compute_pipeline(ctx.device_ref(), s, push_constant_block); }
+	inline auto create_image(context& ctx, const image_desc& desc) -> image { return create_image(ctx.device_ref(), desc); }
+	inline auto create_sampler(context& ctx, const sampler_desc& desc = {}) -> sampler { return create_sampler(ctx.device_ref(), desc); }
+	inline auto allocate_descriptors(context& ctx, const shader& s) -> vulkan::descriptor_region { return allocate_descriptors(ctx.device_ref(), s); }
+	inline auto write_descriptors(context& ctx, const vulkan::descriptor_region& region, const shader& s, const std::unordered_map<std::string, vk::DescriptorBufferInfo>& buffer_infos, const std::unordered_map<std::string, vk::DescriptorImageInfo>& image_infos = {}, const std::unordered_map<std::string, std::vector<vk::DescriptorImageInfo>>& image_array_infos = {}) -> void { write_descriptors(ctx.device_ref(), region, s, buffer_infos, image_infos, image_array_infos); }
+	inline auto upload_to_buffers(context& ctx, std::span<const buffer_upload> uploads) -> void { upload_to_buffers(ctx.device_ref(), uploads); }
+	inline auto create_compute_queue(context& ctx) -> compute_queue { return create_compute_queue(ctx.device_ref()); }
 }
 
 namespace {
@@ -203,16 +214,16 @@ namespace {
 	}
 }
 
-auto gse::gpu::create_buffer(context& ctx, const buffer_desc& desc) -> buffer {
+auto gse::gpu::create_buffer(device& dev, const buffer_desc& desc) -> buffer {
 	auto vk_usage = to_vk(desc.usage);
-	auto resource = ctx.allocator().create_buffer({
+	auto resource = dev.allocator().create_buffer({
 		.size = static_cast<vk::DeviceSize>(desc.size),
 		.usage = vk_usage
 	}, desc.data);
 	return buffer(std::move(resource));
 }
 
-auto gse::gpu::create_image(context& ctx, const image_desc& desc) -> image {
+auto gse::gpu::create_image(device& dev, const image_desc& desc) -> image {
 	auto to_vk_format = [](image_format f) -> vk::Format {
 		switch (f) {
 			case image_format::d32_sfloat:       return vk::Format::eD32Sfloat;
@@ -240,7 +251,7 @@ auto gse::gpu::create_image(context& ctx, const image_desc& desc) -> image {
 	if (desc.usage.test(transfer_dst))     usage |= vk::ImageUsageFlagBits::eTransferDst;
 	if (desc.usage.test(storage))          usage |= vk::ImageUsageFlagBits::eStorage;
 
-	auto resource = ctx.allocator().create_image(
+	auto resource = dev.allocator().create_image(
 		{
 			.flags = is_cube ? vk::ImageCreateFlagBits::eCubeCompatible : vk::ImageCreateFlags{},
 			.imageType = vk::ImageType::e2D,
@@ -279,7 +290,7 @@ auto gse::gpu::create_image(context& ctx, const image_desc& desc) -> image {
 		const auto aspect = is_depth ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor;
 		const auto img = resource.image;
 
-		ctx.add_transient_work([img, target, aspect, layers](const auto& cmd) {
+		dev.add_transient_work([img, target, aspect, layers](const auto& cmd) {
 			const vk::ImageMemoryBarrier2 barrier{
 				.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
 				.srcAccessMask = {},
@@ -307,8 +318,8 @@ auto gse::gpu::create_image(context& ctx, const image_desc& desc) -> image {
 	return image(std::move(resource), desc.format, desc.size);
 }
 
-auto gse::gpu::create_graphics_pipeline(context& ctx, const shader& s, const graphics_pipeline_desc& desc) -> pipeline {
-	auto& device = ctx.device();
+auto gse::gpu::create_graphics_pipeline(device& dev, const shader& s, const graphics_pipeline_desc& desc) -> pipeline {
+	auto& vk_device = dev.logical_device();
 
 	auto layouts = s.layouts();
 
@@ -318,7 +329,7 @@ auto gse::gpu::create_graphics_pipeline(context& ctx, const shader& s, const gra
 		pc_range = s.push_constant_range(desc.push_constant_block);
 	}
 
-	vk::raii::PipelineLayout pipeline_layout = device.createPipelineLayout({
+	vk::raii::PipelineLayout pipeline_layout = vk_device.createPipelineLayout({
 		.setLayoutCount = static_cast<std::uint32_t>(layouts.size()),
 		.pSetLayouts = layouts.data(),
 		.pushConstantRangeCount = has_push ? 1u : 0u,
@@ -381,7 +392,7 @@ auto gse::gpu::create_graphics_pipeline(context& ctx, const shader& s, const gra
 
 	vk::Format vk_color_format = vk::Format::eUndefined;
 	if (desc.color == color_format::swapchain) {
-		vk_color_format = ctx.surface_format();
+		vk_color_format = dev.surface_format();
 	}
 
 	vk::Format vk_depth_format = vk::Format::eUndefined;
@@ -404,12 +415,10 @@ auto gse::gpu::create_graphics_pipeline(context& ctx, const shader& s, const gra
 		.pAttachments = has_color ? &blend_attachment : nullptr
 	};
 
-	const bool is_mesh = s.is_mesh_shader();
-
-	if (is_mesh) {
+	if (s.is_mesh_shader()) {
 		const auto stages = s.mesh_shader_stages();
 
-		vk::raii::Pipeline handle = device.createGraphicsPipeline(nullptr, {
+		vk::raii::Pipeline handle = vk_device.createGraphicsPipeline(nullptr, {
 			.pNext = &rendering_info,
 			.flags = vk::PipelineCreateFlagBits::eDescriptorBufferEXT,
 			.stageCount = static_cast<std::uint32_t>(stages.size()),
@@ -432,7 +441,7 @@ auto gse::gpu::create_graphics_pipeline(context& ctx, const shader& s, const gra
 	const auto stages = s.shader_stages();
 	const auto vertex_input = s.vertex_input_state();
 
-	vk::raii::Pipeline handle = device.createGraphicsPipeline(nullptr, {
+	vk::raii::Pipeline handle = vk_device.createGraphicsPipeline(nullptr, {
 		.pNext = &rendering_info,
 		.flags = vk::PipelineCreateFlagBits::eDescriptorBufferEXT,
 		.stageCount = static_cast<std::uint32_t>(stages.size()),
@@ -452,8 +461,8 @@ auto gse::gpu::create_graphics_pipeline(context& ctx, const shader& s, const gra
 	return pipeline(std::move(handle), std::move(pipeline_layout), bind_point::graphics);
 }
 
-auto gse::gpu::create_compute_pipeline(context& ctx, const shader& s, const std::string& push_constant_block) -> pipeline {
-	auto& device = ctx.device();
+auto gse::gpu::create_compute_pipeline(device& dev, const shader& s, const std::string& push_constant_block) -> pipeline {
+	auto& vk_device = dev.logical_device();
 
 	auto layouts = s.layouts();
 
@@ -463,14 +472,14 @@ auto gse::gpu::create_compute_pipeline(context& ctx, const shader& s, const std:
 		pc_range = s.push_constant_range(push_constant_block);
 	}
 
-	vk::raii::PipelineLayout pipeline_layout = device.createPipelineLayout({
+	vk::raii::PipelineLayout pipeline_layout = vk_device.createPipelineLayout({
 		.setLayoutCount = static_cast<std::uint32_t>(layouts.size()),
 		.pSetLayouts = layouts.data(),
 		.pushConstantRangeCount = has_push ? 1u : 0u,
 		.pPushConstantRanges = has_push ? &pc_range : nullptr
 	});
 
-	vk::raii::Pipeline handle = device.createComputePipeline(nullptr, {
+	vk::raii::Pipeline handle = vk_device.createComputePipeline(nullptr, {
 		.flags = vk::PipelineCreateFlagBits::eDescriptorBufferEXT,
 		.stage = s.compute_stage(),
 		.layout = *pipeline_layout
@@ -479,8 +488,8 @@ auto gse::gpu::create_compute_pipeline(context& ctx, const shader& s, const std:
 	return pipeline(std::move(handle), std::move(pipeline_layout), bind_point::compute);
 }
 
-auto gse::gpu::create_sampler(context& ctx, const sampler_desc& desc) -> sampler {
-	auto& device = ctx.device();
+auto gse::gpu::create_sampler(device& dev, const sampler_desc& desc) -> sampler {
+	auto& vk_device = dev.logical_device();
 
 	const vk::SamplerCreateInfo info{
 		.magFilter = to_vk(desc.mag),
@@ -500,15 +509,15 @@ auto gse::gpu::create_sampler(context& ctx, const sampler_desc& desc) -> sampler
 		.unnormalizedCoordinates = vk::False
 	};
 
-	return sampler(device.createSampler(info));
+	return sampler(vk_device.createSampler(info));
 }
 
-auto gse::gpu::allocate_descriptors(context& ctx, const shader& s) -> vulkan::descriptor_region {
-	return s.allocate_descriptors(ctx.descriptor_heap());
+auto gse::gpu::allocate_descriptors(device& dev, const shader& s) -> vulkan::descriptor_region {
+	return s.allocate_descriptors(dev.descriptor_heap());
 }
 
 auto gse::gpu::write_descriptors(
-	context& ctx,
+	device& dev,
 	const vulkan::descriptor_region& region,
 	const shader& s,
 	const std::unordered_map<std::string, vk::DescriptorBufferInfo>& buffer_infos,
@@ -518,7 +527,7 @@ auto gse::gpu::write_descriptors(
 	s.write_descriptors(region, buffer_infos, image_infos, image_array_infos);
 }
 
-auto gse::gpu::upload_to_buffers(context& ctx, std::span<const buffer_upload> uploads) -> void {
+auto gse::gpu::upload_to_buffers(device& dev, const std::span<const buffer_upload> uploads) -> void {
 	if (uploads.empty()) return;
 
 	struct upload_entry {
@@ -530,26 +539,26 @@ auto gse::gpu::upload_to_buffers(context& ctx, std::span<const buffer_upload> up
 
 	std::vector<upload_entry> entries;
 	entries.reserve(uploads.size());
-	for (const auto& u : uploads) {
+	for (const auto& [dst, data, size, dst_offset] : uploads) {
 		entries.push_back({
-			.dst = u.dst->native().buffer,
-			.data = u.data,
-			.size = static_cast<vk::DeviceSize>(u.size),
-			.offset = static_cast<vk::DeviceSize>(u.dst_offset)
+			.dst = dst->native().buffer,
+			.data = data,
+			.size = static_cast<vk::DeviceSize>(size),
+			.offset = static_cast<vk::DeviceSize>(dst_offset)
 		});
 	}
 
-	ctx.add_transient_work([&ctx, entries = std::move(entries)](const auto& cmd) {
+	dev.add_transient_work([&dev, entries = std::move(entries)](const auto& cmd) {
 		std::vector<vulkan::buffer_resource> transient;
 		transient.reserve(entries.size());
 
-		for (const auto& e : entries) {
-			auto staging = ctx.allocator().create_buffer({
-				.size = e.size,
+		for (const auto& [dst, data, size, offset] : entries) {
+			auto staging = dev.allocator().create_buffer({
+				.size = size,
 				.usage = vk::BufferUsageFlagBits::eTransferSrc
-			}, e.data);
+			}, data);
 
-			cmd.copyBuffer(staging.buffer, e.dst, vk::BufferCopy(0, e.offset, e.size));
+			cmd.copyBuffer(staging.buffer, dst, vk::BufferCopy(0, offset, size));
 			transient.push_back(std::move(staging));
 		}
 
@@ -557,40 +566,40 @@ auto gse::gpu::upload_to_buffers(context& ctx, std::span<const buffer_upload> up
 	});
 }
 
-auto gse::gpu::create_compute_queue(context& ctx) -> compute_queue {
-	auto& device = ctx.device();
+auto gse::gpu::create_compute_queue(device& dev) -> compute_queue {
+	auto& vk_device = dev.logical_device();
 
-	auto pool = device.createCommandPool({
+	auto pool = vk_device.createCommandPool({
 		.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-		.queueFamilyIndex = ctx.compute_queue_family()
+		.queueFamilyIndex = dev.compute_queue_family()
 	});
 
-	auto cmd = std::move(device.allocateCommandBuffers({
+	auto cmd = std::move(vk_device.allocateCommandBuffers({
 		.commandPool = *pool,
 		.level = vk::CommandBufferLevel::ePrimary,
 		.commandBufferCount = 1
 	}).front());
 
-	auto fence = device.createFence({
+	auto fence = vk_device.createFence({
 		.flags = vk::FenceCreateFlagBits::eSignaled
 	});
 
-	auto query_pool = device.createQueryPool({
+	auto query_pool = vk_device.createQueryPool({
 		.queryType = vk::QueryType::eTimestamp,
 		.queryCount = 4
 	});
 
-	static_cast<vk::Device>(*device).resetQueryPool(*query_pool, 0, 4);
+	static_cast<vk::Device>(*vk_device).resetQueryPool(*query_pool, 0, 4);
 
-	const float timestamp_period = ctx.physical_device().getProperties().limits.timestampPeriod;
+	const float timestamp_period = dev.physical_device().getProperties().limits.timestampPeriod;
 
 	return compute_queue(
 		std::move(pool),
 		std::move(cmd),
 		std::move(fence),
 		std::move(query_pool),
-		&ctx.compute_queue_ref(),
-		&device,
+		&dev.compute_queue(),
+		&vk_device,
 		timestamp_period
 	);
 }

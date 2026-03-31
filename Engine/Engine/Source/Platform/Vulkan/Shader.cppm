@@ -126,6 +126,11 @@ namespace gse {
 			vulkan::descriptor_heap& heap
 		) const -> vulkan::descriptor_region;
 
+		auto create_writer(
+			vulkan::descriptor_heap& heap,
+			set::binding_type type
+		) const -> vulkan::descriptor_writer;
+
 		auto write_descriptors(
 			const vulkan::descriptor_region& region,
 			const std::unordered_map<std::string, vk::DescriptorBufferInfo>& buffer_infos,
@@ -453,7 +458,7 @@ auto gse::shader::load(const gpu::context& context) -> void {
 
 		vk::DescriptorSetLayoutCreateInfo ci{
 			.flags = type == set::binding_type::push
-				? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR | vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT
+				? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR
 				: vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT,
 			.bindingCount = static_cast<uint32_t>(raw_bindings.size()),
 			.pBindings = raw_bindings.data()
@@ -471,7 +476,7 @@ auto gse::shader::load(const gpu::context& context) -> void {
 		if (auto t = static_cast<set::binding_type>(i); !m_layout.sets.contains(t)) {
 			vk::DescriptorSetLayoutCreateInfo ci{
 				.flags = t == set::binding_type::push
-					? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR | vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT
+					? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR
 					: vk::DescriptorSetLayoutCreateFlagBits::eDescriptorBufferEXT,
 				.bindingCount = 0,
 				.pBindings = nullptr
@@ -670,6 +675,85 @@ auto gse::shader::vertex_input_state() const -> vk::PipelineVertexInputStateCrea
 		.vertexAttributeDescriptionCount = static_cast<std::uint32_t>(m_vertex_input.attributes.size()),
 		.pVertexAttributeDescriptions = m_vertex_input.attributes.data()
 	};
+}
+
+auto gse::shader::create_writer(vulkan::descriptor_heap& heap, set::binding_type type) const -> vulkan::descriptor_writer {
+	assert(
+		m_layout.sets.contains(type),
+		std::source_location::current(),
+		"Shader '{}' has no set of type {}",
+		m_info.name, static_cast<int>(type)
+	);
+
+	const auto& set_data = m_layout.sets.at(type);
+	const auto set_layout = layout(set_data);
+	const auto& props = heap.props();
+	const bool is_push = (type == set::binding_type::push);
+
+	auto descriptor_size_for = [&](vk::DescriptorType dt) -> vk::DeviceSize {
+		switch (dt) {
+			case vk::DescriptorType::eUniformBuffer:
+			case vk::DescriptorType::eUniformBufferDynamic:
+				return props.uniform_buffer_descriptor_size;
+			case vk::DescriptorType::eStorageBuffer:
+			case vk::DescriptorType::eStorageBufferDynamic:
+				return props.storage_buffer_descriptor_size;
+			case vk::DescriptorType::eCombinedImageSampler:
+				return props.combined_image_sampler_descriptor_size;
+			case vk::DescriptorType::eSampledImage:
+				return props.sampled_image_descriptor_size;
+			case vk::DescriptorType::eStorageImage:
+				return props.storage_image_descriptor_size;
+			case vk::DescriptorType::eSampler:
+				return props.sampler_descriptor_size;
+			default:
+				return props.storage_buffer_descriptor_size;
+		}
+	};
+
+	std::uint32_t max_binding = 0;
+	for (const auto& b : set_data.bindings) {
+		max_binding = std::max(max_binding, b.layout_binding.binding);
+	}
+
+	std::vector<vulkan::descriptor_binding_info> bindings(max_binding + 1);
+
+	if (is_push) {
+		vk::DeviceSize running_offset = 0;
+		for (const auto& b : set_data.bindings) {
+			const auto idx = b.layout_binding.binding;
+			const auto desc_size = descriptor_size_for(b.layout_binding.descriptorType);
+			bindings[idx] = {
+				.offset = running_offset,
+				.descriptor_size = desc_size,
+				.type = b.layout_binding.descriptorType
+			};
+			running_offset += desc_size;
+		}
+
+		return vulkan::descriptor_writer(heap, set_layout, running_offset, std::move(bindings), true);
+	}
+
+	const auto size = heap.layout_size(set_layout);
+
+	for (const auto& b : set_data.bindings) {
+		const auto idx = b.layout_binding.binding;
+		const auto boff = heap.binding_offset(set_layout, idx);
+		const auto desc_size = descriptor_size_for(b.layout_binding.descriptorType);
+
+		bindings[idx] = {
+			.offset = boff,
+			.descriptor_size = desc_size,
+			.type = b.layout_binding.descriptorType
+		};
+	}
+
+	vk::DeviceSize actual_size = size;
+	for (const auto& b : bindings) {
+		actual_size = std::max(actual_size, b.offset + b.descriptor_size);
+	}
+
+	return vulkan::descriptor_writer(heap, set_layout, actual_size, std::move(bindings));
 }
 
 auto gse::shader::allocate_descriptors(vulkan::descriptor_heap& heap) const -> vulkan::descriptor_region {

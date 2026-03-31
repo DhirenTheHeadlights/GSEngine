@@ -195,10 +195,7 @@ namespace gse::log {
             }
 
             if (m_file.is_open()) {
-                m_file << msg << '\n';
-                if (flush_now) {
-                    m_file.flush();
-                }
+                m_file << msg << '\n' << std::flush;
             }
         }
 

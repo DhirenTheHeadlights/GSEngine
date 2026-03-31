@@ -10,6 +10,9 @@ import :shader_layout_compiler;
 import :window;
 import :input_state;
 import :render_graph;
+import :gpu_device;
+import :gpu_swapchain;
+import :gpu_frame;
 
 import gse.log;
 import gse.utility;
@@ -127,7 +130,7 @@ export namespace gse::gpu {
 		) -> decltype(auto);
 
 		auto begin_frame(
-		) -> bool;
+		) -> std::expected<gpu::frame_token, gpu::frame_status>;
 
 		auto end_frame(
 		) -> void;
@@ -136,7 +139,7 @@ export namespace gse::gpu {
 		) -> void;
 
 		[[nodiscard]] auto allocator(
-		) const -> vulkan::allocator&;
+		) -> vulkan::allocator&;
 
 		[[nodiscard]] auto device(
 		) -> vk::raii::Device&;
@@ -212,6 +215,18 @@ export namespace gse::gpu {
 		auto shutdown(
 		) -> void;
 
+		[[nodiscard]] auto device_ref(
+			this auto& self
+		) -> decltype(auto);
+
+		[[nodiscard]] auto swapchain(
+			this auto& self
+		) -> decltype(auto);
+
+		[[nodiscard]] auto frame(
+			this auto& self
+		) -> decltype(auto);
+
 		[[nodiscard]] auto shader_layout(
 			const std::string& name
 		) const -> const gse::shader_layout*;
@@ -230,6 +245,9 @@ export namespace gse::gpu {
 
 		gse::window m_window;
 		std::unique_ptr<vulkan::runtime> m_runtime;
+		gpu::device m_device;
+		gpu::swapchain m_swapchain;
+		gpu::frame m_frame;
 		asset_pipeline m_pipeline{ config::resource_path, config::baked_resource_path };
 		std::unordered_map<std::type_index, std::unique_ptr<resource::loader_base>> m_resource_loaders;
 
@@ -245,7 +263,7 @@ export namespace gse::gpu {
 	};
 }
 
-gse::gpu::context::context(const std::string& window_title, input::system_state& input, save::state& save) : m_window(window_title, input, save), m_runtime(vulkan::create_runtime(m_window.raw_handle(), save)), m_render_graph(std::make_unique<vulkan::render_graph>(*m_runtime)) {
+gse::gpu::context::context(const std::string& window_title, input::system_state& input, save::state& save) : m_window(window_title, input, save), m_runtime(vulkan::create_runtime(m_window.raw_handle(), save)), m_device(*m_runtime), m_swapchain(*m_runtime), m_frame(*m_runtime), m_render_graph(std::make_unique<vulkan::render_graph>(m_device, m_swapchain, m_frame)) {
 	save.bind("Graphics", "Validation Layers", m_validation_layers_enabled)
 		.description("Enable Vulkan validation layers for debugging (impacts performance significantly)")
 		.default_value(false)
@@ -255,6 +273,33 @@ gse::gpu::context::context(const std::string& window_title, input::system_state&
 
 gse::gpu::context::~context() {
 	m_runtime.reset();
+}
+
+auto gse::gpu::context::device_ref(this auto& self) -> decltype(auto) {
+	using self_t = std::remove_reference_t<decltype(self)>;
+	if constexpr (std::is_const_v<self_t>) {
+		return static_cast<const gpu::device&>(self.m_device);
+	} else {
+		return static_cast<gpu::device&>(self.m_device);
+	}
+}
+
+auto gse::gpu::context::swapchain(this auto& self) -> decltype(auto) {
+	using self_t = std::remove_reference_t<decltype(self)>;
+	if constexpr (std::is_const_v<self_t>) {
+		return static_cast<const gpu::swapchain&>(self.m_swapchain);
+	} else {
+		return static_cast<gpu::swapchain&>(self.m_swapchain);
+	}
+}
+
+auto gse::gpu::context::frame(this auto& self) -> decltype(auto) {
+	using self_t = std::remove_reference_t<decltype(self)>;
+	if constexpr (std::is_const_v<self_t>) {
+		return static_cast<const gpu::frame&>(self.m_frame);
+	} else {
+		return static_cast<gpu::frame&>(self.m_frame);
+	}
 }
 
 template <typename T>
@@ -421,13 +466,19 @@ auto gse::gpu::context::loader(this auto&& self) -> decltype(auto) {
 	return static_cast<resource::loader<T, context>*>(base_loader);
 }
 
-auto gse::gpu::context::begin_frame() -> bool {
-	return vulkan::begin_frame({
+auto gse::gpu::context::begin_frame() -> std::expected<gpu::frame_token, gpu::frame_status> {
+	auto result = vulkan::begin_frame({
 		.window = m_window.raw_handle(),
 		.frame_buffer_resized = m_window.frame_buffer_resized(),
 		.minimized = m_window.minimized(),
 		.runtime = *m_runtime
 	});
+
+	if (result) {
+		m_device.descriptor_heap().begin_frame(result->frame_index);
+	}
+
+	return result;
 }
 
 auto gse::gpu::context::end_frame() -> void {
@@ -440,49 +491,43 @@ auto gse::gpu::context::end_frame() -> void {
 }
 
 auto gse::gpu::context::wait_idle() -> void {
-	m_runtime->device_config().device.waitIdle();
+	m_device.wait_idle();
 }
 
-auto gse::gpu::context::allocator() const -> vulkan::allocator& {
-	return m_runtime->allocator();
+auto gse::gpu::context::allocator() -> vulkan::allocator& {
+	return m_device.runtime_ref().allocator();
 }
 
 auto gse::gpu::context::device() -> vk::raii::Device& {
-	return m_runtime->device_config().device;
+	return m_device.logical_device();
 }
 
 auto gse::gpu::context::device() const -> const vk::raii::Device& {
-	return m_runtime->device_config().device;
+	return m_device.logical_device();
 }
 
 auto gse::gpu::context::add_transient_work(const auto& commands) -> void {
-	m_runtime->add_transient_work(commands);
+	m_device.add_transient_work(commands);
 }
 
 auto gse::gpu::context::descriptor_heap(this auto& self) -> decltype(auto) {
-	using self_t = std::remove_reference_t<decltype(self)>;
-	using runtime_ref_t = std::conditional_t<
-		std::is_const_v<self_t>,
-		const vulkan::runtime&,
-		vulkan::runtime&
-	>;
-	return static_cast<runtime_ref_t>(*self.m_runtime).descriptor_heap();
+	return self.m_device.descriptor_heap();
 }
 
 auto gse::gpu::context::surface_format() const -> vk::Format {
-	return m_runtime->swap_chain_config().surface_format.format;
+	return m_swapchain.format();
 }
 
 auto gse::gpu::context::compute_queue_family() const -> std::uint32_t {
-	return m_runtime->queue_config().compute_family_index;
+	return m_device.compute_queue_family();
 }
 
 auto gse::gpu::context::compute_queue_ref() -> const vk::raii::Queue& {
-	return m_runtime->queue_config().compute;
+	return m_device.compute_queue();
 }
 
 auto gse::gpu::context::physical_device() -> const vk::raii::PhysicalDevice& {
-	return m_runtime->device_config().physical_device;
+	return m_device.physical_device();
 }
 
 auto gse::gpu::context::on_swap_chain_recreate(swap_chain_recreate_callback callback) const -> void {
@@ -532,7 +577,7 @@ auto gse::gpu::context::shutdown() -> void {
 
 	m_window.shutdown();
 
-	m_runtime->device_config().device.waitIdle();
+	m_device.wait_idle();
 
 	for (auto& loader : m_resource_loaders | std::views::values) {
 		loader.reset();
@@ -568,7 +613,7 @@ auto gse::gpu::context::load_layouts() -> void {
 		}
 
 		auto layout = std::make_unique<gse::shader_layout>(entry.path());
-		layout->load(m_runtime->device_config().device);
+		layout->load(m_device.logical_device());
 
 		const auto& name = layout->name();
 		log::println(log::category::assets, "Layout loaded: {}", name);

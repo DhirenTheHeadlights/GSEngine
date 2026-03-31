@@ -256,6 +256,7 @@ auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& 
 		.push_constant_block = "push_constants"
 	});
 
+
 	s.skinned_shader = ctx.get<shader>("Shaders/Standard3D/skinned_geometry_pass");
 	ctx.instantly_load(s.skinned_shader);
 
@@ -279,6 +280,7 @@ auto gse::renderer::forward::system::initialize(initialize_phase& phase, state& 
 	s.skinned_pipeline = gpu::create_graphics_pipeline(ctx, *s.skinned_shader, {
 		.depth = { .test = true, .write = false, .compare = gpu::compare_op::less_or_equal }
 	});
+
 
 	s.blank_texture = ctx.queue<texture>("blank", vec4f(1, 1, 1, 1));
 	ctx.instantly_load(s.blank_texture);
@@ -459,6 +461,9 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 	const int num_lights_i = static_cast<int>(light_count);
 	const std::array screen_sz = { ext_w, ext_h };
 
+	auto meshlet_writer = s.shader_handle->create_writer(ctx.descriptor_heap(), shader::set::binding_type::push);
+	auto skinned_writer = s.skinned_shader->create_writer(ctx.descriptor_heap(), shader::set::binding_type::push);
+
 	auto pass = ctx.graph().add_pass<state>();
 	pass.track(s.ubo_allocations.at("CameraUBO")[frame_index]);
 	pass.track(s.light_buffers[frame_index]);
@@ -466,8 +471,7 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 	pass.track(s.point_shadow_params_buffers[frame_index]);
 	pass.track(gc_state->instance_buffer[frame_index].native());
 
-	pass
-		.after<light_culling::state>()
+	pass.after<light_culling::state>()
 		.after<depth_prepass::state>()
 		.reads(
 			vulkan::storage_read(lc_state->tile_light_table_buffers[frame_index].native(), vk::PipelineStageFlagBits2::eFragmentShader),
@@ -477,7 +481,8 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 		)
 		.color_output(vulkan::color_clear{ 0.1f, 0.1f, 0.1f, 1.0f })
 		.depth_output_load()
-		.record([&s, &normal_batches, &skinned_batches, gc_state, frame_index, num_lights_i, screen_sz, ext_w, ext_h](vulkan::recording_context& ctx) {
+		.record([&s, &normal_batches, &skinned_batches, gc_state, frame_index, num_lights_i, screen_sz, ext_w, ext_h,
+			meshlet_writer = std::move(meshlet_writer), skinned_writer = std::move(skinned_writer)](vulkan::recording_context& ctx) mutable {
 			const vec2u ext_size{ ext_w, ext_h };
 			ctx.set_viewport(ext_size);
 			ctx.set_scissor(ext_size);
@@ -508,78 +513,16 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 						pipeline_bound = true;
 					}
 
-					const vk::DescriptorBufferInfo vertex_storage_info{
-						.buffer = mesh.vertex_storage_buffer(),
-						.offset = 0,
-						.range = mesh.vertex_storage_buffer_size()
-					};
-					const vk::DescriptorBufferInfo meshlet_desc_info{
-						.buffer = mesh.meshlet_descriptor_buffer(),
-						.offset = 0,
-						.range = mesh.meshlet_descriptor_buffer_size()
-					};
-					const vk::DescriptorBufferInfo meshlet_vert_info{
-						.buffer = mesh.meshlet_vertex_buffer(),
-						.offset = 0,
-						.range = mesh.meshlet_vertex_buffer_size()
-					};
-					const vk::DescriptorBufferInfo meshlet_tri_info{
-						.buffer = mesh.meshlet_triangle_buffer(),
-						.offset = 0,
-						.range = mesh.meshlet_triangle_buffer_size()
-					};
-					const vk::DescriptorBufferInfo meshlet_bounds_info{
-						.buffer = mesh.meshlet_bounds_buffer(),
-						.offset = 0,
-						.range = mesh.meshlet_bounds_buffer_size()
-					};
-
-					const std::array<vk::WriteDescriptorSet, 7> descriptor_writes{
-						vk::WriteDescriptorSet{
-							.dstBinding = 0,
-							.descriptorCount = 1,
-							.descriptorType = vk::DescriptorType::eStorageBuffer,
-							.pBufferInfo = &vertex_storage_info
-						},
-						vk::WriteDescriptorSet{
-							.dstBinding = 1,
-							.descriptorCount = 1,
-							.descriptorType = vk::DescriptorType::eStorageBuffer,
-							.pBufferInfo = &meshlet_desc_info
-						},
-						vk::WriteDescriptorSet{
-							.dstBinding = 2,
-							.descriptorCount = 1,
-							.descriptorType = vk::DescriptorType::eStorageBuffer,
-							.pBufferInfo = &meshlet_vert_info
-						},
-						vk::WriteDescriptorSet{
-							.dstBinding = 3,
-							.descriptorCount = 1,
-							.descriptorType = vk::DescriptorType::eStorageBuffer,
-							.pBufferInfo = &meshlet_tri_info
-						},
-						vk::WriteDescriptorSet{
-							.dstBinding = 4,
-							.descriptorCount = 1,
-							.descriptorType = vk::DescriptorType::eStorageBuffer,
-							.pBufferInfo = &meshlet_bounds_info
-						},
-						vk::WriteDescriptorSet{
-							.dstBinding = 5,
-							.descriptorCount = 1,
-							.descriptorType = vk::DescriptorType::eStorageBuffer,
-							.pBufferInfo = &instance_buffer_info
-						},
-						vk::WriteDescriptorSet{
-							.dstBinding = 6,
-							.descriptorCount = 1,
-							.descriptorType = vk::DescriptorType::eCombinedImageSampler,
-							.pImageInfo = &tex_info
-						}
-					};
-
-					ctx.push_descriptor(vk::PipelineBindPoint::eGraphics, s.pipeline.native_layout(), 1, descriptor_writes);
+					meshlet_writer.begin(frame_index);
+					meshlet_writer
+						.buffer(0, mesh.vertex_storage_buffer(), 0, mesh.vertex_storage_buffer_size())
+						.buffer(1, mesh.meshlet_descriptor_buffer(), 0, mesh.meshlet_descriptor_buffer_size())
+						.buffer(2, mesh.meshlet_vertex_buffer(), 0, mesh.meshlet_vertex_buffer_size())
+						.buffer(3, mesh.meshlet_triangle_buffer(), 0, mesh.meshlet_triangle_buffer_size())
+						.buffer(4, mesh.meshlet_bounds_buffer(), 0, mesh.meshlet_bounds_buffer_size())
+						.buffer(5, instance_buffer_info.buffer, instance_buffer_info.offset, instance_buffer_info.range)
+						.image(6, tex_info.imageView, tex_info.sampler, tex_info.imageLayout);
+					ctx.commit(meshlet_writer, s.pipeline, 1);
 
 					const std::uint32_t ml_count = mesh.meshlet_count();
 					for (std::uint32_t inst = 0; inst < batch.instance_count; ++inst) {
@@ -620,31 +563,12 @@ auto gse::renderer::forward::system::render(const render_phase& phase, const sta
 					const bool has_texture = mesh.material().valid() && mesh.material()->diffuse_texture.valid();
 					const auto& tex_info = has_texture ? mesh.material()->diffuse_texture->descriptor_info() : s.blank_texture->descriptor_info();
 
-					const std::array<vk::WriteDescriptorSet, 3> skinned_descriptor_writes{
-						vk::WriteDescriptorSet{
-							.dstBinding = 2,
-							.dstArrayElement = 0,
-							.descriptorCount = 1,
-							.descriptorType = vk::DescriptorType::eCombinedImageSampler,
-							.pImageInfo = &tex_info
-						},
-						vk::WriteDescriptorSet{
-							.dstBinding = 3,
-							.dstArrayElement = 0,
-							.descriptorCount = 1,
-							.descriptorType = vk::DescriptorType::eStorageBuffer,
-							.pBufferInfo = &skin_buffer_info
-						},
-						vk::WriteDescriptorSet{
-							.dstBinding = 4,
-							.dstArrayElement = 0,
-							.descriptorCount = 1,
-							.descriptorType = vk::DescriptorType::eStorageBuffer,
-							.pBufferInfo = &skinned_instance_buffer_info
-						}
-					};
-
-					ctx.push_descriptor(vk::PipelineBindPoint::eGraphics, s.skinned_pipeline.native_layout(), 1, skinned_descriptor_writes);
+					skinned_writer.begin(frame_index);
+					skinned_writer
+						.image(2, tex_info.imageView, tex_info.sampler, tex_info.imageLayout)
+						.buffer(3, skin_buffer_info.buffer, skin_buffer_info.offset, skin_buffer_info.range)
+						.buffer(4, skinned_instance_buffer_info.buffer, skinned_instance_buffer_info.offset, skinned_instance_buffer_info.range);
+					ctx.commit(skinned_writer, s.skinned_pipeline, 1);
 
 					ctx.bind_vertex(mesh.vertex_gpu_buffer());
 					ctx.bind_index(mesh.index_gpu_buffer());
