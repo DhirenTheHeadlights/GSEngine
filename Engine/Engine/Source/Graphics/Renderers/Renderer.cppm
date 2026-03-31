@@ -20,6 +20,7 @@ import :clip_compiler;
 import :skinned_model_compiler;
 import :camera_system;
 
+import gse.log;
 import gse.utility;
 import gse.platform;
 import gse.audio;
@@ -157,7 +158,12 @@ auto gse::renderer::system::begin_frame(begin_frame_phase& phase, state& s) -> b
 
 	ctx.process_gpu_queue();
 
-	s.frame_begun = ctx.begin_frame();
+	auto result = ctx.begin_frame();
+	s.frame_begun = result.has_value();
+
+	if (!result && result.error() == gpu::frame_status::device_lost) {
+		log::println(log::level::error, log::category::vulkan, "Device lost during begin_frame");
+	}
 
 	return s.frame_begun;
 }

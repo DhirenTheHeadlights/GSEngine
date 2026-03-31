@@ -151,17 +151,26 @@ Renderers receive `gpu::frame&` for recording and `gpu::device&` for resource cr
 
 ## Phases
 
-### Phase 1: Core types + cmd wrapper
-- Define `gpu::cmd`, `gpu::image`, `gpu::barrier` types
-- Implement semantic command recording (bind, draw, barrier, push, rendering)
-- Implement `gpu::image` with layout tracking and view management
-- All new types live in `Platform/GpuTypes.cppm` or new `Platform/Gpu*.cppm` modules
-- Vulkan implementations in `Platform/Vulkan/` — wrappers forward to vk:: calls
+### Phase 1: Core types + cmd wrapper ✓
+- `gpu::buffer` (`GpuBuffer.cppm`) — wraps `vulkan::buffer_resource`, tracks size/mapped pointer
+- `gpu::image` (`GpuImage.cppm`) — wraps `vulkan::image_resource` with layout tracking and format conversion
+- `gpu::pipeline` (`GpuPipeline.cppm`) — wraps `vk::raii::Pipeline` + `PipelineLayout` + bind point
+- `gpu::descriptor_set`, `gpu::sampler` — RAII wrappers in `GpuPipeline.cppm`
+- `gpu::buffer_desc`, `gpu::image_desc`, `gpu::sampler_desc`, `gpu::graphics_pipeline_desc` — backend-agnostic descriptor structs in `GpuTypes.cppm`
+- Factory functions in `GpuFactory.cppm` — `create_buffer`, `create_image`, `create_graphics_pipeline`, `create_compute_pipeline`, `create_sampler`, `allocate_descriptors`, `write_descriptors`, `upload_to_buffers`
+- `recording_context` overloads accepting `gpu::pipeline`, `gpu::buffer`, `gpu::descriptor_region` in `RenderGraph.cppm`
+- All renderers migrated to use abstract types for pipeline/descriptor/sampler creation
 
-### Phase 2: Context split
-- Break `gpu::context` into `gpu::device`, `gpu::swapchain`, `gpu::frame`, `gpu::resource_manager`
-- Update render graph to pass `gpu::frame` to record lambdas
-- Migrate factory functions to take `gpu::device&`
+### Phase 2: Context split ✓
+- `gpu::device` (`GpuDevice.cppm`) — wraps runtime for logical/physical device, queues, allocator, descriptor heap, transient work
+- `gpu::swapchain` (`GpuSwapchain.cppm`) — wraps runtime for extent, format, depth image, image views, recreate callbacks
+- `gpu::frame` (`GpuFrame.cppm`) — wraps runtime for current frame index, image index, command buffer, frame status; `frame_token`/`frame_status` types for begin_frame result
+- Factory functions take `gpu::device&` as primary signature; `context&` forwarding overloads for backward compatibility
+- Render graph constructor takes `gpu::device&, gpu::swapchain&, gpu::frame&` instead of `runtime&`
+- `gpu::context` delegates device/queue/allocator/format/descriptor methods through the new types
+- `context::begin_frame()` returns `std::expected<frame_token, frame_status>`
+- **Deferred:** `gpu::resource_manager` extraction blocked by circular module dependency (`resource::loader<T, context>` templated on `context`). Will address in Phase 5 when loader system is reworked.
+- **Remaining runtime usage in context:** `begin_frame`/`end_frame` (vulkan free functions take `runtime&`), `upload_image_2d`/`upload_image_layers` (uploader takes `runtime&`), `on_swap_chain_recreate` (const method quirk), shutdown depth_image cleanup
 
 ### Phase 3: Descriptor abstraction
 - Implement `gpu::descriptor_writer` with fluent API
@@ -178,6 +187,9 @@ Renderers receive `gpu::frame&` for recording and `gpu::device&` for resource cr
 - Remove dead `vulkan::` types that are now fully wrapped
 - Merge or remove compute context into `gpu::device` queue model
 - Update compilers (model, material, texture, etc.) to use `gpu::` types only
+- Extract `gpu::resource_manager` from context (requires reworking `resource::loader<T>` to not be templated on `context`)
+- Eliminate `vulkan::runtime` — move remaining ownership into device/swapchain/frame
+- Remove `context&` forwarding overloads from factory functions
 
 ## Non-Goals
 

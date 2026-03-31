@@ -258,6 +258,7 @@ auto gse::renderer::ui::system::initialize(initialize_phase& phase, state& s) ->
 		.push_constant_block = "push_constants"
 	});
 
+
 	constexpr std::size_t vertex_buffer_size = max_vertices * sizeof(vertex);
 	constexpr std::size_t index_buffer_size = max_indices * sizeof(std::uint32_t);
 
@@ -450,8 +451,8 @@ auto gse::renderer::ui::system::render(render_phase& phase, const state& s) -> v
 	auto text_pc = s.text_shader->cache_push_block("push_constants");
 	text_pc.set("projection", projection);
 
-	const auto sprite_binding = s.sprite_shader->binding("spriteTexture");
-	const auto text_binding = s.text_shader->binding("spriteTexture");
+	auto sprite_writer = s.sprite_shader->create_writer(ctx.descriptor_heap(), shader::set::binding_type::push);
+	auto text_writer = s.text_shader->create_writer(ctx.descriptor_heap(), shader::set::binding_type::push);
 
 	auto pass = ctx.graph().add_pass<ui::state>();
 	pass.track(vertex_buffer.native());
@@ -463,8 +464,8 @@ auto gse::renderer::ui::system::render(render_phase& phase, const state& s) -> v
 		.color_output_load()
 		.record([&s, &batches, frame_index, ext_size, window_size,
 			sprite_pc = std::move(sprite_pc), text_pc = std::move(text_pc),
-			sprite_binding, text_binding,
-			&vertex_buffer, &index_buffer](vulkan::recording_context& ctx) {
+			sprite_writer = std::move(sprite_writer), text_writer = std::move(text_writer),
+			&vertex_buffer, &index_buffer](vulkan::recording_context& ctx) mutable {
 
 			ctx.bind_vertex(vertex_buffer);
 			ctx.bind_index(index_buffer);
@@ -497,27 +498,19 @@ auto gse::renderer::ui::system::render(render_phase& phase, const state& s) -> v
 				}
 
 				if (type == command_type::sprite) {
-					if (texture.valid() && texture.id() != bound_texture.id() && sprite_binding) {
+					if (texture.valid() && texture.id() != bound_texture.id()) {
 						const auto info = texture->descriptor_info();
-						const vk::WriteDescriptorSet write{
-							.dstBinding = sprite_binding->binding,
-							.descriptorCount = 1,
-							.descriptorType = sprite_binding->descriptorType,
-							.pImageInfo = &info
-						};
-						ctx.push_descriptor(vk::PipelineBindPoint::eGraphics, s.sprite_pipeline.native_layout(), 1, std::span(&write, 1));
+						sprite_writer.begin(frame_index);
+						sprite_writer.image(0, info.imageView, info.sampler, info.imageLayout);
+						ctx.commit(sprite_writer, s.sprite_pipeline, 1);
 						bound_texture = texture;
 					}
 				} else {
-					if (font.valid() && font.id() != bound_font.id() && text_binding) {
+					if (font.valid() && font.id() != bound_font.id()) {
 						const auto info = font->texture()->descriptor_info();
-						const vk::WriteDescriptorSet write{
-							.dstBinding = text_binding->binding,
-							.descriptorCount = 1,
-							.descriptorType = text_binding->descriptorType,
-							.pImageInfo = &info
-						};
-						ctx.push_descriptor(vk::PipelineBindPoint::eGraphics, s.text_pipeline.native_layout(), 1, std::span(&write, 1));
+						text_writer.begin(frame_index);
+						text_writer.image(0, info.imageView, info.sampler, info.imageLayout);
+						ctx.commit(text_writer, s.text_pipeline, 1);
 						bound_font = font;
 					}
 				}

@@ -6,6 +6,9 @@ import :gpu_types;
 import :gpu_buffer;
 import :gpu_pipeline;
 import :gpu_image;
+import :gpu_device;
+import :gpu_swapchain;
+import :gpu_frame;
 import :descriptor_heap;
 
 import gse.assert;
@@ -118,14 +121,8 @@ export namespace gse::vulkan {
 		auto bind_descriptors(
 			vk::PipelineBindPoint point,
 			vk::PipelineLayout layout,
-			const descriptor_region& region
-		) -> void;
-
-		auto push_descriptor(
-			vk::PipelineBindPoint point,
-			vk::PipelineLayout layout,
-			std::uint32_t set_index,
-			std::span<const vk::WriteDescriptorSet> writes
+			const descriptor_region& region,
+			std::uint32_t set_index = 0
 		) -> void;
 
 		auto push(
@@ -210,7 +207,8 @@ export namespace gse::vulkan {
 		auto bind_descriptors(
 			vk::PipelineBindPoint point,
 			const gpu::pipeline& p,
-			const descriptor_region& region
+			const descriptor_region& region,
+			std::uint32_t set_index = 0
 		) -> void;
 
 		auto push(
@@ -223,13 +221,6 @@ export namespace gse::vulkan {
 			vk::DeviceSize offset,
 			std::uint32_t draw_count,
 			std::uint32_t stride
-		) -> void;
-
-		auto push_storage_buffers(
-			vk::PipelineBindPoint point,
-			const gpu::pipeline& p,
-			std::uint32_t set_index,
-			std::span<const gpu::descriptor_buffer_binding> bindings
 		) -> void;
 
 		auto bind_vertex_buffer(
@@ -249,7 +240,8 @@ export namespace gse::vulkan {
 
 		auto bind_descriptors(
 			const gpu::pipeline& p,
-			const descriptor_region& region
+			const descriptor_region& region,
+			std::uint32_t set_index = 0
 		) -> void;
 
 		auto bind_vertex(
@@ -269,6 +261,12 @@ export namespace gse::vulkan {
 
 		auto set_scissor(
 			vec2u extent
+		) -> void;
+
+		auto commit(
+			descriptor_writer& writer,
+			const gpu::pipeline& p,
+			std::uint32_t set_index = 0
 		) -> void;
 
 		auto begin_rendering(
@@ -371,7 +369,9 @@ export namespace gse::vulkan {
 	class render_graph {
 	public:
 		explicit render_graph(
-			runtime& runtime_state
+			gpu::device& device,
+			gpu::swapchain& swapchain,
+			gpu::frame& frame
 		);
 
 		template <typename PassType>
@@ -409,7 +409,9 @@ export namespace gse::vulkan {
 			render_pass_data pass
 		) -> void;
 
-		runtime* m_runtime;
+		gpu::device* m_device;
+		gpu::swapchain* m_swapchain;
+		gpu::frame* m_frame;
 		std::vector<render_pass_data> m_passes;
 	};
 }
@@ -433,13 +435,9 @@ auto gse::vulkan::recording_context::bind_pipeline(vk::PipelineBindPoint point, 
 	m_cmd.bindPipeline(point, pipeline);
 }
 
-auto gse::vulkan::recording_context::bind_descriptors(vk::PipelineBindPoint point, vk::PipelineLayout layout, const descriptor_region& region) -> void {
+auto gse::vulkan::recording_context::bind_descriptors(vk::PipelineBindPoint point, vk::PipelineLayout layout, const descriptor_region& region, std::uint32_t set_index) -> void {
 	assert(region, std::source_location::current(), "Cannot bind null descriptor region");
-	region.heap->bind(m_cmd, point, layout, 0, region);
-}
-
-auto gse::vulkan::recording_context::push_descriptor(vk::PipelineBindPoint point, vk::PipelineLayout layout, std::uint32_t set_index, std::span<const vk::WriteDescriptorSet> writes) -> void {
-	m_cmd.pushDescriptorSetKHR(point, layout, set_index, static_cast<std::uint32_t>(writes.size()), writes.data());
+	region.heap->bind(m_cmd, point, layout, set_index, region);
 }
 
 auto gse::vulkan::recording_context::push(const cached_push_constants& cache, vk::PipelineLayout layout) -> void {
@@ -496,9 +494,9 @@ auto gse::vulkan::recording_context::bind_pipeline(const vk::PipelineBindPoint p
 	m_cmd.bindPipeline(point, p.native_pipeline());
 }
 
-auto gse::vulkan::recording_context::bind_descriptors(const vk::PipelineBindPoint point, const gpu::pipeline& p, const descriptor_region& region) -> void {
+auto gse::vulkan::recording_context::bind_descriptors(const vk::PipelineBindPoint point, const gpu::pipeline& p, const descriptor_region& region, const std::uint32_t set_index) -> void {
 	assert(region, std::source_location::current(), "Cannot bind null descriptor region");
-	region.heap->bind(m_cmd, point, p.native_layout(), 0, region);
+	region.heap->bind(m_cmd, point, p.native_layout(), set_index, region);
 }
 
 auto gse::vulkan::recording_context::push(const gpu::pipeline& p, const cached_push_constants& cache) -> void {
@@ -509,32 +507,6 @@ auto gse::vulkan::recording_context::draw_indirect(const gpu::buffer& buf, const
 	m_cmd.drawIndexedIndirect(buf.native().buffer, offset, draw_count, stride);
 }
 
-auto gse::vulkan::recording_context::push_storage_buffers(const vk::PipelineBindPoint point, const gpu::pipeline& p, const std::uint32_t set_index, const std::span<const gpu::descriptor_buffer_binding> bindings) -> void {
-	std::vector<vk::DescriptorBufferInfo> buffer_infos;
-	std::vector<vk::WriteDescriptorSet> writes;
-	buffer_infos.reserve(bindings.size());
-	writes.reserve(bindings.size());
-
-	for (const auto& b : bindings) {
-		buffer_infos.push_back({
-			.buffer = b.buf->native().buffer,
-			.offset = b.offset,
-			.range = b.range == 0 ? b.buf->size() : b.range
-		});
-	}
-
-	for (std::size_t i = 0; i < bindings.size(); ++i) {
-		writes.push_back({
-			.dstBinding = bindings[i].binding,
-			.descriptorCount = 1,
-			.descriptorType = vk::DescriptorType::eStorageBuffer,
-			.pBufferInfo = &buffer_infos[i]
-		});
-	}
-
-	m_cmd.pushDescriptorSetKHR(point, p.native_layout(), set_index, static_cast<std::uint32_t>(writes.size()), writes.data());
-}
-
 auto gse::vulkan::recording_context::bind(const gpu::pipeline& p) -> void {
 	const auto point = p.point() == gpu::bind_point::graphics
 		? vk::PipelineBindPoint::eGraphics
@@ -542,7 +514,7 @@ auto gse::vulkan::recording_context::bind(const gpu::pipeline& p) -> void {
 	m_cmd.bindPipeline(point, p.native_pipeline());
 }
 
-auto gse::vulkan::recording_context::bind_descriptors(const gpu::pipeline& p, const descriptor_region& region) -> void {
+auto gse::vulkan::recording_context::bind_descriptors(const gpu::pipeline& p, const descriptor_region& region, const std::uint32_t set_index) -> void {
 	assert(region, std::source_location::current(), "Cannot bind null descriptor region");
 	const auto point = p.point() == gpu::bind_point::graphics
 		? vk::PipelineBindPoint::eGraphics
@@ -603,6 +575,13 @@ auto gse::vulkan::recording_context::begin_rendering(const vec2u extent, const g
 		.pDepthAttachment = depth_att ? &*depth_att : nullptr
 	};
 	m_cmd.beginRendering(ri);
+}
+
+auto gse::vulkan::recording_context::commit(descriptor_writer& writer, const gpu::pipeline& p, std::uint32_t set_index) -> void {
+	const auto point = p.point() == gpu::bind_point::graphics
+		? vk::PipelineBindPoint::eGraphics
+		: vk::PipelineBindPoint::eCompute;
+	writer.commit(m_cmd, point, p.native_layout(), set_index);
 }
 
 auto gse::vulkan::recording_context::bind_vertex_buffer(const gpu::buffer& buf, const vk::DeviceSize offset) -> void {
@@ -716,7 +695,7 @@ auto gse::vulkan::pass_builder::depth_output(const depth_clear& clear_value) -> 
 		.op = load_op::clear_depth,
 		.clear_value = clear_value
 	};
-	m_pass.writes.push_back(attachment(m_graph->m_runtime->swap_chain_config().depth_image, vk::PipelineStageFlagBits2::eLateFragmentTests));
+	m_pass.writes.push_back(attachment(m_graph->m_swapchain->depth_image(), vk::PipelineStageFlagBits2::eLateFragmentTests));
 	return *this;
 }
 
@@ -745,7 +724,7 @@ auto gse::vulkan::pass_builder::submit() -> void {
 	m_graph->submit_pass(std::move(m_pass));
 }
 
-gse::vulkan::render_graph::render_graph(runtime& runtime_state) : m_runtime(std::addressof(runtime_state)) {}
+gse::vulkan::render_graph::render_graph(gpu::device& device, gpu::swapchain& swapchain, gpu::frame& frame) : m_device(std::addressof(device)), m_swapchain(std::addressof(swapchain)), m_frame(std::addressof(frame)) {}
 
 template <typename PassType>
 auto gse::vulkan::render_graph::add_pass() -> pass_builder {
@@ -763,38 +742,37 @@ auto gse::vulkan::render_graph::clear() -> void {
 }
 
 auto gse::vulkan::render_graph::current_frame() const -> std::uint32_t {
-	return m_runtime->current_frame();
+	return m_frame->current_frame();
 }
 
 auto gse::vulkan::render_graph::extent() const -> vec2u {
-	const auto ext = m_runtime->swap_chain_config().extent;
-	return { ext.width, ext.height };
+	return m_swapchain->extent();
 }
 
 auto gse::vulkan::render_graph::swapchain_image_view() const -> vk::ImageView {
-	return *m_runtime->swap_chain_config().image_views[m_runtime->frame_context().image_index];
+	return m_swapchain->image_view(m_frame->image_index());
 }
 
 auto gse::vulkan::render_graph::depth_image_view() const -> vk::ImageView {
-	return m_runtime->swap_chain_config().depth_image.view;
+	return m_swapchain->depth_image().view;
 }
 
 auto gse::vulkan::render_graph::depth_image() const -> const image_resource& {
-	return m_runtime->swap_chain_config().depth_image;
+	return m_swapchain->depth_image();
 }
 
 auto gse::vulkan::render_graph::frame_in_progress() const -> bool {
-	return m_runtime->frame_in_progress();
+	return m_frame->frame_in_progress();
 }
 
 auto gse::vulkan::render_graph::execute() -> void {
-	if (!m_runtime->frame_in_progress()) {
+	if (!m_frame->frame_in_progress()) {
 		return;
 	}
 
-	const auto command = m_runtime->frame_context().command_buffer;
-	const auto& swap = m_runtime->swap_chain_config();
-	const auto image_index = m_runtime->frame_context().image_index;
+	const auto command = m_frame->command_buffer();
+	const auto image_index = m_frame->image_index();
+	auto& swap_runtime = m_swapchain->runtime_ref().swap_chain_config();
 
 	const vk::ImageMemoryBarrier2 begin_barrier{
 		.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
@@ -805,7 +783,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 		.newLayout = vk::ImageLayout::eColorAttachmentOptimal,
 		.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
 		.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-		.image = swap.images[image_index],
+		.image = swap_runtime.images[image_index],
 		.subresourceRange = {
 			.aspectMask = vk::ImageAspectFlagBits::eColor,
 			.baseMipLevel = 0,
@@ -831,7 +809,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 			.newLayout = vk::ImageLayout::ePresentSrcKHR,
 			.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
 			.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-			.image = swap.images[image_index],
+			.image = swap_runtime.images[image_index],
 			.subresourceRange = {
 				.aspectMask = vk::ImageAspectFlagBits::eColor,
 				.baseMipLevel = 0,
@@ -987,7 +965,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 				}
 
 				color_attachments.push_back({
-					.imageView = *swap.image_views[image_index],
+					.imageView = *swap_runtime.image_views[image_index],
 					.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
 					.loadOp = vk_load,
 					.storeOp = vk::AttachmentStoreOp::eStore,
@@ -1008,7 +986,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 				}
 
 				depth_att = vk::RenderingAttachmentInfo{
-					.imageView = swap.depth_image.view,
+					.imageView = swap_runtime.depth_image.view,
 					.imageLayout = vk::ImageLayout::eGeneral,
 					.loadOp = vk_load,
 					.storeOp = vk::AttachmentStoreOp::eStore,
@@ -1017,7 +995,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 			}
 
 			const vk::RenderingInfo ri{
-				.renderArea = { { 0, 0 }, swap.extent },
+				.renderArea = { { 0, 0 }, swap_runtime.extent },
 				.layerCount = 1,
 				.colorAttachmentCount = static_cast<std::uint32_t>(color_attachments.size()),
 				.pColorAttachments = color_attachments.empty() ? nullptr : color_attachments.data(),
@@ -1040,7 +1018,7 @@ auto gse::vulkan::render_graph::execute() -> void {
 		.newLayout = vk::ImageLayout::ePresentSrcKHR,
 		.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
 		.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-		.image = swap.images[image_index],
+		.image = swap_runtime.images[image_index],
 		.subresourceRange = {
 			.aspectMask = vk::ImageAspectFlagBits::eColor,
 			.baseMipLevel = 0,
