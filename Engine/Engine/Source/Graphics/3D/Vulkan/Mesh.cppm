@@ -149,13 +149,13 @@ auto gse::mesh::initialize(gpu::context& ctx) -> void {
         ml.triangles = gpu::create_buffer(ctx.device_ref(), { .size = tri_size, .usage = storage_dst });
         ml.bounds = gpu::create_buffer(ctx.device_ref(), { .size = sizeof(meshlet_bounds) * m_meshlets.bounds.size(), .usage = storage_dst });
 
-        uploads.push_back({ &ml.vertex_storage, m_vertices.data(), vertex_buffer_size });
-        uploads.push_back({ &ml.descriptors, m_meshlets.descriptors.data(), sizeof(meshlet_descriptor) * m_meshlets.descriptors.size() });
-        uploads.push_back({ &ml.vertices, m_meshlets.vertex_indices.data(), sizeof(std::uint32_t) * m_meshlets.vertex_indices.size() });
-        uploads.push_back({ &ml.triangles, m_meshlets.triangles.data(), tri_size });
-        uploads.push_back({ &ml.bounds, m_meshlets.bounds.data(), sizeof(meshlet_bounds) * m_meshlets.bounds.size() });
-
         m_meshlet_gpu = std::move(ml);
+
+        uploads.push_back({ &m_meshlet_gpu->vertex_storage, m_vertices.data(), vertex_buffer_size });
+        uploads.push_back({ &m_meshlet_gpu->descriptors, m_meshlets.descriptors.data(), sizeof(meshlet_descriptor) * m_meshlets.descriptors.size() });
+        uploads.push_back({ &m_meshlet_gpu->vertices, m_meshlets.vertex_indices.data(), sizeof(std::uint32_t) * m_meshlets.vertex_indices.size() });
+        uploads.push_back({ &m_meshlet_gpu->triangles, m_meshlets.triangles.data(), tri_size });
+        uploads.push_back({ &m_meshlet_gpu->bounds, m_meshlets.bounds.data(), sizeof(meshlet_bounds) * m_meshlets.bounds.size() });
     }
 
     gpu::upload_to_buffers(ctx.device_ref(), uploads);
